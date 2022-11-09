@@ -1,12 +1,12 @@
 [package]
 name        = "only_torch"
-version     = "0.0.2"
+version     = "0.0.3"
 edition     = "2021"
 description = "仿造pytorch的个人玩具型AI框架（尚不成熟）"
 repository  = "https://github.com/dbsxdbsx/only_torch"
 license     = "MIT"
 keywords    = ["torch", "AI", "mxnet", "logic"]
-documentation = "https://docs.rs/only_torch/latest/only_torch/"
+documentation = "https://docs.rs/only_torch"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
