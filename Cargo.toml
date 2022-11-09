@@ -3,7 +3,7 @@ name        = "only_torch"
 version     = "0.0.1"
 edition     = "2021"
 description = "仿造pytorch的个人玩具型AI框架（尚不成熟）"
-repository  = "https://github.com/rust-lang/cargo/"
+repository  = "https://github.com/dbsxdbsx/only_torch"
 license     = "MIT"
 keywords    = ["torch", "AI", "mxnet", "logic"]
 
