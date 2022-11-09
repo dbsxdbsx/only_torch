@@ -1,9 +1,9 @@
 ## 描述
 用纯rust（不想用c++）打造的仿造pytorch的个人玩具型AI框架（尚不成熟）。不打算支持gpu(因后期可能要支持安卓等平台，不想受制于某种非cpu设备)，但可能会加入NEAT等网络进化的算法。
 ### 名字由来
-only torch cpu --- 不用gpu，因要照顾多平台，也不想被某个GPU厂商制约
-only torch node --- 没有全连接、卷积这类先入为主的网络结构，具体结构基于NEAT进化
-only torch f32 --- 网络的参数不需要除了f32外的数据结构
+- only torch cpu --- 不用gpu，因要照顾多平台，也不想被某个GPU厂商制约（基于NEAT进化的网络结构也不太好被GPU优化）
+- only torch node --- 没有全连接、卷积这类先入为主的网络结构，具体结构基于NEAT进化
+- only torch f32 --- 网络的参数不需要除了f32外的数据结构
 
 ## 使用示例
 （无）
@@ -12,6 +12,9 @@ only torch f32 --- 网络的参数不需要除了f32外的数据结构
 目前无人性化的文档。可直接看rust自动生成的[APi Doc](https://docs.rs/only_torch)即可。
 
 ## TODO
+- [] 基于本框架解决XOR监督学习问题
+- [] 基于本框架解决Mnist（数字识别）的监督学习问题
+- [] 基于本框架解决CartPole（需要openAI Gym）的深度强化学习问题
 
 
 ## 参考资料
