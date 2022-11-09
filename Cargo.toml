@@ -1,0 +1,12 @@
+[package]
+name        = "only_torch"
+version     = "0.0.1"
+edition     = "2021"
+description = "仿造pytorch的个人玩具型AI框架（尚不成熟）"
+repository  = "https://github.com/rust-lang/cargo/"
+license     = "MIT"
+keywords    = ["torch", "AI", "mxnet", "logic"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
