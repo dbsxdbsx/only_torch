@@ -9,12 +9,12 @@
 （无）
 
 ## 文档
-目前无人性化的文档。可直接看rust自动生成的[APi Doc](https://docs.rs/only_torch)即可。
+目前无人性化的文档。可直接看rust自动生成的[Api Doc](https://docs.rs/only_torch)即可。
 
 ## TODO
-- [] 基于本框架解决XOR监督学习问题
-- [] 基于本框架解决Mnist（数字识别）的监督学习问题
-- [] 基于本框架解决CartPole（需要openAI Gym）的深度强化学习问题
+- [ ] 基于本框架解决XOR监督学习问题
+- [ ] 基于本框架解决Mnist（数字识别）的监督学习问题
+- [ ] 基于本框架解决CartPole（需要openAI Gym）的深度强化学习问题
 
 
 ## 参考资料
