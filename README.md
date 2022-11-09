@@ -1,7 +1,7 @@
 ## 描述
 用纯rust（不想用c++）打造的仿造pytorch的个人玩具型AI框架（尚不成熟）。不打算支持gpu(因后期可能要支持安卓等平台，不想受制于某种非cpu设备)，但可能会加入NEAT等网络进化的算法。
 ### 名字由来
-- only rust --- 只用rust（不用c++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不用第三方lib，这样对跨平台支持会比较友好。
+- only torch rust --- 只用rust（不用c++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不用第三方lib，这样对跨平台支持会比较友好。
 - only torch cpu --- 不用gpu，因要照顾多平台，也不想被某个GPU厂商制约，且基于NEAT进化的网络结构也不太好被GPU优化。
 - only torch node --- 没有全连接、卷积这类先入为主的网络结构，具体结构基于NEAT进化。
 - only torch f32 --- 网络的参数（包括输入、输出）不需要除了f32外的数据结构。
@@ -9,7 +9,7 @@
 ## 使用示例
 （无）
 
-## 文档
+ ## 文档
 目前无人性化的文档。可直接看rust自动生成的[Api Doc](https://docs.rs/only_torch)即可。
 
 ## TODO
@@ -19,7 +19,7 @@
 
 
 ## 参考资料
-### 原理
+### IT原理
 - [陈天奇的机器学习编译课](https://www.bilibili.com/video/BV15v4y1g7EU/?is_story_h5=false&p=1&share_from=ugc&share_medium=android&share_plat=android&share_session_id=5a312434-ccf7-4cb9-862a-17a601cc4d35&share_source=COPY&share_tag=s_i&timestamp=1661386914&unique_k=zCWMKGC&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [基于梯度的机器学习IT原理](https://zhuanlan.zhihu.com/p/518198564)
 ### 开源示例
@@ -31,10 +31,12 @@
 - [radiate--衍生NEAT的纯rust库](https://github.com/pkalivas/radiate)
 - [纯rust的NEAT+GRU](https://github.com/sakex/neat-gru-rust)
 - [C++实现的NEAT+LSTM/GRU/CNN](https://github.com/travisdesell/exact)
+- [scryer-prolog--rust逻辑推理库](https://github.com/mthom/scryer-prolog)
+- [avalog--基于avatar的rust逻辑推理库](https://crates.io/crates/avalog)
 - [awesome rust](https://github.com/rust-unofficial/awesome-rust#genetic-algorithms)
-
 ### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
+- [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
 
 ## 遵循协议
 本项目遵循MIT协议（简言之：不约束，不负责）。
