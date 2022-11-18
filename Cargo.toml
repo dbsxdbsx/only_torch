@@ -1,8 +1,8 @@
 [package]
 name        = "only_torch"
-version     = "0.0.6"
+version     = "0.0.7"
 edition     = "2021"
-description = "仿造pytorch的个人玩具（尚不成熟）AI框架"
+description = "仿造pytorch的个人玩具（仍在构思，请勿下载）AI框架"
 repository  = "https://github.com/dbsxdbsx/only_torch"
 license     = "MIT"
 keywords    = ["dbsx"]

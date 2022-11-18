@@ -15,10 +15,11 @@
 
 ## TODO
 （目前需要先解决有没有的问题；而不是好不好）
-- [ ] 基于本框架解决XOR监督学习问题
-- [ ] 基于本框架解决Mnist（数字识别）的监督学习问题
-- [ ] 基于本框架解决CartPole（需要openAI Gym）的深度强化学习问题
-
+- [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
+- [] 基于本框架解决XOR监督学习问题
+- [] 基于本框架解决Mnist（数字识别）的监督学习问题
+- [] 基于本框架解决CartPole（需要openAI Gym）的深度强化学习问题
+- [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
 
 ## 参考资料
 ### IT原理
@@ -34,12 +35,16 @@
 - [纯rust的NEAT+GRU](https://github.com/sakex/neat-gru-rust)
 - [C++实现的NEAT+LSTM/GRU/CNN](https://github.com/travisdesell/exact)
 - [pytorch+NEAT](https://github.com/ddehueck/pytorch-neat)
-- [scryer-prolog--rust逻辑推理库](https://github.com/mthom/scryer-prolog)
 - [avalog--基于avatar的rust逻辑推理库](https://crates.io/crates/avalog)
 - [awesome rust](https://github.com/rust-unofficial/awesome-rust#genetic-algorithms)
+### 逻辑推理
+- [scryer-prolog--rust逻辑推理库](https://github.com/mthom/scryer-prolog)
+- [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
+- [结合prolog和RL](https://arxiv.org/abs/2004.06997)
+- [prolog与4证人难题](https://prolog.longluntan.com/t9-topic)
+- [logic+mL提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)- [prolog解决数度问题](https://prolog.longluntan.com/t107-topic)
 ### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
-- [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
-
+- [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
 ## 遵循协议
 本项目遵循MIT协议（简言之：不约束，不负责）。
