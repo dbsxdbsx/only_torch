@@ -5,6 +5,7 @@
 - only torch rust --- 只用rust（不用c++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不用第三方lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
 - only torch cpu --- 不用gpu，因要照顾多平台，也不想被某个GPU厂商制约，且基于NEAT进化的网络结构也不太好被GPU优化；如此也省得考虑数据从cpu内存迁移到其他设备内存的开销问题了。
 - only torch node --- 没有全连接、卷积、resnet这类先入为主的算子概念，具体模型结构均基于NEAT进化。
+- only torch tensor --- 所有的数据类型都是内置类型tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/rust-numpy)，[array](https://doc.rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于blas的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
 - only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了f32外的数据结构。
 
 ## 使用示例
@@ -29,6 +30,7 @@
 - [PyToy--基于MatrixSlow的建议python机器学习框架](https://github.com/ysj1173886760/PyToy)
 - [深度学习框架InsNet简介](https://zhuanlan.zhihu.com/p/378684569)
 - [neuronika--纯rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)
+- [C++机器学习库MLPACK](https://www.mlpack.org/)
 - [经典机器学习算法rust库](https://github.com/rust-ml/linfa)
 - [peroxide--纯rust的线代及周边库](https://crates.io/crates/peroxide)
 - [radiate--衍生NEAT的纯rust库](https://github.com/pkalivas/radiate)
@@ -36,15 +38,22 @@
 - [C++实现的NEAT+LSTM/GRU/CNN](https://github.com/travisdesell/exact)
 - [pytorch+NEAT](https://github.com/ddehueck/pytorch-neat)
 - [avalog--基于avatar的rust逻辑推理库](https://crates.io/crates/avalog)
-- [awesome rust](https://github.com/rust-unofficial/awesome-rust#genetic-algorithms)
+
+### NEAT、神经架构进化
+- [用梯度指导神经架构进化：Splitting Steepest Descent](https://www.cs.utexas.edu/~qlearning/project.html?p=splitting)
+
 ### 逻辑推理
 - [scryer-prolog--rust逻辑推理库](https://github.com/mthom/scryer-prolog)
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
 - [结合prolog和RL](https://arxiv.org/abs/2004.06997)
 - [prolog与4证人难题](https://prolog.longluntan.com/t9-topic)
 - [logic+mL提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)- [prolog解决数度问题](https://prolog.longluntan.com/t107-topic)
+ - [贝叶斯与逻辑推理](https://stats.stackexchange.com/questions/243746/what-is-probabilistic-inference)
+### CPU加速
+- [SLIDE](https://arxiv.org/abs/2103.10891)
 ### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
 - [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
+- [awesome rust](https://github.com/rust-unofficial/awesome-rust#genetic-algorithms)
 ## 遵循协议
 本项目遵循MIT协议（简言之：不约束，不负责）。
