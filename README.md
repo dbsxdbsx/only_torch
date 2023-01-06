@@ -41,19 +41,27 @@
 
 ### NEAT、神经架构进化
 - [用梯度指导神经架构进化：Splitting Steepest Descent](https://www.cs.utexas.edu/~qlearning/project.html?p=splitting)
+- [autoML介绍](https://www.zhihu.com/question/554255720/answer/2750670583)
 
-### 逻辑推理
+### 逻辑/推理
 - [scryer-prolog--rust逻辑推理库](https://github.com/mthom/scryer-prolog)
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
 - [结合prolog和RL](https://arxiv.org/abs/2004.06997)
 - [prolog与4证人难题](https://prolog.longluntan.com/t9-topic)
 - [logic+mL提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)- [prolog解决数度问题](https://prolog.longluntan.com/t107-topic)
  - [贝叶斯与逻辑推理](https://stats.stackexchange.com/questions/243746/what-is-probabilistic-inference)
+ - [神经网络的可解释性](https://zhuanlan.zhihu.com/p/341153242)
 ### CPU加速
 - [SLIDE](https://arxiv.org/abs/2103.10891)
+- [rust+AVX](https://medium.com/@Razican/learning-simd-with-rust-by-finding-planets-b85ccfb724c3)
+- [矩阵加速-GEMM](https://www.jianshu.com/p/6d3f013d8aba)
 ### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
+- [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
 - [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
+- [webGPT会上网的gpt](https://arxiv.org/abs/2112.09332)
 - [awesome rust](https://github.com/rust-unofficial/awesome-rust#genetic-algorithms)
+- [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
+
 ## 遵循协议
 本项目遵循MIT协议（简言之：不约束，不负责）。
