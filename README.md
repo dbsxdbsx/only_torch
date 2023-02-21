@@ -60,6 +60,7 @@
 - [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
 - [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
 - [webGPT会上网的gpt](https://arxiv.org/abs/2112.09332)
+- [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
 - [awesome rust](https://github.com/rust-unofficial/awesome-rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
 
