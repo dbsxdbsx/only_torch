@@ -81,10 +81,14 @@
 - [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
 - [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
 - [webGPT会上网的gpt](https://arxiv.org/abs/2112.09332)
+- [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
 - [awesome rust](https://github.com/rust-unofficial/awesome-rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
 - [[2203.02155] Training language models to follow instructions with human feedback (arxiv.org)](https://arxiv.org/abs/2203.02155)
 
 ## 遵循协议
+<<<<<<< HEAD
 
+=======
+>>>>>>> 37f1b60e29935139bcd2525507638a31c8ce93cd
 本项目遵循MIT协议（简言之：不约束，不负责）。
