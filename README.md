@@ -40,9 +40,10 @@
 ### 开源示例
 - [radiate--衍生NEAT的纯rust库](https://github.com/pkalivas/radiate)
 - [纯rust的NEAT+GRU](https://github.com/sakex/neat-gru-rust)
-- [ndarray_glm(可参考下`array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
 - [rusty_sr-纯rust的基于dl的图像超清](https://github.com/millardjn/rusty_sr)
+- [ndarray_glm(可参考下`array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
 - [PyToy--基于MatrixSlow的python机器学习框架](https://github.com/ysj1173886760/PyToy)
+- [rust-CNN](https://github.com/goldstraw/RustCNN)
 - [深度学习框架InsNet简介](https://zhuanlan.zhihu.com/p/378684569)
 - [neuronika--纯rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)
 - [C++机器学习库MLPACK](https://www.mlpack.org/)
