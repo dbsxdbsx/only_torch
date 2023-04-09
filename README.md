@@ -21,14 +21,13 @@
 目前无人性化的文档。可直接看rust自动生成的[Api Doc](https://docs.rs/only_torch)即可。
 
 ## TODO
-
 （目前需要先解决有没有的问题；而不是好不好）
-
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
 - [] 基于本框架解决XOR监督学习问题
 - [] 基于本框架解决Mnist（数字识别）的监督学习问题
 - [] 基于本框架解决CartPole（需要openAI Gym）的深度强化学习问题
 - [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
+- [] [保存的json网络结构设计方案](https://www.perplexity.ai/search/516c7ae4-e5ec-47d2-a67a-22cd1d9285d2?s=c)
 
 ## 参考资料
 
