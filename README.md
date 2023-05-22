@@ -42,10 +42,15 @@
 - [纯rust的NEAT+GRU](https://github.com/sakex/neat-gru-rust)
 - [rusty_sr-纯rust的基于dl的图像超清](https://github.com/millardjn/rusty_sr)
 - [ndarray_glm(可参考下`array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
+
 - [PyToy--基于MatrixSlow的python机器学习框架](https://github.com/ysj1173886760/PyToy)
+
+- [n-nalgebra](https://github.com/dimforge/nalgebra)
 - [rust-CNN](https://github.com/goldstraw/RustCNN)
-- [深度学习框架InsNet简介](https://zhuanlan.zhihu.com/p/378684569)
+- [rust-dfdx---支持cuda的rust深度学习库](https://docs.rs/dfdx/latest/dfdx/)
 - [neuronika--纯rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)
+
+- [深度学习框架InsNet简介](https://zhuanlan.zhihu.com/p/378684569)
 - [C++机器学习库MLPACK](https://www.mlpack.org/)
 - [经典机器学习算法rust库](https://github.com/rust-ml/linfa)
 - [peroxide--纯rust的线代及周边库](https://crates.io/crates/peroxide)
@@ -88,8 +93,4 @@
 - [[2203.02155] Training language models to follow instructions with human feedback (arxiv.org)](https://arxiv.org/abs/2203.02155)
 
 ## 遵循协议
-<<<<<<< HEAD
-
-=======
->>>>>>> 37f1b60e29935139bcd2525507638a31c8ce93cd
 本项目遵循MIT协议（简言之：不约束，不负责）。
