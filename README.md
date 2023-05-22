@@ -71,7 +71,7 @@
 - [rust+AVX](https://medium.com/@Razican/learning-simd-with-rust-by-finding-planets-b85ccfb724c3)
 - [矩阵加速-GEMM](https://www.jianshu.com/p/6d3f013d8aba)
 
-### 其他
+### AI实例项目
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
 - [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
 - [GRU解释](https://www.pluralsight.com/guides/lstm-versus-gru-units-in-rnn)
