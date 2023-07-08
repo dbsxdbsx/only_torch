@@ -55,6 +55,7 @@
 
 ### NEAT、神经架构进化
 - [用梯度指导神经架构进化：Splitting Steepest Descent](https://www.cs.utexas.edu/~qlearning/project.html?p=splitting)
+- [Deep Mad，将卷积网络设计为一个数学建模问题](https://www.bilibili.com/video/BV1HP411R74T/?spm_id_from=333.999.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [autoML介绍](https://www.zhihu.com/question/554255720/answer/2750670583)
 
 ### 逻辑/推理
