@@ -27,6 +27,11 @@
 
 ## 参考资料
 
+### 训练用数据集
+[Mnist](http://yann.lecun.com/exdb/mnist/)
+[FashionMnist](https://www.kaggle.com/datasets/zalando-research/fashionmnist?resource=download)
+[ChineseMnist](https://www.kaggle.com/datasets/gpreda/chinese-mnist)
+
 ### IT原理
 - [陈天奇的机器学习编译课](https://www.bilibili.com/video/BV15v4y1g7EU/?is_story_h5=false&p=1&share_from=ugc&share_medium=android&share_plat=android&share_session_id=5a312434-ccf7-4cb9-862a-17a601cc4d35&share_source=COPY&share_tag=s_i&timestamp=1661386914&unique_k=zCWMKGC&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [基于梯度的机器学习IT原理](https://zhuanlan.zhihu.com/p/518198564)
