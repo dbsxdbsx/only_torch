@@ -70,7 +70,11 @@
 - [prolog与4证人难题](https://prolog.longluntan.com/t9-topic)
 - [logic+mL提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)- [prolog解决数度问题](https://prolog.longluntan.com/t107-topic)
 - [贝叶斯与逻辑推理](https://stats.stackexchange.com/questions/243746/what-is-probabilistic-inference)
+
+### 神经网络的可解释性
 - [神经网络的可解释性](https://zhuanlan.zhihu.com/p/341153242)
+- [可解释的哈萨尼网络](https://zhuanlan.zhihu.com/p/643213054)
+
 
 ### CPU加速
 - [SLIDE](https://arxiv.org/abs/2103.10891)
