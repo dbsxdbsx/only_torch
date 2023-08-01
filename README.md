@@ -75,7 +75,6 @@
 - [神经网络的可解释性](https://zhuanlan.zhihu.com/p/341153242)
 - [可解释的哈萨尼网络](https://zhuanlan.zhihu.com/p/643213054)
 
-
 ### CPU加速
 - [SLIDE](https://arxiv.org/abs/2103.10891)
 - [rust+AVX](https://medium.com/@Razican/learning-simd-with-rust-by-finding-planets-b85ccfb724c3)
