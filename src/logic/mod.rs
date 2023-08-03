@@ -6,7 +6,10 @@
 /// # 示例
 ///
 /// ```
-/// let dbsx - 5;
+/// use only_torch::logic::test_logic;
+///
+/// let result = test_logic(2, 3);
+/// assert_eq!(result, 5);
 /// ```
 pub fn test_logic(left: usize, right: usize) -> usize {
     left + right

@@ -4,16 +4,7 @@
 //! 打造一个相对来说轻便的跨平台（windows，linux，android...）快速推理AI框架。
 //!
 
-pub mod utils;
 pub mod logic;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = utils::test_utils(2, 1);
-        assert_eq!(result, 3);
-    }
-}
+pub mod tensor;
+pub mod utils;
+pub use tensor::Tensor;

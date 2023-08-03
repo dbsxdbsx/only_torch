@@ -1,14 +1,26 @@
 [package]
-name        = "only_torch"
-version     = "0.0.7"
-edition     = "2021"
-description = "仿造pytorch的个人玩具（仍在构思，请勿下载）AI框架"
-repository  = "https://github.com/dbsxdbsx/only_torch"
-license     = "MIT"
-keywords    = ["dbsx"]
-# keywords    = ["torch", "AI", "mxnet", "logic"]
+name          = "only_torch"
+version       = "0.0.8"
+edition       = "2021"
+description   = "仿造pytorch的个人玩具（仍在构思，请勿下载）AI框架"
+repository    = "https://github.com/dbsxdbsx/only_torch"
+license       = "MIT"
 documentation = "https://docs.rs/only_torch"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+categories    = ["ai", "machine-learning", "tensor"]
+readme        = "README.md"
+exclude       = ["target/*", ".vscode/*", ".github/*", "tests/*", "justfile"]
+
+keywords = [
+    "machine learning",
+    "logic",
+    "tensorflow",
+    "mxnet",
+    "AI",
+    "torch",
+    "deep learning",
+    "NEAT",
+]
 
 [dependencies]
 nalgebra = "*"
+rand     = "0.8"
