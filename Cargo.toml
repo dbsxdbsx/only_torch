@@ -11,16 +11,13 @@ readme        = "README.md"
 exclude       = ["target/*", ".vscode/*", ".github/*", "tests/*", "justfile"]
 
 keywords = [
-    "machine learning",
+    "machine-learning",
     "logic",
-    "tensorflow",
-    "mxnet",
     "AI",
     "torch",
-    "deep learning",
     "NEAT",
 ]
 
 [dependencies]
-nalgebra = "*"
+nalgebra = "^0.32.3"
 rand     = "0.8"
