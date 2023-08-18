@@ -7,4 +7,3 @@
 pub mod logic;
 pub mod tensor;
 pub mod utils;
-pub use tensor::Tensor;

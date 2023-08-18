@@ -1,23 +1,18 @@
 [package]
-name          = "only_torch"
-version       = "0.0.8"
-edition       = "2021"
-description   = "仿造pytorch的个人玩具（仍在构思，请勿下载）AI框架"
-repository    = "https://github.com/dbsxdbsx/only_torch"
-license       = "MIT"
-documentation = "https://docs.rs/only_torch"
-categories    = ["ai", "machine-learning", "tensor"]
-readme        = "README.md"
-exclude       = ["target/*", ".vscode/*", ".github/*", "tests/*", "justfile"]
+    name         ="only_torch"
+    version      ="0.0.8"
+    edition      ="2021"
+    description  ="仿造pytorch的个人玩具（仍在构思，请勿下载）AI框架"
+    repository   ="https://github.com/dbsxdbsx/only_torch"
+    license      ="MIT"
+    documentation="https://docs.rs/only_torch"
+    categories   =["ai", "machine-learning", "tensor"]
+    readme       ="README.md"
+    exclude      =["target/*", ".vscode/*", ".github/*", "tests/*", "justfile"]
 
-keywords = [
-    "machine-learning",
-    "logic",
-    "AI",
-    "torch",
-    "NEAT",
-]
+    keywords=["machine-learning", "logic", "AI", "torch", "NEAT"]
 
 [dependencies]
-nalgebra = "^0.32.3"
-rand     = "0.8"
+    rand   ="^0.8"
+    ndarray="^0.15"
+    # nalgebra="^0.32.3"

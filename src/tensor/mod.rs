@@ -1,122 +1,92 @@
-mod tensor;
-pub use tensor::Tensor;
+use ndarray::{Array, IxDyn};
+use rand::distributions::{Distribution, Uniform};
+
+mod ops {
+    pub mod add;
+    pub mod div;
+    pub mod mul;
+    pub mod others;
+    pub mod sub;
+}
+mod display;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use nalgebra as na;
+mod tests;
 
-    #[test]
-    fn test_empty() {
-        // 测试创建一个2x3的空Tensor，数据全部为 0.0
-        let tensor = Tensor::zero(2, 3);
-        assert_eq!(
-            tensor.data(),
-            &na::DMatrix::from_row_slice(2, 3, &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        );
+/// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。
+/// 注：只要通Tensor初始化的都是张量（即使标量也是张量）；
+/// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
+///
+///
+#[derive(Debug, Clone)]
+pub struct Tensor {
+    data: Array<f32, IxDyn>,
+}
 
-        // 测试创建一个1x3的空Tensor，数据全部为 0.0
-        let tensor = Tensor::zero(1, 3);
-        assert_eq!(
-            tensor.data(),
-            &na::DMatrix::from_row_slice(1, 3, &[0.0, 0.0, 0.0])
-        );
-
-        // 测试创建一个2x1的空Tensor，数据全部为 0.0
-        let tensor = Tensor::zero(2, 1);
-        assert_eq!(
-            tensor.data(),
-            &na::DMatrix::from_row_slice(2, 1, &[0.0, 0.0])
-        );
+impl Tensor {
+    /// 创建一个张量，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
+    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
+    /// 若为矩阵，`shape`可以是[n,m]；
+    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
+    /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
+    pub fn new(data: &[f32], shape: &[usize]) -> Self {
+        let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap();
+        Tensor { data }
     }
 
-    #[test]
-    fn test_scalar() {
-        // 先检查下scalar()方法
-        let value: f32 = 42.0;
-        let scalar_tensor = Tensor::scalar(value);
-        let data = scalar_tensor.data();
-        assert_eq!(scalar_tensor.shape(), &[1, 1]);
-        assert_eq!(data.index((0, 0)), &value);
-
-        // 再检查下to_scalar()方法
-        let ret_value = scalar_tensor.to_scalar().unwrap();
-        assert!(ret_value - value < 1e-6);
+    /// 创建一个随机张量，其值在[min, max]的闭区间，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
+    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
+    /// 若为矩阵，`shape`可以是[n,m]；
+    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
+    /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
+    pub fn new_random(min: f32, max: f32, shape: &[usize]) -> Self {
+        let mut rng = rand::thread_rng();
+        let data = (0..shape.iter().product::<usize>())
+            .map(|_| Uniform::from(min..=max).sample(&mut rng))
+            .collect::<Vec<_>>();
+        Tensor::new(&data, shape)
     }
 
-    #[test]
-    fn test_random() {
-        let tensor = Tensor::random(2, 3, 0.0, 1.0);
-        assert_eq!(tensor.shape(), &[2, 3]);
-        assert!(tensor.data().iter().all(|&x| (0.0..=1.0).contains(&x)));
+    /// 创建一个含`n`个对角元素的单位矩阵。
+    /// n必须大于等于2，否则会panic。
+    pub fn new_eye(n: usize) -> Self {
+        assert!(n >= 2, "n必须大于等于2");
+        let data = Array::eye(n);
+        let shape = vec![n, n];
+        let data = Array::from_shape_vec(IxDyn(&shape), data.into_raw_vec()).unwrap();
+        Tensor { data }
     }
 
-    #[test]
-    fn test_eye() {
-        let tensor = Tensor::eye(1);
-        assert_eq!(tensor.data(), &na::DMatrix::from_row_slice(1, 1, &[1.0]));
-
-        let tensor = Tensor::eye(3);
-        assert_eq!(
-            tensor.data(),
-            &na::DMatrix::from_row_slice(3, 3, &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
-        );
+    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
+    /// 若为矩阵，`shape`可以是[n,m]；
+    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]。
+    pub fn shape(&self) -> &[usize] {
+        self.data.shape()
     }
 
-    #[test]
-    fn test_tensor_mul_scalar() {
-        let tensor1 = Tensor::random(2, 2, 0.0, 1.0);
-        let scalar = 2.0;
-        let tensor2 = Tensor::scalar(scalar);
+    // TODO：reshape,如将单位矩阵reshape为向量，或者reshape到高阶张量
 
-        let result1 = tensor1.clone() * scalar;
-        let result2 = scalar * tensor1.clone();
-        let result3 = tensor1.clone() * tensor2.clone();
-        // let result4 = tensor2 * tensor1.clone();
-        println!("======================");
-        println!("result1: {}", result1);
-        println!("result2: {}", result2);
-        println!("result3: {}", result3);
-        // println!("result4: {}", result4);
-        println!("======================");
-        let epsilon = 1e-6;
-        for i in 0..result1.shape()[0] {
-            for j in 0..result1.shape()[1] {
-                assert!(
-                    (result1.data().index((i, j)) - result2.data().index((i, j))).abs() < epsilon
-                );
-                assert!(
-                    (result1.data().index((i, j)) - result3.data().index((i, j))).abs() < epsilon
-                );
-                // assert!(
-                //     (result1.data().index((i, j)) - result4.data().index((i, j))).abs() < epsilon
-                // );
-            }
+    /// 判断两个张量的形状是否严格一致。如：形状为 [1, 4]，[1, 4]和[4]是不一致的，会返回false
+    pub fn is_same_shape(&self, other: &Self) -> bool {
+        self.shape() == other.shape()
+    }
+
+    /// 判断张量是否为标量
+    pub fn is_scalar(&self) -> bool {
+        self.shape().is_empty() || self.shape().iter().all(|x| *x == 1)
+    }
+
+    pub fn to_number(&self) -> Option<f32> {
+        if self.is_scalar() {
+            let shape = self.shape();
+            let index_array = self.generate_index_array(shape);
+            Some(self.data[&index_array[..]])
+        } else {
+            None
         }
     }
 
-    // 这个测试肯定是通过的，但需要通过手动执行来查看确认打印结果
-    #[test]
-    fn test_print() {
-        let tensor = Tensor::eye(1);
-        println!("{}", tensor);
-        let tensor = Tensor::eye(2);
-        println!("{}", tensor);
-        let tensor = Tensor::eye(3);
-        println!("{}", tensor);
-        let tensor = Tensor::eye(7);
-        println!("{}", tensor);
-        let tensor = Tensor::random(2, 2, 0.0, 1.0);
-        println!("{}", tensor);
-        let tensor = Tensor::random(7, 4, 0.0, 1.0);
-        println!("{}", tensor);
-        let tensor = Tensor::random(4, 7, 0.0, 1.0);
-        println!("{}", tensor);
-        let tensor = Tensor::random(1, 7, 0.0, 1.0);
-        println!("{}", tensor);
-        let tensor = Tensor::random(7, 1, 0.0, 1.0);
-        println!("{}", tensor);
-        let tensor = Tensor::random(6, 6, 0.0, 1.0);
-        println!("{}", tensor);
+    fn generate_index_array(&self, shape: &[usize]) -> Vec<usize> {
+        shape.iter().map(|_| 0).collect()
     }
 }
