@@ -8,7 +8,7 @@ mod ops {
     pub mod others;
     pub mod sub;
 }
-mod display;
+mod print;
 
 #[cfg(test)]
 mod tests;
@@ -16,8 +16,6 @@ mod tests;
 /// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。
 /// 注：只要通Tensor初始化的都是张量（即使标量也是张量）；
 /// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
-///
-///
 #[derive(Debug, Clone)]
 pub struct Tensor {
     data: Array<f32, IxDyn>,

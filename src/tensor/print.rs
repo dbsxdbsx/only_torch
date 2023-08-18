@@ -34,8 +34,11 @@ impl fmt::Display for Tensor {
         let shape = self.shape();
         let rank = shape.len();
         let mut indices = vec![0; rank];
-        if rank > 2 {
-            writeln!(f, "<高阶张量（形状：{shape:?}）无法展示具体数据>")
+        if rank > 2 && !self.is_scalar() {
+            writeln!(
+                f,
+                "<对于阶数大于二（rank>2）的张量（形状：{shape:?}）无法展示具体数据>"
+            )
         } else {
             display_recursive(f, &self.data, &mut indices, 0, rank)?;
             writeln!(f, "\n形状: {shape:?}")
