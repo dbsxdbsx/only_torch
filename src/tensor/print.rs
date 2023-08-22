@@ -2,6 +2,12 @@ use crate::tensor::Tensor;
 use ndarray::{Array, IxDyn};
 use std::fmt;
 
+impl Tensor {
+    pub fn print(&self) {
+        println!("{}", self);
+    }
+}
+
 impl fmt::Display for Tensor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn display_recursive(
