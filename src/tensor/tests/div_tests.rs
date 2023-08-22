@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2023-08-17 17:24:24
  * @LastEditors  : 老董
- * @LastEditTime : 2023-08-18 16:06:47
+ * @LastEditTime : 2023-08-22 12:27:21
  * @Description  : 张量的除法，实现了两个张量“逐元素”相除的运算，并返回一个新的张量。
  *                 除法运算支持以下情况：
  *                 1. 若两个张量的形状严格一致, 则相除后的张量形状不变；
@@ -17,6 +17,56 @@ use ndarray::Array;
 use ndarray::IxDyn;
 
 use crate::tensor::tests::TensorCheck;
+
+#[test]
+fn test_div_with_or_without_ownership() {
+    let tensor1 = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let tensor2 = Tensor::new(&[4.0, 5.0, 6.0], &[3]);
+
+    // f32 / 不带引用的张量
+    let result = 5.0 / tensor1.clone();
+    let expected = Tensor::new(&[5.0, 2.5, 1.6666666], &[3]);
+    assert_eq!(result, expected);
+
+    // f32 / 带引用的张量
+    let result = 5.0 / &tensor1;
+    let expected = Tensor::new(&[5.0, 2.5, 1.6666666], &[3]);
+    assert_eq!(result, expected);
+
+    // 不带引用的张量 / f32
+    let result = tensor1.clone() / 5.0;
+    let expected = Tensor::new(&[0.2, 0.4, 0.6], &[3]);
+    assert_eq!(result, expected);
+
+    // 带引用的张量 / f32
+    let result = &tensor1 / 5.0;
+    let expected = Tensor::new(&[0.2, 0.4, 0.6], &[3]);
+    assert_eq!(result, expected);
+
+    // 不带引用的张量 / 不带引用的张量
+    let result = tensor1.clone() / tensor2.clone();
+    let expected = Tensor::new(&[0.25, 0.4, 0.5], &[3]);
+    assert_eq!(result, expected);
+
+    // 不带引用的张量 / 带引用的张量
+    let result = tensor1.clone() / &tensor2;
+    let expected = Tensor::new(&[0.25, 0.4, 0.5], &[3]);
+    assert_eq!(result, expected);
+
+    // 带引用的张量 / 不带引用的张量
+    let result = &tensor1 / tensor2.clone();
+    let expected = Tensor::new(&[0.25, 0.4, 0.5], &[3]);
+    assert_eq!(result, expected);
+
+    // 带引用的张量 / 带引用的张量
+    let result = &tensor1 / &tensor2;
+    let expected = Tensor::new(&[0.25, 0.4, 0.5], &[3]);
+    assert_eq!(result, expected);
+
+    // 验证原始张量仍然可用
+    assert_eq!(tensor1, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+    assert_eq!(tensor2, Tensor::new(&[4.0, 5.0, 6.0], &[3]));
+}
 
 #[test]
 fn test_div_vectors_with_same_shape() {

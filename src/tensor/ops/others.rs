@@ -4,12 +4,12 @@ use std::cmp::PartialEq;
 
 impl From<f32> for Tensor {
     /// 实现 From<f32> trait 用于将`f32`类型转换为形状为`[1]`的张量
-    fn from(scalar: f32) -> Self {
+    fn from(scalar: f32) -> Tensor {
         Tensor::new(&[scalar], &[1])
     }
 }
 
-pub trait DotSum<Rhs = Self> {
+pub trait DotSum<Rhs = Tensor> {
     type Output;
     fn dot_sum(self, rhs: Rhs) -> Self::Output;
 }
@@ -22,7 +22,7 @@ impl DotSum<Tensor> for f32 {
 }
 
 impl PartialEq for Tensor {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, other: &Tensor) -> bool {
         self.data == other.data
     }
 }
@@ -52,4 +52,20 @@ impl Tensor {
         let product_tensor = self.clone() * other;
         product_tensor.sum()
     }
+
+    // TODO:计算张量的平均值
+    // pub fn mean(&self) -> Tensor {
+    //     let sum = self.sum();
+    //     let count = self.numel() as f32;
+    //     sum / count
+    // }
+
+    // /// 计算张量的标准差
+    // pub fn std_dev(&self) -> Tensor {
+    //     let mean = self.mean();
+    //     let diff = self - mean;
+    //     let square_diff = diff * diff;
+    //     let variance = square_diff.mean();
+    //     variance.sqrt()
+    // }
 }

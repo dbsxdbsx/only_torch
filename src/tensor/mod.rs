@@ -27,7 +27,7 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
-    pub fn new(data: &[f32], shape: &[usize]) -> Self {
+    pub fn new(data: &[f32], shape: &[usize]) -> Tensor {
         let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap();
         Tensor { data }
     }
@@ -37,7 +37,7 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
-    pub fn new_random(min: f32, max: f32, shape: &[usize]) -> Self {
+    pub fn new_random(min: f32, max: f32, shape: &[usize]) -> Tensor {
         let mut rng = rand::thread_rng();
         let data = (0..shape.iter().product::<usize>())
             .map(|_| Uniform::from(min..=max).sample(&mut rng))
@@ -47,7 +47,7 @@ impl Tensor {
 
     /// 创建一个含`n`个对角元素的单位矩阵。
     /// n必须大于等于2，否则会panic。
-    pub fn new_eye(n: usize) -> Self {
+    pub fn new_eye(n: usize) -> Tensor {
         assert!(n >= 2, "n必须大于等于2");
         let data = Array::eye(n);
         let shape = vec![n, n];
@@ -65,7 +65,7 @@ impl Tensor {
     // TODO：reshape,如将单位矩阵reshape为向量，或者reshape到高阶张量
 
     /// 判断两个张量的形状是否严格一致。如：形状为 [1, 4]，[1, 4]和[4]是不一致的，会返回false
-    pub fn is_same_shape(&self, other: &Self) -> bool {
+    pub fn is_same_shape(&self, other: &Tensor) -> bool {
         self.shape() == other.shape()
     }
 

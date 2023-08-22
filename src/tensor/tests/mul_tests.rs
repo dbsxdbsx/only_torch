@@ -5,6 +5,56 @@ use ndarray::IxDyn;
 use super::TensorCheck;
 
 #[test]
+fn test_mul_with_or_without_ownership() {
+    let tensor1 = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let tensor2 = Tensor::new(&[4.0, 5.0, 6.0], &[3]);
+
+    // f32 * 不带引用的张量
+    let result = 5.0 * tensor1.clone();
+    let expected = Tensor::new(&[5.0, 10.0, 15.0], &[3]);
+    assert_eq!(result, expected);
+
+    // f32 * 带引用的张量
+    let result = 5.0 * &tensor1;
+    let expected = Tensor::new(&[5.0, 10.0, 15.0], &[3]);
+    assert_eq!(result, expected);
+
+    // 不带引用的张量 * f32
+    let result = tensor1.clone() * 5.0;
+    let expected = Tensor::new(&[5.0, 10.0, 15.0], &[3]);
+    assert_eq!(result, expected);
+
+    // 带引用的张量 * f32
+    let result = &tensor1 * 5.0;
+    let expected = Tensor::new(&[5.0, 10.0, 15.0], &[3]);
+    assert_eq!(result, expected);
+
+    // 不带引用的张量 * 不带引用的张量
+    let result = tensor1.clone() * tensor2.clone();
+    let expected = Tensor::new(&[4.0, 10.0, 18.0], &[3]);
+    assert_eq!(result, expected);
+
+    // 不带引用的张量 * 带引用的张量
+    let result = tensor1.clone() * &tensor2;
+    let expected = Tensor::new(&[4.0, 10.0, 18.0], &[3]);
+    assert_eq!(result, expected);
+
+    // 带引用的张量 * 不带引用的张量
+    let result = &tensor1 * tensor2.clone();
+    let expected = Tensor::new(&[4.0, 10.0, 18.0], &[3]);
+    assert_eq!(result, expected);
+
+    // 带引用的张量 * 带引用的张量
+    let result = &tensor1 * &tensor2;
+    let expected = Tensor::new(&[4.0, 10.0, 18.0], &[3]);
+    assert_eq!(result, expected);
+
+    // 验证原始张量仍然可用
+    assert_eq!(tensor1, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+    assert_eq!(tensor2, Tensor::new(&[4.0, 5.0, 6.0], &[3]));
+}
+
+#[test]
 fn test_mul_vectors_with_same_shape() {
     let shapes: &[&[usize]] = &[&[3], &[3, 1], &[1, 3]];
     for shape in shapes {
