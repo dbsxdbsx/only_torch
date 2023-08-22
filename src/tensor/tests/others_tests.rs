@@ -62,7 +62,7 @@ fn test_dot_sum_vectors_with_same_shape() {
         let vector1 = Tensor::new(&[1.0, 2.0, 3.0], shape);
         let vector2 = Tensor::new(&[4.0, 5.0, 6.0], shape);
         let result = vector1.dot_sum(vector2);
-        assert_eq!(result.to_number().unwrap(), 32.0);
+        assert_eq!(result.number().unwrap(), 32.0);
     }
 }
 
@@ -72,7 +72,7 @@ fn test_dot_sum_matrices_with_same_shape() {
     let matrix1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], shape);
     let matrix2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], shape);
     let result = matrix1.dot_sum(matrix2);
-    assert_eq!(result.to_number().unwrap(), 70.0);
+    assert_eq!(result.number().unwrap(), 70.0);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn test_dot_sum_high_order_tensors_with_same_shape() {
     let tensor1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], shape);
     let tensor2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], shape);
     let result = tensor1.dot_sum(tensor2);
-    assert_eq!(result.to_number().unwrap(), 70.0);
+    assert_eq!(result.number().unwrap(), 70.0);
 }
 
 #[test]

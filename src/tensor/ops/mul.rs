@@ -95,15 +95,15 @@ impl<'a, 'b> Mul<&'b Tensor> for &'a Tensor {
 fn mul_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
     let data = if tensor_1.is_scalar() && tensor_2.is_scalar() {
         return Tensor::new(
-            &[tensor_1.to_number().unwrap() * tensor_2.to_number().unwrap()],
+            &[tensor_1.number().unwrap() * tensor_2.number().unwrap()],
             &[1],
         );
     } else if tensor_1.is_same_shape(tensor_2) {
         &tensor_1.data * &tensor_2.data
     } else if tensor_1.is_scalar() {
-        tensor_1.to_number().unwrap() * &tensor_2.data
+        tensor_1.number().unwrap() * &tensor_2.data
     } else if tensor_2.is_scalar() {
-        &tensor_1.data * tensor_2.to_number().unwrap()
+        &tensor_1.data * tensor_2.number().unwrap()
     } else {
         panic!(
              "形状不一致且两个张量没有一个是标量，故无法相乘：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
