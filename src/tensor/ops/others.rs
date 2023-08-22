@@ -1,6 +1,5 @@
 use crate::tensor::Tensor;
 use ndarray::Zip;
-use std::cmp::PartialEq;
 
 impl From<f32> for Tensor {
     /// 实现 From<f32> trait 用于将`f32`类型转换为形状为`[1]`的张量
@@ -21,11 +20,7 @@ impl DotSum<Tensor> for f32 {
     }
 }
 
-impl PartialEq for Tensor {
-    fn eq(&self, other: &Tensor) -> bool {
-        self.data == other.data
-    }
-}
+
 
 impl Tensor {
     /// 对张量中的所有元素求和并返回一个形状为[1]的标量。

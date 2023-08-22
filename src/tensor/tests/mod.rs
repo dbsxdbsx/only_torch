@@ -1,7 +1,7 @@
 // TODO：加减乘除的参数到底该是引用还是所有权？
-
 mod add_tests;
 mod div_tests;
+mod eq_tests;
 mod mul_tests;
 mod new_tests;
 mod others_tests;
