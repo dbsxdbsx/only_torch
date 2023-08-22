@@ -20,8 +20,6 @@ impl DotSum<Tensor> for f32 {
     }
 }
 
-
-
 impl Tensor {
     /// 对张量中的所有元素求和并返回一个形状为[1]的标量。
     pub fn sum(&self) -> Tensor {
