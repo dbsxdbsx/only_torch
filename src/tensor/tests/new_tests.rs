@@ -143,30 +143,33 @@ fn test_new_eye_with_invalid_diagonal_size() {
 
 #[test]
 fn test_new_normal() {
-    let mean = 0.0;
-    let std_dev = 1.0;
-    let shape = vec![100, 20, 30];
-    let tensor = Tensor::new_normal(mean, std_dev, &shape);
+    let counts = 100;
+    let cases: &[&[usize]] = &[&[171, 6, counts], &[57, 8, counts], &[22, 2, counts]];
+    for case in cases {
+        let mean = case[0] as f32;
+        let std_dev = case[1] as f32;
+        let shape = &[100, case[2], 80, 3];
+        let tensor = Tensor::new_normal(mean, std_dev, shape);
 
-    tensor.print();
-
-    // 检查形状
-    assert_eq!(tensor.shape(), shape);
-
-    // 检查生成的张量均值和标准差是否与预期值相近
-    let eps = std_dev / 100.0;
-    let mean_diff = (tensor.mean() - mean).abs();
-    assert!(
-        mean_diff < eps,
-        "均值不符合预期值，实际值为 {}，期望值为 {}",
-        tensor.mean(),
-        mean
-    );
-    let std_dev_diff = (tensor.std_dev() - std_dev).abs();
-    assert!(
-        std_dev_diff < eps,
-        "标准差不符合预期值，实际值为 {}，期望值为 {}",
-        tensor.std_dev(),
-        std_dev
-    );
+        // 检查形状
+        assert_eq!(tensor.shape(), shape);
+        // 检查生成的张量均值和标准差是否与预期值相近
+        let eps = std_dev / 100.0;
+        let actual_mean = tensor.mean();
+        let mean_diff = (actual_mean - mean).abs();
+        assert!(
+            mean_diff < eps,
+            "均值不符合预期值，实际值为 {}，期望值为 {}",
+            actual_mean,
+            mean
+        );
+        let actual_std_dev = tensor.std_dev();
+        let std_dev_diff = (tensor.std_dev() - std_dev).abs();
+        assert!(
+            std_dev_diff < eps,
+            "标准差不符合预期值，实际值为 {}，期望值为 {}",
+            actual_std_dev,
+            std_dev
+        );
+    }
 }
