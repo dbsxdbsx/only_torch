@@ -140,3 +140,31 @@ fn test_new_eye_with_invalid_diagonal_size() {
     })
     .is_err());
 }
+
+#[test]
+fn test_new_normal() {
+    let mean = 0.0;
+    let std_dev = 1.0;
+    let shape = vec![10, 20, 30];
+    let tensor = Tensor::new_normal(mean, std_dev, &shape);
+
+    // 检查形状
+    assert_eq!(tensor.shape(), shape);
+
+    // 检查生成的张量均值和标准差是否与预期值相近
+    let mean_diff = (tensor.mean() - mean).abs();
+    assert!(
+        mean_diff < std_dev,
+        "均值不符合预期值，实际值为 {}，期望值为 {}",
+        tensor.mean(),
+        mean
+    );
+    let eps = std_dev / 10.0;
+    let std_dev_diff = (tensor.std_dev() - std_dev).abs();
+    assert!(
+        std_dev_diff < eps,
+        "标准差不符合预期值，实际值为 {}，期望值为 {}",
+        tensor.std_dev(),
+        std_dev
+    );
+}

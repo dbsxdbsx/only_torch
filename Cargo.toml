@@ -16,3 +16,6 @@
     rand   ="^0.8"
     ndarray="^0.15"
     # nalgebra="^0.32.3"
+
+# [dev-dependencies]
+#     statrs="^0.16.0"

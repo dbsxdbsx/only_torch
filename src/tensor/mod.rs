@@ -1,5 +1,6 @@
 use ndarray::{Array, IxDyn};
 use rand::distributions::{Distribution, Uniform};
+use rand::Rng;
 
 mod ops {
     pub mod add;
@@ -10,9 +11,10 @@ mod ops {
     pub mod sub;
 }
 mod print;
+mod shape;
 
 #[cfg(test)]
-mod tests;
+pub mod tests;
 
 /// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。
 /// 注：只要通Tensor初始化的都是张量（即使标量也是张量）；
@@ -56,36 +58,21 @@ impl Tensor {
         Tensor { data }
     }
 
-    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
-    /// 若为矩阵，`shape`可以是[n,m]；
-    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]。
-    pub fn shape(&self) -> &[usize] {
-        self.data.shape()
-    }
-
-    // TODO：reshape,如将单位矩阵reshape为向量，或者reshape到高阶张量
-
-    /// 判断两个张量的形状是否严格一致。如：形状为 [1, 4]，[1, 4]和[4]是不一致的，会返回false
-    pub fn is_same_shape(&self, other: &Tensor) -> bool {
-        self.shape() == other.shape()
-    }
-
-    /// 判断张量是否为标量
-    pub fn is_scalar(&self) -> bool {
-        self.shape().is_empty() || self.shape().iter().all(|x| *x == 1)
-    }
-
-    pub fn to_number(&self) -> Option<f32> {
-        if self.is_scalar() {
-            let shape = self.shape();
-            let index_array = self.generate_index_array(shape);
-            Some(self.data[&index_array[..]])
-        } else {
-            None
-        }
-    }
-
-    fn generate_index_array(&self, shape: &[usize]) -> Vec<usize> {
-        shape.iter().map(|_| 0).collect()
+    /// 创建一个服从正态分布的随机张量，其值在指定的均值和标准差范围内。
+    /// 若为标量，shape可以是[]、[1,1]、[1,1,1]...；
+    /// 若为向量，shape可以是[n]、[1,n]、[n,1]；
+    /// 若为矩阵，shape可以是[n,m]；
+    /// 若为更高维度的数组，shape可以是[c,n,m,...]。
+    pub fn new_normal(mean: f32, std_dev: f32, shape: &[usize]) -> Tensor {
+        let mut rng = rand::thread_rng();
+        let data = (0..shape.iter().product::<usize>())
+            .map(|_| {
+                let u1: f32 = rng.gen();
+                let u2: f32 = rng.gen();
+                let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+                mean + std_dev * z0
+            })
+            .collect::<Vec<_>>();
+        Tensor::new(&data, shape)
     }
 }

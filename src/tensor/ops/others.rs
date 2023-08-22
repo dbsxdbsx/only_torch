@@ -46,19 +46,13 @@ impl Tensor {
         product_tensor.sum()
     }
 
-    // TODO:计算张量的平均值
-    // pub fn mean(&self) -> Tensor {
-    //     let sum = self.sum();
-    //     let count = self.numel() as f32;
-    //     sum / count
-    // }
+    /// 计算张量的均值
+    pub fn mean(&self) -> f32 {
+        self.data.mean().unwrap()
+    }
 
-    // /// 计算张量的标准差
-    // pub fn std_dev(&self) -> Tensor {
-    //     let mean = self.mean();
-    //     let diff = self - mean;
-    //     let square_diff = diff * diff;
-    //     let variance = square_diff.mean();
-    //     variance.sqrt()
-    // }
+    /// 计算张量的标准差
+    pub fn std_dev(&self) -> f32 {
+        self.data.std_axis(ndarray::Axis(0), 0.0).mean().unwrap()
+    }
 }

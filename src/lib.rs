@@ -5,7 +5,6 @@
 //! 打造一个相对来说轻便的跨平台（windows，linux，android...）快速推理AI框架。
 //!
 
-pub mod distribution;
 pub mod logic;
 pub mod tensor;
 pub mod utils;
