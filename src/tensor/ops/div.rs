@@ -109,9 +109,3 @@ fn div_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
 
     Tensor { data }
 }
-
-impl Tensor {
-    fn has_zero_value(&self) -> bool {
-        self.data.iter().any(|&x| x == 0.0)
-    }
-}

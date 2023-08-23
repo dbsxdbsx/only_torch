@@ -74,10 +74,3 @@ impl Tensor {
         Some(Tensor::new(&data, &shape))
     }
 }
-
-// 私有方法
-impl Tensor {
-    fn generate_index_array(&self, shape: &[usize]) -> Vec<usize> {
-        shape.iter().map(|_| 0).collect()
-    }
-}

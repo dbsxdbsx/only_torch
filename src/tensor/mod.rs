@@ -76,3 +76,14 @@ impl Tensor {
         Tensor::new(&data, shape)
     }
 }
+
+// 私有方法
+impl Tensor {
+    fn has_zero_value(&self) -> bool {
+        self.data.iter().any(|&x| x == 0.0)
+    }
+
+    fn generate_index_array(&self, shape: &[usize]) -> Vec<usize> {
+        shape.iter().map(|_| 0).collect()
+    }
+}
