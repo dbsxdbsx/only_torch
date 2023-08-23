@@ -10,6 +10,7 @@ mod ops {
     pub mod others;
     pub mod sub;
 }
+mod index;
 mod print;
 mod shape;
 

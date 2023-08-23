@@ -86,3 +86,87 @@ fn test_stack_with_diff_shapes() {
     let stacked_tensor4 = Tensor::stack(&[&tensor4, &tensor5], false);
     assert_eq!(stacked_tensor4, None);
 }
+
+#[test]
+fn test_squeeze() {
+    // 测试标量
+    let data = &[1.0];
+    let shape = &[];
+    let squeezed_tensor = Tensor::new(data, shape).squeeze();
+    assert_eq!(squeezed_tensor.shape(), &[]);
+
+    let data = &[1.0];
+    let shape = &[1];
+    let squeezed_tensor = Tensor::new(data, shape).squeeze();
+    assert_eq!(squeezed_tensor.shape(), &[]);
+
+    // 测试向量
+    let data = &[1.0, 2.0, 3.0, 4.0];
+    let shape = &[4];
+    let squeezed_tensor = Tensor::new(data, shape).squeeze();
+    assert_eq!(squeezed_tensor.shape(), &[4]);
+
+    // 测试矩阵
+    let data = &[1.0, 2.0, 3.0, 4.0];
+    let shapes: &[&[usize]] = &[&[4], &[1, 4], &[4, 1]];
+    for shape in shapes {
+        let squeezed_tensor = Tensor::new(data, shape).squeeze();
+        assert_eq!(squeezed_tensor.shape(), &[4]);
+    }
+
+    // 测试高维张量
+    let data = &[1.0, 2.0, 3.0, 4.0];
+    let shape = &[1, 1, 1, 4];
+    let squeezed_tensor = Tensor::new(data, shape).squeeze();
+    assert_eq!(squeezed_tensor.shape(), &[4]);
+
+    let data = &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let shape = &[1, 2, 1, 3];
+    let squeezed_tensor = Tensor::new(data, shape).squeeze();
+    assert_eq!(squeezed_tensor.shape(), &[2, 3]);
+}
+
+#[test]
+fn test_squeeze_mut() {
+    // 测试标量
+    let data = &[1.0];
+    let shape = &[];
+    let mut tensor = Tensor::new(data, shape);
+    tensor.squeeze_mut();
+    assert_eq!(tensor.shape(), &[]);
+
+    let data = &[1.0];
+    let shape = &[1];
+    let mut tensor = Tensor::new(data, shape);
+    tensor.squeeze_mut();
+    assert_eq!(tensor.shape(), &[]);
+
+    // 测试向量
+    let data = &[1.0, 2.0, 3.0, 4.0];
+    let shape = &[4];
+    let mut tensor = Tensor::new(data, shape);
+    tensor.squeeze_mut();
+    assert_eq!(tensor.shape(), &[4]);
+
+    // 测试矩阵
+    let data = &[1.0, 2.0, 3.0, 4.0];
+    let shapes: &[&[usize]] = &[&[4], &[1, 4], &[4, 1]];
+    for shape in shapes {
+        let mut tensor = Tensor::new(data, shape);
+        tensor.squeeze_mut();
+        assert_eq!(tensor.shape(), &[4]);
+    }
+
+    // 测试高维张量
+    let data = &[1.0, 2.0, 3.0, 4.0];
+    let shape = &[1, 1, 1, 4];
+    let mut tensor = Tensor::new(data, shape);
+    tensor.squeeze_mut();
+    assert_eq!(tensor.shape(), &[4]);
+
+    let data = &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let shape = &[1, 2, 1, 3];
+    let mut tensor = Tensor::new(data, shape);
+    tensor.squeeze_mut();
+    assert_eq!(tensor.shape(), &[2, 3]);
+}

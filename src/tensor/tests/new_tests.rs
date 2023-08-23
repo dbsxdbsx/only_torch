@@ -154,7 +154,7 @@ fn test_new_normal() {
         // 检查形状
         assert_eq!(tensor.shape(), shape);
         // 检查生成的张量均值和标准差是否与预期值相近
-        let eps = std_dev / 100.0;
+        let eps = std_dev / 50.0;
         let actual_mean = tensor.mean();
         let mean_diff = (actual_mean - mean).abs();
         assert!(

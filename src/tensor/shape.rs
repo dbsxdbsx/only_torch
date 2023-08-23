@@ -73,4 +73,32 @@ impl Tensor {
 
         Some(Tensor::new(&data, &shape))
     }
+
+    pub fn squeeze(&self) -> Tensor {
+        let mut new_shape = Vec::new();
+        for dim in self.data.shape() {
+            if *dim > 1 {
+                new_shape.push(*dim);
+            }
+        }
+        let squeezed_data = self.data.clone().into_shape(new_shape).unwrap();
+        Tensor {
+            data: squeezed_data,
+        }
+    }
+
+    pub fn squeeze_mut(&mut self) {
+        let mut new_shape = Vec::new();
+        for dim in self.data.shape() {
+            if *dim > 1 {
+                new_shape.push(*dim);
+            }
+        }
+        self.data = self
+            .data
+            .view_mut()
+            .into_shape(new_shape)
+            .unwrap()
+            .to_owned();
+    }
 }

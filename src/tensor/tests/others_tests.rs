@@ -37,7 +37,7 @@ fn test_sum_matrix() {
 }
 
 #[test]
-fn test_sum_high_order_tensor() {
+fn test_sum_high_dim_tensor() {
     let shapes: &[&[usize]] = &[
         &[2, 2, 2],
         &[1, 2, 2, 2],
@@ -76,7 +76,7 @@ fn test_dot_sum_matrices_with_same_shape() {
 }
 
 #[test]
-fn test_dot_sum_high_order_tensors_with_same_shape() {
+fn test_dot_sum_high_dim_tensors_with_same_shape() {
     let shape = &[2, 1, 2];
     let tensor1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], shape);
     let tensor2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], shape);
