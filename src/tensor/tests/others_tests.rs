@@ -9,9 +9,9 @@ use super::TensorCheck;
 #[test]
 fn test_sum_scalar() {
     let shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1]];
-    let expected_sum = Tensor::from(5.0);
+    let expected_sum = Tensor::from(5.);
     for shape in shapes {
-        let tensor = Tensor::new(&[5.0], shape);
+        let tensor = Tensor::new(&[5.], shape);
         assert_eq!(tensor.sum(), expected_sum);
     }
 }
@@ -19,9 +19,9 @@ fn test_sum_scalar() {
 #[test]
 fn test_sum_vector() {
     let shapes: &[&[usize]] = &[&[4], &[1, 4], &[4, 1]];
-    let expected_sum = Tensor::from(10.0);
+    let expected_sum = Tensor::from(10.);
     for shape in shapes {
-        let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], shape);
+        let tensor = Tensor::new(&[1., 2., 3., 4.], shape);
         assert_eq!(tensor.sum(), expected_sum);
     }
 }
@@ -29,9 +29,9 @@ fn test_sum_vector() {
 #[test]
 fn test_sum_matrix() {
     let shapes: &[&[usize]] = &[&[2, 2], &[1, 2, 2], &[2, 2, 1]];
-    let expected_sum = Tensor::from(10.0);
+    let expected_sum = Tensor::from(10.);
     for shape in shapes {
-        let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], shape);
+        let tensor = Tensor::new(&[1., 2., 3., 4.], shape);
         assert_eq!(tensor.sum(), expected_sum);
     }
 }
@@ -45,9 +45,9 @@ fn test_sum_high_dim_tensor() {
         &[2, 2, 1, 2],
         &[2, 2, 2, 1],
     ];
-    let expected_sum = Tensor::from(36.0);
+    let expected_sum = Tensor::from(36.);
     for shape in shapes {
-        let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], shape);
+        let tensor = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], shape);
         assert_eq!(tensor.sum(), expected_sum);
     }
 }
@@ -59,83 +59,83 @@ fn test_sum_high_dim_tensor() {
 fn test_dot_sum_vectors_with_same_shape() {
     let shapes: &[&[usize]] = &[&[3], &[3, 1], &[1, 3]];
     for shape in shapes {
-        let vector1 = Tensor::new(&[1.0, 2.0, 3.0], shape);
-        let vector2 = Tensor::new(&[4.0, 5.0, 6.0], shape);
+        let vector1 = Tensor::new(&[1., 2., 3.], shape);
+        let vector2 = Tensor::new(&[4., 5., 6.], shape);
         let result = vector1.dot_sum(vector2);
-        assert_eq!(result.number().unwrap(), 32.0);
+        assert_eq!(result.number().unwrap(), 32.);
     }
 }
 
 #[test]
 fn test_dot_sum_matrices_with_same_shape() {
     let shape = &[2, 2];
-    let matrix1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], shape);
-    let matrix2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], shape);
+    let matrix1 = Tensor::new(&[1., 2., 3., 4.], shape);
+    let matrix2 = Tensor::new(&[5., 6., 7., 8.], shape);
     let result = matrix1.dot_sum(matrix2);
-    assert_eq!(result.number().unwrap(), 70.0);
+    assert_eq!(result.number().unwrap(), 70.);
 }
 
 #[test]
 fn test_dot_sum_high_dim_tensors_with_same_shape() {
     let shape = &[2, 1, 2];
-    let tensor1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], shape);
-    let tensor2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], shape);
+    let tensor1 = Tensor::new(&[1., 2., 3., 4.], shape);
+    let tensor2 = Tensor::new(&[5., 6., 7., 8.], shape);
     let result = tensor1.dot_sum(tensor2);
-    assert_eq!(result.number().unwrap(), 70.0);
+    assert_eq!(result.number().unwrap(), 70.);
 }
 
 #[test]
 fn test_dot_sum_number_and_tensor() {
-    let number = 2.0;
+    let number = 2.;
     let test_cases = vec![
         // 标量型张量
         TensorCheck {
             shape: vec![],
-            data: vec![1.0],
-            expected: vec![vec![2.0]],
+            data: vec![1.],
+            expected: vec![vec![2.]],
         },
         TensorCheck {
             shape: vec![1],
-            data: vec![1.0],
-            expected: vec![vec![2.0]],
+            data: vec![1.],
+            expected: vec![vec![2.]],
         },
         TensorCheck {
             shape: vec![1, 1],
-            data: vec![1.0],
-            expected: vec![vec![2.0]],
+            data: vec![1.],
+            expected: vec![vec![2.]],
         },
         // 向量型张量
         TensorCheck {
             shape: vec![2],
-            data: vec![1.0, 2.0],
-            expected: vec![vec![6.0]],
+            data: vec![1., 2.],
+            expected: vec![vec![6.]],
         },
         TensorCheck {
             shape: vec![2, 1],
-            data: vec![1.0, 2.0],
-            expected: vec![vec![6.0]],
+            data: vec![1., 2.],
+            expected: vec![vec![6.]],
         },
         TensorCheck {
             shape: vec![1, 2],
-            data: vec![1.0, 2.0],
-            expected: vec![vec![6.0]],
+            data: vec![1., 2.],
+            expected: vec![vec![6.]],
         },
         // 矩阵型张量
         TensorCheck {
             shape: vec![2, 3],
-            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            expected: vec![vec![42.0]],
+            data: vec![1., 2., 3., 4., 5., 6.],
+            expected: vec![vec![42.]],
         },
         // 高阶张量
         TensorCheck {
             shape: vec![2, 3, 1],
-            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            expected: vec![vec![42.0]],
+            data: vec![1., 2., 3., 4., 5., 6.],
+            expected: vec![vec![42.]],
         },
         TensorCheck {
             shape: vec![2, 1, 3, 1],
-            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            expected: vec![vec![42.0]],
+            data: vec![1., 2., 3., 4., 5., 6.],
+            expected: vec![vec![42.]],
         },
     ];
 
@@ -164,56 +164,56 @@ fn test_dot_sum_number_and_tensor() {
 
 #[test]
 fn test_dot_sum_scalar_and_tensor() {
-    let number = 2.0;
+    let number = 2.;
     let test_cases = vec![
         // 标量型张量
         TensorCheck {
             shape: vec![],
-            data: vec![1.0],
-            expected: vec![vec![2.0]],
+            data: vec![1.],
+            expected: vec![vec![2.]],
         },
         TensorCheck {
             shape: vec![1],
-            data: vec![1.0],
-            expected: vec![vec![2.0]],
+            data: vec![1.],
+            expected: vec![vec![2.]],
         },
         TensorCheck {
             shape: vec![1, 1],
-            data: vec![1.0],
-            expected: vec![vec![2.0]],
+            data: vec![1.],
+            expected: vec![vec![2.]],
         },
         // 向量型张量
         TensorCheck {
             shape: vec![2],
-            data: vec![1.0, 2.0],
-            expected: vec![vec![6.0]],
+            data: vec![1., 2.],
+            expected: vec![vec![6.]],
         },
         TensorCheck {
             shape: vec![2, 1],
-            data: vec![1.0, 2.0],
-            expected: vec![vec![6.0]],
+            data: vec![1., 2.],
+            expected: vec![vec![6.]],
         },
         TensorCheck {
             shape: vec![1, 2],
-            data: vec![1.0, 2.0],
-            expected: vec![vec![6.0]],
+            data: vec![1., 2.],
+            expected: vec![vec![6.]],
         },
         // 矩阵型张量
         TensorCheck {
             shape: vec![2, 3],
-            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            expected: vec![vec![42.0]],
+            data: vec![1., 2., 3., 4., 5., 6.],
+            expected: vec![vec![42.]],
         },
         // 高阶张量
         TensorCheck {
             shape: vec![2, 3, 1],
-            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            expected: vec![vec![42.0]],
+            data: vec![1., 2., 3., 4., 5., 6.],
+            expected: vec![vec![42.]],
         },
         TensorCheck {
             shape: vec![2, 1, 3, 1],
-            data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            expected: vec![vec![42.0]],
+            data: vec![1., 2., 3., 4., 5., 6.],
+            expected: vec![vec![42.]],
         },
     ];
     let scalar_shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1], &[1, 1, 1, 1]];
@@ -249,8 +249,8 @@ fn test_dot_sum_scalar_and_tensor() {
     expected = "形状不一致且两个张量没有一个是标量，故无法相乘：第一个张量的形状为[3]，第二个张量的形状为[2]"
 )]
 fn test_dot_sum_operator_for_inconsistent_shape_1() {
-    let tensor1 = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
-    let tensor2 = Tensor::new(&[2.0, 3.0], &[2]);
+    let tensor1 = Tensor::new(&[1., 2., 3.], &[3]);
+    let tensor2 = Tensor::new(&[2., 3.], &[2]);
     let _ = tensor1 * tensor2;
 }
 
@@ -259,8 +259,8 @@ fn test_dot_sum_operator_for_inconsistent_shape_1() {
     expected = "形状不一致且两个张量没有一个是标量，故无法相乘：第一个张量的形状为[3]，第二个张量的形状为[3, 1]"
 )]
 fn test_dot_sum_operator_for_inconsistent_shape_2() {
-    let tensor1 = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
-    let tensor2 = Tensor::new(&[4.0, 5.0, 6.0], &[3, 1]);
+    let tensor1 = Tensor::new(&[1., 2., 3.], &[3]);
+    let tensor2 = Tensor::new(&[4., 5., 6.], &[3, 1]);
     let _ = tensor1 * tensor2;
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`dot_sum`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑

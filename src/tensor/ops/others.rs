@@ -23,7 +23,7 @@ impl DotSum<Tensor> for f32 {
 impl Tensor {
     /// 对张量中的所有元素求和并返回一个形状为[1]的标量。
     pub fn sum(&self) -> Tensor {
-        let mut value = 0.0;
+        let mut value = 0.;
         Zip::from(&self.data).for_each(|a| value += a);
         Tensor::from(value)
     }
@@ -53,6 +53,6 @@ impl Tensor {
 
     /// 计算张量的标准差
     pub fn std_dev(&self) -> f32 {
-        self.data.std_axis(ndarray::Axis(0), 0.0).mean().unwrap()
+        self.data.std_axis(ndarray::Axis(0), 0.).mean().unwrap()
     }
 }

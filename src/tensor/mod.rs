@@ -64,24 +64,46 @@ impl Tensor {
     /// 若为向量，shape可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，shape可以是[n,m]；
     /// 若为更高维度的数组，shape可以是[c,n,m,...]。
+
     pub fn new_normal(mean: f32, std_dev: f32, shape: &[usize]) -> Tensor {
         let mut rng = rand::thread_rng();
-        let data = (0..shape.iter().product::<usize>())
-            .map(|_| {
-                let u1: f32 = rng.gen();
-                let u2: f32 = rng.gen();
-                let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
-                mean + std_dev * z0
-            })
-            .collect::<Vec<_>>();
+        let data_len = shape.iter().product::<usize>();
+        let mut data = Vec::with_capacity(data_len);
+
+        while data.len() < data_len {
+            let u1: f32 = rng.gen();
+            let u2: f32 = rng.gen();
+            let r = (-2.0 * u1.ln()).sqrt();
+            let theta = 2.0 * std::f32::consts::PI * u2;
+            let z0 = mean + std_dev * r * theta.cos();
+            let z1 = mean + std_dev * r * theta.sin();
+
+            data.push(z0);
+            if data.len() < data_len {
+                data.push(z1);
+            }
+        }
+
         Tensor::new(&data, shape)
     }
+    // pub fn new_normal(mean: f32, std_dev: f32, shape: &[usize]) -> Tensor {
+    //     let mut rng = rand::thread_rng();
+    //     let data = (0..shape.iter().product::<usize>())
+    //         .map(|_| {
+    //             let u1: f32 = rng.gen();
+    //             let u2: f32 = rng.gen();
+    //             let z0 = (-2. * u1.ln()).sqrt() * (2. * std::f32::consts::PI * u2).cos();
+    //             mean + std_dev * z0
+    //         })
+    //         .collect::<Vec<_>>();
+    //     Tensor::new(&data, shape)
+    // }
 }
 
 // 私有方法
 impl Tensor {
     fn has_zero_value(&self) -> bool {
-        self.data.iter().any(|&x| x == 0.0)
+        self.data.iter().any(|&x| x == 0.)
     }
 
     fn generate_index_array(&self, shape: &[usize]) -> Vec<usize> {

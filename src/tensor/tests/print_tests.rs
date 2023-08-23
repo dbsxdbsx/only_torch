@@ -5,43 +5,43 @@ fn test_print() {
     use std::fmt::Write;
 
     // 测试标量
-    let tensor = Tensor::new(&[1.0], &[]);
+    let tensor = Tensor::new(&[1.], &[]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(buffer, "  1.0000\n形状: []\n");
 
-    let tensor = Tensor::new(&[1.0], &[1]);
+    let tensor = Tensor::new(&[1.], &[1]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(buffer, "[  1.0000]\n形状: [1]\n");
 
-    let tensor = Tensor::new(&[1.0], &[1, 1]);
+    let tensor = Tensor::new(&[1.], &[1, 1]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(buffer, "[[  1.0000]]\n形状: [1, 1]\n");
 
-    let tensor = Tensor::new(&[1.0], &[1, 1, 1]);
+    let tensor = Tensor::new(&[1.], &[1, 1, 1]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(buffer, "[[[  1.0000]]]\n形状: [1, 1, 1]\n");
 
-    let tensor = Tensor::new(&[1.0], &[1, 1, 1, 1]);
+    let tensor = Tensor::new(&[1.], &[1, 1, 1, 1]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(buffer, "[[[[  1.0000]]]]\n形状: [1, 1, 1, 1]\n");
 
     // 测试向量
-    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let tensor = Tensor::new(&[1., 2., 3.], &[3]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(buffer, "[  1.0000, \n   2.0000, \n   3.0000]\n形状: [3]\n");
 
-    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+    let tensor = Tensor::new(&[1., 2., 3.], &[1, 3]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(buffer, "[[  1.0000,   2.0000,   3.0000]]\n形状: [1, 3]\n");
 
-    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
+    let tensor = Tensor::new(&[1., 2., 3.], &[3, 1]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(
@@ -50,7 +50,7 @@ fn test_print() {
     );
 
     // 测试矩阵
-    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let tensor = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(
@@ -59,7 +59,7 @@ fn test_print() {
     );
 
     // 测试高阶张量
-    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    let tensor = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3, 1]);
     let mut buffer = String::new();
     write!(&mut buffer, "{}", tensor).unwrap();
     assert_eq!(
@@ -73,13 +73,13 @@ fn test_print() {
 //     use std::fmt::Write;
 
 //     // 测试向量
-//     let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+//     let tensor = Tensor::new(&[1., 2., 3.], &[3]);
 //     let mut buffer = String::new();
 //     write!(&mut buffer, "{}", tensor).unwrap();
 //     assert_eq!(buffer, "[  1.0000, \n   2.0000, \n   3.0000]\n形状: [3]\n");
 
 //     // 测试矩阵
-//     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+//     let tensor = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
 //     let mut buffer = String::new();
 //     write!(&mut buffer, "{}", tensor).unwrap();
 //     assert_eq!(

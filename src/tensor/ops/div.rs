@@ -29,7 +29,7 @@ impl Div<f32> for Tensor {
     type Output = Tensor;
 
     fn div(self, scalar: f32) -> Tensor {
-        if scalar == 0.0 {
+        if scalar == 0. {
             panic!("除数为零");
         }
         Tensor {
@@ -41,7 +41,7 @@ impl<'a> Div<f32> for &'a Tensor {
     type Output = Tensor;
 
     fn div(self, scalar: f32) -> Tensor {
-        if scalar == 0.0 {
+        if scalar == 0. {
             panic!("除数为零");
         }
         Tensor {
