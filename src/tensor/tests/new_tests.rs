@@ -146,7 +146,7 @@ fn test_new_normal() {
     for case in cases {
         let mean = case[0] as f32;
         let std_dev = case[1] as f32;
-        let shape = &[10, 50, 80, 30]; //尽量弄大点，以免误差太大
+        let shape = &[10, 50, 80, 30]; // 尽量弄大点，以免误差太大
         let tensor = Tensor::new_normal(mean, std_dev, shape);
 
         // 检查形状

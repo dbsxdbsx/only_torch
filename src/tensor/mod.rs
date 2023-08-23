@@ -64,7 +64,6 @@ impl Tensor {
     /// 若为向量，shape可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，shape可以是[n,m]；
     /// 若为更高维度的数组，shape可以是[c,n,m,...]。
-
     pub fn new_normal(mean: f32, std_dev: f32, shape: &[usize]) -> Tensor {
         let mut rng = rand::thread_rng();
         let data_len = shape.iter().product::<usize>();
@@ -86,18 +85,6 @@ impl Tensor {
 
         Tensor::new(&data, shape)
     }
-    // pub fn new_normal(mean: f32, std_dev: f32, shape: &[usize]) -> Tensor {
-    //     let mut rng = rand::thread_rng();
-    //     let data = (0..shape.iter().product::<usize>())
-    //         .map(|_| {
-    //             let u1: f32 = rng.gen();
-    //             let u2: f32 = rng.gen();
-    //             let z0 = (-2. * u1.ln()).sqrt() * (2. * std::f32::consts::PI * u2).cos();
-    //             mean + std_dev * z0
-    //         })
-    //         .collect::<Vec<_>>();
-    //     Tensor::new(&data, shape)
-    // }
 }
 
 // 私有方法

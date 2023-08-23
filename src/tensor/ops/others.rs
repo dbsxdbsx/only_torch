@@ -1,5 +1,7 @@
 use crate::tensor::Tensor;
-use ndarray::Zip;
+use ndarray::{Array, Zip};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 impl From<f32> for Tensor {
     /// 实现 From<f32> trait 用于将`f32`类型转换为形状为`[1]`的张量
@@ -55,4 +57,27 @@ impl Tensor {
     pub fn std_dev(&self) -> f32 {
         self.data.std_axis(ndarray::Axis(0), 0.).mean().unwrap()
     }
+
+    /// 返回一个形状和`self`相同的张量，其中的元素按从小到大的顺序排列
+    pub fn order(&self) -> Tensor {
+        let flat_data = self.data.clone().into_shape(self.data.len()).unwrap();
+        let mut flat_data = flat_data.into_raw_vec();
+        flat_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let ordered_data = Array::from_shape_vec(self.data.shape(), flat_data).unwrap();
+        let ordered_data = ordered_data.into_shape(self.data.shape()).unwrap();
+        Tensor { data: ordered_data }
+    }
+
+    /// 打乱张量中的元素顺序
+    pub fn shuffle(&self) -> Tensor {
+        let mut flat_data = self.data.clone().into_shape(self.data.len()).unwrap();
+        let mut rng = thread_rng();
+        flat_data.as_slice_mut().unwrap().shuffle(&mut rng);
+        let shuffled_data = flat_data.into_shape(self.data.shape()).unwrap();
+        Tensor {
+            data: shuffled_data,
+        }
+    }
 }
+
+

@@ -54,7 +54,6 @@ fn test_sum_high_dim_tensor() {
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`sum`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓`dot_sum`↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-
 #[test]
 fn test_dot_sum_vectors_with_same_shape() {
     let shapes: &[&[usize]] = &[&[3], &[3, 1], &[1, 3]];
@@ -264,3 +263,25 @@ fn test_dot_sum_operator_for_inconsistent_shape_2() {
     let _ = tensor1 * tensor2;
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`dot_sum`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓`order`和`shuffle`↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+#[test]
+fn test_order() {
+    let tensor1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    let tensor2 = Tensor::new(&[3., 4., 1., 2., 5., 6.], &[2, 3]);
+    let ordered_tensor = tensor2.order();
+    assert_ne!(tensor1, tensor2);
+    assert_eq!(tensor1, ordered_tensor);
+}
+
+#[test]
+fn test_shuffle() {
+    let tensor = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 4]);
+    let shuffled_tensor = tensor.shuffle();
+    shuffled_tensor.print();
+    assert_eq!(tensor.shape(), shuffled_tensor.shape());
+    assert_ne!(tensor.data, shuffled_tensor.data);
+    let ordered_tensor = shuffled_tensor.order();
+    assert_eq!(tensor, ordered_tensor);
+}
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`order`和`shuffle`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
