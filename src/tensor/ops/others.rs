@@ -68,7 +68,7 @@ impl Tensor {
         Tensor { data: ordered_data }
     }
 
-    /// 打乱张量中的元素顺序
+    /// 打乱张量中的元素顺序，并将其返回（不影响原张量）
     pub fn shuffle(&self, axis: Option<usize>) -> Tensor {
         let mut shuffled_data = self.data.clone();
         let mut rng = thread_rng();
@@ -97,6 +97,28 @@ impl Tensor {
 
         Tensor {
             data: shuffled_data,
+        }
+    }
+
+    /// 打乱张量中的元素顺序（影响原张量）
+    pub fn shuffle_mut(&mut self, axis: Option<usize>) {
+        let mut rng = thread_rng();
+
+        match axis {
+            Some(axis) => {
+                let axis = Axis(axis);
+                let mut chunks: Vec<_> = self.data.axis_iter(axis).map(|c| c.to_owned()).collect();
+                chunks.shuffle(&mut rng);
+                for (i, chunk) in chunks.into_iter().enumerate() {
+                    let mut slice = self.data.index_axis_mut(axis, i);
+                    slice.assign(&chunk);
+                }
+            }
+            None => {
+                let mut flat_data = self.data.clone().into_shape(self.data.len()).unwrap();
+                flat_data.as_slice_mut().unwrap().shuffle(&mut rng);
+                self.data = flat_data.into_shape(self.data.shape()).unwrap().to_owned();
+            }
         }
     }
 }
