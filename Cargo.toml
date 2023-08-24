@@ -15,7 +15,9 @@
 [dependencies]
     rand   ="^0.8"
     ndarray="^0.15"
+    # anyhow       = "1"
+    thiserror="1"
     # nalgebra="^0.32.3"
 
-# [dev-dependencies]
-#     statrs="^0.16.0"
+    # [dev-dependencies]
+    #     statrs="^0.16.0"

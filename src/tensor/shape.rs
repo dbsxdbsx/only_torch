@@ -1,6 +1,6 @@
-use std::collections::HashSet;
-
 use super::Tensor;
+use crate::errors::TensorError;
+use std::collections::HashSet;
 
 impl Tensor {
     // TODO：reshape,如将单位矩阵reshape为向量，或者reshape到高阶张量
@@ -46,9 +46,9 @@ impl Tensor {
     /// 当 `new_dim` 为 `true` 时，确保所有张量具有相同的形状。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len(), 1]` 的张量。
     /// 当 `new_dim` 为 `false`，确保所每个张量的第一个维度可以不同，但其余维度应相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
     /// 其余情况返回None。
-    pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Result<Tensor, &'static str> {
+    pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Result<Tensor, TensorError> {
         if tensors.is_empty() {
-            return Err("张量列表为空");
+            return Err(TensorError::EmptyList);
         }
 
         let all_scalars = tensors.iter().all(|t| t.is_scalar());
@@ -70,7 +70,7 @@ impl Tensor {
         };
 
         if !tensors.iter().all(|t| compatible_shapes(t)) {
-            return Err("张量形状不兼容");
+            return Err(TensorError::InconsitentShape);
         }
 
         let data = tensors
@@ -128,12 +128,12 @@ impl Tensor {
     /// 交换张量的两个（以上）维度，并将其返回（不影响原张量）
     pub fn permute(&self, axes: &[usize]) -> Tensor {
         if axes.len() < 2 {
-            panic!("交换张量时，输入的维度数至少需要2个");
+            panic!("{}", TensorError::PermuteNeedAtLeast2Dims);
         }
         // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
         let unique_axes = axes.iter().cloned().collect::<HashSet<_>>();
         if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dims()) {
-            panic!("需要交换的维度必须是唯一且在[0, <张量维数>)范围内");
+            panic!("{}", TensorError::PermuteNeedUniqueAndInRange);
         }
 
         let permuted_data = self.data.clone().permuted_axes(axes);
@@ -145,12 +145,12 @@ impl Tensor {
     /// 交换张量的两个（以上）维度（影响原张量）
     pub fn permute_mut(&mut self, axes: &[usize]) {
         if axes.len() < 2 {
-            panic!("交换张量时，输入的维度数至少需要2个");
+            panic!("{}", TensorError::PermuteNeedAtLeast2Dims);
         }
         // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
         let unique_axes = axes.iter().cloned().collect::<HashSet<_>>();
         if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dims()) {
-            panic!("需要交换的维度必须是唯一且在[0, <张量维数>)范围内");
+            panic!("{}", TensorError::PermuteNeedUniqueAndInRange);
         }
 
         self.data = self.data.to_owned().permuted_axes(axes);

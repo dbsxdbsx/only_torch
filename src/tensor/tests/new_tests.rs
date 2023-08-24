@@ -1,3 +1,4 @@
+use crate::assert_panic;
 use crate::tensor::Tensor;
 use ndarray::Array;
 use ndarray::IxDyn;
@@ -129,15 +130,8 @@ fn test_new_eye() {
 
 #[test]
 fn test_new_eye_with_invalid_diagonal_size() {
-    assert!(std::panic::catch_unwind(|| {
-        let _ = Tensor::new_eye(0);
-    })
-    .is_err());
-
-    assert!(std::panic::catch_unwind(|| {
-        let _ = Tensor::new_eye(1);
-    })
-    .is_err());
+    assert_panic!(Tensor::new_eye(0));
+    assert_panic!(Tensor::new_eye(1));
 }
 
 #[test]

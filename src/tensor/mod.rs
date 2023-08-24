@@ -2,6 +2,8 @@ use ndarray::{Array, IxDyn};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 
+use crate::errors::{ComparisonOperator, TensorError};
+
 mod ops {
     pub mod add;
     pub mod div;
@@ -10,13 +12,13 @@ mod ops {
     pub mod others;
     pub mod sub;
 }
+
 mod index;
 mod print;
 mod shape;
 
 #[cfg(test)]
 pub mod tests;
-
 /// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。
 /// 注：只要通Tensor初始化的都是张量（即使标量也是张量）；
 /// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
@@ -52,7 +54,15 @@ impl Tensor {
     /// 创建一个含`n`个对角元素的单位矩阵。
     /// n必须大于等于2，否则会panic。
     pub fn new_eye(n: usize) -> Tensor {
-        assert!(n >= 2, "n必须大于等于2");
+        assert!(
+            n >= 2,
+            "{}",
+            TensorError::ValueMustSatisfyComparison {
+                value_name: "n".to_string(),
+                operator: ComparisonOperator::GreaterOrEqual,
+                threshold: 2,
+            }
+        );
         let data = Array::eye(n);
         let shape = vec![n, n];
         let data = Array::from_shape_vec(IxDyn(&shape), data.into_raw_vec()).unwrap();

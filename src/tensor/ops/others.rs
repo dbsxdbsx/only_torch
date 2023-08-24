@@ -1,3 +1,5 @@
+use crate::errors::{Operator, TensorError};
+
 use crate::tensor::Tensor;
 use ndarray::{Array, Axis, Zip};
 use rand::seq::SliceRandom;
@@ -38,10 +40,13 @@ impl Tensor {
         let other = other.into();
         if !self.is_same_shape(&other) && !self.is_scalar() && !other.is_scalar() {
             panic!(
-                "形状不一致且两个张量没有一个是标量，故无法进行点积和：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
-                self.shape(),
-                other.shape()
-            );
+                "{}",
+                TensorError::OperatorError {
+                    operator: Operator::DotSum,
+                    tensor1_shape: self.shape().to_vec(),
+                    tensor2_shape: other.shape().to_vec(),
+                }
+            )
         }
 
         let product_tensor = self.clone() * other;

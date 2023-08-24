@@ -1,4 +1,5 @@
 use crate::assert_panic;
+use crate::errors::TensorError;
 use crate::tensor::Tensor;
 
 #[test]
@@ -55,7 +56,7 @@ fn test_is_scalar() {
 fn test_stack_without_new_dim() {
     // 1.空张量的堆叠
     let stacked = Tensor::stack(&[], false);
-    assert_eq!(stacked, Err("张量列表为空"));
+    assert_eq!(stacked, Err(TensorError::EmptyList));
     // 2.标量的堆叠
     let t1 = Tensor::new(&[5.0], &[]);
     let t2 = Tensor::new(&[6.0], &[1]);
@@ -77,7 +78,7 @@ fn test_stack_without_new_dim() {
     let t1 = Tensor::new(&[1., 2.], &[2]);
     let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3, 1]);
     let stacked = Tensor::stack(&[&t1, &t2], false);
-    assert_eq!(stacked, Err("张量形状不兼容"));
+    assert_eq!(stacked, Err(TensorError::InconsitentShape));
 
     // 4.矩阵的堆叠
     let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
@@ -102,7 +103,7 @@ fn test_stack_without_new_dim() {
     let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
     let t2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0], &[1, 4]);
     let stacked = Tensor::stack(&[&t1, &t2], false);
-    assert_eq!(stacked, Err("张量形状不兼容"));
+    assert_eq!(stacked, Err(TensorError::InconsitentShape));
 
     // 5.高维张量的堆叠
     let t1 = Tensor::new(
@@ -136,14 +137,14 @@ fn test_stack_without_new_dim() {
     let t1 = Tensor::new(&[1., 2., 3.0, 4.0], &[2, 1, 2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2]);
     let stacked = Tensor::stack(&[&t1, &t2], false);
-    assert_eq!(stacked, Err("张量形状不兼容"));
+    assert_eq!(stacked, Err(TensorError::InconsitentShape));
 }
 
 #[test]
 fn test_stack_with_new_dim() {
     // 1. 空张量的堆叠
     let stacked = Tensor::stack(&[], true);
-    assert_eq!(stacked, Err("张量列表为空"));
+    assert_eq!(stacked, Err(TensorError::EmptyList));
 
     // 2. 标量的堆叠
     let t1 = Tensor::new(&[5.0], &[]);
@@ -161,7 +162,7 @@ fn test_stack_with_new_dim() {
     let t1 = Tensor::new(&[1., 2.], &[2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0], &[3, 1]);
     let stacked = Tensor::stack(&[&t1, &t2], true);
-    assert_eq!(stacked, Err("张量形状不兼容"));
+    assert_eq!(stacked, Err(TensorError::InconsitentShape));
 
     // 4. 矩阵的堆叠
     let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
@@ -178,7 +179,7 @@ fn test_stack_with_new_dim() {
     let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
     let t2 = Tensor::new(&[5.0, 6.0], &[2, 1]);
     let stacked = Tensor::stack(&[&t1, &t2], true);
-    assert_eq!(stacked, Err("张量形状不兼容"));
+    assert_eq!(stacked, Err(TensorError::InconsitentShape));
 
     // 5.高维张量的堆叠
     let t1 = Tensor::new(
@@ -204,7 +205,7 @@ fn test_stack_with_new_dim() {
     let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1, 1]);
     let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1]);
     let stacked = Tensor::stack(&[&t1, &t2], true);
-    assert_eq!(stacked, Err("张量形状不兼容"));
+    assert_eq!(stacked, Err(TensorError::InconsitentShape));
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
@@ -303,11 +304,11 @@ fn test_permute() {
     let expected_tensor = Tensor::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2]);
     assert_eq!(permuted_tensor, expected_tensor);
     // 应该失败的情况
-    assert_panic!(tensor.permute(&[]), "交换张量时，输入的维度数至少需要2个");
-    assert_panic!(tensor.permute(&[1]), "交换张量时，输入的维度数至少需要2个");
+    assert_panic!(tensor.permute(&[]), TensorError::PermuteNeedAtLeast2Dims);
+    assert_panic!(tensor.permute(&[1]), TensorError::PermuteNeedAtLeast2Dims);
     assert_panic!(
         tensor.permute(&[1, 1]),
-        "需要交换的维度必须是唯一且在[0, <张量维数>)范围内"
+        TensorError::PermuteNeedUniqueAndInRange
     );
 }
 
@@ -321,15 +322,15 @@ fn test_permute_mut() {
     // 应该失败的情况
     assert_panic!(
         tensor.permute_mut(&[]),
-        "交换张量时，输入的维度数至少需要2个"
+        TensorError::PermuteNeedAtLeast2Dims
     );
     assert_panic!(
         tensor.permute_mut(&[1]),
-        "交换张量时，输入的维度数至少需要2个"
+        TensorError::PermuteNeedAtLeast2Dims
     );
     assert_panic!(
         tensor.permute_mut(&[1, 1]),
-        "需要交换的维度必须是唯一且在[0, <张量维数>)范围内"
+        TensorError::PermuteNeedUniqueAndInRange
     );
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑permute↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑

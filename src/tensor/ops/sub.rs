@@ -1,3 +1,4 @@
+use crate::errors::{Operator, TensorError};
 use crate::tensor::Tensor;
 use std::ops::Sub;
 
@@ -91,9 +92,12 @@ fn sub_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
         &tensor_1.data - tensor_2.number().unwrap()
     } else {
         panic!(
-            "形状不一致且两个张量没有一个是标量，故无法相减：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
-            tensor_1.shape(),
-            tensor_2.shape()
+            "{}",
+            TensorError::OperatorError {
+                operator: Operator::Sub,
+                tensor1_shape: tensor_1.shape().to_vec(),
+                tensor2_shape: tensor_2.shape().to_vec(),
+            }
         )
     };
 

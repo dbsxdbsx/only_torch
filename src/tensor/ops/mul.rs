@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2023-08-17 17:24:24
  * @LastEditors  : 老董
- * @LastEditTime : 2023-08-22 12:09:59
+ * @LastEditTime : 2023-08-24 20:48:56
  * @Description  : 张量的乘法，实现了张量与标量的乘法以及两个张量“逐元素”相乘的运算，并返回一个新的张量。
  *                 乘法运算支持以下情况：
  *                 1. 若两个张量的形状严格一致, 则相乘后的张量形状不变；
@@ -13,6 +13,7 @@
  *                 参考：https://www.jianshu.com/p/9165e3264ced
  */
 
+use crate::errors::{Operator, TensorError};
 use crate::tensor::Tensor;
 use std::ops::Mul;
 
@@ -106,10 +107,13 @@ fn mul_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
         &tensor_1.data * tensor_2.number().unwrap()
     } else {
         panic!(
-             "形状不一致且两个张量没有一个是标量，故无法相乘：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
-             tensor_1.shape(),
-             tensor_2.shape()
-         )
+            "{}",
+            TensorError::OperatorError {
+                operator: Operator::Mul,
+                tensor1_shape: tensor_1.shape().to_vec(),
+                tensor2_shape: tensor_2.shape().to_vec(),
+            }
+        )
     };
 
     Tensor { data }
