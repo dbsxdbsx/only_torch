@@ -1,7 +1,9 @@
 ## #描述
+
 用纯rust（不想用c++）打造的仿造pytorch的个人玩具型AI框架（尚不成熟,请勿使用）。不打算支持gpu(因后期可能要支持安卓等平台，不想受制于某种非cpu设备)，但可能会加入NEAT等网络进化的算法。
 
 ### 名字由来
+
 一部分原因是受到pytorch的影响，希望能写个和pytorch一样甚至更易用的AI框架；另一部分是希望本框架只触及（touch）一些关键的东西：
 
 - only torch rust --- 只用rust（不用c++是因为其在复杂逻辑项目中容易写出内存不安全代码，也不打算支持Python接口）；也不用第三方lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
@@ -10,14 +12,17 @@
 - only torch tensor --- 所有的数据类型都是内置类型tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/rust-numpy)，[array](https://doc.rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于blas的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
 - only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了f32外的数据结构。
 
-## 使用示例
-（无）
+
 
 ## 文档
+
 目前无人性化的文档。可直接看rust自动生成的[Api Doc](https://docs.rs/only_torch)即可。
+## 使用示例
+
+（无）
 
 ## TODO
-（目前需要先解决有没有的问题；而不是好不好）
+**目前需要先解决有没有的问题，而不是好不好**
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
 - [] 基于本框架解决XOR监督学习问题
 - [] 基于本框架解决Mnist（数字识别）的监督学习问题
@@ -28,18 +33,21 @@
 ## 参考资料
 
 ### 训练用数据集
+
 [Mnist](http://yann.lecun.com/exdb/mnist/)
 [FashionMnist](https://www.kaggle.com/datasets/zalando-research/fashionmnist?resource=download)
 [ChineseMnist](https://www.kaggle.com/datasets/gpreda/chinese-mnist)
 [训练用的各种数据集（包括强化学习）](https://huggingface.co/FUXI)
 
 ### 数学/IT原理
-- [矩阵和向量的乘法](https://www.jianshu.com/p/9165e3264ced)
+
+- [矩阵和向量的各种乘法](https://www.jianshu.com/p/9165e3264ced)
 - [神经网络与记忆](https://www.bilibili.com/video/BV1fV4y1i7hZ/?spm_id_from=333.1007.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [陈天奇的机器学习编译课](https://www.bilibili.com/video/BV15v4y1g7EU/?is_story_h5=false&p=1&share_from=ugc&share_medium=android&share_plat=android&share_session_id=5a312434-ccf7-4cb9-862a-17a601cc4d35&share_source=COPY&share_tag=s_i&timestamp=1661386914&unique_k=zCWMKGC&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [基于梯度的机器学习IT原理](https://zhuanlan.zhihu.com/p/518198564)
 
 ### 开源示例
+
 - [radiate--衍生NEAT的纯rust库](https://github.com/pkalivas/radiate)
 - [纯rust的NEAT+GRU](https://github.com/sakex/neat-gru-rust)
 - [rusty_sr-纯rust的基于dl的图像超清](https://github.com/millardjn/rusty_sr)
@@ -62,11 +70,13 @@
 - [avalog--基于avatar的rust逻辑推理库](https://crates.io/crates/avalog)
 
 ### NEAT、神经架构进化
+
 - [用梯度指导神经架构进化：Splitting Steepest Descent](https://www.cs.utexas.edu/~qlearning/project.html?p=splitting)
 - [Deep Mad，将卷积网络设计为一个数学建模问题](https://www.bilibili.com/video/BV1HP411R74T/?spm_id_from=333.999.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [autoML介绍](https://www.zhihu.com/question/554255720/answer/2750670583)
 
 ### 逻辑/推理
+
 - [scryer-prolog--rust逻辑推理库](https://github.com/mthom/scryer-prolog)
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
 - [结合prolog和RL](https://arxiv.org/abs/2004.06997)
@@ -75,15 +85,18 @@
 - [贝叶斯与逻辑推理](https://stats.stackexchange.com/questions/243746/what-is-probabilistic-inference)
 
 ### 神经网络的可解释性
+
 - [神经网络的可解释性](https://zhuanlan.zhihu.com/p/341153242)
 - [可解释的哈萨尼网络](https://zhuanlan.zhihu.com/p/643213054)
 
 ### CPU加速
+
 - [SLIDE](https://arxiv.org/abs/2103.10891)
 - [rust+AVX](https://medium.com/@Razican/learning-simd-with-rust-by-finding-planets-b85ccfb724c3)
 - [矩阵加速-GEMM](https://www.jianshu.com/p/6d3f013d8aba)
 
 ### AI实例项目
+
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
 - [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
 - [GRU解释](https://www.pluralsight.com/guides/lstm-versus-gru-units-in-rnn)
@@ -94,4 +107,5 @@
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
 
 ## 遵循协议
+
 本项目遵循MIT协议（简言之：不约束，不负责）。
