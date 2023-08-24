@@ -77,8 +77,10 @@ impl Tensor {
             let z0 = mean + std_dev * r * theta.cos();
             let z1 = mean + std_dev * r * theta.sin();
 
-            data.push(z0);
-            if data.len() < data_len {
+            if z0.is_finite() {
+                data.push(z0);
+            }
+            if data.len() < data_len && z1.is_finite() {
                 data.push(z1);
             }
         }
