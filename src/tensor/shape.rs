@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::Tensor;
 
 impl Tensor {
@@ -10,7 +12,7 @@ impl Tensor {
         self.data.shape()
     }
 
-    /// 张量的维度、阶（rank）数
+    /// 张量的维（dim）数、阶（rank）数
     /// 即`shape()`的元素个数--如：形状为`[]`的标量阶数为0，向量阶数为1，矩阵阶数为2，以此类推
     pub fn dims(&self) -> usize {
         self.data.ndim()
@@ -121,5 +123,36 @@ impl Tensor {
             .into_shape(new_shape)
             .unwrap()
             .to_owned();
+    }
+
+    /// 交换张量的两个（以上）维度，并将其返回（不影响原张量）
+    pub fn permute(&self, axes: &[usize]) -> Tensor {
+        if axes.len() < 2 {
+            panic!("交换张量时，输入的维度数至少需要2个");
+        }
+        // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
+        let unique_axes = axes.iter().cloned().collect::<HashSet<_>>();
+        if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dims()) {
+            panic!("需要交换的维度必须是唯一且在[0, <张量维数>)范围内");
+        }
+
+        let permuted_data = self.data.clone().permuted_axes(axes);
+        Tensor {
+            data: permuted_data,
+        }
+    }
+
+    /// 交换张量的两个（以上）维度（影响原张量）
+    pub fn permute_mut(&mut self, axes: &[usize]) {
+        if axes.len() < 2 {
+            panic!("交换张量时，输入的维度数至少需要2个");
+        }
+        // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
+        let unique_axes = axes.iter().cloned().collect::<HashSet<_>>();
+        if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dims()) {
+            panic!("需要交换的维度必须是唯一且在[0, <张量维数>)范围内");
+        }
+
+        self.data = self.data.to_owned().permuted_axes(axes);
     }
 }

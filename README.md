@@ -104,7 +104,7 @@
 - [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
 - [awesome Rust](https://github.com/Rust-unofficial/awesome-Rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
-
+- [rust人工智能相关的项目](https://github.com/rust-unofficial/awesome-rust#artificial-intelligence)
 ## 遵循协议
 
 本项目遵循MIT协议（简言之：不约束，不负责）。

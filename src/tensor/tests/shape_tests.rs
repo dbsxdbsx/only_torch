@@ -1,3 +1,4 @@
+use crate::assert_panic;
 use crate::tensor::Tensor;
 
 #[test]
@@ -207,6 +208,7 @@ fn test_stack_with_new_dim() {
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓(un)squeeze↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 #[test]
 fn test_squeeze() {
     // 测试标量
@@ -290,3 +292,44 @@ fn test_squeeze_mut() {
     tensor.squeeze_mut();
     assert_eq!(tensor.shape(), &[2, 3]);
 }
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑(un)squeeze↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓permute↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+#[test]
+fn test_permute() {
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    // 应该成功的情况
+    let permuted_tensor = tensor.permute(&[1, 0]);
+    let expected_tensor = Tensor::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2]);
+    assert_eq!(permuted_tensor, expected_tensor);
+    // 应该失败的情况
+    assert_panic!(tensor.permute(&[]), "交换张量时，输入的维度数至少需要2个");
+    assert_panic!(tensor.permute(&[1]), "交换张量时，输入的维度数至少需要2个");
+    assert_panic!(
+        tensor.permute(&[1, 1]),
+        "需要交换的维度必须是唯一且在[0, <张量维数>)范围内"
+    );
+}
+
+#[test]
+fn test_permute_mut() {
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    // 应该成功的情况
+    tensor.permute_mut(&[1, 0]);
+    let expected_tensor = Tensor::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2]);
+    assert_eq!(tensor, expected_tensor);
+    // 应该失败的情况
+    assert_panic!(
+        tensor.permute_mut(&[]),
+        "交换张量时，输入的维度数至少需要2个"
+    );
+    assert_panic!(
+        tensor.permute_mut(&[1]),
+        "交换张量时，输入的维度数至少需要2个"
+    );
+    assert_panic!(
+        tensor.permute_mut(&[1, 1]),
+        "需要交换的维度必须是唯一且在[0, <张量维数>)范围内"
+    );
+}
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑permute↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
