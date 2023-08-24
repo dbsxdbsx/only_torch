@@ -68,15 +68,18 @@ impl Tensor {
         Tensor { data: ordered_data }
     }
 
-      /// 打乱张量中的元素顺序
-      pub fn shuffle(&self, axis: Option<usize>) -> Tensor {
+    /// 打乱张量中的元素顺序
+    pub fn shuffle(&self, axis: Option<usize>) -> Tensor {
         let mut shuffled_data = self.data.clone();
         let mut rng = thread_rng();
 
         match axis {
             Some(axis) => {
                 let axis = Axis(axis);
-                let mut chunks: Vec<_> = shuffled_data.axis_iter(axis).map(|c| c.to_owned()).collect();
+                let mut chunks: Vec<_> = shuffled_data
+                    .axis_iter(axis)
+                    .map(|c| c.to_owned())
+                    .collect();
                 chunks.shuffle(&mut rng);
                 let mut new_data = Array::zeros(shuffled_data.raw_dim());
                 for (i, chunk) in chunks.into_iter().enumerate() {

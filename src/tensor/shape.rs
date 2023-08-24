@@ -41,31 +41,35 @@ impl Tensor {
     /// * `tensors` - 一个包含多个张量的数组的引用。
     /// * `new_dim` - 布尔值，指示是否增加一个新的维度来堆叠。
     ///
-    /// 注：张量型张量即使每个张量的形状不一致，也会按照`[1]`的形状进行堆叠。
-    // TODO: new_dim 为false时，`tensors`中每个张量的首个维度可以不一致，但后续维度必须一致，
-    // 否则返回None
-    pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Option<Tensor> {
+    /// 当 `new_dim` 为 `true` 时，确保所有张量具有相同的形状。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len(), 1]` 的张量。
+    /// 当 `new_dim` 为 `false`，确保所每个张量的第一个维度可以不同，但其余维度应相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
+    /// 其余情况返回None。
+    pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Result<Tensor, &'static str> {
         if tensors.is_empty() {
-            return None;
+            return Err("张量列表为空");
         }
 
-        let shape = if tensors.iter().all(|t| t.is_scalar()) {
-            if new_dim {
-                vec![tensors.len(), 1]
+        let all_scalars = tensors.iter().all(|t| t.is_scalar());
+        let first_shape = tensors[0].shape();
+
+        let compatible_shapes = |t: &Tensor| {
+            if all_scalars {
+                true
             } else {
-                vec![tensors.len()]
+                let t_shape = t.shape();
+                let skip = if new_dim { 0 } else { 1 };
+                t_shape.len() == first_shape.len()
+                    && t_shape
+                        .iter()
+                        .skip(skip)
+                        .zip(first_shape.iter().skip(skip))
+                        .all(|(a, b)| a == b)
             }
-        } else if !tensors.iter().all(|t| t.is_same_shape(tensors[0])) {
-            return None;
-        } else if new_dim {
-            let mut shape = tensors[0].shape().to_vec();
-            shape.insert(0, tensors.len());
-            shape
-        } else {
-            let mut shape = tensors[0].shape().to_vec();
-            shape[0] *= tensors.len();
-            shape
         };
+
+        if !tensors.iter().all(|t| compatible_shapes(t)) {
+            return Err("张量形状不兼容");
+        }
 
         let data = tensors
             .iter()
@@ -73,7 +77,22 @@ impl Tensor {
             .cloned()
             .collect::<Vec<_>>();
 
-        Some(Tensor::new(&data, &shape))
+        let shape = match (new_dim, all_scalars) {
+            (true, true) => vec![tensors.len(), 1],
+            (true, false) => {
+                let mut shape = tensors[0].shape().to_vec();
+                shape.insert(0, tensors.len());
+                shape
+            }
+            (false, true) => vec![tensors.len()],
+            (false, false) => {
+                let mut shape = tensors[0].shape().to_vec();
+                shape[0] = tensors.iter().map(|t| t.shape()[0]).sum();
+                shape
+            }
+        };
+
+        Ok(Tensor::new(&data, &shape))
     }
 
     pub fn squeeze(&self) -> Tensor {

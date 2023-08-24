@@ -48,44 +48,164 @@ fn test_is_scalar() {
     assert!(!non_scalar_tensor.is_scalar());
 }
 
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓stack↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+
 #[test]
-fn test_stack_with_same_shapes() {
-    // 创建三个形状为[2, 4]的张量
-    let tensor1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 4]);
-    let tensor2 = Tensor::new(&[9., 10., 11., 12., 13., 14., 15., 16.], &[2, 4]);
-    let tensor3 = Tensor::new(&[17., 18., 19., 20., 21., 22., 23., 24.], &[2, 4]);
-    // 在新维度上堆叠三个张量
-    let stacked_tensor1 = Tensor::stack(&[&tensor1, &tensor2, &tensor3], true).unwrap();
-    assert_eq!(stacked_tensor1.shape(), &[3, 2, 4]);
-    // 在现有维度上拼接三个张量
-    let stacked_tensor2 = Tensor::stack(&[&tensor1, &tensor2, &tensor3], false).unwrap();
-    assert_eq!(stacked_tensor2.shape(), &[6, 4]);
+fn test_stack_without_new_dim() {
+    // 1.空张量的堆叠
+    let stacked = Tensor::stack(&[], false);
+    assert_eq!(stacked, Err("张量列表为空"));
+    // 2.标量的堆叠
+    let t1 = Tensor::new(&[5.0], &[]);
+    let t2 = Tensor::new(&[6.0], &[1]);
+    let t3 = Tensor::new(&[7.0], &[1, 1]);
+    let stacked = Tensor::stack(&[&t1, &t2, &t3], false).unwrap();
+    assert_eq!(stacked, Tensor::new(&[5.0, 6.0, 7.0], &[3]));
+
+    // 3.向量的堆叠
+    let t1 = Tensor::new(&[1.0, 2.0], &[2]);
+    let t2 = Tensor::new(&[3.0, 4.0], &[2]);
+    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]));
+    // (不添加新维度的情况下，张量的第一个维度可以不同)
+    let t1 = Tensor::new(&[1., 2.], &[2]);
+    let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3]);
+    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 6.0, 7.0, 8.0], &[5]));
+    // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
+    let t1 = Tensor::new(&[1., 2.], &[2]);
+    let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3, 1]);
+    let stacked = Tensor::stack(&[&t1, &t2], false);
+    assert_eq!(stacked, Err("张量形状不兼容"));
+
+    // 4.矩阵的堆叠
+    let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    let t2 = Tensor::new(&[7., 8., 9., 10., 11., 12.], &[2, 3]);
+    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    assert_eq!(
+        stacked,
+        Tensor::new(
+            &[1.0, 2.0, 3.0, 4.0, 5., 6., 7., 8., 9., 10., 11., 12.],
+            &[4, 3]
+        )
+    );
+    // (不添加新维度的情况下，张量的第一个维度可以不同)
+    let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
+    let t2 = Tensor::new(&[7.0, 8.0, 9.0], &[1, 3]);
+    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    assert_eq!(
+        stacked,
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])
+    );
+    // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
+    let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
+    let t2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0], &[1, 4]);
+    let stacked = Tensor::stack(&[&t1, &t2], false);
+    assert_eq!(stacked, Err("张量形状不兼容"));
+
+    // 5.高维张量的堆叠
+    let t1 = Tensor::new(
+        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
+        &[2, 3, 2, 1],
+    );
+    let t2 = Tensor::new(
+        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
+        &[2, 3, 2, 1],
+    );
+    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    assert_eq!(
+        stacked,
+        Tensor::new(
+            &[
+                1.0, 2.0, 3.0, 4.0, 5., 6., 7., 8., 9., 10., 11., 12., 1., 2., 3., 4., 5., 6., 7.,
+                8., 9., 10., 11., 12.
+            ],
+            &[4, 3, 2, 1]
+        )
+    );
+    // (不添加新维度的情况下，张量的第一个维度可以不同)
+    let t1 = Tensor::new(&[1., 2., 3.0, 4.0], &[2, 1, 2, 1]);
+    let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 1]);
+    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    assert_eq!(
+        stacked,
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,], &[4, 1, 2, 1])
+    );
+    // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
+    let t1 = Tensor::new(&[1., 2., 3.0, 4.0], &[2, 1, 2, 1]);
+    let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2]);
+    let stacked = Tensor::stack(&[&t1, &t2], false);
+    assert_eq!(stacked, Err("张量形状不兼容"));
 }
 
 #[test]
-fn test_stack_with_diff_shapes() {
-    // 创建多个形状不一致的标量
-    let tensor1 = Tensor::new(&[1.], &[]);
-    let tensor2 = Tensor::new(&[2.], &[1]);
-    let tensor3 = Tensor::new(&[3.], &[1, 1]);
-    let tensor4 = Tensor::new(&[3.], &[1, 1, 1]);
-    // 在新维度上堆叠三个张量
-    let stacked_tensor = Tensor::stack(&[&tensor1, &tensor2, &tensor3, &tensor4], true).unwrap();
-    assert_eq!(stacked_tensor.shape(), &[4, 1]);
-    // 在现有维度上拼接三个张量
-    let stacked_tensor = Tensor::stack(&[&tensor1, &tensor2, &tensor3, &tensor4], false).unwrap();
-    assert_eq!(stacked_tensor.shape(), &[4]);
+fn test_stack_with_new_dim() {
+    // 1. 空张量的堆叠
+    let stacked = Tensor::stack(&[], true);
+    assert_eq!(stacked, Err("张量列表为空"));
 
-    // 创建两个形状不一致的非标量型张量
-    let tensor4 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-    let tensor5 = Tensor::new(&[5., 6.], &[2, 1]);
-    // 在新维度上堆叠两个形状不一致的张量，应该返回None
-    let stacked_tensor3 = Tensor::stack(&[&tensor4, &tensor5], true);
-    assert_eq!(stacked_tensor3, None);
-    // 在现有维度上拼接两个形状不一致的张量，应该返回None
-    let stacked_tensor4 = Tensor::stack(&[&tensor4, &tensor5], false);
-    assert_eq!(stacked_tensor4, None);
+    // 2. 标量的堆叠
+    let t1 = Tensor::new(&[5.0], &[]);
+    let t2 = Tensor::new(&[6.0], &[1]);
+    let t3 = Tensor::new(&[7.0], &[1, 1]);
+    let stacked = Tensor::stack(&[&t1, &t2, &t3], true).unwrap();
+    assert_eq!(stacked, Tensor::new(&[5.0, 6.0, 7.0], &[3, 1]));
+
+    // 3. 向量的堆叠
+    let t1 = Tensor::new(&[1.0, 2.0], &[2]);
+    let t2 = Tensor::new(&[3.0, 4.0], &[2]);
+    let stacked = Tensor::stack(&[&t1, &t2], true).unwrap();
+    assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+    // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
+    let t1 = Tensor::new(&[1., 2.], &[2, 1]);
+    let t2 = Tensor::new(&[5.0, 6.0, 7.0], &[3, 1]);
+    let stacked = Tensor::stack(&[&t1, &t2], true);
+    assert_eq!(stacked, Err("张量形状不兼容"));
+
+    // 4. 矩阵的堆叠
+    let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let t2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 3]);
+    let stacked = Tensor::stack(&[&t1, &t2], true).unwrap();
+    assert_eq!(
+        stacked,
+        Tensor::new(
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[2, 2, 3]
+        )
+    );
+    // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
+    let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    let t2 = Tensor::new(&[5.0, 6.0], &[2, 1]);
+    let stacked = Tensor::stack(&[&t1, &t2], true);
+    assert_eq!(stacked, Err("张量形状不兼容"));
+
+    // 5.高维张量的堆叠
+    let t1 = Tensor::new(
+        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
+        &[2, 3, 2],
+    );
+    let t2 = Tensor::new(
+        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
+        &[2, 3, 2],
+    );
+    let stacked = Tensor::stack(&[&t1, &t2], true).unwrap();
+    assert_eq!(
+        stacked,
+        Tensor::new(
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, //
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0
+            ],
+            &[2, 2, 3, 2]
+        )
+    );
+    // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
+    let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1, 1]);
+    let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1]);
+    let stacked = Tensor::stack(&[&t1, &t2], true);
+    assert_eq!(stacked, Err("张量形状不兼容"));
 }
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 #[test]
 fn test_squeeze() {
