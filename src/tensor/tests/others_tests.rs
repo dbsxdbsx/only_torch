@@ -264,7 +264,7 @@ fn test_dot_sum_operator_for_inconsistent_shape_2() {
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`dot_sum`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
-//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓`order`和`shuffle`↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓order↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 #[test]
 fn test_order() {
     let tensor1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
@@ -272,8 +272,43 @@ fn test_order() {
     let ordered_tensor = tensor2.order();
     assert_ne!(tensor1, tensor2);
     assert_eq!(tensor1, ordered_tensor);
+
+    let tensor1 = Tensor::new(
+        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
+        &[2, 2, 3],
+    );
+    let tensor2 = Tensor::new(
+        &[7., 8., 9., 10., 11., 12., 3., 4., 1., 2., 5., 6.],
+        &[2, 2, 3],
+    );
+    let ordered_tensor = tensor2.order();
+    assert_ne!(tensor1, tensor2);
+    assert_eq!(tensor1, ordered_tensor);
 }
 
+#[test]
+fn test_order_mut() {
+    let tensor1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    let mut tensor2 = Tensor::new(&[3., 4., 1., 2., 5., 6.], &[2, 3]);
+    assert_ne!(tensor1, tensor2);
+    tensor2.order_mut();
+    assert_eq!(tensor1, tensor2);
+
+    let tensor1 = Tensor::new(
+        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
+        &[2, 2, 3],
+    );
+    let mut tensor2 = Tensor::new(
+        &[7., 8., 9., 10., 11., 12., 3., 4., 1., 2., 5., 6.],
+        &[2, 2, 3],
+    );
+    assert_ne!(tensor1, tensor2);
+    tensor2.order_mut();
+    assert_eq!(tensor1, tensor2);
+}
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑order↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓shuffle↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 #[test]
 fn test_shuffle() {
     let data = &[
@@ -302,12 +337,22 @@ fn test_shuffle() {
         assert!(tensor.data.axis_iter(Axis(1)).any(|c| c == col));
     }
 
-    // 全局打乱
-    let shuffled_tensor = tensor.shuffle(None);
-    assert_eq!(tensor.shape(), shuffled_tensor.shape()); // 打乱后的形状仍一致，
-    assert_ne!(tensor.data, shuffled_tensor.data); //  打乱后的但数据不一致
-    let ordered_tensor = shuffled_tensor.order();
-    assert_eq!(tensor, ordered_tensor); // 重新排序后则应完全一致
+    // 全局打乱（打乱后的形状仍一致，但数据不一致）
+    let tensor_shuffle = tensor.shuffle(None);
+    assert_eq!(tensor.shape(), tensor_shuffle.shape());
+    assert_ne!(tensor.data, tensor_shuffle.data);
+    // 确保没有一行或一列和原来一样的
+    assert!(tensor_shuffle
+        .data
+        .axis_iter(Axis(0))
+        .all(|row| { tensor.data.axis_iter(Axis(0)).all(|r| r != row) }));
+    assert!(tensor_shuffle
+        .data
+        .axis_iter(Axis(1))
+        .all(|col| { tensor.data.axis_iter(Axis(1)).all(|r| r != col) }));
+    // 重新排序后则应完全一致
+    let ordered_tensor = tensor_shuffle.order();
+    assert_eq!(tensor, ordered_tensor);
 }
 
 #[test]
@@ -340,12 +385,22 @@ fn test_shuffle_mut() {
         assert!(tensor.data.axis_iter(Axis(1)).any(|r| r == row));
     }
 
-    // 全局打乱
+    // 全局打乱（打乱后的形状仍一致，但数据不一致）
     let mut tensor_shuffle = Tensor::new(data, shape);
     tensor_shuffle.shuffle_mut(None);
-    assert_eq!(tensor.shape(), tensor_shuffle.shape()); // 打乱后的形状仍一致，
-    assert_ne!(tensor.data, tensor_shuffle.data); //  打乱后的但数据不一致
+    assert_eq!(tensor.shape(), tensor_shuffle.shape());
+    assert_ne!(tensor.data, tensor_shuffle.data);
+    // 确保没有一行或一列和原来一样的
+    assert!(tensor_shuffle
+        .data
+        .axis_iter(Axis(0))
+        .all(|row| { tensor.data.axis_iter(Axis(0)).all(|r| r != row) }));
+    assert!(tensor_shuffle
+        .data
+        .axis_iter(Axis(1))
+        .all(|col| { tensor.data.axis_iter(Axis(1)).all(|r| r != col) }));
     let ordered_tensor = tensor_shuffle.order();
-    assert_eq!(tensor, ordered_tensor); // 重新排序后则应完全一致
+    // 重新排序后则应完全一致
+    assert_eq!(tensor, ordered_tensor);
 }
-//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`order`和`shuffle`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑shuffle↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑

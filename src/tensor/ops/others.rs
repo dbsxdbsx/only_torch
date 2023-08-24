@@ -58,14 +58,25 @@ impl Tensor {
         self.data.std_axis(ndarray::Axis(0), 0.).mean().unwrap()
     }
 
-    /// 返回一个形状和`self`相同的张量，其中的元素按从小到大的顺序排列
+    /// 不改变形状情况下，将张量的元素按从小到大的顺序排列，并将其返回（不影响原张量）
     pub fn order(&self) -> Tensor {
-        let flat_data = self.data.clone().into_shape(self.data.len()).unwrap();
-        let mut flat_data = flat_data.into_raw_vec();
-        flat_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let ordered_data = Array::from_shape_vec(self.data.shape(), flat_data).unwrap();
-        let ordered_data = ordered_data.into_shape(self.data.shape()).unwrap();
+        let flat_data = self.data.view().into_shape(self.data.len()).unwrap();
+        let mut sorted_data = flat_data.as_slice().unwrap().to_owned();
+        sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let ordered_data = Array::from_shape_vec(self.data.shape(), sorted_data).unwrap();
         Tensor { data: ordered_data }
+    }
+
+    /// 不改变形状情况下，将张量的元素按从小到大的顺序排列（影响原张量）
+    pub fn order_mut(&mut self) {
+        let flat_len = self.data.len();
+        let mut flat_data = self.data.view_mut().into_shape(flat_len).unwrap();
+        let flat_data_slice = flat_data.as_slice_mut().unwrap();
+        flat_data_slice.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        self.data = flat_data
+            .to_owned()
+            .into_shape(self.data.shape().to_owned())
+            .unwrap();
     }
 
     /// 打乱张量中的元素顺序，并将其返回（不影响原张量）
@@ -107,7 +118,11 @@ impl Tensor {
         match axis {
             Some(axis) => {
                 let axis = Axis(axis);
-                let mut chunks: Vec<_> = self.data.axis_iter(axis).map(|c| c.to_owned()).collect();
+                let mut chunks = self
+                    .data
+                    .axis_iter(axis)
+                    .map(|c| c.to_owned())
+                    .collect::<Vec<_>>();
                 chunks.shuffle(&mut rng);
                 for (i, chunk) in chunks.into_iter().enumerate() {
                     let mut slice = self.data.index_axis_mut(axis, i);
@@ -115,9 +130,14 @@ impl Tensor {
                 }
             }
             None => {
-                let mut flat_data = self.data.clone().into_shape(self.data.len()).unwrap();
-                flat_data.as_slice_mut().unwrap().shuffle(&mut rng);
-                self.data = flat_data.into_shape(self.data.shape()).unwrap().to_owned();
+                let flat_len = self.data.len();
+                let mut flat_data = self.data.view_mut().into_shape(flat_len).unwrap();
+                let flat_data_slice = flat_data.as_slice_mut().unwrap();
+                flat_data_slice.shuffle(&mut rng);
+                self.data = flat_data
+                    .to_owned()
+                    .into_shape(self.data.shape().to_owned())
+                    .unwrap();
             }
         }
     }
