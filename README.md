@@ -1,27 +1,26 @@
-## #描述
+## 这是啥？
 
-用纯rust（不想用c++）打造的仿造pytorch的个人玩具型AI框架（尚不成熟,请勿使用）。不打算支持gpu(因后期可能要支持安卓等平台，不想受制于某种非cpu设备)，但可能会加入NEAT等网络进化的算法。
+一个用纯Rust（不想用C++）打造的仿Pytorch的玩具型AI框架（目前尚不成熟，请勿使用）。该项目不打算支持GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非CPU设备。但可能会加入NEAT等网络进化的算法。
 
 ### 名字由来
 
 一部分原因是受到pytorch的影响，希望能写个和pytorch一样甚至更易用的AI框架；另一部分是希望本框架只触及（touch）一些关键的东西：
 
-- only torch rust --- 只用rust（不用c++是因为其在复杂逻辑项目中容易写出内存不安全代码，也不打算支持Python接口）；也不用第三方lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
-- only torch cpu --- 不用gpu，因要照顾多平台，也不想被某个GPU厂商制约，且基于NEAT进化的网络结构也不太好被GPU优化；如此也省得考虑数据从cpu内存迁移到其他设备内存的开销问题了。
+- only torch Rust --- 只用Rust（不用C++是因为其在复杂逻辑项目中容易写出内存不安全代码，也不打算支持Python接口）；也不用第三方lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
+- only torch CPU --- 不用GPU，因要照顾多平台，也不想被某个GPU厂商制约，且基于NEAT进化的网络结构也不太好被GPU优化；如此也省得考虑数据从CPU内存迁移到其他设备内存的开销问题了。
 - only torch node --- 没有全连接、卷积、resnet这类先入为主的算子概念，具体模型结构均基于NEAT进化。
-- only torch tensor --- 所有的数据类型都是内置类型tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/rust-numpy)，[array](https://doc.rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于blas的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
+- only torch tensor --- 所有的数据类型都是内置类型tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/Rust-numpy)，[array](https://doc.Rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于blas的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
 - only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了f32外的数据结构。
-
-
 
 ## 文档
 
-目前无人性化的文档。可直接看rust自动生成的[Api Doc](https://docs.rs/only_torch)即可。
-## 使用示例
+目前无人性化的文档。可直接看Rust自动生成的[Api Doc](https://docs.rs/only_torch)即可。
+### 使用示例
 
 （无）
 
 ## TODO
+
 **目前需要先解决有没有的问题，而不是好不好**
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
 - [] 基于本框架解决XOR监督学习问题
@@ -48,26 +47,26 @@
 
 ### 开源示例
 
-- [radiate--衍生NEAT的纯rust库](https://github.com/pkalivas/radiate)
-- [纯rust的NEAT+GRU](https://github.com/sakex/neat-gru-rust)
-- [rusty_sr-纯rust的基于dl的图像超清](https://github.com/millardjn/rusty_sr)
+- [radiate--衍生NEAT的纯Rust库](https://github.com/pkalivas/radiate)
+- [纯Rust的NEAT+GRU](https://github.com/sakex/neat-gru-Rust)
+- [Rusty_sr-纯Rust的基于dl的图像超清](https://github.com/millardjn/Rusty_sr)
 - [ndarray_glm(可参考下`array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
 
-- [PyToy--基于MatrixSlow的python机器学习框架](https://github.com/ysj1173886760/PyToy)
+- [PyToy--基于MatrixSlow的Python机器学习框架](https://github.com/ysj1173886760/PyToy)
 
 - [n-nalgebra](https://github.com/dimforge/nalgebra)
-- [rust-CNN](https://github.com/goldstraw/RustCNN)
-- [rust-dfdx---支持cuda的rust深度学习库](https://docs.rs/dfdx/latest/dfdx/)
-- [neuronika--纯rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)
+- [Rust-CNN](https://github.com/goldstraw/RustCNN)
+- [Rust-dfdx---支持cuda的Rust深度学习库](https://docs.rs/dfdx/latest/dfdx/)
+- [neuronika--纯Rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)
 
 - [深度学习框架InsNet简介](https://zhuanlan.zhihu.com/p/378684569)
 - [C++机器学习库MLPACK](https://www.mlpack.org/)
-- [经典机器学习算法rust库](https://github.com/rust-ml/linfa)
-- [peroxide--纯rust的线代及周边库](https://crates.io/crates/peroxide)
+- [经典机器学习算法Rust库](https://github.com/Rust-ml/linfa)
+- [peroxide--纯Rust的线代及周边库](https://crates.io/crates/peroxide)
 
 - [C++实现的NEAT+LSTM/GRU/CNN](https://github.com/travisdesell/exact)
 - [pytorch+NEAT](https://github.com/ddehueck/pytorch-neat)
-- [avalog--基于avatar的rust逻辑推理库](https://crates.io/crates/avalog)
+- [avalog--基于avatar的Rust逻辑推理库](https://crates.io/crates/avalog)
 
 ### NEAT、神经架构进化
 
@@ -77,7 +76,7 @@
 
 ### 逻辑/推理
 
-- [scryer-prolog--rust逻辑推理库](https://github.com/mthom/scryer-prolog)
+- [scryer-prolog--Rust逻辑推理库](https://github.com/mthom/scryer-prolog)
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
 - [结合prolog和RL](https://arxiv.org/abs/2004.06997)
 - [prolog与4证人难题](https://prolog.longluntan.com/t9-topic)
@@ -92,7 +91,7 @@
 ### CPU加速
 
 - [SLIDE](https://arxiv.org/abs/2103.10891)
-- [rust+AVX](https://medium.com/@Razican/learning-simd-with-rust-by-finding-planets-b85ccfb724c3)
+- [Rust+AVX](https://medium.com/@Razican/learning-simd-with-Rust-by-finding-planets-b85ccfb724c3)
 - [矩阵加速-GEMM](https://www.jianshu.com/p/6d3f013d8aba)
 
 ### AI实例项目
@@ -103,7 +102,7 @@
 - [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
 - [webGPT会上网的gpt](https://arxiv.org/abs/2112.09332)
 - [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
-- [awesome rust](https://github.com/rust-unofficial/awesome-rust#genetic-algorithms)
+- [awesome Rust](https://github.com/Rust-unofficial/awesome-Rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
 
 ## 遵循协议
