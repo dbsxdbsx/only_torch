@@ -42,6 +42,8 @@ impl Tensor {
     /// * `new_dim` - 布尔值，指示是否增加一个新的维度来堆叠。
     ///
     /// 注：张量型张量即使每个张量的形状不一致，也会按照`[1]`的形状进行堆叠。
+    // TODO: new_dim 为false时，`tensors`中每个张量的首个维度可以不一致，但后续维度必须一致，
+    // 否则返回None
     pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Option<Tensor> {
         if tensors.is_empty() {
             return None;

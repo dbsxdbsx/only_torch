@@ -1,5 +1,5 @@
 use crate::tensor::Tensor;
-use ndarray::{Array, Zip};
+use ndarray::{Array, Axis, Zip};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
@@ -68,16 +68,32 @@ impl Tensor {
         Tensor { data: ordered_data }
     }
 
-    /// 打乱张量中的元素顺序
-    pub fn shuffle(&self) -> Tensor {
-        let mut flat_data = self.data.clone().into_shape(self.data.len()).unwrap();
+      /// 打乱张量中的元素顺序
+      pub fn shuffle(&self, axis: Option<usize>) -> Tensor {
+        let mut shuffled_data = self.data.clone();
         let mut rng = thread_rng();
-        flat_data.as_slice_mut().unwrap().shuffle(&mut rng);
-        let shuffled_data = flat_data.into_shape(self.data.shape()).unwrap();
+
+        match axis {
+            Some(axis) => {
+                let axis = Axis(axis);
+                let mut chunks: Vec<_> = shuffled_data.axis_iter(axis).map(|c| c.to_owned()).collect();
+                chunks.shuffle(&mut rng);
+                let mut new_data = Array::zeros(shuffled_data.raw_dim());
+                for (i, chunk) in chunks.into_iter().enumerate() {
+                    let mut slice = new_data.index_axis_mut(axis, i);
+                    slice.assign(&chunk);
+                }
+                shuffled_data = new_data;
+            }
+            None => {
+                let mut flat_data = shuffled_data.into_shape(self.data.len()).unwrap();
+                flat_data.as_slice_mut().unwrap().shuffle(&mut rng);
+                shuffled_data = flat_data.into_shape(self.data.shape()).unwrap();
+            }
+        }
+
         Tensor {
             data: shuffled_data,
         }
     }
 }
-
-

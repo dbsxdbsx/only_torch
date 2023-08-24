@@ -1,7 +1,7 @@
 use crate::tensor::ops::others::DotSum;
 use crate::tensor::Tensor;
-use ndarray::Array;
 use ndarray::IxDyn;
+use ndarray::{Array, Axis};
 
 use super::TensorCheck;
 
@@ -276,12 +276,38 @@ fn test_order() {
 
 #[test]
 fn test_shuffle() {
-    let tensor = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 4]);
-    let shuffled_tensor = tensor.shuffle();
-    shuffled_tensor.print();
-    assert_eq!(tensor.shape(), shuffled_tensor.shape());
-    assert_ne!(tensor.data, shuffled_tensor.data);
+    let data = &[
+        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+        17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0,
+        32.0, 33.0, 34.0, 35.0, 36.0,
+    ];
+    let shape = &[6, 6];
+    let tensor = Tensor::new(data, shape);
+
+    // 仅打乱第一个维度（打乱后的形状仍一致，但数据不一致）
+    let shuffled_tensor_row = tensor.shuffle(Some(0));
+    assert_eq!(tensor.shape(), shuffled_tensor_row.shape());
+    assert_ne!(tensor.data, shuffled_tensor_row.data);
+    // 虽然打乱后整体数据是不一致的，但是该张量每行的数据总是能在另一个张量中的某行找到完全一致的数据
+    for row in shuffled_tensor_row.data.axis_iter(Axis(0)) {
+        assert!(tensor.data.axis_iter(Axis(0)).any(|r| r == row));
+    }
+
+    // 仅打乱第二个维度（打乱后的形状仍一致，但数据不一致）
+    let shuffled_tensor_col = tensor.shuffle(Some(1));
+    shuffled_tensor_col.print();
+    assert_eq!(tensor.shape(), shuffled_tensor_col.shape());
+    assert_ne!(tensor.data, shuffled_tensor_col.data);
+    // 虽然打乱后整体数据是不一致的，但是该张量每列的数据总是能在另一个张量中的某列找到完全一致的数据
+    for col in shuffled_tensor_col.data.axis_iter(Axis(1)) {
+        assert!(tensor.data.axis_iter(Axis(1)).any(|c| c == col));
+    }
+
+    // 全局打乱
+    let shuffled_tensor = tensor.shuffle(None);
+    assert_eq!(tensor.shape(), shuffled_tensor.shape()); // 打乱后的形状仍一致，
+    assert_ne!(tensor.data, shuffled_tensor.data); //  打乱后的但数据不一致
     let ordered_tensor = shuffled_tensor.order();
-    assert_eq!(tensor, ordered_tensor);
+    assert_eq!(tensor, ordered_tensor); // 重新排序后则应完全一致
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`order`和`shuffle`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
