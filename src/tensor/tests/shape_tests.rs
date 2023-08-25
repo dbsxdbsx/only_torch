@@ -51,39 +51,39 @@ fn test_is_scalar() {
 }
 
 //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓stack↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-
 #[test]
 fn test_stack_without_new_dim() {
     // 1.空张量的堆叠
-    let stacked = Tensor::stack(&[], false);
-    assert_eq!(stacked, Err(TensorError::EmptyList));
+    assert_panic!(Tensor::stack(&[], false), TensorError::EmptyList);
     // 2.标量的堆叠
     let t1 = Tensor::new(&[5.0], &[]);
     let t2 = Tensor::new(&[6.0], &[1]);
     let t3 = Tensor::new(&[7.0], &[1, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2, &t3], false).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2, &t3], false);
     assert_eq!(stacked, Tensor::new(&[5.0, 6.0, 7.0], &[3]));
 
     // 3.向量的堆叠
     let t1 = Tensor::new(&[1.0, 2.0], &[2]);
     let t2 = Tensor::new(&[3.0, 4.0], &[2]);
-    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]));
     // (不添加新维度的情况下，张量的第一个维度可以不同)
     let t1 = Tensor::new(&[1., 2.], &[2]);
     let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3]);
-    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 6.0, 7.0, 8.0], &[5]));
     // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
     let t1 = Tensor::new(&[1., 2.], &[2]);
     let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2], false);
-    assert_eq!(stacked, Err(TensorError::InconsitentShape));
+    assert_panic!(
+        Tensor::stack(&[&t1, &t2], false),
+        TensorError::InconsitentShape
+    );
 
     // 4.矩阵的堆叠
     let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
     let t2 = Tensor::new(&[7., 8., 9., 10., 11., 12.], &[2, 3]);
-    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(
         stacked,
         Tensor::new(
@@ -94,7 +94,7 @@ fn test_stack_without_new_dim() {
     // (不添加新维度的情况下，张量的第一个维度可以不同)
     let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
     let t2 = Tensor::new(&[7.0, 8.0, 9.0], &[1, 3]);
-    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(
         stacked,
         Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])
@@ -102,8 +102,10 @@ fn test_stack_without_new_dim() {
     // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
     let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
     let t2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0], &[1, 4]);
-    let stacked = Tensor::stack(&[&t1, &t2], false);
-    assert_eq!(stacked, Err(TensorError::InconsitentShape));
+    assert_panic!(
+        Tensor::stack(&[&t1, &t2], false),
+        TensorError::InconsitentShape
+    );
 
     // 5.高维张量的堆叠
     let t1 = Tensor::new(
@@ -114,7 +116,7 @@ fn test_stack_without_new_dim() {
         &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
         &[2, 3, 2, 1],
     );
-    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(
         stacked,
         Tensor::new(
@@ -128,7 +130,7 @@ fn test_stack_without_new_dim() {
     // (不添加新维度的情况下，张量的第一个维度可以不同)
     let t1 = Tensor::new(&[1., 2., 3.0, 4.0], &[2, 1, 2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2], false).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(
         stacked,
         Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,], &[4, 1, 2, 1])
@@ -136,38 +138,41 @@ fn test_stack_without_new_dim() {
     // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
     let t1 = Tensor::new(&[1., 2., 3.0, 4.0], &[2, 1, 2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2]);
-    let stacked = Tensor::stack(&[&t1, &t2], false);
-    assert_eq!(stacked, Err(TensorError::InconsitentShape));
+    assert_panic!(
+        Tensor::stack(&[&t1, &t2], false),
+        TensorError::InconsitentShape
+    );
 }
 
 #[test]
 fn test_stack_with_new_dim() {
     // 1. 空张量的堆叠
-    let stacked = Tensor::stack(&[], true);
-    assert_eq!(stacked, Err(TensorError::EmptyList));
+    assert_panic!(Tensor::stack(&[], true), TensorError::EmptyList);
 
     // 2. 标量的堆叠
     let t1 = Tensor::new(&[5.0], &[]);
     let t2 = Tensor::new(&[6.0], &[1]);
     let t3 = Tensor::new(&[7.0], &[1, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2, &t3], true).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2, &t3], true);
     assert_eq!(stacked, Tensor::new(&[5.0, 6.0, 7.0], &[3, 1]));
 
     // 3. 向量的堆叠
     let t1 = Tensor::new(&[1.0, 2.0], &[2]);
     let t2 = Tensor::new(&[3.0, 4.0], &[2]);
-    let stacked = Tensor::stack(&[&t1, &t2], true).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], true);
     assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
     // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
     let t1 = Tensor::new(&[1., 2.], &[2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0], &[3, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2], true);
-    assert_eq!(stacked, Err(TensorError::InconsitentShape));
+    assert_panic!(
+        Tensor::stack(&[&t1, &t2], true),
+        TensorError::InconsitentShape
+    );
 
     // 4. 矩阵的堆叠
     let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
     let t2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 3]);
-    let stacked = Tensor::stack(&[&t1, &t2], true).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], true);
     assert_eq!(
         stacked,
         Tensor::new(
@@ -178,8 +183,10 @@ fn test_stack_with_new_dim() {
     // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
     let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
     let t2 = Tensor::new(&[5.0, 6.0], &[2, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2], true);
-    assert_eq!(stacked, Err(TensorError::InconsitentShape));
+    assert_panic!(
+        Tensor::stack(&[&t1, &t2], true),
+        TensorError::InconsitentShape
+    );
 
     // 5.高维张量的堆叠
     let t1 = Tensor::new(
@@ -190,7 +197,7 @@ fn test_stack_with_new_dim() {
         &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
         &[2, 3, 2],
     );
-    let stacked = Tensor::stack(&[&t1, &t2], true).unwrap();
+    let stacked = Tensor::stack(&[&t1, &t2], true);
     assert_eq!(
         stacked,
         Tensor::new(
@@ -204,8 +211,10 @@ fn test_stack_with_new_dim() {
     // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
     let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1, 1]);
     let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2], true);
-    assert_eq!(stacked, Err(TensorError::InconsitentShape));
+    assert_panic!(
+        Tensor::stack(&[&t1, &t2], true),
+        TensorError::InconsitentShape
+    );
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 

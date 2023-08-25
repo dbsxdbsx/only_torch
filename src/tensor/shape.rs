@@ -45,10 +45,10 @@ impl Tensor {
     ///
     /// 当 `new_dim` 为 `true` 时，确保所有张量具有相同的形状。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len(), 1]` 的张量。
     /// 当 `new_dim` 为 `false`，确保所每个张量的第一个维度可以不同，但其余维度应相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
-    /// 其余情况返回None。
-    pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Result<Tensor, TensorError> {
+    /// 否则报错。
+    pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Tensor {
         if tensors.is_empty() {
-            return Err(TensorError::EmptyList);
+            panic!("{}", TensorError::EmptyList)
         }
 
         let all_scalars = tensors.iter().all(|t| t.is_scalar());
@@ -70,7 +70,7 @@ impl Tensor {
         };
 
         if !tensors.iter().all(|t| compatible_shapes(t)) {
-            return Err(TensorError::InconsitentShape);
+            panic!("{}", TensorError::InconsitentShape)
         }
 
         let data = tensors
@@ -94,7 +94,7 @@ impl Tensor {
             }
         };
 
-        Ok(Tensor::new(&data, &shape))
+        Tensor::new(&data, &shape)
     }
 
     pub fn squeeze(&self) -> Tensor {
