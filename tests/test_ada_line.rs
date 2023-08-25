@@ -27,6 +27,6 @@ fn test_ada_line() {
     train_set.shuffle_mut(Some(0));
 
     for i in 0..5 {
-        println!("{}", train_set.index(&[i]));
+        println!("{}", train_set.get(&[i]));
     }
 }
