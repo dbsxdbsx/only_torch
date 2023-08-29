@@ -1,16 +1,16 @@
-mod add_tests;
-mod div_tests;
-mod eq_tests;
-mod index_tests;
-mod mul_tests;
-mod new_tests;
-mod others_tests;
-mod shape_tests;
-mod sub_tests;
+mod add;
+mod div;
+mod eq;
+mod index;
+mod mul;
+mod new;
+mod others;
+mod shape;
+mod sub;
 
-mod print_tests;
+mod print;
 
-mod save_load_tests;
+mod save_load;
 
 #[derive(Debug)]
 struct TensorCheck {
