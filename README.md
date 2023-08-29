@@ -55,6 +55,7 @@
 - [PyToy--基于MatrixSlow的Python机器学习框架](https://github.com/ysj1173886760/PyToy)
 
 - [n-nalgebra](https://github.com/dimforge/nalgebra)
+（下面3个可以一起看）
 - [Rust-CNN](https://github.com/goldstraw/RustCNN)
 - [Rust-dfdx---支持cuda的Rust深度学习库](https://docs.rs/dfdx/latest/dfdx/)
 - [neuronika--纯Rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)

@@ -10,6 +10,8 @@ mod sub_tests;
 
 mod print_tests;
 
+mod save_load_tests;
+
 #[derive(Debug)]
 struct TensorCheck {
     pub shape: Vec<usize>,

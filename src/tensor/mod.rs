@@ -1,8 +1,12 @@
+use std::fs::File;
+use std::io::{Read, Write};
+
 use ndarray::{Array, IxDyn};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 
 use crate::errors::{ComparisonOperator, TensorError};
+use serde::{Deserialize, Serialize};
 
 mod ops {
     pub mod add;
@@ -22,7 +26,7 @@ pub mod tests;
 /// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。
 /// 注：只要通Tensor初始化的都是张量（即使标量也是张量）；
 /// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
     data: Array<f32, IxDyn>,
 }
@@ -107,5 +111,21 @@ impl Tensor {
 
     fn generate_index_array(&self, shape: &[usize]) -> Vec<usize> {
         shape.iter().map(|_| 0).collect()
+    }
+}
+
+// 保存和加载张量
+impl Tensor {
+    // 将单个Tensor写入文件
+    pub fn save_to_disk(&self, file: &mut File) {
+        let serialized_data = bincode::serialize(&self.data).unwrap();
+        file.write_all(&serialized_data).unwrap();
+    }
+    // 从文件加载单个Tensor
+    pub fn load_from_disk(file: &mut File) -> Tensor {
+        let mut serialized_data = Vec::new();
+        file.read_to_end(&mut serialized_data).unwrap();
+        let data: Array<f32, IxDyn> = bincode::deserialize(&serialized_data).unwrap();
+        Tensor { data }
     }
 }
