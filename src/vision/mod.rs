@@ -1,5 +1,5 @@
 use crate::tensor::Tensor;
-use crate::utils::dynamic_image_trait::TensorTraitForDynamicImage;
+use crate::utils::dynamic_image_trait::TraitForDynamicImage;
 use image::{GenericImageView, GrayImage, RgbImage};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]

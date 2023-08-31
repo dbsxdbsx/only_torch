@@ -1,11 +1,12 @@
 use crate::tensor::Tensor;
-use image::{DynamicImage, GenericImageView};
+use image::{open, DynamicImage, GenericImageView, RgbaImage};
 
-pub trait TensorTraitForDynamicImage {
+pub trait TraitForDynamicImage {
     fn to_tensor(&self) -> Result<Tensor, String>;
 }
 
-impl TensorTraitForDynamicImage for DynamicImage {
+impl TraitForDynamicImage for DynamicImage {
+    // TODO: test
     fn to_tensor(&self) -> Result<Tensor, String> {
         let channels = match self.color() {
             image::ColorType::L8 => 1,
@@ -15,12 +16,12 @@ impl TensorTraitForDynamicImage for DynamicImage {
         };
 
         let (width, height) = self.dimensions();
-        let tensor = Tensor::new(&[], &[height as usize, width as usize, channels]);
+        let mut tensor = Tensor::new(&[], &[height as usize, width as usize, channels]);
 
         for y in 0..height {
             for x in 0..width {
-                let _pixel = self.get_pixel(x, y);
-                // // TODO:
+                let pixel = self.get_pixel(x, y);
+                // TODO:
                 // tensor[[y as usize, x as usize, 0]] = pixel[0] as f32;
 
                 // if channels >= 3 {

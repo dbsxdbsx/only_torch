@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 
-use ndarray::{Array, ArrayBase, ArrayViewD, Dim, IxDyn, IxDynImpl, ViewRepr};
+use ndarray::{Array, ArrayBase, ArrayViewD, ArrayViewMutD, Dim, IxDyn, IxDynImpl, ViewRepr};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 
@@ -33,12 +33,13 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    // TODO: delete pub fn data(&self) -> &Array<f32, IxDyn> {
-    //     &self.data
-    // }
-
-    pub fn view(&self) -> ArrayBase<ViewRepr<&f32>, Dim<IxDynImpl>> {
+    pub fn view(&self) -> ArrayViewD<'_, f32> {
         ArrayViewD::from_shape(self.shape(), self.data.as_slice().unwrap()).unwrap()
+    }
+    pub fn view_mut(&mut self) -> ArrayViewMutD<'_, f32> {
+        let shape = self.shape().to_owned();
+        let slice_mut = self.data.as_slice_mut();
+        ArrayViewMutD::from_shape(shape, slice_mut.unwrap()).unwrap()
     }
 
     /// 创建一个张量，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
