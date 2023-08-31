@@ -1,13 +1,13 @@
 use std::fs::File;
 use std::io::{Read, Write};
 
-use ndarray::{Array, IxDyn};
+use ndarray::{Array, ArrayBase, ArrayViewD, Dim, IxDyn, IxDynImpl, ViewRepr};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 
-use crate::errors::{ComparisonOperator, TensorError};
 use serde::{Deserialize, Serialize};
 
+use crate::errors::{ComparisonOperator, TensorError};
 mod ops {
     pub mod add;
     pub mod div;
@@ -17,6 +17,7 @@ mod ops {
     pub mod sub;
 }
 
+pub mod image;
 mod index;
 mod print;
 mod shape;
@@ -24,14 +25,22 @@ mod shape;
 #[cfg(test)]
 pub mod tests;
 /// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。
-/// 注：只要通Tensor初始化的都是张量（即使标量也是张量）；
+/// 注：通过Tensor初始化的都是张量（即使标量也是张量）；
 /// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
-    data: Array<f32, IxDyn>,
+    pub data: Array<f32, IxDyn>,
 }
 
 impl Tensor {
+    // TODO: delete pub fn data(&self) -> &Array<f32, IxDyn> {
+    //     &self.data
+    // }
+
+    pub fn view(&self) -> ArrayBase<ViewRepr<&f32>, Dim<IxDynImpl>> {
+        ArrayViewD::from_shape(self.shape(), self.data.as_slice().unwrap()).unwrap()
+    }
+
     /// 创建一个张量，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，`shape`可以是[n,m]；
