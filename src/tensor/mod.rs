@@ -43,6 +43,20 @@ impl Tensor {
         Tensor { data }
     }
 
+    /// 创建一个空（未初始化）的张量---元素值随机，请务必之后手动赋予每个元素具体数值后再使用
+    /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
+    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
+    /// 若为矩阵，`shape`可以是[n,m]；
+    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
+    pub fn new_empty(shape: &[usize]) -> Tensor {
+        let data = Array::uninit(IxDyn(shape));
+        unsafe {
+            Tensor {
+                data: data.assume_init(),
+            }
+        }
+    }
+
     /// 创建一个随机张量，其值在[min, max]的闭区间，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，`shape`可以是[n,m]；

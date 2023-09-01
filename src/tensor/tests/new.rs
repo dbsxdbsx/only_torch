@@ -4,6 +4,28 @@ use ndarray::Array;
 use ndarray::IxDyn;
 
 #[test]
+fn test_new_empty() {
+    let shapes: &[&[usize]] = &[
+        &[],
+        &[1],
+        &[1, 1],
+        &[1, 1, 1],
+        &[2],
+        &[2, 1],
+        &[1, 2],
+        &[2, 3],
+        &[2, 3, 1],
+        &[2, 1, 3],
+        &[2, 3, 4],
+        &[2, 3, 4, 5],
+    ];
+    for shape in shapes {
+        let tensor = Tensor::new_empty(shape);
+        assert_eq!(tensor.shape(), *shape);
+    }
+}
+
+#[test]
 fn test_new_scalar() {
     let tensor = Tensor::new(&[1.], &[]);
     assert_eq!(tensor.shape(), vec![]);

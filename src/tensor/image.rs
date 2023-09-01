@@ -1,19 +1,20 @@
 use super::Tensor;
 use crate::utils::traits::float::FloatTrait;
-use crate::vision::ImageType;
-use image::{DynamicImage, GrayImage, ImageBuffer, RgbImage};
+use crate::vision::Vision;
+use image::{ColorType, DynamicImage, GrayImage, ImageBuffer, RgbImage};
 
 impl Tensor {
-    pub fn is_image(&self) -> Result<ImageType, String> {
+    pub fn is_image(&self) -> Result<ColorType, String> {
         let dims = self.dims();
         if !(2..=3).contains(&dims) {
             return Err("图像张量应该仅有2或3个维度。".to_string());
         }
         let channels = if dims == 2 { 0 } else { self.shape()[2] };
+        // TODO: 目前的判断仍不严谨
         let image_type = match channels {
-            0 | 1 => ImageType::L8,
-            3 => ImageType::Rgb8,
-            4 => ImageType::RGBA,
+            0 | 1 => ColorType::L8,
+            3 => ColorType::Rgb8,
+            4 => ColorType::Rgba8,
             _ => return Err("图像张量的通道数只可能是0、1、3或4。".to_string()),
         };
 
@@ -40,9 +41,9 @@ impl Tensor {
     pub fn to_image(&self) -> Result<DynamicImage, String> {
         let image_type = self.is_image()?;
         match image_type {
-            ImageType::L8 => Ok(DynamicImage::ImageLuma8(self.to_image_buff_for_luma8())),
-            ImageType::Rgb8 => Ok(DynamicImage::ImageRgb8(self.to_image_buff_for_rgb8())),
-            ImageType::RGBA => todo!(),
+            ColorType::L8 => Ok(DynamicImage::ImageLuma8(self.to_image_buff_for_luma8())),
+            ColorType::Rgb8 => Ok(DynamicImage::ImageRgb8(self.to_image_buff_for_rgb8())),
+            _ => todo!(),
         }
     }
 
@@ -88,9 +89,20 @@ impl Tensor {
         let height = shape[0];
         let width = shape[1];
         match image_type {
-            ImageType::L8 => Ok((height, width)),
-            ImageType::Rgb8 => Ok((height, width)),
-            ImageType::RGBA => todo!(),
+            ColorType::L8 => Ok((height, width)),
+            ColorType::Rgb8 => Ok((height, width)),
+            _ => todo!(),
         }
+    }
+}
+
+// 这里是一些可以直接用于Tensor实例的Vision静态方法
+impl Tensor {
+    pub fn to_luma(&self) -> Result<Tensor, String> {
+        Vision::to_luma(self)
+    }
+
+    pub fn to_luma_mut(&mut self) {
+        *self = Vision::to_luma(self).unwrap();
     }
 }

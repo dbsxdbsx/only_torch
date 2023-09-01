@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2023-08-30 19:16:48
  * @LastEditors  : 老董
- * @LastEditTime : 2023-09-01 19:17:35
+ * @LastEditTime : 2023-09-01 19:31:21
  * @Description  : 本模块提供计算机视觉相关的功能。
  *                 在本模块中，不严谨地说：
  *                 1. 所谓的image/图像是指RGB(A)格式的图像；
@@ -11,18 +11,10 @@
 
 use crate::tensor::Tensor;
 use crate::utils::traits::dynamic_image::TraitForDynamicImage;
-use image::{DynamicImage, GenericImageView};
+use image::{ColorType, DynamicImage, GenericImageView};
 
 #[cfg(test)]
 mod tests;
-
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-// TODO: 这个类需要吗？
-pub enum ImageType {
-    L8,   // 单通道或者只有高（行）、宽（列）2个维度的图像张量
-    Rgb8, // 3通道的图像张量
-    RGBA, // 4通道的图像张量
-}
 
 pub struct Vision {
     // ...
@@ -57,15 +49,15 @@ impl Vision {
     pub fn save_image(tensor: &Tensor, file_path: &str) -> Result<(), String> {
         let image_type = tensor.is_image()?;
         match image_type {
-            ImageType::L8 => {
+            ColorType::L8 => {
                 let imgbuf = tensor.to_image_buff_for_luma8();
                 imgbuf.save(file_path).map_err(|e| e.to_string())?;
             }
-            ImageType::Rgb8 => {
+            ColorType::Rgb8 => {
                 let imgbuf = tensor.to_image_buff_for_rgb8();
                 imgbuf.save(file_path).map_err(|e| e.to_string())?;
             }
-            ImageType::RGBA => todo!(),
+            _ => todo!(),
         }
         Ok(())
     }
@@ -85,8 +77,8 @@ impl Vision {
         // way2: 直接在Tensor上运算
         // match input_tensor.is_image() {
         //     Ok(t) => match t {
-        //         ImageType::SingleOrNoneChannel => Ok(input_tensor.clone()), // todo: 暂时把所有单通道图像张量都当作是灰度图
-        //         ImageType::RGB => {
+        //         ColorType::SingleOrNoneChannel => Ok(input_tensor.clone()), // todo: 暂时把所有单通道图像张量都当作是灰度图
+        //         ColorType::RGB => {
         //             let height = input_tensor.shape()[0];
         //             let width = input_tensor.shape()[1];
         //             let input_view = input_tensor.view();
@@ -103,7 +95,7 @@ impl Vision {
         //             }
         //             Ok(Tensor::new(&luma_data, &[height, width]))
         //         }
-        //         ImageType::RGBA => todo!(),
+        //         _ => todo!(),
         //     },
         //     Err(e) => Err(e),
         // }
@@ -152,6 +144,7 @@ impl Vision {
     }
 }
 // TODO:
+//  show_image()
 //     pub fn blur_image(&self, image: &DynamicImage) -> DynamicImage {
 //         // 模糊图像
 //     }
