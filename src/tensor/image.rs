@@ -1,18 +1,7 @@
-/*
- * @Author       : 老董
- * @Date         : 2023-08-30 19:16:48
- * @LastEditors  : 老董
- * @LastEditTime : 2023-08-31 12:07:01
- * @Description  : 本模块提供计算机视觉相关的功能。
- *                 在本模块中，不严谨地说：
- *                 1. 所谓的image/图像是指RGB(A)格式的图像；
- *                 2. “灰度”（图）等同于英文中luma、luminance、grey、gray的概念。
- */
-
 use super::Tensor;
-use crate::utils::float_trait::FloatTrait;
+use crate::utils::traits::float::FloatTrait;
 use crate::vision::ImageType;
-use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel};
+use image::{DynamicImage, ImageBuffer, Pixel};
 
 // TODO: unit test
 impl Tensor {
@@ -89,6 +78,19 @@ impl Tensor {
                 }
                 Ok(imgbuf)
             }
+            ImageType::RGBA => todo!(),
+        }
+    }
+
+    /// 确定是图像的情况下，返回该图像的高度和宽度
+    pub fn get_image_size(&self) -> Result<(usize, usize), String> {
+        let image_type = self.is_image()?;
+        let shape = self.shape();
+        let height = shape[0];
+        let width = shape[1];
+        match image_type {
+            ImageType::SingleOrNoneChannel => Ok((height, width)),
+            ImageType::RGB => Ok((height, width)),
             ImageType::RGBA => todo!(),
         }
     }

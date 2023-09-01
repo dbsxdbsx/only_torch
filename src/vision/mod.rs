@@ -1,6 +1,20 @@
+/*
+ * @Author       : 老董
+ * @Date         : 2023-08-30 19:16:48
+ * @LastEditors  : 老董
+ * @LastEditTime : 2023-09-01 14:02:01
+ * @Description  : 本模块提供计算机视觉相关的功能。
+ *                 在本模块中，不严谨地说：
+ *                 1. 所谓的image/图像是指RGB(A)格式的图像；
+ *                 2. “灰度”（图）等同于英文中luma、luminance、grey、gray的概念。
+ */
+
 use crate::tensor::Tensor;
-use crate::utils::dynamic_image_trait::TraitForDynamicImage;
+use crate::utils::traits::dynamic_image::TraitForDynamicImage;
 use image::{GenericImageView, GrayImage, RgbImage};
+
+#[cfg(test)]
+mod tests;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum ImageType {
@@ -46,6 +60,7 @@ impl Vision {
         let width = shape[1];
 
         let view = tensor.view();
+        // TODO：use Tensor .to_image()
         match image_type {
             ImageType::SingleOrNoneChannel => {
                 let mut imgbuf: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
@@ -77,6 +92,11 @@ impl Vision {
         Ok(())
     }
 
+    /// 确定是图像的情况下，返回该图像的灰度图， 否则返回错误信息
+    /// * `input_tensor` - 输入张量
+    ///
+    /// 注：如果输入张量是单通道的图像张量，则直接返回该张量。
+    /// 这里用英文`luma`指代“灰度”（图），也大致等价于`luminance`、`grey`、`gray`。
     pub fn to_luma(input_tensor: &Tensor) -> Result<Tensor, String> {
         match input_tensor.is_image() {
             Ok(t) => match t {
@@ -86,13 +106,12 @@ impl Vision {
                     let width = input_tensor.shape()[1];
                     let input_view = input_tensor.view();
                     let mut luma_data = Vec::new();
-                    // 多通道的图像转化为灰度图，需依据压缩到单通道
+                    // 多通道的图像转化为灰度图，需压缩到单通道
                     for y in 0..height {
                         for x in 0..width {
                             let r = input_view[[y, x, 0]];
                             let g = input_view[[y, x, 1]];
                             let b = input_view[[y, x, 2]];
-
                             let luma = 0.299 * r + 0.587 * g + 0.114 * b;
                             luma_data.push(luma.round());
                         }
@@ -105,121 +124,46 @@ impl Vision {
         }
     }
 
-    // TODO：reshape
     /// 调整图像大小
     /// * `image` - 原始图像
     /// * `width` - 调整后的宽度
     /// * `height` - 调整后的高度
-    /// * `preserve_aspect_ratio` - 是否保持原始宽高比
+    /// * `crop` - `true`则执行基于中心的裁剪，`false`则执行基于中心的缩放
+    ///
+    /// 这里特意用`resize`而不是`reshape`，只为强调其只会改变尺寸，而不会改变张量本身的维度。
     pub fn resize_image(
         image: &Tensor,
-        width: u32,
-        height: u32,
-        preserve_aspect_ratio: bool,
+        height: usize,
+        width: usize,
+        crop: bool,
     ) -> Result<Tensor, String> {
         let image = image.to_image()?;
-        if preserve_aspect_ratio {
-            // TODO: 需要另外计算高宽？
-            // 计算调整后的大小,保持原始宽高比
-            let (width, height) =
-                Self::get_resized_dims(image.width(), image.height(), width, height);
+        if crop {
+            assert!(
+                height <= image.height() as usize,
+                "裁剪图像：新高度必须小于原始高度。"
+            );
+            assert!(
+                width <= image.width() as usize,
+                "裁剪图像：新宽度必须小于原始宽度。"
+            );
             image
-                .resize_exact(width, height, image::imageops::FilterType::Triangle)
+                .crop_imm(
+                    (image.width() - width as u32) / 2,
+                    (image.height() - height as u32) / 2,
+                    width as u32,
+                    height as u32,
+                )
                 .to_tensor()
         } else {
-            // 不保持原始宽高比,强制调整为指定大小
             image
-                .resize(width, height, image::imageops::FilterType::Triangle)
+                .resize_exact(
+                    width as u32,
+                    height as u32,
+                    image::imageops::FilterType::Triangle,
+                )
                 .to_tensor()
         }
-    }
-
-    /// 计算保持原始宽高比的调整后大小
-    fn get_resized_dims(
-        original_width: u32,
-        original_height: u32,
-        width: u32,
-        height: u32,
-    ) -> (u32, u32) {
-        let original_ratio = original_width as f32 / original_height as f32;
-
-        if original_ratio > width as f32 / height as f32 {
-            // 根据高度调整宽度
-            let resized_width = (height as f32 * original_ratio) as u32;
-            (resized_width, height)
-        } else {
-            // 根据宽度调整高度
-            let resized_height = (width as f32 / original_ratio) as u32;
-            (width, resized_height)
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_save_load_image() {
-        test_load_save_color_image();
-        test_load_save_luma_image();
-    }
-
-    fn test_load_save_color_image() {
-        // 1.测试载入、保存本地的png图片
-        let loaded_image = Vision::load_image("./assets/lenna.png").unwrap();
-        assert_eq!(loaded_image.shape(), &[512, 512, 3]);
-        assert_eq!(loaded_image.is_image().unwrap(), ImageType::RGB);
-        // (再次保存载入检查一致性)
-        Vision::save_image(&loaded_image, "./assets/lenna_copy.png").unwrap();
-        let new_load_image = Vision::load_image("./assets/lenna_copy.png").unwrap();
-        assert_eq!(loaded_image, new_load_image);
-
-        // 2.测试保存、载入为jpg图片
-        Vision::save_image(&loaded_image, "./assets/lenna.jpg").unwrap();
-        let loaded_image = Vision::load_image("./assets/lenna.jpg").unwrap();
-        // (由于jpg是有损压损，故只检查形状，不检查数据一致性)
-        assert_eq!(loaded_image.shape(), &[512, 512, 3]);
-        assert_eq!(loaded_image.is_image().unwrap(), ImageType::RGB);
-
-        // TODO: 3.测试rgba
-        // TODO: 4.测试lumaA
-    }
-
-    fn test_load_save_luma_image() {
-        // 1.测试载入本地的png彩色图片，并转化为灰度图
-        let image = Vision::load_image("./assets/lenna.png").unwrap();
-        let luma_image = Vision::to_luma(&image).unwrap();
-        assert_eq!(luma_image.shape(), &[512, 512]);
-        assert_eq!(
-            luma_image.is_image().unwrap(),
-            ImageType::SingleOrNoneChannel
-        );
-        // (再次保存载入检查一致性)
-        Vision::save_image(&luma_image, "./assets/lenna_luma.png").unwrap();
-        let loaded_image = Vision::load_image("./assets/lenna_luma.png").unwrap();
-        assert_eq!(luma_image, loaded_image);
-
-        // 2.测试载入本地的jpg彩色图片，并转化为灰度图
-        let image = Vision::load_image("./assets/lenna.jpg").unwrap();
-        let luma_image = Vision::to_luma(&image).unwrap();
-        assert_eq!(luma_image.shape(), &[512, 512]);
-        assert_eq!(
-            luma_image.is_image().unwrap(),
-            ImageType::SingleOrNoneChannel
-        );
-        // (再次保存载入检查一致性)
-        Vision::save_image(&luma_image, "./assets/lenna_luma.jpg").unwrap();
-        let loaded_image = Vision::load_image("./assets/lenna_luma.jpg").unwrap();
-        // (由于jpg是有损压损，故只检查形状，不检查数据一致性)
-        assert_eq!(loaded_image.shape(), &[512, 512]);
-        assert_eq!(
-            loaded_image.is_image().unwrap(),
-            ImageType::SingleOrNoneChannel
-        );
-
-        // TODO: 3.测试rgba
-        // TODO: 4.测试lumaA
     }
 }
 

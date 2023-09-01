@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 
-use ndarray::{Array, ArrayBase, ArrayViewD, ArrayViewMutD, Dim, IxDyn, IxDynImpl, ViewRepr};
+use ndarray::{Array, IxDyn};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 
@@ -23,7 +23,7 @@ mod print;
 mod shape;
 
 #[cfg(test)]
-pub mod tests;
+mod tests;
 /// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。
 /// 注：通过Tensor初始化的都是张量（即使标量也是张量）；
 /// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
@@ -33,15 +33,6 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    pub fn view(&self) -> ArrayViewD<'_, f32> {
-        ArrayViewD::from_shape(self.shape(), self.data.as_slice().unwrap()).unwrap()
-    }
-    pub fn view_mut(&mut self) -> ArrayViewMutD<'_, f32> {
-        let shape = self.shape().to_owned();
-        let slice_mut = self.data.as_slice_mut();
-        ArrayViewMutD::from_shape(shape, slice_mut.unwrap()).unwrap()
-    }
-
     /// 创建一个张量，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，`shape`可以是[n,m]；
