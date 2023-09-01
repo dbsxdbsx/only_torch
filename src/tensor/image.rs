@@ -1,9 +1,8 @@
 use super::Tensor;
 use crate::utils::traits::float::FloatTrait;
 use crate::vision::ImageType;
-use image::{DynamicImage, ImageBuffer, Pixel};
+use image::{DynamicImage, GrayImage, ImageBuffer, Pixel, RgbImage};
 
-// TODO: unit test
 impl Tensor {
     pub fn is_image(&self) -> Result<ImageType, String> {
         let dims = self.dims();
@@ -12,8 +11,8 @@ impl Tensor {
         }
         let channels = if dims == 2 { 0 } else { self.shape()[2] };
         let image_type = match channels {
-            0 | 1 => ImageType::SingleOrNoneChannel,
-            3 => ImageType::RGB,
+            0 | 1 => ImageType::L8,
+            3 => ImageType::Rgb8,
             4 => ImageType::RGBA,
             _ => return Err("图像张量的通道数只可能是0、1、3或4。".to_string()),
         };
@@ -37,10 +36,13 @@ impl Tensor {
         Ok(image_type)
     }
 
+    // TODO: unit test
     /// 将张量转换为Image库的`DynamicImage`格式
     pub fn to_image(&self) -> Result<DynamicImage, String> {
         let img = self.to_image_buff()?;
+        
         Ok(DynamicImage::ImageRgb8(img))
+        // Ok(DynamicImage::ImageLuma8(img))
     }
 
     /// 将张量转换为Image库的`ImageBuffer`格式
@@ -55,25 +57,46 @@ impl Tensor {
 
         let view = self.view();
         match image_type {
-            ImageType::SingleOrNoneChannel => {
-                let mut imgbuf = ImageBuffer::new(width as u32, height as u32);
+            ImageType::L8 => {
+                // let mut imgbuf = ImageBuffer::new(width as u32, height as u32);
+                // for y in 0..height {
+                //     for x in 0..width {
+                //         let pixel = view[[y, x]] as u8;
+                //         let px = P::from_channels(pixel, pixel, pixel, 0); // 传入相同的值到RGB通道
+                //         imgbuf.put_pixel(x as u32, y as u32, px);
+                //     }
+                // }
+                // Ok(imgbuf)
+
+                let mut imgbuf: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
+                    GrayImage::new(width as u32, height as u32);
                 for y in 0..height {
                     for x in 0..width {
                         let pixel = view[[y, x]] as u8;
-                        let px = P::from_channels(pixel, pixel, pixel, 0); // 传入相同的值到RGB通道
-                        imgbuf.put_pixel(x as u32, y as u32, px);
+                        imgbuf.put_pixel(x as u32, y as u32, image::Luma([pixel]));
                     }
                 }
                 Ok(imgbuf)
             }
-            ImageType::RGB => {
-                let mut imgbuf = ImageBuffer::new(width as u32, height as u32);
+            ImageType::Rgb8 => {
+                // let mut imgbuf = ImageBuffer::new(width as u32, height as u32);
+                // for y in 0..height {
+                //     for x in 0..width {
+                //         let r = view[[y, x, 0]] as u8;
+                //         let g = view[[y, x, 1]] as u8;
+                //         let b = view[[y, x, 2]] as u8;
+                //         imgbuf.put_pixel(x as u32, y as u32, P::from_channels(r, g, b, 0));
+                //     }
+                // }
+                // Ok(imgbuf)
+                let mut imgbuf: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
+                    RgbImage::new(width as u32, height as u32);
                 for y in 0..height {
                     for x in 0..width {
                         let r = view[[y, x, 0]] as u8;
                         let g = view[[y, x, 1]] as u8;
                         let b = view[[y, x, 2]] as u8;
-                        imgbuf.put_pixel(x as u32, y as u32, P::from_channels(r, g, b, 0));
+                        imgbuf.put_pixel(x as u32, y as u32, image::Rgb([r, g, b]));
                     }
                 }
                 Ok(imgbuf)
@@ -89,8 +112,8 @@ impl Tensor {
         let height = shape[0];
         let width = shape[1];
         match image_type {
-            ImageType::SingleOrNoneChannel => Ok((height, width)),
-            ImageType::RGB => Ok((height, width)),
+            ImageType::L8 => Ok((height, width)),
+            ImageType::Rgb8 => Ok((height, width)),
             ImageType::RGBA => todo!(),
         }
     }

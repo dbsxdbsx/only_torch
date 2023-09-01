@@ -2,18 +2,16 @@ use crate::tensor::Tensor;
 use image::{DynamicImage, GenericImageView};
 
 pub trait TraitForDynamicImage {
+    fn get_channel_len(&self) -> usize;
     fn to_tensor(&self) -> Result<Tensor, String>;
 }
 
 impl TraitForDynamicImage for DynamicImage {
-    /// 将Image库的`DynamicImage`格式转换为张量
+    fn get_channel_len(&self) -> usize {
+        self.color().channel_count() as usize
+    }
     fn to_tensor(&self) -> Result<Tensor, String> {
-        let channels = match self.color() {
-            image::ColorType::L8 => 1,
-            image::ColorType::Rgb8 => 3,
-            image::ColorType::Rgba8 => 4,
-            _ => return Err(format!("不支持的图像类型:`{:?}`。", self.color())),
-        };
+        let channels = self.get_channel_len();
         let width = self.dimensions().0 as usize;
         let height = self.dimensions().1 as usize;
         let init_data = vec![0.0; width * height * channels];
@@ -33,7 +31,7 @@ impl TraitForDynamicImage for DynamicImage {
                 }
             }
         }
-
+        tensor.squeeze_mut();
         Ok(tensor)
     }
 }

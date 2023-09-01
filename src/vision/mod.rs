@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2023-08-30 19:16:48
  * @LastEditors  : 老董
- * @LastEditTime : 2023-09-01 14:02:01
+ * @LastEditTime : 2023-09-01 17:42:04
  * @Description  : 本模块提供计算机视觉相关的功能。
  *                 在本模块中，不严谨地说：
  *                 1. 所谓的image/图像是指RGB(A)格式的图像；
@@ -11,16 +11,17 @@
 
 use crate::tensor::Tensor;
 use crate::utils::traits::dynamic_image::TraitForDynamicImage;
-use image::{GenericImageView, GrayImage, RgbImage};
+use image::{DynamicImage, GenericImageView, GrayImage, RgbImage};
 
 #[cfg(test)]
 mod tests;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
+// TODO: 这个类需要吗？
 pub enum ImageType {
-    SingleOrNoneChannel, // 单通道或者只有高（行）、宽（列）2个维度的图像张量
-    RGB,                 // 3通道的图像张量
-    RGBA,                // 4通道的图像张量
+    L8,   // 单通道或者只有高（行）、宽（列）2个维度的图像张量
+    Rgb8, // 3通道的图像张量
+    RGBA, // 4通道的图像张量
 }
 
 pub struct Vision {
@@ -62,7 +63,7 @@ impl Vision {
         let view = tensor.view();
         // TODO：use Tensor .to_image()
         match image_type {
-            ImageType::SingleOrNoneChannel => {
+            ImageType::L8 => {
                 let mut imgbuf: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
                     GrayImage::new(width as u32, height as u32);
                 for y in 0..height {
@@ -73,7 +74,7 @@ impl Vision {
                 }
                 imgbuf.save(file_path).map_err(|e| e.to_string())?;
             }
-            ImageType::RGB => {
+            ImageType::Rgb8 => {
                 let mut imgbuf: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
                     RgbImage::new(width as u32, height as u32);
                 for y in 0..height {
@@ -93,35 +94,42 @@ impl Vision {
     }
 
     /// 确定是图像的情况下，返回该图像的灰度图， 否则返回错误信息
-    /// * `input_tensor` - 输入张量
+    /// * `tensor` - 输入张量
     ///
     /// 注：如果输入张量是单通道的图像张量，则直接返回该张量。
     /// 这里用英文`luma`指代“灰度”（图），也大致等价于`luminance`、`grey`、`gray`。
-    pub fn to_luma(input_tensor: &Tensor) -> Result<Tensor, String> {
-        match input_tensor.is_image() {
-            Ok(t) => match t {
-                ImageType::SingleOrNoneChannel => Ok(input_tensor.clone()), // todo: 暂时把所有单通道图像张量都当作是灰度图
-                ImageType::RGB => {
-                    let height = input_tensor.shape()[0];
-                    let width = input_tensor.shape()[1];
-                    let input_view = input_tensor.view();
-                    let mut luma_data = Vec::new();
-                    // 多通道的图像转化为灰度图，需压缩到单通道
-                    for y in 0..height {
-                        for x in 0..width {
-                            let r = input_view[[y, x, 0]];
-                            let g = input_view[[y, x, 1]];
-                            let b = input_view[[y, x, 2]];
-                            let luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                            luma_data.push(luma.round());
-                        }
-                    }
-                    Ok(Tensor::new(&luma_data, &[height, width]))
-                }
-                ImageType::RGBA => todo!(),
-            },
-            Err(e) => Err(e),
-        }
+    pub fn to_luma(tensor: &Tensor) -> Result<Tensor, String> {
+        // way1: 转成DynamicImage后调用自身的luma算法，再转回Tensor
+        let image = tensor.to_image()?;
+        let luma = image.to_luma8();
+        // convert to tensor
+        let image = DynamicImage::ImageLuma8(luma);
+        image.to_tensor()
+        // way2: 直接在Tensor上运算
+        // match input_tensor.is_image() {
+        //     Ok(t) => match t {
+        //         ImageType::SingleOrNoneChannel => Ok(input_tensor.clone()), // todo: 暂时把所有单通道图像张量都当作是灰度图
+        //         ImageType::RGB => {
+        //             let height = input_tensor.shape()[0];
+        //             let width = input_tensor.shape()[1];
+        //             let input_view = input_tensor.view();
+        //             let mut luma_data = Vec::new();
+        //             // 多通道的图像转化为灰度图，需压缩到单通道
+        //             for y in 0..height {
+        //                 for x in 0..width {
+        //                     let r = input_view[[y, x, 0]];
+        //                     let g = input_view[[y, x, 1]];
+        //                     let b = input_view[[y, x, 2]];
+        //                     let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+        //                     luma_data.push(luma.round());
+        //                 }
+        //             }
+        //             Ok(Tensor::new(&luma_data, &[height, width]))
+        //         }
+        //         ImageType::RGBA => todo!(),
+        //     },
+        //     Err(e) => Err(e),
+        // }
     }
 
     /// 调整图像大小
@@ -166,7 +174,7 @@ impl Vision {
         }
     }
 }
-
+// TODO:
 //     pub fn blur_image(&self, image: &DynamicImage) -> DynamicImage {
 //         // 模糊图像
 //     }
