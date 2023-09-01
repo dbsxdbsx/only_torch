@@ -1,7 +1,7 @@
 use super::Tensor;
 use crate::utils::traits::float::FloatTrait;
 use crate::vision::ImageType;
-use image::{DynamicImage, GrayImage, ImageBuffer, Pixel, RgbImage};
+use image::{DynamicImage, GrayImage, ImageBuffer, RgbImage};
 
 impl Tensor {
     pub fn is_image(&self) -> Result<ImageType, String> {
@@ -36,73 +36,49 @@ impl Tensor {
         Ok(image_type)
     }
 
-    // TODO: unit test
     /// 将张量转换为Image库的`DynamicImage`格式
     pub fn to_image(&self) -> Result<DynamicImage, String> {
-        let img = self.to_image_buff()?;
-        
-        Ok(DynamicImage::ImageRgb8(img))
-        // Ok(DynamicImage::ImageLuma8(img))
+        let image_type = self.is_image()?;
+        match image_type {
+            ImageType::L8 => Ok(DynamicImage::ImageLuma8(self.to_image_buff_for_luma8())),
+            ImageType::Rgb8 => Ok(DynamicImage::ImageRgb8(self.to_image_buff_for_rgb8())),
+            ImageType::RGBA => todo!(),
+        }
     }
 
-    /// 将张量转换为Image库的`ImageBuffer`格式
-    pub fn to_image_buff<P>(&self) -> Result<ImageBuffer<P, Vec<u8>>, String>
-    where
-        P: Pixel<Subpixel = u8> + 'static,
-    {
-        let image_type = self.is_image()?;
+    pub fn to_image_buff_for_rgb8(&self) -> ImageBuffer<image::Rgb<u8>, Vec<u8>> {
         let shape = self.shape();
         let height = shape[0];
         let width = shape[1];
-
         let view = self.view();
-        match image_type {
-            ImageType::L8 => {
-                // let mut imgbuf = ImageBuffer::new(width as u32, height as u32);
-                // for y in 0..height {
-                //     for x in 0..width {
-                //         let pixel = view[[y, x]] as u8;
-                //         let px = P::from_channels(pixel, pixel, pixel, 0); // 传入相同的值到RGB通道
-                //         imgbuf.put_pixel(x as u32, y as u32, px);
-                //     }
-                // }
-                // Ok(imgbuf)
 
-                let mut imgbuf: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
-                    GrayImage::new(width as u32, height as u32);
-                for y in 0..height {
-                    for x in 0..width {
-                        let pixel = view[[y, x]] as u8;
-                        imgbuf.put_pixel(x as u32, y as u32, image::Luma([pixel]));
-                    }
-                }
-                Ok(imgbuf)
+        let mut imgbuf: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
+            RgbImage::new(width as u32, height as u32);
+        for y in 0..height {
+            for x in 0..width {
+                let r = view[[y, x, 0]] as u8;
+                let g = view[[y, x, 1]] as u8;
+                let b = view[[y, x, 2]] as u8;
+                imgbuf.put_pixel(x as u32, y as u32, image::Rgb([r, g, b]));
             }
-            ImageType::Rgb8 => {
-                // let mut imgbuf = ImageBuffer::new(width as u32, height as u32);
-                // for y in 0..height {
-                //     for x in 0..width {
-                //         let r = view[[y, x, 0]] as u8;
-                //         let g = view[[y, x, 1]] as u8;
-                //         let b = view[[y, x, 2]] as u8;
-                //         imgbuf.put_pixel(x as u32, y as u32, P::from_channels(r, g, b, 0));
-                //     }
-                // }
-                // Ok(imgbuf)
-                let mut imgbuf: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-                    RgbImage::new(width as u32, height as u32);
-                for y in 0..height {
-                    for x in 0..width {
-                        let r = view[[y, x, 0]] as u8;
-                        let g = view[[y, x, 1]] as u8;
-                        let b = view[[y, x, 2]] as u8;
-                        imgbuf.put_pixel(x as u32, y as u32, image::Rgb([r, g, b]));
-                    }
-                }
-                Ok(imgbuf)
-            }
-            ImageType::RGBA => todo!(),
         }
+        imgbuf
+    }
+    pub fn to_image_buff_for_luma8(&self) -> ImageBuffer<image::Luma<u8>, Vec<u8>> {
+        let shape = self.shape();
+        let height = shape[0];
+        let width = shape[1];
+        let view = self.view();
+
+        let mut imgbuf: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
+            GrayImage::new(width as u32, height as u32);
+        for y in 0..height {
+            for x in 0..width {
+                let pixel = view[[y, x]] as u8;
+                imgbuf.put_pixel(x as u32, y as u32, image::Luma([pixel]));
+            }
+        }
+        imgbuf
     }
 
     /// 确定是图像的情况下，返回该图像的高度和宽度

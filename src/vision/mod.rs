@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2023-08-30 19:16:48
  * @LastEditors  : 老董
- * @LastEditTime : 2023-09-01 17:42:04
+ * @LastEditTime : 2023-09-01 19:17:35
  * @Description  : 本模块提供计算机视觉相关的功能。
  *                 在本模块中，不严谨地说：
  *                 1. 所谓的image/图像是指RGB(A)格式的图像；
@@ -11,7 +11,7 @@
 
 use crate::tensor::Tensor;
 use crate::utils::traits::dynamic_image::TraitForDynamicImage;
-use image::{DynamicImage, GenericImageView, GrayImage, RgbImage};
+use image::{DynamicImage, GenericImageView};
 
 #[cfg(test)]
 mod tests;
@@ -56,40 +56,17 @@ impl Vision {
     /// 保存Tensor为图像到本地
     pub fn save_image(tensor: &Tensor, file_path: &str) -> Result<(), String> {
         let image_type = tensor.is_image()?;
-        let shape = tensor.shape();
-        let height = shape[0];
-        let width = shape[1];
-
-        let view = tensor.view();
-        // TODO：use Tensor .to_image()
         match image_type {
             ImageType::L8 => {
-                let mut imgbuf: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
-                    GrayImage::new(width as u32, height as u32);
-                for y in 0..height {
-                    for x in 0..width {
-                        let pixel = view[[y, x]] as u8;
-                        imgbuf.put_pixel(x as u32, y as u32, image::Luma([pixel]));
-                    }
-                }
+                let imgbuf = tensor.to_image_buff_for_luma8();
                 imgbuf.save(file_path).map_err(|e| e.to_string())?;
             }
             ImageType::Rgb8 => {
-                let mut imgbuf: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-                    RgbImage::new(width as u32, height as u32);
-                for y in 0..height {
-                    for x in 0..width {
-                        let r = view[[y, x, 0]] as u8;
-                        let g = view[[y, x, 1]] as u8;
-                        let b = view[[y, x, 2]] as u8;
-                        imgbuf.put_pixel(x as u32, y as u32, image::Rgb([r, g, b]));
-                    }
-                }
+                let imgbuf = tensor.to_image_buff_for_rgb8();
                 imgbuf.save(file_path).map_err(|e| e.to_string())?;
             }
             ImageType::RGBA => todo!(),
         }
-
         Ok(())
     }
 
