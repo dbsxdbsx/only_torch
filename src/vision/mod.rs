@@ -2,12 +2,14 @@
  * @Author       : 老董
  * @Date         : 2023-08-30 19:16:48
  * @LastEditors  : 老董
- * @LastEditTime : 2023-09-01 19:31:21
+ * @LastEditTime : 2023-09-03 13:40:30
  * @Description  : 本模块提供计算机视觉相关的功能。
  *                 在本模块中，不严谨地说：
  *                 1. 所谓的image/图像是指RGB(A)格式的图像；
  *                 2. “灰度”（图）等同于英文中luma、luminance、grey、gray的概念。
  */
+
+use std::fs;
 
 use crate::tensor::Tensor;
 use crate::utils::traits::dynamic_image::TraitForDynamicImage;
@@ -47,6 +49,9 @@ impl Vision {
 
     /// 保存Tensor为图像到本地
     pub fn save_image(tensor: &Tensor, file_path: &str) -> Result<(), String> {
+        if fs::metadata(file_path).is_ok() {
+            fs::remove_file(file_path).unwrap();
+        }
         let image_type = tensor.is_image()?;
         match image_type {
             ColorType::L8 => {
@@ -142,9 +147,52 @@ impl Vision {
                 .to_tensor()
         }
     }
+
+    pub fn median_blur(image: &Tensor, ksize: usize) -> Tensor {
+        assert!(ksize >= 2);
+        let mut blurred_tensor = image.clone();
+        let mut blurred = blurred_tensor.view_mut();
+
+        let (h, w, c) = image.get_image_shape().unwrap();
+        let half_ksize = ksize / 2;
+        let orig_view = image.view();
+
+        for y in half_ksize..h - half_ksize {
+            for x in half_ksize..w - half_ksize {
+                if c == 0 {
+                    let mut values = Vec::with_capacity(ksize * ksize);
+                    for ky in y - half_ksize..y + half_ksize + 1 {
+                        for kx in x - half_ksize..x + half_ksize + 1 {
+                            values.push(orig_view[[ky, kx]]);
+                        }
+                    }
+                    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    let median = values[values.len() / 2];
+
+                    blurred[[y, x]] = median;
+                } else {
+                    for z in 0..c {
+                        let mut values = Vec::with_capacity(ksize * ksize);
+                        for ky in y - half_ksize..y + half_ksize + 1 {
+                            for kx in x - half_ksize..x + half_ksize + 1 {
+                                values.push(orig_view[[ky, kx, z]]);
+                            }
+                        }
+                        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                        let median = values[values.len() / 2];
+
+                        blurred[[y, x, z]] = median;
+                    }
+                }
+            }
+        }
+
+        blurred_tensor
+    }
 }
 // TODO:
 //  show_image()
+
 //     pub fn blur_image(&self, image: &DynamicImage) -> DynamicImage {
 //         // 模糊图像
 //     }

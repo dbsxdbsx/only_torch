@@ -1,3 +1,5 @@
+use std::path::Path;
+
 #[macro_export]
 macro_rules! assert_panic {
     ($expr:expr) => {
@@ -24,4 +26,10 @@ macro_rules! assert_panic {
             }
         }
     };
+}
+
+pub fn get_file_size_in_byte(path: impl AsRef<Path>) -> u64 {
+    let metadata = std::fs::metadata(path).unwrap();
+
+    metadata.len()
 }

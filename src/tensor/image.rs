@@ -82,16 +82,19 @@ impl Tensor {
         imgbuf
     }
 
-    /// 确定是图像的情况下，返回该图像的高度和宽度
+    /// 确定是图像的情况下，返回该图像的高度和宽度（不含通道数）
     pub fn get_image_size(&self) -> Result<(usize, usize), String> {
-        let image_type = self.is_image()?;
+        self.get_image_shape().map(|(h, w, _)| (h, w))
+    }
+
+    /// 确定是图像的情况下，返回该图像的高度和宽度和通道数（没有则为0）
+    pub fn get_image_shape(&self) -> Result<(usize, usize, usize), String> {
+        let _ = self.is_image()?;
         let shape = self.shape();
-        let height = shape[0];
-        let width = shape[1];
-        match image_type {
-            ColorType::L8 => Ok((height, width)),
-            ColorType::Rgb8 => Ok((height, width)),
-            _ => todo!(),
+        match self.dims() {
+            2 => Ok((shape[0], shape[1], 0)),
+            3 => Ok((shape[0], shape[1], shape[2])),
+            _ => Err("图像张量应该仅有2或3个维度。".to_string()),
         }
     }
 }
