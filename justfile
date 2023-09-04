@@ -3,7 +3,7 @@ all: clean test lint
 test:
     cargo test -- --test-threads=1
 lint:
-    cargo fmt
+    cargo clippy --fix --allow-dirty --allow-staged --allow-no-vcs
 clean:
     cargo clean && cargo update
 

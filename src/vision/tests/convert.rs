@@ -1,6 +1,6 @@
 use image::ColorType;
 
-use crate::utils::traits::dynamic_image::TraitForDynamicImage;
+use crate::utils::traits::image::{TraitForDynamicImage, TraitForImageBuffer};
 use crate::vision::Vision;
 
 //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓DynamicImage<->Tensor↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
@@ -54,3 +54,30 @@ fn test_to_image_and_tensor_with_luma_image() {
     assert_eq!(tensor.is_image().unwrap(), ColorType::L8);
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑DynamicImage<->Tensor↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓ImageBuffer<->Tensor↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+#[test]
+fn test_to_tensor_with_color_image_buffer() {
+    // 1.用Image库的默认方式打开图片
+    let img1 = image::open("./assets/lenna.png").unwrap();
+    let imgbuf1 = img1.to_rgb8();
+    let t1 = imgbuf1.to_tensor().unwrap();
+    // 2.用Vision模块的方式打开图片
+    let t2 = Vision::load_image("./assets/lenna.png").unwrap();
+    // 3.检查一致性
+    assert_eq!(t1, t2);
+    assert_eq!(t1.shape(), &[512, 512, 3]);
+}
+#[test]
+fn test_to_tensor_with_luma_image_buffer() {
+    // 1.用Image库的默认方式打开图片
+    let img1 = image::open("./assets/lenna_luma.png").unwrap();
+    let imgbuf1 = img1.to_luma8();
+    let t1 = imgbuf1.to_tensor().unwrap();
+    // 2.用Vision模块的方式打开图片
+    let t2 = Vision::load_image("./assets/lenna_luma.png").unwrap();
+    // 3.检查一致性
+    assert_eq!(t1, t2);
+    assert_eq!(t1.shape(), &[512, 512]);
+}
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ImageBuffer<->Tensor↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑

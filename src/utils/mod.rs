@@ -3,8 +3,8 @@
 //! 本模块提供一些常用的操作接口
 
 pub mod traits {
-    pub mod dynamic_image;
     pub mod float;
+    pub mod image;
 }
 pub mod tests;
 

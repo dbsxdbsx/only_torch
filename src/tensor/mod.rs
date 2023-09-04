@@ -29,7 +29,7 @@ mod tests;
 /// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
-    pub data: Array<f32, IxDyn>,
+    data: Array<f32, IxDyn>,
 }
 
 impl Tensor {
