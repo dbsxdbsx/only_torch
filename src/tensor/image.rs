@@ -51,15 +51,14 @@ impl Tensor {
         let shape = self.shape();
         let height = shape[0];
         let width = shape[1];
-        let view = self.view();
 
         let mut imgbuf: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
             RgbImage::new(width as u32, height as u32);
         for y in 0..height {
             for x in 0..width {
-                let r = view[[y, x, 0]] as u8;
-                let g = view[[y, x, 1]] as u8;
-                let b = view[[y, x, 2]] as u8;
+                let r = self[[y, x, 0]] as u8;
+                let g = self[[y, x, 1]] as u8;
+                let b = self[[y, x, 2]] as u8;
                 imgbuf.put_pixel(x as u32, y as u32, image::Rgb([r, g, b]));
             }
         }
