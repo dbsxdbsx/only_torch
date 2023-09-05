@@ -1,14 +1,7 @@
-use image::{ColorType, ImageBuffer, Luma, Rgb};
-
+use super::{ImageBufferEnum, Vision};
 use crate::tensor::Tensor;
 use crate::utils::traits::image::TraitForImageBuffer;
-
-use super::Vision;
-
-enum ImageBufferEnum {
-    Rgb(ImageBuffer<image::Rgb<u8>, Vec<u8>>),
-    Luma(ImageBuffer<image::Luma<u8>, Vec<u8>>),
-}
+use image::{ColorType, Luma, Rgb};
 
 impl Vision {
     /// 在图像上绘制一个圆形。

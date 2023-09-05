@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2023-08-30 19:16:48
  * @LastEditors  : 老董
- * @LastEditTime : 2023-09-04 09:01:04
+ * @LastEditTime : 2023-09-05 10:32:00
  * @Description  : 本模块提供计算机视觉相关的功能。
  *                 在本模块中，不严谨地说：
  *                 1. 所谓的image/图像是指RGB(A)格式的图像；
@@ -13,8 +13,9 @@ use std::fs;
 
 use crate::tensor::Tensor;
 use crate::utils::traits::image::TraitForDynamicImage;
-use image::{ColorType, DynamicImage, GenericImageView};
+use image::{ColorType, DynamicImage, GenericImageView, ImageBuffer};
 
+pub mod detect;
 pub mod draw;
 pub mod process;
 pub mod shape;
@@ -90,17 +91,7 @@ impl Vision {
 // TODO:
 //  show_image()
 
-//     pub fn draw_circle(&self, image: &mut DynamicImage, x: u32, y: u32, radius: u32) {
-//         // 在图像上绘制圆形
-//     }
-
-//     pub fn draw_rectangle(
-//         &self,
-//         image: &mut DynamicImage,
-//         x: u32,
-//         y: u32,
-//         width: u32,
-//         height: u32,
-//     ) {
-//         // 在图像上绘制矩形
-//     }
+pub enum ImageBufferEnum {
+    Rgb(ImageBuffer<image::Rgb<u8>, Vec<u8>>),
+    Luma(ImageBuffer<image::Luma<u8>, Vec<u8>>),
+}

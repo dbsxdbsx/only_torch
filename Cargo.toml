@@ -38,8 +38,9 @@
     # screenshots = "0.7.0"
 
     # 数值相关
-    num-traits="*"
-    num-derive="*"
+    num-traits ="*"
+    num-derive ="*"
+    num-integer="*"
 
 [dev-dependencies]
     # statrs="^0.16.0"
