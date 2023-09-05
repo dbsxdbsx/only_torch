@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 
-use ndarray::{Array, IxDyn};
+use ndarray::{Array, ArrayD, IxDyn};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 
@@ -29,7 +29,7 @@ mod tests;
 /// 而通常意义上的数字（类型为usize、i32、f64等）就只是纯数（number），在这里不被认为是张量。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
-    data: Array<f32, IxDyn>,
+    data: ArrayD<f32>,
 }
 
 impl Tensor {
@@ -140,7 +140,7 @@ impl Tensor {
     pub fn load_from_disk(file: &mut File) -> Tensor {
         let mut serialized_data = Vec::new();
         file.read_to_end(&mut serialized_data).unwrap();
-        let data: Array<f32, IxDyn> = bincode::deserialize(&serialized_data).unwrap();
+        let data = bincode::deserialize(&serialized_data).unwrap();
         Tensor { data }
     }
 }

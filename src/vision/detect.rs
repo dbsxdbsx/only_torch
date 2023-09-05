@@ -1,6 +1,6 @@
 use super::{ImageBufferEnum, Vision};
 use crate::tensor::Tensor;
-use image::{ColorType, GrayImage, ImageBuffer, Luma, Rgb};
+use image::{ColorType, GrayImage, ImageBuffer, Luma};
 use std::collections::HashMap;
 
 impl Vision {
@@ -58,8 +58,8 @@ fn detect_circles_gray_image(
     min_radius: usize,
     max_radius: usize,
 ) -> Vec<(usize, usize, usize)> {
-    let width = image.width() as u32;
-    let height = image.height() as u32;
+    let width = image.width();
+    let height = image.height();
     let mut accumulator: HashMap<(usize, usize, usize), usize> = HashMap::new();
 
     for y in 1..height - 1 {

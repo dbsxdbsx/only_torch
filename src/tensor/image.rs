@@ -69,13 +69,12 @@ impl Tensor {
         let shape = self.shape();
         let height = shape[0];
         let width = shape[1];
-        let view = self.view();
 
         let mut imgbuf: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
             GrayImage::new(width as u32, height as u32);
         for y in 0..height {
             for x in 0..width {
-                let pixel = view[[y, x]] as u8;
+                let pixel = self[[y, x]] as u8;
                 imgbuf.put_pixel(x as u32, y as u32, image::Luma([pixel]));
             }
         }

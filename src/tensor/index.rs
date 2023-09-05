@@ -1,3 +1,6 @@
+use std::ops::{Index, IndexMut};
+use std::slice::SliceIndex;
+
 use super::Tensor;
 use ndarray::{Array, ArrayViewD, ArrayViewMutD, AxisDescription, IxDyn, Slice};
 
@@ -14,58 +17,82 @@ impl Tensor {
 }
 
 //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓index特性↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-// not ok
-// use std::ops::{Index, IndexMut};
-// use std::slice::SliceIndex;
+// 不可变index
+impl Index<[usize; 0]> for Tensor {
+    type Output = f32;
+    fn index(&self, _index: [usize; 0]) -> &Self::Output {
+        assert!(self.is_scalar());
+        let shape = self.shape();
+        let index_array = self.generate_index_array(shape);
+        &self.data[&index_array[..]]
+    }
+}
+impl Index<[usize; 1]> for Tensor {
+    type Output = f32;
+    fn index(&self, index: [usize; 1]) -> &Self::Output {
+        let idx = IxDyn(&index);
+        self.data.index(idx)
+    }
+}
+impl Index<[usize; 2]> for Tensor {
+    type Output = f32;
+    fn index(&self, index: [usize; 2]) -> &Self::Output {
+        let idx = IxDyn(&index);
+        self.data.index(idx)
+    }
+}
+impl Index<[usize; 3]> for Tensor {
+    type Output = f32;
+    fn index(&self, index: [usize; 3]) -> &Self::Output {
+        let idx = IxDyn(&index);
+        self.data.index(idx)
+    }
+}
+impl Index<[usize; 4]> for Tensor {
+    type Output = f32;
+    fn index(&self, index: [usize; 4]) -> &Self::Output {
+        let idx = IxDyn(&index);
+        self.data.index(idx)
+    }
+}
 
-// impl<D> Index<D> for Tensor
-// where
-//     D: Dimension + IntoDimension,
-// {
-//     type Output = f32;
+// 可变index
+impl IndexMut<[usize; 0]> for Tensor {
+    fn index_mut(&mut self, _index: [usize; 0]) -> &mut Self::Output {
+        assert!(self.is_scalar());
+        let shape = self.shape();
+        let index_array = self.generate_index_array(shape);
+        &mut self.data[&index_array[..]]
+    }
+}
 
-//     fn index(&self, index: D) -> &Self::Output {
-//         let dyn_index = index.into_dimension().into_dyn();
-//         let flat_index = self.view()[&dyn_index];
-//         &self.data[flat_index]
-//     }
-// }
-// not ok
-// impl<Idx> Index<Idx> for Tensor
-// where
-//     Idx: SliceIndex<[f32]>,
-// {
-//     type Output = f32;
+impl IndexMut<[usize; 1]> for Tensor {
+    fn index_mut(&mut self, index: [usize; 1]) -> &mut Self::Output {
+        let idx = IxDyn(&index);
+        self.data.index_mut(idx)
+    }
+}
 
-//     fn index(&self, index: Idx) -> &Self::Output {
-//         &self.data[index]
-//     }
-// }
+impl IndexMut<[usize; 2]> for Tensor {
+    fn index_mut(&mut self, index: [usize; 2]) -> &mut Self::Output {
+        let idx = IxDyn(&index);
+        self.data.index_mut(idx)
+    }
+}
 
-// not ok
-// impl<D> Index<D> for Tensor
-// where
-//     D: Dimension + IntoDimension,
-// {
-//     type Output = f32;
-//     fn index(&self, index: D) -> &Self::Output {
-//         self.view()[index.into_dimension().into_dyn()]
-//     }
-// }
+impl IndexMut<[usize; 3]> for Tensor {
+    fn index_mut(&mut self, index: [usize; 3]) -> &mut Self::Output {
+        let idx = IxDyn(&index);
+        self.data.index_mut(idx)
+    }
+}
 
-// impl Index<IxDyn> for Tensor {
-//     type Output = f32;
-//     fn index(&self, index: IxDyn) -> &f32 {
-//         &self.view()[index]
-//     }
-// }
-
-// impl<'a> IndexMut<IxDyn> for Tensor {
-//     fn index_mut(&'a mut self, index: IxDyn) -> &'a mut Self::Output {
-//         let view_mut = self.view_mut();
-//         &mut view_mut[index]
-//     }
-// }
+impl IndexMut<[usize; 4]> for Tensor {
+    fn index_mut(&mut self, index: [usize; 4]) -> &mut Self::Output {
+        let idx = IxDyn(&index);
+        self.data.index_mut(idx)
+    }
+}
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑index特性↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓克隆式索引（局部）张量↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
