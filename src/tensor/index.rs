@@ -1,5 +1,4 @@
 use std::ops::{Index, IndexMut};
-use std::slice::SliceIndex;
 
 use super::Tensor;
 use ndarray::{Array, ArrayViewD, ArrayViewMutD, AxisDescription, IxDyn, Slice};

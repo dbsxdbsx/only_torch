@@ -9,6 +9,7 @@ pub mod errors;
 pub mod logic;
 pub mod tensor;
 pub mod utils;
+pub mod variable;
 pub mod vision;
 
 // #[macro_use]
