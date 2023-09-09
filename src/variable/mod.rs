@@ -1,7 +1,9 @@
+use std::any::Any;
+
 use crate::tensor::Tensor;
-use crate::utils::traits::node::{Gradient, Node};
-/* #[macro_use]
-node! { */
+use crate::utils::traits::node::Node;
+
+// crate::node! {
 struct Variable {
     name: Option<String>,   // 节点名称
     value: Option<Tensor>,  // 本节点的值
@@ -71,5 +73,12 @@ impl Node for Variable {
             }
         }
     }
-}
 
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}

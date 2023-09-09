@@ -1,6 +1,8 @@
+use std::any::Any;
+
 use crate::tensor::Tensor;
 
-pub trait Node {
+pub trait Node: Any {
     // TODO: 可否基于反射去做
     /// 生成节点名称，如果用户初始化时未指定，则根据节点类型生成类似于"MatMul:3"的节点名，
     /// 如果指定了name_scope，则生成类似"Hidden/MatMul:3"的节点名
@@ -35,6 +37,10 @@ pub trait Node {
     //         }
     //     }
     // }
+
+    fn as_any(&self) -> &dyn Any;
+
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 pub trait Gradient: Node {
@@ -42,11 +48,9 @@ pub trait Gradient: Node {
     fn forward(&mut self) {
         for node in self.get_parents() {
             if node.get_value().is_none() {
-                let gradient_node = node
-                    .as_mut()
-                    .downcast_mut::<Box<dyn Node + 'static + Gradient>>()
-                    .unwrap();
-                gradient_node.forward();
+                if let Some(gradient_node) = node.as_any_mut().downcast_mut::<Box<dyn Gradient>>() {
+                    gradient_node.forward();
+                }
             }
         }
         self.compute()
@@ -65,18 +69,27 @@ pub trait Gradient: Node {
     fn clear_jacobi(&mut self);
 }
 
-#[allow(unused)]
+#[macro_export]
 macro_rules! node {
     ($struct_name:ident { $($field_name:ident : $field_type:ty),* }) => {
         #[derive(Debug)]
         struct $struct_name {
             $($field_name : $field_type,)*
-            a: bool,
+            // a: bool,
         }
 
-        impl NodeTrait for $struct_name {
-            fn get_field_a(&self) -> bool {
-                self.a
+        impl Node for $struct_name {
+            // TODO: delete, it is just a test method
+            // fn get_field_a(&self) -> bool {
+            //     self.a
+            // }
+
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
             }
         }
     }
