@@ -1,5 +1,5 @@
 use crate::tensor::Tensor;
-use crate::utils::traits::node::Node;
+use crate::utils::traits::node::{Gradient, Node};
 /* #[macro_use]
 node! { */
 struct Variable {
@@ -33,7 +33,6 @@ impl Variable {
 
     fn set_value(&mut self, value: &Tensor) {
         assert_eq!(value.shape(), self.shape);
-
         // 本节点的值被改变，重置所有下游节点的值
         self.reset_value(true);
         self.value = Some(value.clone());
@@ -60,22 +59,6 @@ impl Node for Variable {
         self.value.as_ref()
     }
 
-    fn compute(&mut self) {
-        todo!()
-    }
-
-    fn get_jacobi(&self, parent: &dyn Node) -> Tensor {
-        todo!()
-    }
-
-    fn backward(&self, result: &dyn Node) -> Tensor {
-        todo!()
-    }
-
-    fn clear_jacobi(&mut self) {
-        self.jacobi = None
-    }
-
     fn shape(&self) -> &[usize] {
         &self.shape
     }
@@ -89,3 +72,4 @@ impl Node for Variable {
         }
     }
 }
+

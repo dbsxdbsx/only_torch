@@ -15,28 +15,6 @@ pub trait Node {
     /// 获取本节点的实际值（张量）
     fn get_value(&self) -> Option<&Tensor>;
 
-    /// 前向传播计算本节点的值，若父节点的值未被计算，则递归调用父节点的forward方法
-    fn forward(&mut self) {
-        for node in self.get_parents() {
-            if node.get_value().is_none() {
-                node.forward();
-            }
-        }
-        self.compute()
-    }
-
-    /// 抽象方法，根据父节点的值计算本节点的值
-    fn compute(&mut self);
-
-    /// 抽象方法，计算本节点对某个父节点的雅可比矩阵
-    fn get_jacobi(&self, parent: &dyn Node) -> Tensor;
-
-    /// 反向传播，计算结果节点对本节点的雅可比矩阵
-    fn backward(&self, result: &dyn Node) -> Tensor;
-
-    /// 清空结果节点对本节点的雅可比矩阵
-    fn clear_jacobi(&mut self);
-
     /// 返回本节点值的形状
     fn shape(&self) -> &[usize];
 
@@ -57,6 +35,34 @@ pub trait Node {
     //         }
     //     }
     // }
+}
+
+pub trait Gradient: Node {
+    /// 前向传播计算本节点的值，若父节点的值未被计算，则递归调用父节点的forward方法
+    fn forward(&mut self) {
+        for node in self.get_parents() {
+            if node.get_value().is_none() {
+                let gradient_node = node
+                    .as_mut()
+                    .downcast_mut::<Box<dyn Node + 'static + Gradient>>()
+                    .unwrap();
+                gradient_node.forward();
+            }
+        }
+        self.compute()
+    }
+
+    /// 抽象方法，根据父节点的值计算本节点的值
+    fn compute(&mut self);
+
+    /// 抽象方法，计算本节点对某个父节点的雅可比矩阵
+    fn get_jacobi(&self, parent: &dyn Node) -> Tensor;
+
+    /// 反向传播，计算结果节点对本节点的雅可比矩阵
+    fn backward(&self, result: &dyn Node) -> Tensor;
+
+    /// 清空结果节点对本节点的雅可比矩阵
+    fn clear_jacobi(&mut self);
 }
 
 #[allow(unused)]
