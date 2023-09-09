@@ -202,7 +202,7 @@ fn test_index() {
 
 #[test]
 fn test_index_mut() {
-    // 测试标量
+    // 1.测试标量
     let shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1], &[1, 1, 1, 1]];
     for shape in shapes {
         let mut tensor = Tensor::new(&[1.], shape);
@@ -210,7 +210,7 @@ fn test_index_mut() {
         assert_eq!(tensor[[]], 2.0);
     }
 
-    // 测试向量
+    // 2.测试向量
     let data = vec![1.0, 2.0, 3.0, 4.0];
     let shape = vec![2, 2];
     let mut tensor = Tensor::new(&data, &shape);
@@ -221,7 +221,7 @@ fn test_index_mut() {
     assert_eq!(tensor[[1, 0]], 3.0);
     assert_eq!(tensor[[1, 1]], 6.0);
 
-    // 测试三维张量
+    // 3.测试三维张量
     let data = vec![
         1.0, 2.0, 3.0, 4.0, 5.0, 6.0, //
         7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
@@ -235,7 +235,7 @@ fn test_index_mut() {
     assert_eq!(tensor[[1, 0, 1]], 8.0);
     assert_eq!(tensor[[1, 1, 2]], 14.0);
 
-    // 测试四维张量
+    // 4.测试四维张量
     let data = vec![
         1.0, 2.0, 3.0, 4.0, 5.0, 6.0, //
         7.0, 8.0, 9.0, 10.0, 11.0, 12.0, //
@@ -251,5 +251,7 @@ fn test_index_mut() {
     assert_eq!(tensor[[1, 0, 1, 0]], 15.0);
     assert_eq!(tensor[[1, 0, 1, 1]], 16.0);
     assert_eq!(tensor[[1, 1, 1, 1]], 26.0);
+
+    // 5.(五维及以上张量的索引是不支持的)
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑index↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑

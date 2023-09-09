@@ -5,19 +5,6 @@
 pub mod traits {
     pub mod float;
     pub mod image;
+    pub mod node;
 }
 pub mod tests;
-
-/// 测
-///
-/// # 示例
-///
-/// ```
-/// use only_torch::utils::test_utils;
-///
-/// let result = test_utils(2, 3);
-/// assert_eq!(result, 5);
-/// ```
-pub fn test_utils(left: usize, right: usize) -> usize {
-    left + right
-}
