@@ -91,6 +91,10 @@
 - [神经网络的可解释性](https://zhuanlan.zhihu.com/p/341153242)
 - [可解释的哈萨尼网络](https://zhuanlan.zhihu.com/p/643213054)
 
+### 超参数优化
+
+- [mle-hyperopt](https://github.com/mle-infrastructure/mle-hyperopt)
+
 ### CPU加速
 
 - [SLIDE](https://arxiv.org/abs/2103.10891)
