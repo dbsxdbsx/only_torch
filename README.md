@@ -91,6 +91,7 @@
 
 ### 神经网络的可解释性
 - [可解释性核心——神经网络的知识表达瓶颈](https://zhuanlan.zhihu.com/p/422420088/)
+- [神经网络可解释性：论统一14种输入重要性归因算法](https://zhuanlan.zhihu.com/p/610774894/)
 - [神经网络的可解释性](https://zhuanlan.zhihu.com/p/341153242)
 - [可解释的哈萨尼网络](https://zhuanlan.zhihu.com/p/643213054)
 
