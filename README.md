@@ -88,8 +88,15 @@
 - [logic+mL提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)- [prolog解决数度问题](https://prolog.longluntan.com/t107-topic)
 - [贝叶斯与逻辑推理](https://stats.stackexchange.com/questions/243746/what-is-probabilistic-inference)
 - [用一阶逻辑辅佐人工神经网络](https://www.cs.cmu.edu/~hovy/papers/16ACL-NNs-and-logic.pdf)
+- [二阶逻辑杂谈](https://blog.csdn.net/VucNdnrzk8iwX/article/details/128928166)
+- [关于二阶逻辑的概念问题](https://www.zhihu.com/question/321025032/answer/702580771?utm_id=0)
+
+### 因果推断
+- 书：《The Book of Why》
+- 书：《Causality:Models,Reasoning,and Inference》
 
 ### 神经网络的可解释性
+
 - [可解释性核心——神经网络的知识表达瓶颈](https://zhuanlan.zhihu.com/p/422420088/)
 - [神经网络可解释性：论统一14种输入重要性归因算法](https://zhuanlan.zhihu.com/p/610774894/)
 - [神经网络的可解释性](https://zhuanlan.zhihu.com/p/341153242)
