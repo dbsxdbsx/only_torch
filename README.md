@@ -79,7 +79,7 @@
 - [Deep Mad，将卷积网络设计为一个数学建模问题](https://www.bilibili.com/video/BV1HP411R74T/?spm_id_from=333.999.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [autoML介绍](https://www.zhihu.com/question/554255720/answer/2750670583)
 
-### 符号派：逻辑/推理
+### 符号派：逻辑/因果推断
 
 - [scryer-prolog--Rust逻辑推理库](https://github.com/mthom/scryer-prolog)
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
@@ -90,9 +90,6 @@
 - [用一阶逻辑辅佐人工神经网络](https://www.cs.cmu.edu/~hovy/papers/16ACL-NNs-and-logic.pdf)
 - [二阶逻辑杂谈](https://blog.csdn.net/VucNdnrzk8iwX/article/details/128928166)
 - [关于二阶逻辑的概念问题](https://www.zhihu.com/question/321025032/answer/702580771?utm_id=0)
-
-### 因果推断
-
 - 书：《The Book of Why》
 - 书：《Causality:Models,Reasoning,and Inference》
 - [信息不完备下基于贝叶斯推断的可靠度优化方法](https://www.docin.com/p-2308549828.html)
