@@ -120,6 +120,7 @@
 - [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
 - [webGPT会上网的gpt](https://arxiv.org/abs/2112.09332)
 - [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
+- [LeCun的自监督世界模型](https://zhuanlan.zhihu.com/p/636997984)
 - [awesome Rust](https://github.com/Rust-unofficial/awesome-Rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
 - [rust人工智能相关的项目](https://github.com/rust-unofficial/awesome-rust#artificial-intelligence)
