@@ -113,7 +113,12 @@
 - [矩阵加速-GEMM](https://www.jianshu.com/p/6d3f013d8aba)
 
 ### AI实例项目
+#### 强化学习
 
+[Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
+[Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
+
+#### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
 - [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
 - [GRU解释](https://www.pluralsight.com/guides/lstm-versus-gru-units-in-rnn)
@@ -124,6 +129,7 @@
 - [awesome Rust](https://github.com/Rust-unofficial/awesome-Rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
 - [rust人工智能相关的项目](https://github.com/rust-unofficial/awesome-rust#artificial-intelligence)
+
 ## 遵循协议
 
 本项目遵循MIT协议（简言之：不约束，不负责）。
