@@ -92,6 +92,7 @@
 - [关于二阶逻辑的概念问题](https://www.zhihu.com/question/321025032/answer/702580771?utm_id=0)
 - 书：《The Book of Why》
 - 书：《Causality:Models,Reasoning,and Inference》
+- [知乎：因果推断杂谈](https://www.zhihu.com/question/266812683/answer/895210894)
 - [信息不完备下基于贝叶斯推断的可靠度优化方法](https://www.docin.com/p-2308549828.html)
 - [贝叶斯网络中的因果推断](https://www.docin.com/p-1073204271.html?docfrom=rrela)
 
