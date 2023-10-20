@@ -118,8 +118,10 @@
 ### AI实例项目
 #### 强化学习
 
-[Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
-[Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
+- [Sac用以复合Action](https://arxiv.org/pdf/1912.11077v1.pdf)
+- [EfficientZero](https://arxiv.org/abs/2111.00210)
+- [Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
+- [Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
 
 #### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
