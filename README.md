@@ -25,18 +25,20 @@
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
 - [] 基于本框架解决XOR监督学习问题
 - [] 基于本框架解决Mnist（数字识别）的监督学习问题
-- [] 基于本框架解决CartPole（需要openAI Gym）的深度强化学习问题
+- [] 基于本框架解决CartPole（需要openAI Gym或相关crate支持）的深度强化学习问题
 - [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
 - [] [保存的json网络结构设计方案](https://www.perplexity.ai/search/516c7ae4-e5ec-47d2-a67a-22cd1d9285d2?s=c)
 
 ## 参考资料
 
-### 训练用数据集
+### 训练用数据集（包括强化学习gym）
 
 - [Mnist](http://yann.lecun.com/exdb/mnist/)
 - [FashionMnist](https://www.kaggle.com/datasets/zalando-research/fashionmnist?resource=download)
 - [ChineseMnist](https://www.kaggle.com/datasets/gpreda/chinese-mnist)
 - [训练用的各种数据集（包括强化学习）](https://huggingface.co/FUXI)
+- [bevy_rl](https://crates.io/crates/bevy_rl)
+- [pure_rust_gym](https://github.com/MathisWellmann/gym-rs/tree/master)
 
 ### 数学/IT原理
 
