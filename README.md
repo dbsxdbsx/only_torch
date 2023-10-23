@@ -59,11 +59,12 @@
 
 - [python：遗传算法（GE）玩FlappyBird](https://github.com/ShuhuaGao/gpFlappyBird)
 
-（下面4个可以一起看）
+（下面5个可以一起看）
 - [手工微分：Rust-CNN](https://github.com/goldstraw/RustCNN)
 - [Rust-dfdx---支持cuda的Rust深度学习库](https://docs.rs/dfdx/latest/dfdx/)
 - [neuronika--纯Rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)
 - [用纯numpy写各类机器学习算法](https://github.com/ddbourgin/numpy-ml)
+- [基于Tiny深度学习库得RL示例](https://github.com/DHDev0/TinyRL/tree/main)
 
 - []
 
@@ -122,6 +123,7 @@
 
 - [Sac用以复合Action](https://arxiv.org/pdf/1912.11077v1.pdf)
 - [EfficientZero](https://arxiv.org/abs/2111.00210)
+- [随机MuZero](https://github.com/DHDev0/Stochastic-muzero)
 - [Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
 - [Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
 
