@@ -39,6 +39,7 @@
 - [训练用的各种数据集（包括强化学习）](https://huggingface.co/FUXI)
 - [bevy_rl](https://crates.io/crates/bevy_rl)
 - [pure_rust_gym](https://github.com/MathisWellmann/gym-rs/tree/master)
+- [老式游戏rom](https://www.myabandonware.com/)
 
 ### 数学/IT原理
 
