@@ -51,6 +51,7 @@
 ### 开源示例
 
 - [radiate--衍生NEAT的纯Rust库](https://github.com/pkalivas/radiate)
+- [neat-rs](https://github.com/dbsxdbsx/neat-rs)
 - [纯Rust的NEAT+GRU](https://github.com/sakex/neat-gru-Rust)
 - [Rusty_sr-纯Rust的基于dl的图像超清](https://github.com/millardjn/Rusty_sr)
 - [ndarray_glm(可参考下`array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
@@ -123,9 +124,11 @@
 
 - [Sac用以复合Action](https://arxiv.org/pdf/1912.11077v1.pdf)
 - [EfficientZero](https://arxiv.org/abs/2111.00210)
-- [随机MuZero](https://github.com/DHDev0/Stochastic-muzero)
+- [随机MuZero代码](https://github.com/DHDev0/Stochastic-muzero)
 - [Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
 - [Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
+- [combo代码](https://github.com/Shylock-H/COMBO_Offline_RL)
+- [2023最新offline算法](https://arxiv.org/abs/2310.05422)
 
 #### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
