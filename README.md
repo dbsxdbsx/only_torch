@@ -129,6 +129,7 @@
 - [Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
 - [combo代码](https://github.com/Shylock-H/COMBO_Offline_RL)
 - [2023最新offline算法](https://arxiv.org/abs/2310.05422)
+- [众多model-base/free的offline算法](https://github.com/yihaosun1124/OfflineRL-Kit)
 
 #### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
