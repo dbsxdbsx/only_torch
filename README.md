@@ -130,13 +130,15 @@
 - [combo代码](https://github.com/Shylock-H/COMBO_Offline_RL)
 - [2023最新offline算法](https://arxiv.org/abs/2310.05422)
 - [众多model-base/free的offline算法](https://github.com/yihaosun1124/OfflineRL-Kit)
-
+- [model-free offline算法：MCQ解析](https://zhuanlan.zhihu.com/p/588444380)
+- [RL论文列表（curiosity、offline、uncertainty，safe）](https://github.com/yingchengyang/Reinforcement-Learning-Papers)
 #### 其他
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
 - [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
 - [GRU解释](https://www.pluralsight.com/guides/lstm-versus-gru-units-in-rnn)
 - [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
 - [webGPT会上网的gpt](https://arxiv.org/abs/2112.09332)
+- [Lean+LLM](https://github.com/lean-dojo/LeanDojo)
 - [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
 - [LeCun的自监督世界模型](https://zhuanlan.zhihu.com/p/636997984)
 - [awesome Rust](https://github.com/Rust-unofficial/awesome-Rust#genetic-algorithms)
