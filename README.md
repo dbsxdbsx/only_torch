@@ -128,7 +128,7 @@
 - [Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
 - [Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
 - [combo代码](https://github.com/Shylock-H/COMBO_Offline_RL)
-- [2023最新offline算法](https://arxiv.org/abs/2310.05422)
+- [2023最新model-based offline算法：MOREC](https://arxiv.org/abs/2310.05422)
 - [众多model-base/free的offline算法](https://github.com/yihaosun1124/OfflineRL-Kit)
 - [model-free offline算法：MCQ解析](https://zhuanlan.zhihu.com/p/588444380)
 - [RL论文列表（curiosity、offline、uncertainty，safe）](https://github.com/yingchengyang/Reinforcement-Learning-Papers)
