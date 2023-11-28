@@ -64,6 +64,7 @@
 - [手工微分：Rust-CNN](https://github.com/goldstraw/RustCNN)
 - [Rust-dfdx---支持cuda的Rust深度学习库](https://docs.rs/dfdx/latest/dfdx/)
 - [neuronika--纯Rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)
+- [Candle:纯rust较成熟的机器学习库](https://github.com/huggingface/candle)
 - [用纯numpy写各类机器学习算法](https://github.com/ddbourgin/numpy-ml)
 - [基于Tiny深度学习库得RL示例](https://github.com/DHDev0/TinyRL/tree/main)
 
