@@ -140,6 +140,11 @@
 - [适用对话的Rust终端UI？](https://dustinblackman.com/posts/oatmeal/)
 - [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
 
+#### （自动、交互式）定理证明
+
+- [关于lean的一篇文章](https://zhuanlan.zhihu.com/p/183902909#%E6%A6%82%E8%A7%88)
+- [Lean+LLM](https://github.com/lean-dojo/LeanDojo)
+
 #### 其他
 
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
@@ -147,7 +152,6 @@
 - [GRU解释](https://www.pluralsight.com/guides/lstm-versus-gru-units-in-rnn)
 - [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
 - [webGPT会上网的gpt](https://arxiv.org/abs/2112.09332)
-- [Lean+LLM](https://github.com/lean-dojo/LeanDojo)
 - [LeCun的自监督世界模型](https://zhuanlan.zhihu.com/p/636997984)
 - [awesome Rust](https://github.com/Rust-unofficial/awesome-Rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
