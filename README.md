@@ -120,8 +120,7 @@
 - [Rust+AVX](https://medium.com/@Razican/learning-simd-with-Rust-by-finding-planets-b85ccfb724c3)
 - [矩阵加速-GEMM](https://www.jianshu.com/p/6d3f013d8aba)
 
-### AI实例项目
-#### 强化学习
+### 强化学习
 
 - [Sac用以复合Action](https://arxiv.org/pdf/1912.11077v1.pdf)
 - [EfficientZero](https://arxiv.org/abs/2111.00210)
@@ -134,18 +133,24 @@
 - [model-free offline算法：MCQ解析](https://zhuanlan.zhihu.com/p/588444380)
 - [RL论文列表（curiosity、offline、uncertainty，safe）](https://github.com/yingchengyang/Reinforcement-Learning-Papers)
 
-#### rust+LLM(大语言模型)
+### rust+大语言模型（LLM）
 
 - [BionicGpt](https://github.com/bionic-gpt/bionic-gpt)
 - [适用对话的Rust终端UI？](https://dustinblackman.com/posts/oatmeal/)
 - [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
 
-#### （自动、交互式）定理证明
+### （自动、交互式）定理证明
 
 - [关于lean的一篇文章](https://zhuanlan.zhihu.com/p/183902909#%E6%A6%82%E8%A7%88)
 - [Lean+LLM](https://github.com/lean-dojo/LeanDojo)
 
-#### 其他
+### 博弈论（game）
+
+- [Sprague-Grundy介绍1](https://zhuanlan.zhihu.com/p/157731188)
+- [Sprague-Grundy介绍2](https://zhuanlan.zhihu.com/p/20611132)
+- [Sprague-Grundy介绍3](https://zhuanlan.zhihu.com/p/357893255)
+
+### 其他
 
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
 - [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
