@@ -143,6 +143,7 @@
 
 - [关于lean的一篇文章](https://zhuanlan.zhihu.com/p/183902909#%E6%A6%82%E8%A7%88)
 - [Lean+LLM](https://github.com/lean-dojo/LeanDojo)
+- [陶哲轩使用Lean4](https://mp.weixin.qq.com/s/TYB6LgbhjvHYvkbWrEoDOg)
 
 ### 博弈论（game）
 
