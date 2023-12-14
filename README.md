@@ -89,6 +89,7 @@
 ### 符号派：逻辑/因果推断
 
 - [scryer-prolog--Rust逻辑推理库](https://github.com/mthom/scryer-prolog)
+- [vampire:自动证明器](https://github.com/vprover/vampire?tab=readme-ov-file)
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
 - [结合prolog和RL](https://arxiv.org/abs/2004.06997)
 - [prolog与4证人难题](https://prolog.longluntan.com/t9-topic)
