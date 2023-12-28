@@ -60,14 +60,17 @@
 
 - [python：遗传算法（GE）玩FlappyBird](https://github.com/ShuhuaGao/gpFlappyBird)
 
-（下面5个可以一起看）
-- [手工微分：Rust-CNN](https://github.com/goldstraw/RustCNN)
-- [Rust-dfdx---支持cuda的Rust深度学习库](https://docs.rs/dfdx/latest/dfdx/)
-- [neuronika--纯Rust深度学习库（更新停滞了）](https://github.com/neuronika/neuronika)
+（较为成熟的3方库）
+- [Burn—纯rust深度学习库](https://github.com/Tracel-AI/burn)
 - [Candle:纯rust较成熟的机器学习库](https://github.com/huggingface/candle)
 - [用纯numpy写各类机器学习算法](https://github.com/ddbourgin/numpy-ml)
-- [基于Tiny深度学习库得RL示例](https://github.com/DHDev0/TinyRL/tree/main)
-
+（自动微分参考）
+- [手工微分：Rust-CNN](https://github.com/goldstraw/RustCNN)
+- [neuronika--纯Rust深度学习库（更新停滞了，参考下自动微分部分）](https://github.com/neuronika/neuronika)
+- [基于TinyGrad的python深度学习库的RL示例](https://github.com/DHDev0/TinyRL/tree/main)
+- [重点：Rust-dfdx---支持cuda的Rust深度学习库(参考下自动微分部分)](https://docs.rs/dfdx/latest/dfdx/)
+- [重点：基于ndarray的反向autoDiff库](https://github.com/raskr/rust-autograd)
+- [前向autoDiff(貌似不成熟)](https://github.com/elrnv/autodiff)
 - []
 
 - [深度学习框架InsNet简介](https://zhuanlan.zhihu.com/p/378684569)
