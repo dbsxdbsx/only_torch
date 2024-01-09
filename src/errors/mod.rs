@@ -21,8 +21,10 @@ pub enum TensorError {
 
     #[error("张量列表为空")]
     EmptyList,
-    #[error("张量形状不兼容")]
+    #[error("张量形状不一致")]
     InconsitentShape,
+    #[error("张量形状不兼容")]
+    IncompatibleShape,
     #[error("交换张量时，输入的维度数至少需要2个")]
     PermuteNeedAtLeast2Dims,
     #[error("需要交换的维度必须是唯一且在[0, <张量维数>)范围内")]

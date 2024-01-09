@@ -7,10 +7,10 @@
 一部分原因是受到pytorch的影响，希望能写个和pytorch一样甚至更易用的AI框架；另一部分是希望本框架只触及（touch）一些关键的东西：
 
 - only torch Rust --- 只用Rust（不用C++是因为其在复杂逻辑项目中容易写出内存不安全代码，也不打算支持Python接口）；也不用第三方lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
-- only torch CPU --- 不用GPU，因要照顾多平台，也不想被某个GPU厂商制约，且基于NEAT进化的网络结构也不太好被GPU优化；如此也省得考虑数据从CPU内存迁移到其他设备内存的开销问题了。
+- only torch CPU --- 不用GPU，因要照顾多平台也不想被某个GPU厂商制约，且基于NEAT进化的网络结构也不太好被GPU优化（也省得考虑数据从CPU的堆栈迁移到其他设备内存的开销问题了）。
 - only torch node --- 没有全连接、卷积、resnet这类先入为主的算子概念，具体模型结构均基于NEAT进化。
 - only torch tensor --- 所有的数据类型都是内置类型tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/Rust-numpy)，[array](https://doc.Rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于blas的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
-- only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了f32外的数据结构。
+- only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了f32外的数据类型。
 
 ## 文档
 
@@ -136,6 +136,7 @@
 - [众多model-base/free的offline算法](https://github.com/yihaosun1124/OfflineRL-Kit)
 - [model-free offline算法：MCQ解析](https://zhuanlan.zhihu.com/p/588444380)
 - [RL论文列表（curiosity、offline、uncertainty，safe）](https://github.com/yingchengyang/Reinforcement-Learning-Papers)
+- [代替Gym的综合库](https://gymnasium.farama.org/)
 
 ### rust+大语言模型（LLM）
 

@@ -2,6 +2,7 @@ mod add;
 mod div;
 mod eq;
 mod index;
+mod mat_mul;
 mod mul;
 mod new;
 mod others;

@@ -12,6 +12,26 @@ impl Tensor {
         self.data.shape()
     }
 
+    pub fn reshape(&self, shape: &[usize]) -> Tensor {
+        let total_elements: usize = self.data.len();
+        let new_total_elements: usize = shape.iter().product();
+        if total_elements != new_total_elements {
+            panic!("{}", TensorError::IncompatibleShape);
+        }
+        Tensor {
+            data: self.data.clone().into_shape(shape).unwrap(),
+        }
+    }
+
+    pub fn reshape_mut(&mut self, shape: &[usize]) {
+        let total_elements: usize = self.data.len();
+        let new_total_elements: usize = shape.iter().product();
+        if total_elements != new_total_elements {
+            panic!("{}", TensorError::IncompatibleShape);
+        }
+        self.data = self.data.clone().into_shape(shape).unwrap();
+    }
+
     /// 张量的维（dim）数、阶（rank）数
     /// 即`shape()`的元素个数--如：形状为`[]`的标量阶数为0，向量阶数为1，矩阵阶数为2，以此类推
     pub fn dims(&self) -> usize {
@@ -123,6 +143,63 @@ impl Tensor {
             .into_shape(new_shape)
             .unwrap()
             .to_owned();
+    }
+
+    /// 在指定维度上增加一个维度。
+    ///
+    /// * `dim` - 要增加维度的索引。如果`dim`为正数或零，则从头开始计数；
+    /// 如果`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度后增加。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    /// let unsqueezed = tensor.unsqueeze(0); // 在最前面增加一个维度
+    /// assert_eq!(unsqueezed.shape(), &[1, 3]);
+    /// let unsqueezed_last = tensor.unsqueeze(-1); // 在最后面增加一个维度
+    /// assert_eq!(unsqueezed.shape(), &[3, 1]);
+    /// ```
+    pub fn unsqueeze(&self, dim: i8) -> Tensor {
+        let dim = if dim < 0 {
+            self.dims() as i8 + dim + 1
+        } else {
+            dim
+        };
+        assert!(dim >= 0 && dim as usize <= self.dims(), "维度超出范围。");
+
+        let mut new_shape = self.data.shape().to_vec();
+        new_shape.insert(dim as usize, 1);
+        self.reshape(&new_shape)
+    }
+
+    /// 就地在指定维度上增加一个维度。
+    ///
+    /// * `dim` - 要增加维度的索引。如果`dim`为正数或零，则从头开始计数；
+    /// 如果`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度后增加。
+    /// 如果`dim`超出了当前维度的范围，将会触发panic。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    /// tensor.unsqueeze_mut(0); // 在最前面增加一个维度
+    /// assert_eq!(tensor.shape(), &[1, 3]);
+    ///
+    /// let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    /// tensor.unsqueeze_mut(-1); // 在最后面增加一个维度
+    /// assert_eq!(tensor.shape(), &[3, 1]);
+    /// ```
+    pub fn unsqueeze_mut(&mut self, dim: i8) {
+        let dim = if dim < 0 {
+            self.dims() as i8 + dim + 1
+        } else {
+            dim
+        };
+        assert!(dim >= 0 && dim as usize <= self.dims(), "维度超出范围。");
+
+        let mut new_shape = self.data.shape().to_vec();
+        new_shape.insert(dim as usize, 1);
+        self.reshape(&new_shape);
     }
 
     /// 交换张量的两个（以上）维度，并将其返回（不影响原张量）

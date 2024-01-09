@@ -13,6 +13,7 @@ mod ops {
     pub mod div;
     pub mod eq;
     pub mod mul;
+    pub mod mat_mul;
     pub mod others;
     pub mod sub;
 }

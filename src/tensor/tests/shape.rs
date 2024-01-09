@@ -21,6 +21,33 @@ fn test_compare_shapes_with_diff_shapes() {
 }
 
 #[test]
+fn test_reshape() {
+    let data = &[1., 2., 3., 4., 5., 6.];
+    let shape = &[2, 3];
+    let tensor = Tensor::new(data, shape);
+    // 成功情况
+    let new_shape = &[3, 2];
+    assert_eq!(tensor.reshape(new_shape).shape(), new_shape);
+    // 应当失败情况
+    let incompatible_shape = &[2, 2];
+    assert_panic!(tensor.reshape(incompatible_shape));
+}
+
+#[test]
+fn test_reshape_mut() {
+    let data = &[1., 2., 3., 4., 5., 6.];
+    let shape = &[2, 3];
+    let mut tensor = Tensor::new(data, shape);
+    // 成功情况
+    let new_shape = &[3, 2];
+    tensor.reshape_mut(new_shape);
+    assert_eq!(tensor.shape(), new_shape);
+    // 应当失败情况
+    let incompatible_shape = &[2, 2];
+    assert_panic!(tensor.reshape_mut(incompatible_shape));
+}
+
+#[test]
 fn test_dims() {
     let tensor = Tensor::new(&[1.], &[]);
     assert_eq!(tensor.dims(), 0);
@@ -218,7 +245,7 @@ fn test_stack_with_new_dim() {
 }
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
-//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓(un)squeeze↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓squeeze↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 #[test]
 fn test_squeeze() {
     // 测试标量
@@ -257,7 +284,6 @@ fn test_squeeze() {
     let squeezed_tensor = Tensor::new(data, shape).squeeze();
     assert_eq!(squeezed_tensor.shape(), &[2, 3]);
 }
-
 #[test]
 fn test_squeeze_mut() {
     // 测试标量
@@ -302,7 +328,58 @@ fn test_squeeze_mut() {
     tensor.squeeze_mut();
     assert_eq!(tensor.shape(), &[2, 3]);
 }
-//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑(un)squeeze↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑squeeze↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+
+//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓unsqueeze↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+#[test]
+fn test_unsqueeze() {
+    // 测试在最前面增加一个维度
+    let data = &[1., 2., 3., 4.];
+    let shape = &[4];
+    let unsqueezed_tensor = Tensor::new(data, shape).unsqueeze(0);
+    assert_eq!(unsqueezed_tensor.shape(), &[1, 4]);
+    // 测试在最后面增加一个维度
+    let unsqueezed_tensor = Tensor::new(data, shape).unsqueeze(-1);
+    assert_eq!(unsqueezed_tensor.shape(), &[4, 1]);
+    // 测试在中间增加一个维度
+    let shape = &[2, 2];
+    let unsqueezed_tensor = Tensor::new(data, shape).unsqueeze(1);
+    assert_eq!(unsqueezed_tensor.shape(), &[2, 1, 2]);
+    // 测试负索引
+    let unsqueezed_tensor = Tensor::new(data, shape).unsqueeze(-2);
+    assert_eq!(unsqueezed_tensor.shape(), &[2, 1, 2]);
+    let unsqueezed_tensor = Tensor::new(data, shape).unsqueeze(-3);
+    assert_eq!(unsqueezed_tensor.shape(), &[1, 2, 2]);
+    // 测试超出范围的索引
+    assert_panic!(Tensor::new(data, shape).unsqueeze(3));
+    assert_panic!(Tensor::new(data, shape).unsqueeze(-4));
+}
+#[test]
+fn test_unsqueeze_mut() {
+    // 测试在最前面增加一个维度
+    let mut tensor = Tensor::new(&[1., 2., 3., 4.], &[4]);
+    tensor.unsqueeze_mut(0);
+    assert_eq!(tensor.shape(), &[1, 4]);
+    // 测试在最后面增加一个维度
+    let mut tensor = Tensor::new(&[1., 2., 3., 4.], &[4]);
+    tensor.unsqueeze_mut(-1);
+    assert_eq!(tensor.shape(), &[4, 1]);
+    // 测试在中间增加一个维度
+    let mut tensor = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    tensor.unsqueeze_mut(1);
+    assert_eq!(tensor.shape(), &[2, 1, 2]);
+    // 测试负索引
+    let mut tensor = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    tensor.unsqueeze_mut(-2);
+    assert_eq!(tensor.shape(), &[2, 1, 2]);
+    let mut tensor = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    tensor.unsqueeze_mut(-3);
+    assert_eq!(tensor.shape(), &[1, 2, 2]);
+    // 测试超出范围的索引
+    assert_panic!(Tensor::new(&[1., 2., 3., 4.], &[2, 2]).unsqueeze_mut(3));
+    assert_panic!(Tensor::new(&[1., 2., 3., 4.], &[2, 2]).unsqueeze_mut(-4));
+}
+//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑unsqueeze↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓permute↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 #[test]
