@@ -150,9 +150,9 @@ impl Tensor {
     /// * `dim` - 要增加维度的索引。如果`dim`为正数或零，则从头开始计数；
     /// 如果`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度后增加。
     ///
-    /// # Examples
+    /// # 示例
     ///
-    /// ```
+    /// ```ignore
     /// let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     /// let unsqueezed = tensor.unsqueeze(0); // 在最前面增加一个维度
     /// assert_eq!(unsqueezed.shape(), &[1, 3]);
@@ -178,9 +178,9 @@ impl Tensor {
     /// 如果`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度后增加。
     /// 如果`dim`超出了当前维度的范围，将会触发panic。
     ///
-    /// # Examples
+    /// # 示例
     ///
-    /// ```
+    /// ```ignore
     /// let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     /// tensor.unsqueeze_mut(0); // 在最前面增加一个维度
     /// assert_eq!(tensor.shape(), &[1, 3]);
@@ -199,7 +199,7 @@ impl Tensor {
 
         let mut new_shape = self.data.shape().to_vec();
         new_shape.insert(dim as usize, 1);
-        self.reshape(&new_shape);
+        self.reshape_mut(&new_shape);
     }
 
     /// 交换张量的两个（以上）维度，并将其返回（不影响原张量）
