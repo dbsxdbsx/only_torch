@@ -1,12 +1,12 @@
 use crate::tensor::Tensor;
 use image::{DynamicImage, GenericImageView};
 
-pub trait TraitForDynamicImage {
+pub trait ForDynamicImage {
     fn get_channel_len(&self) -> usize;
     fn to_tensor(&self) -> Result<Tensor, String>;
 }
 
-impl TraitForDynamicImage for DynamicImage {
+impl ForDynamicImage for DynamicImage {
     fn get_channel_len(&self) -> usize {
         self.color().channel_count() as usize
     }
@@ -36,11 +36,11 @@ impl TraitForDynamicImage for DynamicImage {
 
 use image::{ImageBuffer, Pixel};
 
-pub trait TraitForImageBuffer {
+pub trait ForImageBuffer {
     fn to_tensor(&self) -> Result<Tensor, String>;
 }
 
-impl<P: Pixel + 'static> TraitForImageBuffer for ImageBuffer<P, Vec<P::Subpixel>> {
+impl<P: Pixel + 'static> ForImageBuffer for ImageBuffer<P, Vec<P::Subpixel>> {
     fn to_tensor(&self) -> Result<Tensor, String> {
         let width = self.width() as usize;
         let height = self.height() as usize;

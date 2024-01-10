@@ -42,5 +42,9 @@
     num-derive ="*"
     num-integer="*"
 
+    # 宏
+    paste = "1.0.5"
+
+
 [dev-dependencies]
     # statrs="^0.16.0"

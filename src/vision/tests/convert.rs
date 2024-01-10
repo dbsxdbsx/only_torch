@@ -1,6 +1,6 @@
 use image::ColorType;
 
-use crate::utils::traits::image::{TraitForDynamicImage, TraitForImageBuffer};
+use crate::utils::traits::image::{ForDynamicImage, ForImageBuffer};
 use crate::vision::Vision;
 
 //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓DynamicImage<->Tensor↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓

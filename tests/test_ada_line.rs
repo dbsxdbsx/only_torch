@@ -1,4 +1,5 @@
 use only_torch::tensor::Tensor;
+use only_torch::variable::Variable;
 
 #[test]
 fn test_ada_line() {
@@ -24,9 +25,45 @@ fn test_ada_line() {
         true,
     );
     train_set.permute_mut(&[1, 0]);
-    train_set.shuffle_mut(Some(0));
+    train_set.shuffle_mut(Some(0)); // 随机打乱样本顺序
+    println!("{:?}", train_set.shape());
 
-    for i in 0..5 {
-        println!("{}", train_set.get(&[i]));
+    // 构造计算图：输入向量，是一个3x1矩阵，不需要初始化，不参与训练
+    let _x = Variable::new(&[3, 1], false, false, None);
+    // 类别标签，1男，-1女
+    let _label = Variable::new(&[1, 1], false, false, None);
+    // 权重向量，是一个1x3矩阵，需要初始化，参与训练
+    let _w = Variable::new(&[1, 3], true, true, None);
+    // 阈值，是一个1x1矩阵，需要初始化，参与训练
+    let _b = Variable::new(&[1, 1], true, true, None);
+    // ADALINE的预测输出
+    // output = ms.ops.Add(ms.ops.MatMul(w, x), b)
+    // predict = ms.ops.Step(output)
+
+    // 损失函数
+    // loss = ms.ops.loss.PerceptionLoss(ms.ops.MatMul(label, output))
+
+    // 学习率
+    let _learning_rate = 0.0001;
+
+    // 训练执行50个epoch
+    for _i in 0..50 {
+        // 遍历训练集中的样本
+        for j in 0..train_set.shape()[0] {
+            // 获取当前样本的特征和标签
+            let sample = train_set.get(&[j]); // TODO: use view?
+            println!("{:?}", sample.shape());
+            // let features = sample.get(&[0, 0..3]); //TODO:
+            // let label = sample.get(&[0, 3]);
+
+            // // 计算当前样本的预测值
+            // let mut pred = features.mat_mul(&Tensor::new(&[0.0, 0.0, 0.0], &[3, 1]));
+            // pred += Tensor::new(1.0, &[]);
+            // // 计算当前样本的误差
+            // let mut error = label - pred;
+            // // 计算当前样本的梯度
+            // let mut grad = features.transpose().mat_mul(&error);
+            // // 更新模型参数
+        }
     }
 }

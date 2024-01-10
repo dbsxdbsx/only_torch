@@ -1,4 +1,4 @@
-use crate::utils::tests::get_file_size_in_byte;
+use crate::utils::macro_for_unit_test::get_file_size_in_byte;
 use crate::vision::Vision;
 
 #[test]

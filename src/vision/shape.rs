@@ -1,6 +1,6 @@
 use super::Vision;
 use crate::tensor::Tensor;
-use crate::utils::traits::image::TraitForDynamicImage;
+use crate::utils::traits::image::ForDynamicImage;
 
 impl Vision {
     /// 调整图像大小

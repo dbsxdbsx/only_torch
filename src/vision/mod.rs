@@ -12,7 +12,7 @@
 use std::fs;
 
 use crate::tensor::Tensor;
-use crate::utils::traits::image::TraitForDynamicImage;
+use crate::utils::traits::image::ForDynamicImage;
 use image::{ColorType, DynamicImage, GenericImageView, ImageBuffer};
 
 pub mod detect;

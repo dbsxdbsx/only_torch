@@ -1,6 +1,6 @@
 use super::{ImageBufferEnum, Vision};
 use crate::tensor::Tensor;
-use crate::utils::traits::image::TraitForImageBuffer;
+use crate::utils::traits::image::ForImageBuffer;
 use image::{ColorType, Luma, Rgb};
 
 impl Vision {
