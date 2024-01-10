@@ -22,6 +22,29 @@ fn test_compare_shapes_with_diff_shapes() {
 
 #[test]
 fn test_reshape() {
+    // 1.标量reshape
+    let data = &[5.];
+    let shape = &[];
+    let tensor = Tensor::new(data, shape);
+    // 成功情况
+    let new_shape = &[1, 1, 1];
+    assert_eq!(tensor.reshape(new_shape).shape(), new_shape);
+    // 应当失败情况
+    let incompatible_shape = &[2];
+    assert_panic!(tensor.reshape(incompatible_shape));
+
+    // 2.向量reshape
+    let data = &[1., 2., 3., 4.];
+    let shape = &[4, 1];
+    let tensor = Tensor::new(data, shape);
+    // 成功情况
+    let new_shape = &[2, 2];
+    assert_eq!(tensor.reshape(new_shape).shape(), new_shape);
+    // 应当失败情况
+    let incompatible_shape = &[2, 3];
+    assert_panic!(tensor.reshape(incompatible_shape));
+
+    // 3.矩阵reshape
     let data = &[1., 2., 3., 4., 5., 6.];
     let shape = &[2, 3];
     let tensor = Tensor::new(data, shape);
@@ -35,6 +58,31 @@ fn test_reshape() {
 
 #[test]
 fn test_reshape_mut() {
+    // 1.标量reshape
+    let data = &[5.];
+    let shape = &[];
+    let mut tensor = Tensor::new(data, shape);
+    // 成功情况
+    let new_shape = &[1, 1, 1];
+    tensor.reshape_mut(new_shape);
+    assert_eq!(tensor.shape(), new_shape);
+    // 应当失败情况
+    let incompatible_shape = &[2];
+    assert_panic!(tensor.reshape_mut(incompatible_shape));
+
+    // 2.向量reshape
+    let data = &[1., 2., 3., 4.];
+    let shape = &[4, 1];
+    let mut tensor = Tensor::new(data, shape);
+    // 成功情况
+    let new_shape = &[2, 2];
+    tensor.reshape_mut(new_shape);
+    assert_eq!(tensor.shape(), new_shape);
+    // 应当失败情况
+    let incompatible_shape = &[2, 3];
+    assert_panic!(tensor.reshape_mut(incompatible_shape));
+
+    // 3.矩阵reshape
     let data = &[1., 2., 3., 4., 5., 6.];
     let shape = &[2, 3];
     let mut tensor = Tensor::new(data, shape);
