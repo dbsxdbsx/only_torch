@@ -1,13 +1,25 @@
+/*
+ * @Author       : 老董
+ * @Date         : 2023-10-21 03:22:26
+ * @LastEditors  : 老董
+ * @LastEditTime : 2024-01-11 21:14:09
+ * @Description  : Tensor类的测试模块
+ */
+
 mod add;
+mod add_assign;
 mod div;
+mod div_assign;
 mod eq;
 mod index;
 mod mat_mul;
 mod mul;
+mod mul_assign;
 mod new;
 mod others;
 mod shape;
 mod sub;
+mod sub_assign;
 
 mod print;
 

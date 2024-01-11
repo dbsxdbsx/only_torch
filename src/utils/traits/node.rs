@@ -147,7 +147,7 @@ macro_rules! gradient {
                     // 用户需要在这里实现具体的雅可比矩阵计算逻辑
                     todo!()
                 }
-                fn backward(&mut self, _result: &mut dyn Node) -> &Tensor {
+                fn backward(&mut self, result: &mut dyn Node) -> &Tensor {
                     todo!()
                     // if self.jacobi.is_empty() {
                     //     if std::ptr::eq(self, result) {
@@ -160,8 +160,7 @@ macro_rules! gradient {
                     //                 let c = child.as_any_mut()
                     //                 .downcast_mut::<Box<dyn Gradient>>()
                     //                 .unwrap();
-                    //                 // TODO：self.jacobi += c.backward(result) * c.get_jacobi(self);
-                    //                 self.jacobi = self.jacobi + c.backward(result) * c.get_jacobi(self);
+                    //                 self.jacobi += c.backward(result) * c.get_jacobi(self);
                     //             }
                     //         }
                     //     }

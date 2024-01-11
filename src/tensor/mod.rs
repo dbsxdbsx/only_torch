@@ -10,12 +10,17 @@ use serde::{Deserialize, Serialize};
 use crate::errors::{ComparisonOperator, TensorError};
 mod ops {
     pub mod add;
+    pub mod add_assign;
+    pub mod sub;
+    pub mod sub_assign;
     pub mod div;
+    pub mod div_assign;
     pub mod eq;
     pub mod mat_mul;
     pub mod mul;
+    pub mod mul_assign;
     pub mod others;
-    pub mod sub;
+
 }
 
 pub mod image;
