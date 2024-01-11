@@ -7,8 +7,6 @@ pub trait Node: Any {
     /// 生成节点名称，如果用户初始化时未指定，则根据节点类型生成类似于"MatMul:3"的节点名，
     /// 如果指定了name_scope，则生成类似"Hidden/MatMul:3"的节点名
     fn gen_node_name(&mut self);
-    /// 获取本节点的父节点
-    fn get_parents(&mut self) -> &mut [Box<dyn Node>];
     /// 获取本节点的子节点
     fn get_children(&mut self) -> &mut [Box<dyn Node>];
     /// 设置本节点的实际值（张量）
@@ -23,21 +21,15 @@ pub trait Node: Any {
     }
     /// 重置本节点的值，并递归重置本节点的下游节点的值
     fn reset_value(&mut self, recursive: bool);
-    // NOTE: 所有实现本trait的struct都应按如下实现reset_value方法：
-    // fn reset_value(&mut self, recursive: bool) {
-    //     self.value = None; // 必须有个value字段
-    //     if recursive {
-    //         for child in self.get_children() {
-    //             child.reset_value(true);
-    //         }
-    //     }
-    // }
-
+    //
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 pub trait Gradient: Node {
+    /// 获取本节点的父节点
+    /// 虽然看似这个方法应当在Node中定义，但不需要求梯度的节点类是不需要有“父节点”的概念的，如：Variable
+    fn get_parents(&mut self) -> &mut [Box<dyn Node>];
     /// 前向传播计算本节点的值，若父节点的值未被计算，则递归调用父节点的forward方法
     fn forward(&mut self) {
         for node in self.get_parents() {
@@ -71,18 +63,22 @@ macro_rules! node {
     (struct $struct_name:ident { $($body:tt)* }) => {
         $crate::node!( @impl struct $struct_name { $($body)* });
     };
-    (@impl $vis:vis struct $struct_name:ident { $($body:tt)* }) => {
+    (@impl $vis:vis struct $struct_name:ident { $($user_field_vis:vis $user_field_name:ident : $user_field_type:ty),* $(,)? }) => {
         paste::paste! {
-            $vis struct $struct_name { $($body)* }
+            $vis struct $struct_name {
+                name: Option<String>, // 节点名称
+                value: Option<Tensor>, // 本节点的值
+                trainable: bool, // 是否可训练
+                children: Vec<Box<dyn Node>>, // 子节点列表
+                shape: Vec<usize>, // 节点值（即张量）的形状
+                $($user_field_vis $user_field_name : $user_field_type,)*
+            }
             impl Node for [<$struct_name>] {
                 fn gen_node_name(&mut self) {
                     if self.name.is_none() {
                         let name = std::any::type_name::<Self>();
                         self.name = Some(name.into());
                     }
-                }
-                fn get_parents(&mut self) -> &mut [Box<dyn Node>] {
-                    &mut self.parents
                 }
                 fn get_children(&mut self) -> &mut [Box<dyn Node>] {
                     &mut self.children

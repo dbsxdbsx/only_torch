@@ -39,10 +39,8 @@ fn test_ada_line() {
     // ADALINE的预测输出
     // output = ms.ops.Add(ms.ops.MatMul(w, x), b)
     // predict = ms.ops.Step(output)
-
     // 损失函数
     // loss = ms.ops.loss.PerceptionLoss(ms.ops.MatMul(label, output))
-
     // 学习率
     let _learning_rate = 0.0001;
 

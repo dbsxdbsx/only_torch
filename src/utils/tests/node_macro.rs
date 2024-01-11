@@ -4,21 +4,20 @@ use crate::utils::traits::node::Node;
 
 node! {
     pub  struct  PublicStruct {
-        name: Option<String>,   // 节点名称
-        pub value: Option<Tensor>,  // 本节点的值
-        pub parents: Vec<Box<dyn Node>>,  // 父节点列表
-        children: Vec<Box<dyn Node>>, // 子节点列表
-        shape: Vec<usize>,
+        pub public_field1:bool,
+        private_field1: Vec<Box<dyn Node>>,
+        pub public_field2: i32, // 故意写的注释
+        private_field2: Vec<Box<dyn Node>>,  // 故意写的注释
     }
 }
+
 node! {
- struct   PrivateStruct {
-        name: Option<String>,   // 节点名称
-        value: Option<Tensor>,  // 本节点的值
-        parents: Vec<Box<dyn Node>>,  // 父节点列表
-        pub children: Vec<Box<dyn Node>>, // 子节点列表
-        pub shape: Vec<usize>,
-    }
+struct   PrivateStruct {
+       pub public_field1:bool,
+       pub public_field2: i32, // 故意写的注释
+       private_field1: Vec<Box<dyn Node>>,
+       private_field2: Vec<Box<dyn Node>>,  // 故意写的注释
+   }
 }
 
 #[test]
@@ -27,19 +26,27 @@ fn test_node_macro() {
     let v1 = PublicStruct {
         name: None,
         value: None,
-        parents: vec![],
         children: vec![],
         shape: vec![],
+        trainable: true,
+        private_field1: vec![],
+        private_field2: vec![],
+        public_field1: true,
+        public_field2: 1,
     };
     v1.len(); // 测试trait的默认方法
     v1.shape(); // 测试trait的宏展开方法
-                // 私有类
+    // 私有类
     let v2 = PrivateStruct {
         name: None,
         value: None,
-        parents: vec![],
         children: vec![],
         shape: vec![],
+        trainable: false,
+        private_field1: vec![],
+        private_field2: vec![],
+        public_field1: true,
+        public_field2: 1,
     };
     v2.len(); // 测试trait的默认方法
     v2.shape(); // 测试trait的宏展开方法
