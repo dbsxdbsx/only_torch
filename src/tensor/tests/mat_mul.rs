@@ -44,7 +44,7 @@ fn test_mat_mul_matrix_matrix() {
 
 #[test]
 #[should_panic(expected = "输入的张量维度必须为2")]
-fn test_mat_mul_panic_on_invalid_dims() {
+fn test_mat_mul_panic_on_invalid_dimension() {
     let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2]);
     let b = Tensor::new(&[1.0, 2.0], &[2]);
     a.mat_mul(&b);

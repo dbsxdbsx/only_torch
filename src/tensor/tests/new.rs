@@ -20,8 +20,9 @@ fn test_new_empty() {
         &[2, 3, 4, 5],
     ];
     for shape in shapes {
-        let tensor = Tensor::new_empty(shape);
+        let tensor = Tensor::empty(shape);
         assert_eq!(tensor.shape(), *shape);
+        assert!(tensor.is_empty());
     }
 }
 
@@ -119,11 +120,34 @@ fn test_new_random_tensor() {
     for shape in shapes {
         let min_val = -1.;
         let max_val = 1.;
-        let tensor = Tensor::new_random(min_val, max_val, shape);
+        let tensor = Tensor::random(min_val, max_val, shape);
         assert_eq!(tensor.shape(), *shape);
 
         for elem in tensor.data.iter() {
             assert!(*elem >= min_val && *elem <= max_val);
+        }
+    }
+}
+
+#[test]
+fn test_new_zero() {
+    let shapes: &[&[usize]] = &[
+        &[],
+        &[1],
+        &[2],
+        &[1, 1],
+        &[2, 1],
+        &[1, 3],
+        &[2, 3],
+        &[2, 3, 4],
+        &[2, 3, 4, 5],
+    ];
+    for shape in shapes {
+        let tensor = Tensor::zero(shape);
+        assert_eq!(tensor.shape(), *shape);
+
+        for elem in tensor.data.iter() {
+            assert_eq!(*elem, 0.);
         }
     }
 }
@@ -142,7 +166,7 @@ fn test_new_eye() {
     ];
 
     for (n, correct_result) in test_cases {
-        let eye = Tensor::new_eye(n);
+        let eye = Tensor::eye(n);
         assert_eq!(
             eye.data,
             Array::from_shape_vec(IxDyn(&[n, n]), correct_result).unwrap()
@@ -152,8 +176,8 @@ fn test_new_eye() {
 
 #[test]
 fn test_new_eye_with_invalid_diagonal_size() {
-    assert_panic!(Tensor::new_eye(0));
-    assert_panic!(Tensor::new_eye(1));
+    assert_panic!(Tensor::eye(0));
+    assert_panic!(Tensor::eye(1));
 }
 
 #[test]
@@ -163,7 +187,7 @@ fn test_new_normal() {
         let mean = case[0] as f32;
         let std_dev = case[1] as f32;
         let shape = &[10, 50, 80, 30]; // 尽量弄大点，以免误差太大
-        let tensor = Tensor::new_normal(mean, std_dev, shape);
+        let tensor = Tensor::normal(mean, std_dev, shape);
 
         // 检查形状
         assert_eq!(tensor.shape(), shape);

@@ -5,7 +5,7 @@ use image::{ColorType, DynamicImage, GrayImage, ImageBuffer, RgbImage};
 
 impl Tensor {
     pub fn is_image(&self) -> Result<ColorType, String> {
-        let dims = self.dims();
+        let dims = self.dimension();
         if !(2..=3).contains(&dims) {
             return Err("图像张量应该仅有2或3个维度。".to_string());
         }
@@ -89,7 +89,7 @@ impl Tensor {
     pub fn get_image_shape(&self) -> Result<(usize, usize, usize), String> {
         let _ = self.is_image()?;
         let shape = self.shape();
-        match self.dims() {
+        match self.dimension() {
             2 => Ok((shape[0], shape[1], 0)),
             3 => Ok((shape[0], shape[1], shape[2])),
             _ => Err("图像张量应该仅有2或3个维度。".to_string()),

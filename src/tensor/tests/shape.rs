@@ -96,18 +96,18 @@ fn test_reshape_mut() {
 }
 
 #[test]
-fn test_dims() {
+fn test_dimension() {
     let tensor = Tensor::new(&[1.], &[]);
-    assert_eq!(tensor.dims(), 0);
+    assert_eq!(tensor.dimension(), 0);
 
     let tensor = Tensor::new(&[1., 2., 3., 4.], &[4]);
-    assert_eq!(tensor.dims(), 1);
+    assert_eq!(tensor.dimension(), 1);
 
     let tensor = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-    assert_eq!(tensor.dims(), 2);
+    assert_eq!(tensor.dimension(), 2);
 
     let tensor = Tensor::new(&[1.], &[1, 1, 1]);
-    assert_eq!(tensor.dims(), 3);
+    assert_eq!(tensor.dimension(), 3);
 }
 
 #[test]

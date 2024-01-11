@@ -14,7 +14,7 @@ impl ForDynamicImage for DynamicImage {
         let channels = self.get_channel_len();
         let width = self.dimensions().0 as usize;
         let height = self.dimensions().1 as usize;
-        let mut tensor = Tensor::new_empty(&[height, width, channels]);
+        let mut tensor = Tensor::empty(&[height, width, channels]);
 
         for y in 0..height {
             for x in 0..width {

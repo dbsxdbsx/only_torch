@@ -32,7 +32,7 @@ impl Tensor {
 
     /// 张量的维（dim）数、阶（rank）数
     /// 即`shape()`的元素个数--如：形状为`[]`的标量阶数为0，向量阶数为1，矩阵阶数为2，以此类推
-    pub fn dims(&self) -> usize {
+    pub fn dimension(&self) -> usize {
         self.data.ndim()
     }
 
@@ -159,11 +159,14 @@ impl Tensor {
     /// ```
     pub fn unsqueeze(&self, dim: i8) -> Tensor {
         let dim = if dim < 0 {
-            self.dims() as i8 + dim + 1
+            self.dimension() as i8 + dim + 1
         } else {
             dim
         };
-        assert!(dim >= 0 && dim as usize <= self.dims(), "维度超出范围。");
+        assert!(
+            dim >= 0 && dim as usize <= self.dimension(),
+            "维度超出范围。"
+        );
 
         let mut new_shape = self.data.shape().to_vec();
         new_shape.insert(dim as usize, 1);
@@ -189,11 +192,14 @@ impl Tensor {
     /// ```
     pub fn unsqueeze_mut(&mut self, dim: i8) {
         let dim = if dim < 0 {
-            self.dims() as i8 + dim + 1
+            self.dimension() as i8 + dim + 1
         } else {
             dim
         };
-        assert!(dim >= 0 && dim as usize <= self.dims(), "维度超出范围。");
+        assert!(
+            dim >= 0 && dim as usize <= self.dimension(),
+            "维度超出范围。"
+        );
 
         let mut new_shape = self.data.shape().to_vec();
         new_shape.insert(dim as usize, 1);
@@ -207,7 +213,7 @@ impl Tensor {
         }
         // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
         let unique_axes = axes.iter().cloned().collect::<HashSet<_>>();
-        if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dims()) {
+        if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dimension()) {
             panic!("{}", TensorError::PermuteNeedUniqueAndInRange);
         }
 
@@ -224,7 +230,7 @@ impl Tensor {
         }
         // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
         let unique_axes = axes.iter().cloned().collect::<HashSet<_>>();
-        if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dims()) {
+        if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dimension()) {
             panic!("{}", TensorError::PermuteNeedUniqueAndInRange);
         }
 

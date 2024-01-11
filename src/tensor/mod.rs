@@ -34,7 +34,8 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    /// 创建一个张量，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
+    /// 创建一个张量，
+    /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
@@ -44,18 +45,24 @@ impl Tensor {
         Tensor { data }
     }
 
-    /// 创建一个空（未初始化）的张量---元素值随机，请务必之后手动赋予每个元素具体数值后再使用
+    pub fn zero(shape: &[usize]) -> Tensor {
+        let data = Array::zeros(IxDyn(shape));
+        Tensor { data }
+    }
+
+    /// 创建一个空（未初始化）的张量--该张量的所有元素值为NaN，请务必之后赋予每个元素具体数值后再使用。
     /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
-    pub fn new_empty(shape: &[usize]) -> Tensor {
-        let data = Array::uninit(IxDyn(shape));
-        unsafe {
-            Tensor {
-                data: data.assume_init(),
-            }
-        }
+    pub fn empty(shape: &[usize]) -> Tensor {
+        let data = Array::from_elem(IxDyn(shape), f32::NAN);
+        Tensor { data }
+    }
+
+    /// 检查张量是否为空（即未初始化，也即所有元素都是NaN）
+    pub fn is_empty(&self) -> bool {
+        self.data.iter().all(|&x| x.is_nan())
     }
 
     /// 创建一个随机张量，其值在[min, max]的闭区间，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
@@ -63,7 +70,7 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
-    pub fn new_random(min: f32, max: f32, shape: &[usize]) -> Tensor {
+    pub fn random(min: f32, max: f32, shape: &[usize]) -> Tensor {
         let mut rng = rand::thread_rng();
         let data = (0..shape.iter().product::<usize>())
             .map(|_| Uniform::from(min..=max).sample(&mut rng))
@@ -73,7 +80,7 @@ impl Tensor {
 
     /// 创建一个含`n`个对角元素的单位矩阵。
     /// n必须大于等于2，否则会panic。
-    pub fn new_eye(n: usize) -> Tensor {
+    pub fn eye(n: usize) -> Tensor {
         assert!(
             n >= 2,
             "{}",
@@ -94,7 +101,7 @@ impl Tensor {
     /// 若为向量，shape可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，shape可以是[n,m]；
     /// 若为更高维度的数组，shape可以是[c,n,m,...]。
-    pub fn new_normal(mean: f32, std_dev: f32, shape: &[usize]) -> Tensor {
+    pub fn normal(mean: f32, std_dev: f32, shape: &[usize]) -> Tensor {
         let mut rng = rand::thread_rng();
         let data_len = shape.iter().product::<usize>();
         let mut data = Vec::with_capacity(data_len);

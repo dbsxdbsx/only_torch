@@ -1,8 +1,8 @@
-use crate::node;
+use crate::gradient;
 use crate::tensor::Tensor;
-use crate::utils::traits::node::Node;
+use crate::utils::traits::node::{Gradient, Node};
 
-node! {
+gradient! {
     pub  struct  PublicStruct {
         pub public_field1:bool,
         private_field1: Vec<Box<dyn Node>>,
@@ -11,7 +11,7 @@ node! {
     }
 }
 
-node! {
+gradient! {
 struct   PrivateStruct {
        pub public_field1:bool,
        pub public_field2: i32, // 故意写的注释
@@ -21,13 +21,15 @@ struct   PrivateStruct {
 }
 
 #[test]
-fn test_node_macro() {
+fn test_gradient_macro() {
     // 公有类
     let v1 = PublicStruct {
         name: None,
         value: Tensor::empty(&[]),
         children: vec![],
         trainable: true,
+        jacobi: Tensor::empty(&[]),
+        parents: vec![],
         //
         private_field1: vec![],
         private_field2: vec![],
@@ -42,6 +44,8 @@ fn test_node_macro() {
         value: Tensor::eye(3),
         children: vec![],
         trainable: false,
+        jacobi: Tensor::empty(&[]),
+        parents: vec![],
         //
         private_field1: vec![],
         private_field2: vec![],
