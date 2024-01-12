@@ -1,55 +1,30 @@
-use crate::errors::{Operator, TensorError};
 use crate::tensor::Tensor;
 use std::ops::AddAssign;
 
 impl AddAssign for Tensor {
     fn add_assign(&mut self, other: Tensor) {
-        // 检查是否可以执行加法操作
-        if self.is_same_shape(&other) {
-            self.data += &other.data;
-        } else if other.is_scalar() {
-            self.data += other.number().unwrap();
-        } else {
-            panic!(
-                "{}",
-                TensorError::OperatorError {
-                    operator: Operator::AddAssign,
-                    tensor1_shape: self.shape().to_vec(),
-                    tensor2_shape: other.shape().to_vec(),
-                }
-            )
-        }
+        // 使用`Add` trait的`add`方法来执行加法，并更新当前张量
+        *self = self.clone() + other;
     }
 }
 
 impl<'a> AddAssign<&'a Tensor> for Tensor {
     fn add_assign(&mut self, other: &'a Tensor) {
-        // 检查是否可以执行加法操作
-        if self.is_same_shape(other) {
-            self.data += &other.data;
-        } else if other.is_scalar() {
-            self.data += other.number().unwrap();
-        } else {
-            panic!(
-                "{}",
-                TensorError::OperatorError {
-                    operator: Operator::AddAssign,
-                    tensor1_shape: self.shape().to_vec(),
-                    tensor2_shape: other.shape().to_vec(),
-                }
-            )
-        }
+        // 使用`Add` trait的`add`方法来执行加法，并更新当前张量
+        *self = self.clone() + other;
     }
 }
 
 impl AddAssign<f32> for Tensor {
     fn add_assign(&mut self, scalar: f32) {
-        self.data += scalar;
+        // 使用`Add` trait的`add`方法来执行加法，并更新当前张量
+        *self = self.clone() + scalar;
     }
 }
 
 impl<'a> AddAssign<f32> for &'a mut Tensor {
     fn add_assign(&mut self, scalar: f32) {
-        self.data += scalar;
+        // 使用`Add` trait的`add`方法来执行加法，并更新当前张量
+        **self = (*self).clone() + scalar;
     }
 }

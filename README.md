@@ -20,7 +20,7 @@
 （无）
 
 ## TODO
-
+// TODO:use approx::assert_abs_diff_eq; need or not?
 **目前需要先解决有没有的问题，而不是好不好**
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
 - [] 基于本框架解决XOR监督学习问题
