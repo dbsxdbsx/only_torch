@@ -6,14 +6,14 @@ use super::{NodeEnum, TraitForNode};
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Variable {
-    //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓node basic fields↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-    name: Option<String>,    // 节点名称
-    value: Tensor,           // 本节点的值, 若“is_empty()”则表示未初始化
-    trainable: bool,         // 是否可训练
-    children: Vec<NodeEnum>, // 子节点列表
-    // TODO: need? #[serde(default)]
+    trainable: bool, // 是否可训练
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓node basic fields↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    name: Option<String>,           // 节点名称
+    value: Tensor,                  // 本节点的值, 若“is_uninited()”则表示未初始化
     parents: Option<Vec<NodeEnum>>, // 父节点列表，有些节点不需要父节点，如“Variable”, 所以用Option
-                                    //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+    children: Vec<NodeEnum>,        // 子节点列表
+                                    // TODO: need? #[serde(default)]
+                                    //*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
 
 impl Variable {
@@ -38,7 +38,7 @@ impl Variable {
 }
 
 impl TraitForNode for Variable {
-    //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓固定trait实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓固定trait实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     fn gen_node_name(&mut self) {
         if self.name.is_none() {
             let name = std::any::type_name::<Self>();
@@ -80,8 +80,10 @@ impl TraitForNode for Variable {
             }
         }
     }
-    //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑固定trait实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
-
+    //*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑固定trait实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+    fn is_trainable(&self) -> bool {
+        self.trainable
+    }
     // TODO: need?
     fn as_node_enum(&self) -> NodeEnum {
         NodeEnum::Variable(self.clone())

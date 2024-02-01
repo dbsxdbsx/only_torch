@@ -73,7 +73,7 @@ macro_rules! node {
             #[derive(Debug, Clone, Serialize, Deserialize, Default)]
             $vis struct $struct_name {
                 name: Option<String>, // 节点名称
-                value: Tensor, // 本节点的值, 若“is_empty()”则表示未初始化
+                value: Tensor, // 本节点的值, 若“is_uninited()”则表示未初始化
                 trainable: bool, // 是否可训练
                 children: Vec<NodeEnum>, // 子节点列表
                 #[serde(default)]
@@ -149,7 +149,7 @@ pub trait Gradient: Node {
     fn forward(&mut self) {
         for node in self.parents_mut() {
             // 这里暗示了能取到父节点的node一定是实现了Gradient的类型
-            if node.value().is_empty() {
+            if node.value().is_uninited() {
                 node.as_any_mut()
                     .downcast_mut::<Box<dyn Gradient>>()
                     .unwrap()
@@ -161,7 +161,7 @@ pub trait Gradient: Node {
     /// 反向传播，计算结果节点对本节点的雅可比矩阵
     fn backward(&mut self, result: &NodeEnum) -> &Tensor {
         // fn backward(&mut self, result: &mut NodeEnum) -> &Tensor {
-        if !self.jacobi().is_empty() {
+        if !self.jacobi().is_uninited() {
             return &self.jacobi();
         }
         // TODO: 真的需要这一block吗？ 对自身
@@ -175,7 +175,7 @@ pub trait Gradient: Node {
         let parent_node: NodeEnum = self.as_node_enum();
         let mut temp_jacobis = Vec::new();
         for child in self.children_mut() {
-            if !child.value().is_empty() {
+            if !child.value().is_uninited() {
                 // jacobi_1
                 let jacobi_1 = child
                     .as_any()

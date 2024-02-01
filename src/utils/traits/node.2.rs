@@ -13,7 +13,7 @@ pub enum NodeEnum {
 // 实现Node trait的方法
 #[enum_dispatch(NodeEnum)]
 pub trait Node {
-    //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓节点类的基本方法↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓节点类的基本方法↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 生成节点名称，如果用户初始化时未指定，则根据节点类型生成类似于"MatMul:3"的节点名，
     /// 如果指定了name_scope，则生成类似"Hidden/MatMul:3"的节点名
     fn gen_node_name(&mut self);
@@ -40,13 +40,12 @@ pub trait Node {
     fn value(&self) -> &Tensor;
     /// 重置本节点的值，并递归重置本节点的下游节点的值
     fn reset_value(&mut self, recursive: bool);
-    //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑节点类的基本方法↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
-
-    //↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度相关方法↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+    //*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑节点类的基本方法↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度相关方法↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 前向传播计算本节点的值，若父节点的值未被计算，则递归调用父节点的forward方法
     fn forward(&mut self) {
         for node in self.get_parents_mut() {
-            if node.value().is_empty() {
+            if node.value().is_uninited() {
                 node.forward();
             }
         }
@@ -60,7 +59,7 @@ pub trait Node {
     fn get_jacobi(&mut self, parent: &NodeEnum) -> &Tensor;
     /// 清空结果节点对本节点的雅可比矩阵
     fn clear_jacobi(&mut self);
-    //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度相关方法↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+    //*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度相关方法↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
 
 // 使用宏来简化结构体的定义
@@ -87,7 +86,7 @@ macro_rules! node {
             #[derive(Debug, Clone, Serialize, Deserialize, Default)]
             $vis struct $struct_name {
                 name: Option<String>, // 节点名称
-                value: Tensor, // 本节点的值, 若“is_empty()”则表示未初始化
+                value: Tensor, // 本节点的值, 若“is_uninited()”则表示未初始化
                 trainable: bool, // 是否可训练
                 children: Vec<NodeEnum>, // 子节点列表
                 // #[serde(default)]
@@ -132,7 +131,7 @@ macro_rules! node {
                 }
                 // fn backward(&mut self, result: &mut NodeEnum) -> &Tensor {
                 //     panic!("默认实现: 请在节点类中实现具体的backward方法")
-                //     // if !self.jacobi.is_empty() {
+                //     // if !self.jacobi.is_uninited() {
                 //     //     return &self.jacobi;
                 //     // }
                 //     // // TODO: test, 对自身
@@ -143,7 +142,7 @@ macro_rules! node {
                 //     // // 对其它节点
                 //     // self.jacobi = Tensor::zero(&[result.dimension(), self.dimension()]);
                 //     // for child in self.children.iter_mut() {
-                //     //     if !child.value().is_empty() {
+                //     //     if !child.value().is_uninited() {
                 //     //         // 1
                 //     //         let jacobi_1 = child.backward(result);
                 //     //         // 2

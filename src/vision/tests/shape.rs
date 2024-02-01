@@ -3,7 +3,7 @@ use image::ColorType;
 use crate::assert_panic;
 use crate::vision::Vision;
 
-//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓改变图像尺寸↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓改变图像尺寸↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_resize_color_image() {
     let image = Vision::load_image("./assets/lenna.png").unwrap();
@@ -70,4 +70,4 @@ fn test_resize_luma_image() {
     assert_eq!(resized_image.is_image().unwrap(), ColorType::L8);
     Vision::save_image(&resized_image, "./assets/lenna_resized_expand.png").unwrap();
 }
-//↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑改变图像尺寸↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+//*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑改变图像尺寸↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
