@@ -55,7 +55,7 @@ pub trait TraitForNode {
     fn value(&self) -> &Tensor;
     /// 重置本节点的值，并递归重置本节点的下游节点的值
     fn reset_value(&mut self, recursive: bool);
-    //
+    // TODO: need?
     fn as_node_enum(&self) -> NodeEnum;
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑基本↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -63,19 +63,28 @@ pub trait TraitForNode {
     fn is_trainable(&self) -> bool {
         true // 默认可训练, 除非特殊指定（比如`Variable`）
     }
-    /// 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)
-    fn compute(&mut self);
-    /// 返回结果节点对本节点的雅可比矩阵
-    fn jacobi(&self) -> &Tensor;
+    // 不管何种节点，以下2个是计算梯度的核心方法
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓需手动实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 计算本节点的值(往往需要父节点的值，在`forward`中会用到，需手动实现)
+    fn calc_value(&mut self);
+    /// 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）
+    fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor;
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑需手动实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    // TODO: 下面的是rust因使用trait所特有的，后期通过宏，直接调用trait_field就不用这些个方法了
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓rust特有的↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵
+    fn _jacobi(&self) -> &Tensor;
     /// 设置结果节点对本节点的雅可比矩阵
-    fn set_jacobi(&mut self, jacobi: Tensor);
+    fn _jacobi_mut(&mut self) -> &mut Tensor;
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑rust特有的↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /// 清空结果节点对本节点的雅可比矩阵
     fn clear_jacobi(&mut self) {
-        self.set_jacobi(Tensor::uninited(&[0, 0]));
+        *self._jacobi_mut() = Tensor::uninited(&[]);
     }
-    /// 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）
-    fn parent_jacobi(&self, parent: &NodeEnum) -> Tensor;
-    /// 前向传播计算本节点的值，若父节点的值未被计算，则递归调用父节点的forward方法
+
+    /// 前向传播计算本节点的值（若父节点的值未被计算，则递归调用父节点的forward方法）
     fn forward(&mut self) {
         for node in self.parents_mut() {
             // TODO: delete? 这里暗示了能取到父节点的node一定是实现了Gradient的类型
@@ -83,13 +92,13 @@ pub trait TraitForNode {
                 node.forward();
             }
         }
-        self.compute();
+        self.calc_value();
     }
     /// 反向传播，计算结果节点对本节点的雅可比矩阵
-    fn backward(&mut self, result: &NodeEnum) -> &Tensor {
+    fn backward(&mut self, result_node: &NodeEnum) -> &Tensor {
         // TODO: delete? fn backward(&mut self, result: &mut NodeEnum) -> &Tensor {
-        if !self.jacobi().is_uninited() {
-            return self.jacobi();
+        if !self._jacobi().is_uninited() {
+            return self._jacobi();
         }
         // TODO: 真的需要这一block吗？ 对自身
         // if std::ptr::eq(self as *const _, result as *const NodeEnum as *const _) {
@@ -98,22 +107,23 @@ pub trait TraitForNode {
         //     return &self.jacobi();
         // }
         // 对其它节点
-        self.set_jacobi(Tensor::zero(&[result.dimension(), self.dimension()]));
+        *self._jacobi_mut() = Tensor::zero(&[result_node.dimension(), self.dimension()]);
         let parent_node: NodeEnum = self.as_node_enum();
-        let mut temp_jacobis = Vec::new();
+        let mut tmp_jacobis = Vec::new();
         for child in self.children_mut() {
-            if !child.value().is_uninited() {
-                let jacobi_1 = child.parent_jacobi(&parent_node);
-                let jacobi_2 = child.backward(result);
-                temp_jacobis.push(jacobi_1 * jacobi_2);
-            }
+            assert!(!child.value().is_uninited());
+            // TODO: delete if !child.value().is_uninited() {
+            let jacobi_1 = child.calc_jacobi_to_a_parent(&parent_node);
+            let jacobi_2 = child.backward(result_node);
+            tmp_jacobis.push(jacobi_1 * jacobi_2);
+            // }
         }
         // 最终获得结果节点对本节点的雅可比矩阵
-        for jacobi in temp_jacobis {
-            self.set_jacobi(self.jacobi() + jacobi);
+        for tmp_jacobi in tmp_jacobis {
+            *self._jacobi_mut() = self._jacobi() + tmp_jacobi;
         }
 
-        self.jacobi()
+        self._jacobi()
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度相关↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

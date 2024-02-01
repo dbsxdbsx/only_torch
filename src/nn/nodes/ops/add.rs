@@ -12,7 +12,8 @@ pub struct Add {
     // TODO: need? #[serde(default)]
     parents: Option<Vec<NodeEnum>>, // 父节点列表，有些节点不需要父节点，如“Variable”, 所以用Option, todo: 非用Option不可？
     children: Vec<NodeEnum>,        // 子节点
-                                    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+    jacobi: Tensor,
 }
 
 impl Add {
@@ -85,24 +86,24 @@ impl TraitForNode for Add {
     fn as_node_enum(&self) -> NodeEnum {
         NodeEnum::Add(self.clone())
     }
-
-    #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
-    fn compute(&mut self) {
-        todo!()
+    // TODO: 冗余的field方法，后期需要删除
+    #[doc = r" 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵"]
+    fn _jacobi(&self) -> &Tensor {
+        &self.jacobi
     }
-
-    #[doc = r" 返回结果节点对本节点的雅可比矩阵"]
-    fn jacobi(&self) -> &Tensor {
-        todo!()
-    }
-
     #[doc = r" 设置结果节点对本节点的雅可比矩阵"]
-    fn set_jacobi(&mut self, _jacobi: Tensor) {
-        todo!()
+    fn _jacobi_mut(&mut self) -> &mut Tensor {
+        &mut self.jacobi
     }
 
-    #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
-    fn parent_jacobi(&self, _parent: &NodeEnum) -> Tensor {
-        todo!()
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
+    fn calc_value(&mut self) {
+        unreachable!()
     }
+    #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
+    fn calc_jacobi_to_a_parent(&self, _parent: &NodeEnum) -> Tensor {
+        unreachable!()
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

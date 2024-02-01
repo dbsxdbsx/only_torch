@@ -84,28 +84,29 @@ impl TraitForNode for Variable {
     fn is_trainable(&self) -> bool {
         self.trainable
     }
-    // TODO: need?
+
     fn as_node_enum(&self) -> NodeEnum {
         NodeEnum::Variable(self.clone())
     }
 
-    #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
-    fn compute(&mut self) {
+    // TODO: 冗余的field方法，后期需要删除
+    #[doc = r" 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵"]
+    fn _jacobi(&self) -> &Tensor {
         unreachable!()
     }
-
-    #[doc = r" 返回结果节点对本节点的雅可比矩阵"]
-    fn jacobi(&self) -> &Tensor {
-        unreachable!()
-    }
-
     #[doc = r" 设置结果节点对本节点的雅可比矩阵"]
-    fn set_jacobi(&mut self, _jacobi: Tensor) {
+    fn _jacobi_mut(&mut self) -> &mut Tensor {
         unreachable!()
     }
 
-    #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
-    fn parent_jacobi(&self, _parent: &NodeEnum) -> Tensor {
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
+    fn calc_value(&mut self) {
         unreachable!()
     }
+    #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
+    fn calc_jacobi_to_a_parent(&self, _parent: &NodeEnum) -> Tensor {
+        unreachable!()
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
