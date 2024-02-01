@@ -37,6 +37,12 @@ pub struct Tensor {
     data: ArrayD<f32>,
 }
 
+impl Default for Tensor {
+    fn default() -> Self {
+        Tensor::uninited(&[])
+    }
+}
+
 impl Tensor {
     /// 创建一个张量，
     /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
@@ -54,19 +60,19 @@ impl Tensor {
         Tensor { data }
     }
 
-    /// 创建一个空（未初始化）的张量--该张量的所有元素值为NaN，请务必之后赋予每个元素具体数值后再使用。
+    /// 创建一个空（未初始化）的张量--该张量的所有元素值为NaN，请务必之后赋予每个元素具体数值后再使用（虽然不会报错）。
     /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
-    pub fn empty(shape: &[usize]) -> Tensor {
+    pub fn uninited(shape: &[usize]) -> Tensor {
         let data = Array::from_elem(IxDyn(shape), f32::NAN);
         Tensor { data }
     }
 
-    /// 检查张量是否为空（即未初始化，也即所有元素都是NaN）
-    pub fn is_empty(&self) -> bool {
-        self.data.iter().all(|&x| x.is_nan())
+    /// 检查张量是否为空（即未初始化，也即存在为NaN的元素）
+    pub fn is_uninited(&self) -> bool {
+        self.data.iter().any(|&x| x.is_nan())
     }
 
     /// 创建一个随机张量，其值在[min, max]的闭区间，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...

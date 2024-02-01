@@ -1,53 +1,21 @@
-use crate::node;
-use crate::tensor::Tensor;
-use crate::utils::traits::node::Node;
+// use crate::node;
+// use crate::tensor::Tensor;
+// use crate::utils::traits::node::Node;
+// use crate::variable::Variable;
 
-node! {
-    pub  struct  PublicStruct {
-        pub public_field1:bool,
-        private_field1: Vec<Box<dyn Node>>,
-        pub public_field2: i32, // 故意写的注释
-        private_field2: Vec<Box<dyn Node>>,  // 故意写的注释
-    }
-}
-
-node! {
-struct   PrivateStruct {
-       pub public_field1:bool,
-       pub public_field2: i32, // 故意写的注释
-       private_field1: Vec<Box<dyn Node>>,
-       private_field2: Vec<Box<dyn Node>>,  // 故意写的注释
-   }
-}
-
-#[test]
-fn test_node_macro() {
-    // 公有类
-    let v1 = PublicStruct {
-        name: None,
-        value: Tensor::empty(&[]),
-        children: vec![],
-        trainable: true,
-        //
-        private_field1: vec![],
-        private_field2: vec![],
-        public_field1: true,
-        public_field2: 1,
-    };
-    v1.len(); // 测试trait的默认方法
-    v1.shape(); // 测试trait的宏展开方法
-                // 私有类
-    let v2 = PrivateStruct {
-        name: None,
-        value: Tensor::eye(3),
-        children: vec![],
-        trainable: false,
-        //
-        private_field1: vec![],
-        private_field2: vec![],
-        public_field1: true,
-        public_field2: 1,
-    };
-    v2.len(); // 测试trait的默认方法
-    v2.shape(); // 测试trait的宏展开方法
-}
+// #[test]
+// fn test_variable() {
+//     let mut v = Variable::new(&[2, 3], true, true, None);
+//     v.forward();
+//     println!("{:?}", v);
+//     println!("{:?}", v.value());
+//     println!("{:?}", v.shape());
+//     println!("{:?}", v.dimension());
+//     println!("{:?}", v.len());
+//     println!("{:?}", v.get_parents());
+//     println!("{:?}", v.get_children());
+//     println!("{:?}", v.trainable);
+//     println!("{:?}", v.name);
+//     println!("{:?}", v.jacobi);
+//     println!("{:?}", v);
+// }

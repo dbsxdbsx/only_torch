@@ -4,26 +4,18 @@ use std::fmt::{self, Display};
 #[derive(Debug, PartialEq, Eq)]
 pub enum Operator {
     Add,
-    // AddAssign,
     Sub,
-    SubAssign,
     Mul,
-    // MulAssign,
     Div,
-    // DivAssign,
     DotSum,
 }
 impl Display for Operator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let operation_name = match self {
             Operator::Add => "相加",
-            // Operator::AddAssign => "自相加",
             Operator::Sub => "相减",
-            Operator::SubAssign => "自相减",
             Operator::Mul => "相乘",
-            // Operator::MulAssign => "自相乘",
             Operator::Div => "相除",
-            // Operator::DivAssign => "自相除",
             Operator::DotSum => "点积和",
         };
         write!(f, "{}", operation_name)

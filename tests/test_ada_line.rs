@@ -1,5 +1,5 @@
+use only_torch::nn::nodes::Variable;
 use only_torch::tensor::Tensor;
-use only_torch::variable::Variable;
 
 #[test]
 fn test_ada_line() {

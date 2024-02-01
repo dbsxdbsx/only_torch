@@ -2,7 +2,7 @@
     name         ="only_torch"
     version      ="0.0.8"
     edition      ="2021"
-    description  ="仿造pytorch的个人玩具（仍在构思，请勿下载）AI框架"
+    description  ="仿造pytorch的个人玩具（仍在构思，请勿使用）AI框架"
     repository   ="https://github.com/dbsxdbsx/only_torch"
     license      ="MIT"
     documentation="https://docs.rs/only_torch"
@@ -12,9 +12,21 @@
 
     keywords=["machine-learning", "logic", "AI", "torch", "NEAT"]
 
+[profile.release]
+    lto          =true
+    codegen-units=1
+    strip        ="debuginfo"
+
 [dependencies]
-    rand   ="^0.8"
-    ndarray={version="^0.15", features=["serde"]}
+    # 代码重构
+    enum_dispatch="*"
+
+    # 数值相关
+    num-traits ="*"
+    num-derive ="*"
+    num-integer="*"
+    rand       ="^0.8"
+    ndarray    ={version="^0.15", features=["serde"]}
 
     # 错误处理
     thiserror="1"
@@ -37,14 +49,9 @@
     # show-image = "0.13.1"
     # screenshots = "0.7.0"
 
-    # 数值相关
-    num-traits ="*"
-    num-derive ="*"
-    num-integer="*"
-
     # 宏
-    paste = "1.0.5"
-
+    paste="1.0.5"
+    trait_variable="*"
 
 [dev-dependencies]
     # statrs="^0.16.0"

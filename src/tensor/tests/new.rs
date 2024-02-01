@@ -20,9 +20,9 @@ fn test_new_empty() {
         &[2, 3, 4, 5],
     ];
     for shape in shapes {
-        let tensor = Tensor::empty(shape);
+        let tensor = Tensor::uninited(shape);
         assert_eq!(tensor.shape(), *shape);
-        assert!(tensor.is_empty());
+        assert!(tensor.is_uninited());
     }
 }
 

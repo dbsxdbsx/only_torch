@@ -60,6 +60,9 @@
 
 - [python：遗传算法（GE）玩FlappyBird](https://github.com/ShuhuaGao/gpFlappyBird)
 
+- [python包：遗传规划gplearn](https://gplearn.readthedocs.io/en/stable/examples.html)
+- [python包：遗传规划deap](https://deap.readthedocs.io/en/master/examples/gp_symbreg.html)
+
 （较为成熟的3方库）
 - [Burn—纯rust深度学习库](https://github.com/Tracel-AI/burn)
 - [Candle:纯rust较成熟的机器学习库](https://github.com/huggingface/candle)
@@ -68,7 +71,7 @@
 - [手工微分：Rust-CNN](https://github.com/goldstraw/RustCNN)
 - [neuronika--纯Rust深度学习库（更新停滞了，参考下自动微分部分）](https://github.com/neuronika/neuronika)
 - [基于TinyGrad的python深度学习库的RL示例](https://github.com/DHDev0/TinyRL/tree/main)
-- [重点：Rust-dfdx---支持cuda的Rust深度学习库(参考下自动微分部分)](https://docs.rs/dfdx/latest/dfdx/)
+- [重点：Rust- ---支持cuda的Rust深度学习库(参考下自动微分部分)](https://docs.rs/dfdx/latest/dfdx/)
 - [重点：基于ndarray的反向autoDiff库](https://github.com/raskr/rust-autograd)
 - [前向autoDiff(貌似不成熟)](https://github.com/elrnv/autodiff)
 - []
@@ -128,6 +131,8 @@
 
 - [Sac用以复合Action](https://arxiv.org/pdf/1912.11077v1.pdf)
 - [EfficientZero](https://arxiv.org/abs/2111.00210)
+- [SpeedyZero](https://openreview.net/forum?id=Mg5CLXZgvLJ)
+- [LightZero](https://arxiv.org/abs/2310.08348)
 - [随机MuZero代码](https://github.com/DHDev0/Stochastic-muzero)
 - [Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
 - [Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
