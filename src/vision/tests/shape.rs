@@ -70,4 +70,4 @@ fn test_resize_luma_image() {
     assert_eq!(resized_image.is_image().unwrap(), ColorType::L8);
     Vision::save_image(&resized_image, "./assets/lenna_resized_expand.png").unwrap();
 }
-//*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑改变图像尺寸↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑改变图像尺寸↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

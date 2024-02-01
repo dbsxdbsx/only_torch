@@ -43,7 +43,7 @@ impl Tensor {
 
     /// 判断张量是否为标量
     pub fn is_scalar(&self) -> bool {
-        self.shape().is_uninited() || self.shape().iter().all(|x| *x == 1)
+        self.shape().is_empty() || self.shape().iter().all(|x| *x == 1)
     }
 
     /// 转化为纯数（number）。若为标量，则返回Some(number)，否则返回None
@@ -65,7 +65,7 @@ impl Tensor {
     /// 当 `new_dim` 为 `false`，确保所每个张量的第一个维度可以不同，但其余维度应相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
     /// 否则报错。
     pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Tensor {
-        if tensors.is_uninited() {
+        if tensors.is_empty() {
             panic!("{}", TensorError::EmptyList)
         }
 

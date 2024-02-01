@@ -10,13 +10,13 @@ pub struct Add {
     name: Option<String>, // 节点名称
     value: Tensor,        // 本节点的值, 若“is_uninited()”则表示未初始化
     // TODO: need? #[serde(default)]
-    parents: Option<Vec<NodeEnum>>, // 父节点列表，有些节点不需要父节点，如“Variable”, 所以用Option
+    parents: Option<Vec<NodeEnum>>, // 父节点列表，有些节点不需要父节点，如“Variable”, 所以用Option, todo: 非用Option不可？
     children: Vec<NodeEnum>,        // 子节点
                                     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
 
 impl Add {
-    pub fn new(parents: &[NodeEnum], init: bool, trainable: bool, name: Option<&str>) -> Self {
+    pub fn new(parents: &[NodeEnum], name: Option<&str>) -> Self {
         assert!(parents.len() >= 2); // 既然是加法，那么肯定至少有两个父节点
 
         // 检查父节点的形状是否一致
@@ -81,9 +81,9 @@ impl TraitForNode for Add {
             }
         }
     }
-    //*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑固定trait实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑固定trait实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
     fn as_node_enum(&self) -> NodeEnum {
-        todo!()
+        NodeEnum::Add(self.clone())
     }
 
     #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
@@ -97,12 +97,12 @@ impl TraitForNode for Add {
     }
 
     #[doc = r" 设置结果节点对本节点的雅可比矩阵"]
-    fn set_jacobi(&mut self, jacobi: Tensor) {
+    fn set_jacobi(&mut self, _jacobi: Tensor) {
         todo!()
     }
 
     #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
-    fn parent_jacobi(&self, parent: &NodeEnum) -> Tensor {
+    fn parent_jacobi(&self, _parent: &NodeEnum) -> Tensor {
         todo!()
     }
 }
