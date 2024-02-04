@@ -8,3 +8,6 @@
 
 pub mod graph;
 pub mod nodes;
+
+#[cfg(test)]
+mod tests;

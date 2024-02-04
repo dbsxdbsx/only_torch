@@ -1,26 +1,27 @@
 use crate::tensor::Tensor;
-use crate::utils::add_node_to_default_graph;
 use serde::{Deserialize, Serialize};
 
 use super::{NodeEnum, TraitForNode};
 
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Variable {
     trainable: bool, // 是否可训练
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓node basic fields↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    name: Option<String>,           // 节点名称
-    value: Tensor,                  // 本节点的值, 若“is_uninited()”则表示未初始化
-    parents: Option<Vec<NodeEnum>>, // 父节点列表，有些节点不需要父节点，如“Variable”, 所以用Option, todo: 非用Option不可？
-    children: Vec<NodeEnum>,        // 子节点列表
-                                    // TODO: need? #[serde(default)]
-                                    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+    name: String,  // 节点名称
+    value: Tensor, // 本节点的值, 若“!is_inited()”则表示未初始化
+    children: Vec<NodeEnum>, // 子节点列表
+                   // TODO: need? #[serde(default)]
+                   /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
 
 impl Variable {
     pub fn new(shape: &[usize], init: bool, trainable: bool, name: Option<&str>) -> Self {
+        // 1.构造前必要的校验
         assert!(shape.len() == 2);
-        let v = Variable {
-            name: name.map(|n| n.to_string()),
+
+        // 2.构造本节点
+        let mut v = Variable {
+            name: name.unwrap_or_default().into(),
             value: if init {
                 Tensor::normal(0.0, 0.001, shape)
             } else {
@@ -28,57 +29,53 @@ impl Variable {
             },
             trainable,
             children: vec![],
-            ..Default::default()
         };
-        // 将本节点添加到默认计算图中
-        add_node_to_default_graph(&v.as_node_enum());
 
+        // 3.注册并返回
+        v.register(false);
         v
     }
-}
-
-impl TraitForNode for Variable {
-    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓固定trait实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    fn gen_node_name(&mut self) {
-        if self.name.is_none() {
-            let name = std::any::type_name::<Self>();
-            self.name = Some(name.into());
-        }
-    }
-    fn parents(&self) -> &[NodeEnum] {
-        self.parents
-            .as_ref()
-            .expect("parents字段未初始化")
-            .as_slice()
-    }
-    fn parents_mut(&mut self) -> &mut [NodeEnum] {
-        self.parents
-            .as_mut()
-            .expect("parents字段未初始化")
-            .as_mut_slice()
-    }
-    fn children(&self) -> &[NodeEnum] {
-        &self.children
-    }
-    fn children_mut(&mut self) -> &mut [NodeEnum] {
-        self.children.as_mut_slice()
-    }
-    fn value(&self) -> &Tensor {
-        &self.value
-    }
-    fn set_value(&mut self, value: &Tensor) {
+    /// Variable节点特有的方法
+    /// 因其可以创建未初始化的实例，所以需要个供外部实例设置值的方法
+    /// 设置后，本节点的值就不再是“未初始化”的了，且所有下游节点的值会被重置
+    pub fn set_value(&mut self, value: &Tensor) {
         assert_eq!(value.shape(), self.shape());
         // 本节点的值被改变，重置所有下游节点的值
         self.reset_value(true);
         self.value = value.clone();
     }
-    fn reset_value(&mut self, recursive: bool) {
-        self.value = Tensor::uninited(self.shape());
-        if recursive {
-            for child in self.children.iter_mut() {
-                child.reset_value(true);
-            }
-        }
+}
+
+impl TraitForNode for Variable {
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓部分固定↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    fn gen_name(&mut self) {
+        self.name = "<default>_variable".into();
+    }
+    fn parents(&self) -> &Vec<NodeEnum> {
+        unreachable!("Variable节点无需父节点");
+    }
+    fn parents_mut(&mut self) -> &mut Vec<NodeEnum> {
+        unreachable!("Variable节点无需父节点");
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑部分固定↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓固定trait实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    #[doc = r" 获取节点名称（任何节点都必须有个不为空的节点名）"]
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn children(&self) -> &Vec<NodeEnum> {
+        &self.children
+    }
+    fn children_mut(&mut self) -> &mut Vec<NodeEnum> {
+        &mut self.children
+    }
+    // TODO: 冗余的field方法，后期需要删除
+    fn value(&self) -> &Tensor {
+        &self.value
+    }
+    fn value_mut(&mut self) -> &mut Tensor {
+        &mut self.value
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑固定trait实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
     fn is_trainable(&self) -> bool {
@@ -91,11 +88,11 @@ impl TraitForNode for Variable {
 
     // TODO: 冗余的field方法，后期需要删除
     #[doc = r" 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵"]
-    fn _jacobi(&self) -> &Tensor {
+    fn jacobi(&self) -> &Tensor {
         unreachable!()
     }
     #[doc = r" 设置结果节点对本节点的雅可比矩阵"]
-    fn _jacobi_mut(&mut self) -> &mut Tensor {
+    fn jacobi_mut(&mut self) -> &mut Tensor {
         unreachable!()
     }
 

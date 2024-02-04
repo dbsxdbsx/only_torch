@@ -1,109 +1,106 @@
 use serde::{Deserialize, Serialize};
 
+use crate::errors::TensorError;
 use crate::nn::nodes::{NodeEnum, TraitForNode};
 pub use crate::tensor::Tensor;
-use crate::utils::add_node_to_default_graph;
 
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓node basic fields↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    name: Option<String>, // 节点名称
-    value: Tensor,        // 本节点的值, 若“is_uninited()”则表示未初始化
+    name: String,  // 节点名称
+    value: Tensor, // 本节点的值, 若“is_uninited()”则表示未初始化
     // TODO: need? #[serde(default)]
-    parents: Option<Vec<NodeEnum>>, // 父节点列表，有些节点不需要父节点，如“Variable”, 所以用Option, todo: 非用Option不可？
-    children: Vec<NodeEnum>,        // 子节点
+    parents: Vec<NodeEnum>,  // 父节点列表
+    children: Vec<NodeEnum>, // 子节点
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
     jacobi: Tensor,
 }
 
 impl Add {
-    pub fn new(parents: &[NodeEnum], name: Option<&str>) -> Self {
-        assert!(parents.len() >= 2); // 既然是加法，那么肯定至少有两个父节点
-
-        // 检查父节点的形状是否一致
-        let shape = parents[0].shape();
-        for p in parents.iter().skip(1) {
-            assert_eq!(p.shape(), shape);
+    pub fn new(parents: &Vec<NodeEnum>, name: Option<&str>) -> Self {
+        // 1.构造前必要的校验
+        // 1.1 既然是加法，那么肯定至少有2个父节点
+        assert!(parents.len() >= 2);
+        // 1.2 parents的形状需要复合张量加法的规则
+        let mut test_tensor = Tensor::default();
+        for parent in parents.iter() {
+            // NOTE:即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
+            test_tensor += parent.value()
         }
-        let v = Add {
-            name: name.map(|n| n.to_string()),
-            parents: Some(parents.to_vec()),
+
+        // 2.构造本节点
+        let mut v = Add {
+            name: name.unwrap_or_default().into(),
+            parents: parents.to_vec(),
             children: vec![],
-            ..Default::default()
+            value: Tensor::uninited(test_tensor.shape()),
+            jacobi: Tensor::default(),
         };
 
-        // 将本节点添加到默认计算图中
-        add_node_to_default_graph(&v.as_node_enum());
-
+        // 3.注册并返回
+        v.register(true);
         v
     }
 }
 
 impl TraitForNode for Add {
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓部分固定↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    fn gen_name(&mut self) {
+        self.name = "<default>_add".into();
+    }
+    fn parents(&self) -> &Vec<NodeEnum> {
+        &self.parents
+    }
+    fn parents_mut(&mut self) -> &mut Vec<NodeEnum> {
+        &mut self.parents
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑部分固定↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓固定trait实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    fn gen_node_name(&mut self) {
-        if self.name.is_none() {
-            let name = std::any::type_name::<Self>();
-            self.name = Some(name.into());
-        }
+    #[doc = r" 获取节点名称（任何节点都必须有个不为空的节点名）"]
+    fn name(&self) -> &str {
+        &self.name
     }
-    fn parents(&self) -> &[NodeEnum] {
-        self.parents
-            .as_ref()
-            .expect("parents字段未初始化")
-            .as_slice()
-    }
-    fn parents_mut(&mut self) -> &mut [NodeEnum] {
-        self.parents
-            .as_mut()
-            .expect("parents字段未初始化")
-            .as_mut_slice()
-    }
-    fn children(&self) -> &[NodeEnum] {
+    fn children(&self) -> &Vec<NodeEnum> {
         &self.children
     }
-    fn children_mut(&mut self) -> &mut [NodeEnum] {
-        self.children.as_mut_slice()
+    fn children_mut(&mut self) -> &mut Vec<NodeEnum> {
+        &mut self.children
     }
+    // TODO: 冗余的field方法，后期需要删除
     fn value(&self) -> &Tensor {
         &self.value
     }
-    fn set_value(&mut self, value: &Tensor) {
-        assert_eq!(value.shape(), self.shape());
-        // 本节点的值被改变，重置所有下游节点的值
-        self.reset_value(true);
-        self.value = value.clone();
-    }
-    fn reset_value(&mut self, recursive: bool) {
-        self.value = Tensor::uninited(self.shape());
-        if recursive {
-            for child in self.children.iter_mut() {
-                child.reset_value(true);
-            }
-        }
+    fn value_mut(&mut self) -> &mut Tensor {
+        &mut self.value
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑固定trait实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     fn as_node_enum(&self) -> NodeEnum {
         NodeEnum::Add(self.clone())
     }
     // TODO: 冗余的field方法，后期需要删除
     #[doc = r" 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵"]
-    fn _jacobi(&self) -> &Tensor {
+    fn jacobi(&self) -> &Tensor {
         &self.jacobi
     }
     #[doc = r" 设置结果节点对本节点的雅可比矩阵"]
-    fn _jacobi_mut(&mut self) -> &mut Tensor {
+    fn jacobi_mut(&mut self) -> &mut Tensor {
         &mut self.jacobi
     }
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
     fn calc_value(&mut self) {
-        unreachable!()
+        let mut temp_value = Tensor::zero(self.parents()[0].shape());
+        for parent in self.parents_mut().iter_mut() {
+            temp_value += parent.value();
+        }
+        self.value = temp_value;
     }
     #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
     fn calc_jacobi_to_a_parent(&self, _parent: &NodeEnum) -> Tensor {
-        unreachable!()
+        Tensor::eye(self.dimension()) // 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

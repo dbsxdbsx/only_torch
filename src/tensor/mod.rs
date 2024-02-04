@@ -73,8 +73,8 @@ impl Tensor {
     /// 检查张量是否所有元素为NaN。
     /// 因为即使是仅含有1个NaN元素的也可能已经初始化，所以这里采用“所有”元素作为判断依据：
     /// 若所有元素为NaN，则判定为即未初始化，反之则已判定为已初始化。（单个元素的张量作为特例暂不特殊照顾）
-    pub fn is_uninited(&self) -> bool {
-        self.data.iter().all(|&x| x.is_nan())
+    pub fn is_inited(&self) -> bool {
+        !self.data.iter().all(|&x| x.is_nan())
     }
 
     /// 创建一个随机张量，其值在[min, max]的闭区间，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...

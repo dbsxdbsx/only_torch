@@ -22,7 +22,7 @@ fn test_new_empty() {
     for shape in shapes {
         let tensor = Tensor::uninited(shape);
         assert_eq!(tensor.shape(), *shape);
-        assert!(tensor.is_uninited());
+        assert!(!tensor.is_inited());
     }
 }
 
