@@ -109,9 +109,9 @@ pub trait TraitForNode {
     }
     // 不管何种节点，以下2个是计算梯度的核心方法
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓需手动实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    /// 计算本节点的值(往往需要父节点的值，在`forward`中会用到，需手动实现)
+    /// 计算本节点的值（往往需要父节点的值，但本方法不应计算任何父节点的值，需要计算的话请使用`forward`）
     fn calc_value(&mut self);
-    /// 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）
+    /// 计算并返回本节点对某个父节点的雅可比矩阵
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor;
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑需手动实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -130,13 +130,21 @@ pub trait TraitForNode {
 
     /// 前向传播计算本节点的值（若父节点的值未被计算，则递归调用父节点的forward方法）
     fn forward(&mut self) {
-        for node in self.parents_mut() {
-            // TODO: delete? 这里暗示了能取到父节点的node一定是实现了Gradient的类型
-            if !node.value().is_inited() {
-                node.forward();
+        match self.as_node_enum() {
+            NodeEnum::Variable(_) => {
+                if !self.is_inited() {
+                    panic!("Variable节点在`forward`前必须已初始化其值");
+                }
+            }
+            _ => {
+                for node in self.parents_mut() {
+                    if !node.is_inited() {
+                        node.forward();
+                    }
+                }
+                self.calc_value();
             }
         }
-        self.calc_value();
     }
     /// 反向传播，计算结果节点对本节点的雅可比矩阵
     fn backward(&mut self, result_node: &NodeEnum) -> &Tensor {
@@ -155,8 +163,8 @@ pub trait TraitForNode {
         let parent_node: NodeEnum = self.as_node_enum();
         let mut tmp_jacobis = Vec::new();
         for child in self.children_mut() {
-            assert!(child.value().is_inited());
-            // TODO: delete if child.value().is_inited() {
+            assert!(child.is_inited());
+            // TODO: delete if child.is_inited() {
             let jacobi_1 = child.calc_jacobi_to_a_parent(&parent_node);
             let jacobi_2 = child.backward(result_node);
             tmp_jacobis.push(jacobi_1 * jacobi_2);

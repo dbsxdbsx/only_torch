@@ -17,7 +17,11 @@ pub struct Variable {
 impl Variable {
     pub fn new(shape: &[usize], init: bool, trainable: bool, name: Option<&str>) -> Self {
         // 1.构造前必要的校验
-        assert!(shape.len() == 2);
+        assert!(
+            shape.len() == 2,
+            "Variable节点必须是2阶张量, 但传入的形状却是`{:?}`",
+            shape.len()
+        );
 
         // 2.构造本节点
         let mut v = Variable {

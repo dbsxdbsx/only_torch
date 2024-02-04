@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::errors::TensorError;
 use crate::nn::nodes::{NodeEnum, TraitForNode};
 pub use crate::tensor::Tensor;
 
@@ -20,12 +19,19 @@ impl Add {
     pub fn new(parents: &Vec<NodeEnum>, name: Option<&str>) -> Self {
         // 1.构造前必要的校验
         // 1.1 既然是加法，那么肯定至少有2个父节点
-        assert!(parents.len() >= 2);
+        assert!(parents.len() >= 2, "Add节点至少需要2个父节点");
         // 1.2 parents的形状需要复合张量加法的规则
         let mut test_tensor = Tensor::default();
         for parent in parents.iter() {
             // NOTE:即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
             test_tensor += parent.value()
+        }
+        // 1.3 必须是2阶张量
+        if test_tensor.shape().len() != 2 {
+            panic!(
+                "经Add节点计算的值必须是2阶张量, 但结果却是`{:?}`",
+                test_tensor.dimension()
+            );
         }
 
         // 2.构造本节点
