@@ -22,6 +22,7 @@
 ## TODO
 // TODO:use approx::assert_abs_diff_eq; need or not?
 **目前需要先解决有没有的问题，而不是好不好**
+- [] 实现类似tch-rs中`tch::no_grad(|| {});`的无梯度功能；
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
 - [] 基于本框架解决XOR监督学习问题
 - [] 基于本框架解决Mnist（数字识别）的监督学习问题
@@ -42,7 +43,7 @@
 - [老式游戏rom](https://www.myabandonware.com/)
 
 ### 数学/IT原理
-
+- [早期pytorch关于Tensor、Variable等的探讨](https://pytorch.org/blog/pytorch-0_4_0-migration-guide/#merging-tensor-and-variable-and-classes)
 - [矩阵和向量的各种乘法](https://www.jianshu.com/p/9165e3264ced)
 - [神经网络与记忆](https://www.bilibili.com/video/BV1fV4y1i7hZ/?spm_id_from=333.1007.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [陈天奇的机器学习编译课](https://www.bilibili.com/video/BV15v4y1g7EU/?is_story_h5=false&p=1&share_from=ugc&share_medium=android&share_plat=android&share_session_id=5a312434-ccf7-4cb9-862a-17a601cc4d35&share_source=COPY&share_tag=s_i&timestamp=1661386914&unique_k=zCWMKGC&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
@@ -62,6 +63,8 @@
 
 - [python包：遗传规划gplearn](https://gplearn.readthedocs.io/en/stable/examples.html)
 - [python包：遗传规划deap](https://deap.readthedocs.io/en/master/examples/gp_symbreg.html)
+- [python包：特征自动提取](https://github.com/IIIS-Li-Group/OpenFE)
+- [NTK网络](https://zhuanlan.zhihu.com/p/682231092)
 
 （较为成熟的3方库）
 - [Burn—纯rust深度学习库](https://github.com/Tracel-AI/burn)
