@@ -90,7 +90,7 @@ pub trait TraitForNode {
     fn value(&self) -> &Tensor;
     /// 设置本节点的实际值（张量）
     fn value_mut(&mut self) -> &mut Tensor;
-    /// 重置本节点的值，可选择是否递归重置所有下游节点
+    /// 重置本节点的值(设置为未初始化)，可选择是否递归重置所有下游节点
     fn reset_value(&mut self, recursive: bool) {
         *self.value_mut() = Tensor::uninited(self.shape());
         if recursive {
@@ -179,89 +179,4 @@ pub trait TraitForNode {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度相关↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
-
-// // 使用宏来简化结构体的定义
-// #[macro_export]
-// macro_rules! node {
-//     (pub struct $struct_name:ident {
-//         $($body:tt)*
-//     }) => {
-//         use crate::utils::traits::node::NodeEnum; // 添加这行
-//         $crate::node!(@impl pub struct $struct_name { $($body)* });
-//     };
-//     (struct $struct_name:ident {
-//         $($body:tt)*
-//     }) => {
-//         $crate::node!(@impl struct $struct_name { $($body)* });
-//     };
-//     (@impl $vis:vis struct $struct_name:ident {
-//         $($user_field_vis:vis $user_field_name:ident : $user_field_type:ty),*
-//         $(,)?
-//     }) => {
-//         paste::paste! {
-//             use serde::{Serialize, Deserialize};
-
-//             #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-//             $vis struct $struct_name {
-//                 name: Option<String>, // 节点名称
-//                 value: Tensor, // 本节点的值, 若“is_none()”则表示未初始化
-//                 trainable: bool, // 是否可训练
-//                 children: Vec<NodeEnum>, // 子节点列表
-//                 #[serde(default)]
-//                 parents: Option<Vec<NodeEnum>>, // 父节点列表，有些节点不需要父节点，如“Variable”, 所以用Option
-//                 // 以下是自定义的字段
-//                 $($user_field_vis $user_field_name : $user_field_type,)*
-//             }
-
-//             impl Node for [<$struct_name>] {
-//                 fn gen_node_name(&mut self) {
-//                     if self.name.is_none() {
-//                         let name = std::any::type_name::<Self>();
-//                         self.name = Some(name.into());
-//                     }
-//                 }
-//                 fn parents(&self) -> &Vec<NodeEnum> {
-//                     self.parents.as_ref().expect("parents字段未初始化").as_slice()
-//                 }
-//                 fn parents_mut(&mut self) -> &mut [NodeEnum] {
-//                     self.parents.as_mut().expect("parents字段未初始化").as_mut_slice()
-//                 }
-//                 fn children(&self) -> &Vec<NodeEnum> {
-//                     &self.children
-//                 }
-//                 fn children_mut(&mut self) -> &mut [NodeEnum] {
-//                     self.children.as_mut_slice()
-//                 }
-//                 fn value(&self) -> &Tensor {
-//                     &self.value
-//                 }
-//                 fn set_value(&mut self, value: &Tensor) {
-//                     assert_eq!(value.shape(), self.shape());
-//                     // 本节点的值被改变，重置所有下游节点的值
-//                     self.reset_value(true);
-//                     self.value = value.clone();
-//                 }
-//                 fn reset_value(&mut self, recursive: bool) {
-//                     self.value = Tensor::empty(self.shape());
-//                     if recursive {
-//                         for child in self.children.iter_mut() {
-//                             child.reset_value(true);
-//                         }
-//                     }
-//                 }
-//                 // Any的方法
-//                 fn as_any(&self) -> &dyn std::any::Any {
-//                     self
-//                 }
-//                 fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-//                     self
-//                 }
-//                 //
-//                 fn as_node_enum(&self) -> NodeEnum {
-//                     NodeEnum::$struct_name(self.clone())
-//                 }
-//             }
-//         }
-//     };
-// }
-/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑节点（Node）特性↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+// ----------------------以上是节点（Node）特性、接口、宏----------------------

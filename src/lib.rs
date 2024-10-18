@@ -11,6 +11,3 @@ pub mod nn;
 pub mod tensor;
 pub mod utils;
 pub mod vision;
-
-// #[macro_use]
-// extern crate savefile_derive;

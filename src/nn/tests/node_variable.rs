@@ -86,3 +86,6 @@ fn test_forward_panic_for_node_variable() {
     let mut variable = Variable::new(&shape, init, trainable, name);
     assert_panic!(variable.forward()); // 未初始化的节点不能前向传播
 }
+
+
+// TODO：need backward unit tests?

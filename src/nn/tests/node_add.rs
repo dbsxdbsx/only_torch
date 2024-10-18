@@ -54,17 +54,19 @@ fn test_calc_value_for_node_add() {
     // 1.构造2个父节点
     let mut a = Variable::new(&[2, 3], false, false, None);
     let mut b = Variable::new(&[2, 3], false, false, None);
-    let mut node = Add::new(&vec![a.as_node_enum(), b.as_node_enum()], None);
+    let mut add_node = Add::new(&vec![a.as_node_enum(), b.as_node_enum()], None);
     // 2.计算前校验
-    assert!(!node.is_inited());
+    assert!(!add_node.is_inited());
     // 3.计算
     let a_value = Tensor::normal(0.0, 1.0, &[2, 3]);
     let b_value = Tensor::normal(0.0, 1.0, &[2, 3]);
     // TODO：任何保证转入Add等节点的父节点变量是个可变引用呢(这样Variable节点才能动态更新其值)？
     a.set_value(&a_value);
+    assert!(a.is_inited());
     b.set_value(&b_value);
-    node.forward();
+    assert!(b.is_inited());
+    add_node.forward();
     // 4.计算后校验
-    assert!(node.is_inited());
-    assert_eq!(node.value(), a_value + b_value);
+    assert!(add_node.is_inited());
+    assert_eq!(add_node.value(), a_value + b_value);
 }

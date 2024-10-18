@@ -50,7 +50,7 @@
 - [基于梯度的机器学习IT原理](https://zhuanlan.zhihu.com/p/518198564)
 
 ### 开源示例
-
+- [KAN 2.0](https://blog.csdn.net/qq_44681809/article/details/141355718)
 - [radiate--衍生NEAT的纯Rust库](https://github.com/pkalivas/radiate)
 - [neat-rs](https://github.com/dbsxdbsx/neat-rs)
 - [纯Rust的NEAT+GRU](https://github.com/sakex/neat-gru-Rust)
@@ -58,7 +58,7 @@
 - [ndarray_glm(可参考下`array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
 
 - [PyToy--基于MatrixSlow的Python机器学习框架](https://github.com/ysj1173886760/PyToy)
-
+- [MatrixSlow--纯python写的神经网络库](https://github.com/zc911/MatrixSlow)
 - [python：遗传算法（GE）玩FlappyBird](https://github.com/ShuhuaGao/gpFlappyBird)
 
 - [python包：遗传规划gplearn](https://gplearn.readthedocs.io/en/stable/examples.html)

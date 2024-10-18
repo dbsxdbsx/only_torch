@@ -1,4 +1,4 @@
-use only_torch::nn::nodes::Variable;
+use only_torch::nn::nodes::{Add, Variable};
 use only_torch::tensor::Tensor;
 
 #[test]
@@ -29,15 +29,15 @@ fn test_ada_line() {
     println!("{:?}", train_set.shape());
 
     // 构造计算图：输入向量，是一个3x1矩阵，不需要初始化，不参与训练
-    let _x = Variable::new(&[3, 1], false, false, None);
+    let x = Variable::new(&[3, 1], false, false, None);
     // 类别标签，1男，-1女
-    let _label = Variable::new(&[1, 1], false, false, None);
+    let label = Variable::new(&[1, 1], false, false, None);
     // 权重向量，是一个1x3矩阵，需要初始化，参与训练
-    let _w = Variable::new(&[1, 3], true, true, None);
+    let w = Variable::new(&[1, 3], true, true, None);
     // 阈值，是一个1x1矩阵，需要初始化，参与训练
-    let _b = Variable::new(&[1, 1], true, true, None);
+    let b = Variable::new(&[1, 1], true, true, None);
     // ADALINE的预测输出
-    // output = ms.ops.Add(ms.ops.MatMul(w, x), b)
+    // let output = Add::new(&vec![MatMul::new(&vec![w, x]), b], None);
     // predict = ms.ops.Step(output)
     // 损失函数
     // loss = ms.ops.loss.PerceptionLoss(ms.ops.MatMul(label, output))
