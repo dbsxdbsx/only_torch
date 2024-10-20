@@ -1,12 +1,9 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use crate::nn::nodes::{NodeEnum, TraitForNode};
 use crate::tensor::Tensor;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Add {
+pub struct MatMul {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓node basic fields↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     name: String,               // 节点名称
     value: Tensor,              // 本节点的值, 若"is_uninited()"则表示未初始化
@@ -16,21 +13,21 @@ pub struct Add {
     jacobi: Tensor,
 }
 
-impl Add {
+impl MatMul {
     pub fn new(parents: &[NodeEnum], name: Option<&str>) -> Self {
         // 1.构造前必要的校验
-        // 1.1 既然是加法，那么肯定至少有2个父节点
-        assert!(parents.len() >= 2, "Add节点至少需要2个父节点");
-        // 1.2 parents的形状需要符合矩阵加法的规则
-        let mut test_tensor = Tensor::default();
+        // 1.1 矩阵乘法需要恰好两个父节点
+        assert!(parents.len() == 2, "MatMul节点需要恰好2个父节点");
+        // 1.2 parents的形状需要符合矩阵乘法的规则
+        let mut test_tensor = Tensor::eyes(parents[0].value().shape()[0]);
         for parent in parents {
-            // NOTE:即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
-            test_tensor += parent.value();
+            // NOTE: 即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
+            test_tensor = test_tensor.mat_mul(&parent.value());
         }
         // 1.3 必须是2阶张量
         assert!(
             test_tensor.shape().len() == 2,
-            "经Add节点计算的值必须是2阶张量, 但结果却是`{:?}`",
+            "经MatMul节点计算的值必须是2阶张量, 但结果却是`{:?}`",
             test_tensor.dimension()
         );
 
@@ -49,7 +46,7 @@ impl Add {
     }
 }
 
-impl TraitForNode for Add {
+impl TraitForNode for MatMul {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓固定trait实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     #[doc = " 获取本节点的所有父节点名称"]
     fn parents_names(&self) -> &[String] {
@@ -57,7 +54,7 @@ impl TraitForNode for Add {
     }
     #[doc = " 获取节点名称前缀"]
     fn name_prefix(&self) -> &str {
-        "<default>_add"
+        "<default>_mat_mul"
     }
     #[doc = r" 获取节点名称（任何节点都必须有个不为空的节点名）"]
     fn name(&self) -> &str {
@@ -86,7 +83,7 @@ impl TraitForNode for Add {
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑固定trait实现↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     fn as_node_enum(&self) -> NodeEnum {
-        NodeEnum::Add(self.clone())
+        NodeEnum::MatMul(self.clone())
     }
 
     #[doc = r" 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵"]
@@ -101,15 +98,39 @@ impl TraitForNode for Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
     fn calc_value(&mut self) {
-        let mut temp_value = Tensor::zeros(self.parents()[0].borrow_mut().value().shape());
-        for parent in self.parents() {
-            temp_value += parent.borrow_mut().value();
-        }
-        self.value = temp_value;
+        let parents = self.parents();
+        let parent1 = parents[0].borrow();
+        let parent2 = parents[1].borrow();
+        self.value = parent1.value().mat_mul(parent2.value());
     }
     #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
-    fn calc_jacobi_to_a_parent(&self, _parent: &NodeEnum) -> Tensor {
-        Tensor::eyes(self.dimension()) // 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
+    fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
+        let parents = self.parents();
+        let parent1 = parents[0].borrow();
+        let parent2 = parents[1].borrow();
+
+        if parent.name() == parent1.name() {
+            // 对第一个父节点的雅可比矩阵
+            Tensor::fill_diagonal_with_tensor(
+                &Tensor::zeros(&[self.dimension(), parent.dimension()]),
+                &parent2.value().transpose(),
+            )
+        } else {
+            // 对第二个父节点的雅可比矩阵
+            let jacobi = Tensor::fill_diagonal_with_tensor(
+                &Tensor::zeros(&[self.dimension(), parent.dimension()]),
+                parent1.value(),
+            );
+            let row_sort = Tensor::arange(self.dimension())
+                .reshape(&self.shape().iter().rev().cloned().collect::<Vec<_>>())
+                .transpose()
+                .flatten();
+            let col_sort = Tensor::arange(parent.dimension())
+                .reshape(&parent.shape().iter().rev().cloned().collect::<Vec<_>>())
+                .transpose()
+                .flatten();
+            jacobi.index_select(&row_sort, 0).index_select(&col_sort, 1)
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

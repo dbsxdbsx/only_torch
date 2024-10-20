@@ -20,8 +20,9 @@
 （无）
 
 ## TODO
- unit test for `generate_unique_name`
- 
+- `children_mut`是否可合并至`children()`? and `value_mut`是否可合并至`value`?
+- `fn as_node_enum(&self) -> NodeEnum` trait method 是否多余，对于具体实现的节点，可否隐式转换或直接各节点返回NodeEnum？(只要不要影响后期各种算子的重载)？
+
 // TODO:use approx::assert_abs_diff_eq; need or not?
 **目前需要先解决有没有的问题，而不是好不好**
 - [] 实现类似tch-rs中`tch::no_grad(|| {});`的无梯度功能；

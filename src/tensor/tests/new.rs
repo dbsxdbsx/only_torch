@@ -143,7 +143,7 @@ fn test_new_zero() {
         &[2, 3, 4, 5],
     ];
     for shape in shapes {
-        let tensor = Tensor::zero(shape);
+        let tensor = Tensor::zeros(shape);
         assert_eq!(tensor.shape(), *shape);
 
         for elem in tensor.data.iter() {
@@ -166,7 +166,7 @@ fn test_new_eye() {
     ];
 
     for (n, correct_result) in test_cases {
-        let eye = Tensor::eye(n);
+        let eye = Tensor::eyes(n);
         assert_eq!(
             eye.data,
             Array::from_shape_vec(IxDyn(&[n, n]), correct_result).unwrap()
@@ -176,8 +176,8 @@ fn test_new_eye() {
 
 #[test]
 fn test_new_eye_with_invalid_diagonal_size() {
-    assert_panic!(Tensor::eye(0));
-    assert_panic!(Tensor::eye(1));
+    assert_panic!(Tensor::eyes(0));
+    assert_panic!(Tensor::eyes(1));
 }
 
 #[test]

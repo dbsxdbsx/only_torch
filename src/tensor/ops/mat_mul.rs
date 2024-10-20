@@ -1,7 +1,8 @@
 use crate::tensor::Tensor;
 
 impl Tensor {
-    /// 实现矩阵乘法。只接受2阶张量，否则会触发panic。
+    /// 实现矩阵乘法(`mat_mul`这个名称参考了python的`numpy`库)。
+    /// 只接受2阶张量，否则会触发panic。
     /// 需要保证前一个张量的列数（col）等于后一个张量的行数（row），否则也会触发panic。
     pub fn mat_mul(&self, other: &Self) -> Self {
         // 检查输入的张量维度

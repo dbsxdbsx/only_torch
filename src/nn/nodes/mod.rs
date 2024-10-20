@@ -20,7 +20,7 @@ pub enum NodeEnum {
     Variable,
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓算子↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     Add,
-    // MatMul,
+    MatMul,
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑算子↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
 
@@ -29,8 +29,8 @@ pub enum NodeEnum {
 pub trait TraitForNode {
     /// 注册本节点，干3件事：
     /// 1.（可选）将本节点添加到父节点的子节点列表中；
-    /// 2.将本节点添加到默认计算图中；
-    /// 3.若节点名称为空，生成默认节点名称
+    /// 2.若节点名称为空，生成默认节点名称
+    /// 3.将本节点添加到默认计算图中；
     /// TODO：是否需要检查图中节点名称重复？
     fn register(&mut self, add_to_parents_children: bool) {
         // 1.将本节点添加到父节点的子节点列表中
@@ -85,11 +85,15 @@ pub trait TraitForNode {
         self.value().is_scalar()
     }
     /// 获取本节点的父节点（有些是不需要的，比如“Variable”）
-    fn parents(&self) -> Vec<Rc<RefCell<NodeEnum>>>;
+    fn parents(&self) -> Vec<Rc<RefCell<NodeEnum>>> {
+        crate::nn::graph::convert_parents(&self.parents_names())
+    }
+    /// 获取本节点的所有父节点名称
+    fn parents_names(&self) -> &[String];
     /// 获取本节点的子节点
     fn children(&self) -> &[NodeEnum];
     fn children_mut(&mut self) -> &mut Vec<NodeEnum>;
-    // TODO: 冗余的field方法，后期需要删除
+
     /// 获取本节点的实际值（张量）
     fn value(&self) -> &Tensor;
     /// 设置本节点的实际值（张量）
@@ -161,7 +165,7 @@ pub trait TraitForNode {
         //     return &self.jacobi();
         // }
         // 对其它节点
-        *self.jacobi_mut() = Tensor::zero(&[result_node.dimension(), self.dimension()]);
+        *self.jacobi_mut() = Tensor::zeros(&[result_node.dimension(), self.dimension()]);
         let parent_node: NodeEnum = self.as_node_enum();
         let mut tmp_jacobis = Vec::new();
         for child in self.children_mut() {

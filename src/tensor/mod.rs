@@ -55,7 +55,7 @@ impl Tensor {
         Self { data }
     }
 
-    pub fn zero(shape: &[usize]) -> Self {
+    pub fn zeros(shape: &[usize]) -> Self {
         let data = Array::zeros(IxDyn(shape));
         Self { data }
     }
@@ -92,7 +92,7 @@ impl Tensor {
 
     /// 创建一个含`n`个对角元素的单位矩阵。
     /// n必须大于等于2，否则会panic。
-    pub fn eye(n: usize) -> Self {
+    pub fn eyes(n: usize) -> Self {
         assert!(
             n >= 2,
             "{}",
