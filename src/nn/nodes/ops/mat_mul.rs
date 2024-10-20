@@ -17,14 +17,14 @@ impl MatMul {
     pub fn new(parents: &[NodeEnum], name: Option<&str>) -> Self {
         // 1.构造前必要的校验
         // 1.1 矩阵乘法需要恰好两个父节点
-        assert!(parents.len() == 2, "MatMul节点需要恰好2个父节点");
+        assert!(parents.len() == 2, "MatMul节点需恰好2个父节点");
         // 1.2 parents的形状需要符合矩阵乘法的规则
         let mut test_tensor = Tensor::eyes(parents[0].value().shape()[0]);
         for parent in parents {
             // NOTE: 即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
             test_tensor = test_tensor.mat_mul(&parent.value());
         }
-        // 1.3 必须是2阶张量
+        // 1.3 计算结果必须是2阶张量
         assert!(
             test_tensor.shape().len() == 2,
             "经MatMul节点计算的值必须是2阶张量, 但结果却是`{:?}`",
@@ -86,17 +86,17 @@ impl TraitForNode for MatMul {
         NodeEnum::MatMul(self.clone())
     }
 
-    #[doc = r" 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵"]
+    #[doc = r" 返回结果节点对本节点的雅可比矩阵的不可变引用"]
     fn jacobi(&self) -> &Tensor {
         &self.jacobi
     }
-    #[doc = r" 设置结果节点对本节点的雅可比矩阵"]
+    #[doc = r" 返回结果节点对本节点的雅可比矩阵的可变引用"]
     fn jacobi_mut(&mut self) -> &mut Tensor {
         &mut self.jacobi
     }
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
+    #[doc = r" 根据父节点的值计算本节点的值（需手动实现）"]
     fn calc_value(&mut self) {
         let parents = self.parents();
         let parent1 = parents[0].borrow();
@@ -104,7 +104,9 @@ impl TraitForNode for MatMul {
         self.value = parent1.value().mat_mul(parent2.value());
     }
     #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
+    /// NOTE: 这里的逻辑取巧参考了：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L61
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
+        // TODO: delete return Tensor::default();
         let parents = self.parents();
         let parent1 = parents[0].borrow();
         let parent2 = parents[1].borrow();
@@ -115,7 +117,7 @@ impl TraitForNode for MatMul {
                 &Tensor::zeros(&[self.dimension(), parent.dimension()]),
                 &parent2.value().transpose(),
             )
-        } else {
+        } else if parent.name() == parent2.name() {
             // 对第二个父节点的雅可比矩阵
             let jacobi = Tensor::fill_diagonal_with_tensor(
                 &Tensor::zeros(&[self.dimension(), parent.dimension()]),
@@ -130,6 +132,13 @@ impl TraitForNode for MatMul {
                 .transpose()
                 .flatten();
             jacobi.index_select(&row_sort, 0).index_select(&col_sort, 1)
+        } else {
+            panic!(
+                "MatMul节点的父节点名称必须匹配`{}`或`{}`，但传入的父节点名称是`{}`",
+                parent1.name(),
+                parent2.name(),
+                parent.name()
+            );
         }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

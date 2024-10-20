@@ -20,14 +20,14 @@ impl Add {
     pub fn new(parents: &[NodeEnum], name: Option<&str>) -> Self {
         // 1.构造前必要的校验
         // 1.1 既然是加法，那么肯定至少有2个父节点
-        assert!(parents.len() >= 2, "Add节点至少需要2个父节点");
+        assert!(parents.len() >= 2, "Add节点至少需2个父节点");
         // 1.2 parents的形状需要符合矩阵加法的规则
         let mut test_tensor = Tensor::default();
         for parent in parents {
             // NOTE:即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
             test_tensor += parent.value();
         }
-        // 1.3 必须是2阶张量
+        // 1.3 计算结果必须是2阶张量
         assert!(
             test_tensor.shape().len() == 2,
             "经Add节点计算的值必须是2阶张量, 但结果却是`{:?}`",
@@ -89,26 +89,31 @@ impl TraitForNode for Add {
         NodeEnum::Add(self.clone())
     }
 
-    #[doc = r" 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵"]
+    #[doc = r" 返回结果节点对本节点的雅可比矩阵的不可变引用"]
     fn jacobi(&self) -> &Tensor {
         &self.jacobi
     }
-    #[doc = r" 设置结果节点对本节点的雅可比矩阵"]
+    #[doc = r" 返回结果节点对本节点的雅可比矩阵的可变引用"]
     fn jacobi_mut(&mut self) -> &mut Tensor {
         &mut self.jacobi
     }
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
+    #[doc = r" 根据父节点的值计算本节点的值（需手动实现）"]
     fn calc_value(&mut self) {
         let mut temp_value = Tensor::zeros(self.parents()[0].borrow_mut().value().shape());
         for parent in self.parents() {
-            temp_value += parent.borrow_mut().value();
+            temp_value += parent.borrow().value();
         }
         self.value = temp_value;
     }
     #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
-    fn calc_jacobi_to_a_parent(&self, _parent: &NodeEnum) -> Tensor {
+    fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
+        // 检查输入的父节点是否是存储的父节点之一
+        if !self.parents_names().contains(&parent.name().to_string()) {
+            panic!("输入的父节点 '{}' 不是 Add 节点的父节点之一", parent.name());
+        }
+
         Tensor::eyes(self.dimension()) // 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

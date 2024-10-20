@@ -1,4 +1,4 @@
-use only_torch::nn::nodes::Variable;
+use only_torch::nn::nodes::{Add, MatMul, TraitForNode, Variable};
 use only_torch::tensor::Tensor;
 
 #[test]
@@ -37,7 +37,13 @@ fn test_ada_line() {
     // 阈值，是一个1x1矩阵，需要初始化，参与训练
     let b = Variable::new(&[1, 1], true, true, None);
     // ADALINE的预测输出
-    // let output = Add::new(&vec![MatMul::new(&vec![w, x]), b], None);
+    let output = Add::new(
+        &vec![
+            MatMul::new(&vec![w.as_node_enum(), x.as_node_enum()], None).as_node_enum(),
+            b.as_node_enum(),
+        ],
+        None,
+    );
     // predict = ms.ops.Step(output)
     // 损失函数
     // loss = ms.ops.loss.PerceptionLoss(ms.ops.MatMul(label, output))

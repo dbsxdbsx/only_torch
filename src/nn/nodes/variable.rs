@@ -97,17 +97,17 @@ impl TraitForNode for Variable {
         NodeEnum::Variable(self.clone())
     }
 
-    #[doc = r" 返回(不同于`set_jacobi`，这里仅返回但不计算)结果节点对本节点的雅可比矩阵"]
+    #[doc = r" 返回结果节点对本节点的雅可比矩阵的不可变引用"]
     fn jacobi(&self) -> &Tensor {
         unreachable!()
     }
-    #[doc = r" 设置结果节点对本节点的雅可比矩阵"]
+    #[doc = r" 返回结果节点对本节点的雅可比矩阵的可变引用"]
     fn jacobi_mut(&mut self) -> &mut Tensor {
         unreachable!()
     }
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
+    #[doc = r" 根据父节点的值计算本节点的值（需手动实现）"]
     fn calc_value(&mut self) {
         unreachable!()
     }
