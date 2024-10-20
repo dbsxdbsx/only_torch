@@ -8,24 +8,23 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓node basic fields↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    name: String,            // 节点名称
-    value: Tensor,           // 本节点的值, 若"is_uninited()"则表示未初始化
-    parents: Vec<String>,    // 父节点名称列表
-    children: Vec<NodeEnum>, // 子节点
+    name: String,               // 节点名称
+    value: Tensor,              // 本节点的值, 若"is_uninited()"则表示未初始化
+    parents_names: Vec<String>, // 父节点名称列表
+    children: Vec<NodeEnum>,    // 子节点
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
     jacobi: Tensor,
 }
 
 impl Add {
-    pub fn new(parents: &Vec<NodeEnum>, name: Option<&str>) -> Self {
+    pub fn new(parents: &[NodeEnum], name: Option<&str>) -> Self {
         // 1.构造前必要的校验
         // 1.1 既然是加法，那么肯定至少有2个父节点
         assert!(parents.len() >= 2, "Add节点至少需要2个父节点");
         // 1.2 parents的形状需要复合张量加法的规则
         let mut test_tensor = Tensor::default();
         for parent in parents {
-            // NOTE:即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
-            test_tensor += parent.value();
+            test_tensor += parent.value(); // NOTE:即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
         }
         // 1.3 必须是2阶张量
         assert!(
@@ -37,7 +36,7 @@ impl Add {
         // 2.构造本节点
         let mut v = Self {
             name: name.unwrap_or_default().into(),
-            parents: parents.iter().map(|p| p.name().to_string()).collect(),
+            parents_names: parents.iter().map(|p| p.name().to_string()).collect(),
             children: vec![],
             value: Tensor::uninited(test_tensor.shape()),
             jacobi: Tensor::default(),
@@ -52,7 +51,7 @@ impl Add {
 impl TraitForNode for Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓部分固定↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     fn parents(&self) -> Vec<Rc<RefCell<NodeEnum>>> {
-        crate::nn::graph::convert_parents(&self.parents)
+        crate::nn::graph::convert_parents(&self.parents_names)
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑部分固定↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓固定trait实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/

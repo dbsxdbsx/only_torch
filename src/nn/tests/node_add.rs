@@ -39,14 +39,6 @@ fn test_new_panic_for_node_add() {
         Add::new(&vec![a.as_node_enum(), b.as_node_enum()], None),
         "形状不一致且两个张量没有一个是标量，故无法相加：第一个张量的形状为[2, 3]，第二个张量的形状为[2, 4]"
     );
-    // NOTE: 以下部分暂时不需要，因为Variabel节点的形状已经在构造时校验过了，只可能是2阶张量，所以加法结果也不会出现2阶以外情况
-    // // 3.因计算结果不是2阶张量导致报错
-    // let c = Variable::new(&[2, 3, 4], false, false, None);
-    // let d = Variable::new(&[2, 3, 4], false, false, None);
-    // assert_panic!(
-    //     Add::new(&vec![c.as_node_enum(), d.as_node_enum()], None),
-    //     "经Add节点计算的值必须是2阶张量, 但结果却是`3`"
-    // );
 }
 
 #[test]
@@ -68,4 +60,14 @@ fn test_calc_value_for_node_add() {
     add_node.forward();
     assert!(add_node.is_inited());
     assert_eq!(add_node.value(), a_value + b_value);
+    // 5.1 再次设置父节点值并检查
+    let new_a_value = Tensor::normal(1.0, 0.5, &[2, 3]);
+    let new_b_value = Tensor::normal(-1.0, 0.5, &[2, 3]);
+    a.set_value(&new_a_value);
+    b.set_value(&new_b_value);
+    // 5.2 重新计算Add节点的值
+    add_node.forward();
+    // 5.3 检查Add节点的值是否正确更新
+    assert!(add_node.is_inited());
+    assert_eq!(add_node.value(), new_a_value + new_b_value);
 }
