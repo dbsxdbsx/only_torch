@@ -39,7 +39,7 @@ pub struct Tensor {
 
 impl Default for Tensor {
     fn default() -> Self {
-        Tensor::uninited(&[])
+        Self::uninited(&[])
     }
 }
 
@@ -50,14 +50,14 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
-    pub fn new(data: &[f32], shape: &[usize]) -> Tensor {
+    pub fn new(data: &[f32], shape: &[usize]) -> Self {
         let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap();
-        Tensor { data }
+        Self { data }
     }
 
-    pub fn zero(shape: &[usize]) -> Tensor {
+    pub fn zero(shape: &[usize]) -> Self {
         let data = Array::zeros(IxDyn(shape));
-        Tensor { data }
+        Self { data }
     }
 
     /// 创建一个空（未初始化）的张量--该张量的所有元素值为NaN，请务必之后赋予每个元素具体数值后再使用（虽然不会报错）。
@@ -65,12 +65,12 @@ impl Tensor {
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
-    pub fn uninited(shape: &[usize]) -> Tensor {
+    pub fn uninited(shape: &[usize]) -> Self {
         let data = Array::from_elem(IxDyn(shape), f32::NAN);
-        Tensor { data }
+        Self { data }
     }
 
-    /// 检查张量是否所有元素为NaN。
+    /// `检查张量是否所有元素为NaN`。
     /// 因为即使是仅含有1个NaN元素的也可能已经初始化，所以这里采用“所有”元素作为判断依据：
     /// 若所有元素为NaN，则判定为即未初始化，反之则已判定为已初始化。（单个元素的张量作为特例暂不特殊照顾）
     pub fn is_inited(&self) -> bool {
@@ -82,17 +82,17 @@ impl Tensor {
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
-    pub fn random(min: f32, max: f32, shape: &[usize]) -> Tensor {
+    pub fn random(min: f32, max: f32, shape: &[usize]) -> Self {
         let mut rng = rand::thread_rng();
         let data = (0..shape.iter().product::<usize>())
             .map(|_| Uniform::from(min..=max).sample(&mut rng))
             .collect::<Vec<_>>();
-        Tensor::new(&data, shape)
+        Self::new(&data, shape)
     }
 
     /// 创建一个含`n`个对角元素的单位矩阵。
     /// n必须大于等于2，否则会panic。
-    pub fn eye(n: usize) -> Tensor {
+    pub fn eye(n: usize) -> Self {
         assert!(
             n >= 2,
             "{}",
@@ -105,7 +105,7 @@ impl Tensor {
         let data = Array::eye(n);
         let shape = vec![n, n];
         let data = Array::from_shape_vec(IxDyn(&shape), data.into_raw_vec()).unwrap();
-        Tensor { data }
+        Self { data }
     }
 
     /// 创建一个服从正态分布的随机张量，其值在指定的均值和标准差范围内。
@@ -113,7 +113,7 @@ impl Tensor {
     /// 若为向量，shape可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，shape可以是[n,m]；
     /// 若为更高维度的数组，shape可以是[c,n,m,...]。
-    pub fn normal(mean: f32, std_dev: f32, shape: &[usize]) -> Tensor {
+    pub fn normal(mean: f32, std_dev: f32, shape: &[usize]) -> Self {
         let mut rng = rand::thread_rng();
         let data_len = shape.iter().product::<usize>();
         let mut data = Vec::with_capacity(data_len);
@@ -123,8 +123,8 @@ impl Tensor {
             let u2: f32 = rng.gen();
             let r = (-2.0 * u1.ln()).sqrt();
             let theta = 2.0 * std::f32::consts::PI * u2;
-            let z0 = mean + std_dev * r * theta.cos();
-            let z1 = mean + std_dev * r * theta.sin();
+            let z0 = (std_dev * r).mul_add(theta.cos(), mean);
+            let z1 = (std_dev * r).mul_add(theta.sin(), mean);
 
             if z0.is_finite() {
                 data.push(z0);
@@ -134,7 +134,7 @@ impl Tensor {
             }
         }
 
-        Tensor::new(&data, shape)
+        Self::new(&data, shape)
     }
 }
 
@@ -157,10 +157,10 @@ impl Tensor {
         file.write_all(&serialized_data).unwrap();
     }
     /// 从本地文件加载单个Tensor
-    pub fn load(file: &mut File) -> Tensor {
+    pub fn load(file: &mut File) -> Self {
         let mut serialized_data = Vec::new();
         file.read_to_end(&mut serialized_data).unwrap();
         let data = bincode::deserialize(&serialized_data).unwrap();
-        Tensor { data }
+        Self { data }
     }
 }

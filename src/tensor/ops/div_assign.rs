@@ -2,14 +2,14 @@ use crate::tensor::Tensor;
 use std::ops::DivAssign;
 
 impl DivAssign for Tensor {
-    fn div_assign(&mut self, other: Tensor) {
+    fn div_assign(&mut self, other: Self) {
         // 使用`Div` trait的`div`方法来执行除法，并更新当前张量
         *self = self.clone() / other;
     }
 }
 
-impl<'a> DivAssign<&'a Tensor> for Tensor {
-    fn div_assign(&mut self, other: &'a Tensor) {
+impl<'a> DivAssign<&'a Self> for Tensor {
+    fn div_assign(&mut self, other: &'a Self) {
         // 使用`Div` trait的`div`方法来执行除法，并更新当前张量
         *self = self.clone() / other;
     }

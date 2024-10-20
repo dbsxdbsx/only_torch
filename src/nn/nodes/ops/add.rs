@@ -1,15 +1,16 @@
-use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::nn::nodes::{NodeEnum, TraitForNode};
-pub use crate::tensor::Tensor;
+use crate::tensor::Tensor;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓node basic fields↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    name: String,  // 节点名称
-    value: Tensor, // 本节点的值, 若“is_uninited()”则表示未初始化
-    // TODO: need? #[serde(default)]
-    parents: Vec<NodeEnum>,  // 父节点列表
+    name: String,            // 节点名称
+    value: Tensor,           // 本节点的值, 若"is_uninited()"则表示未初始化
+    parents: Vec<String>,    // 父节点名称列表
     children: Vec<NodeEnum>, // 子节点
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑node basic fields↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
     jacobi: Tensor,
@@ -22,22 +23,21 @@ impl Add {
         assert!(parents.len() >= 2, "Add节点至少需要2个父节点");
         // 1.2 parents的形状需要复合张量加法的规则
         let mut test_tensor = Tensor::default();
-        for parent in parents.iter() {
+        for parent in parents {
             // NOTE:即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
-            test_tensor += parent.value()
+            test_tensor += parent.value();
         }
         // 1.3 必须是2阶张量
-        if test_tensor.shape().len() != 2 {
-            panic!(
-                "经Add节点计算的值必须是2阶张量, 但结果却是`{:?}`",
-                test_tensor.dimension()
-            );
-        }
+        assert!(
+            test_tensor.shape().len() == 2,
+            "经Add节点计算的值必须是2阶张量, 但结果却是`{:?}`",
+            test_tensor.dimension()
+        );
 
         // 2.构造本节点
-        let mut v = Add {
+        let mut v = Self {
             name: name.unwrap_or_default().into(),
-            parents: parents.to_vec(),
+            parents: parents.iter().map(|p| p.name().to_string()).collect(),
             children: vec![],
             value: Tensor::uninited(test_tensor.shape()),
             jacobi: Tensor::default(),
@@ -51,23 +51,24 @@ impl Add {
 
 impl TraitForNode for Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓部分固定↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    fn gen_name(&mut self) {
-        self.name = "<default>_add".into();
-    }
-    fn parents(&self) -> &Vec<NodeEnum> {
-        &self.parents
-    }
-    fn parents_mut(&mut self) -> &mut Vec<NodeEnum> {
-        &mut self.parents
+    fn parents(&self) -> Vec<Rc<RefCell<NodeEnum>>> {
+        crate::nn::graph::convert_parents(&self.parents)
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑部分固定↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
-
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓固定trait实现↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    #[doc = " 获取节点名称前缀"]
+    fn name_prefix(&self) -> &str {
+        "<default>_add"
+    }
     #[doc = r" 获取节点名称（任何节点都必须有个不为空的节点名）"]
     fn name(&self) -> &str {
         &self.name
     }
-    fn children(&self) -> &Vec<NodeEnum> {
+    #[doc = " 设置节点名称"]
+    fn set_name(&mut self, name: &str) {
+        self.name = name.into();
+    }
+    fn children(&self) -> &[NodeEnum] {
         &self.children
     }
     fn children_mut(&mut self) -> &mut Vec<NodeEnum> {
@@ -98,9 +99,9 @@ impl TraitForNode for Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     #[doc = r" 根据父节点的值计算本节点的值(每个使用本trait的节点类都需要实现这个方法)"]
     fn calc_value(&mut self) {
-        let mut temp_value = Tensor::zero(self.parents()[0].shape());
-        for parent in self.parents_mut().iter_mut() {
-            temp_value += parent.value();
+        let mut temp_value = Tensor::zero(self.parents()[0].borrow_mut().value().shape());
+        for parent in self.parents() {
+            temp_value += parent.borrow_mut().value();
         }
         self.value = temp_value;
     }

@@ -34,8 +34,10 @@ impl Vision {
                 let (width, height) = rgb_image.dimensions();
                 ImageBuffer::from_fn(width, height, |x, y| {
                     let pixel = rgb_image.get_pixel(x, y);
-                    let luma =
-                        0.299 * pixel[0] as f32 + 0.587 * pixel[1] as f32 + 0.114 * pixel[2] as f32;
+                    let luma = 0.114f32.mul_add(
+                        f32::from(pixel[2]),
+                        0.299f32.mul_add(f32::from(pixel[0]), 0.587 * f32::from(pixel[1])),
+                    );
                     Luma([luma.round() as u8])
                 })
             }
@@ -71,17 +73,21 @@ fn detect_circles_gray_image(
 
     for y in 1..height - 1 {
         for x in 1..width - 1 {
-            let gradient_x =
-                image.get_pixel(x + 1, y).0[0] as i32 - image.get_pixel(x - 1, y).0[0] as i32;
-            let gradient_y =
-                image.get_pixel(x, y + 1).0[0] as i32 - image.get_pixel(x, y - 1).0[0] as i32;
+            let gradient_x = i32::from(image.get_pixel(x + 1, y).0[0])
+                - i32::from(image.get_pixel(x - 1, y).0[0]);
+            let gradient_y = i32::from(image.get_pixel(x, y + 1).0[0])
+                - i32::from(image.get_pixel(x, y - 1).0[0]);
             let gradient_magnitude = (gradient_x.pow(2) + gradient_y.pow(2)).sqrt() as f32;
 
             if gradient_magnitude > param1 {
                 let gradient_angle = (gradient_y as f32).atan2(gradient_x as f32);
                 for radius in min_radius..=max_radius {
-                    let a = (x as f32 + radius as f32 * gradient_angle.cos()).round() as u32;
-                    let b = (y as f32 + radius as f32 * gradient_angle.sin()).round() as u32;
+                    let a = (radius as f32)
+                        .mul_add(gradient_angle.cos(), x as f32)
+                        .round() as u32;
+                    let b = (radius as f32)
+                        .mul_add(gradient_angle.sin(), y as f32)
+                        .round() as u32;
 
                     if a > 0 && a < width && b > 0 && b < height {
                         let counter = accumulator
@@ -95,10 +101,10 @@ fn detect_circles_gray_image(
     }
 
     let mut circles = Vec::new();
-    for (&(a, b, radius), &votes) in accumulator.iter() {
+    for (&(a, b, radius), &votes) in &accumulator {
         if votes > param2 as usize {
             let mut is_valid = true;
-            for &(x, y, _) in circles.iter() {
+            for &(x, y, _) in &circles {
                 let distance =
                     ((x as i32 - a as i32).pow(2) + (y as i32 - b as i32).pow(2)).sqrt() as f32;
                 if distance < min_dist {

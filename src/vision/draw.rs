@@ -40,10 +40,10 @@ impl Vision {
                 {
                     match &mut buf {
                         ImageBufferEnum::Rgb(buf) => {
-                            buf.put_pixel(xt as u32, yt as u32, Rgb(rgb_color))
+                            buf.put_pixel(xt as u32, yt as u32, Rgb(rgb_color));
                         }
                         ImageBufferEnum::Luma(buf) => {
-                            buf.put_pixel(xt as u32, yt as u32, Luma([rgb_color[0]]))
+                            buf.put_pixel(xt as u32, yt as u32, Luma([rgb_color[0]]));
                         }
                     }
                 }
@@ -98,10 +98,10 @@ impl Vision {
                 if thickness == 0 || is_contour {
                     match &mut buf {
                         ImageBufferEnum::Rgb(buf) => {
-                            buf.put_pixel(dx as u32, dy as u32, Rgb(rgb_color))
+                            buf.put_pixel(dx as u32, dy as u32, Rgb(rgb_color));
                         }
                         ImageBufferEnum::Luma(buf) => {
-                            buf.put_pixel(dx as u32, dy as u32, Luma([rgb_color[0]]))
+                            buf.put_pixel(dx as u32, dy as u32, Luma([rgb_color[0]]));
                         }
                     }
                 }

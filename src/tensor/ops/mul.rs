@@ -40,10 +40,10 @@ impl<'a> Mul<&'a Tensor> for f32 {
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓（不）带引用的张量 * f32↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl Mul<f32> for Tensor {
-    type Output = Tensor;
+    type Output = Self;
 
-    fn mul(self, scalar: f32) -> Tensor {
-        Tensor {
+    fn mul(self, scalar: f32) -> Self {
+        Self {
             data: &self.data * scalar,
         }
     }
@@ -61,17 +61,17 @@ impl<'a> Mul<f32> for &'a Tensor {
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓（不）带引用的张量 *（不）带引用的张量↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl Mul for Tensor {
-    type Output = Tensor;
+    type Output = Self;
 
-    fn mul(self, other: Tensor) -> Tensor {
+    fn mul(self, other: Self) -> Self {
         mul_within_tensors(&self, &other)
     }
 }
 
-impl<'a> Mul<&'a Tensor> for Tensor {
-    type Output = Tensor;
+impl<'a> Mul<&'a Self> for Tensor {
+    type Output = Self;
 
-    fn mul(self, other: &'a Tensor) -> Tensor {
+    fn mul(self, other: &'a Self) -> Self {
         mul_within_tensors(&self, other)
     }
 }

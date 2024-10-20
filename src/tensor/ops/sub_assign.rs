@@ -2,14 +2,14 @@ use crate::tensor::Tensor;
 use std::ops::SubAssign;
 
 impl SubAssign for Tensor {
-    fn sub_assign(&mut self, other: Tensor) {
+    fn sub_assign(&mut self, other: Self) {
         // 使用`Sub` trait的`sub`方法来执行减法，并更新当前张量
         *self = self.clone() - other;
     }
 }
 
-impl<'a> SubAssign<&'a Tensor> for Tensor {
-    fn sub_assign(&mut self, other: &'a Tensor) {
+impl<'a> SubAssign<&'a Self> for Tensor {
+    fn sub_assign(&mut self, other: &'a Self) {
         // 使用`Sub` trait的`sub`方法来执行减法，并更新当前张量
         *self = self.clone() - other;
     }

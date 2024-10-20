@@ -1,13 +1,15 @@
 mod ops;
 mod variable;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 pub use self::ops::*;
 pub use variable::Variable;
 
 // ----------------------以下是节点相关的基本特性、接口、宏----------------------
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓节点（Node）特性↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 use crate::tensor::Tensor;
-use crate::utils::add_node_to_default_graph;
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 
@@ -33,24 +35,21 @@ pub trait TraitForNode {
     fn register(&mut self, add_to_parents_children: bool) {
         // 1.将本节点添加到父节点的子节点列表中
         if add_to_parents_children {
-            self.add_to_parents_children();
+            self.add_the_node_to_children_of_parent_nodes();
         }
-        // 2.将本节点添加到默认计算图中
-        self.add_to_default_graph();
-        // 3.若节点名称为空，生成默认节点名称
+        // 2.若节点名称为空，生成默认节点名称
         if self.name().is_empty() {
-            self.gen_name();
+            let gen_name = self.gen_name();
+            self.set_name(&gen_name);
         }
-    }
-    /// 将本节点添加到默认计算图中
-    fn add_to_default_graph(&self) {
-        add_node_to_default_graph(&self.as_node_enum());
+        // 3.将本节点添加到默认计算图中
+        super::graph::add_node_to_default_graph(&self.as_node_enum());
     }
     /// 将本节点添加到父节点的子节点列表中
-    fn add_to_parents_children(&mut self) {
+    fn add_the_node_to_children_of_parent_nodes(&mut self) {
         let node_enum = self.as_node_enum();
-        for parent in self.parents_mut() {
-            parent.children_mut().push(node_enum.clone());
+        for parent in self.parents() {
+            parent.borrow_mut().children_mut().push(node_enum.clone());
         }
     }
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓基本↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
@@ -60,9 +59,15 @@ pub trait TraitForNode {
     }
     /// 获取节点名称（任何节点都必须有个不为空的节点名）
     fn name(&self) -> &str;
+    /// 获取节点名称前缀
+    fn name_prefix(&self) -> &str;
     /// 生成节点名称，如果用户初始化时未指定，则根据节点类型生成类似于"MatMul:3"的节点名，
-    /// 如果指定了name_scope，则生成类似"Hidden/MatMul:3"的节点名
-    fn gen_name(&mut self);
+    /// `如果指定了name_scope，则生成类似"Hidden/MatMul:3"的节点名`
+    fn gen_name(&mut self) -> String {
+        super::graph::generate_unique_name(self.name_prefix())
+    }
+    /// 设置节点名称
+    fn set_name(&mut self, name: &str);
     /// 返回本节点值（张量）的形状（节点未初始化也能获取）
     fn shape(&self) -> &[usize] {
         self.value().shape()
@@ -80,10 +85,9 @@ pub trait TraitForNode {
         self.value().is_scalar()
     }
     /// 获取本节点的父节点（有些是不需要的，比如“Variable”）
-    fn parents(&self) -> &Vec<NodeEnum>;
-    fn parents_mut(&mut self) -> &mut Vec<NodeEnum>;
+    fn parents(&self) -> Vec<Rc<RefCell<NodeEnum>>>;
     /// 获取本节点的子节点
-    fn children(&self) -> &Vec<NodeEnum>;
+    fn children(&self) -> &[NodeEnum];
     fn children_mut(&mut self) -> &mut Vec<NodeEnum>;
     // TODO: 冗余的field方法，后期需要删除
     /// 获取本节点的实际值（张量）
@@ -93,6 +97,7 @@ pub trait TraitForNode {
     /// 重置本节点的值(设置为未初始化)，可选择是否递归重置所有下游节点
     fn reset_value(&mut self, recursive: bool) {
         *self.value_mut() = Tensor::uninited(self.shape());
+        super::graph::update_node_in_default_graph(&self.as_node_enum());
         if recursive {
             for child in self.children_mut().iter_mut() {
                 child.reset_value(true);
@@ -130,25 +135,22 @@ pub trait TraitForNode {
 
     /// 前向传播计算本节点的值（若父节点的值未被计算，则递归调用父节点的forward方法）
     fn forward(&mut self) {
-        match self.as_node_enum() {
-            NodeEnum::Variable(_) => {
-                if !self.is_inited() {
-                    panic!("Variable节点在`forward`前必须已初始化其值");
+        if let NodeEnum::Variable(_) = self.as_node_enum() {
+            assert!(
+                self.is_inited(),
+                "Variable节点在`forward`前必须已初始化其值"
+            );
+        } else {
+            for node in self.parents() {
+                if !node.borrow().is_inited() {
+                    node.borrow_mut().forward();
                 }
             }
-            _ => {
-                for node in self.parents_mut() {
-                    if !node.is_inited() {
-                        node.forward();
-                    }
-                }
-                self.calc_value();
-            }
+            self.calc_value();
         }
     }
     /// 反向传播，计算结果节点对本节点的雅可比矩阵
     fn backward(&mut self, result_node: &NodeEnum) -> &Tensor {
-        // TODO: delete? fn backward(&mut self, result: &mut NodeEnum) -> &Tensor {
         if self.jacobi().is_inited() {
             return self.jacobi();
         }
@@ -179,4 +181,5 @@ pub trait TraitForNode {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度相关↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
+
 // ----------------------以上是节点（Node）特性、接口、宏----------------------

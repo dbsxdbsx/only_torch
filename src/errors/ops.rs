@@ -12,13 +12,13 @@ pub enum Operator {
 impl Display for Operator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let operation_name = match self {
-            Operator::Add => "相加",
-            Operator::Sub => "相减",
-            Operator::Mul => "相乘",
-            Operator::Div => "相除",
-            Operator::DotSum => "点积和",
+            Self::Add => "相加",
+            Self::Sub => "相减",
+            Self::Mul => "相乘",
+            Self::Div => "相除",
+            Self::DotSum => "点积和",
         };
-        write!(f, "{}", operation_name)
+        write!(f, "{operation_name}")
     }
 }
 
@@ -35,13 +35,13 @@ pub enum ComparisonOperator {
 impl Display for ComparisonOperator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let operator_name = match self {
-            ComparisonOperator::GreaterOrEqual => "≥",
-            ComparisonOperator::LessOrEqual => "≤",
-            ComparisonOperator::GreaterThan => ">",
-            ComparisonOperator::LessThan => "<",
-            ComparisonOperator::Equal => "==",
-            ComparisonOperator::NotEqual => "!=",
+            Self::GreaterOrEqual => "≥",
+            Self::LessOrEqual => "≤",
+            Self::GreaterThan => ">",
+            Self::LessThan => "<",
+            Self::Equal => "==",
+            Self::NotEqual => "!=",
         };
-        write!(f, "{}", operator_name)
+        write!(f, "{operator_name}")
     }
 }

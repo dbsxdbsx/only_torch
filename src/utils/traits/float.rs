@@ -4,6 +4,6 @@ pub trait FloatTrait {
 
 impl FloatTrait for f32 {
     fn is_integer(&self) -> bool {
-        self.fract() < f32::EPSILON
+        self.fract() < Self::EPSILON
     }
 }

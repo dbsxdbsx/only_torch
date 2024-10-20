@@ -101,15 +101,15 @@ impl Tensor {
     ///
     /// 返回一个“克隆”的张量，其包含根据给定索引选取的（多个）元素。
     /// 若原始张量只有一个元素，则无论`indices`为何，均返回一个包含该元素的新张量，且形状为`&[]`。
-    pub fn get(&self, indices: &[usize]) -> Tensor {
+    pub fn get(&self, indices: &[usize]) -> Self {
         if let Some(number) = self.number() {
-            return Tensor::new(&[number], &[]);
+            return Self::new(&[number], &[]);
         }
         let start: Vec<isize> = indices.iter().map(|&i| i as isize).collect();
         let end: Vec<isize> = indices.iter().map(|&i| (i + 1) as isize).collect();
         let step: Vec<isize> = vec![1; indices.len()];
 
-        let t = Tensor {
+        let t = Self {
             data: Self::slice_array(&self.data, &start, &end, &step),
         };
         t.squeeze() //将所有仅为1的维度优化掉
@@ -123,12 +123,12 @@ impl Tensor {
     ) -> Array<f32, IxDyn> {
         let sliced = array.slice_each_axis(|axis: AxisDescription| {
             let axis_index = axis.axis.index();
-            let start_index = start.get(axis_index).cloned().unwrap_or(0);
+            let start_index = start.get(axis_index).copied().unwrap_or(0);
             let end_index = end
                 .get(axis_index)
-                .cloned()
+                .copied()
                 .unwrap_or(array.len_of(axis.axis) as isize);
-            let step_size = step.get(axis_index).cloned().unwrap_or(1);
+            let step_size = step.get(axis_index).copied().unwrap_or(1);
             Slice::new(start_index, Some(end_index), step_size)
         });
 

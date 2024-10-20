@@ -1,4 +1,4 @@
-use only_torch::nn::nodes::{Add, Variable};
+use only_torch::nn::nodes::Variable;
 use only_torch::tensor::Tensor;
 
 #[test]

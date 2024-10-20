@@ -25,10 +25,10 @@ impl<'a> Add<&'a Tensor> for f32 {
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓（不）带引用的张量 + f32↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl Add<f32> for Tensor {
-    type Output = Tensor;
+    type Output = Self;
 
-    fn add(self, scalar: f32) -> Tensor {
-        Tensor {
+    fn add(self, scalar: f32) -> Self {
+        Self {
             data: &self.data + scalar,
         }
     }
@@ -46,17 +46,17 @@ impl<'a> Add<f32> for &'a Tensor {
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓（不）带引用的张量 +（不）带引用的张量↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl Add for Tensor {
-    type Output = Tensor;
+    type Output = Self;
 
-    fn add(self, other: Tensor) -> Tensor {
+    fn add(self, other: Self) -> Self {
         add_within_tensors(&self, &other)
     }
 }
 
-impl<'a> Add<&'a Tensor> for Tensor {
-    type Output = Tensor;
+impl<'a> Add<&'a Self> for Tensor {
+    type Output = Self;
 
-    fn add(self, other: &'a Tensor) -> Tensor {
+    fn add(self, other: &'a Self) -> Self {
         add_within_tensors(&self, other)
     }
 }

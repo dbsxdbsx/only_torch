@@ -2,14 +2,14 @@ use crate::tensor::Tensor;
 use std::ops::MulAssign;
 
 impl MulAssign for Tensor {
-    fn mul_assign(&mut self, other: Tensor) {
+    fn mul_assign(&mut self, other: Self) {
         // 使用`Mul` trait的`mul`方法来执行乘法，并更新当前张量
         *self = self.clone() * other;
     }
 }
 
-impl<'a> MulAssign<&'a Tensor> for Tensor {
-    fn mul_assign(&mut self, other: &'a Tensor) {
+impl<'a> MulAssign<&'a Self> for Tensor {
+    fn mul_assign(&mut self, other: &'a Self) {
         // 使用`Mul` trait的`mul`方法来执行乘法，并更新当前张量
         *self = self.clone() * other;
     }

@@ -3,7 +3,7 @@ use crate::tensor::Tensor;
 impl Tensor {
     /// 实现矩阵乘法。只接受2阶张量，否则会触发panic。
     /// 需要保证前一个张量的列数（col）等于后一个张量的行数（row），否则也会触发panic。
-    pub fn mat_mul(&self, other: &Tensor) -> Tensor {
+    pub fn mat_mul(&self, other: &Self) -> Self {
         // 检查输入的张量维度
         let self_dims = self.dimension();
         let other_dims = other.dimension();
@@ -28,7 +28,7 @@ impl Tensor {
         // 执行矩阵乘法
         let result_data = self_data.dot(&other_data);
         // 创建并返回新的张量
-        Tensor {
+        Self {
             data: result_data.into_dyn(),
         }
     }

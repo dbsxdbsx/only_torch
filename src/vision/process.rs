@@ -13,8 +13,8 @@ impl Vision {
             for x in half_ksize..w - half_ksize {
                 if c == 0 {
                     let mut values = Vec::with_capacity(ksize * ksize);
-                    for ky in y - half_ksize..y + half_ksize + 1 {
-                        for kx in x - half_ksize..x + half_ksize + 1 {
+                    for ky in (y - half_ksize)..=(y + half_ksize) {
+                        for kx in (x - half_ksize)..=(x + half_ksize) {
                             values.push(image[[ky, kx]]);
                         }
                     }
@@ -25,8 +25,8 @@ impl Vision {
                 } else {
                     for z in 0..c {
                         let mut values = Vec::with_capacity(ksize * ksize);
-                        for ky in y - half_ksize..y + half_ksize + 1 {
-                            for kx in x - half_ksize..x + half_ksize + 1 {
+                        for ky in (y - half_ksize)..=(y + half_ksize) {
+                            for kx in (x - half_ksize)..=(x + half_ksize) {
                                 values.push(image[[ky, kx, z]]);
                             }
                         }

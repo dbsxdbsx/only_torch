@@ -19,13 +19,13 @@ impl ForDynamicImage for DynamicImage {
         for y in 0..height {
             for x in 0..width {
                 let pixel = self.get_pixel(x as u32, y as u32);
-                tensor[[y, x, 0]] = pixel[0] as f32;
+                tensor[[y, x, 0]] = f32::from(pixel[0]);
                 if channels >= 3 {
-                    tensor[[y, x, 1]] = pixel[1] as f32;
-                    tensor[[y, x, 2]] = pixel[2] as f32;
+                    tensor[[y, x, 1]] = f32::from(pixel[1]);
+                    tensor[[y, x, 2]] = f32::from(pixel[2]);
                 }
                 if channels >= 4 {
-                    tensor[[y, x, 3]] = pixel[3] as f32;
+                    tensor[[y, x, 3]] = f32::from(pixel[3]);
                 }
             }
         }

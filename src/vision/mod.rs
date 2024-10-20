@@ -37,7 +37,7 @@ impl Vision {
             for x in 0..width {
                 let pixel = image.get_pixel(x, y);
                 for c in 0..channel_count {
-                    tensor_data.push(pixel[c] as f32);
+                    tensor_data.push(f32::from(pixel[c]));
                 }
             }
         }

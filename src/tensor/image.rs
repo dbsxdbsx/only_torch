@@ -99,7 +99,7 @@ impl Tensor {
 
 // 这里是一些可以直接用于Tensor实例的Vision静态方法
 impl Tensor {
-    pub fn to_luma(&self) -> Result<Tensor, String> {
+    pub fn to_luma(&self) -> Result<Self, String> {
         Vision::to_luma(self)
     }
 

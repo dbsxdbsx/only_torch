@@ -10,13 +10,15 @@ impl Tensor {
         self.data.shape()
     }
 
-    pub fn reshape(&self, shape: &[usize]) -> Tensor {
+    pub fn reshape(&self, shape: &[usize]) -> Self {
         let total_elements: usize = self.data.len();
         let new_total_elements: usize = shape.iter().product();
-        if total_elements != new_total_elements {
-            panic!("{}", TensorError::IncompatibleShape);
-        }
-        Tensor {
+        assert!(
+            total_elements == new_total_elements,
+            "{}",
+            TensorError::IncompatibleShape
+        );
+        Self {
             data: self.data.clone().into_shape(shape).unwrap(),
         }
     }
@@ -24,9 +26,11 @@ impl Tensor {
     pub fn reshape_mut(&mut self, shape: &[usize]) {
         let total_elements: usize = self.data.len();
         let new_total_elements: usize = shape.iter().product();
-        if total_elements != new_total_elements {
-            panic!("{}", TensorError::IncompatibleShape);
-        }
+        assert!(
+            total_elements == new_total_elements,
+            "{}",
+            TensorError::IncompatibleShape
+        );
         self.data = self.data.clone().into_shape(shape).unwrap();
     }
 
@@ -37,7 +41,7 @@ impl Tensor {
     }
 
     /// 判断两个张量的形状是否严格一致。如：形状为 [1, 4]，[1, 4]和[4]是不一致的，会返回false
-    pub fn is_same_shape(&self, other: &Tensor) -> bool {
+    pub fn is_same_shape(&self, other: &Self) -> bool {
         self.shape() == other.shape()
     }
 
@@ -64,15 +68,13 @@ impl Tensor {
     /// 当 `new_dim` 为 `true` 时，确保所有张量具有相同的形状。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len(), 1]` 的张量。
     /// 当 `new_dim` 为 `false`，确保所每个张量的第一个维度可以不同，但其余维度应相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
     /// 否则报错。
-    pub fn stack(tensors: &[&Tensor], new_dim: bool) -> Tensor {
-        if tensors.is_empty() {
-            panic!("{}", TensorError::EmptyList)
-        }
+    pub fn stack(tensors: &[&Self], new_dim: bool) -> Self {
+        assert!(!tensors.is_empty(), "{}", TensorError::EmptyList);
 
         let all_scalars = tensors.iter().all(|t| t.is_scalar());
         let first_shape = tensors[0].shape();
 
-        let compatible_shapes = |t: &Tensor| {
+        let compatible_shapes = |t: &Self| {
             if all_scalars {
                 true
             } else {
@@ -87,14 +89,16 @@ impl Tensor {
             }
         };
 
-        if !tensors.iter().all(|t| compatible_shapes(t)) {
-            panic!("{}", TensorError::InconsitentShape)
-        }
+        assert!(
+            tensors.iter().all(|t| compatible_shapes(t)),
+            "{}",
+            TensorError::InconsitentShape
+        );
 
         let data = tensors
             .iter()
             .flat_map(|t| t.data.as_slice().unwrap())
-            .cloned()
+            .copied()
             .collect::<Vec<_>>();
 
         let shape = match (new_dim, all_scalars) {
@@ -112,10 +116,10 @@ impl Tensor {
             }
         };
 
-        Tensor::new(&data, &shape)
+        Self::new(&data, &shape)
     }
 
-    pub fn squeeze(&self) -> Tensor {
+    pub fn squeeze(&self) -> Self {
         let mut new_shape = Vec::new();
         for dim in self.data.shape() {
             if *dim > 1 {
@@ -123,7 +127,7 @@ impl Tensor {
             }
         }
         let squeezed_data = self.data.clone().into_shape(new_shape).unwrap();
-        Tensor {
+        Self {
             data: squeezed_data,
         }
     }
@@ -157,7 +161,7 @@ impl Tensor {
     /// let unsqueezed_last = tensor.unsqueeze(-1); // 在最后面增加一个维度
     /// assert_eq!(unsqueezed.shape(), &[3, 1]);
     /// ```
-    pub fn unsqueeze(&self, dim: i8) -> Tensor {
+    pub fn unsqueeze(&self, dim: i8) -> Self {
         let dim = if dim < 0 {
             self.dimension() as i8 + dim + 1
         } else {
@@ -207,32 +211,34 @@ impl Tensor {
     }
 
     /// 交换张量的两个（以上）维度，并将其返回（不影响原张量）
-    pub fn permute(&self, axes: &[usize]) -> Tensor {
-        if axes.len() < 2 {
-            panic!("{}", TensorError::PermuteNeedAtLeast2Dims);
-        }
+    pub fn permute(&self, axes: &[usize]) -> Self {
+        assert!(axes.len() >= 2, "{}", TensorError::PermuteNeedAtLeast2Dims);
         // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
-        let unique_axes = axes.iter().cloned().collect::<HashSet<_>>();
-        if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dimension()) {
-            panic!("{}", TensorError::PermuteNeedUniqueAndInRange);
-        }
+        let unique_axes = axes.iter().copied().collect::<HashSet<_>>();
+        assert!(
+            !(unique_axes.len() != axes.len()
+                || !unique_axes.iter().all(|&a| a < self.dimension())),
+            "{}",
+            TensorError::PermuteNeedUniqueAndInRange
+        );
 
         let permuted_data = self.data.clone().permuted_axes(axes);
-        Tensor {
+        Self {
             data: permuted_data,
         }
     }
 
     /// 交换张量的两个（以上）维度（影响原张量）
     pub fn permute_mut(&mut self, axes: &[usize]) {
-        if axes.len() < 2 {
-            panic!("{}", TensorError::PermuteNeedAtLeast2Dims);
-        }
+        assert!(axes.len() >= 2, "{}", TensorError::PermuteNeedAtLeast2Dims);
         // 检查axes中的所有元素必须是唯一且在[0, <张量维数>)范围内
-        let unique_axes = axes.iter().cloned().collect::<HashSet<_>>();
-        if unique_axes.len() != axes.len() || !unique_axes.iter().all(|&a| a < self.dimension()) {
-            panic!("{}", TensorError::PermuteNeedUniqueAndInRange);
-        }
+        let unique_axes = axes.iter().copied().collect::<HashSet<_>>();
+        assert!(
+            !(unique_axes.len() != axes.len()
+                || !unique_axes.iter().all(|&a| a < self.dimension())),
+            "{}",
+            TensorError::PermuteNeedUniqueAndInRange
+        );
 
         self.data = self.data.to_owned().permuted_axes(axes);
     }

@@ -11,6 +11,6 @@
 /// let result = test_logic(2, 3);
 /// assert_eq!(result, 5);
 /// ```
-pub fn test_logic(left: usize, right: usize) -> usize {
+pub const fn test_logic(left: usize, right: usize) -> usize {
     left + right
 }

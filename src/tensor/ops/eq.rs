@@ -37,8 +37,8 @@ impl PartialEq for Tensor {
     }
 }
 
-impl<'a> PartialEq<&'a Tensor> for Tensor {
-    fn eq(&self, other: &&'a Tensor) -> bool {
+impl<'a> PartialEq<&'a Self> for Tensor {
+    fn eq(&self, other: &&'a Self) -> bool {
         self.data == other.data
     }
 }

@@ -35,13 +35,11 @@ impl<'a> Div<&'a Tensor> for f32 {
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓（不）带引用的张量 / f32↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl Div<f32> for Tensor {
-    type Output = Tensor;
+    type Output = Self;
 
-    fn div(self, scalar: f32) -> Tensor {
-        if scalar == 0. {
-            panic!("{}", TensorError::DivByZero);
-        }
-        Tensor {
+    fn div(self, scalar: f32) -> Self {
+        assert!(!(scalar == 0.), "{}", TensorError::DivByZero);
+        Self {
             data: &self.data / scalar,
         }
     }
@@ -50,9 +48,7 @@ impl<'a> Div<f32> for &'a Tensor {
     type Output = Tensor;
 
     fn div(self, scalar: f32) -> Tensor {
-        if scalar == 0. {
-            panic!("{}", TensorError::DivByZero);
-        }
+        assert!(!(scalar == 0.), "{}", TensorError::DivByZero);
         Tensor {
             data: &self.data / scalar,
         }
@@ -62,17 +58,17 @@ impl<'a> Div<f32> for &'a Tensor {
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓（不）带引用的张量 /（不）带引用的张量↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl Div for Tensor {
-    type Output = Tensor;
+    type Output = Self;
 
-    fn div(self, other: Tensor) -> Tensor {
+    fn div(self, other: Self) -> Self {
         div_within_tensors(&self, &other)
     }
 }
 
-impl<'a> Div<&'a Tensor> for Tensor {
-    type Output = Tensor;
+impl<'a> Div<&'a Self> for Tensor {
+    type Output = Self;
 
-    fn div(self, other: &'a Tensor) -> Tensor {
+    fn div(self, other: &'a Self) -> Self {
         div_within_tensors(&self, other)
     }
 }
