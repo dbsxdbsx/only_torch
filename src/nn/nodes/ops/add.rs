@@ -113,8 +113,7 @@ impl TraitForNode for Add {
         if !self.parents_names().contains(&parent.name().to_string()) {
             panic!("输入的父节点 '{}' 不是 Add 节点的父节点之一", parent.name());
         }
-
-        Tensor::eyes(self.dimension()) // 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
+        Tensor::eyes(self.size()) // 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

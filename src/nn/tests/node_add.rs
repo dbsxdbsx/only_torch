@@ -100,8 +100,8 @@ fn test_jacobi_for_node_add_with_2_parents() {
 
     // 5. 验证雅可比矩阵
     // 对于加法操作，雅可比矩阵应该是单位矩阵
-    assert_eq!(jacobi_a, Tensor::eyes(2));
-    assert_eq!(jacobi_b, Tensor::eyes(2));
+    assert_eq!(jacobi_a, Tensor::eyes(6));
+    assert_eq!(jacobi_b, Tensor::eyes(6));
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn test_jacobi_for_node_add_with_3_parents() {
     let jacobi_c = add_node.calc_jacobi_to_a_parent(&c.as_node_enum());
 
     // 5. 验证雅可比矩阵
-    assert_eq!(jacobi_a, Tensor::eyes(2));
-    assert_eq!(jacobi_b, Tensor::eyes(2));
-    assert_eq!(jacobi_c, Tensor::eyes(2));
+    assert_eq!(jacobi_b, Tensor::eyes(6));
+    assert_eq!(jacobi_a, Tensor::eyes(6));
+    assert_eq!(jacobi_c, Tensor::eyes(6));
 }

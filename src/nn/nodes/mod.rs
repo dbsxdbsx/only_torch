@@ -77,6 +77,10 @@ pub trait TraitForNode {
         self.value().dimension()
     }
     /// 返回本节点值（张量）的元素个数（节点未初始化也能获取）
+    fn size(&self) -> usize {
+        self.value().size()
+    }
+    /// 返回本节点值（张量）的元素个数（节点未初始化也能获取）
     fn len(&self) -> usize {
         self.shape().iter().product()
     }
