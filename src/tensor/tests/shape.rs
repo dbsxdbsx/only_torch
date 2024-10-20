@@ -468,3 +468,110 @@ fn test_permute_mut() {
     );
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑permute↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓transpose↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_transpose() {
+    // 测试标量
+    let tensor = Tensor::new(&[1.0], &[]);
+    let transposed = tensor.transpose();
+    assert_eq!(transposed.shape(), &[]);
+
+    // 测试向量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let transposed = tensor.transpose();
+    assert_eq!(transposed.shape(), &[3]); // 一维张量的转置仍然是一维的
+
+    // 测试矩阵
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let transposed = tensor.transpose();
+    assert_eq!(transposed.shape(), &[2, 2]);
+    assert_eq!(transposed, Tensor::new(&[1.0, 3.0, 2.0, 4.0], &[2, 2]));
+
+    // 测试高维张量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    let transposed = tensor.transpose();
+    assert_eq!(transposed.shape(), &[3, 2, 1]);
+    assert_eq!(
+        transposed,
+        Tensor::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2, 1])
+    );
+}
+
+#[test]
+fn test_transpose_mut() {
+    // 测试标量
+    let mut tensor = Tensor::new(&[1.0], &[]);
+    tensor.transpose_mut();
+    assert_eq!(tensor.shape(), &[]);
+
+    // 测试向量
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    tensor.transpose_mut();
+    assert_eq!(tensor.shape(), &[3]); // 一维张量的转置仍然是一维的
+
+    // 测试矩阵
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    tensor.transpose_mut();
+    assert_eq!(tensor.shape(), &[2, 2]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 3.0, 2.0, 4.0], &[2, 2]));
+
+    // 测试高维张量
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    tensor.transpose_mut();
+    assert_eq!(tensor.shape(), &[3, 2, 1]);
+    assert_eq!(
+        tensor,
+        Tensor::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2, 1])
+    );
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑transpose↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓transpose_dims↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_transpose_dims() {
+    // 1. 交换第0和第1维
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    let transposed = tensor.transpose_dims(0, 1);
+    assert_eq!(transposed.shape(), &[3, 2, 1]);
+    assert_eq!(
+        transposed,
+        Tensor::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2, 1])
+    );
+
+    // 2. 交换第1和第2维
+    let transposed = tensor.transpose_dims(1, 2);
+    assert_eq!(transposed.shape(), &[2, 1, 3]);
+    assert_eq!(
+        transposed,
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 1, 3])
+    );
+
+    // 3. 测试维度超出范围的情况
+    assert_panic!(tensor.transpose_dims(0, 3));
+}
+
+#[test]
+fn test_transpose_dims_mut() {
+    // 1. 交换第0和第1维
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    tensor.transpose_dims_mut(0, 1);
+    assert_eq!(tensor.shape(), &[3, 2, 1]);
+    assert_eq!(
+        tensor,
+        Tensor::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2, 1])
+    );
+
+    // 2. 交换第1和第2维
+    tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    tensor.transpose_dims_mut(1, 2);
+    assert_eq!(tensor.shape(), &[2, 1, 3]);
+    assert_eq!(
+        tensor,
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 1, 3])
+    );
+
+    // 3. 测试维度超出范围的情况
+    assert_panic!(tensor.transpose_dims_mut(0, 3));
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑transpose_dims↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

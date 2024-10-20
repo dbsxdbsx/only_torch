@@ -180,7 +180,7 @@ impl Tensor {
     /// 就地在指定维度上增加一个维度。
     ///
     /// * `dim` - 要增加维度的索引。如果`dim`为正数或零，则从头开始计数；
-    /// 如果`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度后增加。
+    /// 如果`dim`为负数，则从末尾开始计数。例如，-1表示在最后一个维度增加。
     /// 如果`dim`超出了当前维度的范围，将会触发panic。
     ///
     /// # 示例
@@ -241,5 +241,47 @@ impl Tensor {
         );
 
         self.data = self.data.to_owned().permuted_axes(axes);
+    }
+
+    /// 张量的转置
+    pub fn transpose(&self) -> Self {
+        if self.dimension() <= 1 {
+            self.clone()
+        } else {
+            let mut axes: Vec<usize> = (0..self.dimension()).collect();
+            axes.swap(0, 1);
+            self.permute(&axes)
+        }
+    }
+
+    /// 张量的转置（影响原张量）
+    pub fn transpose_mut(&mut self) {
+        if self.dimension() > 1 {
+            let mut axes: Vec<usize> = (0..self.dimension()).collect();
+            axes.swap(0, 1);
+            self.permute_mut(&axes);
+        }
+    }
+
+    /// 交换指定的两个维度
+    pub fn transpose_dims(&self, dim1: usize, dim2: usize) -> Self {
+        assert!(
+            dim1 < self.dimension() && dim2 < self.dimension(),
+            "维度超出范围"
+        );
+        let mut axes: Vec<usize> = (0..self.dimension()).collect();
+        axes.swap(dim1, dim2);
+        self.permute(&axes)
+    }
+
+    /// 交换指定的两个维度（影响原张量）
+    pub fn transpose_dims_mut(&mut self, dim1: usize, dim2: usize) {
+        assert!(
+            dim1 < self.dimension() && dim2 < self.dimension(),
+            "维度超出范围"
+        );
+        let mut axes: Vec<usize> = (0..self.dimension()).collect();
+        axes.swap(dim1, dim2);
+        self.permute_mut(&axes);
     }
 }
