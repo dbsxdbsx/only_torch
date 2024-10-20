@@ -61,8 +61,8 @@ pub trait TraitForNode {
     fn name(&self) -> &str;
     /// 获取节点名称前缀
     fn name_prefix(&self) -> &str;
-    /// 生成节点名称，如果用户初始化时未指定，则根据节点类型生成类似于"MatMul:3"的节点名，
-    /// `如果指定了name_scope，则生成类似"Hidden/MatMul:3"的节点名`
+    /// 生成节点名称，若用户初始化时未指定，则根据节点类型生成类似于"MatMul:3"的节点名，
+    /// `若指定了name_scope，则生成类似"Hidden/MatMul:3"的节点名`
     fn gen_name(&mut self) -> String {
         super::graph::generate_unique_name(self.name_prefix())
     }

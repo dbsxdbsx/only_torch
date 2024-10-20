@@ -78,7 +78,7 @@ impl Vision {
     /// 确定是图像的情况下，返回该图像的灰度图， 否则返回错误信息
     /// * `tensor` - 输入张量
     ///
-    /// 注：如果输入张量是单通道的图像张量，则直接返回该张量。
+    /// 注：若输入张量是单通道的图像张量，则直接返回该张量。
     /// 这里用英文`luma`指代“灰度”（图），也大致等价于`luminance`、`grey`、`gray`。
     pub fn to_luma(tensor: &Tensor) -> Result<Tensor, String> {
         let image = tensor.to_image()?;
