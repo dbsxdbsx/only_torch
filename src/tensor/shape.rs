@@ -36,8 +36,16 @@ impl Tensor {
 
     /// 张量的维（dim）数、阶（rank）数
     /// 即`shape()`的元素个数--如：形状为`[]`的标量阶数为0，向量阶数为1，矩阵阶数为2，以此类推
+    /// NOTE: 这里用`dimension`是参照了大多数库的命名规范，如PyTorch、NumPy等
+    /// 但和MatrixSlow中的`dimension`不同（https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/core/node.py#L106），
+    /// 后者是张量中所有元素的数量，在本库中请使用`size()`方法来获取
     pub fn dimension(&self) -> usize {
         self.data.ndim()
+    }
+
+    /// 计算张量中所有元素的数量
+    pub fn size(&self) -> usize {
+        self.data.len()
     }
 
     /// 判断两个张量的形状是否严格一致。如：形状为 [1, 4]，[1, 4]和[4]是不一致的，会返回false
