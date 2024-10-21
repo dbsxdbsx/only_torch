@@ -138,13 +138,12 @@ impl Tensor {
     pub fn arange(start: f32, end: f32, step: Option<f32>) -> Self {
         let step = step.unwrap_or(if start <= end { 1.0 } else { -1.0 });
         assert!(step != 0.0, "步长不能为零");
-        assert!(
-            (end - start) * step > 0.0,
-            "步长的符号必须与范围的方向一致"
-        );
+        assert!((end - start) * step > 0.0, "步长的符号必须与范围的方向一致");
 
         let num_elements = ((end - start) / step).abs().ceil() as usize;
-        let data: Vec<f32> = (0..num_elements).map(|i| start + i as f32 * step).collect();
+        let data: Vec<f32> = (0..num_elements)
+            .map(|i| (i as f32).mul_add(step, start))
+            .collect();
 
         Self::new(&data, &[num_elements])
     }

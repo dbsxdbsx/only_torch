@@ -20,6 +20,8 @@
 （无）
 
 ## TODO
+- Tensorlei的index将`[[`优化成`[`?
+- Tensor类的`slice(&[0..m, j..j+1])`是否需要？
 - `children_mut`是否可合并至`children()`? and `value_mut`是否可合并至`value`?
 - `fn as_node_enum(&self) -> NodeEnum` trait method 是否多余，对于具体实现的节点，可否隐式转换或直接各节点返回NodeEnum？(只要不要影响后期各种算子的重载)？
 

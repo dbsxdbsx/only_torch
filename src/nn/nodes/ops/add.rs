@@ -98,7 +98,7 @@ impl TraitForNode for Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     #[doc = r" 根据父节点的值计算本节点的值（需手动实现）"]
     fn calc_value(&mut self) {
-        let mut temp_value = Tensor::zeros(self.parents()[0].borrow_mut().value().shape());
+        let mut temp_value = Tensor::zeros(self.parents()[0].borrow_mut().shape());
         for parent in self.parents() {
             temp_value += parent.borrow().value();
         }

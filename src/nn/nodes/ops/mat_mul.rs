@@ -19,7 +19,7 @@ impl MatMul {
         // 1.1 矩阵乘法需要恰好两个父节点
         assert!(parents.len() == 2, "MatMul节点需恰好2个父节点");
         // 1.2 parents的形状需要符合矩阵乘法的规则
-        let mut test_tensor = Tensor::eyes(parents[0].value().shape()[0]);
+        let mut test_tensor = Tensor::eyes(parents[0].shape()[0]);
         for parent in parents {
             // NOTE: 即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
             test_tensor = test_tensor.mat_mul(parent.value());
@@ -104,43 +104,44 @@ impl TraitForNode for MatMul {
         self.value = parent1.value().mat_mul(parent2.value());
     }
     #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
-    /// NOTE: 这里的逻辑取巧参考了：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L61
+    /// NOTE: 这里的逻辑本想取巧参考：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L61
+    /// 但发现太难懂了，所以还是用最原始的实现吧
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
-        // TODO: delete
-        Tensor::default()
-        // let parents = self.parents();
-        // let parent1 = parents[0].borrow();
-        // let parent2 = parents[1].borrow();
+        let parents = self.parents();
+        let parent_a = parents[0].borrow();
+        let parent_b = parents[1].borrow();
 
-        // if parent.name() == parent1.name() {
-        //     // 对第一个父节点的雅可比矩阵
-        //     Tensor::fill_diagonal_with_tensor(
-        //         &Tensor::zeros(&[self.dimension(), parent.dimension()]),
-        //         &parent2.value().transpose(),
-        //     )
-        // } else if parent.name() == parent2.name() {
-        //     // 对第二个父节点的雅可比矩阵
-        //     let jacobi = Tensor::fill_diagonal_with_tensor(
-        //         &Tensor::zeros(&[self.dimension(), parent.dimension()]),
-        //         parent1.value(),
-        //     );
-        //     let row_sort = Tensor::arange(self.dimension())
-        //         .reshape(&self.shape().iter().rev().cloned().collect::<Vec<_>>())
-        //         .transpose()
-        //         .flatten();
-        //     let col_sort = Tensor::arange(parent.dimension())
-        //         .reshape(&parent.shape().iter().rev().cloned().collect::<Vec<_>>())
-        //         .transpose()
-        //         .flatten();
-        //     jacobi.index_select(&row_sort, 0).index_select(&col_sort, 1)
-        // } else {
-        //     panic!(
-        //         "MatMul节点的父节点名称必须匹配`{}`或`{}`，但传入的父节点名称是`{}`",
-        //         parent1.name(),
-        //         parent2.name(),
-        //         parent.name()
-        //     );
-        // }
+        let parent_a_shape = parent_a.value().shape();
+        let parent_b_shape = parent_b.value().shape();
+        let m = parent_a_shape[0];
+        let n = parent_a_shape[1];
+        let p = parent_b_shape[1];
+
+        if parent.name() == parent_a.name() {
+            // dC/dA
+            let mut jacobi = Tensor::zeros(&[m * p, m * n]);
+            for i in 0..m {
+                for j in 0..p {
+                    for k in 0..n {
+                        jacobi[[i * p + j, i * n + k]] = parent_b.value()[[k, j]];
+                    }
+                }
+            }
+            jacobi
+        } else if parent.name() == parent_b.name() {
+            // dC/dB
+            let mut jacobi = Tensor::zeros(&[m * p, n * p]);
+            for i in 0..m {
+                for j in 0..p {
+                    for k in 0..n {
+                        jacobi[[i * p + j, k * p + j]] = parent_a.value()[[i, k]];
+                    }
+                }
+            }
+            jacobi
+        } else {
+            panic!("输入的parent不是该节点的父节点之一");
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

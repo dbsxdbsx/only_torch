@@ -1,4 +1,5 @@
 mod node_add;
+mod node_mat_mul;
 mod node_variable;
 
 pub use crate::assert_panic;
