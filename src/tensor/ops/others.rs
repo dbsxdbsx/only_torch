@@ -422,5 +422,14 @@ impl Tensor {
         let total_elements = self.data.len();
         self.data = self.data.clone().into_shape(vec![total_elements]).unwrap();
     }
+
+    /// 返回张量的一维展开视图，不复制数据
+    /// NOTE：这个主要参考了numpy的ravel和pytorch的flatten
+    pub fn flatten_view(&self) -> ndarray::ArrayView1<f32> {
+        self.data
+            .view()
+            .into_shape(ndarray::Dim(self.data.len()))
+            .unwrap()
+    }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑flatten↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

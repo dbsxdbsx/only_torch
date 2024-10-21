@@ -561,8 +561,8 @@ fn test_stack_without_new_dim() {
             &[4, 3, 2, 1]
         )
     );
-    // (不添加新维度的情况下，张量的第一个维度可以不同)
-    let t1 = Tensor::new(&[1., 2., 3.0, 4.0], &[2, 1, 2, 1]);
+    // (不添加新维度的情况��，张量的第一个维度可以不同)
+    let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 1, 2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 1]);
     let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(
@@ -570,7 +570,7 @@ fn test_stack_without_new_dim() {
         Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,], &[4, 1, 2, 1])
     );
     // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
-    let t1 = Tensor::new(&[1., 2., 3.0, 4.0], &[2, 1, 2, 1]);
+    let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 1, 2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2]);
     assert_panic!(
         Tensor::stack(&[&t1, &t2], false),
@@ -930,3 +930,89 @@ fn test_transpose_dims_mut() {
     assert_panic!(tensor.transpose_dims_mut(0, 3));
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑transpose↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓flatten↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_flatten() {
+    // 测试标量
+    let tensor = Tensor::new(&[5.0], &[]);
+    let flattened = tensor.flatten();
+    assert_eq!(flattened.shape(), &[1]);
+    assert_eq!(flattened, Tensor::new(&[5.0], &[1]));
+
+    // 测试向量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let flattened = tensor.flatten();
+    assert_eq!(flattened.shape(), &[3]);
+    assert_eq!(flattened, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+
+    // 测试矩阵
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let flattened = tensor.flatten();
+    assert_eq!(flattened.shape(), &[4]);
+    assert_eq!(flattened, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]));
+
+    // 测试高维张量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    let flattened = tensor.flatten();
+    assert_eq!(flattened.shape(), &[6]);
+    assert_eq!(
+        flattened,
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6])
+    );
+}
+
+#[test]
+fn test_flatten_mut() {
+    // 测试标量
+    let mut tensor = Tensor::new(&[5.0], &[]);
+    tensor.flatten_mut();
+    assert_eq!(tensor.shape(), &[1]);
+    assert_eq!(tensor, Tensor::new(&[5.0], &[1]));
+
+    // 测试向量
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    tensor.flatten_mut();
+    assert_eq!(tensor.shape(), &[3]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+
+    // 测试矩阵
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    tensor.flatten_mut();
+    assert_eq!(tensor.shape(), &[4]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]));
+
+    // 测试高维张量
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    tensor.flatten_mut();
+    assert_eq!(tensor.shape(), &[6]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6]));
+}
+
+#[test]
+fn test_flatten_view() {
+    // 测试标量
+    let tensor = Tensor::new(&[5.0], &[]);
+    let flattened = tensor.flatten_view();
+    assert_eq!(flattened.len(), 1);
+    assert_eq!(flattened[0], 5.0);
+
+    // 测试向量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let flattened = tensor.flatten_view();
+    assert_eq!(flattened.len(), 3);
+    assert_eq!(flattened.to_vec(), vec![1.0, 2.0, 3.0]);
+
+    // 测试矩阵
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let flattened = tensor.flatten_view();
+    assert_eq!(flattened.len(), 4);
+    assert_eq!(flattened.to_vec(), vec![1.0, 2.0, 3.0, 4.0]);
+
+    // 测试高维张量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
+    let flattened = tensor.flatten_view();
+    assert_eq!(flattened.len(), 6);
+    assert_eq!(flattened.to_vec(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑flatten↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
