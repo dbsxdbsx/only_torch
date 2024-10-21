@@ -127,4 +127,25 @@ impl Tensor {
 
         Self::new(&data, shape)
     }
+
+    /// 创建一个包含指定范围内等间隔值的一维张量。
+    ///
+    /// * `start` - 范围的起始值（包含）
+    /// * `end` - 范围的结束值（不包含）
+    /// * `step` - 相邻元素之间的间隔（默认为1.0）
+    ///
+    /// 返回一个新的一维张量。
+    pub fn arange(start: f32, end: f32, step: Option<f32>) -> Self {
+        let step = step.unwrap_or(if start <= end { 1.0 } else { -1.0 });
+        assert!(step != 0.0, "步长不能为零");
+        assert!(
+            (end - start) * step > 0.0,
+            "步长的符号必须与范围的方向一致"
+        );
+
+        let num_elements = ((end - start) / step).abs().ceil() as usize;
+        let data: Vec<f32> = (0..num_elements).map(|i| start + i as f32 * step).collect();
+
+        Self::new(&data, &[num_elements])
+    }
 }

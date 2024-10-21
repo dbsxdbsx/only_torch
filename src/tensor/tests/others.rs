@@ -561,7 +561,7 @@ fn test_stack_without_new_dim() {
             &[4, 3, 2, 1]
         )
     );
-    // (不添加新维度的情况��，张量的第一个维度可以不同)
+    // (不添加新维度的情况下，张量的第一个维度可以不同)
     let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 1, 2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 1]);
     let stacked = Tensor::stack(&[&t1, &t2], false);

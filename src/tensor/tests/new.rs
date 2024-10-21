@@ -213,3 +213,55 @@ fn test_new_normal() {
         );
     }
 }
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓arange↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_arange() {
+    // 测试默认步长
+    let tensor = Tensor::arange(0.0, 5.0, None);
+    assert_eq!(tensor, Tensor::new(&[0.0, 1.0, 2.0, 3.0, 4.0], &[5]));
+
+    // 测试自定义步长
+    let tensor = Tensor::arange(0.0, 2.0, Some(0.5));
+    assert_eq!(tensor, Tensor::new(&[0.0, 0.5, 1.0, 1.5], &[4]));
+
+    // 测试负步长
+    let tensor = Tensor::arange(5.0, 0.0, Some(-1.0));
+    assert_eq!(tensor, Tensor::new(&[5.0, 4.0, 3.0, 2.0, 1.0], &[5]));
+
+    // 测试单个元素
+    let tensor = Tensor::arange(0.0, 1.0, Some(2.0));
+    assert_eq!(tensor, Tensor::new(&[0.0], &[1]));
+
+    // 测试负值起点
+    let tensor = Tensor::arange(-3.0, 3.0, Some(1.0));
+    assert_eq!(
+        tensor,
+        Tensor::new(&[-3.0, -2.0, -1.0, 0.0, 1.0, 2.0], &[6])
+    );
+
+    // 测试负值终点
+    let tensor = Tensor::arange(0.0, -5.0, Some(-1.0));
+    assert_eq!(tensor, Tensor::new(&[0.0, -1.0, -2.0, -3.0, -4.0], &[5]));
+
+    // 测试负值起点和终点
+    let tensor = Tensor::arange(-2.0, -6.0, Some(-1.0));
+    assert_eq!(tensor, Tensor::new(&[-2.0, -3.0, -4.0, -5.0], &[4]));
+
+    // 测试小数步长
+    let tensor = Tensor::arange(-1.0, 1.0, Some(0.5));
+    assert_eq!(tensor, Tensor::new(&[-1.0, -0.5, 0.0, 0.5], &[4]));
+}
+
+#[test]
+#[should_panic(expected = "步长不能为零")]
+fn test_arange_zero_step() {
+    Tensor::arange(0.0, 5.0, Some(0.0));
+}
+
+#[test]
+#[should_panic(expected = "步长的符号必须与范围的方向一致")]
+fn test_arange_inconsistent_step_direction() {
+    Tensor::arange(0.0, 5.0, Some(-1.0));
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑arange↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
