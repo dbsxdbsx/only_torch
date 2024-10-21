@@ -17,7 +17,7 @@ mod mul;
 mod mul_assign;
 mod new;
 mod others;
-mod shape;
+mod property;
 mod sub;
 mod sub_assign;
 

@@ -25,7 +25,7 @@ mod ops {
 pub mod image;
 mod index;
 mod print;
-mod shape;
+mod property;
 
 #[cfg(test)]
 mod tests;

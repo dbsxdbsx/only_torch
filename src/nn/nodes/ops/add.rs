@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use crate::nn::nodes::{NodeEnum, TraitForNode};
 use crate::tensor::Tensor;
 use serde::{Deserialize, Serialize};
@@ -110,9 +107,11 @@ impl TraitForNode for Add {
     #[doc = r" 计算并返回本节点对某个父节点的雅可比矩阵（需手动实现）"]
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
         // 检查输入的父节点是否是存储的父节点之一
-        if !self.parents_names().contains(&parent.name().to_string()) {
-            panic!("输入的父节点 '{}' 不是 Add 节点的父节点之一", parent.name());
-        }
+        assert!(
+            self.parents_names().contains(&parent.name().to_string()),
+            "输入的父节点 '{}' 不是 Add 节点的父节点之一",
+            parent.name()
+        );
         Tensor::eyes(self.size()) // 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

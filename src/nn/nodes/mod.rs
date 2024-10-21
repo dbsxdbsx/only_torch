@@ -90,7 +90,7 @@ pub trait TraitForNode {
     }
     /// 获取本节点的父节点（有些是不需要的，比如“Variable”）
     fn parents(&self) -> Vec<Rc<RefCell<NodeEnum>>> {
-        crate::nn::graph::convert_parents(&self.parents_names())
+        crate::nn::graph::convert_parents(self.parents_names())
     }
     /// 获取本节点的所有父节点名称
     fn parents_names(&self) -> &[String];

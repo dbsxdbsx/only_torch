@@ -25,6 +25,8 @@ jacobian_b_reshaped = jacobian_b.reshape(4, 4)
 
 print("\n对a的雅可比矩阵（重塑后）:")
 print(jacobian_a_reshaped)
+print("形状（重塑后）:", jacobian_a_reshaped.shape)
 
 print("\n对b的雅可比矩阵（重塑后）:")
 print(jacobian_b_reshaped)
+print("形状（重塑后）:", jacobian_b_reshaped.shape)
