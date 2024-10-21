@@ -3,12 +3,24 @@
  * @Date         : 2023-10-21 03:22:26
  * @Description  : 本类仅包含一些属性方法，不包含任何运算方法，所以不会需要用到mut
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-21 10:54:36
+ * @LastEditTime : 2024-10-21 11:25:33
  */
 
 use super::Tensor;
+use ndarray::{Array, ArrayViewD, ArrayViewMutD, AxisDescription, IxDyn, Slice};
 
 impl Tensor {
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓快照/view(_mut)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    pub fn view(&self) -> ArrayViewD<'_, f32> {
+        ArrayViewD::from_shape(self.shape(), self.data.as_slice().unwrap()).unwrap()
+    }
+    pub fn view_mut(&mut self) -> ArrayViewMutD<'_, f32> {
+        let shape = self.shape().to_owned();
+        let slice_mut = self.data.as_slice_mut();
+        ArrayViewMutD::from_shape(shape, slice_mut.unwrap()).unwrap()
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑快照/view(_mut)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
     /// 若为矩阵，`shape`可以是[n,m]；
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]。

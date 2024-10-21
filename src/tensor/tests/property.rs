@@ -1,4 +1,45 @@
+use crate::assert_panic;
 use crate::tensor::Tensor;
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓快照/view(_mut)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_view() {
+    let data = vec![1.0, 2.0, 3.0, 4.0];
+    let shape = vec![2, 2];
+    let tensor = Tensor::new(&data, &shape);
+    let view = tensor.view();
+    // 检查可否正常打印
+    println!("{:?}", view);
+    // 检查view的索引是否正确，若非指向具体的某个元素，则会panic
+    assert_panic!(view[[0]]);
+    // 修改view通过索引的元素是否和原始张量保持一致
+    assert_eq!(view[[0, 0]], 1.0);
+    assert_eq!(view[[0, 1]], 2.0);
+    assert_eq!(view[[1, 0]], 3.0);
+    assert_eq!(view[[1, 1]], 4.0);
+}
+
+#[test]
+fn test_view_mut() {
+    let data = vec![1.0, 2.0, 3.0, 4.0];
+    let shape = vec![2, 2];
+    let mut tensor = Tensor::new(&data, &shape);
+    let mut view_mut = tensor.view_mut();
+    // 检查可否正常打印
+    println!("{:?}", view_mut);
+    // 检查view_mut的索引是否正确，若非指向具体的某个元素，则会panic
+    assert_panic!(view_mut[[0]]);
+    // 修改view_mut中的值，并检查原始张量是否也发生了改变
+    view_mut[[0, 0]] = 5.0;
+    view_mut[[0, 1]] = 6.0;
+    view_mut[[1, 0]] = 7.0;
+    view_mut[[1, 1]] = 8.0;
+    assert_eq!(tensor.data[[0, 0]], 5.0);
+    assert_eq!(tensor.data[[0, 1]], 6.0);
+    assert_eq!(tensor.data[[1, 0]], 7.0);
+    assert_eq!(tensor.data[[1, 1]], 8.0);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑快照/view(_mut)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓shape↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]

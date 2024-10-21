@@ -3,18 +3,6 @@ use std::ops::{Index, IndexMut};
 use super::Tensor;
 use ndarray::{Array, ArrayViewD, ArrayViewMutD, AxisDescription, IxDyn, Slice};
 
-// 快照
-impl Tensor {
-    pub fn view(&self) -> ArrayViewD<'_, f32> {
-        ArrayViewD::from_shape(self.shape(), self.data.as_slice().unwrap()).unwrap()
-    }
-    pub fn view_mut(&mut self) -> ArrayViewMutD<'_, f32> {
-        let shape = self.shape().to_owned();
-        let slice_mut = self.data.as_slice_mut();
-        ArrayViewMutD::from_shape(shape, slice_mut.unwrap()).unwrap()
-    }
-}
-
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓index特性↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 // 不可变index
 impl Index<[usize; 0]> for Tensor {

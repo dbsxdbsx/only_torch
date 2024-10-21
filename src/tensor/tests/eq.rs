@@ -51,7 +51,7 @@ fn test_eq_tensors_with_or_without_ownership() {
     assert_ne!(&tensor1, &tensor2);
 }
 
-// test for check eq between view(mut) and Tensor
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓和快照相关的eq测试↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_eq_view_and_tensor_with_or_without_ownership() {
     // 相同的情况
@@ -101,3 +101,4 @@ fn test_eq_view_and_tensor_with_or_without_ownership() {
     assert_ne!(view2_mut, &cloned_tensor1);
     assert_ne!(&cloned_tensor1, view2_mut);
 }
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑和快照相关的eq测试↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

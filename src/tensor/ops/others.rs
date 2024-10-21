@@ -3,7 +3,7 @@
  * @Date         : 2023-10-21 03:22:26
  * @Description  : 本模块包含一些常用的张量非四则运算的常用方法，包含转置及一些会改变形状的方法
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-21 10:56:14
+ * @LastEditTime : 2024-10-21 11:13:51
  */
 
 use std::collections::HashSet;
@@ -407,4 +407,20 @@ impl Tensor {
         self.permute_mut(&axes);
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑transpose↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓flatten↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 将张量展平为一维张量，并返回新的张量（不影响原张量）
+    pub fn flatten(&self) -> Self {
+        let total_elements = self.data.len();
+        Self {
+            data: self.data.clone().into_shape(vec![total_elements]).unwrap(),
+        }
+    }
+
+    /// 将张量展平为一维张量（影响原张量）
+    pub fn flatten_mut(&mut self) {
+        let total_elements = self.data.len();
+        self.data = self.data.clone().into_shape(vec![total_elements]).unwrap();
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑flatten↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
