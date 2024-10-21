@@ -42,22 +42,6 @@ impl Default for Tensor {
 }
 
 impl Tensor {
-    /// 创建一个张量，
-    /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
-    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
-    /// 若为矩阵，`shape`可以是[n,m]；
-    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
-    /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
-    pub fn new(data: &[f32], shape: &[usize]) -> Self {
-        let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap();
-        Self { data }
-    }
-
-    pub fn zeros(shape: &[usize]) -> Self {
-        let data = Array::zeros(IxDyn(shape));
-        Self { data }
-    }
-
     /// 创建一个空（未初始化）的张量--该张量的所有元素值为NaN，请务必之后赋予每个元素具体数值后再使用（虽然不会报错）。
     /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
@@ -68,11 +52,15 @@ impl Tensor {
         Self { data }
     }
 
-    /// `检查张量是否所有元素为NaN`。
-    /// 因为即使是仅含有1个NaN元素的也可能已经初始化，所以这里采用“所有”元素作为判断依据：
-    /// 若所有元素为NaN，则判定为即未初始化，反之则已判定为已初始化。（单个元素的张量作为特例暂不特殊照顾）
-    pub fn is_inited(&self) -> bool {
-        !self.data.iter().all(|&x| x.is_nan())
+    /// 创建一个张量，
+    /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
+    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
+    /// 若为矩阵，`shape`可以是[n,m]；
+    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
+    /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
+    pub fn new(data: &[f32], shape: &[usize]) -> Self {
+        let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap();
+        Self { data }
     }
 
     /// 创建一个随机张量，其值在[min, max]的闭区间，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
@@ -86,6 +74,11 @@ impl Tensor {
             .map(|_| Uniform::from(min..=max).sample(&mut rng))
             .collect::<Vec<_>>();
         Self::new(&data, shape)
+    }
+
+    pub fn zeros(shape: &[usize]) -> Self {
+        let data = Array::zeros(IxDyn(shape));
+        Self { data }
     }
 
     /// 创建一个含`n`个对角元素的单位矩阵。

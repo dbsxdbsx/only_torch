@@ -3,7 +3,7 @@
  * @Date         : 2023-10-21 03:22:26
  * @Description  : 本类仅包含一些属性方法，不包含任何运算方法，所以不会需要用到mut
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-21 12:27:25
+ * @LastEditTime : 2024-10-21 14:25:36
  */
 
 use super::Tensor;
@@ -40,6 +40,13 @@ impl Tensor {
     /// 计算张量中所有元素的数量
     pub fn size(&self) -> usize {
         self.data.len()
+    }
+
+    /// 检查张量是否所有元素为`NaN`。
+    /// 因为即使是仅含有1个`NaN`元素的也可能已经初始化，所以这里采用“所有”元素作为判断依据：
+    /// 若所有元素为`NaN`，则判定为即未初始化，反之则已判定为已初始化。（单个元素的张量作为特例暂不特殊照顾）
+    pub fn is_inited(&self) -> bool {
+        !self.data.iter().all(|&x| x.is_nan())
     }
 
     /// 判断两个张量的形状是否严格一致。如：形状为 [1, 4]，[1, 4]和[4]是不一致的，会返回false
