@@ -3,7 +3,7 @@
  * @Date         : 2023-10-21 03:22:26
  * @Description  : 本类仅包含一些属性方法，不包含任何运算方法，所以不会需要用到mut
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-21 14:25:36
+ * @LastEditTime : 2024-10-21 14:54:48
  */
 
 use super::Tensor;
@@ -55,8 +55,9 @@ impl Tensor {
     }
 
     /// 判断张量是否为标量
+    /// 这里的判断标准是：若形状为空或形状各维数乘积为1，则认为是标量
     pub fn is_scalar(&self) -> bool {
-        self.shape().is_empty() || self.shape().iter().all(|x| *x == 1)
+        self.shape().is_empty() || self.shape().iter().product::<usize>() == 1
     }
 
     /// 判断张量中是否存在0值
@@ -64,8 +65,8 @@ impl Tensor {
         self.data.iter().any(|&x| x == 0.)
     }
 
-    /// 转化为纯数（number）。若为标量，则返回Some(number)，否则返回None
-    pub fn number(&self) -> Option<f32> {
+    /// 将张量转化为纯数（number）。若为标量，则返回Some(number)，否则返回None
+    pub fn get_data_number(&self) -> Option<f32> {
         if self.is_scalar() {
             let shape = self.shape();
             let index_array = self.generate_index_array(shape);

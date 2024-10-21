@@ -81,15 +81,15 @@ impl<'a, 'b> Add<&'b Tensor> for &'a Tensor {
 fn add_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
     let data = if tensor_1.is_scalar() && tensor_2.is_scalar() {
         return Tensor::new(
-            &[tensor_1.number().unwrap() + tensor_2.number().unwrap()],
+            &[tensor_1.get_data_number().unwrap() + tensor_2.get_data_number().unwrap()],
             &[1],
         );
     } else if tensor_1.is_same_shape(tensor_2) {
         &tensor_1.data + &tensor_2.data
     } else if tensor_1.is_scalar() {
-        tensor_1.number().unwrap() + &tensor_2.data
+        tensor_1.get_data_number().unwrap() + &tensor_2.data
     } else if tensor_2.is_scalar() {
-        &tensor_1.data + tensor_2.number().unwrap()
+        &tensor_1.data + tensor_2.get_data_number().unwrap()
     } else {
         panic!(
             "{}",
