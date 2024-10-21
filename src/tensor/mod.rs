@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::{Read, Write};
-
 use ndarray::{Array, ArrayD, IxDyn};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
@@ -23,9 +20,10 @@ mod ops {
 }
 
 pub mod image;
-mod index;
-mod print;
-mod property;
+pub mod index;
+pub mod print;
+pub mod property;
+pub mod save_load;
 
 #[cfg(test)]
 mod tests;
@@ -135,32 +133,5 @@ impl Tensor {
         }
 
         Self::new(&data, shape)
-    }
-}
-
-// 私有方法
-impl Tensor {
-    fn has_zero_value(&self) -> bool {
-        self.data.iter().any(|&x| x == 0.)
-    }
-
-    fn generate_index_array(&self, shape: &[usize]) -> Vec<usize> {
-        shape.iter().map(|_| 0).collect()
-    }
-}
-
-// 保存和加载张量
-impl Tensor {
-    /// 将单个Tensor写入本地文件
-    pub fn save(&self, file: &mut File) {
-        let serialized_data = bincode::serialize(&self.data).unwrap();
-        file.write_all(&serialized_data).unwrap();
-    }
-    /// 从本地文件加载单个Tensor
-    pub fn load(file: &mut File) -> Self {
-        let mut serialized_data = Vec::new();
-        file.read_to_end(&mut serialized_data).unwrap();
-        let data = bincode::deserialize(&serialized_data).unwrap();
-        Self { data }
     }
 }

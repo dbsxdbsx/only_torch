@@ -1,7 +1,7 @@
 use std::ops::{Index, IndexMut};
 
 use super::Tensor;
-use ndarray::{Array, ArrayViewD, ArrayViewMutD, AxisDescription, IxDyn, Slice};
+use ndarray::{Array, AxisDescription, IxDyn, Slice};
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓index特性↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 // 不可变index
@@ -82,8 +82,8 @@ impl IndexMut<[usize; 4]> for Tensor {
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑index特性↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
-/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓克隆式索引（局部）张量↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl Tensor {
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓克隆式索引（局部）张量↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 使用给定的索引数组从张量中选取（多个）元素。
     /// * `indices` - 索引值的数组。
     ///
@@ -122,5 +122,9 @@ impl Tensor {
 
         sliced.to_owned()
     }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑克隆式索引（局部）张量↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    pub(in crate::tensor) fn generate_index_array(&self, shape: &[usize]) -> Vec<usize> {
+        shape.iter().map(|_| 0).collect()
+    }
 }
-/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑克隆式索引（局部）张量↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

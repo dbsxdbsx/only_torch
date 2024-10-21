@@ -91,6 +91,32 @@ fn test_is_scalar() {
     assert!(!non_scalar_tensor.is_scalar());
 }
 
+#[test]
+fn test_has_zero_value() {
+    // 测试不包含零值的张量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    assert!(!tensor.has_zero_value());
+
+    // 测试包含零值的张量
+    let tensor = Tensor::new(&[1.0, 0.0, 3.0, 4.0], &[2, 2]);
+    assert!(tensor.has_zero_value());
+
+    // 测试全为零的张量
+    let tensor = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[2, 2]);
+    assert!(tensor.has_zero_value());
+
+    // 测试标量张量
+    let tensor = Tensor::new(&[0.0], &[]);
+    assert!(tensor.has_zero_value());
+
+    let tensor = Tensor::new(&[1.0], &[]);
+    assert!(!tensor.has_zero_value());
+
+    // 测试高维张量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 0.0, 5.0, 6.0], &[2, 3, 1]);
+    assert!(tensor.has_zero_value());
+}
+
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓size↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_size() {

@@ -3,11 +3,11 @@
  * @Date         : 2023-10-21 03:22:26
  * @Description  : 本类仅包含一些属性方法，不包含任何运算方法，所以不会需要用到mut
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-21 11:55:40
+ * @LastEditTime : 2024-10-21 12:27:25
  */
 
 use super::Tensor;
-use ndarray::{Array, ArrayViewD, ArrayViewMutD, AxisDescription, IxDyn, Slice};
+use ndarray::{ArrayViewD, ArrayViewMutD};
 
 impl Tensor {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓快照/view(_mut)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
@@ -50,6 +50,11 @@ impl Tensor {
     /// 判断张量是否为标量
     pub fn is_scalar(&self) -> bool {
         self.shape().is_empty() || self.shape().iter().all(|x| *x == 1)
+    }
+
+    /// 判断张量中是否存在0值
+    pub fn has_zero_value(&self) -> bool {
+        self.data.iter().any(|&x| x == 0.)
     }
 
     /// 转化为纯数（number）。若为标量，则返回Some(number)，否则返回None
