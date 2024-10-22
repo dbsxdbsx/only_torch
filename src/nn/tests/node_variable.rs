@@ -8,7 +8,7 @@ fn test_new_for_node_variable() {
     let name = Some("test_variable");
     let variable = Variable::new(&shape, init, trainable, name);
 
-    assert_eq!(variable.value_shape(), &shape);
+    assert_eq!(variable.value().shape(), &shape);
     assert!(!variable.is_inited());
     assert!(!variable.is_trainable());
     assert_eq!(variable.name(), "test_variable");

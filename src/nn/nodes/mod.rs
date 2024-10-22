@@ -24,6 +24,12 @@ pub enum NodeEnum {
     Step,
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑算子↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
+impl NodeEnum {
+    /// 比较两个NodeEnum实例是否在内存中完全相同
+    pub fn eq_memory(&self, other: &NodeEnum) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
 
 // 实现Node trait的方法
 #[enum_dispatch(NodeEnum)]
@@ -150,32 +156,25 @@ pub trait TraitForNode {
         }
     }
     /// 反向传播，计算结果节点对本节点的雅可比矩阵
+    /// NOTE: 这里的逻辑参考了https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/core/node.py#L83
     fn backward(&mut self, result_node: &NodeEnum) -> &Tensor {
-        if self.jacobi().is_inited() {
-            return self.jacobi();
-        }
-        // TODO: 真的需要这一block吗？ 对自身
-        // if std::ptr::eq(self as *const _, result as *const NodeEnum as *const _) {
-        // if std::ptr::eq(self as *const _, result as *const _) {
-        //     self.set_jacobi(Tensor::eye(self.dimension()));
-        //     return &self.jacobi();
-        // }
-        // 对其它节点
-        *self.jacobi_mut() =
-            Tensor::zeros(&[result_node.value().dimension(), self.value().dimension()]);
-        let parent_node: NodeEnum = self.as_node_enum();
-        let mut tmp_jacobis = Vec::new();
-        for child in self.children_mut() {
-            assert!(child.is_inited());
-            // TODO: delete if child.is_inited() {
-            let jacobi_1 = child.calc_jacobi_to_a_parent(&parent_node);
-            let jacobi_2 = child.backward(result_node);
-            tmp_jacobis.push(jacobi_1 * jacobi_2);
-            // }
-        }
-        // 最终获得结果节点对本节点的雅可比矩阵
-        for tmp_jacobi in tmp_jacobis {
-            *self.jacobi_mut() = self.jacobi() + tmp_jacobi;
+        if !self.jacobi().is_inited() {
+            if self.as_node_enum().eq_memory(&result_node.as_node_enum()) {
+                *self.jacobi_mut() = Tensor::eyes(self.value().size());
+            } else {
+                *self.jacobi_mut() =
+                    Tensor::zeros(&[result_node.value().size(), self.value().size()]);
+
+                // 对每个子节点进行反向传播
+                for child in self.children_mut() {
+                    if child.is_inited() {
+                        let child_backward = child.backward(result_node);
+                        // TODO:
+                        // let child_jacobi = child.calc_jacobi_to_a_parent(&self.as_node_enum());
+                        // *self.jacobi_mut() = self.jacobi() + child_backward * child_jacobi;
+                    }
+                }
+            }
         }
 
         self.jacobi()

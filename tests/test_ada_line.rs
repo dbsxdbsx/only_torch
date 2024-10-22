@@ -1,4 +1,4 @@
-use only_torch::nn::nodes::{Add, MatMul, TraitForNode, Variable};
+use only_torch::nn::nodes::{Add, MatMul, Step, TraitForNode, Variable};
 use only_torch::tensor::Tensor;
 
 #[test]
@@ -47,60 +47,60 @@ fn test_ada_line() {
     );
     let predict = Step::new(&[output.as_node_enum()], None);
 
-    // 损失函数
-    let loss = PerceptionLoss::new(
-        &[MatMul::new(&[label.as_node_enum(), output.as_node_enum()], None).as_node_enum()],
-        None,
-    );
+    // // 损失函数
+    // let loss = PerceptionLoss::new(
+    //     &[MatMul::new(&[label.as_node_enum(), output.as_node_enum()], None).as_node_enum()],
+    //     None,
+    // );
 
-    // 学习率
-    let learning_rate = 0.0001;
+    // // 学习率
+    // let learning_rate = 0.0001;
 
-    // 训练执行50个epoch
-    for epoch in 0..50 {
-        // 遍历训练集中的样本
-        for i in 0..train_set.shape()[0] {
-            // 取第i个样本的特征和标签
-            let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
-            let l = train_set.slice(&[i, 3]).reshape(&[1, 1]);
+    // // 训练执行50个epoch
+    // for epoch in 0..50 {
+    //     // 遍历训练集中的样本
+    //     for i in 0..train_set.shape()[0] {
+    //         // 取第i个样本的特征和标签
+    //         let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
+    //         let l = train_set.slice(&[i, 3]).reshape(&[1, 1]);
 
-            // 将特征赋给x节点，将标签赋给label节点
-            x.set_value(features);
-            label.set_value(l);
+    //         // 将特征赋给x节点，将标签赋给label节点
+    //         x.set_value(features);
+    //         label.set_value(l);
 
-            // 在loss节点上执行前向传播，计算损失值
-            loss.forward();
+    //         // 在loss节点上执行前向传播，计算损失值
+    //         loss.forward();
 
-            // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
-            w.backward(&loss);
-            b.backward(&loss);
+    //         // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
+    //         w.backward(&loss);
+    //         b.backward(&loss);
 
-            // // 更新参数
-            // // w.set_value(w.value - learning_rate * w.jacobi.T.reshape(w.shape()))
-            // // b.set_value(b.value - learning_rate * b.jacobi.T.reshape(b.shape()))
-            // w.update(learning_rate);
-            // b.update(learning_rate);
+    //         // // 更新参数
+    //         // // w.set_value(w.value - learning_rate * w.jacobi.T.reshape(w.shape()))
+    //         // // b.set_value(b.value - learning_rate * b.jacobi.T.reshape(b.shape()))
+    //         // w.update(learning_rate);
+    //         // b.update(learning_rate);
 
-            // // 清除所有节点的雅可比矩阵
-            // TODO: default_graph.clear_jacobi();
-        }
+    //         // // 清除所有节点的雅可比矩阵
+    //         // TODO: default_graph.clear_jacobi();
+    //     }
 
-        // // 评价模型的正确率
-        // let mut correct_count = 0;
-        // for i in 0..train_set.shape()[0] {
-        //     let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
-        //     x.set_value(features);
+    //     // 评价模型的正确率
+    //     let mut correct_count = 0;
+    //     for i in 0..train_set.shape()[0] {
+    //         let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
+    //         x.set_value(features);
 
-        //     predict.forward();
-        //     let pred = if predict.value().get(&[0, 0]) > &0.0 { 1.0 } else { -1.0 };
-        //     let true_label = train_set.get(&[i, 3]);
+    //         predict.forward();
+    //         let pred = if predict.value().get(&[0, 0]) > &0.0 { 1.0 } else { -1.0 };
+    //         let true_label = train_set.get(&[i, 3]);
 
-        //     if (pred - true_label).abs() < 1e-5 {
-        //         correct_count += 1;
-        //     }
-        // }
+    //         if (pred - true_label).abs() < 1e-5 {
+    //             correct_count += 1;
+    //         }
+    //     }
 
-        // let accuracy = correct_count as f32 / train_set.shape()[0] as f32;
-        // println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
-    }
+    //     let accuracy = correct_count as f32 / train_set.shape()[0] as f32;
+    //     println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
+    // }
 }
