@@ -182,7 +182,7 @@ impl Tensor {
     /// * `new_dim` - 布尔值，指示是否增加一个新的维度来堆叠。
     ///
     /// 当 `new_dim` 为 `true` 时，确保所有张量具有相同的形状。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len(), 1]` 的张量。
-    /// 当 `new_dim` 为 `false`，确保所每个张量的第一个维度可以不同，但其余维度应相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
+    /// 当 `new_dim` 为 `false`，每个张量的第一个维度可以不同，但其余维度须相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
     /// 否则报错。
     pub fn stack(tensors: &[&Self], new_dim: bool) -> Self {
         assert!(!tensors.is_empty(), "{}", TensorError::EmptyList);

@@ -19,7 +19,7 @@
 
 [dependencies]
     # 代码重构
-    enum_dispatch="*"
+    enum_dispatch="0.3"
 
     # 数值相关
     num-traits ="*"
@@ -50,7 +50,7 @@
     # screenshots = "0.7.0"
 
     # 宏
-    paste="1.0.5"
+    paste         ="1.0.5"
     trait_variable="*"
 
 [dev-dependencies]

@@ -21,6 +21,7 @@
 （无）
 
 ## TODO
+- 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - `parent.borrow_mut()`或`.children_mut()`改变后如何保证其matrix形状是合法的该节点运算后matrix?
 - `fn as_node_enum(&self) -> NodeEnum {
         NodeEnum::Step(self.clone())
