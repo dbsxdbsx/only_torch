@@ -76,6 +76,11 @@ impl Tensor {
         Self::new(&data, shape)
     }
 
+    /// 创建一个全0的张量。
+    /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
+    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
+    /// 若为矩阵，`shape`可以是[n,m]；
+    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     pub fn zeros(shape: &[usize]) -> Self {
         let data = Array::zeros(IxDyn(shape));
         Self { data }

@@ -37,7 +37,7 @@ impl Tensor {
         self.data.ndim()
     }
 
-    /// 计算张量中所有元素的数量
+    /// 计算张量中元素的数量
     pub fn size(&self) -> usize {
         self.data.len()
     }

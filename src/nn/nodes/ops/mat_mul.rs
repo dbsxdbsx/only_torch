@@ -19,7 +19,7 @@ impl MatMul {
         // 1.1 矩阵乘法需要恰好两个父节点
         assert!(parents.len() == 2, "MatMul节点需恰好2个父节点");
         // 1.2 parents的形状需要符合矩阵乘法的规则
-        let mut test_tensor = Tensor::eyes(parents[0].shape()[0]);
+        let mut test_tensor = Tensor::eyes(parents[0].value().shape()[0]);
         for parent in parents {
             // NOTE: 即使父节点值未初始化，只要值的形状符合运算规则，就不会报错
             test_tensor = test_tensor.mat_mul(parent.value());
@@ -85,7 +85,6 @@ impl TraitForNode for MatMul {
     fn as_node_enum(&self) -> NodeEnum {
         NodeEnum::MatMul(self.clone())
     }
-
 
     fn jacobi(&self) -> &Tensor {
         &self.jacobi

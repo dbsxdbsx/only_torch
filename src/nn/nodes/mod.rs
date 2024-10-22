@@ -21,6 +21,7 @@ pub enum NodeEnum {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓算子↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     Add,
     MatMul,
+    Step,
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑算子↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
 
@@ -68,26 +69,17 @@ pub trait TraitForNode {
     }
     /// 设置节点名称
     fn set_name(&mut self, name: &str);
-    /// 返回本节点值（张量）的形状（节点未初始化也能获取）
-    fn shape(&self) -> &[usize] {
-        self.value().shape()
+
+    /// 检查输入的父节点是否是本节点的父节点(之一)
+    fn check_parent(&self, node_type_name: &str, parent: &NodeEnum) {
+        assert!(
+            self.parents_names().contains(&parent.name().to_string()),
+            "输入的父节点'{}'不是{}节点的父节点",
+            parent.name(),
+            node_type_name
+        );
     }
-    /// 返回本节点值（张量）的维度（阶数）（节点未初始化也能获取）
-    fn dimension(&self) -> usize {
-        self.value().dimension()
-    }
-    /// 返回本节点值（张量）的元素个数（节点未初始化也能获取）
-    fn size(&self) -> usize {
-        self.value().size()
-    }
-    /// 返回本节点值（张量）的元素个数（节点未初始化也能获取）
-    fn len(&self) -> usize {
-        self.shape().iter().product()
-    }
-    /// 返回本节点值（张量）是否是标量
-    fn is_scalar_node(&self) -> bool {
-        self.value().is_scalar()
-    }
+
     /// 获取本节点的父节点（有些是不需要的，比如“Variable”）
     fn parents(&self) -> Vec<Rc<RefCell<NodeEnum>>> {
         crate::nn::graph::convert_parents(self.parents_names())
@@ -104,7 +96,7 @@ pub trait TraitForNode {
     fn value_mut(&mut self) -> &mut Tensor;
     /// 重置本节点的值(设置为未初始化)，可选择是否递归重置所有下游节点
     fn reset_value(&mut self, recursive: bool) {
-        *self.value_mut() = Tensor::uninited(self.shape());
+        *self.value_mut() = Tensor::uninited(self.value().shape());
         super::graph::update_node_in_default_graph(&self.as_node_enum());
         if recursive {
             for child in self.children_mut().iter_mut() {
@@ -169,7 +161,8 @@ pub trait TraitForNode {
         //     return &self.jacobi();
         // }
         // 对其它节点
-        *self.jacobi_mut() = Tensor::zeros(&[result_node.dimension(), self.dimension()]);
+        *self.jacobi_mut() =
+            Tensor::zeros(&[result_node.value().dimension(), self.value().dimension()]);
         let parent_node: NodeEnum = self.as_node_enum();
         let mut tmp_jacobis = Vec::new();
         for child in self.children_mut() {

@@ -15,11 +15,16 @@
 ## 文档
 
 目前无人性化的文档。可直接看Rust自动生成的[Api Doc](https://docs.rs/only_torch)即可。
+
 ### 使用示例
 
 （无）
 
 ## TODO
+- `parent.borrow_mut()`或`.children_mut()`改变后如何保证其matrix形状是合法的该节点运算后matrix?
+- `fn as_node_enum(&self) -> NodeEnum {
+        NodeEnum::Step(self.clone())
+    }`会否影响计算图graph？
 - Tensorlei的index将`[[`优化成`[`?
 - Tensor类的`slice(&[0..m, j..j+1])`是否需要？
 - `children_mut`是否可合并至`children()`? and `value_mut`是否可合并至`value`?

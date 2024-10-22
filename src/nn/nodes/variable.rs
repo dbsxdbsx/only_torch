@@ -44,7 +44,7 @@ impl Variable {
     /// 因其可以创建未初始化的实例，所以需要个供外部实例设置值的方法
     /// 设置后，本节点的值就不再是“未初始化”的了，且所有下游节点的值会被重置
     pub fn set_value(&mut self, value: &Tensor) {
-        assert_eq!(value.shape(), self.shape());
+        assert_eq!(value.shape(), self.value().shape());
         // 本节点的值被改变，重置本节点及所有下游节点的值
         self.reset_value(true);
         // 重置后，再设置本节点的值

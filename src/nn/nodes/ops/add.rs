@@ -97,7 +97,7 @@ impl TraitForNode for Add {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 
     fn calc_value(&mut self) {
-        let mut temp_value = Tensor::zeros(self.parents()[0].borrow_mut().shape());
+        let mut temp_value = Tensor::zeros(self.parents()[0].borrow_mut().value().shape());
         for parent in self.parents() {
             temp_value += parent.borrow().value();
         }
@@ -105,13 +105,8 @@ impl TraitForNode for Add {
     }
 
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
-        // 检查输入的父节点是否是存储的父节点之一
-        assert!(
-            self.parents_names().contains(&parent.name().to_string()),
-            "输入的父节点 '{}' 不是 Add 节点的父节点之一",
-            parent.name()
-        );
-        Tensor::eyes(self.size()) // 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
+        self.check_parent("Add", parent);
+        Tensor::eyes(self.value().size()) // 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
