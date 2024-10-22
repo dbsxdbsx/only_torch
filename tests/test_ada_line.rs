@@ -12,8 +12,8 @@ fn test_ada_line() {
     let male_bfrs = Tensor::normal(16.0, 2.0, &[500]);
     let female_bfrs = Tensor::normal(22.0, 2.0, &[500]);
 
-    let male_labels = Tensor::new(&vec![1.0; 500], &[500]);
-    let female_labels = Tensor::new(&vec![-1.0; 500], &[500]);
+    let male_labels = Tensor::new(&[1.0; 500], &[500]);
+    let female_labels = Tensor::new(&[-1.0; 500], &[500]);
 
     let mut train_set = Tensor::stack(
         &[
@@ -36,38 +36,71 @@ fn test_ada_line() {
     let w = Variable::new(&[1, 3], true, true, None);
     // 阈值，是一个1x1矩阵，需要初始化，参与训练
     let b = Variable::new(&[1, 1], true, true, None);
+
     // ADALINE的预测输出
     let output = Add::new(
-        &vec![
-            MatMul::new(&vec![w.as_node_enum(), x.as_node_enum()], None).as_node_enum(),
+        &[
+            MatMul::new(&[w.as_node_enum(), x.as_node_enum()], None).as_node_enum(),
             b.as_node_enum(),
         ],
         None,
     );
-    // predict = ms.ops.Step(output)
+    let predict = Step::new(&[output.as_node_enum()], None);
+
     // 损失函数
-    // loss = ms.ops.loss.PerceptionLoss(ms.ops.MatMul(label, output))
+    let loss = PerceptionLoss::new(
+        &[MatMul::new(&[label.as_node_enum(), output.as_node_enum()], None).as_node_enum()],
+        None,
+    );
+
     // 学习率
-    let _learning_rate = 0.0001;
+    let learning_rate = 0.0001;
 
     // 训练执行50个epoch
-    for _i in 0..50 {
+    for epoch in 0..50 {
         // 遍历训练集中的样本
-        for j in 0..train_set.shape()[0] {
-            // 获取当前样本的特征和标签
-            let sample = train_set.get(&[j]); // TODO: use view?
-            println!("{:?}", sample.shape());
-            // let features = sample.get(&[0, 0..3]); //TODO:
-            // let label = sample.get(&[0, 3]);
+        for i in 0..train_set.shape()[0] {
+            // 取第i个样本的特征和标签
+            let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
+            let l = train_set.slice(&[i, 3]).reshape(&[1, 1]);
 
-            // // 计算当前样本的预测值
-            // let mut pred = features.mat_mul(&Tensor::new(&[0.0, 0.0, 0.0], &[3, 1]));
-            // pred += Tensor::new(1.0, &[]);
-            // // 计算当前样本的误差
-            // let mut error = label - pred;
-            // // 计算当前样本的梯度
-            // let mut grad = features.transpose().mat_mul(&error);
-            // // 更新模型参数
+            // 将特征赋给x节点，将标签赋给label节点
+            x.set_value(features);
+            label.set_value(l);
+
+            // 在loss节点上执行前向传播，计算损失值
+            loss.forward();
+
+            // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
+            w.backward(&loss);
+            b.backward(&loss);
+
+            // // 更新参数
+            // // w.set_value(w.value - learning_rate * w.jacobi.T.reshape(w.shape()))
+            // // b.set_value(b.value - learning_rate * b.jacobi.T.reshape(b.shape()))
+            // w.update(learning_rate);
+            // b.update(learning_rate);
+
+            // // 清除所有节点的雅可比矩阵
+            // TODO: default_graph.clear_jacobi();
         }
+
+        // // 评价模型的正确率
+        // let mut correct_count = 0;
+        // for i in 0..train_set.shape()[0] {
+        //     let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
+        //     x.set_value(features);
+
+        //     predict.forward();
+        //     let pred = if predict.value().get(&[0, 0]) > &0.0 { 1.0 } else { -1.0 };
+        //     let true_label = train_set.get(&[i, 3]);
+
+        //     if (pred - true_label).abs() < 1e-5 {
+        //         correct_count += 1;
+        //     }
+        // }
+
+        // let accuracy = correct_count as f32 / train_set.shape()[0] as f32;
+        // println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
     }
 }
