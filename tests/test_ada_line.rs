@@ -47,7 +47,7 @@ fn test_ada_line() {
     );
     let predict = Step::new(&[output.as_node_enum()], None);
 
-    // // 损失函数
+    // 损失函数
     // let loss = PerceptionLoss::new(
     //     &[MatMul::new(&[label.as_node_enum(), output.as_node_enum()], None).as_node_enum()],
     //     None,
