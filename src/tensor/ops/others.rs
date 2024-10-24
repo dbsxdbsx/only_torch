@@ -3,7 +3,7 @@
  * @Date         : 2023-10-21 03:22:26
  * @Description  : 本模块包含一些常用的张量非四则运算的常用方法，包含转置及一些会改变形状的方法
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-21 14:42:26
+ * @LastEditTime : 2024-10-25 05:59:15
  */
 
 use std::collections::HashSet;
@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use crate::errors::{Operator, TensorError};
 
 use crate::tensor::Tensor;
-use ndarray::{Array, Axis, Zip};
+use ndarray::{Array, Axis, IxDyn, Zip};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
@@ -432,4 +432,58 @@ impl Tensor {
             .unwrap()
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑flatten↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓diag↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 返回一个新的张量：
+    /// - 若输入为方阵，则返回其对角线元素组成的向量
+    /// - 若输入为向量，则返回以该向量为对角线的方阵
+    pub fn diag(&self) -> Self {
+        if self.is_vector() {
+            let n = self.size();
+            let mut diag_data = vec![0.0; n * n];
+            let data_slice = self.data.as_slice().unwrap();
+            for i in 0..n {
+                diag_data[i * n + i] = data_slice[i];
+            }
+            Self {
+                data: Array::from_shape_vec(IxDyn(&[n, n]), diag_data).unwrap(),
+            }
+        } else {
+            let shape = self.data.shape();
+            assert!(
+                shape.len() == 2 && shape[0] == shape[1],
+                "张量必须是方阵或向量"
+            );
+            let diag_data = self.data.diag().to_owned();
+            let diag_vector =
+                Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
+            Self { data: diag_vector }
+        }
+    }
+
+    /// 就地修改当前张量：
+    /// - 若输入为方阵，则转换为其对角线元素组成的向量
+    /// - 若输入为向量，则转换为以该向量为对角线的方阵
+    pub fn diag_mut(&mut self) {
+        if self.is_vector() {
+            let n = self.size();
+            let mut diag_data = vec![0.0; n * n];
+            let data_slice = self.data.as_slice().unwrap();
+            for i in 0..n {
+                diag_data[i * n + i] = data_slice[i];
+            }
+            self.data = Array::from_shape_vec(IxDyn(&[n, n]), diag_data).unwrap();
+        } else {
+            let shape = self.data.shape();
+            assert!(
+                shape.len() == 2 && shape[0] == shape[1],
+                "张量必须是方阵或向量"
+            );
+            let diag_data = self.data.diag().to_owned();
+            let diag_vector =
+                Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
+            self.data = diag_vector;
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

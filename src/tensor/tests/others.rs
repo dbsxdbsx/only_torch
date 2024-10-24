@@ -310,7 +310,7 @@ fn test_order_mut() {
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑order↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
-/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓shuffle↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓shuffle↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_shuffle() {
     let data = &[
@@ -405,7 +405,7 @@ fn test_shuffle_mut() {
     // 重新排序后则应完全一致
     assert_eq!(tensor, ordered_tensor);
 }
-/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑shuffle↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑shuffle↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓reshape↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
@@ -1016,3 +1016,113 @@ fn test_flatten_view() {
     assert_eq!(flattened.to_vec(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑flatten↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓diag↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_diag() {
+    // 1. 测试方阵 -> 对角向量
+    // 2x2方阵
+    let tensor = Tensor::new(&[1.0, 0.0, 0.0, 2.0], &[2, 2]);
+    let diag = tensor.diag();
+    assert_eq!(diag.shape(), &[2]);
+    assert_eq!(diag, Tensor::new(&[1.0, 2.0], &[2]));
+
+    // 3x3方阵
+    let tensor = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3]);
+    let diag = tensor.diag();
+    assert_eq!(diag.shape(), &[3]);
+    assert_eq!(diag, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+
+    // 2. 测试向量 -> 对角方阵
+    // 一维向量
+    let tensor = Tensor::new(&[1.0, 2.0], &[2]);
+    let diag = tensor.diag();
+    assert_eq!(diag.shape(), &[2, 2]);
+    assert_eq!(diag, Tensor::new(&[1.0, 0.0, 0.0, 2.0], &[2, 2]));
+
+    // 列向量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
+    let diag = tensor.diag();
+    assert_eq!(diag.shape(), &[3, 3]);
+    assert_eq!(
+        diag,
+        Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3])
+    );
+
+    // 行向量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+    let diag = tensor.diag();
+    assert_eq!(diag.shape(), &[3, 3]);
+    assert_eq!(
+        diag,
+        Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3])
+    );
+
+    // 3. 测试非法输入
+    // 非方阵
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    assert_panic!(tensor.diag(), "张量必须是方阵或向量");
+
+    // 三维张量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2, 1]);
+    assert_panic!(tensor.diag(), "张量必须是方阵或向量");
+
+    // 标量
+    let tensor = Tensor::new(&[1.0], &[1]);
+    assert_panic!(tensor.diag(), "张量必须是方阵或向量");
+}
+
+#[test]
+fn test_diag_mut() {
+    // 1. 测试方阵 -> 对角向量
+    // 2x2方阵
+    let mut tensor = Tensor::new(&[1.0, 0.0, 0.0, 2.0], &[2, 2]);
+    tensor.diag_mut();
+    assert_eq!(tensor.shape(), &[2]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 2.0], &[2]));
+
+    // 3x3方阵
+    let mut tensor = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3]);
+    tensor.diag_mut();
+    assert_eq!(tensor.shape(), &[3]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+
+    // 2. 测试向量 -> 对角方阵
+    // 一维向量
+    let mut tensor = Tensor::new(&[1.0, 2.0], &[2]);
+    tensor.diag_mut();
+    assert_eq!(tensor.shape(), &[2, 2]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 0.0, 0.0, 2.0], &[2, 2]));
+
+    // 列向量
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
+    tensor.diag_mut();
+    assert_eq!(tensor.shape(), &[3, 3]);
+    assert_eq!(
+        tensor,
+        Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3])
+    );
+
+    // 行向量
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+    tensor.diag_mut();
+    assert_eq!(tensor.shape(), &[3, 3]);
+    assert_eq!(
+        tensor,
+        Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3])
+    );
+
+    // 3. 测试非法输入
+    // 非方阵
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    assert_panic!(tensor.diag_mut(), "张量必须是方阵或向量");
+
+    // 三维张量
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2, 1]);
+    assert_panic!(tensor.diag_mut(), "张量必须是方阵或向量");
+
+    // 标量
+    let mut tensor = Tensor::new(&[1.0], &[1]);
+    assert_panic!(tensor.diag_mut(), "张量必须是方阵或向量");
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
