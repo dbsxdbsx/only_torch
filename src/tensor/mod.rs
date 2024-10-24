@@ -24,6 +24,7 @@ pub mod index;
 pub mod print;
 pub mod property;
 pub mod save_load;
+pub mod filter;
 
 #[cfg(test)]
 mod tests;
