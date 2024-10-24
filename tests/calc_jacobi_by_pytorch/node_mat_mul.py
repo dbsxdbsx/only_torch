@@ -4,12 +4,12 @@ import torch
 def mat_mul(a, b):
     return torch.matmul(a, b)
 
-# 定义输入矩阵，a为2x3矩阵，b为3x2矩阵
+# 定义输入矩阵，a为2x3矩阵，b为3x4矩阵
 a = torch.tensor([[1.0, 2.0, 3.0],
                   [4.0, 5.0, 6.0]], requires_grad=True)
-b = torch.tensor([[7.0, 8.0],
-                  [9.0, 10.0],
-                  [11.0, 12.0]], requires_grad=True)
+b = torch.tensor([[7.0, 8.0, 9.0, 10.0],
+                  [11.0, 12.0, 13.0, 14.0],
+                  [15.0, 16.0, 17.0, 18.0]], requires_grad=True)
 
 print("a的维度:", a.shape)
 print("b的维度:", b.shape)
