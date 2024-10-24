@@ -3,7 +3,7 @@
  * @Date         : 2023-10-21 03:22:26
  * @Description  : 本类仅包含一些属性方法，不包含任何运算方法，所以不会需要用到mut
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-21 14:54:48
+ * @LastEditTime : 2024-10-25 05:39:09
  */
 
 use super::Tensor;
@@ -53,12 +53,29 @@ impl Tensor {
     pub fn is_same_shape(&self, other: &Self) -> bool {
         self.shape() == other.shape()
     }
-
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓判断张量是否为标量、向量、矩阵↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 判断张量是否为标量
-    /// 这里的判断标准是：若形状为空或形状各维数乘积为1，则认为是标量
+    /// 判断标准：若形状为空或形状各维数乘积为1，则认为是标量
     pub fn is_scalar(&self) -> bool {
         self.shape().is_empty() || self.shape().iter().product::<usize>() == 1
     }
+
+    /// 判断张量是否为向量
+    /// 判断标准：若张量只有一个维度且该维度的大小大于1，或者张量有两个维度且其中一个维度为1，另一个维度大于1
+    pub fn is_vector(&self) -> bool {
+        let shape = self.shape();
+        (shape.len() == 1 && shape[0] > 1)
+            || (shape.len() == 2
+                && ((shape[0] > 1 && shape[1] == 1) || (shape[1] > 1 && shape[0] == 1)))
+    }
+
+    /// 判断张量是否为矩阵
+    /// 判断标准：若张量有两个维度且各维度大小均大于1，则认为是矩阵
+    pub fn is_matrix(&self) -> bool {
+        let shape = self.shape();
+        shape.len() == 2 && shape.iter().all(|&x| x > 1)
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑判断张量是否为标量、向量、矩阵↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /// 判断张量中是否存在0值
     pub fn has_zero_value(&self) -> bool {

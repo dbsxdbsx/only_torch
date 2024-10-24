@@ -76,6 +76,7 @@ fn test_dimension() {
     assert_eq!(tensor.dimension(), 3);
 }
 
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓判断张量是否为标量、向量、矩阵↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_is_scalar() {
     let scalar_tensor = Tensor::new(&[1.], &[]);
@@ -90,6 +91,52 @@ fn test_is_scalar() {
     let non_scalar_tensor = Tensor::new(&[1., 2.], &[2]);
     assert!(!non_scalar_tensor.is_scalar());
 }
+
+#[test]
+fn test_is_vector() {
+    let vector_tensor = Tensor::new(&[1., 2., 3.], &[3]);
+    assert!(vector_tensor.is_vector());
+
+    let vector_tensor = Tensor::new(&[1., 2., 3.], &[1, 3]);
+    assert!(vector_tensor.is_vector());
+
+    let vector_tensor = Tensor::new(&[1., 2., 3.], &[3, 1]);
+    assert!(vector_tensor.is_vector());
+
+    let non_vector_tensor = Tensor::new(&[1.], &[]);
+    assert!(!non_vector_tensor.is_vector());
+
+    let non_vector_tensor = Tensor::new(&[1.], &[1]);
+    assert!(!non_vector_tensor.is_vector());
+
+    let non_vector_tensor = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    assert!(!non_vector_tensor.is_vector());
+
+    let non_vector_tensor = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1]);
+    assert!(!non_vector_tensor.is_vector());
+}
+
+#[test]
+fn test_is_matrix() {
+    let matrix_tensor = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    assert!(matrix_tensor.is_matrix());
+
+    let non_matrix_tensor = Tensor::new(&[1., 2., 3.], &[3]);
+    assert!(!non_matrix_tensor.is_matrix());
+
+    let non_matrix_tensor = Tensor::new(&[1.], &[]);
+    assert!(!non_matrix_tensor.is_matrix());
+
+    let non_matrix_tensor = Tensor::new(&[1.], &[1, 1]);
+    assert!(!non_matrix_tensor.is_matrix());
+
+    let non_matrix_tensor = Tensor::new(&[1., 2.], &[2, 1]);
+    assert!(!non_matrix_tensor.is_matrix());
+
+    let non_matrix_tensor = Tensor::new(&[1.], &[1, 1, 1]);
+    assert!(!non_matrix_tensor.is_matrix());
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑判断张量是否为标量、向量、矩阵↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 #[test]
 fn test_has_zero_value() {
