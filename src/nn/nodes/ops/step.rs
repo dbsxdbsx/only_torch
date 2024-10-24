@@ -19,13 +19,8 @@ impl Step {
     pub fn new(parents: &[NodeEnum], name: Option<&str>) -> Self {
         // 1.构造前必要的校验
         // 1.1 阶跃算子只能有1个父节点
-        assert_eq!(parents.len(), 1, "Step节点只能有1个父节点");
-        // 1.2 parents的形状需要是二阶，即矩阵
-        assert!(
-            parents[0].value().dimension() == 2,
-            "Step节点的父节点形状必须是矩阵, 但结果却是`{:?}`",
-            parents[0].value().dimension()
-        );
+        assert!(parents.len() == 1, "Step节点只能有1个父节点");
+        // NOTE：这里不用检查父节点的形状必须是矩阵，因为父节点在构造时已经检查过了
 
         // 2.构造本节点
         let mut v = Self {
@@ -83,12 +78,13 @@ impl TraitForNode for Step {
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓梯度核心↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     fn calc_value(&mut self) {
-        let parent_value = self.parents()[0].borrow().value();
-        // TODO: self.value = parent_value.map(|x| if x >= 0.0 { 1.0 } else { 0.0 });
+        let parents = self.parents();
+        let parent = parents[0].borrow();
+        self.value = parent.value().where_greater_equal_than(0.0, 1.0, 0.0);
     }
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
         self.check_parent("Step", parent);
-        Tensor::zeros(&[self.value().size()]) // Step函数的导数在所有点都是0
+        Tensor::zeros(&self.value().shape()) // Step函数的导数在所有点都是0
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
