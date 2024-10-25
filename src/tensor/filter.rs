@@ -1,165 +1,41 @@
 use super::Tensor;
 
 impl Tensor {
-    /// 过滤张量中大于阈值的元素
+    /// 通用的条件过滤函数，可以灵活处理张量中的元素
     ///
     /// # 参数
-    /// * `threshold` - 阈值
-    /// * `true_value` - 当元素大于阈值时的替换值
-    /// * `false_value` - 当元素不大于阈值时的替换值
+    /// * `condition` - 条件函数，接收元素值并返回bool
+    /// * `true_fn` - 当条件为true时的值转换函数
+    /// * `false_fn` - 当条件为false时的值转换函数
     ///
-    /// 注意：如果元素是 NaN，将保持 NaN
-    pub fn where_greater_than(&self, threshold: f32, true_value: f32, false_value: f32) -> Self {
+    /// # 示例
+    /// ```
+    /// use crate::tensor::Tensor;
+    /// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
+    ///
+    /// // 类似 np.where(x >= 0.0, 0.0, -x)
+    /// let result = t.where_with(
+    ///     |x| x >= 0.0,
+    ///     |_| 0.0,
+    ///     |x| -x
+    /// );
+    /// ```
+    pub fn where_with<F, T, U>(&self, condition: F, true_fn: T, false_fn: U) -> Self
+    where
+        F: Fn(f32) -> bool,
+        T: Fn(f32) -> f32,
+        U: Fn(f32) -> f32,
+    {
         let result = self
             .data
             .iter()
             .map(|&x| {
                 if x.is_nan() {
                     f32::NAN
-                } else if x > threshold {
-                    true_value
+                } else if condition(x) {
+                    true_fn(x)
                 } else {
-                    false_value
-                }
-            })
-            .collect::<Vec<_>>();
-
-        Self::new(&result, self.shape())
-    }
-
-    /// 过滤张量中小于阈值的元素
-    ///
-    /// # 参数
-    /// * `threshold` - 阈值
-    /// * `true_value` - 当元素小于阈值时的替换值
-    /// * `false_value` - 当元素不小于阈值时的替换值
-    ///
-    /// 注意：如果元素是 NaN，将保持 NaN
-    pub fn where_lower_than(&self, threshold: f32, true_value: f32, false_value: f32) -> Self {
-        let result = self
-            .data
-            .iter()
-            .map(|&x| {
-                if x.is_nan() {
-                    f32::NAN
-                } else if x < threshold {
-                    true_value
-                } else {
-                    false_value
-                }
-            })
-            .collect::<Vec<_>>();
-
-        Self::new(&result, self.shape())
-    }
-
-    /// 过滤张量中大于等于阈值的元素
-    ///
-    /// # 参数
-    /// * `threshold` - 阈值
-    /// * `true_value` - 当元素大于等于阈值时的替换值
-    /// * `false_value` - 当元素小于阈值时的替换值
-    ///
-    /// 注意：如果元素是 NaN，将保持 NaN
-    pub fn where_greater_equal_than(
-        &self,
-        threshold: f32,
-        true_value: f32,
-        false_value: f32,
-    ) -> Self {
-        let result = self
-            .data
-            .iter()
-            .map(|&x| {
-                if x.is_nan() {
-                    f32::NAN
-                } else if x >= threshold {
-                    true_value
-                } else {
-                    false_value
-                }
-            })
-            .collect::<Vec<_>>();
-
-        Self::new(&result, self.shape())
-    }
-
-    /// 过滤张量中小于等于阈值的元素
-    ///
-    /// # 参数
-    /// * `threshold` - 阈值
-    /// * `true_value` - 当元素小于等于阈值时的替换值
-    /// * `false_value` - 当元素大于阈值时的替换值
-    ///
-    /// 注意：如果元素是 NaN，将保持 NaN
-    pub fn where_lower_equal_than(
-        &self,
-        threshold: f32,
-        true_value: f32,
-        false_value: f32,
-    ) -> Self {
-        let result = self
-            .data
-            .iter()
-            .map(|&x| {
-                if x.is_nan() {
-                    f32::NAN
-                } else if x <= threshold {
-                    true_value
-                } else {
-                    false_value
-                }
-            })
-            .collect::<Vec<_>>();
-
-        Self::new(&result, self.shape())
-    }
-
-    /// 过滤张量中等于阈值的元素
-    ///
-    /// # 参数
-    /// * `threshold` - 阈值
-    /// * `true_value` - 当元素等于阈值时的替换值
-    /// * `false_value` - 当元素不等于阈值时的替换值
-    ///
-    /// 注意：如果元素是 NaN，将保持 NaN
-    pub fn where_equal(&self, threshold: f32, true_value: f32, false_value: f32) -> Self {
-        let result = self
-            .data
-            .iter()
-            .map(|&x| {
-                if x.is_nan() {
-                    f32::NAN
-                } else if (x - threshold).abs() < f32::EPSILON {
-                    true_value
-                } else {
-                    false_value
-                }
-            })
-            .collect::<Vec<_>>();
-
-        Self::new(&result, self.shape())
-    }
-
-    /// 过滤张量中不等于阈值的元素
-    ///
-    /// # 参数
-    /// * `threshold` - 阈值
-    /// * `true_value` - 当元素不等于阈值时的替换值
-    /// * `false_value` - 当元素等于阈值时的替换值
-    ///
-    /// 注意：如果元素是 NaN，将保持 NaN
-    pub fn where_not_equal(&self, threshold: f32, true_value: f32, false_value: f32) -> Self {
-        let result = self
-            .data
-            .iter()
-            .map(|&x| {
-                if x.is_nan() {
-                    f32::NAN
-                } else if (x - threshold).abs() >= f32::EPSILON {
-                    true_value
-                } else {
-                    false_value
+                    false_fn(x)
                 }
             })
             .collect::<Vec<_>>();

@@ -1,13 +1,16 @@
+pub mod loss;
 mod ops;
 mod variable;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
+pub use self::loss::*;
 pub use self::ops::*;
 pub use variable::Variable;
 
-
+#[cfg(test)]
+mod tests;
 
 // ----------------------以下是节点相关的基本特性、接口、宏----------------------
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓节点（Node）特性↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
@@ -24,11 +27,12 @@ pub enum NodeEnum {
     Add,
     MatMul,
     Step,
+    PerceptionLoss,
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑算子↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
 impl NodeEnum {
-    /// 比较两个NodeEnum实例是否在内存中完全相同
-    pub fn eq_memory(&self, other: &NodeEnum) -> bool {
+    /// `比较两个NodeEnum实例是否在内存中完全相同`
+    pub fn eq_memory(&self, other: &Self) -> bool {
         std::ptr::eq(self, other)
     }
 }

@@ -19,12 +19,12 @@ mod ops {
     pub mod sub_assign;
 }
 
+pub mod filter;
 pub mod image;
 pub mod index;
 pub mod print;
 pub mod property;
 pub mod save_load;
-pub mod filter;
 
 #[cfg(test)]
 mod tests;
