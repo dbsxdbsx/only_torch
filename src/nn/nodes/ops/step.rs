@@ -80,14 +80,14 @@ impl TraitForNode for Step {
     fn calc_value(&mut self) {
         let parents = self.parents();
         let parent = parents[0].borrow();
-        self.value = parent.value().where_greater_equal_than(0.0, 1.0, 0.0);
+        self.value = parent.value().where_with(|x| x >= 0.0, |_| 1.0, |_| 0.0);
     }
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
         self.check_parent("Step", parent);
         // Step函数的导数在所有点都是0
         // NOTE: 这里的实现的形状和MatrixSlow有些不同：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L351
         // 这里没有改变形状，而MatrixSlow会改变形状成向量
-        Tensor::zeros(&self.value().shape())
+        Tensor::zeros(self.value().shape())
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑梯度核心↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
