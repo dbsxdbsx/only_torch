@@ -11,14 +11,8 @@ b = torch.tensor([[7.0, 8.0, 9.0, 10.0],
                   [11.0, 12.0, 13.0, 14.0],
                   [15.0, 16.0, 17.0, 18.0]], requires_grad=True)
 
-print("a的维度:", a.shape)
-print("b的维度:", b.shape)
-
 # 计算结果
 c = mat_mul(a, b)
-print("c的值:")
-print(c)
-print("c的维度:", c.shape)
 
 # 计算雅可比矩阵
 jacobian_a = torch.func.jacrev(mat_mul, argnums=0)(a, b)
@@ -28,5 +22,10 @@ jacobian_b = torch.func.jacrev(mat_mul, argnums=1)(a, b)
 jacobian_a_reshaped = jacobian_a.reshape(c.numel(), a.numel())
 jacobian_b_reshaped = jacobian_b.reshape(c.numel(), b.numel())
 
-print(f"\n对a的雅可比矩阵（重塑后）, 形状:{jacobian_a_reshaped.shape}:\n{jacobian_a_reshaped}")
-print(f"\n对b的雅可比矩阵（重塑后）, 形状:{jacobian_b_reshaped.shape}:\n{jacobian_b_reshaped}")
+# 验证结果
+print("\n验证结果:")
+print(f"输入a【{a.shape}】:\n{a}")
+print(f"输入b【{b.shape}】:\n{b}")
+print(f"输出c【{c.shape}】:\n{c}")
+print(f"\n对a的雅可比矩阵（重塑后）【{jacobian_a_reshaped.shape}】:\n{jacobian_a_reshaped}")
+print(f"\n对b的雅可比矩阵（重塑后）【{jacobian_b_reshaped.shape}】:\n{jacobian_b_reshaped}")
