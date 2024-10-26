@@ -26,6 +26,8 @@ mod print;
 
 mod save_load;
 
+mod slice;
+
 #[derive(Debug)]
 struct TensorCheck {
     pub shape: Vec<usize>,

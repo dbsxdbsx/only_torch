@@ -1,4 +1,4 @@
-use ndarray::{Array, ArrayD, IxDyn};
+use ndarray::{Array, ArrayD, ArrayViewD, IxDyn};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 
@@ -25,6 +25,7 @@ pub mod index;
 pub mod print;
 pub mod property;
 pub mod save_load;
+pub mod slice;
 
 #[cfg(test)]
 mod tests;
@@ -152,5 +153,12 @@ impl Tensor {
             .collect();
 
         Self::new(&data, &[num_elements])
+    }
+
+    /// 从快照创建一个新张量
+    pub fn from_view(view: ArrayViewD<'_, f32>) -> Self {
+        Self {
+            data: view.to_owned(),
+        }
     }
 }

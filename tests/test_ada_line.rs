@@ -1,4 +1,11 @@
-use only_torch::nn::nodes::{Add, MatMul, Step, TraitForNode, Variable};
+/*
+ * @Author       : 老董
+ * @Date         : 2024-10-24 09:18:44
+ * @Description  : ⾃适应线性神经元（Adaptive Linear Neuron，ADALINE）网络测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch02/adaline.py
+ * @LastEditors  : 老董
+ * @LastEditTime : 2024-10-26 15:53:56
+ */
+use only_torch::nn::nodes::{Add, MatMul, PerceptionLoss, Step, TraitForNode, Variable};
 use only_torch::tensor::Tensor;
 
 #[test]
@@ -29,13 +36,13 @@ fn test_ada_line() {
     println!("{:?}", train_set.shape());
 
     // 构造计算图：输入向量，是一个3x1矩阵，不需要初始化，不参与训练
-    let x = Variable::new(&[3, 1], false, false, None);
+    let mut x = Variable::new(&[3, 1], false, false, None);
     // 类别标签，1男，-1女
-    let label = Variable::new(&[1, 1], false, false, None);
+    let mut label = Variable::new(&[1, 1], false, false, None);
     // 权重向量，是一个1x3矩阵，需要初始化，参与训练
-    let w = Variable::new(&[1, 3], true, true, None);
+    let mut w = Variable::new(&[1, 3], true, true, None);
     // 阈值，是一个1x1矩阵，需要初始化，参与训练
-    let b = Variable::new(&[1, 1], true, true, None);
+    let mut b = Variable::new(&[1, 1], true, true, None);
 
     // ADALINE的预测输出
     let output = Add::new(
@@ -48,59 +55,60 @@ fn test_ada_line() {
     let predict = Step::new(&[output.as_node_enum()], None);
 
     // 损失函数
-    // let loss = PerceptionLoss::new(
-    //     &[MatMul::new(&[label.as_node_enum(), output.as_node_enum()], None).as_node_enum()],
-    //     None,
-    // );
+    let mut loss = PerceptionLoss::new(
+        &[MatMul::new(&[label.as_node_enum(), output.as_node_enum()], None).as_node_enum()],
+        None,
+    );
 
-    // // 学习率
-    // let learning_rate = 0.0001;
+    // 学习率
+    let learning_rate = 0.0001;
 
-    // // 训练执行50个epoch
-    // for epoch in 0..50 {
-    //     // 遍历训练集中的样本
-    //     for i in 0..train_set.shape()[0] {
-    //         // 取第i个样本的特征和标签
-    //         let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
-    //         let l = train_set.slice(&[i, 3]).reshape(&[1, 1]);
+    // 训练执行50个epoch
+    for epoch in 0..50 {
+        //     // 遍历训练集中的样本
+        for i in 0..train_set.shape()[0] {
+            // // 取第i个样本的前4列（除最后一列的所有列），构造3x1矩阵对象
+            // let features = Tensor::from_view(train_set.slice_view(i, 0..3)).reshape(&[3, 1]);
+            // // 取第i个样本的最后一列，是该样本的性别标签（1男，-1女），构造1x1矩阵对象
+            // let l = train_set.get(&[i, 3]).reshape(&[1, 1]);
 
-    //         // 将特征赋给x节点，将标签赋给label节点
-    //         x.set_value(features);
-    //         label.set_value(l);
+            // // 将特征赋给x节点，将标签赋给label节点
+            // x.set_value(&features);
+            // label.set_value(&l);
 
-    //         // 在loss节点上执行前向传播，计算损失值
-    //         loss.forward();
+            // // 在loss节点上执行前向传播，计算损失值
+            // loss.forward();
 
-    //         // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
-    //         w.backward(&loss);
-    //         b.backward(&loss);
+            // // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
+            // w.backward(&loss.as_node_enum());
+            // b.backward(&loss.as_node_enum());
 
-    //         // // 更新参数
-    //         // // w.set_value(w.value - learning_rate * w.jacobi.T.reshape(w.shape()))
-    //         // // b.set_value(b.value - learning_rate * b.jacobi.T.reshape(b.shape()))
-    //         // w.update(learning_rate);
-    //         // b.update(learning_rate);
+            //         // // 更新参数
+            //         // // w.set_value(w.value - learning_rate * w.jacobi.T.reshape(w.shape()))
+            //         // // b.set_value(b.value - learning_rate * b.jacobi.T.reshape(b.shape()))
+            //         // w.update(learning_rate);
+            //         // b.update(learning_rate);
 
-    //         // // 清除所有节点的雅可比矩阵
-    //         // TODO: default_graph.clear_jacobi();
-    //     }
+            //         // // 清除所有节点的雅可比矩阵
+            //         // TODO: default_graph.clear_jacobi();
+        }
 
-    //     // 评价模型的正确率
-    //     let mut correct_count = 0;
-    //     for i in 0..train_set.shape()[0] {
-    //         let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
-    //         x.set_value(features);
+        //     // 评价模型的正确率
+        //     let mut correct_count = 0;
+        //     for i in 0..train_set.shape()[0] {
+        //         let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
+        //         x.set_value(features);
 
-    //         predict.forward();
-    //         let pred = if predict.value().get(&[0, 0]) > &0.0 { 1.0 } else { -1.0 };
-    //         let true_label = train_set.get(&[i, 3]);
+        //         predict.forward();
+        //         let pred = if predict.value().get(&[0, 0]) > &0.0 { 1.0 } else { -1.0 };
+        //         let true_label = train_set.get(&[i, 3]);
 
-    //         if (pred - true_label).abs() < 1e-5 {
-    //             correct_count += 1;
-    //         }
-    //     }
+        //         if (pred - true_label).abs() < 1e-5 {
+        //             correct_count += 1;
+        //         }
+        //     }
 
-    //     let accuracy = correct_count as f32 / train_set.shape()[0] as f32;
-    //     println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
-    // }
+        //     let accuracy = correct_count as f32 / train_set.shape()[0] as f32;
+        //     println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
+    }
 }
