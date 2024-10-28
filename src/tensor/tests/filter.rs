@@ -219,7 +219,7 @@ fn test_where_with_tensor_shape_mismatch() {
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓macro:tensor_where_f32!↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
-fn test_where_f32_macro() {
+fn test_tensor_where_f32_macro() {
     let t = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
 
     // 1. 测试基本比较运算符
@@ -279,7 +279,7 @@ fn test_where_f32_macro() {
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓macro:tensor_where_tensor!↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
-fn test_where_tensor_macro() {
+fn test_tensor_where_tensor_macro() {
     let t = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
     let y = Tensor::new(&[0.0, 0.0, 0.0, 0.0, 0.0], &[5]);
 
