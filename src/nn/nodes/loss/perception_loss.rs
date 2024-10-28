@@ -76,12 +76,12 @@ impl TraitForNode for PerceptionLoss {
     fn calc_value(&mut self) {
         let parents = self.parents();
         let parent = parents[0].borrow();
-        self.value = parent.value().where_with(|x| x >= 0.0, |_| 0.0, |x| -x);
+        self.value = parent.value().where_with_f32(|x| x >= 0.0, |_| 0.0, |x| -x);
     }
 
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
         self.check_parent("PerceptionLoss", parent);
-        let diag = parent.value().where_with(|x| x >= 0.0, |_| 0.0, |_| -1.0);
+        let diag = parent.value().where_with_f32(|x| x >= 0.0, |_| 0.0, |_| -1.0);
         // TODO: let flatten_view = diag.flatten_view();
         let flatten = diag.flatten();
         Tensor::diag(&flatten)

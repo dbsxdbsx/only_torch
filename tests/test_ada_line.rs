@@ -3,7 +3,7 @@
  * @Date         : 2024-10-24 09:18:44
  * @Description  : ⾃适应线性神经元（Adaptive Linear Neuron，ADALINE）网络测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch02/adaline.py
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-26 15:53:56
+ * @LastEditTime : 2024-10-28 16:52:57
  */
 use only_torch::nn::nodes::{Add, MatMul, PerceptionLoss, Step, TraitForNode, Variable};
 use only_torch::tensor::Tensor;
@@ -67,48 +67,65 @@ fn test_ada_line() {
     for epoch in 0..50 {
         //     // 遍历训练集中的样本
         for i in 0..train_set.shape()[0] {
-            // // 取第i个样本的前4列（除最后一列的所有列），构造3x1矩阵对象
-            // let features = Tensor::from_view(train_set.slice_view(i, 0..3)).reshape(&[3, 1]);
-            // // 取第i个样本的最后一列，是该样本的性别标签（1男，-1女），构造1x1矩阵对象
-            // let l = train_set.get(&[i, 3]).reshape(&[1, 1]);
+            // 取第i个样本的前4列（除最后一列的所有列），构造3x1矩阵对象
+            let features = train_set.slice(&[&i, &(0..3)]).transpose();
+            // 取第i个样本的最后一列，是该样本的性别标签（1男，-1女），构造1x1矩阵对象
+            let l = train_set.slice(&[&i, &3]);
 
-            // // 将特征赋给x节点，将标签赋给label节点
-            // x.set_value(&features);
-            // label.set_value(&l);
+            // 将特征赋给x节点，将标签赋给label节点
+            x.set_value(&features);
+            label.set_value(&l);
 
-            // // 在loss节点上执行前向传播，计算损失值
-            // loss.forward();
+            // 在loss节点上执行前向传播，计算损失值
+            loss.forward();
 
-            // // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
-            // w.backward(&loss.as_node_enum());
-            // b.backward(&loss.as_node_enum());
+            // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
+            w.backward(&loss.as_node_enum());
+            b.backward(&loss.as_node_enum());
 
-            //         // // 更新参数
-            //         // // w.set_value(w.value - learning_rate * w.jacobi.T.reshape(w.shape()))
-            //         // // b.set_value(b.value - learning_rate * b.jacobi.T.reshape(b.shape()))
-            //         // w.update(learning_rate);
-            //         // b.update(learning_rate);
+            // 更新参数:
+            // 用损失值对w和b的雅可比矩阵（梯度的转置）更新参数值。我们想优化的节点
+            // 都应该是标量节点（才有所谓降低其值一说），它对变量节点的雅可比矩阵的
+            // 形状都是1 x n。这个雅可比的转置是结果节点对变量节点的梯度。将梯度再
+            // reshape成变量矩阵的形状，对应位置上就是结果节点对变量元素的偏导数。
+            // 将改变形状后的梯度乘上学习率，从当前变量值中减去，再赋值给变量节点，
+            // 完成梯度下降更新。
+            w.set_value(
+                &(w.value() - learning_rate * w.jacobi().transpose().reshape(w.value().shape())),
+            );
+            b.set_value(
+                &(b.value() - learning_rate * b.jacobi().transpose().reshape(b.value().shape())),
+            );
 
-            //         // // 清除所有节点的雅可比矩阵
-            //         // TODO: default_graph.clear_jacobi();
+            // 清除所有节点的雅可比矩阵
+            // TODO: default_graph.clear_jacobi();
         }
 
-        //     // 评价模型的正确率
-        //     let mut correct_count = 0;
-        //     for i in 0..train_set.shape()[0] {
-        //         let features = train_set.slice(&[i, 0..3]).reshape(&[3, 1]);
-        //         x.set_value(features);
+        // // 每个epoch结束后评价模型的正确率
+        // let mut pred_vec = Vec::with_capacity(train_set.shape()[0]);
 
-        //         predict.forward();
-        //         let pred = if predict.value().get(&[0, 0]) > &0.0 { 1.0 } else { -1.0 };
-        //         let true_label = train_set.get(&[i, 3]);
+        // // 遍历训练集，计算当前模型对每个样本的预测值
+        // for i in 0..train_set.shape()[0] {
+        //     let features = train_set.slice(&[&i, &(0..3)]).transpose();
+        //     x.set_value(&features);
 
-        //         if (pred - true_label).abs() < 1e-5 {
-        //             correct_count += 1;
-        //         }
-        //     }
+        //     // 在模型的predict节点上执行前向传播
+        //     predict.forward();
+        //     let v = predict.value().get(&[0, 0]);
+        //     pred_vec.push(v.get_data_number().unwrap());
+        // }
 
-        //     let accuracy = correct_count as f32 / train_set.shape()[0] as f32;
-        //     println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
+        // // 将预测结果转换为Tensor，并将0/1结果转换为-1/1结果
+        // let pred =
+        //     Tensor::new(&pred_vec, &[pred_vec.len()]).where_with(|x| x >= 0.0, |_| 1.0, |_| -1.0);
+
+        // // 计算预测结果与样本标签相同的数量与训练集总数量之比，即模型预测的正确率
+        // let true_labels = train_set.slice(&[&(0..train_set.shape()[0]), &3]);
+        // let eq_tensor = pred.eq(&true_labels);
+        // let correct_count = eq_tensor.sum();
+        // let accuracy = correct_count / train_set.shape()[0] as f32;
+
+        // // 打印当前epoch数和模型在训练集上的正确率
+        // println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
     }
 }
