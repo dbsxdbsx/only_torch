@@ -14,7 +14,7 @@ impl Tensor {
     /// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
     ///
     /// // 类似 np.where(x >= 0.0, 0.0, -x)
-    /// let result = t.where_with(
+    /// let result = t.where_with_f32(
     ///     |x| x >= 0.0,
     ///     |_| 0.0,
     ///     |x| -x
@@ -111,10 +111,10 @@ impl Tensor {
 /// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
 ///
 /// // 类似 np.where(x >= 0.0, x + 1.0, 0.5)
-/// let result = where_f32!(x >= 0.0, x + 1.0, 0.5);
+/// let result = tensor_where_f32!(x >= 0.0, x + 1.0, 0.5);
 /// ```
 #[macro_export]
-macro_rules! where_f32 {
+macro_rules! tensor_where_f32 {
     // 基础模式匹配
     ($tensor:ident $op:tt $val:expr, $true_expr:expr, $false_expr:expr) => {{
         #[allow(unused)]
@@ -135,10 +135,10 @@ macro_rules! where_f32 {
 /// let y = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
 ///
 /// // 类似 np.where(t >= y, t + y, t - y)
-/// let result = where_tensor!(t >= y, t + y, t - y);
+/// let result = tensor_where_tensor!(t >= y, t + y, t - y);
 /// ```
 #[macro_export]
-macro_rules! where_tensor {
+macro_rules! tensor_where_tensor {
     // 基础匹配规则：处理简单表达式和复合表达式
     ($t:ident $op:tt $y:ident, $true_expr:expr, $false_expr:expr) => {{
         #[allow(unused)]
@@ -148,5 +148,38 @@ macro_rules! where_tensor {
             |$t, $y| $true_expr,
             |$t, $y| $false_expr
         )
+    }};
+}
+
+/// 提供统一的where语法糖，可以处理f32常量比较和张量间比较
+///
+/// # 示例
+/// ```
+/// use crate::tensor::Tensor;
+/// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
+/// let y = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
+///
+/// // f32常量比较
+/// let result = tensor_where!(t >= 0.0, t + 1.0, t - 1.0);
+///
+/// // 张量间比较
+/// let result = tensor_where!(t >= y, t + y, t - y);
+/// ```
+#[macro_export]
+macro_rules! tensor_where {
+    // 1. 处理f32常量比较
+    ($t:ident $op:tt $val:expr, $true_expr:expr, $false_expr:expr) => {{
+        // 如果$val是一个标识符，则认为是张量比较
+        // 否则认为是f32常量比较
+        match stringify!($val).parse::<f32>() {
+            Ok(_) | Err(_) => {
+                // 检查$val是否是一个张量标识符
+                if stringify!($val).chars().all(|c| c.is_alphabetic() || c == '_') {
+                    tensor_where_tensor!($t $op $val, $true_expr, $false_expr)
+                } else {
+                    tensor_where_f32!($t $op $val, $true_expr, $false_expr)
+                }
+            }
+        }
     }};
 }
