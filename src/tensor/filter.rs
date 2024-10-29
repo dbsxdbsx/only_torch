@@ -151,35 +151,36 @@ macro_rules! tensor_where_tensor {
     }};
 }
 
-// /// 提供统一的where语法糖，可以处理f32常量比较和张量间比较
-// ///
-// /// # 示例
-// /// ```
-// /// use crate::tensor::Tensor;
-// /// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
-// /// let y = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
-// ///
-// /// // f32常量比较
-// /// let result = tensor_where!(t >= 0.0, t + 1.0, t - 1.0);
-// ///
-// /// // 张量间比较
-// /// let result = tensor_where!(t >= y, t + y, t - y);
-// /// ```
-// #[macro_export]
-// macro_rules! tensor_where {
-//     // 1. 处理张量比较 - 当右操作数是标识符时
-//     ($t:ident $op:tt $y:ident, $true_expr:expr, $false_expr:expr) => {{
-//         tensor_where_tensor!($t $op $y, $true_expr, $false_expr)
-//     }};
+/// 提供统一的where语法糖，可以处理f32常量比较和张量间比较
+///
+/// # 示例
+/// ```
+/// use crate::tensor::Tensor;
+/// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
+/// let y = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
+///
+/// // f32变量 (须使用括号)或常量比较
+/// let threshold = 1.0;
+/// let result = tensor_where!(t > (threshold), t * 2.0, t / 2.0);
+/// let result = tensor_where!(t >= 0.0, t + 1.0, t - 1.0);
+///
+/// // 张量比较 (不使用括号)
+/// let result = tensor_where!(t >= y, t + y, t - y);
+/// ```
+#[macro_export]
+macro_rules! tensor_where {
+    // 1. 处理字面量比较（如 0.0, 1.0 等）
+    ($t:ident $op:tt $val:literal, $true_expr:expr, $false_expr:expr) => {{
+        $crate::tensor_where_f32!($t $op $val, $true_expr, $false_expr)
+    }};
 
-//     // 2. 处理f32常量比较 - 当右操作数是数值字面量或非标识符表达式时
-//     ($t:ident $op:tt $val:literal, $true_expr:expr, $false_expr:expr) => {{
-//         tensor_where_f32!($t $op $val, $true_expr, $false_expr)
-//     }};
+    // 2. 处理括号内的表达式（f32比较）
+    ($t:ident $op:tt ($val:expr), $true_expr:expr, $false_expr:expr) => {{
+        $crate::tensor_where_f32!($t $op $val, $true_expr, $false_expr)
+    }};
 
-//     // 3. 处理f32变量比较 - 当右操作数是变量或表达式时
-//     ($t:ident $op:tt $val:expr, $true_expr:expr, $false_expr:expr) => {{
-//         let _val: f32 = $val; // 类型检查
-//         tensor_where_f32!($t $op $val, $true_expr, $false_expr)
-//     }};
-// }
+    // 3. 处理无括号的表达式（张量比较）
+    ($t:ident $op:tt $val:ident, $true_expr:expr, $false_expr:expr) => {{
+        $crate::tensor_where_tensor!($t $op $val, $true_expr, $false_expr)
+    }};
+}

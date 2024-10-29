@@ -3,10 +3,11 @@
  * @Date         : 2024-10-24 09:18:44
  * @Description  : ⾃适应线性神经元（Adaptive Linear Neuron，ADALINE）网络测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch02/adaline.py
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-28 16:52:57
+ * @LastEditTime : 2024-10-29 12:22:29
  */
 use only_torch::nn::nodes::{Add, MatMul, PerceptionLoss, Step, TraitForNode, Variable};
 use only_torch::tensor::Tensor;
+use only_torch::tensor_where;
 
 #[test]
 fn test_ada_line() {
@@ -52,7 +53,7 @@ fn test_ada_line() {
         ],
         None,
     );
-    let predict = Step::new(&[output.as_node_enum()], None);
+    let mut predict = Step::new(&[output.as_node_enum()], None);
 
     // 损失函数
     let mut loss = PerceptionLoss::new(
@@ -101,31 +102,28 @@ fn test_ada_line() {
             // TODO: default_graph.clear_jacobi();
         }
 
-        // // 每个epoch结束后评价模型的正确率
-        // let mut pred_vec = Vec::with_capacity(train_set.shape()[0]);
+        // 每个epoch结束后评价模型的正确率
+        let mut pred_vec = Vec::with_capacity(train_set.shape()[0]);
 
-        // // 遍历训练集，计算当前模型对每个样本的预测值
-        // for i in 0..train_set.shape()[0] {
-        //     let features = train_set.slice(&[&i, &(0..3)]).transpose();
-        //     x.set_value(&features);
+        // 遍历训练集，计算当前模型对每个样本的预测值
+        for i in 0..train_set.shape()[0] {
+            let features = train_set.slice(&[&i, &(0..3)]).transpose();
+            x.set_value(&features);
 
-        //     // 在模型的predict节点上执行前向传播
-        //     predict.forward();
-        //     let v = predict.value().get(&[0, 0]);
-        //     pred_vec.push(v.get_data_number().unwrap());
-        // }
+            // 在模型的predict节点上执行前向传播
+            predict.forward();
+            let v = predict.value().get(&[0, 0]);
+            pred_vec.push(v.get_data_number().unwrap()); // 模型的预测结果：1男，0女
+        }
+        let pred = Tensor::new(&pred_vec, &[pred_vec.len()]) * 2.0 - 1.0; // 将1/0结果转化成1/-1结果，好与训练标签的约定一致
 
-        // // 将预测结果转换为Tensor，并将0/1结果转换为-1/1结果
-        // let pred =
-        //     Tensor::new(&pred_vec, &[pred_vec.len()]).where_with(|x| x >= 0.0, |_| 1.0, |_| -1.0);
+        // 判断预测结果与样本标签相同的数量与训练集总数量之比，即模型预测的正确率
+        let train_set_labels = train_set.slice(&[&(..), &3]);
+        let filtered_sum = tensor_where!(train_set_labels == pred, 1.0, 0.0).sum();
+        let train_set_len = train_set.shape()[0] as f32;
+        let accuracy = filtered_sum / train_set_len;
 
-        // // 计算预测结果与样本标签相同的数量与训练集总数量之比，即模型预测的正确率
-        // let true_labels = train_set.slice(&[&(0..train_set.shape()[0]), &3]);
-        // let eq_tensor = pred.eq(&true_labels);
-        // let correct_count = eq_tensor.sum();
-        // let accuracy = correct_count / train_set.shape()[0] as f32;
-
-        // // 打印当前epoch数和模型在训练集上的正确率
-        // println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
+        // 打印当前epoch数和模型在训练集上的正确率
+        println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
     }
 }

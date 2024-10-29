@@ -1,5 +1,5 @@
 use crate::tensor::Tensor;
-use crate::{assert_panic, tensor_where_f32, tensor_where_tensor};
+use crate::{assert_panic, tensor_where, tensor_where_f32, tensor_where_tensor};
 use approx::assert_abs_diff_eq; // 添加这个引用
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓where_with↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
@@ -367,59 +367,59 @@ fn test_tensor_where_tensor_macro() {
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑macro:tensor_where_tensor!↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
-// #[test]
-// fn test_unified_where_macro() {
-//     let t = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
-//     let y = Tensor::new(&[0.0, 0.0, 0.0, 0.0, 0.0], &[5]);
+#[test]
+fn test_unified_where_macro() {
+    let t = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
+    let y = Tensor::new(&[0.0, 0.0, 0.0, 0.0, 0.0], &[5]);
 
-//     // 1. 测试f32常量比较
-//     // 1.1 大于
-//     let result = tensor_where!(t > 0.0, t + 1.0, -1.0);
-//     let expected = Tensor::new(&[-1.0, -1.0, -1.0, 2.0, 3.0], &[5]);
-//     assert_eq!(result, expected);
+    // 1. 测试f32常量比较
+    // 1.1 大于
+    let result = tensor_where!(t > 0.0, t + 1.0, -1.0);
+    let expected = Tensor::new(&[-1.0, -1.0, -1.0, 2.0, 3.0], &[5]);
+    assert_eq!(result, expected);
 
-//     // 1.2 使用f32变量
-//     let threshold = 1.0;
-//     let result = tensor_where!(t > threshold, t * 2.0, t / 2.0);
-//     let expected = Tensor::new(&[-1.0, -0.5, 0.0, 2.0, 4.0], &[5]);
-//     assert_eq!(result, expected);
+    // 1.2 使用f32变量
+    let threshold = 1.0;
+    let result = tensor_where!(t > (-threshold), t * 2.0, t / 2.0);
+    let expected = Tensor::new(&[-1.0, -0.5, 0.0, 2.0, 4.0], &[5]);
+    assert_eq!(result, expected);
 
-//     // 2. 测试张量比较
-//     // 2.1 大于等于
-//     let result = tensor_where!(t >= y, t + y, t - y); // 使用专门的张量比较宏
-//     let expected = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
-//     assert_eq!(result, expected);
+    // 2. 测试张量比较
+    // 2.1 大于等于
+    let result = tensor_where!(t >= y, t + y, t - y); // 使用专门的张量比较宏
+    let expected = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
+    assert_eq!(result, expected);
 
-//     // 2.2 复杂表达式
-//     let a = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
-//     let b = Tensor::new(&[-1.0, -2.0, 0.0, 1.0, 3.0], &[5]);
-//     let result = tensor_where!(a >= b, a * a + b, a * b); // 使用专门的张量比较宏
-//     let expected = Tensor::new(&[2.0, -1.0, 0.0, 2.0, 6.0], &[5]);
-//     assert_eq!(result, expected);
+    // 2.2 复杂表达式
+    let a = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
+    let b = Tensor::new(&[-1.0, -2.0, 0.0, 1.0, 3.0], &[5]);
+    let result = tensor_where!(a >= b, a * a + b, a * b); // 使用专门的张量比较宏
+    let expected = Tensor::new(&[2.0, -1.0, 0.0, 2.0, 6.0], &[5]);
+    assert_eq!(result, expected);
 
-//     // 3. 测试特殊值
-//     let t = Tensor::new(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0], &[4]);
+    // 3. 测试特殊值
+    let t = Tensor::new(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0], &[4]);
 
-//     // 3.1 f32常量比较
-//     let result = tensor_where!(t >= 0.0, t + 1.0, t - 1.0);
-//     let result_slice = result.data.as_slice().unwrap();
-//     assert!(result_slice[0].is_nan());
-//     assert!(result_slice[1].is_infinite() && result_slice[1].is_sign_positive());
-//     assert!(result_slice[2].is_infinite() && result_slice[2].is_sign_negative());
-//     assert_eq!(result_slice[3], 1.0);
+    // 3.1 f32常量比较
+    let result = tensor_where!(t >= 0.0, t + 1.0, t - 1.0);
+    let result_slice = result.data.as_slice().unwrap();
+    assert!(result_slice[0].is_nan());
+    assert!(result_slice[1].is_infinite() && result_slice[1].is_sign_positive());
+    assert!(result_slice[2].is_infinite() && result_slice[2].is_sign_negative());
+    assert_eq!(result_slice[3], 1.0);
 
-//     // 3.2 张量比较
-//     let y = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[4]);
-//     let result = tensor_where!(t >= y, t + y, t - y); // 使用专门的张量比较宏
-//     let expected = Tensor::new(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0], &[4]);
-//     let result_slice = result.data.as_slice().unwrap();
-//     let expected_slice = expected.data.as_slice().unwrap();
+    // 3.2 张量比较
+    let y = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[4]);
+    let result = tensor_where!(t >= y, t + y, t - y); // 使用专门的张量比较宏
+    let expected = Tensor::new(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0], &[4]);
+    let result_slice = result.data.as_slice().unwrap();
+    let expected_slice = expected.data.as_slice().unwrap();
 
-//     for (r, e) in result_slice.iter().zip(expected_slice.iter()) {
-//         if r.is_nan() {
-//             assert!(e.is_nan());
-//         } else {
-//             assert_eq!(r, e);
-//         }
-//     }
-// }
+    for (r, e) in result_slice.iter().zip(expected_slice.iter()) {
+        if r.is_nan() {
+            assert!(e.is_nan());
+        } else {
+            assert_eq!(r, e);
+        }
+    }
+}

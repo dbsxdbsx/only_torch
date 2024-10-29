@@ -1,5 +1,6 @@
 use crate::nn::nodes::{NodeEnum, TraitForNode};
 use crate::tensor::Tensor;
+use crate::tensor_where;
 use serde::{Deserialize, Serialize};
 
 /// 阶跃算子
@@ -80,9 +81,8 @@ impl TraitForNode for Step {
     fn calc_value(&mut self) {
         let parents = self.parents();
         let parent = parents[0].borrow();
-        self.value = parent
-            .value()
-            .where_with_f32(|x| x >= 0.0, |_| 1.0, |_| 0.0);
+        let v = parent.value();
+        self.value = tensor_where!(v >= 0.0, 1.0, 0.0);
     }
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
         self.check_parent("Step", parent);

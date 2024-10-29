@@ -1,5 +1,6 @@
 use crate::nn::nodes::{NodeEnum, TraitForNode};
 use crate::tensor::Tensor;
+use crate::tensor_where;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -81,7 +82,8 @@ impl TraitForNode for PerceptionLoss {
 
     fn calc_jacobi_to_a_parent(&self, parent: &NodeEnum) -> Tensor {
         self.check_parent("PerceptionLoss", parent);
-        let diag = parent.value().where_with_f32(|x| x >= 0.0, |_| 0.0, |_| -1.0);
+        let v = parent.value();
+        let diag = tensor_where!(v >= 0.0, 0.0, -1.0);
         // TODO: let flatten_view = diag.flatten_view();
         let flatten = diag.flatten();
         Tensor::diag(&flatten)
