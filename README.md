@@ -21,6 +21,7 @@
 （无）
 
 ## TODO
+
 - 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - `parent.borrow_mut()`或`.children_mut()`改变后如何保证其matrix形状是合法的该节点运算后matrix?
 - `fn as_node_enum(&self) -> NodeEnum {
@@ -31,7 +32,9 @@
 - `children_mut`是否可合并至`children()`? and `value_mut`是否可合并至`value`?
 - `fn as_node_enum(&self) -> NodeEnum` trait method 是否多余，对于具体实现的节点，可否隐式转换或直接各节点返回NodeEnum？(只要不要影响后期各种算子的重载)？
 
+
 // TODO:use approx::assert_abs_diff_eq; need or not?
+
 **目前需要先解决有没有的问题，而不是好不好**
 - [] 实现类似tch-rs中`tch::no_grad(|| {});`的无梯度功能；
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
@@ -39,7 +42,6 @@
 - [] 基于本框架解决Mnist（数字识别）的监督学习问题
 - [] 基于本框架解决CartPole（需要openAI Gym或相关crate支持）的深度强化学习问题
 - [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
-- [] [保存的json网络结构设计方案](https://www.perplexity.ai/search/516c7ae4-e5ec-47d2-a67a-22cd1d9285d2?s=c)
 
 ## 参考资料
 
@@ -145,8 +147,9 @@
 
 - [Sac用以复合Action](https://arxiv.org/pdf/1912.11077v1.pdf)
 - [EfficientZero](https://arxiv.org/abs/2111.00210)
+- [[EfficientZero Remastered](https://www.gigglebit.net/blog/efficientzero)]
 - [SpeedyZero](https://openreview.net/forum?id=Mg5CLXZgvLJ)
-- [LightZero](https://arxiv.org/abs/2310.08348)
+- [LightZero系列](https://github.com/opendilab/LightZero?tab=readme-ov-file)
 - [随机MuZero代码](https://github.com/DHDev0/Stochastic-muzero)
 - [Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
 - [Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
