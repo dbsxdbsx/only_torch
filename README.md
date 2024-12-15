@@ -21,7 +21,13 @@
 （无）
 
 ## TODO
+根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，graphvi画图，容易添加edge(如何已存在的add节点的父节点)，save/load网络模型。
+use default global graph is a OK trade off here?
+what if make a `Graph::new_graph()` method to return a new graph name string, then add it as param for each node? or you think still just directly return the graph object is better? (consider the future macro support nad pytorch style and NEAT)
+for each node, does only need to store parents/children node name?
+ada_test: how to not add `as_node_enum()`(该实现会拷贝数据吗？),redesign all nodes?
 
+- others.rs test recommment out
 - 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - `parent.borrow_mut()`或`.children_mut()`改变后如何保证其matrix形状是合法的该节点运算后matrix?
 - `fn as_node_enum(&self) -> NodeEnum {
