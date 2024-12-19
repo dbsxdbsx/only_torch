@@ -7,8 +7,8 @@ fn test_new_for_node_add() {
     let a = Variable::new(&[2, 3], false, false, None);
     let b = Variable::new(&[2, 3], false, false, None);
     let node = Add::new(&vec![a.as_node_enum(), b.as_node_enum()], None);
-    assert_eq!(node.parents().len(), 2);
-    assert_eq!(node.children().len(), 0);
+    assert_eq!(node.parents_ids().len(), 2);
+    assert_eq!(node.children_ids().len(), 0);
     assert_eq!(node.name(), "<default>_add_1");
     assert!(!node.is_inited());
     assert!(node.is_trainable());
@@ -19,8 +19,8 @@ fn test_new_for_node_add() {
         &vec![a.as_node_enum(), b.as_node_enum(), c.as_node_enum()],
         None,
     );
-    assert_eq!(node.parents().len(), 3);
-    assert_eq!(node.children().len(), 0);
+    assert_eq!(node.parents_ids().len(), 3);
+    assert_eq!(node.children_ids().len(), 0);
     assert_eq!(node.name(), "<default>_add_2");
     assert!(!node.is_inited());
     assert!(node.is_trainable());

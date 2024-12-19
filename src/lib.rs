@@ -11,3 +11,5 @@ pub mod nn;
 pub mod tensor;
 pub mod utils;
 pub mod vision;
+
+pub use tensor::Tensor;

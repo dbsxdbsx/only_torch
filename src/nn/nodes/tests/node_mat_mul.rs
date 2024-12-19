@@ -7,8 +7,8 @@ fn test_new_for_node_mat_mul() {
     let a = Variable::new(&[2, 3], false, false, None);
     let b = Variable::new(&[3, 4], false, false, None);
     let node = MatMul::new(&vec![a.as_node_enum(), b.as_node_enum()], None);
-    assert_eq!(node.parents().len(), 2);
-    assert_eq!(node.children().len(), 0);
+    assert_eq!(node.parents_ids().len(), 2);
+    assert_eq!(node.children_ids().len(), 0);
     assert_eq!(node.name(), "<default>_mat_mul_1");
     assert!(!node.is_inited());
     assert!(node.is_trainable());

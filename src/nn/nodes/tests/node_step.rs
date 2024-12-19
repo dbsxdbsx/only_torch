@@ -6,8 +6,8 @@ fn test_new_for_node_step() {
     // 1.构造父节点
     let x = Variable::new(&[2, 2], false, false, None);
     let node = Step::new(&vec![x.as_node_enum()], None);
-    assert_eq!(node.parents().len(), 1);
-    assert_eq!(node.children().len(), 0);
+    assert_eq!(node.parents_ids().len(), 1);
+    assert_eq!(node.children_ids().len(), 0);
     assert_eq!(node.name(), "<default>_step_1");
     assert!(!node.is_inited());
     assert!(node.is_trainable());

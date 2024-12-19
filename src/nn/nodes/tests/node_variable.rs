@@ -23,13 +23,13 @@ fn test_new_panic_for_node_variable() {
     let shape = [2];
     assert_panic!(
         Variable::new(&shape, init, trainable, name),
-        "Variable节点必须是2阶张量, 但传入的形状却是`1`"
+        "Variable节点必须是2阶张量, 但得到的形状却是`1`"
     );
     // 因阶数过高导致报错
     let shape = [2, 3, 4];
     assert_panic!(
         Variable::new(&shape, init, trainable, name),
-        "Variable节点必须是2阶张量, 但传入的形状却是`3`"
+        "Variable节点必须是2阶张量, 但得到的形状却是`3`"
     );
 }
 
@@ -73,7 +73,7 @@ fn test_forward_for_node_variable() {
     let new_value = Tensor::normal(0.0, 1.0, &shape);
     variable.set_value(&new_value);
     variable.forward();
-    assert_eq!(variable.value(), &new_value);
+    assert_eq!(variable.value(), Some(&new_value));
 }
 
 #[test]

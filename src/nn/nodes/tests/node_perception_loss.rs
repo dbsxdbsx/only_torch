@@ -7,7 +7,7 @@ fn test_new_for_node_perception_loss() {
     let x = Variable::new(&[2, 2], false, false, None);
     let node = PerceptionLoss::new(&vec![x.as_node_enum()], None);
     assert_eq!(node.parents_names().len(), 1);
-    assert_eq!(node.children().len(), 0);
+    assert_eq!(node.children_ids().len(), 0);
     assert_eq!(node.name(), "<default>_perception_loss_1");
     assert!(!node.is_inited());
     assert!(node.is_trainable());
