@@ -1,27 +1,24 @@
-use crate::nn::{Graph, GraphError, NodeHandle, NodeId, TraitNode};
+use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::{GraphError, NodeHandle, NodeId};
 use crate::tensor::Tensor;
 use crate::tensor_where;
 
-pub struct Step {
+pub(crate) struct Step {
     name: String,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
-    parents: Vec<NodeId>,
-    children: Vec<NodeId>,
 }
 
 impl Step {
-    pub fn new(parents: &[NodeId], name: Option<&str>) -> Self {
-        // 1. 基本验证：Step算子只能有1个父节点
-        assert!(parents.len() == 1, "Step节点只能有1个父节点");
+    pub(crate) fn new(name: &str) -> Self {
+        // 1. 基本验证：阶跃函数需要1个父节点
+        // assert!(parents.len() == 1, "Step节点需要1个父节点");
 
         // 2. 返回实例
         Self {
-            name: name.unwrap_or_default().to_string(),
+            name: name.to_string(),
             value: None,
             jacobi: None,
-            parents: parents.to_vec(),
-            children: Vec::new(),
         }
     }
 }
@@ -31,19 +28,13 @@ impl TraitNode for Step {
         &self.name
     }
 
-    fn compute_value(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError> {
-        // 1. 从图中获取父节点的值
-        let parent_value = graph.get_node_value(self.parents[0])?;
+    fn calc_value_by_parents(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError> {
+        // 1. 获取父节点的值
+        let parent_value = parents[0]
+            .value()
+            .ok_or_else(|| GraphError::ComputationError("父节点没有值".to_string()))?;
 
-        // 2. 验证输入维度
-        if parent_value.shape().len() != 2 {
-            return Err(GraphError::ComputationError(format!(
-                "Step节点的输入必须是2阶张量, 但得到的是{}阶张量",
-                parent_value.shape().len()
-            )));
-        }
-
-        // 3. 计算Step函数值
+        // 2. 计算Step函数值
         self.value = Some(tensor_where!(parent_value >= 0.0, 1.0, 0.0));
         Ok(())
     }
@@ -56,7 +47,9 @@ impl TraitNode for Step {
         // Step函数的导数在所有点都是0
         // NOTE: 这里的实现的形状和MatrixSlow有些不同：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L351
         // 这里没有改变形状，而MatrixSlow会改变形状成向量
-        let parent_value = graph.get_node_value(parent_id)?;
+        let parent_value = parent
+            .value()
+            .ok_or_else(|| GraphError::ComputationError("父节点没有值".to_string()))?;
         Ok(Tensor::zeros(parent_value.shape()))
     }
 
@@ -67,14 +60,6 @@ impl TraitNode for Step {
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.map(|j| j.clone());
         Ok(())
-    }
-
-    fn parents_ids(&self) -> &[NodeId] {
-        &self.parents
-    }
-
-    fn children_ids(&self) -> &[NodeId] {
-        &self.children
     }
 
     fn is_trainable(&self) -> bool {

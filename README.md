@@ -21,8 +21,9 @@
 （无）
 
 ## TODO
-compute_value,calc_jacobi_to_a_parent是否应该传入NodeHandle?
-另外：nodes: HashMap<NodeId, Box<dyn TraitNode>>,是否也应该保存NodeHandle?
+nodeHanlde/TraitNode set_value 的校验合二为一？
+
+use `fill_diagonal` from matrixSlow to rewrite `mat_mul`?
 
 各个计算节点的·is_trainable· method是否应由字段来决定？
 

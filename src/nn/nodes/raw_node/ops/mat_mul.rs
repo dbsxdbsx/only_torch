@@ -1,26 +1,22 @@
-use crate::nn::{Graph, GraphError, NodeHandle, NodeId, TraitNode};
+use crate::nn::graph::init_or_get_graph_registry;
+use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::{GraphError, NodeHandle, NodeId};
 use crate::tensor::Tensor;
 
-pub struct MatMul {
+pub(crate) struct MatMul {
     name: String,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
-    parents: Vec<NodeId>,
-    children: Vec<NodeId>,
 }
 
 impl MatMul {
-    pub fn new(parents: &[NodeId], name: Option<&str>) -> Self {
-        // 1. 基本验证：矩阵乘法需要恰好两个父节点
-        assert!(parents.len() == 2, "MatMul节点需恰好2个父节点");
-
-        // 2. 返回实例
+    pub(crate) fn new(name: &str) -> Self {
+        //       // 1. 基本验证：矩阵乘法需要2个父节点
+        // assert!(parents.len() == 2, "MatMul节点需要2个父节点");
         Self {
-            name: name.unwrap_or_default().to_string(),
+            name: name.to_string(),
             value: None,
             jacobi: None,
-            parents: parents.to_vec(),
-            children: Vec::new(),
         }
     }
 }
@@ -30,19 +26,16 @@ impl TraitNode for MatMul {
         &self.name
     }
 
-    fn compute_value(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError> {
         // 1. 获取父节点的值
-        let parent1_value = graph.get_node_value(self.parents[0])?;
-        let parent2_value = graph.get_node_value(self.parents[1])?;
+        let parent1_value = parents[0]
+            .value()
+            .ok_or_else(|| GraphError::ComputationError("第一个父节点没有值".to_string()))?;
+        let parent2_value = parents[1]
+            .value()
+            .ok_or_else(|| GraphError::ComputationError("第二个父节点没有值".to_string()))?;
 
-        // 2. 验证输入维度
-        if parent1_value.shape().len() != 2 || parent2_value.shape().len() != 2 {
-            return Err(GraphError::ComputationError(
-                "MatMul节点的输入必须是2阶张量".to_string(),
-            ));
-        }
-
-        // 3. 验证矩阵乘法的形状兼容性
+        // 2. 验证矩阵乘法的形状兼容性
         if parent1_value.shape()[1] != parent2_value.shape()[0] {
             return Err(GraphError::ShapeMismatch {
                 expected: vec![parent1_value.shape()[0], parent2_value.shape()[1]],
@@ -50,7 +43,7 @@ impl TraitNode for MatMul {
             });
         }
 
-        // 4. 计算结果
+        // 3. 计算结果
         self.value = Some(parent1_value.mat_mul(parent2_value));
         Ok(())
     }
@@ -62,19 +55,17 @@ impl TraitNode for MatMul {
     /// NOTE: 这里的逻辑本想取巧参考：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L61
     /// 但发现太难懂了，所以还是用最原始的实现吧
     fn calc_jacobi_to_a_parent(&self, parent: &NodeHandle) -> Result<Tensor, GraphError> {
-        // 1. 首先验证输入的节点是否为父节点
-        if parent_id != self.parents[0] && parent_id != self.parents[1] {
-            return Err(GraphError::InvalidOperation(
-                "输入的节点不是该MatMul节点的父节点",
-            ));
-        }
+        // 获取两个父节点的值
+        let registry = init_or_get_graph_registry();
+        let map = registry.lock().unwrap();
+        let graph = map.get(&parent.graph_id()).unwrap();
 
-        // 2. 根据计算目标父节点计算雅可比矩阵
-        let parent1_value = graph.get_node_value(self.parents[0])?;
-        let parent2_value = graph.get_node_value(self.parents[1])?;
+        let parent1_value = graph.get_node_value(parent.parents_ids()[0])?;
+        let parent2_value = graph.get_node_value(parent.parents_ids()[1])?;
 
-        if parent_id == self.parents[0] {
-            // 对于矩阵乘法 C = AB，计算 dC/dA
+        // 根据父节点位置计算雅可比矩阵
+        if parent.id() == parent.parents_ids()[0] {
+            // 对于矩阵乘法 C = AB，计算 dC/dA，需要用到B的值
             let m = parent1_value.shape()[0];
             let n = parent1_value.shape()[1];
             let p = parent2_value.shape()[1];
@@ -88,10 +79,10 @@ impl TraitNode for MatMul {
                 }
             }
             Ok(jacobi)
-        } else {
-            // 对于矩阵乘法 C = AB，计算 dC/dB
+        } else if parent.id() == parent.parents_ids()[1] {
+            // 对于矩阵乘法 C = AB，计算 dC/dB，需要用到A的值
             let m = parent1_value.shape()[0];
-            let n = parent1_value.shape()[1];
+            let n = parent2_value.shape()[0];
             let p = parent2_value.shape()[1];
 
             let mut jacobi = Tensor::zeros(&[m * p, n * p]);
@@ -103,6 +94,13 @@ impl TraitNode for MatMul {
                 }
             }
             Ok(jacobi)
+        } else {
+            Err(GraphError::ComputationError(format!(
+                "节点id `{:?}` 不是当前节点的父节点id `{:?}` 或 `{:?}`",
+                parent.id(),
+                parent.parents_ids()[0],
+                parent.parents_ids()[1]
+            )))
         }
     }
 
@@ -113,14 +111,6 @@ impl TraitNode for MatMul {
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.map(|j| j.clone());
         Ok(())
-    }
-
-    fn parents_ids(&self) -> &[NodeId] {
-        &self.parents
-    }
-
-    fn children_ids(&self) -> &[NodeId] {
-        &self.children
     }
 
     fn is_trainable(&self) -> bool {

@@ -1,16 +1,17 @@
-use crate::nn::{Graph, GraphError, NodeHandle, NodeId, TraitNode};
+use crate::nn::{GraphError, NodeHandle, NodeId};
 use crate::tensor::Tensor;
 
-pub struct Variable {
+use super::TraitNode;
+
+pub(crate) struct Variable {
     name: String,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
-    children: Vec<NodeId>,
     trainable: bool,
 }
 
 impl Variable {
-    pub fn new(shape: &[usize], init: bool, trainable: bool, name: Option<&str>) -> Self {
+    pub(crate) fn new(shape: &[usize], init: bool, trainable: bool, name: &str) -> Self {
         // 1. 构造前必要的校验
         assert!(
             shape.len() == 2,
@@ -28,10 +29,9 @@ impl Variable {
 
         // 3. 返回
         Self {
-            name: name.unwrap_or_default().to_string(),
+            name: name.to_string(),
             value,
             jacobi: None,
-            children: Vec::new(),
             trainable,
         }
     }
@@ -42,7 +42,7 @@ impl TraitNode for Variable {
         &self.name
     }
 
-    fn compute_value(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, _parents: &[&NodeHandle]) -> Result<(), GraphError> {
         // Variable节点不需要计算值
         Ok(())
     }
@@ -86,14 +86,6 @@ impl TraitNode for Variable {
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.map(|j| j.clone());
         Ok(())
-    }
-
-    fn parents_ids(&self) -> &[NodeId] {
-        &[]
-    }
-
-    fn children_ids(&self) -> &[NodeId] {
-        &self.children
     }
 
     fn is_trainable(&self) -> bool {
