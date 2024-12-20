@@ -25,7 +25,7 @@ impl NodeHandle {
         Ok(())
     }
 
-    pub(crate) fn new<T: Into<NodeType>>(
+    pub(in crate::nn::nodes) fn new<T: Into<NodeType>>(
         id: NodeId,
         graph_id: GraphId,
         raw_node: T,
@@ -204,7 +204,7 @@ impl NodeHandle {
     }
 
     // Node creation methods
-    pub(crate) fn new_variable(
+    pub(in crate::nn) fn new_variable(
         id: NodeId,
         graph_id: GraphId,
         shape: &[usize],
@@ -220,7 +220,7 @@ impl NodeHandle {
         )
     }
 
-    pub(crate) fn new_add(
+    pub(in crate::nn) fn new_add(
         id: NodeId,
         graph_id: GraphId,
         name: &str,
@@ -229,7 +229,7 @@ impl NodeHandle {
         Self::new(id, graph_id, Add::new(name), parents)
     }
 
-    pub(crate) fn new_mat_mul(
+    pub(in crate::nn) fn new_mat_mul(
         id: NodeId,
         graph_id: GraphId,
         name: &str,
@@ -238,7 +238,7 @@ impl NodeHandle {
         Self::new(id, graph_id, MatMul::new(name), parents)
     }
 
-    pub(crate) fn new_step(
+    pub(in crate::nn) fn new_step(
         id: NodeId,
         graph_id: GraphId,
         name: &str,
@@ -247,7 +247,7 @@ impl NodeHandle {
         Self::new(id, graph_id, Step::new(name), parents)
     }
 
-    pub(crate) fn new_perception_loss(
+    pub(in crate::nn) fn new_perception_loss(
         id: NodeId,
         graph_id: GraphId,
         name: &str,
