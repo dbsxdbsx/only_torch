@@ -17,7 +17,7 @@ pub(in crate::nn::nodes) enum NodeType {
     PerceptionLoss(PerceptionLoss),
 }
 
-use super::{GraphError, NodeHandle, NodeId};
+use super::{GraphError, NodeHandle};
 use crate::tensor::Tensor;
 
 #[enum_dispatch(NodeType)]

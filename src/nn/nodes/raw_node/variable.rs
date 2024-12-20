@@ -1,4 +1,4 @@
-use crate::nn::{GraphError, NodeHandle, NodeId};
+use crate::nn::{GraphError, NodeHandle};
 use crate::tensor::Tensor;
 
 use super::TraitNode;

@@ -1,6 +1,6 @@
 use crate::nn::graph::init_or_get_graph_registry;
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::{GraphError, NodeHandle, NodeId};
+use crate::nn::{GraphError, NodeHandle};
 use crate::tensor::Tensor;
 
 pub(crate) struct MatMul {
