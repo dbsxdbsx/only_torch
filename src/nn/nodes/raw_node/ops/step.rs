@@ -7,18 +7,16 @@ pub(crate) struct Step {
     name: String,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    trainable: bool,
 }
 
 impl Step {
-    pub(crate) fn new(name: &str) -> Self {
-        // 1. 基本验证：阶跃函数需要1个父节点
-        // assert!(parents.len() == 1, "Step节点需要1个父节点");
-
-        // 2. 返回实例
+    pub(crate) fn new(name: &str, trainable: bool) -> Self {
         Self {
             name: name.to_string(),
             value: None,
             jacobi: None,
+            trainable,
         }
     }
 }
@@ -63,6 +61,11 @@ impl TraitNode for Step {
     }
 
     fn is_trainable(&self) -> bool {
-        true
+        self.trainable
+    }
+
+    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
+        self.trainable = trainable;
+        Ok(())
     }
 }

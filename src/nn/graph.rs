@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 17:57:13
  * @LastEditors  : 老董
- * @LastEditTime : 2024-12-20 17:32:54
+ * @LastEditTime : 2024-12-21 16:25:25
  * @Description  : 神经网络模型的计算图
  */
 
@@ -212,7 +212,7 @@ impl Graph {
         Ok(())
     }
 
-    pub fn zero_grad(&mut self) -> Result<(), GraphError> {
+    pub fn clear_jacobi(&mut self) -> Result<(), GraphError> {
         for node in self.nodes.values_mut() {
             node.clear_jacobi()?;
         }
@@ -288,6 +288,18 @@ impl Graph {
             .value()
             .ok_or_else(|| GraphError::ComputationError(format!("节点 {} 没有值", id.0)))
     }
+
+    /// Set a node's value by its ID
+    pub fn set_node_value(&mut self, id: NodeId, value: Option<&Tensor>) -> Result<(), GraphError> {
+        self.get_node_mut(id)?.set_value(value)
+    }
+
+    /// Get a node's jacobi matrix by its ID
+    pub fn get_node_jacobi(&self, id: NodeId) -> Result<&Tensor, GraphError> {
+        self.get_node(id)?
+            .jacobi()
+            .ok_or_else(|| GraphError::ComputationError(format!("节点 {} 没有雅可比矩阵", id.0)))
+    }
 }
 
 // 图模式相关
@@ -308,7 +320,7 @@ impl Graph {
 
 // 便捷的节点构建方法
 impl Graph {
-    fn add_new_node(&mut self, node_handle: NodeHandle) -> Result<NodeId, GraphError> {
+    fn add_node(&mut self, node_handle: NodeHandle) -> Result<NodeId, GraphError> {
         let node_id = node_handle.id();
 
         // 1. 检查节点名称是否重复
@@ -326,7 +338,7 @@ impl Graph {
         Ok(node_id)
     }
 
-    pub fn variable(
+    pub fn new_variable(
         &mut self,
         shape: &[usize],
         init: bool,
@@ -337,49 +349,63 @@ impl Graph {
         let node_id = self.generate_node_id();
         let handle =
             NodeHandle::new_variable(node_id, self.id, shape, init, trainable, &node_name)?;
-        self.add_new_node(handle)
+        self.add_node(handle)
     }
 
-    pub fn add(
+    pub fn new_add(
         &mut self,
         parents_ids: &[NodeId],
         name: Option<&str>,
+        trainable: bool,
     ) -> Result<NodeId, GraphError> {
         let node_name = self.generate_node_name(name.unwrap_or(""), "add");
         let node_id = self.generate_node_id();
-        let handle = NodeHandle::new_add(node_id, self.id, &node_name, parents_ids)?;
-        self.add_new_node(handle)
+        let handle = NodeHandle::new_add(node_id, self.id, &node_name, parents_ids, trainable)?;
+        self.add_node(handle)
     }
 
-    pub fn mat_mul(
+    pub fn new_mat_mul(
         &mut self,
         left_node_id: NodeId,
         right_node_id: NodeId,
         name: Option<&str>,
+        trainable: bool,
     ) -> Result<NodeId, GraphError> {
         let node_name = self.generate_node_name(name.unwrap_or(""), "matmul");
         let node_id = self.generate_node_id();
-        let handle =
-            NodeHandle::new_mat_mul(node_id, self.id, &node_name, &[left_node_id, right_node_id])?;
-        self.add_new_node(handle)
+        let handle = NodeHandle::new_mat_mul(
+            node_id,
+            self.id,
+            &node_name,
+            &[left_node_id, right_node_id],
+            trainable,
+        )?;
+        self.add_node(handle)
     }
 
-    pub fn step(&mut self, parent_id: NodeId, name: Option<&str>) -> Result<NodeId, GraphError> {
-        let node_name = self.generate_node_name(name.unwrap_or(""), "step");
-        let node_id = self.generate_node_id();
-        let handle = NodeHandle::new_step(node_id, self.id, &node_name, &[parent_id])?;
-        self.add_new_node(handle)
-    }
-
-    pub fn perception_loss(
+    pub fn new_step(
         &mut self,
         parent_id: NodeId,
         name: Option<&str>,
+        trainable: bool,
+    ) -> Result<NodeId, GraphError> {
+        let node_name = self.generate_node_name(name.unwrap_or(""), "step");
+        let node_id = self.generate_node_id();
+        let handle = NodeHandle::new_step(node_id, self.id, &node_name, &[parent_id], trainable)?;
+        self.add_node(handle)
+    }
+
+    pub fn new_perception_loss(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+        trainable: bool,
     ) -> Result<NodeId, GraphError> {
         let node_name = self.generate_node_name(name.unwrap_or(""), "perception_loss");
         let node_id = self.generate_node_id();
-        let handle = NodeHandle::new_perception_loss(node_id, self.id, &node_name, &[parent_id])?;
-        self.add_new_node(handle)
+        let handle =
+            NodeHandle::new_perception_loss(node_id, self.id, &node_name, &[parent_id], trainable)?;
+        self.add_node(handle)
     }
 }
 
@@ -392,6 +418,7 @@ pub enum GraphError {
     ShapeMismatch {
         expected: Vec<usize>,
         got: Vec<usize>,
+        message: String,
     },
     ComputationError(String),
     DuplicateName(String),
@@ -475,7 +502,9 @@ mod tests {
         assert!(graph.is_training);
 
         // 4. 对该图做修改后再从全局图中检验修改是否成功
-        let node_id = graph.variable(&[2, 2], true, true, Some("test")).unwrap();
+        let node_id = graph
+            .new_variable(&[2, 2], true, true, Some("test"))
+            .unwrap();
         let new_graph = map.get_mut(&graph_id).unwrap();
         assert!(new_graph.nodes().contains_key(&node_id));
     }
@@ -512,7 +541,7 @@ mod tests {
         let mut map = registry.lock().unwrap();
         map.clear();
 
-        // 7. 创建第一个图并插入注册表
+        // 7. 创建第一个图并插入注册
         let graph1 = Graph::new();
         let id1 = graph1.id();
         map.insert(id1, graph1);

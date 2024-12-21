@@ -21,17 +21,13 @@
 （无）
 
 ## TODO
-nodeHanlde/TraitNode set_value 的校验合二为一？
 
-use `fill_diagonal` from matrixSlow to rewrite `mat_mul`?
-
-各个计算节点的·is_trainable· method是否应由字段来决定？
-
-根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，graphvi画图，容易添加edge(如何已存在的add节点的父节点)，save/load网络模型。
-use default global graph is a OK trade off here?
-what if make a `Graph::new_graph()` method to return a new graph name string, then add it as param for each node? or you think still just directly return the graph object is better? (consider the future macro support nad pytorch style and NEAT)
-for each node, does only need to store parents/children node name?
-ada_test: how to not add `as_node_enum()`(该实现会拷贝数据吗？),redesign all nodes?
+- unit test for each current module methods
+- draw_graph(graphvi画图)
+- save/load网络模型
+- use `fill_diagonal` from matrixSlow to rewrite `mat_mul`?
+- Tensor 真的需要uninit吗？
+- 根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，，容易添加edge(如已存在的add节点的父节点)，。
 
 - others.rs test recommment out
 - 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
@@ -43,9 +39,7 @@ ada_test: how to not add `as_node_enum()`(该实现会拷贝数据吗？),redesi
 - Tensor类的`slice(&[0..m, j..j+1])`是否需要？
 - `children_mut`是否可合并至`children()`? and `value_mut`是否可合并至`value`?
 - `fn as_node_enum(&self) -> NodeEnum` trait method 是否多余，对于具体实现的节点，可否隐式转换或直接各节点返回NodeEnum？(只要不要影响后期各种算子的重载)？
-
-
-// TODO:use approx::assert_abs_diff_eq; need or not?
+- use approx::assert_abs_diff_eq; need or not?
 
 **目前需要先解决有没有的问题，而不是好不好**
 - [] 实现类似tch-rs中`tch::no_grad(|| {});`的无梯度功能；

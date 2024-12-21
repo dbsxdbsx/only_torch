@@ -6,16 +6,16 @@ pub(crate) struct Add {
     name: String,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    trainable: bool,
 }
 
 impl Add {
-    pub(crate) fn new(name: &str) -> Self {
-        // 1. 基本验证：加法至少需要2个父节点
-        // assert!(parents.len() >= 2, "Add节点至少需2个父节点");
+    pub(crate) fn new(name: &str, trainable: bool) -> Self {
         Self {
             name: name.to_string(),
             value: None,
             jacobi: None,
+            trainable,
         }
     }
 }
@@ -42,6 +42,11 @@ impl TraitNode for Add {
                         return Err(GraphError::ShapeMismatch {
                             expected: sum.shape().to_vec(),
                             got: parent_value.shape().to_vec(),
+                            message: format!(
+                                "Add节点 '{}' 的父节点 '{}' 的值与当前值形状不匹配。",
+                                self.name(),
+                                parent.name(),
+                            ),
                         });
                     }
                     *sum += parent_value;
@@ -79,6 +84,11 @@ impl TraitNode for Add {
     }
 
     fn is_trainable(&self) -> bool {
-        true
+        self.trainable
+    }
+
+    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
+        self.trainable = trainable;
+        Ok(())
     }
 }

@@ -7,19 +7,16 @@ pub struct PerceptionLoss {
     name: String,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    trainable: bool,
 }
 
 impl PerceptionLoss {
-    pub fn new(name: &str) -> Self {
-        // 1. 基本验证：PerceptionLoss只能有1个父节点
-        // assert!(parents.len() == 1, "PerceptionLoss节点只能有1个父节点");
-
-        // 2. 返回实例
-
+    pub fn new(name: &str, trainable: bool) -> Self {
         Self {
             name: name.to_string(),
             value: None,
             jacobi: None,
+            trainable,
         }
     }
 }
@@ -66,6 +63,11 @@ impl TraitNode for PerceptionLoss {
     }
 
     fn is_trainable(&self) -> bool {
-        true
+        self.trainable
+    }
+
+    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
+        self.trainable = trainable;
+        Ok(())
     }
 }

@@ -14,13 +14,34 @@ pub struct NodeHandle {
 }
 
 impl NodeHandle {
-    /// 检查张量是否为二阶
-    fn check_tensor_shape(tensor: &Tensor) -> Result<(), GraphError> {
+    fn check_tensor_dimension(tensor: &Tensor) -> Result<(), GraphError> {
         if tensor.shape().len() != 2 {
             return Err(GraphError::ShapeMismatch {
                 expected: vec![2],
                 got: vec![tensor.shape().len()],
+                message: format!(
+                    "神经网络中的张量必须是二维的（矩阵），但收到的张量维度是 {} 维。",
+                    tensor.shape().len(),
+                ),
             });
+        }
+        Ok(())
+    }
+
+    fn check_shape_compatibility(&self, new_tensor: &Tensor) -> Result<(), GraphError> {
+        if let Some(current_value) = self.raw_node.value() {
+            if new_tensor.shape() != current_value.shape() {
+                return Err(GraphError::ShapeMismatch {
+                    expected: current_value.shape().to_vec(),
+                    got: new_tensor.shape().to_vec(),
+                    message: format!(
+                        "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
+                        new_tensor.shape(),
+                        self.name(),
+                        current_value.shape(),
+                    ),
+                });
+            }
         }
         Ok(())
     }
@@ -35,7 +56,7 @@ impl NodeHandle {
 
         // 检查节点当前值的维度
         if let Some(value) = raw_node.value() {
-            if let Err(e) = Self::check_tensor_shape(value) {
+            if let Err(e) = Self::check_tensor_dimension(value) {
                 panic!("NodeHandle要求所有张量必须为二阶张量: {:?}", e);
             }
         }
@@ -80,7 +101,8 @@ impl NodeHandle {
 
     pub fn set_value(&mut self, value: Option<&Tensor>) -> Result<(), GraphError> {
         if let Some(tensor) = value {
-            Self::check_tensor_shape(tensor)?;
+            Self::check_tensor_dimension(tensor)?;
+            self.check_shape_compatibility(tensor)?;
         }
         self.raw_node.set_value(value)
     }
@@ -91,7 +113,7 @@ impl NodeHandle {
 
     pub fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         if let Some(tensor) = jacobi {
-            Self::check_tensor_shape(tensor)?;
+            Self::check_tensor_dimension(tensor)?;
         }
         self.raw_node.set_jacobi(jacobi)
     }
@@ -225,8 +247,9 @@ impl NodeHandle {
         graph_id: GraphId,
         name: &str,
         parents: &[NodeId],
+        trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(id, graph_id, Add::new(name), parents)
+        Self::new(id, graph_id, Add::new(name, trainable), parents)
     }
 
     pub(in crate::nn) fn new_mat_mul(
@@ -234,8 +257,9 @@ impl NodeHandle {
         graph_id: GraphId,
         name: &str,
         parents: &[NodeId],
+        trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(id, graph_id, MatMul::new(name), parents)
+        Self::new(id, graph_id, MatMul::new(name, trainable), parents)
     }
 
     pub(in crate::nn) fn new_step(
@@ -243,8 +267,9 @@ impl NodeHandle {
         graph_id: GraphId,
         name: &str,
         parents: &[NodeId],
+        trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(id, graph_id, Step::new(name), parents)
+        Self::new(id, graph_id, Step::new(name, trainable), parents)
     }
 
     pub(in crate::nn) fn new_perception_loss(
@@ -252,8 +277,9 @@ impl NodeHandle {
         graph_id: GraphId,
         name: &str,
         parents: &[NodeId],
+        trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(id, graph_id, PerceptionLoss::new(name), parents)
+        Self::new(id, graph_id, PerceptionLoss::new(name, trainable), parents)
     }
 }
 

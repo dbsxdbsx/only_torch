@@ -52,26 +52,7 @@ impl TraitNode for Variable {
     }
 
     fn set_value(&mut self, value: Option<&Tensor>) -> Result<(), GraphError> {
-        match value {
-            Some(value) => {
-                // 1. 校验形状
-                if let Some(current_value) = &self.value {
-                    if value.shape() != current_value.shape() {
-                        return Err(GraphError::ShapeMismatch {
-                            expected: current_value.shape().to_vec(),
-                            got: value.shape().to_vec(),
-                        });
-                    }
-                }
-
-                // 2. 设置value
-                self.value = Some(value.clone());
-            }
-            None => {
-                // 清除值
-                self.value = None;
-            }
-        }
+        self.value = value.map(|v| v.clone());
         Ok(())
     }
 
@@ -90,5 +71,10 @@ impl TraitNode for Variable {
 
     fn is_trainable(&self) -> bool {
         self.trainable
+    }
+
+    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
+        self.trainable = trainable;
+        Ok(())
     }
 }

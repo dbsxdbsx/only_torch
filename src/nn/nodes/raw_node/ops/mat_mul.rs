@@ -7,16 +7,16 @@ pub(crate) struct MatMul {
     name: String,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    trainable: bool,
 }
 
 impl MatMul {
-    pub(crate) fn new(name: &str) -> Self {
-        //       // 1. 基本验证：矩阵乘法需要2个父节点
-        // assert!(parents.len() == 2, "MatMul节点需要2个父节点");
+    pub(crate) fn new(name: &str, trainable: bool) -> Self {
         Self {
             name: name.to_string(),
             value: None,
             jacobi: None,
+            trainable,
         }
     }
 }
@@ -40,6 +40,12 @@ impl TraitNode for MatMul {
             return Err(GraphError::ShapeMismatch {
                 expected: vec![parent1_value.shape()[0], parent2_value.shape()[1]],
                 got: vec![parent1_value.shape()[1], parent2_value.shape()[0]],
+                message: format!(
+                    "MatMul节点 '{}' 的两个父节点形状不兼容：父节点1的列数({})与父节点2的行数({})不相等。",
+                    self.name(),
+                    parent1_value.shape()[1],
+                    parent2_value.shape()[0],
+                ),
             });
         }
 
@@ -114,6 +120,11 @@ impl TraitNode for MatMul {
     }
 
     fn is_trainable(&self) -> bool {
-        true
+        self.trainable
+    }
+
+    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
+        self.trainable = trainable;
+        Ok(())
     }
 }

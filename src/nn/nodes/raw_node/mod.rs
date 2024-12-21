@@ -45,7 +45,11 @@ pub(in crate::nn::nodes) trait TraitNode {
         self.set_jacobi(None)
     }
 
+    /// 返回该节点的参数是否应该在训练过程中被更新
     fn is_trainable(&self) -> bool;
+
+    /// 设置该节点的参数是否应该在训练过程中被更新
+    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError>;
 
     fn is_inited(&self) -> bool {
         self.value().is_some()
