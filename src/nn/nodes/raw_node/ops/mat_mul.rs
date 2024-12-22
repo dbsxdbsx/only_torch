@@ -1,22 +1,25 @@
-use crate::nn::graph::init_or_get_graph_registry;
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::{GraphError, NodeHandle};
+use crate::nn::nodes::NodeHandle;
+use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
+#[derive(Clone)]
 pub(crate) struct MatMul {
     name: String,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
     trainable: bool,
+    parents_ids: Vec<NodeId>, // NOTE: 注意顺序
 }
 
 impl MatMul {
-    pub(crate) fn new(name: &str, trainable: bool) -> Self {
+    pub(crate) fn new(name: &str, trainable: bool, parents_ids: &[NodeId]) -> Self {
         Self {
             name: name.to_string(),
             value: None,
             jacobi: None,
             trainable,
+            parents_ids: parents_ids.to_vec(),
         }
     }
 }
@@ -26,7 +29,7 @@ impl TraitNode for MatMul {
         &self.name
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         // 1. 获取父节点的值
         let parent1_value = parents[0]
             .value()
@@ -59,18 +62,25 @@ impl TraitNode for MatMul {
     }
 
     /// NOTE: 这里的逻辑本想取巧参考：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L61
-    /// 但发现太难懂了，所以还是用最原始的实现吧
-    fn calc_jacobi_to_a_parent(&self, parent: &NodeHandle) -> Result<Tensor, GraphError> {
-        // 获取两个父节点的值
-        let registry = init_or_get_graph_registry();
-        let map = registry.lock().unwrap();
-        let graph = map.get(&parent.graph_id()).unwrap();
+    /// 但太难懂了，所以还是用最原始的实现吧
+    fn calc_jacobi_to_a_parent(
+        &self,
+        target_parent: &NodeHandle,
+        another_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        let other = another_parent.ok_or_else(|| {
+            GraphError::ComputationError("MatMul需要另一个父节点的值".to_string())
+        })?;
 
-        let parent1_value = graph.get_node_value(parent.parents_ids()[0])?;
-        let parent2_value = graph.get_node_value(parent.parents_ids()[1])?;
+        let parent1_value = target_parent
+            .value()
+            .ok_or_else(|| GraphError::ComputationError("第一个父节点没有值".to_string()))?;
+        let parent2_value = other
+            .value()
+            .ok_or_else(|| GraphError::ComputationError("第二个父节点没有值".to_string()))?;
 
         // 根据父节点位置计算雅可比矩阵
-        if parent.id() == parent.parents_ids()[0] {
+        if target_parent.id() == self.parents_ids[0] {
             // 对于矩阵乘法 C = AB，计算 dC/dA，需要用到B的值
             let m = parent1_value.shape()[0];
             let n = parent1_value.shape()[1];
@@ -85,7 +95,7 @@ impl TraitNode for MatMul {
                 }
             }
             Ok(jacobi)
-        } else if parent.id() == parent.parents_ids()[1] {
+        } else if target_parent.id() == self.parents_ids[1] {
             // 对于矩阵乘法 C = AB，计算 dC/dB，需要用到A的值
             let m = parent1_value.shape()[0];
             let n = parent2_value.shape()[0];
@@ -103,9 +113,9 @@ impl TraitNode for MatMul {
         } else {
             Err(GraphError::ComputationError(format!(
                 "节点id `{:?}` 不是当前节点的父节点id `{:?}` 或 `{:?}`",
-                parent.id(),
-                parent.parents_ids()[0],
-                parent.parents_ids()[1]
+                target_parent.id(),
+                self.parents_ids[0],
+                self.parents_ids[1]
             )))
         }
     }

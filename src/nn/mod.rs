@@ -10,4 +10,7 @@ pub mod graph;
 pub mod nodes;
 
 pub use graph::{Graph, GraphError};
-pub use nodes::{NodeHandle, NodeId};
+pub use nodes::NodeId;
+
+#[cfg(test)]
+mod tests;

@@ -1,13 +1,13 @@
-use super::super::graph::{GraphError, GraphId};
+use super::super::graph::GraphError;
 use super::raw_node::{Add, MatMul, PerceptionLoss, Step, Variable};
 use super::{NodeType, TraitNode};
-use crate::nn::graph::init_or_get_graph_registry;
 use crate::tensor::Tensor;
 
 /// 为Graph所管理的节点提供一个句柄，所有内置数据类型必须为二阶张量
-pub struct NodeHandle {
-    id: NodeId,
-    graph_id: GraphId,
+#[derive(Clone)]
+pub(in crate::nn) struct NodeHandle {
+    id: Option<NodeId>,
+    name: Option<String>,
     raw_node: NodeType,
     parents_ids: Vec<NodeId>,
     children_ids: Vec<NodeId>,
@@ -15,13 +15,13 @@ pub struct NodeHandle {
 
 impl NodeHandle {
     fn check_tensor_dimension(tensor: &Tensor) -> Result<(), GraphError> {
-        if tensor.shape().len() != 2 {
+        if tensor.dimension() != 2 {
             return Err(GraphError::ShapeMismatch {
                 expected: vec![2],
-                got: vec![tensor.shape().len()],
+                got: vec![tensor.dimension()],
                 message: format!(
                     "神经网络中的张量必须是二维的（矩阵），但收到的张量维度是 {} 维。",
-                    tensor.shape().len(),
+                    tensor.dimension(),
                 ),
             });
         }
@@ -46,49 +46,35 @@ impl NodeHandle {
         Ok(())
     }
 
-    pub(in crate::nn::nodes) fn new<T: Into<NodeType>>(
+    pub(in crate::nn) fn bind_id_and_name(
+        &mut self,
         id: NodeId,
-        graph_id: GraphId,
-        raw_node: T,
-        parents: &[NodeId],
-    ) -> Result<Self, GraphError> {
-        let raw_node = raw_node.into();
-
-        // 检查节点当前值的维度
-        if let Some(value) = raw_node.value() {
-            if let Err(e) = Self::check_tensor_dimension(value) {
-                panic!("NodeHandle要求所有张量必须为二阶张量: {:?}", e);
-            }
+        name: &str,
+    ) -> Result<(), GraphError> {
+        if self.id.is_some() || self.name.is_some() {
+            return Err(GraphError::InvalidOperation("节点已经绑定了ID和名称"));
         }
-
-        let mut handle = Self {
-            id,
-            graph_id,
-            raw_node,
-            parents_ids: Vec::new(),
-            children_ids: Vec::new(),
-        };
-
-        // 设置并验证父节点关系
-        handle.set_parents_and_validate(parents)?;
-
-        Ok(handle)
+        self.id = Some(id);
+        self.name = Some(name.to_string());
+        Ok(())
     }
 
     pub fn id(&self) -> NodeId {
-        self.id
-    }
-
-    pub fn graph_id(&self) -> GraphId {
-        self.graph_id
+        self.id.expect("节点ID未初始化，这是一个内部错误")
     }
 
     pub fn name(&self) -> &str {
-        self.raw_node.name()
+        self.name
+            .as_ref()
+            .expect("节点名称未初始化，这是一个内部错误")
     }
 
     pub fn is_trainable(&self) -> bool {
         self.raw_node.is_trainable()
+    }
+
+    pub fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
+        self.raw_node.set_trainable(trainable)
     }
 
     pub fn is_inited(&self) -> bool {
@@ -101,7 +87,6 @@ impl NodeHandle {
 
     pub fn set_value(&mut self, value: Option<&Tensor>) -> Result<(), GraphError> {
         if let Some(tensor) = value {
-            Self::check_tensor_dimension(tensor)?;
             self.check_shape_compatibility(tensor)?;
         }
         self.raw_node.set_value(value)
@@ -154,26 +139,17 @@ impl NodeHandle {
         &self.children_ids
     }
 
-    pub fn calc_value_by_parents(&mut self, parents_ids: &[NodeId]) -> Result<(), GraphError> {
-        let registry = init_or_get_graph_registry();
-        let map = registry.lock().unwrap();
-        let graph = map.get(&self.graph_id).unwrap();
-
-        let parent_handles: Vec<&NodeHandle> = parents_ids
-            .iter()
-            .map(|id| graph.get_node(*id))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        self.raw_node.calc_value_by_parents(&parent_handles)
+    pub fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
+        self.raw_node.calc_value_by_parents(parents)
     }
 
-    pub fn calc_jacobi_to_a_parent(&self, parent_id: NodeId) -> Result<Tensor, GraphError> {
-        let registry = init_or_get_graph_registry();
-        let map = registry.lock().unwrap();
-        let graph = map.get(&self.graph_id).unwrap();
-
-        let parent_handle = graph.get_node(parent_id)?;
-        self.raw_node.calc_jacobi_to_a_parent(parent_handle)
+    pub fn calc_jacobi_to_a_parent(
+        &self,
+        parent: &NodeHandle,
+        another_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        self.raw_node
+            .calc_jacobi_to_a_parent(parent, another_parent)
     }
 
     fn set_parents_and_validate(&mut self, parents: &[NodeId]) -> Result<(), GraphError> {
@@ -225,61 +201,67 @@ impl NodeHandle {
         Ok(())
     }
 
-    // Node creation methods
     pub(in crate::nn) fn new_variable(
-        id: NodeId,
-        graph_id: GraphId,
         shape: &[usize],
         init: bool,
         trainable: bool,
-        name: &str,
     ) -> Result<Self, GraphError> {
-        Self::new(
-            id,
-            graph_id,
-            Variable::new(shape, init, trainable, name),
-            &[],
-        )
+        Self::new(Variable::new(shape, init, trainable, ""), &[])
     }
 
-    pub(in crate::nn) fn new_add(
-        id: NodeId,
-        graph_id: GraphId,
-        name: &str,
-        parents: &[NodeId],
-        trainable: bool,
-    ) -> Result<Self, GraphError> {
-        Self::new(id, graph_id, Add::new(name, trainable), parents)
+    pub(in crate::nn) fn new_add(parents: &[NodeId], trainable: bool) -> Result<Self, GraphError> {
+        Self::new(Add::new("", trainable), parents)
     }
 
     pub(in crate::nn) fn new_mat_mul(
-        id: NodeId,
-        graph_id: GraphId,
-        name: &str,
         parents: &[NodeId],
         trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(id, graph_id, MatMul::new(name, trainable), parents)
+        Self::new(MatMul::new("", trainable, parents), parents)
     }
 
-    pub(in crate::nn) fn new_step(
-        id: NodeId,
-        graph_id: GraphId,
-        name: &str,
-        parents: &[NodeId],
-        trainable: bool,
-    ) -> Result<Self, GraphError> {
-        Self::new(id, graph_id, Step::new(name, trainable), parents)
+    pub(in crate::nn) fn new_step(parents: &[NodeId], trainable: bool) -> Result<Self, GraphError> {
+        Self::new(Step::new("", trainable), parents)
     }
 
     pub(in crate::nn) fn new_perception_loss(
-        id: NodeId,
-        graph_id: GraphId,
-        name: &str,
         parents: &[NodeId],
         trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(id, graph_id, PerceptionLoss::new(name, trainable), parents)
+        Self::new(PerceptionLoss::new("", trainable), parents)
+    }
+
+    pub fn node_type(&self) -> &NodeType {
+        &self.raw_node
+    }
+
+    pub(in crate::nn) fn new<T: Into<NodeType>>(
+        raw_node: T,
+        parents: &[NodeId],
+    ) -> Result<Self, GraphError> {
+        // 检查节点当前值的维度
+        let raw_node = raw_node.into();
+        if let Some(value) = raw_node.value() {
+            if let Err(e) = Self::check_tensor_dimension(value) {
+                return Err(GraphError::DimensionMismatch {
+                    expected: 2,
+                    got: value.dimension(),
+                    message: format!("NodeHandle要求所有张量必须为二阶张量: {:?}", e),
+                });
+            }
+        }
+
+        // 设置并验证父节点关系
+        let mut handle = Self {
+            id: None,
+            name: None,
+            raw_node,
+            parents_ids: Vec::new(),
+            children_ids: Vec::new(),
+        };
+        handle.set_parents_and_validate(parents)?;
+
+        Ok(handle)
     }
 }
 

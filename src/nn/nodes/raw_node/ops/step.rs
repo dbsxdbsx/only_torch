@@ -1,8 +1,10 @@
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::{GraphError, NodeHandle};
+use crate::nn::nodes::NodeHandle;
+use crate::nn::GraphError;
 use crate::tensor::Tensor;
 use crate::tensor_where;
 
+#[derive(Clone)]
 pub(crate) struct Step {
     name: String,
     value: Option<Tensor>,
@@ -26,7 +28,7 @@ impl TraitNode for Step {
         &self.name
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         // 1. 获取父节点的值
         let parent_value = parents[0]
             .value()
@@ -41,11 +43,15 @@ impl TraitNode for Step {
         self.value.as_ref()
     }
 
-    fn calc_jacobi_to_a_parent(&self, parent: &NodeHandle) -> Result<Tensor, GraphError> {
+    fn calc_jacobi_to_a_parent(
+        &self,
+        target_parent: &NodeHandle,
+        _another_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
         // Step函数的导数在所有点都是0
         // NOTE: 这里的实现的形状和MatrixSlow有些不同：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L351
         // 这里没有改变形状，而MatrixSlow会改变形状成向量
-        let parent_value = parent
+        let parent_value = target_parent
             .value()
             .ok_or_else(|| GraphError::ComputationError("父节点没有值".to_string()))?;
         Ok(Tensor::zeros(parent_value.shape()))

@@ -1,7 +1,9 @@
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::{GraphError, NodeHandle};
+use crate::nn::nodes::NodeHandle;
+use crate::nn::GraphError;
 use crate::tensor::Tensor;
 
+#[derive(Clone)]
 pub(crate) struct Add {
     name: String,
     value: Option<Tensor>,
@@ -25,7 +27,7 @@ impl TraitNode for Add {
         &self.name
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         // 1. 从图中获取父节点的值
         let mut result = None;
         for parent in parents {
@@ -65,8 +67,12 @@ impl TraitNode for Add {
         self.value.as_ref()
     }
 
-    fn calc_jacobi_to_a_parent(&self, _parent: &NodeHandle) -> Result<Tensor, GraphError> {
-        // 对于加法运算，雅可比矩阵是单位矩阵
+    fn calc_jacobi_to_a_parent(
+        &self,
+        _target_parent: &NodeHandle,
+        _another_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        // Add节点的雅可比矩阵是单位矩阵
         let size = self
             .value()
             .ok_or_else(|| GraphError::ComputationError("节点没有值".to_string()))?

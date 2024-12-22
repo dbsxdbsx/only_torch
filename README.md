@@ -21,8 +21,14 @@
 （无）
 
 ## TODO
-
+- Graph `reset_from` why no used?
+- Graph/NodeHandle rearrange blocks due to visibility and funciontality
+- still return new_variable_node() with ref of node?
+- unit test for Graph, and parent/children
+- should directly use `parents` but not `parents_ids`?
 - unit test for each current module methods
+- check other unused methods
+- 应当区分test中各种error的内容
 - draw_graph(graphvi画图)
 - save/load网络模型
 - use `fill_diagonal` from matrixSlow to rewrite `mat_mul`?

@@ -1,8 +1,9 @@
-use crate::nn::{GraphError, NodeHandle};
+use crate::nn::GraphError;
 use crate::tensor::Tensor;
 
-use super::TraitNode;
+use super::{NodeHandle, TraitNode};
 
+#[derive(Clone)]
 pub(crate) struct Variable {
     name: String,
     value: Option<Tensor>,
@@ -12,14 +13,7 @@ pub(crate) struct Variable {
 
 impl Variable {
     pub(crate) fn new(shape: &[usize], init: bool, trainable: bool, name: &str) -> Self {
-        // 1. 构造前必要的校验
-        assert!(
-            shape.len() == 2,
-            "Variable节点必须是2阶张量, 但得到的形状却是`{:?}`",
-            shape.len()
-        );
-
-        // 2. 根据条件设置value
+        // 1. 根据条件设置value
         let value = if init {
             // 如果需要初始化,则使用正态分布初始化
             Some(Tensor::normal(0.0, 0.001, shape))
@@ -27,7 +21,7 @@ impl Variable {
             None
         };
 
-        // 3. 返回
+        // 2. 返回
         Self {
             name: name.to_string(),
             value,
@@ -42,7 +36,7 @@ impl TraitNode for Variable {
         &self.name
     }
 
-    fn calc_value_by_parents(&mut self, _parents: &[&NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
         // Variable节点不需要计算值
         Ok(())
     }
@@ -56,7 +50,11 @@ impl TraitNode for Variable {
         Ok(())
     }
 
-    fn calc_jacobi_to_a_parent(&self, _parent: &NodeHandle) -> Result<Tensor, GraphError> {
+    fn calc_jacobi_to_a_parent(
+        &self,
+        _target_parent: &NodeHandle,
+        _another_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
         Err(GraphError::InvalidOperation("Variable节点没有父节点"))
     }
 

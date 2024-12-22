@@ -9,7 +9,8 @@ pub(super) use variable::Variable;
 use enum_dispatch::enum_dispatch;
 
 #[enum_dispatch]
-pub(in crate::nn::nodes) enum NodeType {
+#[derive(Clone)]
+pub(in crate::nn) enum NodeType {
     Variable(Variable),
     Add(Add),
     MatMul(MatMul),
@@ -25,7 +26,7 @@ pub(in crate::nn::nodes) trait TraitNode {
     fn name(&self) -> &str;
 
     // 根据父节点的值计算本节点的值（注意：由于该接口只在Graph中使用，所以实现时不用关心父节点的值是否已被计算，所有父节点的值可以已预先被计算过了）
-    fn calc_value_by_parents(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError>;
+    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError>;
 
     fn value(&self) -> Option<&Tensor>;
 
@@ -35,7 +36,11 @@ pub(in crate::nn::nodes) trait TraitNode {
         ))
     }
 
-    fn calc_jacobi_to_a_parent(&self, parent: &NodeHandle) -> Result<Tensor, GraphError>;
+    fn calc_jacobi_to_a_parent(
+        &self,
+        target_parent: &NodeHandle,
+        another_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError>;
 
     fn jacobi(&self) -> Option<&Tensor>;
 

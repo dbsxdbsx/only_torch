@@ -1,8 +1,10 @@
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::{GraphError, NodeHandle};
+use crate::nn::nodes::NodeHandle;
+use crate::nn::GraphError;
 use crate::tensor::Tensor;
 use crate::tensor_where;
 
+#[derive(Clone)]
 pub struct PerceptionLoss {
     name: String,
     value: Option<Tensor>,
@@ -26,7 +28,7 @@ impl TraitNode for PerceptionLoss {
         &self.name
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[&NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         // 1. 获取父节点的值
         let parent_value = parents[0]
             .value()
@@ -41,9 +43,13 @@ impl TraitNode for PerceptionLoss {
         self.value.as_ref()
     }
 
-    fn calc_jacobi_to_a_parent(&self, parent: &NodeHandle) -> Result<Tensor, GraphError> {
+    fn calc_jacobi_to_a_parent(
+        &self,
+        target_parent: &NodeHandle,
+        _another_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
         // 1. 计算对角线元素：x >= 0 时为0，否则为-1
-        let parent_value = parent
+        let parent_value = target_parent
             .value()
             .ok_or_else(|| GraphError::ComputationError("父节点没有值".to_string()))?;
         let diag = tensor_where!(parent_value >= 0.0, 0.0, -1.0);
