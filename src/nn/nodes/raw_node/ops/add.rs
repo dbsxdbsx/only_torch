@@ -9,22 +9,53 @@ pub(crate) struct Add {
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
     trainable: bool,
+    shape: Vec<usize>,
 }
 
 impl Add {
-    pub(crate) fn new(name: &str, trainable: bool) -> Self {
-        Self {
+    pub(crate) fn new(
+        parents: &[&NodeHandle],
+        trainable: bool,
+        name: &str,
+    ) -> Result<Self, GraphError> {
+        // 1. 必要的验证
+        // 1.1 父节点数量验证
+        if parents.len() < 2 {
+            return Err(GraphError::InvalidOperation(
+                "Add节点至少需要2个父节点".to_string(),
+            ));
+        }
+
+        // 1.2 验证所有父节点形状相同
+        let shape = parents[0].value_expected_shape().to_vec();
+        for parent in parents.iter().skip(1) {
+            if parent.value_expected_shape() != shape {
+                return Err(GraphError::ShapeMismatch {
+                    expected: shape.clone(),
+                    got: parent.value_expected_shape().to_vec(),
+                    message: "Add节点的所有父节点形状必须相同".to_string(),
+                });
+            }
+        }
+
+        // 2. 返回
+        Ok(Self {
             name: name.to_string(),
             value: None,
             jacobi: None,
             trainable,
-        }
+            shape,
+        })
     }
 }
 
 impl TraitNode for Add {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn value_expected_shape(&self) -> &[usize] {
+        &self.shape
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
@@ -39,18 +70,6 @@ impl TraitNode for Add {
             match &mut result {
                 None => result = Some(parent_value.clone()),
                 Some(sum) => {
-                    // 1.3 验证形状兼容性
-                    if sum.shape() != parent_value.shape() {
-                        return Err(GraphError::ShapeMismatch {
-                            expected: sum.shape().to_vec(),
-                            got: parent_value.shape().to_vec(),
-                            message: format!(
-                                "Add节点 '{}' 的父节点 '{}' 的值与当前值形状不匹配。",
-                                self.name(),
-                                parent.name(),
-                            ),
-                        });
-                    }
                     *sum += parent_value;
                 }
             }

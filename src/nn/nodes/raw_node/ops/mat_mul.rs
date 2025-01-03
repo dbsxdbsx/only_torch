@@ -9,24 +9,57 @@ pub(crate) struct MatMul {
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
     trainable: bool,
-    parents_ids: Vec<NodeId>, // NOTE: 注意顺序
+    shape: Vec<usize>,
+    parents_ids: Vec<NodeId>, // 保留这个字段用于雅可比计算，注意元素的存储顺序
 }
 
 impl MatMul {
-    pub(crate) fn new(name: &str, trainable: bool, parents_ids: &[NodeId]) -> Self {
-        Self {
+    pub(crate) fn new(
+        parents: &[&NodeHandle],
+        trainable: bool,
+        name: &str,
+    ) -> Result<Self, GraphError> {
+        // 1. 必要的验证
+        // 1.1 父节点数量验证
+        if parents.len() != 2 {
+            return Err(GraphError::InvalidOperation(
+                "MatMul节点需要正好2个父节点".to_string(),
+            ));
+        }
+
+        // 1.2 验证矩阵乘法的形状兼容性
+        let parent1_shape = parents[0].value_expected_shape();
+        let parent2_shape = parents[1].value_expected_shape();
+        if parent1_shape[1] != parent2_shape[0] {
+            return Err(GraphError::ShapeMismatch {
+                expected: vec![parent1_shape[0], parent2_shape[1]],
+                got: vec![parent1_shape[1], parent2_shape[0]],
+                message: format!(
+                    "MatMul节点的2个父节点形状不兼容：父节点1的列数({})与父节点2的行数({})不相等。",
+                    parent1_shape[1], parent2_shape[0],
+                ),
+            });
+        }
+
+        // 2. 返回
+        Ok(Self {
             name: name.to_string(),
             value: None,
             jacobi: None,
             trainable,
-            parents_ids: parents_ids.to_vec(),
-        }
+            shape: vec![parent1_shape[0], parent2_shape[1]],
+            parents_ids: vec![parents[0].id(), parents[1].id()],
+        })
     }
 }
 
 impl TraitNode for MatMul {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn value_expected_shape(&self) -> &[usize] {
+        &self.shape
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
@@ -38,22 +71,10 @@ impl TraitNode for MatMul {
             .value()
             .ok_or_else(|| GraphError::ComputationError("第二个父节点没有值".to_string()))?;
 
-        // 2. 验证矩阵乘法的形状兼容性
-        if parent1_value.shape()[1] != parent2_value.shape()[0] {
-            return Err(GraphError::ShapeMismatch {
-                expected: vec![parent1_value.shape()[0], parent2_value.shape()[1]],
-                got: vec![parent1_value.shape()[1], parent2_value.shape()[0]],
-                message: format!(
-                    "MatMul节点 '{}' 的两个父节点形状不兼容：父节点1的列数({})与父节点2的行数({})不相等。",
-                    self.name(),
-                    parent1_value.shape()[1],
-                    parent2_value.shape()[0],
-                ),
-            });
-        }
-
-        // 3. 计算结果
+        // 2. 计算结果
         self.value = Some(parent1_value.mat_mul(parent2_value));
+
+        // 3. 返回
         Ok(())
     }
 

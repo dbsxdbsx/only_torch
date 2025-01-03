@@ -20,6 +20,7 @@ pub(in crate::nn) enum NodeType {
 
 use super::{GraphError, NodeHandle};
 use crate::tensor::Tensor;
+use std::any::type_name;
 
 #[enum_dispatch(NodeType)]
 pub(in crate::nn::nodes) trait TraitNode {
@@ -31,9 +32,11 @@ pub(in crate::nn::nodes) trait TraitNode {
     fn value(&self) -> Option<&Tensor>;
 
     fn set_value(&mut self, _value: Option<&Tensor>) -> Result<(), GraphError> {
-        Err(GraphError::InvalidOperation(
-            "该类型节点的值不应该被手动设置",
-        ))
+        let type_name = type_name::<Self>().split("::").last().unwrap_or("Unknown");
+        Err(GraphError::InvalidOperation(format!(
+            "{}节点的值只能通过前向传播计算得到，不能直接设置",
+            type_name
+        )))
     }
 
     fn calc_jacobi_to_a_parent(
@@ -59,4 +62,8 @@ pub(in crate::nn::nodes) trait TraitNode {
     fn is_inited(&self) -> bool {
         self.value().is_some()
     }
+
+    /// 返回节点的预期输出形状
+    /// 这个形状在节点创建时就已确定，存储在节点中
+    fn value_expected_shape(&self) -> &[usize];
 }

@@ -21,22 +21,37 @@
 （无）
 
 ## TODO
-- Graph `reset_from` why no used?
+- forward已经计数了，backward +jcobi咋办？
+- graph测试中的“test_forward_backward_propagation_of_add_node”挪到add中去？
+- Graph测试中该包含各种pub method的正确及错误测试，如何set_node_trainable，is_node_trainable...
+- 对比Node_variable和Graph的测试，看看如何优化精简Graph的测试
+- Graph测试中最好添加某个节点后，测试该节点还有其父节点的parents/children属性（又比如：同2个节点用于不同图的add节点，测试其parents/children属性是否正确）(Variable 节点无父节点)、“节点var1在图default_graph中重复”
+
+- 尝试添加add节点的测试，然后再统一优化Variable节点和Add节点的布局？
+- 在python中仿造ada_Line构造一个复合多节点，然后基于此在rust中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
+- jacobi到底该测试对parent还是children？
+- how to expose only `in crate::nn` to the nn::Graph`?
+- should completely hide the NodeHandle?
+- add a `graph` for unit test to test the 多层的jacobi计算，就像ada_line那样?
+- 应当区分test中各种error的内容
+- NodeHandle重命名为Node? 各种`parent/children/node_id`重命名为`parents/children/id`?
+- 除了Variable节点，其他节点须遵循`tests\calc_jacobi_by_pytorch`的测试
 - Graph/NodeHandle rearrange blocks due to visibility and funciontality
 - still return new_variable_node() with ref of node?
 - unit test for Graph, and parent/children
 - should directly use `parents` but not `parents_ids`?
 - unit test for each current module methods
 - check other unused methods
-- 应当区分test中各种error的内容
 - draw_graph(graphvi画图)
 - save/load网络模型
-- use `fill_diagonal` from matrixSlow to rewrite `mat_mul`?
+- 后期当NEAT，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
+- 当后期（NEAT阶段）需要在一个已经forwarded的图中添加节点（如将已经被使用过的var1、var2结合一个新的未使用的var3构建一个add节点），可能需要添加一个`reset_forward_cnt`方法来保证图forward的一致性。
 - Tensor 真的需要uninit吗？
+- 各种命名规范“2维”，“二维”，“二阶”，“2阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"
+-
 - 根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，，容易添加edge(如已存在的add节点的父节点)，。
-
-- others.rs test recommment out
 - 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
+- 图错误“InvalidOperation” vs “ComputationError”
 - `parent.borrow_mut()`或`.children_mut()`改变后如何保证其matrix形状是合法的该节点运算后matrix?
 - `fn as_node_enum(&self) -> NodeEnum {
         NodeEnum::Step(self.clone())

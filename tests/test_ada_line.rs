@@ -81,15 +81,15 @@ fn test_adaline() -> Result<(), GraphError> {
             graph.backward_node(b, loss)?;
 
             // 更新参数
-            let w_value = graph.get_node_value(w)?;
-            let w_jacobi = graph.get_node_jacobi(w)?;
+            let w_value = graph.get_node_value(w)?.unwrap();
+            let w_jacobi = graph.get_node_jacobi(w)?.unwrap();
             graph.set_node_value(
                 w,
                 Some(&(w_value - learning_rate * w_jacobi.transpose().reshape(w_value.shape()))),
             )?;
 
-            let b_value = graph.get_node_value(b)?;
-            let b_jacobi = graph.get_node_jacobi(b)?;
+            let b_value = graph.get_node_value(b)?.unwrap();
+            let b_jacobi = graph.get_node_jacobi(b)?.unwrap();
             graph.set_node_value(
                 b,
                 Some(&(b_value - learning_rate * b_jacobi.transpose().reshape(b_value.shape()))),
@@ -109,7 +109,7 @@ fn test_adaline() -> Result<(), GraphError> {
 
             // 在模型的predict节点上执行前向传播
             graph.forward_node(predict)?;
-            let v = graph.get_node_value(predict)?.get(&[0, 0]);
+            let v = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
             pred_vec.push(v.get_data_number().unwrap()); // 模型的预测结果：1男，0女
         }
         let pred = Tensor::new(&pred_vec, &[pred_vec.len()]) * 2.0 - 1.0; // 将1/0结果转化成1/-1结果，好与训练标签的约定一致

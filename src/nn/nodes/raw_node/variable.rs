@@ -9,25 +9,42 @@ pub(crate) struct Variable {
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
     trainable: bool,
+    shape: Vec<usize>,
 }
 
 impl Variable {
-    pub(crate) fn new(shape: &[usize], init: bool, trainable: bool, name: &str) -> Self {
-        // 1. 根据条件设置value
-        let value = if init {
-            // 如果需要初始化,则使用正态分布初始化
-            Some(Tensor::normal(0.0, 0.001, shape))
-        } else {
-            None
-        };
+    pub(crate) fn new(
+        shape: &[usize],
+        init: bool,
+        trainable: bool,
+        name: &str,
+    ) -> Result<Self, GraphError> {
+        // 1. 必要的验证
+        if shape.len() != 2 {
+            return Err(GraphError::DimensionMismatch {
+                expected: 2,
+                got: shape.len(),
+                message: format!(
+                    "神经网络中的节点张量必须是2维的（矩阵），但收到的维度是{}维。",
+                    shape.len(),
+                ),
+            });
+        }
 
-        // 2. 返回
-        Self {
+        let mut var = Self {
             name: name.to_string(),
-            value,
+            value: None,
             jacobi: None,
             trainable,
+            shape: shape.to_vec(),
+        };
+        if init {
+            // 若需要初始化，则使用正态分布初始化
+            var.value = Some(Tensor::normal(0.0, 0.001, shape));
         }
+
+        // 2. 返回
+        Ok(var)
     }
 }
 
@@ -37,8 +54,9 @@ impl TraitNode for Variable {
     }
 
     fn calc_value_by_parents(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // Variable节点不需要计算值
-        Ok(())
+        Err(GraphError::InvalidOperation(
+            "即使是用户不小心将Variable节点执行了图的前向传播，也不该触及本错误（否则说明crate代码有问题）".to_string(),
+        ))
     }
 
     fn value(&self) -> Option<&Tensor> {
@@ -55,7 +73,9 @@ impl TraitNode for Variable {
         _target_parent: &NodeHandle,
         _another_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        Err(GraphError::InvalidOperation("Variable节点没有父节点"))
+        Err(GraphError::InvalidOperation(
+            "Variable节点没有父节点".to_string(),
+        ))
     }
 
     fn jacobi(&self) -> Option<&Tensor> {
@@ -74,5 +94,9 @@ impl TraitNode for Variable {
     fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
         self.trainable = trainable;
         Ok(())
+    }
+
+    fn value_expected_shape(&self) -> &[usize] {
+        &self.shape
     }
 }

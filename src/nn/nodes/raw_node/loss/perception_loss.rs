@@ -10,22 +10,37 @@ pub struct PerceptionLoss {
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
     trainable: bool,
+    shape: Vec<usize>,
 }
 
 impl PerceptionLoss {
-    pub fn new(name: &str, trainable: bool) -> Self {
-        Self {
+    pub fn new(parents: &[&NodeHandle], trainable: bool, name: &str) -> Result<Self, GraphError> {
+        // 1. 必要的验证
+        // 1.1 父节点数量验证
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "PerceptionLoss节点只需要1个父节点".to_string(),
+            ));
+        }
+
+        // 2. 返回
+        Ok(Self {
             name: name.to_string(),
             value: None,
             jacobi: None,
             trainable,
-        }
+            shape: parents[0].value_expected_shape().to_vec(),
+        })
     }
 }
 
 impl TraitNode for PerceptionLoss {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn value_expected_shape(&self) -> &[usize] {
+        &self.shape
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
