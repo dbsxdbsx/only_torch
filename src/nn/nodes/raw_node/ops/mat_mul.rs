@@ -194,54 +194,6 @@ impl TraitNode for MatMul {
             Ok(jacobi)
         }
     }
-    // fn calc_jacobi_to_a_parent(&self, target_parent: &NodeHandle) -> Result<Tensor, GraphError> {
-    //     // 获取当前节点的值(已在前向传播时计算)
-    //     let value = self.value().ok_or_else(|| {
-    //         GraphError::ComputationError(format!(
-    //             "{}没有值。不该触及本错误，否则说明crate代码有问题",
-    //             self.display_node()
-    //         ))
-    //     })?;
-
-    //     // 根据父节点位置计算雅可比矩阵
-    //     if target_parent.id() == self.parents_ids[0] {
-    //         // 对于矩阵乘法 C = AB，计算 dC/dA
-    //         let m = value.shape()[0];
-    //         let n = target_parent.value().unwrap().shape()[1];
-    //         let p = value.shape()[1];
-
-    //         let mut jacobi = Tensor::zeros(&[m * p, m * n]);
-    //         for i in 0..m {
-    //             for j in 0..p {
-    //                 for k in 0..n {
-    //                     jacobi[[i * p + j, i * n + k]] = value[[k, j]];
-    //                 }
-    //             }
-    //         }
-    //         Ok(jacobi)
-    //     } else if target_parent.id() == self.parents_ids[1] {
-    //         // 对于矩阵乘法 C = AB，计算 dC/dB
-    //         let m = value.shape()[0];
-    //         let n = target_parent.value().unwrap().shape()[0];
-    //         let p = value.shape()[1];
-
-    //         let mut jacobi = Tensor::zeros(&[m * p, n * p]);
-    //         for i in 0..m {
-    //             for j in 0..p {
-    //                 for k in 0..n {
-    //                     jacobi[[i * p + j, k * p + j]] = value[[i, k]];
-    //                 }
-    //             }
-    //         }
-    //         Ok(jacobi)
-    //     } else {
-    //         Err(GraphError::ComputationError(format!(
-    //             "{}不是当前节点{}的父节点。不该触及本错误，否则说明crate代码有问题",
-    //             target_parent,
-    //             self.display_node()
-    //         )))
-    //     }
-    // }
 
     fn jacobi(&self) -> Option<&Tensor> {
         self.jacobi.as_ref()

@@ -1,7 +1,7 @@
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
-use super::{NodeHandle, NodeType, TraitNode};
+use super::{NodeHandle, TraitNode};
 
 #[derive(Clone)]
 pub(crate) struct Variable {

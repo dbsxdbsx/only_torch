@@ -294,7 +294,6 @@ fn test_node_add_expected_shape() {
     assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[2, 3]);
     assert_eq!(graph.get_node_value_shape(add).unwrap().unwrap(), &[2, 3]); // 虽然值已过期，但由于值仍然存在，所以形状不变
 
-
     // 3. 测试多个父节点的情况
     let mut graph = Graph::new();
 

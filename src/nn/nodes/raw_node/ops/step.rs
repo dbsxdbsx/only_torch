@@ -1,5 +1,5 @@
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::{NodeHandle, NodeId, NodeType};
+use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::nn::GraphError;
 use crate::tensor::Tensor;
 use crate::tensor_where;

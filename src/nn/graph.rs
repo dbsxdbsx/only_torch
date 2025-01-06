@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 17:57:13
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-06 12:08:53
+ * @LastEditTime : 2025-01-06 15:33:56
  * @Description  : 神经网络模型的计算图
  */
 
@@ -279,7 +279,7 @@ impl Graph {
                 let local_jacobi = child
                     .calc_jacobi_to_a_parent(self.get_node(node_id).unwrap(), assistant_parent)
                     .unwrap();
-                child.jacobi().unwrap() * local_jacobi
+                child.jacobi().unwrap().mat_mul(&local_jacobi)
             };
             // 4.3.3 更新当前节点的梯度（雅可比矩阵）
             {

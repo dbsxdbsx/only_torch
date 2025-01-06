@@ -1,7 +1,6 @@
 use super::super::graph::GraphError;
 use super::raw_node::{Add, MatMul, PerceptionLoss, Step, Variable};
 use super::{NodeType, TraitNode};
-use crate::nn::format_node_display;
 use crate::tensor::Tensor;
 
 /// 为Graph所管理的节点提供一个句柄，所有内置数据类型必须为二阶张量
@@ -150,7 +149,8 @@ impl NodeHandle {
         parent: &NodeHandle,
         assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        self.raw_node.calc_jacobi_to_a_parent(parent, assistant_parent)
+        self.raw_node
+            .calc_jacobi_to_a_parent(parent, assistant_parent)
     }
 
     pub(in crate::nn) fn value_expected_shape(&self) -> &[usize] {

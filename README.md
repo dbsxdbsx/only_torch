@@ -21,6 +21,7 @@
 （无）
 
 ## TODO
+- graph反向传播中有些节点没有值需要过滤怎么添加？
 - 尝试添加add节点的测试，然后再统一优化Variable节点和Add节点的布局？
 - 除了Variable节点，其他节点须遵循`tests\calc_jacobi_by_pytorch`的测试
 - Graph测试中该包含各种pub method的正确及错误测试，如何set_node_trainable，is_node_trainable...
