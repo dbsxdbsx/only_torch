@@ -5,7 +5,7 @@ use crate::tensor::Tensor;
 fn test_new_node_mat_mul_with_inited_parents() {
     let mut graph = Graph::new();
 
-    // 1. 测试基本构造（2个父节点）
+    // 测试基本构造（2个父节点）
     let var1 = graph
         .new_variable_node(&[2, 3], true, false, Some("var1"))
         .unwrap();
@@ -15,6 +15,7 @@ fn test_new_node_mat_mul_with_inited_parents() {
     let mat_mul = graph
         .new_mat_mul_node(var1, var2, Some("mat_mul"), true)
         .unwrap();
+
     // 验证基本属性
     assert_eq!(graph.get_node_parents(mat_mul).unwrap().len(), 2);
     assert_eq!(graph.get_node_children(mat_mul).unwrap().len(), 0);

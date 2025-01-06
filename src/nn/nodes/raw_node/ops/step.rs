@@ -78,20 +78,20 @@ impl TraitNode for Step {
 
     fn calc_jacobi_to_a_parent(
         &self,
-        target_parent: &NodeHandle,
+        _target_parent: &NodeHandle,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Step函数的导数在所有点都是0
-        // NOTE: 这里的实现的形状和MatrixSlow有些不同：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L351
-        // 这里没有改变形状，而MatrixSlow会改变形状成向量
-        let parent_value = target_parent.value().ok_or_else(|| {
+        let value = self.value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的父节点{}没有值。不该触及本错误，否则说明crate代码有问题",
-                self.display_node(),
-                target_parent
+                "{}没有值。不该触及本错误，否则说明crate代码有问题",
+                self.display_node()
             ))
         })?;
-        Ok(Tensor::zeros(parent_value.shape()))
+        let size = value.size();
+
+        // 创建一个size x size的方阵，所有元素都是0
+        Ok(Tensor::zeros(&[size, size]))
     }
 
     fn jacobi(&self) -> Option<&Tensor> {

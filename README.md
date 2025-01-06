@@ -21,6 +21,7 @@
 （无）
 
 ## TODO
+- ada_line还是有问题
 - graph反向传播中有些节点没有值需要过滤怎么添加？
 - 尝试添加add节点的测试，然后再统一优化Variable节点和Add节点的布局？
 - 除了Variable节点，其他节点须遵循`tests\calc_jacobi_by_pytorch`的测试
