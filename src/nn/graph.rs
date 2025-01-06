@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 17:57:13
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-03 17:15:12
+ * @LastEditTime : 2025-01-06 12:08:53
  * @Description  : 神经网络模型的计算图
  */
 
@@ -26,6 +26,7 @@ pub struct Graph {
 }
 
 impl Graph {
+    #[cfg(test)]
     pub(in crate::nn) fn forward_cnt(&self) -> u64 {
         self.forward_cnt
     }
@@ -88,6 +89,17 @@ impl Graph {
         self.nodes.keys().cloned().collect()
     }
 
+    /// 重置图的前向传播计数器
+    ///
+    /// 当需要在一个已经前向传播过的图中添加新节点时，可能需要调用此方法来保证图前向传播的一致性。
+    pub fn reset_forward_cnt(&mut self) {
+        self.forward_cnt = 0;
+        // 重置所有节点的前向传播计数
+        for node in self.nodes.values_mut() {
+            node.set_forward_cnt(0);
+        }
+    }
+
     pub fn has_node_value(&self, node_id: NodeId) -> Result<bool, GraphError> {
         self.nodes
             .get(&node_id)
@@ -100,10 +112,10 @@ impl Graph {
         // 1. 检查节点类型
         let node = self.get_node(node_id)?;
         if let NodeType::Variable(_) = node.node_type() {
-            return Err(GraphError::InvalidOperation(
-                "Variable节点是输入节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
-                    .to_string(),
-            ));
+            return Err(GraphError::InvalidOperation(format!(
+                "{}是输入节点，其值应通过set_value设置，而不是通过父节点前向传播计算",
+                node
+            )));
         }
 
         // 2. 增加前向传播次数
@@ -134,8 +146,8 @@ impl Graph {
         // 1.2 检查Variable节点是否在本代已经计算过
         if let NodeType::Variable(_) = node.node_type() {
             return Err(GraphError::InvalidOperation(format!(
-                "Variable节点[{}]不能直接前向传播。问题节点的前向传播次数为{}，而图的前向传播次数为{}",
-                node.id(),
+                "{}不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为{}，而图的前向传播次数为{}",
+                node,
                 node.forward_cnt(),
                 graph_forward_cnt
             )));
@@ -153,7 +165,10 @@ impl Graph {
             let value = self
                 .get_node(*id)?
                 .value()
-                .ok_or_else(|| GraphError::ComputationError("父节点没有值".to_string()))?
+                .ok_or_else(|| {
+                    let node = self.get_node(*id).unwrap();
+                    GraphError::ComputationError(format!("父{}没有值", node))
+                })?
                 .clone();
             parent_values.push(value);
         }
@@ -180,9 +195,10 @@ impl Graph {
     pub fn backward_node(&mut self, node_id: NodeId, result_id: NodeId) -> Result<(), GraphError> {
         // 1. 检查节点是否可训练
         if !self.is_node_trainable(node_id)? {
-            return Err(GraphError::InvalidOperation(
-                "不能对不可训练的节点进行反向传播".to_string(),
-            ));
+            return Err(GraphError::InvalidOperation(format!(
+                "不能对不可训练的{}进行反向传播",
+                self.get_node(node_id).unwrap()
+            )));
         }
 
         // 2. 若已经计算过，则直接返回
@@ -190,25 +206,29 @@ impl Graph {
             return Ok(());
         }
 
-        // 3. 若节点是结果节点（是自身），则自己对自己的雅可比为单位矩阵
+        // 3. 若节点是结果节点（是自身），则自己对自己的雅可比矩阵为单位矩阵
         if node_id == result_id {
-            let dim = self
+            let element_number = self
                 .get_node(node_id)?
                 .value()
-                .ok_or_else(|| GraphError::ComputationError("节点没有值".to_string()))?
+                .ok_or_else(|| {
+                    let node = self.get_node(node_id).unwrap();
+                    GraphError::ComputationError(format!("反向传播：{}没有值", node))
+                })?
                 .size();
-            let eye = Tensor::eyes(dim);
+            let eye = Tensor::eyes(element_number);
             self.get_node_mut(node_id)?.set_jacobi(Some(&eye))?;
             return Ok(());
         }
 
         // 4. 其他情况的雅可比矩阵计算
         // 4.1 若节点没有子节点且不是结果节点，则返回错误
-        let children = self.get_node_children(node_id)?;
-        if children.is_empty() {
-            return Err(GraphError::InvalidOperation(
-                "无法对没有子节点的节点进行反向传播".to_string(),
-            ));
+        let children_ids = self.get_node_children(node_id)?;
+        if children_ids.is_empty() {
+            return Err(GraphError::InvalidOperation(format!(
+                "无法对没有子节点的{}进行反向传播",
+                self.get_node(node_id).unwrap()
+            )));
         }
 
         // 4.2 先将雅可比矩阵初始化为零矩阵
@@ -218,11 +238,13 @@ impl Graph {
                 let node = self.get_node(node_id)?;
                 (
                     result_node.value().map(|v| v.size()).ok_or_else(|| {
-                        GraphError::ComputationError("结果节点没有值".to_string())
+                        let node = self.get_node(result_id).unwrap();
+                        GraphError::ComputationError(format!("反向传播：结果{}没有值", node))
                     })?,
-                    node.value()
-                        .map(|v| v.size())
-                        .ok_or_else(|| GraphError::ComputationError("节点没有值".to_string()))?,
+                    node.value().map(|v| v.size()).ok_or_else(|| {
+                        let node = self.get_node(node_id).unwrap();
+                        GraphError::ComputationError(format!("反向传播：{}没有值", node))
+                    })?,
                 )
             };
             let zeros = Tensor::zeros(&[result_dim, node_dim]);
@@ -230,17 +252,16 @@ impl Graph {
         }
 
         // 4.3 计算所有子节点的梯度（雅可比矩阵）对当前节点的贡献
-        for child_id in children {
-            // 4.3.1 先计算子节点对结果节点的梯度（雅可比矩阵）
+        for child_id in children_ids {
+            // 4.3.1 先计算结果节点对子节点的梯度（雅可比矩阵）
             self.backward_node(child_id, result_id)?;
 
             // 4.3.2 计算子节点对当前节点的梯度（雅可比矩阵）贡献
             let contribution = {
                 let child = self.get_node(child_id)?;
-                let parent = self.get_node(node_id)?;
 
                 // 根据节点类型决定是否需要另一个父节点
-                let other_parent = match child.node_type() {
+                let assistant_parent = match child.node_type() {
                     NodeType::MatMul(_) => {
                         // 找到另一个父节点
                         let parents = self.get_node_parents(child_id)?;
@@ -255,19 +276,25 @@ impl Graph {
                     _ => None,
                 };
 
-                let local_jacobi = child.calc_jacobi_to_a_parent(parent, other_parent)?;
-                let child_jacobi = child.jacobi().ok_or_else(|| {
-                    GraphError::ComputationError("子节点没有雅可比矩阵".to_string())
-                })?;
-                child_jacobi * local_jacobi
+                let local_jacobi = child
+                    .calc_jacobi_to_a_parent(self.get_node(node_id).unwrap(), assistant_parent)
+                    .unwrap();
+                child.jacobi().unwrap() * local_jacobi
             };
-
             // 4.3.3 更新当前节点的梯度（雅可比矩阵）
             {
+                let current = {
+                    let node = self.get_node(node_id)?;
+                    node.jacobi()
+                        .ok_or_else(|| {
+                            GraphError::ComputationError(format!(
+                                "反向传播：{}没有雅可比矩阵",
+                                node
+                            ))
+                        })?
+                        .clone()
+                };
                 let node = self.get_node_mut(node_id)?;
-                let current = node
-                    .jacobi()
-                    .ok_or_else(|| GraphError::ComputationError("节点没有可比矩阵".to_string()))?;
                 node.set_jacobi(Some(&(current + contribution)))?;
             }
         }
@@ -432,7 +459,7 @@ impl Graph {
             .extend(parents);
 
         // 3. 绑定ID和名称
-        node_handle.bind_id_and_name(node_id, &node_name)?;
+        node_handle.bind_id_and_name(node_id, &node_name);
 
         // 4. 将节点句柄插入到节点列表中，并返回ID
         self.nodes.insert(node_id, node_handle);

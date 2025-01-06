@@ -1,11 +1,12 @@
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::NodeHandle;
+use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::nn::GraphError;
 use crate::tensor::Tensor;
 
 #[derive(Clone)]
 pub(crate) struct Add {
-    name: String,
+    id: Option<NodeId>,
+    name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
     trainable: bool,
@@ -13,11 +14,7 @@ pub(crate) struct Add {
 }
 
 impl Add {
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
-        trainable: bool,
-        name: &str,
-    ) -> Result<Self, GraphError> {
+    pub(crate) fn new(parents: &[&NodeHandle], trainable: bool) -> Result<Self, GraphError> {
         // 1. 必要的验证
         // 1.1 父节点数量验证
         if parents.len() < 2 {
@@ -33,14 +30,15 @@ impl Add {
                 return Err(GraphError::ShapeMismatch {
                     expected: shape.clone(),
                     got: parent.value_expected_shape().to_vec(),
-                    message: "Add节点的所有父节点形状必须相同".to_string(),
+                    message: format!("Add节点的所有父节点形状必须相同"),
                 });
             }
         }
 
         // 2. 返回
         Ok(Self {
-            name: name.to_string(),
+            id: None,
+            name: None,
             value: None,
             jacobi: None,
             trainable,
@@ -50,8 +48,20 @@ impl Add {
 }
 
 impl TraitNode for Add {
+    fn id(&self) -> NodeId {
+        self.id.unwrap()
+    }
+
+    fn set_id(&mut self, id: NodeId) {
+        self.id = Some(id);
+    }
+
     fn name(&self) -> &str {
-        &self.name
+        self.name.as_ref().unwrap()
+    }
+
+    fn set_name(&mut self, name: &str) {
+        self.name = Some(name.to_string());
     }
 
     fn value_expected_shape(&self) -> &[usize] {
@@ -62,9 +72,13 @@ impl TraitNode for Add {
         // 1. 从图中获取父节点的值
         let mut result = None;
         for parent in parents {
-            let parent_value = parent
-                .value()
-                .ok_or_else(|| GraphError::ComputationError("父节点没有值".to_string()))?;
+            let parent_value = parent.value().ok_or_else(|| {
+                GraphError::ComputationError(format!(
+                    "{}的父节点{}没有值。不该触及本错误，否则说明crate代码有问题",
+                    self.display_node(),
+                    parent
+                ))
+            })?;
 
             // 1.2 添加到结果中
             match &mut result {
@@ -89,12 +103,17 @@ impl TraitNode for Add {
     fn calc_jacobi_to_a_parent(
         &self,
         _target_parent: &NodeHandle,
-        _another_parent: Option<&NodeHandle>,
+        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Add节点的雅可比矩阵是单位矩阵
         let size = self
             .value()
-            .ok_or_else(|| GraphError::ComputationError("节点没有值".to_string()))?
+            .ok_or_else(|| {
+                GraphError::ComputationError(format!(
+                    "{}没有值。不该触及本错误，否则说明crate代码有问题",
+                    self.display_node()
+                ))
+            })?
             .size();
         Ok(Tensor::eyes(size))
     }

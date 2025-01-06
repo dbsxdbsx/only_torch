@@ -221,9 +221,11 @@ fn test_node_variable_forward_propagation() {
     let mut graph = Graph::new();
 
     // 测试所有init、trainable和set_value组合的前向传播
+    let mut i = 0;
     for is_init in [false, true] {
         for is_trainable in [false, true] {
             for set_value in [false, true] {
+                i += 1;
                 let var = graph
                     .new_variable_node(&[2, 2], is_init, is_trainable, None)
                     .unwrap();
@@ -235,10 +237,12 @@ fn test_node_variable_forward_propagation() {
                 }
 
                 // 测试前向传播报错
-                assert!(matches!(
+                assert_eq!(
                     graph.forward_node(var),
-                    Err(GraphError::InvalidOperation(msg)) if msg == "Variable节点是输入节点，其值应通过set_value设置，而不是通过父节点前向传播计算".to_string()
-                ));
+                    Err(GraphError::InvalidOperation(
+                        format!("节点[id={i}, name=variable_{i}, type=Variable]是输入节点，其值应通过set_value设置，而不是通过父节点前向传播计算", i=i)
+                    ))
+                );
             }
         }
     }
@@ -267,7 +271,9 @@ fn test_node_variable_backward_propagation() {
     let trainable_but_non_inited_var = graph.new_variable_node(&[2, 2], false, true, None).unwrap();
     assert_eq!(
         graph.backward_node(trainable_but_non_inited_var, trainable_but_non_inited_var),
-        Err(GraphError::ComputationError("节点没有值".to_string()))
+        Err(GraphError::ComputationError(
+            "反向传播：节点[id=2, name=variable_2, type=Variable]没有值".to_string()
+        ))
     );
 
     // 3.2 不可训练但初始化的节点对其自身的雅可比（应失败）
@@ -275,7 +281,7 @@ fn test_node_variable_backward_propagation() {
     assert_eq!(
         graph.backward_node(non_trainable_var, non_trainable_var),
         Err(GraphError::InvalidOperation(
-            "不能对不可训练的节点进行反向传播".to_string()
+            "不能对不可训练的节点[id=3, name=variable_3, type=Variable]进行反向传播".to_string()
         ))
     );
 
@@ -283,7 +289,7 @@ fn test_node_variable_backward_propagation() {
     assert_eq!(
         graph.backward_node(non_trainable_var, trainable_var),
         Err(GraphError::InvalidOperation(
-            "不能对不可训练的节点进行反向传播".to_string()
+            "不能对不可训练的节点[id=3, name=variable_3, type=Variable]进行反向传播".to_string()
         ))
     );
 
@@ -292,7 +298,7 @@ fn test_node_variable_backward_propagation() {
     assert_eq!(
         graph.backward_node(trainable_var, other_trainable_var),
         Err(GraphError::InvalidOperation(
-            "无法对没有子节点的节点进行反向传播".to_string()
+            "无法对没有子节点的节点[id=1, name=variable_1, type=Variable]进行反向传播".to_string()
         ))
     );
 }

@@ -1,11 +1,12 @@
-use crate::nn::GraphError;
+use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
-use super::{NodeHandle, TraitNode};
+use super::{NodeHandle, NodeType, TraitNode};
 
 #[derive(Clone)]
 pub(crate) struct Variable {
-    name: String,
+    id: Option<NodeId>,
+    name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
     trainable: bool,
@@ -13,12 +14,7 @@ pub(crate) struct Variable {
 }
 
 impl Variable {
-    pub(crate) fn new(
-        shape: &[usize],
-        init: bool,
-        trainable: bool,
-        name: &str,
-    ) -> Result<Self, GraphError> {
+    pub(crate) fn new(shape: &[usize], init: bool, trainable: bool) -> Result<Self, GraphError> {
         // 1. 必要的验证
         if shape.len() != 2 {
             return Err(GraphError::DimensionMismatch {
@@ -32,7 +28,8 @@ impl Variable {
         }
 
         let mut var = Self {
-            name: name.to_string(),
+            id: None,
+            name: None,
             value: None,
             jacobi: None,
             trainable,
@@ -49,14 +46,27 @@ impl Variable {
 }
 
 impl TraitNode for Variable {
+    fn id(&self) -> NodeId {
+        self.id.unwrap()
+    }
+
+    fn set_id(&mut self, id: NodeId) {
+        self.id = Some(id);
+    }
+
     fn name(&self) -> &str {
-        &self.name
+        self.name.as_ref().unwrap()
+    }
+
+    fn set_name(&mut self, name: &str) {
+        self.name = Some(name.to_string());
     }
 
     fn calc_value_by_parents(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
-        Err(GraphError::InvalidOperation(
-            "即使是用户不小心将Variable节点执行了图的前向传播，也不该触及本错误（否则说明crate代码有问题）".to_string(),
-        ))
+        Err(GraphError::InvalidOperation(format!(
+            "{}被执行了前向传播。不该触及本错误，否则说明crate代码有问题",
+            self.display_node()
+        )))
     }
 
     fn value(&self) -> Option<&Tensor> {
@@ -71,11 +81,12 @@ impl TraitNode for Variable {
     fn calc_jacobi_to_a_parent(
         &self,
         _target_parent: &NodeHandle,
-        _another_parent: Option<&NodeHandle>,
+        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        Err(GraphError::InvalidOperation(
-            "Variable节点没有父节点".to_string(),
-        ))
+        Err(GraphError::InvalidOperation(format!(
+            "{}没有父节点。不该触及本错误，否则说明crate代码有问题",
+            self.display_node()
+        )))
     }
 
     fn jacobi(&self) -> Option<&Tensor> {

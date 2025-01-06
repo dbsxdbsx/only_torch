@@ -1,2 +1,2 @@
 mod perception_loss;
-pub use perception_loss::PerceptionLoss;
+pub(crate) use perception_loss::PerceptionLoss;

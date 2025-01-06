@@ -1,12 +1,13 @@
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::NodeHandle;
+use crate::nn::nodes::{NodeHandle, NodeId, NodeType};
 use crate::nn::GraphError;
 use crate::tensor::Tensor;
 use crate::tensor_where;
 
 #[derive(Clone)]
-pub struct PerceptionLoss {
-    name: String,
+pub(crate) struct PerceptionLoss {
+    id: Option<NodeId>,
+    name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
     trainable: bool,
@@ -14,7 +15,7 @@ pub struct PerceptionLoss {
 }
 
 impl PerceptionLoss {
-    pub fn new(parents: &[&NodeHandle], trainable: bool, name: &str) -> Result<Self, GraphError> {
+    pub(crate) fn new(parents: &[&NodeHandle], trainable: bool) -> Result<Self, GraphError> {
         // 1. 必要的验证
         // 1.1 父节点数量验证
         if parents.len() != 1 {
@@ -25,7 +26,8 @@ impl PerceptionLoss {
 
         // 2. 返回
         Ok(Self {
-            name: name.to_string(),
+            id: None,
+            name: None,
             value: None,
             jacobi: None,
             trainable,
@@ -35,8 +37,20 @@ impl PerceptionLoss {
 }
 
 impl TraitNode for PerceptionLoss {
+    fn id(&self) -> NodeId {
+        self.id.unwrap()
+    }
+
+    fn set_id(&mut self, id: NodeId) {
+        self.id = Some(id);
+    }
+
     fn name(&self) -> &str {
-        &self.name
+        self.name.as_ref().unwrap()
+    }
+
+    fn set_name(&mut self, name: &str) {
+        self.name = Some(name.to_string());
     }
 
     fn value_expected_shape(&self) -> &[usize] {
@@ -45,9 +59,13 @@ impl TraitNode for PerceptionLoss {
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         // 1. 获取父节点的值
-        let parent_value = parents[0]
-            .value()
-            .ok_or_else(|| GraphError::ComputationError("父节点没有值".to_string()))?;
+        let parent_value = parents[0].value().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "{}的父节点{}没有值。不该触及本错误，否则说明crate代码有问题",
+                self.display_node(),
+                parents[0]
+            ))
+        })?;
 
         // 2. 计算感知损失：x >= 0 时为0，否则为-x
         self.value = Some(tensor_where!(parent_value >= 0.0, 0.0, -parent_value));
@@ -61,12 +79,16 @@ impl TraitNode for PerceptionLoss {
     fn calc_jacobi_to_a_parent(
         &self,
         target_parent: &NodeHandle,
-        _another_parent: Option<&NodeHandle>,
+        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // 1. 计算对角线元素：x >= 0 时为0，否则为-1
-        let parent_value = target_parent
-            .value()
-            .ok_or_else(|| GraphError::ComputationError("父节点没有值".to_string()))?;
+        let parent_value = target_parent.value().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "{}的父节点{}没有值。不该触及本错误，否则说明crate代码有问题",
+                self.display_node(),
+                target_parent
+            ))
+        })?;
         let diag = tensor_where!(parent_value >= 0.0, 0.0, -1.0);
 
         // 2. 构造对角矩阵作为雅可比矩阵

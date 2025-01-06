@@ -12,7 +12,7 @@ pub enum TensorError {
         threshold: usize,
     },
     // 张量二元运算
-    #[error("形状不一致且两个张量没有一个是标量，故无法{operator}：第一个张量的形状为{tensor1_shape:?}，第二个张量的形状为{tensor2_shape:?}")]
+    #[error("形状不一致且两个张量（且没有一个是标量），故无法{operator}：第一个张量的形状为{tensor1_shape:?}，第二个张量的形状为{tensor2_shape:?}")]
     OperatorError {
         operator: Operator,
         tensor1_shape: Vec<usize>,

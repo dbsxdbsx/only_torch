@@ -247,7 +247,7 @@ fn test_dot_sum_scalar_and_tensor() {
 
 #[test]
 #[should_panic(
-    expected = "形状不一致且两个张量没有一个是标量，故无法相乘：第一个张量的形状为[3]，第二个张量的形状为[2]"
+    expected = "形状不一致且两个张量（且没有一个是标量），故无法相乘：第一个张量的形状为[3]，第二个张量的形状为[2]"
 )]
 fn test_dot_sum_operator_for_inconsistent_shape_1() {
     let tensor1 = Tensor::new(&[1., 2., 3.], &[3]);
@@ -257,7 +257,7 @@ fn test_dot_sum_operator_for_inconsistent_shape_1() {
 
 #[test]
 #[should_panic(
-    expected = "形状不一致且两个张量没有一个是标量，故无法相乘：第一个张量的形状为[3]，第二个张量的形状为[3, 1]"
+    expected = "形状不一致且两个张量（且没有一个是标量），故无法相乘：第一个张量的形状为[3]，第二个张量的形状为[3, 1]"
 )]
 fn test_dot_sum_operator_for_inconsistent_shape_2() {
     let tensor1 = Tensor::new(&[1., 2., 3.], &[3]);

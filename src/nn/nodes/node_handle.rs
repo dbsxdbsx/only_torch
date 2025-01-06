@@ -1,24 +1,27 @@
 use super::super::graph::GraphError;
 use super::raw_node::{Add, MatMul, PerceptionLoss, Step, Variable};
 use super::{NodeType, TraitNode};
+use crate::nn::format_node_display;
 use crate::tensor::Tensor;
 
 /// 为Graph所管理的节点提供一个句柄，所有内置数据类型必须为二阶张量
 #[derive(Clone)]
 pub(in crate::nn) struct NodeHandle {
-    id: Option<NodeId>,
-    name: Option<String>,
     raw_node: NodeType,
     /// 节点最后一次计算的前向传播次数
     forward_cnt: u64,
+}
+
+impl std::fmt::Display for NodeHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.raw_node.display_node())
+    }
 }
 
 impl NodeHandle {
     pub(in crate::nn) fn new<T: Into<NodeType>>(raw_node: T) -> Result<Self, GraphError> {
         let raw_node = raw_node.into();
         Ok(Self {
-            id: None,
-            name: None,
             raw_node,
             forward_cnt: 0,
         })
@@ -46,29 +49,17 @@ impl NodeHandle {
         Ok(())
     }
 
-    pub(in crate::nn) fn bind_id_and_name(
-        &mut self,
-        id: NodeId,
-        name: &str,
-    ) -> Result<(), GraphError> {
-        if self.id.is_some() || self.name.is_some() {
-            return Err(GraphError::InvalidOperation(
-                "节点已经绑定了ID和名称".to_string(),
-            ));
-        }
-        self.id = Some(id);
-        self.name = Some(name.to_string());
-        Ok(())
+    pub(in crate::nn) fn bind_id_and_name(&mut self, id: NodeId, name: &str) {
+        self.raw_node.set_id(id);
+        self.raw_node.set_name(name);
     }
 
     pub(in crate::nn) fn id(&self) -> NodeId {
-        self.id.expect("节点ID未初始化，这是一个内部错误")
+        self.raw_node.id()
     }
 
     pub(in crate::nn) fn name(&self) -> &str {
-        self.name
-            .as_ref()
-            .expect("节点名称未初始化，这是一个内部错误")
+        self.raw_node.name()
     }
 
     pub(in crate::nn) fn is_trainable(&self) -> bool {
@@ -111,10 +102,8 @@ impl NodeHandle {
         init: bool,
         trainable: bool,
     ) -> Result<Self, GraphError> {
-        let variable = Variable::new(shape, init, trainable, "")?;
+        let variable = Variable::new(shape, init, trainable)?;
         Ok(Self {
-            id: None,
-            name: None,
             raw_node: NodeType::Variable(variable),
             forward_cnt: 0,
         })
@@ -124,28 +113,28 @@ impl NodeHandle {
         parents: &[&NodeHandle],
         trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(Add::new(parents, trainable, "")?)
+        Self::new(Add::new(parents, trainable)?)
     }
 
     pub(in crate::nn) fn new_mat_mul(
         parents: &[&NodeHandle],
         trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(MatMul::new(parents, trainable, "")?)
+        Self::new(MatMul::new(parents, trainable)?)
     }
 
     pub(in crate::nn) fn new_step(
         parents: &[&NodeHandle],
         trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(Step::new(parents, trainable, "")?)
+        Self::new(Step::new(parents, trainable)?)
     }
 
     pub(in crate::nn) fn new_perception_loss(
         parents: &[&NodeHandle],
         trainable: bool,
     ) -> Result<Self, GraphError> {
-        Self::new(PerceptionLoss::new(parents, trainable, "")?)
+        Self::new(PerceptionLoss::new(parents, trainable)?)
     }
 
     pub(in crate::nn) fn calc_value_by_parents(
@@ -155,31 +144,27 @@ impl NodeHandle {
         self.raw_node.calc_value_by_parents(parents)
     }
 
+    /// 计算本节点对父节点的雅可比矩阵
     pub(in crate::nn) fn calc_jacobi_to_a_parent(
         &self,
         parent: &NodeHandle,
-        another_parent: Option<&NodeHandle>,
+        assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        self.raw_node
-            .calc_jacobi_to_a_parent(parent, another_parent)
+        self.raw_node.calc_jacobi_to_a_parent(parent, assistant_parent)
     }
 
-    /// 这个返回的是节点value应该有的形状，即使value尚未被计算
     pub(in crate::nn) fn value_expected_shape(&self) -> &[usize] {
         self.raw_node.value_expected_shape()
     }
 
-    /// 检查节点是否有值
     pub(in crate::nn) fn has_value(&self) -> bool {
         self.raw_node.value().is_some()
     }
 
-    /// 获取节点的前向传播次数
     pub(in crate::nn) fn forward_cnt(&self) -> u64 {
         self.forward_cnt
     }
 
-    /// 设置节点的前向传播次数
     pub(in crate::nn) fn set_forward_cnt(&mut self, cnt: u64) {
         self.forward_cnt = cnt;
     }
