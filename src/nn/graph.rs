@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 17:57:13
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-06 15:33:56
+ * @LastEditTime : 2025-01-08 13:07:25
  * @Description  : 神经网络模型的计算图
  */
 
@@ -159,34 +159,20 @@ impl Graph {
             self.forward_node_internal(*parent_id)?;
         }
 
-        // 3. 先收集所有父节点的值
-        let mut parent_values = Vec::new();
-        for id in &parents_ids {
-            let value = self
-                .get_node(*id)?
-                .value()
-                .ok_or_else(|| {
-                    let node = self.get_node(*id).unwrap();
-                    GraphError::ComputationError(format!("父{}没有值", node))
-                })?
-                .clone();
-            parent_values.push(value);
-        }
-
-        // 4. 创建临时的父节点句柄，不持有self的引用(避免等会计算值时借用检查问题)
+        // 3. 创建临时的父节点句柄，不持有self的引用(避免等会计算值时借用检查问题)
         let parent_nodes = parents_ids
             .iter()
             .map(|id| self.get_node(*id).unwrap().clone())
             .collect::<Vec<NodeHandle>>();
 
-        // 5. 计算当前节点
+        // 4. 计算当前节点
         let node = self.get_node_mut(node_id)?;
         node.calc_value_by_parents(&parent_nodes)?;
 
-        // 6. 更新节点的前向传播次数为当前次数
+        // 5. 更新节点的前向传播次数为当前次数
         node.set_forward_cnt(graph_forward_cnt);
 
-        // 7. 返回
+        // 6. 返回
         Ok(())
     }
 

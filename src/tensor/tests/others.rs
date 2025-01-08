@@ -91,74 +91,74 @@ fn test_dot_sum_number_and_tensor() {
     let test_cases = vec![
         // 标量型张量
         TensorCheck {
-            shape: vec![],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         TensorCheck {
-            shape: vec![1],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![1],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         TensorCheck {
-            shape: vec![1, 1],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![1, 1],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         // 向量型张量
         TensorCheck {
-            shape: vec![2],
-            data: vec![1., 2.],
-            expected: vec![vec![6.]],
+            input_shape: vec![2],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![6.]],
         },
         TensorCheck {
-            shape: vec![2, 1],
-            data: vec![1., 2.],
-            expected: vec![vec![6.]],
+            input_shape: vec![2, 1],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![6.]],
         },
         TensorCheck {
-            shape: vec![1, 2],
-            data: vec![1., 2.],
-            expected: vec![vec![6.]],
+            input_shape: vec![1, 2],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![6.]],
         },
         // 矩阵型张量
         TensorCheck {
-            shape: vec![2, 3],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![42.]],
+            input_shape: vec![2, 3],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![42.]],
         },
         // 高阶张量
         TensorCheck {
-            shape: vec![2, 3, 1],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![42.]],
+            input_shape: vec![2, 3, 1],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![42.]],
         },
         TensorCheck {
-            shape: vec![2, 1, 3, 1],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![42.]],
+            input_shape: vec![2, 1, 3, 1],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![42.]],
         },
     ];
 
     for test_case in test_cases {
-        let tensor = Tensor::new(&test_case.data, &test_case.shape);
+        let tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
         // 1.标量在前，张量在后
         let result = number.dot_sum(tensor.clone());
         assert_eq!(
             result.data,
-            Array::from_shape_vec(IxDyn(&[1]), test_case.expected[0].clone()).unwrap(),
+            Array::from_shape_vec(IxDyn(&[1]), test_case.expected_output[0].clone()).unwrap(),
             "标量在前，张量在后：使用的标量为：{:?}，张量为：{:?}",
             number,
-            test_case.data
+            test_case.input_data
         );
         // 2.张量在前，标量在后
         let result = tensor.dot_sum(number);
         assert_eq!(
             result.data,
-            Array::from_shape_vec(IxDyn(&[1]), test_case.expected[0].clone()).unwrap(),
+            Array::from_shape_vec(IxDyn(&[1]), test_case.expected_output[0].clone()).unwrap(),
             "张量在前，标量在后：使用的标量为：{:?}，张量为：{:?}",
             number,
-            test_case.data
+            test_case.input_data
         );
     }
 }
@@ -169,77 +169,77 @@ fn test_dot_sum_scalar_and_tensor() {
     let test_cases = vec![
         // 标量型张量
         TensorCheck {
-            shape: vec![],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         TensorCheck {
-            shape: vec![1],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![1],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         TensorCheck {
-            shape: vec![1, 1],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![1, 1],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         // 向量型张量
         TensorCheck {
-            shape: vec![2],
-            data: vec![1., 2.],
-            expected: vec![vec![6.]],
+            input_shape: vec![2],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![6.]],
         },
         TensorCheck {
-            shape: vec![2, 1],
-            data: vec![1., 2.],
-            expected: vec![vec![6.]],
+            input_shape: vec![2, 1],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![6.]],
         },
         TensorCheck {
-            shape: vec![1, 2],
-            data: vec![1., 2.],
-            expected: vec![vec![6.]],
+            input_shape: vec![1, 2],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![6.]],
         },
         // 矩阵型张量
         TensorCheck {
-            shape: vec![2, 3],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![42.]],
+            input_shape: vec![2, 3],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![42.]],
         },
         // 高阶张量
         TensorCheck {
-            shape: vec![2, 3, 1],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![42.]],
+            input_shape: vec![2, 3, 1],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![42.]],
         },
         TensorCheck {
-            shape: vec![2, 1, 3, 1],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![42.]],
+            input_shape: vec![2, 1, 3, 1],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![42.]],
         },
     ];
     let scalar_shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1], &[1, 1, 1, 1]];
 
     for test_case in test_cases {
-        let tensor = Tensor::new(&test_case.data, &test_case.shape);
+        let tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
         for scalar_shape in scalar_shapes.iter() {
             let scalar_tensor = Tensor::new(&[number], scalar_shape);
             // 1.标量在前，张量在后
             let result = scalar_tensor.clone().dot_sum(tensor.clone());
             assert_eq!(
                 result.data,
-                Array::from_shape_vec(IxDyn(&[1]), test_case.expected[0].clone()).unwrap(),
+                Array::from_shape_vec(IxDyn(&[1]), test_case.expected_output[0].clone()).unwrap(),
                 "标量在前，张量在后：使用的标量为：{:?}，张量为：{:?}",
                 &[number],
-                test_case.data
+                test_case.input_data
             );
             // 2.张量在前，标量在后
             let result = tensor.clone().dot_sum(scalar_tensor);
             assert_eq!(
                 result.data,
-                Array::from_shape_vec(IxDyn(&[1]), test_case.expected[0].clone()).unwrap(),
+                Array::from_shape_vec(IxDyn(&[1]), test_case.expected_output[0].clone()).unwrap(),
                 "张量在前，标量在后：使用的标量为：{:?}，张量为：{:?}",
                 &[number],
-                test_case.data
+                test_case.input_data
             );
         }
     }

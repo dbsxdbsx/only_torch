@@ -181,52 +181,52 @@ fn test_mul_assign_scalar_or_ref_to_tensor_or_ref() {
     let test_cases = vec![
         // 标量型张量
         TensorCheck {
-            shape: vec![],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         TensorCheck {
-            shape: vec![1],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![1],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         TensorCheck {
-            shape: vec![1, 1],
-            data: vec![1.],
-            expected: vec![vec![2.]],
+            input_shape: vec![1, 1],
+            input_data: vec![1.],
+            expected_output: vec![vec![2.]],
         },
         // 向量型张量
         TensorCheck {
-            shape: vec![2],
-            data: vec![1., 2.],
-            expected: vec![vec![2., 4.]],
+            input_shape: vec![2],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![2., 4.]],
         },
         TensorCheck {
-            shape: vec![2, 1],
-            data: vec![1., 2.],
-            expected: vec![vec![2., 4.]],
+            input_shape: vec![2, 1],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![2., 4.]],
         },
         TensorCheck {
-            shape: vec![1, 2],
-            data: vec![1., 2.],
-            expected: vec![vec![2., 4.]],
+            input_shape: vec![1, 2],
+            input_data: vec![1., 2.],
+            expected_output: vec![vec![2., 4.]],
         },
         // 矩阵型张量
         TensorCheck {
-            shape: vec![2, 3],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![2., 4., 6., 8., 10., 12.]],
+            input_shape: vec![2, 3],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![2., 4., 6., 8., 10., 12.]],
         },
         // 高阶张量
         TensorCheck {
-            shape: vec![2, 3, 1],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![2., 4., 6., 8., 10., 12.]],
+            input_shape: vec![2, 3, 1],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![2., 4., 6., 8., 10., 12.]],
         },
         TensorCheck {
-            shape: vec![2, 1, 3, 1],
-            data: vec![1., 2., 3., 4., 5., 6.],
-            expected: vec![vec![2., 4., 6., 8., 10., 12.]],
+            input_shape: vec![2, 1, 3, 1],
+            input_data: vec![1., 2., 3., 4., 5., 6.],
+            expected_output: vec![vec![2., 4., 6., 8., 10., 12.]],
         },
     ];
 
@@ -234,15 +234,15 @@ fn test_mul_assign_scalar_or_ref_to_tensor_or_ref() {
 
     for test_case in test_cases {
         for scalar_shape in scalar_shapes.iter() {
-            let mut tensor = Tensor::new(&test_case.data, &test_case.shape);
+            let mut tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
             let scalar_tensor = Tensor::new(&[number], scalar_shape);
             let correct_shape = if scalar_tensor.is_scalar() && tensor.is_scalar() {
                 vec![1]
             } else {
-                test_case.shape.clone()
+                test_case.input_shape.clone()
             };
             let expect_tensor =
-                Array::from_shape_vec(IxDyn(&correct_shape), test_case.expected[0].clone())
+                Array::from_shape_vec(IxDyn(&correct_shape), test_case.expected_output[0].clone())
                     .unwrap();
             // 1.张量*=标量
             tensor *= scalar_tensor.clone();
@@ -251,20 +251,20 @@ fn test_mul_assign_scalar_or_ref_to_tensor_or_ref() {
                 expect_tensor,
                 "`张量*=标量`出错！使用的标量为：{:?}，张量为：{:?}",
                 &[number],
-                test_case.data
+                test_case.input_data
             );
             // 2.张量*=&标量
-            let mut tensor = Tensor::new(&test_case.data, &test_case.shape);
+            let mut tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
             tensor *= &scalar_tensor;
             assert_eq!(
                 tensor.data,
                 expect_tensor,
                 "`张量*=&标量`出错！使用的标量为：{:?}，张量为：{:?}",
                 &[number],
-                test_case.data
+                test_case.input_data
             );
             // 3.&张量*=标量
-            let mut tensor = Tensor::new(&test_case.data, &test_case.shape);
+            let mut tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
             let tensor_ref = &mut tensor;
             *tensor_ref *= scalar_tensor.clone();
             assert_eq!(
@@ -272,10 +272,10 @@ fn test_mul_assign_scalar_or_ref_to_tensor_or_ref() {
                 expect_tensor,
                 "`&张量*=标量`出错！使用的标量为：{:?}，张量为：{:?}",
                 &[number],
-                test_case.data
+                test_case.input_data
             );
             // 4.&张量*=&标量
-            let mut tensor = Tensor::new(&test_case.data, &test_case.shape);
+            let mut tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
             let tensor_ref = &mut tensor;
             *tensor_ref *= &scalar_tensor;
             assert_eq!(
@@ -283,7 +283,7 @@ fn test_mul_assign_scalar_or_ref_to_tensor_or_ref() {
                 expect_tensor,
                 "`&张量*=&标量`出错！使用的标量为：{:?}，张量为：{:?}",
                 &[number],
-                test_case.data
+                test_case.input_data
             );
         }
     }

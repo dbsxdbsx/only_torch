@@ -30,7 +30,7 @@ mod slice;
 
 #[derive(Debug)]
 struct TensorCheck {
-    pub shape: Vec<usize>,
-    pub data: Vec<f32>,
-    pub expected: Vec<Vec<f32>>, // 外层Vec的每个元素代表一个期望值，内层Vec（期望值）整体代表张量的数据
+    pub input_shape: Vec<usize>,
+    pub input_data: Vec<f32>,
+    pub expected_output: Vec<Vec<f32>>, // 外层Vec的每个元素代表一个期望值，内层Vec（期望值）整体代表张量的数据
 }

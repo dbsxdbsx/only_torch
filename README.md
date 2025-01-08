@@ -21,8 +21,9 @@
 （无）
 
 ## TODO
+- `test_dot_sum_operator_for_inconsistent_shape_1`好像内容不是测试的dot_sum, 而是乘法？
 - ada_line还是有问题
-- graph反向传播中有些节点没有值需要过滤怎么添加？
+- graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
 - 尝试添加add节点的测试，然后再统一优化Variable节点和Add节点的布局？
 - 除了Variable节点，其他节点须遵循`tests\calc_jacobi_by_pytorch`的测试
 - Graph测试中该包含各种pub method的正确及错误测试，如何set_node_trainable，is_node_trainable...
@@ -63,6 +64,7 @@
 - `children_mut`是否可合并至`children()`? and `value_mut`是否可合并至`value`?
 - `fn as_node_enum(&self) -> NodeEnum` trait method 是否多余，对于具体实现的节点，可否隐式转换或直接各节点返回NodeEnum？(只要不要影响后期各种算子的重载)？
 - use approx::assert_abs_diff_eq; need or not?
+- 使用f16代替f32？
 
 **目前需要先解决有没有的问题，而不是好不好**
 - [] 实现类似tch-rs中`tch::no_grad(|| {});`的无梯度功能；
