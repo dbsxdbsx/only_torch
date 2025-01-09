@@ -1,3 +1,15 @@
+/*
+ * @Author       : 老董
+ * @Date         : 2023-08-17 17:24:24
+ * @LastEditors  : 老董
+ * @LastEditTime : 2025-01-09 10:58:47
+ * @Description  : 张量的减法，实现了两个张量“逐元素”（或张量与纯数）相减的运算，并返回一个新的张量。
+ *                 该运算支持以下情况：
+ *                 1. 其中一个操作数为纯数而另一个为张量：则返回的张量形状与该张量相同。
+ *                 2. 两个操作数均为张量：需保证两个操作数的形状严格一致。
+ *                 注意：这里的减法概念与线性代数中的矩阵减法类似，但适用于更高阶的张量。
+ */
+
 use crate::errors::{Operator, TensorError};
 use crate::tensor::Tensor;
 use std::ops::Sub;
@@ -79,17 +91,10 @@ impl<'a, 'b> Sub<&'b Tensor> for &'a Tensor {
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑（不）带引用的张量 -（不）带引用的张量↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 fn sub_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
-    let data = if tensor_1.is_scalar() && tensor_2.is_scalar() {
-        return Tensor::new(
-            &[tensor_1.get_data_number().unwrap() - tensor_2.get_data_number().unwrap()],
-            &[1],
-        );
-    } else if tensor_1.is_same_shape(tensor_2) {
-        &tensor_1.data - &tensor_2.data
-    } else if tensor_1.is_scalar() {
-        tensor_1.get_data_number().unwrap() - &tensor_2.data
-    } else if tensor_2.is_scalar() {
-        &tensor_1.data - tensor_2.get_data_number().unwrap()
+    if tensor_1.is_same_shape(tensor_2) {
+        Tensor {
+            data: &tensor_1.data - &tensor_2.data,
+        }
     } else {
         panic!(
             "{}",
@@ -99,7 +104,5 @@ fn sub_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
                 tensor2_shape: tensor_2.shape().to_vec(),
             }
         )
-    };
-
-    Tensor { data }
+    }
 }

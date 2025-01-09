@@ -1,9 +1,9 @@
 /*
  * @Author       : 老董
  * @Date         : 2023-10-21 03:22:26
- * @Description  : 本模块包含一些常用的张量非四则运算的常用方法，包含转置及一些会改变形状的方法
  * @LastEditors  : 老董
  * @LastEditTime : 2024-10-25 05:59:15
+ * @Description  : 本模块包含一些常用的张量非四则运算的常用方法，包含转置及一些会改变形状的方法
  */
 
 use std::collections::HashSet;

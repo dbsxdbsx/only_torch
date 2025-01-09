@@ -1,7 +1,5 @@
-use super::TensorCheck;
 use crate::assert_panic;
 use crate::tensor::Tensor;
-use ndarray::{Array, IxDyn};
 
 #[test]
 fn test_add_assign_f32_to_tensor() {
