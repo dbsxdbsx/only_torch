@@ -291,7 +291,7 @@ fn test_div_assign_scalar_or_ref_to_tensor_or_ref() {
 
 #[test]
 #[should_panic(
-    expected = "形状不一致且两个张量（且没有一个是标量），故无法相除：第一个张量的形状为[3]，第二个张量的形状为[2]"
+    expected = "形状不一致，故无法相除：第一个张量的形状为[3]，第二个张量的形状为[2]"
 )]
 fn test_div_assign_incompatible_shapes() {
     let mut tensor1 = Tensor::new(&[2.0, 2.0, 2.0], &[3]);

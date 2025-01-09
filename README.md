@@ -21,6 +21,8 @@
 （无）
 
 ## TODO
+- `形状不一致且两个张量（且没有一个是标量）`
+- 各种assign类的op（如：add_assign）是否需要重载而不是复用基本算子？
 - `test_dot_sum_operator_for_inconsistent_shape_1`好像内容不是测试的dot_sum, 而是乘法？
 - ada_line还是有问题
 - graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
