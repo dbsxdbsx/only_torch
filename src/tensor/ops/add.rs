@@ -79,17 +79,10 @@ impl<'a, 'b> Add<&'b Tensor> for &'a Tensor {
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑（不）带引用的张量 +（不）带引用的张量↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 fn add_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
-    let data = if tensor_1.is_scalar() && tensor_2.is_scalar() {
-        return Tensor::new(
-            &[tensor_1.get_data_number().unwrap() + tensor_2.get_data_number().unwrap()],
-            &[1],
-        );
-    } else if tensor_1.is_same_shape(tensor_2) {
-        &tensor_1.data + &tensor_2.data
-    } else if tensor_1.is_scalar() {
-        tensor_1.get_data_number().unwrap() + &tensor_2.data
-    } else if tensor_2.is_scalar() {
-        &tensor_1.data + tensor_2.get_data_number().unwrap()
+    if tensor_1.is_same_shape(tensor_2) {
+        Tensor {
+            data: &tensor_1.data + &tensor_2.data,
+        }
     } else {
         panic!(
             "{}",
@@ -99,7 +92,5 @@ fn add_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
                 tensor2_shape: tensor_2.shape().to_vec(),
             }
         )
-    };
-
-    Tensor { data }
+    }
 }
