@@ -150,7 +150,7 @@ fn test_mul_number_and_tensor() {
 
     for test_case in test_cases {
         let tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
-        // 1.标量在前，张量在后
+        // 1.纯数在前，张量在后
         let result = number * tensor.clone();
         assert_eq!(
             result.data,
@@ -159,11 +159,11 @@ fn test_mul_number_and_tensor() {
                 test_case.expected_output[0].clone()
             )
             .unwrap(),
-            "标量在前，张量在后：使用的标量为：{:?}，张量为：{:?}",
+            "纯数在前，张量在后：使用的纯数为：{:?}，张量为：{:?}",
             number,
             test_case.input_data
         );
-        // 2.张量在前，标量在后
+        // 2.张量在前，纯数在后
         let result = tensor * number;
         assert_eq!(
             result.data,
@@ -172,7 +172,7 @@ fn test_mul_number_and_tensor() {
                 test_case.expected_output[0].clone()
             )
             .unwrap(),
-            "张量在前，标量在后：使用的标量为：{:?}，张量为：{:?}",
+            "张量在前，纯数在后：使用的纯数为：{:?}，张量为：{:?}",
             number,
             test_case.input_data
         );

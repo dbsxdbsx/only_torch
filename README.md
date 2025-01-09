@@ -22,7 +22,6 @@
 
 ## TODO
 - 各种assign类的op（如：add_assign）是否需要重载而不是复用基本算子？
-- `test_dot_sum_operator_for_inconsistent_shape_1`好像内容不是测试的dot_sum, 而是乘法？
 - ada_line还是有问题
 - graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
 - 尝试添加add节点的测试，然后再统一优化Variable节点和Add节点的布局？
@@ -51,7 +50,7 @@
 - 当后期（NEAT阶段）需要在一个已经forwarded的图中添加节点（如将已经被使用过的var1、var2结合一个新的未使用的var3构建一个add节点），可能需要添加一个`reset_forward_cnt`方法来保证图forward的一致性。
 - NEAT之后，针对图backward的`loss1.backward(retain_graph=True)`和`detach()`机制的实现（可在GAN和强化学习算法实例中针对性实现测试），可能须和`forward_cnt`机制结合, 还要考虑一次forward后多次backward()后的结果。
 - Tensor 真的需要uninit吗？
-- 各种命名规范“2维”，“二维”，“二阶”，“2阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”
+- 各种命名规范“2维”，“二维”，“二阶”，“2阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”，”dim/dimension/rank“,"维/阶"
 -
 - 根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，，容易添加edge(如已存在的add节点的父节点)，。
 - 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）

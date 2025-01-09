@@ -11,30 +11,30 @@ use super::TensorCheck;
 #[test]
 fn test_sum_scalar() {
     let shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1]];
-    let expected_sum = Tensor::from(5.);
+    let expected_tensor = Tensor::new(&[5.], &[1, 1]);
     for shape in shapes {
         let tensor = Tensor::new(&[5.], shape);
-        assert_eq!(tensor.sum(), expected_sum);
+        assert_eq!(tensor.sum(), expected_tensor);
     }
 }
 
 #[test]
 fn test_sum_vector() {
     let shapes: &[&[usize]] = &[&[4], &[1, 4], &[4, 1]];
-    let expected_sum = Tensor::from(10.);
+    let expected_tensor = Tensor::new(&[10.], &[1, 1]);
     for shape in shapes {
         let tensor = Tensor::new(&[1., 2., 3., 4.], shape);
-        assert_eq!(tensor.sum(), expected_sum);
+        assert_eq!(tensor.sum(), expected_tensor);
     }
 }
 
 #[test]
 fn test_sum_matrix() {
     let shapes: &[&[usize]] = &[&[2, 2], &[1, 2, 2], &[2, 2, 1]];
-    let expected_sum = Tensor::from(10.);
+    let expected_tensor = Tensor::new(&[10.], &[1, 1]);
     for shape in shapes {
         let tensor = Tensor::new(&[1., 2., 3., 4.], shape);
-        assert_eq!(tensor.sum(), expected_sum);
+        assert_eq!(tensor.sum(), expected_tensor);
     }
 }
 
@@ -47,10 +47,10 @@ fn test_sum_high_dim_tensor() {
         &[2, 2, 1, 2],
         &[2, 2, 2, 1],
     ];
-    let expected_sum = Tensor::from(36.);
+    let expected_tensor = Tensor::new(&[36.], &[1, 1]);
     for shape in shapes {
         let tensor = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], shape);
-        assert_eq!(tensor.sum(), expected_sum);
+        assert_eq!(tensor.sum(), expected_tensor);
     }
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`sum`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
@@ -142,21 +142,21 @@ fn test_dot_sum_number_and_tensor() {
 
     for test_case in test_cases {
         let tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
-        // 1.标量在前，张量在后
+        // 1.纯数在前，张量在后
         let result = number.dot_sum(tensor.clone());
         assert_eq!(
             result.data,
-            Array::from_shape_vec(IxDyn(&[1]), test_case.expected_output[0].clone()).unwrap(),
-            "标量在前，张量在后：使用的标量为：{:?}，张量为：{:?}",
+            Array::from_shape_vec(IxDyn(&[1, 1]), test_case.expected_output[0].clone()).unwrap(),
+            "纯数在前，张量在后：使用的纯数为：{:?}，张量为：{:?}",
             number,
             test_case.input_data
         );
-        // 2.张量在前，标量在后
+        // 2.张量在前，纯数在后
         let result = tensor.dot_sum(number);
         assert_eq!(
             result.data,
-            Array::from_shape_vec(IxDyn(&[1]), test_case.expected_output[0].clone()).unwrap(),
-            "张量在前，标量在后：使用的标量为：{:?}，张量为：{:?}",
+            Array::from_shape_vec(IxDyn(&[1, 1]), test_case.expected_output[0].clone()).unwrap(),
+            "张量在前，纯数在后：使用的纯数为：{:?}，张量为：{:?}",
             number,
             test_case.input_data
         );
@@ -164,115 +164,91 @@ fn test_dot_sum_number_and_tensor() {
 }
 
 #[test]
-fn test_dot_sum_scalar_and_tensor() {
+fn test_dot_sum_scalars_among_various_shapes() {
     let number = 2.;
-    let test_cases = vec![
-        // 标量型张量
-        TensorCheck {
-            input_shape: vec![],
-            input_data: vec![1.],
-            expected_output: vec![vec![2.]],
-        },
-        TensorCheck {
-            input_shape: vec![1],
-            input_data: vec![1.],
-            expected_output: vec![vec![2.]],
-        },
-        TensorCheck {
-            input_shape: vec![1, 1],
-            input_data: vec![1.],
-            expected_output: vec![vec![2.]],
-        },
-        // 向量型张量
-        TensorCheck {
-            input_shape: vec![2],
-            input_data: vec![1., 2.],
-            expected_output: vec![vec![6.]],
-        },
-        TensorCheck {
-            input_shape: vec![2, 1],
-            input_data: vec![1., 2.],
-            expected_output: vec![vec![6.]],
-        },
-        TensorCheck {
-            input_shape: vec![1, 2],
-            input_data: vec![1., 2.],
-            expected_output: vec![vec![6.]],
-        },
-        // 矩阵型张量
-        TensorCheck {
-            input_shape: vec![2, 3],
-            input_data: vec![1., 2., 3., 4., 5., 6.],
-            expected_output: vec![vec![42.]],
-        },
-        // 高阶张量
-        TensorCheck {
-            input_shape: vec![2, 3, 1],
-            input_data: vec![1., 2., 3., 4., 5., 6.],
-            expected_output: vec![vec![42.]],
-        },
-        TensorCheck {
-            input_shape: vec![2, 1, 3, 1],
-            input_data: vec![1., 2., 3., 4., 5., 6.],
-            expected_output: vec![vec![42.]],
-        },
-    ];
     let scalar_shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1], &[1, 1, 1, 1]];
 
-    for test_case in test_cases {
-        let tensor = Tensor::new(&test_case.input_data, &test_case.input_shape);
-        for scalar_shape in scalar_shapes.iter() {
-            let scalar_tensor = Tensor::new(&[number], scalar_shape);
-            // 1.标量在前，张量在后
-            let result = scalar_tensor.clone().dot_sum(tensor.clone());
-            assert_eq!(
-                result.data,
-                Array::from_shape_vec(IxDyn(&[1]), test_case.expected_output[0].clone()).unwrap(),
-                "标量在前，张量在后：使用的标量为：{:?}，张量为：{:?}",
-                &[number],
-                test_case.input_data
-            );
-            // 2.张量在前，标量在后
-            let result = tensor.clone().dot_sum(scalar_tensor);
-            assert_eq!(
-                result.data,
-                Array::from_shape_vec(IxDyn(&[1]), test_case.expected_output[0].clone()).unwrap(),
-                "张量在前，标量在后：使用的标量为：{:?}，张量为：{:?}",
-                &[number],
-                test_case.input_data
-            );
+    // 测试不同形状标量间的点积和组合
+    for shape1 in scalar_shapes.iter() {
+        let scalar1 = Tensor::new(&[number], shape1);
+
+        for shape2 in scalar_shapes.iter() {
+            let scalar2 = Tensor::new(&[1.0], shape2);
+
+            if shape1 == shape2 {
+                // 相同形状的标量张量点积和应该成功
+                let result = scalar1.clone().dot_sum(scalar2.clone());
+                let expected = Tensor::new(&[2.0], &[1, 1]); // 2 * 1 = 2
+                assert_eq!(result, expected);
+
+                let result = scalar2.dot_sum(scalar1.clone());
+                let expected = Tensor::new(&[2.0], &[1, 1]); // 1 * 2 = 2
+                assert_eq!(result, expected);
+            } else {
+                // 不同形状的标量张量点积和应该失败
+                assert_panic!(
+                    scalar1.clone().dot_sum(scalar2.clone()),
+                    format!(
+                        "形状不一致，故无法点积和：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
+                        shape1, shape2
+                    )
+                );
+                assert_panic!(
+                    scalar2.dot_sum(scalar1.clone()),
+                    format!(
+                        "形状不一致，故无法点积和：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
+                        shape2, shape1
+                    )
+                );
+            }
         }
     }
 }
 
 #[test]
-#[should_panic(expected = "形状不一致，故无法相乘：第一个张量的形状为[3]，第二个张量的形状为[2]")]
-fn test_dot_sum_operator_for_inconsistent_shape_1() {
+fn test_dot_sum_with_or_without_ownership() {
     let tensor1 = Tensor::new(&[1., 2., 3.], &[3]);
-    let tensor2 = Tensor::new(&[2., 3.], &[2]);
-    let _ = tensor1 * tensor2;
-}
+    let tensor2 = Tensor::new(&[4., 5., 6.], &[3]);
+    let expected = Tensor::new(&[32.], &[1, 1]); // (1*4 + 2*5 + 3*6) = 32
 
-#[test]
-#[should_panic(
-    expected = "形状不一致，故无法相乘：第一个张量的形状为[3]，第二个张量的形状为[3, 1]"
-)]
-fn test_dot_sum_operator_for_inconsistent_shape_2() {
-    let tensor1 = Tensor::new(&[1., 2., 3.], &[3]);
-    let tensor2 = Tensor::new(&[4., 5., 6.], &[3, 1]);
-    let _ = tensor1 * tensor2;
+    // f32 标量情况
+    // 直接使用 f32
+    let result = tensor1.dot_sum(2.0);
+    assert_eq!(result, Tensor::new(&[12.], &[1, 1])); // (1*2 + 2*2 + 3*2) = 12
+
+    // Tensor 情况
+    // 1. 不带引用的张量
+    let result = tensor1.clone().dot_sum(tensor2.clone());
+    assert_eq!(result, expected);
+
+    // 2. tensor1 带引用，tensor2 不带引用
+    let result = (&tensor1).dot_sum(tensor2.clone());
+    assert_eq!(result, expected);
+
+    // 3. tensor1 不带引用，tensor2 带引用
+    let result = tensor1.clone().dot_sum(&tensor2);
+    assert_eq!(result, expected);
+
+    // 4. 都带引用
+    let result = (&tensor1).dot_sum(&tensor2);
+    assert_eq!(result, expected);
+
+    // 验证原始张量未被修改
+    assert_eq!(tensor1, Tensor::new(&[1., 2., 3.], &[3]));
+    assert_eq!(tensor2, Tensor::new(&[4., 5., 6.], &[3]));
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`dot_sum`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓order↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_order() {
+    // 1. 2维张量
     let tensor1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
     let tensor2 = Tensor::new(&[3., 4., 1., 2., 5., 6.], &[2, 3]);
     let ordered_tensor = tensor2.order();
-    assert_ne!(tensor1, tensor2);
     assert_eq!(tensor1, ordered_tensor);
 
+    // 2. 3维张量
     let tensor1 = Tensor::new(
         &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
         &[2, 2, 3],
@@ -282,18 +258,18 @@ fn test_order() {
         &[2, 2, 3],
     );
     let ordered_tensor = tensor2.order();
-    assert_ne!(tensor1, tensor2);
     assert_eq!(tensor1, ordered_tensor);
 }
 
 #[test]
 fn test_order_mut() {
+    // 1. 2维张量
     let tensor1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
     let mut tensor2 = Tensor::new(&[3., 4., 1., 2., 5., 6.], &[2, 3]);
-    assert_ne!(tensor1, tensor2);
     tensor2.order_mut();
     assert_eq!(tensor1, tensor2);
 
+    // 2. 3维张量
     let tensor1 = Tensor::new(
         &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
         &[2, 2, 3],
@@ -302,7 +278,6 @@ fn test_order_mut() {
         &[7., 8., 9., 10., 11., 12., 3., 4., 1., 2., 5., 6.],
         &[2, 2, 3],
     );
-    assert_ne!(tensor1, tensor2);
     tensor2.order_mut();
     assert_eq!(tensor1, tensor2);
 }
@@ -319,29 +294,29 @@ fn test_shuffle() {
     let shape = &[6, 6];
     let tensor = Tensor::new(data, shape);
 
-    // 仅打乱第一个维度（打乱后的形状仍一致，但数据不一致）
+    // 1. 仅打乱第一个维度（打乱后的形状仍一致，但数据不一致）
     let shuffled_tensor_row = tensor.shuffle(Some(0));
     assert_eq!(tensor.shape(), shuffled_tensor_row.shape());
     assert_ne!(tensor.data, shuffled_tensor_row.data);
-    // 虽然打乱后整体数据是不一致的，但是该张量每行的数据总是能在另一个张量中的某行找到完全一致的数据
+    // 1.1 虽然打乱后整体数据是不一致的，但是该张量每行的数据总是能在另一个张量中的某行找到完全一致的数据
     for row in shuffled_tensor_row.data.axis_iter(Axis(0)) {
         assert!(tensor.data.axis_iter(Axis(0)).any(|r| r == row));
     }
 
-    // 仅打乱第二个维度（打乱后的形状仍一致，但数据不一致）
+    // 2. 仅打乱第二个维度（打乱后的形状仍一致，但数据不一致）
     let shuffled_tensor_col = tensor.shuffle(Some(1));
     assert_eq!(tensor.shape(), shuffled_tensor_col.shape());
     assert_ne!(tensor.data, shuffled_tensor_col.data);
-    // 虽然打乱后整体数据是不一致的，但是该张量每列的数据总是能在另一个张量中的某列找到完全一致的数据
+    // 2.1 虽然打乱后整体数据是不一致的，但是该张量每列的数据总是能在另一个张量中的某列找到完全一致的数据
     for col in shuffled_tensor_col.data.axis_iter(Axis(1)) {
         assert!(tensor.data.axis_iter(Axis(1)).any(|c| c == col));
     }
 
-    // 全局打乱（打乱后的形状仍一致，但数据不一致）
+    // 3. 全局打乱（打乱后的形状仍一致，但数据不一致）
     let tensor_shuffle = tensor.shuffle(None);
     assert_eq!(tensor.shape(), tensor_shuffle.shape());
     assert_ne!(tensor.data, tensor_shuffle.data);
-    // 确保没有一行或一列和原来一样的
+    // 3.1 确保没有一行或一列和原来一样的
     assert!(tensor_shuffle
         .data
         .axis_iter(Axis(0))
@@ -350,7 +325,7 @@ fn test_shuffle() {
         .data
         .axis_iter(Axis(1))
         .all(|col| { tensor.data.axis_iter(Axis(1)).all(|r| r != col) }));
-    // 重新排序后则应完全一致
+    // 3.2 重新排序后则应完全一致
     let ordered_tensor = tensor_shuffle.order();
     assert_eq!(tensor, ordered_tensor);
 }
@@ -365,32 +340,32 @@ fn test_shuffle_mut() {
     let shape = &[6, 6];
     let tensor = Tensor::new(data, shape);
 
-    // 仅打乱第一个维度（打乱后的形状仍一致，但数据不一致）
+    // 1. 仅打乱第一个维度（打乱后的形状仍一致，但数据不一致）
     let mut tensor_shuffle_row = Tensor::new(data, shape);
     tensor_shuffle_row.shuffle_mut(Some(0));
     assert_eq!(tensor.shape(), tensor_shuffle_row.shape());
     assert_ne!(tensor.data, tensor_shuffle_row.data);
-    // 虽然打乱后整体数据是不一致的，但是该张量每行的数据总是能在另一个张量中的某行找到完全一致的数据
+    // 1.1 虽然打乱后整体数据是不一致的，但是该张量每行的数据总是能在另一个张量中的某行找到完全一致的数据
     for row in tensor_shuffle_row.data.axis_iter(Axis(0)) {
         assert!(tensor.data.axis_iter(Axis(0)).any(|r| r == row));
     }
 
-    // 仅打乱第二个维度（打乱后的形状仍一致，但数据不一致）
+    // 2. 仅打乱第二个维度（打乱后的形状仍一致，但数据不一致）
     let mut tensor_shuffle_col = Tensor::new(data, shape);
     tensor_shuffle_col.shuffle_mut(Some(1));
     assert_eq!(tensor.shape(), tensor_shuffle_col.shape());
     assert_ne!(tensor.data, tensor_shuffle_col.data);
-    // 虽然打乱后整体数据是不一致的，但是该张量每列的数据总是能在另一个张量中的某行找到完全一致的数据
+    // 2.1 虽然打乱后整体数据是不一致的，但是该张量每列的数据总是能在另一个张量中的某行找到完全一致的数据
     for row in tensor_shuffle_col.data.axis_iter(Axis(1)) {
         assert!(tensor.data.axis_iter(Axis(1)).any(|r| r == row));
     }
 
-    // 全局打乱（打乱后的形状仍一致，但数据不一致）
+    // 3. 全局打乱（打乱后的形状仍一致，但数据不一致）
     let mut tensor_shuffle = Tensor::new(data, shape);
     tensor_shuffle.shuffle_mut(None);
     assert_eq!(tensor.shape(), tensor_shuffle.shape());
     assert_ne!(tensor.data, tensor_shuffle.data);
-    // 确保没有一行或一列和原来一样的
+    // 3.1 确保没有一行或一列和原来一样的
     assert!(tensor_shuffle
         .data
         .axis_iter(Axis(0))
@@ -400,7 +375,7 @@ fn test_shuffle_mut() {
         .axis_iter(Axis(1))
         .all(|col| { tensor.data.axis_iter(Axis(1)).all(|r| r != col) }));
     let ordered_tensor = tensor_shuffle.order();
-    // 重新排序后则应完全一致
+    // 3.2 重新排序后则应完全一致
     assert_eq!(tensor, ordered_tensor);
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑shuffle↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2023-10-21 03:22:26
  * @LastEditors  : 老董
- * @LastEditTime : 2024-10-25 05:59:15
+ * @LastEditTime : 2025-01-10 07:18:38
  * @Description  : 本模块包含一些常用的张量非四则运算的常用方法，包含转置及一些会改变形状的方法
  */
 
@@ -16,9 +16,9 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 impl From<f32> for Tensor {
-    /// 实现 From<f32> trait 用于将`f32`类型转换为形状为`[1]`的张量
+    /// 实现 From<f32> trait 用于将`f32`类型转换为形状为`[1,1]`的张量
     fn from(scalar: f32) -> Self {
-        Self::new(&[scalar], &[1])
+        Self::new(&[scalar], &[1, 1])
     }
 }
 
@@ -34,31 +34,98 @@ impl DotSum<Tensor> for f32 {
     }
 }
 
+// 为了同时支持Tensor和f32，定义一个trait
+pub trait TensorType {
+    fn is_tensor() -> bool;
+}
+
+// 为 Tensor 实现这个 trait
+impl TensorType for Tensor {
+    fn is_tensor() -> bool {
+        true
+    }
+}
+
+// 为 f32实现这个 trait
+impl TensorType for f32 {
+    fn is_tensor() -> bool {
+        false
+    }
+}
+
+// 为Tensor引用类型实现这个 trait
+impl<'a> TensorType for &'a Tensor {
+    fn is_tensor() -> bool {
+        true
+    }
+}
+
+// 为f32引用类型实现这个 trait
+impl<'a> TensorType for &'a f32 {
+    fn is_tensor() -> bool {
+        false
+    }
+}
+
+// 为Tensor引用类型实现 Into<Tensor> trait
+impl<'a> From<&'a Tensor> for Tensor {
+    fn from(tensor: &'a Tensor) -> Self {
+        tensor.clone()
+    }
+}
+
+// 为f32引用类型实现 Into<Tensor> trait
+impl<'a> From<&'a f32> for Tensor {
+    fn from(scalar: &'a f32) -> Self {
+        Self::new(&[*scalar], &[1, 1])
+    }
+}
+
 impl Tensor {
-    /// 对张量中的所有元素求和并返回一个形状为[1]的标量。
+    /// 对张量中的所有元素求和并返回一个形状为[1,1]的张量。
     pub fn sum(&self) -> Self {
         let mut value = 0.;
         Zip::from(&self.data).for_each(|a| value += a);
-        Self::from(value)
+        Self::new(&[value], &[1, 1])
     }
 
-    /// 对两个张量(或其中一个是标量或纯数)进行逐元素相乘，然后对结果求和，并返回一个形状为[1]的标量。
-    /// 这里`dot_sum`（点积和）的概念拓展自线性代数中向量内积的概念，但适用性更广---
-    /// 这里只需保证两个张量的形状严格一致，或其中一个张量为标量即可运算
-    /// 参考：https://www.jianshu.com/p/9165e3264ced
-    pub fn dot_sum<T: Into<Self>>(&self, other: T) -> Self {
-        let other = other.into();
-        assert!(
-            !(!self.is_same_shape(&other) && !self.is_scalar() && !other.is_scalar()),
-            "{}",
-            TensorError::OperatorError {
-                operator: Operator::DotSum,
-                tensor1_shape: self.shape().to_vec(),
-                tensor2_shape: other.shape().to_vec(),
+    /// 对两个操作数进行逐元素相乘后求和，返回形状为[1,1]的张量。
+    ///
+    /// 计算步骤：
+    /// 1. 如果输入是纯数，将其广播到self的每个元素
+    /// 2. 如果输入是张量，检查形状是否一致
+    /// 3. 对两个张量进行逐元素相乘
+    /// 4. 对乘积结果中的所有元素求和
+    /// 5. 返回形状为[1,1]的结果张量
+    ///
+    /// # Panics
+    ///
+    /// 当输入是张量且形状与self不一致时会触发panic
+    pub fn dot_sum<T>(&self, other: T) -> Self
+    where
+        T: Into<Self> + TensorType,
+    {
+        let product_tensor = if T::is_tensor() {
+            // 如果输入是张量类型，直接检查形状
+            let other = other.into();
+            if !self.is_same_shape(&other) {
+                panic!(
+                    "{}",
+                    TensorError::OperatorError {
+                        operator: Operator::DotSum,
+                        tensor1_shape: self.shape().to_vec(),
+                        tensor2_shape: other.shape().to_vec(),
+                    }
+                );
             }
-        );
+            self * other
+        } else {
+            // 如果输入是纯数（f32），直接将其广播到self的每个元素
+            let scalar = other.into(); // 转换为形状为[1,1]的张量
+            let scalar_value = scalar.get_data_number().unwrap(); // 获取标量值
+            self * scalar_value // 直接用标量值进行乘法运算
+        };
 
-        let product_tensor = self.clone() * other;
         product_tensor.sum()
     }
 
