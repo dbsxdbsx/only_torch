@@ -1,12 +1,12 @@
 ## 这是啥？
 
-一个用纯Rust（不想用C++）打造的仿Pytorch的玩具型AI框架（目前尚不成熟，请勿使用）。该项目不打算支持GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非CPU设备。但可能会加入NEAT等网络进化的算法。
+一个用纯Rust（不用C++）打造的仿Pytorch的玩具型AI框架（目前尚不成熟，请勿使用）。该项目不打算支持GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非CPU设备。但可能会加入NEAT等网络进化的算法。
 
 ### 名字由来
 
 一部分原因是受到pytorch的影响，希望能写个和pytorch一样甚至更易用的AI框架；另一部分是希望本框架只触及（touch）一些关键的东西：
 
-- only torch Rust --- 只用Rust（不用C++是因为其在复杂逻辑项目中容易写出内存不安全代码，也不打算支持Python接口）；也不用第三方lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
+- only torch Rust --- 只用Rust（不用C++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不打算支持Python接口）；亦不用第三方lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
 - only torch CPU --- 不用GPU，因要照顾多平台也不想被某个GPU厂商制约，且基于NEAT进化的网络结构也不太好被GPU优化（也省得考虑数据从CPU的堆栈迁移到其他设备内存的开销问题了）。
 - only torch node --- 没有全连接、卷积、resnet这类先入为主的算子概念，具体模型结构均基于NEAT进化。
 - only torch tensor --- 所有的数据类型都是内置类型tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/Rust-numpy)，[array](https://doc.Rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于blas的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
@@ -21,15 +21,17 @@
 （无）
 
 ## TODO
-- 各种assign类的op（如：add_assign）是否需要重载而不是复用基本算子？
-- ada_line还是有问题
+- pass-id实现后：`test_variable_node_initialization_and_set_value_for_forward_count_mechanism`和`test_reset_graph_forward_cnt_for_forward_count_mechanism`和`fn test_a_complete_case_for_forward_count_mechanism()`删除
 - graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
-- 尝试添加add节点的测试，然后再统一优化Variable节点和Add节点的布局？
-- 除了Variable节点，其他节点须遵循`tests\calc_jacobi_by_pytorch`的测试
-- Graph测试中该包含各种pub method的正确及错误测试，如何set_node_trainable，is_node_trainable...
+- 针对`loss1.backward(retain_graph=True)`和`detach()`还有多output输出，多次backward的问题；
+- ada_line还是有问题
+
 - 对比Node_variable和Graph的测试，看看如何优化精简Graph的测试
+- Graph测试中该包含各种pub method的正确及错误测试
 - Graph测试中最好添加某个节点后，测试该节点还有其父节点的parents/children属性（又比如：同2个节点用于不同图的add节点，测试其parents/children属性是否正确）(Variable 节点无父节点)、“节点var1在图default_graph中重复”
 - add a `graph` for unit test to test the 多层的jacobi计算，就像ada_line那样?
+
+- 各种assign类的op（如：add_assign）是否需要重载而不是复用基本算子？
 
 - 在python中仿造ada_Line构造一个复合多节点，然后基于此在rust中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
 - jacobi到底该测试对parent还是children？
@@ -44,21 +46,18 @@
 - unit test for Graph, and parent/children
 - unit test for each current module methods
 - check other unused methods
-- draw_graph(graphvi画图)
+- draw_graph(graphvis画图)
 - save/load网络模型（已有test_save_load_tensor）
 - 后期当NEAT，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
 - 当后期（NEAT阶段）需要在一个已经forwarded的图中添加节点（如将已经被使用过的var1、var2结合一个新的未使用的var3构建一个add节点），可能需要添加一个`reset_forward_cnt`方法来保证图forward的一致性。
 - NEAT之后，针对图backward的`loss1.backward(retain_graph=True)`和`detach()`机制的实现（可在GAN和强化学习算法实例中针对性实现测试），可能须和`forward_cnt`机制结合, 还要考虑一次forward后多次backward()后的结果。
 - Tensor 真的需要uninit吗？
-- 各种命名规范“2维”，“二维”，“二阶”，“2阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”，”dim/dimension/rank“,"维/阶"
+- 各种命名规范“2维”，“二维”，“二阶”，“2阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”，”dim/dimension/rank“,"维/阶",","改为", ","仍然"改为”仍“
 -
 - 根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，，容易添加edge(如已存在的add节点的父节点)，。
 - 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - 图错误“InvalidOperation” vs “ComputationError”
 - `parent.borrow_mut()`或`.children_mut()`改变后如何保证其matrix形状是合法的该节点运算后matrix?
-- `fn as_node_enum(&self) -> NodeEnum {
-        NodeEnum::Step(self.clone())
-    }`会否影响计算图graph？
 - Tensorlei的index将`[[`优化成`[`?
 - Tensor类的`slice(&[0..m, j..j+1])`是否需要？
 - `children_mut`是否可合并至`children()`? and `value_mut`是否可合并至`value`?

@@ -1,5 +1,5 @@
 use super::super::graph::GraphError;
-use super::raw_node::{Add, MatMul, PerceptionLoss, Step, Variable};
+use super::raw_node::{Add, Input, MatMul, Parameter, PerceptionLoss, Step};
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
 
@@ -61,14 +61,6 @@ impl NodeHandle {
         self.raw_node.name()
     }
 
-    pub(in crate::nn) fn is_trainable(&self) -> bool {
-        self.raw_node.is_trainable()
-    }
-
-    pub(in crate::nn) fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
-        self.raw_node.set_trainable(trainable)
-    }
-
     pub(in crate::nn) fn is_inited(&self) -> bool {
         self.raw_node.is_inited()
     }
@@ -96,44 +88,36 @@ impl NodeHandle {
         self.raw_node.clear_jacobi()
     }
 
-    pub(in crate::nn) fn new_variable(
-        shape: &[usize],
-        init: bool,
-        trainable: bool,
-    ) -> Result<Self, GraphError> {
-        let variable = Variable::new(shape, init, trainable)?;
+    pub(in crate::nn) fn new_input(shape: &[usize]) -> Result<Self, GraphError> {
+        let input = Input::new(shape)?;
         Ok(Self {
-            raw_node: NodeType::Variable(variable),
+            raw_node: NodeType::Input(input),
             forward_cnt: 0,
         })
     }
 
-    pub(in crate::nn) fn new_add(
-        parents: &[&NodeHandle],
-        trainable: bool,
-    ) -> Result<Self, GraphError> {
-        Self::new(Add::new(parents, trainable)?)
+    pub(in crate::nn) fn new_parameter(shape: &[usize]) -> Result<Self, GraphError> {
+        let parameter = Parameter::new(shape)?;
+        Ok(Self {
+            raw_node: NodeType::Parameter(parameter),
+            forward_cnt: 0,
+        })
     }
 
-    pub(in crate::nn) fn new_mat_mul(
-        parents: &[&NodeHandle],
-        trainable: bool,
-    ) -> Result<Self, GraphError> {
-        Self::new(MatMul::new(parents, trainable)?)
+    pub(in crate::nn) fn new_add(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        Self::new(Add::new(parents)?)
     }
 
-    pub(in crate::nn) fn new_step(
-        parents: &[&NodeHandle],
-        trainable: bool,
-    ) -> Result<Self, GraphError> {
-        Self::new(Step::new(parents, trainable)?)
+    pub(in crate::nn) fn new_mat_mul(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        Self::new(MatMul::new(parents)?)
     }
 
-    pub(in crate::nn) fn new_perception_loss(
-        parents: &[&NodeHandle],
-        trainable: bool,
-    ) -> Result<Self, GraphError> {
-        Self::new(PerceptionLoss::new(parents, trainable)?)
+    pub(in crate::nn) fn new_step(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        Self::new(Step::new(parents)?)
+    }
+
+    pub(in crate::nn) fn new_perception_loss(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        Self::new(PerceptionLoss::new(parents)?)
     }
 
     pub(in crate::nn) fn calc_value_by_parents(

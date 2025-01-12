@@ -3,7 +3,7 @@
  * @Date         : 2024-10-24 09:18:44
  * @Description  : 自适应线性神经元（Adaptive Linear Neuron，ADALINE）网络测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch02/adaline.py
  * @LastEditors  : 老董
- * @LastEditTime : 2024-12-21 16:07:56
+ * @LastEditTime : 2025-01-11 17:56:28
  */
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
@@ -40,22 +40,22 @@ fn test_adaline() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
     // 构造计算图：输入向量，是一个3x1矩阵，不需要初始化，不参与训练
-    let x = graph.new_variable_node(&[3, 1], false, false, Some("x"))?;
+    let x = graph.new_input_node(&[3, 1], Some("x"))?;
     // 类别标签，1男，-1女
-    let label = graph.new_variable_node(&[1, 1], false, false, Some("label"))?;
+    let label = graph.new_input_node(&[1, 1], Some("label"))?;
     // 权重向量，是一个1x3矩阵，需要初始化，参与训练
-    let w = graph.new_variable_node(&[1, 3], true, true, Some("w"))?;
+    let w = graph.new_parameter_node(&[1, 3], Some("w"))?;
     // 阈值，是一个1x1矩阵，需要初始化，参与训练
-    let b = graph.new_variable_node(&[1, 1], true, true, Some("b"))?;
+    let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
 
     // ADALINE的预测输出
-    let wx = graph.new_mat_mul_node(w, x, None, true)?;
-    let output = graph.new_add_node(&[wx, b], None, true)?;
-    let predict = graph.new_step_node(output, None, true)?;
+    let wx = graph.new_mat_mul_node(w, x, None)?;
+    let output = graph.new_add_node(&[wx, b], None)?;
+    let predict = graph.new_step_node(output, None)?;
 
     // 损失函数
-    let loss_input = graph.new_mat_mul_node(label, output, None, true)?;
-    let loss = graph.new_perception_loss_node(loss_input, None, true)?;
+    let loss_input = graph.new_mat_mul_node(label, output, None)?;
+    let loss = graph.new_perception_loss_node(loss_input, None)?;
 
     // 学习率
     let learning_rate = 0.0001;

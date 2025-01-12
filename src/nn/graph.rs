@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 17:57:13
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-08 13:07:25
+ * @LastEditTime : 2025-01-12 12:21:42
  * @Description  : 神经网络模型的计算图
  */
 
@@ -111,11 +111,14 @@ impl Graph {
     pub fn forward_node(&mut self, node_id: NodeId) -> Result<(), GraphError> {
         // 1. 检查节点类型
         let node = self.get_node(node_id)?;
-        if let NodeType::Variable(_) = node.node_type() {
-            return Err(GraphError::InvalidOperation(format!(
-                "{}是输入节点，其值应通过set_value设置，而不是通过父节点前向传播计算",
-                node
-            )));
+        match node.node_type() {
+            NodeType::Input(_) | NodeType::Parameter(_) => {
+                return Err(GraphError::InvalidOperation(format!(
+                    "{}是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算",
+                    node
+                )));
+            }
+            _ => {}
         }
 
         // 2. 增加前向传播次数
@@ -144,7 +147,7 @@ impl Graph {
         }
 
         // 1.2 检查Variable节点是否在本代已经计算过
-        if let NodeType::Variable(_) = node.node_type() {
+        if let NodeType::Input(_) = node.node_type() {
             return Err(GraphError::InvalidOperation(format!(
                 "{}不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为{}，而图的前向传播次数为{}",
                 node,
@@ -179,23 +182,15 @@ impl Graph {
     /// 反向传播：计算结果节点对本节点的雅可比矩阵
     /// NOTE: 这里的逻辑参考了https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/core/node.py#L83
     pub fn backward_node(&mut self, node_id: NodeId, result_id: NodeId) -> Result<(), GraphError> {
-        // 1. 检查节点是否可训练
-        if !self.is_node_trainable(node_id)? {
-            return Err(GraphError::InvalidOperation(format!(
-                "不能对不可训练的{}进行反向传播",
-                self.get_node(node_id).unwrap()
-            )));
-        }
-
-        // 2. 若已经计算过，则直接返回
-        if self.get_node(node_id)?.jacobi().is_some() {
+        let target_node = self.get_node(node_id)?;
+        // 1. 若已经计算过，则直接返回
+        if target_node.jacobi().is_some() {
             return Ok(());
         }
 
-        // 3. 若节点是结果节点（是自身），则自己对自己的雅可比矩阵为单位矩阵
+        // 2. 若节点是结果节点（是自身），则自己对自己的雅可比矩阵为单位矩阵
         if node_id == result_id {
-            let element_number = self
-                .get_node(node_id)?
+            let element_number = target_node
                 .value()
                 .ok_or_else(|| {
                     let node = self.get_node(node_id).unwrap();
@@ -207,8 +202,8 @@ impl Graph {
             return Ok(());
         }
 
-        // 4. 其他情况的雅可比矩阵计算
-        // 4.1 若节点没有子节点且不是结果节点，则返回错误
+        // 3. 其他情况的雅可比矩阵计算
+        // 3.1 若节点没有子节点且不是结果节点，则返回错误
         let children_ids = self.get_node_children(node_id)?;
         if children_ids.is_empty() {
             return Err(GraphError::InvalidOperation(format!(
@@ -217,7 +212,7 @@ impl Graph {
             )));
         }
 
-        // 4.2 先将雅可比矩阵初始化为零矩阵
+        // 3.2 先将雅可比矩阵初始化为零矩阵
         {
             let (result_dim, node_dim) = {
                 let result_node = self.get_node(result_id)?;
@@ -237,12 +232,12 @@ impl Graph {
             self.get_node_mut(node_id)?.set_jacobi(Some(&zeros))?;
         }
 
-        // 4.3 计算所有子节点的梯度（雅可比矩阵）对当前节点的贡献
+        // 3.3 计算所有子节点的梯度（雅可比矩阵）对当前节点的贡献
         for child_id in children_ids {
-            // 4.3.1 先计算结果节点对子节点的梯度（雅可比矩阵）
+            // 3.3.1 先计算结果节点对子节点的梯度（雅可比矩阵）
             self.backward_node(child_id, result_id)?;
 
-            // 4.3.2 计算子节点对当前节点的梯度（雅可比矩阵）贡献
+            // 3.3.2 计算子节点对当前节点的梯度（雅可比矩阵）贡献
             let contribution = {
                 let child = self.get_node(child_id)?;
 
@@ -267,7 +262,7 @@ impl Graph {
                     .unwrap();
                 child.jacobi().unwrap().mat_mul(&local_jacobi)
             };
-            // 4.3.3 更新当前节点的梯度（雅可比矩阵）
+            // 3.3.3 更新当前节点的梯度（雅可比矩阵）
             {
                 let current = {
                     let node = self.get_node(node_id)?;
@@ -285,7 +280,7 @@ impl Graph {
             }
         }
 
-        // 5. 返回
+        // 4. 返回
         Ok(())
     }
 
@@ -392,14 +387,6 @@ impl Graph {
     pub fn get_node_jacobi_size(&self, id: NodeId) -> Result<Option<usize>, GraphError> {
         Ok(self.get_node(id)?.jacobi().map(|j| j.size()))
     }
-
-    pub fn is_node_trainable(&self, id: NodeId) -> Result<bool, GraphError> {
-        self.get_node(id).map(|node| node.is_trainable())
-    }
-
-    pub fn set_node_trainable(&mut self, id: NodeId, trainable: bool) -> Result<(), GraphError> {
-        self.get_node_mut(id)?.set_trainable(trainable)
-    }
 }
 
 // 图模式相关
@@ -452,27 +439,31 @@ impl Graph {
         Ok(node_id)
     }
 
-    pub fn new_variable_node(
+    pub fn new_input_node(
         &mut self,
         shape: &[usize],
-        init: bool,
-        trainable: bool,
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
-        let mut node = NodeHandle::new_variable(shape, init, trainable)?;
-        if init {
-            node.set_forward_cnt(self.forward_cnt + 1);
-        }
-        self.add_node_to_list(node, name, "variable", &[])
+        let node = NodeHandle::new_input(shape)?;
+        self.add_node_to_list(node, name, "input", &[])
+    }
+
+    pub fn new_parameter_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let mut node = NodeHandle::new_parameter(shape)?;
+        node.set_forward_cnt(self.forward_cnt + 1); // TODO: 这个再弄好pass-id后删除
+        self.add_node_to_list(node, name, "parameter", &[])
     }
 
     pub fn new_add_node(
         &mut self,
         parents: &[NodeId],
         name: Option<&str>,
-        trainable: bool,
     ) -> Result<NodeId, GraphError> {
-        let handle = NodeHandle::new_add(&self.get_nodes(parents)?, trainable)?;
+        let handle = NodeHandle::new_add(&self.get_nodes(parents)?)?;
         self.add_node_to_list(handle, name, "add", parents)
     }
 
@@ -481,10 +472,8 @@ impl Graph {
         left_node_id: NodeId,
         right_node_id: NodeId,
         name: Option<&str>,
-        trainable: bool,
     ) -> Result<NodeId, GraphError> {
-        let handle =
-            NodeHandle::new_mat_mul(&self.get_nodes(&[left_node_id, right_node_id])?, trainable)?;
+        let handle = NodeHandle::new_mat_mul(&self.get_nodes(&[left_node_id, right_node_id])?)?;
         self.add_node_to_list(handle, name, "mat_mul", &[left_node_id, right_node_id])
     }
 
@@ -492,9 +481,8 @@ impl Graph {
         &mut self,
         parent_id: NodeId,
         name: Option<&str>,
-        trainable: bool,
     ) -> Result<NodeId, GraphError> {
-        let handle = NodeHandle::new_step(&self.get_nodes(&[parent_id])?, trainable)?;
+        let handle = NodeHandle::new_step(&self.get_nodes(&[parent_id])?)?;
         self.add_node_to_list(handle, name, "step", &[parent_id])
     }
 
@@ -502,9 +490,8 @@ impl Graph {
         &mut self,
         parent_id: NodeId,
         name: Option<&str>,
-        trainable: bool,
     ) -> Result<NodeId, GraphError> {
-        let handle = NodeHandle::new_perception_loss(&self.get_nodes(&[parent_id])?, trainable)?;
+        let handle = NodeHandle::new_perception_loss(&self.get_nodes(&[parent_id])?)?;
         self.add_node_to_list(handle, name, "perception_loss", &[parent_id])
     }
 }

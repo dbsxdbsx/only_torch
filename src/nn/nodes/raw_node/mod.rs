@@ -1,17 +1,20 @@
+mod input;
 mod loss;
 mod ops;
-mod variable;
+mod parameter;
 
+pub(super) use input::Input;
 pub(super) use loss::*;
 pub(super) use ops::*;
-pub(super) use variable::Variable;
+pub(super) use parameter::Parameter;
 
 use enum_dispatch::enum_dispatch;
 
 #[enum_dispatch]
 #[derive(Clone)]
 pub(in crate::nn) enum NodeType {
-    Variable(Variable),
+    Input(Input),
+    Parameter(Parameter),
     Add(Add),
     MatMul(MatMul),
     Step(Step),
@@ -67,12 +70,6 @@ pub(in crate::nn::nodes) trait TraitNode {
     fn clear_jacobi(&mut self) -> Result<(), GraphError> {
         self.set_jacobi(None)
     }
-
-    /// 返回该节点的参数是否应该在训练过程中被更新
-    fn is_trainable(&self) -> bool;
-
-    /// 设置该节点的参数是否应该在训练过程中被更新
-    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError>;
 
     fn is_inited(&self) -> bool {
         self.value().is_some()

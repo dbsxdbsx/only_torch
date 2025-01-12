@@ -9,13 +9,12 @@ pub(crate) struct MatMul {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
-    trainable: bool,
     shape: Vec<usize>,
     parents_ids: Vec<NodeId>, // 保留这个字段用于雅可比计算，注意元素的存储顺序
 }
 
 impl MatMul {
-    pub(crate) fn new(parents: &[&NodeHandle], trainable: bool) -> Result<Self, GraphError> {
+    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
         // 1. 必要的验证
         // 1.1 父节点数量验证
         if parents.len() != 2 {
@@ -44,7 +43,6 @@ impl MatMul {
             name: None,
             value: None,
             jacobi: None,
-            trainable,
             shape: vec![parent1_shape[0], parent2_shape[1]],
             parents_ids: vec![parents[0].id(), parents[1].id()],
         })
@@ -201,15 +199,6 @@ impl TraitNode for MatMul {
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.map(|j| j.clone());
-        Ok(())
-    }
-
-    fn is_trainable(&self) -> bool {
-        self.trainable
-    }
-
-    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
-        self.trainable = trainable;
         Ok(())
     }
 }

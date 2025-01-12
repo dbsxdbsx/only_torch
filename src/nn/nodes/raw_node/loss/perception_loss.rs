@@ -10,12 +10,11 @@ pub(crate) struct PerceptionLoss {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
-    trainable: bool,
     shape: Vec<usize>,
 }
 
 impl PerceptionLoss {
-    pub(crate) fn new(parents: &[&NodeHandle], trainable: bool) -> Result<Self, GraphError> {
+    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
         // 1. 必要的验证
         // 1.1 父节点数量验证
         if parents.len() != 1 {
@@ -30,7 +29,6 @@ impl PerceptionLoss {
             name: None,
             value: None,
             jacobi: None,
-            trainable,
             shape: parents[0].value_expected_shape().to_vec(),
         })
     }
@@ -102,15 +100,6 @@ impl TraitNode for PerceptionLoss {
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.map(|j| j.clone());
-        Ok(())
-    }
-
-    fn is_trainable(&self) -> bool {
-        self.trainable
-    }
-
-    fn set_trainable(&mut self, trainable: bool) -> Result<(), GraphError> {
-        self.trainable = trainable;
         Ok(())
     }
 }
