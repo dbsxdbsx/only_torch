@@ -3,7 +3,7 @@
  * @Date         : 2024-10-24 09:18:44
  * @Description  : 自适应线性神经元（Adaptive Linear Neuron，ADALINE）网络测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch02/adaline.py
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-12 15:19:23
+ * @LastEditTime : 2025-01-14 16:32:26
  */
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
@@ -112,7 +112,7 @@ fn test_adaline() -> Result<(), GraphError> {
             let v = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
             pred_vec.push(v.get_data_number().unwrap()); // 模型的预测结果：1男，0女
         }
-        let pred = Tensor::new(&pred_vec, &[pred_vec.len()]) * 2.0 - 1.0; // 将1/0结果转化成1/-1结果，好与训练标签的约定一致
+        let pred = Tensor::new(&pred_vec, &[pred_vec.len(), 1]) * 2.0 - 1.0; // 将1/0结果转化成1/-1结果，好与训练标签的约定一致
 
         // 判断预测结果与样本标签相同的数量与训练集总数量之比，即模型预测的正确率
         let train_set_labels = train_set.slice(&[&(..), &3]);
@@ -121,7 +121,12 @@ fn test_adaline() -> Result<(), GraphError> {
         let accuracy = filtered_sum / train_set_len;
 
         // 打印当前epoch数和模型在训练集上的正确率
-        println!("epoch: {}, accuracy: {:.3}", epoch + 1, accuracy);
+        println!(
+            "训练回合: {}, 正确率: {:.1}%",
+            epoch + 1,
+            accuracy.get_data_number().unwrap() * 100.0
+        );
     }
     Ok(())
 }
+
