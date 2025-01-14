@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2023-10-21 03:22:26
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-10 07:18:38
+ * @LastEditTime : 2025-01-13 21:00:38
  * @Description  : 本模块包含一些常用的张量非四则运算的常用方法，包含转置及一些会改变形状的方法
  */
 
@@ -501,10 +501,50 @@ impl Tensor {
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑flatten↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓diag↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    /// 返回一个新的张量：
-    /// - 若输入为方阵，则返回其对角线元素组成的向量
+    /// 返回一个新的张量。输入张量必须是1维或2维，否则会panic。根据输入类型：
+    /// - 若输入为标量，则返回同形状的标量
     /// - 若输入为向量，则返回以该向量为对角线的方阵
+    /// - 若输入为方阵，则返回其对角线元素组成的1维向量
+    /// - 若输入为非方阵，则panic
+    /// 注意：对于仅含一个元素的1维或2维张量，为方便理解，可被视为标量而不是向量或方阵；
+    /// 另外，不同于`numpy`的`diag`, 这里不支持诸如`[2,3]`这样的非标量、向量及方阵的情况
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // 标量情况 (1维)
+    /// let scalar = Tensor::new(&[1.0], &[1]);
+    /// let diag = scalar.diag();
+    /// assert_eq!(diag.shape(), &[1]);
+    ///
+    /// // 标量情况 (2维)
+    /// let scalar = Tensor::new(&[1.0], &[1, 1]);
+    /// let diag = scalar.diag();
+    /// assert_eq!(diag.shape(), &[1, 1]);
+    ///
+    /// // 向量情况
+    /// let vector = Tensor::new(&[1.0, 2.0], &[2]);
+    /// let diag = vector.diag();
+    /// assert_eq!(diag.shape(), &[2, 2]);
+    ///
+    /// // 方阵情况
+    /// let matrix = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    /// let diag = matrix.diag();
+    /// assert_eq!(diag.shape(), &[2]);
+    /// ```
     pub fn diag(&self) -> Self {
+        // 检查维度是否为1或2
+        if self.dimension() == 0 || self.dimension() > 2 {
+            panic!("张量维度必须为1或2");
+        }
+
+        // 处理标量情况
+        if self.size() == 1 {
+            return self.clone();
+        }
+
+        // 处理向量情况
         if self.is_vector() {
             let n = self.size();
             let mut diag_data = vec![0.0; n * n];
@@ -512,26 +552,65 @@ impl Tensor {
             for i in 0..n {
                 diag_data[i * n + i] = data_slice[i];
             }
-            Self {
+            return Self {
                 data: Array::from_shape_vec(IxDyn(&[n, n]), diag_data).unwrap(),
-            }
-        } else {
-            let shape = self.data.shape();
-            assert!(
-                shape.len() == 2 && shape[0] == shape[1],
-                "张量必须是方阵或向量"
-            );
-            let diag_data = self.data.diag().to_owned();
-            let diag_vector =
-                Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
-            Self { data: diag_vector }
+            };
         }
+
+        // 处理方阵情况
+        let shape = self.data.shape();
+        if shape.len() != 2 || shape[0] != shape[1] {
+            panic!("张量必须是标量、向量或方阵");
+        }
+        let diag_data = self.data.diag().to_owned();
+        let diag_vector = Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
+        Self { data: diag_vector }
     }
 
-    /// 就地修改当前张量：
-    /// - 若输入为方阵，则转换为其对角线元素组成的向量
+    /// 就地修改当前张量。输入张量必须是1维或2维，否则会panic。根据输入类型：
+    /// - 若输入为标量，则保持不变
     /// - 若输入为向量，则转换为以该向量为对角线的方阵
+    /// - 若输入为方阵，则转换为其对角线元素组成的1维向量
+    /// - 若输入为非方阵，则panic
+    /// 注意：对于仅含一个元素的1维或2维张量，为方便理解，可被视为标量而不是向量或方阵；
+    /// 另外，不同于`numpy`的`diag`, 这里不支持诸如`[2,3]`这样的非标量、向量及方阵的情况
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // 标量情况 (1维)
+    /// let mut scalar = Tensor::new(&[1.0], &[1]);
+    /// scalar.diag_mut();
+    /// assert_eq!(scalar.shape(), &[1]);
+    ///
+    /// // 标量情况 (2维)
+    /// let mut scalar = Tensor::new(&[1.0], &[1, 1]);
+    /// scalar.diag_mut();
+    /// assert_eq!(scalar.shape(), &[1, 1]);
+    ///
+    /// // 向量情况
+    /// let mut vector = Tensor::new(&[1.0, 2.0], &[2]);
+    /// vector.diag_mut();
+    /// assert_eq!(vector.shape(), &[2, 2]);
+    ///
+    /// // 方阵情况
+    /// let mut matrix = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    /// matrix.diag_mut();
+    /// assert_eq!(matrix.shape(), &[2]);
+    /// ```
     pub fn diag_mut(&mut self) {
+        // 检查维度是否为1或2
+        if self.dimension() == 0 || self.dimension() > 2 {
+            panic!("张量维度必须为1或2");
+        }
+
+        // 处理标量情况
+        if self.size() == 1 {
+            return;
+        }
+
+        // 处理向量情况
         if self.is_vector() {
             let n = self.size();
             let mut diag_data = vec![0.0; n * n];
@@ -540,17 +619,17 @@ impl Tensor {
                 diag_data[i * n + i] = data_slice[i];
             }
             self.data = Array::from_shape_vec(IxDyn(&[n, n]), diag_data).unwrap();
-        } else {
-            let shape = self.data.shape();
-            assert!(
-                shape.len() == 2 && shape[0] == shape[1],
-                "张量必须是方阵或向量"
-            );
-            let diag_data = self.data.diag().to_owned();
-            let diag_vector =
-                Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
-            self.data = diag_vector;
+            return;
         }
+
+        // 处理方阵情况
+        let shape = self.data.shape();
+        if shape.len() != 2 || shape[0] != shape[1] {
+            panic!("张量必须是标量、向量或方阵");
+        }
+        let diag_data = self.data.diag().to_owned();
+        let diag_vector = Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
+        self.data = diag_vector;
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

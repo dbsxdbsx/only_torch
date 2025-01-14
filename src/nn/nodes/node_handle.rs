@@ -8,7 +8,7 @@ use crate::tensor::Tensor;
 pub(in crate::nn) struct NodeHandle {
     raw_node: NodeType,
     /// 节点最后一次计算的前向传播次数
-    forward_cnt: u64,
+    last_forward_pass_id: u64,
 }
 
 impl std::fmt::Display for NodeHandle {
@@ -22,7 +22,7 @@ impl NodeHandle {
         let raw_node = raw_node.into();
         Ok(Self {
             raw_node,
-            forward_cnt: 0,
+            last_forward_pass_id: 0,
         })
     }
 
@@ -92,7 +92,7 @@ impl NodeHandle {
         let input = Input::new(shape)?;
         Ok(Self {
             raw_node: NodeType::Input(input),
-            forward_cnt: 0,
+            last_forward_pass_id: 0,
         })
     }
 
@@ -100,7 +100,7 @@ impl NodeHandle {
         let parameter = Parameter::new(shape)?;
         Ok(Self {
             raw_node: NodeType::Parameter(parameter),
-            forward_cnt: 0,
+            last_forward_pass_id: 0,
         })
     }
 
@@ -145,12 +145,12 @@ impl NodeHandle {
         self.raw_node.value().is_some()
     }
 
-    pub(in crate::nn) fn forward_cnt(&self) -> u64 {
-        self.forward_cnt
+    pub(in crate::nn) fn last_forward_pass_id(&self) -> u64 {
+        self.last_forward_pass_id
     }
 
-    pub(in crate::nn) fn set_forward_cnt(&mut self, cnt: u64) {
-        self.forward_cnt = cnt;
+    pub(in crate::nn) fn set_last_forward_pass_id(&mut self, forward_pass_id: u64) {
+        self.last_forward_pass_id = forward_pass_id;
     }
 }
 

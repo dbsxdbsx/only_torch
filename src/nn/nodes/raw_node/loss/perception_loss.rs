@@ -74,6 +74,8 @@ impl TraitNode for PerceptionLoss {
         self.value.as_ref()
     }
 
+    /// 雅克比矩阵为对角阵，每个对角线元素对应一个父节点元素。若父节点元素大于0，则
+    /// 相应对角线元素（偏导数）为0，否则为-1。
     fn calc_jacobi_to_a_parent(
         &self,
         target_parent: &NodeHandle,
@@ -91,7 +93,14 @@ impl TraitNode for PerceptionLoss {
 
         // 2. 构造对角矩阵作为雅可比矩阵
         let flatten = diag.flatten();
-        Ok(Tensor::diag(&flatten))
+        let diag1 = Tensor::diag(&flatten);
+
+        // 如果是标量（大小为1），返回1x1矩阵
+        if diag1.is_scalar() {
+            let scalar_value = diag1.get_data_number().unwrap();
+            return Ok(scalar_value.into()); // 使用From<f32> trait
+        }
+        Ok(diag1)
     }
 
     fn jacobi(&self) -> Option<&Tensor> {

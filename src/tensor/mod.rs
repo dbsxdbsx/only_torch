@@ -89,15 +89,15 @@ impl Tensor {
     }
 
     /// 创建一个含`n`个对角元素的单位矩阵。
-    /// n必须大于等于2，否则会panic。
+    /// 注：n必须大于0，否则会panic。
     pub fn eyes(n: usize) -> Self {
         assert!(
-            n >= 2,
+            n > 0,
             "{}",
             TensorError::ValueMustSatisfyComparison {
                 value_name: "n".to_string(),
-                operator: ComparisonOperator::GreaterOrEqual,
-                threshold: 2,
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 0,
             }
         );
         let data = Array::eye(n);

@@ -6,14 +6,15 @@ def perception_loss(x):
     return torch.where(x >= 0, torch.zeros_like(x), -x)
 
 # 定义输入矩阵
-x = torch.tensor([[0.5, -1.0], [0.0, 2.0]], requires_grad=True)
+x = torch.tensor([[0.5, -1.0, 1.5], [0.0, -3.0, -2.0]], requires_grad=True)
+element_cnt = x.numel()
 y = perception_loss(x)
 
 # 计算雅可比矩阵
 jacobian = torch.func.jacrev(perception_loss)(x)
 
 # 重塑雅可比矩阵为更直观的形式
-jacobian_reshaped = jacobian.reshape(4, 4)
+jacobian_reshaped = jacobian.reshape(element_cnt, element_cnt)
 
 # 验证结果的正确性
 print("\n验证结果:")

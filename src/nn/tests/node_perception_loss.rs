@@ -173,7 +173,7 @@ fn test_node_perception_loss_backward_propagation() {
     let mut graph = Graph::new();
 
     // 1. 创建一个简单的感知损失图：result = perception_loss(parent)
-    let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();
+    let parent = graph.new_parameter_node(&[2, 3], Some("parent")).unwrap();
     let result = graph
         .new_perception_loss_node(parent, Some("result"))
         .unwrap();
@@ -187,7 +187,7 @@ fn test_node_perception_loss_backward_propagation() {
     );
 
     // 3. 设置输入值 (与Python测试tests\calc_jacobi_by_pytorch\node_perception_loss.py保持一致)
-    let parent_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
+    let parent_value = Tensor::new(&[0.5, -1.0, 1.5, 0.0, -3.0, -2.0], &[2, 3]);
     graph.set_node_value(parent, Some(&parent_value)).unwrap();
 
     // 4. 反向传播前执行必要的前向传播
@@ -201,11 +201,17 @@ fn test_node_perception_loss_backward_propagation() {
     graph.backward_node(parent, result).unwrap();
     let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
     // 验证雅可比矩阵（与Python输出一致）
+    #[rustfmt::skip]
     let expected_jacobi = Tensor::new(
         &[
-            0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, -1.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, -1.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, -1.0
         ],
-        &[4, 4],
+        &[6, 6],
     );
     assert_eq!(parent_jacobi, &expected_jacobi);
 

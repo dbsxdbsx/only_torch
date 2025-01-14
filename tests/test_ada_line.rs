@@ -3,7 +3,7 @@
  * @Date         : 2024-10-24 09:18:44
  * @Description  : 自适应线性神经元（Adaptive Linear Neuron，ADALINE）网络测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch02/adaline.py
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-11 17:56:28
+ * @LastEditTime : 2025-01-12 15:19:23
  */
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
@@ -54,8 +54,8 @@ fn test_adaline() -> Result<(), GraphError> {
     let predict = graph.new_step_node(output, None)?;
 
     // 损失函数
-    let loss_input = graph.new_mat_mul_node(label, output, None)?;
-    let loss = graph.new_perception_loss_node(loss_input, None)?;
+    let loss_input = graph.new_mat_mul_node(label, output, Some("loss_input"))?;
+    let loss = graph.new_perception_loss_node(loss_input, Some("loss"))?;
 
     // 学习率
     let learning_rate = 0.0001;

@@ -993,18 +993,18 @@ fn test_flatten_view() {
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓diag↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_diag() {
-    // 1. 测试方阵 -> 对角向量
-    // 2x2方阵
-    let tensor = Tensor::new(&[1.0, 0.0, 0.0, 2.0], &[2, 2]);
+    // 1. 测试标量 -> 标量 (保持形状不变)
+    // 1维标量
+    let tensor = Tensor::new(&[1.0], &[1]);
     let diag = tensor.diag();
-    assert_eq!(diag.shape(), &[2]);
-    assert_eq!(diag, Tensor::new(&[1.0, 2.0], &[2]));
+    assert_eq!(diag.shape(), &[1]);
+    assert_eq!(diag, Tensor::new(&[1.0], &[1]));
 
-    // 3x3方阵
-    let tensor = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3]);
+    // 2维标量
+    let tensor = Tensor::new(&[1.0], &[1, 1]);
     let diag = tensor.diag();
-    assert_eq!(diag.shape(), &[3]);
-    assert_eq!(diag, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+    assert_eq!(diag.shape(), &[1, 1]);
+    assert_eq!(diag, Tensor::new(&[1.0], &[1, 1]));
 
     // 2. 测试向量 -> 对角方阵
     // 一维向量
@@ -1031,34 +1031,55 @@ fn test_diag() {
         Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3])
     );
 
-    // 3. 测试非法输入
-    // 非方阵
+    // 3. 测试方阵 -> 对角向量
+    // 2x2方阵
+    let tensor = Tensor::new(&[1.0, 0.0, 0.0, 2.0], &[2, 2]);
+    let diag = tensor.diag();
+    assert_eq!(diag.shape(), &[2]);
+    assert_eq!(diag, Tensor::new(&[1.0, 2.0], &[2]));
+
+    // 3x3方阵
+    let tensor = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3]);
+    let diag = tensor.diag();
+    assert_eq!(diag.shape(), &[3]);
+    assert_eq!(diag, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+
+    // 4. 测试非法输入
+    // 0维标量
+    let tensor = Tensor::new(&[1.0], &[]);
+    assert_panic!(tensor.diag(), "张量维度必须为1或2");
+
+    // 非方阵 (2x3)
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    assert_panic!(tensor.diag(), "张量必须是方阵或向量");
+    assert_panic!(tensor.diag(), "张量必须是标量、向量或方阵");
+
+    // 非方阵 (3x2)
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    assert_panic!(tensor.diag(), "张量必须是标量、向量或方阵");
 
     // 三维张量
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2, 1]);
-    assert_panic!(tensor.diag(), "张量必须是方阵或向量");
+    assert_panic!(tensor.diag(), "张量维度必须为1或2");
 
-    // 标量
-    let tensor = Tensor::new(&[1.0], &[1]);
-    assert_panic!(tensor.diag(), "张量必须是方阵或向量");
+    // 四维张量
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 2, 2, 1]);
+    assert_panic!(tensor.diag(), "张量维度必须为1或2");
 }
 
 #[test]
 fn test_diag_mut() {
-    // 1. 测试方阵 -> 对角向量
-    // 2x2方阵
-    let mut tensor = Tensor::new(&[1.0, 0.0, 0.0, 2.0], &[2, 2]);
+    // 1. 测试标量 -> 标量 (保持形状不变)
+    // 1维标量
+    let mut tensor = Tensor::new(&[1.0], &[1]);
     tensor.diag_mut();
-    assert_eq!(tensor.shape(), &[2]);
-    assert_eq!(tensor, Tensor::new(&[1.0, 2.0], &[2]));
+    assert_eq!(tensor.shape(), &[1]);
+    assert_eq!(tensor, Tensor::new(&[1.0], &[1]));
 
-    // 3x3方阵
-    let mut tensor = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3]);
+    // 2维标量
+    let mut tensor = Tensor::new(&[1.0], &[1, 1]);
     tensor.diag_mut();
-    assert_eq!(tensor.shape(), &[3]);
-    assert_eq!(tensor, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+    assert_eq!(tensor.shape(), &[1, 1]);
+    assert_eq!(tensor, Tensor::new(&[1.0], &[1, 1]));
 
     // 2. 测试向量 -> 对角方阵
     // 一维向量
@@ -1085,17 +1106,38 @@ fn test_diag_mut() {
         Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3])
     );
 
-    // 3. 测试非法输入
-    // 非方阵
+    // 3. 测试方阵 -> 对角向量
+    // 2x2方阵
+    let mut tensor = Tensor::new(&[1.0, 0.0, 0.0, 2.0], &[2, 2]);
+    tensor.diag_mut();
+    assert_eq!(tensor.shape(), &[2]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 2.0], &[2]));
+
+    // 3x3方阵
+    let mut tensor = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0], &[3, 3]);
+    tensor.diag_mut();
+    assert_eq!(tensor.shape(), &[3]);
+    assert_eq!(tensor, Tensor::new(&[1.0, 2.0, 3.0], &[3]));
+
+    // 4. 测试非法输入
+    // 0维标量
+    let mut tensor = Tensor::new(&[1.0], &[]);
+    assert_panic!(tensor.diag_mut(), "张量维度必须为1或2");
+
+    // 非方阵 (2x3)
     let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    assert_panic!(tensor.diag_mut(), "张量必须是方阵或向量");
+    assert_panic!(tensor.diag_mut(), "张量必须是标量、向量或方阵");
+
+    // 非方阵 (3x2)
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    assert_panic!(tensor.diag_mut(), "张量必须是标量、向量或方阵");
 
     // 三维张量
     let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2, 1]);
-    assert_panic!(tensor.diag_mut(), "张量必须是方阵或向量");
+    assert_panic!(tensor.diag_mut(), "张量维度必须为1或2");
 
-    // 标量
-    let mut tensor = Tensor::new(&[1.0], &[1]);
-    assert_panic!(tensor.diag_mut(), "张量必须是方阵或向量");
+    // 四维张量
+    let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 2, 2, 1]);
+    assert_panic!(tensor.diag_mut(), "张量维度必须为1或2");
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

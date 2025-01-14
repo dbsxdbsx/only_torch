@@ -155,6 +155,7 @@ fn test_new_zero() {
 #[test]
 fn test_new_eye() {
     let test_cases = vec![
+        (1, vec![1.]),
         (2, vec![1., 0., 0., 1.]),
         (3, vec![1., 0., 0., 0., 1., 0., 0., 0., 1.]),
         (
@@ -177,7 +178,6 @@ fn test_new_eye() {
 #[test]
 fn test_new_eye_with_invalid_diagonal_size() {
     assert_panic!(Tensor::eyes(0));
-    assert_panic!(Tensor::eyes(1));
 }
 
 #[test]
