@@ -9,6 +9,8 @@ pub(in crate::nn) struct NodeHandle {
     raw_node: NodeType,
     /// 节点最后一次计算的前向传播次数
     last_forward_pass_id: u64,
+    /// 节点最后一次计算的反向传播次数
+    last_backward_pass_id: u64,
 }
 
 impl std::fmt::Display for NodeHandle {
@@ -23,6 +25,7 @@ impl NodeHandle {
         Ok(Self {
             raw_node,
             last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
         })
     }
 
@@ -93,6 +96,7 @@ impl NodeHandle {
         Ok(Self {
             raw_node: NodeType::Input(input),
             last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
         })
     }
 
@@ -101,6 +105,7 @@ impl NodeHandle {
         Ok(Self {
             raw_node: NodeType::Parameter(parameter),
             last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
         })
     }
 
@@ -151,6 +156,14 @@ impl NodeHandle {
 
     pub(in crate::nn) fn set_last_forward_pass_id(&mut self, forward_pass_id: u64) {
         self.last_forward_pass_id = forward_pass_id;
+    }
+
+    pub(in crate::nn) fn last_backward_pass_id(&self) -> u64 {
+        self.last_backward_pass_id
+    }
+
+    pub(in crate::nn) fn set_last_backward_pass_id(&mut self, backward_pass_id: u64) {
+        self.last_backward_pass_id = backward_pass_id;
     }
 }
 

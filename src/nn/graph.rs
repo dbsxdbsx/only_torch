@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 17:57:13
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-14 16:13:53
+ * @LastEditTime : 2025-01-15 08:23:55
  * @Description  : 神经网络模型的计算图
  */
 
@@ -21,6 +21,8 @@ pub struct Graph {
     backward_edges: HashMap<NodeId, Vec<NodeId>>,
     /// 最后一次前向传播的id
     last_forward_pass_id: u64,
+    /// 最后一次反向传播的id
+    last_backward_pass_id: u64,
     next_id: u64,
     is_eval_mode: bool,
 }
@@ -29,6 +31,10 @@ impl Graph {
     #[cfg(test)]
     pub(in crate::nn) fn last_forward_pass_id(&self) -> u64 {
         self.last_forward_pass_id
+    }
+
+    pub(in crate::nn) fn last_backward_pass_id(&self) -> u64 {
+        self.last_backward_pass_id
     }
 
     fn check_duplicate_node_name(&self, name: &str) -> Result<(), GraphError> {
@@ -76,6 +82,7 @@ impl Graph {
             forward_edges: HashMap::new(),
             backward_edges: HashMap::new(),
             last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
             next_id: 0,
             is_eval_mode: false,
         }
@@ -115,7 +122,7 @@ impl Graph {
 
         // 3. 通过内部方法执行完整的前向传播
         self.forward_node_internal(node_id).map_err(|e| {
-            // 如果出错则回滚forward_pass_id
+            // 如果出错则回滚last_forward_pass_id
             self.last_forward_pass_id -= 1;
             e
         })
@@ -180,11 +187,29 @@ impl Graph {
     /// 反向传播：计算结果节点对本节点的雅可比矩阵
     /// NOTE: 这里的逻辑参考了https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/core/node.py#L83
     pub fn backward_node(&mut self, node_id: NodeId, result_id: NodeId) -> Result<(), GraphError> {
+        // 1. 为图本次的反向传播设置新id
+        self.last_backward_pass_id += 1;
+
+        // 2. 通过内部方法执行完整的反向传播
+        self.backward_node_internal(node_id, result_id)
+            .map_err(|e| {
+                // 如果出错则回滚last_backward_pass_id
+                self.last_backward_pass_id -= 1;
+                e
+            })
+    }
+
+    // 反向传播的内部实现
+    fn backward_node_internal(
+        &mut self,
+        node_id: NodeId,
+        result_id: NodeId,
+    ) -> Result<(), GraphError> {
+        let graph_backward_pass_id = self.last_backward_pass_id;
         let target_node = self.get_node(node_id)?;
-        let result_node = self.get_node(result_id)?;
-        // println!("反向传播：{} -> {}", target_node, result_node);
-        // 1. 若已经计算过，则直接返回
-        if target_node.jacobi().is_some() {
+
+        // 1. 若已经在本次反向传播中计算过，则直接返回
+        if target_node.last_backward_pass_id() == graph_backward_pass_id {
             return Ok(());
         }
 
@@ -199,6 +224,9 @@ impl Graph {
                 .size();
             let eye = Tensor::eyes(element_number);
             self.get_node_mut(node_id)?.set_jacobi(Some(&eye))?;
+            // 更新节点的反向传播次数
+            self.get_node_mut(node_id)?
+                .set_last_backward_pass_id(graph_backward_pass_id);
             return Ok(());
         }
 
@@ -213,6 +241,7 @@ impl Graph {
         }
 
         // 3.2 先将雅可比矩阵初始化为零矩阵
+        let result_node = self.get_node(result_id)?;
         {
             let (result_dim, node_dim) = {
                 let node = self.get_node(node_id)?;
@@ -238,7 +267,7 @@ impl Graph {
                 continue;
             }
             // 3.3.1 先计算结果节点对子节点的梯度（雅可比矩阵）
-            self.backward_node(child_id, result_id)?;
+            self.backward_node_internal(child_id, result_id)?;
 
             // 3.3.2 计算子节点对当前节点的梯度（雅可比矩阵）贡献
             let contribution = {
@@ -284,7 +313,11 @@ impl Graph {
             }
         }
 
-        // 4. 返回
+        // 4. 更新节点的反向传播次数
+        self.get_node_mut(node_id)?
+            .set_last_backward_pass_id(graph_backward_pass_id);
+
+        // 5. 返回
         Ok(())
     }
 

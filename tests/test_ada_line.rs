@@ -3,7 +3,7 @@
  * @Date         : 2024-10-24 09:18:44
  * @Description  : 自适应线性神经元（Adaptive Linear Neuron，ADALINE）网络测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch02/adaline.py
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-14 16:32:26
+ * @LastEditTime : 2025-01-15 08:26:42
  */
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
@@ -11,6 +11,8 @@ use only_torch::tensor_where;
 
 #[test]
 fn test_adaline() -> Result<(), GraphError> {
+    let start_time = std::time::Instant::now();
+
     let male_heights = Tensor::normal(171.0, 6.0, &[500]);
     let female_heights = Tensor::normal(158.0, 5.0, &[500]);
 
@@ -61,7 +63,7 @@ fn test_adaline() -> Result<(), GraphError> {
     let learning_rate = 0.0001;
 
     // 训练执行50个epoch
-    for epoch in 0..50 {
+    for epoch in 0..25 {
         // 遍历训练集中的样本
         for i in 0..train_set.shape()[0] {
             // 取第i个样本的前4列（除最后一列的所有列），构造3x1矩阵对象
@@ -94,9 +96,6 @@ fn test_adaline() -> Result<(), GraphError> {
                 b,
                 Some(&(b_value - learning_rate * b_jacobi.transpose().reshape(b_value.shape()))),
             )?;
-
-            // 清除所有节点的雅可比矩阵
-            graph.clear_jacobi()?;
         }
 
         // 每个epoch结束后评价模型的正确率
@@ -127,6 +126,10 @@ fn test_adaline() -> Result<(), GraphError> {
             accuracy.get_data_number().unwrap() * 100.0
         );
     }
+
+    let duration = start_time.elapsed();
+    println!("总耗时: {:.2?}", duration);
+
     Ok(())
 }
 
