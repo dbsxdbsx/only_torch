@@ -176,7 +176,7 @@ fn test_node_parameter_backward_propagation() {
     assert!(graph.get_node_jacobi(param).unwrap().is_none());
 
     // 2. 对自身的反向传播（应生成单位矩阵）
-    graph.backward_node(param, param).unwrap();
+    graph.backward_nodes(&[param], param).unwrap();
     assert_eq!(
         graph.get_node_jacobi(param).unwrap().unwrap(),
         &Tensor::eyes(4)
@@ -189,7 +189,7 @@ fn test_node_parameter_backward_propagation() {
     // 4. 清除值(未初始化)后对自身的反向传播（应失败）
     graph.set_node_value(param, None).unwrap();
     assert_eq!(
-        graph.backward_node(param, param),
+        graph.backward_nodes(&[param], param),
         Err(GraphError::ComputationError(
             "反向传播：节点[id=1, name=param, type=Parameter]没有值".to_string()
         ))
@@ -200,7 +200,7 @@ fn test_node_parameter_backward_propagation() {
         .new_parameter_node(&[2, 2], Some("other_param"))
         .unwrap();
     assert_eq!(
-        graph.backward_node(param, other_param),
+        graph.backward_nodes(&[param], other_param),
         Err(GraphError::InvalidOperation(
             "无法对没有子节点的节点[id=1, name=param, type=Parameter]进行反向传播".to_string()
         ))

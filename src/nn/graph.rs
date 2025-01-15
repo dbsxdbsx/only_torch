@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 17:57:13
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-15 08:23:55
+ * @LastEditTime : 2025-01-15 11:43:32
  * @Description  : 神经网络模型的计算图
  */
 
@@ -186,27 +186,36 @@ impl Graph {
 
     /// 反向传播：计算结果节点对本节点的雅可比矩阵
     /// NOTE: 这里的逻辑参考了https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/core/node.py#L83
-    pub fn backward_node(&mut self, node_id: NodeId, result_id: NodeId) -> Result<(), GraphError> {
+    pub fn backward_nodes(
+        &mut self,
+        target_nodes: &[NodeId],
+        result_id: NodeId,
+    ) -> Result<(), GraphError> {
         // 1. 为图本次的反向传播设置新id
         self.last_backward_pass_id += 1;
+        let graph_backward_pass_id = self.last_backward_pass_id;
 
-        // 2. 通过内部方法执行完整的反向传播
-        self.backward_node_internal(node_id, result_id)
-            .map_err(|e| {
-                // 如果出错则回滚last_backward_pass_id
-                self.last_backward_pass_id -= 1;
-                e
-            })
+        // 2. 对每个目标节点执行反向传播
+        for &target_id in target_nodes {
+            self.backward_node_internal(target_id, result_id)
+                .map_err(|e| {
+                    // 如果出错则回滚backward_pass_id
+                    self.last_backward_pass_id = graph_backward_pass_id - 1;
+                    e
+                })?;
+        }
+
+        Ok(())
     }
 
     // 反向传播的内部实现
     fn backward_node_internal(
         &mut self,
-        node_id: NodeId,
-        result_id: NodeId,
+        target_node_id: NodeId,
+        result_node_id: NodeId,
     ) -> Result<(), GraphError> {
         let graph_backward_pass_id = self.last_backward_pass_id;
-        let target_node = self.get_node(node_id)?;
+        let target_node = self.get_node(target_node_id)?;
 
         // 1. 若已经在本次反向传播中计算过，则直接返回
         if target_node.last_backward_pass_id() == graph_backward_pass_id {
@@ -214,37 +223,37 @@ impl Graph {
         }
 
         // 2. 若节点是结果节点（是自身），则自己对自己的雅可比矩阵为单位矩阵
-        if node_id == result_id {
+        if target_node_id == result_node_id {
             let element_number = target_node
                 .value()
                 .ok_or_else(|| {
-                    let node = self.get_node(node_id).unwrap();
+                    let node = self.get_node(target_node_id).unwrap();
                     GraphError::ComputationError(format!("反向传播：{}没有值", node))
                 })?
                 .size();
             let eye = Tensor::eyes(element_number);
-            self.get_node_mut(node_id)?.set_jacobi(Some(&eye))?;
+            self.get_node_mut(target_node_id)?.set_jacobi(Some(&eye))?;
             // 更新节点的反向传播次数
-            self.get_node_mut(node_id)?
+            self.get_node_mut(target_node_id)?
                 .set_last_backward_pass_id(graph_backward_pass_id);
             return Ok(());
         }
 
         // 3. 其他情况的雅可比矩阵计算
         // 3.1 若节点没有子节点且不是结果节点，则返回错误
-        let children_ids = self.get_node_children(node_id)?;
+        let children_ids = self.get_node_children(target_node_id)?;
         if children_ids.is_empty() {
             return Err(GraphError::InvalidOperation(format!(
                 "无法对没有子节点的{}进行反向传播",
-                self.get_node(node_id).unwrap()
+                self.get_node(target_node_id).unwrap()
             )));
         }
 
         // 3.2 先将雅可比矩阵初始化为零矩阵
-        let result_node = self.get_node(result_id)?;
+        let result_node = self.get_node(result_node_id)?;
         {
             let (result_dim, node_dim) = {
-                let node = self.get_node(node_id)?;
+                let node = self.get_node(target_node_id)?;
                 (
                     result_node.value().map(|v| v.size()).ok_or_else(|| {
                         GraphError::ComputationError(format!("反向传播：结果{}没有值", result_node))
@@ -255,7 +264,8 @@ impl Graph {
                 )
             };
             let zeros = Tensor::zeros(&[result_dim, node_dim]);
-            self.get_node_mut(node_id)?.set_jacobi(Some(&zeros))?;
+            self.get_node_mut(target_node_id)?
+                .set_jacobi(Some(&zeros))?;
         }
 
         // 3.3 计算所有子节点的梯度（雅可比矩阵）对当前节点的贡献
@@ -267,7 +277,7 @@ impl Graph {
                 continue;
             }
             // 3.3.1 先计算结果节点对子节点的梯度（雅可比矩阵）
-            self.backward_node_internal(child_id, result_id)?;
+            self.backward_node_internal(child_id, result_node_id)?;
 
             // 3.3.2 计算子节点对当前节点的梯度（雅可比矩阵）贡献
             let contribution = {
@@ -278,8 +288,10 @@ impl Graph {
                     NodeType::MatMul(_) => {
                         // 找到另一个父节点
                         let parents = self.get_node_parents(child_id)?;
-                        let other_parent_id =
-                            parents.iter().find(|&&id| id != node_id).ok_or_else(|| {
+                        let other_parent_id = parents
+                            .iter()
+                            .find(|&&id| id != target_node_id)
+                            .ok_or_else(|| {
                                 GraphError::ComputationError(
                                     "MatMul节点缺少另一个父节点".to_string(),
                                 )
@@ -289,7 +301,7 @@ impl Graph {
                     _ => None,
                 };
 
-                let parent = self.get_node(node_id).unwrap();
+                let parent = self.get_node(target_node_id).unwrap();
                 let local_jacobi = child
                     .calc_jacobi_to_a_parent(parent, assistant_parent)
                     .unwrap();
@@ -298,7 +310,7 @@ impl Graph {
             // 3.3.3 更新当前节点的梯度（雅可比矩阵）
             {
                 let current = {
-                    let node = self.get_node(node_id)?;
+                    let node = self.get_node(target_node_id)?;
                     node.jacobi()
                         .ok_or_else(|| {
                             GraphError::ComputationError(format!(
@@ -308,13 +320,13 @@ impl Graph {
                         })?
                         .clone()
                 };
-                let node = self.get_node_mut(node_id)?;
+                let node = self.get_node_mut(target_node_id)?;
                 node.set_jacobi(Some(&(current + contribution)))?;
             }
         }
 
         // 4. 更新节点的反向传播次数
-        self.get_node_mut(node_id)?
+        self.get_node_mut(target_node_id)?
             .set_last_backward_pass_id(graph_backward_pass_id);
 
         // 5. 返回

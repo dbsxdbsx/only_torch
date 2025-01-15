@@ -180,7 +180,7 @@ fn test_node_perception_loss_backward_propagation() {
 
     // 2. 测试在前向传播之前进行反向传播（应该失败）
     assert_eq!(
-        graph.backward_node(parent, result),
+        graph.backward_nodes(&[parent], result),
         Err(GraphError::ComputationError(format!(
             "反向传播：结果节点[id=2, name=result, type=PerceptionLoss]没有值"
         )))
@@ -198,7 +198,7 @@ fn test_node_perception_loss_backward_propagation() {
     assert!(graph.get_node_jacobi(result).unwrap().is_none());
 
     // 5.2 对parent的反向传播（第一次）
-    graph.backward_node(parent, result).unwrap();
+    graph.backward_nodes(&[parent], result).unwrap();
     let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
     // 验证雅可比矩阵（与Python输出一致）
     #[rustfmt::skip]
@@ -216,7 +216,7 @@ fn test_node_perception_loss_backward_propagation() {
     assert_eq!(parent_jacobi, &expected_jacobi);
 
     // 5.3 对parent的反向传播（第二次）- 应该得到相同的结果
-    graph.backward_node(parent, result).unwrap();
+    graph.backward_nodes(&[parent], result).unwrap();
     let parent_jacobi_second = graph.get_node_jacobi(parent).unwrap().unwrap();
     assert_eq!(parent_jacobi_second, &expected_jacobi);
 
@@ -232,7 +232,7 @@ fn test_node_perception_loss_backward_propagation() {
     assert!(graph.get_node_jacobi(result).unwrap().is_none());
 
     // 6.2.2 对parent的反向传播
-    graph.backward_node(parent, result).unwrap();
+    graph.backward_nodes(&[parent], result).unwrap();
     let parent_jacobi_after_clear = graph.get_node_jacobi(parent).unwrap().unwrap();
     assert_eq!(parent_jacobi_after_clear, &expected_jacobi);
 }

@@ -300,7 +300,7 @@ fn test_node_mat_mul_backward_propagation() {
 
     // 2. 测试在前向传播之前进行反向传播（应该失败）
     assert_eq!(
-        graph.backward_node(parent1, result),
+        graph.backward_nodes(&[parent1], result),
         Err(GraphError::ComputationError(format!(
             "反向传播：结果节点[id=3, name=result, type=MatMul]没有值"
         )))
@@ -325,7 +325,7 @@ fn test_node_mat_mul_backward_propagation() {
     assert!(graph.get_node_jacobi(result).unwrap().is_none());
 
     // 5.2 对parent1的反向传播（第一次）
-    graph.backward_node(parent1, result).unwrap();
+    graph.backward_nodes(&[parent1], result).unwrap();
     let parent1_jacobi = graph.get_node_jacobi(parent1).unwrap().unwrap();
     let expected_jacobi_parent1 = Tensor::new(
         &[
@@ -338,12 +338,12 @@ fn test_node_mat_mul_backward_propagation() {
     assert_eq!(parent1_jacobi, &expected_jacobi_parent1);
 
     // 5.3 对parent1的反向传播（第二次）- 应该得到相同的结果
-    graph.backward_node(parent1, result).unwrap();
+    graph.backward_nodes(&[parent1], result).unwrap();
     let parent1_jacobi_second = graph.get_node_jacobi(parent1).unwrap().unwrap();
     assert_eq!(parent1_jacobi_second, &expected_jacobi_parent1);
 
     // 5.4 对parent2的反向传播（第一次）
-    graph.backward_node(parent2, result).unwrap();
+    graph.backward_nodes(&[parent2], result).unwrap();
     let parent2_jacobi = graph.get_node_jacobi(parent2).unwrap().unwrap();
     let expected_jacobi_parent2 = Tensor::new(
         &[
@@ -359,7 +359,7 @@ fn test_node_mat_mul_backward_propagation() {
     assert_eq!(parent2_jacobi, &expected_jacobi_parent2);
 
     // 5.5 对parent2的反向传播（第二次）- 应该得到相同的结果
-    graph.backward_node(parent2, result).unwrap();
+    graph.backward_nodes(&[parent2], result).unwrap();
     let parent2_jacobi_second = graph.get_node_jacobi(parent2).unwrap().unwrap();
     assert_eq!(parent2_jacobi_second, &expected_jacobi_parent2);
 
@@ -376,12 +376,12 @@ fn test_node_mat_mul_backward_propagation() {
     assert!(graph.get_node_jacobi(result).unwrap().is_none());
 
     // 6.2.2 对parent1的反向传播
-    graph.backward_node(parent1, result).unwrap();
+    graph.backward_nodes(&[parent1], result).unwrap();
     let parent1_jacobi_after_clear = graph.get_node_jacobi(parent1).unwrap().unwrap();
     assert_eq!(parent1_jacobi_after_clear, &expected_jacobi_parent1);
 
     // 6.2.3 对parent2的反向传播
-    graph.backward_node(parent2, result).unwrap();
+    graph.backward_nodes(&[parent2], result).unwrap();
     let parent2_jacobi_after_clear = graph.get_node_jacobi(parent2).unwrap().unwrap();
     assert_eq!(parent2_jacobi_after_clear, &expected_jacobi_parent2);
 }

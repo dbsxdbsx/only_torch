@@ -79,8 +79,7 @@ fn test_adaline() -> Result<(), GraphError> {
             graph.forward_node(loss)?;
 
             // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
-            graph.backward_node(w, loss)?;
-            graph.backward_node(b, loss)?;
+            graph.backward_nodes(&[w, b], loss)?;
 
             // 更新参数
             let w_value = graph.get_node_value(w)?.unwrap();
@@ -96,6 +95,8 @@ fn test_adaline() -> Result<(), GraphError> {
                 b,
                 Some(&(b_value - learning_rate * b_jacobi.transpose().reshape(b_value.shape()))),
             )?;
+
+            // TODO:no need to clear the jacobi of graph after each epoch?
         }
 
         // 每个epoch结束后评价模型的正确率
@@ -128,8 +129,7 @@ fn test_adaline() -> Result<(), GraphError> {
     }
 
     let duration = start_time.elapsed();
-    println!("总耗时: {:.2?}", duration);
+    println!("总耗时: {duration:.2?}");
 
     Ok(())
 }
-

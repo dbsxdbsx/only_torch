@@ -169,7 +169,7 @@ fn test_node_input_backward_propagation() {
     // 2. 对自身的反向传播（应生成单位矩阵）
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     graph.set_node_value(input, Some(&value)).unwrap();
-    graph.backward_node(input, input).unwrap();
+    graph.backward_nodes(&[input], input).unwrap();
     assert_eq!(
         graph.get_node_jacobi(input).unwrap().unwrap(),
         &Tensor::eyes(4)
@@ -182,7 +182,7 @@ fn test_node_input_backward_propagation() {
     // 4. 清除值(未初始化)后对自身的反向传播（应失败）
     graph.set_node_value(input, None).unwrap();
     assert_eq!(
-        graph.backward_node(input, input),
+        graph.backward_nodes(&[input], input),
         Err(GraphError::ComputationError(
             "反向传播：节点[id=1, name=input, type=Input]没有值".to_string()
         ))
@@ -192,7 +192,7 @@ fn test_node_input_backward_propagation() {
     let other_input = graph.new_input_node(&[2, 2], Some("other_input")).unwrap();
     graph.set_node_value(other_input, Some(&value)).unwrap();
     assert_eq!(
-        graph.backward_node(input, other_input),
+        graph.backward_nodes(&[input], other_input),
         Err(GraphError::InvalidOperation(
             "无法对没有子节点的节点[id=1, name=input, type=Input]进行反向传播".to_string()
         ))
