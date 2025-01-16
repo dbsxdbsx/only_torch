@@ -91,184 +91,106 @@ fn test_node_relationships() {
     assert!(children2.contains(&add));
 }
 
-// #[test]
-// fn test_variable_node_initialization_and_set_value_for_forward_count_mechanism() {
-//     let mut graph = Graph::new();
+#[test]
+fn test_node_jacobi() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
 
-//     // 1. 测试变量节点的前向传播次数
-//     let input1 = graph
-//         .new_input_node(&[2, 2], Some("input1"))
-//         .unwrap(); // 输入型节点
-//     let input2 = graph
-//         .new_parameter_node(&[2, 2], Some("input2"))
-//         .unwrap(); // 参数型节点
+    // 1. 创建一个简单的计算图：y = wx + b
+    let x = graph.new_input_node(&[3, 1], Some("x"))?;
+    let w = graph.new_parameter_node(&[1, 3], Some("w"))?;
+    let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
+    let wx = graph.new_mat_mul_node(w, x, None)?;
+    let y = graph.new_add_node(&[wx, b], None)?;
 
-//     // 1.1 未初始化的Variable节点前向传播次数应该为0，已初始化的Variable节点前向传播次数应该为1
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.get_node(input2).unwrap().forward_cnt(), 0);
-//     assert_eq!(graph.forward_cnt(), 0); // 此时图没有执行前向传播，图前向传播次数不变
+    // 2. 测试未计算时的雅可比矩阵获取
+    // 2.1 输入节点不应该有雅可比矩阵
+    assert_eq!(
+        graph.get_node_jacobi(x),
+        Err(GraphError::InvalidOperation(format!(
+            "输入节点[id=1, name=x, type=Input]不应该有雅可比矩阵",
+        )))
+    );
 
-//     // 1.2 无论是否已初始化的Variable节点，也无论被赋予了什么值（包括None），只要图尚未执行前向传播，节点设置值后前向传播次数仍为应该为当前图次数+1
-//     use rand::Rng;
-//     let rand_cnt = rand::thread_rng().gen_range(1..=10);
-//     // 1.2.1 对input1随机设置None值rand_cnt次并验证前向传播次数
-//     for _ in 0..rand_cnt {
-//         graph.set_node_value(input1, None).unwrap();
-//     }
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 1); // 0 + 1
+    // 2.2 参数节点在反向传播前应该返回None
+    assert_eq!(graph.get_node_jacobi(w)?, None);
+    assert_eq!(graph.get_node_jacobi(b)?, None);
 
-//     // 1.2.2 对input2随机设置None值rand_cnt次并验证前向传播次数
-//     for _ in 0..rand_cnt {
-//         graph.set_node_value(input2, None).unwrap();
-//     }
-//     assert_eq!(graph.get_node(input2).unwrap().forward_cnt(), 1); // 0 + 1
+    // 2.3 计算节点在反向传播前应该返回None
+    assert_eq!(graph.get_node_jacobi(wx)?, None);
+    assert_eq!(graph.get_node_jacobi(y)?, None);
 
-//     // 1.2.3 验证图的前向传播次数
-//     assert_eq!(graph.forward_cnt(), 0); // 此时图仍没有执行前向传播，图前向传播次数仍为0
-// }
+    // 3. 设置输入值
+    let x_value = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
+    let w_value = Tensor::new(&[0.1, 0.2, 0.3], &[1, 3]);
+    let b_value = Tensor::new(&[0.4], &[1, 1]);
+    graph.set_node_value(x, Some(&x_value))?;
+    graph.set_node_value(w, Some(&w_value))?;
+    graph.set_node_value(b, Some(&b_value))?;
 
-// #[test]
-// fn test_reset_graph_forward_cnt_for_forward_count_mechanism() {
-//     let mut graph = Graph::new();
+    // 4. 前向传播
+    graph.forward_node(y)?;
 
-//     // 1. 创建节点并验证初始状态
-//     let input1 = graph
-//         .new_input_node(&[2, 2], Some("input1"))
-//         .unwrap(); // 输入型节点
-//     let input2 = graph
-//         .new_parameter_node(&[2, 2], Some("input2"))
-//         .unwrap(); // 参数型节点
-//     let add = graph
-//         .new_add_node(&[input1, input2], Some("add"), true)
-//         .unwrap();
+    // 5. 反向传播（只对w和b）
+    graph.backward_nodes(&[w, b], y)?;
 
-//     // 1.1 验证初始前向传播次数
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 1); // 已初始化，次数为1
-//     assert_eq!(graph.get_node(input2).unwrap().forward_cnt(), 0); // 未初始化，次数为0
-//     assert_eq!(graph.get_node(add).unwrap().forward_cnt(), 0); // 未计算，次数为0
-//     assert_eq!(graph.forward_cnt(), 0); // 图未执行前向传播
+    // 6. 验证雅可比矩阵
+    // 6.1 输入节点仍然不应该有雅可比矩阵
+    assert_eq!(
+        graph.get_node_jacobi(x),
+        Err(GraphError::InvalidOperation(format!(
+            "输入节点[id=1, name=x, type=Input]不应该有雅可比矩阵",
+        )))
+    );
 
-//     // 2. 设置值并执行前向传播
-//     let value2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]);
-//     graph.set_node_value(input2, Some(&value2)).unwrap();
-//     graph.forward_node(add).unwrap();
+    // 6.2 验证w的雅可比矩阵（参与反向传播的参数节点）
+    let w_jacobi = graph.get_node_jacobi(w)?.unwrap();
+    assert_eq!(w_jacobi.shape(), &[1, 3]); // 雅可比矩阵形状应该是[dy_rows * dy_cols, dw_rows * dw_cols]
+    let w_jacobi_expected = x_value.transpose(); // 因为y=wx+b，所以dy/dw=x^T
+    assert_eq!(w_jacobi, w_jacobi_expected);
 
-//     // 2.1 验证前向传播后的次数
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.get_node(input2).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.get_node(add).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.forward_cnt(), 1);
+    // 6.3 验证b的雅可比矩阵（参与反向传播的参数节点）
+    let b_jacobi = graph.get_node_jacobi(b)?.unwrap();
+    assert_eq!(b_jacobi.shape(), &[1, 1]); // 雅可比矩阵形状应该是[dy_rows * dy_cols, db_rows * db_cols]
+    let b_jacobi_expected = Tensor::new(&[1.0], &[1, 1]); // 因为y=wx+b，所以dy/db=1
+    assert_eq!(b_jacobi, b_jacobi_expected);
 
-//     // 3. 重置前向传播次数
-//     graph.reset_forward_cnt();
+    // 6.4 验证wx的雅可比矩阵（作为中间计算节点，也参与反向传播）
+    let wx_jacobi = graph.get_node_jacobi(wx)?.unwrap();
+    assert_eq!(wx_jacobi.shape(), &[1, 1]); // 雅可比矩阵形状应该是[dy_rows * dy_cols, dwx_rows * dwx_cols]
+    let wx_jacobi_expected = Tensor::new(&[1.0], &[1, 1]); // 因为y=wx+b，所以dy/d(wx)=1
+    assert_eq!(wx_jacobi, wx_jacobi_expected);
 
-//     // 3.1 验证重置后所有节点和图的前向传播次数都应该为0
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 0);
-//     assert_eq!(graph.get_node(input2).unwrap().forward_cnt(), 0);
-//     assert_eq!(graph.get_node(add).unwrap().forward_cnt(), 0);
-//     assert_eq!(graph.forward_cnt(), 0);
+    // 6.5 验证y的雅可比矩阵（作为结果节点）
+    let y_jacobi = graph.get_node_jacobi(y)?.unwrap();
+    assert_eq!(y_jacobi.shape(), &[1, 1]); // 结果节点的雅可比矩阵应该是单位矩阵
+    assert_eq!(y_jacobi, Tensor::new(&[1.0], &[1, 1]));
 
-//     // 4. 重置后再次前向传播
-//     // 4.1 由于input1和input2的前向传播次数都被重置为0，此时前向传播会失败
-//     assert_eq!(
-//         graph.forward_node(add),
-//         Err(GraphError::InvalidOperation(format!(
-//             "节点[id=1, name=input1, type=Variable]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1",
-//         )))
-//     );
+    Ok(())
+}
 
-//     // 4.2 设置节点的值以便后续测试
-//     let value1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-//     graph.set_node_value(input1, Some(&value1)).unwrap();
-//     graph.set_node_value(input2, Some(&value2)).unwrap();
+#[test]
+fn test_node_grad() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
 
-//     // 4.2 执行前向传播并验证次数
-//     graph.forward_node(add).unwrap();
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.get_node(input2).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.get_node(add).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.forward_cnt(), 1);
-// }
+    // 1. 创建一个简单的计算图：y = wx
+    let x = graph.new_input_node(&[3, 1], Some("x"))?;
+    let w = graph.new_parameter_node(&[1, 3], Some("w"))?;
+    let y = graph.new_mat_mul_node(w, x, None)?;
 
-// #[test]
-// fn test_a_complete_case_for_forward_count_mechanism() {
-//     let mut graph = Graph::new();
+    // 2. 设置输入值并进行前向和反向传播
+    let x_value = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
+    let w_value = Tensor::new(&[0.1, 0.2, 0.3], &[1, 3]);
+    graph.set_node_value(x, Some(&x_value))?;
+    graph.set_node_value(w, Some(&w_value))?;
+    graph.forward_node(y)?;
+    graph.backward_nodes(&[w], y)?;
 
-//     // 1. 测试变量节点的前向传播次数
-//     let input1 = graph
-//         .new_input_node(&[2, 2], Some("input1"))
-//         .unwrap(); // 输入型节点
-//     let input2 = graph
-//         .new_parameter_node(&[2, 2], Some("input2"))
-//         .unwrap(); // 参数型节点
+    // 3. 验证梯度是否正确地从雅可比矩阵转换而来
+    let w_jacobi = graph.get_node_jacobi(w)?.unwrap();
+    let w_grad = graph.get_node_grad(w)?.unwrap();
 
-//     // 1.1 未初始化的Variable节点前向传播次数应该为0，已初始化的Variable节点前向传播次数应该为1
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.get_node(input2).unwrap().forward_cnt(), 0);
-//     assert_eq!(graph.forward_cnt(), 0); // 此时图没有执行前向传播，图前向传播次数不变
+    // 验证梯度是否等于雅可比矩阵的转置并重塑
+    assert_eq!(w_grad, w_jacobi.transpose().reshape(w_value.shape()));
 
-//     // 2. 通过Add节点测试整个图的计算节点的前向传播次数
-//     let add = graph
-//         .new_add_node(&[input1, input2], Some("add"), true)
-//         .unwrap();
-
-//     // 2.1 初始时前向传播次数应该为0
-//     assert_eq!(graph.get_node(add).unwrap().forward_cnt(), 0);
-//     assert_eq!(graph.forward_cnt(), 0); // 此时图仍没有执行前向传播，图前向传播次数仍为0
-
-//     // 2.2 尝试前向传播，由于input2未设置值，应该失败
-//     assert_eq!(
-//         graph.forward_node(add),
-//         Err(GraphError::InvalidOperation(format!(
-//             "节点[id=2, name=input2, type=Variable]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1",
-//         )))
-//     );
-//     assert_eq!(graph.forward_cnt(), 0); // 此时图虽然执行了前向传播，但由于失败了，因此回滚后的图前向传播次数仍不变
-
-//     // 2.3 设置input2的值
-//     let value2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]);
-//     graph.set_node_value(input2, Some(&value2)).unwrap();
-//     assert_eq!(graph.get_node(input2).unwrap().forward_cnt(), 1); // 0 + 1
-//     assert_eq!(graph.forward_cnt(), 0); // 此时图仍没有执行前向传播，图前向传播次数仍为0
-
-//     // 2.4 现在前向传播应该成功，add节点的前向传播次数也应该为1
-//     graph.forward_node(add).unwrap();
-//     assert_eq!(graph.get_node(add).unwrap().forward_cnt(), 1);
-//     assert_eq!(graph.forward_cnt(), 1); // 此时图成功执行了前向传播，图前向传播次数+1
-
-//     // 2.5 不改变输入值再次前向传播，add节点的"内部"前向传播不应重新计算且不报错
-//     let old_result = graph.get_node_value(add).unwrap().unwrap().clone();
-//     graph.forward_node_internal(add).unwrap();
-//     assert_eq!(graph.get_node(add).unwrap().forward_cnt(), 1); // 没有重新计算，次数不变
-//     assert_eq!(graph.get_node_value(add).unwrap().unwrap(), &old_result);
-//     assert_eq!(graph.forward_cnt(), 1); // 此时图没有执行默认的外部前向传播，图前向传播次数不变
-
-//     // 2.6 不改变输入值再次前向传播，add节点的前向传播应该报错，因为相应的Variable节点计算次数落后于图的前向传播次数
-//     assert_eq!(
-//         graph.forward_node(add),
-//         Err(GraphError::InvalidOperation(format!(
-//             "节点[id=1, name=input1, type=Variable]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为1，而图的前向传播次数为2",
-//         )))
-//     );
-//     assert_eq!(graph.forward_cnt(), 1); // 此时图虽然执行了前向传播，但由于失败了，因此回滚后的图前向传播次数仍不变
-
-//     // 2.7 改变add节点的父节点input1的值后再次对add节点执行前向传播，仍应失败，因为另一个父节点input2的前向传播次数落后于图的前向传播次数
-//     let new_value1 = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-//     graph.set_node_value(input1, Some(&new_value1)).unwrap();
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 2); // 1 + 1
-//     assert_eq!(
-//         graph.forward_node(add),
-//         Err(GraphError::InvalidOperation(format!(
-//             "节点[id=2, name=input2, type=Variable]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为1，而图的前向传播次数为2",
-//         )))
-//     );
-//     assert_eq!(graph.forward_cnt(), 1); // 此时图虽然执行了前向传播，但由于失败了，因此回滚后的图前向传播次数仍不变
-
-//     // 2.8 改变input2的值后再次对add节点执行前向传播，应该成功
-//     let new_value2 = Tensor::new(&[6.0, 7.0, 8.0, 9.0], &[2, 2]);
-//     graph.set_node_value(input2, Some(&new_value2)).unwrap();
-//     graph.forward_node(add).unwrap();
-//     assert_eq!(graph.get_node(input1).unwrap().forward_cnt(), 2); // 和2.7中一样
-//     assert_eq!(graph.get_node(add).unwrap().forward_cnt(), 2); // 1 + 1
-//     assert_eq!(graph.forward_cnt(), 2); // 此时图成功执行了前向传播，图前向传播次数+1
-// }
+    Ok(())
+}

@@ -161,40 +161,53 @@ fn test_node_input_forward_propagation() {
 #[test]
 fn test_node_input_backward_propagation() {
     let mut graph = Graph::new();
+
+    // 1. 创建输入节点
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
-
-    // 1. 初始时雅可比矩阵应为空
-    assert!(graph.get_node_jacobi(input).unwrap().is_none());
-
-    // 2. 对自身的反向传播（应生成单位矩阵）
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-    graph.backward_nodes(&[input], input).unwrap();
+
+    // 2. 初始时雅可比矩阵应为空，但对于输入节点来说，不应该有雅可比矩阵
     assert_eq!(
-        graph.get_node_jacobi(input).unwrap().unwrap(),
-        &Tensor::eyes(4)
+        graph.get_node_jacobi(input),
+        Err(GraphError::InvalidOperation(format!(
+            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵",
+        )))
     );
 
-    // 3. 清除雅可比矩阵并验证
-    graph.clear_jacobi().unwrap();
-    assert!(graph.get_node_jacobi(input).unwrap().is_none());
+    // 3. 对自身的反向传播（本应生成单位矩阵，但输入节点不应该有雅可比矩阵，所以应该失败）
+    graph.set_node_value(input, Some(&value)).unwrap();
+    assert_eq!(
+        graph.backward_nodes(&[input], input),
+        Err(GraphError::InvalidOperation(format!(
+            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵",
+        )))
+    );
 
-    // 4. 清除值(未初始化)后对自身的反向传播（应失败）
+    // 4. 清除雅可比矩阵并验证（输入节点不应该有雅可比矩阵）
+    graph.clear_jacobi().unwrap();
+    assert_eq!(
+        graph.get_node_jacobi(input),
+        Err(GraphError::InvalidOperation(format!(
+            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵",
+        )))
+    );
+
+    // 5. 对没有值的Input节点的反向传播（应失败）
     graph.set_node_value(input, None).unwrap();
     assert_eq!(
         graph.backward_nodes(&[input], input),
-        Err(GraphError::ComputationError(
-            "反向传播：节点[id=1, name=input, type=Input]没有值".to_string()
-        ))
+        Err(GraphError::InvalidOperation(format!(
+            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵"
+        )))
     );
 
-    // 5. 对其他未关联的Input节点的反向传播（应失败）
+    // 6. 对其他未关联的Input节点的反向传播（应失败）
     let other_input = graph.new_input_node(&[2, 2], Some("other_input")).unwrap();
     graph.set_node_value(other_input, Some(&value)).unwrap();
     assert_eq!(
         graph.backward_nodes(&[input], other_input),
-        Err(GraphError::InvalidOperation(
-            "无法对没有子节点的节点[id=1, name=input, type=Input]进行反向传播".to_string()
-        ))
+        Err(GraphError::InvalidOperation(format!(
+            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵"
+        )))
     );
 }

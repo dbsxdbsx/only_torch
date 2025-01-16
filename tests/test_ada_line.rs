@@ -3,7 +3,7 @@
  * @Date         : 2024-10-24 09:18:44
  * @Description  : 自适应线性神经元（Adaptive Linear Neuron，ADALINE）网络测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch02/adaline.py
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-15 08:26:42
+ * @LastEditTime : 2025-01-15 11:55:43
  */
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
@@ -81,22 +81,15 @@ fn test_adaline() -> Result<(), GraphError> {
             // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
             graph.backward_nodes(&[w, b], loss)?;
 
-            // 更新参数
+            // 更新参数节点w
             let w_value = graph.get_node_value(w)?.unwrap();
-            let w_jacobi = graph.get_node_jacobi(w)?.unwrap();
-            graph.set_node_value(
-                w,
-                Some(&(w_value - learning_rate * w_jacobi.transpose().reshape(w_value.shape()))),
-            )?;
+            let w_grad = graph.get_node_grad(w)?.unwrap();
+            graph.set_node_value(w, Some(&(w_value - learning_rate * w_grad)))?;
 
+            // 更新参数节点b
             let b_value = graph.get_node_value(b)?.unwrap();
-            let b_jacobi = graph.get_node_jacobi(b)?.unwrap();
-            graph.set_node_value(
-                b,
-                Some(&(b_value - learning_rate * b_jacobi.transpose().reshape(b_value.shape()))),
-            )?;
-
-            // TODO:no need to clear the jacobi of graph after each epoch?
+            let b_grad = graph.get_node_grad(b)?.unwrap();
+            graph.set_node_value(b, Some(&(b_value - learning_rate * b_grad)))?;
         }
 
         // 每个epoch结束后评价模型的正确率

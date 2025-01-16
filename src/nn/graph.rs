@@ -2,7 +2,7 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 17:57:13
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-15 11:43:32
+ * @LastEditTime : 2025-01-15 16:41:45
  * @Description  : 神经网络模型的计算图
  */
 
@@ -188,16 +188,16 @@ impl Graph {
     /// NOTE: 这里的逻辑参考了https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/core/node.py#L83
     pub fn backward_nodes(
         &mut self,
-        target_nodes: &[NodeId],
-        result_id: NodeId,
+        target_nodes_ids: &[NodeId],
+        result_node_id: NodeId,
     ) -> Result<(), GraphError> {
         // 1. 为图本次的反向传播设置新id
         self.last_backward_pass_id += 1;
         let graph_backward_pass_id = self.last_backward_pass_id;
 
         // 2. 对每个目标节点执行反向传播
-        for &target_id in target_nodes {
-            self.backward_node_internal(target_id, result_id)
+        for &target_id in target_nodes_ids {
+            self.backward_node_internal(target_id, result_node_id)
                 .map_err(|e| {
                     // 如果出错则回滚backward_pass_id
                     self.last_backward_pass_id = graph_backward_pass_id - 1;
@@ -214,8 +214,19 @@ impl Graph {
         target_node_id: NodeId,
         result_node_id: NodeId,
     ) -> Result<(), GraphError> {
-        let graph_backward_pass_id = self.last_backward_pass_id;
+        // 0. 首先检查目标节点是否为输入节点
         let target_node = self.get_node(target_node_id)?;
+        match target_node.node_type() {
+            NodeType::Input(_) => {
+                return Err(GraphError::InvalidOperation(format!(
+                    "输入{}不应该有雅可比矩阵",
+                    target_node
+                )));
+            }
+            _ => {}
+        }
+
+        let graph_backward_pass_id = self.last_backward_pass_id;
 
         // 1. 若已经在本次反向传播中计算过，则直接返回
         if target_node.last_backward_pass_id() == graph_backward_pass_id {
@@ -377,8 +388,37 @@ impl Graph {
     }
 
     /// 根据ID获取节点的雅可比矩阵
-    pub fn get_node_jacobi(&self, id: NodeId) -> Result<Option<&Tensor>, GraphError> {
-        Ok(self.get_node(id)?.jacobi())
+    pub fn get_node_jacobi(&self, node_id: NodeId) -> Result<Option<&Tensor>, GraphError> {
+        let node = self.get_node(node_id)?;
+
+        // 1. 输入节点不应该有雅可比矩阵
+        match node.node_type() {
+            NodeType::Input(_) => {
+                return Err(GraphError::InvalidOperation(format!(
+                    "输入{}不应该有雅可比矩阵",
+                    node
+                )));
+            }
+            _ => {}
+        }
+
+        // 2. 返回节点的雅可比矩阵
+        Ok(node.jacobi())
+    }
+
+    /// 获取节点的梯度。梯度是雅可比矩阵的转置，并reshape成与节点值相同的形状
+    pub fn get_node_grad(&self, node_id: NodeId) -> Result<Option<Tensor>, GraphError> {
+        // 1. 获取节点的雅可比矩阵
+        let jacobi = match self.get_node_jacobi(node_id)? {
+            Some(j) => j,
+            None => return Ok(None),
+        };
+
+        // 2. 获取节点的预期形状
+        let expected_shape = self.get_node_value_expected_shape(node_id)?;
+
+        // 3. 转换雅可比矩阵为梯度
+        Ok(Some(jacobi.transpose().reshape(expected_shape)))
     }
 
     // Add new public methods for node information access
