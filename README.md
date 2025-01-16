@@ -24,8 +24,6 @@
 - `get_node_grad` 返回引用？
 - (back/forward)pass-id相关的graph测试？
 - （最后用AI优化下backward的逻辑）
-- 是否需要区分jacobi(雅可比)和gradient(梯度)及添加相关方法？
-- 对比Node_variable和Graph的测试，看看如何优化精简Graph的测试；
 - graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
 - 针对`loss1.backward(retain_graph=True)`和`detach()`还有多output输出，多次backward的问题；
 - 是否需要添加一个sign节点来取代step直接forward输出[-1,1]？

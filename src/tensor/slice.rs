@@ -150,6 +150,8 @@ impl super::Tensor {
     ///
     /// # 示例
     /// ```
+    /// use only_torch::{Tensor, tensor_slice};
+    ///
     /// let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     /// let slice = tensor.slice(&[&0, &(..)]); // 保持维度：形状为 [1, 2]
     /// ```

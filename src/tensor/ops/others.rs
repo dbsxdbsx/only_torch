@@ -339,12 +339,14 @@ impl Tensor {
     ///
     /// # 示例
     ///
-    /// ```ignore
+    /// ```
+    /// use only_torch::Tensor;
     /// let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     /// let unsqueezed = tensor.unsqueeze(0); // 在最前面增加一个维度
     /// assert_eq!(unsqueezed.shape(), &[1, 3]);
+    ///
     /// let unsqueezed_last = tensor.unsqueeze(-1); // 在最后面增加一个维度
-    /// assert_eq!(unsqueezed.shape(), &[3, 1]);
+    /// assert_eq!(unsqueezed_last.shape(), &[3, 1]);
     /// ```
     pub fn unsqueeze(&self, dim: i8) -> Self {
         let dim = if dim < 0 {
@@ -370,7 +372,9 @@ impl Tensor {
     ///
     /// # 示例
     ///
-    /// ```ignore
+    /// ```
+    /// use only_torch::Tensor;
+    ///
     /// let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     /// tensor.unsqueeze_mut(0); // 在最前面增加一个维度
     /// assert_eq!(tensor.shape(), &[1, 3]);

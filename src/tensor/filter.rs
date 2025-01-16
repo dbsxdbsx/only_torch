@@ -10,7 +10,7 @@ impl Tensor {
     ///
     /// # 示例
     /// ```
-    /// use crate::tensor::Tensor;
+    /// use only_torch::Tensor;
     /// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
     ///
     /// // 类似 np.where(x >= 0.0, 0.0, -x)
@@ -53,7 +53,7 @@ impl Tensor {
     ///
     /// # 示例
     /// ```
-    /// use crate::tensor::Tensor;
+    /// use only_torch::Tensor;
     /// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
     /// let y = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
     ///
@@ -107,8 +107,9 @@ impl Tensor {
 ///
 /// # 示例
 /// ```
-/// use crate::tensor::Tensor;
-/// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
+/// use only_torch::{Tensor, tensor_where_f32};
+///
+/// let x = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
 ///
 /// // 类似 np.where(x >= 0.0, x + 1.0, 0.5)
 /// let result = tensor_where_f32!(x >= 0.0, x + 1.0, 0.5);
@@ -130,7 +131,8 @@ macro_rules! tensor_where_f32 {
 ///
 /// # 示例
 /// ```
-/// use crate::tensor::Tensor;
+/// use only_torch::{Tensor, tensor_where_tensor};
+///
 /// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
 /// let y = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
 ///
@@ -155,7 +157,8 @@ macro_rules! tensor_where_tensor {
 ///
 /// # 示例
 /// ```
-/// use crate::tensor::Tensor;
+/// use only_torch::{Tensor, tensor_where};
+///
 /// let t = Tensor::new(&[-1.0, 0.0, 1.0], &[3]);
 /// let y = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
 ///
