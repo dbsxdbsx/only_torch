@@ -178,7 +178,7 @@
 
 - [Sac用以复合Action](https://arxiv.org/pdf/1912.11077v1.pdf)
 - [EfficientZero](https://arxiv.org/abs/2111.00210)
-- [[EfficientZero Remastered](https://www.gigglebit.net/blog/efficientzero)]
+- [EfficientZero Remastered](https://www.gigglebit.net/blog/efficientzero)
 - [EfficientZero V2: Mastering Discrete and Continuous Control with Limited Data](https://arxiv.org/abs/2403.00564v2)
 - [SpeedyZero](https://openreview.net/forum?id=Mg5CLXZgvLJ)
 - [LightZero系列](https://github.com/opendilab/LightZero?tab=readme-ov-file)
