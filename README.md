@@ -146,11 +146,16 @@
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
 - [结合prolog和RL](https://arxiv.org/abs/2004.06997)
 - [prolog与4证人难题](https://prolog.longluntan.com/t9-topic)
-- [logic+mL提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)- [prolog解决数度问题](https://prolog.longluntan.com/t107-topic)
+- [logic+mL提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)
+- [prolog解决数独问题](https://prolog.longluntan.com/t107-topic)
 - [贝叶斯与逻辑推理](https://stats.stackexchange.com/questions/243746/what-is-probabilistic-inference)
 - [用一阶逻辑辅佐人工神经网络](https://www.cs.cmu.edu/~hovy/papers/16ACL-NNs-and-logic.pdf)
 - [二阶逻辑杂谈](https://blog.csdn.net/VucNdnrzk8iwX/article/details/128928166)
 - [关于二阶逻辑的概念问题](https://www.zhihu.com/question/321025032/answer/702580771?utm_id=0)
+- [PWL:基于贝叶斯的自然语言处理](https://github.com/asaparov/PWL)
+- [Symbolic Learning Enables Self-Evolving Agents](https://arxiv.org/abs/2406.18532)
+- ASTRID系统（Mind|Construct, 2017）
+- 归纳逻辑编程（Inductive Logic Programming, ILP）
 - 书：《The Book of Why》
 - 书：《Causality:Models,Reasoning,and Inference》
 - [知乎：因果推断杂谈](https://www.zhihu.com/question/266812683/answer/895210894)
@@ -203,7 +208,16 @@
 - [关于lean的一篇文章](https://zhuanlan.zhihu.com/p/183902909#%E6%A6%82%E8%A7%88)
 - [Lean+LLM](https://github.com/lean-dojo/LeanDojo)
 - [陶哲轩使用Lean4](https://mp.weixin.qq.com/s/TYB6LgbhjvHYvkbWrEoDOg)
-
+```
+Formal Verification
+├── Theorem Proving（定理证明）
+│   ├── Interactive Theorem Proving（交互式）
+│   │   ├── Coq
+│   │   ├── Lean
+│   │   └── Isabelle/HOL
+│   └── Automated Theorem Proving（自动式）
+└── Model Checking（模型检测）
+```
 ### 博弈论（game）
 
 - [Sprague-Grundy介绍1](https://zhuanlan.zhihu.com/p/157731188)
@@ -221,6 +235,7 @@
 - [awesome Rust](https://github.com/Rust-unofficial/awesome-Rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
 - [rust人工智能相关的项目](https://github.com/rust-unofficial/awesome-rust#artificial-intelligence)
+- [《千脑智能》及相关github项目](https://www.numenta.com/thousand-brains-project/)
 
 ## 遵循协议
 
