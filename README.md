@@ -18,7 +18,47 @@
 
 ### 使用示例
 
-（无）
+#### Adaline自适应线性神经元
+
+本框架实现了经典的Adaline（Adaptive Linear Neuron）算法，用于二分类问题。以下示例展示了如何使用框架训练一个性别分类模型：
+
+```rust
+// 创建计算图
+let mut graph = Graph::new();
+
+// 构造计算图节点
+let x = graph.new_input_node(&[3, 1], Some("x"))?;        // 输入特征
+let label = graph.new_input_node(&[1, 1], Some("label"))?; // 标签
+let w = graph.new_parameter_node(&[1, 3], Some("w"))?;     // 权重
+let b = graph.new_parameter_node(&[1, 1], Some("b"))?;     // 偏置
+
+// ADALINE网络结构
+let wx = graph.new_mat_mul_node(w, x, None)?;
+let output = graph.new_add_node(&[wx, b], None)?;
+let predict = graph.new_step_node(output, None)?;
+```
+
+**测试结果**：
+```
+训练回合: 20, 正确率: 96.6%
+训练回合: 21, 正确率: 93.2%
+训练回合: 22, 正确率: 96.9%
+训练回合: 23, 正确率: 96.5%
+训练回合: 24, 正确率: 96.6%
+训练回合: 25, 正确率: 96.9%
+总耗时: 3.47s
+```
+
+该示例展示了框架的核心功能：
+- **计算图构建**：支持灵活的节点组合
+- **自动微分**：自动计算梯度进行反向传播
+- **参数更新**：支持梯度下降优化
+- **高效计算**：1000个样本25轮训练仅需3.47秒
+
+运行测试：
+```bash
+cargo test test_adaline -- --show-output
+```
 
 ## TODO
 - `get_node_grad` 返回引用？
