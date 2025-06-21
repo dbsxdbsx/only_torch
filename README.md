@@ -18,47 +18,7 @@
 
 ### 使用示例
 
-#### Adaline自适应线性神经元
-
-本框架实现了经典的Adaline（Adaptive Linear Neuron）算法，用于二分类问题。以下示例展示了如何使用框架训练一个性别分类模型：
-
-```rust
-// 创建计算图
-let mut graph = Graph::new();
-
-// 构造计算图节点
-let x = graph.new_input_node(&[3, 1], Some("x"))?;        // 输入特征
-let label = graph.new_input_node(&[1, 1], Some("label"))?; // 标签
-let w = graph.new_parameter_node(&[1, 3], Some("w"))?;     // 权重
-let b = graph.new_parameter_node(&[1, 1], Some("b"))?;     // 偏置
-
-// ADALINE网络结构
-let wx = graph.new_mat_mul_node(w, x, None)?;
-let output = graph.new_add_node(&[wx, b], None)?;
-let predict = graph.new_step_node(output, None)?;
-```
-
-**测试结果**：
-```
-训练回合: 20, 正确率: 96.6%
-训练回合: 21, 正确率: 93.2%
-训练回合: 22, 正确率: 96.9%
-训练回合: 23, 正确率: 96.5%
-训练回合: 24, 正确率: 96.6%
-训练回合: 25, 正确率: 96.9%
-总耗时: 3.47s
-```
-
-该示例展示了框架的核心功能：
-- **计算图构建**：支持灵活的节点组合
-- **自动微分**：自动计算梯度进行反向传播
-- **参数更新**：支持梯度下降优化
-- **高效计算**：1000个样本25轮训练仅需3.47秒
-
-运行测试：
-```bash
-cargo test test_adaline -- --show-output
-```
+- **[Adaline自适应线性神经元](tests/test_ada_line.rs)** - 经典二分类算法实现，本例使用了最原始的写来构建计算图、自动微分和参数更新，测试显示1000样本25轮训练达96%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
 - `get_node_grad` 返回引用？
@@ -92,7 +52,7 @@ cargo test test_adaline -- --show-output
 
 - 也许后期可给Graph添加一个`forward_batch`方法，用于批量forward(参考adaline_batch.py)？
 
-- 后期当NEAT，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
+- 后期当引入NEAT机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
 - 当后期（NEAT阶段）需要在一个已经forwarded的图中添加节点（如将已经被使用过的var1、var2结合一个新的未使用的var3构建一个add节点），可能需要添加一个`reset_forward_cnt`方法来保证图forward的一致性。
 - NEAT之后，针对图backward的`loss1.backward(retain_graph=True)`和`detach()`机制的实现（可在GAN和强化学习算法实例中针对性实现测试），可能须和`forward_cnt`机制结合, 还要考虑一次forward后多次backward()后的结果。
 - Tensor 真的需要uninit吗？
@@ -101,7 +61,7 @@ cargo test test_adaline -- --show-output
 - 根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，，容易添加edge(如已存在的add节点的父节点)，。
 - 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - 图错误“InvalidOperation” vs “ComputationError”
-- Tensorlei的index将`[[`优化成`[`?
+- Tensor类的index将`[[`优化成`[`?
 - Tensor类的`slice(&[0..m, j..j+1])`是否需要？
 - use approx::assert_abs_diff_eq; need or not?
 - 使用f16代替f32？
@@ -113,6 +73,10 @@ cargo test test_adaline -- --show-output
 - [] 基于本框架解决Mnist（数字识别）的监督学习问题
 - [] 基于本框架解决CartPole（需要openAI Gym或相关crate支持）的深度强化学习问题
 - [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
+
+## 笔记
+
+- [MatrixSlow项目识别文档](.doc/python_MatrixSlow_pid.md) - 基于MatrixSlow的Python深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料
 
