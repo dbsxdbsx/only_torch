@@ -296,6 +296,248 @@ Optimizer (抽象基类)
 └── Adam                     # Adam优化器
 ```
 
+#### 优化器基类实现 (Base Optimizer Implementation)
+
+```python
+class Optimizer(object):
+    """优化器抽象基类"""
+
+    def __init__(self, graph, target, learning_rate=0.01):
+        """
+        参数:
+        - graph: 计算图
+        - target: 目标节点(通常是损失函数)
+        - learning_rate: 学习率
+        """
+        self.graph = graph
+        self.target = target
+        self.learning_rate = learning_rate
+
+        # 获取所有可训练变量
+        self.trainable_variables = [node for node in graph.nodes
+                                   if isinstance(node, Variable) and node.trainable]
+
+    def one_step(self):
+        """执行一步训练：前向传播 + 反向传播"""
+        # 清除之前的梯度
+        self.graph.clear_jacobi()
+
+        # 前向传播
+        self.target.forward()
+
+        # 反向传播
+        self.graph.backward(self.target)
+
+    def update(self):
+        """更新参数 - 子类需要实现"""
+        raise NotImplementedError
+```
+
+#### 梯度下降优化器 (Gradient Descent)
+
+```python
+class GradientDescent(Optimizer):
+    """梯度下降优化器"""
+
+    def update(self):
+        """使用梯度下降更新参数"""
+        for variable in self.trainable_variables:
+            # θ = θ - α * ∇θ
+            variable.value -= self.learning_rate * variable.jacobi
+```
+
+#### Adam优化器 (Adam Optimizer)
+
+```python
+class Adam(Optimizer):
+    """Adam优化器 - 自适应矩估计"""
+
+    def __init__(self, graph, target, learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8):
+        """
+        参数:
+        - beta_1: 一阶矩估计的指数衰减率
+        - beta_2: 二阶矩估计的指数衰减率
+        - epsilon: 数值稳定性常数
+        """
+        super().__init__(graph, target, learning_rate)
+        self.beta_1 = beta_1
+        self.beta_2 = beta_2
+        self.epsilon = epsilon
+
+        # 初始化动量
+        self.m = {}  # 一阶矩估计
+        self.v = {}  # 二阶矩估计
+        self.t = 0   # 时间步
+
+        # 为每个可训练变量初始化动量
+        for variable in self.trainable_variables:
+            self.m[variable] = np.mat(np.zeros(variable.shape()))
+            self.v[variable] = np.mat(np.zeros(variable.shape()))
+
+    def update(self):
+        """使用Adam算法更新参数"""
+        self.t += 1
+
+        for variable in self.trainable_variables:
+            # 计算梯度
+            gradient = variable.jacobi
+
+            # 更新一阶矩估计
+            self.m[variable] = self.beta_1 * self.m[variable] + (1 - self.beta_1) * gradient
+
+            # 更新二阶矩估计
+            self.v[variable] = self.beta_2 * self.v[variable] + (1 - self.beta_2) * np.multiply(gradient, gradient)
+
+            # 偏差修正
+            m_hat = self.m[variable] / (1 - self.beta_1 ** self.t)
+            v_hat = self.v[variable] / (1 - self.beta_2 ** self.t)
+
+            # 参数更新
+            # θ = θ - α * m_hat / (√v_hat + ε)
+            variable.value -= self.learning_rate * np.divide(
+                m_hat,
+                np.sqrt(v_hat) + self.epsilon
+            )
+```
+
+#### 动量优化器 (Momentum Optimizer)
+
+```python
+class Momentum(Optimizer):
+    """动量优化器"""
+
+    def __init__(self, graph, target, learning_rate=0.01, momentum=0.9):
+        """
+        参数:
+        - momentum: 动量系数
+        """
+        super().__init__(graph, target, learning_rate)
+        self.momentum = momentum
+
+        # 初始化速度
+        self.velocity = {}
+        for variable in self.trainable_variables:
+            self.velocity[variable] = np.mat(np.zeros(variable.shape()))
+
+    def update(self):
+        """使用动量法更新参数"""
+        for variable in self.trainable_variables:
+            # 更新速度: v = μ * v - α * ∇θ
+            self.velocity[variable] = (self.momentum * self.velocity[variable] -
+                                     self.learning_rate * variable.jacobi)
+
+            # 更新参数: θ = θ + v
+            variable.value += self.velocity[variable]
+```
+
+#### 优化器使用示例 (Optimizer Usage Examples)
+
+```python
+# 构建简单神经网络
+def create_network():
+    # 输入和标签
+    x = Variable((2, 1), init=False, trainable=False)
+    y = Variable((1, 1), init=False, trainable=False)
+
+    # 隐藏层
+    hidden = fc(x, 2, 4, "ReLU")
+
+    # 输出层
+    output = fc(hidden, 4, 1, None)
+
+    # 损失函数
+    loss = SquareLoss(output, y)
+
+    return x, y, output, loss
+
+# 使用不同优化器训练
+def train_with_optimizers():
+    x, y, output, loss = create_network()
+
+    # 训练数据
+    train_data = [
+        (np.mat([[1.0], [2.0]]), np.mat([[3.0]])),
+        (np.mat([[2.0], [3.0]]), np.mat([[5.0]])),
+        (np.mat([[3.0], [1.0]]), np.mat([[4.0]])),
+    ]
+
+    # 1. 使用Adam优化器
+    print("=== Adam优化器训练 ===")
+    adam_optimizer = Adam(default_graph, loss, learning_rate=0.01)
+
+    for epoch in range(50):
+        total_loss = 0
+        for batch_x, batch_y in train_data:
+            x.set_value(batch_x)
+            y.set_value(batch_y)
+
+            adam_optimizer.one_step()
+            total_loss += loss.value[0, 0]
+
+        adam_optimizer.update()
+
+        if epoch % 10 == 0:
+            print(f"Epoch {epoch}, Loss: {total_loss/len(train_data):.4f}")
+
+    # 2. 使用梯度下降优化器
+    print("\n=== 梯度下降优化器训练 ===")
+    # 重新初始化网络
+    x, y, output, loss = create_network()
+    gd_optimizer = GradientDescent(default_graph, loss, learning_rate=0.1)
+
+    for epoch in range(50):
+        total_loss = 0
+        for batch_x, batch_y in train_data:
+            x.set_value(batch_x)
+            y.set_value(batch_y)
+
+            gd_optimizer.one_step()
+            total_loss += loss.value[0, 0]
+
+        gd_optimizer.update()
+
+        if epoch % 10 == 0:
+            print(f"Epoch {epoch}, Loss: {total_loss/len(train_data):.4f}")
+
+    # 3. 使用动量优化器
+    print("\n=== 动量优化器训练 ===")
+    # 重新初始化网络
+    x, y, output, loss = create_network()
+    momentum_optimizer = Momentum(default_graph, loss, learning_rate=0.05, momentum=0.9)
+
+    for epoch in range(50):
+        total_loss = 0
+        for batch_x, batch_y in train_data:
+            x.set_value(batch_x)
+            y.set_value(batch_y)
+
+            momentum_optimizer.one_step()
+            total_loss += loss.value[0, 0]
+
+        momentum_optimizer.update()
+
+        if epoch % 10 == 0:
+            print(f"Epoch {epoch}, Loss: {total_loss/len(train_data):.4f}")
+
+# 运行训练示例
+if __name__ == "__main__":
+    train_with_optimizers()
+```
+
+**优化器对比**:
+
+| 优化器 | 学习率 | 收敛速度 | 内存占用 | 适用场景 |
+|--------|--------|----------|----------|----------|
+| **GradientDescent** | 需要调优 | 较慢 | 低 | 简单问题、理论学习 |
+| **Momentum** | 需要调优 | 中等 | 中等 | 有噪声的梯度 |
+| **Adam** | 自适应 | 快 | 高 | 大多数深度学习任务 |
+
+**Adam优化器的优势**:
+- **自适应学习率**: 每个参数都有独立的学习率
+- **动量机制**: 结合了一阶和二阶矩估计
+- **偏差修正**: 在训练初期修正估计偏差
+- **数值稳定**: 通过epsilon避免除零错误
+
 ### 5. 层抽象 (Layer Abstraction)
 
 #### 全连接层 (Fully Connected Layer)
