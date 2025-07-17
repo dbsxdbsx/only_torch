@@ -62,7 +62,7 @@ fn test_adaline() -> Result<(), GraphError> {
     // 学习率
     let learning_rate = 0.0001;
 
-    // 训练执行50个epoch
+    // 训练执行25个epoch
     for epoch in 0..25 {
         // 遍历训练集中的样本
         for i in 0..train_set.shape()[0] {

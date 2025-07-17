@@ -18,7 +18,7 @@
 
 ### 使用示例
 
-- **[Adaline自适应线性神经元](tests/test_ada_line.rs)** - 经典二分类算法实现，本例使用了最原始的写来构建计算图、自动微分和参数更新，测试显示1000样本25轮训练达96%+准确率（运行：`cargo test test_adaline -- --show-output`）
+- **[Adaline自适应线性神经元](tests/test_ada_line.rs)** - 经典二分类算法实现，本例使用了最原始的写来构建计算图、自动微分和参数更新，测试显示1000样本25轮训练达95%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
 - `get_node_grad` 返回引用？
