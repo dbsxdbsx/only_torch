@@ -21,7 +21,6 @@
 - **[Adaline自适应线性神经元](tests/test_ada_line.rs)** - 经典二分类算法实现，本例使用了最原始的写来构建计算图、自动微分和参数更新，测试显示1000样本25轮训练达95%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
-- `get_node_grad` 返回引用？
 - (back/forward)pass-id相关的graph测试？
 - （最后用AI优化下backward的逻辑）
 - graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
@@ -64,7 +63,8 @@
 - Tensor类的index将`[[`优化成`[`?
 - Tensor类的`slice(&[0..m, j..j+1])`是否需要？
 - use approx::assert_abs_diff_eq; need or not?
-- 使用f16代替f32？
+- [get_node_grad函数优化分析](.doc/get_node_grad_optimization_analysis.md)
+
 
 **目前需要先解决有没有的问题，而不是好不好**
 - [] 实现类似tch-rs中`tch::no_grad(|| {});`的无梯度功能；
