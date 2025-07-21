@@ -118,23 +118,22 @@ impl Graph {
         }
 
         // 2. 为图本次的前向传播设置新id
-        self.last_forward_pass_id += 1;
+        let new_graph_forward_pass_id = self.last_forward_pass_id + 1;
 
         // 3. 通过内部方法执行完整的前向传播
-        self.forward_node_internal(node_id).map_err(|e| {
-            // 如果出错则回滚last_forward_pass_id
-            self.last_forward_pass_id -= 1;
-            e
-        })
+        self.forward_node_internal(node_id, new_graph_forward_pass_id)?;
+
+        // 4. 只有成功后才更新图的前向传播ID
+        self.last_forward_pass_id = new_graph_forward_pass_id;
+        Ok(())
     }
 
     // 前向传播的内部实现
-    pub(in crate::nn) fn forward_node_internal(
+    fn forward_node_internal(
         &mut self,
         node_id: NodeId,
+        new_graph_forward_pass_id: u64,
     ) -> Result<(), GraphError> {
-        let graph_forward_pass_id = self.last_forward_pass_id.clone();
-
         // 1. 必要检查
         let node = self.get_node_mut(node_id)?;
 
@@ -143,19 +142,19 @@ impl Graph {
             // 1.1.1 输入和参数节点
             NodeType::Input(_) | NodeType::Parameter(_) => {
                 if node.has_value() {
-                    node.set_last_forward_pass_id(graph_forward_pass_id);
+                    node.set_last_forward_pass_id(new_graph_forward_pass_id);
                     return Ok(());
                 }
                 return Err(GraphError::InvalidOperation(format!(
                     "{}不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为{}，而图的前向传播次数为{}",
                     node,
                     node.last_forward_pass_id(),
-                    graph_forward_pass_id
+                    new_graph_forward_pass_id
                 )));
             }
             _ => {
                 // 1.1.2 其他类型节点，若已在本代计算过则直接返回
-                if node.last_forward_pass_id() == graph_forward_pass_id {
+                if node.last_forward_pass_id() == new_graph_forward_pass_id {
                     return Ok(());
                 }
             }
@@ -164,7 +163,7 @@ impl Graph {
         // 2. 递归计算所有父节点
         let parents_ids = self.get_node_parents(node_id)?.to_vec();
         for parent_id in &parents_ids {
-            self.forward_node_internal(*parent_id)?;
+            self.forward_node_internal(*parent_id, new_graph_forward_pass_id)?;
         }
 
         // 3. 创建临时的父节点句柄，不持有self的引用(避免等会计算值时借用检查问题)
@@ -178,7 +177,7 @@ impl Graph {
         node.calc_value_by_parents(&parent_nodes)?;
 
         // 5. 更新节点的前向传播次数为当前次数
-        node.set_last_forward_pass_id(graph_forward_pass_id);
+        node.set_last_forward_pass_id(new_graph_forward_pass_id);
 
         // 6. 返回
         Ok(())
@@ -260,23 +259,24 @@ impl Graph {
             )));
         }
 
-        // 3.2 先将雅可比矩阵初始化为零矩阵
+        // 3.2 初始化雅可比矩阵（如果还没有的话）
+        // 注意：为了支持梯度累积，我们不会重置已存在的雅可比矩阵
         let result_node = self.get_node(result_node_id)?;
         {
-            let (result_dim, node_dim) = {
-                let node = self.get_node(target_node_id)?;
-                (
+            let target_node = self.get_node(target_node_id)?;
+            if target_node.jacobi().is_none() {
+                let (result_dim, node_dim) = (
                     result_node.value().map(|v| v.size()).ok_or_else(|| {
                         GraphError::ComputationError(format!("反向传播：结果{}没有值", result_node))
                     })?,
-                    node.value().map(|v| v.size()).ok_or_else(|| {
+                    target_node.value().map(|v| v.size()).ok_or_else(|| {
                         GraphError::ComputationError(format!("反向传播：{}没有值", target_node))
                     })?,
-                )
-            };
-            let zeros = Tensor::zeros(&[result_dim, node_dim]);
-            self.get_node_mut(target_node_id)?
-                .set_jacobi(Some(&zeros))?;
+                );
+                let zeros = Tensor::zeros(&[result_dim, node_dim]);
+                self.get_node_mut(target_node_id)?
+                    .set_jacobi(Some(&zeros))?;
+            }
         }
 
         // 3.3 计算所有子节点的梯度（雅可比矩阵）对当前节点的贡献

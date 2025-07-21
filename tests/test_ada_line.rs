@@ -62,8 +62,8 @@ fn test_adaline() -> Result<(), GraphError> {
     // 学习率
     let learning_rate = 0.0001;
 
-    // 训练执行25个epoch
-    for epoch in 0..25 {
+    // 训练执行10个epoch
+    for epoch in 0..10 {
         // 遍历训练集中的样本
         for i in 0..train_set.shape()[0] {
             // 取第i个样本的前4列（除最后一列的所有列），构造3x1矩阵对象
@@ -90,6 +90,9 @@ fn test_adaline() -> Result<(), GraphError> {
             let b_value = graph.get_node_value(b)?.unwrap();
             let b_grad = graph.get_node_grad(b)?.unwrap();
             graph.set_node_value(b, Some(&(b_value - learning_rate * b_grad)))?;
+
+            // 手动清除雅可比矩阵，为下次迭代做准备
+            graph.clear_jacobi()?;
         }
 
         // 每个epoch结束后评价模型的正确率

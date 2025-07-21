@@ -215,10 +215,10 @@ fn test_node_perception_loss_backward_propagation() {
     );
     assert_eq!(parent_jacobi, &expected_jacobi);
 
-    // 5.3 对parent的反向传播（第二次）- 应该得到相同的结果
+    // 5.3 对parent的反向传播（第二次）- 梯度应该累积
     graph.backward_nodes(&[parent], result).unwrap();
     let parent_jacobi_second = graph.get_node_jacobi(parent).unwrap().unwrap();
-    assert_eq!(parent_jacobi_second, &expected_jacobi);
+    assert_eq!(parent_jacobi_second, &(&expected_jacobi * 2.0));
 
     // 6. 清除雅可比矩阵并验证
     graph.clear_jacobi().unwrap();

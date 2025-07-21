@@ -351,20 +351,20 @@ fn test_node_add_backward_propagation() {
     let parent1_jacobi = graph.get_node_jacobi(parent1).unwrap().unwrap();
     assert_eq!(parent1_jacobi, &Tensor::eyes(4)); // ∂result/∂parent1 = I
 
-    // 5.3 对parent1的反向传播（第二次）- 应该得到相同的结果
+    // 5.3 对parent1的反向传播（第二次）- 梯度应该累积
     graph.backward_nodes(&[parent1], result).unwrap();
     let parent1_jacobi_second = graph.get_node_jacobi(parent1).unwrap().unwrap();
-    assert_eq!(parent1_jacobi_second, &Tensor::eyes(4)); // 第二次反向传播应该得到相同的结果
+    assert_eq!(parent1_jacobi_second, &(&Tensor::eyes(4) * 2.0)); // 梯度累积，变为2倍
 
     // 5.4 对parent2的反向传播（第一次）
     graph.backward_nodes(&[parent2], result).unwrap();
     let parent2_jacobi = graph.get_node_jacobi(parent2).unwrap().unwrap();
     assert_eq!(parent2_jacobi, &Tensor::eyes(4)); // ∂result/∂parent2 = I
 
-    // 5.5 对parent2的反向传播（第二次）- 应该得到相同的结果
+    // 5.5 对parent2的反向传播（第二次）- 梯度应该累积
     graph.backward_nodes(&[parent2], result).unwrap();
     let parent2_jacobi_second = graph.get_node_jacobi(parent2).unwrap().unwrap();
-    assert_eq!(parent2_jacobi_second, &Tensor::eyes(4)); // 第二次反向传播应该得到相同的结果
+    assert_eq!(parent2_jacobi_second, &(&Tensor::eyes(4) * 2.0)); // 梯度累积，变为2倍
 
     // 6. 清除雅可比矩阵并验证
     graph.clear_jacobi().unwrap();

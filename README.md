@@ -18,13 +18,24 @@
 
 ### 使用示例
 
-- **[Adaline自适应线性神经元](tests/test_ada_line.rs)** - 经典二分类算法实现，本例使用了最原始的写来构建计算图、自动微分和参数更新，测试显示1000样本25轮训练达95%+准确率（运行：`cargo test test_adaline -- --show-output`）
+- **[Adaline自适应线性神经元](tests/test_ada_line.rs)** - 经典二分类算法实现，本例使用了最原始的写来构建计算图、自动微分和参数更新，测试显示1000样本10轮训练可达95%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
-- (back/forward)pass-id相关的graph测试？
+- still need teset `test_duplicate_computation_avoidance`?
+- (back/forward)pass_id相关的graph测试？
 - （最后用AI优化下backward的逻辑）
+- 1次， 一次？用哪个？
+- `assert_eq!(
+        graph.backward_nodes(&[input], input),
+        Err(GraphError::InvalidOperation(format!(
+            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵"
+        )))
+    );
+    `添加一个`assert_err`的宏，可才参考`assert_panic`宏
+- refine `test_ada_line` to a failable test;
 - graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
-- 针对`loss1.backward(retain_graph=True)`和`detach()`还有多output输出，多次backward的问题；
+- 针对`loss1.backward(retain_graph=True)`和`detach()`还有多output输出，还有rnn节点的反向传播，还有多次backward的问题；
+- 对于Input节点的`set_jacobi`和`jacobi`是否可用更好的panic或error取代，毕竟Input节点不该有梯度相关的概念；
 - 是否需要添加一个sign节点来取代step直接forward输出[-1,1]？
 - 直接实现CrossEntropyLoss（训练）和SoftMax（推理），不用LogisticLoss（Sigmoid）了；
 
@@ -76,7 +87,9 @@
 
 ## 笔记
 
+- [计算图执行机制重构方案](.doc/graph_execution_refactor.md) - 阐述了从基于`pass_id`的指令式执行到基于“版本号”和“拓扑排序”的反应式更新模型的重构计划。
 - [MatrixSlow项目识别文档](.doc/python_MatrixSlow_pid.md) - 基于MatrixSlow的Python深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
+- [本项目的梯度设计机制说明](.doc/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
 
 ## 参考资料
 

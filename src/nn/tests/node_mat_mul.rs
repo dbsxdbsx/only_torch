@@ -337,10 +337,13 @@ fn test_node_mat_mul_backward_propagation() {
     );
     assert_eq!(parent1_jacobi, &expected_jacobi_parent1);
 
-    // 5.3 对parent1的反向传播（第二次）- 应该得到相同的结果
+    // 5.3 对parent1的反向传播（第二次）- 梯度应该累积
     graph.backward_nodes(&[parent1], result).unwrap();
     let parent1_jacobi_second = graph.get_node_jacobi(parent1).unwrap().unwrap();
-    assert_eq!(parent1_jacobi_second, &expected_jacobi_parent1);
+    assert_eq!(
+        parent1_jacobi_second,
+        &(&expected_jacobi_parent1 * 2.0)
+    );
 
     // 5.4 对parent2的反向传播（第一次）
     graph.backward_nodes(&[parent2], result).unwrap();
@@ -358,10 +361,13 @@ fn test_node_mat_mul_backward_propagation() {
     );
     assert_eq!(parent2_jacobi, &expected_jacobi_parent2);
 
-    // 5.5 对parent2的反向传播（第二次）- 应该得到相同的结果
+    // 5.5 对parent2的反向传播（第二次）- 梯度应该累积
     graph.backward_nodes(&[parent2], result).unwrap();
     let parent2_jacobi_second = graph.get_node_jacobi(parent2).unwrap().unwrap();
-    assert_eq!(parent2_jacobi_second, &expected_jacobi_parent2);
+    assert_eq!(
+        parent2_jacobi_second,
+        &(&expected_jacobi_parent2 * 2.0)
+    );
 
     // 6. 清除雅可比矩阵并验证
     graph.clear_jacobi().unwrap();
