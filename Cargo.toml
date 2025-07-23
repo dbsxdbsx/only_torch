@@ -1,7 +1,7 @@
 [package]
     name         ="only_torch"
-    version      ="0.0.8"
-    edition      ="2021"
+    version      ="0.1.0"
+    edition      ="2024"
     description  ="仿造pytorch的个人玩具（仍在构思，请勿使用）AI框架"
     repository   ="https://github.com/dbsxdbsx/only_torch"
     license      ="MIT"
