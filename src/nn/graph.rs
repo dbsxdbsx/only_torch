@@ -232,7 +232,7 @@ impl Graph {
             return Ok(());
         }
 
-        // 2. 若节点是结果节点（是自身），则自己对自己的雅可比矩阵为单位矩阵
+        // 2. 若目标节点是结果节点（是自身），则自己对自己的雅可比矩阵为单位矩阵
         if target_node_id == result_node_id {
             let element_number = target_node
                 .value()
@@ -250,7 +250,7 @@ impl Graph {
         }
 
         // 3. 其他情况的雅可比矩阵计算
-        // 3.1 若节点没有子节点且不是结果节点，则返回错误
+        // 3.1 若目标节点没有子节点且不是结果节点，则返回错误
         let children_ids = self.get_node_children(target_node_id)?;
         if children_ids.is_empty() {
             return Err(GraphError::InvalidOperation(format!(

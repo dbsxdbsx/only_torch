@@ -1,107 +1,5 @@
-use crate::nn::{Graph, GraphError, NodeId};
+use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
-
-#[test]
-fn test_graph_creation() {
-    // 测试默认创建
-    let graph = Graph::new();
-    assert_eq!(graph.name(), "default_graph");
-    assert_eq!(graph.nodes_count(), 0);
-
-    // 测试指定名称创建
-    let named_graph = Graph::with_name("custom_graph");
-    assert_eq!(named_graph.name(), "custom_graph");
-    assert_eq!(named_graph.nodes_count(), 0);
-}
-
-#[test]
-fn test_graph_mode() {
-    // 1. 默认创建模式
-    // 默认应该是训练模式
-    let mut graph = Graph::new();
-    assert!(graph.is_train_mode());
-
-    // 测试切换到评估模式
-    graph.set_eval_mode();
-    assert!(!graph.is_train_mode());
-
-    // 测试切换回训练模式
-    graph.set_train_mode();
-    assert!(graph.is_train_mode());
-
-    // 2. 测试指定名称创建
-    // 默认应该是训练模式
-    let mut named_graph = Graph::with_name("custom_graph");
-    assert!(named_graph.is_train_mode());
-
-    // 测试切换到评估模式
-    named_graph.set_eval_mode();
-    assert!(!named_graph.is_train_mode());
-
-    // 测试切换回训练模式
-    named_graph.set_train_mode();
-    assert!(named_graph.is_train_mode());
-}
-
-#[test]
-fn test_new_node_error_handling() {
-    let mut graph = Graph::new();
-
-    // 1. 测试节点未找到错误
-    let invalid_id = NodeId(999);
-    assert_eq!(
-        graph.get_node_value(invalid_id),
-        Err(GraphError::NodeNotFound(invalid_id))
-    );
-
-    // 2. 测试重复节点名称错误
-    let _ = graph
-        .new_parameter_node(&[2, 2], Some("duplicate"))
-        .unwrap();
-    assert_eq!(
-        graph.new_parameter_node(&[2, 2], Some("duplicate")),
-        Err(GraphError::DuplicateNodeName(format!(
-            "节点duplicate在图default_graph中重复"
-        )))
-    );
-
-    // 3. 测试形状不匹配导致的错误
-    let param = graph.new_parameter_node(&[2, 2], None).unwrap();
-    let wrong_shape = Tensor::new(&[1.0, 2.0], &[2, 1]);
-    assert_eq!(
-        graph.set_node_value(param, Some(&wrong_shape)),
-        Err(GraphError::ShapeMismatch {
-            expected: vec![2, 2],
-            got: vec![2, 1],
-            message: format!(
-                "新张量的形状 [2, 1] 与节点 'parameter_1' 现有张量的形状 [2, 2] 不匹配。"
-            )
-        })
-    );
-}
-
-#[test]
-fn test_node_relationships() {
-    let mut graph = Graph::new();
-
-    // 1. 创建节点关系
-    let input1 = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[2, 2], Some("input2")).unwrap();
-    let add = graph.new_add_node(&[input1, input2], Some("add")).unwrap();
-
-    // 2. 验证父子关系
-    let parents = graph.get_node_parents(add).unwrap();
-    assert_eq!(parents.len(), 2);
-    assert!(parents.contains(&input1));
-    assert!(parents.contains(&input2));
-
-    let children1 = graph.get_node_children(input1).unwrap();
-    let children2 = graph.get_node_children(input2).unwrap();
-    assert_eq!(children1.len(), 1);
-    assert_eq!(children2.len(), 1);
-    assert!(children1.contains(&add));
-    assert!(children2.contains(&add));
-}
 
 #[test]
 fn test_node_jacobi() {
@@ -199,103 +97,6 @@ fn test_node_grad() {
     let w_jacobi = graph.get_node_jacobi(w).unwrap().unwrap();
     let w_grad = graph.get_node_grad(w).unwrap().unwrap();
     assert_eq!(w_grad, w_jacobi.transpose().reshape(w_value.shape()));
-}
-
-#[test]
-fn test_forward_with_partial_forward_propagation() {
-    let mut graph = Graph::new();
-
-    // 1. 创建计算图：z = x + y, w = x + y (两个节点都依赖同样的add操作)
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
-    let y = graph.new_input_node(&[2, 1], Some("y")).unwrap();
-    let add1 = graph.new_add_node(&[x, y], Some("add1")).unwrap();
-    let add2 = graph.new_add_node(&[x, y], Some("add2")).unwrap();
-
-    // 2. 设置输入值
-    let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
-    let y_value = Tensor::new(&[0.5, 1.5], &[2, 1]);
-    graph.set_node_value(x, Some(&x_value)).unwrap();
-    graph.set_node_value(y, Some(&y_value)).unwrap();
-
-    // 3. 第一次前向传播add1
-    graph.forward_node(add1).unwrap();
-    let first_pass_id = graph.last_forward_pass_id();
-
-    // 验证所有节点的pass_id都是第一次的pass_id
-    assert_eq!(
-        graph.get_node(x).unwrap().last_forward_pass_id(),
-        first_pass_id
-    );
-    assert_eq!(
-        graph.get_node(y).unwrap().last_forward_pass_id(),
-        first_pass_id
-    );
-    assert_eq!(
-        graph.get_node(add1).unwrap().last_forward_pass_id(),
-        first_pass_id
-    );
-
-    // add2还没有被计算，所以其pass_id应该为0
-    assert_eq!(graph.get_node(add2).unwrap().last_forward_pass_id(), 0);
-
-    // 4. 创建一个更复杂的图来测试重复计算避免：
-    // 创建一个菱形依赖：final = add1 + add2，其中add1和add2都依赖x和y
-    let final_add = graph.new_add_node(&[add1, add2], Some("final")).unwrap();
-
-    // 5. 前向传播final节点，这会触发对add1和add2的计算
-    // 在这个过程中，x和y应该只被计算一次（重复计算避免）
-    graph.forward_node(final_add).unwrap();
-    let second_pass_id = graph.last_forward_pass_id();
-    assert_eq!(second_pass_id, first_pass_id + 1);
-
-    // 验证所有节点都被更新到新的pass_id
-    assert_eq!(
-        graph.get_node(x).unwrap().last_forward_pass_id(),
-        second_pass_id
-    );
-    assert_eq!(
-        graph.get_node(y).unwrap().last_forward_pass_id(),
-        second_pass_id
-    );
-    assert_eq!(
-        graph.get_node(add1).unwrap().last_forward_pass_id(),
-        second_pass_id
-    );
-    assert_eq!(
-        graph.get_node(add2).unwrap().last_forward_pass_id(),
-        second_pass_id
-    );
-    assert_eq!(
-        graph.get_node(final_add).unwrap().last_forward_pass_id(),
-        second_pass_id
-    );
-
-    // 6. 再次前向传播final节点，验证所有节点都会重新计算
-    graph.forward_node(final_add).unwrap();
-    let third_pass_id = graph.last_forward_pass_id();
-    assert_eq!(third_pass_id, second_pass_id + 1);
-
-    // 验证所有节点的pass_id都更新为新的pass_id
-    assert_eq!(
-        graph.get_node(x).unwrap().last_forward_pass_id(),
-        third_pass_id
-    );
-    assert_eq!(
-        graph.get_node(y).unwrap().last_forward_pass_id(),
-        third_pass_id
-    );
-    assert_eq!(
-        graph.get_node(add1).unwrap().last_forward_pass_id(),
-        third_pass_id
-    );
-    assert_eq!(
-        graph.get_node(add2).unwrap().last_forward_pass_id(),
-        third_pass_id
-    );
-    assert_eq!(
-        graph.get_node(final_add).unwrap().last_forward_pass_id(),
-        third_pass_id
-    );
 }
 
 #[test]
@@ -479,37 +280,6 @@ fn test_backward_with_partial_forward_propagation() {
 }
 
 #[test]
-fn test_forward_pass_id_increment() {
-    let mut graph = Graph::new();
-
-    // 1. 创建简单的计算图：y = x + b
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
-    let b = graph.new_parameter_node(&[2, 1], Some("b")).unwrap();
-    let y = graph.new_add_node(&[x, b], Some("y")).unwrap();
-
-    // 2. 初始状态：pass_id应该为0
-    assert_eq!(graph.last_forward_pass_id(), 0);
-
-    // 3. 设置输入值
-    let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
-    let b_value = Tensor::new(&[0.1, 0.2], &[2, 1]);
-    graph.set_node_value(x, Some(&x_value)).unwrap();
-    graph.set_node_value(b, Some(&b_value)).unwrap();
-
-    // 4. 第一次前向传播
-    graph.forward_node(y).unwrap();
-    assert_eq!(graph.last_forward_pass_id(), 1);
-
-    // 5. 第二次前向传播
-    graph.forward_node(y).unwrap();
-    assert_eq!(graph.last_forward_pass_id(), 2);
-
-    // 6. 第三次前向传播
-    graph.forward_node(y).unwrap();
-    assert_eq!(graph.last_forward_pass_id(), 3);
-}
-
-#[test]
 fn test_backward_pass_id_increment() {
     let mut graph = Graph::new();
 
@@ -610,7 +380,7 @@ fn test_node_pass_id_synchronization() {
 }
 
 #[test]
-fn test_pass_id_rollback_on_error() {
+fn test_pass_id_rollback_on_backward_error() {
     let mut graph = Graph::new();
 
     // 1. 创建计算图：y = x + b
@@ -618,153 +388,25 @@ fn test_pass_id_rollback_on_error() {
     let b = graph.new_parameter_node(&[2, 1], Some("b")).unwrap();
     let y = graph.new_add_node(&[x, b], Some("y")).unwrap();
 
-    // 2. 设置b的值，但故意不设置x的值
+    // 2. 设置输入值并前向传播
+    let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
     let b_value = Tensor::new(&[0.1, 0.2], &[2, 1]);
+    graph.set_node_value(x, Some(&x_value)).unwrap();
     graph.set_node_value(b, Some(&b_value)).unwrap();
+    graph.forward_node(y).unwrap();
 
-    // 3. 记录初始pass_id
-    let initial_forward_pass_id = graph.last_forward_pass_id();
+    // 3. 记录初始反向传播pass_id
     let initial_backward_pass_id = graph.last_backward_pass_id();
-    assert_eq!(initial_forward_pass_id, 0);
     assert_eq!(initial_backward_pass_id, 0);
 
-    // 4. 尝试前向传播，应该失败（因为x没有值）
-    let forward_result = graph.forward_node(y);
-    assert!(forward_result.is_err());
-
-    // 验证前向传播失败后pass_id被正确回滚
-    assert_eq!(graph.last_forward_pass_id(), initial_forward_pass_id);
-
-    // 5. 设置x的值，使前向传播能够成功
-    let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
-    graph.set_node_value(x, Some(&x_value)).unwrap();
-
-    // 6. 现在前向传播应该成功
-    graph.forward_node(y).unwrap();
-    assert_eq!(graph.last_forward_pass_id(), 1);
-
-    // 7. 尝试对输入节点进行反向传播，应该失败
+    // 4. 尝试对输入节点进行反向传播，应该失败
     let backward_result = graph.backward_nodes(&[x], y);
     assert!(backward_result.is_err());
 
     // 验证反向传播失败后pass_id被正确回滚
     assert_eq!(graph.last_backward_pass_id(), initial_backward_pass_id);
 
-    // 8. 对参数节点进行反向传播，应该成功
+    // 5. 对参数节点进行反向传播，应该成功
     graph.backward_nodes(&[b], y).unwrap();
     assert_eq!(graph.last_backward_pass_id(), 1);
 }
-
-// #[test]
-// fn test_outdated_node_skipping_in_backward() {
-//     let mut graph = Graph::new();
-
-//     // 1. 创建复杂的计算图：result = (a + b) * c + d
-//     let a = graph.new_input_node(&[2, 1], Some("a")).unwrap();
-//     let b = graph.new_input_node(&[2, 1], Some("b")).unwrap();
-//     let c = graph.new_parameter_node(&[1, 2], Some("c")).unwrap();
-//     let d = graph.new_parameter_node(&[1, 1], Some("d")).unwrap();
-//     let add_ab = graph.new_add_node(&[a, b], Some("add_ab")).unwrap();
-//     let mul_c = graph.new_mat_mul_node(c, add_ab, Some("mul_c")).unwrap();
-//     let result = graph.new_add_node(&[mul_c, d], Some("result")).unwrap();
-
-//     // 2. 设置初始值并进行第一次前向传播
-//     let a_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
-//     let b_value = Tensor::new(&[0.5, 1.5], &[2, 1]);
-//     let c_value = Tensor::new(&[0.1, 0.2], &[1, 2]);
-//     let d_value = Tensor::new(&[0.3], &[1, 1]);
-
-//     graph.set_node_value(a, Some(&a_value)).unwrap();
-//     graph.set_node_value(b, Some(&b_value)).unwrap();
-//     graph.set_node_value(c, Some(&c_value)).unwrap();
-//     graph.set_node_value(d, Some(&d_value)).unwrap();
-
-//     // 第一次前向传播
-//     graph.forward_node(result).unwrap();
-//     let first_forward_pass_id = graph.last_forward_pass_id();
-
-//     // 3. 修改a的值但不重新前向传播，使add_ab和mul_c的值过时
-//     let a_new_value = Tensor::new(&[3.0, 4.0], &[2, 1]);
-//     graph.set_node_value(a, Some(&a_new_value)).unwrap();
-
-//     // 验证a的前向pass_id被重置，但其他节点保持原来的pass_id
-//     assert_eq!(
-//         graph.get_node(a).unwrap().last_forward_pass_id(),
-//         first_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(add_ab).unwrap().last_forward_pass_id(),
-//         first_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(mul_c).unwrap().last_forward_pass_id(),
-//         first_forward_pass_id
-//     );
-
-//     // 4. 修改d的值，这会更新d的前向pass_id但不影响其他节点
-//     let d_new_value = Tensor::new(&[0.5], &[1, 1]);
-//     graph.set_node_value(d, Some(&d_new_value)).unwrap();
-
-//     // 验证修改值后，所有节点的pass_id保持不变（因为还没有新的前向传播）
-//     assert_eq!(
-//         graph.get_node(a).unwrap().last_forward_pass_id(),
-//         first_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(add_ab).unwrap().last_forward_pass_id(),
-//         first_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(mul_c).unwrap().last_forward_pass_id(),
-//         first_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(d).unwrap().last_forward_pass_id(),
-//         first_forward_pass_id
-//     );
-
-//     // 5. 现在重新前向传播result，这会重新计算所有节点
-//     graph.forward_node(result).unwrap();
-//     let second_forward_pass_id = graph.last_forward_pass_id();
-//     assert_eq!(second_forward_pass_id, first_forward_pass_id + 1);
-
-//     // 验证所有节点现在都有最新的前向pass-id
-//     assert_eq!(
-//         graph.get_node(a).unwrap().last_forward_pass_id(),
-//         second_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(add_ab).unwrap().last_forward_pass_id(),
-//         second_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(mul_c).unwrap().last_forward_pass_id(),
-//         second_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(d).unwrap().last_forward_pass_id(),
-//         second_forward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(result).unwrap().last_forward_pass_id(),
-//         second_forward_pass_id
-//     );
-
-//     // 6. 进行反向传播
-//     graph.backward_nodes(&[c, d], result).unwrap();
-
-//     // 验证反向传播成功
-//     let backward_pass_id = graph.last_backward_pass_id();
-//     assert_eq!(
-//         graph.get_node(c).unwrap().last_backward_pass_id(),
-//         backward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(d).unwrap().last_backward_pass_id(),
-//         backward_pass_id
-//     );
-//     assert_eq!(
-//         graph.get_node(result).unwrap().last_backward_pass_id(),
-//         backward_pass_id
-//     );
-// }

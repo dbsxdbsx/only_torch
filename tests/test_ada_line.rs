@@ -62,8 +62,15 @@ fn test_adaline() -> Result<(), GraphError> {
     // 学习率
     let learning_rate = 0.0001;
 
-    // 训练执行10个epoch
-    for epoch in 0..10 {
+    // 测试参数
+    let max_epochs = 100;
+    let target_accuracy = 0.95; // 95%
+    let consecutive_success_required = 3;
+    let mut consecutive_success_count = 0;
+    let mut test_passed = false;
+
+    // 训练执行最多50个epoch，或直到达到成功条件
+    for epoch in 0..max_epochs {
         // 遍历训练集中的样本
         for i in 0..train_set.shape()[0] {
             // 取第i个样本的前4列（除最后一列的所有列），构造3x1矩阵对象
@@ -116,16 +123,50 @@ fn test_adaline() -> Result<(), GraphError> {
         let train_set_len = train_set.shape()[0] as f32;
         let accuracy = filtered_sum / train_set_len;
 
+        let accuracy_value = accuracy.get_data_number().unwrap();
+        let accuracy_percent = accuracy_value * 100.0;
+
         // 打印当前epoch数和模型在训练集上的正确率
-        println!(
-            "训练回合: {}, 正确率: {:.1}%",
-            epoch + 1,
-            accuracy.get_data_number().unwrap() * 100.0
-        );
+        println!("训练回合: {}, 正确率: {:.1}%", epoch + 1, accuracy_percent);
+
+        // 检查是否达到目标准确率
+        if accuracy_value >= target_accuracy {
+            consecutive_success_count += 1;
+
+            // 检查是否连续达到目标准确率足够次数
+            if consecutive_success_count >= consecutive_success_required {
+                test_passed = true;
+                println!(
+                    "🎉 测试通过！连续{}次达到{:.1}%以上准确率",
+                    consecutive_success_required,
+                    target_accuracy * 100.0
+                );
+                break;
+            }
+        } else {
+            consecutive_success_count = 0; // 重置连续成功计数
+        }
     }
 
     let duration = start_time.elapsed();
     println!("总耗时: {duration:.2?}");
 
-    Ok(())
+    // 检查测试是否通过
+    if test_passed {
+        println!("✅ ADALINE测试成功通过！");
+        Ok(())
+    } else {
+        println!(
+            "❌ ADALINE测试失败：在{}个epoch内未能连续{}次达到{:.1}%以上准确率",
+            max_epochs,
+            consecutive_success_required,
+            target_accuracy * 100.0
+        );
+        Err(GraphError::ComputationError(format!(
+            "ADALINE测试失败：在{}个epoch内未能连续{}次达到{:.1}%以上准确率",
+            max_epochs,
+            consecutive_success_required,
+            target_accuracy * 100.0
+        )))
+    }
 }

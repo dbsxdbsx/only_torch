@@ -1,4 +1,6 @@
-mod graph;
+mod graph_backward;
+mod graph_basic;
+mod graph_forward;
 mod node_add;
 mod node_input;
 mod node_mat_mul;

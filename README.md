@@ -21,64 +21,50 @@
 - **[Adaline自适应线性神经元](tests/test_ada_line.rs)** - 经典二分类算法实现，本例使用了最原始的写来构建计算图、自动微分和参数更新，测试显示1000样本10轮训练可达95%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
+
 - still need teset `test_duplicate_computation_avoidance`?
 - (back/forward)pass_id相关的graph测试？
 - （最后用AI优化下backward的逻辑）
 - 1次， 一次？用哪个？
-- `assert_eq!(
-        graph.backward_nodes(&[input], input),
-        Err(GraphError::InvalidOperation(format!(
-            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵"
-        )))
-    );
-    `添加一个`assert_err`的宏，可才参考`assert_panic`宏
-- refine `test_ada_line` to a failable test;
+- `assert_eq!( graph.backward_nodes(&[input], input), Err(GraphError::InvalidOperation(format!( "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵" ))) ); `添加一个 `assert_err`的宏，可才参考 `assert_panic`宏
 - graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
-- 针对`loss1.backward(retain_graph=True)`和`detach()`还有多output输出，还有rnn节点的反向传播，还有多次backward的问题；
-- 对于Input节点的`set_jacobi`和`jacobi`是否可用更好的panic或error取代，毕竟Input节点不该有梯度相关的概念；
+- 针对 `loss1.backward(retain_graph=True)`和 `detach()`还有多output输出，还有rnn节点的反向传播，还有多次backward的问题；
+- 对于Input节点的 `set_jacobi`和 `jacobi`是否可用更好的panic或error取代，毕竟Input节点不该有梯度相关的概念；
 - 是否需要添加一个sign节点来取代step直接forward输出[-1,1]？
 - 直接实现CrossEntropyLoss（训练）和SoftMax（推理），不用LogisticLoss（Sigmoid）了；
-
 - unit test for Graph, and parent/children
 - Graph测试中该包含各种pub method的正确及错误测试
 - Graph测试中最好添加某个节点后，测试该节点还有其父节点的parents/children属性（又比如：同2个节点用于不同图的add节点，测试其parents/children属性是否正确）(Variable 节点无父节点)、“节点var1在图default_graph中重复”
 - add a `graph` for unit test to test the 多层的jacobi计算，就像ada_line那样?
-
 - 各种assign类的op（如：add_assign）是否需要重载而不是复用基本算子？
-
 - 在python中仿造ada_Line构造一个复合多节点，然后基于此在rust中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
 - jacobi到底该测试对parent还是children？
-
 - how to expose only `in crate::nn` to the nn::Graph`?
 - should completely hide the NodeHandle?
 - Graph/NodeHandle rearrange blocks due to visibility and funciontality
-
-- NodeHandle重命名为Node? 各种`parent/children/node_id`重命名为`parents/children/id`?
+- NodeHandle重命名为Node? 各种 `parent/children/node_id`重命名为 `parents/children/id`?
 - should directly use `parents` but not `parents_ids`?
-
 - check other unused methods
 - draw_graph(graphvis画图)
 - save/load网络模型（已有test_save_load_tensor）
-
-- 也许后期可给Graph添加一个`forward_batch`方法，用于批量forward(参考adaline_batch.py)？
-
+- 也许后期可给Graph添加一个 `forward_batch`方法，用于批量forward(参考adaline_batch.py)？
 - 后期当引入NEAT机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
-- 当后期（NEAT阶段）需要在一个已经forwarded的图中添加节点（如将已经被使用过的var1、var2结合一个新的未使用的var3构建一个add节点），可能需要添加一个`reset_forward_cnt`方法来保证图forward的一致性。
-- NEAT之后，针对图backward的`loss1.backward(retain_graph=True)`和`detach()`机制的实现（可在GAN和强化学习算法实例中针对性实现测试），可能须和`forward_cnt`机制结合, 还要考虑一次forward后多次backward()后的结果。
+- 当后期（NEAT阶段）需要在一个已经forwarded的图中添加节点（如将已经被使用过的var1、var2结合一个新的未使用的var3构建一个add节点），可能需要添加一个 `reset_forward_cnt`方法来保证图forward的一致性。
+- NEAT之后，针对图backward的 `loss1.backward(retain_graph=True)`和 `detach()`机制的实现（可在GAN和强化学习算法实例中针对性实现测试），可能须和 `forward_cnt`机制结合, 还要考虑一次forward后多次backward()后的结果。
 - Tensor 真的需要uninit吗？
 - 各种命名规范“2维”，“二维”，“二阶”，“2阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”，”dim/dimension/rank“,"维/阶",","改为", ","仍然"改为”仍“
 - 添加一个表格，说明下本crate中，阶、维、标量、向量、矩阵、张量的概念异同；
 - 根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，，容易添加edge(如已存在的add节点的父节点)，。
 - 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - 图错误“InvalidOperation” vs “ComputationError”
-- Tensor类的index将`[[`优化成`[`?
-- Tensor类的`slice(&[0..m, j..j+1])`是否需要？
+- Tensor类的index将 `[[`优化成 `[`?
+- Tensor类的 `slice(&[0..m, j..j+1])`是否需要？
 - use approx::assert_abs_diff_eq; need or not?
 - [get_node_grad函数优化分析](.doc/get_node_grad_optimization_analysis.md)
 
-
 **目前需要先解决有没有的问题，而不是好不好**
-- [] 实现类似tch-rs中`tch::no_grad(|| {});`的无梯度功能；
+
+- [] 实现类似tch-rs中 `tch::no_grad(|| {});`的无梯度功能；
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
 - [] 基于本框架解决XOR监督学习问题
 - [] 基于本框架解决Mnist（数字识别）的监督学习问题
@@ -87,7 +73,7 @@
 
 ## 笔记
 
-- [计算图执行机制重构方案](.doc/graph_execution_refactor.md) - 阐述了从基于`pass_id`的指令式执行到基于“版本号”和“拓扑排序”的反应式更新模型的重构计划。
+- [计算图执行机制重构方案](.doc/graph_execution_refactor.md) - 阐述了从基于 `pass_id`的指令式执行到基于“版本号”和“拓扑排序”的反应式更新模型的重构计划。
 - [MatrixSlow项目识别文档](.doc/python_MatrixSlow_pid.md) - 基于MatrixSlow的Python深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 - [本项目的梯度设计机制说明](.doc/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
 
@@ -104,6 +90,7 @@
 - [老式游戏rom](https://www.myabandonware.com/)
 
 ### 数学/IT原理
+
 - [早期pytorch关于Tensor、Variable等的探讨](https://pytorch.org/blog/pytorch-0_4_0-migration-guide/#merging-tensor-and-variable-and-classes)
 - [矩阵和向量的各种乘法](https://www.jianshu.com/p/9165e3264ced)
 - [神经网络与记忆](https://www.bilibili.com/video/BV1fV4y1i7hZ/?spm_id_from=333.1007.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
@@ -111,27 +98,27 @@
 - [基于梯度的机器学习IT原理](https://zhuanlan.zhihu.com/p/518198564)
 
 ### 开源示例
+
 - [KAN 2.0](https://blog.csdn.net/qq_44681809/article/details/141355718)
 - [radiate--衍生NEAT的纯Rust库](https://github.com/pkalivas/radiate)
 - [neat-rs](https://github.com/dbsxdbsx/neat-rs)
 - [纯Rust的NEAT+GRU](https://github.com/sakex/neat-gru-Rust)
 - [Rusty_sr-纯Rust的基于dl的图像超清](https://github.com/millardjn/Rusty_sr)
-- [ndarray_glm(可参考下`array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
-
+- [ndarray_glm(可参考下 `array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
 - [PyToy--基于MatrixSlow的Python机器学习框架](https://github.com/ysj1173886760/PyToy)
 - [MatrixSlow--纯python写的神经网络库](https://github.com/zc911/MatrixSlow)
 - [python：遗传算法（GE）玩FlappyBird](https://github.com/ShuhuaGao/gpFlappyBird)
-
 - [python包：遗传规划gplearn](https://gplearn.readthedocs.io/en/stable/examples.html)
 - [python包：遗传规划deap](https://deap.readthedocs.io/en/master/examples/gp_symbreg.html)
 - [python包：特征自动提取](https://github.com/IIIS-Li-Group/OpenFE)
 - [NTK网络](https://zhuanlan.zhihu.com/p/682231092)
 
 （较为成熟的3方库）
+
 - [Burn—纯rust深度学习库](https://github.com/Tracel-AI/burn)
 - [Candle:纯rust较成熟的机器学习库](https://github.com/huggingface/candle)
 - [用纯numpy写各类机器学习算法](https://github.com/ddbourgin/numpy-ml)
-（自动微分参考）
+  （自动微分参考）
 - [手工微分：Rust-CNN](https://github.com/goldstraw/RustCNN)
 - [neuronika--纯Rust深度学习库（更新停滞了，参考下自动微分部分）](https://github.com/neuronika/neuronika)
 - [基于TinyGrad的python深度学习库的RL示例](https://github.com/DHDev0/TinyRL/tree/main)
@@ -139,12 +126,10 @@
 - [重点：基于ndarray的反向autoDiff库](https://github.com/raskr/rust-autograd)
 - [前向autoDiff(貌似不成熟)](https://github.com/elrnv/autodiff)
 - []
-
 - [深度学习框架InsNet简介](https://zhuanlan.zhihu.com/p/378684569)
 - [C++机器学习库MLPACK](https://www.mlpack.org/)
 - [经典机器学习算法Rust库](https://github.com/Rust-ml/linfa)
 - [peroxide--纯Rust的线代及周边库](https://crates.io/crates/peroxide)
-
 - [C++实现的NEAT+LSTM/GRU/CNN](https://github.com/travisdesell/exact)
 - [pytorch+NEAT](https://github.com/ddehueck/pytorch-neat)
 - [avalog--基于avatar的Rust逻辑推理库](https://crates.io/crates/avalog)
@@ -225,6 +210,7 @@
 - [关于lean的一篇文章](https://zhuanlan.zhihu.com/p/183902909#%E6%A6%82%E8%A7%88)
 - [Lean+LLM](https://github.com/lean-dojo/LeanDojo)
 - [陶哲轩使用Lean4](https://mp.weixin.qq.com/s/TYB6LgbhjvHYvkbWrEoDOg)
+
 ```
 Formal Verification
 ├── Theorem Proving（定理证明）
@@ -235,6 +221,7 @@ Formal Verification
 │   └── Automated Theorem Proving（自动式）
 └── Model Checking（模型检测）
 ```
+
 ### 博弈论（game）
 
 - [Sprague-Grundy介绍1](https://zhuanlan.zhihu.com/p/157731188)
