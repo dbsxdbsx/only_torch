@@ -28,8 +28,8 @@ pub trait Optimizer {
     fn set_learning_rate(&mut self, lr: f32);
 }
 
-/// 梯度累积器
-pub struct GradientAccumulator {
+/// 梯度累积器（内部实现，不对外暴露）
+pub(crate) struct GradientAccumulator {
     /// 累积的梯度：NodeId -> 累积梯度
     accumulated_gradients: HashMap<NodeId, Tensor>,
     /// 累积的样本数量
@@ -38,7 +38,7 @@ pub struct GradientAccumulator {
 
 impl GradientAccumulator {
     /// 创建新的梯度累积器
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             accumulated_gradients: HashMap::new(),
             sample_count: 0,
@@ -46,7 +46,11 @@ impl GradientAccumulator {
     }
 
     /// 累积单个样本的梯度
-    pub fn accumulate(&mut self, node_id: NodeId, gradient: &Tensor) -> Result<(), GraphError> {
+    pub(crate) fn accumulate(
+        &mut self,
+        node_id: NodeId,
+        gradient: &Tensor,
+    ) -> Result<(), GraphError> {
         if let Some(existing_gradient) = self.accumulated_gradients.get_mut(&node_id) {
             *existing_gradient = existing_gradient.clone() + gradient;
         } else {
@@ -56,12 +60,12 @@ impl GradientAccumulator {
     }
 
     /// 增加样本计数
-    pub fn increment_sample_count(&mut self) {
+    pub(crate) fn increment_sample_count(&mut self) {
         self.sample_count += 1;
     }
 
     /// 获取平均梯度
-    pub fn get_average_gradient(&self, node_id: NodeId) -> Option<Tensor> {
+    pub(crate) fn get_average_gradient(&self, node_id: NodeId) -> Option<Tensor> {
         if self.sample_count == 0 {
             return None;
         }
@@ -72,19 +76,19 @@ impl GradientAccumulator {
     }
 
     /// 清除累积状态
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.accumulated_gradients.clear();
         self.sample_count = 0;
     }
 
     /// 获取累积的样本数量
-    pub fn sample_count(&self) -> usize {
+    pub(crate) fn sample_count(&self) -> usize {
         self.sample_count
     }
 }
 
-/// 优化器状态管理
-pub struct OptimizerState {
+/// 优化器状态管理（内部实现，不对外暴露）
+pub(crate) struct OptimizerState {
     /// 可训练参数的节点ID列表
     trainable_nodes: Vec<NodeId>,
     /// 梯度累积器
@@ -95,7 +99,7 @@ pub struct OptimizerState {
 
 impl OptimizerState {
     /// 创建新的优化器状态
-    pub fn new(graph: &Graph, learning_rate: f32) -> Result<Self, GraphError> {
+    pub(crate) fn new(graph: &Graph, learning_rate: f32) -> Result<Self, GraphError> {
         // 获取所有可训练的参数节点
         let trainable_nodes = graph.get_trainable_nodes();
 
@@ -107,32 +111,32 @@ impl OptimizerState {
     }
 
     /// 获取可训练节点列表
-    pub fn trainable_nodes(&self) -> &[NodeId] {
+    pub(crate) fn trainable_nodes(&self) -> &[NodeId] {
         &self.trainable_nodes
     }
 
     /// 获取梯度累积器的可变引用
-    pub fn gradient_accumulator_mut(&mut self) -> &mut GradientAccumulator {
+    pub(crate) fn gradient_accumulator_mut(&mut self) -> &mut GradientAccumulator {
         &mut self.gradient_accumulator
     }
 
     /// 获取梯度累积器的不可变引用
-    pub fn gradient_accumulator(&self) -> &GradientAccumulator {
+    pub(crate) fn gradient_accumulator(&self) -> &GradientAccumulator {
         &self.gradient_accumulator
     }
 
     /// 获取学习率
-    pub fn learning_rate(&self) -> f32 {
+    pub(crate) fn learning_rate(&self) -> f32 {
         self.learning_rate
     }
 
     /// 设置学习率
-    pub fn set_learning_rate(&mut self, lr: f32) {
+    pub(crate) fn set_learning_rate(&mut self, lr: f32) {
         self.learning_rate = lr;
     }
 
     /// 执行前向反向传播并累积梯度
-    pub fn forward_backward_accumulate(
+    pub(crate) fn forward_backward_accumulate(
         &mut self,
         graph: &mut Graph,
         target_node: NodeId,
@@ -160,7 +164,7 @@ impl OptimizerState {
     }
 
     /// 重置累积状态
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.gradient_accumulator.clear();
     }
 }

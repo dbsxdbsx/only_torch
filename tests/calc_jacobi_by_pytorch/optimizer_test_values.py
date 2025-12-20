@@ -1,18 +1,26 @@
 """
 验证 optimizer 单元测试的预期值
+=================================
+此脚本用于生成 Rust 单元测试 `src/nn/tests/optimizer.rs` 中的预期值。
+
 计算图结构：
   output = w @ x
   loss_input = label @ output
   loss = perception_loss(loss_input)  # if x < 0: -x, else: 0
 
-用于验证 Rust 单元测试中的精确数值
+验证的测试:
+  - test_sgd_update_formula
+  - test_sgd_gradient_accumulation
+  - test_adam_update
+
+运行方式: python tests/calc_jacobi_by_pytorch/optimizer_test_values.py
 """
 import torch
 import torch.optim as optim
 
 
 def perception_loss(x):
-    """PerceptionLoss: x >= 0 时为 0，x < 0 时为 -x"""
+    """PerceptionLoss: x >= 0 时为 0，x < 0 时为 -x (与 Rust 实现一致)"""
     return torch.where(x >= 0, torch.zeros_like(x), -x)
 
 
@@ -70,12 +78,12 @@ for i in range(3):
     # 每次迭代需要清零梯度
     if w.grad is not None:
         w.grad.zero_()
-    
+
     output = w @ x
     loss_input = label @ output
     loss = perception_loss(loss_input)
     loss.backward()
-    
+
     print(f"Iteration {i+1}: loss_input={loss_input.item()}, grad={w.grad.item()}")
     total_grad += w.grad.item()
 
@@ -140,4 +148,3 @@ test_adam_update:
   - w_init = 2.0, x = 3.0, label = -1.0, lr = 0.1
   - expected w_new ≈ 1.9 (Adam 第一步更新约等于 lr)
 """)
-

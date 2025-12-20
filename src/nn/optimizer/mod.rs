@@ -11,5 +11,9 @@ mod base;
 mod sgd;
 
 pub use adam::Adam;
-pub use base::{GradientAccumulator, Optimizer, OptimizerState};
+pub use base::Optimizer;
 pub use sgd::SGD;
+
+// 内部实现，仅 crate 内可见（用于单元测试）
+#[cfg(test)]
+pub(crate) use base::{GradientAccumulator, OptimizerState};
