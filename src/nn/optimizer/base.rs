@@ -60,7 +60,7 @@ impl GradientAccumulator {
     }
 
     /// 增加样本计数
-    pub(crate) fn increment_sample_count(&mut self) {
+    pub(crate) const fn increment_sample_count(&mut self) {
         self.sample_count += 1;
     }
 
@@ -82,7 +82,7 @@ impl GradientAccumulator {
     }
 
     /// 获取累积的样本数量
-    pub(crate) fn sample_count(&self) -> usize {
+    pub(crate) const fn sample_count(&self) -> usize {
         self.sample_count
     }
 }
@@ -116,22 +116,22 @@ impl OptimizerState {
     }
 
     /// 获取梯度累积器的可变引用
-    pub(crate) fn gradient_accumulator_mut(&mut self) -> &mut GradientAccumulator {
+    pub(crate) const fn gradient_accumulator_mut(&mut self) -> &mut GradientAccumulator {
         &mut self.gradient_accumulator
     }
 
     /// 获取梯度累积器的不可变引用
-    pub(crate) fn gradient_accumulator(&self) -> &GradientAccumulator {
+    pub(crate) const fn gradient_accumulator(&self) -> &GradientAccumulator {
         &self.gradient_accumulator
     }
 
     /// 获取学习率
-    pub(crate) fn learning_rate(&self) -> f32 {
+    pub(crate) const fn learning_rate(&self) -> f32 {
         self.learning_rate
     }
 
     /// 设置学习率
-    pub(crate) fn set_learning_rate(&mut self, lr: f32) {
+    pub(crate) const fn set_learning_rate(&mut self, lr: f32) {
         self.learning_rate = lr;
     }
 

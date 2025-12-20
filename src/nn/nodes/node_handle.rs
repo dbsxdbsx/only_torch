@@ -29,24 +29,24 @@ impl NodeHandle {
         })
     }
 
-    pub(in crate::nn) fn node_type(&self) -> &NodeType {
+    pub(in crate::nn) const fn node_type(&self) -> &NodeType {
         &self.raw_node
     }
 
     fn check_shape_consistency(&self, new_tensor: &Tensor) -> Result<(), GraphError> {
-        if let Some(current_value) = self.raw_node.value() {
-            if new_tensor.shape() != current_value.shape() {
-                return Err(GraphError::ShapeMismatch {
-                    expected: current_value.shape().to_vec(),
-                    got: new_tensor.shape().to_vec(),
-                    message: format!(
-                        "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
-                        new_tensor.shape(),
-                        self.name(),
-                        current_value.shape(),
-                    ),
-                });
-            }
+        if let Some(current_value) = self.raw_node.value()
+            && new_tensor.shape() != current_value.shape()
+        {
+            return Err(GraphError::ShapeMismatch {
+                expected: current_value.shape().to_vec(),
+                got: new_tensor.shape().to_vec(),
+                message: format!(
+                    "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
+                    new_tensor.shape(),
+                    self.name(),
+                    current_value.shape(),
+                ),
+            });
         }
         Ok(())
     }
@@ -109,25 +109,25 @@ impl NodeHandle {
         })
     }
 
-    pub(in crate::nn) fn new_add(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+    pub(in crate::nn) fn new_add(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(Add::new(parents)?)
     }
 
-    pub(in crate::nn) fn new_mat_mul(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+    pub(in crate::nn) fn new_mat_mul(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(MatMul::new(parents)?)
     }
 
-    pub(in crate::nn) fn new_step(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+    pub(in crate::nn) fn new_step(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(Step::new(parents)?)
     }
 
-    pub(in crate::nn) fn new_perception_loss(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+    pub(in crate::nn) fn new_perception_loss(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(PerceptionLoss::new(parents)?)
     }
 
     pub(in crate::nn) fn calc_value_by_parents(
         &mut self,
-        parents: &[NodeHandle],
+        parents: &[Self],
     ) -> Result<(), GraphError> {
         self.raw_node.calc_value_by_parents(parents)
     }
@@ -135,8 +135,8 @@ impl NodeHandle {
     /// 计算本节点对父节点的雅可比矩阵
     pub(in crate::nn) fn calc_jacobi_to_a_parent(
         &self,
-        parent: &NodeHandle,
-        assistant_parent: Option<&NodeHandle>,
+        parent: &Self,
+        assistant_parent: Option<&Self>,
     ) -> Result<Tensor, GraphError> {
         self.raw_node
             .calc_jacobi_to_a_parent(parent, assistant_parent)
@@ -150,19 +150,19 @@ impl NodeHandle {
         self.raw_node.value().is_some()
     }
 
-    pub(in crate::nn) fn last_forward_pass_id(&self) -> u64 {
+    pub(in crate::nn) const fn last_forward_pass_id(&self) -> u64 {
         self.last_forward_pass_id
     }
 
-    pub(in crate::nn) fn set_last_forward_pass_id(&mut self, forward_pass_id: u64) {
+    pub(in crate::nn) const fn set_last_forward_pass_id(&mut self, forward_pass_id: u64) {
         self.last_forward_pass_id = forward_pass_id;
     }
 
-    pub(in crate::nn) fn last_backward_pass_id(&self) -> u64 {
+    pub(in crate::nn) const fn last_backward_pass_id(&self) -> u64 {
         self.last_backward_pass_id
     }
 
-    pub(in crate::nn) fn set_last_backward_pass_id(&mut self, backward_pass_id: u64) {
+    pub(in crate::nn) const fn set_last_backward_pass_id(&mut self, backward_pass_id: u64) {
         self.last_backward_pass_id = backward_pass_id;
     }
 }

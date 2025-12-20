@@ -4,8 +4,8 @@
  * @Description  : Adam 优化器测试
  */
 
-use crate::nn::optimizer::{Adam, Optimizer};
 use crate::nn::Graph;
+use crate::nn::optimizer::{Adam, Optimizer};
 use crate::tensor::Tensor;
 
 #[test]
@@ -213,4 +213,3 @@ fn test_adam_zero_learning_rate() {
     let param_after = graph.get_node_value(param).unwrap().unwrap();
     assert_eq!(&param_before, param_after);
 }
-

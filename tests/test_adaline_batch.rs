@@ -43,7 +43,7 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
 
     // 批大小
     let batch_size = 10;
-    println!("批大小: {}", batch_size);
+    println!("批大小: {batch_size}");
 
     // 创建计算图
     let mut graph = Graph::new();
@@ -95,7 +95,7 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
     // 训练执行最多50个epoch，或直到达到成功条件
     for epoch in 0..max_epochs {
         // 遍历训练集中的批次
-        let num_batches = (train_set.shape()[0] + batch_size - 1) / batch_size; // 向上取整
+        let num_batches = train_set.shape()[0].div_ceil(batch_size); // 向上取整
 
         for batch_idx in 0..num_batches {
             let start_idx = batch_idx * batch_size;
@@ -152,7 +152,7 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
         let mut pred_vec = Vec::new();
 
         // 遍历训练集，计算当前模型对每个样本的预测值
-        let num_batches = (train_set.shape()[0] + batch_size - 1) / batch_size;
+        let num_batches = train_set.shape()[0].div_ceil(batch_size);
 
         for batch_idx in 0..num_batches {
             let start_idx = batch_idx * batch_size;

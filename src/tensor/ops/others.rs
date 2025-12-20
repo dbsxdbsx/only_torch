@@ -54,22 +54,22 @@ impl TensorType for f32 {
 }
 
 // 为Tensor引用类型实现这个 trait
-impl<'a> TensorType for &'a Tensor {
+impl TensorType for &Tensor {
     fn is_tensor() -> bool {
         true
     }
 }
 
 // 为f32引用类型实现这个 trait
-impl<'a> TensorType for &'a f32 {
+impl TensorType for &f32 {
     fn is_tensor() -> bool {
         false
     }
 }
 
 // 为Tensor引用类型实现 Into<Tensor> trait
-impl<'a> From<&'a Tensor> for Tensor {
-    fn from(tensor: &'a Tensor) -> Self {
+impl<'a> From<&'a Self> for Tensor {
+    fn from(tensor: &'a Self) -> Self {
         tensor.clone()
     }
 }
@@ -108,16 +108,15 @@ impl Tensor {
         let product_tensor = if T::is_tensor() {
             // 如果输入是张量类型，直接检查形状
             let other = other.into();
-            if !self.is_same_shape(&other) {
-                panic!(
-                    "{}",
-                    TensorError::OperatorError {
-                        operator: Operator::DotSum,
-                        tensor1_shape: self.shape().to_vec(),
-                        tensor2_shape: other.shape().to_vec(),
-                    }
-                );
-            }
+            assert!(
+                self.is_same_shape(&other),
+                "{}",
+                TensorError::OperatorError {
+                    operator: Operator::DotSum,
+                    tensor1_shape: self.shape().to_vec(),
+                    tensor2_shape: other.shape().to_vec(),
+                }
+            );
             self * other
         } else {
             // 如果输入是纯数（f32），直接将其广播到self的每个元素
@@ -141,7 +140,7 @@ impl Tensor {
 
     /// 计算张量每个元素的平方根
     pub fn sqrt(&self) -> Self {
-        let sqrt_data = self.data.mapv(|x| x.sqrt());
+        let sqrt_data = self.data.mapv(f32::sqrt);
         Self { data: sqrt_data }
     }
 
@@ -268,7 +267,7 @@ impl Tensor {
                 true
             } else {
                 let t_shape = t.shape();
-                let skip = if new_dim { 0 } else { 1 };
+                let skip = usize::from(!new_dim);
                 t_shape.len() == first_shape.len()
                     && t_shape
                         .iter()
@@ -502,7 +501,7 @@ impl Tensor {
 
     /// 返回张量的一维展开视图，不复制数据
     /// NOTE：这个主要参考了numpy的ravel和pytorch的flatten
-    pub fn flatten_view(&self) -> ndarray::ArrayView1<f32> {
+    pub fn flatten_view(&self) -> ndarray::ArrayView1<'_, f32> {
         self.data
             .view()
             .into_shape(ndarray::Dim(self.data.len()))
@@ -545,9 +544,10 @@ impl Tensor {
     /// ```
     pub fn diag(&self) -> Self {
         // 检查维度是否为1或2
-        if self.dimension() == 0 || self.dimension() > 2 {
-            panic!("张量维度必须为1或2");
-        }
+        assert!(
+            !(self.dimension() == 0 || self.dimension() > 2),
+            "张量维度必须为1或2"
+        );
 
         // 处理标量情况
         if self.size() == 1 {
@@ -569,9 +569,10 @@ impl Tensor {
 
         // 处理方阵情况
         let shape = self.data.shape();
-        if shape.len() != 2 || shape[0] != shape[1] {
-            panic!("张量必须是标量、向量或方阵");
-        }
+        assert!(
+            !(shape.len() != 2 || shape[0] != shape[1]),
+            "张量必须是标量、向量或方阵"
+        );
         let diag_data = self.data.diag().to_owned();
         let diag_vector = Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
         Self { data: diag_vector }
@@ -611,9 +612,10 @@ impl Tensor {
     /// ```
     pub fn diag_mut(&mut self) {
         // 检查维度是否为1或2
-        if self.dimension() == 0 || self.dimension() > 2 {
-            panic!("张量维度必须为1或2");
-        }
+        assert!(
+            !(self.dimension() == 0 || self.dimension() > 2),
+            "张量维度必须为1或2"
+        );
 
         // 处理标量情况
         if self.size() == 1 {
@@ -634,9 +636,10 @@ impl Tensor {
 
         // 处理方阵情况
         let shape = self.data.shape();
-        if shape.len() != 2 || shape[0] != shape[1] {
-            panic!("张量必须是标量、向量或方阵");
-        }
+        assert!(
+            !(shape.len() != 2 || shape[0] != shape[1]),
+            "张量必须是标量、向量或方阵"
+        );
         let diag_data = self.data.diag().to_owned();
         let diag_vector = Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
         self.data = diag_vector;

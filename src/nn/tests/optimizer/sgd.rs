@@ -4,8 +4,8 @@
  * @Description  : SGD (随机梯度下降) 优化器测试
  */
 
-use crate::nn::optimizer::{Optimizer, SGD};
 use crate::nn::Graph;
+use crate::nn::optimizer::{Optimizer, SGD};
 use crate::tensor::Tensor;
 
 #[test]
@@ -184,4 +184,3 @@ fn test_sgd_gradient_accumulation() {
     let new_w_value = new_w.get(&[0, 0]).get_data_number().unwrap();
     assert_eq!(new_w_value, 0.8, "SGD梯度累积后w应该等于0.8（PyTorch验证）");
 }
-

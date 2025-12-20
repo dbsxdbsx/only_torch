@@ -66,7 +66,7 @@ impl TraitNode for Parameter {
     }
 
     fn set_value(&mut self, value: Option<&Tensor>) -> Result<(), GraphError> {
-        self.value = value.map(|v| v.clone());
+        self.value = value.cloned();
         Ok(())
     }
 
@@ -86,7 +86,7 @@ impl TraitNode for Parameter {
     }
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.map(|j| j.clone());
+        self.jacobi = jacobi.cloned();
         Ok(())
     }
 

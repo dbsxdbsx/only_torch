@@ -45,7 +45,7 @@ impl Add<f32> for Tensor {
         }
     }
 }
-impl<'a> Add<f32> for &'a Tensor {
+impl Add<f32> for &Tensor {
     type Output = Tensor;
 
     fn add(self, scalar: f32) -> Tensor {
@@ -73,7 +73,7 @@ impl<'a> Add<&'a Self> for Tensor {
     }
 }
 
-impl<'a> Add<Tensor> for &'a Tensor {
+impl Add<Tensor> for &Tensor {
     type Output = Tensor;
 
     fn add(self, other: Tensor) -> Tensor {
@@ -81,7 +81,7 @@ impl<'a> Add<Tensor> for &'a Tensor {
     }
 }
 
-impl<'a, 'b> Add<&'b Tensor> for &'a Tensor {
+impl<'b> Add<&'b Tensor> for &Tensor {
     type Output = Tensor;
 
     fn add(self, other: &'b Tensor) -> Tensor {

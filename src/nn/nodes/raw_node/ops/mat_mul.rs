@@ -1,6 +1,6 @@
+use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
-use crate::nn::GraphError;
 use crate::tensor::Tensor;
 
 #[derive(Clone)]
@@ -198,7 +198,7 @@ impl TraitNode for MatMul {
     }
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.map(|j| j.clone());
+        self.jacobi = jacobi.cloned();
         Ok(())
     }
 }

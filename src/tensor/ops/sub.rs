@@ -45,7 +45,7 @@ impl Sub<f32> for Tensor {
         }
     }
 }
-impl<'a> Sub<f32> for &'a Tensor {
+impl Sub<f32> for &Tensor {
     type Output = Tensor;
 
     fn sub(self, scalar: f32) -> Tensor {
@@ -73,7 +73,7 @@ impl<'a> Sub<&'a Self> for Tensor {
     }
 }
 
-impl<'a> Sub<Tensor> for &'a Tensor {
+impl Sub<Tensor> for &Tensor {
     type Output = Tensor;
 
     fn sub(self, other: Tensor) -> Tensor {
@@ -81,7 +81,7 @@ impl<'a> Sub<Tensor> for &'a Tensor {
     }
 }
 
-impl<'a, 'b> Sub<&'b Tensor> for &'a Tensor {
+impl<'b> Sub<&'b Tensor> for &Tensor {
     type Output = Tensor;
 
     fn sub(self, other: &'b Tensor) -> Tensor {

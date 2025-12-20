@@ -15,9 +15,9 @@ use std::collections::HashMap;
 pub struct Graph {
     name: String,
     nodes: HashMap<NodeId, NodeHandle>,
-    /// 正向边：parent_id -> child_ids（父节点指向子节点）
+    /// `正向边：parent_id` -> `child_ids（父节点指向子节点`）
     forward_edges: HashMap<NodeId, Vec<NodeId>>,
-    /// 反向边：child_id -> parent_ids（子节点指向父节点）
+    /// `反向边：child_id` -> `parent_ids（子节点指向父节点`）
     backward_edges: HashMap<NodeId, Vec<NodeId>>,
     /// 最后一次前向传播的id
     last_forward_pass_id: u64,
@@ -27,13 +27,19 @@ pub struct Graph {
     is_eval_mode: bool,
 }
 
+impl Default for Graph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Graph {
     #[cfg(test)]
     pub(in crate::nn) fn last_forward_pass_id(&self) -> u64 {
         self.last_forward_pass_id
     }
 
-    pub(in crate::nn) fn last_backward_pass_id(&self) -> u64 {
+    pub(in crate::nn) const fn last_backward_pass_id(&self) -> u64 {
         self.last_backward_pass_id
     }
 
@@ -62,7 +68,7 @@ impl Graph {
         // 自动生成名称（只有在用户未提供名称时才进行）
         let mut counter = 1;
         loop {
-            let name = format!("{}_{}", node_type, counter);
+            let name = format!("{node_type}_{counter}");
             if self.check_duplicate_node_name(&name).is_ok() {
                 return Ok(name);
             }
@@ -93,13 +99,13 @@ impl Graph {
     }
 
     pub fn nodes(&self) -> Vec<NodeId> {
-        self.nodes.keys().cloned().collect()
+        self.nodes.keys().copied().collect()
     }
 
     pub fn has_node_value(&self, node_id: NodeId) -> Result<bool, GraphError> {
         self.nodes
             .get(&node_id)
-            .map(|node| node.has_value())
+            .map(super::nodes::node_handle::NodeHandle::has_value)
             .ok_or(GraphError::NodeNotFound(node_id))
     }
 
@@ -110,8 +116,7 @@ impl Graph {
         match node.node_type() {
             NodeType::Input(_) | NodeType::Parameter(_) => {
                 return Err(GraphError::InvalidOperation(format!(
-                    "{}是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算",
-                    node
+                    "{node}是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
                 )));
             }
             _ => {}
@@ -161,7 +166,7 @@ impl Graph {
         }
 
         // 2. 递归计算所有父节点
-        let parents_ids = self.get_node_parents(node_id)?.to_vec();
+        let parents_ids = self.get_node_parents(node_id)?;
         for parent_id in &parents_ids {
             self.forward_node_internal(*parent_id, new_graph_forward_pass_id)?;
         }
@@ -197,10 +202,9 @@ impl Graph {
         // 2. 对每个目标节点执行反向传播
         for &target_id in target_nodes_ids {
             self.backward_node_internal(target_id, result_node_id)
-                .map_err(|e| {
+                .inspect_err(|e| {
                     // 如果出错则回滚backward_pass_id
                     self.last_backward_pass_id = graph_backward_pass_id - 1;
-                    e
                 })?;
         }
 
@@ -215,14 +219,10 @@ impl Graph {
     ) -> Result<(), GraphError> {
         // 0. 首先检查目标节点是否为输入节点
         let target_node = self.get_node(target_node_id)?;
-        match target_node.node_type() {
-            NodeType::Input(_) => {
-                return Err(GraphError::InvalidOperation(format!(
-                    "输入{}不应该有雅可比矩阵",
-                    target_node
-                )));
-            }
-            _ => {}
+        if let NodeType::Input(_) = target_node.node_type() {
+            return Err(GraphError::InvalidOperation(format!(
+                "输入{target_node}不应该有雅可比矩阵"
+            )));
         }
 
         let graph_backward_pass_id = self.last_backward_pass_id;
@@ -238,7 +238,7 @@ impl Graph {
                 .value()
                 .ok_or_else(|| {
                     let node = self.get_node(target_node_id).unwrap();
-                    GraphError::ComputationError(format!("反向传播：{}没有值", node))
+                    GraphError::ComputationError(format!("反向传播：{node}没有值"))
                 })?
                 .size();
             let eye = Tensor::eyes(element_number);
@@ -266,12 +266,20 @@ impl Graph {
             let target_node = self.get_node(target_node_id)?;
             if target_node.jacobi().is_none() {
                 let (result_dim, node_dim) = (
-                    result_node.value().map(|v| v.size()).ok_or_else(|| {
-                        GraphError::ComputationError(format!("反向传播：结果{}没有值", result_node))
-                    })?,
-                    target_node.value().map(|v| v.size()).ok_or_else(|| {
-                        GraphError::ComputationError(format!("反向传播：{}没有值", target_node))
-                    })?,
+                    result_node
+                        .value()
+                        .map(super::super::tensor::Tensor::size)
+                        .ok_or_else(|| {
+                            GraphError::ComputationError(format!(
+                                "反向传播：结果{result_node}没有值"
+                            ))
+                        })?,
+                    target_node
+                        .value()
+                        .map(super::super::tensor::Tensor::size)
+                        .ok_or_else(|| {
+                            GraphError::ComputationError(format!("反向传播：{target_node}没有值"))
+                        })?,
                 );
                 let zeros = Tensor::zeros(&[result_dim, node_dim]);
                 self.get_node_mut(target_node_id)?
@@ -324,10 +332,7 @@ impl Graph {
                     let node = self.get_node(target_node_id)?;
                     node.jacobi()
                         .ok_or_else(|| {
-                            GraphError::ComputationError(format!(
-                                "反向传播：{}没有雅可比矩阵",
-                                node
-                            ))
+                            GraphError::ComputationError(format!("反向传播：{node}没有雅可比矩阵"))
                         })?
                         .clone()
                 };
@@ -351,7 +356,7 @@ impl Graph {
         Ok(())
     }
 
-    fn generate_valid_node_id(&mut self) -> NodeId {
+    const fn generate_valid_node_id(&mut self) -> NodeId {
         // 生成唯一的节点ID
         self.next_id += 1;
         NodeId(self.next_id)
@@ -403,14 +408,10 @@ impl Graph {
         let node = self.get_node(node_id)?;
 
         // 1. 输入节点不应该有雅可比矩阵
-        match node.node_type() {
-            NodeType::Input(_) => {
-                return Err(GraphError::InvalidOperation(format!(
-                    "输入{}不应该有雅可比矩阵",
-                    node
-                )));
-            }
-            _ => {}
+        if let NodeType::Input(_) = node.node_type() {
+            return Err(GraphError::InvalidOperation(format!(
+                "输入{node}不应该有雅可比矩阵"
+            )));
         }
 
         // 2. 返回节点的雅可比矩阵
@@ -434,33 +435,30 @@ impl Graph {
 
     // Add new public methods for node information access
     pub fn get_node_name(&self, id: NodeId) -> Result<&str, GraphError> {
-        self.get_node(id).map(|node| node.name())
+        self.get_node(id)
+            .map(super::nodes::node_handle::NodeHandle::name)
     }
 
     pub fn get_node_parents(&self, id: NodeId) -> Result<Vec<NodeId>, GraphError> {
         self.get_node(id)?; // 确保节点存在
-        Ok(self
-            .backward_edges
-            .get(&id)
-            .map(|vec| vec.clone())
-            .unwrap_or_default())
+        Ok(self.backward_edges.get(&id).cloned().unwrap_or_default())
     }
 
     pub fn get_node_children(&self, id: NodeId) -> Result<Vec<NodeId>, GraphError> {
         self.get_node(id)?; // 确保节点存在
-        Ok(self
-            .forward_edges
-            .get(&id)
-            .map(|vec| vec.clone())
-            .unwrap_or_default())
+        Ok(self.forward_edges.get(&id).cloned().unwrap_or_default())
     }
 
     pub fn is_node_inited(&self, id: NodeId) -> Result<bool, GraphError> {
-        self.get_node(id).map(|node| node.is_inited())
+        self.get_node(id)
+            .map(super::nodes::node_handle::NodeHandle::is_inited)
     }
 
     pub fn get_node_value_shape(&self, id: NodeId) -> Result<Option<&[usize]>, GraphError> {
-        Ok(self.get_node(id)?.value().map(|v| v.shape()))
+        Ok(self
+            .get_node(id)?
+            .value()
+            .map(super::super::tensor::Tensor::shape))
     }
 
     pub fn get_node_value_expected_shape(&self, id: NodeId) -> Result<&[usize], GraphError> {
@@ -468,29 +466,38 @@ impl Graph {
     }
 
     pub fn get_node_value_size(&self, id: NodeId) -> Result<Option<usize>, GraphError> {
-        Ok(self.get_node(id)?.value().map(|v| v.size()))
+        Ok(self
+            .get_node(id)?
+            .value()
+            .map(super::super::tensor::Tensor::size))
     }
 
     pub fn get_node_jacobi_shape(&self, id: NodeId) -> Result<Option<&[usize]>, GraphError> {
-        Ok(self.get_node(id)?.jacobi().map(|j| j.shape()))
+        Ok(self
+            .get_node(id)?
+            .jacobi()
+            .map(super::super::tensor::Tensor::shape))
     }
 
     pub fn get_node_jacobi_size(&self, id: NodeId) -> Result<Option<usize>, GraphError> {
-        Ok(self.get_node(id)?.jacobi().map(|j| j.size()))
+        Ok(self
+            .get_node(id)?
+            .jacobi()
+            .map(super::super::tensor::Tensor::size))
     }
 }
 
 // 图模式相关
 impl Graph {
-    pub fn set_train_mode(&mut self) {
+    pub const fn set_train_mode(&mut self) {
         self.is_eval_mode = false;
     }
 
-    pub fn set_eval_mode(&mut self) {
+    pub const fn set_eval_mode(&mut self) {
         self.is_eval_mode = true;
     }
 
-    pub fn is_train_mode(&self) -> bool {
+    pub const fn is_train_mode(&self) -> bool {
         !self.is_eval_mode
     }
 }
@@ -513,13 +520,13 @@ impl Graph {
         for &parent_id in parents {
             self.forward_edges
                 .entry(parent_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(node_id);
         }
         // 2.2 更新反向边：子节点 -> 父节点
         self.backward_edges
             .entry(node_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .extend(parents);
 
         // 3. 绑定ID和名称
@@ -587,7 +594,7 @@ impl Graph {
 }
 
 /// 图错误类型
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum GraphError {
     GraphNotFound(String),
     NodeNotFound(NodeId),

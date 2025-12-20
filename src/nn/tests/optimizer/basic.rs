@@ -191,4 +191,3 @@ fn test_optimizer_state_reset() {
     // 验证重置后状态
     assert_eq!(state.gradient_accumulator().sample_count(), 0);
 }
-

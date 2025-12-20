@@ -46,7 +46,7 @@ impl Mul<f32> for Tensor {
         }
     }
 }
-impl<'a> Mul<f32> for &'a Tensor {
+impl Mul<f32> for &Tensor {
     type Output = Tensor;
 
     fn mul(self, scalar: f32) -> Tensor {
@@ -74,7 +74,7 @@ impl<'a> Mul<&'a Self> for Tensor {
     }
 }
 
-impl<'a> Mul<Tensor> for &'a Tensor {
+impl Mul<Tensor> for &Tensor {
     type Output = Tensor;
 
     fn mul(self, other: Tensor) -> Tensor {
@@ -82,7 +82,7 @@ impl<'a> Mul<Tensor> for &'a Tensor {
     }
 }
 
-impl<'a, 'b> Mul<&'b Tensor> for &'a Tensor {
+impl<'b> Mul<&'b Tensor> for &Tensor {
     type Output = Tensor;
 
     fn mul(self, other: &'b Tensor) -> Tensor {

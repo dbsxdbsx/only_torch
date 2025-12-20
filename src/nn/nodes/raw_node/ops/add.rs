@@ -1,6 +1,6 @@
+use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
-use crate::nn::GraphError;
 use crate::tensor::Tensor;
 
 #[derive(Clone)]
@@ -27,9 +27,9 @@ impl Add {
         for parent in parents.iter().skip(1) {
             if parent.value_expected_shape() != shape {
                 return Err(GraphError::ShapeMismatch {
-                    expected: shape.clone(),
+                    expected: shape,
                     got: parent.value_expected_shape().to_vec(),
-                    message: format!("Add节点的所有父节点形状必须相同"),
+                    message: "Add节点的所有父节点形状必须相同".to_string(),
                 });
             }
         }
@@ -121,7 +121,7 @@ impl TraitNode for Add {
     }
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.map(|j| j.clone());
+        self.jacobi = jacobi.cloned();
         Ok(())
     }
 }

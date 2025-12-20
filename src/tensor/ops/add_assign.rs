@@ -22,7 +22,7 @@ impl AddAssign<f32> for Tensor {
     }
 }
 
-impl<'a> AddAssign<f32> for &'a mut Tensor {
+impl AddAssign<f32> for &mut Tensor {
     fn add_assign(&mut self, scalar: f32) {
         // 使用`Add` trait的`add`方法来执行加法，并更新当前张量
         **self = (*self).clone() + scalar;

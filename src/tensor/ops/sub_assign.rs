@@ -22,7 +22,7 @@ impl SubAssign<f32> for Tensor {
     }
 }
 
-impl<'a> SubAssign<f32> for &'a mut Tensor {
+impl SubAssign<f32> for &mut Tensor {
     fn sub_assign(&mut self, scalar: f32) {
         // 使用`Sub` trait的`sub`方法来执行减法，并更新当前张量
         **self = (*self).clone() - scalar;

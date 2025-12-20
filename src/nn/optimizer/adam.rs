@@ -64,17 +64,25 @@ impl Optimizer for Adam {
 
         // 对每个可训练参数执行Adam更新
         for &node_id in self.state.trainable_nodes() {
-            if let Some(gradient) = self.state.gradient_accumulator().get_average_gradient(node_id) {
+            if let Some(gradient) = self
+                .state
+                .gradient_accumulator()
+                .get_average_gradient(node_id)
+            {
                 // 获取当前参数值
                 let current_value = graph.get_node_value(node_id)?.unwrap();
 
                 // 获取或初始化一阶矩和二阶矩
-                let m_prev = self.m.get(&node_id).cloned().unwrap_or_else(|| {
-                    Tensor::zeros(gradient.shape())
-                });
-                let v_prev = self.v.get(&node_id).cloned().unwrap_or_else(|| {
-                    Tensor::zeros(gradient.shape())
-                });
+                let m_prev = self
+                    .m
+                    .get(&node_id)
+                    .cloned()
+                    .unwrap_or_else(|| Tensor::zeros(gradient.shape()));
+                let v_prev = self
+                    .v
+                    .get(&node_id)
+                    .cloned()
+                    .unwrap_or_else(|| Tensor::zeros(gradient.shape()));
 
                 // 更新一阶矩估计: m_t = β1 * m_{t-1} + (1 - β1) * g_t
                 let m_t = &m_prev * self.beta1 + &gradient * (1.0 - self.beta1);

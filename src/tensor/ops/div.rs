@@ -57,7 +57,7 @@ impl Div<f32> for Tensor {
         }
     }
 }
-impl<'a> Div<f32> for &'a Tensor {
+impl Div<f32> for &Tensor {
     type Output = Tensor;
 
     fn div(self, scalar: f32) -> Tensor {
@@ -86,7 +86,7 @@ impl<'a> Div<&'a Self> for Tensor {
     }
 }
 
-impl<'a> Div<Tensor> for &'a Tensor {
+impl Div<Tensor> for &Tensor {
     type Output = Tensor;
 
     fn div(self, other: Tensor) -> Tensor {
@@ -94,7 +94,7 @@ impl<'a> Div<Tensor> for &'a Tensor {
     }
 }
 
-impl<'a, 'b> Div<&'b Tensor> for &'a Tensor {
+impl<'b> Div<&'b Tensor> for &Tensor {
     type Output = Tensor;
 
     fn div(self, other: &'b Tensor) -> Tensor {

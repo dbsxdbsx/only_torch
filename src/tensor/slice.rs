@@ -14,7 +14,7 @@ pub enum SliceInfo {
     Step(Range<usize>, usize),
 }
 
-/// 用于将各种类型转换为SliceInfo的内部trait
+/// `用于将各种类型转换为SliceInfo的内部trait`
 pub trait IntoSliceInfo {
     fn into_slice_info(&self) -> SliceInfo;
 }
@@ -49,21 +49,21 @@ impl IntoSliceInfo for RangeInclusive<usize> {
 impl super::Tensor {
     /// 获取张量切片的视图，支持灵活的索引方式
     ///
-    /// # 与 NumPy 的主要区别
-    /// - 维度保持：本实现在使用单个索引时保持维度为1，而 NumPy 会自动压缩掉该维度
+    /// # 与 `NumPy` 的主要区别
+    /// - 维度保持：本实现在使用单个索引时保持维度为1，而 `NumPy` 会自动压缩掉该维度
     ///   - 例如：对形状为 [2,3,1,4] 的张量，切片 [:, 0:2, 0, 1:3]
     ///   - 本实现输出形状为 [2,2,1,2]
-    ///   - NumPy 输出形状为 [2,2,2]（自动压缩了第3维）
+    ///   - `NumPy` 输出形状为 [2,2,2]（自动压缩了第3维）
     ///
     /// # 参数
     /// * `indices` - 切片索引数组，支持以下索引类型：
     ///   - 单个索引：`&1` -> 选择特定位置
     ///   - 范围：`&(0..2)` -> 选择区间
     ///   - 完整范围：`&(..)` -> 选择全部
-    ///   - 步进范围：通过 SliceInfo::Step 支持
+    ///   - 步进范围：通过 `SliceInfo::Step` 支持
     ///
     /// # 返回值
-    /// 返回一个 ArrayViewD<f32> 类型的视图，保持原始数据的所有维度特性
+    /// 返回一个 `ArrayViewD`<f32> 类型的视图，保持原始数据的所有维度特性
     ///
     /// # 错误
     /// 以下情况会触发panic：
@@ -78,25 +78,21 @@ impl super::Tensor {
     ///
     pub fn slice_view(&self, indices: &[&dyn IntoSliceInfo]) -> ArrayViewD<'_, f32> {
         // 检查空索引列表
-        if indices.is_empty() {
-            panic!("slice(_view)无法接受空索引");
-        }
+        assert!(!indices.is_empty(), "slice(_view)无法接受空索引");
 
         // 检查维度匹配
-        if indices.len() < self.dimension() {
-            panic!(
-                "slice(_view)仅提供了{}个维度的索引，但目标张量是{}维",
-                indices.len(),
-                self.dimension()
-            );
-        }
-        if indices.len() > self.dimension() {
-            panic!(
-                "slice(_view)提供了{}个维度的索引，但目标张量只有{}维",
-                indices.len(),
-                self.dimension()
-            );
-        }
+        assert!(
+            indices.len() >= self.dimension(),
+            "slice(_view)仅提供了{}个维度的索引，但目标张量是{}维",
+            indices.len(),
+            self.dimension()
+        );
+        assert!(
+            indices.len() <= self.dimension(),
+            "slice(_view)提供了{}个维度的索引，但目标张量只有{}维",
+            indices.len(),
+            self.dimension()
+        );
 
         // 将输入的索引转换为SliceInfo类型
         let slice_infos: Vec<_> = indices.iter().map(|idx| idx.into_slice_info()).collect();
@@ -106,22 +102,26 @@ impl super::Tensor {
             let dim_size = self.shape()[dim];
             match info {
                 SliceInfo::Single(i) => {
-                    if *i >= dim_size {
-                        panic!("slice(_view)无法接受某个维度的索引超出目标张量在该维度范围");
-                    }
+                    assert!(
+                        *i < dim_size,
+                        "slice(_view)无法接受某个维度的索引超出目标张量在该维度范围"
+                    );
                 }
                 SliceInfo::Range(r) => {
-                    if r.start >= dim_size || r.end > dim_size {
-                        panic!("slice(_view)无法接受某个维度的索引超出目标张量在该维度范围");
-                    }
-                    if r.start == r.end {
-                        panic!("slice(_view)无法接受某个维度为零数据范围的索引");
-                    }
+                    assert!(
+                        !(r.start >= dim_size || r.end > dim_size),
+                        "slice(_view)无法接受某个维度的索引超出目标张量在该维度范围"
+                    );
+                    assert!(
+                        r.start != r.end,
+                        "slice(_view)无法接受某个维度为零数据范围的索引"
+                    );
                 }
                 SliceInfo::Step(r, _) => {
-                    if r.start >= dim_size || r.end > dim_size {
-                        panic!("slice(_view)无法接受某个维度的索引超出目标张量在该维度范围");
-                    }
+                    assert!(
+                        !(r.start >= dim_size || r.end > dim_size),
+                        "slice(_view)无法接受某个维度的索引超出目标张量在该维度范围"
+                    );
                 }
                 SliceInfo::Full => {} // 完整范围不需要检查
             }
@@ -139,14 +139,13 @@ impl super::Tensor {
             .collect();
 
         // 对张量数据的每个轴应用对应的切片操作
-        self.data
-            .slice_each_axis(|ax| slices[ax.axis.index()].clone())
+        self.data.slice_each_axis(|ax| slices[ax.axis.index()])
     }
 
     /// 获取张量切片，返回新的张量
     ///
-    /// 这是 slice_view 的拥有所有权版本，会创建新的张量而不是视图。
-    /// 继承了 slice_view 的所有切片特性，包括维度保持的行为。
+    /// 这是 `slice_view` 的拥有所有权版本，会创建新的张量而不是视图。
+    /// 继承了 `slice_view` 的所有切片特性，包括维度保持的行为。
     ///
     /// # 示例
     /// ```
@@ -157,7 +156,7 @@ impl super::Tensor {
     /// ```
     ///
     /// # 参数与返回值
-    /// * `indices` - 与 slice_view 相同的索引参数
+    /// * `indices` - 与 `slice_view` 相同的索引参数
     /// * 返回：包含切片数据的新张量
     pub fn slice(&self, indices: &[&dyn IntoSliceInfo]) -> Self {
         Self::from_view(self.slice_view(indices))
@@ -168,7 +167,7 @@ impl super::Tensor {
 #[macro_export]
 macro_rules! tensor_slice {
     ($tensor:expr, $($index:expr),* $(,)?) => {{
-        use crate::tensor::slice::IntoSliceInfo;
+        use $crate::tensor::slice::IntoSliceInfo;
         let indices: Vec<&dyn IntoSliceInfo> = vec![
             $(&$index),*
         ];
@@ -180,7 +179,7 @@ macro_rules! tensor_slice {
 #[macro_export]
 macro_rules! tensor_slice_view {
     ($tensor:expr, $($index:expr),* $(,)?) => {{
-        use crate::tensor::slice::IntoSliceInfo;
+        use $crate::tensor::slice::IntoSliceInfo;
         let indices: Vec<&dyn IntoSliceInfo> = vec![
             $(&$index),*
         ];

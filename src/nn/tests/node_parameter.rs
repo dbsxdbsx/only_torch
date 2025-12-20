@@ -151,9 +151,9 @@ fn test_node_parameter_forward_propagation() {
     // 1. 测试前向传播（应该失败，因为Parameter节点不支持前向传播）
     assert_eq!(
         graph.forward_node(param),
-        Err(GraphError::InvalidOperation(
-            format!("节点[id=1, name=param, type=Parameter]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
-        ))
+        Err(GraphError::InvalidOperation(format!(
+            "节点[id=1, name=param, type=Parameter]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
+        )))
     );
 
     // 2. 设置新值后仍然不能前向传播
@@ -161,9 +161,9 @@ fn test_node_parameter_forward_propagation() {
     graph.set_node_value(param, Some(&value)).unwrap();
     assert_eq!(
         graph.forward_node(param),
-        Err(GraphError::InvalidOperation(
-            format!("节点[id=1, name=param, type=Parameter]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
-        ))
+        Err(GraphError::InvalidOperation(format!(
+            "节点[id=1, name=param, type=Parameter]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
+        )))
     );
 }
 

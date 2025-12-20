@@ -22,7 +22,7 @@ impl DivAssign<f32> for Tensor {
     }
 }
 
-impl<'a> DivAssign<f32> for &'a mut Tensor {
+impl DivAssign<f32> for &mut Tensor {
     fn div_assign(&mut self, scalar: f32) {
         // 使用`Div` trait的`div`方法来执行除法，并更新当前张量
         **self = (*self).clone() / scalar;

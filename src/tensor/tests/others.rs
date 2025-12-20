@@ -1,7 +1,7 @@
 use crate::assert_panic;
 use crate::errors::TensorError;
-use crate::tensor::ops::others::DotSum;
 use crate::tensor::Tensor;
+use crate::tensor::ops::others::DotSum;
 use ndarray::IxDyn;
 use ndarray::{Array, Axis};
 
@@ -317,14 +317,18 @@ fn test_shuffle() {
     assert_eq!(tensor.shape(), tensor_shuffle.shape());
     assert_ne!(tensor.data, tensor_shuffle.data);
     // 3.1 确保没有一行或一列和原来一样的
-    assert!(tensor_shuffle
-        .data
-        .axis_iter(Axis(0))
-        .all(|row| { tensor.data.axis_iter(Axis(0)).all(|r| r != row) }));
-    assert!(tensor_shuffle
-        .data
-        .axis_iter(Axis(1))
-        .all(|col| { tensor.data.axis_iter(Axis(1)).all(|r| r != col) }));
+    assert!(
+        tensor_shuffle
+            .data
+            .axis_iter(Axis(0))
+            .all(|row| { tensor.data.axis_iter(Axis(0)).all(|r| r != row) })
+    );
+    assert!(
+        tensor_shuffle
+            .data
+            .axis_iter(Axis(1))
+            .all(|col| { tensor.data.axis_iter(Axis(1)).all(|r| r != col) })
+    );
     // 3.2 重新排序后则应完全一致
     let ordered_tensor = tensor_shuffle.order();
     assert_eq!(tensor, ordered_tensor);
@@ -366,14 +370,18 @@ fn test_shuffle_mut() {
     assert_eq!(tensor.shape(), tensor_shuffle.shape());
     assert_ne!(tensor.data, tensor_shuffle.data);
     // 3.1 确保没有一行或一列和原来一样的
-    assert!(tensor_shuffle
-        .data
-        .axis_iter(Axis(0))
-        .all(|row| { tensor.data.axis_iter(Axis(0)).all(|r| r != row) }));
-    assert!(tensor_shuffle
-        .data
-        .axis_iter(Axis(1))
-        .all(|col| { tensor.data.axis_iter(Axis(1)).all(|r| r != col) }));
+    assert!(
+        tensor_shuffle
+            .data
+            .axis_iter(Axis(0))
+            .all(|row| { tensor.data.axis_iter(Axis(0)).all(|r| r != row) })
+    );
+    assert!(
+        tensor_shuffle
+            .data
+            .axis_iter(Axis(1))
+            .all(|col| { tensor.data.axis_iter(Axis(1)).all(|r| r != col) })
+    );
     let ordered_tensor = tensor_shuffle.order();
     // 3.2 重新排序后则应完全一致
     assert_eq!(tensor, ordered_tensor);
@@ -583,7 +591,9 @@ fn test_stack_with_new_dim() {
     assert_eq!(
         stacked,
         Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0
+            ],
             &[2, 2, 3]
         )
     );

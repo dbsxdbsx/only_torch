@@ -18,5 +18,5 @@ use super::NodeId;
 /// # Returns
 /// 返回格式化后的字符串，格式为：`节点[id={}, name={}, type={}]`
 pub(in crate::nn) fn format_node_display(id: NodeId, name: &str, type_name: &str) -> String {
-    format!("节点[id={}, name={}, type={}]", id, name, type_name)
+    format!("节点[id={id}, name={name}, type={type_name}]")
 }

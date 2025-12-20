@@ -5,13 +5,13 @@ use crate::tensor::Tensor;
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓f32 ==（不）带引用的张量↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl PartialEq<Tensor> for f32 {
     fn eq(&self, other: &Tensor) -> bool {
-        other.get_data_number().map_or(false, |x| x == *self)
+        other.get_data_number() == Some(*self)
     }
 }
 
 impl<'a> PartialEq<&'a Tensor> for f32 {
     fn eq(&self, other: &&'a Tensor) -> bool {
-        other.get_data_number().map_or(false, |x| x == *self)
+        other.get_data_number() == Some(*self)
     }
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑f32 ==（不）带引用的张量↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
@@ -19,13 +19,13 @@ impl<'a> PartialEq<&'a Tensor> for f32 {
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓（不）带引用的张量 == f32↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 impl PartialEq<f32> for Tensor {
     fn eq(&self, other: &f32) -> bool {
-        self.get_data_number().map_or(false, |x| x == *other)
+        self.get_data_number() == Some(*other)
     }
 }
 
-impl<'a> PartialEq<f32> for &'a Tensor {
+impl PartialEq<f32> for &Tensor {
     fn eq(&self, other: &f32) -> bool {
-        self.get_data_number().map_or(false, |x| x == *other)
+        self.get_data_number() == Some(*other)
     }
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑（不）带引用的张量 == f32↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
@@ -43,7 +43,7 @@ impl<'a> PartialEq<&'a Self> for Tensor {
     }
 }
 
-impl<'a> PartialEq<Tensor> for &'a Tensor {
+impl PartialEq<Tensor> for &Tensor {
     fn eq(&self, other: &Tensor) -> bool {
         self.data == other.data
     }
@@ -70,7 +70,7 @@ impl PartialEq<ArrayViewD<'_, f32>> for Tensor {
         self.view() == *other
     }
 }
-impl<'a> PartialEq<ArrayViewD<'_, f32>> for &'a Tensor {
+impl PartialEq<ArrayViewD<'_, f32>> for &Tensor {
     fn eq(&self, other: &ArrayViewD<'_, f32>) -> bool {
         self.view() == *other
     }
@@ -97,7 +97,7 @@ impl PartialEq<ArrayViewMutD<'_, f32>> for Tensor {
         self.view() == *other
     }
 }
-impl<'a> PartialEq<ArrayViewMutD<'_, f32>> for &'a Tensor {
+impl PartialEq<ArrayViewMutD<'_, f32>> for &Tensor {
     fn eq(&self, other: &ArrayViewMutD<'_, f32>) -> bool {
         self.view() == *other
     }

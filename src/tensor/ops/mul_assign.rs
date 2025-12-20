@@ -22,7 +22,7 @@ impl MulAssign<f32> for Tensor {
     }
 }
 
-impl<'a> MulAssign<f32> for &'a mut Tensor {
+impl MulAssign<f32> for &mut Tensor {
     fn mul_assign(&mut self, scalar: f32) {
         // 使用`Mul` trait的`mul`方法来执行乘法，并更新当前张量
         **self = (*self).clone() * scalar;
