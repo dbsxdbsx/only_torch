@@ -1,16 +1,16 @@
-# Optimizer架构设计
+# Optimizer 架构设计
 
 ## 1. 设计目标
 
-基于MatrixSlow Python版本的optimizer设计，为only_torch项目设计一个可扩展、可维护的优化器架构，支持多种优化算法（SGD、Momentum、AdaGrad、RMSProp、Adam等）。
+基于 MatrixSlow Python 版本的 optimizer 设计，为 only_torch 项目设计一个可扩展、可维护的优化器架构，支持多种优化算法。
 
 ## 2. 核心设计原则
 
 - **可扩展性**: 易于添加新的优化算法
-- **类型安全**: 利用Rust的类型系统确保安全性
+- **类型安全**: 利用 Rust 的类型系统确保安全性
 - **性能优化**: 避免不必要的内存分配和拷贝
-- **API一致性**: 与MatrixSlow Python版本保持相似的使用方式
-- **梯度累积**: 支持mini-batch训练的梯度累积机制
+- **API 一致性**: 与 MatrixSlow Python 版本保持相似的使用方式
+- **梯度累积**: 支持 mini-batch 训练的梯度累积机制
 
 ## 3. 架构概览
 
@@ -20,12 +20,13 @@ Optimizer Trait (优化器特征)
 │   ├── one_step()     # 单步训练（前向+反向传播+梯度累积）
 │   ├── update()       # 参数更新（执行具体优化算法）
 │   └── reset()        # 重置累积状态
-├── 具体实现:
-│   ├── GradientDescent    # 梯度下降
-│   ├── Momentum          # 动量法
-│   ├── AdaGrad           # AdaGrad
-│   ├── RMSProp           # RMSProp
-│   └── Adam              # Adam优化器
+├── 已实现:
+│   ├── SGD              # 随机梯度下降
+│   └── Adam             # Adam优化器
+├── 待实现:
+│   ├── Momentum         # 动量法
+│   ├── AdaGrad          # AdaGrad
+│   └── RMSProp          # RMSProp
 └── 辅助结构:
     ├── OptimizerState    # 优化器状态管理
     └── GradientAccumulator # 梯度累积器
@@ -94,29 +95,30 @@ pub struct OptimizerState {
 
 ## 5. 具体优化器实现
 
-### 5.1 梯度下降优化器
+### 5.1 SGD 优化器
 
 ```rust
-pub struct GradientDescent {
+pub struct SGD {
     state: OptimizerState,
 }
 
-impl Optimizer for GradientDescent {
+impl Optimizer for SGD {
     fn update(&mut self, graph: &mut Graph) -> Result<(), GraphError> {
-        for &node_id in &self.state.trainable_nodes {
-            if let Some(avg_gradient) = self.state.gradient_accumulator.get_average_gradient(node_id) {
+        for &node_id in self.state.trainable_nodes() {
+            if let Some(avg_gradient) = self.state.gradient_accumulator().get_average_gradient(node_id) {
                 let current_value = graph.get_node_value(node_id)?.unwrap();
-                let new_value = current_value - self.state.learning_rate * &avg_gradient;
+                // θ = θ - α * ∇θ
+                let new_value = current_value - self.state.learning_rate() * &avg_gradient;
                 graph.set_node_value(node_id, Some(&new_value))?;
             }
         }
-        self.state.gradient_accumulator.clear();
+        self.state.reset();
         Ok(())
     }
 }
 ```
 
-### 5.2 Adam优化器
+### 5.2 Adam 优化器
 
 ```rust
 pub struct Adam {
@@ -201,7 +203,7 @@ for epoch in 0..50 {
 }
 ```
 
-### 6.2 Mini-batch训练
+### 6.2 Mini-batch 训练
 
 ```rust
 let mini_batch_size = 8;
@@ -222,66 +224,30 @@ for (features, label) in train_data {
 }
 ```
 
-## 7. 实现计划
+## 7. 实现状态
 
-### 阶段1: 基础架构 ✅
-- [x] 实现`Optimizer` trait
-- [x] 实现`GradientAccumulator`
-- [x] 实现`OptimizerState`
-
-### 阶段2: 基础优化器 🔄
-- [x] 实现`SGD` (重命名自GradientDescent)
-- [x] 创建`optimizer_example.rs`集成测试
-- [ ] **修复梯度计算问题** (当前所有梯度为0)
-
-### 阶段3: 高级优化器 🔄
-- [ ] 实现`Momentum`
-- [ ] 实现`AdaGrad`
-- [ ] 实现`RMSProp`
-- [x] 实现`Adam` (框架完成，需修复梯度问题)
-
-### 阶段4: 优化和扩展
-- [x] 创建batch版本测试 (`test_adaline_batch.rs`)
-- [ ] 修复梯度计算，确保optimizer正常工作
-- [ ] 性能优化
-- [ ] 完善文档和测试
-
-## 8. 当前问题和解决方案
-
-### 问题1: 梯度计算返回0 🚨
-**现象**: 所有参数节点的梯度都是0.0，导致参数无法更新
-**可能原因**:
-- 损失函数输入计算方式不正确
-- 反向传播链路有问题
-- 梯度转换逻辑错误
-
-**解决方案**:
-1. 对比原始单样本测试的损失函数计算方式
-2. 检查`get_node_grad`方法的实现
-3. 验证反向传播是否正确执行
-
-### 问题2: 优化器算法命名 ✅
-**解决**: 将`GradientDescent`重命名为`SGD`，更准确地反映其实现
+| 组件                | 状态 | 说明         |
+| ------------------- | ---- | ------------ |
+| Optimizer trait     | ✅   | 核心接口     |
+| GradientAccumulator | ✅   | 梯度累积器   |
+| OptimizerState      | ✅   | 状态管理     |
+| SGD                 | ✅   | 随机梯度下降 |
+| Adam                | ✅   | 自适应矩估计 |
+| Momentum            | ❌   | 待实现       |
+| AdaGrad             | ❌   | 待实现       |
+| RMSProp             | ❌   | 待实现       |
 
 ## 8. 文件结构
 
 ```
-src/nn/
-├── mod.rs
-├── graph.rs
-├── nodes/
-├── optimizer/           # 新增优化器模块
-│   ├── mod.rs
-│   ├── base.rs         # Optimizer trait和基础结构
-│   ├── gradient_descent.rs
-│   ├── momentum.rs
-│   ├── adagrad.rs
-│   ├── rmsprop.rs
-│   └── adam.rs
-└── tests/
+src/nn/optimizer/
+├── mod.rs          # 模块导出
+├── base.rs         # Optimizer trait、GradientAccumulator、OptimizerState
+├── sgd.rs          # SGD优化器
+└── adam.rs         # Adam优化器
 
 tests/
-└── optimizer_example.rs  # 集成测试
+├── optimizer_example.rs   # 优化器集成测试
+├── test_ada_line.rs       # 单样本ADALINE测试
+└── test_adaline_batch.rs  # 批量ADALINE测试
 ```
-
-这个设计确保了代码的可扩展性和可维护性，同时与MatrixSlow Python版本保持API一致性。

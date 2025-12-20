@@ -1,6 +1,6 @@
 use ndarray::{Array, ArrayD, ArrayViewD, IxDyn};
-use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
+use rand::distributions::{Distribution, Uniform};
 
 use serde::{Deserialize, Serialize};
 
@@ -117,8 +117,8 @@ impl Tensor {
         let mut data = Vec::with_capacity(data_len);
 
         while data.len() < data_len {
-            let u1: f32 = rng.gen();
-            let u2: f32 = rng.gen();
+            let u1: f32 = rng.r#gen();
+            let u2: f32 = rng.r#gen();
             let r = (-2.0 * u1.ln()).sqrt();
             let theta = 2.0 * std::f32::consts::PI * u2;
             let z0 = (std_dev * r).mul_add(theta.cos(), mean);

@@ -111,6 +111,7 @@ Graph (计算图)
 ```
 
 **核心概念**:
+
 - **计算图**: 有向无环图(DAG)，表示计算流程
 - **节点**: 计算图中的基本单元，包含操作和变量
 - **前向传播**: 从输入到输出计算节点值
@@ -134,10 +135,10 @@ Variable (变量节点) extends Node
 ├── init: bool               # 是否需要初始化
 └── dim: tuple               # 维度信息
 
-Operation (操作节点) extends Node
+Operator (操作节点) extends Node
 ├── MatMul                   # 矩阵乘法
 ├── Add                      # 加法
-├── ReLU                     # ReLU激活
+├── ReLU                     # Leaky ReLU激活 (nslope=0.1)
 ├── Logistic                 # Sigmoid激活
 ├── SoftMax                  # SoftMax激活
 └── Loss Operations          # 损失函数
@@ -145,7 +146,7 @@ Operation (操作节点) extends Node
 
 ### 3. 计算图执行模式 (Graph Execution Mode)
 
-**MatrixSlow采用静态图模式 (Static Graph)**
+**MatrixSlow 采用静态图模式 (Static Graph)**
 
 ```mermaid
 graph TD
@@ -171,11 +172,13 @@ graph TD
 **静态图特征分析**:
 
 1. **图构建时机**:
+
    - 在代码执行时立即构建计算图
    - 节点创建时自动添加到`default_graph`
    - 图结构在训练前完全确定
 
 2. **节点连接方式**:
+
    ```python
    # 节点创建时立即建立连接关系
    def __init__(self, *parents, **kargs):
@@ -198,6 +201,7 @@ graph TD
 ### 4. 自动求导机制 (Automatic Differentiation)
 
 **实现原理**:
+
 1. **前向传播**: 计算每个节点的输出值
 2. **反向传播**: 利用链式法则计算梯度
 3. **雅可比矩阵**: 存储偏导数信息
@@ -259,6 +263,7 @@ graph TD
 ```
 
 **关键算法**:
+
 ```python
 # 前向传播伪代码
 def forward(node):
@@ -328,9 +333,9 @@ class Optimizer(object):
         # 反向传播
         self.graph.backward(self.target)
 
-    def update(self):
-        """更新参数 - 子类需要实现"""
-        raise NotImplementedError
+    @abc.abstractmethod
+    def _update(self):
+        """抽象方法，执行具体的梯度更新算法，由子类实现"""
 ```
 
 #### 梯度下降优化器 (Gradient Descent)
@@ -339,95 +344,96 @@ class Optimizer(object):
 class GradientDescent(Optimizer):
     """梯度下降优化器"""
 
-    def update(self):
+    def _update(self):
         """使用梯度下降更新参数"""
-        for variable in self.trainable_variables:
-            # θ = θ - α * ∇θ
-            variable.value -= self.learning_rate * variable.jacobi
+        for node in self.graph.nodes:
+            if isinstance(node, Variable) and node.trainable:
+                # 取得该节点在当前批的平均梯度
+                gradient = self.get_gradient(node)
+                # θ = θ - α * ∇θ
+                node.set_value(node.value - self.learning_rate * gradient)
 ```
 
-#### Adam优化器 (Adam Optimizer)
+#### Adam 优化器 (Adam Optimizer)
 
 ```python
 class Adam(Optimizer):
-    """Adam优化器 - 自适应矩估计"""
+    """Adam优化器 - 自适应矩估计（简化版，无偏差修正）"""
 
-    def __init__(self, graph, target, learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8):
+    def __init__(self, graph, target, learning_rate=0.01, beta_1=0.9, beta_2=0.99):
         """
         参数:
-        - beta_1: 一阶矩估计的指数衰减率
-        - beta_2: 二阶矩估计的指数衰减率
-        - epsilon: 数值稳定性常数
+        - beta_1: 历史梯度衰减系数
+        - beta_2: 历史梯度各分量平方衰减系数
         """
-        super().__init__(graph, target, learning_rate)
+        Optimizer.__init__(self, graph, target)
+        self.learning_rate = learning_rate
         self.beta_1 = beta_1
         self.beta_2 = beta_2
-        self.epsilon = epsilon
 
-        # 初始化动量
-        self.m = {}  # 一阶矩估计
-        self.v = {}  # 二阶矩估计
-        self.t = 0   # 时间步
+        # 历史梯度累积
+        self.v = dict()
 
-        # 为每个可训练变量初始化动量
-        for variable in self.trainable_variables:
-            self.m[variable] = np.mat(np.zeros(variable.shape()))
-            self.v[variable] = np.mat(np.zeros(variable.shape()))
+        # 历史梯度各分量平方累积
+        self.s = dict()
 
-    def update(self):
-        """使用Adam算法更新参数"""
-        self.t += 1
+    def _update(self):
+        """使用Adam算法更新参数（无偏差修正）"""
+        for node in self.graph.nodes:
+            if isinstance(node, Variable) and node.trainable:
+                # 取得该节点在当前批的平均梯度
+                gradient = self.get_gradient(node)
 
-        for variable in self.trainable_variables:
-            # 计算梯度
-            gradient = variable.jacobi
+                if node not in self.s:
+                    self.v[node] = (1 - self.beta_1) * gradient
+                    self.s[node] = (1 - self.beta_2) * np.power(gradient, 2)
+                else:
+                    # 梯度累积
+                    self.v[node] = self.beta_1 * self.v[node] + (1 - self.beta_1) * gradient
+                    # 各分量平方累积
+                    self.s[node] = self.beta_2 * self.s[node] + (1 - self.beta_2) * np.power(gradient, 2)
 
-            # 更新一阶矩估计
-            self.m[variable] = self.beta_1 * self.m[variable] + (1 - self.beta_1) * gradient
-
-            # 更新二阶矩估计
-            self.v[variable] = self.beta_2 * self.v[variable] + (1 - self.beta_2) * np.multiply(gradient, gradient)
-
-            # 偏差修正
-            m_hat = self.m[variable] / (1 - self.beta_1 ** self.t)
-            v_hat = self.v[variable] / (1 - self.beta_2 ** self.t)
-
-            # 参数更新
-            # θ = θ - α * m_hat / (√v_hat + ε)
-            variable.value -= self.learning_rate * np.divide(
-                m_hat,
-                np.sqrt(v_hat) + self.epsilon
-            )
+                # 更新变量节点的值
+                # θ = θ - α * v / √(s + 1e-10)
+                node.set_value(node.value - self.learning_rate *
+                               self.v[node] / np.sqrt(self.s[node] + 1e-10))
 ```
+
+> **注意**: MatrixSlow 的 Adam 实现是简化版本，没有标准 Adam 的偏差修正步骤。
 
 #### 动量优化器 (Momentum Optimizer)
 
 ```python
 class Momentum(Optimizer):
-    """动量优化器"""
+    """动量优化器（冲量法）"""
 
     def __init__(self, graph, target, learning_rate=0.01, momentum=0.9):
         """
         参数:
-        - momentum: 动量系数
+        - momentum: 衰减系数，默认为0.9
         """
-        super().__init__(graph, target, learning_rate)
+        Optimizer.__init__(self, graph, target)
+        self.learning_rate = learning_rate
         self.momentum = momentum
 
-        # 初始化速度
-        self.velocity = {}
-        for variable in self.trainable_variables:
-            self.velocity[variable] = np.mat(np.zeros(variable.shape()))
+        # 积累历史速度的字典
+        self.v = dict()
 
-    def update(self):
+    def _update(self):
         """使用动量法更新参数"""
-        for variable in self.trainable_variables:
-            # 更新速度: v = μ * v - α * ∇θ
-            self.velocity[variable] = (self.momentum * self.velocity[variable] -
-                                     self.learning_rate * variable.jacobi)
+        for node in self.graph.nodes:
+            if isinstance(node, Variable) and node.trainable:
+                # 取得该节点在当前批的平均梯度
+                gradient = self.get_gradient(node)
 
-            # 更新参数: θ = θ + v
-            variable.value += self.velocity[variable]
+                if node not in self.v:
+                    self.v[node] = - self.learning_rate * gradient
+                else:
+                    # 滑动平均累积历史速度: v = μ * v - α * ∇θ
+                    self.v[node] = self.momentum * self.v[node] - self.learning_rate * gradient
+
+                # 更新参数: θ = θ + v
+                node.set_value(node.value + self.v[node])
 ```
 
 #### 优化器使用示例 (Optimizer Usage Examples)
@@ -526,33 +532,40 @@ if __name__ == "__main__":
 
 **优化器对比**:
 
-| 优化器 | 学习率 | 收敛速度 | 内存占用 | 适用场景 |
-|--------|--------|----------|----------|----------|
-| **GradientDescent** | 需要调优 | 较慢 | 低 | 简单问题、理论学习 |
-| **Momentum** | 需要调优 | 中等 | 中等 | 有噪声的梯度 |
-| **Adam** | 自适应 | 快 | 高 | 大多数深度学习任务 |
+| 优化器              | 学习率   | 收敛速度 | 内存占用 | 适用场景           |
+| ------------------- | -------- | -------- | -------- | ------------------ |
+| **GradientDescent** | 需要调优 | 较慢     | 低       | 简单问题、理论学习 |
+| **Momentum**        | 需要调优 | 中等     | 中等     | 有噪声的梯度       |
+| **AdaGrad**         | 自适应   | 中等     | 中等     | 稀疏特征           |
+| **RMSProp**         | 自适应   | 较快     | 中等     | 非平稳目标         |
+| **Adam**            | 自适应   | 快       | 高       | 大多数深度学习任务 |
 
-**Adam优化器的优势**:
+**Adam 优化器的特点（MatrixSlow 简化版）**:
+
 - **自适应学习率**: 每个参数都有独立的学习率
 - **动量机制**: 结合了一阶和二阶矩估计
-- **偏差修正**: 在训练初期修正估计偏差
-- **数值稳定**: 通过epsilon避免除零错误
+- **简化实现**: 无偏差修正步骤
+- **数值稳定**: 内部使用 1e-10 避免除零错误
 
 ### 5. 层抽象 (Layer Abstraction)
 
 #### 全连接层 (Fully Connected Layer)
 
 **数学原理**:
+
 ```
 y = W * x + b
 ```
+
 其中：
+
 - `x`: 输入向量 (input_size × 1)
 - `W`: 权重矩阵 (size × input_size)
 - `b`: 偏置向量 (size × 1)
 - `y`: 输出向量 (size × 1)
 
 **基本实现**:
+
 ```python
 def fc(input, input_size, size, activation):
     """
@@ -580,40 +593,50 @@ def fc(input, input_size, size, activation):
         return affine
 ```
 
-#### ReLU激活函数 (Rectified Linear Unit)
+#### ReLU 激活函数 (Leaky ReLU)
 
 **数学定义**:
+
 ```
-ReLU(x) = max(0, x) = {
-    x,  if x > 0
-    0,  if x ≤ 0
+LeakyReLU(x) = {
+    x,              if x > 0
+    nslope * x,     if x ≤ 0   (nslope = 0.1)
 }
 ```
 
 **基本实现**:
+
 ```python
 class ReLU(Operator):
-    """ReLU激活函数节点"""
+    """Leaky ReLU激活函数节点"""
+
+    nslope = 0.1  # 负半轴的斜率
 
     def compute(self):
-        """前向传播：计算ReLU输出"""
-        self.value = np.mat(np.maximum(0, self.parents[0].value))
+        """前向传播：计算Leaky ReLU输出"""
+        self.value = np.mat(np.where(
+            self.parents[0].value > 0.0,
+            self.parents[0].value,
+            self.nslope * self.parents[0].value)
+        )
 
     def get_jacobi(self, parent):
-        """反向传播：计算ReLU的导数"""
+        """反向传播：计算Leaky ReLU的导数"""
         return np.diag(np.where(
-            self.parents[0].value.A1 > 0.0, 1.0, 0.0
+            self.parents[0].value.A1 > 0.0, 1.0, self.nslope
         ))
 ```
 
 **特点**:
-- **优势**: 计算简单、梯度不饱和、稀疏激活
-- **问题**: 可能出现死亡神经元问题
-- **应用**: 深度神经网络的标准激活函数
+
+- **优势**: 计算简单、梯度不饱和、避免死亡神经元问题
+- **改进**: 相比标准 ReLU，负半轴有小斜率(0.1)，保持梯度流动
+- **应用**: 深度神经网络的常用激活函数
 
 ## 关键特性 (Key Features)
 
 ### 1. 支持的模型类型
+
 - **线性模型**: 逻辑回归(LR)
 - **因子分解机**: FM, DeepFM
 - **神经网络**: DNN, CNN, RNN
@@ -622,6 +645,7 @@ class ReLU(Operator):
 ### 2. 分布式训练
 
 #### Parameter Server 架构图
+
 ```mermaid
 graph TB
     subgraph "Parameter Server 模式"
@@ -653,6 +677,7 @@ graph TB
 ```
 
 #### Ring AllReduce 架构图
+
 ```mermaid
 graph LR
     subgraph "Ring AllReduce 模式"
@@ -679,9 +704,10 @@ graph LR
 - **通信协议**: gRPC + Protocol Buffers
 
 ### 3. 模型服务
+
 - **模型导出**: 支持模型序列化
-- **推理服务**: 类似TensorFlow Serving
-- **网络协议**: gRPC接口
+- **推理服务**: 类似 TensorFlow Serving
+- **网络协议**: gRPC 接口
 
 ## 项目结构 (Project Structure)
 
@@ -711,6 +737,7 @@ MatrixSlow/
 ## 核心算法实现 (Core Algorithm Implementation)
 
 ### 矩阵乘法操作
+
 ```python
 class MatMul(Operator):
     def compute(self):
@@ -724,6 +751,7 @@ class MatMul(Operator):
 ```
 
 ### 损失函数实现
+
 ```python
 class CrossEntropyWithSoftMax(Operator):
     def compute(self):
@@ -759,17 +787,18 @@ for epoch in range(100):
 
 ## 静态图特性 (Static Graph Characteristics)
 
-MatrixSlow采用静态计算图模式，具有以下特点：
+MatrixSlow 采用静态计算图模式，具有以下特点：
 
-| 特性 | 静态图 (MatrixSlow) | 动态图 (PyTorch风格) |
-|------|-------------------|---------------------|
-| **图构建时机** | 定义时立即构建 | 执行时动态构建 |
-| **图结构** | 固定不变 | 可动态改变 |
-| **调试难度** | 较难调试 | 容易调试 |
-| **性能优化** | 便于全局优化 | 优化空间有限 |
-| **适用场景** | 固定模型结构 | 动态模型结构 |
+| 特性           | 静态图 (MatrixSlow) | 动态图 (PyTorch 风格) |
+| -------------- | ------------------- | --------------------- |
+| **图构建时机** | 定义时立即构建      | 执行时动态构建        |
+| **图结构**     | 固定不变            | 可动态改变            |
+| **调试难度**   | 较难调试            | 容易调试              |
+| **性能优化**   | 便于全局优化        | 优化空间有限          |
+| **适用场景**   | 固定模型结构        | 动态模型结构          |
 
 **静态图的核心机制**:
+
 - **全局图管理**: 使用`default_graph`统一管理所有节点
 - **固定拓扑**: 节点创建时立即建立父子关系
 - **分离执行**: 先构建完整模型，再执行训练
@@ -777,6 +806,7 @@ MatrixSlow采用静态计算图模式，具有以下特点：
 ## 技术特点 (Technical Characteristics)
 
 ### 优势
+
 1. **教学友好**: 代码简洁，注释详细
 2. **原理清晰**: 直接体现深度学习核心概念
 3. **功能完整**: 支持主流模型和训练方式
@@ -784,7 +814,8 @@ MatrixSlow采用静态计算图模式，具有以下特点：
 5. **静态图优势**: 便于全局优化和分析
 
 ### 限制
-1. **性能**: 纯Python实现，运行较慢
+
+1. **性能**: 纯 Python 实现，运行较慢
 2. **张量**: 仅支持二阶张量(矩阵)
 3. **优化**: 未进行计算优化
 4. **生产**: 主要用于教学，不适合生产环境
@@ -792,16 +823,19 @@ MatrixSlow采用静态计算图模式，具有以下特点：
 ## 对其他语言开发者的启示 (Insights for Other Language Developers)
 
 ### 1. 核心设计模式
-- **计算图**: 使用DAG表示计算流程
+
+- **计算图**: 使用 DAG 表示计算流程
 - **自动求导**: 基于链式法则的反向传播
 - **操作符重载**: 简化数学表达式构建
 
 ### 2. 架构设计原则
+
 - **分层抽象**: 节点->操作->层->模型
 - **职责分离**: 计算图、优化器、训练器独立
 - **可扩展性**: 通过继承添加新操作和优化器
 
 ### 3. 实现要点
+
 - **内存管理**: 及时清理中间结果
 - **数值稳定**: 处理梯度消失/爆炸
 - **并行化**: 支持分布式训练
@@ -810,9 +844,10 @@ MatrixSlow采用静态计算图模式，具有以下特点：
 
 ## 总结 (Summary)
 
-MatrixSlow是一个优秀的深度学习框架教学实现，通过简洁的代码展示了现代深度学习框架的核心原理。其静态计算图设计、自动求导机制和分层抽象为理解深度学习框架内部机制提供了极好的学习资源。
+MatrixSlow 是一个优秀的深度学习框架教学实现，通过简洁的代码展示了现代深度学习框架的核心原理。其静态计算图设计、自动求导机制和分层抽象为理解深度学习框架内部机制提供了极好的学习资源。
 
 **核心价值**:
+
 - **教育意义**: 帮助理解深度学习框架的基本原理
 - **设计参考**: 为其他语言的深度学习框架开发提供思路
 - **技术示范**: 展示了计算图、自动求导等关键技术的实现方法

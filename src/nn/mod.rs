@@ -9,6 +9,7 @@
 mod display;
 mod graph;
 mod nodes;
+pub mod optimizer;
 
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{Graph, GraphError};

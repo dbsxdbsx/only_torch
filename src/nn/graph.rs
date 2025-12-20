@@ -6,8 +6,8 @@
  * @Description  : 神经网络模型的计算图
  */
 
-use super::nodes::{NodeHandle, NodeType};
 use super::NodeId;
+use super::nodes::{NodeHandle, NodeType};
 use crate::tensor::Tensor;
 use std::collections::HashMap;
 
@@ -360,6 +360,17 @@ impl Graph {
     // 用于调试
     pub fn nodes_count(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// 获取所有可训练的参数节点ID
+    pub fn get_trainable_nodes(&self) -> Vec<NodeId> {
+        self.nodes
+            .iter()
+            .filter_map(|(&id, node)| match node.node_type() {
+                NodeType::Parameter(_) => Some(id),
+                _ => None,
+            })
+            .collect()
     }
 
     /// 根据ID获取节点的引用

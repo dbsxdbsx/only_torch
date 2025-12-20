@@ -139,6 +139,12 @@ impl Tensor {
         self.data.std_axis(ndarray::Axis(0), 0.).mean().unwrap()
     }
 
+    /// 计算张量每个元素的平方根
+    pub fn sqrt(&self) -> Self {
+        let sqrt_data = self.data.mapv(|x| x.sqrt());
+        Self { data: sqrt_data }
+    }
+
     /// 不改变形状情况下，将张量的元素按从小到大的顺序排列，并将其返回（不影响原张量）
     pub fn order(&self) -> Self {
         let flat_data = self.data.view().into_shape(self.data.len()).unwrap();
