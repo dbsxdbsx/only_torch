@@ -1,6 +1,10 @@
+# Rust 构建输出
 /target
-/Cargo.lock
+Cargo.lock
+
+# IDE 配置
 **/.vscode
+.cursor/
+
+# 二进制文件
 **/*.bin
-
-
