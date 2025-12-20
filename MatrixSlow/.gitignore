@@ -1,0 +1,11 @@
+dataset
+**vscode**
+*.pyc
+*pycache*
+*.pkl
+tmp
+export
+*.code-workspace
+*.html
+*.DS_Store
+.idea
