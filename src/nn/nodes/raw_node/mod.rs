@@ -19,6 +19,7 @@ pub(in crate::nn) enum NodeType {
     MatMul(MatMul),
     Multiply(Multiply),
     ScalarMultiply(ScalarMultiply),
+    LeakyReLU(LeakyReLU),
     Sigmoid(Sigmoid),
     Step(Step),
     Tanh(Tanh),

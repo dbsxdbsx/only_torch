@@ -962,6 +962,35 @@ impl Graph {
         self.add_node_to_list(handle, name, "sigmoid", &[parent_id])
     }
 
+    /// 创建 LeakyReLU 激活节点
+    ///
+    /// # 参数
+    /// - `parent_id`: 父节点 ID
+    /// - `negative_slope`: 负半轴斜率（0.0 时等价于标准 ReLU，MatrixSlow 使用 0.1）
+    /// - `name`: 节点名称（可选）
+    pub fn new_leaky_relu_node(
+        &mut self,
+        parent_id: NodeId,
+        negative_slope: f64,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_leaky_relu(&self.get_nodes(&[parent_id])?, negative_slope)?;
+        self.add_node_to_list(handle, name, "leaky_relu", &[parent_id])
+    }
+
+    /// 创建标准 ReLU 激活节点（等价于 negative_slope=0 的 LeakyReLU）
+    ///
+    /// # 参数
+    /// - `parent_id`: 父节点 ID
+    /// - `name`: 节点名称（可选）
+    pub fn new_relu_node(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        self.new_leaky_relu_node(parent_id, 0.0, name)
+    }
+
     pub fn new_perception_loss_node(
         &mut self,
         parent_id: NodeId,

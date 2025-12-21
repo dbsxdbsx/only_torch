@@ -5,6 +5,7 @@ mod graph_dynamic; // M4: 动态图扩展能力测试（NEAT 友好性）
 mod graph_forward;
 mod node_add;
 mod node_input;
+mod node_leaky_relu; // LeakyReLU/ReLU 激活函数
 mod node_mat_mul;
 mod node_multiply;
 mod node_parameter;
