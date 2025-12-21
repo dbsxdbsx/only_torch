@@ -1,5 +1,26 @@
 # 更新日志
 
+## [0.4.0] - 2025-12-22
+
+### 新增
+
+- **CNN Layer 便捷函数**：高层 API，简化 CNN 网络构建
+  - `conv2d()`：2D 卷积层，自动创建 kernel 参数节点
+  - `max_pool2d()`：最大池化层
+  - `avg_pool2d()`：平均池化层
+- **MNIST CNN 集成测试**：LeNet 风格架构，同时验证 AvgPool（经典）和 MaxPool（现代）两种池化
+
+### 改进
+
+- **文档完善**：添加 PyTorch CPU 内核优化技术参考（并行化、SIMD、内存布局等）
+- **测试重命名**：`test_mnist_layer.rs` → `test_mnist_linear.rs`，明确区分 MLP 和 CNN 架构
+
+### 测试
+
+- Conv2d Layer 单元测试：前向/反向传播、链式连接、名称冲突检测
+- MaxPool2d Layer 单元测试：基础池化、与 Conv2d 链式连接、稀疏梯度传播
+- AvgPool2d Layer 单元测试：全局平均池化（GAP）、ResNet 风格配置
+
 ## [0.3.0] - 2025-12-21
 
 ### 新增

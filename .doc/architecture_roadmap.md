@@ -88,16 +88,16 @@ neat/              0%       ❌ 远期特色
 
 ### 阶段二：MNIST 基础 (4-6 周)
 
-|  #  | 任务                 | 说明                                   | NEAT 友好性       | 状态 |
-| :-: | :------------------- | :------------------------------------- | :---------------- | :--: |
-| P1  | Softmax+CrossEntropy | 分类必需                               | ✅ 新节点         |  ✅  |
-| P1b | Sigmoid 节点         | 通用激活                               | ✅ 新节点         |  ✅  |
-| P1c | DataLoader + MNIST   | 数据加载                               | ✅ 基础设施       |  ✅  |
-| P2  | LeakyReLU/ReLU 节点  | 底层 LeakyReLU + 便捷 ReLU (slope=0.0) | ✅ 新节点         |  ✅  |
-| P3  | Reshape/Flatten 节点 | CNN 数据流转换（PyTorch 风格）         | ✅ 结构操作       |  ✅  |
-| P4  | Conv2d 节点          | PyTorch 风格（多通道内部处理）         | ✅ Jacobi+Batch   |  ✅  |
-| P5  | Pooling 节点         | MaxPool2d/AvgPool2d                   | ✅ Jacobi+Batch   |  ✅  |
-| P6  | MNIST CNN 端到端     | LeNet 风格                             | ✅ 验证           |  🔄  |
+|  #  | 任务                 | 说明                                   | NEAT 友好性     | 状态 |
+| :-: | :------------------- | :------------------------------------- | :-------------- | :--: |
+| P1  | Softmax+CrossEntropy | 分类必需                               | ✅ 新节点       |  ✅  |
+| P1b | Sigmoid 节点         | 通用激活                               | ✅ 新节点       |  ✅  |
+| P1c | DataLoader + MNIST   | 数据加载                               | ✅ 基础设施     |  ✅  |
+| P2  | LeakyReLU/ReLU 节点  | 底层 LeakyReLU + 便捷 ReLU (slope=0.0) | ✅ 新节点       |  ✅  |
+| P3  | Reshape/Flatten 节点 | CNN 数据流转换（PyTorch 风格）         | ✅ 结构操作     |  ✅  |
+| P4  | Conv2d 节点          | PyTorch 风格（多通道内部处理）         | ✅ Jacobi+Batch |  ✅  |
+| P5  | Pooling 节点         | MaxPool2d/AvgPool2d                    | ✅ Jacobi+Batch |  ✅  |
+| P6  | MNIST CNN 端到端     | LeNet 风格                             | ✅ 验证         |  🔄  |
 
 ### 阶段三：NEAT 神经进化 (8-12 周)
 
@@ -208,7 +208,10 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
    - Conv2d: 支持 stride/padding，Jacobi+Batch 双模式
    - MaxPool2d: 稀疏梯度反传（记录最大值索引）
    - AvgPool2d: 均匀梯度分配
-3. 实现 CNN Layer 便捷函数（conv_layer, pool_layer）
+3. ~~实现 CNN Layer 便捷函数~~ ✅ 已完成
+   - `conv2d()`: 创建卷积层（自动创建 kernel 参数）
+   - `max_pool2d()`: 最大池化层
+   - `avg_pool2d()`: 平均池化层
 4. MNIST CNN 端到端示例（LeNet 风格）
 5. 完善 MNIST MLP 示例（提升准确率，添加评估指标）
 

@@ -24,9 +24,14 @@
 
 - **[XOR 异或问题](tests/test_xor.rs)** ⭐ - 经典非线性分类问题，展示多层网络的能力。网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 即可达到 100% 准确率。这是验证神经网络能够学习非线性函数的经典测试（运行：`cargo test test_xor -- --show-output`）
 
+- **[MNIST 手写数字识别（单样本版）](tests/test_mnist.rs)** - 逐样本处理的 MVP 集成测试，验证 DataLoader + MLP 网络 + 训练循环的基本逻辑。适合理解底层 Jacobi 机制，但训练较慢（运行：`cargo test test_mnist -- --show-output`）
+
 - **[MNIST 手写数字识别（Batch 版）](tests/test_mnist_batch.rs)** ⭐⭐ - **推荐示例**，展示 Batch 机制的高效训练。网络结构：`Input(784) → Hidden(128, Sigmoid+bias) → Output(10, SoftmaxCrossEntropy)`，使用 `ones @ bias` 技巧实现 bias 广播。5000 样本训练可达 **90%+ 准确率**，约 50 秒完成（运行：`cargo test test_mnist_batch -- --show-output`）
 
-- **[MNIST 手写数字识别（单样本版）](tests/test_mnist.rs)** - 逐样本处理的 MVP 集成测试，验证 DataLoader + MLP 网络 + 训练循环的基本逻辑。适合理解底层 Jacobi 机制，但训练较慢（运行：`cargo test test_mnist -- --show-output`）
+- **[MNIST Linear（MLP 架构）](tests/test_mnist_linear.rs)** ⭐⭐ - 使用 `linear()` Layer API 构建 MLP。网络结构：`Input(784) → FC1(128, Sigmoid) → FC2(10) → SoftmaxCrossEntropy`，展示 Layer 便捷 API 的使用方式（运行：`cargo test test_mnist_linear -- --show-output`）
+
+- **[MNIST CNN（LeNet 风格）](tests/test_mnist_cnn.rs)** ⭐⭐⭐ - **CNN 架构示例**，基于经典 LeNet-5 设计。网络结构：`Conv1(5x5) → AvgPool → Conv2(3x3) → MaxPool → FC1(64) → FC2(10)`，同时验证 AvgPool 和 MaxPool 两种池化层（运行：`cargo test test_mnist_cnn -- --show-output`）
+
 
 ## TODO
 

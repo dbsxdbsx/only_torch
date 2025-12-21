@@ -1,6 +1,6 @@
 # 性能优化策略
 
-> 最后更新: 2025-12-20
+> 最后更新: 2025-12-22
 > 状态: **规划中**
 > 适用范围: Only Torch 全局
 
@@ -208,11 +208,11 @@ for batch in data {
 
 ### MVP 阶段（当前）
 
-| 优化           |   状态    | 说明                |
-| :------------- | :-------: | :------------------ |
-| Rayon 个体并行 | 🔲 待实现 | NEAT 进化的核心     |
+| 优化           |   状态    | 说明                                                        |
+| :------------- | :-------: | :---------------------------------------------------------- |
+| Rayon 个体并行 | 🔲 待实现 | NEAT 进化的核心                                             |
 | Batch 训练     | 🔲 待实现 | 详见 [batch_mechanism_design.md](batch_mechanism_design.md) |
-| LLVM 自动优化  |  ✅ 已有  | release 模式自动    |
+| LLVM 自动优化  |  ✅ 已有  | release 模式自动                                            |
 
 ### 性能调优阶段
 
@@ -279,3 +279,235 @@ NEAT 网络各部分的向量化潜力：
 2. **测量驱动**：用 benchmark 证明瓶颈，而非猜测
 3. **渐进优化**：从高收益低复杂度的优化开始
 4. **保持简单**：不为假设的未来需求过度工程化
+
+---
+
+## 附录：PyTorch CPU 内核优化技术参考
+
+> 以下技术来源于 PyTorch ATen CPU 内核（`aten/src/ATen/native/cpu/`），可作为未来优化参考。
+
+### 1. 并行化技术
+
+**PyTorch 实现** (`at::parallel_for`)：
+
+```cpp
+// PyTorch: AvgPoolKernel.cpp
+at::parallel_for(0, channels, 0, [&](int64_t begin, int64_t end) {
+    for (const auto c : c10::irange(begin, end)) {
+        // 每个线程处理一部分 channels
+    }
+});
+```
+
+**Rust 对应方案**：
+
+| PyTorch                                   | Rust 等价                                  | 说明                   |
+| ----------------------------------------- | ------------------------------------------ | ---------------------- |
+| `at::parallel_for`                        | [`rayon::par_iter`](https://docs.rs/rayon) | 数据并行，自动负载均衡 |
+| `at::parallel_for(0, n, grain_size, ...)` | `rayon::iter::with_min_len()`              | 控制最小分块大小       |
+
+```rust
+// Rust 等价实现
+use rayon::prelude::*;
+
+// 基础用法
+(0..channels).into_par_iter().for_each(|c| {
+    // 每个线程处理一部分 channels
+});
+
+// 带最小分块大小（类似 grain_size）
+(0..channels)
+    .into_par_iter()
+    .with_min_len(64)  // 每个任务至少处理 64 个元素
+    .for_each(|c| { /* ... */ });
+```
+
+---
+
+### 2. SIMD 向量化技术
+
+**PyTorch 实现** (`vec::Vectorized`)：
+
+```cpp
+// PyTorch: MaxPoolKernel.cpp
+using Vec = vec::Vectorized<scalar_t>;
+
+int64_t d = 0;
+for (; d < len; d += Vec::size()) {
+    Vec val_vec = Vec::loadu(in + d);        // SIMD 加载
+    Vec max_vec = Vec::loadu(out + d);
+    Vec result = Vec::blendv(max_vec, val_vec, val_vec > max_vec);
+    result.store(out + d);                    // SIMD 存储
+}
+// 处理尾部（不足一个 SIMD 宽度）
+for (; d < size; d++) {
+    out[d] = std::max(out[d], in[d]);
+}
+```
+
+**Rust 对应方案**：
+
+| PyTorch              | Rust 等价                                                    | 说明                  |
+| -------------------- | ------------------------------------------------------------ | --------------------- |
+| `vec::Vectorized<T>` | [`std::simd`](https://doc.rust-lang.org/std/simd/) (nightly) | 标准库 SIMD（实验性） |
+|                      | [`wide`](https://docs.rs/wide) crate                         | 稳定版跨平台 SIMD     |
+|                      | [`packed_simd`](https://docs.rs/packed_simd)                 | 更底层的 SIMD 控制    |
+|                      | [`pulp`](https://docs.rs/pulp)                               | 自动 SIMD 分发        |
+
+```rust
+// 方案 1: wide crate（推荐，稳定版可用）
+use wide::f32x8;
+
+let mut d = 0;
+while d + 8 <= len {
+    let val = f32x8::from(&input[d..d+8]);
+    let max = f32x8::from(&output[d..d+8]);
+    let result = val.max(max);
+    result.store(&mut output[d..d+8]);
+    d += 8;
+}
+// 尾部标量处理
+for i in d..len {
+    output[i] = output[i].max(input[i]);
+}
+
+// 方案 2: std::simd（nightly，未来标准）
+#![feature(portable_simd)]
+use std::simd::{f32x8, SimdFloat};
+
+let val = f32x8::from_slice(&input[d..]);
+let max = f32x8::from_slice(&output[d..]);
+let result = val.simd_max(max);
+```
+
+**常用 SIMD 操作对照表**：
+
+| 操作     | PyTorch `vec::Vectorized` | Rust `wide` / `std::simd` |
+| -------- | ------------------------- | ------------------------- |
+| 加载     | `Vec::loadu(ptr)`         | `f32x8::from(slice)`      |
+| 存储     | `vec.store(ptr)`          | `vec.store(slice)`        |
+| 加法     | `a + b`                   | `a + b`                   |
+| 乘法     | `a * b`                   | `a * b`                   |
+| 最大值   | `Vec::max(a, b)`          | `a.max(b)`                |
+| 条件选择 | `Vec::blendv(a, b, mask)` | `mask.select(b, a)`       |
+| 水平求和 | `vec.reduce_add()`        | `vec.reduce_add()`        |
+
+---
+
+### 3. 内存布局优化
+
+**PyTorch 策略**：
+
+```cpp
+// PyTorch 支持多种内存布局
+auto input = input_.contiguous();                      // NCHW (默认)
+auto input = input_.contiguous(MemoryFormat::ChannelsLast);  // NHWC
+
+// Channels Last 对 SIMD 更友好（连续访问 channel 维度）
+```
+
+**Rust 对应方案**：
+
+```rust
+// ndarray 支持不同内存布局
+use ndarray::{Array4, Axis};
+
+// C 顺序（NCHW，行优先）—— 默认
+let tensor = Array4::<f32>::zeros((batch, channels, height, width));
+
+// Fortran 顺序（列优先）
+let tensor = Array4::<f32>::zeros((batch, channels, height, width).f());
+
+// 转换布局
+let contiguous = tensor.as_standard_layout().to_owned();
+```
+
+---
+
+### 4. 数据类型优化
+
+**PyTorch 实现**：
+
+```cpp
+// PyTorch 对 BFloat16/Half 使用 float 累加，避免精度损失
+using opmath_t = at::opmath_type<scalar_t>;  // scalar_t=bf16 → opmath_t=f32
+
+opmath_t sum = 0;
+for (...) {
+    sum += opmath_t(input[i]);  // 累加时提升精度
+}
+output[i] = scalar_t(sum / count);  // 输出时降回原精度
+```
+
+**Rust 对应方案**：
+
+```rust
+// 使用 half crate 处理半精度
+use half::{bf16, f16};
+
+// 累加时使用 f32
+let sum: f32 = input.iter()
+    .map(|&x| f32::from(x))  // bf16 → f32
+    .sum();
+let avg = bf16::from_f32(sum / count as f32);  // f32 → bf16
+```
+
+---
+
+### 5. 索引优化技术
+
+**PyTorch 实现**（避免多维索引计算）：
+
+```cpp
+// PyTorch: 预计算偏移量，避免重复索引计算
+int64_t index = id * input_height * input_width + ih * input_width + iw;
+const scalar_t* in = input_data + n * input_depth * input_height * input_width;
+```
+
+**Rust 对应方案**：
+
+```rust
+// 使用 unsafe 指针运算（性能敏感路径）
+let base_offset = n * depth * height * width;
+let idx = base_offset + d * height * width + h * width + w;
+
+// 或使用 ndarray 的高效索引
+use ndarray::s;
+let slice = tensor.slice(s![n, .., h0..h1, w0..w1]);
+```
+
+---
+
+### 6. 尾部处理模式
+
+**通用模式**（PyTorch 和 Rust 通用）：
+
+```rust
+// SIMD 宽度对齐 + 尾部标量处理
+let simd_width = 8;  // 如 f32x8
+let aligned_len = (len / simd_width) * simd_width;
+
+// SIMD 处理对齐部分
+for i in (0..aligned_len).step_by(simd_width) {
+    // SIMD 操作
+}
+
+// 标量处理尾部
+for i in aligned_len..len {
+    // 标量操作
+}
+```
+
+---
+
+### 相关 Rust Crate 汇总
+
+| 用途        | Crate                  | 说明                  |
+| ----------- | ---------------------- | --------------------- |
+| 并行迭代    | `rayon`                | 数据并行，类似 OpenMP |
+| SIMD (稳定) | `wide`                 | 跨平台 SIMD 抽象      |
+| SIMD (底层) | `packed_simd`          | 更细粒度控制          |
+| SIMD (实验) | `std::simd`            | 未来标准（nightly）   |
+| 半精度浮点  | `half`                 | f16/bf16 支持         |
+| BLAS        | `ndarray` + `blas-src` | 线性代数加速          |
+| 内存对齐    | `aligned`              | 对齐内存分配          |

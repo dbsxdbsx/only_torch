@@ -1,9 +1,9 @@
 /*
  * @Author       : 老董
  * @Date         : 2025-12-22
- * @Description  : MNIST 集成测试（使用 Linear Layer）
- *                 验证：Layer 便捷 API + batch forward/backward + Adam 优化器
- *                 对比 test_mnist_batch.rs，使用 linear() 简化网络构建
+ * @Description  : MNIST Linear 集成测试（MLP 架构）
+ *                 验证：Linear Layer API + batch forward/backward + Adam 优化器
+ *                 使用 linear() 构建纯全连接网络，对比 test_mnist_cnn.rs 的 CNN 架构
  */
 
 use only_torch::data::MnistDataset;
@@ -13,15 +13,15 @@ use only_torch::tensor::Tensor;
 use only_torch::tensor_slice;
 use std::time::Instant;
 
-/// MNIST Layer 集成测试
+/// MNIST Linear 集成测试（MLP 架构）
 ///
 /// 使用 Linear layer 构建 MLP，验证 Layer API 的正确性和易用性
 #[test]
-fn test_mnist_with_linear_layer() -> Result<(), GraphError> {
+fn test_mnist_linear() -> Result<(), GraphError> {
     let start_time = Instant::now();
 
     println!("\n{}", "=".repeat(60));
-    println!("=== MNIST Layer 集成测试（使用 linear()）===");
+    println!("=== MNIST Linear 集成测试（MLP 架构）===");
     println!("{}\n", "=".repeat(60));
 
     // ========== 1. 加载数据 ==========
@@ -210,7 +210,7 @@ fn test_mnist_with_linear_layer() -> Result<(), GraphError> {
 
     if test_passed {
         println!("\n{}", "=".repeat(60));
-        println!("✅ MNIST Layer 测试通过！");
+        println!("✅ MNIST Linear 测试通过！");
         println!("{}\n", "=".repeat(60));
         Ok(())
     } else {
@@ -223,7 +223,7 @@ fn test_mnist_with_linear_layer() -> Result<(), GraphError> {
         );
         println!("{}\n", "=".repeat(60));
         Err(GraphError::ComputationError(format!(
-            "MNIST Layer 测试失败：在 {} 个 epoch 内未能连续 {} 次达到 {:.0}% 准确率",
+            "MNIST Linear 测试失败：在 {} 个 epoch 内未能连续 {} 次达到 {:.0}% 准确率",
             max_epochs,
             consecutive_success_required,
             target_accuracy * 100.0

@@ -119,13 +119,13 @@ pub struct LinearOutput {
 
 ### Layer 与 Node 的对应关系
 
-| 操作        | Node 级别            | Layer 级别        |
-| ----------- | -------------------- | ----------------- |
-| **全连接**  | `MatMul` + `Add`     | `linear()`        |
-| **卷积**    | `Conv2d`             | `conv_layer()`    |
-| **池化**    | `MaxPool`            | `pooling_layer()` |
-| **激活**    | `ReLU`, `Sigmoid`... | _(直接用 Node)_   |
-| **Reshape** | `Reshape`, `Flatten` | _(直接用 Node)_   |
+| 操作        | Node 级别              | Layer 级别                       |
+| ----------- | ---------------------- | -------------------------------- |
+| **全连接**  | `MatMul` + `Add`       | `linear()`                       |
+| **卷积**    | `Conv2d`               | `conv2d()`                       |
+| **池化**    | `MaxPool2d`/`AvgPool2d`| `max_pool2d()` / `avg_pool2d()`  |
+| **激活**    | `ReLU`, `Sigmoid`...   | _(直接用 Node)_                  |
+| **Reshape** | `Reshape`, `Flatten`   | _(直接用 Node)_                  |
 
 **注意**：简单操作（激活、Reshape）不需要 Layer 包装，直接用 Node。
 
@@ -196,7 +196,7 @@ graph.mutate_parameter(fc.weights, 0.1)?;
 ### 当前状态
 
 - ✅ Node 层：核心框架完成，两套 API 实现
-- ✅ Layer 层：`linear()` 已实现（Batch-First）
+- ✅ Layer 层：`linear()`, `conv2d()`, `max_pool2d()`, `avg_pool2d()` 已实现（Batch-First）
 
 ### 计划
 
@@ -204,7 +204,7 @@ graph.mutate_parameter(fc.weights, 0.1)?;
 2. **Phase 2** ✅：实现 Batch 机制（forward_batch, backward_batch）
 3. **Phase 3** ✅：实现 Layer 便捷函数（linear）
 4. **Phase 4** ✅：添加 CNN 节点（Conv2d, MaxPool2d, AvgPool2d）
-5. **Phase 5**：添加 CNN Layer（conv_layer, pool_layer）
+5. **Phase 5** ✅：添加 CNN Layer（conv2d, max_pool2d, avg_pool2d）
 6. **Phase 6**：MNIST CNN 端到端示例（LeNet 风格）
 7. **Phase 7**：NEAT 集成
 
