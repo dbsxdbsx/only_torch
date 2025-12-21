@@ -933,6 +933,44 @@ impl Graph {
         self.add_node_to_list(handle, name, "conv2d", &[input_id, kernel_id])
     }
 
+    /// 创建 MaxPool2d（2D 最大池化）节点
+    ///
+    /// # 设计
+    /// - 在每个池化窗口中取最大值
+    /// - 记录最大值位置用于反向传播（稀疏梯度）
+    ///
+    /// # 参数
+    /// - `input_id`: 输入节点 ID，形状 `[C, H, W]` 或 `[batch, C, H, W]`
+    /// - `kernel_size`: 池化窗口大小 `(kH, kW)`
+    /// - `stride`: 步长 `(sH, sW)`，`None` 时默认等于 `kernel_size`
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 输出形状
+    /// - 单样本: `[C, H', W']`
+    /// - Batch: `[batch, C, H', W']`
+    /// - 其中 `H' = (H - kH) / sH + 1`
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 输入: [batch, 32, 28, 28]
+    /// let pool = graph.new_max_pool2d_node(conv_out, (2, 2), None, Some("pool1"))?;
+    /// // 输出: [batch, 32, 14, 14]（默认 stride = kernel_size）
+    ///
+    /// // 自定义 stride
+    /// let pool2 = graph.new_max_pool2d_node(input, (3, 3), Some((2, 2)), Some("pool2"))?;
+    /// ```
+    pub fn new_max_pool2d_node(
+        &mut self,
+        input_id: NodeId,
+        kernel_size: (usize, usize),
+        stride: Option<(usize, usize)>,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle =
+            NodeHandle::new_max_pool2d(&self.get_nodes(&[input_id])?, kernel_size, stride)?;
+        self.add_node_to_list(handle, name, "max_pool2d", &[input_id])
+    }
+
     pub fn new_mat_mul_node(
         &mut self,
         left_node_id: NodeId,

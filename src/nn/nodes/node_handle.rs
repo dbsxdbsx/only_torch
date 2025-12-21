@@ -1,7 +1,7 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, Conv2d, Flatten, Input, LeakyReLU, MatMul, Multiply, Parameter, PerceptionLoss, Reshape,
-    ScalarMultiply, Sigmoid, SoftmaxCrossEntropy, Step, Tanh,
+    Add, Conv2d, Flatten, Input, LeakyReLU, MatMul, MaxPool2d, Multiply, Parameter, PerceptionLoss,
+    Reshape, ScalarMultiply, Sigmoid, SoftmaxCrossEntropy, Step, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -140,6 +140,20 @@ impl NodeHandle {
         padding: (usize, usize),
     ) -> Result<Self, GraphError> {
         Self::new(Conv2d::new(parents, stride, padding)?)
+    }
+
+    /// 创建 MaxPool2d 节点
+    ///
+    /// # 参数
+    /// - `parents`: [输入节点]
+    /// - `kernel_size`: 池化窗口大小 (kH, kW)
+    /// - `stride`: 步长 (sH, sW)，None 时默认等于 kernel_size
+    pub(in crate::nn) fn new_max_pool2d(
+        parents: &[&Self],
+        kernel_size: (usize, usize),
+        stride: Option<(usize, usize)>,
+    ) -> Result<Self, GraphError> {
+        Self::new(MaxPool2d::new(parents, kernel_size, stride)?)
     }
 
     pub(in crate::nn) fn new_mat_mul(parents: &[&Self]) -> Result<Self, GraphError> {

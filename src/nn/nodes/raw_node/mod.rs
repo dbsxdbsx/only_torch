@@ -19,6 +19,7 @@ pub(in crate::nn) enum NodeType {
     Conv2d(Conv2d),
     Flatten(Flatten),
     MatMul(MatMul),
+    MaxPool2d(MaxPool2d),
     Multiply(Multiply),
     Reshape(Reshape),
     ScalarMultiply(ScalarMultiply),

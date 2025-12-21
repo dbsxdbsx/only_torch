@@ -10,6 +10,7 @@ mod node_flatten; // Flatten 节点（展平）
 mod node_input;
 mod node_leaky_relu; // LeakyReLU/ReLU 激活函数
 mod node_mat_mul;
+mod node_max_pool2d; // MaxPool2d 节点（2D 最大池化）
 mod node_multiply;
 mod node_parameter;
 mod node_perception_loss;
