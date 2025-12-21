@@ -202,7 +202,7 @@ impl Graph {
         // 2. 对每个目标节点执行反向传播
         for &target_id in target_nodes_ids {
             self.backward_node_internal(target_id, result_node_id)
-                .inspect_err(|e| {
+                .inspect_err(|_| {
                     // 如果出错则回滚backward_pass_id
                     self.last_backward_pass_id = graph_backward_pass_id - 1;
                 })?;
@@ -350,11 +350,49 @@ impl Graph {
         Ok(())
     }
 
+    /// 清除所有节点的雅可比矩阵
+    /// 通常在优化器的每个训练步骤开始时调用
     pub fn clear_jacobi(&mut self) -> Result<(), GraphError> {
         for node in self.nodes.values_mut() {
             node.clear_jacobi()?;
         }
         Ok(())
+    }
+
+    /// 当图拓扑发生变化时调用（添加/删除节点或连接）
+    /// 这会清除所有反向传播相关的状态（Jacobi），但保留前向传播的值
+    ///
+    /// # NEAT 友好性
+    /// 这个方法是为神经进化算法（如 NEAT）设计的，在变异操作后调用
+    /// 确保后续的前向/反向传播能正确工作
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 1. 初始图已经训练过
+    /// graph.forward_node(loss)?;
+    /// graph.backward_nodes(&[w], loss)?;
+    ///
+    /// // 2. 动态添加新节点（NEAT 变异）
+    /// let new_node = graph.new_parameter_node(&[1, 1], Some("new"))?;
+    /// let new_add = graph.new_add_node(&[old_node, new_node], None)?;
+    ///
+    /// // 3. 通知图拓扑已变化
+    /// graph.on_topology_changed();
+    ///
+    /// // 4. 继续训练
+    /// graph.forward_node(new_loss)?;
+    /// graph.backward_nodes(&[w, new_node], new_loss)?;
+    /// ```
+    pub fn on_topology_changed(&mut self) {
+        // 清除所有节点的 Jacobi（反向传播相关状态）
+        // 保留 value（前向传播结果）以便复用
+        for node in self.nodes.values_mut() {
+            let _ = node.clear_jacobi();
+            // 重置节点的反向传播 pass_id，确保下次 backward 会重新计算
+            node.set_last_backward_pass_id(0);
+        }
+        // 注意：不重置 graph 的 last_backward_pass_id，
+        // 因为新的 backward 调用会自增 pass_id，从而与所有节点的 0 不匹配，触发重新计算
     }
 
     const fn generate_valid_node_id(&mut self) -> NodeId {

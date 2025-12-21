@@ -1,5 +1,6 @@
 mod graph_backward;
 mod graph_basic;
+mod graph_dynamic; // M4: 动态图扩展能力测试（NEAT 友好性）
 mod graph_forward;
 mod node_add;
 mod node_input;

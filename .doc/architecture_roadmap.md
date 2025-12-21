@@ -79,7 +79,7 @@ neat/              0%       ❌ 远期特色
 | M1b | Granular 种子 API    | `_seeded` 方法确保测试可重复          | 集成测试确定性                                              | ✅ 无影响   |  ✅  |
 | M2  | 实现 Tanh 节点       | XOR 必需的非线性激活                  | forward/backward 正确                                       | ✅ 新节点   |  ✅  |
 | M3  | XOR 监督学习示例     | 用 Optimizer 端到端训练               | 收敛 100%                                                   | ✅ 验证     |  ✅  |
-| M4  | 验证图的动态扩展能力 | 确保 Graph 支持运行时添加节点         | 单元测试通过                                                | ⭐ 关键     |  ❌  |
+| M4  | 验证图的动态扩展能力 | 确保 Graph 支持运行时添加节点         | 单元测试通过                                                | ⭐ 关键     |  ✅  |
 | M4b | Graph 级别种子 API   | `Graph::new_with_seed()` 简化用户代码 | 详见 [API 分层设计](design/api_layering_and_seed_design.md) | ⭐ 关键     |  ❌  |
 
 ### 阶段二：MNIST 基础 (4-6 周)
@@ -137,29 +137,40 @@ only_torch/
 
 XOR 问题已成功解决！网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 收敛到 100%准确率。
 
-### 当前优先：M4 验证 NEAT 友好性
+### ✅ 已完成：M4 验证 NEAT 友好性
 
-在 MVP 完成后，必须验证 Graph 的动态扩展能力：
+Graph 的动态扩展能力已验证通过！关键实现：
+
+1. **新增 `on_topology_changed()` 方法**：在拓扑变化后调用，清除所有 Jacobi 但保留 value
+2. **12 个综合测试**覆盖各种场景：
+   - 基本动态添加（forward/backward 后添加节点）
+   - 多次连续拓扑变化
+   - 链式添加、分支添加
+   - NEAT 变异模拟（添加节点、添加连接）
 
 ```rust
-// 测试：在已有图中动态添加节点
-let mut graph = Graph::new();
-let a = graph.new_parameter_node(&[1, 1], Some("a"))?;
-let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
-let add1 = graph.new_add_node(&[a, b], None)?;
+// 使用示例
+graph.forward_node(loss)?;
+graph.backward_nodes(&[w], loss)?;
 
-// 执行一次训练...
-graph.forward_node(add1)?;
+// NEAT 变异：添加新节点
+let new_node = graph.new_parameter_node(&[1, 1], Some("new"))?;
+let new_add = graph.new_add_node(&[old_node, new_node], None)?;
 
-// 动态添加新节点（NEAT变异时的典型操作）
-let c = graph.new_parameter_node(&[1, 1], Some("c"))?;
-let add2 = graph.new_add_node(&[add1, c], None)?;  // 新增节点
+// 通知拓扑变化（清除 Jacobi，保留 value）
+graph.on_topology_changed();
 
-// 新图仍然能正常工作
-graph.forward_node(add2)?;
+// 继续训练
+graph.forward_node(new_loss)?;
+graph.backward_nodes(&[w, new_node], new_loss)?;
 ```
 
-如果这个测试失败，需要在进入阶段三之前修复。
+### 当前优先：M4b Graph 级别种子 API 或 阶段二功能
+
+MVP 阶段已基本完成，可选择：
+
+1. **M4b**：实现 `Graph::new_with_seed()` 简化用户代码（锦上添花）
+2. **阶段二**：开始实现预设层（Linear、Sequential）以提升易用性
 
 ---
 
