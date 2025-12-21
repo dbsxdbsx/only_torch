@@ -912,6 +912,35 @@ impl Graph {
         self.add_node_to_list(handle, name, "multiply", &[left_node_id, right_node_id])
     }
 
+    /// 创建 Flatten 节点
+    ///
+    /// 将张量展平为 2D，常用于 CNN 与全连接层之间的转换。
+    ///
+    /// # 参数
+    /// - `parent_id`: 父节点 ID
+    /// - `keep_first_dim`: 是否保留首维度
+    ///   - `true`: 保留首维度（batch），展平其余维度
+    ///   - `false`: 完全展平为行向量 `[1, n]`
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // CNN 输出 [batch, features] 展平（2D 保持不变）
+    /// let flat = graph.new_flatten_node(conv_out, true, Some("flatten"))?;
+    ///
+    /// // 完全展平为行向量
+    /// let row_vec = graph.new_flatten_node(input, false, Some("row_vec"))?;
+    /// ```
+    pub fn new_flatten_node(
+        &mut self,
+        parent_id: NodeId,
+        keep_first_dim: bool,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_flatten(&self.get_nodes(&[parent_id])?, keep_first_dim)?;
+        self.add_node_to_list(handle, name, "flatten", &[parent_id])
+    }
+
     /// 创建 Reshape 节点
     ///
     /// 改变张量形状而不改变数据，常用于 CNN 与全连接层之间的转换。

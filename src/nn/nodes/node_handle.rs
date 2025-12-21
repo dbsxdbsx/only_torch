@@ -1,7 +1,7 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, Input, LeakyReLU, MatMul, Multiply, Parameter, PerceptionLoss, Reshape, ScalarMultiply,
-    Sigmoid, SoftmaxCrossEntropy, Step, Tanh,
+    Add, Flatten, Input, LeakyReLU, MatMul, Multiply, Parameter, PerceptionLoss, Reshape,
+    ScalarMultiply, Sigmoid, SoftmaxCrossEntropy, Step, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -134,6 +134,13 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_multiply(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(Multiply::new(parents)?)
+    }
+
+    pub(in crate::nn) fn new_flatten(
+        parents: &[&Self],
+        keep_first_dim: bool,
+    ) -> Result<Self, GraphError> {
+        Self::new(Flatten::new(parents, keep_first_dim)?)
     }
 
     pub(in crate::nn) fn new_reshape(

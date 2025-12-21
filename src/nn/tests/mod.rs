@@ -4,6 +4,7 @@ mod graph_basic;
 mod graph_dynamic; // M4: 动态图扩展能力测试（NEAT 友好性）
 mod graph_forward;
 mod node_add;
+mod node_flatten; // Flatten 节点（展平）
 mod node_input;
 mod node_leaky_relu; // LeakyReLU/ReLU 激活函数
 mod node_mat_mul;

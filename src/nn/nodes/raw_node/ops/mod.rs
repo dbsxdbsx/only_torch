@@ -7,6 +7,7 @@
  */
 
 mod add;
+mod flatten;
 mod leaky_relu;
 mod mat_mul;
 mod multiply;
@@ -17,6 +18,7 @@ mod step;
 mod tanh;
 
 pub(crate) use add::Add;
+pub(crate) use flatten::Flatten;
 pub(crate) use leaky_relu::LeakyReLU;
 pub(crate) use mat_mul::MatMul;
 pub(crate) use multiply::Multiply;
