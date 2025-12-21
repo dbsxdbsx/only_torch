@@ -769,4 +769,82 @@ impl Tensor {
         self.data.mapv_inplace(|x| 1.0 / (1.0 + (-x).exp()));
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑sigmoid↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓exp↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素计算指数函数 e^x
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[0.0, 1.0, 2.0], &[3]);
+    /// let y = x.exp();
+    /// // y ≈ [1.0, 2.7183, 7.3891]
+    /// ```
+    pub fn exp(&self) -> Self {
+        let data = self.data.mapv(|x| x.exp());
+        Self { data }
+    }
+
+    /// 就地对张量的每个元素计算指数函数
+    pub fn exp_mut(&mut self) {
+        self.data.mapv_inplace(|x| x.exp());
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑exp↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓ln↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素计算自然对数 ln(x)
+    ///
+    /// # 注意
+    /// 对于 x <= 0 的元素，结果为 NaN 或 -inf
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 2.7183, 7.3891], &[3]);
+    /// let y = x.ln();
+    /// // y ≈ [0.0, 1.0, 2.0]
+    /// ```
+    pub fn ln(&self) -> Self {
+        let data = self.data.mapv(|x| x.ln());
+        Self { data }
+    }
+
+    /// 就地对张量的每个元素计算自然对数
+    pub fn ln_mut(&mut self) {
+        self.data.mapv_inplace(|x| x.ln());
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ln↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓max↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 返回张量中的最大值（标量）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 3.0, 2.0], &[3]);
+    /// assert_eq!(x.max_value(), 3.0);
+    /// ```
+    pub fn max_value(&self) -> f32 {
+        self.data
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max)
+    }
+
+    /// 返回张量中的最小值（标量）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 3.0, 2.0], &[3]);
+    /// assert_eq!(x.min_value(), 1.0);
+    /// ```
+    pub fn min_value(&self) -> f32 {
+        self.data.iter().copied().fold(f32::INFINITY, f32::min)
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑max↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

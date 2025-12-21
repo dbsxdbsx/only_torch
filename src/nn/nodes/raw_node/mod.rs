@@ -23,6 +23,7 @@ pub(in crate::nn) enum NodeType {
     Step(Step),
     Tanh(Tanh),
     PerceptionLoss(PerceptionLoss),
+    SoftmaxCrossEntropy(SoftmaxCrossEntropy),
 }
 
 use super::{GraphError, NodeHandle, NodeId};

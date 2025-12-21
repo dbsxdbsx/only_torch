@@ -372,7 +372,10 @@ impl Graph {
 
                 // 根据节点类型决定是否需要另一个父节点
                 let assistant_parent = match child.node_type() {
-                    NodeType::MatMul(_) | NodeType::Multiply(_) | NodeType::ScalarMultiply(_) => {
+                    NodeType::MatMul(_)
+                    | NodeType::Multiply(_)
+                    | NodeType::ScalarMultiply(_)
+                    | NodeType::SoftmaxCrossEntropy(_) => {
                         // 找到另一个父节点
                         let parents = self.get_node_parents(child_id)?;
                         let other_parent_id = parents
@@ -380,8 +383,7 @@ impl Graph {
                             .find(|&&id| id != target_node_id)
                             .ok_or_else(|| {
                                 GraphError::ComputationError(
-                                    "MatMul/Multiply/ScalarMultiply节点缺少另一个父节点"
-                                        .to_string(),
+                                    "双父节点类型节点缺少另一个父节点".to_string(),
                                 )
                             })?;
                         Some(self.get_node(*other_parent_id)?)
@@ -772,6 +774,26 @@ impl Graph {
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_perception_loss(&self.get_nodes(&[parent_id])?)?;
         self.add_node_to_list(handle, name, "perception_loss", &[parent_id])
+    }
+
+    /// 创建 SoftmaxCrossEntropy 损失节点
+    ///
+    /// # 参数
+    /// - `logits_id`: 预测值节点 ID（未经 softmax 的原始分数）
+    /// - `labels_id`: 标签节点 ID（one-hot 编码）
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 返回
+    /// 新创建的损失节点 ID，输出为标量 [1, 1]
+    pub fn new_softmax_cross_entropy_node(
+        &mut self,
+        logits_id: NodeId,
+        labels_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[logits_id, labels_id])?;
+        let handle = NodeHandle::new_softmax_cross_entropy(&parents)?;
+        self.add_node_to_list(handle, name, "softmax_ce", &[logits_id, labels_id])
     }
 }
 

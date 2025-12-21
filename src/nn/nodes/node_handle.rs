@@ -1,5 +1,5 @@
 use super::super::graph::GraphError;
-use super::raw_node::{Add, Input, MatMul, Multiply, Parameter, PerceptionLoss, ScalarMultiply, Sigmoid, Step, Tanh};
+use super::raw_node::{Add, Input, MatMul, Multiply, Parameter, PerceptionLoss, ScalarMultiply, Sigmoid, SoftmaxCrossEntropy, Step, Tanh};
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
 
@@ -151,6 +151,10 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_perception_loss(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(PerceptionLoss::new(parents)?)
+    }
+
+    pub(in crate::nn) fn new_softmax_cross_entropy(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(SoftmaxCrossEntropy::new(parents)?)
     }
 
     pub(in crate::nn) fn calc_value_by_parents(
