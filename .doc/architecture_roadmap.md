@@ -10,8 +10,9 @@
 .doc/
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
-│   ├── api_layering_and_seed_design.md             # API分层与种子管理（新）
-│   ├── broadcast_mechanism_design.md               # 广播机制设计（重要）
+│   ├── api_layering_and_seed_design.md             # API分层与种子管理
+│   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制（重要）
+│   ├── broadcast_mechanism_design.md               # 广播机制设计
 │   ├── gradient_clear_and_accumulation_design.md   # 梯度机制
 │   ├── optimization_strategy.md                    # 性能优化策略
 │   └── optimizer_architecture_design.md            # 优化器架构
@@ -41,11 +42,11 @@ neat/              0%       ❌ 远期特色
 
 ## 已实现节点
 
-| 类型 | 节点                       | 状态 |
-| :--- | :------------------------- | :--: |
-| 输入 | Input, Parameter           |  ✅  |
-| 运算 | Add, MatMul                |  ✅  |
-| 激活 | Step, Tanh, Sigmoid        |  ✅  |
+| 类型 | 节点                                    | 状态 |
+| :--- | :-------------------------------------- | :--: |
+| 输入 | Input, Parameter                        |  ✅  |
+| 运算 | Add, MatMul                             |  ✅  |
+| 激活 | Step, Tanh, Sigmoid                     |  ✅  |
 | 损失 | PerceptionLoss, SoftmaxCrossEntropyLoss |  ✅  |
 
 ## 缺失的关键节点
@@ -58,15 +59,15 @@ neat/              0%       ❌ 远期特色
 
 > 对应 MatrixSlow Python 示例的 Rust 实现验证
 
-| Rust 测试                     | 对应 MatrixSlow 示例          | 状态 | 说明                         |
-| ----------------------------- | ----------------------------- | :--: | ---------------------------- |
-| `test_adaline.rs`             | `ch02/adaline.py`             |  ✅  | 最基础的计算图+自动微分      |
-| `test_adaline_batch.rs`       | `ch03/adaline_batch.py`       |  ✅  | 批量处理                     |
-| `test_optimizer_example.rs`   | `ch03/optimizer_example.py`   |  ✅  | SGD/Adam 优化器验证          |
-| `test_xor.rs`                 | -                             |  ✅  | **MVP 展示：非线性分类问题** |
-| `test_logistic_regression.rs` | `ch04/logistic_regression.py` |  ❌  | 需要 Sigmoid 节点 (已有) + 测试代码            |
-| `test_nn_iris.rs`             | `ch05/nn_iris.py`             |  ❌  | 需要多层网络+Softmax         |
-| `test_mnist.rs`               | `ch05/nn_mnist.py`            |  ✅  | **MVP：MLP + SoftmaxCrossEntropy** |
+| Rust 测试                     | 对应 MatrixSlow 示例          | 状态 | 说明                                |
+| ----------------------------- | ----------------------------- | :--: | ----------------------------------- |
+| `test_adaline.rs`             | `ch02/adaline.py`             |  ✅  | 最基础的计算图+自动微分             |
+| `test_adaline_batch.rs`       | `ch03/adaline_batch.py`       |  ✅  | 批量处理                            |
+| `test_optimizer_example.rs`   | `ch03/optimizer_example.py`   |  ✅  | SGD/Adam 优化器验证                 |
+| `test_xor.rs`                 | -                             |  ✅  | **MVP 展示：非线性分类问题**        |
+| `test_logistic_regression.rs` | `ch04/logistic_regression.py` |  ❌  | 需要 Sigmoid 节点 (已有) + 测试代码 |
+| `test_nn_iris.rs`             | `ch05/nn_iris.py`             |  ❌  | 需要多层网络+Softmax                |
+| `test_mnist.rs`               | `ch05/nn_mnist.py`            |  ✅  | **MVP：MLP + SoftmaxCrossEntropy**  |
 
 ---
 
@@ -192,12 +193,14 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
 ### 🎉 阶段二核心完成！
 
 **已完成：**
+
 - ✅ Sigmoid 激活节点 + `jacobi_diag()` 重构
 - ✅ SoftmaxCrossEntropyLoss 融合节点（数值稳定）
 - ✅ DataLoader 模块 + MNIST 数据集（自动下载/缓存）
 - ✅ MNIST MLP MVP 集成测试（验证 loss 下降趋势）
 
 **下一步：**
+
 1. 实现 ReLU 激活节点
 2. 实现 Conv2d / Pooling 节点（CNN 基础）
 3. 完善 MNIST 示例（提升准确率，添加评估指标）

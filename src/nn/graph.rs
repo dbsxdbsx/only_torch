@@ -429,6 +429,201 @@ impl Graph {
         Ok(())
     }
 
+    // ========== Batch 模式（Gradient-based）==========
+
+    /// Batch 前向传播
+    ///
+    /// 与单样本 `forward_node` 类似，但输入节点的 value 应包含 batch 维度。
+    /// 例如：输入 shape 为 `[batch_size, 784]` 而非 `[1, 784]`
+    ///
+    /// # 注意
+    /// 当前实现复用 `forward_node` 的逻辑，因为大多数节点的 element-wise
+    /// 操作天然支持 batch。未来可能需要针对特定节点优化。
+    pub fn forward_batch(&mut self, node_id: NodeId) -> Result<(), GraphError> {
+        // 当前阶段：复用单样本前向传播逻辑
+        // 大多数节点（Add、Sigmoid、Tanh 等）的 element-wise 操作天然支持 batch
+        // MatMul 需要特殊处理（在节点层实现）
+        self.forward_node(node_id)
+    }
+
+    /// Batch 反向传播
+    ///
+    /// 从损失节点开始，计算所有可训练参数的梯度。
+    /// 与单样本模式的 `backward_nodes` 不同，此方法：
+    /// 1. 使用 gradient-based 而非 Jacobi-based 反向传播
+    /// 2. 自动对 batch 维度求平均
+    /// 3. 梯度存储在节点的 `grad` 字段而非 `jacobi` 字段
+    ///
+    /// # 参数
+    /// - `loss_id`: 损失节点 ID，应为标量 `[1, 1]`
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 设置 batch 输入
+    /// graph.set_node_value(x, Some(&batch_images))?;  // [64, 784]
+    /// graph.set_node_value(y, Some(&batch_labels))?;  // [64, 10]
+    ///
+    /// // Batch 前向传播
+    /// graph.forward_batch(loss)?;
+    ///
+    /// // Batch 反向传播
+    /// graph.backward_batch(loss)?;
+    ///
+    /// // 获取梯度
+    /// let grad_w = graph.get_node_grad_batch(w)?;
+    /// ```
+    pub fn backward_batch(&mut self, loss_id: NodeId) -> Result<(), GraphError> {
+        // 1. 验证损失节点
+        let loss_node = self.get_node(loss_id)?;
+        let loss_value = loss_node.value().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "损失节点 {} 没有值，请先执行 forward_batch",
+                loss_node
+            ))
+        })?;
+
+        // 损失应为标量
+        if loss_value.size() != 1 {
+            return Err(GraphError::InvalidOperation(format!(
+                "Batch 反向传播要求损失为标量 [1, 1]，但得到 {:?}",
+                loss_value.shape()
+            )));
+        }
+
+        // 2. 清除所有节点的梯度
+        self.clear_grad()?;
+
+        // 3. 损失节点的梯度为 1.0
+        let loss_grad = Tensor::ones(&[1, 1]);
+        self.get_node_mut(loss_id)?.set_grad(Some(&loss_grad))?;
+
+        // 4. 获取拓扑排序（从损失到输入）
+        let topo_order = self.topological_sort_backward(loss_id)?;
+
+        // 5. 按拓扑顺序反向传播梯度
+        for node_id in topo_order {
+            self.backward_batch_node(node_id, loss_id)?;
+        }
+
+        Ok(())
+    }
+
+    /// 对单个节点执行 batch 反向传播
+    fn backward_batch_node(
+        &mut self,
+        node_id: NodeId,
+        _loss_id: NodeId,
+    ) -> Result<(), GraphError> {
+        // 获取当前节点的梯度
+        let upstream_grad = {
+            let node = self.get_node(node_id)?;
+            match node.grad() {
+                Some(g) => g.clone(),
+                None => return Ok(()), // 没有梯度，跳过
+            }
+        };
+
+        // 获取父节点列表
+        let parent_ids = self.get_node_parents(node_id)?;
+        if parent_ids.is_empty() {
+            return Ok(()); // 输入/参数节点，无需继续传播
+        }
+
+        // 对每个父节点计算梯度
+        for parent_id in &parent_ids {
+            // 跳过 Input 节点（Input 不需要梯度）
+            {
+                let parent = self.get_node(*parent_id)?;
+                if let NodeType::Input(_) = parent.node_type() {
+                    continue;
+                }
+            }
+
+            // 找到辅助父节点（如果需要）
+            let assistant_parent_id = parent_ids.iter().find(|&&id| id != *parent_id).copied();
+
+            // 计算对该父节点的梯度
+            let parent_grad = {
+                let node = self.get_node(node_id)?;
+                let parent = self.get_node(*parent_id)?;
+                let assistant = assistant_parent_id
+                    .map(|id| self.get_node(id))
+                    .transpose()?;
+
+                node.calc_grad_to_parent(parent, &upstream_grad, assistant)?
+            };
+
+            // 累加到父节点的梯度
+            let parent_node = self.get_node_mut(*parent_id)?;
+            if let Some(existing_grad) = parent_node.grad() {
+                let new_grad = existing_grad + &parent_grad;
+                parent_node.set_grad(Some(&new_grad))?;
+            } else {
+                parent_node.set_grad(Some(&parent_grad))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 获取从 loss 到所有输入的反向拓扑排序
+    /// 返回的顺序：loss 在最前，input 在最后（适合反向传播）
+    fn topological_sort_backward(&self, loss_id: NodeId) -> Result<Vec<NodeId>, GraphError> {
+        let mut result = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+
+        fn dfs(
+            graph: &Graph,
+            node_id: NodeId,
+            visited: &mut std::collections::HashSet<NodeId>,
+            result: &mut Vec<NodeId>,
+        ) -> Result<(), GraphError> {
+            if visited.contains(&node_id) {
+                return Ok(());
+            }
+            visited.insert(node_id);
+
+            // 先添加当前节点（因为我们要从 loss 向 input 方向传播）
+            result.push(node_id);
+
+            // 再访问父节点（反向传播方向）
+            let parents = graph.get_node_parents(node_id)?;
+            for parent_id in parents {
+                dfs(graph, parent_id, visited, result)?;
+            }
+
+            Ok(())
+        }
+
+        // 从 loss 节点开始 DFS
+        dfs(self, loss_id, &mut visited, &mut result)?;
+
+        Ok(result)
+    }
+
+    /// 清除所有节点的梯度（Batch 模式）
+    pub fn clear_grad(&mut self) -> Result<(), GraphError> {
+        for node in self.nodes.values_mut() {
+            let _ = node.clear_grad(); // 忽略不支持 grad 的节点
+        }
+        Ok(())
+    }
+
+    /// 获取节点的梯度（Batch 模式）
+    pub fn get_node_grad_batch(&self, node_id: NodeId) -> Result<Option<&Tensor>, GraphError> {
+        let node = self.get_node(node_id)?;
+
+        // 输入节点不应该有梯度
+        if let NodeType::Input(_) = node.node_type() {
+            return Err(GraphError::InvalidOperation(format!(
+                "输入节点 {} 不应该有梯度",
+                node
+            )));
+        }
+
+        Ok(node.grad())
+    }
+
     /// 当图拓扑发生变化时调用（添加/删除节点或连接）
     /// 这会清除所有反向传播相关的状态（Jacobi），但保留前向传播的值
     ///

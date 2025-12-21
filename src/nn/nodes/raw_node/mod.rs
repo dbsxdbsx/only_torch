@@ -61,7 +61,9 @@ pub(in crate::nn::nodes) trait TraitNode {
         )))
     }
 
-    /// 计算本节点对父节点的雅可比矩阵
+    // ========== 单样本模式（Jacobi-based）==========
+
+    /// 计算本节点对父节点的雅可比矩阵（单样本模式）
     fn calc_jacobi_to_a_parent(
         &self,
         target_parent: &NodeHandle,
@@ -75,6 +77,53 @@ pub(in crate::nn::nodes) trait TraitNode {
     fn clear_jacobi(&mut self) -> Result<(), GraphError> {
         self.set_jacobi(None)
     }
+
+    // ========== Batch 模式（Gradient-based）==========
+
+    /// 计算本节点对父节点的梯度（Batch 模式）
+    ///
+    /// # 参数
+    /// - `target_parent`: 目标父节点
+    /// - `upstream_grad`: 从下游传来的梯度，shape 与本节点 value 相同
+    /// - `assistant_parent`: 辅助父节点（用于双父节点如 MatMul）
+    ///
+    /// # 返回
+    /// 对 target_parent 的梯度，shape 与 target_parent.value 相同
+    ///
+    /// # 默认实现
+    /// 返回错误，需要各节点自行实现
+    fn calc_grad_to_parent(
+        &self,
+        target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
+        assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        let _ = (target_parent, upstream_grad, assistant_parent);
+        Err(GraphError::InvalidOperation(format!(
+            "{}尚未实现 calc_grad_to_parent（Batch 模式）",
+            self.display_node()
+        )))
+    }
+
+    /// 获取节点的梯度（Batch 模式）
+    fn grad(&self) -> Option<&Tensor> {
+        None // 默认不支持，需要各节点实现
+    }
+
+    /// 设置节点的梯度（Batch 模式）
+    fn set_grad(&mut self, _grad: Option<&Tensor>) -> Result<(), GraphError> {
+        Err(GraphError::InvalidOperation(format!(
+            "{}尚未实现 set_grad（Batch 模式）",
+            self.display_node()
+        )))
+    }
+
+    /// 清除节点的梯度
+    fn clear_grad(&mut self) -> Result<(), GraphError> {
+        self.set_grad(None)
+    }
+
+    // ========== 通用方法 ==========
 
     fn is_inited(&self) -> bool {
         self.value().is_some()

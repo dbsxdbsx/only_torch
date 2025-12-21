@@ -13,6 +13,7 @@ pub(crate) struct Sigmoid {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    grad: Option<Tensor>, // Batch 模式的梯度
     shape: Vec<usize>,
 }
 
@@ -32,6 +33,7 @@ impl Sigmoid {
             name: None,
             value: None,
             jacobi: None,
+            grad: None,
             shape: parents[0].value_expected_shape().to_vec(),
         })
     }
@@ -103,6 +105,39 @@ impl TraitNode for Sigmoid {
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.cloned();
+        Ok(())
+    }
+
+    // ========== Batch 模式 ==========
+
+    fn calc_grad_to_parent(
+        &self,
+        _target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
+        _assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        // Sigmoid 的梯度: upstream_grad * sigmoid(x) * (1 - sigmoid(x))
+        let value = self.value().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "{}没有值，无法计算梯度",
+                self.display_node()
+            ))
+        })?;
+
+        // 计算 sigmoid(x) * (1 - sigmoid(x))（逐元素）
+        let one_minus_sigmoid = Tensor::ones(value.shape()) - value;
+        let local_grad = value * &one_minus_sigmoid;
+
+        // 逐元素乘以上游梯度
+        Ok(upstream_grad * &local_grad)
+    }
+
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
+
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
         Ok(())
     }
 }

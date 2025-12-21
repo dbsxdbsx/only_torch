@@ -1,3 +1,4 @@
+mod batch_mechanism; // Batch 机制测试
 mod graph_backward;
 mod graph_basic;
 mod graph_dynamic; // M4: 动态图扩展能力测试（NEAT 友好性）

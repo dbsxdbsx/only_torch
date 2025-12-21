@@ -27,10 +27,13 @@ pub(crate) struct SoftmaxCrossEntropy {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    grad: Option<Tensor>, // Batch 模式的梯度
     /// 输出形状固定为 [1, 1]（标量损失）
     shape: Vec<usize>,
-    /// 缓存 softmax 结果，用于反向传播
+    /// 缓存 softmax 结果，用于反向传播（支持 batch）
     softmax_cache: Option<Tensor>,
+    /// 缓存 labels，用于反向传播
+    labels_cache: Option<Tensor>,
     /// 父节点 ID，用于区分 logits 和 labels
     parents_ids: Vec<NodeId>,
 }
@@ -60,44 +63,92 @@ impl SoftmaxCrossEntropy {
             name: None,
             value: None,
             jacobi: None,
+            grad: None,
             shape: vec![1, 1], // 损失是标量
             softmax_cache: None,
+            labels_cache: None,
             parents_ids: vec![parents[0].id(), parents[1].id()],
         })
     }
 
-    /// 计算数值稳定的 softmax
-    /// softmax(x)_i = exp(x_i - max(x)) / Σ exp(x_j - max(x))
-    fn stable_softmax(logits: &Tensor) -> Tensor {
-        let max_val = logits.max_value();
-        let shifted = logits - max_val;
-        let exp_shifted = shifted.exp();
-        let sum_exp: f32 = exp_shifted.flatten_view().iter().sum();
-        exp_shifted / sum_exp
+    /// 计算数值稳定的 softmax（支持 batch）
+    /// 输入: [batch, num_classes] 或 [1, num_classes]
+    /// 输出: [batch, num_classes] 或 [1, num_classes]
+    fn stable_softmax_batch(logits: &Tensor) -> Tensor {
+        let shape = logits.shape();
+        let batch_size = shape[0];
+        let num_classes = shape[1];
+
+        let mut result = Tensor::zeros(shape);
+        for b in 0..batch_size {
+            // 找到该样本的最大值
+            let mut max_val = logits[[b, 0]];
+            for c in 1..num_classes {
+                if logits[[b, c]] > max_val {
+                    max_val = logits[[b, c]];
+                }
+            }
+
+            // 计算 exp(x - max) 和 sum
+            let mut sum_exp = 0.0f32;
+            for c in 0..num_classes {
+                let exp_val = (logits[[b, c]] - max_val).exp();
+                result[[b, c]] = exp_val;
+                sum_exp += exp_val;
+            }
+
+            // 归一化
+            for c in 0..num_classes {
+                result[[b, c]] /= sum_exp;
+            }
+        }
+        result
     }
 
-    /// 计算数值稳定的交叉熵损失
-    /// L = -Σ y_i * log(softmax(x)_i)
-    ///   = -Σ y_i * (x_i - max(x) - log(Σ exp(x_j - max(x))))
+    /// 计算数值稳定的交叉熵损失（支持 batch，返回平均损失）
+    fn stable_cross_entropy_batch(logits: &Tensor, labels: &Tensor) -> f32 {
+        let shape = logits.shape();
+        let batch_size = shape[0];
+        let num_classes = shape[1];
+
+        let mut total_loss = 0.0f32;
+        for b in 0..batch_size {
+            // 找到该样本的最大值
+            let mut max_val = logits[[b, 0]];
+            for c in 1..num_classes {
+                if logits[[b, c]] > max_val {
+                    max_val = logits[[b, c]];
+                }
+            }
+
+            // 计算 log_sum_exp
+            let mut sum_exp = 0.0f32;
+            for c in 0..num_classes {
+                sum_exp += (logits[[b, c]] - max_val).exp();
+            }
+            let log_sum_exp = sum_exp.ln();
+
+            // 计算该样本的损失
+            // L = -Σ y_i * (x_i - max - log_sum_exp)
+            let mut dot_product = 0.0f32;
+            for c in 0..num_classes {
+                dot_product += logits[[b, c]] * labels[[b, c]];
+            }
+            total_loss += -dot_product + max_val + log_sum_exp;
+        }
+
+        // 返回平均损失
+        total_loss / batch_size as f32
+    }
+
+    /// 兼容旧代码的单样本 softmax
+    fn stable_softmax(logits: &Tensor) -> Tensor {
+        Self::stable_softmax_batch(logits)
+    }
+
+    /// 兼容旧代码的单样本交叉熵
     fn stable_cross_entropy(logits: &Tensor, labels: &Tensor) -> f32 {
-        let max_val = logits.max_value();
-        let shifted = logits - max_val;
-        let exp_shifted = shifted.exp();
-        let sum_exp: f32 = exp_shifted.flatten_view().iter().sum();
-        let log_sum_exp = sum_exp.ln();
-
-        // L = -Σ y_i * (x_i - max - log_sum_exp)
-        //   = -Σ y_i * x_i + max * Σ y_i + log_sum_exp * Σ y_i
-        // 由于 y 是 one-hot，Σ y_i = 1
-        let logits_flat = logits.flatten_view();
-        let labels_flat = labels.flatten_view();
-        let dot_product: f32 = logits_flat
-            .iter()
-            .zip(labels_flat.iter())
-            .map(|(x, y)| x * y)
-            .sum();
-
-        -dot_product + max_val + log_sum_exp
+        Self::stable_cross_entropy_batch(logits, labels)
     }
 }
 
@@ -139,11 +190,12 @@ impl TraitNode for SoftmaxCrossEntropy {
             ))
         })?;
 
-        // 缓存 softmax 用于反向传播
-        self.softmax_cache = Some(Self::stable_softmax(logits));
+        // 缓存 softmax 和 labels 用于反向传播
+        self.softmax_cache = Some(Self::stable_softmax_batch(logits));
+        self.labels_cache = Some(labels.clone());
 
-        // 计算损失
-        let loss = Self::stable_cross_entropy(logits, labels);
+        // 计算损失（batch 平均）
+        let loss = Self::stable_cross_entropy_batch(logits, labels);
         self.value = Some(Tensor::new(&[loss], &[1, 1]));
 
         Ok(())
@@ -200,6 +252,50 @@ impl TraitNode for SoftmaxCrossEntropy {
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.cloned();
+        Ok(())
+    }
+
+    // ========== Batch 模式 ==========
+
+    /// SoftmaxCrossEntropy 的 batch 梯度计算
+    ///
+    /// 对于 logits: [batch, num_classes]，labels: [batch, num_classes]：
+    /// dL/d_logits = (softmax - labels) / batch_size
+    fn calc_grad_to_parent(
+        &self,
+        target_parent: &NodeHandle,
+        _upstream_grad: &Tensor,
+        _assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        if target_parent.id() == self.parents_ids[0] {
+            // 对 logits 的梯度
+            let softmax = self.softmax_cache.as_ref().ok_or_else(|| {
+                GraphError::ComputationError(
+                    "softmax 缓存为空，需先执行前向传播".to_string(),
+                )
+            })?;
+            let labels = self.labels_cache.as_ref().ok_or_else(|| {
+                GraphError::ComputationError("labels 缓存为空，需先执行前向传播".to_string())
+            })?;
+
+            // dL/d_logits = (softmax - labels) / batch_size
+            let batch_size = softmax.shape()[0] as f32;
+            let grad = (softmax - labels) / batch_size;
+            Ok(grad)
+        } else {
+            // 对 labels 的梯度（通常不需要，labels 是常量）
+            Err(GraphError::InvalidOperation(
+                "不应该对 labels 计算梯度".to_string(),
+            ))
+        }
+    }
+
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
+
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
         Ok(())
     }
 }

@@ -9,6 +9,7 @@ pub(crate) struct Add {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    grad: Option<Tensor>, // Batch 模式的梯度
     shape: Vec<usize>,
 }
 
@@ -40,6 +41,7 @@ impl Add {
             name: None,
             value: None,
             jacobi: None,
+            grad: None,
             shape,
         })
     }
@@ -122,6 +124,27 @@ impl TraitNode for Add {
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.cloned();
+        Ok(())
+    }
+
+    // ========== Batch 模式 ==========
+
+    fn calc_grad_to_parent(
+        &self,
+        _target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
+        _assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        // Add 节点的梯度直接传递（identity）
+        Ok(upstream_grad.clone())
+    }
+
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
+
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
         Ok(())
     }
 }

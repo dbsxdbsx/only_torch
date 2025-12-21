@@ -53,6 +53,8 @@ impl Adam {
 }
 
 impl Optimizer for Adam {
+    // ========== 单样本模式 ==========
+
     /// 执行一步训练：前向传播 + 反向传播 + 梯度累积
     fn one_step(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError> {
         self.state.forward_backward_accumulate(graph, target_node)
@@ -62,58 +64,72 @@ impl Optimizer for Adam {
     fn update(&mut self, graph: &mut Graph) -> Result<(), GraphError> {
         self.t += 1;
 
+        // 收集可训练节点和它们的梯度（避免借用冲突）
+        let trainable_nodes: Vec<_> = self.state.trainable_nodes().to_vec();
+        let gradients: Vec<_> = trainable_nodes
+            .iter()
+            .filter_map(|&node_id| {
+                self.state
+                    .gradient_accumulator()
+                    .get_average_gradient(node_id)
+                    .map(|g| (node_id, g))
+            })
+            .collect();
+
         // 对每个可训练参数执行Adam更新
-        for &node_id in self.state.trainable_nodes() {
-            if let Some(gradient) = self
-                .state
-                .gradient_accumulator()
-                .get_average_gradient(node_id)
-            {
-                // 获取当前参数值
-                let current_value = graph.get_node_value(node_id)?.unwrap();
-
-                // 获取或初始化一阶矩和二阶矩
-                let m_prev = self
-                    .m
-                    .get(&node_id)
-                    .cloned()
-                    .unwrap_or_else(|| Tensor::zeros(gradient.shape()));
-                let v_prev = self
-                    .v
-                    .get(&node_id)
-                    .cloned()
-                    .unwrap_or_else(|| Tensor::zeros(gradient.shape()));
-
-                // 更新一阶矩估计: m_t = β1 * m_{t-1} + (1 - β1) * g_t
-                let m_t = &m_prev * self.beta1 + &gradient * (1.0 - self.beta1);
-
-                // 更新二阶矩估计: v_t = β2 * v_{t-1} + (1 - β2) * g_t^2
-                let gradient_squared = &gradient * &gradient;
-                let v_t = &v_prev * self.beta2 + &gradient_squared * (1.0 - self.beta2);
-
-                // 偏差修正
-                let m_hat = &m_t / (1.0 - self.beta1.powi(self.t as i32));
-                let v_hat = &v_t / (1.0 - self.beta2.powi(self.t as i32));
-
-                // 参数更新: θ = θ - α * m_hat / (√v_hat + ε)
-                let v_hat_sqrt = v_hat.sqrt();
-                let denominator = &v_hat_sqrt + self.epsilon;
-                let update = &m_hat / &denominator;
-                let new_value = current_value - self.state.learning_rate() * &update;
-
-                // 设置新的参数值
-                graph.set_node_value(node_id, Some(&new_value))?;
-
-                // 保存状态
-                self.m.insert(node_id, m_t);
-                self.v.insert(node_id, v_t);
-            }
+        for (node_id, gradient) in gradients {
+            self.adam_update_with_gradient(graph, node_id, &gradient)?;
         }
 
         // 清除累积的梯度
         self.state.reset();
         Ok(())
     }
+
+    // ========== Batch 模式 ==========
+
+    /// Batch 模式的一步训练
+    fn one_step_batch(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError> {
+        // 清除计算图中所有节点的梯度
+        graph.clear_grad()?;
+
+        // Batch 前向传播
+        graph.forward_batch(target_node)?;
+
+        // Batch 反向传播（梯度已经对 batch 求平均）
+        graph.backward_batch(target_node)?;
+
+        Ok(())
+    }
+
+    /// Batch 模式的参数更新（使用Adam算法）
+    fn update_batch(&mut self, graph: &mut Graph) -> Result<(), GraphError> {
+        self.t += 1;
+
+        // 收集可训练节点（避免借用冲突）
+        let trainable_nodes: Vec<_> = self.state.trainable_nodes().to_vec();
+
+        // 收集梯度
+        let gradients: Vec<_> = trainable_nodes
+            .iter()
+            .filter_map(|&node_id| {
+                graph
+                    .get_node_grad_batch(node_id)
+                    .ok()
+                    .flatten()
+                    .map(|g| (node_id, g.clone()))
+            })
+            .collect();
+
+        // 对每个可训练参数执行Adam更新
+        for (node_id, gradient) in gradients {
+            self.adam_update_with_gradient(graph, node_id, &gradient)?;
+        }
+
+        Ok(())
+    }
+
+    // ========== 通用方法 ==========
 
     /// 重置累积状态
     fn reset(&mut self) {
@@ -131,5 +147,56 @@ impl Optimizer for Adam {
     /// 设置学习率
     fn set_learning_rate(&mut self, lr: f32) {
         self.state.set_learning_rate(lr);
+    }
+}
+
+impl Adam {
+    /// Adam 参数更新的核心逻辑（单样本和 Batch 共用）
+    fn adam_update_with_gradient(
+        &mut self,
+        graph: &mut Graph,
+        node_id: NodeId,
+        gradient: &Tensor,
+    ) -> Result<(), GraphError> {
+        // 获取当前参数值
+        let current_value = graph.get_node_value(node_id)?.unwrap();
+
+        // 获取或初始化一阶矩和二阶矩
+        let m_prev = self
+            .m
+            .get(&node_id)
+            .cloned()
+            .unwrap_or_else(|| Tensor::zeros(gradient.shape()));
+        let v_prev = self
+            .v
+            .get(&node_id)
+            .cloned()
+            .unwrap_or_else(|| Tensor::zeros(gradient.shape()));
+
+        // 更新一阶矩估计: m_t = β1 * m_{t-1} + (1 - β1) * g_t
+        let m_t = &m_prev * self.beta1 + gradient * (1.0 - self.beta1);
+
+        // 更新二阶矩估计: v_t = β2 * v_{t-1} + (1 - β2) * g_t^2
+        let gradient_squared = gradient * gradient;
+        let v_t = &v_prev * self.beta2 + &gradient_squared * (1.0 - self.beta2);
+
+        // 偏差修正
+        let m_hat = &m_t / (1.0 - self.beta1.powi(self.t as i32));
+        let v_hat = &v_t / (1.0 - self.beta2.powi(self.t as i32));
+
+        // 参数更新: θ = θ - α * m_hat / (√v_hat + ε)
+        let v_hat_sqrt = v_hat.sqrt();
+        let denominator = &v_hat_sqrt + self.epsilon;
+        let update = &m_hat / &denominator;
+        let new_value = current_value - self.state.learning_rate() * &update;
+
+        // 设置新的参数值
+        graph.set_node_value(node_id, Some(&new_value))?;
+
+        // 保存状态
+        self.m.insert(node_id, m_t);
+        self.v.insert(node_id, v_t);
+
+        Ok(())
     }
 }

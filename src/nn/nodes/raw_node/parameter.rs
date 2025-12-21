@@ -9,6 +9,7 @@ pub(crate) struct Parameter {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    grad: Option<Tensor>, // Batch 模式的梯度
     shape: Vec<usize>,
 }
 
@@ -32,6 +33,7 @@ impl Parameter {
             name: None,
             value: Some(Tensor::normal(0.0, 0.001, shape)),
             jacobi: None,
+            grad: None,
             shape: shape.to_vec(),
         })
     }
@@ -56,6 +58,7 @@ impl Parameter {
             name: None,
             value: Some(Tensor::normal_seeded(0.0, 0.001, shape, seed)),
             jacobi: None,
+            grad: None,
             shape: shape.to_vec(),
         })
     }
@@ -111,6 +114,17 @@ impl TraitNode for Parameter {
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.cloned();
+        Ok(())
+    }
+
+    // ========== Batch 模式 ==========
+
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
+
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
         Ok(())
     }
 

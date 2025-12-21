@@ -164,6 +164,8 @@ impl NodeHandle {
         self.raw_node.calc_value_by_parents(parents)
     }
 
+    // ========== 单样本模式（Jacobi-based）==========
+
     /// 计算本节点对父节点的雅可比矩阵
     pub(in crate::nn) fn calc_jacobi_to_a_parent(
         &self,
@@ -173,6 +175,36 @@ impl NodeHandle {
         self.raw_node
             .calc_jacobi_to_a_parent(parent, assistant_parent)
     }
+
+    // ========== Batch 模式（Gradient-based）==========
+
+    /// 计算本节点对父节点的梯度（Batch 模式）
+    pub(in crate::nn) fn calc_grad_to_parent(
+        &self,
+        parent: &Self,
+        upstream_grad: &Tensor,
+        assistant_parent: Option<&Self>,
+    ) -> Result<Tensor, GraphError> {
+        self.raw_node
+            .calc_grad_to_parent(parent, upstream_grad, assistant_parent)
+    }
+
+    /// 获取节点的梯度（Batch 模式）
+    pub(in crate::nn) fn grad(&self) -> Option<&Tensor> {
+        self.raw_node.grad()
+    }
+
+    /// 设置节点的梯度（Batch 模式）
+    pub(in crate::nn) fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.raw_node.set_grad(grad)
+    }
+
+    /// 清除节点的梯度
+    pub(in crate::nn) fn clear_grad(&mut self) -> Result<(), GraphError> {
+        self.raw_node.clear_grad()
+    }
+
+    // ========== 通用方法 ==========
 
     pub(in crate::nn) fn value_expected_shape(&self) -> &[usize] {
         self.raw_node.value_expected_shape()

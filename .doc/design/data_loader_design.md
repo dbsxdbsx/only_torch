@@ -23,7 +23,7 @@
 - ❌ 多线程/异步数据加载
 - ❌ 数据增强（augmentation）
 - ❌ 分布式数据加载
-- ❌ 真正的 batch forward（框架暂不支持）
+- ❌ 真正的 batch forward（规划中，详见 [batch_mechanism_design.md](batch_mechanism_design.md)）
 
 ---
 

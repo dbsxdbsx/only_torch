@@ -9,6 +9,7 @@ pub(crate) struct MatMul {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    grad: Option<Tensor>, // Batch 模式的梯度
     shape: Vec<usize>,
     parents_ids: Vec<NodeId>, // 保留这个字段用于雅可比计算，注意元素的存储顺序
 }
@@ -43,6 +44,7 @@ impl MatMul {
             name: None,
             value: None,
             jacobi: None,
+            grad: None,
             shape: vec![parent1_shape[0], parent2_shape[1]],
             parents_ids: vec![parents[0].id(), parents[1].id()],
         })
@@ -199,6 +201,82 @@ impl TraitNode for MatMul {
 
     fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
         self.jacobi = jacobi.cloned();
+        Ok(())
+    }
+
+    // ========== Batch 模式 ==========
+
+    /// MatMul 的 batch 梯度计算
+    ///
+    /// 对于 C = A @ B（A: [batch, n], B: [n, k], C: [batch, k]）：
+    /// - dL/dA = upstream_grad @ B^T，shape: [batch, k] @ [k, n] = [batch, n]
+    /// - dL/dB = A^T @ upstream_grad，shape: [n, batch] @ [batch, k] = [n, k]
+    ///           这个乘法自然地对 batch 维度求和
+    fn calc_grad_to_parent(
+        &self,
+        target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
+        assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        let assistant = assistant_parent.ok_or_else(|| {
+            GraphError::ComputationError("MatMul 需要辅助父节点来计算梯度".to_string())
+        })?;
+
+        // 获取父节点的值
+        let (a_value, b_value) = if target_parent.id() == self.parents_ids[0] {
+            // target 是左父节点 A
+            (
+                target_parent.value().ok_or_else(|| {
+                    GraphError::ComputationError(format!(
+                        "{}的左父节点没有值",
+                        self.display_node()
+                    ))
+                })?,
+                assistant.value().ok_or_else(|| {
+                    GraphError::ComputationError(format!(
+                        "{}的右父节点没有值",
+                        self.display_node()
+                    ))
+                })?,
+            )
+        } else {
+            // target 是右父节点 B
+            (
+                assistant.value().ok_or_else(|| {
+                    GraphError::ComputationError(format!(
+                        "{}的左父节点没有值",
+                        self.display_node()
+                    ))
+                })?,
+                target_parent.value().ok_or_else(|| {
+                    GraphError::ComputationError(format!(
+                        "{}的右父节点没有值",
+                        self.display_node()
+                    ))
+                })?,
+            )
+        };
+
+        if target_parent.id() == self.parents_ids[0] {
+            // 计算 dL/dA = upstream_grad @ B^T
+            // upstream_grad: [batch, k], B: [n, k] -> B^T: [k, n]
+            // 结果: [batch, n]
+            Ok(upstream_grad.mat_mul(&b_value.transpose()))
+        } else {
+            // 计算 dL/dB = A^T @ upstream_grad
+            // A: [batch, n] -> A^T: [n, batch]
+            // upstream_grad: [batch, k]
+            // 结果: [n, k]（自然对 batch 求和）
+            Ok(a_value.transpose().mat_mul(upstream_grad))
+        }
+    }
+
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
+
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
         Ok(())
     }
 }

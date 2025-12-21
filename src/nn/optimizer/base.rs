@@ -12,11 +12,30 @@ use std::collections::HashMap;
 
 /// 优化器核心trait
 pub trait Optimizer {
+    // ========== 单样本模式（Jacobi-based）==========
+
     /// 执行一步训练：前向传播 + 反向传播 + 梯度累积
     fn one_step(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError>;
 
     /// 更新参数（执行具体的优化算法）
     fn update(&mut self, graph: &mut Graph) -> Result<(), GraphError>;
+
+    // ========== Batch 模式（Gradient-based）==========
+
+    /// Batch 模式的一步训练：batch 前向传播 + batch 反向传播
+    ///
+    /// 与单样本模式不同，batch 模式下：
+    /// 1. 输入节点的 value 应包含 batch 维度
+    /// 2. 梯度在 backward_batch 中已经对 batch 求平均
+    /// 3. 不需要额外的梯度累积
+    fn one_step_batch(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError>;
+
+    /// Batch 模式的参数更新
+    ///
+    /// 使用 batch backward 计算的梯度更新参数
+    fn update_batch(&mut self, graph: &mut Graph) -> Result<(), GraphError>;
+
+    // ========== 通用方法 ==========
 
     /// 重置累积状态
     fn reset(&mut self);
