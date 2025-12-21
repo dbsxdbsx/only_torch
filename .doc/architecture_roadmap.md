@@ -10,7 +10,9 @@
 .doc/
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
+│   ├── broadcast_mechanism_design.md               # 广播机制设计（重要）
 │   ├── gradient_clear_and_accumulation_design.md   # 梯度机制
+│   ├── optimization_strategy.md                    # 性能优化策略
 │   └── optimizer_architecture_design.md            # 优化器架构
 ├── reference/                           # 参考资料
 │   └── python_MatrixSlow_pid.md         # MatrixSlow 项目分析

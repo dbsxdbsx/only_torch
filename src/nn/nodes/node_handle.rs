@@ -1,5 +1,5 @@
 use super::super::graph::GraphError;
-use super::raw_node::{Add, Input, MatMul, Parameter, PerceptionLoss, Step};
+use super::raw_node::{Add, Input, MatMul, Multiply, Parameter, PerceptionLoss, ScalarMultiply, Step};
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
 
@@ -115,6 +115,14 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_mat_mul(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(MatMul::new(parents)?)
+    }
+
+    pub(in crate::nn) fn new_multiply(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Multiply::new(parents)?)
+    }
+
+    pub(in crate::nn) fn new_scalar_multiply(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(ScalarMultiply::new(parents)?)
     }
 
     pub(in crate::nn) fn new_step(parents: &[&Self]) -> Result<Self, GraphError> {

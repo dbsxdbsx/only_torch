@@ -189,7 +189,7 @@ impl Graph {
     }
 
     /// 反向传播：计算结果节点对本节点的雅可比矩阵
-    /// NOTE: 这里的逻辑参考了https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/core/node.py#L83
+    /// NOTE: 这里的逻辑参考了 MatrixSlow/matrixslow/core/node.py#L83 (Node.backward)
     pub fn backward_nodes(
         &mut self,
         target_nodes_ids: &[NodeId],
@@ -304,7 +304,7 @@ impl Graph {
 
                 // 根据节点类型决定是否需要另一个父节点
                 let assistant_parent = match child.node_type() {
-                    NodeType::MatMul(_) => {
+                    NodeType::MatMul(_) | NodeType::Multiply(_) | NodeType::ScalarMultiply(_) => {
                         // 找到另一个父节点
                         let parents = self.get_node_parents(child_id)?;
                         let other_parent_id = parents
@@ -312,7 +312,8 @@ impl Graph {
                             .find(|&&id| id != target_node_id)
                             .ok_or_else(|| {
                                 GraphError::ComputationError(
-                                    "MatMul节点缺少另一个父节点".to_string(),
+                                    "MatMul/Multiply/ScalarMultiply节点缺少另一个父节点"
+                                        .to_string(),
                                 )
                             })?;
                         Some(self.get_node(*other_parent_id)?)
@@ -572,6 +573,37 @@ impl Graph {
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_mat_mul(&self.get_nodes(&[left_node_id, right_node_id])?)?;
         self.add_node_to_list(handle, name, "mat_mul", &[left_node_id, right_node_id])
+    }
+
+    /// 创建逐元素乘法节点
+    /// 两个父节点必须形状相同
+    pub fn new_multiply_node(
+        &mut self,
+        left_node_id: NodeId,
+        right_node_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_multiply(&self.get_nodes(&[left_node_id, right_node_id])?)?;
+        self.add_node_to_list(handle, name, "multiply", &[left_node_id, right_node_id])
+    }
+
+    /// 创建标量乘法节点
+    /// scalar_node_id: 标量节点(1x1)的ID
+    /// matrix_node_id: 矩阵节点的ID
+    pub fn new_scalar_multiply_node(
+        &mut self,
+        scalar_node_id: NodeId,
+        matrix_node_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle =
+            NodeHandle::new_scalar_multiply(&self.get_nodes(&[scalar_node_id, matrix_node_id])?)?;
+        self.add_node_to_list(
+            handle,
+            name,
+            "scalar_multiply",
+            &[scalar_node_id, matrix_node_id],
+        )
     }
 
     pub fn new_step_node(

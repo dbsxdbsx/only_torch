@@ -17,6 +17,8 @@ pub(in crate::nn) enum NodeType {
     Parameter(Parameter),
     Add(Add),
     MatMul(MatMul),
+    Multiply(Multiply),
+    ScalarMultiply(ScalarMultiply),
     Step(Step),
     PerceptionLoss(PerceptionLoss),
 }

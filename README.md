@@ -73,9 +73,10 @@
 
 ## 笔记
 
-- [计算图执行机制重构方案](.doc/graph_execution_refactor.md) - 阐述了从基于 `pass_id`的指令式执行到基于“版本号”和“拓扑排序”的反应式更新模型的重构计划。
-- [MatrixSlow项目识别文档](.doc/python_MatrixSlow_pid.md) - 基于MatrixSlow的Python深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
-- [本项目的梯度设计机制说明](.doc/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
+- [广播机制设计决策](.doc/design/broadcast_mechanism_design.md) - 阐述了为何采用"显式节点广播"而非PyTorch风格隐式广播，及其对NEAT演化、梯度计算的影响
+- [性能优化策略](.doc/design/optimization_strategy.md) - 针对CPU-only和NEAT小规模不规则网络的优化方向，包括个体并行、Batch向量化、SIMD等策略的优先级分析
+- [本项目的梯度设计机制说明](.doc/design/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
+- [MatrixSlow项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于MatrixSlow的Python深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料
 

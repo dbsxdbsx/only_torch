@@ -98,7 +98,7 @@ impl TraitNode for MatMul {
         self.value.as_ref()
     }
 
-    /// NOTE: 这里的逻辑本想取巧参考：https://github.com/zc911/MatrixSlow/blob/a6db0d38802004449941e6644e609a2455b26327/matrixslow/ops/ops.py#L61
+    /// NOTE: 这里的逻辑本想取巧参考：MatrixSlow/matrixslow/ops/ops.py#L61 (MatMul.get_jacobi)
     /// 但太难懂了，所以还是用最原始的实现吧
     fn calc_jacobi_to_a_parent(
         &self,
