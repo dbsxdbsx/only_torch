@@ -54,5 +54,10 @@
     paste         ="1.0.5"
     trait_variable="*"
 
+    # 数据加载
+    flate2="1.0"    # gzip 解压
+    dirs  ="5.0"    # 跨平台目录
+    ureq  ="2.9"    # HTTP 下载（blocking）
+
 [dev-dependencies]
     # statrs="^0.16.0"
