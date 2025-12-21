@@ -62,7 +62,6 @@
 - 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - 图错误“InvalidOperation” vs “ComputationError”
 - Tensor 类的 index 将 `[[`优化成 `[`?
-- Tensor 类的 `slice(&[0..m, j..j+1])`是否需要？
 - use approx::assert_abs_diff_eq; need or not?
 - [get_node_grad 函数优化分析](.doc/get_node_grad_optimization_analysis.md)
 

@@ -9,7 +9,7 @@
 use only_torch::nn::optimizer::{Optimizer, SGD};
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
-use only_torch::tensor_where;
+use only_torch::{tensor_slice, tensor_where};
 
 #[test]
 fn test_optimizer_example() -> Result<(), GraphError> {
@@ -95,10 +95,10 @@ fn test_optimizer_example() -> Result<(), GraphError> {
         // 遍历训练集中的样本
         for i in 0..train_set.shape()[0] {
             // 取第i个样本的前3列（除最后一列的所有列），构造3x1矩阵对象
-            let features = train_set.slice(&[&i, &(0..3)]).transpose();
+            let features = tensor_slice!(train_set, i, 0..3).transpose();
 
             // 取第i个样本的最后一列，是该样本的性别标签（1男，-1女），构造1x1矩阵对象
-            let l = train_set.slice(&[&i, &3]);
+            let l = tensor_slice!(train_set, i, 3);
 
             // 将特征赋给x节点，将标签赋给label节点
             graph.set_node_value(x, Some(&features))?;
@@ -151,7 +151,7 @@ fn test_optimizer_example() -> Result<(), GraphError> {
 
         // 遍历训练集，计算当前模型对每个样本的预测值
         for i in 0..train_set.shape()[0] {
-            let features = train_set.slice(&[&i, &(0..3)]).transpose();
+            let features = tensor_slice!(train_set, i, 0..3).transpose();
             graph.set_node_value(x, Some(&features))?;
 
             // 在模型的predict节点上执行前向传播
@@ -164,8 +164,8 @@ fn test_optimizer_example() -> Result<(), GraphError> {
         let pred_tensor = Tensor::new(&pred_vec, &[pred_vec.len(), 1]) * 2.0 - 1.0;
 
         // 计算准确率
-        let train_set_labels = train_set.slice(&[&(0..train_set.shape()[0]), &3]);
-        let pred_subset = pred_tensor.slice(&[&(0..pred_vec.len()), &0]);
+        let train_set_labels = tensor_slice!(train_set, 0..train_set.shape()[0], 3);
+        let pred_subset = tensor_slice!(pred_tensor, 0..pred_vec.len(), 0);
 
         let filtered_sum = tensor_where!(train_set_labels == pred_subset, 1.0, 0.0).sum();
         let accuracy = filtered_sum.get_data_number().unwrap() / train_set.shape()[0] as f32;

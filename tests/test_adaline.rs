@@ -7,7 +7,7 @@
  */
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
-use only_torch::tensor_where;
+use only_torch::{tensor_slice, tensor_where};
 
 #[test]
 fn test_adaline() -> Result<(), GraphError> {
@@ -76,9 +76,9 @@ fn test_adaline() -> Result<(), GraphError> {
         // 遍历训练集中的样本
         for i in 0..train_set.shape()[0] {
             // 取第i个样本的前4列（除最后一列的所有列），构造3x1矩阵对象
-            let features = train_set.slice(&[&i, &(0..3)]).transpose();
+            let features = tensor_slice!(train_set, i, 0..3).transpose();
             // 取第i个样本的最后一列，是该样本的性别标签（1男，-1女），构造1x1矩阵对象
-            let l = train_set.slice(&[&i, &3]);
+            let l = tensor_slice!(train_set, i, 3);
 
             // 将特征赋给x节点，将标签赋给label节点
             graph.set_node_value(x, Some(&features))?;
@@ -109,7 +109,7 @@ fn test_adaline() -> Result<(), GraphError> {
 
         // 遍历训练集，计算当前模型对每个样本的预测值
         for i in 0..train_set.shape()[0] {
-            let features = train_set.slice(&[&i, &(0..3)]).transpose();
+            let features = tensor_slice!(train_set, i, 0..3).transpose();
             graph.set_node_value(x, Some(&features))?;
 
             // 在模型的predict节点上执行前向传播
@@ -120,7 +120,7 @@ fn test_adaline() -> Result<(), GraphError> {
         let pred = Tensor::new(&pred_vec, &[pred_vec.len(), 1]) * 2.0 - 1.0; // 将1/0结果转化成1/-1结果，好与训练标签的约定一致
 
         // 判断预测结果与样本标签相同的数量与训练集总数量之比，即模型预测的正确率
-        let train_set_labels = train_set.slice(&[&(..), &3]);
+        let train_set_labels = tensor_slice!(train_set, .., 3);
         let filtered_sum = tensor_where!(train_set_labels == pred, 1.0, 0.0).sum();
         let train_set_len = train_set.shape()[0] as f32;
         let accuracy = filtered_sum / train_set_len;

@@ -174,22 +174,22 @@ fn test_slice_macro() {
     let tensor = Tensor::new(&data, &[2, 2, 1, 4]);
 
     // 测试宏的基本切片功能
-    let slice1 = tensor_slice!(tensor, 0, 0..2, .., 1..3);
+    let slice1 = tensor_slice!(tensor, 0usize, 0..2usize, .., 1..3usize);
     let slice2 = tensor.slice(&[&0, &(0..2), &(..), &(1..3)]);
     assert_eq!(slice1, slice2);
 
     // 测试宏的视图版本
-    let view1 = tensor_slice_view!(tensor, 1, .., 0, ..);
+    let view1 = tensor_slice_view!(tensor, 1usize, .., 0usize, ..);
     let view2 = tensor.slice_view(&[&1, &(..), &0, &(..)]);
     assert_eq!(view1, view2);
 
     // 测试宏对RangeInclusive的支持
-    let slice3 = tensor_slice!(tensor, 0..=1, 0..=1, 0..=0, 0..=3);
+    let slice3 = tensor_slice!(tensor, 0usize..=1, 0usize..=1, 0usize..=0, 0usize..=3);
     let slice4 = tensor.slice(&[&(0..=1), &(0..=1), &(0..=0), &(0..=3)]);
     assert_eq!(slice3, slice4);
 
     // 测试宏的尾部逗号支持
-    let slice5 = tensor_slice!(tensor, 0, 1, 0, 1..3,);
+    let slice5 = tensor_slice!(tensor, 0usize, 1usize, 0usize, 1..3usize,);
     let slice6 = tensor.slice(&[&0, &1, &0, &(1..3)]);
     assert_eq!(slice5, slice6);
 }

@@ -8,6 +8,7 @@
 use crate::nn::optimizer::{Optimizer, SGD};
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
+use crate::tensor_slice;
 
 /// 测试 batch forward 与单样本 forward 的一致性
 #[test]
@@ -264,8 +265,8 @@ fn test_batch_optimizer_update() -> Result<(), GraphError> {
 
     for i in 0..batch_size {
         // 切片获取单个样本（保持 [1, dim] 形状）
-        let sample = batch_input.slice(&[&i, &(..)]);
-        let label = batch_labels.slice(&[&i, &(..)]);
+        let sample = tensor_slice!(batch_input, i, ..);
+        let label = tensor_slice!(batch_labels, i, ..);
         graph_single.set_node_value(x_s, Some(&sample))?;
         graph_single.set_node_value(y_s, Some(&label))?;
         optimizer_single.one_step(&mut graph_single, loss_s)?;

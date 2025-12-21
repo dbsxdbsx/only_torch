@@ -9,7 +9,7 @@
 use only_torch::nn::optimizer::{Adam, Optimizer};
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
-use only_torch::tensor_where;
+use only_torch::{tensor_slice, tensor_where};
 
 #[test]
 fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
@@ -193,8 +193,8 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
 
         // 计算准确率（只考虑完整批次的样本）
         let valid_samples = (train_set.shape()[0] / batch_size) * batch_size;
-        let train_set_labels = train_set.slice(&[&(0..valid_samples), &3]);
-        let pred_subset = pred_tensor.slice(&[&(0..valid_samples), &0]);
+        let train_set_labels = tensor_slice!(train_set, 0..valid_samples, 3);
+        let pred_subset = tensor_slice!(pred_tensor, 0..valid_samples, 0);
 
         let filtered_sum = tensor_where!(train_set_labels == pred_subset, 1.0, 0.0).sum();
         let accuracy = filtered_sum.get_data_number().unwrap() / valid_samples as f32;

@@ -164,25 +164,119 @@ impl super::Tensor {
 }
 
 /// 简化切片语法的宏
+///
+/// 通过为每个索引创建局部绑定来避免临时值生命周期问题。
+/// 支持 1-6 维张量切片。
 #[macro_export]
 macro_rules! tensor_slice {
-    ($tensor:expr, $($index:expr),* $(,)?) => {{
+    // 1 维
+    ($tensor:expr, $idx1:expr $(,)?) => {{
         use $crate::tensor::slice::IntoSliceInfo;
-        let indices: Vec<&dyn IntoSliceInfo> = vec![
-            $(&$index),*
-        ];
-        $tensor.slice(&indices)
+        let i1 = $idx1;
+        $tensor.slice(&[&i1 as &dyn IntoSliceInfo])
+    }};
+    // 2 维
+    ($tensor:expr, $idx1:expr, $idx2:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        $tensor.slice(&[&i1 as &dyn IntoSliceInfo, &i2])
+    }};
+    // 3 维
+    ($tensor:expr, $idx1:expr, $idx2:expr, $idx3:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        let i3 = $idx3;
+        $tensor.slice(&[&i1 as &dyn IntoSliceInfo, &i2, &i3])
+    }};
+    // 4 维
+    ($tensor:expr, $idx1:expr, $idx2:expr, $idx3:expr, $idx4:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        let i3 = $idx3;
+        let i4 = $idx4;
+        $tensor.slice(&[&i1 as &dyn IntoSliceInfo, &i2, &i3, &i4])
+    }};
+    // 5 维
+    ($tensor:expr, $idx1:expr, $idx2:expr, $idx3:expr, $idx4:expr, $idx5:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        let i3 = $idx3;
+        let i4 = $idx4;
+        let i5 = $idx5;
+        $tensor.slice(&[&i1 as &dyn IntoSliceInfo, &i2, &i3, &i4, &i5])
+    }};
+    // 6 维
+    ($tensor:expr, $idx1:expr, $idx2:expr, $idx3:expr, $idx4:expr, $idx5:expr, $idx6:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        let i3 = $idx3;
+        let i4 = $idx4;
+        let i5 = $idx5;
+        let i6 = $idx6;
+        $tensor.slice(&[&i1 as &dyn IntoSliceInfo, &i2, &i3, &i4, &i5, &i6])
     }};
 }
 
 /// 视图版本的切片宏
+///
+/// 通过为每个索引创建局部绑定来避免临时值生命周期问题。
+/// 支持 1-6 维张量切片。
 #[macro_export]
 macro_rules! tensor_slice_view {
-    ($tensor:expr, $($index:expr),* $(,)?) => {{
+    // 1 维
+    ($tensor:expr, $idx1:expr $(,)?) => {{
         use $crate::tensor::slice::IntoSliceInfo;
-        let indices: Vec<&dyn IntoSliceInfo> = vec![
-            $(&$index),*
-        ];
-        $tensor.slice_view(&indices)
+        let i1 = $idx1;
+        $tensor.slice_view(&[&i1 as &dyn IntoSliceInfo])
+    }};
+    // 2 维
+    ($tensor:expr, $idx1:expr, $idx2:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        $tensor.slice_view(&[&i1 as &dyn IntoSliceInfo, &i2])
+    }};
+    // 3 维
+    ($tensor:expr, $idx1:expr, $idx2:expr, $idx3:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        let i3 = $idx3;
+        $tensor.slice_view(&[&i1 as &dyn IntoSliceInfo, &i2, &i3])
+    }};
+    // 4 维
+    ($tensor:expr, $idx1:expr, $idx2:expr, $idx3:expr, $idx4:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        let i3 = $idx3;
+        let i4 = $idx4;
+        $tensor.slice_view(&[&i1 as &dyn IntoSliceInfo, &i2, &i3, &i4])
+    }};
+    // 5 维
+    ($tensor:expr, $idx1:expr, $idx2:expr, $idx3:expr, $idx4:expr, $idx5:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        let i3 = $idx3;
+        let i4 = $idx4;
+        let i5 = $idx5;
+        $tensor.slice_view(&[&i1 as &dyn IntoSliceInfo, &i2, &i3, &i4, &i5])
+    }};
+    // 6 维
+    ($tensor:expr, $idx1:expr, $idx2:expr, $idx3:expr, $idx4:expr, $idx5:expr, $idx6:expr $(,)?) => {{
+        use $crate::tensor::slice::IntoSliceInfo;
+        let i1 = $idx1;
+        let i2 = $idx2;
+        let i3 = $idx3;
+        let i4 = $idx4;
+        let i5 = $idx5;
+        let i6 = $idx6;
+        $tensor.slice_view(&[&i1 as &dyn IntoSliceInfo, &i2, &i3, &i4, &i5, &i6])
     }};
 }
