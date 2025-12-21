@@ -1,86 +1,86 @@
 ## 这是啥？
 
-一个用纯Rust（不用C++）打造的仿Pytorch的玩具型AI框架（目前尚不成熟，请勿使用）。该项目不打算支持GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非CPU设备。但可能会加入NEAT等网络进化的算法。
+一个用纯 Rust（不用 C++）打造的仿 Pytorch 的玩具型 AI 框架（目前尚不成熟，请勿使用）。该项目不打算支持 GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非 CPU 设备。但可能会加入 NEAT 等网络进化的算法。
 
 ### 名字由来
 
-一部分原因是受到pytorch的影响，希望能写个和pytorch一样甚至更易用的AI框架；另一部分是希望本框架只触及（touch）一些关键的东西：
+一部分原因是受到 pytorch 的影响，希望能写个和 pytorch 一样甚至更易用的 AI 框架；另一部分是希望本框架只触及（touch）一些关键的东西：
 
-- only torch Rust --- 只用Rust（不用C++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不打算支持Python接口）；亦不用第三方lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
-- only torch CPU --- 不用GPU，因要照顾多平台也不想被某个GPU厂商制约，且基于NEAT进化的网络结构也不太好被GPU优化（也省得考虑数据从CPU的堆栈迁移到其他设备内存的开销问题了）。
-- only torch node --- 没有全连接、卷积、resnet这类先入为主的算子概念，具体模型结构均基于NEAT进化。
-- only torch tensor --- 所有的数据类型都是内置类型tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/Rust-numpy)，[array](https://doc.Rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于blas的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
-- only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了f32外的数据类型。
+- only torch Rust --- 只用 Rust（不用 C++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不打算支持 Python 接口）；亦不用第三方 lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
+- only torch CPU --- 不用 GPU，因要照顾多平台也不想被某个 GPU 厂商制约，且基于 NEAT 进化的网络结构也不太好被 GPU 优化（也省得考虑数据从 CPU 的堆栈迁移到其他设备内存的开销问题了）。
+- only torch node --- 没有全连接、卷积、resnet 这类先入为主的算子概念，具体模型结构均基于 NEAT 进化。
+- only torch tensor --- 所有的数据类型都是内置类型 tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/Rust-numpy)，[array](https://doc.Rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于 blas 的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
+- only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了 f32 外的数据类型。
 
 ## 文档
 
-目前无人性化的文档。可直接看Rust自动生成的[Api Doc](https://docs.rs/only_torch)即可。
+目前无人性化的文档。可直接看 Rust 自动生成的[Api Doc](https://docs.rs/only_torch)即可。
 
 ### 使用示例
 
-- **[Adaline自适应线性神经元](tests/test_adaline.rs)** - 经典二分类算法实现，本例使用了最原始的写法来构建计算图、自动微分和参数更新，测试显示1000样本10轮训练可达95%+准确率（运行：`cargo test test_adaline -- --show-output`）
+- **[Adaline 自适应线性神经元](tests/test_adaline.rs)** - 经典二分类算法实现，本例使用了最原始的写法来构建计算图、自动微分和参数更新，测试显示 1000 样本 10 轮训练可达 95%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
 
 - still need teset `test_duplicate_computation_avoidance`?
-- (back/forward)pass_id相关的graph测试？
-- （最后用AI优化下backward的逻辑）
-- 1次， 一次？用哪个？
+- (back/forward)pass_id 相关的 graph 测试？
+- （最后用 AI 优化下 backward 的逻辑）
+- 1 次， 一次？用哪个？
 - `assert_eq!( graph.backward_nodes(&[input], input), Err(GraphError::InvalidOperation(format!( "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵" ))) ); `添加一个 `assert_err`的宏，可才参考 `assert_panic`宏
-- graph反向传播中有些节点没有值需要过滤怎么添加（如多个output的网络结构）？
-- 针对 `loss1.backward(retain_graph=True)`和 `detach()`还有多output输出，还有rnn节点的反向传播，还有多次backward的问题；
-- 对于Input节点的 `set_jacobi`和 `jacobi`是否可用更好的panic或error取代，毕竟Input节点不该有梯度相关的概念；
-- 是否需要添加一个sign节点来取代step直接forward输出[-1,1]？
-- 直接实现CrossEntropyLoss（训练）和SoftMax（推理），不用LogisticLoss（Sigmoid）了；
+- graph 反向传播中有些节点没有值需要过滤怎么添加（如多个 output 的网络结构）？
+- 针对 `loss1.backward(retain_graph=True)`和 `detach()`还有多 output 输出，还有 rnn 节点的反向传播，还有多次 backward 的问题；
+- 对于 Input 节点的 `set_jacobi`和 `jacobi`是否可用更好的 panic 或 error 取代，毕竟 Input 节点不该有梯度相关的概念；
+- 是否需要添加一个 sign 节点来取代 step 直接 forward 输出[-1,1]？
+- 直接实现 CrossEntropyLoss（训练）和 SoftMax（推理），不用 LogisticLoss（Sigmoid）了；
 - unit test for Graph, and parent/children
-- Graph测试中该包含各种pub method的正确及错误测试
-- Graph测试中最好添加某个节点后，测试该节点还有其父节点的parents/children属性（又比如：同2个节点用于不同图的add节点，测试其parents/children属性是否正确）(Variable 节点无父节点)、“节点var1在图default_graph中重复”
-- add a `graph` for unit test to test the 多层的jacobi计算，就像adaline那样?
-- 各种assign类的op（如：add_assign）是否需要重载而不是复用基本算子？
-- 在python中仿造adaline构造一个复合多节点，然后基于此在rust中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
-- jacobi到底该测试对parent还是children？
+- Graph 测试中该包含各种 pub method 的正确及错误测试
+- Graph 测试中最好添加某个节点后，测试该节点还有其父节点的 parents/children 属性（又比如：同 2 个节点用于不同图的 add 节点，测试其 parents/children 属性是否正确）(Variable 节点无父节点)、“节点 var1 在图 default_graph 中重复”
+- add a `graph` for unit test to test the 多层的 jacobi 计算，就像 adaline 那样?
+- 各种 assign 类的 op（如：add_assign）是否需要重载而不是复用基本算子？
+- 在 python 中仿造 adaline 构造一个复合多节点，然后基于此在 rust 中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
+- jacobi 到底该测试对 parent 还是 children？
 - how to expose only `in crate::nn` to the nn::Graph`?
 - should completely hide the NodeHandle?
 - Graph/NodeHandle rearrange blocks due to visibility and funciontality
-- NodeHandle重命名为Node? 各种 `parent/children/node_id`重命名为 `parents/children/id`?
+- NodeHandle 重命名为 Node? 各种 `parent/children/node_id`重命名为 `parents/children/id`?
 - should directly use `parents` but not `parents_ids`?
 - check other unused methods
-- draw_graph(graphvis画图)
-- save/load网络模型（已有test_save_load_tensor）
-- 也许后期可给Graph添加一个 `forward_batch`方法，用于批量forward(参考adaline_batch.py)？
-- 后期当引入NEAT机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
-- 当后期（NEAT阶段）需要在一个已经forwarded的图中添加节点（如将已经被使用过的var1、var2结合一个新的未使用的var3构建一个add节点），可能需要添加一个 `reset_forward_cnt`方法来保证图forward的一致性。
-- NEAT之后，针对图backward的 `loss1.backward(retain_graph=True)`和 `detach()`机制的实现（可在GAN和强化学习算法实例中针对性实现测试），可能须和 `forward_cnt`机制结合, 还要考虑一次forward后多次backward()后的结果。
-- Tensor 真的需要uninit吗？
-- 各种命名规范“2维”，“二维”，“二阶”，“2阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”，”dim/dimension/rank“,"维/阶",","改为", ","仍然"改为”仍“
-- 添加一个表格，说明下本crate中，阶、维、标量、向量、矩阵、张量的概念异同；
-- 根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，，容易添加edge(如已存在的add节点的父节点)，。
-- 等adaline例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
+- draw_graph(graphvis 画图)
+- save/load 网络模型（已有 test_save_load_tensor）
+- 也许后期可给 Graph 添加一个 `forward_batch`方法，用于批量 forward(参考 adaline_batch.py)？
+- 后期当引入 NEAT 机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
+- 当后期（NEAT 阶段）需要在一个已经 forwarded 的图中添加节点（如将已经被使用过的 var1、var2 结合一个新的未使用的 var3 构建一个 add 节点），可能需要添加一个 `reset_forward_cnt`方法来保证图 forward 的一致性。
+- NEAT 之后，针对图 backward 的 `loss1.backward(retain_graph=True)`和 `detach()`机制的实现（可在 GAN 和强化学习算法实例中针对性实现测试），可能须和 `forward_cnt`机制结合, 还要考虑一次 forward 后多次 backward()后的结果。
+- Tensor 真的需要 uninit 吗？
+- 各种命名规范“2 维”，“二维”，“二阶”，“2 阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”，”dim/dimension/rank“,"维/阶",","改为", ","仍然"改为”仍“
+- 添加一个表格，说明下本 crate 中，阶、维、标量、向量、矩阵、张量的概念异同；
+- 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化,能 ok 拓展至 linear 等常用层，还有 detach，，容易添加 edge(如已存在的 add 节点的父节点)，。
+- 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - 图错误“InvalidOperation” vs “ComputationError”
-- Tensor类的index将 `[[`优化成 `[`?
-- Tensor类的 `slice(&[0..m, j..j+1])`是否需要？
+- Tensor 类的 index 将 `[[`优化成 `[`?
+- Tensor 类的 `slice(&[0..m, j..j+1])`是否需要？
 - use approx::assert_abs_diff_eq; need or not?
-- [get_node_grad函数优化分析](.doc/get_node_grad_optimization_analysis.md)
+- [get_node_grad 函数优化分析](.doc/get_node_grad_optimization_analysis.md)
 
 **目前需要先解决有没有的问题，而不是好不好**
 
-- [] 实现类似tch-rs中 `tch::no_grad(|| {});`的无梯度功能；
+- [] 实现类似 tch-rs 中 `tch::no_grad(|| {});`的无梯度功能；
 - [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
-- [] 基于本框架解决XOR监督学习问题
-- [] 基于本框架解决Mnist（数字识别）的监督学习问题
-- [] 基于本框架解决CartPole（需要openAI Gym或相关crate支持）的深度强化学习问题
+- [] 基于本框架解决 XOR 监督学习问题
+- [] 基于本框架解决 Mnist（数字识别）的监督学习问题
+- [] 基于本框架解决 CartPole（需要 openAI Gym 或相关 crate 支持）的深度强化学习问题
 - [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
 
 ## 笔记
 
-- [广播机制设计决策](.doc/design/broadcast_mechanism_design.md) - 阐述了为何采用"显式节点广播"而非PyTorch风格隐式广播，及其对NEAT演化、梯度计算的影响
-- [性能优化策略](.doc/design/optimization_strategy.md) - 针对CPU-only和NEAT小规模不规则网络的优化方向，包括个体并行、Batch向量化、SIMD等策略的优先级分析
+- [广播机制设计决策](.doc/design/broadcast_mechanism_design.md) - 阐述了为何采用"显式节点广播"而非 PyTorch 风格隐式广播，及其对 NEAT 演化、梯度计算的影响
+- [性能优化策略](.doc/design/optimization_strategy.md) - 针对 CPU-only 和 NEAT 小规模不规则网络的优化方向，包括个体并行、Batch 向量化、SIMD 等策略的优先级分析
 - [本项目的梯度设计机制说明](.doc/design/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
-- [MatrixSlow项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于MatrixSlow的Python深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
+- [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料
 
-### 训练用数据集（包括强化学习gym）
+### 训练用数据集（包括强化学习 gym）
 
 - [Mnist](http://yann.lecun.com/exdb/mnist/)
 - [FashionMnist](https://www.kaggle.com/datasets/zalando-research/fashionmnist?resource=download)
@@ -88,76 +88,76 @@
 - [训练用的各种数据集（包括强化学习）](https://huggingface.co/FUXI)
 - [bevy_rl](https://crates.io/crates/bevy_rl)
 - [pure_rust_gym](https://github.com/MathisWellmann/gym-rs/tree/master)
-- [老式游戏rom](https://www.myabandonware.com/)
+- [老式游戏 rom](https://www.myabandonware.com/)
 
-### 数学/IT原理
+### 数学/IT 原理
 
-- [早期pytorch关于Tensor、Variable等的探讨](https://pytorch.org/blog/pytorch-0_4_0-migration-guide/#merging-tensor-and-variable-and-classes)
+- [早期 pytorch 关于 Tensor、Variable 等的探讨](https://pytorch.org/blog/pytorch-0_4_0-migration-guide/#merging-tensor-and-variable-and-classes)
 - [矩阵和向量的各种乘法](https://www.jianshu.com/p/9165e3264ced)
 - [神经网络与记忆](https://www.bilibili.com/video/BV1fV4y1i7hZ/?spm_id_from=333.1007.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
 - [陈天奇的机器学习编译课](https://www.bilibili.com/video/BV15v4y1g7EU/?is_story_h5=false&p=1&share_from=ugc&share_medium=android&share_plat=android&share_session_id=5a312434-ccf7-4cb9-862a-17a601cc4d35&share_source=COPY&share_tag=s_i&timestamp=1661386914&unique_k=zCWMKGC&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
-- [基于梯度的机器学习IT原理](https://zhuanlan.zhihu.com/p/518198564)
+- [基于梯度的机器学习 IT 原理](https://zhuanlan.zhihu.com/p/518198564)
 
 ### 开源示例
 
 - [KAN 2.0](https://blog.csdn.net/qq_44681809/article/details/141355718)
-- [radiate--衍生NEAT的纯Rust库](https://github.com/pkalivas/radiate)
+- [radiate--衍生 NEAT 的纯 Rust 库](https://github.com/pkalivas/radiate)
 - [neat-rs](https://github.com/dbsxdbsx/neat-rs)
-- [纯Rust的NEAT+GRU](https://github.com/sakex/neat-gru-Rust)
-- [Rusty_sr-纯Rust的基于dl的图像超清](https://github.com/millardjn/Rusty_sr)
-- [ndarray_glm(可参考下 `array!`，分布，以及原生的BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
-- [PyToy--基于MatrixSlow的Python机器学习框架](https://github.com/ysj1173886760/PyToy)
-- [MatrixSlow--纯python写的神经网络库](https://github.com/zc911/MatrixSlow)
-- [python：遗传算法（GE）玩FlappyBird](https://github.com/ShuhuaGao/gpFlappyBird)
-- [python包：遗传规划gplearn](https://gplearn.readthedocs.io/en/stable/examples.html)
-- [python包：遗传规划deap](https://deap.readthedocs.io/en/master/examples/gp_symbreg.html)
-- [python包：特征自动提取](https://github.com/IIIS-Li-Group/OpenFE)
-- [NTK网络](https://zhuanlan.zhihu.com/p/682231092)
+- [纯 Rust 的 NEAT+GRU](https://github.com/sakex/neat-gru-Rust)
+- [Rusty_sr-纯 Rust 的基于 dl 的图像超清](https://github.com/millardjn/Rusty_sr)
+- [ndarray_glm(可参考下 `array!`，分布，以及原生的 BLAS)](https://docs.rs/ndarray-glm/latest/ndarray_glm/)
+- [PyToy--基于 MatrixSlow 的 Python 机器学习框架](https://github.com/ysj1173886760/PyToy)
+- [MatrixSlow--纯 python 写的神经网络库](https://github.com/zc911/MatrixSlow)
+- [python：遗传算法（GE）玩 FlappyBird](https://github.com/ShuhuaGao/gpFlappyBird)
+- [python 包：遗传规划 gplearn](https://gplearn.readthedocs.io/en/stable/examples.html)
+- [python 包：遗传规划 deap](https://deap.readthedocs.io/en/master/examples/gp_symbreg.html)
+- [python 包：特征自动提取](https://github.com/IIIS-Li-Group/OpenFE)
+- [NTK 网络](https://zhuanlan.zhihu.com/p/682231092)
 
-（较为成熟的3方库）
+（较为成熟的 3 方库）
 
-- [Burn—纯rust深度学习库](https://github.com/Tracel-AI/burn)
-- [Candle:纯rust较成熟的机器学习库](https://github.com/huggingface/candle)
-- [用纯numpy写各类机器学习算法](https://github.com/ddbourgin/numpy-ml)
+- [Burn—纯 rust 深度学习库](https://github.com/Tracel-AI/burn)
+- [Candle:纯 rust 较成熟的机器学习库](https://github.com/huggingface/candle)
+- [用纯 numpy 写各类机器学习算法](https://github.com/ddbourgin/numpy-ml)
   （自动微分参考）
 - [手工微分：Rust-CNN](https://github.com/goldstraw/RustCNN)
-- [neuronika--纯Rust深度学习库（更新停滞了，参考下自动微分部分）](https://github.com/neuronika/neuronika)
-- [基于TinyGrad的python深度学习库的RL示例](https://github.com/DHDev0/TinyRL/tree/main)
-- [重点：Rust- ---支持cuda的Rust深度学习库(参考下自动微分部分)](https://docs.rs/dfdx/latest/dfdx/)
-- [重点：基于ndarray的反向autoDiff库](https://github.com/raskr/rust-autograd)
-- [前向autoDiff(貌似不成熟)](https://github.com/elrnv/autodiff)
+- [neuronika--纯 Rust 深度学习库（更新停滞了，参考下自动微分部分）](https://github.com/neuronika/neuronika)
+- [基于 TinyGrad 的 python 深度学习库的 RL 示例](https://github.com/DHDev0/TinyRL/tree/main)
+- [重点：Rust- ---支持 cuda 的 Rust 深度学习库(参考下自动微分部分)](https://docs.rs/dfdx/latest/dfdx/)
+- [重点：基于 ndarray 的反向 autoDiff 库](https://github.com/raskr/rust-autograd)
+- [前向 autoDiff(貌似不成熟)](https://github.com/elrnv/autodiff)
 - []
-- [深度学习框架InsNet简介](https://zhuanlan.zhihu.com/p/378684569)
-- [C++机器学习库MLPACK](https://www.mlpack.org/)
-- [经典机器学习算法Rust库](https://github.com/Rust-ml/linfa)
-- [peroxide--纯Rust的线代及周边库](https://crates.io/crates/peroxide)
-- [C++实现的NEAT+LSTM/GRU/CNN](https://github.com/travisdesell/exact)
+- [深度学习框架 InsNet 简介](https://zhuanlan.zhihu.com/p/378684569)
+- [C++机器学习库 MLPACK](https://www.mlpack.org/)
+- [经典机器学习算法 Rust 库](https://github.com/Rust-ml/linfa)
+- [peroxide--纯 Rust 的线代及周边库](https://crates.io/crates/peroxide)
+- [C++实现的 NEAT+LSTM/GRU/CNN](https://github.com/travisdesell/exact)
 - [pytorch+NEAT](https://github.com/ddehueck/pytorch-neat)
-- [avalog--基于avatar的Rust逻辑推理库](https://crates.io/crates/avalog)
+- [avalog--基于 avatar 的 Rust 逻辑推理库](https://crates.io/crates/avalog)
 
 ### NEAT、神经架构进化
 
 - [用梯度指导神经架构进化：Splitting Steepest Descent](https://www.cs.utexas.edu/~qlearning/project.html?p=splitting)
 - [Deep Mad，将卷积网络设计为一个数学建模问题](https://www.bilibili.com/video/BV1HP411R74T/?spm_id_from=333.999.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
-- [动态蛇形卷积DSCNet](https://www.bilibili.com/video/BV1J84y1d7yG/?spm_id_from=333.1007.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
-- [autoML介绍](https://www.zhihu.com/question/554255720/answer/2750670583)
+- [动态蛇形卷积 DSCNet](https://www.bilibili.com/video/BV1J84y1d7yG/?spm_id_from=333.1007.0.0&vd_source=3facc3cb195be0a27a0ea9a4eb3bb6fe)
+- [autoML 介绍](https://www.zhihu.com/question/554255720/answer/2750670583)
 
 ### 符号派：逻辑/因果推断
 
-- [scryer-prolog--Rust逻辑推理库](https://github.com/mthom/scryer-prolog)
+- [scryer-prolog--Rust 逻辑推理库](https://github.com/mthom/scryer-prolog)
 - [vampire:自动证明器](https://github.com/vprover/vampire?tab=readme-ov-file)
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
-- [结合prolog和RL](https://arxiv.org/abs/2004.06997)
-- [prolog与4证人难题](https://prolog.longluntan.com/t9-topic)
-- [logic+mL提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)
-- [prolog解决数独问题](https://prolog.longluntan.com/t107-topic)
+- [结合 prolog 和 RL](https://arxiv.org/abs/2004.06997)
+- [prolog 与 4 证人难题](https://prolog.longluntan.com/t9-topic)
+- [logic+mL 提问](https://ai.stackexchange.com/questions/16224/has-machine-learning-been-combined-with-logical-reasoning-for-example-prolog)
+- [prolog 解决数独问题](https://prolog.longluntan.com/t107-topic)
 - [贝叶斯与逻辑推理](https://stats.stackexchange.com/questions/243746/what-is-probabilistic-inference)
 - [用一阶逻辑辅佐人工神经网络](https://www.cs.cmu.edu/~hovy/papers/16ACL-NNs-and-logic.pdf)
 - [二阶逻辑杂谈](https://blog.csdn.net/VucNdnrzk8iwX/article/details/128928166)
 - [关于二阶逻辑的概念问题](https://www.zhihu.com/question/321025032/answer/702580771?utm_id=0)
 - [PWL:基于贝叶斯的自然语言处理](https://github.com/asaparov/PWL)
 - [Symbolic Learning Enables Self-Evolving Agents](https://arxiv.org/abs/2406.18532)
-- ASTRID系统（Mind|Construct, 2017）
+- ASTRID 系统（Mind|Construct, 2017）
 - 归纳逻辑编程（Inductive Logic Programming, ILP）
 - 书：《The Book of Why》
 - 书：《Causality:Models,Reasoning,and Inference》
@@ -168,7 +168,7 @@
 ### 神经网络的可解释性
 
 - [可解释性核心——神经网络的知识表达瓶颈](https://zhuanlan.zhihu.com/p/422420088/)
-- [神经网络可解释性：论统一14种输入重要性归因算法](https://zhuanlan.zhihu.com/p/610774894/)
+- [神经网络可解释性：论统一 14 种输入重要性归因算法](https://zhuanlan.zhihu.com/p/610774894/)
 - [神经网络的可解释性](https://zhuanlan.zhihu.com/p/341153242)
 - [可解释的哈萨尼网络](https://zhuanlan.zhihu.com/p/643213054)
 
@@ -176,7 +176,7 @@
 
 - [mle-hyperopt](https://github.com/mle-infrastructure/mle-hyperopt)
 
-### CPU加速
+### CPU 加速
 
 - [SLIDE](https://arxiv.org/abs/2103.10891)
 - [Rust+AVX](https://medium.com/@Razican/learning-simd-with-Rust-by-finding-planets-b85ccfb724c3)
@@ -184,33 +184,33 @@
 
 ### 强化学习
 
-- [Sac用以复合Action](https://arxiv.org/pdf/1912.11077v1.pdf)
+- [Sac 用以复合 Action](https://arxiv.org/pdf/1912.11077v1.pdf)
 - [EfficientZero](https://arxiv.org/abs/2111.00210)
 - [EfficientZero Remastered](https://www.gigglebit.net/blog/efficientzero)
 - [EfficientZero V2: Mastering Discrete and Continuous Control with Limited Data](https://arxiv.org/abs/2403.00564v2)
 - [SpeedyZero](https://openreview.net/forum?id=Mg5CLXZgvLJ)
-- [LightZero系列](https://github.com/opendilab/LightZero?tab=readme-ov-file)
-- [随机MuZero代码](https://github.com/DHDev0/Stochastic-muzero)
+- [LightZero 系列](https://github.com/opendilab/LightZero?tab=readme-ov-file)
+- [随机 MuZero 代码](https://github.com/DHDev0/Stochastic-muzero)
 - [Redeeming Intrinsic Rewards via Constrained Optimization](https://williamd4112.github.io/pubs/neurips22_eipo.pdf)
 - [Learning Reward Machines for Partially Observable Reinforcement Learning](https://arxiv.org/abs/2112.09477)
-- [combo代码](https://github.com/Shylock-H/COMBO_Offline_RL)
-- [2023最新model-based offline算法：MOREC](https://arxiv.org/abs/2310.05422)
-- [众多model-base/free的offline算法](https://github.com/yihaosun1124/OfflineRL-Kit)
-- [model-free offline算法：MCQ解析](https://zhuanlan.zhihu.com/p/588444380)
-- [RL论文列表（curiosity、offline、uncertainty，safe）](https://github.com/yingchengyang/Reinforcement-Learning-Papers)
-- [代替Gym的综合库](https://gymnasium.farama.org/)
+- [combo 代码](https://github.com/Shylock-H/COMBO_Offline_RL)
+- [2023 最新 model-based offline 算法：MOREC](https://arxiv.org/abs/2310.05422)
+- [众多 model-base/free 的 offline 算法](https://github.com/yihaosun1124/OfflineRL-Kit)
+- [model-free offline 算法：MCQ 解析](https://zhuanlan.zhihu.com/p/588444380)
+- [RL 论文列表（curiosity、offline、uncertainty，safe）](https://github.com/yingchengyang/Reinforcement-Learning-Papers)
+- [代替 Gym 的综合库](https://gymnasium.farama.org/)
 
 ### rust+大语言模型（LLM）
 
 - [BionicGpt](https://github.com/bionic-gpt/bionic-gpt)
-- [适用对话的Rust终端UI？](https://dustinblackman.com/posts/oatmeal/)
-- [chatGpt相关论文](https://arxiv.org/abs/2203.02155)
+- [适用对话的 Rust 终端 UI？](https://dustinblackman.com/posts/oatmeal/)
+- [chatGpt 相关论文](https://arxiv.org/abs/2203.02155)
 
 ### （自动、交互式）定理证明
 
-- [关于lean的一篇文章](https://zhuanlan.zhihu.com/p/183902909#%E6%A6%82%E8%A7%88)
+- [关于 lean 的一篇文章](https://zhuanlan.zhihu.com/p/183902909#%E6%A6%82%E8%A7%88)
 - [Lean+LLM](https://github.com/lean-dojo/LeanDojo)
-- [陶哲轩使用Lean4](https://mp.weixin.qq.com/s/TYB6LgbhjvHYvkbWrEoDOg)
+- [陶哲轩使用 Lean4](https://mp.weixin.qq.com/s/TYB6LgbhjvHYvkbWrEoDOg)
 
 ```
 Formal Verification
@@ -225,23 +225,23 @@ Formal Verification
 
 ### 博弈论（game）
 
-- [Sprague-Grundy介绍1](https://zhuanlan.zhihu.com/p/157731188)
-- [Sprague-Grundy介绍2](https://zhuanlan.zhihu.com/p/20611132)
-- [Sprague-Grundy介绍3](https://zhuanlan.zhihu.com/p/357893255)
+- [Sprague-Grundy 介绍 1](https://zhuanlan.zhihu.com/p/157731188)
+- [Sprague-Grundy 介绍 2](https://zhuanlan.zhihu.com/p/20611132)
+- [Sprague-Grundy 介绍 3](https://zhuanlan.zhihu.com/p/357893255)
 
 ### 其他
 
 - [动手学深度学习-李沐著](https://zh-v2.d2l.ai/chapter_preliminaries/linear-algebra.html#subsec-lin-algebra-norms)
 - [openMMLab-Yolo](https://github.com/open-mmlab/mmyolo)
-- [GRU解释](https://www.pluralsight.com/guides/lstm-versus-gru-units-in-rnn)
-- [基于人类语音指挥的AI](https://arxiv.org/abs/1703.09831)
-- [webGPT会上网的gpt](https://arxiv.org/abs/2112.09332)
-- [LeCun的自监督世界模型](https://zhuanlan.zhihu.com/p/636997984)
+- [GRU 解释](https://www.pluralsight.com/guides/lstm-versus-gru-units-in-rnn)
+- [基于人类语音指挥的 AI](https://arxiv.org/abs/1703.09831)
+- [webGPT 会上网的 gpt](https://arxiv.org/abs/2112.09332)
+- [LeCun 的自监督世界模型](https://zhuanlan.zhihu.com/p/636997984)
 - [awesome Rust](https://github.com/Rust-unofficial/awesome-Rust#genetic-algorithms)
 - [去雾算法](https://blog.csdn.net/IT_job/article/details/78864236)
-- [rust人工智能相关的项目](https://github.com/rust-unofficial/awesome-rust#artificial-intelligence)
-- [《千脑智能》及相关github项目](https://www.numenta.com/thousand-brains-project/)
+- [rust 人工智能相关的项目](https://github.com/rust-unofficial/awesome-rust#artificial-intelligence)
+- [《千脑智能》及相关 github 项目](https://www.numenta.com/thousand-brains-project/)
 
 ## 遵循协议
 
-本项目遵循MIT协议（简言之：不约束，不负责）。
+本项目遵循 MIT 协议（简言之：不约束，不负责）。

@@ -11,9 +11,11 @@ mod mat_mul;
 mod multiply;
 mod scalar_multiply;
 mod step;
+mod tanh;
 
 pub(crate) use add::Add;
 pub(crate) use mat_mul::MatMul;
 pub(crate) use multiply::Multiply;
 pub(crate) use scalar_multiply::ScalarMultiply;
 pub(crate) use step::Step;
+pub(crate) use tanh::Tanh;

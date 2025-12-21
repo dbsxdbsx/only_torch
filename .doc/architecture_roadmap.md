@@ -44,12 +44,12 @@ neat/              0%       ❌ 远期特色
 | :--- | :--------------- | :--: |
 | 输入 | Input, Parameter |  ✅  |
 | 运算 | Add, MatMul      |  ✅  |
-| 激活 | Step             |  ✅  |
+| 激活 | Step, Tanh       |  ✅  |
 | 损失 | PerceptionLoss   |  ✅  |
 
 ## 缺失的关键节点
 
-- **激活函数**: Tanh, Softplus, ReLU, Sigmoid, Softmax
+- **激活函数**: Softplus, ReLU, Sigmoid, Softmax
 - **损失函数**: CrossEntropyLoss, MSELoss
 - **运算节点**: Sub, Neg, Mul(逐元素), Div, Reshape
 
@@ -57,14 +57,15 @@ neat/              0%       ❌ 远期特色
 
 > 对应 MatrixSlow Python 示例的 Rust 实现验证
 
-| Rust 测试 | 对应 MatrixSlow 示例 | 状态 | 说明 |
-|-----------|---------------------|:----:|------|
-| `test_adaline.rs` | `ch02/adaline.py` | ✅ | 最基础的计算图+自动微分 |
-| `test_adaline_batch.rs` | `ch03/adaline_batch.py` | ✅ | 批量处理 |
-| `test_optimizer_example.rs` | `ch03/optimizer_example.py` | ✅ | SGD/Adam优化器验证 |
-| `test_logistic_regression.rs` | `ch04/logistic_regression.py` | ❌ | 需要Sigmoid节点 |
-| `test_nn_iris.rs` | `ch05/nn_iris.py` | ❌ | 需要多层网络+Softmax |
-| `test_nn_mnist.rs` | `ch05/nn_mnist.py` | ❌ | 需要MNIST数据加载 |
+| Rust 测试                     | 对应 MatrixSlow 示例          | 状态 | 说明                         |
+| ----------------------------- | ----------------------------- | :--: | ---------------------------- |
+| `test_adaline.rs`             | `ch02/adaline.py`             |  ✅  | 最基础的计算图+自动微分      |
+| `test_adaline_batch.rs`       | `ch03/adaline_batch.py`       |  ✅  | 批量处理                     |
+| `test_optimizer_example.rs`   | `ch03/optimizer_example.py`   |  ✅  | SGD/Adam 优化器验证          |
+| `test_xor.rs`                 | -                             |  ✅  | **MVP 展示：非线性分类问题** |
+| `test_logistic_regression.rs` | `ch04/logistic_regression.py` |  ❌  | 需要 Sigmoid 节点            |
+| `test_nn_iris.rs`             | `ch05/nn_iris.py`             |  ❌  | 需要多层网络+Softmax         |
+| `test_nn_mnist.rs`            | `ch05/nn_mnist.py`            |  ❌  | 需要 MNIST 数据加载          |
 
 ---
 
@@ -72,14 +73,14 @@ neat/              0%       ❌ 远期特色
 
 ### MVP: XOR with Optimizer (2-3 周)
 
-|  #  | 任务                 | 说明                          | 验收                  | NEAT 友好性 | 状态 |
-| :-: | :------------------- | :---------------------------- | :-------------------- | :---------- | :--: |
-| M1  | Optimizer 基础功能   | SGD/Adam 参数更新             | 参数能正常更新        | ✅ 无影响   |  ✅  |
-| M1b | Granular 种子 API    | `_seeded` 方法确保测试可重复  | 集成测试确定性        | ✅ 无影响   |  ✅  |
-| M2  | 实现 Tanh 节点       | XOR 必需的非线性激活          | forward/backward 正确 | ✅ 新节点   |  ❌  |
-| M3  | XOR 监督学习示例     | 用 Optimizer 端到端训练       | 收敛>99%              | ✅ 验证     |  ❌  |
-| M4  | 验证图的动态扩展能力 | 确保 Graph 支持运行时添加节点 | 单元测试通过          | ⭐ 关键     |  ❌  |
-| M4b | Graph 级别种子 API   | `Graph::new_with_seed()` 简化用户代码 | 详见 [API分层设计](design/api_layering_and_seed_design.md) | ⭐ 关键 | ❌ |
+|  #  | 任务                 | 说明                                  | 验收                                                        | NEAT 友好性 | 状态 |
+| :-: | :------------------- | :------------------------------------ | :---------------------------------------------------------- | :---------- | :--: |
+| M1  | Optimizer 基础功能   | SGD/Adam 参数更新                     | 参数能正常更新                                              | ✅ 无影响   |  ✅  |
+| M1b | Granular 种子 API    | `_seeded` 方法确保测试可重复          | 集成测试确定性                                              | ✅ 无影响   |  ✅  |
+| M2  | 实现 Tanh 节点       | XOR 必需的非线性激活                  | forward/backward 正确                                       | ✅ 新节点   |  ✅  |
+| M3  | XOR 监督学习示例     | 用 Optimizer 端到端训练               | 收敛 100%                                                   | ✅ 验证     |  ✅  |
+| M4  | 验证图的动态扩展能力 | 确保 Graph 支持运行时添加节点         | 单元测试通过                                                | ⭐ 关键     |  ❌  |
+| M4b | Graph 级别种子 API   | `Graph::new_with_seed()` 简化用户代码 | 详见 [API 分层设计](design/api_layering_and_seed_design.md) | ⭐ 关键     |  ❌  |
 
 ### 阶段二：MNIST 基础 (4-6 周)
 
@@ -132,17 +133,11 @@ only_torch/
 
 ## 下一步行动计划
 
-### 当前优先：M2 实现 Tanh 节点
+### ✅ 已完成：M2 Tanh 节点 & M3 XOR 示例
 
-XOR 问题需要非线性激活函数。Tanh 是最简单的选择：
+XOR 问题已成功解决！网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 收敛到 100%准确率。
 
-```rust
-// Tanh节点实现要点
-// forward: tanh(x) = (e^x - e^-x) / (e^x + e^-x)
-// backward: d(tanh)/dx = 1 - tanh²(x)
-```
-
-### M4 关键：验证 NEAT 友好性
+### 当前优先：M4 验证 NEAT 友好性
 
 在 MVP 完成后，必须验证 Graph 的动态扩展能力：
 

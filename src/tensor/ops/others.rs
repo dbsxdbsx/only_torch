@@ -677,4 +677,28 @@ impl Tensor {
         self.data = diag_vector;
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓tanh↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用双曲正切函数(tanh)
+    ///
+    /// tanh(x) = (e^x - e^(-x)) / (e^x + e^(-x))
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[0.0, 1.0, -1.0], &[3]);
+    /// let y = x.tanh();
+    /// // y ≈ [0.0, 0.7616, -0.7616]
+    /// ```
+    pub fn tanh(&self) -> Self {
+        let data = self.data.mapv(|x| x.tanh());
+        Self { data }
+    }
+
+    /// 就地对张量的每个元素应用双曲正切函数(tanh)
+    pub fn tanh_mut(&mut self) {
+        self.data.mapv_inplace(|x| x.tanh());
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑tanh↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

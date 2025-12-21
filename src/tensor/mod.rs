@@ -90,6 +90,16 @@ impl Tensor {
         Self { data }
     }
 
+    /// 创建一个全1的张量。
+    /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
+    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
+    /// 若为矩阵，`shape`可以是[n,m]；
+    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
+    pub fn ones(shape: &[usize]) -> Self {
+        let data = Array::ones(IxDyn(shape));
+        Self { data }
+    }
+
     /// 创建一个含`n`个对角元素的单位矩阵。
     /// 注：n必须大于0，否则会panic。
     pub fn eyes(n: usize) -> Self {
