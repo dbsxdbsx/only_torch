@@ -12,10 +12,10 @@ use crate::errors::{Operator, TensorError};
 
 use crate::tensor::Tensor;
 use ndarray::{Array, Axis, IxDyn, Zip};
+use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use rand::SeedableRng;
 
 impl From<f32> for Tensor {
     /// 实现 From<f32> trait 用于将`f32`类型转换为形状为`[1,1]`的张量
@@ -586,12 +586,13 @@ impl Tensor {
             "张量维度必须为1或2"
         );
 
-        // 处理标量情况
+        // 处理标量情况（size==1 时保持形状不变）
         if self.size() == 1 {
             return self.clone();
         }
 
         // 处理向量情况
+        // 注意：向量 [n] -> 对角矩阵 [n, n]
         if self.is_vector() {
             let n = self.size();
             let mut diag_data = vec![0.0; n * n];
@@ -605,6 +606,7 @@ impl Tensor {
         }
 
         // 处理方阵情况
+        // 注意：方阵 [n, n] -> 对角向量 [n]
         let shape = self.data.shape();
         assert!(
             !(shape.len() != 2 || shape[0] != shape[1]),
@@ -654,12 +656,13 @@ impl Tensor {
             "张量维度必须为1或2"
         );
 
-        // 处理标量情况
+        // 处理标量情况（size==1 时保持形状不变）
         if self.size() == 1 {
             return;
         }
 
         // 处理向量情况
+        // 注意：向量 [n] -> 对角矩阵 [n, n]
         if self.is_vector() {
             let n = self.size();
             let mut diag_data = vec![0.0; n * n];
@@ -672,6 +675,7 @@ impl Tensor {
         }
 
         // 处理方阵情况
+        // 注意：方阵 [n, n] -> 对角向量 [n]
         let shape = self.data.shape();
         assert!(
             !(shape.len() != 2 || shape[0] != shape[1]),
@@ -682,6 +686,41 @@ impl Tensor {
         self.data = diag_vector;
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓jacobi_diag↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 将张量转换为用于 Jacobian 计算的对角矩阵
+    ///
+    /// 专为神经网络反向传播设计：将逐元素操作的导数转换为对角 Jacobian 矩阵。
+    /// 与 `diag()` 不同，本方法**始终返回 2D 矩阵**，确保与 `mat_mul` 兼容。
+    ///
+    /// 转换规则：
+    /// - 任意形状 → 展平为 `[n]` → 对角矩阵 `[n, n]`
+    /// - 特别地，`size=1` 时返回 `[1, 1]` 而非 `[1]`
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // 标量导数 → [1, 1] 矩阵
+    /// let scalar = Tensor::new(&[0.25], &[1]);
+    /// let jacobi = scalar.jacobi_diag();
+    /// assert_eq!(jacobi.shape(), &[1, 1]);
+    ///
+    /// // 向量导数 → 对角矩阵
+    /// let vector = Tensor::new(&[0.1, 0.2, 0.3], &[3]);
+    /// let jacobi = vector.jacobi_diag();
+    /// assert_eq!(jacobi.shape(), &[3, 3]);
+    /// ```
+    pub fn jacobi_diag(&self) -> Self {
+        let n = self.size();
+        if n == 1 {
+            // 标量情况：返回 [1, 1] 矩阵以兼容 mat_mul
+            return Self::new(&[self.data.iter().next().copied().unwrap()], &[1, 1]);
+        }
+        // 一般情况：展平后构建对角矩阵
+        self.flatten().diag()
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑jacobi_diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓tanh↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 对张量的每个元素应用双曲正切函数(tanh)
@@ -706,4 +745,28 @@ impl Tensor {
         self.data.mapv_inplace(|x| x.tanh());
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑tanh↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓sigmoid↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 Sigmoid 函数
+    ///
+    /// sigmoid(x) = 1 / (1 + e^(-x))
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[0.0, 1.0, -1.0], &[3]);
+    /// let y = x.sigmoid();
+    /// // y ≈ [0.5, 0.7311, 0.2689]
+    /// ```
+    pub fn sigmoid(&self) -> Self {
+        let data = self.data.mapv(|x| 1.0 / (1.0 + (-x).exp()));
+        Self { data }
+    }
+
+    /// 就地对张量的每个元素应用 Sigmoid 函数
+    pub fn sigmoid_mut(&mut self) {
+        self.data.mapv_inplace(|x| 1.0 / (1.0 + (-x).exp()));
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑sigmoid↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

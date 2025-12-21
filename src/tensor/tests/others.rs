@@ -1151,3 +1151,61 @@ fn test_diag_mut() {
     assert_panic!(tensor.diag_mut(), "张量维度必须为1或2");
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓jacobi_diag↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_jacobi_diag() {
+    // 1. 标量情况：始终返回 [1, 1] 矩阵（与 diag() 不同）
+    // 1D 标量
+    let tensor = Tensor::new(&[0.25], &[1]);
+    let jacobi = tensor.jacobi_diag();
+    assert_eq!(jacobi.shape(), &[1, 1]);
+    assert_eq!(jacobi, Tensor::new(&[0.25], &[1, 1]));
+
+    // 2D 标量
+    let tensor = Tensor::new(&[0.5], &[1, 1]);
+    let jacobi = tensor.jacobi_diag();
+    assert_eq!(jacobi.shape(), &[1, 1]);
+    assert_eq!(jacobi, Tensor::new(&[0.5], &[1, 1]));
+
+    // 2. 向量情况：与 diag() 行为一致
+    let tensor = Tensor::new(&[0.1, 0.2, 0.3], &[3]);
+    let jacobi = tensor.jacobi_diag();
+    assert_eq!(jacobi.shape(), &[3, 3]);
+    assert_eq!(
+        jacobi,
+        Tensor::new(
+            &[0.1, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.3],
+            &[3, 3]
+        )
+    );
+
+    // 3. 2D 张量情况：先 flatten 再转对角矩阵
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let jacobi = tensor.jacobi_diag();
+    assert_eq!(jacobi.shape(), &[4, 4]);
+    #[rustfmt::skip]
+    let expected = Tensor::new(
+        &[1.0, 0.0, 0.0, 0.0,
+          0.0, 2.0, 0.0, 0.0,
+          0.0, 0.0, 3.0, 0.0,
+          0.0, 0.0, 0.0, 4.0],
+        &[4, 4]
+    );
+    assert_eq!(jacobi, expected);
+
+    // 4. 高维张量：flatten 后转对角矩阵
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let jacobi = tensor.jacobi_diag();
+    assert_eq!(jacobi.shape(), &[6, 6]);
+
+    // 5. 验证与 mat_mul 兼容性（核心用途）
+    let derivative = Tensor::new(&[0.19661193], &[1]); // sigmoid'(0) ≈ 0.25
+    let jacobi = derivative.jacobi_diag();
+    assert_eq!(jacobi.shape(), &[1, 1]);
+    // 可以进行 mat_mul 操作
+    let upstream = Tensor::new(&[1.0], &[1, 1]);
+    let result = upstream.mat_mul(&jacobi);
+    assert_eq!(result.shape(), &[1, 1]);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑jacobi_diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

@@ -18,11 +18,11 @@
 
 ### 使用示例
 
+- **[Adaline 自适应线性神经元](tests/test_adaline.rs)** - 经典二分类算法实现，本例使用了最原始的写法来构建计算图、自动微分和参数更新，适合初学者理解框架底层机制。测试显示 1000 样本 10 轮训练可达 95%+准确率（运行：`cargo test test_adaline -- --show-output`）
+
+- **[优化器示例](tests/test_optimizer_example.rs)** - 在 Adaline 基础上引入 SGD 优化器，展示 mini-batch 训练、准确率评估等完整训练流程。演示了 Granular 种子 API 和 Graph 级别种子 API 的用法对比（运行：`cargo test test_optimizer_example -- --show-output`）
+
 - **[XOR 异或问题](tests/test_xor.rs)** ⭐ - 经典非线性分类问题，展示多层网络的能力。网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 即可达到 100% 准确率。这是验证神经网络能够学习非线性函数的经典测试（运行：`cargo test test_xor -- --show-output`）
-
-- **[优化器示例](tests/test_optimizer_example.rs)** - 使用 SGD 优化器的完整训练流程，包含 mini-batch 训练、准确率评估。展示了 Granular 种子 API 和 Graph 级别种子 API 的用法对比（运行：`cargo test test_optimizer_example -- --show-output`）
-
-- **[Adaline 自适应线性神经元](tests/test_adaline.rs)** - 经典二分类算法实现，本例使用了最原始的写法来构建计算图、自动微分和参数更新，测试显示 1000 样本 10 轮训练可达 95%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
 

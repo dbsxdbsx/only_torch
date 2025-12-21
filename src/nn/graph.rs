@@ -756,6 +756,15 @@ impl Graph {
         self.add_node_to_list(handle, name, "tanh", &[parent_id])
     }
 
+    pub fn new_sigmoid_node(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_sigmoid(&self.get_nodes(&[parent_id])?)?;
+        self.add_node_to_list(handle, name, "sigmoid", &[parent_id])
+    }
+
     pub fn new_perception_loss_node(
         &mut self,
         parent_id: NodeId,

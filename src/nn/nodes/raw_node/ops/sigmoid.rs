@@ -3,12 +3,12 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
 
-/// Tanh激活函数节点
+/// Sigmoid 激活函数节点
 ///
-/// forward: tanh(x) = (e^x - e^(-x)) / (e^x + e^(-x))
-/// backward: d(tanh)/dx = 1 - tanh²(x)
+/// forward: sigmoid(x) = 1 / (1 + e^(-x))
+/// backward: d(sigmoid)/dx = sigmoid(x) * (1 - sigmoid(x))
 #[derive(Clone)]
-pub(crate) struct Tanh {
+pub(crate) struct Sigmoid {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
@@ -16,13 +16,13 @@ pub(crate) struct Tanh {
     shape: Vec<usize>,
 }
 
-impl Tanh {
+impl Sigmoid {
     pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
         // 1. 必要的验证
         // 1.1 父节点数量验证
         if parents.len() != 1 {
             return Err(GraphError::InvalidOperation(
-                "Tanh节点只需要1个父节点".to_string(),
+                "Sigmoid节点只需要1个父节点".to_string(),
             ));
         }
 
@@ -37,7 +37,7 @@ impl Tanh {
     }
 }
 
-impl TraitNode for Tanh {
+impl TraitNode for Sigmoid {
     fn id(&self) -> NodeId {
         self.id.unwrap()
     }
@@ -68,9 +68,8 @@ impl TraitNode for Tanh {
             ))
         })?;
 
-        // 2. 计算tanh(x) = (e^x - e^(-x)) / (e^x + e^(-x))
-        // 等价于 tanh(x) = 2 / (1 + e^(-2x)) - 1，这种形式数值更稳定
-        self.value = Some(parent_value.tanh());
+        // 2. 计算 sigmoid(x) = 1 / (1 + e^(-x))
+        self.value = Some(parent_value.sigmoid());
         Ok(())
     }
 
@@ -83,7 +82,7 @@ impl TraitNode for Tanh {
         _target_parent: &NodeHandle,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // tanh 的导数: d(tanh(x))/dx = 1 - tanh²(x)
+        // sigmoid 的导数: d(sigmoid(x))/dx = sigmoid(x) * (1 - sigmoid(x))
         // 由于是逐元素操作，雅可比矩阵是对角矩阵
         let value = self.value().ok_or_else(|| {
             GraphError::ComputationError(format!(
@@ -92,9 +91,9 @@ impl TraitNode for Tanh {
             ))
         })?;
 
-        // 计算 1 - tanh²(x)，并转换为 Jacobian 对角矩阵
-        let tanh_squared = value * value;
-        let derivative = Tensor::ones(value.shape()) - tanh_squared;
+        // 计算 sigmoid(x) * (1 - sigmoid(x))，并转换为 Jacobian 对角矩阵
+        let one_minus_sigmoid = Tensor::ones(value.shape()) - value;
+        let derivative = value * &one_minus_sigmoid;
         Ok(derivative.jacobi_diag())
     }
 
