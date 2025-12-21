@@ -3,6 +3,7 @@
  * @Date         : 2025-12-21
  * @Description  : MNIST Batch 机制集成测试
  *                 验证：batch forward/backward + Adam 优化器的高效训练
+ *                 使用 MatMul 实现 bias 广播（ones @ bias）
  * @LastEditors  : 老董
  * @LastEditTime : 2025-12-21
  */
@@ -10,18 +11,19 @@
 use only_torch::data::MnistDataset;
 use only_torch::nn::optimizer::{Adam, Optimizer};
 use only_torch::nn::{Graph, GraphError};
+use only_torch::tensor::Tensor;
 use only_torch::tensor::slice::IntoSliceInfo;
 use std::time::Instant;
 
 /// MNIST Batch 集成测试
 ///
-/// 使用批量机制训练 MLP，验证准确率达到 95% 目标
+/// 使用批量机制训练 MLP（含 bias），验证准确率达到目标
 #[test]
 fn test_mnist_batch() -> Result<(), GraphError> {
     let start_time = Instant::now();
 
     println!("\n{}", "=".repeat(60));
-    println!("=== MNIST Batch 集成测试 ===");
+    println!("=== MNIST Batch 集成测试（含 bias）===");
     println!("{}\n", "=".repeat(60));
 
     // ========== 1. 加载数据 ==========
@@ -49,7 +51,7 @@ fn test_mnist_batch() -> Result<(), GraphError> {
     let max_epochs = 15;
     let num_batches = train_samples / batch_size;
     let learning_rate = 0.001;
-    let target_accuracy = 0.90; // 90% 准确率目标（无 bias 的 MLP）
+    let target_accuracy = 0.90; // 90% 准确率目标
     let consecutive_success_required = 2;
 
     println!("\n[2/4] 训练配置：");
@@ -64,7 +66,7 @@ fn test_mnist_batch() -> Result<(), GraphError> {
     println!("  - 目标准确率: {:.0}%", target_accuracy * 100.0);
 
     // ========== 3. 构建网络 ==========
-    println!("\n[3/4] 构建 MLP 网络: 784 -> 128 (Sigmoid) -> 10...");
+    println!("\n[3/4] 构建 MLP 网络: 784 -> 128 (Sigmoid+bias) -> 10 (bias)...");
 
     let mut graph = Graph::new_with_seed(42);
 
@@ -72,24 +74,37 @@ fn test_mnist_batch() -> Result<(), GraphError> {
     let x = graph.new_input_node(&[batch_size, 784], Some("x"))?;
     let y = graph.new_input_node(&[batch_size, 10], Some("y"))?;
 
-    // 隐藏层：784 -> 128（无 bias，Add 暂不支持广播）
+    // 用于 bias 广播的 ones 矩阵 [batch_size, 1]
+    let ones = graph.new_input_node(&[batch_size, 1], Some("ones"))?;
+
+    // 隐藏层：784 -> 128（使用 ones @ b1 实现 bias 广播）
     let w1 = graph.new_parameter_node_seeded(&[784, 128], Some("w1"), 42)?;
-    let z1 = graph.new_mat_mul_node(x, w1, None)?;
-    let a1 = graph.new_sigmoid_node(z1, None)?;
+    let b1 = graph.new_parameter_node_seeded(&[1, 128], Some("b1"), 43)?;
+    let z1 = graph.new_mat_mul_node(x, w1, None)?; // [batch, 784] @ [784, 128] = [batch, 128]
+    let b1_broadcast = graph.new_mat_mul_node(ones, b1, None)?; // [batch, 1] @ [1, 128] = [batch, 128]
+    let h1 = graph.new_add_node(&[z1, b1_broadcast], None)?; // [batch, 128] + [batch, 128]
+    let a1 = graph.new_sigmoid_node(h1, None)?;
 
     // 输出层：128 -> 10
     let w2 = graph.new_parameter_node_seeded(&[128, 10], Some("w2"), 44)?;
-    let logits = graph.new_mat_mul_node(a1, w2, None)?;
+    let b2 = graph.new_parameter_node_seeded(&[1, 10], Some("b2"), 45)?;
+    let z2 = graph.new_mat_mul_node(a1, w2, None)?; // [batch, 128] @ [128, 10] = [batch, 10]
+    let b2_broadcast = graph.new_mat_mul_node(ones, b2, None)?; // [batch, 1] @ [1, 10] = [batch, 10]
+    let logits = graph.new_add_node(&[z2, b2_broadcast], None)?; // [batch, 10] + [batch, 10]
 
     // 损失函数
     let loss = graph.new_softmax_cross_entropy_node(logits, y, Some("loss"))?;
 
-    println!("  ✓ 网络构建完成");
+    println!("  ✓ 网络构建完成（含 bias 广播）");
 
     // ========== 4. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");
 
     let mut optimizer = Adam::new(&graph, learning_rate, 0.9, 0.999, 1e-8)?;
+
+    // 设置 ones 矩阵（全 1）
+    let ones_tensor = Tensor::ones(&[batch_size, 1]);
+    graph.set_node_value(ones, Some(&ones_tensor))?;
 
     let all_train_images = train_data.images();
     let all_train_labels = train_data.labels();
@@ -110,8 +125,7 @@ fn test_mnist_batch() -> Result<(), GraphError> {
             let end = start + batch_size;
             let row_range = start..end;
 
-            let batch_images =
-                all_train_images.slice(&[&row_range as &dyn IntoSliceInfo, &(..)]);
+            let batch_images = all_train_images.slice(&[&row_range as &dyn IntoSliceInfo, &(..)]);
             let batch_labels =
                 all_train_labels.slice(&[&(start..end) as &dyn IntoSliceInfo, &(..)]);
 
@@ -136,10 +150,8 @@ fn test_mnist_batch() -> Result<(), GraphError> {
             let end = start + batch_size;
             let row_range = start..end;
 
-            let batch_images =
-                all_test_images.slice(&[&row_range as &dyn IntoSliceInfo, &(..)]);
-            let batch_labels =
-                all_test_labels.slice(&[&(start..end) as &dyn IntoSliceInfo, &(..)]);
+            let batch_images = all_test_images.slice(&[&row_range as &dyn IntoSliceInfo, &(..)]);
+            let batch_labels = all_test_labels.slice(&[&(start..end) as &dyn IntoSliceInfo, &(..)]);
 
             graph.set_node_value(x, Some(&batch_images))?;
             graph.set_node_value(y, Some(&batch_labels))?;
@@ -220,7 +232,9 @@ fn test_mnist_batch() -> Result<(), GraphError> {
         println!("\n{}", "=".repeat(60));
         println!(
             "❌ 测试失败：在 {} 个 epoch 内未能连续 {} 次达到 {:.0}% 准确率",
-            max_epochs, consecutive_success_required, target_accuracy * 100.0
+            max_epochs,
+            consecutive_success_required,
+            target_accuracy * 100.0
         );
         println!("{}\n", "=".repeat(60));
         Err(GraphError::ComputationError(format!(
