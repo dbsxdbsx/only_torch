@@ -33,7 +33,7 @@
 ─────────────────────────────────
 tensor/            ~80%     ✅ 基本完成
 nn/graph           ~90%     ✅ 核心完成
-nn/nodes           ~60%     🔄 Reshape/Flatten 已完成，缺 Conv2d/Pooling
+nn/nodes           ~75%     ✅ Conv2d/MaxPool2d/AvgPool2d 已完成
 nn/optimizer       ~70%     ✅ SGD/Adam可用，缺Momentum等
 data/              ~60%     🔄 MNIST 已完成，DataLoader 基础可用
 vision/            ~70%     ✅ 基本完成
@@ -48,6 +48,7 @@ neat/              0%       ❌ 远期特色
 | 输入 | Input, Parameter                        |  ✅  |
 | 运算 | Add, MatMul, Reshape, Flatten           |  ✅  |
 | 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU     |  ✅  |
+| CNN  | Conv2d, MaxPool2d, AvgPool2d            |  ✅  |
 | 损失 | PerceptionLoss, SoftmaxCrossEntropyLoss |  ✅  |
 
 ## 缺失的关键节点
@@ -55,7 +56,6 @@ neat/              0%       ❌ 远期特色
 - **激活函数**: Softplus, Softmax (独立版)
 - **损失函数**: MSELoss
 - **运算节点**: Sub, Neg, Mul(逐元素), Div
-- **CNN 节点**: Conv2d, MaxPool, AvgPool
 
 ## 集成测试进度
 
@@ -95,9 +95,9 @@ neat/              0%       ❌ 远期特色
 | P1c | DataLoader + MNIST   | 数据加载                               | ✅ 基础设施       |  ✅  |
 | P2  | LeakyReLU/ReLU 节点  | 底层 LeakyReLU + 便捷 ReLU (slope=0.0) | ✅ 新节点         |  ✅  |
 | P3  | Reshape/Flatten 节点 | CNN 数据流转换（PyTorch 风格）         | ✅ 结构操作       |  ✅  |
-| P4  | Conv2d 节点          | PyTorch 风格（多通道内部处理）         | ⚠️ 需设计可进化性 |  ❌  |
-| P5  | Pooling 节点         | MaxPool/AvgPool                        | ⚠️ 需设计可进化性 |  ❌  |
-| P6  | MNIST 端到端示例     | LeNet 风格                             | ✅ 验证           |  🔄  |
+| P4  | Conv2d 节点          | PyTorch 风格（多通道内部处理）         | ✅ Jacobi+Batch   |  ✅  |
+| P5  | Pooling 节点         | MaxPool2d/AvgPool2d                   | ✅ Jacobi+Batch   |  ✅  |
+| P6  | MNIST CNN 端到端     | LeNet 风格                             | ✅ 验证           |  🔄  |
 
 ### 阶段三：NEAT 神经进化 (8-12 周)
 
@@ -204,8 +204,13 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
 **下一步：**
 
 1. ~~实现 ReLU 激活节点~~ ✅ 已完成（LeakyReLU + ReLU）
-2. 实现 Conv2d / Pooling 节点（CNN 基础）
-3. 完善 MNIST 示例（提升准确率，添加评估指标）
+2. ~~实现 Conv2d / Pooling 节点（CNN 基础）~~ ✅ 已完成
+   - Conv2d: 支持 stride/padding，Jacobi+Batch 双模式
+   - MaxPool2d: 稀疏梯度反传（记录最大值索引）
+   - AvgPool2d: 均匀梯度分配
+3. 实现 CNN Layer 便捷函数（conv_layer, pool_layer）
+4. MNIST CNN 端到端示例（LeNet 风格）
+5. 完善 MNIST MLP 示例（提升准确率，添加评估指标）
 
 ---
 

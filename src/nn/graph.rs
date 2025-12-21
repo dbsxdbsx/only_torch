@@ -971,6 +971,41 @@ impl Graph {
         self.add_node_to_list(handle, name, "max_pool2d", &[input_id])
     }
 
+    /// 创建 AvgPool2d（2D 平均池化）节点
+    ///
+    /// # 设计
+    /// - 计算每个池化窗口内所有值的平均
+    /// - 反向传播时梯度均匀分配到窗口内所有位置
+    ///
+    /// # 参数
+    /// - `input_id`: 输入节点 ID，形状 `[C, H, W]` 或 `[batch, C, H, W]`
+    /// - `kernel_size`: 池化窗口大小 `(kH, kW)`
+    /// - `stride`: 步长 `(sH, sW)`，`None` 时默认等于 `kernel_size`
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 输出形状
+    /// - 单样本: `[C, H', W']`
+    /// - Batch: `[batch, C, H', W']`
+    /// - 其中 `H' = (H - kH) / sH + 1`
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 输入: [batch, 32, 28, 28]
+    /// let pool = graph.new_avg_pool2d_node(conv_out, (2, 2), None, Some("pool1"))?;
+    /// // 输出: [batch, 32, 14, 14]（默认 stride = kernel_size）
+    /// ```
+    pub fn new_avg_pool2d_node(
+        &mut self,
+        input_id: NodeId,
+        kernel_size: (usize, usize),
+        stride: Option<(usize, usize)>,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle =
+            NodeHandle::new_avg_pool2d(&self.get_nodes(&[input_id])?, kernel_size, stride)?;
+        self.add_node_to_list(handle, name, "avg_pool2d", &[input_id])
+    }
+
     pub fn new_mat_mul_node(
         &mut self,
         left_node_id: NodeId,
