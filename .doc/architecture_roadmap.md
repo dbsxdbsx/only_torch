@@ -1,6 +1,6 @@
 # Only Torch 架构路线图
 
-> 最后更新: 2025-12-20
+> 最后更新: 2025-12-21
 > 战略定位: **简化版 PyTorch in Rust**，为 NEAT 预留扩展性
 > MVP 目标: **XOR with Optimizer**
 
@@ -10,6 +10,7 @@
 .doc/
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
+│   ├── api_layering_and_seed_design.md             # API分层与种子管理（新）
 │   ├── broadcast_mechanism_design.md               # 广播机制设计（重要）
 │   ├── gradient_clear_and_accumulation_design.md   # 梯度机制
 │   ├── optimization_strategy.md                    # 性能优化策略
@@ -61,9 +62,11 @@ neat/              0%       ❌ 远期特色
 |  #  | 任务                 | 说明                          | 验收                  | NEAT 友好性 | 状态 |
 | :-: | :------------------- | :---------------------------- | :-------------------- | :---------- | :--: |
 | M1  | Optimizer 基础功能   | SGD/Adam 参数更新             | 参数能正常更新        | ✅ 无影响   |  ✅  |
+| M1b | Granular 种子 API    | `_seeded` 方法确保测试可重复  | 集成测试确定性        | ✅ 无影响   |  ✅  |
 | M2  | 实现 Tanh 节点       | XOR 必需的非线性激活          | forward/backward 正确 | ✅ 新节点   |  ❌  |
 | M3  | XOR 监督学习示例     | 用 Optimizer 端到端训练       | 收敛>99%              | ✅ 验证     |  ❌  |
 | M4  | 验证图的动态扩展能力 | 确保 Graph 支持运行时添加节点 | 单元测试通过          | ⭐ 关键     |  ❌  |
+| M4b | Graph 级别种子 API   | `Graph::new_with_seed()` 简化用户代码 | 详见 [API分层设计](design/api_layering_and_seed_design.md) | ⭐ 关键 | ❌ |
 
 ### 阶段二：MNIST 基础 (4-6 周)
 
