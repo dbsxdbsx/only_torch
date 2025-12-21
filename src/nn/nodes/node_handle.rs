@@ -1,6 +1,6 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, Flatten, Input, LeakyReLU, MatMul, Multiply, Parameter, PerceptionLoss, Reshape,
+    Add, Conv2d, Flatten, Input, LeakyReLU, MatMul, Multiply, Parameter, PerceptionLoss, Reshape,
     ScalarMultiply, Sigmoid, SoftmaxCrossEntropy, Step, Tanh,
 };
 use super::{NodeType, TraitNode};
@@ -126,6 +126,20 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_add(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(Add::new(parents)?)
+    }
+
+    /// 创建 Conv2d 节点
+    ///
+    /// # 参数
+    /// - `parents`: [输入节点, 卷积核节点]
+    /// - `stride`: 步长 (sH, sW)
+    /// - `padding`: 填充 (pH, pW)
+    pub(in crate::nn) fn new_conv2d(
+        parents: &[&Self],
+        stride: (usize, usize),
+        padding: (usize, usize),
+    ) -> Result<Self, GraphError> {
+        Self::new(Conv2d::new(parents, stride, padding)?)
     }
 
     pub(in crate::nn) fn new_mat_mul(parents: &[&Self]) -> Result<Self, GraphError> {

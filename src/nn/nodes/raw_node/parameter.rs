@@ -15,13 +15,15 @@ pub(crate) struct Parameter {
 
 impl Parameter {
     pub(crate) fn new(shape: &[usize]) -> Result<Self, GraphError> {
-        // 1. 必要的验证
-        if shape.len() != 2 {
+        // 1. 必要的验证：支持 2D-4D 张量
+        // - 2D: FC 权重 [in, out]
+        // - 4D: CNN 卷积核 [C_out, C_in, kH, kW]
+        if shape.len() < 2 || shape.len() > 4 {
             return Err(GraphError::DimensionMismatch {
-                expected: 2,
+                expected: 2, // 表示 2-4 维
                 got: shape.len(),
                 message: format!(
-                    "神经网络中的节点张量必须是2维的（矩阵），但收到的维度是{}维。",
+                    "参数张量必须是 2-4 维（支持 FC 权重和 CNN 卷积核），但收到的维度是 {} 维。",
                     shape.len(),
                 ),
             });
@@ -40,13 +42,13 @@ impl Parameter {
 
     /// 使用固定种子创建参数节点（确保可重复性）
     pub(crate) fn new_seeded(shape: &[usize], seed: u64) -> Result<Self, GraphError> {
-        // 1. 必要的验证
-        if shape.len() != 2 {
+        // 1. 必要的验证：支持 2D-4D 张量
+        if shape.len() < 2 || shape.len() > 4 {
             return Err(GraphError::DimensionMismatch {
-                expected: 2,
+                expected: 2, // 表示 2-4 维
                 got: shape.len(),
                 message: format!(
-                    "神经网络中的节点张量必须是2维的（矩阵），但收到的维度是{}维。",
+                    "参数张量必须是 2-4 维（支持 FC 权重和 CNN 卷积核），但收到的维度是 {} 维。",
                     shape.len(),
                 ),
             });

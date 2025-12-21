@@ -19,13 +19,11 @@ fn test_node_input_creation() {
 fn test_node_input_creation_with_invalid_shape() {
     let mut graph = Graph::new();
 
-    // 测试不同维度的形状(除2维外都应该失败)
-    for dims in [0, 1, 3, 4, 5] {
+    // 测试不同维度的形状（支持 2-4 维，0/1/5 维应该失败）
+    for dims in [0, 1, 5] {
         let shape = match dims {
             0 => vec![],
             1 => vec![2],
-            3 => vec![2, 2, 2],
-            4 => vec![2, 2, 2, 2],
             5 => vec![2, 2, 2, 2, 2],
             _ => unreachable!(),
         };
@@ -34,15 +32,21 @@ fn test_node_input_creation_with_invalid_shape() {
         assert_eq!(
             result,
             Err(GraphError::DimensionMismatch {
-                expected: 2,
+                expected: 2, // 表示 2-4 维
                 got: dims,
                 message: format!(
-                    "神经网络中的节点张量必须是2维的（矩阵），但收到的维度是{}维。",
+                    "节点张量必须是 2-4 维（支持 FC 和 CNN），但收到的维度是 {} 维。",
                     dims
                 ),
             })
         );
     }
+
+    // 3D 和 4D 现在应该成功（CNN 支持）
+    assert!(graph.new_input_node(&[3, 28, 28], Some("input_3d")).is_ok());
+    assert!(graph
+        .new_input_node(&[4, 3, 28, 28], Some("input_4d"))
+        .is_ok());
 }
 
 #[test]

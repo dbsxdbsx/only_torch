@@ -14,13 +14,16 @@ pub(crate) struct Input {
 
 impl Input {
     pub(crate) fn new(shape: &[usize]) -> Result<Self, GraphError> {
-        // 1. 必要的验证
-        if shape.len() != 2 {
+        // 1. 必要的验证：支持 2D-4D 张量
+        // - 2D: 标准全连接层 [batch, features] 或 [rows, cols]
+        // - 3D: 单样本 CNN [C, H, W]
+        // - 4D: Batch CNN [batch, C, H, W]
+        if shape.len() < 2 || shape.len() > 4 {
             return Err(GraphError::DimensionMismatch {
-                expected: 2,
+                expected: 2, // 表示 2-4 维
                 got: shape.len(),
                 message: format!(
-                    "神经网络中的节点张量必须是2维的（矩阵），但收到的维度是{}维。",
+                    "节点张量必须是 2-4 维（支持 FC 和 CNN），但收到的维度是 {} 维。",
                     shape.len(),
                 ),
             });

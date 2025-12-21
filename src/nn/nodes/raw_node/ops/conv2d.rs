@@ -1,0 +1,615 @@
+/*
+ * @Author       : 老董
+ * @Date         : 2025-12-22
+ * @Description  : 2D 卷积节点（PyTorch 风格）
+ *
+ * 设计决策：
+ * - 单节点处理多通道（PyTorch 风格），而非每通道独立节点（MatrixSlow 风格）
+ * - 支持 Jacobi 模式（单样本）和 Batch 模式
+ * - 输入格式：[C_in, H, W] 或 [batch, C_in, H, W]
+ * - 输出格式：[C_out, H', W'] 或 [batch, C_out, H', W']
+ *
+ * 父节点：
+ * - parents[0]: 输入数据
+ * - parents[1]: 卷积核参数（Parameter 节点）
+ */
+
+use crate::nn::GraphError;
+use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::tensor::Tensor;
+
+/// 2D 卷积节点
+#[derive(Clone)]
+pub(crate) struct Conv2d {
+    id: Option<NodeId>,
+    name: Option<String>,
+    value: Option<Tensor>,
+    jacobi: Option<Tensor>,
+    grad: Option<Tensor>,
+    shape: Vec<usize>,           // 输出形状
+    parents_ids: Vec<NodeId>,    // [input_id, kernel_id]
+
+    // 卷积参数（保留供后续 NEAT 进化时使用）
+    #[allow(dead_code)]
+    in_channels: usize,
+    #[allow(dead_code)]
+    out_channels: usize,
+    kernel_size: (usize, usize), // (kH, kW)
+    stride: (usize, usize),      // (sH, sW)
+    padding: (usize, usize),     // (pH, pW)
+
+    // 缓存（用于反向传播）
+    padded_input: Option<Tensor>, // 填充后的输入
+    input_shape: Vec<usize>,      // 原始输入形状（用于梯度计算）
+}
+
+impl Conv2d {
+    /// 创建 Conv2d 节点
+    ///
+    /// # 参数
+    /// - `parents`: [输入节点, 卷积核节点]
+    /// - `stride`: 步长 (sH, sW)
+    /// - `padding`: 填充 (pH, pW)
+    ///
+    /// # 输入形状约定
+    /// - 输入: [C_in, H, W] 或 [batch, C_in, H, W]
+    /// - 卷积核: [C_out, C_in, kH, kW]
+    pub(crate) fn new(
+        parents: &[&NodeHandle],
+        stride: (usize, usize),
+        padding: (usize, usize),
+    ) -> Result<Self, GraphError> {
+        // 1. 验证父节点数量
+        if parents.len() != 2 {
+            return Err(GraphError::InvalidOperation(
+                "Conv2d 节点需要 2 个父节点：[输入, 卷积核]".to_string(),
+            ));
+        }
+
+        let input_shape = parents[0].value_expected_shape();
+        let kernel_shape = parents[1].value_expected_shape();
+
+        // 2. 验证卷积核形状：必须是 4D [C_out, C_in, kH, kW]
+        if kernel_shape.len() != 4 {
+            return Err(GraphError::ShapeMismatch {
+                expected: vec![0, 0, 0, 0], // 占位
+                got: kernel_shape.to_vec(),
+                message: format!(
+                    "卷积核必须是 4D [C_out, C_in, kH, kW]，得到 {:?}",
+                    kernel_shape
+                ),
+            });
+        }
+
+        let out_channels = kernel_shape[0];
+        let in_channels = kernel_shape[1];
+        let kernel_h = kernel_shape[2];
+        let kernel_w = kernel_shape[3];
+
+        // 3. 验证输入形状：3D [C_in, H, W] 或 4D [batch, C_in, H, W]
+        let (batch_size, input_c, input_h, input_w) = match input_shape.len() {
+            3 => (None, input_shape[0], input_shape[1], input_shape[2]),
+            4 => (
+                Some(input_shape[0]),
+                input_shape[1],
+                input_shape[2],
+                input_shape[3],
+            ),
+            _ => {
+                return Err(GraphError::ShapeMismatch {
+                    expected: vec![0, 0, 0], // 占位
+                    got: input_shape.to_vec(),
+                    message: format!(
+                        "输入必须是 3D [C_in, H, W] 或 4D [batch, C_in, H, W]，得到 {:?}",
+                        input_shape
+                    ),
+                });
+            }
+        };
+
+        // 4. 验证通道数匹配
+        if input_c != in_channels {
+            return Err(GraphError::ShapeMismatch {
+                expected: vec![in_channels],
+                got: vec![input_c],
+                message: format!(
+                    "输入通道数 {} 与卷积核输入通道数 {} 不匹配",
+                    input_c, in_channels
+                ),
+            });
+        }
+
+        // 5. 计算输出尺寸
+        let (stride_h, stride_w) = stride;
+        let (pad_h, pad_w) = padding;
+
+        let output_h = (input_h + 2 * pad_h - kernel_h) / stride_h + 1;
+        let output_w = (input_w + 2 * pad_w - kernel_w) / stride_w + 1;
+
+        if output_h == 0 || output_w == 0 {
+            return Err(GraphError::InvalidOperation(format!(
+                "卷积输出尺寸无效：输入 {}x{}，核 {}x{}，步长 {:?}，填充 {:?}",
+                input_h, input_w, kernel_h, kernel_w, stride, padding
+            )));
+        }
+
+        // 6. 确定输出形状
+        let output_shape = match batch_size {
+            Some(b) => vec![b, out_channels, output_h, output_w],
+            None => vec![out_channels, output_h, output_w],
+        };
+
+        Ok(Self {
+            id: None,
+            name: None,
+            value: None,
+            jacobi: None,
+            grad: None,
+            shape: output_shape,
+            parents_ids: vec![parents[0].id(), parents[1].id()],
+            in_channels,
+            out_channels,
+            kernel_size: (kernel_h, kernel_w),
+            stride,
+            padding,
+            padded_input: None,
+            input_shape: input_shape.to_vec(),
+        })
+    }
+
+    /// 对输入进行零填充
+    fn pad_input(&self, input: &Tensor) -> Tensor {
+        let (pad_h, pad_w) = self.padding;
+        if pad_h == 0 && pad_w == 0 {
+            return input.clone();
+        }
+
+        let input_shape = input.shape();
+        let ndim = input_shape.len();
+
+        // 获取空间维度的位置
+        let (h_idx, w_idx) = if ndim == 3 { (1, 2) } else { (2, 3) };
+
+        let h = input_shape[h_idx];
+        let w = input_shape[w_idx];
+        let new_h = h + 2 * pad_h;
+        let new_w = w + 2 * pad_w;
+
+        // 创建新形状
+        let mut new_shape = input_shape.to_vec();
+        new_shape[h_idx] = new_h;
+        new_shape[w_idx] = new_w;
+
+        let mut padded = Tensor::zeros(&new_shape);
+
+        // 复制数据到填充后的张量中心
+        if ndim == 3 {
+            // [C, H, W]
+            let c = input_shape[0];
+            for ci in 0..c {
+                for hi in 0..h {
+                    for wi in 0..w {
+                        padded[[ci, hi + pad_h, wi + pad_w]] = input[[ci, hi, wi]];
+                    }
+                }
+            }
+        } else {
+            // [B, C, H, W]
+            let b = input_shape[0];
+            let c = input_shape[1];
+            for bi in 0..b {
+                for ci in 0..c {
+                    for hi in 0..h {
+                        for wi in 0..w {
+                            padded[[bi, ci, hi + pad_h, wi + pad_w]] = input[[bi, ci, hi, wi]];
+                        }
+                    }
+                }
+            }
+        }
+
+        padded
+    }
+
+    /// 执行卷积运算（forward 核心逻辑）
+    fn convolve(&self, input: &Tensor, kernel: &Tensor) -> Tensor {
+        let input_shape = input.shape();
+        let is_batch = input_shape.len() == 4;
+
+        let (batch_size, in_c, in_h, in_w) = if is_batch {
+            (
+                input_shape[0],
+                input_shape[1],
+                input_shape[2],
+                input_shape[3],
+            )
+        } else {
+            (1, input_shape[0], input_shape[1], input_shape[2])
+        };
+
+        let (out_c, _, k_h, k_w) = (
+            kernel.shape()[0],
+            kernel.shape()[1],
+            kernel.shape()[2],
+            kernel.shape()[3],
+        );
+
+        let (stride_h, stride_w) = self.stride;
+        let out_h = (in_h - k_h) / stride_h + 1;
+        let out_w = (in_w - k_w) / stride_w + 1;
+
+        // 输出形状
+        let output_shape = if is_batch {
+            vec![batch_size, out_c, out_h, out_w]
+        } else {
+            vec![out_c, out_h, out_w]
+        };
+
+        let mut output = Tensor::zeros(&output_shape);
+
+        // 执行卷积
+        for b in 0..batch_size {
+            for oc in 0..out_c {
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let mut sum = 0.0f32;
+                        let h_start = oh * stride_h;
+                        let w_start = ow * stride_w;
+
+                        for ic in 0..in_c {
+                            for kh in 0..k_h {
+                                for kw in 0..k_w {
+                                    let input_val = if is_batch {
+                                        input[[b, ic, h_start + kh, w_start + kw]]
+                                    } else {
+                                        input[[ic, h_start + kh, w_start + kw]]
+                                    };
+                                    sum += input_val * kernel[[oc, ic, kh, kw]];
+                                }
+                            }
+                        }
+
+                        if is_batch {
+                            output[[b, oc, oh, ow]] = sum;
+                        } else {
+                            output[[oc, oh, ow]] = sum;
+                        }
+                    }
+                }
+            }
+        }
+
+        output
+    }
+}
+
+impl TraitNode for Conv2d {
+    fn id(&self) -> NodeId {
+        self.id.unwrap()
+    }
+
+    fn set_id(&mut self, id: NodeId) {
+        self.id = Some(id);
+    }
+
+    fn name(&self) -> &str {
+        self.name.as_ref().unwrap()
+    }
+
+    fn set_name(&mut self, name: &str) {
+        self.name = Some(name.to_string());
+    }
+
+    fn value_expected_shape(&self) -> &[usize] {
+        &self.shape
+    }
+
+    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
+        // 获取输入和卷积核
+        let input = parents[0].value().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "{}的输入父节点{}没有值",
+                self.display_node(),
+                parents[0]
+            ))
+        })?;
+
+        let kernel = parents[1].value().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "{}的卷积核父节点{}没有值",
+                self.display_node(),
+                parents[1]
+            ))
+        })?;
+
+        // 填充输入
+        let padded = self.pad_input(input);
+        self.padded_input = Some(padded.clone());
+        self.input_shape = input.shape().to_vec();
+
+        // 执行卷积
+        self.value = Some(self.convolve(&padded, kernel));
+
+        Ok(())
+    }
+
+    fn value(&self) -> Option<&Tensor> {
+        self.value.as_ref()
+    }
+
+    /// 计算 Jacobi 矩阵（单样本模式）
+    ///
+    /// Conv2d 的 Jacobi 矩阵非常稀疏且巨大，这里使用完整矩阵表示
+    /// 实际生产环境应考虑稀疏表示
+    fn calc_jacobi_to_a_parent(
+        &self,
+        target_parent: &NodeHandle,
+        assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        let kernel = if target_parent.id() == self.parents_ids[0] {
+            // 对输入求导，需要卷积核
+            assistant_parent
+                .ok_or_else(|| {
+                    GraphError::ComputationError("计算对输入的 Jacobi 需要卷积核".to_string())
+                })?
+                .value()
+                .ok_or_else(|| GraphError::ComputationError("卷积核没有值".to_string()))?
+        } else {
+            // 对卷积核求导
+            target_parent.value().ok_or_else(|| {
+                GraphError::ComputationError("卷积核没有值".to_string())
+            })?
+        };
+
+        let padded_input = self.padded_input.as_ref().ok_or_else(|| {
+            GraphError::ComputationError("缺少填充后的输入缓存".to_string())
+        })?;
+
+        let input_shape = padded_input.shape();
+        let is_batch = input_shape.len() == 4;
+
+        // 单样本 Jacobi 只支持非 batch 模式
+        if is_batch {
+            return Err(GraphError::InvalidOperation(
+                "Jacobi 模式不支持 batch 输入，请使用 calc_grad_to_parent".to_string(),
+            ));
+        }
+
+        let (in_c, in_h, in_w) = (input_shape[0], input_shape[1], input_shape[2]);
+        let (out_c, out_h, out_w) = (self.shape[0], self.shape[1], self.shape[2]);
+        let (k_h, k_w) = self.kernel_size;
+        let (stride_h, stride_w) = self.stride;
+
+        let output_dim = out_c * out_h * out_w;
+
+        if target_parent.id() == self.parents_ids[0] {
+            // 对输入求 Jacobi: [output_dim, input_dim]
+            let input_dim = in_c * in_h * in_w;
+            let mut jacobi = Tensor::zeros(&[output_dim, input_dim]);
+
+            for oc in 0..out_c {
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let out_idx = oc * out_h * out_w + oh * out_w + ow;
+                        let h_start = oh * stride_h;
+                        let w_start = ow * stride_w;
+
+                        for ic in 0..in_c {
+                            for kh in 0..k_h {
+                                for kw in 0..k_w {
+                                    let in_h_idx = h_start + kh;
+                                    let in_w_idx = w_start + kw;
+                                    let in_idx = ic * in_h * in_w + in_h_idx * in_w + in_w_idx;
+                                    // ∂output[oc,oh,ow]/∂input[ic,ih,iw] = kernel[oc,ic,kh,kw]
+                                    jacobi[[out_idx, in_idx]] = kernel[[oc, ic, kh, kw]];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(jacobi)
+        } else {
+            // 对卷积核求 Jacobi: [output_dim, kernel_dim]
+            let kernel_dim = out_c * in_c * k_h * k_w;
+            let mut jacobi = Tensor::zeros(&[output_dim, kernel_dim]);
+
+            for oc in 0..out_c {
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let out_idx = oc * out_h * out_w + oh * out_w + ow;
+                        let h_start = oh * stride_h;
+                        let w_start = ow * stride_w;
+
+                        for ic in 0..in_c {
+                            for kh in 0..k_h {
+                                for kw in 0..k_w {
+                                    let in_h_idx = h_start + kh;
+                                    let in_w_idx = w_start + kw;
+                                    let kernel_idx =
+                                        oc * in_c * k_h * k_w + ic * k_h * k_w + kh * k_w + kw;
+                                    // ∂output[oc,oh,ow]/∂kernel[oc,ic,kh,kw] = input[ic,ih,iw]
+                                    jacobi[[out_idx, kernel_idx]] =
+                                        padded_input[[ic, in_h_idx, in_w_idx]];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(jacobi)
+        }
+    }
+
+    fn jacobi(&self) -> Option<&Tensor> {
+        self.jacobi.as_ref()
+    }
+
+    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
+        self.jacobi = jacobi.cloned();
+        Ok(())
+    }
+
+    // ========== Batch 模式 ==========
+
+    /// 计算 Batch 梯度
+    ///
+    /// 对于 Y = conv(X, K):
+    /// - dL/dX: 使用转置卷积（反卷积）
+    /// - dL/dK: 使用输入和上游梯度的相关运算
+    fn calc_grad_to_parent(
+        &self,
+        target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
+        assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        let padded_input = self.padded_input.as_ref().ok_or_else(|| {
+            GraphError::ComputationError("缺少填充后的输入缓存".to_string())
+        })?;
+
+        let kernel = if target_parent.id() == self.parents_ids[0] {
+            assistant_parent
+                .ok_or_else(|| {
+                    GraphError::ComputationError("计算输入梯度需要卷积核".to_string())
+                })?
+                .value()
+                .ok_or_else(|| GraphError::ComputationError("卷积核没有值".to_string()))?
+        } else {
+            target_parent.value().ok_or_else(|| {
+                GraphError::ComputationError("卷积核没有值".to_string())
+            })?
+        };
+
+        let grad_shape = upstream_grad.shape();
+        let is_batch = grad_shape.len() == 4;
+
+        let (batch_size, out_c, out_h, out_w) = if is_batch {
+            (grad_shape[0], grad_shape[1], grad_shape[2], grad_shape[3])
+        } else {
+            (1, grad_shape[0], grad_shape[1], grad_shape[2])
+        };
+
+        let (k_h, k_w) = self.kernel_size;
+        let (stride_h, stride_w) = self.stride;
+        let (pad_h, pad_w) = self.padding;
+
+        let padded_shape = padded_input.shape();
+        let in_c = if padded_shape.len() == 4 {
+            padded_shape[1]
+        } else {
+            padded_shape[0]
+        };
+
+        if target_parent.id() == self.parents_ids[0] {
+            // ========== 计算 dL/dX（对输入的梯度）==========
+            // 使用"full" 卷积（转置卷积/反卷积的一种实现）
+
+            // 输出梯度形状应该与原始输入相同
+            let orig_input_shape = &self.input_shape;
+            let mut input_grad = Tensor::zeros(orig_input_shape);
+
+            for b in 0..batch_size {
+                for oc in 0..out_c {
+                    for oh in 0..out_h {
+                        for ow in 0..out_w {
+                            let grad_val = if is_batch {
+                                upstream_grad[[b, oc, oh, ow]]
+                            } else {
+                                upstream_grad[[oc, oh, ow]]
+                            };
+
+                            let h_start = oh * stride_h;
+                            let w_start = ow * stride_w;
+
+                            for ic in 0..in_c {
+                                for kh in 0..k_h {
+                                    for kw in 0..k_w {
+                                        // 原始输入位置（去除 padding）
+                                        let orig_h = (h_start + kh) as isize - pad_h as isize;
+                                        let orig_w = (w_start + kw) as isize - pad_w as isize;
+
+                                        // 检查是否在原始输入范围内
+                                        let (orig_in_h, orig_in_w) = if is_batch {
+                                            (orig_input_shape[2], orig_input_shape[3])
+                                        } else {
+                                            (orig_input_shape[1], orig_input_shape[2])
+                                        };
+
+                                        if orig_h >= 0
+                                            && orig_h < orig_in_h as isize
+                                            && orig_w >= 0
+                                            && orig_w < orig_in_w as isize
+                                        {
+                                            let orig_h = orig_h as usize;
+                                            let orig_w = orig_w as usize;
+
+                                            if is_batch {
+                                                input_grad[[b, ic, orig_h, orig_w]] +=
+                                                    grad_val * kernel[[oc, ic, kh, kw]];
+                                            } else {
+                                                input_grad[[ic, orig_h, orig_w]] +=
+                                                    grad_val * kernel[[oc, ic, kh, kw]];
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(input_grad)
+        } else {
+            // ========== 计算 dL/dK（对卷积核的梯度）==========
+            // dK[oc,ic,kh,kw] = sum over batch,oh,ow of: upstream[b,oc,oh,ow] * input[b,ic,oh*s+kh,ow*s+kw]
+
+            let mut kernel_grad = Tensor::zeros(kernel.shape());
+
+            for b in 0..batch_size {
+                for oc in 0..out_c {
+                    for oh in 0..out_h {
+                        for ow in 0..out_w {
+                            let grad_val = if is_batch {
+                                upstream_grad[[b, oc, oh, ow]]
+                            } else {
+                                upstream_grad[[oc, oh, ow]]
+                            };
+
+                            let h_start = oh * stride_h;
+                            let w_start = ow * stride_w;
+
+                            for ic in 0..in_c {
+                                for kh in 0..k_h {
+                                    for kw in 0..k_w {
+                                        let input_val = if is_batch {
+                                            padded_input[[b, ic, h_start + kh, w_start + kw]]
+                                        } else {
+                                            padded_input[[ic, h_start + kh, w_start + kw]]
+                                        };
+                                        kernel_grad[[oc, ic, kh, kw]] += grad_val * input_val;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(kernel_grad)
+        }
+    }
+
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
+
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
+        Ok(())
+    }
+}
+

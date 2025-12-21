@@ -890,6 +890,49 @@ impl Graph {
         self.add_node_to_list(handle, name, "add", parents)
     }
 
+    /// 创建 Conv2d（2D 卷积）节点
+    ///
+    /// # 设计
+    /// - **PyTorch 风格**：单节点处理多通道，而非 MatrixSlow 的每通道独立节点
+    /// - 支持 Jacobi 模式（单样本）和 Batch 模式
+    ///
+    /// # 参数
+    /// - `input_id`: 输入节点 ID，形状 `[C_in, H, W]` 或 `[batch, C_in, H, W]`
+    /// - `kernel_id`: 卷积核参数节点 ID，形状 `[C_out, C_in, kH, kW]`
+    /// - `stride`: 步长 `(sH, sW)`
+    /// - `padding`: 零填充 `(pH, pW)`
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 输出形状
+    /// - 单样本: `[C_out, H', W']`
+    /// - Batch: `[batch, C_out, H', W']`
+    /// - 其中 `H' = (H + 2*pH - kH) / sH + 1`
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 创建卷积核参数: 32 个 3x3 卷积核，输入 1 通道
+    /// let kernel = graph.new_parameter_node(&[32, 1, 3, 3], Some("conv1_kernel"))?;
+    ///
+    /// // 输入: [batch, 1, 28, 28]（如 MNIST 图像）
+    /// let input = graph.new_input_node(&[batch_size, 1, 28, 28], Some("input"))?;
+    ///
+    /// // 创建卷积层: stride=1, padding=1（保持尺寸）
+    /// let conv_out = graph.new_conv2d_node(input, kernel, (1, 1), (1, 1), Some("conv1"))?;
+    /// // 输出形状: [batch, 32, 28, 28]
+    /// ```
+    pub fn new_conv2d_node(
+        &mut self,
+        input_id: NodeId,
+        kernel_id: NodeId,
+        stride: (usize, usize),
+        padding: (usize, usize),
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle =
+            NodeHandle::new_conv2d(&self.get_nodes(&[input_id, kernel_id])?, stride, padding)?;
+        self.add_node_to_list(handle, name, "conv2d", &[input_id, kernel_id])
+    }
+
     pub fn new_mat_mul_node(
         &mut self,
         left_node_id: NodeId,

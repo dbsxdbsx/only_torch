@@ -3,10 +3,11 @@
  * @Date         : 2024-01-31 21:19:34
  * @Description  : 这里每个op节点的实现主要参考了 MatrixSlow/matrixslow/ops/ops.py
  * @LastEditors  : 老董
- * @LastEditTime : 2024-12-21 00:00:00
+ * @LastEditTime : 2024-12-22 00:00:00
  */
 
 mod add;
+mod conv2d;
 mod flatten;
 mod leaky_relu;
 mod mat_mul;
@@ -18,6 +19,7 @@ mod step;
 mod tanh;
 
 pub(crate) use add::Add;
+pub(crate) use conv2d::Conv2d;
 pub(crate) use flatten::Flatten;
 pub(crate) use leaky_relu::LeakyReLU;
 pub(crate) use mat_mul::MatMul;

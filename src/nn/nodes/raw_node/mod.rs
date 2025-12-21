@@ -16,6 +16,7 @@ pub(in crate::nn) enum NodeType {
     Input(Input),
     Parameter(Parameter),
     Add(Add),
+    Conv2d(Conv2d),
     Flatten(Flatten),
     MatMul(MatMul),
     Multiply(Multiply),
