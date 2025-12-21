@@ -509,11 +509,7 @@ impl Graph {
     }
 
     /// 对单个节点执行 batch 反向传播
-    fn backward_batch_node(
-        &mut self,
-        node_id: NodeId,
-        _loss_id: NodeId,
-    ) -> Result<(), GraphError> {
+    fn backward_batch_node(&mut self, node_id: NodeId, _loss_id: NodeId) -> Result<(), GraphError> {
         // 获取当前节点的梯度
         let upstream_grad = {
             let node = self.get_node(node_id)?;
@@ -914,6 +910,30 @@ impl Graph {
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_multiply(&self.get_nodes(&[left_node_id, right_node_id])?)?;
         self.add_node_to_list(handle, name, "multiply", &[left_node_id, right_node_id])
+    }
+
+    /// 创建 Reshape 节点
+    ///
+    /// 改变张量形状而不改变数据，常用于 CNN 与全连接层之间的转换。
+    ///
+    /// # 参数
+    /// - `parent_id`: 父节点 ID
+    /// - `target_shape`: 目标形状（元素总数必须与输入相同）
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 将 [batch, 32, 7, 7] reshape 为 [batch, 1568]
+    /// let flat = graph.new_reshape_node(conv_out, &[batch_size, 1568], Some("flatten"))?;
+    /// ```
+    pub fn new_reshape_node(
+        &mut self,
+        parent_id: NodeId,
+        target_shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_reshape(&self.get_nodes(&[parent_id])?, target_shape)?;
+        self.add_node_to_list(handle, name, "reshape", &[parent_id])
     }
 
     /// 创建标量乘法节点

@@ -10,6 +10,7 @@ mod node_mat_mul;
 mod node_multiply;
 mod node_parameter;
 mod node_perception_loss;
+mod node_reshape; // Reshape 节点（形状变换）
 mod node_scalar_multiply;
 mod node_sigmoid;
 mod node_softmax_cross_entropy;

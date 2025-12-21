@@ -61,8 +61,6 @@
 - 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化,能 ok 拓展至 linear 等常用层，还有 detach，，容易添加 edge(如已存在的 add 节点的父节点)，。
 - 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - 图错误“InvalidOperation” vs “ComputationError”
-- Tensor 类的 index 将 `[[`优化成 `[`?
-- use approx::assert_abs_diff_eq; need or not?
 - [get_node_grad 函数优化分析](.doc/get_node_grad_optimization_analysis.md)
 
 **目前需要先解决有没有的问题，而不是好不好**
