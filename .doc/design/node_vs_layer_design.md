@@ -66,7 +66,7 @@ Node 层保留**两套 API**，服务于不同场景：
 | **形状** | `Reshape`, `Flatten`                          | 张量形状变换         |
 | **激活** | `Step`, `Tanh`, `Sigmoid`, `LeakyReLU`        | 非线性激活           |
 | **损失** | `PerceptionLoss`, `SoftmaxCrossEntropy`       | 损失计算             |
-| **CNN**  | `Conv2d`, `MaxPool`                           | _(待实现)_           |
+| **CNN**  | `Conv2d`, `MaxPool2d`, `AvgPool2d`            | 卷积与池化           |
 
 ### Node 特性
 
@@ -203,9 +203,10 @@ graph.mutate_parameter(fc.weights, 0.1)?;
 1. **Phase 1** ✅：完成基础 Node（MatMul, Add, 激活, 损失）
 2. **Phase 2** ✅：实现 Batch 机制（forward_batch, backward_batch）
 3. **Phase 3** ✅：实现 Layer 便捷函数（linear）
-4. **Phase 4**：添加 CNN 节点（Conv2d, MaxPool）
-5. **Phase 5**：添加 CNN Layer（conv, pooling）
-6. **Phase 6**：NEAT 集成
+4. **Phase 4** ✅：添加 CNN 节点（Conv2d, MaxPool2d, AvgPool2d）
+5. **Phase 5**：添加 CNN Layer（conv_layer, pool_layer）
+6. **Phase 6**：MNIST CNN 端到端示例（LeNet 风格）
+7. **Phase 7**：NEAT 集成
 
 ---
 
