@@ -28,7 +28,7 @@ fn test_add_node_after_forward() {
         .unwrap();
     let add1 = graph.new_add_node(&[a, b], Some("add1")).unwrap();
 
-    // 2. 第一次 forward
+    // 2. 第1次 forward
     graph.forward_node(add1).unwrap();
     let add1_value_before = graph.get_node_value(add1).unwrap().unwrap().clone();
     let first_forward_pass_id = graph.last_forward_pass_id();
@@ -146,28 +146,28 @@ fn test_multiple_topology_changes() {
     let input_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
     graph.set_node_value(input, Some(&input_value)).unwrap();
 
-    // 2. 第一轮训练
+    // 2. 第1轮训练
     graph.forward_node(node1).unwrap();
     graph.backward_nodes(&[param], node1).unwrap();
     let value1 = graph.get_node_value(node1).unwrap().unwrap().clone();
 
-    // 3. 第一次拓扑变化: 添加 node2 = tanh(node1)
+    // 3. 第1次拓扑变化: 添加 node2 = tanh(node1)
     let node2 = graph.new_tanh_node(node1, Some("node2")).unwrap();
     graph.on_topology_changed();
 
-    // 4. 第二轮训练
+    // 4. 第2轮训练
     graph.forward_node(node2).unwrap();
     graph.backward_nodes(&[param], node2).unwrap();
     let value2 = graph.get_node_value(node2).unwrap().unwrap().clone();
 
-    // 5. 第二次拓扑变化: 添加 node3 = node2 + bias
+    // 5. 第2次拓扑变化: 添加 node3 = node2 + bias
     let bias = graph
         .new_parameter_node_seeded(&[2, 1], Some("bias"), 43)
         .unwrap();
     let node3 = graph.new_add_node(&[node2, bias], Some("node3")).unwrap();
     graph.on_topology_changed();
 
-    // 6. 第三轮训练
+    // 6. 第3轮训练
     graph.forward_node(node3).unwrap();
     graph.backward_nodes(&[param, bias], node3).unwrap();
     let value3 = graph.get_node_value(node3).unwrap().unwrap().clone();

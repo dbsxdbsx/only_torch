@@ -15,15 +15,15 @@ impl fmt::Display for Tensor {
             data: &Array<f32, IxDyn>,
             indices: &mut Vec<usize>,
             depth: usize,
-            rank: usize,
+            ndim: usize,
         ) -> fmt::Result {
-            if depth == rank {
+            if depth == ndim {
                 write!(f, "{:8.4}", data[&indices[..]])?;
             } else {
                 write!(f, "[")?;
                 for i in 0..data.shape()[depth] {
                     indices[depth] = i;
-                    display_recursive(f, data, indices, depth + 1, rank)?;
+                    display_recursive(f, data, indices, depth + 1, ndim)?;
 
                     if i != data.shape()[depth] - 1 {
                         write!(f, ", ")?;
@@ -38,15 +38,15 @@ impl fmt::Display for Tensor {
         }
 
         let shape = self.shape();
-        let rank = shape.len();
-        let mut indices = vec![0; rank];
-        if rank > 2 && !self.is_scalar() {
+        let ndim = shape.len();
+        let mut indices = vec![0; ndim];
+        if ndim > 2 && !self.is_scalar() {
             writeln!(
                 f,
-                "<对于阶数大于二（rank>2）的张量（形状：{shape:?}）无法展示具体数据>"
+                "<对于维数大于2(ndim>2)的张量（形状：{shape:?}）无法展示具体数据>"
             )
         } else {
-            display_recursive(f, &self.data, &mut indices, 0, rank)?;
+            display_recursive(f, &self.data, &mut indices, 0, ndim)?;
             writeln!(f, "\n形状: {shape:?}")
         }
     }

@@ -127,7 +127,7 @@ fn test_dot_sum_number_and_tensor() {
             input_data: vec![1., 2., 3., 4., 5., 6.],
             expected_output: vec![vec![42.]],
         },
-        // 高阶张量
+        // 高维张量
         TensorCheck {
             input_shape: vec![2, 3, 1],
             input_data: vec![1., 2., 3., 4., 5., 6.],
@@ -189,14 +189,14 @@ fn test_dot_sum_scalars_among_various_shapes() {
                 assert_panic!(
                     scalar1.clone().dot_sum(scalar2.clone()),
                     format!(
-                        "形状不一致，故无法点积和：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
+                        "形状不一致，故无法点积和：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
                         shape1, shape2
                     )
                 );
                 assert_panic!(
                     scalar2.dot_sum(scalar1.clone()),
                     format!(
-                        "形状不一致，故无法点积和：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
+                        "形状不一致，故无法点积和：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
                         shape2, shape1
                     )
                 );
@@ -294,7 +294,7 @@ fn test_shuffle() {
     let shape = &[6, 6];
     let tensor = Tensor::new(data, shape);
 
-    // 1. 仅打乱第一个维度（打乱后的形状仍一致，但数据不一致）
+    // 1. 仅打乱第1个维度（打乱后的形状仍一致，但数据不一致）
     let shuffled_tensor_row = tensor.shuffle(Some(0));
     assert_eq!(tensor.shape(), shuffled_tensor_row.shape());
     assert_ne!(tensor.data, shuffled_tensor_row.data);
@@ -303,7 +303,7 @@ fn test_shuffle() {
         assert!(tensor.data.axis_iter(Axis(0)).any(|r| r == row));
     }
 
-    // 2. 仅打乱第二个维度（打乱后的形状仍一致，但数据不一致）
+    // 2. 仅打乱第2个维度（打乱后的形状仍一致，但数据不一致）
     let shuffled_tensor_col = tensor.shuffle(Some(1));
     assert_eq!(tensor.shape(), shuffled_tensor_col.shape());
     assert_ne!(tensor.data, shuffled_tensor_col.data);
@@ -344,7 +344,7 @@ fn test_shuffle_mut() {
     let shape = &[6, 6];
     let tensor = Tensor::new(data, shape);
 
-    // 1. 仅打乱第一个维度（打乱后的形状仍一致，但数据不一致）
+    // 1. 仅打乱第1个维度（打乱后的形状仍一致，但数据不一致）
     let mut tensor_shuffle_row = Tensor::new(data, shape);
     tensor_shuffle_row.shuffle_mut(Some(0));
     assert_eq!(tensor.shape(), tensor_shuffle_row.shape());
@@ -354,7 +354,7 @@ fn test_shuffle_mut() {
         assert!(tensor.data.axis_iter(Axis(0)).any(|r| r == row));
     }
 
-    // 2. 仅打乱第二个维度（打乱后的形状仍一致，但数据不一致）
+    // 2. 仅打乱第2个维度（打乱后的形状仍一致，但数据不一致）
     let mut tensor_shuffle_col = Tensor::new(data, shape);
     tensor_shuffle_col.shuffle_mut(Some(1));
     assert_eq!(tensor.shape(), tensor_shuffle_col.shape());
@@ -482,12 +482,12 @@ fn test_stack_without_new_dim() {
     let t2 = Tensor::new(&[3.0, 4.0], &[2]);
     let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]));
-    // (不添加新维度的情况下，张量的第一个维度可以不同)
+    // (不添加新维度的情况下，张量的第1个维度可以不同)
     let t1 = Tensor::new(&[1., 2.], &[2]);
     let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3]);
     let stacked = Tensor::stack(&[&t1, &t2], false);
     assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 6.0, 7.0, 8.0], &[5]));
-    // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
+    // (不添加新维度的情况下，除张量的第1个维度不同外，其他维度若不同则会报错)
     let t1 = Tensor::new(&[1., 2.], &[2]);
     let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3, 1]);
     assert_panic!(
@@ -506,7 +506,7 @@ fn test_stack_without_new_dim() {
             &[4, 3]
         )
     );
-    // (不添加新维度的情况下，张量的第一个维度可以不同)
+    // (不添加新维度的情况下，张量的第1个维度可以不同)
     let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
     let t2 = Tensor::new(&[7.0, 8.0, 9.0], &[1, 3]);
     let stacked = Tensor::stack(&[&t1, &t2], false);
@@ -514,7 +514,7 @@ fn test_stack_without_new_dim() {
         stacked,
         Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])
     );
-    // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
+    // (不添加新维度的情况下，除张量的第1个维度不同外，其他维度若不同则会报错)
     let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
     let t2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0], &[1, 4]);
     assert_panic!(
@@ -542,7 +542,7 @@ fn test_stack_without_new_dim() {
             &[4, 3, 2, 1]
         )
     );
-    // (不添加新维度的情况下，张量的第一个维度可以不同)
+    // (不添加新维度的情况下，张量的第1个维度可以不同)
     let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 1, 2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 1]);
     let stacked = Tensor::stack(&[&t1, &t2], false);
@@ -550,7 +550,7 @@ fn test_stack_without_new_dim() {
         stacked,
         Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,], &[4, 1, 2, 1])
     );
-    // (不添加新维度的情况下，除张量的第一个维度不同外，其他维度若不同则会报错)
+    // (不添加新维度的情况下，除张量的第1个维度不同外，其他维度若不同则会报错)
     let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 1, 2, 1]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2]);
     assert_panic!(
@@ -820,7 +820,7 @@ fn test_transpose() {
     // 测试向量
     let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     let transposed = tensor.transpose();
-    assert_eq!(transposed.shape(), &[3]); // 一维张量的转置仍然是一维的
+    assert_eq!(transposed.shape(), &[3]); // 1维张量的转置仍然是1维的
 
     // 测试矩阵
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
@@ -848,7 +848,7 @@ fn test_transpose_mut() {
     // 测试向量
     let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     tensor.transpose_mut();
-    assert_eq!(tensor.shape(), &[3]); // 一维张量的转置仍然是一维的
+    assert_eq!(tensor.shape(), &[3]); // 1维张量的转置仍然是1维的
 
     // 测试矩阵
     let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
@@ -1017,7 +1017,7 @@ fn test_diag() {
     assert_eq!(diag, Tensor::new(&[1.0], &[1, 1]));
 
     // 2. 测试向量 -> 对角方阵
-    // 一维向量
+    // 1维向量
     let tensor = Tensor::new(&[1.0, 2.0], &[2]);
     let diag = tensor.diag();
     assert_eq!(diag.shape(), &[2, 2]);
@@ -1067,11 +1067,11 @@ fn test_diag() {
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
     assert_panic!(tensor.diag(), "张量必须是标量、向量或方阵");
 
-    // 三维张量
+    // 3维张量
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2, 1]);
     assert_panic!(tensor.diag(), "张量维度必须为1或2");
 
-    // 四维张量
+    // 4维张量
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 2, 2, 1]);
     assert_panic!(tensor.diag(), "张量维度必须为1或2");
 }
@@ -1092,7 +1092,7 @@ fn test_diag_mut() {
     assert_eq!(tensor, Tensor::new(&[1.0], &[1, 1]));
 
     // 2. 测试向量 -> 对角方阵
-    // 一维向量
+    // 1维向量
     let mut tensor = Tensor::new(&[1.0, 2.0], &[2]);
     tensor.diag_mut();
     assert_eq!(tensor.shape(), &[2, 2]);
@@ -1142,11 +1142,11 @@ fn test_diag_mut() {
     let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
     assert_panic!(tensor.diag_mut(), "张量必须是标量、向量或方阵");
 
-    // 三维张量
+    // 3维张量
     let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2, 1]);
     assert_panic!(tensor.diag_mut(), "张量维度必须为1或2");
 
-    // 四维张量
+    // 4维张量
     let mut tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 2, 2, 1]);
     assert_panic!(tensor.diag_mut(), "张量维度必须为1或2");
 }

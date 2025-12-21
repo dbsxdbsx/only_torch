@@ -298,15 +298,15 @@ fn test_backward_pass_id_increment() {
     graph.set_node_value(b, Some(&b_value)).unwrap();
     graph.forward_node(y).unwrap();
 
-    // 4. 第一次反向传播
+    // 4. 第1次反向传播
     graph.backward_nodes(&[b], y).unwrap();
     assert_eq!(graph.last_backward_pass_id(), 1);
 
-    // 5. 第二次反向传播
+    // 5. 第2次反向传播
     graph.backward_nodes(&[b], y).unwrap();
     assert_eq!(graph.last_backward_pass_id(), 2);
 
-    // 6. 第三次反向传播
+    // 6. 第3次反向传播
     graph.backward_nodes(&[b], y).unwrap();
     assert_eq!(graph.last_backward_pass_id(), 3);
 }

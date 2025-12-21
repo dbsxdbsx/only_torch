@@ -168,12 +168,14 @@ impl Tensor {
     }
 
     /// 打乱张量中的元素顺序，并将其返回（不影响原张量）
-    pub fn shuffle(&self, axis: Option<usize>) -> Self {
+    ///
+    /// * `dim` - 可选的维度参数，指定沿哪个维度打乱；若为 None 则打乱所有元素
+    pub fn shuffle(&self, dim: Option<usize>) -> Self {
         let mut shuffled_data = self.data.clone();
         let mut rng = thread_rng();
 
-        if let Some(axis) = axis {
-            let axis = Axis(axis);
+        if let Some(dim) = dim {
+            let axis = Axis(dim);
             let mut chunks: Vec<_> = shuffled_data
                 .axis_iter(axis)
                 .map(|c| c.to_owned())
@@ -197,11 +199,13 @@ impl Tensor {
     }
 
     /// 打乱张量中的元素顺序（影响原张量）
-    pub fn shuffle_mut(&mut self, axis: Option<usize>) {
+    ///
+    /// * `dim` - 可选的维度参数，指定沿哪个维度打乱；若为 None 则打乱所有元素
+    pub fn shuffle_mut(&mut self, dim: Option<usize>) {
         let mut rng = thread_rng();
 
-        if let Some(axis) = axis {
-            let axis = Axis(axis);
+        if let Some(dim) = dim {
+            let axis = Axis(dim);
             let mut chunks = self
                 .data
                 .axis_iter(axis)
@@ -225,13 +229,14 @@ impl Tensor {
     }
 
     /// 使用指定种子打乱张量中的元素顺序（影响原张量，确保可重复性）
-    /// * `axis` - 可选的轴参数，指定沿哪个轴打乱
+    ///
+    /// * `dim` - 可选的维度参数，指定沿哪个维度打乱；若为 None 则打乱所有元素
     /// * `seed` - 随机数生成器的种子
-    pub fn shuffle_mut_seeded(&mut self, axis: Option<usize>, seed: u64) {
+    pub fn shuffle_mut_seeded(&mut self, dim: Option<usize>, seed: u64) {
         let mut rng = StdRng::seed_from_u64(seed);
 
-        if let Some(axis) = axis {
-            let axis = Axis(axis);
+        if let Some(dim) = dim {
+            let axis = Axis(dim);
             let mut chunks = self
                 .data
                 .axis_iter(axis)
@@ -286,7 +291,7 @@ impl Tensor {
     /// * `new_dim` - 布尔值，指示是否增加一个新的维度来堆叠。
     ///
     /// 当 `new_dim` 为 `true` 时，确保所有张量具有相同的形状。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len(), 1]` 的张量。
-    /// 当 `new_dim` 为 `false`，每个张量的第一个维度可以不同，但其余维度须相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
+    /// 当 `new_dim` 为 `false`，每个张量的第1个维度可以不同，但其余维度须相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
     /// 否则报错。
     pub fn stack(tensors: &[&Self], new_dim: bool) -> Self {
         assert!(!tensors.is_empty(), "{}", TensorError::EmptyList);
@@ -517,7 +522,7 @@ impl Tensor {
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑transpose↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓flatten↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    /// 将张量展平为一维张量，并返回新的张量（不影响原张量）
+    /// 将张量展平为1维张量，并返回新的张量（不影响原张量）
     pub fn flatten(&self) -> Self {
         let total_elements = self.data.len();
         Self {
@@ -525,13 +530,13 @@ impl Tensor {
         }
     }
 
-    /// 将张量展平为一维张量（影响原张量）
+    /// 将张量展平为1维张量（影响原张量）
     pub fn flatten_mut(&mut self) {
         let total_elements = self.data.len();
         self.data = self.data.clone().into_shape(vec![total_elements]).unwrap();
     }
 
-    /// 返回张量的一维展开视图，不复制数据
+    /// 返回张量的1维展开视图，不复制数据
     /// NOTE：这个主要参考了numpy的ravel和pytorch的flatten
     pub fn flatten_view(&self) -> ndarray::ArrayView1<'_, f32> {
         self.data
@@ -542,12 +547,12 @@ impl Tensor {
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑flatten↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓diag↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    /// 返回一个新的张量。输入张量必须是1维或2维，否则会panic。根据输入类型：
+    /// 返回一个新的张量。输入张量必须是1维或2维，否则会 panic。根据输入类型：
     /// - 若输入为标量，则返回同形状的标量
     /// - 若输入为向量，则返回以该向量为对角线的方阵
     /// - 若输入为方阵，则返回其对角线元素组成的1维向量
     /// - 若输入为非方阵，则panic
-    /// 注意：对于仅含一个元素的1维或2维张量，为方便理解，可被视为标量而不是向量或方阵；
+    /// 注意：对于仅含1个元素的1维或2维张量，为方便理解，可被视为标量而不是向量或方阵；
     /// 另外，不同于`numpy`的`diag`, 这里不支持诸如`[2,3]`这样的非标量、向量及方阵的情况
     ///
     /// # 示例
@@ -610,12 +615,12 @@ impl Tensor {
         Self { data: diag_vector }
     }
 
-    /// 就地修改当前张量。输入张量必须是1维或2维，否则会panic。根据输入类型：
+    /// 就地修改当前张量。输入张量必须是1维或2维，否则会 panic。根据输入类型：
     /// - 若输入为标量，则保持不变
     /// - 若输入为向量，则转换为以该向量为对角线的方阵
     /// - 若输入为方阵，则转换为其对角线元素组成的1维向量
     /// - 若输入为非方阵，则panic
-    /// 注意：对于仅含一个元素的1维或2维张量，为方便理解，可被视为标量而不是向量或方阵；
+    /// 注意：对于仅含1个元素的1维或2维张量，为方便理解，可被视为标量而不是向量或方阵；
     /// 另外，不同于`numpy`的`diag`, 这里不支持诸如`[2,3]`这样的非标量、向量及方阵的情况
     ///
     /// # 示例

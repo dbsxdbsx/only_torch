@@ -11,7 +11,7 @@ use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
 
 /// ScalarMultiply节点：标量(1x1) × 矩阵(m,n) = 矩阵(m,n)
-/// 第一个父节点必须是标量(1x1)，第二个父节点可以是任意形状的矩阵
+/// 第1个父节点必须是标量(1x1)，第2个父节点可以是任意形状的矩阵
 #[derive(Clone)]
 pub(crate) struct ScalarMultiply {
     id: Option<NodeId>,
@@ -31,7 +31,7 @@ impl ScalarMultiply {
             ));
         }
 
-        // 2. 验证第一个父节点是标量(1x1)
+        // 2. 验证第1个父节点是标量(1x1)
         let scalar_shape = parents[0].value_expected_shape();
         if scalar_shape != [1, 1] {
             return Err(GraphError::ShapeMismatch {
@@ -41,7 +41,7 @@ impl ScalarMultiply {
             });
         }
 
-        // 3. 获取第二个父节点（矩阵）的形状作为输出形状
+        // 3. 获取第2个父节点（矩阵）的形状作为输出形状
         let matrix_shape = parents[1].value_expected_shape().to_vec();
 
         // 4. 返回
@@ -116,10 +116,10 @@ impl TraitNode for ScalarMultiply {
     ///
     /// 设 C = s * M，其中s是标量(1x1)，M是矩阵(m,n)
     ///
-    /// 对于标量s（第一个父节点）：
+    /// 对于标量 s（第1个父节点）：
     ///   ∂C/∂s = M.flatten().T  → shape: [m*n, 1]
     ///
-    /// 对于矩阵M（第二个父节点）：
+    /// 对于矩阵 M（第2个父节点）：
     ///   ∂C/∂M = s * I_{m*n}    → shape: [m*n, m*n]
     fn calc_jacobi_to_a_parent(
         &self,

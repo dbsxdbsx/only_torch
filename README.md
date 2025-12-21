@@ -29,7 +29,6 @@
 - still need teset `test_duplicate_computation_avoidance`?
 - (back/forward)pass_id 相关的 graph 测试？
 - （最后用 AI 优化下 backward 的逻辑）
-- 1 次， 一次？用哪个？
 - `assert_eq!( graph.backward_nodes(&[input], input), Err(GraphError::InvalidOperation(format!( "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵" ))) ); `添加一个 `assert_err`的宏，可才参考 `assert_panic`宏
 - graph 反向传播中有些节点没有值需要过滤怎么添加（如多个 output 的网络结构）？
 - 针对 `loss1.backward(retain_graph=True)`和 `detach()`还有多 output 输出，还有 rnn 节点的反向传播，还有多次 backward 的问题；
@@ -56,8 +55,6 @@
 - 当后期（NEAT 阶段）需要在一个已经 forwarded 的图中添加节点（如将已经被使用过的 var1、var2 结合一个新的未使用的 var3 构建一个 add 节点），可能需要添加一个 `reset_forward_cnt`方法来保证图 forward 的一致性。
 - NEAT 之后，针对图 backward 的 `loss1.backward(retain_graph=True)`和 `detach()`机制的实现（可在 GAN 和强化学习算法实例中针对性实现测试），可能须和 `forward_cnt`机制结合, 还要考虑一次 forward 后多次 backward()后的结果。
 - Tensor 真的需要 uninit 吗？
-- 各种命名规范“2 维”，“二维”，“二阶”，“2 阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”，”dim/dimension/rank“,"维/阶",","改为", ","仍然"改为”仍“
-- 添加一个表格，说明下本 crate 中，阶、维、标量、向量、矩阵、张量的概念异同；
 - 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化,能 ok 拓展至 linear 等常用层，还有 detach，，容易添加 edge(如已存在的 add 节点的父节点)，。
 - 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - 图错误“InvalidOperation” vs “ComputationError”
@@ -76,6 +73,21 @@
 - [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
 
 ## 笔记
+
+### 核心概念：维度与张量体系
+
+| 术语         | 英文   | 维数(ndim) | shape 示例 | 说明                   |
+| ------------ | ------ | ---------- | ---------- | ---------------------- |
+| 标量(scalar) | scalar | 0          | `[]`       | 单个数值，无维度       |
+| 向量(vector) | vector | 1          | `[n]`      | 1 维数组               |
+| 矩阵(matrix) | matrix | 2          | `[m, n]`   | 2 维数组，m 行 n 列    |
+| 张量(tensor) | tensor | ≥0         | 任意       | 泛指，包含以上所有类型 |
+
+> **维数(ndim)**：张量有几个轴（shape 长度）。**维度(dim)**：指定某个轴进行操作。本项目统一使用"维度"术语，与 PyTorch 保持一致。
+
+详见：[术语规范](.doc/terminology_convention.md)
+
+### 设计文档
 
 - [广播机制设计决策](.doc/design/broadcast_mechanism_design.md) - 阐述了为何采用"显式节点广播"而非 PyTorch 风格隐式广播，及其对 NEAT 演化、梯度计算的影响
 - [性能优化策略](.doc/design/optimization_strategy.md) - 针对 CPU-only 和 NEAT 小规模不规则网络的优化方向，包括个体并行、Batch 向量化、SIMD 等策略的优先级分析

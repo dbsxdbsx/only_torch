@@ -80,11 +80,11 @@ fn test_slice_panic_cases() {
 
     // 测试索引超出范围
     assert_panic!(
-        tensor.slice(&[&5, &1, &0, &3]), // 第一维的索引5超出范围
+        tensor.slice(&[&5, &1, &0, &3]), // 第1维的索引5超出范围
         "slice(_view)无法接受某个维度的索引超出目标张量在该维度范围"
     );
     assert_panic!(
-        tensor.slice(&[&(0..3), &1, &0, &3]), // 第一维的范围0..3超出实际大小2
+        tensor.slice(&[&(0..3), &1, &0, &3]), // 第1维的范围0..3超出实际大小2
         "slice(_view)无法接受某个维度的索引超出目标张量在该维度范围"
     );
 }
@@ -153,11 +153,11 @@ fn test_slice_view_panic_cases() {
 
     // 测试索引超出范围
     assert_panic!(
-        tensor.slice_view(&[&5, &1, &0, &3]), // 第一维的索引5超出范围
+        tensor.slice_view(&[&5, &1, &0, &3]), // 第1维的索引5超出范围
         "slice(_view)无法接受某个维度的索引超出目标张量在该维度范围"
     );
     assert_panic!(
-        tensor.slice_view(&[&(0..3), &1, &0, &3]), // 第一维的范围0..3超出实际大小2
+        tensor.slice_view(&[&(0..3), &1, &0, &3]), // 第1维的范围0..3超出实际大小2
         "slice(_view)无法接受某个维度的索引超出目标张量在该维度范围"
     );
 }

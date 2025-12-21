@@ -135,7 +135,7 @@ fn test_mul_number_and_tensor() {
             input_data: vec![1., 2., 3., 4., 5., 6.],
             expected_output: vec![vec![2., 4., 6., 8., 10., 12.]],
         },
-        // 高阶张量
+        // 高维张量
         TensorCheck {
             input_shape: vec![2, 3, 1],
             input_data: vec![1., 2., 3., 4., 5., 6.],
@@ -203,13 +203,13 @@ fn test_mul_scalars_among_various_shapes() {
             } else {
                 // 不同形状的标量张量相乘应该失败
                 let expected_msg = format!(
-                    "形状不一致，故无法相乘：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
+                    "形状不一致，故无法相乘：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
                     shape1, shape2
                 );
                 assert_panic!(scalar1.clone() * scalar2.clone(), expected_msg);
 
                 let expected_msg = format!(
-                    "形状不一致，故无法相乘：第一个张量的形状为{:?}，第二个张量的形状为{:?}",
+                    "形状不一致，故无法相乘：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
                     shape2, shape1
                 );
                 assert_panic!(scalar2 * scalar1.clone(), expected_msg);

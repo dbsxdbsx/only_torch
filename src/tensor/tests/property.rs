@@ -171,15 +171,15 @@ fn test_size() {
     let tensor = Tensor::new(&[1.0], &[]);
     assert_eq!(tensor.size(), 1);
 
-    // 测试一维向量
+    // 测试1维向量
     let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     assert_eq!(tensor.size(), 3);
 
-    // 测试二维矩阵
+    // 测试2维矩阵
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     assert_eq!(tensor.size(), 4);
 
-    // 测试三维张量
+    // 测试3维张量
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1]);
     assert_eq!(tensor.size(), 6);
 

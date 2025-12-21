@@ -88,7 +88,7 @@ impl Tensor {
     /// * `indices` - 索引值的数组。
     ///
     /// 返回一个“克隆”的张量，其包含根据给定索引选取的（多个）元素。
-    /// 若原始张量只有一个元素，则无论`indices`为何，均返回一个包含该元素的新张量，且形状为`&[]`。
+    /// 若原始张量只有1个元素，则无论`indices`为何，均返回一个包含该元素的新张量，且形状为`&[]`。
     pub fn get(&self, indices: &[usize]) -> Self {
         if let Some(number) = self.get_data_number() {
             return Self::new(&[number], &[]);

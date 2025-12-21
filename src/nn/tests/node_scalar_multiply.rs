@@ -62,7 +62,7 @@ fn test_node_scalar_multiply_creation() {
 fn test_node_scalar_multiply_creation_with_invalid_shape() {
     let mut graph = Graph::new();
 
-    // 1. 测试第一个参数不是标量（应该失败）
+    // 1. 测试第1个参数不是标量（应该失败）
     let non_scalar = graph
         .new_parameter_node(&[2, 3], Some("non_scalar"))
         .unwrap();
@@ -78,7 +78,7 @@ fn test_node_scalar_multiply_creation_with_invalid_shape() {
         })
     );
 
-    // 2. 测试第一个参数是向量(1xN)而非标量（应该失败）
+    // 2. 测试第1个参数是向量(1xN)而非标量（应该失败）
     let vector = graph.new_parameter_node(&[1, 3], Some("vector")).unwrap();
     let result = graph.new_scalar_multiply_node(vector, matrix, None);
     assert_eq!(
@@ -240,11 +240,11 @@ fn test_node_scalar_multiply_gradient_accumulation() {
     // 前向传播
     graph.forward_node(result).unwrap();
 
-    // 第一次反向传播
+    // 第1次反向传播
     graph.backward_nodes(&[scalar], result).unwrap();
     let jacobi_first = graph.get_node_jacobi(scalar).unwrap().unwrap().clone();
 
-    // 第二次反向传播（梯度应该累积）
+    // 第2次反向传播（梯度应该累积）
     graph.backward_nodes(&[scalar], result).unwrap();
     let jacobi_second = graph.get_node_jacobi(scalar).unwrap().unwrap();
 

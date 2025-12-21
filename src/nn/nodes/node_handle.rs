@@ -3,7 +3,7 @@ use super::raw_node::{Add, Input, MatMul, Multiply, Parameter, PerceptionLoss, S
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
 
-/// 为Graph所管理的节点提供一个句柄，所有内置数据类型必须为二阶张量
+/// 为Graph所管理的节点提供一个句柄，所有内置数据类型必须为2维张量
 #[derive(Clone)]
 pub(in crate::nn) struct NodeHandle {
     raw_node: NodeType,

@@ -182,11 +182,11 @@ fn test_node_multiply_gradient_accumulation() {
     // 前向传播
     graph.forward_node(result).unwrap();
 
-    // 第一次反向传播
+    // 第1次反向传播
     graph.backward_nodes(&[left], result).unwrap();
     let jacobi_first = graph.get_node_jacobi(left).unwrap().unwrap().clone();
 
-    // 第二次反向传播（梯度应该累积）
+    // 第2次反向传播（梯度应该累积）
     graph.backward_nodes(&[left], result).unwrap();
     let jacobi_second = graph.get_node_jacobi(left).unwrap().unwrap();
 

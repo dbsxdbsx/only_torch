@@ -107,10 +107,10 @@ impl TraitNode for Multiply {
     ///
     /// 设 C = A ⊙ B (逐元素乘法)，其中A和B形状相同(m,n)
     ///
-    /// 对于A（第一个父节点）：
+    /// 对于 A（第1个父节点）：
     ///   ∂C/∂A = diag(B.flatten()) → shape: [m*n, m*n]
     ///
-    /// 对于B（第二个父节点）：
+    /// 对于 B（第2个父节点）：
     ///   ∂C/∂B = diag(A.flatten()) → shape: [m*n, m*n]
     fn calc_jacobi_to_a_parent(
         &self,

@@ -17,11 +17,11 @@ fn test_forward_with_partial_forward_propagation() {
     graph.set_node_value(x, Some(&x_value)).unwrap();
     graph.set_node_value(y, Some(&y_value)).unwrap();
 
-    // 3. 第一次前向传播add1
+    // 3. 第1次前向传播add1
     graph.forward_node(add1).unwrap();
     let first_pass_id = graph.last_forward_pass_id();
 
-    // 验证所有节点的pass_id都是第一次的pass_id
+    // 验证所有节点的pass_id都是第1次的pass_id
     assert_eq!(
         graph.get_node(x).unwrap().last_forward_pass_id(),
         first_pass_id
@@ -116,15 +116,15 @@ fn test_forward_pass_id_increment() {
     graph.set_node_value(x, Some(&x_value)).unwrap();
     graph.set_node_value(b, Some(&b_value)).unwrap();
 
-    // 4. 第一次前向传播
+    // 4. 第1次前向传播
     graph.forward_node(y).unwrap();
     assert_eq!(graph.last_forward_pass_id(), 1);
 
-    // 5. 第二次前向传播
+    // 5. 第2次前向传播
     graph.forward_node(y).unwrap();
     assert_eq!(graph.last_forward_pass_id(), 2);
 
-    // 6. 第三次前向传播
+    // 6. 第3次前向传播
     graph.forward_node(y).unwrap();
     assert_eq!(graph.last_forward_pass_id(), 3);
 }

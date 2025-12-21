@@ -13,7 +13,7 @@ pub enum TensorError {
     },
     // 张量二元运算
     #[error(
-        "形状不一致，故无法{operator}：第一个张量的形状为{tensor1_shape:?}，第二个张量的形状为{tensor2_shape:?}"
+        "形状不一致，故无法{operator}：第1个张量的形状为{tensor1_shape:?}，第2个张量的形状为{tensor2_shape:?}"
     )]
     OperatorError {
         operator: Operator,

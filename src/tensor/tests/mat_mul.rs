@@ -12,7 +12,7 @@ fn test_mat_mul_vector_vector() {
     let result = b.mat_mul(&a);
     let expected = Tensor::new(&[4.0, 8.0, 12.0, 5.0, 10.0, 15.0, 6.0, 12.0, 18.0], &[3, 3]);
     assert_eq!(result.data, expected.data);
-    // 构造2个，使得结果正好等于第二个张量
+    // 构造2个，使得结果正好等于第2个张量
     let a = Tensor::eyes(2);
     let b = Tensor::new(&[2.0, 3.0, 4.0, 5.0, 6.0, 7.0], &[2, 3]);
     let result = a.mat_mul(&b);

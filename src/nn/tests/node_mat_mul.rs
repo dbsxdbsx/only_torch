@@ -324,7 +324,7 @@ fn test_node_mat_mul_backward_propagation() {
     // 5.1 mat_mul节点result本身的雅可比矩阵至始至终都应为None
     assert!(graph.get_node_jacobi(result).unwrap().is_none());
 
-    // 5.2 对parent1的反向传播（第一次）
+    // 5.2 对parent1的反向传播（第1次）
     graph.backward_nodes(&[parent1], result).unwrap();
     let parent1_jacobi = graph.get_node_jacobi(parent1).unwrap().unwrap();
     let expected_jacobi_parent1 = Tensor::new(
@@ -337,12 +337,12 @@ fn test_node_mat_mul_backward_propagation() {
     );
     assert_eq!(parent1_jacobi, &expected_jacobi_parent1);
 
-    // 5.3 对parent1的反向传播（第二次）- 梯度应该累积
+    // 5.3 对parent1的反向传播（第2次）- 梯度应该累积
     graph.backward_nodes(&[parent1], result).unwrap();
     let parent1_jacobi_second = graph.get_node_jacobi(parent1).unwrap().unwrap();
     assert_eq!(parent1_jacobi_second, &(&expected_jacobi_parent1 * 2.0));
 
-    // 5.4 对parent2的反向传播（第一次）
+    // 5.4 对parent2的反向传播（第1次）
     graph.backward_nodes(&[parent2], result).unwrap();
     let parent2_jacobi = graph.get_node_jacobi(parent2).unwrap().unwrap();
     let expected_jacobi_parent2 = Tensor::new(
@@ -358,7 +358,7 @@ fn test_node_mat_mul_backward_propagation() {
     );
     assert_eq!(parent2_jacobi, &expected_jacobi_parent2);
 
-    // 5.5 对parent2的反向传播（第二次）- 梯度应该累积
+    // 5.5 对parent2的反向传播（第2次）- 梯度应该累积
     graph.backward_nodes(&[parent2], result).unwrap();
     let parent2_jacobi_second = graph.get_node_jacobi(parent2).unwrap().unwrap();
     assert_eq!(parent2_jacobi_second, &(&expected_jacobi_parent2 * 2.0));
