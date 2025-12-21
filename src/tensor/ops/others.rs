@@ -12,8 +12,10 @@ use crate::errors::{Operator, TensorError};
 
 use crate::tensor::Tensor;
 use ndarray::{Array, Axis, IxDyn, Zip};
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use rand::SeedableRng;
 
 impl From<f32> for Tensor {
     /// 实现 From<f32> trait 用于将`f32`类型转换为形状为`[1,1]`的张量
@@ -197,6 +199,36 @@ impl Tensor {
     /// 打乱张量中的元素顺序（影响原张量）
     pub fn shuffle_mut(&mut self, axis: Option<usize>) {
         let mut rng = thread_rng();
+
+        if let Some(axis) = axis {
+            let axis = Axis(axis);
+            let mut chunks = self
+                .data
+                .axis_iter(axis)
+                .map(|c| c.to_owned())
+                .collect::<Vec<_>>();
+            chunks.shuffle(&mut rng);
+            for (i, chunk) in chunks.into_iter().enumerate() {
+                let mut slice = self.data.index_axis_mut(axis, i);
+                slice.assign(&chunk);
+            }
+        } else {
+            let flat_len = self.data.len();
+            let mut flat_data = self.data.view_mut().into_shape(flat_len).unwrap();
+            let flat_data_slice = flat_data.as_slice_mut().unwrap();
+            flat_data_slice.shuffle(&mut rng);
+            self.data = flat_data
+                .to_owned()
+                .into_shape(self.data.shape().to_owned())
+                .unwrap();
+        }
+    }
+
+    /// 使用指定种子打乱张量中的元素顺序（影响原张量，确保可重复性）
+    /// * `axis` - 可选的轴参数，指定沿哪个轴打乱
+    /// * `seed` - 随机数生成器的种子
+    pub fn shuffle_mut_seeded(&mut self, axis: Option<usize>, seed: u64) {
+        let mut rng = StdRng::seed_from_u64(seed);
 
         if let Some(axis) = axis {
             let axis = Axis(axis);

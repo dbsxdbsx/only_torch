@@ -556,6 +556,17 @@ impl Graph {
         self.add_node_to_list(node, name, "parameter", &[])
     }
 
+    /// 使用固定种子创建参数节点（确保可重复性）
+    pub fn new_parameter_node_seeded(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+        seed: u64,
+    ) -> Result<NodeId, GraphError> {
+        let node = NodeHandle::new_parameter_seeded(shape, seed)?;
+        self.add_node_to_list(node, name, "parameter", &[])
+    }
+
     pub fn new_add_node(
         &mut self,
         parents: &[NodeId],

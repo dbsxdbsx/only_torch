@@ -1,5 +1,7 @@
 use ndarray::{Array, ArrayD, ArrayViewD, IxDyn};
+use rand::rngs::StdRng;
 use rand::Rng;
+use rand::SeedableRng;
 use rand::distributions::{Distribution, Uniform};
 
 use serde::{Deserialize, Serialize};
@@ -113,6 +115,35 @@ impl Tensor {
     /// 若为更高维度的数组，shape可以是[c,n,m,...]。
     pub fn normal(mean: f32, std_dev: f32, shape: &[usize]) -> Self {
         let mut rng = rand::thread_rng();
+        let data_len = shape.iter().product::<usize>();
+        let mut data = Vec::with_capacity(data_len);
+
+        while data.len() < data_len {
+            let u1: f32 = rng.r#gen();
+            let u2: f32 = rng.r#gen();
+            let r = (-2.0 * u1.ln()).sqrt();
+            let theta = 2.0 * std::f32::consts::PI * u2;
+            let z0 = (std_dev * r).mul_add(theta.cos(), mean);
+            let z1 = (std_dev * r).mul_add(theta.sin(), mean);
+
+            if z0.is_finite() {
+                data.push(z0);
+            }
+            if data.len() < data_len && z1.is_finite() {
+                data.push(z1);
+            }
+        }
+
+        Self::new(&data, shape)
+    }
+
+    /// 创建一个服从正态分布的随机张量（使用指定种子确保可重复性）
+    /// * `mean` - 正态分布的均值
+    /// * `std_dev` - 正态分布的标准差
+    /// * `shape` - 张量的形状
+    /// * `seed` - 随机数生成器的种子
+    pub fn normal_seeded(mean: f32, std_dev: f32, shape: &[usize], seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(seed);
         let data_len = shape.iter().product::<usize>();
         let mut data = Vec::with_capacity(data_len);
 

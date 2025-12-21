@@ -15,15 +15,16 @@ use only_torch::tensor_where;
 fn test_optimizer_example() -> Result<(), GraphError> {
     let start_time = std::time::Instant::now();
 
-    // 构造训练数据（与Python版本相同）
-    let male_heights = Tensor::normal(171.0, 6.0, &[500]);
-    let female_heights = Tensor::normal(158.0, 5.0, &[500]);
+    // 构造训练数据（使用固定种子确保测试可重复性）
+    let seed_base: u64 = 42;
+    let male_heights = Tensor::normal_seeded(171.0, 6.0, &[500], seed_base);
+    let female_heights = Tensor::normal_seeded(158.0, 5.0, &[500], seed_base + 1);
 
-    let male_weights = Tensor::normal(70.0, 10.0, &[500]);
-    let female_weights = Tensor::normal(57.0, 8.0, &[500]);
+    let male_weights = Tensor::normal_seeded(70.0, 10.0, &[500], seed_base + 2);
+    let female_weights = Tensor::normal_seeded(57.0, 8.0, &[500], seed_base + 3);
 
-    let male_bfrs = Tensor::normal(16.0, 2.0, &[500]);
-    let female_bfrs = Tensor::normal(22.0, 2.0, &[500]);
+    let male_bfrs = Tensor::normal_seeded(16.0, 2.0, &[500], seed_base + 4);
+    let female_bfrs = Tensor::normal_seeded(22.0, 2.0, &[500], seed_base + 5);
 
     let male_labels = Tensor::new(&[1.0; 500], &[500]);
     let female_labels = Tensor::new(&[-1.0; 500], &[500]);
@@ -38,7 +39,7 @@ fn test_optimizer_example() -> Result<(), GraphError> {
         true,
     );
     train_set.permute_mut(&[1, 0]);
-    train_set.shuffle_mut(Some(0)); // 随机打乱样本顺序
+    train_set.shuffle_mut_seeded(Some(0), seed_base + 6); // 使用固定种子打乱样本顺序
     println!("训练集形状: {:?}", train_set.shape());
 
     // 创建计算图
@@ -50,11 +51,11 @@ fn test_optimizer_example() -> Result<(), GraphError> {
     // 类别标签，1男，-1女
     let label = graph.new_input_node(&[1, 1], Some("label"))?;
 
-    // 权重向量，是一个1x3矩阵，需要初始化，参与训练
-    let w = graph.new_parameter_node(&[1, 3], Some("w"))?;
+    // 权重向量，是一个1x3矩阵，需要初始化，参与训练（使用固定种子）
+    let w = graph.new_parameter_node_seeded(&[1, 3], Some("w"), seed_base + 7)?;
 
-    // 阈值，是一个1x1矩阵，需要初始化，参与训练
-    let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
+    // 阈值，是一个1x1矩阵，需要初始化，参与训练（使用固定种子）
+    let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), seed_base + 8)?;
 
     // ADALINE的预测输出
     let wx = graph.new_mat_mul_node(w, x, None)?;

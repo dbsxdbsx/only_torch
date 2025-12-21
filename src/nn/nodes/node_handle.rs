@@ -109,6 +109,18 @@ impl NodeHandle {
         })
     }
 
+    pub(in crate::nn) fn new_parameter_seeded(
+        shape: &[usize],
+        seed: u64,
+    ) -> Result<Self, GraphError> {
+        let parameter = Parameter::new_seeded(shape, seed)?;
+        Ok(Self {
+            raw_node: NodeType::Parameter(parameter),
+            last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
+        })
+    }
+
     pub(in crate::nn) fn new_add(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(Add::new(parents)?)
     }

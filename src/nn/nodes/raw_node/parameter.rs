@@ -35,6 +35,30 @@ impl Parameter {
             shape: shape.to_vec(),
         })
     }
+
+    /// 使用固定种子创建参数节点（确保可重复性）
+    pub(crate) fn new_seeded(shape: &[usize], seed: u64) -> Result<Self, GraphError> {
+        // 1. 必要的验证
+        if shape.len() != 2 {
+            return Err(GraphError::DimensionMismatch {
+                expected: 2,
+                got: shape.len(),
+                message: format!(
+                    "神经网络中的节点张量必须是2维的（矩阵），但收到的维度是{}维。",
+                    shape.len(),
+                ),
+            });
+        }
+
+        // 2. 返回
+        Ok(Self {
+            id: None,
+            name: None,
+            value: Some(Tensor::normal_seeded(0.0, 0.001, shape, seed)),
+            jacobi: None,
+            shape: shape.to_vec(),
+        })
+    }
 }
 
 impl TraitNode for Parameter {
