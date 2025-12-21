@@ -3,6 +3,7 @@ mod graph_backward;
 mod graph_basic;
 mod graph_dynamic; // M4: 动态图扩展能力测试（NEAT 友好性）
 mod graph_forward;
+mod layer_linear; // Linear 层便捷函数
 mod node_add;
 mod node_flatten; // Flatten 节点（展平）
 mod node_input;

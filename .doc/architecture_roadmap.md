@@ -1,6 +1,6 @@
 # Only Torch 架构路线图
 
-> 最后更新: 2025-12-21
+> 最后更新: 2025-12-22
 > 战略定位: **简化版 PyTorch in Rust**，为 NEAT 预留扩展性
 > MVP 目标: **XOR with Optimizer**
 
@@ -14,6 +14,7 @@
 │   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制（重要）
 │   ├── broadcast_mechanism_design.md               # 广播机制设计
 │   ├── gradient_clear_and_accumulation_design.md   # 梯度机制
+│   ├── node_vs_layer_design.md                     # Node vs Layer 架构设计 ⭐ NEW
 │   ├── optimization_strategy.md                    # 性能优化策略
 │   └── optimizer_architecture_design.md            # 优化器架构
 ├── reference/                           # 参考资料
@@ -32,7 +33,7 @@
 ─────────────────────────────────
 tensor/            ~80%     ✅ 基本完成
 nn/graph           ~90%     ✅ 核心完成
-nn/nodes           ~55%     🔄 Sigmoid/SoftmaxCE/LeakyReLU 已完成，缺 Conv2d 等
+nn/nodes           ~60%     🔄 Reshape/Flatten 已完成，缺 Conv2d/Pooling
 nn/optimizer       ~70%     ✅ SGD/Adam可用，缺Momentum等
 data/              ~60%     🔄 MNIST 已完成，DataLoader 基础可用
 vision/            ~70%     ✅ 基本完成
@@ -45,7 +46,7 @@ neat/              0%       ❌ 远期特色
 | 类型 | 节点                                    | 状态 |
 | :--- | :-------------------------------------- | :--: |
 | 输入 | Input, Parameter                        |  ✅  |
-| 运算 | Add, MatMul                             |  ✅  |
+| 运算 | Add, MatMul, Reshape, Flatten           |  ✅  |
 | 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU     |  ✅  |
 | 损失 | PerceptionLoss, SoftmaxCrossEntropyLoss |  ✅  |
 
@@ -53,7 +54,8 @@ neat/              0%       ❌ 远期特色
 
 - **激活函数**: Softplus, Softmax (独立版)
 - **损失函数**: MSELoss
-- **运算节点**: Sub, Neg, Mul(逐元素), Div, Reshape
+- **运算节点**: Sub, Neg, Mul(逐元素), Div
+- **CNN 节点**: Conv2d, MaxPool, AvgPool
 
 ## 集成测试进度
 
@@ -92,8 +94,8 @@ neat/              0%       ❌ 远期特色
 | P1b | Sigmoid 节点         | 通用激活                               | ✅ 新节点         |  ✅  |
 | P1c | DataLoader + MNIST   | 数据加载                               | ✅ 基础设施       |  ✅  |
 | P2  | LeakyReLU/ReLU 节点  | 底层 LeakyReLU + 便捷 ReLU (slope=0.0) | ✅ 新节点         |  ✅  |
-| P3  | Reshape/Flatten 节点 | CNN 数据流转换                         | ✅ 结构操作       |  ❌  |
-| P4  | Conv2d 节点          | 参考 MatrixSlow 实现                   | ⚠️ 需设计可进化性 |  ❌  |
+| P3  | Reshape/Flatten 节点 | CNN 数据流转换（PyTorch 风格）         | ✅ 结构操作       |  ✅  |
+| P4  | Conv2d 节点          | PyTorch 风格（多通道内部处理）         | ⚠️ 需设计可进化性 |  ❌  |
 | P5  | Pooling 节点         | MaxPool/AvgPool                        | ⚠️ 需设计可进化性 |  ❌  |
 | P6  | MNIST 端到端示例     | LeNet 风格                             | ✅ 验证           |  🔄  |
 

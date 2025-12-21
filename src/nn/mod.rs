@@ -8,11 +8,13 @@
 
 mod display;
 mod graph;
+pub mod layer;
 mod nodes;
 pub mod optimizer;
 
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{Graph, GraphError};
+pub use layer::{LinearOutput, linear};
 pub use nodes::NodeId;
 
 #[cfg(test)]
