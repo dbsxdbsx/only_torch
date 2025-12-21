@@ -76,7 +76,7 @@ fn test_optimizer_example() -> Result<(), GraphError> {
     let mini_batch_size = 8;
     let mut cur_batch_size = 0;
 
-    // 测试参数（与test_ada_line.rs一致）
+    // 测试参数（与test_adaline.rs一致）
     let max_epochs = 100;
     let target_accuracy = 0.95; // 95%
     let consecutive_success_required = 3;

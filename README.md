@@ -18,7 +18,7 @@
 
 ### 使用示例
 
-- **[Adaline自适应线性神经元](tests/test_ada_line.rs)** - 经典二分类算法实现，本例使用了最原始的写法来构建计算图、自动微分和参数更新，测试显示1000样本10轮训练可达95%+准确率（运行：`cargo test test_adaline -- --show-output`）
+- **[Adaline自适应线性神经元](tests/test_adaline.rs)** - 经典二分类算法实现，本例使用了最原始的写法来构建计算图、自动微分和参数更新，测试显示1000样本10轮训练可达95%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
 
@@ -35,9 +35,9 @@
 - unit test for Graph, and parent/children
 - Graph测试中该包含各种pub method的正确及错误测试
 - Graph测试中最好添加某个节点后，测试该节点还有其父节点的parents/children属性（又比如：同2个节点用于不同图的add节点，测试其parents/children属性是否正确）(Variable 节点无父节点)、“节点var1在图default_graph中重复”
-- add a `graph` for unit test to test the 多层的jacobi计算，就像ada_line那样?
+- add a `graph` for unit test to test the 多层的jacobi计算，就像adaline那样?
 - 各种assign类的op（如：add_assign）是否需要重载而不是复用基本算子？
-- 在python中仿造ada_Line构造一个复合多节点，然后基于此在rust中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
+- 在python中仿造adaline构造一个复合多节点，然后基于此在rust中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
 - jacobi到底该测试对parent还是children？
 - how to expose only `in crate::nn` to the nn::Graph`?
 - should completely hide the NodeHandle?
@@ -55,7 +55,7 @@
 - 各种命名规范“2维”，“二维”，“二阶”，“2阶”，“一个”，“两个”，“三个”，“需要”，“需”，“须要”，“须”，“值/value”,"变量/variable","node/handle"，“注/注意：”，”dim/dimension/rank“,"维/阶",","改为", ","仍然"改为”仍“
 - 添加一个表格，说明下本crate中，阶、维、标量、向量、矩阵、张量的概念异同；
 - 根据matrixSlow+我笔记重写全部实现！保证可以后期以NEAT进化,能ok拓展至linear等常用层，还有detach，，容易添加edge(如已存在的add节点的父节点)，。
-- 等ada_line例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
+- 等adaline例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - 图错误“InvalidOperation” vs “ComputationError”
 - Tensor类的index将 `[[`优化成 `[`?
 - Tensor类的 `slice(&[0..m, j..j+1])`是否需要？

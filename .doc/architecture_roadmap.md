@@ -53,6 +53,19 @@ neat/              0%       ❌ 远期特色
 - **损失函数**: CrossEntropyLoss, MSELoss
 - **运算节点**: Sub, Neg, Mul(逐元素), Div, Reshape
 
+## 集成测试进度
+
+> 对应 MatrixSlow Python 示例的 Rust 实现验证
+
+| Rust 测试 | 对应 MatrixSlow 示例 | 状态 | 说明 |
+|-----------|---------------------|:----:|------|
+| `test_adaline.rs` | `ch02/adaline.py` | ✅ | 最基础的计算图+自动微分 |
+| `test_adaline_batch.rs` | `ch03/adaline_batch.py` | ✅ | 批量处理 |
+| `test_optimizer_example.rs` | `ch03/optimizer_example.py` | ✅ | SGD/Adam优化器验证 |
+| `test_logistic_regression.rs` | `ch04/logistic_regression.py` | ❌ | 需要Sigmoid节点 |
+| `test_nn_iris.rs` | `ch05/nn_iris.py` | ❌ | 需要多层网络+Softmax |
+| `test_nn_mnist.rs` | `ch05/nn_mnist.py` | ❌ | 需要MNIST数据加载 |
+
 ---
 
 ## 优先级路线图
