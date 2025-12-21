@@ -4,8 +4,10 @@
  * @Description  : Adam 优化器测试
  */
 
-use crate::nn::Graph;
+use approx::assert_abs_diff_eq;
+
 use crate::nn::optimizer::{Adam, Optimizer};
+use crate::nn::Graph;
 use crate::tensor::Tensor;
 
 #[test]
@@ -80,13 +82,7 @@ fn test_adam_update() {
     // 验证：PyTorch 计算结果 w_new ≈ 1.9
     let new_w = graph.get_node_value(w).unwrap().unwrap();
     let new_w_value = new_w.get(&[0, 0]).get_data_number().unwrap();
-    let expected = 1.9;
-    let tolerance = 1e-5;
-    assert!(
-        (new_w_value - expected).abs() < tolerance,
-        "Adam更新后w应该约等于1.9（PyTorch验证），实际值: {}",
-        new_w_value
-    );
+    assert_abs_diff_eq!(new_w_value, 1.9, epsilon = 1e-5);
 }
 
 #[test]

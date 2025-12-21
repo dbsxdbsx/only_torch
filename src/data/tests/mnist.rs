@@ -3,8 +3,10 @@
 //! 注意：首次运行需要网络连接下载数据（约 11MB）。
 //! 数据下载后缓存在 `~/.cache/only_torch/datasets/mnist/`，后续无需网络。
 
-use crate::data::MnistDataset;
+use approx::assert_abs_diff_eq;
+
 use crate::data::datasets::default_data_dir;
+use crate::data::MnistDataset;
 
 #[test]
 fn test_default_data_dir() {
@@ -44,7 +46,7 @@ fn test_mnist_get_sample() {
 
     // one-hot 标签应该只有一个 1
     let label_sum: f32 = (0..10).map(|i| label[[i]]).sum();
-    assert!((label_sum - 1.0).abs() < 1e-6);
+    assert_abs_diff_eq!(label_sum, 1.0, epsilon = 1e-6);
 }
 
 #[test]

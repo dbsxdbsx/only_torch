@@ -1,3 +1,5 @@
+use approx::assert_abs_diff_eq;
+
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -18,8 +20,8 @@ fn test_node_parameter_creation() {
     let value = graph.get_node_value(param).unwrap().unwrap();
     let mean = value.mean();
     let std_dev = value.std_dev();
-    assert!(mean.abs() < 0.1); // 均值应接近0
-    assert!((std_dev - 0.001).abs() < 0.001); // 标准差应接近0.001
+    assert_abs_diff_eq!(mean, 0.0, epsilon = 0.1); // 均值应接近0
+    assert_abs_diff_eq!(std_dev, 0.001, epsilon = 0.001); // 标准差应接近0.001
 }
 
 #[test]

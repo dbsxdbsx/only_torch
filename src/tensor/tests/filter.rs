@@ -1,6 +1,6 @@
 use crate::tensor::Tensor;
 use crate::{assert_panic, tensor_where, tensor_where_f32, tensor_where_tensor};
-use approx::assert_abs_diff_eq; // 添加这个引用
+use approx::assert_abs_diff_eq;
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓where_with↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
@@ -11,31 +11,18 @@ fn test_where_with() {
     // 测试固定值转换
     let result = t.where_with_f32(|x| x >= 0.0, |_| 0.0, |x| -x);
     let expected = Tensor::new(&[0.0, 0.0, 0.0, 1.0], &[4]);
-    // 使用近似比较
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
 
     // 测试条件值转换
     let result = t.where_with_f32(|x| x > 1.0, |x| x * 2.0, |x| x / 2.0);
     let expected = Tensor::new(&[0.45, 0.5, 2.2, -0.5], &[4]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
 
     // 测试不同维度的张量
     let t = Tensor::new(&[0.9, 1.0, 1.1, 1.2], &[2, 1, 2]);
     let result = t.where_with_f32(|x| x >= 1.0, |x| x + 1.0, |x| x - 1.0);
     let expected = Tensor::new(&[-0.1, 2.0, 2.1, 2.2], &[2, 1, 2]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
 
     // 同时验证形状
     assert_eq!(result.shape(), expected.shape());
@@ -106,19 +93,12 @@ fn test_where_with_tensor() {
     // 1.1
     let result = t.where_with_tensor(&y, |x, y| x >= y, |x, _| x + 1.0, |x, _| x - 1.0);
     let expected = Tensor::new(&[-0.1, 2.0, 2.1, -2.0], &[4]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
+
     // 1.2 测试不同的比较条件
     let result = t.where_with_tensor(&y, |x, y| x < y, |x, _| x * 2.0, |x, _| x / 2.0);
     let expected = Tensor::new(&[1.8, 0.5, 0.55, -2.0], &[4]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
 
     // 2. 测试过滤后的真假条件值混合使用主张量的lambda函数和常量
     // 2.1 真值条件为常量，假值条件为lambda函数
@@ -129,11 +109,7 @@ fn test_where_with_tensor() {
         |x, _| x * x, // false时返回x的平方
     );
     let expected = Tensor::new(&[0.81, 1.0, 1.0, 1.0], &[4]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
 
     // 2.2 真值条件为lambda函数，假值条件为常量
     let result = t.where_with_tensor(
@@ -143,11 +119,7 @@ fn test_where_with_tensor() {
         |_, _| -1.0,    // false时返回常量-1.0
     );
     let expected = Tensor::new(&[-1.0, 2.0, 2.2, -1.0], &[4]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
 
     // 3. 测试过滤后的真假条件值混合使用主副2个张量的值进行计算
     let result = t.where_with_tensor(
@@ -157,11 +129,7 @@ fn test_where_with_tensor() {
         |x, y| x * y, // false时返回两个值的积
     );
     let expected = Tensor::new(&[0.9, 2.0, 2.1, -1.0], &[4]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
 
     // 4. 测试过滤后的真假条件值混合使用副张量的lambda函数和常量
     // 4.1 真值条件为常量，假值条件为副张量lambda函数
@@ -172,11 +140,8 @@ fn test_where_with_tensor() {
         |_, y| y * 3.0, // false时返回副张量值的3倍
     );
     let expected = Tensor::new(&[3.0, -1.0, -1.0, 3.0], &[4]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
+
     // 4.2 真值条件为副张量lambda函数，假值条件为常量
     let result = t.where_with_tensor(
         &y,
@@ -185,11 +150,7 @@ fn test_where_with_tensor() {
         |_, _| 0.0,     // false时返回常量0
     );
     let expected = Tensor::new(&[0.0, 3.0, 3.0, 0.0], &[4]);
-    assert_abs_diff_eq!(
-        result.data.as_slice().unwrap(),
-        expected.data.as_slice().unwrap(),
-        epsilon = 1e-6
-    );
+    assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
 }
 
 #[test]

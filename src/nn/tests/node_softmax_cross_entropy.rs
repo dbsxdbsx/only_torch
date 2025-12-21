@@ -1,29 +1,7 @@
+use approx::assert_abs_diff_eq;
+
 use crate::nn::Graph;
 use crate::tensor::Tensor;
-
-/// 辅助函数：比较两个张量是否近似相等
-fn assert_tensor_approx_eq(actual: &Tensor, expected: &Tensor, tolerance: f32) {
-    assert_eq!(
-        actual.shape(),
-        expected.shape(),
-        "形状不匹配: {:?} vs {:?}",
-        actual.shape(),
-        expected.shape()
-    );
-    let actual_flat = actual.flatten_view();
-    let expected_flat = expected.flatten_view();
-    for (i, (a, e)) in actual_flat.iter().zip(expected_flat.iter()).enumerate() {
-        assert!(
-            (a - e).abs() < tolerance,
-            "索引 {} 处值不匹配: {} vs {}，误差 {} 超过容差 {}",
-            i,
-            a,
-            e,
-            (a - e).abs(),
-            tolerance
-        );
-    }
-}
 
 #[test]
 fn test_softmax_cross_entropy_creation() {
@@ -85,7 +63,7 @@ fn test_softmax_cross_entropy_forward_simple() {
     // 验证损失值
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     let expected_loss = Tensor::new(&[0.40760597], &[1, 1]);
-    assert_tensor_approx_eq(loss, &expected_loss, 1e-5);
+    assert_abs_diff_eq!(loss, &expected_loss, epsilon = 1e-5);
 }
 
 #[test]
@@ -120,7 +98,7 @@ fn test_softmax_cross_entropy_forward_uniform() {
 
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     let expected_loss = Tensor::new(&[1.3862944], &[1, 1]);
-    assert_tensor_approx_eq(loss, &expected_loss, 1e-5);
+    assert_abs_diff_eq!(loss, &expected_loss, epsilon = 1e-5);
 }
 
 #[test]
@@ -159,7 +137,7 @@ fn test_softmax_cross_entropy_backward_simple() {
     assert_eq!(jacobi.shape(), &[1, 3]);
 
     let expected_grad = Tensor::new(&[0.09003057, 0.24472848, -0.33475903], &[1, 3]);
-    assert_tensor_approx_eq(jacobi, &expected_grad, 1e-5);
+    assert_abs_diff_eq!(jacobi, &expected_grad, epsilon = 1e-5);
 }
 
 #[test]
@@ -196,7 +174,7 @@ fn test_softmax_cross_entropy_backward_uniform() {
 
     let jacobi = graph.get_node_jacobi(logits_id).unwrap().unwrap();
     let expected_grad = Tensor::new(&[0.25, -0.75, 0.25, 0.25], &[1, 4]);
-    assert_tensor_approx_eq(jacobi, &expected_grad, 1e-5);
+    assert_abs_diff_eq!(jacobi, &expected_grad, epsilon = 1e-5);
 }
 
 #[test]
@@ -238,7 +216,7 @@ fn test_softmax_cross_entropy_10_classes() {
     // 验证损失
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     let expected_loss = Tensor::new(&[1.2168376], &[1, 1]);
-    assert_tensor_approx_eq(loss, &expected_loss, 1e-5);
+    assert_abs_diff_eq!(loss, &expected_loss, epsilon = 1e-5);
 
     // 验证梯度
     graph.backward_nodes(&[logits_id], loss_id).unwrap();
@@ -246,11 +224,11 @@ fn test_softmax_cross_entropy_10_classes() {
 
     #[rustfmt::skip]
     let expected_grad = Tensor::new(
-        &[0.0660834, 0.1796333, 0.02431072, -0.7038347, 0.04008161, 
+        &[0.0660834, 0.1796333, 0.02431072, -0.7038347, 0.04008161,
           0.0147452, 0.10895311, 0.0660834, 0.02431072, 0.1796333],
         &[1, 10]
     );
-    assert_tensor_approx_eq(jacobi, &expected_grad, 1e-5);
+    assert_abs_diff_eq!(jacobi, &expected_grad, epsilon = 1e-5);
 }
 
 #[test]

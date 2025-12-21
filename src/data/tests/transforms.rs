@@ -2,16 +2,17 @@
 
 use crate::data::transforms::{flatten_images, normalize_pixels, one_hot};
 use crate::tensor::Tensor;
+use approx::assert_abs_diff_eq;
 
 #[test]
 fn test_normalize_pixels_basic() {
     let tensor = Tensor::new(&[0.0, 127.5, 255.0, 51.0], &[2, 2]);
     let normalized = normalize_pixels(&tensor);
 
-    assert!((normalized[[0, 0]] - 0.0).abs() < 1e-6);
-    assert!((normalized[[0, 1]] - 0.5).abs() < 1e-6);
-    assert!((normalized[[1, 0]] - 1.0).abs() < 1e-6);
-    assert!((normalized[[1, 1]] - 0.2).abs() < 1e-6);
+    assert_abs_diff_eq!(normalized[[0, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(normalized[[0, 1]], 0.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(normalized[[1, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(normalized[[1, 1]], 0.2, epsilon = 1e-6);
 }
 
 #[test]
@@ -49,7 +50,7 @@ fn test_one_hot_mnist_style() {
     // 验证每行只有一个 1
     for i in 0..4 {
         let row_sum: f32 = (0..10).map(|j| encoded[[i, j]]).sum();
-        assert!((row_sum - 1.0).abs() < 1e-6);
+        assert_abs_diff_eq!(row_sum, 1.0, epsilon = 1e-6);
     }
 
     // 验证正确位置

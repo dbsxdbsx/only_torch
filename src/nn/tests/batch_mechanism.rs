@@ -5,6 +5,8 @@
  *                 验证 batch forward/backward 与累加单样本的结果一致
  */
 
+use approx::assert_abs_diff_eq;
+
 use crate::nn::optimizer::{Optimizer, SGD};
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
@@ -65,15 +67,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
         for j in 0..output_dim {
             let batch_val = batch_output[[i, j]];
             let single_val = single_out[[0, j]];
-            assert!(
-                (batch_val - single_val).abs() < 1e-5,
-                "batch[{}, {}] = {}, single = {}, diff = {}",
-                i,
-                j,
-                batch_val,
-                single_val,
-                (batch_val - single_val).abs()
-            );
+            assert_abs_diff_eq!(batch_val, single_val, epsilon = 1e-5);
         }
     }
 
@@ -177,40 +171,10 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     let tolerance = 1e-4;
 
     // 验证 w1 梯度
-    assert_eq!(batch_grad_w1.shape(), avg_grad_w1.shape());
-    for i in 0..input_dim {
-        for j in 0..hidden_dim {
-            let batch_val = batch_grad_w1[[i, j]];
-            let avg_val = avg_grad_w1[[i, j]];
-            assert!(
-                (batch_val - avg_val).abs() < tolerance,
-                "w1 grad[{}, {}]: batch = {}, avg = {}, diff = {}",
-                i,
-                j,
-                batch_val,
-                avg_val,
-                (batch_val - avg_val).abs()
-            );
-        }
-    }
+    assert_abs_diff_eq!(batch_grad_w1, avg_grad_w1, epsilon = tolerance);
 
     // 验证 w2 梯度
-    assert_eq!(batch_grad_w2.shape(), avg_grad_w2.shape());
-    for i in 0..hidden_dim {
-        for j in 0..output_dim {
-            let batch_val = batch_grad_w2[[i, j]];
-            let avg_val = avg_grad_w2[[i, j]];
-            assert!(
-                (batch_val - avg_val).abs() < tolerance,
-                "w2 grad[{}, {}]: batch = {}, avg = {}, diff = {}",
-                i,
-                j,
-                batch_val,
-                avg_val,
-                (batch_val - avg_val).abs()
-            );
-        }
-    }
+    assert_abs_diff_eq!(batch_grad_w2, avg_grad_w2, epsilon = tolerance);
 
     println!("✅ test_batch_gradient_equals_accumulated_single 通过");
     Ok(())
@@ -288,21 +252,7 @@ fn test_batch_optimizer_update() -> Result<(), GraphError> {
     );
 
     // 验证更新后的参数
-    for i in 0..input_dim {
-        for j in 0..output_dim {
-            let batch_val = w_after_batch[[i, j]];
-            let single_val = w_after_single[[i, j]];
-            assert!(
-                (batch_val - single_val).abs() < tolerance,
-                "w[{}, {}] after update: batch = {}, single = {}, diff = {}",
-                i,
-                j,
-                batch_val,
-                single_val,
-                (batch_val - single_val).abs()
-            );
-        }
-    }
+    assert_abs_diff_eq!(w_after_batch, w_after_single, epsilon = tolerance);
 
     println!("✅ test_batch_optimizer_update 通过");
     Ok(())

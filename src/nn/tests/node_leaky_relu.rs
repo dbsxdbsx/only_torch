@@ -1,3 +1,5 @@
+use approx::assert_abs_diff_eq;
+
 use crate::nn::optimizer::{Optimizer, SGD};
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
@@ -321,7 +323,7 @@ fn test_node_leaky_relu_simple_network() {
     graph.forward_node(output).unwrap();
 
     let output_val = graph.get_node_value(output).unwrap().unwrap()[[0, 0]];
-    assert!((output_val - 0.5).abs() < 1e-10, "ReLU(0.5) = 0.5");
+    assert_abs_diff_eq!(output_val, 0.5, epsilon = 1e-10);
 
     // 负值输入
     let z_value_neg = Tensor::new(&[-2.0], &[1, 1]);
@@ -329,10 +331,7 @@ fn test_node_leaky_relu_simple_network() {
     graph.forward_node(output).unwrap();
 
     let output_val_neg = graph.get_node_value(output).unwrap().unwrap()[[0, 0]];
-    assert!(
-        (output_val_neg - (-0.2)).abs() < 1e-10,
-        "LeakyReLU(-2.0, 0.1) = -0.2"
-    );
+    assert_abs_diff_eq!(output_val_neg, -0.2, epsilon = 1e-10);
 
     // 反向传播
     graph.backward_nodes(&[z], output).unwrap();
@@ -445,4 +444,3 @@ fn test_node_leaky_relu_mlp_training() {
     let mut optimizer = SGD::new(&graph, 0.01).unwrap();
     optimizer.update(&mut graph).unwrap();
 }
-

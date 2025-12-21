@@ -1,3 +1,5 @@
+use approx::assert_abs_diff_eq;
+
 use crate::nn::optimizer::{Optimizer, SGD};
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
@@ -267,7 +269,7 @@ fn test_node_sigmoid_simple_network() {
     // 3. 前向传播并验证 sigmoid(0.5) ≈ 0.6225
     graph.forward_node(output).unwrap();
     let output_val = graph.get_node_value(output).unwrap().unwrap()[[0, 0]];
-    assert!((output_val - 0.6225).abs() < 0.01, "sigmoid(0.5) ≈ 0.6225");
+    assert_abs_diff_eq!(output_val, 0.6225, epsilon = 0.01);
 
     // 4. 反向传播并验证雅可比矩阵形状
     graph.backward_nodes(&[z], output).unwrap();
