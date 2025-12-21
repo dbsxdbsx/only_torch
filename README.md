@@ -24,6 +24,8 @@
 
 - **[XOR 异或问题](tests/test_xor.rs)** ⭐ - 经典非线性分类问题，展示多层网络的能力。网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 即可达到 100% 准确率。这是验证神经网络能够学习非线性函数的经典测试（运行：`cargo test test_xor -- --show-output`）
 
+- **[MNIST 手写数字识别](tests/test_mnist.rs)** ⭐ - MVP 集成测试，验证 DataLoader + MLP 网络 + 训练循环的基本逻辑。网络结构：`Input(784) → Hidden(64, Sigmoid) → Output(10, SoftmaxCrossEntropy)`，验证 loss 下降趋势（运行：`cargo test test_mnist -- --show-output`）
+
 ## TODO
 
 - still need teset `test_duplicate_computation_avoidance`?
@@ -34,7 +36,7 @@
 - 针对 `loss1.backward(retain_graph=True)`和 `detach()`还有多 output 输出，还有 rnn 节点的反向传播，还有多次 backward 的问题；
 - 对于 Input 节点的 `set_jacobi`和 `jacobi`是否可用更好的 panic 或 error 取代，毕竟 Input 节点不该有梯度相关的概念；
 - 是否需要添加一个 sign 节点来取代 step 直接 forward 输出[-1,1]？
-- 直接实现 CrossEntropyLoss（训练）和 SoftMax（推理），不用 LogisticLoss（Sigmoid）了；
+- ~~直接实现 CrossEntropyLoss（训练）和 SoftMax（推理），不用 LogisticLoss（Sigmoid）了~~ ✅ 已实现 SoftmaxCrossEntropyLoss 融合节点；
 - unit test for Graph, and parent/children
 - Graph 测试中该包含各种 pub method 的正确及错误测试
 - Graph 测试中最好添加某个节点后，测试该节点还有其父节点的 parents/children 属性（又比如：同 2 个节点用于不同图的 add 节点，测试其 parents/children 属性是否正确）(Variable 节点无父节点)、“节点 var1 在图 default_graph 中重复”
@@ -66,9 +68,9 @@
 **目前需要先解决有没有的问题，而不是好不好**
 
 - [] 实现类似 tch-rs 中 `tch::no_grad(|| {});`的无梯度功能；
-- [x] 常用激活函数：Tanh ✅，Softplus/ReLU/Sigmoid 待实现
+- [x] 常用激活函数：Tanh ✅，Sigmoid ✅，Softplus/ReLU 待实现
 - [x] 基于本框架解决 XOR 监督学习问题 ✅ (2025-12-21)
-- [] 基于本框架解决 Mnist（数字识别）的监督学习问题
+- [x] 基于本框架解决 Mnist（数字识别）的监督学习问题 ✅ MVP 集成测试 (2025-12-21)
 - [] 基于本框架解决 CartPole（需要 openAI Gym 或相关 crate 支持）的深度强化学习问题
 - [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
 
@@ -92,6 +94,7 @@
 - [广播机制设计决策](.doc/design/broadcast_mechanism_design.md) - 阐述了为何采用"显式节点广播"而非 PyTorch 风格隐式广播，及其对 NEAT 演化、梯度计算的影响
 - [性能优化策略](.doc/design/optimization_strategy.md) - 针对 CPU-only 和 NEAT 小规模不规则网络的优化方向，包括个体并行、Batch 向量化、SIMD 等策略的优先级分析
 - [本项目的梯度设计机制说明](.doc/design/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
+- [DataLoader 设计文档](.doc/design/data_loader_design.md) - 数据加载模块的架构设计，包括 MNIST 数据集支持、自动下载/缓存、数据转换等
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料
