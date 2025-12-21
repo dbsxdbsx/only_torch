@@ -18,6 +18,10 @@
 
 ### 使用示例
 
+- **[XOR 异或问题](tests/test_xor.rs)** ⭐ - 经典非线性分类问题，展示多层网络的能力。网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 即可达到 100% 准确率。这是验证神经网络能够学习非线性函数的经典测试（运行：`cargo test test_xor -- --show-output`）
+
+- **[优化器示例](tests/test_optimizer_example.rs)** - 使用 SGD 优化器的完整训练流程，包含 mini-batch 训练、准确率评估。展示了 Granular 种子 API 和 Graph 级别种子 API 的用法对比（运行：`cargo test test_optimizer_example -- --show-output`）
+
 - **[Adaline 自适应线性神经元](tests/test_adaline.rs)** - 经典二分类算法实现，本例使用了最原始的写法来构建计算图、自动微分和参数更新，测试显示 1000 样本 10 轮训练可达 95%+准确率（运行：`cargo test test_adaline -- --show-output`）
 
 ## TODO
@@ -65,8 +69,8 @@
 **目前需要先解决有没有的问题，而不是好不好**
 
 - [] 实现类似 tch-rs 中 `tch::no_grad(|| {});`的无梯度功能；
-- [] 常用激活函数，tanh，Softplus，[sech](https://discuss.pytorch.org/t/implementing-sech/66862)
-- [] 基于本框架解决 XOR 监督学习问题
+- [x] 常用激活函数：Tanh ✅，Softplus/ReLU/Sigmoid 待实现
+- [x] 基于本框架解决 XOR 监督学习问题 ✅ (2025-12-21)
 - [] 基于本框架解决 Mnist（数字识别）的监督学习问题
 - [] 基于本框架解决 CartPole（需要 openAI Gym 或相关 crate 支持）的深度强化学习问题
 - [] 尝试实现下[CFC](https://github.com/raminmh/CfC)

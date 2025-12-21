@@ -102,3 +102,187 @@ fn test_node_relationships() {
     assert!(children1.contains(&add));
     assert!(children2.contains(&add));
 }
+
+// ============================================================================
+// M4b: Graph 级别种子测试
+// ============================================================================
+
+/// 测试: Graph::new_with_seed 创建确定性图
+#[test]
+fn test_graph_new_with_seed() {
+    // 1. 创建两个相同种子的图
+    let mut graph1 = Graph::new_with_seed(42);
+    let mut graph2 = Graph::new_with_seed(42);
+
+    // 2. 在两个图中创建相同结构的参数节点
+    let w1_g1 = graph1.new_parameter_node(&[3, 2], Some("w1")).unwrap();
+    let b1_g1 = graph1.new_parameter_node(&[3, 1], Some("b1")).unwrap();
+
+    let w1_g2 = graph2.new_parameter_node(&[3, 2], Some("w1")).unwrap();
+    let b1_g2 = graph2.new_parameter_node(&[3, 1], Some("b1")).unwrap();
+
+    // 3. 验证相同种子产生相同的参数值
+    let w1_value_g1 = graph1.get_node_value(w1_g1).unwrap().unwrap();
+    let w1_value_g2 = graph2.get_node_value(w1_g2).unwrap().unwrap();
+    assert_eq!(w1_value_g1, w1_value_g2);
+
+    let b1_value_g1 = graph1.get_node_value(b1_g1).unwrap().unwrap();
+    let b1_value_g2 = graph2.get_node_value(b1_g2).unwrap().unwrap();
+    assert_eq!(b1_value_g1, b1_value_g2);
+}
+
+/// 测试: 不同种子产生不同的参数值
+#[test]
+fn test_graph_different_seeds_produce_different_values() {
+    let mut graph1 = Graph::new_with_seed(42);
+    let mut graph2 = Graph::new_with_seed(123);
+
+    let w1 = graph1.new_parameter_node(&[3, 2], Some("w1")).unwrap();
+    let w2 = graph2.new_parameter_node(&[3, 2], Some("w1")).unwrap();
+
+    let w1_value = graph1.get_node_value(w1).unwrap().unwrap();
+    let w2_value = graph2.get_node_value(w2).unwrap().unwrap();
+
+    // 不同种子应产生不同的值
+    assert_ne!(w1_value, w2_value);
+}
+
+/// 测试: Graph::set_seed 动态设置种子
+#[test]
+fn test_graph_set_seed() {
+    let mut graph1 = Graph::new();
+    let mut graph2 = Graph::new();
+
+    // 动态设置种子
+    graph1.set_seed(42);
+    graph2.set_seed(42);
+
+    // 验证 has_seed
+    assert!(graph1.has_seed());
+    assert!(graph2.has_seed());
+
+    // 创建参数节点
+    let w1 = graph1.new_parameter_node(&[2, 2], Some("w")).unwrap();
+    let w2 = graph2.new_parameter_node(&[2, 2], Some("w")).unwrap();
+
+    // 相同种子应产生相同值
+    let w1_value = graph1.get_node_value(w1).unwrap().unwrap();
+    let w2_value = graph2.get_node_value(w2).unwrap().unwrap();
+    assert_eq!(w1_value, w2_value);
+}
+
+/// 测试: 无种子的图是非确定性的（概率性测试）
+#[test]
+fn test_graph_without_seed_is_non_deterministic() {
+    let mut graph1 = Graph::new();
+    let mut graph2 = Graph::new();
+
+    assert!(!graph1.has_seed());
+    assert!(!graph2.has_seed());
+
+    // 创建参数节点（使用较大的形状以确保随机性可观察）
+    let w1 = graph1.new_parameter_node(&[10, 10], Some("w")).unwrap();
+    let w2 = graph2.new_parameter_node(&[10, 10], Some("w")).unwrap();
+
+    // 无种子时，两个图的参数值应该不同（概率上几乎不可能相同）
+    let w1_value = graph1.get_node_value(w1).unwrap().unwrap();
+    let w2_value = graph2.get_node_value(w2).unwrap().unwrap();
+    assert_ne!(w1_value, w2_value);
+}
+
+/// 测试: new_parameter_node_seeded 覆盖 Graph 种子
+#[test]
+fn test_seeded_parameter_overrides_graph_seed() {
+    let mut graph1 = Graph::new_with_seed(42);
+    let mut graph2 = Graph::new_with_seed(999); // 不同的 Graph 种子
+
+    // 使用显式种子创建参数（应该覆盖 Graph 种子）
+    let w1 = graph1
+        .new_parameter_node_seeded(&[3, 2], Some("w"), 123)
+        .unwrap();
+    let w2 = graph2
+        .new_parameter_node_seeded(&[3, 2], Some("w"), 123)
+        .unwrap();
+
+    // 显式种子相同，所以参数值应该相同
+    let w1_value = graph1.get_node_value(w1).unwrap().unwrap();
+    let w2_value = graph2.get_node_value(w2).unwrap().unwrap();
+    assert_eq!(w1_value, w2_value);
+}
+
+/// 测试: NEAT 兼容性 - 多个 Graph 并行独立运行
+#[test]
+fn test_neat_compatibility_multiple_graphs() {
+    // 创建多个带种子的图（模拟 NEAT 种群）
+    let mut graphs: Vec<Graph> = (0..5).map(|i| Graph::new_with_seed(i as u64)).collect();
+
+    // 每个图独立创建参数
+    let params: Vec<NodeId> = graphs
+        .iter_mut()
+        .map(|g| g.new_parameter_node(&[4, 3], Some("w")).unwrap())
+        .collect();
+
+    // 验证：相同种子的图（如果重新创建）产生相同结果
+    let mut graph_0_copy = Graph::new_with_seed(0);
+    let param_0_copy = graph_0_copy.new_parameter_node(&[4, 3], Some("w")).unwrap();
+
+    let original_value = graphs[0].get_node_value(params[0]).unwrap().unwrap();
+    let copy_value = graph_0_copy.get_node_value(param_0_copy).unwrap().unwrap();
+    assert_eq!(original_value, copy_value);
+
+    // 验证：不同种子的图产生不同结果
+    let value_0 = graphs[0].get_node_value(params[0]).unwrap().unwrap();
+    let value_1 = graphs[1].get_node_value(params[1]).unwrap().unwrap();
+    assert_ne!(value_0, value_1);
+}
+
+/// 测试: Graph::with_name_and_seed
+#[test]
+fn test_graph_with_name_and_seed() {
+    let mut graph = Graph::with_name_and_seed("my_graph", 42);
+
+    assert_eq!(graph.name(), "my_graph");
+    assert!(graph.has_seed());
+
+    // 创建参数节点
+    let w = graph.new_parameter_node(&[2, 2], None).unwrap();
+
+    // 验证可以正常使用
+    assert!(graph.get_node_value(w).unwrap().is_some());
+}
+
+/// 测试: 种子设置后的多次参数创建保持确定性
+#[test]
+fn test_sequential_parameter_creation_determinism() {
+    let mut graph1 = Graph::new_with_seed(42);
+    let mut graph2 = Graph::new_with_seed(42);
+
+    // 按顺序创建多个参数
+    let w1_g1 = graph1.new_parameter_node(&[3, 2], Some("w1")).unwrap();
+    let w2_g1 = graph1.new_parameter_node(&[2, 3], Some("w2")).unwrap();
+    let w3_g1 = graph1.new_parameter_node(&[4, 4], Some("w3")).unwrap();
+
+    let w1_g2 = graph2.new_parameter_node(&[3, 2], Some("w1")).unwrap();
+    let w2_g2 = graph2.new_parameter_node(&[2, 3], Some("w2")).unwrap();
+    let w3_g2 = graph2.new_parameter_node(&[4, 4], Some("w3")).unwrap();
+
+    // 所有对应的参数都应该相同
+    assert_eq!(
+        graph1.get_node_value(w1_g1).unwrap(),
+        graph2.get_node_value(w1_g2).unwrap()
+    );
+    assert_eq!(
+        graph1.get_node_value(w2_g1).unwrap(),
+        graph2.get_node_value(w2_g2).unwrap()
+    );
+    assert_eq!(
+        graph1.get_node_value(w3_g1).unwrap(),
+        graph2.get_node_value(w3_g2).unwrap()
+    );
+
+    // 同一个图中的不同参数应该不同
+    assert_ne!(
+        graph1.get_node_value(w1_g1).unwrap(),
+        graph1.get_node_value(w2_g1).unwrap()
+    );
+}

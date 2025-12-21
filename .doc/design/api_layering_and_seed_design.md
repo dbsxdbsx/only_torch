@@ -1,7 +1,7 @@
 # API 分层与种子管理设计
 
 > 创建日期: 2025-12-21
-> 状态: **草案**
+> 状态: **已实现** (Graph 级别种子已完成)
 > 关联: [architecture_roadmap.md](../architecture_roadmap.md), [optimizer_architecture_design.md](./optimizer_architecture_design.md)
 
 ## 1. 背景与动机
@@ -56,7 +56,7 @@
 | 层级 | 种子管理 | 适用场景 | 状态 |
 |-----|---------|---------|------|
 | Granular | `fn_seeded(..., seed)` | 单元测试、精确控制 | ✅ 已实现 |
-| Graph-Level | `Graph::set_seed(seed)` | 训练脚本、NEAT | ⏳ 待实现 |
+| Graph-Level | `Graph::new_with_seed(seed)` / `Graph::set_seed(seed)` | 训练脚本、NEAT | ✅ 已实现 |
 | High-Level | 自动/配置化 | 快速原型 | 📋 远期 |
 
 ---
@@ -123,12 +123,15 @@ for graph in &mut graphs {
 - Granular API (`_seeded` 方法) 已实现
 - 集成测试使用显式种子，结果可重复
 
-### 阶段 2：Graph 级别种子（建议在 M4 前完成）
-- [ ] 为 `Graph` 添加 `rng: Option<StdRng>` 字段
-- [ ] 实现 `Graph::new_with_seed(seed)`
-- [ ] 实现 `Graph::set_seed(seed)`
-- [ ] 修改 `new_parameter_node()` 使用 Graph 的 RNG（如有）
-- [ ] 更新集成测试使用 Graph 级别种子（简化代码）
+### 阶段 2：Graph 级别种子 ✅ (2025-12-21 完成)
+- [x] 为 `Graph` 添加 `rng: Option<StdRng>` 字段
+- [x] 实现 `Graph::new_with_seed(seed)`
+- [x] 实现 `Graph::set_seed(seed)`
+- [x] 实现 `Graph::with_name_and_seed(name, seed)`
+- [x] 实现 `Graph::has_seed()` 检查方法
+- [x] 修改 `new_parameter_node()` 使用 Graph 的 RNG（如有）
+- [x] 8 个单元测试验证功能
+- [ ] 更新集成测试使用 Graph 级别种子（可选优化）
 
 ### 阶段 3：High-Level API（远期）
 - 在 `nn::Module` 或类似抽象中自动处理种子

@@ -9,6 +9,8 @@
 use super::NodeId;
 use super::nodes::{NodeHandle, NodeType};
 use crate::tensor::Tensor;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use std::collections::HashMap;
 
 /// 图的完整定义
@@ -25,6 +27,9 @@ pub struct Graph {
     last_backward_pass_id: u64,
     next_id: u64,
     is_eval_mode: bool,
+    /// 图级别的随机数生成器（用于参数初始化等）
+    /// None 表示使用默认的 thread_rng（非确定性）
+    rng: Option<StdRng>,
 }
 
 impl Default for Graph {
@@ -81,6 +86,49 @@ impl Graph {
         Self::with_name("default_graph")
     }
 
+    /// 创建一个带固定种子的计算图（确保可重复性）
+    ///
+    /// 使用此方法创建的图会有一个独立的随机数生成器，
+    /// 所有通过 `new_parameter_node()` 创建的参数都会使用这个 RNG 初始化。
+    ///
+    /// # NEAT 友好性
+    /// 每个 Graph 有独立的 RNG 状态，多个 Graph 可以并行进化互不干扰。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let graph1 = Graph::new_with_seed(42);
+    /// let graph2 = Graph::new_with_seed(42);
+    /// // graph1 和 graph2 的参数初始化结果相同
+    /// ```
+    pub fn new_with_seed(seed: u64) -> Self {
+        Self {
+            name: "default_graph".to_string(),
+            nodes: HashMap::new(),
+            forward_edges: HashMap::new(),
+            backward_edges: HashMap::new(),
+            last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
+            next_id: 0,
+            is_eval_mode: false,
+            rng: Some(StdRng::seed_from_u64(seed)),
+        }
+    }
+
+    /// 创建一个带名称和固定种子的计算图
+    pub fn with_name_and_seed(name: &str, seed: u64) -> Self {
+        Self {
+            name: name.to_string(),
+            nodes: HashMap::new(),
+            forward_edges: HashMap::new(),
+            backward_edges: HashMap::new(),
+            last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
+            next_id: 0,
+            is_eval_mode: false,
+            rng: Some(StdRng::seed_from_u64(seed)),
+        }
+    }
+
     pub fn with_name(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -91,7 +139,27 @@ impl Graph {
             last_backward_pass_id: 0,
             next_id: 0,
             is_eval_mode: false,
+            rng: None,
         }
+    }
+
+    /// 设置/重置图的随机种子
+    ///
+    /// 调用此方法会重置 RNG 状态，后续的参数创建将从新种子开始。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let mut graph = Graph::new();
+    /// graph.set_seed(42);
+    /// // 现在 graph 使用固定种子
+    /// ```
+    pub fn set_seed(&mut self, seed: u64) {
+        self.rng = Some(StdRng::seed_from_u64(seed));
+    }
+
+    /// 检查图是否有固定种子
+    pub fn has_seed(&self) -> bool {
+        self.rng.is_some()
     }
 
     pub fn name(&self) -> &str {
@@ -585,16 +653,31 @@ impl Graph {
         self.add_node_to_list(node, name, "input", &[])
     }
 
+    /// 创建参数节点
+    ///
+    /// 如果 Graph 有种子（通过 `new_with_seed` 或 `set_seed` 设置），
+    /// 则使用 Graph 的 RNG 进行参数初始化（确定性）。
+    /// 否则使用默认的随机初始化（非确定性）。
     pub fn new_parameter_node(
         &mut self,
         shape: &[usize],
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
-        let node = NodeHandle::new_parameter(shape)?;
+        // 如果 Graph 有 RNG，从中生成种子用于参数初始化
+        let node = if let Some(ref mut rng) = self.rng {
+            use rand::Rng;
+            let seed: u64 = rng.r#gen();
+            NodeHandle::new_parameter_seeded(shape, seed)?
+        } else {
+            NodeHandle::new_parameter(shape)?
+        };
         self.add_node_to_list(node, name, "parameter", &[])
     }
 
     /// 使用固定种子创建参数节点（确保可重复性）
+    ///
+    /// 注意：此方法会覆盖 Graph 的 RNG 设置，直接使用指定的种子。
+    /// 适用于需要精确控制单个参数初始化的场景（如单元测试）。
     pub fn new_parameter_node_seeded(
         &mut self,
         shape: &[usize],

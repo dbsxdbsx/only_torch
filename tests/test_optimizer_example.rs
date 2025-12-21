@@ -43,7 +43,10 @@ fn test_optimizer_example() -> Result<(), GraphError> {
     println!("训练集形状: {:?}", train_set.shape());
 
     // 创建计算图
+    // 方式1: Granular API（当前方式，精确控制每个参数的种子）
     let mut graph = Graph::new();
+    // 方式2: Graph级别种子（更简洁，推荐用于一般训练场景）
+    // let mut graph = Graph::new_with_seed(seed_base);
 
     // 构造计算图：输入向量，是一个3x1矩阵，不需要初始化，不参与训练
     let x = graph.new_input_node(&[3, 1], Some("x"))?;
@@ -51,11 +54,15 @@ fn test_optimizer_example() -> Result<(), GraphError> {
     // 类别标签，1男，-1女
     let label = graph.new_input_node(&[1, 1], Some("label"))?;
 
-    // 权重向量，是一个1x3矩阵，需要初始化，参与训练（使用固定种子）
+    // 权重向量，是一个1x3矩阵，需要初始化，参与训练
+    // Granular: 使用显式种子
     let w = graph.new_parameter_node_seeded(&[1, 3], Some("w"), seed_base + 7)?;
+    // Graph种子: let w = graph.new_parameter_node(&[1, 3], Some("w"))?;
 
-    // 阈值，是一个1x1矩阵，需要初始化，参与训练（使用固定种子）
+    // 阈值，是一个1x1矩阵，需要初始化，参与训练
+    // Granular: 使用显式种子
     let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), seed_base + 8)?;
+    // Graph种子: let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
 
     // ADALINE的预测输出
     let wx = graph.new_mat_mul_node(w, x, None)?;
