@@ -8,7 +8,7 @@ pub(crate) struct Input {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
+    // 注意：Input 节点没有 jacobi 字段，因为输入数据不参与梯度更新
     shape: Vec<usize>,
 }
 
@@ -34,7 +34,6 @@ impl Input {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             shape: shape.to_vec(),
         })
     }
@@ -85,11 +84,20 @@ impl TraitNode for Input {
     }
 
     fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
+        // Input 节点不应该有雅可比矩阵，始终返回 None
+        None
     }
 
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
+    fn set_jacobi(&mut self, _jacobi: Option<&Tensor>) -> Result<(), GraphError> {
+        // Input 节点不应该有雅可比矩阵，显式拒绝设置操作
+        Err(GraphError::InvalidOperation(format!(
+            "{}不应该有雅可比矩阵",
+            self.display_node()
+        )))
+    }
+
+    fn clear_jacobi(&mut self) -> Result<(), GraphError> {
+        // Input 节点没有 jacobi，清除操作是一个成功的空操作
         Ok(())
     }
 
