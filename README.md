@@ -54,45 +54,66 @@ opt-level = 3
 
 ## TODO
 
-- (back/forward)pass_id 相关的 graph 测试？
-- （最后用 AI 优化下 backward 的逻辑）
-- `assert_eq!( graph.backward_nodes(&[input], input), Err(GraphError::InvalidOperation(format!( "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵" ))) ); `添加一个 `assert_err`的宏，可才参考 `assert_panic`宏
-- graph 反向传播中有些节点没有值需要过滤怎么添加（如多个 output 的网络结构）？
+> 按优先级排序（最重要的在最前面）
+
+### 🔴 核心基础功能（影响框架可用性）
+
+- [] 实现类似 tch-rs 中 `tch::no_grad(|| {});`的无梯度功能；
 - 针对 `loss1.backward(retain_graph=True)`和 `detach()`还有多 output 输出，还有 rnn 节点的反向传播，还有多次 backward 的问题；
+- save/load 网络模型（已有 test_save_load_tensor）
+- graph 反向传播中有些节点没有值需要过滤怎么添加（如多个 output 的网络结构）？
 - 对于 Input 节点的 `set_jacobi`和 `jacobi`是否可用更好的 panic 或 error 取代，毕竟 Input 节点不该有梯度相关的概念；
-- 是否需要添加一个 sign 节点来取代 step 直接 forward 输出[-1,1]？
-- unit test for Graph, and parent/children
-- Graph 测试中该包含各种 pub method 的正确及错误测试
-- Graph 测试中最好添加某个节点后，测试该节点还有其父节点的 parents/children 属性（又比如：同 2 个节点用于不同图的 add 节点，测试其 parents/children 属性是否正确）(Variable 节点无父节点)、“节点 var1 在图 default_graph 中重复”
+
+### 🟠 正确性验证（确保计算可信）
+
 - add a `graph` for unit test to test the 多层的 jacobi 计算，就像 adaline 那样?
-- 各种 assign 类的 op（如：add_assign）是否需要重载而不是复用基本算子？
 - 在 python 中仿造 adaline 构造一个复合多节点，然后基于此在 rust 中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
 - jacobi 到底该测试对 parent 还是 children？
+- unit test for Graph, and parent/children
+- Graph 测试中该包含各种 pub method 的正确及错误测试
+- Graph 测试中最好添加某个节点后，测试该节点还有其父节点的 parents/children 属性（又比如：同 2 个节点用于不同图的 add 节点，测试其 parents/children 属性是否正确）(Variable 节点无父节点)、"节点 var1 在图 default_graph 中重复"
+- (back/forward)pass_id 相关的 graph 测试？
+
+### 🟡 API 改进（用户体验）
+
+- 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
+- NodeHandle 重命名为 Node? 各种 `parent/children/node_id`重命名为 `parents/children/id`?
+- should directly use `parents` but not `parents_ids`?
+- 图错误"InvalidOperation" vs "ComputationError"
+- `assert_eq!( graph.backward_nodes(&[input], input), Err(GraphError::InvalidOperation(format!( "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵" ))) ); `添加一个 `assert_err`的宏，可才参考 `assert_panic`宏
 - how to expose only `in crate::nn` to the nn::Graph`?
 - should completely hide the NodeHandle?
 - Graph/NodeHandle rearrange blocks due to visibility and funciontality
-- NodeHandle 重命名为 Node? 各种 `parent/children/node_id`重命名为 `parents/children/id`?
-- should directly use `parents` but not `parents_ids`?
-- check other unused methods
+
+### 🟢 辅助功能
+
 - draw_graph(graphvis 画图)
-- save/load 网络模型（已有 test_save_load_tensor）
-- ~~也许后期可给 Graph 添加一个 `forward_batch`方法，用于批量 forward(参考 adaline_batch.py)？~~ ✅ 已实现 `forward_batch` + `backward_batch`
+- 是否需要添加一个 sign 节点来取代 step 直接 forward 输出[-1,1]？
+- 各种 assign 类的 op（如：add_assign）是否需要重载而不是复用基本算子？
+- check other unused methods
+- Tensor 真的需要 uninit 吗？
+
+### 🔵 NEAT 相关（长期目标）
+
 - 后期当引入 NEAT 机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
 - 当后期（NEAT 阶段）需要在一个已经 forwarded 的图中添加节点（如将已经被使用过的 var1、var2 结合一个新的未使用的 var3 构建一个 add 节点），可能需要添加一个 `reset_forward_cnt`方法来保证图 forward 的一致性。
 - NEAT 之后，针对图 backward 的 `loss1.backward(retain_graph=True)`和 `detach()`机制的实现（可在 GAN 和强化学习算法实例中针对性实现测试），可能须和 `forward_cnt`机制结合, 还要考虑一次 forward 后多次 backward()后的结果。
-- Tensor 真的需要 uninit 吗？
 - 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化,能 ok 拓展至 linear 等常用层，还有 detach，，容易添加 edge(如已存在的 add 节点的父节点)，。
-- 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
-- 图错误"InvalidOperation" vs "ComputationError"
 
-**目前需要先解决有没有的问题，而不是好不好**
+### ⚫ 实战验证
 
-- [] 实现类似 tch-rs 中 `tch::no_grad(|| {});`的无梯度功能；
+- [] 基于本框架解决 CartPole（需要 openAI Gym 或相关 crate 支持）的深度强化学习问题
+- [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
+
+### ✅ 已完成
+
 - [x] 常用激活函数：Tanh ✅，Sigmoid ✅，ReLU/LeakyReLU ✅，SoftPlus ✅
 - [x] 基于本框架解决 XOR 监督学习问题 ✅ (2025-12-21)
 - [x] 基于本框架解决 Mnist（数字识别）的监督学习问题 ✅ MVP 集成测试 (2025-12-21)
-- [] 基于本框架解决 CartPole（需要 openAI Gym 或相关 crate 支持）的深度强化学习问题
-- [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
+
+### 💤 低优先级/待定
+
+- （最后用 AI 优化下 backward 的逻辑）
 
 ## 笔记
 
