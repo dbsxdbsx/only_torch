@@ -8,6 +8,7 @@
  * - 支持 Jacobi 模式（单样本）和 Batch 模式
  * - 输入格式：[C, H, W] 或 [batch, C, H, W]
  * - 输出格式：[C, H', W'] 或 [batch, C, H', W']
+ * - 使用 Rayon 在 batch 维度并行加速
  *
  * 父节点：
  * - parents[0]: 输入数据
@@ -17,6 +18,7 @@ use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
+use rayon::prelude::*;
 
 /// 2D 最大池化节点
 #[derive(Clone)]
@@ -183,12 +185,11 @@ impl TraitNode for MaxPool2d {
             vec![channels, out_h, out_w]
         };
 
-        let mut output = Tensor::zeros(&output_shape);
-        // 存储最大值索引（用于反向传播）
-        let mut max_indices = Tensor::zeros(&output_shape);
+        if !is_batch {
+            // 单样本模式 - 串行处理
+            let mut output = Tensor::zeros(&output_shape);
+            let mut max_indices = Tensor::zeros(&output_shape);
 
-        // 执行最大池化
-        for b in 0..batch_size {
             for c in 0..channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
@@ -198,42 +199,83 @@ impl TraitNode for MaxPool2d {
                         let mut max_val = f32::NEG_INFINITY;
                         let mut max_idx: usize = 0;
 
-                        // 在池化窗口中找最大值
                         for kh in 0..k_h {
                             for kw in 0..k_w {
                                 let ih = h_start + kh;
                                 let iw = w_start + kw;
-
-                                let val = if is_batch {
-                                    input[[b, c, ih, iw]]
-                                } else {
-                                    input[[c, ih, iw]]
-                                };
+                                let val = input[[c, ih, iw]];
 
                                 if val > max_val {
                                     max_val = val;
-                                    // 记录在输入特征图中的位置（相对于当前通道）
                                     max_idx = ih * in_w + iw;
                                 }
                             }
                         }
 
-                        if is_batch {
-                            output[[b, c, oh, ow]] = max_val;
-                            max_indices[[b, c, oh, ow]] = max_idx as f32;
-                        } else {
-                            output[[c, oh, ow]] = max_val;
-                            max_indices[[c, oh, ow]] = max_idx as f32;
-                        }
+                        output[[c, oh, ow]] = max_val;
+                        max_indices[[c, oh, ow]] = max_idx as f32;
                     }
                 }
             }
+
+            self.value = Some(output);
+            self.max_indices = Some(max_indices);
+        } else {
+            // Batch 模式 - Rayon 并行处理
+            let single_sample_size = channels * out_h * out_w;
+
+            let batch_results: Vec<(Vec<f32>, Vec<f32>)> = (0..batch_size)
+                .into_par_iter()
+                .map(|b| {
+                    let mut sample_output = vec![0.0f32; single_sample_size];
+                    let mut sample_indices = vec![0.0f32; single_sample_size];
+
+                    for c in 0..channels {
+                        for oh in 0..out_h {
+                            for ow in 0..out_w {
+                                let h_start = oh * s_h;
+                                let w_start = ow * s_w;
+
+                                let mut max_val = f32::NEG_INFINITY;
+                                let mut max_idx: usize = 0;
+
+                                for kh in 0..k_h {
+                                    for kw in 0..k_w {
+                                        let ih = h_start + kh;
+                                        let iw = w_start + kw;
+                                        let val = input[[b, c, ih, iw]];
+
+                                        if val > max_val {
+                                            max_val = val;
+                                            max_idx = ih * in_w + iw;
+                                        }
+                                    }
+                                }
+
+                                let idx = c * out_h * out_w + oh * out_w + ow;
+                                sample_output[idx] = max_val;
+                                sample_indices[idx] = max_idx as f32;
+                            }
+                        }
+                    }
+                    (sample_output, sample_indices)
+                })
+                .collect();
+
+            // 合并结果
+            let mut all_output = Vec::with_capacity(batch_size * single_sample_size);
+            let mut all_indices = Vec::with_capacity(batch_size * single_sample_size);
+
+            for (output, indices) in batch_results {
+                all_output.extend(output);
+                all_indices.extend(indices);
+            }
+
+            self.value = Some(Tensor::new(&all_output, &output_shape));
+            self.max_indices = Some(Tensor::new(&all_indices, &output_shape));
         }
 
-        self.value = Some(output);
-        self.max_indices = Some(max_indices);
         self.input_shape = input_shape.to_vec();
-
         Ok(())
     }
 
@@ -299,7 +341,7 @@ impl TraitNode for MaxPool2d {
 
     // ========== Batch 模式 ==========
 
-    /// 计算 Batch 梯度
+    /// 计算 Batch 梯度（Rayon 并行版本）
     ///
     /// MaxPool 的梯度非常简单：
     /// - 最大值位置：梯度 = upstream_grad
@@ -324,45 +366,57 @@ impl TraitNode for MaxPool2d {
             (1, grad_shape[0], grad_shape[1], grad_shape[2])
         };
 
-        let (_in_h, in_w) = if is_batch {
+        let (in_h, in_w) = if is_batch {
             (input_shape[2], input_shape[3])
         } else {
             (input_shape[1], input_shape[2])
         };
 
-        let mut input_grad = Tensor::zeros(input_shape);
+        if !is_batch {
+            // 单样本模式 - 串行处理
+            let mut input_grad = Tensor::zeros(input_shape);
 
-        for b in 0..batch_size {
             for c in 0..channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
-                        let grad_val = if is_batch {
-                            upstream_grad[[b, c, oh, ow]]
-                        } else {
-                            upstream_grad[[c, oh, ow]]
-                        };
-
-                        let max_pos = if is_batch {
-                            max_indices[[b, c, oh, ow]] as usize
-                        } else {
-                            max_indices[[c, oh, ow]] as usize
-                        };
-
-                        // 将梯度传递到最大值位置
+                        let grad_val = upstream_grad[[c, oh, ow]];
+                        let max_pos = max_indices[[c, oh, ow]] as usize;
                         let ih = max_pos / in_w;
                         let iw = max_pos % in_w;
-
-                        if is_batch {
-                            input_grad[[b, c, ih, iw]] += grad_val;
-                        } else {
-                            input_grad[[c, ih, iw]] += grad_val;
-                        }
+                        input_grad[[c, ih, iw]] += grad_val;
                     }
                 }
             }
-        }
 
-        Ok(input_grad)
+            Ok(input_grad)
+        } else {
+            // Batch 模式 - Rayon 并行处理
+            let single_sample_size = channels * in_h * in_w;
+
+            let batch_results: Vec<Vec<f32>> = (0..batch_size)
+                .into_par_iter()
+                .map(|b| {
+                    let mut sample_grad = vec![0.0f32; single_sample_size];
+
+                    for c in 0..channels {
+                        for oh in 0..out_h {
+                            for ow in 0..out_w {
+                                let grad_val = upstream_grad[[b, c, oh, ow]];
+                                let max_pos = max_indices[[b, c, oh, ow]] as usize;
+                                let ih = max_pos / in_w;
+                                let iw = max_pos % in_w;
+                                let idx = c * in_h * in_w + ih * in_w + iw;
+                                sample_grad[idx] += grad_val;
+                            }
+                        }
+                    }
+                    sample_grad
+                })
+                .collect();
+
+            let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+            Ok(Tensor::new(&all_data, input_shape))
+        }
     }
 
     fn grad(&self) -> Option<&Tensor> {
@@ -374,4 +428,3 @@ impl TraitNode for MaxPool2d {
         Ok(())
     }
 }
-

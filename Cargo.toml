@@ -59,5 +59,8 @@
     dirs  ="5.0"    # 跨平台目录
     ureq  ="2.9"    # HTTP 下载（blocking）
 
+    # 并行计算
+    rayon ="1.10"   # 数据并行
+
 [dev-dependencies]
     # statrs="^0.16.0"

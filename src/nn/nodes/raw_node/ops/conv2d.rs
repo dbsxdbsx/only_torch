@@ -8,6 +8,7 @@
  * - 支持 Jacobi 模式（单样本）和 Batch 模式
  * - 输入格式：[C_in, H, W] 或 [batch, C_in, H, W]
  * - 输出格式：[C_out, H', W'] 或 [batch, C_out, H', W']
+ * - 使用 Rayon 在 batch 维度并行加速
  *
  * 父节点：
  * - parents[0]: 输入数据
@@ -18,6 +19,7 @@ use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
+use rayon::prelude::*;
 
 /// 2D 卷积节点
 #[derive(Clone)]
@@ -158,7 +160,7 @@ impl Conv2d {
         })
     }
 
-    /// 对输入进行零填充
+    /// 对输入进行零填充（Rayon 并行版本）
     fn pad_input(&self, input: &Tensor) -> Tensor {
         let (pad_h, pad_w) = self.padding;
         if pad_h == 0 && pad_w == 0 {
@@ -181,12 +183,11 @@ impl Conv2d {
         new_shape[h_idx] = new_h;
         new_shape[w_idx] = new_w;
 
-        let mut padded = Tensor::zeros(&new_shape);
-
         // 复制数据到填充后的张量中心
         if ndim == 3 {
-            // [C, H, W]
+            // [C, H, W] - 串行处理（单样本）
             let c = input_shape[0];
+            let mut padded = Tensor::zeros(&new_shape);
             for ci in 0..c {
                 for hi in 0..h {
                     for wi in 0..w {
@@ -194,25 +195,37 @@ impl Conv2d {
                     }
                 }
             }
+            padded
         } else {
-            // [B, C, H, W]
-            let b = input_shape[0];
+            // [B, C, H, W] - Rayon 并行处理
+            let batch_size = input_shape[0];
             let c = input_shape[1];
-            for bi in 0..b {
-                for ci in 0..c {
-                    for hi in 0..h {
-                        for wi in 0..w {
-                            padded[[bi, ci, hi + pad_h, wi + pad_w]] = input[[bi, ci, hi, wi]];
+            let single_sample_size = c * new_h * new_w;
+
+            // 并行计算每个 batch 样本的填充结果
+            let batch_results: Vec<Vec<f32>> = (0..batch_size)
+                .into_par_iter()
+                .map(|bi| {
+                    let mut sample_data = vec![0.0f32; single_sample_size];
+                    for ci in 0..c {
+                        for hi in 0..h {
+                            for wi in 0..w {
+                                let idx = ci * new_h * new_w + (hi + pad_h) * new_w + (wi + pad_w);
+                                sample_data[idx] = input[[bi, ci, hi, wi]];
+                            }
                         }
                     }
-                }
-            }
-        }
+                    sample_data
+                })
+                .collect();
 
-        padded
+            // 合并结果
+            let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+            Tensor::new(&all_data, &new_shape)
+        }
     }
 
-    /// 执行卷积运算（forward 核心逻辑）
+    /// 执行卷积运算（Rayon 并行版本）
     fn convolve(&self, input: &Tensor, kernel: &Tensor) -> Tensor {
         let input_shape = input.shape();
         let is_batch = input_shape.len() == 4;
@@ -246,10 +259,9 @@ impl Conv2d {
             vec![out_c, out_h, out_w]
         };
 
-        let mut output = Tensor::zeros(&output_shape);
-
-        // 执行卷积
-        for b in 0..batch_size {
+        if !is_batch {
+            // 单样本模式 - 串行处理
+            let mut output = Tensor::zeros(&output_shape);
             for oc in 0..out_c {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
@@ -260,27 +272,54 @@ impl Conv2d {
                         for ic in 0..in_c {
                             for kh in 0..k_h {
                                 for kw in 0..k_w {
-                                    let input_val = if is_batch {
-                                        input[[b, ic, h_start + kh, w_start + kw]]
-                                    } else {
-                                        input[[ic, h_start + kh, w_start + kw]]
-                                    };
+                                    let input_val = input[[ic, h_start + kh, w_start + kw]];
                                     sum += input_val * kernel[[oc, ic, kh, kw]];
                                 }
                             }
                         }
-
-                        if is_batch {
-                            output[[b, oc, oh, ow]] = sum;
-                        } else {
-                            output[[oc, oh, ow]] = sum;
-                        }
+                        output[[oc, oh, ow]] = sum;
                     }
                 }
             }
-        }
+            output
+        } else {
+            // Batch 模式 - Rayon 并行处理
+            let single_sample_size = out_c * out_h * out_w;
 
-        output
+            // 并行计算每个 batch 样本
+            let batch_results: Vec<Vec<f32>> = (0..batch_size)
+                .into_par_iter()
+                .map(|b| {
+                    let mut sample_data = vec![0.0f32; single_sample_size];
+                    for oc in 0..out_c {
+                        for oh in 0..out_h {
+                            for ow in 0..out_w {
+                                let mut sum = 0.0f32;
+                                let h_start = oh * stride_h;
+                                let w_start = ow * stride_w;
+
+                                for ic in 0..in_c {
+                                    for kh in 0..k_h {
+                                        for kw in 0..k_w {
+                                            let input_val =
+                                                input[[b, ic, h_start + kh, w_start + kw]];
+                                            sum += input_val * kernel[[oc, ic, kh, kw]];
+                                        }
+                                    }
+                                }
+                                let idx = oc * out_h * out_w + oh * out_w + ow;
+                                sample_data[idx] = sum;
+                            }
+                        }
+                    }
+                    sample_data
+                })
+                .collect();
+
+            // 合并结果
+            let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+            Tensor::new(&all_data, &output_shape)
+        }
     }
 }
 
@@ -455,7 +494,7 @@ impl TraitNode for Conv2d {
 
     // ========== Batch 模式 ==========
 
-    /// 计算 Batch 梯度
+    /// 计算 Batch 梯度（Rayon 并行版本）
     ///
     /// 对于 Y = conv(X, K):
     /// - dL/dX: 使用转置卷积（反卷积）
@@ -505,38 +544,25 @@ impl TraitNode for Conv2d {
 
         if target_parent.id() == self.parents_ids[0] {
             // ========== 计算 dL/dX（对输入的梯度）==========
-            // 使用"full" 卷积（转置卷积/反卷积的一种实现）
-
-            // 输出梯度形状应该与原始输入相同
             let orig_input_shape = &self.input_shape;
-            let mut input_grad = Tensor::zeros(orig_input_shape);
 
-            for b in 0..batch_size {
+            if !is_batch {
+                // 单样本模式 - 串行处理
+                let mut input_grad = Tensor::zeros(orig_input_shape);
+                let (orig_in_h, orig_in_w) = (orig_input_shape[1], orig_input_shape[2]);
+
                 for oc in 0..out_c {
                     for oh in 0..out_h {
                         for ow in 0..out_w {
-                            let grad_val = if is_batch {
-                                upstream_grad[[b, oc, oh, ow]]
-                            } else {
-                                upstream_grad[[oc, oh, ow]]
-                            };
-
+                            let grad_val = upstream_grad[[oc, oh, ow]];
                             let h_start = oh * stride_h;
                             let w_start = ow * stride_w;
 
                             for ic in 0..in_c {
                                 for kh in 0..k_h {
                                     for kw in 0..k_w {
-                                        // 原始输入位置（去除 padding）
                                         let orig_h = (h_start + kh) as isize - pad_h as isize;
                                         let orig_w = (w_start + kw) as isize - pad_w as isize;
-
-                                        // 检查是否在原始输入范围内
-                                        let (orig_in_h, orig_in_w) = if is_batch {
-                                            (orig_input_shape[2], orig_input_shape[3])
-                                        } else {
-                                            (orig_input_shape[1], orig_input_shape[2])
-                                        };
 
                                         if orig_h >= 0
                                             && orig_h < orig_in_h as isize
@@ -545,14 +571,8 @@ impl TraitNode for Conv2d {
                                         {
                                             let orig_h = orig_h as usize;
                                             let orig_w = orig_w as usize;
-
-                                            if is_batch {
-                                                input_grad[[b, ic, orig_h, orig_w]] +=
-                                                    grad_val * kernel[[oc, ic, kh, kw]];
-                                            } else {
-                                                input_grad[[ic, orig_h, orig_w]] +=
-                                                    grad_val * kernel[[oc, ic, kh, kw]];
-                                            }
+                                            input_grad[[ic, orig_h, orig_w]] +=
+                                                grad_val * kernel[[oc, ic, kh, kw]];
                                         }
                                     }
                                 }
@@ -560,36 +580,80 @@ impl TraitNode for Conv2d {
                         }
                     }
                 }
-            }
+                Ok(input_grad)
+            } else {
+                // Batch 模式 - Rayon 并行处理
+                let (orig_in_h, orig_in_w) = (orig_input_shape[2], orig_input_shape[3]);
+                let single_sample_size = in_c * orig_in_h * orig_in_w;
 
-            Ok(input_grad)
+                let batch_results: Vec<Vec<f32>> = (0..batch_size)
+                    .into_par_iter()
+                    .map(|b| {
+                        let mut sample_grad = vec![0.0f32; single_sample_size];
+
+                        for oc in 0..out_c {
+                            for oh in 0..out_h {
+                                for ow in 0..out_w {
+                                    let grad_val = upstream_grad[[b, oc, oh, ow]];
+                                    let h_start = oh * stride_h;
+                                    let w_start = ow * stride_w;
+
+                                    for ic in 0..in_c {
+                                        for kh in 0..k_h {
+                                            for kw in 0..k_w {
+                                                let orig_h =
+                                                    (h_start + kh) as isize - pad_h as isize;
+                                                let orig_w =
+                                                    (w_start + kw) as isize - pad_w as isize;
+
+                                                if orig_h >= 0
+                                                    && orig_h < orig_in_h as isize
+                                                    && orig_w >= 0
+                                                    && orig_w < orig_in_w as isize
+                                                {
+                                                    let orig_h = orig_h as usize;
+                                                    let orig_w = orig_w as usize;
+                                                    let idx = ic * orig_in_h * orig_in_w
+                                                        + orig_h * orig_in_w
+                                                        + orig_w;
+                                                    sample_grad[idx] +=
+                                                        grad_val * kernel[[oc, ic, kh, kw]];
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        sample_grad
+                    })
+                    .collect();
+
+                let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+                Ok(Tensor::new(&all_data, orig_input_shape))
+            }
         } else {
             // ========== 计算 dL/dK（对卷积核的梯度）==========
-            // dK[oc,ic,kh,kw] = sum over batch,oh,ow of: upstream[b,oc,oh,ow] * input[b,ic,oh*s+kh,ow*s+kw]
+            // dK 需要跨 batch 累加，使用 map-reduce 模式
+            let kernel_shape = kernel.shape();
+            let kernel_size = out_c * in_c * k_h * k_w;
 
-            let mut kernel_grad = Tensor::zeros(kernel.shape());
+            if !is_batch {
+                // 单样本模式 - 串行处理
+                let mut kernel_grad = Tensor::zeros(kernel_shape);
 
-            for b in 0..batch_size {
                 for oc in 0..out_c {
                     for oh in 0..out_h {
                         for ow in 0..out_w {
-                            let grad_val = if is_batch {
-                                upstream_grad[[b, oc, oh, ow]]
-                            } else {
-                                upstream_grad[[oc, oh, ow]]
-                            };
-
+                            let grad_val = upstream_grad[[oc, oh, ow]];
                             let h_start = oh * stride_h;
                             let w_start = ow * stride_w;
 
                             for ic in 0..in_c {
                                 for kh in 0..k_h {
                                     for kw in 0..k_w {
-                                        let input_val = if is_batch {
-                                            padded_input[[b, ic, h_start + kh, w_start + kw]]
-                                        } else {
-                                            padded_input[[ic, h_start + kh, w_start + kw]]
-                                        };
+                                        let input_val =
+                                            padded_input[[ic, h_start + kh, w_start + kw]];
                                         kernel_grad[[oc, ic, kh, kw]] += grad_val * input_val;
                                     }
                                 }
@@ -597,9 +661,51 @@ impl TraitNode for Conv2d {
                         }
                     }
                 }
-            }
+                Ok(kernel_grad)
+            } else {
+                // Batch 模式 - Rayon 并行 + reduce 累加
+                let batch_kernel_grads: Vec<Vec<f32>> = (0..batch_size)
+                    .into_par_iter()
+                    .map(|b| {
+                        let mut sample_kernel_grad = vec![0.0f32; kernel_size];
 
-            Ok(kernel_grad)
+                        for oc in 0..out_c {
+                            for oh in 0..out_h {
+                                for ow in 0..out_w {
+                                    let grad_val = upstream_grad[[b, oc, oh, ow]];
+                                    let h_start = oh * stride_h;
+                                    let w_start = ow * stride_w;
+
+                                    for ic in 0..in_c {
+                                        for kh in 0..k_h {
+                                            for kw in 0..k_w {
+                                                let input_val = padded_input
+                                                    [[b, ic, h_start + kh, w_start + kw]];
+                                                let idx = oc * in_c * k_h * k_w
+                                                    + ic * k_h * k_w
+                                                    + kh * k_w
+                                                    + kw;
+                                                sample_kernel_grad[idx] += grad_val * input_val;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        sample_kernel_grad
+                    })
+                    .collect();
+
+                // Reduce: 累加所有 batch 样本的梯度
+                let mut total_kernel_grad = vec![0.0f32; kernel_size];
+                for sample_grad in batch_kernel_grads {
+                    for (i, g) in sample_grad.into_iter().enumerate() {
+                        total_kernel_grad[i] += g;
+                    }
+                }
+
+                Ok(Tensor::new(&total_kernel_grad, kernel_shape))
+            }
         }
     }
 
@@ -612,4 +718,3 @@ impl TraitNode for Conv2d {
         Ok(())
     }
 }
-

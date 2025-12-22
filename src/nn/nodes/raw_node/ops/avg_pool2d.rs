@@ -9,6 +9,7 @@
  * - 支持 Jacobi 模式（单样本）和 Batch 模式
  * - 输入格式：[C, H, W] 或 [batch, C, H, W]
  * - 输出格式：[C, H', W'] 或 [batch, C, H', W']
+ * - 使用 Rayon 在 batch 维度并行加速
  *
  * 父节点：
  * - parents[0]: 输入数据
@@ -18,6 +19,7 @@ use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
+use rayon::prelude::*;
 
 /// 2D 平均池化节点
 #[derive(Clone)]
@@ -180,11 +182,12 @@ impl TraitNode for AvgPool2d {
             vec![channels, out_h, out_w]
         };
 
-        let mut output = Tensor::zeros(&output_shape);
         let pool_size = (k_h * k_w) as f32;
 
-        // 执行平均池化
-        for b in 0..batch_size {
+        if !is_batch {
+            // 单样本模式 - 串行处理
+            let mut output = Tensor::zeros(&output_shape);
+
             for c in 0..channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
@@ -192,39 +195,59 @@ impl TraitNode for AvgPool2d {
                         let w_start = ow * s_w;
 
                         let mut sum = 0.0f32;
-
-                        // 对池化窗口求和
                         for kh in 0..k_h {
                             for kw in 0..k_w {
                                 let ih = h_start + kh;
                                 let iw = w_start + kw;
-
-                                let val = if is_batch {
-                                    input[[b, c, ih, iw]]
-                                } else {
-                                    input[[c, ih, iw]]
-                                };
-
-                                sum += val;
+                                sum += input[[c, ih, iw]];
                             }
                         }
 
-                        // 求平均
-                        let avg = sum / pool_size;
-
-                        if is_batch {
-                            output[[b, c, oh, ow]] = avg;
-                        } else {
-                            output[[c, oh, ow]] = avg;
-                        }
+                        output[[c, oh, ow]] = sum / pool_size;
                     }
                 }
             }
+
+            self.value = Some(output);
+        } else {
+            // Batch 模式 - Rayon 并行处理
+            let single_sample_size = channels * out_h * out_w;
+
+            let batch_results: Vec<Vec<f32>> = (0..batch_size)
+                .into_par_iter()
+                .map(|b| {
+                    let mut sample_output = vec![0.0f32; single_sample_size];
+
+                    for c in 0..channels {
+                        for oh in 0..out_h {
+                            for ow in 0..out_w {
+                                let h_start = oh * s_h;
+                                let w_start = ow * s_w;
+
+                                let mut sum = 0.0f32;
+                                for kh in 0..k_h {
+                                    for kw in 0..k_w {
+                                        let ih = h_start + kh;
+                                        let iw = w_start + kw;
+                                        sum += input[[b, c, ih, iw]];
+                                    }
+                                }
+
+                                let idx = c * out_h * out_w + oh * out_w + ow;
+                                sample_output[idx] = sum / pool_size;
+                            }
+                        }
+                    }
+                    sample_output
+                })
+                .collect();
+
+            // 合并结果
+            let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+            self.value = Some(Tensor::new(&all_data, &output_shape));
         }
 
-        self.value = Some(output);
         self.input_shape = input_shape.to_vec();
-
         Ok(())
     }
 
@@ -297,7 +320,7 @@ impl TraitNode for AvgPool2d {
 
     // ========== Batch 模式 ==========
 
-    /// 计算 Batch 梯度
+    /// 计算 Batch 梯度（Rayon 并行版本）
     ///
     /// AvgPool 的梯度：
     /// - 每个输入位置的梯度 = 所有包含该位置的输出的 upstream_grad / pool_size 之和
@@ -322,40 +345,69 @@ impl TraitNode for AvgPool2d {
         let pool_size = (k_h * k_w) as f32;
         let grad_val = 1.0 / pool_size;
 
-        let mut input_grad = Tensor::zeros(input_shape);
+        let (in_h, in_w) = if is_batch {
+            (input_shape[2], input_shape[3])
+        } else {
+            (input_shape[1], input_shape[2])
+        };
 
-        for b in 0..batch_size {
+        if !is_batch {
+            // 单样本模式 - 串行处理
+            let mut input_grad = Tensor::zeros(input_shape);
+
             for c in 0..channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
-                        let upstream = if is_batch {
-                            upstream_grad[[b, c, oh, ow]]
-                        } else {
-                            upstream_grad[[c, oh, ow]]
-                        };
-
+                        let upstream = upstream_grad[[c, oh, ow]];
                         let h_start = oh * s_h;
                         let w_start = ow * s_w;
 
-                        // 将梯度均匀分配到窗口内所有位置
                         for kh in 0..k_h {
                             for kw in 0..k_w {
                                 let ih = h_start + kh;
                                 let iw = w_start + kw;
-
-                                if is_batch {
-                                    input_grad[[b, c, ih, iw]] += upstream * grad_val;
-                                } else {
-                                    input_grad[[c, ih, iw]] += upstream * grad_val;
-                                }
+                                input_grad[[c, ih, iw]] += upstream * grad_val;
                             }
                         }
                     }
                 }
             }
-        }
 
-        Ok(input_grad)
+            Ok(input_grad)
+        } else {
+            // Batch 模式 - Rayon 并行处理
+            let single_sample_size = channels * in_h * in_w;
+
+            let batch_results: Vec<Vec<f32>> = (0..batch_size)
+                .into_par_iter()
+                .map(|b| {
+                    let mut sample_grad = vec![0.0f32; single_sample_size];
+
+                    for c in 0..channels {
+                        for oh in 0..out_h {
+                            for ow in 0..out_w {
+                                let upstream = upstream_grad[[b, c, oh, ow]];
+                                let h_start = oh * s_h;
+                                let w_start = ow * s_w;
+
+                                for kh in 0..k_h {
+                                    for kw in 0..k_w {
+                                        let ih = h_start + kh;
+                                        let iw = w_start + kw;
+                                        let idx = c * in_h * in_w + ih * in_w + iw;
+                                        sample_grad[idx] += upstream * grad_val;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    sample_grad
+                })
+                .collect();
+
+            let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+            Ok(Tensor::new(&all_data, input_shape))
+        }
     }
 
     fn grad(&self) -> Option<&Tensor> {
@@ -367,4 +419,3 @@ impl TraitNode for AvgPool2d {
         Ok(())
     }
 }
-
