@@ -2,6 +2,7 @@ use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
+use rayon::prelude::*;
 
 /// Softmax + CrossEntropy 融合损失节点
 ///
@@ -71,7 +72,7 @@ impl SoftmaxCrossEntropy {
         })
     }
 
-    /// 计算数值稳定的 softmax（支持 batch）
+    /// 计算数值稳定的 softmax（支持 batch，Rayon 并行）
     /// 输入: [batch, num_classes] 或 [1, num_classes]
     /// 输出: [batch, num_classes] 或 [1, num_classes]
     fn stable_softmax_batch(logits: &Tensor) -> Tensor {
@@ -79,74 +80,90 @@ impl SoftmaxCrossEntropy {
         let batch_size = shape[0];
         let num_classes = shape[1];
 
-        let mut result = Tensor::zeros(shape);
-        for b in 0..batch_size {
-            // 找到该样本的最大值
-            let mut max_val = logits[[b, 0]];
-            for c in 1..num_classes {
-                if logits[[b, c]] > max_val {
-                    max_val = logits[[b, c]];
+        // Rayon 并行处理每个 batch 样本
+        let batch_results: Vec<Vec<f32>> = (0..batch_size)
+            .into_par_iter()
+            .map(|b| {
+                let mut sample_result = vec![0.0f32; num_classes];
+
+                // 找到该样本的最大值
+                let mut max_val = logits[[b, 0]];
+                for c in 1..num_classes {
+                    if logits[[b, c]] > max_val {
+                        max_val = logits[[b, c]];
+                    }
                 }
-            }
 
-            // 计算 exp(x - max) 和 sum
-            let mut sum_exp = 0.0f32;
-            for c in 0..num_classes {
-                let exp_val = (logits[[b, c]] - max_val).exp();
-                result[[b, c]] = exp_val;
-                sum_exp += exp_val;
-            }
+                // 计算 exp(x - max) 和 sum
+                let mut sum_exp = 0.0f32;
+                for c in 0..num_classes {
+                    let exp_val = (logits[[b, c]] - max_val).exp();
+                    sample_result[c] = exp_val;
+                    sum_exp += exp_val;
+                }
 
-            // 归一化
-            for c in 0..num_classes {
-                result[[b, c]] /= sum_exp;
-            }
-        }
-        result
+                // 归一化
+                for c in 0..num_classes {
+                    sample_result[c] /= sum_exp;
+                }
+
+                sample_result
+            })
+            .collect();
+
+        // 合并结果
+        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
+        Tensor::new(&all_data, shape)
     }
 
-    /// 计算数值稳定的交叉熵损失（支持 batch，返回平均损失）
+    /// 计算数值稳定的交叉熵损失（支持 batch，Rayon 并行，返回平均损失）
     fn stable_cross_entropy_batch(logits: &Tensor, labels: &Tensor) -> f32 {
         let shape = logits.shape();
         let batch_size = shape[0];
         let num_classes = shape[1];
 
-        let mut total_loss = 0.0f32;
-        for b in 0..batch_size {
-            // 找到该样本的最大值
-            let mut max_val = logits[[b, 0]];
-            for c in 1..num_classes {
-                if logits[[b, c]] > max_val {
-                    max_val = logits[[b, c]];
+        // Rayon 并行计算每个样本的损失，然后 reduce 求和
+        let total_loss: f32 = (0..batch_size)
+            .into_par_iter()
+            .map(|b| {
+                // 找到该样本的最大值
+                let mut max_val = logits[[b, 0]];
+                for c in 1..num_classes {
+                    if logits[[b, c]] > max_val {
+                        max_val = logits[[b, c]];
+                    }
                 }
-            }
 
-            // 计算 log_sum_exp
-            let mut sum_exp = 0.0f32;
-            for c in 0..num_classes {
-                sum_exp += (logits[[b, c]] - max_val).exp();
-            }
-            let log_sum_exp = sum_exp.ln();
+                // 计算 log_sum_exp
+                let mut sum_exp = 0.0f32;
+                for c in 0..num_classes {
+                    sum_exp += (logits[[b, c]] - max_val).exp();
+                }
+                let log_sum_exp = sum_exp.ln();
 
-            // 计算该样本的损失
-            // L = -Σ y_i * (x_i - max - log_sum_exp)
-            let mut dot_product = 0.0f32;
-            for c in 0..num_classes {
-                dot_product += logits[[b, c]] * labels[[b, c]];
-            }
-            total_loss += -dot_product + max_val + log_sum_exp;
-        }
+                // 计算该样本的损失
+                // L = -Σ y_i * (x_i - max - log_sum_exp)
+                let mut dot_product = 0.0f32;
+                for c in 0..num_classes {
+                    dot_product += logits[[b, c]] * labels[[b, c]];
+                }
+
+                -dot_product + max_val + log_sum_exp
+            })
+            .sum();
 
         // 返回平均损失
         total_loss / batch_size as f32
     }
 
     /// 兼容旧代码的单样本 softmax
+    #[allow(dead_code)]
     fn stable_softmax(logits: &Tensor) -> Tensor {
         Self::stable_softmax_batch(logits)
     }
 
     /// 兼容旧代码的单样本交叉熵
+    #[allow(dead_code)]
     fn stable_cross_entropy(logits: &Tensor, labels: &Tensor) -> f32 {
         Self::stable_cross_entropy_batch(logits, labels)
     }
