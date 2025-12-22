@@ -15,6 +15,7 @@ pub mod optimizer;
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{Graph, GraphError};
 pub use layer::{LinearOutput, linear};
+pub use nodes::raw_node::Reduction;
 pub use nodes::NodeId;
 
 #[cfg(test)]

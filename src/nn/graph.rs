@@ -7,6 +7,7 @@
  */
 
 use super::NodeId;
+use super::nodes::raw_node::Reduction;
 use super::nodes::{NodeHandle, NodeType};
 use crate::tensor::Tensor;
 use rand::SeedableRng;
@@ -1201,6 +1202,53 @@ impl Graph {
         let parents = self.get_nodes(&[logits_id, labels_id])?;
         let handle = NodeHandle::new_softmax_cross_entropy(&parents)?;
         self.add_node_to_list(handle, name, "softmax_ce", &[logits_id, labels_id])
+    }
+
+    /// 创建 MSELoss（均方误差损失）节点
+    ///
+    /// 使用默认的 Mean reduction 模式。
+    ///
+    /// # 参数
+    /// - `input_id`: 预测值节点 ID
+    /// - `target_id`: 目标值节点 ID
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 返回
+    /// 新创建的损失节点 ID，输出为标量 [1, 1]
+    ///
+    /// # 公式
+    /// `MSE = mean((input - target)^2)`
+    pub fn new_mse_loss_node(
+        &mut self,
+        input_id: NodeId,
+        target_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[input_id, target_id])?;
+        let handle = NodeHandle::new_mse_loss(&parents)?;
+        self.add_node_to_list(handle, name, "mse_loss", &[input_id, target_id])
+    }
+
+    /// 创建 MSELoss 节点（指定 reduction 模式）
+    ///
+    /// # 参数
+    /// - `input_id`: 预测值节点 ID
+    /// - `target_id`: 目标值节点 ID
+    /// - `reduction`: Reduction 模式（Mean 或 Sum）
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 返回
+    /// 新创建的损失节点 ID，输出为标量 [1, 1]
+    pub fn new_mse_loss_node_with_reduction(
+        &mut self,
+        input_id: NodeId,
+        target_id: NodeId,
+        reduction: Reduction,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[input_id, target_id])?;
+        let handle = NodeHandle::new_mse_loss_with_reduction(&parents, reduction)?;
+        self.add_node_to_list(handle, name, "mse_loss", &[input_id, target_id])
     }
 }
 

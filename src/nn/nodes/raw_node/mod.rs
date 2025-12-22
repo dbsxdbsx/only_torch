@@ -4,7 +4,8 @@ mod ops;
 mod parameter;
 
 pub(super) use input::Input;
-pub(super) use loss::*;
+pub(super) use loss::{MSELoss, PerceptionLoss, SoftmaxCrossEntropy};
+pub use loss::Reduction;
 pub(super) use ops::*;
 pub(super) use parameter::Parameter;
 
@@ -21,6 +22,7 @@ pub(in crate::nn) enum NodeType {
     Flatten(Flatten),
     MatMul(MatMul),
     MaxPool2d(MaxPool2d),
+    MSELoss(MSELoss),
     Multiply(Multiply),
     Reshape(Reshape),
     ScalarMultiply(ScalarMultiply),

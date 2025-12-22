@@ -49,12 +49,11 @@ neat/              0%       ❌ 远期特色
 | 运算 | Add, MatMul, Reshape, Flatten           |  ✅  |
 | 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU     |  ✅  |
 | CNN  | Conv2d, MaxPool2d, AvgPool2d            |  ✅  |
-| 损失 | PerceptionLoss, SoftmaxCrossEntropyLoss |  ✅  |
+| 损失 | PerceptionLoss, SoftmaxCrossEntropyLoss, MSELoss |  ✅  |
 
 ## 缺失的关键节点
 
 - **激活函数**: Softplus, Softmax (独立版)
-- **损失函数**: MSELoss
 - **运算节点**: Sub, Neg, Mul(逐元素), Div
 
 ## 集成测试进度
@@ -70,6 +69,7 @@ neat/              0%       ❌ 远期特色
 | `test_logistic_regression.rs` | `ch04/logistic_regression.py` |  ❌  | 需要 Sigmoid 节点 (已有) + 测试代码 |
 | `test_nn_iris.rs`             | `ch05/nn_iris.py`             |  ❌  | 需要多层网络+Softmax                |
 | `test_mnist.rs`               | `ch05/nn_mnist.py`            |  ✅  | **MVP：MLP + SoftmaxCrossEntropy**  |
+| `test_simple_regression.rs`   | -                             |  ✅  | **MSELoss 回归验证：y=2x+1**        |
 
 ---
 
@@ -123,7 +123,7 @@ only_torch/
 │   │   ├── 输入: Input, Parameter, Constant
 │   │   ├── 激活: LeakyReLU/ReLU, Tanh, Sigmoid, Softmax, Step
 │   │   ├── 运算: Add, Sub, Mul, Div, MatMul, Reshape
-│   │   └── 损失: MSE, CrossEntropy, PerceptionLoss
+│   │   └── 损失: MSELoss ✅, CrossEntropy ✅, PerceptionLoss ✅
 │   ├── optimizer/   # 优化器
 │   │   └── SGD, Momentum, Adam, LRScheduler
 │   └── context/     # 运行上下文
@@ -214,6 +214,14 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
    - `avg_pool2d()`: 平均池化层
 4. MNIST CNN 端到端示例（LeNet 风格）
 5. 完善 MNIST MLP 示例（提升准确率，添加评估指标）
+
+### ✅ 已完成：MSELoss 损失节点
+
+实现了完整的 MSELoss 节点，支持回归任务：
+
+- **支持 Reduction**：`Mean`（默认）、`Sum`
+- **双模式梯度**：Jacobi 模式 + Batch 模式
+- **集成测试**：`test_simple_regression.rs` 验证 y=2x+1 线性回归收敛
 
 ---
 
