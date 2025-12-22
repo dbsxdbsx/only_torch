@@ -64,7 +64,7 @@ fn test_mnist_linear() -> Result<(), GraphError> {
     println!("  - 目标准确率: {:.0}%", target_accuracy * 100.0);
 
     // ========== 3. 构建网络（使用 Layer API）==========
-    println!("\n[3/4] 使用 linear() 构建 MLP: 784 -> 128 (Sigmoid) -> 10...");
+    println!("\n[3/4] 使用 linear() 构建 MLP: 784 -> 128 (Softplus) -> 10...");
 
     let mut graph = Graph::new_with_seed(42);
 
@@ -73,9 +73,9 @@ fn test_mnist_linear() -> Result<(), GraphError> {
     let y = graph.new_input_node(&[batch_size, 10], Some("y"))?;
 
     // ========== 使用 linear() 构建网络（Batch-First）==========
-    // 隐藏层: 784 -> 128
+    // 隐藏层: 784 -> 128，使用 Softplus 激活（比 Sigmoid 更适合隐藏层）
     let fc1 = linear(&mut graph, x, 784, 128, batch_size, Some("fc1"))?;
-    let a1 = graph.new_sigmoid_node(fc1.output, Some("fc1_act"))?;
+    let a1 = graph.new_softplus_node(fc1.output, Some("fc1_act"))?;
 
     // 输出层: 128 -> 10
     let fc2 = linear(&mut graph, a1, 128, 10, batch_size, Some("fc2"))?;

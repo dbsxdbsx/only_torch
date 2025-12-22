@@ -26,6 +26,7 @@ pub(in crate::nn) enum NodeType {
     ScalarMultiply(ScalarMultiply),
     LeakyReLU(LeakyReLU),
     Sigmoid(Sigmoid),
+    SoftPlus(SoftPlus),
     Step(Step),
     Tanh(Tanh),
     PerceptionLoss(PerceptionLoss),

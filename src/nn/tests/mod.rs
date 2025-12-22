@@ -22,6 +22,7 @@ mod node_reshape; // Reshape 节点（形状变换）
 mod node_scalar_multiply;
 mod node_sigmoid;
 mod node_softmax_cross_entropy;
+mod node_softplus; // SoftPlus 激活函数（ReLU 的平滑近似）
 mod node_step;
 mod node_tanh;
 mod optimizer; // 优化器测试模块（包含 basic, sgd, adam, trait_tests 子模块）

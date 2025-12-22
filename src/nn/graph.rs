@@ -1127,6 +1127,24 @@ impl Graph {
         self.add_node_to_list(handle, name, "sigmoid", &[parent_id])
     }
 
+    /// 创建 SoftPlus 激活节点
+    ///
+    /// SoftPlus 是 ReLU 的平滑近似: f(x) = ln(1 + e^x)
+    /// 导数为 sigmoid: f'(x) = 1 / (1 + e^(-x))
+    ///
+    /// 适用场景：
+    /// - 需要正值输出（如方差/标准差预测）
+    /// - 需要平滑梯度的优化
+    /// - 概率模型（VAE）、连续动作空间 RL（SAC/PPO）
+    pub fn new_softplus_node(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_softplus(&self.get_nodes(&[parent_id])?)?;
+        self.add_node_to_list(handle, name, "softplus", &[parent_id])
+    }
+
     /// 创建 LeakyReLU 激活节点
     ///
     /// # 参数

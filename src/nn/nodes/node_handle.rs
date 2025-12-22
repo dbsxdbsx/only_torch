@@ -1,7 +1,7 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
     Add, AvgPool2d, Conv2d, Flatten, Input, LeakyReLU, MatMul, MaxPool2d, Multiply, Parameter,
-    PerceptionLoss, Reshape, ScalarMultiply, Sigmoid, SoftmaxCrossEntropy, Step, Tanh,
+    PerceptionLoss, Reshape, ScalarMultiply, Sigmoid, SoftPlus, SoftmaxCrossEntropy, Step, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -213,6 +213,10 @@ impl NodeHandle {
         negative_slope: f64,
     ) -> Result<Self, GraphError> {
         Self::new(LeakyReLU::new(parents, negative_slope)?)
+    }
+
+    pub(in crate::nn) fn new_softplus(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(SoftPlus::new(parents)?)
     }
 
     pub(in crate::nn) fn new_perception_loss(parents: &[&Self]) -> Result<Self, GraphError> {

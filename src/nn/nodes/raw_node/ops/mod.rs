@@ -17,6 +17,7 @@ mod multiply;
 mod reshape;
 mod scalar_multiply;
 mod sigmoid;
+mod softplus;
 mod step;
 mod tanh;
 
@@ -31,5 +32,6 @@ pub(crate) use multiply::Multiply;
 pub(crate) use reshape::Reshape;
 pub(crate) use scalar_multiply::ScalarMultiply;
 pub(crate) use sigmoid::Sigmoid;
+pub(crate) use softplus::SoftPlus;
 pub(crate) use step::Step;
 pub(crate) use tanh::Tanh;

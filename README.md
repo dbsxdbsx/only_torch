@@ -88,7 +88,7 @@ opt-level = 3
 **目前需要先解决有没有的问题，而不是好不好**
 
 - [] 实现类似 tch-rs 中 `tch::no_grad(|| {});`的无梯度功能；
-- [x] 常用激活函数：Tanh ✅，Sigmoid ✅，Softplus/ReLU 待实现
+- [x] 常用激活函数：Tanh ✅，Sigmoid ✅，ReLU/LeakyReLU ✅，SoftPlus ✅
 - [x] 基于本框架解决 XOR 监督学习问题 ✅ (2025-12-21)
 - [x] 基于本框架解决 Mnist（数字识别）的监督学习问题 ✅ MVP 集成测试 (2025-12-21)
 - [] 基于本框架解决 CartPole（需要 openAI Gym 或相关 crate 支持）的深度强化学习问题
