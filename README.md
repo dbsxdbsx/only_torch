@@ -32,6 +32,23 @@
 
 - **[MNIST CNN（LeNet 风格）](tests/test_mnist_cnn.rs)** ⭐⭐⭐ - **CNN 架构示例**，基于经典 LeNet-5 设计。网络结构：`Conv1(5x5) → AvgPool → Conv2(3x3) → MaxPool → FC1(64) → FC2(10)`，同时验证 AvgPool 和 MaxPool 两种池化层（运行：`cargo test test_mnist_cnn -- --show-output`）
 
+### 性能提示
+
+如果在 **debug 模式**下使用 CNN 等计算密集功能，建议在 `Cargo.toml` 中添加：
+
+```toml
+[profile.dev.package."*"]
+opt-level = 3
+```
+
+这会对所有依赖库（`ndarray`、`rayon` 等）开启最大优化，显著提升 debug 模式下的运行速度，同时保持你自己的代码可调试。
+
+> **适用场景**：
+>
+> - 开发本项目时（开发者）
+> - 将本项目作为 crate 依赖导入到你自己的项目时（用户）
+>
+> **注意**：此设置仅影响当前项目的构建行为。当你把 `only_torch` 作为依赖使用时，需要在**你自己的项目**的 `Cargo.toml` 中添加此配置才能生效。
 
 ## TODO
 

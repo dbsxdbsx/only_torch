@@ -47,6 +47,7 @@ use std::time::Instant;
 /// fc2 (64 → 10) → SoftmaxCrossEntropy
 /// ```
 #[test]
+#[cfg_attr(debug_assertions, ignore)]
 fn test_mnist_cnn() -> Result<(), GraphError> {
     let start_time = Instant::now();
 

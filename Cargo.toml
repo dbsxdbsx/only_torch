@@ -17,6 +17,16 @@
     codegen-units=1
     strip        ="debuginfo"
 
+# Debug 模式优化：在保持可调试性的前提下提升运行速度
+# opt-level=1 对本项目代码开启基本优化（循环优化、部分内联）
+[profile.dev]
+    opt-level=1
+
+# 对所有依赖开启最大优化（仅影响本项目开发，不影响下游用户）
+# 显著加速 debug 模式下的 CNN 等计算密集型测试
+[profile.dev.package."*"]
+    opt-level=3
+
 [dependencies]
     # 代码重构
     enum_dispatch="0.3"
@@ -55,12 +65,12 @@
     trait_variable="*"
 
     # 数据加载
-    flate2="1.0"    # gzip 解压
-    dirs  ="5.0"    # 跨平台目录
-    ureq  ="2.9"    # HTTP 下载（blocking）
+    flate2="1.0" # gzip 解压
+    dirs  ="5.0" # 跨平台目录
+    ureq  ="2.9" # HTTP 下载（blocking）
 
     # 并行计算
-    rayon ="1.10"   # 数据并行
+    rayon="1.10" # 数据并行
 
 [dev-dependencies]
     # statrs="^0.16.0"
