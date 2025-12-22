@@ -4,23 +4,24 @@
 //!
 //! # 主要组件
 //!
-//! - [`MnistDataset`]: MNIST 手写数字数据集
+//! - [`MnistDataset`]: MNIST 手写数字数据集（分类任务）
+//! - [`CaliforniaHousingDataset`]: California Housing 房价数据集（回归任务）
 //! - [`transforms`]: 数据变换函数（归一化、one-hot 等）
 //! - [`DataError`]: 数据加载错误类型
 //!
 //! # 使用示例
 //!
 //! ```ignore
-//! use only_torch::data::{MnistDataset, transforms};
+//! use only_torch::data::{MnistDataset, CaliforniaHousingDataset, transforms};
 //!
-//! // 加载 MNIST 训练集
+//! // 加载 MNIST 训练集（分类）
 //! let train_data = MnistDataset::train()?;
-//!
-//! // 获取 flatten 版本（用于 MLP）
 //! let train_flat = train_data.flatten();
 //!
-//! // 获取单个样本
-//! let (image, label) = train_flat.get(0)?;
+//! // 加载 California Housing（回归）
+//! let housing = CaliforniaHousingDataset::load_default()?
+//!     .standardize();
+//! let (train, test) = housing.train_test_split(0.2, Some(42))?;
 //! ```
 
 pub mod datasets;
@@ -31,6 +32,6 @@ pub mod transforms;
 mod tests;
 
 // Re-exports
-pub use datasets::{default_data_dir, MnistDataset};
+pub use datasets::{default_data_dir, CaliforniaHousingDataset, MnistDataset};
 pub use error::DataError;
 

@@ -32,6 +32,8 @@
 
 - **[MNIST CNN（LeNet 风格）](tests/test_mnist_cnn.rs)** ⭐⭐⭐ - **CNN 架构示例**，基于经典 LeNet-5 设计。网络结构：`Conv1(5x5) → AvgPool → Conv2(3x3) → MaxPool → FC1(64) → FC2(10)`，同时验证 AvgPool 和 MaxPool 两种池化层（运行：`cargo test test_mnist_cnn -- --show-output`）
 
+- **[California Housing 房价回归](tests/test_california_housing_price.rs)** ⭐⭐ - **回归任务示例**，使用真实房价数据集。网络结构：`Input(8) → FC1(128, Softplus) → FC2(64, Softplus) → FC3(32, Softplus) → Output(1)`，展示 Layer API + Batch 模式 + MSELoss 的回归训练，约 10 个 epoch 达到 **70%+ R²**（运行：`cargo test test_california_housing_regression -- --show-output`）
+
 ### 性能提示
 
 如果在 **debug 模式**下使用 CNN 等计算密集功能，建议在 `Cargo.toml` 中添加：

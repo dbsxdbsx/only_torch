@@ -35,7 +35,7 @@ tensor/            ~80%     ✅ 基本完成
 nn/graph           ~90%     ✅ 核心完成
 nn/nodes           ~75%     ✅ Conv2d/MaxPool2d/AvgPool2d 已完成
 nn/optimizer       ~70%     ✅ SGD/Adam可用，缺Momentum等
-data/              ~60%     🔄 MNIST 已完成，DataLoader 基础可用
+data/              ~70%     ✅ MNIST + California Housing 已完成
 vision/            ~70%     ✅ 基本完成
 logic/             0%       ❌ 预留
 neat/              0%       ❌ 远期特色
@@ -43,12 +43,12 @@ neat/              0%       ❌ 远期特色
 
 ## 已实现节点
 
-| 类型 | 节点                                    | 状态 |
-| :--- | :-------------------------------------- | :--: |
-| 输入 | Input, Parameter                        |  ✅  |
-| 运算 | Add, MatMul, Reshape, Flatten           |  ✅  |
-| 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU     |  ✅  |
-| CNN  | Conv2d, MaxPool2d, AvgPool2d            |  ✅  |
+| 类型 | 节点                                             | 状态 |
+| :--- | :----------------------------------------------- | :--: |
+| 输入 | Input, Parameter                                 |  ✅  |
+| 运算 | Add, MatMul, Reshape, Flatten                    |  ✅  |
+| 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU              |  ✅  |
+| CNN  | Conv2d, MaxPool2d, AvgPool2d                     |  ✅  |
 | 损失 | PerceptionLoss, SoftmaxCrossEntropyLoss, MSELoss |  ✅  |
 
 ## 缺失的关键节点
@@ -60,16 +60,17 @@ neat/              0%       ❌ 远期特色
 
 > 对应 MatrixSlow Python 示例的 Rust 实现验证
 
-| Rust 测试                     | 对应 MatrixSlow 示例          | 状态 | 说明                                |
-| ----------------------------- | ----------------------------- | :--: | ----------------------------------- |
-| `test_adaline.rs`             | `ch02/adaline.py`             |  ✅  | 最基础的计算图+自动微分             |
-| `test_adaline_batch.rs`       | `ch03/adaline_batch.py`       |  ✅  | 批量处理                            |
-| `test_optimizer_example.rs`   | `ch03/optimizer_example.py`   |  ✅  | SGD/Adam 优化器验证                 |
-| `test_xor.rs`                 | -                             |  ✅  | **MVP 展示：非线性分类问题**        |
-| `test_logistic_regression.rs` | `ch04/logistic_regression.py` |  ❌  | 需要 Sigmoid 节点 (已有) + 测试代码 |
-| `test_nn_iris.rs`             | `ch05/nn_iris.py`             |  ❌  | 需要多层网络+Softmax                |
-| `test_mnist.rs`               | `ch05/nn_mnist.py`            |  ✅  | **MVP：MLP + SoftmaxCrossEntropy**  |
-| `test_simple_regression.rs`   | -                             |  ✅  | **MSELoss 回归验证：y=2x+1**        |
+| Rust 测试                          | 对应 MatrixSlow 示例          | 状态 | 说明                                |
+| ---------------------------------- | ----------------------------- | :--: | ----------------------------------- |
+| `test_adaline.rs`                  | `ch02/adaline.py`             |  ✅  | 最基础的计算图+自动微分             |
+| `test_adaline_batch.rs`            | `ch03/adaline_batch.py`       |  ✅  | 批量处理                            |
+| `test_optimizer_example.rs`        | `ch03/optimizer_example.py`   |  ✅  | SGD/Adam 优化器验证                 |
+| `test_xor.rs`                      | -                             |  ✅  | **MVP 展示：非线性分类问题**        |
+| `test_logistic_regression.rs`      | `ch04/logistic_regression.py` |  ❌  | 需要 Sigmoid 节点 (已有) + 测试代码 |
+| `test_nn_iris.rs`                  | `ch05/nn_iris.py`             |  ❌  | 需要多层网络+Softmax                |
+| `test_mnist.rs`                    | `ch05/nn_mnist.py`            |  ✅  | **MVP：MLP + SoftmaxCrossEntropy**  |
+| `test_simple_regression.rs`        | -                             |  ✅  | **MSELoss 回归验证：y=2x+1**        |
+| `test_california_housing_price.rs` | -                             |  ✅  | **California Housing 房价回归**     |
 
 ---
 
@@ -129,8 +130,8 @@ only_torch/
 │   └── context/     # 运行上下文
 │       └── no_grad, train/eval模式
 ├── vision/          # 视觉处理 ✅
-├── data/            # 数据加载 ✅ (基础完成)
-│   └── MnistDataset, transforms, DataLoader (MVP)
+├── data/            # 数据加载 ✅
+│   └── MnistDataset, CaliforniaHousingDataset, transforms
 ├── neat/            # 神经进化 (远期)
 └── rl/              # 强化学习 (远期)
 ```
@@ -222,6 +223,15 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
 - **支持 Reduction**：`Mean`（默认）、`Sum`
 - **双模式梯度**：Jacobi 模式 + Batch 模式
 - **集成测试**：`test_simple_regression.rs` 验证 y=2x+1 线性回归收敛
+
+### ✅ 已完成：California Housing 数据集
+
+实现了回归任务的经典数据集（类似分类任务的 MNIST）：
+
+- **数据规模**：20,433 个样本，8 个特征
+- **特征标准化**：Z-score 标准化，加速收敛
+- **数据划分**：支持 train_test_split + 随机种子
+- **集成测试**：`test_california_housing_price.rs` 验证 MLP 回归
 
 ---
 
