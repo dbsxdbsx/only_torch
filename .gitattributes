@@ -1,0 +1,8 @@
+# 将 MatrixSlow 数据目录下的 .ts 文件标记为数据文件，不参与语言统计
+# 这些是时间序列数据文件（Time Series），不是 TypeScript
+MatrixSlow/data/**/*.ts linguist-detectable=false
+MatrixSlow/data/**/*.ts linguist-language=Text
+
+# 确保 Rust 文件被正确识别
+*.rs linguist-language=Rust
+
