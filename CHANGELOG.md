@@ -1,5 +1,38 @@
 # 更新日志
 
+## [0.5.0] - 2025-12-27
+
+### 新增
+
+- feat: 实现计算图序列化与可视化功能
+  - `GraphDescriptor` 统一 IR 设计
+  - `save_model()` / `load_model()` 模型保存加载（JSON + bin）
+  - `to_dot()` / `save_visualization()` Graphviz 可视化
+  - `summary()` / `summary_markdown()` Keras 风格摘要输出
+- feat: 实现完整的梯度流控制机制
+  - `no_grad_scope()` 无梯度作用域
+  - `detach_node()` / `attach_node()` 梯度截断
+  - `backward_nodes_ex(..., retain_graph)` 多次反向传播
+- feat: 优化器 `with_params()` 方法，支持指定参数列表优化（用于 GAN/迁移学习）
+- feat(Input): Input 节点拒绝设置雅可比矩阵
+
+### 文档
+
+- docs: 添加 Graph 序列化与可视化设计文档
+- docs: 添加梯度流控制设计文档 (no_grad/detach/retain_graph)
+- docs: README 添加计算图可视化展示
+- docs: 精简 README TODO 列表
+
+### 重构
+
+- refactor: 将 Python 测试脚本移至 `tests/python/` 目录
+- refactor: summary 标题改为中文「模型摘要」
+
+### 其他
+
+- chore: 添加 MNIST GAN 示例
+- chore: 修正 GitHub 语言检测，忽略 issues 目录
+
 ## [0.4.0] - 2025-12-22
 
 ### 新增
