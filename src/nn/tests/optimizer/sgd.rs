@@ -32,7 +32,7 @@ fn test_sgd_learning_rate_modification() {
 #[test]
 fn test_sgd_update_formula() {
     // 测试SGD更新公式：θ_new = θ_old - α * ∇θ
-    // 预期值通过 PyTorch 验证，见 tests/calc_jacobi_by_pytorch/optimizer_test_values.py
+    // 预期值通过 PyTorch 验证，见 tests/python/calc_jacobi_by_pytorch/optimizer_test_values.py
     //
     // 计算图: output = w @ x, loss_input = label @ output, loss = perception_loss(loss_input)
     // 初始值: w=1, x=1, label=-1 => output=1, loss_input=-1, loss=1 (因为-1<0)
@@ -140,7 +140,7 @@ fn test_sgd_zero_learning_rate() {
 #[test]
 fn test_sgd_gradient_accumulation() {
     // 测试多次one_step后的梯度累积
-    // 预期值通过 PyTorch 验证，见 tests/calc_jacobi_by_pytorch/optimizer_test_values.py
+    // 预期值通过 PyTorch 验证，见 tests/python/calc_jacobi_by_pytorch/optimizer_test_values.py
     //
     // 计算图: output = w @ x, loss_input = label @ output, loss = perception_loss(loss_input)
     // 初始值: w=1, x=2, label=-1 => output=2, loss_input=-2, loss=2

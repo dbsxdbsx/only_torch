@@ -6,8 +6,8 @@
 
 use approx::assert_abs_diff_eq;
 
-use crate::nn::optimizer::{Adam, Optimizer};
 use crate::nn::Graph;
+use crate::nn::optimizer::{Adam, Optimizer};
 use crate::tensor::Tensor;
 
 #[test]
@@ -39,7 +39,7 @@ fn test_adam_learning_rate_modification() {
 #[test]
 fn test_adam_update() {
     // 测试Adam更新公式
-    // 预期值通过 PyTorch 验证，见 tests/calc_jacobi_by_pytorch/optimizer_test_values.py
+    // 预期值通过 PyTorch 验证，见 tests/python/calc_jacobi_by_pytorch/optimizer_test_values.py
     //
     // 计算图: output = w @ x, loss_input = label @ output, loss = perception_loss(loss_input)
     // 初始值: w=2, x=3, label=-1 => output=6, loss_input=-6, loss=6
@@ -325,14 +325,8 @@ fn test_adam_with_params_separate_optimizers() {
     let d_w_after_d = graph.get_node_value(d_w).unwrap().unwrap().clone();
 
     // D 应该被更新，G 应该不变
-    assert_eq!(
-        &g_w_before, &g_w_after_d,
-        "只更新 D 时，G 的参数不应该改变"
-    );
-    assert_ne!(
-        &d_w_before, &d_w_after_d,
-        "只更新 D 时，D 的参数应该被更新"
-    );
+    assert_eq!(&g_w_before, &g_w_after_d, "只更新 D 时，G 的参数不应该改变");
+    assert_ne!(&d_w_before, &d_w_after_d, "只更新 D 时，D 的参数应该被更新");
 
     // 再只更新 G
     adam_g.one_step(&mut graph, loss).unwrap();
@@ -342,12 +336,6 @@ fn test_adam_with_params_separate_optimizers() {
     let d_w_after_g = graph.get_node_value(d_w).unwrap().unwrap();
 
     // G 应该被更新，D 应该不变（相对于 D 更新后的值）
-    assert_ne!(
-        &g_w_after_d, g_w_after_g,
-        "只更新 G 时，G 的参数应该被更新"
-    );
-    assert_eq!(
-        &d_w_after_d, d_w_after_g,
-        "只更新 G 时，D 的参数不应该改变"
-    );
+    assert_ne!(&g_w_after_d, g_w_after_g, "只更新 G 时，G 的参数应该被更新");
+    assert_eq!(&d_w_after_d, d_w_after_g, "只更新 G 时，D 的参数不应该改变");
 }

@@ -90,7 +90,7 @@ fn test_node_leaky_relu_manually_set_value() {
 #[test]
 fn test_node_standard_relu_forward() {
     // 标准 ReLU (negative_slope=0) 前向传播测试
-    // 预期值来自 tests/calc_jacobi_by_pytorch/node_leaky_relu.py
+    // 预期值来自 tests/python/calc_jacobi_by_pytorch/node_leaky_relu.py
     let mut graph = Graph::new();
 
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
@@ -110,7 +110,7 @@ fn test_node_standard_relu_forward() {
 #[test]
 fn test_node_leaky_relu_forward() {
     // Leaky ReLU (negative_slope=0.1) 前向传播测试
-    // 预期值来自 tests/calc_jacobi_by_pytorch/node_leaky_relu.py
+    // 预期值来自 tests/python/calc_jacobi_by_pytorch/node_leaky_relu.py
     let mut graph = Graph::new();
 
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
@@ -157,7 +157,7 @@ fn test_node_leaky_relu_forward_3x2() {
 #[test]
 fn test_node_standard_relu_backward() {
     // 标准 ReLU 反向传播测试
-    // 预期值来自 tests/calc_jacobi_by_pytorch/node_leaky_relu.py
+    // 预期值来自 tests/python/calc_jacobi_by_pytorch/node_leaky_relu.py
     let mut graph = Graph::new();
 
     let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();
@@ -189,7 +189,7 @@ fn test_node_standard_relu_backward() {
 #[test]
 fn test_node_leaky_relu_backward() {
     // Leaky ReLU (slope=0.1) 反向传播测试
-    // 预期值来自 tests/calc_jacobi_by_pytorch/node_leaky_relu.py
+    // 预期值来自 tests/python/calc_jacobi_by_pytorch/node_leaky_relu.py
     let mut graph = Graph::new();
 
     let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();

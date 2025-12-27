@@ -102,7 +102,7 @@ fn test_node_tanh_expected_shape() {
 
 #[test]
 fn test_node_tanh_forward_propagation() {
-    // 1. 准备测试数据 (与Python测试tests/calc_jacobi_by_pytorch/node_tanh.py保持一致)
+    // 1. 准备测试数据 (与Python测试tests/python/calc_jacobi_by_pytorch/node_tanh.py保持一致)
     let value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
     let expected = Tensor::new(
         &[
@@ -174,7 +174,7 @@ fn test_node_tanh_backward_propagation() {
         )))
     );
 
-    // 3. 设置输入值 (与Python测试tests/calc_jacobi_by_pytorch/node_tanh.py保持一致)
+    // 3. 设置输入值 (与Python测试tests/python/calc_jacobi_by_pytorch/node_tanh.py保持一致)
     let parent_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
     graph.set_node_value(parent, Some(&parent_value)).unwrap();
 

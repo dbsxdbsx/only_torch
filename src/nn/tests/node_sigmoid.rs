@@ -128,7 +128,7 @@ fn test_node_sigmoid_expected_shape() {
 
 #[test]
 fn test_node_sigmoid_forward_propagation() {
-    // 1. 准备测试数据 (与 Python 测试 tests/calc_jacobi_by_pytorch/node_sigmoid.py 保持一致)
+    // 1. 准备测试数据 (与 Python 测试 tests/python/calc_jacobi_by_pytorch/node_sigmoid.py 保持一致)
     let value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
     let expected = Tensor::new(
         &[
@@ -200,7 +200,7 @@ fn test_node_sigmoid_backward_propagation() {
         )))
     );
 
-    // 3. 设置输入值 (与 Python 测试 tests/calc_jacobi_by_pytorch/node_sigmoid.py 保持一致)
+    // 3. 设置输入值 (与 Python 测试 tests/python/calc_jacobi_by_pytorch/node_sigmoid.py 保持一致)
     let parent_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
     graph.set_node_value(parent, Some(&parent_value)).unwrap();
 

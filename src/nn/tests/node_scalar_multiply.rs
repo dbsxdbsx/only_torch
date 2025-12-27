@@ -142,7 +142,7 @@ fn test_node_scalar_multiply_manually_set_value() {
 
 #[test]
 fn test_node_scalar_multiply_forward_propagation() {
-    // 测试数据（与Python测试tests/calc_jacobi_by_pytorch/node_scalar_multiply.py保持一致）
+    // 测试数据（与Python测试tests/python/calc_jacobi_by_pytorch/node_scalar_multiply.py保持一致）
     let scalar_data = &[2.0];
     let matrix_data = &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
     let expected_output = &[2.0, 4.0, 6.0, 8.0, 10.0, 12.0];
@@ -173,7 +173,7 @@ fn test_node_scalar_multiply_forward_propagation() {
 
 #[test]
 fn test_node_scalar_multiply_backward_propagation() {
-    // 测试数据（与Python测试tests/calc_jacobi_by_pytorch/node_scalar_multiply.py保持一致）
+    // 测试数据（与Python测试tests/python/calc_jacobi_by_pytorch/node_scalar_multiply.py保持一致）
     let scalar_data = &[2.0];
     let matrix_data = &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
     // 对标量的雅可比矩阵：M.flatten().T → shape: [6, 1]

@@ -6,7 +6,7 @@ use crate::tensor::Tensor;
 
 /// SoftPlus 节点测试
 ///
-/// 预期值来自 tests/calc_jacobi_by_pytorch/node_softplus.py
+/// 预期值来自 tests/python/calc_jacobi_by_pytorch/node_softplus.py
 ///
 /// 注意：本框架要求所有张量为 2-4 维，所以 "1D" 测试使用 [1, n] 形状
 
@@ -71,7 +71,7 @@ fn test_node_softplus_manually_set_value() {
 #[test]
 fn test_node_softplus_forward_1d() {
     // "1D" 向量前向传播测试 (实际使用 [1, 5] 形状)
-    // 预期值来自 tests/calc_jacobi_by_pytorch/node_softplus.py
+    // 预期值来自 tests/python/calc_jacobi_by_pytorch/node_softplus.py
     let mut graph = Graph::new();
     let input = graph.new_input_node(&[1, 5], Some("input")).unwrap();
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
@@ -146,7 +146,7 @@ fn test_node_softplus_numerical_stability() {
 #[test]
 fn test_node_softplus_backward_1d() {
     // "1D" 向量反向传播测试 (实际使用 [1, 5] 形状)
-    // 预期值来自 tests/calc_jacobi_by_pytorch/node_softplus.py
+    // 预期值来自 tests/python/calc_jacobi_by_pytorch/node_softplus.py
     let mut graph = Graph::new();
     let parent = graph.new_parameter_node(&[1, 5], Some("parent")).unwrap();
     let result_node = graph.new_softplus_node(parent, Some("result")).unwrap();

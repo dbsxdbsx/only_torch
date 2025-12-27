@@ -725,7 +725,7 @@ fn test_detach_node_still_functional() {
 }
 
 /// 测试: detach 梯度数值与 PyTorch 精确对照
-/// PyTorch 对照: tests/calc_jacobi_by_pytorch/detach_gradient_values.py
+/// PyTorch 对照: tests/python/calc_jacobi_by_pytorch/detach_gradient_values.py
 ///
 /// 拓扑: x(input) -> w1 -> h (detached) -> w2 -> output
 ///
@@ -945,7 +945,7 @@ fn test_retain_graph_allows_multiple_backward() {
 }
 
 /// 测试: 多任务学习场景 - 两个 loss 共享 backbone
-/// PyTorch 对照: tests/calc_jacobi_by_pytorch/multi_task_learning_retain_graph.py
+/// PyTorch 对照: tests/python/calc_jacobi_by_pytorch/multi_task_learning_retain_graph.py
 #[test]
 fn test_retain_graph_multi_task_learning() {
     let mut graph = Graph::new();
@@ -1300,7 +1300,7 @@ fn test_backward_accumulation_for_complex_topology() {
     let w_task2_after_task2 = graph.get_node_jacobi(w_task2).unwrap().unwrap();
 
     // ========== 验证累积正确性（使用 PyTorch 计算的精确值）==========
-    // 参考: tests/test_backward_accumulation_for_complex_topology.py
+    // 参考: tests/python/test_backward_accumulation_for_complex_topology.py
     // 注意：Jacobi 格式为展平的 [1, n]，而非原始 shape
 
     // PyTorch 计算的预期值（第一次 backward 后，展平为 Jacobi 格式）
