@@ -34,6 +34,8 @@
 
 - **[California Housing 房价回归](tests/test_california_housing_price.rs)** ⭐⭐ - **回归任务示例**，使用真实房价数据集。网络结构：`Input(8) → FC1(128, Softplus) → FC2(64, Softplus) → FC3(32, Softplus) → Output(1)`，展示 Layer API + Batch 模式 + MSELoss 的回归训练，约 10 个 epoch 达到 **70%+ R²**（运行：`cargo test test_california_housing_regression -- --show-output`）
 
+- **[MNIST GAN（对抗生成网络）](tests/test_mnist_gan.rs)** ⭐⭐⭐ - **GAN 训练示例**，验证 `detach` 机制与多 Loss 交替训练。Generator：`z(64) → FC(128, LeakyReLU) → FC(784, Sigmoid)`，Discriminator：`784 → FC(128, LeakyReLU) → FC(1, Sigmoid)`。展示 `Adam::with_params()` 独立优化器、`graph.detach_node()`/`attach_node()` 梯度控制（运行：`cargo test test_mnist_gan -- --show-output`）
+
 ### 性能提示
 
 如果在 **debug 模式**下使用 CNN 等计算密集功能，建议在 `Cargo.toml` 中添加：
