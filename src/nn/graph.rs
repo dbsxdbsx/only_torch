@@ -586,7 +586,8 @@ impl Graph {
             };
             // 3.3.3 更新当前节点的梯度（雅可比矩阵）
             {
-                let current = {
+                // 用 `+=` 复用已分配的缓冲区，避免 `current + contribution` 产生额外临时张量
+                let mut current = {
                     let node = self.get_node(target_node_id)?;
                     node.jacobi()
                         .ok_or_else(|| {
@@ -594,8 +595,9 @@ impl Graph {
                         })?
                         .clone()
                 };
+                current += &contribution;
                 let node = self.get_node_mut(target_node_id)?;
-                node.set_jacobi(Some(&(current + contribution)))?;
+                node.set_jacobi(Some(&current))?;
             }
         }
 
@@ -721,47 +723,43 @@ impl Graph {
             }
         }
 
-        // 获取当前节点的梯度
-        let upstream_grad = {
-            let node = self.get_node(node_id)?;
-            match node.grad() {
-                Some(g) => g.clone(),
-                None => return Ok(()), // 没有梯度，跳过
-            }
-        };
-
         // 获取父节点列表
         let parent_ids = self.get_node_parents(node_id)?;
         if parent_ids.is_empty() {
             return Ok(()); // 输入/参数节点，无需继续传播
         }
 
-        // 对每个父节点计算梯度
-        for parent_id in &parent_ids {
-            // 跳过 Input 节点（Input 不需要梯度）
-            {
+        // 先在只读阶段把所有父节点梯度算出来（避免 clone 整个 upstream_grad）
+        let parent_grads: Vec<(NodeId, Tensor)> = {
+            let node = self.get_node(node_id)?;
+            let upstream_grad = match node.grad() {
+                Some(g) => g,
+                None => return Ok(()), // 没有梯度，跳过
+            };
+
+            let mut grads = Vec::with_capacity(parent_ids.len());
+            for parent_id in &parent_ids {
+                // 跳过 Input 节点（Input 不需要梯度）
                 let parent = self.get_node(*parent_id)?;
                 if let NodeType::Input(_) = parent.node_type() {
                     continue;
                 }
-            }
 
-            // 找到辅助父节点（如果需要）
-            let assistant_parent_id = parent_ids.iter().find(|&&id| id != *parent_id).copied();
-
-            // 计算对该父节点的梯度
-            let parent_grad = {
-                let node = self.get_node(node_id)?;
-                let parent = self.get_node(*parent_id)?;
+                // 找到辅助父节点（如果需要）
+                let assistant_parent_id = parent_ids.iter().find(|&&id| id != *parent_id).copied();
                 let assistant = assistant_parent_id
                     .map(|id| self.get_node(id))
                     .transpose()?;
 
-                node.calc_grad_to_parent(parent, &upstream_grad, assistant)?
-            };
+                let parent_grad = node.calc_grad_to_parent(parent, upstream_grad, assistant)?;
+                grads.push((*parent_id, parent_grad));
+            }
+            grads
+        };
 
-            // 累加到父节点的梯度
-            let parent_node = self.get_node_mut(*parent_id)?;
+        // 回写阶段：累加到父节点的梯度
+        for (parent_id, parent_grad) in parent_grads {
+            let parent_node = self.get_node_mut(parent_id)?;
             if let Some(existing_grad) = parent_node.grad() {
                 let new_grad = existing_grad + &parent_grad;
                 parent_node.set_grad(Some(&new_grad))?;

@@ -193,28 +193,30 @@ impl Adam {
         // 获取当前参数值
         let current_value = graph.get_node_value(node_id)?.unwrap();
 
-        // 获取或初始化一阶矩和二阶矩
-        let m_prev = self
-            .m
-            .get(&node_id)
-            .cloned()
-            .unwrap_or_else(|| Tensor::zeros(gradient.shape()));
-        let v_prev = self
-            .v
-            .get(&node_id)
-            .cloned()
-            .unwrap_or_else(|| Tensor::zeros(gradient.shape()));
-
-        // 更新一阶矩估计: m_t = β1 * m_{t-1} + (1 - β1) * g_t
-        let m_t = &m_prev * self.beta1 + gradient * (1.0 - self.beta1);
-
-        // 更新二阶矩估计: v_t = β2 * v_{t-1} + (1 - β2) * g_t^2
+        // 预计算缩放后的梯度项
+        let scaled_gradient = gradient * (1.0 - self.beta1);
         let gradient_squared = gradient * gradient;
-        let v_t = &v_prev * self.beta2 + &gradient_squared * (1.0 - self.beta2);
+        let scaled_gradient_squared = &gradient_squared * (1.0 - self.beta2);
+
+        // 原地更新一阶矩估计: m = β1 * m + (1 - β1) * g
+        let m = self
+            .m
+            .entry(node_id)
+            .or_insert_with(|| Tensor::zeros(gradient.shape()));
+        *m *= self.beta1;
+        *m += &scaled_gradient;
+
+        // 原地更新二阶矩估计: v = β2 * v + (1 - β2) * g²
+        let v = self
+            .v
+            .entry(node_id)
+            .or_insert_with(|| Tensor::zeros(gradient.shape()));
+        *v *= self.beta2;
+        *v += &scaled_gradient_squared;
 
         // 偏差修正
-        let m_hat = &m_t / (1.0 - self.beta1.powi(self.t as i32));
-        let v_hat = &v_t / (1.0 - self.beta2.powi(self.t as i32));
+        let m_hat = &*m / (1.0 - self.beta1.powi(self.t as i32));
+        let v_hat = &*v / (1.0 - self.beta2.powi(self.t as i32));
 
         // 参数更新: θ = θ - α * m_hat / (√v_hat + ε)
         let v_hat_sqrt = v_hat.sqrt();
@@ -224,10 +226,6 @@ impl Adam {
 
         // 设置新的参数值
         graph.set_node_value(node_id, Some(&new_value))?;
-
-        // 保存状态
-        self.m.insert(node_id, m_t);
-        self.v.insert(node_id, v_t);
 
         Ok(())
     }

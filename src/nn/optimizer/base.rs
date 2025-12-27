@@ -71,7 +71,7 @@ impl GradientAccumulator {
         gradient: &Tensor,
     ) -> Result<(), GraphError> {
         if let Some(existing_gradient) = self.accumulated_gradients.get_mut(&node_id) {
-            *existing_gradient = existing_gradient.clone() + gradient;
+            *existing_gradient += gradient;
         } else {
             self.accumulated_gradients.insert(node_id, gradient.clone());
         }
@@ -91,7 +91,7 @@ impl GradientAccumulator {
 
         self.accumulated_gradients
             .get(&node_id)
-            .map(|gradient| gradient.clone() / (self.sample_count as f32))
+            .map(|gradient| gradient / (self.sample_count as f32))
     }
 
     /// 清除累积状态

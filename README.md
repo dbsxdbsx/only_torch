@@ -116,7 +116,6 @@ funciontality
 ### 🟢 辅助功能
 
 - `sign` 节点（替代 step，直接输出 [-1, 1]）
-- assign 类运算符重载（如 `add_assign`）
 - 清理未使用的方法
 - 评估 `Tensor::uninit` 的必要性
 
@@ -159,6 +158,7 @@ linear 等常用层，容易添加 edge(如已存在的 add 节点的父节点)�
 
 - [广播机制设计决策](.doc/design/broadcast_mechanism_design.md) - 阐述了为何采用"显式节点广播"而非 PyTorch 风格隐式广播，及其对 NEAT 演化、梯度计算的影响
 - [性能优化策略](.doc/design/optimization_strategy.md) - 针对 CPU-only 和 NEAT 小规模不规则网络的优化方向，包括个体并行、Batch 向量化、SIMD 等策略的优先级分析
+- [性能优化候选项](.doc/optimization_candidates.md) - 待 benchmark 验证的具体优化点记录
 - [本项目的梯度设计机制说明](.doc/design/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
 - [梯度流控制机制](.doc/design/gradient_flow_control_design.md) - `no_grad`、`detach`、`retain_graph` 三种梯度控制机制的设计，包括 GAN、Actor-Critic、多任务学习等高级训练模式
 - [DataLoader 设计文档](.doc/design/data_loader_design.md) - 数据加载模块的架构设计，包括 MNIST 数据集支持、自动下载/缓存、数据转换等

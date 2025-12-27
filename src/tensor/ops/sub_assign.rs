@@ -1,30 +1,38 @@
+use crate::errors::{Operator, TensorError};
 use crate::tensor::Tensor;
 use std::ops::SubAssign;
 
 impl SubAssign for Tensor {
     fn sub_assign(&mut self, other: Self) {
-        // 使用`Sub` trait的`sub`方法来执行减法，并更新当前张量
-        *self = self.clone() - other;
+        self.sub_assign(&other);
     }
 }
 
 impl<'a> SubAssign<&'a Self> for Tensor {
     fn sub_assign(&mut self, other: &'a Self) {
-        // 使用`Sub` trait的`sub`方法来执行减法，并更新当前张量
-        *self = self.clone() - other;
+        if self.is_same_shape(other) {
+            self.data -= &other.data;
+        } else {
+            panic!(
+                "{}",
+                TensorError::OperatorError {
+                    operator: Operator::Sub,
+                    tensor1_shape: self.shape().to_vec(),
+                    tensor2_shape: other.shape().to_vec(),
+                }
+            )
+        }
     }
 }
 
 impl SubAssign<f32> for Tensor {
     fn sub_assign(&mut self, scalar: f32) {
-        // 使用`Sub` trait的`sub`方法来执行减法，并更新当前张量
-        *self = self.clone() - scalar;
+        self.data -= scalar;
     }
 }
 
 impl SubAssign<f32> for &mut Tensor {
     fn sub_assign(&mut self, scalar: f32) {
-        // 使用`Sub` trait的`sub`方法来执行减法，并更新当前张量
-        **self = (*self).clone() - scalar;
+        self.data -= scalar;
     }
 }
