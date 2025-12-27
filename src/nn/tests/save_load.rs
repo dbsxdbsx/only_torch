@@ -453,7 +453,7 @@ fn test_save_summary_markdown() {
 
     // 验证 Markdown 格式
     let content = fs::read_to_string(temp_file).expect("读取摘要文件失败");
-    assert!(content.contains("# Model Summary")); // Markdown 标题
+    assert!(content.contains("# 模型摘要")); // Markdown 标题
     assert!(content.contains("|-------")); // Markdown 表格分隔符
     assert!(content.contains("| x |")); // Markdown 表格行
     assert!(content.contains("**总参数量**")); // Markdown 粗体
@@ -471,7 +471,7 @@ fn test_summary_markdown_string() {
     let md = graph.summary_markdown();
 
     // 验证 Markdown 格式元素
-    assert!(md.contains("# Model Summary"));
+    assert!(md.contains("# 模型摘要"));
     assert!(md.contains("| 节点名称 | 类型 |"));
     assert!(md.contains("| weight | Parameter |"));
     assert!(md.contains("| 200 |")); // 参数量 10*20=200

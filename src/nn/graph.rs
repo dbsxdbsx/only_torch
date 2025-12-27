@@ -1190,7 +1190,7 @@ impl Graph {
         let mut output = String::new();
 
         // 标题
-        output.push_str(&format!("# Model Summary: {}\n\n", desc.name));
+        output.push_str(&format!("# 模型摘要: {}\n\n", desc.name));
 
         // 表头
         output.push_str("| 节点名称 | 类型 | 输出形状 | 参数量 | 父节点 |\n");
