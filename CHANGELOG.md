@@ -12,8 +12,6 @@
 - feat: 添加 Softplus 激活函数节点
 - feat(nn): 实现 MSELoss 损失节点
 - feat: California Housing 房价回归数据集与集成测试
-- feat(optimizer): `with_params()` 支持指定参数优化（GAN/迁移学习/分层学习率）
-- feat: MNIST GAN 集成测试（验证 detach + with_params 机制）
 
 ### 性能优化
 
