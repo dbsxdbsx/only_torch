@@ -12,5 +12,5 @@
 | loss_input | MatMul | [1, 1] | - | label, add_1 |
 | loss | PerceptionLoss | [1, 1] | - | loss_input |
 
-**总参数量**: 4  
+**总参数量**: 4
 **可训练参数**: 4
