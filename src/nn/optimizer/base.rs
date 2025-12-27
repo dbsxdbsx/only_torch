@@ -117,7 +117,7 @@ pub(crate) struct OptimizerState {
 }
 
 impl OptimizerState {
-    /// 创建新的优化器状态
+    /// 创建新的优化器状态（自动获取图中所有可训练节点）
     pub(crate) fn new(graph: &Graph, learning_rate: f32) -> Result<Self, GraphError> {
         // 获取所有可训练的参数节点
         let trainable_nodes = graph.get_trainable_nodes();
@@ -127,6 +127,20 @@ impl OptimizerState {
             gradient_accumulator: GradientAccumulator::new(),
             learning_rate,
         })
+    }
+
+    /// 使用指定参数创建优化器状态
+    ///
+    /// 用于需要分别优化不同参数组的场景，如：
+    /// - GAN 训练（G 和 D 用不同优化器）
+    /// - 迁移学习（冻结部分层）
+    /// - 分层学习率
+    pub(crate) fn with_params(params: Vec<NodeId>, learning_rate: f32) -> Self {
+        Self {
+            trainable_nodes: params,
+            gradient_accumulator: GradientAccumulator::new(),
+            learning_rate,
+        }
     }
 
     /// 获取可训练节点列表

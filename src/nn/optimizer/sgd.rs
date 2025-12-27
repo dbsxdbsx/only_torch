@@ -15,10 +15,28 @@ pub struct SGD {
 }
 
 impl SGD {
-    /// 创建新的SGD优化器
+    /// 创建新的SGD优化器（自动优化图中所有可训练节点）
     pub fn new(graph: &Graph, learning_rate: f32) -> Result<Self, GraphError> {
         let state = OptimizerState::new(graph, learning_rate)?;
         Ok(Self { state })
+    }
+
+    /// 使用指定参数创建SGD优化器
+    ///
+    /// 用于需要分别优化不同参数组的场景，如：
+    /// - GAN 训练（G 和 D 用不同优化器）
+    /// - 迁移学习（冻结部分层）
+    /// - 分层学习率
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // GAN 训练：分别为 G 和 D 创建优化器
+    /// let optimizer_g = SGD::with_params(&g_params, 0.01);
+    /// let optimizer_d = SGD::with_params(&d_params, 0.001);
+    /// ```
+    pub fn with_params(params: &[NodeId], learning_rate: f32) -> Self {
+        let state = OptimizerState::with_params(params.to_vec(), learning_rate);
+        Self { state }
     }
 }
 

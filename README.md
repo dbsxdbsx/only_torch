@@ -77,6 +77,7 @@ opt-level = 3
 
 ### 🟡 API 改进（用户体验）
 
+- [x] 优化器 `with_params` 方法：支持指定参数列表，用于 GAN/迁移学习/分层学习率等场景（`Adam::with_params()`, `SGD::with_params()`）
 - 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
 - NodeHandle 重命名为 Node? 各种 `parent/children/node_id`重命名为 `parents/children/id`?
 - should directly use `parents` but not `parents_ids`?

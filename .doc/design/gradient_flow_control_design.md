@@ -682,7 +682,15 @@ graph.backward_nodes_ex(&[w], output2, false)?;
 
 ---
 
-## 8. 参考资料
+## 8. 与优化器的配合
+
+梯度流控制机制通常与 `with_params` 优化器配合使用（如 GAN 训练中 `detach` + 独立优化器）。
+
+详见 [优化器架构设计](optimizer_architecture_design.md#44-指定参数优化with_params) 和 `tests/test_mnist_gan.rs`。
+
+---
+
+## 9. 参考资料
 
 - [PyTorch Autograd Mechanics](https://pytorch.org/docs/stable/notes/autograd.html)
 - [JAX Autodiff Cookbook](https://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html)
@@ -692,3 +700,4 @@ graph.backward_nodes_ex(&[w], output2, false)?;
 | Rust 测试 | PyTorch 对照脚本 |
 |-----------|------------------|
 | `test_retain_graph_multi_task_learning` | `tests/calc_jacobi_by_pytorch/multi_task_learning_retain_graph.py` |
+| `test_mnist_gan` | - (集成测试：验证 detach + with_params) |

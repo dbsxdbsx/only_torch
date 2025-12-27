@@ -26,7 +26,7 @@ pub struct Adam {
 }
 
 impl Adam {
-    /// 创建新的Adam优化器
+    /// 创建新的Adam优化器（自动优化图中所有可训练节点）
     pub fn new(
         graph: &Graph,
         learning_rate: f32,
@@ -49,6 +49,38 @@ impl Adam {
     /// 使用默认参数创建Adam优化器
     pub fn new_default(graph: &Graph, learning_rate: f32) -> Result<Self, GraphError> {
         Self::new(graph, learning_rate, 0.9, 0.999, 1e-8)
+    }
+
+    /// 使用指定参数创建Adam优化器
+    ///
+    /// 用于需要分别优化不同参数组的场景，如：
+    /// - GAN 训练（G 和 D 用不同优化器）
+    /// - 迁移学习（冻结部分层）
+    /// - 分层学习率
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // GAN 训练：分别为 G 和 D 创建优化器
+    /// let optimizer_g = Adam::with_params(&g_params, 0.0002, 0.5, 0.999, 1e-8);
+    /// let optimizer_d = Adam::with_params(&d_params, 0.0002, 0.5, 0.999, 1e-8);
+    /// ```
+    pub fn with_params(
+        params: &[NodeId],
+        learning_rate: f32,
+        beta1: f32,
+        beta2: f32,
+        epsilon: f32,
+    ) -> Self {
+        let state = OptimizerState::with_params(params.to_vec(), learning_rate);
+        Self {
+            state,
+            beta1,
+            beta2,
+            epsilon,
+            m: HashMap::new(),
+            v: HashMap::new(),
+            t: 0,
+        }
     }
 }
 
