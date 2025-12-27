@@ -12,6 +12,26 @@
 - only torch tensor --- 所有的数据类型都是内置类型 tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/Rust-numpy)，[array](https://doc.Rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于 blas 的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
 - only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了 f32 外的数据类型。
 
+### 计算图可视化
+
+框架内置 Graphviz 可视化支持，可自动生成计算图结构图（需安装 [Graphviz](https://graphviz.org/)）：
+
+<details>
+<summary>📊 MNIST GAN 计算图示例（点击展开）</summary>
+
+![MNIST GAN 计算图](tests/outputs/mnist_gan.png)
+
+> Generator + Discriminator 共 210,065 参数，展示 `detach` 梯度控制与多 Loss 训练
+
+</details>
+
+```rust
+// 生成可视化
+graph.save_visualization("model.png", None)?;
+// 或导出 DOT 格式
+let dot = graph.to_dot();
+```
+
 ## 文档
 
 目前无人性化的文档。可直接看 Rust 自动生成的[Api Doc](https://docs.rs/only_torch)即可。
@@ -64,16 +84,34 @@ opt-level = 3
 
 ### 🟠 正确性验证
 
-- 多层 jacobi 计算的单元测试（类似 adaline）
-- Python 对照测试：构造复合多节点验证反向传播正确性
-- Graph 测试覆盖：pub method、parents/children 属性、pass_id 等
+- add a `graph` for unit test to test the 多层的 jacobi 计算，就像
+adaline 那样?
+- 在 python 中仿造 adaline 构造一个复合多节点，然后基于此在 rust 中测试这种复
+合节点，已验证在复合多层节点中的反向传播正确性
+- jacobi 到底该测试对 parent 还是 children？
+- unit test for Graph, and parent/children
+- Graph 测试中该包含各种 pub method 的正确及错误测试
+- Graph 测试中最好添加某个节点后，测试该节点还有其父节点的 parents/children
+属性（又比如：同 2 个节点用于不同图的 add 节点，测试其 parents/children 属性
+是否正确）(Variable 节点无父节点)、"节点 var1 在图 default_graph 中重复"
+- (back/forward)pass_id 相关的 graph 测试？
 
 ### 🟡 API 改进
 
-- `Variable` 节点运算符重载（替代显式节点算子）
-- 命名规范化：`NodeHandle` → `Node`，`parent/children/node_id` → `parents/children/id`
-- 错误类型统一：`InvalidOperation` vs `ComputationError`
-- 可见性优化：隐藏 `NodeHandle`，仅暴露必要 API
+- 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑
+陋的节点算子了）
+- NodeHandle 重命名为 Node? 各种 `parent/children/node_id`重命名为
+`parents/children/id`?
+- should directly use `parents` but not `parents_ids`?
+- 图错误"InvalidOperation" vs "ComputationError"
+- `assert_eq!( graph.backward_nodes(&[input], input),
+Err(GraphError::InvalidOperation(format!( "输入节点[id=1, name=input,
+type=Input]不应该有雅可比矩阵" ))) ); `添加一个 `assert_err`的宏，可才参考
+`assert_panic`宏
+- how to expose only `in crate::nn` to the nn::Graph`?
+- should completely hide the NodeHandle?
+- Graph/NodeHandle rearrange blocks due to visibility and
+funciontality
 
 ### 🟢 辅助功能
 
@@ -84,9 +122,14 @@ opt-level = 3
 
 ### 🔵 NEAT 相关（长期目标）
 
-- 动态节点添加机制完善
+- 动态节点添加机制完善:
+ -- ```
+  - 后期当引入 NEAT 机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
+  - 当后期（NEAT 阶段）需要在一个已经 forwarded 的图中添加节点（如将已经被使用过的 var1、var2 结合一个新的未使用的 var3 构建一个 add 节点），可能需要添加一个`reset_forward_cnt`方法来保证图 forward 的一致性。
+```
 - `reset_forward_cnt` 方法（支持已 forward 图的节点扩展）
-- 基于 MatrixSlow 重写核心实现，确保 NEAT 兼容性
+- 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化,能 ok 拓展至
+linear 等常用层，容易添加 edge(如已存在的 add 节点的父节点)。
 
 ### ⚫ 实战验证
 
