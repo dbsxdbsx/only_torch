@@ -167,7 +167,9 @@ impl OptimizerState {
         graph.forward_node(target_node)?;
 
         // 反向传播计算雅可比矩阵
-        graph.backward_nodes(&self.trainable_nodes, target_node)?;
+        // 注意：这里使用 retain_graph=true，以便用户在 one_step() 后仍能访问 loss 值
+        // 这符合典型的训练循环模式：forward -> backward -> log loss -> update
+        graph.backward_nodes_ex(&self.trainable_nodes, target_node, true)?;
 
         // 累积梯度
         for &node_id in &self.trainable_nodes {

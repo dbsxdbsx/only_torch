@@ -445,9 +445,9 @@ fn test_mse_loss_clear_jacobi() {
         .set_node_value(target_id, Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
 
-    // 第一次前向+反向
+    // 第一次前向+反向（retain_graph=true 以便后续继续 backward）
     graph.forward_node(loss_id).unwrap();
-    graph.backward_nodes(&[input_id], loss_id).unwrap();
+    graph.backward_nodes_ex(&[input_id], loss_id, true).unwrap();
 
     let jacobi_first = graph.get_node_jacobi(input_id).unwrap().unwrap();
     let expected = Tensor::new(&[-0.333_333_34, -0.333_333_34, -0.333_333_34], &[1, 3]);
@@ -456,7 +456,7 @@ fn test_mse_loss_clear_jacobi() {
     // 清除 Jacobi
     graph.clear_jacobi().unwrap();
 
-    // 再次反向传播
+    // 再次反向传播（最后一次可以不保留图）
     graph.backward_nodes(&[input_id], loss_id).unwrap();
     let jacobi_after_clear = graph.get_node_jacobi(input_id).unwrap().unwrap();
     assert_abs_diff_eq!(jacobi_after_clear, &expected, epsilon = 1e-5);

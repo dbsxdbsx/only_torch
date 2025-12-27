@@ -1,4 +1,5 @@
 mod batch_mechanism; // Batch 机制测试
+mod gradient_flow_control; // 梯度流控制机制测试（no_grad、detach、retain_graph）
 mod graph_backward;
 mod graph_basic;
 mod graph_dynamic; // M4: 动态图扩展能力测试（NEAT 友好性）

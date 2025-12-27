@@ -201,14 +201,13 @@ fn test_node_parameter_backward_propagation() {
         ))
     );
 
-    // 5. 对其他未关联的Parameter节点的反向传播（应失败）
+    // 5. 对其他未关联的Parameter节点的反向传播
+    // 当目标节点与结果节点之间没有路径时，不会设置 jacobi（返回 Ok 但 jacobi 为 None）
+    // 这与多输出网络场景一致：某些节点可能不在当前 backward 的路径上
     let other_param = graph
         .new_parameter_node(&[2, 2], Some("other_param"))
         .unwrap();
-    assert_eq!(
-        graph.backward_nodes(&[param], other_param),
-        Err(GraphError::InvalidOperation(
-            "无法对没有子节点的节点[id=1, name=param, type=Parameter]进行反向传播".to_string()
-        ))
-    );
+    graph.backward_nodes(&[param], other_param).unwrap();
+    // 由于没有路径，param 不会有 jacobi
+    assert!(graph.get_node_jacobi(param).unwrap().is_none());
 }

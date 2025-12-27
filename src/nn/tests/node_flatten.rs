@@ -123,7 +123,8 @@ fn test_flatten_jacobi_in_chain() -> Result<(), GraphError> {
     graph.set_node_value(parent, Some(&parent_data))?;
 
     graph.forward_node(output)?;
-    graph.backward_nodes(&[parent], output)?;
+    // 使用 retain_graph=true 以便后续访问节点值
+    graph.backward_nodes_ex(&[parent], output, true)?;
 
     let jacobi = graph.get_node_jacobi(parent)?.unwrap();
     assert_eq!(jacobi.shape(), &[6, 6]);

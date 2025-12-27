@@ -197,8 +197,8 @@ fn test_node_perception_loss_backward_propagation() {
     // 5.1 perception_loss节点result本身的雅可比矩阵至始至终都应为None
     assert!(graph.get_node_jacobi(result).unwrap().is_none());
 
-    // 5.2 对parent的反向传播（第1次）
-    graph.backward_nodes(&[parent], result).unwrap();
+    // 5.2 对parent的反向传播（第1次，retain_graph=true 以便多次 backward）
+    graph.backward_nodes_ex(&[parent], result, true).unwrap();
     let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
     // 验证雅可比矩阵（与Python输出一致）
     #[rustfmt::skip]
@@ -216,7 +216,7 @@ fn test_node_perception_loss_backward_propagation() {
     assert_eq!(parent_jacobi, &expected_jacobi);
 
     // 5.3 对parent的反向传播（第2次）- 梯度应该累积
-    graph.backward_nodes(&[parent], result).unwrap();
+    graph.backward_nodes_ex(&[parent], result, true).unwrap();
     let parent_jacobi_second = graph.get_node_jacobi(parent).unwrap().unwrap();
     assert_eq!(parent_jacobi_second, &(&expected_jacobi * 2.0));
 
@@ -231,7 +231,7 @@ fn test_node_perception_loss_backward_propagation() {
     // 6.2.1 perception_loss节点result本身的雅可比矩阵至始至终都应为None
     assert!(graph.get_node_jacobi(result).unwrap().is_none());
 
-    // 6.2.2 对parent的反向传播
+    // 6.2.2 对parent的反向传播（最后一次可以不保留图）
     graph.backward_nodes(&[parent], result).unwrap();
     let parent_jacobi_after_clear = graph.get_node_jacobi(parent).unwrap().unwrap();
     assert_eq!(parent_jacobi_after_clear, &expected_jacobi);

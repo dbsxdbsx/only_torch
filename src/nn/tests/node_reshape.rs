@@ -148,7 +148,8 @@ fn test_reshape_jacobi_in_chain() -> Result<(), GraphError> {
     graph.set_node_value(parent, Some(&parent_data))?;
 
     graph.forward_node(output)?;
-    graph.backward_nodes(&[parent], output)?;
+    // 使用 retain_graph=true 以便后续访问节点值
+    graph.backward_nodes_ex(&[parent], output, true)?;
 
     // Jacobi 应该是 Sigmoid 导数的对角矩阵（因为 Reshape 的 Jacobi 是单位矩阵）
     let jacobi = graph.get_node_jacobi(parent)?.unwrap();

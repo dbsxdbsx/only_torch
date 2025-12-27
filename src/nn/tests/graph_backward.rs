@@ -120,8 +120,8 @@ fn test_continuous_backward_jacobi_accumulation() {
     // 验证初始状态：没有雅可比矩阵
     assert_eq!(graph.get_node_jacobi(b).unwrap(), None);
 
-    // 第1次反向传播
-    graph.backward_nodes(&[b], y).unwrap();
+    // 第1次反向传播（使用 retain_graph=true 以便后续继续 backward）
+    graph.backward_nodes_ex(&[b], y, true).unwrap();
     let first_jacobi = graph.get_node_jacobi(b).unwrap().unwrap().clone();
 
     // 对于 y = x + b，dy/db = I（单位矩阵）
@@ -129,15 +129,15 @@ fn test_continuous_backward_jacobi_accumulation() {
     assert_eq!(first_jacobi, expected_single);
 
     // 第2次反向传播（连续）- 应该累积梯度
-    graph.backward_nodes(&[b], y).unwrap();
+    graph.backward_nodes_ex(&[b], y, true).unwrap();
     let second_jacobi = graph.get_node_jacobi(b).unwrap().unwrap().clone();
 
     // 累积后应该是2倍的单位矩阵
     let expected_accumulated = expected_single.clone() + expected_single.clone();
     assert_eq!(second_jacobi, expected_accumulated);
 
-    // 第3次反向传播 - 继续累积
-    graph.backward_nodes(&[b], y).unwrap();
+    // 第3次反向传播 - 继续累积（需要 retain_graph=true，因为后续还有 backward）
+    graph.backward_nodes_ex(&[b], y, true).unwrap();
     let third_jacobi = graph.get_node_jacobi(b).unwrap().unwrap().clone();
 
     // 累积后应该是3倍的单位矩阵
@@ -149,13 +149,13 @@ fn test_continuous_backward_jacobi_accumulation() {
     graph.clear_jacobi().unwrap();
     assert_eq!(graph.get_node_jacobi(b).unwrap(), None);
 
-    // 清除后再次反向传播，应该重新开始
-    graph.backward_nodes(&[b], y).unwrap();
+    // 清除后再次反向传播，应该重新开始（需要 retain_graph=true，因为后续还有 backward）
+    graph.backward_nodes_ex(&[b], y, true).unwrap();
     let after_clear_jacobi = graph.get_node_jacobi(b).unwrap().unwrap().clone();
     assert_eq!(after_clear_jacobi, expected_single);
 
     // 测试set_value不会自动清除雅可比矩阵的行为（需要手动清除）
-    // 先进行反向传播，确保有雅可比矩阵
+    // 先进行反向传播，确保有雅可比矩阵（最后一次可以不保留图）
     graph.backward_nodes(&[b], y).unwrap();
     let jacobi_before_set = graph.get_node_jacobi(b).unwrap().unwrap().clone();
 
@@ -298,15 +298,15 @@ fn test_backward_pass_id_increment() {
     graph.set_node_value(b, Some(&b_value)).unwrap();
     graph.forward_node(y).unwrap();
 
-    // 4. 第1次反向传播
-    graph.backward_nodes(&[b], y).unwrap();
+    // 4. 第1次反向传播（retain_graph=true 以便继续 backward）
+    graph.backward_nodes_ex(&[b], y, true).unwrap();
     assert_eq!(graph.last_backward_pass_id(), 1);
 
     // 5. 第2次反向传播
-    graph.backward_nodes(&[b], y).unwrap();
+    graph.backward_nodes_ex(&[b], y, true).unwrap();
     assert_eq!(graph.last_backward_pass_id(), 2);
 
-    // 6. 第3次反向传播
+    // 6. 第3次反向传播（最后一次可以不保留图）
     graph.backward_nodes(&[b], y).unwrap();
     assert_eq!(graph.last_backward_pass_id(), 3);
 }

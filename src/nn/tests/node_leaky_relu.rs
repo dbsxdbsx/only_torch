@@ -280,8 +280,8 @@ fn test_node_leaky_relu_jacobi_accumulation() {
     graph.set_node_value(parent, Some(&parent_value)).unwrap();
     graph.forward_node(result).unwrap();
 
-    // 第一次反向传播
-    graph.backward_nodes(&[parent], result).unwrap();
+    // 第一次反向传播（retain_graph=true 以便多次 backward）
+    graph.backward_nodes_ex(&[parent], result, true).unwrap();
     #[rustfmt::skip]
     let expected_jacobi = Tensor::new(
         &[
@@ -294,11 +294,11 @@ fn test_node_leaky_relu_jacobi_accumulation() {
     );
 
     // 第二次反向传播 - Jacobi 应该累积
-    graph.backward_nodes(&[parent], result).unwrap();
+    graph.backward_nodes_ex(&[parent], result, true).unwrap();
     let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
     assert_eq!(parent_jacobi, &(&expected_jacobi * 2.0));
 
-    // 清除后再次反向传播
+    // 清除后再次反向传播（最后一次可以不保留图）
     graph.clear_jacobi().unwrap();
     graph.backward_nodes(&[parent], result).unwrap();
     let parent_jacobi_after_clear = graph.get_node_jacobi(parent).unwrap().unwrap();

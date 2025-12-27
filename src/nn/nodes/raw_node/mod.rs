@@ -70,6 +70,12 @@ pub(in crate::nn::nodes) trait TraitNode {
         )))
     }
 
+    /// 清除节点的值（用于释放内存）
+    ///
+    /// 与 `set_value(None)` 不同，此方法专门用于内存管理，
+    /// 对于不允许直接设置值的节点（如运算节点）也能正常清除。
+    fn clear_value(&mut self) -> Result<(), GraphError>;
+
     // ========== 单样本模式（Jacobi-based）==========
 
     /// 计算本节点对父节点的雅可比矩阵（单样本模式）

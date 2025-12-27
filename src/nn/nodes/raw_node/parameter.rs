@@ -130,6 +130,11 @@ impl TraitNode for Parameter {
         Ok(())
     }
 
+    fn clear_value(&mut self) -> Result<(), GraphError> {
+        self.value = None;
+        Ok(())
+    }
+
     fn value_expected_shape(&self) -> &[usize] {
         &self.shape
     }

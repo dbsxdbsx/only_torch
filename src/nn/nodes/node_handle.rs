@@ -15,6 +15,9 @@ pub(in crate::nn) struct NodeHandle {
     last_forward_pass_id: u64,
     /// 节点最后一次计算的反向传播次数
     last_backward_pass_id: u64,
+    /// 是否被 detach（梯度截断标记）
+    /// 若为 true，反向传播时不会向该节点的父节点传播梯度
+    is_detached: bool,
 }
 
 impl std::fmt::Display for NodeHandle {
@@ -30,6 +33,7 @@ impl NodeHandle {
             raw_node,
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
+            is_detached: false,
         })
     }
 
@@ -95,12 +99,17 @@ impl NodeHandle {
         self.raw_node.clear_jacobi()
     }
 
+    pub(in crate::nn) fn clear_value(&mut self) -> Result<(), GraphError> {
+        self.raw_node.clear_value()
+    }
+
     pub(in crate::nn) fn new_input(shape: &[usize]) -> Result<Self, GraphError> {
         let input = Input::new(shape)?;
         Ok(Self {
             raw_node: NodeType::Input(input),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
+            is_detached: false,
         })
     }
 
@@ -110,6 +119,7 @@ impl NodeHandle {
             raw_node: NodeType::Parameter(parameter),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
+            is_detached: false,
         })
     }
 
@@ -122,6 +132,7 @@ impl NodeHandle {
             raw_node: NodeType::Parameter(parameter),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
+            is_detached: false,
         })
     }
 
@@ -312,6 +323,21 @@ impl NodeHandle {
 
     pub(in crate::nn) const fn set_last_backward_pass_id(&mut self, backward_pass_id: u64) {
         self.last_backward_pass_id = backward_pass_id;
+    }
+
+    /// 检查节点是否被 detach
+    ///
+    /// 若返回 true，反向传播时不会向该节点的父节点传播梯度
+    pub(in crate::nn) const fn is_detached(&self) -> bool {
+        self.is_detached
+    }
+
+    /// 设置节点的 detach 状态
+    ///
+    /// - `true`: 截断该节点的梯度流，反向传播时不向父节点传播
+    /// - `false`: 正常传播梯度（默认状态）
+    pub(in crate::nn) const fn set_detached(&mut self, detached: bool) {
+        self.is_detached = detached;
     }
 }
 

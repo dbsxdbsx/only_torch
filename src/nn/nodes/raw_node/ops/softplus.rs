@@ -173,5 +173,10 @@ impl TraitNode for SoftPlus {
         self.grad = grad.cloned();
         Ok(())
     }
+
+    fn clear_value(&mut self) -> Result<(), GraphError> {
+        self.value = None;
+        Ok(())
+    }
 }
 

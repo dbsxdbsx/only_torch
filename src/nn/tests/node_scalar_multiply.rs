@@ -207,8 +207,8 @@ fn test_node_scalar_multiply_backward_propagation() {
     // 前向传播
     graph.forward_node(result).unwrap();
 
-    // 测试对标量的反向传播
-    graph.backward_nodes(&[scalar], result).unwrap();
+    // 测试对标量的反向传播（retain_graph=true 以便继续 backward）
+    graph.backward_nodes_ex(&[scalar], result, true).unwrap();
     let scalar_jacobi = graph.get_node_jacobi(scalar).unwrap().unwrap();
     let expected_scalar_jacobi = Tensor::new(expected_jacobi_scalar, &[6, 1]);
     assert_eq!(scalar_jacobi, &expected_scalar_jacobi);
@@ -240,18 +240,18 @@ fn test_node_scalar_multiply_gradient_accumulation() {
     // 前向传播
     graph.forward_node(result).unwrap();
 
-    // 第1次反向传播
-    graph.backward_nodes(&[scalar], result).unwrap();
+    // 第1次反向传播（retain_graph=true 以便多次 backward）
+    graph.backward_nodes_ex(&[scalar], result, true).unwrap();
     let jacobi_first = graph.get_node_jacobi(scalar).unwrap().unwrap().clone();
 
     // 第2次反向传播（梯度应该累积）
-    graph.backward_nodes(&[scalar], result).unwrap();
+    graph.backward_nodes_ex(&[scalar], result, true).unwrap();
     let jacobi_second = graph.get_node_jacobi(scalar).unwrap().unwrap();
 
     // 验证梯度累积
     assert_eq!(jacobi_second, &(&jacobi_first * 2.0));
 
-    // 清除梯度后再次反向传播
+    // 清除梯度后再次反向传播（最后一次可以不保留图）
     graph.clear_jacobi().unwrap();
     graph.backward_nodes(&[scalar], result).unwrap();
     let jacobi_after_clear = graph.get_node_jacobi(scalar).unwrap().unwrap();

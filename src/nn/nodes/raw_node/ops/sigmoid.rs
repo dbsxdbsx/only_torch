@@ -140,4 +140,9 @@ impl TraitNode for Sigmoid {
         self.grad = grad.cloned();
         Ok(())
     }
+
+    fn clear_value(&mut self) -> Result<(), GraphError> {
+        self.value = None;
+        Ok(())
+    }
 }

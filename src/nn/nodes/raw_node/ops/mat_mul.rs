@@ -227,32 +227,20 @@ impl TraitNode for MatMul {
             // target 是左父节点 A
             (
                 target_parent.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的左父节点没有值",
-                        self.display_node()
-                    ))
+                    GraphError::ComputationError(format!("{}的左父节点没有值", self.display_node()))
                 })?,
                 assistant.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的右父节点没有值",
-                        self.display_node()
-                    ))
+                    GraphError::ComputationError(format!("{}的右父节点没有值", self.display_node()))
                 })?,
             )
         } else {
             // target 是右父节点 B
             (
                 assistant.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的左父节点没有值",
-                        self.display_node()
-                    ))
+                    GraphError::ComputationError(format!("{}的左父节点没有值", self.display_node()))
                 })?,
                 target_parent.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的右父节点没有值",
-                        self.display_node()
-                    ))
+                    GraphError::ComputationError(format!("{}的右父节点没有值", self.display_node()))
                 })?,
             )
         };
@@ -277,6 +265,11 @@ impl TraitNode for MatMul {
 
     fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
         self.grad = grad.cloned();
+        Ok(())
+    }
+
+    fn clear_value(&mut self) -> Result<(), GraphError> {
+        self.value = None;
         Ok(())
     }
 }

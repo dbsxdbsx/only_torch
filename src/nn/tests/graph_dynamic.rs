@@ -83,11 +83,11 @@ fn test_add_node_after_backward() {
     let wx = graph.new_mat_mul_node(w, x, Some("wx")).unwrap();
     let y = graph.new_add_node(&[wx, b], Some("y")).unwrap();
 
-    // 2. 设置输入并进行一轮训练
+    // 2. 设置输入并进行一轮训练（使用 retain_graph=true 以便后续访问值）
     let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
     graph.set_node_value(x, Some(&x_value)).unwrap();
     graph.forward_node(y).unwrap();
-    graph.backward_nodes(&[w, b], y).unwrap();
+    graph.backward_nodes_ex(&[w, b], y, true).unwrap();
 
     // 3. 验证反向传播成功
     assert!(graph.get_node_jacobi(w).unwrap().is_some());
@@ -107,7 +107,7 @@ fn test_add_node_after_backward() {
     assert!(graph.get_node_jacobi(w).unwrap().is_none());
     assert!(graph.get_node_jacobi(b).unwrap().is_none());
 
-    // 7. 验证值仍然保留
+    // 7. 验证值仍然保留（因为使用了 retain_graph=true）
     assert!(graph.get_node_value(y).unwrap().is_some());
 
     // 8. 对扩展后的图进行新一轮训练
@@ -146,18 +146,18 @@ fn test_multiple_topology_changes() {
     let input_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
     graph.set_node_value(input, Some(&input_value)).unwrap();
 
-    // 2. 第1轮训练
+    // 2. 第1轮训练（retain_graph=true 以便后续访问值）
     graph.forward_node(node1).unwrap();
-    graph.backward_nodes(&[param], node1).unwrap();
+    graph.backward_nodes_ex(&[param], node1, true).unwrap();
     let value1 = graph.get_node_value(node1).unwrap().unwrap().clone();
 
     // 3. 第1次拓扑变化: 添加 node2 = tanh(node1)
     let node2 = graph.new_tanh_node(node1, Some("node2")).unwrap();
     graph.on_topology_changed();
 
-    // 4. 第2轮训练
+    // 4. 第2轮训练（retain_graph=true 以便后续访问值）
     graph.forward_node(node2).unwrap();
-    graph.backward_nodes(&[param], node2).unwrap();
+    graph.backward_nodes_ex(&[param], node2, true).unwrap();
     let value2 = graph.get_node_value(node2).unwrap().unwrap().clone();
 
     // 5. 第2次拓扑变化: 添加 node3 = node2 + bias
@@ -167,9 +167,9 @@ fn test_multiple_topology_changes() {
     let node3 = graph.new_add_node(&[node2, bias], Some("node3")).unwrap();
     graph.on_topology_changed();
 
-    // 6. 第3轮训练
+    // 6. 第3轮训练（retain_graph=true 以便后续验证）
     graph.forward_node(node3).unwrap();
-    graph.backward_nodes(&[param, bias], node3).unwrap();
+    graph.backward_nodes_ex(&[param, bias], node3, true).unwrap();
     let value3 = graph.get_node_value(node3).unwrap().unwrap().clone();
 
     // 7. 验证计算链正确
@@ -367,9 +367,9 @@ fn test_multiple_on_topology_changed_calls() {
         .unwrap();
     let add = graph.new_add_node(&[a, b], None).unwrap();
 
-    // Forward 和 backward
+    // Forward 和 backward（retain_graph=true 以便后续验证值）
     graph.forward_node(add).unwrap();
-    graph.backward_nodes(&[a, b], add).unwrap();
+    graph.backward_nodes_ex(&[a, b], add, true).unwrap();
 
     // 多次调用 on_topology_changed 应该是安全的
     graph.on_topology_changed();
@@ -380,7 +380,7 @@ fn test_multiple_on_topology_changed_calls() {
     assert!(graph.get_node_jacobi(a).unwrap().is_none());
     assert!(graph.get_node_jacobi(b).unwrap().is_none());
 
-    // 验证值仍然保留
+    // 验证值仍然保留（因为使用了 retain_graph=true）
     assert!(graph.get_node_value(add).unwrap().is_some());
 
     // 可以继续训练
@@ -552,11 +552,11 @@ fn test_neat_add_connection_mutation_simulation() {
         .new_add_node(&[h1_tanh, h2_tanh], Some("output"))
         .unwrap();
 
-    // 2. 初始训练
+    // 2. 初始训练（retain_graph=true 以便后续使用节点值）
     let input_value = Tensor::new(&[1.0, 0.5], &[2, 1]);
     graph.set_node_value(input, Some(&input_value)).unwrap();
     graph.forward_node(output).unwrap();
-    graph.backward_nodes(&[w1, w2], output).unwrap();
+    graph.backward_nodes_ex(&[w1, w2], output, true).unwrap();
 
     // 3. NEAT 变异: 添加从 h1 到 h2 的连接（跨路径连接）
     // 新结构: h2_new = h2 + w3 * h1

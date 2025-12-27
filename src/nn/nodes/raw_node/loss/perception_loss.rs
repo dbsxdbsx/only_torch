@@ -111,4 +111,9 @@ impl TraitNode for PerceptionLoss {
         self.jacobi = jacobi.cloned();
         Ok(())
     }
+
+    fn clear_value(&mut self) -> Result<(), GraphError> {
+        self.value = None;
+        Ok(())
+    }
 }
