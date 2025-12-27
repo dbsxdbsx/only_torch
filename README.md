@@ -58,66 +58,44 @@ opt-level = 3
 
 > 按优先级排序（最重要的在最前面）
 
-### 🔴 核心基础功能（影响框架可用性）
+### 🔴 核心功能
 
-- [x] 实现类似 tch-rs 中 `tch::no_grad(|| {});` 的无梯度功能（已实现为 `graph.no_grad_scope()`，详见 [梯度流控制设计](.doc/design/gradient_flow_control_design.md#16-为何暂不引入-no_grad_guard-形式)）
-- [x] `retain_graph` 支持多次 backward（已实现为 `backward_nodes_ex(..., retain_graph)`，详见 [梯度流控制设计](.doc/design/gradient_flow_control_design.md#3-retain_graph-机制)）
-- [x] `detach` 梯度截断机制（已实现为 `graph.detach_node()`，详见 [梯度流控制设计](.doc/design/gradient_flow_control_design.md#2-detach-机制)）
-- [x] 多 output 输出网络的反向传播支持（多任务学习场景）
 - RNN 节点的反向传播（TBPTT）
-- [x] save/load 网络模型（详见 [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md)）
 
-### 🟠 正确性验证（确保计算可信）
+### 🟠 正确性验证
 
-- add a `graph` for unit test to test the 多层的 jacobi 计算，就像 adaline 那样?
-- 在 python 中仿造 adaline 构造一个复合多节点，然后基于此在 rust 中测试这种复合节点，已验证在复合多层节点中的反向传播正确性
-- jacobi 到底该测试对 parent 还是 children？
-- unit test for Graph, and parent/children
-- Graph 测试中该包含各种 pub method 的正确及错误测试
-- Graph 测试中最好添加某个节点后，测试该节点还有其父节点的 parents/children 属性（又比如：同 2 个节点用于不同图的 add 节点，测试其 parents/children 属性是否正确）(Variable 节点无父节点)、"节点 var1 在图 default_graph 中重复"
-- (back/forward)pass_id 相关的 graph 测试？
+- 多层 jacobi 计算的单元测试（类似 adaline）
+- Python 对照测试：构造复合多节点验证反向传播正确性
+- Graph 测试覆盖：pub method、parents/children 属性、pass_id 等
 
-### 🟡 API 改进（用户体验）
+### 🟡 API 改进
 
-- [x] 优化器 `with_params` 方法：支持指定参数列表，用于 GAN/迁移学习/分层学习率等场景（`Adam::with_params()`, `SGD::with_params()`）
-- 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑陋的节点算子了）
-- NodeHandle 重命名为 Node? 各种 `parent/children/node_id`重命名为 `parents/children/id`?
-- should directly use `parents` but not `parents_ids`?
-- 图错误"InvalidOperation" vs "ComputationError"
-- `assert_eq!( graph.backward_nodes(&[input], input), Err(GraphError::InvalidOperation(format!( "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵" ))) ); `添加一个 `assert_err`的宏，可才参考 `assert_panic`宏
-- how to expose only `in crate::nn` to the nn::Graph`?
-- should completely hide the NodeHandle?
-- Graph/NodeHandle rearrange blocks due to visibility and funciontality
+- `Variable` 节点运算符重载（替代显式节点算子）
+- 命名规范化：`NodeHandle` → `Node`，`parent/children/node_id` → `parents/children/id`
+- 错误类型统一：`InvalidOperation` vs `ComputationError`
+- 可见性优化：隐藏 `NodeHandle`，仅暴露必要 API
 
 ### 🟢 辅助功能
 
-- [x] draw_graph(graphvis 画图) - 已实现为 `graph.to_dot()` / `graph.save_visualization()`，详见 [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md)
-- 是否需要添加一个 sign 节点来取代 step 直接 forward 输出[-1,1]？
-- 各种 assign 类的 op（如：add_assign）是否需要重载而不是复用基本算子？
-- check other unused methods
-- Tensor 真的需要 uninit 吗？
+- `sign` 节点（替代 step，直接输出 [-1, 1]）
+- assign 类运算符重载（如 `add_assign`）
+- 清理未使用的方法
+- 评估 `Tensor::uninit` 的必要性
 
 ### 🔵 NEAT 相关（长期目标）
 
-- 后期当引入 NEAT 机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
-- 当后期（NEAT 阶段）需要在一个已经 forwarded 的图中添加节点（如将已经被使用过的 var1、var2 结合一个新的未使用的 var3 构建一个 add 节点），可能需要添加一个 `reset_forward_cnt`方法来保证图 forward 的一致性。
-- [x] ~~NEAT 之后，针对图 backward 的 `loss1.backward(retain_graph=True)`和 `detach()`机制的实现~~（已完成，详见 [梯度流控制设计](.doc/design/gradient_flow_control_design.md)，可用于 GAN 和强化学习场景）
-- 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化,能 ok 拓展至 linear 等常用层，容易添加 edge(如已存在的 add 节点的父节点)。
+- 动态节点添加机制完善
+- `reset_forward_cnt` 方法（支持已 forward 图的节点扩展）
+- 基于 MatrixSlow 重写核心实现，确保 NEAT 兼容性
 
 ### ⚫ 实战验证
 
-- [] 基于本框架解决 CartPole（需要 openAI Gym 或相关 crate 支持）的深度强化学习问题
-- [] 尝试实现下[CFC](https://github.com/raminmh/CfC)
+- 深度强化学习：CartPole（需 Gym 支持）
+- [CFC](https://github.com/raminmh/CfC) 实现
 
-### ✅ 已完成
+### 💤 低优先级
 
-- [x] 常用激活函数：Tanh ✅，Sigmoid ✅，ReLU/LeakyReLU ✅，SoftPlus ✅
-- [x] 基于本框架解决 XOR 监督学习问题 ✅ (2025-12-21)
-- [x] 基于本框架解决 Mnist（数字识别）的监督学习问题 ✅ MVP 集成测试 (2025-12-21)
-
-### 💤 低优先级/待定
-
-- （最后用 AI 优化下 backward 的逻辑）
+- backward 逻辑的 AI 辅助优化
 
 ## 笔记
 
