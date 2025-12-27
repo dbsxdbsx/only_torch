@@ -7,12 +7,16 @@
  */
 
 use super::NodeId;
+use super::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 use super::nodes::raw_node::Reduction;
 use super::nodes::{NodeHandle, NodeType};
 use crate::tensor::Tensor;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::Path;
 
 /// 图的完整定义
 pub struct Graph {
@@ -818,6 +822,907 @@ impl Graph {
         // 因为新的 backward 调用会自增 pass_id，从而与所有节点的 0 不匹配，触发重新计算
     }
 
+    // ========== 参数保存/加载 ==========
+
+    /// 参数文件魔数: "OTPR" (Only Torch PaRams)
+    const PARAMS_MAGIC: &'static [u8; 4] = b"OTPR";
+    /// 参数文件版本
+    const PARAMS_VERSION: u32 = 1;
+
+    /// 保存所有可训练参数到二进制文件
+    ///
+    /// 文件格式：
+    /// - Header: magic(4) + version(4) + param_count(4)
+    /// - 每个参数: name_len(4) + name + shape_dims(4) + shape + data(f32数组)
+    ///
+    /// # 示例
+    /// ```ignore
+    /// graph.save_params("model.bin")?;
+    /// ```
+    pub fn save_params<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
+        let file = File::create(path.as_ref())
+            .map_err(|e| GraphError::ComputationError(format!("无法创建参数文件: {}", e)))?;
+        let mut writer = BufWriter::new(file);
+
+        // 获取所有参数节点
+        let param_nodes: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(&id, node)| match node.node_type() {
+                NodeType::Parameter(_) => Some((id, node)),
+                _ => None,
+            })
+            .collect();
+
+        // 写入 Header
+        writer
+            .write_all(Self::PARAMS_MAGIC)
+            .map_err(|e| GraphError::ComputationError(format!("写入魔数失败: {}", e)))?;
+        writer
+            .write_all(&Self::PARAMS_VERSION.to_le_bytes())
+            .map_err(|e| GraphError::ComputationError(format!("写入版本失败: {}", e)))?;
+        writer
+            .write_all(&(param_nodes.len() as u32).to_le_bytes())
+            .map_err(|e| GraphError::ComputationError(format!("写入参数数量失败: {}", e)))?;
+
+        // 写入每个参数
+        for (_id, node) in &param_nodes {
+            let name = node.name();
+            let value = node
+                .value()
+                .ok_or_else(|| GraphError::ComputationError(format!("参数 {} 没有值", name)))?;
+            let shape = value.shape();
+            let data = value.data_as_slice();
+
+            // 写入名称
+            let name_bytes = name.as_bytes();
+            writer
+                .write_all(&(name_bytes.len() as u32).to_le_bytes())
+                .map_err(|e| GraphError::ComputationError(format!("写入名称长度失败: {}", e)))?;
+            writer
+                .write_all(name_bytes)
+                .map_err(|e| GraphError::ComputationError(format!("写入名称失败: {}", e)))?;
+
+            // 写入形状
+            writer
+                .write_all(&(shape.len() as u32).to_le_bytes())
+                .map_err(|e| GraphError::ComputationError(format!("写入形状维度失败: {}", e)))?;
+            for &dim in shape {
+                writer
+                    .write_all(&(dim as u32).to_le_bytes())
+                    .map_err(|e| GraphError::ComputationError(format!("写入形状失败: {}", e)))?;
+            }
+
+            // 写入数据（f32 数组）
+            for &val in data {
+                writer
+                    .write_all(&val.to_le_bytes())
+                    .map_err(|e| GraphError::ComputationError(format!("写入数据失败: {}", e)))?;
+            }
+        }
+
+        writer
+            .flush()
+            .map_err(|e| GraphError::ComputationError(format!("刷新缓冲区失败: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 从二进制文件加载参数
+    ///
+    /// 注意：需要先用代码构建相同结构的图，参数按名称匹配
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 先构建图结构
+    /// let mut graph = Graph::new();
+    /// let w1 = graph.new_parameter_node(&[784, 128], Some("w1"))?;
+    /// // ...
+    ///
+    /// // 然后加载参数
+    /// graph.load_params("model.bin")?;
+    /// ```
+    pub fn load_params<P: AsRef<Path>>(&mut self, path: P) -> Result<(), GraphError> {
+        let file = File::open(path.as_ref())
+            .map_err(|e| GraphError::ComputationError(format!("无法打开参数文件: {}", e)))?;
+        let mut reader = BufReader::new(file);
+
+        // 读取并验证 Header
+        let mut magic = [0u8; 4];
+        reader
+            .read_exact(&mut magic)
+            .map_err(|e| GraphError::ComputationError(format!("读取魔数失败: {}", e)))?;
+        if &magic != Self::PARAMS_MAGIC {
+            return Err(GraphError::ComputationError(format!(
+                "无效的参数文件格式（魔数不匹配）"
+            )));
+        }
+
+        let mut version_bytes = [0u8; 4];
+        reader
+            .read_exact(&mut version_bytes)
+            .map_err(|e| GraphError::ComputationError(format!("读取版本失败: {}", e)))?;
+        let version = u32::from_le_bytes(version_bytes);
+        if version != Self::PARAMS_VERSION {
+            return Err(GraphError::ComputationError(format!(
+                "不支持的参数文件版本: {}（当前支持版本: {}）",
+                version,
+                Self::PARAMS_VERSION
+            )));
+        }
+
+        let mut count_bytes = [0u8; 4];
+        reader
+            .read_exact(&mut count_bytes)
+            .map_err(|e| GraphError::ComputationError(format!("读取参数数量失败: {}", e)))?;
+        let param_count = u32::from_le_bytes(count_bytes);
+
+        // 构建名称到节点ID的映射
+        let name_to_id: HashMap<String, NodeId> = self
+            .nodes
+            .iter()
+            .filter_map(|(&id, node)| match node.node_type() {
+                NodeType::Parameter(_) => Some((node.name().to_string(), id)),
+                _ => None,
+            })
+            .collect();
+
+        // 读取每个参数
+        for _ in 0..param_count {
+            // 读取名称
+            let mut name_len_bytes = [0u8; 4];
+            reader
+                .read_exact(&mut name_len_bytes)
+                .map_err(|e| GraphError::ComputationError(format!("读取名称长度失败: {}", e)))?;
+            let name_len = u32::from_le_bytes(name_len_bytes) as usize;
+
+            let mut name_bytes = vec![0u8; name_len];
+            reader
+                .read_exact(&mut name_bytes)
+                .map_err(|e| GraphError::ComputationError(format!("读取名称失败: {}", e)))?;
+            let name = String::from_utf8(name_bytes)
+                .map_err(|e| GraphError::ComputationError(format!("名称编码无效: {}", e)))?;
+
+            // 读取形状
+            let mut shape_dims_bytes = [0u8; 4];
+            reader
+                .read_exact(&mut shape_dims_bytes)
+                .map_err(|e| GraphError::ComputationError(format!("读取形状维度失败: {}", e)))?;
+            let shape_dims = u32::from_le_bytes(shape_dims_bytes) as usize;
+
+            let mut shape = Vec::with_capacity(shape_dims);
+            for _ in 0..shape_dims {
+                let mut dim_bytes = [0u8; 4];
+                reader
+                    .read_exact(&mut dim_bytes)
+                    .map_err(|e| GraphError::ComputationError(format!("读取形状失败: {}", e)))?;
+                shape.push(u32::from_le_bytes(dim_bytes) as usize);
+            }
+
+            // 读取数据
+            let data_len: usize = shape.iter().product();
+            let mut data = Vec::with_capacity(data_len);
+            for _ in 0..data_len {
+                let mut val_bytes = [0u8; 4];
+                reader
+                    .read_exact(&mut val_bytes)
+                    .map_err(|e| GraphError::ComputationError(format!("读取数据失败: {}", e)))?;
+                data.push(f32::from_le_bytes(val_bytes));
+            }
+
+            // 查找并设置参数
+            if let Some(&node_id) = name_to_id.get(&name) {
+                let tensor = Tensor::new(&data, &shape);
+                self.set_node_value(node_id, Some(&tensor))?;
+            }
+            // 注意：文件中存在但图中不存在的参数会被忽略（便于迁移学习）
+        }
+
+        Ok(())
+    }
+
+    // ========== 图描述（describe）==========
+
+    /// 导出图的描述符（用于序列化、可视化、调试）
+    ///
+    /// 返回 `GraphDescriptor`，包含图的完整拓扑信息
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let descriptor = graph.describe();
+    /// println!("{}", descriptor.to_json().unwrap());
+    /// ```
+    pub fn describe(&self) -> GraphDescriptor {
+        let mut descriptor = GraphDescriptor::new(&self.name);
+
+        // 按 ID 排序节点，确保输出顺序一致
+        let mut node_ids: Vec<_> = self.nodes.keys().copied().collect();
+        node_ids.sort_by_key(|id| id.0);
+
+        for node_id in node_ids {
+            let node = self.nodes.get(&node_id).unwrap();
+            let parents = self
+                .backward_edges
+                .get(&node_id)
+                .map(|ids| ids.iter().map(|id| id.0).collect())
+                .unwrap_or_default();
+
+            let output_shape = node.value_expected_shape().to_vec();
+            let node_type_desc = self.node_type_to_descriptor(node.node_type());
+
+            let node_desc = NodeDescriptor::new(
+                node_id.0,
+                node.name(),
+                node_type_desc,
+                output_shape,
+                parents,
+            );
+
+            descriptor.add_node(node_desc);
+        }
+
+        descriptor
+    }
+
+    /// 保存完整模型（拓扑 JSON + 参数 bin）
+    ///
+    /// 自动生成两个文件：
+    /// - `{path}.json`: 图的拓扑描述（可读）
+    /// - `{path}.bin`: 参数数据（紧凑）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// graph.save_model("models/mnist")?;
+    /// // 生成：models/mnist.json + models/mnist.bin
+    /// ```
+    pub fn save_model<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
+        let path = path.as_ref();
+        let json_path = path.with_extension("json");
+        let bin_path = path.with_extension("bin");
+
+        // 1. 保存参数到 bin 文件
+        self.save_params(&bin_path)?;
+
+        // 2. 生成描述符并设置 params_file
+        let mut descriptor = self.describe();
+        descriptor.params_file = Some(
+            bin_path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "params.bin".to_string()),
+        );
+
+        // 3. 保存 JSON
+        let json = descriptor
+            .to_json()
+            .map_err(|e| GraphError::ComputationError(format!("序列化图描述失败: {}", e)))?;
+        std::fs::write(&json_path, json)
+            .map_err(|e| GraphError::ComputationError(format!("写入 JSON 文件失败: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 加载模型参数（需要先用代码构建相同结构的图）
+    ///
+    /// 注意：当前版本不会从 JSON 重建图结构，只加载参数。
+    /// 用户需要先用代码构建与保存时相同结构的图，然后调用此方法加载参数。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 1. 用代码构建图结构（与保存时相同）
+    /// let mut graph = build_mnist_model();
+    ///
+    /// // 2. 加载参数
+    /// graph.load_model("models/mnist")?;
+    /// ```
+    ///
+    /// # TODO
+    /// 未来版本将支持从 JSON 完整重建图结构，无需预先用代码构建。
+    pub fn load_model<P: AsRef<Path>>(&mut self, path: P) -> Result<(), GraphError> {
+        let path = path.as_ref();
+        let json_path = path.with_extension("json");
+
+        // 1. 读取并解析 JSON
+        let json = std::fs::read_to_string(&json_path)
+            .map_err(|e| GraphError::ComputationError(format!("读取 JSON 文件失败: {}", e)))?;
+        let descriptor = GraphDescriptor::from_json(&json)
+            .map_err(|e| GraphError::ComputationError(format!("解析图描述失败: {}", e)))?;
+
+        // 2. 确定参数文件路径
+        let bin_path = if let Some(ref params_file) = descriptor.params_file {
+            path.parent()
+                .map(|p| p.join(params_file))
+                .unwrap_or_else(|| Path::new(params_file).to_path_buf())
+        } else {
+            path.with_extension("bin")
+        };
+
+        // 3. 加载参数
+        self.load_params(&bin_path)?;
+
+        Ok(())
+    }
+
+    // ========== 模型摘要（summary）==========
+
+    /// 打印模型摘要（类似 Keras 的 model.summary()）
+    ///
+    /// 输出格式化的表格，显示所有节点的信息
+    ///
+    /// # 示例
+    /// ```ignore
+    /// graph.summary();
+    /// // 输出：
+    /// // ┌────────────────┬──────────────────┬─────────────┬──────────┬───────────────┐
+    /// // │ 节点名称       │ 类型             │ 输出形状    │ 参数量   │ 父节点        │
+    /// // ├────────────────┼──────────────────┼─────────────┼──────────┼───────────────┤
+    /// // │ x              │ Input            │ [1, 784]    │ -        │ -             │
+    /// // ...
+    /// ```
+    pub fn summary(&self) {
+        println!("{}", self.summary_string());
+    }
+
+    /// 将模型摘要保存到文件
+    ///
+    /// 根据文件扩展名自动选择格式：
+    /// - `.md` → Markdown 表格
+    /// - 其他（`.txt` 等）→ Unicode 文本表格
+    ///
+    /// # 示例
+    /// ```ignore
+    /// graph.save_summary("model_summary.txt")?;  // 文本格式
+    /// graph.save_summary("model_summary.md")?;   // Markdown 格式
+    /// ```
+    pub fn save_summary<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
+        let path = path.as_ref();
+        let summary = match path.extension().and_then(|e| e.to_str()) {
+            Some("md") => self.summary_markdown(),
+            _ => self.summary_string(),
+        };
+        std::fs::write(path, summary)
+            .map_err(|e| GraphError::ComputationError(format!("保存摘要文件失败: {}", e)))
+    }
+
+    /// 返回模型摘要的 Markdown 格式字符串
+    pub fn summary_markdown(&self) -> String {
+        let desc = self.describe();
+        let mut output = String::new();
+
+        // 标题
+        output.push_str(&format!("# Model Summary: {}\n\n", desc.name));
+
+        // 表头
+        output.push_str("| 节点名称 | 类型 | 输出形状 | 参数量 | 父节点 |\n");
+        output.push_str("|----------|------|----------|--------|--------|\n");
+
+        // 节点行
+        for node in &desc.nodes {
+            let type_name = Self::type_name(&node.node_type);
+            let shape_str = format!("{:?}", node.output_shape);
+            let param_str = node
+                .param_count
+                .map(|c| Self::format_number(c))
+                .unwrap_or_else(|| "-".to_string());
+            let parent_str = Self::format_parent_names(&desc, &node.parents);
+
+            output.push_str(&format!(
+                "| {} | {} | {} | {} | {} |\n",
+                node.name, type_name, shape_str, param_str, parent_str
+            ));
+        }
+
+        // 统计信息
+        let total_params = desc.total_params();
+        output.push_str(&format!(
+            "\n**总参数量**: {}  \n**可训练参数**: {}\n",
+            Self::format_number(total_params),
+            Self::format_number(total_params)
+        ));
+
+        output
+    }
+
+    /// 返回模型摘要字符串（Unicode 文本表格，用于控制台输出）
+    pub fn summary_string(&self) -> String {
+        let desc = self.describe();
+
+        // 计算各列宽度
+        let name_width = desc
+            .nodes
+            .iter()
+            .map(|n| Self::display_width(&n.name))
+            .max()
+            .unwrap_or(8)
+            .max(8);
+        let type_width = desc
+            .nodes
+            .iter()
+            .map(|n| Self::type_name(&n.node_type).len())
+            .max()
+            .unwrap_or(8)
+            .max(8);
+        let shape_width = desc
+            .nodes
+            .iter()
+            .map(|n| format!("{:?}", n.output_shape).len())
+            .max()
+            .unwrap_or(8)
+            .max(8);
+        let param_width = 10;
+        let parent_width = desc
+            .nodes
+            .iter()
+            .map(|n| Self::format_parent_names(&desc, &n.parents).len())
+            .max()
+            .unwrap_or(8)
+            .max(6);
+
+        let total_width = name_width + type_width + shape_width + param_width + parent_width + 16; // 边框和间距
+
+        let mut output = String::new();
+
+        // 表头
+        output.push_str(&format!(
+            "┌{}┬{}┬{}┬{}┬{}┐\n",
+            "─".repeat(name_width + 2),
+            "─".repeat(type_width + 2),
+            "─".repeat(shape_width + 2),
+            "─".repeat(param_width + 2),
+            "─".repeat(parent_width + 2),
+        ));
+        output.push_str(&format!(
+            "│ {:<name_w$} │ {:<type_w$} │ {:<shape_w$} │ {:<param_w$} │ {:<parent_w$} │\n",
+            "节点名称",
+            "类型",
+            "输出形状",
+            "参数量",
+            "父节点",
+            name_w = name_width,
+            type_w = type_width,
+            shape_w = shape_width,
+            param_w = param_width,
+            parent_w = parent_width,
+        ));
+        output.push_str(&format!(
+            "├{}┼{}┼{}┼{}┼{}┤\n",
+            "─".repeat(name_width + 2),
+            "─".repeat(type_width + 2),
+            "─".repeat(shape_width + 2),
+            "─".repeat(param_width + 2),
+            "─".repeat(parent_width + 2),
+        ));
+
+        // 节点行
+        for node in &desc.nodes {
+            let type_name = Self::type_name(&node.node_type);
+            let shape_str = format!("{:?}", node.output_shape);
+            let param_str = node
+                .param_count
+                .map(|c| Self::format_number(c))
+                .unwrap_or_else(|| "-".to_string());
+            let parent_str = Self::format_parent_names(&desc, &node.parents);
+
+            output.push_str(&format!(
+                "│ {:<name_w$} │ {:<type_w$} │ {:<shape_w$} │ {:>param_w$} │ {:<parent_w$} │\n",
+                node.name,
+                type_name,
+                shape_str,
+                param_str,
+                parent_str,
+                name_w = name_width,
+                type_w = type_width,
+                shape_w = shape_width,
+                param_w = param_width,
+                parent_w = parent_width,
+            ));
+        }
+
+        // 分隔线
+        output.push_str(&format!(
+            "├{}┴{}┴{}┴{}┴{}┤\n",
+            "─".repeat(name_width + 2),
+            "─".repeat(type_width + 2),
+            "─".repeat(shape_width + 2),
+            "─".repeat(param_width + 2),
+            "─".repeat(parent_width + 2),
+        ));
+
+        // 统计信息
+        let total_params = desc.total_params();
+        output.push_str(&format!(
+            "│ {:<width$} │\n",
+            format!("总参数量: {}", Self::format_number(total_params)),
+            width = total_width - 4,
+        ));
+        output.push_str(&format!(
+            "│ {:<width$} │\n",
+            format!("可训练参数: {}", Self::format_number(total_params)),
+            width = total_width - 4,
+        ));
+
+        // 底边
+        output.push_str(&format!("└{}┘\n", "─".repeat(total_width - 2)));
+
+        output
+    }
+
+    /// 格式化数字为千分位分隔形式
+    fn format_number(n: usize) -> String {
+        let s = n.to_string();
+        let mut result = String::new();
+        for (i, c) in s.chars().rev().enumerate() {
+            if i > 0 && i % 3 == 0 {
+                result.push(',');
+            }
+            result.push(c);
+        }
+        result.chars().rev().collect()
+    }
+
+    /// 获取节点类型名称
+    fn type_name(node_type: &NodeTypeDescriptor) -> &'static str {
+        match node_type {
+            NodeTypeDescriptor::Input => "Input",
+            NodeTypeDescriptor::Parameter => "Parameter",
+            NodeTypeDescriptor::Add => "Add",
+            NodeTypeDescriptor::MatMul => "MatMul",
+            NodeTypeDescriptor::Multiply => "Multiply",
+            NodeTypeDescriptor::ScalarMultiply { .. } => "ScalarMultiply",
+            NodeTypeDescriptor::Sigmoid => "Sigmoid",
+            NodeTypeDescriptor::Tanh => "Tanh",
+            NodeTypeDescriptor::LeakyReLU { .. } => "LeakyReLU",
+            NodeTypeDescriptor::SoftPlus => "SoftPlus",
+            NodeTypeDescriptor::Step => "Step",
+            NodeTypeDescriptor::Reshape { .. } => "Reshape",
+            NodeTypeDescriptor::Flatten => "Flatten",
+            NodeTypeDescriptor::Conv2d { .. } => "Conv2d",
+            NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
+            NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
+            NodeTypeDescriptor::MSELoss => "MSELoss",
+            NodeTypeDescriptor::PerceptionLoss => "PerceptionLoss",
+            NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
+        }
+    }
+
+    /// 格式化父节点名称列表
+    fn format_parent_names(desc: &GraphDescriptor, parent_ids: &[u64]) -> String {
+        if parent_ids.is_empty() {
+            "-".to_string()
+        } else {
+            parent_ids
+                .iter()
+                .filter_map(|id| desc.nodes.iter().find(|n| n.id == *id))
+                .map(|n| n.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    }
+
+    /// 计算字符串显示宽度（考虑中文字符）
+    fn display_width(s: &str) -> usize {
+        s.chars().map(|c| if c.is_ascii() { 1 } else { 2 }).sum()
+    }
+
+    // ========== Graphviz DOT 可视化 ==========
+
+    /// 生成 Graphviz DOT 格式的图描述字符串
+    ///
+    /// 返回的字符串可用于：
+    /// - 在线预览：<https://dreampuf.github.io/GraphvizOnline/>
+    /// - 嵌入到其他文档或工具中
+    /// - 自定义保存逻辑
+    ///
+    /// # 推荐
+    /// 如果只需保存可视化文件，推荐使用 [`save_visualization`] 方法，
+    /// 它会自动生成 `.dot` 文件，并在 Graphviz 可用时生成图像。
+    ///
+    /// # 节点样式
+    /// - **Input**: 椭圆形，浅蓝色
+    /// - **Parameter**: 矩形，浅绿色
+    /// - **运算节点**: 圆角矩形，浅黄色
+    /// - **Loss**: 双椭圆，浅红色
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 获取 DOT 字符串用于自定义处理
+    /// let dot = graph.to_dot();
+    /// println!("{}", dot);  // 打印到控制台
+    ///
+    /// // 或者直接保存可视化（推荐）
+    /// graph.save_visualization("outputs/model", None)?;
+    /// ```
+    pub fn to_dot(&self) -> String {
+        let desc = self.describe();
+        let mut dot = String::new();
+
+        // 图头部
+        dot.push_str("digraph Model {\n");
+        dot.push_str("    rankdir=TB;\n"); // 从上到下
+        dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
+        dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
+        dot.push_str("\n");
+
+        // 节点定义（使用 HTML-like 标签，名称加粗）
+        for node in &desc.nodes {
+            let (shape, style, fillcolor) = Self::dot_node_style(&node.node_type);
+            let label = Self::dot_node_label_html(node);
+
+            dot.push_str(&format!(
+                "    \"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
+                node.id, label, shape, style, fillcolor
+            ));
+        }
+
+        dot.push_str("\n");
+
+        // 边定义（从父节点指向子节点，无标签——形状已在节点内显示）
+        for node in &desc.nodes {
+            for parent_id in &node.parents {
+                dot.push_str(&format!("    \"{}\" -> \"{}\";\n", parent_id, node.id));
+            }
+        }
+
+        dot.push_str("}\n");
+
+        dot
+    }
+
+    /// 将 DOT 保存到文件（内部方法）
+    fn save_dot<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
+        let dot = self.to_dot();
+        std::fs::write(path.as_ref(), dot)
+            .map_err(|e| GraphError::ComputationError(format!("保存 DOT 文件失败: {}", e)))
+    }
+
+    /// 保存计算图可视化
+    ///
+    /// 自动生成 `.dot` 文件，若系统安装了 Graphviz 则额外生成图像文件。
+    ///
+    /// # 参数
+    /// - `base_path`: 基础路径（**不含后缀**），如 `"outputs/model"`
+    /// - `format`: 可选的图像格式，默认为 PNG
+    ///
+    /// # 行为
+    /// - 始终生成 `{base_path}.dot`
+    /// - 若 Graphviz 可用，额外生成 `{base_path}.{format}`（如 `.png`）
+    /// - 若 Graphviz 不可用，返回结果中包含安装提示
+    ///
+    /// # 错误
+    /// - 若路径包含后缀（如 `.dot`、`.png`），返回错误并提示正确用法
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 基础用法（生成 model.dot + model.png）
+    /// let result = graph.save_visualization("outputs/model", None)?;
+    ///
+    /// // 指定 SVG 格式（生成 model.dot + model.svg）
+    /// let result = graph.save_visualization("outputs/model", Some(ImageFormat::Svg))?;
+    /// ```
+    pub fn save_visualization<P: AsRef<Path>>(
+        &self,
+        base_path: P,
+        format: Option<ImageFormat>,
+    ) -> Result<VisualizationOutput, GraphError> {
+        let path = base_path.as_ref();
+
+        // 1. 检查是否包含后缀（不应该有）
+        if let Some(ext) = path.extension() {
+            let ext_str = ext.to_string_lossy();
+            let hint = if ImageFormat::from_extension(&ext_str).is_some() || ext_str == "dot" {
+                format!(
+                    "请提供不含后缀的基础路径。\n\
+                     例如: \"outputs/model\" 而不是 \"outputs/model.{}\"\n\
+                     库会自动生成 .dot 和图像文件。",
+                    ext_str
+                )
+            } else {
+                format!(
+                    "检测到未知后缀 '.{}'，请提供不含后缀的基础路径。\n\
+                     例如: \"outputs/model\"\n\
+                     支持的图像格式: png, svg, pdf",
+                    ext_str
+                )
+            };
+            return Err(GraphError::InvalidOperation(hint));
+        }
+
+        // 2. 生成 .dot 文件
+        let dot_path = path.with_extension("dot");
+        self.save_dot(&dot_path)?;
+
+        // 3. 尝试生成图像（如果 Graphviz 可用）
+        let format = format.unwrap_or_default();
+        let image_path = path.with_extension(format.extension());
+
+        let (graphviz_available, graphviz_hint, final_image_path) =
+            match Self::render_with_graphviz(&dot_path, &image_path, format) {
+                Ok(()) => (true, None, Some(image_path)),
+                Err(hint) => (false, Some(hint), None),
+            };
+
+        Ok(VisualizationOutput {
+            dot_path,
+            image_path: final_image_path,
+            graphviz_available,
+            graphviz_hint,
+        })
+    }
+
+    /// 检测 Graphviz 是否可用
+    fn is_graphviz_available() -> bool {
+        std::process::Command::new("dot")
+            .arg("-V")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// 使用 Graphviz 渲染 DOT 文件为图像
+    fn render_with_graphviz(
+        dot_path: &Path,
+        output_path: &Path,
+        format: ImageFormat,
+    ) -> Result<(), String> {
+        if !Self::is_graphviz_available() {
+            return Err("Graphviz 未安装或不在 PATH 中。\n\
+                 安装方式:\n\
+                 - Windows: winget install graphviz 或 choco install graphviz\n\
+                 - macOS: brew install graphviz\n\
+                 - Linux: sudo apt install graphviz\n\
+                 安装后可用在线预览: https://dreampuf.github.io/GraphvizOnline/"
+                .to_string());
+        }
+
+        // 执行 dot 命令: dot -Tpng input.dot -o output.png
+        let output = std::process::Command::new("dot")
+            .arg(format!("-T{}", format.extension()))
+            .arg(dot_path)
+            .arg("-o")
+            .arg(output_path)
+            .output();
+
+        match output {
+            Ok(result) if result.status.success() => Ok(()),
+            Ok(result) => {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                Err(format!("Graphviz 渲染失败: {}", stderr))
+            }
+            Err(e) => Err(format!("执行 Graphviz 命令失败: {}", e)),
+        }
+    }
+
+    /// 获取节点的 DOT 样式 (shape, style, fillcolor)
+    fn dot_node_style(
+        node_type: &NodeTypeDescriptor,
+    ) -> (&'static str, &'static str, &'static str) {
+        match node_type {
+            // 输入节点：椭圆形，浅蓝色
+            NodeTypeDescriptor::Input => ("ellipse", "filled", "#E3F2FD"),
+            // 参数节点：矩形，浅绿色
+            NodeTypeDescriptor::Parameter => ("box", "filled", "#E8F5E9"),
+            // 损失节点：双椭圆，浅红色
+            NodeTypeDescriptor::MSELoss
+            | NodeTypeDescriptor::PerceptionLoss
+            | NodeTypeDescriptor::SoftmaxCrossEntropy => ("doubleoctagon", "filled", "#FFEBEE"),
+            // 激活函数：菱形，浅橙色
+            NodeTypeDescriptor::Sigmoid
+            | NodeTypeDescriptor::Tanh
+            | NodeTypeDescriptor::LeakyReLU { .. }
+            | NodeTypeDescriptor::SoftPlus
+            | NodeTypeDescriptor::Step => ("diamond", "filled", "#FFF3E0"),
+            // 其他运算节点：圆角矩形，浅黄色
+            _ => ("box", "\"filled,rounded\"", "#FFFDE7"),
+        }
+    }
+
+    /// 生成节点的标签（名称 + 类型 + 形状 + 特殊参数）
+    /// 生成节点的 HTML 格式标签（类型加粗）
+    fn dot_node_label_html(node: &NodeDescriptor) -> String {
+        let type_name = Self::type_name(&node.node_type);
+        let shape_str = format!("{:?}", node.output_shape);
+
+        // 根据节点类型添加特殊参数
+        let extra_info = match &node.node_type {
+            NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={}", alpha)),
+            NodeTypeDescriptor::ScalarMultiply { scalar } if *scalar != 0.0 => {
+                Some(format!("×{}", scalar))
+            }
+            _ => None,
+        };
+
+        // 使用 HTML 格式：类型加粗
+        let mut parts = vec![
+            node.name.clone(),
+            format!("<B>{}</B>", type_name), // 类型加粗
+            shape_str,
+        ];
+
+        if let Some(params) = node.param_count {
+            parts.push(format!("({} params)", Self::format_number(params)));
+        }
+
+        if let Some(info) = extra_info {
+            parts.push(info);
+        }
+
+        parts.join("<BR/>")
+    }
+
+    #[allow(dead_code)]
+    fn dot_node_label(node: &NodeDescriptor) -> String {
+        let type_name = Self::type_name(&node.node_type);
+        let shape_str = format!("{:?}", node.output_shape);
+
+        // 根据节点类型添加特殊参数
+        let extra_info = match &node.node_type {
+            NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={}", alpha)),
+            NodeTypeDescriptor::ScalarMultiply { scalar } if *scalar != 0.0 => {
+                Some(format!("×{}", scalar))
+            }
+            _ => None,
+        };
+
+        let mut label = if let Some(params) = node.param_count {
+            format!(
+                "{}\\n{}\\n{}\\n({} params)",
+                node.name,
+                type_name,
+                shape_str,
+                Self::format_number(params)
+            )
+        } else {
+            format!("{}\\n{}\\n{}", node.name, type_name, shape_str)
+        };
+
+        // 追加特殊参数信息
+        if let Some(info) = extra_info {
+            label.push_str(&format!("\\n{}", info));
+        }
+
+        label
+    }
+
+    /// 将 NodeType 转换为 NodeTypeDescriptor
+    fn node_type_to_descriptor(&self, node_type: &NodeType) -> NodeTypeDescriptor {
+        match node_type {
+            NodeType::Input(_) => NodeTypeDescriptor::Input,
+            NodeType::Parameter(_) => NodeTypeDescriptor::Parameter,
+            NodeType::Add(_) => NodeTypeDescriptor::Add,
+            NodeType::MatMul(_) => NodeTypeDescriptor::MatMul,
+            NodeType::Multiply(_) => NodeTypeDescriptor::Multiply,
+            NodeType::ScalarMultiply(_) => NodeTypeDescriptor::ScalarMultiply { scalar: 0.0 }, // TODO: 获取实际值
+            NodeType::Sigmoid(_) => NodeTypeDescriptor::Sigmoid,
+            NodeType::Tanh(_) => NodeTypeDescriptor::Tanh,
+            NodeType::LeakyReLU(node) => NodeTypeDescriptor::LeakyReLU {
+                alpha: node.alpha() as f32,
+            },
+            NodeType::SoftPlus(_) => NodeTypeDescriptor::SoftPlus,
+            NodeType::Step(_) => NodeTypeDescriptor::Step,
+            NodeType::Reshape(_) => NodeTypeDescriptor::Reshape {
+                target_shape: vec![],
+            }, // TODO: 获取实际值
+            NodeType::Flatten(_) => NodeTypeDescriptor::Flatten,
+            NodeType::Conv2d(_) => NodeTypeDescriptor::Conv2d {
+                stride: (1, 1),
+                padding: (0, 0),
+            }, // TODO: 获取实际值
+            NodeType::MaxPool2d(_) => NodeTypeDescriptor::MaxPool2d {
+                kernel_size: (2, 2),
+                stride: (2, 2),
+            }, // TODO: 获取实际值
+            NodeType::AvgPool2d(_) => NodeTypeDescriptor::AvgPool2d {
+                kernel_size: (2, 2),
+                stride: (2, 2),
+            }, // TODO: 获取实际值
+            NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
+            NodeType::PerceptionLoss(_) => NodeTypeDescriptor::PerceptionLoss,
+            NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
+        }
+    }
+
     const fn generate_valid_node_id(&mut self) -> NodeId {
         // 生成唯一的节点ID
         self.next_id += 1;
@@ -1564,4 +2469,52 @@ pub enum GraphError {
     ComputationError(String),
     DuplicateName(String),
     DuplicateNodeName(String),
+}
+
+// ========== 可视化相关类型 ==========
+
+/// 图像输出格式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ImageFormat {
+    /// PNG 格式（默认）
+    #[default]
+    Png,
+    /// SVG 矢量格式
+    Svg,
+    /// PDF 格式
+    Pdf,
+}
+
+impl ImageFormat {
+    /// 获取文件扩展名（不含点号）
+    pub fn extension(&self) -> &'static str {
+        match self {
+            ImageFormat::Png => "png",
+            ImageFormat::Svg => "svg",
+            ImageFormat::Pdf => "pdf",
+        }
+    }
+
+    /// 从扩展名解析格式（用于错误提示）
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext.to_lowercase().as_str() {
+            "png" => Some(ImageFormat::Png),
+            "svg" => Some(ImageFormat::Svg),
+            "pdf" => Some(ImageFormat::Pdf),
+            _ => None,
+        }
+    }
+}
+
+/// 可视化输出结果
+#[derive(Debug)]
+pub struct VisualizationOutput {
+    /// DOT 文件路径（始终生成）
+    pub dot_path: std::path::PathBuf,
+    /// 图像文件路径（仅当 Graphviz 可用时生成）
+    pub image_path: Option<std::path::PathBuf>,
+    /// Graphviz 是否可用
+    pub graphviz_available: bool,
+    /// 如果 Graphviz 不可用，提供安装提示
+    pub graphviz_hint: Option<String>,
 }

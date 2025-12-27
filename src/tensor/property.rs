@@ -92,4 +92,11 @@ impl Tensor {
             None
         }
     }
+
+    /// 获取张量数据的连续内存切片（按行主序排列）
+    ///
+    /// 用于序列化、导出等需要直接访问底层数据的场景
+    pub fn data_as_slice(&self) -> &[f32] {
+        self.data.as_slice().expect("Tensor 数据应为连续内存布局")
+    }
 }

@@ -41,7 +41,8 @@ fn test_node_jacobi() {
     graph.forward_node(y).unwrap();
 
     // 5. 反向传播（只对w和b）
-    graph.backward_nodes(&[w, b], y).unwrap();
+    // 使用 retain_graph=true 以便验证中间节点的 jacobi
+    graph.backward_nodes_ex(&[w, b], y, true).unwrap();
 
     // 6. 验证雅可比矩阵
     // 6.1 输入节点仍然不应该有雅可比矩阵

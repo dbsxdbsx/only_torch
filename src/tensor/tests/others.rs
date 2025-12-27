@@ -642,12 +642,12 @@ fn test_squeeze() {
     let data = &[1.];
     let shape = &[];
     let squeezed_tensor = Tensor::new(data, shape).squeeze();
-    assert_eq!(squeezed_tensor.shape(), &[]);
+    assert_eq!(squeezed_tensor.shape(), &[] as &[usize]);
 
     let data = &[1.];
     let shape = &[1];
     let squeezed_tensor = Tensor::new(data, shape).squeeze();
-    assert_eq!(squeezed_tensor.shape(), &[]);
+    assert_eq!(squeezed_tensor.shape(), &[] as &[usize]);
 
     // 测试向量
     let data = &[1., 2., 3., 4.];
@@ -681,13 +681,13 @@ fn test_squeeze_mut() {
     let shape = &[];
     let mut tensor = Tensor::new(data, shape);
     tensor.squeeze_mut();
-    assert_eq!(tensor.shape(), &[]);
+    assert_eq!(tensor.shape(), &[] as &[usize]);
 
     let data = &[1.];
     let shape = &[1];
     let mut tensor = Tensor::new(data, shape);
     tensor.squeeze_mut();
-    assert_eq!(tensor.shape(), &[]);
+    assert_eq!(tensor.shape(), &[] as &[usize]);
 
     // 测试向量
     let data = &[1., 2., 3., 4.];
@@ -815,7 +815,7 @@ fn test_transpose() {
     // 测试标量
     let tensor = Tensor::new(&[1.0], &[]);
     let transposed = tensor.transpose();
-    assert_eq!(transposed.shape(), &[]);
+    assert_eq!(transposed.shape(), &[] as &[usize]);
 
     // 测试向量
     let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
@@ -843,7 +843,7 @@ fn test_transpose_mut() {
     // 测试标量
     let mut tensor = Tensor::new(&[1.0], &[]);
     tensor.transpose_mut();
-    assert_eq!(tensor.shape(), &[]);
+    assert_eq!(tensor.shape(), &[] as &[usize]);
 
     // 测试向量
     let mut tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);

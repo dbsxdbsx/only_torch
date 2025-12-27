@@ -28,3 +28,4 @@ mod node_softplus; // SoftPlus 激活函数（ReLU 的平滑近似）
 mod node_step;
 mod node_tanh;
 mod optimizer; // 优化器测试模块（包含 basic, sgd, adam, trait_tests 子模块）
+mod save_load; // 参数保存/加载测试

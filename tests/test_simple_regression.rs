@@ -10,6 +10,7 @@ use approx::assert_abs_diff_eq;
 use only_torch::nn::Graph;
 use only_torch::nn::optimizer::{Optimizer, SGD};
 use only_torch::tensor::Tensor;
+use std::fs;
 
 /// 简单线性回归：学习 y = 2x + 1
 ///
@@ -123,6 +124,16 @@ fn test_simple_linear_regression() {
     // 验证参数接近真实值
     assert_abs_diff_eq!(learned_w, 2.0, epsilon = 0.1);
     assert_abs_diff_eq!(learned_b, 1.0, epsilon = 0.1);
+
+    // 保存可视化和摘要
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph
+        .save_visualization(&format!("{output_dir}/simple_regression"), None)
+        .unwrap();
+    graph
+        .save_summary(&format!("{output_dir}/simple_regression_summary.md"))
+        .unwrap();
 }
 
 /// 多输入线性回归：学习 y = x1 + 2*x2 + 3

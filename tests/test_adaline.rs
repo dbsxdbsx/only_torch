@@ -8,6 +8,7 @@
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
 use only_torch::{tensor_slice, tensor_where};
+use std::fs;
 
 #[test]
 fn test_adaline() -> Result<(), GraphError> {
@@ -152,6 +153,12 @@ fn test_adaline() -> Result<(), GraphError> {
 
     let duration = start_time.elapsed();
     println!("总耗时: {duration:.2?}");
+
+    // 保存可视化和摘要
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph.save_visualization(&format!("{output_dir}/adaline"), None).unwrap();
+    graph.save_summary(&format!("{output_dir}/adaline_summary.md")).unwrap();
 
     // 检查测试是否通过
     if test_passed {

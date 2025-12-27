@@ -29,7 +29,7 @@ fn test_new_empty() {
 #[test]
 fn test_new_scalar() {
     let tensor = Tensor::new(&[1.], &[]);
-    assert_eq!(tensor.shape(), vec![]);
+    assert_eq!(tensor.shape(), &[] as &[usize]);
     assert_eq!(
         tensor.data,
         Array::from_shape_vec(IxDyn(&[]), vec![1.]).unwrap()

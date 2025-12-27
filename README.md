@@ -65,7 +65,7 @@ opt-level = 3
 - [x] `detach` 梯度截断机制（已实现为 `graph.detach_node()`，详见 [梯度流控制设计](.doc/design/gradient_flow_control_design.md#2-detach-机制)）
 - [x] 多 output 输出网络的反向传播支持（多任务学习场景）
 - RNN 节点的反向传播（TBPTT）
-- save/load 网络模型（已有 test_save_load_tensor）
+- [x] save/load 网络模型（详见 [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md)）
 
 ### 🟠 正确性验证（确保计算可信）
 
@@ -91,7 +91,7 @@ opt-level = 3
 
 ### 🟢 辅助功能
 
-- draw_graph(graphvis 画图)
+- [x] draw_graph(graphvis 画图) - 已实现为 `graph.to_dot()` / `graph.save_visualization()`，详见 [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md)
 - 是否需要添加一个 sign 节点来取代 step 直接 forward 输出[-1,1]？
 - 各种 assign 类的 op（如：add_assign）是否需要重载而不是复用基本算子？
 - check other unused methods
@@ -142,6 +142,7 @@ opt-level = 3
 - [梯度流控制机制](.doc/design/gradient_flow_control_design.md) - `no_grad`、`detach`、`retain_graph` 三种梯度控制机制的设计，包括 GAN、Actor-Critic、多任务学习等高级训练模式
 - [DataLoader 设计文档](.doc/design/data_loader_design.md) - 数据加载模块的架构设计，包括 MNIST 数据集支持、自动下载/缓存、数据转换等
 - [Batch Forward/Backward 机制设计](.doc/design/batch_mechanism_design.md) - 批量训练机制的设计决策，包括 Gradient-based 反向传播、API 设计、性能优化（约 18x 加速）等
+- [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md) - 统一的图描述层（IR）设计，支持模型保存/加载（JSON+bin）、Graphviz 可视化、Keras 风格 summary 输出
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料

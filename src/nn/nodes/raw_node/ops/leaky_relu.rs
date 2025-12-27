@@ -25,6 +25,11 @@ pub(crate) struct LeakyReLU {
 }
 
 impl LeakyReLU {
+    /// 获取 negative_slope（alpha）值
+    pub(crate) fn alpha(&self) -> f64 {
+        self.negative_slope
+    }
+
     pub(crate) fn new(parents: &[&NodeHandle], negative_slope: f64) -> Result<Self, GraphError> {
         // 1. 必要的验证
         // 1.1 父节点数量验证
