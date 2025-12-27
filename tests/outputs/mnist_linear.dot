@@ -1,0 +1,56 @@
+digraph Model {
+    rankdir=TB;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    subgraph cluster_fc1 {
+        label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: 784→128</FONT>>;
+        style=filled;
+        fillcolor="#E3F2FD80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "3" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "4" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "5" [label=<fc1_ones<BR/><B>Input</B><BR/>[512, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "6" [label=<fc1_xW<BR/><B>MatMul</B><BR/>[512, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "7" [label=<fc1_b_broadcast<BR/><B>MatMul</B><BR/>[512, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "8" [label=<fc1_out<BR/><B>Add</B><BR/>[512, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    subgraph cluster_fc2 {
+        label=<<B>fc2</B><BR/><FONT POINT-SIZE="9">Linear: 128→10</FONT>>;
+        style=filled;
+        fillcolor="#E8F5E980";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "10" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 10]<BR/>(1,280 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "11" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 10]<BR/>(10 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "12" [label=<fc2_ones<BR/><B>Input</B><BR/>[512, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "13" [label=<fc2_xW<BR/><B>MatMul</B><BR/>[512, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "14" [label=<fc2_b_broadcast<BR/><B>MatMul</B><BR/>[512, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "15" [label=<fc2_out<BR/><B>Add</B><BR/>[512, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    "1" [label=<x<BR/><B>Input</B><BR/>[512, 784]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "2" [label=<y<BR/><B>Input</B><BR/>[512, 10]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "9" [label=<fc1_act<BR/><B>SoftPlus</B><BR/>[512, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "16" [label=<loss<BR/><B>SoftmaxCE</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
+
+    "1" -> "6";
+    "3" -> "6";
+    "5" -> "7";
+    "4" -> "7";
+    "6" -> "8";
+    "7" -> "8";
+    "8" -> "9";
+    "9" -> "13";
+    "10" -> "13";
+    "12" -> "14";
+    "11" -> "14";
+    "13" -> "15";
+    "14" -> "15";
+    "15" -> "16";
+    "2" -> "16";
+}

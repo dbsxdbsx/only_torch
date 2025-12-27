@@ -64,6 +64,17 @@ fn test_simple_linear_regression() {
         .set_node_value(ones_id, Some(&Tensor::new(&[1.0], &[1, 1])))
         .unwrap();
 
+    // 保存网络结构可视化（训练前）
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph
+        .save_visualization(&format!("{output_dir}/simple_regression"), None)
+        .unwrap();
+    graph
+        .save_summary(&format!("{output_dir}/simple_regression_summary.md"))
+        .unwrap();
+    println!("网络结构已保存: {}/simple_regression.png", output_dir);
+
     // 创建优化器
     let mut optimizer = SGD::new(&graph, 0.1).unwrap();
 
@@ -124,16 +135,6 @@ fn test_simple_linear_regression() {
     // 验证参数接近真实值
     assert_abs_diff_eq!(learned_w, 2.0, epsilon = 0.1);
     assert_abs_diff_eq!(learned_b, 1.0, epsilon = 0.1);
-
-    // 保存可视化和摘要
-    let output_dir = "tests/outputs";
-    fs::create_dir_all(output_dir).ok();
-    graph
-        .save_visualization(&format!("{output_dir}/simple_regression"), None)
-        .unwrap();
-    graph
-        .save_summary(&format!("{output_dir}/simple_regression_summary.md"))
-        .unwrap();
 }
 
 /// 多输入线性回归：学习 y = x1 + 2*x2 + 3

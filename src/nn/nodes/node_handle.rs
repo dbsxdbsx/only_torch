@@ -1,7 +1,7 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, AvgPool2d, Conv2d, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d, Multiply,
-    Parameter, PerceptionLoss, Reduction, Reshape, ScalarMultiply, Sigmoid, SoftPlus,
+    Add, AvgPool2d, ChannelBiasAdd, Conv2d, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d,
+    Multiply, Parameter, PerceptionLoss, Reduction, Reshape, ScalarMultiply, Sigmoid, SoftPlus,
     SoftmaxCrossEntropy, Step, Tanh,
 };
 use super::{NodeType, TraitNode};
@@ -152,6 +152,18 @@ impl NodeHandle {
         padding: (usize, usize),
     ) -> Result<Self, GraphError> {
         Self::new(Conv2d::new(parents, stride, padding)?)
+    }
+
+    /// 创建 ChannelBiasAdd 节点
+    ///
+    /// 将通道级 bias 广播加到 4D 或 3D 输入上。
+    ///
+    /// # 参数
+    /// - `parents`: [input, bias]
+    ///   - input: [batch, C, H, W] 或 [C, H, W]
+    ///   - bias: [C] 或 [1, C]
+    pub(in crate::nn) fn new_channel_bias_add(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(ChannelBiasAdd::new(parents)?)
     }
 
     /// 创建 MaxPool2d 节点

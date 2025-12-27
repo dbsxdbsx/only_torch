@@ -21,6 +21,7 @@ use only_torch::nn::layer::{avg_pool2d, conv2d, linear, max_pool2d};
 use only_torch::nn::optimizer::{Adam, Optimizer};
 use only_torch::nn::{Graph, GraphError};
 use only_torch::tensor::Tensor;
+use std::fs;
 use std::time::Instant;
 
 /// MNIST CNN 集成测试
@@ -152,20 +153,22 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
     );
     println!("  网络结构（基于 LeNet-5，混合两种池化）：");
     println!("    Input [batch, 1, 28, 28]");
-    println!("      → Conv1 (1→8, 5x5) → ReLU → AvgPool (2x2)  [经典]");
-    println!("      → Conv2 (8→16, 3x3) → ReLU → MaxPool (2x2) [现代]");
+    println!("      → Conv1 (1→8, 5x5, bias) → ReLU → AvgPool (2x2)  [经典]");
+    println!("      → Conv2 (8→16, 3x3, bias) → ReLU → MaxPool (2x2) [现代]");
     println!("      → Flatten → FC1 (784→64) → ReLU → FC2 (64→10)");
     println!("      → SoftmaxCrossEntropy");
+
+    // 保存网络结构可视化（训练前）
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph.save_visualization_grouped(&format!("{}/mnist_cnn", output_dir), None)?;
+    graph.save_summary(&format!("{}/mnist_cnn_summary.md", output_dir))?;
+    println!("  ✓ 网络结构已保存: {}/mnist_cnn.png", output_dir);
 
     // ========== 4. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");
 
     let mut optimizer = Adam::new(&graph, learning_rate, 0.9, 0.999, 1e-8)?;
-
-    // 设置 ones 矩阵（用于 FC 层 bias 广播）
-    let ones_tensor = Tensor::ones(&[batch_size, 1]);
-    graph.set_node_value(fc1.ones, Some(&ones_tensor))?;
-    graph.set_node_value(fc2.ones, Some(&ones_tensor))?;
 
     // 获取图像数据（保持 [N, 1, 28, 28] 格式）
     let all_train_images = train_data.images(); // [N, 1, 28, 28]
@@ -279,6 +282,10 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
 
     let total_duration = start_time.elapsed();
     println!("\n总耗时: {:.2}s", total_duration.as_secs_f32());
+
+    // 打印模型摘要
+    println!("\n模型摘要：");
+    graph.summary();
 
     if test_passed {
         println!("\n{}", "=".repeat(60));

@@ -66,6 +66,7 @@ pub enum NodeTypeDescriptor {
         stride: (usize, usize),
         padding: (usize, usize),
     },
+    ChannelBiasAdd,
     MaxPool2d {
         kernel_size: (usize, usize),
         stride: (usize, usize),

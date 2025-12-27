@@ -68,13 +68,9 @@ fn test_linear_forward() -> Result<(), GraphError> {
     let w = Tensor::new(&[1.0, 0.0, 0.0, 1.0, 0.0, 0.0], &[3, 2]);
     // 设置偏置: [1, 2]
     let b = Tensor::new(&[0.5, 0.5], &[1, 2]);
-    // 设置 ones: [2, 1]
-    let ones = Tensor::ones(&[2, 1]);
-
     graph.set_node_value(input, Some(&x))?;
     graph.set_node_value(fc.weights, Some(&w))?;
     graph.set_node_value(fc.bias, Some(&b))?;
-    graph.set_node_value(fc.ones, Some(&ones))?;
 
     // 前向传播
     graph.forward_node(fc.output)?;
@@ -143,13 +139,9 @@ fn test_linear_chain() -> Result<(), GraphError> {
     let act = graph.new_sigmoid_node(fc1.output, Some("act"))?;
     let fc2 = linear(&mut graph, act, 8, 2, batch_size, Some("fc2"))?;
 
-    // 设置输入和 ones
+    // 设置输入
     let x = Tensor::normal(0.0, 1.0, &[batch_size, 4]);
-    let ones = Tensor::ones(&[batch_size, 1]);
-
     graph.set_node_value(input, Some(&x))?;
-    graph.set_node_value(fc1.ones, Some(&ones))?;
-    graph.set_node_value(fc2.ones, Some(&ones))?;
 
     // 前向传播
     graph.forward_node(fc2.output)?;
@@ -179,11 +171,9 @@ fn test_linear_batch_backward() -> Result<(), GraphError> {
     // 设置数据
     let x = Tensor::normal(0.0, 1.0, &[batch_size, 3]);
     let y = Tensor::new(&[1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0], &[batch_size, 2]); // one-hot
-    let ones = Tensor::ones(&[batch_size, 1]);
 
     graph.set_node_value(input, Some(&x))?;
     graph.set_node_value(labels, Some(&y))?;
-    graph.set_node_value(fc.ones, Some(&ones))?;
 
     // Batch 训练
     graph.forward_batch(loss)?;
@@ -223,12 +213,9 @@ fn test_linear_chain_batch_training() -> Result<(), GraphError> {
         &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
         &[batch_size, 3],
     ); // one-hot
-    let ones = Tensor::ones(&[batch_size, 1]);
 
     graph.set_node_value(input, Some(&x))?;
     graph.set_node_value(labels, Some(&y))?;
-    graph.set_node_value(fc1.ones, Some(&ones))?;
-    graph.set_node_value(fc2.ones, Some(&ones))?;
 
     // Batch 训练
     graph.forward_batch(loss)?;
@@ -333,11 +320,9 @@ fn test_linear_single_input_feature() -> Result<(), GraphError> {
 
     let fc = linear(&mut graph, input, 1, 4, batch_size, Some("fc"))?;
 
-    // 设置输入和 ones
+    // 设置输入
     let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[batch_size, 1]);
-    let ones = Tensor::ones(&[batch_size, 1]);
     graph.set_node_value(input, Some(&x))?;
-    graph.set_node_value(fc.ones, Some(&ones))?;
 
     // 前向传播
     graph.forward_node(fc.output)?;
@@ -358,11 +343,9 @@ fn test_linear_single_output_feature() -> Result<(), GraphError> {
 
     let fc = linear(&mut graph, input, 4, 1, batch_size, Some("fc"))?;
 
-    // 设置输入和 ones
+    // 设置输入
     let x = Tensor::normal(0.0, 1.0, &[batch_size, 4]);
-    let ones = Tensor::ones(&[batch_size, 1]);
     graph.set_node_value(input, Some(&x))?;
-    graph.set_node_value(fc.ones, Some(&ones))?;
 
     // 前向传播
     graph.forward_node(fc.output)?;

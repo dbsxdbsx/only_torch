@@ -1,0 +1,100 @@
+digraph Model {
+    rankdir=TB;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    subgraph cluster_conv1 {
+        label=<<B>conv1</B><BR/><FONT POINT-SIZE="9">Conv2d: 1→8, 5×5</FONT>>;
+        style=filled;
+        fillcolor="#E3F2FD80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "3" [label=<conv1_K<BR/><B>Parameter</B><BR/>[8, 1, 5, 5]<BR/>(200 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "4" [label=<conv1_conv<BR/><B>Conv2d</B><BR/>[512, 8, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "5" [label=<conv1_b<BR/><B>Parameter</B><BR/>[1, 8]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "6" [label=<conv1_out<BR/><B>ChBiasAdd</B><BR/>[512, 8, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    subgraph cluster_conv2 {
+        label=<<B>conv2</B><BR/><FONT POINT-SIZE="9">Conv2d: 8→16, 3×3</FONT>>;
+        style=filled;
+        fillcolor="#E8F5E980";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "9" [label=<conv2_K<BR/><B>Parameter</B><BR/>[16, 8, 3, 3]<BR/>(1,152 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "10" [label=<conv2_conv<BR/><B>Conv2d</B><BR/>[512, 16, 14, 14]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "11" [label=<conv2_b<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "12" [label=<conv2_out<BR/><B>ChBiasAdd</B><BR/>[512, 16, 14, 14]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    subgraph cluster_fc1 {
+        label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: 784→64</FONT>>;
+        style=filled;
+        fillcolor="#FFF3E080";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "16" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 64]<BR/>(50,176 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "17" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 64]<BR/>(64 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "18" [label=<fc1_ones<BR/><B>Input</B><BR/>[512, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "19" [label=<fc1_xW<BR/><B>MatMul</B><BR/>[512, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "20" [label=<fc1_b_broadcast<BR/><B>MatMul</B><BR/>[512, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "21" [label=<fc1_out<BR/><B>Add</B><BR/>[512, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    subgraph cluster_fc2 {
+        label=<<B>fc2</B><BR/><FONT POINT-SIZE="9">Linear: 64→10</FONT>>;
+        style=filled;
+        fillcolor="#F3E5F580";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "23" [label=<fc2_W<BR/><B>Parameter</B><BR/>[64, 10]<BR/>(640 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "24" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 10]<BR/>(10 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "25" [label=<fc2_ones<BR/><B>Input</B><BR/>[512, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "26" [label=<fc2_xW<BR/><B>MatMul</B><BR/>[512, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "27" [label=<fc2_b_broadcast<BR/><B>MatMul</B><BR/>[512, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "28" [label=<fc2_out<BR/><B>Add</B><BR/>[512, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    "1" [label=<x<BR/><B>Input</B><BR/>[512, 1, 28, 28]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "2" [label=<y<BR/><B>Input</B><BR/>[512, 10]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "7" [label=<relu1<BR/><B>LeakyReLU</B><BR/>[512, 8, 28, 28]<BR/>α=0> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "8" [label=<avg_pool1_out<BR/><B>AvgPool2d</B><BR/>[512, 8, 14, 14]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "13" [label=<relu2<BR/><B>LeakyReLU</B><BR/>[512, 16, 14, 14]<BR/>α=0> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "14" [label=<max_pool2_out<BR/><B>MaxPool2d</B><BR/>[512, 16, 7, 7]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "15" [label=<flatten<BR/><B>Flatten</B><BR/>[512, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "22" [label=<relu3<BR/><B>LeakyReLU</B><BR/>[512, 64]<BR/>α=0> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "29" [label=<loss<BR/><B>SoftmaxCE</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
+
+    "1" -> "4";
+    "3" -> "4";
+    "4" -> "6";
+    "5" -> "6";
+    "6" -> "7";
+    "7" -> "8";
+    "8" -> "10";
+    "9" -> "10";
+    "10" -> "12";
+    "11" -> "12";
+    "12" -> "13";
+    "13" -> "14";
+    "14" -> "15";
+    "15" -> "19";
+    "16" -> "19";
+    "18" -> "20";
+    "17" -> "20";
+    "19" -> "21";
+    "20" -> "21";
+    "21" -> "22";
+    "22" -> "26";
+    "23" -> "26";
+    "25" -> "27";
+    "24" -> "27";
+    "26" -> "28";
+    "27" -> "28";
+    "28" -> "29";
+    "2" -> "29";
+}

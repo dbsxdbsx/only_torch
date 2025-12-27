@@ -18,6 +18,19 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
+/// 层分组信息（用于可视化时将属于同一层的节点框在一起）
+#[derive(Debug, Clone)]
+pub struct LayerGroup {
+    /// 层名称（如 "fc1", "conv1"）
+    pub name: String,
+    /// 层类型（如 "Linear", "Conv2d"）
+    pub layer_type: String,
+    /// 层的描述信息（如 "784→128"）
+    pub description: String,
+    /// 属于该层的节点 ID 列表
+    pub node_ids: Vec<NodeId>,
+}
+
 /// 图的完整定义
 pub struct Graph {
     name: String,
@@ -35,6 +48,8 @@ pub struct Graph {
     /// 图级别的随机数生成器（用于参数初始化等）
     /// None 表示使用默认的 thread_rng（非确定性）
     rng: Option<StdRng>,
+    /// 层分组信息（用于可视化）
+    layer_groups: Vec<LayerGroup>,
 }
 
 impl Default for Graph {
@@ -116,6 +131,7 @@ impl Graph {
             next_id: 0,
             is_eval_mode: false,
             rng: Some(StdRng::seed_from_u64(seed)),
+            layer_groups: Vec::new(),
         }
     }
 
@@ -131,6 +147,7 @@ impl Graph {
             next_id: 0,
             is_eval_mode: false,
             rng: Some(StdRng::seed_from_u64(seed)),
+            layer_groups: Vec::new(),
         }
     }
 
@@ -145,6 +162,7 @@ impl Graph {
             next_id: 0,
             is_eval_mode: false,
             rng: None,
+            layer_groups: Vec::new(),
         }
     }
 
@@ -169,6 +187,33 @@ impl Graph {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// 注册一个层分组（用于可视化时将同一层的节点框在一起）
+    ///
+    /// # 参数
+    /// - `name`: 层名称（如 "fc1", "conv1"）
+    /// - `layer_type`: 层类型（如 "Linear", "Conv2d"）
+    /// - `description`: 层描述（如 "784→128"）
+    /// - `node_ids`: 属于该层的节点 ID 列表
+    pub fn register_layer_group(
+        &mut self,
+        name: &str,
+        layer_type: &str,
+        description: &str,
+        node_ids: Vec<NodeId>,
+    ) {
+        self.layer_groups.push(LayerGroup {
+            name: name.to_string(),
+            layer_type: layer_type.to_string(),
+            description: description.to_string(),
+            node_ids,
+        });
+    }
+
+    /// 获取所有层分组信息
+    pub fn layer_groups(&self) -> &[LayerGroup] {
+        &self.layer_groups
     }
 
     pub fn nodes(&self) -> Vec<NodeId> {
@@ -1377,6 +1422,7 @@ impl Graph {
             NodeTypeDescriptor::Reshape { .. } => "Reshape",
             NodeTypeDescriptor::Flatten => "Flatten",
             NodeTypeDescriptor::Conv2d { .. } => "Conv2d",
+            NodeTypeDescriptor::ChannelBiasAdd => "ChBiasAdd",
             NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
             NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
             NodeTypeDescriptor::MSELoss => "MSELoss",
@@ -1433,6 +1479,14 @@ impl Graph {
     /// graph.save_visualization("outputs/model", None)?;
     /// ```
     pub fn to_dot(&self) -> String {
+        self.to_dot_with_options(false)
+    }
+
+    /// 生成带层分组选项的 DOT 格式字符串
+    ///
+    /// # 参数
+    /// - `group_layers`: 是否将同一层的节点用半透明框分组显示
+    pub fn to_dot_with_options(&self, group_layers: bool) -> String {
         let desc = self.describe();
         let mut dot = String::new();
 
@@ -1443,8 +1497,55 @@ impl Graph {
         dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
         dot.push_str("\n");
 
-        // 节点定义（使用 HTML-like 标签，名称加粗）
+        // 收集已分组的节点 ID（转换为 u64 以便与 descriptor 比较）
+        let grouped_node_ids: std::collections::HashSet<u64> = if group_layers {
+            self.layer_groups
+                .iter()
+                .flat_map(|g| g.node_ids.iter().map(|id| id.0))
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        // 如果启用层分组，先输出 subgraph cluster
+        if group_layers && !self.layer_groups.is_empty() {
+            for (idx, group) in self.layer_groups.iter().enumerate() {
+                let cluster_color = Self::layer_group_color(idx);
+                dot.push_str(&format!(
+                    "    subgraph cluster_{} {{\n",
+                    group.name.replace('-', "_").replace('.', "_")
+                ));
+                dot.push_str(&format!(
+                    "        label=<<B>{}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
+                    group.name, group.layer_type, group.description
+                ));
+                dot.push_str("        style=filled;\n");
+                dot.push_str(&format!("        fillcolor=\"{}\";\n", cluster_color));
+                dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+                dot.push_str("        fontsize=11;\n");
+                dot.push_str("        margin=12;\n");
+
+                // 在 cluster 内定义属于该层的节点
+                for node in &desc.nodes {
+                    if group.node_ids.iter().any(|nid| nid.0 == node.id) {
+                        let (shape, style, fillcolor) = Self::dot_node_style(&node.node_type);
+                        let label = Self::dot_node_label_html(node);
+                        dot.push_str(&format!(
+                            "        \"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
+                            node.id, label, shape, style, fillcolor
+                        ));
+                    }
+                }
+
+                dot.push_str("    }\n\n");
+            }
+        }
+
+        // 节点定义（未分组的节点，或不启用分组时的所有节点）
         for node in &desc.nodes {
+            if group_layers && grouped_node_ids.contains(&node.id) {
+                continue; // 已在 cluster 中定义
+            }
             let (shape, style, fillcolor) = Self::dot_node_style(&node.node_type);
             let label = Self::dot_node_label_html(node);
 
@@ -1468,9 +1569,25 @@ impl Graph {
         dot
     }
 
+    /// 获取层分组的背景颜色（半透明）
+    fn layer_group_color(index: usize) -> &'static str {
+        // 使用柔和的半透明颜色，不同层使用不同颜色以便区分
+        const COLORS: &[&str] = &[
+            "#E3F2FD80", // 浅蓝
+            "#E8F5E980", // 浅绿
+            "#FFF3E080", // 浅橙
+            "#F3E5F580", // 浅紫
+            "#E0F7FA80", // 浅青
+            "#FFFDE780", // 浅黄
+            "#FCE4EC80", // 浅粉
+            "#EFEBE980", // 浅棕
+        ];
+        COLORS[index % COLORS.len()]
+    }
+
     /// 将 DOT 保存到文件（内部方法）
-    fn save_dot<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
-        let dot = self.to_dot();
+    fn save_dot<P: AsRef<Path>>(&self, path: P, group_layers: bool) -> Result<(), GraphError> {
+        let dot = self.to_dot_with_options(group_layers);
         std::fs::write(path.as_ref(), dot)
             .map_err(|e| GraphError::ComputationError(format!("保存 DOT 文件失败: {}", e)))
     }
@@ -1498,11 +1615,42 @@ impl Graph {
     ///
     /// // 指定 SVG 格式（生成 model.dot + model.svg）
     /// let result = graph.save_visualization("outputs/model", Some(ImageFormat::Svg))?;
+    ///
+    /// // 启用层分组可视化（将 Linear、Conv2d 等层用半透明框分组显示）
+    /// let result = graph.save_visualization_grouped("outputs/model", None)?;
     /// ```
     pub fn save_visualization<P: AsRef<Path>>(
         &self,
         base_path: P,
         format: Option<ImageFormat>,
+    ) -> Result<VisualizationOutput, GraphError> {
+        self.save_visualization_impl(base_path, format, false)
+    }
+
+    /// 保存计算图可视化（启用层分组）
+    ///
+    /// 与 `save_visualization` 相同，但会将同一层的节点用半透明框分组显示。
+    /// 层分组信息来自 `linear()`、`conv2d()` 等 Layer API 的注册。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 启用层分组的可视化
+    /// graph.save_visualization_grouped("outputs/model", None)?;
+    /// ```
+    pub fn save_visualization_grouped<P: AsRef<Path>>(
+        &self,
+        base_path: P,
+        format: Option<ImageFormat>,
+    ) -> Result<VisualizationOutput, GraphError> {
+        self.save_visualization_impl(base_path, format, true)
+    }
+
+    /// 保存计算图可视化的内部实现
+    fn save_visualization_impl<P: AsRef<Path>>(
+        &self,
+        base_path: P,
+        format: Option<ImageFormat>,
+        group_layers: bool,
     ) -> Result<VisualizationOutput, GraphError> {
         let path = base_path.as_ref();
 
@@ -1529,7 +1677,7 @@ impl Graph {
 
         // 2. 生成 .dot 文件
         let dot_path = path.with_extension("dot");
-        self.save_dot(&dot_path)?;
+        self.save_dot(&dot_path, group_layers)?;
 
         // 3. 尝试生成图像（如果 Graphviz 可用）
         let format = format.unwrap_or_default();
@@ -1720,6 +1868,7 @@ impl Graph {
             NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
             NodeType::PerceptionLoss(_) => NodeTypeDescriptor::PerceptionLoss,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
+            NodeType::ChannelBiasAdd(_) => NodeTypeDescriptor::ChannelBiasAdd,
         }
     }
 
@@ -2130,6 +2279,34 @@ impl Graph {
         let handle =
             NodeHandle::new_conv2d(&self.get_nodes(&[input_id, kernel_id])?, stride, padding)?;
         self.add_node_to_list(handle, name, "conv2d", &[input_id, kernel_id])
+    }
+
+    /// 创建 ChannelBiasAdd（通道级 bias 广播加法）节点
+    ///
+    /// # 设计
+    /// - 将形状为 [C] 或 [1, C] 的 bias 广播加到 [batch, C, H, W] 的输入上
+    /// - 专门用于 Conv2d 层的 bias 添加
+    /// - 数学：output[b, c, h, w] = input[b, c, h, w] + bias[c]
+    ///
+    /// # 参数
+    /// - `input_id`: 输入节点 ID，形状 `[C, H, W]` 或 `[batch, C, H, W]`
+    /// - `bias_id`: bias 参数节点 ID，形状 `[C]` 或 `[1, C]`
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
+    /// let bias = graph.new_parameter_node(&[1, 32], Some("bias"))?;
+    /// let output = graph.new_channel_bias_add_node(conv, bias, Some("conv_with_bias"))?;
+    /// ```
+    pub fn new_channel_bias_add_node(
+        &mut self,
+        input_id: NodeId,
+        bias_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_channel_bias_add(&self.get_nodes(&[input_id, bias_id])?)?;
+        self.add_node_to_list(handle, name, "channel_bias_add", &[input_id, bias_id])
     }
 
     /// 创建 MaxPool2d（2D 最大池化）节点

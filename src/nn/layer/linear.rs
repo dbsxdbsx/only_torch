@@ -12,6 +12,7 @@
  */
 
 use crate::nn::{Graph, GraphError, NodeId};
+use crate::tensor::Tensor;
 
 /// Linear 层的输出结构
 ///
@@ -69,14 +70,10 @@ pub struct LinearOutput {
 ///
 /// # 示例
 /// ```ignore
-/// // 构建 2 层 MLP
+/// // 构建 2 层 MLP（ones 矩阵已自动初始化，无需手动设置）
 /// let fc1 = linear(&mut graph, x, 784, 128, batch_size, Some("fc1"))?;
 /// let act = graph.new_sigmoid_node(fc1.output, Some("act"))?;
 /// let fc2 = linear(&mut graph, act, 128, 10, batch_size, Some("fc2"))?;
-///
-/// // 设置 ones 矩阵（训练前必须设置）
-/// graph.set_node_value(fc1.ones, Some(&Tensor::ones(&[batch_size, 1])))?;
-/// graph.set_node_value(fc2.ones, Some(&Tensor::ones(&[batch_size, 1])))?;
 ///
 /// // 访问内部参数
 /// let weights = graph.get_node_value(fc1.weights)?;
@@ -98,8 +95,9 @@ pub fn linear(
     // 创建偏置参数 b: [1, out_features]
     let bias = graph.new_parameter_node(&[1, out_features], Some(&format!("{}_b", prefix)))?;
 
-    // 创建 ones 矩阵: [batch_size, 1]，用于 bias 广播
+    // 创建 ones 矩阵: [batch_size, 1]，用于 bias 广播（自动初始化）
     let ones = graph.new_input_node(&[batch_size, 1], Some(&format!("{}_ones", prefix)))?;
+    graph.set_node_value(ones, Some(&Tensor::ones(&[batch_size, 1])))?;
 
     // 计算 x @ W: [batch, in] @ [in, out] = [batch, out]
     let xw = graph.new_mat_mul_node(input, weights, Some(&format!("{}_xW", prefix)))?;
@@ -110,6 +108,14 @@ pub fn linear(
 
     // 计算 x @ W + b
     let output = graph.new_add_node(&[xw, b_broadcast], Some(&format!("{}_out", prefix)))?;
+
+    // 注册层分组（用于可视化时将这些节点框在一起）
+    graph.register_layer_group(
+        prefix,
+        "Linear",
+        &format!("{}→{}", in_features, out_features),
+        vec![weights, bias, ones, xw, b_broadcast, output],
+    );
 
     Ok(LinearOutput {
         output,

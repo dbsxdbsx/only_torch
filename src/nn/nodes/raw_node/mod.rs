@@ -18,6 +18,7 @@ pub(in crate::nn) enum NodeType {
     Parameter(Parameter),
     Add(Add),
     AvgPool2d(AvgPool2d),
+    ChannelBiasAdd(ChannelBiasAdd),
     Conv2d(Conv2d),
     Flatten(Flatten),
     MatMul(MatMul),

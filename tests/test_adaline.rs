@@ -62,6 +62,13 @@ fn test_adaline() -> Result<(), GraphError> {
     let loss_input = graph.new_mat_mul_node(label, output, Some("loss_input"))?;
     let loss = graph.new_perception_loss_node(loss_input, Some("loss"))?;
 
+    // 保存网络结构可视化（训练前）
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph.save_visualization(&format!("{output_dir}/adaline"), None).unwrap();
+    graph.save_summary(&format!("{output_dir}/adaline_summary.md")).unwrap();
+    println!("网络结构已保存: {}/adaline.png", output_dir);
+
     // 学习率
     let learning_rate = 0.0001;
 
@@ -153,12 +160,6 @@ fn test_adaline() -> Result<(), GraphError> {
 
     let duration = start_time.elapsed();
     println!("总耗时: {duration:.2?}");
-
-    // 保存可视化和摘要
-    let output_dir = "tests/outputs";
-    fs::create_dir_all(output_dir).ok();
-    graph.save_visualization(&format!("{output_dir}/adaline"), None).unwrap();
-    graph.save_summary(&format!("{output_dir}/adaline_summary.md")).unwrap();
 
     // 检查测试是否通过
     if test_passed {

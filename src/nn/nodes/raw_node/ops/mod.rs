@@ -8,6 +8,7 @@
 
 mod add;
 mod avg_pool2d;
+mod channel_bias_add;
 mod conv2d;
 mod flatten;
 mod leaky_relu;
@@ -23,6 +24,7 @@ mod tanh;
 
 pub(crate) use add::Add;
 pub(crate) use avg_pool2d::AvgPool2d;
+pub(crate) use channel_bias_add::ChannelBiasAdd;
 pub(crate) use conv2d::Conv2d;
 pub(crate) use flatten::Flatten;
 pub(crate) use leaky_relu::LeakyReLU;

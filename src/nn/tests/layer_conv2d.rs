@@ -490,3 +490,121 @@ fn test_conv2d_mnist_like() -> Result<(), GraphError> {
     Ok(())
 }
 
+// ==================== Bias 功能测试 ====================
+
+/// 测试 conv2d() 默认包含 bias
+#[test]
+fn test_conv2d_has_bias() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+
+    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+
+    // 验证 bias 存在且形状正确
+    let b_shape = graph.get_node(conv.bias)?.value_expected_shape();
+    assert_eq!(b_shape, &[1, 2]);
+
+    // 验证 bias 默认初始化为 0
+    let bias = graph.get_node_value(conv.bias)?.unwrap();
+    assert_abs_diff_eq!(bias[[0, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(bias[[0, 1]], 0.0, epsilon = 1e-6);
+
+    Ok(())
+}
+
+/// 测试 conv2d() bias 正确应用
+#[test]
+fn test_conv2d_bias_applied() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let input = graph.new_input_node(&[1, 1, 3, 3], Some("input"))?;
+
+    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+
+    // 设置输入全 1，卷积核全 1
+    let x = Tensor::ones(&[1, 1, 3, 3]);
+    let k = Tensor::ones(&[2, 1, 2, 2]);
+
+    graph.set_node_value(input, Some(&x))?;
+    graph.set_node_value(conv.kernel, Some(&k))?;
+
+    // 先测试 bias=0 的情况
+    graph.forward_node(conv.output)?;
+    let output_no_bias = graph.get_node_value(conv.output)?.unwrap().clone();
+
+    // 全 1 输入，全 1 卷积核，2x2 窗口 → 每个输出为 4.0
+    for c in 0..2 {
+        for h in 0..2 {
+            for w in 0..2 {
+                assert_abs_diff_eq!(output_no_bias[[0, c, h, w]], 4.0, epsilon = 1e-6);
+            }
+        }
+    }
+
+    // 设置 bias：通道 0 加 1.0，通道 1 加 2.0
+    let bias = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    graph.set_node_value(conv.bias, Some(&bias))?;
+
+    // 重新前向传播
+    graph.forward_node(conv.output)?;
+    let output_with_bias = graph.get_node_value(conv.output)?.unwrap();
+
+    // 验证 bias 被正确加上：通道 0 应该是 5.0，通道 1 应该是 6.0
+    for h in 0..2 {
+        for w in 0..2 {
+            assert_abs_diff_eq!(output_with_bias[[0, 0, h, w]], 5.0, epsilon = 1e-6);
+            assert_abs_diff_eq!(output_with_bias[[0, 1, h, w]], 6.0, epsilon = 1e-6);
+        }
+    }
+
+    Ok(())
+}
+
+/// 测试 conv2d() bias 的梯度传播
+#[test]
+fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+
+    let input = graph.new_input_node(&[batch_size, 1, 4, 4], Some("input"))?;
+    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+    let flat = graph.new_flatten_node(conv.output, true, Some("flat"))?;
+
+    // 简单分类器
+    let fc_weight = graph.new_parameter_node(&[18, 3], Some("fc_w"))?;
+    let logits = graph.new_mat_mul_node(flat, fc_weight, Some("logits"))?;
+    let labels = graph.new_input_node(&[batch_size, 3], Some("labels"))?;
+    let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
+
+    // 设置数据
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, 1, 4, 4]);
+    let y = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], &[batch_size, 3]);
+
+    graph.set_node_value(input, Some(&x))?;
+    graph.set_node_value(labels, Some(&y))?;
+
+    // Batch 训练
+    graph.forward_batch(loss)?;
+    graph.backward_batch(loss)?;
+
+    // 验证 bias 有梯度
+    let b_grad = graph.get_node_grad_batch(conv.bias)?;
+    assert!(b_grad.is_some(), "bias 应该有梯度");
+    assert_eq!(b_grad.unwrap().shape(), &[1, 2], "bias 梯度形状应该正确");
+
+    Ok(())
+}
+
+/// 测试 conv2d() bias 节点命名
+#[test]
+fn test_conv2d_bias_naming() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+    let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
+
+    let conv = conv2d(&mut graph, input, 1, 4, (3, 3), (1, 1), (1, 1), Some("encoder_conv1"))?;
+
+    // 验证 bias 节点名称
+    assert_eq!(graph.get_node(conv.bias)?.name(), "encoder_conv1_b");
+
+    Ok(())
+}
+

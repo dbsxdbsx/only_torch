@@ -114,6 +114,13 @@ fn test_mnist_gan() -> Result<(), GraphError> {
     println!("  ✓ G 参数量: {}", g_params.len());
     println!("  ✓ D 参数量: {}", d_params.len());
 
+    // 保存网络结构可视化（训练前）
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph.save_visualization(&format!("{}/mnist_gan", output_dir), None)?;
+    graph.save_summary(&format!("{}/mnist_gan_summary.md", output_dir))?;
+    println!("  ✓ 网络结构已保存: {}/mnist_gan.png", output_dir);
+
     // ========== 4. 创建优化器 ==========
     println!("\n[4/5] 创建优化器...");
 
@@ -252,22 +259,7 @@ fn test_mnist_gan() -> Result<(), GraphError> {
 
     let test_passed = d_real_avg > 0.3 && d_fake_avg > 0.2 && d_fake_avg < 0.9;
 
-    // ========== 6. 保存模型可视化与摘要 ==========
-    println!("\n[6/6] 保存模型可视化与摘要...");
-
-    // 确保输出目录存在
-    let output_dir = "tests/outputs";
-    fs::create_dir_all(output_dir).ok();
-
-    // 保存可视化文件
-    graph.save_visualization(&format!("{}/mnist_gan", output_dir), None)?;
-
-    // 保存 Markdown 摘要
-    let summary_path = format!("{}/mnist_gan_summary.md", output_dir);
-    graph.save_summary(&summary_path)?;
-    println!("  ✓ Markdown 摘要已保存: {}", summary_path);
-
-    // 打印摘要到控制台
+    // 打印模型摘要
     println!("\n模型摘要：");
     graph.summary();
 
@@ -277,7 +269,6 @@ fn test_mnist_gan() -> Result<(), GraphError> {
         println!("  - D(real) = {:.3} (> 0.3 ✓)", d_real_avg);
         println!("  - D(fake) = {:.3} (0.2 < x < 0.9 ✓)", d_fake_avg);
         println!("  - detach 机制验证：D 能独立训练，G 的梯度正确传播");
-        println!("  - 输出目录: {}", output_dir);
         println!("{}\n", "=".repeat(60));
         Ok(())
     } else {

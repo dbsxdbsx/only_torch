@@ -43,5 +43,5 @@
 | mse_loss_2 | MSELoss | [1, 1] | - | d_fake, fake_labels |
 | g_loss | MSELoss | [1, 1] | - | d_fake, real_labels |
 
-**总参数量**: 210,065
+**总参数量**: 210,065  
 **可训练参数**: 210,065

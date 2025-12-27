@@ -9,8 +9,8 @@
 use only_torch::data::MnistDataset;
 use only_torch::nn::optimizer::{Adam, Optimizer};
 use only_torch::nn::{Graph, GraphError, linear};
-use only_torch::tensor::Tensor;
 use only_torch::tensor_slice;
+use std::fs;
 use std::time::Instant;
 
 /// MNIST Linear 集成测试（MLP 架构）
@@ -87,15 +87,17 @@ fn test_mnist_linear() -> Result<(), GraphError> {
     println!("  ✓ 网络构建完成：784 -> 128 -> 10（2层 MLP）");
     println!("  ✓ 参数节点：fc1_W, fc1_b, fc2_W, fc2_b");
 
+    // 保存网络结构可视化（训练前）
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph.save_visualization_grouped(&format!("{}/mnist_linear", output_dir), None)?;
+    graph.save_summary(&format!("{}/mnist_linear_summary.md", output_dir))?;
+    println!("  ✓ 网络结构已保存: {}/mnist_linear.png", output_dir);
+
     // ========== 4. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");
 
     let mut optimizer = Adam::new(&graph, learning_rate, 0.9, 0.999, 1e-8)?;
-
-    // 设置 ones 矩阵（用于 bias 广播）
-    let ones_tensor = Tensor::ones(&[batch_size, 1]);
-    graph.set_node_value(fc1.ones, Some(&ones_tensor))?;
-    graph.set_node_value(fc2.ones, Some(&ones_tensor))?;
 
     let all_train_images = train_data.images();
     let all_train_labels = train_data.labels();
@@ -207,6 +209,10 @@ fn test_mnist_linear() -> Result<(), GraphError> {
 
     let total_duration = start_time.elapsed();
     println!("\n总耗时: {:.2}s", total_duration.as_secs_f32());
+
+    // 打印模型摘要
+    println!("\n模型摘要：");
+    graph.summary();
 
     if test_passed {
         println!("\n{}", "=".repeat(60));

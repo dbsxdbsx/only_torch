@@ -12,8 +12,9 @@
 use approx::assert_abs_diff_eq;
 use only_torch::data::CaliforniaHousingDataset;
 use only_torch::nn::optimizer::{Adam, Optimizer};
-use only_torch::nn::{linear, Graph, GraphError};
+use only_torch::nn::{Graph, GraphError, linear};
 use only_torch::tensor::Tensor;
+use std::fs;
 use std::time::Instant;
 
 /// California Housing 房价回归（Layer API + Batch 版本）
@@ -109,6 +110,13 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
     println!("  ✓ 网络构建完成：8 -> 128 -> 64 -> 32 -> 1（4 层 MLP）");
     println!("  ✓ 参数节点：fc1_W/b, fc2_W/b, fc3_W/b, fc4_W/b");
 
+    // 保存网络结构可视化（训练前）
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph.save_visualization_grouped(&format!("{}/california_housing", output_dir), None)?;
+    graph.save_summary(&format!("{}/california_housing_summary.md", output_dir))?;
+    println!("  ✓ 网络结构已保存: {}/california_housing.png", output_dir);
+
     // ========== Xavier 初始化 ==========
     let xavier_init = |fan_in: usize, fan_out: usize, seed: u64| -> Tensor {
         let std = (2.0 / (fan_in + fan_out) as f32).sqrt();
@@ -125,13 +133,6 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
     graph.set_node_value(fc2.bias, Some(&Tensor::zeros(&[1, 64])))?;
     graph.set_node_value(fc3.bias, Some(&Tensor::zeros(&[1, 32])))?;
     graph.set_node_value(fc4.bias, Some(&Tensor::zeros(&[1, 1])))?;
-
-    // 设置 ones 矩阵（用于 bias 广播）
-    let ones_tensor = Tensor::ones(&[batch_size, 1]);
-    graph.set_node_value(fc1.ones, Some(&ones_tensor))?;
-    graph.set_node_value(fc2.ones, Some(&ones_tensor))?;
-    graph.set_node_value(fc3.ones, Some(&ones_tensor))?;
-    graph.set_node_value(fc4.ones, Some(&ones_tensor))?;
 
     // ========== 4. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");
@@ -205,6 +206,10 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
 
     let total_duration = start_time.elapsed();
     println!("\n总耗时: {:.2}s", total_duration.as_secs_f32());
+
+    // 打印模型摘要
+    println!("\n模型摘要：");
+    graph.summary();
 
     // 最终验证
     println!("\n{}", "=".repeat(60));
