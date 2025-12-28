@@ -4,8 +4,8 @@ mod ops;
 mod parameter;
 
 pub(super) use input::Input;
-pub(super) use loss::{MSELoss, PerceptionLoss, SoftmaxCrossEntropy};
 pub use loss::Reduction;
+pub(super) use loss::{MSELoss, PerceptionLoss, SoftmaxCrossEntropy};
 pub(super) use ops::*;
 pub(super) use parameter::Parameter;
 
@@ -29,6 +29,7 @@ pub(in crate::nn) enum NodeType {
     ScalarMultiply(ScalarMultiply),
     LeakyReLU(LeakyReLU),
     Sigmoid(Sigmoid),
+    Sign(Sign),
     SoftPlus(SoftPlus),
     Step(Step),
     Tanh(Tanh),

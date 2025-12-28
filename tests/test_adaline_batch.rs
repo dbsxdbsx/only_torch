@@ -72,7 +72,7 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
 
     // 输出 = xw + bias_broadcasted
     let output = graph.new_add_node(&[xw, bias_broadcasted], Some("output"))?;
-    let predict = graph.new_step_node(output, None)?;
+    let predict = graph.new_sign_node(output, None)?; // Sign 直接输出 {-1, 0, 1}
 
     // 一个mini batch的样本的损失函数
     // 使用Multiply节点计算逐元素乘法：label * output
@@ -188,8 +188,8 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
             }
         }
 
-        // 将1/0结果转化成1/-1结果，好与训练标签的约定一致
-        let pred_tensor = Tensor::new(&pred_vec, &[pred_vec.len(), 1]) * 2.0 - 1.0;
+        // Sign 已直接输出 {-1, 1}，无需转换
+        let pred_tensor = Tensor::new(&pred_vec, &[pred_vec.len(), 1]);
 
         // 计算准确率（只考虑完整批次的样本）
         let valid_samples = (train_set.shape()[0] / batch_size) * batch_size;

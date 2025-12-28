@@ -56,6 +56,7 @@ pub enum NodeTypeDescriptor {
     LeakyReLU {
         alpha: f32,
     },
+    Sign,
     SoftPlus,
     Step,
     Reshape {

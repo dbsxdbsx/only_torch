@@ -1415,6 +1415,7 @@ impl Graph {
             NodeTypeDescriptor::Sigmoid => "Sigmoid",
             NodeTypeDescriptor::Tanh => "Tanh",
             NodeTypeDescriptor::LeakyReLU { .. } => "LeakyReLU",
+            NodeTypeDescriptor::Sign => "Sign",
             NodeTypeDescriptor::SoftPlus => "SoftPlus",
             NodeTypeDescriptor::Step => "Step",
             NodeTypeDescriptor::Reshape { .. } => "Reshape",
@@ -1757,6 +1758,7 @@ impl Graph {
             NodeTypeDescriptor::Sigmoid
             | NodeTypeDescriptor::Tanh
             | NodeTypeDescriptor::LeakyReLU { .. }
+            | NodeTypeDescriptor::Sign
             | NodeTypeDescriptor::SoftPlus
             | NodeTypeDescriptor::Step => ("diamond", "filled", "#FFF3E0"),
             // 其他运算节点：圆角矩形，浅黄色
@@ -1845,6 +1847,7 @@ impl Graph {
             NodeType::LeakyReLU(node) => NodeTypeDescriptor::LeakyReLU {
                 alpha: node.alpha() as f32,
             },
+            NodeType::Sign(_) => NodeTypeDescriptor::Sign,
             NodeType::SoftPlus(_) => NodeTypeDescriptor::SoftPlus,
             NodeType::Step(_) => NodeTypeDescriptor::Step,
             NodeType::Reshape(_) => NodeTypeDescriptor::Reshape {
@@ -2472,6 +2475,23 @@ impl Graph {
             "scalar_multiply",
             &[scalar_node_id, matrix_node_id],
         )
+    }
+
+    /// 创建 Sign 节点
+    ///
+    /// Sign 函数返回输入的符号：正数→1, 负数→-1, 零→0
+    /// 导数在所有点都是0（不可微，与 Step 类似）
+    ///
+    /// 适用场景：
+    /// - 二分类预测输出（使用 {-1, +1} 标签时）
+    /// - 信号处理中的符号提取
+    pub fn new_sign_node(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_sign(&self.get_nodes(&[parent_id])?)?;
+        self.add_node_to_list(handle, name, "sign", &[parent_id])
     }
 
     pub fn new_step_node(

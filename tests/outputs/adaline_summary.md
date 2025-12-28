@@ -8,7 +8,7 @@
 | b | Parameter | [1, 1] | 1 | - |
 | mat_mul_1 | MatMul | [1, 1] | - | w, x |
 | add_1 | Add | [1, 1] | - | mat_mul_1, b |
-| step_1 | Step | [1, 1] | - | add_1 |
+| sign_1 | Sign | [1, 1] | - | add_1 |
 | loss_input | MatMul | [1, 1] | - | label, add_1 |
 | loss | PerceptionLoss | [1, 1] | - | loss_input |
 

@@ -2,7 +2,7 @@ use super::super::graph::GraphError;
 use super::raw_node::{
     Add, AvgPool2d, ChannelBiasAdd, Conv2d, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d,
     Multiply, Parameter, PerceptionLoss, Reduction, Reshape, ScalarMultiply, Sigmoid, SoftPlus,
-    SoftmaxCrossEntropy, Step, Tanh,
+    Sign, SoftmaxCrossEntropy, Step, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -218,6 +218,10 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_scalar_multiply(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(ScalarMultiply::new(parents)?)
+    }
+
+    pub(in crate::nn) fn new_sign(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Sign::new(parents)?)
     }
 
     pub(in crate::nn) fn new_step(parents: &[&Self]) -> Result<Self, GraphError> {

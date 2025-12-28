@@ -56,7 +56,7 @@ fn test_adaline() -> Result<(), GraphError> {
     // ADALINE的预测输出
     let wx = graph.new_mat_mul_node(w, x, None)?;
     let output = graph.new_add_node(&[wx, b], None)?;
-    let predict = graph.new_step_node(output, None)?;
+    let predict = graph.new_sign_node(output, None)?; // Sign 直接输出 {-1, 0, 1}
 
     // 损失函数
     let loss_input = graph.new_mat_mul_node(label, output, Some("loss_input"))?;
@@ -65,8 +65,12 @@ fn test_adaline() -> Result<(), GraphError> {
     // 保存网络结构可视化（训练前）
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
-    graph.save_visualization(&format!("{output_dir}/adaline"), None).unwrap();
-    graph.save_summary(&format!("{output_dir}/adaline_summary.md")).unwrap();
+    graph
+        .save_visualization(&format!("{output_dir}/adaline"), None)
+        .unwrap();
+    graph
+        .save_summary(&format!("{output_dir}/adaline_summary.md"))
+        .unwrap();
     println!("网络结构已保存: {}/adaline.png", output_dir);
 
     // 学习率
@@ -123,9 +127,9 @@ fn test_adaline() -> Result<(), GraphError> {
             // 在模型的predict节点上执行前向传播
             graph.forward_node(predict)?;
             let v = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
-            pred_vec.push(v.get_data_number().unwrap()); // 模型的预测结果：1男，0女
+            pred_vec.push(v.get_data_number().unwrap()); // 模型的预测结果：1男，-1女（Sign直接输出）
         }
-        let pred = Tensor::new(&pred_vec, &[pred_vec.len(), 1]) * 2.0 - 1.0; // 将1/0结果转化成1/-1结果，好与训练标签的约定一致
+        let pred = Tensor::new(&pred_vec, &[pred_vec.len(), 1]); // Sign 已直接输出 {-1, 1}，无需转换
 
         // 判断预测结果与样本标签相同的数量与训练集总数量之比，即模型预测的正确率
         let train_set_labels = tensor_slice!(train_set, .., 3);

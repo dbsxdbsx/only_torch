@@ -828,10 +828,7 @@ impl Tensor {
     /// assert_eq!(x.max_value(), 3.0);
     /// ```
     pub fn max_value(&self) -> f32 {
-        self.data
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, f32::max)
+        self.data.iter().copied().fold(f32::NEG_INFINITY, f32::max)
     }
 
     /// 返回张量中的最小值（标量）
@@ -847,4 +844,34 @@ impl Tensor {
         self.data.iter().copied().fold(f32::INFINITY, f32::min)
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑max↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓sign↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 返回张量每个元素的符号
+    ///
+    /// - 正数返回 1.0
+    /// - 负数返回 -1.0
+    /// - 零返回 0.0
+    /// - NaN 返回 NaN
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
+    /// let y = x.sign();
+    /// // y = [-1.0, -1.0, 0.0, 1.0, 1.0]
+    /// ```
+    pub fn sign(&self) -> Self {
+        // 注：Rust 的 f32::signum() 对 0.0 返回 1.0，这与 PyTorch 行为不同
+        // 这里显式处理零值，使其返回 0.0
+        let data = self.data.mapv(|x| if x == 0.0 { 0.0 } else { x.signum() });
+        Self { data }
+    }
+
+    /// 就地计算张量每个元素的符号
+    pub fn sign_mut(&mut self) {
+        self.data
+            .mapv_inplace(|x| if x == 0.0 { 0.0 } else { x.signum() });
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑sign↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
