@@ -2,12 +2,201 @@
  * @Author       : 老董
  * @Date         : 2025-12-22
  * @Description  : AvgPool2d layer 单元测试（Batch-First 设计）
+ *
+ * 参考值来源: tests/python/layer_reference/pool2d_layer_reference.py
  */
 
 use crate::nn::layer::avg_pool2d;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
+
+// ==================== PyTorch 参考常量 ====================
+
+// 测试: 简单前向传播 (batch=1, C=1, H=4, W=4, kernel=2, stride=2)
+const TEST_PYTORCH_X: &[f32] = &[
+    1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+];
+const TEST_PYTORCH_OUTPUT: &[f32] = &[3.5, 5.5, 11.5, 13.5];
+
+// 测试: 多通道多批次 (batch=2, C=3, H=4, W=4)
+#[rustfmt::skip]
+const TEST_MULTI_X: &[f32] = &[
+    1.92691529, 1.48728406, 0.90071720, -2.10552096, 0.67841840, -1.23454487, -0.04306748, -1.60466695,
+    -0.75213528, 1.64872301, -0.39247864, -1.40360713, -0.72788131, -0.55943018, -0.76883888, 0.76244539,
+    1.64231694, -0.15959747, -0.49739754, 0.43958926, -0.75813115, 1.07831764, 0.80080056, 1.68062055,
+    1.27912438, 1.29642284, 0.61046648, 1.33473778, -0.23162432, 0.04175949, -0.25157529, 0.85985851,
+    -1.38467371, -0.87123615, -0.22336592, 1.71736145, 0.31888032, -0.42451897, 0.30572093, -0.77459252,
+    -1.55757248, 0.99563611, -0.87978584, -0.60114205, -1.27415121, 2.12278509, -1.23465312, -0.48791388,
+    -0.91382301, -0.65813726, 0.07802387, 0.52580875, -0.48799172, 1.19136906, -0.81400764, -0.73599279,
+    -1.40324783, 0.03600367, -0.06347727, 0.67561489, -0.09780689, 1.84459400, -1.18453741, 1.38354933,
+    1.44513381, 0.85641253, 2.21807575, 0.52316552, 0.34664667, -0.19733144, -1.05458891, 1.27799559,
+    -0.17219013, 0.52378845, 0.05662182, 0.42629614, 0.57500505, -0.64172411, -2.20639849, -0.75080305,
+    0.01086814, -0.33874235, -1.34067953, -0.58537054, 0.53618813, 0.52462262, 1.14120162, 0.05164360,
+    0.74395198, -0.48158440, -1.04946601, 0.60389882, -1.72229505, -0.82776886, 1.33470297, 0.48353928,
+];
+#[rustfmt::skip]
+const TEST_MULTI_OUTPUT: &[f32] = &[
+    0.71451831, -0.71313453, -0.09768094, -0.45061982,
+    0.45072648, 0.60590321, 0.59642059, 0.63837188,
+    -0.59038717, 0.25628099, 0.07167438, -0.80087370,
+    -0.21714574, -0.23654196, 0.09488574, 0.20278738,
+    0.61271536, 0.74116194, 0.07121982, -0.61857086,
+    0.18323413, -0.18330121, -0.57192409, 0.34316877,
+];
+
+// ==================== PyTorch 数值对照测试 ====================
+
+/// 测试 AvgPool2d 前向传播（与 PyTorch 对照）
+#[test]
+fn test_avg_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+
+    let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
+    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
+
+    graph.set_node_value(input, Some(&Tensor::new(TEST_PYTORCH_X, &[1, 1, 4, 4])))?;
+
+    graph.forward_node(pool.output)?;
+
+    let output = graph.get_node_value(pool.output)?.unwrap();
+    let output_data = output.data_as_slice();
+
+    for (i, (&actual, &expected)) in output_data
+        .iter()
+        .zip(TEST_PYTORCH_OUTPUT.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-5);
+    }
+
+    println!("✅ AvgPool2d 前向传播与 PyTorch 一致");
+    Ok(())
+}
+
+/// 测试 AvgPool2d 多通道多批次（与 PyTorch 对照）
+#[test]
+fn test_avg_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+
+    let input = graph.new_input_node(&[2, 3, 4, 4], Some("input"))?;
+    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
+
+    graph.set_node_value(input, Some(&Tensor::new(TEST_MULTI_X, &[2, 3, 4, 4])))?;
+
+    graph.forward_node(pool.output)?;
+
+    let output = graph.get_node_value(pool.output)?.unwrap();
+    let output_data = output.data_as_slice();
+
+    for (i, (&actual, &expected)) in output_data.iter().zip(TEST_MULTI_OUTPUT.iter()).enumerate() {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-5);
+    }
+
+    println!("✅ AvgPool2d 多通道多批次与 PyTorch 一致");
+    Ok(())
+}
+
+/// 测试 AvgPool2d 反向传播（CNN 完整网络）
+#[test]
+fn test_avg_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
+    use crate::nn::layer::{conv2d, linear};
+
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+
+    // 构建网络: input -> conv -> relu -> avg_pool -> flatten -> fc -> softmax_ce
+    let input = graph.new_input_node(&[batch_size, 1, 4, 4], Some("input"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv"),
+    )?;
+    // conv 输出: [2, 2, 3, 3]
+    let relu = graph.new_leaky_relu_node(conv.output, 0.0, Some("relu"))?;
+    let pool = avg_pool2d(&mut graph, relu, (2, 2), Some((2, 2)), Some("pool"))?;
+    // pool 输出: [2, 2, 1, 1]
+    let flat = graph.new_flatten_node(pool.output, true, Some("flat"))?;
+    // flat 输出: [2, 2]
+    let fc = linear(&mut graph, flat, 2, 3, batch_size, Some("fc"))?;
+
+    // SoftmaxCrossEntropy Loss
+    let labels = graph.new_input_node(&[batch_size, 3], Some("labels"))?;
+    let loss = graph.new_softmax_cross_entropy_node(fc.output, labels, Some("loss"))?;
+
+    // 设置固定的输入和权重（来自 PyTorch 参考脚本）
+    #[rustfmt::skip]
+    let x_data: &[f32] = &[
+        1.92691529, 1.48728406, 0.90071720, -2.10552096, 0.67841840, -1.23454487, -0.04306748, -1.60466695,
+        -0.75213528, 1.64872301, -0.39247864, -1.40360713, -0.72788131, -0.55943018, -0.76883888, 0.76244539,
+        1.64231694, -0.15959747, -0.49739754, 0.43958926, -0.75813115, 1.07831764, 0.80080056, 1.68062055,
+        1.27912438, 1.29642284, 0.61046648, 1.33473778, -0.23162432, 0.04175949, -0.25157529, 0.85985851,
+    ];
+    let conv_weight: &[f32] = &[
+        -0.11146712,
+        0.12036294,
+        -0.36963451,
+        -0.24041797,
+        -1.19692433,
+        0.20926936,
+        -0.97235501,
+        -0.75504547,
+    ];
+    let conv_bias: &[f32] = &[0.32390276, -0.10852263];
+    let fc_weight: &[f32] = &[
+        -2.43058109,
+        1.60250008,
+        -0.16449131,
+        0.75442398,
+        -1.14307523,
+        0.69427645,
+    ];
+    let fc_bias: &[f32] = &[1.29803729, -0.74028862, 1.03223586];
+    let target_data: &[f32] = &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+
+    graph.set_node_value(input, Some(&Tensor::new(x_data, &[batch_size, 1, 4, 4])))?;
+    graph.set_node_value(conv.kernel, Some(&Tensor::new(conv_weight, &[2, 1, 2, 2])))?;
+    graph.set_node_value(conv.bias, Some(&Tensor::new(conv_bias, &[1, 2])))?;
+    graph.set_node_value(fc.weights, Some(&Tensor::new(fc_weight, &[2, 3])))?;
+    graph.set_node_value(fc.bias, Some(&Tensor::new(fc_bias, &[1, 3])))?;
+    graph.set_node_value(labels, Some(&Tensor::new(target_data, &[batch_size, 3])))?;
+
+    // 前向传播
+    graph.forward_batch(loss)?;
+
+    // 验证 loss
+    let loss_val = graph.get_node_value(loss)?.unwrap();
+    let expected_loss: f32 = 1.79948235;
+    assert_abs_diff_eq!(loss_val[[0, 0]], expected_loss, epsilon = 1e-4);
+
+    // 反向传播
+    graph.backward_batch(loss)?;
+
+    // 验证卷积核梯度
+    let conv_grad = graph.get_node_grad_batch(conv.kernel)?.unwrap();
+    let expected_conv_grad: &[f32] = &[
+        0.14983487,
+        0.55885887,
+        0.14587063,
+        -0.64360768,
+        0.04400400,
+        0.00153509,
+        -0.05876692,
+        0.01398947,
+    ];
+    let conv_grad_data = conv_grad.data_as_slice();
+    for (&actual, &expected) in conv_grad_data.iter().zip(expected_conv_grad.iter()) {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
+    }
+
+    println!("✅ AvgPool2d 反向传播梯度与 PyTorch 一致");
+    Ok(())
+}
 
 // ==================== 基础功能测试 ====================
 

@@ -68,7 +68,14 @@ fn test_rnn_creation() -> Result<(), GraphError> {
     let hidden_size = 20;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let rnn_out = rnn(&mut graph, input, input_size, hidden_size, batch_size, Some("rnn1"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn1"),
+    )?;
 
     // 验证节点创建成功
     assert!(graph.get_node_value(rnn_out.hidden).is_ok());
@@ -89,7 +96,14 @@ fn test_rnn_shapes() -> Result<(), GraphError> {
     let hidden_size = 6;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let rnn_out = rnn(&mut graph, input, input_size, hidden_size, batch_size, Some("rnn1"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn1"),
+    )?;
 
     // 验证权重形状
     let w_ih_shape = graph.get_node(rnn_out.w_ih)?.value_expected_shape();
@@ -119,10 +133,20 @@ fn test_rnn_forward_pytorch_comparison() -> Result<(), GraphError> {
     let hidden_size = 4;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let rnn_out = rnn(&mut graph, input, input_size, hidden_size, batch_size, Some("rnn1"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn1"),
+    )?;
 
     // 设置与 PyTorch 相同的权重
-    graph.set_node_value(input, Some(&Tensor::new(TEST1_X, &[batch_size, input_size])))?;
+    graph.set_node_value(
+        input,
+        Some(&Tensor::new(TEST1_X, &[batch_size, input_size])),
+    )?;
     graph.set_node_value(
         rnn_out.w_ih,
         Some(&Tensor::new(TEST1_W_IH, &[input_size, hidden_size])),
@@ -131,7 +155,10 @@ fn test_rnn_forward_pytorch_comparison() -> Result<(), GraphError> {
         rnn_out.w_hh,
         Some(&Tensor::new(TEST1_W_HH, &[hidden_size, hidden_size])),
     )?;
-    graph.set_node_value(rnn_out.b_h, Some(&Tensor::new(TEST1_B_H, &[1, hidden_size])))?;
+    graph.set_node_value(
+        rnn_out.b_h,
+        Some(&Tensor::new(TEST1_B_H, &[1, hidden_size])),
+    )?;
 
     // 前向传播（单时间步）
     graph.step(rnn_out.hidden)?;
@@ -144,7 +171,10 @@ fn test_rnn_forward_pytorch_comparison() -> Result<(), GraphError> {
     for (i, (&actual, &expected)) in hidden_data.iter().zip(TEST1_HIDDEN.iter()).enumerate() {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-5);
         if i < 4 {
-            println!("batch[0][{}]: actual={:.6}, expected={:.6}", i, actual, expected);
+            println!(
+                "batch[0][{}]: actual={:.6}, expected={:.6}",
+                i, actual, expected
+            );
         }
     }
 
@@ -161,7 +191,14 @@ fn test_rnn_multi_step_forward_pytorch_comparison() -> Result<(), GraphError> {
     let hidden_size = 3;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let rnn_out = rnn(&mut graph, input, input_size, hidden_size, batch_size, Some("rnn1"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn1"),
+    )?;
 
     // 设置权重
     graph.set_node_value(
@@ -172,10 +209,7 @@ fn test_rnn_multi_step_forward_pytorch_comparison() -> Result<(), GraphError> {
         rnn_out.w_hh,
         Some(&Tensor::new(TEST2_W_HH, &[hidden_size, hidden_size])),
     )?;
-    graph.set_node_value(
-        rnn_out.b_h,
-        Some(&Tensor::zeros(&[1, hidden_size])),
-    )?;
+    graph.set_node_value(rnn_out.b_h, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
     // 输入序列
     let sequence = vec![
@@ -213,7 +247,14 @@ fn test_rnn_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
 
     // 创建 RNN 层
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let rnn_out = rnn(&mut graph, input, input_size, hidden_size, batch_size, Some("rnn1"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn1"),
+    )?;
 
     // 设置权重
     graph.set_node_value(
@@ -224,7 +265,10 @@ fn test_rnn_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
         rnn_out.w_hh,
         Some(&Tensor::new(TEST3_W_HH, &[hidden_size, hidden_size])),
     )?;
-    graph.set_node_value(rnn_out.b_h, Some(&Tensor::new(TEST3_B_H, &[1, hidden_size])))?;
+    graph.set_node_value(
+        rnn_out.b_h,
+        Some(&Tensor::new(TEST3_B_H, &[1, hidden_size])),
+    )?;
 
     // 创建输出层
     let w_out = graph.new_parameter_node(&[hidden_size, 1], Some("w_out"))?;
@@ -240,7 +284,10 @@ fn test_rnn_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
     let sequence = vec![TEST3_SEQ_0, TEST3_SEQ_1];
 
     // 设置目标值（必须在 step 之前设置，否则 loss 节点无法计算）
-    graph.set_node_value(target, Some(&Tensor::new(&[TEST3_TARGET], &[batch_size, 1])))?;
+    graph.set_node_value(
+        target,
+        Some(&Tensor::new(&[TEST3_TARGET], &[batch_size, 1])),
+    )?;
 
     // 前向传播整个序列
     for x_t in &sequence {
@@ -302,7 +349,14 @@ fn test_rnn_node_naming() -> Result<(), GraphError> {
     let hidden_size = 16;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let rnn_out = rnn(&mut graph, input, input_size, hidden_size, batch_size, Some("encoder"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("encoder"),
+    )?;
 
     // 验证节点名称
     let w_ih_name = graph.get_node(rnn_out.w_ih)?.name();
@@ -331,11 +385,24 @@ fn test_rnn_reset() -> Result<(), GraphError> {
     let hidden_size = 2;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let rnn_out = rnn(&mut graph, input, input_size, hidden_size, batch_size, Some("rnn"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn"),
+    )?;
 
     // 设置权重
-    graph.set_node_value(rnn_out.w_ih, Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2])))?;
-    graph.set_node_value(rnn_out.w_hh, Some(&Tensor::new(&[0.1, 0.0, 0.0, 0.1], &[2, 2])))?;
+    graph.set_node_value(
+        rnn_out.w_ih,
+        Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2])),
+    )?;
+    graph.set_node_value(
+        rnn_out.w_hh,
+        Some(&Tensor::new(&[0.1, 0.0, 0.0, 0.1], &[2, 2])),
+    )?;
 
     // 运行几步
     graph.set_node_value(input, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
@@ -370,3 +437,533 @@ fn test_rnn_reset() -> Result<(), GraphError> {
     Ok(())
 }
 
+// ==================== 默认命名测试 ====================
+
+/// 测试 RNN 无名称（使用默认前缀）
+#[test]
+fn test_rnn_without_name() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 8;
+    let hidden_size = 16;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let rnn_out = rnn(&mut graph, input, input_size, hidden_size, batch_size, None)?;
+
+    // 验证使用默认前缀 "rnn"
+    let w_ih_name = graph.get_node(rnn_out.w_ih)?.name();
+    assert!(w_ih_name.contains("rnn") && w_ih_name.contains("W_ih"));
+
+    let w_hh_name = graph.get_node(rnn_out.w_hh)?.name();
+    assert!(w_hh_name.contains("rnn") && w_hh_name.contains("W_hh"));
+
+    Ok(())
+}
+
+// ==================== 名称冲突测试 ====================
+
+/// 测试重复名称应该报错
+#[test]
+fn test_rnn_duplicate_name_error() {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 4;
+    let hidden_size = 8;
+
+    let input = graph
+        .new_input_node(&[batch_size, input_size], Some("input"))
+        .unwrap();
+
+    // 第一个 RNN 成功
+    let rnn1 = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("encoder"),
+    );
+    assert!(rnn1.is_ok());
+
+    // 第二个 RNN 使用相同名称，应该失败
+    let rnn2 = rnn(
+        &mut graph,
+        rnn1.unwrap().hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("encoder"),
+    );
+    assert!(rnn2.is_err());
+
+    // 验证错误类型
+    if let Err(e) = rnn2 {
+        let err_msg = format!("{:?}", e);
+        assert!(
+            err_msg.contains("Duplicate") || err_msg.contains("重复"),
+            "错误信息应包含重复名称提示: {}",
+            err_msg
+        );
+    }
+}
+
+/// 测试多个 RNN 使用不同名称
+#[test]
+fn test_rnn_multiple_layers_different_names() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 4;
+    let hidden_size = 8;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+
+    let rnn1 = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn1"),
+    )?;
+    let rnn2 = rnn(
+        &mut graph,
+        rnn1.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("rnn2"),
+    )?;
+    let rnn3 = rnn(
+        &mut graph,
+        rnn2.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("rnn3"),
+    )?;
+
+    // 验证各层节点独立存在
+    assert!(graph.get_node_value(rnn1.w_ih).is_ok());
+    assert!(graph.get_node_value(rnn2.w_ih).is_ok());
+    assert!(graph.get_node_value(rnn3.w_ih).is_ok());
+
+    // 验证节点名称正确
+    assert!(graph.get_node(rnn1.w_ih)?.name().contains("rnn1"));
+    assert!(graph.get_node(rnn2.w_ih)?.name().contains("rnn2"));
+    assert!(graph.get_node(rnn3.w_ih)?.name().contains("rnn3"));
+
+    Ok(())
+}
+
+/// 测试多个无名称层会冲突（预期行为）
+#[test]
+fn test_rnn_multiple_unnamed_layers_conflict() {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 4;
+    let hidden_size = 8;
+
+    let input = graph
+        .new_input_node(&[batch_size, input_size], Some("input"))
+        .unwrap();
+
+    // 第一个无名称层成功
+    let rnn1 = rnn(&mut graph, input, input_size, hidden_size, batch_size, None);
+    assert!(rnn1.is_ok());
+
+    // 第二个无名称层应该失败（名称冲突）
+    let rnn2 = rnn(
+        &mut graph,
+        rnn1.unwrap().hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        None,
+    );
+    assert!(rnn2.is_err(), "多个无名称 RNN 层应该因名称冲突而失败");
+}
+
+// ==================== 链式连接测试 ====================
+
+/// 测试多层 RNN 链式连接
+#[test]
+fn test_rnn_chain() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 4;
+    let hidden_size = 6;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+
+    // 3 层堆叠 RNN
+    let rnn1 = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn1"),
+    )?;
+    let rnn2 = rnn(
+        &mut graph,
+        rnn1.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("rnn2"),
+    )?;
+    let rnn3 = rnn(
+        &mut graph,
+        rnn2.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("rnn3"),
+    )?;
+
+    // 设置输入
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    graph.set_node_value(input, Some(&x))?;
+
+    // 前向传播
+    graph.step(rnn3.hidden)?;
+
+    // 验证输出存在且形状正确
+    let output = graph.get_node_value(rnn3.hidden)?;
+    assert!(output.is_some());
+    assert_eq!(output.unwrap().shape(), &[batch_size, hidden_size]);
+
+    println!("✅ 多层 RNN 链式连接成功");
+    Ok(())
+}
+
+// ==================== 边界维度测试 ====================
+
+/// 测试单特征输入
+#[test]
+fn test_rnn_single_input_feature() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 1;
+    let hidden_size = 4;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn"),
+    )?;
+
+    // 设置输入
+    let x = Tensor::new(&[1.0, 2.0], &[batch_size, input_size]);
+    graph.set_node_value(input, Some(&x))?;
+
+    // 前向传播
+    graph.step(rnn_out.hidden)?;
+
+    let output = graph.get_node_value(rnn_out.hidden)?;
+    assert!(output.is_some());
+    assert_eq!(output.unwrap().shape(), &[batch_size, hidden_size]);
+
+    Ok(())
+}
+
+/// 测试单隐藏单元
+#[test]
+fn test_rnn_single_hidden_unit() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 4;
+    let hidden_size = 1;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn"),
+    )?;
+
+    // 设置输入
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    graph.set_node_value(input, Some(&x))?;
+
+    // 前向传播
+    graph.step(rnn_out.hidden)?;
+
+    let output = graph.get_node_value(rnn_out.hidden)?;
+    assert!(output.is_some());
+    assert_eq!(output.unwrap().shape(), &[batch_size, hidden_size]);
+
+    Ok(())
+}
+
+/// 测试大维度 RNN（典型 NLP 配置）
+#[test]
+fn test_rnn_large_dimensions() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 32;
+    let input_size = 128;
+    let hidden_size = 256;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn"),
+    )?;
+
+    // 验证参数形状
+    let w_ih_shape = graph.get_node(rnn_out.w_ih)?.value_expected_shape();
+    let w_hh_shape = graph.get_node(rnn_out.w_hh)?.value_expected_shape();
+
+    assert_eq!(w_ih_shape, &[input_size, hidden_size]);
+    assert_eq!(w_hh_shape, &[hidden_size, hidden_size]);
+
+    Ok(())
+}
+
+// ==================== 参数访问测试 ====================
+
+/// 测试访问 RNN 内部参数
+#[test]
+fn test_rnn_access_internal_params() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 2;
+    let hidden_size = 2;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn"),
+    )?;
+
+    // 应该能访问并修改权重
+    let custom_w_ih = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[input_size, hidden_size]);
+    graph.set_node_value(rnn_out.w_ih, Some(&custom_w_ih))?;
+
+    let w_ih = graph.get_node_value(rnn_out.w_ih)?.unwrap();
+    assert_abs_diff_eq!(w_ih[[0, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(w_ih[[1, 1]], 4.0, epsilon = 1e-6);
+
+    // 修改 W_hh
+    let custom_w_hh = Tensor::new(&[0.1, 0.2, 0.3, 0.4], &[hidden_size, hidden_size]);
+    graph.set_node_value(rnn_out.w_hh, Some(&custom_w_hh))?;
+
+    let w_hh = graph.get_node_value(rnn_out.w_hh)?.unwrap();
+    assert_abs_diff_eq!(w_hh[[0, 0]], 0.1, epsilon = 1e-6);
+    assert_abs_diff_eq!(w_hh[[1, 1]], 0.4, epsilon = 1e-6);
+
+    // 修改 bias
+    let custom_b = Tensor::new(&[0.5, 0.5], &[1, hidden_size]);
+    graph.set_node_value(rnn_out.b_h, Some(&custom_b))?;
+
+    let b_h = graph.get_node_value(rnn_out.b_h)?.unwrap();
+    assert_abs_diff_eq!(b_h[[0, 0]], 0.5, epsilon = 1e-6);
+
+    Ok(())
+}
+
+// ==================== Batch 反向传播测试 ====================
+
+/// 测试 RNN 与 Batch 反向传播（非 BPTT）
+#[test]
+fn test_rnn_batch_backward() -> Result<(), GraphError> {
+    use crate::nn::layer::linear;
+
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 8;
+    let hidden_size = 6;
+    let output_size = 3;
+
+    // 构建网络: input -> rnn -> linear -> softmax_ce
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn"),
+    )?;
+    let fc = linear(
+        &mut graph,
+        rnn_out.hidden,
+        hidden_size,
+        output_size,
+        batch_size,
+        Some("fc"),
+    )?;
+
+    // SoftmaxCrossEntropy Loss
+    let labels = graph.new_input_node(&[batch_size, output_size], Some("labels"))?;
+    let loss = graph.new_softmax_cross_entropy_node(fc.output, labels, Some("loss"))?;
+
+    // 设置数据
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    let y = Tensor::new(
+        &[
+            1.0, 0.0, 0.0, // batch 0
+            0.0, 1.0, 0.0, // batch 1
+            0.0, 0.0, 1.0, // batch 2
+            1.0, 0.0, 0.0, // batch 3
+        ],
+        &[batch_size, output_size],
+    );
+
+    graph.set_node_value(input, Some(&x))?;
+    graph.set_node_value(labels, Some(&y))?;
+
+    // Batch 前向 + 反向
+    graph.forward_batch(loss)?;
+    graph.backward_batch(loss)?;
+
+    // 验证 RNN 权重有梯度
+    let w_ih_grad = graph.get_node_grad_batch(rnn_out.w_ih)?;
+    assert!(w_ih_grad.is_some());
+    assert_eq!(w_ih_grad.unwrap().shape(), &[input_size, hidden_size]);
+
+    let w_hh_grad = graph.get_node_grad_batch(rnn_out.w_hh)?;
+    assert!(w_hh_grad.is_some());
+    assert_eq!(w_hh_grad.unwrap().shape(), &[hidden_size, hidden_size]);
+
+    println!("✅ RNN batch_backward 正确传播梯度");
+    Ok(())
+}
+
+// ==================== Chain Batch Training 测试 ====================
+
+/// 测试多层 RNN 链式批量训练
+#[test]
+fn test_rnn_chain_batch_training() -> Result<(), GraphError> {
+    use crate::nn::layer::linear;
+
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 8;
+    let hidden_size = 6;
+    let output_size = 3;
+
+    // 构建网络: input -> rnn1 -> rnn2 -> linear -> softmax_ce
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let rnn1 = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn1"),
+    )?;
+    let rnn2 = rnn(
+        &mut graph,
+        rnn1.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("rnn2"),
+    )?;
+    let fc = linear(
+        &mut graph,
+        rnn2.hidden,
+        hidden_size,
+        output_size,
+        batch_size,
+        Some("fc"),
+    )?;
+
+    // SoftmaxCrossEntropy Loss
+    let labels = graph.new_input_node(&[batch_size, output_size], Some("labels"))?;
+    let loss = graph.new_softmax_cross_entropy_node(fc.output, labels, Some("loss"))?;
+
+    // 设置数据
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    let y = Tensor::new(
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+        &[batch_size, output_size],
+    );
+
+    graph.set_node_value(input, Some(&x))?;
+    graph.set_node_value(labels, Some(&y))?;
+
+    // 前向
+    graph.forward_batch(loss)?;
+    let loss_before = graph.get_node_value(loss)?.unwrap()[[0, 0]];
+
+    // 反向
+    graph.backward_batch(loss)?;
+
+    // 验证两层 RNN 都有梯度
+    let rnn1_grad = graph.get_node_grad_batch(rnn1.w_ih)?;
+    assert!(rnn1_grad.is_some());
+
+    let rnn2_grad = graph.get_node_grad_batch(rnn2.w_ih)?;
+    assert!(rnn2_grad.is_some());
+
+    println!(
+        "✅ RNN chain_batch_training: loss={:.4}, 两层 RNN 都有梯度",
+        loss_before
+    );
+    Ok(())
+}
+
+// ==================== 与其他层集成测试 ====================
+
+/// 测试 RNN 与 flatten/linear 集成
+#[test]
+fn test_rnn_with_linear_integration() -> Result<(), GraphError> {
+    use crate::nn::layer::linear;
+
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 4;
+    let hidden_size = 8;
+    let output_size = 3;
+
+    // RNN -> Linear 经典序列分类结构
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let rnn_out = rnn(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("rnn"),
+    )?;
+    let fc = linear(
+        &mut graph,
+        rnn_out.hidden,
+        hidden_size,
+        output_size,
+        batch_size,
+        Some("fc"),
+    )?;
+
+    // 设置输入
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    graph.set_node_value(input, Some(&x))?;
+
+    // 前向传播
+    graph.step(fc.output)?;
+
+    // 验证输出形状
+    let output = graph.get_node_value(fc.output)?;
+    assert!(output.is_some());
+    assert_eq!(output.unwrap().shape(), &[batch_size, output_size]);
+
+    println!("✅ RNN 与 Linear 集成正常");
+    Ok(())
+}

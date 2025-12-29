@@ -575,3 +575,540 @@ fn test_lstm_reset() -> Result<(), GraphError> {
     println!("✅ reset() 正确清除 LSTM 状态");
     Ok(())
 }
+
+// ==================== 默认命名测试 ====================
+
+/// 测试 LSTM 无名称（使用默认前缀）
+#[test]
+fn test_lstm_without_name() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 8;
+    let hidden_size = 16;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let lstm_out = lstm(&mut graph, input, input_size, hidden_size, batch_size, None)?;
+
+    // 验证使用默认前缀 "lstm"
+    let w_ii_name = graph.get_node(lstm_out.w_ii)?.name();
+    assert!(w_ii_name.contains("lstm") && w_ii_name.contains("W_ii"));
+
+    let h_prev_name = graph.get_node(lstm_out.h_prev)?.name();
+    assert!(h_prev_name.contains("lstm") && h_prev_name.contains("h_prev"));
+
+    Ok(())
+}
+
+// ==================== 名称冲突测试 ====================
+
+/// 测试重复名称应该报错
+#[test]
+fn test_lstm_duplicate_name_error() {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 4;
+    let hidden_size = 8;
+
+    let input = graph
+        .new_input_node(&[batch_size, input_size], Some("input"))
+        .unwrap();
+
+    // 第一个 LSTM 成功
+    let lstm1 = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("encoder"),
+    );
+    assert!(lstm1.is_ok());
+
+    // 第二个 LSTM 使用相同名称，应该失败
+    let lstm2 = lstm(
+        &mut graph,
+        lstm1.unwrap().hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("encoder"),
+    );
+    assert!(lstm2.is_err());
+
+    // 验证错误类型
+    if let Err(e) = lstm2 {
+        let err_msg = format!("{:?}", e);
+        assert!(
+            err_msg.contains("Duplicate") || err_msg.contains("重复"),
+            "错误信息应包含重复名称提示: {}",
+            err_msg
+        );
+    }
+}
+
+/// 测试多个 LSTM 使用不同名称
+#[test]
+fn test_lstm_multiple_layers_different_names() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 4;
+    let hidden_size = 8;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+
+    let lstm1 = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm1"),
+    )?;
+    let lstm2 = lstm(
+        &mut graph,
+        lstm1.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("lstm2"),
+    )?;
+    let lstm3 = lstm(
+        &mut graph,
+        lstm2.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("lstm3"),
+    )?;
+
+    // 验证各层节点独立存在
+    assert!(graph.get_node_value(lstm1.w_ii).is_ok());
+    assert!(graph.get_node_value(lstm2.w_ii).is_ok());
+    assert!(graph.get_node_value(lstm3.w_ii).is_ok());
+
+    // 验证节点名称正确
+    assert!(graph.get_node(lstm1.w_ii)?.name().contains("lstm1"));
+    assert!(graph.get_node(lstm2.w_ii)?.name().contains("lstm2"));
+    assert!(graph.get_node(lstm3.w_ii)?.name().contains("lstm3"));
+
+    Ok(())
+}
+
+/// 测试多个无名称层会冲突（预期行为）
+#[test]
+fn test_lstm_multiple_unnamed_layers_conflict() {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 4;
+    let hidden_size = 8;
+
+    let input = graph
+        .new_input_node(&[batch_size, input_size], Some("input"))
+        .unwrap();
+
+    // 第一个无名称层成功
+    let lstm1 = lstm(&mut graph, input, input_size, hidden_size, batch_size, None);
+    assert!(lstm1.is_ok());
+
+    // 第二个无名称层应该失败（名称冲突）
+    let lstm2 = lstm(
+        &mut graph,
+        lstm1.unwrap().hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        None,
+    );
+    assert!(lstm2.is_err(), "多个无名称 LSTM 层应该因名称冲突而失败");
+}
+
+// ==================== 链式连接测试 ====================
+
+/// 测试多层 LSTM 链式连接
+#[test]
+fn test_lstm_chain() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 4;
+    let hidden_size = 6;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+
+    // 3 层堆叠 LSTM
+    let lstm1 = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm1"),
+    )?;
+    let lstm2 = lstm(
+        &mut graph,
+        lstm1.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("lstm2"),
+    )?;
+    let lstm3 = lstm(
+        &mut graph,
+        lstm2.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("lstm3"),
+    )?;
+
+    // 设置输入
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    graph.set_node_value(input, Some(&x))?;
+
+    // 前向传播
+    graph.step(lstm3.hidden)?;
+
+    // 验证输出存在且形状正确
+    let output = graph.get_node_value(lstm3.hidden)?;
+    assert!(output.is_some());
+    assert_eq!(output.unwrap().shape(), &[batch_size, hidden_size]);
+
+    // 验证 cell 状态也正确
+    let cell = graph.get_node_value(lstm3.cell)?;
+    assert!(cell.is_some());
+    assert_eq!(cell.unwrap().shape(), &[batch_size, hidden_size]);
+
+    println!("✅ 多层 LSTM 链式连接成功");
+    Ok(())
+}
+
+// ==================== 边界维度测试 ====================
+
+/// 测试单特征输入
+#[test]
+fn test_lstm_single_input_feature() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 1;
+    let hidden_size = 4;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
+
+    // 设置输入
+    let x = Tensor::new(&[1.0, 2.0], &[batch_size, input_size]);
+    graph.set_node_value(input, Some(&x))?;
+
+    // 前向传播
+    graph.step(lstm_out.hidden)?;
+
+    let output = graph.get_node_value(lstm_out.hidden)?;
+    assert!(output.is_some());
+    assert_eq!(output.unwrap().shape(), &[batch_size, hidden_size]);
+
+    Ok(())
+}
+
+/// 测试单隐藏单元
+#[test]
+fn test_lstm_single_hidden_unit() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 4;
+    let hidden_size = 1;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
+
+    // 设置输入
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    graph.set_node_value(input, Some(&x))?;
+
+    // 前向传播
+    graph.step(lstm_out.hidden)?;
+
+    let output = graph.get_node_value(lstm_out.hidden)?;
+    assert!(output.is_some());
+    assert_eq!(output.unwrap().shape(), &[batch_size, hidden_size]);
+
+    Ok(())
+}
+
+/// 测试大维度 LSTM（典型 NLP 配置）
+#[test]
+fn test_lstm_large_dimensions() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 32;
+    let input_size = 128;
+    let hidden_size = 256;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
+
+    // 验证参数形状
+    let w_ii_shape = graph.get_node(lstm_out.w_ii)?.value_expected_shape();
+    let w_hi_shape = graph.get_node(lstm_out.w_hi)?.value_expected_shape();
+
+    assert_eq!(w_ii_shape, &[input_size, hidden_size]);
+    assert_eq!(w_hi_shape, &[hidden_size, hidden_size]);
+
+    Ok(())
+}
+
+// ==================== 参数访问测试 ====================
+
+/// 测试访问 LSTM 内部参数
+#[test]
+fn test_lstm_access_internal_params() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 2;
+    let hidden_size = 2;
+
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
+
+    // 应该能访问并修改输入门权重
+    let custom_w_ii = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[input_size, hidden_size]);
+    graph.set_node_value(lstm_out.w_ii, Some(&custom_w_ii))?;
+
+    let w_ii = graph.get_node_value(lstm_out.w_ii)?.unwrap();
+    assert_abs_diff_eq!(w_ii[[0, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(w_ii[[1, 1]], 4.0, epsilon = 1e-6);
+
+    // 修改遗忘门权重
+    let custom_w_if = Tensor::new(&[0.1, 0.2, 0.3, 0.4], &[input_size, hidden_size]);
+    graph.set_node_value(lstm_out.w_if, Some(&custom_w_if))?;
+
+    let w_if = graph.get_node_value(lstm_out.w_if)?.unwrap();
+    assert_abs_diff_eq!(w_if[[0, 0]], 0.1, epsilon = 1e-6);
+    assert_abs_diff_eq!(w_if[[1, 1]], 0.4, epsilon = 1e-6);
+
+    // 修改 bias
+    let custom_b_i = Tensor::new(&[0.5, 0.5], &[1, hidden_size]);
+    graph.set_node_value(lstm_out.b_i, Some(&custom_b_i))?;
+
+    let b_i = graph.get_node_value(lstm_out.b_i)?.unwrap();
+    assert_abs_diff_eq!(b_i[[0, 0]], 0.5, epsilon = 1e-6);
+
+    Ok(())
+}
+
+// ==================== Batch 反向传播测试 ====================
+
+/// 测试 LSTM 与 Batch 反向传播（非 BPTT）
+#[test]
+fn test_lstm_batch_backward() -> Result<(), GraphError> {
+    use crate::nn::layer::linear;
+
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 8;
+    let hidden_size = 6;
+    let output_size = 3;
+
+    // 构建网络: input -> lstm -> linear -> softmax_ce
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
+    let fc = linear(
+        &mut graph,
+        lstm_out.hidden,
+        hidden_size,
+        output_size,
+        batch_size,
+        Some("fc"),
+    )?;
+
+    // SoftmaxCrossEntropy Loss
+    let labels = graph.new_input_node(&[batch_size, output_size], Some("labels"))?;
+    let loss = graph.new_softmax_cross_entropy_node(fc.output, labels, Some("loss"))?;
+
+    // 设置数据
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    let y = Tensor::new(
+        &[
+            1.0, 0.0, 0.0, // batch 0
+            0.0, 1.0, 0.0, // batch 1
+            0.0, 0.0, 1.0, // batch 2
+            1.0, 0.0, 0.0, // batch 3
+        ],
+        &[batch_size, output_size],
+    );
+
+    graph.set_node_value(input, Some(&x))?;
+    graph.set_node_value(labels, Some(&y))?;
+
+    // Batch 前向 + 反向
+    graph.forward_batch(loss)?;
+    graph.backward_batch(loss)?;
+
+    // 验证 LSTM 输入门权重有梯度
+    let w_ii_grad = graph.get_node_grad_batch(lstm_out.w_ii)?;
+    assert!(w_ii_grad.is_some());
+    assert_eq!(w_ii_grad.unwrap().shape(), &[input_size, hidden_size]);
+
+    // 验证隐藏层权重有梯度
+    let w_hi_grad = graph.get_node_grad_batch(lstm_out.w_hi)?;
+    assert!(w_hi_grad.is_some());
+    assert_eq!(w_hi_grad.unwrap().shape(), &[hidden_size, hidden_size]);
+
+    println!("✅ LSTM batch_backward 正确传播梯度");
+    Ok(())
+}
+
+// ==================== Chain Batch Training 测试 ====================
+
+/// 测试多层 LSTM 链式批量训练
+#[test]
+fn test_lstm_chain_batch_training() -> Result<(), GraphError> {
+    use crate::nn::layer::linear;
+
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 4;
+    let input_size = 8;
+    let hidden_size = 6;
+    let output_size = 3;
+
+    // 构建网络: input -> lstm1 -> lstm2 -> linear -> softmax_ce
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let lstm1 = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm1"),
+    )?;
+    let lstm2 = lstm(
+        &mut graph,
+        lstm1.hidden,
+        hidden_size,
+        hidden_size,
+        batch_size,
+        Some("lstm2"),
+    )?;
+    let fc = linear(
+        &mut graph,
+        lstm2.hidden,
+        hidden_size,
+        output_size,
+        batch_size,
+        Some("fc"),
+    )?;
+
+    // SoftmaxCrossEntropy Loss
+    let labels = graph.new_input_node(&[batch_size, output_size], Some("labels"))?;
+    let loss = graph.new_softmax_cross_entropy_node(fc.output, labels, Some("loss"))?;
+
+    // 设置数据
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    let y = Tensor::new(
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+        &[batch_size, output_size],
+    );
+
+    graph.set_node_value(input, Some(&x))?;
+    graph.set_node_value(labels, Some(&y))?;
+
+    // 前向
+    graph.forward_batch(loss)?;
+    let loss_before = graph.get_node_value(loss)?.unwrap()[[0, 0]];
+
+    // 反向
+    graph.backward_batch(loss)?;
+
+    // 验证两层 LSTM 都有梯度
+    let lstm1_grad = graph.get_node_grad_batch(lstm1.w_ii)?;
+    assert!(lstm1_grad.is_some());
+
+    let lstm2_grad = graph.get_node_grad_batch(lstm2.w_ii)?;
+    assert!(lstm2_grad.is_some());
+
+    println!(
+        "✅ LSTM chain_batch_training: loss={:.4}, 两层 LSTM 都有梯度",
+        loss_before
+    );
+    Ok(())
+}
+
+// ==================== 与其他层集成测试 ====================
+
+/// 测试 LSTM 与 linear 集成
+#[test]
+fn test_lstm_with_linear_integration() -> Result<(), GraphError> {
+    use crate::nn::layer::linear;
+
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let input_size = 4;
+    let hidden_size = 8;
+    let output_size = 3;
+
+    // LSTM -> Linear 经典序列分类结构
+    let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
+    let fc = linear(
+        &mut graph,
+        lstm_out.hidden,
+        hidden_size,
+        output_size,
+        batch_size,
+        Some("fc"),
+    )?;
+
+    // 设置输入
+    let x = Tensor::normal(0.0, 1.0, &[batch_size, input_size]);
+    graph.set_node_value(input, Some(&x))?;
+
+    // 前向传播
+    graph.step(fc.output)?;
+
+    // 验证输出形状
+    let output = graph.get_node_value(fc.output)?;
+    assert!(output.is_some());
+    assert_eq!(output.unwrap().shape(), &[batch_size, output_size]);
+
+    println!("✅ LSTM 与 Linear 集成正常");
+    Ok(())
+}

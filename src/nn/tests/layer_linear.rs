@@ -1,13 +1,68 @@
 /*
  * @Author       : 老董
  * @Date         : 2025-12-22
- * @Description  : Linear layer 单元测试（Batch-First 设计）
+ * @Description  : Linear layer 单元测试（Batch-First 设计，含 PyTorch 数值对照）
+ *
+ * 参考值来源: tests/python/layer_reference/linear_layer_reference.py
  */
 
 use crate::nn::layer::linear;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
+
+// ==================== PyTorch 参考常量 ====================
+
+// 测试: 简单前向传播 (batch=2, in=3, out=4)
+const PYTORCH_FWD_X: &[f32] = &[1.0, 2.0, 3.0, 0.5, 1.5, 2.5];
+const PYTORCH_FWD_W: &[f32] = &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
+const PYTORCH_FWD_B: &[f32] = &[0.1, 0.2, 0.3, 0.4];
+const PYTORCH_FWD_OUTPUT: &[f32] = &[3.9, 4.6, 5.3, 6.0, 3.15, 3.7, 4.25, 4.8];
+
+// 测试: 反向传播梯度 (batch=2, in=3, out=2) + MSE Loss
+const PYTORCH_BWD_X: &[f32] = &[1.0, 2.0, 3.0, 0.5, 1.0, 1.5];
+const PYTORCH_BWD_W: &[f32] = &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
+const PYTORCH_BWD_B: &[f32] = &[0.1, 0.2];
+const PYTORCH_BWD_TARGET: &[f32] = &[1.0, 0.5, 0.5, 1.0];
+const PYTORCH_BWD_OUTPUT: &[f32] = &[2.3, 3.0, 1.2, 1.6];
+const PYTORCH_BWD_LOSS: f32 = 2.1975;
+const PYTORCH_BWD_GRAD_W: &[f32] = &[0.825, 1.4, 1.65, 2.8, 2.475, 4.2];
+const PYTORCH_BWD_GRAD_B: &[f32] = &[1.0, 1.55];
+
+// 测试: 两层 Linear + ReLU + SoftmaxCrossEntropy
+const PYTORCH_CHAIN_X: &[f32] = &[1.0, 0.5, -0.5, 0.2, 0.3, -0.2, 0.8, -0.1];
+const PYTORCH_CHAIN_W1: &[f32] = &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.2, 0.3, 0.4];
+const PYTORCH_CHAIN_B1: &[f32] = &[0.1, 0.1, 0.1];
+const PYTORCH_CHAIN_W2: &[f32] = &[0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+const PYTORCH_CHAIN_B2: &[f32] = &[0.1, 0.2];
+const PYTORCH_CHAIN_TARGET: &[f32] = &[1.0, 0.0, 0.0, 1.0];
+const PYTORCH_CHAIN_H1_RELU: &[f32] = &[0.09, 0.21, 0.33, 0.59, 0.67, 0.75];
+const PYTORCH_CHAIN_LOGITS: &[f32] = &[0.589, 0.752, 1.539, 1.84];
+const PYTORCH_CHAIN_LOSS: f32 = 0.6659472;
+const PYTORCH_CHAIN_GRAD_W1: &[f32] = &[
+    0.02065329,
+    0.02065331,
+    0.02065329,
+    0.01776964,
+    0.01776965,
+    0.01776964,
+    -0.03052906,
+    -0.03052907,
+    -0.03052907,
+    0.00753317,
+    0.00753317,
+    0.00753317,
+];
+const PYTORCH_CHAIN_GRAD_B1: &[f32] = &[0.00576731, 0.00576732, 0.00576729];
+const PYTORCH_CHAIN_GRAD_W2: &[f32] = &[
+    0.10113763,
+    -0.10113766,
+    0.08571057,
+    -0.0857106,
+    0.07028344,
+    -0.07028348,
+];
+const PYTORCH_CHAIN_GRAD_B2: &[f32] = &[-0.0576735, 0.05767344];
 
 // ==================== 基础功能测试 ====================
 
@@ -394,5 +449,349 @@ fn test_linear_access_internal_params() -> Result<(), GraphError> {
     assert_abs_diff_eq!(w[[0, 0]], 1.0, epsilon = 1e-6);
     assert_abs_diff_eq!(w[[3, 1]], 8.0, epsilon = 1e-6);
 
+    Ok(())
+}
+
+// ==================== PyTorch 数值对照测试 ====================
+
+/// 测试前向传播数值（与 PyTorch 对照）
+#[test]
+fn test_linear_forward_pytorch_comparison() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let in_features = 3;
+    let out_features = 4;
+
+    let input = graph.new_input_node(&[batch_size, in_features], Some("input"))?;
+    let fc = linear(
+        &mut graph,
+        input,
+        in_features,
+        out_features,
+        batch_size,
+        Some("fc"),
+    )?;
+
+    // 设置与 PyTorch 相同的参数
+    graph.set_node_value(
+        input,
+        Some(&Tensor::new(PYTORCH_FWD_X, &[batch_size, in_features])),
+    )?;
+    graph.set_node_value(
+        fc.weights,
+        Some(&Tensor::new(PYTORCH_FWD_W, &[in_features, out_features])),
+    )?;
+    graph.set_node_value(
+        fc.bias,
+        Some(&Tensor::new(PYTORCH_FWD_B, &[1, out_features])),
+    )?;
+
+    // 前向传播
+    graph.forward_node(fc.output)?;
+
+    // 验证输出
+    let output = graph.get_node_value(fc.output)?.unwrap();
+    assert_eq!(output.shape(), &[batch_size, out_features]);
+
+    let output_data = output.data_as_slice();
+    for (i, (&actual, &expected)) in output_data
+        .iter()
+        .zip(PYTORCH_FWD_OUTPUT.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
+        println!(
+            "output[{}]: actual={:.6}, expected={:.6}",
+            i, actual, expected
+        );
+    }
+
+    println!("✅ Linear 前向传播与 PyTorch 一致");
+    Ok(())
+}
+
+/// 测试反向传播梯度数值（与 PyTorch 对照）
+#[test]
+fn test_linear_backward_pytorch_comparison() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let in_features = 3;
+    let out_features = 2;
+
+    // 构建网络: input -> linear -> mse_loss
+    let input = graph.new_input_node(&[batch_size, in_features], Some("input"))?;
+    let fc = linear(
+        &mut graph,
+        input,
+        in_features,
+        out_features,
+        batch_size,
+        Some("fc"),
+    )?;
+    let target = graph.new_input_node(&[batch_size, out_features], Some("target"))?;
+    let loss = graph.new_mse_loss_node(fc.output, target, Some("loss"))?;
+
+    // 设置与 PyTorch 相同的参数
+    graph.set_node_value(
+        input,
+        Some(&Tensor::new(PYTORCH_BWD_X, &[batch_size, in_features])),
+    )?;
+    graph.set_node_value(
+        fc.weights,
+        Some(&Tensor::new(PYTORCH_BWD_W, &[in_features, out_features])),
+    )?;
+    graph.set_node_value(
+        fc.bias,
+        Some(&Tensor::new(PYTORCH_BWD_B, &[1, out_features])),
+    )?;
+    graph.set_node_value(
+        target,
+        Some(&Tensor::new(
+            PYTORCH_BWD_TARGET,
+            &[batch_size, out_features],
+        )),
+    )?;
+
+    // 前向传播
+    graph.forward_batch(loss)?;
+
+    // 验证输出
+    let output = graph.get_node_value(fc.output)?.unwrap();
+    let output_data = output.data_as_slice();
+    println!("输出:");
+    for (i, (&actual, &expected)) in output_data
+        .iter()
+        .zip(PYTORCH_BWD_OUTPUT.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
+        println!(
+            "  output[{}]: actual={:.6}, expected={:.6}",
+            i, actual, expected
+        );
+    }
+
+    // 验证 loss
+    let loss_val = graph.get_node_value(loss)?.unwrap();
+    assert_abs_diff_eq!(loss_val[[0, 0]], PYTORCH_BWD_LOSS, epsilon = 1e-3);
+    println!(
+        "loss: actual={:.6}, expected={:.6}",
+        loss_val[[0, 0]],
+        PYTORCH_BWD_LOSS
+    );
+
+    // 反向传播
+    graph.backward_batch(loss)?;
+
+    // 验证权重梯度
+    let grad_w = graph.get_node_grad_batch(fc.weights)?.unwrap();
+    let grad_w_data = grad_w.data_as_slice();
+    println!("\n权重梯度:");
+    for (i, (&actual, &expected)) in grad_w_data
+        .iter()
+        .zip(PYTORCH_BWD_GRAD_W.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-3);
+        println!(
+            "  grad_w[{}]: actual={:.6}, expected={:.6}",
+            i, actual, expected
+        );
+    }
+
+    // 验证偏置梯度
+    let grad_b = graph.get_node_grad_batch(fc.bias)?.unwrap();
+    let grad_b_data = grad_b.data_as_slice();
+    println!("\n偏置梯度:");
+    for (i, (&actual, &expected)) in grad_b_data
+        .iter()
+        .zip(PYTORCH_BWD_GRAD_B.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-3);
+        println!(
+            "  grad_b[{}]: actual={:.6}, expected={:.6}",
+            i, actual, expected
+        );
+    }
+
+    println!("\n✅ Linear 反向传播梯度与 PyTorch 一致");
+    Ok(())
+}
+
+/// 测试两层网络反向传播（与 PyTorch 对照）
+#[test]
+fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
+    let batch_size = 2;
+    let in_features = 4;
+    let hidden_features = 3;
+    let out_features = 2;
+
+    // 构建网络: input -> fc1 -> relu -> fc2 -> softmax_cross_entropy
+    let input = graph.new_input_node(&[batch_size, in_features], Some("input"))?;
+    let fc1 = linear(
+        &mut graph,
+        input,
+        in_features,
+        hidden_features,
+        batch_size,
+        Some("fc1"),
+    )?;
+    let relu = graph.new_leaky_relu_node(fc1.output, 0.0, Some("relu"))?;
+    let fc2 = linear(
+        &mut graph,
+        relu,
+        hidden_features,
+        out_features,
+        batch_size,
+        Some("fc2"),
+    )?;
+    let target = graph.new_input_node(&[batch_size, out_features], Some("target"))?;
+    let loss = graph.new_softmax_cross_entropy_node(fc2.output, target, Some("loss"))?;
+
+    // 设置与 PyTorch 相同的参数
+    graph.set_node_value(
+        input,
+        Some(&Tensor::new(PYTORCH_CHAIN_X, &[batch_size, in_features])),
+    )?;
+    graph.set_node_value(
+        fc1.weights,
+        Some(&Tensor::new(
+            PYTORCH_CHAIN_W1,
+            &[in_features, hidden_features],
+        )),
+    )?;
+    graph.set_node_value(
+        fc1.bias,
+        Some(&Tensor::new(PYTORCH_CHAIN_B1, &[1, hidden_features])),
+    )?;
+    graph.set_node_value(
+        fc2.weights,
+        Some(&Tensor::new(
+            PYTORCH_CHAIN_W2,
+            &[hidden_features, out_features],
+        )),
+    )?;
+    graph.set_node_value(
+        fc2.bias,
+        Some(&Tensor::new(PYTORCH_CHAIN_B2, &[1, out_features])),
+    )?;
+    graph.set_node_value(
+        target,
+        Some(&Tensor::new(
+            PYTORCH_CHAIN_TARGET,
+            &[batch_size, out_features],
+        )),
+    )?;
+
+    // 前向传播
+    graph.forward_batch(loss)?;
+
+    // 验证隐藏层 (ReLU 输出)
+    let h1_relu = graph.get_node_value(relu)?.unwrap();
+    let h1_data = h1_relu.data_as_slice();
+    println!("隐藏层 ReLU 输出:");
+    for (i, (&actual, &expected)) in h1_data.iter().zip(PYTORCH_CHAIN_H1_RELU.iter()).enumerate() {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
+        println!(
+            "  h1[{}]: actual={:.6}, expected={:.6}",
+            i, actual, expected
+        );
+    }
+
+    // 验证 logits
+    let logits = graph.get_node_value(fc2.output)?.unwrap();
+    let logits_data = logits.data_as_slice();
+    println!("\nLogits:");
+    for (i, (&actual, &expected)) in logits_data
+        .iter()
+        .zip(PYTORCH_CHAIN_LOGITS.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-3);
+        println!(
+            "  logits[{}]: actual={:.6}, expected={:.6}",
+            i, actual, expected
+        );
+    }
+
+    // 验证 loss
+    let loss_val = graph.get_node_value(loss)?.unwrap();
+    assert_abs_diff_eq!(loss_val[[0, 0]], PYTORCH_CHAIN_LOSS, epsilon = 1e-3);
+    println!(
+        "\nloss: actual={:.6}, expected={:.6}",
+        loss_val[[0, 0]],
+        PYTORCH_CHAIN_LOSS
+    );
+
+    // 反向传播
+    graph.backward_batch(loss)?;
+
+    // 验证 fc1 权重梯度
+    let grad_w1 = graph.get_node_grad_batch(fc1.weights)?.unwrap();
+    let grad_w1_data = grad_w1.data_as_slice();
+    println!("\nfc1 权重梯度:");
+    for (i, (&actual, &expected)) in grad_w1_data
+        .iter()
+        .zip(PYTORCH_CHAIN_GRAD_W1.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-3);
+        println!(
+            "  grad_w1[{}]: actual={:.8}, expected={:.8}",
+            i, actual, expected
+        );
+    }
+
+    // 验证 fc1 偏置梯度
+    let grad_b1 = graph.get_node_grad_batch(fc1.bias)?.unwrap();
+    let grad_b1_data = grad_b1.data_as_slice();
+    println!("\nfc1 偏置梯度:");
+    for (i, (&actual, &expected)) in grad_b1_data
+        .iter()
+        .zip(PYTORCH_CHAIN_GRAD_B1.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-3);
+        println!(
+            "  grad_b1[{}]: actual={:.8}, expected={:.8}",
+            i, actual, expected
+        );
+    }
+
+    // 验证 fc2 权重梯度
+    let grad_w2 = graph.get_node_grad_batch(fc2.weights)?.unwrap();
+    let grad_w2_data = grad_w2.data_as_slice();
+    println!("\nfc2 权重梯度:");
+    for (i, (&actual, &expected)) in grad_w2_data
+        .iter()
+        .zip(PYTORCH_CHAIN_GRAD_W2.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-3);
+        println!(
+            "  grad_w2[{}]: actual={:.8}, expected={:.8}",
+            i, actual, expected
+        );
+    }
+
+    // 验证 fc2 偏置梯度
+    let grad_b2 = graph.get_node_grad_batch(fc2.bias)?.unwrap();
+    let grad_b2_data = grad_b2.data_as_slice();
+    println!("\nfc2 偏置梯度:");
+    for (i, (&actual, &expected)) in grad_b2_data
+        .iter()
+        .zip(PYTORCH_CHAIN_GRAD_B2.iter())
+        .enumerate()
+    {
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-3);
+        println!(
+            "  grad_b2[{}]: actual={:.8}, expected={:.8}",
+            i, actual, expected
+        );
+    }
+
+    println!("\n✅ 两层 Linear 网络反向传播与 PyTorch 一致");
     Ok(())
 }
