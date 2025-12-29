@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-'''
+"""
 @Author: chenzhen
 @Date: 2020-04-03 19:40:23
 @LastEditTime: 2020-04-20 16:57:33
 @LastEditors: chenzhen
 @Description:
-'''
+"""
+
 # -*- coding: utf-8 -*-
 """
 Created on Wed July  9 15:13:01 2019
@@ -21,16 +22,15 @@ from ..ops import SoftMax
 
 
 class LossFunction(Node):
-    '''
+    """
     定义损失函数抽象类
-    '''
+    """
+
     pass
 
 
 class LogLoss(LossFunction):
-
     def compute(self):
-
         assert len(self.parents) == 1
 
         x = self.parents[0].value
@@ -38,7 +38,6 @@ class LogLoss(LossFunction):
         self.value = np.log(1 + np.power(np.e, np.where(-x > 1e2, 1e2, -x)))
 
     def get_jacobi(self, parent):
-
         x = parent.value
         diag = -1 / (1 + np.power(np.e, np.where(x > 1e2, 1e2, x)))
 
@@ -53,7 +52,8 @@ class CrossEntropyWithSoftMax(LossFunction):
     def compute(self):
         prob = SoftMax.softmax(self.parents[0].value)
         self.value = np.mat(
-            -np.sum(np.multiply(self.parents[1].value, np.log(prob + 1e-10))))
+            -np.sum(np.multiply(self.parents[1].value, np.log(prob + 1e-10)))
+        )
 
     def get_jacobi(self, parent):
         # 这里存在重复计算，但为了代码清晰简洁，舍弃进一步优化
@@ -70,8 +70,9 @@ class PerceptionLoss(LossFunction):
     """
 
     def compute(self):
-        self.value = np.mat(np.where(
-            self.parents[0].value >= 0.0, 0.0, -self.parents[0].value))
+        self.value = np.mat(
+            np.where(self.parents[0].value >= 0.0, 0.0, -self.parents[0].value)
+        )
 
     def get_jacobi(self, parent):
         """

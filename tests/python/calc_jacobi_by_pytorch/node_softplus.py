@@ -164,4 +164,3 @@ if __name__ == "__main__":
     test_jacobi_diagonal()
     test_numerical_stability()
     test_chain_with_linear()
-

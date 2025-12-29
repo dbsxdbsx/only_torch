@@ -4,6 +4,7 @@ Created on Wed Jun  5 15:23:01 2019
 
 @author: zhangjuefei
 """
+
 import abc
 
 import numpy as np
@@ -17,11 +18,10 @@ class Node(object):
     """
 
     def __init__(self, *parents, **kargs):
-
         # 计算图对象，默认为全局对象default_graph
         self.kargs = kargs
-        self.graph = kargs.get('graph', default_graph)
-        self.need_save = kargs.get('need_save', True)
+        self.graph = kargs.get("graph", default_graph)
+        self.need_save = kargs.get("need_save", True)
         self.gen_node_name(**kargs)
 
         self.parents = list(parents)  # 父节点列表
@@ -53,10 +53,11 @@ class Node(object):
         生成节点名称，如果用户不指定，则根据节点类型生成类似于"MatMul:3"的节点名，
         如果指定了name_scope，则生成类似"Hidden/MatMul:3"的节点名
         """
-        self.name = kargs.get('name', '{}:{}'.format(
-            self.__class__.__name__, self.graph.node_count()))
+        self.name = kargs.get(
+            "name", "{}:{}".format(self.__class__.__name__, self.graph.node_count())
+        )
         if self.graph.name_scope:
-            self.name = '{}/{}'.format(self.graph.name_scope, self.name)
+            self.name = "{}/{}".format(self.graph.name_scope, self.name)
 
     def forward(self):
         """
@@ -88,8 +89,7 @@ class Node(object):
             if self is result:
                 self.jacobi = np.mat(np.eye(self.dimension()))
             else:
-                self.jacobi = np.mat(
-                    np.zeros((result.dimension(), self.dimension())))
+                self.jacobi = np.mat(np.zeros((result.dimension(), self.dimension())))
 
                 for child in self.get_children():
                     if child.value is not None:
@@ -136,7 +136,7 @@ class Variable(Node):
         """
         变量节点没有父节点，构造函数接受变量的形状，是否初始化以及是否参与训练的标识
         """
-        Node.__init__(self,  **kargs)
+        Node.__init__(self, **kargs)
         self.dim = dim
 
         # 如果需要初始化，则以正态分布随机初始化变量的值

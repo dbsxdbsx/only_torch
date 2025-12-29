@@ -3,10 +3,11 @@
 
 提供 2-3 种不同的 RNN 结构用于数值对照测试
 
-运行: python tests/pytorch_reference/rnn_multi_structure.py
+运行: python tests/python/layer_reference/rnn_multi_structure.py
 """
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 print("=" * 70)
@@ -64,7 +65,9 @@ loss.backward()
 
 print(f"\noutput = {output.item():.6f}")
 print(f"loss = {loss.item():.6f}")
-print(f"\n梯度:")
+print("\n梯度:")
+assert w_ih1.grad is not None and w_hh1.grad is not None
+assert w_h12.grad is not None and w_hh2.grad is not None and w_out.grad is not None
 print(f"  dL/d(w_ih1) = {w_ih1.grad.item():.8f}")
 print(f"  dL/d(w_hh1) = {w_hh1.grad.item():.8f}")
 print(f"  dL/d(w_h12) = {w_h12.grad.item():.8f}")
@@ -121,7 +124,8 @@ loss2.backward()
 
 print(f"\noutput = {output2.item():.6f}")
 print(f"loss = {loss2.item():.6f}")
-print(f"\n梯度:")
+print("\n梯度:")
+assert w_ih.grad is not None and w_hh.grad is not None and w_out2.grad is not None
 print(f"  dL/d(w_ih) = {w_ih.grad.item():.8f}")
 print(f"  dL/d(w_hh) = {w_hh.grad.item():.8f}")
 print(f"  dL/d(w_out) = {w_out2.grad.item():.8f}")
@@ -177,7 +181,9 @@ loss3.backward()
 
 print(f"\noutput = {output3.item():.6f}")
 print(f"loss = {loss3.item():.6f}")
-print(f"\n梯度:")
+print("\n梯度:")
+assert w_ih3.grad is not None and w_hh3.grad is not None and b_h3.grad is not None
+assert w_out3.grad is not None and b_o3.grad is not None
 print(f"  dL/d(w_ih) = {w_ih3.grad.item():.8f}")
 print(f"  dL/d(w_hh) = {w_hh3.grad.item():.8f}")
 print(f"  dL/d(b_h) = {b_h3.grad.item():.8f}")
@@ -212,8 +218,6 @@ print("""
     - 测试 BPTT 对非平滑激活的支持
 """)
 
-import torch.nn as nn
-
 # 参数
 w_ih4 = torch.tensor([[0.5]], requires_grad=True)
 w_hh4 = torch.tensor([[0.8]], requires_grad=True)
@@ -247,7 +251,8 @@ loss4.backward()
 
 print(f"\noutput = {output4.item():.6f}")
 print(f"loss = {loss4.item():.6f}")
-print(f"\n梯度:")
+print("\n梯度:")
+assert w_ih4.grad is not None and w_hh4.grad is not None and w_out4.grad is not None
 print(f"  dL/d(w_ih) = {w_ih4.grad.item():.8f}")
 print(f"  dL/d(w_hh) = {w_hh4.grad.item():.8f}")
 print(f"  dL/d(w_out) = {w_out4.grad.item():.8f}")
@@ -312,7 +317,8 @@ loss5.backward()
 
 print(f"\noutput = {output5.item():.6f}")
 print(f"loss = {loss5.item():.6f}")
-print(f"\n梯度:")
+print("\n梯度:")
+assert w_ih5.grad is not None and w_hh5.grad is not None and w_out5.grad is not None
 print(f"  dL/d(w_ih) = {w_ih5.grad.item():.8f}")
 print(f"  dL/d(w_hh) = {w_hh5.grad.item():.8f}")
 print(f"  dL/d(w_out) = {w_out5.grad.item():.8f}")
@@ -334,4 +340,3 @@ print_rust_consts("结构 5: SoftPlus RNN", {
 print("\n" + "=" * 70)
 print("测试完成！将上述常量复制到 Rust 测试文件中使用。")
 print("=" * 70)
-

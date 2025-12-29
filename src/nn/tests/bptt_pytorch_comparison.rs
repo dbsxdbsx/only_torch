@@ -2,7 +2,7 @@
  * BPTT PyTorch 数值对照测试
  *
  * 使用 PyTorch 计算的精确参考值验证 BPTT 实现的数值正确性
- * 参考脚本: tests/pytorch_reference/simple_rnn_bptt.py
+ * 参考脚本: tests/python/layer_reference/simple_rnn_bptt.py
  */
 
 use crate::nn::{Graph, GraphError, NodeId};
@@ -142,7 +142,7 @@ fn test_bptt_gradient_matches_pytorch() -> Result<(), GraphError> {
 }
 
 // ==================== 多结构 PyTorch 参考值 ====================
-// 参考脚本: tests/pytorch_reference/rnn_multi_structure.py
+// 参考脚本: tests/python/layer_reference/rnn_multi_structure.py
 
 // === 结构 2: 更长序列的 tanh RNN ===
 // 用于验证长序列下梯度正确性
@@ -562,7 +562,7 @@ fn test_mixed_activation_rnn() -> Result<(), GraphError> {
 }
 
 // ==================== 结构 4: LeakyReLU RNN PyTorch 参考值 ====================
-// 参考脚本: tests/pytorch_reference/rnn_multi_structure.py
+// 参考脚本: tests/python/layer_reference/rnn_multi_structure.py
 // h[t] = LeakyReLU(x[t] * w_ih + h[t-1] * w_hh, negative_slope=0.1)
 // output = h[T] * w_out
 // 参数: w_ih=0.5, w_hh=0.8, w_out=1.5, negative_slope=0.1
@@ -746,7 +746,7 @@ fn test_leaky_relu_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
 }
 
 // ==================== 结构 5: SoftPlus RNN PyTorch 参考值 ====================
-// 参考脚本: tests/pytorch_reference/rnn_multi_structure.py
+// 参考脚本: tests/python/layer_reference/rnn_multi_structure.py
 // h[t] = SoftPlus(x[t] * w_ih + h[t-1] * w_hh)
 // output = h[T] * w_out
 // 参数: w_ih=0.3, w_hh=0.5, w_out=1.0

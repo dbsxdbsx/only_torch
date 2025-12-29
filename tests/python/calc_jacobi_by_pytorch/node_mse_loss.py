@@ -8,7 +8,6 @@ MSELoss 节点的 PyTorch 参考实现
 
 import torch
 import torch.nn as nn
-import numpy as np
 
 
 def print_tensor(name: str, tensor: torch.Tensor):
@@ -32,7 +31,7 @@ def test_mse_basic():
     print_tensor("target", target_data)
 
     # MSE with mean reduction (默认)
-    loss_fn = nn.MSELoss(reduction='mean')
+    loss_fn = nn.MSELoss(reduction="mean")
     loss = loss_fn(input_data, target_data)
 
     print(f"\nMSE Loss (mean): {loss.item()}")
@@ -44,7 +43,7 @@ def test_mse_basic():
 
     # 手动验证
     diff = input_data.detach() - target_data
-    manual_loss = (diff ** 2).mean()
+    manual_loss = (diff**2).mean()
     manual_grad = 2 * diff / diff.numel()
     print(f"\n手动验证 loss: {manual_loss.item()}")
     print(f"手动验证 grad: {manual_grad.flatten().tolist()}")
@@ -62,7 +61,7 @@ def test_mse_reduction_sum():
     print_tensor("input", input_data)
     print_tensor("target", target_data)
 
-    loss_fn = nn.MSELoss(reduction='sum')
+    loss_fn = nn.MSELoss(reduction="sum")
     loss = loss_fn(input_data, target_data)
 
     print(f"\nMSE Loss (sum): {loss.item()}")
@@ -84,7 +83,7 @@ def test_mse_2d():
     print_tensor("target", target_data)
 
     # Mean reduction
-    loss_fn = nn.MSELoss(reduction='mean')
+    loss_fn = nn.MSELoss(reduction="mean")
     loss = loss_fn(input_data, target_data)
 
     print(f"\nMSE Loss (mean): {loss.item()}")
@@ -100,22 +99,19 @@ def test_mse_batch():
     print("=" * 60)
 
     # Batch size = 3, features = 4
-    input_data = torch.tensor([
-        [1.0, 2.0, 3.0, 4.0],
-        [0.5, 1.5, 2.5, 3.5],
-        [2.0, 3.0, 4.0, 5.0]
-    ], requires_grad=True)
+    input_data = torch.tensor(
+        [[1.0, 2.0, 3.0, 4.0], [0.5, 1.5, 2.5, 3.5], [2.0, 3.0, 4.0, 5.0]],
+        requires_grad=True,
+    )
 
-    target_data = torch.tensor([
-        [1.2, 2.1, 2.9, 4.1],
-        [0.6, 1.4, 2.6, 3.4],
-        [1.9, 3.1, 4.0, 5.2]
-    ])
+    target_data = torch.tensor(
+        [[1.2, 2.1, 2.9, 4.1], [0.6, 1.4, 2.6, 3.4], [1.9, 3.1, 4.0, 5.2]]
+    )
 
     print_tensor("input (batch)", input_data)
     print_tensor("target (batch)", target_data)
 
-    loss_fn = nn.MSELoss(reduction='mean')
+    loss_fn = nn.MSELoss(reduction="mean")
     loss = loss_fn(input_data, target_data)
 
     print(f"\nMSE Loss (mean, batch): {loss.item()}")
@@ -142,7 +138,7 @@ def test_mse_jacobi_single_sample():
     print_tensor("input", input_data)
     print_tensor("target", target_data)
 
-    loss_fn = nn.MSELoss(reduction='mean')
+    loss_fn = nn.MSELoss(reduction="mean")
     loss = loss_fn(input_data, target_data)
 
     print(f"\nMSE Loss: {loss.item()}")
@@ -187,7 +183,7 @@ def test_mse_for_regression():
     print_tensor("y_pred", y_pred)
 
     # MSE 损失
-    loss_fn = nn.MSELoss(reduction='mean')
+    loss_fn = nn.MSELoss(reduction="mean")
     loss = loss_fn(y_pred, y_true)
 
     print(f"\nMSE Loss: {loss.item()}")
@@ -195,7 +191,7 @@ def test_mse_for_regression():
     # 反向传播
     loss.backward()
 
-    print(f"\nGradients:")
+    print("\nGradients:")
     print(f"  w.grad: {w.grad.item()}")
     print(f"  b.grad: {b.grad.item()}")
 
@@ -210,7 +206,7 @@ def test_mse_numerical_stability():
     input_data = torch.tensor([[1000.0, 2000.0, 3000.0]], requires_grad=True)
     target_data = torch.tensor([[1000.5, 2000.5, 3000.5]])
 
-    loss_fn = nn.MSELoss(reduction='mean')
+    loss_fn = nn.MSELoss(reduction="mean")
     loss = loss_fn(input_data, target_data)
 
     print(f"Large values - MSE Loss: {loss.item()}")
@@ -241,4 +237,3 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("所有测试完成！")
     print("=" * 60)
-

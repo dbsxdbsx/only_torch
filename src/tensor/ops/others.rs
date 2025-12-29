@@ -24,6 +24,7 @@ impl From<f32> for Tensor {
     }
 }
 
+#[allow(dead_code)]
 pub trait DotSum<Rhs = Tensor> {
     type Output;
     fn dot_sum(self, rhs: Rhs) -> Self::Output;

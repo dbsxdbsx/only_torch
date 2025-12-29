@@ -1,17 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-'''
+"""
 @Author: chenzhen
 @Date: 2020-04-03 16:50:34
 @LastEditTime: 2020-04-03 19:38:33
 @LastEditors: chenzhen
 @Description:
-'''
+"""
+
 import sys
-sys.path.append('../')
-import matrixslow as ms
+
+sys.path.append("../")
 import numpy as np
 
+import matrixslow as ms
 
 """
 制造训练样本。根据均值171，标准差6的正态分布采样500个男性身高，根据均值158，
@@ -33,10 +35,14 @@ female_bfrs = np.random.normal(22, 2, 500)
 male_labels = [1] * 500
 female_labels = [-1] * 500
 
-train_set = np.array([np.concatenate((male_heights, female_heights)),
-                      np.concatenate((male_weights, female_weights)),
-                      np.concatenate((male_bfrs, female_bfrs)),
-                      np.concatenate((male_labels, female_labels))]).T
+train_set = np.array(
+    [
+        np.concatenate((male_heights, female_heights)),
+        np.concatenate((male_weights, female_weights)),
+        np.concatenate((male_bfrs, female_bfrs)),
+        np.concatenate((male_labels, female_labels)),
+    ]
+).T
 
 # 随机打乱样本顺序
 np.random.shuffle(train_set)
@@ -69,10 +75,8 @@ optimizer = ms.optimizer.GradientDescent(ms.default_graph, loss, learning_rate)
 
 # 训练执行50个epoch
 for epoch in range(50):
-
     # 遍历训练集中的样本
     for i in range(len(train_set)):
-
         # 取第i个样本的前4列（除最后一列的所有列），构造3x1矩阵对象
         features = np.mat(train_set[i, :-1]).T
 
@@ -112,7 +116,6 @@ for epoch in range(50):
 
     # 遍历训练集，计算当前模型对每个样本的预测值
     for i in range(len(train_set)):
-
         features = np.mat(train_set[i, :-1]).T
         x.set_value(features)
 

@@ -6,16 +6,19 @@ Created on Thu Mar  5 16:58:19 2020
 """
 
 import sys
-sys.path.append('../..')
+
+sys.path.append("../..")
 
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+
 import matrixslow as ms
 
 # 读取数据，去掉无用列
-data = pd.read_csv("../../data/titanic.csv").drop(["PassengerId", 
-                  "Name", "Ticket", "Cabin"], axis=1)
+data = pd.read_csv("../../data/titanic.csv").drop(
+    ["PassengerId", "Name", "Ticket", "Cabin"], axis=1
+)
 
 # 构造编码类
 le = LabelEncoder()
@@ -24,17 +27,23 @@ ohe = OneHotEncoder(sparse=False)
 # 对类别型特征做One-Hot编码
 Pclass = ohe.fit_transform(le.fit_transform(data["Pclass"].fillna(0)).reshape(-1, 1))
 Sex = ohe.fit_transform(le.fit_transform(data["Sex"].fillna("")).reshape(-1, 1))
-Embarked = ohe.fit_transform(le.fit_transform(data["Embarked"].fillna("")).reshape(-1, 1))
+Embarked = ohe.fit_transform(
+    le.fit_transform(data["Embarked"].fillna("")).reshape(-1, 1)
+)
 
 # 组合特征列
-features = np.concatenate([Pclass,
-                           Sex,
-                           data[["Age"]].fillna(0),
-                           data[["SibSp"]].fillna(0),
-                           data[["Parch"]].fillna(0),
-                           data[["Fare"]].fillna(0),
-                           Embarked
-                           ], axis=1)
+features = np.concatenate(
+    [
+        Pclass,
+        Sex,
+        data[["Age"]].fillna(0),
+        data[["SibSp"]].fillna(0),
+        data[["Parch"]].fillna(0),
+        data[["Fare"]].fillna(0),
+        Embarked,
+    ],
+    axis=1,
+)
 
 # 标签
 labels = data["Survived"].values * 2 - 1
@@ -75,19 +84,15 @@ embedding_Sex = ms.ops.MatMul(E_Sex, x_Sex)
 embedding_Embarked = ms.ops.MatMul(E_Embarked, x_Embarked)
 
 # 将三个嵌入向量连接在一起
-embedding = ms.ops.Concat(
-        embedding_Pclass,
-        embedding_Sex,
-        embedding_Embarked
-        )
+embedding = ms.ops.Concat(embedding_Pclass, embedding_Sex, embedding_Embarked)
 
 
 # FM部分
-fm = ms.ops.Add(ms.ops.MatMul(w, x),   # 一次部分                
-                # 二次部分
-                ms.ops.MatMul(ms.ops.Reshape(embedding, shape=(1, 3 * k)), embedding)
-                )
-
+fm = ms.ops.Add(
+    ms.ops.MatMul(w, x),  # 一次部分
+    # 二次部分
+    ms.ops.MatMul(ms.ops.Reshape(embedding, shape=(1, 3 * k)), embedding),
+)
 
 
 # Deep部分，第一隐藏层
@@ -115,40 +120,35 @@ optimizer = ms.optimizer.Adam(ms.default_graph, loss, learning_rate)
 batch_size = 16
 
 for epoch in range(50):
-    
-    batch_count = 0   
+    batch_count = 0
     for i in range(len(features)):
-        
         x.set_value(np.mat(features[i]).T)
-        
+
         # 从特征中选择各段One-Hot编码
         x_Pclass.set_value(np.mat(features[i, :3]).T)
         x_Sex.set_value(np.mat(features[i, 3:5]).T)
         x_Embarked.set_value(np.mat(features[i, 9:]).T)
-        
+
         label.set_value(np.mat(labels[i]))
-        
+
         optimizer.one_step()
-        
+
         batch_count += 1
         if batch_count >= batch_size:
-            
             optimizer.update()
             batch_count = 0
-        
 
     pred = []
     for i in range(len(features)):
-                
         x.set_value(np.mat(features[i]).T)
         x_Pclass.set_value(np.mat(features[i, :3]).T)
         x_Sex.set_value(np.mat(features[i, 3:5]).T)
         x_Embarked.set_value(np.mat(features[i, 9:]).T)
-        
+
         predict.forward()
         pred.append(predict.value[0, 0])
-            
+
     pred = (np.array(pred) > 0.5).astype(np.int) * 2 - 1
     accuracy = (labels == pred).astype(np.int).sum() / len(features)
-       
+
     print("epoch: {:d}, accuracy: {:.3f}".format(epoch + 1, accuracy))

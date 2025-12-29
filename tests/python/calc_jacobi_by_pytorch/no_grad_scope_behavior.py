@@ -11,7 +11,6 @@ PyTorch no_grad 行为验证脚本
 """
 
 import torch
-import torch.nn as nn
 
 
 def test_no_grad_backward_still_works():
@@ -39,7 +38,7 @@ def test_no_grad_backward_still_works():
         # 尝试 backward - 这会失败，因为 y 没有 grad_fn
         try:
             y.backward()
-            print(f"  backward 成功（意外）")
+            print("  backward 成功（意外）")
         except RuntimeError as e:
             print(f"  backward 失败（预期）: {str(e)[:50]}...")
 
@@ -147,7 +146,7 @@ def test_only_torch_equivalent_pattern():
 
     # 验证梯度值相同
     assert torch.equal(train_grad, w.grad), "梯度应该相同"
-    print(f"  ✓ 梯度值一致")
+    print("  ✓ 梯度值一致")
     print()
 
 
@@ -177,7 +176,7 @@ def test_same_input_same_output():
 
     # 核心验证: 相同输入 → 相同输出
     assert loss_train.item() == loss_eval.item(), "相同输入应产生相同输出"
-    print(f"  ✓ 核心保证验证通过: 相同输入产生相同 loss")
+    print("  ✓ 核心保证验证通过: 相同输入产生相同 loss")
     print()
 
 
@@ -210,4 +209,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

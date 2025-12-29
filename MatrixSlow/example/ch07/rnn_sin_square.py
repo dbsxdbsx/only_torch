@@ -6,16 +6,19 @@ Created on Fri Mar 13 12:37:21 2020
 """
 
 import sys
-sys.path.append('../..')
+
+sys.path.append("../..")
 
 import numpy as np
-import matrixslow as ms
 from scipy import signal
 
+import matrixslow as ms
 
-# 构造正弦波和方波两类样本的函数 
-def get_sequence_data(dimension=10, length=10,
-                      number_of_examples=1000, train_set_ratio=0.7, seed=42):
+
+# 构造正弦波和方波两类样本的函数
+def get_sequence_data(
+    dimension=10, length=10, number_of_examples=1000, train_set_ratio=0.7, seed=42
+):
     """
     生成两类序列数据。
     """
@@ -45,10 +48,12 @@ def get_sequence_data(dimension=10, length=10,
     train_set_size = int(number_of_examples * train_set_ratio)  # 训练集样本数量
 
     # 将训练集和测试集、特征和标签分开
-    return (data[:train_set_size, :-2].reshape(-1, length, dimension),
-            data[:train_set_size, -2:],
-            data[train_set_size:, :-2].reshape(-1, length, dimension),
-            data[train_set_size:, -2:])
+    return (
+        data[:train_set_size, :-2].reshape(-1, length, dimension),
+        data[:train_set_size, -2:],
+        data[train_set_size:, :-2].reshape(-1, length, dimension),
+        data[train_set_size:, -2:],
+    )
 
 
 # 构造RNN
@@ -56,16 +61,23 @@ seq_len = 96  # 序列长度
 dimension = 16  # 输入维度
 status_dimension = 12  # 状态维度
 
-signal_train, label_train, signal_test, label_test = get_sequence_data(length=seq_len, dimension=dimension)
+signal_train, label_train, signal_test, label_test = get_sequence_data(
+    length=seq_len, dimension=dimension
+)
 
 # 输入向量节点
-inputs = [ms.core.Variable(dim=(dimension, 1), init=False, trainable=False) for i in range(seq_len)]
- 
+inputs = [
+    ms.core.Variable(dim=(dimension, 1), init=False, trainable=False)
+    for i in range(seq_len)
+]
+
 # 输入权值矩阵
 U = ms.core.Variable(dim=(status_dimension, dimension), init=True, trainable=True)
 
 # 状态权值矩阵
-W = ms.core.Variable(dim=(status_dimension, status_dimension), init=True, trainable=True)
+W = ms.core.Variable(
+    dim=(status_dimension, status_dimension), init=True, trainable=True
+)
 
 # 偏置向量
 b = ms.core.Variable(dim=(status_dimension, 1), init=True, trainable=True)
@@ -103,40 +115,38 @@ optimizer = ms.optimizer.Adam(ms.default_graph, loss, learning_rate)
 batch_size = 16
 
 for epoch in range(50):
-    
-    batch_count = 0   
+    batch_count = 0
     for i, s in enumerate(signal_train):
-        
         # 将每个样本各时刻的向量赋给相应变量
         for j, x in enumerate(inputs):
             x.set_value(np.mat(s[j]).T)
-        
+
         label.set_value(np.mat(label_train[i, :]).T)
-        
+
         optimizer.one_step()
-        
+
         batch_count += 1
         if batch_count >= batch_size:
-            
-            print("epoch: {:d}, iteration: {:d}, loss: {:.3f}".format(epoch + 1, i + 1, loss.value[0, 0]))
+            print(
+                "epoch: {:d}, iteration: {:d}, loss: {:.3f}".format(
+                    epoch + 1, i + 1, loss.value[0, 0]
+                )
+            )
 
-            
             optimizer.update()
             batch_count = 0
-        
 
     pred = []
     for i, s in enumerate(signal_test):
-                
         # 将每个样本各时刻的向量赋给相应变量
         for j, x in enumerate(inputs):
             x.set_value(np.mat(s[j]).T)
 
         predict.forward()
         pred.append(predict.value.A.ravel())
-            
+
     pred = np.array(pred).argmax(axis=1)
     true = label_test.argmax(axis=1)
-    
+
     accuracy = (true == pred).astype(np.int).sum() / len(signal_test)
     print("epoch: {:d}, accuracy: {:.5f}".format(epoch + 1, accuracy))

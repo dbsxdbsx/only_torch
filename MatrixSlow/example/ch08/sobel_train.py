@@ -6,15 +6,17 @@ Created on Fri Mar 20 11:34:01 2020
 """
 
 import sys
-sys.path.append('../..')
+
+sys.path.append("../..")
+
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
 
 import matrixslow as ms
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
 
 # 读取图像，归一化
-pic = matplotlib.image.imread('../../data/lena.jpg') / 255
+pic = matplotlib.image.imread("../../data/lena.jpg") / 255
 
 # 图像尺寸
 w, h = pic.shape
@@ -49,9 +51,8 @@ n.set_value(np.mat(1.0 / (w * h)))
 # 损失值，均方误差
 error = ms.ops.Add(sobel_output, ms.ops.Multiply(filter_output, minus))
 square_error = ms.ops.MatMul(
-                    ms.ops.Reshape(error, shape=(1, w * h)), 
-                    ms.ops.Reshape(error, shape=(w * h, 1))
-                )
+    ms.ops.Reshape(error, shape=(1, w * h)), ms.ops.Reshape(error, shape=(w * h, 1))
+)
 
 mse = ms.ops.MatMul(square_error, n)
 
@@ -60,9 +61,8 @@ optimizer = ms.optimizer.Adam(ms.core.default_graph, mse, 0.01)
 
 # 训练
 for i in range(1000):
-    
     optimizer.one_step()
-    optimizer.update()               
+    optimizer.update()
     mse.forward()
     print("iteration:{:d},loss:{:.10f}".format(i, mse.value[0, 0]))
 

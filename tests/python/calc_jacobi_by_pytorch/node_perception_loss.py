@@ -5,6 +5,7 @@ def perception_loss(x):
     # 当x >= 0时输出0，当x < 0时输出-x
     return torch.where(x >= 0, torch.zeros_like(x), -x)
 
+
 # 定义输入矩阵
 x = torch.tensor([[0.5, -1.0, 1.5], [0.0, -3.0, -2.0]], requires_grad=True)
 element_cnt = x.numel()

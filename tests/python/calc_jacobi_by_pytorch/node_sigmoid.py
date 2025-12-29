@@ -3,6 +3,7 @@
 Calculate expected values for Sigmoid node forward and Jacobian
 For Rust unit test verification
 """
+
 import numpy as np
 import torch
 
@@ -35,10 +36,9 @@ print(f"\nFull Jacobian ({n}x{n}):\n{jacobi}")
 
 # Output Rust format data
 print("\n=== Rust Test Data ===")
-print(f"// Input value")
+print("// Input value")
 print(f"let input_data = &{x.detach().numpy().flatten().tolist()};")
-print(f"\n// Expected forward output")
+print("\n// Expected forward output")
 print(f"let expected_forward = &{y.detach().numpy().flatten().tolist()};")
-print(f"\n// Expected Jacobian")
+print("\n// Expected Jacobian")
 print(f"let expected_jacobi = &{jacobi.flatten().tolist()};")
-

@@ -20,6 +20,7 @@ use crate::tensor::Tensor;
 const MNIST_BASE_URL: &str = "https://ossci-datasets.s3.amazonaws.com/mnist/";
 
 /// MNIST 文件信息
+#[allow(dead_code)]
 const MNIST_FILES: [(&str, &str); 4] = [
     (
         "train-images-idx3-ubyte.gz",

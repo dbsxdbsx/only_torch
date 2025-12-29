@@ -15,6 +15,7 @@
 
 运行方式: python tests/calc_jacobi_by_pytorch/optimizer_test_values.py
 """
+
 import torch
 import torch.optim as optim
 
@@ -84,7 +85,7 @@ for i in range(3):
     loss = perception_loss(loss_input)
     loss.backward()
 
-    print(f"Iteration {i+1}: loss_input={loss_input.item()}, grad={w.grad.item()}")
+    print(f"Iteration {i + 1}: loss_input={loss_input.item()}, grad={w.grad.item()}")
     total_grad += w.grad.item()
 
 avg_grad = total_grad / 3

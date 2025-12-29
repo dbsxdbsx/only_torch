@@ -3,12 +3,10 @@ GRU Layer PyTorch 参考实现
 
 用于生成 Rust 单元测试的对照数值
 
-运行: python tests/pytorch_reference/gru_layer_reference.py
+运行: python tests/python/layer_reference/gru_layer_reference.py
 """
 
 import torch
-import torch.nn as nn
-import numpy as np
 
 print("=" * 70)
 print("GRU Layer 参考值")
@@ -188,7 +186,7 @@ print(f"损失: {loss.item():.8f}")
 
 loss.backward()
 
-print(f"\n主要梯度:")
+print("\n主要梯度:")
 print(f"  dL/d(w_ir) sum = {w_ir.grad.sum().item():.8f}")
 print(f"  dL/d(w_iz) sum = {w_iz.grad.sum().item():.8f}")
 print(f"  dL/d(w_in) sum = {w_in.grad.sum().item():.8f}")
@@ -203,4 +201,3 @@ print_tensor_as_rust("TEST3_GRAD_W_OUT", w_out.grad)
 print("\n" + "=" * 70)
 print("完成！")
 print("=" * 70)
-

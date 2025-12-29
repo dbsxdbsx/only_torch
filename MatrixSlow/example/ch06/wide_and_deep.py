@@ -6,10 +6,12 @@ Created on Wed Mar  4 14:34:10 2020
 """
 
 import sys
-sys.path.append('../..')
+
+sys.path.append("../..")
 
 import numpy as np
 from sklearn.datasets import make_classification
+
 import matrixslow as ms
 
 # 特征维数
@@ -71,31 +73,26 @@ optimizer = ms.optimizer.Adam(ms.default_graph, loss, learning_rate)
 batch_size = 16
 
 for epoch in range(200):
-    
-    batch_count = 0   
+    batch_count = 0
     for i in range(len(X)):
-        
         x1.set_value(np.mat(X[i]).T)
         label.set_value(np.mat(y[i]))
-        
+
         optimizer.one_step()
-        
+
         batch_count += 1
         if batch_count >= batch_size:
-            
             optimizer.update()
             batch_count = 0
-        
 
     pred = []
     for i in range(len(X)):
-                
         x1.set_value(np.mat(X[i]).T)
-        
+
         predict.forward()
         pred.append(predict.value[0, 0])
-            
+
     pred = (np.array(pred) > 0.5).astype(np.int) * 2 - 1
     accuracy = (y == pred).astype(np.int).sum() / len(X)
-       
+
     print("epoch: {:d}, accuracy: {:.3f}".format(epoch + 1, accuracy))

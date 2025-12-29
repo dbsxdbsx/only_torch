@@ -4,19 +4,22 @@ Created on Wed Jul 10 17:34:46 CST 2019
 
 @author: chenzhen
 """
-import numpy as np
+
 import abc
+
+import numpy as np
+
 from ..core import Node
 
 
 class Metrics(Node):
-    '''
+    """
     评估指标算子抽象基类
-    '''
+    """
 
     def __init__(self, *parents, **kargs):
         # 默认情况下，metrics节点不需要保存
-        kargs['need_save'] = kargs.get('need_save', False)
+        kargs["need_save"] = kargs.get("need_save", False)
         Node.__init__(self, *parents, **kargs)
         # 初始化节点
         self.init()
@@ -43,7 +46,6 @@ class Metrics(Node):
         return labels
 
     def get_jacobi(self):
-
         # 对于评估指标节点，计算雅可比无意义
         raise NotImplementedError()
 
@@ -52,9 +54,9 @@ class Metrics(Node):
 
 
 class Accuracy(Metrics):
-    '''
+    """
     正确率节点
-    '''
+    """
 
     def __init__(self, *parents, **kargs):
         Metrics.__init__(self, *parents, **kargs)
@@ -64,10 +66,10 @@ class Accuracy(Metrics):
         self.total_num = 0
 
     def compute(self):
-        '''
+        """
         计算Accrucy: (TP + TN) / TOTAL
         这里假设第一个父节点是预测值（概率），第二个父节点是标签
-        '''
+        """
 
         pred = Metrics.prob_to_label(self.parents[0].value)
         gt = self.parents[1].value
@@ -84,9 +86,9 @@ class Accuracy(Metrics):
 
 
 class Precision(Metrics):
-    '''
+    """
     查准率节点
-    '''
+    """
 
     def __init__(self, *parents, **kargs):
         Metrics.__init__(self, *parents, **kargs)
@@ -96,9 +98,9 @@ class Precision(Metrics):
         self.pred_pos_num = 0
 
     def compute(self):
-        '''
+        """
         计算Precision： TP / (TP + FP)
-        '''
+        """
         assert self.parents[0].value.shape[1] == 1
 
         pred = Metrics.prob_to_label(self.parents[0].value)
@@ -111,9 +113,9 @@ class Precision(Metrics):
 
 
 class Recall(Metrics):
-    '''
+    """
     查全率节点
-    '''
+    """
 
     def __init__(self, *parents, **kargs):
         Metrics.__init__(self, *parents, **kargs)
@@ -123,9 +125,9 @@ class Recall(Metrics):
         self.true_pos_num = 0
 
     def compute(self):
-        '''
+        """
         计算Recall： TP / (TP + FN)
-        '''
+        """
         assert self.parents[0].value.shape[1] == 1
 
         pred = Metrics.prob_to_label(self.parents[0].value)
@@ -140,9 +142,9 @@ class Recall(Metrics):
 
 
 class ROC(Metrics):
-    '''
+    """
     ROC曲线
-    '''
+    """
 
     def __init__(self, *parents, **kargs):
         Metrics.__init__(self, *parents, **kargs)
@@ -157,7 +159,6 @@ class ROC(Metrics):
         self.fpr = np.array([0] * self.count)
 
     def compute(self):
-
         prob = self.parents[0].value
         gt = self.parents[1].value
         self.gt_pos_num += np.sum(gt == 1)
@@ -185,13 +186,13 @@ class ROC(Metrics):
         # plt.xlim(0, 1)
         # plt.plot(self.fpr, self.tpr)
         # plt.show()
-        return ''
+        return ""
 
 
 class ROC_AUC(Metrics):
-    '''
+    """
     ROC AUC
-    '''
+    """
 
     def __init__(self, *parents, **kargs):
         Metrics.__init__(self, *parents, **kargs)
@@ -201,7 +202,6 @@ class ROC_AUC(Metrics):
         self.gt_neg_preds = []
 
     def compute(self):
-
         prob = self.parents[0].value
         gt = self.parents[1].value
 
@@ -228,24 +228,24 @@ class ROC_AUC(Metrics):
 
 
 class F1Score(Metrics):
-    '''
+    """
     F1 Score算子
 
-    '''
+    """
 
     def __init__(self, *parents, **kargs):
-        '''
+        """
         F1Score算子
-        '''
+        """
         Metrics.__init__(self, *parents, **kargs)
         self.true_pos_num = 0
         self.pred_pos_num = 0
         self.gt_pos_num = 0
 
     def compute(self):
-        '''
+        """
         计算f1-score: (2 * pre * recall) / (pre + recall)
-        '''
+        """
 
         assert self.parents[0].value.shape[1] == 1
 
@@ -266,6 +266,6 @@ class F1Score(Metrics):
 
         self.value = 0
         if pre_score + recall_score != 0:
-            self.value = 2 * \
-                np.multiply(pre_score, recall_score) / \
-                (pre_score + recall_score)
+            self.value = (
+                2 * np.multiply(pre_score, recall_score) / (pre_score + recall_score)
+            )

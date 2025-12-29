@@ -10,12 +10,13 @@ import torch.nn.functional as F
 # 设置打印精度
 torch.set_printoptions(precision=16)
 
+
 def test_leaky_relu(x_data, negative_slope, name):
     """测试 LeakyReLU 的 forward 和 backward"""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"测试: {name}")
     print(f"negative_slope = {negative_slope}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # 创建需要梯度的张量
     x = torch.tensor(x_data, dtype=torch.float64, requires_grad=True)
@@ -29,7 +30,9 @@ def test_leaky_relu(x_data, negative_slope, name):
     # 对于逐元素操作，Jacobi 是对角矩阵
     # d(leaky_relu(x))/dx = 1 if x > 0, else negative_slope
     x_flat = x.flatten()
-    jacobi_diag = torch.where(x_flat > 0, torch.ones_like(x_flat), torch.full_like(x_flat, negative_slope))
+    jacobi_diag = torch.where(
+        x_flat > 0, torch.ones_like(x_flat), torch.full_like(x_flat, negative_slope)
+    )
     jacobi = torch.diag(jacobi_diag)
     print(f"\nJacobian 对角线元素:\n{jacobi_diag}")
     print(f"\nJacobian 矩阵 ({jacobi.shape[0]}x{jacobi.shape[1]}):\n{jacobi}")
@@ -49,6 +52,7 @@ def test_leaky_relu(x_data, negative_slope, name):
         print(f"d(y[{i}])/dx = {grad_row.tolist()}")
 
     return y, jacobi
+
 
 # ============================================================
 # 测试用例 1: 2x2 矩阵，包含正负值
@@ -72,9 +76,9 @@ test_leaky_relu(x2, 0.1, "Leaky ReLU slope=0.1 (3x2)")
 # ============================================================
 # 测试用例 3: 边界值测试（全正、全负、含零）
 # ============================================================
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("边界值测试")
-print("="*60)
+print("=" * 60)
 
 # 全正值
 x_positive = [[1.0, 2.0], [3.0, 4.0]]
@@ -87,4 +91,3 @@ test_leaky_relu(x_negative, 0.1, "全负值 (2x2)")
 # 含零
 x_with_zero = [[0.0, 1.0], [-1.0, 0.0]]
 test_leaky_relu(x_with_zero, 0.1, "含零 (2x2)")
-

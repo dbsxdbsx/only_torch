@@ -3,7 +3,7 @@
  * @Date         : 2025-12-30
  * @Description  : LSTM Layer 单元测试（与 PyTorch 数值对照）
  *
- * 参考值来源: tests/pytorch_reference/lstm_layer_reference.py
+ * 参考值来源: tests/python/layer_reference/lstm_layer_reference.py
  */
 
 use crate::nn::layer::lstm;
@@ -63,7 +63,14 @@ fn test_lstm_creation() -> Result<(), GraphError> {
     let hidden_size = 20;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let lstm_out = lstm(&mut graph, input, input_size, hidden_size, batch_size, Some("lstm1"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm1"),
+    )?;
 
     // 验证节点创建成功
     assert!(graph.get_node_value(lstm_out.hidden).is_ok());
@@ -89,7 +96,14 @@ fn test_lstm_shapes() -> Result<(), GraphError> {
     let hidden_size = 6;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let lstm_out = lstm(&mut graph, input, input_size, hidden_size, batch_size, Some("lstm1"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm1"),
+    )?;
 
     // 验证输入门权重形状
     assert_eq!(
@@ -129,30 +143,76 @@ fn test_lstm_forward_pytorch_comparison() -> Result<(), GraphError> {
     let hidden_size = 2;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let lstm_out = lstm(&mut graph, input, input_size, hidden_size, batch_size, Some("lstm"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
 
     // 设置与 PyTorch 相同的权重
-    graph.set_node_value(input, Some(&Tensor::new(TEST1_X, &[batch_size, input_size])))?;
+    graph.set_node_value(
+        input,
+        Some(&Tensor::new(TEST1_X, &[batch_size, input_size])),
+    )?;
 
     // 输入门
-    graph.set_node_value(lstm_out.w_ii, Some(&Tensor::new(TEST1_W_II, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hi, Some(&Tensor::new(TEST1_W_HI, &[hidden_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.b_i, Some(&Tensor::new(TEST1_B_I, &[1, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_ii,
+        Some(&Tensor::new(TEST1_W_II, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hi,
+        Some(&Tensor::new(TEST1_W_HI, &[hidden_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.b_i,
+        Some(&Tensor::new(TEST1_B_I, &[1, hidden_size])),
+    )?;
 
     // 遗忘门
-    graph.set_node_value(lstm_out.w_if, Some(&Tensor::new(TEST1_W_IF, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hf, Some(&Tensor::new(TEST1_W_HF, &[hidden_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.b_f, Some(&Tensor::new(TEST1_B_F, &[1, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_if,
+        Some(&Tensor::new(TEST1_W_IF, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hf,
+        Some(&Tensor::new(TEST1_W_HF, &[hidden_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.b_f,
+        Some(&Tensor::new(TEST1_B_F, &[1, hidden_size])),
+    )?;
 
     // 候选细胞
-    graph.set_node_value(lstm_out.w_ig, Some(&Tensor::new(TEST1_W_IG, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hg, Some(&Tensor::new(TEST1_W_HG, &[hidden_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.b_g, Some(&Tensor::new(TEST1_B_G, &[1, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_ig,
+        Some(&Tensor::new(TEST1_W_IG, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hg,
+        Some(&Tensor::new(TEST1_W_HG, &[hidden_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.b_g,
+        Some(&Tensor::new(TEST1_B_G, &[1, hidden_size])),
+    )?;
 
     // 输出门
-    graph.set_node_value(lstm_out.w_io, Some(&Tensor::new(TEST1_W_IO, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_ho, Some(&Tensor::new(TEST1_W_HO, &[hidden_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.b_o, Some(&Tensor::new(TEST1_B_O, &[1, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_io,
+        Some(&Tensor::new(TEST1_W_IO, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_ho,
+        Some(&Tensor::new(TEST1_W_HO, &[hidden_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.b_o,
+        Some(&Tensor::new(TEST1_B_O, &[1, hidden_size])),
+    )?;
 
     // 前向传播
     graph.step(lstm_out.hidden)?;
@@ -186,23 +246,54 @@ fn test_lstm_multi_step_forward_pytorch_comparison() -> Result<(), GraphError> {
     let hidden_size = 2;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let lstm_out = lstm(&mut graph, input, input_size, hidden_size, batch_size, Some("lstm"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
 
     // 设置权重
-    graph.set_node_value(lstm_out.w_ii, Some(&Tensor::new(TEST2_W_II, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hi, Some(&Tensor::new(TEST2_W_HI, &[hidden_size, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_ii,
+        Some(&Tensor::new(TEST2_W_II, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hi,
+        Some(&Tensor::new(TEST2_W_HI, &[hidden_size, hidden_size])),
+    )?;
     graph.set_node_value(lstm_out.b_i, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
-    graph.set_node_value(lstm_out.w_if, Some(&Tensor::new(TEST2_W_IF, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hf, Some(&Tensor::new(TEST2_W_HF, &[hidden_size, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_if,
+        Some(&Tensor::new(TEST2_W_IF, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hf,
+        Some(&Tensor::new(TEST2_W_HF, &[hidden_size, hidden_size])),
+    )?;
     graph.set_node_value(lstm_out.b_f, Some(&Tensor::ones(&[1, hidden_size])))?;
 
-    graph.set_node_value(lstm_out.w_ig, Some(&Tensor::new(TEST2_W_IG, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hg, Some(&Tensor::new(TEST2_W_HG, &[hidden_size, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_ig,
+        Some(&Tensor::new(TEST2_W_IG, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hg,
+        Some(&Tensor::new(TEST2_W_HG, &[hidden_size, hidden_size])),
+    )?;
     graph.set_node_value(lstm_out.b_g, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
-    graph.set_node_value(lstm_out.w_io, Some(&Tensor::new(TEST2_W_IO, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_ho, Some(&Tensor::new(TEST2_W_HO, &[hidden_size, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_io,
+        Some(&Tensor::new(TEST2_W_IO, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_ho,
+        Some(&Tensor::new(TEST2_W_HO, &[hidden_size, hidden_size])),
+    )?;
     graph.set_node_value(lstm_out.b_o, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
     // 输入序列
@@ -255,23 +346,54 @@ fn test_lstm_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
 
     // 创建 LSTM 层
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let lstm_out = lstm(&mut graph, input, input_size, hidden_size, batch_size, Some("lstm"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
 
     // 设置与 PyTorch 相同的权重
-    graph.set_node_value(lstm_out.w_ii, Some(&Tensor::new(TEST2_W_II, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hi, Some(&Tensor::new(TEST2_W_HI, &[hidden_size, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_ii,
+        Some(&Tensor::new(TEST2_W_II, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hi,
+        Some(&Tensor::new(TEST2_W_HI, &[hidden_size, hidden_size])),
+    )?;
     graph.set_node_value(lstm_out.b_i, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
-    graph.set_node_value(lstm_out.w_if, Some(&Tensor::new(TEST2_W_IF, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hf, Some(&Tensor::new(TEST2_W_HF, &[hidden_size, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_if,
+        Some(&Tensor::new(TEST2_W_IF, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hf,
+        Some(&Tensor::new(TEST2_W_HF, &[hidden_size, hidden_size])),
+    )?;
     graph.set_node_value(lstm_out.b_f, Some(&Tensor::ones(&[1, hidden_size])))?;
 
-    graph.set_node_value(lstm_out.w_ig, Some(&Tensor::new(TEST2_W_IG, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_hg, Some(&Tensor::new(TEST2_W_HG, &[hidden_size, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_ig,
+        Some(&Tensor::new(TEST2_W_IG, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_hg,
+        Some(&Tensor::new(TEST2_W_HG, &[hidden_size, hidden_size])),
+    )?;
     graph.set_node_value(lstm_out.b_g, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
-    graph.set_node_value(lstm_out.w_io, Some(&Tensor::new(TEST2_W_IO, &[input_size, hidden_size])))?;
-    graph.set_node_value(lstm_out.w_ho, Some(&Tensor::new(TEST2_W_HO, &[hidden_size, hidden_size])))?;
+    graph.set_node_value(
+        lstm_out.w_io,
+        Some(&Tensor::new(TEST2_W_IO, &[input_size, hidden_size])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_ho,
+        Some(&Tensor::new(TEST2_W_HO, &[hidden_size, hidden_size])),
+    )?;
     graph.set_node_value(lstm_out.b_o, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
     // 创建输出层
@@ -354,7 +476,14 @@ fn test_lstm_node_naming() -> Result<(), GraphError> {
     let hidden_size = 16;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let lstm_out = lstm(&mut graph, input, input_size, hidden_size, batch_size, Some("encoder"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("encoder"),
+    )?;
 
     // 验证节点名称
     let w_ii_name = graph.get_node(lstm_out.w_ii)?.name();
@@ -380,12 +509,28 @@ fn test_lstm_reset() -> Result<(), GraphError> {
     let hidden_size = 2;
 
     let input = graph.new_input_node(&[batch_size, input_size], Some("input"))?;
-    let lstm_out = lstm(&mut graph, input, input_size, hidden_size, batch_size, Some("lstm"))?;
+    let lstm_out = lstm(
+        &mut graph,
+        input,
+        input_size,
+        hidden_size,
+        batch_size,
+        Some("lstm"),
+    )?;
 
     // 设置固定权重，确保输出不为 0
-    graph.set_node_value(lstm_out.w_ii, Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2])))?;
-    graph.set_node_value(lstm_out.w_ig, Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2])))?;
-    graph.set_node_value(lstm_out.w_io, Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2])))?;
+    graph.set_node_value(
+        lstm_out.w_ii,
+        Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_ig,
+        Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2])),
+    )?;
+    graph.set_node_value(
+        lstm_out.w_io,
+        Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2])),
+    )?;
 
     // 运行几步
     graph.set_node_value(input, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
@@ -395,9 +540,19 @@ fn test_lstm_reset() -> Result<(), GraphError> {
     // 获取当前状态（运行两步后应该有非零值）
     let h_before = graph.get_node_value(lstm_out.hidden)?.unwrap().clone();
     let c_before = graph.get_node_value(lstm_out.cell)?.unwrap().clone();
-    println!("Before reset: h={:?}, c={:?}", h_before.data_as_slice(), c_before.data_as_slice());
-    assert!(h_before[[0, 0]].abs() > 0.001, "h should be non-zero after 2 steps");
-    assert!(c_before[[0, 0]].abs() > 0.001, "c should be non-zero after 2 steps");
+    println!(
+        "Before reset: h={:?}, c={:?}",
+        h_before.data_as_slice(),
+        c_before.data_as_slice()
+    );
+    assert!(
+        h_before[[0, 0]].abs() > 0.001,
+        "h should be non-zero after 2 steps"
+    );
+    assert!(
+        c_before[[0, 0]].abs() > 0.001,
+        "c should be non-zero after 2 steps"
+    );
 
     // reset
     graph.reset();
@@ -420,4 +575,3 @@ fn test_lstm_reset() -> Result<(), GraphError> {
     println!("✅ reset() 正确清除 LSTM 状态");
     Ok(())
 }
-

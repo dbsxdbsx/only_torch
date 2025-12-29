@@ -55,6 +55,7 @@ def test_detach_gradient_values():
     # 对 output 求和后 backward (模拟 loss)
     output_no_detach.sum().backward()
 
+    assert w1.grad is not None and w2.grad is not None
     print(f"\nw1.grad (无 detach):\n{w1.grad}")
     print(f"w1.grad.shape: {w1.grad.shape}")
     print(f"\nw2.grad (无 detach):\n{w2.grad}")
@@ -86,6 +87,7 @@ def test_detach_gradient_values():
 
     print(f"\nw1.grad (有 detach): {w1.grad}")
     print("  -> 应为 None 或全 0 (梯度被阻断)")
+    assert w2.grad is not None
     print(f"\nw2.grad (有 detach):\n{w2.grad}")
     print(f"w2.grad.shape: {w2.grad.shape}")
 
@@ -96,12 +98,12 @@ def test_detach_gradient_values():
 
     # w2 的梯度应该和无 detach 时相同
     # 因为 h 的值没变，只是梯度不再回流到 w1
-    print(f"\n// 场景 1 (无 detach) - 供对照")
+    print("\n// 场景 1 (无 detach) - 供对照")
     print(f"// w1_grad: {w1_grad_no_detach.flatten().tolist()}")
     print(f"// w2_grad: {w2_grad_no_detach.flatten().tolist()}")
 
-    print(f"\n// 场景 2 (有 detach) - Rust 测试期望值")
-    print(f"// w1_grad: None (被 detach 阻断)")
+    print("\n// 场景 2 (有 detach) - Rust 测试期望值")
+    print("// w1_grad: None (被 detach 阻断)")
     print(f"// w2_grad (Jacobi 格式 [1, 2]): {w2.grad.flatten().tolist()}")
 
     # 验证 w2 梯度在两种场景下相同
@@ -131,4 +133,3 @@ def test_detach_gradient_values():
 
 if __name__ == "__main__":
     test_detach_gradient_values()
-

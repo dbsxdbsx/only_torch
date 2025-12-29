@@ -12,6 +12,7 @@ PyTorch 参考实现：复杂拓扑下多参数节点的梯度累积测试
 
 import torch
 
+
 def main():
     # ========== 构建拓扑 ==========
     # 输入 (4, 1)
@@ -23,11 +24,11 @@ def main():
     w_shared3 = torch.ones(2, 2, requires_grad=True)  # [2, 2]
 
     # 分叉参数
-    w_task1 = torch.ones(1, 2, requires_grad=True)    # [1, 2]
-    w_task2 = torch.ones(1, 2, requires_grad=True)    # [1, 2]
+    w_task1 = torch.ones(1, 2, requires_grad=True)  # [1, 2]
+    w_task2 = torch.ones(1, 2, requires_grad=True)  # [1, 2]
 
     # ========== 前向传播 ==========
-    shared_feat1 = w_shared1 @ x          # [2, 1]
+    shared_feat1 = w_shared1 @ x  # [2, 1]
     w_shared2_out = w_shared2 @ shared_feat1  # [2, 1]
     shared_feat2 = w_shared3 @ w_shared2_out  # [2, 1]
 
@@ -75,20 +76,34 @@ def main():
 
     # 由于拓扑对称，out1 和 out2 对共享参数的贡献应该相同
     # 因此累积后的梯度应该是单次的 2 倍
-    print(f"w_shared1 累积 == 2 * 单次: {torch.allclose(w_shared1.grad, w_shared1_after_task1 * 2)}")
-    print(f"w_shared2 累积 == 2 * 单次: {torch.allclose(w_shared2.grad, w_shared2_after_task1 * 2)}")
-    print(f"w_shared3 累积 == 2 * 单次: {torch.allclose(w_shared3.grad, w_shared3_after_task1 * 2)}")
+    print(
+        f"w_shared1 累积 == 2 * 单次: {torch.allclose(w_shared1.grad, w_shared1_after_task1 * 2)}"
+    )
+    print(
+        f"w_shared2 累积 == 2 * 单次: {torch.allclose(w_shared2.grad, w_shared2_after_task1 * 2)}"
+    )
+    print(
+        f"w_shared3 累积 == 2 * 单次: {torch.allclose(w_shared3.grad, w_shared3_after_task1 * 2)}"
+    )
     print(f"w_task1 不变: {torch.allclose(w_task1.grad, w_task1_after_task1)}")
-    print(f"w_task2 == w_task1 单次 (对称): {torch.allclose(w_task2.grad, w_task1_after_task1)}")
+    print(
+        f"w_task2 == w_task1 单次 (对称): {torch.allclose(w_task2.grad, w_task1_after_task1)}"
+    )
 
     # ========== 输出 Rust 测试需要的精确值 ==========
     print("\n========== Rust 测试需要的精确值 ==========")
     print("// 注意：Rust 中 Jacobi 格式为展平的 [1, n]，而非 PyTorch 原始 shape")
     print()
     print("// 第一次 backward 后各参数的梯度（展平为 Jacobi 格式 [1, n]）")
-    print(f"// w_shared1: shape [1, 8], data: {w_shared1_after_task1.flatten().tolist()}")
-    print(f"// w_shared2: shape [1, 4], data: {w_shared2_after_task1.flatten().tolist()}")
-    print(f"// w_shared3: shape [1, 4], data: {w_shared3_after_task1.flatten().tolist()}")
+    print(
+        f"// w_shared1: shape [1, 8], data: {w_shared1_after_task1.flatten().tolist()}"
+    )
+    print(
+        f"// w_shared2: shape [1, 4], data: {w_shared2_after_task1.flatten().tolist()}"
+    )
+    print(
+        f"// w_shared3: shape [1, 4], data: {w_shared3_after_task1.flatten().tolist()}"
+    )
     print(f"// w_task1: shape [1, 2], data: {w_task1_after_task1.flatten().tolist()}")
     print()
     print("// 第二次 backward 后累积的梯度（展平为 Jacobi 格式 [1, n]）")
@@ -98,6 +113,6 @@ def main():
     print(f"// w_task1 (不变): shape [1, 2], data: {w_task1.grad.flatten().tolist()}")
     print(f"// w_task2: shape [1, 2], data: {w_task2.grad.flatten().tolist()}")
 
+
 if __name__ == "__main__":
     main()
-

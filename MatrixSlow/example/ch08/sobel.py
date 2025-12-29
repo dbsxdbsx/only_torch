@@ -6,15 +6,17 @@ Created on Mon Mar 23 10:07:59 2020
 """
 
 import sys
-sys.path.append('../..')
+
+sys.path.append("../..")
+
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
 
 import matrixslow as ms
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
 
 # 读取图像，归一化
-pic = matplotlib.image.imread('../../data/mondrian.jpg') / 255
+pic = matplotlib.image.imread("../../data/mondrian.jpg") / 255
 
 # 图像尺寸
 w, h = pic.shape
@@ -37,9 +39,9 @@ sobel_h_output = ms.ops.Convolve(img, sobel_h)
 
 # 两个Sobel滤波器的输出平方和
 square_output = ms.ops.Add(
-            ms.ops.Multiply(sobel_v_output, sobel_v_output),
-            ms.ops.Multiply(sobel_h_output, sobel_h_output)
-        )
+    ms.ops.Multiply(sobel_v_output, sobel_v_output),
+    ms.ops.Multiply(sobel_h_output, sobel_h_output),
+)
 
 # 前向传播
 square_output.forward()

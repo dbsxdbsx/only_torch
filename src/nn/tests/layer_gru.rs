@@ -3,7 +3,7 @@
  * @Date         : 2025-12-30
  * @Description  : GRU Layer 单元测试（与 PyTorch 数值对照）
  *
- * 参考值来源: tests/pytorch_reference/gru_layer_reference.py
+ * 参考值来源: tests/python/layer_reference/gru_layer_reference.py
  */
 
 use crate::nn::layer::gru;

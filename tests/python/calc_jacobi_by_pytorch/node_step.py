@@ -5,6 +5,7 @@ def step(x):
     # 当x >= 0时输出1，当x < 0时输出0
     return torch.where(x >= 0, torch.ones_like(x), torch.zeros_like(x))
 
+
 # 定义输入矩阵
 x = torch.tensor([[0.5, -1.0], [0.0, 2.0]], requires_grad=True)
 y = step(x)

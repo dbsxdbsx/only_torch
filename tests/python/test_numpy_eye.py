@@ -14,5 +14,3 @@ print(eye2)
 eye3 = np.asmatrix(np.eye(3))
 print("\n3x3 eye matrix:")
 print(eye3)
-
-

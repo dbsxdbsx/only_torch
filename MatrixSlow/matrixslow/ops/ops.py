@@ -5,6 +5,7 @@ Created on Wed Jun  5 15:23:01 2019
 
 @author: zhangjuefei
 """
+
 import numpy as np
 
 from ..core import Node
@@ -14,21 +15,24 @@ def fill_diagonal(to_be_filled, filler):
     """
     将 filler 矩阵填充在 to_be_filled 的对角线上
     """
-    assert to_be_filled.shape[0] / \
-        filler.shape[0] == to_be_filled.shape[1] / filler.shape[1]
+    assert (
+        to_be_filled.shape[0] / filler.shape[0]
+        == to_be_filled.shape[1] / filler.shape[1]
+    )
     n = int(to_be_filled.shape[0] / filler.shape[0])
 
     r, c = filler.shape
     for i in range(n):
-        to_be_filled[i * r:(i + 1) * r, i * c:(i + 1) * c] = filler
+        to_be_filled[i * r : (i + 1) * r, i * c : (i + 1) * c] = filler
 
     return to_be_filled
 
 
 class Operator(Node):
-    '''
+    """
     定义操作符抽象类
-    '''
+    """
+
     pass
 
 
@@ -45,7 +49,9 @@ class Add(Operator):
             self.value += parent.value
 
     def get_jacobi(self, parent):
-        return np.mat(np.eye(self.dimension()))  # 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
+        return np.mat(
+            np.eye(self.dimension())
+        )  # 矩阵之和对其中任一个矩阵的雅可比矩阵是单位矩阵
 
 
 class MatMul(Operator):
@@ -54,8 +60,10 @@ class MatMul(Operator):
     """
 
     def compute(self):
-        assert len(self.parents) == 2 and self.parents[0].shape()[
-            1] == self.parents[1].shape()[0]
+        assert (
+            len(self.parents) == 2
+            and self.parents[0].shape()[1] == self.parents[1].shape()[0]
+        )
         self.value = self.parents[0].value * self.parents[1].value
 
     def get_jacobi(self, parent):
@@ -69,10 +77,10 @@ class MatMul(Operator):
             return fill_diagonal(zeros, self.parents[1].value.T)
         else:
             jacobi = fill_diagonal(zeros, self.parents[0].value)
-            row_sort = np.arange(self.dimension()).reshape(
-                self.shape()[::-1]).T.ravel()
-            col_sort = np.arange(parent.dimension()).reshape(
-                parent.shape()[::-1]).T.ravel()
+            row_sort = np.arange(self.dimension()).reshape(self.shape()[::-1]).T.ravel()
+            col_sort = (
+                np.arange(parent.dimension()).reshape(parent.shape()[::-1]).T.ravel()
+            )
             return jacobi[row_sort, :][:, col_sort]
 
 
@@ -84,8 +92,7 @@ class Logistic(Operator):
     def compute(self):
         x = self.parents[0].value
         # 对父节点的每个分量施加Logistic
-        self.value = np.mat(
-            1.0 / (1.0 + np.power(np.e, np.where(-x > 1e2, 1e2, -x))))
+        self.value = np.mat(1.0 / (1.0 + np.power(np.e, np.where(-x > 1e2, 1e2, -x))))
 
     def get_jacobi(self, parent):
         return np.diag(np.mat(np.multiply(self.value, 1 - self.value)).A1)
@@ -99,10 +106,12 @@ class ReLU(Operator):
     nslope = 0.1  # 负半轴的斜率
 
     def compute(self):
-        self.value = np.mat(np.where(
-            self.parents[0].value > 0.0,
-            self.parents[0].value,
-            self.nslope * self.parents[0].value)
+        self.value = np.mat(
+            np.where(
+                self.parents[0].value > 0.0,
+                self.parents[0].value,
+                self.nslope * self.parents[0].value,
+            )
         )
 
     def get_jacobi(self, parent):
@@ -139,9 +148,8 @@ class Reshape(Operator):
     def __init__(self, *parent, **kargs):
         Operator.__init__(self, *parent, **kargs)
 
-        self.to_shape = kargs.get('shape')
+        self.to_shape = kargs.get("shape")
         assert isinstance(self.to_shape, tuple) and len(self.to_shape) == 2
-
 
     def compute(self):
         self.value = self.parents[0].value.reshape(self.to_shape)
@@ -160,7 +168,6 @@ class Multiply(Operator):
         self.value = np.multiply(self.parents[0].value, self.parents[1].value)
 
     def get_jacobi(self, parent):
-
         if parent is self.parents[0]:
             return np.diag(self.parents[1].value.A1)
         else:
@@ -179,7 +186,6 @@ class Convolve(Operator):
         self.padded = None
 
     def compute(self):
-
         data = self.parents[0].value  # 图像
         kernel = self.parents[1].value  # 滤波器
 
@@ -190,7 +196,7 @@ class Convolve(Operator):
         # 补齐数据边缘
         pw, ph = tuple(np.add(data.shape, np.multiply((hkw, hkh), 2)))
         self.padded = np.mat(np.zeros((pw, ph)))
-        self.padded[hkw:hkw + w, hkh:hkh + h] = data
+        self.padded[hkw : hkw + w, hkh : hkh + h] = data
 
         self.value = np.mat(np.zeros((w, h)))
 
@@ -198,10 +204,13 @@ class Convolve(Operator):
         for i in np.arange(hkw, hkw + w):
             for j in np.arange(hkh, hkh + h):
                 self.value[i - hkw, j - hkh] = np.sum(
-                    np.multiply(self.padded[i - hkw:i - hkw + kw, j - hkh:j - hkh + kh], kernel))
+                    np.multiply(
+                        self.padded[i - hkw : i - hkw + kw, j - hkh : j - hkh + kh],
+                        kernel,
+                    )
+                )
 
     def get_jacobi(self, parent):
-
         data = self.parents[0].value  # 图像
         kernel = self.parents[1].value  # 滤波器
 
@@ -217,13 +226,14 @@ class Convolve(Operator):
             for i in np.arange(hkw, hkw + w):
                 for j in np.arange(hkh, hkh + h):
                     mask = np.mat(np.zeros((pw, ph)))
-                    mask[i - hkw:i - hkw + kw, j - hkh:j - hkh + kh] = kernel
-                    jacobi.append(mask[hkw:hkw + w, hkh:hkh + h].A1)
+                    mask[i - hkw : i - hkw + kw, j - hkh : j - hkh + kh] = kernel
+                    jacobi.append(mask[hkw : hkw + w, hkh : hkh + h].A1)
         elif parent is self.parents[1]:
             for i in np.arange(hkw, hkw + w):
                 for j in np.arange(hkh, hkh + h):
                     jacobi.append(
-                        self.padded[i - hkw:i - hkw + kw, j - hkh:j - hkh + kh].A1)
+                        self.padded[i - hkw : i - hkw + kw, j - hkh : j - hkh + kh].A1
+                    )
         else:
             raise Exception("You're not my father")
 
@@ -238,13 +248,12 @@ class MaxPooling(Operator):
     def __init__(self, *parent, **kargs):
         Operator.__init__(self, *parent, **kargs)
 
-        self.stride = kargs.get('stride')
+        self.stride = kargs.get("stride")
         assert self.stride is not None
         self.stride = tuple(self.stride)
         assert isinstance(self.stride, tuple) and len(self.stride) == 2
 
-
-        self.size = kargs.get('size')
+        self.size = kargs.get("size")
         assert self.size is not None
         self.size = tuple(self.size)
         assert isinstance(self.size, tuple) and len(self.size) == 2
@@ -269,9 +278,7 @@ class MaxPooling(Operator):
                 top, bottom = max(0, i - hkw), min(w, i + hkw + 1)
                 left, right = max(0, j - hkh), min(h, j + hkh + 1)
                 window = data[top:bottom, left:right]
-                row.append(
-                    np.max(window)
-                )
+                row.append(np.max(window))
 
                 # 记录最大值在原特征图中的位置
                 pos = np.argmax(window)
@@ -288,7 +295,6 @@ class MaxPooling(Operator):
         self.value = np.mat(result)
 
     def get_jacobi(self, parent):
-
         assert parent is self.parents[0] and self.jacobi is not None
         return self.flag
 
@@ -302,10 +308,7 @@ class Concat(Operator):
         assert len(self.parents) > 0
 
         # 将所有父节点矩阵展平并连接成一个向量
-        self.value = np.concatenate(
-            [p.value.flatten() for p in self.parents],
-            axis=1
-        ).T
+        self.value = np.concatenate([p.value.flatten() for p in self.parents], axis=1).T
 
     def get_jacobi(self, parent):
         assert parent in self.parents
@@ -318,8 +321,7 @@ class Concat(Operator):
 
         jacobi = np.mat(np.zeros((self.dimension(), dimension)))
         start_row = int(np.sum(dimensions[:pos]))
-        jacobi[start_row:start_row + dimension,
-               0:dimension] = np.eye(dimension)
+        jacobi[start_row : start_row + dimension, 0:dimension] = np.eye(dimension)
 
         return jacobi
 
@@ -334,17 +336,18 @@ class ScalarMultiply(Operator):
         self.value = np.multiply(self.parents[0].value, self.parents[1].value)
 
     def get_jacobi(self, parent):
-
         assert parent in self.parents
 
         if parent is self.parents[0]:
             return self.parents[1].value.flatten().T
         else:
-            return np.mat(np.eye(self.parents[1].dimension())) * self.parents[0].value[0, 0]
+            return (
+                np.mat(np.eye(self.parents[1].dimension()))
+                * self.parents[0].value[0, 0]
+            )
 
 
 class Step(Operator):
-
     def compute(self):
         self.value = np.mat(np.where(self.parents[0].value >= 0.0, 1.0, 0.0))
 
@@ -353,14 +356,11 @@ class Step(Operator):
 
 
 class Welding(Operator):
-
     def compute(self):
-
         assert len(self.parents) == 1 and self.parents[0] is not None
         self.value = self.parents[0].value
 
     def get_jacobi(self, parent):
-
         assert parent is self.parents[0]
         return np.mat(np.eye(self.dimension()))
 

@@ -77,7 +77,7 @@ def main():
     print("梯度分析:")
     print(f"w_shared 第一次梯度 (仅 task1):\n{w_shared_grad_after_task1}")
     print(f"\nw_shared 累积后梯度 (task1 + task2):\n{w_shared.grad}")
-    print(f"\n验证: task1 贡献 + task2 贡献 = 累积梯度")
+    print("\n验证: task1 贡献 + task2 贡献 = 累积梯度")
 
     # ========== 生成 Rust 测试用的精确数值 ==========
     print("\n" + "=" * 60)
@@ -88,7 +88,9 @@ def main():
     print(f"// out2: {out2.detach().numpy().flatten().tolist()}")
 
     print("\n// 任务 1 backward 后的梯度")
-    print(f"// w_shared_grad_task1: {w_shared_grad_after_task1.numpy().flatten().tolist()}")
+    print(
+        f"// w_shared_grad_task1: {w_shared_grad_after_task1.numpy().flatten().tolist()}"
+    )
     print(f"// w1_grad: {w1.grad.numpy().flatten().tolist()}")
 
     # 为了获取 w2 单独的梯度，需要重新计算
@@ -108,11 +110,12 @@ def main():
 
     # 验证累积是否正确
     expected_accumulated = w_shared_grad_after_task1 + w_shared2.grad
-    print(f"\n// 验证: task1_grad + task2_grad = {expected_accumulated.numpy().flatten().tolist()}")
+    print(
+        f"\n// 验证: task1_grad + task2_grad = {expected_accumulated.numpy().flatten().tolist()}"
+    )
     assert torch.allclose(w_shared.grad, expected_accumulated), "梯度累积验证失败!"
     print("// ✓ 梯度累积验证通过!")
 
 
 if __name__ == "__main__":
     main()
-

@@ -101,6 +101,7 @@ impl GradientAccumulator {
     }
 
     /// 获取累积的样本数量
+    #[allow(dead_code)]
     pub(crate) const fn sample_count(&self) -> usize {
         self.sample_count
     }
@@ -149,6 +150,7 @@ impl OptimizerState {
     }
 
     /// 获取梯度累积器的可变引用
+    #[allow(dead_code)]
     pub(crate) const fn gradient_accumulator_mut(&mut self) -> &mut GradientAccumulator {
         &mut self.gradient_accumulator
     }

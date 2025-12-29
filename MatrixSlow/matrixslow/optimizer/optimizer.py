@@ -4,6 +4,7 @@ Created on Wed Jun  5 15:25:06 2019
 
 @author: zhangjuefei
 """
+
 import abc
 
 import numpy as np
@@ -51,7 +52,6 @@ class Optimizer(object):
         """
 
     def apply_gradients(self, node_gradients_dict, summarize=False, acc_no=None):
-
         for node, gradient in node_gradients_dict.items():
             if isinstance(node, Node):
                 pass
@@ -74,7 +74,6 @@ class Optimizer(object):
                 self.acc_no = acc_no
 
     def update(self, var_gradients=None):
-
         if var_gradients is not None:
             self.apply_gradients(var_gradients)
 
@@ -116,7 +115,6 @@ class GradientDescent(Optimizer):
     """
 
     def __init__(self, graph, target, learning_rate=0.01):
-
         Optimizer.__init__(self, graph, target)
         self.learning_rate = learning_rate
 
@@ -126,7 +124,6 @@ class GradientDescent(Optimizer):
         """
         for node in self.graph.nodes:
             if isinstance(node, Variable) and node.trainable:
-
                 # 取得该节点在当前批的平均梯度
                 gradient = self.get_gradient(node)
 
@@ -140,7 +137,6 @@ class Momentum(Optimizer):
     """
 
     def __init__(self, graph, target, learning_rate=0.01, momentum=0.9):
-
         Optimizer.__init__(self, graph, target)
 
         self.learning_rate = learning_rate
@@ -152,19 +148,18 @@ class Momentum(Optimizer):
         self.v = dict()
 
     def _update(self):
-
         for node in self.graph.nodes:
             if isinstance(node, Variable) and node.trainable:
-
                 # 取得该节点在当前批的平均梯度
                 gradient = self.get_gradient(node)
 
                 if node not in self.v:
-                    self.v[node] = - self.learning_rate * gradient
+                    self.v[node] = -self.learning_rate * gradient
                 else:
                     # 滑动平均累积历史速度
-                    self.v[node] = self.momentum * self.v[node] \
-                        - self.learning_rate * gradient
+                    self.v[node] = (
+                        self.momentum * self.v[node] - self.learning_rate * gradient
+                    )
 
                 # 更新变量节点的值
                 node.set_value(node.value + self.v[node])
@@ -176,7 +171,6 @@ class AdaGrad(Optimizer):
     """
 
     def __init__(self, graph, target, learning_rate=0.01):
-
         Optimizer.__init__(self, graph, target)
 
         self.learning_rate = learning_rate
@@ -184,10 +178,8 @@ class AdaGrad(Optimizer):
         self.s = dict()
 
     def _update(self):
-
         for node in self.graph.nodes:
             if isinstance(node, Variable) and node.trainable:
-
                 # 取得该节点在当前批的平均梯度
                 gradient = self.get_gradient(node)
 
@@ -198,8 +190,10 @@ class AdaGrad(Optimizer):
                     self.s[node] = self.s[node] + np.power(gradient, 2)
 
                 # 更新变量节点的值
-                node.set_value(node.value - self.learning_rate *
-                               gradient / (np.sqrt(self.s[node] + 1e-10)))
+                node.set_value(
+                    node.value
+                    - self.learning_rate * gradient / (np.sqrt(self.s[node] + 1e-10))
+                )
 
 
 class RMSProp(Optimizer):
@@ -208,7 +202,6 @@ class RMSProp(Optimizer):
     """
 
     def __init__(self, graph, target, learning_rate=0.01, beta=0.9):
-
         Optimizer.__init__(self, graph, target)
 
         self.learning_rate = learning_rate
@@ -220,10 +213,8 @@ class RMSProp(Optimizer):
         self.s = dict()
 
     def _update(self):
-
         for node in self.graph.nodes:
             if isinstance(node, Variable) and node.trainable:
-
                 # 取得该节点在当前批的平均梯度
                 gradient = self.get_gradient(node)
 
@@ -231,12 +222,15 @@ class RMSProp(Optimizer):
                 if node not in self.s:
                     self.s[node] = (1 - self.beta) * np.power(gradient, 2)
                 else:
-                    self.s[node] = self.beta * self.s[node] + \
-                        (1 - self.beta) * np.power(gradient, 2)
+                    self.s[node] = self.beta * self.s[node] + (
+                        1 - self.beta
+                    ) * np.power(gradient, 2)
 
                 # 更新变量节点的值
-                node.set_value(node.value - self.learning_rate *
-                               gradient / (np.sqrt(self.s[node] + 1e-10)))
+                node.set_value(
+                    node.value
+                    - self.learning_rate * gradient / (np.sqrt(self.s[node] + 1e-10))
+                )
 
 
 class Adam(Optimizer):
@@ -245,7 +239,6 @@ class Adam(Optimizer):
     """
 
     def __init__(self, graph, target, learning_rate=0.01, beta_1=0.9, beta_2=0.99):
-
         Optimizer.__init__(self, graph, target)
         self.learning_rate = learning_rate
 
@@ -264,10 +257,8 @@ class Adam(Optimizer):
         self.s = dict()
 
     def _update(self):
-
         for node in self.graph.nodes:
             if isinstance(node, Variable) and node.trainable:
-
                 # 取得该节点在当前批的平均梯度
                 gradient = self.get_gradient(node)
 
@@ -276,13 +267,17 @@ class Adam(Optimizer):
                     self.s[node] = (1 - self.beta_2) * np.power(gradient, 2)
                 else:
                     # 梯度累积
-                    self.v[node] = self.beta_1 * self.v[node] + \
-                        (1 - self.beta_1) * gradient
+                    self.v[node] = (
+                        self.beta_1 * self.v[node] + (1 - self.beta_1) * gradient
+                    )
 
                     # 各分量平方累积
-                    self.s[node] = self.beta_2 * self.s[node] + \
-                        (1 - self.beta_2) * np.power(gradient, 2)
+                    self.s[node] = self.beta_2 * self.s[node] + (
+                        1 - self.beta_2
+                    ) * np.power(gradient, 2)
 
                 # 更新变量节点的值
-                node.set_value(node.value - self.learning_rate *
-                               self.v[node] / np.sqrt(self.s[node] + 1e-10))
+                node.set_value(
+                    node.value
+                    - self.learning_rate * self.v[node] / np.sqrt(self.s[node] + 1e-10)
+                )

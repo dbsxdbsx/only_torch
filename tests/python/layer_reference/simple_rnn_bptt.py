@@ -10,7 +10,7 @@
     output = hidden[T] * w_out
     loss = MSE(output, target)
 
-运行: python tests/pytorch_reference/simple_rnn_bptt.py
+运行: python tests/python/layer_reference/simple_rnn_bptt.py
 """
 
 import torch
@@ -65,6 +65,7 @@ print("=" * 60)
 
 loss.backward()
 
+assert w_scale.grad is not None and w_out.grad is not None
 print(f"\ndL/d(w_scale) = {w_scale.grad.item():.6f}")
 print(f"dL/d(w_out) = {w_out.grad.item():.6f}")
 
@@ -128,4 +129,3 @@ const GRAD_W_OUT: f32 = {w_out.grad.item():.8f};
 """)
 
 print("\n如果 only_torch 的 BPTT 实现正确，应该得到相同的梯度值！")
-

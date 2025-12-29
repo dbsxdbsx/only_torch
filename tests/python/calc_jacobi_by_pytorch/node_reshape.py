@@ -10,7 +10,6 @@ Reshape 的 Jacobi 是单位矩阵，因为每个输出元素正好等于对应�
 """
 
 import torch
-import torch.nn as nn
 
 
 def test_reshape_jacobi_is_identity():
@@ -33,7 +32,6 @@ def test_reshape_jacobi_is_identity():
     # Jacobi[i, j] = ∂y[i] / ∂x[j]
     jacobi = torch.zeros(6, 6)
     y_flat = y.reshape(-1)
-    x_flat = x.reshape(-1)
 
     for i in range(6):
         # 清除之前的梯度
@@ -175,4 +173,3 @@ if __name__ == "__main__":
     print("1. Reshape Jacobi is Identity Matrix - PASS")
     print("2. Reshape in chain does not affect gradient (pass-through) - PASS")
     print("3. Chained Reshapes still have Identity Jacobi - PASS")
-

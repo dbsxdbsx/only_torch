@@ -89,6 +89,7 @@ impl Graph {
         self.last_forward_pass_id
     }
 
+    #[allow(dead_code)]
     pub(in crate::nn) const fn last_backward_pass_id(&self) -> u64 {
         self.last_backward_pass_id
     }

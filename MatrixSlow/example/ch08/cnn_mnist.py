@@ -6,15 +6,17 @@ Created on Tue Mar 24 12:16:15 2020
 """
 
 import sys
-sys.path.append('../..')
+
+sys.path.append("../..")
 
 import numpy as np
 from sklearn.datasets import fetch_openml
 from sklearn.preprocessing import OneHotEncoder
+
 import matrixslow as ms
 
 # 加载MNIST数据集，取一部分样本并归一化
-X, y = fetch_openml('mnist_784', version=1, return_X_y=True)
+X, y = fetch_openml("mnist_784", version=1, return_X_y=True)
 X, y = X[:1000] / 255, y.astype(np.int)[:1000]
 
 # 将整数形式的标签转换成One-Hot编码
@@ -65,40 +67,37 @@ batch_size = 32
 
 # 训练
 for epoch in range(60):
-    
     batch_count = 0
-    
+
     for i in range(len(X)):
-        
         feature = np.mat(X[i]).reshape(img_shape)
         label = np.mat(one_hot_label[i]).T
-        
+
         x.set_value(feature)
         one_hot.set_value(label)
-        
 
         optimizer.one_step()
-        
 
         batch_count += 1
         if batch_count >= batch_size:
-            
-            print("epoch: {:d}, iteration: {:d}, loss: {:.3f}".format(epoch + 1, i + 1, loss.value[0, 0]))
+            print(
+                "epoch: {:d}, iteration: {:d}, loss: {:.3f}".format(
+                    epoch + 1, i + 1, loss.value[0, 0]
+                )
+            )
 
             optimizer.update()
             batch_count = 0
-        
 
     pred = []
     for i in range(len(X)):
-                
         feature = np.mat(X[i]).reshape(img_shape)
         x.set_value(feature)
-        
+
         predict.forward()
         pred.append(predict.value.A.ravel())
-            
+
     pred = np.array(pred).argmax(axis=1)
     accuracy = (y == pred).astype(np.int).sum() / len(X)
-       
+
     print("epoch: {:d}, accuracy: {:.3f}".format(epoch + 1, accuracy))

@@ -13,17 +13,16 @@ def multilayer_perception(input_size, classes, hidden_layers, activation):
     :return: x: 输入变量，logits: 多分类 logits
     """
 
-    with name_scope('Input'):
+    with name_scope("Input"):
         x = Variable((input_size, 1), init=False, trainable=False)
 
-    with name_scope('Hidden'):
-
+    with name_scope("Hidden"):
         output = x
         for size in hidden_layers:
             output = fc(output, input_size, size, activation)
             input_size = size
 
-    with name_scope('Logits'):
+    with name_scope("Logits"):
         logits = fc(output, input_size, classes, None)  # 无激活函数
 
     return x, logits

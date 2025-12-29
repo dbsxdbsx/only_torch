@@ -18,7 +18,6 @@ def conv(feature_maps, input_shape, kernels, kernel_shape, activation):
 
     outputs = []
     for i in range(kernels):
-
         channels = []
         for fm in feature_maps:
             kernel = Variable(kernel_shape, init=True, trainable=True)

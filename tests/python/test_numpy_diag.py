@@ -1,9 +1,7 @@
 import numpy as np
 
 # Test case 1: Input a square matrix
-matrix = np.array([[1, 2, 3],
-                   [4, 5, 6],
-                   [7, 8, 9]])
+matrix = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
 print("Input matrix:")
 print(matrix)
 diag_vector = np.diag(matrix)
@@ -27,8 +25,7 @@ print("Diagonal matrix from single value:")
 print(diag_matrix)
 
 # Test case 4: Input a non-square matrix
-non_square = np.array([[1, 2, 3],
-                       [4, 5, 6]])
+non_square = np.array([[1, 2, 3], [4, 5, 6]])
 print("\nInput non-square matrix:")
 print(non_square)
 diag_vector = np.diag(non_square)

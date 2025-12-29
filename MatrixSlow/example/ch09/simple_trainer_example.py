@@ -1,27 +1,28 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-'''
+"""
 @Author: chenzhen
 @Date: 2020-04-10 17:04:46
 @LastEditTime: 2020-04-30 09:23:38
 @LastEditors: chenzhen
 @Description:
-'''
+"""
+
 import sys
-sys.path.append('../../')
 
-from matrixslow.trainer import SimpleTrainer
-import matrixslow as ms
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.datasets import fetch_openml
+sys.path.append("../../")
+
 import numpy as np
+from matrixslow.trainer import SimpleTrainer
+from sklearn.datasets import fetch_openml
+from sklearn.preprocessing import OneHotEncoder
 
-
+import matrixslow as ms
 
 # 加载MNIST数据集，取一部分样本并归一化
 
 
-X, y = fetch_openml('mnist_784', version=1, return_X_y=True, cache=True)
+X, y = fetch_openml("mnist_784", version=1, return_X_y=True, cache=True)
 X, y = X[:1000] / 255, y.astype(np.int)[:1000]
 X = np.reshape(np.array(X), (1000, 28, 28))
 
@@ -73,6 +74,7 @@ optimizer = ms.optimizer.Adam(ms.default_graph, loss, learning_rate)
 batch_size = 32
 
 trainer = SimpleTrainer(
-    [x], one_hot, loss, optimizer, epoches=10, batch_size=batch_size)
+    [x], one_hot, loss, optimizer, epoches=10, batch_size=batch_size
+)
 
 trainer.train({x.name: X}, one_hot_label)

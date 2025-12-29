@@ -4,15 +4,16 @@ Created on Fri Jul 26 10:00:02 CST 2019
 
 @author: chenzhen
 """
-from .node import Variable
+
 from .graph import default_graph
+from .node import Variable
 
 
 def get_node_from_graph(node_name, name_scope=None, graph=None):
     if graph is None:
         graph = default_graph
     if name_scope:
-        node_name = name_scope + '/' + node_name
+        node_name = name_scope + "/" + node_name
     for node in graph.nodes:
         if node.name == node_name:
             return node
@@ -23,10 +24,14 @@ def get_trainable_variables_from_graph(node_name=None, name_scope=None, graph=No
     if graph is None:
         graph = default_graph
     if node_name is None:
-        return [node for node in graph.nodes if isinstance(node, Variable) and node.trainable]
+        return [
+            node
+            for node in graph.nodes
+            if isinstance(node, Variable) and node.trainable
+        ]
 
     if name_scope:
-        node_name = name_scope + '/' + node_name
+        node_name = name_scope + "/" + node_name
     return get_node_from_graph(node_name, graph=graph)
 
 

@@ -11,14 +11,14 @@ def logistic_regression(input_size, classes):
     :return: x: 输入变量，logits: 多分类 logits
     """
 
-    with name_scope('Input'):
+    with name_scope("Input"):
         x = Variable((input_size, 1), init=False, trainable=False)
 
-    with name_scope('Parameter'):
+    with name_scope("Parameter"):
         w = Variable((classes, input_size), init=True, trainable=True)
         b = Variable((classes, 1), init=True, trainable=True)
 
-    with name_scope('Logits'):
+    with name_scope("Logits"):
         logits = Add(MatMul(w, x), b)
 
     return x, logits

@@ -4,9 +4,9 @@ SoftmaxCrossEntropy 节点的 PyTorch 验证脚本
 用于生成 Rust 单元测试的预期值
 """
 
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
 
 np.set_printoptions(precision=8, suppress=True)
 
@@ -47,7 +47,9 @@ def test_case_2_batch():
     print("=" * 50)
 
     # 10 个类别
-    logits = torch.tensor([0.5, 1.5, -0.5, 2.0, 0.0, -1.0, 1.0, 0.5, -0.5, 1.5], requires_grad=True)
+    logits = torch.tensor(
+        [0.5, 1.5, -0.5, 2.0, 0.0, -1.0, 1.0, 0.5, -0.5, 1.5], requires_grad=True
+    )
     # 真实类别是 3
     labels = torch.zeros(10)
     labels[3] = 1.0
@@ -127,4 +129,3 @@ if __name__ == "__main__":
     test_case_3_numerical_stability()
     test_case_4_single_element()
     test_case_5_uniform()
-
