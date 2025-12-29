@@ -1,0 +1,64 @@
+digraph Model {
+    rankdir=TB;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    subgraph cluster_rnn {
+        label=<<B>rnn</B><BR/><FONT POINT-SIZE="9">RNN: 1→8</FONT>>;
+        style=filled;
+        fillcolor="#E3F2FD80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "3" [label=<rnn_W_ih<BR/><B>Parameter</B><BR/>[1, 8]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "4" [label=<rnn_W_hh<BR/><B>Parameter</B><BR/>[8, 8]<BR/>(64 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "5" [label=<rnn_b_h<BR/><B>Parameter</B><BR/>[1, 8]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "7" [label=<rnn_ones<BR/><B>Input</B><BR/>[16, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "8" [label=<rnn_input_contrib<BR/><B>MatMul</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "9" [label=<rnn_hidden_contrib<BR/><B>MatMul</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "10" [label=<rnn_bias_broadcast<BR/><B>MatMul</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "11" [label=<rnn_sum1<BR/><B>Add</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "12" [label=<rnn_pre_h<BR/><B>Add</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "13" [label=<rnn_h<BR/><B>Tanh</B><BR/>[16, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    }
+
+    "1" [label=<input<BR/><B>Input</B><BR/>[16, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "2" [label=<mask<BR/><B>Input</B><BR/>[16, 8]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "6" [label=<rnn_h_prev<BR/><B>State</B><BR/>[16, 8]> shape=cylinder style=filled fillcolor="#FFE0B2" fontsize=10];
+    "14" [label=<neg_one<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "15" [label=<neg_h_prev<BR/><B>ScalarMultiply</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "16" [label=<delta<BR/><B>Add</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "17" [label=<masked_delta<BR/><B>Multiply</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "18" [label=<masked_h<BR/><B>Add</B><BR/>[16, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "19" [label=<w_ho<BR/><B>Parameter</B><BR/>[8, 1]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "20" [label=<pre_output<BR/><B>MatMul</B><BR/>[16, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "21" [label=<output<BR/><B>Sigmoid</B><BR/>[16, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "22" [label=<target<BR/><B>Input</B><BR/>[16, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "23" [label=<loss<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
+
+    "1" -> "8";
+    "3" -> "8";
+    "6" -> "9";
+    "4" -> "9";
+    "7" -> "10";
+    "5" -> "10";
+    "8" -> "11";
+    "9" -> "11";
+    "11" -> "12";
+    "10" -> "12";
+    "12" -> "13";
+    "14" -> "15";
+    "6" -> "15";
+    "13" -> "16";
+    "15" -> "16";
+    "2" -> "17";
+    "16" -> "17";
+    "6" -> "18";
+    "17" -> "18";
+    "18" -> "20";
+    "19" -> "20";
+    "20" -> "21";
+    "21" -> "23";
+    "22" -> "23";
+    "13" -> "6" [style=dashed color="#E67E22" label="t-1" fontcolor="#E67E22"];
+}

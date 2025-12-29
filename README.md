@@ -87,12 +87,15 @@ opt-level = 3
   - ✅ **IT-1: 奇偶性检测（固定长度 + 单序列）** ← 验收通过（98%准确率）
   - ✅ **IT-2: 奇偶性检测（固定长度 + Batch）** ← 验收通过
   - ✅ **IT-3a: 奇偶性检测（变长 + Batch + Padding/Mask）** ← 96.9% 准确率
-  - Phase 3: 模板层（∆-RNN/GRU 等可选便捷 API）
-  - IT-3b: 奇偶性检测（变长 + 模板层 API）← Phase 3 后
+  - ✅ Phase 3: 模板层 API（`rnn()`, `lstm()`, `gru()`）
+  - ✅ **IT-3b: 奇偶性检测（RNN Layer）** ← 95.3% 准确率
+  - ✅ **IT-3c: 奇偶性检测（LSTM Layer）** ← 93.8% 准确率
+  - ✅ **IT-3d: 奇偶性检测（GRU Layer）** ← 90.6% 准确率
   - Phase 4: NEAT 集成
 
 ### 🟡 API 改进
-
+- only retain `save_visualization_grouped`?
+- waht if make the input ndoes also be groupd together?
 - fis still lacking some of the nodes need to append, refine with `grad: Option<Tensor>,`？
 - 是否需要整合单独跟批处理版本的 forward 跟 backward 相关类的方法? 如果需要，怎么整合？
 - ~~Graph/NodeHandle 代码按功能分块重组~~ → 推迟至 Phase 1 完成后评估

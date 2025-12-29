@@ -13,13 +13,16 @@
 | Phase 2.5: State 节点 | ✅ | 修复跨时间梯度传递 |
 | Phase 2 修复 A: 通用激活 | ✅ | 支持 tanh/sigmoid/任意组合 |
 | Phase 2 修复 B: VJP 模式 | ✅ | 大 batch/hidden 高效训练 |
-| Phase 3: 模板层 | ⏳ | ∆-RNN, GRU, LSTM |
+| Phase 3: 模板层 | ✅ | `rnn()`, `lstm()`, `gru()` Layer API |
 | Phase 4: NEAT 集成 | ⏳ | 结构变异、物种形成 |
 
 **验收指标**：
-- 7/7 PyTorch 数值对照测试通过
+- 21/21 PyTorch 数值对照测试通过（RNN 7 + LSTM 7 + GRU 7）
 - batch=64, hidden=256：241ms/5epochs，无 OOM
 - IT-1 奇偶性检测：98% 准确率
+- IT-3b RNN Layer：95.3% 准确率
+- IT-3c LSTM Layer：93.8% 准确率
+- IT-3d GRU Layer：90.6% 准确率
 
 ---
 
@@ -472,11 +475,13 @@ graph.set_initial_state(h_prev, h_0)?;
 | IT-1 | 奇偶性检测（固定长度） | ❌ 单序列 | ✅ 98% 准确率 |
 | IT-2 | 奇偶性检测（固定长度） | ✅ Batch | ✅ 梯度正确 |
 | IT-3a | 奇偶性检测（变长 + Padding/Mask） | ✅ Batch | ✅ 96.9% 准确率 |
-| IT-3b | 奇偶性检测（变长 + 模板层 API） | ✅ Batch | Phase 3 后 |
+| IT-3b | 奇偶性检测（变长 + RNN Layer） | ✅ Batch | ✅ 95.3% 准确率 |
+| IT-3c | 奇偶性检测（变长 + LSTM Layer） | ✅ Batch | ✅ 93.8% 准确率 |
+| IT-3d | 奇偶性检测（变长 + GRU Layer） | ✅ Batch | ✅ 90.6% 准确率 |
 
-**IT-3a vs IT-3b**：
+**集成测试说明**：
 - **IT-3a**：用原子节点手工实现 padding + mask，验证变长语义的核心正确性
-- **IT-3b**：用 Phase 3 模板层 API 重写同一测试，验收封装易用性
+- **IT-3b/c/d**：分别用 `rnn()`, `lstm()`, `gru()` Layer API 实现同一任务，验收 Phase 3 封装易用性
 
 **奇偶性检测任务**：
 
