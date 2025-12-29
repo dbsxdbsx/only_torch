@@ -1,3 +1,4 @@
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -79,16 +80,15 @@ fn test_node_mat_mul_creation_with_inconsistent_shape() {
                 assert!(result.is_ok());
             } else {
                 // 形状不匹配,应该失败
-                assert_eq!(
+                assert_err!(
                     result,
-                    Err(GraphError::ShapeMismatch {
-                        expected: vec![left_shape[0], right_shape[1]],
-                        got: vec![left_shape[1], right_shape[0]],
-                        message: format!(
-                            "MatMul节点的2个父节点形状不兼容：父节点1的列数({})与父节点2的行数({})不相等。",
-                            left_shape[1], right_shape[0]
-                        ),
-                    })
+                    GraphError::ShapeMismatch { expected, got, message }
+                        if expected == &[left_shape[0], right_shape[1]]
+                            && got == &[left_shape[1], right_shape[0]]
+                            && message == &format!(
+                                "MatMul节点的2个父节点形状不兼容：父节点1的列数({})与父节点2的行数({})不相等。",
+                                left_shape[1], right_shape[0]
+                            )
                 );
             }
         }
@@ -112,11 +112,9 @@ fn test_node_mat_mul_name_generation() {
 
     // 3. 测试节点名称重复
     let result = graph.new_mat_mul_node(input1, input2, Some("explicit_mat_mul"));
-    assert_eq!(
+    assert_err!(
         result,
-        Err(GraphError::DuplicateNodeName(
-            "节点explicit_mat_mul在图default_graph中重复".to_string()
-        ))
+        GraphError::DuplicateNodeName("节点explicit_mat_mul在图default_graph中重复")
     );
 }
 
@@ -131,21 +129,15 @@ fn test_node_mat_mul_manually_set_value() {
 
     // 1. 测试直接设置MatMul节点的值（应该失败）
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(mat_mul, Some(&test_value)),
-        Err(GraphError::InvalidOperation(
-            "节点[id=3, name=mat_mul, type=MatMul]的值只能通过前向传播计算得到，不能直接设置"
-                .into()
-        ))
+        GraphError::InvalidOperation("节点[id=3, name=mat_mul, type=MatMul]的值只能通过前向传播计算得到，不能直接设置")
     );
 
     // 2. 测试清除MatMul节点的值（也应该失败）
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(mat_mul, None),
-        Err(GraphError::InvalidOperation(
-            "节点[id=3, name=mat_mul, type=MatMul]的值只能通过前向传播计算得到，不能直接设置"
-                .into()
-        ))
+        GraphError::InvalidOperation("节点[id=3, name=mat_mul, type=MatMul]的值只能通过前向传播计算得到，不能直接设置")
     );
 }
 
@@ -251,18 +243,14 @@ fn test_node_mat_mul_forward_propagation() {
             } else {
                 // 如果有input节点，因创建时其值未初始化，所以前向传播应失败
                 if parent1_type == "input" {
-                    assert_eq!(
+                    assert_err!(
                         graph.forward_node(mat_mul),
-                        Err(GraphError::InvalidOperation(format!(
-                            "节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1",
-                        )))
+                        GraphError::InvalidOperation("节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1")
                     );
                 } else if parent2_type == "input" {
-                    assert_eq!(
+                    assert_err!(
                         graph.forward_node(mat_mul),
-                        Err(GraphError::InvalidOperation(format!(
-                            "节点[id=2, name=input_2, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1",
-                        )))
+                        GraphError::InvalidOperation("节点[id=2, name=input_2, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1")
                     );
                 }
 
@@ -299,11 +287,9 @@ fn test_node_mat_mul_backward_propagation() {
         .unwrap();
 
     // 2. 测试在前向传播之前进行反向传播（应该失败）
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[parent1], result),
-        Err(GraphError::ComputationError(format!(
-            "反向传播：结果节点[id=3, name=result, type=MatMul]没有值"
-        )))
+        GraphError::ComputationError("反向传播：结果节点[id=3, name=result, type=MatMul]没有值")
     );
 
     // 3. 设置输入值 (与Python测试tests\calc_jacobi_by_pytorch\node_mat_mul.py保持一致)

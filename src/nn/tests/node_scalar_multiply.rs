@@ -1,3 +1,4 @@
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -69,26 +70,12 @@ fn test_node_scalar_multiply_creation_with_invalid_shape() {
     let matrix = graph.new_input_node(&[3, 4], Some("matrix")).unwrap();
 
     let result = graph.new_scalar_multiply_node(non_scalar, matrix, None);
-    assert_eq!(
-        result,
-        Err(GraphError::ShapeMismatch {
-            expected: vec![1, 1],
-            got: vec![2, 3],
-            message: "ScalarMultiply的第1个父节点必须是标量(形状为[1,1])".to_string(),
-        })
-    );
+    assert_err!(result, GraphError::ShapeMismatch([1, 1], [2, 3], "ScalarMultiply的第1个父节点必须是标量(形状为[1,1])"));
 
     // 2. 测试第1个参数是向量(1xN)而非标量（应该失败）
     let vector = graph.new_parameter_node(&[1, 3], Some("vector")).unwrap();
     let result = graph.new_scalar_multiply_node(vector, matrix, None);
-    assert_eq!(
-        result,
-        Err(GraphError::ShapeMismatch {
-            expected: vec![1, 1],
-            got: vec![1, 3],
-            message: "ScalarMultiply的第1个父节点必须是标量(形状为[1,1])".to_string(),
-        })
-    );
+    assert_err!(result, GraphError::ShapeMismatch([1, 1], [1, 3], "ScalarMultiply的第1个父节点必须是标量(形状为[1,1])"));
 }
 
 #[test]
@@ -112,12 +99,7 @@ fn test_node_scalar_multiply_name_generation() {
 
     // 3. 测试名称重复
     let result = graph.new_scalar_multiply_node(scalar, matrix, Some("my_scalar_mul"));
-    assert_eq!(
-        result,
-        Err(GraphError::DuplicateNodeName(
-            "节点my_scalar_mul在图default_graph中重复".to_string()
-        ))
-    );
+    assert_err!(result, GraphError::DuplicateNodeName("节点my_scalar_mul在图default_graph中重复"));
 }
 
 #[test]
@@ -131,12 +113,9 @@ fn test_node_scalar_multiply_manually_set_value() {
 
     // 测试直接设置ScalarMultiply节点的值（应该失败）
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(result, Some(&test_value)),
-        Err(GraphError::InvalidOperation(
-            "节点[id=3, name=sm, type=ScalarMultiply]的值只能通过前向传播计算得到，不能直接设置"
-                .into()
-        ))
+        GraphError::InvalidOperation("节点[id=3, name=sm, type=ScalarMultiply]的值只能通过前向传播计算得到，不能直接设置")
     );
 }
 

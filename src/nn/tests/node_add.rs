@@ -1,3 +1,4 @@
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -55,11 +56,10 @@ fn test_node_add_creation() {
     {
         let input = graph.new_input_node(&[2, 3], Some("input5")).unwrap();
         let result = graph.new_add_node(&[input], None);
-        assert_eq!(
+        // 使用简洁语法：直接传字符串字面量
+        assert_err!(
             result,
-            Err(GraphError::InvalidOperation(
-                "Add节点至少需要2个父节点".into()
-            ))
+            GraphError::InvalidOperation("Add节点至少需要2个父节点")
         );
     }
 }
@@ -84,35 +84,24 @@ fn test_node_add_creation_with_inconsistent_shape() {
     // 3. 测试不同形状组合
     // 3.1 测试行数不同
     let result = graph.new_add_node(&[input1, input2], None);
-    assert_eq!(
+    // 使用简洁语法：ShapeMismatch(expected, got, message)
+    assert_err!(
         result,
-        Err(GraphError::ShapeMismatch {
-            expected: vec![2, 2],
-            got: vec![3, 2],
-            message: "Add节点的所有父节点形状必须相同".to_string()
-        })
+        GraphError::ShapeMismatch([2, 2], [3, 2], "Add节点的所有父节点形状必须相同")
     );
 
     // 3.2 测试列数不同
     let result = graph.new_add_node(&[input1, param3], None);
-    assert_eq!(
+    assert_err!(
         result,
-        Err(GraphError::ShapeMismatch {
-            expected: vec![2, 2],
-            got: vec![2, 3],
-            message: "Add节点的所有父节点形状必须相同".to_string()
-        })
+        GraphError::ShapeMismatch([2, 2], [2, 3], "Add节点的所有父节点形状必须相同")
     );
 
     // 3.3 测试多个父节点的情况
     let result = graph.new_add_node(&[input1, input2, param3], None);
-    assert_eq!(
+    assert_err!(
         result,
-        Err(GraphError::ShapeMismatch {
-            expected: vec![2, 2],
-            got: vec![3, 2],
-            message: "Add节点的所有父节点形状必须相同".to_string()
-        })
+        GraphError::ShapeMismatch([2, 2], [3, 2], "Add节点的所有父节点形状必须相同")
     );
 }
 
@@ -134,11 +123,9 @@ fn test_node_add_name_generation() {
 
     // 3. 测试节点名称重复
     let duplicate_result = graph.new_add_node(&[input1, input2], Some("explicit_add"));
-    assert_eq!(
+    assert_err!(
         duplicate_result,
-        Err(GraphError::DuplicateNodeName(
-            "节点explicit_add在图default_graph中重复".to_string()
-        ))
+        GraphError::DuplicateNodeName("节点explicit_add在图default_graph中重复")
     );
 }
 
@@ -151,19 +138,19 @@ fn test_node_add_manually_set_value() {
 
     // 1. 测试直接设置Add节点的值（应该失败）
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(add, Some(&test_value)),
-        Err(GraphError::InvalidOperation(
-            "节点[id=3, name=add, type=Add]的值只能通过前向传播计算得到，不能直接设置".into()
-        ))
+        GraphError::InvalidOperation(
+            "节点[id=3, name=add, type=Add]的值只能通过前向传播计算得到，不能直接设置"
+        )
     );
 
     // 2. 测试清除Add节点的值（也应该失败）
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(add, None),
-        Err(GraphError::InvalidOperation(
-            "节点[id=3, name=add, type=Add]的值只能通过前向传播计算得到，不能直接设置".into()
-        ))
+        GraphError::InvalidOperation(
+            "节点[id=3, name=add, type=Add]的值只能通过前向传播计算得到，不能直接设置"
+        )
     );
 }
 
@@ -278,18 +265,18 @@ fn test_node_add_forward_propagation() {
             } else {
                 // 如果有input节点，因创建时其值未初始化，所以前向传播应失败
                 if parent1_type == "input" {
-                    assert_eq!(
+                    assert_err!(
                         graph.forward_node(add),
-                        Err(GraphError::InvalidOperation(format!(
-                            "节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1",
-                        )))
+                        GraphError::InvalidOperation(
+                            "节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1"
+                        )
                     );
                 } else if parent2_type == "input" {
-                    assert_eq!(
+                    assert_err!(
                         graph.forward_node(add),
-                        Err(GraphError::InvalidOperation(format!(
-                            "节点[id=2, name=input_2, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1",
-                        )))
+                        GraphError::InvalidOperation(
+                            "节点[id=2, name=input_2, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1"
+                        )
                     );
                 }
 
@@ -326,11 +313,9 @@ fn test_node_add_backward_propagation() {
         .unwrap();
 
     // 2. 测试在前向传播之前进行反向传播（应该失败）
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[parent1], result),
-        Err(GraphError::ComputationError(format!(
-            "反向传播：结果节点[id=3, name=result, type=Add]没有值"
-        )))
+        GraphError::ComputationError("反向传播：结果节点[id=3, name=result, type=Add]没有值")
     );
 
     // 3. 设置输入值 (与Python测试tests\calc_jacobi_by_pytorch\node_add.py保持一致)

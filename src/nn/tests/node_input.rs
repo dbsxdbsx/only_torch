@@ -1,3 +1,4 @@
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -29,16 +30,13 @@ fn test_node_input_creation_with_invalid_shape() {
         };
 
         let result = graph.new_input_node(&shape, None);
-        assert_eq!(
+        assert_err!(
             result,
-            Err(GraphError::DimensionMismatch {
-                expected: 2, // 表示 2-4 维
-                got: dims,
-                message: format!(
+            GraphError::DimensionMismatch { expected, got, message }
+                if *expected == 2 && *got == dims && message == &format!(
                     "节点张量必须是 2-4 维（支持 FC 和 CNN），但收到的维度是 {} 维。",
                     dims
-                ),
-            })
+                )
         );
     }
 
@@ -65,12 +63,7 @@ fn test_node_input_name_generation() {
 
     // 3. 测试节点名称重复
     let result = graph.new_input_node(&[2, 2], Some("explicit_input"));
-    assert_eq!(
-        result,
-        Err(GraphError::DuplicateNodeName(
-            "节点explicit_input在图default_graph中重复".to_string()
-        ))
-    );
+    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_input在图default_graph中重复"));
 }
 
 #[test]
@@ -96,18 +89,17 @@ fn test_node_input_manually_set_value() {
         Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]),
     ];
     for value in invalid_cases {
-        assert_eq!(
+        let shape = value.shape().to_vec();
+        assert_err!(
             graph.set_node_value(input, Some(&value)),
-            Err(GraphError::ShapeMismatch {
-                expected: vec![2, 2],
-                got: value.shape().to_vec(),
-                message: format!(
-                    "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
-                    value.shape(),
-                    graph.get_node_name(input).unwrap(),
-                    &[2, 2]
-                ),
-            })
+            GraphError::ShapeMismatch { expected, got, message }
+                if expected == &[2, 2] && got == &shape
+                    && message == &format!(
+                        "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
+                        shape,
+                        "test_input",
+                        &[2, 2]
+                    )
         );
     }
 
@@ -144,21 +136,17 @@ fn test_node_input_forward_propagation() {
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
 
     // 1. 测试前向传播（应该失败，因为Input节点不支持前向传播）
-    assert_eq!(
+    assert_err!(
         graph.forward_node(input),
-        Err(GraphError::InvalidOperation(format!(
-            "节点[id=1, name=input, type=Input]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
-        )))
+        GraphError::InvalidOperation("节点[id=1, name=input, type=Input]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
     );
 
     // 2. 设置值后仍然不能前向传播
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     graph.set_node_value(input, Some(&value)).unwrap();
-    assert_eq!(
+    assert_err!(
         graph.forward_node(input),
-        Err(GraphError::InvalidOperation(format!(
-            "节点[id=1, name=input, type=Input]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
-        )))
+        GraphError::InvalidOperation("节点[id=1, name=input, type=Input]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
     );
 }
 
@@ -171,47 +159,37 @@ fn test_node_input_backward_propagation() {
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
     // 2. 初始时雅可比矩阵应为空，但对于输入节点来说，不应该有雅可比矩阵
-    assert_eq!(
+    assert_err!(
         graph.get_node_jacobi(input),
-        Err(GraphError::InvalidOperation(format!(
-            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵",
-        )))
+        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
     );
 
     // 3. 对自身的反向传播（本应生成单位矩阵，但输入节点不应该有雅可比矩阵，所以应该失败）
     graph.set_node_value(input, Some(&value)).unwrap();
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[input], input),
-        Err(GraphError::InvalidOperation(format!(
-            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵",
-        )))
+        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
     );
 
     // 4. 清除雅可比矩阵并验证（输入节点不应该有雅可比矩阵）
     graph.clear_jacobi().unwrap();
-    assert_eq!(
+    assert_err!(
         graph.get_node_jacobi(input),
-        Err(GraphError::InvalidOperation(format!(
-            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵",
-        )))
+        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
     );
 
     // 5. 对没有值的Input节点的反向传播（应失败）
     graph.set_node_value(input, None).unwrap();
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[input], input),
-        Err(GraphError::InvalidOperation(format!(
-            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵"
-        )))
+        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
     );
 
     // 6. 对其他未关联的Input节点的反向传播（应失败）
     let other_input = graph.new_input_node(&[2, 2], Some("other_input")).unwrap();
     graph.set_node_value(other_input, Some(&value)).unwrap();
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[input], other_input),
-        Err(GraphError::InvalidOperation(format!(
-            "输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵"
-        )))
+        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
     );
 }

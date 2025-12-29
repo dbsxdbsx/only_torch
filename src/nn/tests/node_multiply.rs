@@ -1,3 +1,4 @@
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -47,14 +48,7 @@ fn test_node_multiply_creation_with_invalid_shape() {
     let right = graph.new_input_node(&[3, 4], Some("right")).unwrap();
 
     let result = graph.new_multiply_node(left, right, None);
-    assert_eq!(
-        result,
-        Err(GraphError::ShapeMismatch {
-            expected: vec![2, 3],
-            got: vec![3, 4],
-            message: "Multiply节点的两个父节点形状必须相同".to_string(),
-        })
-    );
+    assert_err!(result, GraphError::ShapeMismatch([2, 3], [3, 4], "Multiply节点的两个父节点形状必须相同"));
 }
 
 #[test]
@@ -76,12 +70,7 @@ fn test_node_multiply_name_generation() {
 
     // 3. 测试名称重复
     let result = graph.new_multiply_node(left, right, Some("my_mul"));
-    assert_eq!(
-        result,
-        Err(GraphError::DuplicateNodeName(
-            "节点my_mul在图default_graph中重复".to_string()
-        ))
-    );
+    assert_err!(result, GraphError::DuplicateNodeName("节点my_mul在图default_graph中重复"));
 }
 
 #[test]
@@ -93,11 +82,9 @@ fn test_node_multiply_manually_set_value() {
 
     // 测试直接设置Multiply节点的值（应该失败）
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(result, Some(&test_value)),
-        Err(GraphError::InvalidOperation(
-            "节点[id=3, name=mul, type=Multiply]的值只能通过前向传播计算得到，不能直接设置".into()
-        ))
+        GraphError::InvalidOperation("节点[id=3, name=mul, type=Multiply]的值只能通过前向传播计算得到，不能直接设置")
     );
 }
 

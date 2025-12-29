@@ -1,5 +1,6 @@
 use approx::assert_abs_diff_eq;
 
+use crate::assert_err;
 use crate::nn::optimizer::{Optimizer, SGD};
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
@@ -48,12 +49,7 @@ fn test_node_leaky_relu_name_generation() {
 
     // 3. 测试节点名称重复
     let result = graph.new_leaky_relu_node(input, 0.1, Some("explicit_relu"));
-    assert_eq!(
-        result,
-        Err(GraphError::DuplicateNodeName(
-            "节点explicit_relu在图default_graph中重复".to_string()
-        ))
-    );
+    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_relu在图default_graph中重复"));
 }
 
 #[test]
@@ -74,12 +70,9 @@ fn test_node_leaky_relu_manually_set_value() {
 
     // 直接设置 LeakyReLU 节点的值应该失败
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(relu, Some(&test_value)),
-        Err(GraphError::InvalidOperation(
-            "节点[id=2, name=relu, type=LeakyReLU]的值只能通过前向传播计算得到，不能直接设置"
-                .into()
-        ))
+        GraphError::InvalidOperation("节点[id=2, name=relu, type=LeakyReLU]的值只能通过前向传播计算得到，不能直接设置")
     );
 }
 

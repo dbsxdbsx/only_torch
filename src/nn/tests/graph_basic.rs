@@ -1,3 +1,4 @@
+use crate::assert_err;
 use crate::nn::{Graph, GraphError, NodeId};
 use crate::tensor::Tensor;
 
@@ -49,34 +50,30 @@ fn test_new_node_error_handling() {
 
     // 1. 测试节点未找到错误
     let invalid_id = NodeId(999);
-    assert_eq!(
+    assert_err!(
         graph.get_node_value(invalid_id),
-        Err(GraphError::NodeNotFound(invalid_id))
+        GraphError::NodeNotFound(id) if *id == invalid_id
     );
 
     // 2. 测试重复节点名称错误
     let _ = graph
         .new_parameter_node(&[2, 2], Some("duplicate"))
         .unwrap();
-    assert_eq!(
+    assert_err!(
         graph.new_parameter_node(&[2, 2], Some("duplicate")),
-        Err(GraphError::DuplicateNodeName(format!(
-            "节点duplicate在图default_graph中重复"
-        )))
+        GraphError::DuplicateNodeName("节点duplicate在图default_graph中重复")
     );
 
     // 3. 测试形状不匹配导致的错误
     let param = graph.new_parameter_node(&[2, 2], None).unwrap();
     let wrong_shape = Tensor::new(&[1.0, 2.0], &[2, 1]);
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(param, Some(&wrong_shape)),
-        Err(GraphError::ShapeMismatch {
-            expected: vec![2, 2],
-            got: vec![2, 1],
-            message: format!(
-                "新张量的形状 [2, 1] 与节点 'parameter_1' 现有张量的形状 [2, 2] 不匹配。"
-            )
-        })
+        GraphError::ShapeMismatch(
+            [2, 2],
+            [2, 1],
+            "新张量的形状 [2, 1] 与节点 'parameter_1' 现有张量的形状 [2, 2] 不匹配。"
+        )
     );
 }
 

@@ -4,6 +4,7 @@
  * @Description  : Reshape 节点单元测试
  */
 
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -263,14 +264,8 @@ fn test_reshape_shape_mismatch_error() {
     // 尝试 reshape 到元素数量不匹配的形状
     let result = graph.new_reshape_node(input, &[2, 2], Some("bad_reshape"));
 
-    assert!(result.is_err());
-    match result {
-        Err(GraphError::ShapeMismatch { expected, got, .. }) => {
-            assert_eq!(expected, vec![2, 3]);
-            assert_eq!(got, vec![2, 2]);
-        }
-        _ => panic!("期望 ShapeMismatch 错误"),
-    }
+    assert_err!(result, GraphError::ShapeMismatch { expected, got, .. }
+        if expected == &[2, 3] && got == &[2, 2]);
 }
 
 /// 测试空形状错误
@@ -283,13 +278,7 @@ fn test_reshape_empty_shape_error() {
     // 尝试 reshape 到空形状
     let result = graph.new_reshape_node(input, &[], Some("empty_reshape"));
 
-    assert!(result.is_err());
-    match result {
-        Err(GraphError::InvalidOperation(msg)) => {
-            assert!(msg.contains("空"));
-        }
-        _ => panic!("期望 InvalidOperation 错误"),
-    }
+    assert_err!(result, GraphError::InvalidOperation(msg) if msg.contains("空"));
 }
 
 // ==================== 与其他节点组合测试 ====================

@@ -1,5 +1,6 @@
 use approx::assert_abs_diff_eq;
 
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -38,16 +39,13 @@ fn test_node_parameter_creation_with_invalid_shape() {
         };
 
         let result = graph.new_parameter_node(&shape, None);
-        assert_eq!(
+        assert_err!(
             result,
-            Err(GraphError::DimensionMismatch {
-                expected: 2, // 表示 2-4 维
-                got: dims,
-                message: format!(
+            GraphError::DimensionMismatch { expected, got, message }
+                if *expected == 2 && *got == dims && message == &format!(
                     "参数张量必须是 2-4 维（支持 FC 权重和 CNN 卷积核），但收到的维度是 {} 维。",
                     dims
-                ),
-            })
+                )
         );
     }
 
@@ -74,12 +72,7 @@ fn test_node_parameter_name_generation() {
 
     // 3. 测试节点名称重复
     let result = graph.new_parameter_node(&[2, 2], Some("explicit_param"));
-    assert_eq!(
-        result,
-        Err(GraphError::DuplicateNodeName(
-            "节点explicit_param在图default_graph中重复".to_string()
-        ))
-    );
+    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_param在图default_graph中重复"));
 }
 
 #[test]
@@ -107,18 +100,17 @@ fn test_node_parameter_manually_set_value() {
         Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]),
     ];
     for value in invalid_cases {
-        assert_eq!(
+        let shape = value.shape().to_vec();
+        assert_err!(
             graph.set_node_value(param, Some(&value)),
-            Err(GraphError::ShapeMismatch {
-                expected: vec![2, 2],
-                got: value.shape().to_vec(),
-                message: format!(
-                    "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
-                    value.shape(),
-                    graph.get_node_name(param).unwrap(),
-                    &[2, 2]
-                ),
-            })
+            GraphError::ShapeMismatch { expected, got, message }
+                if expected == &[2, 2] && got == &shape
+                    && message == &format!(
+                        "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
+                        shape,
+                        "test_param",
+                        &[2, 2]
+                    )
         );
     }
 
@@ -155,21 +147,17 @@ fn test_node_parameter_forward_propagation() {
     let param = graph.new_parameter_node(&[2, 2], Some("param")).unwrap();
 
     // 1. 测试前向传播（应该失败，因为Parameter节点不支持前向传播）
-    assert_eq!(
+    assert_err!(
         graph.forward_node(param),
-        Err(GraphError::InvalidOperation(format!(
-            "节点[id=1, name=param, type=Parameter]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
-        )))
+        GraphError::InvalidOperation("节点[id=1, name=param, type=Parameter]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
     );
 
     // 2. 设置新值后仍然不能前向传播
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     graph.set_node_value(param, Some(&value)).unwrap();
-    assert_eq!(
+    assert_err!(
         graph.forward_node(param),
-        Err(GraphError::InvalidOperation(format!(
-            "节点[id=1, name=param, type=Parameter]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
-        )))
+        GraphError::InvalidOperation("节点[id=1, name=param, type=Parameter]是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
     );
 }
 
@@ -194,11 +182,9 @@ fn test_node_parameter_backward_propagation() {
 
     // 4. 清除值(未初始化)后对自身的反向传播（应失败）
     graph.set_node_value(param, None).unwrap();
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[param], param),
-        Err(GraphError::ComputationError(
-            "反向传播：节点[id=1, name=param, type=Parameter]没有值".to_string()
-        ))
+        GraphError::ComputationError("反向传播：节点[id=1, name=param, type=Parameter]没有值")
     );
 
     // 5. 对其他未关联的Parameter节点的反向传播

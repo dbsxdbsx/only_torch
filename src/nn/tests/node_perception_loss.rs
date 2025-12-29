@@ -1,3 +1,4 @@
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -55,12 +56,7 @@ fn test_node_perception_loss_name_generation() {
 
     // 3. 测试节点名称重复
     let result = graph.new_perception_loss_node(input, Some("explicit_perception_loss"));
-    assert_eq!(
-        result,
-        Err(GraphError::DuplicateNodeName(
-            "节点explicit_perception_loss在图default_graph中重复".to_string()
-        ))
-    );
+    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_perception_loss在图default_graph中重复"));
 }
 
 #[test]
@@ -71,21 +67,15 @@ fn test_node_perception_loss_manually_set_value() {
 
     // 1. 测试直接设置Loss节点的值（应该失败）
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(loss, Some(&test_value)),
-        Err(GraphError::InvalidOperation(
-            "节点[id=2, name=loss, type=PerceptionLoss]的值只能通过前向传播计算得到，不能直接设置"
-                .into()
-        ))
+        GraphError::InvalidOperation("节点[id=2, name=loss, type=PerceptionLoss]的值只能通过前向传播计算得到，不能直接设置")
     );
 
     // 2. 测试清除Loss节点的值（也应该失败）
-    assert_eq!(
+    assert_err!(
         graph.set_node_value(loss, None),
-        Err(GraphError::InvalidOperation(
-            "节点[id=2, name=loss, type=PerceptionLoss]的值只能通过前向传播计算得到，不能直接设置"
-                .into()
-        ))
+        GraphError::InvalidOperation("节点[id=2, name=loss, type=PerceptionLoss]的值只能通过前向传播计算得到，不能直接设置")
     );
 }
 
@@ -146,11 +136,9 @@ fn test_node_perception_loss_forward_propagation() {
             graph.forward_node(loss).unwrap();
         } else {
             // 如果是input节点，因创建时其值未初始化，所以前向传播应失败
-            assert_eq!(
+            assert_err!(
                 graph.forward_node(loss),
-                Err(GraphError::InvalidOperation(format!(
-                    "节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1",
-                )))
+                GraphError::InvalidOperation("节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1")
             );
 
             // 设置input节点的值
@@ -179,11 +167,9 @@ fn test_node_perception_loss_backward_propagation() {
         .unwrap();
 
     // 2. 测试在前向传播之前进行反向传播（应该失败）
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[parent], result),
-        Err(GraphError::ComputationError(format!(
-            "反向传播：结果节点[id=2, name=result, type=PerceptionLoss]没有值"
-        )))
+        GraphError::ComputationError("反向传播：结果节点[id=2, name=result, type=PerceptionLoss]没有值")
     );
 
     // 3. 设置输入值 (与Python测试tests\calc_jacobi_by_pytorch\node_perception_loss.py保持一致)

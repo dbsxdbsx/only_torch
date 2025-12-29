@@ -1,3 +1,4 @@
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
@@ -14,11 +15,9 @@ fn test_node_jacobi() {
 
     // 2. 测试未计算时的雅可比矩阵获取
     // 2.1 输入节点不应该有雅可比矩阵
-    assert_eq!(
+    assert_err!(
         graph.get_node_jacobi(x),
-        Err(GraphError::InvalidOperation(format!(
-            "输入节点[id=1, name=x, type=Input]不应该有雅可比矩阵",
-        )))
+        GraphError::InvalidOperation("输入节点[id=1, name=x, type=Input]不应该有雅可比矩阵")
     );
 
     // 2.2 参数节点在反向传播前应该返回None
@@ -46,11 +45,9 @@ fn test_node_jacobi() {
 
     // 6. 验证雅可比矩阵
     // 6.1 输入节点仍然不应该有雅可比矩阵
-    assert_eq!(
+    assert_err!(
         graph.get_node_jacobi(x),
-        Err(GraphError::InvalidOperation(format!(
-            "输入节点[id=1, name=x, type=Input]不应该有雅可比矩阵",
-        )))
+        GraphError::InvalidOperation("输入节点[id=1, name=x, type=Input]不应该有雅可比矩阵")
     );
 
     // 6.2 验证w的雅可比矩阵（参与反向传播的参数节点）
@@ -194,19 +191,15 @@ fn test_backward_without_any_forward() {
 
     // 关键测试：在没有任何前向传播的情况下尝试反向传播
     // 这应该失败，因为结果节点y没有值
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[w], y),
-        Err(GraphError::ComputationError(
-            "反向传播：结果节点[id=5, name=y, type=Add]没有值".to_string()
-        ))
+        GraphError::ComputationError("反向传播：结果节点[id=5, name=y, type=Add]没有值")
     );
 
     // 同样，对参数b的反向传播也应该失败
-    assert_eq!(
+    assert_err!(
         graph.backward_nodes(&[b], y),
-        Err(GraphError::ComputationError(
-            "反向传播：结果节点[id=5, name=y, type=Add]没有值".to_string()
-        ))
+        GraphError::ComputationError("反向传播：结果节点[id=5, name=y, type=Add]没有值")
     );
 
     // 验证：反向传播失败后，参数节点仍然没有雅可比矩阵

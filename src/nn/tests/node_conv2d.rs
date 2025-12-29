@@ -10,6 +10,7 @@
  * 4. 各种参数组合（stride, padding）
  */
 
+use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -470,14 +471,7 @@ fn test_conv2d_channel_mismatch() {
         .unwrap();
 
     let result = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"));
-    assert!(result.is_err());
-    // 验证错误类型是 ShapeMismatch（通道数不匹配）
-    match result {
-        Err(GraphError::ShapeMismatch { message, .. }) => {
-            assert!(message.contains("通道数"));
-        }
-        _ => panic!("应该返回 ShapeMismatch 错误"),
-    }
+    assert_err!(result, GraphError::ShapeMismatch { message, .. } if message.contains("通道数"));
 }
 
 /// 测试无效的输入维度（2D 输入对于 Conv2d 无效）
@@ -492,14 +486,8 @@ fn test_conv2d_invalid_input_dims() {
         .unwrap();
 
     let result = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"));
-    assert!(result.is_err());
-    // 验证错误类型是 ShapeMismatch（输入维度不符合 Conv2d 要求）
-    match result {
-        Err(GraphError::ShapeMismatch { message, .. }) => {
-            assert!(message.contains("3D") || message.contains("4D"));
-        }
-        _ => panic!("应该返回 ShapeMismatch 错误"),
-    }
+    assert_err!(result, GraphError::ShapeMismatch { message, .. }
+        if message.contains("3D") || message.contains("4D"));
 }
 
 /// 测试无效的卷积核维度（2D 卷积核无效）
@@ -512,13 +500,7 @@ fn test_conv2d_invalid_kernel_dims() {
     let kernel = graph.new_parameter_node(&[3, 3], Some("kernel")).unwrap();
 
     let result = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"));
-    assert!(result.is_err());
-    // 验证错误类型是 ShapeMismatch（卷积核维度不符合要求）
-    match result {
-        Err(GraphError::ShapeMismatch { message, .. }) => {
-            assert!(message.contains("4D") || message.contains("C_out"));
-        }
-        _ => panic!("应该返回 ShapeMismatch 错误"),
-    }
+    assert_err!(result, GraphError::ShapeMismatch { message, .. }
+        if message.contains("4D") || message.contains("C_out"));
 }
 

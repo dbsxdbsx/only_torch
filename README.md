@@ -88,20 +88,14 @@ opt-level = 3
 
 ### 🟡 API 改进
 
-- 等 adaline 例子跑通后：`Variable`节点做常见的运算重载（如此便不需要用那些丑
-陋的节点算子了）
-- NodeHandle 重命名为 Node? 各种 `parent/children/node_id`重命名为
-`parents/children/id`?
-- should directly use `parents` but not `parents_ids`?
-- 图错误"InvalidOperation" vs "ComputationError"
-- `assert_eq!( graph.backward_nodes(&[input], input),
-Err(GraphError::InvalidOperation(format!( "输入节点[id=1, name=input,
-type=Input]不应该有雅可比矩阵" ))) ); `添加一个 `assert_err`的宏，可才参考
-`assert_panic`宏
-- how to expose only `in crate::nn` to the nn::Graph`?
-- should completely hide the NodeHandle?
-- Graph/NodeHandle rearrange blocks due to visibility and
-funciontality
+- Graph/NodeHandle 代码按功能分块重组（创建、查询、传播、
+序列化）
+
+> **已评估并确认为好设计**（无需更改）：
+>
+> - `InvalidOperation` vs `ComputationError`：语义边界已清晰且使用一致（`InvalidOperation` = 调用方式错误，`ComputationError` = 运行时状态错误）
+> - 运算符重载（如 `y = w @ x + b`）：应在上层 API 实现（参见 `.doc/_archive/high_level_architecture_design.md` 五层架构规划），底层 Graph API 保持当前设计
+> - NodeId 作为用户接口：避免所有权复杂性和循环引用，是正确设计
 
 ### 🟢 辅助功能
 
