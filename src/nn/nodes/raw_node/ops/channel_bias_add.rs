@@ -119,17 +119,11 @@ impl TraitNode for ChannelBiasAdd {
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的 input 父节点没有值",
-                self.display_node()
-            ))
+            GraphError::ComputationError(format!("{} 的 input 父节点没有值", self.display_node()))
         })?;
 
         let bias = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的 bias 父节点没有值",
-                self.display_node()
-            ))
+            GraphError::ComputationError(format!("{} 的 bias 父节点没有值", self.display_node()))
         })?;
 
         // 获取 bias 数据
@@ -195,9 +189,10 @@ impl TraitNode for ChannelBiasAdd {
         target_parent: &NodeHandle,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        let output_size = self.value().ok_or_else(|| {
-            GraphError::ComputationError(format!("{} 没有值", self.display_node()))
-        })?.size();
+        let output_size = self
+            .value()
+            .ok_or_else(|| GraphError::ComputationError(format!("{} 没有值", self.display_node())))?
+            .size();
 
         let target_shape = target_parent.value_expected_shape();
         let target_size = target_shape.iter().product::<usize>();
@@ -328,4 +323,3 @@ impl TraitNode for ChannelBiasAdd {
         Ok(())
     }
 }
-

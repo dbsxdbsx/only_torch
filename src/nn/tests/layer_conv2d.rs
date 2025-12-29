@@ -17,7 +17,16 @@ fn test_conv2d_creation() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     let input = graph.new_input_node(&[2, 1, 28, 28], Some("input"))?;
 
-    let conv = conv2d(&mut graph, input, 1, 32, (3, 3), (1, 1), (1, 1), Some("conv1"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        32,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv1"),
+    )?;
 
     // 验证返回的节点 ID 都有效
     assert!(graph.get_node_value(conv.output).is_ok());
@@ -33,7 +42,16 @@ fn test_conv2d_shapes() -> Result<(), GraphError> {
     let input = graph.new_input_node(&[4, 3, 28, 28], Some("input"))?;
 
     // 3->16 通道，5x5 核
-    let conv = conv2d(&mut graph, input, 3, 16, (5, 5), (1, 1), (2, 2), Some("conv1"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        3,
+        16,
+        (5, 5),
+        (1, 1),
+        (2, 2),
+        Some("conv1"),
+    )?;
 
     // 检查卷积核形状：[out_channels, in_channels, kH, kW]
     let k_shape = graph.get_node(conv.kernel)?.value_expected_shape();
@@ -49,7 +67,16 @@ fn test_conv2d_forward() -> Result<(), GraphError> {
 
     // 输入: [batch=1, C_in=1, H=4, W=4]
     let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv1"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv1"),
+    )?;
 
     // 设置输入全 1
     let x = Tensor::ones(&[1, 1, 4, 4]);
@@ -86,7 +113,16 @@ fn test_conv2d_output_size() -> Result<(), GraphError> {
 
     // padding=1, kernel=3x3, stride=1 → same padding (保持尺寸)
     let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let conv = conv2d(&mut graph, input, 1, 1, (3, 3), (1, 1), (1, 1), Some("conv1"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        1,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv1"),
+    )?;
 
     let x = Tensor::ones(&[1, 1, 4, 4]);
     let k = Tensor::ones(&[1, 1, 3, 3]);
@@ -110,7 +146,16 @@ fn test_conv2d_with_name() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     let input = graph.new_input_node(&[2, 1, 28, 28], Some("input"))?;
 
-    let conv = conv2d(&mut graph, input, 1, 32, (3, 3), (1, 1), (1, 1), Some("encoder_conv1"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        32,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("encoder_conv1"),
+    )?;
 
     // 验证节点名称
     assert_eq!(graph.get_node(conv.kernel)?.name(), "encoder_conv1_K");
@@ -143,9 +188,27 @@ fn test_conv2d_chain() -> Result<(), GraphError> {
 
     // 典型 CNN 结构: conv1 -> relu -> conv2 -> relu
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
-    let conv1 = conv2d(&mut graph, input, 1, 4, (3, 3), (1, 1), (1, 1), Some("conv1"))?;
+    let conv1 = conv2d(
+        &mut graph,
+        input,
+        1,
+        4,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv1"),
+    )?;
     let relu1 = graph.new_leaky_relu_node(conv1.output, 0.0, Some("relu1"))?;
-    let conv2 = conv2d(&mut graph, relu1, 4, 8, (3, 3), (1, 1), (1, 1), Some("conv2"))?;
+    let conv2 = conv2d(
+        &mut graph,
+        relu1,
+        4,
+        8,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv2"),
+    )?;
     let relu2 = graph.new_leaky_relu_node(conv2.output, 0.0, Some("relu2"))?;
 
     // 设置输入
@@ -170,7 +233,16 @@ fn test_conv2d_with_flatten() -> Result<(), GraphError> {
 
     // conv -> flatten
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv"),
+    )?;
     let flat = graph.new_flatten_node(conv.output, true, Some("flat"))?;
 
     // 设置输入
@@ -198,7 +270,16 @@ fn test_conv2d_batch_backward() -> Result<(), GraphError> {
 
     // 构建网络: conv -> flatten -> matmul (简化的 CNN 分类)
     let input = graph.new_input_node(&[batch_size, 1, 4, 4], Some("input"))?;
-    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv"),
+    )?;
     let flat = graph.new_flatten_node(conv.output, true, Some("flat"))?;
     // flat 输出: [2, 18]
 
@@ -239,11 +320,29 @@ fn test_conv2d_chain_batch_training() -> Result<(), GraphError> {
 
     // 构建网络: conv1 -> relu -> conv2 -> flatten -> loss
     let input = graph.new_input_node(&[batch_size, 1, 6, 6], Some("input"))?;
-    let conv1 = conv2d(&mut graph, input, 1, 2, (3, 3), (1, 1), (0, 0), Some("conv1"))?;
+    let conv1 = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (3, 3),
+        (1, 1),
+        (0, 0),
+        Some("conv1"),
+    )?;
     let relu1 = graph.new_leaky_relu_node(conv1.output, 0.0, Some("relu1"))?;
     // conv1 输出: [2, 2, 4, 4]
 
-    let conv2 = conv2d(&mut graph, relu1, 2, 4, (2, 2), (1, 1), (0, 0), Some("conv2"))?;
+    let conv2 = conv2d(
+        &mut graph,
+        relu1,
+        2,
+        4,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv2"),
+    )?;
     // conv2 输出: [2, 4, 3, 3]
 
     let flat = graph.new_flatten_node(conv2.output, true, Some("flat"))?;
@@ -283,9 +382,36 @@ fn test_conv2d_multiple_layers_different_names() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     let input = graph.new_input_node(&[2, 1, 16, 16], Some("input"))?;
 
-    let conv1 = conv2d(&mut graph, input, 1, 4, (3, 3), (1, 1), (1, 1), Some("conv1"))?;
-    let conv2 = conv2d(&mut graph, conv1.output, 4, 8, (3, 3), (1, 1), (1, 1), Some("conv2"))?;
-    let conv3 = conv2d(&mut graph, conv2.output, 8, 16, (3, 3), (1, 1), (1, 1), Some("conv3"))?;
+    let conv1 = conv2d(
+        &mut graph,
+        input,
+        1,
+        4,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv1"),
+    )?;
+    let conv2 = conv2d(
+        &mut graph,
+        conv1.output,
+        4,
+        8,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv2"),
+    )?;
+    let conv3 = conv2d(
+        &mut graph,
+        conv2.output,
+        8,
+        16,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv3"),
+    )?;
 
     // 验证各层节点独立存在
     assert!(graph.get_node_value(conv1.kernel).is_ok());
@@ -304,12 +430,19 @@ fn test_conv2d_multiple_layers_different_names() -> Result<(), GraphError> {
 #[test]
 fn test_conv2d_duplicate_name_error() {
     let mut graph = Graph::new();
-    let input = graph
-        .new_input_node(&[2, 1, 8, 8], Some("input"))
-        .unwrap();
+    let input = graph.new_input_node(&[2, 1, 8, 8], Some("input")).unwrap();
 
     // 第一个 conv 成功
-    let conv1 = conv2d(&mut graph, input, 1, 4, (3, 3), (1, 1), (1, 1), Some("conv"));
+    let conv1 = conv2d(
+        &mut graph,
+        input,
+        1,
+        4,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv"),
+    );
     assert!(conv1.is_ok());
 
     // 第二个 conv 使用相同名称，应该失败
@@ -340,9 +473,7 @@ fn test_conv2d_duplicate_name_error() {
 #[test]
 fn test_conv2d_multiple_unnamed_layers_conflict() {
     let mut graph = Graph::new();
-    let input = graph
-        .new_input_node(&[2, 1, 8, 8], Some("input"))
-        .unwrap();
+    let input = graph.new_input_node(&[2, 1, 8, 8], Some("input")).unwrap();
 
     // 第一个无名称层成功
     let conv1 = conv2d(&mut graph, input, 1, 4, (3, 3), (1, 1), (1, 1), None);
@@ -370,7 +501,16 @@ fn test_conv2d_single_channel() -> Result<(), GraphError> {
     let mut graph = Graph::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
 
-    let conv = conv2d(&mut graph, input, 1, 1, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        1,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv"),
+    )?;
 
     // 设置输入
     let x = Tensor::ones(&[2, 1, 4, 4]);
@@ -392,7 +532,16 @@ fn test_conv2d_large_channels() -> Result<(), GraphError> {
     let mut graph = Graph::new_with_seed(42);
     let input = graph.new_input_node(&[1, 64, 8, 8], Some("input"))?;
 
-    let conv = conv2d(&mut graph, input, 64, 128, (3, 3), (1, 1), (1, 1), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        64,
+        128,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("conv"),
+    )?;
 
     // 验证参数形状
     let k_shape = graph.get_node(conv.kernel)?.value_expected_shape();
@@ -408,7 +557,16 @@ fn test_conv2d_with_stride() -> Result<(), GraphError> {
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
 
     // stride=2 会使输出尺寸减半
-    let conv = conv2d(&mut graph, input, 1, 4, (3, 3), (2, 2), (1, 1), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        4,
+        (3, 3),
+        (2, 2),
+        (1, 1),
+        Some("conv"),
+    )?;
 
     let x = Tensor::ones(&[2, 1, 8, 8]);
     graph.set_node_value(input, Some(&x))?;
@@ -430,7 +588,16 @@ fn test_conv2d_nonsquare_kernel() -> Result<(), GraphError> {
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
 
     // 使用 3x5 的非方形卷积核
-    let conv = conv2d(&mut graph, input, 1, 4, (3, 5), (1, 1), (1, 2), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        4,
+        (3, 5),
+        (1, 1),
+        (1, 2),
+        Some("conv"),
+    )?;
 
     // 验证卷积核形状
     let k_shape = graph.get_node(conv.kernel)?.value_expected_shape();
@@ -457,13 +624,19 @@ fn test_conv2d_access_internal_params() -> Result<(), GraphError> {
     let mut graph = Graph::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
 
-    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv"),
+    )?;
 
     // 应该能访问并修改卷积核
-    let custom_kernel = Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-        &[2, 1, 2, 2],
-    );
+    let custom_kernel = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 2]);
     graph.set_node_value(conv.kernel, Some(&custom_kernel))?;
 
     let k = graph.get_node_value(conv.kernel)?.unwrap();
@@ -481,7 +654,16 @@ fn test_conv2d_mnist_like() -> Result<(), GraphError> {
 
     // 典型 MNIST CNN 第一层
     let input = graph.new_input_node(&[batch_size, 1, 28, 28], Some("input"))?;
-    let conv = conv2d(&mut graph, input, 1, 32, (5, 5), (1, 1), (2, 2), Some("conv1"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        32,
+        (5, 5),
+        (1, 1),
+        (2, 2),
+        Some("conv1"),
+    )?;
 
     // 验证参数形状
     let k_shape = graph.get_node(conv.kernel)?.value_expected_shape();
@@ -498,7 +680,16 @@ fn test_conv2d_has_bias() -> Result<(), GraphError> {
     let mut graph = Graph::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
 
-    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv"),
+    )?;
 
     // 验证 bias 存在且形状正确
     let b_shape = graph.get_node(conv.bias)?.value_expected_shape();
@@ -518,7 +709,16 @@ fn test_conv2d_bias_applied() -> Result<(), GraphError> {
     let mut graph = Graph::new_with_seed(42);
     let input = graph.new_input_node(&[1, 1, 3, 3], Some("input"))?;
 
-    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv"),
+    )?;
 
     // 设置输入全 1，卷积核全 1
     let x = Tensor::ones(&[1, 1, 3, 3]);
@@ -566,7 +766,16 @@ fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
     let batch_size = 2;
 
     let input = graph.new_input_node(&[batch_size, 1, 4, 4], Some("input"))?;
-    let conv = conv2d(&mut graph, input, 1, 2, (2, 2), (1, 1), (0, 0), Some("conv"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        Some("conv"),
+    )?;
     let flat = graph.new_flatten_node(conv.output, true, Some("flat"))?;
 
     // 简单分类器
@@ -600,11 +809,19 @@ fn test_conv2d_bias_naming() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
 
-    let conv = conv2d(&mut graph, input, 1, 4, (3, 3), (1, 1), (1, 1), Some("encoder_conv1"))?;
+    let conv = conv2d(
+        &mut graph,
+        input,
+        1,
+        4,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        Some("encoder_conv1"),
+    )?;
 
     // 验证 bias 节点名称
     assert_eq!(graph.get_node(conv.bias)?.name(), "encoder_conv1_b");
 
     Ok(())
 }
-

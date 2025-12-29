@@ -80,7 +80,11 @@ opt-level = 3
 
 ### 🔴 核心功能
 
-- RNN 节点的反向传播（TBPTT）
+- 记忆/循环机制（详见 [设计文档](.doc/design/memory_mechanism_design.md)）
+  - Phase 1: Graph 支持非 DAG 模式 + 双缓冲 + step()/reset() API
+  - Phase 2: BPTT/TBPTT 训练支持
+  - Phase 3: 模板层（RNNCell/LSTMCell 等可选便捷 API）
+  - Phase 4: NEAT 集成
 
 ### 🟠 正确性验证
 
@@ -163,6 +167,7 @@ linear 等常用层，容易添加 edge(如已存在的 add 节点的父节点)�
 - [DataLoader 设计文档](.doc/design/data_loader_design.md) - 数据加载模块的架构设计，包括 MNIST 数据集支持、自动下载/缓存、数据转换等
 - [Batch Forward/Backward 机制设计](.doc/design/batch_mechanism_design.md) - 批量训练机制的设计决策，包括 Gradient-based 反向传播、API 设计、性能优化（约 18x 加速）等
 - [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md) - 统一的图描述层（IR）设计，支持模型保存/加载（JSON+bin）、Graphviz 可视化、Keras 风格 summary 输出
+- [记忆/循环机制设计](.doc/design/memory_mechanism_design.md) - NEAT 风格循环与传统 RNN 循环的关系、Hybrid 设计方案、BPTT/TBPTT 训练策略、实现路径及相关论文
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料
