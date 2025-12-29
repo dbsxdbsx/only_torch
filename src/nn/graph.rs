@@ -31,6 +31,13 @@ pub struct LayerGroup {
     pub node_ids: Vec<NodeId>,
 }
 
+/// BPTT 时间步快照：存储节点在某个时间步的状态
+#[derive(Clone)]
+pub(crate) struct StepSnapshot {
+    /// 节点的值
+    pub value: Option<Tensor>,
+}
+
 /// 图的完整定义
 pub struct Graph {
     name: String,
@@ -50,6 +57,24 @@ pub struct Graph {
     rng: Option<StdRng>,
     /// 层分组信息（用于可视化）
     layer_groups: Vec<LayerGroup>,
+
+    // ========== 循环/记忆机制相关字段（Phase 1） ==========
+    /// 循环边：to_node -> from_node（to 节点在 step() 时从 from 节点的上一步值读取）
+    recurrent_edges: HashMap<NodeId, NodeId>,
+    /// 双缓冲：存储循环节点的上一时间步值
+    prev_values: HashMap<NodeId, Tensor>,
+    /// 当前时间步（用于调试，每次 step() 递增，reset() 归零）
+    time_step: u64,
+
+    // ========== BPTT 相关字段（Phase 2） ==========
+    /// 时间步历史：存储每个时间步的节点快照，用于 BPTT
+    /// 每个元素是一个时间步的快照：NodeId -> (value, jacobi)
+    /// 只在训练模式下记录
+    step_history: Vec<HashMap<NodeId, StepSnapshot>>,
+
+    /// BPTT 调试标志（仅用于调试）
+    #[cfg(test)]
+    bptt_debug: bool,
 }
 
 impl Default for Graph {
@@ -132,6 +157,12 @@ impl Graph {
             is_eval_mode: false,
             rng: Some(StdRng::seed_from_u64(seed)),
             layer_groups: Vec::new(),
+            recurrent_edges: HashMap::new(),
+            prev_values: HashMap::new(),
+            time_step: 0,
+            step_history: Vec::new(),
+            #[cfg(test)]
+            bptt_debug: false,
         }
     }
 
@@ -148,6 +179,12 @@ impl Graph {
             is_eval_mode: false,
             rng: Some(StdRng::seed_from_u64(seed)),
             layer_groups: Vec::new(),
+            recurrent_edges: HashMap::new(),
+            prev_values: HashMap::new(),
+            time_step: 0,
+            step_history: Vec::new(),
+            #[cfg(test)]
+            bptt_debug: false,
         }
     }
 
@@ -163,6 +200,12 @@ impl Graph {
             is_eval_mode: false,
             rng: None,
             layer_groups: Vec::new(),
+            recurrent_edges: HashMap::new(),
+            prev_values: HashMap::new(),
+            time_step: 0,
+            step_history: Vec::new(),
+            #[cfg(test)]
+            bptt_debug: false,
         }
     }
 
@@ -232,9 +275,9 @@ impl Graph {
         // 1. 检查节点类型
         let node = self.get_node(node_id)?;
         match node.node_type() {
-            NodeType::Input(_) | NodeType::Parameter(_) => {
+            NodeType::Input(_) | NodeType::Parameter(_) | NodeType::State(_) => {
                 return Err(GraphError::InvalidOperation(format!(
-                    "{node}是输入或参数节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
+                    "{node}是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
                 )));
             }
             _ => {}
@@ -262,8 +305,8 @@ impl Graph {
 
         // 1.1 检查节点类型和状态
         match node.node_type() {
-            // 1.1.1 输入和参数节点
-            NodeType::Input(_) | NodeType::Parameter(_) => {
+            // 1.1.1 输入、参数、状态节点（这些节点的值由外部设置，不从父节点计算）
+            NodeType::Input(_) | NodeType::Parameter(_) | NodeType::State(_) => {
                 if node.has_value() {
                     node.set_last_forward_pass_id(new_graph_forward_pass_id);
                     return Ok(());
@@ -408,8 +451,9 @@ impl Graph {
     fn release_intermediate_results(&mut self) -> Result<(), GraphError> {
         for node in self.nodes.values_mut() {
             match node.node_type() {
-                // 保留输入和参数节点的值和梯度
-                NodeType::Input(_) | NodeType::Parameter(_) => {}
+                // 保留输入、参数、状态节点的值和梯度
+                // State 的值由 step()/reset() 管理，不在 backward 后清除
+                NodeType::Input(_) | NodeType::Parameter(_) | NodeType::State(_) => {}
                 // 清除其他节点的值和梯度
                 _ => {
                     node.clear_value()?;
@@ -1408,6 +1452,7 @@ impl Graph {
         match node_type {
             NodeTypeDescriptor::Input => "Input",
             NodeTypeDescriptor::Parameter => "Parameter",
+            NodeTypeDescriptor::State => "State",
             NodeTypeDescriptor::Add => "Add",
             NodeTypeDescriptor::MatMul => "MatMul",
             NodeTypeDescriptor::Multiply => "Multiply",
@@ -1556,11 +1601,19 @@ impl Graph {
 
         dot.push_str("\n");
 
-        // 边定义（从父节点指向子节点，无标签——形状已在节点内显示）
+        // 边定义（从父节点指向子节点）
         for node in &desc.nodes {
             for parent_id in &node.parents {
                 dot.push_str(&format!("    \"{}\" -> \"{}\";\n", parent_id, node.id));
             }
+        }
+
+        // 循环边定义（橙色虚线，标注 "t-1"）
+        for (&to_id, &from_id) in &self.recurrent_edges {
+            dot.push_str(&format!(
+                "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=\"t-1\" fontcolor=\"#E67E22\"];\n",
+                from_id.0, to_id.0
+            ));
         }
 
         dot.push_str("}\n");
@@ -1748,6 +1801,8 @@ impl Graph {
         match node_type {
             // 输入节点：椭圆形，浅蓝色
             NodeTypeDescriptor::Input => ("ellipse", "filled", "#E3F2FD"),
+            // 状态节点：圆柱体，浅橙色（与循环边颜色呼应，表示"记忆/存储"）
+            NodeTypeDescriptor::State => ("cylinder", "filled", "#FFE0B2"),
             // 参数节点：矩形，浅绿色
             NodeTypeDescriptor::Parameter => ("box", "filled", "#E8F5E9"),
             // 损失节点：双椭圆，浅红色
@@ -1838,6 +1893,7 @@ impl Graph {
         match node_type {
             NodeType::Input(_) => NodeTypeDescriptor::Input,
             NodeType::Parameter(_) => NodeTypeDescriptor::Parameter,
+            NodeType::State(_) => NodeTypeDescriptor::State,
             NodeType::Add(_) => NodeTypeDescriptor::Add,
             NodeType::MatMul(_) => NodeTypeDescriptor::MatMul,
             NodeType::Multiply(_) => NodeTypeDescriptor::Multiply,
@@ -1950,7 +2006,7 @@ impl Graph {
         Ok(Some(jacobi.transpose().reshape(expected_shape)))
     }
 
-    // Add new public methods for node information access
+    // 节点信息访问的公共方法
     pub fn get_node_name(&self, id: NodeId) -> Result<&str, GraphError> {
         self.get_node(id)
             .map(super::nodes::node_handle::NodeHandle::name)
@@ -2018,6 +2074,12 @@ impl Graph {
         !self.is_eval_mode
     }
 
+    /// 设置 BPTT 调试模式（仅用于测试）
+    #[cfg(test)]
+    pub fn set_bptt_debug(&mut self, debug: bool) {
+        self.bptt_debug = debug;
+    }
+
     /// 检查是否启用梯度计算（等价于 `is_train_mode()`）
     ///
     /// 在训练模式下返回 `true`，在评估模式（no_grad 上下文）中返回 `false`。
@@ -2082,6 +2144,1119 @@ impl Graph {
     /// - `false`: 正常状态，梯度会向父节点传播
     pub fn is_node_detached(&self, node_id: NodeId) -> Result<bool, GraphError> {
         Ok(self.get_node(node_id)?.is_detached())
+    }
+
+    // ========== 循环/记忆机制 API（Phase 1） ==========
+
+    /// 声明循环连接：to_node 在每次 step() 时从 from_node 的上一时间步值读取
+    ///
+    /// 这是实现 RNN 等循环网络的基础。循环连接不是普通的边，
+    /// 而是声明一种"延迟读取"关系。
+    ///
+    /// # 参数
+    /// - `from_node`: 提供值的节点（源节点）
+    /// - `to_node`: 接收上一步值的节点（目标节点，通常是 Input 类型）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 创建一个简单的循环：hidden 的值在下一步传给 hidden_prev
+    /// let hidden_prev = graph.new_input_node(&[hidden_size, 1], "hidden_prev")?;
+    /// let hidden = graph.new_add_node(&[...], "hidden")?;
+    /// graph.connect_recurrent(hidden, hidden_prev)?;
+    /// ```
+    ///
+    /// # 注意
+    /// - to_node 通常应该是 Input 节点（用于接收延迟值）
+    /// - 一个 to_node 只能有一个循环连接源
+    pub fn connect_recurrent(
+        &mut self,
+        from_node: NodeId,
+        to_node: NodeId,
+    ) -> Result<(), GraphError> {
+        // 验证节点存在
+        self.get_node(from_node)?;
+        self.get_node(to_node)?;
+
+        // 检查 to_node 是否已有循环连接
+        if self.recurrent_edges.contains_key(&to_node) {
+            return Err(GraphError::InvalidOperation(format!(
+                "节点 {} 已经有循环连接源，不能重复声明",
+                self.get_node_name(to_node)?
+            )));
+        }
+
+        // 注册循环连接
+        self.recurrent_edges.insert(to_node, from_node);
+        Ok(())
+    }
+
+    /// 获取节点的循环连接源（如果有）
+    pub fn get_recurrent_source(&self, to_node: NodeId) -> Option<NodeId> {
+        self.recurrent_edges.get(&to_node).copied()
+    }
+
+    /// 检查图中是否有循环连接
+    pub fn has_recurrent_edges(&self) -> bool {
+        !self.recurrent_edges.is_empty()
+    }
+
+    /// 获取当前时间步
+    pub fn current_time_step(&self) -> u64 {
+        self.time_step
+    }
+
+    /// 执行一个时间步的前向传播
+    ///
+    /// 与普通的 `forward_node` 不同，`step` 专门用于循环网络：
+    /// 1. 将循环连接的上一步值传递给目标节点
+    /// 2. 执行前向传播
+    /// 3. 保存当前值用于下一步（双缓冲交换）
+    /// 4. 递增时间步计数
+    ///
+    /// # 参数
+    /// - `output_node`: 要计算的输出节点
+    ///
+    /// # 示例
+    /// ```ignore
+    /// graph.reset();  // 新序列开始
+    /// for input in sequence {
+    ///     graph.set_node_value(input_node, Some(&input))?;
+    ///     graph.step(output_node)?;
+    ///     let output = graph.get_node_value(output_node)?;
+    /// }
+    /// ```
+    pub fn step(&mut self, output_node: NodeId) -> Result<(), GraphError> {
+        // 1. 将上一步的值传递给循环连接的目标节点
+        for (&to_node, &from_node) in &self.recurrent_edges.clone() {
+            let prev_value = self.prev_values.get(&from_node).cloned();
+            if let Some(value) = prev_value {
+                self.set_node_value(to_node, Some(&value))?;
+            }
+            // 如果没有上一步值（第一步），to_node 保持其初始值（通常是 0）
+        }
+
+        // 2. 执行前向传播
+        self.forward_node(output_node)?;
+
+        // 3. 保存循环连接源节点的当前值，用于下一步
+        for &from_node in self.recurrent_edges.values() {
+            if let Some(value) = self.get_node_value(from_node)? {
+                self.prev_values.insert(from_node, value.clone());
+            }
+        }
+
+        // 4. 在训练模式下，保存快照用于 BPTT
+        if self.is_train_mode() {
+            let snapshot = self.capture_snapshot();
+            self.step_history.push(snapshot);
+        }
+
+        // 5. 递增时间步
+        self.time_step += 1;
+
+        Ok(())
+    }
+
+    /// 捕获当前所有节点的快照（用于 BPTT）
+    fn capture_snapshot(&self) -> HashMap<NodeId, StepSnapshot> {
+        self.nodes
+            .iter()
+            .map(|(&id, node)| {
+                (
+                    id,
+                    StepSnapshot {
+                        value: node.value().cloned(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// 恢复节点值到指定快照（用于 BPTT）
+    fn restore_snapshot(&mut self, snapshot: &HashMap<NodeId, StepSnapshot>) {
+        for (&node_id, snap) in snapshot {
+            if let Some(node) = self.nodes.get_mut(&node_id) {
+                node.set_value_unchecked(snap.value.as_ref());
+            }
+        }
+    }
+
+    /// 重置循环状态，用于新序列开始
+    ///
+    /// 清除所有双缓冲中的上一步值，将循环目标节点重置为零，并将时间步归零。
+    /// 在处理新的序列之前必须调用此方法。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// for sequence in sequences {
+    ///     graph.reset();  // 每个新序列开始前重置
+    ///     for input in sequence {
+    ///         graph.step(output)?;
+    ///     }
+    /// }
+    /// ```
+    pub fn reset(&mut self) {
+        // 清除上一步值缓存
+        self.prev_values.clear();
+
+        // 清除 BPTT 历史
+        self.step_history.clear();
+
+        // 收集循环目标节点的 ID 和形状
+        let to_reset: Vec<(NodeId, Vec<usize>)> = self
+            .recurrent_edges
+            .keys()
+            .filter_map(|&to_node| {
+                self.get_node(to_node)
+                    .ok()
+                    .map(|node| (to_node, node.value_expected_shape().to_vec()))
+            })
+            .collect();
+
+        // 将循环目标节点重置为零
+        for (to_node, shape) in to_reset {
+            let zeros = Tensor::zeros(&shape);
+            // 忽略错误（边缘情况）
+            let _ = self.set_node_value(to_node, Some(&zeros));
+        }
+
+        // 重置时间步
+        self.time_step = 0;
+    }
+
+    // ========== BPTT API（Phase 2） ==========
+
+    /// 获取当前存储的时间步历史长度
+    pub fn history_len(&self) -> usize {
+        self.step_history.len()
+    }
+
+    /// 清除 BPTT 历史（不重置循环状态）
+    ///
+    /// 与 `reset()` 不同，此方法只清除历史记录，不影响当前的循环状态和时间步。
+    /// 用于 TBPTT 截断后开始新的截断窗口。
+    pub fn clear_history(&mut self) {
+        self.step_history.clear();
+    }
+
+    /// 通过时间反向传播（BPTT）
+    ///
+    /// 遍历所有存储的时间步，从最后一步向前反向传播，累加梯度到参数节点。
+    ///
+    /// # 参数
+    /// - `target_nodes`: 需要计算梯度的目标节点（通常是参数节点）
+    /// - `loss_node`: 损失节点（每个时间步都会从这个节点开始反向传播）
+    ///
+    /// # 工作原理
+    /// ```text
+    /// 对于序列 [t=0, t=1, t=2]：
+    ///   1. 恢复 t=2 的快照，backward(loss) → 梯度累加到参数
+    ///   2. 恢复 t=1 的快照，backward(loss) → 梯度继续累加
+    ///   3. 恢复 t=0 的快照，backward(loss) → 梯度继续累加
+    /// 最终参数的梯度 = Σ(各时间步的梯度贡献)
+    /// ```
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 前向传播整个序列
+    /// for input in sequence {
+    ///     graph.set_node_value(x, Some(&input))?;
+    ///     graph.step(output)?;
+    /// }
+    ///
+    /// // 反向传播整个序列
+    /// graph.backward_through_time(&[w, b], loss)?;
+    ///
+    /// // 更新参数
+    /// optimizer.step(&mut graph)?;
+    /// graph.zero_grad();
+    /// graph.reset();
+    /// ```
+    pub fn backward_through_time(
+        &mut self,
+        target_nodes: &[NodeId],
+        loss_node: NodeId,
+    ) -> Result<(), GraphError> {
+        self.backward_through_time_truncated(target_nodes, loss_node, None)
+    }
+
+    /// 截断的通过时间反向传播（TBPTT）
+    ///
+    /// 与 `backward_through_time` 相同，但只反向传播最近的 `truncation_steps` 个时间步。
+    /// 用于处理长序列时限制内存使用和梯度消失/爆炸问题。
+    ///
+    /// # 参数
+    /// - `target_nodes`: 需要计算梯度的目标节点
+    /// - `loss_node`: 损失节点
+    /// - `truncation_steps`: 截断长度，None 表示不截断（等同于 `backward_through_time`）
+    ///
+    /// # TBPTT 策略
+    /// ```text
+    /// 序列长度 = 10，truncation = 3
+    ///
+    /// 方式 1（本实现）：只反向传播最近 3 步
+    ///   [t=7, t=8, t=9] → backward
+    ///
+    /// 方式 2（高级）：分段处理（需要用户自己实现）
+    ///   [t=0,1,2] → backward → step
+    ///   [t=3,4,5] → backward → step
+    ///   [t=6,7,8,9] → backward → step
+    /// ```
+    pub fn backward_through_time_truncated(
+        &mut self,
+        target_nodes: &[NodeId],
+        loss_node: NodeId,
+        truncation_steps: Option<usize>,
+    ) -> Result<(), GraphError> {
+        if self.step_history.is_empty() {
+            return Err(GraphError::InvalidOperation(
+                "BPTT 失败：没有时间步历史。请确保在训练模式下调用 step()。".to_string(),
+            ));
+        }
+
+        // 确定要反向传播的时间步范围
+        let total_steps = self.step_history.len();
+        let steps_to_backprop = truncation_steps.unwrap_or(total_steps).min(total_steps);
+        let start_idx = total_steps - steps_to_backprop;
+
+        // 收集循环边信息: to_node (State, 如 h_prev) -> from_node (如 hidden)
+        let recurrent_edges_vec: Vec<(NodeId, NodeId)> = self
+            .recurrent_edges
+            .iter()
+            .map(|(&to, &from)| (to, from))
+            .collect();
+
+        // 收集所有 State 节点（循环边的目标节点）
+        let state_nodes: Vec<NodeId> = recurrent_edges_vec.iter().map(|(to, _)| *to).collect();
+
+        // 合并目标节点：params + State 节点
+        let mut all_targets: Vec<NodeId> = target_nodes.to_vec();
+        for state_id in &state_nodes {
+            if !all_targets.contains(state_id) {
+                all_targets.push(*state_id);
+            }
+        }
+
+        // 存储来自"未来"时间步的梯度
+        // key: source_node (如 hidden), value: dL/d(source[t]) 从 t+1 传来
+        let mut incoming_grads: std::collections::HashMap<NodeId, Tensor> =
+            std::collections::HashMap::new();
+
+        // 从最后一个时间步向前反向传播
+        let is_first_step = |t: usize| t == total_steps - 1;
+
+        #[cfg(test)]
+        let debug = self.bptt_debug;
+        #[cfg(not(test))]
+        let debug = false;
+
+        // 清除参数的 grad（确保干净的累加起点）
+        for &param in target_nodes {
+            self.get_node_mut(param)?.clear_grad()?;
+        }
+
+        for t in (start_idx..total_steps).rev() {
+            // 恢复该时间步的快照
+            let snapshot = self.step_history[t].clone();
+            self.restore_snapshot(&snapshot);
+
+            if debug {
+                println!("\n=== BPTT t={} ===", t);
+                // 打印当前 incoming_grads
+                for (node_id, grad) in &incoming_grads {
+                    let name = self
+                        .get_node(*node_id)
+                        .map(|n| n.name().to_string())
+                        .unwrap_or_default();
+                    println!(
+                        "  incoming_grads[{}({})]: {:?}",
+                        name,
+                        node_id.0,
+                        grad.data_as_slice()
+                    );
+                }
+            }
+
+            // 收集传递到上一时间步的梯度（VJP 模式）
+            let mut next_incoming_grads: std::collections::HashMap<NodeId, Tensor> =
+                std::collections::HashMap::new();
+
+            if is_first_step(t) {
+                // === 最后一个时间步：从 loss 反向传播（纯 VJP）===
+                // 使用 backward_from_loss_vjp 代替 backward_nodes_ex
+                // 这会：1) 累加参数的 grad，2) 返回 State 节点收到的 grad
+                let state_grads =
+                    self.backward_from_loss_vjp(target_nodes, &state_nodes, loss_node)?;
+
+                if debug {
+                    println!("  [t={}] After backward_from_loss_vjp:", t);
+                    for &param in target_nodes {
+                        let name = self
+                            .get_node(param)
+                            .map(|n| n.name().to_string())
+                            .unwrap_or_default();
+                        let grad = self.get_node_grad_batch(param).ok().flatten();
+                        println!(
+                            "    {} grad: {:?}",
+                            name,
+                            grad.map(|g| g.data_as_slice().to_vec())
+                        );
+                    }
+                }
+
+                // 收集 State grad 用于跨时间传递
+                for &(to_node, from_node) in &recurrent_edges_vec {
+                    if let Some(state_grad) = state_grads.get(&to_node) {
+                        if debug {
+                            let to_name = self
+                                .get_node(to_node)
+                                .map(|n| n.name().to_string())
+                                .unwrap_or_default();
+                            let from_name = self
+                                .get_node(from_node)
+                                .map(|n| n.name().to_string())
+                                .unwrap_or_default();
+                            println!(
+                                "  [t={}] State grad {}({}) -> {}({}): {:?}",
+                                t,
+                                to_name,
+                                to_node.0,
+                                from_name,
+                                from_node.0,
+                                state_grad.data_as_slice()
+                            );
+                        }
+                        next_incoming_grads.insert(from_node, state_grad.clone());
+                    }
+                }
+            } else {
+                // === 中间时间步：只从 incoming_grad 传播（纯 VJP）===
+                if !incoming_grads.is_empty() {
+                    for &(to_node, from_node) in &recurrent_edges_vec {
+                        if let Some(incoming_grad) = incoming_grads.get(&from_node) {
+                            if debug {
+                                let from_name = self
+                                    .get_node(from_node)
+                                    .map(|n| n.name().to_string())
+                                    .unwrap_or_default();
+                                println!(
+                                    "  [t={}] Processing from {} with incoming {:?}",
+                                    t,
+                                    from_name,
+                                    incoming_grad.data_as_slice()
+                                );
+                            }
+
+                            // 1) 传播参数梯度
+                            self.bptt_backward_from_node_vjp(
+                                from_node,
+                                incoming_grad,
+                                target_nodes,
+                            )?;
+
+                            if debug {
+                                println!("  [t={}] After param grad propagation:", t);
+                                for &param in target_nodes {
+                                    let name = self
+                                        .get_node(param)
+                                        .map(|n| n.name().to_string())
+                                        .unwrap_or_default();
+                                    let grad = self.get_node_grad_batch(param).ok().flatten();
+                                    println!(
+                                        "    {} grad: {:?}",
+                                        name,
+                                        grad.map(|g| g.data_as_slice().to_vec())
+                                    );
+                                }
+                            }
+
+                            // 2) 传播 State 梯度（用于跨时间传递）
+                            let state_grads = self.bptt_propagate_to_state_vjp(
+                                from_node,
+                                incoming_grad,
+                                target_nodes,
+                                false, // 参数梯度已由上面处理，不要重复累加
+                            )?;
+
+                            if let Some(state_grad) = state_grads.get(&to_node) {
+                                if debug {
+                                    let to_name = self
+                                        .get_node(to_node)
+                                        .map(|n| n.name().to_string())
+                                        .unwrap_or_default();
+                                    println!(
+                                        "  [t={}] State {} received grad: {:?}",
+                                        t,
+                                        to_name,
+                                        state_grad.data_as_slice()
+                                    );
+                                }
+                                next_incoming_grads.insert(from_node, state_grad.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            if debug {
+                println!("  [t={}] next_incoming_grads:", t);
+                for (node_id, grad) in &next_incoming_grads {
+                    let name = self
+                        .get_node(*node_id)
+                        .map(|n| n.name().to_string())
+                        .unwrap_or_default();
+                    println!("    {}({}): {:?}", name, node_id.0, grad.data_as_slice());
+                }
+            }
+
+            incoming_grads = next_incoming_grads;
+        }
+
+        // 将 grad 转换为 jacobi（兼容现有测试和优化器）
+        // 注意：这里是"替换"而非"累加"，因为 grad 已包含所有时间步的贡献
+        for &param in target_nodes {
+            // 使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
+            // 而不是 get_node_grad（从 jacobi 转换）
+            if let Some(grad) = self.get_node_grad_batch(param)? {
+                // 将 grad（值格式）转换为 jacobi 格式 [1, N]
+                let grad_as_jacobi = grad.reshape(&[1, grad.size()]);
+                self.get_node_mut(param)?
+                    .set_jacobi(Some(&grad_as_jacobi))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// BPTT 辅助方法：将 incoming gradient 传播到参数
+    ///
+    /// 这模拟了如果 from_node 的 jacobi 是 incoming_grad 时，
+    /// 参数会收到多少额外的梯度贡献。
+    /// 从指定节点向目标节点反向传播梯度
+    ///
+    /// 这是 BPTT 的核心辅助函数：给定一个节点和它的初始 jacobi，
+    /// 计算该 jacobi 对所有目标节点的贡献。
+    ///
+    /// # 算法
+    /// 1. 设置 source_node 的 jacobi 为 initial_jacobi
+    /// 2. 从 source_node 向上遍历到目标节点
+    /// 3. 累加梯度贡献
+    ///
+    /// 注意：该方法已由 VJP 版本（bptt_backward_from_node_vjp）取代，
+    /// 保留用于 debug 和单元测试。
+    #[allow(dead_code)]
+    fn bptt_backward_from_node(
+        &mut self,
+        source_node: NodeId,
+        initial_jacobi: &Tensor,
+        target_nodes: &[NodeId],
+    ) -> Result<(), GraphError> {
+        // 使用 BFS 遍历从 source_node 到所有 target_nodes 的路径
+        use std::collections::{HashSet, VecDeque};
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        // 起点：source_node，其 jacobi = initial_jacobi
+        queue.push_back((source_node, initial_jacobi.clone()));
+        visited.insert(source_node);
+
+        while let Some((node_id, accumulated_jacobi)) = queue.pop_front() {
+            // 获取该节点的父节点
+            let parent_ids = self.get_node_parents(node_id)?;
+            if parent_ids.is_empty() {
+                // 叶子节点
+                // 如果是目标节点（Parameter），累加梯度
+                if target_nodes.contains(&node_id) {
+                    let current_jacobi = self.get_node_jacobi(node_id)?;
+                    if let Some(existing) = current_jacobi {
+                        // 累加梯度
+                        if existing.shape() == accumulated_jacobi.shape() {
+                            let new_jacobi = existing + &accumulated_jacobi;
+                            self.get_node_mut(node_id)?.set_jacobi(Some(&new_jacobi))?;
+                        }
+                    } else {
+                        // 直接设置
+                        self.get_node_mut(node_id)?
+                            .set_jacobi(Some(&accumulated_jacobi))?;
+                    }
+                }
+                continue;
+            }
+
+            // 第一阶段：计算所有父节点的贡献（只读）
+            // 收集 (parent_id, new_accumulated, should_update_jacobi)
+            let mut contributions: Vec<(NodeId, Tensor, bool)> = Vec::new();
+
+            {
+                let node = self.get_node(node_id)?;
+                for &parent_id in &parent_ids {
+                    // 跳过 Input 和 State 节点（State 的梯度在 BPTT 中另外处理）
+                    let parent = self.get_node(parent_id)?;
+                    match parent.node_type() {
+                        NodeType::Input(_) => continue,
+                        NodeType::State(_) => continue, // State 节点的梯度通过 BPTT 循环处理
+                        _ => {}
+                    }
+
+                    // 计算 d(node)/d(parent)
+                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
+                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
+
+                    let local_jacobi = node.calc_jacobi_to_a_parent(parent, assistant)?;
+
+                    // 链式法则：accumulated_jacobi @ local_jacobi
+                    let new_accumulated = accumulated_jacobi.mat_mul(&local_jacobi);
+
+                    // 标记是否需要更新 jacobi
+                    let should_update = target_nodes.contains(&parent_id);
+                    contributions.push((parent_id, new_accumulated, should_update));
+                }
+            }
+
+            // 第二阶段：更新 jacobi 和队列（可变）
+            for (parent_id, new_accumulated, should_update) in contributions {
+                if should_update {
+                    // 目标节点（Parameter）：累加梯度，不需要继续遍历
+                    // 先获取现有 jacobi 的克隆（避免借用冲突）
+                    let existing_jacobi = self.get_node_jacobi(parent_id)?.cloned();
+                    let new_jacobi = match existing_jacobi {
+                        Some(existing) if existing.shape() == new_accumulated.shape() => {
+                            &existing + &new_accumulated
+                        }
+                        _ => new_accumulated.clone(),
+                    };
+                    self.get_node_mut(parent_id)?
+                        .set_jacobi(Some(&new_jacobi))?;
+                    // 标记为已访问，但不 push 到队列（目标节点是叶子节点，无需继续遍历）
+                    visited.insert(parent_id);
+                } else {
+                    // 非目标节点：继续向上传播（如果还没访问过）
+                    if !visited.contains(&parent_id) {
+                        visited.insert(parent_id);
+                        queue.push_back((parent_id, new_accumulated));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// BPTT 辅助方法：从源节点传播梯度到 State 节点（通用版本）
+    ///
+    /// 通过通用的 backward 机制自动处理任意激活函数（tanh、sigmoid、ReLU 等）
+    /// 和任意网络拓扑，不再硬编码特定激活函数的导数。
+    ///
+    /// # 算法
+    /// 1. 从 source_node 开始，带入 initial_jacobi
+    /// 2. 沿着计算图向父节点方向传播（使用节点的 calc_jacobi_to_a_parent）
+    /// 3. 遇到 State 节点时，收集其梯度（而不是跳过）
+    /// 4. 遇到 Parameter 节点时，根据 `accumulate_params` 决定是否累加梯度
+    /// 5. 返回所有 State 节点收到的梯度
+    ///
+    /// # 与 bptt_backward_from_node 的区别
+    /// - `bptt_backward_from_node`：跳过 State 节点，只传播到 Parameter
+    /// - `bptt_propagate_to_state`：收集 State 节点的梯度，用于跨时间传递
+    ///
+    /// # 参数
+    /// - `accumulate_params`: 是否累加梯度到参数。中间步应设为 false（因为
+    ///   bptt_backward_from_node 已经处理了参数），只有当需要同时收集 State
+    ///   梯度和更新参数时才设为 true。
+    ///
+    /// # 返回
+    /// HashMap<NodeId, Tensor>: State 节点 ID -> 该节点收到的梯度
+    ///
+    /// 注意：该方法已由 VJP 版本（bptt_propagate_to_state_vjp）取代，
+    /// 保留用于 debug 和单元测试。
+    #[allow(dead_code)]
+    fn bptt_propagate_to_state(
+        &mut self,
+        source_node: NodeId,
+        initial_jacobi: &Tensor,
+        target_params: &[NodeId],
+        accumulate_params: bool,
+    ) -> Result<std::collections::HashMap<NodeId, Tensor>, GraphError> {
+        use std::collections::{HashMap, HashSet, VecDeque};
+
+        let mut state_grads: HashMap<NodeId, Tensor> = HashMap::new();
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        // 起点：source_node，其 jacobi = initial_jacobi
+        queue.push_back((source_node, initial_jacobi.clone()));
+        visited.insert(source_node);
+
+        while let Some((node_id, accumulated_jacobi)) = queue.pop_front() {
+            // 获取该节点的父节点
+            let parent_ids = self.get_node_parents(node_id)?;
+            if parent_ids.is_empty() {
+                // 叶子节点（可能是 Parameter）
+                if target_params.contains(&node_id) {
+                    // 累加到 Parameter 的梯度
+                    let existing_jacobi = self.get_node_jacobi(node_id)?.cloned();
+                    let new_jacobi = match existing_jacobi {
+                        Some(existing) if existing.shape() == accumulated_jacobi.shape() => {
+                            &existing + &accumulated_jacobi
+                        }
+                        _ => accumulated_jacobi.clone(),
+                    };
+                    self.get_node_mut(node_id)?.set_jacobi(Some(&new_jacobi))?;
+                }
+                continue;
+            }
+
+            // 计算所有父节点的贡献
+            let mut contributions: Vec<(NodeId, Tensor, bool, bool)> = Vec::new(); // (id, grad, is_param, is_state)
+
+            {
+                let node = self.get_node(node_id)?;
+                for &parent_id in &parent_ids {
+                    let parent = self.get_node(parent_id)?;
+
+                    // 检查父节点类型
+                    let is_input = matches!(parent.node_type(), NodeType::Input(_));
+                    let is_state = matches!(parent.node_type(), NodeType::State(_));
+                    let is_param = target_params.contains(&parent_id);
+
+                    // 跳过 Input 节点（用户输入，不需要梯度）
+                    if is_input {
+                        continue;
+                    }
+
+                    // 计算 d(node)/d(parent)
+                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
+                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
+
+                    let local_jacobi = node.calc_jacobi_to_a_parent(parent, assistant)?;
+
+                    // 链式法则：accumulated_jacobi @ local_jacobi
+                    let new_accumulated = accumulated_jacobi.mat_mul(&local_jacobi);
+
+                    contributions.push((parent_id, new_accumulated, is_param, is_state));
+                }
+            }
+
+            // 处理各类贡献
+            for (parent_id, new_accumulated, is_param, is_state) in contributions {
+                if is_state {
+                    // State 节点：收集梯度（关键修复点！）
+                    // 这是跨时间传递的梯度，需要返回给 BPTT 循环
+                    state_grads
+                        .entry(parent_id)
+                        .and_modify(|existing| {
+                            if existing.shape() == new_accumulated.shape() {
+                                *existing = &*existing + &new_accumulated;
+                            }
+                        })
+                        .or_insert_with(|| new_accumulated.clone());
+                    // State 是叶子，不继续向上
+                } else if is_param {
+                    // Parameter 节点：根据参数决定是否累加梯度
+                    if accumulate_params {
+                        let existing_jacobi = self.get_node_jacobi(parent_id)?.cloned();
+                        let new_jacobi = match existing_jacobi {
+                            Some(existing) if existing.shape() == new_accumulated.shape() => {
+                                &existing + &new_accumulated
+                            }
+                            _ => new_accumulated.clone(),
+                        };
+                        self.get_node_mut(parent_id)?
+                            .set_jacobi(Some(&new_jacobi))?;
+                    }
+                    visited.insert(parent_id);
+                    // Parameter 是叶子，不继续向上
+                } else {
+                    // 中间节点：继续向上传播
+                    if !visited.contains(&parent_id) {
+                        visited.insert(parent_id);
+                        queue.push_back((parent_id, new_accumulated));
+                    }
+                }
+            }
+        }
+
+        Ok(state_grads)
+    }
+
+    /// BPTT 辅助方法：从源节点传播梯度到 State 节点（VJP/grad 模式）
+    ///
+    /// 使用 VJP (Vector-Jacobian Product) 而非完整 Jacobian 矩阵，
+    /// 避免 O(N²) 内存开销，支持大 batch/hidden 尺寸的 RNN 训练。
+    ///
+    /// # 与 Jacobian 版本 (bptt_propagate_to_state) 的区别
+    /// - Jacobian 模式：构造 N×N 对角矩阵，然后矩阵乘法
+    /// - VJP 模式：直接调用 calc_grad_to_parent，做 O(N) 元素乘法
+    ///
+    /// # 参数
+    /// - `source_node`: 开始传播的节点（如 hidden）
+    /// - `initial_grad`: 该节点的上游梯度，形状与节点值相同
+    /// - `target_params`: 需要累加 grad 的参数节点
+    /// - `accumulate_params`: 是否累加 grad 到参数
+    ///
+    /// # 返回
+    /// HashMap<NodeId, Tensor>: State 节点 ID -> 该节点收到的 grad
+    fn bptt_propagate_to_state_vjp(
+        &mut self,
+        source_node: NodeId,
+        initial_grad: &Tensor,
+        target_params: &[NodeId],
+        accumulate_params: bool,
+    ) -> Result<std::collections::HashMap<NodeId, Tensor>, GraphError> {
+        use std::collections::{HashMap, HashSet, VecDeque};
+
+        let mut state_grads: HashMap<NodeId, Tensor> = HashMap::new();
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        // 起点：source_node，其 grad = initial_grad
+        queue.push_back((source_node, initial_grad.clone()));
+        visited.insert(source_node);
+
+        while let Some((node_id, upstream_grad)) = queue.pop_front() {
+            // 获取该节点的父节点
+            let parent_ids = self.get_node_parents(node_id)?;
+            if parent_ids.is_empty() {
+                // 叶子节点（可能是 Parameter）
+                if target_params.contains(&node_id) && accumulate_params {
+                    // 累加到 Parameter 的 grad
+                    // 注意：使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
+                    let existing_grad = self.get_node_grad_batch(node_id)?;
+                    let new_grad = match existing_grad {
+                        Some(existing) if existing.shape() == upstream_grad.shape() => {
+                            existing + &upstream_grad
+                        }
+                        _ => upstream_grad.clone(),
+                    };
+                    self.get_node_mut(node_id)?.set_grad(Some(&new_grad))?;
+                }
+                continue;
+            }
+
+            // 计算所有父节点的 grad（只读阶段）
+            let mut contributions: Vec<(NodeId, Tensor, bool, bool)> = Vec::new();
+
+            {
+                let node = self.get_node(node_id)?;
+                for &parent_id in &parent_ids {
+                    let parent = self.get_node(parent_id)?;
+
+                    // 检查父节点类型
+                    let is_input = matches!(parent.node_type(), NodeType::Input(_));
+                    let is_state = matches!(parent.node_type(), NodeType::State(_));
+                    let is_param = target_params.contains(&parent_id);
+
+                    // 跳过 Input 节点
+                    if is_input {
+                        continue;
+                    }
+
+                    // 使用 VJP 模式计算梯度（关键：使用 calc_grad_to_parent 而非 calc_jacobi_to_a_parent）
+                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
+                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
+
+                    let local_grad = node.calc_grad_to_parent(parent, &upstream_grad, assistant)?;
+
+                    contributions.push((parent_id, local_grad, is_param, is_state));
+                }
+            }
+
+            // 处理各类贡献（可变阶段）
+            for (parent_id, local_grad, is_param, is_state) in contributions {
+                if is_state {
+                    // State 节点：收集 grad
+                    state_grads
+                        .entry(parent_id)
+                        .and_modify(|existing| {
+                            if existing.shape() == local_grad.shape() {
+                                *existing = &*existing + &local_grad;
+                            }
+                        })
+                        .or_insert_with(|| local_grad.clone());
+                } else if is_param {
+                    // Parameter 节点：根据参数决定是否累加 grad
+                    if accumulate_params {
+                        // 注意：使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
+                        let existing_grad = self.get_node_grad_batch(parent_id)?;
+                        let new_grad = match existing_grad {
+                            Some(existing) if existing.shape() == local_grad.shape() => {
+                                existing + &local_grad
+                            }
+                            _ => local_grad.clone(),
+                        };
+                        self.get_node_mut(parent_id)?.set_grad(Some(&new_grad))?;
+                    }
+                    visited.insert(parent_id);
+                } else {
+                    // 中间节点：继续向上传播
+                    if !visited.contains(&parent_id) {
+                        visited.insert(parent_id);
+                        queue.push_back((parent_id, local_grad));
+                    }
+                }
+            }
+        }
+
+        Ok(state_grads)
+    }
+
+    /// BPTT 辅助方法：将 incoming grad 传播到参数（VJP 模式）
+    ///
+    /// 使用 VJP 而非 Jacobian 模式。与 `bptt_backward_from_node` 类似，但：
+    /// - 使用 `calc_grad_to_parent` 而非 `calc_jacobi_to_a_parent`
+    /// - 输入是值格式（[batch, hidden]）而非 jacobi 格式（[1, N]）
+    /// - 累加到 `grad` 而非 `jacobi`
+    fn bptt_backward_from_node_vjp(
+        &mut self,
+        source_node: NodeId,
+        initial_grad: &Tensor,
+        target_nodes: &[NodeId],
+    ) -> Result<(), GraphError> {
+        use std::collections::{HashSet, VecDeque};
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        queue.push_back((source_node, initial_grad.clone()));
+        visited.insert(source_node);
+
+        while let Some((node_id, upstream_grad)) = queue.pop_front() {
+            let parent_ids = self.get_node_parents(node_id)?;
+            if parent_ids.is_empty() {
+                continue;
+            }
+
+            // 第一阶段：计算所有父节点的贡献（只读）
+            let mut contributions: Vec<(NodeId, Tensor, bool)> = Vec::new();
+
+            {
+                let node = self.get_node(node_id)?;
+                for &parent_id in &parent_ids {
+                    // 跳过 Input 和 State 节点
+                    let parent = self.get_node(parent_id)?;
+                    match parent.node_type() {
+                        NodeType::Input(_) => continue,
+                        NodeType::State(_) => continue,
+                        _ => {}
+                    }
+
+                    // 使用 VJP 计算梯度
+                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
+                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
+
+                    let local_grad = node.calc_grad_to_parent(parent, &upstream_grad, assistant)?;
+
+                    let should_update = target_nodes.contains(&parent_id);
+                    contributions.push((parent_id, local_grad, should_update));
+                }
+            }
+
+            // 第二阶段：更新 grad 和队列（可变）
+            for (parent_id, local_grad, should_update) in contributions {
+                if should_update {
+                    // 目标节点（Parameter）：累加到 grad
+                    // 注意：使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
+                    let existing_grad = self.get_node_grad_batch(parent_id)?;
+                    let new_grad = match existing_grad {
+                        Some(existing) if existing.shape() == local_grad.shape() => {
+                            existing + &local_grad
+                        }
+                        _ => local_grad.clone(),
+                    };
+                    self.get_node_mut(parent_id)?.set_grad(Some(&new_grad))?;
+                    visited.insert(parent_id);
+                } else {
+                    // 非目标节点：继续向上传播
+                    if !visited.contains(&parent_id) {
+                        visited.insert(parent_id);
+                        queue.push_back((parent_id, local_grad));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 从 loss 反向传播到目标节点（纯 VJP 模式）
+    ///
+    /// 完全使用 VJP 模式，不使用 Jacobian 矩阵。与 `backward_nodes_ex` 的区别：
+    /// - 梯度存储在 `grad` 而非 `jacobi`
+    /// - 使用 `calc_grad_to_parent` 而非 `calc_jacobi_to_a_parent`
+    /// - 支持 batch 形状（不扁平化为 [1, N]）
+    ///
+    /// # 参数
+    /// - `target_params`: 参数节点（累加 grad）
+    /// - `state_nodes`: State 节点（收集 grad 用于跨时间传递）
+    /// - `loss_node`: loss 节点（反向传播起点）
+    ///
+    /// # 返回
+    /// HashMap<NodeId, Tensor>: State 节点收到的 grad
+    fn backward_from_loss_vjp(
+        &mut self,
+        target_params: &[NodeId],
+        state_nodes: &[NodeId],
+        loss_node: NodeId,
+    ) -> Result<std::collections::HashMap<NodeId, Tensor>, GraphError> {
+        use std::collections::{HashMap, HashSet, VecDeque};
+
+        #[cfg(test)]
+        let debug = self.bptt_debug;
+        #[cfg(not(test))]
+        let debug = false;
+
+        let mut state_grads: HashMap<NodeId, Tensor> = HashMap::new();
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        // 起点：loss 节点，其 grad = 1（标量 loss 的初始梯度）
+        let loss_value = self
+            .get_node_value(loss_node)?
+            .ok_or_else(|| GraphError::ComputationError("Loss node has no value".to_string()))?;
+        let initial_grad = Tensor::ones(loss_value.shape());
+
+        if debug {
+            println!(
+                "  backward_from_loss_vjp: loss={}, target_params={:?}, state_nodes={:?}",
+                loss_node.0,
+                target_params.iter().map(|n| n.0).collect::<Vec<_>>(),
+                state_nodes.iter().map(|n| n.0).collect::<Vec<_>>()
+            );
+        }
+
+        queue.push_back((loss_node, initial_grad));
+        visited.insert(loss_node);
+
+        while let Some((node_id, upstream_grad)) = queue.pop_front() {
+            let parent_ids = self.get_node_parents(node_id)?;
+            if parent_ids.is_empty() {
+                continue;
+            }
+
+            if debug {
+                let node_name = self
+                    .get_node(node_id)
+                    .map(|n| n.name().to_string())
+                    .unwrap_or_default();
+                println!(
+                    "    Processing node {}({}), upstream_grad={:?}, parents={:?}",
+                    node_name,
+                    node_id.0,
+                    upstream_grad.data_as_slice(),
+                    parent_ids.iter().map(|n| n.0).collect::<Vec<_>>()
+                );
+            }
+
+            // 计算所有父节点的 grad
+            let mut contributions: Vec<(NodeId, Tensor, bool, bool)> = Vec::new();
+
+            {
+                let node = self.get_node(node_id)?;
+                for &parent_id in &parent_ids {
+                    let parent = self.get_node(parent_id)?;
+
+                    // 检查父节点类型
+                    let is_input = matches!(parent.node_type(), NodeType::Input(_));
+                    let is_state = state_nodes.contains(&parent_id);
+                    let is_param = target_params.contains(&parent_id);
+
+                    if debug {
+                        println!(
+                            "      parent {}({}): is_input={}, is_state={}, is_param={}",
+                            parent.name(),
+                            parent_id.0,
+                            is_input,
+                            is_state,
+                            is_param
+                        );
+                    }
+
+                    // 跳过 Input 节点
+                    if is_input {
+                        continue;
+                    }
+
+                    // 使用 VJP 计算梯度
+                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
+                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
+
+                    let local_grad = node.calc_grad_to_parent(parent, &upstream_grad, assistant)?;
+
+                    if debug {
+                        println!("        -> local_grad={:?}", local_grad.data_as_slice());
+                    }
+
+                    contributions.push((parent_id, local_grad, is_param, is_state));
+                }
+            }
+
+            // 处理各类贡献
+            for (parent_id, local_grad, is_param, is_state) in contributions {
+                if is_state {
+                    // State 节点：收集 grad（不继续向上，State 是当前时间步的叶子）
+                    if debug {
+                        println!(
+                            "      -> State {}({}): collecting grad",
+                            self.get_node(parent_id)
+                                .map(|n| n.name().to_string())
+                                .unwrap_or_default(),
+                            parent_id.0
+                        );
+                    }
+                    state_grads
+                        .entry(parent_id)
+                        .and_modify(|existing| {
+                            if existing.shape() == local_grad.shape() {
+                                *existing = &*existing + &local_grad;
+                            }
+                        })
+                        .or_insert_with(|| local_grad.clone());
+                } else if is_param {
+                    // Parameter 节点：累加到 grad
+                    if debug {
+                        println!(
+                            "      -> Param {}({}): setting grad",
+                            self.get_node(parent_id)
+                                .map(|n| n.name().to_string())
+                                .unwrap_or_default(),
+                            parent_id.0
+                        );
+                    }
+                    // 注意：使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
+                    let existing_grad = self.get_node_grad_batch(parent_id)?;
+                    let new_grad = match existing_grad {
+                        Some(existing) if existing.shape() == local_grad.shape() => {
+                            existing + &local_grad
+                        }
+                        _ => local_grad.clone(),
+                    };
+                    self.get_node_mut(parent_id)?.set_grad(Some(&new_grad))?;
+                    visited.insert(parent_id);
+                } else {
+                    // 中间节点：继续向上传播
+                    if debug {
+                        println!(
+                            "      -> Intermediate {}({}): {}",
+                            self.get_node(parent_id)
+                                .map(|n| n.name().to_string())
+                                .unwrap_or_default(),
+                            parent_id.0,
+                            if !visited.contains(&parent_id) {
+                                "adding to queue"
+                            } else {
+                                "already visited"
+                            }
+                        );
+                    }
+                    if !visited.contains(&parent_id) {
+                        visited.insert(parent_id);
+                        queue.push_back((parent_id, local_grad));
+                    }
+                }
+            }
+        }
+
+        Ok(state_grads)
     }
 
     /// 在 no_grad 上下文中执行闭包
@@ -2228,6 +3403,36 @@ impl Graph {
     ) -> Result<NodeId, GraphError> {
         let node = NodeHandle::new_parameter_seeded(shape, seed)?;
         self.add_node_to_list(node, name, "parameter", &[])
+    }
+
+    /// 创建 State 节点（用于 RNN 时间状态）
+    ///
+    /// State 节点用于存储 RNN/LSTM 的隐藏状态（h, c 等）。
+    /// 与 Input 节点不同，State 节点：
+    /// - 可以接收并存储 jacobi（用于 BPTT 梯度传递）
+    /// - 值由执行引擎（step/reset）管理，而非用户直接输入
+    ///
+    /// 与 Parameter 节点不同，State 节点：
+    /// - 不被优化器更新（不在 get_trainable_nodes() 中返回）
+    /// - 值在每个时间步都会变化
+    ///
+    /// # 参数
+    /// - `shape`: 状态张量形状，如 `[batch, hidden_size]`
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let h_prev = graph.new_state_node(&[1, 64], Some("hidden"))?;
+    /// graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 64])))?; // 初始化
+    /// graph.connect_recurrent(hidden, h_prev)?; // 建立循环连接
+    /// ```
+    pub fn new_state_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let node = NodeHandle::new_state(shape)?;
+        self.add_node_to_list(node, name, "state", &[])
     }
 
     pub fn new_add_node(

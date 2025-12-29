@@ -18,6 +18,7 @@ pub(crate) struct ScalarMultiply {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    grad: Option<Tensor>, // Batch 模式梯度
     shape: Vec<usize>,
     parents_ids: Vec<NodeId>, // 保留用于雅可比计算，[标量id, 矩阵id]
 }
@@ -50,6 +51,7 @@ impl ScalarMultiply {
             name: None,
             value: None,
             jacobi: None,
+            grad: None,
             shape: matrix_shape,
             parents_ids: vec![parents[0].id(), parents[1].id()],
         })
@@ -203,8 +205,68 @@ impl TraitNode for ScalarMultiply {
         Ok(())
     }
 
+    // ========== Batch 模式 ==========
+
+    /// 计算 ScalarMultiply 节点对父节点的梯度（Batch 模式 / VJP）
+    ///
+    /// 对于 C = s * M，其中 s 是标量，M 是矩阵：
+    /// - ∂L/∂M = s * upstream_grad
+    /// - ∂L/∂s = sum(upstream_grad ⊙ M) → 形状 [1, 1]
+    fn calc_grad_to_parent(
+        &self,
+        target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
+        assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        // 获取辅助父节点
+        let assistant = assistant_parent.ok_or_else(|| {
+            GraphError::ComputationError("ScalarMultiply 节点计算梯度需要辅助父节点".to_string())
+        })?;
+
+        if target_parent.id() == self.parents_ids[0] {
+            // target 是标量 s，assistant 是矩阵 M
+            // ∂L/∂s = sum(upstream_grad ⊙ M)
+            let m_value = assistant.value().ok_or_else(|| {
+                GraphError::ComputationError(format!("{} 的矩阵父节点没有值", self.display_node()))
+            })?;
+            // 逐元素乘积后求和
+            let elementwise_product = upstream_grad * m_value;
+            let sum: f32 = elementwise_product.data_as_slice().iter().sum();
+            Ok(Tensor::new(&[sum], &[1, 1]))
+        } else if target_parent.id() == self.parents_ids[1] {
+            // target 是矩阵 M，assistant 是标量 s
+            // ∂L/∂M = s * upstream_grad
+            let s_value = assistant.value().ok_or_else(|| {
+                GraphError::ComputationError(format!("{} 的标量父节点没有值", self.display_node()))
+            })?;
+            let scalar = s_value.get_data_number().ok_or_else(|| {
+                GraphError::ComputationError("标量父节点不是 1x1 矩阵".to_string())
+            })?;
+            Ok(scalar * upstream_grad)
+        } else {
+            Err(GraphError::ComputationError(format!(
+                "{} 不是当前 {} 的父节点",
+                target_parent,
+                self.display_node()
+            )))
+        }
+    }
+
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
+
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
+        Ok(())
+    }
+
     fn clear_value(&mut self) -> Result<(), GraphError> {
         self.value = None;
         Ok(())
+    }
+
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
     }
 }

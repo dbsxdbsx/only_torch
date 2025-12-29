@@ -18,6 +18,7 @@ pub(crate) struct Multiply {
     name: Option<String>,
     value: Option<Tensor>,
     jacobi: Option<Tensor>,
+    grad: Option<Tensor>, // Batch 模式梯度
     shape: Vec<usize>,
     parents_ids: Vec<NodeId>, // 保留用于雅可比计算，[left_id, right_id]
 }
@@ -47,6 +48,7 @@ impl Multiply {
             name: None,
             value: None,
             jacobi: None,
+            grad: None,
             shape,
             parents_ids: vec![parents[0].id(), parents[1].id()],
         })
@@ -183,8 +185,71 @@ impl TraitNode for Multiply {
         Ok(())
     }
 
+    // ========== Batch 模式 ==========
+
+    /// 计算 Multiply 节点对父节点的梯度（Batch 模式 / VJP）
+    ///
+    /// 对于 C = A ⊙ B（逐元素乘法）：
+    /// - ∂L/∂A = upstream_grad ⊙ B
+    /// - ∂L/∂B = upstream_grad ⊙ A
+    fn calc_grad_to_parent(
+        &self,
+        target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
+        assistant_parent: Option<&NodeHandle>,
+    ) -> Result<Tensor, GraphError> {
+        // 获取辅助父节点（另一个操作数）
+        let assistant = assistant_parent.ok_or_else(|| {
+            GraphError::ComputationError(
+                "Multiply 节点计算梯度需要辅助父节点".to_string(),
+            )
+        })?;
+
+        // 确定哪个是 target，哪个是 assistant
+        if target_parent.id() == self.parents_ids[0] {
+            // target 是 left (A)，assistant 是 right (B)
+            // ∂L/∂A = upstream_grad ⊙ B
+            let b_value = assistant.value().ok_or_else(|| {
+                GraphError::ComputationError(format!(
+                    "{} 的辅助父节点没有值",
+                    self.display_node()
+                ))
+            })?;
+            Ok(upstream_grad * b_value)
+        } else if target_parent.id() == self.parents_ids[1] {
+            // target 是 right (B)，assistant 是 left (A)
+            // ∂L/∂B = upstream_grad ⊙ A
+            let a_value = assistant.value().ok_or_else(|| {
+                GraphError::ComputationError(format!(
+                    "{} 的辅助父节点没有值",
+                    self.display_node()
+                ))
+            })?;
+            Ok(upstream_grad * a_value)
+        } else {
+            Err(GraphError::ComputationError(format!(
+                "{} 不是当前 {} 的父节点",
+                target_parent,
+                self.display_node()
+            )))
+        }
+    }
+
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
+
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
+        Ok(())
+    }
+
     fn clear_value(&mut self) -> Result<(), GraphError> {
         self.value = None;
         Ok(())
+    }
+
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
     }
 }

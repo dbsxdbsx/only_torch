@@ -2,12 +2,14 @@ mod input;
 mod loss;
 mod ops;
 mod parameter;
+mod state;
 
 pub(super) use input::Input;
 pub use loss::Reduction;
 pub(super) use loss::{MSELoss, PerceptionLoss, SoftmaxCrossEntropy};
 pub(super) use ops::*;
 pub(super) use parameter::Parameter;
+pub(super) use state::State;
 
 use enum_dispatch::enum_dispatch;
 
@@ -16,6 +18,7 @@ use enum_dispatch::enum_dispatch;
 pub(in crate::nn) enum NodeType {
     Input(Input),
     Parameter(Parameter),
+    State(State), // 时间状态节点（RNN 隐藏状态等）
     Add(Add),
     AvgPool2d(AvgPool2d),
     ChannelBiasAdd(ChannelBiasAdd),
@@ -77,6 +80,12 @@ pub(in crate::nn::nodes) trait TraitNode {
     /// 与 `set_value(None)` 不同，此方法专门用于内存管理，
     /// 对于不允许直接设置值的节点（如运算节点）也能正常清除。
     fn clear_value(&mut self) -> Result<(), GraphError>;
+
+    /// 强制设置节点的值（绕过类型检查）
+    ///
+    /// ⚠️ 仅供内部使用（如 BPTT 快照恢复）。
+    /// 普通用户应使用 `set_value`，它会检查节点类型。
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>);
 
     // ========== 单样本模式（Jacobi-based）==========
 

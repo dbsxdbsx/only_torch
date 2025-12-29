@@ -106,6 +106,10 @@ impl TraitNode for Input {
         Ok(())
     }
 
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
+    }
+
     fn value_expected_shape(&self) -> &[usize] {
         &self.shape
     }

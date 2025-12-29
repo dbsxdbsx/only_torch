@@ -45,6 +45,7 @@ pub struct NodeDescriptor {
 pub enum NodeTypeDescriptor {
     Input,
     Parameter,
+    State, // 时间状态节点（RNN 隐藏状态等）
     Add,
     MatMul,
     Multiply,

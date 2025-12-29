@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
     Add, AvgPool2d, ChannelBiasAdd, Conv2d, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d,
-    Multiply, Parameter, PerceptionLoss, Reduction, Reshape, ScalarMultiply, Sigmoid, SoftPlus,
-    Sign, SoftmaxCrossEntropy, Step, Tanh,
+    Multiply, Parameter, PerceptionLoss, Reduction, Reshape, ScalarMultiply, Sigmoid, Sign,
+    SoftPlus, SoftmaxCrossEntropy, State, Step, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -87,6 +87,12 @@ impl NodeHandle {
         self.raw_node.set_value(value)
     }
 
+    /// 强制设置节点的值（绕过类型检查）
+    /// 仅供内部使用（如 BPTT 快照恢复）
+    pub(in crate::nn) fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.raw_node.set_value_unchecked(value);
+    }
+
     pub(in crate::nn) fn jacobi(&self) -> Option<&Tensor> {
         self.raw_node.jacobi()
     }
@@ -130,6 +136,17 @@ impl NodeHandle {
         let parameter = Parameter::new_seeded(shape, seed)?;
         Ok(Self {
             raw_node: NodeType::Parameter(parameter),
+            last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
+            is_detached: false,
+        })
+    }
+
+    /// 创建 State 节点（用于 RNN 时间状态）
+    pub(in crate::nn) fn new_state(shape: &[usize]) -> Result<Self, GraphError> {
+        let state = State::new(shape)?;
+        Ok(Self {
+            raw_node: NodeType::State(state),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             is_detached: false,

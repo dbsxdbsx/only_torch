@@ -6,7 +6,7 @@ use crate::tensor::Tensor;
 /// SoftPlus 激活函数节点
 ///
 /// forward: f(x) = ln(1 + e^x)
-/// backward: f'(x) = sigmoid(x) = 1 / (1 + e^(-x))
+/// backward: f'(x) = sigmoid(x) = 1 / (1 + e^(-x)) = 1 - exp(-softplus(x))
 ///
 /// SoftPlus 是 ReLU 的平滑近似，处处可微，适用于：
 /// - 需要正值输出的场景（如方差/标准差预测）
@@ -20,8 +20,6 @@ pub(crate) struct SoftPlus {
     jacobi: Option<Tensor>,
     grad: Option<Tensor>, // Batch 模式的梯度
     shape: Vec<usize>,
-    /// 缓存父节点的值（用于反向传播）
-    parent_value: Option<Tensor>,
 }
 
 impl SoftPlus {
@@ -42,7 +40,6 @@ impl SoftPlus {
             jacobi: None,
             grad: None,
             shape: parents[0].value_expected_shape().to_vec(),
-            parent_value: None,
         })
     }
 
@@ -67,6 +64,24 @@ impl SoftPlus {
                     (1.0 + val.exp()).ln()
                 }
             },
+        )
+    }
+
+    /// 从 softplus(x) 计算 sigmoid(x)
+    ///
+    /// 数学推导:
+    ///   y = softplus(x) = ln(1 + e^x)
+    ///   e^y = 1 + e^x
+    ///   sigmoid(x) = e^x / (1 + e^x) = (e^y - 1) / e^y = 1 - e^(-y)
+    ///
+    /// 这允许我们从输出计算梯度，对 BPTT 很关键
+    fn sigmoid_from_softplus(softplus_output: &Tensor) -> Tensor {
+        // sigmoid(x) = 1 - exp(-softplus(x))
+        // 对于大 y（对应大正数 x），sigmoid ≈ 1，exp(-y) 会下溢到 0，公式仍正确
+        softplus_output.where_with_f32(
+            |y| y > 20.0,
+            |_| 1.0, // 大 y 时 sigmoid ≈ 1
+            |y| 1.0 - (-y).exp(),
         )
     }
 }
@@ -102,10 +117,8 @@ impl TraitNode for SoftPlus {
             ))
         })?;
 
-        // 2. 缓存父节点的值（用于反向传播）
-        self.parent_value = Some(parent_value.clone());
-
-        // 3. 计算 softplus(x) = ln(1 + e^x)（数值稳定版本）
+        // 2. 计算 softplus(x) = ln(1 + e^x)（数值稳定版本）
+        // 注：不再缓存 parent_value，因为梯度计算已改为使用 value（输出）
         self.value = Some(Self::stable_softplus(parent_value));
         Ok(())
     }
@@ -119,17 +132,18 @@ impl TraitNode for SoftPlus {
         _target_parent: &NodeHandle,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // SoftPlus 的导数: d(softplus(x))/dx = sigmoid(x)
+        // SoftPlus 的导数: d(softplus(x))/dx = sigmoid(x) = 1 - exp(-softplus(x))
         // 由于是逐元素操作，雅可比矩阵是对角矩阵
-        let parent_value = self.parent_value.as_ref().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}没有缓存的父节点值。不该触及本错误，否则说明crate代码有问题",
-                self.display_node()
-            ))
+        //
+        // 重要：使用 value（输出）计算 sigmoid，而非 parent_value（输入）
+        // 这对 BPTT 很关键，因为 BPTT 只恢复 value，不恢复 parent_value
+        // 数学推导: y = softplus(x) = ln(1 + e^x) → sigmoid(x) = 1 - exp(-y)
+        let value = self.value().ok_or_else(|| {
+            GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
-        // 计算 sigmoid(x)，并转换为 Jacobian 对角矩阵
-        let derivative = parent_value.sigmoid();
+        // 计算 sigmoid(x) = 1 - exp(-softplus(x))，并转换为 Jacobian 对角矩阵
+        let derivative = Self::sigmoid_from_softplus(value);
         Ok(derivative.jacobi_diag())
     }
 
@@ -150,16 +164,16 @@ impl TraitNode for SoftPlus {
         upstream_grad: &Tensor,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // SoftPlus 的梯度: upstream_grad * sigmoid(x)
-        let parent_value = self.parent_value.as_ref().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}没有缓存的父节点值，无法计算梯度",
-                self.display_node()
-            ))
+        // SoftPlus 的梯度: upstream_grad * sigmoid(x) = upstream_grad * (1 - exp(-y))
+        //
+        // 重要：使用 value（输出）计算 sigmoid，而非 parent_value（输入）
+        // 这对 BPTT 很关键，因为 BPTT 只恢复 value，不恢复 parent_value
+        let value = self.value().ok_or_else(|| {
+            GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
-        // 计算 sigmoid(x)（逐元素）
-        let local_grad = parent_value.sigmoid();
+        // 计算 sigmoid(x) = 1 - exp(-softplus(x))（逐元素）
+        let local_grad = Self::sigmoid_from_softplus(value);
 
         // 逐元素乘以上游梯度
         Ok(upstream_grad * &local_grad)
@@ -178,5 +192,8 @@ impl TraitNode for SoftPlus {
         self.value = None;
         Ok(())
     }
-}
 
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
+    }
+}

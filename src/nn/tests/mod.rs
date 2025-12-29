@@ -20,6 +20,7 @@ mod node_mse_loss; // MSELoss 节点（均方误差损失）
 mod node_multiply;
 mod node_parameter;
 mod node_perception_loss;
+mod node_state; // State 节点测试（RNN 时间状态）
 mod node_reshape; // Reshape 节点（形状变换）
 mod node_scalar_multiply;
 mod node_sigmoid;
@@ -29,4 +30,7 @@ mod node_softplus; // SoftPlus 激活函数（ReLU 的平滑近似）
 mod node_step;
 mod node_tanh;
 mod optimizer; // 优化器测试模块（包含 basic, sgd, adam, trait_tests 子模块）
+mod recurrent_basic; // Phase 1: 循环/记忆机制基础测试
+mod recurrent_bptt; // Phase 2: BPTT 通过时间反向传播测试
+mod bptt_pytorch_comparison; // BPTT PyTorch 对照测试
 mod save_load; // 参数保存/加载测试

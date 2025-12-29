@@ -20,8 +20,6 @@ pub(crate) struct LeakyReLU {
     shape: Vec<usize>,
     /// 负半轴斜率，默认 0.0（标准 ReLU）
     negative_slope: f64,
-    /// 缓存父节点的值（用于反向传播时判断梯度）
-    parent_value: Option<Tensor>,
 }
 
 impl LeakyReLU {
@@ -56,7 +54,6 @@ impl LeakyReLU {
             grad: None,
             shape: parents[0].value_expected_shape().to_vec(),
             negative_slope,
-            parent_value: None,
         })
     }
 }
@@ -92,10 +89,8 @@ impl TraitNode for LeakyReLU {
             ))
         })?;
 
-        // 2. 缓存父节点的值（用于反向传播）
-        self.parent_value = Some(parent_value.clone());
-
-        // 3. 计算 LeakyReLU: f(x) = x if x > 0, else negative_slope * x
+        // 2. 计算 LeakyReLU: f(x) = x if x > 0, else negative_slope * x
+        // 注：不再缓存 parent_value，因为梯度计算已改为使用 value（输出）判断区域
         let slope = self.negative_slope as f32;
         let result = parent_value.where_with_f32(
             |x| x > 0.0,
@@ -118,19 +113,20 @@ impl TraitNode for LeakyReLU {
     ) -> Result<Tensor, GraphError> {
         // LeakyReLU 的导数: d(f(x))/dx = 1 if x > 0, else negative_slope
         // 由于是逐元素操作，雅可比矩阵是对角矩阵
-        let parent_value = self.parent_value.as_ref().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}没有缓存的父节点值。不该触及本错误，否则说明crate代码有问题",
-                self.display_node()
-            ))
+        //
+        // 重要：使用 value（输出）而非 parent_value（输入）判断区域
+        // 这对 BPTT 很关键，因为 BPTT 只恢复 value，不恢复 parent_value
+        // 数学上等价：output > 0 ⟺ input > 0（当 slope >= 0 时）
+        let value = self.value().ok_or_else(|| {
+            GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
-        // 计算导数：x > 0 时为 1，否则为 negative_slope
+        // 计算导数：output > 0 时为 1（对应 x > 0），否则为 negative_slope
         let slope = self.negative_slope as f32;
-        let derivative = parent_value.where_with_f32(
-            |x| x > 0.0,
-            |_| 1.0,   // x > 0 时导数为 1
-            |_| slope, // x <= 0 时导数为 slope
+        let derivative = value.where_with_f32(
+            |y| y > 0.0,
+            |_| 1.0,   // y > 0 时导数为 1
+            |_| slope, // y <= 0 时导数为 slope
         );
 
         // 转换为 Jacobian 对角矩阵
@@ -155,19 +151,20 @@ impl TraitNode for LeakyReLU {
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // LeakyReLU 的梯度: upstream_grad * (1 if x > 0 else negative_slope)
-        let parent_value = self.parent_value.as_ref().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}没有缓存的父节点值，无法计算梯度",
-                self.display_node()
-            ))
+        //
+        // 重要：使用 value（输出）而非 parent_value（输入）判断区域
+        // 这对 BPTT 很关键，因为 BPTT 只恢复 value，不恢复 parent_value
+        // 数学上等价：output > 0 ⟺ input > 0（当 slope >= 0 时）
+        let value = self.value().ok_or_else(|| {
+            GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
         // 计算局部梯度（逐元素）
         let slope = self.negative_slope as f32;
-        let local_grad = parent_value.where_with_f32(
-            |x| x > 0.0,
-            |_| 1.0,   // x > 0 时导数为 1
-            |_| slope, // x <= 0 时导数为 slope
+        let local_grad = value.where_with_f32(
+            |y| y > 0.0,
+            |_| 1.0,   // y > 0 时导数为 1
+            |_| slope, // y <= 0 时导数为 slope
         );
 
         // 逐元素乘以上游梯度
@@ -186,5 +183,9 @@ impl TraitNode for LeakyReLU {
     fn clear_value(&mut self) -> Result<(), GraphError> {
         self.value = None;
         Ok(())
+    }
+
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
     }
 }

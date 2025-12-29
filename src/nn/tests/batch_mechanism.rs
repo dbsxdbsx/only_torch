@@ -71,7 +71,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
         }
     }
 
-    println!("✅ test_batch_forward_equals_single 通过");
+    println!("✅ batch 前向传播与单样本一致性测试通过");
     Ok(())
 }
 
@@ -176,7 +176,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     // 验证 w2 梯度
     assert_abs_diff_eq!(batch_grad_w2, avg_grad_w2, epsilon = tolerance);
 
-    println!("✅ test_batch_gradient_equals_accumulated_single 通过");
+    println!("✅ batch 梯度与累加单样本梯度一致性测试通过");
     Ok(())
 }
 
@@ -254,6 +254,6 @@ fn test_batch_optimizer_update() -> Result<(), GraphError> {
     // 验证更新后的参数
     assert_abs_diff_eq!(w_after_batch, w_after_single, epsilon = tolerance);
 
-    println!("✅ test_batch_optimizer_update 通过");
+    println!("✅ batch 优化器更新一致性测试通过");
     Ok(())
 }

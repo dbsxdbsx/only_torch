@@ -146,4 +146,8 @@ impl TraitNode for Tanh {
         self.value = None;
         Ok(())
     }
+
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
+    }
 }

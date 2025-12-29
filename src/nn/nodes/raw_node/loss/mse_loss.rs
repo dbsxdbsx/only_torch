@@ -253,5 +253,9 @@ impl TraitNode for MSELoss {
         self.value = None;
         Ok(())
     }
+
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
+    }
 }
 

@@ -1,0 +1,41 @@
+digraph Model {
+    rankdir=TB;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    "1" [label=<input<BR/><B>Input</B><BR/>[1, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "2" [label=<h_prev<BR/><B>State</B><BR/>[1, 4]> shape=cylinder style=filled fillcolor="#FFE0B2" fontsize=10];
+    "3" [label=<w_ih<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "4" [label=<w_hh<BR/><B>Parameter</B><BR/>[4, 4]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "5" [label=<b_h<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "6" [label=<input_contrib<BR/><B>MatMul</B><BR/>[1, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "7" [label=<hidden_contrib<BR/><B>MatMul</B><BR/>[1, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "8" [label=<sum1<BR/><B>Add</B><BR/>[1, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "9" [label=<pre_hidden<BR/><B>Add</B><BR/>[1, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "10" [label=<hidden<BR/><B>Tanh</B><BR/>[1, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "11" [label=<w_ho<BR/><B>Parameter</B><BR/>[4, 1]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "12" [label=<b_o<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "13" [label=<hidden_out<BR/><B>MatMul</B><BR/>[1, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "14" [label=<pre_output<BR/><B>Add</B><BR/>[1, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "15" [label=<output<BR/><B>Sigmoid</B><BR/>[1, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "16" [label=<target<BR/><B>Input</B><BR/>[1, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "17" [label=<loss<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
+
+    "1" -> "6";
+    "3" -> "6";
+    "2" -> "7";
+    "4" -> "7";
+    "6" -> "8";
+    "7" -> "8";
+    "8" -> "9";
+    "5" -> "9";
+    "9" -> "10";
+    "10" -> "13";
+    "11" -> "13";
+    "13" -> "14";
+    "12" -> "14";
+    "14" -> "15";
+    "15" -> "17";
+    "16" -> "17";
+    "10" -> "2" [style=dashed color="#E67E22" label="t-1" fontcolor="#E67E22"];
+}
