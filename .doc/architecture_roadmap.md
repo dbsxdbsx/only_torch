@@ -10,17 +10,18 @@
 .doc/
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
+│   ├── architecture_v2_design.md                   # ⭐ 3+1层架构设计（主设计文档）
 │   ├── api_layering_and_seed_design.md             # API分层与种子管理
 │   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制（重要）
 │   ├── broadcast_mechanism_design.md               # 广播机制设计
 │   ├── gradient_clear_and_accumulation_design.md   # 梯度机制
-│   ├── node_vs_layer_design.md                     # Node vs Layer 架构设计 ⭐ NEW
+│   ├── memory_mechanism_design.md                  # 记忆/循环机制设计
+│   ├── node_vs_layer_design.md                     # Node vs Layer 架构设计
 │   ├── optimization_strategy.md                    # 性能优化策略
 │   └── optimizer_architecture_design.md            # 优化器架构
 ├── reference/                           # 参考资料
 │   └── python_MatrixSlow_pid.md         # MatrixSlow 项目分析
-└── _archive/                            # 暂缓/远期愿景
-    ├── high_level_architecture_design.md   # 5层架构愿景（远期）
+└── _archive/                            # 暂缓/历史文档
     └── graph_execution_refactor.md         # 底层重构方案（暂缓）
 ```
 

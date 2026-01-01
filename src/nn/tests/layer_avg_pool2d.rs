@@ -62,7 +62,7 @@ fn test_avg_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
     let output = graph.get_node_value(pool.output)?.unwrap();
     let output_data = output.data_as_slice();
 
-    for (i, (&actual, &expected)) in output_data
+    for (_, (&actual, &expected)) in output_data
         .iter()
         .zip(TEST_PYTORCH_OUTPUT.iter())
         .enumerate()
@@ -89,7 +89,7 @@ fn test_avg_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> 
     let output = graph.get_node_value(pool.output)?.unwrap();
     let output_data = output.data_as_slice();
 
-    for (i, (&actual, &expected)) in output_data.iter().zip(TEST_MULTI_OUTPUT.iter()).enumerate() {
+    for (_, (&actual, &expected)) in output_data.iter().zip(TEST_MULTI_OUTPUT.iter()).enumerate() {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-5);
     }
 

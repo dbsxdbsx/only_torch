@@ -270,4 +270,3 @@ A → B → C → A  (错误的图结构)
 **相关文档**：
 
 - 新建 [梯度流控制设计](.doc/design/gradient_flow_control_design.md) 文档，详细描述 `no_grad`、`detach`、`retain_graph` 的 API 设计和实现方案
-- README 中相关冗余 TODO 已清理

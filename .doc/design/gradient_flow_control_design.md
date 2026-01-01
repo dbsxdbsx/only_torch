@@ -701,3 +701,18 @@ graph.backward_nodes_ex(&[w], output2, false)?;
 |-----------|------------------|
 | `test_retain_graph_multi_task_learning` | `tests/calc_jacobi_by_pytorch/multi_task_learning_retain_graph.py` |
 | `test_mnist_gan` | - (集成测试：验证 detach + with_params) |
+
+---
+
+## 10. 与高层 API 的集成
+
+本文档描述的梯度流控制机制已在 [架构 V2 设计](architecture_v2_design.md) 中的高层 API 中得到支持：
+
+| 底层 API | 高层 API (Var 版) |
+|----------|-------------------|
+| `graph.detach_node(node_id)` | `graph.detach(var)` |
+| `graph.attach_node(node_id)` | `graph.attach(var)` |
+| `graph.backward_nodes_ex(&ids, loss, retain)` | `graph.backward_ex(loss, &params, retain)` |
+| `graph.no_grad_scope(\|g\| { ... })` | 同上（无变化） |
+
+高层 API 的设计原则是**薄封装**：`Var` 只是 `NodeId` 的类型安全包装，所有梯度流控制的语义与底层完全一致。

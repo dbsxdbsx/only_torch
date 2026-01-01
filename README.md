@@ -95,9 +95,9 @@ opt-level = 3
 
 ### 🟡 API 改进
 - only retain `save_visualization_grouped`?
-- waht if make the input ndoes also be groupd together?
-- fis still lacking some of the nodes need to append, refine with `grad: Option<Tensor>,`？
-- 是否需要整合单独跟批处理版本的 forward 跟 backward 相关类的方法? 如果需要，怎么整合？
+- what if make the input nodes also be grouped together?
+- fix still lacking some of the nodes need to append, refine with `grad: Option<Tensor>,`？
+- 是否需要整合单独跟批处理版本的 forward 跟 backward 相关类的方法? 如果需要，怎么整合---and `backward_through_time`？
 - ~~Graph/NodeHandle 代码按功能分块重组~~ → 推迟至 Phase 1 完成后评估
 
 
