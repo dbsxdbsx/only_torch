@@ -127,6 +127,6 @@ digraph Model {
     "49" -> "50";
     "50" -> "52";
     "51" -> "52";
-    "40" -> "4" [style=dashed color="#E67E22" label="t-1" fontcolor="#E67E22"];
     "42" -> "3" [style=dashed color="#E67E22" label="t-1" fontcolor="#E67E22"];
+    "40" -> "4" [style=dashed color="#E67E22" label="t-1" fontcolor="#E67E22"];
 }

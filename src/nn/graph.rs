@@ -689,14 +689,21 @@ impl Graph {
 
     /// Batch 反向传播
     ///
-    /// 从损失节点开始，计算所有可训练参数的梯度。
+    /// 从损失节点开始，计算可训练参数的梯度。
     /// 与单样本模式的 `backward_nodes` 不同，此方法：
     /// 1. 使用 gradient-based 而非 Jacobi-based 反向传播
     /// 2. 自动对 batch 维度求平均
     /// 3. 梯度存储在节点的 `grad` 字段而非 `jacobi` 字段
     ///
+    /// # 重要
+    /// **调用此方法前需先调用 `clear_grad()`**，否则梯度会累加到旧值上。
+    /// 这与 PyTorch 的设计一致（需要手动调用 `zero_grad()`）。
+    ///
     /// # 参数
     /// - `loss_id`: 损失节点 ID，应为标量 `[1, 1]`
+    /// - `target_params`: 可选的目标参数列表。如果提供，则只计算这些参数的梯度；
+    ///   如果为 `None`，则计算所有可达参数的梯度（传统行为）。
+    ///   提供 target_params 可以避免计算不需要更新的参数梯度，提升效率。
     ///
     /// # 示例
     /// ```ignore
@@ -707,13 +714,23 @@ impl Graph {
     /// // Batch 前向传播
     /// graph.forward_batch(loss)?;
     ///
-    /// // Batch 反向传播
-    /// graph.backward_batch(loss)?;
+    /// // 清除旧梯度（必须！）
+    /// graph.clear_grad()?;
+    ///
+    /// // Batch 反向传播（计算所有参数梯度）
+    /// graph.backward_batch(loss, None)?;
+    ///
+    /// // 或者只计算指定参数的梯度（更高效，适用于 GAN 等场景）
+    /// graph.backward_batch(loss, Some(&g_params))?;
     ///
     /// // 获取梯度
     /// let grad_w = graph.get_node_grad_batch(w)?;
     /// ```
-    pub fn backward_batch(&mut self, loss_id: NodeId) -> Result<(), GraphError> {
+    pub fn backward_batch(
+        &mut self,
+        loss_id: NodeId,
+        target_params: Option<&[NodeId]>,
+    ) -> Result<(), GraphError> {
         // 0. 警告：在 no_grad（eval）模式下调用 backward 通常是误用
         if !self.is_train_mode() {
             eprintln!(
@@ -739,26 +756,49 @@ impl Graph {
             )));
         }
 
-        // 2. 清除所有节点的梯度
-        self.clear_grad()?;
-
-        // 3. 损失节点的梯度为 1.0
+        // 2. 损失节点的梯度为 1.0
+        // 注意：不在此处调用 clear_grad()，由调用者负责（与 backward_nodes_ex 一致，也符合 PyTorch 惯例）
         let loss_grad = Tensor::ones(&[1, 1]);
         self.get_node_mut(loss_id)?.set_grad(Some(&loss_grad))?;
 
         // 4. 获取拓扑排序（从损失到输入）
         let topo_order = self.topological_sort_backward(loss_id)?;
 
-        // 5. 按拓扑顺序反向传播梯度
+        // 5. 如果指定了 target_params，则过滤拓扑排序，只保留目标参数的祖先节点
+        let (topo_order, target_set) = if let Some(params) = target_params {
+            let ancestors = self.collect_ancestors_of_params(params, loss_id)?;
+            let filtered: Vec<_> = topo_order
+                .into_iter()
+                .filter(|id| ancestors.contains(id))
+                .collect();
+            let target_set: std::collections::HashSet<_> = params.iter().copied().collect();
+            (filtered, Some(target_set))
+        } else {
+            (topo_order, None)
+        };
+
+        // 6. 按拓扑顺序反向传播梯度
+        // 传入 target_set 以便跳过非目标参数的梯度计算
         for node_id in topo_order {
-            self.backward_batch_node(node_id, loss_id)?;
+            self.backward_batch_node(node_id, loss_id, target_set.as_ref())?;
         }
 
         Ok(())
     }
 
     /// 对单个节点执行 batch 反向传播
-    fn backward_batch_node(&mut self, node_id: NodeId, _loss_id: NodeId) -> Result<(), GraphError> {
+    ///
+    /// # 参数
+    /// - `node_id`: 当前节点 ID
+    /// - `_loss_id`: 损失节点 ID（保留参数）
+    /// - `target_params`: 可选的目标参数集合。如果提供，只为目标参数计算并设置梯度，
+    ///   跳过非目标的 Parameter 节点以节省计算。
+    fn backward_batch_node(
+        &mut self,
+        node_id: NodeId,
+        _loss_id: NodeId,
+        target_params: Option<&std::collections::HashSet<NodeId>>,
+    ) -> Result<(), GraphError> {
         // 检查当前节点是否被 detach
         // 被 detach 的节点不向父节点传播梯度
         {
@@ -774,7 +814,7 @@ impl Graph {
             return Ok(()); // 输入/参数节点，无需继续传播
         }
 
-        // 先在只读阶段把所有父节点梯度算出来（避免 clone 整个 upstream_grad）
+        // 先在只读阶段把需要的父节点梯度算出来
         let parent_grads: Vec<(NodeId, Tensor)> = {
             let node = self.get_node(node_id)?;
             let upstream_grad = match node.grad() {
@@ -784,10 +824,21 @@ impl Graph {
 
             let mut grads = Vec::with_capacity(parent_ids.len());
             for parent_id in &parent_ids {
-                // 跳过 Input 节点（Input 不需要梯度）
                 let parent = self.get_node(*parent_id)?;
+
+                // 跳过 Input 节点（Input 不需要梯度）
                 if let NodeType::Input(_) = parent.node_type() {
                     continue;
+                }
+
+                // 如果指定了 target_params，跳过非目标的 Parameter 节点
+                // 这是核心优化：避免为不需要更新的参数计算梯度
+                if let Some(targets) = target_params {
+                    if let NodeType::Parameter(_) = parent.node_type() {
+                        if !targets.contains(parent_id) {
+                            continue; // 跳过非目标参数，节省计算
+                        }
+                    }
                 }
 
                 // 找到辅助父节点（如果需要）
@@ -849,6 +900,78 @@ impl Graph {
         dfs(self, loss_id, &mut visited, &mut result)?;
 
         Ok(result)
+    }
+
+    /// 收集目标参数的所有祖先节点（从 loss 到 target_params 路径上的节点）
+    ///
+    /// 用于 `backward_batch` 的优化：只计算目标参数需要的梯度
+    fn collect_ancestors_of_params(
+        &self,
+        target_params: &[NodeId],
+        loss_id: NodeId,
+    ) -> Result<std::collections::HashSet<NodeId>, GraphError> {
+        use std::collections::{HashSet, VecDeque};
+
+        // 1. 从 loss 向下（父方向）BFS，找到所有可达节点
+        let mut reachable_from_loss = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(loss_id);
+
+        while let Some(node_id) = queue.pop_front() {
+            if reachable_from_loss.contains(&node_id) {
+                continue;
+            }
+            reachable_from_loss.insert(node_id);
+
+            let parents = self.get_node_parents(node_id)?;
+            for parent_id in parents {
+                queue.push_back(parent_id);
+            }
+        }
+
+        // 2. 从 target_params 向上（子方向）BFS，找到能到达 loss 的路径
+        // 注意：我们需要反向遍历，从 target_params 向 loss 方向
+        let mut ancestors = HashSet::new();
+
+        // 对每个 target_param，找到从它到 loss 的路径上所有节点
+        for &param_id in target_params {
+            if !reachable_from_loss.contains(&param_id) {
+                continue; // 该参数不在 loss 的可达路径上
+            }
+
+            // 从 param 向上到 loss（使用子节点关系）
+            let mut visited = HashSet::new();
+            let mut stack = vec![param_id];
+
+            while let Some(node_id) = stack.pop() {
+                if visited.contains(&node_id) {
+                    continue;
+                }
+                visited.insert(node_id);
+
+                // 该节点在从 loss 到 param 的路径上
+                ancestors.insert(node_id);
+
+                // 如果到达 loss，停止
+                if node_id == loss_id {
+                    continue;
+                }
+
+                // 获取子节点（谁以当前节点为父）
+                let children = self.get_node_children(node_id)?;
+                for child_id in children {
+                    // 只遍历在 loss 可达范围内的子节点
+                    if reachable_from_loss.contains(&child_id) {
+                        stack.push(child_id);
+                    }
+                }
+            }
+        }
+
+        // 确保 loss 本身也在内
+        ancestors.insert(loss_id);
+
+        Ok(ancestors)
     }
 
     /// 清除所有节点的梯度（Batch 模式）

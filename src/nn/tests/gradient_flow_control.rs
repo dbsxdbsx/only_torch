@@ -660,7 +660,7 @@ fn test_detach_with_batch_mode() {
 
     // detach y 后 batch 反向传播
     graph.detach_node(y).unwrap();
-    graph.backward_batch(loss).unwrap();
+    graph.backward_batch(loss, None).unwrap();
 
     // w 不应该有 batch 梯度（因为 y 被 detach，梯度不会传到 w）
     assert!(graph.get_node_grad(w).unwrap().is_none());
@@ -815,7 +815,7 @@ fn test_detach_node_still_functional_batch() {
     graph.set_node_value(x, Some(&input_data)).unwrap();
     graph.set_node_value(target, Some(&target_data)).unwrap();
     graph.forward_batch(loss).unwrap();
-    graph.backward_batch(loss).unwrap();
+    graph.backward_batch(loss, None).unwrap();
 
     // 验证 w 有 grad（使用 batch 模式的 get_node_grad_batch）
     let grad_before = graph.get_node_grad_batch(w).unwrap().unwrap().clone();

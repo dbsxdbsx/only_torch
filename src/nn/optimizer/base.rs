@@ -204,4 +204,37 @@ impl OptimizerState {
     pub(crate) fn reset(&mut self) {
         self.gradient_accumulator.clear();
     }
+
+    /// 收集 batch 模式下所有 trainable_nodes 的梯度
+    ///
+    /// 如果任何 trainable_node 缺少梯度，会 panic 并报错。
+    /// 这确保了 `backward_batch` 的 `target_params` 与优化器的参数范围一致。
+    ///
+    /// # Returns
+    /// 返回 (NodeId, Tensor) 的列表，包含所有参数及其梯度
+    ///
+    /// # Panics
+    /// 如果某个 trainable_node 没有梯度
+    pub(crate) fn collect_batch_gradients(
+        &self,
+        graph: &Graph,
+    ) -> Result<Vec<(NodeId, crate::tensor::Tensor)>, GraphError> {
+        let mut gradients = Vec::with_capacity(self.trainable_nodes.len());
+
+        for &node_id in &self.trainable_nodes {
+            let grad = graph.get_node_grad_batch(node_id)?;
+            match grad {
+                Some(g) => gradients.push((node_id, g.clone())),
+                None => {
+                    panic!(
+                        "[only_torch] update_batch 错误：参数 {:?} 在 optimizer.trainable_nodes 中，\
+                        但没有梯度。请确保 backward_batch 的 target_params 包含所有需要更新的参数。",
+                        node_id
+                    );
+                }
+            }
+        }
+
+        Ok(gradients)
+    }
 }

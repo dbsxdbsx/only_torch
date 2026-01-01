@@ -348,7 +348,7 @@ fn test_mse_loss_batch_backward() {
     graph.set_node_value(target_id, Some(&target_data)).unwrap();
 
     graph.forward_batch(loss_id).unwrap();
-    graph.backward_batch(loss_id).unwrap();
+    graph.backward_batch(loss_id, None).unwrap();
 
     let grad = graph.get_node_grad_batch(input_id).unwrap().unwrap();
 

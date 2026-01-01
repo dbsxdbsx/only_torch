@@ -879,7 +879,7 @@ fn test_gru_batch_backward() -> Result<(), GraphError> {
 
     // Batch 前向 + 反向
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证 GRU 重置门权重有梯度
     let w_ir_grad = graph.get_node_grad_batch(gru_out.w_ir)?;
@@ -954,7 +954,7 @@ fn test_gru_chain_batch_training() -> Result<(), GraphError> {
     let loss_before = graph.get_node_value(loss)?.unwrap()[[0, 0]];
 
     // 反向
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证两层 GRU 都有梯度
     let gru1_grad = graph.get_node_grad_batch(gru1.w_ir)?;

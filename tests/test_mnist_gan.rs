@@ -183,9 +183,9 @@ fn test_mnist_gan() -> Result<(), GraphError> {
             }
             d_real_sum += d_real_batch_sum / batch_size as f32;
 
-            // 反向传播 D(real)
+            // 反向传播 D(real)（只计算 D 参数的梯度）
             graph.clear_grad()?;
-            graph.backward_batch(d_loss_real)?;
+            graph.backward_batch(d_loss_real, Some(&d_params))?;
             adam_d.update_batch(&mut graph)?;
 
             // 前向传播 - 生成图像
@@ -199,9 +199,9 @@ fn test_mnist_gan() -> Result<(), GraphError> {
             }
             d_fake_sum += d_fake_batch_sum / batch_size as f32;
 
-            // 反向传播 D(fake)
+            // 反向传播 D(fake)（只计算 D 参数的梯度）
             graph.clear_grad()?;
-            graph.backward_batch(d_loss_fake)?;
+            graph.backward_batch(d_loss_fake, Some(&d_params))?;
             adam_d.update_batch(&mut graph)?;
 
             let d_loss_real_val = graph.get_node_value(d_loss_real)?.unwrap()[[0, 0]];
@@ -220,9 +220,9 @@ fn test_mnist_gan() -> Result<(), GraphError> {
             // 前向传播
             graph.forward_batch(g_loss)?;
 
-            // 反向传播并更新 G
+            // 反向传播并更新 G（只计算 G 参数的梯度，避免浪费计算 D 的梯度）
             graph.clear_grad()?;
-            graph.backward_batch(g_loss)?;
+            graph.backward_batch(g_loss, Some(&g_params))?;
             adam_g.update_batch(&mut graph)?;
 
             let g_loss_val = graph.get_node_value(g_loss)?.unwrap()[[0, 0]];

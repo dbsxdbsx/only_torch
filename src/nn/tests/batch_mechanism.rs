@@ -120,7 +120,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     graph_batch.set_node_value(x_b, Some(&batch_input))?;
     graph_batch.set_node_value(y_b, Some(&batch_labels))?;
     graph_batch.forward_batch(loss_b)?;
-    graph_batch.backward_batch(loss_b)?;
+    graph_batch.backward_batch(loss_b, None)?;
 
     let batch_grad_w1 = graph_batch.get_node_grad_batch(w1_b)?.unwrap().clone();
     let batch_grad_w2 = graph_batch.get_node_grad_batch(w2_b)?.unwrap().clone();
@@ -255,5 +255,304 @@ fn test_batch_optimizer_update() -> Result<(), GraphError> {
     assert_abs_diff_eq!(w_after_batch, w_after_single, epsilon = tolerance);
 
     println!("✅ batch 优化器更新一致性测试通过");
+    Ok(())
+}
+
+/// 测试 target_params 机制：只计算指定参数的梯度
+///
+/// 这个测试验证当 `backward_batch(loss, Some(&target_params))` 被调用时，
+/// 只有 target_params 中的参数会有梯度，其他参数不应该有梯度。
+/// 这是 GAN 等场景的效率优化关键。
+#[test]
+fn test_backward_batch_target_params_only_computes_specified() -> Result<(), GraphError> {
+    let seed = 42u64;
+    let batch_size = 4;
+
+    let mut graph = Graph::new_with_seed(seed);
+
+    // 创建输入
+    let x = graph.new_input_node(&[batch_size, 4], Some("x"))?;
+    let y = graph.new_input_node(&[batch_size, 2], Some("y"))?;
+
+    // 创建两组参数（模拟 GAN 的 G 和 D）
+    // Group A: w_a1, w_a2
+    let w_a1 = graph.new_parameter_node_seeded(&[4, 8], Some("w_a1"), seed + 1)?;
+    let w_a2 = graph.new_parameter_node_seeded(&[8, 4], Some("w_a2"), seed + 2)?;
+
+    // Group B: w_b1, w_b2
+    let w_b1 = graph.new_parameter_node_seeded(&[4, 2], Some("w_b1"), seed + 3)?;
+    let w_b2 = graph.new_parameter_node_seeded(&[2, 2], Some("w_b2"), seed + 4)?;
+
+    // 构建计算图: x -> [Group A] -> hidden -> [Group B] -> output -> loss
+    let h1 = graph.new_mat_mul_node(x, w_a1, None)?;
+    let h1_act = graph.new_relu_node(h1, None)?;
+    let h2 = graph.new_mat_mul_node(h1_act, w_a2, None)?;
+    let h2_act = graph.new_relu_node(h2, None)?;
+
+    let h3 = graph.new_mat_mul_node(h2_act, w_b1, None)?;
+    let h3_act = graph.new_relu_node(h3, None)?;
+    let output = graph.new_mat_mul_node(h3_act, w_b2, None)?;
+
+    let loss = graph.new_mse_loss_node(output, y, Some("loss"))?;
+
+    // 设置输入数据
+    let input_data = Tensor::normal_seeded(0.0, 1.0, &[batch_size, 4], seed + 100);
+    let target_data = Tensor::normal_seeded(0.0, 1.0, &[batch_size, 2], seed + 101);
+    graph.set_node_value(x, Some(&input_data))?;
+    graph.set_node_value(y, Some(&target_data))?;
+
+    // ========== 测试 1: 只计算 Group B 的梯度 ==========
+    graph.forward_batch(loss)?;
+    graph.backward_batch(loss, Some(&[w_b1, w_b2]))?;
+
+    // Group B 应该有梯度
+    let grad_b1 = graph.get_node_grad_batch(w_b1)?;
+    let grad_b2 = graph.get_node_grad_batch(w_b2)?;
+    assert!(grad_b1.is_some(), "w_b1 应该有梯度（在 target_params 中）");
+    assert!(grad_b2.is_some(), "w_b2 应该有梯度（在 target_params 中）");
+
+    // Group A 不应该有梯度（不在 target_params 中）
+    let grad_a1 = graph.get_node_grad_batch(w_a1)?;
+    let grad_a2 = graph.get_node_grad_batch(w_a2)?;
+    assert!(
+        grad_a1.is_none(),
+        "w_a1 不应该有梯度（不在 target_params 中）"
+    );
+    assert!(
+        grad_a2.is_none(),
+        "w_a2 不应该有梯度（不在 target_params 中）"
+    );
+
+    println!("  ✓ 测试 1 通过：只计算 Group B 的梯度");
+
+    // ========== 测试 2: 只计算 Group A 的梯度 ==========
+    graph.clear_grad()?;
+    graph.forward_batch(loss)?;
+    graph.backward_batch(loss, Some(&[w_a1, w_a2]))?;
+
+    // Group A 应该有梯度
+    let grad_a1 = graph.get_node_grad_batch(w_a1)?;
+    let grad_a2 = graph.get_node_grad_batch(w_a2)?;
+    assert!(grad_a1.is_some(), "w_a1 应该有梯度（在 target_params 中）");
+    assert!(grad_a2.is_some(), "w_a2 应该有梯度（在 target_params 中）");
+
+    // Group B 不应该有梯度（不在 target_params 中）
+    let grad_b1 = graph.get_node_grad_batch(w_b1)?;
+    let grad_b2 = graph.get_node_grad_batch(w_b2)?;
+    assert!(
+        grad_b1.is_none(),
+        "w_b1 不应该有梯度（不在 target_params 中）"
+    );
+    assert!(
+        grad_b2.is_none(),
+        "w_b2 不应该有梯度（不在 target_params 中）"
+    );
+
+    println!("  ✓ 测试 2 通过：只计算 Group A 的梯度");
+
+    // ========== 测试 3: 计算所有参数的梯度（None）==========
+    graph.clear_grad()?;
+    graph.forward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
+
+    // 所有参数都应该有梯度
+    assert!(
+        graph.get_node_grad_batch(w_a1)?.is_some(),
+        "w_a1 应该有梯度（None = 全部）"
+    );
+    assert!(
+        graph.get_node_grad_batch(w_a2)?.is_some(),
+        "w_a2 应该有梯度（None = 全部）"
+    );
+    assert!(
+        graph.get_node_grad_batch(w_b1)?.is_some(),
+        "w_b1 应该有梯度（None = 全部）"
+    );
+    assert!(
+        graph.get_node_grad_batch(w_b2)?.is_some(),
+        "w_b2 应该有梯度（None = 全部）"
+    );
+
+    println!("  ✓ 测试 3 通过：计算所有参数的梯度（None）");
+
+    // ========== 测试 4: 验证梯度值的正确性 ==========
+    // 使用 target_params 计算的梯度应该与 None 计算的梯度一致
+    let grad_b1_all = graph.get_node_grad_batch(w_b1)?.unwrap().clone();
+    let grad_b2_all = graph.get_node_grad_batch(w_b2)?.unwrap().clone();
+
+    graph.clear_grad()?;
+    graph.forward_batch(loss)?;
+    graph.backward_batch(loss, Some(&[w_b1, w_b2]))?;
+
+    let grad_b1_targeted = graph.get_node_grad_batch(w_b1)?.unwrap();
+    let grad_b2_targeted = graph.get_node_grad_batch(w_b2)?.unwrap();
+
+    assert_abs_diff_eq!(grad_b1_all, *grad_b1_targeted, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad_b2_all, *grad_b2_targeted, epsilon = 1e-6);
+
+    println!("  ✓ 测试 4 通过：target_params 梯度值与全量计算一致");
+
+    println!("✅ backward_batch target_params 机制测试全部通过");
+    Ok(())
+}
+
+/// 测试：当 backward_batch 的 target_params 与 optimizer 的 trainable_nodes 不一致时应该 panic
+///
+/// 场景：backward 只计算了部分参数的梯度，但 optimizer 想更新所有参数
+#[test]
+#[should_panic(expected = "update_batch 错误")]
+fn test_update_batch_panics_when_params_mismatch_sgd() {
+    use crate::nn::optimizer::{Optimizer, SGD};
+
+    let seed = 42u64;
+    let mut graph = crate::nn::Graph::new_with_seed(seed);
+
+    // 创建输入和两组参数
+    let x = graph.new_input_node(&[2, 4], Some("x")).unwrap();
+    let y = graph.new_input_node(&[2, 2], Some("y")).unwrap();
+    let w1 = graph
+        .new_parameter_node_seeded(&[4, 3], Some("w1"), seed + 1)
+        .unwrap();
+    let w2 = graph
+        .new_parameter_node_seeded(&[3, 2], Some("w2"), seed + 2)
+        .unwrap();
+
+    // 构建网络: x -> w1 -> relu -> w2 -> loss
+    let h = graph.new_mat_mul_node(x, w1, None).unwrap();
+    let h_act = graph.new_relu_node(h, None).unwrap();
+    let out = graph.new_mat_mul_node(h_act, w2, None).unwrap();
+    let loss = graph.new_mse_loss_node(out, y, None).unwrap();
+
+    // 创建 optimizer，管理 w1 和 w2
+    let mut optimizer = SGD::with_params(&[w1, w2], 0.01);
+
+    // 设置输入
+    let x_data = crate::tensor::Tensor::normal_seeded(0.0, 1.0, &[2, 4], seed + 100);
+    let y_data = crate::tensor::Tensor::normal_seeded(0.0, 1.0, &[2, 2], seed + 101);
+    graph.set_node_value(x, Some(&x_data)).unwrap();
+    graph.set_node_value(y, Some(&y_data)).unwrap();
+
+    // 前向传播
+    graph.forward_batch(loss).unwrap();
+
+    // 关键：backward 只计算 w1 的梯度，不包括 w2
+    graph.backward_batch(loss, Some(&[w1])).unwrap();
+
+    // 这里应该 panic，因为 optimizer 想更新 w2，但 w2 没有梯度
+    optimizer.update_batch(&mut graph).unwrap();
+}
+
+/// 测试：当 backward_batch 的 target_params 与 optimizer 的 trainable_nodes 不一致时应该 panic（Adam）
+#[test]
+#[should_panic(expected = "update_batch 错误")]
+fn test_update_batch_panics_when_params_mismatch_adam() {
+    use crate::nn::optimizer::{Adam, Optimizer};
+
+    let seed = 42u64;
+    let mut graph = crate::nn::Graph::new_with_seed(seed);
+
+    // 创建输入和两组参数
+    let x = graph.new_input_node(&[2, 4], Some("x")).unwrap();
+    let y = graph.new_input_node(&[2, 2], Some("y")).unwrap();
+    let w1 = graph
+        .new_parameter_node_seeded(&[4, 3], Some("w1"), seed + 1)
+        .unwrap();
+    let w2 = graph
+        .new_parameter_node_seeded(&[3, 2], Some("w2"), seed + 2)
+        .unwrap();
+
+    // 构建网络
+    let h = graph.new_mat_mul_node(x, w1, None).unwrap();
+    let h_act = graph.new_relu_node(h, None).unwrap();
+    let out = graph.new_mat_mul_node(h_act, w2, None).unwrap();
+    let loss = graph.new_mse_loss_node(out, y, None).unwrap();
+
+    // 创建 Adam optimizer，管理 w1 和 w2
+    let mut optimizer = Adam::with_params(&[w1, w2], 0.001, 0.9, 0.999, 1e-8);
+
+    // 设置输入
+    let x_data = crate::tensor::Tensor::normal_seeded(0.0, 1.0, &[2, 4], seed + 100);
+    let y_data = crate::tensor::Tensor::normal_seeded(0.0, 1.0, &[2, 2], seed + 101);
+    graph.set_node_value(x, Some(&x_data)).unwrap();
+    graph.set_node_value(y, Some(&y_data)).unwrap();
+
+    // 前向传播
+    graph.forward_batch(loss).unwrap();
+
+    // 关键：backward 只计算 w1 的梯度，不包括 w2
+    graph.backward_batch(loss, Some(&[w1])).unwrap();
+
+    // 这里应该 panic，因为 optimizer 想更新 w2，但 w2 没有梯度
+    optimizer.update_batch(&mut graph).unwrap();
+}
+
+/// 测试：当参数范围一致时，不应该 panic（正常工作）
+#[test]
+fn test_update_batch_works_when_params_match() -> Result<(), GraphError> {
+    use crate::nn::optimizer::{Adam, Optimizer, SGD};
+
+    let seed = 42u64;
+
+    // ========== SGD 测试 ==========
+    {
+        let mut graph = crate::nn::Graph::new_with_seed(seed);
+        let x = graph.new_input_node(&[2, 4], Some("x"))?;
+        let y = graph.new_input_node(&[2, 2], Some("y"))?;
+        let w1 = graph.new_parameter_node_seeded(&[4, 3], Some("w1"), seed + 1)?;
+        let w2 = graph.new_parameter_node_seeded(&[3, 2], Some("w2"), seed + 2)?;
+
+        let h = graph.new_mat_mul_node(x, w1, None)?;
+        let h_act = graph.new_relu_node(h, None)?;
+        let out = graph.new_mat_mul_node(h_act, w2, None)?;
+        let loss = graph.new_mse_loss_node(out, y, None)?;
+
+        // optimizer 只管理 w1
+        let mut optimizer = SGD::with_params(&[w1], 0.01);
+
+        let x_data = crate::tensor::Tensor::normal_seeded(0.0, 1.0, &[2, 4], seed + 100);
+        let y_data = crate::tensor::Tensor::normal_seeded(0.0, 1.0, &[2, 2], seed + 101);
+        graph.set_node_value(x, Some(&x_data))?;
+        graph.set_node_value(y, Some(&y_data))?;
+
+        graph.forward_batch(loss)?;
+        // backward 也只计算 w1 的梯度（一致）
+        graph.backward_batch(loss, Some(&[w1]))?;
+
+        // 不应该 panic
+        optimizer.update_batch(&mut graph)?;
+        println!("  ✓ SGD 参数一致时正常工作");
+    }
+
+    // ========== Adam 测试 ==========
+    {
+        let mut graph = crate::nn::Graph::new_with_seed(seed);
+        let x = graph.new_input_node(&[2, 4], Some("x"))?;
+        let y = graph.new_input_node(&[2, 2], Some("y"))?;
+        let w1 = graph.new_parameter_node_seeded(&[4, 3], Some("w1"), seed + 1)?;
+        let w2 = graph.new_parameter_node_seeded(&[3, 2], Some("w2"), seed + 2)?;
+
+        let h = graph.new_mat_mul_node(x, w1, None)?;
+        let h_act = graph.new_relu_node(h, None)?;
+        let out = graph.new_mat_mul_node(h_act, w2, None)?;
+        let loss = graph.new_mse_loss_node(out, y, None)?;
+
+        // optimizer 管理 w1 和 w2
+        let mut optimizer = Adam::with_params(&[w1, w2], 0.001, 0.9, 0.999, 1e-8);
+
+        let x_data = crate::tensor::Tensor::normal_seeded(0.0, 1.0, &[2, 4], seed + 100);
+        let y_data = crate::tensor::Tensor::normal_seeded(0.0, 1.0, &[2, 2], seed + 101);
+        graph.set_node_value(x, Some(&x_data))?;
+        graph.set_node_value(y, Some(&y_data))?;
+
+        graph.forward_batch(loss)?;
+        // backward 计算 w1 和 w2 的梯度（一致）
+        graph.backward_batch(loss, Some(&[w1, w2]))?;
+
+        // 不应该 panic
+        optimizer.update_batch(&mut graph)?;
+        println!("  ✓ Adam 参数一致时正常工作");
+    }
+
+    println!("✅ update_batch 参数一致性测试通过");
     Ok(())
 }

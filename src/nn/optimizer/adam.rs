@@ -128,30 +128,22 @@ impl Optimizer for Adam {
         // Batch 前向传播
         graph.forward_batch(target_node)?;
 
-        // Batch 反向传播（梯度已经对 batch 求平均）
-        graph.backward_batch(target_node)?;
+        // Batch 反向传播（只计算 trainable_nodes 的梯度，避免浪费）
+        graph.backward_batch(target_node, Some(self.state.trainable_nodes()))?;
 
         Ok(())
     }
 
     /// Batch 模式的参数更新（使用Adam算法）
+    ///
+    /// # Panics
+    /// 如果 optimizer 的 trainable_nodes 中有参数没有梯度，会 panic。
+    /// 这通常意味着 `backward_batch` 的 `target_params` 与 optimizer 的参数范围不一致。
     fn update_batch(&mut self, graph: &mut Graph) -> Result<(), GraphError> {
         self.t += 1;
 
-        // 收集可训练节点（避免借用冲突）
-        let trainable_nodes: Vec<_> = self.state.trainable_nodes().to_vec();
-
-        // 收集梯度
-        let gradients: Vec<_> = trainable_nodes
-            .iter()
-            .filter_map(|&node_id| {
-                graph
-                    .get_node_grad_batch(node_id)
-                    .ok()
-                    .flatten()
-                    .map(|g| (node_id, g.clone()))
-            })
-            .collect();
+        // 收集所有 trainable_nodes 的梯度（若缺失会 panic）
+        let gradients = self.state.collect_batch_gradients(graph)?;
 
         // 对每个可训练参数执行Adam更新
         for (node_id, gradient) in gradients {

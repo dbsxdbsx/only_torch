@@ -404,7 +404,7 @@ fn test_conv2d_batch_backward() -> Result<(), GraphError> {
 
     // Batch 训练
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证卷积核有梯度
     let k_grad = graph.get_node_grad_batch(conv.kernel)?;
@@ -469,7 +469,7 @@ fn test_conv2d_chain_batch_training() -> Result<(), GraphError> {
 
     // Batch 训练
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证所有卷积核参数都有梯度
     assert!(graph.get_node_grad_batch(conv1.kernel)?.is_some());
@@ -897,7 +897,7 @@ fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
 
     // Batch 训练
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证 bias 有梯度
     let b_grad = graph.get_node_grad_batch(conv.bias)?;
@@ -1079,7 +1079,7 @@ fn test_conv2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     );
 
     // 反向传播
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证卷积核梯度
     let grad_kernel = graph.get_node_grad_batch(conv.kernel)?.unwrap();
@@ -1230,7 +1230,7 @@ fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     );
 
     // 反向传播
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证卷积核梯度
     let grad_kernel = graph.get_node_grad_batch(conv.kernel)?.unwrap();

@@ -83,26 +83,26 @@ impl Optimizer for SGD {
         // Batch 前向传播
         graph.forward_batch(target_node)?;
 
-        // Batch 反向传播（梯度已经对 batch 求平均）
-        graph.backward_batch(target_node)?;
+        // Batch 反向传播（只计算 trainable_nodes 的梯度，避免浪费）
+        graph.backward_batch(target_node, Some(self.state.trainable_nodes()))?;
 
         Ok(())
     }
 
     /// Batch 模式的参数更新
+    ///
+    /// # Panics
+    /// 如果 optimizer 的 trainable_nodes 中有参数没有梯度，会 panic。
+    /// 这通常意味着 `backward_batch` 的 `target_params` 与 optimizer 的参数范围不一致。
     fn update_batch(&mut self, graph: &mut Graph) -> Result<(), GraphError> {
-        // 对每个可训练参数执行梯度下降更新
-        for &node_id in self.state.trainable_nodes() {
-            if let Some(gradient) = graph.get_node_grad_batch(node_id)? {
-                // 获取当前参数值
-                let current_value = graph.get_node_value(node_id)?.unwrap();
+        // 收集所有 trainable_nodes 的梯度（若缺失会 panic）
+        let gradients = self.state.collect_batch_gradients(graph)?;
 
-                // 梯度下降更新：θ = θ - α * ∇θ
-                let new_value = current_value - self.state.learning_rate() * gradient;
-
-                // 设置新的参数值
-                graph.set_node_value(node_id, Some(&new_value))?;
-            }
+        // 对每个参数执行梯度下降更新：θ = θ - α * ∇θ
+        for (node_id, grad) in gradients {
+            let current_value = graph.get_node_value(node_id)?.unwrap();
+            let new_value = current_value - self.state.learning_rate() * &grad;
+            graph.set_node_value(node_id, Some(&new_value))?;
         }
 
         Ok(())

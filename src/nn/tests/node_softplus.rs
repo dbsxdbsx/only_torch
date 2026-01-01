@@ -251,7 +251,7 @@ fn test_node_softplus_batch_backward() {
     graph.forward_node(loss).unwrap();
 
     // Batch 反向传播
-    graph.backward_batch(loss).unwrap();
+    graph.backward_batch(loss, None).unwrap();
 
     // 获取 input 的梯度
     let grad = graph.get_node_grad_batch(input).unwrap().unwrap();

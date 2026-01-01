@@ -830,7 +830,7 @@ fn test_rnn_batch_backward() -> Result<(), GraphError> {
 
     // Batch 前向 + 反向
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证 RNN 权重有梯度
     let w_ih_grad = graph.get_node_grad_batch(rnn_out.w_ih)?;
@@ -904,7 +904,7 @@ fn test_rnn_chain_batch_training() -> Result<(), GraphError> {
     let loss_before = graph.get_node_value(loss)?.unwrap()[[0, 0]];
 
     // 反向
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证两层 RNN 都有梯度
     let rnn1_grad = graph.get_node_grad_batch(rnn1.w_ih)?;

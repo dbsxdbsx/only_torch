@@ -175,7 +175,7 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     assert_abs_diff_eq!(loss_val[[0, 0]], expected_loss, epsilon = 1e-4);
 
     // 反向传播
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证卷积核梯度
     let conv_grad = graph.get_node_grad_batch(conv.kernel)?.unwrap();
@@ -505,7 +505,7 @@ fn test_max_pool2d_batch_backward() -> Result<(), GraphError> {
 
     // Batch 训练
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证卷积核有梯度（梯度通过池化层正确传播）
     let k_grad = graph.get_node_grad_batch(conv.kernel)?;

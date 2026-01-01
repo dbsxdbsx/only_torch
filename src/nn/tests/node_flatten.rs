@@ -196,7 +196,7 @@ fn test_flatten_batch_gradient() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&labels_data))?;
 
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证梯度存在且形状正确
     let grad_w = graph.get_node_grad_batch(w)?;

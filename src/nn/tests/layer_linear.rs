@@ -232,7 +232,7 @@ fn test_linear_batch_backward() -> Result<(), GraphError> {
 
     // Batch 训练
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证权重和偏置都有梯度
     let w_grad = graph.get_node_grad_batch(fc.weights)?;
@@ -274,7 +274,7 @@ fn test_linear_chain_batch_training() -> Result<(), GraphError> {
 
     // Batch 训练
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证所有参数都有梯度
     assert!(graph.get_node_grad_batch(fc1.weights)?.is_some());
@@ -581,7 +581,7 @@ fn test_linear_backward_pytorch_comparison() -> Result<(), GraphError> {
     );
 
     // 反向传播
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证权重梯度
     let grad_w = graph.get_node_grad_batch(fc.weights)?.unwrap();
@@ -726,7 +726,7 @@ fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     );
 
     // 反向传播
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证 fc1 权重梯度
     let grad_w1 = graph.get_node_grad_batch(fc1.weights)?.unwrap();

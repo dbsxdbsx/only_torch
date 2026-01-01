@@ -974,7 +974,7 @@ fn test_lstm_batch_backward() -> Result<(), GraphError> {
 
     // Batch 前向 + 反向
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证 LSTM 输入门权重有梯度
     let w_ii_grad = graph.get_node_grad_batch(lstm_out.w_ii)?;
@@ -1049,7 +1049,7 @@ fn test_lstm_chain_batch_training() -> Result<(), GraphError> {
     let loss_before = graph.get_node_value(loss)?.unwrap()[[0, 0]];
 
     // 反向
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证两层 LSTM 都有梯度
     let lstm1_grad = graph.get_node_grad_batch(lstm1.w_ii)?;

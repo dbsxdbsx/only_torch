@@ -242,7 +242,7 @@ fn test_reshape_batch_gradient() -> Result<(), GraphError> {
 
     // Batch forward & backward
     graph.forward_batch(loss)?;
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证梯度存在且形状正确
     let grad_w = graph.get_node_grad_batch(w)?;
@@ -402,7 +402,7 @@ fn test_reshape_as_flatten_in_mlp() -> Result<(), GraphError> {
     let loss_val = graph.get_node_value(loss)?.unwrap()[[0, 0]];
     assert!(loss_val > 0.0, "Loss 应该为正数");
 
-    graph.backward_batch(loss)?;
+    graph.backward_batch(loss, None)?;
 
     // 验证梯度存在
     assert!(graph.get_node_grad_batch(w1)?.is_some());
