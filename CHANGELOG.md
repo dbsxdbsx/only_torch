@@ -1,5 +1,54 @@
 # 更新日志
 
+## [0.6.0] - 2026-01-01
+
+### 新增
+
+- feat(layer): **Phase 3 完成** - RNN/LSTM/GRU Layer API
+  - `rnn()`: Vanilla RNN 层 (h_t = tanh(x@W_ih + h_{t-1}@W_hh + b))
+  - `lstm()`: LSTM 层 (4 门: 输入门、遗忘门、候选细胞、输出门)
+  - `gru()`: GRU 层 (2 门: 重置门、更新门)
+  - 所有层支持 BPTT 训练与层分组可视化
+  - 集成测试验收：RNN 95.3%、LSTM 93.8%、GRU 90.6% 准确率
+- feat: 实现 State 节点与 BPTT 循环机制
+  - 支持时序状态记忆
+  - `graph.step()` / `backward_through_time()` API
+- feat: 添加 Sign 节点（Tensor 层 + NN 节点层）
+  - 输出 {-1, 0, 1}，与 PyTorch 行为一致
+- feat: 添加 Conv2d bias 支持与层分组可视化功能
+  - 新增 ChannelBiasAdd 节点用于 bias 广播
+  - 新增 `LayerGroup` 和 `save_visualization_grouped()` 实现层分组可视化
+
+### 性能优化
+
+- perf: 优化赋值算子 (+=/-=/*=/÷=) 并减少不必要的 clone
+  - jacobi 累加、优化器梯度计算等处避免临时张量分配
+
+### 重构
+
+- refactor: 重组 Python 测试目录结构 (`tests/python/layer_reference/`)
+- refactor(test): 增强 `assert_err!` 宏，支持多种简洁语法
+  - 新增 `Variant(literal)`、`ShapeMismatch(exp, got, msg)` 等语法
+  - 重构所有测试文件，消除冗长的 if guard 形式
+
+### 测试
+
+- test: 补充各层 PyTorch 数值对照及覆盖测试
+  - 层测试总数从 128 增加到 143
+  - 新增 AvgPool2d/MaxPool2d/Linear/Conv2d 的 forward/backward PyTorch 对照
+  - 新增 RNN/LSTM/GRU batch_backward、chain_batch_training 等测试
+
+### 文档
+
+- docs: 新增五层架构设计文档 (`architecture_v2_design.md`)
+- docs: 添加记忆机制设计文档及 NEAT/EXAMM 论文笔记
+- docs: 更新梯度流控制设计文档
+- docs: 修复 README 笔误 (waht→what, ndoes→nodes, fis→fix)
+
+### 其他
+
+- chore: 删除 README 中已完成的正确性验证 section（所有项已被现有测试覆盖）
+
 ## [0.5.0] - 2025-12-27
 
 ### 新增
