@@ -225,7 +225,7 @@ linear 等常用层，容易添加 edge(如已存在的 add 节点的父节点)�
 - [autoML 介绍](https://www.zhihu.com/question/554255720/answer/2750670583)
 
 ### 符号派：逻辑/因果推断
-
+- [逻辑/因果推断相关书籍](.doc/reference/logic_books.md)
 - [scryer-prolog--Rust 逻辑推理库](https://github.com/mthom/scryer-prolog)
 - [vampire:自动证明器](https://github.com/vprover/vampire?tab=readme-ov-file)
 - [那迷人的被遗忘的语言：Prolog](https://zhuanlan.zhihu.com/p/41908829)
