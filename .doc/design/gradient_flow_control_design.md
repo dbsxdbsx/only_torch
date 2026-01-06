@@ -2,7 +2,7 @@
 
 ## 概述
 
-本文档描述 only_torch 中控制梯度计算和传播的三种核心机制：`no_grad`、`detach` 和 `retain_graph`。这三种机制在高级训练场景（如 GAN、强化学习、多任务学习）中经常组合使用。
+本文档描述 only_torch 中控制梯度计算和传播的核心机制：`no_grad`、`detach`、`retain_graph`，以及**可选的** `requires_grad` / 冻结机制。这些机制在高级训练场景（如 GAN、强化学习、多任务学习、迁移学习）中经常组合使用。
 
 ## 机制对比总览
 
@@ -11,6 +11,9 @@
 | `no_grad` | 全局上下文 | 完全禁用梯度追踪 | 整个代码块 | 推理、评估、验证 |
 | `detach` | 单个节点 | 截断特定路径的梯度流 | 局部路径 | GAN、Actor-Critic、Target Network |
 | `retain_graph` | backward 调用 | 保留计算图供多次反向传播 | 计算图生命周期 | 多 Loss、高阶导数、TBPTT |
+| `requires_grad`* | 参数节点 | 控制参数是否参与梯度计算 | 单个参数 | 迁移学习（冻结层）、部分微调 |
+
+> \* `requires_grad` / 冻结机制为**可选功能**，详见 [附录 B](#附录-brequires_grad--冻结机制可选功能)。
 
 ### 直观对比
 
@@ -24,23 +27,34 @@
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                        detach (局部截断)                         │
-│  x → A → B.detach() → C → loss                                 │
-│       ↑       ╳       ↑                                        │
-│      无梯度  截断点   有梯度                                     │
+│  x → A → B.detach() → C → loss                                  │
+│       ↑       ╳       ↑                                         │
+│      无梯度  截断点   有梯度                                       │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                        no_grad (全局禁用)                        │
-│  x → A → B → C → output                                        │
-│      (无计算图构建，纯前向计算)                                   │
+│  x → A → B → C → output                                         │
+│      (无计算图构建，纯前向计算)                                     │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                     retain_graph (保留计算图)                    │
-│  x → A → B → C → loss1.backward(retain_graph=True)             │
-│       ↑   ↑   ↑                                                │
-│      图保留，可再次 backward                                     │
-│              └───→ loss2.backward()                            │
+│  x → A → B → C → loss1.backward(retain_graph=True)              │
+│       ↑   ↑   ↑                                                 │
+│      图保留，可再次 backward                                      │
+│              └───→ loss2.backward()                             │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│              requires_grad=false (参数冻结) [可选功能]             │
+│                                                                 │
+│  [数据流 →]  data → w0 → w1[frozen] → w2 → loss                  │
+│                    ↑         │         ↑                        │
+│  [← 梯度流]    w0.grad ✅  穿过(不存)   w2.grad ✅                 │
+│                                                                 │
+│  关键：w1 冻结但梯度穿过，所以 w0 仍能训练                          │
+│  对比 detach：如果 w1 之后 detach，w0 就收不到梯度了               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -214,6 +228,8 @@ if !self.is_train_mode() {
 
 ## 2. detach 机制
 
+> **设计决策**：为何用 `detach()` 而非 `target_params` 控制梯度流？详见 [附录 A](#附录-a设计决策为什么用-detach-而非-target_params)。
+
 ### 2.1 设计目标
 
 - **选择性梯度截断**：只阻止特定路径的梯度流，其他路径正常
@@ -281,7 +297,18 @@ fn backward_node_internal(
 }
 ```
 
-### 2.4 PyTorch 语义兼容性
+### 2.4 与 PyTorch `tensor.detach()` 的语义差异
+
+> **重要**：only_torch 的 `detach_node()`/`attach_node()` 采用"开关式"设计，与 PyTorch 的 `tensor.detach()` 语义不同。
+
+| 框架 | API | 语义 |
+|------|-----|------|
+| **PyTorch** | `y = x.detach()` | 返回**新张量** `y`，`x` 和 `y` 可同时存在于不同分支 |
+| **only_torch** | `graph.detach_node(x)` | 对**同一节点** `x` 设置开关，阻止梯度回流 |
+
+这是**有意的设计选择**：only_torch 是静态图框架，"开关式"设计更符合静态图的心智模型，且在功能上可达到相同效果。
+
+### 2.5 PyTorch 语义兼容性
 
 **关键行为**：当节点被 detach 后，其上游参数节点的 jacobi 应为 `None`，而非零张量。
 
@@ -299,7 +326,7 @@ backward(y) 后:
 - 这确保了被 detach 阻断的上游节点不会残留零梯度
 ```
 
-### 2.4 使用示例
+### 2.6 使用示例
 
 #### GAN 训练
 
@@ -326,7 +353,7 @@ let advantage = compute_advantage(reward, value);
 graph.backward_nodes(&[actor_weights], actor_loss)?;
 ```
 
-### 2.5 与 `value_version` 机制的关系
+### 2.7 与 `value_version` 机制的关系
 
 归档文档 `graph_execution_refactor.md` 提议用 `value_version` 替代 `pass_id`，并声称对 `detach` 更友好。
 
@@ -716,3 +743,341 @@ graph.backward_nodes_ex(&[w], output2, false)?;
 | `graph.no_grad_scope(\|g\| { ... })` | 同上（无变化） |
 
 高层 API 的设计原则是**薄封装**：`Var` 只是 `NodeId` 的类型安全包装，所有梯度流控制的语义与底层完全一致。
+
+---
+
+## 附录 A：设计决策——为什么用 `detach()` 而非 `target_params`
+
+> 本节解释为何 only_torch 移除了 `backward(target_params)` 参数，改用 `detach()` 控制梯度流。
+
+### A.1 问题背景
+
+在 GAN、Actor-Critic 等场景中，需要控制"哪些参数计算梯度"。存在两种设计方案：
+
+| 方案 | API 形式 | 控制层面 |
+|------|----------|----------|
+| **方案 A: `target_params`** | `loss.backward(target_params=&[w1, w2])` | 反向传播时选择性计算 |
+| **方案 B: `detach()`** | `fake.detach(); loss.backward();` | 前向时截断计算图拓扑 |
+
+### A.2 两种方案的工作原理
+
+```
+场景：GAN 训练判别器 D（不想更新生成器 G）
+
+计算图：
+z ──→ [G] ──→ fake ──→ [D] ──→ d_loss
+       ↑               ↑
+      G 参数          D 参数
+
+════════════════════════════════════════════════════════════════════
+
+方案 A: target_params ─ 选择性计算
+────────────────────────────────────
+z ──→ [G] ──→ fake ──→ [D] ──→ d_loss
+                              ↓
+                    backward(target_params=[D 参数])
+
+行为取决于实现：
+├─ 实现 1：计算所有梯度，只返回 D 的（浪费计算）
+└─ 实现 2：智能剪枝，只计算到达 D 参数的路径
+
+问题：API 语义混乱——backward() 在做 optimizer 该做的事
+
+════════════════════════════════════════════════════════════════════
+
+方案 B: detach() ─ 拓扑截断
+────────────────────────────
+z ──→ [G] ──→ fake ──✂──→ [D] ──→ d_loss
+                     ↑
+              detach() 截断点
+
+反向传播：d_loss → D → fake（停止，图被截断）
+结果：G 的梯度根本不会被计算（图在前向时就截断了）
+
+优势：语义清晰，性能最优
+```
+
+### A.3 为什么选择 `detach()`
+
+#### 1. 语义更清晰
+
+| 方式 | 语义 | 职责边界 |
+|------|------|----------|
+| `target_params` | "只计算这些参数的梯度" | ⚠️ `backward()` 在做 optimizer 的事 |
+| `detach()` | "从这里切断梯度流" | ✅ 清晰的图拓扑控制 |
+
+PyTorch 的职责分离：
+```python
+# PyTorch 风格（我们采用）
+fake = G(z)
+fake_detached = fake.detach()    # 控制图拓扑
+d_loss = D(fake_detached)
+d_loss.backward()                # 计算所有可达的梯度
+d_optimizer.step()               # optimizer 决定更新谁
+
+# target_params 风格（已弃用）
+fake = G(z)
+d_loss = D(fake)
+d_loss.backward(target_params=D.parameters())  # backward 越权了
+```
+
+#### 2. 性能更优
+
+| 方式 | 计算量 | 原因 |
+|------|--------|------|
+| `detach()` | ✅ 最少 | 前向时截断，被截断部分完全不计算 |
+| `target_params` (实现 1) | ❌ 浪费 | 计算所有梯度再过滤 |
+| `target_params` (实现 2) | ⚠️ 复杂 | 需要智能剪枝算法 |
+
+#### 3. 与 PyTorch 一致
+
+```python
+# PyTorch 的 backward() 签名
+Tensor.backward(
+    gradient=None,      # 上游梯度（用于非标量 loss）
+    retain_graph=None,  # 是否保留计算图
+    create_graph=False  # 是否创建梯度的计算图（高阶导数）
+)
+# ❌ 没有 target_params 参数！
+```
+
+项目愿景是"媲美 PyTorch 的易用体验"，API 应与 PyTorch 保持一致。
+
+#### 4. 更难出 Bug
+
+- `detach()` 在前向时就截断图，如果图构建有问题会**立即暴露**
+- `target_params` 可能**隐藏**图构建问题（反向时才发现某些梯度计算不对）
+
+### A.4 是否存在 `detach()` 无法覆盖的场景？
+
+**99% 的场景可以完全替代**。唯一可能的例外是：
+
+```
+复杂图（参数组共享中间节点）：
+
+           ┌──→ [A] ──→ out_a ──→ loss_a
+           │     ↑
+x ──→ [shared] ──┤
+           │     ↓
+           └──→ [B] ──→ out_b ──→ loss_b
+
+场景：只想计算 A 的梯度，不想计算 B 的梯度
+
+detach() 方式：在 shared 和 B 之间 detach
+  - 但这样 B 的梯度无法流回 shared
+  - 如果 shared 需要从两条路径获得梯度，这就有问题
+
+target_params 方式：只指定 A 的参数
+  - 不影响图拓扑
+```
+
+**但这种场景极其罕见**。在实际 ML 场景中：
+- GAN：`detach()` 是标准做法
+- Actor-Critic：`detach()` 是标准做法
+- 多任务学习：用 `retain_graph` + 分别 backward
+- 迁移学习（冻结层）：用 `requires_grad=False`
+
+### A.5 迁移指南
+
+如果现有代码使用了 `target_params`：
+
+```rust
+// ❌ 旧代码（已弃用）
+let fake = g.forward(input)?;
+let d_loss = d.forward(fake)?;
+graph.backward(d_loss, Some(&d_params))?;  // target_params
+
+// ✅ 新代码（PyTorch 风格）
+let fake = g.forward(input)?;
+graph.detach(fake)?;                        // 截断梯度流
+let d_loss = d.forward(fake)?;
+d_loss.backward()?;                         // 计算所有可达梯度
+d_optimizer.step()?;                        // optimizer 决定更新谁
+```
+
+### A.6 总结
+
+| 维度 | `target_params` | `detach()` |
+|------|-----------------|------------|
+| **语义清晰度** | ⚠️ 混乱 | ✅ 清晰 |
+| **性能** | ⚠️ 取决于实现 | ✅ 最优 |
+| **PyTorch 兼容** | ❌ 不兼容 | ✅ 一致 |
+| **错误暴露** | ⚠️ 可能隐藏问题 | ✅ 尽早暴露 |
+| **场景覆盖** | 100% | 99%+ |
+
+**结论**：采用 `detach()` + `optimizer.step()` 的 PyTorch 风格，移除 `target_params` 参数。
+
+---
+
+## 附录 B：`requires_grad` / 冻结机制（可选功能）
+
+> **状态**：Optional TODO（不在当前迭代范围内）
+>
+> 本节描述 `requires_grad` / 参数冻结机制的设计草案。此功能在迁移学习、部分微调等场景中有用，但**对于绝大多数训练场景不是必需的**。当前 `detach` 机制已能覆盖 GAN、Actor-Critic 等复杂梯度流控制需求。
+
+### B.1 问题背景
+
+在某些训练场景中，用户希望"冻结"部分参数——不更新它们，但**仍然允许梯度流经这些参数**到达更早的可训练参数。
+
+| 场景 | 需求 | `detach` 能解决？ | `requires_grad` 能解决？ |
+|------|------|------------------|-------------------------|
+| **GAN 训练 D 时不更新 G** | 梯度不流向 G | ✅ 是 | ✅ 是 |
+| **迁移学习冻结 backbone** | backbone 不更新，但梯度穿过 | ⚠️ 看情况 | ✅ 是 |
+| **冻结 embedding 但训练后续层** | embedding 不更新，梯度不需要穿过 | ✅ 是 | ✅ 是 |
+| **共享 backbone + 只冻结一个分支的参数** | 复杂场景 | ⚠️ 可能困难 | ✅ 是 |
+
+### B.2 `detach` vs `requires_grad` 关键区别
+
+理解两者的区别需要明确两个方向：
+- **前向传播方向**：数据从 input 流向 loss（input → ... → loss）
+- **反向传播方向（梯度流方向）**：梯度从 loss 流向参数（loss → ... → parameters）
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                           detach() 语义                                │
+│                                                                        │
+│  [数据流方向 →]                                                        │
+│   data ──► layer_A[参数] ──► detach() ──► layer_B[参数] ──► loss       │
+│                                │                                      │
+│                           截断点：梯度完全停止                          │
+│                                                                        │
+│  [← 梯度流方向]                                                        │
+│   loss → layer_B.grad ✅ → 停止 ╳                                      │
+│                                                                        │
+│   结果：layer_B 有梯度，layer_A 无梯度（被截断）                        │
+├────────────────────────────────────────────────────────────────────────┤
+│                      requires_grad=false 语义                          │
+│                                                                        │
+│  [数据流方向 →]                                                        │
+│   data ──► layer_A[参数] ──► frozen_layer[冻结] ──► layer_B[参数] ──► loss │
+│                                     │                                 │
+│                            不累积自己的梯度，但梯度继续传播               │
+│                                                                        │
+│  [← 梯度流方向]                                                        │
+│   loss → layer_B.grad ✅ → frozen_layer.grad=None → layer_A.grad ✅    │
+│                              ↑ 不存储         ↑ 梯度穿过               │
+│                                                                        │
+│   结果：layer_A 和 layer_B 都有梯度，只有 frozen_layer 没有（但它让梯度穿过）│
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+**核心区别一句话总结**：
+- `detach()` = 梯度**到这里就停**（阻断传播）
+- `requires_grad=false` = 梯度**穿过但不存**（继续传播，但该参数不累积）
+
+### B.3 何时需要 `requires_grad`（而非 `detach`）
+
+**绝大多数场景（~99%）使用 `detach` 即可**。以下是少数需要 `requires_grad` 的场景：
+
+1. **冻结中间层，但需要训练其"上游"参数**：
+   ```
+   [数据流方向 →]
+   data ──► encoder[要训练] ──► adapter[要冻结] ──► head[要训练] ──► loss
+                                    │
+                               如果用 detach()：
+                               - head 有梯度 ✅
+                               - adapter 无梯度 ✅
+                               - encoder 无梯度 ❌ ← 被截断了！
+
+                               如果用 requires_grad=false：
+                               - head 有梯度 ✅
+                               - adapter 无梯度 ✅（冻结）
+                               - encoder 有梯度 ✅ ← 梯度穿过了 adapter
+   ```
+
+2. **多任务学习 + 选择性冻结分支**：
+   ```
+                             ┌──► task_A_head[要训练] ──► loss_A
+   data ──► shared_encoder ──┤
+                             └──► task_B_head[要冻结] ──► loss_B
+
+   需求：task_B_head 不训练，但 shared_encoder 需要从 loss_B 获得梯度
+
+   如果用 detach() 放在 shared_encoder 和 task_B_head 之间：
+   - task_B_head 不训练 ✅
+   - 但 loss_B 的梯度无法流回 shared_encoder ❌
+
+   如果用 requires_grad=false 冻结 task_B_head：
+   - task_B_head 不训练 ✅
+   - loss_B 的梯度可以穿过 task_B_head 到达 shared_encoder ✅
+   ```
+
+**重要结论**：
+- 如果你要冻结的参数**更靠近 loss 端**（即：冻结点和 loss 之间没有其他需要训练的参数），用 `detach` 完全足够
+- 如果你要冻结的参数**位于中间**，且其"上游"（更靠近 input 端）还有需要训练的参数，则需要 `requires_grad=false`
+
+### B.4 API 设计（草案）
+
+```rust
+impl Graph {
+    /// 冻结参数（不累积梯度，但允许梯度流经）
+    pub fn freeze_param(&mut self, param_id: NodeId) -> Result<(), GraphError>;
+
+    /// 解冻参数
+    pub fn unfreeze_param(&mut self, param_id: NodeId) -> Result<(), GraphError>;
+
+    /// 检查参数是否被冻结
+    pub fn is_param_frozen(&self, param_id: NodeId) -> Result<bool, GraphError>;
+}
+
+// Var 扩展（高层 API）
+impl Var {
+    /// 冻结此参数
+    pub fn freeze(&self) -> Result<&Self, GraphError>;
+
+    /// 解冻此参数
+    pub fn unfreeze(&self) -> Result<&Self, GraphError>;
+
+    /// 检查是否被冻结
+    pub fn is_frozen(&self) -> Result<bool, GraphError>;
+}
+
+// 使用示例
+let backbone_params = backbone.parameters();
+for param in &backbone_params {
+    param.freeze()?;  // 冻结 backbone
+}
+
+// 训练时，backbone 的参数不会被更新，但梯度会穿过它们
+loss.backward()?;
+optimizer.step()?;  // 只更新非冻结参数
+```
+
+### B.5 实现要点
+
+1. **在 `Parameter` 节点上增加 `requires_grad` 标志**
+2. **backward 时**：对于 `requires_grad=false` 的参数，不累积其 `.grad`，但继续向其父节点传播梯度
+3. **optimizer.step() 时**：跳过 `requires_grad=false` 的参数
+
+### B.6 与其他机制的对比总结
+
+| 机制 | 阻止梯度流？ | 阻止参数更新？ | 适用场景 |
+|------|-------------|---------------|----------|
+| `detach()` | ✅ 是 | ✅ 是（间接） | GAN、Actor-Critic、梯度隔离 |
+| `requires_grad=false` | ❌ 否 | ✅ 是 | 迁移学习冻结、部分微调 |
+| `no_grad` | ✅ 是（全局） | ✅ 是（全局） | 推理、评估 |
+| `optimizer` 不包含参数 | ❌ 否 | ✅ 是 | 选择性训练 |
+
+**重要：这三个维度是正交的**
+
+- `detach` 管"梯度能不能过去"（图拓扑）
+- `requires_grad` 管"这个参数要不要累积梯度"
+- `optimizer参数列表` 管"step 时更新谁"
+
+在 PyTorch 中，它们可以独立组合使用。
+
+### B.7 为什么是 Optional TODO
+
+1. **`detach` 已覆盖 99% 场景**：GAN、Actor-Critic、Target Network 等都用 `detach`
+2. **optimizer 选择性绑定**：`SGD::with_params(&partial_params, lr)` 也能实现"只更新部分参数"
+3. **实现成本**：需要修改 backward 逻辑，增加复杂度
+4. **用户学习成本**：多一个概念需要理解
+
+**⚠️ 重要提醒：optimizer 选择性绑定的局限性**
+
+"optimizer 不包含参数"**只能替代"冻结更新"，不能等价替代 `requires_grad=false`**：
+1. **梯度仍会被计算/占内存**：如果参数 `requires_grad=true`（默认），即使不在 optimizer 中，backward 时仍会计算其 `.grad`
+2. **`zero_grad()` 覆盖范围不同**：optimizer 的 `zero_grad()` 只清除其管理的参数，不会清除"不在 optimizer 中"的参数梯度，可能导致梯度意外累积
+3. **生态工具链依赖 `requires_grad` 语义**：如 `filter(p.requires_grad, params)`、梯度裁剪等
+
+**建议**：仅当有明确的迁移学习 / 复杂冻结需求时，再实现此功能。

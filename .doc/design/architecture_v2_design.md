@@ -1336,10 +1336,11 @@ impl Dropout {
 /// - `backward()` 计算所有梯度（由 Var 调用）
 /// - `step()` 只更新 Optimizer 绑定的参数
 ///
-/// # 设计决策：移除 backward_for
+/// # 设计决策：移除 backward_for / target_params
 /// PyTorch 没有 `loss.backward(params)` 这种 API。
 /// 正确的模式是：`loss.backward()` 计算所有梯度，`optimizer.step()` 更新特定参数。
-/// 这样语义更清晰，也与主流框架一致。
+/// GAN 等场景的梯度隔离通过 `detach()` 实现，而非 `target_params`。
+/// 详见 [梯度流控制设计 - 附录 A](gradient_flow_control_design.md#附录-a设计决策为什么用-detach-而非-target_params)。
 pub trait Optimizer {
     /// 清零所有参数的梯度
     fn zero_grad(&mut self) -> Result<(), GraphError>;
@@ -2417,6 +2418,15 @@ impl Genome {
 | GAN 训练 | `fake.detach()` + `fake.attach()` | 分离 G/D 训练 |
 | Actor-Critic | `value.detach()` + `td_target.detach()` | 策略梯度 |
 
+> **关于参数冻结 / `requires_grad`**
+>
+> 当前设计中，所有参数节点默认 `requires_grad=true`。如需"冻结"部分参数（如迁移学习），有两种方式：
+>
+> 1. **Optimizer 选择性绑定**（推荐）：`Adam::new(&graph, &trainable_params, lr)` 只绑定需要训练的参数
+> 2. **`requires_grad` 机制**（Optional TODO）：详见 [梯度流控制设计 - 附录 B](gradient_flow_control_design.md#附录-brequires_grad--冻结机制可选功能)
+>
+> `detach` 与 `requires_grad=false` 的核心区别：`detach` 会**截断**梯度流，而 `requires_grad=false` 允许梯度**穿过**但不累积。99% 场景用 `detach` 即可。
+
 ### 5.2 与 LSTM/RNN 记忆机制的兼容性
 
 新设计**完全兼容** LSTM、RNN、GRU 等带记忆机制的模型：
@@ -2882,6 +2892,7 @@ let inner2 = graph.inner().borrow_mut();  // panic!
 | 2025-12-31 | backward() 采用 ensure-forward 并返回 loss 值 | 若当前 pass 未计算则先 forward；若已计算（缓存命中）则不重复 forward；简化用户代码 |
 | 2025-12-31 | forward() 和 new() 不是 Module trait 方法 | 不同层签名各异，无法统一（参考 Burn） |
 | 2026-01-01 | randn() 使用正态分布 N(0,1) | 与 PyTorch `torch.randn()` 语义一致 |
+| 2026-01-06 | `requires_grad` / 冻结机制列为 Optional TODO | `detach` + optimizer 选择性绑定已覆盖 99% 场景；详见 [梯度流控制设计 - 附录 B](gradient_flow_control_design.md#附录-brequires_grad--冻结机制可选功能) |
 
 ### 9.1 关键设计决策详解
 
