@@ -1,0 +1,24 @@
+digraph Model {
+    rankdir=TB;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    "1" [label=<x<BR/><B>Input</B><BR/>[7, 2]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "2" [label=<w<BR/><B>Parameter</B><BR/>[2, 1]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "3" [label=<b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    "4" [label=<xw<BR/><B>MatMul</B><BR/>[7, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "5" [label=<ones<BR/><B>Input</B><BR/>[7, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "6" [label=<bias_broadcast<BR/><B>MatMul</B><BR/>[7, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "7" [label=<y_pred<BR/><B>Add</B><BR/>[7, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "8" [label=<y_true<BR/><B>Input</B><BR/>[7, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "9" [label=<loss<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
+
+    "1" -> "4";
+    "2" -> "4";
+    "5" -> "6";
+    "3" -> "6";
+    "4" -> "7";
+    "6" -> "7";
+    "7" -> "9";
+    "8" -> "9";
+}

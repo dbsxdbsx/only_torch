@@ -27,11 +27,11 @@ use crate::tensor::Tensor;
 /// - 调试和可视化
 #[derive(Debug, Clone, Copy)]
 pub struct Conv2dOutput {
-    /// 输出节点 ID (最终计算结果，含 bias) [batch, out_channels, H', W']
+    /// 输出节点 ID (最终计算结果，含 bias) [batch, `out_channels`, H', W']
     pub output: NodeId,
-    /// 卷积核参数节点 ID [out_channels, in_channels, kernel_h, kernel_w]
+    /// 卷积核参数节点 ID [`out_channels`, `in_channels`, `kernel_h`, `kernel_w`]
     pub kernel: NodeId,
-    /// 偏置参数节点 ID [1, out_channels]，初始化为 0
+    /// 偏置参数节点 ID [1, `out_channels`]，初始化为 0
     pub bias: NodeId,
 }
 
@@ -39,7 +39,7 @@ pub struct Conv2dOutput {
 ///
 /// # 设计
 /// - **Batch-First**：输入 `[batch, C_in, H, W]`，输出 `[batch, C_out, H', W']`
-/// - 符合 PyTorch `nn.Conv2d` 语义（默认包含 bias，初始化为 0）
+/// - 符合 `PyTorch` `nn.Conv2d` 语义（默认包含 bias，初始化为 0）
 ///
 /// # 参数
 /// - `graph`: 计算图
@@ -108,7 +108,7 @@ pub fn conv2d(
     let (k_h, k_w) = kernel_size;
     let kernel = graph.new_parameter_node(
         &[out_channels, in_channels, k_h, k_w],
-        Some(&format!("{}_K", prefix)),
+        Some(&format!("{prefix}_K")),
     )?;
 
     // 创建 Conv2d 节点（无 bias）
@@ -117,22 +117,21 @@ pub fn conv2d(
         kernel,
         stride,
         padding,
-        Some(&format!("{}_conv", prefix)),
+        Some(&format!("{prefix}_conv")),
     )?;
 
     // 创建 bias 参数 [1, out_channels]，初始化为 0
-    let bias = graph.new_parameter_node(&[1, out_channels], Some(&format!("{}_b", prefix)))?;
+    let bias = graph.new_parameter_node(&[1, out_channels], Some(&format!("{prefix}_b")))?;
     graph.set_node_value(bias, Some(&Tensor::zeros(&[1, out_channels])))?;
 
     // 通过 ChannelBiasAdd 节点添加 bias
-    let output =
-        graph.new_channel_bias_add_node(conv_out, bias, Some(&format!("{}_out", prefix)))?;
+    let output = graph.new_channel_bias_add_node(conv_out, bias, Some(&format!("{prefix}_out")))?;
 
     // 注册层分组（用于可视化时将这些节点框在一起）
     graph.register_layer_group(
         prefix,
         "Conv2d",
-        &format!("{}→{}, {}×{}", in_channels, out_channels, k_h, k_w),
+        &format!("{in_channels}→{out_channels}, {k_h}×{k_w}"),
         vec![kernel, bias, conv_out, output],
     );
 

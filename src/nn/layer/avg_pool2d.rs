@@ -13,7 +13,7 @@
 
 use crate::nn::{Graph, GraphError, NodeId};
 
-/// AvgPool2d 层的输出结构
+/// `AvgPool2d` 层的输出结构
 ///
 /// 池化层没有可学习参数，只返回输出节点
 #[derive(Debug, Clone, Copy)]
@@ -22,18 +22,18 @@ pub struct AvgPool2dOutput {
     pub output: NodeId,
 }
 
-/// 创建 AvgPool2d (2D 平均池化) 层
+/// 创建 `AvgPool2d` (2D 平均池化) 层
 ///
 /// # 设计
 /// - **Batch-First**：输入 `[batch, C, H, W]`，输出 `[batch, C, H', W']`
 /// - 无可学习参数
-/// - 符合 PyTorch `nn.AvgPool2d` 语义
+/// - 符合 `PyTorch` `nn.AvgPool2d` 语义
 ///
 /// # 参数
 /// - `graph`: 计算图
 /// - `input`: 输入节点 ID，形状 `[batch_size, channels, H, W]`
 /// - `kernel_size`: 池化窗口大小 (kH, kW)
-/// - `stride`: 步长 (sH, sW)，若为 None 则默认等于 kernel_size
+/// - `stride`: 步长 (sH, sW)，若为 None 则默认等于 `kernel_size`
 /// - `name`: 层名称前缀（可选）
 ///
 /// # 返回
@@ -60,7 +60,8 @@ pub fn avg_pool2d(
     let prefix = name.unwrap_or("avg_pool2d");
 
     // 创建 AvgPool2d 节点
-    let output = graph.new_avg_pool2d_node(input, kernel_size, stride, Some(&format!("{}_out", prefix)))?;
+    let output =
+        graph.new_avg_pool2d_node(input, kernel_size, stride, Some(&format!("{prefix}_out")))?;
 
     Ok(AvgPool2dOutput { output })
 }

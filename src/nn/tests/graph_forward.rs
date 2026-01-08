@@ -18,7 +18,7 @@ fn test_forward_with_partial_forward_propagation() {
     graph.set_node_value(y, Some(&y_value)).unwrap();
 
     // 3. 第1次前向传播add1
-    graph.forward_node(add1).unwrap();
+    graph.forward(add1).unwrap();
     let first_pass_id = graph.last_forward_pass_id();
 
     // 验证所有节点的pass_id都是第1次的pass_id
@@ -44,7 +44,7 @@ fn test_forward_with_partial_forward_propagation() {
 
     // 5. 前向传播final节点，这会触发对add1和add2的计算
     // 在这个过程中，x和y应该只被计算一次（重复计算避免）
-    graph.forward_node(final_add).unwrap();
+    graph.forward(final_add).unwrap();
     let second_pass_id = graph.last_forward_pass_id();
     assert_eq!(second_pass_id, first_pass_id + 1);
 
@@ -71,7 +71,7 @@ fn test_forward_with_partial_forward_propagation() {
     );
 
     // 6. 再次前向传播final节点，验证所有节点都会重新计算
-    graph.forward_node(final_add).unwrap();
+    graph.forward(final_add).unwrap();
     let third_pass_id = graph.last_forward_pass_id();
     assert_eq!(third_pass_id, second_pass_id + 1);
 
@@ -117,15 +117,15 @@ fn test_forward_pass_id_increment() {
     graph.set_node_value(b, Some(&b_value)).unwrap();
 
     // 4. 第1次前向传播
-    graph.forward_node(y).unwrap();
+    graph.forward(y).unwrap();
     assert_eq!(graph.last_forward_pass_id(), 1);
 
     // 5. 第2次前向传播
-    graph.forward_node(y).unwrap();
+    graph.forward(y).unwrap();
     assert_eq!(graph.last_forward_pass_id(), 2);
 
     // 6. 第3次前向传播
-    graph.forward_node(y).unwrap();
+    graph.forward(y).unwrap();
     assert_eq!(graph.last_forward_pass_id(), 3);
 }
 
@@ -147,7 +147,7 @@ fn test_pass_id_rollback_on_forward_error() {
     assert_eq!(initial_forward_pass_id, 0);
 
     // 4. 尝试前向传播，应该失败（因为x没有值）
-    let forward_result = graph.forward_node(y);
+    let forward_result = graph.forward(y);
     assert!(forward_result.is_err());
 
     // 验证前向传播失败后pass_id被正确回滚
@@ -158,6 +158,6 @@ fn test_pass_id_rollback_on_forward_error() {
     graph.set_node_value(x, Some(&x_value)).unwrap();
 
     // 6. 现在前向传播应该成功
-    graph.forward_node(y).unwrap();
+    graph.forward(y).unwrap();
     assert_eq!(graph.last_forward_pass_id(), 1);
 }

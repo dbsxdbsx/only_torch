@@ -123,9 +123,9 @@ def test_detach_gradient_values():
     let expected_w2_grad = Tensor::new(&{w2_grad_list}, &[1, 2]);
 
     // 验证
-    assert!(graph.get_node_jacobi(w1).unwrap().is_none(),
+    assert!(graph.get_node_grad(w1).unwrap().is_none(),
             "w1 应无梯度 (被 detach 阻断)");
-    let actual_w2_grad = graph.get_node_jacobi(w2).unwrap().unwrap();
+    let actual_w2_grad = graph.get_node_grad(w2).unwrap().unwrap();
     assert_eq!(actual_w2_grad, &expected_w2_grad,
             "w2 梯度应与 PyTorch 匹配");
     """)

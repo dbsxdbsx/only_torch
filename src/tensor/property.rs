@@ -31,7 +31,7 @@ impl Tensor {
     /// 张量的维数(ndim)，即`shape()`的长度
     /// 如：标量维数为0，向量维数为1，矩阵维数为2，以此类推
     /// NOTE: 这里用`dimension`是参照了PyTorch、NumPy等库的命名规范
-    /// 但和MatrixSlow中的`dimension`不同（MatrixSlow/matrixslow/core/node.py#L106）
+    /// `但和MatrixSlow中的``dimension`不同（MatrixSlow/matrixslow/core/node.py#L106）
     /// 后者是张量中所有元素的数量，在本库中请使用`size()`方法来获取
     pub fn dimension(&self) -> usize {
         self.data.ndim()

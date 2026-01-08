@@ -30,9 +30,9 @@ use crate::tensor::Tensor;
 /// LSTM 层输出结构
 #[derive(Debug, Clone)]
 pub struct LstmOutput {
-    /// 隐藏状态输出节点 h_t: [batch, hidden_size]
+    /// 隐藏状态输出节点 `h_t`: [batch, `hidden_size`]
     pub hidden: NodeId,
-    /// 细胞状态输出节点 c_t: [batch, hidden_size]
+    /// 细胞状态输出节点 `c_t`: [batch, `hidden_size`]
     pub cell: NodeId,
     /// 上一时间步隐藏状态 (State 节点)
     pub h_prev: NodeId,
@@ -60,7 +60,7 @@ pub struct LstmOutput {
 ///
 /// # 参数
 /// - `graph`: 计算图
-/// - `input`: 输入节点，形状 [batch_size, input_size]
+/// - `input`: 输入节点，形状 [`batch_size`, `input_size`]
 /// - `input_size`: 输入特征维度
 /// - `hidden_size`: 隐藏状态维度
 /// - `batch_size`: 批大小
@@ -81,117 +81,101 @@ pub fn lstm(
     // === 创建状态节点 ===
     let h_prev = graph.new_state_node(
         &[batch_size, hidden_size],
-        Some(&format!("{}_h_prev", prefix)),
+        Some(&format!("{prefix}_h_prev")),
     )?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
 
     let c_prev = graph.new_state_node(
         &[batch_size, hidden_size],
-        Some(&format!("{}_c_prev", prefix)),
+        Some(&format!("{prefix}_c_prev")),
     )?;
     graph.set_node_value(c_prev, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
 
     // === 创建 ones 用于偏置广播 ===
-    let ones = graph.new_input_node(&[batch_size, 1], Some(&format!("{}_ones", prefix)))?;
+    let ones = graph.new_input_node(&[batch_size, 1], Some(&format!("{prefix}_ones")))?;
     graph.set_node_value(ones, Some(&Tensor::ones(&[batch_size, 1])))?;
 
     // === 输入门参数 ===
-    let w_ii = graph.new_parameter_node(
-        &[input_size, hidden_size],
-        Some(&format!("{}_W_ii", prefix)),
-    )?;
-    let w_hi = graph.new_parameter_node(
-        &[hidden_size, hidden_size],
-        Some(&format!("{}_W_hi", prefix)),
-    )?;
-    let b_i = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{}_b_i", prefix)))?;
+    let w_ii =
+        graph.new_parameter_node(&[input_size, hidden_size], Some(&format!("{prefix}_W_ii")))?;
+    let w_hi =
+        graph.new_parameter_node(&[hidden_size, hidden_size], Some(&format!("{prefix}_W_hi")))?;
+    let b_i = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{prefix}_b_i")))?;
     graph.set_node_value(b_i, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
     // === 遗忘门参数 ===
-    let w_if = graph.new_parameter_node(
-        &[input_size, hidden_size],
-        Some(&format!("{}_W_if", prefix)),
-    )?;
-    let w_hf = graph.new_parameter_node(
-        &[hidden_size, hidden_size],
-        Some(&format!("{}_W_hf", prefix)),
-    )?;
-    let b_f = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{}_b_f", prefix)))?;
+    let w_if =
+        graph.new_parameter_node(&[input_size, hidden_size], Some(&format!("{prefix}_W_if")))?;
+    let w_hf =
+        graph.new_parameter_node(&[hidden_size, hidden_size], Some(&format!("{prefix}_W_hf")))?;
+    let b_f = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{prefix}_b_f")))?;
     // 遗忘门偏置初始化为 1（有助于训练初期记住信息）
     graph.set_node_value(b_f, Some(&Tensor::ones(&[1, hidden_size])))?;
 
     // === 候选细胞参数 ===
-    let w_ig = graph.new_parameter_node(
-        &[input_size, hidden_size],
-        Some(&format!("{}_W_ig", prefix)),
-    )?;
-    let w_hg = graph.new_parameter_node(
-        &[hidden_size, hidden_size],
-        Some(&format!("{}_W_hg", prefix)),
-    )?;
-    let b_g = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{}_b_g", prefix)))?;
+    let w_ig =
+        graph.new_parameter_node(&[input_size, hidden_size], Some(&format!("{prefix}_W_ig")))?;
+    let w_hg =
+        graph.new_parameter_node(&[hidden_size, hidden_size], Some(&format!("{prefix}_W_hg")))?;
+    let b_g = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{prefix}_b_g")))?;
     graph.set_node_value(b_g, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
     // === 输出门参数 ===
-    let w_io = graph.new_parameter_node(
-        &[input_size, hidden_size],
-        Some(&format!("{}_W_io", prefix)),
-    )?;
-    let w_ho = graph.new_parameter_node(
-        &[hidden_size, hidden_size],
-        Some(&format!("{}_W_ho", prefix)),
-    )?;
-    let b_o = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{}_b_o", prefix)))?;
+    let w_io =
+        graph.new_parameter_node(&[input_size, hidden_size], Some(&format!("{prefix}_W_io")))?;
+    let w_ho =
+        graph.new_parameter_node(&[hidden_size, hidden_size], Some(&format!("{prefix}_W_ho")))?;
+    let b_o = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{prefix}_b_o")))?;
     graph.set_node_value(b_o, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
     // === 输入门计算: i_t = σ(x @ W_ii + h_prev @ W_hi + b_i) ===
-    let x_ii = graph.new_mat_mul_node(input, w_ii, Some(&format!("{}_x_ii", prefix)))?;
-    let h_hi = graph.new_mat_mul_node(h_prev, w_hi, Some(&format!("{}_h_hi", prefix)))?;
-    let b_i_broadcast = graph.new_mat_mul_node(ones, b_i, Some(&format!("{}_b_i_bc", prefix)))?;
+    let x_ii = graph.new_mat_mul_node(input, w_ii, Some(&format!("{prefix}_x_ii")))?;
+    let h_hi = graph.new_mat_mul_node(h_prev, w_hi, Some(&format!("{prefix}_h_hi")))?;
+    let b_i_broadcast = graph.new_mat_mul_node(ones, b_i, Some(&format!("{prefix}_b_i_bc")))?;
     let pre_i = graph.new_add_node(
         &[x_ii, h_hi, b_i_broadcast],
-        Some(&format!("{}_pre_i", prefix)),
+        Some(&format!("{prefix}_pre_i")),
     )?;
-    let i_gate = graph.new_sigmoid_node(pre_i, Some(&format!("{}_i_gate", prefix)))?;
+    let i_gate = graph.new_sigmoid_node(pre_i, Some(&format!("{prefix}_i_gate")))?;
 
     // === 遗忘门计算: f_t = σ(x @ W_if + h_prev @ W_hf + b_f) ===
-    let x_if = graph.new_mat_mul_node(input, w_if, Some(&format!("{}_x_if", prefix)))?;
-    let h_hf = graph.new_mat_mul_node(h_prev, w_hf, Some(&format!("{}_h_hf", prefix)))?;
-    let b_f_broadcast = graph.new_mat_mul_node(ones, b_f, Some(&format!("{}_b_f_bc", prefix)))?;
+    let x_if = graph.new_mat_mul_node(input, w_if, Some(&format!("{prefix}_x_if")))?;
+    let h_hf = graph.new_mat_mul_node(h_prev, w_hf, Some(&format!("{prefix}_h_hf")))?;
+    let b_f_broadcast = graph.new_mat_mul_node(ones, b_f, Some(&format!("{prefix}_b_f_bc")))?;
     let pre_f = graph.new_add_node(
         &[x_if, h_hf, b_f_broadcast],
-        Some(&format!("{}_pre_f", prefix)),
+        Some(&format!("{prefix}_pre_f")),
     )?;
-    let f_gate = graph.new_sigmoid_node(pre_f, Some(&format!("{}_f_gate", prefix)))?;
+    let f_gate = graph.new_sigmoid_node(pre_f, Some(&format!("{prefix}_f_gate")))?;
 
     // === 候选细胞计算: g_t = tanh(x @ W_ig + h_prev @ W_hg + b_g) ===
-    let x_ig = graph.new_mat_mul_node(input, w_ig, Some(&format!("{}_x_ig", prefix)))?;
-    let h_hg = graph.new_mat_mul_node(h_prev, w_hg, Some(&format!("{}_h_hg", prefix)))?;
-    let b_g_broadcast = graph.new_mat_mul_node(ones, b_g, Some(&format!("{}_b_g_bc", prefix)))?;
+    let x_ig = graph.new_mat_mul_node(input, w_ig, Some(&format!("{prefix}_x_ig")))?;
+    let h_hg = graph.new_mat_mul_node(h_prev, w_hg, Some(&format!("{prefix}_h_hg")))?;
+    let b_g_broadcast = graph.new_mat_mul_node(ones, b_g, Some(&format!("{prefix}_b_g_bc")))?;
     let pre_g = graph.new_add_node(
         &[x_ig, h_hg, b_g_broadcast],
-        Some(&format!("{}_pre_g", prefix)),
+        Some(&format!("{prefix}_pre_g")),
     )?;
-    let g_gate = graph.new_tanh_node(pre_g, Some(&format!("{}_g_gate", prefix)))?;
+    let g_gate = graph.new_tanh_node(pre_g, Some(&format!("{prefix}_g_gate")))?;
 
     // === 输出门计算: o_t = σ(x @ W_io + h_prev @ W_ho + b_o) ===
-    let x_io = graph.new_mat_mul_node(input, w_io, Some(&format!("{}_x_io", prefix)))?;
-    let h_ho = graph.new_mat_mul_node(h_prev, w_ho, Some(&format!("{}_h_ho", prefix)))?;
-    let b_o_broadcast = graph.new_mat_mul_node(ones, b_o, Some(&format!("{}_b_o_bc", prefix)))?;
+    let x_io = graph.new_mat_mul_node(input, w_io, Some(&format!("{prefix}_x_io")))?;
+    let h_ho = graph.new_mat_mul_node(h_prev, w_ho, Some(&format!("{prefix}_h_ho")))?;
+    let b_o_broadcast = graph.new_mat_mul_node(ones, b_o, Some(&format!("{prefix}_b_o_bc")))?;
     let pre_o = graph.new_add_node(
         &[x_io, h_ho, b_o_broadcast],
-        Some(&format!("{}_pre_o", prefix)),
+        Some(&format!("{prefix}_pre_o")),
     )?;
-    let o_gate = graph.new_sigmoid_node(pre_o, Some(&format!("{}_o_gate", prefix)))?;
+    let o_gate = graph.new_sigmoid_node(pre_o, Some(&format!("{prefix}_o_gate")))?;
 
     // === 细胞状态更新: c_t = f_t ⊙ c_prev + i_t ⊙ g_t ===
-    let f_c = graph.new_multiply_node(f_gate, c_prev, Some(&format!("{}_f_c", prefix)))?;
-    let i_g = graph.new_multiply_node(i_gate, g_gate, Some(&format!("{}_i_g", prefix)))?;
-    let cell = graph.new_add_node(&[f_c, i_g], Some(&format!("{}_c", prefix)))?;
+    let f_c = graph.new_multiply_node(f_gate, c_prev, Some(&format!("{prefix}_f_c")))?;
+    let i_g = graph.new_multiply_node(i_gate, g_gate, Some(&format!("{prefix}_i_g")))?;
+    let cell = graph.new_add_node(&[f_c, i_g], Some(&format!("{prefix}_c")))?;
 
     // === 隐藏状态更新: h_t = o_t ⊙ tanh(c_t) ===
-    let tanh_c = graph.new_tanh_node(cell, Some(&format!("{}_tanh_c", prefix)))?;
-    let hidden = graph.new_multiply_node(o_gate, tanh_c, Some(&format!("{}_h", prefix)))?;
+    let tanh_c = graph.new_tanh_node(cell, Some(&format!("{prefix}_tanh_c")))?;
+    let hidden = graph.new_multiply_node(o_gate, tanh_c, Some(&format!("{prefix}_h")))?;
 
     // === 建立循环连接 ===
     graph.connect_recurrent(hidden, h_prev)?;
@@ -201,7 +185,7 @@ pub fn lstm(
     graph.register_layer_group(
         prefix,
         "LSTM",
-        &format!("{}→{}", input_size, hidden_size),
+        &format!("{input_size}→{hidden_size}"),
         vec![
             // 参数节点
             w_ii,

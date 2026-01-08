@@ -12,8 +12,7 @@ pub(crate) struct Tanh {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
-    grad: Option<Tensor>, // Batch 模式的梯度
+    grad: Option<Tensor>,
     shape: Vec<usize>,
 }
 
@@ -32,7 +31,6 @@ impl Tanh {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape: parents[0].value_expected_shape().to_vec(),
         })
@@ -80,37 +78,6 @@ impl TraitNode for Tanh {
         self.value.as_ref()
     }
 
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        // tanh 的导数: d(tanh(x))/dx = 1 - tanh²(x)
-        // 由于是逐元素操作，雅可比矩阵是对角矩阵
-        let value = self.value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}没有值。不该触及本错误，否则说明crate代码有问题",
-                self.display_node()
-            ))
-        })?;
-
-        // 计算 1 - tanh²(x)，并转换为 Jacobian 对角矩阵
-        let tanh_squared = value * value;
-        let derivative = Tensor::ones(value.shape()) - tanh_squared;
-        Ok(derivative.jacobi_diag())
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
-
     fn calc_grad_to_parent(
         &self,
         _target_parent: &NodeHandle,
@@ -119,10 +86,7 @@ impl TraitNode for Tanh {
     ) -> Result<Tensor, GraphError> {
         // Tanh 的梯度: upstream_grad * (1 - tanh²(x))
         let value = self.value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}没有值，无法计算梯度",
-                self.display_node()
-            ))
+            GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
         // 计算 1 - tanh²(x)（逐元素）

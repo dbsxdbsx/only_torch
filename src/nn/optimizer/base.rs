@@ -7,35 +7,22 @@
  */
 
 use crate::nn::{Graph, GraphError, NodeId};
-use crate::tensor::Tensor;
-use std::collections::HashMap;
 
-/// 优化器核心trait
+/// 优化器核心 trait
 pub trait Optimizer {
-    // ========== 单样本模式（Jacobi-based）==========
-
-    /// 执行一步训练：前向传播 + 反向传播 + 梯度累积
-    fn one_step(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError>;
-
-    /// 更新参数（执行具体的优化算法）
-    fn update(&mut self, graph: &mut Graph) -> Result<(), GraphError>;
-
-    // ========== Batch 模式（Gradient-based）==========
-
-    /// Batch 模式的一步训练：batch 前向传播 + batch 反向传播
+    /// 参数更新（使用已计算的梯度）
     ///
-    /// 与单样本模式不同，batch 模式下：
-    /// 1. 输入节点的 value 应包含 batch 维度
-    /// 2. 梯度在 backward_batch 中已经对 batch 求平均
-    /// 3. 不需要额外的梯度累积
-    fn one_step_batch(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError>;
-
-    /// Batch 模式的参数更新
+    /// `PyTorch` 风格训练循环：
+    /// ```ignore
+    /// optimizer.zero_grad();      // 或 graph.zero_grad()
+    /// graph.forward(loss)?;
+    /// graph.backward(loss)?;
+    /// optimizer.step(&mut graph)?; // ← 只更新参数，不做 forward/backward
+    /// ```
     ///
-    /// 使用 batch backward 计算的梯度更新参数
-    fn update_batch(&mut self, graph: &mut Graph) -> Result<(), GraphError>;
-
-    // ========== 通用方法 ==========
+    /// 此方法直接使用节点的 `.grad` 进行参数更新，
+    /// 不区分单样本和批量（API 已统一）。
+    fn step(&mut self, graph: &mut Graph) -> Result<(), GraphError>;
 
     /// 重置累积状态
     fn reset(&mut self);
@@ -47,72 +34,10 @@ pub trait Optimizer {
     fn set_learning_rate(&mut self, lr: f32);
 }
 
-/// 梯度累积器（内部实现，不对外暴露）
-pub(crate) struct GradientAccumulator {
-    /// 累积的梯度：NodeId -> 累积梯度
-    accumulated_gradients: HashMap<NodeId, Tensor>,
-    /// 累积的样本数量
-    sample_count: usize,
-}
-
-impl GradientAccumulator {
-    /// 创建新的梯度累积器
-    pub(crate) fn new() -> Self {
-        Self {
-            accumulated_gradients: HashMap::new(),
-            sample_count: 0,
-        }
-    }
-
-    /// 累积单个样本的梯度
-    pub(crate) fn accumulate(
-        &mut self,
-        node_id: NodeId,
-        gradient: &Tensor,
-    ) -> Result<(), GraphError> {
-        if let Some(existing_gradient) = self.accumulated_gradients.get_mut(&node_id) {
-            *existing_gradient += gradient;
-        } else {
-            self.accumulated_gradients.insert(node_id, gradient.clone());
-        }
-        Ok(())
-    }
-
-    /// 增加样本计数
-    pub(crate) const fn increment_sample_count(&mut self) {
-        self.sample_count += 1;
-    }
-
-    /// 获取平均梯度
-    pub(crate) fn get_average_gradient(&self, node_id: NodeId) -> Option<Tensor> {
-        if self.sample_count == 0 {
-            return None;
-        }
-
-        self.accumulated_gradients
-            .get(&node_id)
-            .map(|gradient| gradient / (self.sample_count as f32))
-    }
-
-    /// 清除累积状态
-    pub(crate) fn clear(&mut self) {
-        self.accumulated_gradients.clear();
-        self.sample_count = 0;
-    }
-
-    /// 获取累积的样本数量
-    #[allow(dead_code)]
-    pub(crate) const fn sample_count(&self) -> usize {
-        self.sample_count
-    }
-}
-
 /// 优化器状态管理（内部实现，不对外暴露）
 pub(crate) struct OptimizerState {
-    /// 可训练参数的节点ID列表
+    /// 可训练参数的节点 ID 列表
     trainable_nodes: Vec<NodeId>,
-    /// 梯度累积器
-    gradient_accumulator: GradientAccumulator,
     /// 学习率
     learning_rate: f32,
 }
@@ -120,12 +45,9 @@ pub(crate) struct OptimizerState {
 impl OptimizerState {
     /// 创建新的优化器状态（自动获取图中所有可训练节点）
     pub(crate) fn new(graph: &Graph, learning_rate: f32) -> Result<Self, GraphError> {
-        // 获取所有可训练的参数节点
         let trainable_nodes = graph.get_trainable_nodes();
-
         Ok(Self {
             trainable_nodes,
-            gradient_accumulator: GradientAccumulator::new(),
             learning_rate,
         })
     }
@@ -136,10 +58,9 @@ impl OptimizerState {
     /// - GAN 训练（G 和 D 用不同优化器）
     /// - 迁移学习（冻结部分层）
     /// - 分层学习率
-    pub(crate) fn with_params(params: Vec<NodeId>, learning_rate: f32) -> Self {
+    pub(crate) const fn with_params(params: Vec<NodeId>, learning_rate: f32) -> Self {
         Self {
             trainable_nodes: params,
-            gradient_accumulator: GradientAccumulator::new(),
             learning_rate,
         }
     }
@@ -147,17 +68,6 @@ impl OptimizerState {
     /// 获取可训练节点列表
     pub(crate) fn trainable_nodes(&self) -> &[NodeId] {
         &self.trainable_nodes
-    }
-
-    /// 获取梯度累积器的可变引用
-    #[allow(dead_code)]
-    pub(crate) const fn gradient_accumulator_mut(&mut self) -> &mut GradientAccumulator {
-        &mut self.gradient_accumulator
-    }
-
-    /// 获取梯度累积器的不可变引用
-    pub(crate) const fn gradient_accumulator(&self) -> &GradientAccumulator {
-        &self.gradient_accumulator
     }
 
     /// 获取学习率
@@ -168,73 +78,5 @@ impl OptimizerState {
     /// 设置学习率
     pub(crate) const fn set_learning_rate(&mut self, lr: f32) {
         self.learning_rate = lr;
-    }
-
-    /// 执行前向反向传播并累积梯度
-    pub(crate) fn forward_backward_accumulate(
-        &mut self,
-        graph: &mut Graph,
-        target_node: NodeId,
-    ) -> Result<(), GraphError> {
-        // 清除计算图中所有节点的雅可比矩阵
-        graph.clear_jacobi()?;
-
-        // 前向传播计算目标节点
-        graph.forward_node(target_node)?;
-
-        // 反向传播计算雅可比矩阵
-        // 注意：这里使用 retain_graph=true，以便用户在 one_step() 后仍能访问 loss 值
-        // 这符合典型的训练循环模式：forward -> backward -> log loss -> update
-        graph.backward_nodes_ex(&self.trainable_nodes, target_node, true)?;
-
-        // 累积梯度
-        for &node_id in &self.trainable_nodes {
-            if let Some(gradient) = graph.get_node_grad(node_id)? {
-                self.gradient_accumulator.accumulate(node_id, &gradient)?;
-            }
-        }
-
-        // 增加样本计数
-        self.gradient_accumulator.increment_sample_count();
-
-        Ok(())
-    }
-
-    /// 重置累积状态
-    pub(crate) fn reset(&mut self) {
-        self.gradient_accumulator.clear();
-    }
-
-    /// 收集 batch 模式下所有 trainable_nodes 的梯度
-    ///
-    /// 如果任何 trainable_node 缺少梯度，会 panic 并报错。
-    /// 这确保了 `backward_batch` 的 `target_params` 与优化器的参数范围一致。
-    ///
-    /// # Returns
-    /// 返回 (NodeId, Tensor) 的列表，包含所有参数及其梯度
-    ///
-    /// # Panics
-    /// 如果某个 trainable_node 没有梯度
-    pub(crate) fn collect_batch_gradients(
-        &self,
-        graph: &Graph,
-    ) -> Result<Vec<(NodeId, crate::tensor::Tensor)>, GraphError> {
-        let mut gradients = Vec::with_capacity(self.trainable_nodes.len());
-
-        for &node_id in &self.trainable_nodes {
-            let grad = graph.get_node_grad_batch(node_id)?;
-            match grad {
-                Some(g) => gradients.push((node_id, g.clone())),
-                None => {
-                    panic!(
-                        "[only_torch] update_batch 错误：参数 {:?} 在 optimizer.trainable_nodes 中，\
-                        但没有梯度。请确保 backward_batch 的 target_params 包含所有需要更新的参数。",
-                        node_id
-                    );
-                }
-            }
-        }
-
-        Ok(gradients)
     }
 }

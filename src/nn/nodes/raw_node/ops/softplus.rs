@@ -3,12 +3,12 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
 
-/// SoftPlus 激活函数节点
+/// `SoftPlus` 激活函数节点
 ///
 /// forward: f(x) = ln(1 + e^x)
 /// backward: f'(x) = sigmoid(x) = 1 / (1 + e^(-x)) = 1 - exp(-softplus(x))
 ///
-/// SoftPlus 是 ReLU 的平滑近似，处处可微，适用于：
+/// `SoftPlus` 是 `ReLU` 的平滑近似，处处可微，适用于：
 /// - 需要正值输出的场景（如方差/标准差预测）
 /// - 需要平滑梯度的优化场景
 /// - 概率模型（VAE）、连续动作空间强化学习（SAC/PPO）
@@ -17,8 +17,7 @@ pub(crate) struct SoftPlus {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
-    grad: Option<Tensor>, // Batch 模式的梯度
+    grad: Option<Tensor>,
     shape: Vec<usize>,
 }
 
@@ -37,13 +36,12 @@ impl SoftPlus {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape: parents[0].value_expected_shape().to_vec(),
         })
     }
 
-    /// 数值稳定的 SoftPlus 计算
+    /// 数值稳定的 `SoftPlus` 计算
     ///
     /// 对于大正数 x，直接使用 ln(1 + e^x) 会导致 e^x 溢出
     /// 使用恒等变换: softplus(x) = x + ln(1 + e^(-x)) 当 x > 0
@@ -58,10 +56,10 @@ impl SoftPlus {
             |val| {
                 if val > 0.0 {
                     // 0 < x <= threshold: x + ln(1 + e^(-x))
-                    val + (1.0 + (-val).exp()).ln()
+                    val + (-val).exp().ln_1p()
                 } else {
                     // x <= 0: ln(1 + e^x)
-                    (1.0 + val.exp()).ln()
+                    val.exp().ln_1p()
                 }
             },
         )
@@ -126,37 +124,6 @@ impl TraitNode for SoftPlus {
     fn value(&self) -> Option<&Tensor> {
         self.value.as_ref()
     }
-
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        // SoftPlus 的导数: d(softplus(x))/dx = sigmoid(x) = 1 - exp(-softplus(x))
-        // 由于是逐元素操作，雅可比矩阵是对角矩阵
-        //
-        // 重要：使用 value（输出）计算 sigmoid，而非 parent_value（输入）
-        // 这对 BPTT 很关键，因为 BPTT 只恢复 value，不恢复 parent_value
-        // 数学推导: y = softplus(x) = ln(1 + e^x) → sigmoid(x) = 1 - exp(-y)
-        let value = self.value().ok_or_else(|| {
-            GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
-        })?;
-
-        // 计算 sigmoid(x) = 1 - exp(-softplus(x))，并转换为 Jacobian 对角矩阵
-        let derivative = Self::sigmoid_from_softplus(value);
-        Ok(derivative.jacobi_diag())
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
 
     fn calc_grad_to_parent(
         &self,

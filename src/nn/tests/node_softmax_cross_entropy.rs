@@ -58,7 +58,7 @@ fn test_softmax_cross_entropy_forward_simple() {
         .unwrap();
 
     // 前向传播
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     // 验证损失值
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
@@ -94,7 +94,7 @@ fn test_softmax_cross_entropy_forward_uniform() {
         )
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     let expected_loss = Tensor::new(&[1.3862944], &[1, 1]);
@@ -106,12 +106,9 @@ fn test_softmax_cross_entropy_backward_simple() {
     // PyTorch 验证值：
     // logits = [1.0, 2.0, 3.0], labels = [0, 0, 1]
     // grad = [0.09003057, 0.24472848, -0.33475903]
-    //
-    // 使用 Parameter 节点而非 Input 节点，因为只有 Parameter 节点可以计算梯度
 
     let mut graph = Graph::new();
 
-    // 使用 Parameter 作为 logits，这样可以计算梯度
     let logits_id = graph.new_parameter_node(&[1, 3], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 3], Some("labels")).unwrap();
     let loss_id = graph
@@ -126,18 +123,18 @@ fn test_softmax_cross_entropy_backward_simple() {
         .unwrap();
 
     // 前向传播
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     // 反向传播
-    graph.backward_nodes(&[logits_id], loss_id).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
 
-    // 验证 logits 的雅可比
-    let jacobi = graph.get_node_jacobi(logits_id).unwrap().unwrap();
-    // 雅可比形状应为 [1, 3]，因为损失是 [1,1]，logits 是 [1, 3]
-    assert_eq!(jacobi.shape(), &[1, 3]);
+    // 验证 logits 的梯度
+    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
+    assert_eq!(grad.shape(), &[1, 3]);
 
     let expected_grad = Tensor::new(&[0.09003057, 0.24472848, -0.33475903], &[1, 3]);
-    assert_abs_diff_eq!(jacobi, &expected_grad, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
 }
 
 #[test]
@@ -148,9 +145,7 @@ fn test_softmax_cross_entropy_backward_uniform() {
 
     let mut graph = Graph::new();
 
-    let logits_id = graph
-        .new_parameter_node(&[1, 4], Some("logits"))
-        .unwrap();
+    let logits_id = graph.new_parameter_node(&[1, 4], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 4], Some("labels")).unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
@@ -169,12 +164,13 @@ fn test_softmax_cross_entropy_backward_uniform() {
         )
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
-    graph.backward_nodes(&[logits_id], loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
 
-    let jacobi = graph.get_node_jacobi(logits_id).unwrap().unwrap();
+    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
     let expected_grad = Tensor::new(&[0.25, -0.75, 0.25, 0.25], &[1, 4]);
-    assert_abs_diff_eq!(jacobi, &expected_grad, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
 }
 
 #[test]
@@ -187,9 +183,7 @@ fn test_softmax_cross_entropy_10_classes() {
 
     let mut graph = Graph::new();
 
-    let logits_id = graph
-        .new_parameter_node(&[1, 10], Some("logits"))
-        .unwrap();
+    let logits_id = graph.new_parameter_node(&[1, 10], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 10], Some("labels")).unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
@@ -211,7 +205,7 @@ fn test_softmax_cross_entropy_10_classes() {
         .set_node_value(labels_id, Some(&Tensor::new(&labels, &[1, 10])))
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     // 验证损失
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
@@ -219,8 +213,9 @@ fn test_softmax_cross_entropy_10_classes() {
     assert_abs_diff_eq!(loss, &expected_loss, epsilon = 1e-5);
 
     // 验证梯度
-    graph.backward_nodes(&[logits_id], loss_id).unwrap();
-    let jacobi = graph.get_node_jacobi(logits_id).unwrap().unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
+    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
 
     #[rustfmt::skip]
     let expected_grad = Tensor::new(
@@ -228,7 +223,7 @@ fn test_softmax_cross_entropy_10_classes() {
           0.0147452, 0.10895311, 0.0660834, 0.02431072, 0.1796333],
         &[1, 10]
     );
-    assert_abs_diff_eq!(jacobi, &expected_grad, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
 }
 
 #[test]
@@ -275,13 +270,13 @@ fn test_softmax_cross_entropy_with_linear_layer() {
         .unwrap();
 
     // 前向传播
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     // 反向传播到权重
-    graph.backward_nodes(&[weights_id], loss_id).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
 
     // 验证权重有梯度
-    let weights_jacobi = graph.get_node_jacobi(weights_id).unwrap().unwrap();
-    assert_eq!(weights_jacobi.shape()[0], 1); // 损失是标量
-    assert_eq!(weights_jacobi.shape()[1], 6); // 权重有 6 个元素
+    let weights_grad = graph.get_node(weights_id).unwrap().grad().unwrap();
+    assert_eq!(weights_grad.shape(), &[2, 3]); // 权重形状 [2, 3]
 }

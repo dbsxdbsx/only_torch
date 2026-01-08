@@ -66,12 +66,12 @@ fn test_adaline() -> Result<(), GraphError> {
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
     graph
-        .save_visualization(&format!("{output_dir}/adaline"), None)
+        .save_visualization(format!("{output_dir}/adaline"), None)
         .unwrap();
     graph
-        .save_summary(&format!("{output_dir}/adaline_summary.md"))
+        .save_summary(format!("{output_dir}/adaline_summary.md"))
         .unwrap();
-    println!("网络结构已保存: {}/adaline.png", output_dir);
+    println!("网络结构已保存: {output_dir}/adaline.png");
 
     // 学习率
     let learning_rate = 0.0001;
@@ -97,10 +97,10 @@ fn test_adaline() -> Result<(), GraphError> {
             graph.set_node_value(label, Some(&l))?;
 
             // 在loss节点上执行前向传播，计算损失值
-            graph.forward_node(loss)?;
+            graph.forward(loss)?;
 
             // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
-            graph.backward_nodes(&[w, b], loss)?;
+            graph.backward(loss)?;
 
             // 更新参数节点w
             let w_value = graph.get_node_value(w)?.unwrap();
@@ -113,7 +113,7 @@ fn test_adaline() -> Result<(), GraphError> {
             graph.set_node_value(b, Some(&(b_value - learning_rate * b_grad)))?;
 
             // 手动清除雅可比矩阵，为下次迭代做准备
-            graph.clear_jacobi()?;
+            graph.zero_grad()?;
         }
 
         // 每个epoch结束后评价模型的正确率
@@ -125,7 +125,7 @@ fn test_adaline() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(&features))?;
 
             // 在模型的predict节点上执行前向传播
-            graph.forward_node(predict)?;
+            graph.forward(predict)?;
             let v = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
             pred_vec.push(v.get_data_number().unwrap()); // 模型的预测结果：1男，-1女（Sign直接输出）
         }

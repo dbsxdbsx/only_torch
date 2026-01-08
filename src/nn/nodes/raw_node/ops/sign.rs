@@ -8,7 +8,7 @@ pub(crate) struct Sign {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
+    grad: Option<Tensor>,
     shape: Vec<usize>,
 }
 
@@ -27,7 +27,7 @@ impl Sign {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
+            grad: None,
             shape: parents[0].value_expected_shape().to_vec(),
         })
     }
@@ -73,30 +73,22 @@ impl TraitNode for Sign {
         self.value.as_ref()
     }
 
-    fn calc_jacobi_to_a_parent(
+    /// Sign 函数不可微，VJP 返回零向量（梯度不流经此节点）
+    fn calc_grad_to_parent(
         &self,
         _target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // Sign函数的导数在所有点都是0（与Step一样不可微）
-        let value = self.value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}没有值。不该触及本错误，否则说明crate代码有问题",
-                self.display_node()
-            ))
-        })?;
-        let size = value.size();
-
-        // 创建一个size x size的方阵，所有元素都是0
-        Ok(Tensor::zeros(&[size, size]))
+        Ok(Tensor::zeros(upstream_grad.shape()))
     }
 
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
     }
 
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
         Ok(())
     }
 
@@ -109,4 +101,3 @@ impl TraitNode for Sign {
         self.value = value.cloned();
     }
 }
-

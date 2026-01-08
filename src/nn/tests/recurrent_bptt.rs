@@ -203,7 +203,7 @@ fn test_bptt_basic_gradient() {
     graph.backward_through_time(&[w_out], loss).unwrap();
 
     // 获取梯度
-    let grad = graph.get_node_jacobi(w_out).unwrap().unwrap();
+    let grad = graph.get_node_grad(w_out).unwrap().unwrap();
     // loss = (w * h - t)^2 = (0.5 * 2 - 1)^2 = 0
     // d(loss)/d(w) = 2 * (w * h - t) * h = 2 * (1 - 1) * 2 = 0
     assert!(
@@ -229,7 +229,7 @@ fn test_bptt_nonzero_gradient() {
     graph.backward_through_time(&[w_out], loss).unwrap();
 
     // 获取梯度
-    let grad = graph.get_node_jacobi(w_out).unwrap().unwrap();
+    let grad = graph.get_node_grad(w_out).unwrap().unwrap();
     // loss = (w * h - t)^2 = (0.5 * 2 - 2)^2 = 1
     // d(loss)/d(w) = 2 * (w * h - t) * h = 2 * (1 - 2) * 2 = -4
     assert!(
@@ -260,7 +260,7 @@ fn test_bptt_multi_step_gradient_accumulation() {
     graph.backward_through_time(&[w_out], loss).unwrap();
 
     // 验证梯度存在且非零（具体值在 IT-1 用 PyTorch 验证）
-    let grad = graph.get_node_jacobi(w_out).unwrap().unwrap();
+    let grad = graph.get_node_grad(w_out).unwrap().unwrap();
     assert!(grad.data_as_slice()[0].abs() > 1e-6, "梯度应非零");
     assert!(
         grad.data_as_slice()[0] < 0.0,
@@ -291,7 +291,7 @@ fn test_tbptt_truncation() {
         .unwrap();
 
     // 验证梯度存在（具体值依赖于网络，这里只验证机制工作）
-    let grad = graph.get_node_jacobi(w_out).unwrap();
+    let grad = graph.get_node_grad(w_out).unwrap();
     assert!(grad.is_some(), "截断 BPTT 后应有梯度");
 }
 
@@ -324,8 +324,8 @@ fn test_tbptt_full_vs_none() {
         .unwrap();
 
     // 梯度应该相同
-    let grad1 = graph1.get_node_jacobi(w_out1).unwrap().unwrap();
-    let grad2 = graph2.get_node_jacobi(w_out2).unwrap().unwrap();
+    let grad1 = graph1.get_node_grad(w_out1).unwrap().unwrap();
+    let grad2 = graph2.get_node_grad(w_out2).unwrap().unwrap();
 
     assert!(
         (grad1.data_as_slice()[0] - grad2.data_as_slice()[0]).abs() < 1e-6,
@@ -415,7 +415,7 @@ fn test_bptt_gradient_direction_and_magnitude() {
     // BPTT
     graph.backward_through_time(&[w_out], loss).unwrap();
 
-    let grad = graph.get_node_jacobi(w_out).unwrap().unwrap();
+    let grad = graph.get_node_grad(w_out).unwrap().unwrap();
 
     // 1. 梯度应该为负（output < target，需要增大 w）
     assert!(
@@ -453,11 +453,8 @@ fn test_bptt_long_sequence() {
     // BPTT 应该能处理
     graph.backward_through_time(&[w_out], loss).unwrap();
 
-    let grad = graph.get_node_jacobi(w_out).unwrap();
-    assert!(
-        grad.is_some(),
-        "长序列 BPTT 后应有梯度"
-    );
+    let grad = graph.get_node_grad(w_out).unwrap();
+    assert!(grad.is_some(), "长序列 BPTT 后应有梯度");
 }
 
 /// 长序列 BPTT 测试（50+ 步），观察梯度范数变化
@@ -534,8 +531,8 @@ fn test_bptt_very_long_sequence_gradient_norm() {
     fn grad_norm(graph: &Graph, params: &[NodeId]) -> f32 {
         let mut sum_sq = 0.0f32;
         for &p in params {
-            if let Ok(Some(jacobi)) = graph.get_node_jacobi(p) {
-                for &v in jacobi.data_as_slice() {
+            if let Ok(Some(param_grad)) = graph.get_node_grad(p) {
+                for &v in param_grad.data_as_slice() {
                     sum_sq += v * v;
                 }
             }
@@ -566,12 +563,12 @@ fn test_bptt_very_long_sequence_gradient_norm() {
 
         // 获取梯度
         let grad_w_ih = graph
-            .get_node_jacobi(w_ih)
+            .get_node_grad(w_ih)
             .unwrap()
             .map(|j| j.data_as_slice()[0])
             .unwrap_or(0.0);
         let grad_w_hh = graph
-            .get_node_jacobi(w_hh)
+            .get_node_grad(w_hh)
             .unwrap()
             .map(|j| j.data_as_slice()[0])
             .unwrap_or(0.0);
@@ -663,7 +660,7 @@ fn test_bptt_gradient_stability_vs_w_hh() {
         graph.backward_through_time(&[w_hh], loss).unwrap();
 
         let grad = graph
-            .get_node_jacobi(w_hh)
+            .get_node_grad(w_hh)
             .unwrap()
             .map(|j| j.data_as_slice()[0])
             .unwrap_or(0.0);
@@ -728,8 +725,8 @@ fn test_tbptt_vs_full_bptt_different_gradients() {
         .backward_through_time_truncated(&[w_rec2], loss2, Some(3))
         .unwrap();
 
-    let grad1 = graph1.get_node_jacobi(w_rec1).unwrap().unwrap();
-    let grad2 = graph2.get_node_jacobi(w_rec2).unwrap().unwrap();
+    let grad1 = graph1.get_node_grad(w_rec1).unwrap().unwrap();
+    let grad2 = graph2.get_node_grad(w_rec2).unwrap().unwrap();
 
     // 循环权重的梯度应该不同（TBPTT 只反向传播了部分时间步的贡献）
     // 完整 BPTT 会累积来自所有 10 个时间步的梯度贡献
@@ -821,7 +818,7 @@ fn test_vjp_large_batch_hidden() -> Result<(), GraphError> {
         // 简单 SGD 更新
         let lr = 0.01;
         for &param in &params {
-            if let Some(grad) = graph.get_node_jacobi(param)? {
+            if let Some(grad) = graph.get_node_grad(param)? {
                 let value = graph.get_node_value(param)?.unwrap();
                 let grad_reshaped = grad.reshape(value.shape());
                 let new_value = value - &grad_reshaped * lr;
@@ -830,7 +827,7 @@ fn test_vjp_large_batch_hidden() -> Result<(), GraphError> {
         }
 
         // 清理
-        graph.clear_jacobi()?;
+        graph.zero_grad()?;
     }
 
     let elapsed = start.elapsed();

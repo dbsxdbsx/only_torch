@@ -77,12 +77,8 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
     // 一个mini batch的样本的损失函数
     // 使用Multiply节点计算逐元素乘法：label * output
     let label_output = graph.new_multiply_node(label, output, Some("label_output"))?;
+    // PerceptionLoss 已经输出标量 [1,1]（对整个 batch 自动取平均）
     let loss = graph.new_perception_loss_node(label_output, Some("loss"))?;
-
-    // 一个mini batch的平均损失
-    // B是[1, batch_size]的权重向量，值为1/batch_size
-    let avg_weight = graph.new_input_node(&[1, batch_size], Some("avg_weight"))?;
-    let mean_loss = graph.new_mat_mul_node(avg_weight, loss, Some("mean_loss"))?;
 
     // 学习率
     let learning_rate = 0.0001;
@@ -101,11 +97,6 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
     let ones_data = vec![1.0; batch_size];
     let ones_tensor = Tensor::new(&ones_data, &[batch_size, 1]);
     graph.set_node_value(ones, Some(&ones_tensor))?;
-
-    // 设置平均权重的值
-    let avg_weight_data: Vec<f32> = vec![1.0 / batch_size as f32; batch_size];
-    let avg_weight_tensor = Tensor::new(&avg_weight_data, &[1, batch_size]);
-    graph.set_node_value(avg_weight, Some(&avg_weight_tensor))?;
 
     // 训练执行最多max_epochs个epoch
     for epoch in 0..max_epochs {
@@ -142,11 +133,11 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(&features))?;
             graph.set_node_value(label, Some(&labels))?;
 
-            // 使用优化器执行一步训练（对mean_loss进行反向传播）
-            optimizer.one_step(&mut graph, mean_loss)?;
-
-            // 每个batch后立即更新参数（模拟MatrixSlow的行为）
-            optimizer.update(&mut graph)?;
+            // 使用新 API 执行一步训练（PyTorch 风格）
+            graph.zero_grad()?;
+            graph.forward(loss)?;
+            graph.backward(loss)?;
+            optimizer.step(&mut graph)?;
         }
 
         // 每个epoch结束后评价模型的正确率
@@ -176,10 +167,10 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(&features))?;
 
             // 前向传播计算output（bias_broadcasted通过ScalarMultiply节点自动计算）
-            graph.forward_node(output)?;
+            graph.forward(output)?;
 
             // 在模型的predict节点上执行前向传播
-            graph.forward_node(predict)?;
+            graph.forward(predict)?;
             let predict_value = graph.get_node_value(predict)?.unwrap();
 
             // 收集当前批次的预测结果

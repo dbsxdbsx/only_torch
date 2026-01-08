@@ -27,7 +27,7 @@ fn test_reshape_basic_2x3_to_3x2() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&input_data))?;
 
     // 前向传播
-    graph.forward_node(reshaped)?;
+    graph.forward(reshaped)?;
 
     // 验证输出形状
     let output = graph.get_node_value(reshaped)?.unwrap();
@@ -52,7 +52,7 @@ fn test_reshape_preserves_row_major_order() -> Result<(), GraphError> {
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 6]);
     graph.set_node_value(input, Some(&input_data))?;
-    graph.forward_node(reshaped)?;
+    graph.forward(reshaped)?;
 
     let output = graph.get_node_value(reshaped)?.unwrap();
     let expected = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
@@ -71,7 +71,7 @@ fn test_reshape_to_column_vector() -> Result<(), GraphError> {
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
     graph.set_node_value(input, Some(&input_data))?;
-    graph.forward_node(reshaped)?;
+    graph.forward(reshaped)?;
 
     let output = graph.get_node_value(reshaped)?.unwrap();
     assert_eq!(output.shape(), &[6, 1]);
@@ -93,7 +93,7 @@ fn test_reshape_to_row_vector() -> Result<(), GraphError> {
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
     graph.set_node_value(input, Some(&input_data))?;
-    graph.forward_node(reshaped)?;
+    graph.forward(reshaped)?;
 
     let output = graph.get_node_value(reshaped)?.unwrap();
     assert_eq!(output.shape(), &[1, 6]);
@@ -104,75 +104,102 @@ fn test_reshape_to_row_vector() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== Jacobi 测试（单样本模式）====================
+// ==================== VJP单元测试（直接调用 calc_grad_to_parent）====================
 
-/// 测试 Reshape 的 Jacobi 矩阵是单位矩阵
+/// 测试 Reshape VJP（梯度直接透传）
+///
+/// 对于 y = reshape(x)，有 dy/dx = I（单位变换）
+/// VJP: grad_to_input = reshape(upstream_grad, input_shape)
 #[test]
-fn test_reshape_jacobi_is_identity() -> Result<(), GraphError> {
+fn test_reshape_backward_vjp() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
-    // 使用 Parameter 节点，因为 Input 节点不能有 Jacobi
-    let parent = graph.new_parameter_node(&[2, 3], Some("parent"))?;
-    let reshaped = graph.new_reshape_node(parent, &[3, 2], Some("reshaped"))?;
+    let input_id = graph.new_parameter_node(&[2, 3], Some("input"))?;
+    let reshape_id = graph.new_reshape_node(input_id, &[3, 2], Some("reshaped"))?;
 
-    let parent_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    graph.set_node_value(parent, Some(&parent_data))?;
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    graph.set_node_value(input_id, Some(&input_data))?;
+    graph.forward(reshape_id)?;
+
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[3, 2]);
+    let reshape_node = graph.get_node(reshape_id)?;
+    let input_node = graph.get_node(input_id)?;
+    let grad = reshape_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    // Reshape 的梯度只是形状变化，数值直接透传
+    assert_eq!(grad.shape(), &[2, 3]);
+    assert_eq!(&grad, &Tensor::ones(&[2, 3]));
+
+    Ok(())
+}
+
+/// 测试 Reshape VJP（非单位上游梯度）
+#[test]
+fn test_reshape_backward_vjp_non_unit_upstream() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let input_id = graph.new_parameter_node(&[2, 3], Some("input"))?;
+    let reshape_id = graph.new_reshape_node(input_id, &[3, 2], Some("reshaped"))?;
+
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    graph.set_node_value(input_id, Some(&input_data))?;
+    graph.forward(reshape_id)?;
+
+    // 非单位上游梯度
+    let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    let reshape_node = graph.get_node(reshape_id)?;
+    let input_node = graph.get_node(input_id)?;
+    let grad = reshape_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    // 梯度应该被 reshape 回输入形状，数值保持不变
+    assert_eq!(grad.shape(), &[2, 3]);
+    let expected = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    assert_eq!(&grad, &expected);
+
+    Ok(())
+}
+
+// ==================== 端到端反向传播测试（通过 graph.backward）====================
+
+/// 测试 Reshape 通过 graph.backward() 的端到端反向传播
+#[test]
+fn test_reshape_backward_e2e() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    // 创建计算图：output = sigmoid(reshape(input))
+    let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
+    let reshaped = graph.new_reshape_node(input, &[3, 2], Some("reshaped"))?;
+    let sigmoid = graph.new_sigmoid_node(reshaped, Some("sigmoid"))?;
+
+    // loss = MSE(sigmoid, target)
+    let target = graph.new_input_node(&[3, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(sigmoid, target, Some("loss"))?;
+
+    // 设置值
+    let input_data = Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6], &[2, 3]);
+    graph.set_node_value(input, Some(&input_data))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[3, 2])))?;
 
     // 前向传播
-    graph.forward_node(reshaped)?;
+    graph.forward(loss)?;
 
     // 反向传播
-    graph.backward_nodes(&[parent], reshaped)?;
+    graph.zero_grad()?;
+    let loss_returned = graph.backward(loss)?;
+    assert!(loss_returned > 0.0);
 
-    // 获取 Jacobi
-    let jacobi = graph.get_node_jacobi(parent)?.unwrap();
+    // 验证梯度存在且形状正确
+    let input_grad = graph.get_node(input)?.grad().expect("input 应有 grad");
+    assert_eq!(input_grad.shape(), &[2, 3]);
 
-    // 验证是单位矩阵 6x6
-    assert_eq!(jacobi.shape(), &[6, 6]);
-    let expected = Tensor::eyes(6);
-    assert_eq!(jacobi, &expected);
-
-    Ok(())
-}
-
-/// 测试复杂图中的 Jacobi：Parameter -> Reshape -> Sigmoid
-#[test]
-fn test_reshape_jacobi_in_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
-
-    // 使用 Parameter 节点，因为 Input 节点不能有 Jacobi
-    let parent = graph.new_parameter_node(&[2, 3], Some("parent"))?;
-    let reshaped = graph.new_reshape_node(parent, &[3, 2], Some("reshaped"))?;
-    let output = graph.new_sigmoid_node(reshaped, Some("output"))?;
-
-    let parent_data = Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6], &[2, 3]);
-    graph.set_node_value(parent, Some(&parent_data))?;
-
-    graph.forward_node(output)?;
-    // 使用 retain_graph=true 以便后续访问节点值
-    graph.backward_nodes_ex(&[parent], output, true)?;
-
-    // Jacobi 应该是 Sigmoid 导数的对角矩阵（因为 Reshape 的 Jacobi 是单位矩阵）
-    let jacobi = graph.get_node_jacobi(parent)?.unwrap();
-    assert_eq!(jacobi.shape(), &[6, 6]);
-
-    // 计算预期的 Sigmoid 导数
-    let sigmoid_out = graph.get_node_value(output)?.unwrap();
-    let one_minus_sigmoid = Tensor::ones(sigmoid_out.shape()) - sigmoid_out;
-    let sigmoid_deriv = sigmoid_out * &one_minus_sigmoid;
-
-    // 验证对角线元素
-    for i in 0..6 {
-        let row = i / 2;
-        let col = i % 2;
-        let expected_val = sigmoid_deriv[[row, col]];
-        assert_abs_diff_eq!(jacobi[[i, i]], expected_val, epsilon = 1e-6);
-    }
+    // Reshape 只改变形状不改变梯度值，所以梯度应该等于
+    // sigmoid'(x) * 2*(sigmoid(x)-target)/n，然后 reshape 回 [2,3]
+    // 验证梯度非零
+    assert!(input_grad.data_as_slice().iter().any(|&v| v.abs() > 1e-10));
 
     Ok(())
 }
-
-// ==================== Batch 模式测试 ====================
 
 /// 测试 Batch 模式的前向传播
 #[test]
@@ -182,14 +209,14 @@ fn test_reshape_batch_forward() -> Result<(), GraphError> {
 
     // 输入形状: [batch, 6]
     let input = graph.new_input_node(&[batch_size, 6], Some("input"))?;
-    // Reshape 到: [2, 12]（演示非 batch 维度的 reshape）
+    // Reshape 到: [2, 12]
     let reshaped = graph.new_reshape_node(input, &[2, 12], Some("reshaped"))?;
 
     // 创建 batch 数据
     let input_data = Tensor::normal(0.0, 1.0, &[batch_size, 6]);
     graph.set_node_value(input, Some(&input_data))?;
 
-    graph.forward_batch(reshaped)?;
+    graph.forward(reshaped)?;
 
     let output = graph.get_node_value(reshaped)?.unwrap();
     assert_eq!(output.shape(), &[2, 12]);
@@ -210,44 +237,42 @@ fn test_reshape_batch_forward() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Batch 模式的梯度传播
+// ==================== 梯度累积测试 ====================
+
+/// 测试 Reshape 梯度累积
 #[test]
-fn test_reshape_batch_gradient() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
-    let batch_size = 3;
-    let input_features = 6;
-    let output_features = 2;
+fn test_reshape_gradient_accumulation() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
 
-    // 网络: Input [3,6] -> Reshape [6,3] -> MatMul [6,3]@[3,2]=[6,2] -> Loss
-    let x = graph.new_input_node(&[batch_size, input_features], Some("x"))?;
-    let reshaped = graph.new_reshape_node(x, &[input_features, batch_size], Some("reshaped"))?;
+    let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
+    let reshaped = graph.new_reshape_node(input, &[3, 2], Some("reshaped"))?;
+    let sigmoid = graph.new_sigmoid_node(reshaped, Some("sigmoid"))?;
+    let target = graph.new_input_node(&[3, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(sigmoid, target, Some("loss"))?;
 
-    let w = graph.new_parameter_node(&[batch_size, output_features], Some("w"))?;
-    let y = graph.new_mat_mul_node(reshaped, w, Some("y"))?;
+    // 设置值
+    let input_data = Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6], &[2, 3]);
+    graph.set_node_value(input, Some(&input_data))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[3, 2])))?;
+    graph.forward(loss)?;
 
-    // 标签
-    let labels = graph.new_input_node(&[input_features, output_features], Some("labels"))?;
-    let loss = graph.new_softmax_cross_entropy_node(y, labels, Some("loss"))?;
+    // 第1次反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad_first = graph.get_node(input)?.grad().unwrap().clone();
 
-    // 设置输入
-    let x_data = Tensor::normal_seeded(0.0, 1.0, &[batch_size, input_features], 100);
-    let mut labels_data = Tensor::zeros(&[input_features, output_features]);
-    // 设置 one-hot 标签
-    for i in 0..input_features {
-        labels_data[[i, i % output_features]] = 1.0;
-    }
+    // 第2次反向传播（梯度累积）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_second = graph.get_node(input)?.grad().unwrap();
+    assert_eq!(grad_second, &(&grad_first * 2.0));
 
-    graph.set_node_value(x, Some(&x_data))?;
-    graph.set_node_value(labels, Some(&labels_data))?;
-
-    // Batch forward & backward
-    graph.forward_batch(loss)?;
-    graph.backward_batch(loss, None)?;
-
-    // 验证梯度存在且形状正确
-    let grad_w = graph.get_node_grad_batch(w)?;
-    assert!(grad_w.is_some());
-    assert_eq!(grad_w.unwrap().shape(), &[batch_size, output_features]);
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_after_clear = graph.get_node(input)?.grad().unwrap();
+    assert_eq!(grad_after_clear, &grad_first);
 
     Ok(())
 }
@@ -306,7 +331,7 @@ fn test_reshape_with_add() -> Result<(), GraphError> {
     graph.set_node_value(a, Some(&a_data))?;
     graph.set_node_value(b, Some(&b_data))?;
 
-    graph.forward_node(sum)?;
+    graph.forward(sum)?;
 
     let output = graph.get_node_value(sum)?.unwrap();
     // a reshape 后: [[1,2], [3,4], [5,6]]
@@ -322,7 +347,6 @@ fn test_reshape_with_add() -> Result<(), GraphError> {
 fn test_reshape_chain() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
-    // 使用 Parameter 节点进行 Jacobi 测试
     let parent = graph.new_parameter_node(&[2, 6], Some("parent"))?;
     let reshape1 = graph.new_reshape_node(parent, &[3, 4], Some("reshape1"))?;
     let reshape2 = graph.new_reshape_node(reshape1, &[4, 3], Some("reshape2"))?;
@@ -331,7 +355,7 @@ fn test_reshape_chain() -> Result<(), GraphError> {
     let parent_data = Tensor::normal_seeded(0.0, 1.0, &[2, 6], 42);
     graph.set_node_value(parent, Some(&parent_data))?;
 
-    graph.forward_node(reshape3)?;
+    graph.forward(reshape3)?;
 
     // 验证最终形状
     let output = graph.get_node_value(reshape3)?.unwrap();
@@ -350,14 +374,18 @@ fn test_reshape_chain() -> Result<(), GraphError> {
         );
     }
 
-    // 反向传播验证
-    graph.backward_nodes(&[parent], reshape3)?;
-    let jacobi = graph.get_node_jacobi(parent)?.unwrap();
+    // VJP 验证：连续 Reshape 的梯度仍然只是形状变化
+    let upstream_grad = Tensor::ones(&[6, 2]);
+    let reshape3_node = graph.get_node(reshape3)?;
+    let _parent_node = graph.get_node(parent)?;
 
-    // 连续 Reshape 的 Jacobi 仍然是单位矩阵
-    assert_eq!(jacobi.shape(), &[12, 12]);
-    let expected = Tensor::eyes(12);
-    assert_eq!(jacobi, &expected);
+    // 通过最后一个节点计算到第一个的梯度（中间链会自动传播）
+    // 由于是直接调用 calc_grad_to_parent，只能测试单步
+    let reshape2_node = graph.get_node(reshape2)?;
+    let grad_to_reshape2 =
+        reshape3_node.calc_grad_to_parent(reshape2_node, &upstream_grad, None)?;
+    assert_eq!(grad_to_reshape2.shape(), &[4, 3]);
+    assert_eq!(&grad_to_reshape2, &Tensor::ones(&[4, 3]));
 
     Ok(())
 }
@@ -398,15 +426,16 @@ fn test_reshape_as_flatten_in_mlp() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&labels_data))?;
 
     // 训练一步
-    graph.forward_batch(loss)?;
+    graph.forward(loss)?;
     let loss_val = graph.get_node_value(loss)?.unwrap()[[0, 0]];
     assert!(loss_val > 0.0, "Loss 应该为正数");
 
-    graph.backward_batch(loss, None)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
 
     // 验证梯度存在
-    assert!(graph.get_node_grad_batch(w1)?.is_some());
-    assert!(graph.get_node_grad_batch(w2)?.is_some());
+    assert!(graph.get_node(w1)?.grad().is_some());
+    assert!(graph.get_node(w2)?.grad().is_some());
 
     Ok(())
 }
@@ -416,26 +445,31 @@ fn test_reshape_as_flatten_in_mlp() -> Result<(), GraphError> {
 fn test_reshape_single_sample_backward() -> Result<(), GraphError> {
     let mut graph = Graph::new_with_seed(42);
 
-    // 简单网络: Input [1,6] -> Reshape [2,3] -> MatMul [2,3]@[3,1]=[2,1] -> Loss
+    // 简单网络: Input [1,6] -> Reshape [2,3] -> MatMul [2,3]@[3,1]=[2,1] -> MSE
     let x = graph.new_input_node(&[1, 6], Some("x"))?;
     let reshaped = graph.new_reshape_node(x, &[2, 3], Some("reshaped"))?;
     let w = graph.new_parameter_node_seeded(&[3, 1], Some("w"), 100)?;
     let y = graph.new_mat_mul_node(reshaped, w, Some("y"))?;
-    let loss = graph.new_perception_loss_node(y, Some("loss"))?;
+
+    // 使用 MSE loss
+    let target = graph.new_input_node(&[2, 1], Some("target"))?;
+    let loss = graph.new_mse_loss_node(y, target, Some("loss"))?;
 
     // 设置输入
     let x_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 6]);
     graph.set_node_value(x, Some(&x_data))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 1])))?;
 
     // 前向传播
-    graph.forward_node(loss)?;
+    graph.forward(loss)?;
 
     // 反向传播
-    graph.backward_nodes(&[w], loss)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
 
-    // 验证 w 的 Jacobi 存在且形状正确
-    let jacobi_w = graph.get_node_jacobi(w)?.unwrap();
-    assert_eq!(jacobi_w.shape(), &[2, 3]); // loss shape [2,1], w shape [3,1]
+    // 验证 w 的梯度存在且形状正确
+    let grad_w = graph.get_node(w)?.grad().expect("w 应有 grad");
+    assert_eq!(grad_w.shape(), &[3, 1]);
 
     Ok(())
 }

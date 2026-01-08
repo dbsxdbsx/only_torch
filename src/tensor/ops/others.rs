@@ -737,13 +737,13 @@ impl Tensor {
     /// // y ≈ [0.0, 0.7616, -0.7616]
     /// ```
     pub fn tanh(&self) -> Self {
-        let data = self.data.mapv(|x| x.tanh());
+        let data = self.data.mapv(f32::tanh);
         Self { data }
     }
 
     /// 就地对张量的每个元素应用双曲正切函数(tanh)
     pub fn tanh_mut(&mut self) {
-        self.data.mapv_inplace(|x| x.tanh());
+        self.data.mapv_inplace(f32::tanh);
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑tanh↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -783,13 +783,13 @@ impl Tensor {
     /// // y ≈ [1.0, 2.7183, 7.3891]
     /// ```
     pub fn exp(&self) -> Self {
-        let data = self.data.mapv(|x| x.exp());
+        let data = self.data.mapv(f32::exp);
         Self { data }
     }
 
     /// 就地对张量的每个元素计算指数函数
     pub fn exp_mut(&mut self) {
-        self.data.mapv_inplace(|x| x.exp());
+        self.data.mapv_inplace(f32::exp);
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑exp↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -808,13 +808,13 @@ impl Tensor {
     /// // y ≈ [0.0, 1.0, 2.0]
     /// ```
     pub fn ln(&self) -> Self {
-        let data = self.data.mapv(|x| x.ln());
+        let data = self.data.mapv(f32::ln);
         Self { data }
     }
 
     /// 就地对张量的每个元素计算自然对数
     pub fn ln_mut(&mut self) {
-        self.data.mapv_inplace(|x| x.ln());
+        self.data.mapv_inplace(f32::ln);
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ln↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 

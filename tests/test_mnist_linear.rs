@@ -53,14 +53,11 @@ fn test_mnist_linear() -> Result<(), GraphError> {
     let consecutive_success_required = 2;
 
     println!("\n[2/4] 训练配置：");
-    println!("  - Batch Size: {}", batch_size);
-    println!(
-        "  - 训练样本: {} (共 {} 个 batch)",
-        train_samples, num_batches
-    );
-    println!("  - 测试样本: {}", test_samples);
-    println!("  - 最大 Epochs: {}", max_epochs);
-    println!("  - 学习率: {}", learning_rate);
+    println!("  - Batch Size: {batch_size}");
+    println!("  - 训练样本: {train_samples} (共 {num_batches} 个 batch)");
+    println!("  - 测试样本: {test_samples}");
+    println!("  - 最大 Epochs: {max_epochs}");
+    println!("  - 学习率: {learning_rate}");
     println!("  - 目标准确率: {:.0}%", target_accuracy * 100.0);
 
     // ========== 3. 构建网络（使用 Layer API）==========
@@ -90,9 +87,9 @@ fn test_mnist_linear() -> Result<(), GraphError> {
     // 保存网络结构可视化（训练前）
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
-    graph.save_visualization_grouped(&format!("{}/mnist_linear", output_dir), None)?;
-    graph.save_summary(&format!("{}/mnist_linear_summary.md", output_dir))?;
-    println!("  ✓ 网络结构已保存: {}/mnist_linear.png", output_dir);
+    graph.save_visualization_grouped(format!("{output_dir}/mnist_linear"), None)?;
+    graph.save_summary(format!("{output_dir}/mnist_linear_summary.md"))?;
+    println!("  ✓ 网络结构已保存: {output_dir}/mnist_linear.png");
 
     // ========== 4. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");
@@ -123,10 +120,11 @@ fn test_mnist_linear() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(&batch_images))?;
             graph.set_node_value(y, Some(&batch_labels))?;
 
-            optimizer.one_step_batch(&mut graph, loss)?;
-            optimizer.update_batch(&mut graph)?;
+            graph.zero_grad()?;
+            graph.forward(loss)?;
+            let loss_val = graph.backward(loss)?; // backward 返回 loss 值
+            optimizer.step(&mut graph)?;
 
-            let loss_val = graph.get_node_value(loss)?.unwrap()[[0, 0]];
             epoch_loss_sum += loss_val;
         }
 
@@ -146,7 +144,7 @@ fn test_mnist_linear() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(&batch_images))?;
             graph.set_node_value(y, Some(&batch_labels))?;
 
-            graph.forward_batch(loss)?;
+            graph.forward(loss)?;
 
             let predictions = graph.get_node_value(logits)?.unwrap();
 

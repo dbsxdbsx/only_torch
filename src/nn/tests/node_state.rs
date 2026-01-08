@@ -4,12 +4,16 @@
  * State 节点用于 RNN 的时间状态（如隐藏状态 h、LSTM 的 c）。
  *
  * 与 Input 节点的关键区别：
- *   - State 可以接收并存储 jacobi（用于 BPTT 梯度传递）
- *   - Input 不能接收 jacobi
+ *   - State 可以接收并存储梯度（用于 BPTT 梯度传递）
+ *   - Input 不能接收梯度（是"梯度汇点"）
  *
  * 与 Parameter 节点的关键区别：
  *   - State 不被优化器更新（不在 get_trainable_nodes() 中）
  *   - Parameter 被优化器更新
+ *
+ * VJP 迁移说明：
+ *   - 统一 API: backward + get_node_grad + zero_grad
+ *   - 新 API: backward + get_node_grad + zero_grad
  */
 
 use crate::assert_err;
@@ -65,13 +69,15 @@ fn test_state_not_trainable() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 State 节点可以接收 jacobi（与 Input 的关键区别）
+/// 测试 State 节点可以接收梯度（与 Input 的关键区别）
+///
+/// 在 VJP 模式下，State 节点在 backward 后应该有 grad
 #[test]
-fn test_state_accepts_jacobi() -> Result<(), GraphError> {
+fn test_state_accepts_grad() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     graph.set_train_mode();
 
-    // 创建网络：state -> add -> output
+    // 创建网络：state -> add -> loss
     let state = graph.new_state_node(&[1, 2], Some("state"))?;
     graph.set_node_value(state, Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
 
@@ -81,33 +87,37 @@ fn test_state_accepts_jacobi() -> Result<(), GraphError> {
     // state + param -> add
     let add = graph.new_add_node(&[state, param], Some("add"))?;
 
+    // 添加 target 和 loss 节点（VJP 模式需要标量 loss）
+    let target = graph.new_input_node(&[1, 2], Some("target"))?;
+    graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
+    let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
+
     // 前向传播
-    graph.forward_node(add)?;
+    graph.forward(loss)?;
 
-    // 反向传播
-    graph.backward_nodes(&[state, param], add)?;
+    // 反向传播（VJP 模式）
+    graph.backward(loss)?;
 
-    // State 应该能接收 jacobi
-    let state_jacobi = graph.get_node_jacobi(state)?;
-    assert!(
-        state_jacobi.is_some(),
-        "State 节点在 backward 后应有 jacobi"
-    );
+    // State 应该能接收 grad（与 Input 的关键区别）
+    let state_grad = graph.get_node_grad(state)?;
+    assert!(state_grad.is_some(), "State 节点在 backward 后应有 grad");
 
-    // 验证 jacobi 值（Add 节点对两个输入的 jacobi 都是单位矩阵）
-    let jacobi = state_jacobi.unwrap();
-    assert_eq!(jacobi.shape(), &[2, 2]); // [输出维度, 输入维度]
+    // 验证 grad 形状
+    let grad = state_grad.unwrap();
+    assert_eq!(grad.shape(), &[1, 2]); // [输入维度]
 
     Ok(())
 }
 
-/// 测试 Input 节点不能接收 jacobi（对照测试）
+/// 测试 Input 节点不能有梯度（对照测试）
+///
+/// 在 VJP 模式下，调用 get_node_grad(input) 应返回错误
 #[test]
-fn test_input_rejects_jacobi() -> Result<(), GraphError> {
+fn test_input_has_no_grad() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     graph.set_train_mode();
 
-    // 创建网络：input -> add -> output
+    // 创建网络：input -> add -> loss
     let input = graph.new_input_node(&[1, 2], Some("input"))?;
     graph.set_node_value(input, Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
 
@@ -116,29 +126,25 @@ fn test_input_rejects_jacobi() -> Result<(), GraphError> {
 
     let add = graph.new_add_node(&[input, param], Some("add"))?;
 
-    graph.forward_node(add)?;
+    // 添加 target 和 loss 节点
+    let target = graph.new_input_node(&[1, 2], Some("target"))?;
+    graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
+    let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
 
-    // 只对 param 做 backward（不包含 input）
-    graph.backward_nodes(&[param], add)?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
-    // Input 节点查询 jacobi 应该返回错误（设计如此）
-    let jacobi_result = graph.get_node_jacobi(input);
+    // Input 节点查询 grad 应该返回错误
+    let grad_result = graph.get_node_grad(input);
     assert_err!(
-        jacobi_result,
-        GraphError::InvalidOperation(msg) if msg.contains("不应该有雅可比矩阵")
-    );
-
-    // 尝试对 Input 节点做 backward 应该失败
-    let backward_result = graph.backward_nodes(&[input], add);
-    assert_err!(
-        backward_result,
-        GraphError::InvalidOperation(msg) if msg.contains("不应该有雅可比矩阵")
+        grad_result,
+        GraphError::InvalidOperation(msg) if msg.contains("不应该有梯度")
     );
 
     Ok(())
 }
 
-/// 测试 State 节点在 forward_node 中的行为
+/// 测试 State 节点在 forward 中的行为
 #[test]
 fn test_state_forward_behavior() -> Result<(), GraphError> {
     let mut graph = Graph::new();
@@ -146,15 +152,15 @@ fn test_state_forward_behavior() -> Result<(), GraphError> {
     let state = graph.new_state_node(&[1, 4], Some("state"))?;
 
     // 尝试对未设值的 State 进行前向传播应该失败
-    let result = graph.forward_node(state);
+    let result = graph.forward(state);
     assert_err!(
         result,
         GraphError::InvalidOperation(msg) if msg.contains("是输入/参数/状态节点")
     );
 
-    // 设置值后，State 不应该被 forward_node 直接调用（它的值由外部设置）
+    // 设置值后，State 不应该被 forward 直接调用（它的值由外部设置）
     graph.set_node_value(state, Some(&Tensor::zeros(&[1, 4])))?;
-    let result = graph.forward_node(state);
+    let result = graph.forward(state);
     assert_err!(
         result,
         GraphError::InvalidOperation(msg) if msg.contains("是输入/参数/状态节点")
@@ -164,6 +170,8 @@ fn test_state_forward_behavior() -> Result<(), GraphError> {
 }
 
 /// 测试 State 节点在简单 RNN 结构中的使用
+///
+/// 验证 State 节点能正确接收和传递梯度
 #[test]
 fn test_state_in_rnn_structure() -> Result<(), GraphError> {
     let mut graph = Graph::new();
@@ -188,19 +196,24 @@ fn test_state_in_rnn_structure() -> Result<(), GraphError> {
     // tanh
     let hidden = graph.new_tanh_node(pre_hidden, Some("hidden"))?;
 
-    // 前向传播
-    graph.forward_node(hidden)?;
+    // 添加 target 和 loss（VJP 模式需要标量 loss）
+    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    graph.set_node_value(target, Some(&Tensor::new(&[0.5], &[1, 1])))?;
+    let loss = graph.new_mse_loss_node(hidden, target, Some("loss"))?;
 
-    // 反向传播到所有参数和状态
-    graph.backward_nodes(&[w, h_prev], hidden)?;
+    // 前向传播
+    graph.forward(loss)?;
+
+    // 反向传播
+    graph.backward(loss)?;
 
     // 验证 W 有梯度
-    let w_jacobi = graph.get_node_jacobi(w)?;
-    assert!(w_jacobi.is_some(), "W 应有 jacobi");
+    let w_grad = graph.get_node_grad(w)?;
+    assert!(w_grad.is_some(), "W 应有 grad");
 
     // 验证 h_prev 也有梯度（这是 State 与 Input 的关键区别）
-    let h_prev_jacobi = graph.get_node_jacobi(h_prev)?;
-    assert!(h_prev_jacobi.is_some(), "h_prev (State) 应有 jacobi");
+    let h_prev_grad = graph.get_node_grad(h_prev)?;
+    assert!(h_prev_grad.is_some(), "h_prev (State) 应有 grad");
 
     Ok(())
 }
@@ -238,9 +251,9 @@ fn test_state_with_recurrent_connection() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 State 节点的 clear_jacobi
+/// 测试 State 节点的 zero_grad
 #[test]
-fn test_state_clear_jacobi() -> Result<(), GraphError> {
+fn test_state_zero_grad() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     graph.set_train_mode();
 
@@ -252,23 +265,26 @@ fn test_state_clear_jacobi() -> Result<(), GraphError> {
 
     let add = graph.new_add_node(&[state, param], Some("add"))?;
 
-    graph.forward_node(add)?;
-    graph.backward_nodes(&[state, param], add)?;
+    // 添加 target 和 loss
+    let target = graph.new_input_node(&[1, 2], Some("target"))?;
+    graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
+    let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
 
-    // 验证有 jacobi
-    assert!(graph.get_node_jacobi(state)?.is_some());
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
-    // 清除 jacobi
-    graph.clear_jacobi()?;
+    // 验证有 grad
+    assert!(graph.get_node_grad(state)?.is_some());
 
-    // State 的 jacobi 应该被清除（与 Parameter 不同）
-    // 注意：clear_jacobi 保留 Parameter 的 jacobi，但清除其他节点的
-    // 这里需要检查 State 是否被正确清除
-    // 根据 reset_intermediate_jacobi 的实现，只有 Parameter 的 jacobi 被保留
-    let state_jacobi_after = graph.get_node_jacobi(state)?;
+    // 清除 grad
+    graph.zero_grad()?;
+
+    // State 的 grad 应该被清除
+    // 注意：zero_grad 清除所有非 Parameter 节点的 grad
+    let state_grad_after = graph.get_node_grad(state)?;
     assert!(
-        state_jacobi_after.is_none(),
-        "State jacobi 应被 clear_jacobi() 清除"
+        state_grad_after.is_none(),
+        "State grad 应被 zero_grad() 清除"
     );
 
     Ok(())
@@ -378,7 +394,7 @@ fn test_state_used_without_value() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
 
     // forward 时，state 没有值应该会导致错误
-    let result = graph.forward_node(add);
+    let result = graph.forward(add);
 
     // 预期：应该报错或返回合理的默认值
     // 当前实现：State 节点没有值时不能前向传播
@@ -406,7 +422,7 @@ fn test_state_without_recurrent_connection() -> Result<(), GraphError> {
 
     // 这应该能正常前向传播（state 作为常量）
     graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-    graph.forward_node(output)?;
+    graph.forward(output)?;
 
     let val = graph.get_node_value(output)?.unwrap().data_as_slice()[0];
     // tanh(1.0 + 0.0) = tanh(1.0) ≈ 0.7616
@@ -438,13 +454,12 @@ fn test_duplicate_recurrent_connection_error() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 State 节点的 jacobi 在 BPTT 场景下的行为
+/// 测试 State 节点的 grad 在 BPTT 场景下的行为
 ///
-/// 普通 backward 只计算指定 target_nodes 的梯度，
-/// 如果 State 不在 target_nodes 中，它可能没有 jacobi。
-/// 但在 BPTT 中，State 节点会被自动包含以支持跨时间梯度传递。
+/// BPTT 需要 State 节点接收并传递梯度（跨时间步）
+/// 使用 backward_through_time 专用方法
 #[test]
-fn test_state_jacobi_in_bptt() -> Result<(), GraphError> {
+fn test_state_grad_in_bptt() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     graph.set_train_mode();
 
@@ -475,9 +490,9 @@ fn test_state_jacobi_in_bptt() -> Result<(), GraphError> {
     // 使用 BPTT（会自动包含 State 节点）
     graph.backward_through_time(&[w], loss)?;
 
-    // w 应该有梯度
-    let w_jacobi = graph.get_node_jacobi(w)?;
-    assert!(w_jacobi.is_some(), "w 应在 BPTT 后有 jacobi");
+    // w 应该有梯度（通过 get_node_grad 获取）
+    let w_grad = graph.get_node_grad(w)?;
+    assert!(w_grad.is_some(), "w 应在 BPTT 后有 grad");
     Ok(())
 }
 
@@ -498,13 +513,13 @@ fn test_state_shape_mismatch_recurrent() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 clear_jacobi 对 State 节点的影响
+/// 测试 zero_grad 对 State 节点的影响
 #[test]
-fn test_clear_jacobi_on_state() -> Result<(), GraphError> {
+fn test_zero_grad_on_state() -> Result<(), GraphError> {
     let mut graph = Graph::new();
     graph.set_train_mode();
 
-    // 构建一个会产生 State jacobi 的网络
+    // 构建一个会产生 State grad 的网络
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 1], Some("state"))?;
     graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
@@ -521,26 +536,23 @@ fn test_clear_jacobi_on_state() -> Result<(), GraphError> {
 
     graph.connect_recurrent(hidden, state)?;
 
-    // 前向和反向传播，产生 jacobi
+    // 前向和反向传播，产生 grad
     graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
     graph.set_node_value(target, Some(&Tensor::new(&[0.5], &[1, 1])))?;
-    graph.step(loss)?;
-    graph.backward_nodes(&[w, state], loss)?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
-    // 验证 State 有 jacobi
-    let state_jacobi = graph.get_node_jacobi(state)?;
+    // 验证 State 有 grad
+    let state_grad = graph.get_node_grad(state)?;
+    assert!(state_grad.is_some(), "State 节点在 backward 后应有 grad");
+
+    // zero_grad 应该清除 State 的 grad
+    graph.zero_grad()?;
+
+    let cleared_grad = graph.get_node_grad(state)?;
     assert!(
-        state_jacobi.is_some(),
-        "State 节点在 backward 后应有 jacobi"
-    );
-
-    // clear_jacobi 应该清除 State 的 jacobi
-    graph.clear_jacobi()?;
-
-    let cleared_jacobi = graph.get_node_jacobi(state)?;
-    assert!(
-        cleared_jacobi.is_none(),
-        "State jacobi 应在 clear_jacobi() 后被清除"
+        cleared_grad.is_none(),
+        "State grad 应在 zero_grad() 后被清除"
     );
     Ok(())
 }

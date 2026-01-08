@@ -1,9 +1,9 @@
 use approx::AbsDiffEq;
 use ndarray::{Array, ArrayD, ArrayViewD, IxDyn};
-use rand::distributions::{Distribution, Uniform};
-use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
+use rand::distributions::{Distribution, Uniform};
+use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{ComparisonOperator, TensorError};
@@ -45,7 +45,7 @@ impl Default for Tensor {
     }
 }
 
-/// 为 Tensor 实现 approx::AbsDiffEq trait，支持浮点近似比较
+/// 为 Tensor 实现 `approx::AbsDiffEq` trait，支持浮点近似比较
 impl AbsDiffEq for Tensor {
     type Epsilon = f32;
 

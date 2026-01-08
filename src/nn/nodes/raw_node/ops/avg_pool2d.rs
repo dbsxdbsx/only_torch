@@ -27,7 +27,6 @@ pub(crate) struct AvgPool2d {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
     grad: Option<Tensor>,
     shape: Vec<usize>, // 输出形状
 
@@ -40,12 +39,12 @@ pub(crate) struct AvgPool2d {
 }
 
 impl AvgPool2d {
-    /// 创建 AvgPool2d 节点
+    /// 创建 `AvgPool2d` 节点
     ///
     /// # 参数
     /// - `parents`: [输入节点]
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
-    /// - `stride`: 步长 (sH, sW)，默认等于 kernel_size
+    /// - `stride`: 步长 (sH, sW)，默认等于 `kernel_size`
     ///
     /// # 输入形状约定
     /// - 输入: [C, H, W] 或 [batch, C, H, W]
@@ -77,8 +76,7 @@ impl AvgPool2d {
                     expected: vec![0, 0, 0],
                     got: input_shape.to_vec(),
                     message: format!(
-                        "AvgPool2d 输入必须是 3D [C, H, W] 或 4D [batch, C, H, W]，得到 {:?}",
-                        input_shape
+                        "AvgPool2d 输入必须是 3D [C, H, W] 或 4D [batch, C, H, W]，得到 {input_shape:?}"
                     ),
                 });
             }
@@ -90,8 +88,7 @@ impl AvgPool2d {
         // 3. 验证池化窗口不超过输入尺寸
         if k_h > input_h || k_w > input_w {
             return Err(GraphError::InvalidOperation(format!(
-                "AvgPool2d 池化窗口 {}x{} 超出输入尺寸 {}x{}",
-                k_h, k_w, input_h, input_w
+                "AvgPool2d 池化窗口 {k_h}x{k_w} 超出输入尺寸 {input_h}x{input_w}"
             )));
         }
 
@@ -102,7 +99,11 @@ impl AvgPool2d {
         if output_h == 0 || output_w == 0 {
             return Err(GraphError::InvalidOperation(format!(
                 "AvgPool2d 输出尺寸无效：输入 {}x{}，核 {}x{}，步长 {:?}",
-                input_h, input_w, k_h, k_w, (s_h, s_w)
+                input_h,
+                input_w,
+                k_h,
+                k_w,
+                (s_h, s_w)
             )));
         }
 
@@ -116,7 +117,6 @@ impl AvgPool2d {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape: output_shape,
             kernel_size,
@@ -184,32 +184,7 @@ impl TraitNode for AvgPool2d {
 
         let pool_size = (k_h * k_w) as f32;
 
-        if !is_batch {
-            // 单样本模式 - 串行处理
-            let mut output = Tensor::zeros(&output_shape);
-
-            for c in 0..channels {
-                for oh in 0..out_h {
-                    for ow in 0..out_w {
-                        let h_start = oh * s_h;
-                        let w_start = ow * s_w;
-
-                        let mut sum = 0.0f32;
-                        for kh in 0..k_h {
-                            for kw in 0..k_w {
-                                let ih = h_start + kh;
-                                let iw = w_start + kw;
-                                sum += input[[c, ih, iw]];
-                            }
-                        }
-
-                        output[[c, oh, ow]] = sum / pool_size;
-                    }
-                }
-            }
-
-            self.value = Some(output);
-        } else {
+        if is_batch {
             // Batch 模式 - Rayon 并行处理
             let single_sample_size = channels * out_h * out_w;
 
@@ -245,6 +220,31 @@ impl TraitNode for AvgPool2d {
             // 合并结果
             let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
             self.value = Some(Tensor::new(&all_data, &output_shape));
+        } else {
+            // 单样本模式 - 串行处理
+            let mut output = Tensor::zeros(&output_shape);
+
+            for c in 0..channels {
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let h_start = oh * s_h;
+                        let w_start = ow * s_w;
+
+                        let mut sum = 0.0f32;
+                        for kh in 0..k_h {
+                            for kw in 0..k_w {
+                                let ih = h_start + kh;
+                                let iw = w_start + kw;
+                                sum += input[[c, ih, iw]];
+                            }
+                        }
+
+                        output[[c, oh, ow]] = sum / pool_size;
+                    }
+                }
+            }
+
+            self.value = Some(output);
         }
 
         self.input_shape = input_shape.to_vec();
@@ -255,75 +255,12 @@ impl TraitNode for AvgPool2d {
         self.value.as_ref()
     }
 
-    /// 计算 Jacobi 矩阵（单样本模式）
-    ///
-    /// AvgPool 的 Jacobi 矩阵：
-    /// - 每个输出对窗口内所有输入的导数 = 1 / pool_size
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        let input_shape = &self.input_shape;
-        let is_batch = input_shape.len() == 4;
-
-        // 单样本 Jacobi 只支持非 batch 模式
-        if is_batch {
-            return Err(GraphError::InvalidOperation(
-                "Jacobi 模式不支持 batch 输入，请使用 calc_grad_to_parent".to_string(),
-            ));
-        }
-
-        let (channels, in_h, in_w) = (input_shape[0], input_shape[1], input_shape[2]);
-        let (out_h, out_w) = (self.shape[1], self.shape[2]);
-        let (k_h, k_w) = self.kernel_size;
-        let (s_h, s_w) = self.stride;
-
-        let output_dim = channels * out_h * out_w;
-        let input_dim = channels * in_h * in_w;
-        let pool_size = (k_h * k_w) as f32;
-        let grad_val = 1.0 / pool_size;
-
-        let mut jacobi = Tensor::zeros(&[output_dim, input_dim]);
-
-        for c in 0..channels {
-            for oh in 0..out_h {
-                for ow in 0..out_w {
-                    let out_idx = c * out_h * out_w + oh * out_w + ow;
-                    let h_start = oh * s_h;
-                    let w_start = ow * s_w;
-
-                    // 窗口内所有位置的梯度都是 1/pool_size
-                    for kh in 0..k_h {
-                        for kw in 0..k_w {
-                            let ih = h_start + kh;
-                            let iw = w_start + kw;
-                            let in_idx = c * in_h * in_w + ih * in_w + iw;
-                            jacobi[[out_idx, in_idx]] = grad_val;
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(jacobi)
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
+    // ========== VJP 模式 ==========
 
     /// 计算 Batch 梯度（Rayon 并行版本）
     ///
-    /// AvgPool 的梯度：
-    /// - 每个输入位置的梯度 = 所有包含该位置的输出的 upstream_grad / pool_size 之和
+    /// `AvgPool` 的梯度：
+    /// - 每个输入位置的梯度 = 所有包含该位置的输出的 `upstream_grad` / `pool_size` 之和
     fn calc_grad_to_parent(
         &self,
         _target_parent: &NodeHandle,
@@ -351,30 +288,7 @@ impl TraitNode for AvgPool2d {
             (input_shape[1], input_shape[2])
         };
 
-        if !is_batch {
-            // 单样本模式 - 串行处理
-            let mut input_grad = Tensor::zeros(input_shape);
-
-            for c in 0..channels {
-                for oh in 0..out_h {
-                    for ow in 0..out_w {
-                        let upstream = upstream_grad[[c, oh, ow]];
-                        let h_start = oh * s_h;
-                        let w_start = ow * s_w;
-
-                        for kh in 0..k_h {
-                            for kw in 0..k_w {
-                                let ih = h_start + kh;
-                                let iw = w_start + kw;
-                                input_grad[[c, ih, iw]] += upstream * grad_val;
-                            }
-                        }
-                    }
-                }
-            }
-
-            Ok(input_grad)
-        } else {
+        if is_batch {
             // Batch 模式 - Rayon 并行处理
             let single_sample_size = channels * in_h * in_w;
 
@@ -407,6 +321,29 @@ impl TraitNode for AvgPool2d {
 
             let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
             Ok(Tensor::new(&all_data, input_shape))
+        } else {
+            // 单样本模式 - 串行处理
+            let mut input_grad = Tensor::zeros(input_shape);
+
+            for c in 0..channels {
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let upstream = upstream_grad[[c, oh, ow]];
+                        let h_start = oh * s_h;
+                        let w_start = ow * s_w;
+
+                        for kh in 0..k_h {
+                            for kw in 0..k_w {
+                                let ih = h_start + kh;
+                                let iw = w_start + kw;
+                                input_grad[[c, ih, iw]] += upstream * grad_val;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(input_grad)
         }
     }
 

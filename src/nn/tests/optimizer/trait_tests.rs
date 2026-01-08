@@ -12,7 +12,7 @@ use crate::tensor::Tensor;
 
 #[test]
 fn test_optimizer_trait_implementations() {
-    // 验证SGD和Adam都正确实现了Optimizer trait
+    // 验证 SGD 和 Adam 都正确实现了 Optimizer trait
     let mut graph = Graph::new();
     let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
     let param = graph.new_parameter_node(&[1, 1], Some("param")).unwrap();
@@ -26,13 +26,13 @@ fn test_optimizer_trait_implementations() {
     let input_value = Tensor::new(&[1.0], &[1, 1]);
     graph.set_node_value(input, Some(&input_value)).unwrap();
 
-    // 测试SGD作为trait object
+    // 测试 SGD 作为 trait object
     let mut sgd: Box<dyn Optimizer> = Box::new(SGD::new(&graph, 0.01).unwrap());
     assert_eq!(sgd.learning_rate(), 0.01);
     sgd.set_learning_rate(0.02);
     assert_eq!(sgd.learning_rate(), 0.02);
 
-    // 测试Adam作为trait object
+    // 测试 Adam 作为 trait object
     let mut adam: Box<dyn Optimizer> = Box::new(Adam::new_default(&graph, 0.001).unwrap());
     assert_eq!(adam.learning_rate(), 0.001);
     adam.set_learning_rate(0.002);
@@ -42,7 +42,7 @@ fn test_optimizer_trait_implementations() {
 #[test]
 fn test_optimizer_with_multiple_parameters() {
     // 测试优化器能正确处理多个参数
-    // 使用ADALINE结构确保梯度不为0
+    // 使用 ADALINE 结构确保梯度不为0
     let mut graph = Graph::new();
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
     let label = graph.new_input_node(&[1, 1], Some("label")).unwrap();
@@ -58,8 +58,8 @@ fn test_optimizer_with_multiple_parameters() {
         .new_perception_loss_node(loss_input, Some("loss"))
         .unwrap();
 
-    // 显式设置参数值，确保output > 0，使得loss_input = label * output < 0
-    // 这样PerceptionLoss的梯度才不为0
+    // 显式设置参数值，确保 output > 0，使得 loss_input = label * output < 0
+    // 这样 PerceptionLoss 的梯度才不为0
     let w_init = Tensor::new(&[1.0, 1.0], &[1, 2]); // w = [1, 1]
     let b_init = Tensor::new(&[0.5], &[1, 1]); // b = 0.5
     graph.set_node_value(w, Some(&w_init)).unwrap();
@@ -76,10 +76,12 @@ fn test_optimizer_with_multiple_parameters() {
     let initial_w = graph.get_node_value(w).unwrap().unwrap().clone();
     let initial_b = graph.get_node_value(b).unwrap().unwrap().clone();
 
-    // 使用SGD优化
+    // 使用新 API：forward -> backward -> step
     let mut sgd = SGD::new(&graph, 0.01).unwrap();
-    sgd.one_step(&mut graph, loss).unwrap();
-    sgd.update(&mut graph).unwrap();
+    graph.zero_grad().unwrap();
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    sgd.step(&mut graph).unwrap();
 
     // 两个参数都应该更新
     let new_w = graph.get_node_value(w).unwrap().unwrap();
@@ -88,13 +90,13 @@ fn test_optimizer_with_multiple_parameters() {
     // 两个参数都应该变化
     let w_changed = new_w != &initial_w;
     let b_changed = new_b != &initial_b;
-    assert!(w_changed, "参数w应该在优化后改变");
-    assert!(b_changed, "参数b应该在优化后改变");
+    assert!(w_changed, "参数 w 应该在优化后改变");
+    assert!(b_changed, "参数 b 应该在优化后改变");
 }
 
 #[test]
-fn test_optimizer_update_without_one_step() {
-    // 测试在没有调用one_step的情况下调用update
+fn test_optimizer_step_without_backward() {
+    // 测试在没有调用 backward 的情况下调用 step
     let mut graph = Graph::new();
     let param = graph.new_parameter_node(&[2, 2], Some("param")).unwrap();
 
@@ -103,15 +105,15 @@ fn test_optimizer_update_without_one_step() {
 
     let mut sgd = SGD::new(&graph, 0.01).unwrap();
 
-    // 直接调用update（没有累积任何梯度）
-    // 应该不报错，参数保持不变
-    let result = sgd.update(&mut graph);
+    // 直接调用 step（没有梯度）
+    // 应该不报错，参数保持不变（因为没有梯度）
+    let result = sgd.step(&mut graph);
     assert!(result.is_ok());
 
     // 验证参数值未改变
     let param_after = graph.get_node_value(param).unwrap().unwrap();
     assert_eq!(
         &param_before, param_after,
-        "未调用one_step时，update不应改变参数值"
+        "未调用 backward 时，step 不应改变参数值"
     );
 }

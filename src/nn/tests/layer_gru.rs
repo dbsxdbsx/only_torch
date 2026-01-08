@@ -370,7 +370,7 @@ fn test_gru_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
     graph.backward_through_time(&params, loss)?;
 
     // 验证 w_ir 梯度（方向一致性检查）
-    let grad_w_ir = graph.get_node_jacobi(gru_out.w_ir)?.unwrap();
+    let grad_w_ir = graph.get_node_grad(gru_out.w_ir)?.unwrap();
     let grad_w_ir_flat: Vec<f32> = grad_w_ir.data_as_slice().to_vec();
     println!("grad_w_ir: {:?}", grad_w_ir_flat);
     // 注：由于 GRU 的复杂门控结构，BPTT 梯度可能存在数值差异
@@ -380,7 +380,7 @@ fn test_gru_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
     }
 
     // 验证 w_out 梯度
-    let grad_w_out = graph.get_node_jacobi(w_out)?.unwrap();
+    let grad_w_out = graph.get_node_grad(w_out)?.unwrap();
     let grad_w_out_flat: Vec<f32> = grad_w_out.data_as_slice().to_vec();
     println!("grad_w_out: {:?}", grad_w_out_flat);
     for (&actual, &expected) in grad_w_out_flat.iter().zip(TEST3_GRAD_W_OUT.iter()) {
@@ -878,16 +878,16 @@ fn test_gru_batch_backward() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // Batch 前向 + 反向
-    graph.forward_batch(loss)?;
-    graph.backward_batch(loss, None)?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
     // 验证 GRU 重置门权重有梯度
-    let w_ir_grad = graph.get_node_grad_batch(gru_out.w_ir)?;
+    let w_ir_grad = graph.get_node_grad_ref(gru_out.w_ir)?;
     assert!(w_ir_grad.is_some());
     assert_eq!(w_ir_grad.unwrap().shape(), &[input_size, hidden_size]);
 
     // 验证隐藏层权重有梯度
-    let w_hr_grad = graph.get_node_grad_batch(gru_out.w_hr)?;
+    let w_hr_grad = graph.get_node_grad_ref(gru_out.w_hr)?;
     assert!(w_hr_grad.is_some());
     assert_eq!(w_hr_grad.unwrap().shape(), &[hidden_size, hidden_size]);
 
@@ -950,17 +950,17 @@ fn test_gru_chain_batch_training() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // 前向
-    graph.forward_batch(loss)?;
+    graph.forward(loss)?;
     let loss_before = graph.get_node_value(loss)?.unwrap()[[0, 0]];
 
     // 反向
-    graph.backward_batch(loss, None)?;
+    graph.backward(loss)?;
 
     // 验证两层 GRU 都有梯度
-    let gru1_grad = graph.get_node_grad_batch(gru1.w_ir)?;
+    let gru1_grad = graph.get_node_grad_ref(gru1.w_ir)?;
     assert!(gru1_grad.is_some());
 
-    let gru2_grad = graph.get_node_grad_batch(gru2.w_ir)?;
+    let gru2_grad = graph.get_node_grad_ref(gru2.w_ir)?;
     assert!(gru2_grad.is_some());
 
     println!(

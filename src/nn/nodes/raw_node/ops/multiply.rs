@@ -17,10 +17,9 @@ pub(crate) struct Multiply {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
-    grad: Option<Tensor>, // Batch 模式梯度
+    grad: Option<Tensor>,
     shape: Vec<usize>,
-    parents_ids: Vec<NodeId>, // 保留用于雅可比计算，[left_id, right_id]
+    parents_ids: Vec<NodeId>, // 用于区分左右父节点
 }
 
 impl Multiply {
@@ -47,7 +46,6 @@ impl Multiply {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape,
             parents_ids: vec![parents[0].id(), parents[1].id()],
@@ -104,94 +102,11 @@ impl TraitNode for Multiply {
         self.value.as_ref()
     }
 
-    /// 计算Multiply节点对父节点的雅可比矩阵
-    /// 参考MatrixSlow: MatrixSlow/matrixslow/ops/ops.py#L162 (Multiply.get_jacobi)
-    ///
-    /// 设 C = A ⊙ B (逐元素乘法)，其中A和B形状相同(m,n)
-    ///
-    /// 对于 A（第1个父节点）：
-    ///   ∂C/∂A = diag(B.flatten()) → shape: [m*n, m*n]
-    ///
-    /// 对于 B（第2个父节点）：
-    ///   ∂C/∂B = diag(A.flatten()) → shape: [m*n, m*n]
-    fn calc_jacobi_to_a_parent(
-        &self,
-        target_parent: &NodeHandle,
-        assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        // 获取两个父节点的值
-        let (left_value, right_value) = if target_parent.id() == self.parents_ids[0] {
-            // target是left，assistant是right
-            let assistant = assistant_parent.ok_or_else(|| {
-                GraphError::ComputationError("Multiply计算雅可比矩阵需要辅助父节点".to_string())
-            })?;
-            (
-                target_parent.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的第1个父节点没有值",
-                        self.display_node()
-                    ))
-                })?,
-                assistant.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的第2个父节点没有值",
-                        self.display_node()
-                    ))
-                })?,
-            )
-        } else if target_parent.id() == self.parents_ids[1] {
-            // target是right，assistant是left
-            let assistant = assistant_parent.ok_or_else(|| {
-                GraphError::ComputationError("Multiply计算雅可比矩阵需要辅助父节点".to_string())
-            })?;
-            (
-                assistant.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的第1个父节点没有值",
-                        self.display_node()
-                    ))
-                })?,
-                target_parent.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的第2个父节点没有值",
-                        self.display_node()
-                    ))
-                })?,
-            )
-        } else {
-            return Err(GraphError::ComputationError(format!(
-                "{}不是当前{}的父节点",
-                target_parent,
-                self.display_node()
-            )));
-        };
-
-        // 根据目标父节点计算雅可比矩阵
-        if target_parent.id() == self.parents_ids[0] {
-            // 对left的雅可比：∂C/∂A = diag(B.flatten())
-            Ok(right_value.flatten().diag())
-        } else {
-            // 对right的雅可比：∂C/∂B = diag(A.flatten())
-            Ok(left_value.flatten().diag())
-        }
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
-
-    /// 计算 Multiply 节点对父节点的梯度（Batch 模式 / VJP）
+    /// 计算 Multiply 节点对父节点的梯度（VJP）
     ///
     /// 对于 C = A ⊙ B（逐元素乘法）：
-    /// - ∂L/∂A = upstream_grad ⊙ B
-    /// - ∂L/∂B = upstream_grad ⊙ A
+    /// - ∂L/∂A = `upstream_grad` ⊙ B
+    /// - ∂L/∂B = `upstream_grad` ⊙ A
     fn calc_grad_to_parent(
         &self,
         target_parent: &NodeHandle,
@@ -200,9 +115,7 @@ impl TraitNode for Multiply {
     ) -> Result<Tensor, GraphError> {
         // 获取辅助父节点（另一个操作数）
         let assistant = assistant_parent.ok_or_else(|| {
-            GraphError::ComputationError(
-                "Multiply 节点计算梯度需要辅助父节点".to_string(),
-            )
+            GraphError::ComputationError("Multiply 节点计算梯度需要辅助父节点".to_string())
         })?;
 
         // 确定哪个是 target，哪个是 assistant
@@ -210,20 +123,14 @@ impl TraitNode for Multiply {
             // target 是 left (A)，assistant 是 right (B)
             // ∂L/∂A = upstream_grad ⊙ B
             let b_value = assistant.value().ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "{} 的辅助父节点没有值",
-                    self.display_node()
-                ))
+                GraphError::ComputationError(format!("{} 的辅助父节点没有值", self.display_node()))
             })?;
             Ok(upstream_grad * b_value)
         } else if target_parent.id() == self.parents_ids[1] {
             // target 是 right (B)，assistant 是 left (A)
             // ∂L/∂B = upstream_grad ⊙ A
             let a_value = assistant.value().ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "{} 的辅助父节点没有值",
-                    self.display_node()
-                ))
+                GraphError::ComputationError(format!("{} 的辅助父节点没有值", self.display_node()))
             })?;
             Ok(upstream_grad * a_value)
         } else {

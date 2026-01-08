@@ -60,16 +60,14 @@ impl MnistDataset {
     /// 完整加载 API
     ///
     /// # 参数
-    /// - `root`: 数据目录，None 则使用默认 (~/.cache/only_torch/datasets/mnist)
+    /// - `root`: 数据目录，None 则使用默认 (~/.`cache/only_torch/datasets/mnist`)
     /// - `train`: true=训练集(60000), false=测试集(10000)
     /// - `download`: true=自动下载缺失文件
     ///
     /// # 返回
     /// 加载后的 MnistDataset，图像形状为 [N, 1, 28, 28]
     pub fn load(root: Option<&str>, train: bool, download: bool) -> Result<Self, DataError> {
-        let data_dir = root
-            .map(PathBuf::from)
-            .unwrap_or_else(|| default_data_dir().join("mnist"));
+        let data_dir = root.map_or_else(|| default_data_dir().join("mnist"), PathBuf::from);
 
         // 确定文件名
         let (images_file, labels_file) = if train {
@@ -127,12 +125,12 @@ impl MnistDataset {
     }
 
     /// 返回数据集中的样本数量
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
     }
 
     /// 数据集是否为空
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
@@ -181,12 +179,12 @@ impl MnistDataset {
     }
 
     /// 获取所有图像（用于批量处理）
-    pub fn images(&self) -> &Tensor {
+    pub const fn images(&self) -> &Tensor {
         &self.images
     }
 
     /// 获取所有标签（用于批量处理）
-    pub fn labels(&self) -> &Tensor {
+    pub const fn labels(&self) -> &Tensor {
         &self.labels
     }
 }
@@ -208,7 +206,7 @@ fn ensure_file(data_dir: &Path, base_name: &str, download: bool) -> Result<PathB
     }
 
     // 检查 .gz 文件
-    let gz_path = data_dir.join(format!("{}.gz", base_name));
+    let gz_path = data_dir.join(format!("{base_name}.gz"));
     if gz_path.exists() {
         return Ok(gz_path);
     }
@@ -225,14 +223,14 @@ fn ensure_file(data_dir: &Path, base_name: &str, download: bool) -> Result<PathB
 
 /// 下载 MNIST 文件
 fn download_file(base_name: &str, dest_path: &Path) -> Result<(), DataError> {
-    let gz_name = format!("{}.gz", base_name);
-    let url = format!("{}{}", MNIST_BASE_URL, gz_name);
+    let gz_name = format!("{base_name}.gz");
+    let url = format!("{MNIST_BASE_URL}{gz_name}");
 
-    println!("正在下载 {} ...", url);
+    println!("正在下载 {url} ...");
 
     let response = ureq::get(&url)
         .call()
-        .map_err(|e| DataError::DownloadError(format!("HTTP 请求失败: {}", e)))?;
+        .map_err(|e| DataError::DownloadError(format!("HTTP 请求失败: {e}")))?;
 
     if response.status() != 200 {
         return Err(DataError::DownloadError(format!(
@@ -245,14 +243,14 @@ fn download_file(base_name: &str, dest_path: &Path) -> Result<(), DataError> {
     response
         .into_reader()
         .read_to_end(&mut bytes)
-        .map_err(|e| DataError::DownloadError(format!("读取响应失败: {}", e)))?;
+        .map_err(|e| DataError::DownloadError(format!("读取响应失败: {e}")))?;
 
     // 验证 MD5（可选，暂时跳过详细实现）
     // TODO: 添加 MD5 校验
 
     std::fs::write(dest_path, &bytes).map_err(DataError::IoError)?;
 
-    println!("下载完成: {:?}", dest_path);
+    println!("下载完成: {dest_path:?}");
     Ok(())
 }
 
@@ -266,7 +264,7 @@ fn download_file(base_name: &str, dest_path: &Path) -> Result<(), DataError> {
 /// - [16+] pixel data (unsigned byte)
 fn parse_idx_images(path: &Path) -> Result<Tensor, DataError> {
     let file = File::open(path).map_err(|_| DataError::FileNotFound(path.to_path_buf()))?;
-    let reader: Box<dyn Read> = if path.extension().map_or(false, |ext| ext == "gz") {
+    let reader: Box<dyn Read> = if path.extension().is_some_and(|ext| ext == "gz") {
         Box::new(GzDecoder::new(BufReader::new(file)))
     } else {
         Box::new(BufReader::new(file))
@@ -276,14 +274,13 @@ fn parse_idx_images(path: &Path) -> Result<Tensor, DataError> {
     let mut header = [0u8; 16];
     reader
         .read_exact(&mut header)
-        .map_err(|e| DataError::FormatError(format!("读取头部失败: {}", e)))?;
+        .map_err(|e| DataError::FormatError(format!("读取头部失败: {e}")))?;
 
     // 解析头部（大端序）
     let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
     if magic != 2051 {
         return Err(DataError::FormatError(format!(
-            "无效的 magic number: {} (期望 2051)",
-            magic
+            "无效的 magic number: {magic} (期望 2051)"
         )));
     }
 
@@ -293,8 +290,7 @@ fn parse_idx_images(path: &Path) -> Result<Tensor, DataError> {
 
     if num_rows != 28 || num_cols != 28 {
         return Err(DataError::FormatError(format!(
-            "无效的图像尺寸: {}x{} (期望 28x28)",
-            num_rows, num_cols
+            "无效的图像尺寸: {num_rows}x{num_cols} (期望 28x28)"
         )));
     }
 
@@ -303,10 +299,10 @@ fn parse_idx_images(path: &Path) -> Result<Tensor, DataError> {
     let mut pixels = vec![0u8; pixel_count];
     reader
         .read_exact(&mut pixels)
-        .map_err(|e| DataError::FormatError(format!("读取像素数据失败: {}", e)))?;
+        .map_err(|e| DataError::FormatError(format!("读取像素数据失败: {e}")))?;
 
     // 转换为 f32 Tensor [N, 784]
-    let data: Vec<f32> = pixels.into_iter().map(|p| p as f32).collect();
+    let data: Vec<f32> = pixels.into_iter().map(f32::from).collect();
     Ok(Tensor::new(&data, &[num_images, 784]))
 }
 
@@ -318,7 +314,7 @@ fn parse_idx_images(path: &Path) -> Result<Tensor, DataError> {
 /// - [8+] label data (unsigned byte, 0-9)
 fn parse_idx_labels(path: &Path) -> Result<Tensor, DataError> {
     let file = File::open(path).map_err(|_| DataError::FileNotFound(path.to_path_buf()))?;
-    let reader: Box<dyn Read> = if path.extension().map_or(false, |ext| ext == "gz") {
+    let reader: Box<dyn Read> = if path.extension().is_some_and(|ext| ext == "gz") {
         Box::new(GzDecoder::new(BufReader::new(file)))
     } else {
         Box::new(BufReader::new(file))
@@ -328,14 +324,13 @@ fn parse_idx_labels(path: &Path) -> Result<Tensor, DataError> {
     let mut header = [0u8; 8];
     reader
         .read_exact(&mut header)
-        .map_err(|e| DataError::FormatError(format!("读取头部失败: {}", e)))?;
+        .map_err(|e| DataError::FormatError(format!("读取头部失败: {e}")))?;
 
     // 解析头部（大端序）
     let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
     if magic != 2049 {
         return Err(DataError::FormatError(format!(
-            "无效的 magic number: {} (期望 2049)",
-            magic
+            "无效的 magic number: {magic} (期望 2049)"
         )));
     }
 
@@ -345,9 +340,9 @@ fn parse_idx_labels(path: &Path) -> Result<Tensor, DataError> {
     let mut labels = vec![0u8; num_labels];
     reader
         .read_exact(&mut labels)
-        .map_err(|e| DataError::FormatError(format!("读取标签数据失败: {}", e)))?;
+        .map_err(|e| DataError::FormatError(format!("读取标签数据失败: {e}")))?;
 
     // 转换为 f32 Tensor [N]
-    let data: Vec<f32> = labels.into_iter().map(|l| l as f32).collect();
+    let data: Vec<f32> = labels.into_iter().map(f32::from).collect();
     Ok(Tensor::new(&data, &[num_labels]))
 }

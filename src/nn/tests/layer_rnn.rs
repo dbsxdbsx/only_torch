@@ -306,28 +306,28 @@ fn test_rnn_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
     graph.backward_through_time(&[rnn_out.w_ih, rnn_out.w_hh, rnn_out.b_h, w_out], loss)?;
 
     // 验证梯度
-    let grad_w_ih = graph.get_node_jacobi(rnn_out.w_ih)?.unwrap();
+    let grad_w_ih = graph.get_node_grad(rnn_out.w_ih)?.unwrap();
     let grad_w_ih_flat: Vec<f32> = grad_w_ih.data_as_slice().to_vec();
     println!("grad_w_ih: {:?}", grad_w_ih_flat);
     for (&actual, &expected) in grad_w_ih_flat.iter().zip(TEST3_GRAD_W_IH.iter()) {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
     }
 
-    let grad_w_hh = graph.get_node_jacobi(rnn_out.w_hh)?.unwrap();
+    let grad_w_hh = graph.get_node_grad(rnn_out.w_hh)?.unwrap();
     let grad_w_hh_flat: Vec<f32> = grad_w_hh.data_as_slice().to_vec();
     println!("grad_w_hh: {:?}", grad_w_hh_flat);
     for (&actual, &expected) in grad_w_hh_flat.iter().zip(TEST3_GRAD_W_HH.iter()) {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
     }
 
-    let grad_b_h = graph.get_node_jacobi(rnn_out.b_h)?.unwrap();
+    let grad_b_h = graph.get_node_grad(rnn_out.b_h)?.unwrap();
     let grad_b_h_flat: Vec<f32> = grad_b_h.data_as_slice().to_vec();
     println!("grad_b_h: {:?}", grad_b_h_flat);
     for (&actual, &expected) in grad_b_h_flat.iter().zip(TEST3_GRAD_B_H.iter()) {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
     }
 
-    let grad_w_out = graph.get_node_jacobi(w_out)?.unwrap();
+    let grad_w_out = graph.get_node_grad(w_out)?.unwrap();
     let grad_w_out_flat: Vec<f32> = grad_w_out.data_as_slice().to_vec();
     println!("grad_w_out: {:?}", grad_w_out_flat);
     for (&actual, &expected) in grad_w_out_flat.iter().zip(TEST3_GRAD_W_OUT.iter()) {
@@ -829,15 +829,15 @@ fn test_rnn_batch_backward() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // Batch 前向 + 反向
-    graph.forward_batch(loss)?;
-    graph.backward_batch(loss, None)?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
     // 验证 RNN 权重有梯度
-    let w_ih_grad = graph.get_node_grad_batch(rnn_out.w_ih)?;
+    let w_ih_grad = graph.get_node_grad_ref(rnn_out.w_ih)?;
     assert!(w_ih_grad.is_some());
     assert_eq!(w_ih_grad.unwrap().shape(), &[input_size, hidden_size]);
 
-    let w_hh_grad = graph.get_node_grad_batch(rnn_out.w_hh)?;
+    let w_hh_grad = graph.get_node_grad_ref(rnn_out.w_hh)?;
     assert!(w_hh_grad.is_some());
     assert_eq!(w_hh_grad.unwrap().shape(), &[hidden_size, hidden_size]);
 
@@ -900,17 +900,17 @@ fn test_rnn_chain_batch_training() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // 前向
-    graph.forward_batch(loss)?;
+    graph.forward(loss)?;
     let loss_before = graph.get_node_value(loss)?.unwrap()[[0, 0]];
 
     // 反向
-    graph.backward_batch(loss, None)?;
+    graph.backward(loss)?;
 
     // 验证两层 RNN 都有梯度
-    let rnn1_grad = graph.get_node_grad_batch(rnn1.w_ih)?;
+    let rnn1_grad = graph.get_node_grad_ref(rnn1.w_ih)?;
     assert!(rnn1_grad.is_some());
 
-    let rnn2_grad = graph.get_node_grad_batch(rnn2.w_ih)?;
+    let rnn2_grad = graph.get_node_grad_ref(rnn2.w_ih)?;
     assert!(rnn2_grad.is_some());
 
     println!(

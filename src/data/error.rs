@@ -24,7 +24,10 @@ pub enum DataError {
 
     /// 形状不匹配
     #[error("形状不匹配: 期望 {expected:?}, 实际 {got:?}")]
-    ShapeMismatch { expected: Vec<usize>, got: Vec<usize> },
+    ShapeMismatch {
+        expected: Vec<usize>,
+        got: Vec<usize>,
+    },
 
     /// 下载错误
     #[error("下载错误: {0}")]
@@ -38,4 +41,3 @@ pub enum DataError {
     #[error("解压错误: {0}")]
     DecompressionError(String),
 }
-

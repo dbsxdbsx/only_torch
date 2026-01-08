@@ -1,373 +1,572 @@
+/*
+ * @Author       : 老董
+ * @Description  : MatMul 节点单元测试（矩阵乘法）
+ *
+ * 测试策略：
+ * 1. 基础功能测试（创建、形状验证、命名）
+ * 2. 前向传播测试
+ * 3. VJP 单元测试（直接调用 calc_grad_to_parent）
+ * 4. 端到端反向传播测试（通过 graph.backward）
+ * 5. 梯度累积测试
+ */
+
 use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
+use approx::assert_abs_diff_eq;
 
+// ==================== 基础功能测试 ====================
+
+/// 测试 MatMul 节点创建
 #[test]
-fn test_node_mat_mul_creation() {
+fn test_mat_mul_creation() {
     let mut graph = Graph::new();
 
-    // 1. 测试只有Input节点作为父节点
+    // 1. 两个 Input 节点相乘
     {
         let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
         let input2 = graph.new_input_node(&[3, 4], Some("input2")).unwrap();
         let mat_mul = graph
-            .new_mat_mul_node(input1, input2, Some("mat_mul_with_inputs"))
+            .new_mat_mul_node(input1, input2, Some("mat_mul_inputs"))
             .unwrap();
-        // 1.1 验证基本属性
-        assert_eq!(graph.get_node_name(mat_mul).unwrap(), "mat_mul_with_inputs");
+
+        assert_eq!(graph.get_node_name(mat_mul).unwrap(), "mat_mul_inputs");
         assert_eq!(graph.get_node_parents(mat_mul).unwrap().len(), 2);
-        assert_eq!(graph.get_node_children(mat_mul).unwrap().len(), 0);
+        assert_eq!(
+            graph.get_node_value_expected_shape(mat_mul).unwrap(),
+            &[2, 4]
+        );
     }
 
-    // 2. 测试只有Parameter节点作为父节点
+    // 2. 两个 Parameter 节点相乘
     {
         let param1 = graph.new_parameter_node(&[2, 3], Some("param1")).unwrap();
         let param2 = graph.new_parameter_node(&[3, 4], Some("param2")).unwrap();
         let mat_mul = graph
-            .new_mat_mul_node(param1, param2, Some("mat_mul_with_params"))
+            .new_mat_mul_node(param1, param2, Some("mat_mul_params"))
             .unwrap();
-        assert_eq!(graph.get_node_name(mat_mul).unwrap(), "mat_mul_with_params");
+
+        assert_eq!(graph.get_node_name(mat_mul).unwrap(), "mat_mul_params");
         assert_eq!(graph.get_node_parents(mat_mul).unwrap().len(), 2);
-        assert_eq!(graph.get_node_children(mat_mul).unwrap().len(), 0);
+        assert_eq!(
+            graph.get_node_value_expected_shape(mat_mul).unwrap(),
+            &[2, 4]
+        );
     }
 
-    // 3. 测试混合Input和Parameter节点作为父节点
+    // 3. 混合 Input 和 Parameter 节点相乘
     {
         let input = graph.new_input_node(&[2, 3], Some("input3")).unwrap();
         let param = graph.new_parameter_node(&[3, 4], Some("param3")).unwrap();
         let mat_mul = graph
-            .new_mat_mul_node(input, param, Some("mat_mul_with_mixed"))
+            .new_mat_mul_node(input, param, Some("mat_mul_mixed"))
             .unwrap();
-        assert_eq!(graph.get_node_name(mat_mul).unwrap(), "mat_mul_with_mixed");
+
+        assert_eq!(graph.get_node_name(mat_mul).unwrap(), "mat_mul_mixed");
         assert_eq!(graph.get_node_parents(mat_mul).unwrap().len(), 2);
-        assert_eq!(graph.get_node_children(mat_mul).unwrap().len(), 0);
+        assert_eq!(
+            graph.get_node_value_expected_shape(mat_mul).unwrap(),
+            &[2, 4]
+        );
+    }
+
+    // 4. 向量乘矩阵 (1xN) @ (NxM) = (1xM)
+    {
+        let vec = graph.new_parameter_node(&[1, 3], Some("vec")).unwrap();
+        let mat = graph.new_parameter_node(&[3, 5], Some("mat")).unwrap();
+        let result = graph
+            .new_mat_mul_node(vec, mat, Some("vec_mat_mul"))
+            .unwrap();
+
+        assert_eq!(
+            graph.get_node_value_expected_shape(result).unwrap(),
+            &[1, 5]
+        );
     }
 }
 
+/// 测试 MatMul 创建时的形状校验
 #[test]
-fn test_node_mat_mul_creation_with_inconsistent_shape() {
+fn test_mat_mul_creation_invalid_shape() {
     let mut graph = Graph::new();
 
-    // 1. 创建形状不匹配的父节点（不满足矩阵乘法规则）
-    let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[2, 4], Some("input2")).unwrap();
-    let param3 = graph.new_parameter_node(&[4, 3], Some("param3")).unwrap();
+    // 1. 列数与行数不匹配：[2,3] @ [2,4]（3 ≠ 2）
+    let left = graph.new_input_node(&[2, 3], Some("left")).unwrap();
+    let right = graph.new_input_node(&[2, 4], Some("right")).unwrap();
 
-    // 2. 设置父节点的值
-    let value1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let value2 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
-    let value3 = Tensor::new(
-        &[
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
-        ],
-        &[4, 3],
-    );
-    graph.set_node_value(input1, Some(&value1)).unwrap();
-    graph.set_node_value(input2, Some(&value2)).unwrap();
-    graph.set_node_value(param3, Some(&value3)).unwrap();
-
-    // 3. 测试不同形状组合
-    let nodes = [input1, input2, param3];
-    for &left in nodes.iter() {
-        for &right in nodes.iter() {
-            let result = graph.new_mat_mul_node(left, right, None);
-
-            let left_shape = graph.get_node_value(left).unwrap().unwrap().shape();
-            let right_shape = graph.get_node_value(right).unwrap().unwrap().shape();
-
-            if left_shape[1] == right_shape[0] {
-                // 形状匹配,应该成功
-                assert!(result.is_ok());
-            } else {
-                // 形状不匹配,应该失败
-                assert_err!(
-                    result,
-                    GraphError::ShapeMismatch { expected, got, message }
-                        if expected == &[left_shape[0], right_shape[1]]
-                            && got == &[left_shape[1], right_shape[0]]
-                            && message == &format!(
-                                "MatMul节点的2个父节点形状不兼容：父节点1的列数({})与父节点2的行数({})不相等。",
-                                left_shape[1], right_shape[0]
-                            )
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn test_node_mat_mul_name_generation() {
-    // 1. 测试节点显式命名
-    let mut graph = Graph::new();
-    let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[3, 4], Some("input2")).unwrap();
-    let mat_mul = graph
-        .new_mat_mul_node(input1, input2, Some("explicit_mat_mul"))
-        .unwrap();
-    assert_eq!(graph.get_node_name(mat_mul).unwrap(), "explicit_mat_mul");
-
-    // 2. 测试节点自动命名
-    let mat_mul2 = graph.new_mat_mul_node(input1, input2, None).unwrap();
-    assert_eq!(graph.get_node_name(mat_mul2).unwrap(), "mat_mul_1");
-
-    // 3. 测试节点名称重复
-    let result = graph.new_mat_mul_node(input1, input2, Some("explicit_mat_mul"));
+    let result = graph.new_mat_mul_node(left, right, None);
     assert_err!(
         result,
-        GraphError::DuplicateNodeName("节点explicit_mat_mul在图default_graph中重复")
+        GraphError::ShapeMismatch(
+            [2, 4],
+            [3, 2],
+            "MatMul节点的2个父节点形状不兼容：父节点1的列数(3)与父节点2的行数(2)不相等。"
+        )
+    );
+
+    // 2. 另一种不匹配：[2,3] @ [4,3]（3 ≠ 4）
+    let right2 = graph.new_input_node(&[4, 3], Some("right2")).unwrap();
+    let result = graph.new_mat_mul_node(left, right2, None);
+    assert_err!(
+        result,
+        GraphError::ShapeMismatch(
+            [2, 3],
+            [3, 4],
+            "MatMul节点的2个父节点形状不兼容：父节点1的列数(3)与父节点2的行数(4)不相等。"
+        )
     );
 }
 
+/// 测试 MatMul 节点命名
 #[test]
-fn test_node_mat_mul_manually_set_value() {
+fn test_mat_mul_name_generation() {
     let mut graph = Graph::new();
-    let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[3, 4], Some("input2")).unwrap();
-    let mat_mul = graph
-        .new_mat_mul_node(input1, input2, Some("mat_mul"))
+
+    let left = graph.new_input_node(&[2, 3], Some("l")).unwrap();
+    let right = graph.new_input_node(&[3, 4], Some("r")).unwrap();
+
+    // 1. 显式命名
+    let result1 = graph
+        .new_mat_mul_node(left, right, Some("my_matmul"))
         .unwrap();
+    assert_eq!(graph.get_node_name(result1).unwrap(), "my_matmul");
 
-    // 1. 测试直接设置MatMul节点的值（应该失败）
-    let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
-    assert_err!(
-        graph.set_node_value(mat_mul, Some(&test_value)),
-        GraphError::InvalidOperation("节点[id=3, name=mat_mul, type=MatMul]的值只能通过前向传播计算得到，不能直接设置")
-    );
+    // 2. 自动命名
+    let result2 = graph.new_mat_mul_node(left, right, None).unwrap();
+    assert_eq!(graph.get_node_name(result2).unwrap(), "mat_mul_1");
 
-    // 2. 测试清除MatMul节点的值（也应该失败）
+    // 3. 名称重复
+    let result = graph.new_mat_mul_node(left, right, Some("my_matmul"));
     assert_err!(
-        graph.set_node_value(mat_mul, None),
-        GraphError::InvalidOperation("节点[id=3, name=mat_mul, type=MatMul]的值只能通过前向传播计算得到，不能直接设置")
+        result,
+        GraphError::DuplicateNodeName("节点my_matmul在图default_graph中重复")
     );
 }
 
+/// 测试 MatMul 节点不能直接设置值
 #[test]
-fn test_node_mat_mul_expected_shape() {
+fn test_mat_mul_cannot_set_value() {
+    let mut graph = Graph::new();
+    let left = graph.new_input_node(&[2, 3], Some("l")).unwrap();
+    let right = graph.new_input_node(&[3, 4], Some("r")).unwrap();
+    let result = graph.new_mat_mul_node(left, right, Some("matmul")).unwrap();
+
+    let test_value = Tensor::new(&[1.0; 8], &[2, 4]);
+    assert_err!(
+        graph.set_node_value(result, Some(&test_value)),
+        GraphError::InvalidOperation(
+            "节点[id=3, name=matmul, type=MatMul]的值只能通过前向传播计算得到，不能直接设置"
+        )
+    );
+}
+
+// ==================== 前向传播测试 ====================
+
+/// 测试 MatMul 前向传播
+#[test]
+fn test_mat_mul_forward() {
     let mut graph = Graph::new();
 
-    // 1. 测试基本的MatMul节点预期形状
-    let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[3, 4], Some("input2")).unwrap();
-    let mat_mul = graph
-        .new_mat_mul_node(input1, input2, Some("mat_mul"))
+    let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
+    let right = graph.new_parameter_node(&[3, 4], Some("right")).unwrap();
+    let result = graph.new_mat_mul_node(left, right, Some("result")).unwrap();
+
+    // left=[[1,2,3],[4,5,6]], right=[[7,8,9,10],[11,12,13,14],[15,16,17,18]]
+    // result = [[1*7+2*11+3*15, ...], [...]] = [[74,80,86,92],[173,188,203,218]]
+    graph
+        .set_node_value(
+            left,
+            Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])),
+        )
         .unwrap();
-    assert_eq!(
-        graph.get_node_value_expected_shape(mat_mul).unwrap(),
-        &[2, 4]
+    graph
+        .set_node_value(
+            right,
+            Some(&Tensor::new(
+                &[
+                    7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
+                ],
+                &[3, 4],
+            )),
+        )
+        .unwrap();
+
+    graph.forward(result).unwrap();
+
+    let output = graph.get_node_value(result).unwrap().unwrap();
+    let expected = Tensor::new(
+        &[74.0, 80.0, 86.0, 92.0, 173.0, 188.0, 203.0, 218.0],
+        &[2, 4],
     );
-    assert_eq!(graph.get_node_value_shape(mat_mul).unwrap(), None); // 实际值形状为None（未计算）
+    assert_eq!(output, &expected);
+}
 
-    // 2. 测试前向传播后的形状
-    let value1 = Tensor::zeros(&[2, 3]);
-    let value2 = Tensor::zeros(&[3, 4]);
-    graph.set_node_value(input1, Some(&value1)).unwrap();
-    graph.set_node_value(input2, Some(&value2)).unwrap();
-    graph.forward_node(mat_mul).unwrap();
+/// 测试 MatMul 前向传播（向量乘矩阵）
+#[test]
+fn test_mat_mul_forward_vector() {
+    let mut graph = Graph::new();
 
-    // 2.1 验证前向传播后的形状
-    assert_eq!(
-        graph.get_node_value_shape(mat_mul).unwrap().unwrap(),
-        &[2, 4]
-    ); // 实际值形状
-    assert_eq!(
-        graph.get_node_value_expected_shape(mat_mul).unwrap(),
-        &[2, 4]
-    ); // 预期形状保持不变
+    let vec = graph.new_parameter_node(&[1, 3], Some("vec")).unwrap();
+    let mat = graph.new_parameter_node(&[3, 2], Some("mat")).unwrap();
+    let result = graph.new_mat_mul_node(vec, mat, Some("result")).unwrap();
 
-    // 2.2 测试父节点值在首次前向传播后，再次设置新值后的形状检查
-    let value1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let value2 = Tensor::new(
+    // vec=[1,2,3], mat=[[1,2],[3,4],[5,6]]
+    // result = [1*1+2*3+3*5, 1*2+2*4+3*6] = [22, 28]
+    graph
+        .set_node_value(vec, Some(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])))
+        .unwrap();
+    graph
+        .set_node_value(
+            mat,
+            Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])),
+        )
+        .unwrap();
+
+    graph.forward(result).unwrap();
+
+    let output = graph.get_node_value(result).unwrap().unwrap();
+    let expected = Tensor::new(&[22.0, 28.0], &[1, 2]);
+    assert_eq!(output, &expected);
+}
+
+// ==================== 节点级反向传播测试（直接调用 calc_grad_to_parent）====================
+
+/// 测试 MatMul 对 left 父节点的梯度计算
+///
+/// 对于 C = A @ B，有：
+/// - ∂C/∂A 的 VJP: grad_to_A = upstream_grad @ B^T
+#[test]
+fn test_mat_mul_backward_to_left() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let left_id = graph.new_parameter_node(&[2, 3], Some("left"))?;
+    let right_id = graph.new_parameter_node(&[3, 4], Some("right"))?;
+    let result_id = graph.new_mat_mul_node(left_id, right_id, Some("result"))?;
+
+    // 设置值
+    let left_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let right_value = Tensor::new(
         &[
             7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
         ],
         &[3, 4],
     );
-    graph.set_node_value(input1, Some(&value1)).unwrap();
-    graph.set_node_value(input2, Some(&value2)).unwrap();
+    graph.set_node_value(left_id, Some(&left_value))?;
+    graph.set_node_value(right_id, Some(&right_value))?;
+    graph.forward(result_id)?;
 
-    // 2.2.1 验证预期形状和实际形状
-    assert_eq!(
-        graph.get_node_value_expected_shape(mat_mul).unwrap(),
-        &[2, 4]
-    );
-    assert_eq!(
-        graph.get_node_value_shape(mat_mul).unwrap().unwrap(),
-        &[2, 4]
-    ); // 虽然值已过期，但由于值仍然存在，所以形状不变
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[2, 4]);
+    let result_node = graph.get_node(result_id)?;
+    let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
+
+    // MatMul 需要 assistant_parent（另一个操作数）
+    let grad = result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+
+    // grad_to_left = upstream @ right^T
+    // upstream=[2,4], right^T=[4,3] → grad=[2,3]
+    let expected = upstream_grad.mat_mul(&right_value.transpose());
+    assert_eq!(grad.shape(), &[2, 3]);
+    assert_eq!(&grad, &expected);
+
+    Ok(())
 }
 
+/// 测试 MatMul 对 right 父节点的梯度计算
+///
+/// 对于 C = A @ B，有：
+/// - ∂C/∂B 的 VJP: grad_to_B = A^T @ upstream_grad
 #[test]
-fn test_node_mat_mul_forward_propagation() {
-    // 1. 准备测试数据 (与Python测试tests\calc_jacobi_by_pytorch\node_mat_mul.py保持一致)
-    let value1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let value2 = Tensor::new(
-        &[
-            7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
-        ],
-        &[3, 4],
-    );
-    let expected = value1.mat_mul(&value2); // 结果应该是[2, 4]的矩阵
-
-    // 2. 测试不同节点类型组合的前向传播
-    let node_types = ["input", "parameter"];
-    for parent1_type in node_types {
-        for parent2_type in node_types {
-            let mut graph = Graph::new();
-
-            // 创建parent1节点
-            let parent1 = match parent1_type {
-                "input" => graph.new_input_node(&[2, 3], Some("input_1")).unwrap(),
-                "parameter" => graph
-                    .new_parameter_node(&[2, 3], Some("parameter_1"))
-                    .unwrap(),
-                _ => unreachable!(),
-            };
-
-            // 创建parent2节点
-            let parent2 = match parent2_type {
-                "input" => graph.new_input_node(&[3, 4], Some("input_2")).unwrap(),
-                "parameter" => graph
-                    .new_parameter_node(&[3, 4], Some("parameter_2"))
-                    .unwrap(),
-                _ => unreachable!(),
-            };
-
-            // MatMul节点总是可训练的
-            let mat_mul = graph
-                .new_mat_mul_node(parent1, parent2, Some("mat_mul"))
-                .unwrap();
-
-            // 如果两个节点都是parameter，因创建时其值已隐式初始化过了，所以前向传播应成功
-            if parent1_type == "parameter" && parent2_type == "parameter" {
-                graph.forward_node(mat_mul).unwrap();
-            } else {
-                // 如果有input节点，因创建时其值未初始化，所以前向传播应失败
-                if parent1_type == "input" {
-                    assert_err!(
-                        graph.forward_node(mat_mul),
-                        GraphError::InvalidOperation("节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1")
-                    );
-                } else if parent2_type == "input" {
-                    assert_err!(
-                        graph.forward_node(mat_mul),
-                        GraphError::InvalidOperation("节点[id=2, name=input_2, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1")
-                    );
-                }
-
-                // 设置input节点的值
-                if parent1_type == "input" {
-                    graph.set_node_value(parent1, Some(&value1)).unwrap();
-                }
-                if parent2_type == "input" {
-                    graph.set_node_value(parent2, Some(&value2)).unwrap();
-                }
-
-                // 设置值后前向传播应成功
-                graph.forward_node(mat_mul).unwrap();
-                let result = graph.get_node_value(mat_mul).unwrap().unwrap();
-
-                // 只有当两个节点都是input时才检查输出值
-                if parent1_type == "input" && parent2_type == "input" {
-                    assert_eq!(result, &expected);
-                }
-            }
-        }
-    }
-}
-
-#[test]
-fn test_node_mat_mul_backward_propagation() {
+fn test_mat_mul_backward_to_right() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
-    // 1. 创建一个简单的矩阵乘法图：result = parent1 * parent2
-    let parent1 = graph.new_parameter_node(&[2, 3], Some("parent1")).unwrap();
-    let parent2 = graph.new_parameter_node(&[3, 4], Some("parent2")).unwrap();
-    let result = graph
-        .new_mat_mul_node(parent1, parent2, Some("result"))
-        .unwrap();
+    let left_id = graph.new_parameter_node(&[2, 3], Some("left"))?;
+    let right_id = graph.new_parameter_node(&[3, 4], Some("right"))?;
+    let result_id = graph.new_mat_mul_node(left_id, right_id, Some("result"))?;
 
-    // 2. 测试在前向传播之前进行反向传播（应该失败）
-    assert_err!(
-        graph.backward_nodes(&[parent1], result),
-        GraphError::ComputationError("反向传播：结果节点[id=3, name=result, type=MatMul]没有值")
-    );
-
-    // 3. 设置输入值 (与Python测试tests\calc_jacobi_by_pytorch\node_mat_mul.py保持一致)
-    let parent1_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let parent2_value = Tensor::new(
+    // 设置值
+    let left_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let right_value = Tensor::new(
         &[
             7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0,
         ],
         &[3, 4],
     );
-    graph.set_node_value(parent1, Some(&parent1_value)).unwrap();
-    graph.set_node_value(parent2, Some(&parent2_value)).unwrap();
+    graph.set_node_value(left_id, Some(&left_value))?;
+    graph.set_node_value(right_id, Some(&right_value))?;
+    graph.forward(result_id)?;
 
-    // 4. 反向传播前执行必要的前向传播
-    graph.forward_node(result).unwrap();
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[2, 4]);
+    let result_node = graph.get_node(result_id)?;
+    let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
 
-    // 5. 反向传播（使用 retain_graph=true 以便多次 backward）
-    // 5.1 mat_mul节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    let grad = result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
 
-    // 5.2 对parent1的反向传播（第1次）
-    graph.backward_nodes_ex(&[parent1], result, true).unwrap();
-    let parent1_jacobi = graph.get_node_jacobi(parent1).unwrap().unwrap();
-    let expected_jacobi_parent1 = Tensor::new(
-        &[
-            7.0, 11.0, 15.0, 0.0, 0.0, 0.0, 8.0, 12.0, 16.0, 0.0, 0.0, 0.0, 9.0, 13.0, 17.0, 0.0,
-            0.0, 0.0, 10.0, 14.0, 18.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 7.0, 11.0, 15.0, 0.0, 0.0,
-            0.0, 8.0, 12.0, 16.0, 0.0, 0.0, 0.0, 9.0, 13.0, 17.0, 0.0, 0.0, 0.0, 10.0, 14.0, 18.0,
-        ],
-        &[8, 6],
+    // grad_to_right = left^T @ upstream
+    // left^T=[3,2], upstream=[2,4] → grad=[3,4]
+    let expected = left_value.transpose().mat_mul(&upstream_grad);
+    assert_eq!(grad.shape(), &[3, 4]);
+    assert_eq!(&grad, &expected);
+
+    Ok(())
+}
+
+/// 测试 MatMul 梯度计算（非单位 upstream_grad）
+#[test]
+fn test_mat_mul_backward_with_non_unit_upstream() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
+    let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
+    let result_id = graph.new_mat_mul_node(left_id, right_id, Some("result"))?;
+
+    // left=[[1,2],[3,4]], right=[[5,6],[7,8]]
+    let left_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let right_value = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]);
+    graph.set_node_value(left_id, Some(&left_value))?;
+    graph.set_node_value(right_id, Some(&right_value))?;
+    graph.forward(result_id)?;
+
+    // upstream_grad = [[1,2],[3,4]]（非全1）
+    let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let result_node = graph.get_node(result_id)?;
+    let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
+
+    // 对 left 的梯度：upstream @ right^T
+    let grad_to_left =
+        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let expected_left = upstream_grad.mat_mul(&right_value.transpose());
+    assert_eq!(&grad_to_left, &expected_left);
+
+    // 对 right 的梯度：left^T @ upstream
+    let grad_to_right =
+        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let expected_right = left_value.transpose().mat_mul(&upstream_grad);
+    assert_eq!(&grad_to_right, &expected_right);
+
+    Ok(())
+}
+
+/// 测试 MatMul 梯度计算（负数值）
+///
+/// 验证 VJP 在负数值场景下的正确性
+#[test]
+fn test_mat_mul_backward_with_negative_values() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
+    let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
+    let result_id = graph.new_mat_mul_node(left_id, right_id, Some("result"))?;
+
+    // left=[[-1,2],[-3,4]], right=[[5,-6],[7,-8]]
+    let left_value = Tensor::new(&[-1.0, 2.0, -3.0, 4.0], &[2, 2]);
+    let right_value = Tensor::new(&[5.0, -6.0, 7.0, -8.0], &[2, 2]);
+    graph.set_node_value(left_id, Some(&left_value))?;
+    graph.set_node_value(right_id, Some(&right_value))?;
+    graph.forward(result_id)?;
+
+    // 验证前向传播
+    // [[-1,2],[-3,4]] @ [[5,-6],[7,-8]]
+    // = [[-1*5+2*7, -1*-6+2*-8], [-3*5+4*7, -3*-6+4*-8]]
+    // = [[9, -10], [13, -14]]
+    let output = graph.get_node_value(result_id)?.unwrap();
+    let expected_output = Tensor::new(&[9.0, -10.0, 13.0, -14.0], &[2, 2]);
+    assert_eq!(output, &expected_output);
+
+    // upstream_grad = [[1,1],[1,1]]
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let result_node = graph.get_node(result_id)?;
+    let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
+
+    // grad_to_left = upstream @ right^T
+    let grad_to_left =
+        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let expected_left = upstream_grad.mat_mul(&right_value.transpose());
+    assert_eq!(&grad_to_left, &expected_left);
+
+    // grad_to_right = left^T @ upstream
+    let grad_to_right =
+        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let expected_right = left_value.transpose().mat_mul(&upstream_grad);
+    assert_eq!(&grad_to_right, &expected_right);
+
+    Ok(())
+}
+
+/// 测试 MatMul 梯度计算（含零值）
+///
+/// 零值是重要边界情况：A @ B 中的零元素，梯度仍应正确传播
+#[test]
+fn test_mat_mul_backward_with_zero_value() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
+    let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
+    let result_id = graph.new_mat_mul_node(left_id, right_id, Some("result"))?;
+
+    // left=[[0,1],[2,0]], right=[[1,0],[0,1]]（单位矩阵变体）
+    let left_value = Tensor::new(&[0.0, 1.0, 2.0, 0.0], &[2, 2]);
+    let right_value = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]);
+    graph.set_node_value(left_id, Some(&left_value))?;
+    graph.set_node_value(right_id, Some(&right_value))?;
+    graph.forward(result_id)?;
+
+    // 验证前向传播：left @ I' = [[0,1],[2,0]]
+    let output = graph.get_node_value(result_id)?.unwrap();
+    let expected_output = Tensor::new(&[0.0, 1.0, 2.0, 0.0], &[2, 2]);
+    assert_eq!(output, &expected_output);
+
+    // upstream_grad = [[1,1],[1,1]]
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let result_node = graph.get_node(result_id)?;
+    let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
+
+    // 即使有零值，梯度仍应正确计算
+    let grad_to_left =
+        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let expected_left = upstream_grad.mat_mul(&right_value.transpose());
+    assert_eq!(&grad_to_left, &expected_left);
+
+    let grad_to_right =
+        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let expected_right = left_value.transpose().mat_mul(&upstream_grad);
+    assert_eq!(&grad_to_right, &expected_right);
+
+    Ok(())
+}
+
+/// 测试 MatMul 梯度计算缺少 assistant_parent 时报错
+#[test]
+fn test_mat_mul_backward_missing_assistant_parent() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let left_id = graph.new_parameter_node(&[2, 3], Some("left"))?;
+    let right_id = graph.new_parameter_node(&[3, 4], Some("right"))?;
+    let result_id = graph.new_mat_mul_node(left_id, right_id, Some("result"))?;
+
+    // 设置值并前向传播
+    graph.set_node_value(
+        left_id,
+        Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])),
+    )?;
+    graph.set_node_value(right_id, Some(&Tensor::new(&[1.0; 12], &[3, 4])))?;
+    graph.forward(result_id)?;
+
+    // 直接测试 VJP，不传 assistant_parent（应该报错）
+    let upstream_grad = Tensor::ones(&[2, 4]);
+    let result_node = graph.get_node(result_id)?;
+    let left_node = graph.get_node(left_id)?;
+
+    let result = result_node.calc_grad_to_parent(left_node, &upstream_grad, None);
+    assert_err!(
+        result,
+        GraphError::ComputationError("MatMul 需要辅助父节点来计算梯度")
     );
-    assert_eq!(parent1_jacobi, &expected_jacobi_parent1);
 
-    // 5.3 对parent1的反向传播（第2次）- 梯度应该累积
-    graph.backward_nodes_ex(&[parent1], result, true).unwrap();
-    let parent1_jacobi_second = graph.get_node_jacobi(parent1).unwrap().unwrap();
-    assert_eq!(parent1_jacobi_second, &(&expected_jacobi_parent1 * 2.0));
+    Ok(())
+}
 
-    // 5.4 对parent2的反向传播（第1次）
-    graph.backward_nodes_ex(&[parent2], result, true).unwrap();
-    let parent2_jacobi = graph.get_node_jacobi(parent2).unwrap().unwrap();
-    let expected_jacobi_parent2 = Tensor::new(
-        &[
-            1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
-            2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0,
-            3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0, 4.0, 0.0, 0.0,
-            0.0, 5.0, 0.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0,
-            0.0, 6.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 6.0, 0.0, 0.0,
-            0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 6.0,
-        ],
-        &[8, 12],
-    );
-    assert_eq!(parent2_jacobi, &expected_jacobi_parent2);
+// ==================== 端到端反向传播测试 ====================
 
-    // 5.5 对parent2的反向传播（第2次）- 梯度应该累积
-    graph.backward_nodes_ex(&[parent2], result, true).unwrap();
-    let parent2_jacobi_second = graph.get_node_jacobi(parent2).unwrap().unwrap();
-    assert_eq!(parent2_jacobi_second, &(&expected_jacobi_parent2 * 2.0));
+/// 测试 MatMul 通过 graph.backward() 的端到端反向传播
+///
+/// 构建简单图：result = left @ right → loss = MSE(result, target)
+#[test]
+fn test_mat_mul_backward_e2e() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
 
-    // 6. 清除雅可比矩阵并验证
-    graph.clear_jacobi().unwrap();
+    // 创建计算图：result = left @ right
+    let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
+    let right = graph.new_parameter_node(&[2, 2], Some("right"))?;
+    let result = graph.new_mat_mul_node(left, right, Some("result"))?;
 
-    // 6.1 清除后，parent1, parent2, result的雅可比矩阵应该为None
-    assert!(graph.get_node_jacobi(parent1).unwrap().is_none());
-    assert!(graph.get_node_jacobi(parent2).unwrap().is_none());
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    // loss = MSE(result, target)
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
-    // 6.2 清除后再次反向传播 - 仍应正常工作
-    // 6.2.1 mat_mul节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    // 设置值：left=[[1,2],[3,4]], right=[[1,0],[0,1]]（单位矩阵）, target=[[0,0],[0,0]]
+    let left_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let right_value = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]);
+    graph.set_node_value(left, Some(&left_value))?;
+    graph.set_node_value(right, Some(&right_value))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
 
-    // 6.2.2 对parent1的反向传播
-    graph.backward_nodes_ex(&[parent1], result, true).unwrap();
-    let parent1_jacobi_after_clear = graph.get_node_jacobi(parent1).unwrap().unwrap();
-    assert_eq!(parent1_jacobi_after_clear, &expected_jacobi_parent1);
+    // 前向传播
+    graph.forward(loss)?;
 
-    // 6.2.3 对parent2的反向传播（最后一次可以不保留图）
-    graph.backward_nodes(&[parent2], result).unwrap();
-    let parent2_jacobi_after_clear = graph.get_node_jacobi(parent2).unwrap().unwrap();
-    assert_eq!(parent2_jacobi_after_clear, &expected_jacobi_parent2);
+    // result = left @ I = left = [[1,2],[3,4]]
+    // loss = mean((result - 0)^2) = mean([1,4,9,16]) = 30/4 = 7.5
+    let loss_value = graph.get_node_value(loss)?.unwrap();
+    assert_abs_diff_eq!(loss_value.get_data_number().unwrap(), 7.5, epsilon = 1e-6);
+
+    // 反向传播（验证 backward 返回 loss 标量值 —— Phase 2 API 契约）
+    graph.zero_grad()?;
+    let loss_returned = graph.backward(loss)?;
+    assert_abs_diff_eq!(loss_returned, 7.5, epsilon = 1e-6);
+
+    // 验证梯度存在且形状正确
+    let left_grad = graph.get_node(left)?.grad().expect("left 应有 grad");
+    let right_grad = graph.get_node(right)?.grad().expect("right 应有 grad");
+    assert_eq!(left_grad.shape(), &[2, 2]);
+    assert_eq!(right_grad.shape(), &[2, 2]);
+
+    // ∂loss/∂result = 2*(result - target)/n = 2*result/4 = result/2 = [[0.5,1],[1.5,2]]
+    // ∂loss/∂left = ∂loss/∂result @ right^T = [[0.5,1],[1.5,2]] @ I = [[0.5,1],[1.5,2]]
+    let expected_left_grad = Tensor::new(&[0.5, 1.0, 1.5, 2.0], &[2, 2]);
+    assert_eq!(left_grad, &expected_left_grad);
+
+    // ∂loss/∂right = left^T @ ∂loss/∂result = [[1,3],[2,4]] @ [[0.5,1],[1.5,2]] = [[5,7],[7,10]]
+    let expected_right_grad = Tensor::new(&[5.0, 7.0, 7.0, 10.0], &[2, 2]);
+    assert_eq!(right_grad, &expected_right_grad);
+
+    Ok(())
+}
+
+// ==================== 梯度累积测试 ====================
+
+/// 测试 MatMul 梯度累积
+///
+/// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
+/// 这是 PyTorch 兼容的行为，支持"micro-batch 梯度累积"场景。
+#[test]
+fn test_mat_mul_gradient_accumulation() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
+    let right = graph.new_parameter_node(&[2, 2], Some("right"))?;
+    let result = graph.new_mat_mul_node(left, right, Some("result"))?;
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值
+    graph.set_node_value(left, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(right, Some(&Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
+    graph.forward(loss)?;
+
+    // 第1次反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad_first = graph.get_node(left)?.grad().unwrap().clone();
+
+    // 第2次反向传播（梯度累积）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_second = graph.get_node(left)?.grad().unwrap();
+    assert_eq!(grad_second, &(&grad_first * 2.0));
+
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_after_clear = graph.get_node(left)?.grad().unwrap();
+    assert_eq!(grad_after_clear, &grad_first);
+
+    Ok(())
 }

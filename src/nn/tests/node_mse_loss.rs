@@ -67,7 +67,7 @@ fn test_mse_loss_forward_mean_basic() {
         .unwrap();
 
     // 前向传播
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     // 验证损失值: ((0.5)^2 + (0.5)^2 + (0.5)^2) / 3 = 0.75 / 3 = 0.25
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
@@ -92,10 +92,7 @@ fn test_mse_loss_forward_2d_matrix() {
         .unwrap();
 
     graph
-        .set_node_value(
-            input_id,
-            Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])),
-        )
+        .set_node_value(input_id, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
         .unwrap();
     graph
         .set_node_value(
@@ -104,7 +101,7 @@ fn test_mse_loss_forward_2d_matrix() {
         )
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     // 4 个元素，每个 diff = 0.5, squared = 0.25
@@ -139,14 +136,14 @@ fn test_mse_loss_forward_sum() {
         .set_node_value(target_id, Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     // 3 * 0.25 = 0.75
     assert_abs_diff_eq!(loss[[0, 0]], 0.75, epsilon = 1e-6);
 }
 
-// ========== Jacobi 测试（单样本模式）==========
+// ========== 端到端反向传播测试（通过 graph.backward）==========
 
 /// PyTorch 验证:
 /// ```python
@@ -157,10 +154,9 @@ fn test_mse_loss_forward_sum() {
 /// # grad = 2 * (input - target) / N = 2 * (-0.5) / 3 = -0.333...
 /// ```
 #[test]
-fn test_mse_loss_backward_jacobi_mean() {
+fn test_mse_loss_backward_e2e_mean() {
     let mut graph = Graph::new();
 
-    // 使用 Parameter 作为 input，这样可以计算梯度
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
@@ -174,19 +170,17 @@ fn test_mse_loss_backward_jacobi_mean() {
         .set_node_value(target_id, Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
-    graph.backward_nodes(&[input_id], loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
 
-    // 获取雅可比矩阵（单样本模式）
-    let jacobi = graph.get_node_jacobi(input_id).unwrap().unwrap();
+    // 获取梯度
+    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
 
     // 预期梯度: 2 * (input - target) / N = 2 * [-0.5, -0.5, -0.5] / 3
-    let expected_grad = Tensor::new(
-        &[-0.333_333_34, -0.333_333_34, -0.333_333_34],
-        &[1, 3],
-    );
+    let expected_grad = Tensor::new(&[-0.333_333_34, -0.333_333_34, -0.333_333_34], &[1, 3]);
 
-    assert_abs_diff_eq!(jacobi, &expected_grad, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
 }
 
 /// PyTorch 验证:
@@ -198,10 +192,9 @@ fn test_mse_loss_backward_jacobi_mean() {
 /// # grad = 2 * (input - target) = 2 * (-0.5) = -1.0
 /// ```
 #[test]
-fn test_mse_loss_backward_jacobi_sum() {
+fn test_mse_loss_backward_e2e_sum() {
     let mut graph = Graph::new();
 
-    // 使用 Parameter 作为 input，这样可以计算梯度
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
@@ -215,16 +208,17 @@ fn test_mse_loss_backward_jacobi_sum() {
         .set_node_value(target_id, Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
-    graph.backward_nodes(&[input_id], loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
 
-    let jacobi = graph.get_node_jacobi(input_id).unwrap().unwrap();
+    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
     let expected_grad = Tensor::new(&[-1.0, -1.0, -1.0], &[1, 3]);
 
-    assert_abs_diff_eq!(jacobi, &expected_grad, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-6);
 }
 
-/// 测试 2D 矩阵的 Jacobi
+/// 测试 2D 矩阵的梯度
 /// PyTorch 验证:
 /// ```python
 /// input = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
@@ -234,10 +228,9 @@ fn test_mse_loss_backward_jacobi_sum() {
 /// # grad = 2 * (-0.5) / 4 = -0.25
 /// ```
 #[test]
-fn test_mse_loss_backward_jacobi_2d() {
+fn test_mse_loss_backward_e2e_2d() {
     let mut graph = Graph::new();
 
-    // 使用 Parameter 作为 input，这样可以计算梯度
     let input_id = graph.new_parameter_node(&[2, 2], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[2, 2], Some("target")).unwrap();
     let loss_id = graph
@@ -245,10 +238,7 @@ fn test_mse_loss_backward_jacobi_2d() {
         .unwrap();
 
     graph
-        .set_node_value(
-            input_id,
-            Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])),
-        )
+        .set_node_value(input_id, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
         .unwrap();
     graph
         .set_node_value(
@@ -257,14 +247,14 @@ fn test_mse_loss_backward_jacobi_2d() {
         )
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
-    graph.backward_nodes(&[input_id], loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
 
-    // 使用 get_node_grad 获取正确形状的梯度
-    let grad = graph.get_node_grad(input_id).unwrap().unwrap();
+    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
     let expected_grad = Tensor::new(&[-0.25, -0.25, -0.25, -0.25], &[2, 2]);
 
-    assert_abs_diff_eq!(grad, expected_grad, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-6);
 }
 
 // ========== Batch 模式测试 ==========
@@ -311,7 +301,7 @@ fn test_mse_loss_batch_forward() {
     graph.set_node_value(input_id, Some(&input_data)).unwrap();
     graph.set_node_value(target_id, Some(&target_data)).unwrap();
 
-    graph.forward_batch(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     // PyTorch: 0.014166653156280518
@@ -323,7 +313,6 @@ fn test_mse_loss_batch_forward() {
 fn test_mse_loss_batch_backward() {
     let mut graph = Graph::new();
 
-    // 使用 Parameter 作为 input，这样可以计算梯度
     let input_id = graph.new_parameter_node(&[3, 4], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[3, 4], Some("target")).unwrap();
     let loss_id = graph
@@ -347,10 +336,11 @@ fn test_mse_loss_batch_backward() {
     graph.set_node_value(input_id, Some(&input_data)).unwrap();
     graph.set_node_value(target_id, Some(&target_data)).unwrap();
 
-    graph.forward_batch(loss_id).unwrap();
-    graph.backward_batch(loss_id, None).unwrap();
+    graph.forward(loss_id).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
 
-    let grad = graph.get_node_grad_batch(input_id).unwrap().unwrap();
+    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
 
     // PyTorch 验证的梯度值
     #[rustfmt::skip]
@@ -388,7 +378,7 @@ fn test_mse_loss_large_values() {
         )
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     // 同样是 diff = 0.5，所以 loss = 0.25
@@ -418,20 +408,19 @@ fn test_mse_loss_small_values() {
         )
         .unwrap();
 
-    graph.forward_node(loss_id).unwrap();
+    graph.forward(loss_id).unwrap();
 
     let loss = graph.get_node_value(loss_id).unwrap().unwrap();
     // PyTorch: 2.4999997094710125e-07
     assert_abs_diff_eq!(loss[[0, 0]], 2.5e-7, epsilon = 1e-10);
 }
 
-// ========== 梯度清除测试 ==========
+// ========== 梯度累积测试 ==========
 
 #[test]
-fn test_mse_loss_clear_jacobi() {
+fn test_mse_loss_gradient_accumulation() {
     let mut graph = Graph::new();
 
-    // 使用 Parameter 作为 input，这样可以计算梯度
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
@@ -445,21 +434,27 @@ fn test_mse_loss_clear_jacobi() {
         .set_node_value(target_id, Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
 
-    // 第一次前向+反向（retain_graph=true 以便后续继续 backward）
-    graph.forward_node(loss_id).unwrap();
-    graph.backward_nodes_ex(&[input_id], loss_id, true).unwrap();
+    // 第一次前向+反向
+    graph.forward(loss_id).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss_id).unwrap();
 
-    let jacobi_first = graph.get_node_jacobi(input_id).unwrap().unwrap();
+    let grad_first = graph.get_node(input_id).unwrap().grad().unwrap().clone();
     let expected = Tensor::new(&[-0.333_333_34, -0.333_333_34, -0.333_333_34], &[1, 3]);
-    assert_abs_diff_eq!(jacobi_first, &expected, epsilon = 1e-5);
+    assert_abs_diff_eq!(&grad_first, &expected, epsilon = 1e-5);
 
-    // 清除 Jacobi
-    graph.clear_jacobi().unwrap();
+    // 第二次反向传播（梯度累积）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss_id).unwrap();
+    graph.backward(loss_id).unwrap();
+    let grad_second = graph.get_node(input_id).unwrap().grad().unwrap();
+    assert_eq!(grad_second, &(&grad_first * 2.0));
 
-    // 再次反向传播（最后一次可以不保留图）
-    graph.backward_nodes(&[input_id], loss_id).unwrap();
-    let jacobi_after_clear = graph.get_node_jacobi(input_id).unwrap().unwrap();
-    assert_abs_diff_eq!(jacobi_after_clear, &expected, epsilon = 1e-5);
+    // zero_grad 后重新计算
+    graph.zero_grad().unwrap();
+    graph.forward(loss_id).unwrap();
+    graph.backward(loss_id).unwrap();
+    let grad_after_clear = graph.get_node(input_id).unwrap().grad().unwrap();
+    assert_eq!(grad_after_clear, &grad_first);
 }
 
 // ========== 端到端训练测试 ==========
@@ -501,13 +496,15 @@ fn test_mse_loss_simple_regression_training() {
                 .set_node_value(y_true_id, Some(&Tensor::new(&[y_val], &[1, 1])))
                 .unwrap();
 
-            optimizer.one_step(&mut graph, loss_id).unwrap();
+            // 使用新 API
+            graph.zero_grad().unwrap();
+            graph.forward(loss_id).unwrap();
+            graph.backward(loss_id).unwrap();
+            optimizer.step(&mut graph).unwrap();
         }
-        optimizer.update(&mut graph).unwrap();
     }
 
     // 验证学习到的权重接近 2.0
     let learned_w = graph.get_node_value(w_id).unwrap().unwrap();
     assert_abs_diff_eq!(learned_w[[0, 0]], 2.0, epsilon = 0.1);
 }
-

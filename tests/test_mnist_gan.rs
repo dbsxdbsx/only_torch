@@ -20,10 +20,10 @@ use std::time::Instant;
 ///
 /// 验证梯度流控制机制在 GAN 训练中的正确性：
 /// - detach: 训练 D 时阻止梯度流向 G
-/// - 多 Loss 交替训练: D_loss 和 G_loss 交替 backward
+/// - 多 Loss 交替训练: `D_loss` 和 `G_loss` 交替 backward
 ///
 /// 网络结构：
-/// - Generator: z(64) -> FC(256, Sigmoid) -> FC(784, Sigmoid) -> fake_image
+/// - Generator: z(64) -> FC(256, Sigmoid) -> FC(784, Sigmoid) -> `fake_image`
 /// - Discriminator: image(784) -> FC(256, Sigmoid) -> FC(1, Sigmoid) -> prob
 #[test]
 fn test_mnist_gan() -> Result<(), GraphError> {
@@ -59,14 +59,11 @@ fn test_mnist_gan() -> Result<(), GraphError> {
     let lr_g = 0.001;
 
     println!("\n[2/5] 训练配置：");
-    println!("  - Batch Size: {}", batch_size);
-    println!(
-        "  - 训练样本: {} (共 {} 个 batch)",
-        train_samples, num_batches
-    );
-    println!("  - 最大 Epochs: {}", max_epochs);
-    println!("  - 噪声维度: {}", latent_dim);
-    println!("  - 学习率 (D/G): {}/{}", lr_d, lr_g);
+    println!("  - Batch Size: {batch_size}");
+    println!("  - 训练样本: {train_samples} (共 {num_batches} 个 batch)");
+    println!("  - 最大 Epochs: {max_epochs}");
+    println!("  - 噪声维度: {latent_dim}");
+    println!("  - 学习率 (D/G): {lr_d}/{lr_g}");
 
     // ========== 3. 构建网络 ==========
     println!("\n[3/5] 构建 GAN 网络...");
@@ -109,7 +106,7 @@ fn test_mnist_gan() -> Result<(), GraphError> {
     // G loss = MSE(D(fake), 1) -- G 想让 D 认为 fake 是真的
     let g_loss = graph.new_mse_loss_node(d_fake_out, real_labels, Some("g_loss"))?;
 
-    println!("  ✓ Generator: z({}) -> 128 -> 784", latent_dim);
+    println!("  ✓ Generator: z({latent_dim}) -> 128 -> 784");
     println!("  ✓ Discriminator: 784 -> 128 -> 1");
     println!("  ✓ G 参数量: {}", g_params.len());
     println!("  ✓ D 参数量: {}", d_params.len());
@@ -117,9 +114,9 @@ fn test_mnist_gan() -> Result<(), GraphError> {
     // 保存网络结构可视化（训练前）
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
-    graph.save_visualization(&format!("{}/mnist_gan", output_dir), None)?;
-    graph.save_summary(&format!("{}/mnist_gan_summary.md", output_dir))?;
-    println!("  ✓ 网络结构已保存: {}/mnist_gan.png", output_dir);
+    graph.save_visualization(format!("{output_dir}/mnist_gan"), None)?;
+    graph.save_summary(format!("{output_dir}/mnist_gan_summary.md"))?;
+    println!("  ✓ 网络结构已保存: {output_dir}/mnist_gan.png");
 
     // ========== 4. 创建优化器 ==========
     println!("\n[4/5] 创建优化器...");
@@ -173,7 +170,7 @@ fn test_mnist_gan() -> Result<(), GraphError> {
             graph.detach_node(fake_images)?;
 
             // 前向传播 - 真实图像
-            graph.forward_batch(d_loss_real)?;
+            graph.forward(d_loss_real)?;
 
             // D 对真实图像的判断
             let d_real_val = graph.get_node_value(d_real_out)?.unwrap();
@@ -183,13 +180,13 @@ fn test_mnist_gan() -> Result<(), GraphError> {
             }
             d_real_sum += d_real_batch_sum / batch_size as f32;
 
-            // 反向传播 D(real)（只计算 D 参数的梯度）
-            graph.clear_grad()?;
-            graph.backward_batch(d_loss_real, Some(&d_params))?;
-            adam_d.update_batch(&mut graph)?;
+            // 反向传播 D(real) - backward 返回 loss 值
+            graph.zero_grad()?;
+            let d_loss_real_val = graph.backward(d_loss_real)?;
+            adam_d.step(&mut graph)?;
 
             // 前向传播 - 生成图像
-            graph.forward_batch(d_loss_fake)?;
+            graph.forward(d_loss_fake)?;
 
             // D 对假图像的判断
             let d_fake_val = graph.get_node_value(d_fake_out)?.unwrap();
@@ -199,14 +196,12 @@ fn test_mnist_gan() -> Result<(), GraphError> {
             }
             d_fake_sum += d_fake_batch_sum / batch_size as f32;
 
-            // 反向传播 D(fake)（只计算 D 参数的梯度）
-            graph.clear_grad()?;
-            graph.backward_batch(d_loss_fake, Some(&d_params))?;
-            adam_d.update_batch(&mut graph)?;
+            // 反向传播 D(fake) - backward 返回 loss 值
+            graph.zero_grad()?;
+            let d_loss_fake_val = graph.backward(d_loss_fake)?;
+            adam_d.step(&mut graph)?;
 
-            let d_loss_real_val = graph.get_node_value(d_loss_real)?.unwrap()[[0, 0]];
-            let d_loss_fake_val = graph.get_node_value(d_loss_fake)?.unwrap()[[0, 0]];
-            d_loss_sum += (d_loss_real_val + d_loss_fake_val) / 2.0;
+            d_loss_sum += f32::midpoint(d_loss_real_val, d_loss_fake_val);
 
             // ========== 训练 Generator ==========
             // 恢复 fake_images 的梯度流
@@ -218,14 +213,13 @@ fn test_mnist_gan() -> Result<(), GraphError> {
             graph.set_node_value(z, Some(&noise))?;
 
             // 前向传播
-            graph.forward_batch(g_loss)?;
+            graph.forward(g_loss)?;
 
-            // 反向传播并更新 G（只计算 G 参数的梯度，避免浪费计算 D 的梯度）
-            graph.clear_grad()?;
-            graph.backward_batch(g_loss, Some(&g_params))?;
-            adam_g.update_batch(&mut graph)?;
+            // 反向传播并更新 G - backward 返回 loss 值
+            graph.zero_grad()?;
+            let g_loss_val = graph.backward(g_loss)?;
+            adam_g.step(&mut graph)?;
 
-            let g_loss_val = graph.get_node_value(g_loss)?.unwrap()[[0, 0]];
             g_loss_sum += g_loss_val;
         }
 
@@ -266,16 +260,16 @@ fn test_mnist_gan() -> Result<(), GraphError> {
     if test_passed {
         println!("\n{}", "=".repeat(60));
         println!("✅ MNIST GAN 测试通过！");
-        println!("  - D(real) = {:.3} (> 0.3 ✓)", d_real_avg);
-        println!("  - D(fake) = {:.3} (0.2 < x < 0.9 ✓)", d_fake_avg);
+        println!("  - D(real) = {d_real_avg:.3} (> 0.3 ✓)");
+        println!("  - D(fake) = {d_fake_avg:.3} (0.2 < x < 0.9 ✓)");
         println!("  - detach 机制验证：D 能独立训练，G 的梯度正确传播");
         println!("{}\n", "=".repeat(60));
         Ok(())
     } else {
         println!("\n{}", "=".repeat(60));
         println!("❌ MNIST GAN 测试失败！");
-        println!("  - D(real) = {:.3} (需 > 0.3)", d_real_avg);
-        println!("  - D(fake) = {:.3} (需 0.2 < x < 0.9)", d_fake_avg);
+        println!("  - D(real) = {d_real_avg:.3} (需 > 0.3)");
+        println!("  - D(fake) = {d_fake_avg:.3} (需 0.2 < x < 0.9)");
         println!("{}\n", "=".repeat(60));
         Err(GraphError::ComputationError(
             "GAN 训练未收敛：Generator 未能学习生成有效图像".to_string(),
@@ -285,7 +279,7 @@ fn test_mnist_gan() -> Result<(), GraphError> {
 
 /// 构建 Generator 网络（简化版，与 MNIST Batch 规模相当）
 ///
-/// z(latent_dim) -> FC(128, LeakyReLU) -> FC(784, Sigmoid) -> fake_image
+/// `z(latent_dim)` -> FC(128, `LeakyReLU`) -> FC(784, Sigmoid) -> `fake_image`
 fn build_generator(
     graph: &mut Graph,
     z: NodeId,
@@ -315,7 +309,7 @@ fn build_generator(
 
 /// 构建 Discriminator 网络（简化版）
 ///
-/// image(784) -> FC(128, LeakyReLU) -> FC(1, Sigmoid) -> prob
+/// image(784) -> FC(128, `LeakyReLU`) -> FC(1, Sigmoid) -> prob
 fn build_discriminator(
     graph: &mut Graph,
     input: NodeId,

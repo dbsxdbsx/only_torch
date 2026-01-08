@@ -32,6 +32,5 @@ pub mod transforms;
 mod tests;
 
 // Re-exports
-pub use datasets::{default_data_dir, CaliforniaHousingDataset, MnistDataset};
+pub use datasets::{CaliforniaHousingDataset, MnistDataset, default_data_dir};
 pub use error::DataError;
-

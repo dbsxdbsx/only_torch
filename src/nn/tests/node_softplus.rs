@@ -42,7 +42,10 @@ fn test_node_softplus_name_generation() {
 
     // 重复命名应失败
     let result = graph.new_softplus_node(input, Some("explicit_softplus"));
-    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_softplus在图default_graph中重复"));
+    assert_err!(
+        result,
+        GraphError::DuplicateNodeName("节点explicit_softplus在图default_graph中重复")
+    );
 }
 
 #[test]
@@ -55,7 +58,9 @@ fn test_node_softplus_manually_set_value() {
     let test_value = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
     assert_err!(
         graph.set_node_value(softplus, Some(&test_value)),
-        GraphError::InvalidOperation("节点[id=2, name=softplus, type=SoftPlus]的值只能通过前向传播计算得到，不能直接设置")
+        GraphError::InvalidOperation(
+            "节点[id=2, name=softplus, type=SoftPlus]的值只能通过前向传播计算得到，不能直接设置"
+        )
     );
 }
 
@@ -72,7 +77,7 @@ fn test_node_softplus_forward_1d() {
     // 设置输入: [-2.0, -1.0, 0.0, 1.0, 2.0]
     let input_data = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[1, 5]);
     graph.set_node_value(input, Some(&input_data)).unwrap();
-    graph.forward_node(softplus).unwrap();
+    graph.forward(softplus).unwrap();
 
     let result = graph.get_node_value(softplus).unwrap().unwrap();
 
@@ -93,7 +98,7 @@ fn test_node_softplus_forward_2d() {
     // 设置输入: [[-1.0, 0.0, 1.0], [2.0, -2.0, 0.5]]
     let input_data = Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]);
     graph.set_node_value(input, Some(&input_data)).unwrap();
-    graph.forward_node(softplus).unwrap();
+    graph.forward(softplus).unwrap();
 
     let result = graph.get_node_value(softplus).unwrap().unwrap();
 
@@ -118,7 +123,7 @@ fn test_node_softplus_numerical_stability() {
     // 设置极端输入: [-50.0, -20.0, 0.0, 20.0, 50.0]
     let input_data = Tensor::new(&[-50.0, -20.0, 0.0, 20.0, 50.0], &[1, 5]);
     graph.set_node_value(input, Some(&input_data)).unwrap();
-    graph.forward_node(softplus).unwrap();
+    graph.forward(softplus).unwrap();
 
     let result = graph.get_node_value(softplus).unwrap().unwrap();
 
@@ -134,75 +139,130 @@ fn test_node_softplus_numerical_stability() {
     assert_abs_diff_eq!(result[[0, 4]], 50.0, epsilon = 1e-5);
 }
 
-// ==================== 反向传播测试（单样本 Jacobi 模式）====================
+// ==================== VJP单元测试（直接调用 calc_grad_to_parent）====================
 
+/// 测试 SoftPlus VJP（单位上游梯度）
+///
+/// 对于 y = softplus(x) = ln(1 + e^x)，有 dy/dx = sigmoid(x) = 1/(1+e^(-x))
+/// VJP: grad_to_input = upstream_grad ⊙ sigmoid(x)
 #[test]
-fn test_node_softplus_backward_1d() {
-    // "1D" 向量反向传播测试 (实际使用 [1, 5] 形状)
-    // 预期值来自 tests/python/calc_jacobi_by_pytorch/node_softplus.py
+fn test_node_softplus_backward_vjp() -> Result<(), GraphError> {
     let mut graph = Graph::new();
-    let parent = graph.new_parameter_node(&[1, 5], Some("parent")).unwrap();
-    let result_node = graph.new_softplus_node(parent, Some("result")).unwrap();
+    let input_id = graph.new_parameter_node(&[1, 5], Some("input"))?;
+    let softplus_id = graph.new_softplus_node(input_id, Some("softplus"))?;
 
     // 设置输入: [-2.0, -1.0, 0.0, 1.0, 2.0]
     let input_data = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[1, 5]);
-    graph.set_node_value(parent, Some(&input_data)).unwrap();
-    graph.forward_node(result_node).unwrap();
+    graph.set_node_value(input_id, Some(&input_data))?;
+    graph.forward(softplus_id)?;
 
-    // 反向传播
-    graph.backward_nodes(&[parent], result_node).unwrap();
-    let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[1, 5]);
+    let softplus_node = graph.get_node(softplus_id)?;
+    let input_node = graph.get_node(input_id)?;
+    let grad = softplus_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
 
-    // SoftPlus 的导数是 sigmoid(x)，Jacobian 是对角矩阵
-    // 对角元素: [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708]
-    let expected_diag = [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708];
-
-    // 验证对角矩阵
-    assert_eq!(parent_jacobi.shape(), &[5, 5]);
+    // softplus 的导数是 sigmoid(x)
+    // 预期: [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708]
+    let expected = [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708];
+    assert_eq!(grad.shape(), &[1, 5]);
     for i in 0..5 {
-        for j in 0..5 {
-            if i == j {
-                assert_abs_diff_eq!(parent_jacobi[[i, j]], expected_diag[i], epsilon = 1e-5);
-            } else {
-                assert_abs_diff_eq!(parent_jacobi[[i, j]], 0.0, epsilon = 1e-10);
-            }
-        }
+        assert_abs_diff_eq!(grad[[0, i]], expected[i], epsilon = 1e-5);
     }
+
+    Ok(())
 }
 
+/// 测试 SoftPlus VJP（非单位上游梯度）
 #[test]
-fn test_node_softplus_backward_2d() {
-    // 2D 矩阵反向传播测试
+fn test_node_softplus_backward_vjp_non_unit_upstream() -> Result<(), GraphError> {
     let mut graph = Graph::new();
-    let parent = graph.new_parameter_node(&[2, 3], Some("parent")).unwrap();
-    let result_node = graph.new_softplus_node(parent, Some("result")).unwrap();
+    let input_id = graph.new_parameter_node(&[2, 3], Some("input"))?;
+    let softplus_id = graph.new_softplus_node(input_id, Some("softplus"))?;
 
     // 设置输入: [[-1.0, 0.0, 1.0], [2.0, -2.0, 0.5]]
     let input_data = Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]);
-    graph.set_node_value(parent, Some(&input_data)).unwrap();
-    graph.forward_node(result_node).unwrap();
+    graph.set_node_value(input_id, Some(&input_data))?;
+    graph.forward(softplus_id)?;
 
-    // 反向传播
-    graph.backward_nodes(&[parent], result_node).unwrap();
-    let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
+    // 非单位上游梯度
+    let upstream_grad = Tensor::new(&[2.0, 3.0, 1.0, 0.5, 4.0, 2.0], &[2, 3]);
+    let softplus_node = graph.get_node(softplus_id)?;
+    let input_node = graph.get_node(input_id)?;
+    let grad = softplus_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
 
-    // 预期对角元素 (来自 PyTorch): [0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935]
-    let expected_diag = [
+    // sigmoid 值: [0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935]
+    // grad = upstream ⊙ sigmoid
+    let sigmoid_vals = [
         0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935,
     ];
-
-    // 验证对角矩阵 (6x6)
-    assert_eq!(parent_jacobi.shape(), &[6, 6]);
+    let upstream_vals = [2.0, 3.0, 1.0, 0.5, 4.0, 2.0];
+    assert_eq!(grad.shape(), &[2, 3]);
     for i in 0..6 {
-        assert_abs_diff_eq!(parent_jacobi[[i, i]], expected_diag[i], epsilon = 1e-5);
+        let expected = sigmoid_vals[i] * upstream_vals[i];
+        assert_abs_diff_eq!(grad.data_as_slice()[i], expected, epsilon = 1e-5);
     }
+
+    Ok(())
 }
 
-// ==================== Batch 模式测试 ====================
+// ==================== 端到端反向传播测试（通过 graph.backward）====================
 
+/// 测试 SoftPlus 通过 graph.backward() 的端到端反向传播
+#[test]
+fn test_node_softplus_backward_e2e() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    // 创建计算图：output = softplus(input)
+    let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
+    let softplus = graph.new_softplus_node(input, Some("softplus"))?;
+
+    // loss = MSE(softplus, target)
+    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let loss = graph.new_mse_loss_node(softplus, target, Some("loss"))?;
+
+    // 设置值：input=[[-1,0,1],[2,-2,0.5]], target=zeros
+    let input_data = Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]);
+    graph.set_node_value(input, Some(&input_data))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 3])))?;
+
+    // 前向传播
+    graph.forward(loss)?;
+
+    // softplus 输出: [0.31326169, 0.69314718, 1.31326163, 2.12692809, 0.12692800, 0.97407699]
+    // loss = mean(softplus^2) 因为 target=0
+
+    // 反向传播
+    graph.zero_grad()?;
+    let loss_returned = graph.backward(loss)?;
+    assert!(loss_returned > 0.0); // loss 应为正值
+
+    // 验证梯度存在且形状正确
+    let input_grad = graph.get_node(input)?.grad().expect("input 应有 grad");
+    assert_eq!(input_grad.shape(), &[2, 3]);
+
+    // 梯度计算：∂loss/∂input = ∂loss/∂softplus * ∂softplus/∂input
+    // ∂loss/∂softplus = 2 * softplus / n
+    // ∂softplus/∂input = sigmoid(input)
+    // 所以：grad = 2 * softplus * sigmoid / n
+    let softplus_vals = [
+        0.31326169, 0.69314718, 1.31326163, 2.12692809, 0.12692800, 0.97407699,
+    ];
+    let sigmoid_vals = [
+        0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935,
+    ];
+    let n = 6.0;
+    for i in 0..6 {
+        let expected = 2.0 * softplus_vals[i] * sigmoid_vals[i] / n;
+        assert_abs_diff_eq!(input_grad.data_as_slice()[i], expected, epsilon = 1e-5);
+    }
+
+    Ok(())
+}
+
+/// 测试 SoftPlus 前向传播（batch 模式）
 #[test]
 fn test_node_softplus_batch_forward() {
-    // Batch 前向传播测试
     let mut graph = Graph::new();
     let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
@@ -210,7 +270,7 @@ fn test_node_softplus_batch_forward() {
     // Batch 输入 (2 samples, 3 features)
     let input_data = Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]);
     graph.set_node_value(input, Some(&input_data)).unwrap();
-    graph.forward_node(softplus).unwrap();
+    graph.forward(softplus).unwrap();
 
     let result = graph.get_node_value(softplus).unwrap().unwrap();
     assert_eq!(result.shape(), &[2, 3]);
@@ -220,99 +280,15 @@ fn test_node_softplus_batch_forward() {
     assert_abs_diff_eq!(result[[1, 0]], 2.12692809, epsilon = 1e-5);
 }
 
-#[test]
-fn test_node_softplus_batch_backward() {
-    // Batch 反向传播测试（Gradient-based）
-    // 需要构建完整的网络到标量损失
-    let mut graph = Graph::new();
-    let input = graph.new_parameter_node(&[2, 3], Some("input")).unwrap();
-    let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
-    // 添加一个简单的求和操作来得到标量损失
-    let ones = graph.new_parameter_node(&[3, 1], Some("ones")).unwrap();
-    let sum_rows = graph
-        .new_mat_mul_node(softplus, ones, Some("sum_rows"))
-        .unwrap(); // [2, 1]
-    let ones2 = graph.new_parameter_node(&[1, 2], Some("ones2")).unwrap();
-    let loss = graph
-        .new_mat_mul_node(ones2, sum_rows, Some("loss"))
-        .unwrap(); // [1, 1]
-
-    // 设置输入
-    let input_data = Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]);
-    graph.set_node_value(input, Some(&input_data)).unwrap();
-    graph
-        .set_node_value(ones, Some(&Tensor::ones(&[3, 1])))
-        .unwrap();
-    graph
-        .set_node_value(ones2, Some(&Tensor::ones(&[1, 2])))
-        .unwrap();
-
-    // 前向传播
-    graph.forward_node(loss).unwrap();
-
-    // Batch 反向传播
-    graph.backward_batch(loss, None).unwrap();
-
-    // 获取 input 的梯度
-    let grad = graph.get_node_grad_batch(input).unwrap().unwrap();
-    assert_eq!(grad.shape(), &[2, 3]);
-
-    // 预期梯度 = sigmoid(x) (因为下游都是 ones)
-    // Row 0: sigmoid([-1.0, 0.0, 1.0]) = [0.26894143, 0.5, 0.73105860]
-    // Row 1: sigmoid([2.0, -2.0, 0.5]) = [0.88079709, 0.11920292, 0.62245935]
-    assert_abs_diff_eq!(grad[[0, 0]], 0.26894143, epsilon = 1e-5);
-    assert_abs_diff_eq!(grad[[0, 1]], 0.5, epsilon = 1e-5);
-    assert_abs_diff_eq!(grad[[0, 2]], 0.73105860, epsilon = 1e-5);
-    assert_abs_diff_eq!(grad[[1, 0]], 0.88079709, epsilon = 1e-5);
-    assert_abs_diff_eq!(grad[[1, 1]], 0.11920292, epsilon = 1e-5);
-    assert_abs_diff_eq!(grad[[1, 2]], 0.62245935, epsilon = 1e-5);
-}
-
-// ==================== 链式传播测试 ====================
-
-#[test]
-fn test_node_softplus_simple_network() {
-    // 简单网络: z -> softplus -> output
-    let mut graph = Graph::new();
-    let z = graph.new_parameter_node(&[1, 3], Some("z")).unwrap();
-    let output = graph.new_softplus_node(z, Some("output")).unwrap();
-
-    // 设置输入
-    let z_value = Tensor::new(&[-1.0, 0.0, 1.0], &[1, 3]);
-    graph.set_node_value(z, Some(&z_value)).unwrap();
-
-    // 前向传播
-    graph.forward_node(output).unwrap();
-
-    // 验证输出
-    let result = graph.get_node_value(output).unwrap().unwrap();
-    assert_abs_diff_eq!(result[[0, 0]], 0.31326169, epsilon = 1e-5);
-    assert_abs_diff_eq!(result[[0, 1]], 0.69314718, epsilon = 1e-5);
-    assert_abs_diff_eq!(result[[0, 2]], 1.31326163, epsilon = 1e-5);
-
-    // 反向传播
-    graph.backward_nodes(&[z], output).unwrap();
-    let jacobi = graph.get_node_jacobi(z).unwrap().unwrap();
-
-    // 验证 Jacobian 对角元素 = sigmoid(z)
-    let expected_diag = [0.26894143, 0.5, 0.73105860];
-    for i in 0..3 {
-        assert_abs_diff_eq!(jacobi[[i, i]], expected_diag[i], epsilon = 1e-5);
-    }
-}
-
+/// 测试 SoftPlus 在线性层后的前向传播
 #[test]
 fn test_node_softplus_after_linear() {
     // 线性层后接 SoftPlus: output = softplus(x @ w)
     let mut graph = Graph::new();
 
-    // 输入 x: [1, 2] (shape: [1, 2])
     let x = graph.new_input_node(&[1, 2], Some("x")).unwrap();
-    // 权重 w: [[0.5, -0.5], [0.3, 0.7]] (shape: [2, 2])
     let w = graph.new_parameter_node(&[2, 2], Some("w")).unwrap();
-    // z = x @ w
     let z = graph.new_mat_mul_node(x, w, Some("z")).unwrap();
-    // output = softplus(z)
     let output = graph.new_softplus_node(z, Some("output")).unwrap();
 
     // 设置值
@@ -322,7 +298,7 @@ fn test_node_softplus_after_linear() {
     graph.set_node_value(w, Some(&w_value)).unwrap();
 
     // 前向传播
-    graph.forward_node(output).unwrap();
+    graph.forward(output).unwrap();
 
     // 验证 z = x @ w = [1.0, 2.0] @ [[0.5, -0.5], [0.3, 0.7]] = [1.1, 0.9]
     let z_value = graph.get_node_value(z).unwrap().unwrap();
@@ -331,48 +307,96 @@ fn test_node_softplus_after_linear() {
 
     // 验证 output = softplus([1.1, 0.9])
     let output_value = graph.get_node_value(output).unwrap().unwrap();
-    // 预期值来自 PyTorch: [1.3873353, 1.2411538]
     assert_abs_diff_eq!(output_value[[0, 0]], 1.3873353, epsilon = 1e-5);
     assert_abs_diff_eq!(output_value[[0, 1]], 1.2411538, epsilon = 1e-5);
 }
 
+// ==================== 梯度累积测试 ====================
+
+/// 测试 SoftPlus 梯度累积
+///
+/// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
+#[test]
+fn test_node_softplus_gradient_accumulation() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
+    let softplus = graph.new_softplus_node(input, Some("softplus"))?;
+    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let loss = graph.new_mse_loss_node(softplus, target, Some("loss"))?;
+
+    // 设置值
+    let input_data = Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]);
+    graph.set_node_value(input, Some(&input_data))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 3])))?;
+    graph.forward(loss)?;
+
+    // 第1次反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad_first = graph.get_node(input)?.grad().unwrap().clone();
+
+    // 第2次反向传播（梯度累积）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_second = graph.get_node(input)?.grad().unwrap();
+    assert_eq!(grad_second, &(&grad_first * 2.0));
+
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_after_clear = graph.get_node(input)?.grad().unwrap();
+    assert_eq!(grad_after_clear, &grad_first);
+
+    Ok(())
+}
+
 /// 测试 SoftPlus 在 MLP 网络中的端到端训练
 #[test]
-fn test_node_softplus_mlp_training() {
+fn test_node_softplus_mlp_training() -> Result<(), GraphError> {
     let mut graph = Graph::new_with_seed(42);
 
-    // 构建简单 MLP: x -> Linear -> SoftPlus -> Linear -> output
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
-    let w1 = graph.new_parameter_node(&[3, 2], Some("w1")).unwrap();
-    let b1 = graph.new_parameter_node(&[3, 1], Some("b1")).unwrap();
+    // 构建简单 MLP: x -> Linear -> SoftPlus -> Linear -> output -> MSE
+    let x = graph.new_input_node(&[2, 1], Some("x"))?;
+    let w1 = graph.new_parameter_node(&[3, 2], Some("w1"))?;
+    let b1 = graph.new_parameter_node(&[3, 1], Some("b1"))?;
 
-    let z1 = graph.new_mat_mul_node(w1, x, Some("z1")).unwrap(); // [3, 1]
-    let h1 = graph.new_add_node(&[z1, b1], Some("h1")).unwrap(); // [3, 1]
-    let a1 = graph.new_softplus_node(h1, Some("a1")).unwrap(); // SoftPlus
+    let z1 = graph.new_mat_mul_node(w1, x, Some("z1"))?; // [3, 1]
+    let h1 = graph.new_add_node(&[z1, b1], Some("h1"))?; // [3, 1]
+    let a1 = graph.new_softplus_node(h1, Some("a1"))?; // SoftPlus
 
-    let w2 = graph.new_parameter_node(&[1, 3], Some("w2")).unwrap();
-    let output = graph.new_mat_mul_node(w2, a1, Some("output")).unwrap(); // [1, 1]
+    let w2 = graph.new_parameter_node(&[1, 3], Some("w2"))?;
+    let output = graph.new_mat_mul_node(w2, a1, Some("output"))?; // [1, 1]
+
+    // 添加 MSE 损失
+    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     // 设置输入
     let input_value = Tensor::new(&[1.0, -0.5], &[2, 1]);
-    graph.set_node_value(x, Some(&input_value)).unwrap();
+    graph.set_node_value(x, Some(&input_value))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[1, 1])))?;
 
     // 前向传播
-    graph.forward_node(output).unwrap();
-    let output_val = graph.get_node_value(output).unwrap().unwrap();
+    graph.forward(loss)?;
+    let output_val = graph.get_node_value(output)?.unwrap();
     assert_eq!(output_val.shape(), &[1, 1]);
 
     // 反向传播
-    graph.backward_nodes(&[w1, b1, w2], output).unwrap();
+    graph.zero_grad()?;
+    graph.backward(loss)?;
 
     // 验证所有参数都有梯度
-    assert!(graph.get_node_jacobi(w1).unwrap().is_some());
-    assert!(graph.get_node_jacobi(b1).unwrap().is_some());
-    assert!(graph.get_node_jacobi(w2).unwrap().is_some());
+    assert!(graph.get_node(w1)?.grad().is_some());
+    assert!(graph.get_node(b1)?.grad().is_some());
+    assert!(graph.get_node(w2)?.grad().is_some());
 
     // 优化器更新
-    let mut optimizer = SGD::new(&graph, 0.01).unwrap();
-    optimizer.update(&mut graph).unwrap();
+    let mut optimizer = SGD::new(&graph, 0.01)?;
+    optimizer.step(&mut graph)?;
+
+    Ok(())
 }
 
 // ==================== 与其他激活函数的对比测试 ====================
@@ -389,8 +413,8 @@ fn test_softplus_vs_relu_smoothness() {
     let input_data = Tensor::new(&[-0.1, -0.01, 0.0, 0.01, 0.1], &[1, 5]);
     graph.set_node_value(input, Some(&input_data)).unwrap();
 
-    graph.forward_node(softplus).unwrap();
-    graph.forward_node(relu).unwrap();
+    graph.forward(softplus).unwrap();
+    graph.forward(relu).unwrap();
 
     let softplus_output = graph.get_node_value(softplus).unwrap().unwrap();
     let relu_output = graph.get_node_value(relu).unwrap().unwrap();
@@ -408,37 +432,36 @@ fn test_softplus_vs_relu_smoothness() {
     assert_eq!(relu_output[[0, 2]], 0.0);
 }
 
+/// 验证 SoftPlus 的导数等于 Sigmoid（使用 VJP 验证）
 #[test]
-fn test_softplus_derivative_is_sigmoid() {
-    // 验证 SoftPlus 的导数等于 Sigmoid
-    // 使用两个独立的图来避免反向传播冲突
-    let mut graph1 = Graph::new();
-    let input1 = graph1.new_parameter_node(&[1, 5], Some("input")).unwrap();
-    let softplus = graph1.new_softplus_node(input1, Some("softplus")).unwrap();
+fn test_softplus_derivative_is_sigmoid() -> Result<(), GraphError> {
+    // 通过 VJP 验证 SoftPlus 的导数等于 Sigmoid
+    let mut graph = Graph::new();
+    let input_id = graph.new_parameter_node(&[1, 5], Some("input"))?;
+    let softplus_id = graph.new_softplus_node(input_id, Some("softplus"))?;
 
     let input_data = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[1, 5]);
-    graph1.set_node_value(input1, Some(&input_data)).unwrap();
+    graph.set_node_value(input_id, Some(&input_data))?;
+    graph.forward(softplus_id)?;
 
-    // 前向传播
-    graph1.forward_node(softplus).unwrap();
-
-    // 获取 SoftPlus 的 Jacobian
-    graph1.backward_nodes(&[input1], softplus).unwrap();
-    let softplus_jacobi = graph1.get_node_jacobi(input1).unwrap().unwrap();
+    // 使用单位上游梯度计算 VJP
+    let upstream_grad = Tensor::ones(&[1, 5]);
+    let softplus_node = graph.get_node(softplus_id)?;
+    let input_node = graph.get_node(input_id)?;
+    let grad = softplus_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
 
     // 独立计算 sigmoid 作为预期值
     let mut graph2 = Graph::new();
-    let input2 = graph2.new_input_node(&[1, 5], Some("input")).unwrap();
-    let sigmoid = graph2.new_sigmoid_node(input2, Some("sigmoid")).unwrap();
-    graph2.set_node_value(input2, Some(&input_data)).unwrap();
-    graph2.forward_node(sigmoid).unwrap();
-    let sigmoid_output = graph2.get_node_value(sigmoid).unwrap().unwrap();
+    let input2 = graph2.new_input_node(&[1, 5], Some("input"))?;
+    let sigmoid = graph2.new_sigmoid_node(input2, Some("sigmoid"))?;
+    graph2.set_node_value(input2, Some(&input_data))?;
+    graph2.forward(sigmoid)?;
+    let sigmoid_output = graph2.get_node_value(sigmoid)?.unwrap();
 
     // 验证: d(SoftPlus)/dx = sigmoid(x)
-    // Jacobian 是对角矩阵，提取对角元素
     for i in 0..5 {
-        let grad_diag = softplus_jacobi[[i, i]]; // 对角元素
-        let sigmoid_val = sigmoid_output[[0, i]];
-        assert_abs_diff_eq!(grad_diag, sigmoid_val, epsilon = 1e-5);
+        assert_abs_diff_eq!(grad[[0, i]], sigmoid_output[[0, i]], epsilon = 1e-5);
     }
+
+    Ok(())
 }

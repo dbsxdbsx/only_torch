@@ -94,10 +94,10 @@ fn test_xor() -> Result<(), GraphError> {
             graph.set_node_value(label, Some(lbl))?;
 
             // 前向传播
-            graph.forward_node(loss)?;
+            graph.forward(loss)?;
 
             // 反向传播
-            graph.backward_nodes(&[w1, b1, w2, b2], loss)?;
+            graph.backward(loss)?;
 
             // 更新参数
             // w1
@@ -121,14 +121,14 @@ fn test_xor() -> Result<(), GraphError> {
             graph.set_node_value(b2, Some(&(b2_value - learning_rate * b2_grad)))?;
 
             // 清除梯度
-            graph.clear_jacobi()?;
+            graph.zero_grad()?;
         }
 
         // 评估准确率
         let mut correct = 0;
         for (input, lbl) in inputs.iter().zip(labels.iter()) {
             graph.set_node_value(x, Some(input))?;
-            graph.forward_node(predict)?;
+            graph.forward(predict)?;
 
             let pred_value = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
             let pred = pred_value.get_data_number().unwrap();
@@ -178,19 +178,15 @@ fn test_xor() -> Result<(), GraphError> {
     println!("\n=== 最终预测结果 ===");
     for (input, lbl) in inputs.iter().zip(labels.iter()) {
         graph.set_node_value(x, Some(input))?;
-        graph.forward_node(output)?;
-        graph.forward_node(predict)?;
+        graph.forward(output)?;
+        graph.forward(predict)?;
 
         let raw_output = graph.get_node_value(output)?.unwrap().get(&[0, 0]);
         let pred_value = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
 
         let x1 = input.get(&[0, 0]).get_data_number().unwrap() as i32;
         let x2 = input.get(&[1, 0]).get_data_number().unwrap() as i32;
-        let expected = if lbl.get(&[0, 0]).get_data_number().unwrap() > 0.0 {
-            1
-        } else {
-            0
-        };
+        let expected = i32::from(lbl.get(&[0, 0]).get_data_number().unwrap() > 0.0);
         let predicted = pred_value.get_data_number().unwrap() as i32;
 
         println!(
@@ -221,4 +217,3 @@ fn test_xor() -> Result<(), GraphError> {
         )))
     }
 }
-

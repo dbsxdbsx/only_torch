@@ -93,18 +93,6 @@ impl NodeHandle {
         self.raw_node.set_value_unchecked(value);
     }
 
-    pub(in crate::nn) fn jacobi(&self) -> Option<&Tensor> {
-        self.raw_node.jacobi()
-    }
-
-    pub(in crate::nn) fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.raw_node.set_jacobi(jacobi)
-    }
-
-    pub(in crate::nn) fn clear_jacobi(&mut self) -> Result<(), GraphError> {
-        self.raw_node.clear_jacobi()
-    }
-
     pub(in crate::nn) fn clear_value(&mut self) -> Result<(), GraphError> {
         self.raw_node.clear_value()
     }
@@ -171,7 +159,7 @@ impl NodeHandle {
         Self::new(Conv2d::new(parents, stride, padding)?)
     }
 
-    /// 创建 ChannelBiasAdd 节点
+    /// 创建 `ChannelBiasAdd` 节点
     ///
     /// 将通道级 bias 广播加到 4D 或 3D 输入上。
     ///
@@ -183,12 +171,12 @@ impl NodeHandle {
         Self::new(ChannelBiasAdd::new(parents)?)
     }
 
-    /// 创建 MaxPool2d 节点
+    /// 创建 `MaxPool2d` 节点
     ///
     /// # 参数
     /// - `parents`: [输入节点]
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
-    /// - `stride`: 步长 (sH, sW)，None 时默认等于 kernel_size
+    /// - `stride`: 步长 (sH, sW)，None 时默认等于 `kernel_size`
     pub(in crate::nn) fn new_max_pool2d(
         parents: &[&Self],
         kernel_size: (usize, usize),
@@ -197,12 +185,12 @@ impl NodeHandle {
         Self::new(MaxPool2d::new(parents, kernel_size, stride)?)
     }
 
-    /// 创建 AvgPool2d 节点
+    /// 创建 `AvgPool2d` 节点
     ///
     /// # 参数
     /// - `parents`: [输入节点]
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
-    /// - `stride`: 步长 (sH, sW)，None 时默认等于 kernel_size
+    /// - `stride`: 步长 (sH, sW)，None 时默认等于 `kernel_size`
     pub(in crate::nn) fn new_avg_pool2d(
         parents: &[&Self],
         kernel_size: (usize, usize),
@@ -272,12 +260,12 @@ impl NodeHandle {
         Self::new(SoftmaxCrossEntropy::new(parents)?)
     }
 
-    /// 创建 MSELoss 节点（默认使用 Mean reduction）
+    /// 创建 `MSELoss` 节点（默认使用 Mean reduction）
     pub(in crate::nn) fn new_mse_loss(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(MSELoss::new_mean(parents)?)
     }
 
-    /// 创建 MSELoss 节点（指定 reduction 模式）
+    /// 创建 `MSELoss` 节点（指定 reduction 模式）
     pub(in crate::nn) fn new_mse_loss_with_reduction(
         parents: &[&Self],
         reduction: Reduction,
@@ -292,19 +280,7 @@ impl NodeHandle {
         self.raw_node.calc_value_by_parents(parents)
     }
 
-    // ========== 单样本模式（Jacobi-based）==========
-
-    /// 计算本节点对父节点的雅可比矩阵
-    pub(in crate::nn) fn calc_jacobi_to_a_parent(
-        &self,
-        parent: &Self,
-        assistant_parent: Option<&Self>,
-    ) -> Result<Tensor, GraphError> {
-        self.raw_node
-            .calc_jacobi_to_a_parent(parent, assistant_parent)
-    }
-
-    // ========== Batch 模式（Gradient-based）==========
+    // ========== 梯度（VJP 模式）==========
 
     /// 计算本节点对父节点的梯度（Batch 模式）
     pub(in crate::nn) fn calc_grad_to_parent(
@@ -350,6 +326,8 @@ impl NodeHandle {
         self.last_forward_pass_id = forward_pass_id;
     }
 
+    // 用于测试中验证 backward pass 状态
+    #[allow(dead_code)]
     pub(in crate::nn) const fn last_backward_pass_id(&self) -> u64 {
         self.last_backward_pass_id
     }

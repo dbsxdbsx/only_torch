@@ -23,14 +23,13 @@ use crate::tensor::Tensor;
 /// - 标量损失值 [1, 1]
 ///
 /// ## 参考
-/// - PyTorch: `torch.nn.MSELoss`
+/// - `PyTorch`: `torch.nn.MSELoss`
 #[derive(Clone)]
 pub(crate) struct MSELoss {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
-    grad: Option<Tensor>, // Batch 模式的梯度
+    grad: Option<Tensor>,
     /// 输出形状固定为 [1, 1]（标量损失）
     shape: Vec<usize>,
     /// Reduction 模式: "mean" 或 "sum"
@@ -79,7 +78,6 @@ impl MSELoss {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape: vec![1, 1], // 损失是标量
             reduction,
@@ -89,7 +87,7 @@ impl MSELoss {
         })
     }
 
-    /// 使用默认 Mean reduction 创建 MSELoss
+    /// 使用默认 Mean reduction 创建 `MSELoss`
     pub(crate) fn new_mean(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
         Self::new(parents, Reduction::Mean)
     }
@@ -162,59 +160,11 @@ impl TraitNode for MSELoss {
         self.value.as_ref()
     }
 
-    /// 计算 Jacobi 矩阵（单样本模式）
-    ///
-    /// MSE 的梯度：
-    /// - Mean: ∂L/∂input = 2 * (input - target) / N
-    /// - Sum: ∂L/∂input = 2 * (input - target)
-    ///
-    /// Jacobi 形状: [1, N] 其中 N 是 input 的元素总数
-    fn calc_jacobi_to_a_parent(
-        &self,
-        target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        let diff = self.diff_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("diff 缓存为空，需先执行前向传播".to_string())
-        })?;
-
-        // 对 input 的梯度
-        if target_parent.id() == self.parents_ids[0] {
-            let grad = match self.reduction {
-                Reduction::Mean => diff * (2.0 / self.numel_cache as f32),
-                Reduction::Sum => diff * 2.0,
-            };
-            // 损失是标量 [1,1]，input 是 [N]，Jacobi 形状是 [1, N]
-            let n = grad.size();
-            Ok(grad.reshape(&[1, n]))
-        } else {
-            // 对 target 的梯度（通常不需要，target 是常量）
-            // ∂L/∂target = -∂L/∂input
-            let grad = match self.reduction {
-                Reduction::Mean => diff * (-2.0 / self.numel_cache as f32),
-                Reduction::Sum => diff * (-2.0),
-            };
-            let n = grad.size();
-            Ok(grad.reshape(&[1, n]))
-        }
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
-
-    /// MSELoss 的 batch 梯度计算
+    /// `MSELoss` 的 VJP 梯度计算
     ///
     /// 对于 input: [batch, features]，target: [batch, features]：
-    /// - Mean: dL/d_input = 2 * (input - target) / N（N 是总元素数）
-    /// - Sum: dL/d_input = 2 * (input - target)
+    /// - Mean: `dL/d_input` = 2 * (input - target) / N（N 是总元素数）
+    /// - Sum: `dL/d_input` = 2 * (input - target)
     fn calc_grad_to_parent(
         &self,
         target_parent: &NodeHandle,
@@ -258,4 +208,3 @@ impl TraitNode for MSELoss {
         self.value = value.cloned();
     }
 }
-

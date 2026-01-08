@@ -1,142 +1,158 @@
+/*
+ * @Author       : 老董
+ * @Description  : Add 节点单元测试
+ *
+ * 测试策略：
+ * 1. 基础功能测试（创建、形状验证、命名）
+ * 2. 前向传播测试
+ * 3. VJP 单元测试（直接调用 calc_grad_to_parent）
+ * 4. 端到端反向传播测试（通过 graph.backward）
+ * 5. 梯度累积测试
+ */
+
 use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
+use approx::assert_abs_diff_eq;
 
+// ==================== 基础功能测试 ====================
+
+/// 测试 Add 节点创建
 #[test]
-fn test_node_add_creation() {
+fn test_add_creation() {
     let mut graph = Graph::new();
 
-    // 1. 测试只有Variable节点作为父节点
+    // 1. 两个 Input 节点相加
     {
         let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
         let input2 = graph.new_input_node(&[2, 3], Some("input2")).unwrap();
         let add = graph
-            .new_add_node(&[input1, input2], Some("add_with_inputs"))
+            .new_add_node(&[input1, input2], Some("add_inputs"))
             .unwrap();
-        // 1.1 验证基本属性
-        assert_eq!(graph.get_node_name(add).unwrap(), "add_with_inputs");
+
+        assert_eq!(graph.get_node_name(add).unwrap(), "add_inputs");
         assert_eq!(graph.get_node_parents(add).unwrap().len(), 2);
-        assert_eq!(graph.get_node_children(add).unwrap().len(), 0);
+        assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[2, 3]);
     }
 
-    // 2. 测试只有Parameter节点作为父节点
+    // 2. 两个 Parameter 节点相加
     {
         let param1 = graph.new_parameter_node(&[2, 3], Some("param1")).unwrap();
         let param2 = graph.new_parameter_node(&[2, 3], Some("param2")).unwrap();
         let add = graph
-            .new_add_node(&[param1, param2], Some("add_with_params"))
+            .new_add_node(&[param1, param2], Some("add_params"))
             .unwrap();
-        assert_eq!(graph.get_node_name(add).unwrap(), "add_with_params");
+
+        assert_eq!(graph.get_node_name(add).unwrap(), "add_params");
         assert_eq!(graph.get_node_parents(add).unwrap().len(), 2);
-        assert_eq!(graph.get_node_children(add).unwrap().len(), 0);
+        assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[2, 3]);
     }
 
-    // 3. 测试混合Variable和Parameter节点作为父节点
+    // 3. 混合 Input 和 Parameter 节点相加
     {
         let input = graph.new_input_node(&[2, 3], Some("input3")).unwrap();
         let param = graph.new_parameter_node(&[2, 3], Some("param3")).unwrap();
         let add = graph
-            .new_add_node(&[input, param], Some("add_with_mixed"))
+            .new_add_node(&[input, param], Some("add_mixed"))
             .unwrap();
-        assert_eq!(graph.get_node_name(add).unwrap(), "add_with_mixed");
-        assert_eq!(graph.get_node_parents(add).unwrap().len(), 2);
-        assert_eq!(graph.get_node_children(add).unwrap().len(), 0);
 
-        // 测试多个父节点的情况
-        let param2 = graph.new_parameter_node(&[2, 3], Some("param4")).unwrap();
-        let add_multi = graph
-            .new_add_node(&[input, param, param2], Some("add_with_multi"))
-            .unwrap();
-        assert_eq!(graph.get_node_name(add_multi).unwrap(), "add_with_multi");
-        assert_eq!(graph.get_node_parents(add_multi).unwrap().len(), 3);
-        assert_eq!(graph.get_node_children(add_multi).unwrap().len(), 0);
+        assert_eq!(graph.get_node_name(add).unwrap(), "add_mixed");
+        assert_eq!(graph.get_node_parents(add).unwrap().len(), 2);
+        assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[2, 3]);
     }
 
-    // 4. 测试父节点不足错误
+    // 4. 三个父节点相加（Add 支持多父节点）
     {
-        let input = graph.new_input_node(&[2, 3], Some("input5")).unwrap();
-        let result = graph.new_add_node(&[input], None);
-        // 使用简洁语法：直接传字符串字面量
-        assert_err!(
-            result,
-            GraphError::InvalidOperation("Add节点至少需要2个父节点")
-        );
+        let p1 = graph.new_parameter_node(&[2, 2], Some("p1")).unwrap();
+        let p2 = graph.new_parameter_node(&[2, 2], Some("p2")).unwrap();
+        let p3 = graph.new_parameter_node(&[2, 2], Some("p3")).unwrap();
+        let add = graph
+            .new_add_node(&[p1, p2, p3], Some("add_three"))
+            .unwrap();
+
+        assert_eq!(graph.get_node_parents(add).unwrap().len(), 3);
+        assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[2, 2]);
     }
 }
 
+/// 测试 Add 创建时的形状校验
 #[test]
-fn test_node_add_creation_with_inconsistent_shape() {
+fn test_add_creation_invalid_shape() {
     let mut graph = Graph::new();
 
-    // 1. 创建形状不同的父节点（都是2维，但形状不同）
+    // 1. 第一个和第二个父节点形状不同（行数不同）
     let input1 = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
     let input2 = graph.new_input_node(&[3, 2], Some("input2")).unwrap();
-    let param3 = graph.new_parameter_node(&[2, 3], Some("param3")).unwrap();
 
-    // 2. 设置父节点的值
-    let value1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    let value2 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
-    let value3 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    graph.set_node_value(input1, Some(&value1)).unwrap();
-    graph.set_node_value(input2, Some(&value2)).unwrap();
-    graph.set_node_value(param3, Some(&value3)).unwrap();
-
-    // 3. 测试不同形状组合
-    // 3.1 测试行数不同
     let result = graph.new_add_node(&[input1, input2], None);
-    // 使用简洁语法：ShapeMismatch(expected, got, message)
     assert_err!(
         result,
         GraphError::ShapeMismatch([2, 2], [3, 2], "Add节点的所有父节点形状必须相同")
     );
 
-    // 3.2 测试列数不同
-    let result = graph.new_add_node(&[input1, param3], None);
+    // 2. 列数不同
+    let input3 = graph.new_input_node(&[2, 3], Some("input3")).unwrap();
+    let result = graph.new_add_node(&[input1, input3], None);
     assert_err!(
         result,
         GraphError::ShapeMismatch([2, 2], [2, 3], "Add节点的所有父节点形状必须相同")
     );
 
-    // 3.3 测试多个父节点的情况
-    let result = graph.new_add_node(&[input1, input2, param3], None);
+    // 3. 三个父节点中有形状不同的
+    let input4 = graph.new_input_node(&[2, 2], Some("input4")).unwrap();
+    let input5 = graph.new_input_node(&[3, 2], Some("input5")).unwrap();
+    let result = graph.new_add_node(&[input1, input4, input5], None);
     assert_err!(
         result,
         GraphError::ShapeMismatch([2, 2], [3, 2], "Add节点的所有父节点形状必须相同")
     );
 }
 
+/// 测试 Add 创建时父节点数量不足
 #[test]
-fn test_node_add_name_generation() {
+fn test_add_creation_insufficient_parents() {
     let mut graph = Graph::new();
 
-    // 1. 测试节点显式命名
-    let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[2, 3], Some("input2")).unwrap();
-    let add1 = graph
-        .new_add_node(&[input1, input2], Some("explicit_add"))
-        .unwrap();
-    assert_eq!(graph.get_node_name(add1).unwrap(), "explicit_add");
-
-    // 2. 测试节点自动命名
-    let add2 = graph.new_add_node(&[input1, input2], None).unwrap();
-    assert_eq!(graph.get_node_name(add2).unwrap(), "add_1");
-
-    // 3. 测试节点名称重复
-    let duplicate_result = graph.new_add_node(&[input1, input2], Some("explicit_add"));
+    let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let result = graph.new_add_node(&[input], None);
     assert_err!(
-        duplicate_result,
-        GraphError::DuplicateNodeName("节点explicit_add在图default_graph中重复")
+        result,
+        GraphError::InvalidOperation("Add节点至少需要2个父节点")
     );
 }
 
+/// 测试 Add 节点命名
 #[test]
-fn test_node_add_manually_set_value() {
+fn test_add_name_generation() {
     let mut graph = Graph::new();
-    let input1 = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[2, 2], Some("input2")).unwrap();
-    let add = graph.new_add_node(&[input1, input2], Some("add")).unwrap();
 
-    // 1. 测试直接设置Add节点的值（应该失败）
+    let p1 = graph.new_parameter_node(&[2, 3], Some("p1")).unwrap();
+    let p2 = graph.new_parameter_node(&[2, 3], Some("p2")).unwrap();
+
+    // 1. 显式命名
+    let add1 = graph.new_add_node(&[p1, p2], Some("my_add")).unwrap();
+    assert_eq!(graph.get_node_name(add1).unwrap(), "my_add");
+
+    // 2. 自动命名
+    let add2 = graph.new_add_node(&[p1, p2], None).unwrap();
+    assert_eq!(graph.get_node_name(add2).unwrap(), "add_1");
+
+    // 3. 名称重复
+    let result = graph.new_add_node(&[p1, p2], Some("my_add"));
+    assert_err!(
+        result,
+        GraphError::DuplicateNodeName("节点my_add在图default_graph中重复")
+    );
+}
+
+/// 测试 Add 节点不能直接设置值
+#[test]
+fn test_add_cannot_set_value() {
+    let mut graph = Graph::new();
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1")).unwrap();
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2")).unwrap();
+    let add = graph.new_add_node(&[p1, p2], Some("add")).unwrap();
+
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     assert_err!(
         graph.set_node_value(add, Some(&test_value)),
@@ -144,232 +160,371 @@ fn test_node_add_manually_set_value() {
             "节点[id=3, name=add, type=Add]的值只能通过前向传播计算得到，不能直接设置"
         )
     );
-
-    // 2. 测试清除Add节点的值（也应该失败）
-    assert_err!(
-        graph.set_node_value(add, None),
-        GraphError::InvalidOperation(
-            "节点[id=3, name=add, type=Add]的值只能通过前向传播计算得到，不能直接设置"
-        )
-    );
 }
 
+// ==================== 前向传播测试 ====================
+
+/// 测试 Add 前向传播（两个父节点）
 #[test]
-fn test_node_add_expected_shape() {
+fn test_add_forward() {
     let mut graph = Graph::new();
 
-    // 1. 测试基本的Add节点预期形状
-    let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[2, 3], Some("input2")).unwrap();
-    let add = graph.new_add_node(&[input1, input2], Some("add")).unwrap();
-    assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[2, 3]);
-    assert_eq!(graph.get_node_value_shape(add).unwrap(), None); // 实际值形状为None（未计算）
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1")).unwrap();
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2")).unwrap();
+    let add = graph.new_add_node(&[p1, p2], Some("add")).unwrap();
 
-    // 2. 测试前向传播后的形状
-    let value1 = Tensor::zeros(&[2, 3]);
-    let value2 = Tensor::zeros(&[2, 3]);
-    graph.set_node_value(input1, Some(&value1)).unwrap();
-    graph.set_node_value(input2, Some(&value2)).unwrap();
-    graph.forward_node(add).unwrap();
-
-    // 2.1 验证前向传播后的形状
-    assert_eq!(graph.get_node_value_shape(add).unwrap().unwrap(), &[2, 3]); // 实际值形状
-    assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[2, 3]); // 预期形状保持不变
-
-    // 2.2 测试父节点值在首次前向传播后，再次设置新值后的形状检查
-    let value1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let value2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 3]);
-    graph.set_node_value(input1, Some(&value1)).unwrap();
-    graph.set_node_value(input2, Some(&value2)).unwrap();
-
-    // 2.2.1 验证预期形状和实际形状
-    assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[2, 3]);
-    assert_eq!(graph.get_node_value_shape(add).unwrap().unwrap(), &[2, 3]); // 虽然值已过期，但由于值仍然存在，所以形状不变
-
-    // 3. 测试多个父节点的情况
-    let mut graph = Graph::new();
-
-    let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[2, 3], Some("input2")).unwrap();
-    let input3 = graph.new_input_node(&[2, 3], Some("input3")).unwrap();
-    let add_multi = graph
-        .new_add_node(&[input1, input2, input3], Some("add_multi"))
+    // p1=[[1,2],[3,4]], p2=[[5,6],[7,8]] → add=[[6,8],[10,12]]
+    graph
+        .set_node_value(p1, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    graph
+        .set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
 
-    // 3.1 验证多父节点Add的预期形状
-    assert_eq!(
-        graph.get_node_value_expected_shape(add_multi).unwrap(),
-        &[2, 3]
-    );
-    assert_eq!(graph.get_node_value_shape(add_multi).unwrap(), None);
+    graph.forward(add).unwrap();
 
-    // 3.2 设置所有父节点的值并前向传播
-    let value1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let value2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 3]);
-    let value3 = Tensor::new(&[13.0, 14.0, 15.0, 16.0, 17.0, 18.0], &[2, 3]);
-    graph.set_node_value(input1, Some(&value1)).unwrap();
-    graph.set_node_value(input2, Some(&value2)).unwrap();
-    graph.set_node_value(input3, Some(&value3)).unwrap();
-    graph.forward_node(add_multi).unwrap();
-
-    // 3.2.1 验证前向传播后的形状
-    assert_eq!(
-        graph.get_node_value_expected_shape(add_multi).unwrap(),
-        &[2, 3]
-    );
-    assert_eq!(
-        graph.get_node_value_shape(add_multi).unwrap().unwrap(),
-        &[2, 3]
-    );
+    let output = graph.get_node_value(add).unwrap().unwrap();
+    let expected = Tensor::new(&[6.0, 8.0, 10.0, 12.0], &[2, 2]);
+    assert_eq!(output, &expected);
 }
 
+/// 测试 Add 前向传播（三个父节点）
 #[test]
-fn test_node_add_forward_propagation() {
-    // 1. 准备测试数据 (与Python测试tests\calc_jacobi_by_pytorch\node_add.py保持一致)
-    let value1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    let value2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]);
-    let expected = &value1 + &value2;
-
-    // 2. 测试不同节点类型组合的前向传播
-    let node_types = ["input", "parameter"];
-    for parent1_type in node_types {
-        for parent2_type in node_types {
-            let mut graph = Graph::new();
-
-            // 创建parent1节点
-            let parent1 = match parent1_type {
-                "input" => graph.new_input_node(&[2, 2], Some("input_1")).unwrap(),
-                "parameter" => graph
-                    .new_parameter_node(&[2, 2], Some("parameter_1"))
-                    .unwrap(),
-                _ => unreachable!(),
-            };
-
-            // 创建parent2节点
-            let parent2 = match parent2_type {
-                "input" => graph.new_input_node(&[2, 2], Some("input_2")).unwrap(),
-                "parameter" => graph
-                    .new_parameter_node(&[2, 2], Some("parameter_2"))
-                    .unwrap(),
-                _ => unreachable!(),
-            };
-
-            // Add节点总是可训练的
-            let add = graph
-                .new_add_node(&[parent1, parent2], Some("add"))
-                .unwrap();
-
-            // 如果两个节点都是parameter，因创建时其值已隐式初始化过了，所以前向传播应成功
-            if parent1_type == "parameter" && parent2_type == "parameter" {
-                graph.forward_node(add).unwrap();
-            } else {
-                // 如果有input节点，因创建时其值未初始化，所以前向传播应失败
-                if parent1_type == "input" {
-                    assert_err!(
-                        graph.forward_node(add),
-                        GraphError::InvalidOperation(
-                            "节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1"
-                        )
-                    );
-                } else if parent2_type == "input" {
-                    assert_err!(
-                        graph.forward_node(add),
-                        GraphError::InvalidOperation(
-                            "节点[id=2, name=input_2, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1"
-                        )
-                    );
-                }
-
-                // 设置input节点的值
-                if parent1_type == "input" {
-                    graph.set_node_value(parent1, Some(&value1)).unwrap();
-                }
-                if parent2_type == "input" {
-                    graph.set_node_value(parent2, Some(&value2)).unwrap();
-                }
-
-                // 设置值后前向传播应成功
-                graph.forward_node(add).unwrap();
-                let result = graph.get_node_value(add).unwrap().unwrap();
-
-                // 只有当两个节点都是input时才检查输出值
-                if parent1_type == "input" && parent2_type == "input" {
-                    assert_eq!(result, &expected);
-                }
-            }
-        }
-    }
-}
-
-#[test]
-fn test_node_add_backward_propagation() {
+fn test_add_forward_three_parents() {
     let mut graph = Graph::new();
 
-    // 1. 创建一个简单的加法图：result = parent1 + parent2
-    let parent1 = graph.new_parameter_node(&[2, 2], Some("parent1")).unwrap();
-    let parent2 = graph.new_parameter_node(&[2, 2], Some("parent2")).unwrap();
-    let result = graph
-        .new_add_node(&[parent1, parent2], Some("result"))
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1")).unwrap();
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2")).unwrap();
+    let p3 = graph.new_parameter_node(&[2, 2], Some("p3")).unwrap();
+    let add = graph.new_add_node(&[p1, p2, p3], Some("add")).unwrap();
+
+    // p1=[[1,2],[3,4]], p2=[[5,6],[7,8]], p3=[[10,10],[10,10]]
+    // → add=[[16,18],[20,22]]
+    graph
+        .set_node_value(p1, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    graph
+        .set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
+    graph
+        .set_node_value(p3, Some(&Tensor::new(&[10.0, 10.0, 10.0, 10.0], &[2, 2])))
         .unwrap();
 
-    // 2. 测试在前向传播之前进行反向传播（应该失败）
-    assert_err!(
-        graph.backward_nodes(&[parent1], result),
-        GraphError::ComputationError("反向传播：结果节点[id=3, name=result, type=Add]没有值")
-    );
+    graph.forward(add).unwrap();
 
-    // 3. 设置输入值 (与Python测试tests\calc_jacobi_by_pytorch\node_add.py保持一致)
-    let parent1_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    let parent2_value = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]);
-    graph.set_node_value(parent1, Some(&parent1_value)).unwrap();
-    graph.set_node_value(parent2, Some(&parent2_value)).unwrap();
+    let output = graph.get_node_value(add).unwrap().unwrap();
+    let expected = Tensor::new(&[16.0, 18.0, 20.0, 22.0], &[2, 2]);
+    assert_eq!(output, &expected);
+}
 
-    // 4. 反向传播前执行必要的前向传播
-    graph.forward_node(result).unwrap();
+// ==================== 节点级反向传播测试（直接调用 calc_grad_to_parent）====================
 
-    // 5. 反向传播（使用 retain_graph=true 以便多次 backward）
-    // 5.1 add节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+/// 测试 Add 对第一个父节点的梯度计算
+///
+/// 对于 result = p1 + p2，有 ∂result/∂p1 = I（恒等映射）
+/// VJP: grad_to_p1 = upstream_grad
+#[test]
+fn test_add_backward_to_first_parent() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
 
-    // 5.2 对parent1的反向传播（第1次）
-    graph.backward_nodes_ex(&[parent1], result, true).unwrap();
-    let parent1_jacobi = graph.get_node_jacobi(parent1).unwrap().unwrap();
-    assert_eq!(parent1_jacobi, &Tensor::eyes(4)); // ∂result/∂parent1 = I
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
+    let add = graph.new_add_node(&[p1, p2], Some("add"))?;
 
-    // 5.3 对parent1的反向传播（第2次）- 梯度应该累积
-    graph.backward_nodes_ex(&[parent1], result, true).unwrap();
-    let parent1_jacobi_second = graph.get_node_jacobi(parent1).unwrap().unwrap();
-    assert_eq!(parent1_jacobi_second, &(&Tensor::eyes(4) * 2.0)); // 梯度累积，变为2倍
+    // 设置值并前向传播
+    graph.set_node_value(p1, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
+    graph.forward(add)?;
 
-    // 5.4 对parent2的反向传播（第1次）
-    graph.backward_nodes_ex(&[parent2], result, true).unwrap();
-    let parent2_jacobi = graph.get_node_jacobi(parent2).unwrap().unwrap();
-    assert_eq!(parent2_jacobi, &Tensor::eyes(4)); // ∂result/∂parent2 = I
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let add_node = graph.get_node(add)?;
+    let p1_node = graph.get_node(p1)?;
 
-    // 5.5 对parent2的反向传播（第2次）- 梯度应该累积
-    graph.backward_nodes_ex(&[parent2], result, true).unwrap();
-    let parent2_jacobi_second = graph.get_node_jacobi(parent2).unwrap().unwrap();
-    assert_eq!(parent2_jacobi_second, &(&Tensor::eyes(4) * 2.0)); // 梯度累积，变为2倍
+    // Add 不需要 assistant_parent，梯度直接传递
+    let grad = add_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
 
-    // 6. 清除雅可比矩阵并验证
-    graph.clear_jacobi().unwrap();
+    // grad_to_p1 = upstream_grad（恒等传递）
+    assert_eq!(grad.shape(), &[2, 2]);
+    assert_eq!(&grad, &upstream_grad);
 
-    // 6.1 清除后，parent1, parent2, result的雅可比矩阵应该为None
-    assert!(graph.get_node_jacobi(parent1).unwrap().is_none());
-    assert!(graph.get_node_jacobi(parent2).unwrap().is_none());
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    Ok(())
+}
 
-    // 6.2 清除后再次反向传播 - 仍应正常工作
-    // 6.2.1 add节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+/// 测试 Add 对第二个父节点的梯度计算
+///
+/// 对于 result = p1 + p2，有 ∂result/∂p2 = I（恒等映射）
+/// VJP: grad_to_p2 = upstream_grad
+#[test]
+fn test_add_backward_to_second_parent() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
 
-    // 6.2.2 对parent1的反向传播
-    graph.backward_nodes_ex(&[parent1], result, true).unwrap();
-    let parent1_jacobi_after_clear = graph.get_node_jacobi(parent1).unwrap().unwrap();
-    assert_eq!(parent1_jacobi_after_clear, &Tensor::eyes(4));
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
+    let add = graph.new_add_node(&[p1, p2], Some("add"))?;
 
-    // 6.2.3 对parent2的反向传播（最后一次可以不保留图）
-    graph.backward_nodes(&[parent2], result).unwrap();
-    let parent2_jacobi_after_clear = graph.get_node_jacobi(parent2).unwrap().unwrap();
-    assert_eq!(parent2_jacobi_after_clear, &Tensor::eyes(4));
+    // 设置值并前向传播
+    graph.set_node_value(p1, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
+    graph.forward(add)?;
+
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let add_node = graph.get_node(add)?;
+    let p2_node = graph.get_node(p2)?;
+
+    let grad = add_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+
+    // grad_to_p2 = upstream_grad（恒等传递）
+    assert_eq!(grad.shape(), &[2, 2]);
+    assert_eq!(&grad, &upstream_grad);
+
+    Ok(())
+}
+
+/// 测试 Add 梯度计算（非单位 upstream_grad）
+#[test]
+fn test_add_backward_with_non_unit_upstream() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
+    let add = graph.new_add_node(&[p1, p2], Some("add"))?;
+
+    // 设置值并前向传播
+    graph.set_node_value(p1, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
+    graph.forward(add)?;
+
+    // upstream_grad = [[1,2],[3,4]]（非全1）
+    let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let add_node = graph.get_node(add)?;
+    let p1_node = graph.get_node(p1)?;
+    let p2_node = graph.get_node(p2)?;
+
+    // 对 p1 的梯度：直接传递 upstream_grad
+    let grad_to_p1 = add_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    assert_eq!(&grad_to_p1, &upstream_grad);
+
+    // 对 p2 的梯度：直接传递 upstream_grad
+    let grad_to_p2 = add_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    assert_eq!(&grad_to_p2, &upstream_grad);
+
+    Ok(())
+}
+
+/// 测试 Add 梯度计算（负数值）
+///
+/// 验证 VJP 在负数值场景下的正确性
+#[test]
+fn test_add_backward_with_negative_values() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
+    let add = graph.new_add_node(&[p1, p2], Some("add"))?;
+
+    // p1=[[-1,-2],[-3,-4]], p2=[[5,-6],[7,-8]]
+    graph.set_node_value(p1, Some(&Tensor::new(&[-1.0, -2.0, -3.0, -4.0], &[2, 2])))?;
+    graph.set_node_value(p2, Some(&Tensor::new(&[5.0, -6.0, 7.0, -8.0], &[2, 2])))?;
+    graph.forward(add)?;
+
+    // 验证前向传播：[[-1+5, -2-6], [-3+7, -4-8]] = [[4,-8],[4,-12]]
+    let output = graph.get_node_value(add)?.unwrap();
+    let expected_output = Tensor::new(&[4.0, -8.0, 4.0, -12.0], &[2, 2]);
+    assert_eq!(output, &expected_output);
+
+    // upstream_grad = [[-1,2],[-3,4]]（含负数）
+    let upstream_grad = Tensor::new(&[-1.0, 2.0, -3.0, 4.0], &[2, 2]);
+    let add_node = graph.get_node(add)?;
+    let p1_node = graph.get_node(p1)?;
+    let p2_node = graph.get_node(p2)?;
+
+    // Add 的梯度恒等传递，与值无关
+    let grad_to_p1 = add_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    let grad_to_p2 = add_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    assert_eq!(&grad_to_p1, &upstream_grad);
+    assert_eq!(&grad_to_p2, &upstream_grad);
+
+    Ok(())
+}
+
+/// 测试 Add 对三个父节点的梯度计算
+#[test]
+fn test_add_backward_three_parents() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
+    let p3 = graph.new_parameter_node(&[2, 2], Some("p3"))?;
+    let add = graph.new_add_node(&[p1, p2, p3], Some("add"))?;
+
+    // 设置值并前向传播
+    graph.set_node_value(p1, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
+    graph.set_node_value(p3, Some(&Tensor::new(&[10.0, 10.0, 10.0, 10.0], &[2, 2])))?;
+    graph.forward(add)?;
+
+    // upstream_grad = [[2,4],[6,8]]
+    let upstream_grad = Tensor::new(&[2.0, 4.0, 6.0, 8.0], &[2, 2]);
+    let add_node = graph.get_node(add)?;
+    let p1_node = graph.get_node(p1)?;
+    let p2_node = graph.get_node(p2)?;
+    let p3_node = graph.get_node(p3)?;
+
+    // 所有父节点的梯度都相同，等于 upstream_grad
+    let grad_to_p1 = add_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    let grad_to_p2 = add_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    let grad_to_p3 = add_node.calc_grad_to_parent(p3_node, &upstream_grad, None)?;
+
+    assert_eq!(&grad_to_p1, &upstream_grad);
+    assert_eq!(&grad_to_p2, &upstream_grad);
+    assert_eq!(&grad_to_p3, &upstream_grad);
+
+    Ok(())
+}
+
+// ==================== 端到端反向传播测试 ====================
+
+/// 测试 Add 通过 graph.backward() 的端到端反向传播
+///
+/// 构建简单图：result = p1 + p2 → loss = MSE(result, target)
+#[test]
+fn test_add_backward_e2e() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    // 创建计算图：result = p1 + p2
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
+    let result = graph.new_add_node(&[p1, p2], Some("result"))?;
+
+    // loss = MSE(result, target)
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值：p1=[[1,2],[3,4]], p2=[[5,6],[7,8]], target=[[0,0],[0,0]]
+    graph.set_node_value(p1, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
+
+    // 前向传播
+    graph.forward(loss)?;
+
+    // result = [[6,8],[10,12]]
+    // loss = mean((result - 0)^2) = mean([36,64,100,144]) = 344/4 = 86
+    let loss_value = graph.get_node_value(loss)?.unwrap();
+    assert_abs_diff_eq!(loss_value.get_data_number().unwrap(), 86.0, epsilon = 1e-6);
+
+    // 反向传播（验证 backward 返回 loss 标量值 —— Phase 2 API 契约）
+    graph.zero_grad()?;
+    let loss_returned = graph.backward(loss)?;
+    assert_abs_diff_eq!(loss_returned, 86.0, epsilon = 1e-6);
+
+    // 验证梯度存在且形状正确
+    let p1_grad = graph.get_node(p1)?.grad().expect("p1 应有 grad");
+    let p2_grad = graph.get_node(p2)?.grad().expect("p2 应有 grad");
+    assert_eq!(p1_grad.shape(), &[2, 2]);
+    assert_eq!(p2_grad.shape(), &[2, 2]);
+
+    // ∂loss/∂result = 2*(result - target)/n = 2*result/4 = result/2 = [[3,4],[5,6]]
+    // ∂loss/∂p1 = ∂loss/∂result (因为 ∂result/∂p1 = I)
+    // ∂loss/∂p2 = ∂loss/∂result (因为 ∂result/∂p2 = I)
+    let expected_grad = Tensor::new(&[3.0, 4.0, 5.0, 6.0], &[2, 2]);
+    assert_eq!(p1_grad, &expected_grad);
+    assert_eq!(p2_grad, &expected_grad);
+
+    // Add 节点对两个输入的梯度应该相同
+    assert_eq!(p1_grad, p2_grad);
+
+    Ok(())
+}
+
+/// 测试 Add 端到端反向传播（三个父节点）
+#[test]
+fn test_add_backward_e2e_three_parents() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    // 创建计算图：result = p1 + p2 + p3
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
+    let p3 = graph.new_parameter_node(&[2, 2], Some("p3"))?;
+    let result = graph.new_add_node(&[p1, p2, p3], Some("result"))?;
+
+    // loss = MSE(result, target)
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值：p1=[[1,1],[1,1]], p2=[[2,2],[2,2]], p3=[[3,3],[3,3]], target=[[0,0],[0,0]]
+    graph.set_node_value(p1, Some(&Tensor::new(&[1.0; 4], &[2, 2])))?;
+    graph.set_node_value(p2, Some(&Tensor::new(&[2.0; 4], &[2, 2])))?;
+    graph.set_node_value(p3, Some(&Tensor::new(&[3.0; 4], &[2, 2])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
+
+    // 前向传播
+    graph.forward(loss)?;
+
+    // result = [[6,6],[6,6]]
+    // loss = mean((6-0)^2) = 36
+    let loss_value = graph.get_node_value(loss)?.unwrap();
+    assert_abs_diff_eq!(loss_value.get_data_number().unwrap(), 36.0, epsilon = 1e-6);
+
+    // 反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    // ∂loss/∂result = 2*(result - target)/n = 2*6/4 = 3
+    // 所有父节点的梯度相同
+    let p1_grad = graph.get_node(p1)?.grad().expect("p1 应有 grad");
+    let p2_grad = graph.get_node(p2)?.grad().expect("p2 应有 grad");
+    let p3_grad = graph.get_node(p3)?.grad().expect("p3 应有 grad");
+
+    let expected_grad = Tensor::new(&[3.0; 4], &[2, 2]);
+    assert_eq!(p1_grad, &expected_grad);
+    assert_eq!(p2_grad, &expected_grad);
+    assert_eq!(p3_grad, &expected_grad);
+
+    Ok(())
+}
+
+// ==================== 梯度累积测试 ====================
+
+/// 测试 Add 梯度累积
+///
+/// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
+/// 这是 PyTorch 兼容的行为，支持"micro-batch 梯度累积"场景。
+#[test]
+fn test_add_gradient_accumulation() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
+    let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
+    let result = graph.new_add_node(&[p1, p2], Some("result"))?;
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值
+    graph.set_node_value(p1, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
+    graph.forward(loss)?;
+
+    // 第1次反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad_first = graph.get_node(p1)?.grad().unwrap().clone();
+
+    // 第2次反向传播（梯度累积）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_second = graph.get_node(p1)?.grad().unwrap();
+    assert_eq!(grad_second, &(&grad_first * 2.0));
+
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_after_clear = graph.get_node(p1)?.grad().unwrap();
+    assert_eq!(grad_after_clear, &grad_first);
+
+    Ok(())
 }

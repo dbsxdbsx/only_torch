@@ -87,34 +87,17 @@ pub(in crate::nn::nodes) trait TraitNode {
     /// 普通用户应使用 `set_value`，它会检查节点类型。
     fn set_value_unchecked(&mut self, value: Option<&Tensor>);
 
-    // ========== 单样本模式（Jacobi-based）==========
-
-    /// 计算本节点对父节点的雅可比矩阵（单样本模式）
-    fn calc_jacobi_to_a_parent(
-        &self,
-        target_parent: &NodeHandle,
-        assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError>;
-
-    fn jacobi(&self) -> Option<&Tensor>;
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError>;
-
-    fn clear_jacobi(&mut self) -> Result<(), GraphError> {
-        self.set_jacobi(None)
-    }
-
-    // ========== Batch 模式（Gradient-based）==========
+    // ========== 梯度（VJP 模式）==========
 
     /// 计算本节点对父节点的梯度（Batch 模式）
     ///
     /// # 参数
     /// - `target_parent`: 目标父节点
     /// - `upstream_grad`: 从下游传来的梯度，shape 与本节点 value 相同
-    /// - `assistant_parent`: 辅助父节点（用于双父节点如 MatMul）
+    /// - `assistant_parent`: 辅助父节点（用于双父节点如 `MatMul`）
     ///
     /// # 返回
-    /// 对 target_parent 的梯度，shape 与 target_parent.value 相同
+    /// 对 `target_parent` 的梯度，shape 与 `target_parent.value` 相同
     ///
     /// # 默认实现
     /// 返回错误，需要各节点自行实现

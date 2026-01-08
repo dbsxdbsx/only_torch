@@ -18,11 +18,11 @@ pub fn normalize_pixels(tensor: &Tensor) -> Tensor {
 /// 将类别索引转换为 one-hot 编码
 ///
 /// # 参数
-/// - `labels`: 类别索引 Tensor，形状 [N] 或 [N, 1]，值为 0..num_classes
+/// - `labels`: 类别索引 Tensor，形状 [N] 或 [N, 1]，值为 `0..num_classes`
 /// - `num_classes`: 类别总数
 ///
 /// # 返回
-/// one-hot 编码 Tensor，形状 [N, num_classes]
+/// one-hot 编码 Tensor，形状 [N, `num_classes`]
 ///
 /// # 示例
 /// ```ignore

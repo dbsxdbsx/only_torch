@@ -53,17 +53,17 @@ pub struct Graph {
     next_id: u64,
     is_eval_mode: bool,
     /// 图级别的随机数生成器（用于参数初始化等）
-    /// None 表示使用默认的 thread_rng（非确定性）
+    /// None 表示使用默认的 `thread_rng（非确定性`）
     rng: Option<StdRng>,
     /// 层分组信息（用于可视化）
     layer_groups: Vec<LayerGroup>,
 
     // ========== 循环/记忆机制相关字段（Phase 1） ==========
-    /// 循环边：to_node -> from_node（to 节点在 step() 时从 from 节点的上一步值读取）
+    /// `循环边：to_node` -> `from_node（to` 节点在 `step()` 时从 from 节点的上一步值读取）
     recurrent_edges: HashMap<NodeId, NodeId>,
     /// 双缓冲：存储循环节点的上一时间步值
     prev_values: HashMap<NodeId, Tensor>,
-    /// 当前时间步（用于调试，每次 step() 递增，reset() 归零）
+    /// 当前时间步（用于调试，每次 `step()` `递增，reset()` 归零）
     time_step: u64,
 
     // ========== BPTT 相关字段（Phase 2） ==========
@@ -225,7 +225,7 @@ impl Graph {
     }
 
     /// 检查图是否有固定种子
-    pub fn has_seed(&self) -> bool {
+    pub const fn has_seed(&self) -> bool {
         self.rng.is_some()
     }
 
@@ -272,7 +272,7 @@ impl Graph {
     }
 
     // 前向传播：
-    pub fn forward_node(&mut self, node_id: NodeId) -> Result<(), GraphError> {
+    pub fn forward(&mut self, node_id: NodeId) -> Result<(), GraphError> {
         // 1. 检查节点类型
         let node = self.get_node(node_id)?;
         match node.node_type() {
@@ -350,97 +350,13 @@ impl Graph {
         Ok(())
     }
 
-    /// 反向传播：计算结果节点对本节点的雅可比矩阵（扩展版本）
-    ///
-    /// # 参数
-    /// - `target_nodes_ids`: 目标节点列表（通常是需要计算梯度的参数节点）
-    /// - `result_node_id`: 结果节点（通常是 loss 节点）
-    /// - `retain_graph`: 是否保留计算图供后续反向传播使用
-    ///   - `true`: 保留中间值，允许再次 backward
-    ///   - `false`: 释放中间值以节省内存
-    ///
-    /// # 用途
-    /// - **多 Loss 共享计算路径**：多任务学习中多个 loss 需要分别 backward
-    /// - **高阶导数**：计算梯度的梯度需要保留计算图
-    /// - **Actor-Critic 共享 backbone**：两个 loss 共享前向计算
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // 多任务学习
-    /// graph.forward_node(shared_output)?;
-    /// let cls_loss = compute_cls_loss();
-    /// let reg_loss = compute_reg_loss();
-    ///
-    /// // 第一个 loss backward，保留图
-    /// graph.backward_nodes_ex(&[cls_weights], cls_loss, true)?;
-    ///
-    /// // 第二个 loss backward，可以释放图
-    /// graph.backward_nodes_ex(&[reg_weights], reg_loss, false)?;
-    /// ```
-    pub fn backward_nodes_ex(
-        &mut self,
-        target_nodes_ids: &[NodeId],
-        result_node_id: NodeId,
-        retain_graph: bool,
-    ) -> Result<(), GraphError> {
-        // 0. 警告：在 no_grad（eval）模式下调用 backward 通常是误用
-        // 虽然静态图架构允许此操作，但大多数情况下无实际意义
-        // 参考设计文档: .doc/design/gradient_flow_control_design.md
-        if !self.is_train_mode() {
-            eprintln!(
-                "[only_torch 警告] 在 no_grad/eval 模式下调用 backward，这通常是误用。\
-                如确需此行为，请忽略此警告。"
-            );
-        }
-
-        // 1. 重置中间节点的 jacobi（PyTorch 语义：只有参数节点梯度累积）
-        // 这确保每次 backward 时中间节点的梯度是重新计算的
-        self.reset_intermediate_jacobi();
-
-        // 2. 为图本次的反向传播设置新id
-        self.last_backward_pass_id += 1;
-        let graph_backward_pass_id = self.last_backward_pass_id;
-
-        // 3. 对每个目标节点执行反向传播
-        for &target_id in target_nodes_ids {
-            self.backward_node_internal(target_id, result_node_id)
-                .inspect_err(|_| {
-                    // 如果出错则回滚backward_pass_id
-                    self.last_backward_pass_id = graph_backward_pass_id - 1;
-                })?;
-        }
-
-        // 4. 根据 retain_graph 决定是否释放中间值
-        if !retain_graph {
-            self.release_intermediate_results()?;
-        }
-
-        Ok(())
-    }
-
-    /// 反向传播：计算结果节点对本节点的雅可比矩阵
-    ///
-    /// 这是 `backward_nodes_ex` 的简化版本，默认 `retain_graph = false`。
-    /// 这意味着 backward 后中间节点的值会被释放以节省内存。
-    /// 如需多次 backward，请使用 `backward_nodes_ex(..., retain_graph=true)`。
-    ///
-    /// NOTE: 这里的逻辑参考了 MatrixSlow/matrixslow/core/node.py#L83 (Node.backward)
-    pub fn backward_nodes(
-        &mut self,
-        target_nodes_ids: &[NodeId],
-        result_node_id: NodeId,
-    ) -> Result<(), GraphError> {
-        // 默认不保留图（与 PyTorch 行为一致）
-        self.backward_nodes_ex(target_nodes_ids, result_node_id, false)
-    }
-
     /// 释放中间节点的值和梯度以节省内存
     ///
     /// 保留 Input 和 Parameter 节点的数据，只清除计算节点（如 Add、MatMul 等）的值和梯度。
     /// 这些值在下次 forward 时会重新计算，梯度在下次 backward 时会重新计算。
     ///
     /// # 用途
-    /// - 在 `backward_nodes_ex(..., retain_graph=false)` 后自动调用
+    /// - 在 `backward_ex(loss, retain_graph=false)` 后自动调用
     /// - 可手动调用以释放内存
     ///
     /// # 设计理由
@@ -448,7 +364,7 @@ impl Graph {
     /// - 值被释放：需要重新 forward 才能再次 backward
     /// - 梯度也被释放：避免用户误以为中间节点的梯度是累积的（实际只是本次的）
     ///
-    /// 这更接近 PyTorch 的语义：中间节点的梯度默认不保留（除非 `retain_grad()`）
+    /// 这更接近 `PyTorch` 的语义：中间节点的梯度默认不保留（除非 `retain_grad()`）
     fn release_intermediate_results(&mut self) -> Result<(), GraphError> {
         for node in self.nodes.values_mut() {
             match node.node_type() {
@@ -458,28 +374,28 @@ impl Graph {
                 // 清除其他节点的值和梯度
                 _ => {
                     node.clear_value()?;
-                    let _ = node.clear_jacobi();
+                    let _ = node.clear_grad();
                 }
             }
         }
         Ok(())
     }
 
-    /// 重置中间节点的 jacobi（保留参数节点的 jacobi 以支持梯度累积）
+    /// 重置中间节点的 grad（保留参数节点的 grad 以支持梯度累积）
     ///
-    /// PyTorch 语义：
+    /// `PyTorch` 语义：
     /// - 参数节点（叶节点）：梯度跨 backward 调用累积
     /// - 中间节点：每次 backward 重新计算，不累积
     ///
     /// 这确保了多任务学习等场景下梯度计算的正确性。
-    fn reset_intermediate_jacobi(&mut self) {
+    fn reset_intermediate_grad(&mut self) {
         for node in self.nodes.values_mut() {
             match node.node_type() {
-                // 保留参数节点的 jacobi（支持梯度累积）
+                // 保留参数节点的 grad（支持梯度累积）
                 NodeType::Parameter(_) => {}
-                // 清除其他节点的 jacobi（中间节点每次 backward 重新计算）
+                // 清除其他节点的 grad（中间节点每次 backward 重新计算）
                 _ => {
-                    let _ = node.clear_jacobi();
+                    let _ = node.clear_grad();
                     // 重置 backward pass id 以便重新计算
                     node.set_last_backward_pass_id(0);
                 }
@@ -487,313 +403,75 @@ impl Graph {
         }
     }
 
-    // 反向传播的内部实现
-    fn backward_node_internal(
-        &mut self,
-        target_node_id: NodeId,
-        result_node_id: NodeId,
-    ) -> Result<(), GraphError> {
-        // 0. 首先检查目标节点是否为输入节点
-        let target_node = self.get_node(target_node_id)?;
-        if let NodeType::Input(_) = target_node.node_type() {
-            return Err(GraphError::InvalidOperation(format!(
-                "输入{target_node}不应该有雅可比矩阵"
-            )));
-        }
-
-        // 0.1 检查节点是否被 detach
-        // 被 detach 的节点视为叶子节点，不向父节点传播梯度
-        if target_node.is_detached() {
-            return Ok(());
-        }
-
-        let graph_backward_pass_id = self.last_backward_pass_id;
-
-        // 1. 若已经在本次反向传播中计算过，则直接返回
-        if target_node.last_backward_pass_id() == graph_backward_pass_id {
-            return Ok(());
-        }
-
-        // 2. 若目标节点是结果节点（是自身），则自己对自己的雅可比矩阵为单位矩阵
-        if target_node_id == result_node_id {
-            let element_number = target_node
-                .value()
-                .ok_or_else(|| {
-                    let node = self.get_node(target_node_id).unwrap();
-                    GraphError::ComputationError(format!("反向传播：{node}没有值"))
-                })?
-                .size();
-            let eye = Tensor::eyes(element_number);
-            self.get_node_mut(target_node_id)?.set_jacobi(Some(&eye))?;
-            // 更新节点的反向传播次数
-            self.get_node_mut(target_node_id)?
-                .set_last_backward_pass_id(graph_backward_pass_id);
-            return Ok(());
-        }
-
-        // 3. 其他情况的雅可比矩阵计算
-        // 3.1 若目标节点没有子节点且不是结果节点
-        // 说明该节点不在从 target 到 result 的路径上，跳过（不设置 jacobi）
-        let children_ids = self.get_node_children(target_node_id)?;
-        if children_ids.is_empty() {
-            // 这种情况发生在多输出网络中：某些输出节点不在当前 backward 的路径上
-            // 例如：features -> [out1, out2]，backward on out1 时 out2 会走到这里
-            return Ok(());
-        }
-
-        // 3.2 初始化雅可比矩阵（如果还没有的话）
-        // 注意：为了支持梯度累积，我们不会重置已存在的雅可比矩阵
-        let result_node = self.get_node(result_node_id)?;
-        // 记录 jacobi 是否是本次 backward 新初始化的（用于 detach 语义）
-        let jacobi_was_none = {
-            let target_node = self.get_node(target_node_id)?;
-            let was_none = target_node.jacobi().is_none();
-            if was_none {
-                let (result_dim, node_dim) = (
-                    result_node
-                        .value()
-                        .map(super::super::tensor::Tensor::size)
-                        .ok_or_else(|| {
-                            GraphError::ComputationError(format!(
-                                "反向传播：结果{result_node}没有值"
-                            ))
-                        })?,
-                    target_node
-                        .value()
-                        .map(super::super::tensor::Tensor::size)
-                        .ok_or_else(|| {
-                            GraphError::ComputationError(format!("反向传播：{target_node}没有值"))
-                        })?,
-                );
-                let zeros = Tensor::zeros(&[result_dim, node_dim]);
-                self.get_node_mut(target_node_id)?
-                    .set_jacobi(Some(&zeros))?;
-            }
-            was_none
-        };
-
-        // 3.3 计算所有子节点的梯度（雅可比矩阵）对当前节点的贡献
-        // 跟踪是否有任何子节点贡献了梯度，以及是否有子节点因 detach 被跳过
-        let mut has_contribution = false;
-        let mut skipped_due_to_detach = false;
-        for child_id in children_ids {
-            // 若子节点从未前向传播过（forward_pass_id = 0），则跳过
-            // 注意：不再检查 forward_pass_id 是否等于图的当前 id，以支持多次 forward 后的 backward
-            let child = self.get_node(child_id)?;
-            if child.last_forward_pass_id() == 0 {
-                continue;
-            }
-            // 3.3.1 先计算结果节点对子节点的梯度（雅可比矩阵）
-            self.backward_node_internal(child_id, result_node_id)?;
-
-            // 3.3.2 检查子节点是否有 jacobi（可能因为 detach 而没有）
-            let child = self.get_node(child_id)?;
-            let child_jacobi = match child.jacobi() {
-                Some(j) => j,
-                None => {
-                    // 子节点被 detach 或没有 jacobi，记录并跳过
-                    skipped_due_to_detach = true;
-                    continue;
-                }
-            };
-
-            // 标记有贡献
-            has_contribution = true;
-
-            // 3.3.3 计算子节点对当前节点的梯度（雅可比矩阵）贡献
-            let contribution = {
-                // 根据节点类型决定是否需要另一个父节点
-                let assistant_parent = match child.node_type() {
-                    NodeType::MatMul(_)
-                    | NodeType::Multiply(_)
-                    | NodeType::ScalarMultiply(_)
-                    | NodeType::SoftmaxCrossEntropy(_) => {
-                        // 找到另一个父节点
-                        let parents = self.get_node_parents(child_id)?;
-                        let other_parent_id = parents
-                            .iter()
-                            .find(|&&id| id != target_node_id)
-                            .ok_or_else(|| {
-                                GraphError::ComputationError(
-                                    "双父节点类型节点缺少另一个父节点".to_string(),
-                                )
-                            })?;
-                        Some(self.get_node(*other_parent_id)?)
-                    }
-                    _ => None,
-                };
-
-                let parent = self.get_node(target_node_id).unwrap();
-                let local_jacobi = child
-                    .calc_jacobi_to_a_parent(parent, assistant_parent)
-                    .unwrap();
-                child_jacobi.mat_mul(&local_jacobi)
-            };
-            // 3.3.3 更新当前节点的梯度（雅可比矩阵）
-            {
-                // 用 `+=` 复用已分配的缓冲区，避免 `current + contribution` 产生额外临时张量
-                let mut current = {
-                    let node = self.get_node(target_node_id)?;
-                    node.jacobi()
-                        .ok_or_else(|| {
-                            GraphError::ComputationError(format!("反向传播：{node}没有雅可比矩阵"))
-                        })?
-                        .clone()
-                };
-                current += &contribution;
-                let node = self.get_node_mut(target_node_id)?;
-                node.set_jacobi(Some(&current))?;
-            }
-        }
-
-        // 3.4 如果没有任何子节点贡献梯度，且是因为 detach 导致的（不是因为 forward_pass_id 不匹配），
-        // 且 jacobi 是本次新初始化的，则将 jacobi 设为 None，符合 PyTorch 语义
-        // 注意：只有明确因 detach 阻断且 jacobi 是本次初始化的才清除
-        if !has_contribution && skipped_due_to_detach && jacobi_was_none {
-            self.get_node_mut(target_node_id)?.clear_jacobi()?;
-        }
-
-        // 4. 更新节点的反向传播次数
-        self.get_node_mut(target_node_id)?
-            .set_last_backward_pass_id(graph_backward_pass_id);
-
-        // 5. 返回
-        Ok(())
-    }
-
-    /// 清除所有节点的雅可比矩阵
-    /// 通常在优化器的每个训练步骤开始时调用
-    pub fn clear_jacobi(&mut self) -> Result<(), GraphError> {
-        for node in self.nodes.values_mut() {
-            node.clear_jacobi()?;
-        }
-        Ok(())
-    }
-
     // ========== Batch 模式（Gradient-based）==========
 
-    /// Batch 前向传播
+    /// VJP 反向传播核心实现（内部方法）
     ///
-    /// 与单样本 `forward_node` 类似，但输入节点的 value 应包含 batch 维度。
-    /// 例如：输入 shape 为 `[batch_size, 784]` 而非 `[1, 784]`
-    ///
-    /// # 注意
-    /// 当前实现复用 `forward_node` 的逻辑，因为大多数节点的 element-wise
-    /// 操作天然支持 batch。未来可能需要针对特定节点优化。
-    pub fn forward_batch(&mut self, node_id: NodeId) -> Result<(), GraphError> {
-        // 当前阶段：复用单样本前向传播逻辑
-        // 大多数节点（Add、Sigmoid、Tanh 等）的 element-wise 操作天然支持 batch
-        // MatMul 需要特殊处理（在节点层实现）
-        self.forward_node(node_id)
-    }
-
-    /// Batch 反向传播
-    ///
-    /// 从损失节点开始，计算可训练参数的梯度。
-    /// 与单样本模式的 `backward_nodes` 不同，此方法：
-    /// 1. 使用 gradient-based 而非 Jacobi-based 反向传播
-    /// 2. 自动对 batch 维度求平均
-    /// 3. 梯度存储在节点的 `grad` 字段而非 `jacobi` 字段
-    ///
-    /// # 重要
-    /// **调用此方法前需先调用 `clear_grad()`**，否则梯度会累加到旧值上。
-    /// 这与 PyTorch 的设计一致（需要手动调用 `zero_grad()`）。
-    ///
-    /// # 参数
-    /// - `loss_id`: 损失节点 ID，应为标量 `[1, 1]`
-    /// - `target_params`: 可选的目标参数列表。如果提供，则只计算这些参数的梯度；
-    ///   如果为 `None`，则计算所有可达参数的梯度（传统行为）。
-    ///   提供 target_params 可以避免计算不需要更新的参数梯度，提升效率。
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // 设置 batch 输入
-    /// graph.set_node_value(x, Some(&batch_images))?;  // [64, 784]
-    /// graph.set_node_value(y, Some(&batch_labels))?;  // [64, 10]
-    ///
-    /// // Batch 前向传播
-    /// graph.forward_batch(loss)?;
-    ///
-    /// // 清除旧梯度（必须！）
-    /// graph.clear_grad()?;
-    ///
-    /// // Batch 反向传播（计算所有参数梯度）
-    /// graph.backward_batch(loss, None)?;
-    ///
-    /// // 或者只计算指定参数的梯度（更高效，适用于 GAN 等场景）
-    /// graph.backward_batch(loss, Some(&g_params))?;
-    ///
-    /// // 获取梯度
-    /// let grad_w = graph.get_node_grad_batch(w)?;
-    /// ```
-    pub fn backward_batch(
-        &mut self,
-        loss_id: NodeId,
-        target_params: Option<&[NodeId]>,
-    ) -> Result<(), GraphError> {
+    /// 被 `backward()` 和 `backward_ex()` 共用
+    fn backward_vjp_core(&mut self, loss_id: NodeId) -> Result<(), GraphError> {
         // 0. 警告：在 no_grad（eval）模式下调用 backward 通常是误用
         if !self.is_train_mode() {
             eprintln!(
-                "[only_torch 警告] 在 no_grad/eval 模式下调用 backward_batch，这通常是误用。\
+                "[only_torch 警告] 在 no_grad/eval 模式下调用 backward，这通常是误用。\
                 如确需此行为，请忽略此警告。"
             );
         }
 
-        // 1. 验证损失节点
+        // 1. 重置中间节点的 grad（PyTorch 语义：只有参数节点梯度累积）
+        self.reset_intermediate_grad();
+
+        // 2. 验证损失节点
         let loss_node = self.get_node(loss_id)?;
         let loss_value = loss_node.value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "损失节点 {} 没有值，请先执行 forward_batch",
-                loss_node
-            ))
+            GraphError::ComputationError(format!("损失节点 {loss_node} 没有值，请先执行 forward"))
         })?;
 
         // 损失应为标量
         if loss_value.size() != 1 {
             return Err(GraphError::InvalidOperation(format!(
-                "Batch 反向传播要求损失为标量 [1, 1]，但得到 {:?}",
+                "反向传播要求损失为标量 [1, 1]，但得到 {:?}",
                 loss_value.shape()
             )));
         }
 
-        // 2. 损失节点的梯度为 1.0
-        // 注意：不在此处调用 clear_grad()，由调用者负责（与 backward_nodes_ex 一致，也符合 PyTorch 惯例）
+        // 3. 损失节点的梯度为 1.0
+        // 注意：不在此处调用 clear_grad()，由调用者负责（PyTorch 惯例）
         let loss_grad = Tensor::ones(&[1, 1]);
         self.get_node_mut(loss_id)?.set_grad(Some(&loss_grad))?;
 
         // 4. 获取拓扑排序（从损失到输入）
         let topo_order = self.topological_sort_backward(loss_id)?;
 
-        // 5. 如果指定了 target_params，则过滤拓扑排序，只保留目标参数的祖先节点
-        let (topo_order, target_set) = if let Some(params) = target_params {
-            let ancestors = self.collect_ancestors_of_params(params, loss_id)?;
-            let filtered: Vec<_> = topo_order
-                .into_iter()
-                .filter(|id| ancestors.contains(id))
-                .collect();
-            let target_set: std::collections::HashSet<_> = params.iter().copied().collect();
-            (filtered, Some(target_set))
-        } else {
-            (topo_order, None)
-        };
+        // 5. 按拓扑顺序反向传播梯度
+        for node_id in &topo_order {
+            self.propagate_grad_to_parents(*node_id, loss_id, None)?;
+        }
 
-        // 6. 按拓扑顺序反向传播梯度
-        // 传入 target_set 以便跳过非目标参数的梯度计算
+        // 6. 递增反向传播 pass_id
+        self.last_backward_pass_id += 1;
+        let new_pass_id = self.last_backward_pass_id;
+
+        // 7. 更新参与反向传播的节点的 pass_id（用于判断节点是否参与了最近的 backward）
         for node_id in topo_order {
-            self.backward_batch_node(node_id, loss_id, target_set.as_ref())?;
+            // 只更新有梯度的节点（Input 节点没有梯度，不更新）
+            if let Ok(node) = self.get_node_mut(node_id)
+                && node.grad().is_some()
+            {
+                node.set_last_backward_pass_id(new_pass_id);
+            }
         }
 
         Ok(())
     }
 
-    /// 对单个节点执行 batch 反向传播
+    /// 将梯度从当前节点传播到其父节点
     ///
     /// # 参数
     /// - `node_id`: 当前节点 ID
     /// - `_loss_id`: 损失节点 ID（保留参数）
     /// - `target_params`: 可选的目标参数集合。如果提供，只为目标参数计算并设置梯度，
     ///   跳过非目标的 Parameter 节点以节省计算。
-    fn backward_batch_node(
+    fn propagate_grad_to_parents(
         &mut self,
         node_id: NodeId,
         _loss_id: NodeId,
@@ -833,12 +511,11 @@ impl Graph {
 
                 // 如果指定了 target_params，跳过非目标的 Parameter 节点
                 // 这是核心优化：避免为不需要更新的参数计算梯度
-                if let Some(targets) = target_params {
-                    if let NodeType::Parameter(_) = parent.node_type() {
-                        if !targets.contains(parent_id) {
-                            continue; // 跳过非目标参数，节省计算
-                        }
-                    }
+                if let Some(targets) = target_params
+                    && let NodeType::Parameter(_) = parent.node_type()
+                    && !targets.contains(parent_id)
+                {
+                    continue; // 跳过非目标参数，节省计算
                 }
 
                 // 找到辅助父节点（如果需要）
@@ -856,6 +533,13 @@ impl Graph {
         // 回写阶段：累加到父节点的梯度
         for (parent_id, parent_grad) in parent_grads {
             let parent_node = self.get_node_mut(parent_id)?;
+
+            // 如果父节点被 detach，跳过设置梯度
+            // 根据文档 2.5 节：被 detach 的节点本身的 grad 应为 None
+            if parent_node.is_detached() {
+                continue;
+            }
+
             if let Some(existing_grad) = parent_node.grad() {
                 let new_grad = existing_grad + &parent_grad;
                 parent_node.set_grad(Some(&new_grad))?;
@@ -902,79 +586,9 @@ impl Graph {
         Ok(result)
     }
 
-    /// 收集目标参数的所有祖先节点（从 loss 到 target_params 路径上的节点）
+    /// 清除所有节点的梯度
     ///
-    /// 用于 `backward_batch` 的优化：只计算目标参数需要的梯度
-    fn collect_ancestors_of_params(
-        &self,
-        target_params: &[NodeId],
-        loss_id: NodeId,
-    ) -> Result<std::collections::HashSet<NodeId>, GraphError> {
-        use std::collections::{HashSet, VecDeque};
-
-        // 1. 从 loss 向下（父方向）BFS，找到所有可达节点
-        let mut reachable_from_loss = HashSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(loss_id);
-
-        while let Some(node_id) = queue.pop_front() {
-            if reachable_from_loss.contains(&node_id) {
-                continue;
-            }
-            reachable_from_loss.insert(node_id);
-
-            let parents = self.get_node_parents(node_id)?;
-            for parent_id in parents {
-                queue.push_back(parent_id);
-            }
-        }
-
-        // 2. 从 target_params 向上（子方向）BFS，找到能到达 loss 的路径
-        // 注意：我们需要反向遍历，从 target_params 向 loss 方向
-        let mut ancestors = HashSet::new();
-
-        // 对每个 target_param，找到从它到 loss 的路径上所有节点
-        for &param_id in target_params {
-            if !reachable_from_loss.contains(&param_id) {
-                continue; // 该参数不在 loss 的可达路径上
-            }
-
-            // 从 param 向上到 loss（使用子节点关系）
-            let mut visited = HashSet::new();
-            let mut stack = vec![param_id];
-
-            while let Some(node_id) = stack.pop() {
-                if visited.contains(&node_id) {
-                    continue;
-                }
-                visited.insert(node_id);
-
-                // 该节点在从 loss 到 param 的路径上
-                ancestors.insert(node_id);
-
-                // 如果到达 loss，停止
-                if node_id == loss_id {
-                    continue;
-                }
-
-                // 获取子节点（谁以当前节点为父）
-                let children = self.get_node_children(node_id)?;
-                for child_id in children {
-                    // 只遍历在 loss 可达范围内的子节点
-                    if reachable_from_loss.contains(&child_id) {
-                        stack.push(child_id);
-                    }
-                }
-            }
-        }
-
-        // 确保 loss 本身也在内
-        ancestors.insert(loss_id);
-
-        Ok(ancestors)
-    }
-
-    /// 清除所有节点的梯度（Batch 模式）
+    /// 注意：推荐使用 `zero_grad()`，与 `PyTorch` 风格一致
     pub fn clear_grad(&mut self) -> Result<(), GraphError> {
         for node in self.nodes.values_mut() {
             let _ = node.clear_grad(); // 忽略不支持 grad 的节点
@@ -982,15 +596,111 @@ impl Graph {
         Ok(())
     }
 
-    /// 获取节点的梯度（Batch 模式）
-    pub fn get_node_grad_batch(&self, node_id: NodeId) -> Result<Option<&Tensor>, GraphError> {
+    // ==================== 统一反向传播 API（VJP 模式）====================
+    //
+    // 以下是 autodiff_unification_design.md 中定义的统一 API。
+    // 设计目标：单样本与批量使用相同的 API，底层统一使用 VJP 模式。
+
+    /// 反向传播（VJP 模式，单样本和批量统一）
+    ///
+    /// 这是 `backward_ex(loss, false)` 的简写，覆盖 90% 的训练场景。
+    ///
+    /// # 语义
+    /// - 计算 loss 对**所有** `requires_grad` 参数的梯度
+    /// - 梯度存储在节点的 `grad` 字段
+    /// - 梯度会累积（需要先调用 `zero_grad()` 清零）
+    /// - 返回 loss 的标量值（方便用户打印）
+    ///
+    /// # 梯度隔离
+    /// GAN 等场景的梯度隔离通过 `detach()` 实现，而非 `target_params`。
+    /// 详见 [梯度流控制设计 - 附录 A](gradient_flow_control_design.md#附录-a设计决策为什么用-detach-而非-target_params)。
+    ///
+    /// # 示例
+    /// ```rust,ignore
+    /// optimizer.zero_grad()?;
+    /// let loss = model.forward(x)?.cross_entropy(&y)?;
+    /// let loss_val = graph.backward(loss)?;      // 计算所有参数的梯度
+    /// optimizer.step()?;                         // 更新参数
+    /// println!("Loss: {:.4}", loss_val);
+    /// ```
+    pub fn backward(&mut self, loss: NodeId) -> Result<f32, GraphError> {
+        self.backward_ex(loss, false)
+    }
+
+    /// 反向传播（扩展版本，支持 `retain_graph`）
+    ///
+    /// # 参数
+    /// - `loss`: 损失节点 ID
+    /// - `retain_graph`: 是否保留计算图（用于多次 backward）
+    ///
+    /// # 使用场景
+    /// | 场景 | `retain_graph` |
+    /// |------|----------------|
+    /// | 标准训练 | `false` |
+    /// | 多任务学习（多 loss 累加） | `true` |
+    ///
+    /// # 设计决策：移除 `target_params`
+    /// `PyTorch` 的 `backward()` 没有 `target_params` 参数。
+    /// GAN 等场景的梯度隔离通过 `detach()` 实现，语义更清晰、性能更优。
+    /// 详见 [梯度流控制设计 - 附录 A](gradient_flow_control_design.md#附录-a设计决策为什么用-detach-而非-target_params)。
+    pub fn backward_ex(&mut self, loss: NodeId, retain_graph: bool) -> Result<f32, GraphError> {
+        // 1. 获取 loss 值（在 backward_vjp_core 之前获取，因为它会验证）
+        let loss_node = self.get_node(loss)?;
+        let loss_value = loss_node.value().ok_or_else(|| {
+            GraphError::ComputationError(format!("损失节点 {loss_node} 没有值，请先执行 forward"))
+        })?;
+
+        let loss_scalar = loss_value.get_data_number().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "无法从损失节点获取标量值，形状: {:?}",
+                loss_value.shape()
+            ))
+        })?;
+
+        // 2. 调用 VJP 核心实现
+        self.backward_vjp_core(loss)?;
+
+        // 3. 如果 retain_graph=false，释放中间结果（PyTorch 默认行为）
+        // 根据文档 7.2 节：同时释放中间节点的值和梯度
+        if !retain_graph {
+            self.release_intermediate_results()?;
+        }
+
+        // 4. 返回 loss 值
+        Ok(loss_scalar)
+    }
+
+    /// 清零所有参数的梯度（PyTorch 风格）
+    ///
+    /// 与 `PyTorch` 的 `optimizer.zero_grad()` 风格一致。
+    ///
+    /// # 使用时机
+    /// 在每次 `backward()` 之前调用，防止梯度累积。
+    ///
+    /// # 示例
+    /// ```rust,ignore
+    /// for batch in dataloader {
+    ///     graph.zero_grad()?;        // 清零梯度
+    ///     let loss = forward(batch)?;
+    ///     graph.backward(loss)?;     // 计算梯度
+    ///     optimizer.step()?;         // 更新参数
+    /// }
+    /// ```
+    pub fn zero_grad(&mut self) -> Result<(), GraphError> {
+        self.clear_grad()
+    }
+
+    /// 获取节点梯度的引用（避免克隆）
+    ///
+    /// 与 `get_node_grad()` 功能相同，但返回引用而非克隆。
+    /// 适用于内部计算或只读访问场景。
+    pub fn get_node_grad_ref(&self, node_id: NodeId) -> Result<Option<&Tensor>, GraphError> {
         let node = self.get_node(node_id)?;
 
         // 输入节点不应该有梯度
         if let NodeType::Input(_) = node.node_type() {
             return Err(GraphError::InvalidOperation(format!(
-                "输入节点 {} 不应该有梯度",
-                node
+                "输入节点 {node} 不应该有梯度"
             )));
         }
 
@@ -998,7 +708,7 @@ impl Graph {
     }
 
     /// 当图拓扑发生变化时调用（添加/删除节点或连接）
-    /// 这会清除所有反向传播相关的状态（Jacobi），但保留前向传播的值
+    /// 这会清除所有反向传播相关的状态（梯度），但保留前向传播的值
     ///
     /// # NEAT 友好性
     /// 这个方法是为神经进化算法（如 NEAT）设计的，在变异操作后调用
@@ -1007,8 +717,8 @@ impl Graph {
     /// # 示例
     /// ```ignore
     /// // 1. 初始图已经训练过
-    /// graph.forward_node(loss)?;
-    /// graph.backward_nodes(&[w], loss)?;
+    /// graph.forward(loss)?;
+    /// graph.backward(loss)?;
     ///
     /// // 2. 动态添加新节点（NEAT 变异）
     /// let new_node = graph.new_parameter_node(&[1, 1], Some("new"))?;
@@ -1018,14 +728,14 @@ impl Graph {
     /// graph.on_topology_changed();
     ///
     /// // 4. 继续训练
-    /// graph.forward_node(new_loss)?;
-    /// graph.backward_nodes(&[w, new_node], new_loss)?;
+    /// graph.forward(new_loss)?;
+    /// graph.backward(new_loss)?;
     /// ```
     pub fn on_topology_changed(&mut self) {
-        // 清除所有节点的 Jacobi（反向传播相关状态）
+        // 清除所有节点的 grad（反向传播相关状态）
         // 保留 value（前向传播结果）以便复用
         for node in self.nodes.values_mut() {
-            let _ = node.clear_jacobi();
+            let _ = node.clear_grad();
             // 重置节点的反向传播 pass_id，确保下次 backward 会重新计算
             node.set_last_backward_pass_id(0);
         }
@@ -1035,7 +745,7 @@ impl Graph {
 
     // ========== 参数保存/加载 ==========
 
-    /// 参数文件魔数: "OTPR" (Only Torch PaRams)
+    /// 参数文件魔数: "OTPR" (Only Torch `PaRams`)
     const PARAMS_MAGIC: &'static [u8; 4] = b"OTPR";
     /// 参数文件版本
     const PARAMS_VERSION: u32 = 1;
@@ -1043,8 +753,8 @@ impl Graph {
     /// 保存所有可训练参数到二进制文件
     ///
     /// 文件格式：
-    /// - Header: magic(4) + version(4) + param_count(4)
-    /// - 每个参数: name_len(4) + name + shape_dims(4) + shape + data(f32数组)
+    /// - Header: magic(4) + version(4) + `param_count(4)`
+    /// - 每个参数: `name_len(4)` + name + `shape_dims(4)` + shape + data(f32数组)
     ///
     /// # 示例
     /// ```ignore
@@ -1052,7 +762,7 @@ impl Graph {
     /// ```
     pub fn save_params<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
         let file = File::create(path.as_ref())
-            .map_err(|e| GraphError::ComputationError(format!("无法创建参数文件: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("无法创建参数文件: {e}")))?;
         let mut writer = BufWriter::new(file);
 
         // 获取所有参数节点
@@ -1068,20 +778,20 @@ impl Graph {
         // 写入 Header
         writer
             .write_all(Self::PARAMS_MAGIC)
-            .map_err(|e| GraphError::ComputationError(format!("写入魔数失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("写入魔数失败: {e}")))?;
         writer
             .write_all(&Self::PARAMS_VERSION.to_le_bytes())
-            .map_err(|e| GraphError::ComputationError(format!("写入版本失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("写入版本失败: {e}")))?;
         writer
             .write_all(&(param_nodes.len() as u32).to_le_bytes())
-            .map_err(|e| GraphError::ComputationError(format!("写入参数数量失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("写入参数数量失败: {e}")))?;
 
         // 写入每个参数
         for (_id, node) in &param_nodes {
             let name = node.name();
             let value = node
                 .value()
-                .ok_or_else(|| GraphError::ComputationError(format!("参数 {} 没有值", name)))?;
+                .ok_or_else(|| GraphError::ComputationError(format!("参数 {name} 没有值")))?;
             let shape = value.shape();
             let data = value.data_as_slice();
 
@@ -1089,32 +799,32 @@ impl Graph {
             let name_bytes = name.as_bytes();
             writer
                 .write_all(&(name_bytes.len() as u32).to_le_bytes())
-                .map_err(|e| GraphError::ComputationError(format!("写入名称长度失败: {}", e)))?;
+                .map_err(|e| GraphError::ComputationError(format!("写入名称长度失败: {e}")))?;
             writer
                 .write_all(name_bytes)
-                .map_err(|e| GraphError::ComputationError(format!("写入名称失败: {}", e)))?;
+                .map_err(|e| GraphError::ComputationError(format!("写入名称失败: {e}")))?;
 
             // 写入形状
             writer
                 .write_all(&(shape.len() as u32).to_le_bytes())
-                .map_err(|e| GraphError::ComputationError(format!("写入形状维度失败: {}", e)))?;
+                .map_err(|e| GraphError::ComputationError(format!("写入形状维度失败: {e}")))?;
             for &dim in shape {
                 writer
                     .write_all(&(dim as u32).to_le_bytes())
-                    .map_err(|e| GraphError::ComputationError(format!("写入形状失败: {}", e)))?;
+                    .map_err(|e| GraphError::ComputationError(format!("写入形状失败: {e}")))?;
             }
 
             // 写入数据（f32 数组）
             for &val in data {
                 writer
                     .write_all(&val.to_le_bytes())
-                    .map_err(|e| GraphError::ComputationError(format!("写入数据失败: {}", e)))?;
+                    .map_err(|e| GraphError::ComputationError(format!("写入数据失败: {e}")))?;
             }
         }
 
         writer
             .flush()
-            .map_err(|e| GraphError::ComputationError(format!("刷新缓冲区失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("刷新缓冲区失败: {e}")))?;
 
         Ok(())
     }
@@ -1135,24 +845,24 @@ impl Graph {
     /// ```
     pub fn load_params<P: AsRef<Path>>(&mut self, path: P) -> Result<(), GraphError> {
         let file = File::open(path.as_ref())
-            .map_err(|e| GraphError::ComputationError(format!("无法打开参数文件: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("无法打开参数文件: {e}")))?;
         let mut reader = BufReader::new(file);
 
         // 读取并验证 Header
         let mut magic = [0u8; 4];
         reader
             .read_exact(&mut magic)
-            .map_err(|e| GraphError::ComputationError(format!("读取魔数失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("读取魔数失败: {e}")))?;
         if &magic != Self::PARAMS_MAGIC {
-            return Err(GraphError::ComputationError(format!(
-                "无效的参数文件格式（魔数不匹配）"
-            )));
+            return Err(GraphError::ComputationError(
+                "无效的参数文件格式（魔数不匹配）".to_string(),
+            ));
         }
 
         let mut version_bytes = [0u8; 4];
         reader
             .read_exact(&mut version_bytes)
-            .map_err(|e| GraphError::ComputationError(format!("读取版本失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("读取版本失败: {e}")))?;
         let version = u32::from_le_bytes(version_bytes);
         if version != Self::PARAMS_VERSION {
             return Err(GraphError::ComputationError(format!(
@@ -1165,7 +875,7 @@ impl Graph {
         let mut count_bytes = [0u8; 4];
         reader
             .read_exact(&mut count_bytes)
-            .map_err(|e| GraphError::ComputationError(format!("读取参数数量失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("读取参数数量失败: {e}")))?;
         let param_count = u32::from_le_bytes(count_bytes);
 
         // 构建名称到节点ID的映射
@@ -1184,21 +894,21 @@ impl Graph {
             let mut name_len_bytes = [0u8; 4];
             reader
                 .read_exact(&mut name_len_bytes)
-                .map_err(|e| GraphError::ComputationError(format!("读取名称长度失败: {}", e)))?;
+                .map_err(|e| GraphError::ComputationError(format!("读取名称长度失败: {e}")))?;
             let name_len = u32::from_le_bytes(name_len_bytes) as usize;
 
             let mut name_bytes = vec![0u8; name_len];
             reader
                 .read_exact(&mut name_bytes)
-                .map_err(|e| GraphError::ComputationError(format!("读取名称失败: {}", e)))?;
+                .map_err(|e| GraphError::ComputationError(format!("读取名称失败: {e}")))?;
             let name = String::from_utf8(name_bytes)
-                .map_err(|e| GraphError::ComputationError(format!("名称编码无效: {}", e)))?;
+                .map_err(|e| GraphError::ComputationError(format!("名称编码无效: {e}")))?;
 
             // 读取形状
             let mut shape_dims_bytes = [0u8; 4];
             reader
                 .read_exact(&mut shape_dims_bytes)
-                .map_err(|e| GraphError::ComputationError(format!("读取形状维度失败: {}", e)))?;
+                .map_err(|e| GraphError::ComputationError(format!("读取形状维度失败: {e}")))?;
             let shape_dims = u32::from_le_bytes(shape_dims_bytes) as usize;
 
             let mut shape = Vec::with_capacity(shape_dims);
@@ -1206,7 +916,7 @@ impl Graph {
                 let mut dim_bytes = [0u8; 4];
                 reader
                     .read_exact(&mut dim_bytes)
-                    .map_err(|e| GraphError::ComputationError(format!("读取形状失败: {}", e)))?;
+                    .map_err(|e| GraphError::ComputationError(format!("读取形状失败: {e}")))?;
                 shape.push(u32::from_le_bytes(dim_bytes) as usize);
             }
 
@@ -1217,7 +927,7 @@ impl Graph {
                 let mut val_bytes = [0u8; 4];
                 reader
                     .read_exact(&mut val_bytes)
-                    .map_err(|e| GraphError::ComputationError(format!("读取数据失败: {}", e)))?;
+                    .map_err(|e| GraphError::ComputationError(format!("读取数据失败: {e}")))?;
                 data.push(f32::from_le_bytes(val_bytes));
             }
 
@@ -1296,19 +1006,17 @@ impl Graph {
 
         // 2. 生成描述符并设置 params_file
         let mut descriptor = self.describe();
-        descriptor.params_file = Some(
-            bin_path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "params.bin".to_string()),
-        );
+        descriptor.params_file = Some(bin_path.file_name().map_or_else(
+            || "params.bin".to_string(),
+            |s| s.to_string_lossy().to_string(),
+        ));
 
         // 3. 保存 JSON
         let json = descriptor
             .to_json()
-            .map_err(|e| GraphError::ComputationError(format!("序列化图描述失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("序列化图描述失败: {e}")))?;
         std::fs::write(&json_path, json)
-            .map_err(|e| GraphError::ComputationError(format!("写入 JSON 文件失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("写入 JSON 文件失败: {e}")))?;
 
         Ok(())
     }
@@ -1335,15 +1043,16 @@ impl Graph {
 
         // 1. 读取并解析 JSON
         let json = std::fs::read_to_string(&json_path)
-            .map_err(|e| GraphError::ComputationError(format!("读取 JSON 文件失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("读取 JSON 文件失败: {e}")))?;
         let descriptor = GraphDescriptor::from_json(&json)
-            .map_err(|e| GraphError::ComputationError(format!("解析图描述失败: {}", e)))?;
+            .map_err(|e| GraphError::ComputationError(format!("解析图描述失败: {e}")))?;
 
         // 2. 确定参数文件路径
         let bin_path = if let Some(ref params_file) = descriptor.params_file {
-            path.parent()
-                .map(|p| p.join(params_file))
-                .unwrap_or_else(|| Path::new(params_file).to_path_buf())
+            path.parent().map_or_else(
+                || Path::new(params_file).to_path_buf(),
+                |p| p.join(params_file),
+            )
         } else {
             path.with_extension("bin")
         };
@@ -1356,7 +1065,7 @@ impl Graph {
 
     // ========== 模型摘要（summary）==========
 
-    /// 打印模型摘要（类似 Keras 的 model.summary()）
+    /// 打印模型摘要（类似 Keras 的 `model.summary()`）
     ///
     /// 输出格式化的表格，显示所有节点的信息
     ///
@@ -1392,7 +1101,7 @@ impl Graph {
             _ => self.summary_string(),
         };
         std::fs::write(path, summary)
-            .map_err(|e| GraphError::ComputationError(format!("保存摘要文件失败: {}", e)))
+            .map_err(|e| GraphError::ComputationError(format!("保存摘要文件失败: {e}")))
     }
 
     /// 返回模型摘要的 Markdown 格式字符串
@@ -1413,8 +1122,7 @@ impl Graph {
             let shape_str = format!("{:?}", node.output_shape);
             let param_str = node
                 .param_count
-                .map(|c| Self::format_number(c))
-                .unwrap_or_else(|| "-".to_string());
+                .map_or_else(|| "-".to_string(), Self::format_number);
             let parent_str = Self::format_parent_names(&desc, &node.parents);
 
             output.push_str(&format!(
@@ -1510,8 +1218,7 @@ impl Graph {
             let shape_str = format!("{:?}", node.output_shape);
             let param_str = node
                 .param_count
-                .map(|c| Self::format_number(c))
-                .unwrap_or_else(|| "-".to_string());
+                .map_or_else(|| "-".to_string(), Self::format_number);
             let parent_str = Self::format_parent_names(&desc, &node.parents);
 
             output.push_str(&format!(
@@ -1572,7 +1279,7 @@ impl Graph {
     }
 
     /// 获取节点类型名称
-    fn type_name(node_type: &NodeTypeDescriptor) -> &'static str {
+    const fn type_name(node_type: &NodeTypeDescriptor) -> &'static str {
         match node_type {
             NodeTypeDescriptor::Input => "Input",
             NodeTypeDescriptor::Parameter => "Parameter",
@@ -1663,7 +1370,7 @@ impl Graph {
         dot.push_str("    rankdir=TB;\n"); // 从上到下
         dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
         dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
-        dot.push_str("\n");
+        dot.push('\n');
 
         // 收集已分组的节点 ID（转换为 u64 以便与 descriptor 比较）
         let grouped_node_ids: std::collections::HashSet<u64> = if group_layers {
@@ -1681,14 +1388,14 @@ impl Graph {
                 let cluster_color = Self::layer_group_color(idx);
                 dot.push_str(&format!(
                     "    subgraph cluster_{} {{\n",
-                    group.name.replace('-', "_").replace('.', "_")
+                    group.name.replace(['-', '.'], "_")
                 ));
                 dot.push_str(&format!(
                     "        label=<<B>{}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
                     group.name, group.layer_type, group.description
                 ));
                 dot.push_str("        style=filled;\n");
-                dot.push_str(&format!("        fillcolor=\"{}\";\n", cluster_color));
+                dot.push_str(&format!("        fillcolor=\"{cluster_color}\";\n"));
                 dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
                 dot.push_str("        fontsize=11;\n");
                 dot.push_str("        margin=12;\n");
@@ -1723,7 +1430,7 @@ impl Graph {
             ));
         }
 
-        dot.push_str("\n");
+        dot.push('\n');
 
         // 边定义（从父节点指向子节点）
         for node in &desc.nodes {
@@ -1765,7 +1472,7 @@ impl Graph {
     fn save_dot<P: AsRef<Path>>(&self, path: P, group_layers: bool) -> Result<(), GraphError> {
         let dot = self.to_dot_with_options(group_layers);
         std::fs::write(path.as_ref(), dot)
-            .map_err(|e| GraphError::ComputationError(format!("保存 DOT 文件失败: {}", e)))
+            .map_err(|e| GraphError::ComputationError(format!("保存 DOT 文件失败: {e}")))
     }
 
     /// 保存计算图可视化
@@ -1836,16 +1543,14 @@ impl Graph {
             let hint = if ImageFormat::from_extension(&ext_str).is_some() || ext_str == "dot" {
                 format!(
                     "请提供不含后缀的基础路径。\n\
-                     例如: \"outputs/model\" 而不是 \"outputs/model.{}\"\n\
-                     库会自动生成 .dot 和图像文件。",
-                    ext_str
+                     例如: \"outputs/model\" 而不是 \"outputs/model.{ext_str}\"\n\
+                     库会自动生成 .dot 和图像文件。"
                 )
             } else {
                 format!(
-                    "检测到未知后缀 '.{}'，请提供不含后缀的基础路径。\n\
+                    "检测到未知后缀 '.{ext_str}'，请提供不含后缀的基础路径。\n\
                      例如: \"outputs/model\"\n\
-                     支持的图像格式: png, svg, pdf",
-                    ext_str
+                     支持的图像格式: png, svg, pdf"
                 )
             };
             return Err(GraphError::InvalidOperation(hint));
@@ -1912,14 +1617,14 @@ impl Graph {
             Ok(result) if result.status.success() => Ok(()),
             Ok(result) => {
                 let stderr = String::from_utf8_lossy(&result.stderr);
-                Err(format!("Graphviz 渲染失败: {}", stderr))
+                Err(format!("Graphviz 渲染失败: {stderr}"))
             }
-            Err(e) => Err(format!("执行 Graphviz 命令失败: {}", e)),
+            Err(e) => Err(format!("执行 Graphviz 命令失败: {e}")),
         }
     }
 
     /// 获取节点的 DOT 样式 (shape, style, fillcolor)
-    fn dot_node_style(
+    const fn dot_node_style(
         node_type: &NodeTypeDescriptor,
     ) -> (&'static str, &'static str, &'static str) {
         match node_type {
@@ -1953,9 +1658,9 @@ impl Graph {
 
         // 根据节点类型添加特殊参数
         let extra_info = match &node.node_type {
-            NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={}", alpha)),
+            NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={alpha}")),
             NodeTypeDescriptor::ScalarMultiply { scalar } if *scalar != 0.0 => {
-                Some(format!("×{}", scalar))
+                Some(format!("×{scalar}"))
             }
             _ => None,
         };
@@ -1985,9 +1690,9 @@ impl Graph {
 
         // 根据节点类型添加特殊参数
         let extra_info = match &node.node_type {
-            NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={}", alpha)),
+            NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={alpha}")),
             NodeTypeDescriptor::ScalarMultiply { scalar } if *scalar != 0.0 => {
-                Some(format!("×{}", scalar))
+                Some(format!("×{scalar}"))
             }
             _ => None,
         };
@@ -2006,14 +1711,14 @@ impl Graph {
 
         // 追加特殊参数信息
         if let Some(info) = extra_info {
-            label.push_str(&format!("\\n{}", info));
+            label.push_str(&format!("\\n{info}"));
         }
 
         label
     }
 
-    /// 将 NodeType 转换为 NodeTypeDescriptor
-    fn node_type_to_descriptor(&self, node_type: &NodeType) -> NodeTypeDescriptor {
+    /// 将 `NodeType` 转换为 `NodeTypeDescriptor`
+    const fn node_type_to_descriptor(&self, node_type: &NodeType) -> NodeTypeDescriptor {
         match node_type {
             NodeType::Input(_) => NodeTypeDescriptor::Input,
             NodeType::Parameter(_) => NodeTypeDescriptor::Parameter,
@@ -2100,34 +1805,21 @@ impl Graph {
         self.get_node_mut(id)?.set_value(value)
     }
 
-    /// 根据ID获取节点的雅可比矩阵
-    pub fn get_node_jacobi(&self, node_id: NodeId) -> Result<Option<&Tensor>, GraphError> {
+    /// 获取节点的梯度（VJP 模式）
+    ///
+    /// 在 VJP 模式下，梯度形状与节点值形状一致，无需转置或 reshape
+    pub fn get_node_grad(&self, node_id: NodeId) -> Result<Option<Tensor>, GraphError> {
         let node = self.get_node(node_id)?;
 
-        // 1. 输入节点不应该有雅可比矩阵
+        // 输入节点不应该有梯度
         if let NodeType::Input(_) = node.node_type() {
             return Err(GraphError::InvalidOperation(format!(
-                "输入{node}不应该有雅可比矩阵"
+                "输入{node}不应该有梯度"
             )));
         }
 
-        // 2. 返回节点的雅可比矩阵
-        Ok(node.jacobi())
-    }
-
-    /// 获取节点的梯度。梯度是雅可比矩阵的转置，并reshape成与节点值相同的形状
-    pub fn get_node_grad(&self, node_id: NodeId) -> Result<Option<Tensor>, GraphError> {
-        // 1. 获取节点的雅可比矩阵
-        let jacobi = match self.get_node_jacobi(node_id)? {
-            Some(j) => j,
-            None => return Ok(None),
-        };
-
-        // 2. 获取节点的预期形状
-        let expected_shape = self.get_node_value_expected_shape(node_id)?;
-
-        // 3. 转换雅可比矩阵为梯度
-        Ok(Some(jacobi.transpose().reshape(expected_shape)))
+        // VJP 模式下 grad 已经是正确的形状
+        Ok(node.grad().cloned())
     }
 
     // 节点信息访问的公共方法
@@ -2168,20 +1860,6 @@ impl Graph {
             .value()
             .map(super::super::tensor::Tensor::size))
     }
-
-    pub fn get_node_jacobi_shape(&self, id: NodeId) -> Result<Option<&[usize]>, GraphError> {
-        Ok(self
-            .get_node(id)?
-            .jacobi()
-            .map(super::super::tensor::Tensor::shape))
-    }
-
-    pub fn get_node_jacobi_size(&self, id: NodeId) -> Result<Option<usize>, GraphError> {
-        Ok(self
-            .get_node(id)?
-            .jacobi()
-            .map(super::super::tensor::Tensor::size))
-    }
 }
 
 // 图模式相关
@@ -2206,7 +1884,7 @@ impl Graph {
 
     /// 检查是否启用梯度计算（等价于 `is_train_mode()`）
     ///
-    /// 在训练模式下返回 `true`，在评估模式（no_grad 上下文）中返回 `false`。
+    /// 在训练模式下返回 `true`，`在评估模式（no_grad` 上下文）中返回 `false`。
     ///
     /// # 示例
     /// ```ignore
@@ -2235,14 +1913,14 @@ impl Graph {
     /// # 示例
     /// ```ignore
     /// // GAN 训练 - 训练判别器
-    /// let fake = graph.forward_node(generator_output)?;
+    /// graph.forward(generator_output)?;
     /// graph.detach_node(fake)?;  // 防止 D 的 loss 更新 G
-    /// let d_fake = graph.forward_node(discriminator_on_fake)?;
-    /// graph.backward_nodes(&[d_weights], d_loss)?;
+    /// graph.forward(discriminator_on_fake)?;
+    /// graph.backward(d_loss)?;
     ///
     /// // 训练生成器时恢复梯度流
     /// graph.attach_node(fake)?;
-    /// graph.backward_nodes(&[g_weights], g_loss)?;
+    /// graph.backward(g_loss)?;
     /// ```
     pub fn detach_node(&mut self, node_id: NodeId) -> Result<(), GraphError> {
         self.get_node_mut(node_id)?.set_detached(true);
@@ -2254,7 +1932,7 @@ impl Graph {
     /// # 示例
     /// ```ignore
     /// graph.attach_node(fake)?;  // 恢复梯度流
-    /// graph.backward_nodes(&[g_weights], g_loss)?;
+    /// graph.backward(g_loss)?;
     /// ```
     pub fn attach_node(&mut self, node_id: NodeId) -> Result<(), GraphError> {
         self.get_node_mut(node_id)?.set_detached(false);
@@ -2272,7 +1950,7 @@ impl Graph {
 
     // ========== 循环/记忆机制 API（Phase 1） ==========
 
-    /// 声明循环连接：to_node 在每次 step() 时从 from_node 的上一时间步值读取
+    /// `声明循环连接：to_node` 在每次 `step()` 时从 `from_node` 的上一时间步值读取
     ///
     /// 这是实现 RNN 等循环网络的基础。循环连接不是普通的边，
     /// 而是声明一种"延迟读取"关系。
@@ -2290,8 +1968,8 @@ impl Graph {
     /// ```
     ///
     /// # 注意
-    /// - to_node 通常应该是 Input 节点（用于接收延迟值）
-    /// - 一个 to_node 只能有一个循环连接源
+    /// - `to_node` 通常应该是 Input 节点（用于接收延迟值）
+    /// - 一个 `to_node` 只能有一个循环连接源
     pub fn connect_recurrent(
         &mut self,
         from_node: NodeId,
@@ -2325,13 +2003,13 @@ impl Graph {
     }
 
     /// 获取当前时间步
-    pub fn current_time_step(&self) -> u64 {
+    pub const fn current_time_step(&self) -> u64 {
         self.time_step
     }
 
     /// 执行一个时间步的前向传播
     ///
-    /// 与普通的 `forward_node` 不同，`step` 专门用于循环网络：
+    /// 与普通的 `forward` 不同，`step` 专门用于循环网络：
     /// 1. 将循环连接的上一步值传递给目标节点
     /// 2. 执行前向传播
     /// 3. 保存当前值用于下一步（双缓冲交换）
@@ -2360,7 +2038,7 @@ impl Graph {
         }
 
         // 2. 执行前向传播
-        self.forward_node(output_node)?;
+        self.forward(output_node)?;
 
         // 3. 保存循环连接源节点的当前值，用于下一步
         for &from_node in self.recurrent_edges.values() {
@@ -2451,7 +2129,7 @@ impl Graph {
     // ========== BPTT API（Phase 2） ==========
 
     /// 获取当前存储的时间步历史长度
-    pub fn history_len(&self) -> usize {
+    pub const fn history_len(&self) -> usize {
         self.step_history.len()
     }
 
@@ -2585,7 +2263,7 @@ impl Graph {
             self.restore_snapshot(&snapshot);
 
             if debug {
-                println!("\n=== BPTT t={} ===", t);
+                println!("\n=== BPTT t={t} ===");
                 // 打印当前 incoming_grads
                 for (node_id, grad) in &incoming_grads {
                     let name = self
@@ -2607,19 +2285,19 @@ impl Graph {
 
             if is_first_step(t) {
                 // === 最后一个时间步：从 loss 反向传播（纯 VJP）===
-                // 使用 backward_from_loss_vjp 代替 backward_nodes_ex
+                // 使用 backward_from_loss_vjp 进行反向传播
                 // 这会：1) 累加参数的 grad，2) 返回 State 节点收到的 grad
                 let state_grads =
                     self.backward_from_loss_vjp(target_nodes, &state_nodes, loss_node)?;
 
                 if debug {
-                    println!("  [t={}] After backward_from_loss_vjp:", t);
+                    println!("  [t={t}] After backward_from_loss_vjp:");
                     for &param in target_nodes {
                         let name = self
                             .get_node(param)
                             .map(|n| n.name().to_string())
                             .unwrap_or_default();
-                        let grad = self.get_node_grad_batch(param).ok().flatten();
+                        let grad = self.get_node_grad_ref(param).ok().flatten();
                         println!(
                             "    {} grad: {:?}",
                             name,
@@ -2679,13 +2357,13 @@ impl Graph {
                             )?;
 
                             if debug {
-                                println!("  [t={}] After param grad propagation:", t);
+                                println!("  [t={t}] After param grad propagation:");
                                 for &param in target_nodes {
                                     let name = self
                                         .get_node(param)
                                         .map(|n| n.name().to_string())
                                         .unwrap_or_default();
-                                    let grad = self.get_node_grad_batch(param).ok().flatten();
+                                    let grad = self.get_node_grad_ref(param).ok().flatten();
                                     println!(
                                         "    {} grad: {:?}",
                                         name,
@@ -2723,7 +2401,7 @@ impl Graph {
             }
 
             if debug {
-                println!("  [t={}] next_incoming_grads:", t);
+                println!("  [t={t}] next_incoming_grads:");
                 for (node_id, grad) in &next_incoming_grads {
                     let name = self
                         .get_node(*node_id)
@@ -2736,271 +2414,7 @@ impl Graph {
             incoming_grads = next_incoming_grads;
         }
 
-        // 将 grad 转换为 jacobi（兼容现有测试和优化器）
-        // 注意：这里是"替换"而非"累加"，因为 grad 已包含所有时间步的贡献
-        for &param in target_nodes {
-            // 使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
-            // 而不是 get_node_grad（从 jacobi 转换）
-            if let Some(grad) = self.get_node_grad_batch(param)? {
-                // 将 grad（值格式）转换为 jacobi 格式 [1, N]
-                let grad_as_jacobi = grad.reshape(&[1, grad.size()]);
-                self.get_node_mut(param)?
-                    .set_jacobi(Some(&grad_as_jacobi))?;
-            }
-        }
-
         Ok(())
-    }
-
-    /// BPTT 辅助方法：将 incoming gradient 传播到参数
-    ///
-    /// 这模拟了如果 from_node 的 jacobi 是 incoming_grad 时，
-    /// 参数会收到多少额外的梯度贡献。
-    /// 从指定节点向目标节点反向传播梯度
-    ///
-    /// 这是 BPTT 的核心辅助函数：给定一个节点和它的初始 jacobi，
-    /// 计算该 jacobi 对所有目标节点的贡献。
-    ///
-    /// # 算法
-    /// 1. 设置 source_node 的 jacobi 为 initial_jacobi
-    /// 2. 从 source_node 向上遍历到目标节点
-    /// 3. 累加梯度贡献
-    ///
-    /// 注意：该方法已由 VJP 版本（bptt_backward_from_node_vjp）取代，
-    /// 保留用于 debug 和单元测试。
-    #[allow(dead_code)]
-    fn bptt_backward_from_node(
-        &mut self,
-        source_node: NodeId,
-        initial_jacobi: &Tensor,
-        target_nodes: &[NodeId],
-    ) -> Result<(), GraphError> {
-        // 使用 BFS 遍历从 source_node 到所有 target_nodes 的路径
-        use std::collections::{HashSet, VecDeque};
-
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-
-        // 起点：source_node，其 jacobi = initial_jacobi
-        queue.push_back((source_node, initial_jacobi.clone()));
-        visited.insert(source_node);
-
-        while let Some((node_id, accumulated_jacobi)) = queue.pop_front() {
-            // 获取该节点的父节点
-            let parent_ids = self.get_node_parents(node_id)?;
-            if parent_ids.is_empty() {
-                // 叶子节点
-                // 如果是目标节点（Parameter），累加梯度
-                if target_nodes.contains(&node_id) {
-                    let current_jacobi = self.get_node_jacobi(node_id)?;
-                    if let Some(existing) = current_jacobi {
-                        // 累加梯度
-                        if existing.shape() == accumulated_jacobi.shape() {
-                            let new_jacobi = existing + &accumulated_jacobi;
-                            self.get_node_mut(node_id)?.set_jacobi(Some(&new_jacobi))?;
-                        }
-                    } else {
-                        // 直接设置
-                        self.get_node_mut(node_id)?
-                            .set_jacobi(Some(&accumulated_jacobi))?;
-                    }
-                }
-                continue;
-            }
-
-            // 第一阶段：计算所有父节点的贡献（只读）
-            // 收集 (parent_id, new_accumulated, should_update_jacobi)
-            let mut contributions: Vec<(NodeId, Tensor, bool)> = Vec::new();
-
-            {
-                let node = self.get_node(node_id)?;
-                for &parent_id in &parent_ids {
-                    // 跳过 Input 和 State 节点（State 的梯度在 BPTT 中另外处理）
-                    let parent = self.get_node(parent_id)?;
-                    match parent.node_type() {
-                        NodeType::Input(_) => continue,
-                        NodeType::State(_) => continue, // State 节点的梯度通过 BPTT 循环处理
-                        _ => {}
-                    }
-
-                    // 计算 d(node)/d(parent)
-                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
-                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
-
-                    let local_jacobi = node.calc_jacobi_to_a_parent(parent, assistant)?;
-
-                    // 链式法则：accumulated_jacobi @ local_jacobi
-                    let new_accumulated = accumulated_jacobi.mat_mul(&local_jacobi);
-
-                    // 标记是否需要更新 jacobi
-                    let should_update = target_nodes.contains(&parent_id);
-                    contributions.push((parent_id, new_accumulated, should_update));
-                }
-            }
-
-            // 第二阶段：更新 jacobi 和队列（可变）
-            for (parent_id, new_accumulated, should_update) in contributions {
-                if should_update {
-                    // 目标节点（Parameter）：累加梯度，不需要继续遍历
-                    // 先获取现有 jacobi 的克隆（避免借用冲突）
-                    let existing_jacobi = self.get_node_jacobi(parent_id)?.cloned();
-                    let new_jacobi = match existing_jacobi {
-                        Some(existing) if existing.shape() == new_accumulated.shape() => {
-                            &existing + &new_accumulated
-                        }
-                        _ => new_accumulated.clone(),
-                    };
-                    self.get_node_mut(parent_id)?
-                        .set_jacobi(Some(&new_jacobi))?;
-                    // 标记为已访问，但不 push 到队列（目标节点是叶子节点，无需继续遍历）
-                    visited.insert(parent_id);
-                } else {
-                    // 非目标节点：继续向上传播（如果还没访问过）
-                    if !visited.contains(&parent_id) {
-                        visited.insert(parent_id);
-                        queue.push_back((parent_id, new_accumulated));
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// BPTT 辅助方法：从源节点传播梯度到 State 节点（通用版本）
-    ///
-    /// 通过通用的 backward 机制自动处理任意激活函数（tanh、sigmoid、ReLU 等）
-    /// 和任意网络拓扑，不再硬编码特定激活函数的导数。
-    ///
-    /// # 算法
-    /// 1. 从 source_node 开始，带入 initial_jacobi
-    /// 2. 沿着计算图向父节点方向传播（使用节点的 calc_jacobi_to_a_parent）
-    /// 3. 遇到 State 节点时，收集其梯度（而不是跳过）
-    /// 4. 遇到 Parameter 节点时，根据 `accumulate_params` 决定是否累加梯度
-    /// 5. 返回所有 State 节点收到的梯度
-    ///
-    /// # 与 bptt_backward_from_node 的区别
-    /// - `bptt_backward_from_node`：跳过 State 节点，只传播到 Parameter
-    /// - `bptt_propagate_to_state`：收集 State 节点的梯度，用于跨时间传递
-    ///
-    /// # 参数
-    /// - `accumulate_params`: 是否累加梯度到参数。中间步应设为 false（因为
-    ///   bptt_backward_from_node 已经处理了参数），只有当需要同时收集 State
-    ///   梯度和更新参数时才设为 true。
-    ///
-    /// # 返回
-    /// HashMap<NodeId, Tensor>: State 节点 ID -> 该节点收到的梯度
-    ///
-    /// 注意：该方法已由 VJP 版本（bptt_propagate_to_state_vjp）取代，
-    /// 保留用于 debug 和单元测试。
-    #[allow(dead_code)]
-    fn bptt_propagate_to_state(
-        &mut self,
-        source_node: NodeId,
-        initial_jacobi: &Tensor,
-        target_params: &[NodeId],
-        accumulate_params: bool,
-    ) -> Result<std::collections::HashMap<NodeId, Tensor>, GraphError> {
-        use std::collections::{HashMap, HashSet, VecDeque};
-
-        let mut state_grads: HashMap<NodeId, Tensor> = HashMap::new();
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-
-        // 起点：source_node，其 jacobi = initial_jacobi
-        queue.push_back((source_node, initial_jacobi.clone()));
-        visited.insert(source_node);
-
-        while let Some((node_id, accumulated_jacobi)) = queue.pop_front() {
-            // 获取该节点的父节点
-            let parent_ids = self.get_node_parents(node_id)?;
-            if parent_ids.is_empty() {
-                // 叶子节点（可能是 Parameter）
-                if target_params.contains(&node_id) {
-                    // 累加到 Parameter 的梯度
-                    let existing_jacobi = self.get_node_jacobi(node_id)?.cloned();
-                    let new_jacobi = match existing_jacobi {
-                        Some(existing) if existing.shape() == accumulated_jacobi.shape() => {
-                            &existing + &accumulated_jacobi
-                        }
-                        _ => accumulated_jacobi.clone(),
-                    };
-                    self.get_node_mut(node_id)?.set_jacobi(Some(&new_jacobi))?;
-                }
-                continue;
-            }
-
-            // 计算所有父节点的贡献
-            let mut contributions: Vec<(NodeId, Tensor, bool, bool)> = Vec::new(); // (id, grad, is_param, is_state)
-
-            {
-                let node = self.get_node(node_id)?;
-                for &parent_id in &parent_ids {
-                    let parent = self.get_node(parent_id)?;
-
-                    // 检查父节点类型
-                    let is_input = matches!(parent.node_type(), NodeType::Input(_));
-                    let is_state = matches!(parent.node_type(), NodeType::State(_));
-                    let is_param = target_params.contains(&parent_id);
-
-                    // 跳过 Input 节点（用户输入，不需要梯度）
-                    if is_input {
-                        continue;
-                    }
-
-                    // 计算 d(node)/d(parent)
-                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
-                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
-
-                    let local_jacobi = node.calc_jacobi_to_a_parent(parent, assistant)?;
-
-                    // 链式法则：accumulated_jacobi @ local_jacobi
-                    let new_accumulated = accumulated_jacobi.mat_mul(&local_jacobi);
-
-                    contributions.push((parent_id, new_accumulated, is_param, is_state));
-                }
-            }
-
-            // 处理各类贡献
-            for (parent_id, new_accumulated, is_param, is_state) in contributions {
-                if is_state {
-                    // State 节点：收集梯度（关键修复点！）
-                    // 这是跨时间传递的梯度，需要返回给 BPTT 循环
-                    state_grads
-                        .entry(parent_id)
-                        .and_modify(|existing| {
-                            if existing.shape() == new_accumulated.shape() {
-                                *existing = &*existing + &new_accumulated;
-                            }
-                        })
-                        .or_insert_with(|| new_accumulated.clone());
-                    // State 是叶子，不继续向上
-                } else if is_param {
-                    // Parameter 节点：根据参数决定是否累加梯度
-                    if accumulate_params {
-                        let existing_jacobi = self.get_node_jacobi(parent_id)?.cloned();
-                        let new_jacobi = match existing_jacobi {
-                            Some(existing) if existing.shape() == new_accumulated.shape() => {
-                                &existing + &new_accumulated
-                            }
-                            _ => new_accumulated.clone(),
-                        };
-                        self.get_node_mut(parent_id)?
-                            .set_jacobi(Some(&new_jacobi))?;
-                    }
-                    visited.insert(parent_id);
-                    // Parameter 是叶子，不继续向上
-                } else {
-                    // 中间节点：继续向上传播
-                    if !visited.contains(&parent_id) {
-                        visited.insert(parent_id);
-                        queue.push_back((parent_id, new_accumulated));
-                    }
-                }
-            }
-        }
-
-        Ok(state_grads)
     }
 
     /// BPTT 辅助方法：从源节点传播梯度到 State 节点（VJP/grad 模式）
@@ -3008,9 +2422,9 @@ impl Graph {
     /// 使用 VJP (Vector-Jacobian Product) 而非完整 Jacobian 矩阵，
     /// 避免 O(N²) 内存开销，支持大 batch/hidden 尺寸的 RNN 训练。
     ///
-    /// # 与 Jacobian 版本 (bptt_propagate_to_state) 的区别
+    /// # 与 Jacobian 版本 (`bptt_propagate_to_state`) 的区别
     /// - Jacobian 模式：构造 N×N 对角矩阵，然后矩阵乘法
-    /// - VJP 模式：直接调用 calc_grad_to_parent，做 O(N) 元素乘法
+    /// - VJP 模式：直接调用 `calc_grad_to_parent，做` O(N) 元素乘法
     ///
     /// # 参数
     /// - `source_node`: 开始传播的节点（如 hidden）
@@ -3019,7 +2433,7 @@ impl Graph {
     /// - `accumulate_params`: 是否累加 grad 到参数
     ///
     /// # 返回
-    /// HashMap<NodeId, Tensor>: State 节点 ID -> 该节点收到的 grad
+    /// `HashMap`<`NodeId`, Tensor>: State 节点 ID -> 该节点收到的 grad
     fn bptt_propagate_to_state_vjp(
         &mut self,
         source_node: NodeId,
@@ -3044,8 +2458,8 @@ impl Graph {
                 // 叶子节点（可能是 Parameter）
                 if target_params.contains(&node_id) && accumulate_params {
                     // 累加到 Parameter 的 grad
-                    // 注意：使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
-                    let existing_grad = self.get_node_grad_batch(node_id)?;
+                    // 注意：使用 get_node_grad_ref 读取 grad 字段（VJP 模式）
+                    let existing_grad = self.get_node_grad_ref(node_id)?;
                     let new_grad = match existing_grad {
                         Some(existing) if existing.shape() == upstream_grad.shape() => {
                             existing + &upstream_grad
@@ -3100,8 +2514,8 @@ impl Graph {
                 } else if is_param {
                     // Parameter 节点：根据参数决定是否累加 grad
                     if accumulate_params {
-                        // 注意：使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
-                        let existing_grad = self.get_node_grad_batch(parent_id)?;
+                        // 注意：使用 get_node_grad_ref 读取 grad 字段（VJP 模式）
+                        let existing_grad = self.get_node_grad_ref(parent_id)?;
                         let new_grad = match existing_grad {
                             Some(existing) if existing.shape() == local_grad.shape() => {
                                 existing + &local_grad
@@ -3179,8 +2593,8 @@ impl Graph {
             for (parent_id, local_grad, should_update) in contributions {
                 if should_update {
                     // 目标节点（Parameter）：累加到 grad
-                    // 注意：使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
-                    let existing_grad = self.get_node_grad_batch(parent_id)?;
+                    // 注意：使用 get_node_grad_ref 读取 grad 字段（VJP 模式）
+                    let existing_grad = self.get_node_grad_ref(parent_id)?;
                     let new_grad = match existing_grad {
                         Some(existing) if existing.shape() == local_grad.shape() => {
                             existing + &local_grad
@@ -3202,12 +2616,12 @@ impl Graph {
         Ok(())
     }
 
-    /// 从 loss 反向传播到目标节点（纯 VJP 模式）
+    /// 从 loss 反向传播到目标节点（VJP 模式）
     ///
-    /// 完全使用 VJP 模式，不使用 Jacobian 矩阵。与 `backward_nodes_ex` 的区别：
-    /// - 梯度存储在 `grad` 而非 `jacobi`
-    /// - 使用 `calc_grad_to_parent` 而非 `calc_jacobi_to_a_parent`
-    /// - 支持 batch 形状（不扁平化为 [1, N]）
+    /// 使用 VJP 模式计算梯度：
+    /// - 梯度存储在 `grad` 字段
+    /// - 使用 `calc_grad_to_parent` 计算梯度
+    /// - 支持 batch 形状
     ///
     /// # 参数
     /// - `target_params`: 参数节点（累加 grad）
@@ -3215,7 +2629,7 @@ impl Graph {
     /// - `loss_node`: loss 节点（反向传播起点）
     ///
     /// # 返回
-    /// HashMap<NodeId, Tensor>: State 节点收到的 grad
+    /// `HashMap`<`NodeId`, Tensor>: State 节点收到的 grad
     fn backward_from_loss_vjp(
         &mut self,
         target_params: &[NodeId],
@@ -3346,8 +2760,8 @@ impl Graph {
                             parent_id.0
                         );
                     }
-                    // 注意：使用 get_node_grad_batch 读取 grad 字段（VJP 模式）
-                    let existing_grad = self.get_node_grad_batch(parent_id)?;
+                    // 注意：使用 get_node_grad_ref 读取 grad 字段（VJP 模式）
+                    let existing_grad = self.get_node_grad_ref(parent_id)?;
                     let new_grad = match existing_grad {
                         Some(existing) if existing.shape() == local_grad.shape() => {
                             existing + &local_grad
@@ -3365,10 +2779,10 @@ impl Graph {
                                 .map(|n| n.name().to_string())
                                 .unwrap_or_default(),
                             parent_id.0,
-                            if !visited.contains(&parent_id) {
-                                "adding to queue"
-                            } else {
+                            if visited.contains(&parent_id) {
                                 "already visited"
+                            } else {
+                                "adding to queue"
                             }
                         );
                     }
@@ -3383,7 +2797,7 @@ impl Graph {
         Ok(state_grads)
     }
 
-    /// 在 no_grad 上下文中执行闭包
+    /// 在 `no_grad` 上下文中执行闭包
     ///
     /// 在此上下文中，图处于评估模式，前向传播不会为反向传播缓存中间值。
     /// 闭包执行完毕后，图会自动恢复到之前的模式。
@@ -3394,7 +2808,7 @@ impl Graph {
     /// - **内存节省**：不存储用于反向传播的中间值
     ///
     /// # 参数
-    /// - `f`: 在 no_grad 上下文中执行的闭包
+    /// - `f`: 在 `no_grad` 上下文中执行的闭包
     ///
     /// # 返回
     /// 闭包的返回值
@@ -3403,13 +2817,13 @@ impl Graph {
     /// ```ignore
     /// // 训练阶段
     /// graph.set_train_mode();
-    /// graph.forward_node(loss)?;
-    /// graph.backward_nodes(&[w], loss)?;
+    /// graph.forward(loss)?;
+    /// graph.backward(loss)?;
     ///
     /// // 验证阶段（no_grad）
     /// let val_loss = graph.no_grad_scope(|g| {
     ///     g.set_node_value(x, Some(&val_data))?;
-    ///     g.forward_node(output)?;
+    ///     g.forward(output)?;
     ///     let loss_val = g.get_node_value(loss)?.unwrap().data()[0];
     ///     Ok(loss_val)
     /// })?;
@@ -3537,7 +2951,7 @@ impl Graph {
     /// - 值由执行引擎（step/reset）管理，而非用户直接输入
     ///
     /// 与 Parameter 节点不同，State 节点：
-    /// - 不被优化器更新（不在 get_trainable_nodes() 中返回）
+    /// - 不被优化器更新（不在 `get_trainable_nodes()` 中返回）
     /// - 值在每个时间步都会变化
     ///
     /// # 参数
@@ -3571,7 +2985,7 @@ impl Graph {
     /// 创建 Conv2d（2D 卷积）节点
     ///
     /// # 设计
-    /// - **PyTorch 风格**：单节点处理多通道，而非 MatrixSlow 的每通道独立节点
+    /// - **`PyTorch` 风格**：单节点处理多通道，而非 `MatrixSlow` 的每通道独立节点
     /// - 支持 Jacobi 模式（单样本）和 Batch 模式
     ///
     /// # 参数
@@ -3788,8 +3202,8 @@ impl Graph {
     }
 
     /// 创建标量乘法节点
-    /// scalar_node_id: 标量节点(1x1)的ID
-    /// matrix_node_id: 矩阵节点的ID
+    /// `scalar_node_id`: 标量节点(1x1)的ID
+    /// `matrix_node_id`: 矩阵节点的ID
     pub fn new_scalar_multiply_node(
         &mut self,
         scalar_node_id: NodeId,
@@ -3850,9 +3264,9 @@ impl Graph {
         self.add_node_to_list(handle, name, "sigmoid", &[parent_id])
     }
 
-    /// 创建 SoftPlus 激活节点
+    /// 创建 `SoftPlus` 激活节点
     ///
-    /// SoftPlus 是 ReLU 的平滑近似: f(x) = ln(1 + e^x)
+    /// `SoftPlus` 是 `ReLU` 的平滑近似: f(x) = ln(1 + e^x)
     /// 导数为 sigmoid: f'(x) = 1 / (1 + e^(-x))
     ///
     /// 适用场景：
@@ -3868,7 +3282,7 @@ impl Graph {
         self.add_node_to_list(handle, name, "softplus", &[parent_id])
     }
 
-    /// 创建 LeakyReLU 激活节点
+    /// 创建 `LeakyReLU` 激活节点
     ///
     /// # 参数
     /// - `parent_id`: 父节点 ID
@@ -3884,7 +3298,7 @@ impl Graph {
         self.add_node_to_list(handle, name, "leaky_relu", &[parent_id])
     }
 
-    /// 创建标准 ReLU 激活节点（等价于 negative_slope=0 的 LeakyReLU）
+    /// 创建标准 `ReLU` 激活节点（等价于 `negative_slope=0` 的 `LeakyReLU`）
     ///
     /// # 参数
     /// - `parent_id`: 父节点 ID
@@ -3906,7 +3320,7 @@ impl Graph {
         self.add_node_to_list(handle, name, "perception_loss", &[parent_id])
     }
 
-    /// 创建 SoftmaxCrossEntropy 损失节点
+    /// 创建 `SoftmaxCrossEntropy` 损失节点
     ///
     /// # 参数
     /// - `logits_id`: 预测值节点 ID（未经 softmax 的原始分数）
@@ -3951,7 +3365,7 @@ impl Graph {
         self.add_node_to_list(handle, name, "mse_loss", &[input_id, target_id])
     }
 
-    /// 创建 MSELoss 节点（指定 reduction 模式）
+    /// 创建 `MSELoss` 节点（指定 reduction 模式）
     ///
     /// # 参数
     /// - `input_id`: 预测值节点 ID
@@ -4011,20 +3425,20 @@ pub enum ImageFormat {
 
 impl ImageFormat {
     /// 获取文件扩展名（不含点号）
-    pub fn extension(&self) -> &'static str {
+    pub const fn extension(&self) -> &'static str {
         match self {
-            ImageFormat::Png => "png",
-            ImageFormat::Svg => "svg",
-            ImageFormat::Pdf => "pdf",
+            Self::Png => "png",
+            Self::Svg => "svg",
+            Self::Pdf => "pdf",
         }
     }
 
     /// 从扩展名解析格式（用于错误提示）
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
-            "png" => Some(ImageFormat::Png),
-            "svg" => Some(ImageFormat::Svg),
-            "pdf" => Some(ImageFormat::Pdf),
+            "png" => Some(Self::Png),
+            "svg" => Some(Self::Svg),
+            "pdf" => Some(Self::Pdf),
             _ => None,
         }
     }

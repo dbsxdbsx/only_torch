@@ -41,7 +41,10 @@ fn test_node_sign_name_generation() {
 
     // 3. 测试节点名称重复
     let result = graph.new_sign_node(input, Some("explicit_sign"));
-    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_sign在图default_graph中重复"));
+    assert_err!(
+        result,
+        GraphError::DuplicateNodeName("节点explicit_sign在图default_graph中重复")
+    );
 }
 
 #[test]
@@ -54,13 +57,17 @@ fn test_node_sign_manually_set_value() {
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     assert_err!(
         graph.set_node_value(sign, Some(&test_value)),
-        GraphError::InvalidOperation("节点[id=2, name=sign, type=Sign]的值只能通过前向传播计算得到，不能直接设置")
+        GraphError::InvalidOperation(
+            "节点[id=2, name=sign, type=Sign]的值只能通过前向传播计算得到，不能直接设置"
+        )
     );
 
     // 2. 测试清除Sign节点的值（也应该失败）
     assert_err!(
         graph.set_node_value(sign, None),
-        GraphError::InvalidOperation("节点[id=2, name=sign, type=Sign]的值只能通过前向传播计算得到，不能直接设置")
+        GraphError::InvalidOperation(
+            "节点[id=2, name=sign, type=Sign]的值只能通过前向传播计算得到，不能直接设置"
+        )
     );
 }
 
@@ -77,7 +84,7 @@ fn test_node_sign_expected_shape() {
     // 2. 测试前向传播后的形状
     let value = Tensor::zeros(&[2, 2]);
     graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward_node(sign).unwrap();
+    graph.forward(sign).unwrap();
 
     // 2.1 验证前向传播后的形状
     assert_eq!(graph.get_node_value_shape(sign).unwrap().unwrap(), &[2, 2]); // 实际值形状
@@ -118,11 +125,11 @@ fn test_node_sign_forward_propagation() {
 
         // 如果节点是parameter，因创建时其值已隐式初始化过了，所以前向传播应成功
         if parent_type == "parameter" {
-            graph.forward_node(sign).unwrap();
+            graph.forward(sign).unwrap();
         } else {
             // 如果是input节点，因创建时其值未初始化，所以前向传播应失败
             assert_err!(
-                graph.forward_node(sign),
+                graph.forward(sign),
                 GraphError::InvalidOperation(msg) if msg.contains("不能直接前向传播")
             );
 
@@ -130,7 +137,7 @@ fn test_node_sign_forward_propagation() {
             graph.set_node_value(parent, Some(&value)).unwrap();
 
             // 设置值后前向传播应成功
-            graph.forward_node(sign).unwrap();
+            graph.forward(sign).unwrap();
             let result = graph.get_node_value(sign).unwrap().unwrap();
 
             // 只有当节点是input时才检查输出值
@@ -152,7 +159,7 @@ fn test_node_sign_forward_values() {
 
     let value = Tensor::new(&[-2.0, -0.5, 0.0, 0.5, 2.0], &[5, 1]);
     graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward_node(sign).unwrap();
+    graph.forward(sign).unwrap();
 
     let result = graph.get_node_value(sign).unwrap().unwrap();
     let expected = Tensor::new(&[-1.0, -1.0, 0.0, 1.0, 1.0], &[5, 1]);
@@ -167,7 +174,7 @@ fn test_node_sign_forward_values() {
     let sign2 = graph.new_sign_node(input2, Some("sign2")).unwrap();
 
     graph.set_node_value(input2, Some(&extreme_value)).unwrap();
-    graph.forward_node(sign2).unwrap();
+    graph.forward(sign2).unwrap();
 
     let result2 = graph.get_node_value(sign2).unwrap().unwrap();
     // INFINITY → 1, NEG_INFINITY → -1, MIN → -1, MAX → 1
@@ -175,61 +182,65 @@ fn test_node_sign_forward_values() {
     assert_eq!(result2, &expected2);
 }
 
+/// 测试 Sign 节点的反向传播（VJP 模式）
+///
+/// Sign 是不可微节点，VJP 返回 0（梯度不流经此节点）。
+/// 这与 PyTorch 行为一致：`torch.sign(x).backward()` 时 x.grad 为 0。
 #[test]
 fn test_node_sign_backward_propagation() {
+    use approx::assert_abs_diff_eq;
+
     let mut graph = Graph::new();
 
-    // 1. 创建一个简单的符号图：result = sign(parent)
+    // 1. 构建计算图: parent -> sign -> mse_loss
     let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();
-    let result = graph.new_sign_node(parent, Some("result")).unwrap();
+    let sign = graph.new_sign_node(parent, Some("sign")).unwrap();
+    let target = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+    let loss = graph.new_mse_loss_node(sign, target, None).unwrap();
 
-    // 2. 测试在前向传播之前进行反向传播（应该失败）
-    assert_err!(
-        graph.backward_nodes(&[parent], result),
-        GraphError::ComputationError(msg) if msg.contains("没有值")
-    );
-
-    // 3. 设置输入值
+    // 2. 设置输入值
     let parent_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
+    let target_value = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[2, 2]);
     graph.set_node_value(parent, Some(&parent_value)).unwrap();
+    graph.set_node_value(target, Some(&target_value)).unwrap();
 
-    // 4. 反向传播前执行必要的前向传播
-    graph.forward_node(result).unwrap();
+    // 3. 前向传播
+    graph.forward(loss).unwrap();
+
+    // sign(parent) = [1, -1, 0, 1]
+    // loss = mean((sign - target)^2) = mean([1, 1, 0, 1]) = 0.75
+    let loss_val = graph
+        .get_node_value(loss)
+        .unwrap()
+        .unwrap()
+        .get_data_number()
+        .unwrap();
+    assert_abs_diff_eq!(loss_val, 0.75, epsilon = 1e-6);
+
+    // 4. 初始时梯度应为空
+    assert!(graph.get_node_grad(parent).unwrap().is_none());
 
     // 5. 反向传播
-    // 5.1 sign节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    graph.zero_grad().unwrap();
+    graph.backward(loss).unwrap();
 
-    // 5.2 对parent的反向传播（第1次，retain_graph=true 以便多次 backward）
-    graph.backward_nodes_ex(&[parent], result, true).unwrap();
-    let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
-    // 验证雅可比矩阵（Sign函数导数在所有点都是0）
-    let expected_jacobi = Tensor::new(
-        &[
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ],
-        &[4, 4],
-    );
-    assert_eq!(parent_jacobi, &expected_jacobi);
+    // 6. 验证 parent 的梯度应该全为 0（Sign 不可微）
+    let grad = graph.get_node_grad(parent).unwrap().unwrap();
+    assert_eq!(grad.shape(), &[2, 2]);
 
-    // 5.3 对parent的反向传播（第2次）- 应该得到相同的结果
-    graph.backward_nodes_ex(&[parent], result, true).unwrap();
-    let parent_jacobi_second = graph.get_node_jacobi(parent).unwrap().unwrap();
-    assert_eq!(parent_jacobi_second, &expected_jacobi);
+    // Sign 的 VJP 返回 0，所以梯度不会传播到 parent
+    assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 1]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 1]], 0.0, epsilon = 1e-6);
 
-    // 6. 清除雅可比矩阵并验证
-    graph.clear_jacobi().unwrap();
+    // 7. 测试梯度累积（0 + 0 = 0）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    let grad_accumulated = graph.get_node_grad(parent).unwrap().unwrap();
+    assert_abs_diff_eq!(grad_accumulated[[0, 0]], 0.0, epsilon = 1e-6);
 
-    // 6.1 清除后，parent和result的雅可比矩阵应该为None
-    assert!(graph.get_node_jacobi(parent).unwrap().is_none());
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
-
-    // 6.2 清除后再次反向传播 - 仍应正常工作
-    // 6.2.1 sign节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
-
-    // 6.2.2 对parent的反向传播（最后一次可以不保留图）
-    graph.backward_nodes(&[parent], result).unwrap();
-    let parent_jacobi_after_clear = graph.get_node_jacobi(parent).unwrap().unwrap();
-    assert_eq!(parent_jacobi_after_clear, &expected_jacobi);
+    // 8. zero_grad 后梯度应清零
+    graph.zero_grad().unwrap();
+    assert!(graph.get_node_grad(parent).unwrap().is_none());
 }

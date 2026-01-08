@@ -42,9 +42,11 @@ fn test_node_input_creation_with_invalid_shape() {
 
     // 3D 和 4D 现在应该成功（CNN 支持）
     assert!(graph.new_input_node(&[3, 28, 28], Some("input_3d")).is_ok());
-    assert!(graph
-        .new_input_node(&[4, 3, 28, 28], Some("input_4d"))
-        .is_ok());
+    assert!(
+        graph
+            .new_input_node(&[4, 3, 28, 28], Some("input_4d"))
+            .is_ok()
+    );
 }
 
 #[test]
@@ -63,7 +65,10 @@ fn test_node_input_name_generation() {
 
     // 3. 测试节点名称重复
     let result = graph.new_input_node(&[2, 2], Some("explicit_input"));
-    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_input在图default_graph中重复"));
+    assert_err!(
+        result,
+        GraphError::DuplicateNodeName("节点explicit_input在图default_graph中重复")
+    );
 }
 
 #[test]
@@ -137,59 +142,97 @@ fn test_node_input_forward_propagation() {
 
     // 1. 测试前向传播（应该失败，因为Input节点不支持前向传播）
     assert_err!(
-        graph.forward_node(input),
-        GraphError::InvalidOperation("节点[id=1, name=input, type=Input]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
+        graph.forward(input),
+        GraphError::InvalidOperation(
+            "节点[id=1, name=input, type=Input]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
+        )
     );
 
     // 2. 设置值后仍然不能前向传播
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     graph.set_node_value(input, Some(&value)).unwrap();
     assert_err!(
-        graph.forward_node(input),
-        GraphError::InvalidOperation("节点[id=1, name=input, type=Input]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
+        graph.forward(input),
+        GraphError::InvalidOperation(
+            "节点[id=1, name=input, type=Input]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
+        )
     );
 }
 
+/// 测试 Input 节点不应该有梯度（VJP 模式）
+///
+/// Input 节点是输入数据，不是可学习参数，因此不应该有梯度。
 #[test]
-fn test_node_input_backward_propagation() {
+fn test_node_input_no_grad() {
     let mut graph = Graph::new();
 
     // 1. 创建输入节点
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
-    // 2. 初始时雅可比矩阵应为空，但对于输入节点来说，不应该有雅可比矩阵
+    // 2. 对 Input 节点调用 get_node_grad 应该返回错误
     assert_err!(
-        graph.get_node_jacobi(input),
-        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
+        graph.get_node_grad(input),
+        GraphError::InvalidOperation(msg) if msg == "输入节点[id=1, name=input, type=Input]不应该有梯度"
     );
 
-    // 3. 对自身的反向传播（本应生成单位矩阵，但输入节点不应该有雅可比矩阵，所以应该失败）
+    // 3. 设置值后，get_node_grad 仍应返回错误
     graph.set_node_value(input, Some(&value)).unwrap();
     assert_err!(
-        graph.backward_nodes(&[input], input),
-        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
+        graph.get_node_grad(input),
+        GraphError::InvalidOperation(msg) if msg == "输入节点[id=1, name=input, type=Input]不应该有梯度"
     );
 
-    // 4. 清除雅可比矩阵并验证（输入节点不应该有雅可比矩阵）
-    graph.clear_jacobi().unwrap();
+    // 4. zero_grad 后，get_node_grad 仍应返回错误
+    graph.zero_grad().unwrap();
     assert_err!(
-        graph.get_node_jacobi(input),
-        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
+        graph.get_node_grad(input),
+        GraphError::InvalidOperation(msg) if msg == "输入节点[id=1, name=input, type=Input]不应该有梯度"
     );
+}
 
-    // 5. 对没有值的Input节点的反向传播（应失败）
-    graph.set_node_value(input, None).unwrap();
+/// 测试 Input 节点在正常计算图反向传播后的行为
+///
+/// 在完整的计算图中，反向传播到 Input 节点时会无害跳过（Input 是"梯度汇点"），
+/// 调用 get_node_grad(input) 仍然返回错误。
+#[test]
+fn test_node_input_in_computation_graph() {
+    let mut graph = Graph::new();
+
+    // 1. 构建简单计算图: input -> param -> mse_loss
+    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
+    let param = graph.new_parameter_node(&[2, 2], Some("param")).unwrap();
+    let target = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+
+    // input * param
+    let mul = graph.new_multiply_node(input, param, None).unwrap();
+    // MSE Loss
+    let loss = graph.new_mse_loss_node(mul, target, None).unwrap();
+
+    // 2. 设置输入值
+    let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let target_val = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
+    graph.set_node_value(input, Some(&input_val)).unwrap();
+    graph.set_node_value(target, Some(&target_val)).unwrap();
+
+    // 3. 前向传播
+    graph.forward(loss).unwrap();
+
+    // 4. 反向传播
+    graph.zero_grad().unwrap();
+    let _loss_val = graph.backward(loss).unwrap();
+
+    // 5. 验证：Parameter 节点应该有梯度
+    assert!(graph.get_node_grad(param).unwrap().is_some());
+
+    // 6. 验证：Input 节点仍然不应该有梯度（调用 get_node_grad 返回错误）
+    //    反向传播到 Input 节点时是无害跳过的，不会报错，但 get_node_grad 仍返回错误
     assert_err!(
-        graph.backward_nodes(&[input], input),
-        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
+        graph.get_node_grad(input),
+        GraphError::InvalidOperation(msg) if msg == "输入节点[id=1, name=input, type=Input]不应该有梯度"
     );
-
-    // 6. 对其他未关联的Input节点的反向传播（应失败）
-    let other_input = graph.new_input_node(&[2, 2], Some("other_input")).unwrap();
-    graph.set_node_value(other_input, Some(&value)).unwrap();
     assert_err!(
-        graph.backward_nodes(&[input], other_input),
-        GraphError::InvalidOperation("输入节点[id=1, name=input, type=Input]不应该有雅可比矩阵")
+        graph.get_node_grad(target),
+        GraphError::InvalidOperation(msg) if msg == "输入节点[id=3, name=target, type=Input]不应该有梯度"
     );
 }

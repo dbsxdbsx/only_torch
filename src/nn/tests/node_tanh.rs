@@ -1,214 +1,365 @@
+/*
+ * @Author       : 老董
+ * @Description  : Tanh 节点单元测试
+ *
+ * 测试策略：
+ * 1. 基础功能测试（创建、形状验证、命名）
+ * 2. 前向传播测试
+ * 3. VJP 单元测试（直接调用 calc_grad_to_parent）
+ * 4. 端到端反向传播测试（通过 graph.backward）
+ * 5. 梯度累积测试
+ */
+
 use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
+use approx::assert_abs_diff_eq;
 
+// ==================== 基础功能测试 ====================
+
+/// 测试 Tanh 节点创建
 #[test]
-fn test_node_tanh_creation() {
+fn test_tanh_creation() {
     let mut graph = Graph::new();
 
-    // 1. 测试Input节点作为父节点
+    // 1. Input 节点作为父节点
     {
         let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
         let tanh = graph.new_tanh_node(input, Some("tanh_with_input")).unwrap();
-        // 1.1 验证基本属性
+
         assert_eq!(graph.get_node_name(tanh).unwrap(), "tanh_with_input");
         assert_eq!(graph.get_node_parents(tanh).unwrap().len(), 1);
         assert_eq!(graph.get_node_children(tanh).unwrap().len(), 0);
+        assert_eq!(graph.get_node_value_expected_shape(tanh).unwrap(), &[2, 2]);
     }
 
-    // 2. 测试Parameter节点作为父节点
+    // 2. Parameter 节点作为父节点
     {
-        let param = graph.new_parameter_node(&[2, 2], Some("param1")).unwrap();
+        let param = graph.new_parameter_node(&[2, 3], Some("param1")).unwrap();
         let tanh = graph.new_tanh_node(param, Some("tanh_with_param")).unwrap();
+
         assert_eq!(graph.get_node_name(tanh).unwrap(), "tanh_with_param");
         assert_eq!(graph.get_node_parents(tanh).unwrap().len(), 1);
-        assert_eq!(graph.get_node_children(tanh).unwrap().len(), 0);
+        assert_eq!(graph.get_node_value_expected_shape(tanh).unwrap(), &[2, 3]);
     }
 }
 
+/// 测试 Tanh 节点命名
 #[test]
-fn test_node_tanh_name_generation() {
+fn test_tanh_name_generation() {
     let mut graph = Graph::new();
 
-    // 1. 测试节点显式命名
-    let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
-    let tanh = graph.new_tanh_node(input, Some("explicit_tanh")).unwrap();
-    assert_eq!(graph.get_node_name(tanh).unwrap(), "explicit_tanh");
+    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
 
-    // 2. 测试节点自动命名
+    // 1. 显式命名
+    let tanh1 = graph.new_tanh_node(input, Some("my_tanh")).unwrap();
+    assert_eq!(graph.get_node_name(tanh1).unwrap(), "my_tanh");
+
+    // 2. 自动命名
     let tanh2 = graph.new_tanh_node(input, None).unwrap();
     assert_eq!(graph.get_node_name(tanh2).unwrap(), "tanh_1");
 
-    // 3. 测试节点名称重复
-    let result = graph.new_tanh_node(input, Some("explicit_tanh"));
-    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_tanh在图default_graph中重复"));
+    // 3. 名称重复
+    let result = graph.new_tanh_node(input, Some("my_tanh"));
+    assert_err!(
+        result,
+        GraphError::DuplicateNodeName("节点my_tanh在图default_graph中重复")
+    );
 }
 
+/// 测试 Tanh 节点不能直接设置值
 #[test]
-fn test_node_tanh_manually_set_value() {
+fn test_tanh_cannot_set_value() {
     let mut graph = Graph::new();
-    let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
+    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
     let tanh = graph.new_tanh_node(input, Some("tanh")).unwrap();
 
-    // 1. 测试直接设置Tanh节点的值（应该失败）
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     assert_err!(
         graph.set_node_value(tanh, Some(&test_value)),
-        GraphError::InvalidOperation("节点[id=2, name=tanh, type=Tanh]的值只能通过前向传播计算得到，不能直接设置")
-    );
-
-    // 2. 测试清除Tanh节点的值（也应该失败）
-    assert_err!(
-        graph.set_node_value(tanh, None),
-        GraphError::InvalidOperation("节点[id=2, name=tanh, type=Tanh]的值只能通过前向传播计算得到，不能直接设置")
+        GraphError::InvalidOperation(
+            "节点[id=2, name=tanh, type=Tanh]的值只能通过前向传播计算得到，不能直接设置"
+        )
     );
 }
 
+// ==================== 前向传播测试 ====================
+
+/// 测试 Tanh 前向传播
 #[test]
-fn test_node_tanh_expected_shape() {
+fn test_tanh_forward() {
     let mut graph = Graph::new();
 
-    // 1. 测试基本的Tanh节点预期形状
-    let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
+    let input = graph.new_parameter_node(&[2, 2], Some("input")).unwrap();
     let tanh = graph.new_tanh_node(input, Some("tanh")).unwrap();
-    assert_eq!(graph.get_node_value_expected_shape(tanh).unwrap(), &[2, 2]);
-    assert_eq!(graph.get_node_value_shape(tanh).unwrap(), None); // 实际值形状为None（未计算）
 
-    // 2. 测试前向传播后的形状
-    let value = Tensor::zeros(&[2, 2]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward_node(tanh).unwrap();
+    // 测试数据（与 Python 参考一致）
+    // tanh(0.5) ≈ 0.4621, tanh(-1.0) ≈ -0.7616, tanh(0.0) = 0.0, tanh(2.0) ≈ 0.9640
+    let input_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
+    graph.set_node_value(input, Some(&input_value)).unwrap();
 
-    // 2.1 验证前向传播后的形状
-    assert_eq!(graph.get_node_value_shape(tanh).unwrap().unwrap(), &[2, 2]); // 实际值形状
-    assert_eq!(graph.get_node_value_expected_shape(tanh).unwrap(), &[2, 2]); // 预期形状保持不变
+    graph.forward(tanh).unwrap();
 
-    // 2.2 测试父节点值在首次前向传播后，再次设置新值后的形状检查
-    let value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-
-    // 2.2.1 验证预期形状和实际形状
-    assert_eq!(graph.get_node_value_expected_shape(tanh).unwrap(), &[2, 2]);
-    assert_eq!(graph.get_node_value_shape(tanh).unwrap().unwrap(), &[2, 2]); // 虽然值已过期，但由于值仍然存在，所以形状不变
+    let output = graph.get_node_value(tanh).unwrap().unwrap();
+    assert_eq!(output.shape(), &[2, 2]);
+    assert_abs_diff_eq!(output[[0, 0]], 0.46211716, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 1]], -0.76159418, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[1, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[1, 1]], 0.96402758, epsilon = 1e-6);
 }
 
+/// 测试 Tanh 前向传播（边界值）
 #[test]
-fn test_node_tanh_forward_propagation() {
-    // 1. 准备测试数据 (与Python测试tests/python/calc_jacobi_by_pytorch/node_tanh.py保持一致)
-    let value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    let expected = Tensor::new(
-        &[
-            0.46211716532707214,
-            -0.7615941762924194,
-            0.0,
-            0.9640275835990906,
-        ],
-        &[2, 2],
-    );
-
-    // 2. 测试不同节点类型组合的前向传播
-    let node_types = ["input", "parameter"];
-    for parent_type in node_types {
-        let mut graph = Graph::new();
-
-        // 创建parent节点
-        let parent = match parent_type {
-            "input" => graph.new_input_node(&[2, 2], Some("input_1")).unwrap(),
-            "parameter" => graph
-                .new_parameter_node(&[2, 2], Some("parameter_1"))
-                .unwrap(),
-            _ => unreachable!(),
-        };
-
-        // Tanh节点总是可训练的
-        let tanh = graph.new_tanh_node(parent, Some("tanh")).unwrap();
-
-        // 如果节点是parameter，因创建时其值已隐式初始化过了，所以前向传播应成功
-        if parent_type == "parameter" {
-            graph.forward_node(tanh).unwrap();
-        } else {
-            // 如果是input节点，因创建时其值未初始化，所以前向传播应失败
-            assert_err!(
-                graph.forward_node(tanh),
-                GraphError::InvalidOperation("节点[id=1, name=input_1, type=Input]不能直接前向传播（须通过set_value或初始化时设置`init`为true来增加前向传播次数）。问题节点的前向传播次数为0，而图的前向传播次数为1")
-            );
-
-            // 设置input节点的值
-            graph.set_node_value(parent, Some(&value)).unwrap();
-
-            // 设置值后前向传播应成功
-            graph.forward_node(tanh).unwrap();
-            let result = graph.get_node_value(tanh).unwrap().unwrap();
-
-            // 只有当节点是input时才检查输出值
-            if parent_type == "input" {
-                assert_eq!(result, &expected);
-            }
-        }
-    }
-}
-
-#[test]
-fn test_node_tanh_backward_propagation() {
+fn test_tanh_forward_edge_cases() {
     let mut graph = Graph::new();
 
-    // 1. 创建一个简单的tanh图：result = tanh(parent)
-    let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();
-    let result = graph.new_tanh_node(parent, Some("result")).unwrap();
+    let input = graph.new_parameter_node(&[1, 4], Some("input")).unwrap();
+    let tanh = graph.new_tanh_node(input, Some("tanh")).unwrap();
 
-    // 2. 测试在前向传播之前进行反向传播（应该失败）
-    assert_err!(
-        graph.backward_nodes(&[parent], result),
-        GraphError::ComputationError("反向传播：结果节点[id=2, name=result, type=Tanh]没有值")
+    // 边界值：大正数 → 接近 1，大负数 → 接近 -1
+    let input_value = Tensor::new(&[0.0, 10.0, -10.0, 0.001], &[1, 4]);
+    graph.set_node_value(input, Some(&input_value)).unwrap();
+
+    graph.forward(tanh).unwrap();
+
+    let output = graph.get_node_value(tanh).unwrap().unwrap();
+    assert_abs_diff_eq!(output[[0, 0]], 0.0, epsilon = 1e-6); // tanh(0) = 0
+    assert_abs_diff_eq!(output[[0, 1]], 1.0, epsilon = 1e-6); // tanh(10) ≈ 1
+    assert_abs_diff_eq!(output[[0, 2]], -1.0, epsilon = 1e-6); // tanh(-10) ≈ -1
+    assert_abs_diff_eq!(output[[0, 3]], 0.001, epsilon = 1e-5); // tanh(x) ≈ x for small x
+}
+
+// ==================== 节点级反向传播测试（直接调用 calc_grad_to_parent）====================
+
+/// 测试 Tanh 对父节点的梯度计算
+///
+/// 对于 y = tanh(x)，有：
+/// - dy/dx = 1 - tanh²(x) = 1 - y²
+/// - VJP: grad_to_parent = upstream_grad * (1 - y²)
+#[test]
+fn test_tanh_backward_vjp() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
+    let tanh_id = graph.new_tanh_node(input_id, Some("tanh"))?;
+
+    // 设置值
+    let input_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
+    graph.set_node_value(input_id, Some(&input_value))?;
+    graph.forward(tanh_id)?;
+
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let tanh_node = graph.get_node(tanh_id)?;
+    let input_node = graph.get_node(input_id)?;
+
+    // Tanh 不需要 assistant_parent
+    let grad = tanh_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    // grad = upstream_grad * (1 - tanh(x)²)
+    // tanh([0.5, -1.0, 0.0, 2.0]) = [0.4621, -0.7616, 0.0, 0.9640]
+    // 1 - tanh² = [0.7864, 0.4200, 1.0, 0.0707]
+    assert_eq!(grad.shape(), &[2, 2]);
+    assert_abs_diff_eq!(grad[[0, 0]], 0.78644770, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 1]], 0.41997433, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 1]], 0.07065082, epsilon = 1e-6);
+
+    Ok(())
+}
+
+/// 测试 Tanh 梯度计算（非单位 upstream_grad）
+#[test]
+fn test_tanh_backward_with_non_unit_upstream() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
+    let tanh_id = graph.new_tanh_node(input_id, Some("tanh"))?;
+
+    // 设置值
+    let input_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
+    graph.set_node_value(input_id, Some(&input_value))?;
+    graph.forward(tanh_id)?;
+
+    // upstream_grad = [[2,3],[4,5]]（非全1）
+    let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
+    let tanh_node = graph.get_node(tanh_id)?;
+    let input_node = graph.get_node(input_id)?;
+
+    let grad = tanh_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    // grad = upstream_grad * (1 - tanh²)
+    // (1 - tanh²) = [0.7864, 0.4200, 1.0, 0.0707]
+    // grad = [2*0.7864, 3*0.4200, 4*1.0, 5*0.0707] = [1.5729, 1.2599, 4.0, 0.3533]
+    assert_eq!(grad.shape(), &[2, 2]);
+    assert_abs_diff_eq!(grad[[0, 0]], 2.0 * 0.78644770, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[0, 1]], 3.0 * 0.41997433, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[1, 0]], 4.0 * 1.0, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[1, 1]], 5.0 * 0.07065082, epsilon = 1e-5);
+
+    Ok(())
+}
+
+/// 测试 Tanh 梯度计算（接近饱和区）
+///
+/// 当输入绝对值很大时，tanh 接近 ±1，梯度接近 0（梯度消失）
+#[test]
+fn test_tanh_backward_saturation() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let input_id = graph.new_parameter_node(&[1, 2], Some("input"))?;
+    let tanh_id = graph.new_tanh_node(input_id, Some("tanh"))?;
+
+    // 饱和区输入：大正数和大负数
+    let input_value = Tensor::new(&[5.0, -5.0], &[1, 2]);
+    graph.set_node_value(input_id, Some(&input_value))?;
+    graph.forward(tanh_id)?;
+
+    let upstream_grad = Tensor::ones(&[1, 2]);
+    let tanh_node = graph.get_node(tanh_id)?;
+    let input_node = graph.get_node(input_id)?;
+
+    let grad = tanh_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    // tanh(±5) ≈ ±0.9999，1 - tanh² ≈ 0.0002（梯度接近 0）
+    assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-3);
+    assert_abs_diff_eq!(grad[[0, 1]], 0.0, epsilon = 1e-3);
+
+    Ok(())
+}
+
+// ==================== 端到端反向传播测试 ====================
+
+/// 测试 Tanh 通过 graph.backward() 的端到端反向传播
+///
+/// 构建简单图：result = tanh(input) → loss = MSE(result, target)
+#[test]
+fn test_tanh_backward_e2e() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    // 创建计算图：result = tanh(input)
+    let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
+    let result = graph.new_tanh_node(input, Some("result"))?;
+
+    // loss = MSE(result, target)
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值：input = [[0.5, -1.0], [0.0, 2.0]], target = [[0, 0], [0, 0]]
+    let input_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
+    graph.set_node_value(input, Some(&input_value))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
+
+    // 前向传播
+    graph.forward(loss)?;
+
+    // result = tanh(input) = [[0.4621, -0.7616], [0.0, 0.9640]]
+    // loss = mean(result²) = mean([0.2135, 0.5800, 0.0, 0.9293]) = 0.4307
+    let loss_value = graph.get_node_value(loss)?.unwrap();
+    let expected_loss = (0.46211716_f32.powi(2)
+        + 0.76159418_f32.powi(2)
+        + 0.0_f32.powi(2)
+        + 0.96402758_f32.powi(2))
+        / 4.0;
+    assert_abs_diff_eq!(
+        loss_value.get_data_number().unwrap(),
+        expected_loss,
+        epsilon = 1e-5
     );
 
-    // 3. 设置输入值 (与Python测试tests/python/calc_jacobi_by_pytorch/node_tanh.py保持一致)
-    let parent_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    graph.set_node_value(parent, Some(&parent_value)).unwrap();
+    // 反向传播
+    graph.zero_grad()?;
+    let loss_returned = graph.backward(loss)?;
+    assert_abs_diff_eq!(loss_returned, expected_loss, epsilon = 1e-5);
 
-    // 4. 反向传播前执行必要的前向传播
-    graph.forward_node(result).unwrap();
+    // 验证梯度存在且形状正确
+    let input_grad = graph.get_node(input)?.grad().expect("input 应有 grad");
+    assert_eq!(input_grad.shape(), &[2, 2]);
 
-    // 5. 反向传播
-    // 5.1 tanh节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    // ∂loss/∂result = 2*(result - target)/n = result/2
+    // ∂loss/∂input = ∂loss/∂result * (1 - tanh²)
+    // = [0.4621/2 * 0.7864, -0.7616/2 * 0.4200, 0.0/2 * 1.0, 0.9640/2 * 0.0707]
+    // = [0.1817, -0.1599, 0.0, 0.0341]
+    assert_abs_diff_eq!(input_grad[[0, 0]], 0.18165, epsilon = 1e-4);
+    assert_abs_diff_eq!(input_grad[[0, 1]], -0.15993, epsilon = 1e-4);
+    assert_abs_diff_eq!(input_grad[[1, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(input_grad[[1, 1]], 0.03409, epsilon = 1e-4);
 
-    // 5.2 对parent的反向传播（第1次，retain_graph=true 以便多次 backward）
-    graph.backward_nodes_ex(&[parent], result, true).unwrap();
-    let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
+    Ok(())
+}
 
-    // 验证雅可比矩阵（与Python输出一致）
-    // d(tanh(x))/dx = 1 - tanh²(x)，对角矩阵
-    #[rustfmt::skip]
-    let expected_jacobi = Tensor::new(
-        &[
-            0.7864477038383484, 0.0, 0.0, 0.0,
-            0.0, 0.41997432708740234, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 0.07065081596374512,
-        ],
-        &[4, 4],
-    );
-    assert_eq!(parent_jacobi, &expected_jacobi);
+/// 测试 Tanh 在链式网络中的端到端反向传播
+///
+/// 网络结构: x -> MatMul(w) -> Tanh -> output
+#[test]
+fn test_tanh_backward_e2e_chain() -> Result<(), GraphError> {
+    let mut graph = Graph::new_with_seed(42);
 
-    // 5.3 对parent的反向传播（第2次）- 梯度应该累积
-    graph.backward_nodes_ex(&[parent], result, true).unwrap();
-    let parent_jacobi_second = graph.get_node_jacobi(parent).unwrap().unwrap();
-    assert_eq!(parent_jacobi_second, &(&expected_jacobi * 2.0));
+    // 构建网络: output = tanh(w @ x)
+    let x = graph.new_input_node(&[2, 1], Some("x"))?;
+    let w = graph.new_parameter_node(&[2, 2], Some("w"))?;
+    let wx = graph.new_mat_mul_node(w, x, Some("wx"))?;
+    let output = graph.new_tanh_node(wx, Some("output"))?;
 
-    // 6. 清除雅可比矩阵并验证
-    graph.clear_jacobi().unwrap();
+    // loss = MSE(output, target)
+    let target = graph.new_input_node(&[2, 1], Some("target"))?;
+    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
-    // 6.1 清除后，parent和result的雅可比矩阵应该为None
-    assert!(graph.get_node_jacobi(parent).unwrap().is_none());
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    // 设置输入
+    graph.set_node_value(x, Some(&Tensor::new(&[1.0, 0.5], &[2, 1])))?;
+    graph.set_node_value(w, Some(&Tensor::new(&[0.1, 0.2, 0.3, 0.4], &[2, 2])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 1])))?;
 
-    // 6.2 清除后再次反向传播 - 仍应正常工作
-    // 6.2.1 tanh节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    // 前向传播
+    graph.forward(loss)?;
 
-    // 6.2.2 对parent的反向传播（最后一次可以不保留图）
-    graph.backward_nodes(&[parent], result).unwrap();
-    let parent_jacobi_after_clear = graph.get_node_jacobi(parent).unwrap().unwrap();
-    assert_eq!(parent_jacobi_after_clear, &expected_jacobi);
+    // 反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    // 验证 w 的梯度存在且形状正确
+    let w_grad = graph.get_node(w)?.grad().expect("w 应有 grad");
+    assert_eq!(w_grad.shape(), &[2, 2]);
+
+    Ok(())
+}
+
+// ==================== 梯度累积测试 ====================
+
+/// 测试 Tanh 梯度累积
+///
+/// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
+#[test]
+fn test_tanh_gradient_accumulation() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
+    let result = graph.new_tanh_node(input, Some("result"))?;
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值
+    graph.set_node_value(input, Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
+    graph.forward(loss)?;
+
+    // 第 1 次反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad_first = graph.get_node(input)?.grad().unwrap().clone();
+
+    // 第 2 次反向传播（梯度累积）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_second = graph.get_node(input)?.grad().unwrap();
+    assert_eq!(grad_second, &(&grad_first * 2.0));
+
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_after_clear = graph.get_node(input)?.grad().unwrap();
+    assert_eq!(grad_after_clear, &grad_first);
+
+    Ok(())
 }

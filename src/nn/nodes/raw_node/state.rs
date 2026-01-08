@@ -22,8 +22,7 @@ pub(crate) struct State {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>, // Jacobian 模式梯度（用于单样本 BPTT）
-    grad: Option<Tensor>,   // VJP/grad 模式梯度（用于 Batch BPTT）
+    grad: Option<Tensor>,
     shape: Vec<usize>,
 }
 
@@ -48,7 +47,6 @@ impl State {
             id: None,
             name: None,
             value: None, // 初始值为 None，由 reset() 或用户设置
-            jacobi: None,
             grad: None,
             shape: shape.to_vec(),
         })
@@ -89,36 +87,6 @@ impl TraitNode for State {
         self.value = value.cloned();
         Ok(())
     }
-
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        // State 节点没有父节点（在图结构中是叶子）
-        Err(GraphError::InvalidOperation(format!(
-            "{}没有父节点。不该触及本错误，否则说明crate代码有问题",
-            self.display_node()
-        )))
-    }
-
-    // ========== 与 Input 节点的关键区别：State 接收并存储 jacobi ==========
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    fn clear_jacobi(&mut self) -> Result<(), GraphError> {
-        self.jacobi = None;
-        Ok(())
-    }
-
-    // ========== Batch 模式 grad API（用于 VJP）==========
 
     fn grad(&self) -> Option<&Tensor> {
         self.grad.as_ref()

@@ -84,7 +84,7 @@ fn test_node_step_expected_shape() {
     // 2. 测试前向传播后的形状
     let value = Tensor::zeros(&[2, 2]);
     graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward_node(step).unwrap();
+    graph.forward(step).unwrap();
 
     // 2.1 验证前向传播后的形状
     assert_eq!(graph.get_node_value_shape(step).unwrap().unwrap(), &[2, 2]); // 实际值形状
@@ -124,11 +124,11 @@ fn test_node_step_forward_propagation() {
 
         // 如果节点是parameter，因创建时其值已隐式初始化过了，所以前向传播应成功
         if parent_type == "parameter" {
-            graph.forward_node(step).unwrap();
+            graph.forward(step).unwrap();
         } else {
             // 如果是input节点，因创建时其值未初始化，所以前向传播应失败
             assert_err!(
-                graph.forward_node(step),
+                graph.forward(step),
                 GraphError::InvalidOperation(msg) if msg.contains("不能直接前向传播")
             );
 
@@ -136,7 +136,7 @@ fn test_node_step_forward_propagation() {
             graph.set_node_value(parent, Some(&value)).unwrap();
 
             // 设置值后前向传播应成功
-            graph.forward_node(step).unwrap();
+            graph.forward(step).unwrap();
             let result = graph.get_node_value(step).unwrap().unwrap();
 
             // 只有当节点是input时才检查输出值
@@ -159,7 +159,7 @@ fn test_node_step_forward_values() {
 
     let value = Tensor::new(&[-2.0, -0.5, 0.0, 0.5, 2.0], &[5, 1]);
     graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward_node(step).unwrap();
+    graph.forward(step).unwrap();
 
     let result = graph.get_node_value(step).unwrap().unwrap();
     // 注意：0.0 >= 0 为 true，所以输出 1.0
@@ -175,7 +175,7 @@ fn test_node_step_forward_values() {
     let step2 = graph.new_step_node(input2, Some("step2")).unwrap();
 
     graph.set_node_value(input2, Some(&extreme_value)).unwrap();
-    graph.forward_node(step2).unwrap();
+    graph.forward(step2).unwrap();
 
     let result2 = graph.get_node_value(step2).unwrap().unwrap();
     // INFINITY >= 0 → 1, NEG_INFINITY < 0 → 0, MIN < 0 → 0, MAX >= 0 → 1
@@ -183,61 +183,67 @@ fn test_node_step_forward_values() {
     assert_eq!(result2, &expected2);
 }
 
+/// 测试 Step 节点的反向传播（VJP 模式）
+///
+/// Step 是不可微节点，VJP 返回 0（梯度不流经此节点）。
+/// Step 函数：x >= 0 → 1, x < 0 → 0（Heaviside 阶跃函数）
 #[test]
 fn test_node_step_backward_propagation() {
+    use approx::assert_abs_diff_eq;
+
     let mut graph = Graph::new();
 
-    // 1. 创建一个简单的阶跃图：result = step(parent)
+    // 1. 构建计算图: parent -> step -> mse_loss
     let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();
-    let result = graph.new_step_node(parent, Some("result")).unwrap();
+    let step = graph.new_step_node(parent, Some("step")).unwrap();
+    let target = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+    let loss = graph.new_mse_loss_node(step, target, None).unwrap();
 
-    // 2. 测试在前向传播之前进行反向传播（应该失败）
-    assert_err!(
-        graph.backward_nodes(&[parent], result),
-        GraphError::ComputationError(msg) if msg.contains("没有值")
-    );
-
-    // 3. 设置输入值 (与Python测试tests\calc_jacobi_by_pytorch\node_step.py保持一致)
+    // 2. 设置输入值
+    // parent = [0.5, -1.0, 0.0, 2.0]
+    // step(parent) = [1, 0, 1, 1]
     let parent_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
+    let target_value = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[2, 2]);
     graph.set_node_value(parent, Some(&parent_value)).unwrap();
+    graph.set_node_value(target, Some(&target_value)).unwrap();
 
-    // 4. 反向传播前执行必要的前向传播
-    graph.forward_node(result).unwrap();
+    // 3. 前向传播
+    graph.forward(loss).unwrap();
+
+    // step(parent) = [1, 0, 1, 1]
+    // loss = mean((step - target)^2) = mean([1, 0, 1, 1]) = 0.75
+    let loss_val = graph
+        .get_node_value(loss)
+        .unwrap()
+        .unwrap()
+        .get_data_number()
+        .unwrap();
+    assert_abs_diff_eq!(loss_val, 0.75, epsilon = 1e-6);
+
+    // 4. 初始时梯度应为空
+    assert!(graph.get_node_grad(parent).unwrap().is_none());
 
     // 5. 反向传播
-    // 5.1 step节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
+    graph.zero_grad().unwrap();
+    graph.backward(loss).unwrap();
 
-    // 5.2 对parent的反向传播（第1次，retain_graph=true 以便多次 backward）
-    graph.backward_nodes_ex(&[parent], result, true).unwrap();
-    let parent_jacobi = graph.get_node_jacobi(parent).unwrap().unwrap();
-    // 验证雅可比矩阵（与Python输出一致）
-    let expected_jacobi = Tensor::new(
-        &[
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ],
-        &[4, 4],
-    );
-    assert_eq!(parent_jacobi, &expected_jacobi);
+    // 6. 验证 parent 的梯度应该全为 0（Step 不可微）
+    let grad = graph.get_node_grad(parent).unwrap().unwrap();
+    assert_eq!(grad.shape(), &[2, 2]);
 
-    // 5.3 对parent的反向传播（第2次）- 应该得到相同的结果
-    graph.backward_nodes_ex(&[parent], result, true).unwrap();
-    let parent_jacobi_second = graph.get_node_jacobi(parent).unwrap().unwrap();
-    assert_eq!(parent_jacobi_second, &expected_jacobi);
+    // Step 的 VJP 返回 0，所以梯度不会传播到 parent
+    assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 1]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 1]], 0.0, epsilon = 1e-6);
 
-    // 6. 清除雅可比矩阵并验证
-    graph.clear_jacobi().unwrap();
+    // 7. 测试梯度累积（0 + 0 = 0）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    let grad_accumulated = graph.get_node_grad(parent).unwrap().unwrap();
+    assert_abs_diff_eq!(grad_accumulated[[0, 0]], 0.0, epsilon = 1e-6);
 
-    // 6.1 清除后，parent和result的雅可比矩阵应该为None
-    assert!(graph.get_node_jacobi(parent).unwrap().is_none());
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
-
-    // 6.2 清除后再次反向传播 - 仍应正常工作
-    // 6.2.1 step节点result本身的雅可比矩阵至始至终都应为None
-    assert!(graph.get_node_jacobi(result).unwrap().is_none());
-
-    // 6.2.2 对parent的反向传播（最后一次可以不保留图）
-    graph.backward_nodes(&[parent], result).unwrap();
-    let parent_jacobi_after_clear = graph.get_node_jacobi(parent).unwrap().unwrap();
-    assert_eq!(parent_jacobi_after_clear, &expected_jacobi);
+    // 8. zero_grad 后梯度应清零
+    graph.zero_grad().unwrap();
+    assert!(graph.get_node_grad(parent).unwrap().is_none());
 }

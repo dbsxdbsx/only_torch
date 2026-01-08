@@ -8,5 +8,4 @@ mod california_housing;
 mod mnist;
 
 pub use california_housing::CaliforniaHousingDataset;
-pub use mnist::{default_data_dir, MnistDataset};
-
+pub use mnist::{MnistDataset, default_data_dir};

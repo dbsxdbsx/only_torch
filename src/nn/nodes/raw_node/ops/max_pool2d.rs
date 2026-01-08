@@ -26,7 +26,6 @@ pub(crate) struct MaxPool2d {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
     grad: Option<Tensor>,
     shape: Vec<usize>, // 输出形状
 
@@ -42,12 +41,12 @@ pub(crate) struct MaxPool2d {
 }
 
 impl MaxPool2d {
-    /// 创建 MaxPool2d 节点
+    /// 创建 `MaxPool2d` 节点
     ///
     /// # 参数
     /// - `parents`: [输入节点]
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
-    /// - `stride`: 步长 (sH, sW)，默认等于 kernel_size
+    /// - `stride`: 步长 (sH, sW)，默认等于 `kernel_size`
     ///
     /// # 输入形状约定
     /// - 输入: [C, H, W] 或 [batch, C, H, W]
@@ -79,8 +78,7 @@ impl MaxPool2d {
                     expected: vec![0, 0, 0],
                     got: input_shape.to_vec(),
                     message: format!(
-                        "MaxPool2d 输入必须是 3D [C, H, W] 或 4D [batch, C, H, W]，得到 {:?}",
-                        input_shape
+                        "MaxPool2d 输入必须是 3D [C, H, W] 或 4D [batch, C, H, W]，得到 {input_shape:?}"
                     ),
                 });
             }
@@ -92,8 +90,7 @@ impl MaxPool2d {
         // 3. 验证池化窗口不超过输入尺寸
         if k_h > input_h || k_w > input_w {
             return Err(GraphError::InvalidOperation(format!(
-                "MaxPool2d 池化窗口 {}x{} 超出输入尺寸 {}x{}",
-                k_h, k_w, input_h, input_w
+                "MaxPool2d 池化窗口 {k_h}x{k_w} 超出输入尺寸 {input_h}x{input_w}"
             )));
         }
 
@@ -104,7 +101,11 @@ impl MaxPool2d {
         if output_h == 0 || output_w == 0 {
             return Err(GraphError::InvalidOperation(format!(
                 "MaxPool2d 输出尺寸无效：输入 {}x{}，核 {}x{}，步长 {:?}",
-                input_h, input_w, k_h, k_w, (s_h, s_w)
+                input_h,
+                input_w,
+                k_h,
+                k_w,
+                (s_h, s_w)
             )));
         }
 
@@ -118,7 +119,6 @@ impl MaxPool2d {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape: output_shape,
             kernel_size,
@@ -185,42 +185,7 @@ impl TraitNode for MaxPool2d {
             vec![channels, out_h, out_w]
         };
 
-        if !is_batch {
-            // 单样本模式 - 串行处理
-            let mut output = Tensor::zeros(&output_shape);
-            let mut max_indices = Tensor::zeros(&output_shape);
-
-            for c in 0..channels {
-                for oh in 0..out_h {
-                    for ow in 0..out_w {
-                        let h_start = oh * s_h;
-                        let w_start = ow * s_w;
-
-                        let mut max_val = f32::NEG_INFINITY;
-                        let mut max_idx: usize = 0;
-
-                        for kh in 0..k_h {
-                            for kw in 0..k_w {
-                                let ih = h_start + kh;
-                                let iw = w_start + kw;
-                                let val = input[[c, ih, iw]];
-
-                                if val > max_val {
-                                    max_val = val;
-                                    max_idx = ih * in_w + iw;
-                                }
-                            }
-                        }
-
-                        output[[c, oh, ow]] = max_val;
-                        max_indices[[c, oh, ow]] = max_idx as f32;
-                    }
-                }
-            }
-
-            self.value = Some(output);
-            self.max_indices = Some(max_indices);
-        } else {
+        if is_batch {
             // Batch 模式 - Rayon 并行处理
             let single_sample_size = channels * out_h * out_w;
 
@@ -273,6 +238,41 @@ impl TraitNode for MaxPool2d {
 
             self.value = Some(Tensor::new(&all_output, &output_shape));
             self.max_indices = Some(Tensor::new(&all_indices, &output_shape));
+        } else {
+            // 单样本模式 - 串行处理
+            let mut output = Tensor::zeros(&output_shape);
+            let mut max_indices = Tensor::zeros(&output_shape);
+
+            for c in 0..channels {
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let h_start = oh * s_h;
+                        let w_start = ow * s_w;
+
+                        let mut max_val = f32::NEG_INFINITY;
+                        let mut max_idx: usize = 0;
+
+                        for kh in 0..k_h {
+                            for kw in 0..k_w {
+                                let ih = h_start + kh;
+                                let iw = w_start + kw;
+                                let val = input[[c, ih, iw]];
+
+                                if val > max_val {
+                                    max_val = val;
+                                    max_idx = ih * in_w + iw;
+                                }
+                            }
+                        }
+
+                        output[[c, oh, ow]] = max_val;
+                        max_indices[[c, oh, ow]] = max_idx as f32;
+                    }
+                }
+            }
+
+            self.value = Some(output);
+            self.max_indices = Some(max_indices);
         }
 
         self.input_shape = input_shape.to_vec();
@@ -283,68 +283,12 @@ impl TraitNode for MaxPool2d {
         self.value.as_ref()
     }
 
-    /// 计算 Jacobi 矩阵（单样本模式）
-    ///
-    /// MaxPool 的 Jacobi 矩阵非常稀疏：
-    /// - 每个输出只依赖一个输入（最大值位置）
-    /// - 该位置导数为 1，其他为 0
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        let max_indices = self.max_indices.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("缺少最大值索引缓存".to_string())
-        })?;
-
-        let input_shape = &self.input_shape;
-        let is_batch = input_shape.len() == 4;
-
-        // 单样本 Jacobi 只支持非 batch 模式
-        if is_batch {
-            return Err(GraphError::InvalidOperation(
-                "Jacobi 模式不支持 batch 输入，请使用 calc_grad_to_parent".to_string(),
-            ));
-        }
-
-        let (channels, in_h, in_w) = (input_shape[0], input_shape[1], input_shape[2]);
-        let (out_h, out_w) = (self.shape[1], self.shape[2]);
-
-        let output_dim = channels * out_h * out_w;
-        let input_dim = channels * in_h * in_w;
-
-        let mut jacobi = Tensor::zeros(&[output_dim, input_dim]);
-
-        for c in 0..channels {
-            for oh in 0..out_h {
-                for ow in 0..out_w {
-                    let out_idx = c * out_h * out_w + oh * out_w + ow;
-                    let max_pos = max_indices[[c, oh, ow]] as usize;
-                    // 输入索引 = channel_offset + max_pos
-                    let in_idx = c * in_h * in_w + max_pos;
-                    jacobi[[out_idx, in_idx]] = 1.0;
-                }
-            }
-        }
-
-        Ok(jacobi)
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
+    // ========== VJP 模式 ==========
 
     /// 计算 Batch 梯度（Rayon 并行版本）
     ///
-    /// MaxPool 的梯度非常简单：
-    /// - 最大值位置：梯度 = upstream_grad
+    /// `MaxPool` 的梯度非常简单：
+    /// - 最大值位置：梯度 = `upstream_grad`
     /// - 其他位置：梯度 = 0
     fn calc_grad_to_parent(
         &self,
@@ -352,9 +296,10 @@ impl TraitNode for MaxPool2d {
         upstream_grad: &Tensor,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        let max_indices = self.max_indices.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("缺少最大值索引缓存".to_string())
-        })?;
+        let max_indices = self
+            .max_indices
+            .as_ref()
+            .ok_or_else(|| GraphError::ComputationError("缺少最大值索引缓存".to_string()))?;
 
         let input_shape = &self.input_shape;
         let grad_shape = upstream_grad.shape();
@@ -372,24 +317,7 @@ impl TraitNode for MaxPool2d {
             (input_shape[1], input_shape[2])
         };
 
-        if !is_batch {
-            // 单样本模式 - 串行处理
-            let mut input_grad = Tensor::zeros(input_shape);
-
-            for c in 0..channels {
-                for oh in 0..out_h {
-                    for ow in 0..out_w {
-                        let grad_val = upstream_grad[[c, oh, ow]];
-                        let max_pos = max_indices[[c, oh, ow]] as usize;
-                        let ih = max_pos / in_w;
-                        let iw = max_pos % in_w;
-                        input_grad[[c, ih, iw]] += grad_val;
-                    }
-                }
-            }
-
-            Ok(input_grad)
-        } else {
+        if is_batch {
             // Batch 模式 - Rayon 并行处理
             let single_sample_size = channels * in_h * in_w;
 
@@ -416,6 +344,23 @@ impl TraitNode for MaxPool2d {
 
             let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
             Ok(Tensor::new(&all_data, input_shape))
+        } else {
+            // 单样本模式 - 串行处理
+            let mut input_grad = Tensor::zeros(input_shape);
+
+            for c in 0..channels {
+                for oh in 0..out_h {
+                    for ow in 0..out_w {
+                        let grad_val = upstream_grad[[c, oh, ow]];
+                        let max_pos = max_indices[[c, oh, ow]] as usize;
+                        let ih = max_pos / in_w;
+                        let iw = max_pos % in_w;
+                        input_grad[[c, ih, iw]] += grad_val;
+                    }
+                }
+            }
+
+            Ok(input_grad)
         }
     }
 

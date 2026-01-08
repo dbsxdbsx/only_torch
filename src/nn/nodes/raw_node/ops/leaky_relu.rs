@@ -3,28 +3,27 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
 
-/// Leaky ReLU 激活函数节点
+/// Leaky `ReLU` 激活函数节点
 ///
-/// forward: f(x) = x if x > 0, else negative_slope * x
-/// backward: d(f)/dx = 1 if x > 0, else negative_slope
+/// forward: f(x) = x if x > 0, else `negative_slope` * x
+/// backward: d(f)/dx = 1 if x > 0, else `negative_slope`
 ///
-/// 当 negative_slope = 0 时，等价于标准 ReLU
-/// MatrixSlow 使用 negative_slope = 0.1
+/// 当 `negative_slope` = 0 时，等价于标准 `ReLU`
+/// `MatrixSlow` 使用 `negative_slope` = 0.1
 #[derive(Clone)]
 pub(crate) struct LeakyReLU {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
-    grad: Option<Tensor>, // Batch 模式的梯度
+    grad: Option<Tensor>,
     shape: Vec<usize>,
-    /// 负半轴斜率，默认 0.0（标准 ReLU）
+    /// 负半轴斜率，默认 0.0（标准 `ReLU`）
     negative_slope: f64,
 }
 
 impl LeakyReLU {
-    /// 获取 negative_slope（alpha）值
-    pub(crate) fn alpha(&self) -> f64 {
+    /// 获取 `negative_slope（alpha）值`
+    pub(crate) const fn alpha(&self) -> f64 {
         self.negative_slope
     }
 
@@ -40,8 +39,7 @@ impl LeakyReLU {
         // 1.2 negative_slope 验证（通常应该是非负小数）
         if negative_slope < 0.0 {
             return Err(GraphError::InvalidOperation(format!(
-                "LeakyReLU的negative_slope应为非负数，但得到: {}",
-                negative_slope
+                "LeakyReLU的negative_slope应为非负数，但得到: {negative_slope}"
             )));
         }
 
@@ -50,7 +48,6 @@ impl LeakyReLU {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape: parents[0].value_expected_shape().to_vec(),
             negative_slope,
@@ -105,44 +102,6 @@ impl TraitNode for LeakyReLU {
     fn value(&self) -> Option<&Tensor> {
         self.value.as_ref()
     }
-
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        // LeakyReLU 的导数: d(f(x))/dx = 1 if x > 0, else negative_slope
-        // 由于是逐元素操作，雅可比矩阵是对角矩阵
-        //
-        // 重要：使用 value（输出）而非 parent_value（输入）判断区域
-        // 这对 BPTT 很关键，因为 BPTT 只恢复 value，不恢复 parent_value
-        // 数学上等价：output > 0 ⟺ input > 0（当 slope >= 0 时）
-        let value = self.value().ok_or_else(|| {
-            GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
-        })?;
-
-        // 计算导数：output > 0 时为 1（对应 x > 0），否则为 negative_slope
-        let slope = self.negative_slope as f32;
-        let derivative = value.where_with_f32(
-            |y| y > 0.0,
-            |_| 1.0,   // y > 0 时导数为 1
-            |_| slope, // y <= 0 时导数为 slope
-        );
-
-        // 转换为 Jacobian 对角矩阵
-        Ok(derivative.jacobi_diag())
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
 
     fn calc_grad_to_parent(
         &self,

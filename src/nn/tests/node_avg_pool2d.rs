@@ -91,7 +91,7 @@ fn test_avg_pool2d_forward_simple() -> Result<(), GraphError> {
     ], &[1, 4, 4]);
 
     graph.set_node_value(input, Some(&input_val))?;
-    graph.forward_node(pool)?;
+    graph.forward(pool)?;
 
     // 验证输出
     // 窗口 [0:2, 0:2]: avg(1,2,5,6) = 14/4 = 3.5
@@ -110,7 +110,7 @@ fn test_avg_pool2d_forward_simple() -> Result<(), GraphError> {
 
 /// 测试 AvgPool2d 前向传播（Batch 模式）
 #[test]
-fn test_avg_pool2d_forward_batch() -> Result<(), GraphError> {
+fn test_avg_pool2d_forward() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
     // 输入: [batch=2, C=1, H=4, W=4]
@@ -124,7 +124,7 @@ fn test_avg_pool2d_forward_batch() -> Result<(), GraphError> {
     );
 
     graph.set_node_value(input, Some(&input_val))?;
-    graph.forward_node(pool)?;
+    graph.forward(pool)?;
 
     let output = graph.get_node_value(pool)?.unwrap();
     assert_eq!(output.shape(), &[2, 1, 2, 2]);
@@ -147,13 +147,10 @@ fn test_avg_pool2d_multi_channel() -> Result<(), GraphError> {
     let pool = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
     // 设置输入：第一通道全 1，第二通道全 2
-    let input_val = Tensor::new(
-        &[vec![1.0f32; 16], vec![2.0f32; 16]].concat(),
-        &[2, 4, 4],
-    );
+    let input_val = Tensor::new(&[vec![1.0f32; 16], vec![2.0f32; 16]].concat(), &[2, 4, 4]);
 
     graph.set_node_value(input, Some(&input_val))?;
-    graph.forward_node(pool)?;
+    graph.forward(pool)?;
 
     let output = graph.get_node_value(pool)?.unwrap();
     assert_eq!(output.shape(), &[2, 2, 2]);
@@ -170,32 +167,50 @@ fn test_avg_pool2d_multi_channel() -> Result<(), GraphError> {
 
 /// 测试 AvgPool2d Jacobi 矩阵
 #[test]
+/// 测试 AvgPool2d 梯度（VJP 模式）
+///
+/// 构建完整计算图：input -> pool -> flatten -> mse_loss
 fn test_avg_pool2d_jacobi() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
-    // 输入: [C=1, H=4, W=4]，使用 Parameter 以便计算 Jacobi
+    // 输入: [C=1, H=4, W=4]，使用 Parameter 以便计算梯度
+    // pool 输出: [C=1, H=2, W=2]（kernel=2x2, stride=2）
     let input = graph.new_parameter_node(&[1, 4, 4], Some("input"))?;
     let pool = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
+    // 将 pool 输出 reshape 为 [1, 4] 并添加 MSE loss
+    let pool_flat = graph.new_reshape_node(pool, &[1, 4], Some("pool_flat"))?;
+    let target = graph.new_input_node(&[1, 4], Some("target"))?;
+    let loss = graph.new_mse_loss_node(pool_flat, target, Some("loss"))?;
+
     // 设置输入值
     let input_val = Tensor::ones(&[1, 4, 4]);
+    let target_val = Tensor::zeros(&[1, 4]);
 
     graph.set_node_value(input, Some(&input_val))?;
-    graph.forward_node(pool)?;
-    graph.backward_nodes(&[input], pool)?;
+    graph.set_node_value(target, Some(&target_val))?;
 
-    // 验证 Jacobi 形状：[output_dim=4, input_dim=16]
-    let jacobi = graph.get_node(input)?.jacobi().expect("应有 Jacobi");
-    assert_eq!(jacobi.shape(), &[4, 16]);
+    // 前向传播
+    graph.forward(loss)?;
 
-    // AvgPool Jacobi：每个输出对窗口内 4 个输入的导数都是 1/4 = 0.25
-    // 输出 [0,0,0] 对应输入位置 0,1,4,5
-    assert_abs_diff_eq!(jacobi[[0, 0]], 0.25, epsilon = 1e-6);
-    assert_abs_diff_eq!(jacobi[[0, 1]], 0.25, epsilon = 1e-6);
-    assert_abs_diff_eq!(jacobi[[0, 4]], 0.25, epsilon = 1e-6);
-    assert_abs_diff_eq!(jacobi[[0, 5]], 0.25, epsilon = 1e-6);
-    // 其他位置为 0
-    assert_abs_diff_eq!(jacobi[[0, 2]], 0.0, epsilon = 1e-6);
+    // pool 输出全为 1（因为输入全为 1，取平均还是 1）
+    // loss = mean((1-0)^2 * 4) = 1
+
+    // 反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    // VJP 模式下验证 grad 形状应与输入值一致：[1, 4, 4]
+    let grad = graph.get_node(input)?.grad().expect("应有 grad");
+    assert_eq!(grad.shape(), &[1, 4, 4]);
+
+    // d_loss/d_pool = 2 * (pool - target) / 4 = 0.5 * [1,1,1,1] = [0.5, 0.5, 0.5, 0.5]
+    // d_pool/d_input 对每个 2x2 区域：每个输入位置贡献 0.25 到对应输出
+    // d_loss/d_input = 0.5 * 0.25 = 0.125
+    assert_abs_diff_eq!(grad[[0, 0, 0]], 0.125, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 0, 1]], 0.125, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 1, 0]], 0.125, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 1, 1]], 0.125, epsilon = 1e-6);
 
     Ok(())
 }
@@ -214,7 +229,7 @@ fn test_avg_pool2d_batch_grad() -> Result<(), GraphError> {
     let input_val = Tensor::ones(&[1, 1, 4, 4]);
 
     graph.set_node_value(input_id, Some(&input_val))?;
-    graph.forward_node(pool_id)?;
+    graph.forward(pool_id)?;
 
     // upstream_grad 全 1
     let upstream_grad = Tensor::ones(&[1, 1, 2, 2]);
@@ -255,14 +270,8 @@ fn test_avg_pool2d_after_conv2d() -> Result<(), GraphError> {
     // 输出: [2, 4, 4, 4]
 
     // 验证形状
-    assert_eq!(
-        graph.get_node(conv)?.value_expected_shape(),
-        &[2, 4, 8, 8]
-    );
-    assert_eq!(
-        graph.get_node(pool)?.value_expected_shape(),
-        &[2, 4, 4, 4]
-    );
+    assert_eq!(graph.get_node(conv)?.value_expected_shape(), &[2, 4, 8, 8]);
+    assert_eq!(graph.get_node(pool)?.value_expected_shape(), &[2, 4, 4, 4]);
 
     // 设置输入并前向传播
     let input_val = Tensor::ones(&[2, 1, 8, 8]);
@@ -271,7 +280,7 @@ fn test_avg_pool2d_after_conv2d() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&input_val))?;
     graph.set_node_value(kernel, Some(&kernel_val))?;
 
-    graph.forward_node(pool)?;
+    graph.forward(pool)?;
 
     // 验证池化输出有值
     let pool_output = graph.get_node_value(pool)?.unwrap();
@@ -304,7 +313,7 @@ fn test_avg_pool2d_overlapping_windows() -> Result<(), GraphError> {
     ], &[1, 4, 4]);
 
     graph.set_node_value(input, Some(&input_val))?;
-    graph.forward_node(pool)?;
+    graph.forward(pool)?;
 
     let output = graph.get_node_value(pool)?.unwrap();
     // 窗口 [0:2, 0:2]: avg(1,2,5,6) = 3.5
@@ -341,4 +350,3 @@ fn test_avg_pool2d_kernel_too_large() {
     let result = graph.new_avg_pool2d_node(input, (5, 5), None, Some("pool"));
     assert!(result.is_err());
 }
-

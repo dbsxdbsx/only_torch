@@ -70,10 +70,10 @@ fn generate_parity_data(
 /// 创建奇偶性检测 RNN 网络（完整版）
 ///
 /// 使用标准 RNN 单元结构：
-///   hidden_t = tanh(w_ih * input_t + w_hh * h_prev + b_h)
-///   output = sigmoid(w_ho * hidden_T + b_o)
+///   `hidden_t` = `tanh(w_ih` * `input_t` + `w_hh` * `h_prev` + `b_h`)
+///   output = `sigmoid(w_ho` * `hidden_T` + `b_o`)
 ///
-/// 返回: (graph, input_node, output_node, loss_node, target_node, params)
+/// 返回: (graph, `input_node`, `output_node`, `loss_node`, `target_node`, params)
 fn create_parity_rnn(
     seed: u64,
 ) -> Result<(Graph, NodeId, NodeId, NodeId, NodeId, Vec<NodeId>), GraphError> {
@@ -159,23 +159,20 @@ fn create_parity_rnn(
     Ok((graph, input, output, loss, target, params))
 }
 
-/// 手动 SGD 更新（因为 BPTT 使用 jacobi 而非 gradient_accumulator）
+/// 手动 SGD 更新
 fn sgd_update(graph: &mut Graph, params: &[NodeId], lr: f32) -> Result<(), GraphError> {
     for &param in params {
-        if let Some(jacobi) = graph.get_node_jacobi(param)? {
+        if let Some(param_grad) = graph.get_node_grad(param)? {
             // 获取当前参数值
             let current_value = graph.get_node_value(param)?.unwrap().clone();
 
-            // 梯度下降：θ = θ - lr * jacobi
-            // 对于标量 loss，jacobi 形状是 [1, param_size]
-            // 需要 reshape 为参数的形状
+            // 梯度下降：θ = θ - lr * grad
+            // 梯度形状可能需要 reshape 为参数的形状
             let param_shape = current_value.shape();
-            let grad = if jacobi.shape() != param_shape {
-                // Reshape jacobi to match parameter shape
-                let reshaped = jacobi.reshape(param_shape);
-                reshaped
+            let grad = if param_grad.shape() == param_shape {
+                param_grad.clone()
             } else {
-                jacobi.clone()
+                param_grad.reshape(param_shape)
             };
 
             let new_value = &current_value - &(&grad * lr);
@@ -218,11 +215,11 @@ fn train_sequence(
         .data_as_slice()[0];
 
     if debug {
-        println!("    序列: {:?}, 标签: {}", sequence, label);
-        println!("    损失值: {:.6}", loss_value);
+        println!("    序列: {sequence:?}, 标签: {label}");
+        println!("    损失值: {loss_value:.6}");
         for (i, &param) in params.iter().enumerate() {
             let val = graph.get_node_value(param)?.map(|v| v.data_as_slice()[0]);
-            println!("    参数[{}] BPTT 前: {:?}", i, val);
+            println!("    参数[{i}] BPTT 前: {val:?}");
         }
     }
 
@@ -231,8 +228,8 @@ fn train_sequence(
 
     if debug {
         for (i, &param) in params.iter().enumerate() {
-            let grad = graph.get_node_jacobi(param)?.map(|j| j.data_as_slice()[0]);
-            println!("    参数[{}] 梯度: {:?}", i, grad);
+            let grad = graph.get_node_grad(param)?.map(|j| j.data_as_slice()[0]);
+            println!("    参数[{i}] 梯度: {grad:?}");
         }
     }
 
@@ -240,7 +237,7 @@ fn train_sequence(
     sgd_update(graph, params, lr)?;
 
     // 清零梯度
-    graph.clear_jacobi()?;
+    graph.zero_grad()?;
 
     Ok(loss_value)
 }
@@ -315,7 +312,7 @@ fn test_parity_detection_can_learn() {
             "  seq={:?}, ones={}, label={}, expected={}",
             train_seqs[i], count_ones, train_labels[i], expected
         );
-        assert_eq!(train_labels[i], expected, "样本 {} 数据生成错误", i);
+        assert_eq!(train_labels[i], expected, "样本 {i} 数据生成错误");
     }
 
     // 创建网络
@@ -333,7 +330,7 @@ fn test_parity_detection_can_learn() {
                 println!("[可视化] 图像文件: {}", img.display());
             }
         }
-        Err(e) => println!("[可视化] 跳过（{:?}）", e),
+        Err(e) => println!("[可视化] 跳过（{e:?}）"),
     }
 
     // 初始准确率

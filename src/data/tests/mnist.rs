@@ -5,8 +5,8 @@
 
 use approx::assert_abs_diff_eq;
 
-use crate::data::datasets::default_data_dir;
 use crate::data::MnistDataset;
+use crate::data::datasets::default_data_dir;
 
 #[test]
 fn test_default_data_dir() {

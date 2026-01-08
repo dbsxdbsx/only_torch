@@ -85,90 +85,42 @@ impl Adam {
 }
 
 impl Optimizer for Adam {
-    // ========== 单样本模式 ==========
-
-    /// 执行一步训练：前向传播 + 反向传播 + 梯度累积
-    fn one_step(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError> {
-        self.state.forward_backward_accumulate(graph, target_node)
-    }
-
-    /// 更新参数（使用Adam算法）
-    fn update(&mut self, graph: &mut Graph) -> Result<(), GraphError> {
+    /// 参数更新（使用已计算的梯度）
+    ///
+    /// 直接使用节点的 `.grad` 进行 Adam 更新
+    fn step(&mut self, graph: &mut Graph) -> Result<(), GraphError> {
         self.t += 1;
 
-        // 收集可训练节点和它们的梯度（避免借用冲突）
+        // 先收集所有需要更新的参数及其梯度（避免借用冲突）
         let trainable_nodes: Vec<_> = self.state.trainable_nodes().to_vec();
         let gradients: Vec<_> = trainable_nodes
             .iter()
             .filter_map(|&node_id| {
-                self.state
-                    .gradient_accumulator()
-                    .get_average_gradient(node_id)
+                graph
+                    .get_node_grad(node_id)
+                    .ok()
+                    .flatten()
                     .map(|g| (node_id, g))
             })
             .collect();
 
-        // 对每个可训练参数执行Adam更新
+        // 对每个可训练参数执行 Adam 更新
         for (node_id, gradient) in gradients {
             self.adam_update_with_gradient(graph, node_id, &gradient)?;
         }
-
-        // 清除累积的梯度
-        self.state.reset();
         Ok(())
     }
 
-    // ========== Batch 模式 ==========
-
-    /// Batch 模式的一步训练
-    fn one_step_batch(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError> {
-        // 清除计算图中所有节点的梯度
-        graph.clear_grad()?;
-
-        // Batch 前向传播
-        graph.forward_batch(target_node)?;
-
-        // Batch 反向传播（只计算 trainable_nodes 的梯度，避免浪费）
-        graph.backward_batch(target_node, Some(self.state.trainable_nodes()))?;
-
-        Ok(())
-    }
-
-    /// Batch 模式的参数更新（使用Adam算法）
-    ///
-    /// # Panics
-    /// 如果 optimizer 的 trainable_nodes 中有参数没有梯度，会 panic。
-    /// 这通常意味着 `backward_batch` 的 `target_params` 与 optimizer 的参数范围不一致。
-    fn update_batch(&mut self, graph: &mut Graph) -> Result<(), GraphError> {
-        self.t += 1;
-
-        // 收集所有 trainable_nodes 的梯度（若缺失会 panic）
-        let gradients = self.state.collect_batch_gradients(graph)?;
-
-        // 对每个可训练参数执行Adam更新
-        for (node_id, gradient) in gradients {
-            self.adam_update_with_gradient(graph, node_id, &gradient)?;
-        }
-
-        Ok(())
-    }
-
-    // ========== 通用方法 ==========
-
-    /// 重置累积状态
     fn reset(&mut self) {
-        self.state.reset();
         self.m.clear();
         self.v.clear();
         self.t = 0;
     }
 
-    /// 获取学习率
     fn learning_rate(&self) -> f32 {
         self.state.learning_rate()
     }
 
-    /// 设置学习率
     fn set_learning_rate(&mut self, lr: f32) {
         self.state.set_learning_rate(lr);
     }

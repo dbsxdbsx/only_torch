@@ -38,20 +38,20 @@ fn test_adam_learning_rate_modification() {
 
 #[test]
 fn test_adam_update() {
-    // 测试Adam更新公式
+    // 测试 Adam 更新公式
     // 预期值通过 PyTorch 验证，见 tests/python/calc_jacobi_by_pytorch/optimizer_test_values.py
     //
     // 计算图: output = w @ x, loss_input = label @ output, loss = perception_loss(loss_input)
     // 初始值: w=2, x=3, label=-1 => output=6, loss_input=-6, loss=6
     // 梯度: d(loss)/d(w) = (-1) * (-1) * 3 = 3
-    // Adam更新 (beta1=0.9, beta2=0.999, eps=1e-8, lr=0.1):
+    // Adam 更新 (beta1=0.9, beta2=0.999, eps=1e-8, lr=0.1):
     //   m_1 = 0.1 * 3 = 0.3
     //   v_1 = 0.001 * 9 = 0.009
     //   m_hat = 0.3 / (1-0.9) = 3.0
     //   v_hat = 0.009 / (1-0.999) = 9.0
     //   update = 0.1 * 3.0 / (sqrt(9.0) + 1e-8) ≈ 0.1
     //   w_new = 2.0 - 0.1 ≈ 1.9
-    // PyTorch验证: w_new = 1.899999976158142
+    // PyTorch 验证: w_new = 1.899999976158142
     let mut graph = Graph::new();
     let x = graph.new_input_node(&[1, 1], Some("x")).unwrap();
     let label = graph.new_input_node(&[1, 1], Some("label")).unwrap();
@@ -64,7 +64,7 @@ fn test_adam_update() {
         .new_perception_loss_node(loss_input, Some("loss"))
         .unwrap();
 
-    // 设置初始值（PyTorch验证用的相同值）
+    // 设置初始值（PyTorch 验证用的相同值）
     graph
         .set_node_value(w, Some(&Tensor::new(&[2.0], &[1, 1])))
         .unwrap();
@@ -75,9 +75,12 @@ fn test_adam_update() {
         .set_node_value(label, Some(&Tensor::new(&[-1.0], &[1, 1])))
         .unwrap();
 
+    // 使用新 API：forward -> backward -> step
     let mut adam = Adam::new_default(&graph, 0.1).unwrap();
-    adam.one_step(&mut graph, loss).unwrap();
-    adam.update(&mut graph).unwrap();
+    graph.zero_grad().unwrap();
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    adam.step(&mut graph).unwrap();
 
     // 验证：PyTorch 计算结果 w_new ≈ 1.9
     let new_w = graph.get_node_value(w).unwrap().unwrap();
@@ -102,16 +105,19 @@ fn test_adam_reset() {
 
     let mut adam = Adam::new_default(&graph, 0.01).unwrap();
 
-    // 执行几步训练
-    adam.one_step(&mut graph, loss).unwrap();
-    adam.update(&mut graph).unwrap();
+    // 执行一步训练
+    graph.zero_grad().unwrap();
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    adam.step(&mut graph).unwrap();
 
     // 重置（清除矩估计和时间步）
     adam.reset();
 
-    // 重置后update不应该改变参数
+    // 重置后 step 不应该改变参数（因为梯度已清零）
     let param_before = graph.get_node_value(param).unwrap().unwrap().clone();
-    adam.update(&mut graph).unwrap();
+    graph.zero_grad().unwrap();
+    adam.step(&mut graph).unwrap();
     let param_after = graph.get_node_value(param).unwrap().unwrap();
 
     assert_eq!(&param_before, param_after);
@@ -119,8 +125,8 @@ fn test_adam_reset() {
 
 #[test]
 fn test_adam_momentum_accumulation() {
-    // 测试Adam的动量累积（多次更新后，一阶矩和二阶矩应该有累积效果）
-    // 使用ADALINE结构确保梯度不为0
+    // 测试 Adam 的动量累积（多次更新后，一阶矩和二阶矩应该有累积效果）
+    // 使用 ADALINE 结构确保梯度不为 0
     let mut graph = Graph::new();
     let x = graph.new_input_node(&[1, 1], Some("x")).unwrap();
     let label = graph.new_input_node(&[1, 1], Some("label")).unwrap();
@@ -157,8 +163,12 @@ fn test_adam_momentum_accumulation() {
     for _ in 0..5 {
         graph.set_node_value(x, Some(&x_value)).unwrap();
         graph.set_node_value(label, Some(&label_value)).unwrap();
-        adam.one_step(&mut graph, loss).unwrap();
-        adam.update(&mut graph).unwrap();
+
+        // 使用新 API
+        graph.zero_grad().unwrap();
+        graph.forward(loss).unwrap();
+        graph.backward(loss).unwrap();
+        adam.step(&mut graph).unwrap();
 
         param_history.push(
             graph
@@ -176,7 +186,7 @@ fn test_adam_momentum_accumulation() {
         assert_ne!(
             param_history[i],
             param_history[i - 1],
-            "参数在第{}次更新后应该变化",
+            "参数在第 {} 次更新后应该变化",
             i
         );
     }
@@ -197,13 +207,16 @@ fn test_adam_zero_learning_rate() {
     let input_value = Tensor::new(&[1.0], &[1, 1]);
     graph.set_node_value(input, Some(&input_value)).unwrap();
 
-    // 学习率为0
+    // 学习率为 0
     let mut adam = Adam::new(&graph, 0.0, 0.9, 0.999, 1e-8).unwrap();
 
     let param_before = graph.get_node_value(param).unwrap().unwrap().clone();
 
-    adam.one_step(&mut graph, loss).unwrap();
-    adam.update(&mut graph).unwrap();
+    // 使用新 API
+    graph.zero_grad().unwrap();
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    adam.step(&mut graph).unwrap();
 
     // 参数应该不变
     let param_after = graph.get_node_value(param).unwrap().unwrap();
@@ -251,8 +264,11 @@ fn test_adam_with_params() {
     let w1_before = graph.get_node_value(w1).unwrap().unwrap().clone();
     let w2_before = graph.get_node_value(w2).unwrap().unwrap().clone();
 
-    adam.one_step(&mut graph, loss).unwrap();
-    adam.update(&mut graph).unwrap();
+    // 使用新 API
+    graph.zero_grad().unwrap();
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    adam.step(&mut graph).unwrap();
 
     let w1_after = graph.get_node_value(w1).unwrap().unwrap();
     let w2_after = graph.get_node_value(w2).unwrap().unwrap();
@@ -317,9 +333,11 @@ fn test_adam_with_params_separate_optimizers() {
     let g_w_before = graph.get_node_value(g_w).unwrap().unwrap().clone();
     let d_w_before = graph.get_node_value(d_w).unwrap().unwrap().clone();
 
-    // 只更新 D
-    adam_d.one_step(&mut graph, loss).unwrap();
-    adam_d.update(&mut graph).unwrap();
+    // 只更新 D（一次完整的 forward-backward-step 周期）
+    graph.zero_grad().unwrap();
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    adam_d.step(&mut graph).unwrap();
 
     let g_w_after_d = graph.get_node_value(g_w).unwrap().unwrap().clone();
     let d_w_after_d = graph.get_node_value(d_w).unwrap().unwrap().clone();
@@ -328,9 +346,11 @@ fn test_adam_with_params_separate_optimizers() {
     assert_eq!(&g_w_before, &g_w_after_d, "只更新 D 时，G 的参数不应该改变");
     assert_ne!(&d_w_before, &d_w_after_d, "只更新 D 时，D 的参数应该被更新");
 
-    // 再只更新 G
-    adam_g.one_step(&mut graph, loss).unwrap();
-    adam_g.update(&mut graph).unwrap();
+    // 再只更新 G（需要重新计算梯度，因为参数已经变了）
+    graph.zero_grad().unwrap();
+    graph.forward(loss).unwrap();
+    graph.backward(loss).unwrap();
+    adam_g.step(&mut graph).unwrap();
 
     let g_w_after_g = graph.get_node_value(g_w).unwrap().unwrap();
     let d_w_after_g = graph.get_node_value(d_w).unwrap().unwrap();

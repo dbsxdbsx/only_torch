@@ -77,7 +77,7 @@ fn get_batch_labels(labels: &[f32]) -> Tensor {
 
 /// 创建支持 batch 的 RNN 网络
 ///
-/// 与 IT-1 的 create_parity_rnn 类似结构，但形状支持 batch
+/// 与 IT-1 的 `create_parity_rnn` 类似结构，但形状支持 batch
 /// 注意：为简化实现，暂不使用 bias（Add 节点不支持广播）
 fn create_batch_parity_rnn(
     batch_size: usize,
@@ -145,13 +145,13 @@ fn create_batch_parity_rnn(
 /// 手动 SGD 更新
 fn sgd_update(graph: &mut Graph, params: &[NodeId], lr: f32) -> Result<(), GraphError> {
     for &param in params {
-        if let Some(jacobi) = graph.get_node_jacobi(param)? {
+        if let Some(param_grad) = graph.get_node_grad(param)? {
             let current_value = graph.get_node_value(param)?.unwrap().clone();
             let param_shape = current_value.shape();
-            let grad = if jacobi.shape() != param_shape {
-                jacobi.reshape(param_shape)
+            let grad = if param_grad.shape() == param_shape {
+                param_grad.clone()
             } else {
-                jacobi.clone()
+                param_grad.reshape(param_shape)
             };
             let new_value = &current_value - &(&grad * lr);
             graph.set_node_value(param, Some(&new_value))?;
@@ -196,7 +196,7 @@ fn train_batch(
 
     if debug {
         println!("    批大小: {}, 序列长度: {}", sequences.len(), seq_len);
-        println!("    损失值: {:.6}", loss_value);
+        println!("    损失值: {loss_value:.6}");
     }
 
     // BPTT
@@ -205,9 +205,9 @@ fn train_batch(
     if debug {
         for (i, &param) in params.iter().enumerate() {
             let grad = graph
-                .get_node_jacobi(param)?
+                .get_node_grad(param)?
                 .map(|j| format!("{:.6}", j.data_as_slice()[0]));
-            println!("    参数[{}] 梯度: {:?}", i, grad);
+            println!("    参数[{i}] 梯度: {grad:?}");
         }
     }
 
@@ -215,7 +215,7 @@ fn train_batch(
     sgd_update(graph, params, lr)?;
 
     // 清零梯度
-    graph.clear_jacobi()?;
+    graph.zero_grad()?;
 
     Ok(loss_value)
 }
@@ -292,7 +292,7 @@ fn print_output_distribution(
     let chunk_labels: Vec<f32> = labels[0..batch_size.min(labels.len())].to_vec();
     let seq_len = chunk_seqs[0].len();
 
-    let _ = graph.reset();
+    let () = graph.reset();
 
     for t in 0..seq_len {
         let batch_input = get_batch_input(&chunk_seqs, t);
@@ -314,7 +314,7 @@ fn print_output_distribution(
             seq_str,
             label,
             pred_val,
-            if pred_val > 0.5 { 1 } else { 0 }
+            i32::from(pred_val > 0.5)
         );
     }
 
@@ -350,7 +350,7 @@ fn test_batch_parity_detection_can_learn() {
             "  seq={:?}, ones={}, label={}, expected={}",
             train_seqs[i], count_ones, train_labels[i], expected
         );
-        assert_eq!(train_labels[i], expected, "样本 {} 数据生成错误", i);
+        assert_eq!(train_labels[i], expected, "样本 {i} 数据生成错误");
     }
 
     // 创建网络
@@ -372,7 +372,7 @@ fn test_batch_parity_detection_can_learn() {
                 println!("[可视化] 图像文件: {}", img.display());
             }
         }
-        Err(e) => println!("[可视化] 跳过（{:?}）", e),
+        Err(e) => println!("[可视化] 跳过（{e:?}）"),
     }
 
     // 初始准确率
@@ -505,8 +505,8 @@ fn test_batch_parity_detection_can_learn() {
     println!("  初始准确率: {:.1}%", initial_acc * 100.0);
     println!("  最终准确率: {:.1}%", final_acc * 100.0);
     println!("  最佳准确率: {:.1}%", best_acc * 100.0);
-    println!("  首 epoch Loss: {:.4}", first_epoch_loss);
-    println!("  末 epoch Loss: {:.4}", last_epoch_loss);
+    println!("  首 epoch Loss: {first_epoch_loss:.4}");
+    println!("  末 epoch Loss: {last_epoch_loss:.4}");
     println!("  Loss 变化: {:.4}", first_epoch_loss - last_epoch_loss);
 
     // 验收标准
@@ -524,8 +524,7 @@ fn test_batch_parity_detection_can_learn() {
     let loss_decreased = last_epoch_loss < first_epoch_loss + 0.01;
     assert!(
         loss_decreased,
-        "损失值应在训练中下降。首 epoch: {:.4}, 末 epoch: {:.4}",
-        first_epoch_loss, last_epoch_loss
+        "损失值应在训练中下降。首 epoch: {first_epoch_loss:.4}, 末 epoch: {last_epoch_loss:.4}"
     );
 
     println!("\n✅ IT-2 测试通过！Batch BPTT 工作正常\n");

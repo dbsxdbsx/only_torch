@@ -17,10 +17,9 @@ pub(crate) struct ScalarMultiply {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
-    grad: Option<Tensor>, // Batch 模式梯度
+    grad: Option<Tensor>,
     shape: Vec<usize>,
-    parents_ids: Vec<NodeId>, // 保留用于雅可比计算，[标量id, 矩阵id]
+    parents_ids: Vec<NodeId>, // 用于区分标量和矩阵父节点
 }
 
 impl ScalarMultiply {
@@ -50,7 +49,6 @@ impl ScalarMultiply {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape: matrix_shape,
             parents_ids: vec![parents[0].id(), parents[1].id()],
@@ -113,105 +111,11 @@ impl TraitNode for ScalarMultiply {
         self.value.as_ref()
     }
 
-    /// 计算ScalarMultiply节点对父节点的雅可比矩阵
-    /// 参考MatrixSlow: MatrixSlow/matrixslow/ops/ops.py#L336 (ScalarMultiply.get_jacobi)
-    ///
-    /// 设 C = s * M，其中s是标量(1x1)，M是矩阵(m,n)
-    ///
-    /// 对于标量 s（第1个父节点）：
-    ///   ∂C/∂s = M.flatten().T  → shape: [m*n, 1]
-    ///
-    /// 对于矩阵 M（第2个父节点）：
-    ///   ∂C/∂M = s * I_{m*n}    → shape: [m*n, m*n]
-    fn calc_jacobi_to_a_parent(
-        &self,
-        target_parent: &NodeHandle,
-        assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        // 获取两个父节点的值
-        let (scalar_value, matrix_value) = if target_parent.id() == self.parents_ids[0] {
-            // target是标量，assistant是矩阵
-            let assistant = assistant_parent.ok_or_else(|| {
-                GraphError::ComputationError(
-                    "ScalarMultiply计算雅可比矩阵需要辅助父节点".to_string(),
-                )
-            })?;
-            (
-                target_parent.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的标量父节点没有值",
-                        self.display_node()
-                    ))
-                })?,
-                assistant.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的矩阵父节点没有值",
-                        self.display_node()
-                    ))
-                })?,
-            )
-        } else if target_parent.id() == self.parents_ids[1] {
-            // target是矩阵，assistant是标量
-            let assistant = assistant_parent.ok_or_else(|| {
-                GraphError::ComputationError(
-                    "ScalarMultiply计算雅可比矩阵需要辅助父节点".to_string(),
-                )
-            })?;
-            (
-                assistant.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的标量父节点没有值",
-                        self.display_node()
-                    ))
-                })?,
-                target_parent.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{}的矩阵父节点没有值",
-                        self.display_node()
-                    ))
-                })?,
-            )
-        } else {
-            return Err(GraphError::ComputationError(format!(
-                "{}不是当前{}的父节点",
-                target_parent,
-                self.display_node()
-            )));
-        };
-
-        // 根据目标父节点计算雅可比矩阵
-        if target_parent.id() == self.parents_ids[0] {
-            // 对标量的雅可比：∂C/∂s = M.flatten().T → shape: [m*n, 1]
-            // 将矩阵展平并reshape为列向量
-            let size = matrix_value.size();
-            let flattened = matrix_value.flatten().reshape(&[size, 1]);
-            Ok(flattened)
-        } else {
-            // 对矩阵的雅可比：∂C/∂M = s * I_{m*n} → shape: [m*n, m*n]
-            let scalar = scalar_value
-                .get_data_number()
-                .ok_or_else(|| GraphError::ComputationError("标量父节点不是1x1矩阵".to_string()))?;
-            let size = matrix_value.size();
-            Ok(Tensor::eyes(size) * scalar)
-        }
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
-
-    /// 计算 ScalarMultiply 节点对父节点的梯度（Batch 模式 / VJP）
+    /// 计算 `ScalarMultiply` 节点对父节点的梯度（VJP）
     ///
     /// 对于 C = s * M，其中 s 是标量，M 是矩阵：
-    /// - ∂L/∂M = s * upstream_grad
-    /// - ∂L/∂s = sum(upstream_grad ⊙ M) → 形状 [1, 1]
+    /// - ∂L/∂M = s * `upstream_grad`
+    /// - ∂L/∂s = `sum(upstream_grad` ⊙ M) → 形状 [1, 1]
     fn calc_grad_to_parent(
         &self,
         target_parent: &NodeHandle,

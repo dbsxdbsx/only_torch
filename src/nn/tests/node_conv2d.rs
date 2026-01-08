@@ -102,7 +102,7 @@ fn test_conv2d_forward_simple() -> Result<(), GraphError> {
     graph.set_node_value(kernel, Some(&kernel_val))?;
 
     // 前向传播
-    graph.forward_node(conv)?;
+    graph.forward(conv)?;
 
     // 验证输出: 2x2 窗口求和 = 4.0（每个位置）
     let output = graph.get_node_value(conv)?.unwrap();
@@ -136,7 +136,7 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&input_val))?;
     graph.set_node_value(kernel, Some(&kernel_val))?;
 
-    graph.forward_node(conv)?;
+    graph.forward(conv)?;
 
     // 验证输出形状: [1, 3, 3]（same padding）
     let output = graph.get_node_value(conv)?.unwrap();
@@ -152,7 +152,7 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
 
 /// 测试 Conv2d 前向传播（Batch 模式）
 #[test]
-fn test_conv2d_forward_batch() -> Result<(), GraphError> {
+fn test_conv2d_forward() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
     // 输入: [batch=2, C_in=1, H=4, W=4]
@@ -171,7 +171,7 @@ fn test_conv2d_forward_batch() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&input_val))?;
     graph.set_node_value(kernel, Some(&kernel_val))?;
 
-    graph.forward_node(conv)?;
+    graph.forward(conv)?;
 
     let output = graph.get_node_value(conv)?.unwrap();
     assert_eq!(output.shape(), &[2, 1, 3, 3]);
@@ -206,7 +206,7 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&input_val))?;
     graph.set_node_value(kernel, Some(&kernel_val))?;
 
-    graph.forward_node(conv)?;
+    graph.forward(conv)?;
 
     let output = graph.get_node_value(conv)?.unwrap();
     assert_eq!(output.shape(), &[2, 3, 3]);
@@ -219,51 +219,76 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== Jacobi 模式测试（单样本）====================
+// ==================== VJP 模式测试（单样本）====================
 
-/// 测试 Conv2d Jacobi 对卷积核的导数
+/// 测试 Conv2d 对卷积核的梯度（VJP 模式）
+///
+/// 构建完整计算图：input -> conv -> flatten -> mse_loss
+/// 验证 kernel 的梯度正确性
 #[test]
 fn test_conv2d_jacobi_to_kernel() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
     // 简单情况：输入 [1, 2, 2]，卷积核 [1, 1, 2, 2]
-    // 使用 Parameter 节点来允许计算 Jacobi
+    // 输出形状：[1, 1, 1]（out_channels=1, H=1, W=1）
     let input = graph.new_input_node(&[1, 2, 2], Some("input"))?;
     let kernel = graph.new_parameter_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
 
+    // 将 conv 输出 [1, 1, 1] reshape 成 [1, 1] 以便与 target 匹配
+    let conv_flat = graph.new_reshape_node(conv, &[1, 1], Some("conv_flat"))?;
+
+    // 添加 MSE loss 使输出为标量 [1, 1]
+    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let loss = graph.new_mse_loss_node(conv_flat, target, Some("loss"))?;
+
     // 设置值
     let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 2, 2]);
     let kernel_val = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[1, 1, 2, 2]);
+    let target_val = Tensor::new(&[0.0], &[1, 1]);
 
     graph.set_node_value(input, Some(&input_val))?;
     graph.set_node_value(kernel, Some(&kernel_val))?;
+    graph.set_node_value(target, Some(&target_val))?;
 
     // 前向传播
-    graph.forward_node(conv)?;
+    graph.forward(loss)?;
 
-    // 反向传播计算 Jacobi（只对 Parameter 节点）
-    graph.backward_nodes(&[kernel], conv)?;
+    // conv 输出 = 1*1 + 0*2 + 0*3 + 1*4 = 5
+    // loss = (5 - 0)^2 = 25
+    let loss_val = graph
+        .get_node_value(loss)?
+        .unwrap()
+        .get_data_number()
+        .unwrap();
+    assert_abs_diff_eq!(loss_val, 25.0, epsilon = 1e-6);
 
-    // 验证 Jacobi 形状：output_dim=1, kernel_dim=4
-    let jacobi = graph.get_node(kernel)?.jacobi().expect("应有 Jacobi");
-    assert_eq!(jacobi.shape(), &[1, 4]);
+    // 反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
 
-    // Jacobi 值应该等于输入值（因为 ∂out/∂kernel[i,j] = input[i,j]）
-    assert_abs_diff_eq!(jacobi[[0, 0]], 1.0, epsilon = 1e-6); // input[0,0]
-    assert_abs_diff_eq!(jacobi[[0, 1]], 2.0, epsilon = 1e-6); // input[0,1]
-    assert_abs_diff_eq!(jacobi[[0, 2]], 3.0, epsilon = 1e-6); // input[1,0]
-    assert_abs_diff_eq!(jacobi[[0, 3]], 4.0, epsilon = 1e-6); // input[1,1]
+    // 验证 kernel 的梯度
+    let grad = graph.get_node(kernel)?.grad().expect("kernel 应有 grad");
+    assert_eq!(grad.shape(), &[1, 1, 2, 2]);
+
+    // d_loss/d_conv = 2 * (conv - target) = 2 * 5 = 10
+    // d_conv/d_kernel[i,j] = input[i,j]
+    // d_loss/d_kernel = 10 * input
+    assert_abs_diff_eq!(grad[[0, 0, 0, 0]], 10.0, epsilon = 1e-5); // 10 * input[0,0]
+    assert_abs_diff_eq!(grad[[0, 0, 0, 1]], 20.0, epsilon = 1e-5); // 10 * input[0,1]
+    assert_abs_diff_eq!(grad[[0, 0, 1, 0]], 30.0, epsilon = 1e-5); // 10 * input[1,0]
+    assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 40.0, epsilon = 1e-5); // 10 * input[1,1]
 
     Ok(())
 }
 
-/// 测试 Conv2d calc_jacobi_to_a_parent 直接调用（对输入）
+/// 测试 Conv2d calc_grad_to_parent 直接调用（对输入）
 ///
-/// 直接调用节点的 calc_jacobi_to_a_parent 方法测试对输入的 Jacobi
+/// 直接调用节点的 calc_grad_to_parent 方法测试对输入的 grad
 #[test]
-fn test_conv2d_jacobi_to_input() -> Result<(), GraphError> {
+fn test_conv2d_grad_to_input() -> Result<(), GraphError> {
+    use crate::tensor::Tensor;
     let mut graph = Graph::new();
 
     // 输入 [1, 2, 2]，卷积核 [1, 1, 2, 2]
@@ -279,23 +304,25 @@ fn test_conv2d_jacobi_to_input() -> Result<(), GraphError> {
     graph.set_node_value(input_id, Some(&input_val))?;
     graph.set_node_value(kernel_id, Some(&kernel_val))?;
 
-    graph.forward_node(conv_id)?;
+    graph.forward(conv_id)?;
 
-    // 直接调用 calc_jacobi_to_a_parent
+    // 直接调用 calc_grad_to_parent（VJP 模式）
     let conv_node = graph.get_node(conv_id)?;
     let input_node = graph.get_node(input_id)?;
     let kernel_node = graph.get_node(kernel_id)?;
 
-    let jacobi = conv_node.calc_jacobi_to_a_parent(input_node, Some(kernel_node))?;
+    // upstream_grad 形状与 conv 输出一致：[1, 1, 1]
+    let upstream_grad = Tensor::ones(&[1, 1, 1]);
+    let grad = conv_node.calc_grad_to_parent(input_node, &upstream_grad, Some(kernel_node))?;
 
-    // 验证 Jacobi 形状：output_dim=1, input_dim=4
-    assert_eq!(jacobi.shape(), &[1, 4]);
+    // VJP 模式下验证 grad 形状与 input 值一致：[1, 2, 2]
+    assert_eq!(grad.shape(), &[1, 2, 2]);
 
-    // Jacobi 值应该等于卷积核值（因为 ∂out/∂input[i,j] = kernel[i,j]）
-    assert_abs_diff_eq!(jacobi[[0, 0]], 1.0, epsilon = 1e-6); // kernel[0,0]
-    assert_abs_diff_eq!(jacobi[[0, 1]], 2.0, epsilon = 1e-6); // kernel[0,1]
-    assert_abs_diff_eq!(jacobi[[0, 2]], 3.0, epsilon = 1e-6); // kernel[1,0]
-    assert_abs_diff_eq!(jacobi[[0, 3]], 4.0, epsilon = 1e-6); // kernel[1,1]
+    // grad 值应该等于卷积核值（因为 ∂out/∂input[i,j] = kernel[i,j]）
+    assert_abs_diff_eq!(grad[[0, 0, 0]], 1.0, epsilon = 1e-6); // kernel[0,0]
+    assert_abs_diff_eq!(grad[[0, 0, 1]], 2.0, epsilon = 1e-6); // kernel[0,1]
+    assert_abs_diff_eq!(grad[[0, 1, 0]], 3.0, epsilon = 1e-6); // kernel[1,0]
+    assert_abs_diff_eq!(grad[[0, 1, 1]], 4.0, epsilon = 1e-6); // kernel[1,1]
 
     Ok(())
 }
@@ -330,7 +357,7 @@ fn test_conv2d_batch_in_network() -> Result<(), GraphError> {
     graph.set_node_value(kernel, Some(&kernel_val))?;
 
     // 前向传播
-    graph.forward_node(flat)?;
+    graph.forward(flat)?;
 
     // 验证卷积输出
     let conv_output = graph.get_node_value(conv)?.unwrap();
@@ -374,7 +401,7 @@ fn test_conv2d_calc_grad_to_kernel_direct() -> Result<(), GraphError> {
     graph.set_node_value(kernel_id, Some(&kernel_val))?;
 
     // 前向传播
-    graph.forward_node(conv_id)?;
+    graph.forward(conv_id)?;
 
     // 直接调用 calc_grad_to_parent
     // upstream_grad 全 1，形状 [2, 1, 2, 2]
@@ -385,11 +412,7 @@ fn test_conv2d_calc_grad_to_kernel_direct() -> Result<(), GraphError> {
     let input_node = graph.get_node(input_id)?;
 
     // 直接调用 NodeHandle 上的 calc_grad_to_parent
-    let grad = conv_node.calc_grad_to_parent(
-        kernel_node,
-        &upstream_grad,
-        Some(input_node),
-    )?;
+    let grad = conv_node.calc_grad_to_parent(kernel_node, &upstream_grad, Some(input_node))?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
@@ -424,7 +447,7 @@ fn test_conv2d_calc_grad_to_input_direct() -> Result<(), GraphError> {
     graph.set_node_value(input_id, Some(&input_val))?;
     graph.set_node_value(kernel_id, Some(&kernel_val))?;
 
-    graph.forward_node(conv_id)?;
+    graph.forward(conv_id)?;
 
     // upstream_grad 全 1
     let upstream_grad = Tensor::ones(&[1, 1, 2, 2]);
@@ -434,11 +457,7 @@ fn test_conv2d_calc_grad_to_input_direct() -> Result<(), GraphError> {
     let kernel_node = graph.get_node(kernel_id)?;
 
     // 直接调用 NodeHandle 上的 calc_grad_to_parent
-    let grad = conv_node.calc_grad_to_parent(
-        input_node,
-        &upstream_grad,
-        Some(kernel_node),
-    )?;
+    let grad = conv_node.calc_grad_to_parent(input_node, &upstream_grad, Some(kernel_node))?;
 
     assert_eq!(grad.shape(), &[1, 1, 3, 3]);
 
@@ -503,4 +522,3 @@ fn test_conv2d_invalid_kernel_dims() {
     assert_err!(result, GraphError::ShapeMismatch { message, .. }
         if message.contains("4D") || message.contains("C_out"));
 }
-

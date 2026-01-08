@@ -57,7 +57,7 @@ fn test_max_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
 
     graph.set_node_value(input, Some(&Tensor::new(TEST_PYTORCH_X, &[1, 1, 4, 4])))?;
 
-    graph.forward_node(pool.output)?;
+    graph.forward(pool.output)?;
 
     let output = graph.get_node_value(pool.output)?.unwrap();
     let output_data = output.data_as_slice();
@@ -84,7 +84,7 @@ fn test_max_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> 
 
     graph.set_node_value(input, Some(&Tensor::new(TEST_MULTI_X, &[2, 3, 4, 4])))?;
 
-    graph.forward_node(pool.output)?;
+    graph.forward(pool.output)?;
 
     let output = graph.get_node_value(pool.output)?.unwrap();
     let output_data = output.data_as_slice();
@@ -167,7 +167,7 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&Tensor::new(target_data, &[batch_size, 3])))?;
 
     // 前向传播
-    graph.forward_batch(loss)?;
+    graph.forward(loss)?;
 
     // 验证 loss
     let loss_val = graph.get_node_value(loss)?.unwrap();
@@ -175,10 +175,10 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     assert_abs_diff_eq!(loss_val[[0, 0]], expected_loss, epsilon = 1e-4);
 
     // 反向传播
-    graph.backward_batch(loss, None)?;
+    graph.backward(loss)?;
 
     // 验证卷积核梯度
-    let conv_grad = graph.get_node_grad_batch(conv.kernel)?.unwrap();
+    let conv_grad = graph.get_node_grad_ref(conv.kernel)?.unwrap();
     let expected_conv_grad: &[f32] = &[
         -0.25443733,
         1.33351851,
@@ -255,7 +255,7 @@ fn test_max_pool2d_forward() -> Result<(), GraphError> {
     let pool = max_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool1"))?;
 
     // 前向传播
-    graph.forward_node(pool.output)?;
+    graph.forward(pool.output)?;
 
     // 验证输出形状: [1, 1, 2, 2]
     let output = graph.get_node_value(pool.output)?.unwrap();
@@ -285,7 +285,7 @@ fn test_max_pool2d_default_stride() -> Result<(), GraphError> {
     // stride=None → 默认等于 kernel_size
     let pool = max_pool2d(&mut graph, input, (2, 2), None, Some("pool1"))?;
 
-    graph.forward_node(pool.output)?;
+    graph.forward(pool.output)?;
 
     // 验证输出形状: [1, 1, 2, 2]
     let output = graph.get_node_value(pool.output)?;
@@ -360,7 +360,7 @@ fn test_max_pool2d_with_conv2d() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&x))?;
 
     // 前向传播
-    graph.forward_node(pool.output)?;
+    graph.forward(pool.output)?;
 
     // 验证输出形状: [2, 4, 4, 4]
     // conv 输出 [2, 4, 8, 8] (same padding)
@@ -425,7 +425,7 @@ fn test_max_pool2d_chain() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&x))?;
 
     // 前向传播
-    graph.forward_node(pool2.output)?;
+    graph.forward(pool2.output)?;
 
     // 验证输出
     let output = graph.get_node_value(pool2.output)?;
@@ -450,7 +450,7 @@ fn test_max_pool2d_with_flatten() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&x))?;
 
     // 前向传播
-    graph.forward_node(flat)?;
+    graph.forward(flat)?;
 
     // 验证展平输出: [2, 4*2*2] = [2, 16]
     let output = graph.get_node_value(flat)?;
@@ -504,11 +504,11 @@ fn test_max_pool2d_batch_backward() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // Batch 训练
-    graph.forward_batch(loss)?;
-    graph.backward_batch(loss, None)?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
     // 验证卷积核有梯度（梯度通过池化层正确传播）
-    let k_grad = graph.get_node_grad_batch(conv.kernel)?;
+    let k_grad = graph.get_node_grad_ref(conv.kernel)?;
     assert!(k_grad.is_some());
     assert_eq!(k_grad.unwrap().shape(), &[2, 1, 3, 3]);
 
@@ -620,7 +620,7 @@ fn test_max_pool2d_single_channel() -> Result<(), GraphError> {
     let x = Tensor::ones(&[2, 1, 4, 4]);
     graph.set_node_value(input, Some(&x))?;
 
-    graph.forward_node(pool.output)?;
+    graph.forward(pool.output)?;
 
     let output = graph.get_node_value(pool.output)?;
     assert!(output.is_some());
@@ -656,7 +656,7 @@ fn test_max_pool2d_nonsquare_kernel() -> Result<(), GraphError> {
     let x = Tensor::ones(&[2, 4, 8, 8]);
     graph.set_node_value(input, Some(&x))?;
 
-    graph.forward_node(pool.output)?;
+    graph.forward(pool.output)?;
 
     // 输出尺寸:
     // H' = (8 - 2) / 2 + 1 = 4
@@ -680,7 +680,7 @@ fn test_max_pool2d_different_stride() -> Result<(), GraphError> {
     let x = Tensor::ones(&[2, 4, 8, 8]);
     graph.set_node_value(input, Some(&x))?;
 
-    graph.forward_node(pool.output)?;
+    graph.forward(pool.output)?;
 
     // 输出尺寸: (8 - 2) / 1 + 1 = 7
     let output = graph.get_node_value(pool.output)?;

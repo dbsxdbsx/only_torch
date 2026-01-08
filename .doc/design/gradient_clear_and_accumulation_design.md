@@ -187,12 +187,15 @@ for child_id in children_ids {
    // 如果结果节点没有进行前向传播，反向传播会失败
    Err(GraphError::ComputationError("反向传播：结果节点没有值"))
    ```
-2. **输入节点不能反向传播**：
+2. **输入节点不应该有梯度**：
 
    ```rust
-   // 输入节点不应该有梯度
-   Err(GraphError::InvalidOperation("输入节点不应该有雅可比矩阵"))
+   // 调用 get_node_grad(input) 会报错
+   Err(GraphError::InvalidOperation("输入节点不应该有梯度"))
    ```
+
+   **注意**：在正常的 `backward(loss)` 过程中，梯度传播到 Input 节点时会**无害跳过**（不报错），
+   这是预期行为——Input 节点是"梯度汇点"，梯度到达这里就停止传播。
 3. **叶子节点无法反向传播**：
 
    ```rust
@@ -224,7 +227,7 @@ for child_id in children_ids {
 
 ### 边界情况测试
 
-- **输入节点反向传播**：验证输入节点不能进行反向传播
+- **输入节点梯度获取**：验证 `get_node_grad(input)` 返回错误（Input 节点不应该有梯度）
 - **参数节点自身反向传播**：验证参数对自身的梯度为单位矩阵
 - **错误状态回滚**：验证反向传播失败时的状态回滚机制
 

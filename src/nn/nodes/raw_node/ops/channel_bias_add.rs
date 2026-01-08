@@ -21,13 +21,12 @@ pub(crate) struct ChannelBiasAdd {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
     grad: Option<Tensor>,
     shape: Vec<usize>, // 输出形状 [batch, C, H, W]
 }
 
 impl ChannelBiasAdd {
-    /// 创建 ChannelBiasAdd 节点
+    /// 创建 `ChannelBiasAdd` 节点
     ///
     /// # 参数
     /// - `parents[0]`: input，形状 [batch, C, H, W] 或 [C, H, W]
@@ -47,8 +46,7 @@ impl ChannelBiasAdd {
         if input_shape.len() != 3 && input_shape.len() != 4 {
             return Err(GraphError::InvalidOperation(format!(
                 "ChannelBiasAdd 的 input 必须是 3D [C, H, W] 或 4D [batch, C, H, W]，\
-                 实际为 {:?}",
-                input_shape
+                 实际为 {input_shape:?}"
             )));
         }
 
@@ -66,8 +64,7 @@ impl ChannelBiasAdd {
             bias_shape[1] // [1, C]
         } else {
             return Err(GraphError::InvalidOperation(format!(
-                "ChannelBiasAdd 的 bias 必须是 [C] 或 [1, C]，实际为 {:?}",
-                bias_shape
+                "ChannelBiasAdd 的 bias 必须是 [C] 或 [1, C]，实际为 {bias_shape:?}"
             )));
         };
 
@@ -76,8 +73,7 @@ impl ChannelBiasAdd {
                 expected: vec![channels],
                 got: vec![bias_channels],
                 message: format!(
-                    "ChannelBiasAdd 的 bias 通道数 ({}) 与 input 通道数 ({}) 不匹配",
-                    bias_channels, channels
+                    "ChannelBiasAdd 的 bias 通道数 ({bias_channels}) 与 input 通道数 ({channels}) 不匹配"
                 ),
             });
         }
@@ -89,7 +85,6 @@ impl ChannelBiasAdd {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             shape,
         })
@@ -184,68 +179,7 @@ impl TraitNode for ChannelBiasAdd {
         self.value.as_ref()
     }
 
-    fn calc_jacobi_to_a_parent(
-        &self,
-        target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        let output_size = self
-            .value()
-            .ok_or_else(|| GraphError::ComputationError(format!("{} 没有值", self.display_node())))?
-            .size();
-
-        let target_shape = target_parent.value_expected_shape();
-        let target_size = target_shape.iter().product::<usize>();
-
-        // 判断是 input 还是 bias
-        if target_shape == self.shape.as_slice() {
-            // 对 input: ∂output/∂input = I（单位矩阵）
-            Ok(Tensor::eyes(output_size))
-        } else {
-            // 对 bias: ∂output/∂bias[c] = sum over (b, h, w)
-            // Jacobi 形状: [output_size, bias_size]
-            let channels = target_size;
-            let mut jacobi = Tensor::zeros(&[output_size, channels]);
-
-            let shape = &self.shape;
-            if shape.len() == 4 {
-                let (batch, c, h, w) = (shape[0], shape[1], shape[2], shape[3]);
-                for b in 0..batch {
-                    for ci in 0..c {
-                        for hi in 0..h {
-                            for wi in 0..w {
-                                let out_idx = ((b * c + ci) * h + hi) * w + wi;
-                                jacobi[[out_idx, ci]] = 1.0;
-                            }
-                        }
-                    }
-                }
-            } else {
-                let (c, h, w) = (shape[0], shape[1], shape[2]);
-                for ci in 0..c {
-                    for hi in 0..h {
-                        for wi in 0..w {
-                            let out_idx = (ci * h + hi) * w + wi;
-                            jacobi[[out_idx, ci]] = 1.0;
-                        }
-                    }
-                }
-            }
-
-            Ok(jacobi)
-        }
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
+    // ========== VJP 模式 ==========
 
     fn calc_grad_to_parent(
         &self,

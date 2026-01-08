@@ -116,12 +116,12 @@ fn test_bptt_gradient_matches_pytorch() -> Result<(), GraphError> {
 
     // 验证梯度
     let actual_w_scale = graph
-        .get_node_jacobi(w_scale)?
-        .expect("w_scale jacobi")
+        .get_node_grad(w_scale)?
+        .expect("w_scale 应有梯度")
         .data_as_slice()[0];
     let actual_w_out = graph
-        .get_node_jacobi(w_out)?
-        .expect("w_out jacobi")
+        .get_node_grad(w_out)?
+        .expect("w_out 应有梯度")
         .data_as_slice()[0];
 
     assert!(
@@ -192,9 +192,9 @@ fn test_longer_sequence_tanh_rnn() -> Result<(), GraphError> {
     graph.backward_through_time(&[w_ih, w_hh, w_out], loss)?;
 
     // 验证梯度存在且有限
-    let grad_w_ih = graph.get_node_jacobi(w_ih)?.unwrap().data_as_slice()[0];
-    let grad_w_hh = graph.get_node_jacobi(w_hh)?.unwrap().data_as_slice()[0];
-    let grad_w_out = graph.get_node_jacobi(w_out)?.unwrap().data_as_slice()[0];
+    let grad_w_ih = graph.get_node_grad(w_ih)?.unwrap().data_as_slice()[0];
+    let grad_w_hh = graph.get_node_grad(w_hh)?.unwrap().data_as_slice()[0];
+    let grad_w_out = graph.get_node_grad(w_out)?.unwrap().data_as_slice()[0];
 
     assert!(grad_w_ih.is_finite(), "w_ih 梯度应有限");
     assert!(grad_w_hh.is_finite(), "w_hh 梯度应有限");
@@ -261,10 +261,10 @@ fn test_multi_param_rnn() -> Result<(), GraphError> {
     // BPTT
     graph.backward_through_time(&[w_ih1, w_ih2, w_hh, w_out], loss)?;
 
-    let grad_w_ih1 = graph.get_node_jacobi(w_ih1)?.unwrap().data_as_slice()[0];
-    let grad_w_ih2 = graph.get_node_jacobi(w_ih2)?.unwrap().data_as_slice()[0];
-    let grad_w_hh = graph.get_node_jacobi(w_hh)?.unwrap().data_as_slice()[0];
-    let grad_w_out = graph.get_node_jacobi(w_out)?.unwrap().data_as_slice()[0];
+    let grad_w_ih1 = graph.get_node_grad(w_ih1)?.unwrap().data_as_slice()[0];
+    let grad_w_ih2 = graph.get_node_grad(w_ih2)?.unwrap().data_as_slice()[0];
+    let grad_w_hh = graph.get_node_grad(w_hh)?.unwrap().data_as_slice()[0];
+    let grad_w_out = graph.get_node_grad(w_out)?.unwrap().data_as_slice()[0];
 
     // 验证所有梯度有限
     assert!(grad_w_ih1.is_finite());
@@ -420,9 +420,9 @@ fn test_sigmoid_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     graph.backward_through_time(&[w_ih, w_hh, w_out], loss)?;
 
     // 验证梯度
-    let actual_w_ih = graph.get_node_jacobi(w_ih)?.unwrap().data_as_slice()[0];
-    let actual_w_hh = graph.get_node_jacobi(w_hh)?.unwrap().data_as_slice()[0];
-    let actual_w_out = graph.get_node_jacobi(w_out)?.unwrap().data_as_slice()[0];
+    let actual_w_ih = graph.get_node_grad(w_ih)?.unwrap().data_as_slice()[0];
+    let actual_w_hh = graph.get_node_grad(w_hh)?.unwrap().data_as_slice()[0];
+    let actual_w_out = graph.get_node_grad(w_out)?.unwrap().data_as_slice()[0];
 
     assert!(
         (actual_w_out - SIGMOID_GRAD_W_OUT).abs() < 1e-5,
@@ -529,11 +529,11 @@ fn test_mixed_activation_rnn() -> Result<(), GraphError> {
     graph.backward_through_time(&[w_ih1, w_hh1, w_h12, w_hh2, w_out], loss)?;
 
     // 验证所有梯度有限且非零
-    let grad_w_ih1 = graph.get_node_jacobi(w_ih1)?.unwrap().data_as_slice()[0];
-    let grad_w_hh1 = graph.get_node_jacobi(w_hh1)?.unwrap().data_as_slice()[0];
-    let grad_w_h12 = graph.get_node_jacobi(w_h12)?.unwrap().data_as_slice()[0];
-    let grad_w_hh2 = graph.get_node_jacobi(w_hh2)?.unwrap().data_as_slice()[0];
-    let grad_w_out = graph.get_node_jacobi(w_out)?.unwrap().data_as_slice()[0];
+    let grad_w_ih1 = graph.get_node_grad(w_ih1)?.unwrap().data_as_slice()[0];
+    let grad_w_hh1 = graph.get_node_grad(w_hh1)?.unwrap().data_as_slice()[0];
+    let grad_w_h12 = graph.get_node_grad(w_h12)?.unwrap().data_as_slice()[0];
+    let grad_w_hh2 = graph.get_node_grad(w_hh2)?.unwrap().data_as_slice()[0];
+    let grad_w_out = graph.get_node_grad(w_out)?.unwrap().data_as_slice()[0];
 
     assert!(grad_w_ih1.is_finite(), "w_ih1 梯度应有限");
     assert!(grad_w_hh1.is_finite(), "w_hh1 梯度应有限");
@@ -703,9 +703,9 @@ fn test_leaky_relu_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     graph.backward_through_time(&[w_ih, w_hh, w_out], loss)?;
 
     // 验证梯度
-    let actual_w_ih = graph.get_node_jacobi(w_ih)?.unwrap().data_as_slice()[0];
-    let actual_w_hh = graph.get_node_jacobi(w_hh)?.unwrap().data_as_slice()[0];
-    let actual_w_out = graph.get_node_jacobi(w_out)?.unwrap().data_as_slice()[0];
+    let actual_w_ih = graph.get_node_grad(w_ih)?.unwrap().data_as_slice()[0];
+    let actual_w_hh = graph.get_node_grad(w_hh)?.unwrap().data_as_slice()[0];
+    let actual_w_out = graph.get_node_grad(w_out)?.unwrap().data_as_slice()[0];
 
     assert!(
         (actual_w_out - LEAKY_RELU_GRAD_W_OUT).abs() < 1e-5,
@@ -885,9 +885,9 @@ fn test_softplus_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     graph.backward_through_time(&[w_ih, w_hh, w_out], loss)?;
 
     // 验证梯度
-    let actual_w_ih = graph.get_node_jacobi(w_ih)?.unwrap().data_as_slice()[0];
-    let actual_w_hh = graph.get_node_jacobi(w_hh)?.unwrap().data_as_slice()[0];
-    let actual_w_out = graph.get_node_jacobi(w_out)?.unwrap().data_as_slice()[0];
+    let actual_w_ih = graph.get_node_grad(w_ih)?.unwrap().data_as_slice()[0];
+    let actual_w_hh = graph.get_node_grad(w_hh)?.unwrap().data_as_slice()[0];
+    let actual_w_out = graph.get_node_grad(w_out)?.unwrap().data_as_slice()[0];
 
     assert!(
         (actual_w_out - SOFTPLUS_GRAD_W_OUT).abs() < 1e-5,

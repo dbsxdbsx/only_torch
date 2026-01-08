@@ -128,7 +128,7 @@ fn test_linear_forward() -> Result<(), GraphError> {
     graph.set_node_value(fc.bias, Some(&b))?;
 
     // 前向传播
-    graph.forward_node(fc.output)?;
+    graph.forward(fc.output)?;
 
     // 验证输出
     // x @ W = [[1,2,3], [4,5,6]] @ [[1,0], [0,1], [0,0]] = [[1, 2], [4, 5]]
@@ -199,7 +199,7 @@ fn test_linear_chain() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&x))?;
 
     // 前向传播
-    graph.forward_node(fc2.output)?;
+    graph.forward(fc2.output)?;
 
     // 验证输出存在且形状正确
     let output = graph.get_node_value(fc2.output)?;
@@ -231,12 +231,12 @@ fn test_linear_batch_backward() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // Batch 训练
-    graph.forward_batch(loss)?;
-    graph.backward_batch(loss, None)?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
     // 验证权重和偏置都有梯度
-    let w_grad = graph.get_node_grad_batch(fc.weights)?;
-    let b_grad = graph.get_node_grad_batch(fc.bias)?;
+    let w_grad = graph.get_node_grad_ref(fc.weights)?;
+    let b_grad = graph.get_node_grad_ref(fc.bias)?;
     assert!(w_grad.is_some());
     assert!(b_grad.is_some());
 
@@ -273,14 +273,14 @@ fn test_linear_chain_batch_training() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // Batch 训练
-    graph.forward_batch(loss)?;
-    graph.backward_batch(loss, None)?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
     // 验证所有参数都有梯度
-    assert!(graph.get_node_grad_batch(fc1.weights)?.is_some());
-    assert!(graph.get_node_grad_batch(fc1.bias)?.is_some());
-    assert!(graph.get_node_grad_batch(fc2.weights)?.is_some());
-    assert!(graph.get_node_grad_batch(fc2.bias)?.is_some());
+    assert!(graph.get_node_grad_ref(fc1.weights)?.is_some());
+    assert!(graph.get_node_grad_ref(fc1.bias)?.is_some());
+    assert!(graph.get_node_grad_ref(fc2.weights)?.is_some());
+    assert!(graph.get_node_grad_ref(fc2.bias)?.is_some());
 
     Ok(())
 }
@@ -380,7 +380,7 @@ fn test_linear_single_input_feature() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&x))?;
 
     // 前向传播
-    graph.forward_node(fc.output)?;
+    graph.forward(fc.output)?;
 
     let output = graph.get_node_value(fc.output)?;
     assert!(output.is_some());
@@ -403,7 +403,7 @@ fn test_linear_single_output_feature() -> Result<(), GraphError> {
     graph.set_node_value(input, Some(&x))?;
 
     // 前向传播
-    graph.forward_node(fc.output)?;
+    graph.forward(fc.output)?;
 
     let output = graph.get_node_value(fc.output)?;
     assert!(output.is_some());
@@ -487,7 +487,7 @@ fn test_linear_forward_pytorch_comparison() -> Result<(), GraphError> {
     )?;
 
     // 前向传播
-    graph.forward_node(fc.output)?;
+    graph.forward(fc.output)?;
 
     // 验证输出
     let output = graph.get_node_value(fc.output)?.unwrap();
@@ -553,7 +553,7 @@ fn test_linear_backward_pytorch_comparison() -> Result<(), GraphError> {
     )?;
 
     // 前向传播
-    graph.forward_batch(loss)?;
+    graph.forward(loss)?;
 
     // 验证输出
     let output = graph.get_node_value(fc.output)?.unwrap();
@@ -581,10 +581,10 @@ fn test_linear_backward_pytorch_comparison() -> Result<(), GraphError> {
     );
 
     // 反向传播
-    graph.backward_batch(loss, None)?;
+    graph.backward(loss)?;
 
     // 验证权重梯度
-    let grad_w = graph.get_node_grad_batch(fc.weights)?.unwrap();
+    let grad_w = graph.get_node_grad_ref(fc.weights)?.unwrap();
     let grad_w_data = grad_w.data_as_slice();
     println!("\n权重梯度:");
     for (i, (&actual, &expected)) in grad_w_data
@@ -600,7 +600,7 @@ fn test_linear_backward_pytorch_comparison() -> Result<(), GraphError> {
     }
 
     // 验证偏置梯度
-    let grad_b = graph.get_node_grad_batch(fc.bias)?.unwrap();
+    let grad_b = graph.get_node_grad_ref(fc.bias)?.unwrap();
     let grad_b_data = grad_b.data_as_slice();
     println!("\n偏置梯度:");
     for (i, (&actual, &expected)) in grad_b_data
@@ -686,7 +686,7 @@ fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     )?;
 
     // 前向传播
-    graph.forward_batch(loss)?;
+    graph.forward(loss)?;
 
     // 验证隐藏层 (ReLU 输出)
     let h1_relu = graph.get_node_value(relu)?.unwrap();
@@ -726,10 +726,10 @@ fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     );
 
     // 反向传播
-    graph.backward_batch(loss, None)?;
+    graph.backward(loss)?;
 
     // 验证 fc1 权重梯度
-    let grad_w1 = graph.get_node_grad_batch(fc1.weights)?.unwrap();
+    let grad_w1 = graph.get_node_grad_ref(fc1.weights)?.unwrap();
     let grad_w1_data = grad_w1.data_as_slice();
     println!("\nfc1 权重梯度:");
     for (i, (&actual, &expected)) in grad_w1_data
@@ -745,7 +745,7 @@ fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     }
 
     // 验证 fc1 偏置梯度
-    let grad_b1 = graph.get_node_grad_batch(fc1.bias)?.unwrap();
+    let grad_b1 = graph.get_node_grad_ref(fc1.bias)?.unwrap();
     let grad_b1_data = grad_b1.data_as_slice();
     println!("\nfc1 偏置梯度:");
     for (i, (&actual, &expected)) in grad_b1_data
@@ -761,7 +761,7 @@ fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     }
 
     // 验证 fc2 权重梯度
-    let grad_w2 = graph.get_node_grad_batch(fc2.weights)?.unwrap();
+    let grad_w2 = graph.get_node_grad_ref(fc2.weights)?.unwrap();
     let grad_w2_data = grad_w2.data_as_slice();
     println!("\nfc2 权重梯度:");
     for (i, (&actual, &expected)) in grad_w2_data
@@ -777,7 +777,7 @@ fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     }
 
     // 验证 fc2 偏置梯度
-    let grad_b2 = graph.get_node_grad_batch(fc2.bias)?.unwrap();
+    let grad_b2 = graph.get_node_grad_ref(fc2.bias)?.unwrap();
     let grad_b2_data = grad_b2.data_as_slice();
     println!("\nfc2 偏置梯度:");
     for (i, (&actual, &expected)) in grad_b2_data

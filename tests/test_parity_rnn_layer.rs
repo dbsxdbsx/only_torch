@@ -69,7 +69,7 @@ fn generate_varlen_parity_data(
     (sequences, labels, lengths)
 }
 
-/// 将变长序列填充到 max_len
+/// 将变长序列填充到 `max_len`
 fn pad_sequences(sequences: &[Vec<f32>], max_len: usize) -> Vec<Vec<f32>> {
     sequences
         .iter()
@@ -114,7 +114,7 @@ fn get_batch_labels(labels: &[f32]) -> Tensor {
 
 /// 使用 RNN Layer API 创建网络
 ///
-/// 关键区别：使用 rnn() 函数创建 RNN 层，而非手动构建节点
+/// 关键区别：使用 `rnn()` 函数创建 RNN 层，而非手动构建节点
 fn create_parity_rnn_with_layer_api(
     batch_size: usize,
     hidden_size: usize,
@@ -122,14 +122,14 @@ fn create_parity_rnn_with_layer_api(
 ) -> Result<
     (
         Graph,
-        NodeId,        // input
-        NodeId,        // mask
-        NodeId,        // output
-        NodeId,        // loss
-        NodeId,        // target
-        Vec<NodeId>,   // params (w_ih, w_hh, b_h, w_ho)
-        NodeId,        // rnn_hidden (for state freezing)
-        NodeId,        // h_prev (State node)
+        NodeId,      // input
+        NodeId,      // mask
+        NodeId,      // output
+        NodeId,      // loss
+        NodeId,      // target
+        Vec<NodeId>, // params (w_ih, w_hh, b_h, w_ho)
+        NodeId,      // rnn_hidden (for state freezing)
+        NodeId,      // h_prev (State node)
     ),
     GraphError,
 > {
@@ -155,10 +155,13 @@ fn create_parity_rnn_with_layer_api(
         .map(|i| {
             (seed, "w_ih", i).hash(&mut hasher);
             let h = hasher.finish();
-            ((h as f32 / u64::MAX as f32) * 2.0 - 1.0) * scale_ih
+            (h as f32 / u64::MAX as f32).mul_add(2.0, -1.0) * scale_ih
         })
         .collect();
-    graph.set_node_value(rnn_out.w_ih, Some(&Tensor::new(&w_ih_init, &[1, hidden_size])))?;
+    graph.set_node_value(
+        rnn_out.w_ih,
+        Some(&Tensor::new(&w_ih_init, &[1, hidden_size])),
+    )?;
 
     // W_hh 初始化
     let scale_hh = (6.0 / (hidden_size as f32 * 2.0)).sqrt();
@@ -166,7 +169,7 @@ fn create_parity_rnn_with_layer_api(
         .map(|i| {
             (seed, "w_hh", i).hash(&mut hasher);
             let h = hasher.finish();
-            ((h as f32 / u64::MAX as f32) * 2.0 - 1.0) * scale_hh
+            (h as f32 / u64::MAX as f32).mul_add(2.0, -1.0) * scale_hh
         })
         .collect();
     graph.set_node_value(
@@ -200,7 +203,7 @@ fn create_parity_rnn_with_layer_api(
         .map(|i| {
             (seed, "w_ho", i).hash(&mut hasher);
             let h = hasher.finish();
-            ((h as f32 / u64::MAX as f32) * 2.0 - 1.0) * scale_ho
+            (h as f32 / u64::MAX as f32).mul_add(2.0, -1.0) * scale_ho
         })
         .collect();
     graph.set_node_value(w_ho, Some(&Tensor::new(&w_ho_init, &[hidden_size, 1])))?;
@@ -232,13 +235,13 @@ fn create_parity_rnn_with_layer_api(
 /// 手动 SGD 更新
 fn sgd_update(graph: &mut Graph, params: &[NodeId], lr: f32) -> Result<(), GraphError> {
     for &param in params {
-        if let Some(jacobi) = graph.get_node_jacobi(param)? {
+        if let Some(param_grad) = graph.get_node_grad(param)? {
             let current_value = graph.get_node_value(param)?.unwrap().clone();
             let param_shape = current_value.shape();
-            let grad = if jacobi.shape() != param_shape {
-                jacobi.reshape(param_shape)
+            let grad = if param_grad.shape() == param_shape {
+                param_grad.clone()
             } else {
-                jacobi.clone()
+                param_grad.reshape(param_shape)
             };
             let new_value = &current_value - &(&grad * lr);
             graph.set_node_value(param, Some(&new_value))?;
@@ -279,7 +282,7 @@ fn train_batch(
 
     graph.backward_through_time(params, loss_node)?;
     sgd_update(graph, params, lr)?;
-    graph.clear_jacobi()?;
+    graph.zero_grad()?;
 
     Ok(loss_value)
 }
@@ -358,8 +361,8 @@ fn test_parity_detection_with_rnn_layer() {
     let (test_seqs, test_labels, _) =
         generate_varlen_parity_data(num_test, min_len, max_len, seed + 1000);
 
-    println!("[数据] 训练: {} 样本, 测试: {} 样本", num_train, num_test);
-    println!("[数据] 序列长度: {} ~ {}", min_len, max_len);
+    println!("[数据] 训练: {num_train} 样本, 测试: {num_test} 样本");
+    println!("[数据] 序列长度: {min_len} ~ {max_len}");
 
     // 验证数据
     println!("\n[数据验证] 前 3 个样本:");
@@ -393,7 +396,7 @@ fn test_parity_detection_with_rnn_layer() {
                 println!("[可视化] PNG: {}", img.display());
             }
         }
-        Err(e) => println!("[可视化] 跳过: {:?}", e),
+        Err(e) => println!("[可视化] 跳过: {e:?}"),
     }
 
     // 健壮性检查
@@ -417,8 +420,8 @@ fn test_parity_detection_with_rnn_layer() {
     )
     .expect("第一个 batch 失败");
 
-    println!("  Loss: {:.6}", first_loss);
-    assert!(first_loss >= 0.0 && first_loss < 10.0, "Loss 异常");
+    println!("  Loss: {first_loss:.6}");
+    assert!((0.0..10.0).contains(&first_loss), "Loss 异常");
     println!("  ✓ 前向/反向传播正常");
 
     // 训练
@@ -515,4 +518,3 @@ fn test_parity_detection_with_rnn_layer() {
         best_acc * 100.0
     );
 }
-

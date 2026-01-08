@@ -27,11 +27,11 @@ pub struct RnnOutput {
     pub hidden: NodeId,
     /// 隐藏状态输入节点（State 节点，接收上一时间步的 hidden）
     pub h_prev: NodeId,
-    /// 输入到隐藏权重 W_ih: [input_size, hidden_size]
+    /// 输入到隐藏权重 `W_ih`: [`input_size`, `hidden_size`]
     pub w_ih: NodeId,
-    /// 隐藏到隐藏权重 W_hh: [hidden_size, hidden_size]
+    /// 隐藏到隐藏权重 `W_hh`: [`hidden_size`, `hidden_size`]
     pub w_hh: NodeId,
-    /// 隐藏层偏置 b_h: [1, hidden_size]
+    /// 隐藏层偏置 `b_h`: [1, `hidden_size`]
     pub b_h: NodeId,
 }
 
@@ -39,7 +39,7 @@ pub struct RnnOutput {
 ///
 /// # 参数
 /// - `graph`: 计算图
-/// - `input`: 输入节点，形状 [batch_size, input_size]
+/// - `input`: 输入节点，形状 [`batch_size`, `input_size`]
 /// - `input_size`: 输入特征维度
 /// - `hidden_size`: 隐藏状态维度
 /// - `batch_size`: 批大小
@@ -72,19 +72,15 @@ pub fn rnn(
     // === 创建参数节点 ===
 
     // W_ih: [input_size, hidden_size] - 输入到隐藏权重
-    let w_ih = graph.new_parameter_node(
-        &[input_size, hidden_size],
-        Some(&format!("{}_W_ih", prefix)),
-    )?;
+    let w_ih =
+        graph.new_parameter_node(&[input_size, hidden_size], Some(&format!("{prefix}_W_ih")))?;
 
     // W_hh: [hidden_size, hidden_size] - 隐藏到隐藏权重
-    let w_hh = graph.new_parameter_node(
-        &[hidden_size, hidden_size],
-        Some(&format!("{}_W_hh", prefix)),
-    )?;
+    let w_hh =
+        graph.new_parameter_node(&[hidden_size, hidden_size], Some(&format!("{prefix}_W_hh")))?;
 
     // b_h: [1, hidden_size] - 隐藏层偏置
-    let b_h = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{}_b_h", prefix)))?;
+    let b_h = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{prefix}_b_h")))?;
     // 初始化偏置为 0
     graph.set_node_value(b_h, Some(&Tensor::zeros(&[1, hidden_size])))?;
 
@@ -93,7 +89,7 @@ pub fn rnn(
     // h_prev: [batch_size, hidden_size] - 上一时间步的隐藏状态
     let h_prev = graph.new_state_node(
         &[batch_size, hidden_size],
-        Some(&format!("{}_h_prev", prefix)),
+        Some(&format!("{prefix}_h_prev")),
     )?;
     // 初始化为 0
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
@@ -101,35 +97,35 @@ pub fn rnn(
     // === 创建 ones 用于偏置广播 ===
 
     // ones: [batch_size, 1] - 用于将 [1, hidden_size] 广播到 [batch_size, hidden_size]
-    let ones = graph.new_input_node(&[batch_size, 1], Some(&format!("{}_ones", prefix)))?;
+    let ones = graph.new_input_node(&[batch_size, 1], Some(&format!("{prefix}_ones")))?;
     graph.set_node_value(ones, Some(&Tensor::ones(&[batch_size, 1])))?;
 
     // === 计算隐藏状态 ===
 
     // input_contrib = x_t @ W_ih: [batch, input] @ [input, hidden] = [batch, hidden]
     let input_contrib =
-        graph.new_mat_mul_node(input, w_ih, Some(&format!("{}_input_contrib", prefix)))?;
+        graph.new_mat_mul_node(input, w_ih, Some(&format!("{prefix}_input_contrib")))?;
 
     // hidden_contrib = h_{t-1} @ W_hh: [batch, hidden] @ [hidden, hidden] = [batch, hidden]
     let hidden_contrib =
-        graph.new_mat_mul_node(h_prev, w_hh, Some(&format!("{}_hidden_contrib", prefix)))?;
+        graph.new_mat_mul_node(h_prev, w_hh, Some(&format!("{prefix}_hidden_contrib")))?;
 
     // bias_broadcast = ones @ b_h: [batch, 1] @ [1, hidden] = [batch, hidden]
     let bias_broadcast =
-        graph.new_mat_mul_node(ones, b_h, Some(&format!("{}_bias_broadcast", prefix)))?;
+        graph.new_mat_mul_node(ones, b_h, Some(&format!("{prefix}_bias_broadcast")))?;
 
     // pre_hidden = input_contrib + hidden_contrib
     let sum1 = graph.new_add_node(
         &[input_contrib, hidden_contrib],
-        Some(&format!("{}_sum1", prefix)),
+        Some(&format!("{prefix}_sum1")),
     )?;
 
     // pre_hidden = sum1 + bias_broadcast
     let pre_hidden =
-        graph.new_add_node(&[sum1, bias_broadcast], Some(&format!("{}_pre_h", prefix)))?;
+        graph.new_add_node(&[sum1, bias_broadcast], Some(&format!("{prefix}_pre_h")))?;
 
     // hidden = tanh(pre_hidden)
-    let hidden = graph.new_tanh_node(pre_hidden, Some(&format!("{}_h", prefix)))?;
+    let hidden = graph.new_tanh_node(pre_hidden, Some(&format!("{prefix}_h")))?;
 
     // === 建立循环连接 ===
     // hidden 的值在下一个 step() 时传递给 h_prev
@@ -139,7 +135,7 @@ pub fn rnn(
     graph.register_layer_group(
         prefix,
         "RNN",
-        &format!("{}→{}", input_size, hidden_size),
+        &format!("{input_size}→{hidden_size}"),
         vec![
             w_ih,
             w_hh,

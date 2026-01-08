@@ -8,8 +8,7 @@ pub(crate) struct Parameter {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
-    grad: Option<Tensor>, // Batch 模式的梯度
+    grad: Option<Tensor>,
     shape: Vec<usize>,
 }
 
@@ -34,7 +33,6 @@ impl Parameter {
             id: None,
             name: None,
             value: Some(Tensor::normal(0.0, 0.001, shape)),
-            jacobi: None,
             grad: None,
             shape: shape.to_vec(),
         })
@@ -59,7 +57,6 @@ impl Parameter {
             id: None,
             name: None,
             value: Some(Tensor::normal_seeded(0.0, 0.001, shape, seed)),
-            jacobi: None,
             grad: None,
             shape: shape.to_vec(),
         })
@@ -98,28 +95,6 @@ impl TraitNode for Parameter {
         self.value = value.cloned();
         Ok(())
     }
-
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        Err(GraphError::InvalidOperation(format!(
-            "{}没有父节点。不该触及本错误，否则说明crate代码有问题",
-            self.display_node()
-        )))
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
 
     fn grad(&self) -> Option<&Tensor> {
         self.grad.as_ref()

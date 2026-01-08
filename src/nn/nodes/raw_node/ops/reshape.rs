@@ -24,7 +24,6 @@ pub(crate) struct Reshape {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
     grad: Option<Tensor>,
     /// 目标形状
     target_shape: Vec<usize>,
@@ -58,8 +57,7 @@ impl Reshape {
                 expected: parent_shape.clone(),
                 got: target_shape.to_vec(),
                 message: format!(
-                    "Reshape 目标形状 {:?}（{}个元素）与输入形状 {:?}（{}个元素）的元素总数不匹配",
-                    target_shape, target_size, parent_shape, parent_size
+                    "Reshape 目标形状 {target_shape:?}（{target_size}个元素）与输入形状 {parent_shape:?}（{parent_size}个元素）的元素总数不匹配"
                 ),
             });
         }
@@ -68,7 +66,6 @@ impl Reshape {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             target_shape: target_shape.to_vec(),
             parent_shape,
@@ -128,38 +125,6 @@ impl TraitNode for Reshape {
         self.value.as_ref()
     }
 
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        // Reshape 的 Jacobi 是单位矩阵
-        // 因为每个输出元素正好等于对应的输入元素
-        // ∂output[i] / ∂input[i] = 1
-        // ∂output[i] / ∂input[j] = 0 (i ≠ j)
-        let size = self
-            .value()
-            .ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "{} 没有值。不该触及本错误，否则说明 crate 代码有问题",
-                    self.display_node()
-                ))
-            })?
-            .size();
-        Ok(Tensor::eyes(size))
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
-
     fn calc_grad_to_parent(
         &self,
         _target_parent: &NodeHandle,
@@ -189,4 +154,3 @@ impl TraitNode for Reshape {
         self.value = value.cloned();
     }
 }
-

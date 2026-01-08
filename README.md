@@ -44,7 +44,7 @@ let dot = graph.to_dot();
 
 - **[XOR 异或问题](tests/test_xor.rs)** ⭐ - 经典非线性分类问题，展示多层网络的能力。网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 即可达到 100% 准确率。这是验证神经网络能够学习非线性函数的经典测试（运行：`cargo test test_xor -- --show-output`）
 
-- **[MNIST 手写数字识别（单样本版）](tests/test_mnist.rs)** - 逐样本处理的 MVP 集成测试，验证 DataLoader + MLP 网络 + 训练循环的基本逻辑。适合理解底层 Jacobi 机制，但训练较慢（运行：`cargo test test_mnist -- --show-output`）
+- **[MNIST 手写数字识别（单样本版）](tests/test_mnist.rs)** - 逐样本处理的 MVP 集成测试，验证 DataLoader + MLP 网络 + 训练循环的基本逻辑。适合理解底层自动微分机制，但训练较慢（运行：`cargo test test_mnist -- --show-output`）
 
 - **[MNIST 手写数字识别（Batch 版）](tests/test_mnist_batch.rs)** ⭐⭐ - **推荐示例**，展示 Batch 机制的高效训练。网络结构：`Input(784) → Hidden(128, Sigmoid+bias) → Output(10, SoftmaxCrossEntropy)`，使用 `ones @ bias` 技巧实现 bias 广播。5000 样本训练可达 **90%+ 准确率**，约 50 秒完成（运行：`cargo test test_mnist_batch -- --show-output`）
 
@@ -97,7 +97,7 @@ opt-level = 3
 - only retain `save_visualization_grouped`?
 - what if make the input nodes also be grouped together?
 - fix still lacking some of the nodes need to append, refine with `grad: Option<Tensor>,`？
-- 是否需要整合单独跟批处理版本的 forward 跟 backward 相关类的方法? 如果需要，怎么整合---and `backward_through_time`？
+- ✅ ~~是否需要整合单独跟批处理版本的 forward 跟 backward 相关类的方法?~~ → 已完成，详见 [自动微分统一设计](.doc/design/autodiff_unification_design.md)
 - ~~Graph/NodeHandle 代码按功能分块重组~~ → 推迟至 Phase 1 完成后评估
 
 

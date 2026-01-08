@@ -72,35 +72,6 @@ impl TraitNode for Input {
         Ok(())
     }
 
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        Err(GraphError::InvalidOperation(format!(
-            "{}没有父节点。不该触及本错误，否则说明crate代码有问题",
-            self.display_node()
-        )))
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        // Input 节点不应该有雅可比矩阵，始终返回 None
-        None
-    }
-
-    fn set_jacobi(&mut self, _jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        // Input 节点不应该有雅可比矩阵，显式拒绝设置操作
-        Err(GraphError::InvalidOperation(format!(
-            "{}不应该有雅可比矩阵",
-            self.display_node()
-        )))
-    }
-
-    fn clear_jacobi(&mut self) -> Result<(), GraphError> {
-        // Input 节点没有 jacobi，清除操作是一个成功的空操作
-        Ok(())
-    }
-
     fn clear_value(&mut self) -> Result<(), GraphError> {
         self.value = None;
         Ok(())

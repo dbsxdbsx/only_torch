@@ -70,7 +70,7 @@ neat/              0%       ❌ 远期特色
 | `test_logistic_regression.rs`      | `ch04/logistic_regression.py` |  ❌  | 需要 Sigmoid 节点 (已有) + 测试代码 |
 | `test_nn_iris.rs`                  | `ch05/nn_iris.py`             |  ❌  | 需要多层网络+Softmax                |
 | `test_mnist.rs`                    | `ch05/nn_mnist.py`            |  ✅  | **MVP：MLP + SoftmaxCrossEntropy**  |
-| `test_simple_regression.rs`        | -                             |  ✅  | **MSELoss 回归验证：y=2x+1**        |
+| `test_simple_regression_full_batch.rs` | -                         |  ✅  | **MSELoss 回归验证：y=2x+1（全批量）** |
 | `test_california_housing_price.rs` | -                             |  ✅  | **California Housing 房价回归**     |
 
 ---
@@ -223,7 +223,7 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
 
 - **支持 Reduction**：`Mean`（默认）、`Sum`
 - **双模式梯度**：Jacobi 模式 + Batch 模式
-- **集成测试**：`test_simple_regression.rs` 验证 y=2x+1 线性回归收敛
+- **集成测试**：`test_simple_regression_full_batch.rs` 验证 y=2x+1 线性回归收敛
 
 ### ✅ 已完成：California Housing 数据集
 

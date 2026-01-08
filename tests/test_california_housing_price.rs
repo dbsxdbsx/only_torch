@@ -24,12 +24,12 @@ use std::time::Instant;
 ///
 /// 设计特点：
 /// 1. 使用 `linear()` Layer API 构建网络（简洁、可维护）
-/// 2. 真正的 batch 训练（batch_size=256，高效）
+/// 2. 真正的 batch `训练（batch_size=256，高效`）
 /// 3. Softplus 激活：平滑梯度，无死神经元问题
 /// 4. Xavier 初始化：适配 Softplus
 ///
 /// 注：California Housing + MLP 在 batch 模式下 70% R² 是合理目标
-/// scikit-learn MLPRegressor 在此数据集上也达到类似水平
+/// scikit-learn `MLPRegressor` 在此数据集上也达到类似水平
 #[test]
 fn test_california_housing_regression() -> Result<(), GraphError> {
     let start_time = Instant::now();
@@ -69,14 +69,11 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
     let target_r2 = 0.70; // California Housing + MLP 的合理目标
 
     println!("\n[2/4] 训练配置：");
-    println!("  - Batch Size: {}", batch_size);
-    println!(
-        "  - 训练样本: {} (共 {} 个 batch)",
-        train_samples, num_batches
-    );
-    println!("  - 测试样本: {}", test_samples);
-    println!("  - 最大 Epochs: {}", max_epochs);
-    println!("  - 学习率: {}", learning_rate);
+    println!("  - Batch Size: {batch_size}");
+    println!("  - 训练样本: {train_samples} (共 {num_batches} 个 batch)");
+    println!("  - 测试样本: {test_samples}");
+    println!("  - 最大 Epochs: {max_epochs}");
+    println!("  - 学习率: {learning_rate}");
     println!("  - 目标 R²: {:.0}%", target_r2 * 100.0);
 
     // ========== 3. 构建网络（使用 Layer API）==========
@@ -113,9 +110,9 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
     // 保存网络结构可视化（训练前）
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
-    graph.save_visualization_grouped(&format!("{}/california_housing", output_dir), None)?;
-    graph.save_summary(&format!("{}/california_housing_summary.md", output_dir))?;
-    println!("  ✓ 网络结构已保存: {}/california_housing.png", output_dir);
+    graph.save_visualization_grouped(format!("{output_dir}/california_housing"), None)?;
+    graph.save_summary(format!("{output_dir}/california_housing_summary.md"))?;
+    println!("  ✓ 网络结构已保存: {output_dir}/california_housing.png");
 
     // ========== Xavier 初始化 ==========
     let xavier_init = |fan_in: usize, fan_out: usize, seed: u64| -> Tensor {
@@ -154,10 +151,11 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(batch_x))?;
             graph.set_node_value(y_true, Some(batch_y))?;
 
-            optimizer.one_step_batch(&mut graph, loss)?;
-            optimizer.update_batch(&mut graph)?;
+            graph.zero_grad()?;
+            graph.forward(loss)?;
+            let loss_val = graph.backward(loss)?; // backward 返回 loss 值
+            optimizer.step(&mut graph)?;
 
-            let loss_val = graph.get_node_value(loss)?.unwrap()[[0, 0]];
             epoch_loss_sum += loss_val;
         }
 
@@ -172,7 +170,7 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(batch_x))?;
             graph.set_node_value(y_true, Some(batch_y))?;
 
-            graph.forward_batch(y_pred)?;
+            graph.forward(y_pred)?;
 
             let pred_tensor = graph.get_node_value(y_pred)?.unwrap();
             for i in 0..batch_size {

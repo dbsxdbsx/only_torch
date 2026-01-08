@@ -50,10 +50,16 @@ fn test_node_parameter_creation_with_invalid_shape() {
     }
 
     // 3D 和 4D 现在应该成功（CNN 卷积核支持）
-    assert!(graph.new_parameter_node(&[16, 3, 3], Some("param_3d")).is_ok());
-    assert!(graph
-        .new_parameter_node(&[32, 16, 3, 3], Some("conv_kernel"))
-        .is_ok());
+    assert!(
+        graph
+            .new_parameter_node(&[16, 3, 3], Some("param_3d"))
+            .is_ok()
+    );
+    assert!(
+        graph
+            .new_parameter_node(&[32, 16, 3, 3], Some("conv_kernel"))
+            .is_ok()
+    );
 }
 
 #[test]
@@ -72,7 +78,10 @@ fn test_node_parameter_name_generation() {
 
     // 3. 测试节点名称重复
     let result = graph.new_parameter_node(&[2, 2], Some("explicit_param"));
-    assert_err!(result, GraphError::DuplicateNodeName("节点explicit_param在图default_graph中重复"));
+    assert_err!(
+        result,
+        GraphError::DuplicateNodeName("节点explicit_param在图default_graph中重复")
+    );
 }
 
 #[test]
@@ -148,52 +157,92 @@ fn test_node_parameter_forward_propagation() {
 
     // 1. 测试前向传播（应该失败，因为Parameter节点不支持前向传播）
     assert_err!(
-        graph.forward_node(param),
-        GraphError::InvalidOperation("节点[id=1, name=param, type=Parameter]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
+        graph.forward(param),
+        GraphError::InvalidOperation(
+            "节点[id=1, name=param, type=Parameter]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
+        )
     );
 
     // 2. 设置新值后仍然不能前向传播
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     graph.set_node_value(param, Some(&value)).unwrap();
     assert_err!(
-        graph.forward_node(param),
-        GraphError::InvalidOperation("节点[id=1, name=param, type=Parameter]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算")
+        graph.forward(param),
+        GraphError::InvalidOperation(
+            "节点[id=1, name=param, type=Parameter]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
+        )
     );
 }
 
+/// 测试 Parameter 节点在完整计算图中的反向传播行为
+///
+/// Parameter 节点是可学习参数，在反向传播后应该有梯度。
 #[test]
 fn test_node_parameter_backward_propagation() {
     let mut graph = Graph::new();
+
+    // 1. 构建计算图: input * param -> mse_loss
+    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
     let param = graph.new_parameter_node(&[2, 2], Some("param")).unwrap();
+    let target = graph.new_input_node(&[2, 2], Some("target")).unwrap();
 
-    // 1. 初始时雅可比矩阵应为空
-    assert!(graph.get_node_jacobi(param).unwrap().is_none());
+    let mul = graph.new_multiply_node(input, param, None).unwrap();
+    let loss = graph.new_mse_loss_node(mul, target, None).unwrap();
 
-    // 2. 对自身的反向传播（应生成单位矩阵）
-    graph.backward_nodes(&[param], param).unwrap();
-    assert_eq!(
-        graph.get_node_jacobi(param).unwrap().unwrap(),
-        &Tensor::eyes(4)
-    );
+    // 2. 设置输入值
+    let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let param_val = Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2]);
+    let target_val = Tensor::new(&[1.0, 1.0, 1.0, 1.0], &[2, 2]);
+    graph.set_node_value(input, Some(&input_val)).unwrap();
+    graph.set_node_value(param, Some(&param_val)).unwrap();
+    graph.set_node_value(target, Some(&target_val)).unwrap();
 
-    // 3. 清除雅可比矩阵并验证
-    graph.clear_jacobi().unwrap();
-    assert!(graph.get_node_jacobi(param).unwrap().is_none());
+    // 3. 初始时梯度应为空
+    assert!(graph.get_node_grad(param).unwrap().is_none());
 
-    // 4. 清除值(未初始化)后对自身的反向传播（应失败）
-    graph.set_node_value(param, None).unwrap();
-    assert_err!(
-        graph.backward_nodes(&[param], param),
-        GraphError::ComputationError("反向传播：节点[id=1, name=param, type=Parameter]没有值")
-    );
+    // 4. 前向传播 + 反向传播
+    graph.forward(loss).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss).unwrap();
 
-    // 5. 对其他未关联的Parameter节点的反向传播
-    // 当目标节点与结果节点之间没有路径时，不会设置 jacobi（返回 Ok 但 jacobi 为 None）
-    // 这与多输出网络场景一致：某些节点可能不在当前 backward 的路径上
-    let other_param = graph
-        .new_parameter_node(&[2, 2], Some("other_param"))
-        .unwrap();
-    graph.backward_nodes(&[param], other_param).unwrap();
-    // 由于没有路径，param 不会有 jacobi
-    assert!(graph.get_node_jacobi(param).unwrap().is_none());
+    // 5. Parameter 节点应该有梯度
+    let grad = graph.get_node_grad(param).unwrap();
+    assert!(grad.is_some(), "Parameter 节点应该有梯度");
+
+    // 6. 清除梯度并验证
+    graph.zero_grad().unwrap();
+    assert!(graph.get_node_grad(param).unwrap().is_none());
+}
+
+/// 测试 Parameter 节点的梯度值正确性
+#[test]
+fn test_node_parameter_gradient_correctness() {
+    let mut graph = Graph::new();
+
+    // 简单计算图: param -> mse_loss(param, target)
+    // loss = mean((param - target)^2)
+    // d_loss/d_param = 2 * (param - target) / n
+    let param = graph.new_parameter_node(&[1, 2], Some("param")).unwrap();
+    let target = graph.new_input_node(&[1, 2], Some("target")).unwrap();
+    let loss = graph.new_mse_loss_node(param, target, None).unwrap();
+
+    // 设置值: param = [1.0, 2.0], target = [0.0, 0.0]
+    let param_val = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let target_val = Tensor::new(&[0.0, 0.0], &[1, 2]);
+    graph.set_node_value(param, Some(&param_val)).unwrap();
+    graph.set_node_value(target, Some(&target_val)).unwrap();
+
+    // 前向 + 反向
+    graph.forward(loss).unwrap();
+    graph.zero_grad().unwrap();
+    graph.backward(loss).unwrap();
+
+    // 验证梯度
+    // loss = mean((1-0)^2 + (2-0)^2) = mean(1 + 4) = 2.5
+    // d_loss/d_param = 2 * (param - target) / 2 = (param - target)
+    // d_loss/d_param = [1.0, 2.0]
+    let grad = graph.get_node_grad(param).unwrap().unwrap();
+    assert_eq!(grad.shape(), &[1, 2]);
+    assert_abs_diff_eq!(grad[[0, 0]], 1.0, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[0, 1]], 2.0, epsilon = 1e-5);
 }

@@ -1,5 +1,20 @@
 # 更新日志
 
+## [0.7.0] - 2026-01-08
+
+### ⚠️ 破坏性变更 (Breaking Changes)
+
+- **refactor(autodiff): 自动微分 API 统一 (Jacobian → VJP)**
+  - 删除 Jacobian 模式，统一使用 VJP (Vector-Jacobian Product)
+  - API 重命名：
+    - `forward_node()` → `forward()`
+    - `backward_nodes()` / `backward_batch()` → `backward()`
+    - `clear_jacobi()` / `clear_grad()` → `zero_grad()`
+    - `one_step()` / `one_step_batch()` / `update()` → `step()`
+  - 删除：所有节点的 `jacobi` 字段、`calc_jacobi_to_a_parent()` 方法
+  - `backward()` 返回 `f32` (loss 值)，简化训练循环
+  - 详见 [自动微分统一设计](.doc/design/autodiff_unification_design.md)
+
 ## [0.6.0] - 2026-01-01
 
 ### 新增

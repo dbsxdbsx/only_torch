@@ -446,7 +446,7 @@ fn test_lstm_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
     graph.backward_through_time(&params, loss)?;
 
     // 验证 w_ii 梯度
-    let grad_w_ii = graph.get_node_jacobi(lstm_out.w_ii)?.unwrap();
+    let grad_w_ii = graph.get_node_grad(lstm_out.w_ii)?.unwrap();
     let grad_w_ii_flat: Vec<f32> = grad_w_ii.data_as_slice().to_vec();
     println!("grad_w_ii: {:?}", grad_w_ii_flat);
     for (&actual, &expected) in grad_w_ii_flat.iter().zip(TEST3_GRAD_W_II.iter()) {
@@ -454,7 +454,7 @@ fn test_lstm_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
     }
 
     // 验证 w_out 梯度
-    let grad_w_out = graph.get_node_jacobi(w_out)?.unwrap();
+    let grad_w_out = graph.get_node_grad(w_out)?.unwrap();
     let grad_w_out_flat: Vec<f32> = grad_w_out.data_as_slice().to_vec();
     println!("grad_w_out: {:?}", grad_w_out_flat);
     for (&actual, &expected) in grad_w_out_flat.iter().zip(TEST3_GRAD_W_OUT.iter()) {
@@ -973,16 +973,16 @@ fn test_lstm_batch_backward() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // Batch 前向 + 反向
-    graph.forward_batch(loss)?;
-    graph.backward_batch(loss, None)?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
 
     // 验证 LSTM 输入门权重有梯度
-    let w_ii_grad = graph.get_node_grad_batch(lstm_out.w_ii)?;
+    let w_ii_grad = graph.get_node_grad_ref(lstm_out.w_ii)?;
     assert!(w_ii_grad.is_some());
     assert_eq!(w_ii_grad.unwrap().shape(), &[input_size, hidden_size]);
 
     // 验证隐藏层权重有梯度
-    let w_hi_grad = graph.get_node_grad_batch(lstm_out.w_hi)?;
+    let w_hi_grad = graph.get_node_grad_ref(lstm_out.w_hi)?;
     assert!(w_hi_grad.is_some());
     assert_eq!(w_hi_grad.unwrap().shape(), &[hidden_size, hidden_size]);
 
@@ -1045,17 +1045,17 @@ fn test_lstm_chain_batch_training() -> Result<(), GraphError> {
     graph.set_node_value(labels, Some(&y))?;
 
     // 前向
-    graph.forward_batch(loss)?;
+    graph.forward(loss)?;
     let loss_before = graph.get_node_value(loss)?.unwrap()[[0, 0]];
 
     // 反向
-    graph.backward_batch(loss, None)?;
+    graph.backward(loss)?;
 
     // 验证两层 LSTM 都有梯度
-    let lstm1_grad = graph.get_node_grad_batch(lstm1.w_ii)?;
+    let lstm1_grad = graph.get_node_grad_ref(lstm1.w_ii)?;
     assert!(lstm1_grad.is_some());
 
-    let lstm2_grad = graph.get_node_grad_batch(lstm2.w_ii)?;
+    let lstm2_grad = graph.get_node_grad_ref(lstm2.w_ii)?;
     assert!(lstm2_grad.is_some());
 
     println!(

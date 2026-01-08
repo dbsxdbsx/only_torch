@@ -22,13 +22,13 @@ use crate::tensor::Tensor;
 /// - 调试和可视化
 #[derive(Debug, Clone, Copy)]
 pub struct LinearOutput {
-    /// 输出节点 ID (最终计算结果) [batch_size, out_features]
+    /// 输出节点 ID (最终计算结果) [`batch_size`, `out_features`]
     pub output: NodeId,
-    /// 权重参数节点 ID [in_features, out_features]
+    /// 权重参数节点 ID [`in_features`, `out_features`]
     pub weights: NodeId,
-    /// 偏置参数节点 ID [1, out_features]
+    /// 偏置参数节点 ID [1, `out_features`]
     pub bias: NodeId,
-    /// ones 矩阵节点 ID [batch_size, 1]，用于 bias 广播
+    /// ones 矩阵节点 ID [`batch_size`, 1]，用于 bias 广播
     pub ones: NodeId,
 }
 
@@ -37,7 +37,7 @@ pub struct LinearOutput {
 /// # 设计
 /// - **Batch-First**：输入 `[batch, in]`，输出 `[batch, out]`
 /// - 计算：`output = x @ W + b`
-/// - 符合 PyTorch `nn.Linear` 语义
+/// - 符合 `PyTorch` `nn.Linear` 语义
 ///
 /// # 参数
 /// - `graph`: 计算图
@@ -90,30 +90,29 @@ pub fn linear(
 
     // 创建权重参数 W: [in_features, out_features]
     let weights =
-        graph.new_parameter_node(&[in_features, out_features], Some(&format!("{}_W", prefix)))?;
+        graph.new_parameter_node(&[in_features, out_features], Some(&format!("{prefix}_W")))?;
 
     // 创建偏置参数 b: [1, out_features]
-    let bias = graph.new_parameter_node(&[1, out_features], Some(&format!("{}_b", prefix)))?;
+    let bias = graph.new_parameter_node(&[1, out_features], Some(&format!("{prefix}_b")))?;
 
     // 创建 ones 矩阵: [batch_size, 1]，用于 bias 广播（自动初始化）
-    let ones = graph.new_input_node(&[batch_size, 1], Some(&format!("{}_ones", prefix)))?;
+    let ones = graph.new_input_node(&[batch_size, 1], Some(&format!("{prefix}_ones")))?;
     graph.set_node_value(ones, Some(&Tensor::ones(&[batch_size, 1])))?;
 
     // 计算 x @ W: [batch, in] @ [in, out] = [batch, out]
-    let xw = graph.new_mat_mul_node(input, weights, Some(&format!("{}_xW", prefix)))?;
+    let xw = graph.new_mat_mul_node(input, weights, Some(&format!("{prefix}_xW")))?;
 
     // 计算 ones @ b: [batch, 1] @ [1, out] = [batch, out]（广播 bias）
-    let b_broadcast =
-        graph.new_mat_mul_node(ones, bias, Some(&format!("{}_b_broadcast", prefix)))?;
+    let b_broadcast = graph.new_mat_mul_node(ones, bias, Some(&format!("{prefix}_b_broadcast")))?;
 
     // 计算 x @ W + b
-    let output = graph.new_add_node(&[xw, b_broadcast], Some(&format!("{}_out", prefix)))?;
+    let output = graph.new_add_node(&[xw, b_broadcast], Some(&format!("{prefix}_out")))?;
 
     // 注册层分组（用于可视化时将这些节点框在一起）
     graph.register_layer_group(
         prefix,
         "Linear",
-        &format!("{}→{}", in_features, out_features),
+        &format!("{in_features}→{out_features}"),
         vec![weights, bias, ones, xw, b_broadcast, output],
     );
 

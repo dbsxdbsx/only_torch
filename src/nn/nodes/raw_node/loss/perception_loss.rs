@@ -9,7 +9,7 @@ pub(crate) struct PerceptionLoss {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
+    grad: Option<Tensor>,
     shape: Vec<usize>,
 }
 
@@ -23,13 +23,13 @@ impl PerceptionLoss {
             ));
         }
 
-        // 2. 返回
+        // 2. 返回：输出为标量 [1, 1]（与 MSELoss/SoftmaxCE 一致）
         Ok(Self {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
-            shape: parents[0].value_expected_shape().to_vec(),
+            grad: None,
+            shape: vec![1, 1], // 标量输出
         })
     }
 }
@@ -65,8 +65,13 @@ impl TraitNode for PerceptionLoss {
             ))
         })?;
 
-        // 2. 计算感知损失：x >= 0 时为0，否则为-x
-        self.value = Some(tensor_where!(parent_value >= 0.0, 0.0, -parent_value));
+        // 2. 计算感知损失：loss = mean(max(0, -x))
+        //    - x >= 0 时对应的元素损失为 0
+        //    - x < 0 时对应的元素损失为 -x
+        //    - 最终输出为标量 [1, 1]
+        let element_loss = tensor_where!(parent_value >= 0.0, 0.0, -parent_value);
+        let mean_loss = element_loss.mean();
+        self.value = Some(Tensor::new(&[mean_loss], &[1, 1]));
         Ok(())
     }
 
@@ -74,41 +79,48 @@ impl TraitNode for PerceptionLoss {
         self.value.as_ref()
     }
 
-    /// 雅克比矩阵为对角阵，每个对角线元素对应一个父节点元素。若父节点元素大于0，则
-    /// 相应对角线元素（偏导数）为0，否则为-1。
-    fn calc_jacobi_to_a_parent(
+    // ========== VJP 模式 ==========
+
+    /// 计算 VJP 梯度
+    ///
+    /// `PerceptionLoss`（mean reduction）的梯度：
+    /// - x >= 0 时为 0
+    /// - x < 0 时为 -1/n（其中 n 为元素数）
+    ///
+    /// 上游梯度为标量 [1, 1]，输出梯度形状与父节点相同。
+    fn calc_grad_to_parent(
         &self,
         target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // 1. 计算对角线元素：x >= 0 时为0，否则为-1
         let parent_value = target_parent.value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的父节点{}没有值。不该触及本错误，否则说明crate代码有问题",
+                "{}的父节点{}没有值",
                 self.display_node(),
                 target_parent
             ))
         })?;
-        let diag = tensor_where!(parent_value >= 0.0, 0.0, -1.0);
 
-        // 2. 构造对角矩阵作为雅可比矩阵
-        let flatten = diag.flatten();
-        let diag1 = Tensor::diag(&flatten);
+        // 元素数量
+        let n = parent_value.size() as f32;
 
-        // 如果是标量（大小为1），返回1x1矩阵
-        if diag1.is_scalar() {
-            let scalar_value = diag1.get_data_number().unwrap();
-            return Ok(scalar_value.into()); // 使用From<f32> trait
-        }
-        Ok(diag1)
+        // 局部梯度：x >= 0 时为 0，否则为 -1/n（mean reduction）
+        let local_grad = tensor_where!(parent_value >= 0.0, 0.0, -1.0 / n);
+
+        // 上游梯度为标量 [1, 1]，需要广播到父节点形状
+        let upstream_scalar = upstream_grad.get_data_number().unwrap_or(1.0);
+
+        // VJP: upstream_scalar * local_grad
+        Ok(&local_grad * upstream_scalar)
     }
 
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
     }
 
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
+    fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
+        self.grad = grad.cloned();
         Ok(())
     }
 

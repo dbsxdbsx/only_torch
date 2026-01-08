@@ -1,12 +1,28 @@
+/*
+ * @Author       : 老董
+ * @Description  : ScalarMultiply 节点单元测试
+ *
+ * 测试策略：
+ * 1. 基础功能测试（创建、形状验证、命名）
+ * 2. 前向传播测试
+ * 3. VJP 单元测试（直接调用 calc_grad_to_parent）
+ * 4. 端到端反向传播测试（通过 graph.backward）
+ * 5. 梯度累积测试
+ */
+
 use crate::assert_err;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
+use approx::assert_abs_diff_eq;
 
+// ==================== 基础功能测试 ====================
+
+/// 测试 ScalarMultiply 节点创建
 #[test]
-fn test_node_scalar_multiply_creation() {
+fn test_scalar_multiply_creation() {
     let mut graph = Graph::new();
 
-    // 1. 测试正常创建：标量(1x1) * 矩阵(2x3)
+    // 1. 标量(1x1) * 矩阵(2x3)
     {
         let scalar = graph.new_parameter_node(&[1, 1], Some("scalar")).unwrap();
         let matrix = graph.new_input_node(&[2, 3], Some("matrix")).unwrap();
@@ -14,19 +30,15 @@ fn test_node_scalar_multiply_creation() {
             .new_scalar_multiply_node(scalar, matrix, Some("scalar_mul"))
             .unwrap();
 
-        // 验证基本属性
         assert_eq!(graph.get_node_name(result).unwrap(), "scalar_mul");
         assert_eq!(graph.get_node_parents(result).unwrap().len(), 2);
-        assert_eq!(graph.get_node_children(result).unwrap().len(), 0);
-
-        // 验证输出形状与矩阵形状相同
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
             &[2, 3]
         );
     }
 
-    // 2. 测试标量 * 向量(1xN)
+    // 2. 标量 * 向量(1xN)
     {
         let scalar = graph.new_parameter_node(&[1, 1], Some("scalar2")).unwrap();
         let vector = graph.new_input_node(&[1, 5], Some("vector")).unwrap();
@@ -40,14 +52,10 @@ fn test_node_scalar_multiply_creation() {
         );
     }
 
-    // 3. 测试标量 * 标量(1x1)
+    // 3. 标量 * 标量(1x1)
     {
-        let scalar1 = graph
-            .new_parameter_node(&[1, 1], Some("scalar_a"))
-            .unwrap();
-        let scalar2 = graph
-            .new_parameter_node(&[1, 1], Some("scalar_b"))
-            .unwrap();
+        let scalar1 = graph.new_parameter_node(&[1, 1], Some("scalar_a")).unwrap();
+        let scalar2 = graph.new_parameter_node(&[1, 1], Some("scalar_b")).unwrap();
         let result = graph
             .new_scalar_multiply_node(scalar1, scalar2, Some("scalar_mul_scalar"))
             .unwrap();
@@ -59,51 +67,71 @@ fn test_node_scalar_multiply_creation() {
     }
 }
 
+/// 测试 ScalarMultiply 创建时的形状校验
 #[test]
-fn test_node_scalar_multiply_creation_with_invalid_shape() {
+fn test_scalar_multiply_creation_invalid_shape() {
     let mut graph = Graph::new();
 
-    // 1. 测试第1个参数不是标量（应该失败）
+    // 1. 第1个参数不是标量（应该失败）
     let non_scalar = graph
         .new_parameter_node(&[2, 3], Some("non_scalar"))
         .unwrap();
     let matrix = graph.new_input_node(&[3, 4], Some("matrix")).unwrap();
 
     let result = graph.new_scalar_multiply_node(non_scalar, matrix, None);
-    assert_err!(result, GraphError::ShapeMismatch([1, 1], [2, 3], "ScalarMultiply的第1个父节点必须是标量(形状为[1,1])"));
+    assert_err!(
+        result,
+        GraphError::ShapeMismatch(
+            [1, 1],
+            [2, 3],
+            "ScalarMultiply的第1个父节点必须是标量(形状为[1,1])"
+        )
+    );
 
-    // 2. 测试第1个参数是向量(1xN)而非标量（应该失败）
+    // 2. 第1个参数是向量(1xN)而非标量（应该失败）
     let vector = graph.new_parameter_node(&[1, 3], Some("vector")).unwrap();
     let result = graph.new_scalar_multiply_node(vector, matrix, None);
-    assert_err!(result, GraphError::ShapeMismatch([1, 1], [1, 3], "ScalarMultiply的第1个父节点必须是标量(形状为[1,1])"));
+    assert_err!(
+        result,
+        GraphError::ShapeMismatch(
+            [1, 1],
+            [1, 3],
+            "ScalarMultiply的第1个父节点必须是标量(形状为[1,1])"
+        )
+    );
 }
 
+/// 测试 ScalarMultiply 节点命名
 #[test]
-fn test_node_scalar_multiply_name_generation() {
+fn test_scalar_multiply_name_generation() {
     let mut graph = Graph::new();
 
     let scalar = graph.new_parameter_node(&[1, 1], Some("s")).unwrap();
     let matrix = graph.new_input_node(&[2, 3], Some("m")).unwrap();
 
-    // 1. 测试显式命名
+    // 1. 显式命名
     let result1 = graph
         .new_scalar_multiply_node(scalar, matrix, Some("my_scalar_mul"))
         .unwrap();
     assert_eq!(graph.get_node_name(result1).unwrap(), "my_scalar_mul");
 
-    // 2. 测试自动命名
+    // 2. 自动命名
     let result2 = graph
         .new_scalar_multiply_node(scalar, matrix, None)
         .unwrap();
     assert_eq!(graph.get_node_name(result2).unwrap(), "scalar_multiply_1");
 
-    // 3. 测试名称重复
+    // 3. 名称重复
     let result = graph.new_scalar_multiply_node(scalar, matrix, Some("my_scalar_mul"));
-    assert_err!(result, GraphError::DuplicateNodeName("节点my_scalar_mul在图default_graph中重复"));
+    assert_err!(
+        result,
+        GraphError::DuplicateNodeName("节点my_scalar_mul在图default_graph中重复")
+    );
 }
 
+/// 测试 ScalarMultiply 节点不能直接设置值
 #[test]
-fn test_node_scalar_multiply_manually_set_value() {
+fn test_scalar_multiply_cannot_set_value() {
     let mut graph = Graph::new();
     let scalar = graph.new_parameter_node(&[1, 1], Some("s")).unwrap();
     let matrix = graph.new_input_node(&[2, 3], Some("m")).unwrap();
@@ -111,196 +139,374 @@ fn test_node_scalar_multiply_manually_set_value() {
         .new_scalar_multiply_node(scalar, matrix, Some("sm"))
         .unwrap();
 
-    // 测试直接设置ScalarMultiply节点的值（应该失败）
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
     assert_err!(
         graph.set_node_value(result, Some(&test_value)),
-        GraphError::InvalidOperation("节点[id=3, name=sm, type=ScalarMultiply]的值只能通过前向传播计算得到，不能直接设置")
+        GraphError::InvalidOperation(
+            "节点[id=3, name=sm, type=ScalarMultiply]的值只能通过前向传播计算得到，不能直接设置"
+        )
     );
 }
 
-#[test]
-fn test_node_scalar_multiply_forward_propagation() {
-    // 测试数据（与Python测试tests/python/calc_jacobi_by_pytorch/node_scalar_multiply.py保持一致）
-    let scalar_data = &[2.0];
-    let matrix_data = &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-    let expected_output = &[2.0, 4.0, 6.0, 8.0, 10.0, 12.0];
+// ==================== 前向传播测试 ====================
 
+/// 测试 ScalarMultiply 前向传播
+#[test]
+fn test_scalar_multiply_forward() {
     let mut graph = Graph::new();
 
-    // 创建节点
     let scalar = graph.new_parameter_node(&[1, 1], Some("scalar")).unwrap();
     let matrix = graph.new_input_node(&[2, 3], Some("matrix")).unwrap();
     let result = graph
         .new_scalar_multiply_node(scalar, matrix, Some("result"))
         .unwrap();
 
-    // 设置输入值
-    let scalar_value = Tensor::new(scalar_data, &[1, 1]);
-    let matrix_value = Tensor::new(matrix_data, &[2, 3]);
-    graph.set_node_value(scalar, Some(&scalar_value)).unwrap();
-    graph.set_node_value(matrix, Some(&matrix_value)).unwrap();
+    // s=2, M=[1,2,3,4,5,6] → result=[2,4,6,8,10,12]
+    graph
+        .set_node_value(scalar, Some(&Tensor::new(&[2.0], &[1, 1])))
+        .unwrap();
+    graph
+        .set_node_value(
+            matrix,
+            Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])),
+        )
+        .unwrap();
 
-    // 前向传播
-    graph.forward_node(result).unwrap();
+    graph.forward(result).unwrap();
 
-    // 验证输出
     let output = graph.get_node_value(result).unwrap().unwrap();
-    let expected = Tensor::new(expected_output, &[2, 3]);
+    let expected = Tensor::new(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0], &[2, 3]);
     assert_eq!(output, &expected);
 }
 
-#[test]
-fn test_node_scalar_multiply_backward_propagation() {
-    // 测试数据（与Python测试tests/python/calc_jacobi_by_pytorch/node_scalar_multiply.py保持一致）
-    let scalar_data = &[2.0];
-    let matrix_data = &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-    // 对标量的雅可比矩阵：M.flatten().T → shape: [6, 1]
-    let expected_jacobi_scalar = &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-    // 对矩阵的雅可比矩阵：s * I_6 → shape: [6, 6]
-    #[rustfmt::skip]
-    let expected_jacobi_matrix = &[
-        2.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 2.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 2.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 2.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 2.0,
-    ];
+// ==================== 节点级反向传播测试（直接调用 calc_grad_to_parent）====================
 
+/// 测试 ScalarMultiply 对 scalar 的梯度计算
+///
+/// 对于 result = s * M，有 ∂result/∂s = M
+/// VJP: grad_to_scalar = sum(upstream_grad * M)
+#[test]
+fn test_scalar_multiply_backward_to_scalar() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
-    // 创建节点
-    let scalar = graph.new_parameter_node(&[1, 1], Some("scalar")).unwrap();
-    let matrix = graph.new_parameter_node(&[2, 3], Some("matrix")).unwrap();
-    let result = graph
-        .new_scalar_multiply_node(scalar, matrix, Some("result"))
-        .unwrap();
+    let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
+    let matrix_id = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
+    let result_id = graph.new_scalar_multiply_node(scalar_id, matrix_id, Some("result"))?;
 
-    // 设置输入值
-    let scalar_value = Tensor::new(scalar_data, &[1, 1]);
-    let matrix_value = Tensor::new(matrix_data, &[2, 3]);
-    graph.set_node_value(scalar, Some(&scalar_value)).unwrap();
-    graph.set_node_value(matrix, Some(&matrix_value)).unwrap();
-
-    // 前向传播
-    graph.forward_node(result).unwrap();
-
-    // 测试对标量的反向传播（retain_graph=true 以便继续 backward）
-    graph.backward_nodes_ex(&[scalar], result, true).unwrap();
-    let scalar_jacobi = graph.get_node_jacobi(scalar).unwrap().unwrap();
-    let expected_scalar_jacobi = Tensor::new(expected_jacobi_scalar, &[6, 1]);
-    assert_eq!(scalar_jacobi, &expected_scalar_jacobi);
-
-    // 测试对矩阵的反向传播
-    graph.backward_nodes(&[matrix], result).unwrap();
-    let matrix_jacobi = graph.get_node_jacobi(matrix).unwrap().unwrap();
-    let expected_matrix_jacobi = Tensor::new(expected_jacobi_matrix, &[6, 6]);
-    assert_eq!(matrix_jacobi, &expected_matrix_jacobi);
-}
-
-#[test]
-fn test_node_scalar_multiply_gradient_accumulation() {
-    let mut graph = Graph::new();
-
-    // 创建节点
-    let scalar = graph.new_parameter_node(&[1, 1], Some("scalar")).unwrap();
-    let matrix = graph.new_parameter_node(&[2, 3], Some("matrix")).unwrap();
-    let result = graph
-        .new_scalar_multiply_node(scalar, matrix, Some("result"))
-        .unwrap();
-
-    // 设置输入值
+    // 设置值
     let scalar_value = Tensor::new(&[2.0], &[1, 1]);
     let matrix_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    graph.set_node_value(scalar, Some(&scalar_value)).unwrap();
-    graph.set_node_value(matrix, Some(&matrix_value)).unwrap();
+    graph.set_node_value(scalar_id, Some(&scalar_value))?;
+    graph.set_node_value(matrix_id, Some(&matrix_value))?;
+    graph.forward(result_id)?;
 
-    // 前向传播
-    graph.forward_node(result).unwrap();
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[2, 3]);
+    let result_node = graph.get_node(result_id)?;
+    let scalar_node = graph.get_node(scalar_id)?;
+    let matrix_node = graph.get_node(matrix_id)?;
 
-    // 第1次反向传播（retain_graph=true 以便多次 backward）
-    graph.backward_nodes_ex(&[scalar], result, true).unwrap();
-    let jacobi_first = graph.get_node_jacobi(scalar).unwrap().unwrap().clone();
+    let grad = result_node.calc_grad_to_parent(scalar_node, &upstream_grad, Some(matrix_node))?;
 
-    // 第2次反向传播（梯度应该累积）
-    graph.backward_nodes_ex(&[scalar], result, true).unwrap();
-    let jacobi_second = graph.get_node_jacobi(scalar).unwrap().unwrap();
+    // grad_to_scalar = sum(upstream * M) = sum([1,2,3,4,5,6]) = 21
+    assert_eq!(grad.shape(), &[1, 1]);
+    assert_abs_diff_eq!(grad.get_data_number().unwrap(), 21.0, epsilon = 1e-6);
 
-    // 验证梯度累积
-    assert_eq!(jacobi_second, &(&jacobi_first * 2.0));
-
-    // 清除梯度后再次反向传播（最后一次可以不保留图）
-    graph.clear_jacobi().unwrap();
-    graph.backward_nodes(&[scalar], result).unwrap();
-    let jacobi_after_clear = graph.get_node_jacobi(scalar).unwrap().unwrap();
-
-    // 验证清除后梯度回到初始值
-    assert_eq!(jacobi_after_clear, &jacobi_first);
+    Ok(())
 }
 
-/// 测试ScalarMultiply在更复杂计算图中的使用（模拟batch训练中的bias广播）
+/// 测试 ScalarMultiply 对 matrix 的梯度计算
+///
+/// 对于 result = s * M，有 ∂result/∂M = s * I（逐元素）
+/// VJP: grad_to_matrix = s * upstream_grad
 #[test]
-fn test_node_scalar_multiply_in_batch_training_scenario() {
+fn test_scalar_multiply_backward_to_matrix() -> Result<(), GraphError> {
     let mut graph = Graph::new();
 
-    // 模拟batch训练场景：
-    // X: [batch_size, features] = [3, 2]
-    // W: [features, 1] = [2, 1]
-    // b: [1, 1] 标量偏置
-    // ones: [batch_size, 1] = [3, 1] 全1向量
-    // bias = ScalarMultiply(b, ones) → [3, 1]
-    // output = MatMul(X, W) + bias → [3, 1]
+    let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
+    let matrix_id = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
+    let result_id = graph.new_scalar_multiply_node(scalar_id, matrix_id, Some("result"))?;
 
-    let batch_size = 3;
-    let features = 2;
+    // 设置值
+    let scalar_value = Tensor::new(&[2.0], &[1, 1]);
+    let matrix_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    graph.set_node_value(scalar_id, Some(&scalar_value))?;
+    graph.set_node_value(matrix_id, Some(&matrix_value))?;
+    graph.forward(result_id)?;
 
-    // 创建节点
-    let x = graph
-        .new_input_node(&[batch_size, features], Some("X"))
-        .unwrap();
-    let w = graph.new_parameter_node(&[features, 1], Some("W")).unwrap();
-    let b = graph.new_parameter_node(&[1, 1], Some("b")).unwrap();
-    let ones = graph
-        .new_input_node(&[batch_size, 1], Some("ones"))
-        .unwrap();
+    // 直接测试 VJP
+    let upstream_grad = Tensor::ones(&[2, 3]);
+    let result_node = graph.get_node(result_id)?;
+    let scalar_node = graph.get_node(scalar_id)?;
+    let matrix_node = graph.get_node(matrix_id)?;
 
-    // 构建计算图
-    let xw = graph.new_mat_mul_node(x, w, Some("xw")).unwrap();
-    let bias = graph
-        .new_scalar_multiply_node(b, ones, Some("bias"))
-        .unwrap();
-    let output = graph.new_add_node(&[xw, bias], Some("output")).unwrap();
+    let grad = result_node.calc_grad_to_parent(matrix_node, &upstream_grad, Some(scalar_node))?;
 
-    // 设置输入值
-    let x_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[batch_size, features]);
-    let w_value = Tensor::new(&[0.5, 0.5], &[features, 1]);
-    let b_value = Tensor::new(&[1.0], &[1, 1]);
-    let ones_value = Tensor::new(&[1.0, 1.0, 1.0], &[batch_size, 1]);
+    // grad_to_matrix = s * upstream = 2 * ones = [2,2,2,2,2,2]
+    assert_eq!(grad.shape(), &[2, 3]);
+    let expected = Tensor::new(&[2.0; 6], &[2, 3]);
+    assert_eq!(&grad, &expected);
 
-    graph.set_node_value(x, Some(&x_value)).unwrap();
-    graph.set_node_value(w, Some(&w_value)).unwrap();
-    graph.set_node_value(b, Some(&b_value)).unwrap();
-    graph.set_node_value(ones, Some(&ones_value)).unwrap();
-
-    // 前向传播
-    graph.forward_node(output).unwrap();
-
-    // 验证输出
-    // xw = [[1*0.5+2*0.5], [3*0.5+4*0.5], [5*0.5+6*0.5]] = [[1.5], [3.5], [5.5]]
-    // bias = 1 * [1,1,1]^T = [[1], [1], [1]]
-    // output = xw + bias = [[2.5], [4.5], [6.5]]
-    let output_value = graph.get_node_value(output).unwrap().unwrap();
-    let expected_output = Tensor::new(&[2.5, 4.5, 6.5], &[batch_size, 1]);
-    assert_eq!(output_value, &expected_output);
-
-    // 反向传播：计算b的梯度
-    graph.backward_nodes(&[b], output).unwrap();
-    let b_jacobi = graph.get_node_jacobi(b).unwrap().unwrap();
-
-    // b的雅可比应该是 [3, 1]（因为bias对b的雅可比是ones，add对bias的雅可比是单位矩阵）
-    // 最终 b 的雅可比 = I_3 @ ones.T = [[1], [1], [1]]
-    let expected_b_jacobi = Tensor::new(&[1.0, 1.0, 1.0], &[3, 1]);
-    assert_eq!(b_jacobi, &expected_b_jacobi);
+    Ok(())
 }
 
+/// 测试 ScalarMultiply 梯度计算（非单位 upstream_grad）
+#[test]
+fn test_scalar_multiply_backward_with_non_unit_upstream() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
+    let matrix_id = graph.new_parameter_node(&[2, 2], Some("matrix"))?;
+    let result_id = graph.new_scalar_multiply_node(scalar_id, matrix_id, Some("result"))?;
+
+    // s=3, M=[[1,2],[3,4]]
+    graph.set_node_value(scalar_id, Some(&Tensor::new(&[3.0], &[1, 1])))?;
+    graph.set_node_value(
+        matrix_id,
+        Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])),
+    )?;
+    graph.forward(result_id)?;
+
+    // upstream_grad = [[1,2],[3,4]]（非全1）
+    let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let result_node = graph.get_node(result_id)?;
+    let scalar_node = graph.get_node(scalar_id)?;
+    let matrix_node = graph.get_node(matrix_id)?;
+
+    // 对 scalar 的梯度：sum(upstream * M) = 1*1 + 2*2 + 3*3 + 4*4 = 1+4+9+16 = 30
+    let grad_to_scalar =
+        result_node.calc_grad_to_parent(scalar_node, &upstream_grad, Some(matrix_node))?;
+    assert_abs_diff_eq!(
+        grad_to_scalar.get_data_number().unwrap(),
+        30.0,
+        epsilon = 1e-6
+    );
+
+    // 对 matrix 的梯度：s * upstream = 3 * [[1,2],[3,4]] = [[3,6],[9,12]]
+    let grad_to_matrix =
+        result_node.calc_grad_to_parent(matrix_node, &upstream_grad, Some(scalar_node))?;
+    let expected = Tensor::new(&[3.0, 6.0, 9.0, 12.0], &[2, 2]);
+    assert_eq!(&grad_to_matrix, &expected);
+
+    Ok(())
+}
+
+/// 测试 ScalarMultiply 梯度计算（负数值）
+///
+/// 验证 VJP 在负数值场景下的正确性
+#[test]
+fn test_scalar_multiply_backward_with_negative_values() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
+    let matrix_id = graph.new_parameter_node(&[2, 2], Some("matrix"))?;
+    let result_id = graph.new_scalar_multiply_node(scalar_id, matrix_id, Some("result"))?;
+
+    // s=-2, M=[[-1,2],[-3,4]]
+    let scalar_value = Tensor::new(&[-2.0], &[1, 1]);
+    let matrix_value = Tensor::new(&[-1.0, 2.0, -3.0, 4.0], &[2, 2]);
+    graph.set_node_value(scalar_id, Some(&scalar_value))?;
+    graph.set_node_value(matrix_id, Some(&matrix_value))?;
+    graph.forward(result_id)?;
+
+    // 验证前向传播：-2 * [[-1,2],[-3,4]] = [[2,-4],[6,-8]]
+    let output = graph.get_node_value(result_id)?.unwrap();
+    let expected_output = Tensor::new(&[2.0, -4.0, 6.0, -8.0], &[2, 2]);
+    assert_eq!(output, &expected_output);
+
+    // upstream_grad = [[1,1],[1,1]]
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let result_node = graph.get_node(result_id)?;
+    let scalar_node = graph.get_node(scalar_id)?;
+    let matrix_node = graph.get_node(matrix_id)?;
+
+    // grad_to_scalar = sum(upstream * M) = sum([[-1,2],[-3,4]]) = -1+2-3+4 = 2
+    let grad_to_scalar =
+        result_node.calc_grad_to_parent(scalar_node, &upstream_grad, Some(matrix_node))?;
+    assert_abs_diff_eq!(
+        grad_to_scalar.get_data_number().unwrap(),
+        2.0,
+        epsilon = 1e-6
+    );
+
+    // grad_to_matrix = s * upstream = -2 * ones = [[-2,-2],[-2,-2]]
+    let grad_to_matrix =
+        result_node.calc_grad_to_parent(matrix_node, &upstream_grad, Some(scalar_node))?;
+    let expected_matrix_grad = Tensor::new(&[-2.0; 4], &[2, 2]);
+    assert_eq!(&grad_to_matrix, &expected_matrix_grad);
+
+    Ok(())
+}
+
+/// 测试 ScalarMultiply 梯度计算（零标量）
+///
+/// 零标量是重要边界情况：0*M=0，但梯度仍应正确传播
+#[test]
+fn test_scalar_multiply_backward_with_zero_scalar() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
+    let matrix_id = graph.new_parameter_node(&[2, 2], Some("matrix"))?;
+    let result_id = graph.new_scalar_multiply_node(scalar_id, matrix_id, Some("result"))?;
+
+    // s=0, M=[[1,2],[3,4]]
+    let scalar_value = Tensor::new(&[0.0], &[1, 1]);
+    let matrix_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    graph.set_node_value(scalar_id, Some(&scalar_value))?;
+    graph.set_node_value(matrix_id, Some(&matrix_value))?;
+    graph.forward(result_id)?;
+
+    // 验证前向传播：0 * [[1,2],[3,4]] = [[0,0],[0,0]]
+    let output = graph.get_node_value(result_id)?.unwrap();
+    assert_eq!(output, &Tensor::zeros(&[2, 2]));
+
+    // upstream_grad = [[1,1],[1,1]]
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let result_node = graph.get_node(result_id)?;
+    let scalar_node = graph.get_node(scalar_id)?;
+    let matrix_node = graph.get_node(matrix_id)?;
+
+    // 即使输出全为 0，梯度仍应正确计算
+    // grad_to_scalar = sum(upstream * M) = sum([[1,2],[3,4]]) = 10
+    let grad_to_scalar =
+        result_node.calc_grad_to_parent(scalar_node, &upstream_grad, Some(matrix_node))?;
+    assert_abs_diff_eq!(
+        grad_to_scalar.get_data_number().unwrap(),
+        10.0,
+        epsilon = 1e-6
+    );
+
+    // grad_to_matrix = s * upstream = 0 * ones = [[0,0],[0,0]]
+    let grad_to_matrix =
+        result_node.calc_grad_to_parent(matrix_node, &upstream_grad, Some(scalar_node))?;
+    assert_eq!(&grad_to_matrix, &Tensor::zeros(&[2, 2]));
+
+    Ok(())
+}
+
+/// 测试 ScalarMultiply 梯度计算缺少 assistant_parent 时报错
+#[test]
+fn test_scalar_multiply_backward_missing_assistant_parent() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
+    let matrix_id = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
+    let result_id = graph.new_scalar_multiply_node(scalar_id, matrix_id, Some("result"))?;
+
+    // 设置值并前向传播
+    graph.set_node_value(scalar_id, Some(&Tensor::new(&[2.0], &[1, 1])))?;
+    graph.set_node_value(
+        matrix_id,
+        Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])),
+    )?;
+    graph.forward(result_id)?;
+
+    // 直接测试 VJP，不传 assistant_parent（应该报错）
+    let upstream_grad = Tensor::ones(&[2, 3]);
+    let result_node = graph.get_node(result_id)?;
+    let scalar_node = graph.get_node(scalar_id)?;
+
+    let result = result_node.calc_grad_to_parent(scalar_node, &upstream_grad, None);
+    assert_err!(
+        result,
+        GraphError::ComputationError("ScalarMultiply 节点计算梯度需要辅助父节点")
+    );
+
+    Ok(())
+}
+
+// ==================== 端到端反向传播测试 ====================
+
+/// 测试 ScalarMultiply 通过 graph.backward() 的端到端反向传播
+///
+/// 构建简单图：result = s * M → loss = MSE(result, target)
+#[test]
+fn test_scalar_multiply_backward_e2e() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    // 创建简单的计算图：result = s * M
+    let scalar = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
+    let matrix = graph.new_parameter_node(&[2, 2], Some("matrix"))?;
+    let result = graph.new_scalar_multiply_node(scalar, matrix, Some("result"))?;
+
+    // loss = MSE(result, target)
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值：s=2, M=[[1,2],[3,4]], target=[[0,0],[0,0]]
+    graph.set_node_value(scalar, Some(&Tensor::new(&[2.0], &[1, 1])))?;
+    graph.set_node_value(matrix, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
+
+    // 前向传播
+    graph.forward(loss)?;
+
+    // result = [[2,4],[6,8]]
+    // loss = mean((result - 0)^2) = mean([4,16,36,64]) = 120/4 = 30
+    let loss_value = graph.get_node_value(loss)?.unwrap();
+    assert_abs_diff_eq!(loss_value.get_data_number().unwrap(), 30.0, epsilon = 1e-6);
+
+    // 反向传播（验证 backward 返回 loss 标量值 —— Phase 2 API 契约）
+    graph.zero_grad()?;
+    let loss_returned = graph.backward(loss)?;
+    assert_abs_diff_eq!(loss_returned, 30.0, epsilon = 1e-6);
+
+    // 验证梯度存在且形状正确
+    let scalar_grad = graph.get_node(scalar)?.grad().expect("scalar 应有 grad");
+    let matrix_grad = graph.get_node(matrix)?.grad().expect("matrix 应有 grad");
+    assert_eq!(scalar_grad.shape(), &[1, 1]);
+    assert_eq!(matrix_grad.shape(), &[2, 2]);
+
+    // ∂loss/∂result = 2*(result - target)/n = 2*result/4 = result/2 = [[1,2],[3,4]]
+    // ∂loss/∂scalar = sum(∂loss/∂result * M) = sum([[1,2],[3,4]] * [[1,2],[3,4]]) = 1+4+9+16 = 30
+    assert_abs_diff_eq!(scalar_grad.get_data_number().unwrap(), 30.0, epsilon = 1e-6);
+
+    // ∂loss/∂matrix = s * ∂loss/∂result = 2 * [[1,2],[3,4]] = [[2,4],[6,8]]
+    let expected_matrix_grad = Tensor::new(&[2.0, 4.0, 6.0, 8.0], &[2, 2]);
+    assert_eq!(matrix_grad, &expected_matrix_grad);
+
+    Ok(())
+}
+
+// ==================== 梯度累积测试 ====================
+
+/// 测试 ScalarMultiply 梯度累积
+///
+/// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
+/// 这是 PyTorch 兼容的行为，支持"micro-batch 梯度累积"场景。
+#[test]
+fn test_scalar_multiply_gradient_accumulation() -> Result<(), GraphError> {
+    let mut graph = Graph::new();
+
+    let scalar = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
+    let matrix = graph.new_parameter_node(&[2, 2], Some("matrix"))?;
+    let result = graph.new_scalar_multiply_node(scalar, matrix, Some("result"))?;
+    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值
+    graph.set_node_value(scalar, Some(&Tensor::new(&[2.0], &[1, 1])))?;
+    graph.set_node_value(matrix, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
+    graph.forward(loss)?;
+
+    // 第1次反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad_first = graph.get_node(scalar)?.grad().unwrap().clone();
+
+    // 第2次反向传播（梯度累积）- 需要重新 forward（PyTorch 语义）
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_second = graph.get_node(scalar)?.grad().unwrap();
+    assert_eq!(grad_second, &(&grad_first * 2.0));
+
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad_after_clear = graph.get_node(scalar)?.grad().unwrap();
+    assert_eq!(grad_after_clear, &grad_first);
+
+    Ok(())
+}

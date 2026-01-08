@@ -29,7 +29,6 @@ pub(crate) struct Flatten {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,
     grad: Option<Tensor>,
     /// 目标形状
     target_shape: Vec<usize>,
@@ -81,7 +80,6 @@ impl Flatten {
             id: None,
             name: None,
             value: None,
-            jacobi: None,
             grad: None,
             target_shape,
             parent_shape,
@@ -97,7 +95,7 @@ impl Flatten {
 
     /// 是否保留首维度
     #[allow(dead_code)]
-    pub(crate) fn keep_first_dim(&self) -> bool {
+    pub(crate) const fn keep_first_dim(&self) -> bool {
         self.keep_first_dim
     }
 }
@@ -142,35 +140,6 @@ impl TraitNode for Flatten {
         self.value.as_ref()
     }
 
-    fn calc_jacobi_to_a_parent(
-        &self,
-        _target_parent: &NodeHandle,
-        _assistant_parent: Option<&NodeHandle>,
-    ) -> Result<Tensor, GraphError> {
-        // Flatten 的 Jacobi 是单位矩阵（与 Reshape 相同）
-        let size = self
-            .value()
-            .ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "{} 没有值。不该触及本错误，否则说明 crate 代码有问题",
-                    self.display_node()
-                ))
-            })?
-            .size();
-        Ok(Tensor::eyes(size))
-    }
-
-    fn jacobi(&self) -> Option<&Tensor> {
-        self.jacobi.as_ref()
-    }
-
-    fn set_jacobi(&mut self, jacobi: Option<&Tensor>) -> Result<(), GraphError> {
-        self.jacobi = jacobi.cloned();
-        Ok(())
-    }
-
-    // ========== Batch 模式 ==========
-
     fn calc_grad_to_parent(
         &self,
         _target_parent: &NodeHandle,
@@ -199,4 +168,3 @@ impl TraitNode for Flatten {
         self.value = value.cloned();
     }
 }
-

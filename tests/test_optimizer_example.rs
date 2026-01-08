@@ -74,13 +74,15 @@ fn test_optimizer_example() -> Result<(), GraphError> {
     let loss = graph.new_perception_loss_node(loss_input, Some("loss"))?;
 
     // 学习率（与Python版本一致）
+    // 注意：新 API 不做梯度平均，所以除以 mini_batch_size 来保持等效
     let learning_rate = 0.0001;
+    let mini_batch_size = 8;
+    let scaled_lr = learning_rate / mini_batch_size as f32;
 
     // 创建SGD优化器
-    let mut optimizer = SGD::new(&graph, learning_rate)?;
+    let mut optimizer = SGD::new(&graph, scaled_lr)?;
 
     // mini batch参数
-    let mini_batch_size = 8;
     let mut cur_batch_size = 0;
 
     // 测试参数（与test_adaline.rs一致）
@@ -104,14 +106,14 @@ fn test_optimizer_example() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(&features))?;
             graph.set_node_value(label, Some(&l))?;
 
-            // 优化器执行一次前向传播和一次后向传播
-            // loss_input = label * output 会在前向传播时自动计算
-            optimizer.one_step(&mut graph, loss)?;
+            // 前向传播和反向传播（梯度会累积）
+            graph.forward(loss)?;
+            graph.backward(loss)?;
             cur_batch_size += 1;
 
-            // 当积累到一个mini batch的时候，完成一次参数更新
+            // 当积累到一个 mini batch 的时候，完成一次参数更新
             if cur_batch_size == mini_batch_size {
-                // 在第一个epoch的第一个batch打印调试信息
+                // 在第一个 epoch 的第一个 batch 打印调试信息
                 if epoch == 0 && i < mini_batch_size {
                     println!(
                         "更新前 w: {:?}",
@@ -123,7 +125,8 @@ fn test_optimizer_example() -> Result<(), GraphError> {
                     );
                 }
 
-                optimizer.update(&mut graph)?;
+                optimizer.step(&mut graph)?;
+                graph.zero_grad()?;
 
                 if epoch == 0 && i < mini_batch_size {
                     println!(
@@ -140,9 +143,10 @@ fn test_optimizer_example() -> Result<(), GraphError> {
             }
         }
 
-        // 处理最后不完整的batch
+        // 处理最后不完整的 batch
         if cur_batch_size > 0 {
-            optimizer.update(&mut graph)?;
+            optimizer.step(&mut graph)?;
+            graph.zero_grad()?;
             cur_batch_size = 0;
         }
 
@@ -155,7 +159,7 @@ fn test_optimizer_example() -> Result<(), GraphError> {
             graph.set_node_value(x, Some(&features))?;
 
             // 在模型的predict节点上执行前向传播
-            graph.forward_node(predict)?;
+            graph.forward(predict)?;
             let predict_value = graph.get_node_value(predict)?.unwrap();
             pred_vec.push(predict_value.get(&[0, 0]).get_data_number().unwrap());
         }

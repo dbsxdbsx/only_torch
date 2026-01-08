@@ -1,8 +1,8 @@
 //! California Housing 房价回归数据集
 //!
-//! 来源：sklearn / StatLib
+//! 来源：sklearn / `StatLib`
 //! - 20,640 个样本
-//! - 8 个特征：MedInc, HouseAge, AveRooms, AveBedrms, Population, AveOccup, Latitude, Longitude
+//! - 8 个特征：MedInc, `HouseAge`, `AveRooms`, `AveBedrms`, Population, `AveOccup`, Latitude, Longitude
 //! - 1 个目标：MedHouseVal（房价中位数，单位：$100,000）
 //!
 //! 这是回归任务的经典数据集，类似于分类任务中的 MNIST。
@@ -19,7 +19,7 @@ use crate::tensor::Tensor;
 use super::default_data_dir;
 
 /// California Housing 数据集下载地址（来自 Hands-on ML 书籍 GitHub）
-/// CSV 格式，包含 ocean_proximity 列需要跳过
+/// CSV 格式，包含 `ocean_proximity` 列需要跳过
 const CALIFORNIA_HOUSING_URL: &str =
     "https://raw.githubusercontent.com/ageron/handson-ml2/master/datasets/housing/housing.csv";
 
@@ -70,9 +70,10 @@ impl CaliforniaHousingDataset {
     /// # 返回
     /// 加载后的数据集（未标准化）
     pub fn load(root: Option<&str>, download: bool) -> Result<Self, DataError> {
-        let data_dir = root
-            .map(PathBuf::from)
-            .unwrap_or_else(|| default_data_dir().join("california_housing"));
+        let data_dir = root.map_or_else(
+            || default_data_dir().join("california_housing"),
+            PathBuf::from,
+        );
 
         let data_path = ensure_file(&data_dir, download)?;
         let (features, targets) = parse_csv(&data_path)?;
@@ -196,19 +197,19 @@ impl CaliforniaHousingDataset {
     /// 逆标准化预测值（用于评估时还原真实房价）
     pub fn inverse_transform_target(&self, prediction: f32) -> f32 {
         if let (Some(mean), Some(std)) = (self.target_mean, self.target_std) {
-            prediction * std + mean
+            prediction.mul_add(std, mean)
         } else {
             prediction
         }
     }
 
     /// 数据集样本数量
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
     }
 
     /// 数据集是否为空
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
@@ -240,8 +241,8 @@ impl CaliforniaHousingDataset {
     ///
     /// # 返回
     /// (features, targets) 元组
-    /// - features: [batch_size, 8]
-    /// - targets: [batch_size, 1]
+    /// - features: [`batch_size`, 8]
+    /// - targets: [`batch_size`, 1]
     pub fn get_batch(&self, start: usize, end: usize) -> Result<(Tensor, Tensor), DataError> {
         let end = end.min(self.len);
         if start >= end {
@@ -269,7 +270,7 @@ impl CaliforniaHousingDataset {
     /// - `seed`: 随机种子（用于打乱数据）
     ///
     /// # 返回
-    /// (train_dataset, test_dataset)
+    /// (`train_dataset`, `test_dataset`)
     pub fn train_test_split(
         self,
         test_ratio: f32,
@@ -351,22 +352,22 @@ impl CaliforniaHousingDataset {
     }
 
     /// 特征维度
-    pub fn feature_dim(&self) -> usize {
+    pub const fn feature_dim(&self) -> usize {
         NUM_FEATURES
     }
 
     /// 获取所有特征
-    pub fn features(&self) -> &Tensor {
+    pub const fn features(&self) -> &Tensor {
         &self.features
     }
 
     /// 获取所有目标
-    pub fn targets(&self) -> &Tensor {
+    pub const fn targets(&self) -> &Tensor {
         &self.targets
     }
 
     /// 是否已标准化
-    pub fn is_standardized(&self) -> bool {
+    pub const fn is_standardized(&self) -> bool {
         self.is_standardized
     }
 }
@@ -390,11 +391,11 @@ fn ensure_file(data_dir: &Path, download: bool) -> Result<PathBuf, DataError> {
 /// 下载数据集
 fn download_dataset(dest_path: &Path) -> Result<(), DataError> {
     println!("正在下载 California Housing 数据集...");
-    println!("URL: {}", CALIFORNIA_HOUSING_URL);
+    println!("URL: {CALIFORNIA_HOUSING_URL}");
 
     let response = ureq::get(CALIFORNIA_HOUSING_URL)
         .call()
-        .map_err(|e| DataError::DownloadError(format!("HTTP 请求失败: {}", e)))?;
+        .map_err(|e| DataError::DownloadError(format!("HTTP 请求失败: {e}")))?;
 
     if response.status() != 200 {
         return Err(DataError::DownloadError(format!(
@@ -407,26 +408,26 @@ fn download_dataset(dest_path: &Path) -> Result<(), DataError> {
     response
         .into_reader()
         .read_to_string(&mut content)
-        .map_err(|e| DataError::DownloadError(format!("读取响应失败: {}", e)))?;
+        .map_err(|e| DataError::DownloadError(format!("读取响应失败: {e}")))?;
 
     std::fs::write(dest_path, &content).map_err(DataError::IoError)?;
 
-    println!("下载完成: {:?}", dest_path);
+    println!("下载完成: {dest_path:?}");
     Ok(())
 }
 
 /// 解析 CSV 文件
 ///
 /// CSV 格式（来自 Hands-on ML）：
-/// longitude, latitude, housing_median_age, total_rooms, total_bedrooms,
-/// population, households, median_income, median_house_value, ocean_proximity
+/// longitude, latitude, `housing_median_age`, `total_rooms`, `total_bedrooms`,
+/// population, households, `median_income`, `median_house_value`, `ocean_proximity`
 ///
 /// 转换为 sklearn 格式特征：
-/// MedInc, HouseAge, AveRooms, AveBedrms, Population, AveOccup, Latitude, Longitude
+/// `MedInc`, `HouseAge`, `AveRooms`, `AveBedrms`, Population, `AveOccup`, Latitude, Longitude
 fn parse_csv(path: &Path) -> Result<(Tensor, Tensor), DataError> {
     let file = File::open(path).map_err(|_| DataError::FileNotFound(path.to_path_buf()))?;
 
-    let reader: Box<dyn BufRead> = if path.extension().map_or(false, |ext| ext == "gz") {
+    let reader: Box<dyn BufRead> = if path.extension().is_some_and(|ext| ext == "gz") {
         Box::new(BufReader::new(GzDecoder::new(file)))
     } else {
         Box::new(BufReader::new(file))
@@ -438,7 +439,7 @@ fn parse_csv(path: &Path) -> Result<(Tensor, Tensor), DataError> {
     let mut is_header = true;
 
     for line in reader.lines() {
-        let line = line.map_err(|e| DataError::FormatError(format!("读取行失败: {}", e)))?;
+        let line = line.map_err(|e| DataError::FormatError(format!("读取行失败: {e}")))?;
         let line = line.trim();
 
         // 跳过空行
@@ -535,7 +536,7 @@ fn parse_csv(path: &Path) -> Result<(Tensor, Tensor), DataError> {
     let features = Tensor::new(&features_data, &[sample_count, NUM_FEATURES]);
     let targets = Tensor::new(&targets_data, &[sample_count, 1]);
 
-    println!("加载了 {} 个样本", sample_count);
+    println!("加载了 {sample_count} 个样本");
 
     Ok((features, targets))
 }

@@ -32,7 +32,7 @@ use only_torch::tensor::Tensor;
 /// 生成变长奇偶性检测数据
 ///
 /// 返回: (sequences, labels, lengths)
-/// - sequences: Vec<Vec<f32>>，每个序列长度在 [min_len, max_len] 范围内
+/// - sequences: Vec<Vec<f32>>，每个序列长度在 [`min_len`, `max_len`] 范围内
 /// - labels: Vec<f32>，1.0 表示奇数个 1，0.0 表示偶数个 1
 /// - lengths: Vec<usize>，每个序列的实际长度
 fn generate_varlen_parity_data(
@@ -83,7 +83,7 @@ fn generate_varlen_parity_data(
     (sequences, labels, lengths)
 }
 
-/// 将变长序列填充到 max_len
+/// 将变长序列填充到 `max_len`
 fn pad_sequences(sequences: &[Vec<f32>], max_len: usize) -> Vec<Vec<f32>> {
     sequences
         .iter()
@@ -97,7 +97,7 @@ fn pad_sequences(sequences: &[Vec<f32>], max_len: usize) -> Vec<Vec<f32>> {
 
 /// 生成 mask 张量（标记有效时间步）
 ///
-/// 返回: Vec<Tensor>，每个元素是 [batch, hidden_size] 的 mask
+/// 返回: Vec<Tensor>，每个元素是 [batch, `hidden_size`] 的 mask
 /// mask[t][b, :] = 1.0 if t < lengths[b] else 0.0
 fn generate_masks(lengths: &[usize], max_len: usize, hidden_size: usize) -> Vec<Tensor> {
     let batch_size = lengths.len();
@@ -134,8 +134,8 @@ fn get_batch_labels(labels: &[f32]) -> Tensor {
 /// 创建支持变长 batch 的 RNN 网络（带 mask 状态冻结）
 ///
 /// 关键：添加 mask 输入节点和状态冻结逻辑
-/// h_t = mask * h̃_t + (1 - mask) * h_prev
-///     = h_prev + mask * (h̃_t - h_prev)
+/// `h_t` = mask * `h̃_t` + (1 - mask) * `h_prev`
+///     = `h_prev` + mask * (`h̃_t` - `h_prev`)
 fn create_varlen_parity_rnn(
     batch_size: usize,
     hidden_size: usize,
@@ -170,7 +170,7 @@ fn create_varlen_parity_rnn(
         .map(|i| {
             (seed, "w_ih", i).hash(&mut hasher);
             let h = hasher.finish();
-            ((h as f32 / u64::MAX as f32) * 2.0 - 1.0) * scale_ih
+            (h as f32 / u64::MAX as f32).mul_add(2.0, -1.0) * scale_ih
         })
         .collect();
     graph.set_node_value(w_ih, Some(&Tensor::new(&w_ih_init, &[1, hidden_size])))?;
@@ -182,7 +182,7 @@ fn create_varlen_parity_rnn(
         .map(|i| {
             (seed, "w_hh", i).hash(&mut hasher);
             let h = hasher.finish();
-            ((h as f32 / u64::MAX as f32) * 2.0 - 1.0) * scale_hh
+            (h as f32 / u64::MAX as f32).mul_add(2.0, -1.0) * scale_hh
         })
         .collect();
     graph.set_node_value(
@@ -216,7 +216,7 @@ fn create_varlen_parity_rnn(
         .map(|i| {
             (seed, "w_ho", i).hash(&mut hasher);
             let h = hasher.finish();
-            ((h as f32 / u64::MAX as f32) * 2.0 - 1.0) * scale_ho
+            (h as f32 / u64::MAX as f32).mul_add(2.0, -1.0) * scale_ho
         })
         .collect();
     graph.set_node_value(w_ho, Some(&Tensor::new(&w_ho_init, &[hidden_size, 1])))?;
@@ -239,13 +239,13 @@ fn create_varlen_parity_rnn(
 /// 手动 SGD 更新
 fn sgd_update(graph: &mut Graph, params: &[NodeId], lr: f32) -> Result<(), GraphError> {
     for &param in params {
-        if let Some(jacobi) = graph.get_node_jacobi(param)? {
+        if let Some(param_grad) = graph.get_node_grad(param)? {
             let current_value = graph.get_node_value(param)?.unwrap().clone();
             let param_shape = current_value.shape();
-            let grad = if jacobi.shape() != param_shape {
-                jacobi.reshape(param_shape)
+            let grad = if param_grad.shape() == param_shape {
+                param_grad.clone()
             } else {
-                jacobi.clone()
+                param_grad.reshape(param_shape)
             };
             let new_value = &current_value - &(&grad * lr);
             graph.set_node_value(param, Some(&new_value))?;
@@ -297,7 +297,7 @@ fn train_varlen_batch(
             padded_sequences.len(),
             max_len
         );
-        println!("    损失值: {:.6}", loss_value);
+        println!("    损失值: {loss_value:.6}");
     }
 
     // BPTT
@@ -306,9 +306,9 @@ fn train_varlen_batch(
     if debug {
         for (i, &param) in params.iter().enumerate() {
             let grad = graph
-                .get_node_jacobi(param)?
+                .get_node_grad(param)?
                 .map(|j| format!("{:.6}", j.data_as_slice()[0]));
-            println!("    参数[{}] 梯度: {:?}", i, grad);
+            println!("    参数[{i}] 梯度: {grad:?}");
         }
     }
 
@@ -316,7 +316,7 @@ fn train_varlen_batch(
     sgd_update(graph, params, lr)?;
 
     // 清零梯度
-    graph.clear_jacobi()?;
+    graph.zero_grad()?;
 
     Ok(loss_value)
 }
@@ -432,7 +432,7 @@ fn print_varlen_output_distribution(
             actual_len,
             label,
             pred_val,
-            if pred_val > 0.5 { 1 } else { 0 }
+            i32::from(pred_val > 0.5)
         );
     }
 
@@ -473,7 +473,7 @@ fn test_varlen_parity_detection_can_learn() {
             "  seq={:?} (len={}), ones={}, label={}, expected={}",
             train_seqs[i], train_lengths[i], count_ones, train_labels[i], expected
         );
-        assert_eq!(train_labels[i], expected, "样本 {} 数据生成错误", i);
+        assert_eq!(train_labels[i], expected, "样本 {i} 数据生成错误");
     }
 
     // 统计长度分布
@@ -510,7 +510,7 @@ fn test_varlen_parity_detection_can_learn() {
                 println!("[可视化] 图像文件: {}", img.display());
             }
         }
-        Err(e) => println!("[可视化] 跳过（{:?}）", e),
+        Err(e) => println!("[可视化] 跳过（{e:?}）"),
     }
 
     // 健壮性检查：第一个 batch 的前向/反向传播
@@ -547,7 +547,7 @@ fn test_varlen_parity_detection_can_learn() {
     let input_t1 = Tensor::new(
         &vec![1.0; batch_size]
             .into_iter()
-            .chain(std::iter::repeat(0.0).take(batch_size * 0))
+            .chain(std::iter::repeat_n(0.0, batch_size * 0))
             .collect::<Vec<_>>(),
         &[batch_size, 1],
     );
@@ -562,7 +562,7 @@ fn test_varlen_parity_detection_can_learn() {
     let mut mask_data = vec![1.0; batch_size * hidden_size]; // 默认全部有效
     // 只将样本 1 的 mask 设为 0（冻结）
     for h in 0..hidden_size {
-        mask_data[1 * hidden_size + h] = 0.0;
+        mask_data[hidden_size + h] = 0.0;
     }
     let mask_t2 = Tensor::new(&mask_data, &[batch_size, hidden_size]);
     graph.set_node_value(input, Some(&input_t2)).unwrap();
@@ -700,8 +700,8 @@ fn test_varlen_parity_detection_can_learn() {
 
     // 结果汇总
     println!("\n[结果]");
-    println!("  首 epoch Loss: {:.4}", first_epoch_loss);
-    println!("  末 epoch Loss: {:.4}", last_epoch_loss);
+    println!("  首 epoch Loss: {first_epoch_loss:.4}");
+    println!("  末 epoch Loss: {last_epoch_loss:.4}");
     println!("  Loss 变化: {:.4}", first_epoch_loss - last_epoch_loss);
     println!("  最终准确率: {:.1}%", final_acc * 100.0);
     println!("  最佳准确率: {:.1}%", best_acc * 100.0);

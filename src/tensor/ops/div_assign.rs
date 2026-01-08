@@ -10,11 +10,7 @@ impl DivAssign for Tensor {
 
 impl<'a> DivAssign<&'a Self> for Tensor {
     fn div_assign(&mut self, other: &'a Self) {
-        assert!(
-            !other.has_zero_value(),
-            "{}",
-            TensorError::DivByZeroElement
-        );
+        assert!(!other.has_zero_value(), "{}", TensorError::DivByZeroElement);
         if self.is_same_shape(other) {
             self.data /= &other.data;
         } else {

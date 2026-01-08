@@ -96,4 +96,3 @@ fn test_flatten_preserves_data() {
     assert_eq!(flat[[1, 2]], 6.0);
     assert_eq!(flat[[1, 3]], 7.0);
 }
-
