@@ -23,6 +23,7 @@ pub use layer::{Linear, LinearOutput, linear};
 pub use module::Module;
 pub use nodes::NodeId;
 pub use nodes::raw_node::Reduction;
+pub use optimizer::{Adamv2, OptimizerV2, SGDv2};
 pub use var::{Init, Var};
 pub use var_ops::{VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps};
 

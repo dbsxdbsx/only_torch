@@ -2076,6 +2076,14 @@ impl GraphInner {
         self.get_node_mut(id)?.set_value(value)
     }
 
+    /// 清除指定节点的梯度
+    ///
+    /// # 用途
+    /// - V2 Optimizer 的 zero_grad() 只清除它管理的参数的梯度
+    pub fn clear_node_grad(&mut self, id: NodeId) -> Result<(), GraphError> {
+        self.get_node_mut(id)?.clear_grad()
+    }
+
     /// 获取节点的梯度（VJP 模式）
     ///
     /// 在 VJP 模式下，梯度形状与节点值形状一致，无需转置或 reshape

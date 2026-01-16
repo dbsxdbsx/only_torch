@@ -36,6 +36,7 @@ mod node_state; // State 节点测试（RNN 时间状态）
 mod node_step;
 mod node_tanh;
 mod optimizer; // 优化器测试模块（包含 basic, sgd, adam, trait_tests 子模块）
+mod optimizer_v2; // V2 优化器测试（PyTorch 风格 API）
 mod recurrent_basic; // Phase 1: 循环/记忆机制基础测试
 mod recurrent_bptt; // Phase 2: BPTT 通过时间反向传播测试
 mod save_load; // 参数保存/加载测试

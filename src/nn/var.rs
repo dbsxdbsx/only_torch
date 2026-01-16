@@ -18,6 +18,8 @@ use std::rc::Rc;
 /// 参数初始化策略
 #[derive(Debug, Clone)]
 pub enum Init {
+    /// 常数初始化
+    Constant(f32),
     /// 全零
     Zeros,
     /// 全一
@@ -34,6 +36,7 @@ impl Init {
     /// 生成初始化后的 Tensor（使用全局 RNG）
     pub fn generate(&self, shape: &[usize]) -> Tensor {
         match self {
+            Init::Constant(v) => &Tensor::ones(shape) * *v,
             Init::Zeros => Tensor::zeros(shape),
             Init::Ones => Tensor::ones(shape),
             Init::Normal { mean, std } => Tensor::normal(*mean, *std, shape),
