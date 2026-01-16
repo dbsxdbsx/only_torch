@@ -7,7 +7,7 @@
  */
 
 use crate::nn::layer::linear;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -69,7 +69,7 @@ const PYTORCH_CHAIN_GRAD_B2: &[f32] = &[-0.0576735, 0.05767344];
 /// 测试 linear() 创建
 #[test]
 fn test_linear_creation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let batch_size = 32;
     let input = graph.new_input_node(&[batch_size, 4], Some("input"))?;
 
@@ -87,7 +87,7 @@ fn test_linear_creation() -> Result<(), GraphError> {
 /// 测试 linear() 参数形状
 #[test]
 fn test_linear_shapes() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 64;
     let input = graph.new_input_node(&[batch_size, 784], Some("input"))?;
 
@@ -111,7 +111,7 @@ fn test_linear_shapes() -> Result<(), GraphError> {
 /// 测试 linear() 前向传播
 #[test]
 fn test_linear_forward() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
 
     let input = graph.new_input_node(&[batch_size, 3], Some("input"))?;
@@ -148,7 +148,7 @@ fn test_linear_forward() -> Result<(), GraphError> {
 /// 测试 linear() 带名称
 #[test]
 fn test_linear_with_name() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let batch_size = 16;
     let input = graph.new_input_node(&[batch_size, 4], Some("input"))?;
 
@@ -166,7 +166,7 @@ fn test_linear_with_name() -> Result<(), GraphError> {
 /// 测试 linear() 无名称（使用默认前缀）
 #[test]
 fn test_linear_without_name() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let batch_size = 16;
     let input = graph.new_input_node(&[batch_size, 4], Some("input"))?;
 
@@ -186,7 +186,7 @@ fn test_linear_without_name() -> Result<(), GraphError> {
 /// 测试多层 linear() 链式连接
 #[test]
 fn test_linear_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 8;
 
     let input = graph.new_input_node(&[batch_size, 4], Some("input"))?;
@@ -214,7 +214,7 @@ fn test_linear_chain() -> Result<(), GraphError> {
 /// 测试 linear() 与 Batch 反向传播
 #[test]
 fn test_linear_batch_backward() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
 
     // 构建网络
@@ -250,7 +250,7 @@ fn test_linear_batch_backward() -> Result<(), GraphError> {
 /// 测试多层 linear() + Loss 的 Batch 训练
 #[test]
 fn test_linear_chain_batch_training() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
 
     // 构建网络: input -> fc1 -> relu -> fc2 -> loss
@@ -290,7 +290,7 @@ fn test_linear_chain_batch_training() -> Result<(), GraphError> {
 /// 测试多个 linear() 使用不同名称
 #[test]
 fn test_linear_multiple_layers_different_names() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let batch_size = 16;
     let input = graph.new_input_node(&[batch_size, 4], Some("input"))?;
 
@@ -314,7 +314,7 @@ fn test_linear_multiple_layers_different_names() -> Result<(), GraphError> {
 /// 测试重复名称应该报错
 #[test]
 fn test_linear_duplicate_name_error() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let batch_size = 16;
     let input = graph
         .new_input_node(&[batch_size, 4], Some("input"))
@@ -349,7 +349,7 @@ fn test_linear_duplicate_name_error() {
 /// 测试多个无名称层会冲突（预期行为）
 #[test]
 fn test_linear_multiple_unnamed_layers_conflict() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let batch_size = 16;
     let input = graph
         .new_input_node(&[batch_size, 4], Some("input"))
@@ -369,7 +369,7 @@ fn test_linear_multiple_unnamed_layers_conflict() {
 /// 测试单特征输入
 #[test]
 fn test_linear_single_input_feature() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input = graph.new_input_node(&[batch_size, 1], Some("input"))?;
 
@@ -392,7 +392,7 @@ fn test_linear_single_input_feature() -> Result<(), GraphError> {
 /// 测试单特征输出
 #[test]
 fn test_linear_single_output_feature() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input = graph.new_input_node(&[batch_size, 4], Some("input"))?;
 
@@ -415,7 +415,7 @@ fn test_linear_single_output_feature() -> Result<(), GraphError> {
 /// 测试大维度 linear()（典型 MNIST 配置）
 #[test]
 fn test_linear_large_dimensions() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 64;
     let input = graph.new_input_node(&[batch_size, 784], Some("input"))?;
 
@@ -435,7 +435,7 @@ fn test_linear_large_dimensions() -> Result<(), GraphError> {
 /// 测试访问 linear() 内部参数
 #[test]
 fn test_linear_access_internal_params() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input = graph.new_input_node(&[batch_size, 4], Some("input"))?;
 
@@ -457,7 +457,7 @@ fn test_linear_access_internal_params() -> Result<(), GraphError> {
 /// 测试前向传播数值（与 PyTorch 对照）
 #[test]
 fn test_linear_forward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let in_features = 3;
     let out_features = 4;
@@ -513,7 +513,7 @@ fn test_linear_forward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试反向传播梯度数值（与 PyTorch 对照）
 #[test]
 fn test_linear_backward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let in_features = 3;
     let out_features = 2;
@@ -622,7 +622,7 @@ fn test_linear_backward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试两层网络反向传播（与 PyTorch 对照）
 #[test]
 fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let in_features = 4;
     let hidden_features = 3;

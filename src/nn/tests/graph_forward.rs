@@ -1,9 +1,9 @@
-use crate::nn::Graph;
+use crate::nn::GraphInner;
 use crate::tensor::Tensor;
 
 #[test]
 fn test_forward_with_partial_forward_propagation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建计算图：z = x + y, w = x + y (两个节点都依赖同样的add操作)
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -100,7 +100,7 @@ fn test_forward_with_partial_forward_propagation() {
 
 #[test]
 fn test_forward_pass_id_increment() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建简单的计算图：y = x + b
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -131,7 +131,7 @@ fn test_forward_pass_id_increment() {
 
 #[test]
 fn test_pass_id_rollback_on_forward_error() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建计算图：y = x + b
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();

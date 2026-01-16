@@ -4,15 +4,15 @@
  * @Description  : MNIST Linear V2 集成测试（使用 V2 API）
  *
  * 使用 Phase 2 的 V2 API:
- * - GraphHandle + Var（不再用 Graph + NodeId）
+ * - Graph + Var（不再用 Graph + NodeId）
  * - Linear V2 层（forward 不需要 &Graph）
- * - OptimizerV2（PyTorch 风格 API）
+ * - Optimizer（PyTorch 风格 API）
  */
 
 use only_torch::data::MnistDataset;
 use only_torch::nn::layer::Linear;
 use only_torch::nn::{
-    Adamv2, GraphError, GraphHandle, Module, OptimizerV2, VarActivationOps, VarLossOps,
+    Adam, GraphError, Graph, Module, Optimizer, VarActivationOps, VarLossOps,
 };
 use only_torch::tensor_slice;
 use std::fs;
@@ -68,7 +68,7 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
     // ========== 3. 构建网络（使用 V2 API）==========
     println!("\n[3/4] 使用 V2 API 构建 MLP: 784 -> 128 (Softplus) -> 10...");
 
-    let graph = GraphHandle::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // 输入变量（使用 zeros 占位，稍后通过 set_value 设置真实数据）
     let x = graph.zeros(&[batch_size, 784])?;
@@ -108,9 +108,9 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
     // 注意：V2 API 目前暂无可视化方法，跳过
 
     // ========== 4. 创建 V2 优化器 ==========
-    let mut optimizer = Adamv2::new(&graph, &all_params, learning_rate);
+    let mut optimizer = Adam::new(&graph, &all_params, learning_rate);
 
-    println!("  ✓ 优化器：Adamv2 (lr={learning_rate})");
+    println!("  ✓ 优化器：Adam (lr={learning_rate})");
 
     // ========== 5. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");
@@ -140,13 +140,13 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
             x.set_value(&batch_images)?;
             y.set_value(&batch_labels)?;
 
-            // 清空梯度（使用 OptimizerV2 API）
+            // 清空梯度（使用 Optimizer API）
             optimizer.zero_grad()?;
 
             // 反向传播（V2 API：backward 会自动 forward）
             let loss_val = loss.backward()?;
 
-            // 更新参数（使用 OptimizerV2 API）
+            // 更新参数（使用 Optimizer API）
             optimizer.step()?;
 
             epoch_loss_sum += loss_val;

@@ -5,7 +5,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -14,7 +14,7 @@ use approx::assert_abs_diff_eq;
 /// 测试基本的 reshape 功能：2x3 -> 3x2
 #[test]
 fn test_reshape_basic_2x3_to_3x2() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建输入节点 [2, 3]
     let input = graph.new_input_node(&[2, 3], Some("input"))?;
@@ -44,7 +44,7 @@ fn test_reshape_basic_2x3_to_3x2() -> Result<(), GraphError> {
 /// 测试 reshape 保持元素顺序：行优先
 #[test]
 fn test_reshape_preserves_row_major_order() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建 1x6 输入
     let input = graph.new_input_node(&[1, 6], Some("input"))?;
@@ -64,7 +64,7 @@ fn test_reshape_preserves_row_major_order() -> Result<(), GraphError> {
 /// 测试 reshape 到列向量
 #[test]
 fn test_reshape_to_column_vector() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[2, 3], Some("input"))?;
     let reshaped = graph.new_reshape_node(input, &[6, 1], Some("column"))?;
@@ -86,7 +86,7 @@ fn test_reshape_to_column_vector() -> Result<(), GraphError> {
 /// 测试 reshape 到行向量
 #[test]
 fn test_reshape_to_row_vector() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[3, 2], Some("input"))?;
     let reshaped = graph.new_reshape_node(input, &[1, 6], Some("row"))?;
@@ -112,7 +112,7 @@ fn test_reshape_to_row_vector() -> Result<(), GraphError> {
 /// VJP: grad_to_input = reshape(upstream_grad, input_shape)
 #[test]
 fn test_reshape_backward_vjp() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let reshape_id = graph.new_reshape_node(input_id, &[3, 2], Some("reshaped"))?;
@@ -137,7 +137,7 @@ fn test_reshape_backward_vjp() -> Result<(), GraphError> {
 /// 测试 Reshape VJP（非单位上游梯度）
 #[test]
 fn test_reshape_backward_vjp_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let reshape_id = graph.new_reshape_node(input_id, &[3, 2], Some("reshaped"))?;
@@ -165,7 +165,7 @@ fn test_reshape_backward_vjp_non_unit_upstream() -> Result<(), GraphError> {
 /// 测试 Reshape 通过 graph.backward() 的端到端反向传播
 #[test]
 fn test_reshape_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：output = sigmoid(reshape(input))
     let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
@@ -204,7 +204,7 @@ fn test_reshape_backward_e2e() -> Result<(), GraphError> {
 /// 测试 Batch 模式的前向传播
 #[test]
 fn test_reshape_batch_forward() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let batch_size = 4;
 
     // 输入形状: [batch, 6]
@@ -242,7 +242,7 @@ fn test_reshape_batch_forward() -> Result<(), GraphError> {
 /// 测试 Reshape 梯度累积
 #[test]
 fn test_reshape_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let reshaped = graph.new_reshape_node(input, &[3, 2], Some("reshaped"))?;
@@ -282,7 +282,7 @@ fn test_reshape_gradient_accumulation() -> Result<(), GraphError> {
 /// 测试形状不匹配错误
 #[test]
 fn test_reshape_shape_mismatch_error() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
 
@@ -296,7 +296,7 @@ fn test_reshape_shape_mismatch_error() {
 /// 测试空形状错误
 #[test]
 fn test_reshape_empty_shape_error() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
 
@@ -311,7 +311,7 @@ fn test_reshape_empty_shape_error() {
 /// 测试 Reshape 与 Add 组合
 #[test]
 fn test_reshape_with_add() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 两个输入，形状不同但 reshape 后相同
     let a = graph.new_input_node(&[2, 3], Some("a"))?;
@@ -345,7 +345,7 @@ fn test_reshape_with_add() -> Result<(), GraphError> {
 /// 测试多次 Reshape（连续变换）
 #[test]
 fn test_reshape_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let parent = graph.new_parameter_node(&[2, 6], Some("parent"))?;
     let reshape1 = graph.new_reshape_node(parent, &[3, 4], Some("reshape1"))?;
@@ -393,7 +393,7 @@ fn test_reshape_chain() -> Result<(), GraphError> {
 /// 测试 Reshape 在实际 MLP 场景中的使用（模拟 Flatten）
 #[test]
 fn test_reshape_as_flatten_in_mlp() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 模拟 CNN 输出: [batch=2, features=8]
     let batch_size = 2;
@@ -443,7 +443,7 @@ fn test_reshape_as_flatten_in_mlp() -> Result<(), GraphError> {
 /// 测试单样本模式下的反向传播正确性
 #[test]
 fn test_reshape_single_sample_backward() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 简单网络: Input [1,6] -> Reshape [2,3] -> MatMul [2,3]@[3,1]=[2,1] -> MSE
     let x = graph.new_input_node(&[1, 6], Some("x"))?;

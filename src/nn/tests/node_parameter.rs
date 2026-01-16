@@ -1,12 +1,12 @@
 use approx::assert_abs_diff_eq;
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 
 #[test]
 fn test_node_parameter_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试基本创建
     let param = graph.new_parameter_node(&[2, 3], Some("param1")).unwrap();
@@ -27,7 +27,7 @@ fn test_node_parameter_creation() {
 
 #[test]
 fn test_node_parameter_creation_with_invalid_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 测试不同维度的形状（支持 2-4 维，0/1/5 维应该失败）
     for dims in [0, 1, 5] {
@@ -64,7 +64,7 @@ fn test_node_parameter_creation_with_invalid_shape() {
 
 #[test]
 fn test_node_parameter_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试节点显式命名
     let param1 = graph
@@ -86,7 +86,7 @@ fn test_node_parameter_name_generation() {
 
 #[test]
 fn test_node_parameter_manually_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let param = graph
         .new_parameter_node(&[2, 2], Some("test_param"))
         .unwrap();
@@ -131,7 +131,7 @@ fn test_node_parameter_manually_set_value() {
 
 #[test]
 fn test_node_parameter_expected_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试基本的Parameter节点预期形状
     let param = graph.new_parameter_node(&[2, 3], Some("param")).unwrap();
@@ -152,7 +152,7 @@ fn test_node_parameter_expected_shape() {
 
 #[test]
 fn test_node_parameter_forward_propagation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let param = graph.new_parameter_node(&[2, 2], Some("param")).unwrap();
 
     // 1. 测试前向传播（应该失败，因为Parameter节点不支持前向传播）
@@ -179,7 +179,7 @@ fn test_node_parameter_forward_propagation() {
 /// Parameter 节点是可学习参数，在反向传播后应该有梯度。
 #[test]
 fn test_node_parameter_backward_propagation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 构建计算图: input * param -> mse_loss
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
@@ -217,7 +217,7 @@ fn test_node_parameter_backward_propagation() {
 /// 测试 Parameter 节点的梯度值正确性
 #[test]
 fn test_node_parameter_gradient_correctness() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 简单计算图: param -> mse_loss(param, target)
     // loss = mean((param - target)^2)

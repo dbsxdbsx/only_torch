@@ -7,7 +7,7 @@
  */
 
 use crate::nn::layer::lstm;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -57,7 +57,7 @@ const TEST3_GRAD_W_OUT: &[f32] = &[-0.09518241, -0.09178685];
 /// 测试 LSTM 层创建
 #[test]
 fn test_lstm_creation() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 16;
     let input_size = 10;
     let hidden_size = 20;
@@ -90,7 +90,7 @@ fn test_lstm_creation() -> Result<(), GraphError> {
 /// 测试 LSTM 参数形状
 #[test]
 fn test_lstm_shapes() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 8;
     let input_size = 4;
     let hidden_size = 6;
@@ -137,7 +137,7 @@ fn test_lstm_shapes() -> Result<(), GraphError> {
 /// 测试 1: 简单前向传播（与 PyTorch 对照）
 #[test]
 fn test_lstm_forward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let input_size = 3;
     let hidden_size = 2;
@@ -240,7 +240,7 @@ fn test_lstm_forward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试 2: 多时间步前向传播（与 PyTorch 对照）
 #[test]
 fn test_lstm_multi_step_forward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 1;
     let input_size = 2;
     let hidden_size = 2;
@@ -339,7 +339,7 @@ fn test_lstm_multi_step_forward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试 3: BPTT 反向传播梯度（与 PyTorch 对照）
 #[test]
 fn test_lstm_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 1;
     let input_size = 2;
     let hidden_size = 2;
@@ -470,7 +470,7 @@ fn test_lstm_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试 LSTM 层节点命名
 #[test]
 fn test_lstm_node_naming() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input_size = 8;
     let hidden_size = 16;
@@ -503,7 +503,7 @@ fn test_lstm_node_naming() -> Result<(), GraphError> {
 /// 测试 reset() 清除 LSTM 状态
 #[test]
 fn test_lstm_reset() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 1;
     let input_size = 2;
     let hidden_size = 2;
@@ -581,7 +581,7 @@ fn test_lstm_reset() -> Result<(), GraphError> {
 /// 测试 LSTM 无名称（使用默认前缀）
 #[test]
 fn test_lstm_without_name() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input_size = 8;
     let hidden_size = 16;
@@ -604,7 +604,7 @@ fn test_lstm_without_name() -> Result<(), GraphError> {
 /// 测试重复名称应该报错
 #[test]
 fn test_lstm_duplicate_name_error() {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input_size = 4;
     let hidden_size = 8;
@@ -649,7 +649,7 @@ fn test_lstm_duplicate_name_error() {
 /// 测试多个 LSTM 使用不同名称
 #[test]
 fn test_lstm_multiple_layers_different_names() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input_size = 4;
     let hidden_size = 8;
@@ -697,7 +697,7 @@ fn test_lstm_multiple_layers_different_names() -> Result<(), GraphError> {
 /// 测试多个无名称层会冲突（预期行为）
 #[test]
 fn test_lstm_multiple_unnamed_layers_conflict() {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input_size = 4;
     let hidden_size = 8;
@@ -727,7 +727,7 @@ fn test_lstm_multiple_unnamed_layers_conflict() {
 /// 测试多层 LSTM 链式连接
 #[test]
 fn test_lstm_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let input_size = 4;
     let hidden_size = 6;
@@ -786,7 +786,7 @@ fn test_lstm_chain() -> Result<(), GraphError> {
 /// 测试单特征输入
 #[test]
 fn test_lstm_single_input_feature() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let input_size = 1;
     let hidden_size = 4;
@@ -818,7 +818,7 @@ fn test_lstm_single_input_feature() -> Result<(), GraphError> {
 /// 测试单隐藏单元
 #[test]
 fn test_lstm_single_hidden_unit() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let input_size = 4;
     let hidden_size = 1;
@@ -850,7 +850,7 @@ fn test_lstm_single_hidden_unit() -> Result<(), GraphError> {
 /// 测试大维度 LSTM（典型 NLP 配置）
 #[test]
 fn test_lstm_large_dimensions() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 32;
     let input_size = 128;
     let hidden_size = 256;
@@ -880,7 +880,7 @@ fn test_lstm_large_dimensions() -> Result<(), GraphError> {
 /// 测试访问 LSTM 内部参数
 #[test]
 fn test_lstm_access_internal_params() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let input_size = 2;
     let hidden_size = 2;
@@ -928,7 +928,7 @@ fn test_lstm_access_internal_params() -> Result<(), GraphError> {
 fn test_lstm_batch_backward() -> Result<(), GraphError> {
     use crate::nn::layer::linear;
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input_size = 8;
     let hidden_size = 6;
@@ -997,7 +997,7 @@ fn test_lstm_batch_backward() -> Result<(), GraphError> {
 fn test_lstm_chain_batch_training() -> Result<(), GraphError> {
     use crate::nn::layer::linear;
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 4;
     let input_size = 8;
     let hidden_size = 6;
@@ -1072,7 +1072,7 @@ fn test_lstm_chain_batch_training() -> Result<(), GraphError> {
 fn test_lstm_with_linear_integration() -> Result<(), GraphError> {
     use crate::nn::layer::linear;
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
     let input_size = 4;
     let hidden_size = 8;

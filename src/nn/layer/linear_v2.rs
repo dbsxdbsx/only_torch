@@ -11,7 +11,7 @@
  * 设计依据：architecture_v2_design.md §4.2.4
  */
 
-use crate::nn::{GraphError, GraphHandle, Init, Module, Var, VarMatrixOps};
+use crate::nn::{GraphError, Graph, Init, Module, Var, VarMatrixOps};
 
 /// Var-based Linear 层
 ///
@@ -50,7 +50,7 @@ impl Linear {
     /// # 返回
     /// Linear 层实例
     pub fn new(
-        graph: &GraphHandle,
+        graph: &Graph,
         in_features: usize,
         out_features: usize,
         use_bias: bool,

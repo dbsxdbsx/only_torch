@@ -1,15 +1,17 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-01-17
- * @Description  : V2 Optimizer API - PyTorch 风格
+ * @LastEditTime : 2026-01-17
+ * @Description  : Optimizer API - PyTorch 风格
  *
  * 设计依据：architecture_v2_design.md §4.2.6
  *
- * 核心改进：
+ * 核心特性：
  * - Optimizer 持有 Rc<RefCell<GraphInner>> 引用
+ * - params 存储 Vec<Var>（保留完整 Var 能力，支持未来 param_groups 等扩展）
  * - zero_grad() 不再需要 &mut Graph 参数
  * - step() 不再需要 &mut Graph 参数
- * - 新增 minimize(&self, loss: &Var) 一步完成
+ * - minimize(&self, loss: &Var) 一步完成训练
  */
 
 use std::cell::RefCell;
@@ -17,10 +19,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::nn::graph::GraphInner;
-use crate::nn::{GraphError, GraphHandle, NodeId, Var};
+use crate::nn::{Graph, GraphError, NodeId, Var};
 use crate::tensor::Tensor;
 
-/// V2 Optimizer trait（PyTorch 风格）
+/// Optimizer trait（PyTorch 风格）
 ///
 /// # 设计要点
 /// - Optimizer 绑定特定参数（通过 Var）
@@ -29,7 +31,7 @@ use crate::tensor::Tensor;
 ///
 /// # 使用示例
 /// ```ignore
-/// let optimizer = SGDv2::new(&graph, &model.parameters(), 0.01);
+/// let optimizer = SGD::new(&graph, &model.parameters(), 0.01);
 ///
 /// // 训练循环
 /// optimizer.zero_grad()?;
@@ -40,14 +42,19 @@ use crate::tensor::Tensor;
 /// // 或者一步完成
 /// let loss_val = optimizer.minimize(&loss)?;
 /// ```
-pub trait OptimizerV2 {
+pub trait Optimizer {
     /// 清零所有参数的梯度
     fn zero_grad(&mut self) -> Result<(), GraphError>;
 
     /// 更新参数（只更新 Optimizer 绑定的参数）
     fn step(&mut self) -> Result<(), GraphError>;
 
-    /// 一步完成：zero_grad + forward + backward + step
+    /// 一步完成训练：zero_grad → backward(ensure-forward) → step
+    ///
+    /// # 执行顺序
+    /// 1. `zero_grad()` - 清零梯度（必须在前，因为 backward 会累加梯度）
+    /// 2. `loss.backward()` - 计算梯度（内部 ensure-forward：必要时先执行前向）
+    /// 3. `step()` - 更新参数
     ///
     /// # 参数
     /// - `loss`: loss 节点的 Var
@@ -66,54 +73,62 @@ pub trait OptimizerV2 {
     fn reset(&mut self);
 }
 
-/// SGD V2 优化器（PyTorch 风格）
+/// SGD 优化器（PyTorch 风格）
 ///
 /// 随机梯度下降：θ = θ - α * ∇θ
 ///
 /// # 使用示例
 /// ```ignore
-/// let optimizer = SGDv2::new(&graph, &model.parameters(), 0.01);
+/// let optimizer = SGD::new(&graph, &model.parameters(), 0.01);
 /// optimizer.zero_grad()?;
 /// loss.backward()?;
 /// optimizer.step()?;
 /// ```
-pub struct SGDv2 {
+pub struct SGD {
     /// 图引用
     graph: Rc<RefCell<GraphInner>>,
-    /// 要优化的参数节点 ID
-    params: Vec<NodeId>,
+    /// 要优化的参数（保留完整 Var，支持未来 param_groups 等扩展）
+    params: Vec<Var>,
     /// 学习率
     lr: f32,
 }
 
-impl SGDv2 {
-    /// 创建新的 SGD V2 优化器
+impl SGD {
+    /// 创建新的 SGD 优化器
     ///
     /// # 参数
     /// - `graph`: 图句柄
     /// - `params`: 要优化的参数 Var 列表
     /// - `lr`: 学习率
-    pub fn new(graph: &GraphHandle, params: &[Var], lr: f32) -> Self {
+    pub fn new(graph: &Graph, params: &[Var], lr: f32) -> Self {
         Self {
             graph: graph.inner_rc(),
-            params: params.iter().map(|v| v.node_id()).collect(),
+            params: params.to_vec(),
             lr,
         }
     }
+
+    /// 获取优化器绑定的参数列表
+    ///
+    /// 用于调试、状态查询、param_groups 等场景
+    pub fn params(&self) -> &[Var] {
+        &self.params
+    }
 }
 
-impl OptimizerV2 for SGDv2 {
+impl Optimizer for SGD {
     fn zero_grad(&mut self) -> Result<(), GraphError> {
         let mut g = self.graph.borrow_mut();
-        for &node_id in &self.params {
-            g.clear_node_grad(node_id)?;
+        for param in &self.params {
+            g.clear_node_grad(param.node_id())?;
         }
         Ok(())
     }
 
     fn step(&mut self) -> Result<(), GraphError> {
         let mut g = self.graph.borrow_mut();
-        for &node_id in &self.params {
+        for param in &self.params {
+            let node_id = param.node_id();
             if let Some(grad) = g.get_node_grad(node_id)? {
                 let current = g.get_node_value(node_id)?.ok_or_else(|| {
                     GraphError::ComputationError(format!("参数节点 {:?} 没有值", node_id))
@@ -145,7 +160,7 @@ impl OptimizerV2 for SGDv2 {
     }
 }
 
-/// Adam V2 优化器（PyTorch 风格）
+/// Adam 优化器（PyTorch 风格）
 ///
 /// Adam: Adaptive Moment Estimation
 /// - m = β1 * m + (1 - β1) * g
@@ -154,16 +169,16 @@ impl OptimizerV2 for SGDv2 {
 ///
 /// # 使用示例
 /// ```ignore
-/// let optimizer = Adamv2::new(&graph, &model.parameters(), 0.001);
+/// let optimizer = Adam::new(&graph, &model.parameters(), 0.001);
 /// optimizer.zero_grad()?;
 /// loss.backward()?;
 /// optimizer.step()?;
 /// ```
-pub struct Adamv2 {
+pub struct Adam {
     /// 图引用
     graph: Rc<RefCell<GraphInner>>,
-    /// 要优化的参数节点 ID
-    params: Vec<NodeId>,
+    /// 要优化的参数（保留完整 Var，支持未来 param_groups 等扩展）
+    params: Vec<Var>,
     /// 学习率
     lr: f32,
     /// β1 (一阶矩衰减)
@@ -172,28 +187,28 @@ pub struct Adamv2 {
     beta2: f32,
     /// 数值稳定项
     epsilon: f32,
-    /// 一阶矩估计
+    /// 一阶矩估计（按 NodeId 索引，高效查找）
     m: HashMap<NodeId, Tensor>,
-    /// 二阶矩估计
+    /// 二阶矩估计（按 NodeId 索引，高效查找）
     v: HashMap<NodeId, Tensor>,
     /// 时间步
     t: usize,
 }
 
-impl Adamv2 {
-    /// 创建新的 Adam V2 优化器
+impl Adam {
+    /// 创建新的 Adam 优化器
     ///
     /// # 参数
     /// - `graph`: 图句柄
     /// - `params`: 要优化的参数 Var 列表
     /// - `lr`: 学习率
-    pub fn new(graph: &GraphHandle, params: &[Var], lr: f32) -> Self {
-        Self::with_config(graph, params, lr, 0.9, 0.999, 1e-8)
+    pub fn new(graph: &Graph, params: &[Var], lr: f32) -> Self {
+        Self::new_with_config(graph, params, lr, 0.9, 0.999, 1e-8)
     }
 
-    /// 创建带完整配置的 Adam V2 优化器
-    pub fn with_config(
-        graph: &GraphHandle,
+    /// 创建带完整配置的 Adam 优化器
+    pub fn new_with_config(
+        graph: &Graph,
         params: &[Var],
         lr: f32,
         beta1: f32,
@@ -202,7 +217,7 @@ impl Adamv2 {
     ) -> Self {
         Self {
             graph: graph.inner_rc(),
-            params: params.iter().map(|v| v.node_id()).collect(),
+            params: params.to_vec(),
             lr,
             beta1,
             beta2,
@@ -212,13 +227,39 @@ impl Adamv2 {
             t: 0,
         }
     }
+
+    /// 获取优化器绑定的参数列表
+    ///
+    /// 用于调试、状态查询、param_groups 等场景
+    pub fn params(&self) -> &[Var] {
+        &self.params
+    }
+
+    /// 获取指定参数的动量状态（一阶矩 m）
+    ///
+    /// 用于调试和可视化优化过程
+    pub fn get_momentum(&self, param: &Var) -> Option<&Tensor> {
+        self.m.get(&param.node_id())
+    }
+
+    /// 获取指定参数的速度状态（二阶矩 v）
+    ///
+    /// 用于调试和可视化优化过程
+    pub fn get_velocity(&self, param: &Var) -> Option<&Tensor> {
+        self.v.get(&param.node_id())
+    }
+
+    /// 获取当前时间步
+    pub fn timestep(&self) -> usize {
+        self.t
+    }
 }
 
-impl OptimizerV2 for Adamv2 {
+impl Optimizer for Adam {
     fn zero_grad(&mut self) -> Result<(), GraphError> {
         let mut g = self.graph.borrow_mut();
-        for &node_id in &self.params {
-            g.clear_node_grad(node_id)?;
+        for param in &self.params {
+            g.clear_node_grad(param.node_id())?;
         }
         Ok(())
     }
@@ -227,7 +268,8 @@ impl OptimizerV2 for Adamv2 {
         self.t += 1;
         let mut g = self.graph.borrow_mut();
 
-        for &node_id in &self.params {
+        for param in &self.params {
+            let node_id = param.node_id();
             if let Some(grad) = g.get_node_grad(node_id)? {
                 let current = g.get_node_value(node_id)?.ok_or_else(|| {
                     GraphError::ComputationError(format!("参数节点 {:?} 没有值", node_id))

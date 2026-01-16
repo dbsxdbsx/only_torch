@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -20,7 +20,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 Conv2d 节点创建（单样本）
 #[test]
 fn test_conv2d_creation_single() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C_in=1, H=5, W=5]
     let input = graph.new_input_node(&[1, 5, 5], Some("input"))?;
@@ -41,7 +41,7 @@ fn test_conv2d_creation_single() -> Result<(), GraphError> {
 /// 测试 Conv2d 节点创建（Batch）
 #[test]
 fn test_conv2d_creation_batch() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=4, C_in=3, H=28, W=28]
     let input = graph.new_input_node(&[4, 3, 28, 28], Some("input"))?;
@@ -62,7 +62,7 @@ fn test_conv2d_creation_batch() -> Result<(), GraphError> {
 /// 测试 Conv2d 带 stride
 #[test]
 fn test_conv2d_with_stride() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C_in=1, H=8, W=8]
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
@@ -85,7 +85,7 @@ fn test_conv2d_with_stride() -> Result<(), GraphError> {
 /// 测试 Conv2d 前向传播（简单情况）
 #[test]
 fn test_conv2d_forward_simple() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C_in=1, H=3, W=3]，全 1
     let input = graph.new_input_node(&[1, 3, 3], Some("input"))?;
@@ -118,7 +118,7 @@ fn test_conv2d_forward_simple() -> Result<(), GraphError> {
 /// 测试 Conv2d 前向传播（带 padding）
 #[test]
 fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C_in=1, H=3, W=3]
     let input = graph.new_input_node(&[1, 3, 3], Some("input"))?;
@@ -153,7 +153,7 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
 /// 测试 Conv2d 前向传播（Batch 模式）
 #[test]
 fn test_conv2d_forward() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C_in=1, H=4, W=4]
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
@@ -187,7 +187,7 @@ fn test_conv2d_forward() -> Result<(), GraphError> {
 /// 测试 Conv2d 多输出通道
 #[test]
 fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C_in=1, H=4, W=4]
     let input = graph.new_input_node(&[1, 4, 4], Some("input"))?;
@@ -227,7 +227,7 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
 /// 验证 kernel 的梯度正确性
 #[test]
 fn test_conv2d_jacobi_to_kernel() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 简单情况：输入 [1, 2, 2]，卷积核 [1, 1, 2, 2]
     // 输出形状：[1, 1, 1]（out_channels=1, H=1, W=1）
@@ -289,7 +289,7 @@ fn test_conv2d_jacobi_to_kernel() -> Result<(), GraphError> {
 #[test]
 fn test_conv2d_grad_to_input() -> Result<(), GraphError> {
     use crate::tensor::Tensor;
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入 [1, 2, 2]，卷积核 [1, 1, 2, 2]
     let input_id = graph.new_input_node(&[1, 2, 2], Some("input"))?;
@@ -334,7 +334,7 @@ fn test_conv2d_grad_to_input() -> Result<(), GraphError> {
 /// 通过构建 Conv2d -> Flatten 的网络来测试
 #[test]
 fn test_conv2d_batch_in_network() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 输入: [batch=2, C_in=1, H=4, W=4]
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
@@ -382,7 +382,7 @@ fn test_conv2d_batch_in_network() -> Result<(), GraphError> {
 /// 测试 Conv2d calc_grad_to_parent 直接调用（对卷积核）
 #[test]
 fn test_conv2d_calc_grad_to_kernel_direct() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C_in=1, H=3, W=3]
     let input_id = graph.new_input_node(&[2, 1, 3, 3], Some("input"))?;
@@ -432,7 +432,7 @@ fn test_conv2d_calc_grad_to_kernel_direct() -> Result<(), GraphError> {
 /// 测试 Conv2d calc_grad_to_parent 直接调用（对输入）
 #[test]
 fn test_conv2d_calc_grad_to_input_direct() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=1, C_in=1, H=3, W=3]
     let input_id = graph.new_input_node(&[1, 1, 3, 3], Some("input"))?;
@@ -480,7 +480,7 @@ fn test_conv2d_calc_grad_to_input_direct() -> Result<(), GraphError> {
 /// 测试通道数不匹配
 #[test]
 fn test_conv2d_channel_mismatch() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C_in=3, H=5, W=5]
     let input = graph.new_input_node(&[3, 5, 5], Some("input")).unwrap();
@@ -496,7 +496,7 @@ fn test_conv2d_channel_mismatch() {
 /// 测试无效的输入维度（2D 输入对于 Conv2d 无效）
 #[test]
 fn test_conv2d_invalid_input_dims() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [H=5, W=5]（2D，缺少通道维度，对 Conv2d 无效）
     let input = graph.new_input_node(&[5, 5], Some("input")).unwrap();
@@ -512,7 +512,7 @@ fn test_conv2d_invalid_input_dims() {
 /// 测试无效的卷积核维度（2D 卷积核无效）
 #[test]
 fn test_conv2d_invalid_kernel_dims() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[1, 5, 5], Some("input")).unwrap();
     // 卷积核: [kH=3, kW=3]（2D，缺少通道维度）

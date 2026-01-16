@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -20,7 +20,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 Tanh 节点创建
 #[test]
 fn test_tanh_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. Input 节点作为父节点
     {
@@ -47,7 +47,7 @@ fn test_tanh_creation() {
 /// 测试 Tanh 节点命名
 #[test]
 fn test_tanh_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
 
@@ -70,7 +70,7 @@ fn test_tanh_name_generation() {
 /// 测试 Tanh 节点不能直接设置值
 #[test]
 fn test_tanh_cannot_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
     let tanh = graph.new_tanh_node(input, Some("tanh")).unwrap();
 
@@ -88,7 +88,7 @@ fn test_tanh_cannot_set_value() {
 /// 测试 Tanh 前向传播
 #[test]
 fn test_tanh_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 2], Some("input")).unwrap();
     let tanh = graph.new_tanh_node(input, Some("tanh")).unwrap();
@@ -111,7 +111,7 @@ fn test_tanh_forward() {
 /// 测试 Tanh 前向传播（边界值）
 #[test]
 fn test_tanh_forward_edge_cases() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[1, 4], Some("input")).unwrap();
     let tanh = graph.new_tanh_node(input, Some("tanh")).unwrap();
@@ -138,7 +138,7 @@ fn test_tanh_forward_edge_cases() {
 /// - VJP: grad_to_parent = upstream_grad * (1 - y²)
 #[test]
 fn test_tanh_backward_vjp() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let tanh_id = graph.new_tanh_node(input_id, Some("tanh"))?;
@@ -171,7 +171,7 @@ fn test_tanh_backward_vjp() -> Result<(), GraphError> {
 /// 测试 Tanh 梯度计算（非单位 upstream_grad）
 #[test]
 fn test_tanh_backward_with_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let tanh_id = graph.new_tanh_node(input_id, Some("tanh"))?;
@@ -205,7 +205,7 @@ fn test_tanh_backward_with_non_unit_upstream() -> Result<(), GraphError> {
 /// 当输入绝对值很大时，tanh 接近 ±1，梯度接近 0（梯度消失）
 #[test]
 fn test_tanh_backward_saturation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[1, 2], Some("input"))?;
     let tanh_id = graph.new_tanh_node(input_id, Some("tanh"))?;
@@ -235,7 +235,7 @@ fn test_tanh_backward_saturation() -> Result<(), GraphError> {
 /// 构建简单图：result = tanh(input) → loss = MSE(result, target)
 #[test]
 fn test_tanh_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：result = tanh(input)
     let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
@@ -293,7 +293,7 @@ fn test_tanh_backward_e2e() -> Result<(), GraphError> {
 /// 网络结构: x -> MatMul(w) -> Tanh -> output
 #[test]
 fn test_tanh_backward_e2e_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 构建网络: output = tanh(w @ x)
     let x = graph.new_input_node(&[2, 1], Some("x"))?;
@@ -331,7 +331,7 @@ fn test_tanh_backward_e2e_chain() -> Result<(), GraphError> {
 /// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
 #[test]
 fn test_tanh_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let result = graph.new_tanh_node(input, Some("result"))?;

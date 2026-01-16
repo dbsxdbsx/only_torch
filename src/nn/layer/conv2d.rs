@@ -16,7 +16,7 @@
  * - 用户可通过 Conv2dOutput.bias 访问并修改 bias 参数
  */
 
-use crate::nn::{Graph, GraphError, NodeId};
+use crate::nn::{GraphError, GraphInner, NodeId};
 use crate::tensor::Tensor;
 
 /// Conv2d 层的输出结构
@@ -93,7 +93,7 @@ pub struct Conv2dOutput {
 /// graph.set_node_value(conv1.bias, Some(&Tensor::new(&[0.1, 0.2, ...], &[1, 32])))?;
 /// ```
 pub fn conv2d(
-    graph: &mut Graph,
+    graph: &mut GraphInner,
     input: NodeId,
     in_channels: usize,
     out_channels: usize,

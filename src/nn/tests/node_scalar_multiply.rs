@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -20,7 +20,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 ScalarMultiply 节点创建
 #[test]
 fn test_scalar_multiply_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 标量(1x1) * 矩阵(2x3)
     {
@@ -70,7 +70,7 @@ fn test_scalar_multiply_creation() {
 /// 测试 ScalarMultiply 创建时的形状校验
 #[test]
 fn test_scalar_multiply_creation_invalid_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 第1个参数不是标量（应该失败）
     let non_scalar = graph
@@ -104,7 +104,7 @@ fn test_scalar_multiply_creation_invalid_shape() {
 /// 测试 ScalarMultiply 节点命名
 #[test]
 fn test_scalar_multiply_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar = graph.new_parameter_node(&[1, 1], Some("s")).unwrap();
     let matrix = graph.new_input_node(&[2, 3], Some("m")).unwrap();
@@ -132,7 +132,7 @@ fn test_scalar_multiply_name_generation() {
 /// 测试 ScalarMultiply 节点不能直接设置值
 #[test]
 fn test_scalar_multiply_cannot_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let scalar = graph.new_parameter_node(&[1, 1], Some("s")).unwrap();
     let matrix = graph.new_input_node(&[2, 3], Some("m")).unwrap();
     let result = graph
@@ -153,7 +153,7 @@ fn test_scalar_multiply_cannot_set_value() {
 /// 测试 ScalarMultiply 前向传播
 #[test]
 fn test_scalar_multiply_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar = graph.new_parameter_node(&[1, 1], Some("scalar")).unwrap();
     let matrix = graph.new_input_node(&[2, 3], Some("matrix")).unwrap();
@@ -187,7 +187,7 @@ fn test_scalar_multiply_forward() {
 /// VJP: grad_to_scalar = sum(upstream_grad * M)
 #[test]
 fn test_scalar_multiply_backward_to_scalar() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
     let matrix_id = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
@@ -221,7 +221,7 @@ fn test_scalar_multiply_backward_to_scalar() -> Result<(), GraphError> {
 /// VJP: grad_to_matrix = s * upstream_grad
 #[test]
 fn test_scalar_multiply_backward_to_matrix() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
     let matrix_id = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
@@ -253,7 +253,7 @@ fn test_scalar_multiply_backward_to_matrix() -> Result<(), GraphError> {
 /// 测试 ScalarMultiply 梯度计算（非单位 upstream_grad）
 #[test]
 fn test_scalar_multiply_backward_with_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
     let matrix_id = graph.new_parameter_node(&[2, 2], Some("matrix"))?;
@@ -296,7 +296,7 @@ fn test_scalar_multiply_backward_with_non_unit_upstream() -> Result<(), GraphErr
 /// 验证 VJP 在负数值场景下的正确性
 #[test]
 fn test_scalar_multiply_backward_with_negative_values() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
     let matrix_id = graph.new_parameter_node(&[2, 2], Some("matrix"))?;
@@ -343,7 +343,7 @@ fn test_scalar_multiply_backward_with_negative_values() -> Result<(), GraphError
 /// 零标量是重要边界情况：0*M=0，但梯度仍应正确传播
 #[test]
 fn test_scalar_multiply_backward_with_zero_scalar() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
     let matrix_id = graph.new_parameter_node(&[2, 2], Some("matrix"))?;
@@ -387,7 +387,7 @@ fn test_scalar_multiply_backward_with_zero_scalar() -> Result<(), GraphError> {
 /// 测试 ScalarMultiply 梯度计算缺少 assistant_parent 时报错
 #[test]
 fn test_scalar_multiply_backward_missing_assistant_parent() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar_id = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
     let matrix_id = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
@@ -422,7 +422,7 @@ fn test_scalar_multiply_backward_missing_assistant_parent() -> Result<(), GraphE
 /// 构建简单图：result = s * M → loss = MSE(result, target)
 #[test]
 fn test_scalar_multiply_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建简单的计算图：result = s * M
     let scalar = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
@@ -476,7 +476,7 @@ fn test_scalar_multiply_backward_e2e() -> Result<(), GraphError> {
 /// 这是 PyTorch 兼容的行为，支持"micro-batch 梯度累积"场景。
 #[test]
 fn test_scalar_multiply_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let scalar = graph.new_parameter_node(&[1, 1], Some("scalar"))?;
     let matrix = graph.new_parameter_node(&[2, 2], Some("matrix"))?;

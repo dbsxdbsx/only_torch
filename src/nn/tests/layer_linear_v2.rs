@@ -4,14 +4,14 @@
  * 测试新版 Linear 层（基于 Var API）
  */
 
-use crate::nn::graph::GraphHandle;
+use crate::nn::graph::Graph;
 use crate::nn::layer::Linear;
 use crate::nn::{Module, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 
 #[test]
 fn test_linear_forward() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 创建 Linear 层：3 -> 2
     let fc = Linear::new(&graph, 3, 2, true, "fc").unwrap();
@@ -32,7 +32,7 @@ fn test_linear_forward() {
 
 #[test]
 fn test_linear_no_bias() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 创建无 bias 的 Linear 层
     let fc = Linear::new(&graph, 3, 2, false, "fc_no_bias").unwrap();
@@ -50,7 +50,7 @@ fn test_linear_no_bias() {
 
 #[test]
 fn test_linear_parameters() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 有 bias 的 Linear
     let fc_with_bias = Linear::new(&graph, 4, 3, true, "fc1").unwrap();
@@ -65,7 +65,7 @@ fn test_linear_parameters() {
 
 #[test]
 fn test_linear_chained_with_activation() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let fc = Linear::new(&graph, 3, 2, true, "fc").unwrap();
 
@@ -85,7 +85,7 @@ fn test_linear_chained_with_activation() {
 
 #[test]
 fn test_linear_backward() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let fc = Linear::new(&graph, 3, 2, true, "fc").unwrap();
 
@@ -109,7 +109,7 @@ fn test_linear_backward() {
 
 #[test]
 fn test_mlp_two_layers() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 简单 MLP：3 -> 4 -> 2
     let fc1 = Linear::new(&graph, 3, 4, true, "fc1").unwrap();

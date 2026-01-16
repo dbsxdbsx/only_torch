@@ -1,10 +1,10 @@
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 
 #[test]
 fn test_node_step_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试Input节点作为父节点
     {
@@ -28,7 +28,7 @@ fn test_node_step_creation() {
 
 #[test]
 fn test_node_step_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试节点显式命名
     let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
@@ -49,7 +49,7 @@ fn test_node_step_name_generation() {
 
 #[test]
 fn test_node_step_manually_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
     let step = graph.new_step_node(input, Some("step")).unwrap();
 
@@ -73,7 +73,7 @@ fn test_node_step_manually_set_value() {
 
 #[test]
 fn test_node_step_expected_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试基本的Step节点预期形状
     let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
@@ -108,7 +108,7 @@ fn test_node_step_forward_propagation() {
     // 2. 测试不同节点类型组合的前向传播
     let node_types = ["input", "parameter"];
     for parent_type in node_types {
-        let mut graph = Graph::new();
+        let mut graph = GraphInner::new();
 
         // 创建parent节点
         let parent = match parent_type {
@@ -150,7 +150,7 @@ fn test_node_step_forward_propagation() {
 #[test]
 fn test_node_step_forward_values() {
     // 测试 Step 节点的具体输出值
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试包含正数、负数、零的情况（使用 2D 张量，框架要求 2-4 维）
     // Step: x >= 0 → 1, x < 0 → 0
@@ -191,7 +191,7 @@ fn test_node_step_forward_values() {
 fn test_node_step_backward_propagation() {
     use approx::assert_abs_diff_eq;
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 构建计算图: parent -> step -> mse_loss
     let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();

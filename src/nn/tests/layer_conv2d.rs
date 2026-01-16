@@ -7,7 +7,7 @@
  */
 
 use crate::nn::layer::conv2d;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -118,7 +118,7 @@ const PYTORCH_CHAIN_GRAD_CONV_BIAS: &[f32] = &[0.12196727, 0.1219673];
 /// 测试 conv2d() 创建
 #[test]
 fn test_conv2d_creation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 1, 28, 28], Some("input"))?;
 
     let conv = conv2d(
@@ -142,7 +142,7 @@ fn test_conv2d_creation() -> Result<(), GraphError> {
 /// 测试 conv2d() 参数形状
 #[test]
 fn test_conv2d_shapes() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[4, 3, 28, 28], Some("input"))?;
 
     // 3->16 通道，5x5 核
@@ -167,7 +167,7 @@ fn test_conv2d_shapes() -> Result<(), GraphError> {
 /// 测试 conv2d() 前向传播
 #[test]
 fn test_conv2d_forward() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 输入: [batch=1, C_in=1, H=4, W=4]
     let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
@@ -213,7 +213,7 @@ fn test_conv2d_forward() -> Result<(), GraphError> {
 /// 测试 conv2d() 输出尺寸计算
 #[test]
 fn test_conv2d_output_size() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // padding=1, kernel=3x3, stride=1 → same padding (保持尺寸)
     let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
@@ -247,7 +247,7 @@ fn test_conv2d_output_size() -> Result<(), GraphError> {
 /// 测试 conv2d() 带名称
 #[test]
 fn test_conv2d_with_name() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 1, 28, 28], Some("input"))?;
 
     let conv = conv2d(
@@ -271,7 +271,7 @@ fn test_conv2d_with_name() -> Result<(), GraphError> {
 /// 测试 conv2d() 无名称（使用默认前缀）
 #[test]
 fn test_conv2d_without_name() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 1, 28, 28], Some("input"))?;
 
     let conv = conv2d(&mut graph, input, 1, 32, (3, 3), (1, 1), (1, 1), None)?;
@@ -288,7 +288,7 @@ fn test_conv2d_without_name() -> Result<(), GraphError> {
 /// 测试多层 conv2d() 链式连接
 #[test]
 fn test_conv2d_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 典型 CNN 结构: conv1 -> relu -> conv2 -> relu
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
@@ -333,7 +333,7 @@ fn test_conv2d_chain() -> Result<(), GraphError> {
 /// 测试 conv2d + flatten 链式连接（典型 CNN 末端结构）
 #[test]
 fn test_conv2d_with_flatten() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // conv -> flatten
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
@@ -369,7 +369,7 @@ fn test_conv2d_with_flatten() -> Result<(), GraphError> {
 /// 测试 conv2d() 与 Batch 反向传播
 #[test]
 fn test_conv2d_batch_backward() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
 
     // 构建网络: conv -> flatten -> matmul (简化的 CNN 分类)
@@ -419,7 +419,7 @@ fn test_conv2d_batch_backward() -> Result<(), GraphError> {
 /// 测试多层 conv2d() 的 Batch 训练
 #[test]
 fn test_conv2d_chain_batch_training() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
 
     // 构建网络: conv1 -> relu -> conv2 -> flatten -> loss
@@ -483,7 +483,7 @@ fn test_conv2d_chain_batch_training() -> Result<(), GraphError> {
 /// 测试多个 conv2d() 使用不同名称
 #[test]
 fn test_conv2d_multiple_layers_different_names() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 1, 16, 16], Some("input"))?;
 
     let conv1 = conv2d(
@@ -533,7 +533,7 @@ fn test_conv2d_multiple_layers_different_names() -> Result<(), GraphError> {
 /// 测试重复名称应该报错
 #[test]
 fn test_conv2d_duplicate_name_error() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input")).unwrap();
 
     // 第一个 conv 成功
@@ -576,7 +576,7 @@ fn test_conv2d_duplicate_name_error() {
 /// 测试多个无名称层会冲突（预期行为）
 #[test]
 fn test_conv2d_multiple_unnamed_layers_conflict() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input")).unwrap();
 
     // 第一个无名称层成功
@@ -602,7 +602,7 @@ fn test_conv2d_multiple_unnamed_layers_conflict() {
 /// 测试单通道输入输出
 #[test]
 fn test_conv2d_single_channel() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
 
     let conv = conv2d(
@@ -633,7 +633,7 @@ fn test_conv2d_single_channel() -> Result<(), GraphError> {
 /// 测试大通道数
 #[test]
 fn test_conv2d_large_channels() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[1, 64, 8, 8], Some("input"))?;
 
     let conv = conv2d(
@@ -657,7 +657,7 @@ fn test_conv2d_large_channels() -> Result<(), GraphError> {
 /// 测试带 stride 的 conv2d
 #[test]
 fn test_conv2d_with_stride() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
 
     // stride=2 会使输出尺寸减半
@@ -688,7 +688,7 @@ fn test_conv2d_with_stride() -> Result<(), GraphError> {
 /// 测试非方形卷积核
 #[test]
 fn test_conv2d_nonsquare_kernel() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
 
     // 使用 3x5 的非方形卷积核
@@ -725,7 +725,7 @@ fn test_conv2d_nonsquare_kernel() -> Result<(), GraphError> {
 /// 测试访问 conv2d() 内部参数
 #[test]
 fn test_conv2d_access_internal_params() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
 
     let conv = conv2d(
@@ -753,7 +753,7 @@ fn test_conv2d_access_internal_params() -> Result<(), GraphError> {
 /// 测试典型 MNIST CNN 配置
 #[test]
 fn test_conv2d_mnist_like() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 32;
 
     // 典型 MNIST CNN 第一层
@@ -781,7 +781,7 @@ fn test_conv2d_mnist_like() -> Result<(), GraphError> {
 /// 测试 conv2d() 默认包含 bias
 #[test]
 fn test_conv2d_has_bias() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
 
     let conv = conv2d(
@@ -810,7 +810,7 @@ fn test_conv2d_has_bias() -> Result<(), GraphError> {
 /// 测试 conv2d() bias 正确应用
 #[test]
 fn test_conv2d_bias_applied() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[1, 1, 3, 3], Some("input"))?;
 
     let conv = conv2d(
@@ -866,7 +866,7 @@ fn test_conv2d_bias_applied() -> Result<(), GraphError> {
 /// 测试 conv2d() bias 的梯度传播
 #[test]
 fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
 
     let input = graph.new_input_node(&[batch_size, 1, 4, 4], Some("input"))?;
@@ -910,7 +910,7 @@ fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
 /// 测试 conv2d() bias 节点命名
 #[test]
 fn test_conv2d_bias_naming() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
 
     let conv = conv2d(
@@ -935,7 +935,7 @@ fn test_conv2d_bias_naming() -> Result<(), GraphError> {
 /// 测试前向传播数值（与 PyTorch 对照）
 #[test]
 fn test_conv2d_forward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // batch=1, C_in=1, H=4, W=4, C_out=2, kernel=2x2
     let batch_size = 1;
@@ -1002,7 +1002,7 @@ fn test_conv2d_forward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试反向传播梯度数值（与 PyTorch 对照）
 #[test]
 fn test_conv2d_backward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // batch=1, C_in=1, H=3, W=3, C_out=1, kernel=2x2
     let batch_size = 1;
@@ -1122,7 +1122,7 @@ fn test_conv2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     use crate::nn::layer::linear;
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 网络结构: conv -> relu -> flatten -> linear -> softmax_cross_entropy
     let batch_size = 2;

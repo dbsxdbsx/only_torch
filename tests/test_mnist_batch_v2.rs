@@ -4,14 +4,14 @@
  * @Description  : MNIST Batch V2 集成测试（使用 V2 API）
  *
  * 对应原 test_mnist_batch.rs，改用 V2 API：
- * - GraphHandle + Var（不再用 Graph + NodeId）
- * - OptimizerV2（PyTorch 风格 API）
+ * - Graph + Var（不再用 Graph + NodeId）
+ * - Optimizer（PyTorch 风格 API）
  * - 手动构建网络（不使用 Linear 层，验证底层 matmul/add 链式调用）
  */
 
 use only_torch::data::MnistDataset;
 use only_torch::nn::{
-    Adamv2, GraphError, GraphHandle, Init, OptimizerV2, VarActivationOps, VarLossOps, VarMatrixOps,
+    Adam, GraphError, Graph, Init, Optimizer, VarActivationOps, VarLossOps, VarMatrixOps,
 };
 use only_torch::tensor::Tensor;
 use only_torch::tensor_slice;
@@ -67,7 +67,7 @@ fn test_mnist_batch_v2() -> Result<(), GraphError> {
     // ========== 3. 构建网络（手动，不使用 Linear 层）==========
     println!("\n[3/4] 使用 V2 API 手动构建 MLP: 784 -> 128 (Sigmoid) -> 10...");
 
-    let graph = GraphHandle::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // 输入变量（使用 zeros 占位）
     let x = graph.zeros(&[batch_size, 784])?;
@@ -106,8 +106,8 @@ fn test_mnist_batch_v2() -> Result<(), GraphError> {
     let all_params = vec![w1.clone(), b1.clone(), w2.clone(), b2.clone()];
 
     // ========== 4. 创建 V2 优化器 ==========
-    let mut optimizer = Adamv2::new(&graph, &all_params, learning_rate);
-    println!("  ✓ 优化器：Adamv2 (lr={learning_rate})");
+    let mut optimizer = Adam::new(&graph, &all_params, learning_rate);
+    println!("  ✓ 优化器：Adam (lr={learning_rate})");
 
     // ========== 5. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");

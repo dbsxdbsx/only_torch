@@ -17,13 +17,13 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 
 /// 测试 State 节点的基本创建
 #[test]
 fn test_state_node_creation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let state = graph.new_state_node(&[1, 64], Some("hidden"))?;
 
     // 验证节点存在且可获取
@@ -34,7 +34,7 @@ fn test_state_node_creation() -> Result<(), GraphError> {
 /// 测试 State 节点的值设置
 #[test]
 fn test_state_node_set_value() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let state = graph.new_state_node(&[1, 4], Some("hidden"))?;
 
     // 设置值
@@ -50,7 +50,7 @@ fn test_state_node_set_value() -> Result<(), GraphError> {
 /// 测试 State 节点不在 trainable nodes 中
 #[test]
 fn test_state_not_trainable() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建各种节点
     let input = graph.new_input_node(&[1, 4], Some("input"))?;
@@ -74,7 +74,7 @@ fn test_state_not_trainable() -> Result<(), GraphError> {
 /// 在 VJP 模式下，State 节点在 backward 后应该有 grad
 #[test]
 fn test_state_accepts_grad() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     // 创建网络：state -> add -> loss
@@ -114,7 +114,7 @@ fn test_state_accepts_grad() -> Result<(), GraphError> {
 /// 在 VJP 模式下，调用 get_node_grad(input) 应返回错误
 #[test]
 fn test_input_has_no_grad() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     // 创建网络：input -> add -> loss
@@ -147,7 +147,7 @@ fn test_input_has_no_grad() -> Result<(), GraphError> {
 /// 测试 State 节点在 forward 中的行为
 #[test]
 fn test_state_forward_behavior() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let state = graph.new_state_node(&[1, 4], Some("state"))?;
 
@@ -174,7 +174,7 @@ fn test_state_forward_behavior() -> Result<(), GraphError> {
 /// 验证 State 节点能正确接收和传递梯度
 #[test]
 fn test_state_in_rnn_structure() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     // 简单 RNN: hidden_t = tanh(h_prev + input * W)
@@ -221,7 +221,7 @@ fn test_state_in_rnn_structure() -> Result<(), GraphError> {
 /// 测试 State 节点与循环连接的配合
 #[test]
 fn test_state_with_recurrent_connection() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     // 创建循环网络
@@ -254,7 +254,7 @@ fn test_state_with_recurrent_connection() -> Result<(), GraphError> {
 /// 测试 State 节点的 zero_grad
 #[test]
 fn test_state_zero_grad() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     let state = graph.new_state_node(&[1, 2], Some("state"))?;
@@ -293,7 +293,7 @@ fn test_state_zero_grad() -> Result<(), GraphError> {
 /// 测试 State 节点的 reset 行为
 #[test]
 fn test_state_reset_behavior() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
@@ -329,7 +329,7 @@ fn test_state_reset_behavior() -> Result<(), GraphError> {
 /// 测试多个 State 节点（如 LSTM 的 h 和 c）
 #[test]
 fn test_multiple_state_nodes() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let h = graph.new_state_node(&[1, 64], Some("hidden"))?;
     let c = graph.new_state_node(&[1, 64], Some("cell"))?;
@@ -352,7 +352,7 @@ fn test_multiple_state_nodes() -> Result<(), GraphError> {
 /// 测试 State 节点的维度验证
 #[test]
 fn test_state_dimension_validation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 2D 应该成功
     assert!(graph.new_state_node(&[1, 64], None).is_ok());
@@ -381,7 +381,7 @@ fn test_state_dimension_validation() {
 /// 测试 State 节点未初始化值时的行为
 #[test]
 fn test_state_used_without_value() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 1], Some("state"))?;
@@ -409,7 +409,7 @@ fn test_state_used_without_value() -> Result<(), GraphError> {
 /// 测试 State 节点作为普通计算节点使用（无循环连接）
 #[test]
 fn test_state_without_recurrent_connection() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -433,7 +433,7 @@ fn test_state_without_recurrent_connection() -> Result<(), GraphError> {
 /// 测试重复建立循环连接
 #[test]
 fn test_duplicate_recurrent_connection_error() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 1], Some("state"))?;
@@ -460,7 +460,7 @@ fn test_duplicate_recurrent_connection_error() -> Result<(), GraphError> {
 /// 使用 backward_through_time 专用方法
 #[test]
 fn test_state_grad_in_bptt() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -499,7 +499,7 @@ fn test_state_grad_in_bptt() -> Result<(), GraphError> {
 /// 测试 State 节点形状不匹配的循环连接
 #[test]
 fn test_state_shape_mismatch_recurrent() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 2], Some("state"))?; // 形状 [1, 2]
@@ -516,7 +516,7 @@ fn test_state_shape_mismatch_recurrent() -> Result<(), GraphError> {
 /// 测试 zero_grad 对 State 节点的影响
 #[test]
 fn test_zero_grad_on_state() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     // 构建一个会产生 State grad 的网络

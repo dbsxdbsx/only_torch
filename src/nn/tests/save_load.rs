@@ -4,7 +4,7 @@
  * @Description  : Graph 参数保存/加载测试 + 图描述测试
  */
 
-use crate::nn::{Graph, ImageFormat, NodeTypeDescriptor};
+use crate::nn::{GraphInner, ImageFormat, NodeTypeDescriptor};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 use std::fs;
@@ -15,7 +15,7 @@ fn test_save_load_params_basic() {
     let temp_file = "test_save_load_params_basic.bin";
 
     // 1. 创建图并设置参数值
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let w1 = graph
         .new_parameter_node(&[3, 4], Some("w1"))
         .expect("创建 w1 失败");
@@ -37,7 +37,7 @@ fn test_save_load_params_basic() {
     graph.save_params(temp_file).expect("保存参数失败");
 
     // 3. 创建新图并加载参数
-    let mut graph2 = Graph::new();
+    let mut graph2 = GraphInner::new();
     let w1_new = graph2
         .new_parameter_node(&[3, 4], Some("w1"))
         .expect("创建 w1 失败");
@@ -69,7 +69,7 @@ fn test_save_load_params_partial() {
     let temp_file = "test_save_load_params_partial.bin";
 
     // 1. 创建包含 3 个参数的图
-    let mut graph1 = Graph::new();
+    let mut graph1 = GraphInner::new();
     let _w1 = graph1
         .new_parameter_node(&[2, 3], Some("w1"))
         .expect("创建 w1 失败");
@@ -83,7 +83,7 @@ fn test_save_load_params_partial() {
     graph1.save_params(temp_file).expect("保存参数失败");
 
     // 2. 创建只有 2 个参数的图（缺少 w2）
-    let mut graph2 = Graph::new();
+    let mut graph2 = GraphInner::new();
     let w1_new = graph2
         .new_parameter_node(&[2, 3], Some("w1"))
         .expect("创建 w1 失败");
@@ -110,7 +110,7 @@ fn test_load_params_invalid_magic() {
     // 写入无效数据
     fs::write(temp_file, b"INVALID_DATA").expect("写入测试文件失败");
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let _w1 = graph
         .new_parameter_node(&[2, 3], Some("w1"))
         .expect("创建 w1 失败");
@@ -128,7 +128,7 @@ fn test_load_params_invalid_magic() {
 /// 测试文件不存在的错误处理
 #[test]
 fn test_load_params_file_not_found() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let _w1 = graph
         .new_parameter_node(&[2, 3], Some("w1"))
         .expect("创建 w1 失败");
@@ -150,11 +150,11 @@ fn test_save_load_params_empty_graph() {
     let temp_file = "test_save_load_params_empty.bin";
 
     // 创建没有参数节点的图
-    let graph = Graph::new();
+    let graph = GraphInner::new();
     graph.save_params(temp_file).expect("保存空图参数失败");
 
     // 加载到另一个空图
-    let mut graph2 = Graph::new();
+    let mut graph2 = GraphInner::new();
     graph2.load_params(temp_file).expect("加载空图参数失败");
 
     // 清理
@@ -166,7 +166,7 @@ fn test_save_load_params_empty_graph() {
 fn test_save_load_params_utf8_names() {
     let temp_file = "test_save_load_params_utf8.bin";
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let w1 = graph
         .new_parameter_node(&[2, 3], Some("权重_层1"))
         .expect("创建参数失败");
@@ -187,7 +187,7 @@ fn test_save_load_params_utf8_names() {
     graph.save_params(temp_file).expect("保存参数失败");
 
     // 新图加载
-    let mut graph2 = Graph::new();
+    let mut graph2 = GraphInner::new();
     let w1_new = graph2
         .new_parameter_node(&[2, 3], Some("权重_层1"))
         .expect("创建参数失败");
@@ -212,7 +212,7 @@ fn test_save_load_params_utf8_names() {
 /// 测试基本的图描述
 #[test]
 fn test_describe_basic() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 构建简单的网络：input -> matmul(w) -> sigmoid -> loss
     let x = graph.new_input_node(&[1, 4], Some("x")).unwrap();
@@ -248,7 +248,7 @@ fn test_describe_basic() {
 /// 测试 JSON 序列化/反序列化
 #[test]
 fn test_describe_json_roundtrip() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let x = graph.new_input_node(&[2, 3], Some("input")).unwrap();
     let w = graph.new_parameter_node(&[3, 4], Some("weight")).unwrap();
@@ -267,7 +267,7 @@ fn test_describe_json_roundtrip() {
 /// 测试总参数量计算
 #[test]
 fn test_describe_total_params() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let _ = graph.new_input_node(&[1, 784], Some("x")).unwrap();
     let _ = graph.new_parameter_node(&[784, 128], Some("w1")).unwrap(); // 100352
@@ -287,7 +287,7 @@ fn test_save_load_model() {
     let temp_base = "test_save_load_model";
 
     // 1. 创建并训练一个简单模型
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let _x = graph.new_input_node(&[1, 4], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[4, 2], Some("w")).unwrap();
     let b = graph.new_parameter_node(&[1, 2], Some("b")).unwrap();
@@ -310,7 +310,7 @@ fn test_save_load_model() {
     assert!(std::path::Path::new("test_save_load_model.bin").exists());
 
     // 3. 创建相同结构的新图并加载模型
-    let mut graph2 = Graph::new();
+    let mut graph2 = GraphInner::new();
     let _x2 = graph2.new_input_node(&[1, 4], Some("x")).unwrap();
     let w2 = graph2.new_parameter_node(&[4, 2], Some("w")).unwrap();
     let b2 = graph2.new_parameter_node(&[1, 2], Some("b")).unwrap();
@@ -333,7 +333,7 @@ fn test_save_load_model() {
 fn test_save_model_json_readable() {
     let temp_base = "test_save_model_json_readable";
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let _ = graph.new_input_node(&[2, 3], Some("input")).unwrap();
     let _ = graph.new_parameter_node(&[3, 4], Some("weight")).unwrap();
 
@@ -357,7 +357,7 @@ fn test_save_model_json_readable() {
 /// 测试 summary 输出基本格式
 #[test]
 fn test_summary_basic() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let x = graph.new_input_node(&[1, 784], Some("x")).unwrap();
     let w1 = graph.new_parameter_node(&[784, 128], Some("w1")).unwrap();
@@ -394,7 +394,7 @@ fn test_summary_basic() {
 /// 测试参数量格式化（千分位分隔）
 #[test]
 fn test_summary_param_formatting() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let _ = graph
         .new_parameter_node(&[1000, 1000], Some("big_param"))
@@ -409,7 +409,7 @@ fn test_summary_param_formatting() {
 /// 测试空图的 summary
 #[test]
 fn test_summary_empty_graph() {
-    let graph = Graph::new();
+    let graph = GraphInner::new();
     let summary = graph.summary_string();
 
     // 空图也应该能输出表格结构
@@ -422,7 +422,7 @@ fn test_summary_empty_graph() {
 fn test_save_summary_txt() {
     let temp_file = "test_save_summary.txt";
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let x = graph.new_input_node(&[1, 4], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
@@ -445,7 +445,7 @@ fn test_save_summary_txt() {
 fn test_save_summary_markdown() {
     let temp_file = "test_save_summary.md";
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let x = graph.new_input_node(&[1, 4], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
@@ -465,7 +465,7 @@ fn test_save_summary_markdown() {
 /// 测试 summary_markdown 方法
 #[test]
 fn test_summary_markdown_string() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let _ = graph.new_parameter_node(&[10, 20], Some("weight")).unwrap();
 
     let md = graph.summary_markdown();
@@ -483,7 +483,7 @@ fn test_summary_markdown_string() {
 /// 测试 DOT 输出基本格式
 #[test]
 fn test_to_dot_basic() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let x = graph.new_input_node(&[1, 4], Some("input")).unwrap();
     let w = graph.new_parameter_node(&[4, 2], Some("weight")).unwrap();
@@ -518,7 +518,7 @@ fn test_to_dot_basic() {
 fn test_save_visualization_basic() {
     let base_path = "test_save_visualization_basic";
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let x = graph.new_input_node(&[2, 3], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
@@ -558,7 +558,7 @@ fn test_save_visualization_basic() {
 fn test_save_visualization_with_format() {
     let base_path = "test_save_visualization_svg";
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let x = graph.new_input_node(&[2, 3], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
@@ -585,7 +585,7 @@ fn test_save_visualization_with_format() {
 /// 测试路径包含后缀时应报错
 #[test]
 fn test_save_visualization_rejects_extension() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let x = graph.new_input_node(&[2, 3], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
@@ -636,7 +636,7 @@ fn test_image_format() {
 /// 测试各节点类型的样式
 #[test]
 fn test_to_dot_node_styles() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 各种类型节点
     let x = graph.new_input_node(&[1, 4], Some("input")).unwrap();

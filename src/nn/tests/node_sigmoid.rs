@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -20,7 +20,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 Sigmoid 节点创建
 #[test]
 fn test_sigmoid_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. Input 节点作为父节点
     {
@@ -57,7 +57,7 @@ fn test_sigmoid_creation() {
 /// 测试 Sigmoid 节点命名
 #[test]
 fn test_sigmoid_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
 
@@ -80,7 +80,7 @@ fn test_sigmoid_name_generation() {
 /// 测试 Sigmoid 节点不能直接设置值
 #[test]
 fn test_sigmoid_cannot_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
     let sigmoid = graph.new_sigmoid_node(input, Some("sigmoid")).unwrap();
 
@@ -98,7 +98,7 @@ fn test_sigmoid_cannot_set_value() {
 /// 测试 Sigmoid 前向传播
 #[test]
 fn test_sigmoid_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 2], Some("input")).unwrap();
     let sigmoid = graph.new_sigmoid_node(input, Some("sigmoid")).unwrap();
@@ -121,7 +121,7 @@ fn test_sigmoid_forward() {
 /// 测试 Sigmoid 前向传播（边界值）
 #[test]
 fn test_sigmoid_forward_edge_cases() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[1, 4], Some("input")).unwrap();
     let sigmoid = graph.new_sigmoid_node(input, Some("sigmoid")).unwrap();
@@ -148,7 +148,7 @@ fn test_sigmoid_forward_edge_cases() {
 /// - VJP: grad_to_parent = upstream_grad * y * (1 - y)
 #[test]
 fn test_sigmoid_backward_vjp() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let sigmoid_id = graph.new_sigmoid_node(input_id, Some("sigmoid"))?;
@@ -181,7 +181,7 @@ fn test_sigmoid_backward_vjp() -> Result<(), GraphError> {
 /// 测试 Sigmoid 梯度计算（非单位 upstream_grad）
 #[test]
 fn test_sigmoid_backward_with_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let sigmoid_id = graph.new_sigmoid_node(input_id, Some("sigmoid"))?;
@@ -215,7 +215,7 @@ fn test_sigmoid_backward_with_non_unit_upstream() -> Result<(), GraphError> {
 /// 当输入绝对值很大时，sigmoid 接近 0 或 1，梯度接近 0（梯度消失）
 #[test]
 fn test_sigmoid_backward_saturation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[1, 2], Some("input"))?;
     let sigmoid_id = graph.new_sigmoid_node(input_id, Some("sigmoid"))?;
@@ -246,7 +246,7 @@ fn test_sigmoid_backward_saturation() -> Result<(), GraphError> {
 /// 构建简单图：result = sigmoid(input) → loss = MSE(result, target)
 #[test]
 fn test_sigmoid_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：result = sigmoid(input)
     let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
@@ -309,7 +309,7 @@ fn test_sigmoid_backward_e2e() -> Result<(), GraphError> {
 /// 网络结构: x -> MatMul(w) -> Add(b) -> Sigmoid -> output
 #[test]
 fn test_sigmoid_backward_e2e_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 构建网络: output = sigmoid(w @ x + b)
     let x = graph.new_input_node(&[2, 1], Some("x"))?;
@@ -357,7 +357,7 @@ fn test_sigmoid_backward_e2e_chain() -> Result<(), GraphError> {
 /// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
 #[test]
 fn test_sigmoid_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let result = graph.new_sigmoid_node(input, Some("result"))?;

@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -20,7 +20,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 Add 节点创建
 #[test]
 fn test_add_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 两个 Input 节点相加
     {
@@ -78,7 +78,7 @@ fn test_add_creation() {
 /// 测试 Add 创建时的形状校验
 #[test]
 fn test_add_creation_invalid_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 第一个和第二个父节点形状不同（行数不同）
     let input1 = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
@@ -111,7 +111,7 @@ fn test_add_creation_invalid_shape() {
 /// 测试 Add 创建时父节点数量不足
 #[test]
 fn test_add_creation_insufficient_parents() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
     let result = graph.new_add_node(&[input], None);
@@ -124,7 +124,7 @@ fn test_add_creation_insufficient_parents() {
 /// 测试 Add 节点命名
 #[test]
 fn test_add_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 3], Some("p1")).unwrap();
     let p2 = graph.new_parameter_node(&[2, 3], Some("p2")).unwrap();
@@ -148,7 +148,7 @@ fn test_add_name_generation() {
 /// 测试 Add 节点不能直接设置值
 #[test]
 fn test_add_cannot_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1")).unwrap();
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2")).unwrap();
     let add = graph.new_add_node(&[p1, p2], Some("add")).unwrap();
@@ -167,7 +167,7 @@ fn test_add_cannot_set_value() {
 /// 测试 Add 前向传播（两个父节点）
 #[test]
 fn test_add_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1")).unwrap();
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2")).unwrap();
@@ -191,7 +191,7 @@ fn test_add_forward() {
 /// 测试 Add 前向传播（三个父节点）
 #[test]
 fn test_add_forward_three_parents() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1")).unwrap();
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2")).unwrap();
@@ -225,7 +225,7 @@ fn test_add_forward_three_parents() {
 /// VJP: grad_to_p1 = upstream_grad
 #[test]
 fn test_add_backward_to_first_parent() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
@@ -257,7 +257,7 @@ fn test_add_backward_to_first_parent() -> Result<(), GraphError> {
 /// VJP: grad_to_p2 = upstream_grad
 #[test]
 fn test_add_backward_to_second_parent() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
@@ -285,7 +285,7 @@ fn test_add_backward_to_second_parent() -> Result<(), GraphError> {
 /// 测试 Add 梯度计算（非单位 upstream_grad）
 #[test]
 fn test_add_backward_with_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
@@ -318,7 +318,7 @@ fn test_add_backward_with_non_unit_upstream() -> Result<(), GraphError> {
 /// 验证 VJP 在负数值场景下的正确性
 #[test]
 fn test_add_backward_with_negative_values() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
@@ -352,7 +352,7 @@ fn test_add_backward_with_negative_values() -> Result<(), GraphError> {
 /// 测试 Add 对三个父节点的梯度计算
 #[test]
 fn test_add_backward_three_parents() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
@@ -391,7 +391,7 @@ fn test_add_backward_three_parents() -> Result<(), GraphError> {
 /// 构建简单图：result = p1 + p2 → loss = MSE(result, target)
 #[test]
 fn test_add_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：result = p1 + p2
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
@@ -442,7 +442,7 @@ fn test_add_backward_e2e() -> Result<(), GraphError> {
 /// 测试 Add 端到端反向传播（三个父节点）
 #[test]
 fn test_add_backward_e2e_three_parents() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：result = p1 + p2 + p3
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
@@ -494,7 +494,7 @@ fn test_add_backward_e2e_three_parents() -> Result<(), GraphError> {
 /// 这是 PyTorch 兼容的行为，支持"micro-batch 梯度累积"场景。
 #[test]
 fn test_add_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;

@@ -17,7 +17,7 @@
  */
 
 use crate::nn::GraphError;
-use crate::nn::graph::Graph;
+use crate::nn::graph::GraphInner;
 use crate::nn::nodes::NodeId;
 use crate::tensor::Tensor;
 
@@ -55,7 +55,7 @@ pub struct GruOutput {
 /// # 返回
 /// - `GruOutput`: 包含所有相关节点 ID
 pub fn gru(
-    graph: &mut Graph,
+    graph: &mut GraphInner,
     input: NodeId,
     input_size: usize,
     hidden_size: usize,

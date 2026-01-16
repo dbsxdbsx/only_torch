@@ -65,7 +65,7 @@ impl Init {
 ///
 /// # 使用示例
 /// ```ignore
-/// let graph = GraphHandle::new();
+/// let graph = Graph::new();
 /// let x = graph.input(&images)?;      // 返回 Var
 /// let h = x.relu();                   // 链式调用
 /// let y = h.matmul(&w)?;              // 方法调用
@@ -112,8 +112,8 @@ impl Var {
     ///
     /// 即使原始 Graph handle 已 drop，此方法仍返回有效的 Graph。
     /// 这是因为 Var 持有 GraphInner 的强引用（Rc）。
-    pub fn get_graph(&self) -> super::graph::GraphHandle {
-        super::graph::GraphHandle::from_rc(Rc::clone(&self.graph))
+    pub fn get_graph(&self) -> super::graph::Graph {
+        super::graph::Graph::from_rc(Rc::clone(&self.graph))
     }
 
     /// 获取节点的预期输出形状

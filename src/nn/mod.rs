@@ -18,12 +18,12 @@ mod var_ops;
 
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
-pub use graph::{Graph, GraphError, GraphHandle, GraphInner, ImageFormat, VisualizationOutput};
+pub use graph::{Graph, GraphError, GraphInner, ImageFormat, VisualizationOutput};
 pub use layer::{Linear, LinearOutput, linear};
 pub use module::Module;
 pub use nodes::NodeId;
 pub use nodes::raw_node::Reduction;
-pub use optimizer::{Adamv2, OptimizerV2, SGDv2};
+pub use optimizer::{Adam, Optimizer, SGD};
 pub use var::{Init, Var};
 pub use var_ops::{VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps};
 

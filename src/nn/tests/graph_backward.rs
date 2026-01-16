@@ -1,5 +1,5 @@
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -7,7 +7,7 @@ use approx::assert_abs_diff_eq;
 /// 验证：输入节点不应该有梯度，参数节点反向传播后有梯度
 #[test]
 fn test_node_grad_retrieval() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = wx + b
     let x = graph.new_input_node(&[3, 1], Some("x")).unwrap();
@@ -69,7 +69,7 @@ fn test_node_grad_retrieval() {
 /// 验证：y = wx 情况下，dL/dw 的正确性
 #[test]
 fn test_node_grad_computation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = wx
     let x = graph.new_input_node(&[3, 1], Some("x")).unwrap();
@@ -108,7 +108,7 @@ fn test_node_grad_computation() {
 /// 验证：多次 backward 会累积梯度，zero_grad 会清零
 #[test]
 fn test_continuous_backward_grad_accumulation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：loss = MSE(y, target)，其中 y = x + b
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -184,7 +184,7 @@ fn test_continuous_backward_grad_accumulation() {
 /// 验证：如果 loss 节点没有值，backward 应该报错
 #[test]
 fn test_backward_without_any_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：loss = MSE(y, target)，其中 y = wx + b
     let x = graph.new_input_node(&[3, 1], Some("x")).unwrap();
@@ -231,7 +231,7 @@ fn test_backward_without_any_forward() {
 /// 验证：即使参数节点有未前向传播的子节点分支，反向传播仍能正常工作
 #[test]
 fn test_backward_with_partial_forward_propagation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建一个计算图：loss = MSE(z, target)
     // 其中 z = (x + a) + (y + b)，参数 a 有多个子节点，但只有部分子节点参与了前向传播
@@ -305,7 +305,7 @@ fn test_backward_with_partial_forward_propagation() {
 /// 验证：每次 backward 后 pass_id 增加
 #[test]
 fn test_backward_pass_id_increment() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = x + b
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -343,7 +343,7 @@ fn test_backward_pass_id_increment() {
 /// 验证：前向/反向传播后，参与的节点的 pass_id 与图一致
 #[test]
 fn test_node_pass_id_synchronization() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(z, target)，其中 z = (x + y) * w
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -426,7 +426,7 @@ fn test_node_pass_id_synchronization() {
 /// 验证：当 backward 失败时，pass_id 应该不变
 #[test]
 fn test_pass_id_rollback_on_backward_error() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = x + b
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();

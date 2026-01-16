@@ -5,13 +5,13 @@
  * - reshape, flatten
  */
 
-use crate::nn::graph::GraphHandle;
+use crate::nn::graph::Graph;
 use crate::nn::VarShapeOps;
 use crate::tensor::Tensor;
 
 #[test]
 fn test_var_reshape() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
         .unwrap();
@@ -24,7 +24,7 @@ fn test_var_reshape() {
 
 #[test]
 fn test_var_reshape_to_vector() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
         .unwrap();
@@ -38,7 +38,7 @@ fn test_var_reshape_to_vector() {
 
 #[test]
 fn test_var_reshape_invalid_size() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
         .unwrap();
@@ -49,7 +49,7 @@ fn test_var_reshape_invalid_size() {
 
 #[test]
 fn test_var_flatten() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
         .unwrap();
@@ -63,7 +63,7 @@ fn test_var_flatten() {
 
 #[test]
 fn test_var_flatten_already_flat() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph.input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1])).unwrap();
     let y = x.flatten().unwrap();
     y.forward().unwrap();
@@ -74,7 +74,7 @@ fn test_var_flatten_already_flat() {
 
 #[test]
 fn test_var_reshape_chain() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
         .unwrap();

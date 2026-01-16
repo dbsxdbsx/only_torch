@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -20,7 +20,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 Multiply 节点创建
 #[test]
 fn test_multiply_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 矩阵(2x3) ⊙ 矩阵(2x3)
     {
@@ -64,7 +64,7 @@ fn test_multiply_creation() {
 /// 测试 Multiply 创建时的形状校验
 #[test]
 fn test_multiply_creation_invalid_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 形状完全不同
     let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
@@ -88,7 +88,7 @@ fn test_multiply_creation_invalid_shape() {
 /// 测试 Multiply 节点命名
 #[test]
 fn test_multiply_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left = graph.new_parameter_node(&[2, 3], Some("l")).unwrap();
     let right = graph.new_parameter_node(&[2, 3], Some("r")).unwrap();
@@ -114,7 +114,7 @@ fn test_multiply_name_generation() {
 /// 测试 Multiply 节点不能直接设置值
 #[test]
 fn test_multiply_cannot_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let left = graph.new_parameter_node(&[2, 3], Some("l")).unwrap();
     let right = graph.new_parameter_node(&[2, 3], Some("r")).unwrap();
     let result = graph.new_multiply_node(left, right, Some("mul")).unwrap();
@@ -133,7 +133,7 @@ fn test_multiply_cannot_set_value() {
 /// 测试 Multiply 前向传播
 #[test]
 fn test_multiply_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
     let right = graph.new_parameter_node(&[2, 3], Some("right")).unwrap();
@@ -171,7 +171,7 @@ fn test_multiply_forward() {
 /// VJP: grad_to_left = upstream_grad ⊙ B
 #[test]
 fn test_multiply_backward_to_left() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -206,7 +206,7 @@ fn test_multiply_backward_to_left() -> Result<(), GraphError> {
 /// VJP: grad_to_right = upstream_grad ⊙ A
 #[test]
 fn test_multiply_backward_to_right() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -237,7 +237,7 @@ fn test_multiply_backward_to_right() -> Result<(), GraphError> {
 /// 测试 Multiply 梯度计算（非单位 upstream_grad）
 #[test]
 fn test_multiply_backward_with_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -276,7 +276,7 @@ fn test_multiply_backward_with_non_unit_upstream() -> Result<(), GraphError> {
 /// 验证 VJP 在负数值场景下的正确性
 #[test]
 fn test_multiply_backward_with_negative_values() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -318,7 +318,7 @@ fn test_multiply_backward_with_negative_values() -> Result<(), GraphError> {
 /// 零值是重要边界情况：0*x=0，但梯度仍应正确传播
 #[test]
 fn test_multiply_backward_with_zero_value() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -358,7 +358,7 @@ fn test_multiply_backward_with_zero_value() -> Result<(), GraphError> {
 /// 测试 Multiply 梯度计算缺少 assistant_parent 时报错
 #[test]
 fn test_multiply_backward_missing_assistant_parent() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -390,7 +390,7 @@ fn test_multiply_backward_missing_assistant_parent() -> Result<(), GraphError> {
 /// 构建简单图：result = left ⊙ right → loss = MSE(result, target)
 #[test]
 fn test_multiply_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：result = left ⊙ right
     let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
@@ -445,7 +445,7 @@ fn test_multiply_backward_e2e() -> Result<(), GraphError> {
 /// 这是 PyTorch 兼容的行为，支持"micro-batch 梯度累积"场景。
 #[test]
 fn test_multiply_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right = graph.new_parameter_node(&[2, 2], Some("right"))?;

@@ -1,10 +1,10 @@
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 
 #[test]
 fn test_node_perception_loss_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试Input节点作为父节点
     {
@@ -38,7 +38,7 @@ fn test_node_perception_loss_creation() {
 
 #[test]
 fn test_node_perception_loss_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试节点显式命名
     let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
@@ -64,7 +64,7 @@ fn test_node_perception_loss_name_generation() {
 
 #[test]
 fn test_node_perception_loss_manually_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
     let loss = graph.new_perception_loss_node(input, Some("loss")).unwrap();
 
@@ -88,7 +88,7 @@ fn test_node_perception_loss_manually_set_value() {
 
 #[test]
 fn test_node_perception_loss_expected_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试基本的 Loss 节点预期形状（标量 [1, 1]）
     let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
@@ -132,7 +132,7 @@ fn test_node_perception_loss_forward_propagation() {
     // 2. 测试不同节点类型组合的前向传播
     let node_types = ["input", "parameter"];
     for parent_type in node_types {
-        let mut graph = Graph::new();
+        let mut graph = GraphInner::new();
 
         // 创建 parent 节点
         let parent = match parent_type {
@@ -191,7 +191,7 @@ fn test_node_perception_loss_forward_propagation() {
 fn test_node_perception_loss_backward_propagation() {
     use approx::assert_abs_diff_eq;
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建计算图: parent -> perception_loss
     let parent = graph.new_parameter_node(&[2, 3], Some("parent")).unwrap();

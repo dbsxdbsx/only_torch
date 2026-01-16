@@ -4,7 +4,7 @@
  * 测试 backward_through_time() 和 TBPTT 的正确性
  */
 
-use crate::nn::{Graph, GraphError, NodeId};
+use crate::nn::{GraphInner, GraphError, NodeId};
 use crate::tensor::Tensor;
 
 // ==================== 辅助函数 ====================
@@ -30,8 +30,8 @@ fn scalar(val: f64) -> Tensor {
 ///   output_t = w_out * hidden_t
 ///
 /// 这是一个简单的累加器 + 线性输出
-fn create_simple_rnn() -> Result<(Graph, NodeId, NodeId, NodeId, NodeId), GraphError> {
-    let mut graph = Graph::new();
+fn create_simple_rnn() -> Result<(GraphInner, NodeId, NodeId, NodeId, NodeId), GraphError> {
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     // 输入节点
@@ -71,8 +71,8 @@ fn create_simple_rnn() -> Result<(Graph, NodeId, NodeId, NodeId, NodeId), GraphE
 ///         └────────────┘ (循环连接)
 /// ```
 fn create_rnn_with_recurrent_weight()
--> Result<(Graph, NodeId, NodeId, NodeId, NodeId, NodeId), GraphError> {
-    let mut graph = Graph::new();
+-> Result<(GraphInner, NodeId, NodeId, NodeId, NodeId, NodeId), GraphError> {
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     // 输入和目标
@@ -110,8 +110,8 @@ fn create_rnn_with_recurrent_weight()
 }
 
 /// 创建带 MSE Loss 的简单 RNN
-fn create_rnn_with_loss() -> Result<(Graph, NodeId, NodeId, NodeId, NodeId), GraphError> {
-    let mut graph = Graph::new();
+fn create_rnn_with_loss() -> Result<(GraphInner, NodeId, NodeId, NodeId, NodeId), GraphError> {
+    let mut graph = GraphInner::new();
     graph.set_train_mode();
 
     // 输入和目标
@@ -465,11 +465,11 @@ fn test_bptt_long_sequence() {
 /// 3. 检测潜在的梯度消失/爆炸问题
 #[test]
 fn test_bptt_very_long_sequence_gradient_norm() {
-    use crate::nn::{Graph, NodeId};
+    use crate::nn::{GraphInner, NodeId};
 
     /// 创建带 tanh 激活的简单 RNN
-    fn create_tanh_rnn() -> (Graph, NodeId, NodeId, NodeId, NodeId, NodeId) {
-        let mut graph = Graph::new_with_seed(42);
+    fn create_tanh_rnn() -> (GraphInner, NodeId, NodeId, NodeId, NodeId, NodeId) {
+        let mut graph = GraphInner::new_with_seed(42);
         graph.set_train_mode();
 
         let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
@@ -528,7 +528,7 @@ fn test_bptt_very_long_sequence_gradient_norm() {
     }
 
     /// 计算梯度范数
-    fn grad_norm(graph: &Graph, params: &[NodeId]) -> f32 {
+    fn grad_norm(graph: &GraphInner, params: &[NodeId]) -> f32 {
         let mut sum_sq = 0.0f32;
         for &p in params {
             if let Ok(Some(param_grad)) = graph.get_node_grad(p) {
@@ -619,10 +619,8 @@ fn test_bptt_very_long_sequence_gradient_norm() {
 /// w_hh 较小时梯度衰减更快，但更稳定
 #[test]
 fn test_bptt_gradient_stability_vs_w_hh() {
-    use crate::nn::Graph;
-
     fn run_bptt_with_w_hh(w_hh_value: f64, seq_len: usize) -> (f32, f32) {
-        let mut graph = Graph::new_with_seed(42);
+        let mut graph = GraphInner::new_with_seed(42);
         graph.set_train_mode();
 
         let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
@@ -756,7 +754,7 @@ fn test_vjp_large_batch_hidden() -> Result<(), GraphError> {
     let num_epochs = 5;
 
     // 创建网络
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     // 输入和状态

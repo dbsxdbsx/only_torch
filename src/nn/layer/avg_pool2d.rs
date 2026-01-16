@@ -11,7 +11,7 @@
  * 等价于 PyTorch 的 nn.AvgPool2d
  */
 
-use crate::nn::{Graph, GraphError, NodeId};
+use crate::nn::{GraphError, GraphInner, NodeId};
 
 /// `AvgPool2d` 层的输出结构
 ///
@@ -51,7 +51,7 @@ pub struct AvgPool2dOutput {
 /// let gap = avg_pool2d(&mut graph, features, (7, 7), None, Some("gap"))?;
 /// ```
 pub fn avg_pool2d(
-    graph: &mut Graph,
+    graph: &mut GraphInner,
     input: NodeId,
     kernel_size: (usize, usize),
     stride: Option<(usize, usize)>,

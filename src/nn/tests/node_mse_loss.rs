@@ -4,7 +4,7 @@
  * @Description  : MSELoss 节点单元测试
  */
 
-use crate::nn::{Graph, Reduction};
+use crate::nn::{GraphInner, Reduction};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -12,7 +12,7 @@ use approx::assert_abs_diff_eq;
 
 #[test]
 fn test_mse_loss_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
@@ -29,7 +29,7 @@ fn test_mse_loss_creation() {
 
 #[test]
 fn test_mse_loss_shape_mismatch() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 4], Some("target")).unwrap(); // 形状不匹配
@@ -50,7 +50,7 @@ fn test_mse_loss_shape_mismatch() {
 /// ```
 #[test]
 fn test_mse_loss_forward_mean_basic() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
@@ -83,7 +83,7 @@ fn test_mse_loss_forward_mean_basic() {
 /// ```
 #[test]
 fn test_mse_loss_forward_2d_matrix() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_input_node(&[2, 2], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[2, 2], Some("target")).unwrap();
@@ -121,7 +121,7 @@ fn test_mse_loss_forward_2d_matrix() {
 /// ```
 #[test]
 fn test_mse_loss_forward_sum() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
@@ -155,7 +155,7 @@ fn test_mse_loss_forward_sum() {
 /// ```
 #[test]
 fn test_mse_loss_backward_e2e_mean() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
@@ -193,7 +193,7 @@ fn test_mse_loss_backward_e2e_mean() {
 /// ```
 #[test]
 fn test_mse_loss_backward_e2e_sum() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
@@ -229,7 +229,7 @@ fn test_mse_loss_backward_e2e_sum() {
 /// ```
 #[test]
 fn test_mse_loss_backward_e2e_2d() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[2, 2], Some("target")).unwrap();
@@ -276,7 +276,7 @@ fn test_mse_loss_backward_e2e_2d() {
 /// ```
 #[test]
 fn test_mse_loss_batch_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_input_node(&[3, 4], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[3, 4], Some("target")).unwrap();
@@ -311,7 +311,7 @@ fn test_mse_loss_batch_forward() {
 /// Batch 模式的反向传播测试
 #[test]
 fn test_mse_loss_batch_backward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[3, 4], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[3, 4], Some("target")).unwrap();
@@ -357,7 +357,7 @@ fn test_mse_loss_batch_backward() {
 
 #[test]
 fn test_mse_loss_large_values() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
@@ -387,7 +387,7 @@ fn test_mse_loss_large_values() {
 
 #[test]
 fn test_mse_loss_small_values() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
@@ -419,7 +419,7 @@ fn test_mse_loss_small_values() {
 
 #[test]
 fn test_mse_loss_gradient_accumulation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
     let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
@@ -463,9 +463,7 @@ fn test_mse_loss_gradient_accumulation() {
 /// 目标: y = 2x (学习斜率)
 #[test]
 fn test_mse_loss_simple_regression_training() {
-    use crate::nn::optimizer::{Optimizer, SGD};
-
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 创建网络: y_pred = x * w
     let x_id = graph.new_input_node(&[1, 1], Some("x")).unwrap();
@@ -481,7 +479,7 @@ fn test_mse_loss_simple_regression_training() {
         .set_node_value(w_id, Some(&Tensor::new(&[0.5], &[1, 1])))
         .unwrap();
 
-    let mut optimizer = SGD::new(&graph, 0.1).unwrap();
+    let lr = 0.1;
 
     // 训练数据: x=1 -> y=2, x=2 -> y=4, x=3 -> y=6
     let training_data = [(1.0_f32, 2.0_f32), (2.0, 4.0), (3.0, 6.0)];
@@ -496,11 +494,15 @@ fn test_mse_loss_simple_regression_training() {
                 .set_node_value(y_true_id, Some(&Tensor::new(&[y_val], &[1, 1])))
                 .unwrap();
 
-            // 使用新 API
             graph.zero_grad().unwrap();
             graph.forward(loss_id).unwrap();
             graph.backward(loss_id).unwrap();
-            optimizer.step(&mut graph).unwrap();
+
+            // 手动 SGD 更新：w = w - lr * grad
+            let w_val = graph.get_node_value(w_id).unwrap().unwrap();
+            let w_grad = graph.get_node_grad(w_id).unwrap().unwrap();
+            let new_w = w_val - lr * &w_grad;
+            graph.set_node_value(w_id, Some(&new_w)).unwrap();
         }
     }
 

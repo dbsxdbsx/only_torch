@@ -14,7 +14,7 @@
  */
 
 use crate::nn::GraphError;
-use crate::nn::graph::Graph;
+use crate::nn::graph::GraphInner;
 use crate::nn::nodes::NodeId;
 use crate::tensor::Tensor;
 
@@ -60,7 +60,7 @@ pub struct RnnOutput {
 /// // 使用 rnn.h_prev 设置初始隐藏状态（可选）
 /// ```
 pub fn rnn(
-    graph: &mut Graph,
+    graph: &mut GraphInner,
     input: NodeId,
     input_size: usize,
     hidden_size: usize,

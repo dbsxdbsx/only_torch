@@ -33,7 +33,7 @@
 | 问题 | 答案 |
 |------|------|
 | **第4层（核心底座）是否保留？** | ✅ **完全保留**。`GraphInner` 就是现有 `Graph` 的重命名，保留所有字段和方法。 |
-| **Graph 是否变成 `pub(crate)`？** | ❌ **仍然是 `pub`**。新 `Graph` 和 `GraphInner` 都是 `pub`。现有粒度级操作通过 `graph.inner().borrow_mut()` 访问。 |
+| **Graph 是否变成 `pub(crate)`？** | ❌ **仍然是 `pub`**。新 `Graph` 和 `GraphInner` 都是 `pub`。现有粒度级操作通过 `graph.inner_mut()` 访问。 |
 | **`randn` 是什么分布？** | **正态分布 N(0,1)**，与 PyTorch `torch.randn()` 语义一致。均匀分布使用 `rand()`。 |
 | **`backward()` 为什么隐式先 `forward`？** | **用户体验优化**。`backward()` 采用 **ensure-forward**：若当前 pass 下 loss 尚未计算，则先触发一次 forward；若已计算（缓存命中），则不重复 forward。可选择显式模式。 |
 | **新 Optimizer 与现有的是同一概念吗？** | ✅ **是同一概念**，但 API 层级不同。新版不需要传 `&mut graph`，Optimizer 内部持有图引用。 |
@@ -281,7 +281,7 @@ class DefaultGenome:
 3. **与 NEAT 和复杂梯度流 100% 兼容**
    - `GraphInner` 保留现有 Graph 的全部能力（动态拓扑、BPTT、循环边）
    - `detach`/`attach`/`retain_graph` 等梯度流控制完全支持
-   - NEAT 可通过 `graph.inner()` 访问底层进行拓扑变异
+   - NEAT 可通过 `graph.inner_mut()` 访问底层进行拓扑变异
 
 4. **性能开销极小**
    - `Rc::clone()` 只是引用计数 +1，纳秒级
@@ -371,11 +371,11 @@ class DefaultGenome:
 **路径 A：继续使用底层 API（最小改动）**
 
 ```rust
-// 只需将 Graph::new() 后加 .inner().borrow_mut() 访问 GraphInner
+// 通过 inner_mut() 访问 GraphInner
 let graph = Graph::new();
 
-// 通过 inner() 访问 GraphInner，API 几乎不变
-let mut g = graph.inner().borrow_mut();
+// 通过 inner_mut() 访问 GraphInner，API 几乎不变
+let mut g = graph.inner_mut();
 let x = g.new_input_node(&[3, 1], Some("x"))?;
 let w = g.new_parameter_node_seeded(&[1, 3], Some("w"), seed)?;
 // ... 其他操作完全相同
@@ -384,7 +384,7 @@ g.backward_nodes(&[w, b], loss)?;
 drop(g);  // 释放借用
 
 // 手动参数更新（与现有代码相同）
-let mut g = graph.inner().borrow_mut();
+let mut g = graph.inner_mut();
 let w_value = g.get_node_value(w)?.unwrap();
 let w_grad = g.get_node_grad(w)?.unwrap();
 g.set_node_value(w, Some(&(w_value - learning_rate * w_grad)))?;
@@ -402,7 +402,7 @@ loss.backward()?;                           // 链式调用
 optimizer.step()?;
 ```
 
-**关键点**：底层 `GraphInner` API 完全保留，现有代码只需通过 `graph.inner().borrow_mut()` 访问即可继续工作。
+**关键点**：底层 `GraphInner` API 完全保留，现有代码只需通过 `graph.inner_mut()` 访问即可继续工作。
 
 **架构关系图**：
 
@@ -1240,14 +1240,23 @@ impl Graph {
 
     // ==================== 底层访问（NEAT 和高级用途）====================
 
-    /// 获取底层 GraphInner 引用
+    /// 获取底层 GraphInner 的不可变引用
+    ///
+    /// # 用途
+    /// - 查询图状态
+    /// - 可视化
+    pub fn inner(&self) -> Ref<'_, GraphInner> {
+        self.inner.borrow()
+    }
+
+    /// 获取底层 GraphInner 的可变引用
     ///
     /// # 用途
     /// - NEAT 拓扑变异
     /// - 直接操作底层节点
     /// - 序列化/反序列化
-    pub fn inner(&self) -> &RefCell<GraphInner> {
-        &self.inner
+    pub fn inner_mut(&self) -> RefMut<'_, GraphInner> {
+        self.inner.borrow_mut()
     }
 
     /// 获取底层 Rc（用于创建 Var）
@@ -1262,15 +1271,16 @@ impl Graph {
 | API | 可见性 | 说明 |
 |-----|--------|------|
 | `Graph::new()`, `Graph::input()` 等 | `pub` | 用户主要接口 |
-| `Graph::inner()` | `pub` | 返回 `&RefCell<GraphInner>`，NEAT/高级用户使用 |
+| `Graph::inner()` | `pub` | 返回 `Ref<'_, GraphInner>`，用于查询 |
+| `Graph::inner_mut()` | `pub` | 返回 `RefMut<'_, GraphInner>`，NEAT/高级用户使用 |
 | `Graph::inner_rc()` | `pub(crate)` | 内部使用，创建 Var |
 | `Var::new()` | `pub(crate)` | 内部使用，只能通过 Graph 创建 |
 | `Var::same_graph()`, `Var::get_graph()` | `pub` | 用户可用的辅助方法 |
-| `GraphInner` 所有方法 | `pub` | 通过 `graph.inner().borrow[_mut]()` 访问 |
+| `GraphInner` 所有方法 | `pub` | 通过 `graph.inner()` / `graph.inner_mut()` 访问 |
 
 **设计理由**：
 
-- `graph.inner()` 是"逃生舱口"，允许 NEAT 等场景直接操作底层
+- `graph.inner()` / `graph.inner_mut()` 是"逃生舱口"，允许 NEAT 等场景直接操作底层
 - `Var::new()` 是 `pub(crate)` 确保 Var 只能通过 Graph 创建
 - 普通用户永远不需要调用 `inner()`，但高级用户可以
 
@@ -1581,7 +1591,7 @@ pub trait Optimizer {
     /// 更新参数（只更新 Optimizer 绑定的参数）
     fn step(&mut self) -> Result<(), GraphError>;
 
-    /// 一步完成：forward + backward + step + zero_grad
+    /// 一步完成：zero_grad → backward(ensure-forward) → step
     fn minimize(&mut self, loss: &Var) -> Result<f32, GraphError>;
 }
 
@@ -1982,7 +1992,7 @@ fn main() -> Result<(), GraphError> {
         let output = model.forward(x.clone())?;
         let loss = output.cross_entropy(&y)?;
 
-        // ✅ 一行搞定：forward + backward + step + zero_grad
+        // ✅ 一行搞定：zero_grad → backward(ensure-forward) → step
         let loss_val = optimizer.minimize(&loss)?;
 
         println!("Loss: {:.4}", loss_val);
@@ -2457,7 +2467,7 @@ impl DQN {
             let main_val = main.value()?;
             let target_val = target.value()?;
             let new_val = &(&main_val * tau) + &(&target_val * (1.0 - tau));
-            graph.inner().borrow_mut().set_node_value(target.node_id(), Some(&new_val))?;
+            graph.inner_mut().set_node_value(target.node_id(), Some(&new_val))?;
         }
         Ok(())
     }
@@ -2598,7 +2608,7 @@ fn main() -> Result<(), GraphError> {
 
             // 可视化最佳网络
             let graph = best.compile()?;
-            graph.inner().borrow().visualize("best_xor_network.dot")?;
+            graph.inner().visualize("best_xor_network.dot")?;
 
             break;
         }
@@ -2618,9 +2628,9 @@ impl Genome {
     pub fn compile(&self) -> Result<Graph, GraphError> {
         let graph = Graph::new();
 
-        // 通过 graph.inner() 访问 GraphInner 进行拓扑构建
+        // 通过 graph.inner_mut() 访问 GraphInner 进行拓扑构建
         {
-            let mut g = graph.inner().borrow_mut();
+            let mut g = graph.inner_mut();
 
             // 1. 创建所有节点
             for (id, node_gene) in &self.nodes {
@@ -2658,7 +2668,7 @@ impl Genome {
 
         // 设置输入值
         {
-            let mut g = graph.inner().borrow_mut();
+            let mut g = graph.inner_mut();
             // 将 input 的值复制到 NEAT 输入节点
             let input_value = g.get_node_value(input.node_id())?.cloned();
             for input_id in self.get_input_node_ids() {
@@ -2767,7 +2777,7 @@ fn train_lstm_bptt(
         total_loss = &total_loss + &loss_t;  // ✅ 算子重载
 
         // 通过 GraphInner 记录时间步（BPTT 用）
-        graph.inner().borrow_mut().step()?;
+        graph.inner_mut().step()?;
 
         h = h_new;
         c = c_new;
@@ -2790,7 +2800,7 @@ fn train_lstm_bptt(
    - 支持运行时添加/删除节点和边
    - NEAT 变异操作直接作用于 `GraphInner`
 
-2. **通过 `graph.inner()` 访问底层**
+2. **通过 `graph.inner_mut()` 访问底层**
 
 ```rust
 impl Genome {
@@ -2800,7 +2810,7 @@ impl Genome {
 
         // 直接操作 GraphInner
         {
-            let mut g = graph.inner().borrow_mut();
+            let mut g = graph.inner_mut();
 
             // 创建节点
             for (id, node_gene) in &self.nodes {
@@ -2829,7 +2839,7 @@ fn mutate_add_node(genome: &mut Genome, graph: &Graph, tracker: &mut InnovationT
     genome.nodes.insert(new_node_id, NodeGene::new_hidden());
 
     // 操作 GraphInner 添加新节点
-    graph.inner().borrow_mut().add_neat_node(
+    graph.inner_mut().add_neat_node(
         new_node_id,
         NeatNodeType::Hidden,
         Activation::ReLU,
@@ -2847,7 +2857,7 @@ fn mutate_add_node(genome: &mut Genome, graph: &Graph, tracker: &mut InnovationT
 | **PyTorch 级用户体验** | 算子重载 + 链式调用 + 无生命周期 |
 | **完全兼容梯度流控制** | `detach`/`attach`/`retain_graph` 等 |
 | **完全兼容 LSTM/RNN** | GraphInner 保留所有 BPTT 能力 |
-| **完全兼容 NEAT** | 通过 `graph.inner()` 访问底层进行拓扑变异 |
+| **完全兼容 NEAT** | 通过 `graph.inner_mut()` 访问底层进行拓扑变异 |
 | **概念简单** | Graph 是句柄，Var 是带图引用的节点 ID |
 | **运行时开销极小** | Rc clone + RefCell borrow，纳秒级 |
 
@@ -2961,16 +2971,19 @@ struct MLP {
 
 **目标**：将现有 Graph 重命名为 GraphInner，确保无回归
 
-- [ ] 将 `Graph` 重命名为 `GraphInner`
-- [ ] 保留所有现有字段和方法
-- [ ] 更新所有内部引用
+- [x] 将 `Graph` 重命名为 `GraphInner` ✅ 通过 `type Graph = GraphInner` 兼容实现
+- [x] 保留所有现有字段和方法 ✅
+- [x] 更新所有内部引用 ✅
+
+> **📝 实现策略**：采用类型别名 `pub type Graph = GraphInner` 保持向后兼容，
+> 旧代码无需修改即可继续使用 `Graph`。未来命名清理阶段会移除此别名。
 
 **🧪 Phase 1a 验收门禁**（必须全部通过才能进入 Phase 1b）：
-- [ ] `cargo test` 全部通过（733+ 单元测试）
-- [ ] 关键集成测试验证：
-  - [ ] `cargo test test_mnist_batch` → 90%+ 准确率
-  - [ ] `cargo test test_california_housing_regression` → 70%+ R²
-  - [ ] `cargo test test_mnist_gan` → 正常完成
+- [x] `cargo test` 全部通过（733+ 单元测试）✅ 现已 822+
+- [x] 关键集成测试验证：
+  - [x] `cargo test test_mnist_batch` → 90%+ 准确率 ✅
+  - [x] `cargo test test_california_housing_regression` → 70%+ R² ✅
+  - [x] `cargo test test_mnist_gan` → 正常完成 ✅
 
 ---
 
@@ -3023,29 +3036,29 @@ struct MLP {
 
 **目标**：实现 Module trait 和高层 Layer 封装
 
-- [ ] **新增底层节点**（需先实现才能支持 Var API）
-  - [ ] 实现 `Div` 节点（逐元素除法）
-  - [ ] 实现独立 `Softmax` 节点
-- [ ] **完善 Var 算子重载**
-  - [ ] `Div` for `&Var` and `Var`（依赖底层 Div 节点）
-  - [ ] `Var::softmax()`（依赖底层 Softmax 节点）
-- [ ] 定义 `Module` trait（返回 `Vec<Var>`）
-- [ ] **重构 Optimizer**
-  - [ ] Optimizer 持有 `Rc<RefCell<GraphInner>>` 引用
-  - [ ] `zero_grad()` 不再需要 `&mut Graph` 参数
-  - [ ] `step()` 不再需要 `&mut Graph` 参数
-  - [ ] 实现 `minimize(&self, loss: &Var)`
-- [ ] **实现高层 Layer**
-  - [ ] `Linear::new(graph, in, out, bias, name)` → 返回持有 Var 的 Linear
-  - [ ] `Linear::forward(x: Var)` → 不需要 graph 参数
-  - [ ] 类似实现 `Conv2d`, `RNN`, `LSTM`, `GRU`
+- [x] **新增底层节点**（需先实现才能支持 Var API）
+  - [x] 实现 `Div` 节点（逐元素除法）✅ `src/nn/nodes/raw_node/ops/divide.rs`
+  - [x] 实现独立 `Softmax` 节点 ✅ `src/nn/nodes/raw_node/ops/softmax.rs`
+- [x] **完善 Var 算子重载**
+  - [x] `Div` for `&Var` and `Var`（依赖底层 Div 节点）✅ `src/nn/var.rs`
+  - [x] `Var::softmax()`（依赖底层 Softmax 节点）✅ `src/nn/var_ops/activation.rs`
+- [x] 定义 `Module` trait（返回 `Vec<Var>`）✅ `src/nn/module.rs`
+- [x] **重构 Optimizer**
+  - [x] Optimizer 持有 `Rc<RefCell<GraphInner>>` 引用 ✅ `OptimizerV2`
+  - [x] `zero_grad()` 不再需要 `&mut Graph` 参数 ✅
+  - [x] `step()` 不再需要 `&mut Graph` 参数 ✅
+  - [x] 实现 `minimize(&self, loss: &Var)` ✅
+- [x] **实现高层 Layer**
+  - [x] `Linear::new(graph, in, out, bias, name)` → 返回持有 Var 的 Linear ✅ `src/nn/layer/linear_v2.rs`
+  - [x] `Linear::forward(x: Var)` → 不需要 graph 参数 ✅
+  - [ ] 类似实现 `Conv2d`, `RNN`, `LSTM`, `GRU`（延后到 Phase 2.5）
 
 **🧪 Phase 2 验收门禁**（必须全部通过才能进入 Phase 3）：
-- [ ] 新增单元测试：`src/nn/tests/module_trait.rs`
-- [ ] 新增单元测试：`src/nn/tests/optimizer_v2.rs`
-- [ ] 用新 API 重写 `test_mnist_linear.rs` 并通过（90%+ 准确率）
-- [ ] 用新 API 重写 `test_mnist_batch.rs` 并通过
-- [ ] `cargo test` 全部通过
+- [x] 新增单元测试：`src/nn/tests/module_trait.rs` ✅ 6 tests
+- [x] 新增单元测试：`src/nn/tests/optimizer_v2.rs` ✅
+- [x] 用新 API 重写 `test_mnist_linear.rs` 并通过（90%+ 准确率）✅ `tests/test_mnist_linear_v2.rs`
+- [x] 用新 API 重写 `test_mnist_batch.rs` 并通过 ✅ `tests/test_mnist_batch_v2.rs`
+- [x] `cargo test` 全部通过 ✅ 822 unit tests + V2 integration tests
 
 ---
 
@@ -3159,8 +3172,8 @@ fn test_internal_topology() {
     let x = graph.input(&data).unwrap();
     let y = x.relu();
 
-    // 需要访问底层时，使用 inner()
-    let inner = graph.inner().borrow();
+    // 需要访问底层时，使用 inner()（不可变）或 inner_mut()（可变）
+    let inner = graph.inner();
     assert_eq!(inner.node_count(), 2);
     assert!(inner.get_edge(x.node_id(), y.node_id()).is_some());
 }
@@ -3178,7 +3191,7 @@ fn test_internal_topology() {
 | 算子重载方法增多导致 Var impl 膨胀 | 中 | 1. 考虑 extension trait<br>2. 宏生成重复代码 |
 | Module 封装与现有 layer 函数冲突 | 低 | 保留 layer 函数，Module 封装调用它们 |
 | NEAT 与 BPTT 集成复杂 | 高 | 先做 DAG 网络进化，循环后加 |
-| 用户误用 `graph.inner()` 导致状态不一致 | 低 | 1. 文档明确 `inner()` 是高级 API<br>2. 正常使用无需访问 inner |
+| 用户误用 `graph.inner()` / `inner_mut()` 导致状态不一致 | 低 | 1. 文档明确这是高级 API<br>2. 正常使用无需访问 inner |
 
 ### 8.1 RefCell 安全使用指南
 
@@ -3195,21 +3208,21 @@ let b = graph.input(&data2)?;
 let c = &a + &b;  // 每次操作都是独立的 borrow_mut
 
 // ❌ 错误：同时持有多个可变引用（编译时无法检测，运行时 panic）
-let inner1 = graph.inner().borrow_mut();
-let inner2 = graph.inner().borrow_mut();  // panic!
+let inner1 = graph.inner_mut();
+let inner2 = graph.inner_mut();  // panic!
 
 // ✅ 正确：使用作用域限制借用
 {
-    let mut g = graph.inner().borrow_mut();
+    let mut g = graph.inner_mut();
     g.some_operation();
 }  // 借用在此释放
 {
-    let mut g = graph.inner().borrow_mut();  // 安全
+    let mut g = graph.inner_mut();  // 安全
     g.another_operation();
 }
 ```
 
-**设计保证**：正常使用 `Graph` 和 `Var` 的公开 API 时，不会触发 RefCell panic。只有直接操作 `graph.inner()` 时需要注意。
+**设计保证**：正常使用 `Graph` 和 `Var` 的公开 API 时，不会触发 RefCell panic。只有直接操作 `graph.inner()` / `graph.inner_mut()` 时需要注意。
 
 ---
 
@@ -3385,7 +3398,7 @@ fn train_step(graph: &Graph, model: &Model, x: &Tensor, y: &Tensor) -> Result<f3
 | ComputationGraph | 不需要（GraphInner 承担） | ❌ 删除 |
 | Hybrid 模式 | 不需要 | ❌ 删除 |
 | OTMF 格式 | 保留（JSON + bin） | ✅ 保留 |
-| EvolvableModel | Genome（通过 `graph.inner()` 操作底层） | ✅ 重设计 |
+| EvolvableModel | Genome（通过 `graph.inner_mut()` 操作底层） | ✅ 重设计 |
 
 ### 新旧架构结构对比
 

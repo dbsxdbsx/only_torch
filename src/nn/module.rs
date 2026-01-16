@@ -19,7 +19,7 @@ use super::Var;
 /// # 使用示例
 ///
 /// ```ignore
-/// use only_torch::nn::{Module, Var, GraphHandle, Init};
+/// use only_torch::nn::{Module, Var, Graph, Init};
 ///
 /// struct MLP {
 ///     fc1: Linear,
@@ -27,7 +27,7 @@ use super::Var;
 /// }
 ///
 /// impl MLP {
-///     fn new(graph: &GraphHandle, in_dim: usize, hidden: usize, out_dim: usize) -> Self {
+///     fn new(graph: &Graph, in_dim: usize, hidden: usize, out_dim: usize) -> Self {
 ///         MLP {
 ///             fc1: Linear::new(graph, in_dim, hidden, true, "fc1"),
 ///             fc2: Linear::new(graph, hidden, out_dim, true, "fc2"),

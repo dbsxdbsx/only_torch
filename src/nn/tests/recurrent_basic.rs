@@ -5,7 +5,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError, NodeId};
+use crate::nn::{GraphInner, GraphError, NodeId};
 use crate::tensor::Tensor;
 
 // ==================== 辅助函数 ====================
@@ -28,8 +28,8 @@ fn scalar(val: f64) -> Tensor {
 ///
 /// 行为：output = input + prev_output
 /// 如果 input 恒为 1，则 output 依次为 1, 2, 3, 4, ...
-fn create_accumulator_graph() -> Result<(Graph, NodeId, NodeId), GraphError> {
-    let mut graph = Graph::new();
+fn create_accumulator_graph() -> Result<(GraphInner, NodeId, NodeId), GraphError> {
+    let mut graph = GraphInner::new();
 
     // 输入节点（每步的新输入）
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -173,8 +173,8 @@ fn test_variable_input() {
 /// ```
 ///
 /// 行为：output = input + weight * prev_output
-fn create_weighted_recurrent_graph(weight: f64) -> Result<(Graph, NodeId, NodeId), GraphError> {
-    let mut graph = Graph::new();
+fn create_weighted_recurrent_graph(weight: f64) -> Result<(GraphInner, NodeId, NodeId), GraphError> {
+    let mut graph = GraphInner::new();
 
     // 输入节点
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -268,7 +268,7 @@ fn test_decaying_memory() {
 
 #[test]
 fn test_duplicate_recurrent_connection() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
     let prev = graph.new_input_node(&[1, 1], Some("prev")).unwrap();
     let output = graph.new_add_node(&[input, prev], Some("output")).unwrap();
@@ -286,7 +286,7 @@ fn test_duplicate_recurrent_connection() {
 
 #[test]
 fn test_recurrent_with_invalid_nodes() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
     let invalid_id = NodeId(999);
 
@@ -303,7 +303,7 @@ fn test_recurrent_with_invalid_nodes() {
 
 #[test]
 fn test_multiple_recurrent_connections() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 两个独立的循环
     let input1 = graph.new_input_node(&[1, 1], Some("input1")).unwrap();
@@ -368,7 +368,7 @@ fn test_multiple_recurrent_connections() {
 
 #[test]
 fn test_vector_accumulator() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 3 维向量累加
     let input = graph.new_input_node(&[3, 1], Some("input")).unwrap();

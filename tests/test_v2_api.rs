@@ -1,20 +1,20 @@
 /*
  * V2 API 集成测试
  *
- * 测试 GraphHandle + Var 的基本功能：
+ * 测试 Graph + Var 的基本功能：
  * - 创建节点
  * - 链式调用
  * - 算子重载
  * - 前向/反向传播
  */
 
-use only_torch::nn::{GraphHandle, Init, VarActivationOps, VarLossOps, VarMatrixOps};
+use only_torch::nn::{Graph, Init, VarActivationOps, VarLossOps, VarMatrixOps};
 use only_torch::tensor::Tensor;
 
 /// 测试基本的 V2 API 创建和前向传播
 #[test]
 fn test_v2_basic_forward() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 创建输入
     let x = graph
@@ -35,7 +35,7 @@ fn test_v2_basic_forward() {
 /// 测试算子重载（加法）
 #[test]
 fn test_v2_operator_add() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
     let b = graph.input(&Tensor::new(&[3.0, 4.0], &[1, 2])).unwrap();
@@ -53,7 +53,7 @@ fn test_v2_operator_add() {
 /// 测试算子重载（减法）
 #[test]
 fn test_v2_operator_sub() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph.input(&Tensor::new(&[5.0, 6.0], &[1, 2])).unwrap();
     let b = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
@@ -71,7 +71,7 @@ fn test_v2_operator_sub() {
 /// 测试算子重载（乘法 - 元素级）
 #[test]
 fn test_v2_operator_mul() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph.input(&Tensor::new(&[2.0, 3.0], &[1, 2])).unwrap();
     let b = graph.input(&Tensor::new(&[4.0, 5.0], &[1, 2])).unwrap();
@@ -89,7 +89,7 @@ fn test_v2_operator_mul() {
 /// 测试链式调用
 #[test]
 fn test_v2_chain_calls() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph
         .input(&Tensor::new(&[-1.0, 2.0, -3.0, 4.0], &[1, 4]))
@@ -113,7 +113,7 @@ fn test_v2_chain_calls() {
 /// 测试参数初始化
 #[test]
 fn test_v2_parameter_init() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 使用 Xavier 初始化创建参数
     let w = graph.parameter(&[10, 5], Init::Xavier, "weight").unwrap();
@@ -130,7 +130,7 @@ fn test_v2_parameter_init() {
 /// 测试 MSE Loss 和反向传播
 #[test]
 fn test_v2_mse_backward() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 简单线性模型：y = w * x
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
@@ -150,7 +150,7 @@ fn test_v2_mse_backward() {
 /// 测试 detach 功能
 #[test]
 fn test_v2_detach() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
     let y = x.relu();
@@ -165,7 +165,7 @@ fn test_v2_detach() {
 /// 测试矩阵乘法
 #[test]
 fn test_v2_matmul() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // [1, 2] @ [[1], [2]] = [5]
     let a = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
@@ -181,10 +181,10 @@ fn test_v2_matmul() {
     assert!((val - 5.0).abs() < 0.001);
 }
 
-/// 测试 GraphHandle 的 Clone 语义
+/// 测试 Graph 的 Clone 语义
 #[test]
 fn test_v2_graph_clone() {
-    let graph1 = GraphHandle::new();
+    let graph1 = Graph::new();
     let graph2 = graph1.clone();
 
     // 在 graph1 上创建节点
@@ -198,7 +198,7 @@ fn test_v2_graph_clone() {
 /// 测试负号运算符
 #[test]
 fn test_v2_operator_neg() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph
         .input(&Tensor::new(&[1.0, -2.0, 3.0], &[1, 3]))
@@ -223,7 +223,7 @@ fn test_v2_xor_training() {
     let start_time = std::time::Instant::now();
 
     // ========== 创建计算图 ==========
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 输入变量（Plan A：建图一次，训练循环中通过 set_value 喂新数据）
     let x = graph.zeros(&[2, 1]).unwrap();

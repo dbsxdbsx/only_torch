@@ -8,13 +8,13 @@
  */
 
 use crate::nn::Module;
-use crate::nn::graph::GraphHandle;
+use crate::nn::graph::Graph;
 use crate::nn::layer::Linear;
 
 /// 测试 Linear 层实现 Module trait
 #[test]
 fn test_linear_implements_module() {
-    let graph = GraphHandle::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // 带 bias 的 Linear
     let fc = Linear::new(&graph, 10, 5, true, "fc").unwrap();
@@ -32,7 +32,7 @@ fn test_linear_implements_module() {
 /// 测试不带 bias 的 Linear
 #[test]
 fn test_linear_no_bias() {
-    let graph = GraphHandle::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     let fc = Linear::new(&graph, 8, 4, false, "fc_no_bias").unwrap();
 
@@ -44,7 +44,7 @@ fn test_linear_no_bias() {
 /// 测试 num_params() 默认实现
 #[test]
 fn test_module_num_params() {
-    let graph = GraphHandle::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     let fc = Linear::new(&graph, 16, 8, true, "fc").unwrap();
     assert_eq!(fc.num_params(), 2);
@@ -58,7 +58,7 @@ fn test_module_num_params() {
 /// 模拟一个简单的 MLP：fc1 -> fc2
 #[test]
 fn test_composite_model_parameters() {
-    let graph = GraphHandle::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // 构建简单 MLP
     let fc1 = Linear::new(&graph, 784, 128, true, "fc1").unwrap();
@@ -82,10 +82,10 @@ fn test_composite_model_parameters() {
 /// 测试参数可用于优化器
 #[test]
 fn test_parameters_usable_with_optimizer() {
-    use crate::nn::{Adamv2, OptimizerV2, VarActivationOps, VarLossOps};
+    use crate::nn::{Adam, Optimizer, VarActivationOps, VarLossOps};
     use crate::tensor::Tensor;
 
-    let graph = GraphHandle::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // 简单模型
     let fc = Linear::new(&graph, 4, 2, true, "fc").unwrap();
@@ -101,7 +101,7 @@ fn test_parameters_usable_with_optimizer() {
     let loss = y.mse_loss(&target).unwrap();
 
     // 使用 Module::parameters() 创建优化器
-    let mut optimizer = Adamv2::new(&graph, &fc.parameters(), 0.01);
+    let mut optimizer = Adam::new(&graph, &fc.parameters(), 0.01);
 
     // 训练一步
     optimizer.zero_grad().unwrap();
@@ -124,7 +124,7 @@ fn test_parameters_usable_with_optimizer() {
 /// 测试参数的 Var 可以 clone 且共享底层节点
 #[test]
 fn test_parameters_var_clone_semantics() {
-    let graph = GraphHandle::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     let fc = Linear::new(&graph, 4, 2, true, "fc").unwrap();
 

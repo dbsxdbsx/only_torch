@@ -1,31 +1,31 @@
 /*
- * @Description  : GraphHandle（V2 Graph 句柄）测试
+ * @Description  : Graph（V2 Graph 句柄）测试
  *
  * 这是 Phase 1b 验收测试的一部分，测试 Graph 句柄的核心功能。
  */
 
-use crate::nn::graph::GraphHandle;
+use crate::nn::graph::Graph;
 use crate::nn::var::Init;
 use crate::nn::{VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 
 // ==================== 创建测试 ====================
 
-/// 测试 GraphHandle 创建
+/// 测试 Graph 创建
 #[test]
 fn test_graph_handle_new() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 应该能创建输入
     let x = graph.input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]));
     assert!(x.is_ok());
 }
 
-/// 测试带种子的 GraphHandle 创建
+/// 测试带种子的 Graph 创建
 #[test]
 fn test_graph_handle_new_with_seed() {
-    let graph1 = GraphHandle::new_with_seed(42);
-    let graph2 = GraphHandle::new_with_seed(42);
+    let graph1 = Graph::new_with_seed(42);
+    let graph2 = Graph::new_with_seed(42);
 
     // 使用相同图级别种子，使用 parameter_seeded 确保可重复
     // 注意：parameter() + Init::Normal 使用全局 RNG，不受 graph seed 控制
@@ -44,7 +44,7 @@ fn test_graph_handle_new_with_seed() {
 /// 测试 input 方法
 #[test]
 fn test_graph_handle_input() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     let x = graph.input(&data).unwrap();
@@ -58,7 +58,7 @@ fn test_graph_handle_input() {
 /// 测试 input_named 方法
 #[test]
 fn test_graph_handle_input_named() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let data = Tensor::new(&[1.0, 2.0], &[2, 1]);
     let x = graph.input_named(&data, "my_input").unwrap();
@@ -74,7 +74,7 @@ fn test_graph_handle_input_named() {
 /// 测试 parameter 方法
 #[test]
 fn test_graph_handle_parameter() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let w = graph.parameter(&[3, 2], Init::Xavier, "weight").unwrap();
 
@@ -92,8 +92,8 @@ fn test_graph_handle_parameter() {
 /// 测试 parameter_seeded 方法
 #[test]
 fn test_graph_handle_parameter_seeded() {
-    let graph1 = GraphHandle::new();
-    let graph2 = GraphHandle::new();
+    let graph1 = Graph::new();
+    let graph2 = Graph::new();
 
     // 使用相同种子应该得到相同的初始化
     let p1 = graph1.parameter_seeded(&[3, 2], "p", 123).unwrap();
@@ -110,7 +110,7 @@ fn test_graph_handle_parameter_seeded() {
 /// 测试 zeros 方法
 #[test]
 fn test_graph_handle_zeros() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.zeros(&[2, 3]).unwrap();
     let value = x.value().unwrap().unwrap();
@@ -122,7 +122,7 @@ fn test_graph_handle_zeros() {
 /// 测试 ones 方法
 #[test]
 fn test_graph_handle_ones() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.ones(&[2, 3]).unwrap();
     let value = x.value().unwrap().unwrap();
@@ -134,7 +134,7 @@ fn test_graph_handle_ones() {
 /// 测试 randn 方法
 #[test]
 fn test_graph_handle_randn() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.randn(&[100, 100]).unwrap();
     let value = x.value().unwrap().unwrap();
@@ -154,7 +154,7 @@ fn test_graph_handle_randn() {
 /// 测试 constant 方法
 #[test]
 fn test_graph_handle_constant() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let data = Tensor::new(&[3.14, 2.71, 1.41], &[3, 1]);
     let c = graph.constant(&data).unwrap();
@@ -166,7 +166,7 @@ fn test_graph_handle_constant() {
 /// 测试 constant_named 方法
 #[test]
 fn test_graph_handle_constant_named() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let data = Tensor::new(&[1.0, 2.0], &[2, 1]);
     let c = graph.constant_named(&data, "my_const").unwrap();
@@ -181,7 +181,7 @@ fn test_graph_handle_constant_named() {
 /// 测试 forward 方法
 #[test]
 fn test_graph_handle_forward() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
     let y = x.relu();
@@ -196,7 +196,7 @@ fn test_graph_handle_forward() {
 /// 测试 backward 方法
 #[test]
 fn test_graph_handle_backward() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[2.0], &[1, 1])).unwrap();
     let w = graph.parameter(&[1, 1], Init::Ones, "w").unwrap();
@@ -220,7 +220,7 @@ fn test_graph_handle_backward() {
 /// 测试 zero_grad 方法
 #[test]
 fn test_graph_handle_zero_grad() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[2.0], &[1, 1])).unwrap();
     let w = graph.parameter(&[1, 1], Init::Ones, "w").unwrap();
@@ -276,7 +276,7 @@ fn test_graph_handle_zero_grad() {
 /// 测试 train/eval 模式
 #[test]
 fn test_graph_handle_train_eval() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 默认应该是训练模式
     assert!(!graph.is_eval());
@@ -292,10 +292,10 @@ fn test_graph_handle_train_eval() {
 
 // ==================== Clone 语义测试 ====================
 
-/// 测试 GraphHandle clone 共享同一个 GraphInner
+/// 测试 Graph clone 共享同一个 GraphInner
 #[test]
 fn test_graph_handle_clone_shared() {
-    let graph1 = GraphHandle::new();
+    let graph1 = Graph::new();
     let graph2 = graph1.clone();
 
     // 在 graph1 创建的节点，graph2 也能看到
@@ -312,7 +312,7 @@ fn test_graph_handle_clone_shared() {
 /// 测试 inner 和 inner_mut 访问
 #[test]
 fn test_graph_handle_inner_access() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 通过 inner() 可以访问 GraphInner
     let node_count = graph.inner().nodes_count();
@@ -331,7 +331,7 @@ fn test_graph_handle_inner_access() {
 /// 测试 no_grad_scope 基本功能
 #[test]
 fn test_graph_handle_no_grad_scope_basic() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 默认是训练模式
     assert!(!graph.is_eval());
@@ -353,7 +353,7 @@ fn test_graph_handle_no_grad_scope_basic() {
 /// 测试 no_grad_scope 从 eval 模式开始
 #[test]
 fn test_graph_handle_no_grad_scope_from_eval() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 先切换到 eval 模式
     graph.eval();
@@ -372,7 +372,7 @@ fn test_graph_handle_no_grad_scope_from_eval() {
 /// 测试 no_grad_scope 嵌套调用
 #[test]
 fn test_graph_handle_no_grad_scope_nested() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 默认是训练模式
     assert!(!graph.is_eval());
@@ -396,7 +396,7 @@ fn test_graph_handle_no_grad_scope_nested() {
 /// 测试 no_grad_scope 中执行计算
 #[test]
 fn test_graph_handle_no_grad_scope_with_computation() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))
         .unwrap();

@@ -5,7 +5,7 @@
  * 参考脚本: tests/python/layer_reference/simple_rnn_bptt.py
  */
 
-use crate::nn::{Graph, GraphError, NodeId};
+use crate::nn::{GraphInner, GraphError, NodeId};
 use crate::tensor::Tensor;
 
 // ==================== PyTorch 参考值 ====================
@@ -24,8 +24,8 @@ const TOLERANCE: f32 = 1e-5;
 
 /// 创建测试用的简单 RNN 网络
 /// hidden = tanh(h_prev + input * w_scale), output = hidden * w_out
-fn create_simple_rnn() -> Result<(Graph, NodeId, NodeId, NodeId, NodeId, NodeId), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+fn create_simple_rnn() -> Result<(GraphInner, NodeId, NodeId, NodeId, NodeId, NodeId), GraphError> {
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -152,7 +152,7 @@ fn test_bptt_gradient_matches_pytorch() -> Result<(), GraphError> {
 /// 与基础测试相同结构，但使用更长的序列验证 BPTT 累加正确
 #[test]
 fn test_longer_sequence_tanh_rnn() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -216,7 +216,7 @@ fn test_longer_sequence_tanh_rnn() -> Result<(), GraphError> {
 /// 验证同一网络中有多个参数时，梯度正确累加
 #[test]
 fn test_multi_param_rnn() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -309,7 +309,7 @@ const SIGMOID_GRAD_W_OUT: f32 = 0.72805655;
 /// Sigmoid RNN 前向传播与 PyTorch 匹配
 #[test]
 fn test_sigmoid_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -381,7 +381,7 @@ fn test_sigmoid_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
 /// 验证 BPTT 通用化后能正确处理 sigmoid 激活
 #[test]
 fn test_sigmoid_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -471,7 +471,7 @@ fn test_sigmoid_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
 ///   output = h2[T] * w_out
 #[test]
 fn test_mixed_activation_rnn() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -585,7 +585,7 @@ const LEAKY_RELU_GRAD_W_OUT: f32 = -0.15523794;
 /// 特别测试正负区域的分段线性行为
 #[test]
 fn test_leaky_relu_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -664,7 +664,7 @@ fn test_leaky_relu_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
 /// LeakyReLU 在 x=0 处导数不连续，这是与 tanh/sigmoid 的关键区别
 #[test]
 fn test_leaky_relu_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -767,7 +767,7 @@ const SOFTPLUS_GRAD_W_OUT: f32 = -0.03426690;
 /// 验证 SoftPlus 激活函数在 RNN 中的前向计算正确性
 #[test]
 fn test_softplus_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;
@@ -846,7 +846,7 @@ fn test_softplus_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
 /// SoftPlus 的导数为 sigmoid，需要从输出计算：sigmoid(x) = 1 - exp(-softplus(x))
 #[test]
 fn test_softplus_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
     let input = graph.new_input_node(&[1, 1], Some("input"))?;

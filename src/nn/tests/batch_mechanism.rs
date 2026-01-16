@@ -12,8 +12,7 @@
 
 use approx::assert_abs_diff_eq;
 
-use crate::nn::GraphError;
-use crate::nn::graph::Graph;
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 
 /// 测试 batch forward 与单样本 forward 的一致性
@@ -39,7 +38,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     assert_eq!(batch_input.shape(), &[batch_size, input_dim]);
 
     // ========== Batch 模式 ==========
-    let mut graph_batch = Graph::new_with_seed(seed);
+    let mut graph_batch = GraphInner::new_with_seed(seed);
     let x_b = graph_batch.new_input_node(&[batch_size, input_dim], Some("x"))?;
     let w_b =
         graph_batch.new_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
@@ -53,7 +52,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     // ========== 单样本模式 ==========
     let mut single_outputs = Vec::new();
     for sample in samples.iter() {
-        let mut graph_single = Graph::new_with_seed(seed);
+        let mut graph_single = GraphInner::new_with_seed(seed);
         let x_s = graph_single.new_input_node(&[1, input_dim], Some("x"))?;
         let w_s = graph_single.new_parameter_node_seeded(
             &[input_dim, output_dim],
@@ -114,7 +113,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     let batch_labels = Tensor::stack(&label_refs, false);
 
     // ========== Batch 模式（统一 API）==========
-    let mut graph_batch = Graph::new_with_seed(seed);
+    let mut graph_batch = GraphInner::new_with_seed(seed);
     let x_b = graph_batch.new_input_node(&[batch_size, input_dim], Some("x"))?;
     let y_b = graph_batch.new_input_node(&[batch_size, output_dim], Some("y"))?;
     let w1_b =
@@ -142,7 +141,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     let mut accumulated_grad_w2 = Tensor::zeros(&[hidden_dim, output_dim]);
 
     for i in 0..batch_size {
-        let mut graph_single = Graph::new_with_seed(seed);
+        let mut graph_single = GraphInner::new_with_seed(seed);
         let x_s = graph_single.new_input_node(&[1, input_dim], Some("x"))?;
         let y_s = graph_single.new_input_node(&[1, output_dim], Some("y"))?;
         let w1_s = graph_single.new_parameter_node_seeded(
@@ -223,7 +222,7 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
     let batch_labels = Tensor::stack(&label_refs, false);
 
     // ========== Batch 模式 ==========
-    let mut graph_batch = Graph::new_with_seed(seed);
+    let mut graph_batch = GraphInner::new_with_seed(seed);
     let x_b = graph_batch.new_input_node(&[batch_size, input_dim], Some("x"))?;
     let y_b = graph_batch.new_input_node(&[batch_size, output_dim], Some("y"))?;
     let w_b =
@@ -247,7 +246,7 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
     let mut accumulated_grad = Tensor::zeros(&[input_dim, output_dim]);
 
     for i in 0..batch_size {
-        let mut graph_single = Graph::new_with_seed(seed);
+        let mut graph_single = GraphInner::new_with_seed(seed);
         let x_s = graph_single.new_input_node(&[1, input_dim], Some("x"))?;
         let y_s = graph_single.new_input_node(&[1, output_dim], Some("y"))?;
         let w_s = graph_single.new_parameter_node_seeded(

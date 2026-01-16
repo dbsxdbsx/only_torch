@@ -11,7 +11,7 @@
  * 等价于 PyTorch 的 nn.MaxPool2d
  */
 
-use crate::nn::{Graph, GraphError, NodeId};
+use crate::nn::{GraphError, GraphInner, NodeId};
 
 /// `MaxPool2d` 层的输出结构
 ///
@@ -53,7 +53,7 @@ pub struct MaxPool2dOutput {
 /// let pool1 = max_pool2d(&mut graph, act1, (2, 2), Some((2, 2)), Some("pool1"))?;
 /// ```
 pub fn max_pool2d(
-    graph: &mut Graph,
+    graph: &mut GraphInner,
     input: NodeId,
     kernel_size: (usize, usize),
     stride: Option<(usize, usize)>,

@@ -40,8 +40,8 @@ pub(crate) struct StepSnapshot {
 
 /// 图的完整定义（核心实现）
 ///
-/// 这是计算图的核心实现。在 V2 架构中，用户通常通过 `Graph`（类型别名）使用此结构。
-/// 未来版本中，`Graph` 将变为包装 `Rc<RefCell<GraphInner>>` 的句柄类型。
+/// 这是计算图的核心实现。用户通常通过 `Graph` 句柄使用此结构，
+/// 高级用户（如 NEAT）可通过 `graph.inner()` 访问底层操作。
 pub struct GraphInner {
     name: String,
     nodes: HashMap<NodeId, NodeHandle>,
@@ -86,51 +86,41 @@ impl Default for GraphInner {
     }
 }
 
-/// 临时类型别名：保持向后兼容
-///
-/// **注意**：在 V2 完全迁移后，此别名将被移除，届时 `Graph` 将成为
-/// `GraphHandle` 的新名称。
-pub type Graph = GraphInner;
-
-// ==================== V2 API: GraphHandle ====================
+// ==================== V2 API: Graph ====================
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::var::{Init, Var};
 
-/// Graph 句柄 - V2 用户友好 API
+/// Graph - 计算图句柄（PyTorch 风格用户 API）
 ///
 /// # 设计原则
 /// - 是 `Rc<RefCell<GraphInner>>` 的薄封装
-/// - Clone 语义：多个 GraphHandle 引用同一个 GraphInner
+/// - Clone 语义：多个 Graph 引用同一个 GraphInner
 /// - 创建的 Var 自动持有图引用
 ///
 /// # 使用示例
 /// ```ignore
-/// let graph = GraphHandle::new();
+/// let graph = Graph::new();
 /// let x = graph.input(&images)?;
 /// let y = x.relu().matmul(&w)?;  // Var 上的链式调用
 /// let loss = y.cross_entropy(&target)?;
 /// loss.backward()?;
 /// ```
 ///
-/// # 与旧 API 的兼容
+/// # 底层访问
 /// ```ignore
-/// // 旧 API（仍然可用）
-/// let mut graph = Graph::new();
-/// let id = graph.new_input_node(&[1, 10], None)?;
-///
-/// // 新 API
-/// let graph = GraphHandle::new();
-/// let x = graph.input(&tensor)?;  // 返回 Var
+/// // 通过 inner() 访问 GraphInner 进行底层操作
+/// let mut g = graph.inner_mut();
+/// g.forward_node(loss_id)?;
 /// ```
 #[derive(Clone)]
-pub struct GraphHandle {
+pub struct Graph {
     inner: Rc<RefCell<GraphInner>>,
 }
 
-impl GraphHandle {
+impl Graph {
     // ==================== 创建 ====================
 
     /// 创建新图
@@ -159,14 +149,16 @@ impl GraphHandle {
         Self { inner }
     }
 
-    /// 获取内部 GraphInner 的可变引用（用于底层操作）
+    /// 获取内部 GraphInner 的不可变引用（用于底层查询）
     ///
     /// **注意**：这是一个 escape hatch，正常使用不需要调用此方法。
     pub fn inner(&self) -> std::cell::Ref<'_, GraphInner> {
         self.inner.borrow()
     }
 
-    /// 获取内部 GraphInner 的可变引用（用于底层操作）
+    /// 获取内部 GraphInner 的可变引用（用于底层操作，如 NEAT 拓扑变异）
+    ///
+    /// **注意**：这是一个 escape hatch，正常使用不需要调用此方法。
     pub fn inner_mut(&self) -> std::cell::RefMut<'_, GraphInner> {
         self.inner.borrow_mut()
     }
@@ -344,7 +336,7 @@ impl GraphHandle {
     }
 }
 
-impl Default for GraphHandle {
+impl Default for Graph {
     fn default() -> Self {
         Self::new()
     }
@@ -825,7 +817,7 @@ impl GraphInner {
         let mut visited = std::collections::HashSet::new();
 
         fn dfs(
-            graph: &Graph,
+            graph: &GraphInner,
             node_id: NodeId,
             visited: &mut std::collections::HashSet<NodeId>,
             result: &mut Vec<NodeId>,

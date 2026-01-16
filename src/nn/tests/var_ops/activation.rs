@@ -5,13 +5,13 @@
  * - relu, sigmoid, tanh, leaky_relu, softmax, softplus, step, sign
  */
 
-use crate::nn::graph::GraphHandle;
+use crate::nn::graph::Graph;
 use crate::nn::{VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 
 #[test]
 fn test_var_relu() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[-1.0, 0.0, 1.0, 2.0], &[4, 1]))
         .unwrap();
@@ -25,7 +25,7 @@ fn test_var_relu() {
 
 #[test]
 fn test_var_sigmoid() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph.input(&Tensor::new(&[0.0], &[1, 1])).unwrap();
     let y = x.sigmoid();
     y.forward().unwrap();
@@ -35,7 +35,7 @@ fn test_var_sigmoid() {
 
 #[test]
 fn test_var_tanh() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph.input(&Tensor::new(&[0.0], &[1, 1])).unwrap();
     let y = x.tanh();
     y.forward().unwrap();
@@ -45,7 +45,7 @@ fn test_var_tanh() {
 
 #[test]
 fn test_var_leaky_relu() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[-1.0, 0.0, 1.0], &[3, 1]))
         .unwrap();
@@ -59,7 +59,7 @@ fn test_var_leaky_relu() {
 
 #[test]
 fn test_var_step() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[-1.0, 0.0, 1.0], &[3, 1]))
         .unwrap();
@@ -72,7 +72,7 @@ fn test_var_step() {
 
 #[test]
 fn test_var_softplus() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[-1.0, 0.0, 1.0], &[3, 1]))
         .unwrap();
@@ -88,7 +88,7 @@ fn test_var_softplus() {
 
 #[test]
 fn test_var_sign() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[-2.0, 0.0, 3.0], &[3, 1]))
         .unwrap();
@@ -101,7 +101,7 @@ fn test_var_sign() {
 
 #[test]
 fn test_var_softmax() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     // 输入 [batch=2, classes=3]
     let x = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]))
@@ -125,7 +125,7 @@ fn test_var_softmax() {
 fn test_var_softmax_backward() {
     use crate::nn::var::Init;
 
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 简单网络：parameter -> softmax -> mse_loss
     let x = graph.parameter(&[1, 3], Init::Ones, "x").unwrap();
@@ -151,7 +151,7 @@ fn test_var_softmax_backward() {
 
 #[test]
 fn test_var_chained_activations() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[-1.0, 0.5, 1.0], &[3, 1]))
         .unwrap();
@@ -164,7 +164,7 @@ fn test_var_chained_activations() {
 
 #[test]
 fn test_var_chained_softplus_sigmoid() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[-1.0, 0.0, 1.0], &[3, 1]))
         .unwrap();

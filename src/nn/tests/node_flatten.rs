@@ -4,7 +4,7 @@
  * @Description  : Flatten 节点单元测试
  */
 
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -13,7 +13,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 keep_first_dim=true（保留首维度）- 2D 张量保持不变
 #[test]
 fn test_flatten_keep_first_dim_2d() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 2D 输入 [3, 4]
     let input = graph.new_input_node(&[3, 4], Some("input"))?;
@@ -40,7 +40,7 @@ fn test_flatten_keep_first_dim_2d() -> Result<(), GraphError> {
 /// 测试 keep_first_dim=false（完全展平为行向量）
 #[test]
 fn test_flatten_to_row_vector() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[2, 3], Some("input"))?;
     let flat = graph.new_flatten_node(input, false, Some("flat"))?;
@@ -64,7 +64,7 @@ fn test_flatten_to_row_vector() -> Result<(), GraphError> {
 /// 测试方形矩阵的展平
 #[test]
 fn test_flatten_square_matrix() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[4, 4], Some("input"))?;
     let flat = graph.new_flatten_node(input, false, Some("flat"))?;
@@ -95,7 +95,7 @@ fn test_flatten_square_matrix() -> Result<(), GraphError> {
 /// VJP: grad_to_input = reshape(upstream_grad, input_shape)
 #[test]
 fn test_flatten_backward_vjp() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let flat_id = graph.new_flatten_node(input_id, false, Some("flat"))?;
@@ -120,7 +120,7 @@ fn test_flatten_backward_vjp() -> Result<(), GraphError> {
 /// 测试 Flatten VJP（非单位上游梯度）
 #[test]
 fn test_flatten_backward_vjp_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let flat_id = graph.new_flatten_node(input_id, false, Some("flat"))?;
@@ -148,7 +148,7 @@ fn test_flatten_backward_vjp_non_unit_upstream() -> Result<(), GraphError> {
 /// 测试 Flatten 通过 graph.backward() 的端到端反向传播
 #[test]
 fn test_flatten_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：output = sigmoid(flatten(input))
     let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
@@ -185,7 +185,7 @@ fn test_flatten_backward_e2e() -> Result<(), GraphError> {
 /// 测试 Batch 模式的前向传播
 #[test]
 fn test_flatten_batch_forward() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入 [batch=4, features=6]
     let input = graph.new_input_node(&[4, 6], Some("input"))?;
@@ -209,7 +209,7 @@ fn test_flatten_batch_forward() -> Result<(), GraphError> {
 /// 测试 Flatten 梯度累积
 #[test]
 fn test_flatten_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let flat = graph.new_flatten_node(input, false, Some("flat"))?;
@@ -249,7 +249,7 @@ fn test_flatten_gradient_accumulation() -> Result<(), GraphError> {
 /// 测试 Flatten + MatMul（典型 CNN 到 FC 场景）
 #[test]
 fn test_flatten_with_matmul() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 模拟 CNN 输出 [batch=2, features=8]
     let batch_size = 2;
@@ -275,7 +275,7 @@ fn test_flatten_with_matmul() -> Result<(), GraphError> {
 /// 测试 Flatten -> Reshape 链
 #[test]
 fn test_flatten_reshape_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[3, 4], Some("input"))?;
     // 先展平为行向量 [1, 12]
@@ -315,7 +315,7 @@ fn test_flatten_reshape_chain() -> Result<(), GraphError> {
 /// 测试单样本反向传播
 #[test]
 fn test_flatten_single_sample_backward() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // Parameter -> Flatten -> MatMul -> MSE
     let x = graph.new_parameter_node(&[2, 3], Some("x"))?;

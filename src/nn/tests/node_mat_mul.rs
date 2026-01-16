@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -20,7 +20,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 MatMul 节点创建
 #[test]
 fn test_mat_mul_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 两个 Input 节点相乘
     {
@@ -88,7 +88,7 @@ fn test_mat_mul_creation() {
 /// 测试 MatMul 创建时的形状校验
 #[test]
 fn test_mat_mul_creation_invalid_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 列数与行数不匹配：[2,3] @ [2,4]（3 ≠ 2）
     let left = graph.new_input_node(&[2, 3], Some("left")).unwrap();
@@ -120,7 +120,7 @@ fn test_mat_mul_creation_invalid_shape() {
 /// 测试 MatMul 节点命名
 #[test]
 fn test_mat_mul_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left = graph.new_input_node(&[2, 3], Some("l")).unwrap();
     let right = graph.new_input_node(&[3, 4], Some("r")).unwrap();
@@ -146,7 +146,7 @@ fn test_mat_mul_name_generation() {
 /// 测试 MatMul 节点不能直接设置值
 #[test]
 fn test_mat_mul_cannot_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let left = graph.new_input_node(&[2, 3], Some("l")).unwrap();
     let right = graph.new_input_node(&[3, 4], Some("r")).unwrap();
     let result = graph.new_mat_mul_node(left, right, Some("matmul")).unwrap();
@@ -165,7 +165,7 @@ fn test_mat_mul_cannot_set_value() {
 /// 测试 MatMul 前向传播
 #[test]
 fn test_mat_mul_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
     let right = graph.new_parameter_node(&[3, 4], Some("right")).unwrap();
@@ -204,7 +204,7 @@ fn test_mat_mul_forward() {
 /// 测试 MatMul 前向传播（向量乘矩阵）
 #[test]
 fn test_mat_mul_forward_vector() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let vec = graph.new_parameter_node(&[1, 3], Some("vec")).unwrap();
     let mat = graph.new_parameter_node(&[3, 2], Some("mat")).unwrap();
@@ -237,7 +237,7 @@ fn test_mat_mul_forward_vector() {
 /// - ∂C/∂A 的 VJP: grad_to_A = upstream_grad @ B^T
 #[test]
 fn test_mat_mul_backward_to_left() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 3], Some("left"))?;
     let right_id = graph.new_parameter_node(&[3, 4], Some("right"))?;
@@ -279,7 +279,7 @@ fn test_mat_mul_backward_to_left() -> Result<(), GraphError> {
 /// - ∂C/∂B 的 VJP: grad_to_B = A^T @ upstream_grad
 #[test]
 fn test_mat_mul_backward_to_right() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 3], Some("left"))?;
     let right_id = graph.new_parameter_node(&[3, 4], Some("right"))?;
@@ -317,7 +317,7 @@ fn test_mat_mul_backward_to_right() -> Result<(), GraphError> {
 /// 测试 MatMul 梯度计算（非单位 upstream_grad）
 #[test]
 fn test_mat_mul_backward_with_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -356,7 +356,7 @@ fn test_mat_mul_backward_with_non_unit_upstream() -> Result<(), GraphError> {
 /// 验证 VJP 在负数值场景下的正确性
 #[test]
 fn test_mat_mul_backward_with_negative_values() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -403,7 +403,7 @@ fn test_mat_mul_backward_with_negative_values() -> Result<(), GraphError> {
 /// 零值是重要边界情况：A @ B 中的零元素，梯度仍应正确传播
 #[test]
 fn test_mat_mul_backward_with_zero_value() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
@@ -444,7 +444,7 @@ fn test_mat_mul_backward_with_zero_value() -> Result<(), GraphError> {
 /// 测试 MatMul 梯度计算缺少 assistant_parent 时报错
 #[test]
 fn test_mat_mul_backward_missing_assistant_parent() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 3], Some("left"))?;
     let right_id = graph.new_parameter_node(&[3, 4], Some("right"))?;
@@ -479,7 +479,7 @@ fn test_mat_mul_backward_missing_assistant_parent() -> Result<(), GraphError> {
 /// 构建简单图：result = left @ right → loss = MSE(result, target)
 #[test]
 fn test_mat_mul_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：result = left @ right
     let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
@@ -536,7 +536,7 @@ fn test_mat_mul_backward_e2e() -> Result<(), GraphError> {
 /// 这是 PyTorch 兼容的行为，支持"micro-batch 梯度累积"场景。
 #[test]
 fn test_mat_mul_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right = graph.new_parameter_node(&[2, 2], Some("right"))?;

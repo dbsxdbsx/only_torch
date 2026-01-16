@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -20,7 +20,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 LeakyReLU 节点创建
 #[test]
 fn test_leaky_relu_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. Input 节点作为父节点（默认 slope=0.1）
     {
@@ -59,7 +59,7 @@ fn test_leaky_relu_creation() {
 /// 测试 LeakyReLU 节点命名
 #[test]
 fn test_leaky_relu_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
 
@@ -84,7 +84,7 @@ fn test_leaky_relu_name_generation() {
 /// 测试 LeakyReLU 无效 slope
 #[test]
 fn test_leaky_relu_invalid_slope() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
 
     // 负的 negative_slope 应该失败
@@ -95,7 +95,7 @@ fn test_leaky_relu_invalid_slope() {
 /// 测试 LeakyReLU 节点不能直接设置值
 #[test]
 fn test_leaky_relu_cannot_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
     let relu = graph.new_leaky_relu_node(input, 0.1, Some("relu")).unwrap();
 
@@ -113,7 +113,7 @@ fn test_leaky_relu_cannot_set_value() {
 /// 测试标准 ReLU (slope=0) 前向传播
 #[test]
 fn test_relu_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 2], Some("input")).unwrap();
     let relu = graph.new_relu_node(input, Some("relu")).unwrap();
@@ -136,7 +136,7 @@ fn test_relu_forward() {
 /// 测试 LeakyReLU (slope=0.1) 前向传播
 #[test]
 fn test_leaky_relu_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 2], Some("input")).unwrap();
     let relu = graph
@@ -161,7 +161,7 @@ fn test_leaky_relu_forward() {
 /// 测试 LeakyReLU 前向传播（3x2 矩阵）
 #[test]
 fn test_leaky_relu_forward_3x2() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[3, 2], Some("input")).unwrap();
     let relu = graph
@@ -194,7 +194,7 @@ fn test_leaky_relu_forward_3x2() {
 /// - VJP: grad_to_parent = upstream_grad * (1 if x > 0 else 0)
 #[test]
 fn test_relu_backward_vjp() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let relu_id = graph.new_relu_node(input_id, Some("relu"))?;
@@ -229,7 +229,7 @@ fn test_relu_backward_vjp() -> Result<(), GraphError> {
 /// - VJP: grad_to_parent = upstream_grad * (1 if x > 0 else negative_slope)
 #[test]
 fn test_leaky_relu_backward_vjp() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let relu_id = graph.new_leaky_relu_node(input_id, 0.1, Some("leaky_relu"))?;
@@ -260,7 +260,7 @@ fn test_leaky_relu_backward_vjp() -> Result<(), GraphError> {
 /// 测试 LeakyReLU 梯度计算（非单位 upstream_grad）
 #[test]
 fn test_leaky_relu_backward_with_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let relu_id = graph.new_leaky_relu_node(input_id, 0.1, Some("leaky_relu"))?;
@@ -291,7 +291,7 @@ fn test_leaky_relu_backward_with_non_unit_upstream() -> Result<(), GraphError> {
 /// 测试 LeakyReLU 梯度计算（全正值）
 #[test]
 fn test_leaky_relu_backward_all_positive() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let relu_id = graph.new_leaky_relu_node(input_id, 0.1, Some("leaky_relu"))?;
@@ -316,7 +316,7 @@ fn test_leaky_relu_backward_all_positive() -> Result<(), GraphError> {
 /// 测试 LeakyReLU 梯度计算（全负值）
 #[test]
 fn test_leaky_relu_backward_all_negative() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let relu_id = graph.new_leaky_relu_node(input_id, 0.1, Some("leaky_relu"))?;
@@ -346,7 +346,7 @@ fn test_leaky_relu_backward_all_negative() -> Result<(), GraphError> {
 /// 构建简单图：result = leaky_relu(input) → loss = MSE(result, target)
 #[test]
 fn test_leaky_relu_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建计算图：result = leaky_relu(input)
     let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
@@ -401,7 +401,7 @@ fn test_leaky_relu_backward_e2e() -> Result<(), GraphError> {
 /// 网络结构: x -> MatMul(w) -> Add(b) -> LeakyReLU -> output
 #[test]
 fn test_leaky_relu_backward_e2e_chain() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 构建网络: output = leaky_relu(w @ x + b)
     let x = graph.new_input_node(&[2, 1], Some("x"))?;
@@ -440,7 +440,7 @@ fn test_leaky_relu_backward_e2e_chain() -> Result<(), GraphError> {
 /// 测试 LeakyReLU 在 MLP 网络中的端到端训练
 #[test]
 fn test_leaky_relu_backward_e2e_mlp() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 构建简单 MLP: x -> Linear -> LeakyReLU -> Linear -> output
     let x = graph.new_input_node(&[2, 1], Some("x"))?;
@@ -484,7 +484,7 @@ fn test_leaky_relu_backward_e2e_mlp() -> Result<(), GraphError> {
 /// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
 #[test]
 fn test_leaky_relu_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let result = graph.new_leaky_relu_node(input, 0.1, Some("result"))?;
@@ -522,7 +522,7 @@ fn test_leaky_relu_gradient_accumulation() -> Result<(), GraphError> {
 /// 测试 LeakyReLU Batch 前向传播
 #[test]
 fn test_leaky_relu_batch_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入形状: batch_size=2, features=4
     let input = graph.new_parameter_node(&[2, 4], Some("input")).unwrap();

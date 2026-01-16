@@ -1,10 +1,10 @@
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 
 #[test]
 fn test_node_input_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试基本创建
     let input = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
@@ -18,7 +18,7 @@ fn test_node_input_creation() {
 
 #[test]
 fn test_node_input_creation_with_invalid_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 测试不同维度的形状（支持 2-4 维，0/1/5 维应该失败）
     for dims in [0, 1, 5] {
@@ -51,7 +51,7 @@ fn test_node_input_creation_with_invalid_shape() {
 
 #[test]
 fn test_node_input_name_generation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试节点显式命名
     let input1 = graph
@@ -73,7 +73,7 @@ fn test_node_input_name_generation() {
 
 #[test]
 fn test_node_input_manually_set_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 2], Some("test_input")).unwrap();
 
     // 1. 测试有效赋值
@@ -116,7 +116,7 @@ fn test_node_input_manually_set_value() {
 
 #[test]
 fn test_node_input_expected_shape() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 测试基本的Input节点预期形状
     let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
@@ -137,7 +137,7 @@ fn test_node_input_expected_shape() {
 
 #[test]
 fn test_node_input_forward_propagation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
 
     // 1. 测试前向传播（应该失败，因为Input节点不支持前向传播）
@@ -164,7 +164,7 @@ fn test_node_input_forward_propagation() {
 /// Input 节点是输入数据，不是可学习参数，因此不应该有梯度。
 #[test]
 fn test_node_input_no_grad() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建输入节点
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
@@ -197,7 +197,7 @@ fn test_node_input_no_grad() {
 /// 调用 get_node_grad(input) 仍然返回错误。
 #[test]
 fn test_node_input_in_computation_graph() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 构建简单计算图: input -> param -> mse_loss
     let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();

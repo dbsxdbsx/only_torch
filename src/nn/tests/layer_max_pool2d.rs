@@ -7,7 +7,7 @@
  */
 
 use crate::nn::layer::max_pool2d;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -50,7 +50,7 @@ const TEST_MULTI_OUTPUT: &[f32] = &[
 /// 测试 MaxPool2d 前向传播（与 PyTorch 对照）
 #[test]
 fn test_max_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
     let pool = max_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
@@ -77,7 +77,7 @@ fn test_max_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试 MaxPool2d 多通道多批次（与 PyTorch 对照）
 #[test]
 fn test_max_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     let input = graph.new_input_node(&[2, 3, 4, 4], Some("input"))?;
     let pool = max_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
@@ -102,7 +102,7 @@ fn test_max_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> 
 fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     use crate::nn::layer::{conv2d, linear};
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
 
     // 构建网络: input -> conv -> relu -> max_pool -> flatten -> fc -> softmax_ce
@@ -203,7 +203,7 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试 max_pool2d() 创建
 #[test]
 fn test_max_pool2d_creation() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 32, 14, 14], Some("input"))?;
 
     let pool = max_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool1"))?;
@@ -217,7 +217,7 @@ fn test_max_pool2d_creation() -> Result<(), GraphError> {
 /// 测试 max_pool2d() 输出形状
 #[test]
 fn test_max_pool2d_shapes() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[4, 16, 28, 28], Some("input"))?;
 
     // 2x2 池化, stride=2 → 尺寸减半
@@ -233,7 +233,7 @@ fn test_max_pool2d_shapes() -> Result<(), GraphError> {
 /// 测试 max_pool2d() 前向传播
 #[test]
 fn test_max_pool2d_forward() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 输入: [batch=1, C=1, H=4, W=4]
     let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
@@ -277,7 +277,7 @@ fn test_max_pool2d_forward() -> Result<(), GraphError> {
 /// 测试 max_pool2d() 默认 stride（等于 kernel_size）
 #[test]
 fn test_max_pool2d_default_stride() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
     graph.set_node_value(input, Some(&Tensor::ones(&[1, 1, 4, 4])))?;
@@ -300,7 +300,7 @@ fn test_max_pool2d_default_stride() -> Result<(), GraphError> {
 /// 测试 max_pool2d() 带名称
 #[test]
 fn test_max_pool2d_with_name() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 16, 8, 8], Some("input"))?;
 
     let pool = max_pool2d(
@@ -320,7 +320,7 @@ fn test_max_pool2d_with_name() -> Result<(), GraphError> {
 /// 测试 max_pool2d() 无名称（使用默认前缀）
 #[test]
 fn test_max_pool2d_without_name() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 16, 8, 8], Some("input"))?;
 
     let pool = max_pool2d(&mut graph, input, (2, 2), Some((2, 2)), None)?;
@@ -338,7 +338,7 @@ fn test_max_pool2d_without_name() -> Result<(), GraphError> {
 fn test_max_pool2d_with_conv2d() -> Result<(), GraphError> {
     use crate::nn::layer::conv2d;
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 典型 CNN: conv -> relu -> pool
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
@@ -377,7 +377,7 @@ fn test_max_pool2d_with_conv2d() -> Result<(), GraphError> {
 fn test_max_pool2d_chain() -> Result<(), GraphError> {
     use crate::nn::layer::conv2d;
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 多层 CNN: conv1 -> pool1 -> conv2 -> pool2
     let input = graph.new_input_node(&[2, 1, 16, 16], Some("input"))?;
@@ -438,7 +438,7 @@ fn test_max_pool2d_chain() -> Result<(), GraphError> {
 /// 测试 max_pool2d + flatten 链式连接
 #[test]
 fn test_max_pool2d_with_flatten() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // pool -> flatten（CNN 末端典型结构）
     let input = graph.new_input_node(&[2, 4, 4, 4], Some("input"))?;
@@ -467,7 +467,7 @@ fn test_max_pool2d_with_flatten() -> Result<(), GraphError> {
 fn test_max_pool2d_batch_backward() -> Result<(), GraphError> {
     use crate::nn::layer::conv2d;
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 2;
 
     // 构建网络: conv -> pool -> flatten -> matmul -> loss
@@ -520,7 +520,7 @@ fn test_max_pool2d_batch_backward() -> Result<(), GraphError> {
 /// 测试多个 max_pool2d() 使用不同名称
 #[test]
 fn test_max_pool2d_multiple_layers_different_names() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 4, 16, 16], Some("input"))?;
 
     let pool1 = max_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool1"))?;
@@ -555,7 +555,7 @@ fn test_max_pool2d_multiple_layers_different_names() -> Result<(), GraphError> {
 /// 测试重复名称应该报错
 #[test]
 fn test_max_pool2d_duplicate_name_error() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 4, 8, 8], Some("input")).unwrap();
 
     // 第一个 pool 成功
@@ -586,7 +586,7 @@ fn test_max_pool2d_duplicate_name_error() {
 /// 测试多个无名称层会冲突（预期行为）
 #[test]
 fn test_max_pool2d_multiple_unnamed_layers_conflict() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let input = graph.new_input_node(&[2, 4, 8, 8], Some("input")).unwrap();
 
     // 第一个无名称层成功
@@ -612,7 +612,7 @@ fn test_max_pool2d_multiple_unnamed_layers_conflict() {
 /// 测试单通道输入
 #[test]
 fn test_max_pool2d_single_channel() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
 
     let pool = max_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
@@ -632,7 +632,7 @@ fn test_max_pool2d_single_channel() -> Result<(), GraphError> {
 /// 测试大通道数
 #[test]
 fn test_max_pool2d_large_channels() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[1, 128, 8, 8], Some("input"))?;
 
     let pool = max_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
@@ -647,7 +647,7 @@ fn test_max_pool2d_large_channels() -> Result<(), GraphError> {
 /// 测试非方形池化窗口
 #[test]
 fn test_max_pool2d_nonsquare_kernel() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[2, 4, 8, 8], Some("input"))?;
 
     // 使用 2x4 的非方形池化窗口
@@ -671,7 +671,7 @@ fn test_max_pool2d_nonsquare_kernel() -> Result<(), GraphError> {
 /// 测试不同 stride
 #[test]
 fn test_max_pool2d_different_stride() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let input = graph.new_input_node(&[2, 4, 8, 8], Some("input"))?;
 
     // 2x2 kernel, stride=1 → 重叠池化
@@ -695,7 +695,7 @@ fn test_max_pool2d_different_stride() -> Result<(), GraphError> {
 fn test_max_pool2d_typical_cnn() -> Result<(), GraphError> {
     use crate::nn::layer::conv2d;
 
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
     let batch_size = 32;
 
     // 典型 LeNet 风格网络

@@ -8,7 +8,7 @@
  * - 梯度流控制（detach）
  */
 
-use crate::nn::graph::GraphHandle;
+use crate::nn::graph::Graph;
 use crate::nn::{VarActivationOps, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 
@@ -17,7 +17,7 @@ use crate::tensor::Tensor;
 /// 测试 Var 加法算子重载
 #[test]
 fn test_var_add() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))
@@ -36,7 +36,7 @@ fn test_var_add() {
 /// 测试 Var 减法算子重载
 #[test]
 fn test_var_sub() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph
         .input(&Tensor::new(&[5.0, 7.0, 9.0], &[3, 1]))
@@ -54,7 +54,7 @@ fn test_var_sub() {
 /// 测试 Var 乘法算子重载（逐元素）
 #[test]
 fn test_var_mul() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))
@@ -72,7 +72,7 @@ fn test_var_mul() {
 /// 测试 Var 除法算子重载
 #[test]
 fn test_var_div() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph
         .input(&Tensor::new(&[6.0, 12.0, 24.0], &[3, 1]))
@@ -92,7 +92,7 @@ fn test_var_div() {
 fn test_var_div_backward() {
     use crate::nn::var::Init;
 
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 构建简单网络：a / b -> mse_loss
     // 设置 a=4, b=2，target=1，则 output=2，loss=(2-1)^2=1
@@ -126,7 +126,7 @@ fn test_var_div_backward() {
 /// 测试 Var 取反算子重载
 #[test]
 fn test_var_neg() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph
         .input(&Tensor::new(&[1.0, -2.0, 3.0], &[3, 1]))
@@ -141,7 +141,7 @@ fn test_var_neg() {
 /// 测试混合算子
 #[test]
 fn test_var_mixed_operators() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
     let b = graph.input(&Tensor::new(&[3.0, 4.0], &[2, 1])).unwrap();
@@ -159,7 +159,7 @@ fn test_var_mixed_operators() {
 /// 测试各种所有权组合
 #[test]
 fn test_var_ownership_combinations() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
     let b = graph.input(&Tensor::new(&[3.0, 4.0], &[2, 1])).unwrap();
@@ -183,7 +183,7 @@ fn test_var_ownership_combinations() {
 /// 测试链式激活函数
 #[test]
 fn test_var_chain_activations() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph
         .input(&Tensor::new(&[-1.0, 0.0, 1.0], &[3, 1]))
@@ -217,7 +217,7 @@ fn test_var_chain_activations() {
 /// 测试链式矩阵乘法
 #[test]
 fn test_var_chain_matmul() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // x: [2, 3], w: [3, 2] -> result: [2, 2]
     let x = graph
@@ -240,7 +240,7 @@ fn test_var_chain_matmul() {
 /// 测试复合链式调用
 #[test]
 fn test_var_compound_chain() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
     let w = graph
@@ -269,7 +269,7 @@ fn test_var_compound_chain() {
 /// 测试 set_value 和 value
 #[test]
 fn test_var_set_value() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.zeros(&[2, 2]).unwrap();
     assert_eq!(
@@ -289,7 +289,7 @@ fn test_var_set_value() {
 /// 测试 item（获取标量）
 #[test]
 fn test_var_item() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[3.14], &[1, 1])).unwrap();
     let val = x.item().unwrap();
@@ -299,7 +299,7 @@ fn test_var_item() {
 /// 测试 grad
 #[test]
 fn test_var_grad() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     // 简单网络：x * w -> loss
     let x = graph.input(&Tensor::new(&[2.0], &[1, 1])).unwrap();
@@ -323,7 +323,7 @@ fn test_var_grad() {
 /// 测试同一图的 Var 可以操作
 #[test]
 fn test_var_same_graph() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
     let b = graph.input(&Tensor::new(&[2.0], &[1, 1])).unwrap();
@@ -340,8 +340,8 @@ fn test_var_same_graph() {
 #[test]
 #[should_panic(expected = "不能对来自不同 Graph 的 Var 进行加法")]
 fn test_var_different_graph_panic() {
-    let graph1 = GraphHandle::new();
-    let graph2 = GraphHandle::new();
+    let graph1 = Graph::new();
+    let graph2 = Graph::new();
 
     let a = graph1.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
     let b = graph2.input(&Tensor::new(&[2.0], &[1, 1])).unwrap();
@@ -356,7 +356,7 @@ fn test_var_different_graph_panic() {
 #[test]
 fn test_var_get_graph() {
     let x = {
-        let graph = GraphHandle::new();
+        let graph = Graph::new();
         graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap()
         // graph 在这里 drop
     };
@@ -380,7 +380,7 @@ fn test_var_get_graph() {
 /// 虽然 Rust 类型系统已保证 `&Var` 不可变，但此测试明确记录了这一语义。
 #[test]
 fn test_var_operators_do_not_mutate_operands() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let a = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
     let b = graph.input(&Tensor::new(&[3.0, 4.0], &[2, 1])).unwrap();
@@ -419,7 +419,7 @@ fn test_var_operators_do_not_mutate_operands() {
 /// 测试 detach 截断梯度流
 #[test]
 fn test_var_detach() {
-    let graph = GraphHandle::new();
+    let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
     let w = graph

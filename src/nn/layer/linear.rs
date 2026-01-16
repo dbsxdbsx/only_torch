@@ -11,7 +11,7 @@
  * 等价于 PyTorch 的 nn.Linear（天然支持 batch）
  */
 
-use crate::nn::{Graph, GraphError, NodeId};
+use crate::nn::{GraphError, GraphInner, NodeId};
 use crate::tensor::Tensor;
 
 /// Linear 层的输出结构
@@ -79,7 +79,7 @@ pub struct LinearOutput {
 /// let weights = graph.get_node_value(fc1.weights)?;
 /// ```
 pub fn linear(
-    graph: &mut Graph,
+    graph: &mut GraphInner,
     input: NodeId,
     in_features: usize,
     out_features: usize,

@@ -5,7 +5,7 @@
 
 use approx::assert_abs_diff_eq;
 
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 
 // ============================================================================
@@ -15,7 +15,7 @@ use crate::tensor::Tensor;
 /// 测试: is_grad_enabled 与 is_train_mode 一致
 #[test]
 fn test_is_grad_enabled_equals_is_train_mode() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 默认训练模式
     assert!(graph.is_grad_enabled());
@@ -35,7 +35,7 @@ fn test_is_grad_enabled_equals_is_train_mode() {
 /// 测试: no_grad_scope 基本功能 - 临时禁用梯度
 #[test]
 fn test_no_grad_scope_basic() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 默认是训练模式
     assert!(graph.is_grad_enabled());
@@ -55,7 +55,7 @@ fn test_no_grad_scope_basic() {
 /// 测试: no_grad_scope 从评估模式开始
 #[test]
 fn test_no_grad_scope_from_eval_mode() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 先切换到评估模式
     graph.set_eval_mode();
@@ -73,7 +73,7 @@ fn test_no_grad_scope_from_eval_mode() {
 /// 测试: no_grad_scope 返回值传递
 #[test]
 fn test_no_grad_scope_return_value() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 返回简单值
     let result: i32 = graph.no_grad_scope(|_g| 42);
@@ -91,7 +91,7 @@ fn test_no_grad_scope_return_value() {
 /// 测试: no_grad_scope 错误传播
 #[test]
 fn test_no_grad_scope_error_propagation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 闭包返回错误
     let result: Result<(), GraphError> =
@@ -111,7 +111,7 @@ fn test_no_grad_scope_error_propagation() {
 /// 测试: no_grad_scope 嵌套调用
 #[test]
 fn test_no_grad_scope_nested() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     assert!(graph.is_grad_enabled());
 
@@ -142,7 +142,7 @@ fn test_no_grad_scope_nested() {
 /// 测试: no_grad_scope 与前向传播集成
 #[test]
 fn test_no_grad_scope_with_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建简单网络: x -> tanh -> output
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -172,7 +172,7 @@ fn test_no_grad_scope_with_forward() {
 /// 测试: no_grad_scope 核心保证 - 相同输入产生相同 loss，区别仅在于梯度
 #[test]
 fn test_no_grad_scope_same_input_same_loss_no_gradient() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建简单回归网络
     let x = graph.new_input_node(&[1, 2], Some("x")).unwrap();
@@ -230,7 +230,7 @@ fn test_no_grad_scope_same_input_same_loss_no_gradient() {
 /// 测试: no_grad_scope 多次调用
 #[test]
 fn test_no_grad_scope_multiple_calls() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     for i in 0..5 {
         assert!(graph.is_grad_enabled(), "第 {i} 次调用前应为训练模式");
@@ -246,7 +246,7 @@ fn test_no_grad_scope_multiple_calls() {
 /// 测试: no_grad_scope 与 set_eval_mode 交互
 #[test]
 fn test_no_grad_scope_interaction_with_eval_mode() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 场景 1: 在 no_grad 中手动切换模式
     graph.no_grad_scope(|g| {
@@ -268,7 +268,7 @@ fn test_no_grad_scope_interaction_with_eval_mode() {
 /// 测试: no_grad_scope 闭包中的可变借用
 #[test]
 fn test_no_grad_scope_mutable_operations() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建节点
     let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
@@ -292,7 +292,7 @@ fn test_no_grad_scope_mutable_operations() {
 /// 测试: no_grad_scope 与种子的交互
 #[test]
 fn test_no_grad_scope_with_seeded_graph() {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     assert!(graph.has_seed());
     assert!(graph.is_grad_enabled());
@@ -327,7 +327,7 @@ fn test_no_grad_scope_with_seeded_graph() {
 /// 参考: `.doc/design/gradient_flow_control_design.md` 1.7 节
 #[test]
 fn test_no_grad_scope_backward_still_works() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建简单网络
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -370,7 +370,7 @@ fn test_no_grad_scope_backward_still_works() {
 /// 测试: no_grad_scope 内创建的节点在退出后的梯度行为
 #[test]
 fn test_no_grad_scope_nodes_created_inside() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 先创建输入节点
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -408,7 +408,7 @@ fn test_no_grad_scope_nodes_created_inside() {
 /// 测试: detach_node / attach_node / is_node_detached 基本功能
 #[test]
 fn test_detach_basic() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建节点
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -433,7 +433,7 @@ fn test_detach_basic() {
 /// 测试: detach 阻止梯度回流
 #[test]
 fn test_detach_blocks_gradient_flow() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建简单网络: x -> w1 -> h -> w2 -> output
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -487,7 +487,7 @@ fn test_detach_blocks_gradient_flow() {
 /// 测试: detach 不影响前向传播
 #[test]
 fn test_detach_does_not_affect_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -516,7 +516,7 @@ fn test_detach_does_not_affect_forward() {
 /// 测试: 多次 detach/attach 切换（包括幂等性和实际 backward 效果验证）
 #[test]
 fn test_detach_attach_multiple_times() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建简单网络用于验证 backward 效果: x -> w -> y -> loss
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -580,7 +580,7 @@ fn test_detach_attach_multiple_times() {
 /// 测试: detach 节点不存在时返回错误
 #[test]
 fn test_detach_nonexistent_node() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let invalid_id = crate::nn::NodeId(999);
 
     assert!(graph.detach_node(invalid_id).is_err());
@@ -591,7 +591,7 @@ fn test_detach_nonexistent_node() {
 /// 测试: GAN 风格训练模式
 #[test]
 fn test_detach_gan_style_training() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 简化的 GAN 结构:
     // z(输入) -> G_w(生成器参数) -> fake_data -> D_w(判别器参数) -> d_output -> loss
@@ -654,7 +654,7 @@ fn test_detach_gan_style_training() {
 /// 测试: detach 与 Batch 模式的兼容性
 #[test]
 fn test_detach_with_batch_mode() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> mse_loss
     let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
@@ -689,7 +689,7 @@ fn test_detach_with_batch_mode() {
 /// 测试: Input 节点不能被 detach（语义上没意义但不应报错）
 #[test]
 fn test_detach_input_node() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
     let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
 
     // 技术上可以 detach，但语义上没有意义
@@ -705,7 +705,7 @@ fn test_detach_input_node() {
 /// 测试: detach 后的节点仍然可以正常操作，且已有的 grad 不会被清除（Single 模式）
 #[test]
 fn test_detach_node_still_functional() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建简单网络: x -> w -> y
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -751,7 +751,7 @@ fn test_detach_node_still_functional() {
 /// 2. w2 的梯度数值与 PyTorch 精确匹配
 #[test]
 fn test_detach_gradient_values_match_pytorch() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络: x -> w1 -> h -> w2 -> output
     // x: [2, 1], w1: [2, 2] -> h: [2, 1], w2: [1, 2] -> output: [1, 1]
@@ -817,7 +817,7 @@ fn test_detach_gradient_values_match_pytorch() {
 /// 测试: detach 后的节点仍然可以正常操作，且已有的 grad 不会被清除（Batch 模式）
 #[test]
 fn test_detach_node_still_functional_batch() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> loss
     let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
@@ -864,7 +864,7 @@ fn test_detach_node_still_functional_batch() {
 /// 测试: backward_ex 基本功能
 #[test]
 fn test_retain_graph_basic() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建简单网络: x -> w -> y
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -891,7 +891,7 @@ fn test_retain_graph_basic() {
 /// 测试: retain_graph=false 释放中间节点的值和梯度
 #[test]
 fn test_retain_graph_false_releases_intermediate_results() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> z -> loss (标量)
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -936,7 +936,7 @@ fn test_retain_graph_false_releases_intermediate_results() {
 /// 测试: retain_graph=true 允许多次 backward
 #[test]
 fn test_retain_graph_allows_multiple_backward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -969,7 +969,7 @@ fn test_retain_graph_allows_multiple_backward() {
 /// PyTorch 对照: tests/python/calc_jacobi_by_pytorch/multi_task_learning_retain_graph.py
 #[test]
 fn test_retain_graph_multi_task_learning() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建共享 backbone: x -> w_shared -> features
     let x = graph.new_input_node(&[4, 1], Some("x")).unwrap();
@@ -1085,7 +1085,7 @@ fn test_retain_graph_multi_task_learning() {
 /// 测试: backward 默认行为（等价于 retain_graph=false，与 PyTorch 一致）
 #[test]
 fn test_backward_default_releases_graph() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> loss (标量)
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -1126,7 +1126,7 @@ fn test_backward_default_releases_graph() {
 /// 测试: retain_graph=false 后再次 backward 需要重新 forward
 #[test]
 fn test_retain_graph_false_requires_new_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -1157,7 +1157,7 @@ fn test_retain_graph_false_requires_new_forward() {
 /// 测试: 混合使用 retain_graph 和 detach
 #[test]
 fn test_retain_graph_with_detach() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建网络: x -> w1 -> h -> w2 -> y -> loss
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -1226,7 +1226,7 @@ fn test_retain_graph_with_detach() {
 /// 关键测试点: w_shared2 与 w_shared3 是**相邻参数节点**，验证链式累积是否正确
 #[test]
 fn test_backward_accumulation_for_complex_topology() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // ========== 构建拓扑 ==========
     // 输入

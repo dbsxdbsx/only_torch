@@ -10,7 +10,7 @@
  * 4. 各种参数组合（kernel_size, stride）
  */
 
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphInner, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -19,7 +19,7 @@ use approx::assert_abs_diff_eq;
 /// 测试 AvgPool2d 节点创建（单样本）
 #[test]
 fn test_avg_pool2d_creation_single() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
     let input = graph.new_input_node(&[1, 4, 4], Some("input"))?;
@@ -37,7 +37,7 @@ fn test_avg_pool2d_creation_single() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 节点创建（Batch）
 #[test]
 fn test_avg_pool2d_creation_batch() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=4, C=16, H=28, W=28]
     let input = graph.new_input_node(&[4, 16, 28, 28], Some("input"))?;
@@ -55,7 +55,7 @@ fn test_avg_pool2d_creation_batch() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 带自定义 stride
 #[test]
 fn test_avg_pool2d_with_stride() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C=1, H=6, W=6]
     let input = graph.new_input_node(&[2, 1, 6, 6], Some("input"))?;
@@ -75,7 +75,7 @@ fn test_avg_pool2d_with_stride() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 前向传播（简单情况）
 #[test]
 fn test_avg_pool2d_forward_simple() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
     let input = graph.new_input_node(&[1, 4, 4], Some("input"))?;
@@ -111,7 +111,7 @@ fn test_avg_pool2d_forward_simple() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 前向传播（Batch 模式）
 #[test]
 fn test_avg_pool2d_forward() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C=1, H=4, W=4]
     let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
@@ -140,7 +140,7 @@ fn test_avg_pool2d_forward() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 多通道
 #[test]
 fn test_avg_pool2d_multi_channel() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C=2, H=4, W=4]
     let input = graph.new_input_node(&[2, 4, 4], Some("input"))?;
@@ -171,7 +171,7 @@ fn test_avg_pool2d_multi_channel() -> Result<(), GraphError> {
 ///
 /// 构建完整计算图：input -> pool -> flatten -> mse_loss
 fn test_avg_pool2d_jacobi() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]，使用 Parameter 以便计算梯度
     // pool 输出: [C=1, H=2, W=2]（kernel=2x2, stride=2）
@@ -220,7 +220,7 @@ fn test_avg_pool2d_jacobi() -> Result<(), GraphError> {
 /// 测试 AvgPool2d Batch 梯度
 #[test]
 fn test_avg_pool2d_batch_grad() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [batch=1, C=1, H=4, W=4]
     let input_id = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
@@ -254,7 +254,7 @@ fn test_avg_pool2d_batch_grad() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 与 Conv2d 串联
 #[test]
 fn test_avg_pool2d_after_conv2d() -> Result<(), GraphError> {
-    let mut graph = Graph::new_with_seed(42);
+    let mut graph = GraphInner::new_with_seed(42);
 
     // 输入: [batch=2, C_in=1, H=8, W=8]
     let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
@@ -292,7 +292,7 @@ fn test_avg_pool2d_after_conv2d() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 重叠窗口（stride < kernel_size）
 #[test]
 fn test_avg_pool2d_overlapping_windows() -> Result<(), GraphError> {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
     let input = graph.new_input_node(&[1, 4, 4], Some("input"))?;
@@ -329,7 +329,7 @@ fn test_avg_pool2d_overlapping_windows() -> Result<(), GraphError> {
 /// 测试无效的输入维度
 #[test]
 fn test_avg_pool2d_invalid_input_dims() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [H=4, W=4]（2D，缺少通道维度）
     let input = graph.new_input_node(&[4, 4], Some("input")).unwrap();
@@ -341,7 +341,7 @@ fn test_avg_pool2d_invalid_input_dims() {
 /// 测试池化窗口过大
 #[test]
 fn test_avg_pool2d_kernel_too_large() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
     let input = graph.new_input_node(&[1, 4, 4], Some("input")).unwrap();

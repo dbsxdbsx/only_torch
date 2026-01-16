@@ -7,7 +7,7 @@
  * @LastEditTime : 2025-01-08
  */
 
-use crate::nn::Graph;
+use crate::nn::GraphInner;
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -18,7 +18,7 @@ use approx::assert_abs_diff_eq;
 /// 测试: 在 forward 后添加新节点并继续计算
 #[test]
 fn test_add_node_after_forward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建初始图: add1 = a + b
     let a = graph
@@ -71,7 +71,7 @@ fn test_add_node_after_forward() {
 /// 测试: 在 backward 后添加新节点并继续训练
 #[test]
 fn test_add_node_after_backward() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建初始图: y = w * x + b，然后创建 loss = MSE(y, target)
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -141,7 +141,7 @@ fn test_add_node_after_backward() {
 /// 测试: 连续多次添加节点
 #[test]
 fn test_multiple_topology_changes() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 初始图: node1 = param + input
     let param = graph
@@ -215,7 +215,7 @@ fn test_multiple_topology_changes() {
 /// 测试: 在同一个父节点上添加多个子节点（分支）
 #[test]
 fn test_add_multiple_branches() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 初始图
     let input = graph.new_input_node(&[2, 1], Some("input")).unwrap();
@@ -274,7 +274,7 @@ fn test_add_multiple_branches() {
 /// 测试: 链式添加节点（A -> B -> C -> D）
 #[test]
 fn test_chain_node_addition() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建初始节点
     let a = graph
@@ -324,7 +324,7 @@ fn test_chain_node_addition() {
 /// 测试: 在已有复杂图上添加节点
 #[test]
 fn test_add_to_complex_graph() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建一个类似 XOR 的网络结构
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
@@ -404,7 +404,7 @@ fn test_add_to_complex_graph() {
 /// 测试: on_topology_changed 多次调用
 #[test]
 fn test_multiple_on_topology_changed_calls() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let a = graph
         .new_parameter_node_seeded(&[2, 1], Some("a"), 42)
@@ -448,7 +448,7 @@ fn test_multiple_on_topology_changed_calls() {
 /// 验证即使不显式调用，pass_id 机制也能保证正确性
 #[test]
 fn test_add_node_without_explicit_topology_changed() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建初始图
     let a = graph
@@ -524,7 +524,7 @@ fn test_add_node_without_explicit_topology_changed() {
 /// 注意: 当前 API 不直接支持"插入"，需要重建连接
 #[test]
 fn test_neat_add_node_mutation_simulation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 初始网络: input -> hidden -> output
     let input = graph.new_input_node(&[2, 1], Some("input")).unwrap();
@@ -608,7 +608,7 @@ fn test_neat_add_node_mutation_simulation() {
 /// 在两个已存在但未连接的节点之间添加连接
 #[test]
 fn test_neat_add_connection_mutation_simulation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建一个有多个并行路径的网络
     let input = graph.new_input_node(&[2, 1], Some("input")).unwrap();
@@ -692,7 +692,7 @@ fn test_neat_add_connection_mutation_simulation() {
 /// 测试: 验证动态添加后的梯度数值正确性
 #[test]
 fn test_gradient_correctness_after_dynamic_add() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建初始图: y = a + b，loss = MSE(y, target)
     let a = graph
@@ -764,7 +764,7 @@ fn test_gradient_correctness_after_dynamic_add() {
 /// 测试: 验证 forward pass ID 在动态添加后的行为
 #[test]
 fn test_pass_id_behavior_after_dynamic_add() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 1. 创建初始图
     let a = graph

@@ -1,11 +1,11 @@
 use approx::assert_abs_diff_eq;
 
-use crate::nn::Graph;
+use crate::nn::GraphInner;
 use crate::tensor::Tensor;
 
 #[test]
 fn test_softmax_cross_entropy_creation() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 创建 logits 和 labels 输入节点（必须是 2D）
     let logits_id = graph.new_input_node(&[1, 3], Some("logits")).unwrap();
@@ -25,7 +25,7 @@ fn test_softmax_cross_entropy_creation() {
 
 #[test]
 fn test_softmax_cross_entropy_shape_mismatch() {
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let logits_id = graph.new_input_node(&[1, 3], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 4], Some("labels")).unwrap(); // 形状不匹配
@@ -41,7 +41,7 @@ fn test_softmax_cross_entropy_forward_simple() {
     // softmax = [0.09003057, 0.24472848, 0.66524094]
     // loss = 0.40760597
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let logits_id = graph.new_input_node(&[1, 3], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 3], Some("labels")).unwrap();
@@ -73,7 +73,7 @@ fn test_softmax_cross_entropy_forward_uniform() {
     // softmax = [0.25, 0.25, 0.25, 0.25]
     // loss = 1.3862944 (= -ln(0.25))
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let logits_id = graph.new_input_node(&[1, 4], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 4], Some("labels")).unwrap();
@@ -107,7 +107,7 @@ fn test_softmax_cross_entropy_backward_simple() {
     // logits = [1.0, 2.0, 3.0], labels = [0, 0, 1]
     // grad = [0.09003057, 0.24472848, -0.33475903]
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let logits_id = graph.new_parameter_node(&[1, 3], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 3], Some("labels")).unwrap();
@@ -143,7 +143,7 @@ fn test_softmax_cross_entropy_backward_uniform() {
     // logits = [1.0, 1.0, 1.0, 1.0], labels = [0, 1, 0, 0]
     // grad = [0.25, -0.75, 0.25, 0.25]
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let logits_id = graph.new_parameter_node(&[1, 4], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 4], Some("labels")).unwrap();
@@ -181,7 +181,7 @@ fn test_softmax_cross_entropy_10_classes() {
     // loss = 1.2168376
     // grad = [0.0660834, 0.1796333, 0.02431072, -0.7038347, ...]
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     let logits_id = graph.new_parameter_node(&[1, 10], Some("logits")).unwrap();
     let labels_id = graph.new_input_node(&[1, 10], Some("labels")).unwrap();
@@ -231,7 +231,7 @@ fn test_softmax_cross_entropy_with_linear_layer() {
     // 简单网络: input -> linear -> softmax_cross_entropy
     // 验证梯度能正确传播到线性层权重
 
-    let mut graph = Graph::new();
+    let mut graph = GraphInner::new();
 
     // 输入: [1, 2] -> 线性层 -> [1, 3] -> softmax_cross_entropy -> loss
     let input_id = graph.new_input_node(&[1, 2], Some("input")).unwrap();
