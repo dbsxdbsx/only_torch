@@ -14,6 +14,7 @@ mod layer_linear_v2; // Var-based Linear 层（V2 API）
 mod layer_lstm; // LSTM 层便捷函数
 mod layer_max_pool2d; // MaxPool2d 层便捷函数
 mod layer_rnn; // RNN 层便捷函数
+mod module_trait; // Module trait 测试（V2 API）
 mod node_add;
 mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
