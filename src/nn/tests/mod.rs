@@ -5,10 +5,12 @@ mod graph_backward;
 mod graph_basic;
 mod graph_dynamic; // M4: 动态图扩展能力测试（NEAT 友好性）
 mod graph_forward;
+mod graph_handle; // V2 API: GraphHandle 句柄测试
 mod layer_avg_pool2d; // AvgPool2d 层便捷函数
 mod layer_conv2d; // Conv2d 层便捷函数
 mod layer_gru; // GRU 层便捷函数
 mod layer_linear; // Linear 层便捷函数
+mod layer_linear_v2; // Var-based Linear 层（V2 API）
 mod layer_lstm; // LSTM 层便捷函数
 mod layer_max_pool2d; // MaxPool2d 层便捷函数
 mod layer_rnn; // RNN 层便捷函数
@@ -37,3 +39,4 @@ mod optimizer; // 优化器测试模块（包含 basic, sgd, adam, trait_tests �
 mod recurrent_basic; // Phase 1: 循环/记忆机制基础测试
 mod recurrent_bptt; // Phase 2: BPTT 通过时间反向传播测试
 mod save_load; // 参数保存/加载测试
+mod var_ops; // V2 API: Var 算子重载和链式调用测试

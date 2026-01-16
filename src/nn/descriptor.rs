@@ -47,12 +47,14 @@ pub enum NodeTypeDescriptor {
     Parameter,
     State, // 时间状态节点（RNN 隐藏状态等）
     Add,
+    Divide,
     MatMul,
     Multiply,
     ScalarMultiply {
         scalar: f32,
     },
     Sigmoid,
+    Softmax,
     Tanh,
     LeakyReLU {
         alpha: f32,

@@ -38,8 +38,11 @@ pub(crate) struct StepSnapshot {
     pub value: Option<Tensor>,
 }
 
-/// 图的完整定义
-pub struct Graph {
+/// 图的完整定义（核心实现）
+///
+/// 这是计算图的核心实现。在 V2 架构中，用户通常通过 `Graph`（类型别名）使用此结构。
+/// 未来版本中，`Graph` 将变为包装 `Rc<RefCell<GraphInner>>` 的句柄类型。
+pub struct GraphInner {
     name: String,
     nodes: HashMap<NodeId, NodeHandle>,
     /// `正向边：parent_id` -> `child_ids（父节点指向子节点`）
@@ -77,13 +80,277 @@ pub struct Graph {
     bptt_debug: bool,
 }
 
-impl Default for Graph {
+impl Default for GraphInner {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Graph {
+/// 临时类型别名：保持向后兼容
+///
+/// **注意**：在 V2 完全迁移后，此别名将被移除，届时 `Graph` 将成为
+/// `GraphHandle` 的新名称。
+pub type Graph = GraphInner;
+
+// ==================== V2 API: GraphHandle ====================
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use super::var::{Init, Var};
+
+/// Graph 句柄 - V2 用户友好 API
+///
+/// # 设计原则
+/// - 是 `Rc<RefCell<GraphInner>>` 的薄封装
+/// - Clone 语义：多个 GraphHandle 引用同一个 GraphInner
+/// - 创建的 Var 自动持有图引用
+///
+/// # 使用示例
+/// ```ignore
+/// let graph = GraphHandle::new();
+/// let x = graph.input(&images)?;
+/// let y = x.relu().matmul(&w)?;  // Var 上的链式调用
+/// let loss = y.cross_entropy(&target)?;
+/// loss.backward()?;
+/// ```
+///
+/// # 与旧 API 的兼容
+/// ```ignore
+/// // 旧 API（仍然可用）
+/// let mut graph = Graph::new();
+/// let id = graph.new_input_node(&[1, 10], None)?;
+///
+/// // 新 API
+/// let graph = GraphHandle::new();
+/// let x = graph.input(&tensor)?;  // 返回 Var
+/// ```
+#[derive(Clone)]
+pub struct GraphHandle {
+    inner: Rc<RefCell<GraphInner>>,
+}
+
+impl GraphHandle {
+    // ==================== 创建 ====================
+
+    /// 创建新图
+    pub fn new() -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(GraphInner::new())),
+        }
+    }
+
+    /// 创建带种子的图（用于确定性训练）
+    pub fn new_with_seed(seed: u64) -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(GraphInner::new_with_seed(seed))),
+        }
+    }
+
+    /// 从现有 GraphInner 创建句柄
+    pub fn from_inner(inner: GraphInner) -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(inner)),
+        }
+    }
+
+    /// 从现有 Rc 创建句柄（供 Var::get_graph 使用）
+    pub(crate) fn from_rc(inner: Rc<RefCell<GraphInner>>) -> Self {
+        Self { inner }
+    }
+
+    /// 获取内部 GraphInner 的可变引用（用于底层操作）
+    ///
+    /// **注意**：这是一个 escape hatch，正常使用不需要调用此方法。
+    pub fn inner(&self) -> std::cell::Ref<'_, GraphInner> {
+        self.inner.borrow()
+    }
+
+    /// 获取内部 GraphInner 的可变引用（用于底层操作）
+    pub fn inner_mut(&self) -> std::cell::RefMut<'_, GraphInner> {
+        self.inner.borrow_mut()
+    }
+
+    /// 获取内部 Rc（供 Var 使用）
+    pub(crate) fn inner_rc(&self) -> Rc<RefCell<GraphInner>> {
+        Rc::clone(&self.inner)
+    }
+
+    // ==================== 创建变量（返回 Var，自动携带图引用）====================
+
+    /// 创建输入节点并设置数据
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let x = graph.input(&images)?;  // 返回携带图引用的 Var
+    /// let h = x.relu();               // 可直接链式调用
+    /// ```
+    pub fn input(&self, data: &Tensor) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_input_node(data.shape(), None)?;
+        g.set_node_value(node_id, Some(data))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建命名输入节点
+    pub fn input_named(&self, data: &Tensor, name: &str) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_input_node(data.shape(), Some(name))?;
+        g.set_node_value(node_id, Some(data))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建参数节点（带初始化）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let w = graph.parameter(&[784, 128], Init::Kaiming, "fc1.weight")?;
+    /// ```
+    pub fn parameter(&self, shape: &[usize], init: Init, name: &str) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_parameter_node(shape, Some(name))?;
+        let init_data = init.generate(shape);
+        g.set_node_value(node_id, Some(&init_data))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建参数节点（带种子初始化，用于确定性训练）
+    pub fn parameter_seeded(
+        &self,
+        shape: &[usize],
+        name: &str,
+        seed: u64,
+    ) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_parameter_node_seeded(shape, Some(name), seed)?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建零张量
+    pub fn zeros(&self, shape: &[usize]) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_input_node(shape, None)?;
+        g.set_node_value(node_id, Some(&Tensor::zeros(shape)))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建全一张量
+    pub fn ones(&self, shape: &[usize]) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_input_node(shape, None)?;
+        g.set_node_value(node_id, Some(&Tensor::ones(shape)))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建随机张量（标准正态分布 N(0,1)）
+    ///
+    /// 与 PyTorch `torch.randn()` 语义一致。
+    pub fn randn(&self, shape: &[usize]) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_input_node(shape, None)?;
+        let data = Tensor::normal(0.0, 1.0, shape);
+        g.set_node_value(node_id, Some(&data))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建常量张量
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let c = graph.constant(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))?;
+    /// ```
+    pub fn constant(&self, data: &Tensor) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_input_node(data.shape(), None)?;
+        g.set_node_value(node_id, Some(data))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建命名常量张量
+    pub fn constant_named(&self, data: &Tensor, name: &str) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_input_node(data.shape(), Some(name))?;
+        g.set_node_value(node_id, Some(data))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    // ==================== 执行（也可以在 Var 上调用）====================
+
+    /// 前向传播
+    pub fn forward(&self, output: &Var) -> Result<(), GraphError> {
+        self.inner.borrow_mut().forward(output.node_id())
+    }
+
+    /// 反向传播（ensure-forward）
+    pub fn backward(&self, loss: &Var) -> Result<f32, GraphError> {
+        loss.backward()
+    }
+
+    // ==================== 训练控制 ====================
+
+    /// 清零所有参数的梯度
+    pub fn zero_grad(&self) -> Result<(), GraphError> {
+        self.inner.borrow_mut().clear_grad()
+    }
+
+    /// 设置训练模式
+    pub fn train(&self) {
+        self.inner.borrow_mut().set_train_mode();
+    }
+
+    /// 设置评估模式
+    pub fn eval(&self) {
+        self.inner.borrow_mut().set_eval_mode();
+    }
+
+    /// 是否处于评估模式
+    pub fn is_eval(&self) -> bool {
+        self.inner.borrow().is_eval_mode
+    }
+
+    /// 在 no_grad 上下文中执行闭包
+    ///
+    /// 临时切换到评估模式（禁用梯度计算），执行完毕后恢复原模式。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 验证集评估
+    /// let val_loss = graph.no_grad_scope(|g| {
+    ///     x.set_value(&val_images)?;
+    ///     y.set_value(&val_labels)?;
+    ///     loss.forward()?;
+    ///     loss.item()
+    /// })?;
+    /// ```
+    pub fn no_grad_scope<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&Self) -> R,
+    {
+        // 保存当前模式
+        let was_train = !self.is_eval();
+
+        // 切换到评估模式（禁用梯度）
+        self.eval();
+
+        // 执行闭包
+        let result = f(self);
+
+        // 恢复之前的模式
+        if was_train {
+            self.train();
+        }
+
+        result
+    }
+}
+
+impl Default for GraphHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GraphInner {
     #[cfg(test)]
     pub(in crate::nn) fn last_forward_pass_id(&self) -> u64 {
         self.last_forward_pass_id
@@ -1285,10 +1552,12 @@ impl Graph {
             NodeTypeDescriptor::Parameter => "Parameter",
             NodeTypeDescriptor::State => "State",
             NodeTypeDescriptor::Add => "Add",
+            NodeTypeDescriptor::Divide => "Divide",
             NodeTypeDescriptor::MatMul => "MatMul",
             NodeTypeDescriptor::Multiply => "Multiply",
             NodeTypeDescriptor::ScalarMultiply { .. } => "ScalarMultiply",
             NodeTypeDescriptor::Sigmoid => "Sigmoid",
+            NodeTypeDescriptor::Softmax => "Softmax",
             NodeTypeDescriptor::Tanh => "Tanh",
             NodeTypeDescriptor::LeakyReLU { .. } => "LeakyReLU",
             NodeTypeDescriptor::Sign => "Sign",
@@ -1724,10 +1993,12 @@ impl Graph {
             NodeType::Parameter(_) => NodeTypeDescriptor::Parameter,
             NodeType::State(_) => NodeTypeDescriptor::State,
             NodeType::Add(_) => NodeTypeDescriptor::Add,
+            NodeType::Divide(_) => NodeTypeDescriptor::Divide,
             NodeType::MatMul(_) => NodeTypeDescriptor::MatMul,
             NodeType::Multiply(_) => NodeTypeDescriptor::Multiply,
             NodeType::ScalarMultiply(_) => NodeTypeDescriptor::ScalarMultiply { scalar: 0.0 }, // TODO: 获取实际值
             NodeType::Sigmoid(_) => NodeTypeDescriptor::Sigmoid,
+            NodeType::Softmax(_) => NodeTypeDescriptor::Softmax,
             NodeType::Tanh(_) => NodeTypeDescriptor::Tanh,
             NodeType::LeakyReLU(node) => NodeTypeDescriptor::LeakyReLU {
                 alpha: node.alpha() as f32,
@@ -1863,7 +2134,7 @@ impl Graph {
 }
 
 // 图模式相关
-impl Graph {
+impl GraphInner {
     pub const fn set_train_mode(&mut self) {
         self.is_eval_mode = false;
     }
@@ -2865,7 +3136,7 @@ impl Graph {
 }
 
 // 便捷的节点构建方法
-impl Graph {
+impl GraphInner {
     fn add_node_to_list(
         &mut self,
         mut node_handle: NodeHandle,
@@ -3148,6 +3419,23 @@ impl Graph {
         self.add_node_to_list(handle, name, "multiply", &[left_node_id, right_node_id])
     }
 
+    /// 创建逐元素除法节点
+    /// 两个父节点必须形状相同
+    ///
+    /// # 参数
+    /// - `left_node_id`: 被除数节点 ID
+    /// - `right_node_id`: 除数节点 ID
+    /// - `name`: 节点名称（可选）
+    pub fn new_divide_node(
+        &mut self,
+        left_node_id: NodeId,
+        right_node_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_divide(&self.get_nodes(&[left_node_id, right_node_id])?)?;
+        self.add_node_to_list(handle, name, "divide", &[left_node_id, right_node_id])
+    }
+
     /// 创建 Flatten 节点
     ///
     /// 将张量展平为 2D，常用于 CNN 与全连接层之间的转换。
@@ -3262,6 +3550,22 @@ impl Graph {
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_sigmoid(&self.get_nodes(&[parent_id])?)?;
         self.add_node_to_list(handle, name, "sigmoid", &[parent_id])
+    }
+
+    /// 创建 Softmax 激活节点
+    ///
+    /// 对输入张量沿最后一维计算 softmax。
+    ///
+    /// # 参数
+    /// - `parent_id`: 输入节点 ID，形状 [batch, num_classes]
+    /// - `name`: 节点名称（可选）
+    pub fn new_softmax_node(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_softmax(&self.get_nodes(&[parent_id])?)?;
+        self.add_node_to_list(handle, name, "softmax", &[parent_id])
     }
 
     /// 创建 `SoftPlus` 激活节点

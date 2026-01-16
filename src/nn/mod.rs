@@ -10,15 +10,21 @@ mod descriptor;
 mod display;
 mod graph;
 pub mod layer;
+mod module;
 mod nodes;
 pub mod optimizer;
+mod var;
+mod var_ops;
 
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
-pub use graph::{Graph, GraphError, ImageFormat, VisualizationOutput};
-pub use layer::{LinearOutput, linear};
+pub use graph::{Graph, GraphError, GraphHandle, GraphInner, ImageFormat, VisualizationOutput};
+pub use layer::{Linear, LinearOutput, linear};
+pub use module::Module;
 pub use nodes::NodeId;
 pub use nodes::raw_node::Reduction;
+pub use var::{Init, Var};
+pub use var_ops::{VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps};
 
 #[cfg(test)]
 mod tests;

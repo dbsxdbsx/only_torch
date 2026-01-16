@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, AvgPool2d, ChannelBiasAdd, Conv2d, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d,
-    Multiply, Parameter, PerceptionLoss, Reduction, Reshape, ScalarMultiply, Sigmoid, Sign,
-    SoftPlus, SoftmaxCrossEntropy, State, Step, Tanh,
+    Add, AvgPool2d, ChannelBiasAdd, Conv2d, Divide, Flatten, Input, LeakyReLU, MSELoss, MatMul,
+    MaxPool2d, Multiply, Parameter, PerceptionLoss, Reduction, Reshape, ScalarMultiply, Sigmoid,
+    Sign, Softmax, SoftPlus, SoftmaxCrossEntropy, State, Step, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -207,6 +207,10 @@ impl NodeHandle {
         Self::new(Multiply::new(parents)?)
     }
 
+    pub(in crate::nn) fn new_divide(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Divide::new(parents)?)
+    }
+
     pub(in crate::nn) fn new_flatten(
         parents: &[&Self],
         keep_first_dim: bool,
@@ -239,6 +243,10 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_sigmoid(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(Sigmoid::new(parents)?)
+    }
+
+    pub(in crate::nn) fn new_softmax(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Softmax::new(parents)?)
     }
 
     pub(in crate::nn) fn new_leaky_relu(

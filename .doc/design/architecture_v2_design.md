@@ -1,9 +1,10 @@
 # Only-Torch 架构 V2 设计方案
 
-> **状态**：设计稿 (v2.2 - Smart Var 设计，增强版)
+> **状态**：待实现 (v2.3 - 准备开始 Phase 1)
 > **作者**：架构评审
 > **创建日期**：2025-12-30
-> **最后更新**：2026-01-01
+> **最后更新**：2026-01-08
+> **前置条件**：[自动微分统一设计](autodiff_unification_design.md) 已完成（Phase 1-5 全部 ✅）
 > **背景**：基于对 Burn、Candle、Neuronika、tch-rs、neat-python、neat-rs 等框架的深度调研，以及对用户体验和梯度流控制兼容性的深入讨论，重新设计项目架构
 
 ---
@@ -13,6 +14,8 @@
 本文档描述 only_torch 的 **Graph Handle + Smart Var** 架构设计，核心目标是提供 **PyTorch 级用户体验**，同时保持与 NEAT、LSTM/RNN、复杂梯度流控制的完全兼容。
 
 > **注意**：本文档是架构设计的完整参考，无需参考其他设计文档。
+>
+> **黄金法则**：每个 Phase 完成后必须通过全面测试验证，确保无回归后才能进入下一阶段。
 
 ### 核心设计决策
 
@@ -490,6 +493,10 @@ impl Var {
     }
 
     // ==================== 链式激活函数 ====================
+    //
+    // 注意：以下方法在实现时可能会根据 4.2.1.3 节的 Trait 分层策略
+    // 组织到不同的扩展 trait 中（如 VarActivationOps、VarLossOps 等）。
+    // 这里展示的是用户最终使用的 API 形态。
 
     /// ReLU 激活
     pub fn relu(&self) -> Var {
@@ -596,7 +603,7 @@ impl Var {
         Ok(loss_val)
     }
 
-    // ==================== 值访问 ====================
+    // ==================== 值访问与设置 ====================
 
     /// 获取标量值
     pub fn item(&self) -> Result<f32, GraphError> {
@@ -612,6 +619,25 @@ impl Var {
         let tensor = g.get_node_value(self.id)?
             .ok_or_else(|| GraphError::ValueNotComputed(self.id))?;
         Ok(tensor.clone())
+    }
+
+    /// 设置节点的值（用于输入数据喂入）
+    ///
+    /// # 使用场景
+    /// 在训练循环中更新输入节点的数据，而不是每次创建新节点。
+    /// 这是避免图膨胀的关键 API。
+    ///
+    /// # 示例
+    /// ```rust
+    /// // ✅ 正确：创建一次，多次更新
+    /// let x = graph.zeros(&[batch_size, 784])?;
+    /// for batch in dataloader.iter() {
+    ///     x.set_value(&batch)?;  // 只更新数据，不创建节点
+    ///     // ...
+    /// }
+    /// ```
+    pub fn set_value(&self, value: &Tensor) -> Result<(), GraphError> {
+        self.graph.borrow_mut().set_node_value(self.id, Some(value))
     }
 
     /// 获取梯度（克隆）
@@ -754,6 +780,213 @@ graph.backward(&output)?;        // ✅ 继续使用
 ```
 
 **设计理由**：这与 PyTorch 的 tensor 语义一致——tensor 可以独立于 model 存在。
+
+##### 4.2.1.3 Var API 组织策略（Trait 分层设计）
+
+**核心理念**：`Var` 是"节点句柄 + 建图语法糖"，不是节点本身。当你调用 `x.relu()` 时，实际上是在 GraphInner 中创建了一个 ReLU 节点，并返回指向它的新 `Var`。
+
+**问题**：随着节点类型增加（激活函数、损失函数、CNN 算子、形状操作等），如果全部塞进 `impl Var`，会导致：
+- 单文件膨胀（数千行）
+- 难以维护和扩展
+- 不同领域的算子混杂
+
+**解决方案**：采用 **Trait 分层 + 核心集合** 的组织策略。
+
+---
+
+**层级 1：核心能力（直接在 `impl Var` 中）**
+
+这些是 Var 的核心能力，用户最高频使用，必须直接可用（无需 import trait）：
+
+```rust
+impl Var {
+    // ========== 身份与图访问 ==========
+    pub fn node_id(&self) -> NodeId;
+    pub fn same_graph(&self, other: &Var) -> bool;
+    pub fn get_graph(&self) -> Graph;
+
+    // ========== 执行控制 ==========
+    pub fn forward(&self) -> Result<(), GraphError>;
+    pub fn backward(&self) -> Result<f32, GraphError>;
+
+    // ========== 值访问与设置 ==========
+    pub fn value(&self) -> Result<Option<Tensor>, GraphError>;
+    pub fn set_value(&self, value: &Tensor) -> Result<(), GraphError>;
+    pub fn grad(&self) -> Result<Option<Tensor>, GraphError>;
+    pub fn item(&self) -> Result<f32, GraphError>;
+
+    // ========== 梯度流控制 ==========
+    pub fn detach(&self) -> Result<Var, GraphError>;
+    pub fn attach(&self) -> Result<Var, GraphError>;
+}
+```
+
+**层级 2：算子重载（通过 `std::ops` trait）**
+
+算术运算符通过标准库 trait 实现，用户自动可用：
+
+```rust
+// 自动可用，无需 import
+let c = &a + &b;  // Add
+let d = &a - &b;  // Sub
+let e = &a * &b;  // Mul (逐元素)
+let f = &a / &b;  // Div
+let g = -&a;      // Neg
+```
+
+**层级 3：扩展 trait（按功能领域分组）**
+
+长尾算子通过扩展 trait 组织，用户按需 import：
+
+| Trait 名称 | 职责 | 包含的方法 |
+|-----------|------|-----------|
+| `VarActivationOps` | 激活函数 | `relu`, `sigmoid`, `tanh`, `softmax`, `leaky_relu`, `step` |
+| `VarLossOps` | 损失函数 | `mse_loss`, `cross_entropy`, `perception_loss`, `bce_loss` |
+| `VarMatrixOps` | 矩阵运算 | `matmul`, `transpose`, `reshape`, `flatten` |
+| `VarVisionOps` | CNN/视觉 | `conv2d`, `max_pool2d`, `avg_pool2d`, `channel_bias_add` |
+| `VarReductionOps` | 归约操作 | `sum`, `mean`, `max`, `min` |
+
+**使用示例**：
+
+```rust
+use only_torch::nn::var::{Var, VarActivationOps, VarLossOps};
+
+let h = x.relu();                    // VarActivationOps
+let loss = output.mse_loss(&target)?; // VarLossOps
+```
+
+**层级 4：高层 Layer 封装（复杂组件）**
+
+带配置参数、多个节点组合的复杂组件，**不应**暴露为 Var 方法，而应封装为 Layer：
+
+```rust
+// ❌ 不推荐：Var 上直接暴露复杂组件
+let out = x.linear(784, 128, "fc1")?;  // 参数创建 + 乘法 + bias
+
+// ✅ 推荐：使用 Layer 封装
+let fc1 = Linear::new(&graph, 784, 128, true, "fc1")?;
+let out = fc1.forward(x)?;
+```
+
+**理由**：Layer 封装可以：
+- 管理自己的参数（weight, bias）
+- 提供更丰富的配置（dropout, initialization 等）
+- 实现 `Module` trait，支持参数收集和序列化
+
+---
+
+**扩展 Trait 设计模板**
+
+当需要添加新节点到 Var API 时，遵循此模板：
+
+```rust
+/// 激活函数扩展 trait
+pub trait VarActivationOps {
+    /// ReLU 激活函数
+    fn relu(&self) -> Var;
+    /// Sigmoid 激活函数
+    fn sigmoid(&self) -> Var;
+    /// Tanh 激活函数
+    fn tanh(&self) -> Var;
+    // ... 更多激活函数
+}
+
+impl VarActivationOps for Var {
+    fn relu(&self) -> Var {
+        let id = self.graph.borrow_mut()
+            .new_relu_node(self.id, None)
+            .expect("Failed to create ReLU node");
+        Var::new(id, Rc::clone(&self.graph))
+    }
+    // ... 其他实现
+}
+```
+
+**宏生成减少样板**（可选优化）：
+
+```rust
+// 定义宏简化单输入节点的实现
+macro_rules! impl_unary_var_op {
+    ($trait_name:ident, $method:ident, $node_method:ident) => {
+        fn $method(&self) -> Var {
+            let id = self.graph.borrow_mut()
+                .$node_method(self.id, None)
+                .expect(concat!("Failed to create ", stringify!($method), " node"));
+            Var::new(id, Rc::clone(&self.graph))
+        }
+    };
+}
+```
+
+---
+
+**文件组织建议**
+
+```
+src/nn/
+├── var.rs              # Var 结构体 + 核心能力 + 算子重载
+├── var_ops/
+│   ├── mod.rs          # 导出所有扩展 trait
+│   ├── activation.rs   # VarActivationOps
+│   ├── loss.rs         # VarLossOps
+│   ├── matrix.rs       # VarMatrixOps
+│   ├── vision.rs       # VarVisionOps
+│   └── reduction.rs    # VarReductionOps
+└── prelude.rs          # 常用 trait 的便捷导出
+```
+
+**prelude 便捷导出**：
+
+```rust
+// src/nn/prelude.rs
+pub use crate::nn::var::{Var, Init};
+pub use crate::nn::var_ops::{VarActivationOps, VarLossOps, VarMatrixOps};
+pub use crate::nn::graph::GraphHandle;
+// ... 其他常用类型
+
+// 用户代码
+use only_torch::nn::prelude::*;
+```
+
+---
+
+**新节点添加指南**
+
+当需要支持新的节点类型时，按以下决策树选择暴露方式：
+
+```
+新节点需要暴露到 Var API 吗？
+    │
+    ├─ 是基础算子（单/双输入，无复杂配置）？
+    │   ├─ 是 ──► 添加到对应的扩展 trait（如 VarActivationOps）
+    │   └─ 否 ──► 考虑 Layer 封装
+    │
+    ├─ 是算术运算（+、-、*、/）？
+    │   └─ 是 ──► 已通过 std::ops 实现，无需额外操作
+    │
+    └─ 是复杂组件（多节点组合、带参数、需配置）？
+        └─ 是 ──► 封装为 Layer，实现 Module trait
+```
+
+**示例决策**：
+
+| 节点类型 | 决策 | 理由 |
+|---------|------|------|
+| `ReLU` | `VarActivationOps` | 单输入、无配置 |
+| `MSELoss` | `VarLossOps` | 双输入、无配置 |
+| `Conv2d` | `VarVisionOps` 或 `Layer` | 有 stride/padding 参数，推荐 Layer |
+| `Linear` | `Layer` | 需要创建 weight/bias 参数，必须 Layer |
+| `BatchNorm` | `Layer` | 有 running_mean/var 状态，必须 Layer |
+
+---
+
+**Phase 1b 实现策略**
+
+为保持 Phase 1b 的简洁性，当前阶段可以：
+
+1. **暂时将所有方法放在 `impl Var` 中**（快速验证 API 可用性）
+2. **Phase 2+ 重构**：当方法超过 ~20 个时，拆分为扩展 trait
+3. **保持向后兼容**：通过 `prelude.rs` 统一导出，用户代码无感知
 
 #### 4.2.2 Init（参数初始化策略）
 
@@ -1614,6 +1847,32 @@ h.forward()?;              // 显式触发 forward
 let h_tensor = h.value()?; // 获取计算后的 Tensor
 ```
 
+> **⚠️ 警告：图膨胀问题**
+>
+> 在 define-and-run 语义下，每次调用 `graph.input()`、`graph.zeros()` 或任何建图方法都会创建 **新节点**。
+> 图不会自动删除节点——这是持久化计算图的固有特性。
+>
+> **错误示范**（图会无限膨胀）：
+> ```rust
+> for batch in dataloader.iter() {
+>     let x = graph.input(&batch)?;  // ❌ 每次循环创建新节点！
+>     let y = model.forward(x)?;     // ❌ 又创建一堆新节点！
+>     // ... epoch 1: 100 个节点；epoch 2: 200 个节点...
+> }
+> ```
+>
+> **正确做法**（图规模恒定）：
+> ```rust
+> // ✅ 建图阶段：仅执行一次
+> let x = graph.zeros(&[batch_size, 784])?;  // 创建输入节点
+> let y = model.forward(x.clone())?;         // 创建计算子图
+>
+> for batch in dataloader.iter() {
+>     x.set_value(&batch)?;   // ✅ 只更新数据，不创建节点
+>     y.backward()?;          // ✅ 复用已有计算图
+> }
+> ```
+
 #### 4.3.2 标准训练循环（新 PyTorch 风格 API）
 
 ```rust
@@ -1654,18 +1913,27 @@ fn main() -> Result<(), GraphError> {
     let params = model.parameters();
     let mut optimizer = Adam::new(&graph, &params, 0.001);
 
+    // ✅ Plan A（更像 PyTorch 的写法）：建图一次，复用输入节点，用 set_value 喂新数据
+    //
+    // 重要：`graph.input(&tensor)` 每调用一次都会创建一个新的 Input 节点。
+    // 在训练循环里反复调用会导致节点数量持续增长（图不会自动“删除节点”），最终影响内存与速度。
+    //
+    // 因此训练循环推荐：先创建固定形状的输入 Var（例如 zeros），再在循环里 set_value()。
+    let x = graph.zeros(&[/* batch_size */, 784])?;
+    let y = graph.zeros(&[/* batch_size */, 10])?;
+
     // 训练循环
     for epoch in 0..10 {
         for (images, labels) in dataloader.iter() {
             // ✅ PyTorch 风格：清零梯度
             optimizer.zero_grad()?;
 
-            // ✅ 创建输入（返回携带图引用的 Var）
-            let x = graph.input(&images)?;
-            let y = graph.input(&labels)?;
+            // ✅ 喂数据（复用输入节点）
+            x.set_value(&images)?;
+            y.set_value(&labels)?;
 
             // ✅ forward - 直接调用，无需传 graph
-            let output = model.forward(x)?;
+            let output = model.forward(x.clone())?;
 
             // ✅ 计算 loss - 链式调用
             let loss = output.cross_entropy(&y)?;
@@ -1704,10 +1972,14 @@ fn main() -> Result<(), GraphError> {
     let model = MLP::new(&graph)?;
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.001);
 
+    // ✅ Plan A：建图一次 + set_value 喂数据
+    let x = graph.zeros(&[/* batch_size */, 784])?;
+    let y = graph.zeros(&[/* batch_size */, 10])?;
+
     for (images, labels) in dataloader.iter() {
-        let x = graph.input(&images)?;
-        let y = graph.input(&labels)?;
-        let output = model.forward(x)?;
+        x.set_value(&images)?;
+        y.set_value(&labels)?;
+        let output = model.forward(x.clone())?;
         let loss = output.cross_entropy(&y)?;
 
         // ✅ 一行搞定：forward + backward + step + zero_grad
@@ -2681,39 +2953,82 @@ struct MLP {
 
 ## 7. 实现路线图
 
-### Phase 1：Graph Handle + Smart Var（2-3 周）
+> **黄金法则**：每个 Phase 完成后必须通过全面测试验证（包括现有测试无回归 + 新功能测试），确保稳定后才能进入下一阶段。
 
-**目标**：实现核心的 Graph 句柄和 Smart Var 设计
+---
 
-- [ ] **重构 Graph 为 GraphInner**
-  - [ ] 将现有 `Graph` 重命名为 `GraphInner`
-  - [ ] 保留所有现有字段和方法
-  - [ ] 确保 BPTT、循环边、动态拓扑等功能正常
-- [ ] **实现新 Graph（句柄）**
-  - [ ] `Graph` 包装 `Rc<RefCell<GraphInner>>`
-  - [ ] 实现 `new()`, `new_with_seed()`
-  - [ ] 实现 `input()`, `parameter()`, `zeros()`, `ones()`, `randn()`, `constant()`
-  - [ ] 实现 `forward()`, `backward()`, `backward_ex()`
-  - [ ] 实现 `zero_grad()`, `no_grad()`
-  - [ ] 实现 `inner()` 底层访问
-- [ ] **实现 Smart Var**
-  - [ ] `Var` 包含 `NodeId` + `Rc<RefCell<GraphInner>>`
-  - [ ] 实现链式激活函数：`relu()`, `sigmoid()`, `tanh()`, `softmax()`
-  - [ ] 实现链式运算：`matmul()`, `cross_entropy()`, `mse_loss()`
-  - [ ] 实现梯度控制：`detach()`, `attach()`
-  - [ ] 实现执行方法：`forward()`, `backward()`
-  - [ ] 实现值访问：`item()`, `value()`, `grad()`
-- [ ] **实现算子重载**
-  - [ ] `Add`, `Sub`, `Mul`, `Div` for `&Var`
-  - [ ] `Add`, `Sub`, `Mul`, `Div` for `Var`
-  - [ ] `Neg` for `Var` and `&Var`
-- [ ] 实现 `Init` 枚举及初始化逻辑
-- [ ] **验收**：用新 API 重写 `test_xor.rs`，验证算子重载和链式调用
+### 7.1 Phase 1a：GraphInner 重构（1 周）
 
-### Phase 2：Module + Optimizer 增强（2-3 周）
+**目标**：将现有 Graph 重命名为 GraphInner，确保无回归
+
+- [ ] 将 `Graph` 重命名为 `GraphInner`
+- [ ] 保留所有现有字段和方法
+- [ ] 更新所有内部引用
+
+**🧪 Phase 1a 验收门禁**（必须全部通过才能进入 Phase 1b）：
+- [ ] `cargo test` 全部通过（733+ 单元测试）
+- [ ] 关键集成测试验证：
+  - [ ] `cargo test test_mnist_batch` → 90%+ 准确率
+  - [ ] `cargo test test_california_housing_regression` → 70%+ R²
+  - [ ] `cargo test test_mnist_gan` → 正常完成
+
+---
+
+### 7.2 Phase 1b：Graph Handle + Smart Var（2 周）
+
+**目标**：实现新的 Graph 句柄和 Smart Var
+
+- [x] **实现新 Graph（句柄）**
+  - [x] `Graph` 包装 `Rc<RefCell<GraphInner>>`
+  - [x] 实现 `new()`, `new_with_seed()`
+  - [x] 实现 `input()`, `parameter()`, `parameter_seeded()`
+  - [x] 实现 `zeros()`, `ones()`, `randn()`
+  - [x] 实现 `constant()`
+  - [x] 实现 `forward()`, `backward()`
+  - [x] 实现 `zero_grad()`
+  - [x] 实现 `no_grad_scope()`
+  - [x] 实现 `inner()` 底层访问
+- [x] **实现 Smart Var**
+  - [x] `Var` 包含 `NodeId` + `Rc<RefCell<GraphInner>>`
+  - [x] 实现核心方法（详见 §4.2.1.3 层级 1）：
+    - [x] `node_id()`, `same_graph()`
+    - [x] `get_graph()`
+    - [x] `forward()`, `backward()`
+    - [x] `value()`, `set_value()`, `grad()`, `item()`
+    - [x] `detach()`, `attach()`
+  - [x] 实现链式激活函数：`relu()`, `sigmoid()`, `tanh()`, `leaky_relu()`
+  - [x] 实现链式运算：`matmul()`, `cross_entropy()`, `mse_loss()`
+  - [x] 实现额外激活/损失：`step()`, `perception_loss()`
+- [x] **实现算子重载**
+  - [x] `Add`, `Sub`, `Mul` for `&Var`
+  - [x] `Add`, `Sub`, `Mul` for `Var`
+  - [x] `Neg` for `Var` and `&Var`
+- [x] 实现 `Init` 枚举及初始化逻辑
+
+> **📝 API 组织策略**：已按 §4.2.1.3 完成 Trait 分层拆分 ✅
+> - `VarActivationOps`: `relu()`, `sigmoid()`, `tanh()`, `leaky_relu()`, `step()`
+> - `VarLossOps`: `cross_entropy()`, `mse_loss()`, `perception_loss()`
+> - `VarMatrixOps`: `matmul()`
+> - 核心方法保留在 `impl Var` 中
+
+**🧪 Phase 1b 验收门禁**（必须全部通过才能进入 Phase 2）：
+- [x] 新增单元测试：`src/nn/tests/var_ops.rs`（测试算子重载、链式调用、扩展 trait）✅ 16 passed
+- [x] 新增单元测试：`src/nn/tests/graph_handle.rs`（测试 Graph 句柄）✅ 21 passed
+- [x] 用新 API 重写 XOR 测试：`tests/test_v2_api.rs::test_v2_xor_training` ✅ 通过
+- [x] `cargo test` 全部通过 ✅（774+ 单元测试 + 12 集成测试）
+
+---
+
+### 7.3 Phase 2：Module + Optimizer 增强（2-3 周）
 
 **目标**：实现 Module trait 和高层 Layer 封装
 
+- [ ] **新增底层节点**（需先实现才能支持 Var API）
+  - [ ] 实现 `Div` 节点（逐元素除法）
+  - [ ] 实现独立 `Softmax` 节点
+- [ ] **完善 Var 算子重载**
+  - [ ] `Div` for `&Var` and `Var`（依赖底层 Div 节点）
+  - [ ] `Var::softmax()`（依赖底层 Softmax 节点）
 - [ ] 定义 `Module` trait（返回 `Vec<Var>`）
 - [ ] **重构 Optimizer**
   - [ ] Optimizer 持有 `Rc<RefCell<GraphInner>>` 引用
@@ -2724,20 +3039,35 @@ struct MLP {
   - [ ] `Linear::new(graph, in, out, bias, name)` → 返回持有 Var 的 Linear
   - [ ] `Linear::forward(x: Var)` → 不需要 graph 参数
   - [ ] 类似实现 `Conv2d`, `RNN`, `LSTM`, `GRU`
-- [ ] **验收**：用新 API 重写 `test_mnist_linear.rs`
 
-### Phase 3：NEAT MVP（4-6 周）
+**🧪 Phase 2 验收门禁**（必须全部通过才能进入 Phase 3）：
+- [ ] 新增单元测试：`src/nn/tests/module_trait.rs`
+- [ ] 新增单元测试：`src/nn/tests/optimizer_v2.rs`
+- [ ] 用新 API 重写 `test_mnist_linear.rs` 并通过（90%+ 准确率）
+- [ ] 用新 API 重写 `test_mnist_batch.rs` 并通过
+- [ ] `cargo test` 全部通过
+
+---
+
+### 7.4 Phase 3：NEAT MVP（4-6 周）
 
 **目标**：实现最小可用的 NEAT 进化
 
 - [ ] 实现 `NodeGene`, `ConnectionGene`, `Genome`
 - [ ] 实现 `InnovationTracker`
 - [ ] 实现 `Genome::compile() -> Graph`
-- [ ] 实现基础变异
+- [ ] 实现基础变异（add_node, add_connection, mutate_weights）
 - [ ] 实现 `Genome::crossover()` 和 `distance()`
-- [ ] **验收**：XOR 任务进化成功
 
-### Phase 4：NEAT 完整（6-8 周）
+**🧪 Phase 3 验收门禁**（必须全部通过才能进入 Phase 4）：
+- [ ] 新增单元测试：`src/neat/tests/genome.rs`
+- [ ] 新增单元测试：`src/neat/tests/mutation.rs`
+- [ ] 新增集成测试：`tests/test_neat_xor.rs` → XOR 任务进化成功
+- [ ] `cargo test` 全部通过
+
+---
+
+### 7.5 Phase 4：NEAT 完整（6-8 周）
 
 **目标**：实现完整的 NEAT 进化系统
 
@@ -2745,18 +3075,30 @@ struct MLP {
 - [ ] 实现物种划分算法
 - [ ] 支持循环连接
 - [ ] 实现进化可视化
-- [ ] **验收**：Parity 任务进化成功
 
-### Phase 5：Layer-Level NEAT（未来，8-12 周）
+**🧪 Phase 4 验收门禁**（必须全部通过才能进入 Phase 5）：
+- [ ] 新增单元测试：`src/neat/tests/species.rs`
+- [ ] 新增单元测试：`src/neat/tests/population.rs`
+- [ ] 新增集成测试：`tests/test_neat_parity.rs` → Parity 任务进化成功
+- [ ] `cargo test` 全部通过
+
+---
+
+### 7.6 Phase 5：Layer-Level NEAT（未来，8-12 周）
 
 **目标**：实现 Layer 级别的网络架构演化
 
 - [ ] 定义 `LayerGene` 枚举
 - [ ] 实现 `Blueprint`
 - [ ] 实现层级变异和交叉
-- [ ] **验收**：MNIST 架构搜索
 
-### 7.6 测试迁移策略
+**🧪 Phase 5 验收门禁**：
+- [ ] 新增集成测试：`tests/test_neat_mnist_nas.rs` → MNIST 架构搜索
+- [ ] `cargo test` 全部通过
+
+---
+
+### 7.7 测试迁移策略
 
 **目标**：所有现有测试统一使用新的 Graph Handle + Var API。
 
@@ -2893,6 +3235,14 @@ let inner2 = graph.inner().borrow_mut();  // panic!
 | 2025-12-31 | forward() 和 new() 不是 Module trait 方法 | 不同层签名各异，无法统一（参考 Burn） |
 | 2026-01-01 | randn() 使用正态分布 N(0,1) | 与 PyTorch `torch.randn()` 语义一致 |
 | 2026-01-06 | `requires_grad` / 冻结机制列为 Optional TODO | `detach` + optimizer 选择性绑定已覆盖 99% 场景；详见 [梯度流控制设计 - 附录 B](gradient_flow_control_design.md#附录-brequires_grad--冻结机制可选功能) |
+| 2026-01-08 | Phase 1 拆分为 1a（重构）和 1b（新增） | 降低风险，确保每步都有明确验收门禁 |
+| 2026-01-08 | 每个 Phase 必须有验收门禁 | **黄金法则**：测试全过才能进入下一阶段 |
+| 2026-01-09 | Var API 采用 Trait 分层设计 | 核心能力放 `impl Var`，长尾算子按领域分组到扩展 trait（如 `VarActivationOps`），复杂组件封装为 Layer；详见 §4.2.1.3 |
+| 2026-01-09 | `set_value()` 列为 Var 核心 API | 训练循环中复用输入节点喂数据的关键 API，避免图膨胀 |
+| 2026-01-09 | 图膨胀问题明确警告 | 在 §4.3.1 添加显式警告，强调不要在训练循环里反复 `graph.input()` |
+| 2026-01-09 | 放弃 `placeholder()` 方法 | 与 TensorFlow 1.x 语义雷同易混淆，`zeros()` + `set_value()` 已满足需求 |
+| 2026-01-09 | 完成 Var Trait 分层拆分 | 按 §4.2.1.3 策略拆分为 `VarActivationOps`、`VarLossOps`、`VarMatrixOps`，核心方法保留在 `impl Var` |
+| 2026-01-09 | 在 GraphHandle 暴露 `no_grad_scope()` | 提供简洁的无梯度上下文 API，用于验证集评估等场景 |
 
 ### 9.1 关键设计决策详解
 
