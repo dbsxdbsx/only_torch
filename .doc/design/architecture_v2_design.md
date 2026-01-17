@@ -1,9 +1,9 @@
 # Only-Torch 架构 V2 设计方案
 
-> **状态**：待实现 (v2.3 - 准备开始 Phase 1)
+> **状态**：Phase 2 已完成，准备进入 Phase 3 (NEAT)
 > **作者**：架构评审
 > **创建日期**：2025-12-30
-> **最后更新**：2026-01-08
+> **最后更新**：2026-01-17
 > **前置条件**：[自动微分统一设计](autodiff_unification_design.md) 已完成（Phase 1-5 全部 ✅）
 > **背景**：基于对 Burn、Candle、Neuronika、tch-rs、neat-python、neat-rs 等框架的深度调研，以及对用户体验和梯度流控制兼容性的深入讨论，重新设计项目架构
 
@@ -3050,9 +3050,9 @@ struct MLP {
   - [x] `step()` 不再需要 `&mut Graph` 参数 ✅
   - [x] 实现 `minimize(&self, loss: &Var)` ✅
 - [x] **实现高层 Layer**
-  - [x] `Linear::new(graph, in, out, bias, name)` → 返回持有 Var 的 Linear ✅ `src/nn/layer/linear_v2.rs`
+  - [x] `Linear::new(graph, in, out, bias, name)` → 返回持有 Var 的 Linear ✅ `src/nn/layer/linear.rs`
   - [x] `Linear::forward(x: Var)` → 不需要 graph 参数 ✅
-  - [ ] 类似实现 `Conv2d`, `RNN`, `LSTM`, `GRU`（延后到 Phase 2.5）
+  - [x] `Conv2d`, `Rnn`, `Lstm`, `Gru`, `AvgPool2d`, `MaxPool2d` 统一为 PyTorch 风格 API ✅
 
 **🧪 Phase 2 验收门禁**（必须全部通过才能进入 Phase 3）：
 - [x] 新增单元测试：`src/nn/tests/module_trait.rs` ✅ 6 tests

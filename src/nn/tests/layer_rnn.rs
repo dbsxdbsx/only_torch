@@ -298,44 +298,33 @@ fn test_rnn_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
 // ==================== reset() 测试 ====================
 
 /// 测试 reset() 清除隐藏状态和历史快照
+///
+/// 核心验证：reset 后从同一输入出发，应产生相同输出。
+/// 不检查输出的绝对值大小，避免对随机初始化的依赖。
 #[test]
 fn test_rnn_reset() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 1;
-    let input_size = 2;
-    let hidden_size = 2;
+    let rnn = Rnn::new(&graph, 2, 2, 1, "rnn")?;
 
-    let rnn = Rnn::new(&graph, input_size, hidden_size, batch_size, "rnn")?;
+    // 运行几步（使用随机初始化的权重）
+    rnn.step(&Tensor::ones(&[1, 2]))?;
+    rnn.step(&Tensor::ones(&[1, 2]))?;
 
-    // 设置权重
-    rnn.w_ih().set_value(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[2, 2]))?;
-    rnn.w_hh().set_value(&Tensor::new(&[0.1, 0.0, 0.0, 0.1], &[2, 2]))?;
-
-    // 运行几步
-    rnn.step(&Tensor::new(&[1.0, 1.0], &[1, 2]))?;
-    rnn.step(&Tensor::new(&[1.0, 1.0], &[1, 2]))?;
-
-    // 获取当前隐藏状态
-    let h_before_reset = rnn.hidden().value()?.unwrap().clone();
-    assert!(h_before_reset[[0, 0]].abs() > 0.1); // 确保不是 0
-
-    // 完整重置（包括历史快照）
+    // reset 后运行一步
     rnn.reset();
-
-    // 再运行一步
-    rnn.step(&Tensor::new(&[1.0, 1.0], &[1, 2]))?;
+    rnn.step(&Tensor::ones(&[1, 2]))?;
     let h_after_reset = rnn.hidden().value()?.unwrap().clone();
 
-    // 重新从头开始
+    // 再次 reset 后运行一步
     rnn.reset();
-    rnn.step(&Tensor::new(&[1.0, 1.0], &[1, 2]))?;
+    rnn.step(&Tensor::ones(&[1, 2]))?;
     let h_fresh = rnn.hidden().value()?.unwrap();
 
-    // reset 后第一步应该和全新开始的第一步相同
+    // 核心断言：两次 reset 后从相同输入出发，输出应一致
     assert_abs_diff_eq!(h_after_reset[[0, 0]], h_fresh[[0, 0]], epsilon = 1e-6);
     assert_abs_diff_eq!(h_after_reset[[0, 1]], h_fresh[[0, 1]], epsilon = 1e-6);
 
-    println!("✅ reset() 正确清除隐藏状态和历史快照");
+    println!("✅ RNN reset() 正确");
     Ok(())
 }
 

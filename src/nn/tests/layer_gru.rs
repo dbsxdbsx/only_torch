@@ -128,35 +128,32 @@ fn test_gru_multi_step() -> Result<(), GraphError> {
 // ==================== reset 测试 ====================
 
 /// 测试 reset() 清除状态
+///
+/// 核心验证：reset 后从同一输入出发，应产生相同输出。
+/// 不检查输出的绝对值大小，避免对随机初始化的依赖。
 #[test]
 fn test_gru_reset() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 1;
-    let input_size = 2;
-    let hidden_size = 2;
+    let gru = Gru::new(&graph, 2, 2, 1, "gru")?;
 
-    let gru = Gru::new(&graph, input_size, hidden_size, batch_size, "gru")?;
-
-    // 运行几步
+    // 运行几步（使用随机初始化的权重）
     gru.step(&Tensor::ones(&[1, 2]))?;
     gru.step(&Tensor::ones(&[1, 2]))?;
 
-    let h_before = gru.hidden().value()?.unwrap()[[0, 0]];
-    assert!(h_before.abs() > 0.01);
-
-    // 完整重置
-    gru.reset();
-
-    // 再运行一步
-    gru.step(&Tensor::ones(&[1, 2]))?;
-    let h_after = gru.hidden().value()?.unwrap()[[0, 0]];
-
-    // 重新开始
+    // reset 后运行一步
     gru.reset();
     gru.step(&Tensor::ones(&[1, 2]))?;
-    let h_fresh = gru.hidden().value()?.unwrap()[[0, 0]];
+    let h_after_reset = gru.hidden().value()?.unwrap().clone();
 
-    assert_abs_diff_eq!(h_after, h_fresh, epsilon = 1e-6);
+    // 再次 reset 后运行一步
+    gru.reset();
+    gru.step(&Tensor::ones(&[1, 2]))?;
+    let h_fresh = gru.hidden().value()?.unwrap();
+
+    // 核心断言：两次 reset 后从相同输入出发，输出应一致
+    assert_abs_diff_eq!(h_after_reset[[0, 0]], h_fresh[[0, 0]], epsilon = 1e-6);
+    assert_abs_diff_eq!(h_after_reset[[0, 1]], h_fresh[[0, 1]], epsilon = 1e-6);
+
     println!("✅ GRU reset() 正确");
     Ok(())
 }

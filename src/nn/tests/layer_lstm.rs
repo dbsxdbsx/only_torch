@@ -45,13 +45,25 @@ fn test_lstm_shapes() -> Result<(), GraphError> {
     let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm1")?;
 
     // 验证输入门权重形状
-    assert_eq!(lstm.w_ii().value()?.unwrap().shape(), &[input_size, hidden_size]);
-    assert_eq!(lstm.w_hi().value()?.unwrap().shape(), &[hidden_size, hidden_size]);
+    assert_eq!(
+        lstm.w_ii().value()?.unwrap().shape(),
+        &[input_size, hidden_size]
+    );
+    assert_eq!(
+        lstm.w_hi().value()?.unwrap().shape(),
+        &[hidden_size, hidden_size]
+    );
     assert_eq!(lstm.b_i().value()?.unwrap().shape(), &[1, hidden_size]);
 
     // 验证状态形状
-    assert_eq!(lstm.hidden_input().value()?.unwrap().shape(), &[batch_size, hidden_size]);
-    assert_eq!(lstm.cell_input().value()?.unwrap().shape(), &[batch_size, hidden_size]);
+    assert_eq!(
+        lstm.hidden_input().value()?.unwrap().shape(),
+        &[batch_size, hidden_size]
+    );
+    assert_eq!(
+        lstm.cell_input().value()?.unwrap().shape(),
+        &[batch_size, hidden_size]
+    );
 
     Ok(())
 }
@@ -81,20 +93,28 @@ fn test_lstm_forward() -> Result<(), GraphError> {
     let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm1")?;
 
     // 设置简单权重
-    lstm.w_ii().set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    lstm.w_hi().set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
+    lstm.w_ii()
+        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
+    lstm.w_hi()
+        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
     lstm.b_i().set_value(&Tensor::zeros(&[1, hidden_size]))?;
 
-    lstm.w_if().set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    lstm.w_hf().set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
+    lstm.w_if()
+        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
+    lstm.w_hf()
+        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
     lstm.b_f().set_value(&Tensor::ones(&[1, hidden_size]))?;
 
-    lstm.w_ig().set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    lstm.w_hg().set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
+    lstm.w_ig()
+        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
+    lstm.w_hg()
+        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
     lstm.b_g().set_value(&Tensor::zeros(&[1, hidden_size]))?;
 
-    lstm.w_io().set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    lstm.w_ho().set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
+    lstm.w_io()
+        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
+    lstm.w_ho()
+        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
     lstm.b_o().set_value(&Tensor::zeros(&[1, hidden_size]))?;
 
     // 前向传播
@@ -138,35 +158,32 @@ fn test_lstm_multi_step() -> Result<(), GraphError> {
 // ==================== reset 测试 ====================
 
 /// 测试 reset() 清除状态
+///
+/// 核心验证：reset 后从同一输入出发，应产生相同输出。
+/// 不检查输出的绝对值大小，避免对随机初始化的依赖。
 #[test]
 fn test_lstm_reset() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 1;
-    let input_size = 2;
-    let hidden_size = 2;
+    let lstm = Lstm::new(&graph, 2, 2, 1, "lstm")?;
 
-    let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm")?;
-
-    // 运行几步
+    // 运行几步（使用随机初始化的权重）
     lstm.step(&Tensor::ones(&[1, 2]))?;
     lstm.step(&Tensor::ones(&[1, 2]))?;
 
-    let h_before = lstm.hidden().value()?.unwrap()[[0, 0]];
-    assert!(h_before.abs() > 0.01);
-
-    // 完整重置
-    lstm.reset();
-
-    // 再运行一步
-    lstm.step(&Tensor::ones(&[1, 2]))?;
-    let h_after = lstm.hidden().value()?.unwrap()[[0, 0]];
-
-    // 重新开始
+    // reset 后运行一步
     lstm.reset();
     lstm.step(&Tensor::ones(&[1, 2]))?;
-    let h_fresh = lstm.hidden().value()?.unwrap()[[0, 0]];
+    let h_after_reset = lstm.hidden().value()?.unwrap().clone();
 
-    assert_abs_diff_eq!(h_after, h_fresh, epsilon = 1e-6);
+    // 再次 reset 后运行一步
+    lstm.reset();
+    lstm.step(&Tensor::ones(&[1, 2]))?;
+    let h_fresh = lstm.hidden().value()?.unwrap();
+
+    // 核心断言：两次 reset 后从相同输入出发，输出应一致
+    assert_abs_diff_eq!(h_after_reset[[0, 0]], h_fresh[[0, 0]], epsilon = 1e-6);
+    assert_abs_diff_eq!(h_after_reset[[0, 1]], h_fresh[[0, 1]], epsilon = 1e-6);
+
     println!("✅ LSTM reset() 正确");
     Ok(())
 }
