@@ -2,12 +2,23 @@
  * @Author       : 老董
  * @Date         : 2025-07-24 16:30:00
  * @LastEditors  : 老董
- * @LastEditTime : 2025-12-21 16:30:00
- * @Description  : 批量ADALINE示例测试，参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch03/adaline_batch.py
+ * @LastEditTime : 2026-01-17 16:30:00
+ * @Description  : 批量 ADALINE 示例测试
+ *
+ * ADALINE (Adaptive Linear Neuron) 是一个简单的线性分类器：
+ *   output = sign(x @ w + b)
+ *
+ * 本测试展示 PyTorch 风格的高层 API 使用方式：
+ * - 使用 Linear 层封装权重和偏置
+ * - 使用 Module trait 获取参数
+ * - 无需手动处理 bias 广播
+ *
+ * 参考自：https://github.com/zc911/MatrixSlow/blob/master/example/ch03/adaline_batch.py
  */
 
+use only_torch::nn::layer::Linear;
 use only_torch::nn::optimizer::{Adam, Optimizer};
-use only_torch::nn::{Graph, GraphError};
+use only_torch::nn::{Graph, GraphError, Module, VarActivationOps, VarLossOps};
 use only_torch::tensor::Tensor;
 use only_torch::{tensor_slice, tensor_where};
 
@@ -15,6 +26,7 @@ use only_torch::{tensor_slice, tensor_where};
 fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
     let start_time = std::time::Instant::now();
 
+    // ==================== 数据准备 ====================
     // 构造训练数据（使用固定种子确保测试可重复性）
     let seed_base: u64 = 42;
     let male_heights = Tensor::normal_seeded(171.0, 6.0, &[500], seed_base);
@@ -39,52 +51,43 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
         true,
     );
     train_set.permute_mut(&[1, 0]);
-    train_set.shuffle_mut_seeded(Some(0), seed_base + 6); // 使用固定种子打乱样本顺序
+    train_set.shuffle_mut_seeded(Some(0), seed_base + 6);
     println!("训练集形状: {:?}", train_set.shape());
 
-    // 批大小
+    // ==================== 模型定义 ====================
     let batch_size = 10;
     println!("批大小: {batch_size}");
 
     // 创建计算图
-    let mut graph = Graph::new();
+    let graph = Graph::new();
 
-    // batch_size x 3矩阵，每行保存一个样本，整个节点保存一个mini batch的样本
-    let x = graph.new_input_node(&[batch_size, 3], Some("X"))?;
+    // 输入占位符：[batch_size, 3] 特征（身高、体重、体脂率）
+    let x = graph.zeros(&[batch_size, 3])?;
 
-    // 保存一个mini batch的样本的类别标签
-    let label = graph.new_input_node(&[batch_size, 1], Some("label"))?;
+    // 标签占位符：[batch_size, 1]
+    let label = graph.zeros(&[batch_size, 1])?;
 
-    // 权值向量，3x1矩阵（使用固定种子）
-    let w = graph.new_parameter_node_seeded(&[3, 1], Some("w"), seed_base + 7)?;
+    // ADALINE 模型：单层 Linear (3 -> 1)
+    // Linear 层内部自动处理 bias 广播，无需手动操作
+    let fc = Linear::new_seeded(&graph, 3, 1, true, "fc", seed_base + 7)?;
 
-    // 阈值，1x1矩阵（使用固定种子）
-    let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), seed_base + 8)?;
+    // 前向传播：output = x @ w + b
+    let output = fc.forward(&x);
 
-    // 对一个mini batch的样本计算输出
-    let xw = graph.new_mat_mul_node(x, w, Some("xw"))?;
+    // 预测：sign(output) 输出 {-1, 0, 1}
+    let predict = output.sign();
 
-    // 创建全1向量节点，用于偏置广播
-    let ones = graph.new_input_node(&[batch_size, 1], Some("ones"))?;
+    // ==================== 损失函数 ====================
+    // Perception Loss: max(0, -label * output)
+    let label_output = &label * &output;
+    let loss = label_output.perception_loss();
 
-    // 使用ScalarMultiply节点实现偏置广播：bias = b * ones
-    let bias_broadcasted = graph.new_scalar_multiply_node(b, ones, Some("bias_broadcasted"))?;
+    // ==================== 优化器 ====================
+    let learning_rate = 0.001;
 
-    // 输出 = xw + bias_broadcasted
-    let output = graph.new_add_node(&[xw, bias_broadcasted], Some("output"))?;
-    let predict = graph.new_sign_node(output, None)?; // Sign 直接输出 {-1, 0, 1}
-
-    // 一个mini batch的样本的损失函数
-    // 使用Multiply节点计算逐元素乘法：label * output
-    let label_output = graph.new_multiply_node(label, output, Some("label_output"))?;
-    // PerceptionLoss 已经输出标量 [1,1]（对整个 batch 自动取平均）
-    let loss = graph.new_perception_loss_node(label_output, Some("loss"))?;
-
-    // 学习率
-    let learning_rate = 0.0001;
-
-    // 创建Adam优化器
-    let mut optimizer = Adam::new_default(&graph, learning_rate)?;
+    // 使用 Module trait 获取参数（推荐方式）
+    let params = fc.parameters();
+    let mut optimizer = Adam::new(&graph, &params, learning_rate);
 
     // 测试参数
     let max_epochs = 100;
@@ -92,11 +95,6 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
     let consecutive_success_required = 3;
     let mut consecutive_success_count = 0;
     let mut test_passed = false;
-
-    // 设置全1向量的值（用于偏置广播）
-    let ones_data = vec![1.0; batch_size];
-    let ones_tensor = Tensor::new(&ones_data, &[batch_size, 1]);
-    graph.set_node_value(ones, Some(&ones_tensor))?;
 
     // 训练执行最多max_epochs个epoch
     for epoch in 0..max_epochs {
@@ -130,14 +128,11 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
             let labels = Tensor::new(&labels_data, &[batch_size, 1]);
 
             // 将特征赋给X节点，将标签赋给label节点
-            graph.set_node_value(x, Some(&features))?;
-            graph.set_node_value(label, Some(&labels))?;
+            x.set_value(&features)?;
+            label.set_value(&labels)?;
 
-            // 使用新 API 执行一步训练（PyTorch 风格）
-            graph.zero_grad()?;
-            graph.forward(loss)?;
-            graph.backward(loss)?;
-            optimizer.step(&mut graph)?;
+            // 使用 minimize 一步完成训练
+            optimizer.minimize(&loss)?;
         }
 
         // 每个epoch结束后评价模型的正确率
@@ -164,14 +159,11 @@ fn test_adaline_batch_with_optimizer() -> Result<(), GraphError> {
                 }
             }
             let features = Tensor::new(&features_data, &[batch_size, 3]);
-            graph.set_node_value(x, Some(&features))?;
-
-            // 前向传播计算output（bias_broadcasted通过ScalarMultiply节点自动计算）
-            graph.forward(output)?;
+            x.set_value(&features)?;
 
             // 在模型的predict节点上执行前向传播
-            graph.forward(predict)?;
-            let predict_value = graph.get_node_value(predict)?.unwrap();
+            predict.forward()?;
+            let predict_value = predict.value()?.unwrap();
 
             // 收集当前批次的预测结果
             for i in 0..batch_size {

@@ -7,7 +7,7 @@
  */
 
 use only_torch::nn::optimizer::{Optimizer, SGD};
-use only_torch::nn::{Graph, GraphError};
+use only_torch::nn::{Graph, GraphError, VarActivationOps, VarLossOps, VarMatrixOps};
 use only_torch::tensor::Tensor;
 use only_torch::{tensor_slice, tensor_where};
 
@@ -43,35 +43,28 @@ fn test_optimizer_example() -> Result<(), GraphError> {
     println!("训练集形状: {:?}", train_set.shape());
 
     // 创建计算图
-    // 方式1: Granular API（当前方式，精确控制每个参数的种子）
-    let mut graph = Graph::new();
-    // 方式2: Graph级别种子（更简洁，推荐用于一般训练场景）
-    // let mut graph = Graph::new_with_seed(seed_base);
+    let graph = Graph::new();
 
     // 构造计算图：输入向量，是一个3x1矩阵，不需要初始化，不参与训练
-    let x = graph.new_input_node(&[3, 1], Some("x"))?;
+    let x = graph.zeros(&[3, 1])?;
 
     // 类别标签，1男，-1女
-    let label = graph.new_input_node(&[1, 1], Some("label"))?;
+    let label = graph.zeros(&[1, 1])?;
 
     // 权重向量，是一个1x3矩阵，需要初始化，参与训练
-    // Granular: 使用显式种子
-    let w = graph.new_parameter_node_seeded(&[1, 3], Some("w"), seed_base + 7)?;
-    // Graph种子: let w = graph.new_parameter_node(&[1, 3], Some("w"))?;
+    let w = graph.parameter_seeded(&[1, 3], "w", seed_base + 7)?;
 
     // 阈值，是一个1x1矩阵，需要初始化，参与训练
-    // Granular: 使用显式种子
-    let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), seed_base + 8)?;
-    // Graph种子: let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
+    let b = graph.parameter_seeded(&[1, 1], "b", seed_base + 8)?;
 
     // ADALINE的预测输出
-    let wx = graph.new_mat_mul_node(w, x, None)?;
-    let output = graph.new_add_node(&[wx, b], None)?;
-    let predict = graph.new_step_node(output, None)?;
+    let wx = w.matmul(&x)?;
+    let output = &wx + &b;
+    let predict = output.step();
 
     // 损失函数：使用MatMul节点连接label和output，保持梯度链完整
-    let loss_input = graph.new_mat_mul_node(label, output, Some("loss_input"))?;
-    let loss = graph.new_perception_loss_node(loss_input, Some("loss"))?;
+    let loss_input = label.matmul(&output)?;
+    let loss = loss_input.perception_loss();
 
     // 学习率（与Python版本一致）
     // 注意：新 API 不做梯度平均，所以除以 mini_batch_size 来保持等效
@@ -80,7 +73,8 @@ fn test_optimizer_example() -> Result<(), GraphError> {
     let scaled_lr = learning_rate / mini_batch_size as f32;
 
     // 创建SGD优化器
-    let mut optimizer = SGD::new(&graph, scaled_lr)?;
+    let params = vec![w.clone(), b.clone()];
+    let mut optimizer = SGD::new(&graph, &params, scaled_lr);
 
     // mini batch参数
     let mut cur_batch_size = 0;
@@ -103,12 +97,11 @@ fn test_optimizer_example() -> Result<(), GraphError> {
             let l = tensor_slice!(train_set, i, 3);
 
             // 将特征赋给x节点，将标签赋给label节点
-            graph.set_node_value(x, Some(&features))?;
-            graph.set_node_value(label, Some(&l))?;
+            x.set_value(&features)?;
+            label.set_value(&l)?;
 
             // 前向传播和反向传播（梯度会累积）
-            graph.forward(loss)?;
-            graph.backward(loss)?;
+            loss.backward()?;
             cur_batch_size += 1;
 
             // 当积累到一个 mini batch 的时候，完成一次参数更新
@@ -117,25 +110,25 @@ fn test_optimizer_example() -> Result<(), GraphError> {
                 if epoch == 0 && i < mini_batch_size {
                     println!(
                         "更新前 w: {:?}",
-                        graph.get_node_value(w)?.unwrap().get(&[0, 0])
+                        w.value()?.unwrap().get(&[0, 0])
                     );
                     println!(
                         "更新前 b: {:?}",
-                        graph.get_node_value(b)?.unwrap().get(&[0, 0])
+                        b.value()?.unwrap().get(&[0, 0])
                     );
                 }
 
-                optimizer.step(&mut graph)?;
+                optimizer.step()?;
                 graph.zero_grad()?;
 
                 if epoch == 0 && i < mini_batch_size {
                     println!(
                         "更新后 w: {:?}",
-                        graph.get_node_value(w)?.unwrap().get(&[0, 0])
+                        w.value()?.unwrap().get(&[0, 0])
                     );
                     println!(
                         "更新后 b: {:?}",
-                        graph.get_node_value(b)?.unwrap().get(&[0, 0])
+                        b.value()?.unwrap().get(&[0, 0])
                     );
                 }
 
@@ -145,7 +138,7 @@ fn test_optimizer_example() -> Result<(), GraphError> {
 
         // 处理最后不完整的 batch
         if cur_batch_size > 0 {
-            optimizer.step(&mut graph)?;
+            optimizer.step()?;
             graph.zero_grad()?;
             cur_batch_size = 0;
         }
@@ -156,11 +149,11 @@ fn test_optimizer_example() -> Result<(), GraphError> {
         // 遍历训练集，计算当前模型对每个样本的预测值
         for i in 0..train_set.shape()[0] {
             let features = tensor_slice!(train_set, i, 0..3).transpose();
-            graph.set_node_value(x, Some(&features))?;
+            x.set_value(&features)?;
 
             // 在模型的predict节点上执行前向传播
-            graph.forward(predict)?;
-            let predict_value = graph.get_node_value(predict)?.unwrap();
+            predict.forward()?;
+            let predict_value = predict.value()?.unwrap();
             pred_vec.push(predict_value.get(&[0, 0]).get_data_number().unwrap());
         }
 

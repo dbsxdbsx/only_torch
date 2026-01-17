@@ -417,9 +417,7 @@ impl Neg for &Var {
     fn neg(self) -> Var {
         let mut g = self.graph.borrow_mut();
         // 创建 -1 常量
-        let neg_one_id = g
-            .new_input_node(&[1, 1], None)
-            .expect("创建 -1 节点失败");
+        let neg_one_id = g.new_input_node(&[1, 1], None).expect("创建 -1 节点失败");
         g.set_node_value(neg_one_id, Some(&Tensor::new(&[-1.0], &[1, 1])))
             .expect("设置 -1 值失败");
         // -self = -1 * self

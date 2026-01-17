@@ -6,7 +6,7 @@
  * @LastEditors  : 老董
  * @LastEditTime : 2025-12-21
  */
-use only_torch::nn::{Graph, GraphError};
+use only_torch::nn::{Graph, GraphError, VarActivationOps, VarLossOps, VarMatrixOps};
 use only_torch::tensor::Tensor;
 
 /// XOR问题训练数据
@@ -38,39 +38,39 @@ fn test_xor() -> Result<(), GraphError> {
     let seed_base: u64 = 42;
 
     // 创建计算图
-    let mut graph = Graph::new();
+    let graph = Graph::new();
 
     // ========== 网络结构 ==========
     // 输入层: 2个特征
-    let x = graph.new_input_node(&[2, 1], Some("x"))?;
+    let x = graph.zeros(&[2, 1])?;
     // 标签: 1x1
-    let label = graph.new_input_node(&[1, 1], Some("label"))?;
+    let label = graph.zeros(&[1, 1])?;
 
     // 隐藏层权重和偏置 (使用固定种子初始化)
     // 隐藏层有4个神经元，输入2个特征，所以权重形状为[4, 2]
-    let w1 = graph.new_parameter_node_seeded(&[4, 2], Some("w1"), seed_base)?;
-    let b1 = graph.new_parameter_node_seeded(&[4, 1], Some("b1"), seed_base + 1)?;
+    let w1 = graph.parameter_seeded(&[4, 2], "w1", seed_base)?;
+    let b1 = graph.parameter_seeded(&[4, 1], "b1", seed_base + 1)?;
 
     // 输出层权重和偏置
     // 输出1个值，隐藏层4个神经元，所以权重形状为[1, 4]
-    let w2 = graph.new_parameter_node_seeded(&[1, 4], Some("w2"), seed_base + 2)?;
-    let b2 = graph.new_parameter_node_seeded(&[1, 1], Some("b2"), seed_base + 3)?;
+    let w2 = graph.parameter_seeded(&[1, 4], "w2", seed_base + 2)?;
+    let b2 = graph.parameter_seeded(&[1, 1], "b2", seed_base + 3)?;
 
     // 隐藏层: h = tanh(w1 * x + b1)
-    let wx1 = graph.new_mat_mul_node(w1, x, None)?;
-    let z1 = graph.new_add_node(&[wx1, b1], None)?;
-    let h = graph.new_tanh_node(z1, Some("hidden"))?;
+    let wx1 = w1.matmul(&x)?;
+    let z1 = &wx1 + &b1;
+    let h = z1.tanh();
 
     // 输出层: output = w2 * h + b2
-    let wx2 = graph.new_mat_mul_node(w2, h, None)?;
-    let output = graph.new_add_node(&[wx2, b2], Some("output"))?;
+    let wx2 = w2.matmul(&h)?;
+    let output = &wx2 + &b2;
 
     // 预测: step函数将输出转换为0/1
-    let predict = graph.new_step_node(output, Some("predict"))?;
+    let predict = output.step();
 
     // 损失函数: PerceptionLoss(label * output)
-    let loss_input = graph.new_mat_mul_node(label, output, Some("loss_input"))?;
-    let loss = graph.new_perception_loss_node(loss_input, Some("loss"))?;
+    let loss_input = label.matmul(&output)?;
+    let loss = loss_input.perception_loss();
 
     // 获取训练数据
     let (inputs, labels) = get_xor_data();
@@ -90,35 +90,32 @@ fn test_xor() -> Result<(), GraphError> {
         // 遍历所有4个XOR样本
         for (input, lbl) in inputs.iter().zip(labels.iter()) {
             // 设置输入和标签
-            graph.set_node_value(x, Some(input))?;
-            graph.set_node_value(label, Some(lbl))?;
+            x.set_value(input)?;
+            label.set_value(lbl)?;
 
-            // 前向传播
-            graph.forward(loss)?;
-
-            // 反向传播
-            graph.backward(loss)?;
+            // 前向传播 + 反向传播
+            loss.backward()?;
 
             // 更新参数
             // w1
-            let w1_value = graph.get_node_value(w1)?.unwrap();
-            let w1_grad = graph.get_node_grad(w1)?.unwrap();
-            graph.set_node_value(w1, Some(&(w1_value - learning_rate * w1_grad)))?;
+            let w1_value = w1.value()?.unwrap();
+            let w1_grad = w1.grad()?.unwrap();
+            w1.set_value(&(&w1_value - learning_rate * &w1_grad))?;
 
             // b1
-            let b1_value = graph.get_node_value(b1)?.unwrap();
-            let b1_grad = graph.get_node_grad(b1)?.unwrap();
-            graph.set_node_value(b1, Some(&(b1_value - learning_rate * b1_grad)))?;
+            let b1_value = b1.value()?.unwrap();
+            let b1_grad = b1.grad()?.unwrap();
+            b1.set_value(&(&b1_value - learning_rate * &b1_grad))?;
 
             // w2
-            let w2_value = graph.get_node_value(w2)?.unwrap();
-            let w2_grad = graph.get_node_grad(w2)?.unwrap();
-            graph.set_node_value(w2, Some(&(w2_value - learning_rate * w2_grad)))?;
+            let w2_value = w2.value()?.unwrap();
+            let w2_grad = w2.grad()?.unwrap();
+            w2.set_value(&(&w2_value - learning_rate * &w2_grad))?;
 
             // b2
-            let b2_value = graph.get_node_value(b2)?.unwrap();
-            let b2_grad = graph.get_node_grad(b2)?.unwrap();
-            graph.set_node_value(b2, Some(&(b2_value - learning_rate * b2_grad)))?;
+            let b2_value = b2.value()?.unwrap();
+            let b2_grad = b2.grad()?.unwrap();
+            b2.set_value(&(&b2_value - learning_rate * &b2_grad))?;
 
             // 清除梯度
             graph.zero_grad()?;
@@ -127,10 +124,10 @@ fn test_xor() -> Result<(), GraphError> {
         // 评估准确率
         let mut correct = 0;
         for (input, lbl) in inputs.iter().zip(labels.iter()) {
-            graph.set_node_value(x, Some(input))?;
-            graph.forward(predict)?;
+            x.set_value(input)?;
+            predict.forward()?;
 
-            let pred_value = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
+            let pred_value = predict.value()?.unwrap().get(&[0, 0]);
             let pred = pred_value.get_data_number().unwrap();
             // 将预测的0/1转换为-1/+1
             let pred_label = pred * 2.0 - 1.0;
@@ -177,12 +174,12 @@ fn test_xor() -> Result<(), GraphError> {
     // 打印最终的预测结果
     println!("\n=== 最终预测结果 ===");
     for (input, lbl) in inputs.iter().zip(labels.iter()) {
-        graph.set_node_value(x, Some(input))?;
-        graph.forward(output)?;
-        graph.forward(predict)?;
+        x.set_value(input)?;
+        output.forward()?;
+        predict.forward()?;
 
-        let raw_output = graph.get_node_value(output)?.unwrap().get(&[0, 0]);
-        let pred_value = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
+        let raw_output = output.value()?.unwrap().get(&[0, 0]);
+        let pred_value = predict.value()?.unwrap().get(&[0, 0]);
 
         let x1 = input.get(&[0, 0]).get_data_number().unwrap() as i32;
         let x2 = input.get(&[1, 0]).get_data_number().unwrap() as i32;

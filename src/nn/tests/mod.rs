@@ -9,8 +9,7 @@ mod graph_handle; // Graph 高层 API 测试（PyTorch 风格）
 mod layer_avg_pool2d; // AvgPool2d 层便捷函数
 mod layer_conv2d; // Conv2d 层便捷函数
 mod layer_gru; // GRU 层便捷函数
-mod layer_linear; // Linear 层便捷函数
-mod layer_linear_v2; // Var-based Linear 层（V2 API）
+mod layer_linear; // Linear 层测试（包含 linear() 遗留 API 和 Linear 结构体推荐 API）
 mod layer_lstm; // LSTM 层便捷函数
 mod layer_max_pool2d; // MaxPool2d 层便捷函数
 mod layer_rnn; // RNN 层便捷函数

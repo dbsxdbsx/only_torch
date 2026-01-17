@@ -20,8 +20,9 @@
  *   序列 [1,1,0,0,0] → 1的个数=2 → 偶数 → 输出接近 0
  */
 
-use only_torch::nn::{Graph, GraphError, NodeId};
+use only_torch::nn::{Graph, GraphError, NodeId, Var};
 use only_torch::tensor::Tensor;
+use std::rc::Rc;
 
 /// 生成奇偶性检测数据
 ///
@@ -76,83 +77,121 @@ fn generate_parity_data(
 /// 返回: (graph, `input_node`, `output_node`, `loss_node`, `target_node`, params)
 fn create_parity_rnn(
     seed: u64,
-) -> Result<(Graph, NodeId, NodeId, NodeId, NodeId, Vec<NodeId>), GraphError> {
-    let mut graph = Graph::new_with_seed(seed);
-    graph.set_train_mode();
+) -> Result<(Graph, Var, Var, Var, Var, Vec<Var>), GraphError> {
+    let graph = Graph::new_with_seed(seed);
+    graph.train();
 
     let hidden_size = 4; // 增加隐藏层大小以提高表达能力
 
     // 输入节点：单个时间步的输入（标量）
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.zeros(&[1, 1])?;
 
-    // 循环状态节点：上一时间步的隐藏状态
-    let h_prev = graph.new_state_node(&[1, hidden_size], Some("h_prev"))?;
-    graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, hidden_size])))?;
+    // 循环状态节点：上一时间步的隐藏状态（通过 inner_mut 访问底层 API）
+    let h_prev_id = {
+        let mut g = graph.inner_mut();
+        let id = g.new_state_node(&[1, hidden_size], Some("h_prev"))?;
+        g.set_node_value(id, Some(&Tensor::zeros(&[1, hidden_size])))?;
+        id
+    };
+    let h_prev = Var::new(h_prev_id, graph.inner_rc());
 
     // === RNN 参数 ===
     // 输入到隐藏层权重
-    let w_ih = graph.new_parameter_node(&[1, hidden_size], Some("w_ih"))?;
-    // Xavier 初始化近似
-    graph.set_node_value(
-        w_ih,
-        Some(&Tensor::new(&[0.5, -0.5, 0.3, -0.3], &[1, hidden_size])),
-    )?;
+    let w_ih = {
+        let mut g = graph.inner_mut();
+        let id = g.new_parameter_node(&[1, hidden_size], Some("w_ih"))?;
+        // Xavier 初始化近似
+        g.set_node_value(
+            id,
+            Some(&Tensor::new(&[0.5, -0.5, 0.3, -0.3], &[1, hidden_size])),
+        )?;
+        Var::new(id, graph.inner_rc())
+    };
 
     // 隐藏到隐藏权重
-    let w_hh = graph.new_parameter_node(&[hidden_size, hidden_size], Some("w_hh"))?;
-    let w_hh_init: Vec<f32> = vec![
-        0.1, 0.2, 0.0, 0.0, 0.0, 0.1, 0.2, 0.0, 0.0, 0.0, 0.1, 0.2, 0.2, 0.0, 0.0, 0.1,
-    ];
-    graph.set_node_value(
-        w_hh,
-        Some(&Tensor::new(&w_hh_init, &[hidden_size, hidden_size])),
-    )?;
+    let w_hh = {
+        let mut g = graph.inner_mut();
+        let id = g.new_parameter_node(&[hidden_size, hidden_size], Some("w_hh"))?;
+        let w_hh_init: Vec<f32> = vec![
+            0.1, 0.2, 0.0, 0.0, 0.0, 0.1, 0.2, 0.0, 0.0, 0.0, 0.1, 0.2, 0.2, 0.0, 0.0, 0.1,
+        ];
+        g.set_node_value(
+            id,
+            Some(&Tensor::new(&w_hh_init, &[hidden_size, hidden_size])),
+        )?;
+        Var::new(id, graph.inner_rc())
+    };
 
     // 隐藏层偏置
-    let b_h = graph.new_parameter_node(&[1, hidden_size], Some("b_h"))?;
-    graph.set_node_value(b_h, Some(&Tensor::zeros(&[1, hidden_size])))?;
+    let b_h = {
+        let mut g = graph.inner_mut();
+        let id = g.new_parameter_node(&[1, hidden_size], Some("b_h"))?;
+        g.set_node_value(id, Some(&Tensor::zeros(&[1, hidden_size])))?;
+        Var::new(id, graph.inner_rc())
+    };
 
-    // === 隐藏层计算 ===
-    // input_contrib = input * w_ih  (1x1 @ 1xH = 1xH)
-    let input_contrib = graph.new_mat_mul_node(input, w_ih, Some("input_contrib"))?;
+    // === 隐藏层计算（通过 inner_mut 访问底层 API）===
+    let hidden_id = {
+        let mut g = graph.inner_mut();
+        // input_contrib = input * w_ih  (1x1 @ 1xH = 1xH)
+        let input_contrib = g.new_mat_mul_node(input.node_id(), w_ih.node_id(), Some("input_contrib"))?;
 
-    // hidden_contrib = h_prev * w_hh  (1xH @ HxH = 1xH)
-    let hidden_contrib = graph.new_mat_mul_node(h_prev, w_hh, Some("hidden_contrib"))?;
+        // hidden_contrib = h_prev * w_hh  (1xH @ HxH = 1xH)
+        let hidden_contrib = g.new_mat_mul_node(h_prev_id, w_hh.node_id(), Some("hidden_contrib"))?;
 
-    // pre_hidden = input_contrib + hidden_contrib + b_h
-    let sum1 = graph.new_add_node(&[input_contrib, hidden_contrib], Some("sum1"))?;
-    let pre_hidden = graph.new_add_node(&[sum1, b_h], Some("pre_hidden"))?;
+        // pre_hidden = input_contrib + hidden_contrib + b_h
+        let sum1 = g.new_add_node(&[input_contrib, hidden_contrib], Some("sum1"))?;
+        let pre_hidden = g.new_add_node(&[sum1, b_h.node_id()], Some("pre_hidden"))?;
 
-    // hidden = tanh(pre_hidden)
-    let hidden = graph.new_tanh_node(pre_hidden, Some("hidden"))?;
+        // hidden = tanh(pre_hidden)
+        let hidden = g.new_tanh_node(pre_hidden, Some("hidden"))?;
 
-    // 循环连接：hidden -> h_prev
-    graph.connect_recurrent(hidden, h_prev)?;
+        // 循环连接：hidden -> h_prev
+        g.connect_recurrent(hidden, h_prev_id)?;
+
+        hidden
+    };
+    let hidden = Var::new(hidden_id, graph.inner_rc());
 
     // === 输出层 ===
     // 隐藏到输出权重
-    let w_ho = graph.new_parameter_node(&[hidden_size, 1], Some("w_ho"))?;
-    graph.set_node_value(
-        w_ho,
-        Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[hidden_size, 1])),
-    )?;
+    let w_ho = {
+        let mut g = graph.inner_mut();
+        let id = g.new_parameter_node(&[hidden_size, 1], Some("w_ho"))?;
+        g.set_node_value(
+            id,
+            Some(&Tensor::new(&[0.5, 0.5, 0.5, 0.5], &[hidden_size, 1])),
+        )?;
+        Var::new(id, graph.inner_rc())
+    };
 
     // 输出偏置
-    let b_o = graph.new_parameter_node(&[1, 1], Some("b_o"))?;
-    graph.set_node_value(b_o, Some(&Tensor::zeros(&[1, 1])))?;
+    let b_o = {
+        let mut g = graph.inner_mut();
+        let id = g.new_parameter_node(&[1, 1], Some("b_o"))?;
+        g.set_node_value(id, Some(&Tensor::zeros(&[1, 1])))?;
+        Var::new(id, graph.inner_rc())
+    };
 
     // pre_output = hidden * w_ho + b_o
-    let hidden_out = graph.new_mat_mul_node(hidden, w_ho, Some("hidden_out"))?;
-    let pre_output = graph.new_add_node(&[hidden_out, b_o], Some("pre_output"))?;
-
-    // output = sigmoid(pre_output)
-    let output = graph.new_sigmoid_node(pre_output, Some("output"))?;
+    let output_id = {
+        let mut g = graph.inner_mut();
+        let hidden_out = g.new_mat_mul_node(hidden_id, w_ho.node_id(), Some("hidden_out"))?;
+        let pre_output = g.new_add_node(&[hidden_out, b_o.node_id()], Some("pre_output"))?;
+        // output = sigmoid(pre_output)
+        g.new_sigmoid_node(pre_output, Some("output"))?
+    };
+    let output = Var::new(output_id, graph.inner_rc());
 
     // 目标节点
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.zeros(&[1, 1])?;
 
     // MSE Loss
-    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
+    let loss_id = {
+        let mut g = graph.inner_mut();
+        g.new_mse_loss_node(output_id, target.node_id(), Some("loss"))?
+    };
+    let loss = Var::new(loss_id, graph.inner_rc());
 
     let params = vec![w_ih, w_hh, b_h, w_ho, b_o];
 
@@ -160,11 +199,11 @@ fn create_parity_rnn(
 }
 
 /// 手动 SGD 更新
-fn sgd_update(graph: &mut Graph, params: &[NodeId], lr: f32) -> Result<(), GraphError> {
-    for &param in params {
-        if let Some(param_grad) = graph.get_node_grad(param)? {
+fn sgd_update(graph: &Graph, params: &[Var], lr: f32) -> Result<(), GraphError> {
+    for param in params {
+        if let Some(param_grad) = param.grad()? {
             // 获取当前参数值
-            let current_value = graph.get_node_value(param)?.unwrap().clone();
+            let current_value = param.value()?.unwrap().clone();
 
             // 梯度下降：θ = θ - lr * grad
             // 梯度形状可能需要 reshape 为参数的形状
@@ -176,7 +215,7 @@ fn sgd_update(graph: &mut Graph, params: &[NodeId], lr: f32) -> Result<(), Graph
             };
 
             let new_value = &current_value - &(&grad * lr);
-            graph.set_node_value(param, Some(&new_value))?;
+            param.set_value(&new_value)?;
         }
     }
     Ok(())
@@ -184,51 +223,52 @@ fn sgd_update(graph: &mut Graph, params: &[NodeId], lr: f32) -> Result<(), Graph
 
 /// 训练一个序列（带可选调试输出）
 fn train_sequence(
-    graph: &mut Graph,
-    input_node: NodeId,
-    loss_node: NodeId,
-    target_node: NodeId,
-    params: &[NodeId],
+    graph: &Graph,
+    input_node: &Var,
+    loss_node: &Var,
+    target_node: &Var,
+    params: &[Var],
     sequence: &[f32],
     label: f32,
     lr: f32,
     debug: bool,
 ) -> Result<f32, GraphError> {
     // 重置循环状态
-    graph.reset();
+    graph.inner_mut().reset();
 
     // 设置目标值（BPTT 需要 loss 在每个时间步都被计算，所以提前设置）
     let target_tensor = Tensor::new(&[label], &[1, 1]);
-    graph.set_node_value(target_node, Some(&target_tensor))?;
+    target_node.set_value(&target_tensor)?;
 
     // 前向传播整个序列（通过 loss_node，这样历史快照会包含 loss 值）
     for &bit in sequence {
         let input_tensor = Tensor::new(&[bit], &[1, 1]);
-        graph.set_node_value(input_node, Some(&input_tensor))?;
-        graph.step(loss_node)?;
+        input_node.set_value(&input_tensor)?;
+        graph.inner_mut().step(loss_node.node_id())?;
     }
 
     // 获取最终 loss 值
-    let loss_value = graph
-        .get_node_value(loss_node)?
+    let loss_value = loss_node
+        .value()?
         .ok_or_else(|| GraphError::InvalidOperation("Loss 节点没有值".to_string()))?
         .data_as_slice()[0];
 
     if debug {
         println!("    序列: {sequence:?}, 标签: {label}");
         println!("    损失值: {loss_value:.6}");
-        for (i, &param) in params.iter().enumerate() {
-            let val = graph.get_node_value(param)?.map(|v| v.data_as_slice()[0]);
+        for (i, param) in params.iter().enumerate() {
+            let val = param.value()?.map(|v| v.data_as_slice()[0]);
             println!("    参数[{i}] BPTT 前: {val:?}");
         }
     }
 
     // BPTT
-    graph.backward_through_time(params, loss_node)?;
+    let param_ids: Vec<NodeId> = params.iter().map(|p| p.node_id()).collect();
+    graph.inner_mut().backward_through_time(&param_ids, loss_node.node_id())?;
 
     if debug {
-        for (i, &param) in params.iter().enumerate() {
-            let grad = graph.get_node_grad(param)?.map(|j| j.data_as_slice()[0]);
+        for (i, param) in params.iter().enumerate() {
+            let grad = param.grad()?.map(|j| j.data_as_slice()[0]);
             println!("    参数[{i}] 梯度: {grad:?}");
         }
     }
@@ -244,30 +284,30 @@ fn train_sequence(
 
 /// 评估准确率
 fn evaluate(
-    graph: &mut Graph,
-    input_node: NodeId,
-    output_node: NodeId,
+    graph: &Graph,
+    input_node: &Var,
+    output_node: &Var,
     sequences: &[Vec<f32>],
     labels: &[f32],
 ) -> Result<f32, GraphError> {
     let mut correct = 0;
 
     // 切换到评估模式
-    graph.set_eval_mode();
+    graph.eval();
 
     for (seq, &label) in sequences.iter().zip(labels.iter()) {
-        graph.reset();
+        graph.inner_mut().reset();
 
         // 前向传播
         for &bit in seq {
             let input_tensor = Tensor::new(&[bit], &[1, 1]);
-            graph.set_node_value(input_node, Some(&input_tensor))?;
-            graph.step(output_node)?;
+            input_node.set_value(&input_tensor)?;
+            graph.inner_mut().step(output_node.node_id())?;
         }
 
         // 获取输出
-        let output = graph
-            .get_node_value(output_node)?
+        let output = output_node
+            .value()?
             .ok_or_else(|| GraphError::InvalidOperation("Output 节点没有值".to_string()))?
             .data_as_slice()[0];
 
@@ -279,7 +319,7 @@ fn evaluate(
     }
 
     // 恢复训练模式
-    graph.set_train_mode();
+    graph.train();
 
     Ok(correct as f32 / sequences.len() as f32)
 }
@@ -316,13 +356,15 @@ fn test_parity_detection_can_learn() {
     }
 
     // 创建网络
-    let (mut graph, input, output, loss, target, params) =
+    let (graph, input, output, loss, target, params) =
         create_parity_rnn(seed).expect("创建网络失败");
 
     println!("\n[网络结构] {} 个参数节点", params.len());
 
     // 保存网络拓扑可视化
-    let viz_result = graph.save_visualization("tests/outputs/it1_parity_rnn", None);
+    let viz_result = graph
+        .inner()
+        .save_visualization("tests/outputs/it1_parity_rnn", None);
     match &viz_result {
         Ok(output) => {
             println!("[可视化] DOT 文件: {}", output.dot_path.display());
@@ -335,16 +377,16 @@ fn test_parity_detection_can_learn() {
 
     // 初始准确率
     let initial_acc =
-        evaluate(&mut graph, input, output, &test_seqs, &test_labels).expect("评估失败");
+        evaluate(&graph, &input, &output, &test_seqs, &test_labels).expect("评估失败");
     println!("\n[训练前] 初始准确率: {:.1}%", initial_acc * 100.0);
 
     // 前向/反向传播健壮性检查（第一个样本）
     println!("\n[健壮性检查] 单样本前向/反向传播:");
     let first_loss = train_sequence(
-        &mut graph,
-        input,
-        loss,
-        target,
+        &graph,
+        &input,
+        &loss,
+        &target,
         &params,
         &train_seqs[0],
         train_labels[0],
@@ -364,7 +406,7 @@ fn test_parity_detection_can_learn() {
 
         for (seq, &label) in train_seqs.iter().zip(train_labels.iter()) {
             let loss_val = train_sequence(
-                &mut graph, input, loss, target, &params, seq, label, lr, false,
+                &graph, &input, &loss, &target, &params, seq, label, lr, false,
             )
             .expect("训练失败");
             total_loss += loss_val;
@@ -373,7 +415,7 @@ fn test_parity_detection_can_learn() {
         // 每 20 轮评估一次
         if (epoch + 1) % 20 == 0 {
             let acc =
-                evaluate(&mut graph, input, output, &test_seqs, &test_labels).expect("评估失败");
+                evaluate(&graph, &input, &output, &test_seqs, &test_labels).expect("评估失败");
             let avg_loss = total_loss / num_train as f32;
 
             println!(
@@ -391,7 +433,7 @@ fn test_parity_detection_can_learn() {
 
     // 最终评估
     let final_acc =
-        evaluate(&mut graph, input, output, &test_seqs, &test_labels).expect("评估失败");
+        evaluate(&graph, &input, &output, &test_seqs, &test_labels).expect("评估失败");
 
     println!("\n[结果]");
     println!("  初始准确率: {:.1}%", initial_acc * 100.0);

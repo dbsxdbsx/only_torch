@@ -9,8 +9,8 @@
  */
 
 use approx::assert_abs_diff_eq;
-use only_torch::nn::Graph;
 use only_torch::nn::optimizer::{Optimizer, SGD};
+use only_torch::nn::{Graph, Init, VarLossOps, VarMatrixOps};
 use only_torch::tensor::Tensor;
 use std::fs;
 
@@ -36,101 +36,84 @@ fn test_simple_regression_full_batch() {
     let y_data: Vec<f32> = vec![3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 4.0];
     let batch_size = 7;
 
-    let mut graph = Graph::new_with_seed(123);
+    let graph = Graph::new_with_seed(123);
 
     // 创建网络结构: y_pred = x @ w + b
     // x: [batch, 2], w: [2, 1], b: [1, 1]
-    let x_id = graph.new_input_node(&[batch_size, 2], Some("x")).unwrap();
-    let w_id = graph.new_parameter_node(&[2, 1], Some("w")).unwrap();
-    let b_id = graph.new_parameter_node(&[1, 1], Some("b")).unwrap();
+
+    // 输入 x：先创建占位符，稍后设置值
+    let x = graph.zeros(&[batch_size, 2]).unwrap();
+    // 参数 w：使用零初始化
+    let w = graph.parameter(&[2, 1], Init::Zeros, "w").unwrap();
+    // 参数 b：使用零初始化
+    let b = graph.parameter(&[1, 1], Init::Zeros, "b").unwrap();
 
     // y_pred = x @ w
-    let xw_id = graph.new_mat_mul_node(x_id, w_id, Some("xw")).unwrap();
+    let xw = x.matmul(&w).unwrap();
 
     // ones 节点用于广播 bias
-    let ones_id = graph
-        .new_input_node(&[batch_size, 1], Some("ones"))
-        .unwrap();
+    let ones = graph.ones(&[batch_size, 1]).unwrap();
 
     // bias_broadcast = ones @ b
-    let bias_broadcast_id = graph
-        .new_mat_mul_node(ones_id, b_id, Some("bias_broadcast"))
-        .unwrap();
+    let bias_broadcast = ones.matmul(&b).unwrap();
 
     // y_pred = xw + bias_broadcast
-    let y_pred_id = graph
-        .new_add_node(&[xw_id, bias_broadcast_id], Some("y_pred"))
-        .unwrap();
+    let y_pred = &xw + &bias_broadcast;
 
-    // 目标值
-    let y_true_id = graph
-        .new_input_node(&[batch_size, 1], Some("y_true"))
-        .unwrap();
+    // 目标值：先创建占位符
+    let y_true = graph.zeros(&[batch_size, 1]).unwrap();
 
     // MSE 损失
-    let loss_id = graph
-        .new_mse_loss_node(y_pred_id, y_true_id, Some("loss"))
-        .unwrap();
-
-    // 初始化参数
-    graph
-        .set_node_value(w_id, Some(&Tensor::new(&[0.0, 0.0], &[2, 1])))
-        .unwrap();
-    graph
-        .set_node_value(b_id, Some(&Tensor::new(&[0.0], &[1, 1])))
-        .unwrap();
-    graph
-        .set_node_value(ones_id, Some(&Tensor::ones(&[batch_size, 1])))
-        .unwrap();
+    let loss = y_pred.mse_loss(&y_true).unwrap();
 
     // 设置训练数据
-    graph
-        .set_node_value(x_id, Some(&Tensor::new(&x_data, &[batch_size, 2])))
-        .unwrap();
-    graph
-        .set_node_value(y_true_id, Some(&Tensor::new(&y_data, &[batch_size, 1])))
+    x.set_value(&Tensor::new(&x_data, &[batch_size, 2])).unwrap();
+    y_true
+        .set_value(&Tensor::new(&y_data, &[batch_size, 1]))
         .unwrap();
 
     // 保存网络结构可视化（训练前）
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
     graph
+        .inner()
         .save_visualization(format!("{output_dir}/simple_regression_full_batch"), None)
         .unwrap();
     graph
+        .inner()
         .save_summary(format!(
             "{output_dir}/simple_regression_full_batch_summary.md"
         ))
         .unwrap();
     println!("网络结构已保存: {output_dir}/simple_regression_full_batch.png");
 
-    let mut optimizer = SGD::new(&graph, 0.05).unwrap();
+    // 创建优化器（V2 API 需要传入参数列表）
+    let params = vec![w.clone(), b.clone()];
+    let mut optimizer = SGD::new(&graph, &params, 0.05);
 
     // 训练 200 个 epoch（全批量训练）
     for epoch in 0..200 {
-        graph.zero_grad().unwrap();
-        graph.forward(loss_id).unwrap();
-        let loss = graph.backward(loss_id).unwrap();
-        optimizer.step(&mut graph).unwrap();
+        // 使用 minimize 一步完成：zero_grad + backward + step
+        let loss_val = optimizer.minimize(&loss).unwrap();
 
         // 打印每 50 个 epoch 的损失
         if (epoch + 1) % 50 == 0 {
-            let w = graph.get_node_value(w_id).unwrap().unwrap();
-            let b = graph.get_node_value(b_id).unwrap().unwrap()[[0, 0]];
+            let w_val = w.value().unwrap().unwrap();
+            let b_val = b.value().unwrap().unwrap()[[0, 0]];
             println!(
                 "Epoch {}: loss = {:.6}, w = [{:.4}, {:.4}], b = {:.4}",
                 epoch + 1,
-                loss,
-                w[[0, 0]],
-                w[[1, 0]],
-                b
+                loss_val,
+                w_val[[0, 0]],
+                w_val[[1, 0]],
+                b_val
             );
         }
     }
 
     // 验证学习到的参数
-    let learned_w = graph.get_node_value(w_id).unwrap().unwrap();
-    let learned_b = graph.get_node_value(b_id).unwrap().unwrap()[[0, 0]];
+    let learned_w = w.value().unwrap().unwrap();
+    let learned_b = b.value().unwrap().unwrap()[[0, 0]];
 
     println!("\n最终结果:");
     println!("  真实参数: w = [1.0, 2.0], b = 3.0");

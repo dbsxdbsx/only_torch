@@ -1,32 +1,31 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-01-17
- * @Description  : MNIST Linear V2 集成测试（使用 V2 API）
+ * @Description  : MNIST MLP 集成测试
  *
- * 使用 Phase 2 的 V2 API:
- * - Graph + Var（不再用 Graph + NodeId）
- * - Linear V2 层（forward 不需要 &Graph）
+ * 展示理想的 PyTorch 风格 API：
+ * - Graph + Var（用户无需接触 NodeId）
+ * - Linear 层（内部自动处理 bias 广播）
  * - Optimizer（PyTorch 风格 API）
+ * - 链式调用
  */
 
 use only_torch::data::MnistDataset;
 use only_torch::nn::layer::Linear;
-use only_torch::nn::{
-    Adam, GraphError, Graph, Module, Optimizer, VarActivationOps, VarLossOps,
-};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarActivationOps, VarLossOps};
 use only_torch::tensor_slice;
 use std::fs;
 use std::time::Instant;
 
-/// MNIST Linear V2 集成测试
+/// MNIST MLP 集成测试
 ///
-/// 验证 Phase 2 的 V2 API 能够完成端到端训练
+/// 展示理想的 PyTorch 风格 API 用法
 #[test]
-fn test_mnist_linear_v2() -> Result<(), GraphError> {
+fn test_mnist_mlp() -> Result<(), GraphError> {
     let start_time = Instant::now();
 
     println!("\n{}", "=".repeat(60));
-    println!("=== MNIST Linear V2 集成测试（使用 V2 API）===");
+    println!("=== MNIST MLP 集成测试 ===");
     println!("{}\n", "=".repeat(60));
 
     // ========== 1. 加载数据 ==========
@@ -65,8 +64,8 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
     println!("  - 学习率: {learning_rate}");
     println!("  - 目标准确率: {:.0}%", target_accuracy * 100.0);
 
-    // ========== 3. 构建网络（使用 V2 API）==========
-    println!("\n[3/4] 使用 V2 API 构建 MLP: 784 -> 128 (Softplus) -> 10...");
+    // ========== 3. 构建网络 ==========
+    println!("\n[3/4] 构建 MLP: 784 -> 128 (Softplus) -> 10...");
 
     let graph = Graph::new_with_seed(42);
 
@@ -74,13 +73,13 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
     let x = graph.zeros(&[batch_size, 784])?;
     let y = graph.zeros(&[batch_size, 10])?;
 
-    // ========== 使用 Linear V2 构建网络 ==========
-    // 隐藏层: 784 -> 128
-    let fc1 = Linear::new(&graph, 784, 128, true, "fc1")?;
+    // ========== 使用 Linear 层构建网络 ==========
+    // 隐藏层: 784 -> 128（使用 seeded 确保可重复性）
+    let fc1 = Linear::new_seeded(&graph, 784, 128, true, "fc1", 100)?;
     // 输出层: 128 -> 10
-    let fc2 = Linear::new(&graph, 128, 10, true, "fc2")?;
+    let fc2 = Linear::new_seeded(&graph, 128, 10, true, "fc2", 200)?;
 
-    // 前向传播链
+    // 前向传播链（PyTorch 风格链式调用）
     // fc1: [batch, 784] -> [batch, 128]
     let h1 = fc1.forward(&x);
     let a1 = h1.softplus(); // Softplus 激活
@@ -105,9 +104,8 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
     // 保存网络结构可视化
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
-    // 注意：V2 API 目前暂无可视化方法，跳过
 
-    // ========== 4. 创建 V2 优化器 ==========
+    // ========== 4. 创建优化器 ==========
     let mut optimizer = Adam::new(&graph, &all_params, learning_rate);
 
     println!("  ✓ 优化器：Adam (lr={learning_rate})");
@@ -136,17 +134,17 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
             let batch_images = tensor_slice!(all_train_images, start..end, ..);
             let batch_labels = tensor_slice!(all_train_labels, start..end, ..);
 
-            // 使用 V2 API 设置输入
+            // 设置输入
             x.set_value(&batch_images)?;
             y.set_value(&batch_labels)?;
 
-            // 清空梯度（使用 Optimizer API）
+            // 清空梯度
             optimizer.zero_grad()?;
 
-            // 反向传播（V2 API：backward 会自动 forward）
+            // 反向传播（backward 会自动 forward）
             let loss_val = loss.backward()?;
 
-            // 更新参数（使用 Optimizer API）
+            // 更新参数
             optimizer.step()?;
 
             epoch_loss_sum += loss_val;
@@ -232,7 +230,7 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
 
     if test_passed {
         println!("\n{}", "=".repeat(60));
-        println!("✅ MNIST Linear V2 测试通过！");
+        println!("✅ MNIST MLP 测试通过！");
         println!("{}\n", "=".repeat(60));
         Ok(())
     } else {
@@ -245,7 +243,7 @@ fn test_mnist_linear_v2() -> Result<(), GraphError> {
         );
         println!("{}\n", "=".repeat(60));
         Err(GraphError::ComputationError(format!(
-            "MNIST Linear V2 测试失败：在 {} 个 epoch 内未能连续 {} 次达到 {:.0}% 准确率",
+            "MNIST MLP 测试失败：在 {} 个 epoch 内未能连续 {} 次达到 {:.0}% 准确率",
             max_epochs,
             consecutive_success_required,
             target_accuracy * 100.0

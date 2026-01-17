@@ -1,13 +1,20 @@
 /*
  * @Author       : 老董
  * @Date         : 2025-12-22
- * @Description  : Linear layer 单元测试（Batch-First 设计，含 PyTorch 数值对照）
+ * @Description  : Linear layer 单元测试
+ *
+ * 包含两种 API 的测试：
+ * - Linear 结构体（推荐）：PyTorch 风格，forward 返回 Var
+ * - linear() 函数（遗留）：底层 API，返回 NodeId
  *
  * 参考值来源: tests/python/layer_reference/linear_layer_reference.py
  */
 
+#[allow(deprecated)]
 use crate::nn::layer::linear;
-use crate::nn::{GraphInner, GraphError};
+use crate::nn::layer::Linear;
+use crate::nn::graph::Graph;
+use crate::nn::{GraphError, GraphInner, Module, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -794,4 +801,177 @@ fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
 
     println!("\n✅ 两层 Linear 网络反向传播与 PyTorch 一致");
     Ok(())
+}
+
+// ==================== Linear 结构体测试（推荐 API）====================
+
+/// 测试 Linear 结构体前向传播
+#[test]
+fn test_linear_struct_forward() {
+    let graph = Graph::new();
+
+    // 创建 Linear 层：3 -> 2
+    let fc = Linear::new(&graph, 3, 2, true, "fc").unwrap();
+
+    // 创建输入：[2, 3] (batch=2, in_features=3)
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
+        .unwrap();
+
+    // 前向传播
+    let y = fc.forward(&x);
+    y.forward().unwrap();
+
+    // 验证输出形状
+    let result = y.value().unwrap().unwrap();
+    assert_eq!(result.shape(), &[2, 2]);
+}
+
+/// 测试 Linear 无 bias
+#[test]
+fn test_linear_struct_no_bias() {
+    let graph = Graph::new();
+
+    // 创建无 bias 的 Linear 层
+    let fc = Linear::new(&graph, 3, 2, false, "fc_no_bias").unwrap();
+
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
+
+    let y = fc.forward(&x);
+    y.forward().unwrap();
+
+    let result = y.value().unwrap().unwrap();
+    assert_eq!(result.shape(), &[1, 2]);
+}
+
+/// 测试 Linear 参数数量
+#[test]
+fn test_linear_struct_parameters() {
+    let graph = Graph::new();
+
+    // 有 bias 的 Linear
+    let fc_with_bias = Linear::new(&graph, 4, 3, true, "fc1").unwrap();
+    assert_eq!(fc_with_bias.parameters().len(), 2);
+    assert_eq!(fc_with_bias.num_params(), 2);
+
+    // 无 bias 的 Linear
+    let fc_no_bias = Linear::new(&graph, 4, 3, false, "fc2").unwrap();
+    assert_eq!(fc_no_bias.parameters().len(), 1);
+    assert_eq!(fc_no_bias.num_params(), 1);
+}
+
+/// 测试 Linear 链式调用激活函数
+#[test]
+fn test_linear_struct_chained_with_activation() {
+    let graph = Graph::new();
+
+    let fc = Linear::new(&graph, 3, 2, true, "fc").unwrap();
+
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
+
+    // 链式调用：fc.forward(x).relu()
+    let y = fc.forward(&x).relu();
+    y.forward().unwrap();
+
+    let result = y.value().unwrap().unwrap();
+    assert_eq!(result.shape(), &[1, 2]);
+    // ReLU 后所有值应该 >= 0
+    assert!(result.data_as_slice().iter().all(|&v| v >= 0.0));
+}
+
+/// 测试 Linear 反向传播
+#[test]
+fn test_linear_struct_backward() {
+    let graph = Graph::new();
+
+    let fc = Linear::new(&graph, 3, 2, true, "fc").unwrap();
+
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
+    let target = graph.input(&Tensor::new(&[1.0, 0.0], &[1, 2])).unwrap();
+
+    let y = fc.forward(&x);
+    let loss = y.mse_loss(&target).unwrap();
+
+    loss.backward().unwrap();
+
+    // 权重和偏置都应该有梯度
+    let params = fc.parameters();
+    for p in params {
+        let grad = p.grad().unwrap();
+        assert!(grad.is_some(), "参数应该有梯度");
+    }
+}
+
+/// 测试两层 MLP
+#[test]
+fn test_linear_struct_mlp_two_layers() {
+    let graph = Graph::new();
+
+    // 简单 MLP：3 -> 4 -> 2
+    let fc1 = Linear::new(&graph, 3, 4, true, "fc1").unwrap();
+    let fc2 = Linear::new(&graph, 4, 2, true, "fc2").unwrap();
+
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
+    let target = graph.input(&Tensor::new(&[1.0, 0.0], &[1, 2])).unwrap();
+
+    // 前向：fc1 -> relu -> fc2
+    let h = fc1.forward(&x).relu();
+    let y = fc2.forward(&h);
+    let loss = y.mse_loss(&target).unwrap();
+
+    loss.backward().unwrap();
+
+    // 两层的参数都应该有梯度
+    for p in fc1.parameters() {
+        assert!(p.grad().unwrap().is_some());
+    }
+    for p in fc2.parameters() {
+        assert!(p.grad().unwrap().is_some());
+    }
+}
+
+/// 测试 Linear::new_seeded() 可重复性
+#[test]
+fn test_linear_struct_seeded_reproducibility() {
+    let seed = 12345u64;
+
+    // 创建两个使用相同 seed 的 Linear 层
+    let graph1 = Graph::new();
+    let fc1 = Linear::new_seeded(&graph1, 4, 3, true, "fc", seed).unwrap();
+
+    let graph2 = Graph::new();
+    let fc2 = Linear::new_seeded(&graph2, 4, 3, true, "fc", seed).unwrap();
+
+    // 权重应该完全相同
+    let w1 = fc1.weights().value().unwrap().unwrap();
+    let w2 = fc2.weights().value().unwrap().unwrap();
+    assert_eq!(w1.data_as_slice(), w2.data_as_slice());
+
+    // bias 都是零初始化，也应该相同
+    let b1 = fc1.bias().unwrap().value().unwrap().unwrap();
+    let b2 = fc2.bias().unwrap().value().unwrap().unwrap();
+    assert_eq!(b1.data_as_slice(), b2.data_as_slice());
+}
+
+/// 测试不同 seed 产生不同权重
+#[test]
+fn test_linear_struct_different_seeds() {
+    let graph1 = Graph::new();
+    let fc1 = Linear::new_seeded(&graph1, 4, 3, true, "fc", 111).unwrap();
+
+    let graph2 = Graph::new();
+    let fc2 = Linear::new_seeded(&graph2, 4, 3, true, "fc", 222).unwrap();
+
+    // 不同 seed 应该产生不同权重
+    let w1 = fc1.weights().value().unwrap().unwrap();
+    let w2 = fc2.weights().value().unwrap().unwrap();
+    assert_ne!(w1.data_as_slice(), w2.data_as_slice());
 }

@@ -10,10 +10,11 @@
 
 use only_torch::data::MnistDataset;
 use only_torch::nn::optimizer::{Adam, Optimizer};
-use only_torch::nn::{Graph, GraphError, NodeId};
+use only_torch::nn::{Graph, GraphError, NodeId, Var, VarActivationOps, VarLossOps, VarMatrixOps};
 use only_torch::tensor::Tensor;
 use only_torch::tensor_slice;
 use std::fs;
+use std::rc::Rc;
 use std::time::Instant;
 
 /// MNIST GAN 集成测试
@@ -68,43 +69,44 @@ fn test_mnist_gan() -> Result<(), GraphError> {
     // ========== 3. 构建网络 ==========
     println!("\n[3/5] 构建 GAN 网络...");
 
-    let mut graph = Graph::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // --- 输入节点 ---
     // 真实图像输入
-    let real_images = graph.new_input_node(&[batch_size, 784], Some("real_images"))?;
+    let real_images = graph.zeros(&[batch_size, 784])?;
     // 噪声输入
-    let z = graph.new_input_node(&[batch_size, latent_dim], Some("z"))?;
+    let z = graph.zeros(&[batch_size, latent_dim])?;
     // bias 广播用的 ones
-    let ones = graph.new_input_node(&[batch_size, 1], Some("ones"))?;
+    let ones = graph.ones(&[batch_size, 1])?;
 
-    // --- Generator: z(64) -> 256 -> 784 ---
-    let (fake_images, g_params) = build_generator(&mut graph, z, ones, latent_dim, batch_size)?;
+    // --- Generator: z(64) -> 128 -> 784 ---
+    let (fake_images, g_params) =
+        build_generator(&graph, &z, &ones, latent_dim)?;
 
     // --- Discriminator（对真实图像）---
     let (d_real_out, d_params) =
-        build_discriminator(&mut graph, real_images, ones, batch_size, "d_real")?;
+        build_discriminator(&graph, &real_images, &ones, "d_real")?;
 
     // --- Discriminator（对生成图像，共享参数）---
     // 注意：需要用同样的参数，但对 fake_images 进行前向
     let d_fake_out =
-        build_discriminator_forward(&mut graph, fake_images, ones, &d_params, "d_fake")?;
+        build_discriminator_forward(&graph, &fake_images, &ones, &d_params, "d_fake")?;
 
     // --- 损失函数 ---
     // D 的目标：真实图像 -> 1，生成图像 -> 0
     // G 的目标：生成图像（通过 D）-> 1
 
     // 真实标签 (全 1) 和假标签 (全 0)
-    let real_labels = graph.new_input_node(&[batch_size, 1], Some("real_labels"))?;
-    let fake_labels = graph.new_input_node(&[batch_size, 1], Some("fake_labels"))?;
+    let real_labels = graph.ones(&[batch_size, 1])?;
+    let fake_labels = graph.zeros(&[batch_size, 1])?;
 
     // D loss = MSE(D(real), 1) + MSE(D(fake), 0)
     // 使用两个 MSE loss
-    let d_loss_real = graph.new_mse_loss_node(d_real_out, real_labels, None)?;
-    let d_loss_fake = graph.new_mse_loss_node(d_fake_out, fake_labels, None)?;
+    let d_loss_real = d_real_out.mse_loss(&real_labels)?;
+    let d_loss_fake = d_fake_out.mse_loss(&fake_labels)?;
 
     // G loss = MSE(D(fake), 1) -- G 想让 D 认为 fake 是真的
-    let g_loss = graph.new_mse_loss_node(d_fake_out, real_labels, Some("g_loss"))?;
+    let g_loss = d_fake_out.mse_loss(&real_labels)?;
 
     println!("  ✓ Generator: z({latent_dim}) -> 128 -> 784");
     println!("  ✓ Discriminator: 784 -> 128 -> 1");
@@ -114,30 +116,25 @@ fn test_mnist_gan() -> Result<(), GraphError> {
     // 保存网络结构可视化（训练前）
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
-    graph.save_visualization(format!("{output_dir}/mnist_gan"), None)?;
-    graph.save_summary(format!("{output_dir}/mnist_gan_summary.md"))?;
+    graph
+        .inner()
+        .save_visualization(format!("{output_dir}/mnist_gan"), None)?;
+    graph
+        .inner()
+        .save_summary(format!("{output_dir}/mnist_gan_summary.md"))?;
     println!("  ✓ 网络结构已保存: {output_dir}/mnist_gan.png");
 
     // ========== 4. 创建优化器 ==========
     println!("\n[4/5] 创建优化器...");
 
-    // 使用 with_params 为 D 和 G 创建独立优化器
-    let mut adam_d = Adam::with_params(&d_params, lr_d, 0.5, 0.999, 1e-8);
-    let mut adam_g = Adam::with_params(&g_params, lr_g, 0.5, 0.999, 1e-8);
+    // 为 D 和 G 创建独立优化器
+    let mut adam_d = Adam::new_with_config(&graph, &d_params, lr_d, 0.5, 0.999, 1e-8);
+    let mut adam_g = Adam::new_with_config(&graph, &g_params, lr_g, 0.5, 0.999, 1e-8);
 
-    println!("  ✓ Adam::with_params 优化器 (beta1=0.5 for GAN stability)");
+    println!("  ✓ Adam 优化器 (beta1=0.5 for GAN stability)");
 
     // ========== 5. 训练循环 ==========
     println!("\n[5/5] 开始训练...\n");
-
-    // 设置常量
-    let ones_tensor = Tensor::ones(&[batch_size, 1]);
-    let real_labels_tensor = Tensor::ones(&[batch_size, 1]);
-    let fake_labels_tensor = Tensor::zeros(&[batch_size, 1]);
-
-    graph.set_node_value(ones, Some(&ones_tensor))?;
-    graph.set_node_value(real_labels, Some(&real_labels_tensor))?;
-    graph.set_node_value(fake_labels, Some(&fake_labels_tensor))?;
 
     let all_train_images = train_data.images();
 
@@ -158,67 +155,67 @@ fn test_mnist_gan() -> Result<(), GraphError> {
 
             // 获取真实图像 batch
             let batch_images = tensor_slice!(all_train_images, start..end, ..);
-            graph.set_node_value(real_images, Some(&batch_images))?;
+            real_images.set_value(&batch_images)?;
 
             // 生成随机噪声（确定性种子，确保可重复）
             let noise_seed = (epoch * num_batches + batch_idx) as u64;
             let noise = Tensor::normal_seeded(0.0, 1.0, &[batch_size, latent_dim], noise_seed);
-            graph.set_node_value(z, Some(&noise))?;
+            z.set_value(&noise)?;
 
             // ========== 训练 Discriminator ==========
             // 关键：detach fake_images，防止 D 的 loss 更新 G
-            graph.detach_node(fake_images)?;
+            fake_images.detach()?;
 
             // 前向传播 - 真实图像
-            graph.forward(d_loss_real)?;
+            d_loss_real.forward()?;
 
             // D 对真实图像的判断
-            let d_real_val = graph.get_node_value(d_real_out)?.unwrap();
+            let d_real_val = d_real_out.value()?.unwrap();
             let mut d_real_batch_sum = 0.0;
             for i in 0..batch_size {
                 d_real_batch_sum += d_real_val[[i, 0]];
             }
             d_real_sum += d_real_batch_sum / batch_size as f32;
 
-            // 反向传播 D(real) - backward 返回 loss 值
-            graph.zero_grad()?;
-            let d_loss_real_val = graph.backward(d_loss_real)?;
-            adam_d.step(&mut graph)?;
+            // 反向传播 D(real)
+            adam_d.zero_grad()?;
+            let d_loss_real_val = d_loss_real.backward()?;
+            adam_d.step()?;
 
             // 前向传播 - 生成图像
-            graph.forward(d_loss_fake)?;
+            d_loss_fake.forward()?;
 
             // D 对假图像的判断
-            let d_fake_val = graph.get_node_value(d_fake_out)?.unwrap();
+            let d_fake_val = d_fake_out.value()?.unwrap();
             let mut d_fake_batch_sum = 0.0;
             for i in 0..batch_size {
                 d_fake_batch_sum += d_fake_val[[i, 0]];
             }
             d_fake_sum += d_fake_batch_sum / batch_size as f32;
 
-            // 反向传播 D(fake) - backward 返回 loss 值
-            graph.zero_grad()?;
-            let d_loss_fake_val = graph.backward(d_loss_fake)?;
-            adam_d.step(&mut graph)?;
+            // 反向传播 D(fake)
+            adam_d.zero_grad()?;
+            let d_loss_fake_val = d_loss_fake.backward()?;
+            adam_d.step()?;
 
             d_loss_sum += f32::midpoint(d_loss_real_val, d_loss_fake_val);
 
             // ========== 训练 Generator ==========
             // 恢复 fake_images 的梯度流
-            graph.attach_node(fake_images)?;
+            fake_images.attach()?;
 
             // 重新生成噪声（G 训练用不同种子）
             let noise_seed_g = (epoch * num_batches + batch_idx + 10000) as u64;
             let noise = Tensor::normal_seeded(0.0, 1.0, &[batch_size, latent_dim], noise_seed_g);
-            graph.set_node_value(z, Some(&noise))?;
+            z.set_value(&noise)?;
 
             // 前向传播
-            graph.forward(g_loss)?;
+            g_loss.forward()?;
 
-            // 反向传播并更新 G - backward 返回 loss 值
-            graph.zero_grad()?;
-            let g_loss_val = graph.backward(g_loss)?;
-            adam_g.step(&mut graph)?;
+            // 反向传播并更新 G
+            adam_g.zero_grad()?;
+            let g_loss_val = g_loss.backward()?;
+            adam_g.step()?;
 
             g_loss_sum += g_loss_val;
         }
@@ -255,7 +252,7 @@ fn test_mnist_gan() -> Result<(), GraphError> {
 
     // 打印模型摘要
     println!("\n模型摘要：");
-    graph.summary();
+    graph.inner().summary();
 
     if test_passed {
         println!("\n{}", "=".repeat(60));
@@ -281,27 +278,26 @@ fn test_mnist_gan() -> Result<(), GraphError> {
 ///
 /// `z(latent_dim)` -> FC(128, `LeakyReLU`) -> FC(784, Sigmoid) -> `fake_image`
 fn build_generator(
-    graph: &mut Graph,
-    z: NodeId,
-    ones: NodeId,
+    graph: &Graph,
+    z: &Var,
+    ones: &Var,
     latent_dim: usize,
-    _batch_size: usize,
-) -> Result<(NodeId, Vec<NodeId>), GraphError> {
+) -> Result<(Var, Vec<Var>), GraphError> {
     // Layer 1: latent_dim -> 128
-    let g_w1 = graph.new_parameter_node_seeded(&[latent_dim, 128], Some("g_w1"), 100)?;
-    let g_b1 = graph.new_parameter_node_seeded(&[1, 128], Some("g_b1"), 101)?;
-    let g_z1 = graph.new_mat_mul_node(z, g_w1, None)?;
-    let g_b1_broadcast = graph.new_mat_mul_node(ones, g_b1, None)?;
-    let g_h1 = graph.new_add_node(&[g_z1, g_b1_broadcast], None)?;
-    let g_a1 = graph.new_leaky_relu_node(g_h1, 0.2, None)?;
+    let g_w1 = graph.parameter_seeded(&[latent_dim, 128], "g_w1", 100)?;
+    let g_b1 = graph.parameter_seeded(&[1, 128], "g_b1", 101)?;
+    let g_z1 = z.matmul(&g_w1)?;
+    let g_b1_broadcast = ones.matmul(&g_b1)?;
+    let g_h1 = &g_z1 + &g_b1_broadcast;
+    let g_a1 = g_h1.leaky_relu(0.2);
 
     // Layer 2: 128 -> 784
-    let g_w2 = graph.new_parameter_node_seeded(&[128, 784], Some("g_w2"), 102)?;
-    let g_b2 = graph.new_parameter_node_seeded(&[1, 784], Some("g_b2"), 103)?;
-    let g_z2 = graph.new_mat_mul_node(g_a1, g_w2, None)?;
-    let g_b2_broadcast = graph.new_mat_mul_node(ones, g_b2, None)?;
-    let g_h2 = graph.new_add_node(&[g_z2, g_b2_broadcast], None)?;
-    let g_out = graph.new_sigmoid_node(g_h2, Some("fake_images"))?; // Sigmoid 输出 [0, 1]
+    let g_w2 = graph.parameter_seeded(&[128, 784], "g_w2", 102)?;
+    let g_b2 = graph.parameter_seeded(&[1, 784], "g_b2", 103)?;
+    let g_z2 = g_a1.matmul(&g_w2)?;
+    let g_b2_broadcast = ones.matmul(&g_b2)?;
+    let g_h2 = &g_z2 + &g_b2_broadcast;
+    let g_out = g_h2.sigmoid(); // Sigmoid 输出 [0, 1]
 
     let g_params = vec![g_w1, g_b1, g_w2, g_b2];
     Ok((g_out, g_params))
@@ -311,27 +307,26 @@ fn build_generator(
 ///
 /// image(784) -> FC(128, `LeakyReLU`) -> FC(1, Sigmoid) -> prob
 fn build_discriminator(
-    graph: &mut Graph,
-    input: NodeId,
-    ones: NodeId,
-    _batch_size: usize,
-    name_prefix: &str,
-) -> Result<(NodeId, Vec<NodeId>), GraphError> {
+    graph: &Graph,
+    input: &Var,
+    ones: &Var,
+    _name_prefix: &str,
+) -> Result<(Var, Vec<Var>), GraphError> {
     // Layer 1: 784 -> 128
-    let d_w1 = graph.new_parameter_node_seeded(&[784, 128], Some("d_w1"), 200)?;
-    let d_b1 = graph.new_parameter_node_seeded(&[1, 128], Some("d_b1"), 201)?;
-    let d_z1 = graph.new_mat_mul_node(input, d_w1, None)?;
-    let d_b1_broadcast = graph.new_mat_mul_node(ones, d_b1, None)?;
-    let d_h1 = graph.new_add_node(&[d_z1, d_b1_broadcast], None)?;
-    let d_a1 = graph.new_leaky_relu_node(d_h1, 0.2, None)?;
+    let d_w1 = graph.parameter_seeded(&[784, 128], "d_w1", 200)?;
+    let d_b1 = graph.parameter_seeded(&[1, 128], "d_b1", 201)?;
+    let d_z1 = input.matmul(&d_w1)?;
+    let d_b1_broadcast = ones.matmul(&d_b1)?;
+    let d_h1 = &d_z1 + &d_b1_broadcast;
+    let d_a1 = d_h1.leaky_relu(0.2);
 
     // Layer 2: 128 -> 1
-    let d_w2 = graph.new_parameter_node_seeded(&[128, 1], Some("d_w2"), 202)?;
-    let d_b2 = graph.new_parameter_node_seeded(&[1, 1], Some("d_b2"), 203)?;
-    let d_z2 = graph.new_mat_mul_node(d_a1, d_w2, None)?;
-    let d_b2_broadcast = graph.new_mat_mul_node(ones, d_b2, None)?;
-    let d_h2 = graph.new_add_node(&[d_z2, d_b2_broadcast], None)?;
-    let d_out = graph.new_sigmoid_node(d_h2, Some(name_prefix))?;
+    let d_w2 = graph.parameter_seeded(&[128, 1], "d_w2", 202)?;
+    let d_b2 = graph.parameter_seeded(&[1, 1], "d_b2", 203)?;
+    let d_z2 = d_a1.matmul(&d_w2)?;
+    let d_b2_broadcast = ones.matmul(&d_b2)?;
+    let d_h2 = &d_z2 + &d_b2_broadcast;
+    let d_out = d_h2.sigmoid();
 
     let d_params = vec![d_w1, d_b1, d_w2, d_b2];
     Ok((d_out, d_params))
@@ -339,28 +334,28 @@ fn build_discriminator(
 
 /// 使用现有 D 参数对新输入进行前向传播
 fn build_discriminator_forward(
-    graph: &mut Graph,
-    input: NodeId,
-    ones: NodeId,
-    d_params: &[NodeId],
-    name: &str,
-) -> Result<NodeId, GraphError> {
-    let d_w1 = d_params[0];
-    let d_b1 = d_params[1];
-    let d_w2 = d_params[2];
-    let d_b2 = d_params[3];
+    _graph: &Graph,
+    input: &Var,
+    ones: &Var,
+    d_params: &[Var],
+    _name: &str,
+) -> Result<Var, GraphError> {
+    let d_w1 = &d_params[0];
+    let d_b1 = &d_params[1];
+    let d_w2 = &d_params[2];
+    let d_b2 = &d_params[3];
 
     // Layer 1
-    let d_z1 = graph.new_mat_mul_node(input, d_w1, None)?;
-    let d_b1_broadcast = graph.new_mat_mul_node(ones, d_b1, None)?;
-    let d_h1 = graph.new_add_node(&[d_z1, d_b1_broadcast], None)?;
-    let d_a1 = graph.new_leaky_relu_node(d_h1, 0.2, None)?;
+    let d_z1 = input.matmul(d_w1)?;
+    let d_b1_broadcast = ones.matmul(d_b1)?;
+    let d_h1 = &d_z1 + &d_b1_broadcast;
+    let d_a1 = d_h1.leaky_relu(0.2);
 
     // Layer 2
-    let d_z2 = graph.new_mat_mul_node(d_a1, d_w2, None)?;
-    let d_b2_broadcast = graph.new_mat_mul_node(ones, d_b2, None)?;
-    let d_h2 = graph.new_add_node(&[d_z2, d_b2_broadcast], None)?;
-    let d_out = graph.new_sigmoid_node(d_h2, Some(name))?;
+    let d_z2 = d_a1.matmul(d_w2)?;
+    let d_b2_broadcast = ones.matmul(d_b2)?;
+    let d_h2 = &d_z2 + &d_b2_broadcast;
+    let d_out = d_h2.sigmoid();
 
     Ok(d_out)
 }

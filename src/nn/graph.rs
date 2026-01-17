@@ -506,6 +506,10 @@ impl GraphInner {
         description: &str,
         node_ids: Vec<NodeId>,
     ) {
+        // 检查是否已存在同名分组，避免重复注册
+        if self.layer_groups.iter().any(|g| g.name == name) {
+            return;
+        }
         self.layer_groups.push(LayerGroup {
             name: name.to_string(),
             layer_type: layer_type.to_string(),

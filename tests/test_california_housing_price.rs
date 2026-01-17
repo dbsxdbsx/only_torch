@@ -1,41 +1,32 @@
 /*
  * @Author       : 老董
  * @Date         : 2025-12-22
+ * @LastEditTime : 2026-01-17
  * @Description  : California Housing 房价回归集成测试
  *
  * 使用真实数据集验证 MSELoss + MLP 回归任务
- * 类似于 MNIST 在分类任务中的地位
- *
- * 采用 Layer API + Batch 模式，与 MNIST 测试风格一致
+ * 展示 PyTorch 风格的高层 API：Linear 层 + Module trait
  */
 
 use approx::assert_abs_diff_eq;
 use only_torch::data::CaliforniaHousingDataset;
+use only_torch::nn::layer::Linear;
 use only_torch::nn::optimizer::{Adam, Optimizer};
-use only_torch::nn::{Graph, GraphError, linear};
+use only_torch::nn::{Graph, GraphError, Module, VarActivationOps, VarLossOps};
 use only_torch::tensor::Tensor;
 use std::fs;
 use std::time::Instant;
 
-/// California Housing 房价回归（Layer API + Batch 版本）
+/// California Housing 房价回归（PyTorch 风格 API）
 ///
 /// 网络结构：Input(8) → Linear(128, Softplus) → Linear(64, Softplus) → Linear(32, Softplus) → Linear(1)
 /// 目标：R² ≥ 0.70 (70%)
-///
-/// 设计特点：
-/// 1. 使用 `linear()` Layer API 构建网络（简洁、可维护）
-/// 2. 真正的 batch `训练（batch_size=256，高效`）
-/// 3. Softplus 激活：平滑梯度，无死神经元问题
-/// 4. Xavier 初始化：适配 Softplus
-///
-/// 注：California Housing + MLP 在 batch 模式下 70% R² 是合理目标
-/// scikit-learn `MLPRegressor` 在此数据集上也达到类似水平
 #[test]
 fn test_california_housing_regression() -> Result<(), GraphError> {
     let start_time = Instant::now();
 
     println!("\n{}", "=".repeat(60));
-    println!("=== California Housing 房价回归测试（Layer API + Batch）===");
+    println!("=== California Housing 房价回归测试 ===");
     println!("{}\n", "=".repeat(60));
 
     // ========== 1. 加载数据 ==========
@@ -58,15 +49,13 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
     );
 
     // ========== 2. 训练配置 ==========
-    // Batch 模式：与 MNIST 测试风格一致，使用较大 batch 和相应学习率
-    // 注：batch MSE 梯度会被 batch_size 平均，需要更高学习率补偿
     let batch_size = 256;
-    let train_samples = 16000; // 使用更多训练数据
-    let test_samples = 1024; // 测试样本数（batch 整除）
+    let train_samples = 16000;
+    let test_samples = 1024;
     let max_epochs = 30;
-    let num_batches = train_samples / batch_size; // 62 batches/epoch
-    let learning_rate = 0.01; // batch 模式需要更高学习率
-    let target_r2 = 0.70; // California Housing + MLP 的合理目标
+    let num_batches = train_samples / batch_size;
+    let learning_rate = 0.01;
+    let target_r2 = 0.70;
 
     println!("\n[2/4] 训练配置：");
     println!("  - Batch Size: {batch_size}");
@@ -76,65 +65,64 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
     println!("  - 学习率: {learning_rate}");
     println!("  - 目标 R²: {:.0}%", target_r2 * 100.0);
 
-    // ========== 3. 构建网络（使用 Layer API）==========
-    println!("\n[3/4] 使用 linear() 构建 MLP: 8 -> 128 -> 64 -> 32 -> 1...");
+    // ========== 3. 构建网络（使用 Linear 层）==========
+    println!("\n[3/4] 构建 MLP: 8 -> 128 -> 64 -> 32 -> 1...");
 
-    let mut graph = Graph::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
-    // 输入/标签节点（batch 维度）
-    let x = graph.new_input_node(&[batch_size, 8], Some("x"))?;
-    let y_true = graph.new_input_node(&[batch_size, 1], Some("y_true"))?;
+    // 输入/标签占位符
+    let x = graph.zeros(&[batch_size, 8])?;
+    let y_true = graph.zeros(&[batch_size, 1])?;
 
-    // 隐藏层1: 8 -> 128 (Softplus)
-    let fc1 = linear(&mut graph, x, 8, 128, batch_size, Some("fc1"))?;
-    let a1 = graph.new_softplus_node(fc1.output, Some("fc1_act"))?;
+    // 使用 Linear 层构建网络（PyTorch 风格）
+    let fc1 = Linear::new_seeded(&graph, 8, 128, true, "fc1", 100)?;
+    let fc2 = Linear::new_seeded(&graph, 128, 64, true, "fc2", 200)?;
+    let fc3 = Linear::new_seeded(&graph, 64, 32, true, "fc3", 300)?;
+    let fc4 = Linear::new_seeded(&graph, 32, 1, true, "fc4", 400)?;
 
-    // 隐藏层2: 128 -> 64 (Softplus)
-    let fc2 = linear(&mut graph, a1, 128, 64, batch_size, Some("fc2"))?;
-    let a2 = graph.new_softplus_node(fc2.output, Some("fc2_act"))?;
-
-    // 隐藏层3: 64 -> 32 (Softplus)
-    let fc3 = linear(&mut graph, a2, 64, 32, batch_size, Some("fc3"))?;
-    let a3 = graph.new_softplus_node(fc3.output, Some("fc3_act"))?;
-
-    // 输出层: 32 -> 1 (线性)
-    let fc4 = linear(&mut graph, a3, 32, 1, batch_size, Some("fc4"))?;
-    let y_pred = fc4.output;
-
-    // 损失函数
-    let loss = graph.new_mse_loss_node(y_pred, y_true, Some("loss"))?;
-
-    println!("  ✓ 网络构建完成：8 -> 128 -> 64 -> 32 -> 1（4 层 MLP）");
-    println!("  ✓ 参数节点：fc1_W/b, fc2_W/b, fc3_W/b, fc4_W/b");
-
-    // 保存网络结构可视化（训练前）
-    let output_dir = "tests/outputs";
-    fs::create_dir_all(output_dir).ok();
-    graph.save_visualization_grouped(format!("{output_dir}/california_housing"), None)?;
-    graph.save_summary(format!("{output_dir}/california_housing_summary.md"))?;
-    println!("  ✓ 网络结构已保存: {output_dir}/california_housing.png");
-
-    // ========== Xavier 初始化 ==========
+    // Xavier 初始化（适合 Softplus 激活）
     let xavier_init = |fan_in: usize, fan_out: usize, seed: u64| -> Tensor {
         let std = (2.0 / (fan_in + fan_out) as f32).sqrt();
         Tensor::normal_seeded(0.0, std, &[fan_in, fan_out], seed)
     };
+    fc1.weights().set_value(&xavier_init(8, 128, 42))?;
+    fc2.weights().set_value(&xavier_init(128, 64, 43))?;
+    fc3.weights().set_value(&xavier_init(64, 32, 44))?;
+    fc4.weights().set_value(&xavier_init(32, 1, 45))?;
 
-    graph.set_node_value(fc1.weights, Some(&xavier_init(8, 128, 42)))?;
-    graph.set_node_value(fc2.weights, Some(&xavier_init(128, 64, 43)))?;
-    graph.set_node_value(fc3.weights, Some(&xavier_init(64, 32, 44)))?;
-    graph.set_node_value(fc4.weights, Some(&xavier_init(32, 1, 45)))?;
+    // 前向传播链
+    let a1 = fc1.forward(&x).softplus();
+    let a2 = fc2.forward(&a1).softplus();
+    let a3 = fc3.forward(&a2).softplus();
+    let y_pred = fc4.forward(&a3);
 
-    // bias 初始化为 0
-    graph.set_node_value(fc1.bias, Some(&Tensor::zeros(&[1, 128])))?;
-    graph.set_node_value(fc2.bias, Some(&Tensor::zeros(&[1, 64])))?;
-    graph.set_node_value(fc3.bias, Some(&Tensor::zeros(&[1, 32])))?;
-    graph.set_node_value(fc4.bias, Some(&Tensor::zeros(&[1, 1])))?;
+    // 损失函数
+    let loss = y_pred.mse_loss(&y_true)?;
+
+    println!("  ✓ 网络构建完成：8 -> 128 -> 64 -> 32 -> 1（4 层 MLP）");
+
+    // 收集所有参数（使用 Module trait）
+    let mut params: Vec<_> = fc1.parameters();
+    params.extend(fc2.parameters());
+    params.extend(fc3.parameters());
+    params.extend(fc4.parameters());
+    println!("  ✓ 参数节点：{} 个 Var", params.len());
+
+    // 保存网络结构可视化
+    let output_dir = "tests/outputs";
+    fs::create_dir_all(output_dir).ok();
+    graph
+        .inner()
+        .save_visualization_grouped(format!("{output_dir}/california_housing"), None)?;
+    graph
+        .inner()
+        .save_summary(format!("{output_dir}/california_housing_summary.md"))?;
+    println!("  ✓ 网络结构已保存: {output_dir}/california_housing.png");
 
     // ========== 4. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");
 
-    let mut optimizer = Adam::new(&graph, learning_rate, 0.9, 0.999, 1e-8)?;
+    let mut optimizer = Adam::new(&graph, &params, learning_rate);
 
     // 预先构建 batch 数据
     let train_batches = build_batches(&train_data, batch_size, num_batches);
@@ -148,38 +136,34 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
 
         // 训练
         for (batch_x, batch_y) in &train_batches {
-            graph.set_node_value(x, Some(batch_x))?;
-            graph.set_node_value(y_true, Some(batch_y))?;
+            x.set_value(batch_x)?;
+            y_true.set_value(batch_y)?;
 
-            graph.zero_grad()?;
-            graph.forward(loss)?;
-            let loss_val = graph.backward(loss)?; // backward 返回 loss 值
-            optimizer.step(&mut graph)?;
-
+            let loss_val = optimizer.minimize(&loss)?;
             epoch_loss_sum += loss_val;
         }
 
         let epoch_avg_loss = epoch_loss_sum / num_batches as f32;
 
         // 测试集评估（计算 R²）
-        graph.set_eval_mode();
+        graph.eval();
         let mut predictions: Vec<f32> = Vec::with_capacity(test_samples);
         let mut actuals: Vec<f32> = Vec::with_capacity(test_samples);
 
         for (batch_x, batch_y) in &test_batches_data {
-            graph.set_node_value(x, Some(batch_x))?;
-            graph.set_node_value(y_true, Some(batch_y))?;
+            x.set_value(batch_x)?;
+            y_true.set_value(batch_y)?;
 
-            graph.forward(y_pred)?;
+            y_pred.forward()?;
 
-            let pred_tensor = graph.get_node_value(y_pred)?.unwrap();
+            let pred_tensor = y_pred.value()?.unwrap();
             for i in 0..batch_size {
                 predictions.push(pred_tensor[[i, 0]]);
                 actuals.push(batch_y[[i, 0]]);
             }
         }
 
-        graph.set_train_mode();
+        graph.train();
 
         // 计算 R²
         let r2_score = compute_r2(&predictions, &actuals);
@@ -207,7 +191,7 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
 
     // 打印模型摘要
     println!("\n模型摘要：");
-    graph.summary();
+    graph.inner().summary();
 
     // 最终验证
     println!("\n{}", "=".repeat(60));
@@ -248,7 +232,6 @@ fn build_batches(
             let idx = batch_idx * batch_size + i;
             if idx < data.len() {
                 let (features, target) = data.get(idx).unwrap();
-                // 使用 flatten_view() 获取数据视图并复制
                 x_data.extend(features.flatten_view().iter().copied());
                 y_data.push(target[[0]]);
             }

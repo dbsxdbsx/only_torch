@@ -5,7 +5,7 @@
  * @LastEditors  : 老董
  * @LastEditTime : 2025-01-15 11:55:43
  */
-use only_torch::nn::{Graph, GraphError};
+use only_torch::nn::{Graph, GraphError, VarActivationOps, VarLossOps, VarMatrixOps};
 use only_torch::tensor::Tensor;
 use only_torch::{tensor_slice, tensor_where};
 use std::fs;
@@ -42,33 +42,35 @@ fn test_adaline() -> Result<(), GraphError> {
     println!("{:?}", train_set.shape());
 
     // 创建计算图
-    let mut graph = Graph::new();
+    let graph = Graph::new();
 
     // 构造计算图：输入向量，是一个3x1矩阵，不需要初始化，不参与训练
-    let x = graph.new_input_node(&[3, 1], Some("x"))?;
+    let x = graph.zeros(&[3, 1]).unwrap();
     // 类别标签，1男，-1女
-    let label = graph.new_input_node(&[1, 1], Some("label"))?;
+    let label = graph.zeros(&[1, 1]).unwrap();
     // 权重向量，是一个1x3矩阵，需要初始化，参与训练（使用固定种子）
-    let w = graph.new_parameter_node_seeded(&[1, 3], Some("w"), seed_base + 7)?;
+    let w = graph.parameter_seeded(&[1, 3], "w", seed_base + 7)?;
     // 阈值，是一个1x1矩阵，需要初始化，参与训练（使用固定种子）
-    let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), seed_base + 8)?;
+    let b = graph.parameter_seeded(&[1, 1], "b", seed_base + 8)?;
 
     // ADALINE的预测输出
-    let wx = graph.new_mat_mul_node(w, x, None)?;
-    let output = graph.new_add_node(&[wx, b], None)?;
-    let predict = graph.new_sign_node(output, None)?; // Sign 直接输出 {-1, 0, 1}
+    let wx = w.matmul(&x)?;
+    let output = &wx + &b;
+    let predict = output.sign(); // Sign 直接输出 {-1, 0, 1}
 
     // 损失函数
-    let loss_input = graph.new_mat_mul_node(label, output, Some("loss_input"))?;
-    let loss = graph.new_perception_loss_node(loss_input, Some("loss"))?;
+    let loss_input = label.matmul(&output)?;
+    let loss = loss_input.perception_loss();
 
     // 保存网络结构可视化（训练前）
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
     graph
+        .inner()
         .save_visualization(format!("{output_dir}/adaline"), None)
         .unwrap();
     graph
+        .inner()
         .save_summary(format!("{output_dir}/adaline_summary.md"))
         .unwrap();
     println!("网络结构已保存: {output_dir}/adaline.png");
@@ -93,24 +95,21 @@ fn test_adaline() -> Result<(), GraphError> {
             let l = tensor_slice!(train_set, i, 3);
 
             // 将特征赋给x节点，将标签赋给label节点
-            graph.set_node_value(x, Some(&features))?;
-            graph.set_node_value(label, Some(&l))?;
+            x.set_value(&features)?;
+            label.set_value(&l)?;
 
-            // 在loss节点上执行前向传播，计算损失值
-            graph.forward(loss)?;
-
-            // 在w和b节点上执行反向传播，计算损失值对它们的雅可比矩阵
-            graph.backward(loss)?;
+            // 在loss节点上执行前向 + 反向传播
+            loss.backward()?;
 
             // 更新参数节点w
-            let w_value = graph.get_node_value(w)?.unwrap();
-            let w_grad = graph.get_node_grad(w)?.unwrap();
-            graph.set_node_value(w, Some(&(w_value - learning_rate * w_grad)))?;
+            let w_value = w.value()?.unwrap();
+            let w_grad = w.grad()?.unwrap();
+            w.set_value(&(&w_value - learning_rate * &w_grad))?;
 
             // 更新参数节点b
-            let b_value = graph.get_node_value(b)?.unwrap();
-            let b_grad = graph.get_node_grad(b)?.unwrap();
-            graph.set_node_value(b, Some(&(b_value - learning_rate * b_grad)))?;
+            let b_value = b.value()?.unwrap();
+            let b_grad = b.grad()?.unwrap();
+            b.set_value(&(&b_value - learning_rate * &b_grad))?;
 
             // 手动清除雅可比矩阵，为下次迭代做准备
             graph.zero_grad()?;
@@ -122,11 +121,11 @@ fn test_adaline() -> Result<(), GraphError> {
         // 遍历训练集，计算当前模型对每个样本的预测值
         for i in 0..train_set.shape()[0] {
             let features = tensor_slice!(train_set, i, 0..3).transpose();
-            graph.set_node_value(x, Some(&features))?;
+            x.set_value(&features)?;
 
             // 在模型的predict节点上执行前向传播
-            graph.forward(predict)?;
-            let v = graph.get_node_value(predict)?.unwrap().get(&[0, 0]);
+            predict.forward()?;
+            let v = predict.value()?.unwrap().get(&[0, 0]);
             pred_vec.push(v.get_data_number().unwrap()); // 模型的预测结果：1男，-1女（Sign直接输出）
         }
         let pred = Tensor::new(&pred_vec, &[pred_vec.len(), 1]); // Sign 已直接输出 {-1, 1}，无需转换

@@ -19,9 +19,10 @@
 use only_torch::data::MnistDataset;
 use only_torch::nn::layer::{avg_pool2d, conv2d, linear, max_pool2d};
 use only_torch::nn::optimizer::{Adam, Optimizer};
-use only_torch::nn::{Graph, GraphError};
+use only_torch::nn::{Graph, GraphError, Var, VarActivationOps, VarLossOps, VarShapeOps};
 use only_torch::tensor::Tensor;
 use std::fs;
+use std::rc::Rc;
 use std::time::Instant;
 
 /// MNIST CNN 集成测试
@@ -93,27 +94,43 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
     println!("\n[3/4] 构建 LeNet 风格 CNN...");
     let build_start = Instant::now();
 
-    let mut graph = Graph::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // 输入节点: [batch, 1, 28, 28]
-    let x = graph.new_input_node(&[batch_size, 1, 28, 28], Some("x"))?;
+    let x = graph.zeros(&[batch_size, 1, 28, 28])?;
     // 标签节点: [batch, 10]
-    let y = graph.new_input_node(&[batch_size, 10], Some("y"))?;
+    let y = graph.zeros(&[batch_size, 10])?;
 
     // ========== 卷积层 1 ==========
     // conv1: 1→8 通道, 5x5 核, padding=2 (same padding)
-    let conv1 = conv2d(&mut graph, x, 1, 8, (5, 5), (1, 1), (2, 2), Some("conv1"))?;
+    let conv1 = conv2d(
+        &mut graph.inner_mut(),
+        x.node_id(),
+        1,
+        8,
+        (5, 5),
+        (1, 1),
+        (2, 2),
+        Some("conv1"),
+    )?;
     // conv1 输出: [batch, 8, 28, 28]
-    let relu1 = graph.new_leaky_relu_node(conv1.output, 0.0, Some("relu1"))?;
+    let conv1_output = Var::new(conv1.output, graph.inner_rc());
+    let relu1 = conv1_output.leaky_relu(0.0);
 
     // pool1: 2x2, stride=2 —— 使用 AvgPool（经典 LeNet-5 风格）
-    let pool1 = avg_pool2d(&mut graph, relu1, (2, 2), Some((2, 2)), Some("avg_pool1"))?;
+    let pool1 = avg_pool2d(
+        &mut graph.inner_mut(),
+        relu1.node_id(),
+        (2, 2),
+        Some((2, 2)),
+        Some("avg_pool1"),
+    )?;
     // pool1 输出: [batch, 8, 14, 14]
 
     // ========== 卷积层 2 ==========
     // conv2: 8→16 通道, 3x3 核, padding=1 (same padding)
     let conv2 = conv2d(
-        &mut graph,
+        &mut graph.inner_mut(),
         pool1.output,
         8,
         16,
@@ -123,26 +140,69 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
         Some("conv2"),
     )?;
     // conv2 输出: [batch, 16, 14, 14]
-    let relu2 = graph.new_leaky_relu_node(conv2.output, 0.0, Some("relu2"))?;
+    let conv2_output = Var::new(conv2.output, graph.inner_rc());
+    let relu2 = conv2_output.leaky_relu(0.0);
 
     // pool2: 2x2, stride=2 —— 使用 MaxPool（现代 CNN 风格）
-    let pool2 = max_pool2d(&mut graph, relu2, (2, 2), Some((2, 2)), Some("max_pool2"))?;
+    let pool2 = max_pool2d(
+        &mut graph.inner_mut(),
+        relu2.node_id(),
+        (2, 2),
+        Some((2, 2)),
+        Some("max_pool2"),
+    )?;
     // pool2 输出: [batch, 16, 7, 7]
 
     // ========== 展平 + 全连接层 ==========
     // flatten: [batch, 16, 7, 7] → [batch, 784]
-    let flat = graph.new_flatten_node(pool2.output, true, Some("flatten"))?;
+    let pool2_output = Var::new(pool2.output, graph.inner_rc());
+    let flat = pool2_output.flatten(true);
 
     // fc1: 784 → 64
-    let fc1 = linear(&mut graph, flat, 784, 64, batch_size, Some("fc1"))?;
-    let relu3 = graph.new_leaky_relu_node(fc1.output, 0.0, Some("relu3"))?;
+    let fc1 = linear(
+        &mut graph.inner_mut(),
+        flat.node_id(),
+        784,
+        64,
+        batch_size,
+        Some("fc1"),
+    )?;
+    let fc1_output = Var::new(fc1.output, graph.inner_rc());
+    let relu3 = fc1_output.leaky_relu(0.0);
 
     // fc2: 64 → 10 (输出层)
-    let fc2 = linear(&mut graph, relu3, 64, 10, batch_size, Some("fc2"))?;
-    let logits = fc2.output;
+    let fc2 = linear(
+        &mut graph.inner_mut(),
+        relu3.node_id(),
+        64,
+        10,
+        batch_size,
+        Some("fc2"),
+    )?;
+    let logits = Var::new(fc2.output, graph.inner_rc());
 
     // 损失函数
-    let loss = graph.new_softmax_cross_entropy_node(logits, y, Some("loss"))?;
+    let loss = logits.cross_entropy(&y)?;
+
+    // 收集参数
+    let conv1_weights = Var::new(conv1.weights, graph.inner_rc());
+    let conv1_bias = Var::new(conv1.bias, graph.inner_rc());
+    let conv2_weights = Var::new(conv2.weights, graph.inner_rc());
+    let conv2_bias = Var::new(conv2.bias, graph.inner_rc());
+    let fc1_weights = Var::new(fc1.weights, graph.inner_rc());
+    let fc1_bias = Var::new(fc1.bias, graph.inner_rc());
+    let fc2_weights = Var::new(fc2.weights, graph.inner_rc());
+    let fc2_bias = Var::new(fc2.bias, graph.inner_rc());
+    let params = vec![
+        conv1_weights,
+        conv1_bias,
+        conv2_weights,
+        conv2_bias,
+        fc1_weights,
+        fc1_bias,
+        fc2_weights,
+        fc2_bias,
+    ];
 
     println!(
         "  ✓ CNN 构建完成，耗时 {:.2}s",
@@ -158,14 +218,18 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
     // 保存网络结构可视化（训练前）
     let output_dir = "tests/outputs";
     fs::create_dir_all(output_dir).ok();
-    graph.save_visualization_grouped(format!("{output_dir}/mnist_cnn"), None)?;
-    graph.save_summary(format!("{output_dir}/mnist_cnn_summary.md"))?;
+    graph
+        .inner()
+        .save_visualization_grouped(format!("{output_dir}/mnist_cnn"), None)?;
+    graph
+        .inner()
+        .save_summary(format!("{output_dir}/mnist_cnn_summary.md"))?;
     println!("  ✓ 网络结构已保存: {output_dir}/mnist_cnn.png");
 
     // ========== 4. 训练循环 ==========
     println!("\n[4/4] 开始训练...\n");
 
-    let mut optimizer = Adam::new(&graph, learning_rate, 0.9, 0.999, 1e-8)?;
+    let mut optimizer = Adam::new(&graph, &params, learning_rate);
 
     // 获取图像数据（保持 [N, 1, 28, 28] 格式）
     let all_train_images = train_data.images(); // [N, 1, 28, 28]
@@ -190,21 +254,17 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
             let batch_images = extract_batch_4d(all_train_images, start, end, batch_size);
             let batch_labels = extract_batch_2d(all_train_labels, start, end, batch_size);
 
-            graph.set_node_value(x, Some(&batch_images))?;
-            graph.set_node_value(y, Some(&batch_labels))?;
+            x.set_value(&batch_images)?;
+            y.set_value(&batch_labels)?;
 
-            graph.zero_grad()?;
-            graph.forward(loss)?;
-            let loss_val = graph.backward(loss)?; // backward 返回 loss 值
-            optimizer.step(&mut graph)?;
-
+            let loss_val = optimizer.minimize(&loss)?;
             epoch_loss_sum += loss_val;
         }
 
         let epoch_avg_loss = epoch_loss_sum / num_batches as f32;
 
         // 测试精度
-        graph.set_eval_mode();
+        graph.eval();
         let mut correct = 0;
 
         for batch_idx in 0..test_batches {
@@ -214,12 +274,12 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
             let batch_images = extract_batch_4d(all_test_images, start, end, batch_size);
             let batch_labels = extract_batch_2d(all_test_labels, start, end, batch_size);
 
-            graph.set_node_value(x, Some(&batch_images))?;
-            graph.set_node_value(y, Some(&batch_labels))?;
+            x.set_value(&batch_images)?;
+            y.set_value(&batch_labels)?;
 
-            graph.forward(loss)?;
+            logits.forward()?;
 
-            let predictions = graph.get_node_value(logits)?.unwrap();
+            let predictions = logits.value()?.unwrap();
 
             for i in 0..batch_size {
                 let mut pred_class = 0;
@@ -246,7 +306,7 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
             }
         }
 
-        graph.set_train_mode();
+        graph.train();
 
         let total_tested = test_batches * batch_size;
         let accuracy = correct as f32 / total_tested as f32;
@@ -283,7 +343,7 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
 
     // 打印模型摘要
     println!("\n模型摘要：");
-    graph.summary();
+    graph.inner().summary();
 
     if test_passed {
         println!("\n{}", "=".repeat(60));
