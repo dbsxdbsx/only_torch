@@ -1,7 +1,7 @@
 /*
  * @Author       : 老董
- * @Date         : 2025-12-30
- * @Description  : GRU 层 - 便捷函数，组合 Node 构建 GRU 结构
+ * @Date         : 2026-01-17
+ * @Description  : Gru (门控循环单元) 层 - PyTorch 风格 API
  *
  * 公式:
  *   r_t = σ(x_t @ W_ir + h_{t-1} @ W_hr + b_r)     # 重置门
@@ -9,204 +9,216 @@
  *   n_t = tanh(x_t @ W_in + r_t ⊙ (h_{t-1} @ W_hn) + b_n)  # 候选状态
  *   h_t = (1 - z_t) ⊙ n_t + z_t ⊙ h_{t-1}         # 隐藏状态
  *
- * 与 PyTorch nn.GRUCell 对齐:
- * - input: [batch, input_size]
- * - hidden: [batch, hidden_size]
- *
- * GRU 相比 LSTM 更简单（2 个门 vs 4 个门），计算效率更高
+ * 输入/输出形状：
+ * - 输入：[batch_size, input_size]
+ * - 输出：[batch_size, hidden_size]
  */
 
-use crate::nn::GraphError;
-use crate::nn::graph::GraphInner;
-use crate::nn::nodes::NodeId;
+use crate::nn::{Graph, GraphError, Init, Module, Var};
 use crate::tensor::Tensor;
 
-/// GRU 层输出结构
-#[derive(Debug, Clone)]
-pub struct GruOutput {
-    /// 隐藏状态输出节点 `h_t`: [batch, `hidden_size`]
-    pub hidden: NodeId,
-    /// 上一时间步隐藏状态 (State 节点)
-    pub h_prev: NodeId,
-    // === 重置门参数 ===
-    pub w_ir: NodeId,
-    pub w_hr: NodeId,
-    pub b_r: NodeId,
-    // === 更新门参数 ===
-    pub w_iz: NodeId,
-    pub w_hz: NodeId,
-    pub b_z: NodeId,
-    // === 候选状态参数 ===
-    pub w_in: NodeId,
-    pub w_hn: NodeId,
-    pub b_n: NodeId,
-}
+// ==================== 新版 Gru 结构体 ====================
 
-/// 创建 GRU 层
+/// Gru (门控循环单元) 层
 ///
-/// # 参数
-/// - `graph`: 计算图
-/// - `input`: 输入节点，形状 [`batch_size`, `input_size`]
-/// - `input_size`: 输入特征维度
-/// - `hidden_size`: 隐藏状态维度
-/// - `batch_size`: 批大小
-/// - `name`: 可选的层名称前缀
+/// PyTorch 风格的 GRU 层，包含重置门、更新门和候选状态。
+/// 比 LSTM 更简单高效（2 个门 vs 4 个门）。
 ///
-/// # 返回
-/// - `GruOutput`: 包含所有相关节点 ID
-pub fn gru(
-    graph: &mut GraphInner,
-    input: NodeId,
+/// # 输入/输出形状
+/// - 输入：[batch_size, input_size]
+/// - 输出：[batch_size, hidden_size]
+///
+/// # 使用示例
+/// ```ignore
+/// let gru = Gru::new(&graph, 10, 20, 32, "gru1")?;
+/// gru.step(&x_t)?;
+/// let h_t = gru.hidden().value()?;
+/// ```
+pub struct Gru {
+    // === 重置门参数 ===
+    w_ir: Var,
+    w_hr: Var,
+    b_r: Var,
+    // === 更新门参数 ===
+    w_iz: Var,
+    w_hz: Var,
+    b_z: Var,
+    // === 候选状态参数 ===
+    w_in: Var,
+    w_hn: Var,
+    b_n: Var,
+    // === 状态节点 ===
+    hidden_output: Var,
+    hidden_input: Var,
+    // === 输入节点 ===
+    input_node: Var,
+    // === Graph 和配置 ===
+    graph: Graph,
     input_size: usize,
     hidden_size: usize,
     batch_size: usize,
-    name: Option<&str>,
-) -> Result<GruOutput, GraphError> {
-    let prefix = name.unwrap_or("gru");
-
-    // === 创建状态节点 ===
-    let h_prev = graph.new_state_node(
-        &[batch_size, hidden_size],
-        Some(&format!("{prefix}_h_prev")),
-    )?;
-    graph.set_node_value(h_prev, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
-
-    // === 创建 ones 用于偏置广播 ===
-    let ones = graph.new_input_node(&[batch_size, 1], Some(&format!("{prefix}_ones")))?;
-    graph.set_node_value(ones, Some(&Tensor::ones(&[batch_size, 1])))?;
-
-    // === 创建 one 用于 (1 - z_t) 计算 ===
-    let one = graph.new_parameter_node(&[1, 1], Some(&format!("{prefix}_one")))?;
-    graph.set_node_value(one, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-
-    let neg_one = graph.new_parameter_node(&[1, 1], Some(&format!("{prefix}_neg_one")))?;
-    graph.set_node_value(neg_one, Some(&Tensor::new(&[-1.0], &[1, 1])))?;
-
-    // === 重置门参数 ===
-    let w_ir =
-        graph.new_parameter_node(&[input_size, hidden_size], Some(&format!("{prefix}_W_ir")))?;
-    let w_hr =
-        graph.new_parameter_node(&[hidden_size, hidden_size], Some(&format!("{prefix}_W_hr")))?;
-    let b_r = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{prefix}_b_r")))?;
-    graph.set_node_value(b_r, Some(&Tensor::zeros(&[1, hidden_size])))?;
-
-    // === 更新门参数 ===
-    let w_iz =
-        graph.new_parameter_node(&[input_size, hidden_size], Some(&format!("{prefix}_W_iz")))?;
-    let w_hz =
-        graph.new_parameter_node(&[hidden_size, hidden_size], Some(&format!("{prefix}_W_hz")))?;
-    let b_z = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{prefix}_b_z")))?;
-    graph.set_node_value(b_z, Some(&Tensor::zeros(&[1, hidden_size])))?;
-
-    // === 候选状态参数 ===
-    let w_in =
-        graph.new_parameter_node(&[input_size, hidden_size], Some(&format!("{prefix}_W_in")))?;
-    let w_hn =
-        graph.new_parameter_node(&[hidden_size, hidden_size], Some(&format!("{prefix}_W_hn")))?;
-    let b_n = graph.new_parameter_node(&[1, hidden_size], Some(&format!("{prefix}_b_n")))?;
-    graph.set_node_value(b_n, Some(&Tensor::zeros(&[1, hidden_size])))?;
-
-    // === 重置门计算: r_t = σ(x @ W_ir + h_prev @ W_hr + b_r) ===
-    let x_ir = graph.new_mat_mul_node(input, w_ir, Some(&format!("{prefix}_x_ir")))?;
-    let h_hr = graph.new_mat_mul_node(h_prev, w_hr, Some(&format!("{prefix}_h_hr")))?;
-    let b_r_broadcast = graph.new_mat_mul_node(ones, b_r, Some(&format!("{prefix}_b_r_bc")))?;
-    let pre_r = graph.new_add_node(
-        &[x_ir, h_hr, b_r_broadcast],
-        Some(&format!("{prefix}_pre_r")),
-    )?;
-    let r_gate = graph.new_sigmoid_node(pre_r, Some(&format!("{prefix}_r_gate")))?;
-
-    // === 更新门计算: z_t = σ(x @ W_iz + h_prev @ W_hz + b_z) ===
-    let x_iz = graph.new_mat_mul_node(input, w_iz, Some(&format!("{prefix}_x_iz")))?;
-    let h_hz = graph.new_mat_mul_node(h_prev, w_hz, Some(&format!("{prefix}_h_hz")))?;
-    let b_z_broadcast = graph.new_mat_mul_node(ones, b_z, Some(&format!("{prefix}_b_z_bc")))?;
-    let pre_z = graph.new_add_node(
-        &[x_iz, h_hz, b_z_broadcast],
-        Some(&format!("{prefix}_pre_z")),
-    )?;
-    let z_gate = graph.new_sigmoid_node(pre_z, Some(&format!("{prefix}_z_gate")))?;
-
-    // === 候选状态计算: n_t = tanh(x @ W_in + r_t ⊙ (h_prev @ W_hn) + b_n) ===
-    let x_in = graph.new_mat_mul_node(input, w_in, Some(&format!("{prefix}_x_in")))?;
-    let h_hn = graph.new_mat_mul_node(h_prev, w_hn, Some(&format!("{prefix}_h_hn")))?;
-    let r_h = graph.new_multiply_node(r_gate, h_hn, Some(&format!("{prefix}_r_h")))?;
-    let b_n_broadcast = graph.new_mat_mul_node(ones, b_n, Some(&format!("{prefix}_b_n_bc")))?;
-    let pre_n = graph.new_add_node(
-        &[x_in, r_h, b_n_broadcast],
-        Some(&format!("{prefix}_pre_n")),
-    )?;
-    let n_gate = graph.new_tanh_node(pre_n, Some(&format!("{prefix}_n_gate")))?;
-
-    // === 隐藏状态更新: h_t = (1 - z_t) ⊙ n_t + z_t ⊙ h_prev ===
-    // 分解为: h_t = n_t - z_t ⊙ n_t + z_t ⊙ h_prev
-    //       = n_t + z_t ⊙ (h_prev - n_t)
-    let neg_n =
-        graph.new_scalar_multiply_node(neg_one, n_gate, Some(&format!("{prefix}_neg_n")))?;
-    let h_minus_n = graph.new_add_node(&[h_prev, neg_n], Some(&format!("{prefix}_h_minus_n")))?;
-    let z_diff = graph.new_multiply_node(z_gate, h_minus_n, Some(&format!("{prefix}_z_diff")))?;
-    let hidden = graph.new_add_node(&[n_gate, z_diff], Some(&format!("{prefix}_h")))?;
-
-    // === 建立循环连接 ===
-    graph.connect_recurrent(hidden, h_prev)?;
-
-    // === 注册层分组（用于可视化） ===
-    graph.register_layer_group(
-        prefix,
-        "GRU",
-        &format!("{input_size}→{hidden_size}"),
-        vec![
-            // 参数节点
-            w_ir,
-            w_hr,
-            b_r,
-            w_iz,
-            w_hz,
-            b_z,
-            w_in,
-            w_hn,
-            b_n,
-            ones,
-            one,
-            neg_one,
-            // 重置门
-            x_ir,
-            h_hr,
-            b_r_broadcast,
-            pre_r,
-            r_gate,
-            // 更新门
-            x_iz,
-            h_hz,
-            b_z_broadcast,
-            pre_z,
-            z_gate,
-            // 候选状态
-            x_in,
-            h_hn,
-            r_h,
-            b_n_broadcast,
-            pre_n,
-            n_gate,
-            // 状态更新
-            neg_n,
-            h_minus_n,
-            z_diff,
-            hidden,
-        ],
-    );
-
-    Ok(GruOutput {
-        hidden,
-        h_prev,
-        w_ir,
-        w_hr,
-        b_r,
-        w_iz,
-        w_hz,
-        b_z,
-        w_in,
-        w_hn,
-        b_n,
-    })
+    #[allow(dead_code)]
+    name: String,
 }
+
+impl Gru {
+    /// 创建新的 Gru 层
+    pub fn new(
+        graph: &Graph,
+        input_size: usize,
+        hidden_size: usize,
+        batch_size: usize,
+        name: &str,
+    ) -> Result<Self, GraphError> {
+        // 创建参数节点
+        let w_ir = graph.parameter(&[input_size, hidden_size], Init::Kaiming, &format!("{name}_W_ir"))?;
+        let w_hr = graph.parameter(&[hidden_size, hidden_size], Init::Kaiming, &format!("{name}_W_hr"))?;
+        let b_r = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_r"))?;
+
+        let w_iz = graph.parameter(&[input_size, hidden_size], Init::Kaiming, &format!("{name}_W_iz"))?;
+        let w_hz = graph.parameter(&[hidden_size, hidden_size], Init::Kaiming, &format!("{name}_W_hz"))?;
+        let b_z = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_z"))?;
+
+        let w_in = graph.parameter(&[input_size, hidden_size], Init::Kaiming, &format!("{name}_W_in"))?;
+        let w_hn = graph.parameter(&[hidden_size, hidden_size], Init::Kaiming, &format!("{name}_W_hn"))?;
+        let b_n = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_n"))?;
+
+        // 创建输入节点
+        let input_node = graph.zeros(&[batch_size, input_size])?;
+
+        // 创建 ones 用于偏置广播
+        let ones = graph.ones(&[batch_size, 1])?;
+
+        // 创建 -1 用于减法（h_t = n_t + z_t ⊙ (h_prev - n_t)）
+        let neg_one = graph.parameter(&[1, 1], Init::Zeros, &format!("{name}_neg_one"))?;
+        neg_one.set_value(&Tensor::new(&[-1.0], &[1, 1]))?;
+
+        // 创建状态节点和计算图结构
+        let (hidden_input, hidden_output) = {
+            let mut g = graph.inner_mut();
+
+            // 创建状态节点
+            let h_prev_id = g.new_state_node(&[batch_size, hidden_size], Some(&format!("{name}_h_prev")))?;
+            g.set_node_value(h_prev_id, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
+
+            // === 重置门计算 ===
+            let x_ir = g.new_mat_mul_node(input_node.node_id(), w_ir.node_id(), Some(&format!("{name}_x_ir")))?;
+            let h_hr = g.new_mat_mul_node(h_prev_id, w_hr.node_id(), Some(&format!("{name}_h_hr")))?;
+            let b_r_bc = g.new_mat_mul_node(ones.node_id(), b_r.node_id(), Some(&format!("{name}_b_r_bc")))?;
+            let pre_r = g.new_add_node(&[x_ir, h_hr, b_r_bc], Some(&format!("{name}_pre_r")))?;
+            let r_gate = g.new_sigmoid_node(pre_r, Some(&format!("{name}_r_gate")))?;
+
+            // === 更新门计算 ===
+            let x_iz = g.new_mat_mul_node(input_node.node_id(), w_iz.node_id(), Some(&format!("{name}_x_iz")))?;
+            let h_hz = g.new_mat_mul_node(h_prev_id, w_hz.node_id(), Some(&format!("{name}_h_hz")))?;
+            let b_z_bc = g.new_mat_mul_node(ones.node_id(), b_z.node_id(), Some(&format!("{name}_b_z_bc")))?;
+            let pre_z = g.new_add_node(&[x_iz, h_hz, b_z_bc], Some(&format!("{name}_pre_z")))?;
+            let z_gate = g.new_sigmoid_node(pre_z, Some(&format!("{name}_z_gate")))?;
+
+            // === 候选状态计算 ===
+            let x_in = g.new_mat_mul_node(input_node.node_id(), w_in.node_id(), Some(&format!("{name}_x_in")))?;
+            let h_hn = g.new_mat_mul_node(h_prev_id, w_hn.node_id(), Some(&format!("{name}_h_hn")))?;
+            let r_h_hn = g.new_multiply_node(r_gate, h_hn, Some(&format!("{name}_r_h_hn")))?;
+            let b_n_bc = g.new_mat_mul_node(ones.node_id(), b_n.node_id(), Some(&format!("{name}_b_n_bc")))?;
+            let pre_n = g.new_add_node(&[x_in, r_h_hn, b_n_bc], Some(&format!("{name}_pre_n")))?;
+            let n_gate = g.new_tanh_node(pre_n, Some(&format!("{name}_n_gate")))?;
+
+            // === 隐藏状态更新: h_t = (1-z_t) ⊙ n_t + z_t ⊙ h_{t-1} ===
+            // 重写为: h_t = n_t + z_t ⊙ (h_{t-1} - n_t)
+            let neg_n = g.new_scalar_multiply_node(neg_one.node_id(), n_gate, Some(&format!("{name}_neg_n")))?;
+            let h_minus_n = g.new_add_node(&[h_prev_id, neg_n], Some(&format!("{name}_h_minus_n")))?;
+            let z_diff = g.new_multiply_node(z_gate, h_minus_n, Some(&format!("{name}_z_diff")))?;
+            let hidden_id = g.new_add_node(&[n_gate, z_diff], Some(&format!("{name}_h")))?;
+
+            // === 建立循环连接 ===
+            g.connect_recurrent(hidden_id, h_prev_id)?;
+
+            // 注册层分组
+            g.register_layer_group(
+                name,
+                "Gru",
+                &format!("{input_size}→{hidden_size}"),
+                vec![
+                    w_ir.node_id(), w_hr.node_id(), b_r.node_id(),
+                    w_iz.node_id(), w_hz.node_id(), b_z.node_id(),
+                    w_in.node_id(), w_hn.node_id(), b_n.node_id(),
+                    r_gate, z_gate, n_gate, hidden_id,
+                ],
+            );
+
+            let h_prev = Var::new(h_prev_id, graph.inner_rc());
+            let hidden = Var::new(hidden_id, graph.inner_rc());
+
+            (h_prev, hidden)
+        };
+
+        Ok(Self {
+            w_ir, w_hr, b_r,
+            w_iz, w_hz, b_z,
+            w_in, w_hn, b_n,
+            hidden_output,
+            hidden_input,
+            input_node,
+            graph: graph.clone(),
+            input_size,
+            hidden_size,
+            batch_size,
+            name: name.to_string(),
+        })
+    }
+
+    /// 单步前向传播
+    pub fn step(&self, x: &Tensor) -> Result<&Var, GraphError> {
+        self.input_node.set_value(x)?;
+        self.graph.inner_mut().step(self.hidden_output.node_id())?;
+        Ok(&self.hidden_output)
+    }
+
+    /// 完整重置
+    pub fn reset(&self) {
+        self.graph.inner_mut().reset();
+    }
+
+    /// 重置隐藏状态为零
+    pub fn reset_hidden(&self) -> Result<(), GraphError> {
+        self.hidden_input.set_value(&Tensor::zeros(&[self.batch_size, self.hidden_size]))?;
+        Ok(())
+    }
+
+    // === Getter 方法 ===
+    pub fn hidden(&self) -> &Var { &self.hidden_output }
+    pub fn hidden_input(&self) -> &Var { &self.hidden_input }
+    pub fn input(&self) -> &Var { &self.input_node }
+
+    // 重置门参数
+    pub fn w_ir(&self) -> &Var { &self.w_ir }
+    pub fn w_hr(&self) -> &Var { &self.w_hr }
+    pub fn b_r(&self) -> &Var { &self.b_r }
+
+    // 更新门参数
+    pub fn w_iz(&self) -> &Var { &self.w_iz }
+    pub fn w_hz(&self) -> &Var { &self.w_hz }
+    pub fn b_z(&self) -> &Var { &self.b_z }
+
+    // 候选状态参数
+    pub fn w_in(&self) -> &Var { &self.w_in }
+    pub fn w_hn(&self) -> &Var { &self.w_hn }
+    pub fn b_n(&self) -> &Var { &self.b_n }
+
+    pub fn input_size(&self) -> usize { self.input_size }
+    pub fn hidden_size(&self) -> usize { self.hidden_size }
+    pub fn batch_size(&self) -> usize { self.batch_size }
+    pub fn graph(&self) -> &Graph { &self.graph }
+}
+
+impl Module for Gru {
+    fn parameters(&self) -> Vec<Var> {
+        vec![
+            self.w_ir.clone(), self.w_hr.clone(), self.b_r.clone(),
+            self.w_iz.clone(), self.w_hz.clone(), self.b_z.clone(),
+            self.w_in.clone(), self.w_hn.clone(), self.b_n.clone(),
+        ]
+    }
+}
+
 // 单元测试位于 src/nn/tests/layer_gru.rs

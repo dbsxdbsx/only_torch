@@ -15,11 +15,10 @@ mod lstm;
 mod max_pool2d;
 mod rnn;
 
-pub use avg_pool2d::{avg_pool2d, AvgPool2dOutput};
-pub use conv2d::{conv2d, Conv2dOutput};
-pub use gru::{gru, GruOutput};
-#[allow(deprecated)]
-pub use linear::{linear, Linear, LinearOutput};
-pub use lstm::{lstm, LstmOutput};
-pub use max_pool2d::{max_pool2d, MaxPool2dOutput};
-pub use rnn::{rnn, RnnOutput};
+pub use avg_pool2d::AvgPool2d;
+pub use conv2d::Conv2d;
+pub use gru::Gru;
+pub use linear::Linear;
+pub use lstm::Lstm;
+pub use max_pool2d::MaxPool2d;
+pub use rnn::Rnn;

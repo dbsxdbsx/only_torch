@@ -17,17 +17,16 @@
  */
 
 use only_torch::data::MnistDataset;
-use only_torch::nn::layer::{avg_pool2d, conv2d, linear, max_pool2d};
+use only_torch::nn::layer::{AvgPool2d, Conv2d, Linear, MaxPool2d};
 use only_torch::nn::optimizer::{Adam, Optimizer};
-use only_torch::nn::{Graph, GraphError, Var, VarActivationOps, VarLossOps, VarShapeOps};
+use only_torch::nn::{Graph, GraphError, Module, VarActivationOps, VarLossOps, VarShapeOps};
 use only_torch::tensor::Tensor;
 use std::fs;
-use std::rc::Rc;
 use std::time::Instant;
 
 /// MNIST CNN 集成测试
 ///
-/// 使用 conv2d + `avg_pool2d` + `max_pool2d` + linear 构建 `LeNet` 风格 CNN
+/// 使用 Conv2d + AvgPool2d + MaxPool2d + Linear 构建 LeNet 风格 CNN
 /// 验证所有 CNN Layer API 的正确性
 ///
 /// 网络结构（基于 LeNet-5，同时测试两种池化）：
@@ -103,106 +102,46 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
 
     // ========== 卷积层 1 ==========
     // conv1: 1→8 通道, 5x5 核, padding=2 (same padding)
-    let conv1 = conv2d(
-        &mut graph.inner_mut(),
-        x.node_id(),
-        1,
-        8,
-        (5, 5),
-        (1, 1),
-        (2, 2),
-        Some("conv1"),
-    )?;
+    let conv1 = Conv2d::new_seeded(&graph, 1, 8, (5, 5), (1, 1), (2, 2), true, "conv1", 42)?;
     // conv1 输出: [batch, 8, 28, 28]
-    let conv1_output = Var::new(conv1.output, graph.inner_rc());
-    let relu1 = conv1_output.leaky_relu(0.0);
+    let h1 = conv1.forward(&x).leaky_relu(0.0);
 
     // pool1: 2x2, stride=2 —— 使用 AvgPool（经典 LeNet-5 风格）
-    let pool1 = avg_pool2d(
-        &mut graph.inner_mut(),
-        relu1.node_id(),
-        (2, 2),
-        Some((2, 2)),
-        Some("avg_pool1"),
-    )?;
+    let pool1 = AvgPool2d::new((2, 2), Some((2, 2)), "avg_pool1");
     // pool1 输出: [batch, 8, 14, 14]
+    let h2 = pool1.forward(&h1);
 
     // ========== 卷积层 2 ==========
     // conv2: 8→16 通道, 3x3 核, padding=1 (same padding)
-    let conv2 = conv2d(
-        &mut graph.inner_mut(),
-        pool1.output,
-        8,
-        16,
-        (3, 3),
-        (1, 1),
-        (1, 1),
-        Some("conv2"),
-    )?;
+    let conv2 = Conv2d::new_seeded(&graph, 8, 16, (3, 3), (1, 1), (1, 1), true, "conv2", 43)?;
     // conv2 输出: [batch, 16, 14, 14]
-    let conv2_output = Var::new(conv2.output, graph.inner_rc());
-    let relu2 = conv2_output.leaky_relu(0.0);
+    let h3 = conv2.forward(&h2).leaky_relu(0.0);
 
     // pool2: 2x2, stride=2 —— 使用 MaxPool（现代 CNN 风格）
-    let pool2 = max_pool2d(
-        &mut graph.inner_mut(),
-        relu2.node_id(),
-        (2, 2),
-        Some((2, 2)),
-        Some("max_pool2"),
-    )?;
+    let pool2 = MaxPool2d::new((2, 2), Some((2, 2)), "max_pool2");
     // pool2 输出: [batch, 16, 7, 7]
+    let h4 = pool2.forward(&h3);
 
     // ========== 展平 + 全连接层 ==========
     // flatten: [batch, 16, 7, 7] → [batch, 784]
-    let pool2_output = Var::new(pool2.output, graph.inner_rc());
-    let flat = pool2_output.flatten(true);
+    let flat = h4.flatten()?;
 
     // fc1: 784 → 64
-    let fc1 = linear(
-        &mut graph.inner_mut(),
-        flat.node_id(),
-        784,
-        64,
-        batch_size,
-        Some("fc1"),
-    )?;
-    let fc1_output = Var::new(fc1.output, graph.inner_rc());
-    let relu3 = fc1_output.leaky_relu(0.0);
+    let fc1 = Linear::new(&graph, 784, 64, true, "fc1")?;
+    let h5 = fc1.forward(&flat).leaky_relu(0.0);
 
     // fc2: 64 → 10 (输出层)
-    let fc2 = linear(
-        &mut graph.inner_mut(),
-        relu3.node_id(),
-        64,
-        10,
-        batch_size,
-        Some("fc2"),
-    )?;
-    let logits = Var::new(fc2.output, graph.inner_rc());
+    let fc2 = Linear::new(&graph, 64, 10, true, "fc2")?;
+    let logits = fc2.forward(&h5);
 
     // 损失函数
     let loss = logits.cross_entropy(&y)?;
 
     // 收集参数
-    let conv1_weights = Var::new(conv1.weights, graph.inner_rc());
-    let conv1_bias = Var::new(conv1.bias, graph.inner_rc());
-    let conv2_weights = Var::new(conv2.weights, graph.inner_rc());
-    let conv2_bias = Var::new(conv2.bias, graph.inner_rc());
-    let fc1_weights = Var::new(fc1.weights, graph.inner_rc());
-    let fc1_bias = Var::new(fc1.bias, graph.inner_rc());
-    let fc2_weights = Var::new(fc2.weights, graph.inner_rc());
-    let fc2_bias = Var::new(fc2.bias, graph.inner_rc());
-    let params = vec![
-        conv1_weights,
-        conv1_bias,
-        conv2_weights,
-        conv2_bias,
-        fc1_weights,
-        fc1_bias,
-        fc2_weights,
-        fc2_bias,
-    ];
+    let mut params = conv1.parameters();
+    params.extend(conv2.parameters());
+    params.extend(fc1.parameters());
+    params.extend(fc2.parameters());
 
     println!(
         "  ✓ CNN 构建完成，耗时 {:.2}s",

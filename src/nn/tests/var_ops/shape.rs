@@ -56,8 +56,8 @@ fn test_var_flatten() {
     let y = x.flatten().unwrap();
     y.forward().unwrap();
     let result = y.value().unwrap().unwrap();
-    // Flatten(keep_first_dim=false) 将 [2, 3] 展平为 [1, 6]（行向量）
-    assert_eq!(result.shape(), &[1, 6]);
+    // Flatten(keep_first_dim=true) 将 [2, 3] 展平为 [2, 3]（保持 batch 维度）
+    assert_eq!(result.shape(), &[2, 3]);
     assert_eq!(result.data_as_slice(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
@@ -68,8 +68,8 @@ fn test_var_flatten_already_flat() {
     let y = x.flatten().unwrap();
     y.forward().unwrap();
     let result = y.value().unwrap().unwrap();
-    // [3, 1] flatten(keep_first_dim=false) -> [1, 3]（行向量）
-    assert_eq!(result.shape(), &[1, 3]);
+    // [3, 1] flatten(keep_first_dim=true) -> [3, 1]（保持 batch 维度）
+    assert_eq!(result.shape(), &[3, 1]);
 }
 
 #[test]

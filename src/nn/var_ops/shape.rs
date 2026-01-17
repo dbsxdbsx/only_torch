@@ -37,7 +37,8 @@ pub trait VarShapeOps {
 
     /// Flatten 展平
     ///
-    /// 将张量完全展平为行向量 `[1, total_elements]`。
+    /// 将张量展平为 `[batch_size, total_other_elements]`，保留 batch 维度。
+    /// 对于输入如：`[batch, C, H, W]`，输出：`[batch, C*H*W]`。
     ///
     /// # 返回
     /// 展平后的 Var
@@ -54,11 +55,11 @@ impl VarShapeOps for Var {
     }
 
     fn flatten(&self) -> Result<Var, GraphError> {
-        // keep_first_dim = false: 完全展平为 [total_elements, 1]
+        // keep_first_dim = true: 保留 batch 维度，展平为 [batch, other_elements]
         let id = self
             .graph()
             .borrow_mut()
-            .new_flatten_node(self.node_id(), false, None)?;
+            .new_flatten_node(self.node_id(), true, None)?;
         Ok(Var::new(id, Rc::clone(self.graph())))
     }
 }

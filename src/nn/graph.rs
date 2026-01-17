@@ -168,6 +168,25 @@ impl Graph {
         Rc::clone(&self.inner)
     }
 
+    /// 将 NodeId 包装成 Var
+    ///
+    /// 用于将底层 GraphInner 节点操作的结果包装成 Var，以便使用新版 API。
+    /// 
+    /// **注意**：这是一个 escape hatch，用于混合新旧 API 的场景。
+    /// 正常使用建议直接使用新版 Layer API（如 Conv2d、Linear 等）。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 使用旧版 API 创建卷积层
+    /// let conv = conv2d(&mut graph.inner_mut(), input, ...)?;
+    /// // 包装成 Var 以便使用新版 API 链式调用
+    /// let conv_var = graph.wrap_node_id(conv.output);
+    /// let h = conv_var.relu();
+    /// ```
+    pub fn wrap_node_id(&self, node_id: NodeId) -> Var {
+        Var::new(node_id, Rc::clone(&self.inner))
+    }
+
     // ==================== 创建变量（返回 Var，自动携带图引用）====================
 
     /// 创建输入节点并设置数据

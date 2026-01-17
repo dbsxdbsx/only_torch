@@ -1099,25 +1099,21 @@ impl Graph {
 
     // ==================== 创建变量（返回 Var，自动携带图引用）====================
 
-    /// 创建输入节点并设置数据
+    /// 创建命名输入占位符
+    ///
+    /// 推荐用于创建用户可见的输入节点，名称会显示在可视化图中。
+    /// 创建后需要通过 `set_value()` 设置实际数据。
     ///
     /// # 示例
     /// ```rust
-    /// let x = graph.input(&images)?;  // 返回携带图引用的 Var
-    /// let h = x.relu();               // 可直接链式调用
+    /// let x = graph.input(&[batch, 784], "x")?;     // 创建命名输入
+    /// let label = graph.input(&[batch, 10], "label")?;
+    /// x.set_value(&images)?;                        // 设置数据
     /// ```
-    pub fn input(&self, data: &Tensor) -> Result<Var, GraphError> {
+    pub fn input(&self, shape: &[usize], name: &str) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(data.shape(), None)?;
-        g.set_node_value(node_id, Some(data))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
-    }
-
-    /// 创建命名输入节点
-    pub fn input_named(&self, data: &Tensor, name: &str) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(data.shape(), Some(name))?;
-        g.set_node_value(node_id, Some(data))?;
+        let node_id = g.new_input_node(shape, Some(name))?;
+        g.set_node_value(node_id, Some(&Tensor::zeros(shape)))?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 
@@ -1135,7 +1131,10 @@ impl Graph {
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 
-    /// 创建零张量
+    /// 创建零张量（内部/辅助用途）
+    ///
+    /// 节点自动编号（如 `zeros_1`），用于内部计算或占位。
+    /// 若需语义化命名，请使用 `input(shape, name)`。
     pub fn zeros(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
         let node_id = g.new_input_node(shape, None)?;
@@ -1143,7 +1142,9 @@ impl Graph {
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 
-    /// 创建全一张量
+    /// 创建全一张量（内部/辅助用途）
+    ///
+    /// 常用于偏置广播（ones @ bias）。节点自动编号。
     pub fn ones(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
         let node_id = g.new_input_node(shape, None)?;
@@ -1151,9 +1152,9 @@ impl Graph {
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 
-    /// 创建随机张量（标准正态分布 N(0,1)）
+    /// 创建随机张量（标准正态分布 N(0,1)，内部/辅助用途）
     ///
-    /// 与 PyTorch `torch.randn()` 语义一致。
+    /// 与 PyTorch `torch.randn()` 语义一致。节点自动编号。
     /// 如需均匀分布，请使用 `rand()`。
     pub fn randn(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
@@ -1163,9 +1164,9 @@ impl Graph {
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 
-    /// 创建随机张量（均匀分布 U(0,1)）
+    /// 创建随机张量（均匀分布 U(0,1)，内部/辅助用途）
     ///
-    /// 与 PyTorch `torch.rand()` 语义一致。
+    /// 与 PyTorch `torch.rand()` 语义一致。节点自动编号。
     /// 如需正态分布，请使用 `randn()`。
     pub fn rand(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();

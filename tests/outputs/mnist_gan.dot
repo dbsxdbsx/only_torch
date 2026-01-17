@@ -3,9 +3,9 @@ digraph Model {
     node [fontname="Microsoft YaHei,SimHei,Arial"];
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
-    "1" [label=<real_images<BR/><B>Input</B><BR/>[256, 784]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "2" [label=<z<BR/><B>Input</B><BR/>[256, 64]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "3" [label=<ones<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "1" [label=<input_1<BR/><B>Input</B><BR/>[256, 784]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "2" [label=<input_2<BR/><B>Input</B><BR/>[256, 64]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "3" [label=<input_3<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "4" [label=<g_w1<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     "5" [label=<g_b1<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     "6" [label=<mat_mul_1<BR/><B>MatMul</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
@@ -17,7 +17,7 @@ digraph Model {
     "12" [label=<mat_mul_3<BR/><B>MatMul</B><BR/>[256, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     "13" [label=<mat_mul_4<BR/><B>MatMul</B><BR/>[256, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     "14" [label=<add_2<BR/><B>Add</B><BR/>[256, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "15" [label=<fake_images<BR/><B>Sigmoid</B><BR/>[256, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "15" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[256, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     "16" [label=<d_w1<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     "17" [label=<d_b1<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     "18" [label=<mat_mul_5<BR/><B>MatMul</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
@@ -29,7 +29,7 @@ digraph Model {
     "24" [label=<mat_mul_7<BR/><B>MatMul</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     "25" [label=<mat_mul_8<BR/><B>MatMul</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     "26" [label=<add_4<BR/><B>Add</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "27" [label=<d_real<BR/><B>Sigmoid</B><BR/>[256, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "27" [label=<sigmoid_2<BR/><B>Sigmoid</B><BR/>[256, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     "28" [label=<mat_mul_9<BR/><B>MatMul</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     "29" [label=<mat_mul_10<BR/><B>MatMul</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     "30" [label=<add_5<BR/><B>Add</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
@@ -37,12 +37,12 @@ digraph Model {
     "32" [label=<mat_mul_11<BR/><B>MatMul</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     "33" [label=<mat_mul_12<BR/><B>MatMul</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     "34" [label=<add_6<BR/><B>Add</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "35" [label=<d_fake<BR/><B>Sigmoid</B><BR/>[256, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "36" [label=<real_labels<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "37" [label=<fake_labels<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "35" [label=<sigmoid_3<BR/><B>Sigmoid</B><BR/>[256, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "36" [label=<input_4<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "37" [label=<input_5<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "38" [label=<mse_loss_1<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
     "39" [label=<mse_loss_2<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
-    "40" [label=<g_loss<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "40" [label=<mse_loss_3<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
 
     "2" -> "6";
     "4" -> "6";

@@ -1,13 +1,13 @@
 /*
  * @Author       : 老董
  * @Date         : 2025-12-22
- * @Description  : AvgPool2d layer 单元测试（Batch-First 设计）
+ * @Description  : AvgPool2d layer 单元测试（PyTorch 风格 API）
  *
  * 参考值来源: tests/python/layer_reference/pool2d_layer_reference.py
  */
 
-use crate::nn::layer::avg_pool2d;
-use crate::nn::{GraphInner, GraphError};
+use crate::nn::layer::{AvgPool2d, Conv2d, Linear};
+use crate::nn::{Graph, GraphError, VarActivationOps, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -50,23 +50,18 @@ const TEST_MULTI_OUTPUT: &[f32] = &[
 /// 测试 AvgPool2d 前向传播（与 PyTorch 对照）
 #[test]
 fn test_avg_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
-    let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
+    let x = graph.input(&Tensor::new(TEST_PYTORCH_X, &[1, 1, 4, 4]))?;
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let output = pool.forward(&x);
 
-    graph.set_node_value(input, Some(&Tensor::new(TEST_PYTORCH_X, &[1, 1, 4, 4])))?;
+    output.forward()?;
 
-    graph.forward(pool.output)?;
+    let out_val = output.value()?.unwrap();
+    let output_data = out_val.data_as_slice();
 
-    let output = graph.get_node_value(pool.output)?.unwrap();
-    let output_data = output.data_as_slice();
-
-    for (_, (&actual, &expected)) in output_data
-        .iter()
-        .zip(TEST_PYTORCH_OUTPUT.iter())
-        .enumerate()
-    {
+    for (_, (&actual, &expected)) in output_data.iter().zip(TEST_PYTORCH_OUTPUT.iter()).enumerate() {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-5);
     }
 
@@ -77,17 +72,16 @@ fn test_avg_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 多通道多批次（与 PyTorch 对照）
 #[test]
 fn test_avg_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
-    let input = graph.new_input_node(&[2, 3, 4, 4], Some("input"))?;
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
+    let x = graph.input(&Tensor::new(TEST_MULTI_X, &[2, 3, 4, 4]))?;
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let output = pool.forward(&x);
 
-    graph.set_node_value(input, Some(&Tensor::new(TEST_MULTI_X, &[2, 3, 4, 4])))?;
+    output.forward()?;
 
-    graph.forward(pool.output)?;
-
-    let output = graph.get_node_value(pool.output)?.unwrap();
-    let output_data = output.data_as_slice();
+    let out_val = output.value()?.unwrap();
+    let output_data = out_val.data_as_slice();
 
     for (_, (&actual, &expected)) in output_data.iter().zip(TEST_MULTI_OUTPUT.iter()).enumerate() {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-5);
@@ -100,34 +94,26 @@ fn test_avg_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> 
 /// 测试 AvgPool2d 反向传播（CNN 完整网络）
 #[test]
 fn test_avg_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
-    use crate::nn::layer::{conv2d, linear};
-
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
     let batch_size = 2;
 
     // 构建网络: input -> conv -> relu -> avg_pool -> flatten -> fc -> softmax_ce
-    let input = graph.new_input_node(&[batch_size, 1, 4, 4], Some("input"))?;
-    let conv = conv2d(
-        &mut graph,
-        input,
-        1,
-        2,
-        (2, 2),
-        (1, 1),
-        (0, 0),
-        Some("conv"),
-    )?;
+    let x = graph.input(&Tensor::new(&[0.0; 32], &[batch_size, 1, 4, 4]))?;
+    let conv = Conv2d::new_seeded(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
     // conv 输出: [2, 2, 3, 3]
-    let relu = graph.new_leaky_relu_node(conv.output, 0.0, Some("relu"))?;
-    let pool = avg_pool2d(&mut graph, relu, (2, 2), Some((2, 2)), Some("pool"))?;
+    let h = conv.forward(&x).relu();
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
     // pool 输出: [2, 2, 1, 1]
-    let flat = graph.new_flatten_node(pool.output, true, Some("flat"))?;
+    let pooled = pool.forward(&h);
+    let flat = pooled.flatten()?;
     // flat 输出: [2, 2]
-    let fc = linear(&mut graph, flat, 2, 3, batch_size, Some("fc"))?;
+
+    let fc = Linear::new(&graph, 2, 3, true, "fc")?;
+    let fc_out = fc.forward(&flat);
 
     // SoftmaxCrossEntropy Loss
-    let labels = graph.new_input_node(&[batch_size, 3], Some("labels"))?;
-    let loss = graph.new_softmax_cross_entropy_node(fc.output, labels, Some("loss"))?;
+    let labels = graph.input(&Tensor::new(&[0.0; 6], &[batch_size, 3]))?;
+    let loss = fc_out.cross_entropy(&labels)?;
 
     // 设置固定的输入和权重（来自 PyTorch 参考脚本）
     #[rustfmt::skip]
@@ -138,56 +124,38 @@ fn test_avg_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
         1.27912438, 1.29642284, 0.61046648, 1.33473778, -0.23162432, 0.04175949, -0.25157529, 0.85985851,
     ];
     let conv_weight: &[f32] = &[
-        -0.11146712,
-        0.12036294,
-        -0.36963451,
-        -0.24041797,
-        -1.19692433,
-        0.20926936,
-        -0.97235501,
-        -0.75504547,
+        -0.11146712, 0.12036294, -0.36963451, -0.24041797,
+        -1.19692433, 0.20926936, -0.97235501, -0.75504547,
     ];
-    let conv_bias: &[f32] = &[0.32390276, -0.10852263];
+    let conv_bias_data: &[f32] = &[0.32390276, -0.10852263];
     let fc_weight: &[f32] = &[
-        -2.43058109,
-        1.60250008,
-        -0.16449131,
-        0.75442398,
-        -1.14307523,
-        0.69427645,
+        -2.43058109, 1.60250008, -0.16449131,
+        0.75442398, -1.14307523, 0.69427645,
     ];
-    let fc_bias: &[f32] = &[1.29803729, -0.74028862, 1.03223586];
+    let fc_bias_data: &[f32] = &[1.29803729, -0.74028862, 1.03223586];
     let target_data: &[f32] = &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
 
-    graph.set_node_value(input, Some(&Tensor::new(x_data, &[batch_size, 1, 4, 4])))?;
-    graph.set_node_value(conv.kernel, Some(&Tensor::new(conv_weight, &[2, 1, 2, 2])))?;
-    graph.set_node_value(conv.bias, Some(&Tensor::new(conv_bias, &[1, 2])))?;
-    graph.set_node_value(fc.weights, Some(&Tensor::new(fc_weight, &[2, 3])))?;
-    graph.set_node_value(fc.bias, Some(&Tensor::new(fc_bias, &[1, 3])))?;
-    graph.set_node_value(labels, Some(&Tensor::new(target_data, &[batch_size, 3])))?;
+    x.set_value(&Tensor::new(x_data, &[batch_size, 1, 4, 4]))?;
+    conv.kernel().set_value(&Tensor::new(conv_weight, &[2, 1, 2, 2]))?;
+    conv.bias().unwrap().set_value(&Tensor::new(conv_bias_data, &[1, 2]))?;
+    fc.weights().set_value(&Tensor::new(fc_weight, &[2, 3]))?;
+    fc.bias().unwrap().set_value(&Tensor::new(fc_bias_data, &[1, 3]))?;
+    labels.set_value(&Tensor::new(target_data, &[batch_size, 3]))?;
 
-    // 前向传播
-    graph.forward(loss)?;
-
-    // 验证 loss
-    let loss_val = graph.get_node_value(loss)?.unwrap();
+    // 先前向传播验证 loss
+    loss.forward()?;
+    let loss_val = loss.value()?.unwrap();
     let expected_loss: f32 = 1.79948235;
     assert_abs_diff_eq!(loss_val[[0, 0]], expected_loss, epsilon = 1e-4);
 
     // 反向传播
-    graph.backward(loss)?;
+    loss.backward()?;
 
     // 验证卷积核梯度
-    let conv_grad = graph.get_node_grad_ref(conv.kernel)?.unwrap();
+    let conv_grad = conv.kernel().grad()?.unwrap();
     let expected_conv_grad: &[f32] = &[
-        0.14983487,
-        0.55885887,
-        0.14587063,
-        -0.64360768,
-        0.04400400,
-        0.00153509,
-        -0.05876692,
-        0.01398947,
+        0.14983487, 0.55885887, 0.14587063, -0.64360768,
+        0.04400400, 0.00153509, -0.05876692, 0.01398947,
     ];
     let conv_grad_data = conv_grad.data_as_slice();
     for (&actual, &expected) in conv_grad_data.iter().zip(expected_conv_grad.iter()) {
@@ -200,45 +168,23 @@ fn test_avg_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 
 // ==================== 基础功能测试 ====================
 
-/// 测试 avg_pool2d() 创建
+/// 测试 AvgPool2d 创建
 #[test]
 fn test_avg_pool2d_creation() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 32, 14, 14], Some("input"))?;
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool1");
 
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool1"))?;
-
-    // 验证返回的节点 ID 有效
-    assert!(graph.get_node_value(pool.output).is_ok());
+    assert_eq!(pool.kernel_size(), (2, 2));
+    assert_eq!(pool.stride(), Some((2, 2)));
 
     Ok(())
 }
 
-/// 测试 avg_pool2d() 输出形状
-#[test]
-fn test_avg_pool2d_shapes() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    let input = graph.new_input_node(&[4, 16, 28, 28], Some("input"))?;
-
-    // 2x2 池化, stride=2 → 尺寸减半
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool1"))?;
-
-    // 检查输出形状预期: [4, 16, 14, 14]
-    let out_shape = graph.get_node(pool.output)?.value_expected_shape();
-    assert_eq!(out_shape, &[4, 16, 14, 14]);
-
-    Ok(())
-}
-
-/// 测试 avg_pool2d() 前向传播
+/// 测试 AvgPool2d 前向传播
 #[test]
 fn test_avg_pool2d_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // 输入: [batch=1, C=1, H=4, W=4]
-    let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
-
-    // 创建特定的输入数据
     #[rustfmt::skip]
     let input_data = Tensor::new(
         &[
@@ -249,117 +195,66 @@ fn test_avg_pool2d_forward() -> Result<(), GraphError> {
         ],
         &[1, 1, 4, 4],
     );
-    graph.set_node_value(input, Some(&input_data))?;
+    let x = graph.input(&input_data)?;
 
-    // 创建 avg_pool2d 层: 2x2 核, stride=2
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool1"))?;
+    // 创建 AvgPool2d 层: 2x2 核, stride=2
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let output = pool.forward(&x);
 
-    // 前向传播
-    graph.forward(pool.output)?;
+    output.forward()?;
 
     // 验证输出形状: [1, 1, 2, 2]
-    let output = graph.get_node_value(pool.output)?.unwrap();
-    assert_eq!(output.shape(), &[1, 1, 2, 2]);
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[1, 1, 2, 2]);
 
     // 验证输出值（2x2 窗口的平均值）
-    // 窗口1: (1+2+5+6)/4 = 3.5
-    // 窗口2: (3+4+7+8)/4 = 5.5
-    // 窗口3: (9+10+13+14)/4 = 11.5
-    // 窗口4: (11+12+15+16)/4 = 13.5
-    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 3.5, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 0, 0, 1]], 5.5, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 0, 1, 0]], 11.5, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 0, 1, 1]], 13.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(out_val[[0, 0, 0, 0]], 3.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(out_val[[0, 0, 0, 1]], 5.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(out_val[[0, 0, 1, 0]], 11.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(out_val[[0, 0, 1, 1]], 13.5, epsilon = 1e-6);
 
     Ok(())
 }
 
-/// 测试 avg_pool2d() 默认 stride（等于 kernel_size）
+/// 测试 AvgPool2d 默认 stride（等于 kernel_size）
 #[test]
 fn test_avg_pool2d_default_stride() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
-    let input = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
-    graph.set_node_value(input, Some(&Tensor::ones(&[1, 1, 4, 4])))?;
-
+    let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
     // stride=None → 默认等于 kernel_size
-    let pool = avg_pool2d(&mut graph, input, (2, 2), None, Some("pool1"))?;
+    let pool = AvgPool2d::new((2, 2), None, "pool1");
+    let output = pool.forward(&x);
 
-    graph.forward(pool.output)?;
+    output.forward()?;
 
     // 验证输出形状: [1, 1, 2, 2]
-    let output = graph.get_node_value(pool.output)?;
-    assert!(output.is_some());
-    assert_eq!(output.unwrap().shape(), &[1, 1, 2, 2]);
-
-    Ok(())
-}
-
-// ==================== 节点名称测试 ====================
-
-/// 测试 avg_pool2d() 带名称
-#[test]
-fn test_avg_pool2d_with_name() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 16, 8, 8], Some("input"))?;
-
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("encoder_gap"))?;
-
-    // 验证节点名称
-    assert_eq!(graph.get_node(pool.output)?.name(), "encoder_gap_out");
-
-    Ok(())
-}
-
-/// 测试 avg_pool2d() 无名称（使用默认前缀）
-#[test]
-fn test_avg_pool2d_without_name() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 16, 8, 8], Some("input"))?;
-
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), None)?;
-
-    // 验证使用默认前缀 "avg_pool2d"
-    assert_eq!(graph.get_node(pool.output)?.name(), "avg_pool2d_out");
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[1, 1, 2, 2]);
 
     Ok(())
 }
 
 // ==================== 链式连接测试 ====================
 
-/// 测试 avg_pool2d() 与 conv2d 链式连接
+/// 测试 AvgPool2d 与 Conv2d 链式连接
 #[test]
 fn test_avg_pool2d_with_conv2d() -> Result<(), GraphError> {
-    use crate::nn::layer::conv2d;
-
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // 典型 CNN: conv -> relu -> avg_pool
-    let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
-    let conv = conv2d(
-        &mut graph,
-        input,
-        1,
-        4,
-        (3, 3),
-        (1, 1),
-        (1, 1),
-        Some("conv1"),
-    )?;
-    let relu = graph.new_leaky_relu_node(conv.output, 0.0, Some("relu1"))?;
-    let pool = avg_pool2d(&mut graph, relu, (2, 2), Some((2, 2)), Some("pool1"))?;
+    let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]))?;
+    let conv = Conv2d::new_seeded(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "conv1", 42)?;
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool1");
 
-    // 设置输入
-    let x = Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]);
-    graph.set_node_value(input, Some(&x))?;
+    let h = conv.forward(&x).relu();
+    let output = pool.forward(&h);
 
-    // 前向传播
-    graph.forward(pool.output)?;
+    output.forward()?;
 
     // 验证输出形状: [2, 4, 4, 4]
-    let output = graph.get_node_value(pool.output)?;
-    assert!(output.is_some());
-    assert_eq!(output.unwrap().shape(), &[2, 4, 4, 4]);
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[2, 4, 4, 4]);
 
     Ok(())
 }
@@ -367,201 +262,76 @@ fn test_avg_pool2d_with_conv2d() -> Result<(), GraphError> {
 /// 测试全局平均池化（Global Average Pooling）
 #[test]
 fn test_avg_pool2d_global_average_pooling() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // GAP: 将特征图池化到 1x1
-    let input = graph.new_input_node(&[2, 64, 7, 7], Some("input"))?;
+    let x = graph.input(&Tensor::ones(&[2, 64, 7, 7]))?;
     // 使用 7x7 的池化窗口实现全局平均池化
-    let gap = avg_pool2d(&mut graph, input, (7, 7), None, Some("gap"))?;
+    let gap = AvgPool2d::new((7, 7), None, "gap");
+    let output = gap.forward(&x);
 
-    // 设置输入
-    let x = Tensor::ones(&[2, 64, 7, 7]);
-    graph.set_node_value(input, Some(&x))?;
-
-    // 前向传播
-    graph.forward(gap.output)?;
+    output.forward()?;
 
     // 验证输出形状: [2, 64, 1, 1]
-    let output = graph.get_node_value(gap.output)?;
-    assert!(output.is_some());
-    assert_eq!(output.unwrap().shape(), &[2, 64, 1, 1]);
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[2, 64, 1, 1]);
 
     // 全 1 输入的全局平均池化结果应该是 1.0
-    assert_abs_diff_eq!(output.unwrap()[[0, 0, 0, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(out_val[[0, 0, 0, 0]], 1.0, epsilon = 1e-6);
 
     Ok(())
 }
 
-/// 测试 avg_pool2d + flatten 链式连接
+/// 测试 AvgPool2d + flatten 链式连接
 #[test]
 fn test_avg_pool2d_with_flatten() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
     // pool -> flatten（CNN 末端典型结构）
-    let input = graph.new_input_node(&[2, 4, 4, 4], Some("input"))?;
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
-    let flat = graph.new_flatten_node(pool.output, true, Some("flat"))?;
+    let x = graph.input(&Tensor::ones(&[2, 4, 4, 4]))?;
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let output = pool.forward(&x).flatten()?;
 
-    // 设置输入
-    let x = Tensor::ones(&[2, 4, 4, 4]);
-    graph.set_node_value(input, Some(&x))?;
-
-    // 前向传播
-    graph.forward(flat)?;
+    output.forward()?;
 
     // 验证展平输出: [2, 4*2*2] = [2, 16]
-    let output = graph.get_node_value(flat)?;
-    assert!(output.is_some());
-    assert_eq!(output.unwrap().shape(), &[2, 16]);
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[2, 16]);
 
     Ok(())
 }
 
 // ==================== 反向传播测试 ====================
 
-/// 测试 avg_pool2d() 与 Batch 反向传播
+/// 测试 AvgPool2d 与 Batch 反向传播
 #[test]
 fn test_avg_pool2d_batch_backward() -> Result<(), GraphError> {
-    use crate::nn::layer::conv2d;
-
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
     let batch_size = 2;
 
-    // 构建网络: conv -> avg_pool -> flatten -> matmul -> loss
-    let input = graph.new_input_node(&[batch_size, 1, 8, 8], Some("input"))?;
-    let conv = conv2d(
-        &mut graph,
-        input,
-        1,
-        2,
-        (3, 3),
-        (1, 1),
-        (1, 1),
-        Some("conv"),
-    )?;
+    // 构建网络: conv -> avg_pool -> flatten -> fc -> loss
+    let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 8, 8]))?;
+    let conv = Conv2d::new_seeded(&graph, 1, 2, (3, 3), (1, 1), (1, 1), true, "conv", 42)?;
     // conv 输出: [2, 2, 8, 8]
-    let pool = avg_pool2d(&mut graph, conv.output, (2, 2), Some((2, 2)), Some("pool"))?;
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
     // pool 输出: [2, 2, 4, 4]
-    let flat = graph.new_flatten_node(pool.output, true, Some("flat"))?;
+    let flat = pool.forward(&conv.forward(&x)).flatten()?;
     // flat 输出: [2, 32]
 
-    // 分类器
-    let fc_weight = graph.new_parameter_node(&[32, 3], Some("fc_w"))?;
-    let logits = graph.new_mat_mul_node(flat, fc_weight, Some("logits"))?;
+    let fc = Linear::new(&graph, 32, 3, true, "fc")?;
+    let logits = fc.forward(&flat);
 
     // SoftmaxCrossEntropy Loss
-    let labels = graph.new_input_node(&[batch_size, 3], Some("labels"))?;
-    let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
+    let labels = graph.input(&Tensor::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], &[batch_size, 3]))?;
+    let loss = logits.cross_entropy(&labels)?;
 
-    // 设置数据
-    let x = Tensor::normal(0.0, 1.0, &[batch_size, 1, 8, 8]);
-    let y = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], &[batch_size, 3]);
-
-    graph.set_node_value(input, Some(&x))?;
-    graph.set_node_value(labels, Some(&y))?;
-
-    // Batch 训练
-    graph.forward(loss)?;
-    graph.backward(loss)?;
+    loss.backward()?;
 
     // 验证卷积核有梯度（梯度通过池化层正确传播）
-    let k_grad = graph.get_node_grad_ref(conv.kernel)?;
-    assert!(k_grad.is_some());
-    assert_eq!(k_grad.unwrap().shape(), &[2, 1, 3, 3]);
+    let k_grad = conv.kernel().grad()?.unwrap();
+    assert_eq!(k_grad.shape(), &[2, 1, 3, 3]);
 
     Ok(())
-}
-
-// ==================== 名称冲突测试 ====================
-
-/// 测试多个 avg_pool2d() 使用不同名称
-#[test]
-fn test_avg_pool2d_multiple_layers_different_names() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 4, 16, 16], Some("input"))?;
-
-    let pool1 = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool1"))?;
-    let pool2 = avg_pool2d(
-        &mut graph,
-        pool1.output,
-        (2, 2),
-        Some((2, 2)),
-        Some("pool2"),
-    )?;
-    let pool3 = avg_pool2d(
-        &mut graph,
-        pool2.output,
-        (2, 2),
-        Some((2, 2)),
-        Some("pool3"),
-    )?;
-
-    // 验证各层节点独立存在
-    assert!(graph.get_node_value(pool1.output).is_ok());
-    assert!(graph.get_node_value(pool2.output).is_ok());
-    assert!(graph.get_node_value(pool3.output).is_ok());
-
-    // 验证节点名称正确
-    assert_eq!(graph.get_node(pool1.output)?.name(), "pool1_out");
-    assert_eq!(graph.get_node(pool2.output)?.name(), "pool2_out");
-    assert_eq!(graph.get_node(pool3.output)?.name(), "pool3_out");
-
-    Ok(())
-}
-
-/// 测试重复名称应该报错
-#[test]
-fn test_avg_pool2d_duplicate_name_error() {
-    let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 4, 8, 8], Some("input")).unwrap();
-
-    // 第一个 pool 成功
-    let pool1 = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"));
-    assert!(pool1.is_ok());
-
-    // 第二个 pool 使用相同名称，应该失败
-    let pool2 = avg_pool2d(
-        &mut graph,
-        pool1.unwrap().output,
-        (2, 2),
-        Some((2, 2)),
-        Some("pool"),
-    );
-    assert!(pool2.is_err());
-
-    // 验证错误类型
-    if let Err(e) = pool2 {
-        let err_msg = format!("{:?}", e);
-        assert!(
-            err_msg.contains("Duplicate") || err_msg.contains("重复"),
-            "错误信息应包含重复名称提示: {}",
-            err_msg
-        );
-    }
-}
-
-/// 测试多个无名称层会冲突（预期行为）
-#[test]
-fn test_avg_pool2d_multiple_unnamed_layers_conflict() {
-    let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 4, 8, 8], Some("input")).unwrap();
-
-    // 第一个无名称层成功
-    let pool1 = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), None);
-    assert!(pool1.is_ok());
-
-    // 第二个无名称层应该失败（名称冲突）
-    let pool2 = avg_pool2d(
-        &mut graph,
-        pool1.unwrap().output,
-        (2, 2),
-        Some((2, 2)),
-        None,
-    );
-    assert!(
-        pool2.is_err(),
-        "多个无名称 avg_pool2d 层应该因名称冲突而失败"
-    );
 }
 
 // ==================== 边界维度测试 ====================
@@ -569,19 +339,16 @@ fn test_avg_pool2d_multiple_unnamed_layers_conflict() {
 /// 测试单通道输入
 #[test]
 fn test_avg_pool2d_single_channel() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let graph = Graph::new_with_seed(42);
+    let x = graph.input(&Tensor::ones(&[2, 1, 4, 4]))?;
 
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let output = pool.forward(&x);
 
-    let x = Tensor::ones(&[2, 1, 4, 4]);
-    graph.set_node_value(input, Some(&x))?;
+    output.forward()?;
 
-    graph.forward(pool.output)?;
-
-    let output = graph.get_node_value(pool.output)?;
-    assert!(output.is_some());
-    assert_eq!(output.unwrap().shape(), &[2, 1, 2, 2]);
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[2, 1, 2, 2]);
 
     Ok(())
 }
@@ -589,14 +356,16 @@ fn test_avg_pool2d_single_channel() -> Result<(), GraphError> {
 /// 测试大通道数
 #[test]
 fn test_avg_pool2d_large_channels() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    let input = graph.new_input_node(&[1, 128, 8, 8], Some("input"))?;
+    let graph = Graph::new_with_seed(42);
+    let x = graph.input(&Tensor::ones(&[1, 128, 8, 8]))?;
 
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((2, 2)), Some("pool"))?;
+    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let output = pool.forward(&x);
 
-    // 验证输出形状预期
-    let out_shape = graph.get_node(pool.output)?.value_expected_shape();
-    assert_eq!(out_shape, &[1, 128, 4, 4]);
+    output.forward()?;
+
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[1, 128, 4, 4]);
 
     Ok(())
 }
@@ -604,23 +373,20 @@ fn test_avg_pool2d_large_channels() -> Result<(), GraphError> {
 /// 测试非方形池化窗口
 #[test]
 fn test_avg_pool2d_nonsquare_kernel() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    let input = graph.new_input_node(&[2, 4, 8, 8], Some("input"))?;
+    let graph = Graph::new_with_seed(42);
+    let x = graph.input(&Tensor::ones(&[2, 4, 8, 8]))?;
 
     // 使用 2x4 的非方形池化窗口
-    let pool = avg_pool2d(&mut graph, input, (2, 4), Some((2, 4)), Some("pool"))?;
+    let pool = AvgPool2d::new((2, 4), Some((2, 4)), "pool");
+    let output = pool.forward(&x);
 
-    let x = Tensor::ones(&[2, 4, 8, 8]);
-    graph.set_node_value(input, Some(&x))?;
-
-    graph.forward(pool.output)?;
+    output.forward()?;
 
     // 输出尺寸:
     // H' = (8 - 2) / 2 + 1 = 4
     // W' = (8 - 4) / 4 + 1 = 2
-    let output = graph.get_node_value(pool.output)?;
-    assert!(output.is_some());
-    assert_eq!(output.unwrap().shape(), &[2, 4, 4, 2]);
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[2, 4, 4, 2]);
 
     Ok(())
 }
@@ -628,21 +394,18 @@ fn test_avg_pool2d_nonsquare_kernel() -> Result<(), GraphError> {
 /// 测试不同 stride
 #[test]
 fn test_avg_pool2d_different_stride() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    let input = graph.new_input_node(&[2, 4, 8, 8], Some("input"))?;
+    let graph = Graph::new_with_seed(42);
+    let x = graph.input(&Tensor::ones(&[2, 4, 8, 8]))?;
 
     // 2x2 kernel, stride=1 → 重叠池化
-    let pool = avg_pool2d(&mut graph, input, (2, 2), Some((1, 1)), Some("pool"))?;
+    let pool = AvgPool2d::new((2, 2), Some((1, 1)), "pool");
+    let output = pool.forward(&x);
 
-    let x = Tensor::ones(&[2, 4, 8, 8]);
-    graph.set_node_value(input, Some(&x))?;
-
-    graph.forward(pool.output)?;
+    output.forward()?;
 
     // 输出尺寸: (8 - 2) / 1 + 1 = 7
-    let output = graph.get_node_value(pool.output)?;
-    assert!(output.is_some());
-    assert_eq!(output.unwrap().shape(), &[2, 4, 7, 7]);
+    let out_val = output.value()?.unwrap();
+    assert_eq!(out_val.shape(), &[2, 4, 7, 7]);
 
     Ok(())
 }
@@ -650,24 +413,26 @@ fn test_avg_pool2d_different_stride() -> Result<(), GraphError> {
 /// 测试 ResNet 风格全局平均池化
 #[test]
 fn test_avg_pool2d_resnet_gap() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
     let batch_size = 16;
 
     // ResNet 末端: 特征图 -> GAP -> FC
-    // 假设最后卷积层输出 [batch, 512, 7, 7]
-    let features = graph.new_input_node(&[batch_size, 512, 7, 7], Some("features"))?;
+    let features = graph.input(&Tensor::ones(&[batch_size, 512, 7, 7]))?;
 
     // 全局平均池化: 7x7 → 1x1
-    let gap = avg_pool2d(&mut graph, features, (7, 7), None, Some("gap"))?;
+    let gap = AvgPool2d::new((7, 7), None, "gap");
+    let pooled = gap.forward(&features);
     // gap 输出: [16, 512, 1, 1]
 
     // 展平后接全连接
-    let _flat = graph.new_flatten_node(gap.output, true, Some("flat"))?;
+    let flat = pooled.flatten()?;
     // flat 输出: [16, 512]
 
+    flat.forward()?;
+
     // 验证形状
-    let gap_shape = graph.get_node(gap.output)?.value_expected_shape();
-    assert_eq!(gap_shape, &[batch_size, 512, 1, 1]);
+    let gap_val = pooled.value()?.unwrap();
+    assert_eq!(gap_val.shape(), &[batch_size, 512, 1, 1]);
 
     Ok(())
 }
