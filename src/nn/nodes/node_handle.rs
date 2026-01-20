@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, AvgPool2d, Conv2d, Divide, Flatten, Input, LeakyReLU, MSELoss, MatMul,
-    MaxPool2d, Multiply, Parameter, PerceptionLoss, Reduction, Reshape, Sigmoid, Sign, Softmax,
-    SoftPlus, SoftmaxCrossEntropy, State, Step, Subtract, Tanh,
+    Add, AvgPool2d, Conv2d, Divide, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d,
+    Multiply, Parameter, PerceptionLoss, Reduction, Reshape, Sigmoid, Sign, SoftPlus, Softmax,
+    SoftmaxCrossEntropy, State, Step, Subtract, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
