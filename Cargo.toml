@@ -86,9 +86,5 @@ name = "sine_regression"
 path = "examples/sine_regression/main.rs"
 
 [[example]]
-name = "spiral"
-path = "examples/spiral/main.rs"
-
-[[example]]
 name = "iris"
 path = "examples/iris/main.rs"
