@@ -1,4 +1,5 @@
 use crate::assert_panic;
+use crate::tensor::property::broadcast_shape;
 use crate::tensor::Tensor;
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓快照/view(_mut)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
@@ -188,3 +189,184 @@ fn test_size() {
     assert_eq!(tensor.size(), 24);
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑size↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓广播工具函数↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+
+/// 测试 broadcast_shape 函数 - 成功场景
+#[test]
+fn test_broadcast_shape_success() {
+    // Python 参考: tests/python/tensor_reference/broadcast_utils_reference.py
+    let success_cases: &[(&[usize], &[usize], &[usize])] = &[
+        // 相同形状
+        (&[3, 4], &[3, 4], &[3, 4]),
+        (&[2, 3, 4], &[2, 3, 4], &[2, 3, 4]),
+        (&[], &[], &[]),
+        // 标量广播
+        (&[], &[3], &[3]),
+        (&[3], &[], &[3]),
+        (&[], &[2, 3], &[2, 3]),
+        (&[2, 3], &[], &[2, 3]),
+        // 低维广播到高维
+        (&[3, 4], &[4], &[3, 4]),
+        (&[4], &[3, 4], &[3, 4]),
+        (&[2, 3, 4], &[4], &[2, 3, 4]),
+        (&[2, 3, 4], &[3, 4], &[2, 3, 4]),
+        // 带 1 的广播
+        (&[3, 4], &[1, 4], &[3, 4]),
+        (&[3, 4], &[3, 1], &[3, 4]),
+        (&[3, 1], &[1, 4], &[3, 4]),
+        (&[1, 4], &[3, 1], &[3, 4]),
+        // 高维
+        (&[2, 3, 4], &[1, 3, 1], &[2, 3, 4]),
+        (&[2, 1, 4], &[1, 3, 1], &[2, 3, 4]),
+        (&[1, 1, 4], &[2, 3, 1], &[2, 3, 4]),
+    ];
+
+    for (shape_a, shape_b, expected) in success_cases {
+        let result = broadcast_shape(shape_a, shape_b);
+        assert_eq!(
+            result,
+            Some(expected.to_vec()),
+            "broadcast_shape({:?}, {:?}) 失败",
+            shape_a,
+            shape_b
+        );
+    }
+}
+
+/// 测试 broadcast_shape 函数 - 失败场景
+#[test]
+fn test_broadcast_shape_failure() {
+    let failure_cases: &[(&[usize], &[usize])] = &[
+        (&[3], &[4]),
+        (&[2, 3], &[3, 2]),
+        (&[2, 3], &[4]),
+        (&[2, 3, 4], &[2, 5, 4]),
+    ];
+
+    for (shape_a, shape_b) in failure_cases {
+        let result = broadcast_shape(shape_a, shape_b);
+        assert_eq!(
+            result, None,
+            "broadcast_shape({:?}, {:?}) 应返回 None",
+            shape_a, shape_b
+        );
+    }
+}
+
+/// 测试 sum_to_shape 方法
+#[test]
+fn test_sum_to_shape() {
+    // Python 参考: tests/python/tensor_reference/broadcast_utils_reference.py
+    let test_cases: &[(&[usize], &[usize], &[f32], &[f32])] = &[
+        // [2, 3] -> [2, 3] (no-op)
+        (
+            &[2, 3],
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        ),
+        // [3, 4] -> [1, 4] (sum axis 0)
+        (
+            &[3, 4],
+            &[1, 4],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[15.0, 18.0, 21.0, 24.0],
+        ),
+        // [3, 4] -> [3, 1] (sum axis 1)
+        (
+            &[3, 4],
+            &[3, 1],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[10.0, 26.0, 42.0],
+        ),
+        // [3, 4] -> [1, 1] (sum all)
+        (
+            &[3, 4],
+            &[1, 1],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[78.0],
+        ),
+        // [3, 4] -> [4] (reduce dimension)
+        (
+            &[3, 4],
+            &[4],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[15.0, 18.0, 21.0, 24.0],
+        ),
+        // [2, 3, 4] -> [1, 3, 1] (sum axes 0 and 2)
+        (
+            &[2, 3, 4],
+            &[1, 3, 1],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+            ],
+            &[68.0, 100.0, 132.0],
+        ),
+        // [2, 3, 4] -> [4] (reduce to vector)
+        (
+            &[2, 3, 4],
+            &[4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+            ],
+            &[66.0, 72.0, 78.0, 84.0],
+        ),
+        // [2, 3, 4] -> [3, 4] (remove first dimension)
+        (
+            &[2, 3, 4],
+            &[3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+            ],
+            &[14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0, 32.0, 34.0, 36.0],
+        ),
+    ];
+
+    for (input_shape, target_shape, input_data, expected_data) in test_cases {
+        let tensor = Tensor::new(*input_data, *input_shape);
+        let result = tensor.sum_to_shape(*target_shape);
+        let expected = Tensor::new(*expected_data, *target_shape);
+
+        assert_eq!(
+            result, expected,
+            "sum_to_shape 失败: {:?} -> {:?}",
+            input_shape, target_shape
+        );
+    }
+}
+
+/// 测试 sum_axis_keepdims 方法
+#[test]
+fn test_sum_axis_keepdims() {
+    // [2, 3] sum axis 0 -> [1, 3]
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let result = t.sum_axis_keepdims(0);
+    assert_eq!(result.shape(), &[1, 3]);
+    assert_eq!(result.data_as_slice(), &[5.0, 7.0, 9.0]);
+
+    // [2, 3] sum axis 1 -> [2, 1]
+    let result = t.sum_axis_keepdims(1);
+    assert_eq!(result.shape(), &[2, 1]);
+    assert_eq!(result.data_as_slice(), &[6.0, 15.0]);
+
+    // [2, 3, 4] sum axis 1 -> [2, 1, 4]
+    let t = Tensor::new(
+        &[
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+            17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+        ],
+        &[2, 3, 4],
+    );
+    let result = t.sum_axis_keepdims(1);
+    assert_eq!(result.shape(), &[2, 1, 4]);
+    assert_eq!(
+        result.data_as_slice(),
+        &[15.0, 18.0, 21.0, 24.0, 51.0, 54.0, 57.0, 60.0]
+    );
+}
+
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑广播工具函数↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

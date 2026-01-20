@@ -29,6 +29,9 @@ pub mod property;
 pub mod save_load;
 pub mod slice;
 
+// 导出广播相关的工具函数
+pub use property::broadcast_shape;
+
 #[cfg(test)]
 mod tests;
 /// 定义张量的结构体。其可以是标量、向量、矩阵或更高维度的数组。

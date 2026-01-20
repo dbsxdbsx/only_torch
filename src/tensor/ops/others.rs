@@ -92,6 +92,39 @@ impl Tensor {
         Self::new(&[value], &[1, 1])
     }
 
+    /// 沿指定轴求和，保持维度数不变（keepdims=true）
+    ///
+    /// # 参数
+    /// - `axis`: 要求和的轴索引
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    /// let result = t.sum_axis_keepdims(0);  // [2, 3] → [1, 3]
+    /// assert_eq!(result.shape(), &[1, 3]);
+    /// assert_eq!(result.data_as_slice(), &[4., 6., 8.]);
+    /// ```
+    pub fn sum_axis_keepdims(&self, axis: usize) -> Self {
+        use ndarray::Axis;
+
+        assert!(
+            axis < self.dimension(),
+            "sum_axis_keepdims: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // 沿指定轴求和
+        let summed = self.data.sum_axis(Axis(axis));
+
+        // 构建新形状（在求和的轴位置插入 1）
+        let mut new_shape: Vec<usize> = summed.shape().to_vec();
+        new_shape.insert(axis, 1);
+
+        // 创建新张量
+        Self::new(summed.as_slice().unwrap(), &new_shape)
+    }
+
     /// 对两个操作数进行逐元素相乘后求和，返回形状为[1,1]的张量。
     ///
     /// 计算步骤：

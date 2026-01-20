@@ -9,6 +9,53 @@
 use super::Tensor;
 use ndarray::{ArrayViewD, ArrayViewMutD};
 
+/// 计算两个形状广播后的输出形状（NumPy 风格）
+///
+/// # 广播规则
+/// - 从右向左对齐维度
+/// - 每个维度必须相等，或其中一个为 1
+/// - 维度数不同时，较短的形状前面补 1
+///
+/// # 返回值
+/// - `Some(shape)`: 广播后的形状
+/// - `None`: 形状不兼容，无法广播
+///
+/// # 示例
+/// ```ignore
+/// assert_eq!(broadcast_shape(&[3, 4], &[4]), Some(vec![3, 4]));
+/// assert_eq!(broadcast_shape(&[3, 1], &[1, 4]), Some(vec![3, 4]));
+/// assert_eq!(broadcast_shape(&[3], &[4]), None);  // 不兼容
+/// ```
+pub fn broadcast_shape(shape_a: &[usize], shape_b: &[usize]) -> Option<Vec<usize>> {
+    let max_ndim = shape_a.len().max(shape_b.len());
+    let mut result = vec![0; max_ndim];
+
+    // 从右向左对齐并计算每个维度
+    let iter_a = shape_a.iter().rev();
+    let iter_b = shape_b.iter().rev();
+
+    for (i, (d_a, d_b)) in iter_a
+        .chain(std::iter::repeat(&1usize))
+        .zip(iter_b.chain(std::iter::repeat(&1usize)))
+        .take(max_ndim)
+        .enumerate()
+    {
+        let idx = max_ndim - 1 - i;
+        if d_a == d_b {
+            result[idx] = *d_a;
+        } else if *d_a == 1 {
+            result[idx] = *d_b;
+        } else if *d_b == 1 {
+            result[idx] = *d_a;
+        } else {
+            // 维度不兼容
+            return None;
+        }
+    }
+
+    Some(result)
+}
+
 impl Tensor {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓快照/view(_mut)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     pub fn view(&self) -> ArrayViewD<'_, f32> {
@@ -119,6 +166,82 @@ impl Tensor {
         // 但由于 other_shape.len() <= self_shape.len() 已检查，这里不需要额外检查
 
         true
+    }
+
+    /// 将张量沿被广播的维度求和，收缩到目标形状
+    ///
+    /// 用于反向传播时，将梯度从广播后的形状求和回原始形状。
+    ///
+    /// # 参数
+    /// - `target_shape`: 目标形状（通常是广播前的原始形状）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // Forward:  [32, 128] + [1, 128] → [32, 128]
+    /// // Backward: grad [32, 128] → sum_to_shape → [1, 128]
+    /// let grad = Tensor::new(&data, &[32, 128]);
+    /// let result = grad.sum_to_shape(&[1, 128]);
+    /// assert_eq!(result.shape(), &[1, 128]);
+    /// ```
+    ///
+    /// # Panics
+    /// 如果目标形状与当前形状不兼容（目标形状无法广播到当前形状）
+    pub fn sum_to_shape(&self, target_shape: &[usize]) -> Tensor {
+        let current_shape = self.shape();
+
+        // 快速路径：形状相同，直接返回克隆
+        if current_shape == target_shape {
+            return self.clone();
+        }
+
+        // 将两个形状对齐到相同长度（左边补 1）
+        let max_ndim = current_shape.len().max(target_shape.len());
+        let mut padded_current: Vec<usize> = vec![1; max_ndim];
+        let mut padded_target: Vec<usize> = vec![1; max_ndim];
+
+        // 从右向左填充
+        for (i, &d) in current_shape.iter().rev().enumerate() {
+            padded_current[max_ndim - 1 - i] = d;
+        }
+        for (i, &d) in target_shape.iter().rev().enumerate() {
+            padded_target[max_ndim - 1 - i] = d;
+        }
+
+        // 找出需要求和的维度（current > target 的维度）
+        let mut axes_to_sum: Vec<usize> = Vec::new();
+        for (i, (&cur, &tgt)) in padded_current.iter().zip(padded_target.iter()).enumerate() {
+            if cur != tgt {
+                // 验证：target 必须是 1（否则不是合法的广播关系）
+                assert!(
+                    tgt == 1,
+                    "sum_to_shape: 目标形状 {:?} 与当前形状 {:?} 不兼容",
+                    target_shape,
+                    current_shape
+                );
+                axes_to_sum.push(i);
+            }
+        }
+
+        // 如果没有需要求和的维度，只需要 reshape
+        if axes_to_sum.is_empty() {
+            return self.reshape(target_shape);
+        }
+
+        // 先 reshape 到 padded 形状（如果维度数不同）
+        let working_tensor = if current_shape.len() < max_ndim {
+            self.reshape(&padded_current)
+        } else {
+            self.clone()
+        };
+
+        // 沿需要求和的维度依次求和（从后向前，避免索引偏移）
+        let mut result = working_tensor;
+        for &axis in axes_to_sum.iter().rev() {
+            result = result.sum_axis_keepdims(axis);
+        }
+
+        // 最后 reshape 到目标形状
+        result.reshape(target_shape)
     }
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓判断张量是否为标量、向量、矩阵↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 判断张量是否为标量

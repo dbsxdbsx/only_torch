@@ -1,7 +1,7 @@
 # 广播机制设计
 
 > 最后更新: 2026-01-19
-> 状态: **部分实现**（Tensor 层已完成）
+> 状态: **部分实现**（Tensor 层 + 工具函数已完成）
 > 影响范围: Tensor 层、Node 层、Layer 层、NEAT 演化
 
 ---
@@ -292,12 +292,15 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 | 更新所有相关单元测试 | `tensor/tests/*.rs` | ✅ |
 | 创建 Python 参考测试脚本 | `tests/python/tensor_reference/` | ✅ |
 
-### 阶段 2：工具函数
+### 阶段 2：工具函数 ✅ 已完成
 
-| 任务 | 说明 |
-|---|---|
-| `broadcast_shape(a, b)` | 计算广播后的输出形状 |
-| `sum_to_shape(tensor, target_shape)` | 将梯度求和回原始形状 |
+| 任务 | 文件 | 状态 |
+|---|---|---|
+| `broadcast_shape(a, b)` | `tensor/property.rs` | ✅ |
+| `sum_to_shape(tensor, target_shape)` | `tensor/property.rs` | ✅ |
+| `sum_axis_keepdims(axis)` | `tensor/ops/others.rs` | ✅ |
+| Python 参考测试 | `tests/python/tensor_reference/broadcast_utils_reference.py` | ✅ |
+| Rust 单元测试 | `tensor/tests/property.rs` | ✅ |
 
 ### 阶段 3：Node 层
 
@@ -390,3 +393,4 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 | 2025-12-20 | 初版：显式节点广播 | NEAT 友好考虑 |
 | 2026-01-19 | **重写：采用 NumPy 广播** | 发现 ndarray 原生支持；简化设计；NEAT 兼容性分析 |
 | 2026-01-19 | **实现 Tensor 层广播** | 完成阶段 1：移除形状检查，启用 ndarray 原生广播，添加自定义错误信息 |
+| 2026-01-19 | **实现广播工具函数** | 完成阶段 2：broadcast_shape, sum_to_shape, sum_axis_keepdims |
