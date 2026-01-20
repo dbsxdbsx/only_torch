@@ -138,23 +138,12 @@ impl Linear {
         // x @ W: [batch, in] @ [in, out] = [batch, out]
         let xw = x.matmul(&self.weights).expect("Linear matmul 失败");
 
-        // 如果有 bias，需要广播加法
+        // 如果有 bias，直接加法（Add 支持广播：[batch, out] + [1, out]）
         if let Some(ref bias) = self.bias {
-            // 获取 batch_size
-            let x_shape = x.value_expected_shape();
-            let batch_size = x_shape[0];
-
-            // 使用 Graph handle 创建 ones 矩阵用于 bias 广播
-            let graph = x.get_graph();
-            let ones = graph.ones(&[batch_size, 1]).expect("创建 ones 节点失败");
-
-            // ones @ b: [batch, 1] @ [1, out] = [batch, out]
-            let bias_broadcast = ones.matmul(bias).expect("bias broadcast matmul 失败");
-
-            // output + bias
-            let output = &xw + &bias_broadcast;
+            let output = &xw + bias;
 
             // 注册层分组（用于可视化）
+            let graph = x.get_graph();
             graph.inner_mut().register_layer_group(
                 &self.name,
                 "Linear",
@@ -162,9 +151,7 @@ impl Linear {
                 vec![
                     self.weights.node_id(),
                     bias.node_id(),
-                    ones.node_id(),
                     xw.node_id(),
-                    bias_broadcast.node_id(),
                     output.node_id(),
                 ],
             );

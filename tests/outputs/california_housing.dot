@@ -13,9 +13,7 @@ digraph Model {
         "3" [label=<fc1_W<BR/><B>Parameter</B><BR/>[8, 128]<BR/>(1,024 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         "4" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         "11" [label=<mat_mul_1<BR/><B>MatMul</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "12" [label=<input_3<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-        "13" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "14" [label=<add_1<BR/><B>Add</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "12" [label=<add_1<BR/><B>Add</B><BR/>[256, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     }
 
     subgraph cluster_fc2 {
@@ -27,10 +25,8 @@ digraph Model {
         margin=12;
         "5" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 64]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         "6" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 64]<BR/>(64 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-        "16" [label=<mat_mul_3<BR/><B>MatMul</B><BR/>[256, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "17" [label=<input_4<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-        "18" [label=<mat_mul_4<BR/><B>MatMul</B><BR/>[256, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "19" [label=<add_2<BR/><B>Add</B><BR/>[256, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "14" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[256, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "15" [label=<add_2<BR/><B>Add</B><BR/>[256, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     }
 
     subgraph cluster_fc3 {
@@ -42,10 +38,8 @@ digraph Model {
         margin=12;
         "7" [label=<fc3_W<BR/><B>Parameter</B><BR/>[64, 32]<BR/>(2,048 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         "8" [label=<fc3_b<BR/><B>Parameter</B><BR/>[1, 32]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-        "21" [label=<mat_mul_5<BR/><B>MatMul</B><BR/>[256, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "22" [label=<input_5<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-        "23" [label=<mat_mul_6<BR/><B>MatMul</B><BR/>[256, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "24" [label=<add_3<BR/><B>Add</B><BR/>[256, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "17" [label=<mat_mul_3<BR/><B>MatMul</B><BR/>[256, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "18" [label=<add_3<BR/><B>Add</B><BR/>[256, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     }
 
     subgraph cluster_fc4 {
@@ -57,46 +51,36 @@ digraph Model {
         margin=12;
         "9" [label=<fc4_W<BR/><B>Parameter</B><BR/>[32, 1]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         "10" [label=<fc4_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-        "26" [label=<mat_mul_7<BR/><B>MatMul</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "27" [label=<input_6<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-        "28" [label=<mat_mul_8<BR/><B>MatMul</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "29" [label=<add_4<BR/><B>Add</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "20" [label=<mat_mul_4<BR/><B>MatMul</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "21" [label=<add_4<BR/><B>Add</B><BR/>[256, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
     }
 
     "1" [label=<input_1<BR/><B>Input</B><BR/>[256, 8]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "2" [label=<input_2<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "15" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[256, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "20" [label=<softplus_2<BR/><B>SoftPlus</B><BR/>[256, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "25" [label=<softplus_3<BR/><B>SoftPlus</B><BR/>[256, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "30" [label=<mse_loss_1<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "13" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[256, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "16" [label=<softplus_2<BR/><B>SoftPlus</B><BR/>[256, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "19" [label=<softplus_3<BR/><B>SoftPlus</B><BR/>[256, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "22" [label=<mse_loss_1<BR/><B>MSELoss</B><BR/>[1, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
 
     "1" -> "11";
     "3" -> "11";
+    "11" -> "12";
+    "4" -> "12";
     "12" -> "13";
-    "4" -> "13";
-    "11" -> "14";
     "13" -> "14";
+    "5" -> "14";
     "14" -> "15";
+    "6" -> "15";
     "15" -> "16";
-    "5" -> "16";
+    "16" -> "17";
+    "7" -> "17";
     "17" -> "18";
-    "6" -> "18";
-    "16" -> "19";
+    "8" -> "18";
     "18" -> "19";
     "19" -> "20";
+    "9" -> "20";
     "20" -> "21";
-    "7" -> "21";
-    "22" -> "23";
-    "8" -> "23";
-    "21" -> "24";
-    "23" -> "24";
-    "24" -> "25";
-    "25" -> "26";
-    "9" -> "26";
-    "27" -> "28";
-    "10" -> "28";
-    "26" -> "29";
-    "28" -> "29";
-    "29" -> "30";
-    "2" -> "30";
+    "10" -> "21";
+    "21" -> "22";
+    "2" -> "22";
 }

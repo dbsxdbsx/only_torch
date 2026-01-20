@@ -86,9 +86,6 @@ impl Gru {
         // 创建输入节点
         let input_node = graph.zeros(&[batch_size, input_size])?;
 
-        // 创建 ones 用于偏置广播
-        let ones = graph.ones(&[batch_size, 1])?;
-
         // 创建状态节点和计算图结构
         let (hidden_input, hidden_output) = {
             let mut g = graph.inner_mut();
@@ -98,25 +95,23 @@ impl Gru {
             g.set_node_value(h_prev_id, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
 
             // === 重置门计算 ===
+            // Add 支持广播：[batch, hidden] + [batch, hidden] + [1, hidden]
             let x_ir = g.new_mat_mul_node(input_node.node_id(), w_ir.node_id(), Some(&format!("{name}_x_ir")))?;
             let h_hr = g.new_mat_mul_node(h_prev_id, w_hr.node_id(), Some(&format!("{name}_h_hr")))?;
-            let b_r_bc = g.new_mat_mul_node(ones.node_id(), b_r.node_id(), Some(&format!("{name}_b_r_bc")))?;
-            let pre_r = g.new_add_node(&[x_ir, h_hr, b_r_bc], Some(&format!("{name}_pre_r")))?;
+            let pre_r = g.new_add_node(&[x_ir, h_hr, b_r.node_id()], Some(&format!("{name}_pre_r")))?;
             let r_gate = g.new_sigmoid_node(pre_r, Some(&format!("{name}_r_gate")))?;
 
             // === 更新门计算 ===
             let x_iz = g.new_mat_mul_node(input_node.node_id(), w_iz.node_id(), Some(&format!("{name}_x_iz")))?;
             let h_hz = g.new_mat_mul_node(h_prev_id, w_hz.node_id(), Some(&format!("{name}_h_hz")))?;
-            let b_z_bc = g.new_mat_mul_node(ones.node_id(), b_z.node_id(), Some(&format!("{name}_b_z_bc")))?;
-            let pre_z = g.new_add_node(&[x_iz, h_hz, b_z_bc], Some(&format!("{name}_pre_z")))?;
+            let pre_z = g.new_add_node(&[x_iz, h_hz, b_z.node_id()], Some(&format!("{name}_pre_z")))?;
             let z_gate = g.new_sigmoid_node(pre_z, Some(&format!("{name}_z_gate")))?;
 
             // === 候选状态计算 ===
             let x_in = g.new_mat_mul_node(input_node.node_id(), w_in.node_id(), Some(&format!("{name}_x_in")))?;
             let h_hn = g.new_mat_mul_node(h_prev_id, w_hn.node_id(), Some(&format!("{name}_h_hn")))?;
             let r_h_hn = g.new_multiply_node(r_gate, h_hn, Some(&format!("{name}_r_h_hn")))?;
-            let b_n_bc = g.new_mat_mul_node(ones.node_id(), b_n.node_id(), Some(&format!("{name}_b_n_bc")))?;
-            let pre_n = g.new_add_node(&[x_in, r_h_hn, b_n_bc], Some(&format!("{name}_pre_n")))?;
+            let pre_n = g.new_add_node(&[x_in, r_h_hn, b_n.node_id()], Some(&format!("{name}_pre_n")))?;
             let n_gate = g.new_tanh_node(pre_n, Some(&format!("{name}_n_gate")))?;
 
             // === 隐藏状态更新: h_t = (1-z_t) ⊙ n_t + z_t ⊙ h_{t-1} ===

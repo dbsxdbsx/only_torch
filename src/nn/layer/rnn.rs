@@ -55,14 +55,13 @@ pub struct Rnn {
     hidden_input: Var,
     /// 输入节点
     input_node: Var,
-    /// 广播用的 ones 节点
-    ones: Var,
     /// Graph 引用
     graph: Graph,
     /// 配置
     input_size: usize,
     hidden_size: usize,
     batch_size: usize,
+    #[allow(dead_code)]
     name: String,
 }
 
@@ -107,9 +106,6 @@ impl Rnn {
         // 创建输入节点
         let input_node = graph.zeros(&[batch_size, input_size])?;
 
-        // 创建 ones 用于偏置广播
-        let ones = graph.ones(&[batch_size, 1])?;
-
         // 创建状态节点和计算图结构
         let (hidden_input, hidden_output) = {
             let mut g = graph.inner_mut();
@@ -136,20 +132,10 @@ impl Rnn {
                 Some(&format!("{name}_hidden_contrib")),
             )?;
 
-            // bias_broadcast = ones @ b_h
-            let bias_broadcast = g.new_mat_mul_node(
-                ones.node_id(),
-                b_h.node_id(),
-                Some(&format!("{name}_bias_broadcast")),
-            )?;
-
-            // pre_hidden = input_contrib + hidden_contrib + bias_broadcast
-            let sum1 = g.new_add_node(
-                &[input_contrib, hidden_contrib],
-                Some(&format!("{name}_sum1")),
-            )?;
+            // pre_hidden = input_contrib + hidden_contrib + b_h
+            // Add 支持广播：[batch, hidden] + [batch, hidden] + [1, hidden]
             let pre_hidden = g.new_add_node(
-                &[sum1, bias_broadcast],
+                &[input_contrib, hidden_contrib, b_h.node_id()],
                 Some(&format!("{name}_pre_h")),
             )?;
 
@@ -168,11 +154,8 @@ impl Rnn {
                     w_ih.node_id(),
                     w_hh.node_id(),
                     b_h.node_id(),
-                    ones.node_id(),
                     input_contrib,
                     hidden_contrib,
-                    bias_broadcast,
-                    sum1,
                     pre_hidden,
                     hidden_id,
                 ],
@@ -192,7 +175,6 @@ impl Rnn {
             hidden_output,
             hidden_input,
             input_node,
-            ones,
             graph: graph.clone(),
             input_size,
             hidden_size,
@@ -232,9 +214,6 @@ impl Rnn {
         // 创建输入节点
         let input_node = graph.zeros(&[batch_size, input_size])?;
 
-        // 创建 ones 用于偏置广播
-        let ones = graph.ones(&[batch_size, 1])?;
-
         // 创建状态节点和计算图结构
         let (hidden_input, hidden_output) = {
             let mut g = graph.inner_mut();
@@ -259,18 +238,9 @@ impl Rnn {
                 Some(&format!("{name}_hidden_contrib")),
             )?;
 
-            let bias_broadcast = g.new_mat_mul_node(
-                ones.node_id(),
-                b_h.node_id(),
-                Some(&format!("{name}_bias_broadcast")),
-            )?;
-
-            let sum1 = g.new_add_node(
-                &[input_contrib, hidden_contrib],
-                Some(&format!("{name}_sum1")),
-            )?;
+            // Add 支持广播：[batch, hidden] + [batch, hidden] + [1, hidden]
             let pre_hidden = g.new_add_node(
-                &[sum1, bias_broadcast],
+                &[input_contrib, hidden_contrib, b_h.node_id()],
                 Some(&format!("{name}_pre_h")),
             )?;
 
@@ -286,11 +256,8 @@ impl Rnn {
                     w_ih.node_id(),
                     w_hh.node_id(),
                     b_h.node_id(),
-                    ones.node_id(),
                     input_contrib,
                     hidden_contrib,
-                    bias_broadcast,
-                    sum1,
                     pre_hidden,
                     hidden_id,
                 ],
@@ -309,7 +276,6 @@ impl Rnn {
             hidden_output,
             hidden_input,
             input_node,
-            ones,
             graph: graph.clone(),
             input_size,
             hidden_size,

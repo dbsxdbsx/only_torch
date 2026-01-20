@@ -100,9 +100,6 @@ impl Lstm {
         // 创建输入节点
         let input_node = graph.zeros(&[batch_size, input_size])?;
 
-        // 创建 ones 用于偏置广播
-        let ones = graph.ones(&[batch_size, 1])?;
-
         // 创建状态节点和计算图结构
         let (hidden_input, cell_input, hidden_output, cell_output) = {
             let mut g = graph.inner_mut();
@@ -115,31 +112,28 @@ impl Lstm {
             g.set_node_value(c_prev_id, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
 
             // === 输入门计算 ===
+            // Add 支持广播：[batch, hidden] + [batch, hidden] + [1, hidden]
             let x_ii = g.new_mat_mul_node(input_node.node_id(), w_ii.node_id(), Some(&format!("{name}_x_ii")))?;
             let h_hi = g.new_mat_mul_node(h_prev_id, w_hi.node_id(), Some(&format!("{name}_h_hi")))?;
-            let b_i_bc = g.new_mat_mul_node(ones.node_id(), b_i.node_id(), Some(&format!("{name}_b_i_bc")))?;
-            let pre_i = g.new_add_node(&[x_ii, h_hi, b_i_bc], Some(&format!("{name}_pre_i")))?;
+            let pre_i = g.new_add_node(&[x_ii, h_hi, b_i.node_id()], Some(&format!("{name}_pre_i")))?;
             let i_gate = g.new_sigmoid_node(pre_i, Some(&format!("{name}_i_gate")))?;
 
             // === 遗忘门计算 ===
             let x_if = g.new_mat_mul_node(input_node.node_id(), w_if.node_id(), Some(&format!("{name}_x_if")))?;
             let h_hf = g.new_mat_mul_node(h_prev_id, w_hf.node_id(), Some(&format!("{name}_h_hf")))?;
-            let b_f_bc = g.new_mat_mul_node(ones.node_id(), b_f.node_id(), Some(&format!("{name}_b_f_bc")))?;
-            let pre_f = g.new_add_node(&[x_if, h_hf, b_f_bc], Some(&format!("{name}_pre_f")))?;
+            let pre_f = g.new_add_node(&[x_if, h_hf, b_f.node_id()], Some(&format!("{name}_pre_f")))?;
             let f_gate = g.new_sigmoid_node(pre_f, Some(&format!("{name}_f_gate")))?;
 
             // === 候选细胞计算 ===
             let x_ig = g.new_mat_mul_node(input_node.node_id(), w_ig.node_id(), Some(&format!("{name}_x_ig")))?;
             let h_hg = g.new_mat_mul_node(h_prev_id, w_hg.node_id(), Some(&format!("{name}_h_hg")))?;
-            let b_g_bc = g.new_mat_mul_node(ones.node_id(), b_g.node_id(), Some(&format!("{name}_b_g_bc")))?;
-            let pre_g = g.new_add_node(&[x_ig, h_hg, b_g_bc], Some(&format!("{name}_pre_g")))?;
+            let pre_g = g.new_add_node(&[x_ig, h_hg, b_g.node_id()], Some(&format!("{name}_pre_g")))?;
             let g_gate = g.new_tanh_node(pre_g, Some(&format!("{name}_g_gate")))?;
 
             // === 输出门计算 ===
             let x_io = g.new_mat_mul_node(input_node.node_id(), w_io.node_id(), Some(&format!("{name}_x_io")))?;
             let h_ho = g.new_mat_mul_node(h_prev_id, w_ho.node_id(), Some(&format!("{name}_h_ho")))?;
-            let b_o_bc = g.new_mat_mul_node(ones.node_id(), b_o.node_id(), Some(&format!("{name}_b_o_bc")))?;
-            let pre_o = g.new_add_node(&[x_io, h_ho, b_o_bc], Some(&format!("{name}_pre_o")))?;
+            let pre_o = g.new_add_node(&[x_io, h_ho, b_o.node_id()], Some(&format!("{name}_pre_o")))?;
             let o_gate = g.new_sigmoid_node(pre_o, Some(&format!("{name}_o_gate")))?;
 
             // === 细胞状态更新 ===
