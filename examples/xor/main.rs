@@ -1,6 +1,6 @@
 //! # XOR 异或问题示例
 //!
-//! 展示 only_torch 的 PyTorch 风格 API：
+//! 展示 `only_torch` 的 `PyTorch` 风格 API：
 //! - `Linear` 层（全连接）
 //! - `Adam` 优化器
 //! - `cross_entropy` 损失函数
@@ -92,8 +92,8 @@ fn main() -> Result<(), GraphError> {
         x.set_value(input)?;
         logits.forward()?;
         let out = logits.value()?.unwrap();
-        let pred = if out[[0, 0]] > out[[0, 1]] { 0 } else { 1 };
-        let expected = if label[[0, 0]] > label[[0, 1]] { 0 } else { 1 };
+        let pred = i32::from(out[[0, 0]] <= out[[0, 1]]);
+        let expected = i32::from(label[[0, 0]] <= label[[0, 1]]);
         println!(
             "  XOR({}, {}) = {} {}",
             input[[0, 0]] as i32,

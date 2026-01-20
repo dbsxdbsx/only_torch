@@ -130,9 +130,12 @@ fn test_rnn_forward_pytorch_comparison() -> Result<(), GraphError> {
     let rnn = Rnn::new(&graph, input_size, hidden_size, batch_size, "rnn1")?;
 
     // 设置与 PyTorch 相同的权重
-    rnn.w_ih().set_value(&Tensor::new(TEST1_W_IH, &[input_size, hidden_size]))?;
-    rnn.w_hh().set_value(&Tensor::new(TEST1_W_HH, &[hidden_size, hidden_size]))?;
-    rnn.b_h().set_value(&Tensor::new(TEST1_B_H, &[1, hidden_size]))?;
+    rnn.w_ih()
+        .set_value(&Tensor::new(TEST1_W_IH, &[input_size, hidden_size]))?;
+    rnn.w_hh()
+        .set_value(&Tensor::new(TEST1_W_HH, &[hidden_size, hidden_size]))?;
+    rnn.b_h()
+        .set_value(&Tensor::new(TEST1_B_H, &[1, hidden_size]))?;
 
     // 前向传播（单时间步）
     let x = Tensor::new(TEST1_X, &[batch_size, input_size]);
@@ -168,8 +171,10 @@ fn test_rnn_multi_step_forward_pytorch_comparison() -> Result<(), GraphError> {
     let rnn = Rnn::new(&graph, input_size, hidden_size, batch_size, "rnn1")?;
 
     // 设置权重
-    rnn.w_ih().set_value(&Tensor::new(TEST2_W_IH, &[input_size, hidden_size]))?;
-    rnn.w_hh().set_value(&Tensor::new(TEST2_W_HH, &[hidden_size, hidden_size]))?;
+    rnn.w_ih()
+        .set_value(&Tensor::new(TEST2_W_IH, &[input_size, hidden_size]))?;
+    rnn.w_hh()
+        .set_value(&Tensor::new(TEST2_W_HH, &[hidden_size, hidden_size]))?;
     rnn.b_h().set_value(&Tensor::zeros(&[1, hidden_size]))?;
 
     // 输入序列
@@ -210,9 +215,12 @@ fn test_rnn_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
     let rnn = Rnn::new(&graph, input_size, hidden_size, batch_size, "rnn1")?;
 
     // 设置权重
-    rnn.w_ih().set_value(&Tensor::new(TEST3_W_IH, &[input_size, hidden_size]))?;
-    rnn.w_hh().set_value(&Tensor::new(TEST3_W_HH, &[hidden_size, hidden_size]))?;
-    rnn.b_h().set_value(&Tensor::new(TEST3_B_H, &[1, hidden_size]))?;
+    rnn.w_ih()
+        .set_value(&Tensor::new(TEST3_W_IH, &[input_size, hidden_size]))?;
+    rnn.w_hh()
+        .set_value(&Tensor::new(TEST3_W_HH, &[hidden_size, hidden_size]))?;
+    rnn.b_h()
+        .set_value(&Tensor::new(TEST3_B_H, &[1, hidden_size]))?;
 
     // 创建输出层权重（初始化后立即设置值，所以用 Zeros）
     let w_out = graph.parameter(&[hidden_size, 1], Init::Zeros, "w_out")?;
@@ -258,7 +266,12 @@ fn test_rnn_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
 
     // 反向传播
     graph.inner_mut().backward_through_time(
-        &[rnn.w_ih().node_id(), rnn.w_hh().node_id(), rnn.b_h().node_id(), w_out.node_id()],
+        &[
+            rnn.w_ih().node_id(),
+            rnn.w_hh().node_id(),
+            rnn.b_h().node_id(),
+            w_out.node_id(),
+        ],
         loss_id,
     )?;
 
@@ -499,6 +512,9 @@ fn test_rnn_complete_training() -> Result<(), GraphError> {
     assert!(rnn.b_h().grad()?.is_some());
     assert!(fc.weights().grad()?.is_some());
 
-    println!("✅ Rnn 完整训练流程: loss={:.4}, 所有参数都有梯度", loss_val);
+    println!(
+        "✅ Rnn 完整训练流程: loss={:.4}, 所有参数都有梯度",
+        loss_val
+    );
     Ok(())
 }

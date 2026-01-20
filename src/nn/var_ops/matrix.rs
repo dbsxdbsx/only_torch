@@ -46,6 +46,6 @@ impl VarMatrixOps for Var {
             self.graph()
                 .borrow_mut()
                 .new_mat_mul_node(self.node_id(), other.node_id(), None)?;
-        Ok(Var::new(id, Rc::clone(self.graph())))
+        Ok(Self::new(id, Rc::clone(self.graph())))
     }
 }

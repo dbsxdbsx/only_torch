@@ -29,13 +29,12 @@ impl Add {
             let parent_shape = parent.value_expected_shape();
 
             // 使用 broadcast_shape 计算广播后的形状
-            shape = broadcast_shape(&shape, parent_shape).ok_or_else(|| {
-                GraphError::ShapeMismatch {
+            shape =
+                broadcast_shape(&shape, parent_shape).ok_or_else(|| GraphError::ShapeMismatch {
                     expected: shape.clone(),
                     got: parent_shape.to_vec(),
                     message: "Add节点的父节点形状无法广播".to_string(),
-                }
-            })?;
+                })?;
         }
 
         // 2. 返回

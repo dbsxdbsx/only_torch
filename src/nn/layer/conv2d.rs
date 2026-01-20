@@ -20,11 +20,11 @@ use crate::nn::{Graph, GraphError, Init, Module, Var};
 
 /// Conv2d (2D 卷积) 层
 ///
-/// PyTorch 风格的卷积层：`output = conv2d(x, K) + b`
+/// `PyTorch` 风格的卷积层：`output = conv2d(x, K) + b`
 ///
 /// # 输入/输出形状
-/// - 输入：[batch_size, in_channels, H, W]
-/// - 输出：[batch_size, out_channels, H', W']
+/// - 输入：[`batch_size`, `in_channels`, H, W]
+/// - 输出：[`batch_size`, `out_channels`, H', W']
 ///
 /// # 输出尺寸计算
 /// ```text
@@ -38,19 +38,19 @@ use crate::nn::{Graph, GraphError, Init, Module, Var};
 /// let h = conv.forward(&x).relu();  // 链式调用
 /// ```
 pub struct Conv2d {
-    /// 卷积核参数 [out_channels, in_channels, kernel_h, kernel_w]
+    /// 卷积核参数 [`out_channels`, `in_channels`, `kernel_h`, `kernel_w`]
     kernel: Var,
-    /// 偏置参数 [1, out_channels, 1, 1]（可选，用于广播加法）
+    /// 偏置参数 [1, `out_channels`, 1, 1]（可选，用于广播加法）
     bias: Option<Var>,
     /// 输入通道数
     in_channels: usize,
     /// 输出通道数
     out_channels: usize,
-    /// 卷积核大小 (kernel_h, kernel_w)
+    /// 卷积核大小 (`kernel_h`, `kernel_w`)
     kernel_size: (usize, usize),
-    /// 步长 (stride_h, stride_w)
+    /// 步长 (`stride_h`, `stride_w`)
     stride: (usize, usize),
-    /// 填充 (padding_h, padding_w)
+    /// 填充 (`padding_h`, `padding_w`)
     padding: (usize, usize),
     /// 层名称（用于可视化分组）
     name: String,
@@ -115,10 +115,10 @@ impl Conv2d {
     /// 计算 `conv2d(x, K) + b`
     ///
     /// # 参数
-    /// - `x`: 输入 Var，形状 [batch_size, in_channels, H, W]
+    /// - `x`: 输入 Var，形状 [`batch_size`, `in_channels`, H, W]
     ///
     /// # 返回
-    /// 输出 Var，形状 [batch_size, out_channels, H', W']
+    /// 输出 Var，形状 [`batch_size`, `out_channels`, H', W']
     pub fn forward(&self, x: &Var) -> Var {
         let graph = x.get_graph();
 
@@ -183,37 +183,37 @@ impl Conv2d {
     }
 
     /// 获取输入通道数
-    pub fn in_channels(&self) -> usize {
+    pub const fn in_channels(&self) -> usize {
         self.in_channels
     }
 
     /// 获取输出通道数
-    pub fn out_channels(&self) -> usize {
+    pub const fn out_channels(&self) -> usize {
         self.out_channels
     }
 
     /// 获取卷积核大小
-    pub fn kernel_size(&self) -> (usize, usize) {
+    pub const fn kernel_size(&self) -> (usize, usize) {
         self.kernel_size
     }
 
     /// 获取步长
-    pub fn stride(&self) -> (usize, usize) {
+    pub const fn stride(&self) -> (usize, usize) {
         self.stride
     }
 
     /// 获取填充
-    pub fn padding(&self) -> (usize, usize) {
+    pub const fn padding(&self) -> (usize, usize) {
         self.padding
     }
 
     /// 获取卷积核 Var
-    pub fn kernel(&self) -> &Var {
+    pub const fn kernel(&self) -> &Var {
         &self.kernel
     }
 
     /// 获取偏置 Var（如果有）
-    pub fn bias(&self) -> Option<&Var> {
+    pub const fn bias(&self) -> Option<&Var> {
         self.bias.as_ref()
     }
 }

@@ -24,11 +24,11 @@ use crate::tensor::Tensor;
 
 /// Rnn (循环神经网络) 层
 ///
-/// PyTorch 风格的 RNN 层：`h_t = tanh(x @ W_ih + h_{t-1} @ W_hh + b_h)`
+/// `PyTorch` 风格的 RNN 层：`h_t = tanh(x @ W_ih + h_{t-1} @ W_hh + b_h)`
 ///
 /// # 输入/输出形状
-/// - 输入：[batch_size, input_size]
-/// - 输出：[batch_size, hidden_size]
+/// - 输入：[`batch_size`, `input_size`]
+/// - 输出：[`batch_size`, `hidden_size`]
 ///
 /// # 使用示例
 /// ```ignore
@@ -43,13 +43,13 @@ use crate::tensor::Tensor;
 /// let (output, hidden) = rnn.forward(&x)?;
 /// ```
 pub struct Rnn {
-    /// 输入到隐藏权重 W_ih: [input_size, hidden_size]
+    /// 输入到隐藏权重 `W_ih`: [`input_size`, `hidden_size`]
     w_ih: Var,
-    /// 隐藏到隐藏权重 W_hh: [hidden_size, hidden_size]
+    /// 隐藏到隐藏权重 `W_hh`: [`hidden_size`, `hidden_size`]
     w_hh: Var,
-    /// 隐藏层偏置 b_h: [1, hidden_size]
+    /// 隐藏层偏置 `b_h`: [1, `hidden_size`]
     b_h: Var,
-    /// 隐藏状态输出节点（h_t，经过 tanh 激活）
+    /// `隐藏状态输出节点（h_t，经过` tanh 激活）
     hidden_output: Var,
     /// 隐藏状态输入节点（h_{t-1}，State 节点）
     hidden_input: Var,
@@ -97,11 +97,7 @@ impl Rnn {
             &format!("{name}_W_hh"),
         )?;
 
-        let b_h = graph.parameter(
-            &[1, hidden_size],
-            Init::Zeros,
-            &format!("{name}_b_h"),
-        )?;
+        let b_h = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_h"))?;
 
         // 创建输入节点
         let input_node = graph.zeros(&[batch_size, input_size])?;
@@ -111,10 +107,8 @@ impl Rnn {
             let mut g = graph.inner_mut();
 
             // 创建状态节点：h_prev
-            let h_prev_id = g.new_state_node(
-                &[batch_size, hidden_size],
-                Some(&format!("{name}_h_prev")),
-            )?;
+            let h_prev_id =
+                g.new_state_node(&[batch_size, hidden_size], Some(&format!("{name}_h_prev")))?;
             g.set_node_value(h_prev_id, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
 
             // 计算图结构
@@ -183,14 +177,13 @@ impl Rnn {
         })
     }
 
-
     /// 单步前向传播
     ///
     /// 设置输入并执行一个时间步的计算。
     /// 用于需要逐时间步控制的场景（如 BPTT）。
     ///
     /// # 参数
-    /// - `x`: 输入张量，形状 [batch_size, input_size]
+    /// - `x`: 输入张量，形状 [`batch_size`, `input_size`]
     ///
     /// # 返回
     /// 隐藏状态输出的引用
@@ -206,10 +199,10 @@ impl Rnn {
     /// 适用于构建更复杂的网络结构。
     ///
     /// # 参数
-    /// - `x`: 输入 Var，形状 [batch_size, input_size]
+    /// - `x`: 输入 Var，形状 [`batch_size`, `input_size`]
     ///
     /// # 返回
-    /// 隐藏状态 Var，形状 [batch_size, hidden_size]
+    /// 隐藏状态 Var，形状 [`batch_size`, `hidden_size`]
     pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
         // 将输入值复制到 RNN 的输入节点
         if let Some(x_val) = x.value()? {
@@ -220,7 +213,8 @@ impl Rnn {
 
     /// 重置隐藏状态为零（仅重置状态节点的值）
     pub fn reset_hidden(&self) -> Result<(), GraphError> {
-        self.hidden_input.set_value(&Tensor::zeros(&[self.batch_size, self.hidden_size]))?;
+        self.hidden_input
+            .set_value(&Tensor::zeros(&[self.batch_size, self.hidden_size]))?;
         Ok(())
     }
 
@@ -238,52 +232,52 @@ impl Rnn {
     }
 
     /// 获取当前隐藏状态输出
-    pub fn hidden(&self) -> &Var {
+    pub const fn hidden(&self) -> &Var {
         &self.hidden_output
     }
 
     /// 获取隐藏状态输入节点（State 节点）
-    pub fn hidden_input(&self) -> &Var {
+    pub const fn hidden_input(&self) -> &Var {
         &self.hidden_input
     }
 
     /// 获取输入节点
-    pub fn input(&self) -> &Var {
+    pub const fn input(&self) -> &Var {
         &self.input_node
     }
 
-    /// 获取 W_ih 权重
-    pub fn w_ih(&self) -> &Var {
+    /// 获取 `W_ih` 权重
+    pub const fn w_ih(&self) -> &Var {
         &self.w_ih
     }
 
-    /// 获取 W_hh 权重
-    pub fn w_hh(&self) -> &Var {
+    /// 获取 `W_hh` 权重
+    pub const fn w_hh(&self) -> &Var {
         &self.w_hh
     }
 
-    /// 获取 b_h 偏置
-    pub fn b_h(&self) -> &Var {
+    /// 获取 `b_h` 偏置
+    pub const fn b_h(&self) -> &Var {
         &self.b_h
     }
 
     /// 获取输入维度
-    pub fn input_size(&self) -> usize {
+    pub const fn input_size(&self) -> usize {
         self.input_size
     }
 
     /// 获取隐藏维度
-    pub fn hidden_size(&self) -> usize {
+    pub const fn hidden_size(&self) -> usize {
         self.hidden_size
     }
 
     /// 获取批大小
-    pub fn batch_size(&self) -> usize {
+    pub const fn batch_size(&self) -> usize {
         self.batch_size
     }
 
     /// 获取 Graph 引用
-    pub fn graph(&self) -> &Graph {
+    pub const fn graph(&self) -> &Graph {
         &self.graph
     }
 }

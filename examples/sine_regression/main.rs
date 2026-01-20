@@ -80,10 +80,7 @@ fn main() -> Result<(), GraphError> {
         let error = (predicted - expected).abs();
         max_error = max_error.max(error);
 
-        println!(
-            "  sin({:+.2}) = {:+.4} (预测: {:+.4}, 误差: {:.4})",
-            x_val, expected, predicted, error
-        );
+        println!("  sin({x_val:+.2}) = {expected:+.4} (预测: {predicted:+.4}, 误差: {error:.4})");
     }
 
     // 计算全部样本的最大误差
@@ -92,7 +89,7 @@ fn main() -> Result<(), GraphError> {
         max_error = max_error.max(error);
     }
 
-    println!("\n全部样本最大误差: {:.4}", max_error);
+    println!("\n全部样本最大误差: {max_error:.4}");
 
     if max_error < 0.1 {
         println!("✅ MSE 回归成功！");

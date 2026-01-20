@@ -1,5 +1,5 @@
 use crate::assert_err;
-use crate::nn::{GraphInner, GraphError, NodeId};
+use crate::nn::{GraphError, GraphInner, NodeId};
 use crate::tensor::Tensor;
 
 #[test]
@@ -211,7 +211,9 @@ fn test_seeded_parameter_overrides_graph_seed() {
 #[test]
 fn test_neat_compatibility_multiple_graphs() {
     // 创建多个带种子的图（模拟 NEAT 种群）
-    let mut graphs: Vec<GraphInner> = (0..5).map(|i| GraphInner::new_with_seed(i as u64)).collect();
+    let mut graphs: Vec<GraphInner> = (0..5)
+        .map(|i| GraphInner::new_with_seed(i as u64))
+        .collect();
 
     // 每个图独立创建参数
     let params: Vec<NodeId> = graphs

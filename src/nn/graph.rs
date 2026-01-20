@@ -97,7 +97,7 @@ use super::var::{Init, Var};
 ///
 /// # 设计原则
 /// - 是 `Rc<RefCell<GraphInner>>` 的薄封装
-/// - Clone 语义：多个 Graph 引用同一个 GraphInner
+/// - Clone 语义：多个 Graph 引用同一个 `GraphInner`
 /// - 创建的 Var 自动持有图引用
 ///
 /// # 使用示例
@@ -137,26 +137,26 @@ impl Graph {
         }
     }
 
-    /// 从现有 GraphInner 创建句柄
+    /// 从现有 `GraphInner` 创建句柄
     pub fn from_inner(inner: GraphInner) -> Self {
         Self {
             inner: Rc::new(RefCell::new(inner)),
         }
     }
 
-    /// 从现有 Rc 创建句柄（供 Var::get_graph 使用）
-    pub(crate) fn from_rc(inner: Rc<RefCell<GraphInner>>) -> Self {
+    /// 从现有 Rc 创建句柄（供 `Var::get_graph` 使用）
+    pub(crate) const fn from_rc(inner: Rc<RefCell<GraphInner>>) -> Self {
         Self { inner }
     }
 
-    /// 获取内部 GraphInner 的不可变引用（用于底层查询）
+    /// 获取内部 `GraphInner` 的不可变引用（用于底层查询）
     ///
     /// **注意**：这是一个 escape hatch，正常使用不需要调用此方法。
     pub fn inner(&self) -> std::cell::Ref<'_, GraphInner> {
         self.inner.borrow()
     }
 
-    /// 获取内部 GraphInner 的可变引用（用于底层操作，如 NEAT 拓扑变异）
+    /// 获取内部 `GraphInner` 的可变引用（用于底层操作，如 NEAT 拓扑变异）
     ///
     /// **注意**：这是一个 escape hatch，正常使用不需要调用此方法。
     pub fn inner_mut(&self) -> std::cell::RefMut<'_, GraphInner> {
@@ -168,10 +168,10 @@ impl Graph {
         Rc::clone(&self.inner)
     }
 
-    /// 将 NodeId 包装成 Var
+    /// 将 `NodeId` 包装成 Var
     ///
-    /// 用于将底层 GraphInner 节点操作的结果包装成 Var，以便使用新版 API。
-    /// 
+    /// 用于将底层 `GraphInner` 节点操作的结果包装成 Var，以便使用新版 API。
+    ///
     /// **注意**：这是一个 escape hatch，用于混合新旧 API 的场景。
     /// 正常使用建议直接使用新版 Layer API（如 Conv2d、Linear 等）。
     ///
@@ -248,7 +248,7 @@ impl Graph {
 
     /// 创建随机张量（标准正态分布 N(0,1)）
     ///
-    /// 与 PyTorch `torch.randn()` 语义一致。
+    /// 与 `PyTorch` `torch.randn()` 语义一致。
     pub fn randn(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
         let node_id = g.new_input_node(shape, None)?;
@@ -312,7 +312,7 @@ impl Graph {
         self.inner.borrow().is_eval_mode
     }
 
-    /// 在 no_grad 上下文中执行闭包
+    /// 在 `no_grad` 上下文中执行闭包
     ///
     /// 临时切换到评估模式（禁用梯度计算），执行完毕后恢复原模式。
     ///
@@ -2077,7 +2077,7 @@ impl GraphInner {
     /// 清除指定节点的梯度
     ///
     /// # 用途
-    /// - V2 Optimizer 的 zero_grad() 只清除它管理的参数的梯度
+    /// - V2 Optimizer 的 `zero_grad()` 只清除它管理的参数的梯度
     pub fn clear_node_grad(&mut self, id: NodeId) -> Result<(), GraphError> {
         self.get_node_mut(id)?.clear_grad()
     }
@@ -3533,7 +3533,7 @@ impl GraphInner {
     /// 对输入张量沿最后一维计算 softmax。
     ///
     /// # 参数
-    /// - `parent_id`: 输入节点 ID，形状 [batch, num_classes]
+    /// - `parent_id`: 输入节点 ID，形状 [batch, `num_classes`]
     /// - `name`: 节点名称（可选）
     pub fn new_softmax_node(
         &mut self,

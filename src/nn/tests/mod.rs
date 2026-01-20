@@ -16,8 +16,8 @@ mod layer_rnn; // RNN 层便捷函数
 mod module_trait; // Module trait 测试（V2 API）
 mod node_add;
 mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
-mod node_divide; // Divide 节点（逐元素除法）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
+mod node_divide; // Divide 节点（逐元素除法）
 mod node_flatten; // Flatten 节点（展平）
 mod node_input;
 mod node_leaky_relu; // LeakyReLU/ReLU 激活函数

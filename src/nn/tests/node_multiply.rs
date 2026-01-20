@@ -11,7 +11,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{GraphInner, GraphError};
+use crate::nn::{GraphError, GraphInner};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -491,9 +491,7 @@ fn test_multiply_broadcast_creation() {
     {
         let left = graph.new_input_node(&[3, 4], Some("left1")).unwrap();
         let right = graph.new_input_node(&[1, 4], Some("right1")).unwrap();
-        let result = graph
-            .new_multiply_node(left, right, Some("mul1"))
-            .unwrap();
+        let result = graph.new_multiply_node(left, right, Some("mul1")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
             &[3, 4]
@@ -504,9 +502,7 @@ fn test_multiply_broadcast_creation() {
     {
         let left = graph.new_input_node(&[3, 1], Some("left2")).unwrap();
         let right = graph.new_input_node(&[1, 4], Some("right2")).unwrap();
-        let result = graph
-            .new_multiply_node(left, right, Some("mul2"))
-            .unwrap();
+        let result = graph.new_multiply_node(left, right, Some("mul2")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
             &[3, 4]
@@ -517,9 +513,7 @@ fn test_multiply_broadcast_creation() {
     {
         let left = graph.new_input_node(&[2, 3, 4], Some("left3")).unwrap();
         let right = graph.new_input_node(&[1, 1, 4], Some("right3")).unwrap();
-        let result = graph
-            .new_multiply_node(left, right, Some("mul3"))
-            .unwrap();
+        let result = graph.new_multiply_node(left, right, Some("mul3")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
             &[2, 3, 4]
@@ -688,7 +682,11 @@ fn test_multiply_broadcast_e2e() -> Result<(), GraphError> {
         .expect("features 应有 grad");
     let scale_grad = graph.get_node(scale)?.grad().expect("scale 应有 grad");
 
-    assert_eq!(features_grad.shape(), &[2, 3], "features 梯度形状应为 [2,3]");
+    assert_eq!(
+        features_grad.shape(),
+        &[2, 3],
+        "features 梯度形状应为 [2,3]"
+    );
     assert_eq!(scale_grad.shape(), &[1, 3], "scale 梯度形状应为 [1,3]");
 
     // result = [[1,2,3], [4,5,6]]

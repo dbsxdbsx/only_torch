@@ -41,12 +41,27 @@ const PYTORCH_CHAIN_H1_RELU: &[f32] = &[0.09, 0.21, 0.33, 0.59, 0.67, 0.75];
 const PYTORCH_CHAIN_LOGITS: &[f32] = &[0.589, 0.752, 1.539, 1.84];
 const PYTORCH_CHAIN_LOSS: f32 = 0.6659472;
 const PYTORCH_CHAIN_GRAD_W1: &[f32] = &[
-    0.02065329, 0.02065331, 0.02065329, 0.01776964, 0.01776965, 0.01776964, -0.03052906,
-    -0.03052907, -0.03052907, 0.00753317, 0.00753317, 0.00753317,
+    0.02065329,
+    0.02065331,
+    0.02065329,
+    0.01776964,
+    0.01776965,
+    0.01776964,
+    -0.03052906,
+    -0.03052907,
+    -0.03052907,
+    0.00753317,
+    0.00753317,
+    0.00753317,
 ];
 const PYTORCH_CHAIN_GRAD_B1: &[f32] = &[0.00576731, 0.00576732, 0.00576729];
 const PYTORCH_CHAIN_GRAD_W2: &[f32] = &[
-    0.10113763, -0.10113766, 0.08571057, -0.0857106, 0.07028344, -0.07028348,
+    0.10113763,
+    -0.10113766,
+    0.08571057,
+    -0.0857106,
+    0.07028344,
+    -0.07028348,
 ];
 const PYTORCH_CHAIN_GRAD_B2: &[f32] = &[-0.0576735, 0.05767344];
 
@@ -291,7 +306,10 @@ fn test_linear_backward_pytorch_comparison() -> Result<(), GraphError> {
 
     // 创建输入和目标
     let x = graph.input(&Tensor::new(PYTORCH_BWD_X, &[batch_size, in_features]))?;
-    let target = graph.input(&Tensor::new(PYTORCH_BWD_TARGET, &[batch_size, out_features]))?;
+    let target = graph.input(&Tensor::new(
+        PYTORCH_BWD_TARGET,
+        &[batch_size, out_features],
+    ))?;
 
     // 前向传播
     let y = fc.forward(&x);
@@ -376,20 +394,27 @@ fn test_linear_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     let fc2 = Linear::new(&graph, hidden_features, out_features, true, "fc2")?;
 
     // 设置与 PyTorch 相同的参数
-    fc1.weights()
-        .set_value(&Tensor::new(PYTORCH_CHAIN_W1, &[in_features, hidden_features]))?;
+    fc1.weights().set_value(&Tensor::new(
+        PYTORCH_CHAIN_W1,
+        &[in_features, hidden_features],
+    ))?;
     fc1.bias()
         .unwrap()
         .set_value(&Tensor::new(PYTORCH_CHAIN_B1, &[1, hidden_features]))?;
-    fc2.weights()
-        .set_value(&Tensor::new(PYTORCH_CHAIN_W2, &[hidden_features, out_features]))?;
+    fc2.weights().set_value(&Tensor::new(
+        PYTORCH_CHAIN_W2,
+        &[hidden_features, out_features],
+    ))?;
     fc2.bias()
         .unwrap()
         .set_value(&Tensor::new(PYTORCH_CHAIN_B2, &[1, out_features]))?;
 
     // 创建输入和目标
     let x = graph.input(&Tensor::new(PYTORCH_CHAIN_X, &[batch_size, in_features]))?;
-    let target = graph.input(&Tensor::new(PYTORCH_CHAIN_TARGET, &[batch_size, out_features]))?;
+    let target = graph.input(&Tensor::new(
+        PYTORCH_CHAIN_TARGET,
+        &[batch_size, out_features],
+    ))?;
 
     // 前向传播：fc1 -> relu -> fc2 -> softmax_cross_entropy
     let h1 = fc1.forward(&x).relu();

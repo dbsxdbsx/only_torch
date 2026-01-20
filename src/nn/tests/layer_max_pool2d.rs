@@ -61,7 +61,11 @@ fn test_max_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
     let out_val = output.value()?.unwrap();
     let output_data = out_val.data_as_slice();
 
-    for (_, (&actual, &expected)) in output_data.iter().zip(TEST_PYTORCH_OUTPUT.iter()).enumerate() {
+    for (_, (&actual, &expected)) in output_data
+        .iter()
+        .zip(TEST_PYTORCH_OUTPUT.iter())
+        .enumerate()
+    {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-5);
     }
 
@@ -124,22 +128,37 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
         1.27912438, 1.29642284, 0.61046648, 1.33473778, -0.23162432, 0.04175949, -0.25157529, 0.85985851,
     ];
     let conv_weight: &[f32] = &[
-        -0.11146712, 0.12036294, -0.36963451, -0.24041797,
-        -1.19692433, 0.20926936, -0.97235501, -0.75504547,
+        -0.11146712,
+        0.12036294,
+        -0.36963451,
+        -0.24041797,
+        -1.19692433,
+        0.20926936,
+        -0.97235501,
+        -0.75504547,
     ];
     let conv_bias_data: &[f32] = &[0.32390276, -0.10852263];
     let fc_weight: &[f32] = &[
-        -2.43058109, 1.60250008, -0.16449131,
-        0.75442398, -1.14307523, 0.69427645,
+        -2.43058109,
+        1.60250008,
+        -0.16449131,
+        0.75442398,
+        -1.14307523,
+        0.69427645,
     ];
     let fc_bias_data: &[f32] = &[1.29803729, -0.74028862, 1.03223586];
     let target_data: &[f32] = &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
 
     x.set_value(&Tensor::new(x_data, &[batch_size, 1, 4, 4]))?;
-    conv.kernel().set_value(&Tensor::new(conv_weight, &[2, 1, 2, 2]))?;
-    conv.bias().unwrap().set_value(&Tensor::new(conv_bias_data, &[1, 2, 1, 1]))?;
+    conv.kernel()
+        .set_value(&Tensor::new(conv_weight, &[2, 1, 2, 2]))?;
+    conv.bias()
+        .unwrap()
+        .set_value(&Tensor::new(conv_bias_data, &[1, 2, 1, 1]))?;
     fc.weights().set_value(&Tensor::new(fc_weight, &[2, 3]))?;
-    fc.bias().unwrap().set_value(&Tensor::new(fc_bias_data, &[1, 3]))?;
+    fc.bias()
+        .unwrap()
+        .set_value(&Tensor::new(fc_bias_data, &[1, 3]))?;
     labels.set_value(&Tensor::new(target_data, &[batch_size, 3]))?;
 
     // 先前向传播验证 loss
@@ -154,8 +173,14 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     // 验证卷积核梯度
     let conv_grad = conv.kernel().grad()?.unwrap();
     let expected_conv_grad: &[f32] = &[
-        -0.25443733, 1.33351851, -0.56869137, -1.44372773,
-        0.38442636, 0.01341083, -0.51339775, 0.12221438,
+        -0.25443733,
+        1.33351851,
+        -0.56869137,
+        -1.44372773,
+        0.38442636,
+        0.01341083,
+        -0.51339775,
+        0.12221438,
     ];
     let conv_grad_data = conv_grad.data_as_slice();
     for (&actual, &expected) in conv_grad_data.iter().zip(expected_conv_grad.iter()) {
@@ -325,7 +350,10 @@ fn test_max_pool2d_batch_backward() -> Result<(), GraphError> {
     let logits = fc.forward(&flat);
 
     // SoftmaxCrossEntropy Loss
-    let labels = graph.input(&Tensor::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], &[batch_size, 3]))?;
+    let labels = graph.input(&Tensor::new(
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        &[batch_size, 3],
+    ))?;
     let loss = logits.cross_entropy(&labels)?;
 
     loss.backward()?;

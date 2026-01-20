@@ -3,7 +3,7 @@
 //! 展示在真实图像数据上的深度学习：
 //! - MNIST 数据集（28x28 灰度图 → 10 类数字）
 //! - 两层 MLP (784 -> 128 -> 10)
-//! - CrossEntropy 损失，Adam 优化器
+//! - `CrossEntropy` 损失，Adam 优化器
 //!
 //! ## 运行
 //! ```bash
@@ -50,11 +50,15 @@ fn main() -> Result<(), GraphError> {
     let learning_rate = 0.01;
 
     println!("\n[2/3] 配置：");
-    println!("  - Batch: {}", batch_size);
-    println!("  - 训练样本: {} (共 {} 个 batch)", train_samples, train_samples / batch_size);
-    println!("  - 测试样本: {}", test_samples);
-    println!("  - Epochs: {}", max_epochs);
-    println!("  - 学习率: {}", learning_rate);
+    println!("  - Batch: {batch_size}");
+    println!(
+        "  - 训练样本: {} (共 {} 个 batch)",
+        train_samples,
+        train_samples / batch_size
+    );
+    println!("  - 测试样本: {test_samples}");
+    println!("  - Epochs: {max_epochs}");
+    println!("  - 学习率: {learning_rate}");
 
     // 3. 构建网络（使用固定种子确保可复现）
     let graph = Graph::new_with_seed(42);
@@ -69,7 +73,12 @@ fn main() -> Result<(), GraphError> {
     let mut optimizer = Adam::new(&graph, &model.parameters(), learning_rate);
 
     println!("\n  网络: 784 -> 128 (Softplus) -> 10");
-    println!("  参数: {} + {} = {} 个", 784 * 128 + 128, 128 * 10 + 10, 784 * 128 + 128 + 128 * 10 + 10);
+    println!(
+        "  参数: {} + {} = {} 个",
+        784 * 128 + 128,
+        128 * 10 + 10,
+        784 * 128 + 128 + 128 * 10 + 10
+    );
 
     // 4. 训练
     println!("\n[3/3] 开始训练...\n");
@@ -145,7 +154,7 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 5. 结果
-    println!("\n最佳准确率: {:.1}%", best_acc);
+    println!("\n最佳准确率: {best_acc:.1}%");
 
     if best_acc >= 85.0 {
         println!("✅ MNIST 示例成功！");

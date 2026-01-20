@@ -5,8 +5,8 @@
  * - reshape, flatten
  */
 
-use crate::nn::graph::Graph;
 use crate::nn::VarShapeOps;
+use crate::nn::graph::Graph;
 use crate::tensor::Tensor;
 
 #[test]
@@ -64,7 +64,9 @@ fn test_var_flatten() {
 #[test]
 fn test_var_flatten_already_flat() {
     let graph = Graph::new();
-    let x = graph.input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1])).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))
+        .unwrap();
     let y = x.flatten().unwrap();
     y.forward().unwrap();
     let result = y.value().unwrap().unwrap();

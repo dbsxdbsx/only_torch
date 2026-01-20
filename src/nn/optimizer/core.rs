@@ -49,7 +49,7 @@ pub trait Optimizer {
     /// 更新参数（只更新 Optimizer 绑定的参数）
     fn step(&mut self) -> Result<(), GraphError>;
 
-    /// 一步完成训练：zero_grad → backward(ensure-forward) → step
+    /// `一步完成训练：zero_grad` → backward(ensure-forward) → step
     ///
     /// # 执行顺序
     /// 1. `zero_grad()` - 清零梯度（必须在前，因为 backward 会累加梯度）
@@ -87,7 +87,7 @@ pub trait Optimizer {
 pub struct SGD {
     /// 图引用
     graph: Rc<RefCell<GraphInner>>,
-    /// 要优化的参数（保留完整 Var，支持未来 param_groups 等扩展）
+    /// 要优化的参数（保留完整 Var，支持未来 `param_groups` 等扩展）
     params: Vec<Var>,
     /// 学习率
     lr: f32,
@@ -110,7 +110,7 @@ impl SGD {
 
     /// 获取优化器绑定的参数列表
     ///
-    /// 用于调试、状态查询、param_groups 等场景
+    /// `用于调试、状态查询、param_groups` 等场景
     pub fn params(&self) -> &[Var] {
         &self.params
     }
@@ -131,7 +131,7 @@ impl Optimizer for SGD {
             let node_id = param.node_id();
             if let Some(grad) = g.get_node_grad(node_id)? {
                 let current = g.get_node_value(node_id)?.ok_or_else(|| {
-                    GraphError::ComputationError(format!("参数节点 {:?} 没有值", node_id))
+                    GraphError::ComputationError(format!("参数节点 {node_id:?} 没有值"))
                 })?;
                 let new_value = current - self.lr * &grad;
                 g.set_node_value(node_id, Some(&new_value))?;
@@ -165,7 +165,7 @@ impl Optimizer for SGD {
 /// Adam: Adaptive Moment Estimation
 /// - m = β1 * m + (1 - β1) * g
 /// - v = β2 * v + (1 - β2) * g²
-/// - θ = θ - α * m_hat / (√v_hat + ε)
+/// - θ = θ - α * `m_hat` / (√`v_hat` + ε)
 ///
 /// # 使用示例
 /// ```ignore
@@ -177,7 +177,7 @@ impl Optimizer for SGD {
 pub struct Adam {
     /// 图引用
     graph: Rc<RefCell<GraphInner>>,
-    /// 要优化的参数（保留完整 Var，支持未来 param_groups 等扩展）
+    /// 要优化的参数（保留完整 Var，支持未来 `param_groups` 等扩展）
     params: Vec<Var>,
     /// 学习率
     lr: f32,
@@ -187,9 +187,9 @@ pub struct Adam {
     beta2: f32,
     /// 数值稳定项
     epsilon: f32,
-    /// 一阶矩估计（按 NodeId 索引，高效查找）
+    /// 一阶矩估计（按 `NodeId` 索引，高效查找）
     m: HashMap<NodeId, Tensor>,
-    /// 二阶矩估计（按 NodeId 索引，高效查找）
+    /// 二阶矩估计（按 `NodeId` 索引，高效查找）
     v: HashMap<NodeId, Tensor>,
     /// 时间步
     t: usize,
@@ -230,7 +230,7 @@ impl Adam {
 
     /// 获取优化器绑定的参数列表
     ///
-    /// 用于调试、状态查询、param_groups 等场景
+    /// `用于调试、状态查询、param_groups` 等场景
     pub fn params(&self) -> &[Var] {
         &self.params
     }
@@ -250,7 +250,7 @@ impl Adam {
     }
 
     /// 获取当前时间步
-    pub fn timestep(&self) -> usize {
+    pub const fn timestep(&self) -> usize {
         self.t
     }
 }
@@ -272,7 +272,7 @@ impl Optimizer for Adam {
             let node_id = param.node_id();
             if let Some(grad) = g.get_node_grad(node_id)? {
                 let current = g.get_node_value(node_id)?.ok_or_else(|| {
-                    GraphError::ComputationError(format!("参数节点 {:?} 没有值", node_id))
+                    GraphError::ComputationError(format!("参数节点 {node_id:?} 没有值"))
                 })?;
 
                 // 预计算

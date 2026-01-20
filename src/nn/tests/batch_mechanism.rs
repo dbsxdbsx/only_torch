@@ -12,7 +12,7 @@
 
 use approx::assert_abs_diff_eq;
 
-use crate::nn::{GraphInner, GraphError};
+use crate::nn::{GraphError, GraphInner};
 use crate::tensor::Tensor;
 
 /// 测试 batch forward 与单样本 forward 的一致性

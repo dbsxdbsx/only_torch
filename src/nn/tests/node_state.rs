@@ -17,7 +17,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{GraphInner, GraphError};
+use crate::nn::{GraphError, GraphInner};
 use crate::tensor::Tensor;
 
 /// 测试 State 节点的基本创建

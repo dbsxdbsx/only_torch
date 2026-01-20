@@ -5,7 +5,7 @@
  * 参考脚本: tests/python/layer_reference/simple_rnn_bptt.py
  */
 
-use crate::nn::{GraphInner, GraphError, NodeId};
+use crate::nn::{GraphError, GraphInner, NodeId};
 use crate::tensor::Tensor;
 
 // ==================== PyTorch 参考值 ====================

@@ -6,8 +6,8 @@
  * - cross_entropy: 交叉熵（分类）
  */
 
-use crate::nn::graph::Graph;
 use crate::nn::VarLossOps;
+use crate::nn::graph::Graph;
 use crate::tensor::Tensor;
 
 #[test]

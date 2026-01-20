@@ -10,7 +10,7 @@
  * 4. 各种参数组合（kernel_size, stride）
  */
 
-use crate::nn::{GraphInner, GraphError};
+use crate::nn::{GraphError, GraphInner};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 

@@ -5,7 +5,7 @@
 use only_torch::tensor::Tensor;
 
 /// Iris 数据集特征
-/// [sepal_length, sepal_width, petal_length, petal_width]
+/// [`sepal_length`, `sepal_width`, `petal_length`, `petal_width`]
 #[rustfmt::skip]
 const IRIS_FEATURES: [[f32; 4]; 150] = [
     // Setosa (0-49)
@@ -98,7 +98,7 @@ pub fn load_iris() -> (Tensor, Tensor) {
 }
 
 /// 获取原始标签（用于评估）
-pub fn get_labels() -> &'static [usize; 150] {
+pub const fn get_labels() -> &'static [usize; 150] {
     &IRIS_LABELS
 }
 

@@ -23,11 +23,7 @@ fn test_sgd_basic() {
     // 简单线性模型：y = x * w
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
     let w = graph
-        .parameter(
-            &[2, 1],
-            crate::nn::Init::Constant(0.5),
-            "w",
-        )
+        .parameter(&[2, 1], crate::nn::Init::Constant(0.5), "w")
         .unwrap();
     let target = graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
 
@@ -54,7 +50,12 @@ fn test_sgd_basic() {
     let new_loss = loss2.item().unwrap();
 
     // loss 应该下降
-    assert!(new_loss < initial_loss, "Loss 应该下降: {} -> {}", initial_loss, new_loss);
+    assert!(
+        new_loss < initial_loss,
+        "Loss 应该下降: {} -> {}",
+        initial_loss,
+        new_loss
+    );
 }
 
 #[test]
@@ -63,11 +64,7 @@ fn test_sgd_minimize() {
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
     let w = graph
-        .parameter(
-            &[2, 1],
-            crate::nn::Init::Constant(0.5),
-            "w",
-        )
+        .parameter(&[2, 1], crate::nn::Init::Constant(0.5), "w")
         .unwrap();
     let target = graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
 
@@ -87,11 +84,7 @@ fn test_adam_basic() {
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
     let w = graph
-        .parameter(
-            &[2, 1],
-            crate::nn::Init::Constant(0.5),
-            "w",
-        )
+        .parameter(&[2, 1], crate::nn::Init::Constant(0.5), "w")
         .unwrap();
     let target = graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
 
@@ -117,7 +110,12 @@ fn test_adam_basic() {
     let new_loss = loss2.item().unwrap();
 
     // loss 应该下降
-    assert!(new_loss < initial_loss, "Loss 应该下降: {} -> {}", initial_loss, new_loss);
+    assert!(
+        new_loss < initial_loss,
+        "Loss 应该下降: {} -> {}",
+        initial_loss,
+        new_loss
+    );
 }
 
 #[test]
@@ -126,11 +124,7 @@ fn test_adam_minimize() {
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
     let w = graph
-        .parameter(
-            &[2, 1],
-            crate::nn::Init::Constant(0.5),
-            "w",
-        )
+        .parameter(&[2, 1], crate::nn::Init::Constant(0.5), "w")
         .unwrap();
     let target = graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
 
@@ -149,11 +143,7 @@ fn test_adam_reset() {
     let graph = Graph::new_with_seed(42);
 
     let w = graph
-        .parameter(
-            &[2, 1],
-            crate::nn::Init::Constant(0.5),
-            "w",
-        )
+        .parameter(&[2, 1], crate::nn::Init::Constant(0.5), "w")
         .unwrap();
 
     let mut optimizer = Adam::new(&graph, &[w], 0.001);

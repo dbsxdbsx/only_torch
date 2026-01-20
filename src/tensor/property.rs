@@ -186,7 +186,7 @@ impl Tensor {
     ///
     /// # Panics
     /// 如果目标形状与当前形状不兼容（目标形状无法广播到当前形状）
-    pub fn sum_to_shape(&self, target_shape: &[usize]) -> Tensor {
+    pub fn sum_to_shape(&self, target_shape: &[usize]) -> Self {
         let current_shape = self.shape();
 
         // 快速路径：形状相同，直接返回克隆
@@ -214,9 +214,7 @@ impl Tensor {
                 // 验证：target 必须是 1（否则不是合法的广播关系）
                 assert!(
                     tgt == 1,
-                    "sum_to_shape: 目标形状 {:?} 与当前形状 {:?} 不兼容",
-                    target_shape,
-                    current_shape
+                    "sum_to_shape: 目标形状 {target_shape:?} 与当前形状 {current_shape:?} 不兼容"
                 );
                 axes_to_sum.push(i);
             }

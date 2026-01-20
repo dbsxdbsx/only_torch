@@ -3,7 +3,7 @@
 //! 展示多分类任务：
 //! - 经典 Iris 数据集（150 样本，4 特征，3 类别）
 //! - 三层 MLP + Tanh 激活
-//! - CrossEntropy 损失（多分类）
+//! - `CrossEntropy` 损失（多分类）
 //!
 //! ## 运行
 //! ```bash
@@ -13,7 +13,7 @@
 mod data;
 mod model;
 
-use data::{get_labels, load_iris, CLASS_NAMES};
+use data::{CLASS_NAMES, get_labels, load_iris};
 use model::IrisMLP;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 
@@ -40,8 +40,8 @@ fn main() -> Result<(), GraphError> {
     // 5. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.05);
 
-    println!("数据: {} 个样本，4 个特征，3 个类别", n_samples);
-    println!("类别: {:?}", CLASS_NAMES);
+    println!("数据: {n_samples} 个样本，4 个特征，3 个类别");
+    println!("类别: {CLASS_NAMES:?}");
     println!("网络: Input(4) -> Linear(10, Tanh) -> Linear(10, Tanh) -> Linear(3)");
     println!("优化器: Adam (lr=0.05), 损失: CrossEntropy\n");
 
@@ -99,7 +99,7 @@ fn main() -> Result<(), GraphError> {
     let final_acc = correct as f32 / n_samples as f32 * 100.0;
 
     println!("\n=== 最终结果 ===");
-    println!("准确率: {:.1}% ({}/{})", final_acc, correct, n_samples);
+    println!("准确率: {final_acc:.1}% ({correct}/{n_samples})");
 
     // 混淆矩阵
     println!("\n混淆矩阵:");

@@ -5,7 +5,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{GraphInner, GraphError, NodeId};
+use crate::nn::{GraphError, GraphInner, NodeId};
 use crate::tensor::Tensor;
 
 // ==================== 辅助函数 ====================
@@ -173,7 +173,9 @@ fn test_variable_input() {
 /// ```
 ///
 /// 行为：output = input + weight * prev_output
-fn create_weighted_recurrent_graph(weight: f64) -> Result<(GraphInner, NodeId, NodeId), GraphError> {
+fn create_weighted_recurrent_graph(
+    weight: f64,
+) -> Result<(GraphInner, NodeId, NodeId), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入节点

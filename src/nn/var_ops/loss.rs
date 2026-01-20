@@ -51,7 +51,7 @@ impl VarLossOps for Var {
             target.node_id(),
             None,
         )?;
-        Ok(Var::new(id, Rc::clone(self.graph())))
+        Ok(Self::new(id, Rc::clone(self.graph())))
     }
 
     fn mse_loss(&self, target: &Var) -> Result<Var, GraphError> {
@@ -60,6 +60,6 @@ impl VarLossOps for Var {
             self.graph()
                 .borrow_mut()
                 .new_mse_loss_node(self.node_id(), target.node_id(), None)?;
-        Ok(Var::new(id, Rc::clone(self.graph())))
+        Ok(Self::new(id, Rc::clone(self.graph())))
     }
 }

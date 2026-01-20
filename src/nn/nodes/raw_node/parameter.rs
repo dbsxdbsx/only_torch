@@ -40,7 +40,7 @@ impl Parameter {
 
     /// 使用固定种子创建参数节点（确保可重复性）
     ///
-    /// 使用 Kaiming/He 初始化：std = sqrt(2 / fan_in)
+    /// 使用 Kaiming/He 初始化：std = sqrt(2 / `fan_in`)
     pub(crate) fn new_seeded(shape: &[usize], seed: u64) -> Result<Self, GraphError> {
         // 1. 必要的验证：支持 2D-4D 张量
         if shape.len() < 2 || shape.len() > 4 {

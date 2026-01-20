@@ -26,7 +26,7 @@ pub enum Init {
     Ones,
     /// 正态分布（使用 Graph 的 RNG）
     Normal { mean: f32, std: f32 },
-    /// Kaiming/He 初始化（适用于 ReLU）
+    /// Kaiming/He 初始化（适用于 `ReLU`）
     Kaiming,
     /// Xavier/Glorot 初始化（适用于 Sigmoid/Tanh）
     Xavier,
@@ -36,16 +36,16 @@ impl Init {
     /// 生成初始化后的 Tensor（使用全局 RNG）
     pub fn generate(&self, shape: &[usize]) -> Tensor {
         match self {
-            Init::Constant(v) => &Tensor::ones(shape) * *v,
-            Init::Zeros => Tensor::zeros(shape),
-            Init::Ones => Tensor::ones(shape),
-            Init::Normal { mean, std } => Tensor::normal(*mean, *std, shape),
-            Init::Kaiming => {
+            Self::Constant(v) => &Tensor::ones(shape) * *v,
+            Self::Zeros => Tensor::zeros(shape),
+            Self::Ones => Tensor::ones(shape),
+            Self::Normal { mean, std } => Tensor::normal(*mean, *std, shape),
+            Self::Kaiming => {
                 let fan_in = shape[0];
                 let std = (2.0 / fan_in as f32).sqrt();
                 Tensor::normal(0.0, std, shape)
             }
-            Init::Xavier => {
+            Self::Xavier => {
                 let (fan_in, fan_out) = (shape[0], shape.get(1).copied().unwrap_or(1));
                 let std = (2.0 / (fan_in + fan_out) as f32).sqrt();
                 Tensor::normal(0.0, std, shape)
@@ -56,16 +56,16 @@ impl Init {
     /// 生成初始化后的 Tensor（使用指定的 RNG）
     pub fn generate_with_rng(&self, shape: &[usize], rng: &mut rand::rngs::StdRng) -> Tensor {
         match self {
-            Init::Constant(v) => &Tensor::ones(shape) * *v,
-            Init::Zeros => Tensor::zeros(shape),
-            Init::Ones => Tensor::ones(shape),
-            Init::Normal { mean, std } => Tensor::normal_with_rng(*mean, *std, shape, rng),
-            Init::Kaiming => {
+            Self::Constant(v) => &Tensor::ones(shape) * *v,
+            Self::Zeros => Tensor::zeros(shape),
+            Self::Ones => Tensor::ones(shape),
+            Self::Normal { mean, std } => Tensor::normal_with_rng(*mean, *std, shape, rng),
+            Self::Kaiming => {
                 let fan_in = shape[0];
                 let std = (2.0 / fan_in as f32).sqrt();
                 Tensor::normal_with_rng(0.0, std, shape, rng)
             }
-            Init::Xavier => {
+            Self::Xavier => {
                 let (fan_in, fan_out) = (shape[0], shape.get(1).copied().unwrap_or(1));
                 let std = (2.0 / (fan_in + fan_out) as f32).sqrt();
                 Tensor::normal_with_rng(0.0, std, shape, rng)
@@ -80,7 +80,7 @@ impl Init {
 ///
 /// # 设计原则
 /// - 持有 `Rc<RefCell<GraphInner>>` 引用，实现算子重载
-/// - 用户无需关心内部实现，像 PyTorch tensor 一样使用
+/// - 用户无需关心内部实现，像 `PyTorch` tensor 一样使用
 /// - Clone 语义（非 Copy），但开销极低（Rc clone）
 ///
 /// # 使用示例
@@ -109,29 +109,29 @@ impl std::fmt::Debug for Var {
 
 impl Var {
     /// 创建新的 Var（内部使用）
-    pub(crate) fn new(id: NodeId, graph: Rc<RefCell<GraphInner>>) -> Self {
+    pub(crate) const fn new(id: NodeId, graph: Rc<RefCell<GraphInner>>) -> Self {
         Self { id, graph }
     }
 
     /// 获取节点 ID
-    pub fn node_id(&self) -> NodeId {
+    pub const fn node_id(&self) -> NodeId {
         self.id
     }
 
     /// 获取内部图引用（供 trait 和内部模块使用）
-    pub(crate) fn graph(&self) -> &Rc<RefCell<GraphInner>> {
+    pub(crate) const fn graph(&self) -> &Rc<RefCell<GraphInner>> {
         &self.graph
     }
 
     /// 检查两个 Var 是否来自同一个 Graph
-    pub fn same_graph(&self, other: &Var) -> bool {
+    pub fn same_graph(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.graph, &other.graph)
     }
 
     /// 获取 Var 所属的 Graph handle
     ///
     /// 即使原始 Graph handle 已 drop，此方法仍返回有效的 Graph。
-    /// 这是因为 Var 持有 GraphInner 的强引用（Rc）。
+    /// 这是因为 Var 持有 `GraphInner` 的强引用（Rc）。
     pub fn get_graph(&self) -> super::graph::Graph {
         super::graph::Graph::from_rc(Rc::clone(&self.graph))
     }
@@ -148,22 +148,23 @@ impl Var {
     }
 
     /// 断言两个 Var 来自同一个 Graph，否则 panic（供 trait 使用）
-    pub(crate) fn assert_same_graph(&self, other: &Var) {
-        if !self.same_graph(other) {
-            panic!("不能对来自不同 Graph 的 Var 进行操作");
-        }
+    pub(crate) fn assert_same_graph(&self, other: &Self) {
+        assert!(
+            self.same_graph(other),
+            "不能对来自不同 Graph 的 Var 进行操作"
+        );
     }
 
     // ==================== 梯度流控制 ====================
 
     /// 截断梯度流（返回新的 detached Var）
-    pub fn detach(&self) -> Result<Var, GraphError> {
+    pub fn detach(&self) -> Result<Self, GraphError> {
         self.graph.borrow_mut().detach_node(self.id)?;
         Ok(self.clone())
     }
 
     /// 恢复梯度流
-    pub fn attach(&self) -> Result<Var, GraphError> {
+    pub fn attach(&self) -> Result<Self, GraphError> {
         self.graph.borrow_mut().attach_node(self.id)?;
         Ok(self.clone())
     }
@@ -205,9 +206,7 @@ impl Var {
 
     /// 获取标量值（假设是 1x1 Tensor）
     pub fn item(&self) -> Result<f32, GraphError> {
-        let val = self
-            .value()?
-            .ok_or_else(|| GraphError::NodeNotFound(self.id))?;
+        let val = self.value()?.ok_or(GraphError::NodeNotFound(self.id))?;
         val.get_data_number()
             .ok_or_else(|| GraphError::InvalidOperation("Tensor 不是标量".to_string()))
     }
@@ -220,7 +219,7 @@ impl Var {
     // ==================== 安全版本（返回 Result）====================
 
     /// 安全的加法（返回 Result）
-    pub fn try_add(&self, other: &Var) -> Result<Var, GraphError> {
+    pub fn try_add(&self, other: &Self) -> Result<Self, GraphError> {
         if !self.same_graph(other) {
             return Err(GraphError::InvalidOperation(
                 "不能对来自不同 Graph 的 Var 进行加法".to_string(),
@@ -230,13 +229,13 @@ impl Var {
             .graph
             .borrow_mut()
             .new_add_node(&[self.id, other.id], None)?;
-        Ok(Var::new(id, Rc::clone(&self.graph)))
+        Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 
     /// 安全的减法（返回 Result）
     ///
     /// 使用 Subtract 节点实现，支持广播
-    pub fn try_sub(&self, other: &Var) -> Result<Var, GraphError> {
+    pub fn try_sub(&self, other: &Self) -> Result<Self, GraphError> {
         if !self.same_graph(other) {
             return Err(GraphError::InvalidOperation(
                 "不能对来自不同 Graph 的 Var 进行减法".to_string(),
@@ -244,11 +243,11 @@ impl Var {
         }
         let mut g = self.graph.borrow_mut();
         let id = g.new_subtract_node(self.id, other.id, None)?;
-        Ok(Var::new(id, Rc::clone(&self.graph)))
+        Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 
     /// 安全的元素级乘法（返回 Result）
-    pub fn try_mul(&self, other: &Var) -> Result<Var, GraphError> {
+    pub fn try_mul(&self, other: &Self) -> Result<Self, GraphError> {
         if !self.same_graph(other) {
             return Err(GraphError::InvalidOperation(
                 "不能对来自不同 Graph 的 Var 进行乘法".to_string(),
@@ -258,13 +257,13 @@ impl Var {
             .graph
             .borrow_mut()
             .new_multiply_node(self.id, other.id, None)?;
-        Ok(Var::new(id, Rc::clone(&self.graph)))
+        Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 
     /// 安全的除法（返回 Result）
     ///
     /// 逐元素除法：`self / other`
-    pub fn try_div(&self, other: &Var) -> Result<Var, GraphError> {
+    pub fn try_div(&self, other: &Self) -> Result<Self, GraphError> {
         if !self.same_graph(other) {
             return Err(GraphError::InvalidOperation(
                 "不能对来自不同 Graph 的 Var 进行除法".to_string(),
@@ -274,7 +273,7 @@ impl Var {
             .graph
             .borrow_mut()
             .new_divide_node(self.id, other.id, None)?;
-        Ok(Var::new(id, Rc::clone(&self.graph)))
+        Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 }
 
@@ -291,9 +290,9 @@ impl Add for &Var {
 
 // Add for Var (consumes self)
 impl Add for Var {
-    type Output = Var;
+    type Output = Self;
 
-    fn add(self, other: Var) -> Var {
+    fn add(self, other: Self) -> Self {
         &self + &other
     }
 }
@@ -308,10 +307,10 @@ impl Add<Var> for &Var {
 }
 
 // Add<&Var> for Var
-impl Add<&Var> for Var {
-    type Output = Var;
+impl Add<&Self> for Var {
+    type Output = Self;
 
-    fn add(self, other: &Var) -> Var {
+    fn add(self, other: &Self) -> Self {
         &self + other
     }
 }
@@ -327,9 +326,9 @@ impl Sub for &Var {
 
 // Sub for Var
 impl Sub for Var {
-    type Output = Var;
+    type Output = Self;
 
-    fn sub(self, other: Var) -> Var {
+    fn sub(self, other: Self) -> Self {
         &self - &other
     }
 }
@@ -344,10 +343,10 @@ impl Sub<Var> for &Var {
 }
 
 // Sub<&Var> for Var
-impl Sub<&Var> for Var {
-    type Output = Var;
+impl Sub<&Self> for Var {
+    type Output = Self;
 
-    fn sub(self, other: &Var) -> Var {
+    fn sub(self, other: &Self) -> Self {
         &self - other
     }
 }
@@ -363,9 +362,9 @@ impl Mul for &Var {
 
 // Mul for Var
 impl Mul for Var {
-    type Output = Var;
+    type Output = Self;
 
-    fn mul(self, other: Var) -> Var {
+    fn mul(self, other: Self) -> Self {
         &self * &other
     }
 }
@@ -380,10 +379,10 @@ impl Mul<Var> for &Var {
 }
 
 // Mul<&Var> for Var
-impl Mul<&Var> for Var {
-    type Output = Var;
+impl Mul<&Self> for Var {
+    type Output = Self;
 
-    fn mul(self, other: &Var) -> Var {
+    fn mul(self, other: &Self) -> Self {
         &self * other
     }
 }
@@ -399,9 +398,9 @@ impl Div for &Var {
 
 // Div for Var
 impl Div for Var {
-    type Output = Var;
+    type Output = Self;
 
-    fn div(self, other: Var) -> Var {
+    fn div(self, other: Self) -> Self {
         &self / &other
     }
 }
@@ -416,10 +415,10 @@ impl Div<Var> for &Var {
 }
 
 // Div<&Var> for Var
-impl Div<&Var> for Var {
-    type Output = Var;
+impl Div<&Self> for Var {
+    type Output = Self;
 
-    fn div(self, other: &Var) -> Var {
+    fn div(self, other: &Self) -> Self {
         &self / other
     }
 }
@@ -444,9 +443,9 @@ impl Neg for &Var {
 
 // Neg for Var
 impl Neg for Var {
-    type Output = Var;
+    type Output = Self;
 
-    fn neg(self) -> Var {
+    fn neg(self) -> Self {
         -&self
     }
 }

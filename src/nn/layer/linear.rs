@@ -16,11 +16,11 @@ use crate::nn::{Graph, GraphError, Init, Module, Var, VarMatrixOps};
 
 /// Linear (全连接) 层
 ///
-/// PyTorch 风格的全连接层：`output = x @ W + b`
+/// `PyTorch` 风格的全连接层：`output = x @ W + b`
 ///
 /// # 输入/输出形状
-/// - 输入：[batch_size, in_features]
-/// - 输出：[batch_size, out_features]
+/// - 输入：[`batch_size`, `in_features`]
+/// - 输出：[`batch_size`, `out_features`]
 ///
 /// # 使用示例
 /// ```ignore
@@ -28,9 +28,9 @@ use crate::nn::{Graph, GraphError, Init, Module, Var, VarMatrixOps};
 /// let h = fc.forward(&x).relu();  // 链式调用
 /// ```
 pub struct Linear {
-    /// 权重参数 [in_features, out_features]
+    /// 权重参数 [`in_features`, `out_features`]
     weights: Var,
-    /// 偏置参数 [1, out_features]（可选）
+    /// 偏置参数 [1, `out_features`]（可选）
     bias: Option<Var>,
     /// 输入特征维度
     in_features: usize,
@@ -87,10 +87,10 @@ impl Linear {
     /// 计算 `x @ W + b`
     ///
     /// # 参数
-    /// - `x`: 输入 Var，形状 [batch_size, in_features]
+    /// - `x`: 输入 Var，形状 [`batch_size`, `in_features`]
     ///
     /// # 返回
-    /// 输出 Var，形状 [batch_size, out_features]
+    /// 输出 Var，形状 [`batch_size`, `out_features`]
     ///
     /// # Panics
     /// 如果输入形状不匹配
@@ -131,22 +131,22 @@ impl Linear {
     }
 
     /// 获取输入特征维度
-    pub fn in_features(&self) -> usize {
+    pub const fn in_features(&self) -> usize {
         self.in_features
     }
 
     /// 获取输出特征维度
-    pub fn out_features(&self) -> usize {
+    pub const fn out_features(&self) -> usize {
         self.out_features
     }
 
     /// 获取权重 Var
-    pub fn weights(&self) -> &Var {
+    pub const fn weights(&self) -> &Var {
         &self.weights
     }
 
     /// 获取偏置 Var（如果有）
-    pub fn bias(&self) -> Option<&Var> {
+    pub const fn bias(&self) -> Option<&Var> {
         self.bias.as_ref()
     }
 }

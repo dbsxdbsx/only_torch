@@ -16,13 +16,13 @@ use crate::nn::Var;
 
 // ==================== 新版 MaxPool2d 结构体（推荐）====================
 
-/// MaxPool2d (2D 最大池化) 层
+/// `MaxPool2d` (2D 最大池化) 层
 ///
-/// PyTorch 风格的最大池化层，无可学习参数。
+/// `PyTorch` 风格的最大池化层，无可学习参数。
 ///
 /// # 输入/输出形状
-/// - 输入：[batch_size, channels, H, W]
-/// - 输出：[batch_size, channels, H', W']
+/// - 输入：[`batch_size`, channels, H, W]
+/// - 输出：[`batch_size`, channels, H', W']
 ///
 /// # 输出尺寸计算
 /// ```text
@@ -36,24 +36,24 @@ use crate::nn::Var;
 /// let h = pool.forward(&x);  // 下采样
 /// ```
 pub struct MaxPool2d {
-    /// 池化窗口大小 (kernel_h, kernel_w)
+    /// 池化窗口大小 (`kernel_h`, `kernel_w`)
     kernel_size: (usize, usize),
-    /// 步长 (stride_h, stride_w)，None 时等于 kernel_size
+    /// 步长 (`stride_h`, `stride_w)，None` 时等于 `kernel_size`
     stride: Option<(usize, usize)>,
     /// 层名称（用于节点命名）
     name: String,
 }
 
 impl MaxPool2d {
-    /// 创建新的 MaxPool2d 层
+    /// 创建新的 `MaxPool2d` 层
     ///
     /// # 参数
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
-    /// - `stride`: 步长 (sH, sW)，若为 None 则默认等于 kernel_size
+    /// - `stride`: 步长 (sH, sW)，若为 None 则默认等于 `kernel_size`
     /// - `name`: 层名称前缀
     ///
     /// # 返回
-    /// MaxPool2d 层实例
+    /// `MaxPool2d` 层实例
     pub fn new(kernel_size: (usize, usize), stride: Option<(usize, usize)>, name: &str) -> Self {
         Self {
             kernel_size,
@@ -65,10 +65,10 @@ impl MaxPool2d {
     /// 前向传播
     ///
     /// # 参数
-    /// - `x`: 输入 Var，形状 [batch_size, channels, H, W]
+    /// - `x`: 输入 Var，形状 [`batch_size`, channels, H, W]
     ///
     /// # 返回
-    /// 输出 Var，形状 [batch_size, channels, H', W']
+    /// 输出 Var，形状 [`batch_size`, channels, H', W']
     pub fn forward(&self, x: &Var) -> Var {
         let graph = x.get_graph();
         let mut g = graph.inner_mut();
@@ -84,12 +84,12 @@ impl MaxPool2d {
     }
 
     /// 获取池化窗口大小
-    pub fn kernel_size(&self) -> (usize, usize) {
+    pub const fn kernel_size(&self) -> (usize, usize) {
         self.kernel_size
     }
 
     /// 获取步长
-    pub fn stride(&self) -> Option<(usize, usize)> {
+    pub const fn stride(&self) -> Option<(usize, usize)> {
         self.stride
     }
 }

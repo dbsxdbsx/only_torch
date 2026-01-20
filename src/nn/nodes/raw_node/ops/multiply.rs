@@ -35,13 +35,12 @@ impl Multiply {
         let left_shape = parents[0].value_expected_shape();
         let right_shape = parents[1].value_expected_shape();
 
-        let shape = broadcast_shape(left_shape, right_shape).ok_or_else(|| {
-            GraphError::ShapeMismatch {
+        let shape =
+            broadcast_shape(left_shape, right_shape).ok_or_else(|| GraphError::ShapeMismatch {
                 expected: left_shape.to_vec(),
                 got: right_shape.to_vec(),
                 message: "Multiply节点的父节点形状无法广播".to_string(),
-            }
-        })?;
+            })?;
 
         // 3. 返回
         Ok(Self {
@@ -107,8 +106,8 @@ impl TraitNode for Multiply {
     /// 计算 Multiply 节点对父节点的梯度（VJP）
     ///
     /// 对于 C = A ⊙ B（逐元素乘法，支持广播）：
-    /// - ∂L/∂A = sum_to_shape(`upstream_grad` ⊙ B, shape_A)
-    /// - ∂L/∂B = sum_to_shape(`upstream_grad` ⊙ A, shape_B)
+    /// - ∂L/∂A = `sum_to_shape`(`upstream_grad` ⊙ B, `shape_A`)
+    /// - ∂L/∂B = `sum_to_shape`(`upstream_grad` ⊙ A, `shape_B`)
     ///
     /// 当 A 或 B 被广播时，梯度需要沿广播维度求和
     fn calc_grad_to_parent(

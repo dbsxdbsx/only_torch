@@ -4,7 +4,7 @@
  * 测试 backward_through_time() 和 TBPTT 的正确性
  */
 
-use crate::nn::{GraphInner, GraphError, NodeId};
+use crate::nn::{GraphError, GraphInner, NodeId};
 use crate::tensor::Tensor;
 
 // ==================== 辅助函数 ====================

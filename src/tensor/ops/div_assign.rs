@@ -8,7 +8,7 @@ impl DivAssign for Tensor {
     }
 }
 
-/// 张量的 /= 操作，支持 NumPy 风格广播
+/// 张量的 /= 操作，支持 `NumPy` 风格广播
 ///
 /// # 广播规则
 /// - 支持广播，但**广播后的结果形状必须与左操作数形状相同**
@@ -27,11 +27,7 @@ impl<'a> DivAssign<&'a Self> for Tensor {
             TensorError::IncompatibleShape
         );
         // 检查除以0
-        assert!(
-            !other.has_zero_value(),
-            "{}",
-            TensorError::DivByZeroElement
-        );
+        assert!(!other.has_zero_value(), "{}", TensorError::DivByZeroElement);
         // 使用 ndarray 原生广播
         self.data /= &other.data;
     }

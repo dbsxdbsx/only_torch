@@ -1,7 +1,7 @@
 use approx::assert_abs_diff_eq;
 
 use crate::assert_err;
-use crate::nn::{GraphInner, GraphError};
+use crate::nn::{GraphError, GraphInner};
 use crate::tensor::Tensor;
 
 #[test]

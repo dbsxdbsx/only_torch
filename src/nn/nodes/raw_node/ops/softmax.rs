@@ -17,7 +17,7 @@ use rayon::prelude::*;
 /// 使用数值稳定的 log-sum-exp 技巧避免溢出。
 ///
 /// ## 输入
-/// - 父节点: [batch, num_classes] 或 [1, num_classes]
+/// - 父节点: [batch, `num_classes`] 或 [1, `num_classes`]
 ///
 /// ## 输出
 /// - 与输入形状相同，每行归一化为概率分布
@@ -45,8 +45,7 @@ impl Softmax {
         let shape = parents[0].value_expected_shape().to_vec();
         if shape.len() != 2 {
             return Err(GraphError::InvalidOperation(format!(
-                "Softmax 节点需要 2D 输入 [batch, num_classes]，但得到 {:?}",
-                shape
+                "Softmax 节点需要 2D 输入 [batch, num_classes]，但得到 {shape:?}"
             )));
         }
 
@@ -61,8 +60,8 @@ impl Softmax {
     }
 
     /// 计算数值稳定的 softmax（支持 batch，Rayon 并行）
-    /// 输入: [batch, num_classes]
-    /// 输出: [batch, num_classes]
+    /// 输入: [batch, `num_classes`]
+    /// 输出: [batch, `num_classes`]
     fn stable_softmax_batch(logits: &Tensor) -> Tensor {
         let shape = logits.shape();
         let batch_size = shape[0];
@@ -149,10 +148,10 @@ impl TraitNode for Softmax {
     /// Softmax 反向传播的 VJP 计算
     ///
     /// 对于 y = softmax(x)，Jacobian 矩阵为：
-    /// dL/dx_i = Σ_j (dL/dy_j * dy_j/dx_i)
-    ///         = Σ_j (dL/dy_j * (y_i * (δ_ij - y_j)))
-    ///         = y_i * (dL/dy_i - Σ_j (dL/dy_j * y_j))
-    ///         = y_i * (dL/dy_i - <dL/dy, y>)
+    /// `dL/dx_i` = `Σ_j` (`dL/dy_j` * `dy_j/dx_i`)
+    ///         = `Σ_j` (`dL/dy_j` * (`y_i` * (`δ_ij` - `y_j`)))
+    ///         = `y_i` * (`dL/dy_i` - `Σ_j` (`dL/dy_j` * `y_j`))
+    ///         = `y_i` * (`dL/dy_i` - <dL/dy, y>)
     ///
     /// 其中 <dL/dy, y> 是上游梯度与 softmax 输出的内积。
     fn calc_grad_to_parent(
@@ -182,8 +181,7 @@ impl TraitNode for Softmax {
                 // dL/dx_i = y_i * (dL/dy_i - dot_product)
                 let mut sample_grad = vec![0.0f32; num_classes];
                 for c in 0..num_classes {
-                    sample_grad[c] =
-                        softmax_output[[b, c]] * (upstream_grad[[b, c]] - dot_product);
+                    sample_grad[c] = softmax_output[[b, c]] * (upstream_grad[[b, c]] - dot_product);
                 }
 
                 sample_grad

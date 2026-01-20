@@ -51,7 +51,7 @@ impl VarShapeOps for Var {
             .graph()
             .borrow_mut()
             .new_reshape_node(self.node_id(), shape, None)?;
-        Ok(Var::new(id, Rc::clone(self.graph())))
+        Ok(Self::new(id, Rc::clone(self.graph())))
     }
 
     fn flatten(&self) -> Result<Var, GraphError> {
@@ -60,6 +60,6 @@ impl VarShapeOps for Var {
             .graph()
             .borrow_mut()
             .new_flatten_node(self.node_id(), true, None)?;
-        Ok(Var::new(id, Rc::clone(self.graph())))
+        Ok(Self::new(id, Rc::clone(self.graph())))
     }
 }

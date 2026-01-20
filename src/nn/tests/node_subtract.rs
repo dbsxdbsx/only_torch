@@ -477,7 +477,11 @@ fn test_subtract_broadcast_e2e() -> Result<(), GraphError> {
         .expect("features 应有 grad");
     let bias_grad = graph.get_node(bias)?.grad().expect("bias 应有 grad");
 
-    assert_eq!(features_grad.shape(), &[2, 3], "features 梯度形状应为 [2,3]");
+    assert_eq!(
+        features_grad.shape(),
+        &[2, 3],
+        "features 梯度形状应为 [2,3]"
+    );
     assert_eq!(bias_grad.shape(), &[1, 3], "bias 梯度形状应为 [1,3]");
 
     // result = [[0,1,2], [3,4,5]]

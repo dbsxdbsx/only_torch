@@ -43,12 +43,21 @@ fn test_gru_shapes() -> Result<(), GraphError> {
     let gru = Gru::new(&graph, input_size, hidden_size, batch_size, "gru1")?;
 
     // 验证重置门权重形状
-    assert_eq!(gru.w_ir().value()?.unwrap().shape(), &[input_size, hidden_size]);
-    assert_eq!(gru.w_hr().value()?.unwrap().shape(), &[hidden_size, hidden_size]);
+    assert_eq!(
+        gru.w_ir().value()?.unwrap().shape(),
+        &[input_size, hidden_size]
+    );
+    assert_eq!(
+        gru.w_hr().value()?.unwrap().shape(),
+        &[hidden_size, hidden_size]
+    );
     assert_eq!(gru.b_r().value()?.unwrap().shape(), &[1, hidden_size]);
 
     // 验证状态形状
-    assert_eq!(gru.hidden_input().value()?.unwrap().shape(), &[batch_size, hidden_size]);
+    assert_eq!(
+        gru.hidden_input().value()?.unwrap().shape(),
+        &[batch_size, hidden_size]
+    );
 
     Ok(())
 }
@@ -78,16 +87,22 @@ fn test_gru_forward() -> Result<(), GraphError> {
     let gru = Gru::new(&graph, input_size, hidden_size, batch_size, "gru1")?;
 
     // 设置简单权重
-    gru.w_ir().set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    gru.w_hr().set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
+    gru.w_ir()
+        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
+    gru.w_hr()
+        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
     gru.b_r().set_value(&Tensor::zeros(&[1, hidden_size]))?;
 
-    gru.w_iz().set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    gru.w_hz().set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
+    gru.w_iz()
+        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
+    gru.w_hz()
+        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
     gru.b_z().set_value(&Tensor::zeros(&[1, hidden_size]))?;
 
-    gru.w_in().set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    gru.w_hn().set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
+    gru.w_in()
+        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
+    gru.w_hn()
+        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
     gru.b_n().set_value(&Tensor::zeros(&[1, hidden_size]))?;
 
     // 前向传播
