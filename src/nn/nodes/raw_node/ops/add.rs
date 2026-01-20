@@ -1,7 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
-use crate::tensor::Tensor;
+use crate::tensor::{Tensor, broadcast_shape};
 
 #[derive(Clone)]
 pub(crate) struct Add {
@@ -22,16 +22,20 @@ impl Add {
             ));
         }
 
-        // 1.2 验证所有父节点形状相同
-        let shape = parents[0].value_expected_shape().to_vec();
+        // 1.2 计算广播后的输出形状
+        let mut shape = parents[0].value_expected_shape().to_vec();
+
         for parent in parents.iter().skip(1) {
-            if parent.value_expected_shape() != shape {
-                return Err(GraphError::ShapeMismatch {
-                    expected: shape,
-                    got: parent.value_expected_shape().to_vec(),
-                    message: "Add节点的所有父节点形状必须相同".to_string(),
-                });
-            }
+            let parent_shape = parent.value_expected_shape();
+
+            // 使用 broadcast_shape 计算广播后的形状
+            shape = broadcast_shape(&shape, parent_shape).ok_or_else(|| {
+                GraphError::ShapeMismatch {
+                    expected: shape.clone(),
+                    got: parent_shape.to_vec(),
+                    message: "Add节点的父节点形状无法广播".to_string(),
+                }
+            })?;
         }
 
         // 2. 返回
@@ -100,12 +104,21 @@ impl TraitNode for Add {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        target_parent: &NodeHandle,
         upstream_grad: &Tensor,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // Add 节点的梯度直接传递（identity）
-        Ok(upstream_grad.clone())
+        // Add 节点的局部梯度是 identity，但需要处理广播
+        // 如果父节点被广播过，需要将梯度沿广播维度求和
+        let target_shape = target_parent.value_expected_shape();
+
+        if upstream_grad.shape() == target_shape {
+            // 形状匹配，直接传递
+            Ok(upstream_grad.clone())
+        } else {
+            // 被广播过，需要对广播维度求和
+            Ok(upstream_grad.sum_to_shape(target_shape))
+        }
     }
 
     fn grad(&self) -> Option<&Tensor> {

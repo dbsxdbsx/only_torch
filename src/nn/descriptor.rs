@@ -48,6 +48,7 @@ pub enum NodeTypeDescriptor {
     State, // 时间状态节点（RNN 隐藏状态等）
     Add,
     Divide,
+    Subtract,
     MatMul,
     Multiply,
     ScalarMultiply {

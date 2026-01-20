@@ -35,6 +35,7 @@ pub(in crate::nn) enum NodeType {
     Sigmoid(Sigmoid),
     Sign(Sign),
     Softmax(Softmax),
+    Subtract(Subtract),
     SoftPlus(SoftPlus),
     Step(Step),
     Tanh(Tanh),

@@ -16,6 +16,7 @@ mod layer_rnn; // RNN 层便捷函数
 mod module_trait; // Module trait 测试（V2 API）
 mod node_add;
 mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
+mod node_divide; // Divide 节点（逐元素除法）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
 mod node_flatten; // Flatten 节点（展平）
 mod node_input;
@@ -34,6 +35,7 @@ mod node_softmax_cross_entropy;
 mod node_softplus; // SoftPlus 激活函数（ReLU 的平滑近似）
 mod node_state; // State 节点测试（RNN 时间状态）
 mod node_step;
+mod node_subtract; // Subtract 节点（逐元素减法）
 mod node_tanh;
 mod optimizer; // 优化器测试（PyTorch 风格 API）
 mod recurrent_basic; // Phase 1: 循环/记忆机制基础测试

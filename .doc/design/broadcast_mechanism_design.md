@@ -1,7 +1,7 @@
 # 广播机制设计
 
 > 最后更新: 2026-01-19
-> 状态: **部分实现**（Tensor 层 + 工具函数已完成）
+> 状态: **部分实现**（Tensor 层 + 工具函数 + Node 层已完成）
 > 影响范围: Tensor 层、Node 层、Layer 层、NEAT 演化
 
 ---
@@ -302,14 +302,16 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 | Python 参考测试 | `tests/python/tensor_reference/broadcast_utils_reference.py` | ✅ |
 | Rust 单元测试 | `tensor/tests/property.rs` | ✅ |
 
-### 阶段 3：Node 层
+### 阶段 3：Node 层 ✅ 已完成
 
-| 任务 | 文件 | 说明 |
+| 任务 | 文件 | 状态 |
 |---|---|---|
-| 修改 Add::new() | `nodes/raw_node/ops/add.rs` | 形状验证改为广播兼容检查 |
-| 修改 Add::calc_grad_to_parent() | 同上 | 增加 sum_to_shape |
-| 修改 Multiply | `nodes/raw_node/ops/multiply.rs` | 同上 |
-| 修改 Divide | `nodes/raw_node/ops/divide.rs` | 同上 |
+| 修改 Add::new() | `nodes/raw_node/ops/add.rs` | ✅ 使用 broadcast_shape |
+| 修改 Add::calc_grad_to_parent() | 同上 | ✅ 使用 sum_to_shape |
+| 修改 Multiply | `nodes/raw_node/ops/multiply.rs` | ✅ 同上 |
+| 修改 Divide | `nodes/raw_node/ops/divide.rs` | ✅ 同上 |
+| **新增 Subtract 节点** | `nodes/raw_node/ops/subtract.rs` | ✅ 原生支持广播 |
+| Node 层广播测试 | `nn/tests/node_*.rs` | ✅ 每个节点都有广播测试 |
 
 ### 阶段 4：Layer 层
 
@@ -324,8 +326,8 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 |---|---|---|
 | 更新 Tensor 层测试 | 原有"形状不匹配应 panic"的测试需要修改 | ✅ |
 | 新增 Tensor 层广播测试 | 使用 Python 参考数据验证正确性 | ✅ |
-| 新增 Node 层广播测试 | Forward + Backward 正确性 | 待实现 |
-| 更新本文档 | 标记为"已实现" | 进行中 |
+| 新增 Node 层广播测试 | Forward + Backward 正确性 | ✅ |
+| 更新本文档 | 标记为"已实现" | ✅ |
 
 ---
 
@@ -394,3 +396,4 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 | 2026-01-19 | **重写：采用 NumPy 广播** | 发现 ndarray 原生支持；简化设计；NEAT 兼容性分析 |
 | 2026-01-19 | **实现 Tensor 层广播** | 完成阶段 1：移除形状检查，启用 ndarray 原生广播，添加自定义错误信息 |
 | 2026-01-19 | **实现广播工具函数** | 完成阶段 2：broadcast_shape, sum_to_shape, sum_axis_keepdims |
+| 2026-01-19 | **实现 Node 层广播** | 完成阶段 3：Add, Subtract, Multiply, Divide 节点支持广播 |

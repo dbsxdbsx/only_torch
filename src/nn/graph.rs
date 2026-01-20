@@ -1568,6 +1568,7 @@ impl GraphInner {
             NodeTypeDescriptor::State => "State",
             NodeTypeDescriptor::Add => "Add",
             NodeTypeDescriptor::Divide => "Divide",
+            NodeTypeDescriptor::Subtract => "Subtract",
             NodeTypeDescriptor::MatMul => "MatMul",
             NodeTypeDescriptor::Multiply => "Multiply",
             NodeTypeDescriptor::ScalarMultiply { .. } => "ScalarMultiply",
@@ -2009,6 +2010,7 @@ impl GraphInner {
             NodeType::State(_) => NodeTypeDescriptor::State,
             NodeType::Add(_) => NodeTypeDescriptor::Add,
             NodeType::Divide(_) => NodeTypeDescriptor::Divide,
+            NodeType::Subtract(_) => NodeTypeDescriptor::Subtract,
             NodeType::MatMul(_) => NodeTypeDescriptor::MatMul,
             NodeType::Multiply(_) => NodeTypeDescriptor::Multiply,
             NodeType::ScalarMultiply(_) => NodeTypeDescriptor::ScalarMultiply { scalar: 0.0 }, // TODO: 获取实际值
@@ -3443,7 +3445,7 @@ impl GraphInner {
     }
 
     /// 创建逐元素除法节点
-    /// 两个父节点必须形状相同
+    /// 支持广播：两个父节点形状需广播兼容
     ///
     /// # 参数
     /// - `left_node_id`: 被除数节点 ID
@@ -3457,6 +3459,23 @@ impl GraphInner {
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_divide(&self.get_nodes(&[left_node_id, right_node_id])?)?;
         self.add_node_to_list(handle, name, "divide", &[left_node_id, right_node_id])
+    }
+
+    /// 创建逐元素减法节点
+    /// 支持广播：两个父节点形状需广播兼容
+    ///
+    /// # 参数
+    /// - `left_node_id`: 被减数节点 ID
+    /// - `right_node_id`: 减数节点 ID
+    /// - `name`: 节点名称（可选）
+    pub fn new_subtract_node(
+        &mut self,
+        left_node_id: NodeId,
+        right_node_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_subtract(&self.get_nodes(&[left_node_id, right_node_id])?)?;
+        self.add_node_to_list(handle, name, "subtract", &[left_node_id, right_node_id])
     }
 
     /// 创建 Flatten 节点

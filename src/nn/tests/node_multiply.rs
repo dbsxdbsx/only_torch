@@ -61,27 +61,27 @@ fn test_multiply_creation() {
     }
 }
 
-/// 测试 Multiply 创建时的形状校验
+/// 测试 Multiply 创建时的形状校验（广播不兼容的情况）
 #[test]
 fn test_multiply_creation_invalid_shape() {
     let mut graph = GraphInner::new();
 
-    // 1. 形状完全不同
+    // 1. 无法广播的形状：[2, 3] + [3, 4]（两个维度都不兼容）
     let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
     let right = graph.new_input_node(&[3, 4], Some("right")).unwrap();
 
     let result = graph.new_multiply_node(left, right, None);
     assert_err!(
         result,
-        GraphError::ShapeMismatch([2, 3], [3, 4], "Multiply节点的两个父节点形状必须相同")
+        GraphError::ShapeMismatch([2, 3], [3, 4], "Multiply节点的父节点形状无法广播")
     );
 
-    // 2. 行数相同但列数不同
+    // 2. 无法广播的形状：[2, 3] + [2, 4]（第二维 3 != 4 且都不是 1）
     let right2 = graph.new_input_node(&[2, 4], Some("right2")).unwrap();
     let result = graph.new_multiply_node(left, right2, None);
     assert_err!(
         result,
-        GraphError::ShapeMismatch([2, 3], [2, 4], "Multiply节点的两个父节点形状必须相同")
+        GraphError::ShapeMismatch([2, 3], [2, 4], "Multiply节点的父节点形状无法广播")
     );
 }
 
@@ -476,6 +476,232 @@ fn test_multiply_gradient_accumulation() -> Result<(), GraphError> {
     graph.backward(loss)?;
     let grad_after_clear = graph.get_node(left)?.grad().unwrap();
     assert_eq!(grad_after_clear, &grad_first);
+
+    Ok(())
+}
+
+// ==================== 广播测试 ====================
+
+/// 测试 Multiply 节点支持广播的创建
+#[test]
+fn test_multiply_broadcast_creation() {
+    let mut graph = GraphInner::new();
+
+    // 1. [3, 4] ⊙ [1, 4] -> [3, 4]（行广播）
+    {
+        let left = graph.new_input_node(&[3, 4], Some("left1")).unwrap();
+        let right = graph.new_input_node(&[1, 4], Some("right1")).unwrap();
+        let result = graph
+            .new_multiply_node(left, right, Some("mul1"))
+            .unwrap();
+        assert_eq!(
+            graph.get_node_value_expected_shape(result).unwrap(),
+            &[3, 4]
+        );
+    }
+
+    // 2. [3, 1] ⊙ [1, 4] -> [3, 4]（双向广播）
+    {
+        let left = graph.new_input_node(&[3, 1], Some("left2")).unwrap();
+        let right = graph.new_input_node(&[1, 4], Some("right2")).unwrap();
+        let result = graph
+            .new_multiply_node(left, right, Some("mul2"))
+            .unwrap();
+        assert_eq!(
+            graph.get_node_value_expected_shape(result).unwrap(),
+            &[3, 4]
+        );
+    }
+
+    // 3. [2, 3, 4] ⊙ [1, 1, 4] -> [2, 3, 4]（高维广播）
+    {
+        let left = graph.new_input_node(&[2, 3, 4], Some("left3")).unwrap();
+        let right = graph.new_input_node(&[1, 1, 4], Some("right3")).unwrap();
+        let result = graph
+            .new_multiply_node(left, right, Some("mul3"))
+            .unwrap();
+        assert_eq!(
+            graph.get_node_value_expected_shape(result).unwrap(),
+            &[2, 3, 4]
+        );
+    }
+}
+
+/// 测试 Multiply 广播前向传播
+///
+/// [3, 4] ⊙ [1, 4] -> [3, 4]
+#[test]
+fn test_multiply_broadcast_forward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建节点：[2, 3] ⊙ [1, 3] -> [2, 3]
+    let matrix = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
+    let scale = graph.new_parameter_node(&[1, 3], Some("scale"))?;
+    let result = graph.new_multiply_node(matrix, scale, Some("result"))?;
+
+    // matrix = [[1,2,3], [4,5,6]]
+    // scale = [[2, 3, 4]]
+    // result = [[1*2,2*3,3*4], [4*2,5*3,6*4]] = [[2,6,12], [8,15,24]]
+    graph.set_node_value(
+        matrix,
+        Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])),
+    )?;
+    graph.set_node_value(scale, Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))?;
+
+    graph.forward(result)?;
+
+    let output = graph.get_node_value(result)?.unwrap();
+    let expected = Tensor::new(&[2., 6., 12., 8., 15., 24.], &[2, 3]);
+    assert_eq!(output, &expected);
+
+    Ok(())
+}
+
+/// 测试 Multiply 广播反向传播（关键测试）
+///
+/// [2, 3] ⊙ [1, 3] -> [2, 3]
+/// 反向传播时，对 [1, 3] 的梯度需要沿 axis=0 求和
+#[test]
+fn test_multiply_broadcast_backward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建节点：result = matrix ⊙ scale
+    let matrix = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
+    let scale = graph.new_parameter_node(&[1, 3], Some("scale"))?;
+    let result = graph.new_multiply_node(matrix, scale, Some("result"))?;
+
+    // matrix = [[1,2,3], [4,5,6]]
+    // scale = [[2, 3, 4]]
+    graph.set_node_value(
+        matrix,
+        Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])),
+    )?;
+    graph.set_node_value(scale, Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))?;
+    graph.forward(result)?;
+
+    // 直接测试 VJP
+    // upstream_grad = [[1,1,1], [1,1,1]] (全1)
+    let upstream_grad = Tensor::ones(&[2, 3]);
+    let result_node = graph.get_node(result)?;
+    let matrix_node = graph.get_node(matrix)?;
+    let scale_node = graph.get_node(scale)?;
+
+    // 对 matrix [2,3] 的梯度：upstream ⊙ scale（广播后）
+    // upstream ⊙ [[2,3,4],[2,3,4]] = [[2,3,4],[2,3,4]]
+    let grad_to_matrix =
+        result_node.calc_grad_to_parent(matrix_node, &upstream_grad, Some(scale_node))?;
+    assert_eq!(grad_to_matrix.shape(), &[2, 3]);
+    let expected_matrix_grad = Tensor::new(&[2., 3., 4., 2., 3., 4.], &[2, 3]);
+    assert_eq!(&grad_to_matrix, &expected_matrix_grad);
+
+    // 对 scale [1,3] 的梯度：upstream ⊙ matrix，然后沿 axis=0 求和
+    // upstream ⊙ [[1,2,3],[4,5,6]] = [[1,2,3],[4,5,6]]
+    // sum([[1,2,3],[4,5,6]], axis=0) = [[5,7,9]]
+    let grad_to_scale =
+        result_node.calc_grad_to_parent(scale_node, &upstream_grad, Some(matrix_node))?;
+    assert_eq!(grad_to_scale.shape(), &[1, 3]);
+    let expected_scale_grad = Tensor::new(&[5., 7., 9.], &[1, 3]);
+    assert_eq!(&grad_to_scale, &expected_scale_grad);
+
+    Ok(())
+}
+
+/// 测试 Multiply 广播反向传播（非全 1 上游梯度）
+///
+/// 实际训练中，upstream_grad 几乎不会是全 1，而是由链式法则层层计算得到的各种值。
+/// 此测试验证 sum_to_shape 在这种真实场景下的正确性。
+#[test]
+fn test_multiply_broadcast_backward_non_unit() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建节点：result = matrix ⊙ scale
+    let matrix = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
+    let scale = graph.new_parameter_node(&[1, 3], Some("scale"))?;
+    let result = graph.new_multiply_node(matrix, scale, Some("result"))?;
+
+    // matrix = [[1,2,3], [4,5,6]]
+    // scale = [[2, 3, 4]]
+    graph.set_node_value(
+        matrix,
+        Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])),
+    )?;
+    graph.set_node_value(scale, Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))?;
+    graph.forward(result)?;
+
+    // upstream_grad = [[1,2,3], [4,5,6]]（非全 1）
+    let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    let result_node = graph.get_node(result)?;
+    let matrix_node = graph.get_node(matrix)?;
+    let scale_node = graph.get_node(scale)?;
+
+    // 对 scale [1,3] 的梯度：upstream ⊙ matrix，然后沿 axis=0 求和
+    // [[1,2,3],[4,5,6]] ⊙ [[1,2,3],[4,5,6]] = [[1,4,9],[16,25,36]]
+    // sum([[1,4,9],[16,25,36]], axis=0) = [[17,29,45]]
+    let grad_to_scale =
+        result_node.calc_grad_to_parent(scale_node, &upstream_grad, Some(matrix_node))?;
+    assert_eq!(grad_to_scale.shape(), &[1, 3]);
+    let expected = Tensor::new(&[17., 29., 45.], &[1, 3]);
+    assert_eq!(&grad_to_scale, &expected);
+
+    Ok(())
+}
+
+/// 测试 Multiply 广播端到端反向传播
+///
+/// 验证广播在完整训练场景中的正确性
+#[test]
+fn test_multiply_broadcast_e2e() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 模拟特征缩放：result = features ⊙ scale
+    // features [2,3], scale [1,3]
+    let features = graph.new_parameter_node(&[2, 3], Some("features"))?;
+    let scale = graph.new_parameter_node(&[1, 3], Some("scale"))?;
+    let result = graph.new_multiply_node(features, scale, Some("result"))?;
+
+    // loss = MSE(result, target)
+    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+
+    // 设置值
+    // features = [[1,2,3], [4,5,6]]
+    // scale = [[1,1,1]]（初始为1）
+    // result = features（因为 scale 全为 1）
+    // target = [[0,0,0], [0,0,0]]
+    graph.set_node_value(
+        features,
+        Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])),
+    )?;
+    graph.set_node_value(scale, Some(&Tensor::ones(&[1, 3])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 3])))?;
+
+    graph.forward(loss)?;
+
+    // 反向传播
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    // 验证梯度形状
+    let features_grad = graph
+        .get_node(features)?
+        .grad()
+        .expect("features 应有 grad");
+    let scale_grad = graph.get_node(scale)?.grad().expect("scale 应有 grad");
+
+    assert_eq!(features_grad.shape(), &[2, 3], "features 梯度形状应为 [2,3]");
+    assert_eq!(scale_grad.shape(), &[1, 3], "scale 梯度形状应为 [1,3]");
+
+    // result = [[1,2,3], [4,5,6]]
+    // ∂loss/∂result = 2*(result - target)/n = result/3
+    //               = [[1/3, 2/3, 1], [4/3, 5/3, 2]]
+    //
+    // ∂loss/∂scale = sum(∂loss/∂result ⊙ features, axis=0)
+    //              = sum([[1*1/3, 2*2/3, 3*1], [4*4/3, 5*5/3, 6*2]], axis=0)
+    //              = sum([[1/3, 4/3, 3], [16/3, 25/3, 12]], axis=0)
+    //              = [[(1+16)/3, (4+25)/3, (3+12)]]
+    //              = [[17/3, 29/3, 15]]
+    let expected_scale_grad = Tensor::new(&[17. / 3., 29. / 3., 15.], &[1, 3]);
+    assert_abs_diff_eq!(scale_grad, &expected_scale_grad, epsilon = 1e-4);
 
     Ok(())
 }

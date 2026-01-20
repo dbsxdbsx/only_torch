@@ -2,7 +2,7 @@ use super::super::graph::GraphError;
 use super::raw_node::{
     Add, AvgPool2d, ChannelBiasAdd, Conv2d, Divide, Flatten, Input, LeakyReLU, MSELoss, MatMul,
     MaxPool2d, Multiply, Parameter, PerceptionLoss, Reduction, Reshape, ScalarMultiply, Sigmoid,
-    Sign, Softmax, SoftPlus, SoftmaxCrossEntropy, State, Step, Tanh,
+    Sign, Softmax, SoftPlus, SoftmaxCrossEntropy, State, Step, Subtract, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -209,6 +209,10 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_divide(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(Divide::new(parents)?)
+    }
+
+    pub(in crate::nn) fn new_subtract(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Subtract::new(parents)?)
     }
 
     pub(in crate::nn) fn new_flatten(
