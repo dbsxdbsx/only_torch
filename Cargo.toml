@@ -80,3 +80,7 @@
 [[example]]
 name = "xor"
 path = "examples/xor/main.rs"
+
+[[example]]
+name = "sine_regression"
+path = "examples/sine_regression/main.rs"
