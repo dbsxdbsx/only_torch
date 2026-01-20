@@ -249,27 +249,26 @@ impl Linear {
 
 ## ChannelBiasAdd 的定位
 
-### 当前状态
+### 最终决策：已删除 ✅
 
-`ChannelBiasAdd` 是为 Conv2d 设计的专用节点：
+`ChannelBiasAdd` 专用节点已被删除，改用通用 Add 节点 + 广播：
 
 ```rust
-// [batch, C, H, W] + [1, C] → [batch, C, H, W]
+// 旧：专用节点
+// [batch, C, H, W] + [1, C] → 需要特殊处理
 let output = graph.new_channel_bias_add_node(conv_out, bias)?;
+
+// 新：通用 Add + 广播
+// bias 形状改为 [1, C, 1, 1]，使用标准广播
+// [batch, C, H, W] + [1, C, 1, 1] → [batch, C, H, W]
+let output = graph.new_add_node(&[conv_out, bias], ...)?;
 ```
 
-### 新设计下的选择
+**删除理由**：
 
-| 选择 | 说明 |
-|---|---|
-| **保留** | 语义清晰，用户不需要手动 reshape bias |
-| **删除** | 通用 Add 可以处理（需要 reshape bias 为 `[1, C, 1, 1]`） |
-
-**建议：保留**。理由：
-
-1. 语义更清晰（"通道级 bias 加法"）
-2. 用户体验更好（Conv2d 层内部直接用）
-3. 不增加复杂度（已实现）
+1. 通用 Add 已支持完整广播，无需专用节点
+2. 减少代码复杂度（~260 行）
+3. 统一的节点语义（Conv2d 的 bias 和 Linear 的 bias 都用 Add）
 
 ---
 
@@ -366,7 +365,7 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 | Tensor 层 | 移除限制 | 直接使用 ndarray |
 | Node 层 | Forward 广播 + Backward 求和 | 标准自动微分 |
 | Layer 层 | 简化实现 | 删除手动广播代码 |
-| ChannelBiasAdd | 保留 | 语义清晰 |
+| ChannelBiasAdd | **已删除** | 通用 Add + 4D 广播替代 |
 | NEAT 兼容 | 不影响 | 广播是执行语义，非结构语义 |
 
 ### 核心收益
@@ -402,3 +401,4 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 | 2026-01-19 | **实现 Node 层广播** | 完成阶段 3：Add, Subtract, Multiply, Divide 节点支持广播 |
 | 2026-01-19 | **简化 Layer 层** | 完成阶段 4：移除 `ones @ bias` 手动广播，使用原生 Add 广播 |
 | 2026-01-19 | **移除 ScalarMultiply** | 功能被 Multiply + Subtract 替代 |
+| 2026-01-19 | **移除 ChannelBiasAdd** | 功能被通用 Add + 4D 广播替代 |

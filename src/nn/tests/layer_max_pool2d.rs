@@ -137,7 +137,7 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 
     x.set_value(&Tensor::new(x_data, &[batch_size, 1, 4, 4]))?;
     conv.kernel().set_value(&Tensor::new(conv_weight, &[2, 1, 2, 2]))?;
-    conv.bias().unwrap().set_value(&Tensor::new(conv_bias_data, &[1, 2]))?;
+    conv.bias().unwrap().set_value(&Tensor::new(conv_bias_data, &[1, 2, 1, 1]))?;
     fc.weights().set_value(&Tensor::new(fc_weight, &[2, 3]))?;
     fc.bias().unwrap().set_value(&Tensor::new(fc_bias_data, &[1, 3]))?;
     labels.set_value(&Tensor::new(target_data, &[batch_size, 3]))?;

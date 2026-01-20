@@ -8,7 +8,6 @@
 
 mod add;
 mod avg_pool2d;
-mod channel_bias_add;
 mod conv2d;
 mod divide;
 mod flatten;
@@ -27,7 +26,6 @@ mod tanh;
 
 pub(crate) use add::Add;
 pub(crate) use avg_pool2d::AvgPool2d;
-pub(crate) use channel_bias_add::ChannelBiasAdd;
 pub(crate) use conv2d::Conv2d;
 pub(crate) use divide::Divide;
 pub(crate) use flatten::Flatten;

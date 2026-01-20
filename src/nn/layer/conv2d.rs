@@ -40,7 +40,7 @@ use crate::nn::{Graph, GraphError, Init, Module, Var};
 pub struct Conv2d {
     /// 卷积核参数 [out_channels, in_channels, kernel_h, kernel_w]
     kernel: Var,
-    /// 偏置参数 [1, out_channels]（可选）
+    /// 偏置参数 [1, out_channels, 1, 1]（可选，用于广播加法）
     bias: Option<Var>,
     /// 输入通道数
     in_channels: usize,
@@ -91,8 +91,9 @@ impl Conv2d {
         )?;
 
         // 创建偏置参数（可选）：零初始化
+        // 形状 [1, C, 1, 1] 以便与 [batch, C, H, W] 广播
         let bias = if use_bias {
-            Some(graph.parameter(&[1, out_channels], Init::Zeros, &format!("{name}_b"))?)
+            Some(graph.parameter(&[1, out_channels, 1, 1], Init::Zeros, &format!("{name}_b"))?)
         } else {
             None
         };
@@ -144,9 +145,10 @@ impl Conv2d {
             seed,
         )?;
 
-        // 创建偏置参数（可选）：零初始化（无需种子）
+        // 创建偏置参数（可选）：零初始化
+        // 形状 [1, C, 1, 1] 以便与 [batch, C, H, W] 广播
         let bias = if use_bias {
-            Some(graph.parameter(&[1, out_channels], Init::Zeros, &format!("{name}_b"))?)
+            Some(graph.parameter(&[1, out_channels, 1, 1], Init::Zeros, &format!("{name}_b"))?)
         } else {
             None
         };
@@ -190,14 +192,13 @@ impl Conv2d {
             Var::new(conv_id, graph.inner_rc())
         };
 
-        // 如果有 bias，通过 ChannelBiasAdd 添加
+        // 如果有 bias，直接加法（Add 支持广播：[batch, C, H, W] + [1, C, 1, 1]）
         if let Some(ref bias) = self.bias {
             let output = {
                 let mut g = graph.inner_mut();
                 let out_id = g
-                    .new_channel_bias_add_node(
-                        conv_out.node_id(),
-                        bias.node_id(),
+                    .new_add_node(
+                        &[conv_out.node_id(), bias.node_id()],
                         Some(&format!("{}_out", self.name)),
                     )
                     .expect("Conv2d bias add 失败");

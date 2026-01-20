@@ -82,9 +82,7 @@ fn test_divide_name_generation() {
     let right = graph.new_parameter_node(&[2, 3], Some("r")).unwrap();
 
     // 1. 显式命名
-    let result1 = graph
-        .new_divide_node(left, right, Some("my_div"))
-        .unwrap();
+    let result1 = graph.new_divide_node(left, right, Some("my_div")).unwrap();
     assert_eq!(graph.get_node_name(result1).unwrap(), "my_div");
 
     // 2. 自动命名
@@ -108,9 +106,7 @@ fn test_divide_forward() {
 
     let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
     let right = graph.new_parameter_node(&[2, 3], Some("right")).unwrap();
-    let result = graph
-        .new_divide_node(left, right, Some("result"))
-        .unwrap();
+    let result = graph.new_divide_node(left, right, Some("result")).unwrap();
 
     // left=[6,8,12,20,30,42], right=[2,4,3,5,6,7]
     // result = [6/2, 8/4, 12/3, 20/5, 30/6, 42/7] = [3,2,4,4,5,6]
@@ -389,10 +385,7 @@ fn test_divide_broadcast_backward() -> Result<(), GraphError> {
     let grad_to_matrix =
         result_node.calc_grad_to_parent(matrix_node, &upstream_grad, Some(scale_node))?;
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
-    let expected_matrix_grad = Tensor::new(
-        &[0.5, 1.0 / 3.0, 0.25, 0.5, 1.0 / 3.0, 0.25],
-        &[2, 3],
-    );
+    let expected_matrix_grad = Tensor::new(&[0.5, 1.0 / 3.0, 0.25, 0.5, 1.0 / 3.0, 0.25], &[2, 3]);
     assert_abs_diff_eq!(grad_to_matrix, expected_matrix_grad, epsilon = 1e-6);
 
     // 对 scale [1,3] 的梯度：-upstream * matrix / scale²，然后沿 axis=0 求和
@@ -493,7 +486,11 @@ fn test_divide_broadcast_e2e() -> Result<(), GraphError> {
         .expect("features 应有 grad");
     let scale_grad = graph.get_node(scale)?.grad().expect("scale 应有 grad");
 
-    assert_eq!(features_grad.shape(), &[2, 3], "features 梯度形状应为 [2,3]");
+    assert_eq!(
+        features_grad.shape(),
+        &[2, 3],
+        "features 梯度形状应为 [2,3]"
+    );
     assert_eq!(scale_grad.shape(), &[1, 3], "scale 梯度形状应为 [1,3]");
 
     // result = [[1,2,3], [2,4,6]]

@@ -431,13 +431,13 @@ fn test_conv2d_has_bias() -> Result<(), GraphError> {
 
     let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv")?;
 
-    // 验证 bias 存在且形状正确
+    // 验证 bias 存在且形状正确（4D 形状用于广播）
     let bias = conv.bias().unwrap().value()?.unwrap();
-    assert_eq!(bias.shape(), &[1, 2]);
+    assert_eq!(bias.shape(), &[1, 2, 1, 1]);
 
     // 验证 bias 默认初始化为 0
-    assert_abs_diff_eq!(bias[[0, 0]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(bias[[0, 1]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(bias[[0, 0, 0, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(bias[[0, 1, 0, 0]], 0.0, epsilon = 1e-6);
 
     Ok(())
 }
@@ -468,7 +468,7 @@ fn test_conv2d_bias_applied() -> Result<(), GraphError> {
     }
 
     // 设置 bias：通道 0 加 1.0，通道 1 加 2.0
-    conv.bias().unwrap().set_value(&Tensor::new(&[1.0, 2.0], &[1, 2]))?;
+    conv.bias().unwrap().set_value(&Tensor::new(&[1.0, 2.0], &[1, 2, 1, 1]))?;
 
     // 重新前向传播
     output.forward()?;
@@ -507,7 +507,7 @@ fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
     // 验证 bias 有梯度
     let b_grad = conv.bias().unwrap().grad()?;
     assert!(b_grad.is_some(), "bias 应该有梯度");
-    assert_eq!(b_grad.unwrap().shape(), &[1, 2], "bias 梯度形状应该正确");
+    assert_eq!(b_grad.unwrap().shape(), &[1, 2, 1, 1], "bias 梯度形状应该正确");
 
     Ok(())
 }
@@ -545,7 +545,7 @@ fn test_conv2d_forward_pytorch_comparison() -> Result<(), GraphError> {
 
     // 设置与 PyTorch 相同的参数
     conv.kernel().set_value(&Tensor::new(PYTORCH_FWD_KERNEL, &[out_channels, in_channels, 2, 2]))?;
-    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_FWD_BIAS, &[1, out_channels]))?;
+    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_FWD_BIAS, &[1, out_channels, 1, 1]))?;
 
     // 前向传播
     let output = conv.forward(&x);
@@ -581,7 +581,7 @@ fn test_conv2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 
     // 设置与 PyTorch 相同的参数
     conv.kernel().set_value(&Tensor::new(PYTORCH_BWD_KERNEL, &[out_channels, in_channels, 2, 2]))?;
-    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_BWD_BIAS, &[1, out_channels]))?;
+    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_BWD_BIAS, &[1, out_channels, 1, 1]))?;
 
     let conv_out = conv.forward(&x);
     let target = graph.input(&Tensor::new(PYTORCH_BWD_TARGET, &[batch_size, out_channels, 2, 2]))?;
@@ -645,7 +645,7 @@ fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
 
     // 设置与 PyTorch 相同的参数
     conv.kernel().set_value(&Tensor::new(PYTORCH_CHAIN_CONV_KERNEL, &[out_channels, in_channels, 2, 2]))?;
-    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_CHAIN_CONV_BIAS, &[1, out_channels]))?;
+    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_CHAIN_CONV_BIAS, &[1, out_channels, 1, 1]))?;
 
     // 保存 conv 输出以便后续验证
     let conv_out = conv.forward(&x);

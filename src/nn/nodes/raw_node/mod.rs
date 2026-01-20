@@ -21,7 +21,6 @@ pub(in crate::nn) enum NodeType {
     State(State), // 时间状态节点（RNN 隐藏状态等）
     Add(Add),
     AvgPool2d(AvgPool2d),
-    ChannelBiasAdd(ChannelBiasAdd),
     Conv2d(Conv2d),
     Flatten(Flatten),
     MatMul(MatMul),

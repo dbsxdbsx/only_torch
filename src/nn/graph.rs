@@ -1581,7 +1581,6 @@ impl GraphInner {
             NodeTypeDescriptor::Reshape { .. } => "Reshape",
             NodeTypeDescriptor::Flatten => "Flatten",
             NodeTypeDescriptor::Conv2d { .. } => "Conv2d",
-            NodeTypeDescriptor::ChannelBiasAdd => "ChBiasAdd",
             NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
             NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
             NodeTypeDescriptor::MSELoss => "MSELoss",
@@ -2034,7 +2033,6 @@ impl GraphInner {
             NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
             NodeType::PerceptionLoss(_) => NodeTypeDescriptor::PerceptionLoss,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
-            NodeType::ChannelBiasAdd(_) => NodeTypeDescriptor::ChannelBiasAdd,
         }
     }
 
@@ -3311,34 +3309,6 @@ impl GraphInner {
         let handle =
             NodeHandle::new_conv2d(&self.get_nodes(&[input_id, kernel_id])?, stride, padding)?;
         self.add_node_to_list(handle, name, "conv2d", &[input_id, kernel_id])
-    }
-
-    /// 创建 ChannelBiasAdd（通道级 bias 广播加法）节点
-    ///
-    /// # 设计
-    /// - 将形状为 [C] 或 [1, C] 的 bias 广播加到 [batch, C, H, W] 的输入上
-    /// - 专门用于 Conv2d 层的 bias 添加
-    /// - 数学：output[b, c, h, w] = input[b, c, h, w] + bias[c]
-    ///
-    /// # 参数
-    /// - `input_id`: 输入节点 ID，形状 `[C, H, W]` 或 `[batch, C, H, W]`
-    /// - `bias_id`: bias 参数节点 ID，形状 `[C]` 或 `[1, C]`
-    /// - `name`: 可选的节点名称
-    ///
-    /// # 示例
-    /// ```ignore
-    /// let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
-    /// let bias = graph.new_parameter_node(&[1, 32], Some("bias"))?;
-    /// let output = graph.new_channel_bias_add_node(conv, bias, Some("conv_with_bias"))?;
-    /// ```
-    pub fn new_channel_bias_add_node(
-        &mut self,
-        input_id: NodeId,
-        bias_id: NodeId,
-        name: Option<&str>,
-    ) -> Result<NodeId, GraphError> {
-        let handle = NodeHandle::new_channel_bias_add(&self.get_nodes(&[input_id, bias_id])?)?;
-        self.add_node_to_list(handle, name, "channel_bias_add", &[input_id, bias_id])
     }
 
     /// 创建 MaxPool2d（2D 最大池化）节点
