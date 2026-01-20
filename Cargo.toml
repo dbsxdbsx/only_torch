@@ -74,3 +74,9 @@
 
 [dev-dependencies]
     # statrs="^0.16.0"
+
+# ==================== 示例 ====================
+
+[[example]]
+name = "xor"
+path = "examples/xor/main.rs"
