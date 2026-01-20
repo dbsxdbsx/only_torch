@@ -1,7 +1,7 @@
 # 广播机制设计
 
 > 最后更新: 2026-01-19
-> 状态: **部分实现**（Tensor 层 + 工具函数 + Node 层已完成）
+> 状态: **已完成**（Tensor 层 + 工具函数 + Node 层 + Layer 层简化）
 > 影响范围: Tensor 层、Node 层、Layer 层、NEAT 演化
 
 ---
@@ -313,12 +313,15 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 | **新增 Subtract 节点** | `nodes/raw_node/ops/subtract.rs` | ✅ 原生支持广播 |
 | Node 层广播测试 | `nn/tests/node_*.rs` | ✅ 每个节点都有广播测试 |
 
-### 阶段 4：Layer 层
+### 阶段 4：Layer 层 ✅ 已完成
 
-| 任务 | 文件 | 说明 |
+| 任务 | 文件 | 状态 |
 |---|---|---|
-| 简化 Linear::forward() | `layer/linear.rs` | 删除 ones @ b |
-| 可选：清理 ScalarMultiply | - | 评估是否还需要 |
+| 简化 Linear::forward() | `layer/linear.rs` | ✅ 直接 xw + bias |
+| 简化 RNN | `layer/rnn.rs` | ✅ 移除 ones @ b_h |
+| 简化 LSTM | `layer/lstm.rs` | ✅ 移除 ones @ b_i/b_f/b_g/b_o |
+| 简化 GRU | `layer/gru.rs` | ✅ 移除 ones @ b_r/b_z/b_n |
+| 移除 ScalarMultiply | `nodes/raw_node/ops/` | ✅ 功能被 Multiply + Subtract 替代 |
 
 ### 阶段 5：测试和文档
 
@@ -397,3 +400,5 @@ let output = graph.new_channel_bias_add_node(conv_out, bias)?;
 | 2026-01-19 | **实现 Tensor 层广播** | 完成阶段 1：移除形状检查，启用 ndarray 原生广播，添加自定义错误信息 |
 | 2026-01-19 | **实现广播工具函数** | 完成阶段 2：broadcast_shape, sum_to_shape, sum_axis_keepdims |
 | 2026-01-19 | **实现 Node 层广播** | 完成阶段 3：Add, Subtract, Multiply, Divide 节点支持广播 |
+| 2026-01-19 | **简化 Layer 层** | 完成阶段 4：移除 `ones @ bias` 手动广播，使用原生 Add 广播 |
+| 2026-01-19 | **移除 ScalarMultiply** | 功能被 Multiply + Subtract 替代 |
