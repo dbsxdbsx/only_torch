@@ -50,7 +50,7 @@ neat/              0%       ❌ 远期特色
 | 运算 | Add, MatMul, Reshape, Flatten                    |  ✅  |
 | 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU              |  ✅  |
 | CNN  | Conv2d, MaxPool2d, AvgPool2d                     |  ✅  |
-| 损失 | PerceptionLoss, SoftmaxCrossEntropyLoss, MSELoss |  ✅  |
+| 损失 | SoftmaxCrossEntropyLoss, MSELoss |  ✅  |
 
 ## 缺失的关键节点
 
@@ -125,7 +125,7 @@ only_torch/
 │   │   ├── 输入: Input, Parameter, Constant
 │   │   ├── 激活: LeakyReLU/ReLU, Tanh, Sigmoid, Softmax, Step
 │   │   ├── 运算: Add, Sub, Mul, Div, MatMul, Reshape
-│   │   └── 损失: MSELoss ✅, CrossEntropy ✅, PerceptionLoss ✅
+│   │   └── 损失: MSELoss ✅, CrossEntropy ✅
 │   ├── optimizer/   # 优化器
 │   │   └── SGD, Momentum, Adam, LRScheduler
 │   └── context/     # 运行上下文

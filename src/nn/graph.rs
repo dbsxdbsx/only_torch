@@ -1584,7 +1584,6 @@ impl GraphInner {
             NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
             NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
             NodeTypeDescriptor::MSELoss => "MSELoss",
-            NodeTypeDescriptor::PerceptionLoss => "PerceptionLoss",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
         }
     }
@@ -1918,9 +1917,9 @@ impl GraphInner {
             // 参数节点：矩形，浅绿色
             NodeTypeDescriptor::Parameter => ("box", "filled", "#E8F5E9"),
             // 损失节点：双椭圆，浅红色
-            NodeTypeDescriptor::MSELoss
-            | NodeTypeDescriptor::PerceptionLoss
-            | NodeTypeDescriptor::SoftmaxCrossEntropy => ("doubleoctagon", "filled", "#FFEBEE"),
+            NodeTypeDescriptor::MSELoss | NodeTypeDescriptor::SoftmaxCrossEntropy => {
+                ("doubleoctagon", "filled", "#FFEBEE")
+            }
             // 激活函数：菱形，浅橙色
             NodeTypeDescriptor::Sigmoid
             | NodeTypeDescriptor::Tanh
@@ -2031,7 +2030,6 @@ impl GraphInner {
                 stride: (2, 2),
             }, // TODO: 获取实际值
             NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
-            NodeType::PerceptionLoss(_) => NodeTypeDescriptor::PerceptionLoss,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
         }
     }
@@ -3598,15 +3596,6 @@ impl GraphInner {
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
         self.new_leaky_relu_node(parent_id, 0.0, name)
-    }
-
-    pub fn new_perception_loss_node(
-        &mut self,
-        parent_id: NodeId,
-        name: Option<&str>,
-    ) -> Result<NodeId, GraphError> {
-        let handle = NodeHandle::new_perception_loss(&self.get_nodes(&[parent_id])?)?;
-        self.add_node_to_list(handle, name, "perception_loss", &[parent_id])
     }
 
     /// 创建 `SoftmaxCrossEntropy` 损失节点

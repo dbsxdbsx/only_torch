@@ -207,11 +207,6 @@ loss = nn.CrossEntropyLoss(reduction='none')  # 可选：不聚合，返回每�
 |-----------|---------|-----------|---------|
 | MSELoss | 标量 `[1,1]` | ✅ 已实现 | ✅ `calc_grad_to_parent` |
 | SoftmaxCrossEntropy | 标量 `[1,1]` | ✅ 已实现 | ✅ `calc_grad_to_parent` |
-| PerceptionLoss | 标量 `[1,1]` | ✅ 已实现 | ✅ `calc_grad_to_parent` |
-
-> **PerceptionLoss 设计决策**：改为标量输出 `[1,1]`（与其他 Loss 一致）。
-> - **公式**：`loss = sum(max(0, -x))` 或 `mean(max(0, -x))`（默认 Mean）
-> - **理由**：VJP 形状统一（上游梯度始终 `[1,1]`）；避免对角 Jacobian 的 O(n²) 空间复杂度
 > - 如需 element-wise 损失分布，可通过 `ReLU(-x)` 组合实现
 
 ### 4.5 形状验证策略（广播语义）
@@ -701,7 +696,7 @@ pub fn compute_full_jacobian(
 | 2026-01-06 | 提供 `backward()` + `backward_ex()` 双 API | 简单场景用 `backward()`；多任务学习用 `backward_ex(loss, retain_graph=true)` |
 | 2026-01-06 | 移除 `target_params` 参数，改用 `detach()` | PyTorch 风格：语义更清晰、性能更优、与主流框架一致。详见 [附录 A](gradient_flow_control_design.md#附录-a设计决策为什么用-detach-而非-target_params) |
 | 2026-01-06 | `backward()` 返回 `f32`（loss 值） | 方便用户打印 loss，与 `architecture_v2_design.md` 保持一致 |
-| 2026-01-06 | PerceptionLoss 改为标量输出 `[1,1]` | 与 MSELoss/SoftmaxCE 一致；VJP 形状统一；避免 O(n²) 对角 Jacobian |
+| 2026-01-20 | 移除 PerceptionLoss 节点 | 不常用，可用 CrossEntropy 替代 |
 | 2026-01-06 | 不支持隐式广播，形状不匹配时显式报错 | "Explicit is better than implicit"；与 Candle/Neuronika 一致；调试更容易 |
 | 2026-01-06 | `compute_full_jacobian` 暂不实现 | 当前无明确需求；后期如有需要再添加 |
 | 2026-01-06 | `requires_grad` / 冻结机制列为 Optional TODO | `detach` 已覆盖 99% 场景；optimizer 选择性绑定也可实现部分训练；详见 [梯度流控制设计 - 附录 B](gradient_flow_control_design.md#附录-brequires_grad--冻结机制可选功能) |

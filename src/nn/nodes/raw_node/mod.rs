@@ -6,7 +6,7 @@ mod state;
 
 pub(super) use input::Input;
 pub use loss::Reduction;
-pub(super) use loss::{MSELoss, PerceptionLoss, SoftmaxCrossEntropy};
+pub(super) use loss::{MSELoss, SoftmaxCrossEntropy};
 pub(super) use ops::*;
 pub(super) use parameter::Parameter;
 pub(super) use state::State;
@@ -37,7 +37,6 @@ pub(in crate::nn) enum NodeType {
     SoftPlus(SoftPlus),
     Step(Step),
     Tanh(Tanh),
-    PerceptionLoss(PerceptionLoss),
     SoftmaxCrossEntropy(SoftmaxCrossEntropy),
 }
 

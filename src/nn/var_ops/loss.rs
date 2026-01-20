@@ -13,9 +13,8 @@ use std::rc::Rc;
 /// 损失函数扩展 trait
 ///
 /// 提供常用损失函数的链式调用：
-/// - `cross_entropy(target)`: 交叉熵损失（含 Softmax）
-/// - `mse_loss(target)`: 均方误差损失
-/// - `perception_loss()`: 感知损失（用于二分类）
+/// - `cross_entropy(target)`: 交叉熵损失（含 Softmax）- 用于分类
+/// - `mse_loss(target)`: 均方误差损失 - 用于回归
 ///
 /// # 使用示例
 /// ```ignore
@@ -42,14 +41,6 @@ pub trait VarLossOps {
     /// # 返回
     /// 标量损失值节点
     fn mse_loss(&self, target: &Var) -> Result<Var, GraphError>;
-
-    /// Perception Loss（感知损失，用于二分类）
-    ///
-    /// 期望 label * output > 0 时为正确分类。
-    ///
-    /// # 返回
-    /// 标量损失值节点
-    fn perception_loss(&self) -> Var;
 }
 
 impl VarLossOps for Var {
@@ -70,14 +61,5 @@ impl VarLossOps for Var {
                 .borrow_mut()
                 .new_mse_loss_node(self.node_id(), target.node_id(), None)?;
         Ok(Var::new(id, Rc::clone(self.graph())))
-    }
-
-    fn perception_loss(&self) -> Var {
-        let id = self
-            .graph()
-            .borrow_mut()
-            .new_perception_loss_node(self.node_id(), None)
-            .expect("创建 PerceptionLoss 节点失败");
-        Var::new(id, Rc::clone(self.graph()))
     }
 }

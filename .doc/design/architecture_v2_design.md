@@ -842,7 +842,7 @@ let g = -&a;      // Neg
 | Trait 名称 | 职责 | 包含的方法 |
 |-----------|------|-----------|
 | `VarActivationOps` | 激活函数 | `relu`, `sigmoid`, `tanh`, `softmax`, `leaky_relu`, `step` |
-| `VarLossOps` | 损失函数 | `mse_loss`, `cross_entropy`, `perception_loss`, `bce_loss` |
+| `VarLossOps` | 损失函数 | `mse_loss`, `cross_entropy` |
 | `VarMatrixOps` | 矩阵运算 | `matmul`, `transpose`, `reshape`, `flatten` |
 | `VarVisionOps` | CNN/视觉 | `conv2d`, `max_pool2d`, `avg_pool2d`, `channel_bias_add` |
 | `VarReductionOps` | 归约操作 | `sum`, `mean`, `max`, `min` |
@@ -3013,7 +3013,7 @@ struct MLP {
     - [x] `detach()`, `attach()`
   - [x] 实现链式激活函数：`relu()`, `sigmoid()`, `tanh()`, `leaky_relu()`
   - [x] 实现链式运算：`matmul()`, `cross_entropy()`, `mse_loss()`
-  - [x] 实现额外激活/损失：`step()`, `perception_loss()`
+  - [x] 实现额外激活：`step()`
 - [x] **实现算子重载**
   - [x] `Add`, `Sub`, `Mul` for `&Var`
   - [x] `Add`, `Sub`, `Mul` for `Var`
@@ -3022,7 +3022,7 @@ struct MLP {
 
 > **📝 API 组织策略**：已按 §4.2.1.3 完成 Trait 分层拆分 ✅
 > - `VarActivationOps`: `relu()`, `sigmoid()`, `tanh()`, `leaky_relu()`, `step()`
-> - `VarLossOps`: `cross_entropy()`, `mse_loss()`, `perception_loss()`
+> - `VarLossOps`: `cross_entropy()`, `mse_loss()`
 > - `VarMatrixOps`: `matmul()`
 > - 核心方法保留在 `impl Var` 中
 

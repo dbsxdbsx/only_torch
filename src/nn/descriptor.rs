@@ -77,7 +77,6 @@ pub enum NodeTypeDescriptor {
         stride: (usize, usize),
     },
     MSELoss,
-    PerceptionLoss,
     SoftmaxCrossEntropy,
 }
 

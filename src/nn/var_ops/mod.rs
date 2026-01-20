@@ -8,7 +8,7 @@
  *
  * # 模块结构
  * - `activation`: 激活函数（relu, sigmoid, tanh, leaky_relu, softplus, step, sign）
- * - `loss`: 损失函数（cross_entropy, mse_loss, perception_loss）
+ * - `loss`: 损失函数（cross_entropy, mse_loss）
  * - `matrix`: 矩阵运算（matmul）
  * - `shape`: 形状变换（reshape, flatten）
  *

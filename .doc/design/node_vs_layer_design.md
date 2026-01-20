@@ -65,7 +65,7 @@ Node 层保留**两套 API**，服务于不同场景：
 | **运算** | `Add`, `MatMul`, `Multiply`, `ScalarMultiply` | 基础数学运算         |
 | **形状** | `Reshape`, `Flatten`                          | 张量形状变换         |
 | **激活** | `Step`, `Tanh`, `Sigmoid`, `LeakyReLU`        | 非线性激活           |
-| **损失** | `PerceptionLoss`, `SoftmaxCrossEntropy`       | 损失计算             |
+| **损失** | `MSELoss`, `SoftmaxCrossEntropy`              | 损失计算             |
 | **CNN**  | `Conv2d`, `MaxPool2d`, `AvgPool2d`            | 卷积与池化           |
 
 ### Node 特性

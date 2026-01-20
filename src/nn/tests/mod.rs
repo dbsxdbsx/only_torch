@@ -26,7 +26,6 @@ mod node_max_pool2d; // MaxPool2d 节点（2D 最大池化）
 mod node_mse_loss; // MSELoss 节点（均方误差损失）
 mod node_multiply;
 mod node_parameter;
-mod node_perception_loss;
 mod node_reshape; // Reshape 节点（形状变换）
 mod node_sigmoid;
 mod node_sign; // Sign 符号函数（正→1, 负→-1, 零→0）

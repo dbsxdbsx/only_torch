@@ -1,7 +1,7 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
     Add, AvgPool2d, Conv2d, Divide, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d,
-    Multiply, Parameter, PerceptionLoss, Reduction, Reshape, Sigmoid, Sign, SoftPlus, Softmax,
+    Multiply, Parameter, Reduction, Reshape, Sigmoid, Sign, SoftPlus, Softmax,
     SoftmaxCrossEntropy, State, Step, Subtract, Tanh,
 };
 use super::{NodeType, TraitNode};
@@ -246,10 +246,6 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_softplus(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(SoftPlus::new(parents)?)
-    }
-
-    pub(in crate::nn) fn new_perception_loss(parents: &[&Self]) -> Result<Self, GraphError> {
-        Self::new(PerceptionLoss::new(parents)?)
     }
 
     pub(in crate::nn) fn new_softmax_cross_entropy(parents: &[&Self]) -> Result<Self, GraphError> {

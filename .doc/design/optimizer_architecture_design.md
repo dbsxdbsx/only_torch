@@ -220,7 +220,7 @@ let x = graph.new_input_node(&[3, 1], Some("x"))?;
 let w = graph.new_parameter_node(&[1, 3], Some("w"))?;
 let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
 let output = graph.new_add_node(&[graph.new_mat_mul_node(w, x, None)?, b], None)?;
-let loss = graph.new_perception_loss_node(output, Some("loss"))?;
+let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
 // 创建优化器
 let mut optimizer = Adam::new(&graph, loss, 0.01)?;
