@@ -44,9 +44,9 @@ fn main() -> Result<(), GraphError> {
 
     // 2. 配置
     let batch_size = 256;
-    let train_samples = 5000; // 使用部分训练集（加快演示）
+    let train_samples = 15000; // 使用部分训练集（加快演示）
     let test_samples = 1000;
-    let max_epochs = 10;
+    let max_epochs = 20;
     let learning_rate = 0.01;
 
     println!("\n[2/3] 配置：");
@@ -156,11 +156,11 @@ fn main() -> Result<(), GraphError> {
     // 5. 结果
     println!("\n最佳准确率: {best_acc:.1}%");
 
-    if best_acc >= 85.0 {
+    if best_acc >= 95.0 {
         println!("✅ MNIST 示例成功！");
         Ok(())
     } else {
-        println!("❌ 准确率不足 85%");
+        println!("❌ 准确率不足 95%");
         Err(GraphError::ComputationError("MNIST 准确率不足".to_string()))
     }
 }
