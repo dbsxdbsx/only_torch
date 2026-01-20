@@ -40,7 +40,8 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new();
     let model = XorMLP::new(&graph)?;
 
-    // 2. 输入/输出占位符
+    // 2. 输入/输出占位符（用于迭代更新数据）
+    // 也可用 graph.input(&data) 一次性输入 batch 数据，详见 sine_regression 示例
     let x = graph.zeros(&[1, 2])?;
     let target = graph.zeros(&[1, 2])?;
 
