@@ -88,3 +88,7 @@ path = "examples/sine_regression/main.rs"
 [[example]]
 name = "iris"
 path = "examples/iris/main.rs"
+
+[[example]]
+name = "mnist"
+path = "examples/mnist/main.rs"
