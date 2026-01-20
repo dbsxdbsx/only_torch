@@ -7,7 +7,7 @@
  */
 
 use crate::nn::layer::Rnn;
-use crate::nn::{Graph, GraphError, Module, VarLossOps};
+use crate::nn::{Graph, GraphError, Init, Module, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -214,8 +214,8 @@ fn test_rnn_bptt_gradient_pytorch_comparison() -> Result<(), GraphError> {
     rnn.w_hh().set_value(&Tensor::new(TEST3_W_HH, &[hidden_size, hidden_size]))?;
     rnn.b_h().set_value(&Tensor::new(TEST3_B_H, &[1, hidden_size]))?;
 
-    // 创建输出层权重
-    let w_out = graph.parameter_seeded(&[hidden_size, 1], "w_out", 42)?;
+    // 创建输出层权重（初始化后立即设置值，所以用 Zeros）
+    let w_out = graph.parameter(&[hidden_size, 1], Init::Zeros, "w_out")?;
     w_out.set_value(&Tensor::new(TEST3_W_OUT, &[hidden_size, 1]))?;
 
     // 创建输出节点和 loss 节点（需要底层 API）

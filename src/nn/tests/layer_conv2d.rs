@@ -88,25 +88,7 @@ const PYTORCH_CHAIN_FC_WEIGHT: &[f32] = &[
 const PYTORCH_CHAIN_FC_BIAS: &[f32] = &[0.1, 0.2, 0.3];
 const PYTORCH_CHAIN_TARGET: &[f32] = &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
 #[rustfmt::skip]
-const PYTORCH_CHAIN_CONV_OUT: &[f32] = &[
-    // batch 0, channel 0
-    4.5, 5.5, 6.5,
-    8.5, 9.5, 10.5,
-    12.5, 13.5, 14.5,
-    // batch 0, channel 1
-    9.9, 12.5, 15.1,
-    20.3, 22.9, 25.5,
-    30.7, 33.3, 35.9,
-    // batch 1, channel 0
-    2.3, 2.8, 3.3,
-    4.3, 4.8, 5.3,
-    6.3, 6.8, 7.3,
-    // batch 1, channel 1
-    4.9, 6.2, 7.5,
-    10.1, 11.4, 12.7,
-    15.3, 16.6, 17.9,
-];
-const PYTORCH_CHAIN_LOGITS: &[f32] = &[102.079, 105.095, 108.111, 50.968, 52.526, 54.084];
+
 const PYTORCH_CHAIN_LOSS: f32 = 3.9335797;
 const PYTORCH_CHAIN_GRAD_CONV_KERNEL: &[f32] = &[
     0.62899423, 0.73382658, 1.04832363, 1.15315592, 0.62899423, 0.73382658, 1.04832363, 1.15315592,
@@ -153,7 +135,7 @@ fn test_conv2d_forward() -> Result<(), GraphError> {
 
     // 输入: [batch=1, C_in=1, H=4, W=4]
     let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
-    let conv = Conv2d::new_seeded(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv1", 42)?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
 
     // 设置卷积核全 1
     conv.kernel().set_value(&Tensor::ones(&[2, 1, 2, 2]))?;
@@ -186,7 +168,7 @@ fn test_conv2d_output_size() -> Result<(), GraphError> {
 
     // padding=1, kernel=3x3, stride=1 → same padding (保持尺寸)
     let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
-    let conv = Conv2d::new_seeded(&graph, 1, 1, (3, 3), (1, 1), (1, 1), true, "conv1", 42)?;
+    let conv = Conv2d::new(&graph, 1, 1, (3, 3), (1, 1), (1, 1), true, "10")?;
 
     // 设置卷积核全 1
     conv.kernel().set_value(&Tensor::ones(&[1, 1, 3, 3]))?;
@@ -211,9 +193,9 @@ fn test_conv2d_chain() -> Result<(), GraphError> {
 
     // 典型 CNN 结构: conv1 -> relu -> conv2 -> relu
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]))?;
-    let conv1 = Conv2d::new_seeded(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "conv1", 42)?;
+    let conv1 = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "10")?;
     let h1 = conv1.forward(&x).relu();
-    let conv2 = Conv2d::new_seeded(&graph, 4, 8, (3, 3), (1, 1), (1, 1), true, "conv2", 43)?;
+    let conv2 = Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), true, "40")?;
     let output = conv2.forward(&h1).relu();
 
     // 前向传播
@@ -233,7 +215,7 @@ fn test_conv2d_with_flatten() -> Result<(), GraphError> {
 
     // conv -> flatten
     let x = graph.input(&Tensor::ones(&[2, 1, 4, 4]))?;
-    let conv = Conv2d::new_seeded(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
     let flat = conv.forward(&x).flatten()?;
 
     // 前向传播
@@ -256,7 +238,7 @@ fn test_conv2d_batch_backward() -> Result<(), GraphError> {
 
     // 构建网络: conv -> flatten -> fc -> softmax_ce
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 4, 4]))?;
-    let conv = Conv2d::new_seeded(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
     let flat = conv.forward(&x).flatten()?;
     // flat 输出: [2, 18]
 
@@ -264,7 +246,10 @@ fn test_conv2d_batch_backward() -> Result<(), GraphError> {
     let logits = fc.forward(&flat);
 
     // SoftmaxCrossEntropy Loss
-    let labels = graph.input(&Tensor::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], &[batch_size, 3]))?;
+    let labels = graph.input(&Tensor::new(
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        &[batch_size, 3],
+    ))?;
     let loss = logits.cross_entropy(&labels)?;
 
     // 反向传播
@@ -286,11 +271,11 @@ fn test_conv2d_chain_batch_training() -> Result<(), GraphError> {
 
     // 构建网络: conv1 -> relu -> conv2 -> flatten -> fc -> loss
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 6, 6]))?;
-    let conv1 = Conv2d::new_seeded(&graph, 1, 2, (3, 3), (1, 1), (0, 0), true, "conv1", 42)?;
+    let conv1 = Conv2d::new(&graph, 1, 2, (3, 3), (1, 1), (0, 0), true, "10")?;
     let h1 = conv1.forward(&x).relu();
     // conv1 输出: [2, 2, 4, 4]
 
-    let conv2 = Conv2d::new_seeded(&graph, 2, 4, (2, 2), (1, 1), (0, 0), true, "conv2", 43)?;
+    let conv2 = Conv2d::new(&graph, 2, 4, (2, 2), (1, 1), (0, 0), true, "20")?;
     let h2 = conv2.forward(&h1);
     // conv2 输出: [2, 4, 3, 3]
 
@@ -301,7 +286,10 @@ fn test_conv2d_chain_batch_training() -> Result<(), GraphError> {
     let logits = fc.forward(&flat);
 
     // SoftmaxCrossEntropy Loss
-    let labels = graph.input(&Tensor::new(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], &[batch_size, 4]))?;
+    let labels = graph.input(&Tensor::new(
+        &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        &[batch_size, 4],
+    ))?;
     let loss = logits.cross_entropy(&labels)?;
 
     // 反向传播
@@ -322,7 +310,7 @@ fn test_conv2d_single_channel() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[2, 1, 4, 4]))?;
 
-    let conv = Conv2d::new_seeded(&graph, 1, 1, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 1, (2, 2), (1, 1), (0, 0), true, "10")?;
     let output = conv.forward(&x);
     output.forward()?;
 
@@ -353,7 +341,7 @@ fn test_conv2d_with_stride() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::ones(&[2, 1, 8, 8]))?;
 
     // stride=2 会使输出尺寸减半
-    let conv = Conv2d::new_seeded(&graph, 1, 4, (3, 3), (2, 2), (1, 1), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 4, (3, 3), (2, 2), (1, 1), true, "10")?;
     let output = conv.forward(&x);
     output.forward()?;
 
@@ -371,7 +359,7 @@ fn test_conv2d_nonsquare_kernel() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::ones(&[2, 1, 8, 8]))?;
 
     // 使用 3x5 的非方形卷积核
-    let conv = Conv2d::new_seeded(&graph, 1, 4, (3, 5), (1, 1), (1, 2), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 4, (3, 5), (1, 1), (1, 2), true, "10")?;
 
     // 验证卷积核形状
     let k = conv.kernel().value()?.unwrap();
@@ -394,7 +382,7 @@ fn test_conv2d_nonsquare_kernel() -> Result<(), GraphError> {
 fn test_conv2d_access_internal_params() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
-    let conv = Conv2d::new_seeded(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
 
     // 应该能访问并修改卷积核
     let custom_kernel = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 2]);
@@ -448,7 +436,7 @@ fn test_conv2d_bias_applied() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[1, 1, 3, 3]))?;
 
-    let conv = Conv2d::new_seeded(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
 
     // 设置卷积核全 1
     conv.kernel().set_value(&Tensor::ones(&[2, 1, 2, 2]))?;
@@ -468,7 +456,9 @@ fn test_conv2d_bias_applied() -> Result<(), GraphError> {
     }
 
     // 设置 bias：通道 0 加 1.0，通道 1 加 2.0
-    conv.bias().unwrap().set_value(&Tensor::new(&[1.0, 2.0], &[1, 2, 1, 1]))?;
+    conv.bias()
+        .unwrap()
+        .set_value(&Tensor::new(&[1.0, 2.0], &[1, 2, 1, 1]))?;
 
     // 重新前向传播
     output.forward()?;
@@ -492,13 +482,16 @@ fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
     let batch_size = 2;
 
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 4, 4]))?;
-    let conv = Conv2d::new_seeded(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
     let flat = conv.forward(&x).flatten()?;
 
     // 简单分类器
     let fc = Linear::new(&graph, 18, 3, true, "fc")?;
     let logits = fc.forward(&flat);
-    let labels = graph.input(&Tensor::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], &[batch_size, 3]))?;
+    let labels = graph.input(&Tensor::new(
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        &[batch_size, 3],
+    ))?;
     let loss = logits.cross_entropy(&labels)?;
 
     // 反向传播
@@ -507,7 +500,11 @@ fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
     // 验证 bias 有梯度
     let b_grad = conv.bias().unwrap().grad()?;
     assert!(b_grad.is_some(), "bias 应该有梯度");
-    assert_eq!(b_grad.unwrap().shape(), &[1, 2, 1, 1], "bias 梯度形状应该正确");
+    assert_eq!(
+        b_grad.unwrap().shape(),
+        &[1, 2, 1, 1],
+        "bias 梯度形状应该正确"
+    );
 
     Ok(())
 }
@@ -540,12 +537,29 @@ fn test_conv2d_forward_pytorch_comparison() -> Result<(), GraphError> {
     let in_channels = 1;
     let out_channels = 2;
 
-    let x = graph.input(&Tensor::new(PYTORCH_FWD_X, &[batch_size, in_channels, 4, 4]))?;
-    let conv = Conv2d::new_seeded(&graph, in_channels, out_channels, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let x = graph.input(&Tensor::new(
+        PYTORCH_FWD_X,
+        &[batch_size, in_channels, 4, 4],
+    ))?;
+    let conv = Conv2d::new(
+        &graph,
+        in_channels,
+        out_channels,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        true,
+        "conv",
+    )?;
 
     // 设置与 PyTorch 相同的参数
-    conv.kernel().set_value(&Tensor::new(PYTORCH_FWD_KERNEL, &[out_channels, in_channels, 2, 2]))?;
-    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_FWD_BIAS, &[1, out_channels, 1, 1]))?;
+    conv.kernel().set_value(&Tensor::new(
+        PYTORCH_FWD_KERNEL,
+        &[out_channels, in_channels, 2, 2],
+    ))?;
+    conv.bias()
+        .unwrap()
+        .set_value(&Tensor::new(PYTORCH_FWD_BIAS, &[1, out_channels, 1, 1]))?;
 
     // 前向传播
     let output = conv.forward(&x);
@@ -557,9 +571,16 @@ fn test_conv2d_forward_pytorch_comparison() -> Result<(), GraphError> {
 
     let output_data = out_val.data_as_slice();
     println!("Conv2d 前向传播输出:");
-    for (i, (&actual, &expected)) in output_data.iter().zip(PYTORCH_FWD_OUTPUT.iter()).enumerate() {
+    for (i, (&actual, &expected)) in output_data
+        .iter()
+        .zip(PYTORCH_FWD_OUTPUT.iter())
+        .enumerate()
+    {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
-        println!("  output[{}]: actual={:.4}, expected={:.4}", i, actual, expected);
+        println!(
+            "  output[{}]: actual={:.4}, expected={:.4}",
+            i, actual, expected
+        );
     }
 
     println!("✅ Conv2d 前向传播与 PyTorch 一致");
@@ -576,15 +597,35 @@ fn test_conv2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     let in_channels = 1;
     let out_channels = 1;
 
-    let x = graph.input(&Tensor::new(PYTORCH_BWD_X, &[batch_size, in_channels, 3, 3]))?;
-    let conv = Conv2d::new_seeded(&graph, in_channels, out_channels, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let x = graph.input(&Tensor::new(
+        PYTORCH_BWD_X,
+        &[batch_size, in_channels, 3, 3],
+    ))?;
+    let conv = Conv2d::new(
+        &graph,
+        in_channels,
+        out_channels,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        true,
+        "conv",
+    )?;
 
     // 设置与 PyTorch 相同的参数
-    conv.kernel().set_value(&Tensor::new(PYTORCH_BWD_KERNEL, &[out_channels, in_channels, 2, 2]))?;
-    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_BWD_BIAS, &[1, out_channels, 1, 1]))?;
+    conv.kernel().set_value(&Tensor::new(
+        PYTORCH_BWD_KERNEL,
+        &[out_channels, in_channels, 2, 2],
+    ))?;
+    conv.bias()
+        .unwrap()
+        .set_value(&Tensor::new(PYTORCH_BWD_BIAS, &[1, out_channels, 1, 1]))?;
 
     let conv_out = conv.forward(&x);
-    let target = graph.input(&Tensor::new(PYTORCH_BWD_TARGET, &[batch_size, out_channels, 2, 2]))?;
+    let target = graph.input(&Tensor::new(
+        PYTORCH_BWD_TARGET,
+        &[batch_size, out_channels, 2, 2],
+    ))?;
     let loss = conv_out.mse_loss(&target)?;
 
     // 前向传播
@@ -594,15 +635,26 @@ fn test_conv2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     let out_val = conv_out.value()?.unwrap();
     let output_data = out_val.data_as_slice();
     println!("Conv2d 输出:");
-    for (i, (&actual, &expected)) in output_data.iter().zip(PYTORCH_BWD_OUTPUT.iter()).enumerate() {
+    for (i, (&actual, &expected)) in output_data
+        .iter()
+        .zip(PYTORCH_BWD_OUTPUT.iter())
+        .enumerate()
+    {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-4);
-        println!("  output[{}]: actual={:.4}, expected={:.4}", i, actual, expected);
+        println!(
+            "  output[{}]: actual={:.4}, expected={:.4}",
+            i, actual, expected
+        );
     }
 
     // 验证 loss
     let loss_val = loss.value()?.unwrap();
     assert_abs_diff_eq!(loss_val[[0, 0]], PYTORCH_BWD_LOSS, epsilon = 1e-2);
-    println!("\nloss: actual={:.6}, expected={:.6}", loss_val[[0, 0]], PYTORCH_BWD_LOSS);
+    println!(
+        "\nloss: actual={:.6}, expected={:.6}",
+        loss_val[[0, 0]],
+        PYTORCH_BWD_LOSS
+    );
 
     // 反向传播
     loss.backward()?;
@@ -611,18 +663,32 @@ fn test_conv2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     let grad_kernel = conv.kernel().grad()?.unwrap();
     let grad_kernel_data = grad_kernel.data_as_slice();
     println!("\n卷积核梯度:");
-    for (i, (&actual, &expected)) in grad_kernel_data.iter().zip(PYTORCH_BWD_GRAD_KERNEL.iter()).enumerate() {
+    for (i, (&actual, &expected)) in grad_kernel_data
+        .iter()
+        .zip(PYTORCH_BWD_GRAD_KERNEL.iter())
+        .enumerate()
+    {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-2);
-        println!("  grad_kernel[{}]: actual={:.4}, expected={:.4}", i, actual, expected);
+        println!(
+            "  grad_kernel[{}]: actual={:.4}, expected={:.4}",
+            i, actual, expected
+        );
     }
 
     // 验证偏置梯度
     let grad_bias = conv.bias().unwrap().grad()?.unwrap();
     let grad_bias_data = grad_bias.data_as_slice();
     println!("\n偏置梯度:");
-    for (i, (&actual, &expected)) in grad_bias_data.iter().zip(PYTORCH_BWD_GRAD_BIAS.iter()).enumerate() {
+    for (i, (&actual, &expected)) in grad_bias_data
+        .iter()
+        .zip(PYTORCH_BWD_GRAD_BIAS.iter())
+        .enumerate()
+    {
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-2);
-        println!("  grad_bias[{}]: actual={:.4}, expected={:.4}", i, actual, expected);
+        println!(
+            "  grad_bias[{}]: actual={:.4}, expected={:.4}",
+            i, actual, expected
+        );
     }
 
     println!("\n✅ Conv2d 反向传播梯度与 PyTorch 一致");
@@ -640,12 +706,30 @@ fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     let out_channels = 2;
     let num_classes = 3;
 
-    let x = graph.input(&Tensor::new(PYTORCH_CHAIN_X, &[batch_size, in_channels, 4, 4]))?;
-    let conv = Conv2d::new_seeded(&graph, in_channels, out_channels, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let x = graph.input(&Tensor::new(
+        PYTORCH_CHAIN_X,
+        &[batch_size, in_channels, 4, 4],
+    ))?;
+    let conv = Conv2d::new(
+        &graph,
+        in_channels,
+        out_channels,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        true,
+        "conv",
+    )?;
 
     // 设置与 PyTorch 相同的参数
-    conv.kernel().set_value(&Tensor::new(PYTORCH_CHAIN_CONV_KERNEL, &[out_channels, in_channels, 2, 2]))?;
-    conv.bias().unwrap().set_value(&Tensor::new(PYTORCH_CHAIN_CONV_BIAS, &[1, out_channels, 1, 1]))?;
+    conv.kernel().set_value(&Tensor::new(
+        PYTORCH_CHAIN_CONV_KERNEL,
+        &[out_channels, in_channels, 2, 2],
+    ))?;
+    conv.bias().unwrap().set_value(&Tensor::new(
+        PYTORCH_CHAIN_CONV_BIAS,
+        &[1, out_channels, 1, 1],
+    ))?;
 
     // 保存 conv 输出以便后续验证
     let conv_out = conv.forward(&x);
@@ -655,13 +739,19 @@ fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
 
     // 使用 Linear API
     let fc = Linear::new(&graph, 18, num_classes, true, "fc")?;
-    fc.weights().set_value(&Tensor::new(PYTORCH_CHAIN_FC_WEIGHT, &[18, num_classes]))?;
-    fc.bias().unwrap().set_value(&Tensor::new(PYTORCH_CHAIN_FC_BIAS, &[1, num_classes]))?;
+    fc.weights()
+        .set_value(&Tensor::new(PYTORCH_CHAIN_FC_WEIGHT, &[18, num_classes]))?;
+    fc.bias()
+        .unwrap()
+        .set_value(&Tensor::new(PYTORCH_CHAIN_FC_BIAS, &[1, num_classes]))?;
 
     let fc_out = fc.forward(&flat);
 
     // SoftmaxCrossEntropy Loss
-    let target = graph.input(&Tensor::new(PYTORCH_CHAIN_TARGET, &[batch_size, num_classes]))?;
+    let target = graph.input(&Tensor::new(
+        PYTORCH_CHAIN_TARGET,
+        &[batch_size, num_classes],
+    ))?;
     let loss = fc_out.cross_entropy(&target)?;
 
     // 先前向传播验证输出
@@ -670,7 +760,11 @@ fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     // 验证 loss
     let loss_val = loss.value()?.unwrap();
     assert_abs_diff_eq!(loss_val[[0, 0]], PYTORCH_CHAIN_LOSS, epsilon = 1e-1);
-    println!("loss: actual={:.6}, expected={:.6}", loss_val[[0, 0]], PYTORCH_CHAIN_LOSS);
+    println!(
+        "loss: actual={:.6}, expected={:.6}",
+        loss_val[[0, 0]],
+        PYTORCH_CHAIN_LOSS
+    );
 
     // 反向传播
     loss.backward()?;
@@ -679,18 +773,32 @@ fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
     let grad_kernel = conv.kernel().grad()?.unwrap();
     let grad_kernel_data = grad_kernel.data_as_slice();
     println!("\n卷积核梯度:");
-    for (i, (&actual, &expected)) in grad_kernel_data.iter().zip(PYTORCH_CHAIN_GRAD_CONV_KERNEL.iter()).enumerate() {
+    for (i, (&actual, &expected)) in grad_kernel_data
+        .iter()
+        .zip(PYTORCH_CHAIN_GRAD_CONV_KERNEL.iter())
+        .enumerate()
+    {
         assert_abs_diff_eq!(actual, expected, epsilon = 5e-2);
-        println!("  grad_kernel[{}]: actual={:.6}, expected={:.6}", i, actual, expected);
+        println!(
+            "  grad_kernel[{}]: actual={:.6}, expected={:.6}",
+            i, actual, expected
+        );
     }
 
     // 验证偏置梯度
     let grad_bias = conv.bias().unwrap().grad()?.unwrap();
     let grad_bias_data = grad_bias.data_as_slice();
     println!("\n偏置梯度:");
-    for (i, (&actual, &expected)) in grad_bias_data.iter().zip(PYTORCH_CHAIN_GRAD_CONV_BIAS.iter()).enumerate() {
+    for (i, (&actual, &expected)) in grad_bias_data
+        .iter()
+        .zip(PYTORCH_CHAIN_GRAD_CONV_BIAS.iter())
+        .enumerate()
+    {
         assert_abs_diff_eq!(actual, expected, epsilon = 5e-2);
-        println!("  grad_bias[{}]: actual={:.6}, expected={:.6}", i, actual, expected);
+        println!(
+            "  grad_bias[{}]: actual={:.6}, expected={:.6}",
+            i, actual, expected
+        );
     }
 
     println!("\n✅ CNN 链式网络反向传播与 PyTorch 一致");
@@ -715,12 +823,13 @@ fn test_conv2d_module_trait() -> Result<(), GraphError> {
 /// 测试 Conv2d struct 带种子的可重复性
 #[test]
 fn test_conv2d_seeded_reproducibility() -> Result<(), GraphError> {
-    let graph1 = Graph::new();
-    let conv1 = Conv2d::new_seeded(&graph1, 1, 4, (3, 3), (1, 1), (0, 0), true, "conv", 42)?;
+    // 使用相同种子的 Graph 应产生相同权重
+    let graph1 = Graph::new_with_seed(42);
+    let conv1 = Conv2d::new(&graph1, 1, 4, (3, 3), (1, 1), (0, 0), true, "conv")?;
     let k1 = conv1.kernel().value()?.unwrap();
 
-    let graph2 = Graph::new();
-    let conv2 = Conv2d::new_seeded(&graph2, 1, 4, (3, 3), (1, 1), (0, 0), true, "conv", 42)?;
+    let graph2 = Graph::new_with_seed(42);
+    let conv2 = Conv2d::new(&graph2, 1, 4, (3, 3), (1, 1), (0, 0), true, "conv")?;
     let k2 = conv2.kernel().value()?.unwrap();
 
     // 相同种子应产生相同权重
@@ -736,9 +845,9 @@ fn test_conv2d_chain_api() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]))?;
 
     // conv -> relu -> conv -> relu
-    let conv1 = Conv2d::new_seeded(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "conv1", 42)?;
+    let conv1 = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "10")?;
     let a1 = conv1.forward(&x).relu();
-    let conv2 = Conv2d::new_seeded(&graph, 4, 8, (3, 3), (1, 1), (1, 1), true, "conv2", 43)?;
+    let conv2 = Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), true, "40")?;
     let output = conv2.forward(&a1).relu();
 
     // 前向传播

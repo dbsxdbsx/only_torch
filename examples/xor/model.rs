@@ -18,8 +18,8 @@ pub struct XorMLP {
 impl XorMLP {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
         Ok(Self {
-            fc1: Linear::new_seeded(graph, 2, 4, true, "fc1", 1)?,
-            fc2: Linear::new_seeded(graph, 4, 2, true, "fc2", 2)?,
+            fc1: Linear::new(graph, 2, 4, true, "fc1")?,
+            fc2: Linear::new(graph, 4, 2, true, "fc2")?,
         })
     }
 

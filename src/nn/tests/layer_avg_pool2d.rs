@@ -99,7 +99,7 @@ fn test_avg_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 
     // 构建网络: input -> conv -> relu -> avg_pool -> flatten -> fc -> softmax_ce
     let x = graph.input(&Tensor::new(&[0.0; 32], &[batch_size, 1, 4, 4]))?;
-    let conv = Conv2d::new_seeded(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
     // conv 输出: [2, 2, 3, 3]
     let h = conv.forward(&x).relu();
     let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
@@ -244,7 +244,7 @@ fn test_avg_pool2d_with_conv2d() -> Result<(), GraphError> {
 
     // 典型 CNN: conv -> relu -> avg_pool
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]))?;
-    let conv = Conv2d::new_seeded(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "conv1", 42)?;
+    let conv = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "10")?;
     let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool1");
 
     let h = conv.forward(&x).relu();
@@ -311,7 +311,7 @@ fn test_avg_pool2d_batch_backward() -> Result<(), GraphError> {
 
     // 构建网络: conv -> avg_pool -> flatten -> fc -> loss
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 8, 8]))?;
-    let conv = Conv2d::new_seeded(&graph, 1, 2, (3, 3), (1, 1), (1, 1), true, "conv", 42)?;
+    let conv = Conv2d::new(&graph, 1, 2, (3, 3), (1, 1), (1, 1), true, "10")?;
     // conv 输出: [2, 2, 8, 8]
     let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
     // pool 输出: [2, 2, 4, 4]

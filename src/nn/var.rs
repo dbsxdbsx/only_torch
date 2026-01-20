@@ -52,6 +52,26 @@ impl Init {
             }
         }
     }
+
+    /// 生成初始化后的 Tensor（使用指定的 RNG）
+    pub fn generate_with_rng(&self, shape: &[usize], rng: &mut rand::rngs::StdRng) -> Tensor {
+        match self {
+            Init::Constant(v) => &Tensor::ones(shape) * *v,
+            Init::Zeros => Tensor::zeros(shape),
+            Init::Ones => Tensor::ones(shape),
+            Init::Normal { mean, std } => Tensor::normal_with_rng(*mean, *std, shape, rng),
+            Init::Kaiming => {
+                let fan_in = shape[0];
+                let std = (2.0 / fan_in as f32).sqrt();
+                Tensor::normal_with_rng(0.0, std, shape, rng)
+            }
+            Init::Xavier => {
+                let (fan_in, fan_out) = (shape[0], shape.get(1).copied().unwrap_or(1));
+                let std = (2.0 / (fan_in + fan_out) as f32).sqrt();
+                Tensor::normal_with_rng(0.0, std, shape, rng)
+            }
+        }
+    }
 }
 
 // ==================== Var 结构 ====================

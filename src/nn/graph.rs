@@ -220,20 +220,13 @@ impl Graph {
     pub fn parameter(&self, shape: &[usize], init: Init, name: &str) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
         let node_id = g.new_parameter_node(shape, Some(name))?;
-        let init_data = init.generate(shape);
+        // 如果 Graph 有 RNG，使用它；否则使用全局 RNG
+        let init_data = if let Some(ref mut rng) = g.rng {
+            init.generate_with_rng(shape, rng)
+        } else {
+            init.generate(shape)
+        };
         g.set_node_value(node_id, Some(&init_data))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
-    }
-
-    /// 创建参数节点（带种子初始化，用于确定性训练）
-    pub fn parameter_seeded(
-        &self,
-        shape: &[usize],
-        name: &str,
-        seed: u64,
-    ) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_parameter_node_seeded(shape, Some(name), seed)?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 

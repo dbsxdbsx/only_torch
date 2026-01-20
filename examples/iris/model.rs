@@ -16,9 +16,9 @@ pub struct IrisMLP {
 impl IrisMLP {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
         Ok(Self {
-            fc1: Linear::new_seeded(graph, 4, 10, true, "fc1", 100)?,
-            fc2: Linear::new_seeded(graph, 10, 10, true, "fc2", 200)?,
-            fc3: Linear::new_seeded(graph, 10, 3, true, "fc3", 300)?,
+            fc1: Linear::new(graph, 4, 10, true, "fc1")?,
+            fc2: Linear::new(graph, 10, 10, true, "fc2")?,
+            fc3: Linear::new(graph, 10, 3, true, "fc3")?,
         })
     }
 

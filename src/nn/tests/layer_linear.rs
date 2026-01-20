@@ -185,17 +185,17 @@ fn test_linear_mlp_two_layers() {
     }
 }
 
-/// 测试 Linear::new_seeded() 可重复性
+/// 测试带种子 Graph 的 Linear 可重复性
 #[test]
 fn test_linear_seeded_reproducibility() {
     let seed = 12345u64;
 
-    // 创建两个使用相同 seed 的 Linear 层
-    let graph1 = Graph::new();
-    let fc1 = Linear::new_seeded(&graph1, 4, 3, true, "fc", seed).unwrap();
+    // 创建两个使用相同 seed 的 Graph，Linear 层会继承种子
+    let graph1 = Graph::new_with_seed(seed);
+    let fc1 = Linear::new(&graph1, 4, 3, true, "fc").unwrap();
 
-    let graph2 = Graph::new();
-    let fc2 = Linear::new_seeded(&graph2, 4, 3, true, "fc", seed).unwrap();
+    let graph2 = Graph::new_with_seed(seed);
+    let fc2 = Linear::new(&graph2, 4, 3, true, "fc").unwrap();
 
     // 权重应该完全相同
     let w1 = fc1.weights().value().unwrap().unwrap();
@@ -211,11 +211,11 @@ fn test_linear_seeded_reproducibility() {
 /// 测试不同 seed 产生不同权重
 #[test]
 fn test_linear_different_seeds() {
-    let graph1 = Graph::new();
-    let fc1 = Linear::new_seeded(&graph1, 4, 3, true, "fc", 111).unwrap();
+    let graph1 = Graph::new_with_seed(111);
+    let fc1 = Linear::new(&graph1, 4, 3, true, "fc").unwrap();
 
-    let graph2 = Graph::new();
-    let fc2 = Linear::new_seeded(&graph2, 4, 3, true, "fc", 222).unwrap();
+    let graph2 = Graph::new_with_seed(222);
+    let fc2 = Linear::new(&graph2, 4, 3, true, "fc").unwrap();
 
     // 不同 seed 应该产生不同权重
     let w1 = fc1.weights().value().unwrap().unwrap();

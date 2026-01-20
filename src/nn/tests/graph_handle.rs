@@ -27,15 +27,14 @@ fn test_graph_handle_new_with_seed() {
     let graph1 = Graph::new_with_seed(42);
     let graph2 = Graph::new_with_seed(42);
 
-    // 使用相同图级别种子，使用 parameter_seeded 确保可重复
-    // 注意：parameter() + Init::Normal 使用全局 RNG，不受 graph seed 控制
-    // 要测试 graph seed，应使用图内部的 RNG（如 parameter_seeded）
-    let p1 = graph1.parameter_seeded(&[2, 2], "p", 100).unwrap();
-    let p2 = graph2.parameter_seeded(&[2, 2], "p", 100).unwrap();
+    // 使用相同图级别种子，parameter() 会使用 Graph 内部的 RNG 进行初始化
+    let p1 = graph1.parameter(&[2, 2], Init::Kaiming, "p").unwrap();
+    let p2 = graph2.parameter(&[2, 2], Init::Kaiming, "p").unwrap();
 
     let v1 = p1.value().unwrap().unwrap();
     let v2 = p2.value().unwrap().unwrap();
 
+    // 相同的 Graph seed 应该产生相同的参数初始化
     assert_eq!(v1.data_as_slice(), v2.data_as_slice());
 }
 
@@ -89,20 +88,98 @@ fn test_graph_handle_parameter() {
     }
 }
 
-/// 测试 parameter_seeded 方法
+/// 测试带 seed 的 Graph 可重复性（替代原 parameter_seeded 测试）
 #[test]
-fn test_graph_handle_parameter_seeded() {
-    let graph1 = Graph::new();
-    let graph2 = Graph::new();
+fn test_graph_handle_seeded_parameter_reproducibility() {
+    // 使用相同 Graph seed 应该得到相同的初始化
+    let graph1 = Graph::new_with_seed(123);
+    let graph2 = Graph::new_with_seed(123);
 
-    // 使用相同种子应该得到相同的初始化
-    let p1 = graph1.parameter_seeded(&[3, 2], "p", 123).unwrap();
-    let p2 = graph2.parameter_seeded(&[3, 2], "p", 123).unwrap();
+    let p1 = graph1.parameter(&[3, 2], Init::Xavier, "p").unwrap();
+    let p2 = graph2.parameter(&[3, 2], Init::Xavier, "p").unwrap();
 
     let v1 = p1.value().unwrap().unwrap();
     let v2 = p2.value().unwrap().unwrap();
 
     assert_eq!(v1.data_as_slice(), v2.data_as_slice());
+}
+
+/// 测试 Graph seed 传播到多个层的可重复性
+///
+/// 验证：同一 Graph seed 下，按相同顺序创建的多个参数/层会得到相同的初始化序列。
+/// 这是 seed 传播机制的核心测试。
+#[test]
+fn test_graph_handle_seed_propagation_to_multiple_layers() {
+    use crate::nn::layer::Linear;
+
+    // 创建两个相同 seed 的 Graph
+    let graph1 = Graph::new_with_seed(42);
+    let graph2 = Graph::new_with_seed(42);
+
+    // 按相同顺序创建多个层
+    let fc1_a = Linear::new(&graph1, 10, 20, true, "fc1").unwrap();
+    let fc2_a = Linear::new(&graph1, 20, 5, true, "fc2").unwrap();
+
+    let fc1_b = Linear::new(&graph2, 10, 20, true, "fc1").unwrap();
+    let fc2_b = Linear::new(&graph2, 20, 5, true, "fc2").unwrap();
+
+    // 验证：所有对应层的权重完全相同
+    assert_eq!(
+        fc1_a.weights().value().unwrap().unwrap().data_as_slice(),
+        fc1_b.weights().value().unwrap().unwrap().data_as_slice(),
+        "fc1 权重应相同"
+    );
+    assert_eq!(
+        fc2_a.weights().value().unwrap().unwrap().data_as_slice(),
+        fc2_b.weights().value().unwrap().unwrap().data_as_slice(),
+        "fc2 权重应相同"
+    );
+
+    // 验证：不同层的权重应该不同（证明 RNG 在消耗）
+    assert_ne!(
+        fc1_a.weights().value().unwrap().unwrap().data_as_slice(),
+        fc2_a.weights().value().unwrap().unwrap().data_as_slice(),
+        "fc1 和 fc2 权重应不同"
+    );
+}
+
+/// 测试不同 seed 产生不同的初始化
+#[test]
+fn test_graph_handle_different_seeds_produce_different_weights() {
+    use crate::nn::layer::Linear;
+
+    let graph1 = Graph::new_with_seed(111);
+    let graph2 = Graph::new_with_seed(222);
+
+    let fc1 = Linear::new(&graph1, 10, 5, true, "fc").unwrap();
+    let fc2 = Linear::new(&graph2, 10, 5, true, "fc").unwrap();
+
+    // 不同 seed 应产生不同权重
+    assert_ne!(
+        fc1.weights().value().unwrap().unwrap().data_as_slice(),
+        fc2.weights().value().unwrap().unwrap().data_as_slice(),
+        "不同 seed 应产生不同权重"
+    );
+}
+
+/// 测试无 seed 的 Graph（每次运行不可重复）
+#[test]
+fn test_graph_handle_no_seed_is_random() {
+    use crate::nn::layer::Linear;
+
+    // 两个无 seed 的 Graph
+    let graph1 = Graph::new();
+    let graph2 = Graph::new();
+
+    let fc1 = Linear::new(&graph1, 10, 5, true, "fc").unwrap();
+    let fc2 = Linear::new(&graph2, 10, 5, true, "fc").unwrap();
+
+    // 无 seed 时，两次创建应产生不同权重（极小概率相同，可忽略）
+    assert_ne!(
+        fc1.weights().value().unwrap().unwrap().data_as_slice(),
+        fc2.weights().value().unwrap().unwrap().data_as_slice(),
+        "无 seed 时应产生不同权重"
+    );
 }
 
 // ==================== 张量创建测试 ====================

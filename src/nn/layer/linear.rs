@@ -82,46 +82,6 @@ impl Linear {
         })
     }
 
-    /// 创建新的 Linear 层（带种子，确保可重复性）
-    ///
-    /// # 参数
-    /// - `graph`: 计算图句柄
-    /// - `in_features`: 输入特征维度
-    /// - `out_features`: 输出特征维度
-    /// - `use_bias`: 是否使用偏置
-    /// - `name`: 层名称前缀
-    /// - `seed`: 随机种子
-    ///
-    /// # 返回
-    /// Linear 层实例
-    pub fn new_seeded(
-        graph: &Graph,
-        in_features: usize,
-        out_features: usize,
-        use_bias: bool,
-        name: &str,
-        seed: u64,
-    ) -> Result<Self, GraphError> {
-        // 创建权重参数：使用固定种子初始化
-        let weights =
-            graph.parameter_seeded(&[in_features, out_features], &format!("{name}_W"), seed)?;
-
-        // 创建偏置参数（可选）：零初始化（无需种子）
-        let bias = if use_bias {
-            Some(graph.parameter(&[1, out_features], Init::Zeros, &format!("{name}_b"))?)
-        } else {
-            None
-        };
-
-        Ok(Self {
-            weights,
-            bias,
-            in_features,
-            out_features,
-            name: name.to_string(),
-        })
-    }
-
     /// 前向传播
     ///
     /// 计算 `x @ W + b`

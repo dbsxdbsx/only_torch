@@ -110,61 +110,6 @@ impl Conv2d {
         })
     }
 
-    /// 创建新的 Conv2d 层（带种子，确保可重复性）
-    ///
-    /// # 参数
-    /// - `graph`: 计算图句柄
-    /// - `in_channels`: 输入通道数
-    /// - `out_channels`: 输出通道数
-    /// - `kernel_size`: 卷积核大小 (kH, kW)
-    /// - `stride`: 步长 (sH, sW)
-    /// - `padding`: 填充 (pH, pW)
-    /// - `use_bias`: 是否使用偏置
-    /// - `name`: 层名称前缀
-    /// - `seed`: 随机种子
-    ///
-    /// # 返回
-    /// Conv2d 层实例
-    pub fn new_seeded(
-        graph: &Graph,
-        in_channels: usize,
-        out_channels: usize,
-        kernel_size: (usize, usize),
-        stride: (usize, usize),
-        padding: (usize, usize),
-        use_bias: bool,
-        name: &str,
-        seed: u64,
-    ) -> Result<Self, GraphError> {
-        let (k_h, k_w) = kernel_size;
-
-        // 创建卷积核参数：使用固定种子初始化
-        let kernel = graph.parameter_seeded(
-            &[out_channels, in_channels, k_h, k_w],
-            &format!("{name}_K"),
-            seed,
-        )?;
-
-        // 创建偏置参数（可选）：零初始化
-        // 形状 [1, C, 1, 1] 以便与 [batch, C, H, W] 广播
-        let bias = if use_bias {
-            Some(graph.parameter(&[1, out_channels, 1, 1], Init::Zeros, &format!("{name}_b"))?)
-        } else {
-            None
-        };
-
-        Ok(Self {
-            kernel,
-            bias,
-            in_channels,
-            out_channels,
-            kernel_size,
-            stride,
-            padding,
-            name: name.to_string(),
-        })
-    }
-
     /// 前向传播
     ///
     /// 计算 `conv2d(x, K) + b`

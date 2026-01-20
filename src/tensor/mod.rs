@@ -175,6 +175,15 @@ impl Tensor {
     /// * `seed` - 随机数生成器的种子
     pub fn normal_seeded(mean: f32, std_dev: f32, shape: &[usize], seed: u64) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
+        Self::normal_with_rng(mean, std_dev, shape, &mut rng)
+    }
+
+    /// 创建一个服从正态分布的随机张量（使用外部提供的 RNG）
+    /// * `mean` - 正态分布的均值
+    /// * `std_dev` - 正态分布的标准差
+    /// * `shape` - 张量的形状
+    /// * `rng` - 随机数生成器的可变引用
+    pub fn normal_with_rng(mean: f32, std_dev: f32, shape: &[usize], rng: &mut StdRng) -> Self {
         let data_len = shape.iter().product::<usize>();
         let mut data = Vec::with_capacity(data_len);
 
