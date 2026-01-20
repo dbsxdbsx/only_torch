@@ -89,10 +89,6 @@ impl Gru {
         // 创建 ones 用于偏置广播
         let ones = graph.ones(&[batch_size, 1])?;
 
-        // 创建 -1 用于减法（h_t = n_t + z_t ⊙ (h_prev - n_t)）
-        let neg_one = graph.parameter(&[1, 1], Init::Zeros, &format!("{name}_neg_one"))?;
-        neg_one.set_value(&Tensor::new(&[-1.0], &[1, 1]))?;
-
         // 创建状态节点和计算图结构
         let (hidden_input, hidden_output) = {
             let mut g = graph.inner_mut();
@@ -125,8 +121,7 @@ impl Gru {
 
             // === 隐藏状态更新: h_t = (1-z_t) ⊙ n_t + z_t ⊙ h_{t-1} ===
             // 重写为: h_t = n_t + z_t ⊙ (h_{t-1} - n_t)
-            let neg_n = g.new_scalar_multiply_node(neg_one.node_id(), n_gate, Some(&format!("{name}_neg_n")))?;
-            let h_minus_n = g.new_add_node(&[h_prev_id, neg_n], Some(&format!("{name}_h_minus_n")))?;
+            let h_minus_n = g.new_subtract_node(h_prev_id, n_gate, Some(&format!("{name}_h_minus_n")))?;
             let z_diff = g.new_multiply_node(z_gate, h_minus_n, Some(&format!("{name}_z_diff")))?;
             let hidden_id = g.new_add_node(&[n_gate, z_diff], Some(&format!("{name}_h")))?;
 

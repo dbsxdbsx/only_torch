@@ -501,13 +501,13 @@ fn test_state_grad_in_bptt() -> Result<(), GraphError> {
 fn test_state_shape_mismatch_recurrent() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
-    let state = graph.new_state_node(&[1, 2], Some("state"))?; // 形状 [1, 2]
-    graph.set_node_value(state, Some(&Tensor::zeros(&[1, 2])))?;
+    // 使用无法广播的形状：[2, 3] 和 [2, 4]
+    // 第二维 3 != 4 且都不是 1，无法广播
+    let input = graph.new_input_node(&[2, 3], Some("input"))?;
+    let state = graph.new_state_node(&[2, 4], Some("state"))?;
+    graph.set_node_value(state, Some(&Tensor::zeros(&[2, 4])))?;
 
-    // hidden 形状会是 [1, 1]（与 input 相同）
-    // 但 state 形状是 [1, 2]
-    // 这应该在 Add 节点创建时就报错
+    // 这应该在 Add 节点创建时就报错（形状无法广播）
     let result = graph.new_add_node(&[input, state], None);
     assert_err!(result, GraphError::ShapeMismatch { .. });
     Ok(())

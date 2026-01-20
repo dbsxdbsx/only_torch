@@ -1571,7 +1571,6 @@ impl GraphInner {
             NodeTypeDescriptor::Subtract => "Subtract",
             NodeTypeDescriptor::MatMul => "MatMul",
             NodeTypeDescriptor::Multiply => "Multiply",
-            NodeTypeDescriptor::ScalarMultiply { .. } => "ScalarMultiply",
             NodeTypeDescriptor::Sigmoid => "Sigmoid",
             NodeTypeDescriptor::Softmax => "Softmax",
             NodeTypeDescriptor::Tanh => "Tanh",
@@ -1944,9 +1943,6 @@ impl GraphInner {
         // 根据节点类型添加特殊参数
         let extra_info = match &node.node_type {
             NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={alpha}")),
-            NodeTypeDescriptor::ScalarMultiply { scalar } if *scalar != 0.0 => {
-                Some(format!("×{scalar}"))
-            }
             _ => None,
         };
 
@@ -1976,9 +1972,6 @@ impl GraphInner {
         // 根据节点类型添加特殊参数
         let extra_info = match &node.node_type {
             NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={alpha}")),
-            NodeTypeDescriptor::ScalarMultiply { scalar } if *scalar != 0.0 => {
-                Some(format!("×{scalar}"))
-            }
             _ => None,
         };
 
@@ -2013,7 +2006,6 @@ impl GraphInner {
             NodeType::Subtract(_) => NodeTypeDescriptor::Subtract,
             NodeType::MatMul(_) => NodeTypeDescriptor::MatMul,
             NodeType::Multiply(_) => NodeTypeDescriptor::Multiply,
-            NodeType::ScalarMultiply(_) => NodeTypeDescriptor::ScalarMultiply { scalar: 0.0 }, // TODO: 获取实际值
             NodeType::Sigmoid(_) => NodeTypeDescriptor::Sigmoid,
             NodeType::Softmax(_) => NodeTypeDescriptor::Softmax,
             NodeType::Tanh(_) => NodeTypeDescriptor::Tanh,
@@ -3529,25 +3521,6 @@ impl GraphInner {
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_reshape(&self.get_nodes(&[parent_id])?, target_shape)?;
         self.add_node_to_list(handle, name, "reshape", &[parent_id])
-    }
-
-    /// 创建标量乘法节点
-    /// `scalar_node_id`: 标量节点(1x1)的ID
-    /// `matrix_node_id`: 矩阵节点的ID
-    pub fn new_scalar_multiply_node(
-        &mut self,
-        scalar_node_id: NodeId,
-        matrix_node_id: NodeId,
-        name: Option<&str>,
-    ) -> Result<NodeId, GraphError> {
-        let handle =
-            NodeHandle::new_scalar_multiply(&self.get_nodes(&[scalar_node_id, matrix_node_id])?)?;
-        self.add_node_to_list(
-            handle,
-            name,
-            "scalar_multiply",
-            &[scalar_node_id, matrix_node_id],
-        )
     }
 
     /// 创建 Sign 节点

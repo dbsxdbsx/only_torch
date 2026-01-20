@@ -51,9 +51,6 @@ pub enum NodeTypeDescriptor {
     Subtract,
     MatMul,
     Multiply,
-    ScalarMultiply {
-        scalar: f32,
-    },
     Sigmoid,
     Softmax,
     Tanh,

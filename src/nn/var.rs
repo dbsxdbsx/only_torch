@@ -215,21 +215,15 @@ impl Var {
 
     /// 安全的减法（返回 Result）
     ///
-    /// 实现为 `self + (-1 * other)`
+    /// 使用 Subtract 节点实现，支持广播
     pub fn try_sub(&self, other: &Var) -> Result<Var, GraphError> {
         if !self.same_graph(other) {
             return Err(GraphError::InvalidOperation(
                 "不能对来自不同 Graph 的 Var 进行减法".to_string(),
             ));
         }
-        // 创建 -1 常量节点
         let mut g = self.graph.borrow_mut();
-        let neg_one_id = g.new_input_node(&[1, 1], None)?;
-        g.set_node_value(neg_one_id, Some(&Tensor::new(&[-1.0], &[1, 1])))?;
-        // -other = -1 * other
-        let neg_other_id = g.new_scalar_multiply_node(neg_one_id, other.id, None)?;
-        // self + (-other)
-        let id = g.new_add_node(&[self.id, neg_other_id], None)?;
+        let id = g.new_subtract_node(self.id, other.id, None)?;
         Ok(Var::new(id, Rc::clone(&self.graph)))
     }
 
@@ -420,9 +414,9 @@ impl Neg for &Var {
         let neg_one_id = g.new_input_node(&[1, 1], None).expect("创建 -1 节点失败");
         g.set_node_value(neg_one_id, Some(&Tensor::new(&[-1.0], &[1, 1])))
             .expect("设置 -1 值失败");
-        // -self = -1 * self
+        // -self = -1 * self（Multiply 支持广播）
         let id = g
-            .new_scalar_multiply_node(neg_one_id, self.id, None)
+            .new_multiply_node(neg_one_id, self.id, None)
             .expect("创建取反节点失败");
         Var::new(id, Rc::clone(&self.graph))
     }

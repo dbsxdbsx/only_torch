@@ -30,7 +30,6 @@ pub(in crate::nn) enum NodeType {
     MSELoss(MSELoss),
     Multiply(Multiply),
     Reshape(Reshape),
-    ScalarMultiply(ScalarMultiply),
     LeakyReLU(LeakyReLU),
     Sigmoid(Sigmoid),
     Sign(Sign),
