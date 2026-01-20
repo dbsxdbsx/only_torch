@@ -1,4 +1,3 @@
-use crate::assert_panic;
 use crate::tensor::Tensor;
 use ndarray::Array;
 use ndarray::IxDyn;
@@ -179,41 +178,152 @@ fn test_mul_number_and_tensor() {
     }
 }
 
+/// NumPy 风格广播乘法测试（基于 Python NumPy 参考结果）
+///
+/// 参考脚本: tests/python/tensor_reference/tensor_mul_broadcast_reference.py
 #[test]
-fn test_mul_scalars_among_various_shapes() {
-    let number = 2.;
-    let scalar_shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1], &[1, 1, 1, 1]];
+fn test_mul_broadcast() {
+    // 格式: (shape_a, data_a, shape_b, data_b, expected_shape, expected_data)
+    let test_cases: &[(&[usize], &[f32], &[usize], &[f32], &[usize], &[f32])] = &[
+        // 1. 相同形状
+        // [3] * [3] -> [3]
+        (
+            &[3],
+            &[1.0, 2.0, 3.0],
+            &[3],
+            &[1.0, 2.0, 3.0],
+            &[3],
+            &[1.0, 4.0, 9.0],
+        ),
+        // [2, 3] * [2, 3] -> [2, 3]
+        (
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[2, 3],
+            &[1.0, 4.0, 9.0, 16.0, 25.0, 36.0],
+        ),
+        // 2. 标量广播
+        // [] * [3] -> [3]
+        (&[], &[1.0], &[3], &[1.0, 2.0, 3.0], &[3], &[1.0, 2.0, 3.0]),
+        // [3] * [] -> [3]
+        (&[3], &[1.0, 2.0, 3.0], &[], &[2.0], &[3], &[2.0, 4.0, 6.0]),
+        // [] * [2, 3] -> [2, 3]
+        (
+            &[],
+            &[1.0],
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        ),
+        // [2, 3] * [] -> [2, 3]
+        (
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[],
+            &[2.0],
+            &[2, 3],
+            &[2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+        ),
+        // 3. 低维广播到高维 (mask/scale 场景)
+        // [3, 4] * [4] -> [3, 4]
+        (
+            &[3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            &[4],
+            &[1.0, 2.0, 3.0, 4.0],
+            &[3, 4],
+            &[
+                1.0, 4.0, 9.0, 16.0, 5.0, 12.0, 21.0, 32.0, 9.0, 20.0, 33.0, 48.0,
+            ],
+        ),
+        // [3, 4] * [1, 4] -> [3, 4]
+        (
+            &[3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            &[1, 4],
+            &[1.0, 2.0, 3.0, 4.0],
+            &[3, 4],
+            &[
+                1.0, 4.0, 9.0, 16.0, 5.0, 12.0, 21.0, 32.0, 9.0, 20.0, 33.0, 48.0,
+            ],
+        ),
+        // 4. 双向广播: [3, 1] * [1, 4] -> [3, 4]
+        (
+            &[3, 1],
+            &[1.0, 2.0, 3.0],
+            &[1, 4],
+            &[1.0, 2.0, 3.0, 4.0],
+            &[3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 2.0, 4.0, 6.0, 8.0, 3.0, 6.0, 9.0, 12.0,
+            ],
+        ),
+        // [1, 4] * [3, 1] -> [3, 4]
+        (
+            &[1, 4],
+            &[1.0, 2.0, 3.0, 4.0],
+            &[3, 1],
+            &[1.0, 2.0, 3.0],
+            &[3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 2.0, 4.0, 6.0, 8.0, 3.0, 6.0, 9.0, 12.0,
+            ],
+        ),
+    ];
 
-    // 测试不同形状标量间的乘法组合
-    for shape1 in scalar_shapes.iter() {
-        let scalar1 = Tensor::new(&[number], shape1);
+    for (shape_a, data_a, shape_b, data_b, expected_shape, expected_data) in test_cases {
+        let a = Tensor::new(*data_a, *shape_a);
+        let b = Tensor::new(*data_b, *shape_b);
+        let expected = Tensor::new(*expected_data, *expected_shape);
 
-        for shape2 in scalar_shapes.iter() {
-            let scalar2 = Tensor::new(&[1.0], shape2);
+        // 直接比对 Tensor
+        let result = &a * &b;
+        assert_eq!(
+            result, expected,
+            "* broadcast failed: {:?} * {:?}",
+            shape_a, shape_b
+        );
 
-            if shape1 == shape2 {
-                // 相同形状的标量张量相乘应该成功
-                let result = scalar1.clone() * scalar2.clone();
-                let expected = Tensor::new(&[2.0], shape1);
-                assert_eq!(result, expected);
-
-                let result = scalar2 * scalar1.clone();
-                let expected = Tensor::new(&[2.0], shape1);
-                assert_eq!(result, expected);
-            } else {
-                // 不同形状的标量张量相乘应该失败
-                let expected_msg = format!(
-                    "形状不一致，故无法相乘：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
-                    shape1, shape2
-                );
-                assert_panic!(scalar1.clone() * scalar2.clone(), expected_msg);
-
-                let expected_msg = format!(
-                    "形状不一致，故无法相乘：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
-                    shape2, shape1
-                );
-                assert_panic!(scalar2 * scalar1.clone(), expected_msg);
-            }
-        }
+        // 验证乘法交换律
+        let result_swap = &b * &a;
+        assert_eq!(
+            result_swap, expected,
+            "* commutative failed: {:?} * {:?}",
+            shape_b, shape_a
+        );
     }
+}
+
+/// 广播失败测试: 维度不匹配 [3] * [4]
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_mul_broadcast_fail_dim_mismatch() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let b = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    let _ = &a * &b;
+}
+
+/// 广播失败测试: 形状不兼容 [2, 3] * [3, 2]
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_mul_broadcast_fail_shape_incompatible() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let b = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    let _ = &a * &b;
+}
+
+/// 广播失败测试: 最后一维不匹配 [2, 3] * [4]
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_mul_broadcast_fail_last_dim_mismatch() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let b = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    let _ = &a * &b;
 }

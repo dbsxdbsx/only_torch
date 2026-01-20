@@ -1,4 +1,4 @@
-use crate::errors::{Operator, TensorError};
+use crate::errors::TensorError;
 use crate::tensor::Tensor;
 use std::ops::SubAssign;
 
@@ -8,20 +8,25 @@ impl SubAssign for Tensor {
     }
 }
 
+/// 张量的 -= 操作，支持 NumPy 风格广播
+///
+/// # 广播规则
+/// - 支持广播，但**广播后的结果形状必须与左操作数形状相同**
+/// - 例如：`[3,4] -= [1,4]` 成功（广播后仍是 [3,4]）
+/// - 例如：`[3] -= [1,3]` 失败（广播后变成 [1,3] ≠ [3]）
+///
+/// # Panics
+/// 如果广播后形状与左操作数不同
 impl<'a> SubAssign<&'a Self> for Tensor {
     fn sub_assign(&mut self, other: &'a Self) {
-        if self.is_same_shape(other) {
-            self.data -= &other.data;
-        } else {
-            panic!(
-                "{}",
-                TensorError::OperatorError {
-                    operator: Operator::Sub,
-                    tensor1_shape: self.shape().to_vec(),
-                    tensor2_shape: other.shape().to_vec(),
-                }
-            )
-        }
+        // 检查就地广播兼容性
+        assert!(
+            self.can_assign_broadcast_from(other),
+            "{}",
+            TensorError::IncompatibleShape
+        );
+        // 使用 ndarray 原生广播
+        self.data -= &other.data;
     }
 }
 

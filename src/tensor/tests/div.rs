@@ -1,4 +1,3 @@
-use crate::assert_panic;
 use crate::tensor::Tensor;
 use ndarray::Array;
 use ndarray::IxDyn;
@@ -230,45 +229,127 @@ fn test_div_number_and_tensor() {
     }
 }
 
+/// NumPy 风格广播除法测试（基于 Python NumPy 参考结果）
+///
+/// 注意：除法**不满足交换律** (a / b != b / a)
+/// 注意：测试数据避免除数为 0（Only Torch 会 panic）
+///
+/// 参考脚本: tests/python/tensor_reference/tensor_div_broadcast_reference.py
 #[test]
-fn test_div_scalars_among_various_shapes() {
-    let number = 2.;
-    let scalar_shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1], &[1, 1, 1, 1]];
+fn test_div_broadcast() {
+    // 格式: (shape_a, data_a, shape_b, data_b, expected_shape, expected_data)
+    // 使用整除结果避免浮点精度问题
+    let test_cases: &[(&[usize], &[f32], &[usize], &[f32], &[usize], &[f32])] = &[
+        // 1. 相同形状
+        // [3] / [3] -> [3]
+        (
+            &[3],
+            &[2.0, 4.0, 6.0],
+            &[3],
+            &[1.0, 2.0, 3.0],
+            &[3],
+            &[2.0, 2.0, 2.0],
+        ),
+        // [2, 3] / [2, 3] -> [2, 3]
+        (
+            &[2, 3],
+            &[2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[2, 3],
+            &[2.0, 2.0, 2.0, 2.0, 2.0, 2.0],
+        ),
+        // 2. 标量广播
+        // [] / [3] -> [3]
+        (&[], &[12.0], &[3], &[1.0, 2.0, 3.0], &[3], &[12.0, 6.0, 4.0]),
+        // [3] / [] -> [3]
+        (&[3], &[2.0, 4.0, 6.0], &[], &[2.0], &[3], &[1.0, 2.0, 3.0]),
+        // [] / [2, 3] -> [2, 3]
+        (
+            &[],
+            &[12.0],
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 6.0, 12.0],
+            &[2, 3],
+            &[12.0, 6.0, 4.0, 3.0, 2.0, 1.0],
+        ),
+        // [2, 3] / [] -> [2, 3]
+        (
+            &[2, 3],
+            &[2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+            &[],
+            &[2.0],
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        ),
+        // 3. 低维广播到高维 (normalize 场景)
+        // [3, 4] / [4] -> [3, 4]
+        (
+            &[3, 4],
+            &[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0],
+            &[4],
+            &[1.0, 2.0, 2.0, 4.0],
+            &[3, 4],
+            &[2.0, 2.0, 3.0, 2.0, 10.0, 6.0, 7.0, 4.0, 18.0, 10.0, 11.0, 6.0],
+        ),
+        // 4. 双向广播: [3, 1] / [1, 4] -> [3, 4]
+        (
+            &[3, 1],
+            &[12.0, 24.0, 36.0],
+            &[1, 4],
+            &[1.0, 2.0, 3.0, 4.0],
+            &[3, 4],
+            &[12.0, 6.0, 4.0, 3.0, 24.0, 12.0, 8.0, 6.0, 36.0, 18.0, 12.0, 9.0],
+        ),
+    ];
 
-    // 测试不同形状标量间的除法组合
-    for shape1 in scalar_shapes.iter() {
-        let scalar1 = Tensor::new(&[number], shape1);
+    for (shape_a, data_a, shape_b, data_b, expected_shape, expected_data) in test_cases {
+        let a = Tensor::new(*data_a, *shape_a);
+        let b = Tensor::new(*data_b, *shape_b);
+        let expected = Tensor::new(*expected_data, *expected_shape);
 
-        for shape2 in scalar_shapes.iter() {
-            let scalar2 = Tensor::new(&[1.0], shape2);
+        // 直接比对 Tensor
+        let result = &a / &b;
+        assert_eq!(
+            result, expected,
+            "/ broadcast failed: {:?} / {:?}",
+            shape_a, shape_b
+        );
 
-            if shape1 == shape2 {
-                // 相同形状的标量张量相除应该成功
-                let result = scalar1.clone() / scalar2.clone();
-                let expected = Tensor::new(&[2.0], shape1);
-                assert_eq!(result, expected);
-
-                let result = scalar2 / scalar1.clone();
-                let expected = Tensor::new(&[0.5], shape1);
-                assert_eq!(result, expected);
-            } else {
-                // 不同形状的标量张量相除应该失败
-                let expected_msg = format!(
-                    "形状不一致，故无法相除：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
-                    shape1, shape2
-                );
-                assert_panic!(scalar1.clone() / scalar2.clone(), expected_msg);
-
-                let expected_msg = format!(
-                    "形状不一致，故无法相除：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
-                    shape2, shape1
-                );
-                assert_panic!(scalar2 / scalar1.clone(), expected_msg);
-            }
-        }
+        // 注意：除法不满足交换律，不测试 b / a
     }
 }
 
+/// 广播失败测试: 维度不匹配 [3] / [4]
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_div_broadcast_fail_dim_mismatch() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let b = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    let _ = &a / &b;
+}
+
+/// 广播失败测试: 形状不兼容 [2, 3] / [3, 2]
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_div_broadcast_fail_shape_incompatible() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let b = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    let _ = &a / &b;
+}
+
+/// 广播失败测试: 最后一维不匹配 [2, 3] / [4]
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_div_broadcast_fail_last_dim_mismatch() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let b = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    let _ = &a / &b;
+}
+
+// ====================== 除以 0 测试 ======================
+
+/// 张量除以纯数 0
 #[test]
 #[should_panic(expected = "除数为零")]
 fn test_div_zero_number() {
@@ -277,18 +358,40 @@ fn test_div_zero_number() {
     let _ = tensor1 / scalar;
 }
 
+/// 相同形状：除数包含 0 元素
 #[test]
 #[should_panic(expected = "作为除数的张量中存在为零元素")]
-fn test_div_zero_scalar() {
-    let tensor1 = Tensor::new(&[1., 2., 3.], &[3]);
-    let tensor2 = Tensor::new(&[0.], &[1, 1]);
+fn test_div_zero_same_shape() {
+    let tensor1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    let tensor2 = Tensor::new(&[1., 0., 3., 4.], &[2, 2]);
     let _ = tensor1 / tensor2;
 }
 
+/// 广播场景：标量 0 广播到向量
+/// [3] / [] where [] = 0
 #[test]
 #[should_panic(expected = "作为除数的张量中存在为零元素")]
-fn test_div_matrix_and_zero_matrix() {
-    let tensor1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-    let tensor2 = Tensor::new(&[0., 2., 3., 0.], &[2, 2]);
-    let _ = tensor1 / tensor2;
+fn test_div_zero_broadcast_scalar() {
+    let tensor1 = Tensor::new(&[1., 2., 3.], &[3]);
+    let tensor2 = Tensor::new(&[0.], &[]);
+    let _ = &tensor1 / &tensor2;
+}
+
+/// 广播场景：向量中含 0 广播到矩阵
+/// [2, 3] / [3] where [3] contains 0
+#[test]
+#[should_panic(expected = "作为除数的张量中存在为零元素")]
+fn test_div_zero_broadcast_vector() {
+    let tensor1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    let tensor2 = Tensor::new(&[1., 0., 3.], &[3]); // 中间元素为 0
+    let _ = &tensor1 / &tensor2;
+}
+
+/// 广播场景：[1, 4] 含 0 广播到 [3, 4]
+#[test]
+#[should_panic(expected = "作为除数的张量中存在为零元素")]
+fn test_div_zero_broadcast_row() {
+    let tensor1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.], &[3, 4]);
+    let tensor2 = Tensor::new(&[1., 2., 0., 4.], &[1, 4]); // 第3个元素为 0
+    let _ = &tensor1 / &tensor2;
 }

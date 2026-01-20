@@ -1,301 +1,350 @@
-# 广播机制设计决策
+# 广播机制设计
 
-> 最后更新: 2025-12-20
-> 状态: **已确定**
-> 影响范围: Tensor 层、Graph 层、高层 API、NEAT 演化
+> 最后更新: 2026-01-19
+> 状态: **部分实现**（Tensor 层已完成）
+> 影响范围: Tensor 层、Node 层、Layer 层、NEAT 演化
 
 ---
 
 ## 核心决策
 
-**Only Torch 采用"显式节点广播"策略，而非 PyTorch/NumPy 风格的隐式广播。**
+**Only Torch 采用完整的 NumPy 风格广播机制。**
+
+- **Tensor 层**：直接使用 ndarray 原生广播（已验证可用）
+- **Node 层**：Forward 支持广播，Backward 对广播维度求和
+- **NEAT 兼容**：广播是"执行语义"，不影响"结构语义"
 
 ---
 
-## 设计原则
+## 设计背景
 
-```
-显式优于隐式 (Explicit is better than implicit)
-```
+### 为什么改变原有设计？
 
-在 NEAT 演化场景下，网络结构的透明性至关重要。隐式广播会模糊计算图的真实拓扑，阻碍结构优化和可解释性。
+原设计采用"显式节点广播"（如 `ones @ b`），存在以下问题：
 
----
+| 问题 | 说明 |
+|---|---|
+| **图膨胀** | 每次 forward 创建新的 ones 节点 |
+| **复杂性** | 用户需要手动处理广播逻辑 |
+| **不必要** | ndarray 原生已支持完整广播 |
 
-## 目标场景：混合进化-训练循环
+### 关键发现
 
-Only Torch 的核心使用场景是**结构进化与权重训练的交替循环**：
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                                                         │
-│   NEAT 进化结构 ──→ 固定结构 ──→ Batch 梯度训练 ──→ 瓶颈？──┤
-│         ↑                                          │    │
-│         └──────────── 微调结构 ←───────────────────┘    │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
-
-| 阶段         | 网络结构 | 训练方式        |  广播需求   |
-| :----------- | :------- | :-------------- | :---------: |
-| 结构进化     | 动态变化 | 逐样本/小 batch |     低      |
-| **权重训练** | **固定** | **大 batch**    | **✅ 需要** |
-| 结构微调     | 局部变化 | 逐样本/小 batch |     低      |
-
-**关键洞察**：大部分训练时间花在"权重训练"阶段，这正是 batch 效率最重要的地方。ScalarMultiply 节点正是为此设计。
-
----
-
-## 两层广播策略
-
-| 层次          | 支持的广播  | 实现方式                          |
-| :------------ | :---------- | :-------------------------------- |
-| **Tensor 层** | 标量 ↔ 张量 | Rust 运算符重载（`f32 + Tensor`） |
-| **Graph 层**  | 标量 → 矩阵 | `ScalarMultiply`节点              |
-
-### Tensor 层（底层计算）
+经过验证，ndarray 原生支持完整 NumPy 广播：
 
 ```rust
-// ✅ 支持：标量与张量的运算
-let result = 2.0 * tensor;        // f32 * Tensor
-let result = tensor + 1.0;        // Tensor + f32
-
-// ❌ 不支持：不同形状张量的隐式广播
-let a = Tensor::new(&[1.0], &[1, 1]);
-let b = Tensor::new(&[1.0; 10], &[10, 1]);
-let result = a + b;  // panic! 形状不匹配
+// ndarray 原生广播测试结果
+[3, 2] + [1, 2]       ✅ batch 广播
+[3, 2] + [2]          ✅ 维度数不同
+[3, 2] * [1, 2]       ✅ 乘法广播
+[2,3,2,2] + [1,3,1,1] ✅ Conv bias 广播
 ```
 
-### Graph 层（计算图）
+**✅ 已解决**：原 Tensor 层的 `is_same_shape` 限制已移除，现已启用完整广播支持。
 
-```rust
-// ✅ 正确做法：使用 ScalarMultiply 节点
-let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
-let ones = graph.new_input_node(&[batch_size, 1], Some("ones"))?;
-let bias = graph.new_scalar_multiply_node(b, ones, None)?;  // [1,1] → [batch,1]
-let output = graph.new_add_node(&[matmul, bias], None)?;
+---
 
-// ❌ 错误做法：期望 Add 节点自动广播
-let output = graph.new_add_node(&[matmul, b], None)?;  // Error! 形状不匹配
+## NumPy 广播规则
+
+### 规则定义
+
+1. **从右向左对齐维度**
+2. **维度兼容条件**：相等，或其中一个为 1
+3. **维度数不同时**：较短的形状前面补 1
+
+### 示例
+
+| 形状 A | 形状 B | 对齐后 B | 结果形状 | 兼容？ |
+|---|---|---|---|---|
+| `[32, 128]` | `[128]` | `[1, 128]` | `[32, 128]` | ✅ |
+| `[32, 128]` | `[1, 128]` | - | `[32, 128]` | ✅ |
+| `[32, 128]` | `[32, 1]` | - | `[32, 128]` | ✅ |
+| `[2, 3, 4]` | `[3, 4]` | `[1, 3, 4]` | `[2, 3, 4]` | ✅ |
+| `[2, 3, 4]` | `[3, 1]` | `[1, 3, 1]` | `[2, 3, 4]` | ✅ |
+| `[32, 128]` | `[32, 64]` | - | - | ❌ |
+
+### 广播满足交换律
+
+```
+A: [32, 128]
+B: [1, 128]
+
+A + B 的结果 == B + A 的结果  ✅
 ```
 
 ---
 
-## 为什么 ScalarMultiply 而非隐式广播？
+## 分层设计
 
-### 1. 雅可比矩阵计算复杂度
+### 第 1 层：Tensor 层 ✅ 已实现
 
-**隐式广播**：
-
-```
-forward:  [1,1] + [10,3] → [10,3]
-backward: ∂L/∂a 需要 sum reduce [10,3] → [1,1]
-jacobi:   不再是简单的单位矩阵，需要处理维度归约
-```
-
-**显式节点**：
-
-```
-forward:  ScalarMultiply(a, ones) → [10,3], 然后 Add
-backward: 梯度直接通过节点链传播
-jacobi:   每个节点的雅可比矩阵形式明确
-```
-
-### 2. NEAT 演化友好性
-
-| 特性       | 隐式广播 | 显式节点 |
-| :--------- | :------: | :------: |
-| 结构透明性 |    ❌    |    ✅    |
-| 可进化性   |    ❌    |    ✅    |
-| 基因表示   |   复杂   |   直接   |
-
-隐式广播将"形状适配"逻辑隐藏在运算符内部，NEAT 无法感知和优化这部分结构。显式节点使每个计算步骤都成为可进化的基因单元。
-
-### 3. CPU 优化解耦
-
-广播的 SIMD 优化应该在 Tensor 层（通过 ndarray/BLAS）实现，而非在 Graph 层。这样：
-
-- Graph 层专注于拓扑和梯度流
-- Tensor 层专注于计算效率
-- 关注点分离，便于独立优化
-
----
-
-## Batch 机制的价值：技术效率视角
-
-### 为什么 Batch 比 Rayon 逐样本并行更高效？
-
-在 CPU 上，batch 矩阵运算的效率显著优于 Rayon 并行处理单个样本：
-
-```
-方案 A：Rayon 逐样本并行
-─────────────────────────
-Core0: sample0 → [1,3]×[3,1] → result0
-Core1: sample1 → [1,3]×[3,1] → result1
-Core2: sample2 → [1,3]×[3,1] → result2
-...
-开销：线程调度 × N 样本
-
-方案 B：Batch 矩阵运算（SIMD）
-─────────────────────────
-Single Core: [batch,3]×[3,1] → [batch,1]
-             └── SIMD: 8 个 float 同时计算（AVX2）
-开销：一次矩阵乘法
-```
-
-### 效率对比（预估经验值，待实测）
-
-| 操作                                  | 逐样本循环 | Batch 矩阵 | 加速比      |
-| :------------------------------------ | :--------: | :--------: | :---------- |
-| `[1,3]×[3,1]` × 1000 次               |    1.0x    |    3-5x    | SIMD + 缓存 |
-| `[1,784]×[784,128]` × 1000 次         |    1.0x    |   10-50x   | BLAS 优化   |
-| `[1,3]×[3,1]` × 1000 次 + Rayon(8 核) |    6-7x    |     -      | 并行开销    |
-
-### Batch 胜出的原因
-
-1. **SIMD 向量化**：
-
-   ```
-   逐样本：3 次乘法 × 1000 样本 = 3000 条 MUL 指令
-   Batch： AVX2 一次处理 8 个 float → ~375 条 VMUL 指令
-   ```
-
-2. **缓存命中率**：
-
-   ```
-   逐样本：每次从内存取权重矩阵 → 缓存失效
-   Batch： 权重矩阵常驻 L1 缓存 → 极高命中率
-   ```
-
-3. **指令流水线**：
-   ```
-   逐样本：循环开销、分支预测
-   Batch： 连续内存访问，预取有效
-   ```
-
-### 最优策略：Batch + Rayon 组合
+**策略**：移除形状检查，使用 ndarray 原生广播 + 自定义错误信息。
 
 ```rust
-// 最高效的方式：batch 内 SIMD，batch 间 Rayon
-data.par_chunks(batch_size)      // Rayon 并行处理多个 batch
-    .for_each(|batch| {
-        let result = weights.dot(&batch);  // SIMD 矩阵运算
-    });
-```
-
-| 层级     | 优化方式                           | 收益             |
-| :------- | :--------------------------------- | :--------------- |
-| 单个运算 | SIMD（自动，由 ndarray/BLAS 提供） | 4-8x             |
-| Batch 内 | 矩阵化（ScalarMultiply 等）        | 3-10x            |
-| Batch 间 | Rayon 并行                         | 核心数 x         |
-| **组合** | **Batch × Rayon**                  | **可达 50-100x** |
-
----
-
-## Batch 机制的价值：用户体验视角
-
-### 用户期望的使用方式
-
-```rust
-// 1. 传统深度学习（PyTorch 风格）
-let model = Linear::new(784, 10);
-for batch in data_loader {
-    let loss = model.forward(&batch)?;
-    optimizer.step()?;
+// 修改后（当前实现）
+fn add_within_tensors(a: &Tensor, b: &Tensor) -> Tensor {
+    // 检查广播兼容性，使用自定义错误信息
+    assert!(
+        a.can_broadcast_with(b),
+        "{}",
+        TensorError::IncompatibleShape  // "张量形状不兼容"
+    );
+    // 使用 ndarray 原生广播
+    Tensor { data: &a.data + &b.data }
 }
+```
 
-// 2. 进化网络结构（NEAT 风格）
-let evolved_model = neat.evolve(|model| {
-    evaluate_fitness(model, &validation_data)
-})?;
+**新增的 Tensor 方法**（`tensor/property.rs`）：
 
-// 3. 混合模式（Only Torch 的核心场景）
-loop {
-    // 固定结构，batch 训练
-    train_with_batch(&model, &data, epochs)?;
+```rust
+/// 判断两个张量是否可以广播（用于 +, -, *, /）
+pub fn can_broadcast_with(&self, other: &Self) -> bool
 
-    if is_bottleneck(&model) {
-        // 微调结构
-        model = neat.mutate_structure(&model)?;
+/// 判断 other 是否可以广播到 self 的形状（用于 +=, -=, *=, /=）
+pub fn can_assign_broadcast_from(&self, other: &Self) -> bool
+```
+
+**已修改的文件**：
+- `tensor/ops/add.rs`, `tensor/ops/add_assign.rs`
+- `tensor/ops/sub.rs`, `tensor/ops/sub_assign.rs`
+- `tensor/ops/mul.rs`, `tensor/ops/mul_assign.rs`
+- `tensor/ops/div.rs`, `tensor/ops/div_assign.rs`
+- `tensor/property.rs`（新增广播检查方法）
+- `tensor/tests/*.rs`（更新所有单元测试）
+
+**新增的 Python 参考脚本**（`tests/python/tensor_reference/`）：
+- `tensor_add_broadcast_reference.py`
+- `tensor_add_assign_broadcast_reference.py`
+- `tensor_sub_broadcast_reference.py`
+- `tensor_sub_assign_broadcast_reference.py`
+- `tensor_mul_broadcast_reference.py`
+- `tensor_mul_assign_broadcast_reference.py`
+- `tensor_div_broadcast_reference.py`
+- `tensor_div_assign_broadcast_reference.py`
+
+### 第 2 层：Node 层
+
+#### Forward（前向传播）
+
+**策略**：允许广播兼容的形状，计算广播后的输出形状。
+
+```rust
+impl Add {
+    pub fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        // 计算广播后的输出形状
+        let shape = broadcast_shape(
+            parents[0].value_expected_shape(),
+            parents[1].value_expected_shape()
+        )?;
+        Ok(Self { shape, ... })
     }
 }
 ```
 
-### 高层 API 封装策略
+#### Backward（反向传播）⚠️ 关键
 
-高层 API（如 `Linear`、`Conv2d`）应在内部封装广播逻辑，对用户透明：
+**策略**：对被广播的维度求和。
 
 ```rust
-impl Linear {
-    fn forward(&self, input: &Tensor) -> Result<Tensor, GraphError> {
-        let matmul = self.graph.new_mat_mul_node(self.weight, input)?;
+impl TraitNode for Add {
+    fn calc_grad_to_parent(
+        &self,
+        target_parent: &NodeHandle,
+        upstream_grad: &Tensor,
+        ...
+    ) -> Result<Tensor, GraphError> {
+        let target_shape = target_parent.value_expected_shape();
 
-        // 封装层自动处理批量 vs 单样本
-        let output = if is_batch(input) {
-            let bias_broadcast = self.broadcast_bias(input.shape()[0])?;
-            self.graph.new_add_node(&[matmul, bias_broadcast])?
+        if target_shape == upstream_grad.shape() {
+            // 形状匹配，直接传递
+            Ok(upstream_grad.clone())
         } else {
-            self.graph.new_add_node(&[matmul, self.bias])?
-        };
-
-        Ok(output)
+            // 被广播过，需要对广播维度求和
+            Ok(sum_to_shape(upstream_grad, target_shape))
+        }
     }
 }
 ```
 
-用户代码：
+**梯度求和示例**：
+
+```
+Forward:  [32, 128] + [1, 128] → [32, 128]
+
+Backward:
+  dL/dA = upstream_grad           # [32, 128]（直接传递）
+  dL/dB = sum(upstream_grad, axis=0, keepdims=true)  # [1, 128]
+```
+
+### 第 3 层：Layer 层
+
+**策略**：简化实现，删除手动广播代码。
 
 ```rust
-let output = linear.forward(&batch_input)?;  // 用户无需关心广播细节
-```
+// 修改前（当前实现）
+impl Linear {
+    pub fn forward(&self, x: &Var) -> Var {
+        let xw = x.matmul(&self.weights)?;
 
-**ScalarMultiply 节点是实现这种用户体验的基础设施。**
+        // 手动广播 bias
+        let ones = graph.ones(&[batch_size, 1])?;
+        let bias_broadcast = ones.matmul(&self.bias)?;
 
----
+        &xw + &bias_broadcast
+    }
+}
 
-## 常见场景的处理方式
-
-### 全连接层（单样本）
-
-```python
-# MatrixSlow 设计：形状天然匹配，无需广播
-weights = Variable((out, in), ...)      # [out, in]
-bias = Variable((out, 1), ...)          # [out, 1]
-output = Add(MatMul(weights, input), bias)  # [out,1] + [out,1] ✓
-```
-
-### 批量训练
-
-```python
-# 需要 ScalarMultiply 广播 bias
-b = Variable((1, 1), ...)
-ones = Variable((batch, 1), ...)
-bias = ScalarMultiply(b, ones)          # [1,1] → [batch,1]
-output = Add(MatMul(X, w), bias)        # [batch,1] + [batch,1] ✓
-```
-
-### 卷积层
-
-```python
-# 同样使用 ScalarMultiply
-ones = Variable(input_shape, ...)
-bias = ScalarMultiply(Variable((1,1), ...), ones)  # [1,1] → [H,W]
-output = Add(conv_result, bias)
+// 修改后
+impl Linear {
+    pub fn forward(&self, x: &Var) -> Var {
+        let xw = x.matmul(&self.weights)?;
+        &xw + &self.bias  // Add 节点自动广播
+    }
+}
 ```
 
 ---
 
-## 扩展路径
+## NEAT 兼容性分析
 
-如果未来需要更复杂的广播模式，采用**渐进式添加专用节点**：
+### 核心问题
 
-| 阶段 | 新增节点             | 覆盖场景              |
-| :--- | :------------------- | :-------------------- |
-| MVP  | `ScalarMultiply`     | 标量 × 矩阵           |
-| 按需 | `VectorBroadcastAdd` | 向量 + 矩阵（沿某轴） |
-| 按需 | `BatchNormBroadcast` | BN 专用广播           |
+> 广播是否影响 NEAT 节点层面的进化？
 
-**不建议**实现通用的 `BroadcastAdd`，保持"一种模式一个节点"的原则。
+**答案：不影响。**
+
+### 理由
+
+| 概念 | 说明 | NEAT 关心？ |
+|---|---|---|
+| **结构语义** | 网络拓扑、节点类型、连接关系 | ✅ 是 |
+| **执行语义** | batch 维度处理、形状适配 | ❌ 否 |
+
+广播属于"执行语义"，是运算时的形状适配，不是网络结构本身。
+
+### NEAT 进化示例
+
+```
+当前结构：Y = WX          （MatMul 节点）
+进化目标：Y = WX + b       （增加 Add 节点 + Parameter 节点）
+
+进化操作：
+1. 新增 Parameter 节点 b，形状 [1, out]
+2. 新增 Add 节点，连接 WX 和 b
+
+结果：普通 Add 节点自动处理广播，无需特殊节点。
+```
+
+### 与原设计的对比
+
+| 方面 | 原设计（显式节点） | 新设计（内置广播） |
+|---|---|---|
+| 进化加 bias | 需要加 ones + MatMul + Add | 只需加 Add + Parameter |
+| 图结构 | 多余的 ones 节点 | 干净 |
+| NEAT 感知 | 看到 ones/MatMul（无意义） | 只看到 Add（有意义） |
+
+**新设计对 NEAT 更友好**——进化只需关心真正的结构节点。
+
+---
+
+## ChannelBiasAdd 的定位
+
+### 当前状态
+
+`ChannelBiasAdd` 是为 Conv2d 设计的专用节点：
+
+```rust
+// [batch, C, H, W] + [1, C] → [batch, C, H, W]
+let output = graph.new_channel_bias_add_node(conv_out, bias)?;
+```
+
+### 新设计下的选择
+
+| 选择 | 说明 |
+|---|---|
+| **保留** | 语义清晰，用户不需要手动 reshape bias |
+| **删除** | 通用 Add 可以处理（需要 reshape bias 为 `[1, C, 1, 1]`） |
+
+**建议：保留**。理由：
+
+1. 语义更清晰（"通道级 bias 加法"）
+2. 用户体验更好（Conv2d 层内部直接用）
+3. 不增加复杂度（已实现）
+
+---
+
+## 实现计划
+
+### 阶段 1：Tensor 层 ✅ 已完成
+
+| 任务 | 文件 | 状态 |
+|---|---|---|
+| 移除 Add 形状检查 | `tensor/ops/add.rs` | ✅ |
+| 移除 Sub 形状检查 | `tensor/ops/sub.rs` | ✅ |
+| 移除 Mul 形状检查 | `tensor/ops/mul.rs` | ✅ |
+| 移除 Div 形状检查 | `tensor/ops/div.rs` | ✅ |
+| 移除 AddAssign 形状检查 | `tensor/ops/add_assign.rs` | ✅ |
+| 移除 SubAssign 形状检查 | `tensor/ops/sub_assign.rs` | ✅ |
+| 移除 MulAssign 形状检查 | `tensor/ops/mul_assign.rs` | ✅ |
+| 移除 DivAssign 形状检查 | `tensor/ops/div_assign.rs` | ✅ |
+| 添加广播兼容性检查方法 | `tensor/property.rs` | ✅ |
+| 使用自定义错误信息 | 所有 ops 文件 | ✅ |
+| 更新所有相关单元测试 | `tensor/tests/*.rs` | ✅ |
+| 创建 Python 参考测试脚本 | `tests/python/tensor_reference/` | ✅ |
+
+### 阶段 2：工具函数
+
+| 任务 | 说明 |
+|---|---|
+| `broadcast_shape(a, b)` | 计算广播后的输出形状 |
+| `sum_to_shape(tensor, target_shape)` | 将梯度求和回原始形状 |
+
+### 阶段 3：Node 层
+
+| 任务 | 文件 | 说明 |
+|---|---|---|
+| 修改 Add::new() | `nodes/raw_node/ops/add.rs` | 形状验证改为广播兼容检查 |
+| 修改 Add::calc_grad_to_parent() | 同上 | 增加 sum_to_shape |
+| 修改 Multiply | `nodes/raw_node/ops/multiply.rs` | 同上 |
+| 修改 Divide | `nodes/raw_node/ops/divide.rs` | 同上 |
+
+### 阶段 4：Layer 层
+
+| 任务 | 文件 | 说明 |
+|---|---|---|
+| 简化 Linear::forward() | `layer/linear.rs` | 删除 ones @ b |
+| 可选：清理 ScalarMultiply | - | 评估是否还需要 |
+
+### 阶段 5：测试和文档
+
+| 任务 | 说明 | 状态 |
+|---|---|---|
+| 更新 Tensor 层测试 | 原有"形状不匹配应 panic"的测试需要修改 | ✅ |
+| 新增 Tensor 层广播测试 | 使用 Python 参考数据验证正确性 | ✅ |
+| 新增 Node 层广播测试 | Forward + Backward 正确性 | 待实现 |
+| 更新本文档 | 标记为"已实现" | 进行中 |
+
+---
+
+## 风险和注意事项
+
+### 1. Backward 的 sum_to_shape 逻辑
+
+需要正确处理各种广播情况：
+
+```
+[32, 128] + [1, 128]  → dB 沿 axis=0 求和
+[32, 128] + [128]     → dB 沿 axis=0 求和，然后 squeeze
+[2, 3, 4] + [3, 1]    → dB 沿 axis=0 和 axis=2 求和
+```
+
+### 2. 现有测试
+
+部分测试明确验证"形状不同应该 panic"，需要更新。
+
+### 3. 性能
+
+广播涉及内存分配和复制，但这是 ndarray 内部优化的范畴，且与 PyTorch 行为一致。
 
 ---
 
@@ -303,23 +352,41 @@ output = Add(conv_result, bias)
 
 ### 设计决策
 
-| 决策      | 选择                 | 原因                |
-| :-------- | :------------------- | :------------------ |
-| 广播策略  | 显式节点             | NEAT 友好、梯度清晰 |
-| Tensor 层 | 仅标量广播           | 简单高效            |
-| Graph 层  | `ScalarMultiply`节点 | 覆盖主要场景        |
-| 高层 API  | 封装隐藏             | 用户体验            |
-| 扩展方式  | 渐进添加节点         | 可控复杂度          |
+| 决策 | 选择 | 原因 |
+|---|---|---|
+| 广播策略 | 完整 NumPy 广播 | ndarray 原生支持，简单高效 |
+| Tensor 层 | 移除限制 | 直接使用 ndarray |
+| Node 层 | Forward 广播 + Backward 求和 | 标准自动微分 |
+| Layer 层 | 简化实现 | 删除手动广播代码 |
+| ChannelBiasAdd | 保留 | 语义清晰 |
+| NEAT 兼容 | 不影响 | 广播是执行语义，非结构语义 |
 
-### ScalarMultiply 的双重价值
+### 核心收益
 
-| 维度         | 价值                                                           |
-| :----------- | :------------------------------------------------------------- |
-| **技术效率** | 使 batch 训练能利用 SIMD 向量化，比 Rayon 逐样本并行快 3-10 倍 |
-| **用户体验** | 使高层 API（Linear 等）能自动处理 batch，用户无需手动广播      |
+| 收益 | 说明 |
+|---|---|
+| **简化代码** | 删除 ones @ b 等手动广播 |
+| **减少图膨胀** | 不再每次 forward 创建新节点 |
+| **NEAT 更友好** | 进化只需加普通 Add，无需特殊节点 |
+| **与 PyTorch 一致** | 用户期望的行为 |
 
-### 核心权衡
+### Batch 训练的价值（保留）
 
-**牺牲少量 API 便利性，换取结构透明性和演化能力。对于以 NEAT 为远期目标的框架，这是正确的取舍。**
+广播机制使 batch 训练成为可能，这对训练效率至关重要：
 
-同时，通过高层 API 封装，用户仍然可以享受 PyTorch 风格的简洁体验，而底层保持 NEAT 友好的显式节点设计。
+| 层级 | 优化方式 | 收益 |
+|---|---|---|
+| 单个运算 | SIMD（ndarray/BLAS） | 4-8x |
+| Batch 内 | 矩阵化 | 3-10x |
+| Batch 间 | Rayon 并行 | 核心数 x |
+| **组合** | **Batch × Rayon** | **可达 50-100x** |
+
+---
+
+## 变更历史
+
+| 日期 | 变更 | 原因 |
+|---|---|---|
+| 2025-12-20 | 初版：显式节点广播 | NEAT 友好考虑 |
+| 2026-01-19 | **重写：采用 NumPy 广播** | 发现 ndarray 原生支持；简化设计；NEAT 兼容性分析 |
+| 2026-01-19 | **实现 Tensor 层广播** | 完成阶段 1：移除形状检查，启用 ndarray 原生广播，添加自定义错误信息 |

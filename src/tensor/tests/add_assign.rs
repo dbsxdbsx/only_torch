@@ -1,4 +1,3 @@
-use crate::assert_panic;
 use crate::tensor::Tensor;
 
 #[test]
@@ -173,67 +172,181 @@ fn test_add_assign_tensor_ref_to_tensor_ref() {
     assert_eq!(*tensor1_ref, expected);
 }
 
+/// += 广播测试（基于 NumPy 参考结果）
+///
+/// 规则：`a += b` 支持广播，但广播后的结果形状必须与 a 形状相同
+///
+/// 参考脚本: tests/python/tensor_reference/tensor_add_assign_broadcast_reference.py
 #[test]
-fn test_add_assign_scalar_or_ref_to_scalar_or_ref() {
-    let number = 2.;
-    let scalar_shapes: &[&[usize]] = &[&[], &[1], &[1, 1], &[1, 1, 1], &[1, 1, 1, 1]];
+fn test_add_assign_broadcast() {
+    // 格式: (shape_a, data_a, shape_b, data_b, expected_data)
+    // 注意: 结果形状始终等于 shape_a
+    let test_cases: &[(&[usize], &[f32], &[usize], &[f32], &[f32])] = &[
+        // 1. 相同形状
+        // [3] += [3]
+        (
+            &[3],
+            &[1.0, 2.0, 3.0],
+            &[3],
+            &[10.0, 20.0, 30.0],
+            &[11.0, 22.0, 33.0],
+        ),
+        // [2, 3] += [2, 3]
+        (
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[2, 3],
+            &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            &[11.0, 22.0, 33.0, 44.0, 55.0, 66.0],
+        ),
+        // 2. 标量广播
+        // [3] += []
+        (&[3], &[1.0, 2.0, 3.0], &[], &[10.0], &[11.0, 12.0, 13.0]),
+        // [2, 3] += []
+        (
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[],
+            &[10.0],
+            &[11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+        ),
+        // 3. 低维广播到高维
+        // [2, 3] += [3]
+        (
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[3],
+            &[10.0, 20.0, 30.0],
+            &[11.0, 22.0, 33.0, 14.0, 25.0, 36.0],
+        ),
+        // [2, 3] += [1, 3]
+        (
+            &[2, 3],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1, 3],
+            &[10.0, 20.0, 30.0],
+            &[11.0, 22.0, 33.0, 14.0, 25.0, 36.0],
+        ),
+        // 4. Linear 层典型场景: [batch, out] += [out] 或 [1, out]
+        // [3, 4] += [4]
+        (
+            &[3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            &[4],
+            &[10.0, 20.0, 30.0, 40.0],
+            &[
+                11.0, 22.0, 33.0, 44.0, 15.0, 26.0, 37.0, 48.0, 19.0, 30.0, 41.0, 52.0,
+            ],
+        ),
+        // [3, 4] += [1, 4]
+        (
+            &[3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            &[1, 4],
+            &[10.0, 20.0, 30.0, 40.0],
+            &[
+                11.0, 22.0, 33.0, 44.0, 15.0, 26.0, 37.0, 48.0, 19.0, 30.0, 41.0, 52.0,
+            ],
+        ),
+        // 5. 列广播: [3, 4] += [3, 1]
+        (
+            &[3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            &[3, 1],
+            &[10.0, 20.0, 30.0],
+            &[
+                11.0, 12.0, 13.0, 14.0, 25.0, 26.0, 27.0, 28.0, 39.0, 40.0, 41.0, 42.0,
+            ],
+        ),
+        // 6. 3D 广播
+        // [2, 3, 4] += [4]
+        (
+            &[2, 3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+            ],
+            &[4],
+            &[10.0, 20.0, 30.0, 40.0],
+            &[
+                11.0, 22.0, 33.0, 44.0, 15.0, 26.0, 37.0, 48.0, 19.0, 30.0, 41.0, 52.0, 23.0, 34.0,
+                45.0, 56.0, 27.0, 38.0, 49.0, 60.0, 31.0, 42.0, 53.0, 64.0,
+            ],
+        ),
+        // [2, 3, 4] += [3, 4]
+        (
+            &[2, 3, 4],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0,
+            ],
+            &[3, 4],
+            &[
+                10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0, 120.0,
+            ],
+            &[
+                11.0, 22.0, 33.0, 44.0, 55.0, 66.0, 77.0, 88.0, 99.0, 110.0, 121.0, 132.0, 23.0,
+                34.0, 45.0, 56.0, 67.0, 78.0, 89.0, 100.0, 111.0, 122.0, 133.0, 144.0,
+            ],
+        ),
+    ];
 
-    // 测试不同形状标量间的加法组合
-    for shape1 in scalar_shapes.iter() {
-        let scalar1 = Tensor::new(&[number], shape1);
+    for (shape_a, data_a, shape_b, data_b, expected_data) in test_cases {
+        let mut a = Tensor::new(*data_a, *shape_a);
+        let b = Tensor::new(*data_b, *shape_b);
+        let expected = Tensor::new(*expected_data, *shape_a); // 形状不变
 
-        for shape2 in scalar_shapes.iter() {
-            let scalar2 = Tensor::new(&[1.0], shape2);
-
-            if shape1 == shape2 {
-                // 相同形状的标量相加应该成功
-                // 1. 标量 += 标量
-                let mut result = scalar1.clone();
-                result += scalar2.clone();
-                let expected = Tensor::new(&[3.0], shape1);
-                assert_eq!(result, expected);
-
-                // 2. 标量 += &标量
-                let mut result = scalar1.clone();
-                result += &scalar2;
-                assert_eq!(result, expected);
-
-                // 3. &标量 += 标量
-                let mut result = scalar1.clone();
-                let result_ref = &mut result;
-                *result_ref += scalar2.clone();
-                assert_eq!(result, expected);
-
-                // 4. &标量 += &标量
-                let mut result = scalar1.clone();
-                let result_ref = &mut result;
-                *result_ref += &scalar2;
-                assert_eq!(result, expected);
-            } else {
-                // 不同形状的标量相加应该失败
-                let expected_msg = format!(
-                    "形状不一致，故无法相加：第1个张量的形状为{:?}，第2个张量的形状为{:?}",
-                    shape1, shape2
-                );
-
-                // 1. 标量 += 标量
-                let mut result = scalar1.clone();
-                assert_panic!(result += scalar2.clone(), expected_msg);
-
-                // 2. 标量 += &标量
-                let mut result = scalar1.clone();
-                assert_panic!(result += &scalar2, expected_msg);
-
-                // 3. &标量 += 标量
-                let mut result = scalar1.clone();
-                let result_ref = &mut result;
-                assert_panic!(*result_ref += scalar2.clone(), expected_msg);
-
-                // 4. &标量 += &标量
-                let mut result = scalar1.clone();
-                let result_ref = &mut result;
-                assert_panic!(*result_ref += &scalar2, expected_msg);
-            }
-        }
+        a += &b;
+        assert_eq!(
+            a, expected,
+            "+= broadcast failed: {:?} += {:?}",
+            shape_a, shape_b
+        );
     }
+}
+
+/// += 广播失败: 标量 += 向量（形状会改变）
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_add_assign_broadcast_fail_scalar_to_vector() {
+    // [] += [3] → 失败
+    let mut a = Tensor::new(&[1.0], &[]);
+    let b = Tensor::new(&[10.0, 20.0, 30.0], &[3]);
+    a += b;
+}
+
+/// += 广播失败: 向量 += 矩阵（形状会改变）
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_add_assign_broadcast_fail_vector_to_matrix() {
+    // [3] += [2, 3] → 失败
+    let mut a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let b = Tensor::new(&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0], &[2, 3]);
+    a += b;
+}
+
+/// += 广播失败: 最后一维不兼容
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_add_assign_broadcast_fail_incompatible_last_dim() {
+    // [2, 3] += [4] → 失败（3 != 4）
+    let mut a = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let b = Tensor::new(&[10.0, 20.0, 30.0, 40.0], &[4]);
+    a += b;
+}
+
+/// += 广播失败: 转置形状不兼容
+#[test]
+#[should_panic(expected = "张量形状不兼容")]
+fn test_add_assign_broadcast_fail_transposed_shape() {
+    // [2, 3] += [3, 2] → 失败
+    let mut a = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let b = Tensor::new(&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0], &[3, 2]);
+    a += b;
 }

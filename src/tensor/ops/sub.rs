@@ -6,11 +6,11 @@
  * @Description  : 张量的减法，实现了两个张量“逐元素”（或张量与纯数）相减的运算，并返回一个新的张量。
  *                 该运算支持以下情况：
  *                 1. 其中一个操作数为纯数而另一个为张量：则返回的张量形状与该张量相同。
- *                 2. 两个操作数均为张量：需保证两个操作数的形状严格一致。
+ *                 2. 两个操作数均为张量：支持 NumPy 风格的广播（broadcasting）。
  *                 注意：这里的减法概念与线性代数中的矩阵减法类似，但适用于更高维的张量。
  */
 
-use crate::errors::{Operator, TensorError};
+use crate::errors::TensorError;
 use crate::tensor::Tensor;
 use std::ops::Sub;
 
@@ -90,19 +90,24 @@ impl<'b> Sub<&'b Tensor> for &Tensor {
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑（不）带引用的张量 -（不）带引用的张量↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
+/// 两个张量相减，支持 NumPy 风格广播（broadcasting）
+///
+/// # 广播规则
+/// - 从右向左对齐维度
+/// - 每个维度必须相等，或其中一个为 1
+/// - 维度数不同时，较短的形状前面补 1
+///
+/// # Panics
+/// 如果形状不兼容（无法广播）
 fn sub_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
-    if tensor_1.is_same_shape(tensor_2) {
-        Tensor {
-            data: &tensor_1.data - &tensor_2.data,
-        }
-    } else {
-        panic!(
-            "{}",
-            TensorError::OperatorError {
-                operator: Operator::Sub,
-                tensor1_shape: tensor_1.shape().to_vec(),
-                tensor2_shape: tensor_2.shape().to_vec(),
-            }
-        )
+    // 检查广播兼容性
+    assert!(
+        tensor_1.can_broadcast_with(tensor_2),
+        "{}",
+        TensorError::IncompatibleShape
+    );
+    // 使用 ndarray 的原生广播
+    Tensor {
+        data: &tensor_1.data - &tensor_2.data,
     }
 }

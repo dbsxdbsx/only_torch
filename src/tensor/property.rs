@@ -53,6 +53,73 @@ impl Tensor {
     pub fn is_same_shape(&self, other: &Self) -> bool {
         self.shape() == other.shape()
     }
+
+    /// 判断两个张量是否可以广播（NumPy 风格）
+    ///
+    /// # 广播规则
+    /// - 从右向左对齐维度
+    /// - 每个维度必须相等，或其中一个为 1
+    /// - 维度数不同时，较短的形状前面补 1
+    ///
+    /// # 示例
+    /// - `[3, 4]` 和 `[4]` → 可广播 (结果 `[3, 4]`)
+    /// - `[3, 4]` 和 `[3, 1]` → 可广播 (结果 `[3, 4]`)
+    /// - `[3, 1]` 和 `[1, 4]` → 可广播 (结果 `[3, 4]`)
+    /// - `[3]` 和 `[4]` → 不可广播
+    pub fn can_broadcast_with(&self, other: &Self) -> bool {
+        let shape1 = self.shape();
+        let shape2 = other.shape();
+
+        // 从右向左对齐比较
+        let iter1 = shape1.iter().rev();
+        let iter2 = shape2.iter().rev();
+
+        for (d1, d2) in iter1.zip(iter2) {
+            // 每个维度必须相等，或其中一个为 1
+            if d1 != d2 && *d1 != 1 && *d2 != 1 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// 判断 other 是否可以广播到 self 的形状（用于 += 等就地操作）
+    ///
+    /// # 规则
+    /// - other 可以广播到 self 的形状
+    /// - 广播后的结果形状必须与 self 相同
+    ///
+    /// # 示例
+    /// - `[3, 4]` 可接受 `[4]` → true (广播后仍是 `[3, 4]`)
+    /// - `[3, 4]` 可接受 `[3, 1]` → true
+    /// - `[]` 不可接受 `[3]` → false (会扩展形状)
+    /// - `[3]` 不可接受 `[2, 3]` → false (会扩展形状)
+    pub fn can_assign_broadcast_from(&self, other: &Self) -> bool {
+        let self_shape = self.shape();
+        let other_shape = other.shape();
+
+        // other 的维度不能超过 self
+        if other_shape.len() > self_shape.len() {
+            return false;
+        }
+
+        // 从右向左对齐比较
+        let iter_self = self_shape.iter().rev();
+        let iter_other = other_shape.iter().rev();
+
+        for (d_self, d_other) in iter_self.zip(iter_other) {
+            // other 的维度必须为 1 或与 self 相等
+            if d_other != d_self && *d_other != 1 {
+                return false;
+            }
+        }
+
+        // 检查 other 的多余维度（如果有）是否都是 1
+        // 例如：self=[3,4], other=[1,1,4] 是可以的
+        // 但由于 other_shape.len() <= self_shape.len() 已检查，这里不需要额外检查
+
+        true
+    }
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓判断张量是否为标量、向量、矩阵↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 判断张量是否为标量
     /// 判断标准：若形状为空或形状各维数乘积为1，则认为是标量
