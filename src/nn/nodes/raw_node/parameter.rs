@@ -39,6 +39,8 @@ impl Parameter {
     }
 
     /// 使用固定种子创建参数节点（确保可重复性）
+    ///
+    /// 使用 Kaiming/He 初始化：std = sqrt(2 / fan_in)
     pub(crate) fn new_seeded(shape: &[usize], seed: u64) -> Result<Self, GraphError> {
         // 1. 必要的验证：支持 2D-4D 张量
         if shape.len() < 2 || shape.len() > 4 {
@@ -52,11 +54,15 @@ impl Parameter {
             });
         }
 
-        // 2. 返回
+        // 2. Kaiming 初始化：std = sqrt(2 / fan_in)
+        let fan_in = shape[0];
+        let std = (2.0 / fan_in as f32).sqrt();
+
+        // 3. 返回
         Ok(Self {
             id: None,
             name: None,
-            value: Some(Tensor::normal_seeded(0.0, 0.001, shape, seed)),
+            value: Some(Tensor::normal_seeded(0.0, std, shape, seed)),
             grad: None,
             shape: shape.to_vec(),
         })

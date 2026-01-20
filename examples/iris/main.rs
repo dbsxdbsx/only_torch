@@ -25,8 +25,8 @@ fn main() -> Result<(), GraphError> {
     let labels = get_labels();
     let n_samples = 150;
 
-    // 2. 模型
-    let graph = Graph::new();
+    // 2. 模型（使用固定种子确保可复现）
+    let graph = Graph::new_with_seed(42);
     let model = IrisMLP::new(&graph)?;
 
     // 3. 输入/目标（batch 模式）

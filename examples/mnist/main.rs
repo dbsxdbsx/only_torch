@@ -56,8 +56,8 @@ fn main() -> Result<(), GraphError> {
     println!("  - Epochs: {}", max_epochs);
     println!("  - 学习率: {}", learning_rate);
 
-    // 3. 构建网络
-    let graph = Graph::new();
+    // 3. 构建网络（使用固定种子确保可复现）
+    let graph = Graph::new_with_seed(42);
     let model = MnistMLP::new(&graph)?;
 
     let x = graph.zeros(&[batch_size, 784])?;

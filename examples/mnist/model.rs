@@ -16,8 +16,8 @@ impl MnistMLP {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
         Ok(Self {
             // 784 = 28x28 (MNIST 图片展平后的维度)
-            fc1: Linear::new(graph, 784, 128, true, "fc1")?,
-            fc2: Linear::new(graph, 128, 10, true, "fc2")?,
+            fc1: Linear::new_seeded(graph, 784, 128, true, "fc1", 100)?,
+            fc2: Linear::new_seeded(graph, 128, 10, true, "fc2", 200)?,
         })
     }
 

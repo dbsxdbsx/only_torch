@@ -36,8 +36,8 @@ fn get_xor_data() -> (Vec<Tensor>, Vec<Tensor>) {
 fn main() -> Result<(), GraphError> {
     println!("=== XOR 异或问题示例 ===\n");
 
-    // 1. 创建模型
-    let graph = Graph::new();
+    // 1. 创建模型（使用固定种子确保可复现）
+    let graph = Graph::new_with_seed(42);
     let model = XorMLP::new(&graph)?;
 
     // 2. 输入/输出占位符（用于迭代更新数据）

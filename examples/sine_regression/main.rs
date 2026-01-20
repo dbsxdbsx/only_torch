@@ -36,8 +36,8 @@ fn main() -> Result<(), GraphError> {
     let n_samples = 50;
     let (x_train, y_train) = generate_data(n_samples);
 
-    // 1. 模型
-    let graph = Graph::new();
+    // 1. 模型（使用固定种子确保可复现）
+    let graph = Graph::new_with_seed(42);
     let model = SineMLP::new(&graph)?;
 
     // 2. 输入/目标
