@@ -1,5 +1,51 @@
 # 更新日志
 
+## [0.8.0] - 2026-01-20
+
+### ⚠️ 破坏性变更 (Breaking Changes)
+
+- **refactor(layer)!: 统一所有 Layer 为 PyTorch 风格 API**
+  - `Linear`, `Conv2d`, `MaxPool2d`, `AvgPool2d`, `Rnn`, `Lstm`, `Gru` 统一为 struct + `forward()` 模式
+  - 旧函数式 API 已删除
+  - 详见 [架构 V2 设计](.doc/design/architecture_v2_design.md)
+
+- **refactor(nn): 移除 `ScalarMultiply` 和 `ChannelBiasAdd` 节点**
+  - 功能由通用 `Add`/`Subtract`/`Multiply` + 广播替代
+  - `Conv2d` bias 形状从 `[1, C]` 改为 `[1, C, 1, 1]`
+
+- **refactor(optimizer): 统一优化器 API**
+  - V1 API 已删除，V2 成为默认实现
+  - Optimizer 内部持有图引用，`zero_grad()`/`step()` 不再需要 `&mut Graph` 参数
+
+### 新增
+
+- **feat(tensor): 实现完整 NumPy 风格广播机制**
+  - Tensor 层：8 个运算符（`+`/`-`/`*`/`/` 及其 `Assign` 版本）支持广播
+  - Node 层：`Add`/`Subtract`/`Multiply`/`Divide` 支持广播
+  - 工具函数：`broadcast_shape()`, `sum_to_shape()`
+  - 新增 `Subtract` 节点
+  - 详见 [广播机制设计](.doc/design/broadcast_mechanism_design.md)
+
+- **feat(nn): 实现 Module trait 和 PyTorch 风格 API**
+  - `Module` trait：`parameters()` 返回 `Vec<Var>`
+  - `Var` 支持算子重载（`&a + &b`）和链式调用（`x.relu().sigmoid()`）
+  - `Graph` 句柄：`Rc<RefCell<GraphInner>>` 允许 `Var` 持有图引用
+
+### 重构
+
+- refactor(layer): 简化 Layer 层，使用原生广播替代 `ones @ bias` 模式
+- refactor(test): 改进 RNN/LSTM/GRU reset 测试的健壮性
+
+### 文档
+
+- docs: 更新架构 V2 设计文档，添加广播机制设计决策
+- docs: 新增广播机制设计文档
+
+### 测试
+
+- 单元测试从 ~800 增加到 822+
+- 新增 V2 集成测试：`test_mnist_linear_v2.rs`, `test_mnist_batch_v2.rs`
+
 ## [0.7.0] - 2026-01-08
 
 ### ⚠️ 破坏性变更 (Breaking Changes)

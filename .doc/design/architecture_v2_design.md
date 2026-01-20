@@ -3,7 +3,7 @@
 > **状态**：Phase 2 已完成，准备进入 Phase 3 (NEAT)
 > **作者**：架构评审
 > **创建日期**：2025-12-30
-> **最后更新**：2026-01-17
+> **最后更新**：2026-01-20
 > **前置条件**：[自动微分统一设计](autodiff_unification_design.md) 已完成（Phase 1-5 全部 ✅）
 > **背景**：基于对 Burn、Candle、Neuronika、tch-rs、neat-python、neat-rs 等框架的深度调研，以及对用户体验和梯度流控制兼容性的深入讨论，重新设计项目架构
 
@@ -102,6 +102,7 @@ let loss_val = loss.backward()?;
 | 可视化 | ✅ | `GraphDescriptor`, Graphviz DOT 输出 |
 | 序列化 | ✅ | JSON + bin 格式 |
 | 梯度流控制 | ✅ | `detach`、`no_grad`、`retain_graph` 已设计 |
+| 广播机制 | ✅ | NumPy 风格广播，Tensor/Node/Layer 三层统一支持 |
 
 ---
 
@@ -1144,7 +1145,7 @@ impl Graph {
 
     /// 创建全一张量（内部/辅助用途）
     ///
-    /// 常用于偏置广播（ones @ bias）。节点自动编号。
+    /// 节点自动编号。Layer 层现已使用原生广播，无需 `ones @ bias` 模式。
     pub fn ones(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
         let node_id = g.new_input_node(shape, None)?;
@@ -3257,6 +3258,10 @@ let inner2 = graph.inner_mut();  // panic!
 | 2026-01-09 | 放弃 `placeholder()` 方法 | 与 TensorFlow 1.x 语义雷同易混淆，`zeros()` + `set_value()` 已满足需求 |
 | 2026-01-09 | 完成 Var Trait 分层拆分 | 按 §4.2.1.3 策略拆分为 `VarActivationOps`、`VarLossOps`、`VarMatrixOps`，核心方法保留在 `impl Var` |
 | 2026-01-09 | 在 GraphHandle 暴露 `no_grad_scope()` | 提供简洁的无梯度上下文 API，用于验证集评估等场景 |
+| 2026-01-19 | 实现完整 NumPy 风格广播机制 | Tensor/Node/Layer 三层统一支持广播，简化代码；详见 [广播机制设计](broadcast_mechanism_design.md) |
+| 2026-01-19 | Layer 层使用原生广播替代 `ones @ bias` | 计算图更简洁（减少辅助节点），Linear/RNN/LSTM/GRU 统一简化 |
+| 2026-01-19 | 移除 `ScalarMultiply` 节点 | 功能由 `Multiply + 广播` 完全覆盖（`[1,1] * [m,n]`） |
+| 2026-01-19 | 移除 `ChannelBiasAdd` 节点 | 功能由 `Add + 广播` 完全覆盖（Conv2d bias 形状调整为 `[1,C,1,1]`） |
 
 ### 9.1 关键设计决策详解
 
