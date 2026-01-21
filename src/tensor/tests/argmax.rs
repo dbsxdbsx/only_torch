@@ -64,24 +64,6 @@ fn test_argmax_3d() {
 }
 
 #[test]
-fn test_argmin_2d() {
-    // [[1, 3, 2],
-    //  [5, 4, 6]]
-    let x = Tensor::new(&[1.0, 3.0, 2.0, 5.0, 4.0, 6.0], &[2, 3]);
-
-    let result_axis0 = x.argmin(0);
-    assert_eq!(result_axis0.shape(), &[3]);
-    assert_eq!(result_axis0[[0]], 0.0); // 第 0 列最小值 1.0 在行索引 0
-    assert_eq!(result_axis0[[1]], 0.0); // 第 1 列最小值 3.0 在行索引 0
-    assert_eq!(result_axis0[[2]], 0.0); // 第 2 列最小值 2.0 在行索引 0
-
-    let result_axis1 = x.argmin(1);
-    assert_eq!(result_axis1.shape(), &[2]);
-    assert_eq!(result_axis1[[0]], 0.0); // 第 0 行最小值 1.0 在索引 0
-    assert_eq!(result_axis1[[1]], 1.0); // 第 1 行最小值 4.0 在索引 1
-}
-
-#[test]
 fn test_argmax_with_ties() {
     // 有多个最大值时，返回第一个
     let x = Tensor::new(&[1.0, 5.0, 5.0, 3.0], &[4]);

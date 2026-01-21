@@ -9,6 +9,7 @@
 mod add;
 mod add_assign;
 mod argmax;
+mod argmin;
 mod div;
 mod div_assign;
 mod eq;
