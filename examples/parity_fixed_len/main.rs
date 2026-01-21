@@ -156,14 +156,15 @@ fn evaluate(model: &ParityRNN, graph: &Graph, test_loader: &DataLoader) -> Resul
         // 前向传播
         model.forward(&x_batch)?;
 
-        // 计算准确率
+        // 使用 argmax 简化准确率计算
         let logits = graph.inner().get_node_value(output_id)?.unwrap().clone();
-        let batch_size = x_batch.shape()[0];
+        let pred = logits.argmax(1); // [batch] 预测类别
+        let true_labels = y_batch.argmax(1); // [batch] 真实类别
 
+        // 统计正确预测数
+        let batch_size = x_batch.shape()[0];
         for i in 0..batch_size {
-            let pred_class = if logits[[i, 0]] > logits[[i, 1]] { 0 } else { 1 };
-            let true_class = if y_batch[[i, 0]] > 0.5 { 0 } else { 1 };
-            if pred_class == true_class {
+            if pred[[i]] == true_labels[[i]] {
                 correct += 1;
             }
             total += 1;

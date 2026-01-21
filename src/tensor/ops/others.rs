@@ -851,7 +851,7 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ln↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
-    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓max↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓max/min↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 返回张量中的最大值（标量）
     ///
     /// # 示例
@@ -877,7 +877,111 @@ impl Tensor {
     pub fn min_value(&self) -> f32 {
         self.data.iter().copied().fold(f32::INFINITY, f32::min)
     }
-    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑max↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑max/min↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓argmax/argmin↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 沿指定轴返回最大值的索引
+    ///
+    /// 类似 PyTorch 的 `tensor.argmax(dim=axis)`。
+    ///
+    /// # 参数
+    /// - `axis`: 沿哪个轴查找最大值的索引
+    ///
+    /// # 返回
+    /// 形状为原张量去掉 `axis` 维度后的张量，元素为 `usize` 类型的索引（以 `f32` 存储）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // 2D 张量
+    /// let x = Tensor::new(&[1.0, 3.0, 2.0, 5.0, 4.0, 6.0], &[2, 3]);
+    /// // [[1, 3, 2],
+    /// //  [5, 4, 6]]
+    ///
+    /// let argmax_axis1 = x.argmax(1);  // 沿列方向找最大
+    /// assert_eq!(argmax_axis1.shape(), &[2]);
+    /// assert_eq!(argmax_axis1[[0]], 1.0);  // 第 0 行最大值在索引 1
+    /// assert_eq!(argmax_axis1[[1]], 2.0);  // 第 1 行最大值在索引 2
+    ///
+    /// let argmax_axis0 = x.argmax(0);  // 沿行方向找最大
+    /// assert_eq!(argmax_axis0.shape(), &[3]);
+    /// assert_eq!(argmax_axis0[[0]], 1.0);  // 第 0 列最大值在行索引 1
+    /// ```
+    pub fn argmax(&self, axis: usize) -> Self {
+        assert!(
+            axis < self.dimension(),
+            "argmax: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // 使用 map_axis 沿指定轴找 argmax
+        // 注意：使用 fold 而非 max_by，确保在相等时返回第一个索引（与 PyTorch 行为一致）
+        let argmax_array = self.data.map_axis(Axis(axis), |lane| {
+            lane.iter()
+                .enumerate()
+                .fold((0, f32::NEG_INFINITY), |(max_idx, max_val), (idx, &val)| {
+                    if val > max_val {
+                        (idx, val)
+                    } else {
+                        (max_idx, max_val)
+                    }
+                })
+                .0 as f32
+        });
+
+        Self {
+            data: argmax_array.into_dyn(),
+        }
+    }
+
+    /// 沿指定轴返回最小值的索引
+    ///
+    /// 类似 PyTorch 的 `tensor.argmin(dim=axis)`。
+    ///
+    /// # 参数
+    /// - `axis`: 沿哪个轴查找最小值的索引
+    ///
+    /// # 返回
+    /// 形状为原张量去掉 `axis` 维度后的张量，元素为 `usize` 类型的索引（以 `f32` 存储）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 3.0, 2.0, 5.0, 4.0, 6.0], &[2, 3]);
+    /// let argmin_axis1 = x.argmin(1);
+    /// assert_eq!(argmin_axis1[[0]], 0.0);  // 第 0 行最小值在索引 0
+    /// assert_eq!(argmin_axis1[[1]], 1.0);  // 第 1 行最小值在索引 1
+    /// ```
+    pub fn argmin(&self, axis: usize) -> Self {
+        assert!(
+            axis < self.dimension(),
+            "argmin: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // 使用 fold 而非 min_by，确保在相等时返回第一个索引（与 PyTorch 行为一致）
+        let argmin_array = self.data.map_axis(Axis(axis), |lane| {
+            lane.iter()
+                .enumerate()
+                .fold((0, f32::INFINITY), |(min_idx, min_val), (idx, &val)| {
+                    if val < min_val {
+                        (idx, val)
+                    } else {
+                        (min_idx, min_val)
+                    }
+                })
+                .0 as f32
+        });
+
+        Self {
+            data: argmin_array.into_dyn(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑argmax/argmin↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓sign↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 返回张量每个元素的符号
