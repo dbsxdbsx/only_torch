@@ -161,14 +161,12 @@ fn evaluate(model: &ParityRNN, graph: &Graph, test_loader: &DataLoader) -> Resul
         let pred = logits.argmax(1); // [batch] 预测类别
         let true_labels = y_batch.argmax(1); // [batch] 真实类别
 
-        // 统计正确预测数
+        // 统计正确预测数（函数式风格）
         let batch_size = x_batch.shape()[0];
-        for i in 0..batch_size {
-            if pred[[i]] == true_labels[[i]] {
-                correct += 1;
-            }
-            total += 1;
-        }
+        correct += (0..batch_size)
+            .filter(|&i| pred[[i]] == true_labels[[i]])
+            .count();
+        total += batch_size;
     }
 
     graph.train();

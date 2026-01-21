@@ -68,7 +68,7 @@ fn main() -> Result<(), GraphError> {
             optimizer.step()?;
         }
 
-        // 评估
+        // 评估（使用 argmax 简化）
         let correct = inputs
             .iter()
             .zip(labels.iter())
@@ -76,7 +76,7 @@ fn main() -> Result<(), GraphError> {
                 x.set_value(inp).ok();
                 logits.forward().ok();
                 let out = logits.value().ok().flatten().unwrap();
-                (out[[0, 0]] > out[[0, 1]]) == (lbl[[0, 0]] > lbl[[0, 1]])
+                out.argmax(1).get_data_number().unwrap() == lbl.argmax(1).get_data_number().unwrap()
             })
             .count();
 
@@ -86,14 +86,14 @@ fn main() -> Result<(), GraphError> {
         }
     }
 
-    // 7. 结果
+    // 7. 结果（使用 argmax 简化）
     println!("\n=== 预测结果 ===");
     for (input, label) in inputs.iter().zip(labels.iter()) {
         x.set_value(input)?;
         logits.forward()?;
         let out = logits.value()?.unwrap();
-        let pred = i32::from(out[[0, 0]] <= out[[0, 1]]);
-        let expected = i32::from(label[[0, 0]] <= label[[0, 1]]);
+        let pred = out.argmax(1).get_data_number().unwrap() as i32;
+        let expected = label.argmax(1).get_data_number().unwrap() as i32;
         println!(
             "  XOR({}, {}) = {} {}",
             input[[0, 0]] as i32,

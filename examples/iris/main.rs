@@ -52,20 +52,14 @@ fn main() -> Result<(), GraphError> {
         optimizer.step()?;
 
         if (epoch + 1) % 50 == 0 {
-            // 评估
+            // 评估（使用 argmax 简化）
             logits.forward()?;
             let preds = logits.value()?.unwrap();
+            let pred_classes = preds.argmax(1); // [n_samples] 预测类别
 
-            let mut correct = 0;
-            for i in 0..n_samples {
-                // 找最大概率的类别
-                let pred_class = (0..3)
-                    .max_by(|&a, &b| preds[[i, a]].partial_cmp(&preds[[i, b]]).unwrap())
-                    .unwrap();
-                if pred_class == labels[i] {
-                    correct += 1;
-                }
-            }
+            let correct = (0..n_samples)
+                .filter(|&i| pred_classes[[i]] as usize == labels[i])
+                .count();
             let acc = correct as f32 / n_samples as f32 * 100.0;
 
             println!(
@@ -77,17 +71,16 @@ fn main() -> Result<(), GraphError> {
         }
     }
 
-    // 7. 最终评估
+    // 7. 最终评估（使用 argmax 简化）
     logits.forward()?;
     let preds = logits.value()?.unwrap();
+    let pred_classes = preds.argmax(1); // [n_samples] 预测类别
 
     let mut correct = 0;
     let mut confusion = [[0usize; 3]; 3]; // confusion[true][pred]
 
     for i in 0..n_samples {
-        let pred_class = (0..3)
-            .max_by(|&a, &b| preds[[i, a]].partial_cmp(&preds[[i, b]]).unwrap())
-            .unwrap();
+        let pred_class = pred_classes[[i]] as usize;
         let true_class = labels[i];
 
         confusion[true_class][pred_class] += 1;

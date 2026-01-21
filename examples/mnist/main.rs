@@ -121,7 +121,7 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        // 使用 DataLoader 迭代测试
+        // 使用 DataLoader 迭代测试（argmax 简化版）
         let mut correct = 0;
         let mut total = 0;
 
@@ -130,18 +130,15 @@ fn main() -> Result<(), GraphError> {
             logits.forward()?;
 
             let preds = logits.value()?.unwrap();
-            let current_batch_size = batch_x.shape()[0];
+            let pred_classes = preds.argmax(1); // [batch] 预测类别
+            let true_classes = batch_y.argmax(1); // [batch] 真实类别
 
-            for i in 0..current_batch_size {
-                let pred_class = (0..10)
-                    .max_by(|&a, &b| preds[[i, a]].partial_cmp(&preds[[i, b]]).unwrap())
-                    .unwrap();
-                let true_class = (0..10).find(|&j| batch_y[[i, j]] > 0.5).unwrap();
-                if pred_class == true_class {
-                    correct += 1;
-                }
-                total += 1;
-            }
+            // 统计正确预测数（函数式风格）
+            let batch_size = batch_x.shape()[0];
+            correct += (0..batch_size)
+                .filter(|&i| pred_classes[[i]] == true_classes[[i]])
+                .count();
+            total += batch_size;
         }
 
         let acc = correct as f32 / total as f32 * 100.0;
