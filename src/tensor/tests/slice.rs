@@ -193,3 +193,125 @@ fn test_slice_macro() {
     let slice6 = tensor.slice(&[&0, &1, &0, &(1..3)]);
     assert_eq!(slice5, slice6);
 }
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓select↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+
+#[test]
+fn test_select_basic() {
+    // 2D 张量: [3, 4]
+    let data = vec![
+        1.0, 2.0, 3.0, 4.0, // row 0
+        5.0, 6.0, 7.0, 8.0, // row 1
+        9.0, 10.0, 11.0, 12.0, // row 2
+    ];
+    let tensor = Tensor::new(&data, &[3, 4]);
+
+    // 选择第 1 行 (axis=0, index=1) → 形状 [4]
+    let row1 = tensor.select(0, 1);
+    assert_eq!(row1.shape(), &[4]);
+    assert_eq!(row1, Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[4]));
+
+    // 选择第 2 列 (axis=1, index=2) → 形状 [3]
+    let col2 = tensor.select(1, 2);
+    assert_eq!(col2.shape(), &[3]);
+    assert_eq!(col2, Tensor::new(&[3.0, 7.0, 11.0], &[3]));
+}
+
+#[test]
+fn test_select_3d_rnn_usecase() {
+    // 3D 张量: [batch=2, seq_len=3, input=4]（RNN 典型输入）
+    let data: Vec<f32> = (1..=24).map(|x| x as f32).collect();
+    let tensor = Tensor::new(&data, &[2, 3, 4]);
+
+    // 选择时间步 t=1 (axis=1, index=1) → 形状 [2, 4]
+    let x_t1 = tensor.select(1, 1);
+    assert_eq!(x_t1.shape(), &[2, 4]);
+    // batch 0, t=1: [5, 6, 7, 8]
+    // batch 1, t=1: [17, 18, 19, 20]
+    assert_eq!(
+        x_t1,
+        Tensor::new(&[5.0, 6.0, 7.0, 8.0, 17.0, 18.0, 19.0, 20.0], &[2, 4])
+    );
+
+    // 选择 batch=0 (axis=0, index=0) → 形状 [3, 4]
+    let batch0 = tensor.select(0, 0);
+    assert_eq!(batch0.shape(), &[3, 4]);
+    assert_eq!(
+        batch0,
+        Tensor::new(
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[3, 4]
+        )
+    );
+
+    // 选择最后一个特征 (axis=2, index=3) → 形状 [2, 3]
+    let last_feat = tensor.select(2, 3);
+    assert_eq!(last_feat.shape(), &[2, 3]);
+    assert_eq!(
+        last_feat,
+        Tensor::new(&[4.0, 8.0, 12.0, 16.0, 20.0, 24.0], &[2, 3])
+    );
+}
+
+#[test]
+fn test_select_4d_cnn_usecase() {
+    // 4D 张量: [batch=2, channels=3, height=2, width=2]（CNN 典型输入）
+    let data: Vec<f32> = (1..=24).map(|x| x as f32).collect();
+    let tensor = Tensor::new(&data, &[2, 3, 2, 2]);
+
+    // 选择通道 c=1 (axis=1, index=1) → 形状 [2, 2, 2]
+    let channel1 = tensor.select(1, 1);
+    assert_eq!(channel1.shape(), &[2, 2, 2]);
+    // batch 0, c=1: [[5,6],[7,8]]
+    // batch 1, c=1: [[17,18],[19,20]]
+    assert_eq!(
+        channel1,
+        Tensor::new(&[5.0, 6.0, 7.0, 8.0, 17.0, 18.0, 19.0, 20.0], &[2, 2, 2])
+    );
+}
+
+#[test]
+fn test_select_1d() {
+    // 1D 张量: [5]
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0], &[5]);
+
+    // 选择 index=2 → 形状 [] (标量)
+    let scalar = tensor.select(0, 2);
+    let empty_shape: &[usize] = &[];
+    assert_eq!(scalar.shape(), empty_shape); // 0 维标量
+    assert_eq!(scalar, Tensor::new(&[3.0], &[]));
+}
+
+#[test]
+fn test_select_vs_slice_comparison() {
+    // 对比 select 和 slice 的区别
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+
+    // select: 降维
+    let selected = tensor.select(0, 1); // 选择第 1 行
+    assert_eq!(selected.shape(), &[3]); // 维度从 2D 变为 1D
+
+    // slice: 保持维度
+    let sliced = tensor_slice!(tensor, 1usize, ..);
+    assert_eq!(sliced.shape(), &[1, 3]); // 维度仍为 2D，第一维为 1
+}
+
+#[test]
+fn test_select_panic_axis_out_of_bounds() {
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    assert_panic!(
+        tensor.select(2, 0), // axis=2 超出 2D 张量
+        "select: axis 2 超出张量维度 2"
+    );
+}
+
+#[test]
+fn test_select_panic_index_out_of_bounds() {
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    assert_panic!(
+        tensor.select(0, 5), // index=5 超出轴 0 的大小 2
+        "select: index 5 超出轴 0 的大小 2"
+    );
+}
+
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑select↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

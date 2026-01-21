@@ -161,6 +161,55 @@ impl super::Tensor {
     pub fn slice(&self, indices: &[&dyn IntoSliceInfo]) -> Self {
         Self::from_view(self.slice_view(indices))
     }
+
+    /// 沿指定轴选择单个索引，返回降维后的张量（PyTorch `select` 风格）
+    ///
+    /// 与 `slice` 的区别：`select` 会移除被选择的维度，而 `slice` 保持维度为 1。
+    ///
+    /// # 参数
+    /// - `axis`: 要选择的轴（0-indexed）
+    /// - `index`: 该轴上的索引
+    ///
+    /// # 返回
+    /// 降维后的新张量（维度数减 1）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::Tensor;
+    ///
+    /// // 3D 张量: [batch=2, seq_len=3, input=4]
+    /// let x = Tensor::zeros(&[2, 3, 4]);
+    ///
+    /// // 选择第 1 个时间步 (axis=1, index=1)
+    /// let x_t = x.select(1, 1);  // 形状: [2, 4]
+    ///
+    /// // 对比 slice（保持维度）
+    /// // tensor_slice!(x, .., 1, ..) 会得到 [2, 1, 4]
+    /// ```
+    ///
+    /// # Panics
+    /// - `axis` 超出张量维度
+    /// - `index` 超出该轴的大小
+    pub fn select(&self, axis: usize, index: usize) -> Self {
+        let ndim = self.dimension();
+        assert!(
+            axis < ndim,
+            "select: axis {} 超出张量维度 {}",
+            axis,
+            ndim
+        );
+        assert!(
+            index < self.shape()[axis],
+            "select: index {} 超出轴 {} 的大小 {}",
+            index,
+            axis,
+            self.shape()[axis]
+        );
+
+        // 使用 ndarray 的 index_axis 方法
+        let view = self.data.index_axis(ndarray::Axis(axis), index);
+        Self::from_view(view)
+    }
 }
 
 /// 简化切片语法的宏

@@ -78,6 +78,12 @@ pub struct GraphInner {
     /// BPTT 调试标志（仅用于调试）
     #[cfg(test)]
     bptt_debug: bool,
+
+    // ========== MemoryLayer 训练目标（可选） ==========
+    /// 训练目标节点（通常是 loss 节点）
+    /// MemoryLayer::forward() 会使用此值作为 step() 的目标
+    /// None 时使用各层的默认输出节点
+    training_target: Option<NodeId>,
 }
 
 impl Default for GraphInner {
@@ -185,6 +191,44 @@ impl Graph {
     /// ```
     pub fn wrap_node_id(&self, node_id: NodeId) -> Var {
         Var::new(node_id, Rc::clone(&self.inner))
+    }
+
+    // ==================== 训练目标（MemoryLayer 使用） ====================
+
+    /// 设置训练目标节点（通常是 loss 节点）
+    ///
+    /// 设置后，`MemoryLayer::forward()` 会自动使用此节点作为 `step()` 的目标，
+    /// 用户无需在每次 `forward()` 调用时显式传递。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let loss = model.output().cross_entropy(&labels);
+    /// graph.set_training_target(loss.node_id());
+    ///
+    /// // 之后的训练循环中
+    /// model.forward(&x_batch)?;  // 无需传递 loss_id
+    /// ```
+    pub fn set_training_target(&self, node: NodeId) {
+        self.inner.borrow_mut().set_training_target(node);
+    }
+
+    /// 清除训练目标节点
+    ///
+    /// 清除后，`MemoryLayer::forward()` 将使用各层的默认输出节点。
+    pub fn clear_training_target(&self) {
+        self.inner.borrow_mut().clear_training_target();
+    }
+
+    /// 获取训练目标节点
+    pub fn training_target(&self) -> Option<NodeId> {
+        self.inner.borrow().training_target()
+    }
+
+    /// 从指定节点出发，自动查找终端节点
+    ///
+    /// 用于 MemoryLayer 自动检测训练目标（loss 节点）。
+    pub fn find_terminal_from(&self, start: NodeId) -> Option<NodeId> {
+        self.inner.borrow().find_terminal_from(start)
     }
 
     // ==================== 创建变量（返回 Var，自动携带图引用）====================
@@ -435,6 +479,7 @@ impl GraphInner {
             step_history: Vec::new(),
             #[cfg(test)]
             bptt_debug: false,
+            training_target: None,
         }
     }
 
@@ -457,6 +502,7 @@ impl GraphInner {
             step_history: Vec::new(),
             #[cfg(test)]
             bptt_debug: false,
+            training_target: None,
         }
     }
 
@@ -478,6 +524,7 @@ impl GraphInner {
             step_history: Vec::new(),
             #[cfg(test)]
             bptt_debug: false,
+            training_target: None,
         }
     }
 
@@ -919,7 +966,7 @@ impl GraphInner {
     /// GAN 等场景的梯度隔离通过 `detach()` 实现，语义更清晰、性能更优。
     /// 详见 [梯度流控制设计 - 附录 A](gradient_flow_control_design.md#附录-a设计决策为什么用-detach-而非-target_params)。
     pub fn backward_ex(&mut self, loss: NodeId, retain_graph: bool) -> Result<f32, GraphError> {
-        // 1. 获取 loss 值（在 backward_vjp_core 之前获取，因为它会验证）
+        // 1. 获取 loss 值
         let loss_node = self.get_node(loss)?;
         let loss_value = loss_node.value().ok_or_else(|| {
             GraphError::ComputationError(format!("损失节点 {loss_node} 没有值，请先执行 forward"))
@@ -932,11 +979,20 @@ impl GraphInner {
             ))
         })?;
 
-        // 2. 调用 VJP 核心实现
-        self.backward_vjp_core(loss)?;
+        // 2. 自动检测是否需要 BPTT（PyTorch 风格：用户无需关心）
+        //    条件：存在时间步历史 且 存在循环连接
+        let needs_bptt = !self.step_history.is_empty() && !self.recurrent_edges.is_empty();
+
+        if needs_bptt {
+            // 使用 BPTT：自动收集所有可训练参数并反向传播
+            let param_ids = self.get_trainable_nodes();
+            self.backward_through_time(&param_ids, loss)?;
+        } else {
+            // 普通反向传播（前馈网络）
+            self.backward_vjp_core(loss)?;
+        }
 
         // 3. 如果 retain_graph=false，释放中间结果（PyTorch 默认行为）
-        // 根据文档 7.2 节：同时释放中间节点的值和梯度
         if !retain_graph {
             self.release_intermediate_results()?;
         }
@@ -2157,6 +2213,85 @@ impl GraphInner {
     #[cfg(test)]
     pub fn set_bptt_debug(&mut self, debug: bool) {
         self.bptt_debug = debug;
+    }
+
+    // ========== 训练目标（MemoryLayer 使用） ==========
+
+    /// 设置训练目标节点（通常是 loss 节点）
+    ///
+    /// 设置后，`MemoryLayer::forward()` 会自动使用此节点作为 `step()` 的目标，
+    /// 用户无需在每次 `forward()` 调用时显式传递。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let loss = model.output().cross_entropy(&labels);
+    /// graph.set_training_target(loss.node_id());
+    ///
+    /// // 之后的训练循环中
+    /// model.forward(&x_batch)?;  // 无需传递 loss_id
+    /// ```
+    pub fn set_training_target(&mut self, node: NodeId) {
+        self.training_target = Some(node);
+    }
+
+    /// 清除训练目标节点
+    ///
+    /// 清除后，`MemoryLayer::forward()` 将使用各层的默认输出节点。
+    pub fn clear_training_target(&mut self) {
+        self.training_target = None;
+    }
+
+    /// 获取训练目标节点
+    pub const fn training_target(&self) -> Option<NodeId> {
+        self.training_target
+    }
+
+    /// 从指定节点出发，自动查找终端节点（用于 MemoryLayer 自动检测）
+    ///
+    /// 终端节点是指在计算图中没有子节点的节点（通常是 loss 节点）。
+    /// 使用 BFS 遍历从 `start` 可达的所有节点，返回最后一个终端节点。
+    ///
+    /// # 参数
+    /// - `start`: 起始节点 ID（通常是 MemoryLayer 的 hidden_output）
+    ///
+    /// # 返回
+    /// - `Some(NodeId)`: 找到的终端节点
+    /// - `None`: 没有找到终端节点（start 本身可能就是终端）
+    ///
+    /// # 用途
+    /// - MemoryLayer 自动检测训练目标，无需用户显式调用 `set_training_target()`
+    pub fn find_terminal_from(&self, start: NodeId) -> Option<NodeId> {
+        use std::collections::{HashSet, VecDeque};
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        let mut terminal = None;
+
+        queue.push_back(start);
+        visited.insert(start);
+
+        while let Some(node) = queue.pop_front() {
+            let children = self.forward_edges.get(&node).cloned().unwrap_or_default();
+
+            if children.is_empty() {
+                // 这是一个终端节点（没有子节点）
+                terminal = Some(node);
+            } else {
+                for child in children {
+                    if !visited.contains(&child) {
+                        visited.insert(child);
+                        queue.push_back(child);
+                    }
+                }
+            }
+        }
+
+        // 如果 start 本身就是终端节点，返回 None（让调用者使用默认值）
+        if terminal == Some(start) {
+            None
+        } else {
+            terminal
+        }
     }
 
     /// 检查是否启用梯度计算（等价于 `is_train_mode()`）

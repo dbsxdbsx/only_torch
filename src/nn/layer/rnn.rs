@@ -17,7 +17,7 @@
  * - 输出：[batch_size, hidden_size]
  */
 
-use crate::nn::{Graph, GraphError, Init, Module, Var};
+use crate::nn::{Graph, GraphError, Init, MemoryLayer, Module, NodeId, Var};
 use crate::tensor::Tensor;
 
 // ==================== 新版 Rnn 结构体 ====================
@@ -193,22 +193,99 @@ impl Rnn {
         Ok(&self.hidden_output)
     }
 
-    /// 前向传播（返回 Var 用于链式调用）
+    /// 前向传播（PyTorch 风格：自动检测训练目标）
     ///
-    /// 设置输入并执行计算，返回隐藏状态的 Var。
-    /// 适用于构建更复杂的网络结构。
+    /// 自动处理整个序列的所有时间步，用户无需手动迭代。
+    ///
+    /// **自动检测逻辑**（优先级从高到低）：
+    /// 1. 使用 `Graph::set_training_target()` 显式设置的目标（或已缓存的值）
+    /// 2. 首次调用时自动从图结构中查找终端节点（如 loss 节点）并缓存
+    /// 3. 回退到 `hidden_output`（推理模式）
+    ///
+    /// # 性能
+    /// - 首次调用：BFS 遍历图结构 + 缓存结果
+    /// - 后续调用：O(1) 查找
     ///
     /// # 参数
-    /// - `x`: 输入 Var，形状 [`batch_size`, `input_size`]
+    /// - `x`: 输入张量，形状 [`batch_size`, `seq_len`, `input_size`]
     ///
     /// # 返回
-    /// 隐藏状态 Var，形状 [`batch_size`, `hidden_size`]
-    pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
-        // 将输入值复制到 RNN 的输入节点
-        if let Some(x_val) = x.value()? {
-            self.input_node.set_value(&x_val)?;
+    /// 最终隐藏状态，形状 [`batch_size`, `hidden_size`]
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // PyTorch 风格训练循环 - 无需任何额外设置！
+    /// let loss = model.output().cross_entropy(&labels)?;
+    /// 
+    /// for epoch in 0..epochs {
+    ///     rnn.forward(&x_batch)?;  // 首次自动检测，后续 O(1)
+    ///     loss.backward()?;
+    /// }
+    /// ```
+    pub fn forward(&self, x: &Tensor) -> Result<&Var, GraphError> {
+        // 检查是否已有缓存的 training_target
+        let output_node = if let Some(target) = self.graph.training_target() {
+            target // 已缓存，O(1)
+        } else {
+            // 首次调用：BFS 查找终端节点 + 缓存
+            let terminal = self
+                .graph
+                .find_terminal_from(self.hidden_output.node_id())
+                .unwrap_or(self.hidden_output.node_id());
+            self.graph.set_training_target(terminal); // 缓存供后续使用
+            terminal
+        };
+        self.forward_to(x, output_node)
+    }
+
+    /// 前向传播（显式指定输出节点）
+    ///
+    /// 自动处理整个序列的所有时间步，用户无需手动迭代。
+    /// 适用于需要精确控制输出节点的场景（如 NEAT、多输出网络）。
+    ///
+    /// # 参数
+    /// - `x`: 输入张量，形状 [`batch_size`, `seq_len`, `input_size`]
+    /// - `output_node`: 输出节点 ID（如 loss 节点），用于记录完整的计算图历史
+    ///
+    /// # 返回
+    /// 最终隐藏状态，形状 [`batch_size`, `hidden_size`]
+    pub fn forward_to(&self, x: &Tensor, output_node: NodeId) -> Result<&Var, GraphError> {
+        let shape = x.shape();
+        if shape.len() != 3 {
+            return Err(GraphError::InvalidOperation(format!(
+                "forward_to 需要 3D 输入 [batch, seq_len, input], 实际: {:?}",
+                shape
+            )));
         }
-        Ok(self.hidden_output.clone())
+
+        let (batch, seq_len, input_size) = (shape[0], shape[1], shape[2]);
+
+        // 验证形状
+        if batch != self.batch_size {
+            return Err(GraphError::InvalidOperation(format!(
+                "batch_size 不匹配: 期望 {}, 实际 {}",
+                self.batch_size, batch
+            )));
+        }
+        if input_size != self.input_size {
+            return Err(GraphError::InvalidOperation(format!(
+                "input_size 不匹配: 期望 {}, 实际 {}",
+                self.input_size, input_size
+            )));
+        }
+
+        // 重置状态
+        self.reset();
+
+        // 遍历所有时间步
+        for t in 0..seq_len {
+            // 提取第 t 个时间步: [batch, input_size]
+            let x_t = x.select(1, t);
+            self.input_node.set_value(&x_t)?;
+            self.graph.inner_mut().step(output_node)?;
+        }
+
+        Ok(&self.hidden_output)
     }
 
     /// 重置隐藏状态为零（仅重置状态节点的值）
@@ -285,6 +362,28 @@ impl Rnn {
 impl Module for Rnn {
     fn parameters(&self) -> Vec<Var> {
         vec![self.w_ih.clone(), self.w_hh.clone(), self.b_h.clone()]
+    }
+}
+
+impl MemoryLayer for Rnn {
+    fn forward(&self, x: &Tensor) -> Result<&Var, GraphError> {
+        Rnn::forward(self, x)
+    }
+
+    fn forward_to(&self, x: &Tensor, output_node: NodeId) -> Result<&Var, GraphError> {
+        Rnn::forward_to(self, x, output_node)
+    }
+
+    fn step(&self, x: &Tensor) -> Result<&Var, GraphError> {
+        Rnn::step(self, x)
+    }
+
+    fn output(&self) -> &Var {
+        self.hidden() // 委托给 Rnn 特有的 hidden() 方法
+    }
+
+    fn reset(&self) {
+        Rnn::reset(self)
     }
 }
 
