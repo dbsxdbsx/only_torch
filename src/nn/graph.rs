@@ -78,12 +78,6 @@ pub struct GraphInner {
     /// BPTT 调试标志（仅用于调试）
     #[cfg(test)]
     bptt_debug: bool,
-
-    // ========== MemoryLayer 训练目标（可选） ==========
-    /// 训练目标节点（通常是 loss 节点）
-    /// MemoryLayer::forward() 会使用此值作为 step() 的目标
-    /// None 时使用各层的默认输出节点
-    training_target: Option<NodeId>,
 }
 
 impl Default for GraphInner {
@@ -191,44 +185,6 @@ impl Graph {
     /// ```
     pub fn wrap_node_id(&self, node_id: NodeId) -> Var {
         Var::new(node_id, Rc::clone(&self.inner))
-    }
-
-    // ==================== 训练目标（MemoryLayer 使用） ====================
-
-    /// 设置训练目标节点（通常是 loss 节点）
-    ///
-    /// 设置后，`MemoryLayer::forward()` 会自动使用此节点作为 `step()` 的目标，
-    /// 用户无需在每次 `forward()` 调用时显式传递。
-    ///
-    /// # 示例
-    /// ```ignore
-    /// let loss = model.output().cross_entropy(&labels);
-    /// graph.set_training_target(loss.node_id());
-    ///
-    /// // 之后的训练循环中
-    /// model.forward(&x_batch)?;  // 无需传递 loss_id
-    /// ```
-    pub fn set_training_target(&self, node: NodeId) {
-        self.inner.borrow_mut().set_training_target(node);
-    }
-
-    /// 清除训练目标节点
-    ///
-    /// 清除后，`MemoryLayer::forward()` 将使用各层的默认输出节点。
-    pub fn clear_training_target(&self) {
-        self.inner.borrow_mut().clear_training_target();
-    }
-
-    /// 获取训练目标节点
-    pub fn training_target(&self) -> Option<NodeId> {
-        self.inner.borrow().training_target()
-    }
-
-    /// 从指定节点出发，自动查找终端节点
-    ///
-    /// 用于 MemoryLayer 自动检测训练目标（loss 节点）。
-    pub fn find_terminal_from(&self, start: NodeId) -> Option<NodeId> {
-        self.inner.borrow().find_terminal_from(start)
     }
 
     // ==================== 创建变量（返回 Var，自动携带图引用）====================
@@ -479,7 +435,6 @@ impl GraphInner {
             step_history: Vec::new(),
             #[cfg(test)]
             bptt_debug: false,
-            training_target: None,
         }
     }
 
@@ -502,7 +457,6 @@ impl GraphInner {
             step_history: Vec::new(),
             #[cfg(test)]
             bptt_debug: false,
-            training_target: None,
         }
     }
 
@@ -524,7 +478,6 @@ impl GraphInner {
             step_history: Vec::new(),
             #[cfg(test)]
             bptt_debug: false,
-            training_target: None,
         }
     }
 
@@ -1632,6 +1585,7 @@ impl GraphInner {
             NodeTypeDescriptor::Conv2d { .. } => "Conv2d",
             NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
             NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
+            NodeTypeDescriptor::Select { .. } => "Select",
             NodeTypeDescriptor::MSELoss => "MSELoss",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
         }
@@ -2078,6 +2032,10 @@ impl GraphInner {
                 kernel_size: (2, 2),
                 stride: (2, 2),
             }, // TODO: 获取实际值
+            NodeType::Select(_) => NodeTypeDescriptor::Select {
+                axis: 0,
+                index: 0,
+            }, // TODO: 获取实际值
             NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
         }
@@ -2215,85 +2173,6 @@ impl GraphInner {
         self.bptt_debug = debug;
     }
 
-    // ========== 训练目标（MemoryLayer 使用） ==========
-
-    /// 设置训练目标节点（通常是 loss 节点）
-    ///
-    /// 设置后，`MemoryLayer::forward()` 会自动使用此节点作为 `step()` 的目标，
-    /// 用户无需在每次 `forward()` 调用时显式传递。
-    ///
-    /// # 示例
-    /// ```ignore
-    /// let loss = model.output().cross_entropy(&labels);
-    /// graph.set_training_target(loss.node_id());
-    ///
-    /// // 之后的训练循环中
-    /// model.forward(&x_batch)?;  // 无需传递 loss_id
-    /// ```
-    pub fn set_training_target(&mut self, node: NodeId) {
-        self.training_target = Some(node);
-    }
-
-    /// 清除训练目标节点
-    ///
-    /// 清除后，`MemoryLayer::forward()` 将使用各层的默认输出节点。
-    pub fn clear_training_target(&mut self) {
-        self.training_target = None;
-    }
-
-    /// 获取训练目标节点
-    pub const fn training_target(&self) -> Option<NodeId> {
-        self.training_target
-    }
-
-    /// 从指定节点出发，自动查找终端节点（用于 MemoryLayer 自动检测）
-    ///
-    /// 终端节点是指在计算图中没有子节点的节点（通常是 loss 节点）。
-    /// 使用 BFS 遍历从 `start` 可达的所有节点，返回最后一个终端节点。
-    ///
-    /// # 参数
-    /// - `start`: 起始节点 ID（通常是 MemoryLayer 的 hidden_output）
-    ///
-    /// # 返回
-    /// - `Some(NodeId)`: 找到的终端节点
-    /// - `None`: 没有找到终端节点（start 本身可能就是终端）
-    ///
-    /// # 用途
-    /// - MemoryLayer 自动检测训练目标，无需用户显式调用 `set_training_target()`
-    pub fn find_terminal_from(&self, start: NodeId) -> Option<NodeId> {
-        use std::collections::{HashSet, VecDeque};
-
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-        let mut terminal = None;
-
-        queue.push_back(start);
-        visited.insert(start);
-
-        while let Some(node) = queue.pop_front() {
-            let children = self.forward_edges.get(&node).cloned().unwrap_or_default();
-
-            if children.is_empty() {
-                // 这是一个终端节点（没有子节点）
-                terminal = Some(node);
-            } else {
-                for child in children {
-                    if !visited.contains(&child) {
-                        visited.insert(child);
-                        queue.push_back(child);
-                    }
-                }
-            }
-        }
-
-        // 如果 start 本身就是终端节点，返回 None（让调用者使用默认值）
-        if terminal == Some(start) {
-            None
-        } else {
-            terminal
-        }
-    }
-
     /// 检查是否启用梯度计算（等价于 `is_train_mode()`）
     ///
     /// 在训练模式下返回 `true`，`在评估模式（no_grad` 上下文）中返回 `false`。
@@ -2361,6 +2240,20 @@ impl GraphInner {
     }
 
     // ========== 循环/记忆机制 API（Phase 1） ==========
+    //
+    // TODO(RNN 重构): 以下 BPTT 相关方法（connect_recurrent, step, backward_through_time 等）
+    // 是旧的"显式时间步"设计，目前仅被 LSTM/GRU 层使用。
+    //
+    // 新的 Rnn 层已改用"展开式设计"（见 src/nn/layer/rnn.rs），不依赖这些方法。
+    // 待 LSTM/GRU 也完成展开式重构后，可考虑删除这些底层 API。
+    //
+    // 相关测试文件（同样待清理）：
+    // - src/nn/tests/bptt_pytorch_comparison.rs
+    // - src/nn/tests/recurrent_bptt.rs
+    // - src/nn/tests/recurrent_basic.rs
+    // - src/nn/tests/node_state.rs
+    //
+    // 保留理由：可能对 NEAT 或其他高级动态网络场景有用。
 
     /// `声明循环连接：to_node` 在每次 `step()` 时从 `from_node` 的上一时间步值读取
     ///
@@ -3652,6 +3545,33 @@ impl GraphInner {
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_tanh(&self.get_nodes(&[parent_id])?)?;
         self.add_node_to_list(handle, name, "tanh", &[parent_id])
+    }
+
+    /// 创建 Select 节点（从张量中选择指定轴和索引的切片）
+    ///
+    /// 用于 RNN 展开式设计：从 `[batch, seq_len, input_size]` 中提取单个时间步。
+    ///
+    /// # 参数
+    /// - `parent_id`: 输入节点 ID
+    /// - `axis`: 选择的轴
+    /// - `index`: 选择的索引
+    /// - `name`: 节点名称（可选）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 从 [batch, seq_len, input_size] 中提取第 t 个时间步
+    /// let x_t = graph.new_select_node(x_seq_id, 1, t, Some("x_t"))?;
+    /// // 输出形状: [batch, input_size]
+    /// ```
+    pub fn new_select_node(
+        &mut self,
+        parent_id: NodeId,
+        axis: usize,
+        index: usize,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_select(&self.get_nodes(&[parent_id])?, axis, index)?;
+        self.add_node_to_list(handle, name, "select", &[parent_id])
     }
 
     pub fn new_sigmoid_node(

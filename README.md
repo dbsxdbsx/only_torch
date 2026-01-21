@@ -38,23 +38,142 @@ let dot = graph.to_dot();
 
 ### 使用示例
 
-- **[Adaline 自适应线性神经元](tests/test_adaline.rs)** - 经典二分类算法实现，使用 Sign 节点直接输出 {-1, +1} 分类结果。本例使用了最原始的写法来构建计算图、自动微分和参数更新，适合初学者理解框架底层机制。测试显示 1000 样本 10 轮训练可达 95%+准确率（运行：`cargo test test_adaline -- --show-output`）
+> 所有示例均采用 **PyTorch 风格 API**，使用 `ModelState` + `Criterion` 智能缓存机制。
+> 运行方式：`cargo run --example <名称>` 或 `just example-<名称>`
 
-- **[优化器示例](tests/test_optimizer_example.rs)** - 在 Adaline 基础上引入 SGD 优化器，展示 mini-batch 训练、准确率评估等完整训练流程。演示了 Granular 种子 API 和 Graph 级别种子 API 的用法对比（运行：`cargo test test_optimizer_example -- --show-output`）
+#### 示例概览
 
-- **[XOR 异或问题](tests/test_xor.rs)** ⭐ - 经典非线性分类问题，展示多层网络的能力。网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 即可达到 100% 准确率。这是验证神经网络能够学习非线性函数的经典测试（运行：`cargo test test_xor -- --show-output`）
+| 示例 | 任务类型 | 核心特性 | 网络结构 | 运行命令 |
+|------|---------|---------|---------|---------|
+| [xor](examples/xor/) | 二分类 | Linear 层、Tanh 激活 | `2 → 4 → 1` | `cargo run --example xor` |
+| [iris](examples/iris/) | 多分类 | CrossEntropyLoss、真实数据集 | `4 → 8 → 3` | `cargo run --example iris` |
+| [sine_regression](examples/sine_regression/) | 回归 | MseLoss、函数拟合 | `1 → 32 → 1` | `cargo run --example sine_regression` |
+| [california_housing](examples/california_housing/) | 回归 | MseLoss、真实数据集、DataLoader | `8 → 128 → 64 → 32 → 1` | `cargo run --example california_housing` |
+| [mnist](examples/mnist/) | 图像分类 | CNN、MaxPool、大规模数据 | LeNet 风格 | `cargo run --example mnist` |
+| [parity_rnn_fixed_len](examples/parity_rnn_fixed_len/) | 序列分类 | **RNN 层**、固定长度序列 | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_fixed_len` |
+| [parity_rnn_var_len](examples/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
+| [parity_lstm_var_len](examples/parity_lstm_var_len/) | 序列分类 | **LSTM 层**、变长序列 | `LSTM(1→16) → FC(2)` | `cargo run --example parity_lstm_var_len` |
+| [parity_gru_var_len](examples/parity_gru_var_len/) | 序列分类 | **GRU 层**、变长序列 | `GRU(1→16) → FC(2)` | `cargo run --example parity_gru_var_len` |
 
-- **[MNIST 手写数字识别（单样本版）](tests/test_mnist.rs)** - 逐样本处理的 MVP 集成测试，验证 DataLoader + MLP 网络 + 训练循环的基本逻辑。适合理解底层自动微分机制，但训练较慢（运行：`cargo test test_mnist -- --show-output`）
+#### 详细说明
 
-- **[MNIST 手写数字识别（Batch 版）](tests/test_mnist_batch.rs)** ⭐⭐ - **推荐示例**，展示 Batch 机制的高效训练。网络结构：`Input(784) → Hidden(128, Sigmoid+bias) → Output(10, SoftmaxCrossEntropy)`，使用 `ones @ bias` 技巧实现 bias 广播。5000 样本训练可达 **90%+ 准确率**，约 50 秒完成（运行：`cargo test test_mnist_batch -- --show-output`）
+<details>
+<summary><b>基础示例</b>（点击展开）</summary>
 
-- **[MNIST Linear（MLP 架构）](tests/test_mnist_linear.rs)** ⭐⭐ - 使用 `linear()` Layer API 构建 MLP。网络结构：`Input(784) → FC1(128, Sigmoid) → FC2(10) → SoftmaxCrossEntropy`，展示 Layer 便捷 API 的使用方式（运行：`cargo test test_mnist_linear -- --show-output`）
+**XOR 异或问题** ⭐
 
-- **[MNIST CNN（LeNet 风格）](tests/test_mnist_cnn.rs)** ⭐⭐⭐ - **CNN 架构示例**，基于经典 LeNet-5 设计。网络结构：`Conv1(5x5) → AvgPool → Conv2(3x3) → MaxPool → FC1(64) → FC2(10)`，同时验证 AvgPool 和 MaxPool 两种池化层（运行：`cargo test test_mnist_cnn -- --show-output`）
+经典非线性分类问题，验证神经网络学习非线性函数的能力。
 
-- **[California Housing 房价回归](tests/test_california_housing_price.rs)** ⭐⭐ - **回归任务示例**，使用真实房价数据集。网络结构：`Input(8) → FC1(128, Softplus) → FC2(64, Softplus) → FC3(32, Softplus) → Output(1)`，展示 Layer API + Batch 模式 + MSELoss 的回归训练，约 10 个 epoch 达到 **70%+ R²**（运行：`cargo test test_california_housing_regression -- --show-output`）
+```bash
+cargo run --example xor
+# 约 100 epoch 达到 100% 准确率
+```
 
-- **[MNIST GAN（对抗生成网络）](tests/test_mnist_gan.rs)** ⭐⭐⭐ - **GAN 训练示例**，验证 `detach` 机制与多 Loss 交替训练。Generator：`z(64) → FC(128, LeakyReLU) → FC(784, Sigmoid)`，Discriminator：`784 → FC(128, LeakyReLU) → FC(1, Sigmoid)`。展示 `Adam::with_params()` 独立优化器、`graph.detach_node()`/`attach_node()` 梯度控制（运行：`cargo test test_mnist_gan -- --show-output`）
+**Iris 鸢尾花分类** ⭐
+
+使用经典 Iris 数据集进行三分类，展示 `CrossEntropyLoss` 在多分类任务中的使用。
+
+```bash
+cargo run --example iris
+# 约 200 epoch 达到 96%+ 准确率
+```
+
+</details>
+
+<details>
+<summary><b>回归示例</b>（点击展开）</summary>
+
+**正弦函数拟合**
+
+拟合 `y = sin(x)`，展示 `MseLoss` 在回归任务中的基本使用。
+
+```bash
+cargo run --example sine_regression
+# 500 epoch 后最大误差 < 0.1
+```
+
+**California Housing 房价预测** ⭐⭐
+
+使用真实房价数据集（20,000+ 样本），展示：
+- `ModelState` 模型状态管理
+- `MseLoss` 损失函数
+- `DataLoader` 批量加载
+- R² 评估指标
+
+```bash
+cargo run --example california_housing
+# 约 11 epoch 达到 R² ≥ 70%
+```
+
+</details>
+
+<details>
+<summary><b>图像分类示例</b>（点击展开）</summary>
+
+**MNIST 手写数字识别** ⭐⭐⭐
+
+基于 LeNet 风格的 CNN 架构，展示：
+- `Conv2d` 卷积层
+- `MaxPool2d` / `AvgPool2d` 池化层
+- 大规模图像数据处理
+
+```bash
+cargo run --example mnist
+# 达到 90%+ 准确率
+```
+
+</details>
+
+<details>
+<summary><b>序列/RNN 示例</b>（点击展开）</summary>
+
+**RNN 奇偶性检测（固定长度）**
+
+判断二进制序列中 1 的个数是奇数还是偶数，展示 RNN 层的基本使用。
+
+```bash
+cargo run --example parity_rnn_fixed_len
+# 固定 seq_len=10，达到 95%+ 准确率
+```
+
+**RNN 奇偶性检测（变长序列）** ⭐⭐
+
+展示 **变长序列** 处理的完整流程：
+- `VarLenDataset` + `BucketedDataLoader` 分桶加载
+- `ModelState` 按形状智能缓存
+- `CrossEntropyLoss` 按输出节点智能缓存
+
+```bash
+cargo run --example parity_rnn_var_len
+# 混合 seq_len=5/7/10，达到 90%+ 准确率
+```
+
+**LSTM/GRU 变长序列** ⭐⭐
+
+与 RNN 版本相同的任务，但使用 LSTM/GRU 层展示不同循环单元的使用。
+
+```bash
+cargo run --example parity_lstm_var_len
+cargo run --example parity_gru_var_len
+```
+
+</details>
+
+#### 特性覆盖矩阵
+
+| 特性 | xor | iris | sine | california | mnist | parity* |
+|------|:---:|:----:|:----:|:----------:|:-----:|:-------:|
+| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Conv2d` 层 | | | | | ✅ | |
+| `RNN/LSTM/GRU` 层 | | | | | | ✅ |
+| `ModelState` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ |
+| `MseLoss` | | | ✅ | ✅ | | |
+| `DataLoader` | | ✅ | | ✅ | ✅ | |
+| `BucketedDataLoader` | | | | | | ✅ |
+| 变长序列 | | | | | | ✅ |
+
+> **底层测试**：如需了解框架底层机制（手动构建计算图、自动微分原理等），可参考 `tests/` 目录下的单元测试和 `tests/archive/` 下的早期集成测试。
 
 ### 性能提示
 
@@ -115,13 +234,10 @@ opt-level = 3
 ### 🔵 NEAT 相关（长期目标）
 
 - 动态节点添加机制完善:
- -- ```
   - 后期当引入 NEAT 机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
-  - 当后期（NEAT 阶段）需要在一个已经 forwarded 的图中添加节点（如将已经被使用过的 var1、var2 结合一个新的未使用的 var3 构建一个 add 节点），可能需要添加一个`reset_forward_cnt`方法来保证图 forward 的一致性。
-```
+  - 当后期（NEAT 阶段）需要在一个已经 forwarded 的图中添加节点（如将已经被使用过的 var1、var2 结合一个新的未使用的 var3 构建一个 add 节点），可能需要添加一个 `reset_forward_cnt` 方法来保证图 forward 的一致性。
 - `reset_forward_cnt` 方法（支持已 forward 图的节点扩展）
-- 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化,能 ok 拓展至
-linear 等常用层，容易添加 edge(如已存在的 add 节点的父节点)。
+- 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化，能 ok 拓展至 linear 等常用层，容易添加 edge（如已存在的 add 节点的父节点）。
 
 ### ⚫ 实战验证
 

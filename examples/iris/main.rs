@@ -1,9 +1,9 @@
-//! # Iris 鸢尾花分类示例（三分类）
+//! # Iris 鸢尾花分类示例（三分类，PyTorch 风格）
 //!
 //! 展示多分类任务：
 //! - 经典 Iris 数据集（150 样本，4 特征，3 类别）
 //! - 三层 MLP + Tanh 激活
-//! - `CrossEntropy` 损失（多分类）
+//! - `CrossEntropyLoss` 损失（PyTorch 风格）
 //!
 //! ## 运行
 //! ```bash
@@ -15,10 +15,10 @@ mod model;
 
 use data::{CLASS_NAMES, get_labels, load_iris};
 use model::IrisMLP;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
+use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 
 fn main() -> Result<(), GraphError> {
-    println!("=== Iris 鸢尾花分类示例（三分类）===\n");
+    println!("=== Iris 鸢尾花分类示例（PyTorch 风格）===\n");
 
     // 1. 加载数据
     let (x_train, y_train) = load_iris();
@@ -29,32 +29,32 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = IrisMLP::new(&graph)?;
 
-    // 3. 输入/目标（batch 模式）
-    let x = graph.input(&x_train)?;
-    let target = graph.input(&y_train)?;
+    // 3. 损失函数（PyTorch 风格）
+    let criterion = CrossEntropyLoss::new();
 
-    // 4. 前向 + CrossEntropy 损失
-    let logits = model.forward(&x);
-    let loss = logits.cross_entropy(&target)?;
-
-    // 5. 优化器
+    // 4. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.05);
 
     println!("数据: {n_samples} 个样本，4 个特征，3 个类别");
     println!("类别: {CLASS_NAMES:?}");
     println!("网络: Input(4) -> Linear(10, Tanh) -> Linear(10, Tanh) -> Linear(3)");
-    println!("优化器: Adam (lr=0.05), 损失: CrossEntropy\n");
+    println!("优化器: Adam (lr=0.05), 损失: CrossEntropyLoss\n");
 
-    // 6. 训练
+    // 5. 训练（PyTorch 风格）
     for epoch in 0..200 {
+        // PyTorch 风格：直接传 Tensor
+        let output = model.forward(&x_train)?;
+        let loss = criterion.forward(&output, &y_train)?;
+
+        // 反向传播 + 参数更新
         optimizer.zero_grad()?;
         let loss_val = loss.backward()?;
         optimizer.step()?;
 
         if (epoch + 1) % 50 == 0 {
-            // 评估（使用 argmax 简化）
-            logits.forward()?;
-            let preds = logits.value()?.unwrap();
+            // 评估（重新 forward 获取最新预测）
+            let output = model.forward(&x_train)?;
+            let preds = output.value()?.unwrap();
             let pred_classes = preds.argmax(1); // [n_samples] 预测类别
 
             let correct = (0..n_samples)
@@ -64,16 +64,14 @@ fn main() -> Result<(), GraphError> {
 
             println!(
                 "Epoch {:3}: loss = {:.4}, accuracy = {:.1}%",
-                epoch + 1,
-                loss_val,
-                acc
+                epoch + 1, loss_val, acc
             );
         }
     }
 
-    // 7. 最终评估（使用 argmax 简化）
-    logits.forward()?;
-    let preds = logits.value()?.unwrap();
+    // 6. 最终评估
+    let output = model.forward(&x_train)?;
+    let preds = output.value()?.unwrap();
     let pred_classes = preds.argmax(1); // [n_samples] 预测类别
 
     let mut correct = 0;

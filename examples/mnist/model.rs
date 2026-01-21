@@ -1,8 +1,9 @@
 //! MNIST MLP 模型
 //!
-//! 两层全连接网络用于手写数字识别
+//! 两层全连接网络用于手写数字识别（PyTorch 风格）
 
-use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::tensor::Tensor;
 
 /// MNIST MLP
 ///
@@ -10,6 +11,7 @@ use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
 pub struct MnistMLP {
     fc1: Linear,
     fc2: Linear,
+    state: ModelState,
 }
 
 impl MnistMLP {
@@ -18,12 +20,16 @@ impl MnistMLP {
             // 784 = 28x28 (MNIST 图片展平后的维度)
             fc1: Linear::new(graph, 784, 128, true, "fc1")?,
             fc2: Linear::new(graph, 128, 10, true, "fc2")?,
+            state: ModelState::new(graph),
         })
     }
 
-    pub fn forward(&self, x: &Var) -> Var {
-        let h1 = self.fc1.forward(x).softplus();
-        self.fc2.forward(&h1)
+    /// PyTorch 风格 forward：直接接收 Tensor
+    pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
+        self.state.forward(x, |input| {
+            let h1 = self.fc1.forward(input).softplus();
+            Ok(self.fc2.forward(&h1))
+        })
     }
 }
 

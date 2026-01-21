@@ -6,22 +6,24 @@
  * @Description  : 负责神经网络（neural network）的构建
  */
 
+mod criterion;
 mod descriptor;
 mod display;
 mod graph;
 pub mod layer;
-mod memory_layer;
+mod model_state;
 mod module;
 mod nodes;
 pub mod optimizer;
 mod var;
 mod var_ops;
 
+pub use criterion::{CrossEntropyLoss, MseLoss};
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{Graph, GraphError, GraphInner, ImageFormat, VisualizationOutput};
 pub use layer::{AvgPool2d, Conv2d, Gru, Linear, Lstm, MaxPool2d, Rnn};
-pub use memory_layer::MemoryLayer;
+pub use model_state::ModelState;
 pub use module::Module;
 pub use nodes::NodeId;
 pub use nodes::raw_node::Reduction;

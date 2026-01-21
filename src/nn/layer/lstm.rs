@@ -1,7 +1,7 @@
 /*
  * @Author       : 老董
- * @Date         : 2026-01-17
- * @Description  : Lstm (长短期记忆) 层 - PyTorch 风格 API
+ * @Date         : 2026-01-21
+ * @Description  : Lstm (长短期记忆) 层 - 展开式设计（PyTorch 风格 API）
  *
  * 公式:
  *   i_t = σ(x_t @ W_ii + h_{t-1} @ W_hi + b_i)   # 输入门
@@ -11,38 +11,51 @@
  *   c_t = f_t ⊙ c_{t-1} + i_t ⊙ g_t              # 细胞状态
  *   h_t = o_t ⊙ tanh(c_t)                        # 隐藏状态
  *
- * 输入/输出形状：
- * - 输入：[batch_size, input_size]
- * - 输出：hidden [batch_size, hidden_size], cell [batch_size, hidden_size]
+ * 与 PyTorch nn.LSTM 对齐:
+ * - 输入: [batch, seq_len, input_size]
+ * - 输出: [batch, hidden_size]（最后一个时间步的隐藏状态）
+ *
+ * 展开式设计：
+ * - 每次 forward 根据输入序列长度动态展开时间步
+ * - 使用 Select 节点从序列中提取每个时间步
+ * - BPTT 通过图的反向传播自动完成
+ * - 配合 ModelState 实现 PyTorch 风格的 API
  */
 
+use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
 use crate::nn::{Graph, GraphError, Init, Module, Var};
-use crate::tensor::Tensor;
 
-// ==================== 新版 Lstm 结构体 ====================
-
-/// Lstm (长短期记忆) 层
+/// Lstm (长短期记忆) 层 - 展开式设计
 ///
 /// `PyTorch` 风格的 LSTM 层，包含输入门、遗忘门、候选细胞和输出门。
 ///
 /// # 输入/输出形状
-/// - 输入：[`batch_size`, `input_size`]
-/// - 输出：hidden [`batch_size`, `hidden_size`], cell [`batch_size`, `hidden_size`]
+/// - 输入：[`batch_size`, `seq_len`, `input_size`]
+/// - 输出：[`batch_size`, `hidden_size`]（最后一个时间步）
 ///
 /// # 使用示例
 /// ```ignore
-/// let lstm = Lstm::new(&graph, 10, 20, 32, "lstm1")?;
+/// // 定义模型
+/// pub struct MyLstmModel {
+///     lstm: Lstm,
+///     fc: Linear,
+///     state: ModelState,
+/// }
 ///
-/// // 单步前向传播
-/// lstm.step(&x_t)?;
-/// let h_t = lstm.hidden().value()?;
-/// let c_t = lstm.cell().value()?;
+/// impl MyLstmModel {
+///     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
+///         self.state.forward(x, |input| {
+///             let h = self.lstm.forward(input)?;
+///             Ok(self.fc.forward(&h))
+///         })
+///     }
+/// }
 /// ```
 pub struct Lstm {
     // === 输入门参数 ===
-    w_ii: Var,
-    w_hi: Var,
-    b_i: Var,
+    w_ii: Var, // [input_size, hidden_size]
+    w_hi: Var, // [hidden_size, hidden_size]
+    b_i: Var,  // [1, hidden_size]
     // === 遗忘门参数 ===
     w_if: Var,
     w_hf: Var,
@@ -55,32 +68,32 @@ pub struct Lstm {
     w_io: Var,
     w_ho: Var,
     b_o: Var,
-    // === 状态节点 ===
-    hidden_output: Var,
-    cell_output: Var,
-    hidden_input: Var,
-    cell_input: Var,
-    // === 输入节点 ===
-    input_node: Var,
     // === Graph 和配置 ===
     graph: Graph,
     input_size: usize,
     hidden_size: usize,
-    batch_size: usize,
     #[allow(dead_code)]
     name: String,
 }
 
 impl Lstm {
     /// 创建新的 Lstm 层
+    ///
+    /// # 参数
+    /// - `graph`: 计算图句柄
+    /// - `input_size`: 输入特征维度
+    /// - `hidden_size`: 隐藏状态维度
+    /// - `name`: 层名称前缀
+    ///
+    /// # 返回
+    /// Lstm 层实例
     pub fn new(
         graph: &Graph,
         input_size: usize,
         hidden_size: usize,
-        batch_size: usize,
         name: &str,
     ) -> Result<Self, GraphError> {
-        // 创建参数节点
+        // === 输入门参数 ===
         let w_ii = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
@@ -93,6 +106,7 @@ impl Lstm {
         )?;
         let b_i = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_i"))?;
 
+        // === 遗忘门参数 ===
         let w_if = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
@@ -103,8 +117,10 @@ impl Lstm {
             Init::Kaiming,
             &format!("{name}_W_hf"),
         )?;
-        let b_f = graph.parameter(&[1, hidden_size], Init::Ones, &format!("{name}_b_f"))?; // 遗忘门偏置初始化为 1
+        // 遗忘门偏置初始化为 1（帮助记忆）
+        let b_f = graph.parameter(&[1, hidden_size], Init::Ones, &format!("{name}_b_f"))?;
 
+        // === 候选细胞参数 ===
         let w_ig = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
@@ -117,6 +133,7 @@ impl Lstm {
         )?;
         let b_g = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_g"))?;
 
+        // === 输出门参数 ===
         let w_io = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
@@ -128,120 +145,6 @@ impl Lstm {
             &format!("{name}_W_ho"),
         )?;
         let b_o = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_o"))?;
-
-        // 创建输入节点
-        let input_node = graph.zeros(&[batch_size, input_size])?;
-
-        // 创建状态节点和计算图结构
-        let (hidden_input, cell_input, hidden_output, cell_output) = {
-            let mut g = graph.inner_mut();
-
-            // 创建状态节点
-            let h_prev_id =
-                g.new_state_node(&[batch_size, hidden_size], Some(&format!("{name}_h_prev")))?;
-            g.set_node_value(h_prev_id, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
-
-            let c_prev_id =
-                g.new_state_node(&[batch_size, hidden_size], Some(&format!("{name}_c_prev")))?;
-            g.set_node_value(c_prev_id, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
-
-            // === 输入门计算 ===
-            // Add 支持广播：[batch, hidden] + [batch, hidden] + [1, hidden]
-            let x_ii = g.new_mat_mul_node(
-                input_node.node_id(),
-                w_ii.node_id(),
-                Some(&format!("{name}_x_ii")),
-            )?;
-            let h_hi =
-                g.new_mat_mul_node(h_prev_id, w_hi.node_id(), Some(&format!("{name}_h_hi")))?;
-            let pre_i =
-                g.new_add_node(&[x_ii, h_hi, b_i.node_id()], Some(&format!("{name}_pre_i")))?;
-            let i_gate = g.new_sigmoid_node(pre_i, Some(&format!("{name}_i_gate")))?;
-
-            // === 遗忘门计算 ===
-            let x_if = g.new_mat_mul_node(
-                input_node.node_id(),
-                w_if.node_id(),
-                Some(&format!("{name}_x_if")),
-            )?;
-            let h_hf =
-                g.new_mat_mul_node(h_prev_id, w_hf.node_id(), Some(&format!("{name}_h_hf")))?;
-            let pre_f =
-                g.new_add_node(&[x_if, h_hf, b_f.node_id()], Some(&format!("{name}_pre_f")))?;
-            let f_gate = g.new_sigmoid_node(pre_f, Some(&format!("{name}_f_gate")))?;
-
-            // === 候选细胞计算 ===
-            let x_ig = g.new_mat_mul_node(
-                input_node.node_id(),
-                w_ig.node_id(),
-                Some(&format!("{name}_x_ig")),
-            )?;
-            let h_hg =
-                g.new_mat_mul_node(h_prev_id, w_hg.node_id(), Some(&format!("{name}_h_hg")))?;
-            let pre_g =
-                g.new_add_node(&[x_ig, h_hg, b_g.node_id()], Some(&format!("{name}_pre_g")))?;
-            let g_gate = g.new_tanh_node(pre_g, Some(&format!("{name}_g_gate")))?;
-
-            // === 输出门计算 ===
-            let x_io = g.new_mat_mul_node(
-                input_node.node_id(),
-                w_io.node_id(),
-                Some(&format!("{name}_x_io")),
-            )?;
-            let h_ho =
-                g.new_mat_mul_node(h_prev_id, w_ho.node_id(), Some(&format!("{name}_h_ho")))?;
-            let pre_o =
-                g.new_add_node(&[x_io, h_ho, b_o.node_id()], Some(&format!("{name}_pre_o")))?;
-            let o_gate = g.new_sigmoid_node(pre_o, Some(&format!("{name}_o_gate")))?;
-
-            // === 细胞状态更新 ===
-            let f_c = g.new_multiply_node(f_gate, c_prev_id, Some(&format!("{name}_f_c")))?;
-            let i_g = g.new_multiply_node(i_gate, g_gate, Some(&format!("{name}_i_g")))?;
-            let cell_id = g.new_add_node(&[f_c, i_g], Some(&format!("{name}_c")))?;
-
-            // === 隐藏状态更新 ===
-            let tanh_c = g.new_tanh_node(cell_id, Some(&format!("{name}_tanh_c")))?;
-            let hidden_id = g.new_multiply_node(o_gate, tanh_c, Some(&format!("{name}_h")))?;
-
-            // === 建立循环连接 ===
-            g.connect_recurrent(hidden_id, h_prev_id)?;
-            g.connect_recurrent(cell_id, c_prev_id)?;
-
-            // 注册层分组
-            g.register_layer_group(
-                name,
-                "Lstm",
-                &format!("{input_size}→{hidden_size}"),
-                vec![
-                    w_ii.node_id(),
-                    w_hi.node_id(),
-                    b_i.node_id(),
-                    w_if.node_id(),
-                    w_hf.node_id(),
-                    b_f.node_id(),
-                    w_ig.node_id(),
-                    w_hg.node_id(),
-                    b_g.node_id(),
-                    w_io.node_id(),
-                    w_ho.node_id(),
-                    b_o.node_id(),
-                    i_gate,
-                    f_gate,
-                    g_gate,
-                    o_gate,
-                    cell_id,
-                    hidden_id,
-                ],
-            );
-
-            // 创建 Var
-            let h_prev = Var::new(h_prev_id, graph.inner_rc());
-            let c_prev = Var::new(c_prev_id, graph.inner_rc());
-            let hidden = Var::new(hidden_id, graph.inner_rc());
-            let cell = Var::new(cell_id, graph.inner_rc());
-
-            (h_prev, c_prev, hidden, cell)
-        };
 
         Ok(Self {
             w_ii,
@@ -256,110 +159,166 @@ impl Lstm {
             w_io,
             w_ho,
             b_o,
-            hidden_output,
-            cell_output,
-            hidden_input,
-            cell_input,
-            input_node,
             graph: graph.clone(),
             input_size,
             hidden_size,
-            batch_size,
             name: name.to_string(),
         })
     }
 
-    /// 单步前向传播
-    pub fn step(&self, x: &Tensor) -> Result<(&Var, &Var), GraphError> {
-        self.input_node.set_value(x)?;
-        self.graph.inner_mut().step(self.hidden_output.node_id())?;
-        Ok((&self.hidden_output, &self.cell_output))
+    /// 前向传播
+    ///
+    /// 自动展开所有时间步，返回最后一个时间步的隐藏状态。
+    ///
+    /// # 参数
+    /// - `x`: 输入 Var，形状 [`batch_size`, `seq_len`, `input_size`]
+    ///
+    /// # 返回
+    /// 最后一个时间步的隐藏状态 Var，形状 [`batch_size`, `hidden_size`]
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 与 ModelState 配合使用（推荐）
+    /// self.state.forward(x, |input| {
+    ///     let h = self.lstm.forward(input)?;
+    ///     Ok(self.fc.forward(&h))
+    /// })
+    /// ```
+    pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
+        let shape = x.value_expected_shape();
+        if shape.len() != 3 {
+            return Err(GraphError::InvalidOperation(format!(
+                "Lstm.forward 需要 3D 输入 [batch, seq_len, input], 实际: {:?}",
+                shape
+            )));
+        }
+
+        let (batch_size, seq_len, input_size) = (shape[0], shape[1], shape[2]);
+
+        // 验证输入维度
+        if input_size != self.input_size {
+            return Err(GraphError::InvalidOperation(format!(
+                "input_size 不匹配: 期望 {}, 实际 {}",
+                self.input_size, input_size
+            )));
+        }
+
+        // 展开所有时间步
+        self.unroll(x, batch_size, seq_len)
     }
 
-    /// 完整重置
-    pub fn reset(&self) {
-        self.graph.inner_mut().reset();
-    }
+    /// 展开 LSTM 时间步
+    fn unroll(&self, x: &Var, batch_size: usize, seq_len: usize) -> Result<Var, GraphError> {
+        // 初始隐藏状态和细胞状态（零）
+        let mut h = self.graph.zeros(&[batch_size, self.hidden_size])?;
+        let mut c = self.graph.zeros(&[batch_size, self.hidden_size])?;
 
-    /// 重置隐藏状态和细胞状态为零
-    pub fn reset_state(&self) -> Result<(), GraphError> {
-        self.hidden_input
-            .set_value(&Tensor::zeros(&[self.batch_size, self.hidden_size]))?;
-        self.cell_input
-            .set_value(&Tensor::zeros(&[self.batch_size, self.hidden_size]))?;
-        Ok(())
+        // 展开所有时间步
+        for t in 0..seq_len {
+            // 选择第 t 个时间步: x_t = x[:, t, :] -> [batch, input_size]
+            let x_t = x.select(1, t)?;
+
+            // === 输入门 ===
+            // i_t = σ(x_t @ W_ii + h @ W_hi + b_i)
+            let x_ii = x_t.matmul(&self.w_ii)?;
+            let h_hi = h.matmul(&self.w_hi)?;
+            let i_gate = (&x_ii + &h_hi + &self.b_i).sigmoid();
+
+            // === 遗忘门 ===
+            // f_t = σ(x_t @ W_if + h @ W_hf + b_f)
+            let x_if = x_t.matmul(&self.w_if)?;
+            let h_hf = h.matmul(&self.w_hf)?;
+            let f_gate = (&x_if + &h_hf + &self.b_f).sigmoid();
+
+            // === 候选细胞 ===
+            // g_t = tanh(x_t @ W_ig + h @ W_hg + b_g)
+            let x_ig = x_t.matmul(&self.w_ig)?;
+            let h_hg = h.matmul(&self.w_hg)?;
+            let g_gate = (&x_ig + &h_hg + &self.b_g).tanh();
+
+            // === 输出门 ===
+            // o_t = σ(x_t @ W_io + h @ W_ho + b_o)
+            let x_io = x_t.matmul(&self.w_io)?;
+            let h_ho = h.matmul(&self.w_ho)?;
+            let o_gate = (&x_io + &h_ho + &self.b_o).sigmoid();
+
+            // === 更新细胞状态 ===
+            // c_t = f_t ⊙ c + i_t ⊙ g_t
+            c = &f_gate * &c + &i_gate * &g_gate;
+
+            // === 更新隐藏状态 ===
+            // h_t = o_t ⊙ tanh(c_t)
+            h = &o_gate * &c.tanh();
+        }
+
+        Ok(h)
     }
 
     // === Getter 方法 ===
-    pub const fn hidden(&self) -> &Var {
-        &self.hidden_output
-    }
-    pub const fn cell(&self) -> &Var {
-        &self.cell_output
-    }
-    pub const fn hidden_input(&self) -> &Var {
-        &self.hidden_input
-    }
-    pub const fn cell_input(&self) -> &Var {
-        &self.cell_input
-    }
-    pub const fn input(&self) -> &Var {
-        &self.input_node
-    }
 
-    // 输入门参数
+    /// 获取输入门权重 `W_ii`
     pub const fn w_ii(&self) -> &Var {
         &self.w_ii
     }
+    /// 获取输入门权重 `W_hi`
     pub const fn w_hi(&self) -> &Var {
         &self.w_hi
     }
+    /// 获取输入门偏置 `b_i`
     pub const fn b_i(&self) -> &Var {
         &self.b_i
     }
 
-    // 遗忘门参数
+    /// 获取遗忘门权重 `W_if`
     pub const fn w_if(&self) -> &Var {
         &self.w_if
     }
+    /// 获取遗忘门权重 `W_hf`
     pub const fn w_hf(&self) -> &Var {
         &self.w_hf
     }
+    /// 获取遗忘门偏置 `b_f`
     pub const fn b_f(&self) -> &Var {
         &self.b_f
     }
 
-    // 候选细胞参数
+    /// 获取候选细胞权重 `W_ig`
     pub const fn w_ig(&self) -> &Var {
         &self.w_ig
     }
+    /// 获取候选细胞权重 `W_hg`
     pub const fn w_hg(&self) -> &Var {
         &self.w_hg
     }
+    /// 获取候选细胞偏置 `b_g`
     pub const fn b_g(&self) -> &Var {
         &self.b_g
     }
 
-    // 输出门参数
+    /// 获取输出门权重 `W_io`
     pub const fn w_io(&self) -> &Var {
         &self.w_io
     }
+    /// 获取输出门权重 `W_ho`
     pub const fn w_ho(&self) -> &Var {
         &self.w_ho
     }
+    /// 获取输出门偏置 `b_o`
     pub const fn b_o(&self) -> &Var {
         &self.b_o
     }
 
+    /// 获取输入维度
     pub const fn input_size(&self) -> usize {
         self.input_size
     }
+
+    /// 获取隐藏维度
     pub const fn hidden_size(&self) -> usize {
         self.hidden_size
     }
-    pub const fn batch_size(&self) -> usize {
-        self.batch_size
-    }
+
+    /// 获取 Graph 引用
     pub const fn graph(&self) -> &Graph {
         &self.graph
     }
@@ -368,20 +327,22 @@ impl Lstm {
 impl Module for Lstm {
     fn parameters(&self) -> Vec<Var> {
         vec![
+            // 输入门
             self.w_ii.clone(),
             self.w_hi.clone(),
             self.b_i.clone(),
+            // 遗忘门
             self.w_if.clone(),
             self.w_hf.clone(),
             self.b_f.clone(),
+            // 候选细胞
             self.w_ig.clone(),
             self.w_hg.clone(),
             self.b_g.clone(),
+            // 输出门
             self.w_io.clone(),
             self.w_ho.clone(),
             self.b_o.clone(),
         ]
     }
 }
-
-// 单元测试位于 src/nn/tests/layer_lstm.rs

@@ -92,3 +92,23 @@ path = "examples/iris/main.rs"
 [[example]]
 name = "mnist"
 path = "examples/mnist/main.rs"
+
+[[example]]
+name = "california_housing"
+path = "examples/california_housing/main.rs"
+
+[[example]]
+name = "parity_rnn_fixed_len"
+path = "examples/parity_rnn_fixed_len/main.rs"
+
+[[example]]
+name = "parity_rnn_var_len"
+path = "examples/parity_rnn_var_len/main.rs"
+
+[[example]]
+name = "parity_lstm_var_len"
+path = "examples/parity_lstm_var_len/main.rs"
+
+[[example]]
+name = "parity_gru_var_len"
+path = "examples/parity_gru_var_len/main.rs"

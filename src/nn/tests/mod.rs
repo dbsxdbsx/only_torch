@@ -1,4 +1,5 @@
 mod batch_mechanism; // Batch 机制测试
+mod criterion; // Criterion（损失函数封装）智能缓存测试
 mod bptt_pytorch_comparison; // BPTT PyTorch 对照测试
 mod gradient_flow_control; // 梯度流控制机制测试（no_grad、detach、retain_graph）
 mod graph_backward;
@@ -12,7 +13,8 @@ mod layer_gru; // GRU 层便捷函数
 mod layer_linear; // Linear 层测试（包含 linear() 遗留 API 和 Linear 结构体推荐 API）
 mod layer_lstm; // LSTM 层便捷函数
 mod layer_max_pool2d; // MaxPool2d 层便捷函数
-mod layer_rnn; // RNN 层便捷函数
+mod layer_rnn; // RNN 层测试（展开式设计）
+mod model_state; // ModelState（模型状态管理器）智能缓存测试
 mod module_trait; // Module trait 测试（V2 API）
 mod node_add;
 mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
@@ -27,6 +29,7 @@ mod node_mse_loss; // MSELoss 节点（均方误差损失）
 mod node_multiply;
 mod node_parameter;
 mod node_reshape; // Reshape 节点（形状变换）
+mod node_select; // Select 节点（张量索引选择，RNN 展开式设计用）
 mod node_sigmoid;
 mod node_sign; // Sign 符号函数（正→1, 负→-1, 零→0）
 mod node_softmax_cross_entropy;

@@ -7,11 +7,13 @@
  * - 自动分批 (batch_size)
  * - 随机打乱 (shuffle)
  * - 丢弃不完整批次 (drop_last)
+ * - 变长序列分桶 (VarLenDataset + BucketedDataLoader)
  */
 
 use crate::tensor::Tensor;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
+use std::collections::HashMap;
 
 /// TensorDataset - 持有特征和标签的数据集
 ///
@@ -261,4 +263,252 @@ fn extract_batch(dataset: &TensorDataset, indices: &[usize]) -> (Tensor, Tensor)
     let labels_batch = Tensor::new(&label_data, &new_label_shape);
 
     (features_batch, labels_batch)
+}
+
+// ==================== 变长序列支持 ====================
+
+/// 变长样本
+///
+/// 用于存储长度可变的序列数据。
+#[derive(Debug, Clone)]
+pub struct VarLenSample {
+    /// 序列数据（展平为 1D，实际形状由 seq_len 和 feature_size 决定）
+    pub features: Vec<f32>,
+    /// 序列长度
+    pub seq_len: usize,
+    /// 特征维度
+    pub feature_size: usize,
+    /// 标签（固定大小）
+    pub label: Vec<f32>,
+}
+
+impl VarLenSample {
+    /// 创建新的变长样本
+    ///
+    /// # 参数
+    /// - `features`: 特征数据，长度应为 seq_len * feature_size
+    /// - `seq_len`: 序列长度
+    /// - `feature_size`: 特征维度
+    /// - `label`: 标签
+    pub fn new(features: Vec<f32>, seq_len: usize, feature_size: usize, label: Vec<f32>) -> Self {
+        debug_assert_eq!(
+            features.len(),
+            seq_len * feature_size,
+            "features 长度应为 seq_len * feature_size"
+        );
+        Self {
+            features,
+            seq_len,
+            feature_size,
+            label,
+        }
+    }
+}
+
+/// 变长数据集
+///
+/// 存储长度可变的序列样本，支持按长度分桶。
+///
+/// # 示例
+/// ```ignore
+/// let mut dataset = VarLenDataset::new(1, 2);  // feature_size=1, label_size=2
+/// dataset.push(VarLenSample::new(vec![1.0, 0.0, 1.0], 3, 1, vec![0.0, 1.0]));
+/// dataset.push(VarLenSample::new(vec![1.0, 1.0, 0.0, 1.0, 0.0], 5, 1, vec![1.0, 0.0]));
+///
+/// let loader = BucketedDataLoader::new(&dataset);
+/// for (x_batch, y_batch) in loader.iter() {
+///     // x_batch 同一批次内序列长度相同
+/// }
+/// ```
+pub struct VarLenDataset {
+    samples: Vec<VarLenSample>,
+    feature_size: usize,
+    label_size: usize,
+}
+
+impl VarLenDataset {
+    /// 创建新的变长数据集
+    ///
+    /// # 参数
+    /// - `feature_size`: 特征维度
+    /// - `label_size`: 标签维度
+    pub fn new(feature_size: usize, label_size: usize) -> Self {
+        Self {
+            samples: Vec::new(),
+            feature_size,
+            label_size,
+        }
+    }
+
+    /// 添加样本
+    pub fn push(&mut self, sample: VarLenSample) {
+        debug_assert_eq!(sample.feature_size, self.feature_size);
+        debug_assert_eq!(sample.label.len(), self.label_size);
+        self.samples.push(sample);
+    }
+
+    /// 获取样本数量
+    pub fn len(&self) -> usize {
+        self.samples.len()
+    }
+
+    /// 检查是否为空
+    pub fn is_empty(&self) -> bool {
+        self.samples.is_empty()
+    }
+
+    /// 获取所有样本的引用
+    pub fn samples(&self) -> &[VarLenSample] {
+        &self.samples
+    }
+
+    /// 获取特征维度
+    pub fn feature_size(&self) -> usize {
+        self.feature_size
+    }
+
+    /// 获取标签维度
+    pub fn label_size(&self) -> usize {
+        self.label_size
+    }
+
+    /// 按长度分桶
+    fn bucket_by_length(&self) -> HashMap<usize, Vec<usize>> {
+        let mut buckets: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (idx, sample) in self.samples.iter().enumerate() {
+            buckets.entry(sample.seq_len).or_default().push(idx);
+        }
+        buckets
+    }
+}
+
+/// 分桶数据加载器
+///
+/// 自动将相同长度的序列放在一起批处理。
+///
+/// # 示例
+/// ```ignore
+/// let loader = BucketedDataLoader::new(&dataset);
+///
+/// for (x_batch, y_batch) in loader.iter() {
+///     // x_batch: [batch, seq_len, feature_size]
+///     // 同一批次内 seq_len 相同，不同批次可能不同
+///     let output = model.forward(&x_batch)?;
+///     let loss = criterion.forward(&output, &y_batch)?;
+/// }
+/// ```
+pub struct BucketedDataLoader<'a> {
+    dataset: &'a VarLenDataset,
+    shuffle: bool,
+    seed: Option<u64>,
+}
+
+impl<'a> BucketedDataLoader<'a> {
+    /// 创建分桶数据加载器
+    ///
+    /// # 参数
+    /// - `dataset`: 变长数据集引用
+    pub fn new(dataset: &'a VarLenDataset) -> Self {
+        Self {
+            dataset,
+            shuffle: false,
+            seed: None,
+        }
+    }
+
+    /// 设置是否打乱（在每个桶内打乱）
+    pub fn shuffle(mut self, shuffle: bool) -> Self {
+        self.shuffle = shuffle;
+        self
+    }
+
+    /// 设置随机种子
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = Some(seed);
+        self
+    }
+
+    /// 创建迭代器
+    ///
+    /// 每次迭代返回同一长度的所有样本组成的批次。
+    pub fn iter(&self) -> BucketedDataLoaderIterator<'_> {
+        let mut buckets: Vec<(usize, Vec<usize>)> =
+            self.dataset.bucket_by_length().into_iter().collect();
+
+        // 可选：按 seq_len 排序（使输出顺序确定）
+        buckets.sort_by_key(|(seq_len, _)| *seq_len);
+
+        // 可选：打乱每个桶内的样本顺序
+        if self.shuffle {
+            if let Some(seed) = self.seed {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+                for (_, indices) in &mut buckets {
+                    indices.shuffle(&mut rng);
+                }
+            } else {
+                let mut rng = rand::thread_rng();
+                for (_, indices) in &mut buckets {
+                    indices.shuffle(&mut rng);
+                }
+            }
+        }
+
+        BucketedDataLoaderIterator {
+            dataset: self.dataset,
+            buckets,
+            current_bucket: 0,
+        }
+    }
+
+    /// 获取桶的数量（即不同长度的数量）
+    pub fn num_buckets(&self) -> usize {
+        self.dataset.bucket_by_length().len()
+    }
+}
+
+/// 分桶数据加载器迭代器
+pub struct BucketedDataLoaderIterator<'a> {
+    dataset: &'a VarLenDataset,
+    buckets: Vec<(usize, Vec<usize>)>,
+    current_bucket: usize,
+}
+
+impl<'a> Iterator for BucketedDataLoaderIterator<'a> {
+    type Item = (Tensor, Tensor);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_bucket >= self.buckets.len() {
+            return None;
+        }
+
+        let (seq_len, indices) = &self.buckets[self.current_bucket];
+        self.current_bucket += 1;
+
+        let batch_size = indices.len();
+        let feature_size = self.dataset.feature_size;
+        let label_size = self.dataset.label_size;
+
+        // 收集特征数据
+        let mut feature_data = Vec::with_capacity(batch_size * seq_len * feature_size);
+        for &idx in indices {
+            feature_data.extend(&self.dataset.samples[idx].features);
+        }
+
+        // 收集标签数据
+        let mut label_data = Vec::with_capacity(batch_size * label_size);
+        for &idx in indices {
+            label_data.extend(&self.dataset.samples[idx].label);
+        }
+
+        let features = Tensor::new(&feature_data, &[batch_size, *seq_len, feature_size]);
+        let labels = Tensor::new(&label_data, &[batch_size, label_size]);
+
+        Some((features, labels))
+    }
+}
+
+impl<'a> ExactSizeIterator for BucketedDataLoaderIterator<'a> {
+    fn len(&self) -> usize {
+        self.buckets.len() - self.current_bucket
+    }
 }

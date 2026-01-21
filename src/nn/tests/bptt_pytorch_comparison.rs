@@ -1,6 +1,10 @@
 /*
  * BPTT PyTorch 数值对照测试
  *
+ * TODO(RNN 重构): 此测试基于旧的"显式时间步 + backward_through_time"设计。
+ * 待 LSTM/GRU 完成展开式重构后，这些测试可能需要删除或重写。
+ * 新的 Rnn 层使用"展开式设计"，BPTT 通过标准 backward() 自动完成。
+ *
  * 使用 PyTorch 计算的精确参考值验证 BPTT 实现的数值正确性
  * 参考脚本: tests/python/layer_reference/simple_rnn_bptt.py
  */

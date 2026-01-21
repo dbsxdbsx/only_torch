@@ -1,9 +1,9 @@
 //! # XOR 异或问题示例
 //!
-//! 展示 `only_torch` 的 `PyTorch` 风格 API：
-//! - `Linear` 层（全连接）
-//! - `Adam` 优化器
-//! - `cross_entropy` 损失函数
+//! 展示 `only_torch` 的 **PyTorch 风格** API：
+//! - `model.forward(&tensor)` - 直接传入 Tensor
+//! - `criterion.forward(&output, &target)` - PyTorch 风格损失计算
+//! - 训练循环与 PyTorch 几乎一致
 //!
 //! ## 运行
 //! ```bash
@@ -13,7 +13,7 @@
 mod model;
 
 use model::XorMLP;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
+use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 use only_torch::tensor::Tensor;
 
 /// XOR 训练数据（one-hot 编码）
@@ -34,49 +34,46 @@ fn get_xor_data() -> (Vec<Tensor>, Vec<Tensor>) {
 }
 
 fn main() -> Result<(), GraphError> {
-    println!("=== XOR 异或问题示例 ===\n");
+    println!("=== XOR 异或问题示例（PyTorch 风格）===\n");
 
-    // 1. 创建模型（使用固定种子确保可复现）
+    // 1. 创建模型
     let graph = Graph::new_with_seed(42);
     let model = XorMLP::new(&graph)?;
 
-    // 2. 输入/输出占位符（用于迭代更新数据）
-    // 也可用 graph.input(&data) 一次性输入 batch 数据，详见 sine_regression 示例
-    let x = graph.zeros(&[1, 2])?;
-    let target = graph.zeros(&[1, 2])?;
+    // 2. 损失函数（PyTorch 风格）
+    let criterion = CrossEntropyLoss::new();
 
-    // 3. 前向传播 + 损失
-    let logits = model.forward(&x);
-    let loss = logits.cross_entropy(&target)?;
-
-    // 4. 优化器
+    // 3. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.1);
 
-    // 5. 数据
+    // 4. 数据
     let (inputs, labels) = get_xor_data();
 
     println!("网络: Input(2) -> Linear(4, Tanh) -> Linear(2)");
-    println!("优化器: Adam, 损失: CrossEntropy\n");
+    println!("优化器: Adam, 损失: CrossEntropyLoss\n");
 
-    // 6. 训练
+    // 5. 训练循环（完全 PyTorch 风格！）
     for epoch in 0..100 {
         for (input, label) in inputs.iter().zip(labels.iter()) {
-            x.set_value(input)?;
-            target.set_value(label)?;
+            // PyTorch 风格：直接传 Tensor
+            let output = model.forward(input)?;
+            let loss = criterion.forward(&output, label)?;
+
+            // 反向传播 + 参数更新
             optimizer.zero_grad()?;
             loss.backward()?;
             optimizer.step()?;
         }
 
-        // 评估（使用 argmax 简化）
+        // 评估
         let correct = inputs
             .iter()
             .zip(labels.iter())
             .filter(|(inp, lbl)| {
-                x.set_value(inp).ok();
-                logits.forward().ok();
-                let out = logits.value().ok().flatten().unwrap();
-                out.argmax(1).get_data_number().unwrap() == lbl.argmax(1).get_data_number().unwrap()
+                let out = model.forward(inp).unwrap();
+                let pred = out.value().ok().flatten().unwrap();
+                pred.argmax(1).get_data_number().unwrap()
+                    == lbl.argmax(1).get_data_number().unwrap()
             })
             .count();
 
@@ -86,13 +83,12 @@ fn main() -> Result<(), GraphError> {
         }
     }
 
-    // 7. 结果（使用 argmax 简化）
+    // 6. 结果展示
     println!("\n=== 预测结果 ===");
     for (input, label) in inputs.iter().zip(labels.iter()) {
-        x.set_value(input)?;
-        logits.forward()?;
-        let out = logits.value()?.unwrap();
-        let pred = out.argmax(1).get_data_number().unwrap() as i32;
+        let output = model.forward(input)?;
+        let pred_tensor = output.value()?.unwrap();
+        let pred = pred_tensor.argmax(1).get_data_number().unwrap() as i32;
         let expected = label.argmax(1).get_data_number().unwrap() as i32;
         println!(
             "  XOR({}, {}) = {} {}",

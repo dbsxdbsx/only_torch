@@ -8,11 +8,11 @@
 //!
 //! ## 运行方式
 //! ```bash
-//! cargo run --example parity_fixed_len
+//! cargo run --example parity_rnn_fixed_len
 //! ```
 //!
 //! ## PyTorch 对照实现
-//! 参见 `tests/parity_fixed_len_pytorch.py`
+//! 参见 `tests/parity_rnn_fixed_len_pytorch.py`
 
 mod model;
 
@@ -63,7 +63,9 @@ fn main() -> Result<(), GraphError> {
     let train_odd = (0..train_samples)
         .filter(|&i| train_y[[i, 1]] > 0.5)
         .count();
-    let test_odd = (0..test_samples).filter(|&i| test_y[[i, 1]] > 0.5).count();
+    let test_odd = (0..test_samples)
+        .filter(|&i| test_y[[i, 1]] > 0.5)
+        .count();
     println!(
         "标签分布: 训练 {}/{} 奇数, 测试 {}/{} 奇数\n",
         train_odd, train_samples, test_odd, test_samples
@@ -116,10 +118,7 @@ fn main() -> Result<(), GraphError> {
 
             println!(
                 "Epoch {:3}/{}: loss={:.4}, test_acc={:.1}%",
-                epoch + 1,
-                max_epochs,
-                avg_loss,
-                accuracy
+                epoch + 1, max_epochs, avg_loss, accuracy
             );
 
             if accuracy >= target_accuracy {

@@ -76,6 +76,11 @@ pub enum NodeTypeDescriptor {
         kernel_size: (usize, usize),
         stride: (usize, usize),
     },
+    /// 张量索引选择（RNN 展开式设计用）
+    Select {
+        axis: usize,
+        index: usize,
+    },
     MSELoss,
     SoftmaxCrossEntropy,
 }

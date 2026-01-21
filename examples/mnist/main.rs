@@ -1,9 +1,9 @@
-//! # MNIST 手写数字识别示例
+//! # MNIST 手写数字识别示例（PyTorch 风格）
 //!
 //! 展示在真实图像数据上的深度学习：
 //! - MNIST 数据集（28x28 灰度图 → 10 类数字）
 //! - 两层 MLP (784 -> 128 -> 10)
-//! - `CrossEntropy` 损失，Adam 优化器
+//! - `CrossEntropyLoss` 损失（PyTorch 风格），Adam 优化器
 //!
 //! ## 运行
 //! ```bash
@@ -17,12 +17,12 @@ mod model;
 
 use model::MnistMLP;
 use only_torch::data::{DataLoader, MnistDataset, TensorDataset};
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
+use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 use only_torch::tensor_slice;
 use std::time::Instant;
 
 fn main() -> Result<(), GraphError> {
-    println!("=== MNIST 手写数字识别示例 ===\n");
+    println!("=== MNIST 手写数字识别示例（PyTorch 风格）===\n");
 
     // 1. 加载数据
     println!("[1/3] 加载 MNIST 数据集...");
@@ -60,7 +60,7 @@ fn main() -> Result<(), GraphError> {
     println!("  - Epochs: {max_epochs}");
     println!("  - 学习率: {learning_rate}");
 
-    // 3. 准备数据（使用 DataLoader！）
+    // 3. 准备数据（使用 DataLoader）
     let all_train_images = train_data.images();
     let all_train_labels = train_data.labels();
     let all_test_images = test_data.images();
@@ -78,16 +78,14 @@ fn main() -> Result<(), GraphError> {
     let test_loader =
         DataLoader::new(TensorDataset::new(test_x, test_y), batch_size).drop_last(true);
 
-    // 4. 构建网络（使用固定种子确保可复现）
+    // 4. 构建网络（PyTorch 风格）
     let graph = Graph::new_with_seed(42);
     let model = MnistMLP::new(&graph)?;
 
-    let x = graph.zeros(&[batch_size, 784])?;
-    let y = graph.zeros(&[batch_size, 10])?;
+    // 损失函数（PyTorch 风格）
+    let criterion = CrossEntropyLoss::new();
 
-    let logits = model.forward(&x);
-    let loss = logits.cross_entropy(&y)?;
-
+    // 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), learning_rate);
 
     println!("\n  网络: 784 -> 128 (Softplus) -> 10");
@@ -98,7 +96,7 @@ fn main() -> Result<(), GraphError> {
         784 * 128 + 128 + 128 * 10 + 10
     );
 
-    // 5. 训练
+    // 5. 训练（PyTorch 风格！）
     println!("\n[3/3] 开始训练...\n");
 
     let mut best_acc = 0.0f32;
@@ -108,11 +106,13 @@ fn main() -> Result<(), GraphError> {
         let mut epoch_loss = 0.0;
         let mut num_batches = 0;
 
-        // 使用 DataLoader 迭代训练
+        // 训练循环（完全 PyTorch 风格！）
         for (batch_x, batch_y) in train_loader.iter() {
-            x.set_value(&batch_x)?;
-            y.set_value(&batch_y)?;
+            // PyTorch 风格：直接传 Tensor
+            let output = model.forward(&batch_x)?;
+            let loss = criterion.forward(&output, &batch_y)?;
 
+            // 反向传播 + 参数更新
             optimizer.zero_grad()?;
             let loss_val = loss.backward()?;
             optimizer.step()?;
@@ -121,19 +121,19 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        // 使用 DataLoader 迭代测试（argmax 简化版）
+        // 测试循环
         let mut correct = 0;
         let mut total = 0;
 
         for (batch_x, batch_y) in test_loader.iter() {
-            x.set_value(&batch_x)?;
-            logits.forward()?;
+            // PyTorch 风格：直接传 Tensor
+            let output = model.forward(&batch_x)?;
 
-            let preds = logits.value()?.unwrap();
+            let preds = output.value()?.unwrap();
             let pred_classes = preds.argmax(1); // [batch] 预测类别
             let true_classes = batch_y.argmax(1); // [batch] 真实类别
 
-            // 统计正确预测数（函数式风格）
+            // 统计正确预测数
             let batch_size = batch_x.shape()[0];
             correct += (0..batch_size)
                 .filter(|&i| pred_classes[[i]] == true_classes[[i]])

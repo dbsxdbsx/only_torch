@@ -15,6 +15,7 @@ use std::rc::Rc;
 /// 提供张量形状变换的链式调用：
 /// - `reshape(shape)`: 变形为指定形状
 /// - `flatten()`: 展平为一维向量（保留 batch 维度）
+/// - `select(axis, index)`: 从指定轴选择一个切片
 ///
 /// # 使用示例
 /// ```ignore
@@ -22,6 +23,7 @@ use std::rc::Rc;
 ///
 /// let reshaped = x.reshape(&[2, 4])?;
 /// let flat = x.flatten()?;
+/// let x_t = x_seq.select(1, t)?;  // 从 [batch, seq_len, input] 选择第 t 步
 /// ```
 pub trait VarShapeOps {
     /// Reshape 变形
@@ -43,6 +45,25 @@ pub trait VarShapeOps {
     /// # 返回
     /// 展平后的 Var
     fn flatten(&self) -> Result<Var, GraphError>;
+
+    /// Select 选择
+    ///
+    /// 从张量的指定轴选择一个索引，去掉该维度。
+    /// 主要用于 RNN 展开式设计：从 `[batch, seq_len, input_size]` 提取单个时间步。
+    ///
+    /// # 参数
+    /// - `axis`: 选择的轴
+    /// - `index`: 选择的索引
+    ///
+    /// # 返回
+    /// 选择后的 Var（维度减 1）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // x: [batch, seq_len, input_size]
+    /// let x_t = x.select(1, t)?;  // [batch, input_size]
+    /// ```
+    fn select(&self, axis: usize, index: usize) -> Result<Var, GraphError>;
 }
 
 impl VarShapeOps for Var {
@@ -60,6 +81,14 @@ impl VarShapeOps for Var {
             .graph()
             .borrow_mut()
             .new_flatten_node(self.node_id(), true, None)?;
+        Ok(Self::new(id, Rc::clone(self.graph())))
+    }
+
+    fn select(&self, axis: usize, index: usize) -> Result<Var, GraphError> {
+        let id = self
+            .graph()
+            .borrow_mut()
+            .new_select_node(self.node_id(), axis, index, None)?;
         Ok(Self::new(id, Rc::clone(self.graph())))
     }
 }

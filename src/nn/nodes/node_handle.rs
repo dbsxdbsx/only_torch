@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
     Add, AvgPool2d, Conv2d, Divide, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d,
-    Multiply, Parameter, Reduction, Reshape, Sigmoid, Sign, SoftPlus, Softmax, SoftmaxCrossEntropy,
-    State, Step, Subtract, Tanh,
+    Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus, Softmax,
+    SoftmaxCrossEntropy, State, Step, Subtract, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -246,6 +246,20 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_softplus(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(SoftPlus::new(parents)?)
+    }
+
+    /// 创建 Select 节点（从张量中选择指定轴和索引的切片）
+    ///
+    /// # 参数
+    /// - `parents`: [输入节点]
+    /// - `axis`: 选择的轴
+    /// - `index`: 选择的索引
+    pub(in crate::nn) fn new_select(
+        parents: &[&Self],
+        axis: usize,
+        index: usize,
+    ) -> Result<Self, GraphError> {
+        Self::new(Select::new(parents, axis, index)?)
     }
 
     pub(in crate::nn) fn new_softmax_cross_entropy(parents: &[&Self]) -> Result<Self, GraphError> {

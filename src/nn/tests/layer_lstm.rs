@@ -1,48 +1,54 @@
 /*
  * @Author       : 老董
- * @Date         : 2026-01-17
- * @Description  : Lstm Layer 单元测试（与 PyTorch 数值对照）
+ * @Date         : 2026-01-21
+ * @Description  : Lstm Layer 单元测试（展开式设计）
+ *
+ * 测试覆盖：
+ * - 基础功能：创建、参数形状、Module trait
+ * - 前向传播：形状验证、数值计算
+ * - 反向传播：梯度流动
+ * - ModelState 集成：智能缓存
  */
 
-use crate::nn::layer::Lstm;
-use crate::nn::{Graph, GraphError, Module, VarLossOps};
+use crate::nn::layer::{Linear, Lstm};
+use crate::nn::{CrossEntropyLoss, Graph, GraphError, ModelState, Module};
 use crate::tensor::Tensor;
-use approx::assert_abs_diff_eq;
 
 // ==================== 基础功能测试 ====================
 
 /// 测试 Lstm 层创建
 #[test]
-fn test_lstm_creation() -> Result<(), GraphError> {
+fn test_lstm_new() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 16;
-    let input_size = 10;
-    let hidden_size = 20;
+    let lstm = Lstm::new(&graph, 10, 20, "lstm1")?;
 
-    let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm1")?;
+    assert_eq!(lstm.input_size(), 10);
+    assert_eq!(lstm.hidden_size(), 20);
 
     // 验证参数存在
     assert!(lstm.w_ii().value()?.is_some());
     assert!(lstm.w_hi().value()?.is_some());
+    assert!(lstm.b_i().value()?.is_some());
     assert!(lstm.w_if().value()?.is_some());
     assert!(lstm.w_hf().value()?.is_some());
+    assert!(lstm.b_f().value()?.is_some());
     assert!(lstm.w_ig().value()?.is_some());
     assert!(lstm.w_hg().value()?.is_some());
+    assert!(lstm.b_g().value()?.is_some());
     assert!(lstm.w_io().value()?.is_some());
     assert!(lstm.w_ho().value()?.is_some());
+    assert!(lstm.b_o().value()?.is_some());
 
     Ok(())
 }
 
-/// 测试 Lstm 参数形状
+/// 测试参数形状
 #[test]
-fn test_lstm_shapes() -> Result<(), GraphError> {
+fn test_lstm_parameters() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 8;
     let input_size = 4;
     let hidden_size = 6;
-
-    let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm1")?;
+    let lstm = Lstm::new(&graph, input_size, hidden_size, "lstm1")?;
 
     // 验证输入门权重形状
     assert_eq!(
@@ -55,15 +61,9 @@ fn test_lstm_shapes() -> Result<(), GraphError> {
     );
     assert_eq!(lstm.b_i().value()?.unwrap().shape(), &[1, hidden_size]);
 
-    // 验证状态形状
-    assert_eq!(
-        lstm.hidden_input().value()?.unwrap().shape(),
-        &[batch_size, hidden_size]
-    );
-    assert_eq!(
-        lstm.cell_input().value()?.unwrap().shape(),
-        &[batch_size, hidden_size]
-    );
+    // 验证遗忘门偏置初始化为 1
+    let b_f = lstm.b_f().value()?.unwrap();
+    assert!((b_f[[0, 0]] - 1.0).abs() < 1e-6);
 
     Ok(())
 }
@@ -72,186 +72,349 @@ fn test_lstm_shapes() -> Result<(), GraphError> {
 #[test]
 fn test_lstm_module_trait() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let lstm = Lstm::new(&graph, 10, 20, 4, "lstm")?;
+    let lstm = Lstm::new(&graph, 10, 20, "lstm")?;
 
     let params = lstm.parameters();
-    assert_eq!(params.len(), 12); // 4 gates × 3 params each
+    assert_eq!(params.len(), 12); // 4 门 × 3 参数
 
     Ok(())
 }
 
-// ==================== PyTorch 数值对照测试 ====================
+// ==================== 前向传播测试 ====================
 
-/// 测试简单前向传播
+/// 测试前向传播输出形状
 #[test]
-fn test_lstm_forward() -> Result<(), GraphError> {
+fn test_lstm_forward_shape() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 2;
-    let input_size = 3;
-    let hidden_size = 4;
+    let lstm = Lstm::new(&graph, 5, 10, "lstm")?;
 
-    let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm1")?;
+    // 输入: [batch=2, seq_len=8, input=5]
+    let x = graph.zeros(&[2, 8, 5])?;
+    let h = lstm.forward(&x)?;
+    h.forward()?;
 
-    // 设置简单权重
-    lstm.w_ii()
-        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    lstm.w_hi()
-        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
-    lstm.b_i().set_value(&Tensor::zeros(&[1, hidden_size]))?;
+    // 输出: [batch=2, hidden=10]
+    let output = h.value()?.unwrap();
+    assert_eq!(output.shape(), &[2, 10]);
 
-    lstm.w_if()
-        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    lstm.w_hf()
-        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
-    lstm.b_f().set_value(&Tensor::ones(&[1, hidden_size]))?;
-
-    lstm.w_ig()
-        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    lstm.w_hg()
-        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
-    lstm.b_g().set_value(&Tensor::zeros(&[1, hidden_size]))?;
-
-    lstm.w_io()
-        .set_value(&Tensor::new(&[0.1; 12], &[input_size, hidden_size]))?;
-    lstm.w_ho()
-        .set_value(&Tensor::new(&[0.1; 16], &[hidden_size, hidden_size]))?;
-    lstm.b_o().set_value(&Tensor::zeros(&[1, hidden_size]))?;
-
-    // 前向传播
-    let x = Tensor::ones(&[batch_size, input_size]);
-    lstm.step(&x)?;
-
-    // 验证输出存在且形状正确
-    let hidden = lstm.hidden().value()?.unwrap();
-    assert_eq!(hidden.shape(), &[batch_size, hidden_size]);
-
-    let cell = lstm.cell().value()?.unwrap();
-    assert_eq!(cell.shape(), &[batch_size, hidden_size]);
-
-    println!("✅ LSTM 前向传播正确");
     Ok(())
 }
 
-/// 测试多时间步前向传播
+/// 测试不同序列长度
 #[test]
-fn test_lstm_multi_step() -> Result<(), GraphError> {
+fn test_lstm_various_seq_len() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 1;
-    let input_size = 2;
-    let hidden_size = 3;
+    let lstm = Lstm::new(&graph, 3, 8, "lstm")?;
 
-    let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm1")?;
+    for seq_len in [1, 5, 10, 20] {
+        let x = graph.zeros(&[4, seq_len, 3])?;
+        let h = lstm.forward(&x)?;
+        h.forward()?;
 
-    // 执行多个时间步
-    for t in 0..3 {
-        let x = Tensor::new(&[1.0, (t + 1) as f32 * 0.5], &[batch_size, input_size]);
-        lstm.step(&x)?;
-
-        let hidden = lstm.hidden().value()?.unwrap();
-        println!("t={}: hidden[0]={:.4}", t, hidden[[0, 0]]);
+        let output = h.value()?.unwrap();
+        assert_eq!(output.shape(), &[4, 8]);
     }
 
-    println!("✅ LSTM 多时间步前向传播正确");
     Ok(())
 }
 
-// ==================== reset 测试 ====================
-
-/// 测试 reset() 清除状态
-///
-/// 核心验证：reset 后从同一输入出发，应产生相同输出。
-/// 不检查输出的绝对值大小，避免对随机初始化的依赖。
+/// 测试输入维度验证
 #[test]
-fn test_lstm_reset() -> Result<(), GraphError> {
+fn test_lstm_forward_invalid_dim() {
     let graph = Graph::new_with_seed(42);
-    let lstm = Lstm::new(&graph, 2, 2, 1, "lstm")?;
+    let lstm = Lstm::new(&graph, 5, 10, "lstm").unwrap();
 
-    // 运行几步（使用随机初始化的权重）
-    lstm.step(&Tensor::ones(&[1, 2]))?;
-    lstm.step(&Tensor::ones(&[1, 2]))?;
-
-    // reset 后运行一步
-    lstm.reset();
-    lstm.step(&Tensor::ones(&[1, 2]))?;
-    let h_after_reset = lstm.hidden().value()?.unwrap().clone();
-
-    // 再次 reset 后运行一步
-    lstm.reset();
-    lstm.step(&Tensor::ones(&[1, 2]))?;
-    let h_fresh = lstm.hidden().value()?.unwrap();
-
-    // 核心断言：两次 reset 后从相同输入出发，输出应一致
-    assert_abs_diff_eq!(h_after_reset[[0, 0]], h_fresh[[0, 0]], epsilon = 1e-6);
-    assert_abs_diff_eq!(h_after_reset[[0, 1]], h_fresh[[0, 1]], epsilon = 1e-6);
-
-    println!("✅ LSTM reset() 正确");
-    Ok(())
+    // 2D 输入应该报错
+    let x = graph.zeros(&[2, 5]).unwrap();
+    let result = lstm.forward(&x);
+    assert!(result.is_err());
 }
 
-// ==================== 与 Linear 集成测试 ====================
-
-/// 测试 Lstm 与 Linear 集成
+/// 测试 input_size 不匹配
 #[test]
-fn test_lstm_with_linear_integration() -> Result<(), GraphError> {
-    use crate::nn::layer::Linear;
-
+fn test_lstm_forward_input_size_mismatch() {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 2;
-    let input_size = 4;
-    let hidden_size = 8;
-    let output_size = 3;
+    let lstm = Lstm::new(&graph, 5, 10, "lstm").unwrap();
 
-    let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm")?;
-    let fc = Linear::new(&graph, hidden_size, output_size, true, "fc")?;
-
-    // 前向传播
-    lstm.step(&Tensor::normal(0.0, 1.0, &[batch_size, input_size]))?;
-    let fc_out = fc.forward(lstm.hidden());
-    fc_out.forward()?;
-
-    let output = fc_out.value()?.unwrap();
-    assert_eq!(output.shape(), &[batch_size, output_size]);
-
-    println!("✅ LSTM 与 Linear 集成正常");
-    Ok(())
+    // input_size=3 不匹配期望的 5
+    let x = graph.zeros(&[2, 8, 3]).unwrap();
+    let result = lstm.forward(&x);
+    assert!(result.is_err());
 }
 
-/// 测试完整训练流程
+// ==================== 反向传播测试 ====================
+
+/// 测试反向传播梯度流动
 #[test]
-fn test_lstm_complete_training() -> Result<(), GraphError> {
-    use crate::nn::layer::Linear;
-
+fn test_lstm_backward() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let batch_size = 4;
-    let input_size = 8;
-    let hidden_size = 6;
-    let output_size = 3;
+    let lstm = Lstm::new(&graph, 3, 4, "lstm")?;
+    let fc = Linear::new(&graph, 4, 2, true, "fc")?;
 
-    let lstm = Lstm::new(&graph, input_size, hidden_size, batch_size, "lstm")?;
-    let fc = Linear::new(&graph, hidden_size, output_size, true, "fc")?;
+    // 构建图
+    let x = graph.randn(&[2, 5, 3])?;
+    let h = lstm.forward(&x)?;
+    let logits = fc.forward(&h);
 
-    // 前向传播
-    lstm.step(&Tensor::normal(0.0, 1.0, &[batch_size, input_size]))?;
-    let fc_out = fc.forward(lstm.hidden());
+    // 创建标签
+    let labels = graph.input(&Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]))?;
 
-    let labels = graph.input(&Tensor::new(
-        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
-        &[batch_size, output_size],
-    ))?;
-    let loss = fc_out.cross_entropy(&labels)?;
+    // 计算 loss
+    use crate::nn::VarLossOps;
+    let loss = logits.cross_entropy(&labels)?;
 
-    // 前向 + 反向
-    loss.forward()?;
-    let loss_val = loss.value()?.unwrap()[[0, 0]];
+    // 反向传播
     loss.backward()?;
 
     // 验证所有参数都有梯度
     assert!(lstm.w_ii().grad()?.is_some());
+    assert!(lstm.w_hi().grad()?.is_some());
+    assert!(lstm.b_i().grad()?.is_some());
     assert!(lstm.w_if().grad()?.is_some());
+    assert!(lstm.w_hf().grad()?.is_some());
+    assert!(lstm.b_f().grad()?.is_some());
     assert!(lstm.w_ig().grad()?.is_some());
+    assert!(lstm.w_hg().grad()?.is_some());
+    assert!(lstm.b_g().grad()?.is_some());
     assert!(lstm.w_io().grad()?.is_some());
+    assert!(lstm.w_ho().grad()?.is_some());
+    assert!(lstm.b_o().grad()?.is_some());
     assert!(fc.weights().grad()?.is_some());
 
-    println!("✅ LSTM 完整训练: loss={:.4}, 所有参数都有梯度", loss_val);
+    Ok(())
+}
+
+/// 测试梯度传播到输入（通过 ModelState 的 input 节点）
+#[test]
+fn test_lstm_gradient_to_input() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 2, 3, "lstm")?;
+    let state = ModelState::new(&graph);
+
+    let x = Tensor::new(&vec![0.1f32; 8], &[1, 4, 2]);
+    let h = state.forward(&x, |input| lstm.forward(input))?;
+
+    // 简单的 L2 loss
+    use crate::nn::VarLossOps;
+    let target = graph.zeros(&[1, 3])?;
+    let loss = h.mse_loss(&target)?;
+    loss.backward()?;
+
+    // LSTM 参数应该有梯度
+    assert!(lstm.w_ii().grad()?.is_some());
+
+    Ok(())
+}
+
+// ==================== 数值正确性测试 ====================
+
+/// 测试单时间步计算
+#[test]
+fn test_lstm_single_timestep_value() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 2, 3, "lstm")?;
+
+    // 设置简单权重
+    let zero_w = Tensor::zeros(&[2, 3]);
+    let zero_hw = Tensor::zeros(&[3, 3]);
+    let zero_b = Tensor::zeros(&[1, 3]);
+
+    lstm.w_ii().set_value(&zero_w)?;
+    lstm.w_hi().set_value(&zero_hw)?;
+    lstm.b_i().set_value(&zero_b)?;
+    lstm.w_if().set_value(&zero_w)?;
+    lstm.w_hf().set_value(&zero_hw)?;
+    lstm.b_f().set_value(&Tensor::ones(&[1, 3]))?; // 遗忘门偏置
+    lstm.w_ig().set_value(&zero_w)?;
+    lstm.w_hg().set_value(&zero_hw)?;
+    lstm.b_g().set_value(&zero_b)?;
+    lstm.w_io().set_value(&zero_w)?;
+    lstm.w_ho().set_value(&zero_hw)?;
+    lstm.b_o().set_value(&zero_b)?;
+
+    // 输入
+    let x = graph.zeros(&[1, 1, 2])?;
+    let h = lstm.forward(&x)?;
+    h.forward()?;
+
+    let output = h.value()?.unwrap();
+    // 所有权重为 0 时：
+    // i = σ(0) = 0.5, f = σ(1) ≈ 0.73, g = tanh(0) = 0, o = σ(0) = 0.5
+    // c = 0.73 * 0 + 0.5 * 0 = 0
+    // h = 0.5 * tanh(0) = 0
+    for i in 0..3 {
+        assert!(output[[0, i]].abs() < 0.1);
+    }
+
+    Ok(())
+}
+
+/// 测试隐藏状态传递
+#[test]
+fn test_lstm_hidden_propagation() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 2, 4, "lstm")?;
+
+    // 短序列和长序列应该产生不同结果
+    let x_short = graph.randn(&[1, 2, 2])?;
+    let h_short = lstm.forward(&x_short)?;
+    h_short.forward()?;
+    let val_short = h_short.value()?.unwrap().clone();
+
+    let x_long = graph.randn(&[1, 10, 2])?;
+    let h_long = lstm.forward(&x_long)?;
+    h_long.forward()?;
+    let val_long = h_long.value()?.unwrap();
+
+    // 应该是不同的值
+    let diff: f32 = (0..4)
+        .map(|i| (val_short[[0, i]] - val_long[[0, i]]).abs())
+        .sum();
+    assert!(diff > 0.01);
+
+    Ok(())
+}
+
+// ==================== ModelState 集成测试 ====================
+
+/// 测试与 ModelState 配合使用
+#[test]
+fn test_lstm_with_model_state() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 3, 8, "lstm")?;
+    let fc = Linear::new(&graph, 8, 2, true, "fc")?;
+    let state = ModelState::new(&graph);
+    let criterion = CrossEntropyLoss::new();
+
+    // 定义 forward 逻辑
+    let forward = |x: &Tensor| -> Result<_, GraphError> {
+        state.forward(x, |input| {
+            let h = lstm.forward(input)?;
+            Ok(fc.forward(&h))
+        })
+    };
+
+    // 第一次调用
+    let x1 = Tensor::new(&vec![0.1f32; 12], &[2, 2, 3]);
+    let y1 = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]);
+    let output1 = forward(&x1)?;
+    let loss1 = criterion.forward(&output1, &y1)?;
+    loss1.backward()?;
+
+    // 第二次调用（复用）
+    let x2 = Tensor::new(&vec![0.2f32; 12], &[2, 2, 3]);
+    let output2 = forward(&x2)?;
+
+    // 应该是同一个节点
+    assert_eq!(output1.node_id(), output2.node_id());
+
+    Ok(())
+}
+
+/// 测试智能缓存支持变长
+#[test]
+fn test_lstm_model_state_cache() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 2, 4, "lstm")?;
+    let fc = Linear::new(&graph, 4, 2, true, "fc")?;
+    let state = ModelState::new(&graph);
+
+    let forward = |x: &Tensor| -> Result<_, GraphError> {
+        state.forward(x, |input| {
+            let h = lstm.forward(input)?;
+            Ok(fc.forward(&h))
+        })
+    };
+
+    // seq_len = 3
+    let x1 = Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]);
+    let out1 = forward(&x1)?;
+
+    // seq_len = 5（不同长度，应该创建新缓存）
+    let x2 = Tensor::new(&vec![0.1f32; 20], &[2, 5, 2]);
+    let out2 = forward(&x2)?;
+
+    // 应该是不同的节点
+    assert_ne!(out1.node_id(), out2.node_id());
+    assert_eq!(state.cache_size(), 2);
+
+    Ok(())
+}
+
+// ==================== 边界情况测试 ====================
+
+/// 测试 seq_len = 1
+#[test]
+fn test_lstm_seq_len_one() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 5, 8, "lstm")?;
+
+    let x = graph.randn(&[3, 1, 5])?;
+    let h = lstm.forward(&x)?;
+    h.forward()?;
+
+    let output = h.value()?.unwrap();
+    assert_eq!(output.shape(), &[3, 8]);
+
+    Ok(())
+}
+
+/// 测试 batch_size = 1
+#[test]
+fn test_lstm_batch_size_one() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 3, 6, "lstm")?;
+
+    let x = graph.randn(&[1, 10, 3])?;
+    let h = lstm.forward(&x)?;
+    h.forward()?;
+
+    let output = h.value()?.unwrap();
+    assert_eq!(output.shape(), &[1, 6]);
+
+    Ok(())
+}
+
+/// 测试长序列
+#[test]
+fn test_lstm_long_sequence() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 2, 4, "lstm")?;
+
+    let x = graph.randn(&[1, 50, 2])?;
+    let h = lstm.forward(&x)?;
+    h.forward()?;
+
+    let output = h.value()?.unwrap();
+    assert_eq!(output.shape(), &[1, 4]);
+
+    Ok(())
+}
+
+/// 测试种子可重复性
+#[test]
+fn test_lstm_seeded_reproducibility() -> Result<(), GraphError> {
+    // 相同种子应该产生相同权重初始化，因此相同输入应产生相同输出
+    let run = |seed: u64| -> Result<Vec<f32>, GraphError> {
+        let graph = Graph::new_with_seed(seed);
+        let lstm = Lstm::new(&graph, 2, 3, "lstm")?;
+
+        // 使用固定输入
+        let x_data = vec![0.1f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+        let x = graph.input(&Tensor::new(&x_data, &[1, 4, 2]))?;
+        let h = lstm.forward(&x)?;
+        h.forward()?;
+
+        let output = h.value()?.unwrap();
+        Ok((0..3).map(|i| output[[0, i]]).collect())
+    };
+
+    let result1 = run(42)?;
+    let result2 = run(42)?;
+
+    for i in 0..3 {
+        assert!((result1[i] - result2[i]).abs() < 1e-6);
+    }
+
     Ok(())
 }

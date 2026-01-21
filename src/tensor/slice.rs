@@ -210,6 +210,71 @@ impl super::Tensor {
         let view = self.data.index_axis(ndarray::Axis(axis), index);
         Self::from_view(view)
     }
+
+    /// 将 `source` 张量放入 `self` 的指定轴和索引位置（scatter 操作）
+    ///
+    /// 这是 `select` 的逆操作，用于反向传播时将梯度放回原位置。
+    ///
+    /// # 参数
+    /// - `axis`: 目标轴
+    /// - `index`: 目标索引
+    /// - `source`: 源张量，形状应为 `self` 在 `axis` 轴 `index` 位置切片后的形状
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // self: [2, 3, 4]，在 axis=1, index=1 处放入 [2, 1, 4] 的 source
+    /// let mut grad = Tensor::zeros(&[2, 3, 4]);
+    /// let source = Tensor::ones(&[2, 1, 4]);
+    /// grad.scatter_at(1, 1, &source);
+    /// // 现在 grad[:, 1, :] = 1.0，其他位置为 0.0
+    /// ```
+    ///
+    /// # Panics
+    /// - `axis` 超出张量维度
+    /// - `index` 超出该轴的大小
+    /// - `source` 形状不匹配
+    pub fn scatter_at(&mut self, axis: usize, index: usize, source: &Self) {
+        let ndim = self.dimension();
+        assert!(
+            axis < ndim,
+            "scatter_at: axis {} 超出张量维度 {}",
+            axis,
+            ndim
+        );
+        assert!(
+            index < self.shape()[axis],
+            "scatter_at: index {} 超出轴 {} 的大小 {}",
+            index,
+            axis,
+            self.shape()[axis]
+        );
+
+        // 使用 ndarray 的 slice_mut 进行赋值
+        // 构建索引：除了 axis 轴用 index..index+1，其他轴用 ..
+        use ndarray::SliceInfoElem;
+
+        let slice_info: Vec<SliceInfoElem> = (0..ndim)
+            .map(|i| {
+                if i == axis {
+                    SliceInfoElem::Slice {
+                        start: index as isize,
+                        end: Some((index + 1) as isize),
+                        step: 1,
+                    }
+                } else {
+                    SliceInfoElem::Slice {
+                        start: 0,
+                        end: None,
+                        step: 1,
+                    }
+                }
+            })
+            .collect();
+
+        // 将 source 的数据复制到 self 的对应位置
+        let mut target_view = self.data.slice_mut(slice_info.as_slice());
+        target_view.assign(&source.data);
+    }
 }
 
 /// 简化切片语法的宏

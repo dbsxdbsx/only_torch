@@ -1,6 +1,10 @@
 /*
  * @Description  : BPTT（通过时间反向传播）测试（Phase 2）
  *
+ * TODO(RNN 重构): 此测试基于旧的"显式时间步 + backward_through_time"设计。
+ * 待 LSTM/GRU 完成展开式重构后，这些测试可能需要删除或重写。
+ * 新的 Rnn 层使用"展开式设计"，BPTT 通过标准 backward() 自动完成。
+ *
  * 测试 backward_through_time() 和 TBPTT 的正确性
  */
 

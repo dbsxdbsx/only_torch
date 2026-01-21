@@ -29,6 +29,7 @@ pub(in crate::nn) enum NodeType {
     MSELoss(MSELoss),
     Multiply(Multiply),
     Reshape(Reshape),
+    Select(Select), // 张量索引选择（RNN 展开式设计用）
     LeakyReLU(LeakyReLU),
     Sigmoid(Sigmoid),
     Sign(Sign),

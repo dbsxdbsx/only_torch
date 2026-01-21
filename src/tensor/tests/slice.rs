@@ -315,3 +315,139 @@ fn test_select_panic_index_out_of_bounds() {
 }
 
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑select↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓scatter_at↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+
+/// 测试基本的 scatter_at 功能：2D 张量
+#[test]
+fn test_scatter_at_basic_2d() {
+    // 目标张量: [3, 4]
+    let mut target = Tensor::zeros(&[3, 4]);
+
+    // 源张量: [1, 4]（要放入 axis=0, index=1）
+    let source = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+
+    target.scatter_at(0, 1, &source);
+
+    // 验证：只有第 1 行被填充
+    for row in 0..3 {
+        for col in 0..4 {
+            let expected = if row == 1 { (col + 1) as f32 } else { 0.0 };
+            assert_eq!(target[[row, col]], expected);
+        }
+    }
+}
+
+/// 测试 3D 张量的 scatter_at（RNN 场景）
+#[test]
+fn test_scatter_at_3d_rnn_gradient() {
+    // 模拟 RNN 反向传播：将梯度放回特定时间步
+    // 目标张量: [batch=2, seq_len=3, input=4]
+    let mut grad_input = Tensor::zeros(&[2, 3, 4]);
+
+    // 源张量（某个时间步的梯度）: [2, 1, 4]
+    let grad_t1 = Tensor::ones(&[2, 1, 4]);
+
+    // 放入 axis=1, index=1
+    grad_input.scatter_at(1, 1, &grad_t1);
+
+    // 验证：只有 [:, 1, :] 被填充为 1.0
+    for b in 0..2 {
+        for t in 0..3 {
+            for i in 0..4 {
+                let expected = if t == 1 { 1.0 } else { 0.0 };
+                assert_eq!(grad_input[[b, t, i]], expected);
+            }
+        }
+    }
+}
+
+/// 测试 scatter_at 是 select 的逆操作
+#[test]
+fn test_scatter_at_inverse_of_select() {
+    // 原始张量
+    let original = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+
+    // 使用 select 提取第 0 行
+    let row0 = original.select(0, 0); // 形状 [3]
+
+    // 将其放回一个全零张量的相同位置
+    let mut restored = Tensor::zeros(&[2, 3]);
+    // scatter_at 需要的 source 形状应该是 [1, 3]
+    let row0_expanded = row0.reshape(&[1, 3]);
+    restored.scatter_at(0, 0, &row0_expanded);
+
+    // 验证第 0 行被正确恢复
+    assert_eq!(restored[[0, 0]], 1.0);
+    assert_eq!(restored[[0, 1]], 2.0);
+    assert_eq!(restored[[0, 2]], 3.0);
+    // 其他位置仍为 0
+    assert_eq!(restored[[1, 0]], 0.0);
+    assert_eq!(restored[[1, 1]], 0.0);
+    assert_eq!(restored[[1, 2]], 0.0);
+}
+
+/// 测试多次 scatter_at（累积效果）
+#[test]
+fn test_scatter_at_multiple_times() {
+    let mut target = Tensor::zeros(&[3, 4]);
+
+    // 放入不同行
+    let row0 = Tensor::new(&[1.0, 1.0, 1.0, 1.0], &[1, 4]);
+    let row1 = Tensor::new(&[2.0, 2.0, 2.0, 2.0], &[1, 4]);
+    let row2 = Tensor::new(&[3.0, 3.0, 3.0, 3.0], &[1, 4]);
+
+    target.scatter_at(0, 0, &row0);
+    target.scatter_at(0, 1, &row1);
+    target.scatter_at(0, 2, &row2);
+
+    // 验证整个张量
+    assert_eq!(target, Tensor::new(&[1., 1., 1., 1., 2., 2., 2., 2., 3., 3., 3., 3.], &[3, 4]));
+}
+
+/// 测试 scatter_at 的 axis=1 场景
+#[test]
+fn test_scatter_at_axis_1() {
+    let mut target = Tensor::zeros(&[2, 3, 4]);
+
+    // 在 axis=1, index=2 处放入数据
+    let source = Tensor::new(&[1.0; 8], &[2, 1, 4]); // [batch=2, 1, input=4]
+
+    target.scatter_at(1, 2, &source);
+
+    // 验证只有 [:, 2, :] 被填充
+    for b in 0..2 {
+        for t in 0..3 {
+            for i in 0..4 {
+                let expected = if t == 2 { 1.0 } else { 0.0 };
+                assert_eq!(target[[b, t, i]], expected);
+            }
+        }
+    }
+}
+
+/// 测试 scatter_at panic：axis 越界
+#[test]
+fn test_scatter_at_panic_axis_out_of_bounds() {
+    let mut target = Tensor::zeros(&[2, 3]);
+    let source = Tensor::zeros(&[2, 1]);
+
+    assert_panic!(
+        target.scatter_at(2, 0, &source),
+        "scatter_at: axis 2 超出张量维度 2"
+    );
+}
+
+/// 测试 scatter_at panic：index 越界
+#[test]
+fn test_scatter_at_panic_index_out_of_bounds() {
+    let mut target = Tensor::zeros(&[2, 3]);
+    let source = Tensor::zeros(&[1, 3]);
+
+    assert_panic!(
+        target.scatter_at(0, 5, &source),
+        "scatter_at: index 5 超出轴 0 的大小 2"
+    );
+}
+
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑scatter_at↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

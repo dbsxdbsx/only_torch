@@ -1,9 +1,9 @@
-//! # 正弦函数拟合示例（MSE 回归）
+//! # 正弦函数拟合示例（MSE 回归，PyTorch 风格）
 //!
 //! 展示 MSE 损失在回归任务上的使用：
 //! - 拟合 y = sin(x)
 //! - 使用 Linear 层 + Tanh 激活
-//! - 使用 MSE 损失（均方误差）
+//! - 使用 `MseLoss`（PyTorch 风格）
 //!
 //! ## 运行
 //! ```bash
@@ -13,7 +13,7 @@
 mod model;
 
 use model::SineMLP;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
+use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
 use only_torch::tensor::Tensor;
 
 /// 生成 batch 数据: y = sin(x), x ∈ [-π, π]
@@ -31,7 +31,7 @@ fn generate_data(n: usize) -> (Tensor, Tensor) {
 }
 
 fn main() -> Result<(), GraphError> {
-    println!("=== 正弦函数拟合示例 (MSE 回归) ===\n");
+    println!("=== 正弦函数拟合示例（PyTorch 风格）===\n");
 
     let n_samples = 50;
     let (x_train, y_train) = generate_data(n_samples);
@@ -40,22 +40,22 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = SineMLP::new(&graph)?;
 
-    // 2. 输入/目标
-    let x = graph.input(&x_train)?;
-    let target = graph.input(&y_train)?;
+    // 2. 损失函数（PyTorch 风格）
+    let criterion = MseLoss::new();
 
-    // 3. 前向 + MSE 损失
-    let output = model.forward(&x);
-    let loss = output.mse_loss(&target)?;
-
-    // 4. 优化器
+    // 3. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.05);
 
     println!("网络: Input(1) -> Linear(32, Tanh) -> Linear(1)");
-    println!("优化器: Adam (lr=0.05), 损失: MSE\n");
+    println!("优化器: Adam (lr=0.05), 损失: MseLoss\n");
 
-    // 5. 训练
+    // 4. 训练（PyTorch 风格）
     for epoch in 0..500 {
+        // PyTorch 风格：直接传 Tensor
+        let output = model.forward(&x_train)?;
+        let loss = criterion.forward(&output, &y_train)?;
+
+        // 反向传播 + 参数更新
         optimizer.zero_grad()?;
         let loss_val = loss.backward()?;
         optimizer.step()?;
@@ -65,8 +65,8 @@ fn main() -> Result<(), GraphError> {
         }
     }
 
-    // 6. 评估（在训练数据上）
-    output.forward()?;
+    // 5. 评估（在训练数据上）
+    let output = model.forward(&x_train)?;
     let predictions = output.value()?.unwrap();
 
     println!("\n=== 预测结果（部分样本）===");

@@ -1,9 +1,9 @@
 # Only-Torch 架构 V2 设计方案
 
-> **状态**：Phase 2 已完成，准备进入 Phase 3 (NEAT)
+> **状态**：Phase 2 完成 + RNN 展开式重构完成，准备进入 Phase 3 (NEAT)
 > **作者**：架构评审
 > **创建日期**：2025-12-30
-> **最后更新**：2026-01-20
+> **最后更新**：2026-01-21
 > **前置条件**：[自动微分统一设计](autodiff_unification_design.md) 已完成（Phase 1-5 全部 ✅）
 > **背景**：基于对 Burn、Candle、Neuronika、tch-rs、neat-python、neat-rs 等框架的深度调研，以及对用户体验和梯度流控制兼容性的深入讨论，重新设计项目架构
 
@@ -1832,6 +1832,312 @@ pub enum GraphError {
 }
 ```
 
+#### 4.2.9 ModelState（模型状态管理器）
+
+> **新增于 2026-01-21**：为支持 PyTorch 风格的 `forward(Tensor)` API 和变长序列处理而引入。
+
+**设计动机**：
+
+在 define-and-run 语义下，模型需要先构建计算图再填入数据。但这与 PyTorch 的 `model.forward(tensor)` 直接接收 Tensor 的习惯不符。`ModelState` 通过"延迟绑定 + 智能缓存"机制解决这一问题。
+
+**核心功能**：
+- 首次调用某形状时，自动创建输入节点和计算图
+- 后续相同形状输入复用已创建的子图，只更新数据
+- 不同形状自动创建新的子图并缓存（支持变长序列）
+
+```rust
+/// 模型状态管理器
+pub struct ModelState {
+    graph: Graph,
+    cache: RefCell<HashMap<Vec<usize>, StateCache>>,
+}
+
+struct StateCache {
+    input: Var,   // 输入节点
+    output: Var,  // 输出节点（预构建的计算图终点）
+}
+
+impl ModelState {
+    /// 创建模型状态管理器
+    pub fn new(graph: &Graph) -> Self;
+
+    /// PyTorch 风格的 forward（延迟绑定 + 智能缓存）
+    ///
+    /// # 参数
+    /// - `x`: 输入 Tensor
+    /// - `compute`: 计算逻辑闭包，接收 `&Var` 输入，返回 `Result<Var, GraphError>`
+    ///
+    /// # 智能缓存
+    /// - 相同形状复用已创建的计算图
+    /// - 不同形状自动创建新子图
+    pub fn forward<F>(&self, x: &Tensor, compute: F) -> Result<Var, GraphError>
+    where
+        F: FnOnce(&Var) -> Result<Var, GraphError>;
+
+    /// 获取缓存的形状数量
+    pub fn cache_size(&self) -> usize;
+
+    /// 获取已缓存的形状列表
+    pub fn cached_shapes(&self) -> Vec<Vec<usize>>;
+}
+```
+
+**使用示例**：
+
+```rust
+/// 变长序列 RNN 模型
+pub struct VarLenRNN {
+    rnn: Rnn,
+    fc: Linear,
+    state: ModelState,  // ← 关键：使用 ModelState 管理状态
+}
+
+impl VarLenRNN {
+    pub fn new(graph: &Graph, hidden_size: usize) -> Result<Self, GraphError> {
+        Ok(Self {
+            rnn: Rnn::new(graph, 1, hidden_size, "rnn")?,
+            fc: Linear::new(graph, hidden_size, 2, true, "fc")?,
+            state: ModelState::new(graph),
+        })
+    }
+
+    /// forward 直接接收 Tensor（PyTorch 风格）
+    pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
+        self.state.forward(x, |input| {
+            let h = self.rnn.forward(input)?;
+            Ok(self.fc.forward(&h))
+        })
+    }
+}
+
+// 训练循环
+for (x_batch, y_batch) in bucketed_loader.iter() {
+    // x_batch 可能是 [batch, seq_len=5, 1] 或 [batch, seq_len=10, 1]
+    let output = model.forward(&x_batch)?;  // 自动缓存不同形状！
+    let loss = criterion.forward(&output, &y_batch)?;
+    loss.backward()?;
+    optimizer.step()?;
+}
+
+println!("缓存的形状数量: {}", model.state.cache_size());  // 输出: 2
+```
+
+**与 Layer 的关系**：
+
+| 组件 | 职责 | 缓存范围 |
+|------|------|---------|
+| `ModelState` | 管理整个模型的输入/输出缓存 | 按输入形状 |
+| `Layer` (如 `Rnn`) | 定义计算逻辑，持有参数 | 无缓存 |
+
+**设计决策**：将缓存逻辑从 Layer 中解耦，放入 `ModelState`，使 Layer 更简洁且可复用。
+
+---
+
+#### 4.2.10 Criterion（损失函数封装）
+
+> **新增于 2026-01-21**：提供 PyTorch 风格的损失函数 API，支持智能缓存。
+
+**设计动机**：
+
+原先的 `output.cross_entropy(&target)?` API 虽简洁，但在训练循环中每次都会创建新的 loss 子图（target 节点 + loss 节点）。对于变长序列场景，不同 output 节点需要不同的 loss 子图，手动管理复杂。
+
+`Criterion` 封装了这一逻辑：
+- 按 output 节点 ID 缓存 loss 子图
+- 自动为不同 output 创建独立的 target + loss 节点
+- 复用时只更新 target 数据
+
+```rust
+/// 交叉熵损失函数
+pub struct CrossEntropyLoss {
+    cache: RefCell<HashMap<NodeId, LossState>>,
+}
+
+struct LossState {
+    target_node: Var,  // 内部创建的 target 输入节点
+    loss_node: Var,    // 内部创建的 loss 节点
+}
+
+impl CrossEntropyLoss {
+    pub fn new() -> Self;
+
+    /// 计算损失
+    ///
+    /// # 智能缓存
+    /// - 相同 output 节点复用已创建的 loss 子图
+    /// - 不同 output 节点自动创建新的 loss 子图
+    pub fn forward(&self, output: &Var, target: &Tensor) -> Result<Var, GraphError>;
+
+    pub fn cache_size(&self) -> usize;
+    pub fn clear_cache(&self);
+}
+
+/// 均方误差损失函数
+pub struct MseLoss {
+    cache: RefCell<HashMap<NodeId, LossState>>,
+}
+
+impl MseLoss {
+    pub fn new() -> Self;
+    pub fn forward(&self, output: &Var, target: &Tensor) -> Result<Var, GraphError>;
+    pub fn cache_size(&self) -> usize;
+    pub fn clear_cache(&self);
+}
+```
+
+**使用示例**：
+
+```rust
+let criterion = CrossEntropyLoss::new();
+
+for epoch in 0..epochs {
+    for (x_batch, y_batch) in bucketed_loader.iter() {
+        let output = model.forward(&x_batch)?;  // 可能产生不同的 output 节点
+        let loss = criterion.forward(&output, &y_batch)?;  // 自动缓存！
+        loss.backward()?;
+        optimizer.step()?;
+    }
+}
+
+// 查看缓存情况
+println!("Criterion 缓存的输出节点数: {}", criterion.cache_size());
+```
+
+**与 Var 方法的对比**：
+
+| API | 适用场景 | 缓存 |
+|-----|---------|------|
+| `output.cross_entropy(&target_var)?` | 固定形状、手动管理 target 节点 | 无 |
+| `criterion.forward(&output, &target_tensor)?` | 变长序列、自动管理缓存 | ✅ |
+
+**推荐**：对于包含循环层的模型，优先使用 `Criterion` 封装。
+
+---
+
+#### 4.2.11 变长序列数据支持
+
+> **新增于 2026-01-21**：为支持变长序列训练而引入。
+
+**设计动机**：
+
+RNN/LSTM/GRU 模型常需处理不同长度的序列。传统方法（padding）会引入无效计算，且掩码处理复杂。分桶（bucketing）策略将相同长度的序列批处理在一起，避免 padding。
+
+**核心组件**：
+
+```rust
+/// 变长样本
+#[derive(Debug, Clone)]
+pub struct VarLenSample {
+    /// 序列数据（展平为 1D）
+    pub features: Vec<f32>,
+    /// 序列长度
+    pub seq_len: usize,
+    /// 特征维度
+    pub feature_size: usize,
+    /// 标签
+    pub label: Vec<f32>,
+}
+
+impl VarLenSample {
+    pub fn new(features: Vec<f32>, seq_len: usize, feature_size: usize, label: Vec<f32>) -> Self;
+}
+
+/// 变长数据集
+pub struct VarLenDataset {
+    samples: Vec<VarLenSample>,
+    feature_size: usize,
+    label_size: usize,
+}
+
+impl VarLenDataset {
+    pub fn new(feature_size: usize, label_size: usize) -> Self;
+    pub fn push(&mut self, sample: VarLenSample);
+    pub fn len(&self) -> usize;
+    pub fn feature_size(&self) -> usize;
+    pub fn label_size(&self) -> usize;
+}
+
+/// 分桶数据加载器
+///
+/// 自动将相同长度的序列放在一起批处理。
+pub struct BucketedDataLoader<'a> {
+    dataset: &'a VarLenDataset,
+    batch_size: usize,
+    shuffle: bool,
+    drop_last: bool,
+}
+
+impl<'a> BucketedDataLoader<'a> {
+    pub fn new(dataset: &'a VarLenDataset) -> Self;
+
+    pub fn batch_size(self, batch_size: usize) -> Self;
+    pub fn shuffle(self, shuffle: bool) -> Self;
+    pub fn drop_last(self, drop_last: bool) -> Self;
+
+    /// 返回 (Tensor, Tensor) 迭代器
+    /// - 特征：[batch, seq_len, feature_size]
+    /// - 标签：[batch, label_size]
+    pub fn iter(&self) -> impl Iterator<Item = (Tensor, Tensor)>;
+
+    /// 获取桶数量（不同长度的数量）
+    pub fn num_buckets(&self) -> usize;
+}
+```
+
+**使用示例**：
+
+```rust
+// 创建变长数据集
+let mut dataset = VarLenDataset::new(1, 2);  // feature_size=1, label_size=2
+
+// 添加不同长度的样本
+dataset.push(VarLenSample::new(vec![1.0, 0.0, 1.0], 3, 1, vec![0.0, 1.0]));  // seq_len=3
+dataset.push(VarLenSample::new(vec![1.0, 1.0, 0.0, 1.0, 0.0], 5, 1, vec![1.0, 0.0]));  // seq_len=5
+// ... 添加更多样本
+
+// 创建分桶加载器
+let loader = BucketedDataLoader::new(&dataset)
+    .batch_size(32)
+    .shuffle(true)
+    .drop_last(true);
+
+println!("桶数量: {}", loader.num_buckets());  // 输出: 2（seq_len=3 和 seq_len=5）
+
+// 训练循环
+for (x_batch, y_batch) in loader.iter() {
+    // 每个批次内所有序列长度相同
+    // x_batch: [batch, seq_len, 1]
+    // y_batch: [batch, 2]
+    let output = model.forward(&x_batch)?;
+    let loss = criterion.forward(&output, &y_batch)?;
+    loss.backward()?;
+    optimizer.step()?;
+}
+```
+
+**与 ModelState + Criterion 的配合**：
+
+分桶加载器产生的不同形状批次会触发 `ModelState` 和 `Criterion` 的智能缓存机制：
+
+```
+BucketedDataLoader                ModelState              Criterion
+       │                              │                       │
+       ├─► [32, 3, 1] ────────────────► 缓存子图 A ──────────► 缓存 loss A
+       │                              │                       │
+       ├─► [32, 5, 1] ────────────────► 缓存子图 B ──────────► 缓存 loss B
+       │                              │                       │
+       └─► [32, 7, 1] ────────────────► 缓存子图 C ──────────► 缓存 loss C
+```
+
+**设计决策**：
+
+| 决策 | 理由 |
+|------|------|
+| 分桶而非 padding | 避免无效计算；无需掩码处理 |
+| 返回 Tensor 而非 Var | 与 `ModelState::forward(Tensor)` API 匹配 |
+| 与固定长度 DataLoader 独立 | 保持 API 简洁；不同使用场景 |
+
+---
+
 ### 4.3 使用示例
 
 #### 4.3.1 Define-and-Run 语义说明
@@ -2713,85 +3019,154 @@ impl Genome {
 
 ### 5.2 与 LSTM/RNN 记忆机制的兼容性
 
-新设计**完全兼容** LSTM、RNN、GRU 等带记忆机制的模型：
+> **重要更新（2026-01-21）**：RNN/LSTM/GRU 层已从"显式时间步"设计重构为"展开式设计"，
+> 与 PyTorch `nn.RNN` / `nn.LSTM` / `nn.GRU` 行为一致。
 
-1. **GraphInner 保留所有现有能力**
-   - `recurrent_edges` 循环边管理
-   - `prev_values` 双缓冲机制
-   - `step()` 和 `backward_through_time()` BPTT 支持
-   - `step_history` 时间步记录
+#### 5.2.1 展开式设计（当前实现）
 
-2. **Var 是 GraphInner 的薄封装**
-   - `Var` 只是 `(NodeId, Rc<RefCell<GraphInner>>)` 的组合
-   - 不改变任何底层语义
-   - LSTM/RNN 的所有操作通过 `GraphInner` 执行
-
-3. **示例：LSTM 前向传播**
+新的 RNN 层采用**展开式设计**，每次 `forward` 根据输入序列长度动态展开时间步：
 
 ```rust
-struct LSTMCell {
-    // ... 参数
+/// Rnn 层 - 展开式设计
+///
+/// 输入：[batch, seq_len, input_size]
+/// 输出：[batch, hidden_size]（最后一个时间步的隐藏状态）
+pub struct Rnn {
+    w_ih: Var,  // [input_size, hidden_size]
+    w_hh: Var,  // [hidden_size, hidden_size]
+    b_h: Var,   // [1, hidden_size]
+    graph: Graph,
+    input_size: usize,
+    hidden_size: usize,
 }
 
-impl LSTMCell {
-    fn forward(&self, x: Var, h_prev: Var, c_prev: Var) -> Result<(Var, Var), GraphError> {
-        // 所有操作都在同一个 GraphInner 上执行
-        let gates = x.matmul(&self.w_ih)? + h_prev.matmul(&self.w_hh)? + &self.bias;
+impl Rnn {
+    /// 创建 RNN 层（无需指定 batch_size）
+    pub fn new(
+        graph: &Graph,
+        input_size: usize,
+        hidden_size: usize,
+        name: &str,
+    ) -> Result<Self, GraphError>;
 
-        // 分割 gates（通过 GraphInner 底层方法）
-        let (i, f, g, o) = gates.split_4()?;
+    /// 前向传播（展开式）
+    ///
+    /// 自动展开所有时间步，返回最后一个时间步的隐藏状态。
+    /// BPTT 通过图的反向传播自动完成。
+    pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
+        let shape = x.value_expected_shape();
+        let (batch_size, seq_len, _) = (shape[0], shape[1], shape[2]);
 
-        let i = i.sigmoid();
-        let f = f.sigmoid();
-        let g = g.tanh();
-        let o = o.sigmoid();
+        // 初始化隐藏状态
+        let mut h = self.graph.zeros(&[batch_size, self.hidden_size])?;
 
-        // 新的 cell state 和 hidden state
-        let c = &f * &c_prev + &i * &g;  // ✅ 算子重载
-        let h = &o * &c.tanh();
+        // 展开时间步
+        for t in 0..seq_len {
+            // 使用 Select 节点提取 x[:, t, :]
+            let x_t = x.select(1, t)?;  // [batch, input_size]
 
-        Ok((h, c))
+            // RNN 计算：h_t = tanh(x_t @ W_ih + h_{t-1} @ W_hh + b_h)
+            let input_contrib = x_t.matmul(&self.w_ih)?;
+            let hidden_contrib = h.matmul(&self.w_hh)?;
+            h = (&input_contrib + &hidden_contrib + &self.b_h).tanh();
+        }
+
+        Ok(h)  // 返回最后一个时间步
     }
-}
-
-// BPTT 训练
-fn train_lstm_bptt(
-    graph: &Graph,
-    lstm: &LSTMCell,
-    sequence: &[Tensor],
-    targets: &[Tensor],
-) -> Result<f32, GraphError> {
-    let mut h = graph.zeros(&[batch_size, hidden_size])?;
-    let mut c = graph.zeros(&[batch_size, hidden_size])?;
-
-    let mut total_loss = graph.zeros(&[1, 1])?;
-
-    // 前向传播序列
-    for (t, (x_t, y_t)) in sequence.iter().zip(targets).enumerate() {
-        let x = graph.input(x_t)?;
-        let y = graph.input(y_t)?;
-
-        // LSTM 前向
-        let (h_new, c_new) = lstm.forward(x, h.clone(), c.clone())?;
-
-        // 计算 loss
-        let loss_t = h_new.mse_loss(&y)?;
-        total_loss = &total_loss + &loss_t;  // ✅ 算子重载
-
-        // 通过 GraphInner 记录时间步（BPTT 用）
-        graph.inner_mut().step()?;
-
-        h = h_new;
-        c = c_new;
-    }
-
-    // BPTT 反向传播（计算所有参数的梯度）
-    let loss_val = total_loss.backward()?;
-    // optimizer.step() 只更新 lstm.parameters()
-
-    Ok(loss_val)
 }
 ```
+
+**关键变化**：
+
+| 旧设计（显式时间步） | 新设计（展开式） |
+|---------------------|-----------------|
+| 需要指定 `batch_size` | 无需指定，从输入推断 |
+| 用户手动迭代时间步 + `step()` | 层内自动展开时间步 |
+| 使用 `connect_recurrent()` 循环边 | 使用 `Select` 节点提取时间步 |
+| 需要显式调用 `backward_through_time()` | 普通 `backward()` 自动完成 BPTT |
+| `forward(&Tensor)` 接收 Tensor | `forward(&Var)` 接收 Var |
+
+#### 5.2.2 配合 ModelState 使用（推荐）
+
+展开式 RNN 层应配合 `ModelState` 使用，实现 PyTorch 风格的 `forward(Tensor)` API：
+
+```rust
+pub struct ParityRNN {
+    rnn: Rnn,
+    fc: Linear,
+    state: ModelState,
+}
+
+impl ParityRNN {
+    pub fn new(graph: &Graph, hidden_size: usize) -> Result<Self, GraphError> {
+        Ok(Self {
+            rnn: Rnn::new(graph, 1, hidden_size, "rnn")?,
+            fc: Linear::new(graph, hidden_size, 2, true, "fc")?,
+            state: ModelState::new(graph),
+        })
+    }
+
+    /// PyTorch 风格的 forward
+    pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
+        self.state.forward(x, |input| {
+            let h = self.rnn.forward(input)?;
+            Ok(self.fc.forward(&h))
+        })
+    }
+}
+```
+
+#### 5.2.3 变长序列支持
+
+展开式设计天然支持变长序列。配合 `BucketedDataLoader`，不同长度的序列自动创建独立的计算图子图：
+
+```rust
+// 生成变长奇偶性数据
+let mut dataset = VarLenDataset::new(1, 2);
+for len in [5, 10, 15] {
+    for _ in 0..100 {
+        let (seq, label) = generate_parity_sample(len);
+        dataset.push(VarLenSample::new(seq, len, 1, label));
+    }
+}
+
+// 分桶加载器（相同长度的序列批处理在一起）
+let loader = BucketedDataLoader::new(&dataset);
+
+// 训练
+let criterion = CrossEntropyLoss::new();
+for (x_batch, y_batch) in loader.iter() {
+    let output = model.forward(&x_batch)?;  // 自动缓存不同形状
+    let loss = criterion.forward(&output, &y_batch)?;  // 自动缓存不同输出节点
+    loss.backward()?;
+    optimizer.step()?;
+}
+
+println!("ModelState 缓存: {} 种形状", model.cache_size());
+println!("Criterion 缓存: {} 个输出节点", criterion.cache_size());
+```
+
+#### 5.2.4 底层 BPTT API（仍保留）
+
+底层的显式 BPTT API（`step()`, `backward_through_time()`, `connect_recurrent()` 等）仍保留在 `GraphInner` 中，供需要精细控制的高级场景使用。但**常规使用场景下无需调用这些 API**。
+
+```rust
+// 底层 API 仍可用（但通常不需要）
+let mut g = graph.inner_mut();
+g.connect_recurrent(hidden_id, h_prev_id)?;  // 建立循环边
+g.step(output_id)?;                           // 记录时间步
+g.backward_through_time(output_id, &params, 5)?;  // 带截断的 BPTT
+```
+
+#### 5.2.5 设计决策记录
+
+| 日期 | 决策 | 理由 |
+|------|------|------|
+| 2026-01-21 | RNN/LSTM/GRU 从"显式时间步"改为"展开式"设计 | 与 PyTorch 一致；用户无需手动迭代；代码更简洁 |
+| 2026-01-21 | 引入 `Select` 节点用于时间步提取 | 展开式设计的核心组件；支持反向传播 |
+| 2026-01-21 | 移除 `MemoryLayer` trait | 展开式设计无需此抽象；简化层定义 |
+| 2026-01-21 | 移除 `Graph::training_target` 机制 | 展开式设计不依赖自动检测终端节点 |
+| 2026-01-21 | 层的 `forward` 改为接收 `&Var` 而非 `&Tensor` | 与其他层统一；配合 `ModelState` 处理 Tensor 输入 |
 
 ### 5.3 与 NEAT 动态拓扑的兼容性
 
@@ -2856,9 +3231,11 @@ fn mutate_add_node(genome: &mut Genome, graph: &Graph, tracker: &mut InnovationT
 
 | 优势 | 说明 |
 |------|------|
-| **PyTorch 级用户体验** | 算子重载 + 链式调用 + 无生命周期 |
+| **PyTorch 级用户体验** | 算子重载 + 链式调用 + 无生命周期 + `forward(Tensor)` API |
 | **完全兼容梯度流控制** | `detach`/`attach`/`retain_graph` 等 |
-| **完全兼容 LSTM/RNN** | GraphInner 保留所有 BPTT 能力 |
+| **展开式 RNN/LSTM/GRU** | 与 PyTorch 一致；BPTT 自动完成；支持变长序列 |
+| **智能缓存机制** | `ModelState` + `Criterion` 自动管理不同形状的子图 |
+| **变长序列支持** | `BucketedDataLoader` 分桶加载；无需 padding |
 | **完全兼容 NEAT** | 通过 `graph.inner_mut()` 访问底层进行拓扑变异 |
 | **概念简单** | Graph 是句柄，Var 是带图引用的节点 ID |
 | **运行时开销极小** | Rc clone + RefCell borrow，纳秒级 |
@@ -3055,12 +3432,41 @@ struct MLP {
   - [x] `Linear::forward(x: Var)` → 不需要 graph 参数 ✅
   - [x] `Conv2d`, `Rnn`, `Lstm`, `Gru`, `AvgPool2d`, `MaxPool2d` 统一为 PyTorch 风格 API ✅
 
+**Phase 2 扩展内容（2026-01-21）**：
+
+- [x] **RNN/LSTM/GRU 展开式重构**
+  - [x] 从"显式时间步"改为"展开式"设计 ✅
+  - [x] 实现 `Select` 节点用于时间步提取 ✅ `src/nn/nodes/raw_node/ops/select.rs`
+  - [x] 移除 `MemoryLayer` trait ✅
+  - [x] 移除 `Graph::training_target` 机制 ✅
+  - [x] 层的 `forward` 改为接收 `&Var` ✅
+- [x] **实现 ModelState（模型状态管理器）** ✅ `src/nn/model_state.rs`
+  - [x] 延迟绑定 + 智能缓存机制
+  - [x] 支持变长序列的形状缓存
+- [x] **实现 Criterion（损失函数封装）** ✅ `src/nn/criterion.rs`
+  - [x] `CrossEntropyLoss` 带智能缓存
+  - [x] `MseLoss` 带智能缓存
+- [x] **实现变长序列数据支持** ✅ `src/data/dataloader.rs`
+  - [x] `VarLenSample`, `VarLenDataset`
+  - [x] `BucketedDataLoader`（分桶加载器）
+- [x] **新增 Var 形状操作** ✅ `src/nn/var_ops/shape.rs`
+  - [x] `Var::select(axis, index)` 序列索引
+
 **🧪 Phase 2 验收门禁**（必须全部通过才能进入 Phase 3）：
 - [x] 新增单元测试：`src/nn/tests/module_trait.rs` ✅ 6 tests
 - [x] 新增单元测试：`src/nn/tests/optimizer_v2.rs` ✅
 - [x] 用新 API 重写 `test_mnist_linear.rs` 并通过（90%+ 准确率）✅ `tests/test_mnist_linear_v2.rs`
 - [x] 用新 API 重写 `test_mnist_batch.rs` 并通过 ✅ `tests/test_mnist_batch_v2.rs`
 - [x] `cargo test` 全部通过 ✅ 822 unit tests + V2 integration tests
+
+**🧪 Phase 2 扩展验收门禁（2026-01-21）**：
+- [x] 新增单元测试：`src/nn/tests/model_state.rs` ✅
+- [x] 新增单元测试：`src/nn/tests/criterion.rs` ✅
+- [x] 新增单元测试：`src/nn/tests/node_select.rs` ✅
+- [x] 更新 RNN/LSTM/GRU 层测试 ✅ `src/nn/tests/layer_rnn.rs`, `layer_lstm.rs`, `layer_gru.rs`
+- [x] 新增变长序列示例：`examples/parity_rnn_var_len/` ✅
+- [x] 新增 LSTM 变长序列示例：`examples/parity_lstm_var_len/` ✅
+- [x] 新增 GRU 变长序列示例：`examples/parity_gru_var_len/` ✅
 
 ---
 
@@ -3262,6 +3668,15 @@ let inner2 = graph.inner_mut();  // panic!
 | 2026-01-19 | Layer 层使用原生广播替代 `ones @ bias` | 计算图更简洁（减少辅助节点），Linear/RNN/LSTM/GRU 统一简化 |
 | 2026-01-19 | 移除 `ScalarMultiply` 节点 | 功能由 `Multiply + 广播` 完全覆盖（`[1,1] * [m,n]`） |
 | 2026-01-19 | 移除 `ChannelBiasAdd` 节点 | 功能由 `Add + 广播` 完全覆盖（Conv2d bias 形状调整为 `[1,C,1,1]`） |
+| 2026-01-21 | RNN/LSTM/GRU 从"显式时间步"改为"展开式"设计 | 与 PyTorch `nn.RNN` 一致；用户无需手动迭代；BPTT 自动完成；详见 §5.2 |
+| 2026-01-21 | 引入 `Select` 节点用于时间步提取 | 展开式 RNN 的核心组件；支持 `x.select(axis, index)` 操作；反向传播正确 |
+| 2026-01-21 | 移除 `MemoryLayer` trait | 展开式设计无需此抽象；层定义更简洁 |
+| 2026-01-21 | 移除 `Graph::training_target` 机制 | 展开式设计不依赖自动检测终端节点；简化 Graph API |
+| 2026-01-21 | 引入 `ModelState` 模型状态管理器 | PyTorch 风格 `forward(Tensor)` API；按输入形状智能缓存子图；支持变长序列；详见 §4.2.9 |
+| 2026-01-21 | 引入 `Criterion` 损失函数封装 | PyTorch 风格 loss API；按输出节点智能缓存；与 `ModelState` 配合；详见 §4.2.10 |
+| 2026-01-21 | 引入 `VarLenDataset` + `BucketedDataLoader` | 变长序列训练支持；分桶避免 padding；详见 §4.2.11 |
+| 2026-01-21 | 层的 `forward` 改为接收 `&Var` 而非 `&Tensor` | 与其他层统一；配合 `ModelState` 处理 Tensor 输入 |
+| 2026-01-21 | 缓存责任分离：ModelState 管理输入，Criterion 管理 loss | 单一职责；Layer 不持有缓存；可组合 |
 
 ### 9.1 关键设计决策详解
 
