@@ -69,6 +69,88 @@ self.padded_input = Some(padded.clone());
 
 ---
 
+## 4. RNN 场景 `select` + `set_value` 二次复制问题
+
+**位置**：`src/nn/layer/rnn.rs` → `forward`
+
+**现状**：
+```rust
+for t in 0..seq_len {
+    let x_t = x.select(1, t);           // ① 复制：index_axis → to_owned()
+    self.input_node.set_value(&x_t)?;   // ② 复制：value.cloned()
+}
+```
+
+**问题**：每个时间步有两次数据复制，实际上只需一次。
+
+**影响评估**（以 parity 示例为例）：
+| 指标 | 数值 |
+|------|------|
+| 每次 select 复制 | batch_size × input_size = 32 × 1 = 32 floats |
+| 调用次数 | 8 步 × ~31 batch × ~40 epoch ≈ 10K 次 |
+| 总冗余复制量 | ~1.2 MB |
+
+**结论**：对于当前规模，开销可忽略（真正瓶颈在矩阵乘法）。
+
+**可能的优化方案**：
+
+### 方案 A：新增 `set_value_owned` 方法
+
+```rust
+// 保留原有方法
+pub fn set_value(&self, value: &Tensor) -> Result<(), GraphError>
+
+// 新增：接受所有权，避免二次 clone
+pub fn set_value_owned(&self, value: Tensor) -> Result<(), GraphError>
+
+// 使用
+let x_t = x.select(1, t);              // 复制 ①
+self.input_node.set_value_owned(x_t)?;  // 转移所有权，无复制
+```
+
+**优点**：向后兼容，现有 253 处 `set_value` 调用不受影响
+**缺点**：API 冗余
+
+### 方案 B：新增 `select_view` + `set_value_from_view`
+
+```rust
+// 新增视图方法
+pub fn select_view(&self, axis: usize, index: usize) -> ArrayViewD<'_, f32>
+pub fn set_value_from_view(&self, view: ArrayViewD<'_, f32>) -> Result<...>
+
+// 使用
+let view = x.select_view(1, t);              // 零拷贝
+self.input_node.set_value_from_view(view)?;  // 复制 ①
+```
+
+**优点**：对只读场景也有收益
+**缺点**：引入新类型（或暴露 ndarray 的 `ArrayViewD`），增加 API 复杂度
+
+### 方案 C：引入 `TensorView<'a>` 包装类型
+
+```rust
+pub struct TensorView<'a> {
+    view: ArrayViewD<'a, f32>,
+}
+
+impl Tensor {
+    pub fn select_view(&self, axis: usize, index: usize) -> TensorView<'_>
+}
+
+// 让 set_value 通过泛型或 trait 接受 TensorView
+```
+
+**优点**：类型封装更优雅
+**缺点**：实现复杂度高，需要处理生命周期
+
+**状态**：暂缓实施（YAGNI），等性能分析证明是瓶颈再优化
+
+**备注**：
+- 核心限制：`ArrayViewD` 和 `Tensor` 是不同类型，无法让 `select` 返回 `&Tensor`
+- 如果未来 RNN 处理更大规模数据，可优先考虑方案 A（最小改动）
+
+---
+
 ## 已实施的优化（已验证有效）
 
 以下优化已实施并通过测试：
