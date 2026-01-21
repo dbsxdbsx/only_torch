@@ -16,7 +16,7 @@
 mod model;
 
 use model::MnistMLP;
-use only_torch::data::MnistDataset;
+use only_torch::data::{DataLoader, MnistDataset, TensorDataset};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor_slice;
 use std::time::Instant;
@@ -60,7 +60,25 @@ fn main() -> Result<(), GraphError> {
     println!("  - Epochs: {max_epochs}");
     println!("  - 学习率: {learning_rate}");
 
-    // 3. 构建网络（使用固定种子确保可复现）
+    // 3. 准备数据（使用 DataLoader！）
+    let all_train_images = train_data.images();
+    let all_train_labels = train_data.labels();
+    let all_test_images = test_data.images();
+    let all_test_labels = test_data.labels();
+
+    // 提取部分数据用于训练/测试
+    let train_x = tensor_slice!(all_train_images, 0usize..train_samples, ..);
+    let train_y = tensor_slice!(all_train_labels, 0usize..train_samples, ..);
+    let test_x = tensor_slice!(all_test_images, 0usize..test_samples, ..);
+    let test_y = tensor_slice!(all_test_labels, 0usize..test_samples, ..);
+
+    // 创建 DataLoader（drop_last=true 丢弃不完整的最后一个 batch）
+    let train_loader =
+        DataLoader::new(TensorDataset::new(train_x, train_y), batch_size).drop_last(true);
+    let test_loader =
+        DataLoader::new(TensorDataset::new(test_x, test_y), batch_size).drop_last(true);
+
+    // 4. 构建网络（使用固定种子确保可复现）
     let graph = Graph::new_with_seed(42);
     let model = MnistMLP::new(&graph)?;
 
@@ -80,31 +98,18 @@ fn main() -> Result<(), GraphError> {
         784 * 128 + 128 + 128 * 10 + 10
     );
 
-    // 4. 训练
+    // 5. 训练
     println!("\n[3/3] 开始训练...\n");
-
-    let all_train_images = train_data.images();
-    let all_train_labels = train_data.labels();
-    let all_test_images = test_data.images();
-    let all_test_labels = test_data.labels();
-
-    let num_batches = train_samples / batch_size;
-    let test_batches = test_samples / batch_size;
 
     let mut best_acc = 0.0f32;
 
     for epoch in 0..max_epochs {
         let epoch_start = Instant::now();
         let mut epoch_loss = 0.0;
+        let mut num_batches = 0;
 
-        // 训练
-        for batch_idx in 0..num_batches {
-            let start = batch_idx * batch_size;
-            let end = start + batch_size;
-
-            let batch_x = tensor_slice!(all_train_images, start..end, ..);
-            let batch_y = tensor_slice!(all_train_labels, start..end, ..);
-
+        // 使用 DataLoader 迭代训练
+        for (batch_x, batch_y) in train_loader.iter() {
             x.set_value(&batch_x)?;
             y.set_value(&batch_y)?;
 
@@ -113,22 +118,21 @@ fn main() -> Result<(), GraphError> {
             optimizer.step()?;
 
             epoch_loss += loss_val;
+            num_batches += 1;
         }
 
-        // 测试
+        // 使用 DataLoader 迭代测试
         let mut correct = 0;
-        for batch_idx in 0..test_batches {
-            let start = batch_idx * batch_size;
-            let end = start + batch_size;
+        let mut total = 0;
 
-            let batch_x = tensor_slice!(all_test_images, start..end, ..);
-            let batch_y = tensor_slice!(all_test_labels, start..end, ..);
-
+        for (batch_x, batch_y) in test_loader.iter() {
             x.set_value(&batch_x)?;
             logits.forward()?;
 
             let preds = logits.value()?.unwrap();
-            for i in 0..batch_size {
+            let current_batch_size = batch_x.shape()[0];
+
+            for i in 0..current_batch_size {
                 let pred_class = (0..10)
                     .max_by(|&a, &b| preds[[i, a]].partial_cmp(&preds[[i, b]]).unwrap())
                     .unwrap();
@@ -136,10 +140,11 @@ fn main() -> Result<(), GraphError> {
                 if pred_class == true_class {
                     correct += 1;
                 }
+                total += 1;
             }
         }
 
-        let acc = correct as f32 / (test_batches * batch_size) as f32 * 100.0;
+        let acc = correct as f32 / total as f32 * 100.0;
         best_acc = best_acc.max(acc);
 
         println!(
@@ -148,12 +153,12 @@ fn main() -> Result<(), GraphError> {
             epoch_loss / num_batches as f32,
             acc,
             correct,
-            test_batches * batch_size,
+            total,
             epoch_start.elapsed().as_secs_f32()
         );
     }
 
-    // 5. 结果
+    // 6. 结果
     println!("\n最佳准确率: {best_acc:.1}%");
 
     if best_acc >= 95.0 {

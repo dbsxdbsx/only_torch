@@ -4,6 +4,8 @@
 //!
 //! # 主要组件
 //!
+//! - [`DataLoader`]: PyTorch 风格的数据批量加载器
+//! - [`TensorDataset`]: 持有特征和标签的数据集
 //! - [`MnistDataset`]: MNIST 手写数字数据集（分类任务）
 //! - [`CaliforniaHousingDataset`]: California Housing 房价数据集（回归任务）
 //! - [`transforms`]: 数据变换函数（归一化、one-hot 等）
@@ -12,18 +14,23 @@
 //! # 使用示例
 //!
 //! ```ignore
-//! use only_torch::data::{MnistDataset, CaliforniaHousingDataset, transforms};
+//! use only_torch::data::{DataLoader, TensorDataset};
 //!
-//! // 加载 MNIST 训练集（分类）
-//! let train_data = MnistDataset::train()?;
-//! let train_flat = train_data.flatten();
+//! // 创建数据集和加载器
+//! let dataset = TensorDataset::new(train_x, train_y);
+//! let loader = DataLoader::new(dataset, 32)
+//!     .shuffle(true)
+//!     .seed(42);
 //!
-//! // 加载 California Housing（回归）
-//! let housing = CaliforniaHousingDataset::load_default()?
-//!     .standardize();
-//! let (train, test) = housing.train_test_split(0.2, Some(42))?;
+//! // PyTorch 风格训练循环
+//! for (x_batch, y_batch) in loader.iter() {
+//!     model.forward(&x_batch)?;
+//!     loss.backward()?;
+//!     optimizer.step()?;
+//! }
 //! ```
 
+mod dataloader;
 pub mod datasets;
 pub mod error;
 pub mod transforms;
@@ -32,5 +39,6 @@ pub mod transforms;
 mod tests;
 
 // Re-exports
+pub use dataloader::{DataLoader, TensorDataset};
 pub use datasets::{CaliforniaHousingDataset, MnistDataset, default_data_dir};
 pub use error::DataError;

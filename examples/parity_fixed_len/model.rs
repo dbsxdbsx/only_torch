@@ -27,7 +27,6 @@ pub struct ParityRNN {
     fc: Linear,
     /// 输出节点（2 类 logits）
     output: Var,
-    batch_size: usize,
 }
 
 impl ParityRNN {
@@ -47,12 +46,7 @@ impl ParityRNN {
         // 构建输出计算图: fc(rnn.hidden()) → 2 类 logits
         let output = fc.forward(rnn.hidden());
 
-        Ok(Self {
-            rnn,
-            fc,
-            output,
-            batch_size,
-        })
+        Ok(Self { rnn, fc, output })
     }
 
     /// 前向传播（PyTorch 风格）
@@ -70,10 +64,6 @@ impl ParityRNN {
     /// 获取输出节点
     pub fn output(&self) -> &Var {
         &self.output
-    }
-
-    pub fn batch_size(&self) -> usize {
-        self.batch_size
     }
 }
 

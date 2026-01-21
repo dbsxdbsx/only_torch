@@ -17,6 +17,7 @@
 mod model;
 
 use model::{generate_parity_data, ParityRNN};
+use only_torch::data::{DataLoader, TensorDataset};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
@@ -31,7 +32,7 @@ fn main() -> Result<(), GraphError> {
     let train_samples = 1000;
     let test_samples = 200;
     let max_epochs = 150;
-    let lr = 0.01; // Adam 使用较小学习率
+    let lr = 0.01;
     let target_accuracy = 95.0;
 
     println!("超参数:");
@@ -43,10 +44,16 @@ fn main() -> Result<(), GraphError> {
     println!("  损失函数: CrossEntropy");
     println!();
 
-    // ========== 数据生成 ==========
-    // 生成 Tensor 格式的数据: [num_samples, seq_len, input_size]
+    // ========== 数据准备（使用 DataLoader！）==========
     let (train_x, train_y) = generate_parity_data(train_samples, seq_len, seed);
     let (test_x, test_y) = generate_parity_data(test_samples, seq_len, seed + 1000);
+
+    // 创建 DataLoader（PyTorch 风格）
+    let train_dataset = TensorDataset::new(train_x, train_y.clone());
+    let train_loader = DataLoader::new(train_dataset, batch_size).drop_last(true);
+
+    let test_dataset = TensorDataset::new(test_x, test_y.clone());
+    let test_loader = DataLoader::new(test_dataset, batch_size).drop_last(true);
 
     println!(
         "数据集: 训练 {} 样本, 测试 {} 样本",
@@ -77,45 +84,35 @@ fn main() -> Result<(), GraphError> {
     // 创建 Adam 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), lr);
 
-    // 无需 set_training_target()！RNN 会自动检测到 loss 节点
-
     // ========== 训练循环（完全 PyTorch 风格！）==========
-    let num_batches = train_samples / batch_size;
     let mut best_accuracy = 0.0f32;
-
     println!("开始训练...\n");
 
     for epoch in 0..max_epochs {
         let mut epoch_loss = 0.0;
+        let mut num_batches = 0;
 
-        for batch_idx in 0..num_batches {
-            let start = batch_idx * batch_size;
-
-            // 1. 准备 batch 数据: [batch, seq_len, 1]
-            let x_batch = extract_batch(&train_x, start, batch_size, seq_len);
-            let y_batch = extract_labels(&train_y, start, batch_size);
-
-            // 2. 设置标签
+        // 使用 DataLoader 迭代！
+        for (x_batch, y_batch) in train_loader.iter() {
+            // 1. 设置标签
             labels_node.set_value(&y_batch)?;
 
-            // 3. 前向传播（PyTorch 风格：无需传递 loss_id！）
+            // 2. 前向传播
             model.forward(&x_batch)?;
 
-            // 4. 获取 loss 值
-            let loss_val = loss.value()?.unwrap()[[0, 0]];
-            epoch_loss += loss_val;
+            // 3. 获取 loss 值
+            epoch_loss += loss.value()?.unwrap()[[0, 0]];
+            num_batches += 1;
 
-            // 5. 反向传播（自动检测 BPTT！）
+            // 4. 反向传播 + 参数更新
             loss.backward()?;
-
-            // 6. 参数更新 + 清零梯度（一行搞定！）
             optimizer.step()?;
         }
 
         // 每 10 个 epoch 评估
         if (epoch + 1) % 10 == 0 || epoch == 0 {
             let avg_loss = epoch_loss / num_batches as f32;
-            let accuracy = evaluate(&model, &graph, &test_x, &test_y, seq_len)?;
+            let accuracy = evaluate(&model, &graph, &test_loader)?;
             best_accuracy = best_accuracy.max(accuracy);
 
             println!(
@@ -131,7 +128,7 @@ fn main() -> Result<(), GraphError> {
     }
 
     // ========== 最终评估 ==========
-    let final_accuracy = evaluate(&model, &graph, &test_x, &test_y, seq_len)?;
+    let final_accuracy = evaluate(&model, &graph, &test_loader)?;
     println!("\n========== 最终结果 ==========");
     println!("测试准确率: {:.1}%", final_accuracy);
     println!("最佳准确率: {:.1}%", best_accuracy);
@@ -147,59 +144,25 @@ fn main() -> Result<(), GraphError> {
     }
 }
 
-/// 从数据集中提取一个 batch
-fn extract_batch(data: &Tensor, start: usize, batch_size: usize, seq_len: usize) -> Tensor {
-    let mut batch_data = Vec::with_capacity(batch_size * seq_len);
-    for i in start..(start + batch_size) {
-        for t in 0..seq_len {
-            batch_data.push(data[[i, t, 0]]);
-        }
-    }
-    Tensor::new(&batch_data, &[batch_size, seq_len, 1])
-}
-
-/// 从标签集中提取一个 batch
-fn extract_labels(labels: &Tensor, start: usize, batch_size: usize) -> Tensor {
-    let mut batch_labels = Vec::with_capacity(batch_size * 2);
-    for i in start..(start + batch_size) {
-        batch_labels.push(labels[[i, 0]]);
-        batch_labels.push(labels[[i, 1]]);
-    }
-    Tensor::new(&batch_labels, &[batch_size, 2])
-}
-
 /// 评估模型准确率
-fn evaluate(
-    model: &ParityRNN,
-    graph: &Graph,
-    test_x: &Tensor,
-    test_y: &Tensor,
-    seq_len: usize,
-) -> Result<f32, GraphError> {
-    let batch_size = model.batch_size();
-    let num_samples = test_x.shape()[0];
-    let num_batches = num_samples / batch_size;
-
+fn evaluate(model: &ParityRNN, graph: &Graph, test_loader: &DataLoader) -> Result<f32, GraphError> {
     graph.eval();
 
     let mut correct = 0;
     let mut total = 0;
     let output_id = model.output().node_id();
 
-    for batch_idx in 0..num_batches {
-        let start = batch_idx * batch_size;
-
-        // 提取 batch
-        let x_batch = extract_batch(test_x, start, batch_size, seq_len);
-
-        // PyTorch 风格前向传播（无需传递 output_id！）
+    for (x_batch, y_batch) in test_loader.iter() {
+        // 前向传播
         model.forward(&x_batch)?;
 
         // 计算准确率
         let logits = graph.inner().get_node_value(output_id)?.unwrap().clone();
+        let batch_size = x_batch.shape()[0];
+
         for i in 0..batch_size {
             let pred_class = if logits[[i, 0]] > logits[[i, 1]] { 0 } else { 1 };
-            let true_class = if test_y[[start + i, 0]] > 0.5 { 0 } else { 1 };
+            let true_class = if y_batch[[i, 0]] > 0.5 { 0 } else { 1 };
             if pred_class == true_class {
                 correct += 1;
             }

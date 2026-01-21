@@ -154,7 +154,7 @@ linear 等常用层，容易添加 edge(如已存在的 add 节点的父节点)�
 - [性能优化候选项](.doc/optimization_candidates.md) - 待 benchmark 验证的具体优化点记录
 - [本项目的梯度设计机制说明](.doc/design/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
 - [梯度流控制机制](.doc/design/gradient_flow_control_design.md) - `no_grad`、`detach`、`retain_graph` 三种梯度控制机制的设计，包括 GAN、Actor-Critic、多任务学习等高级训练模式
-- [DataLoader 设计文档](.doc/design/data_loader_design.md) - 数据加载模块的架构设计，包括 MNIST 数据集支持、自动下载/缓存、数据转换等
+- [DataLoader 使用指南](.doc/design/data_loader_design.md) - PyTorch 风格的数据批量加载器，支持 `TensorDataset`、自动分批、shuffle、drop_last 等功能
 - [Batch Forward/Backward 机制设计](.doc/design/batch_mechanism_design.md) - 批量训练机制的设计决策，包括 Gradient-based 反向传播、API 设计、性能优化（约 18x 加速）等
 - [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md) - 统一的图描述层（IR）设计，支持模型保存/加载（JSON+bin）、Graphviz 可视化、Keras 风格 summary 输出
 - [记忆/循环机制设计](.doc/design/memory_mechanism_design.md) - NEAT 风格循环与传统 RNN 循环的关系、Hybrid 设计方案、BPTT/TBPTT 训练策略、实现路径及相关论文
