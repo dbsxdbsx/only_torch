@@ -24,7 +24,7 @@ test-filter pattern:
 # ==================== Examples ====================
 
 # 运行所有 examples
-examples: example-xor example-iris example-sine example-mnist example-california example-parity
+examples: example-xor example-iris example-sine example-mnist example-mnist-gan example-california example-parity
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -45,6 +45,10 @@ example-sine:
 example-mnist:
     @echo "=== Running MNIST ==="
     cargo run --example mnist
+
+example-mnist-gan:
+    @echo "=== Running MNIST GAN ==="
+    cargo run --example mnist_gan
 
 example-california:
     @echo "=== Running California Housing ==="

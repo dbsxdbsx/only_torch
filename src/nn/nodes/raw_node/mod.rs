@@ -18,7 +18,9 @@ use enum_dispatch::enum_dispatch;
 pub(in crate::nn) enum NodeType {
     Input(Input),
     Parameter(Parameter),
-    State(State), // 时间状态节点（RNN 隐藏状态等）
+    State(State),              // 时间状态节点（RNN 隐藏状态等）
+    Identity(Identity),        // 恒等映射（用于 detach 等）
+    GradientRouter(GradientRouter), // 梯度路由器（ModelState 内部使用）
     Add(Add),
     AvgPool2d(AvgPool2d),
     Conv2d(Conv2d),
@@ -29,7 +31,7 @@ pub(in crate::nn) enum NodeType {
     MSELoss(MSELoss),
     Multiply(Multiply),
     Reshape(Reshape),
-    Select(Select), // 张量索引选择（RNN 展开式设计用）
+    Select(Select),            // 张量索引选择（RNN 展开式设计用）
     LeakyReLU(LeakyReLU),
     Sigmoid(Sigmoid),
     Sign(Sign),

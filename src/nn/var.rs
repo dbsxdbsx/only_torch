@@ -157,16 +157,90 @@ impl Var {
 
     // ==================== 梯度流控制 ====================
 
-    /// 截断梯度流（返回新的 detached Var）
-    pub fn detach(&self) -> Result<Self, GraphError> {
-        self.graph.borrow_mut().detach_node(self.id)?;
-        Ok(self.clone())
+    /// 创建一个 detached 的副本（函数式 detach）
+    ///
+    /// 返回一个新的 Var，它是当前节点的 Identity 副本，但梯度流被阻断。
+    /// 原节点**不受影响**。
+    ///
+    /// # 语义（与 PyTorch 一致）
+    /// - 返回的 Var 与原 Var 共享前向计算的值
+    /// - 但反向传播时，梯度不会通过返回的 Var 传递到原 Var
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // GAN 训练：训练 D 时阻止梯度流向 G
+    /// let fake_images = G.forward(&noise)?;
+    /// let fake_detached = fake_images.detach();  // 新 Var，阻断梯度
+    /// let d_fake = D.forward(&fake_detached)?;
+    /// d_loss.backward()?;  // 梯度不会流向 G
+    ///
+    /// // 训练 G 时正常使用
+    /// let d_fake_for_g = D.forward(&fake_images)?;  // 原 Var，梯度正常流动
+    /// g_loss.backward()?;  // 梯度流向 G
+    /// ```
+    /// 创建一个 detached 视图（轻量级包装，不创建图节点）
+    ///
+    /// 返回 `DetachedVar`，它是原 Var 的轻量级包装：
+    /// - **不创建任何图节点**
+    /// - 实现 `ForwardInput` trait，行为像 detached Var
+    /// - 用于 GAN 训练等需要梯度截断的场景
+    ///
+    /// # 与 `detach_node()` 的区别
+    /// - `detach()` → 返回 `DetachedVar`（轻量级，推荐用于 ModelState）
+    /// - `detach_node()` → 返回 `Var`（创建 Identity 节点，用于直接图操作）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // GAN 训练（推荐）
+    /// let fake = G.forward(&noise)?;
+    /// let d_fake = D.forward(&fake.detach())?;  // DetachedVar，无图节点创建
+    /// ```
+    pub fn detach(&self) -> DetachedVar {
+        DetachedVar { inner: self.clone() }
     }
 
-    /// 恢复梯度流
-    pub fn attach(&self) -> Result<Self, GraphError> {
-        self.graph.borrow_mut().attach_node(self.id)?;
-        Ok(self.clone())
+    /// 创建一个 detached 节点（创建 Identity 节点）
+    ///
+    /// 在图中创建一个新的 Identity 节点，标记为 detached。
+    /// 返回指向该节点的 Var。
+    ///
+    /// # 何时使用
+    /// - 需要在图中保留明确的 detach 边界
+    /// - 需要对 detached 结果进行进一步的图操作
+    ///
+    /// # 注意
+    /// 对于 ModelState 场景，推荐使用 `detach()` 方法（更高效）。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 需要在图中操作 detached 结果
+    /// let x_detached = x.detach_node();
+    /// let y = x_detached.sigmoid();  // 可以继续构建图
+    /// ```
+    pub fn detach_node(&self) -> Self {
+        let new_id = self
+            .graph
+            .borrow_mut()
+            .new_identity_node(self.id, None, true)
+            .expect("内部错误：detach_node 创建 Identity 节点失败");
+        Self {
+            graph: self.graph.clone(),
+            id: new_id,
+        }
+    }
+
+    /// 检查此 Var 对应的节点是否处于 detached 状态
+    ///
+    /// detached 节点在反向传播时不会传递梯度给其父节点。
+    ///
+    /// # 用途
+    /// - ModelState 使用此方法判断 Var 输入是否可以缓存
+    /// - detached Var 只需要值，不需要梯度流，因此可以像 Tensor 一样缓存
+    pub fn is_detached(&self) -> bool {
+        self.graph
+            .borrow()
+            .is_node_detached(self.id)
+            .unwrap_or(false)
     }
 
     // ==================== 执行 ====================
@@ -450,6 +524,56 @@ impl Neg for Var {
     }
 }
 
+// ==================== DetachedVar ====================
+
+/// Detached Var（轻量级包装器）
+///
+/// 这是 `Var::detach()` 返回的类型，用于表示"梯度截断"的 Var 视图：
+/// - **不创建图节点**：与之前的 Identity 节点方式不同，这是零成本抽象
+/// - **实现 `ForwardInput`**：可直接传入 `ModelState::forward()`
+/// - **行为像 detached Var**：梯度不会流回原 Var
+///
+/// # 用法
+/// ```ignore
+/// let fake = G.forward(&noise)?;
+/// let d_fake = D.forward(&fake.detach())?;  // DetachedVar，无图节点创建
+/// ```
+///
+/// # 与 Var 的区别
+/// - `Var::is_detached()` 检查节点本身的 detached 标志
+/// - `DetachedVar` 是一个包装器，表示"以 detached 方式使用这个 Var"
+#[derive(Clone)]
+pub struct DetachedVar {
+    inner: Var,
+}
+
+impl DetachedVar {
+    /// 获取内部 Var 的引用
+    pub fn inner(&self) -> &Var {
+        &self.inner
+    }
+
+    /// 获取值
+    pub fn value(&self) -> Result<Option<Tensor>, GraphError> {
+        self.inner.value()
+    }
+
+    /// 获取预期形状
+    pub fn value_expected_shape(&self) -> Vec<usize> {
+        self.inner.value_expected_shape()
+    }
+
+    /// 触发前向传播
+    pub fn forward(&self) -> Result<(), GraphError> {
+        self.inner.forward()
+    }
+
+    /// 始终返回 true（这是 DetachedVar 的核心特性）
+    pub const fn is_detached(&self) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,6 +602,29 @@ mod tests {
         let actual_std = data.iter().map(|x| x * x).sum::<f32>() / data.len() as f32;
         let actual_std = actual_std.sqrt();
         assert!((actual_std - expected_std).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_detached_var_is_lightweight() {
+        // 验证 DetachedVar 不创建图节点
+        use crate::nn::Graph;
+        let graph = Graph::new();
+        let x = graph.input(&crate::tensor::Tensor::ones(&[1, 2])).unwrap();
+        let initial_count = graph.inner().nodes_count();
+
+        // detach() 不应该创建新节点
+        let _ = x.detach();
+        let after_detach_count = graph.inner().nodes_count();
+        assert_eq!(initial_count, after_detach_count, "detach() 不应创建新节点");
+
+        // detach_node() 应该创建新节点
+        let _ = x.detach_node();
+        let after_detach_node_count = graph.inner().nodes_count();
+        assert_eq!(
+            initial_count + 1,
+            after_detach_node_count,
+            "detach_node() 应创建一个新节点"
+        );
     }
 
     #[test]

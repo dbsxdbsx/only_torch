@@ -722,11 +722,21 @@ impl GraphInner {
             self.propagate_grad_to_parents(*node_id, loss_id, None)?;
         }
 
-        // 6. 递增反向传播 pass_id
+        // 6. 处理 GradientRouter 的梯度路由
+        // GradientRouter 节点可能有梯度路由目标，需要将梯度累加到目标节点
+        // 然后从目标节点继续反向传播
+        let routed_targets = self.process_gradient_routing()?;
+
+        // 6.1 从路由目标节点继续反向传播
+        for target_id in routed_targets {
+            self.backward_from_node(target_id)?;
+        }
+
+        // 7. 递增反向传播 pass_id
         self.last_backward_pass_id += 1;
         let new_pass_id = self.last_backward_pass_id;
 
-        // 7. 更新参与反向传播的节点的 pass_id（用于判断节点是否参与了最近的 backward）
+        // 8. 更新参与反向传播的节点的 pass_id（用于判断节点是否参与了最近的 backward）
         for node_id in topo_order {
             // 只更新有梯度的节点（Input 节点没有梯度，不更新）
             if let Ok(node) = self.get_node_mut(node_id)
@@ -734,6 +744,66 @@ impl GraphInner {
             {
                 node.set_last_backward_pass_id(new_pass_id);
             }
+        }
+
+        Ok(())
+    }
+
+    /// 处理 GradientRouter 节点的梯度路由
+    ///
+    /// 遍历所有 GradientRouter 节点，如果有梯度路由目标，
+    /// 将 GradientRouter 的梯度累加到目标节点。
+    ///
+    /// # 返回
+    /// 接收到路由梯度的目标节点 ID 列表（用于继续反向传播）
+    fn process_gradient_routing(&mut self) -> Result<Vec<NodeId>, GraphError> {
+        use super::nodes::raw_node::NodeType;
+
+        // 收集需要路由的梯度信息：(target_id, gradient)
+        let mut routing_info: Vec<(NodeId, Tensor)> = Vec::new();
+
+        for (_node_id, node) in &self.nodes {
+            if let NodeType::GradientRouter(router) = node.node_type() {
+                // 检查是否有梯度路由目标
+                if let Some(target_id) = router.gradient_target() {
+                    // 检查 GradientRouter 是否有梯度（且未被 detach）
+                    if !router.is_detached() {
+                        if let Some(grad) = node.grad() {
+                            routing_info.push((target_id, grad.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        // 将梯度累加到目标节点
+        let mut routed_targets = Vec::new();
+        for (target_id, grad) in routing_info {
+            if let Ok(target_node) = self.get_node_mut(target_id) {
+                if let Some(existing_grad) = target_node.grad() {
+                    let new_grad = existing_grad + &grad;
+                    target_node.set_grad(Some(&new_grad))?;
+                } else {
+                    target_node.set_grad(Some(&grad))?;
+                }
+                routed_targets.push(target_id);
+            }
+            // 如果目标节点不存在，静默忽略（可能已被清理）
+        }
+
+        Ok(routed_targets)
+    }
+
+    /// 从指定节点继续反向传播
+    ///
+    /// 用于梯度路由后，从目标节点继续向其父节点传播梯度。
+    fn backward_from_node(&mut self, start_id: NodeId) -> Result<(), GraphError> {
+        // 获取从 start_id 到所有输入的反向拓扑排序
+        let topo_order = self.topological_sort_backward(start_id)?;
+
+        // 按拓扑顺序反向传播梯度
+        for node_id in &topo_order {
+            self.propagate_grad_to_parents(*node_id, start_id, None)?;
         }
 
         Ok(())
@@ -783,6 +853,9 @@ impl GraphInner {
                 if let NodeType::Input(_) = parent.node_type() {
                     continue;
                 }
+
+                // 注意：不跳过 GradientRouter 节点
+                // GradientRouter 需要接收梯度，然后通过 process_gradient_routing 路由到目标
 
                 // 如果指定了 target_params，跳过非目标的 Parameter 节点
                 // 这是核心优化：避免为不需要更新的参数计算梯度
@@ -1568,6 +1641,8 @@ impl GraphInner {
             NodeTypeDescriptor::Input => "Input",
             NodeTypeDescriptor::Parameter => "Parameter",
             NodeTypeDescriptor::State => "State",
+            NodeTypeDescriptor::Identity => "Identity",
+            NodeTypeDescriptor::GradientRouter => "GradientRouter",
             NodeTypeDescriptor::Add => "Add",
             NodeTypeDescriptor::Divide => "Divide",
             NodeTypeDescriptor::Subtract => "Subtract",
@@ -1917,6 +1992,10 @@ impl GraphInner {
             NodeTypeDescriptor::Input => ("ellipse", "filled", "#E3F2FD"),
             // 状态节点：圆柱体，浅橙色（与循环边颜色呼应，表示"记忆/存储"）
             NodeTypeDescriptor::State => ("cylinder", "filled", "#FFE0B2"),
+            // Identity 节点：椭圆形，虚线边框，浅紫色（用户创建的 detach 边界）
+            NodeTypeDescriptor::Identity => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
+            // GradientRouter 节点：椭圆形，虚线边框，浅灰色（内部实现节点）
+            NodeTypeDescriptor::GradientRouter => ("ellipse", "\"filled,dashed\"", "#F5F5F5"),
             // 参数节点：矩形，浅绿色
             NodeTypeDescriptor::Parameter => ("box", "filled", "#E8F5E9"),
             // 损失节点：双椭圆，浅红色
@@ -2002,6 +2081,8 @@ impl GraphInner {
             NodeType::Input(_) => NodeTypeDescriptor::Input,
             NodeType::Parameter(_) => NodeTypeDescriptor::Parameter,
             NodeType::State(_) => NodeTypeDescriptor::State,
+            NodeType::Identity(_) => NodeTypeDescriptor::Identity,
+            NodeType::GradientRouter(_) => NodeTypeDescriptor::GradientRouter,
             NodeType::Add(_) => NodeTypeDescriptor::Add,
             NodeType::Divide(_) => NodeTypeDescriptor::Divide,
             NodeType::Subtract(_) => NodeTypeDescriptor::Subtract,
@@ -3213,6 +3294,47 @@ impl GraphInner {
         self.add_node_to_list(node, name, "input", &[])
     }
 
+    /// 创建 GradientRouter 节点（梯度路由器）
+    ///
+    /// GradientRouter 是 ModelState 内部使用的特殊节点，用于实现智能缓存：
+    /// - 像 Input 节点一样存储值（通过 set_value 设置）
+    /// - 支持动态设置 detached 状态
+    /// - 支持梯度路由到外部目标节点
+    ///
+    /// # 参数
+    /// - `shape`: 节点输出形状
+    /// - `name`: 节点名称（可选）
+    pub fn new_gradient_router_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let node = NodeHandle::new_gradient_router(shape)?;
+        self.add_node_to_list(node, name, "router", &[])
+    }
+
+    /// 设置 GradientRouter 节点的 detached 状态
+    pub fn set_router_detached(&mut self, node_id: NodeId, detached: bool) -> Result<(), GraphError> {
+        let node = self.get_node_mut(node_id)?;
+        node.set_router_detached(detached)
+    }
+
+    /// 设置 GradientRouter 节点的梯度路由目标
+    pub fn set_gradient_target(
+        &mut self,
+        node_id: NodeId,
+        target: Option<NodeId>,
+    ) -> Result<(), GraphError> {
+        let node = self.get_node_mut(node_id)?;
+        node.set_gradient_target(target)
+    }
+
+    /// 获取 GradientRouter 节点的梯度路由目标
+    pub fn get_gradient_target(&self, node_id: NodeId) -> Result<Option<NodeId>, GraphError> {
+        let node = self.get_node(node_id)?;
+        Ok(node.gradient_target())
+    }
+
     /// 创建参数节点
     ///
     /// 如果 Graph 有种子（通过 `new_with_seed` 或 `set_seed` 设置），
@@ -3581,6 +3703,28 @@ impl GraphInner {
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_sigmoid(&self.get_nodes(&[parent_id])?)?;
         self.add_node_to_list(handle, name, "sigmoid", &[parent_id])
+    }
+
+    /// 创建 Identity 节点（恒等映射）
+    ///
+    /// 直接传递父节点的值，不做任何变换。
+    /// 主要用于 `detach()` 操作：创建一个 detached 的 Identity 节点来阻断梯度流。
+    ///
+    /// # 参数
+    /// - `parent_id`: 父节点 ID
+    /// - `name`: 节点名称（可选）
+    /// - `detached`: 是否阻断梯度流
+    pub fn new_identity_node(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+        detached: bool,
+    ) -> Result<NodeId, GraphError> {
+        let mut handle = NodeHandle::new_identity(&self.get_nodes(&[parent_id])?)?;
+        if detached {
+            handle.set_detached(true);
+        }
+        self.add_node_to_list(handle, name, "identity", &[parent_id])
     }
 
     /// 创建 Softmax 激活节点

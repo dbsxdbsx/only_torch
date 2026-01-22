@@ -3,83 +3,233 @@
  * @Date         : 2025-01-21
  * @Description  : 模型状态管理器（支持 PyTorch 风格的 forward API）
  *
- * ModelState 使得用户定义的模型可以直接接收 Tensor 作为输入，
+ * ModelState 使得用户定义的模型可以接收 Tensor 或 Var 作为输入，
  * 内部自动处理计算图节点的创建和复用。
  *
- * # 智能缓存
- * 支持不同形状的输入（如变长序列），自动为每种形状维护独立的计算图子图。
+ * # 核心机制：GradientRouter
+ *
+ * ModelState 使用 GradientRouter 节点作为模型的入口点：
+ * - 无论输入是 Tensor 还是 Var，都复用同一个 GradientRouter
+ * - GradientRouter 可以动态设置 detached 状态和梯度路由目标
+ * - 这实现了"Archive 的效率 + PyTorch 的优雅"
+ *
+ * # 智能行为
+ *
+ * | 输入类型 | 行为 |
+ * |---------|------|
+ * | `&Tensor` | 复制值到 GradientRouter，无梯度路由 |
+ * | `&Var`（detached）| 复制值到 GradientRouter，无梯度路由 |
+ * | `&Var`（非 detached）| 复制值到 GradientRouter，设置梯度路由到源 Var |
+ *
+ * # 结果
+ * - 图结构只构建一次（按形状缓存）
+ * - 无论多少批次，图节点数保持 O(1)
+ * - 梯度正确路由到需要的地方
  *
  * # 使用示例
  * ```ignore
- * pub struct MyModel {
- *     fc1: Linear,
- *     fc2: Linear,
- *     state: ModelState,
- * }
- *
- * impl MyModel {
- *     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
- *         Ok(Self {
- *             fc1: Linear::new(graph, 2, 4, true, "fc1")?,
- *             fc2: Linear::new(graph, 4, 2, true, "fc2")?,
- *             state: ModelState::new(graph),
- *         })
- *     }
- *
- *     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
- *         self.state.forward(x, |input| {
- *             Ok(self.fc2.forward(&self.fc1.forward(input).tanh()))
- *         })
- *     }
- * }
+ * // GAN 训练
+ * let fake = G.forward(&noise)?;
+ * let d_fake = D.forward(&fake.detach())?;  // D 训练：复用结构，无梯度路由
+ * let d_fake_for_g = D.forward(&fake)?;     // G 训练：复用结构，梯度路由到 fake
  * ```
  */
 
-use super::{Graph, GraphError, Var};
+use super::{DetachedVar, Graph, GraphError, NodeId, Var};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+// ============================================================================
+// ForwardInput Trait
+// ============================================================================
+
+/// 模型前向输入类型
+///
+/// 实现此 trait 的类型可以作为 `ModelState::forward()` 的输入。
+/// 支持 `&Tensor`、`Tensor`、`&Var`、`Var` 四种类型。
+///
+/// # 统一缓存
+///
+/// 所有输入类型都使用相同的缓存策略（按形状缓存）。
+/// 区别在于梯度路由：
+/// - Tensor / detached Var: 无梯度路由
+/// - 非 detached Var: 梯度路由到源 Var
+pub trait ForwardInput {
+    /// 获取输入的形状（用于缓存键）
+    fn shape(&self) -> Vec<usize>;
+
+    /// 获取输入的值
+    fn get_value(&self) -> Result<Tensor, GraphError>;
+
+    /// 是否处于 detached 状态
+    ///
+    /// - Tensor: 总是 true（没有梯度流）
+    /// - Var: 取决于 Var 是否被 detach
+    fn is_detached(&self) -> bool;
+
+    /// 如果是 Var，返回其 NodeId（用于梯度路由）
+    fn var_node_id(&self) -> Option<NodeId>;
+}
+
+impl ForwardInput for &Tensor {
+    fn shape(&self) -> Vec<usize> {
+        Tensor::shape(self).to_vec()
+    }
+
+    fn get_value(&self) -> Result<Tensor, GraphError> {
+        Ok((*self).clone())
+    }
+
+    fn is_detached(&self) -> bool {
+        true // Tensor 没有梯度流
+    }
+
+    fn var_node_id(&self) -> Option<NodeId> {
+        None
+    }
+}
+
+impl ForwardInput for Tensor {
+    fn shape(&self) -> Vec<usize> {
+        Tensor::shape(self).to_vec()
+    }
+
+    fn get_value(&self) -> Result<Tensor, GraphError> {
+        Ok(self.clone())
+    }
+
+    fn is_detached(&self) -> bool {
+        true
+    }
+
+    fn var_node_id(&self) -> Option<NodeId> {
+        None
+    }
+}
+
+impl ForwardInput for &Var {
+    fn shape(&self) -> Vec<usize> {
+        self.value_expected_shape()
+    }
+
+    fn get_value(&self) -> Result<Tensor, GraphError> {
+        // 如果 Var 已有值，直接使用
+        if let Ok(Some(value)) = self.value() {
+            return Ok(value);
+        }
+        // 否则触发 forward 计算
+        self.forward()?;
+        self.value()?.ok_or_else(|| {
+            GraphError::ComputationError("Var 计算后仍没有值".to_string())
+        })
+    }
+
+    fn is_detached(&self) -> bool {
+        Var::is_detached(self)
+    }
+
+    fn var_node_id(&self) -> Option<NodeId> {
+        Some(self.node_id())
+    }
+}
+
+impl ForwardInput for Var {
+    fn shape(&self) -> Vec<usize> {
+        self.value_expected_shape()
+    }
+
+    fn get_value(&self) -> Result<Tensor, GraphError> {
+        // 如果 Var 已有值，直接使用
+        if let Ok(Some(value)) = self.value() {
+            return Ok(value);
+        }
+        // 否则触发 forward 计算
+        self.forward()?;
+        self.value()?.ok_or_else(|| {
+            GraphError::ComputationError("Var 计算后仍没有值".to_string())
+        })
+    }
+
+    fn is_detached(&self) -> bool {
+        Var::is_detached(self)
+    }
+
+    fn var_node_id(&self) -> Option<NodeId> {
+        Some(self.node_id())
+    }
+}
+
+// ============================================================================
+// DetachedVar 的 ForwardInput 实现
+// ============================================================================
+
+impl ForwardInput for &DetachedVar {
+    fn shape(&self) -> Vec<usize> {
+        self.value_expected_shape()
+    }
+
+    fn get_value(&self) -> Result<Tensor, GraphError> {
+        // 如果内部 Var 已有值，直接使用
+        if let Ok(Some(value)) = self.value() {
+            return Ok(value);
+        }
+        // 否则触发 forward 计算
+        self.forward()?;
+        self.value()?.ok_or_else(|| {
+            GraphError::ComputationError("DetachedVar 计算后仍没有值".to_string())
+        })
+    }
+
+    fn is_detached(&self) -> bool {
+        true // DetachedVar 始终是 detached
+    }
+
+    fn var_node_id(&self) -> Option<NodeId> {
+        None // detached 不需要梯度路由
+    }
+}
+
+impl ForwardInput for DetachedVar {
+    fn shape(&self) -> Vec<usize> {
+        self.value_expected_shape()
+    }
+
+    fn get_value(&self) -> Result<Tensor, GraphError> {
+        (&self).get_value()
+    }
+
+    fn is_detached(&self) -> bool {
+        true
+    }
+
+    fn var_node_id(&self) -> Option<NodeId> {
+        None
+    }
+}
+
 /// 模型状态缓存（单个形状）
 struct StateCache {
-    /// 输入节点
-    input: Var,
+    /// GradientRouter 节点（模型入口点）
+    router: Var,
     /// 输出节点（预构建的计算图终点）
     output: Var,
 }
 
 /// 模型状态管理器
 ///
-/// 提供"延迟绑定 + 智能缓存"机制，使模型可以直接接收 Tensor 输入。
-/// 支持变长序列等不同形状的输入，自动为每种形状创建独立的计算图子图。
+/// 使用 GradientRouter 实现"Archive 的效率 + PyTorch 的优雅"：
+/// - 图结构只构建一次（按形状缓存）
+/// - 无论多少批次，图节点数保持 O(1)
+/// - 梯度通过 GradientRouter 自动路由
 ///
 /// # 工作原理
-/// - **首次调用**某形状：创建输入节点，构建计算图，缓存结果
-/// - **后续调用**相同形状：复用已创建的节点，只更新输入值
+/// - **首次调用**某形状：创建 GradientRouter，构建计算图，缓存结果
+/// - **后续调用**相同形状：复用 GradientRouter，更新值和梯度路由设置
 /// - **不同形状**：自动创建新的子图并缓存
-///
-/// # 使用示例
-/// ```ignore
-/// pub struct VarLenRNN {
-///     rnn: Rnn,
-///     fc: Linear,
-///     state: ModelState,
-/// }
-///
-/// impl VarLenRNN {
-///     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-///         // x 可以是 [batch, seq_len=5, 1] 或 [batch, seq_len=10, 1]
-///         // ModelState 自动为每种形状创建独立缓存
-///         self.state.forward(x, |input| {
-///             let h = self.rnn.forward(input)?;
-///             Ok(self.fc.forward(&h))
-///         })
-///     }
-/// }
-/// ```
 pub struct ModelState {
     graph: Graph,
-    /// 按输入形状缓存的子图：shape -> (input, output)
+    /// 按输入形状缓存的子图：shape -> (router, output)
     cache: RefCell<HashMap<Vec<usize>, StateCache>>,
 }
 
@@ -95,58 +245,97 @@ impl ModelState {
         }
     }
 
-    /// PyTorch 风格的 forward（延迟绑定 + 智能缓存）
+    /// PyTorch 风格的 forward（统一缓存 + 梯度路由）
     ///
     /// # 参数
-    /// - `x`: 输入数据（Tensor）
+    /// - `x`: 输入数据（`&Tensor`、`Tensor`、`&Var` 或 `Var`）
     /// - `compute`: 计算逻辑闭包，接收 `&Var` 输入，返回 `Result<Var, GraphError>`
     ///
     /// # 返回
     /// 模型输出节点（Var）
     ///
-    /// # 智能缓存
-    /// - 相同形状的输入复用已创建的计算图
-    /// - 不同形状的输入自动创建新的子图
-    ///
     /// # 示例
     /// ```ignore
-    /// // 简单层（如 Linear）：用 Ok(...) 包装
-    /// self.state.forward(x, |input| {
-    ///     Ok(self.fc2.forward(&self.fc1.forward(input).tanh()))
-    /// })
+    /// // 普通训练
+    /// let out = model.forward(&batch_x)?;
     ///
-    /// // 复杂层（如 RNN）：直接用 ? 传播错误
-    /// self.state.forward(x, |input| {
-    ///     let h = self.rnn.forward(input)?;
-    ///     Ok(self.fc.forward(&h))
-    /// })
+    /// // GAN 训练
+    /// let fake = G.forward(&noise)?;
+    /// let d_fake = D.forward(&fake.detach())?;  // 复用结构，无梯度路由
+    /// let d_fake_for_g = D.forward(&fake)?;     // 复用结构，梯度路由到 fake
     /// ```
-    pub fn forward<F>(&self, x: &Tensor, compute: F) -> Result<Var, GraphError>
+    pub fn forward<X, F>(&self, x: X, compute: F) -> Result<Var, GraphError>
     where
+        X: ForwardInput,
         F: FnOnce(&Var) -> Result<Var, GraphError>,
     {
-        let shape = x.shape().to_vec();
+        let shape = x.shape();
+        let value = x.get_value()?;
+        let is_detached = x.is_detached();
+        let gradient_target = if is_detached {
+            None
+        } else {
+            x.var_node_id()
+        };
+
         let mut cache = self.cache.borrow_mut();
 
         if let Some(c) = cache.get(&shape) {
-            // 缓存命中：复用已有子图
-            c.input.set_value(x)?;
+            // 缓存命中：复用已有结构
+            
+            // 1. 更新 GradientRouter 的值
+            c.router.set_value(&value)?;
+
+            // 2. 设置 GradientRouter 的 detached 状态
+            self.graph
+                .inner_mut()
+                .set_router_detached(c.router.node_id(), is_detached)?;
+
+            // 3. 设置梯度路由目标
+            self.graph
+                .inner_mut()
+                .set_gradient_target(c.router.node_id(), gradient_target)?;
+
+            // 4. 重新计算
             c.output.forward()?;
+
             return Ok(c.output.clone());
         }
 
         // 缓存未命中：创建新的子图
-        let input = self.graph.zeros(x.shape())?;
-        input.set_value(x)?;
 
-        // 调用用户提供的计算逻辑
-        let output = compute(&input)?;
+        // 1. 创建 GradientRouter 作为模型入口
+        let router_id = self
+            .graph
+            .inner_mut()
+            .new_gradient_router_node(&shape, None)?;
+        let router = Var::new(router_id, self.graph.inner_rc());
 
-        // 触发前向传播，确保输出值是最新的
+        // 2. 设置初始值
+        router.set_value(&value)?;
+
+        // 3. 设置 detached 状态和梯度路由目标
+        self.graph
+            .inner_mut()
+            .set_router_detached(router_id, is_detached)?;
+        self.graph
+            .inner_mut()
+            .set_gradient_target(router_id, gradient_target)?;
+
+        // 4. 调用用户提供的计算逻辑
+        let output = compute(&router)?;
+
+        // 5. 触发前向传播
         output.forward()?;
 
-        // 缓存
-        cache.insert(shape, StateCache { input, output: output.clone() });
+        // 6. 缓存
+        cache.insert(
+            shape,
+            StateCache {
+                router,
+                output: output.clone(),
+            },
+        );
 
         Ok(output)
     }

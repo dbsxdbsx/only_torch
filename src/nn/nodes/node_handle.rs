@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, AvgPool2d, Conv2d, Divide, Flatten, Input, LeakyReLU, MSELoss, MatMul, MaxPool2d,
-    Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus, Softmax,
-    SoftmaxCrossEntropy, State, Step, Subtract, Tanh,
+    Add, AvgPool2d, Conv2d, Divide, Flatten, GradientRouter, Identity, Input, LeakyReLU, MSELoss,
+    MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus,
+    Softmax, SoftmaxCrossEntropy, State, Step, Subtract, Tanh,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -237,6 +237,68 @@ impl NodeHandle {
         Self::new(Softmax::new(parents)?)
     }
 
+    pub(in crate::nn) fn new_identity(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Identity::new(parents)?)
+    }
+
+    /// 创建 GradientRouter 节点（梯度路由器）
+    ///
+    /// GradientRouter 用于 ModelState 的智能缓存机制，支持：
+    /// - 动态设置 detached 状态
+    /// - 梯度路由到外部目标节点
+    pub(in crate::nn) fn new_gradient_router(shape: &[usize]) -> Result<Self, GraphError> {
+        Ok(Self {
+            raw_node: NodeType::GradientRouter(GradientRouter::new(shape)),
+            last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
+            is_detached: false,
+        })
+    }
+
+    /// 设置 GradientRouter 的 detached 状态
+    ///
+    /// # 返回
+    /// 如果节点不是 GradientRouter，返回错误
+    pub(in crate::nn) fn set_router_detached(&mut self, detached: bool) -> Result<(), GraphError> {
+        if let NodeType::GradientRouter(router) = &self.raw_node {
+            router.set_detached(detached);
+            Ok(())
+        } else {
+            Err(GraphError::InvalidOperation(format!(
+                "{} 不是 GradientRouter 节点",
+                self.raw_node.display_node()
+            )))
+        }
+    }
+
+    /// 设置 GradientRouter 的梯度路由目标
+    ///
+    /// # 返回
+    /// 如果节点不是 GradientRouter，返回错误
+    pub(in crate::nn) fn set_gradient_target(
+        &mut self,
+        target: Option<NodeId>,
+    ) -> Result<(), GraphError> {
+        if let NodeType::GradientRouter(router) = &self.raw_node {
+            router.set_gradient_target(target);
+            Ok(())
+        } else {
+            Err(GraphError::InvalidOperation(format!(
+                "{} 不是 GradientRouter 节点",
+                self.raw_node.display_node()
+            )))
+        }
+    }
+
+    /// 获取 GradientRouter 的梯度路由目标
+    pub(in crate::nn) fn gradient_target(&self) -> Option<NodeId> {
+        if let NodeType::GradientRouter(router) = &self.raw_node {
+            router.gradient_target()
+        } else {
+            None
+        }
+    }
+
     pub(in crate::nn) fn new_leaky_relu(
         parents: &[&Self],
         negative_slope: f64,
@@ -345,7 +407,15 @@ impl NodeHandle {
     /// 检查节点是否被 detach
     ///
     /// 若返回 true，反向传播时不会向该节点的父节点传播梯度
-    pub(in crate::nn) const fn is_detached(&self) -> bool {
+    /// 检查节点是否处于 detached 状态
+    ///
+    /// 对于 GradientRouter 节点，使用其内部动态标志；
+    /// 对于其他节点，使用 NodeHandle 的静态标志。
+    pub(in crate::nn) fn is_detached(&self) -> bool {
+        // GradientRouter 有自己的动态 detached 标志
+        if let NodeType::GradientRouter(router) = &self.raw_node {
+            return router.is_detached();
+        }
         self.is_detached
     }
 
@@ -353,7 +423,9 @@ impl NodeHandle {
     ///
     /// - `true`: 截断该节点的梯度流，反向传播时不向父节点传播
     /// - `false`: 正常传播梯度（默认状态）
-    pub(in crate::nn) const fn set_detached(&mut self, detached: bool) {
+    ///
+    /// 注意：对于 GradientRouter 节点，应使用 `set_router_detached()` 方法。
+    pub(in crate::nn) fn set_detached(&mut self, detached: bool) {
         self.is_detached = detached;
     }
 }

@@ -427,9 +427,9 @@ fn test_var_detach() {
         .unwrap();
 
     let h = &x * &w;
-    let h_detached = h.detach().unwrap();
+    let h_detached = h.detach_node();
 
-    // detach 后的 Var 仍可参与计算
+    // detach_node 后的 Var 仍可参与计算
     let y = &h_detached * &w;
     let target = graph.input(&Tensor::new(&[2.0], &[1, 1])).unwrap();
     let loss = y.mse_loss(&target).unwrap();

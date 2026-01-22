@@ -112,3 +112,7 @@ path = "examples/parity_lstm_var_len/main.rs"
 [[example]]
 name = "parity_gru_var_len"
 path = "examples/parity_gru_var_len/main.rs"
+
+[[example]]
+name = "mnist_gan"
+path = "examples/mnist_gan/main.rs"
