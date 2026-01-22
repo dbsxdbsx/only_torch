@@ -1,5 +1,67 @@
 # 更新日志
 
+## [0.9.0] - 2026-01-22
+
+### 新增
+
+- **feat(nn): DynamicShape 动态形状系统**
+  - 新增 `DynamicShape` 类型，支持动态维度（类似 Keras 的 `None`）
+  - 所有节点实现 `dynamic_expected_shape()` 和 `supports_dynamic_batch()`
+  - `NodeDescriptor` 存储 `dynamic_shape` 用于可视化和序列化
+  - 可视化中动态维度显示为 `?`（如 `[?, 128]`）
+
+- **feat(nn): GradientRouter 节点和函数式 detach 机制**
+  - 新增 `GradientRouter` 节点，支持动态梯度路由
+  - 实现 `DetachedVar` 轻量 detach 包装
+  - 支持 GAN 训练的 `fake.detach()` 模式
+
+- **feat(nn): ModelState 智能缓存 + Criterion 损失封装**
+  - `ModelState` 按特征形状缓存计算图，忽略 batch 维度
+  - `MseLoss` / `CrossEntropyLoss` PyTorch 风格封装
+  - `ForwardInput` trait 统一输入类型
+
+- **feat(nn): PyTorch 风格 RNN/LSTM/GRU API**
+  - `Rnn`/`Lstm`/`Gru` struct + `forward()` 模式
+  - 支持变长序列（`BucketedDataLoader`）
+  - `ZerosLike` 节点动态生成初始隐藏状态
+
+- **feat(data): PyTorch 风格 DataLoader**
+  - `DataLoader` 统一批处理接口
+  - `BucketedDataLoader` 变长序列分桶
+
+- **feat(tensor): argmax/argmin 方法**
+  - 分类任务预测必需
+
+### 示例
+
+- 新增 10 个完整示例：
+  - `xor`: 基础 MLP
+  - `sine_regression`: 回归任务
+  - `iris`: 多分类
+  - `mnist`: 图像分类（MLP + CNN）
+  - `mnist_gan`: GAN 训练 + detach
+  - `california_housing`: 房价回归
+  - `parity_rnn_fixed_len`: RNN 定长
+  - `parity_rnn_var_len`: RNN 变长 + 智能缓存
+  - `parity_lstm_var_len`: LSTM 变长
+  - `parity_gru_var_len`: GRU 变长
+
+### 修复
+
+- fix(layer): RNN/LSTM/GRU 层 h0/c0 不再缓存，每次 forward 动态创建
+  - 解决 `BucketedDataLoader` 变长批次的形状不兼容问题
+
+### 重构
+
+- refactor(nn): `check_shape_consistency` 使用 `DynamicShape.is_compatible_with_tensor()`
+- refactor(seed): Graph seed 自动传播到 Layer
+
+### 测试
+
+- 单元测试从 822 增加到 1017
+- 所有节点新增 DynamicShape 单元测试
+- 新增 `node_softmax.rs`、`node_zeros_like.rs` 测试文件
+
 ## [0.8.0] - 2026-01-20
 
 ### ⚠️ 破坏性变更 (Breaking Changes)
