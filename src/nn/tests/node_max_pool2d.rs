@@ -348,3 +348,94 @@ fn test_max_pool2d_kernel_too_large() {
     let result = graph.new_max_pool2d_node(input, (5, 5), None, Some("pool"));
     assert!(result.is_err());
 }
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 MaxPool2d 节点的动态形状传播
+#[test]
+fn test_max_pool2d_dynamic_shape_propagation() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建 4D 输入：[batch, channels, height, width]
+    let input = graph.new_input_node(&[2, 3, 8, 8], Some("input"))?;
+
+    // MaxPool2d: kernel=2x2, stride=2x2
+    // [batch, 3, 8, 8] -> [batch, 3, 4, 4]
+    let pool = graph.new_max_pool2d_node(input, (2, 2), Some((2, 2)), Some("pool"))?;
+
+    // 验证动态形状传播
+    let pool_node = graph.get_node(pool)?;
+    let dyn_shape = pool_node.dynamic_expected_shape();
+    assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
+    assert!(!dyn_shape.is_dynamic(1), "channels 维度应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(3), "channels 应该是 3");
+
+    Ok(())
+}
+
+/// 测试 MaxPool2d 在不同 batch_size 下的前向计算
+#[test]
+fn test_max_pool2d_dynamic_batch_forward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建 4D 输入
+    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let pool = graph.new_max_pool2d_node(input, (2, 2), Some((2, 2)), Some("pool"))?;
+
+    // 设置初始值
+    graph.set_node_value(input, Some(&Tensor::ones(&[2, 1, 4, 4])))?;
+
+    // 第一次 forward：batch=2
+    graph.forward(pool)?;
+    let value1 = graph.get_node_value(pool)?.unwrap();
+    assert_eq!(value1.shape(), &[2, 1, 2, 2], "第一次 forward: batch=2");
+
+    // 更新输入为不同的 batch_size
+    graph.set_node_value(input, Some(&Tensor::ones(&[5, 1, 4, 4])))?;
+
+    // 第二次 forward：batch=5
+    graph.forward(pool)?;
+    let value2 = graph.get_node_value(pool)?.unwrap();
+    assert_eq!(value2.shape(), &[5, 1, 2, 2], "第二次 forward: batch=5");
+
+    Ok(())
+}
+
+/// 测试 MaxPool2d 在不同 batch_size 下的反向传播
+#[test]
+fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建 4D 输入
+    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let pool = graph.new_max_pool2d_node(input, (2, 2), Some((2, 2)), Some("pool"))?;
+    // 输出形状: [batch, 1, 2, 2]
+    let flat = graph.new_flatten_node(pool, true, Some("flat"))?;
+    // 输出形状: [batch, 4]
+    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    let loss = graph.new_mse_loss_node(flat, target, Some("loss"))?;
+
+    // 设置初始值
+    graph.set_node_value(input, Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 4, 4], 42)))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
+
+    // 第一次训练：batch=2
+    graph.forward(loss)?;
+    let loss_val1 = graph.get_node_value(loss)?.unwrap()[[0, 0]];
+    assert!(loss_val1 >= 0.0);
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    // 更新输入为不同的 batch_size
+    graph.set_node_value(input, Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 4, 4], 100)))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[4, 4])))?;
+
+    // 第二次训练：batch=4
+    graph.forward(loss)?;
+    let loss_val2 = graph.get_node_value(loss)?.unwrap()[[0, 0]];
+    assert!(loss_val2 >= 0.0);
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    Ok(())
+}

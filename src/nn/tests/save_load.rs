@@ -656,3 +656,123 @@ fn test_to_dot_node_styles() {
     // 损失节点应该是红色
     assert!(dot.contains("#FFEBEE"));
 }
+
+/// 测试动态形状在描述符中的序列化
+#[test]
+fn test_dynamic_shape_in_descriptor() {
+    use crate::nn::descriptor::NodeDescriptor;
+
+    let mut graph = GraphInner::new();
+
+    // 创建支持动态 batch 的节点
+    let x = graph.new_input_node(&[32, 128], Some("input")).unwrap();
+    let w = graph.new_parameter_node(&[128, 64], Some("weight")).unwrap();
+    let y = graph.new_mat_mul_node(x, w, Some("output")).unwrap();
+
+    // 获取描述符
+    let desc = graph.describe();
+
+    // 查找各节点
+    let input_node = desc.nodes.iter().find(|n| n.name == "input").unwrap();
+    let weight_node = desc.nodes.iter().find(|n| n.name == "weight").unwrap();
+    let output_node = desc.nodes.iter().find(|n| n.name == "output").unwrap();
+
+    // Input 节点应该有动态形状（第一维是 None）
+    assert!(
+        input_node.dynamic_shape.is_some(),
+        "Input 节点应有动态形状"
+    );
+    let input_dyn = input_node.dynamic_shape.as_ref().unwrap();
+    assert_eq!(input_dyn[0], None, "Input 的第一维应该是动态的");
+    assert_eq!(input_dyn[1], Some(128), "Input 的第二维应该是固定的");
+
+    // Parameter 节点不应该有动态形状
+    assert!(
+        weight_node.dynamic_shape.is_none(),
+        "Parameter 节点不应有动态形状"
+    );
+
+    // MatMul 输出应该继承动态 batch
+    assert!(
+        output_node.dynamic_shape.is_some(),
+        "MatMul 输出应有动态形状"
+    );
+    let output_dyn = output_node.dynamic_shape.as_ref().unwrap();
+    assert_eq!(output_dyn[0], None, "MatMul 输出的第一维应该是动态的");
+    assert_eq!(output_dyn[1], Some(64), "MatMul 输出的第二维应该是固定的");
+
+    // 测试 display_shape
+    assert_eq!(input_node.display_shape(), "[?, 128]");
+    assert_eq!(weight_node.display_shape(), "[128, 64]"); // 固定形状
+    assert_eq!(output_node.display_shape(), "[?, 64]");
+}
+
+/// 测试动态形状在 JSON 中的序列化/反序列化
+#[test]
+fn test_dynamic_shape_json_roundtrip() {
+    use crate::nn::descriptor::GraphDescriptor;
+
+    let mut graph = GraphInner::new();
+
+    // 创建支持动态 batch 的图
+    let x = graph.new_input_node(&[16, 64], Some("x")).unwrap();
+    let y = graph.new_tanh_node(x, Some("y")).unwrap();
+
+    // 获取描述符并序列化为 JSON
+    let desc = graph.describe();
+    let json = desc.to_json().expect("JSON 序列化失败");
+
+    // 反序列化
+    let desc2 = GraphDescriptor::from_json(&json).expect("JSON 反序列化失败");
+
+    // 验证动态形状信息被正确保留
+    let x_node = desc2.nodes.iter().find(|n| n.name == "x").unwrap();
+    let y_node = desc2.nodes.iter().find(|n| n.name == "y").unwrap();
+
+    // x 节点应该有动态形状
+    assert!(x_node.dynamic_shape.is_some());
+    let x_dyn = x_node.dynamic_shape.as_ref().unwrap();
+    assert_eq!(x_dyn, &vec![None, Some(64)]);
+
+    // y 节点也应该有动态形状（继承自 x）
+    assert!(y_node.dynamic_shape.is_some());
+    let y_dyn = y_node.dynamic_shape.as_ref().unwrap();
+    assert_eq!(y_dyn, &vec![None, Some(64)]);
+
+    // 验证 display_shape
+    assert_eq!(x_node.display_shape(), "[?, 64]");
+    assert_eq!(y_node.display_shape(), "[?, 64]");
+}
+
+/// 测试可视化中动态形状的显示
+#[test]
+fn test_dynamic_shape_in_visualization() {
+    let mut graph = GraphInner::new();
+
+    // 创建支持动态 batch 的节点
+    let x = graph.new_input_node(&[8, 32], Some("x")).unwrap();
+    let w = graph.new_parameter_node(&[32, 16], Some("w")).unwrap();
+    let _ = graph.new_mat_mul_node(x, w, Some("y")).unwrap();
+
+    // 生成 DOT 格式
+    let dot = graph.to_dot();
+
+    // Input 和 MatMul 应该显示动态 batch [?, ...]
+    assert!(
+        dot.contains("[?, 32]"),
+        "Input 节点应显示动态 batch: {}",
+        dot
+    );
+    assert!(
+        dot.contains("[?, 16]"),
+        "MatMul 节点应显示动态 batch: {}",
+        dot
+    );
+
+    // Parameter 应该显示固定形状
+    assert!(
+        dot.contains("[32, 16]"),
+        "Parameter 节点应显示固定形状: {}",
+        dot
+    );
+}

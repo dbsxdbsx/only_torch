@@ -5,6 +5,7 @@
  *                 这是 Reshape 的便捷封装，常用于 CNN 与全连接层之间的转换
  */
 
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -32,6 +33,10 @@ pub(crate) struct Flatten {
     grad: Option<Tensor>,
     /// 目标形状
     target_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch
+    supports_dynamic: bool,
     /// 父节点的原始形状（用于反向传播）
     parent_shape: Vec<usize>,
     /// 是否保留首维度
@@ -55,7 +60,8 @@ impl Flatten {
         }
 
         // 2. 获取父节点形状
-        let parent_shape = parents[0].value_expected_shape().to_vec();
+        let parent = &parents[0];
+        let parent_shape = parent.value_expected_shape().to_vec();
         let total_elements: usize = parent_shape.iter().product();
 
         // 3. 计算目标形状
@@ -76,12 +82,27 @@ impl Flatten {
             vec![1, total_elements]
         };
 
+        // 4. 计算动态形状
+        let parent_dyn = parent.dynamic_expected_shape();
+        let supports_dynamic = parent.supports_dynamic_batch();
+
+        // 如果父节点第一维是动态的且保留首维度，输出也保持第一维动态
+        let dynamic_shape = if supports_dynamic && parent_dyn.is_dynamic(0) && keep_first_dim {
+            let mut dims: Vec<Option<usize>> = target_shape.iter().map(|&d| Some(d)).collect();
+            dims[0] = None; // 第一维动态
+            DynamicShape::new(&dims)
+        } else {
+            DynamicShape::fixed(&target_shape)
+        };
+
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
             target_shape,
+            dynamic_shape,
+            supports_dynamic,
             parent_shape,
             keep_first_dim,
         })
@@ -121,6 +142,14 @@ impl TraitNode for Flatten {
         &self.target_shape
     }
 
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
+    }
+
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         // 1. 获取父节点的值
         let parent_value = parents[0].value().ok_or_else(|| {
@@ -131,8 +160,27 @@ impl TraitNode for Flatten {
             ))
         })?;
 
-        // 2. Reshape 到目标形状
-        self.value = Some(parent_value.reshape(&self.target_shape));
+        // 2. 动态计算目标形状（支持动态 batch）
+        // 使用实际输入的 batch 大小，而不是创建时固定的 target_shape
+        let actual_shape = parent_value.shape();
+        let runtime_target_shape = if self.keep_first_dim {
+            if actual_shape.len() == 2 {
+                // 2D 已经是展平状态
+                actual_shape.to_vec()
+            } else {
+                // 高维：[batch, d1, d2, ...] → [batch, d1*d2*...]
+                let batch_dim = actual_shape[0];
+                let rest_dim: usize = actual_shape[1..].iter().product();
+                vec![batch_dim, rest_dim]
+            }
+        } else {
+            // 完全展平为行向量
+            let total: usize = actual_shape.iter().product();
+            vec![1, total]
+        };
+
+        // 3. Reshape 到运行时计算的目标形状
+        self.value = Some(parent_value.reshape(&runtime_target_shape));
         Ok(())
     }
 
@@ -142,12 +190,17 @@ impl TraitNode for Flatten {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        target_parent: &NodeHandle,
         upstream_grad: &Tensor,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // 将上游梯度 reshape 回父节点的形状
-        Ok(upstream_grad.reshape(&self.parent_shape))
+        // 使用父节点的实际形状（支持动态 batch）
+        let parent_actual_shape = target_parent.value().map_or_else(
+            || self.parent_shape.clone(), // fallback 到固定形状
+            |v| v.shape().to_vec(),
+        );
+        // 将上游梯度 reshape 回父节点的实际形状
+        Ok(upstream_grad.reshape(&parent_actual_shape))
     }
 
     fn grad(&self) -> Option<&Tensor> {

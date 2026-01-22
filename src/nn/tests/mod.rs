@@ -34,12 +34,14 @@ mod node_reshape; // Reshape 节点（形状变换）
 mod node_select; // Select 节点（张量索引选择，RNN 展开式设计用）
 mod node_sigmoid;
 mod node_sign; // Sign 符号函数（正→1, 负→-1, 零→0）
+mod node_softmax; // Softmax 激活函数（沿最后一维归一化为概率分布）
 mod node_softmax_cross_entropy;
 mod node_softplus; // SoftPlus 激活函数（ReLU 的平滑近似）
 mod node_state; // State 节点测试（RNN 时间状态）
 mod node_step;
 mod node_subtract; // Subtract 节点（逐元素减法）
 mod node_tanh;
+mod node_zeros_like; // ZerosLike 节点测试（动态零张量）
 mod optimizer; // 优化器测试（PyTorch 风格 API）
 mod recurrent_basic; // Phase 1: 循环/记忆机制基础测试
 mod recurrent_bptt; // Phase 2: BPTT 通过时间反向传播测试

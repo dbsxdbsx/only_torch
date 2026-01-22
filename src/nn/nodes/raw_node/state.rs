@@ -10,8 +10,13 @@
  *   - State：时间状态，不被优化器更新，值由 step()/reset() 管理
  *
  * 语义：State 是"要记的东西"，不是"要学的东西"
+ *
+ * # 动态 Batch 支持
+ * State 节点支持动态 batch：第一维可以是任意值。
+ * 这使得同一个 RNN 结构可以处理不同 batch_size 的输入。
  */
 
+use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
@@ -23,7 +28,10 @@ pub(crate) struct State {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    shape: Vec<usize>,
+    /// 动态形状：第一维是 None（动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 固定形状缓存（首次创建时的形状）
+    fixed_shape: Vec<usize>,
 }
 
 impl State {
@@ -43,12 +51,43 @@ impl State {
             });
         }
 
+        // 创建动态形状：第一维是 None（动态 batch）
+        let dynamic_shape = DynamicShape::with_dynamic_batch(&shape[1..]);
+
         Ok(Self {
             id: None,
             name: None,
             value: None, // 初始值为 None，由 reset() 或用户设置
             grad: None,
-            shape: shape.to_vec(),
+            dynamic_shape,
+            fixed_shape: shape.to_vec(),
+        })
+    }
+
+    /// 从 DynamicShape 创建
+    #[allow(dead_code)]
+    pub(crate) fn with_dynamic_shape(
+        dynamic_shape: DynamicShape,
+        initial_fixed: &[usize],
+    ) -> Result<Self, GraphError> {
+        if initial_fixed.len() < 2 || initial_fixed.len() > 4 {
+            return Err(GraphError::DimensionMismatch {
+                expected: 2,
+                got: initial_fixed.len(),
+                message: format!(
+                    "State 张量必须是 2-4 维，但收到的维度是 {} 维。",
+                    initial_fixed.len(),
+                ),
+            });
+        }
+
+        Ok(Self {
+            id: None,
+            name: None,
+            value: None,
+            grad: None,
+            dynamic_shape,
+            fixed_shape: initial_fixed.to_vec(),
         })
     }
 }
@@ -125,6 +164,14 @@ impl TraitNode for State {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        true
     }
 }

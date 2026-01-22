@@ -5,6 +5,7 @@
  *                 实现沿最后一维的 softmax: softmax(x)_i = exp(x_i) / Σ exp(x_j)
  */
 
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -27,7 +28,12 @@ pub(crate) struct Softmax {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    shape: Vec<usize>,
+    /// 固定形状（用于 value_expected_shape）
+    fixed_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch
+    supports_dynamic: bool,
     /// 缓存输出结果，用于反向传播
     output_cache: Option<Tensor>,
 }
@@ -42,19 +48,26 @@ impl Softmax {
         }
 
         // 2. 获取输入形状
-        let shape = parents[0].value_expected_shape().to_vec();
-        if shape.len() != 2 {
+        let parent = &parents[0];
+        let fixed_shape = parent.value_expected_shape().to_vec();
+        if fixed_shape.len() != 2 {
             return Err(GraphError::InvalidOperation(format!(
-                "Softmax 节点需要 2D 输入 [batch, num_classes]，但得到 {shape:?}"
+                "Softmax 节点需要 2D 输入 [batch, num_classes]，但得到 {fixed_shape:?}"
             )));
         }
+
+        // 3. 从父节点继承动态形状信息
+        let dynamic_shape = parent.dynamic_expected_shape();
+        let supports_dynamic = parent.supports_dynamic_batch();
 
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
-            shape,
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
             output_cache: None,
         })
     }
@@ -122,7 +135,15 @@ impl TraitNode for Softmax {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {

@@ -2,7 +2,7 @@ use super::super::graph::GraphError;
 use super::raw_node::{
     Add, AvgPool2d, Conv2d, Divide, Flatten, GradientRouter, Identity, Input, LeakyReLU, MSELoss,
     MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus,
-    Softmax, SoftmaxCrossEntropy, State, Step, Subtract, Tanh,
+    Softmax, SoftmaxCrossEntropy, State, Step, Subtract, Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -41,21 +41,32 @@ impl NodeHandle {
         &self.raw_node
     }
 
+    /// 检查新张量形状是否与节点的动态形状兼容
+    ///
+    /// 使用 `dynamic_expected_shape()` 的 `is_compatible_with_tensor` 方法，
+    /// 自动处理动态维度（None）和固定维度的兼容性检查。
     fn check_shape_consistency(&self, new_tensor: &Tensor) -> Result<(), GraphError> {
-        if let Some(current_value) = self.raw_node.value()
-            && new_tensor.shape() != current_value.shape()
-        {
+        let dyn_shape = self.raw_node.dynamic_expected_shape();
+        let actual = new_tensor.shape();
+
+        // 使用 DynamicShape 的内置兼容性检查
+        // - 维度数必须相同
+        // - 动态维度（None）与任何值兼容
+        // - 固定维度必须完全匹配
+        if !dyn_shape.is_compatible_with_tensor(actual) {
+            let expected_fixed = self.raw_node.value_expected_shape();
             return Err(GraphError::ShapeMismatch {
-                expected: current_value.shape().to_vec(),
-                got: new_tensor.shape().to_vec(),
+                expected: expected_fixed.to_vec(),
+                got: actual.to_vec(),
                 message: format!(
-                    "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
-                    new_tensor.shape(),
+                    "新张量的形状 {:?} 与节点 '{}' 的动态形状 {} 不兼容。",
+                    actual,
                     self.name(),
-                    current_value.shape(),
+                    dyn_shape,
                 ),
             });
         }
+
         Ok(())
     }
 
@@ -139,6 +150,17 @@ impl NodeHandle {
             last_backward_pass_id: 0,
             is_detached: false,
         })
+    }
+
+    /// 创建 ZerosLike 节点（动态零张量，用于 RNN 初始隐藏状态）
+    pub(in crate::nn) fn new_zeros_like(feature_shape: &[usize]) -> Self {
+        let zeros_like = ZerosLike::new(feature_shape);
+        Self {
+            raw_node: NodeType::ZerosLike(zeros_like),
+            last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
+            is_detached: false,
+        }
     }
 
     pub(in crate::nn) fn new_add(parents: &[&Self]) -> Result<Self, GraphError> {
@@ -380,6 +402,14 @@ impl NodeHandle {
 
     pub(in crate::nn) fn value_expected_shape(&self) -> &[usize] {
         self.raw_node.value_expected_shape()
+    }
+
+    pub(in crate::nn) fn dynamic_expected_shape(&self) -> crate::nn::shape::DynamicShape {
+        self.raw_node.dynamic_expected_shape()
+    }
+
+    pub(in crate::nn) fn supports_dynamic_batch(&self) -> bool {
+        self.raw_node.supports_dynamic_batch()
     }
 
     pub(in crate::nn) fn has_value(&self) -> bool {

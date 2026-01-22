@@ -15,6 +15,7 @@ mod model_state;
 mod module;
 mod nodes;
 pub mod optimizer;
+mod shape;
 mod var;
 mod var_ops;
 
@@ -28,6 +29,7 @@ pub use module::Module;
 pub use nodes::NodeId;
 pub use nodes::raw_node::Reduction;
 pub use optimizer::{Adam, Optimizer, SGD};
+pub use shape::{Dim, DynamicShape};
 pub use var::{DetachedVar, Init, Var};
 pub use var_ops::{VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps};
 

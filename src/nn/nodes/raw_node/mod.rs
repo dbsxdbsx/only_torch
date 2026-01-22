@@ -41,10 +41,12 @@ pub(in crate::nn) enum NodeType {
     Step(Step),
     Tanh(Tanh),
     SoftmaxCrossEntropy(SoftmaxCrossEntropy),
+    ZerosLike(ZerosLike), // 动态零张量（RNN 初始隐藏状态）
 }
 
 use super::{GraphError, NodeHandle, NodeId};
 use crate::nn::format_node_display;
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use std::any::type_name;
 
@@ -141,7 +143,28 @@ pub(in crate::nn::nodes) trait TraitNode {
         self.value().is_some()
     }
 
-    /// 返回节点的预期输出形状
-    /// 这个形状在节点创建时就已确定，存储在节点中
+    /// 返回节点的预期输出形状（固定形状）
+    ///
+    /// 这个形状在节点创建时就已确定，存储在节点中。
+    /// 对于支持动态维度的节点，应同时实现 `dynamic_expected_shape`。
     fn value_expected_shape(&self) -> &[usize];
+
+    /// 返回节点的动态形状
+    ///
+    /// 默认实现基于 `value_expected_shape` 创建固定形状。
+    /// 支持动态维度的节点（如 GradientRouter、State）应覆盖此方法。
+    ///
+    /// # 返回
+    /// - 普通节点：固定形状 `[32, 128]`
+    /// - 动态节点：带动态维度 `[?, 128]`
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        DynamicShape::fixed(self.value_expected_shape())
+    }
+
+    /// 检查此节点是否支持动态 batch
+    ///
+    /// 默认返回 false。GradientRouter 和 State 应返回 true。
+    fn supports_dynamic_batch(&self) -> bool {
+        false
+    }
 }

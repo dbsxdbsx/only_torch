@@ -14,6 +14,7 @@
  * - parents[0]: 输入数据
  */
 
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -27,7 +28,12 @@ pub(crate) struct MaxPool2d {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    shape: Vec<usize>, // 输出形状
+    /// 固定形状（用于 value_expected_shape）
+    fixed_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch
+    supports_dynamic: bool,
 
     // 池化参数
     kernel_size: (usize, usize), // (kH, kW)
@@ -110,9 +116,22 @@ impl MaxPool2d {
         }
 
         // 5. 确定输出形状
-        let output_shape = match batch_size {
+        let fixed_shape = match batch_size {
             Some(b) => vec![b, channels, output_h, output_w],
             None => vec![channels, output_h, output_w],
+        };
+
+        // 计算动态形状
+        let parent = &parents[0];
+        let parent_dyn = parent.dynamic_expected_shape();
+        let supports_dynamic = parent.supports_dynamic_batch();
+
+        let dynamic_shape = if supports_dynamic && parent_dyn.is_dynamic(0) {
+            let mut dims: Vec<Option<usize>> = fixed_shape.iter().map(|&d| Some(d)).collect();
+            dims[0] = None;
+            DynamicShape::new(&dims)
+        } else {
+            DynamicShape::fixed(&fixed_shape)
         };
 
         Ok(Self {
@@ -120,7 +139,9 @@ impl MaxPool2d {
             name: None,
             value: None,
             grad: None,
-            shape: output_shape,
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
             kernel_size,
             stride: (s_h, s_w),
             max_indices: None,
@@ -147,7 +168,15 @@ impl TraitNode for MaxPool2d {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {

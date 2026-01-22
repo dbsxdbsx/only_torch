@@ -234,126 +234,185 @@ if !self.is_train_mode() {
 
 - **选择性梯度截断**：只阻止特定路径的梯度流，其他路径正常
 - **支持高级训练模式**：GAN、Actor-Critic 等需要精细控制梯度流向
+- **PyTorch 风格 API**：`var.detach()` 返回可用于 `ModelState::forward()` 的轻量包装
 
-### 2.2 API 设计
+### 2.2 API 设计（PyTorch 风格）
 
-```rust
-impl Graph {
-    /// 将节点标记为 detached，阻止梯度回流到其父节点
-    pub fn detach_node(&mut self, node_id: NodeId) -> Result<(), GraphError> {
-        self.get_node_mut(node_id)?.set_detached(true);
-        Ok(())
-    }
+only_torch 提供两种 detach API，适用于不同场景：
 
-    /// 取消 detach 状态
-    pub fn attach_node(&mut self, node_id: NodeId) -> Result<(), GraphError> {
-        self.get_node_mut(node_id)?.set_detached(false);
-        Ok(())
-    }
-
-    /// 检查节点是否被 detach
-    pub fn is_node_detached(&self, node_id: NodeId) -> Result<bool, GraphError> {
-        Ok(self.get_node(node_id)?.is_detached())
-    }
-}
-
-// NodeHandle 扩展
-impl NodeHandle {
-    pub fn is_detached(&self) -> bool {
-        self.is_detached
-    }
-
-    pub fn set_detached(&mut self, detached: bool) {
-        self.is_detached = detached;
-    }
-}
-```
-
-### 2.3 实现方案
-
-在现有 `pass_id` 机制下实现，修改 `backward_node_internal`：
+| 方法 | 返回类型 | 创建图节点 | 推荐场景 |
+|------|---------|-----------|---------|
+| `var.detach()` | `DetachedVar` | ❌ 否 | `ModelState::forward()` 输入 |
+| `var.detach_node()` | `Var` | ✅ Identity 节点 | 直接图操作、可视化调试 |
 
 ```rust
-fn backward_node_internal(
-    &mut self,
-    target_node_id: NodeId,
-    result_node_id: NodeId,
-) -> Result<(), GraphError> {
-    let target_node = self.get_node(target_node_id)?;
-
-    // 🆕 检查 detach 状态
-    if target_node.is_detached() {
-        // 视为叶子节点，不向父节点传播梯度
-        // jacobi 不设置（保持 None）
-        return Ok(());
+impl Var {
+    /// 创建 detached 视图（轻量级，不创建图节点）
+    ///
+    /// 返回 `DetachedVar`，用于传递给 `ModelState::forward()`。
+    /// GradientRouter 会自动处理梯度路由。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // GAN 训练（推荐）
+    /// let fake = G.forward(&noise)?;
+    /// let d_fake = D.forward(&fake.detach())?;  // DetachedVar，无图节点创建
+    /// d_loss.backward()?;  // D 的梯度不会流向 G
+    /// ```
+    pub fn detach(&self) -> DetachedVar {
+        DetachedVar { inner: self.clone() }
     }
 
-    // 原有逻辑保持不变...
-    let parents_ids = self.get_node_parents(target_node_id)?;
-    for parent_id in &parents_ids {
-        self.backward_node_internal(*parent_id, result_node_id)?;
-    }
-    // ...
+    /// 创建 detached 节点（在图中创建 Identity 节点）
+    ///
+    /// 返回新的 `Var`，指向一个 detached 的 Identity 节点。
+    /// 用于需要在 detach 后继续进行图操作的场景。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let x_detached = x.detach_node();
+    /// let y = x_detached.sigmoid();  // 可以继续构建图
+    /// ```
+    pub fn detach_node(&self) -> Self { ... }
+}
+
+/// DetachedVar: Var 的轻量级 detached 包装
+///
+/// 不创建图节点，仅作为语义标记。
+/// 实现 ForwardInput trait，可直接传给 ModelState::forward()。
+pub struct DetachedVar {
+    inner: Var,
 }
 ```
 
-### 2.4 与 PyTorch `tensor.detach()` 的语义差异
+### 2.3 GradientRouter 梯度路由机制
 
-> **重要**：only_torch 的 `detach_node()`/`attach_node()` 采用"开关式"设计，与 PyTorch 的 `tensor.detach()` 语义不同。
-
-| 框架 | API | 语义 |
-|------|-----|------|
-| **PyTorch** | `y = x.detach()` | 返回**新张量** `y`，`x` 和 `y` 可同时存在于不同分支 |
-| **only_torch** | `graph.detach_node(x)` | 对**同一节点** `x` 设置开关，阻止梯度回流 |
-
-这是**有意的设计选择**：only_torch 是静态图框架，"开关式"设计更符合静态图的心智模型，且在功能上可达到相同效果。
-
-### 2.5 PyTorch 语义兼容性
-
-**关键行为**：当节点被 detach 后，其上游参数节点的 jacobi 应为 `None`，而非零张量。
+当 `DetachedVar` 传入 `ModelState::forward()` 时，底层通过 `GradientRouter` 节点实现梯度路由：
 
 ```
-网络: x → w1 → h(detached) → w2 → y
-
-backward(y) 后:
-- w2.jacobi = Some(正常梯度)
-- h.jacobi = None (被 detach)
-- w1.jacobi = None (梯度被 h 阻断，符合 PyTorch 语义)
+┌─────────────────────────────────────────────────────────────────┐
+│                    GradientRouter 工作原理                       │
+│                                                                 │
+│  Forward 阶段:                                                  │
+│    G.forward(&noise) → fake_images                              │
+│    fake_images.detach() → DetachedVar { inner: fake_images }    │
+│    D.forward(&fake.detach())                                    │
+│      └→ ModelState 创建/复用 GradientRouter:                    │
+│         - 设置 value = fake_images 的值                         │
+│         - 设置 is_detached = true                               │
+│         - 设置 gradient_target = fake_images.node_id()          │
+│                                                                 │
+│  Backward 阶段:                                                 │
+│    d_loss.backward()                                            │
+│      └→ 梯度传播到 GradientRouter                               │
+│         - is_detached = true → 梯度不从此节点继续向上传播        │
+│         - gradient_target 存在 → 梯度被路由到 fake_images        │
+│         - 从 fake_images 继续向上传播（到 G 的参数）             │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-实现细节：
-- 若目标节点的所有子节点都无 jacobi（因 detach 导致），则清除该节点的 jacobi
-- 这确保了被 detach 阻断的上游节点不会残留零梯度
-```
+### 2.4 与 PyTorch 的对比
 
-### 2.6 使用示例
+| 框架 | API | 语义 | 实现 |
+|------|-----|------|------|
+| **PyTorch** | `y = x.detach()` | 返回新张量，共享存储但无 grad_fn | 动态图，创建新节点 |
+| **only_torch** | `var.detach()` | 返回 DetachedVar 轻量包装 | 静态图，不创建节点 |
+| **only_torch** | `var.detach_node()` | 返回新 Var（Identity 节点） | 静态图，创建节点 |
 
-#### GAN 训练
+### 2.5 使用示例
+
+#### GAN 训练（PyTorch 风格）
 
 ```rust
-// 训练判别器
-let fake = graph.forward_node(generator_output)?;
-graph.detach_node(fake)?;  // 防止 D 的 loss 更新 G
-let d_fake = graph.forward_node(discriminator_on_fake)?;
-graph.backward_nodes(&[d_weights], d_loss)?;
+// 创建模型
+let generator = Generator::new(&graph)?;
+let discriminator = Discriminator::new(&graph)?;
+let criterion = MseLoss::new();
 
-// 训练生成器
-graph.attach_node(fake)?;  // 恢复梯度流
-graph.backward_nodes(&[g_weights], g_loss)?;
+for epoch in 0..epochs {
+    // === 训练 Discriminator ===
+    d_optimizer.zero_grad()?;
+    
+    // D 对真实图像
+    let real_out = discriminator.forward(&real_images)?;
+    let d_real_loss = criterion.forward(&real_out, &real_labels)?;
+    d_real_loss.backward()?;
+    
+    // D 对假图像（使用 detach 阻止梯度流向 G）
+    let fake_images = generator.forward(&noise)?;
+    let fake_out = discriminator.forward(&fake_images.detach())?;  // ✨ PyTorch 风格
+    let d_fake_loss = criterion.forward(&fake_out, &fake_labels)?;
+    d_fake_loss.backward()?;
+    d_optimizer.step()?;
+    
+    // === 训练 Generator ===
+    g_optimizer.zero_grad()?;
+    let fake_for_g = generator.forward(&new_noise)?;
+    let fake_out_g = discriminator.forward(&fake_for_g)?;  // 不 detach，梯度流向 G
+    let g_loss = criterion.forward(&fake_out_g, &real_labels)?;
+    g_loss.backward()?;
+    g_optimizer.step()?;
+}
 ```
 
 #### Actor-Critic (强化学习)
 
 ```rust
-// Critic 的 value 估计传给 Actor 时需要 detach
-let value = graph.forward_node(critic_output)?;
-graph.detach_node(value)?;  // Actor 的 loss 不应更新 Critic
-let advantage = compute_advantage(reward, value);
-// ... 计算 actor_loss ...
-graph.backward_nodes(&[actor_weights], actor_loss)?;
+// Critic 的 value 估计传给 advantage 计算时 detach
+let value = critic.forward(&state)?;
+let advantage = rewards - value.detach();  // 不需要 Critic 的梯度
+
+// Actor 训练
+let action_logits = actor.forward(&state)?;
+let actor_loss = compute_policy_loss(&action_logits, &actions, &advantage)?;
+actor_loss.backward()?;
+actor_optimizer.step()?;
 ```
 
-### 2.7 与 `value_version` 机制的关系
+### 2.6 ModelState 与 ForwardInput trait
+
+`ModelState` 提供了统一的模型前向传播接口，通过 `ForwardInput` trait 支持多种输入类型：
+
+```rust
+/// 模型前向输入 trait
+pub trait ForwardInput {
+    fn shape(&self) -> Vec<usize>;
+    fn get_value(&self) -> Result<Tensor, GraphError>;
+    fn is_detached(&self) -> bool;
+    fn var_node_id(&self) -> Option<NodeId>;
+}
+
+// 已实现的类型：
+impl ForwardInput for &Tensor { ... }      // Tensor 引用
+impl ForwardInput for Tensor { ... }       // Tensor 值
+impl ForwardInput for &Var { ... }         // Var 引用（非 detached）
+impl ForwardInput for Var { ... }          // Var 值（非 detached）
+impl ForwardInput for &DetachedVar { ... } // DetachedVar 引用（detached）
+impl ForwardInput for DetachedVar { ... }  // DetachedVar 值（detached）
+```
+
+**ModelState 的智能缓存**：
+
+| 输入类型 | is_detached | gradient_target | 行为 |
+|----------|-------------|-----------------|------|
+| `Tensor` | false | None | 缓存，无梯度路由 |
+| `Var` | false | Some(var_id) | 缓存，梯度路由到原 Var |
+| `DetachedVar` | true | Some(var_id) | 缓存，但阻止梯度向上传播 |
+
+### 2.7 Criterion 损失函数封装
+
+`Criterion` 提供 PyTorch 风格的损失函数 API，支持智能缓存：
+
+```rust
+let criterion = MseLoss::new();
+
+// 自动按 output 节点 ID 缓存
+let loss1 = criterion.forward(&output1, &target1)?;
+let loss2 = criterion.forward(&output2, &target2)?;  // 不同 output → 新缓存
+let loss3 = criterion.forward(&output1, &target3)?;  // 同 output → 复用缓存
+```
+
+### 2.8 与 `value_version` 机制的关系
 
 归档文档 `graph_execution_refactor.md` 提议用 `value_version` 替代 `pass_id`，并声称对 `detach` 更友好。
 
@@ -363,6 +422,7 @@ graph.backward_nodes(&[actor_weights], actor_loss)?;
 |----------|-------------|
 | `pass_id` + 递归 | 递归时检查 `is_detached` flag，遇到则停止 |
 | `value_version` + 拓扑排序 | 构建反向子图时排除 detached 分支 |
+| `GradientRouter` | 动态设置 is_detached 和 gradient_target |
 
 ---
 
@@ -457,58 +517,86 @@ graph.backward_nodes_ex(&[critic_params], critic_loss, false)?;
 
 ## 4. 组合使用模式
 
-### 4.1 GAN 训练完整示例
+### 4.1 GAN 训练完整示例（PyTorch 风格）
 
 ```rust
+// 创建模型和优化器
+let graph = Graph::new_with_seed(42);
+let generator = Generator::new(&graph)?;
+let discriminator = Discriminator::new(&graph)?;
+let criterion = MseLoss::new();
+
+let mut g_optimizer = Adam::new(&graph, &generator.parameters(), 0.001);
+let mut d_optimizer = Adam::new(&graph, &discriminator.parameters(), 0.0005);
+
 for epoch in 0..epochs {
-    // === 训练判别器 ===
-    // 真实样本
-    let d_real = graph.forward_node(discriminator_on_real)?;
-
-    // 生成样本（detach 防止更新生成器）
-    let fake = graph.forward_node(generator_output)?;
-    graph.detach_node(fake)?;
-    let d_fake = graph.forward_node(discriminator_on_fake)?;
-
-    let d_loss = compute_d_loss(d_real, d_fake);
-    graph.backward_nodes(&[d_weights], d_loss)?;
-    d_optimizer.step(&mut graph)?;
-    graph.clear_jacobi()?;
-
-    // === 训练生成器 ===
-    graph.attach_node(fake)?;  // 恢复梯度流
-    let g_loss = compute_g_loss(d_fake);
-    graph.backward_nodes(&[g_weights], g_loss)?;
-    g_optimizer.step(&mut graph)?;
-    graph.clear_jacobi()?;
+    for batch in train_loader.iter() {
+        let (real_images, _) = batch;
+        let noise = Tensor::normal(0.0, 1.0, &[batch_size, latent_dim]);
+        
+        // === 训练 Discriminator ===
+        d_optimizer.zero_grad()?;
+        
+        // D 对真实图像
+        let real_out = discriminator.forward(&real_images)?;
+        let real_labels = Tensor::ones(&[batch_size, 1]);
+        let d_real_loss = criterion.forward(&real_out, &real_labels)?;
+        d_real_loss.backward()?;
+        d_optimizer.step()?;
+        
+        // D 对假图像
+        d_optimizer.zero_grad()?;
+        let fake_images = generator.forward(&noise)?;
+        let fake_out = discriminator.forward(&fake_images.detach())?;  // ✨ detach
+        let fake_labels = Tensor::zeros(&[batch_size, 1]);
+        let d_fake_loss = criterion.forward(&fake_out, &fake_labels)?;
+        d_fake_loss.backward()?;
+        d_optimizer.step()?;
+        
+        // === 训练 Generator ===
+        g_optimizer.zero_grad()?;
+        let new_noise = Tensor::normal(0.0, 1.0, &[batch_size, latent_dim]);
+        let fake_for_g = generator.forward(&new_noise)?;
+        let fake_out_g = discriminator.forward(&fake_for_g)?;  // 不 detach
+        let g_loss = criterion.forward(&fake_out_g, &real_labels)?;
+        g_loss.backward()?;
+        g_optimizer.step()?;
+    }
 }
 ```
 
 ### 4.2 Actor-Critic (PPO 风格)
 
 ```rust
+let actor = Actor::new(&graph)?;
+let critic = Critic::new(&graph)?;
+let mut actor_optimizer = Adam::new(&graph, &actor.parameters(), 0.0003);
+let mut critic_optimizer = Adam::new(&graph, &critic.parameters(), 0.001);
+
 for epoch in 0..epochs {
-    // 收集经验时使用 no_grad
-    let trajectories = graph.no_grad_scope(|g| {
-        collect_trajectories(g, env)
-    })?;
-
-    // 计算优势函数（Critic 输出 detach）
-    let values = graph.forward_node(critic_output)?;
-    graph.detach_node(values)?;
-    let advantages = compute_gae(rewards, values);
-
-    // 多次 PPO 更新
+    // 收集经验（no_grad 模式）
+    let trajectories = collect_trajectories(&actor, &env)?;
+    
     for _ in 0..ppo_epochs {
-        let actor_loss = compute_ppo_loss(actions, advantages);
-        let critic_loss = compute_value_loss(values, returns);
-
-        // 两个 loss 共享 backbone，需要 retain_graph
-        graph.backward_nodes_ex(&[actor_params], actor_loss, true)?;
-        graph.backward_nodes_ex(&[critic_params], critic_loss, false)?;
-
-        optimizer.step(&mut graph)?;
-        graph.clear_jacobi()?;
+        // Critic 估计 value
+        let values = critic.forward(&states)?;
+        
+        // 计算 advantage（使用 detach）
+        let advantages = &returns - &values.detach();
+        
+        // Actor 更新
+        actor_optimizer.zero_grad()?;
+        let action_logits = actor.forward(&states)?;
+        let actor_loss = compute_ppo_loss(&action_logits, &actions, &advantages)?;
+        actor_loss.backward()?;
+        actor_optimizer.step()?;
+        
+        // Critic 更新
+        critic_optimizer.zero_grad()?;
+        let values_new = critic.forward(&states)?;
+        let critic_loss = values_new.mse_loss(&returns)?;
+        critic_loss.backward()?;
+        critic_optimizer.step()?;
     }
 }
 ```
@@ -516,23 +604,40 @@ for epoch in 0..epochs {
 ### 4.3 多任务学习
 
 ```rust
-// 共享 backbone 的多任务模型
-let features = graph.forward_node(shared_backbone)?;
+let backbone = Backbone::new(&graph)?;
+let cls_head = ClassificationHead::new(&graph)?;
+let det_head = DetectionHead::new(&graph)?;
 
-// 任务 1：分类
-let cls_out = graph.forward_node(classification_head)?;
-let cls_loss = graph.forward_node(ce_loss)?;
+// 所有参数共用一个优化器
+let all_params = [
+    backbone.parameters(),
+    cls_head.parameters(),
+    det_head.parameters(),
+].concat();
+let mut optimizer = Adam::new(&graph, &all_params, 0.001);
 
-// 任务 2：检测
-let det_out = graph.forward_node(detection_head)?;
-let det_loss = graph.forward_node(detection_loss)?;
+let cls_criterion = CrossEntropyLoss::new();
+let det_criterion = MseLoss::new();
 
-// 反向传播（注意 retain_graph）
-graph.backward_nodes_ex(&[backbone, cls_head], cls_loss, true)?;
-graph.backward_nodes_ex(&[backbone, det_head], det_loss, false)?;
-
-optimizer.step(&mut graph)?;
-graph.clear_jacobi()?;
+for batch in train_loader.iter() {
+    optimizer.zero_grad()?;
+    
+    // 共享 backbone
+    let features = backbone.forward(&images)?;
+    
+    // 任务 1：分类
+    let cls_out = cls_head.forward(&features)?;
+    let cls_loss = cls_criterion.forward(&cls_out, &labels)?;
+    
+    // 任务 2：检测
+    let det_out = det_head.forward(&features)?;
+    let det_loss = det_criterion.forward(&det_out, &boxes)?;
+    
+    // 总 loss（自动累积梯度）
+    let total_loss = &cls_loss + &det_loss;
+    total_loss.backward()?;
+    optimizer.step()?;
+}
 ```
 
 ---
@@ -735,12 +840,44 @@ graph.backward_nodes_ex(&[w], output2, false)?;
 
 本文档描述的梯度流控制机制已在 [架构 V2 设计](architecture_v2_design.md) 中的高层 API 中得到支持：
 
-| 底层 API | 高层 API (Var 版) |
-|----------|-------------------|
-| `graph.detach_node(node_id)` | `graph.detach(var)` |
-| `graph.attach_node(node_id)` | `graph.attach(var)` |
-| `graph.backward_nodes_ex(&ids, loss, retain)` | `graph.backward_ex(loss, &params, retain)` |
-| `graph.no_grad_scope(\|g\| { ... })` | 同上（无变化） |
+| 功能 | PyTorch 风格 API | 说明 |
+|------|-----------------|------|
+| **detach（推荐）** | `var.detach()` → `DetachedVar` | 轻量级，不创建节点 |
+| **detach（图操作）** | `var.detach_node()` → `Var` | 创建 Identity 节点 |
+| **backward** | `loss.backward()?` | 自动前向（ensure-forward） |
+| **ModelState** | `model.forward(&x)?` | 统一接受 Tensor/Var/DetachedVar |
+| **Criterion** | `criterion.forward(&output, &target)?` | 智能缓存损失子图 |
+
+### 10.1 核心组件
+
+```rust
+// ModelState: 封装模型的前向计算和缓存
+pub struct ModelState { ... }
+
+impl ModelState {
+    pub fn forward(&self, x: impl ForwardInput) -> Result<Var, GraphError> { ... }
+}
+
+// Criterion: 封装损失函数和缓存
+pub struct MseLoss { ... }
+pub struct CrossEntropyLoss { ... }
+
+impl MseLoss {
+    pub fn forward(&self, output: &Var, target: &Tensor) -> Result<Var, GraphError> { ... }
+}
+```
+
+### 10.2 GradientRouter 内部机制
+
+`GradientRouter` 是 `ModelState` 的内部实现节点，用户无需直接使用：
+
+| 属性 | 说明 |
+|------|------|
+| `value` | 动态设置的输入值 |
+| `is_detached` | 是否阻止梯度向上传播 |
+| `gradient_target` | 梯度路由目标节点 ID |
+
+**可视化**：GradientRouter 在 Graphviz 中显示为椭圆形、虚线边框、浅灰色背景。
 
 高层 API 的设计原则是**薄封装**：`Var` 只是 `NodeId` 的类型安全包装，所有梯度流控制的语义与底层完全一致。
 
@@ -879,21 +1016,27 @@ target_params 方式：只指定 A 的参数
 
 ### A.5 迁移指南
 
-如果现有代码使用了 `target_params`：
+如果现有代码使用了旧版 `detach_node()`/`attach_node()` 状态式 API：
 
 ```rust
-// ❌ 旧代码（已弃用）
-let fake = g.forward(input)?;
-let d_loss = d.forward(fake)?;
-graph.backward(d_loss, Some(&d_params))?;  // target_params
+// ❌ 旧代码（状态式 detach/attach）
+let fake = generator.forward(&noise)?;
+graph.detach_node(fake.node_id())?;  // 状态式 detach
+let d_fake = discriminator.forward(&fake)?;
+d_loss.backward()?;
+graph.attach_node(fake.node_id())?;  // 状态式 attach
 
-// ✅ 新代码（PyTorch 风格）
-let fake = g.forward(input)?;
-graph.detach(fake)?;                        // 截断梯度流
-let d_loss = d.forward(fake)?;
-d_loss.backward()?;                         // 计算所有可达梯度
-d_optimizer.step()?;                        // optimizer 决定更新谁
+// ✅ 新代码（PyTorch 风格，函数式 detach）
+let fake = generator.forward(&noise)?;
+let d_fake = discriminator.forward(&fake.detach())?;  // 函数式 detach
+d_loss.backward()?;
+// 无需 attach！下次使用 fake 时不带 .detach() 即可
 ```
+
+**关键变化**：
+1. `var.detach()` 返回 `DetachedVar`（轻量包装，不创建节点）
+2. 无需 `attach()` 操作——detach 状态随 `DetachedVar` 生命周期结束而消失
+3. 如需在图中创建显式 detach 边界，使用 `var.detach_node()`
 
 ### A.6 总结
 

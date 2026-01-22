@@ -43,6 +43,10 @@ fn test_model_state_basic() {
     assert_eq!(state.cache_size(), 1);
 }
 
+/// 测试: 不同 batch_size 复用同一个缓存（类似 Keras）
+///
+/// 新机制：缓存键只用特征维度，忽略 batch（第一维）。
+/// `[1, 2]` 和 `[2, 2]` 的特征维度都是 `[2]`，所以复用同一个缓存。
 #[test]
 fn test_model_state_multi_shape() {
     let graph = Graph::new_with_seed(42);
@@ -56,15 +60,15 @@ fn test_model_state_multi_shape() {
         .forward(&x1, |input| Ok(fc2.forward(&fc1.forward(input).tanh())))
         .unwrap();
 
-    // 第二种形状 [2, 2]（不同 batch_size）
+    // 第二种形状 [2, 2]（不同 batch_size，但特征维度相同）
     let x2 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     let output2 = state
         .forward(&x2, |input| Ok(fc2.forward(&fc1.forward(input).tanh())))
         .unwrap();
 
-    // 应该是不同的节点
-    assert_ne!(output1.node_id(), output2.node_id());
-    assert_eq!(state.cache_size(), 2);
+    // 新机制：相同特征维度 → 复用同一个节点！
+    assert_eq!(output1.node_id(), output2.node_id());
+    assert_eq!(state.cache_size(), 1); // 只有 1 个缓存（特征维度 [2]）
 
     // 再次使用第一种形状（复用）
     let x3 = Tensor::new(&[5.0, 6.0], &[1, 2]);
@@ -73,9 +77,38 @@ fn test_model_state_multi_shape() {
         .unwrap();
 
     assert_eq!(output1.node_id(), output3.node_id());
-    assert_eq!(state.cache_size(), 2); // 仍然只有 2 个缓存
+    assert_eq!(state.cache_size(), 1); // 仍然只有 1 个缓存
+
+    // 测试不同特征维度确实会创建不同缓存
+    let fc1_3 = Linear::new(&graph, 3, 4, true, "fc1_3").unwrap();
+    let fc2_3 = Linear::new(&graph, 4, 2, true, "fc2_3").unwrap();
+    let state2 = ModelState::new(&graph);
+
+    let y1 = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+    let out1 = state2
+        .forward(&y1, |input| Ok(fc2_3.forward(&fc1_3.forward(input).tanh())))
+        .unwrap();
+
+    let y2 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let out2 = state2
+        .forward(&y2, |input| Ok(fc2_3.forward(&fc1_3.forward(input).tanh())))
+        .unwrap();
+
+    // 相同特征维度 [3] → 复用
+    assert_eq!(out1.node_id(), out2.node_id());
+    assert_eq!(state2.cache_size(), 1);
 }
 
+/// 测试: RNN 变长序列缓存
+///
+/// 对于 RNN 输入 [batch, seq_len, features]：
+/// - batch（第一维）被忽略
+/// - 缓存键是 [seq_len, features]
+/// - 不同 seq_len 会创建不同缓存（因为展开次数不同）
+///
+/// 注意：由于 RNN 展开会创建依赖 batch 维度的中间节点，
+/// 目前不同 batch_size 复用同一缓存的功能暂不支持 RNN。
+/// 这个限制只影响 RNN 等展开式网络，普通 MLP 完全支持。
 #[test]
 fn test_model_state_var_len_rnn() {
     let graph = Graph::new_with_seed(42);
@@ -83,7 +116,7 @@ fn test_model_state_var_len_rnn() {
     let fc = Linear::new(&graph, 8, 2, true, "fc").unwrap();
     let state = ModelState::new(&graph);
 
-    // seq_len = 5
+    // seq_len = 5, batch = 2
     let x1 = Tensor::new(&vec![0.1f32; 10], &[2, 5, 1]);
     let output1 = state
         .forward(&x1, |input| {
@@ -101,14 +134,14 @@ fn test_model_state_var_len_rnn() {
         })
         .unwrap();
 
-    // 应该是不同的节点
+    // 不同 seq_len → 不同缓存（因为 RNN 展开次数不同）
     assert_ne!(output1.node_id(), output2.node_id());
     assert_eq!(state.cache_size(), 2);
 
-    // 检查缓存的形状
+    // 检查缓存的特征形状（不含 batch）
     let shapes = state.cached_shapes();
-    assert!(shapes.contains(&vec![2, 5, 1]));
-    assert!(shapes.contains(&vec![2, 8, 1]));
+    assert!(shapes.contains(&vec![5, 1]), "应有特征形状 [5, 1]");
+    assert!(shapes.contains(&vec![8, 1]), "应有特征形状 [8, 1]");
 }
 
 #[test]

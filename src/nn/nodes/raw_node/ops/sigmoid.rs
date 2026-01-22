@@ -1,3 +1,4 @@
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -13,7 +14,12 @@ pub(crate) struct Sigmoid {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    shape: Vec<usize>,
+    /// 固定形状（用于 value_expected_shape）
+    fixed_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch
+    supports_dynamic: bool,
 }
 
 impl Sigmoid {
@@ -26,13 +32,21 @@ impl Sigmoid {
             ));
         }
 
-        // 2. 返回
+        // 2. 从父节点继承动态形状信息
+        let parent = &parents[0];
+        let fixed_shape = parent.value_expected_shape().to_vec();
+        let dynamic_shape = parent.dynamic_expected_shape();
+        let supports_dynamic = parent.supports_dynamic_batch();
+
+        // 3. 返回
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
-            shape: parents[0].value_expected_shape().to_vec(),
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
         })
     }
 }
@@ -55,7 +69,15 @@ impl TraitNode for Sigmoid {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {

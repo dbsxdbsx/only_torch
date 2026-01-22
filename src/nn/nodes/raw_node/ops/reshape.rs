@@ -5,6 +5,7 @@
  *                 参考 MatrixSlow/matrixslow/ops/ops.py 中的 Reshape 类
  */
 
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -17,6 +18,10 @@ use crate::tensor::Tensor;
 /// - Backward (Jacobi): 单位矩阵（因为只是重新排列元素）
 /// - Backward (Gradient): 将上游梯度 reshape 回父节点形状
 ///
+/// # 动态 batch 支持
+/// - 如果目标形状的第一维等于原始输入的 batch 大小，则认为是保留 batch 维度
+/// - 运行时会按比例调整第一维以适应实际 batch 大小
+///
 /// # 约束
 /// - 目标形状的元素总数必须与输入相同
 #[derive(Clone)]
@@ -25,10 +30,16 @@ pub(crate) struct Reshape {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    /// 目标形状
+    /// 目标形状（创建时的固定形状）
     target_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch
+    supports_dynamic: bool,
     /// 父节点的原始形状（用于反向传播）
     parent_shape: Vec<usize>,
+    /// 原始 batch 大小（用于运行时按比例调整）
+    original_batch_size: usize,
 }
 
 impl Reshape {
@@ -41,7 +52,8 @@ impl Reshape {
         }
 
         // 2. 获取父节点形状
-        let parent_shape = parents[0].value_expected_shape().to_vec();
+        let parent = &parents[0];
+        let parent_shape = parent.value_expected_shape().to_vec();
         let parent_size: usize = parent_shape.iter().product();
 
         // 3. 验证目标形状
@@ -62,12 +74,32 @@ impl Reshape {
             });
         }
 
+        // 4. 计算动态形状
+        // Reshape 保持父节点的 dynamic batch 特性
+        let parent_dyn = parent.dynamic_expected_shape();
+        let supports_dynamic = parent.supports_dynamic_batch();
+
+        // 如果父节点第一维是动态的，输出也保持第一维动态
+        let dynamic_shape = if supports_dynamic && parent_dyn.is_dynamic(0) {
+            let mut dims: Vec<Option<usize>> = target_shape.iter().map(|&d| Some(d)).collect();
+            dims[0] = None; // 第一维动态
+            DynamicShape::new(&dims)
+        } else {
+            DynamicShape::fixed(target_shape)
+        };
+
+        // 记录原始 batch 大小（用于动态 batch 时按比例调整）
+        let original_batch_size = parent_shape[0];
+
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
             target_shape: target_shape.to_vec(),
+            dynamic_shape,
+            supports_dynamic,
+            original_batch_size,
             parent_shape,
         })
     }
@@ -106,6 +138,14 @@ impl TraitNode for Reshape {
         &self.target_shape
     }
 
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
+    }
+
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         // 1. 获取父节点的值
         let parent_value = parents[0].value().ok_or_else(|| {
@@ -116,8 +156,23 @@ impl TraitNode for Reshape {
             ))
         })?;
 
-        // 2. Reshape 到目标形状
-        self.value = Some(parent_value.reshape(&self.target_shape));
+        // 2. 动态计算目标形状（支持动态 batch）
+        // 如果 batch 大小变化，按比例调整目标形状的第一维
+        let actual_batch = parent_value.shape()[0];
+        let runtime_target_shape = if self.supports_dynamic && actual_batch != self.original_batch_size
+        {
+            // 按比例调整第一维
+            // 原始：[orig_batch, ...] -> [target[0], ...]
+            // 现在：[actual_batch, ...] -> [target[0] * actual_batch / orig_batch, ...]
+            let mut new_shape = self.target_shape.clone();
+            new_shape[0] = self.target_shape[0] * actual_batch / self.original_batch_size;
+            new_shape
+        } else {
+            self.target_shape.clone()
+        };
+
+        // 3. Reshape 到运行时目标形状
+        self.value = Some(parent_value.reshape(&runtime_target_shape));
         Ok(())
     }
 
@@ -127,13 +182,17 @@ impl TraitNode for Reshape {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        target_parent: &NodeHandle,
         upstream_grad: &Tensor,
         _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // Reshape 的梯度就是将上游梯度 reshape 回父节点的形状
-        // 值不变，只是形状变回去
-        Ok(upstream_grad.reshape(&self.parent_shape))
+        // 使用父节点的实际形状（支持动态 batch）
+        let parent_actual_shape = target_parent.value().map_or_else(
+            || self.parent_shape.clone(), // fallback 到固定形状
+            |v| v.shape().to_vec(),
+        );
+        // Reshape 的梯度就是将上游梯度 reshape 回父节点的实际形状
+        Ok(upstream_grad.reshape(&parent_actual_shape))
     }
 
     fn grad(&self) -> Option<&Tensor> {

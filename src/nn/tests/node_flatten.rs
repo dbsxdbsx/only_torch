@@ -338,3 +338,100 @@ fn test_flatten_single_sample_backward() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 Flatten 节点的动态形状传播
+///
+/// Flatten 在 keep_first_dim=true 时支持动态 batch：
+/// - 输入: [batch, c, h, w] 或 [batch, features]
+/// - 输出: [batch, c*h*w] 或 [batch, features]
+#[test]
+fn test_flatten_dynamic_shape_propagation() {
+    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 4D 输入：[batch, channels, height, width]
+    // Input 节点默认支持动态 batch
+    let x = graph.input(&Tensor::zeros(&[2, 3, 4, 4])).unwrap();
+
+    // Flatten (keep_first_dim=true by default): [batch, 3, 4, 4] -> [batch, 48]
+    let flat = x.flatten().unwrap();
+
+    // 验证动态形状传播
+    let dyn_shape = flat.dynamic_expected_shape();
+    assert!(
+        dyn_shape.is_dynamic(0),
+        "batch 维度应该是动态的（因为输入是动态的且 keep_first_dim=true）"
+    );
+    assert!(!dyn_shape.is_dynamic(1), "第二维应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(48), "第二维应该是 3*4*4=48");
+}
+
+/// 测试 Flatten 在不同 batch_size 下的前向计算
+#[test]
+fn test_flatten_dynamic_batch_forward() {
+    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 4D 输入：[batch, channels, height, width]
+    let x = graph.input(&Tensor::zeros(&[2, 3, 4, 4])).unwrap();
+
+    // Flatten (keep_first_dim=true by default)
+    let flat = x.flatten().unwrap();
+
+    // 第一次 forward：batch=2
+    flat.forward().unwrap();
+    let value1 = flat.value().unwrap().unwrap();
+    assert_eq!(value1.shape(), &[2, 48], "第一次 forward: batch=2");
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::zeros(&[5, 3, 4, 4])).unwrap();
+
+    // 第二次 forward：batch=5
+    flat.forward().unwrap();
+    let value2 = flat.value().unwrap().unwrap();
+    assert_eq!(value2.shape(), &[5, 48], "第二次 forward: batch=5");
+}
+
+/// 测试 Flatten 在不同 batch_size 下的反向传播
+#[test]
+fn test_flatten_dynamic_batch_backward() {
+    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 4D 输入
+    let x = graph
+        .input(&Tensor::normal_seeded(0.0, 1.0, &[2, 3, 4, 4], 42))
+        .unwrap();
+
+    // Flatten (keep_first_dim=true by default) -> MSE
+    let flat = x.flatten().unwrap();
+    let target = graph.input(&Tensor::zeros(&[2, 48])).unwrap();
+    let loss = flat.mse_loss(&target).unwrap();
+
+    // 第一次训练：batch=2
+    loss.forward().unwrap();
+    let loss_val1 = loss.value().unwrap().unwrap()[[0, 0]];
+    assert!(loss_val1 >= 0.0);
+    graph.zero_grad();
+    loss.backward().unwrap();
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::normal_seeded(0.0, 1.0, &[5, 3, 4, 4], 100))
+        .unwrap();
+    target.set_value(&Tensor::zeros(&[5, 48])).unwrap();
+
+    // 第二次训练：batch=5
+    loss.forward().unwrap();
+    let loss_val2 = loss.value().unwrap().unwrap()[[0, 0]];
+    assert!(loss_val2 >= 0.0);
+    graph.zero_grad();
+    loss.backward().unwrap();
+}

@@ -1,3 +1,15 @@
+/*
+ * @Author       : 老董
+ * @Description  : Input 节点单元测试
+ *
+ * 测试策略：
+ * 1. 基础功能测试（创建、形状验证、命名）
+ * 2. 值设置测试
+ * 3. 前向传播行为测试
+ * 4. 梯度行为测试（Input 是梯度汇点，不应有梯度）
+ * 5. 动态形状测试
+ */
+
 use crate::assert_err;
 use crate::nn::{GraphError, GraphInner};
 use crate::tensor::Tensor;
@@ -34,7 +46,7 @@ fn test_node_input_creation_with_invalid_shape() {
             result,
             GraphError::DimensionMismatch { expected, got, message }
                 if *expected == 2 && *got == dims && message == &format!(
-                    "节点张量必须是 2-4 维（支持 FC 和 CNN），但收到的维度是 {} 维。",
+                    "节点张量必须是 2-4 维（支持 FC、RNN 和 CNN），但收到的维度是 {} 维。",
                     dims
                 )
         );
@@ -87,26 +99,25 @@ fn test_node_input_manually_set_value() {
     assert!(graph.is_node_inited(input).unwrap());
     assert_eq!(graph.get_node_value(input).unwrap().unwrap(), &test_value);
 
-    // 2. 测试错误形状的赋值
+    // 2. 测试错误形状的赋值（特征维度不匹配）
+    // 由于 Input 节点支持动态 batch，错误消息会提示"动态形状不兼容"
     let invalid_cases = [
-        Tensor::new(&[1.0], &[1, 1]),
-        Tensor::new(&[1.0, 2.0], &[2, 1]),
-        Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]),
+        Tensor::new(&[1.0], &[1, 1]),       // 特征维度 [1] != [2]
+        Tensor::new(&[1.0, 2.0], &[2, 1]),  // 特征维度 [1] != [2]
+        Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]), // 特征维度 [1] != [2]
     ];
     for value in invalid_cases {
-        let shape = value.shape().to_vec();
+        let result = graph.set_node_value(input, Some(&value));
         assert_err!(
-            graph.set_node_value(input, Some(&value)),
-            GraphError::ShapeMismatch { expected, got, message }
-                if expected == &[2, 2] && got == &shape
-                    && message == &format!(
-                        "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
-                        shape,
-                        "test_input",
-                        &[2, 2]
-                    )
+            result,
+            GraphError::ShapeMismatch { message, .. }
+                if message.contains("动态形状") && message.contains("不兼容")
         );
     }
+
+    // 3. 不同的 batch 大小应该成功（动态 batch）
+    let different_batch = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    graph.set_node_value(input, Some(&different_batch)).unwrap();
 
     // 3. 测试设置空值（清除值）
     graph.set_node_value(input, None).unwrap();
@@ -235,4 +246,140 @@ fn test_node_input_in_computation_graph() {
         graph.get_node_grad(target),
         GraphError::InvalidOperation(msg) if msg == "输入节点[id=3, name=target, type=Input]不应该有梯度"
     );
+}
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 Input 节点的动态形状传播
+///
+/// Input 节点是动态 batch 的源头，其 dynamic_expected_shape 的第一维应为 None
+#[test]
+fn test_input_dynamic_shape_propagation() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 2D Input 节点
+    let x = graph.input(&Tensor::zeros(&[4, 16])).unwrap();
+
+    // 验证动态形状
+    let dyn_shape = x.dynamic_expected_shape();
+    assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
+    assert!(!dyn_shape.is_dynamic(1), "特征维度应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(16), "特征维度应该是 16");
+}
+
+/// 测试 Input 节点在不同维度下的动态形状
+#[test]
+fn test_input_dynamic_shape_various_dims() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 2D: [batch, features]
+    let x_2d = graph.input(&Tensor::zeros(&[4, 16])).unwrap();
+    let dyn_2d = x_2d.dynamic_expected_shape();
+    assert!(dyn_2d.is_dynamic(0));
+    assert!(!dyn_2d.is_dynamic(1));
+
+    // 3D: [batch, seq_len, features] (RNN)
+    let x_3d = graph.input(&Tensor::zeros(&[4, 10, 32])).unwrap();
+    let dyn_3d = x_3d.dynamic_expected_shape();
+    assert!(dyn_3d.is_dynamic(0), "3D: batch 维度应该是动态的");
+    assert!(!dyn_3d.is_dynamic(1), "3D: seq_len 应该是固定的");
+    assert!(!dyn_3d.is_dynamic(2), "3D: features 应该是固定的");
+
+    // 4D: [batch, channels, height, width] (CNN)
+    let x_4d = graph.input(&Tensor::zeros(&[8, 3, 28, 28])).unwrap();
+    let dyn_4d = x_4d.dynamic_expected_shape();
+    assert!(dyn_4d.is_dynamic(0), "4D: batch 维度应该是动态的");
+    assert!(!dyn_4d.is_dynamic(1), "4D: channels 应该是固定的");
+    assert!(!dyn_4d.is_dynamic(2), "4D: height 应该是固定的");
+    assert!(!dyn_4d.is_dynamic(3), "4D: width 应该是固定的");
+}
+
+/// 测试 Input 节点支持动态 batch 的值更新
+///
+/// Input 节点在 set_value 时允许不同的 batch 大小（特征维度必须匹配）
+#[test]
+fn test_input_dynamic_batch_set_value() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 Input 节点
+    let x = graph.input(&Tensor::zeros(&[4, 16])).unwrap();
+
+    // 验证支持动态 batch（通过检查第一维是否为动态）
+    assert!(
+        x.dynamic_expected_shape().is_dynamic(0),
+        "Input 节点应该支持动态 batch"
+    );
+
+    // 设置不同 batch 大小的值应该成功
+    x.set_value(&Tensor::zeros(&[8, 16])).unwrap();
+    assert_eq!(x.value().unwrap().unwrap().shape(), &[8, 16]);
+
+    x.set_value(&Tensor::zeros(&[1, 16])).unwrap();
+    assert_eq!(x.value().unwrap().unwrap().shape(), &[1, 16]);
+
+    x.set_value(&Tensor::zeros(&[32, 16])).unwrap();
+    assert_eq!(x.value().unwrap().unwrap().shape(), &[32, 16]);
+}
+
+/// 测试 Input 节点作为下游节点父节点时的动态 batch 传播
+#[test]
+fn test_input_dynamic_batch_forward_chain() {
+    use crate::nn::var_ops::VarActivationOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // Input -> Sigmoid -> output
+    let x = graph.input(&Tensor::new(&[0.0, 1.0, 2.0, 3.0], &[2, 2])).unwrap();
+    let output = x.sigmoid();
+
+    // 第一次 forward：batch=2
+    output.forward().unwrap();
+    assert_eq!(output.value().unwrap().unwrap().shape(), &[2, 2]);
+
+    // 更新 Input 为不同的 batch 大小
+    x.set_value(&Tensor::zeros(&[5, 2])).unwrap();
+
+    // 第二次 forward：batch=5
+    output.forward().unwrap();
+    assert_eq!(
+        output.value().unwrap().unwrap().shape(),
+        &[5, 2],
+        "输出应该自动适应新的 batch 大小"
+    );
+}
+
+/// 测试 Input 节点在完整训练流程中的动态 batch 支持
+#[test]
+fn test_input_dynamic_batch_training() {
+    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建简单网络：input -> sigmoid -> loss
+    let x = graph.input(&Tensor::new(&[0.0, 1.0, 2.0, 3.0], &[2, 2])).unwrap();
+    let pred = x.sigmoid();
+    let target = graph.input(&Tensor::zeros(&[2, 2])).unwrap();
+    let loss = pred.mse_loss(&target).unwrap();
+
+    // 第一次训练：batch=2
+    loss.forward().unwrap();
+    let loss_val1 = loss.value().unwrap().unwrap()[[0, 0]];
+    assert!(loss_val1 >= 0.0);
+
+    // 更新为不同 batch 大小
+    x.set_value(&Tensor::zeros(&[8, 2])).unwrap();
+    target.set_value(&Tensor::zeros(&[8, 2])).unwrap();
+
+    // 第二次训练：batch=8
+    loss.forward().unwrap();
+    let loss_val2 = loss.value().unwrap().unwrap()[[0, 0]];
+    assert!(loss_val2 >= 0.0);
 }

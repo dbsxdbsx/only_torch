@@ -483,3 +483,103 @@ fn test_select_index_out_of_bounds() {
         panic!("应返回 InvalidOperation 错误");
     }
 }
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 Select 节点的动态形状传播
+/// 使用 3D 输入（符合 Select 典型业务场景：从序列中选择时间步）
+/// 注：Input 节点默认支持动态 batch
+#[test]
+fn test_select_dynamic_shape_propagation() {
+    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 3D 输入：[batch, seq_len, features]
+    // Input 节点默认支持动态 batch
+    let x_seq = graph.input(&Tensor::zeros(&[4, 3, 16])).unwrap();
+
+    // Select：沿 axis=1 选择 index=1，输出应为 [?, 16]
+    let selected = x_seq.select(1, 1).unwrap();
+
+    // 验证动态形状传播
+    let dyn_shape = selected.dynamic_expected_shape();
+    assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
+    assert!(!dyn_shape.is_dynamic(1), "特征维度应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(16), "特征维度应该是 16");
+    assert_eq!(dyn_shape.dims().len(), 2, "输出应该是 2 维");
+}
+
+/// 测试 Select 节点在不同 batch_size 下的前向计算
+/// 使用 3D 输入（符合 Select 典型业务场景）
+#[test]
+fn test_select_dynamic_batch_forward() {
+    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 3D 输入：[batch, seq_len, features]
+    // Input 节点默认支持动态 batch
+    let x_seq = graph.input(&Tensor::zeros(&[2, 4, 16])).unwrap();
+
+    // Select 沿 axis=1 选择 index=2
+    let selected = x_seq.select(1, 2).unwrap();
+
+    // 第一次 forward：batch=2
+    selected.forward().unwrap();
+    let value1 = selected.value().unwrap().unwrap();
+    assert_eq!(value1.shape(), &[2, 16], "第一次 forward: batch=2");
+
+    // 更新输入为不同的 batch_size
+    x_seq.set_value(&Tensor::zeros(&[5, 4, 16])).unwrap();
+
+    // 第二次 forward：batch=5
+    selected.forward().unwrap();
+    let value2 = selected.value().unwrap().unwrap();
+    assert_eq!(value2.shape(), &[5, 16], "第二次 forward: batch=5");
+}
+
+/// 测试 Select 节点在不同 batch_size 下的反向传播
+/// 使用 3D 输入（模拟 RNN 输入序列），符合 Select 的典型业务场景
+#[test]
+fn test_select_dynamic_batch_backward() {
+    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 3D 输入序列：[batch, seq_len, features]
+    // Input 节点默认支持动态 batch
+    let x_seq = graph
+        .input(&Tensor::normal_seeded(0.0, 1.0, &[2, 3, 16], 42))
+        .unwrap();
+
+    // Select 沿 axis=1 选择 index=0，模拟选择第一个时间步
+    let selected = x_seq.select(1, 0).unwrap();
+
+    // 创建 target
+    let target = graph.input(&Tensor::zeros(&[2, 16])).unwrap();
+    let loss = selected.mse_loss(&target).unwrap();
+
+    // 第一次训练：batch=2
+    loss.forward().unwrap();
+    let loss_val1 = loss.value().unwrap().unwrap()[[0, 0]];
+    assert!(loss_val1 >= 0.0);
+    graph.zero_grad();
+    loss.backward().unwrap();
+
+    // 更新输入为不同的 batch_size（模拟不同 batch 的序列数据）
+    x_seq
+        .set_value(&Tensor::normal_seeded(0.0, 1.0, &[5, 3, 16], 100))
+        .unwrap();
+    target.set_value(&Tensor::zeros(&[5, 16])).unwrap();
+
+    // 第二次训练：batch=5
+    loss.forward().unwrap();
+    let loss_val2 = loss.value().unwrap().unwrap()[[0, 0]];
+    assert!(loss_val2 >= 0.0);
+    graph.zero_grad();
+    loss.backward().unwrap();
+}

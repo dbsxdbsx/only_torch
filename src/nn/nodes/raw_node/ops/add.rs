@@ -1,3 +1,4 @@
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -9,7 +10,12 @@ pub(crate) struct Add {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    shape: Vec<usize>,
+    /// 固定形状（用于 value_expected_shape）
+    fixed_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch（继承自父节点）
+    supports_dynamic: bool,
 }
 
 impl Add {
@@ -22,19 +28,34 @@ impl Add {
             ));
         }
 
-        // 1.2 计算广播后的输出形状
-        let mut shape = parents[0].value_expected_shape().to_vec();
+        // 1.2 计算广播后的固定形状
+        let mut fixed_shape = parents[0].value_expected_shape().to_vec();
 
         for parent in parents.iter().skip(1) {
             let parent_shape = parent.value_expected_shape();
 
             // 使用 broadcast_shape 计算广播后的形状
-            shape =
-                broadcast_shape(&shape, parent_shape).ok_or_else(|| GraphError::ShapeMismatch {
-                    expected: shape.clone(),
-                    got: parent_shape.to_vec(),
-                    message: "Add节点的父节点形状无法广播".to_string(),
+            fixed_shape =
+                broadcast_shape(&fixed_shape, parent_shape).ok_or_else(|| {
+                    GraphError::ShapeMismatch {
+                        expected: fixed_shape.clone(),
+                        got: parent_shape.to_vec(),
+                        message: "Add节点的父节点形状无法广播".to_string(),
+                    }
                 })?;
+        }
+
+        // 1.3 计算动态形状（使用父节点的动态形状）
+        // 如果任一父节点支持动态 batch，输出也支持
+        let supports_dynamic = parents.iter().any(|p| p.supports_dynamic_batch());
+
+        // 合并所有父节点的动态形状
+        let mut dynamic_shape = parents[0].dynamic_expected_shape();
+        for parent in parents.iter().skip(1) {
+            let parent_dyn = parent.dynamic_expected_shape();
+            // 对于 Add，输出形状是广播后的形状
+            // 简化处理：如果任一维度是动态的，输出该维度也是动态的
+            dynamic_shape = dynamic_shape.broadcast_with(&parent_dyn);
         }
 
         // 2. 返回
@@ -43,7 +64,9 @@ impl Add {
             name: None,
             value: None,
             grad: None,
-            shape,
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
         })
     }
 }
@@ -66,7 +89,15 @@ impl TraitNode for Add {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
@@ -109,7 +140,17 @@ impl TraitNode for Add {
     ) -> Result<Tensor, GraphError> {
         // Add 节点的局部梯度是 identity，但需要处理广播
         // 如果父节点被广播过，需要将梯度沿广播维度求和
-        let target_shape = target_parent.value_expected_shape();
+        //
+        // 注意：使用实际值的形状（支持动态 batch），而不是 value_expected_shape
+        let target_shape = target_parent
+            .value()
+            .ok_or_else(|| {
+                GraphError::ComputationError(format!(
+                    "Add 梯度计算时父节点 {} 没有值",
+                    target_parent
+                ))
+            })?
+            .shape();
 
         if upstream_grad.shape() == target_shape {
             // 形状匹配，直接传递

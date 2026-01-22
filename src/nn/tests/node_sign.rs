@@ -244,3 +244,57 @@ fn test_node_sign_backward_propagation() {
     graph.zero_grad().unwrap();
     assert!(graph.get_node_grad(parent).unwrap().is_none());
 }
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 Sign 节点的动态形状传播
+#[test]
+fn test_sign_dynamic_shape_propagation() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建一个支持动态 batch 的输入（使用 ZerosLike）
+    let x = graph.input(&Tensor::zeros(&[4, 8])).unwrap();
+    let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
+
+    // 创建 Sign
+    use crate::nn::var_ops::VarActivationOps;
+    let result = h0.sign();
+
+    // 验证动态形状传播
+    let dyn_shape = result.dynamic_expected_shape();
+    assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
+    assert!(!dyn_shape.is_dynamic(1), "特征维度应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(16), "特征维度应该是 16");
+}
+
+/// 测试 Sign 节点在不同 batch_size 下的前向计算
+/// 注：Sign 是不可微函数，梯度恒为 0，因此不测试 backward
+#[test]
+fn test_sign_dynamic_batch_forward() {
+    use crate::nn::var_ops::VarActivationOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建支持动态 batch 的节点
+    let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
+    let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
+
+    // Sign
+    let result = h0.sign();
+
+    // 第一次 forward：batch=2
+    result.forward().unwrap();
+    let value1 = result.value().unwrap().unwrap();
+    assert_eq!(value1.shape(), &[2, 16], "第一次 forward: batch=2");
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::zeros(&[8, 8])).unwrap();
+
+    // 第二次 forward：batch=8
+    result.forward().unwrap();
+    let value2 = result.value().unwrap().unwrap();
+    assert_eq!(value2.shape(), &[8, 16], "第二次 forward: batch=8");
+}

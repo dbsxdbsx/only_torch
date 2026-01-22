@@ -510,3 +510,131 @@ fn test_mse_loss_simple_regression_training() {
     let learned_w = graph.get_node_value(w_id).unwrap().unwrap();
     assert_abs_diff_eq!(learned_w[[0, 0]], 2.0, epsilon = 0.1);
 }
+
+// ==================== 动态形状测试 ====================
+
+use crate::nn::GraphError;
+
+/// 测试 MSELoss 节点的动态形状（输出固定为标量 [1, 1]）
+#[test]
+fn test_mse_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    let input = graph.new_input_node(&[4, 8], Some("input"))?;
+    let target = graph.new_input_node(&[4, 8], Some("target"))?;
+    let loss = graph.new_mse_loss_node(input, target, Some("loss"))?;
+
+    // MSELoss 输出形状始终是 [1, 1]（标量）
+    let node = graph.get_node(loss)?;
+    let dyn_shape = node.dynamic_expected_shape();
+
+    // 输出形状固定
+    assert!(!dyn_shape.is_dynamic(0), "MSELoss 输出维度 0 应固定");
+    assert!(!dyn_shape.is_dynamic(1), "MSELoss 输出维度 1 应固定");
+    assert_eq!(dyn_shape.dim(0), Some(1));
+    assert_eq!(dyn_shape.dim(1), Some(1));
+
+    Ok(())
+}
+
+/// 测试 MSELoss 接受动态 batch 输入
+#[test]
+fn test_mse_loss_dynamic_batch_forward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    let loss = graph.new_mse_loss_node(input, target, Some("loss"))?;
+
+    // 第一次 forward：batch=2
+    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
+    graph.forward(loss)?;
+    let loss_val1 = graph.get_node_value(loss)?.unwrap();
+    assert_eq!(loss_val1.shape(), &[1, 1], "MSELoss 输出应为标量");
+    assert!(loss_val1[[0, 0]] > 0.0);
+
+    // 第二次 forward：batch=6（不同 batch 大小）
+    graph.set_node_value(input, Some(&Tensor::ones(&[6, 4])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[6, 4])))?;
+    graph.forward(loss)?;
+    let loss_val2 = graph.get_node_value(loss)?.unwrap();
+    assert_eq!(loss_val2.shape(), &[1, 1], "MSELoss 输出应始终为标量");
+
+    Ok(())
+}
+
+/// 测试 MSELoss 在不同 batch 大小下的反向传播
+#[test]
+fn test_mse_loss_dynamic_batch_backward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 使用 Input 节点接收动态 batch 数据
+    // 注意：Input 节点支持动态 batch 但没有 grad
+    // 为了测试梯度反传，使用 y = x * w 形式，其中 w 是可训练的 Parameter
+    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?;  // [4, 4] 权重
+    let pred = graph.new_mat_mul_node(input, weight, Some("pred"))?;
+    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    let loss = graph.new_mse_loss_node(pred, target, Some("loss"))?;
+
+    // 初始化权重
+    graph.set_node_value(weight, Some(&Tensor::ones(&[4, 4])))?;
+
+    // 第一次训练：batch=2
+    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
+    graph.forward(loss)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    let grad1 = graph.get_node_grad(weight)?.unwrap().clone();
+    assert_eq!(grad1.shape(), &[4, 4], "权重梯度形状应保持不变");
+
+    // 更新为不同 batch
+    graph.set_node_value(input, Some(&Tensor::ones(&[5, 4])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[5, 4])))?;
+
+    // 第二次训练：batch=5
+    graph.forward(loss)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    let grad2 = graph.get_node_grad(weight)?.unwrap();
+    assert_eq!(
+        grad2.shape(),
+        &[4, 4],
+        "权重梯度形状应保持不变（与 batch 大小无关）"
+    );
+
+    Ok(())
+}
+
+/// 测试 MSELoss 的动态形状兼容性检查
+///
+/// MSELoss 验证 input 和 target 的动态形状兼容性
+#[test]
+fn test_mse_loss_dynamic_shape_compatibility() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 两个输入都支持动态 batch
+    let input = graph.new_input_node(&[4, 8], Some("input"))?;
+    let target = graph.new_input_node(&[4, 8], Some("target"))?;
+
+    // 验证动态形状兼容
+    let input_node = graph.get_node(input)?;
+    let target_node = graph.get_node(target)?;
+    let input_dyn = input_node.dynamic_expected_shape();
+    let target_dyn = target_node.dynamic_expected_shape();
+
+    assert!(
+        input_dyn.is_compatible(&target_dyn),
+        "Input 和 Target 的动态形状应兼容"
+    );
+
+    // 创建 MSELoss 应该成功
+    let loss = graph.new_mse_loss_node(input, target, Some("loss"))?;
+    assert!(graph.get_node(loss).is_ok());
+
+    Ok(())
+}

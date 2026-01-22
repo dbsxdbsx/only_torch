@@ -5,6 +5,7 @@
  *                 实现 C = A / B（element-wise division）
  */
 
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -18,7 +19,12 @@ pub(crate) struct Divide {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    shape: Vec<usize>,
+    /// 固定形状
+    fixed_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch
+    supports_dynamic: bool,
     parents_ids: Vec<NodeId>, // [left, right] 用于区分被除数和除数
 }
 
@@ -31,24 +37,32 @@ impl Divide {
             ));
         }
 
-        // 2. 计算广播后的输出形状
+        // 2. 计算广播后的固定形状
         let left_shape = parents[0].value_expected_shape();
         let right_shape = parents[1].value_expected_shape();
 
-        let shape =
+        let fixed_shape =
             broadcast_shape(left_shape, right_shape).ok_or_else(|| GraphError::ShapeMismatch {
                 expected: left_shape.to_vec(),
                 got: right_shape.to_vec(),
                 message: "Divide 节点的父节点形状无法广播".to_string(),
             })?;
 
-        // 3. 返回
+        // 3. 计算动态形状
+        let supports_dynamic = parents.iter().any(|p| p.supports_dynamic_batch());
+        let dynamic_shape = parents[0]
+            .dynamic_expected_shape()
+            .broadcast_with(&parents[1].dynamic_expected_shape());
+
+        // 4. 返回
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
-            shape,
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
             parents_ids: vec![parents[0].id(), parents[1].id()],
         })
     }
@@ -72,7 +86,15 @@ impl TraitNode for Divide {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
@@ -121,8 +143,16 @@ impl TraitNode for Divide {
             GraphError::ComputationError("Divide 节点计算梯度需要辅助父节点".to_string())
         })?;
 
-        // 获取 target 的原始形状
-        let target_shape = target_parent.value_expected_shape();
+        // 使用实际值的形状（支持动态 batch）
+        let target_shape = target_parent
+            .value()
+            .ok_or_else(|| {
+                GraphError::ComputationError(format!(
+                    "Divide 梯度计算时父节点 {} 没有值",
+                    target_parent
+                ))
+            })?
+            .shape();
 
         if target_parent.id() == self.parents_ids[0] {
             // target 是 left (A)，assistant 是 right (B)

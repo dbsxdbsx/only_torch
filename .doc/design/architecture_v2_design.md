@@ -555,17 +555,25 @@ impl Var {
 
     // ==================== 梯度流控制 ====================
 
-    /// 截断梯度流（返回自身以支持链式调用）
-    pub fn detach(&self) -> Result<&Self, GraphError> {
-        self.graph.borrow_mut().detach_node(self.id)?;
-        Ok(self)
+    /// 创建 detached 视图（轻量级，不创建图节点）
+    ///
+    /// 返回 `DetachedVar`，用于传递给 `ModelState::forward()`。
+    /// 典型场景：GAN 训练时阻止梯度流向 Generator。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let fake = generator.forward(&noise)?;
+    /// let d_fake = discriminator.forward(&fake.detach())?;  // 梯度不会流向 G
+    /// ```
+    pub fn detach(&self) -> DetachedVar {
+        DetachedVar { inner: self.clone() }
     }
 
-    /// 恢复梯度流
-    pub fn attach(&self) -> Result<&Self, GraphError> {
-        self.graph.borrow_mut().attach_node(self.id)?;
-        Ok(self)
-    }
+    /// 创建 detached 节点（在图中创建 Identity 节点）
+    ///
+    /// 用于需要在 detach 后继续进行图操作的高级场景。
+    /// 绝大多数情况应使用 `detach()` 而非此方法。
+    pub fn detach_node(&self) -> Self { ... }
 
     // ==================== 执行 ====================
 
@@ -817,8 +825,8 @@ impl Var {
     pub fn item(&self) -> Result<f32, GraphError>;
 
     // ========== 梯度流控制 ==========
-    pub fn detach(&self) -> Result<Var, GraphError>;
-    pub fn attach(&self) -> Result<Var, GraphError>;
+    pub fn detach(&self) -> DetachedVar;      // 轻量包装，不创建节点
+    pub fn detach_node(&self) -> Self;        // 创建 Identity 节点
 }
 ```
 
@@ -1834,16 +1842,45 @@ pub enum GraphError {
 
 #### 4.2.9 ModelState（模型状态管理器）
 
-> **新增于 2026-01-21**：为支持 PyTorch 风格的 `forward(Tensor)` API 和变长序列处理而引入。
+> **新增于 2026-01-21**：为支持 PyTorch 风格的 `forward(impl ForwardInput)` API 和变长序列处理而引入。
+> **更新于 2026-01-21**：引入 `GradientRouter` 节点和 `ForwardInput` trait，支持 Tensor/Var/DetachedVar 统一输入。
 
 **设计动机**：
 
-在 define-and-run 语义下，模型需要先构建计算图再填入数据。但这与 PyTorch 的 `model.forward(tensor)` 直接接收 Tensor 的习惯不符。`ModelState` 通过"延迟绑定 + 智能缓存"机制解决这一问题。
+在 define-and-run 语义下，模型需要先构建计算图再填入数据。但这与 PyTorch 的 `model.forward(x)` 直接接收数据的习惯不符。`ModelState` 通过"GradientRouter + 智能缓存"机制解决这一问题，同时支持 GAN 等需要 `detach()` 的高级场景。
 
 **核心功能**：
-- 首次调用某形状时，自动创建输入节点和计算图
-- 后续相同形状输入复用已创建的子图，只更新数据
+- 首次调用某形状时，自动创建 `GradientRouter` 节点和计算图
+- 后续相同形状输入复用已创建的子图，只更新数据和梯度路由目标
 - 不同形状自动创建新的子图并缓存（支持变长序列）
+- 支持 `Tensor`、`Var`、`DetachedVar` 三种输入类型
+
+**ForwardInput Trait**：
+
+```rust
+/// 模型前向输入 trait
+pub trait ForwardInput {
+    fn shape(&self) -> Vec<usize>;
+    fn get_value(&self) -> Result<Tensor, GraphError>;
+    fn is_detached(&self) -> bool;
+    fn var_node_id(&self) -> Option<NodeId>;
+}
+
+// 已实现的类型：
+impl ForwardInput for &Tensor { ... }      // Tensor 引用
+impl ForwardInput for Tensor { ... }       // Tensor 值
+impl ForwardInput for &Var { ... }         // Var 引用
+impl ForwardInput for Var { ... }          // Var 值
+impl ForwardInput for &DetachedVar { ... } // DetachedVar 引用（detached）
+impl ForwardInput for DetachedVar { ... }  // DetachedVar 值（detached）
+```
+
+**GradientRouter 节点**（内部实现）：
+
+`GradientRouter` 是 `ModelState` 使用的特殊输入节点，支持：
+- 动态设置值（`set_value`）
+- 动态设置 detached 状态
+- 梯度路由到原始 Var（用于 GAN 训练等场景）
 
 ```rust
 /// 模型状态管理器
@@ -1853,7 +1890,7 @@ pub struct ModelState {
 }
 
 struct StateCache {
-    input: Var,   // 输入节点
+    router: Var,  // GradientRouter 节点（动态输入）
     output: Var,  // 输出节点（预构建的计算图终点）
 }
 
@@ -1861,28 +1898,27 @@ impl ModelState {
     /// 创建模型状态管理器
     pub fn new(graph: &Graph) -> Self;
 
-    /// PyTorch 风格的 forward（延迟绑定 + 智能缓存）
+    /// PyTorch 风格的 forward（智能缓存 + 梯度路由）
     ///
     /// # 参数
-    /// - `x`: 输入 Tensor
-    /// - `compute`: 计算逻辑闭包，接收 `&Var` 输入，返回 `Result<Var, GraphError>`
+    /// - `x`: 实现 `ForwardInput` 的输入（Tensor、Var 或 DetachedVar）
+    /// - `compute`: 计算逻辑闭包
     ///
-    /// # 智能缓存
+    /// # 智能缓存与梯度路由
     /// - 相同形状复用已创建的计算图
-    /// - 不同形状自动创建新子图
-    pub fn forward<F>(&self, x: &Tensor, compute: F) -> Result<Var, GraphError>
+    /// - Tensor 输入：无梯度路由
+    /// - Var 输入：梯度路由回原 Var
+    /// - DetachedVar 输入：阻止梯度向上传播
+    pub fn forward<F>(&self, x: impl ForwardInput, compute: F) -> Result<Var, GraphError>
     where
         F: FnOnce(&Var) -> Result<Var, GraphError>;
 
     /// 获取缓存的形状数量
     pub fn cache_size(&self) -> usize;
-
-    /// 获取已缓存的形状列表
-    pub fn cached_shapes(&self) -> Vec<Vec<usize>>;
 }
 ```
 
-**使用示例**：
+**使用示例 1：变长序列 RNN**
 
 ```rust
 /// 变长序列 RNN 模型
@@ -1901,8 +1937,8 @@ impl VarLenRNN {
         })
     }
 
-    /// forward 直接接收 Tensor（PyTorch 风格）
-    pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
+    /// forward 接收 impl ForwardInput（支持 Tensor/Var/DetachedVar）
+    pub fn forward(&self, x: impl ForwardInput) -> Result<Var, GraphError> {
         self.state.forward(x, |input| {
             let h = self.rnn.forward(input)?;
             Ok(self.fc.forward(&h))
@@ -1912,24 +1948,62 @@ impl VarLenRNN {
 
 // 训练循环
 for (x_batch, y_batch) in bucketed_loader.iter() {
-    // x_batch 可能是 [batch, seq_len=5, 1] 或 [batch, seq_len=10, 1]
-    let output = model.forward(&x_batch)?;  // 自动缓存不同形状！
+    let output = model.forward(&x_batch)?;  // Tensor 输入，自动缓存
     let loss = criterion.forward(&output, &y_batch)?;
     loss.backward()?;
     optimizer.step()?;
 }
+```
 
-println!("缓存的形状数量: {}", model.state.cache_size());  // 输出: 2
+**使用示例 2：GAN 训练（detach 场景）**
+
+```rust
+// 创建模型
+let generator = Generator::new(&graph)?;     // 内部使用 ModelState
+let discriminator = Discriminator::new(&graph)?;
+let criterion = MseLoss::new();
+
+for epoch in 0..epochs {
+    // === 训练 Discriminator ===
+    d_optimizer.zero_grad()?;
+    
+    // D 对真实图像（Tensor 输入）
+    let real_out = discriminator.forward(&real_images)?;
+    let d_real_loss = criterion.forward(&real_out, &real_labels)?;
+    d_real_loss.backward()?;
+    d_optimizer.step()?;
+    
+    // D 对假图像（DetachedVar 输入，阻止梯度流向 G）
+    d_optimizer.zero_grad()?;
+    let fake_images = generator.forward(&noise)?;
+    let fake_out = discriminator.forward(&fake_images.detach())?;  // ✨ detach
+    let d_fake_loss = criterion.forward(&fake_out, &fake_labels)?;
+    d_fake_loss.backward()?;
+    d_optimizer.step()?;
+    
+    // === 训练 Generator ===
+    g_optimizer.zero_grad()?;
+    let fake_for_g = generator.forward(&new_noise)?;
+    let fake_out_g = discriminator.forward(&fake_for_g)?;  // Var 输入，梯度流向 G
+    let g_loss = criterion.forward(&fake_out_g, &real_labels)?;
+    g_loss.backward()?;
+    g_optimizer.step()?;
+}
 ```
 
 **与 Layer 的关系**：
 
 | 组件 | 职责 | 缓存范围 |
 |------|------|---------|
-| `ModelState` | 管理整个模型的输入/输出缓存 | 按输入形状 |
+| `ModelState` | 管理模型的输入/输出缓存、梯度路由 | 按输入形状 |
+| `GradientRouter` | 内部节点，动态接收值、路由梯度 | - |
 | `Layer` (如 `Rnn`) | 定义计算逻辑，持有参数 | 无缓存 |
+| `DetachedVar` | Var 的 detached 包装 | - |
 
-**设计决策**：将缓存逻辑从 Layer 中解耦，放入 `ModelState`，使 Layer 更简洁且可复用。
+**设计决策**：
+1. 将缓存逻辑从 Layer 中解耦，放入 `ModelState`，使 Layer 更简洁且可复用
+2. 使用 `GradientRouter` 实现"静态图结构 + 动态值传递"，避免图爆炸
+3. `DetachedVar` 是轻量包装（不创建图节点），`var.detach_node()` 创建 Identity 节点
 
 ---
 
@@ -2385,81 +2459,52 @@ impl Discriminator {
     }
 }
 
-fn train_gan(
-    graph: &Graph,
-    generator: &Generator,
-    discriminator: &Discriminator,
-    g_optimizer: &mut Adam,
-    d_optimizer: &mut Adam,
-    real_images: &Tensor,
-    noise: &Tensor,
-    batch_size: usize,
-) -> Result<(f32, f32), GraphError> {
-    // === 训练判别器 ===
-    d_optimizer.zero_grad()?;
-
-    // 真实样本
-    let real = graph.input(real_images)?;
-    let d_real = discriminator.forward(real)?;
-    let real_labels = graph.ones(&[batch_size, 1])?;
-    let d_loss_real = d_real.bce_loss(&real_labels)?;
-
-    // 生成样本
-    let z = graph.input(noise)?;
-    let fake = generator.forward(z)?;
-
-    // ✅ 关键：detach 阻止梯度流向 G（训练 D 时不更新 G）
-    fake.detach()?;
-
-    let d_fake = discriminator.forward(fake.clone())?;
-    let fake_labels = graph.zeros(&[batch_size, 1])?;
-    let d_loss_fake = d_fake.bce_loss(&fake_labels)?;
-
-    // 总 D loss
-    let d_loss = &d_loss_real + &d_loss_fake;  // ✅ 算子重载
-    // ✅ backward() 计算所有梯度，但因为 fake 被 detach，G 的参数梯度为 0
-    let d_loss_val = d_loss.backward()?;
-    // ✅ step() 只更新 D 的参数（d_optimizer 只绑定了 D 的参数）
-    d_optimizer.step()?;
-
-    // === 训练生成器 ===
-    g_optimizer.zero_grad()?;
-
-    // ✅ 恢复 fake 的梯度流（训练 G 时需要梯度流过 D 到 G）
-    fake.attach()?;
-
-    let d_fake_for_g = discriminator.forward(fake)?;
-    let g_labels = graph.ones(&[batch_size, 1])?;
-    let g_loss = d_fake_for_g.bce_loss(&g_labels)?;
-    // ✅ backward() 计算所有梯度
-    let g_loss_val = g_loss.backward()?;
-    // ✅ step() 只更新 G 的参数（g_optimizer 只绑定了 G 的参数）
-    g_optimizer.step()?;
-
-    Ok((d_loss_val, g_loss_val))
-}
-
-// 主训练循环
+// 主训练循环（PyTorch 风格 + ModelState）
 fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
-    // 创建模型
+    // 创建模型（内部使用 ModelState）
     let generator = Generator::new(&graph, 100, 256, 784)?;
     let discriminator = Discriminator::new(&graph, 784, 256)?;
+    let criterion = MseLoss::new();
 
     // 创建优化器
     let mut g_optimizer = Adam::new(&graph, &generator.parameters(), 0.0002);
     let mut d_optimizer = Adam::new(&graph, &discriminator.parameters(), 0.0002);
 
     for epoch in 0..100 {
-        for batch in dataloader.iter() {
+        for real_images in dataloader.iter() {
             let noise = Tensor::randn(&[batch_size, 100]);
-            let (d_loss, g_loss) = train_gan(
-                &graph, &generator, &discriminator,
-                &mut g_optimizer, &mut d_optimizer,
-                &batch, &noise, batch_size,
-            )?;
-            println!("D Loss: {:.4}, G Loss: {:.4}", d_loss, g_loss);
+            let real_labels = Tensor::ones(&[batch_size, 1]);
+            let fake_labels = Tensor::zeros(&[batch_size, 1]);
+
+            // === 训练判别器 ===
+            d_optimizer.zero_grad()?;
+            
+            // D 对真实图像
+            let d_real = discriminator.forward(&real_images)?;
+            let d_real_loss = criterion.forward(&d_real, &real_labels)?;
+            d_real_loss.backward()?;
+            d_optimizer.step()?;
+            
+            // D 对假图像
+            d_optimizer.zero_grad()?;
+            let fake = generator.forward(&noise)?;
+            // ✅ 关键：detach() 返回 DetachedVar，阻止梯度流向 G
+            let d_fake = discriminator.forward(&fake.detach())?;
+            let d_fake_loss = criterion.forward(&d_fake, &fake_labels)?;
+            d_fake_loss.backward()?;
+            d_optimizer.step()?;
+
+            // === 训练生成器 ===
+            g_optimizer.zero_grad()?;
+            let new_noise = Tensor::randn(&[batch_size, 100]);
+            let fake_for_g = generator.forward(&new_noise)?;
+            // ✅ 不使用 detach，梯度正常流向 G
+            let d_fake_for_g = discriminator.forward(&fake_for_g)?;
+            let g_loss = criterion.forward(&d_fake_for_g, &real_labels)?;
+            g_loss.backward()?;
+            g_optimizer.step()?;
         }
     }
 
@@ -2470,13 +2515,18 @@ fn main() -> Result<(), GraphError> {
 **GAN 梯度流说明**：
 
 ```
-训练 D 时：                           训练 G 时：
+训练 D 时：                                  训练 G 时：
 
-  z ───► G ───► fake ──✂──► D        z ───► G ───► fake ───► D
-              detach()               attach()
-              阻止梯度                恢复梯度
-
-  ✂ = fake.detach() 截断梯度流        fake.attach() 恢复梯度流
+  noise ─► G ─► fake.detach() ─► D           noise ─► G ─► fake ─► D
+                   │                                        │
+                DetachedVar                              正常 Var
+                   │                                        │
+              GradientRouter                           GradientRouter
+              (is_detached=true)                      (is_detached=false)
+                   │                                        │
+                梯度阻止                                 梯度路由回 fake
+                                                           │
+                                                        继续传播到 G
 ```
 
 #### 4.3.6 多任务学习（retain_graph）
@@ -3001,12 +3051,12 @@ impl Genome {
 | 场景 | 新 API 支持方式 | 示例 |
 |------|----------------|------|
 | `no_grad` / eval 模式 | `graph.no_grad(\|\| { ... })` | 推理时禁用梯度 |
-| `detach` 局部截断 | `var.detach()?` | GAN 训练、Actor-Critic |
-| `attach` 恢复梯度 | `var.attach()?` | GAN Generator 训练 |
+| `detach` 局部截断 | `var.detach()` → `DetachedVar` | GAN 训练、Actor-Critic |
+| `detach_node` 创建节点 | `var.detach_node()` → `Var` | 需要图操作的高级场景 |
 | `retain_graph` 多次 backward | `graph.backward_ex(&loss, &params, true)?` | 多任务学习 |
 | 多任务学习 | 多次调用 `backward_ex` | 共享 backbone |
-| GAN 训练 | `fake.detach()` + `fake.attach()` | 分离 G/D 训练 |
-| Actor-Critic | `value.detach()` + `td_target.detach()` | 策略梯度 |
+| GAN 训练 | `discriminator.forward(&fake.detach())` | 分离 G/D 训练 |
+| Actor-Critic | `advantages = returns - value.detach()` | 策略梯度 |
 
 > **关于参数冻结 / `requires_grad`**
 >
@@ -3387,7 +3437,7 @@ struct MLP {
     - [x] `get_graph()`
     - [x] `forward()`, `backward()`
     - [x] `value()`, `set_value()`, `grad()`, `item()`
-    - [x] `detach()`, `attach()`
+    - [x] `detach()` → `DetachedVar`, `detach_node()` → `Var`
   - [x] 实现链式激活函数：`relu()`, `sigmoid()`, `tanh()`, `leaky_relu()`
   - [x] 实现链式运算：`matmul()`, `cross_entropy()`, `mse_loss()`
   - [x] 实现额外激活：`step()`
@@ -3677,6 +3727,11 @@ let inner2 = graph.inner_mut();  // panic!
 | 2026-01-21 | 引入 `VarLenDataset` + `BucketedDataLoader` | 变长序列训练支持；分桶避免 padding；详见 §4.2.11 |
 | 2026-01-21 | 层的 `forward` 改为接收 `&Var` 而非 `&Tensor` | 与其他层统一；配合 `ModelState` 处理 Tensor 输入 |
 | 2026-01-21 | 缓存责任分离：ModelState 管理输入，Criterion 管理 loss | 单一职责；Layer 不持有缓存；可组合 |
+| 2026-01-21 | 引入 `GradientRouter` 节点 | ModelState 内部使用；支持动态值设置和梯度路由；解决图爆炸问题 |
+| 2026-01-21 | 引入 `DetachedVar` 轻量包装 | `var.detach()` 返回，不创建图节点；GAN 训练推荐方式 |
+| 2026-01-21 | 引入 `ForwardInput` trait | 统一 Tensor/Var/DetachedVar 输入；ModelState::forward 接受 impl ForwardInput |
+| 2026-01-21 | 移除 `attach()` 方法 | 函数式 detach 无需恢复；detached 状态随 DetachedVar 生命周期结束 |
+| 2026-01-21 | `detach()` 改为返回 `DetachedVar` | 轻量级，不创建节点；`detach_node()` 用于需要 Identity 节点的场景 |
 
 ### 9.1 关键设计决策详解
 

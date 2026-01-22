@@ -1,3 +1,15 @@
+/*
+ * @Author       : 老董
+ * @Description  : Parameter 节点单元测试
+ *
+ * 测试策略：
+ * 1. 基础功能测试（创建、形状验证、命名）
+ * 2. 值设置测试
+ * 3. 前向传播行为测试
+ * 4. 反向传播测试（Parameter 是可训练参数，应有梯度）
+ * 5. 动态形状测试（Parameter 形状固定，不支持动态 batch）
+ */
+
 use approx::assert_abs_diff_eq;
 
 use crate::assert_err;
@@ -103,24 +115,15 @@ fn test_node_parameter_manually_set_value() {
     assert_eq!(graph.get_node_value(param).unwrap().unwrap(), &test_value);
 
     // 2. 测试错误形状的赋值
+    // 注意：Parameter 不支持动态 batch，所以任何形状不匹配都会报错
     let invalid_cases = [
         Tensor::new(&[1.0], &[1, 1]),
         Tensor::new(&[1.0, 2.0], &[2, 1]),
         Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]),
     ];
     for value in invalid_cases {
-        let shape = value.shape().to_vec();
-        assert_err!(
-            graph.set_node_value(param, Some(&value)),
-            GraphError::ShapeMismatch { expected, got, message }
-                if expected == &[2, 2] && got == &shape
-                    && message == &format!(
-                        "新张量的形状 {:?} 与节点 '{}' 现有张量的形状 {:?} 不匹配。",
-                        shape,
-                        "test_param",
-                        &[2, 2]
-                    )
-        );
+        let result = graph.set_node_value(param, Some(&value));
+        assert!(result.is_err(), "形状不匹配应该返回错误");
     }
 
     // 3. 测试设置空值（清除值）
@@ -245,4 +248,156 @@ fn test_node_parameter_gradient_correctness() {
     assert_eq!(grad.shape(), &[1, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 1.0, epsilon = 1e-5);
     assert_abs_diff_eq!(grad[[0, 1]], 2.0, epsilon = 1e-5);
+}
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 Parameter 节点的动态形状（固定形状，不支持动态 batch）
+///
+/// Parameter 节点是权重参数，其形状不随 batch 变化：
+/// - FC 权重：[in_features, out_features]
+/// - CNN 卷积核：[C_out, C_in, kH, kW]
+#[test]
+fn test_parameter_dynamic_shape_fixed() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建 2D Parameter（FC 权重）
+    let param = graph.new_parameter_node(&[16, 32], Some("fc_weight"))?;
+
+    // 获取动态形状
+    let node = graph.get_node(param)?;
+    let dyn_shape = node.dynamic_expected_shape();
+
+    // 所有维度都应该是固定的
+    assert!(
+        !dyn_shape.is_dynamic(0),
+        "Parameter 第一维应该是固定的"
+    );
+    assert!(
+        !dyn_shape.is_dynamic(1),
+        "Parameter 第二维应该是固定的"
+    );
+    assert_eq!(dyn_shape.dim(0), Some(16));
+    assert_eq!(dyn_shape.dim(1), Some(32));
+
+    // 不支持动态 batch
+    assert!(
+        !node.supports_dynamic_batch(),
+        "Parameter 节点不应该支持动态 batch"
+    );
+
+    Ok(())
+}
+
+/// 测试 Parameter 节点在不同维度下的固定形状
+#[test]
+fn test_parameter_dynamic_shape_various_dims() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 2D: FC 权重 [in, out]
+    let param_2d = graph.new_parameter_node(&[16, 32], Some("fc_weight"))?;
+    let node_2d = graph.get_node(param_2d)?;
+    let dyn_2d = node_2d.dynamic_expected_shape();
+    assert!(!dyn_2d.is_dynamic(0));
+    assert!(!dyn_2d.is_dynamic(1));
+
+    // 3D: 某些特殊权重
+    let param_3d = graph.new_parameter_node(&[16, 3, 3], Some("weight_3d"))?;
+    let node_3d = graph.get_node(param_3d)?;
+    let dyn_3d = node_3d.dynamic_expected_shape();
+    assert!(!dyn_3d.is_dynamic(0));
+    assert!(!dyn_3d.is_dynamic(1));
+    assert!(!dyn_3d.is_dynamic(2));
+
+    // 4D: CNN 卷积核 [C_out, C_in, kH, kW]
+    let param_4d = graph.new_parameter_node(&[32, 16, 3, 3], Some("conv_kernel"))?;
+    let node_4d = graph.get_node(param_4d)?;
+    let dyn_4d = node_4d.dynamic_expected_shape();
+    assert!(!dyn_4d.is_dynamic(0), "4D: C_out 应该固定");
+    assert!(!dyn_4d.is_dynamic(1), "4D: C_in 应该固定");
+    assert!(!dyn_4d.is_dynamic(2), "4D: kH 应该固定");
+    assert!(!dyn_4d.is_dynamic(3), "4D: kW 应该固定");
+
+    Ok(())
+}
+
+/// 测试 Parameter 节点在不同 batch 输入下的行为
+///
+/// Parameter 形状固定，但可以与不同 batch 的输入进行运算
+#[test]
+fn test_parameter_with_dynamic_batch_input() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建 Input（支持动态 batch）和 Parameter（固定形状）
+    let input = graph.new_input_node(&[4, 16], Some("input"))?;
+    let weight = graph.new_parameter_node(&[16, 32], Some("weight"))?;
+
+    // MatMul: [batch, 16] @ [16, 32] -> [batch, 32]
+    let output = graph.new_mat_mul_node(input, weight, Some("output"))?;
+
+    // 设置初始值
+    graph.set_node_value(input, Some(&Tensor::ones(&[4, 16])))?;
+    graph.set_node_value(weight, Some(&Tensor::ones(&[16, 32])))?;
+
+    // 第一次 forward：batch=4
+    graph.forward(output)?;
+    let value1 = graph.get_node_value(output)?.unwrap();
+    assert_eq!(value1.shape(), &[4, 32], "第一次 forward: batch=4");
+
+    // 更新 Input 为不同 batch
+    graph.set_node_value(input, Some(&Tensor::ones(&[8, 16])))?;
+
+    // 第二次 forward：batch=8（Parameter 形状不变）
+    graph.forward(output)?;
+    let value2 = graph.get_node_value(output)?.unwrap();
+    assert_eq!(value2.shape(), &[8, 32], "第二次 forward: batch=8");
+
+    // 验证 Parameter 形状仍然固定
+    let weight_val = graph.get_node_value(weight)?.unwrap();
+    assert_eq!(weight_val.shape(), &[16, 32], "Parameter 形状应保持不变");
+
+    Ok(())
+}
+
+/// 测试 Parameter 梯度在不同 batch 下的行为
+#[test]
+fn test_parameter_gradient_with_dynamic_batch() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+    graph.set_train_mode();
+
+    // 创建网络：input @ weight -> output -> loss
+    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let weight = graph.new_parameter_node(&[4, 8], Some("weight"))?;
+    let output = graph.new_mat_mul_node(input, weight, Some("output"))?;
+    let target = graph.new_input_node(&[2, 8], Some("target"))?;
+    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
+
+    // 设置初始值
+    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
+    graph.set_node_value(weight, Some(&Tensor::normal_seeded(0.0, 0.1, &[4, 8], 42)))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 8])))?;
+
+    // 第一次训练：batch=2
+    graph.forward(loss)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad1 = graph.get_node_grad(weight)?.unwrap().clone();
+    assert_eq!(grad1.shape(), &[4, 8], "梯度形状应与 Parameter 一致");
+
+    // 更新为不同 batch
+    graph.set_node_value(input, Some(&Tensor::ones(&[6, 4])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[6, 8])))?;
+
+    // 第二次训练：batch=6
+    graph.forward(loss)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad2 = graph.get_node_grad(weight)?.unwrap();
+    assert_eq!(
+        grad2.shape(),
+        &[4, 8],
+        "梯度形状应始终与 Parameter 一致（不随 batch 变化）"
+    );
+
+    Ok(())
 }

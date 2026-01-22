@@ -214,3 +214,65 @@ fn test_gradient_router_visualization() {
     assert!(dot.contains("dashed"), "GradientRouter 应使用虚线样式");
     assert!(dot.contains("GradientRouter"), "DOT 应包含 GradientRouter 类型");
 }
+
+/// 测试: GradientRouter 支持动态 batch（类似 Keras）
+///
+/// GradientRouter 只验证特征维度匹配，允许不同 batch_size 的值。
+#[test]
+fn test_gradient_router_dynamic_batch() {
+    let graph = Graph::new();
+
+    // 创建 GradientRouter（首次使用 batch=4）
+    let router_id = graph
+        .inner_mut()
+        .new_gradient_router_node(&[4, 3], Some("router"))
+        .unwrap();
+
+    // 设置初始值 [4, 3]
+    let value1 = Tensor::ones(&[4, 3]);
+    graph.inner_mut().set_node_value(router_id, Some(&value1)).unwrap();
+
+    // 设置不同 batch 的值 [2, 3]（应该成功）
+    let value2 = Tensor::ones(&[2, 3]);
+    graph.inner_mut().set_node_value(router_id, Some(&value2)).unwrap();
+
+    // 设置 batch=1 的值 [1, 3]（应该成功）
+    let value3 = Tensor::ones(&[1, 3]);
+    graph.inner_mut().set_node_value(router_id, Some(&value3)).unwrap();
+
+    // 验证值已更新
+    let inner = graph.inner();
+    let retrieved = inner.get_node_value(router_id).unwrap().unwrap();
+    assert_eq!(retrieved.shape(), &[1, 3]);
+}
+
+/// 测试: GradientRouter 仍然验证特征维度
+///
+/// 虽然 batch 维度可变，但特征维度必须匹配。
+#[test]
+fn test_gradient_router_feature_shape_must_match() {
+    let graph = Graph::new();
+
+    // 创建 GradientRouter（特征维度=3）
+    let router_id = graph
+        .inner_mut()
+        .new_gradient_router_node(&[4, 3], Some("router"))
+        .unwrap();
+
+    // 设置初始值 [4, 3]
+    let value1 = Tensor::ones(&[4, 3]);
+    graph.inner_mut().set_node_value(router_id, Some(&value1)).unwrap();
+
+    // 尝试设置不同特征维度的值 [4, 5]（应该失败）
+    let value2 = Tensor::ones(&[4, 5]);
+    let result = graph.inner_mut().set_node_value(router_id, Some(&value2));
+    
+    assert!(result.is_err(), "特征维度不匹配应该报错");
+    if let Err(crate::nn::GraphError::ShapeMismatch { message, .. }) = result {
+        assert!(
+            message.contains("动态形状") && message.contains("不兼容"),
+            "错误信息应提及动态形状不兼容: {}",
+            message
+        );
+    }
+}

@@ -473,3 +473,101 @@ fn test_reshape_single_sample_backward() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 Reshape 节点的动态形状传播
+///
+/// 注意：Reshape 的动态 batch 支持有限制：
+/// - 只有当目标形状保持第一维（batch）时才有意义
+/// - 典型场景：[batch, 3, 4] -> [batch, 12] 或反过来
+#[test]
+fn test_reshape_dynamic_shape_propagation() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 3D 输入：[batch, height, width]
+    // Input 节点默认支持动态 batch
+    let x = graph.input(&Tensor::zeros(&[2, 3, 4])).unwrap();
+
+    // Reshape: [batch, 3, 4] -> [batch, 12]（保持 batch 维度）
+    // 注意：这里 target_shape 是 [2, 12]，对应 batch=2 时的形状
+    use crate::nn::var_ops::VarShapeOps;
+    let reshaped = x.reshape(&[2, 12]).unwrap();
+
+    // 验证动态形状传播
+    let dyn_shape = reshaped.dynamic_expected_shape();
+    assert!(
+        dyn_shape.is_dynamic(0),
+        "batch 维度应该是动态的（因为输入是动态的）"
+    );
+    assert!(!dyn_shape.is_dynamic(1), "第二维应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(12), "第二维应该是 12");
+}
+
+/// 测试 Reshape 在不同 batch_size 下的前向计算
+#[test]
+fn test_reshape_dynamic_batch_forward() {
+    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 3D 输入：[batch, height, width]
+    let x = graph.input(&Tensor::zeros(&[2, 3, 4])).unwrap();
+
+    // Reshape: [2, 3, 4] -> [2, 12]（保留 batch 维度）
+    let reshaped = x.reshape(&[2, 12]).unwrap();
+
+    // 第一次 forward：batch=2
+    reshaped.forward().unwrap();
+    let value1 = reshaped.value().unwrap().unwrap();
+    assert_eq!(value1.shape(), &[2, 12], "第一次 forward: batch=2");
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::zeros(&[4, 3, 4])).unwrap();
+
+    // 第二次 forward：batch=4（目标形状按比例调整为 [4, 12]）
+    reshaped.forward().unwrap();
+    let value2 = reshaped.value().unwrap().unwrap();
+    assert_eq!(value2.shape(), &[4, 12], "第二次 forward: batch=4");
+}
+
+/// 测试 Reshape 在不同 batch_size 下的反向传播
+#[test]
+fn test_reshape_dynamic_batch_backward() {
+    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建 3D 输入
+    let x = graph
+        .input(&Tensor::normal_seeded(0.0, 1.0, &[2, 3, 4], 42))
+        .unwrap();
+
+    // Reshape: [2, 3, 4] -> [2, 12] + MSE
+    let reshaped = x.reshape(&[2, 12]).unwrap();
+    let target = graph.input(&Tensor::zeros(&[2, 12])).unwrap();
+    let loss = reshaped.mse_loss(&target).unwrap();
+
+    // 第一次训练：batch=2
+    loss.forward().unwrap();
+    let loss_val1 = loss.value().unwrap().unwrap()[[0, 0]];
+    assert!(loss_val1 >= 0.0);
+    graph.zero_grad();
+    loss.backward().unwrap();
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::normal_seeded(0.0, 1.0, &[4, 3, 4], 100))
+        .unwrap();
+    target.set_value(&Tensor::zeros(&[4, 12])).unwrap();
+
+    // 第二次训练：batch=4
+    loss.forward().unwrap();
+    let loss_val2 = loss.value().unwrap().unwrap()[[0, 0]];
+    assert!(loss_val2 >= 0.0);
+    graph.zero_grad();
+    loss.backward().unwrap();
+}

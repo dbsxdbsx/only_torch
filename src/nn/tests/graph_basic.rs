@@ -72,7 +72,7 @@ fn test_new_node_error_handling() {
         GraphError::ShapeMismatch(
             [2, 2],
             [2, 1],
-            "新张量的形状 [2, 1] 与节点 'parameter_1' 现有张量的形状 [2, 2] 不匹配。"
+            "新张量的形状 [2, 1] 与节点 'parameter_1' 的动态形状 [2, 2] 不兼容。"
         )
     );
 }

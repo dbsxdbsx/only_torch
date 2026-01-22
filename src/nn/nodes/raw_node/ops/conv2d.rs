@@ -15,6 +15,7 @@
  * - parents[1]: 卷积核参数（Parameter 节点）
  */
 
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -28,7 +29,12 @@ pub(crate) struct Conv2d {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    shape: Vec<usize>,        // 输出形状
+    /// 固定形状（用于 value_expected_shape）
+    fixed_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch
+    supports_dynamic: bool,
     parents_ids: Vec<NodeId>, // [input_id, kernel_id]
 
     // 卷积参数（保留供后续 NEAT 进化时使用）
@@ -128,9 +134,23 @@ impl Conv2d {
         }
 
         // 6. 确定输出形状
-        let output_shape = match batch_size {
+        let fixed_shape = match batch_size {
             Some(b) => vec![b, out_channels, output_h, output_w],
             None => vec![out_channels, output_h, output_w],
+        };
+
+        // 7. 计算动态形状
+        let parent = &parents[0];
+        let parent_dyn = parent.dynamic_expected_shape();
+        let supports_dynamic = parent.supports_dynamic_batch();
+
+        // 如果父节点第一维是动态的，输出也保持第一维动态
+        let dynamic_shape = if supports_dynamic && parent_dyn.is_dynamic(0) {
+            let mut dims: Vec<Option<usize>> = fixed_shape.iter().map(|&d| Some(d)).collect();
+            dims[0] = None; // 第一维动态
+            DynamicShape::new(&dims)
+        } else {
+            DynamicShape::fixed(&fixed_shape)
         };
 
         Ok(Self {
@@ -138,7 +158,9 @@ impl Conv2d {
             name: None,
             value: None,
             grad: None,
-            shape: output_shape,
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
             parents_ids: vec![parents[0].id(), parents[1].id()],
             in_channels,
             out_channels,
@@ -331,7 +353,15 @@ impl TraitNode for Conv2d {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {

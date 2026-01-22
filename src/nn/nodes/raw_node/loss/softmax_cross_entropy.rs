@@ -47,14 +47,14 @@ impl SoftmaxCrossEntropy {
             ));
         }
 
-        // 2. 验证形状兼容性
-        let logits_shape = parents[0].value_expected_shape();
-        let labels_shape = parents[1].value_expected_shape();
-        if logits_shape != labels_shape {
+        // 2. 验证形状兼容性（使用动态形状比较，支持动态 batch）
+        let logits_dyn_shape = parents[0].dynamic_expected_shape();
+        let labels_dyn_shape = parents[1].dynamic_expected_shape();
+        if !logits_dyn_shape.is_compatible(&labels_dyn_shape) {
             return Err(GraphError::ShapeMismatch {
-                expected: logits_shape.to_vec(),
-                got: labels_shape.to_vec(),
-                message: "logits 和 labels 形状必须相同".to_string(),
+                expected: parents[0].value_expected_shape().to_vec(),
+                got: parents[1].value_expected_shape().to_vec(),
+                message: "logits 和 labels 动态形状必须兼容".to_string(),
             });
         }
 

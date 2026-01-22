@@ -185,7 +185,12 @@ impl Lstm {
     /// })
     /// ```
     pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
-        let shape = x.value_expected_shape();
+        // 使用实际值的形状（支持动态 batch）
+        let value = x.value()?.ok_or_else(|| {
+            GraphError::ComputationError("Lstm.forward 需要输入有值".to_string())
+        })?;
+        let shape = value.shape();
+        
         if shape.len() != 3 {
             return Err(GraphError::InvalidOperation(format!(
                 "Lstm.forward 需要 3D 输入 [batch, seq_len, input], 实际: {:?}",
@@ -193,7 +198,7 @@ impl Lstm {
             )));
         }
 
-        let (batch_size, seq_len, input_size) = (shape[0], shape[1], shape[2]);
+        let (_, seq_len, input_size) = (shape[0], shape[1], shape[2]);
 
         // 验证输入维度
         if input_size != self.input_size {
@@ -204,14 +209,18 @@ impl Lstm {
         }
 
         // 展开所有时间步
-        self.unroll(x, batch_size, seq_len)
+        self.unroll(x, seq_len)
     }
 
     /// 展开 LSTM 时间步
-    fn unroll(&self, x: &Var, batch_size: usize, seq_len: usize) -> Result<Var, GraphError> {
-        // 初始隐藏状态和细胞状态（零）
-        let mut h = self.graph.zeros(&[batch_size, self.hidden_size])?;
-        let mut c = self.graph.zeros(&[batch_size, self.hidden_size])?;
+    fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
+        // 创建初始状态（ZerosLike：根据 x 的 batch_size 动态生成）
+        // 注意：每次 forward 都创建新的 ZerosLike 节点，确保与当前输入的 batch_size 匹配
+        // 这对于变长序列处理（不同桶有不同 batch_size）是必需的
+        let h0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
+        let c0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
+        let mut h = h0;
+        let mut c = c0;
 
         // 展开所有时间步
         for t in 0..seq_len {

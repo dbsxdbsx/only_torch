@@ -60,18 +60,19 @@ impl MSELoss {
             ));
         }
 
-        // 2. 验证形状兼容性
-        let input_shape = parents[0].value_expected_shape();
-        let target_shape = parents[1].value_expected_shape();
-        if input_shape != target_shape {
+        // 2. 验证形状兼容性（使用动态形状比较，支持动态 batch）
+        let input_dyn_shape = parents[0].dynamic_expected_shape();
+        let target_dyn_shape = parents[1].dynamic_expected_shape();
+        if !input_dyn_shape.is_compatible(&target_dyn_shape) {
             return Err(GraphError::ShapeMismatch {
-                expected: input_shape.to_vec(),
-                got: target_shape.to_vec(),
-                message: "input 和 target 形状必须相同".to_string(),
+                expected: parents[0].value_expected_shape().to_vec(),
+                got: parents[1].value_expected_shape().to_vec(),
+                message: "input 和 target 动态形状必须兼容".to_string(),
             });
         }
 
-        // 计算元素总数
+        // 计算元素总数（使用固定形状作为初始估计，运行时会更新）
+        let input_shape = parents[0].value_expected_shape();
         let numel: usize = input_shape.iter().product();
 
         Ok(Self {

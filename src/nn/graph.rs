@@ -211,6 +211,22 @@ impl Graph {
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 
+    /// 创建带形状的输入节点（无初始值，支持动态 batch）
+    ///
+    /// 用于 RNN/LSTM/GRU 的初始隐藏状态等场景。
+    /// 节点支持动态 batch：第一维可以接受任意值。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 创建初始隐藏状态节点，后续通过 set_value 设置实际值
+    /// let h0 = graph.input_shape(&[1, hidden_size], Some("h0"))?;
+    /// ```
+    pub fn input_shape(&self, shape: &[usize], name: Option<&str>) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_input_node(shape, name)?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
     /// 创建参数节点（带初始化）
     ///
     /// # 示例
@@ -254,6 +270,32 @@ impl Graph {
         let node_id = g.new_input_node(shape, None)?;
         let data = Tensor::normal(0.0, 1.0, shape);
         g.set_node_value(node_id, Some(&data))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建动态零张量节点
+    ///
+    /// 在每次 forward 时根据参考节点的 batch_size 生成零张量。
+    /// 用于 RNN/LSTM/GRU 的初始隐藏状态。
+    ///
+    /// # 参数
+    /// - `reference`: 参考 Var（用于获取 batch_size）
+    /// - `feature_shape`: 输出的特征维度（不包括 batch）
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 创建一个输出 [?, hidden_size] 形状的零张量节点
+    /// let h0 = graph.zeros_like(&x, &[hidden_size], Some("h0"))?;
+    /// ```
+    pub fn zeros_like(
+        &self,
+        reference: &Var,
+        feature_shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_zeros_like_node(reference.node_id(), feature_shape, name)?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 
@@ -1328,11 +1370,20 @@ impl GraphInner {
             let output_shape = node.value_expected_shape().to_vec();
             let node_type_desc = self.node_type_to_descriptor(node.node_type());
 
+            // 获取动态形状信息
+            let dyn_shape = node.dynamic_expected_shape();
+            let dynamic_shape = if dyn_shape.has_dynamic_dims() {
+                Some(dyn_shape.dims().to_vec())
+            } else {
+                None // 固定形状节点不需要额外存储
+            };
+
             let node_desc = NodeDescriptor::new(
                 node_id.0,
                 node.name(),
                 node_type_desc,
                 output_shape,
+                dynamic_shape,
                 parents,
             );
 
@@ -1663,6 +1714,7 @@ impl GraphInner {
             NodeTypeDescriptor::Select { .. } => "Select",
             NodeTypeDescriptor::MSELoss => "MSELoss",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
+            NodeTypeDescriptor::ZerosLike => "ZerosLike",
         }
     }
 
@@ -1732,6 +1784,9 @@ impl GraphInner {
         dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
         dot.push('\n');
 
+        // 收集 GradientRouter 节点及其所有下游节点（这些节点的 batch 维度应显示为 ?）
+        let dynamic_batch_nodes = Self::find_dynamic_batch_nodes(&desc);
+
         // 收集已分组的节点 ID（转换为 u64 以便与 descriptor 比较）
         let grouped_node_ids: std::collections::HashSet<u64> = if group_layers {
             self.layer_groups
@@ -1764,7 +1819,8 @@ impl GraphInner {
                 for node in &desc.nodes {
                     if group.node_ids.iter().any(|nid| nid.0 == node.id) {
                         let (shape, style, fillcolor) = Self::dot_node_style(&node.node_type);
-                        let label = Self::dot_node_label_html(node);
+                        let use_dynamic_batch = dynamic_batch_nodes.contains(&node.id);
+                        let label = Self::dot_node_label_html_with_dynamic_batch(node, use_dynamic_batch);
                         dot.push_str(&format!(
                             "        \"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
                             node.id, label, shape, style, fillcolor
@@ -1782,7 +1838,8 @@ impl GraphInner {
                 continue; // 已在 cluster 中定义
             }
             let (shape, style, fillcolor) = Self::dot_node_style(&node.node_type);
-            let label = Self::dot_node_label_html(node);
+            let use_dynamic_batch = dynamic_batch_nodes.contains(&node.id);
+            let label = Self::dot_node_label_html_with_dynamic_batch(node, use_dynamic_batch);
 
             dot.push_str(&format!(
                 "    \"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
@@ -1983,6 +2040,44 @@ impl GraphInner {
         }
     }
 
+    /// 找出所有应该显示动态 batch 维度的节点（GradientRouter 及其所有下游节点）
+    ///
+    /// 这些节点在可视化时 batch 维度显示为 `?`，表示 batch 是动态的。
+    fn find_dynamic_batch_nodes(desc: &GraphDescriptor) -> std::collections::HashSet<u64> {
+        use std::collections::{HashSet, VecDeque};
+        
+        let mut dynamic_nodes = HashSet::new();
+        
+        // 1. 找出所有 GradientRouter 节点
+        let router_ids: Vec<u64> = desc.nodes.iter()
+            .filter(|n| matches!(n.node_type, NodeTypeDescriptor::GradientRouter))
+            .map(|n| n.id)
+            .collect();
+        
+        // 2. 构建邻接表（parent -> children）
+        let mut children_map: std::collections::HashMap<u64, Vec<u64>> = std::collections::HashMap::new();
+        for node in &desc.nodes {
+            for &parent_id in &node.parents {
+                children_map.entry(parent_id).or_default().push(node.id);
+            }
+        }
+        
+        // 3. BFS 找出所有下游节点
+        let mut queue: VecDeque<u64> = router_ids.iter().copied().collect();
+        while let Some(node_id) = queue.pop_front() {
+            if dynamic_nodes.insert(node_id) {
+                // 将所有子节点加入队列
+                if let Some(children) = children_map.get(&node_id) {
+                    for &child_id in children {
+                        queue.push_back(child_id);
+                    }
+                }
+            }
+        }
+        
+        dynamic_nodes
+    }
+
     /// 获取节点的 DOT 样式 (shape, style, fillcolor)
     const fn dot_node_style(
         node_type: &NodeTypeDescriptor,
@@ -2016,9 +2111,38 @@ impl GraphInner {
 
     /// 生成节点的标签（名称 + 类型 + 形状 + 特殊参数）
     /// 生成节点的 HTML 格式标签（类型加粗）
+    #[allow(dead_code)]
     fn dot_node_label_html(node: &NodeDescriptor) -> String {
+        Self::dot_node_label_html_with_dynamic_batch(node, false)
+    }
+
+    /// 生成节点的 HTML 格式标签，支持动态 batch 显示
+    ///
+    /// # 参数
+    /// - `use_dynamic_batch`: 如果为 true，对于没有 dynamic_shape 信息的旧节点，
+    ///   回退到旧的逻辑（第一维显示为 `?`）
+    ///
+    /// 优先级：
+    /// 1. 如果节点有 dynamic_shape 信息，直接使用它（最准确）
+    /// 2. 如果 use_dynamic_batch 为 true 且没有 dynamic_shape，使用旧的回退逻辑
+    /// 3. 否则使用固定形状
+    fn dot_node_label_html_with_dynamic_batch(node: &NodeDescriptor, use_dynamic_batch: bool) -> String {
         let type_name = Self::type_name(&node.node_type);
-        let shape_str = format!("{:?}", node.output_shape);
+        
+        // 使用 NodeDescriptor 中存储的动态形状信息
+        // 如果有 dynamic_shape，直接使用（不依赖 use_dynamic_batch 参数）
+        let shape_str = if node.dynamic_shape.is_some() {
+            node.display_shape()
+        } else if use_dynamic_batch && node.output_shape.len() > 1 {
+            // 回退：旧的逻辑（兼容没有 dynamic_shape 的旧 JSON）
+            let shape_parts: Vec<String> = node.output_shape.iter()
+                .enumerate()
+                .map(|(i, &dim)| if i == 0 { "?".to_string() } else { dim.to_string() })
+                .collect();
+            format!("[{}]", shape_parts.join(", "))
+        } else {
+            format!("{:?}", node.output_shape)
+        };
 
         // 根据节点类型添加特殊参数
         let extra_info = match &node.node_type {
@@ -2047,7 +2171,22 @@ impl GraphInner {
     #[allow(dead_code)]
     fn dot_node_label(node: &NodeDescriptor) -> String {
         let type_name = Self::type_name(&node.node_type);
-        let shape_str = format!("{:?}", node.output_shape);
+        
+        // 使用 NodeDescriptor 中的动态形状信息
+        let shape_str = if node.dynamic_shape.is_some() {
+            node.display_shape()
+        } else if matches!(node.node_type, NodeTypeDescriptor::GradientRouter) 
+            && node.output_shape.len() > 1 
+        {
+            // 回退：兼容旧的 JSON（没有 dynamic_shape）
+            let shape_parts: Vec<String> = node.output_shape.iter()
+                .enumerate()
+                .map(|(i, &dim)| if i == 0 { "?".to_string() } else { dim.to_string() })
+                .collect();
+            format!("[{}]", shape_parts.join(", "))
+        } else {
+            format!("{:?}", node.output_shape)
+        };
 
         // 根据节点类型添加特殊参数
         let extra_info = match &node.node_type {
@@ -2119,6 +2258,7 @@ impl GraphInner {
             }, // TODO: 获取实际值
             NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
+            NodeType::ZerosLike(_) => NodeTypeDescriptor::ZerosLike,
         }
     }
 
@@ -2224,6 +2364,13 @@ impl GraphInner {
 
     pub fn get_node_value_expected_shape(&self, id: NodeId) -> Result<&[usize], GraphError> {
         Ok(self.get_node(id)?.value_expected_shape())
+    }
+
+    pub fn get_node_dynamic_expected_shape(
+        &self,
+        id: NodeId,
+    ) -> Result<crate::nn::shape::DynamicShape, GraphError> {
+        Ok(self.get_node(id)?.dynamic_expected_shape())
     }
 
     pub fn get_node_value_size(&self, id: NodeId) -> Result<Option<usize>, GraphError> {
@@ -3398,6 +3545,31 @@ impl GraphInner {
     ) -> Result<NodeId, GraphError> {
         let node = NodeHandle::new_state(shape)?;
         self.add_node_to_list(node, name, "state", &[])
+    }
+
+    /// 创建 ZerosLike 节点（动态零张量）
+    ///
+    /// ZerosLike 节点在每次 forward 时根据参考节点的 batch_size 生成零张量。
+    /// 用于 RNN/LSTM/GRU 的初始隐藏状态。
+    ///
+    /// # 参数
+    /// - `reference`: 参考节点 ID（用于获取 batch_size）
+    /// - `feature_shape`: 输出的特征维度（不包括 batch）
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 创建一个输出 [?, hidden_size] 形状的零张量节点
+    /// let h0 = graph.new_zeros_like_node(input_id, &[hidden_size], Some("h0"))?;
+    /// ```
+    pub fn new_zeros_like_node(
+        &mut self,
+        reference: NodeId,
+        feature_shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let node = NodeHandle::new_zeros_like(feature_shape);
+        self.add_node_to_list(node, name, "zeros_like", &[reference])
     }
 
     pub fn new_add_node(

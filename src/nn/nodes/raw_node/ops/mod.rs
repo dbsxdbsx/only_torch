@@ -26,6 +26,7 @@ mod softplus;
 mod step;
 mod subtract;
 mod tanh;
+mod zeros_like;
 
 pub(crate) use add::Add;
 pub(crate) use avg_pool2d::AvgPool2d;
@@ -47,3 +48,4 @@ pub(crate) use softplus::SoftPlus;
 pub(crate) use step::Step;
 pub(crate) use subtract::Subtract;
 pub(crate) use tanh::Tanh;
+pub(crate) use zeros_like::ZerosLike;

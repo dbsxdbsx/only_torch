@@ -570,3 +570,113 @@ fn test_mat_mul_gradient_accumulation() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 MatMul 节点的动态形状传播
+#[test]
+fn test_mat_mul_dynamic_shape_propagation() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建一个支持动态 batch 的输入（使用 ZerosLike）
+    let x = graph.input(&Tensor::zeros(&[4, 8])).unwrap();
+    let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
+
+    // 创建一个固定形状的权重
+    let w = graph
+        .parameter(&[16, 32], crate::nn::Init::Kaiming, "w")
+        .unwrap();
+
+    // MatMul: h0 @ w -> [?, 32]
+    use crate::nn::var_ops::VarMatrixOps;
+    let result = h0.matmul(&w).unwrap();
+
+    // 验证动态形状传播
+    let dyn_shape = result.dynamic_expected_shape();
+    assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
+    assert!(!dyn_shape.is_dynamic(1), "output 维度应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(32), "output 维度应该是 32");
+}
+
+/// 测试 MatMul 节点在不同 batch_size 下的前向计算
+#[test]
+fn test_mat_mul_dynamic_batch_forward() {
+    use crate::nn::var_ops::VarMatrixOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建支持动态 batch 的节点
+    let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
+    let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
+    let w = graph
+        .parameter(&[16, 32], crate::nn::Init::Kaiming, "w")
+        .unwrap();
+
+    // MatMul: h0 @ w
+    let result = h0.matmul(&w).unwrap();
+
+    // 第一次 forward：batch=2
+    result.forward().unwrap();
+    let value1 = result.value().unwrap().unwrap();
+    assert_eq!(value1.shape(), &[2, 32], "第一次 forward: batch=2");
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::zeros(&[8, 8])).unwrap();
+
+    // 第二次 forward：batch=8
+    result.forward().unwrap();
+    let value2 = result.value().unwrap().unwrap();
+    assert_eq!(value2.shape(), &[8, 32], "第二次 forward: batch=8");
+}
+
+/// 测试 MatMul 节点在不同 batch_size 下的反向传播
+#[test]
+fn test_mat_mul_dynamic_batch_backward() {
+    use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建支持动态 batch 的节点
+    let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
+    let h0 = graph.zeros_like(&x, &[4], None).unwrap(); // [?, 4]
+    let w = graph
+        .parameter(&[4, 8], crate::nn::Init::Kaiming, "w")
+        .unwrap();
+
+    // MatMul: h0 @ w -> [?, 8]
+    let result = h0.matmul(&w).unwrap();
+
+    // 创建目标和损失
+    let target = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
+    let loss = result.mse_loss(&target).unwrap();
+
+    // 第一次 forward + backward：batch=2
+    loss.forward().unwrap();
+    assert_eq!(result.value().unwrap().unwrap().shape(), &[2, 8]);
+    loss.backward().unwrap();
+
+    // 验证 w 有梯度
+    let w_grad1 = w.grad().unwrap().unwrap();
+    assert_eq!(w_grad1.shape(), &[4, 8], "w 梯度形状应为 [4, 8]");
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::zeros(&[6, 8])).unwrap();
+    target.set_value(&Tensor::zeros(&[6, 8])).unwrap();
+
+    // 第二次 forward + backward：batch=6
+    loss.forward().unwrap();
+    assert_eq!(
+        result.value().unwrap().unwrap().shape(),
+        &[6, 8],
+        "第二次 forward: batch=6"
+    );
+    loss.backward().unwrap();
+
+    // 验证 w 仍有正确形状的梯度
+    let w_grad2 = w.grad().unwrap().unwrap();
+    assert_eq!(w_grad2.shape(), &[4, 8], "w 梯度形状仍应为 [4, 8]");
+}

@@ -1,8 +1,8 @@
 # Only Torch 架构路线图
 
-> 最后更新: 2025-12-22
+> 最后更新: 2026-01-21
 > 战略定位: **简化版 PyTorch in Rust**，为 NEAT 预留扩展性
-> MVP 目标: **XOR with Optimizer**
+> 当前阶段: **Phase 2 完成，PyTorch 风格 API 已实现**
 
 ## 文档索引
 
@@ -15,6 +15,7 @@
 │   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制（重要）
 │   ├── broadcast_mechanism_design.md               # 广播机制设计
 │   ├── gradient_clear_and_accumulation_design.md   # 梯度机制
+│   ├── gradient_flow_control_design.md             # ⭐ 梯度流控制（detach/GradientRouter）
 │   ├── memory_mechanism_design.md                  # 记忆/循环机制设计
 │   ├── node_vs_layer_design.md                     # Node vs Layer 架构设计
 │   ├── optimization_strategy.md                    # 性能优化策略
@@ -32,29 +33,76 @@
 ```
 模块               完成度    状态
 ─────────────────────────────────
-tensor/            ~80%     ✅ 基本完成
-nn/graph           ~90%     ✅ 核心完成
-nn/nodes           ~75%     ✅ Conv2d/MaxPool2d/AvgPool2d 已完成
+tensor/            ~85%     ✅ 基本完成
+nn/graph           ~95%     ✅ 核心完成 + PyTorch 风格 API
+nn/nodes           ~80%     ✅ Conv2d/Pool/RNN/LSTM/GRU 已完成
+nn/model_state     100%     ✅ 智能缓存 + ForwardInput trait
+nn/criterion       100%     ✅ MseLoss/CrossEntropyLoss
 nn/optimizer       ~70%     ✅ SGD/Adam可用，缺Momentum等
-data/              ~70%     ✅ MNIST + California Housing 已完成
+data/              ~75%     ✅ MNIST + California Housing + DataLoader
 vision/            ~70%     ✅ 基本完成
 logic/             0%       ❌ 预留
 neat/              0%       ❌ 远期特色
 ```
+
+## 🎉 PyTorch 风格 API 里程碑（2026-01-21）
+
+### 核心组件
+
+| 组件 | 说明 | 状态 |
+|------|------|------|
+| **ModelState** | 模型前向计算封装，智能缓存 | ✅ |
+| **ForwardInput** | 统一输入 trait（Tensor/Var/DetachedVar） | ✅ |
+| **GradientRouter** | 内部节点，梯度路由 | ✅ |
+| **DetachedVar** | 轻量 detach 包装 | ✅ |
+| **MseLoss/CrossEntropyLoss** | Criterion 损失函数封装 | ✅ |
+
+### 示例 API 风格
+
+```rust
+// 创建模型（PyTorch 风格）
+let generator = Generator::new(&graph)?;
+let discriminator = Discriminator::new(&graph)?;
+let criterion = MseLoss::new();
+
+// 训练循环
+let fake = generator.forward(&noise)?;
+let d_fake = discriminator.forward(&fake.detach())?;  // ✨ detach
+let loss = criterion.forward(&d_fake, &labels)?;
+loss.backward()?;
+optimizer.step()?;
+```
+
+### 示例覆盖
+
+| 示例 | 功能验证 | 状态 |
+|------|---------|------|
+| `xor` | 基础 MLP | ✅ |
+| `sine_regression` | 回归任务 | ✅ |
+| `iris` | 多分类 | ✅ |
+| `mnist` | 图像分类 | ✅ |
+| `mnist_gan` | GAN 训练 + detach | ✅ |
+| `california_housing` | 房价回归 | ✅ |
+| `parity_rnn_fixed_len` | RNN 展开式 | ✅ |
+| `parity_rnn_var_len` | RNN 变长 + 智能缓存 | ✅ |
+| `parity_lstm_var_len` | LSTM 变长 | ✅ |
+| `parity_gru_var_len` | GRU 变长 | ✅ |
 
 ## 已实现节点
 
 | 类型 | 节点                                             | 状态 |
 | :--- | :----------------------------------------------- | :--: |
 | 输入 | Input, Parameter                                 |  ✅  |
-| 运算 | Add, MatMul, Reshape, Flatten                    |  ✅  |
-| 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU              |  ✅  |
+| 运算 | Add, MatMul, Reshape, Flatten, Select            |  ✅  |
+| 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU, Softplus    |  ✅  |
 | CNN  | Conv2d, MaxPool2d, AvgPool2d                     |  ✅  |
-| 损失 | SoftmaxCrossEntropyLoss, MSELoss |  ✅  |
+| RNN  | RNN, LSTM, GRU (Layer 形式)                      |  ✅  |
+| 损失 | SoftmaxCrossEntropyLoss, MSELoss                 |  ✅  |
+| 内部 | Identity, GradientRouter, State                  |  ✅  |
 
 ## 缺失的关键节点
 
-- **激活函数**: Softplus, Softmax (独立版)
+- **激活函数**: Softmax (独立版)
 - **运算节点**: Sub, Neg, Mul(逐元素), Div
 
 ## 集成测试进度

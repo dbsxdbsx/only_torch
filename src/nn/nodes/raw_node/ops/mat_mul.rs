@@ -1,3 +1,4 @@
+use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
@@ -9,7 +10,12 @@ pub(crate) struct MatMul {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    shape: Vec<usize>,
+    /// 固定形状（用于 value_expected_shape）
+    fixed_shape: Vec<usize>,
+    /// 动态形状（支持动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 是否支持动态 batch（继承自父节点）
+    supports_dynamic: bool,
     parents_ids: Vec<NodeId>, // 用于区分左右父节点
 }
 
@@ -24,26 +30,48 @@ impl MatMul {
         }
 
         // 1.2 验证矩阵乘法的形状兼容性
-        let parent1_shape = parents[0].value_expected_shape();
-        let parent2_shape = parents[1].value_expected_shape();
-        if parent1_shape[1] != parent2_shape[0] {
+        let parent1_dyn = parents[0].dynamic_expected_shape();
+        let parent2_dyn = parents[1].dynamic_expected_shape();
+        let parent1_fixed = parents[0].value_expected_shape();
+        let parent2_fixed = parents[1].value_expected_shape();
+
+        // 获取内层维度进行验证：parent1[1] 必须等于 parent2[0]
+        // 注意：必须使用 fixed_shape 验证内层维度，因为：
+        // - 对于 Input 节点，dynamic_shape 的 dim(0) 是 None（动态 batch）
+        // - 但矩阵乘法的内层维度必须是确定值且必须匹配
+        let parent1_cols = parent1_fixed[1]; // parent1 的列数
+        let parent2_rows = parent2_fixed[0]; // parent2 的行数
+
+        // 验证内层维度兼容性
+        if parent1_cols != parent2_rows {
             return Err(GraphError::ShapeMismatch {
-                expected: vec![parent1_shape[0], parent2_shape[1]],
-                got: vec![parent1_shape[1], parent2_shape[0]],
+                expected: vec![parent1_fixed[0], parent2_fixed[1]],
+                got: vec![parent1_cols, parent2_rows],
                 message: format!(
                     "MatMul节点的2个父节点形状不兼容：父节点1的列数({})与父节点2的行数({})不相等。",
-                    parent1_shape[1], parent2_shape[0],
+                    parent1_cols, parent2_rows,
                 ),
             });
         }
 
-        // 2. 返回
+        // 2. 计算输出形状
+        // 输出形状 = [parent1的batch/行, parent2的列]
+        // 如果 parent1 支持动态 batch，输出也支持
+        let supports_dynamic = parents[0].supports_dynamic_batch();
+        let output_batch = parent1_dyn.dim(0); // 可能是 None（动态）或 Some(n)
+        let output_cols = parent2_dyn.dim(1).or(Some(parent2_fixed[1]));
+
+        let dynamic_shape = DynamicShape::new(&[output_batch, output_cols]);
+        let fixed_shape = vec![parent1_fixed[0], parent2_fixed[1]];
+
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
-            shape: vec![parent1_shape[0], parent2_shape[1]],
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
             parents_ids: vec![parents[0].id(), parents[1].id()],
         })
     }
@@ -67,7 +95,15 @@ impl TraitNode for MatMul {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
     }
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
@@ -141,13 +177,40 @@ impl TraitNode for MatMul {
             // 计算 dL/dA = upstream_grad @ B^T
             // upstream_grad: [batch, k], B: [n, k] -> B^T: [k, n]
             // 结果: [batch, n]
-            Ok(upstream_grad.mat_mul(&b_value.transpose()))
+            let b_t = b_value.transpose();
+            if upstream_grad.shape()[1] != b_t.shape()[0] {
+                return Err(GraphError::ShapeMismatch {
+                    expected: vec![upstream_grad.shape()[0], b_t.shape()[1]],
+                    got: vec![upstream_grad.shape()[1], b_t.shape()[0]],
+                    message: format!(
+                        "MatMul ({}) dL/dA 形状不匹配: upstream_grad {:?} @ B^T {:?}",
+                        self.display_node(),
+                        upstream_grad.shape(),
+                        b_t.shape()
+                    ),
+                });
+            }
+            Ok(upstream_grad.mat_mul(&b_t))
         } else {
             // 计算 dL/dB = A^T @ upstream_grad
             // A: [batch, n] -> A^T: [n, batch]
             // upstream_grad: [batch, k]
             // 结果: [n, k]（自然对 batch 求和）
-            Ok(a_value.transpose().mat_mul(upstream_grad))
+            let a_t = a_value.transpose();
+            if a_t.shape()[1] != upstream_grad.shape()[0] {
+                return Err(GraphError::ShapeMismatch {
+                    expected: vec![a_t.shape()[0], upstream_grad.shape()[1]],
+                    got: vec![a_t.shape()[1], upstream_grad.shape()[0]],
+                    message: format!(
+                        "MatMul ({}) dL/dB 形状不匹配: A^T {:?} (A={:?}) @ upstream_grad {:?}",
+                        self.display_node(),
+                        a_t.shape(),
+                        a_value.shape(),
+                        upstream_grad.shape()
+                    ),
+                });
+            }
+            Ok(a_t.mat_mul(upstream_grad))
         }
     }
 

@@ -1,6 +1,6 @@
 use approx::assert_abs_diff_eq;
 
-use crate::nn::GraphInner;
+use crate::nn::{GraphError, GraphInner};
 use crate::tensor::Tensor;
 
 #[test]
@@ -279,4 +279,119 @@ fn test_softmax_cross_entropy_with_linear_layer() {
     // 验证权重有梯度
     let weights_grad = graph.get_node(weights_id).unwrap().grad().unwrap();
     assert_eq!(weights_grad.shape(), &[2, 3]); // 权重形状 [2, 3]
+}
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 SoftmaxCrossEntropy 节点的动态形状传播
+/// 注：Loss 节点输出固定为 [1, 1]，但输入可以有动态 batch
+#[test]
+fn test_softmax_cross_entropy_dynamic_shape_propagation() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建 2D 输入：[batch, num_classes]
+    let logits = graph.new_input_node(&[2, 3], Some("logits"))?;
+    let labels = graph.new_input_node(&[2, 3], Some("labels"))?;
+
+    let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
+
+    // Loss 输出固定为 [1, 1]
+    let loss_node = graph.get_node(loss)?;
+    assert_eq!(loss_node.value_expected_shape(), &[1, 1]);
+
+    Ok(())
+}
+
+/// 测试 SoftmaxCrossEntropy 在不同 batch_size 下的前向计算
+#[test]
+fn test_softmax_cross_entropy_dynamic_batch_forward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建输入
+    let logits = graph.new_input_node(&[2, 3], Some("logits"))?;
+    let labels = graph.new_input_node(&[2, 3], Some("labels"))?;
+    let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
+
+    // 设置初始值：batch=2
+    let mut labels_data = Tensor::zeros(&[2, 3]);
+    labels_data[[0, 0]] = 1.0;
+    labels_data[[1, 2]] = 1.0;
+    graph.set_node_value(logits, Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 3], 42)))?;
+    graph.set_node_value(labels, Some(&labels_data))?;
+
+    // 第一次 forward：batch=2
+    graph.forward(loss)?;
+    let value1 = graph.get_node_value(loss)?.unwrap();
+    assert_eq!(value1.shape(), &[1, 1], "Loss 输出固定为 [1, 1]");
+    let loss_val1 = value1[[0, 0]];
+    assert!(loss_val1 > 0.0);
+
+    // 更新输入为不同的 batch_size
+    let mut labels_data2 = Tensor::zeros(&[5, 3]);
+    for i in 0..5 {
+        labels_data2[[i, i % 3]] = 1.0;
+    }
+    graph.set_node_value(logits, Some(&Tensor::normal_seeded(0.0, 1.0, &[5, 3], 100)))?;
+    graph.set_node_value(labels, Some(&labels_data2))?;
+
+    // 第二次 forward：batch=5
+    graph.forward(loss)?;
+    let value2 = graph.get_node_value(loss)?.unwrap();
+    assert_eq!(value2.shape(), &[1, 1], "Loss 输出固定为 [1, 1]");
+    let loss_val2 = value2[[0, 0]];
+    assert!(loss_val2 > 0.0);
+
+    Ok(())
+}
+
+/// 测试 SoftmaxCrossEntropy 在不同 batch_size 下的反向传播
+#[test]
+fn test_softmax_cross_entropy_dynamic_batch_backward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 使用 Input 节点接收动态 batch 数据
+    // 构建 y = x * w 形式，其中 w 是可训练的 Parameter
+    let input = graph.new_input_node(&[2, 5], Some("input"))?;
+    let weight = graph.new_parameter_node(&[5, 3], Some("weight"))?;  // [5, 3] 权重
+    let logits = graph.new_mat_mul_node(input, weight, Some("logits"))?;
+    let labels = graph.new_input_node(&[2, 3], Some("labels"))?;
+    let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
+
+    // 初始化权重
+    graph.set_node_value(weight, Some(&Tensor::normal_seeded(0.0, 0.1, &[5, 3], 42)))?;
+
+    // 设置初始值：batch=2
+    let mut labels_data = Tensor::zeros(&[2, 3]);
+    labels_data[[0, 0]] = 1.0;
+    labels_data[[1, 2]] = 1.0;
+    graph.set_node_value(input, Some(&Tensor::ones(&[2, 5])))?;
+    graph.set_node_value(labels, Some(&labels_data))?;
+
+    // 第一次训练：batch=2
+    graph.forward(loss)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+    let grad1 = graph.get_node(weight)?.grad().unwrap().clone();
+    assert_eq!(grad1.shape(), &[5, 3], "权重梯度形状应保持不变");
+
+    // 更新输入为不同的 batch_size
+    let mut labels_data2 = Tensor::zeros(&[4, 3]);
+    for i in 0..4 {
+        labels_data2[[i, i % 3]] = 1.0;
+    }
+    graph.set_node_value(input, Some(&Tensor::ones(&[4, 5])))?;
+    graph.set_node_value(labels, Some(&labels_data2))?;
+
+    // 第二次训练：batch=4
+    graph.zero_grad()?;
+    graph.forward(loss)?;
+    graph.backward(loss)?;
+    let grad2 = graph.get_node(weight)?.grad().unwrap();
+    assert_eq!(
+        grad2.shape(),
+        &[5, 3],
+        "权重梯度形状应保持不变（与 batch 大小无关）"
+    );
+
+    Ok(())
 }

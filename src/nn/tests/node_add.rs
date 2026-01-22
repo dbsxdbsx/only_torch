@@ -748,3 +748,105 @@ fn test_add_broadcast_e2e() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 Add 节点的动态形状传播
+#[test]
+fn test_add_dynamic_shape_propagation() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建一个支持动态 batch 的输入（使用 ZerosLike）
+    let x = graph.input(&Tensor::zeros(&[4, 8])).unwrap();
+    let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
+
+    // 创建一个固定形状的参数
+    let bias = graph.parameter(&[1, 16], crate::nn::Init::Zeros, "bias").unwrap();
+
+    // Add: h0 + bias
+    let result = &h0 + &bias;
+
+    // 验证动态形状传播
+    let dyn_shape = result.dynamic_expected_shape();
+    assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
+    assert!(!dyn_shape.is_dynamic(1), "feature 维度应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(16), "feature 维度应该是 16");
+}
+
+/// 测试 Add 节点在不同 batch_size 下的前向计算
+#[test]
+fn test_add_dynamic_batch_forward() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建支持动态 batch 的节点
+    let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
+    let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
+    let bias = graph.parameter(&[1, 16], crate::nn::Init::Ones, "bias").unwrap();
+
+    // Add: h0 + bias
+    let result = &h0 + &bias;
+
+    // 第一次 forward：batch=2
+    result.forward().unwrap();
+    let value1 = result.value().unwrap().unwrap();
+    assert_eq!(value1.shape(), &[2, 16], "第一次 forward: batch=2");
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::zeros(&[8, 8])).unwrap();
+
+    // 第二次 forward：batch=8
+    result.forward().unwrap();
+    let value2 = result.value().unwrap().unwrap();
+    assert_eq!(value2.shape(), &[8, 16], "第二次 forward: batch=8");
+}
+
+/// 测试 Add 节点在不同 batch_size 下的反向传播
+#[test]
+fn test_add_dynamic_batch_backward() {
+    use crate::nn::var_ops::VarLossOps;
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+
+    // 创建支持动态 batch 的节点
+    let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
+    let h0 = graph.zeros_like(&x, &[4], None).unwrap(); // [?, 4]
+    let bias = graph.parameter(&[1, 4], crate::nn::Init::Ones, "bias").unwrap();
+
+    // Add: h0 + bias
+    let result = &h0 + &bias;
+
+    // 创建目标和损失
+    let target = graph.input(&Tensor::zeros(&[2, 4])).unwrap();
+    let loss = result.mse_loss(&target).unwrap();
+
+    // 第一次 forward + backward：batch=2
+    loss.forward().unwrap();
+    assert_eq!(result.value().unwrap().unwrap().shape(), &[2, 4]);
+    loss.backward().unwrap();
+
+    // 验证 bias 有梯度
+    let bias_grad1 = bias.grad().unwrap().unwrap();
+    assert_eq!(bias_grad1.shape(), &[1, 4], "bias 梯度形状应为 [1, 4]");
+
+    // 更新输入为不同的 batch_size
+    x.set_value(&Tensor::zeros(&[6, 8])).unwrap();
+    target.set_value(&Tensor::zeros(&[6, 4])).unwrap();
+
+    // 第二次 forward + backward：batch=6
+    loss.forward().unwrap();
+    assert_eq!(
+        result.value().unwrap().unwrap().shape(),
+        &[6, 4],
+        "第二次 forward: batch=6"
+    );
+    loss.backward().unwrap();
+
+    // 验证 bias 仍有正确形状的梯度
+    let bias_grad2 = bias.grad().unwrap().unwrap();
+    assert_eq!(bias_grad2.shape(), &[1, 4], "bias 梯度形状仍应为 [1, 4]");
+}

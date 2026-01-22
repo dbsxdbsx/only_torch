@@ -1,40 +1,88 @@
+use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
 use super::{NodeHandle, TraitNode};
 
+/// Input 节点：用户数据输入
+///
+/// # 动态 Batch 支持
+/// Input 节点支持动态 batch：第一维可以是任意值。
+/// 这使得同一个计算图可以处理不同 batch_size 的输入。
 #[derive(Clone)]
 pub(crate) struct Input {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
     // 注意：Input 节点没有 jacobi 字段，因为输入数据不参与梯度更新
-    shape: Vec<usize>,
+    /// 动态形状：第一维是 None（动态 batch）
+    dynamic_shape: DynamicShape,
+    /// 固定形状缓存（首次创建时的形状）
+    fixed_shape: Vec<usize>,
 }
 
 impl Input {
     pub(crate) fn new(shape: &[usize]) -> Result<Self, GraphError> {
         // 1. 必要的验证：支持 2D-4D 张量
         // - 2D: 标准全连接层 [batch, features] 或 [rows, cols]
-        // - 3D: 单样本 CNN [C, H, W]
+        // - 3D: RNN 输入 [batch, seq_len, features]
         // - 4D: Batch CNN [batch, C, H, W]
         if shape.len() < 2 || shape.len() > 4 {
             return Err(GraphError::DimensionMismatch {
                 expected: 2, // 表示 2-4 维
                 got: shape.len(),
                 message: format!(
-                    "节点张量必须是 2-4 维（支持 FC 和 CNN），但收到的维度是 {} 维。",
+                    "节点张量必须是 2-4 维（支持 FC、RNN 和 CNN），但收到的维度是 {} 维。",
                     shape.len(),
                 ),
             });
         }
+
+        // 创建动态形状：第一维是 None（动态 batch）
+        let dynamic_shape = DynamicShape::with_dynamic_batch(&shape[1..]);
 
         // 2. 返回
         Ok(Self {
             id: None,
             name: None,
             value: None,
-            shape: shape.to_vec(),
+            dynamic_shape,
+            fixed_shape: shape.to_vec(),
+        })
+    }
+
+    /// 创建支持动态 batch 的 Input 节点（指定特征形状）
+    ///
+    /// # 参数
+    /// - `feature_shape`: 特征维度形状（不包括 batch）
+    /// - `initial_batch`: 初始 batch_size（用于固定形状）
+    #[allow(dead_code)]
+    pub(crate) fn with_dynamic_batch(
+        feature_shape: &[usize],
+        initial_batch: usize,
+    ) -> Result<Self, GraphError> {
+        let ndim = feature_shape.len() + 1;
+        if ndim < 2 || ndim > 4 {
+            return Err(GraphError::DimensionMismatch {
+                expected: 2,
+                got: ndim,
+                message: format!(
+                    "节点张量必须是 2-4 维，但收到的维度是 {} 维。",
+                    ndim,
+                ),
+            });
+        }
+
+        let dynamic_shape = DynamicShape::with_dynamic_batch(feature_shape);
+        let mut fixed_shape = vec![initial_batch];
+        fixed_shape.extend_from_slice(feature_shape);
+
+        Ok(Self {
+            id: None,
+            name: None,
+            value: None,
+            dynamic_shape,
+            fixed_shape,
         })
     }
 }
@@ -82,6 +130,14 @@ impl TraitNode for Input {
     }
 
     fn value_expected_shape(&self) -> &[usize] {
-        &self.shape
+        &self.fixed_shape
+    }
+
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+
+    fn supports_dynamic_batch(&self) -> bool {
+        true
     }
 }

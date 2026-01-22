@@ -560,3 +560,166 @@ fn test_zero_grad_on_state() -> Result<(), GraphError> {
     );
     Ok(())
 }
+
+// ==================== 动态形状测试 ====================
+
+/// 测试 State 节点的动态形状传播
+///
+/// State 节点也是动态 batch 的源头，其 dynamic_expected_shape 的第一维应为 None
+#[test]
+fn test_state_dynamic_shape_propagation() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建 2D State 节点
+    let state = graph.new_state_node(&[4, 64], Some("hidden"))?;
+
+    // 获取节点的动态形状
+    let node = graph.get_node(state)?;
+    let dyn_shape = node.dynamic_expected_shape();
+
+    assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
+    assert!(!dyn_shape.is_dynamic(1), "特征维度应该是固定的");
+    assert_eq!(dyn_shape.dim(1), Some(64), "特征维度应该是 64");
+    assert!(
+        node.supports_dynamic_batch(),
+        "State 节点应该支持动态 batch"
+    );
+
+    Ok(())
+}
+
+/// 测试 State 节点在不同维度下的动态形状
+#[test]
+fn test_state_dynamic_shape_various_dims() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 2D: [batch, hidden_size] (基础 RNN)
+    let state_2d = graph.new_state_node(&[4, 64], Some("hidden_2d"))?;
+    let node_2d = graph.get_node(state_2d)?;
+    let dyn_2d = node_2d.dynamic_expected_shape();
+    assert!(dyn_2d.is_dynamic(0));
+    assert!(!dyn_2d.is_dynamic(1));
+
+    // 3D: [batch, seq_len, hidden_size] (序列状态)
+    let state_3d = graph.new_state_node(&[4, 10, 64], Some("hidden_3d"))?;
+    let node_3d = graph.get_node(state_3d)?;
+    let dyn_3d = node_3d.dynamic_expected_shape();
+    assert!(dyn_3d.is_dynamic(0), "3D: batch 维度应该是动态的");
+    assert!(!dyn_3d.is_dynamic(1), "3D: seq_len 应该是固定的");
+    assert!(!dyn_3d.is_dynamic(2), "3D: hidden_size 应该是固定的");
+
+    // 4D: [batch, channels, height, width] (ConvLSTM 状态)
+    let state_4d = graph.new_state_node(&[4, 32, 7, 7], Some("hidden_4d"))?;
+    let node_4d = graph.get_node(state_4d)?;
+    let dyn_4d = node_4d.dynamic_expected_shape();
+    assert!(dyn_4d.is_dynamic(0), "4D: batch 维度应该是动态的");
+    assert!(!dyn_4d.is_dynamic(1), "4D: channels 应该是固定的");
+    assert!(!dyn_4d.is_dynamic(2), "4D: height 应该是固定的");
+    assert!(!dyn_4d.is_dynamic(3), "4D: width 应该是固定的");
+
+    Ok(())
+}
+
+/// 测试 State 节点在不同 batch_size 下的前向计算
+#[test]
+fn test_state_dynamic_batch_forward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+
+    // 创建网络：state + input -> add -> tanh -> output
+    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let state = graph.new_state_node(&[2, 4], Some("state"))?;
+
+    // 设置初始值
+    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
+    graph.set_node_value(state, Some(&Tensor::zeros(&[2, 4])))?;
+
+    let add = graph.new_add_node(&[input, state], Some("add"))?;
+    let output = graph.new_tanh_node(add, Some("output"))?;
+
+    // 第一次 forward：batch=2
+    graph.forward(output)?;
+    let value1 = graph.get_node_value(output)?.unwrap();
+    assert_eq!(value1.shape(), &[2, 4], "第一次 forward: batch=2");
+
+    // 更新为不同的 batch 大小
+    graph.set_node_value(input, Some(&Tensor::ones(&[6, 4])))?;
+    graph.set_node_value(state, Some(&Tensor::zeros(&[6, 4])))?;
+
+    // 第二次 forward：batch=6
+    graph.forward(output)?;
+    let value2 = graph.get_node_value(output)?.unwrap();
+    assert_eq!(value2.shape(), &[6, 4], "第二次 forward: batch=6");
+
+    Ok(())
+}
+
+/// 测试 State 节点在不同 batch_size 下的反向传播
+#[test]
+fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
+    let mut graph = GraphInner::new();
+    graph.set_train_mode();
+
+    // 创建网络：input * weight + state -> output -> loss
+    // 其中 input 和 state 支持动态 batch，weight 是固定形状的 Parameter
+    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let state = graph.new_state_node(&[2, 4], Some("state"))?;
+    let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?;  // 固定形状 [4, 4]
+
+    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
+    graph.set_node_value(state, Some(&Tensor::ones(&[2, 4])))?;
+    graph.set_node_value(weight, Some(&Tensor::normal_seeded(0.0, 0.1, &[4, 4], 42)))?;
+
+    // input @ weight + state -> tanh -> output
+    let proj = graph.new_mat_mul_node(input, weight, Some("proj"))?;
+    let add = graph.new_add_node(&[proj, state], Some("add"))?;
+    let output = graph.new_tanh_node(add, Some("output"))?;
+
+    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
+    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
+
+    // 第一次训练：batch=2
+    graph.forward(loss)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    // 验证 State 有梯度
+    let state_grad1 = graph.get_node_grad(state)?;
+    assert!(state_grad1.is_some(), "State 应该有梯度");
+    assert_eq!(state_grad1.unwrap().shape(), &[2, 4]);
+
+    // 验证 weight 梯度形状
+    let weight_grad1 = graph.get_node_grad(weight)?;
+    assert!(weight_grad1.is_some(), "Weight 应该有梯度");
+    assert_eq!(weight_grad1.unwrap().shape(), &[4, 4]);
+
+    // 更新为不同的 batch 大小（只有 Input 和 State 支持动态 batch）
+    graph.set_node_value(input, Some(&Tensor::ones(&[5, 4])))?;
+    graph.set_node_value(state, Some(&Tensor::ones(&[5, 4])))?;
+    graph.set_node_value(target, Some(&Tensor::zeros(&[5, 4])))?;
+
+    // 第二次训练：batch=5
+    graph.forward(loss)?;
+    graph.zero_grad()?;
+    graph.backward(loss)?;
+
+    // 验证 State 梯度形状正确（随 batch 变化）
+    let state_grad2 = graph.get_node_grad(state)?;
+    assert!(state_grad2.is_some(), "State 应该有梯度");
+    assert_eq!(
+        state_grad2.unwrap().shape(),
+        &[5, 4],
+        "State 梯度应该适应新的 batch 大小"
+    );
+
+    // 验证 weight 梯度形状保持不变
+    let weight_grad2 = graph.get_node_grad(weight)?;
+    assert!(weight_grad2.is_some(), "Weight 应该有梯度");
+    assert_eq!(
+        weight_grad2.unwrap().shape(),
+        &[4, 4],
+        "Weight 梯度形状应保持不变（与 batch 大小无关）"
+    );
+
+    Ok(())
+}

@@ -147,6 +147,16 @@ impl Var {
             .to_vec()
     }
 
+    /// 获取节点的动态形状
+    ///
+    /// 返回支持动态维度的形状表示（如 `[?, 128]`）
+    pub fn dynamic_expected_shape(&self) -> crate::nn::shape::DynamicShape {
+        self.graph
+            .borrow()
+            .get_node_dynamic_expected_shape(self.id)
+            .expect("获取动态形状失败")
+    }
+
     /// 断言两个 Var 来自同一个 Graph，否则 panic（供 trait 使用）
     pub(crate) fn assert_same_graph(&self, other: &Self) {
         assert!(
