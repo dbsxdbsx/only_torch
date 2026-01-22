@@ -64,7 +64,9 @@ fn main() -> Result<(), GraphError> {
 
             println!(
                 "Epoch {:3}: loss = {:.4}, accuracy = {:.1}%",
-                epoch + 1, loss_val, acc
+                epoch + 1,
+                loss_val,
+                acc
             );
         }
     }

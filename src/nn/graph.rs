@@ -275,11 +275,11 @@ impl Graph {
 
     /// 创建动态零张量节点
     ///
-    /// 在每次 forward 时根据参考节点的 batch_size 生成零张量。
+    /// 在每次 forward 时根据参考节点的 `batch_size` 生成零张量。
     /// 用于 RNN/LSTM/GRU 的初始隐藏状态。
     ///
     /// # 参数
-    /// - `reference`: 参考 Var（用于获取 batch_size）
+    /// - `reference`: 参考 Var（用于获取 `batch_size`）
     /// - `feature_shape`: 输出的特征维度（不包括 batch）
     /// - `name`: 可选的节点名称
     ///
@@ -791,10 +791,10 @@ impl GraphInner {
         Ok(())
     }
 
-    /// 处理 GradientRouter 节点的梯度路由
+    /// 处理 `GradientRouter` 节点的梯度路由
     ///
-    /// 遍历所有 GradientRouter 节点，如果有梯度路由目标，
-    /// 将 GradientRouter 的梯度累加到目标节点。
+    /// 遍历所有 `GradientRouter` 节点，如果有梯度路由目标，
+    /// 将 `GradientRouter` 的梯度累加到目标节点。
     ///
     /// # 返回
     /// 接收到路由梯度的目标节点 ID 列表（用于继续反向传播）
@@ -804,15 +804,15 @@ impl GraphInner {
         // 收集需要路由的梯度信息：(target_id, gradient)
         let mut routing_info: Vec<(NodeId, Tensor)> = Vec::new();
 
-        for (_node_id, node) in &self.nodes {
+        for node in self.nodes.values() {
             if let NodeType::GradientRouter(router) = node.node_type() {
                 // 检查是否有梯度路由目标
                 if let Some(target_id) = router.gradient_target() {
                     // 检查 GradientRouter 是否有梯度（且未被 detach）
-                    if !router.is_detached() {
-                        if let Some(grad) = node.grad() {
-                            routing_info.push((target_id, grad.clone()));
-                        }
+                    if !router.is_detached()
+                        && let Some(grad) = node.grad()
+                    {
+                        routing_info.push((target_id, grad.clone()));
                     }
                 }
             }
@@ -1820,7 +1820,8 @@ impl GraphInner {
                     if group.node_ids.iter().any(|nid| nid.0 == node.id) {
                         let (shape, style, fillcolor) = Self::dot_node_style(&node.node_type);
                         let use_dynamic_batch = dynamic_batch_nodes.contains(&node.id);
-                        let label = Self::dot_node_label_html_with_dynamic_batch(node, use_dynamic_batch);
+                        let label =
+                            Self::dot_node_label_html_with_dynamic_batch(node, use_dynamic_batch);
                         dot.push_str(&format!(
                             "        \"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
                             node.id, label, shape, style, fillcolor
@@ -2045,23 +2046,26 @@ impl GraphInner {
     /// 这些节点在可视化时 batch 维度显示为 `?`，表示 batch 是动态的。
     fn find_dynamic_batch_nodes(desc: &GraphDescriptor) -> std::collections::HashSet<u64> {
         use std::collections::{HashSet, VecDeque};
-        
+
         let mut dynamic_nodes = HashSet::new();
-        
+
         // 1. 找出所有 GradientRouter 节点
-        let router_ids: Vec<u64> = desc.nodes.iter()
+        let router_ids: Vec<u64> = desc
+            .nodes
+            .iter()
             .filter(|n| matches!(n.node_type, NodeTypeDescriptor::GradientRouter))
             .map(|n| n.id)
             .collect();
-        
+
         // 2. 构建邻接表（parent -> children）
-        let mut children_map: std::collections::HashMap<u64, Vec<u64>> = std::collections::HashMap::new();
+        let mut children_map: std::collections::HashMap<u64, Vec<u64>> =
+            std::collections::HashMap::new();
         for node in &desc.nodes {
             for &parent_id in &node.parents {
                 children_map.entry(parent_id).or_default().push(node.id);
             }
         }
-        
+
         // 3. BFS 找出所有下游节点
         let mut queue: VecDeque<u64> = router_ids.iter().copied().collect();
         while let Some(node_id) = queue.pop_front() {
@@ -2074,7 +2078,7 @@ impl GraphInner {
                 }
             }
         }
-        
+
         dynamic_nodes
     }
 
@@ -2119,25 +2123,36 @@ impl GraphInner {
     /// 生成节点的 HTML 格式标签，支持动态 batch 显示
     ///
     /// # 参数
-    /// - `use_dynamic_batch`: 如果为 true，对于没有 dynamic_shape 信息的旧节点，
+    /// - `use_dynamic_batch`: 如果为 true，对于没有 `dynamic_shape` 信息的旧节点，
     ///   回退到旧的逻辑（第一维显示为 `?`）
     ///
     /// 优先级：
-    /// 1. 如果节点有 dynamic_shape 信息，直接使用它（最准确）
-    /// 2. 如果 use_dynamic_batch 为 true 且没有 dynamic_shape，使用旧的回退逻辑
+    /// 1. 如果节点有 `dynamic_shape` 信息，直接使用它（最准确）
+    /// 2. 如果 `use_dynamic_batch` 为 true 且没有 `dynamic_shape，使用旧的回退逻辑`
     /// 3. 否则使用固定形状
-    fn dot_node_label_html_with_dynamic_batch(node: &NodeDescriptor, use_dynamic_batch: bool) -> String {
+    fn dot_node_label_html_with_dynamic_batch(
+        node: &NodeDescriptor,
+        use_dynamic_batch: bool,
+    ) -> String {
         let type_name = Self::type_name(&node.node_type);
-        
+
         // 使用 NodeDescriptor 中存储的动态形状信息
         // 如果有 dynamic_shape，直接使用（不依赖 use_dynamic_batch 参数）
         let shape_str = if node.dynamic_shape.is_some() {
             node.display_shape()
         } else if use_dynamic_batch && node.output_shape.len() > 1 {
             // 回退：旧的逻辑（兼容没有 dynamic_shape 的旧 JSON）
-            let shape_parts: Vec<String> = node.output_shape.iter()
+            let shape_parts: Vec<String> = node
+                .output_shape
+                .iter()
                 .enumerate()
-                .map(|(i, &dim)| if i == 0 { "?".to_string() } else { dim.to_string() })
+                .map(|(i, &dim)| {
+                    if i == 0 {
+                        "?".to_string()
+                    } else {
+                        dim.to_string()
+                    }
+                })
                 .collect();
             format!("[{}]", shape_parts.join(", "))
         } else {
@@ -2171,17 +2186,25 @@ impl GraphInner {
     #[allow(dead_code)]
     fn dot_node_label(node: &NodeDescriptor) -> String {
         let type_name = Self::type_name(&node.node_type);
-        
+
         // 使用 NodeDescriptor 中的动态形状信息
         let shape_str = if node.dynamic_shape.is_some() {
             node.display_shape()
-        } else if matches!(node.node_type, NodeTypeDescriptor::GradientRouter) 
-            && node.output_shape.len() > 1 
+        } else if matches!(node.node_type, NodeTypeDescriptor::GradientRouter)
+            && node.output_shape.len() > 1
         {
             // 回退：兼容旧的 JSON（没有 dynamic_shape）
-            let shape_parts: Vec<String> = node.output_shape.iter()
+            let shape_parts: Vec<String> = node
+                .output_shape
+                .iter()
                 .enumerate()
-                .map(|(i, &dim)| if i == 0 { "?".to_string() } else { dim.to_string() })
+                .map(|(i, &dim)| {
+                    if i == 0 {
+                        "?".to_string()
+                    } else {
+                        dim.to_string()
+                    }
+                })
                 .collect();
             format!("[{}]", shape_parts.join(", "))
         } else {
@@ -2252,10 +2275,7 @@ impl GraphInner {
                 kernel_size: (2, 2),
                 stride: (2, 2),
             }, // TODO: 获取实际值
-            NodeType::Select(_) => NodeTypeDescriptor::Select {
-                axis: 0,
-                index: 0,
-            }, // TODO: 获取实际值
+            NodeType::Select(_) => NodeTypeDescriptor::Select { axis: 0, index: 0 }, // TODO: 获取实际值
             NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
             NodeType::ZerosLike(_) => NodeTypeDescriptor::ZerosLike,
@@ -3441,10 +3461,10 @@ impl GraphInner {
         self.add_node_to_list(node, name, "input", &[])
     }
 
-    /// 创建 GradientRouter 节点（梯度路由器）
+    /// 创建 `GradientRouter` 节点（梯度路由器）
     ///
-    /// GradientRouter 是 ModelState 内部使用的特殊节点，用于实现智能缓存：
-    /// - 像 Input 节点一样存储值（通过 set_value 设置）
+    /// `GradientRouter` 是 `ModelState` 内部使用的特殊节点，用于实现智能缓存：
+    /// - 像 Input 节点一样存储值（通过 `set_value` 设置）
     /// - 支持动态设置 detached 状态
     /// - 支持梯度路由到外部目标节点
     ///
@@ -3460,13 +3480,17 @@ impl GraphInner {
         self.add_node_to_list(node, name, "router", &[])
     }
 
-    /// 设置 GradientRouter 节点的 detached 状态
-    pub fn set_router_detached(&mut self, node_id: NodeId, detached: bool) -> Result<(), GraphError> {
+    /// 设置 `GradientRouter` 节点的 detached 状态
+    pub fn set_router_detached(
+        &mut self,
+        node_id: NodeId,
+        detached: bool,
+    ) -> Result<(), GraphError> {
         let node = self.get_node_mut(node_id)?;
         node.set_router_detached(detached)
     }
 
-    /// 设置 GradientRouter 节点的梯度路由目标
+    /// 设置 `GradientRouter` 节点的梯度路由目标
     pub fn set_gradient_target(
         &mut self,
         node_id: NodeId,
@@ -3476,7 +3500,7 @@ impl GraphInner {
         node.set_gradient_target(target)
     }
 
-    /// 获取 GradientRouter 节点的梯度路由目标
+    /// 获取 `GradientRouter` 节点的梯度路由目标
     pub fn get_gradient_target(&self, node_id: NodeId) -> Result<Option<NodeId>, GraphError> {
         let node = self.get_node(node_id)?;
         Ok(node.gradient_target())
@@ -3547,13 +3571,13 @@ impl GraphInner {
         self.add_node_to_list(node, name, "state", &[])
     }
 
-    /// 创建 ZerosLike 节点（动态零张量）
+    /// 创建 `ZerosLike` 节点（动态零张量）
     ///
-    /// ZerosLike 节点在每次 forward 时根据参考节点的 batch_size 生成零张量。
+    /// `ZerosLike` 节点在每次 forward 时根据参考节点的 `batch_size` 生成零张量。
     /// 用于 RNN/LSTM/GRU 的初始隐藏状态。
     ///
     /// # 参数
-    /// - `reference`: 参考节点 ID（用于获取 batch_size）
+    /// - `reference`: 参考节点 ID（用于获取 `batch_size`）
     /// - `feature_shape`: 输出的特征维度（不包括 batch）
     /// - `name`: 可选的节点名称
     ///

@@ -666,7 +666,9 @@ fn test_dynamic_shape_in_descriptor() {
 
     // 创建支持动态 batch 的节点
     let x = graph.new_input_node(&[32, 128], Some("input")).unwrap();
-    let w = graph.new_parameter_node(&[128, 64], Some("weight")).unwrap();
+    let w = graph
+        .new_parameter_node(&[128, 64], Some("weight"))
+        .unwrap();
     let y = graph.new_mat_mul_node(x, w, Some("output")).unwrap();
 
     // 获取描述符
@@ -678,10 +680,7 @@ fn test_dynamic_shape_in_descriptor() {
     let output_node = desc.nodes.iter().find(|n| n.name == "output").unwrap();
 
     // Input 节点应该有动态形状（第一维是 None）
-    assert!(
-        input_node.dynamic_shape.is_some(),
-        "Input 节点应有动态形状"
-    );
+    assert!(input_node.dynamic_shape.is_some(), "Input 节点应有动态形状");
     let input_dyn = input_node.dynamic_shape.as_ref().unwrap();
     assert_eq!(input_dyn[0], None, "Input 的第一维应该是动态的");
     assert_eq!(input_dyn[1], Some(128), "Input 的第二维应该是固定的");

@@ -571,8 +571,8 @@ fn test_leaky_relu_dynamic_shape_propagation() {
 /// 测试 LeakyReLU 节点在不同 batch_size 下的前向计算
 #[test]
 fn test_leaky_relu_dynamic_batch_forward() {
-    use crate::nn::var_ops::VarActivationOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarActivationOps;
 
     let graph = Graph::new();
 
@@ -600,8 +600,8 @@ fn test_leaky_relu_dynamic_batch_forward() {
 /// 测试 LeakyReLU 节点在不同 batch_size 下的反向传播
 #[test]
 fn test_leaky_relu_dynamic_batch_backward() {
-    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
     use crate::nn::Graph;
+    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
 
     let graph = Graph::new();
 

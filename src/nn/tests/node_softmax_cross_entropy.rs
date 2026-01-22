@@ -352,7 +352,7 @@ fn test_softmax_cross_entropy_dynamic_batch_backward() -> Result<(), GraphError>
     // 使用 Input 节点接收动态 batch 数据
     // 构建 y = x * w 形式，其中 w 是可训练的 Parameter
     let input = graph.new_input_node(&[2, 5], Some("input"))?;
-    let weight = graph.new_parameter_node(&[5, 3], Some("weight"))?;  // [5, 3] 权重
+    let weight = graph.new_parameter_node(&[5, 3], Some("weight"))?; // [5, 3] 权重
     let logits = graph.new_mat_mul_node(input, weight, Some("logits"))?;
     let labels = graph.new_input_node(&[2, 3], Some("labels"))?;
     let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;

@@ -178,13 +178,17 @@ fn test_model_state_var_input_no_cache() {
     let x_var = graph.input(&x_tensor).unwrap();
 
     // 使用 Var 输入
-    let output1 = state.forward(&x_var, |input| Ok(fc.forward(input))).unwrap();
+    let output1 = state
+        .forward(&x_var, |input| Ok(fc.forward(input)))
+        .unwrap();
 
     // GradientRouter 机制：所有输入都使用缓存
     assert_eq!(state.cache_size(), 1);
 
     // 再次使用相同 Var
-    let output2 = state.forward(&x_var, |input| Ok(fc.forward(input))).unwrap();
+    let output2 = state
+        .forward(&x_var, |input| Ok(fc.forward(input)))
+        .unwrap();
 
     // 相同形状 → 复用缓存 → 相同的输出节点
     assert_eq!(output1.node_id(), output2.node_id());
@@ -252,8 +256,11 @@ fn test_model_state_gan_style_training() {
     // === 训练 D ===
     // 使用 detach 后的 fake（无梯度路由）
     let fake_detached = fake.detach();
-    assert!(fake_detached.is_detached(), "detach() 返回的 Var 应该是 detached");
-    
+    assert!(
+        fake_detached.is_detached(),
+        "detach() 返回的 Var 应该是 detached"
+    );
+
     let d_out_for_d = d_state
         .forward(&fake_detached, |input| Ok(d_fc.forward(input)))
         .unwrap();
@@ -268,14 +275,17 @@ fn test_model_state_gan_style_training() {
 
     // d_fc 应该有梯度
     // g_w 不应该有梯度（fake 被 detach，GradientRouter 无梯度路由）
-    assert!(g_w.grad().unwrap().is_none(), "g_w 不应有梯度（fake 被 detach）");
+    assert!(
+        g_w.grad().unwrap().is_none(),
+        "g_w 不应有梯度（fake 被 detach）"
+    );
 
     // === 训练 G ===
     graph.zero_grad().unwrap();
 
     // 使用未 detach 的 fake（有梯度路由）
     assert!(!fake.is_detached(), "原始 fake 不应该是 detached");
-    
+
     let d_out_for_g = d_state
         .forward(&fake, |input| Ok(d_fc.forward(input)))
         .unwrap();
@@ -306,7 +316,9 @@ fn test_model_state_var_input_value_passthrough() {
     let x_var = graph.input(&x_tensor).unwrap();
 
     // 使用 Var 输入（GradientRouter 会复制值）
-    let output = state.forward(&x_var, |input| Ok(fc.forward(input))).unwrap();
+    let output = state
+        .forward(&x_var, |input| Ok(fc.forward(input)))
+        .unwrap();
 
     // 验证输出值存在且形状正确
     let output_val = output.value().unwrap().unwrap();
@@ -354,7 +366,11 @@ fn test_model_state_detached_var_uses_cache() {
         .unwrap();
 
     // 应该是同一个节点（复用缓存）
-    assert_eq!(output1.node_id(), output2.node_id(), "detached Var 应复用缓存");
+    assert_eq!(
+        output1.node_id(),
+        output2.node_id(),
+        "detached Var 应复用缓存"
+    );
     assert_eq!(state.cache_size(), 1);
 }
 
@@ -374,13 +390,17 @@ fn test_model_state_non_detached_var_no_cache() {
     assert!(!x_var.is_detached());
 
     // 使用非 detached Var 输入
-    let output1 = state.forward(&x_var, |input| Ok(fc.forward(input))).unwrap();
+    let output1 = state
+        .forward(&x_var, |input| Ok(fc.forward(input)))
+        .unwrap();
 
     // GradientRouter 机制：所有输入都使用缓存
     assert_eq!(state.cache_size(), 1);
 
     // 再次使用相同 Var
-    let output2 = state.forward(&x_var, |input| Ok(fc.forward(input))).unwrap();
+    let output2 = state
+        .forward(&x_var, |input| Ok(fc.forward(input)))
+        .unwrap();
 
     // 相同形状 → 复用缓存 → 相同的输出节点
     assert_eq!(output1.node_id(), output2.node_id());
@@ -391,7 +411,7 @@ fn test_model_state_non_detached_var_no_cache() {
 #[test]
 fn test_model_state_detached_var_value_copy() {
     let graph = Graph::new_with_seed(42);
-    
+
     // 使用简单 FC 层验证值传递（不能用 identity，因为 Input 节点不能被 forward）
     let fc = Linear::new(&graph, 2, 2, false, "fc").unwrap(); // 无 bias，简化验证
     let state = ModelState::new(&graph);
@@ -400,12 +420,12 @@ fn test_model_state_detached_var_value_copy() {
     let x1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
     let var1 = graph.input(&x1).unwrap();
     let detached1 = var1.detach();
-    
+
     let output1 = state
         .forward(&detached1, |input| Ok(fc.forward(input)))
         .unwrap();
     let val1 = output1.value().unwrap().unwrap();
-    
+
     // 验证形状正确
     assert_eq!(val1.shape(), &[1, 2]);
     let val1_00 = val1[[0, 0]];
@@ -415,20 +435,20 @@ fn test_model_state_detached_var_value_copy() {
     let x2 = Tensor::new(&[5.0, 6.0], &[1, 2]);
     let var2 = graph.input(&x2).unwrap();
     let detached2 = var2.detach();
-    
+
     let output2 = state
         .forward(&detached2, |input| Ok(fc.forward(input)))
         .unwrap();
-    
+
     // 应该是同一个节点（缓存复用）
     assert_eq!(output1.node_id(), output2.node_id());
-    
+
     // 验证值已更新（不同于第一次）
     let val2 = output2.value().unwrap().unwrap();
     assert_eq!(val2.shape(), &[1, 2]);
     let val2_00 = val2[[0, 0]];
     let val2_01 = val2[[0, 1]];
-    
+
     // 由于输入不同，输出也应该不同
     assert!((val2_00 - val1_00).abs() > 1e-6 || (val2_01 - val1_01).abs() > 1e-6);
 }
@@ -461,7 +481,8 @@ fn test_model_state_gan_multi_batch_efficiency() {
     // 关键验证：5 批次后，缓存仍然只有 1 个条目
     // （detached Var 复用缓存，而非每批次创建新路径）
     assert_eq!(
-        d_state.cache_size(), 1,
+        d_state.cache_size(),
+        1,
         "多批次 GAN 训练应复用缓存，不应膨胀"
     );
 }

@@ -5,10 +5,10 @@
  *                 实现 C = A / B（element-wise division）
  */
 
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
 /// Divide 节点：逐元素除法
@@ -148,8 +148,7 @@ impl TraitNode for Divide {
             .value()
             .ok_or_else(|| {
                 GraphError::ComputationError(format!(
-                    "Divide 梯度计算时父节点 {} 没有值",
-                    target_parent
+                    "Divide 梯度计算时父节点 {target_parent} 没有值"
                 ))
             })?
             .shape();

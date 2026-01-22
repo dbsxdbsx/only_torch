@@ -3,7 +3,7 @@
 //! 展示 MSE 损失在真实数据集上的回归任务：
 //! - 使用 California Housing 数据集
 //! - 使用 Linear 层 + Softplus 激活
-//! - 使用 `MseLoss`（PyTorch 风格）
+//! - 使用 `MseLoss`（`PyTorch` 风格）
 //! - 使用 `DataLoader` 批处理
 //!
 //! ## 运行
@@ -151,7 +151,7 @@ fn main() -> Result<(), GraphError> {
     }
 }
 
-/// 将 CaliforniaHousingDataset 转换为 (Tensor, Tensor)
+/// 将 `CaliforniaHousingDataset` 转换为 (Tensor, Tensor)
 fn to_tensor_dataset(data: &CaliforniaHousingDataset) -> (Tensor, Tensor) {
     let n = data.len();
     let mut x_data = Vec::with_capacity(n * 8);

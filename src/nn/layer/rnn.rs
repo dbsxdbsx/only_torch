@@ -36,7 +36,7 @@ use crate::nn::{Graph, GraphError, Init, Module, Var};
 ///
 /// # 动态 Batch 支持
 /// 初始隐藏状态使用 Input 节点（支持动态 batch），
-/// 允许同一个 RNN 层处理不同 batch_size 的输入。
+/// 允许同一个 RNN 层处理不同 `batch_size` 的输入。
 ///
 /// # 使用示例
 /// ```ignore
@@ -135,15 +135,14 @@ impl Rnn {
     /// ```
     pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
         // 使用实际值的形状（支持动态 batch）
-        let value = x.value()?.ok_or_else(|| {
-            GraphError::ComputationError("Rnn.forward 需要输入有值".to_string())
-        })?;
+        let value = x
+            .value()?
+            .ok_or_else(|| GraphError::ComputationError("Rnn.forward 需要输入有值".to_string()))?;
         let shape = value.shape();
-        
+
         if shape.len() != 3 {
             return Err(GraphError::InvalidOperation(format!(
-                "Rnn.forward 需要 3D 输入 [batch, seq_len, input], 实际: {:?}",
-                shape
+                "Rnn.forward 需要 3D 输入 [batch, seq_len, input], 实际: {shape:?}"
             )));
         }
 

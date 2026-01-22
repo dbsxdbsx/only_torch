@@ -5,10 +5,10 @@
  *                 实现沿最后一维的 softmax: softmax(x)_i = exp(x_i) / Σ exp(x_j)
  */
 
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
 
@@ -28,7 +28,7 @@ pub(crate) struct Softmax {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    /// 固定形状（用于 value_expected_shape）
+    /// 固定形状（用于 `value_expected_shape`）
     fixed_shape: Vec<usize>,
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,

@@ -5,10 +5,10 @@
  *                 参考 MatrixSlow/matrixslow/ops/ops.py 中的 Reshape 类
  */
 
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
 /// Reshape 节点 - 改变父节点值的形状
@@ -159,17 +159,17 @@ impl TraitNode for Reshape {
         // 2. 动态计算目标形状（支持动态 batch）
         // 如果 batch 大小变化，按比例调整目标形状的第一维
         let actual_batch = parent_value.shape()[0];
-        let runtime_target_shape = if self.supports_dynamic && actual_batch != self.original_batch_size
-        {
-            // 按比例调整第一维
-            // 原始：[orig_batch, ...] -> [target[0], ...]
-            // 现在：[actual_batch, ...] -> [target[0] * actual_batch / orig_batch, ...]
-            let mut new_shape = self.target_shape.clone();
-            new_shape[0] = self.target_shape[0] * actual_batch / self.original_batch_size;
-            new_shape
-        } else {
-            self.target_shape.clone()
-        };
+        let runtime_target_shape =
+            if self.supports_dynamic && actual_batch != self.original_batch_size {
+                // 按比例调整第一维
+                // 原始：[orig_batch, ...] -> [target[0], ...]
+                // 现在：[actual_batch, ...] -> [target[0] * actual_batch / orig_batch, ...]
+                let mut new_shape = self.target_shape.clone();
+                new_shape[0] = self.target_shape[0] * actual_batch / self.original_batch_size;
+                new_shape
+            } else {
+                self.target_shape.clone()
+            };
 
         // 3. Reshape 到运行时目标形状
         self.value = Some(parent_value.reshape(&runtime_target_shape));

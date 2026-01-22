@@ -1,6 +1,6 @@
 //! XOR 模型定义
 //!
-//! 使用 Linear 层 + ModelState 的 PyTorch 风格实现。
+//! 使用 Linear 层 + `ModelState` 的 `PyTorch` 风格实现。
 //!
 //! ## 网络结构
 //! ```text
@@ -26,7 +26,7 @@ impl XorMLP {
         })
     }
 
-    /// PyTorch 风格 forward：直接接收 Tensor
+    /// `PyTorch` 风格 forward：直接接收 Tensor
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
         self.state.forward(x, |input| {
             Ok(self.fc2.forward(&self.fc1.forward(input).tanh()))

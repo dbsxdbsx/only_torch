@@ -3,7 +3,7 @@
 //! 验证展开式 RNN + 自动 BPTT 在序列任务上的能力。
 //!
 //! ## 数据格式
-//! - 输入：`[batch, seq_len, input_size]`（batch_first=True）
+//! - 输入：`[batch, seq_len, input_size]`（`batch_first=True`）
 //! - 标签：`[batch, 2]`（one-hot：偶数=[1,0]，奇数=[0,1]）
 //!
 //! ## 运行方式
@@ -11,7 +11,7 @@
 //! cargo run --example parity_rnn_fixed_len
 //! ```
 //!
-//! ## PyTorch 对照实现
+//! ## `PyTorch` 对照实现
 //! 参见 `tests/parity_rnn_fixed_len_pytorch.py`
 
 mod model;
@@ -55,20 +55,14 @@ fn main() -> Result<(), GraphError> {
     let test_dataset = TensorDataset::new(test_x, test_y.clone());
     let test_loader = DataLoader::new(test_dataset, batch_size).drop_last(true);
 
-    println!(
-        "数据集: 训练 {} 样本, 测试 {} 样本",
-        train_samples, test_samples
-    );
+    println!("数据集: 训练 {train_samples} 样本, 测试 {test_samples} 样本");
 
     let train_odd = (0..train_samples)
         .filter(|&i| train_y[[i, 1]] > 0.5)
         .count();
-    let test_odd = (0..test_samples)
-        .filter(|&i| test_y[[i, 1]] > 0.5)
-        .count();
+    let test_odd = (0..test_samples).filter(|&i| test_y[[i, 1]] > 0.5).count();
     println!(
-        "标签分布: 训练 {}/{} 奇数, 测试 {}/{} 奇数\n",
-        train_odd, train_samples, test_odd, test_samples
+        "标签分布: 训练 {train_odd}/{train_samples} 奇数, 测试 {test_odd}/{test_samples} 奇数\n"
     );
 
     // ========== 模型构建（PyTorch 风格！）==========
@@ -118,7 +112,10 @@ fn main() -> Result<(), GraphError> {
 
             println!(
                 "Epoch {:3}/{}: loss={:.4}, test_acc={:.1}%",
-                epoch + 1, max_epochs, avg_loss, accuracy
+                epoch + 1,
+                max_epochs,
+                avg_loss,
+                accuracy
             );
 
             if accuracy >= target_accuracy {
@@ -131,16 +128,15 @@ fn main() -> Result<(), GraphError> {
     // ========== 最终评估 ==========
     let final_accuracy = evaluate(&model, &graph, &test_loader)?;
     println!("\n========== 最终结果 ==========");
-    println!("测试准确率: {:.1}%", final_accuracy);
-    println!("最佳准确率: {:.1}%", best_accuracy);
+    println!("测试准确率: {final_accuracy:.1}%");
+    println!("最佳准确率: {best_accuracy:.1}%");
 
     if final_accuracy >= target_accuracy {
         println!("✅ 奇偶性检测任务成功！");
         Ok(())
     } else {
         Err(GraphError::ComputationError(format!(
-            "准确率 {:.1}% 未达到目标 {target_accuracy}%",
-            final_accuracy
+            "准确率 {final_accuracy:.1}% 未达到目标 {target_accuracy}%"
         )))
     }
 }

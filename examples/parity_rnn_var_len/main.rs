@@ -2,10 +2,10 @@
 //!
 //! 验证智能缓存在变长序列任务上的能力。
 //!
-//! ## 与 fixed_len 的区别
-//! - 序列长度在 [min_len, max_len] 范围内随机变化
-//! - 使用 BucketedDataLoader 自动分桶
-//! - 模型和 Criterion 使用智能缓存，代码风格与 fixed_len 完全一致
+//! ## 与 `fixed_len` 的区别
+//! - 序列长度在 [`min_len`, `max_len`] 范围内随机变化
+//! - 使用 `BucketedDataLoader` 自动分桶
+//! - 模型和 Criterion 使用智能缓存，代码风格与 `fixed_len` 完全一致
 //!
 //! ## 运行方式
 //! ```bash
@@ -44,7 +44,9 @@ fn main() -> Result<(), GraphError> {
     let train_dataset = generate_var_len_dataset(train_samples, min_len, max_len, seed);
     let test_dataset = generate_var_len_dataset(test_samples, min_len, max_len, seed + 1000);
 
-    let train_loader = BucketedDataLoader::new(&train_dataset).shuffle(true).seed(seed);
+    let train_loader = BucketedDataLoader::new(&train_dataset)
+        .shuffle(true)
+        .seed(seed);
     let test_loader = BucketedDataLoader::new(&test_dataset);
 
     println!(
@@ -66,8 +68,7 @@ fn main() -> Result<(), GraphError> {
         .filter(|s| s.label[1] > 0.5)
         .count();
     println!(
-        "标签分布: 训练 {}/{} 奇数, 测试 {}/{} 奇数\n",
-        train_odd, train_samples, test_odd, test_samples
+        "标签分布: 训练 {train_odd}/{train_samples} 奇数, 测试 {test_odd}/{test_samples} 奇数\n"
     );
 
     // ========== 模型构建（与 fixed_len 完全相同！）==========
@@ -111,7 +112,10 @@ fn main() -> Result<(), GraphError> {
 
             println!(
                 "Epoch {:3}/{}: loss={:.4}, test_acc={:.1}%",
-                epoch + 1, max_epochs, avg_loss, accuracy
+                epoch + 1,
+                max_epochs,
+                avg_loss,
+                accuracy
             );
 
             if accuracy >= target_accuracy {
@@ -124,8 +128,8 @@ fn main() -> Result<(), GraphError> {
     // ========== 最终评估 ==========
     let final_accuracy = evaluate(&model, &test_loader)?;
     println!("\n========== 最终结果 ==========");
-    println!("测试准确率: {:.1}%", final_accuracy);
-    println!("最佳准确率: {:.1}%", best_accuracy);
+    println!("测试准确率: {final_accuracy:.1}%");
+    println!("最佳准确率: {best_accuracy:.1}%");
     println!("模型缓存形状数: {}", model.cache_size());
     println!("Criterion 缓存数: {}", criterion.cache_size());
 
@@ -134,8 +138,7 @@ fn main() -> Result<(), GraphError> {
         Ok(())
     } else {
         Err(GraphError::ComputationError(format!(
-            "准确率 {:.1}% 未达到目标 {target_accuracy}%",
-            final_accuracy
+            "准确率 {final_accuracy:.1}% 未达到目标 {target_accuracy}%"
         )))
     }
 }

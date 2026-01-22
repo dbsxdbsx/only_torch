@@ -66,7 +66,9 @@ fn test_softmax_requires_2d_input() {
     assert!(result.is_err());
 
     // 4D 输入应该失败
-    let input_4d = graph.new_input_node(&[2, 3, 4, 5], Some("input_4d")).unwrap();
+    let input_4d = graph
+        .new_input_node(&[2, 3, 4, 5], Some("input_4d"))
+        .unwrap();
     let result = graph.new_softmax_node(input_4d, Some("softmax_4d"));
     assert!(result.is_err());
 }
@@ -412,8 +414,14 @@ fn test_softmax_gradient_accumulation() -> Result<(), GraphError> {
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值
-    graph.set_node_value(input, Some(&Tensor::new(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0], &[2, 3])))?;
-    graph.set_node_value(target, Some(&Tensor::new(&[0.0, 0.0, 1.0, 1.0, 0.0, 0.0], &[2, 3])))?;
+    graph.set_node_value(
+        input,
+        Some(&Tensor::new(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0], &[2, 3])),
+    )?;
+    graph.set_node_value(
+        target,
+        Some(&Tensor::new(&[0.0, 0.0, 1.0, 1.0, 0.0, 0.0], &[2, 3])),
+    )?;
     graph.forward(loss)?;
 
     // 第 1 次反向传播
@@ -442,8 +450,8 @@ fn test_softmax_gradient_accumulation() -> Result<(), GraphError> {
 /// 测试 Softmax 节点的动态形状传播
 #[test]
 fn test_softmax_dynamic_shape_propagation() {
-    use crate::nn::var_ops::VarActivationOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarActivationOps;
 
     let graph = Graph::new();
 
@@ -464,8 +472,8 @@ fn test_softmax_dynamic_shape_propagation() {
 /// 测试 Softmax 节点在不同 batch_size 下的前向计算
 #[test]
 fn test_softmax_dynamic_batch_forward() {
-    use crate::nn::var_ops::VarActivationOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarActivationOps;
 
     let graph = Graph::new();
 
@@ -501,8 +509,8 @@ fn test_softmax_dynamic_batch_forward() {
 /// 测试 Softmax 节点在不同 batch_size 下的反向传播
 #[test]
 fn test_softmax_dynamic_batch_backward() {
-    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
     use crate::nn::Graph;
+    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
 
     let graph = Graph::new();
 

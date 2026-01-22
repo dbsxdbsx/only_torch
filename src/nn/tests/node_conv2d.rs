@@ -598,7 +598,10 @@ fn test_conv2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let loss = graph.new_mse_loss_node(flat, target, Some("loss"))?;
 
     // 设置初始值
-    graph.set_node_value(input, Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 5, 5], 42)))?;
+    graph.set_node_value(
+        input,
+        Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 5, 5], 42)),
+    )?;
     graph.set_node_value(kernel, Some(&Tensor::ones(&[2, 1, 3, 3])))?;
     graph.set_node_value(target, Some(&Tensor::zeros(&[2, 18])))?;
 
@@ -610,7 +613,10 @@ fn test_conv2d_dynamic_batch_backward() -> Result<(), GraphError> {
     graph.backward(loss)?;
 
     // 更新输入为不同的 batch_size
-    graph.set_node_value(input, Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 5, 5], 100)))?;
+    graph.set_node_value(
+        input,
+        Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 5, 5], 100)),
+    )?;
     graph.set_node_value(target, Some(&Tensor::zeros(&[4, 18])))?;
 
     // 第二次训练：batch=4

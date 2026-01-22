@@ -882,7 +882,7 @@ impl Tensor {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓argmax/argmin↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 沿指定轴返回最大值的索引
     ///
-    /// 类似 PyTorch 的 `tensor.argmax(dim=axis)`。
+    /// 类似 `PyTorch` 的 `tensor.argmax(dim=axis)`。
     ///
     /// # 参数
     /// - `axis`: 沿哪个轴查找最大值的索引
@@ -938,7 +938,7 @@ impl Tensor {
 
     /// 沿指定轴返回最小值的索引
     ///
-    /// 类似 PyTorch 的 `tensor.argmin(dim=axis)`。
+    /// 类似 `PyTorch` 的 `tensor.argmin(dim=axis)`。
     ///
     /// # 参数
     /// - `axis`: 沿哪个轴查找最小值的索引

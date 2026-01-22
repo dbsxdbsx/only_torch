@@ -1,9 +1,9 @@
 //! # XOR 异或问题示例
 //!
-//! 展示 `only_torch` 的 **PyTorch 风格** API：
+//! 展示 `only_torch` 的 **`PyTorch` 风格** API：
 //! - `model.forward(&tensor)` - 直接传入 Tensor
-//! - `criterion.forward(&output, &target)` - PyTorch 风格损失计算
-//! - 训练循环与 PyTorch 几乎一致
+//! - `criterion.forward(&output, &target)` - `PyTorch` 风格损失计算
+//! - 训练循环与 `PyTorch` 几乎一致
 //!
 //! ## 运行
 //! ```bash

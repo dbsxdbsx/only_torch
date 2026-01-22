@@ -5,8 +5,8 @@
  * 用于 RNN/LSTM/GRU 的初始隐藏状态。
  */
 
-use crate::nn::var_ops::VarMatrixOps;
 use crate::nn::Graph;
+use crate::nn::var_ops::VarMatrixOps;
 use crate::tensor::Tensor;
 
 /// 测试 ZerosLike 基本功能

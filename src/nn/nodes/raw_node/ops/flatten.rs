@@ -5,10 +5,10 @@
  *                 这是 Reshape 的便捷封装，常用于 CNN 与全连接层之间的转换
  */
 
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
 /// Flatten 节点 - 展平张量

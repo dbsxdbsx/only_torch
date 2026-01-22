@@ -1,7 +1,7 @@
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
 #[derive(Clone)]
@@ -10,7 +10,7 @@ pub(crate) struct MatMul {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    /// 固定形状（用于 value_expected_shape）
+    /// 固定形状（用于 `value_expected_shape`）
     fixed_shape: Vec<usize>,
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
@@ -48,8 +48,7 @@ impl MatMul {
                 expected: vec![parent1_fixed[0], parent2_fixed[1]],
                 got: vec![parent1_cols, parent2_rows],
                 message: format!(
-                    "MatMul节点的2个父节点形状不兼容：父节点1的列数({})与父节点2的行数({})不相等。",
-                    parent1_cols, parent2_rows,
+                    "MatMul节点的2个父节点形状不兼容：父节点1的列数({parent1_cols})与父节点2的行数({parent2_rows})不相等。",
                 ),
             });
         }

@@ -172,7 +172,7 @@ impl Var {
     /// 返回一个新的 Var，它是当前节点的 Identity 副本，但梯度流被阻断。
     /// 原节点**不受影响**。
     ///
-    /// # 语义（与 PyTorch 一致）
+    /// # 语义（与 `PyTorch` 一致）
     /// - 返回的 Var 与原 Var 共享前向计算的值
     /// - 但反向传播时，梯度不会通过返回的 Var 传递到原 Var
     ///
@@ -196,7 +196,7 @@ impl Var {
     /// - 用于 GAN 训练等需要梯度截断的场景
     ///
     /// # 与 `detach_node()` 的区别
-    /// - `detach()` → 返回 `DetachedVar`（轻量级，推荐用于 ModelState）
+    /// - `detach()` → 返回 `DetachedVar`（轻量级，推荐用于 `ModelState`）
     /// - `detach_node()` → 返回 `Var`（创建 Identity 节点，用于直接图操作）
     ///
     /// # 示例
@@ -206,7 +206,9 @@ impl Var {
     /// let d_fake = D.forward(&fake.detach())?;  // DetachedVar，无图节点创建
     /// ```
     pub fn detach(&self) -> DetachedVar {
-        DetachedVar { inner: self.clone() }
+        DetachedVar {
+            inner: self.clone(),
+        }
     }
 
     /// 创建一个 detached 节点（创建 Identity 节点）
@@ -219,7 +221,7 @@ impl Var {
     /// - 需要对 detached 结果进行进一步的图操作
     ///
     /// # 注意
-    /// 对于 ModelState 场景，推荐使用 `detach()` 方法（更高效）。
+    /// 对于 `ModelState` 场景，推荐使用 `detach()` 方法（更高效）。
     ///
     /// # 示例
     /// ```ignore
@@ -244,7 +246,7 @@ impl Var {
     /// detached 节点在反向传播时不会传递梯度给其父节点。
     ///
     /// # 用途
-    /// - ModelState 使用此方法判断 Var 输入是否可以缓存
+    /// - `ModelState` 使用此方法判断 Var 输入是否可以缓存
     /// - detached Var 只需要值，不需要梯度流，因此可以像 Tensor 一样缓存
     pub fn is_detached(&self) -> bool {
         self.graph
@@ -559,7 +561,7 @@ pub struct DetachedVar {
 
 impl DetachedVar {
     /// 获取内部 Var 的引用
-    pub fn inner(&self) -> &Var {
+    pub const fn inner(&self) -> &Var {
         &self.inner
     }
 
@@ -578,7 +580,7 @@ impl DetachedVar {
         self.inner.forward()
     }
 
-    /// 始终返回 true（这是 DetachedVar 的核心特性）
+    /// 始终返回 true（这是 `DetachedVar` 的核心特性）
     pub const fn is_detached(&self) -> bool {
         true
     }

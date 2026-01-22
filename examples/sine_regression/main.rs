@@ -3,7 +3,7 @@
 //! 展示 MSE 损失在回归任务上的使用：
 //! - 拟合 y = sin(x)
 //! - 使用 Linear 层 + Tanh 激活
-//! - 使用 `MseLoss`（PyTorch 风格）
+//! - 使用 `MseLoss`（`PyTorch` 风格）
 //!
 //! ## 运行
 //! ```bash

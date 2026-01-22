@@ -763,7 +763,9 @@ fn test_add_dynamic_shape_propagation() {
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
 
     // 创建一个固定形状的参数
-    let bias = graph.parameter(&[1, 16], crate::nn::Init::Zeros, "bias").unwrap();
+    let bias = graph
+        .parameter(&[1, 16], crate::nn::Init::Zeros, "bias")
+        .unwrap();
 
     // Add: h0 + bias
     let result = &h0 + &bias;
@@ -785,7 +787,9 @@ fn test_add_dynamic_batch_forward() {
     // 创建支持动态 batch 的节点
     let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
-    let bias = graph.parameter(&[1, 16], crate::nn::Init::Ones, "bias").unwrap();
+    let bias = graph
+        .parameter(&[1, 16], crate::nn::Init::Ones, "bias")
+        .unwrap();
 
     // Add: h0 + bias
     let result = &h0 + &bias;
@@ -807,15 +811,17 @@ fn test_add_dynamic_batch_forward() {
 /// 测试 Add 节点在不同 batch_size 下的反向传播
 #[test]
 fn test_add_dynamic_batch_backward() {
-    use crate::nn::var_ops::VarLossOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarLossOps;
 
     let graph = Graph::new();
 
     // 创建支持动态 batch 的节点
     let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[4], None).unwrap(); // [?, 4]
-    let bias = graph.parameter(&[1, 4], crate::nn::Init::Ones, "bias").unwrap();
+    let bias = graph
+        .parameter(&[1, 4], crate::nn::Init::Ones, "bias")
+        .unwrap();
 
     // Add: h0 + bias
     let result = &h0 + &bias;

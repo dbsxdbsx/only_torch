@@ -152,7 +152,7 @@ impl NodeHandle {
         })
     }
 
-    /// 创建 ZerosLike 节点（动态零张量，用于 RNN 初始隐藏状态）
+    /// 创建 `ZerosLike` 节点（动态零张量，用于 RNN 初始隐藏状态）
     pub(in crate::nn) fn new_zeros_like(feature_shape: &[usize]) -> Self {
         let zeros_like = ZerosLike::new(feature_shape);
         Self {
@@ -263,9 +263,9 @@ impl NodeHandle {
         Self::new(Identity::new(parents)?)
     }
 
-    /// 创建 GradientRouter 节点（梯度路由器）
+    /// 创建 `GradientRouter` 节点（梯度路由器）
     ///
-    /// GradientRouter 用于 ModelState 的智能缓存机制，支持：
+    /// `GradientRouter` 用于 `ModelState` 的智能缓存机制，支持：
     /// - 动态设置 detached 状态
     /// - 梯度路由到外部目标节点
     pub(in crate::nn) fn new_gradient_router(shape: &[usize]) -> Result<Self, GraphError> {
@@ -277,7 +277,7 @@ impl NodeHandle {
         })
     }
 
-    /// 设置 GradientRouter 的 detached 状态
+    /// 设置 `GradientRouter` 的 detached 状态
     ///
     /// # 返回
     /// 如果节点不是 GradientRouter，返回错误
@@ -293,7 +293,7 @@ impl NodeHandle {
         }
     }
 
-    /// 设置 GradientRouter 的梯度路由目标
+    /// 设置 `GradientRouter` 的梯度路由目标
     ///
     /// # 返回
     /// 如果节点不是 GradientRouter，返回错误
@@ -312,7 +312,7 @@ impl NodeHandle {
         }
     }
 
-    /// 获取 GradientRouter 的梯度路由目标
+    /// 获取 `GradientRouter` 的梯度路由目标
     pub(in crate::nn) fn gradient_target(&self) -> Option<NodeId> {
         if let NodeType::GradientRouter(router) = &self.raw_node {
             router.gradient_target()
@@ -439,8 +439,8 @@ impl NodeHandle {
     /// 若返回 true，反向传播时不会向该节点的父节点传播梯度
     /// 检查节点是否处于 detached 状态
     ///
-    /// 对于 GradientRouter 节点，使用其内部动态标志；
-    /// 对于其他节点，使用 NodeHandle 的静态标志。
+    /// 对于 `GradientRouter` 节点，使用其内部动态标志；
+    /// 对于其他节点，使用 `NodeHandle` 的静态标志。
     pub(in crate::nn) fn is_detached(&self) -> bool {
         // GradientRouter 有自己的动态 detached 标志
         if let NodeType::GradientRouter(router) = &self.raw_node {
@@ -454,8 +454,8 @@ impl NodeHandle {
     /// - `true`: 截断该节点的梯度流，反向传播时不向父节点传播
     /// - `false`: 正常传播梯度（默认状态）
     ///
-    /// 注意：对于 GradientRouter 节点，应使用 `set_router_detached()` 方法。
-    pub(in crate::nn) fn set_detached(&mut self, detached: bool) {
+    /// 注意：对于 `GradientRouter` 节点，应使用 `set_router_detached()` 方法。
+    pub(in crate::nn) const fn set_detached(&mut self, detached: bool) {
         self.is_detached = detached;
     }
 }

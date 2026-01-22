@@ -8,7 +8,7 @@ use super::{NodeHandle, TraitNode};
 ///
 /// # 动态 Batch 支持
 /// Input 节点支持动态 batch：第一维可以是任意值。
-/// 这使得同一个计算图可以处理不同 batch_size 的输入。
+/// 这使得同一个计算图可以处理不同 `batch_size` 的输入。
 #[derive(Clone)]
 pub(crate) struct Input {
     id: Option<NodeId>,
@@ -55,21 +55,18 @@ impl Input {
     ///
     /// # 参数
     /// - `feature_shape`: 特征维度形状（不包括 batch）
-    /// - `initial_batch`: 初始 batch_size（用于固定形状）
+    /// - `initial_batch`: 初始 `batch_size（用于固定形状`）
     #[allow(dead_code)]
     pub(crate) fn with_dynamic_batch(
         feature_shape: &[usize],
         initial_batch: usize,
     ) -> Result<Self, GraphError> {
         let ndim = feature_shape.len() + 1;
-        if ndim < 2 || ndim > 4 {
+        if !(2..=4).contains(&ndim) {
             return Err(GraphError::DimensionMismatch {
                 expected: 2,
                 got: ndim,
-                message: format!(
-                    "节点张量必须是 2-4 维，但收到的维度是 {} 维。",
-                    ndim,
-                ),
+                message: format!("节点张量必须是 2-4 维，但收到的维度是 {ndim} 维。",),
             });
         }
 

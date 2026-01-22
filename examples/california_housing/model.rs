@@ -21,7 +21,7 @@ impl CaliforniaHousingMLP {
     /// 创建模型
     ///
     /// # 参数
-    /// - `graph`: 计算图（使用 Graph::new_with_seed 确保可复现）
+    /// - `graph`: 计算图（使用 `Graph::new_with_seed` 确保可复现）
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
         Ok(Self {
             fc1: Linear::new(graph, 8, 128, true, "fc1")?,
@@ -32,7 +32,7 @@ impl CaliforniaHousingMLP {
         })
     }
 
-    /// PyTorch 风格 forward：直接接收 Tensor
+    /// `PyTorch` 风格 forward：直接接收 Tensor
     ///
     /// # 参数
     /// - `x`: 输入特征，形状 `[batch, 8]`

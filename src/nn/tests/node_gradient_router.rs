@@ -27,7 +27,10 @@ fn test_gradient_router_basic() {
 
     // 设置值
     let value = Tensor::ones(&[2, 3]);
-    graph.inner_mut().set_node_value(router_id, Some(&value)).unwrap();
+    graph
+        .inner_mut()
+        .set_node_value(router_id, Some(&value))
+        .unwrap();
 
     // 读取值
     let inner = graph.inner();
@@ -49,11 +52,17 @@ fn test_gradient_router_dynamic_detached() {
     assert!(!graph.inner().is_node_detached(router_id).unwrap());
 
     // 设置为 detached
-    graph.inner_mut().set_router_detached(router_id, true).unwrap();
+    graph
+        .inner_mut()
+        .set_router_detached(router_id, true)
+        .unwrap();
     assert!(graph.inner().is_node_detached(router_id).unwrap());
 
     // 切换回非 detached
-    graph.inner_mut().set_router_detached(router_id, false).unwrap();
+    graph
+        .inner_mut()
+        .set_router_detached(router_id, false)
+        .unwrap();
     assert!(!graph.inner().is_node_detached(router_id).unwrap());
 }
 
@@ -73,7 +82,13 @@ fn test_gradient_router_gradient_target() {
         .unwrap();
 
     // 默认无路由目标
-    assert!(graph.inner().get_gradient_target(router_id).unwrap().is_none());
+    assert!(
+        graph
+            .inner()
+            .get_gradient_target(router_id)
+            .unwrap()
+            .is_none()
+    );
 
     // 设置路由目标
     graph
@@ -86,8 +101,17 @@ fn test_gradient_router_gradient_target() {
     );
 
     // 清除路由目标
-    graph.inner_mut().set_gradient_target(router_id, None).unwrap();
-    assert!(graph.inner().get_gradient_target(router_id).unwrap().is_none());
+    graph
+        .inner_mut()
+        .set_gradient_target(router_id, None)
+        .unwrap();
+    assert!(
+        graph
+            .inner()
+            .get_gradient_target(router_id)
+            .unwrap()
+            .is_none()
+    );
 }
 
 /// 测试: GradientRouter 梯度路由功能（核心测试）
@@ -176,7 +200,10 @@ fn test_gradient_router_detached_no_routing() {
         .inner_mut()
         .set_gradient_target(router_id, Some(fake.node_id()))
         .unwrap();
-    graph.inner_mut().set_router_detached(router_id, true).unwrap();
+    graph
+        .inner_mut()
+        .set_router_detached(router_id, true)
+        .unwrap();
 
     // 构建 D 的计算
     let d_out = router.matmul(&d_w).unwrap();
@@ -212,7 +239,10 @@ fn test_gradient_router_visualization() {
 
     // 验证 GradientRouter 使用特殊样式（虚线边框）
     assert!(dot.contains("dashed"), "GradientRouter 应使用虚线样式");
-    assert!(dot.contains("GradientRouter"), "DOT 应包含 GradientRouter 类型");
+    assert!(
+        dot.contains("GradientRouter"),
+        "DOT 应包含 GradientRouter 类型"
+    );
 }
 
 /// 测试: GradientRouter 支持动态 batch（类似 Keras）
@@ -230,15 +260,24 @@ fn test_gradient_router_dynamic_batch() {
 
     // 设置初始值 [4, 3]
     let value1 = Tensor::ones(&[4, 3]);
-    graph.inner_mut().set_node_value(router_id, Some(&value1)).unwrap();
+    graph
+        .inner_mut()
+        .set_node_value(router_id, Some(&value1))
+        .unwrap();
 
     // 设置不同 batch 的值 [2, 3]（应该成功）
     let value2 = Tensor::ones(&[2, 3]);
-    graph.inner_mut().set_node_value(router_id, Some(&value2)).unwrap();
+    graph
+        .inner_mut()
+        .set_node_value(router_id, Some(&value2))
+        .unwrap();
 
     // 设置 batch=1 的值 [1, 3]（应该成功）
     let value3 = Tensor::ones(&[1, 3]);
-    graph.inner_mut().set_node_value(router_id, Some(&value3)).unwrap();
+    graph
+        .inner_mut()
+        .set_node_value(router_id, Some(&value3))
+        .unwrap();
 
     // 验证值已更新
     let inner = graph.inner();
@@ -261,12 +300,15 @@ fn test_gradient_router_feature_shape_must_match() {
 
     // 设置初始值 [4, 3]
     let value1 = Tensor::ones(&[4, 3]);
-    graph.inner_mut().set_node_value(router_id, Some(&value1)).unwrap();
+    graph
+        .inner_mut()
+        .set_node_value(router_id, Some(&value1))
+        .unwrap();
 
     // 尝试设置不同特征维度的值 [4, 5]（应该失败）
     let value2 = Tensor::ones(&[4, 5]);
     let result = graph.inner_mut().set_node_value(router_id, Some(&value2));
-    
+
     assert!(result.is_err(), "特征维度不匹配应该报错");
     if let Err(crate::nn::GraphError::ShapeMismatch { message, .. }) = result {
         assert!(

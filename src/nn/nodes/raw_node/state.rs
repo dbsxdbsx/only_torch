@@ -64,7 +64,7 @@ impl State {
         })
     }
 
-    /// 从 DynamicShape 创建
+    /// 从 `DynamicShape` 创建
     #[allow(dead_code)]
     pub(crate) fn with_dynamic_shape(
         dynamic_shape: DynamicShape,

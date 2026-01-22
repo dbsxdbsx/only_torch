@@ -573,7 +573,7 @@ fn test_mse_loss_dynamic_batch_backward() -> Result<(), GraphError> {
     // 注意：Input 节点支持动态 batch 但没有 grad
     // 为了测试梯度反传，使用 y = x * w 形式，其中 w 是可训练的 Parameter
     let input = graph.new_input_node(&[2, 4], Some("input"))?;
-    let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?;  // [4, 4] 权重
+    let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?; // [4, 4] 权重
     let pred = graph.new_mat_mul_node(input, weight, Some("pred"))?;
     let target = graph.new_input_node(&[2, 4], Some("target"))?;
     let loss = graph.new_mse_loss_node(pred, target, Some("loss"))?;

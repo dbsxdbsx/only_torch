@@ -6,10 +6,10 @@
  *                 支持 NumPy 风格广播
  */
 
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
 /// Subtract 节点：逐元素减法
@@ -144,8 +144,7 @@ impl TraitNode for Subtract {
             .value()
             .ok_or_else(|| {
                 GraphError::ComputationError(format!(
-                    "Subtract 梯度计算时父节点 {} 没有值",
-                    target_parent
+                    "Subtract 梯度计算时父节点 {target_parent} 没有值"
                 ))
             })?
             .shape();

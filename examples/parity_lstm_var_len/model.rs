@@ -7,7 +7,7 @@
 //! ```text
 //! x: [batch, seq_len, 1] → LSTM → h: [batch, hidden] → Linear → [batch, 2]
 //! ```
-//! 注意：seq_len 可以在不同批次之间变化！
+//! `注意：seq_len` 可以在不同批次之间变化！
 
 use only_torch::nn::{Graph, GraphError, Linear, Lstm, ModelState, Module, Var};
 use only_torch::tensor::Tensor;

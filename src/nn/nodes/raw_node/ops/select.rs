@@ -6,10 +6,10 @@
  * 用于 RNN 展开式设计：从 [batch, seq_len, input_size] 中提取 [batch, input_size]
  */
 
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
 /// Select 节点：从张量中选择指定轴和索引的切片

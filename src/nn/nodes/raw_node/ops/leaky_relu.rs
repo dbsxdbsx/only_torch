@@ -1,7 +1,7 @@
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
 /// Leaky `ReLU` 激活函数节点
@@ -17,7 +17,7 @@ pub(crate) struct LeakyReLU {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    /// 固定形状（用于 value_expected_shape）
+    /// 固定形状（用于 `value_expected_shape`）
     fixed_shape: Vec<usize>,
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,

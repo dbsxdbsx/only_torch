@@ -15,7 +15,7 @@ use crate::tensor::Tensor;
 use crate::nn::nodes::node_handle::NodeHandle;
 use crate::nn::nodes::raw_node::TraitNode;
 
-/// ZerosLike 节点：根据参考节点的 batch_size 生成零张量
+/// `ZerosLike` 节点：根据参考节点的 `batch_size` 生成零张量
 #[derive(Clone)]
 pub(crate) struct ZerosLike {
     id: Option<NodeId>,
@@ -23,14 +23,14 @@ pub(crate) struct ZerosLike {
     value: Option<Tensor>,
     /// 输出特征维度（不包括 batch）
     feature_shape: Vec<usize>,
-    /// 动态形状 [?, feature_dims...]
+    /// 动态形状 [?, `feature_dims`...]
     dynamic_shape: DynamicShape,
     /// 固定形状（首次创建时使用 batch=1）
     fixed_shape: Vec<usize>,
 }
 
 impl ZerosLike {
-    /// 创建 ZerosLike 节点
+    /// 创建 `ZerosLike` 节点
     ///
     /// # 参数
     /// - `feature_shape`: 输出的特征维度（不包括 batch）
@@ -75,15 +75,12 @@ impl TraitNode for ZerosLike {
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         // 从第一个父节点获取 batch_size
-        let ref_value = parents
-            .first()
-            .and_then(|p| p.value())
-            .ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "{} 需要参考节点有值以确定 batch_size",
-                    self.display_node()
-                ))
-            })?;
+        let ref_value = parents.first().and_then(|p| p.value()).ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "{} 需要参考节点有值以确定 batch_size",
+                self.display_node()
+            ))
+        })?;
 
         let batch_size = ref_value.shape()[0];
 

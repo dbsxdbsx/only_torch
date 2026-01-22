@@ -491,8 +491,8 @@ fn test_select_index_out_of_bounds() {
 /// 注：Input 节点默认支持动态 batch
 #[test]
 fn test_select_dynamic_shape_propagation() {
-    use crate::nn::var_ops::VarShapeOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarShapeOps;
 
     let graph = Graph::new();
 
@@ -515,8 +515,8 @@ fn test_select_dynamic_shape_propagation() {
 /// 使用 3D 输入（符合 Select 典型业务场景）
 #[test]
 fn test_select_dynamic_batch_forward() {
-    use crate::nn::var_ops::VarShapeOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarShapeOps;
 
     let graph = Graph::new();
 
@@ -545,8 +545,8 @@ fn test_select_dynamic_batch_forward() {
 /// 使用 3D 输入（模拟 RNN 输入序列），符合 Select 的典型业务场景
 #[test]
 fn test_select_dynamic_batch_backward() {
-    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
     use crate::nn::Graph;
+    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
 
     let graph = Graph::new();
 

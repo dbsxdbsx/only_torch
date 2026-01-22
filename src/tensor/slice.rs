@@ -192,12 +192,7 @@ impl super::Tensor {
     /// - `index` 超出该轴的大小
     pub fn select(&self, axis: usize, index: usize) -> Self {
         let ndim = self.dimension();
-        assert!(
-            axis < ndim,
-            "select: axis {} 超出张量维度 {}",
-            axis,
-            ndim
-        );
+        assert!(axis < ndim, "select: axis {axis} 超出张量维度 {ndim}");
         assert!(
             index < self.shape()[axis],
             "select: index {} 超出轴 {} 的大小 {}",
@@ -235,12 +230,7 @@ impl super::Tensor {
     /// - `source` 形状不匹配
     pub fn scatter_at(&mut self, axis: usize, index: usize, source: &Self) {
         let ndim = self.dimension();
-        assert!(
-            axis < ndim,
-            "scatter_at: axis {} 超出张量维度 {}",
-            axis,
-            ndim
-        );
+        assert!(axis < ndim, "scatter_at: axis {axis} 超出张量维度 {ndim}");
         assert!(
             index < self.shape()[axis],
             "scatter_at: index {} 超出轴 {} 的大小 {}",

@@ -4,7 +4,7 @@
 //!
 //! # 主要组件
 //!
-//! - [`DataLoader`]: PyTorch 风格的数据批量加载器
+//! - [`DataLoader`]: `PyTorch` 风格的数据批量加载器
 //! - [`TensorDataset`]: 持有特征和标签的数据集
 //! - [`MnistDataset`]: MNIST 手写数字数据集（分类任务）
 //! - [`CaliforniaHousingDataset`]: California Housing 房价数据集（回归任务）

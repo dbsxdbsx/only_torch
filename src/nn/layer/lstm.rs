@@ -186,15 +186,14 @@ impl Lstm {
     /// ```
     pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
         // 使用实际值的形状（支持动态 batch）
-        let value = x.value()?.ok_or_else(|| {
-            GraphError::ComputationError("Lstm.forward 需要输入有值".to_string())
-        })?;
+        let value = x
+            .value()?
+            .ok_or_else(|| GraphError::ComputationError("Lstm.forward 需要输入有值".to_string()))?;
         let shape = value.shape();
-        
+
         if shape.len() != 3 {
             return Err(GraphError::InvalidOperation(format!(
-                "Lstm.forward 需要 3D 输入 [batch, seq_len, input], 实际: {:?}",
-                shape
+                "Lstm.forward 需要 3D 输入 [batch, seq_len, input], 实际: {shape:?}"
             )));
         }
 

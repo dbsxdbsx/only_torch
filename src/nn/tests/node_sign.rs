@@ -273,8 +273,8 @@ fn test_sign_dynamic_shape_propagation() {
 /// 注：Sign 是不可微函数，梯度恒为 0，因此不测试 backward
 #[test]
 fn test_sign_dynamic_batch_forward() {
-    use crate::nn::var_ops::VarActivationOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarActivationOps;
 
     let graph = Graph::new();
 

@@ -23,17 +23,17 @@
  * GradientRouter 是内部实现节点，在可视化时使用特殊样式（虚线、灰色）。
  */
 
-use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::NodeId;
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
+use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use std::cell::RefCell;
 
-/// GradientRouter 节点（梯度路由器）
+/// `GradientRouter` 节点（梯度路由器）
 ///
-/// 作为 ModelState 缓存结构的入口点，支持：
-/// - 动态值更新（通过 set_value）
+/// 作为 `ModelState` 缓存结构的入口点，支持：
+/// - 动态值更新（通过 `set_value`）
 /// - 动态 detached 状态切换
 /// - 梯度路由到外部目标节点
 /// - **动态 batch**：第一维可以是任意值
@@ -45,7 +45,7 @@ pub(crate) struct GradientRouter {
     grad: Option<Tensor>,
     /// 动态形状：第一维是 None（动态 batch）
     dynamic_shape: DynamicShape,
-    /// 用于 value_expected_shape 的固定形状缓存（首次调用时的形状）
+    /// 用于 `value_expected_shape` 的固定形状缓存（首次调用时的形状）
     fixed_shape: Vec<usize>,
     /// 是否处于 detached 状态（阻止梯度传播）
     is_detached: RefCell<bool>,
@@ -54,7 +54,7 @@ pub(crate) struct GradientRouter {
 }
 
 impl GradientRouter {
-    /// 创建一个支持动态 batch 的 GradientRouter
+    /// 创建一个支持动态 batch 的 `GradientRouter`
     ///
     /// # 参数
     /// - `initial_shape`: 首次调用时的完整形状（如 `[256, 64]`）
@@ -80,7 +80,7 @@ impl GradientRouter {
         }
     }
 
-    /// 从 DynamicShape 创建（预留 API，暂未使用）
+    /// 从 `DynamicShape` 创建（预留 API，暂未使用）
     #[allow(dead_code)]
     pub(crate) fn with_dynamic_shape(shape: DynamicShape, initial_fixed: &[usize]) -> Self {
         Self {

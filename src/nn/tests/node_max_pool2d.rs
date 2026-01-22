@@ -416,7 +416,10 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let loss = graph.new_mse_loss_node(flat, target, Some("loss"))?;
 
     // 设置初始值
-    graph.set_node_value(input, Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 4, 4], 42)))?;
+    graph.set_node_value(
+        input,
+        Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 4, 4], 42)),
+    )?;
     graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
 
     // 第一次训练：batch=2
@@ -427,7 +430,10 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     graph.backward(loss)?;
 
     // 更新输入为不同的 batch_size
-    graph.set_node_value(input, Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 4, 4], 100)))?;
+    graph.set_node_value(
+        input,
+        Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 4, 4], 100)),
+    )?;
     graph.set_node_value(target, Some(&Tensor::zeros(&[4, 4])))?;
 
     // 第二次训练：batch=4

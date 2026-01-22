@@ -1,7 +1,7 @@
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
 #[derive(Clone)]
@@ -10,7 +10,7 @@ pub(crate) struct Add {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    /// 固定形状（用于 value_expected_shape）
+    /// 固定形状（用于 `value_expected_shape`）
     fixed_shape: Vec<usize>,
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
@@ -35,14 +35,13 @@ impl Add {
             let parent_shape = parent.value_expected_shape();
 
             // 使用 broadcast_shape 计算广播后的形状
-            fixed_shape =
-                broadcast_shape(&fixed_shape, parent_shape).ok_or_else(|| {
-                    GraphError::ShapeMismatch {
-                        expected: fixed_shape.clone(),
-                        got: parent_shape.to_vec(),
-                        message: "Add节点的父节点形状无法广播".to_string(),
-                    }
-                })?;
+            fixed_shape = broadcast_shape(&fixed_shape, parent_shape).ok_or_else(|| {
+                GraphError::ShapeMismatch {
+                    expected: fixed_shape.clone(),
+                    got: parent_shape.to_vec(),
+                    message: "Add节点的父节点形状无法广播".to_string(),
+                }
+            })?;
         }
 
         // 1.3 计算动态形状（使用父节点的动态形状）
@@ -145,10 +144,7 @@ impl TraitNode for Add {
         let target_shape = target_parent
             .value()
             .ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "Add 梯度计算时父节点 {} 没有值",
-                    target_parent
-                ))
+                GraphError::ComputationError(format!("Add 梯度计算时父节点 {target_parent} 没有值"))
             })?
             .shape();
 

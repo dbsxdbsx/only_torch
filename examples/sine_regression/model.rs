@@ -23,7 +23,7 @@ impl SineMLP {
         })
     }
 
-    /// PyTorch 风格 forward：直接接收 Tensor
+    /// `PyTorch` 风格 forward：直接接收 Tensor
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
         self.state.forward(x, |input| {
             Ok(self.fc2.forward(&self.fc1.forward(input).tanh()))

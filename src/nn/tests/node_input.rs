@@ -102,8 +102,8 @@ fn test_node_input_manually_set_value() {
     // 2. 测试错误形状的赋值（特征维度不匹配）
     // 由于 Input 节点支持动态 batch，错误消息会提示"动态形状不兼容"
     let invalid_cases = [
-        Tensor::new(&[1.0], &[1, 1]),       // 特征维度 [1] != [2]
-        Tensor::new(&[1.0, 2.0], &[2, 1]),  // 特征维度 [1] != [2]
+        Tensor::new(&[1.0], &[1, 1]),           // 特征维度 [1] != [2]
+        Tensor::new(&[1.0, 2.0], &[2, 1]),      // 特征维度 [1] != [2]
         Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]), // 特征维度 [1] != [2]
     ];
     for value in invalid_cases {
@@ -330,13 +330,15 @@ fn test_input_dynamic_batch_set_value() {
 /// 测试 Input 节点作为下游节点父节点时的动态 batch 传播
 #[test]
 fn test_input_dynamic_batch_forward_chain() {
-    use crate::nn::var_ops::VarActivationOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarActivationOps;
 
     let graph = Graph::new();
 
     // Input -> Sigmoid -> output
-    let x = graph.input(&Tensor::new(&[0.0, 1.0, 2.0, 3.0], &[2, 2])).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[0.0, 1.0, 2.0, 3.0], &[2, 2]))
+        .unwrap();
     let output = x.sigmoid();
 
     // 第一次 forward：batch=2
@@ -358,13 +360,15 @@ fn test_input_dynamic_batch_forward_chain() {
 /// 测试 Input 节点在完整训练流程中的动态 batch 支持
 #[test]
 fn test_input_dynamic_batch_training() {
-    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
     use crate::nn::Graph;
+    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
 
     let graph = Graph::new();
 
     // 创建简单网络：input -> sigmoid -> loss
-    let x = graph.input(&Tensor::new(&[0.0, 1.0, 2.0, 3.0], &[2, 2])).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[0.0, 1.0, 2.0, 3.0], &[2, 2]))
+        .unwrap();
     let pred = x.sigmoid();
     let target = graph.input(&Tensor::zeros(&[2, 2])).unwrap();
     let loss = pred.mse_loss(&target).unwrap();

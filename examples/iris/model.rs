@@ -25,7 +25,7 @@ impl IrisMLP {
         })
     }
 
-    /// PyTorch 风格 forward：直接接收 Tensor
+    /// `PyTorch` 风格 forward：直接接收 Tensor
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
         self.state.forward(x, |input| {
             let h1 = self.fc1.forward(input).tanh();

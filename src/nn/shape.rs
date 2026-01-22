@@ -98,7 +98,7 @@ impl DynamicShape {
     }
 
     /// 获取维度数量
-    pub fn ndim(&self) -> usize {
+    pub const fn ndim(&self) -> usize {
         self.dims.len()
     }
 
@@ -111,12 +111,14 @@ impl DynamicShape {
 
     /// 检查指定维度是否是动态的
     pub fn is_dynamic(&self, index: usize) -> bool {
-        self.dims.get(index).map(|d| d.is_none()).unwrap_or(false)
+        self.dims
+            .get(index)
+            .is_some_and(std::option::Option::is_none)
     }
 
     /// 检查是否有任何动态维度
     pub fn has_dynamic_dims(&self) -> bool {
-        self.dims.iter().any(|d| d.is_none())
+        self.dims.iter().any(std::option::Option::is_none)
     }
 
     /// 获取特征形状（忽略第一维 batch）
@@ -129,22 +131,22 @@ impl DynamicShape {
     /// let features = shape.feature_shape();
     /// assert_eq!(features.to_vec_fixed().unwrap(), vec![128, 64]);
     /// ```
-    pub fn feature_shape(&self) -> DynamicShape {
+    pub fn feature_shape(&self) -> Self {
         if self.dims.len() > 1 {
-            DynamicShape::new(&self.dims[1..])
+            Self::new(&self.dims[1..])
         } else {
             self.clone()
         }
     }
 
     /// 将第一维设置为动态
-    pub fn with_batch_dynamic(&self) -> DynamicShape {
+    pub fn with_batch_dynamic(&self) -> Self {
         if self.dims.is_empty() {
             return self.clone();
         }
         let mut dims = self.dims.clone();
         dims[0] = None;
-        DynamicShape::new(&dims)
+        Self::new(&dims)
     }
 
     /// 检查此形状是否与另一个形状兼容
@@ -166,7 +168,7 @@ impl DynamicShape {
     /// assert!(a.is_compatible(&c));  // [?, 128] vs [16, 128] ✓
     /// assert!(!a.is_compatible(&d)); // [?, 128] vs [32, 64] ✗ (128 != 64)
     /// ```
-    pub fn is_compatible(&self, other: &DynamicShape) -> bool {
+    pub fn is_compatible(&self, other: &Self) -> bool {
         if self.dims.len() != other.dims.len() {
             return false;
         }
@@ -217,7 +219,7 @@ impl DynamicShape {
     /// let merged = a.merge(&b).unwrap();
     /// assert_eq!(merged.to_string(), "[32, 128]");
     /// ```
-    pub fn merge(&self, other: &DynamicShape) -> Option<DynamicShape> {
+    pub fn merge(&self, other: &Self) -> Option<Self> {
         if self.dims.len() != other.dims.len() {
             return None;
         }
@@ -239,7 +241,7 @@ impl DynamicShape {
             })
             .collect();
 
-        merged.map(|dims| DynamicShape { dims })
+        merged.map(|dims| Self { dims })
     }
 
     /// 计算两个形状广播后的动态形状
@@ -256,20 +258,18 @@ impl DynamicShape {
     /// let result = a.broadcast_with(&b);
     /// assert_eq!(result.to_string(), "[?, 128]");
     /// ```
-    pub fn broadcast_with(&self, other: &DynamicShape) -> DynamicShape {
+    pub fn broadcast_with(&self, other: &Self) -> Self {
         let max_ndim = self.dims.len().max(other.dims.len());
 
         // 从右边对齐（广播规则）
-        let self_padded: Vec<Dim> = std::iter::repeat(&None)
-            .take(max_ndim - self.dims.len())
-            .cloned()
-            .chain(self.dims.iter().cloned())
+        let self_padded: Vec<Dim> = std::iter::repeat_n(&None, max_ndim - self.dims.len())
+            .copied()
+            .chain(self.dims.iter().copied())
             .collect();
 
-        let other_padded: Vec<Dim> = std::iter::repeat(&None)
-            .take(max_ndim - other.dims.len())
-            .cloned()
-            .chain(other.dims.iter().cloned())
+        let other_padded: Vec<Dim> = std::iter::repeat_n(&None, max_ndim - other.dims.len())
+            .copied()
+            .chain(other.dims.iter().copied())
             .collect();
 
         let result: Vec<Dim> = self_padded
@@ -283,7 +283,7 @@ impl DynamicShape {
             })
             .collect();
 
-        DynamicShape { dims: result }
+        Self { dims: result }
     }
 
     /// 使用实际张量形状具体化动态维度
@@ -298,18 +298,18 @@ impl DynamicShape {
     /// let concrete = shape.concretize(&[32, 128]).unwrap();
     /// assert_eq!(concrete.to_vec_fixed().unwrap(), vec![32, 128]);
     /// ```
-    pub fn concretize(&self, tensor_shape: &[usize]) -> Option<DynamicShape> {
+    pub fn concretize(&self, tensor_shape: &[usize]) -> Option<Self> {
         if !self.is_compatible_with_tensor(tensor_shape) {
             return None;
         }
-        Some(DynamicShape::fixed(tensor_shape))
+        Some(Self::fixed(tensor_shape))
     }
 
     /// 转换为固定形状向量（如果所有维度都是固定的）
     ///
     /// 如果有任何动态维度，返回 None。
     pub fn to_vec_fixed(&self) -> Option<Vec<usize>> {
-        self.dims.iter().map(|&d| d).collect()
+        self.dims.iter().copied().collect()
     }
 
     /// 获取内部维度数组的引用
@@ -340,13 +340,13 @@ impl fmt::Display for DynamicShape {
 /// 从固定形状转换
 impl From<&[usize]> for DynamicShape {
     fn from(shape: &[usize]) -> Self {
-        DynamicShape::fixed(shape)
+        Self::fixed(shape)
     }
 }
 
 impl From<Vec<usize>> for DynamicShape {
     fn from(shape: Vec<usize>) -> Self {
-        DynamicShape::fixed(&shape)
+        Self::fixed(&shape)
     }
 }
 

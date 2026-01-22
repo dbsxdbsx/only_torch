@@ -269,14 +269,8 @@ fn test_parameter_dynamic_shape_fixed() -> Result<(), GraphError> {
     let dyn_shape = node.dynamic_expected_shape();
 
     // 所有维度都应该是固定的
-    assert!(
-        !dyn_shape.is_dynamic(0),
-        "Parameter 第一维应该是固定的"
-    );
-    assert!(
-        !dyn_shape.is_dynamic(1),
-        "Parameter 第二维应该是固定的"
-    );
+    assert!(!dyn_shape.is_dynamic(0), "Parameter 第一维应该是固定的");
+    assert!(!dyn_shape.is_dynamic(1), "Parameter 第二维应该是固定的");
     assert_eq!(dyn_shape.dim(0), Some(16));
     assert_eq!(dyn_shape.dim(1), Some(32));
 

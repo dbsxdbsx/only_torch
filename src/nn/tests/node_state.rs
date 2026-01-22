@@ -663,7 +663,7 @@ fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
     // 其中 input 和 state 支持动态 batch，weight 是固定形状的 Parameter
     let input = graph.new_input_node(&[2, 4], Some("input"))?;
     let state = graph.new_state_node(&[2, 4], Some("state"))?;
-    let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?;  // 固定形状 [4, 4]
+    let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?; // 固定形状 [4, 4]
 
     graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
     graph.set_node_value(state, Some(&Tensor::ones(&[2, 4])))?;

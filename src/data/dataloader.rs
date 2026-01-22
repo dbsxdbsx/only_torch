@@ -11,11 +11,11 @@
  */
 
 use crate::tensor::Tensor;
-use rand::seq::SliceRandom;
 use rand::SeedableRng;
+use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
-/// TensorDataset - 持有特征和标签的数据集
+/// `TensorDataset` - 持有特征和标签的数据集
 ///
 /// # 示例
 /// ```ignore
@@ -30,7 +30,7 @@ pub struct TensorDataset {
 }
 
 impl TensorDataset {
-    /// 创建新的 TensorDataset
+    /// 创建新的 `TensorDataset`
     ///
     /// # 参数
     /// - `features`: 特征张量，第一维为样本数
@@ -55,27 +55,27 @@ impl TensorDataset {
     }
 
     /// 获取样本数量
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
     }
 
     /// 检查数据集是否为空
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// 获取特征张量引用
-    pub fn features(&self) -> &Tensor {
+    pub const fn features(&self) -> &Tensor {
         &self.features
     }
 
     /// 获取标签张量引用
-    pub fn labels(&self) -> &Tensor {
+    pub const fn labels(&self) -> &Tensor {
         &self.labels
     }
 }
 
-/// DataLoader - PyTorch 风格的数据批量加载器
+/// `DataLoader` - `PyTorch` 风格的数据批量加载器
 ///
 /// # 示例
 /// ```ignore
@@ -99,7 +99,7 @@ pub struct DataLoader {
 }
 
 impl DataLoader {
-    /// 创建新的 DataLoader
+    /// 创建新的 `DataLoader`
     ///
     /// # 参数
     /// - `dataset`: 数据集
@@ -116,19 +116,19 @@ impl DataLoader {
     }
 
     /// 设置是否打乱数据
-    pub fn shuffle(mut self, shuffle: bool) -> Self {
+    pub const fn shuffle(mut self, shuffle: bool) -> Self {
         self.shuffle = shuffle;
         self
     }
 
     /// 设置是否丢弃最后一个不完整的批次
-    pub fn drop_last(mut self, drop_last: bool) -> Self {
+    pub const fn drop_last(mut self, drop_last: bool) -> Self {
         self.drop_last = drop_last;
         self
     }
 
     /// 设置随机种子（用于 shuffle）
-    pub fn seed(mut self, seed: u64) -> Self {
+    pub const fn seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
     }
@@ -139,7 +139,7 @@ impl DataLoader {
         if self.drop_last {
             n / self.batch_size
         } else {
-            (n + self.batch_size - 1) / self.batch_size
+            n.div_ceil(self.batch_size)
         }
     }
 
@@ -178,14 +178,14 @@ impl DataLoader {
     }
 }
 
-/// DataLoader 迭代器
+/// `DataLoader` 迭代器
 pub struct DataLoaderIterator<'a> {
     loader: &'a DataLoader,
     indices: Vec<usize>,
     current_batch: usize,
 }
 
-impl<'a> Iterator for DataLoaderIterator<'a> {
+impl Iterator for DataLoaderIterator<'_> {
     type Item = (Tensor, Tensor);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -210,8 +210,7 @@ impl<'a> Iterator for DataLoaderIterator<'a> {
 
         // 提取批次数据
         let batch_indices = &self.indices[start..end];
-        let (features_batch, labels_batch) =
-            extract_batch(&self.loader.dataset, batch_indices);
+        let (features_batch, labels_batch) = extract_batch(&self.loader.dataset, batch_indices);
 
         Some((features_batch, labels_batch))
     }
@@ -272,7 +271,7 @@ fn extract_batch(dataset: &TensorDataset, indices: &[usize]) -> (Tensor, Tensor)
 /// 用于存储长度可变的序列数据。
 #[derive(Debug, Clone)]
 pub struct VarLenSample {
-    /// 序列数据（展平为 1D，实际形状由 seq_len 和 feature_size 决定）
+    /// 序列数据（展平为 1D，实际形状由 `seq_len` 和 `feature_size` 决定）
     pub features: Vec<f32>,
     /// 序列长度
     pub seq_len: usize,
@@ -286,7 +285,7 @@ impl VarLenSample {
     /// 创建新的变长样本
     ///
     /// # 参数
-    /// - `features`: 特征数据，长度应为 seq_len * feature_size
+    /// - `features`: 特征数据，长度应为 `seq_len` * `feature_size`
     /// - `seq_len`: 序列长度
     /// - `feature_size`: 特征维度
     /// - `label`: 标签
@@ -332,7 +331,7 @@ impl VarLenDataset {
     /// # 参数
     /// - `feature_size`: 特征维度
     /// - `label_size`: 标签维度
-    pub fn new(feature_size: usize, label_size: usize) -> Self {
+    pub const fn new(feature_size: usize, label_size: usize) -> Self {
         Self {
             samples: Vec::new(),
             feature_size,
@@ -348,12 +347,12 @@ impl VarLenDataset {
     }
 
     /// 获取样本数量
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.samples.len()
     }
 
     /// 检查是否为空
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
 
@@ -363,12 +362,12 @@ impl VarLenDataset {
     }
 
     /// 获取特征维度
-    pub fn feature_size(&self) -> usize {
+    pub const fn feature_size(&self) -> usize {
         self.feature_size
     }
 
     /// 获取标签维度
-    pub fn label_size(&self) -> usize {
+    pub const fn label_size(&self) -> usize {
         self.label_size
     }
 
@@ -408,7 +407,7 @@ impl<'a> BucketedDataLoader<'a> {
     ///
     /// # 参数
     /// - `dataset`: 变长数据集引用
-    pub fn new(dataset: &'a VarLenDataset) -> Self {
+    pub const fn new(dataset: &'a VarLenDataset) -> Self {
         Self {
             dataset,
             shuffle: false,
@@ -417,13 +416,13 @@ impl<'a> BucketedDataLoader<'a> {
     }
 
     /// 设置是否打乱（在每个桶内打乱）
-    pub fn shuffle(mut self, shuffle: bool) -> Self {
+    pub const fn shuffle(mut self, shuffle: bool) -> Self {
         self.shuffle = shuffle;
         self
     }
 
     /// 设置随机种子
-    pub fn seed(mut self, seed: u64) -> Self {
+    pub const fn seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
     }
@@ -473,7 +472,7 @@ pub struct BucketedDataLoaderIterator<'a> {
     current_bucket: usize,
 }
 
-impl<'a> Iterator for BucketedDataLoaderIterator<'a> {
+impl Iterator for BucketedDataLoaderIterator<'_> {
     type Item = (Tensor, Tensor);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -507,7 +506,7 @@ impl<'a> Iterator for BucketedDataLoaderIterator<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for BucketedDataLoaderIterator<'a> {
+impl ExactSizeIterator for BucketedDataLoaderIterator<'_> {
     fn len(&self) -> usize {
         self.buckets.len() - self.current_bucket
     }

@@ -64,12 +64,14 @@ fn main() -> Result<(), GraphError> {
     let criterion = MseLoss::new();
 
     // 优化器（beta1=0.5 对 GAN 更稳定）
-    let mut g_optimizer = Adam::new_with_config(&graph, &generator.parameters(), LR_G, 0.5, 0.999, 1e-8);
-    let mut d_optimizer = Adam::new_with_config(&graph, &discriminator.parameters(), LR_D, 0.5, 0.999, 1e-8);
+    let mut g_optimizer =
+        Adam::new_with_config(&graph, &generator.parameters(), LR_G, 0.5, 0.999, 1e-8);
+    let mut d_optimizer =
+        Adam::new_with_config(&graph, &discriminator.parameters(), LR_D, 0.5, 0.999, 1e-8);
 
-    println!("  Generator: {} -> 128 -> 784", LATENT_DIM);
+    println!("  Generator: {LATENT_DIM} -> 128 -> 784");
     println!("  Discriminator: 784 -> 128 -> 1");
-    println!("  学习率: D={}, G={}", LR_D, LR_G);
+    println!("  学习率: D={LR_D}, G={LR_G}");
 
     // 3. 训练循环
     println!("\n[3/4] 开始训练...\n");
@@ -108,7 +110,7 @@ fn main() -> Result<(), GraphError> {
             let real_out = discriminator.forward(&real_images)?;
             let real_labels = Tensor::ones(&[BATCH_SIZE, 1]);
             let d_real_loss = criterion.forward(&real_out, &real_labels)?;
-            
+
             // 记录 D(real) 平均值
             let real_out_val = real_out.value()?.unwrap();
             let mut d_real_batch_sum = 0.0;
@@ -130,7 +132,7 @@ fn main() -> Result<(), GraphError> {
             let fake_out = discriminator.forward(&fake_detached)?;
             let fake_labels = Tensor::zeros(&[BATCH_SIZE, 1]);
             let d_fake_loss = criterion.forward(&fake_out, &fake_labels)?;
-            
+
             // 记录 D(fake) 平均值
             let fake_out_val = fake_out.value()?.unwrap();
             let mut d_fake_batch_sum = 0.0;
@@ -168,7 +170,7 @@ fn main() -> Result<(), GraphError> {
         let avg_g_loss = g_loss_sum / batch_count as f32;
         d_real_avg = d_real_sum / batch_count as f32;
         d_fake_avg = d_fake_sum / batch_count as f32;
-        
+
         println!(
             "Epoch {:2}/{}: D_loss={:.4}, G_loss={:.4}, D(real)={:.3}, D(fake)={:.3} ({:.1}s)",
             epoch + 1,
@@ -183,8 +185,8 @@ fn main() -> Result<(), GraphError> {
 
     // 验证训练效果
     println!("\n训练结果验证:");
-    println!("  D(real) = {:.3} (理想值接近 0.5-1.0)", d_real_avg);
-    println!("  D(fake) = {:.3} (理想值接近 0.3-0.7)", d_fake_avg);
+    println!("  D(real) = {d_real_avg:.3} (理想值接近 0.5-1.0)");
+    println!("  D(fake) = {d_fake_avg:.3} (理想值接近 0.3-0.7)");
 
     println!(
         "\n训练完成！总用时: {:.1}s",

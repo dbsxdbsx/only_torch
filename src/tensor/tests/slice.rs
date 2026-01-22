@@ -239,7 +239,9 @@ fn test_select_3d_rnn_usecase() {
     assert_eq!(
         batch0,
         Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0
+            ],
             &[3, 4]
         )
     );
@@ -402,7 +404,10 @@ fn test_scatter_at_multiple_times() {
     target.scatter_at(0, 2, &row2);
 
     // 验证整个张量
-    assert_eq!(target, Tensor::new(&[1., 1., 1., 1., 2., 2., 2., 2., 3., 3., 3., 3.], &[3, 4]));
+    assert_eq!(
+        target,
+        Tensor::new(&[1., 1., 1., 1., 2., 2., 2., 2., 3., 3., 3., 3.], &[3, 4])
+    );
 }
 
 /// 测试 scatter_at 的 axis=1 场景

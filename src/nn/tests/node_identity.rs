@@ -34,9 +34,7 @@ fn test_identity_forward_value_passthrough() {
     let mut graph = GraphInner::new();
 
     let x = graph.new_input_node(&[2, 3], Some("x")).unwrap();
-    let y = graph
-        .new_identity_node(x, Some("y"), false)
-        .unwrap();
+    let y = graph.new_identity_node(x, Some("y"), false).unwrap();
 
     // 设置输入
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
@@ -59,9 +57,7 @@ fn test_identity_backward_gradient_passthrough() {
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let h = graph.new_mat_mul_node(w, x, Some("h")).unwrap();
-    let identity = graph
-        .new_identity_node(h, Some("identity"), false)
-        .unwrap();
+    let identity = graph.new_identity_node(h, Some("identity"), false).unwrap();
     let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph
         .new_mse_loss_node(identity, target, Some("loss"))
@@ -92,11 +88,7 @@ fn test_identity_preserves_shape() {
     let mut graph = GraphInner::new();
 
     // 测试各种形状（框架要求 2-4 维）
-    let shapes = vec![
-        vec![2, 3],
-        vec![2, 3, 4],
-        vec![1, 2, 3, 4],
-    ];
+    let shapes = vec![vec![2, 3], vec![2, 3, 4], vec![1, 2, 3, 4]];
 
     for shape in shapes {
         let x = graph.new_input_node(&shape, None).unwrap();
@@ -125,9 +117,7 @@ fn test_identity_detached_blocks_gradient() {
     let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = graph.new_parameter_node(&[2, 2], Some("w1")).unwrap();
     let h = graph.new_mat_mul_node(w1, x, Some("h")).unwrap();
-    let detached = graph
-        .new_identity_node(h, Some("detached"), true)
-        .unwrap(); // detached=true
+    let detached = graph.new_identity_node(h, Some("detached"), true).unwrap(); // detached=true
     let w2 = graph.new_parameter_node(&[1, 2], Some("w2")).unwrap();
     let y = graph.new_mat_mul_node(w2, detached, Some("y")).unwrap();
     let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
@@ -164,9 +154,7 @@ fn test_identity_detached_does_not_affect_forward() {
     let mut graph = GraphInner::new();
 
     let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
-    let detached = graph
-        .new_identity_node(x, Some("detached"), true)
-        .unwrap();
+    let detached = graph.new_identity_node(x, Some("detached"), true).unwrap();
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     graph.set_node_value(x, Some(&input_data)).unwrap();
@@ -187,7 +175,9 @@ fn test_var_detach_returns_new_var() {
     let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
-    let w = graph.parameter(&[1, 2], crate::nn::var::Init::Ones, "w").unwrap();
+    let w = graph
+        .parameter(&[1, 2], crate::nn::var::Init::Ones, "w")
+        .unwrap();
     let h = x.matmul(&w).unwrap();
 
     // detach_node 返回新的 Var（创建 Identity 节点）
@@ -207,7 +197,9 @@ fn test_var_detach_original_unchanged() {
     let graph = Graph::new();
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
-    let w = graph.parameter(&[1, 2], crate::nn::var::Init::Ones, "w").unwrap();
+    let w = graph
+        .parameter(&[1, 2], crate::nn::var::Init::Ones, "w")
+        .unwrap();
     let h = (&x).matmul(&w).unwrap();
 
     // 记录原节点的 detach 状态
@@ -222,10 +214,7 @@ fn test_var_detach_original_unchanged() {
         original_detached, after_detached,
         "原节点的 detach 状态不应改变"
     );
-    assert!(
-        !after_detached,
-        "原节点应该仍然是 attached 状态"
-    );
+    assert!(!after_detached, "原节点应该仍然是 attached 状态");
 }
 
 /// 测试: Var::detach() 阻断梯度流（GAN 风格）
@@ -238,10 +227,14 @@ fn test_var_detach_blocks_gradient_gan_style() {
     // 形状: [2,1] @ [1,2] -> [2,2] @ [2,1] -> [2,1]
 
     let z = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
-    let g_w = graph.parameter(&[1, 2], crate::nn::var::Init::Ones, "g_w").unwrap();
+    let g_w = graph
+        .parameter(&[1, 2], crate::nn::var::Init::Ones, "g_w")
+        .unwrap();
     let fake = z.matmul(&g_w).unwrap(); // [2,1] @ [1,2] -> [2,2]
 
-    let d_w = graph.parameter(&[2, 1], crate::nn::var::Init::Ones, "d_w").unwrap();
+    let d_w = graph
+        .parameter(&[2, 1], crate::nn::var::Init::Ones, "d_w")
+        .unwrap();
 
     // === 场景 1: 使用 detach_node，训练 D ===
     let fake_detached = fake.detach_node();
@@ -252,10 +245,7 @@ fn test_var_detach_blocks_gradient_gan_style() {
     d_loss.backward().unwrap();
 
     // d_w 应该有梯度
-    assert!(
-        d_w.grad().unwrap().is_some(),
-        "d_w 应该有梯度（训练 D）"
-    );
+    assert!(d_w.grad().unwrap().is_some(), "d_w 应该有梯度（训练 D）");
 
     // g_w 不应该有梯度（fake 被 detach）
     assert!(
@@ -273,10 +263,14 @@ fn test_var_without_detach_gradient_flows() {
     // 形状: [2,1] @ [1,2] -> [2,2] @ [2,1] -> [2,1]
 
     let z = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
-    let g_w = graph.parameter(&[1, 2], crate::nn::var::Init::Ones, "g_w").unwrap();
+    let g_w = graph
+        .parameter(&[1, 2], crate::nn::var::Init::Ones, "g_w")
+        .unwrap();
     let fake = z.matmul(&g_w).unwrap(); // [2,1] @ [1,2] -> [2,2]
 
-    let d_w = graph.parameter(&[2, 1], crate::nn::var::Init::Ones, "d_w").unwrap();
+    let d_w = graph
+        .parameter(&[2, 1], crate::nn::var::Init::Ones, "d_w")
+        .unwrap();
 
     // 不使用 detach
     let d_out = fake.matmul(&d_w).unwrap(); // [2,2] @ [2,1] -> [2,1]
@@ -286,10 +280,7 @@ fn test_var_without_detach_gradient_flows() {
     g_loss.backward().unwrap();
 
     // d_w 和 g_w 都应该有梯度
-    assert!(
-        d_w.grad().unwrap().is_some(),
-        "d_w 应该有梯度"
-    );
+    assert!(d_w.grad().unwrap().is_some(), "d_w 应该有梯度");
     assert!(
         g_w.grad().unwrap().is_some(),
         "g_w 应该有梯度（没有 detach，梯度正常流动）"

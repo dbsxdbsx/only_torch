@@ -5,10 +5,10 @@
  *                 参考自：MatrixSlow/matrixslow/ops/ops.py#L154 (class Multiply)
  */
 
-use crate::nn::shape::DynamicShape;
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
 /// Multiply节点：逐元素乘法（Hadamard积）
@@ -148,8 +148,7 @@ impl TraitNode for Multiply {
             .value()
             .ok_or_else(|| {
                 GraphError::ComputationError(format!(
-                    "Multiply 梯度计算时父节点 {} 没有值",
-                    target_parent
+                    "Multiply 梯度计算时父节点 {target_parent} 没有值"
                 ))
             })?
             .shape();

@@ -348,8 +348,8 @@ fn test_flatten_single_sample_backward() -> Result<(), GraphError> {
 /// - 输出: [batch, c*h*w] 或 [batch, features]
 #[test]
 fn test_flatten_dynamic_shape_propagation() {
-    use crate::nn::var_ops::VarShapeOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarShapeOps;
 
     let graph = Graph::new();
 
@@ -373,8 +373,8 @@ fn test_flatten_dynamic_shape_propagation() {
 /// 测试 Flatten 在不同 batch_size 下的前向计算
 #[test]
 fn test_flatten_dynamic_batch_forward() {
-    use crate::nn::var_ops::VarShapeOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarShapeOps;
 
     let graph = Graph::new();
 
@@ -401,8 +401,8 @@ fn test_flatten_dynamic_batch_forward() {
 /// 测试 Flatten 在不同 batch_size 下的反向传播
 #[test]
 fn test_flatten_dynamic_batch_backward() {
-    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
     use crate::nn::Graph;
+    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
 
     let graph = Graph::new();
 

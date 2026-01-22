@@ -41,10 +41,10 @@
  * 这表明它是用户有意识创建的 detach 边界，区别于内部使用的 GradientRouter（灰色）。
  */
 
-use crate::nn::shape::DynamicShape;
+use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
-use crate::nn::GraphError;
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
 /// Identity 节点（恒等映射）
@@ -71,7 +71,7 @@ pub(crate) struct Identity {
     name: Option<String>,
     value: Option<Tensor>,
     grad: Option<Tensor>,
-    /// 固定形状（用于 value_expected_shape）
+    /// 固定形状（用于 `value_expected_shape`）
     fixed_shape: Vec<usize>,
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,

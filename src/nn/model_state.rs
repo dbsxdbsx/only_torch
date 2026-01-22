@@ -92,7 +92,7 @@ impl ForwardInput for &Tensor {
 
 impl ForwardInput for Tensor {
     fn shape(&self) -> Vec<usize> {
-        Tensor::shape(self).to_vec()
+        Self::shape(self).to_vec()
     }
 
     fn get_value(&self) -> Result<Tensor, GraphError> {
@@ -120,9 +120,8 @@ impl ForwardInput for &Var {
         }
         // 否则触发 forward 计算
         self.forward()?;
-        self.value()?.ok_or_else(|| {
-            GraphError::ComputationError("Var 计算后仍没有值".to_string())
-        })
+        self.value()?
+            .ok_or_else(|| GraphError::ComputationError("Var 计算后仍没有值".to_string()))
     }
 
     fn is_detached(&self) -> bool {
@@ -146,13 +145,12 @@ impl ForwardInput for Var {
         }
         // 否则触发 forward 计算
         self.forward()?;
-        self.value()?.ok_or_else(|| {
-            GraphError::ComputationError("Var 计算后仍没有值".to_string())
-        })
+        self.value()?
+            .ok_or_else(|| GraphError::ComputationError("Var 计算后仍没有值".to_string()))
     }
 
     fn is_detached(&self) -> bool {
-        Var::is_detached(self)
+        Self::is_detached(self)
     }
 
     fn var_node_id(&self) -> Option<NodeId> {
@@ -176,9 +174,8 @@ impl ForwardInput for &DetachedVar {
         }
         // 否则触发 forward 计算
         self.forward()?;
-        self.value()?.ok_or_else(|| {
-            GraphError::ComputationError("DetachedVar 计算后仍没有值".to_string())
-        })
+        self.value()?
+            .ok_or_else(|| GraphError::ComputationError("DetachedVar 计算后仍没有值".to_string()))
     }
 
     fn is_detached(&self) -> bool {
@@ -210,7 +207,7 @@ impl ForwardInput for DetachedVar {
 
 /// 模型状态缓存（单个形状）
 struct StateCache {
-    /// GradientRouter 节点（模型入口点）
+    /// `GradientRouter` 节点（模型入口点）
     router: Var,
     /// 输出节点（预构建的计算图终点）
     output: Var,
@@ -218,14 +215,14 @@ struct StateCache {
 
 /// 模型状态管理器
 ///
-/// 使用 GradientRouter 实现"Archive 的效率 + PyTorch 的优雅"：
+/// 使用 `GradientRouter` 实现"Archive 的效率 + `PyTorch` 的优雅"：
 /// - 图结构只构建一次（按特征形状缓存，忽略 batch 维度）
-/// - 无论多少批次、多大 batch_size，图节点数保持 O(1)
-/// - 梯度通过 GradientRouter 自动路由
+/// - 无论多少批次、多大 `batch_size，图节点数保持` O(1)
+/// - 梯度通过 `GradientRouter` 自动路由
 ///
 /// # 工作原理
 /// - **首次调用**某特征形状：创建 GradientRouter，构建计算图，缓存结果
-/// - **后续调用**相同特征形状（不同 batch_size 也复用）：更新值和梯度路由设置
+/// - **后续调用**相同特征形状（不同 `batch_size` 也复用）：更新值和梯度路由设置
 /// - **不同特征形状**：自动创建新的子图并缓存
 ///
 /// # Batch 维度处理（类似 Keras）
@@ -234,7 +231,7 @@ struct StateCache {
 /// - 可视化时 batch 维度显示为 `?`
 pub struct ModelState {
     graph: Graph,
-    /// 按特征形状缓存的子图：feature_shape -> (router, output)
+    /// `按特征形状缓存的子图：feature_shape` -> (router, output)
     /// 注意：缓存键不包含 batch 维度
     cache: RefCell<HashMap<Vec<usize>, StateCache>>,
 }
@@ -251,7 +248,7 @@ impl ModelState {
         }
     }
 
-    /// PyTorch 风格的 forward（统一缓存 + 梯度路由）
+    /// `PyTorch` 风格的 forward（统一缓存 + 梯度路由）
     ///
     /// # 参数
     /// - `x`: 输入数据（`&Tensor`、`Tensor`、`&Var` 或 `Var`）
@@ -287,11 +284,7 @@ impl ModelState {
         let full_shape = x.shape();
         let value = x.get_value()?;
         let is_detached = x.is_detached();
-        let gradient_target = if is_detached {
-            None
-        } else {
-            x.var_node_id()
-        };
+        let gradient_target = if is_detached { None } else { x.var_node_id() };
 
         // 缓存键策略：统一使用特征维度（忽略第一维 batch）
         //
@@ -309,7 +302,7 @@ impl ModelState {
 
         if let Some(c) = cache.get(&feature_shape) {
             // 缓存命中：复用已有结构
-            
+
             // 1. 更新 GradientRouter 的值（可能 batch_size 不同）
             c.router.set_value(&value)?;
 
