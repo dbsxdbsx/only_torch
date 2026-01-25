@@ -72,7 +72,7 @@ fn main() -> Result<(), GraphError> {
 
             // 早停：达到目标准确率即停止
             if acc >= target_accuracy {
-                println!("\n✅ 达到目标准确率 {:.1}%，提前停止训练", acc);
+                println!("\n✅ 达到目标准确率 {acc:.1}%，提前停止训练");
                 break;
             }
         }

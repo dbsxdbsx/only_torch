@@ -134,7 +134,7 @@ impl DataLoader {
     }
 
     /// 获取批次数量
-    pub fn num_batches(&self) -> usize {
+    pub const fn num_batches(&self) -> usize {
         let n = self.dataset.len();
         if self.drop_last {
             n / self.batch_size
@@ -144,12 +144,12 @@ impl DataLoader {
     }
 
     /// 获取数据集大小
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.dataset.len()
     }
 
     /// 检查是否为空
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.dataset.is_empty()
     }
 

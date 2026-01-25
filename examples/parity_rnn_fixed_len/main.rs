@@ -132,8 +132,8 @@ fn main() -> Result<(), GraphError> {
     println!("最佳准确率: {best_accuracy:.1}%");
 
     // 保存可视化
-    let vis_result = graph
-        .save_visualization("examples/parity_rnn_fixed_len/parity_rnn_fixed_len", None)?;
+    let vis_result =
+        graph.save_visualization("examples/parity_rnn_fixed_len/parity_rnn_fixed_len", None)?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

@@ -121,8 +121,8 @@ fn main() -> Result<(), GraphError> {
     println!("Criterion 缓存数: {}", criterion.cache_size());
 
     // 保存可视化
-    let vis_result = graph
-        .save_visualization("examples/parity_gru_var_len/parity_gru_var_len", None)?;
+    let vis_result =
+        graph.save_visualization("examples/parity_gru_var_len/parity_gru_var_len", None)?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

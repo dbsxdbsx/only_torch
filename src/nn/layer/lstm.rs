@@ -76,9 +76,9 @@ pub struct Lstm {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
-    /// 按 (batch_size, seq_len) 缓存的展开结构 -> 实际输出节点 ID
-    /// 注意：必须同时用 batch_size 和 seq_len 作为 key，
-    /// 因为 zeros_like 创建的初始状态节点依赖输入的 batch 维度
+    /// 按 (`batch_size`, `seq_len`) 缓存的展开结构 -> 实际输出节点 ID
+    /// 注意：必须同时用 `batch_size` 和 `seq_len` 作为 key，
+    /// 因为 `zeros_like` 创建的初始状态节点依赖输入的 batch 维度
     unroll_cache: RefCell<HashMap<(usize, usize), NodeId>>,
 }
 

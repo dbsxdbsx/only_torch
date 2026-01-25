@@ -34,7 +34,7 @@ pub(crate) enum InputVariant {
     Target(SmartInput),
     /// 智能输入（ModelState 使用，支持动态 batch、梯度路由等）
     Smart(SmartInput),
-    /// 循环层输出桥接（RNN/LSTM/GRU 内部使用，固定 node_id 用于下游复用）
+    /// 循环层输出桥接（RNN/LSTM/GRU 内部使用，固定 `node_id` 用于下游复用）
     RecurrentOutput(SmartInput),
 }
 
@@ -54,14 +54,14 @@ impl InputVariant {
         Self::Smart(SmartInput::new(shape))
     }
 
-    /// 创建 RecurrentOutput 变体（循环层输出桥接）
+    /// 创建 `RecurrentOutput` 变体（循环层输出桥接）
     pub(crate) fn new_recurrent_output(shape: &[usize]) -> Self {
         Self::RecurrentOutput(SmartInput::new(shape))
     }
 
     /// 获取内部的 SmartInput（对 Target、Smart、RecurrentOutput 变体有效）
     #[allow(dead_code)]
-    pub(crate) fn as_smart(&self) -> Option<&SmartInput> {
+    pub(crate) const fn as_smart(&self) -> Option<&SmartInput> {
         match self {
             Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => Some(inner),
             Self::Data(_) => None,
@@ -70,7 +70,7 @@ impl InputVariant {
 
     /// 获取变体类型名称（用于可视化）
     #[allow(dead_code)]
-    pub(crate) fn variant_name(&self) -> &'static str {
+    pub(crate) const fn variant_name(&self) -> &'static str {
         match self {
             Self::Data(_) => "Data",
             Self::Target(_) => "Target",
@@ -93,7 +93,7 @@ impl TraitNode for InputVariant {
         match self {
             Self::Data(inner) => inner.set_id(id),
             Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => {
-                inner.set_id(id)
+                inner.set_id(id);
             }
         }
     }
@@ -101,9 +101,7 @@ impl TraitNode for InputVariant {
     fn name(&self) -> &str {
         match self {
             Self::Data(inner) => inner.name(),
-            Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => {
-                inner.name()
-            }
+            Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => inner.name(),
         }
     }
 
@@ -111,7 +109,7 @@ impl TraitNode for InputVariant {
         match self {
             Self::Data(inner) => inner.set_name(name),
             Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => {
-                inner.set_name(name)
+                inner.set_name(name);
             }
         }
     }
@@ -165,7 +163,7 @@ impl TraitNode for InputVariant {
         match self {
             Self::Data(inner) => inner.set_value_unchecked(value),
             Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => {
-                inner.set_value_unchecked(value)
+                inner.set_value_unchecked(value);
             }
         }
     }
@@ -216,9 +214,7 @@ impl TraitNode for InputVariant {
     fn grad(&self) -> Option<&Tensor> {
         match self {
             Self::Data(_) => None,
-            Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => {
-                inner.grad()
-            }
+            Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => inner.grad(),
         }
     }
 

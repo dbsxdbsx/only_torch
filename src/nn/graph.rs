@@ -41,7 +41,7 @@ pub struct LayerGroup {
     /// 分组类型
     pub kind: GroupKind,
     /// 循环层的时间步数（None 表示非循环层）
-    /// 对于变长序列，使用 min_steps 和 max_steps
+    /// 对于变长序列，使用 `min_steps` 和 `max_steps`
     pub recurrent_steps: Option<usize>,
     /// 循环层的最小时间步数（变长序列支持）
     pub min_steps: Option<usize>,
@@ -50,7 +50,7 @@ pub struct LayerGroup {
     /// 需要在可视化中隐藏的节点 ID（如循环层的非代表性展开节点）
     pub hidden_node_ids: Vec<NodeId>,
     /// 代表性节点（折叠显示，实际代表多个节点）
-    /// 格式：(node_id, 实际重复次数)
+    /// `格式：(node_id`, 实际重复次数)
     pub folded_nodes: Vec<(NodeId, usize)>,
     /// 输出代理：(隐藏的真实输出节点, 代表性输出节点)
     /// 用于在可视化时连接代表性节点到下游（折叠层的输出流向）
@@ -88,7 +88,7 @@ pub struct RecurrentLayerMeta {
 pub struct RecurrentUnrollInfo {
     /// 时间步数
     pub steps: usize,
-    /// 输入节点 ID（如 SmartInput）
+    /// 输入节点 ID（如 `SmartInput`）
     pub input_node_id: NodeId,
     /// 初始状态节点 ID 列表（如 [h0] 或 [h0, c0]）
     /// - RNN/GRU：只有一个 h0
@@ -97,10 +97,10 @@ pub struct RecurrentUnrollInfo {
     /// 第一个时间步的第一个计算节点 ID（如 Select）
     pub first_step_start_id: NodeId,
     /// 代表性输出节点列表（第一个时间步的各状态输出）
-    /// - RNN/GRU：[h_1]
-    /// - LSTM：[h_1, c_1]（h 和 c 的第一个时间步输出）
+    /// - RNN/GRU：[`h_1`]
+    /// - LSTM：[`h_1`, `c_1`]（h 和 c 的第一个时间步输出）
     pub repr_output_node_ids: Vec<NodeId>,
-    /// 真实输出节点（最后一个时间步的隐藏状态输出，如 h_N）
+    /// 真实输出节点（最后一个时间步的隐藏状态输出，如 `h_N`）
     pub real_output_node_id: NodeId,
 }
 
@@ -708,11 +708,7 @@ impl GraphInner {
         nodes_per_step: usize,
     ) {
         // 检查是否已存在同名元信息，避免重复注册
-        if self
-            .recurrent_layer_metas
-            .iter()
-            .any(|m| m.name == name)
-        {
+        if self.recurrent_layer_metas.iter().any(|m| m.name == name) {
             return;
         }
         self.recurrent_layer_metas.push(RecurrentLayerMeta {
@@ -728,7 +724,7 @@ impl GraphInner {
     /// 追加循环层的展开信息（forward 时调用，支持变长序列）
     ///
     /// 每次 forward 调用都会追加一条记录，用于：
-    /// - 计算步数范围（min_steps, max_steps）
+    /// - `计算步数范围（min_steps`, `max_steps`）
     /// - 选择代表性调用进行折叠显示
     /// - 隐藏其他调用创建的节点
     ///
@@ -803,7 +799,7 @@ impl GraphInner {
         });
     }
 
-    /// 惰性推断循环层分组（在 save_visualization 时调用）
+    /// 惰性推断循环层分组（在 `save_visualization` 时调用）
     ///
     /// 根据 `recurrent_layer_metas` 中的元信息和 `unroll_info` 推断完整的分组：
     /// - 代表性节点：参数 + 初始状态 + 第一个时间步的计算节点
@@ -909,11 +905,10 @@ impl GraphInner {
                 max_steps,
             );
         }
-
     }
 
     /// 收集需要隐藏的"根节点"（非代表性调用的输出节点）
-    /// 这些根节点的后代会在 to_dot_with_options 中使用描述符来扩展
+    /// 这些根节点的后代会在 `to_dot_with_options` 中使用描述符来扩展
     fn hidden_output_nodes(&self) -> Vec<NodeId> {
         self.recurrent_layer_metas
             .iter()
@@ -1150,10 +1145,10 @@ impl GraphInner {
         Ok(())
     }
 
-    /// 处理 SmartInput 节点的梯度路由
+    /// 处理 `SmartInput` 节点的梯度路由
     ///
-    /// 遍历所有 SmartInput 节点，如果有梯度路由目标，
-    /// 将 SmartInput 的梯度累加到目标节点。
+    /// 遍历所有 `SmartInput` 节点，如果有梯度路由目标，
+    /// 将 `SmartInput` 的梯度累加到目标节点。
     ///
     /// # 返回
     /// 接收到路由梯度的目标节点 ID 列表（用于继续反向传播）
@@ -1164,8 +1159,9 @@ impl GraphInner {
         let mut routing_info: Vec<(NodeId, Tensor)> = Vec::new();
 
         for node in self.nodes.values() {
-            if let NodeType::Input(InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart)) =
-                node.node_type()
+            if let NodeType::Input(
+                InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart),
+            ) = node.node_type()
             {
                 // 检查是否有梯度路由目标
                 if let Some(target_id) = smart.gradient_target() {
@@ -2166,10 +2162,9 @@ impl GraphInner {
                 if let NodeType::Input(
                     InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart),
                 ) = node.node_type()
+                    && smart.was_ever_detached()
                 {
-                    if smart.was_ever_detached() {
-                        return Some(node.id().0);
-                    }
+                    return Some(node.id().0);
                 }
                 None
             })
@@ -2241,7 +2236,8 @@ impl GraphInner {
             // BFS 标记代表性路径上的所有节点为"受保护"
             let mut protected_nodes: std::collections::HashSet<u64> =
                 repr_input_ids.iter().copied().collect();
-            let mut queue: std::collections::VecDeque<u64> = repr_input_ids.iter().copied().collect();
+            let mut queue: std::collections::VecDeque<u64> =
+                repr_input_ids.iter().copied().collect();
             while let Some(node_id) = queue.pop_front() {
                 if let Some(children) = children_map.get(&node_id) {
                     for &child_id in children {
@@ -2271,7 +2267,9 @@ impl GraphInner {
                 hidden_node_ids.insert(node_id);
                 if let Some(children) = children_map.get(&node_id) {
                     for &child_id in children {
-                        if !hidden_node_ids.contains(&child_id) && !protected_nodes.contains(&child_id) {
+                        if !hidden_node_ids.contains(&child_id)
+                            && !protected_nodes.contains(&child_id)
+                        {
                             queue.push_back(child_id);
                         }
                     }
@@ -2313,8 +2311,7 @@ impl GraphInner {
                         desc.nodes
                             .iter()
                             .find(|n| n.id == id.0)
-                            .map(|n| matches!(n.node_type, NodeTypeDescriptor::Parameter { .. }))
-                            .unwrap_or(false)
+                            .is_some_and(|n| matches!(n.node_type, NodeTypeDescriptor::Parameter))
                     })
                     .map(|id| id.0)
                     .collect();
@@ -2331,7 +2328,8 @@ impl GraphInner {
                     }
                     if let Some(node) = desc.nodes.iter().find(|n| n.id == node_id) {
                         // 检查该节点是否使用了该层的参数
-                        let uses_layer_param = node.parents.iter().any(|p| param_node_ids.contains(p));
+                        let uses_layer_param =
+                            node.parents.iter().any(|p| param_node_ids.contains(p));
                         if uses_layer_param && !layer.node_ids.iter().any(|id| id.0 == node_id) {
                             layer.node_ids.push(NodeId(node_id));
                         }
@@ -2357,17 +2355,14 @@ impl GraphInner {
                         }
                         if let Some(node) = desc.nodes.iter().find(|n| n.id == node_id) {
                             // 检查该节点是否使用了当前层的计算节点
-                            let uses_layer_node = node.parents.iter().any(|p| current_nodes.contains(p));
+                            let uses_layer_node =
+                                node.parents.iter().any(|p| current_nodes.contains(p));
                             // 排除使用了其他层参数的节点（属于其他层）
                             let uses_other_param = node.parents.iter().any(|p| {
-                                desc.nodes
-                                    .iter()
-                                    .find(|n| n.id == *p)
-                                    .map(|n| {
-                                        matches!(n.node_type, NodeTypeDescriptor::Parameter { .. })
-                                            && !param_node_ids.contains(p)
-                                    })
-                                    .unwrap_or(false)
+                                desc.nodes.iter().find(|n| n.id == *p).is_some_and(|n| {
+                                    matches!(n.node_type, NodeTypeDescriptor::Parameter)
+                                        && !param_node_ids.contains(p)
+                                })
                             });
                             if uses_layer_node && !uses_other_param {
                                 layer.node_ids.push(NodeId(node_id));
@@ -2415,9 +2410,9 @@ impl GraphInner {
                     }
                     // 检查是否有可见的子节点
                     let children = children_map.get(&node.id);
-                    let all_children_hidden = children
-                        .map(|c| !c.is_empty() && c.iter().all(|id| hidden_node_ids.contains(id)))
-                        .unwrap_or(false);
+                    let all_children_hidden = children.is_some_and(|c| {
+                        !c.is_empty() && c.iter().all(|id| hidden_node_ids.contains(id))
+                    });
                     if all_children_hidden {
                         newly_hidden.push(node.id);
                     }
@@ -2474,7 +2469,10 @@ impl GraphInner {
                                  dynamic_batch_nodes: &std::collections::HashSet<u64>,
                                  ever_detached_nodes: &std::collections::HashSet<u64>,
                                  folded_info: &std::collections::HashMap<u64, (usize, usize)>,
-                                 input_seq_range: &std::collections::HashMap<u64, (usize, usize)>,
+                                 input_seq_range: &std::collections::HashMap<
+            u64,
+            (usize, usize),
+        >,
                                  call_count: Option<usize>|
          -> String {
             let (shape, mut style, mut fillcolor) = Self::dot_node_style(&node.node_type);
@@ -2501,12 +2499,11 @@ impl GraphInner {
                         "\"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" peripheries=2 fontsize=10];\n",
                         node.id, label, shape, style, fillcolor
                     );
-                } else {
-                    return format!(
-                        "\"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
-                        node.id, label, shape, style, fillcolor
-                    );
                 }
+                return format!(
+                    "\"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
+                    node.id, label, shape, style, fillcolor
+                );
             }
 
             if matches!(node.node_type, NodeTypeDescriptor::SmartInput)
@@ -2525,7 +2522,7 @@ impl GraphInner {
             // - TargetInput 节点（如果 call_count > 1）
             let is_compute_node = !matches!(
                 node.node_type,
-                NodeTypeDescriptor::Parameter { .. }
+                NodeTypeDescriptor::Parameter
                     | NodeTypeDescriptor::SmartInput
                     | NodeTypeDescriptor::TargetInput
                     | NodeTypeDescriptor::BasicInput
@@ -2535,7 +2532,13 @@ impl GraphInner {
             let label = if let Some(&(min_seq, max_seq)) = input_seq_range.get(&node.id) {
                 // 变长输入节点：显示序列范围 + 蓝色调用次数标注
                 let count = call_count.unwrap_or(1);
-                Self::dot_node_label_html_with_seq_range(node, use_dynamic_batch, min_seq, max_seq, count)
+                Self::dot_node_label_html_with_seq_range(
+                    node,
+                    use_dynamic_batch,
+                    min_seq,
+                    max_seq,
+                    count,
+                )
             } else if let Some(count) = call_count {
                 // 多次调用的计算节点或 TargetInput 节点
                 if is_compute_node || is_target_input {
@@ -2553,7 +2556,8 @@ impl GraphInner {
             // 3. TargetInput 节点（如果 call_count > 1）
             let is_multi_call_compute = call_count.is_some() && is_compute_node;
             let is_multi_call_target = call_count.is_some() && is_target_input;
-            let use_double_border = is_multi_call_compute || is_multi_call_input || is_multi_call_target;
+            let use_double_border =
+                is_multi_call_compute || is_multi_call_input || is_multi_call_target;
 
             if use_double_border {
                 format!(
@@ -2809,10 +2813,10 @@ impl GraphInner {
                     let label = if is_var_len {
                         // 变长序列：显示范围 t=min~max
                         let min_last = min_steps.saturating_sub(1);
-                        format!("t={}~{}", min_last, last_step)
+                        format!("t={min_last}~{last_step}")
                     } else {
                         // 固定长度：显示具体时间步
-                        format!("t={}", last_step)
+                        format!("t={last_step}")
                     };
                     // 使用第一个 repr_output_node_id 作为代理节点（RNN/GRU 只有一个，LSTM 用 h）
                     let repr_id = repr_info.repr_output_node_ids.first()?.0;
@@ -2875,10 +2879,10 @@ impl GraphInner {
                 let recycle_label = if is_var_len {
                     // 变长序列：t=0~(min_last~max_last)，表示回流时间步的范围
                     let min_recycle_last = min_steps.saturating_sub(2);
-                    format!("t=0~({}~{})", min_recycle_last, recycle_last)
+                    format!("t=0~({min_recycle_last}~{recycle_last})")
                 } else {
                     // 固定长度：t=0~(N-2)
-                    format!("t=0~{}", recycle_last)
+                    format!("t=0~{recycle_last}")
                 };
 
                 // 为每对 (初始状态, 输出) 绘制边
@@ -2886,9 +2890,7 @@ impl GraphInner {
                 // - LSTM：2 对 (h0, h_1) 和 (c0, c_1)
                 for (idx, init_id) in repr_info.init_state_node_ids.iter().enumerate() {
                     // 1. t=0 边：SmartInput → ZerosLike（初始化）
-                    if let Some(init_node_desc) =
-                        desc.nodes.iter().find(|n| n.id == init_id.0)
-                    {
+                    if let Some(init_node_desc) = desc.nodes.iter().find(|n| n.id == init_id.0) {
                         for parent_id in &init_node_desc.parents {
                             dot.push_str(&format!(
                                 "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<t=0> fontcolor=\"#E67E22\" fontsize=9];\n",
@@ -2914,10 +2916,7 @@ impl GraphInner {
                         .iter()
                         .map(|id| format!("\"{}\"", id.0))
                         .collect();
-                    dot.push_str(&format!(
-                        "    {{ rank=same; {} }}\n",
-                        node_ids.join("; ")
-                    ));
+                    dot.push_str(&format!("    {{ rank=same; {} }}\n", node_ids.join("; ")));
                 }
             }
         }
@@ -2928,14 +2927,13 @@ impl GraphInner {
             if let NodeType::Input(
                 InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart),
             ) = node.node_type()
+                && let Some(target_id) = smart.gradient_target()
             {
-                if let Some(target_id) = smart.gradient_target() {
-                    // 绘制虚线箭头：从源节点到 SmartInput/RecurrentOutput（数据流方向）
-                    dot.push_str(&format!(
+                // 绘制虚线箭头：从源节点到 SmartInput/RecurrentOutput（数据流方向）
+                dot.push_str(&format!(
                         "    \"{}\" -> \"{}\" [style=dashed color=\"#1565C0\" label=\"data flow\" fontcolor=\"#1565C0\" fontsize=9];\n",
                         target_id.0, node.id().0
                     ));
-                }
             }
         }
 
@@ -3289,7 +3287,10 @@ impl GraphInner {
 
         // 使用 HTML 格式：名称后添加蓝色 (×N) 标注
         let mut parts = vec![
-            format!("{} <FONT COLOR=\"#1565C0\">(×{})</FONT>", base_name, call_count),
+            format!(
+                "{} <FONT COLOR=\"#1565C0\">(×{})</FONT>",
+                base_name, call_count
+            ),
             format!("<B>{}</B>", type_name),
             shape_str,
         ];
@@ -3301,7 +3302,7 @@ impl GraphInner {
         parts.join("<BR/>")
     }
 
-    /// 去掉节点名称中的索引后缀（如 mat_mul_153 -> mat_mul）
+    /// 去掉节点名称中的索引后缀（如 `mat_mul_153` -> `mat_mul`）
     fn strip_index_suffix(name: &str) -> String {
         // 找到最后一个下划线，检查后面是否全是数字
         if let Some(last_underscore) = name.rfind('_') {
@@ -3313,7 +3314,7 @@ impl GraphInner {
         name.to_string()
     }
 
-    /// 生成带序列长度范围的节点标签（用于变长 RNN 的 SmartInput 节点）
+    /// 生成带序列长度范围的节点标签（用于变长 RNN 的 `SmartInput` 节点）
     /// 形状显示为 `[?, min-max, ...]` 格式，并添加蓝色调用次数标注
     fn dot_node_label_html_with_seq_range(
         node: &NodeDescriptor,
@@ -3335,7 +3336,7 @@ impl GraphInner {
                     if i == 0 {
                         "?".to_string() // batch 维度
                     } else if i == 1 && min_seq != max_seq {
-                        format!("{}-{}", min_seq, max_seq) // 序列维度，显示范围
+                        format!("{min_seq}-{max_seq}") // 序列维度，显示范围
                     } else if i == 1 {
                         dim.to_string() // 序列维度，固定长度
                     } else {
@@ -3346,9 +3347,13 @@ impl GraphInner {
             format!("[{}]", shape_parts.join(", "))
         } else if node.output_shape.len() >= 2 && min_seq != max_seq {
             // 不使用动态 batch，但仍需显示序列范围
-            let mut shape_parts: Vec<String> = node.output_shape.iter().map(|d| d.to_string()).collect();
+            let mut shape_parts: Vec<String> = node
+                .output_shape
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             if shape_parts.len() >= 2 {
-                shape_parts[1] = format!("{}-{}", min_seq, max_seq);
+                shape_parts[1] = format!("{min_seq}-{max_seq}");
             }
             format!("[{}]", shape_parts.join(", "))
         } else {
@@ -3357,17 +3362,10 @@ impl GraphInner {
 
         // 移除名称后缀，添加蓝色调用次数标注（与其他多次调用节点一致）
         let base_name = Self::strip_index_suffix(&node.name);
-        let name_with_count = format!(
-            "{} <FONT COLOR=\"#1565C0\">(×{})</FONT>",
-            base_name, call_count
-        );
+        let name_with_count = format!("{base_name} <FONT COLOR=\"#1565C0\">(×{call_count})</FONT>");
 
         // 使用 HTML 格式：类型加粗
-        let mut parts = vec![
-            name_with_count,
-            format!("<B>{}</B>", type_name),
-            shape_str,
-        ];
+        let mut parts = vec![name_with_count, format!("<B>{}</B>", type_name), shape_str];
 
         if let Some(params) = node.param_count {
             parts.push(format!("({} params)", Self::format_number(params)));
@@ -3423,21 +3421,20 @@ impl GraphInner {
 
         // 使用 HTML 格式：名称后添加 ×N 或 ×min-max 标注
         let steps_str = if min_steps == max_steps {
-            format!("×{}", max_steps)
+            format!("×{max_steps}")
         } else {
-            format!("×{}-{}", min_steps, max_steps)
+            format!("×{min_steps}-{max_steps}")
         };
 
         // 构建名称行：基础名称 + 橙色时间步标注 + 可选蓝色创建次数标注
         let name_line = if let Some(count) = call_count {
             // 双重语义：橙色 ×N（时间步）+ 蓝色 (×N)（创建次数）
             format!(
-                "{} <FONT COLOR=\"#E67E22\">{}</FONT> <FONT COLOR=\"#1565C0\">(×{})</FONT>",
-                base_name, steps_str, count
+                "{base_name} <FONT COLOR=\"#E67E22\">{steps_str}</FONT> <FONT COLOR=\"#1565C0\">(×{count})</FONT>"
             )
         } else {
             // 单一语义：仅橙色 ×N（时间步）
-            format!("{} <FONT COLOR=\"#E67E22\">{}</FONT>", base_name, steps_str)
+            format!("{base_name} <FONT COLOR=\"#E67E22\">{steps_str}</FONT>")
         };
 
         let mut parts = vec![name_line, format!("<B>{}</B>", type_name), shape_str];
@@ -3516,7 +3513,7 @@ impl GraphInner {
     }
 
     /// 将 `NodeType` 转换为 `NodeTypeDescriptor`
-    fn node_type_to_descriptor(&self, node_type: &NodeType) -> NodeTypeDescriptor {
+    const fn node_type_to_descriptor(&self, node_type: &NodeType) -> NodeTypeDescriptor {
         use super::nodes::raw_node::InputVariant;
         match node_type {
             NodeType::Input(variant) => {
@@ -4782,8 +4779,8 @@ impl GraphInner {
 impl GraphInner {
     /// 添加节点到列表
     ///
-    /// 注意：目前不启用自动节点复用。RNN 层使用自己的内部缓存机制（unroll_cache + output_bridge）。
-    /// 全局节点复用机制已准备好，但需要更细粒度的控制才能正确工作（如区分不同 ModelState feature_shape）。
+    /// 注意：目前不启用自动节点复用。RNN `层使用自己的内部缓存机制（unroll_cache` + `output_bridge`）。
+    /// 全局节点复用机制已准备好，但需要更细粒度的控制才能正确工作（如区分不同 `ModelState` `feature_shape`）。
     fn add_node_to_list(
         &mut self,
         mut node_handle: NodeHandle,
@@ -4837,10 +4834,10 @@ impl GraphInner {
         self.add_node_to_list(node, name, "target", &[])
     }
 
-    /// 创建 SmartInput 节点（智能输入）
+    /// 创建 `SmartInput` 节点（智能输入）
     ///
-    /// SmartInput 是 ModelState 内部使用的特殊节点，用于实现智能缓存：
-    /// - 像 BasicInput 一样存储值（通过 `set_value` 设置）
+    /// `SmartInput` 是 `ModelState` 内部使用的特殊节点，用于实现智能缓存：
+    /// - 像 `BasicInput` 一样存储值（通过 `set_value` 设置）
     /// - 支持动态设置 detached 状态
     /// - 支持梯度路由到外部目标节点
     /// - 支持动态 batch
@@ -4857,10 +4854,10 @@ impl GraphInner {
         self.add_node_to_list(node, name, "input", &[])
     }
 
-    /// 创建 RecurrentOutput 节点（循环层输出桥接）
+    /// 创建 `RecurrentOutput` 节点（循环层输出桥接）
     ///
-    /// RecurrentOutput 用于 RNN/LSTM/GRU 层的输出桥接：
-    /// - 固定的 node_id，使下游层（如 FC）可以复用
+    /// `RecurrentOutput` 用于 RNN/LSTM/GRU 层的输出桥接：
+    /// - 固定的 `node_id，使下游层（如` FC）可以复用
     /// - 支持梯度路由到实际的 RNN 输出节点
     /// - 支持动态 batch
     ///
@@ -4881,7 +4878,7 @@ impl GraphInner {
     /// # 参数
     /// - `node_id`: SmartInput/RecurrentOutput 节点 ID
     /// - `detached`: 是否阻止梯度传播
-    /// - `mark_ever_detached`: 是否标记 was_ever_detached（用于可视化显示虚线边框）
+    /// - `mark_ever_detached`: 是否标记 `was_ever_detached（用于可视化显示虚线边框`）
     pub fn set_router_detached(
         &mut self,
         node_id: NodeId,
@@ -4902,7 +4899,7 @@ impl GraphInner {
         node.set_gradient_target(target)
     }
 
-    /// 获取 SmartInput 节点的梯度路由目标
+    /// 获取 `SmartInput` 节点的梯度路由目标
     pub fn get_gradient_target(&self, node_id: NodeId) -> Result<Option<NodeId>, GraphError> {
         let node = self.get_node(node_id)?;
         Ok(node.gradient_target())

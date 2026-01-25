@@ -10,8 +10,8 @@
  * 这使得同一个计算图可以处理不同 batch_size 的输入。
  */
 
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeHandle;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
@@ -19,8 +19,8 @@ use crate::tensor::Tensor;
 /// 基础输入节点（Data 和 Target 共用）
 ///
 /// # 动态 Batch 支持
-/// BasicInput 支持动态 batch：第一维可以是任意值。
-/// 这使得同一个计算图可以处理不同 batch_size 的输入。
+/// `BasicInput` 支持动态 batch：第一维可以是任意值。
+/// 这使得同一个计算图可以处理不同 `batch_size` 的输入。
 #[derive(Clone)]
 pub(crate) struct BasicInput {
     id: Option<NodeId>,
@@ -63,11 +63,11 @@ impl BasicInput {
         })
     }
 
-    /// 创建支持动态 batch 的 BasicInput 节点（指定特征形状）
+    /// 创建支持动态 batch 的 `BasicInput` 节点（指定特征形状）
     ///
     /// # 参数
     /// - `feature_shape`: 特征维度形状（不包括 batch）
-    /// - `initial_batch`: 初始 batch_size（用于固定形状）
+    /// - `initial_batch`: 初始 `batch_size（用于固定形状`）
     #[allow(dead_code)]
     pub(crate) fn with_dynamic_batch(
         feature_shape: &[usize],

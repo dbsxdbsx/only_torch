@@ -184,7 +184,9 @@ fn test_softmax_cross_entropy_10_classes() {
     let mut graph = GraphInner::new();
 
     let logits_id = graph.new_parameter_node(&[1, 10], Some("logits")).unwrap();
-    let labels_id = graph.new_basic_input_node(&[1, 10], Some("labels")).unwrap();
+    let labels_id = graph
+        .new_basic_input_node(&[1, 10], Some("labels"))
+        .unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
         .unwrap();

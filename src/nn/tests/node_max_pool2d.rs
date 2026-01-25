@@ -342,7 +342,9 @@ fn test_max_pool2d_kernel_too_large() {
     let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
-    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input")).unwrap();
+    let input = graph
+        .new_basic_input_node(&[1, 4, 4], Some("input"))
+        .unwrap();
 
     // kernel_size=5x5 超出输入尺寸
     let result = graph.new_max_pool2d_node(input, (5, 5), None, Some("pool"));

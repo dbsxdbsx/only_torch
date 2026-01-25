@@ -483,7 +483,9 @@ fn test_conv2d_channel_mismatch() {
     let mut graph = GraphInner::new();
 
     // 输入: [C_in=3, H=5, W=5]
-    let input = graph.new_basic_input_node(&[3, 5, 5], Some("input")).unwrap();
+    let input = graph
+        .new_basic_input_node(&[3, 5, 5], Some("input"))
+        .unwrap();
     // 卷积核: [C_out=2, C_in=1, kH=3, kW=3]（C_in 不匹配）
     let kernel = graph
         .new_parameter_node(&[2, 1, 3, 3], Some("kernel"))
@@ -514,7 +516,9 @@ fn test_conv2d_invalid_input_dims() {
 fn test_conv2d_invalid_kernel_dims() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_basic_input_node(&[1, 5, 5], Some("input")).unwrap();
+    let input = graph
+        .new_basic_input_node(&[1, 5, 5], Some("input"))
+        .unwrap();
     // 卷积核: [kH=3, kW=3]（2D，缺少通道维度）
     let kernel = graph.new_parameter_node(&[3, 3], Some("kernel")).unwrap();
 

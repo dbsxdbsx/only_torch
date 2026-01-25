@@ -61,7 +61,9 @@ fn test_softmax_requires_2d_input() {
     let mut graph = GraphInner::new();
 
     // 3D 输入应该失败（Softmax 只支持 2D）
-    let input_3d = graph.new_basic_input_node(&[2, 3, 4], Some("input_3d")).unwrap();
+    let input_3d = graph
+        .new_basic_input_node(&[2, 3, 4], Some("input_3d"))
+        .unwrap();
     let result = graph.new_softmax_node(input_3d, Some("softmax_3d"));
     assert!(result.is_err());
 

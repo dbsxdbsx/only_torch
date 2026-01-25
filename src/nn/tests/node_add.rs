@@ -562,8 +562,12 @@ fn test_add_broadcast_creation() {
 
     // 4. [2, 3, 4] + [1, 1, 4] -> [2, 3, 4]（高维广播）
     {
-        let input1 = graph.new_basic_input_node(&[2, 3, 4], Some("input7")).unwrap();
-        let input2 = graph.new_basic_input_node(&[1, 1, 4], Some("input8")).unwrap();
+        let input1 = graph
+            .new_basic_input_node(&[2, 3, 4], Some("input7"))
+            .unwrap();
+        let input2 = graph
+            .new_basic_input_node(&[1, 1, 4], Some("input8"))
+            .unwrap();
         let add = graph.new_add_node(&[input1, input2], Some("add4")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(add).unwrap(),

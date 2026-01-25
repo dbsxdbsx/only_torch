@@ -113,7 +113,9 @@ fn test_node_sign_forward_propagation() {
 
         // 创建parent节点
         let parent = match parent_type {
-            "input" => graph.new_basic_input_node(&[2, 2], Some("input_1")).unwrap(),
+            "input" => graph
+                .new_basic_input_node(&[2, 2], Some("input_1"))
+                .unwrap(),
             "parameter" => graph
                 .new_parameter_node(&[2, 2], Some("parameter_1"))
                 .unwrap(),

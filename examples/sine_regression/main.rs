@@ -100,8 +100,7 @@ fn main() -> Result<(), GraphError> {
     println!("\n全部样本最大误差: {max_error:.4}");
 
     // 保存可视化
-    let vis_result =
-        graph.save_visualization("examples/sine_regression/sine_regression", None)?;
+    let vis_result = graph.save_visualization("examples/sine_regression/sine_regression", None)?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

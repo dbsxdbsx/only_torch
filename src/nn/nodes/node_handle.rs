@@ -275,9 +275,9 @@ impl NodeHandle {
         Self::new(Identity::new(parents)?)
     }
 
-    /// 创建 SmartInput 节点（智能输入）
+    /// 创建 `SmartInput` 节点（智能输入）
     ///
-    /// SmartInput 用于 ModelState 的智能缓存机制，支持：
+    /// `SmartInput` 用于 `ModelState` 的智能缓存机制，支持：
     /// - 动态设置 detached 状态
     /// - 梯度路由到外部目标节点
     /// - 动态 batch
@@ -290,10 +290,10 @@ impl NodeHandle {
         })
     }
 
-    /// 创建 RecurrentOutput 节点（循环层输出桥接）
+    /// 创建 `RecurrentOutput` 节点（循环层输出桥接）
     ///
-    /// RecurrentOutput 用于 RNN/LSTM/GRU 层的输出桥接，功能与 SmartInput 相同：
-    /// - 固定的 node_id，使下游层可以复用
+    /// `RecurrentOutput` 用于 RNN/LSTM/GRU 层的输出桥接，功能与 `SmartInput` 相同：
+    /// - 固定的 `node_id，使下游层可以复用`
     /// - 支持梯度路由到实际的 RNN 输出节点
     /// - 支持动态 batch
     pub(in crate::nn) fn new_recurrent_output(shape: &[usize]) -> Result<Self, GraphError> {
@@ -309,7 +309,7 @@ impl NodeHandle {
     ///
     /// # 参数
     /// - `detached`: 是否阻止梯度传播
-    /// - `mark_ever_detached`: 是否标记 was_ever_detached（用于可视化显示虚线边框）
+    /// - `mark_ever_detached`: 是否标记 `was_ever_detached（用于可视化显示虚线边框`）
     ///
     /// # 返回
     /// 如果节点不是 SmartInput/RecurrentOutput，返回错误
@@ -498,7 +498,7 @@ impl NodeHandle {
     /// - `true`: 截断该节点的梯度流，反向传播时不向父节点传播
     /// - `false`: 正常传播梯度（默认状态）
     ///
-    /// 注意：对于 SmartInput 节点，应使用 `set_router_detached()` 方法。
+    /// 注意：对于 `SmartInput` 节点，应使用 `set_router_detached()` 方法。
     pub(in crate::nn) const fn set_detached(&mut self, detached: bool) {
         self.is_detached = detached;
     }

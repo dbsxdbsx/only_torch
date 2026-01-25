@@ -453,7 +453,9 @@ fn test_select_rnn_two_step_unroll() -> Result<(), GraphError> {
 fn test_select_axis_out_of_bounds() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_basic_input_node(&[2, 3, 4], Some("input")).unwrap();
+    let input = graph
+        .new_basic_input_node(&[2, 3, 4], Some("input"))
+        .unwrap();
 
     // axis=3 超出 3 维张量的范围
     let result = graph.new_select_node(input, 3, 0, Some("bad_select"));
@@ -471,7 +473,9 @@ fn test_select_axis_out_of_bounds() {
 fn test_select_index_out_of_bounds() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_basic_input_node(&[2, 3, 4], Some("input")).unwrap();
+    let input = graph
+        .new_basic_input_node(&[2, 3, 4], Some("input"))
+        .unwrap();
 
     // index=5 超出 axis=1 的大小 3
     let result = graph.new_select_node(input, 1, 5, Some("bad_select"));

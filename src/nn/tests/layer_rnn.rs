@@ -517,7 +517,11 @@ fn test_rnn_recurrent_output_linear_reuse() -> Result<(), GraphError> {
     // 验证每次调用后值是正确计算的
     // 这里只验证最后一次调用的值存在且形状正确
     let v3 = y3.value()?.unwrap();
-    assert_eq!(v3.shape(), &[2, 2], "输出形状应该是 [batch=2, out_features=2]");
+    assert_eq!(
+        v3.shape(),
+        &[2, 2],
+        "输出形状应该是 [batch=2, out_features=2]"
+    );
 
     Ok(())
 }
@@ -533,8 +537,10 @@ fn test_rnn_different_batch_size_same_seq_len() -> Result<(), GraphError> {
     let rnn = Rnn::new(&graph, 2, 4, "rnn")?;
 
     // 设置已知权重便于验证
-    rnn.w_ih()
-        .set_value(&Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8], &[2, 4]))?;
+    rnn.w_ih().set_value(&Tensor::new(
+        &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        &[2, 4],
+    ))?;
     rnn.w_hh().set_value(&Tensor::new(&[0.1f32; 16], &[4, 4]))?;
     rnn.b_h().set_value(&Tensor::zeros(&[1, 4]))?;
 
@@ -595,10 +601,8 @@ fn test_rnn_recurrent_output_gradient_propagation() -> Result<(), GraphError> {
     let fc = Linear::new(&graph, 4, 2, true, "fc")?;
 
     // 设置固定权重以便验证梯度
-    rnn.w_ih()
-        .set_value(&Tensor::new(&[0.1f32; 8], &[2, 4]))?;
-    rnn.w_hh()
-        .set_value(&Tensor::new(&[0.1f32; 16], &[4, 4]))?;
+    rnn.w_ih().set_value(&Tensor::new(&[0.1f32; 8], &[2, 4]))?;
+    rnn.w_hh().set_value(&Tensor::new(&[0.1f32; 16], &[4, 4]))?;
     rnn.b_h().set_value(&Tensor::zeros(&[1, 4]))?;
 
     // 第一次训练：seq_len=3
@@ -644,10 +648,7 @@ fn test_rnn_recurrent_output_gradient_propagation() -> Result<(), GraphError> {
         .iter()
         .zip(grad_w_ih_2.data_as_slice().iter())
         .all(|(a, b)| (a - b).abs() < 1e-6);
-    assert!(
-        !same,
-        "不同 seq_len 的梯度应该不同，说明梯度路由正确"
-    );
+    assert!(!same, "不同 seq_len 的梯度应该不同，说明梯度路由正确");
 
     Ok(())
 }

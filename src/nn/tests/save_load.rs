@@ -665,7 +665,9 @@ fn test_dynamic_shape_in_descriptor() {
     let mut graph = GraphInner::new();
 
     // 创建支持动态 batch 的节点
-    let x = graph.new_basic_input_node(&[32, 128], Some("input")).unwrap();
+    let x = graph
+        .new_basic_input_node(&[32, 128], Some("input"))
+        .unwrap();
     let w = graph
         .new_parameter_node(&[128, 64], Some("weight"))
         .unwrap();

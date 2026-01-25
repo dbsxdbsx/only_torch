@@ -65,7 +65,7 @@ pub trait ForwardInput {
     /// 是否处于 detached 状态
     ///
     /// - `None`: 这个输入本身没有梯度流概念（如 Tensor），问它是否 detach 没有意义
-    /// - `Some(true)`: 被显式 detach（如 DetachedVar）
+    /// - `Some(true)`: 被显式 detach（如 `DetachedVar`）
     /// - `Some(false)`: 正常传播梯度（如 Var）
     fn is_detached(&self) -> Option<bool>;
 

@@ -608,7 +608,9 @@ fn test_detach_gan_style_training() {
         .unwrap();
 
     // 添加 loss 节点使输出为标量
-    let d_target = graph.new_basic_input_node(&[1, 1], Some("d_target")).unwrap();
+    let d_target = graph
+        .new_basic_input_node(&[1, 1], Some("d_target"))
+        .unwrap();
     let loss = graph
         .new_mse_loss_node(d_output, d_target, Some("loss"))
         .unwrap();
@@ -981,7 +983,9 @@ fn test_retain_graph_multi_task_learning() {
     // 任务 1: features -> w1 -> out1 -> loss1
     let w1 = graph.new_parameter_node(&[1, 2], Some("w1")).unwrap();
     let out1 = graph.new_mat_mul_node(w1, features, Some("out1")).unwrap();
-    let target1 = graph.new_basic_input_node(&[1, 1], Some("target1")).unwrap();
+    let target1 = graph
+        .new_basic_input_node(&[1, 1], Some("target1"))
+        .unwrap();
     let loss1 = graph
         .new_mse_loss_node(out1, target1, Some("loss1"))
         .unwrap();
@@ -989,7 +993,9 @@ fn test_retain_graph_multi_task_learning() {
     // 任务 2: features -> w2 -> out2 -> loss2
     let w2 = graph.new_parameter_node(&[1, 2], Some("w2")).unwrap();
     let out2 = graph.new_mat_mul_node(w2, features, Some("out2")).unwrap();
-    let target2 = graph.new_basic_input_node(&[1, 1], Some("target2")).unwrap();
+    let target2 = graph
+        .new_basic_input_node(&[1, 1], Some("target2"))
+        .unwrap();
     let loss2 = graph
         .new_mse_loss_node(out2, target2, Some("loss2"))
         .unwrap();
@@ -1260,7 +1266,9 @@ fn test_backward_accumulation_for_complex_topology() {
     let out1 = graph
         .new_mat_mul_node(w_task1, shared_feat2, Some("out1"))
         .unwrap();
-    let target1 = graph.new_basic_input_node(&[1, 1], Some("target1")).unwrap();
+    let target1 = graph
+        .new_basic_input_node(&[1, 1], Some("target1"))
+        .unwrap();
     let loss1 = graph
         .new_mse_loss_node(out1, target1, Some("loss1"))
         .unwrap();
@@ -1269,7 +1277,9 @@ fn test_backward_accumulation_for_complex_topology() {
     let out2 = graph
         .new_mat_mul_node(w_task2, shared_feat2, Some("out2"))
         .unwrap();
-    let target2 = graph.new_basic_input_node(&[1, 1], Some("target2")).unwrap();
+    let target2 = graph
+        .new_basic_input_node(&[1, 1], Some("target2"))
+        .unwrap();
     let loss2 = graph
         .new_mse_loss_node(out2, target2, Some("loss2"))
         .unwrap();

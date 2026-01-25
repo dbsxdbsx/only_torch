@@ -54,8 +54,8 @@ pub enum NodeTypeDescriptor {
     SmartInput,      // 模型入口（ModelState 使用，支持动态 batch、梯度路由）
     RecurrentOutput, // 循环层输出桥接（RNN/LSTM/GRU 内部使用）
     Parameter,
-    State,          // 时间状态节点（RNN 隐藏状态等）
-    Identity,       // 恒等映射（用于 detach 等）
+    State,    // 时间状态节点（RNN 隐藏状态等）
+    Identity, // 恒等映射（用于 detach 等）
     Add,
     Divide,
     Subtract,

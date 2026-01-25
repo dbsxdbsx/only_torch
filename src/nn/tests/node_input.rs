@@ -59,7 +59,11 @@ fn test_node_input_creation_with_invalid_shape() {
     }
 
     // 3D 和 4D 现在应该成功（CNN 支持）
-    assert!(graph.new_basic_input_node(&[3, 28, 28], Some("input_3d")).is_ok());
+    assert!(
+        graph
+            .new_basic_input_node(&[3, 28, 28], Some("input_3d"))
+            .is_ok()
+    );
     assert!(
         graph
             .new_basic_input_node(&[4, 3, 28, 28], Some("input_4d"))
@@ -92,7 +96,9 @@ fn test_node_input_name_generation() {
 #[test]
 fn test_node_input_manually_set_value() {
     let mut graph = GraphInner::new();
-    let input = graph.new_basic_input_node(&[2, 2], Some("test_input")).unwrap();
+    let input = graph
+        .new_basic_input_node(&[2, 2], Some("test_input"))
+        .unwrap();
 
     // 1. 测试有效赋值
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);

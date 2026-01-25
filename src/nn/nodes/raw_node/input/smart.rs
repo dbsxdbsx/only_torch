@@ -20,16 +20,16 @@
  * - 可视化时 batch 维度显示为 `?`
  */
 
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeHandle;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
 
-/// SmartInput 节点（智能输入）
+/// `SmartInput` 节点（智能输入）
 ///
-/// 作为 ModelState 缓存结构的入口点，支持：
+/// 作为 `ModelState` 缓存结构的入口点，支持：
 /// - 动态值更新（通过 `set_value`）
 /// - 动态 detached 状态切换
 /// - 梯度路由到外部目标节点
@@ -53,7 +53,7 @@ pub(crate) struct SmartInput {
 }
 
 impl SmartInput {
-    /// 创建一个支持动态 batch 的 SmartInput
+    /// 创建一个支持动态 batch 的 `SmartInput`
     ///
     /// # 参数
     /// - `initial_shape`: 首次调用时的完整形状（如 `[256, 64]`）
@@ -100,7 +100,7 @@ impl SmartInput {
     ///
     /// # 参数
     /// - `detached`: 是否阻止梯度传播
-    /// - `mark_ever_detached`: 是否标记 was_ever_detached（用于可视化显示虚线边框）
+    /// - `mark_ever_detached`: 是否标记 `was_ever_detached（用于可视化显示虚线边框`）
     pub(crate) fn set_detached(&self, detached: bool, mark_ever_detached: bool) {
         *self.is_detached.borrow_mut() = detached;
         // 只有当显式 detach 时才标记（Tensor 输入不算）
@@ -162,10 +162,7 @@ impl TraitNode for SmartInput {
         true
     }
 
-    fn calc_value_by_parents(
-        &mut self,
-        _parents: &[NodeHandle],
-    ) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
         // SmartInput 没有父节点，值通过 set_value 设置
         // 如果调用到这里，说明值还没设置
         if self.value.is_none() {

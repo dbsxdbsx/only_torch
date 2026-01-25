@@ -314,8 +314,12 @@ fn test_subtract_broadcast_creation() {
 
     // 3. [2, 3, 4] - [1, 1, 4] -> [2, 3, 4]（高维广播）
     {
-        let left = graph.new_basic_input_node(&[2, 3, 4], Some("left3")).unwrap();
-        let right = graph.new_basic_input_node(&[1, 1, 4], Some("right3")).unwrap();
+        let left = graph
+            .new_basic_input_node(&[2, 3, 4], Some("left3"))
+            .unwrap();
+        let right = graph
+            .new_basic_input_node(&[1, 1, 4], Some("right3"))
+            .unwrap();
         let result = graph.new_subtract_node(left, right, Some("sub3")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
