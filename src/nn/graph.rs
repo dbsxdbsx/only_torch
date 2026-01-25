@@ -2154,9 +2154,9 @@ impl GraphInner {
         dot.push_str("digraph Model {\n");
         dot.push_str("    rankdir=TB;\n"); // 从上到下
         dot.push_str("    newrank=true;\n"); // 允许 rank=same 跨 cluster 正常工作
-        // 使用正交线（ortho）：边保持直角转弯，回流边不会穿过其他节点
-        // 虽然回流边可能略超出 cluster 边界，但整体视觉效果更整齐
-        dot.push_str("    splines=ortho;\n");
+        // 使用折线（polyline）：边由直线段组成，可斜向转弯（非严格 90 度）
+        // 相比 ortho，polyline 对边标签的位置支持更好
+        dot.push_str("    splines=polyline;\n");
         dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
         dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
         dot.push('\n');

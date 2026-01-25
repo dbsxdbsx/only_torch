@@ -1,7 +1,7 @@
 digraph Model {
     rankdir=TB;
     newrank=true;
-    splines=ortho;
+    splines=polyline;
     node [fontname="Microsoft YaHei,SimHei,Arial"];
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
