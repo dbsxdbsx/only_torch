@@ -23,7 +23,9 @@
  */
 
 use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
-use crate::nn::{Graph, GraphError, Init, Module, Var};
+use crate::nn::{Graph, GraphError, Init, Module, NodeId, Var};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 /// Lstm (长短期记忆) 层 - 展开式设计
 ///
@@ -74,6 +76,10 @@ pub struct Lstm {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
+    /// 按 (batch_size, seq_len) 缓存的展开结构 -> 实际输出节点 ID
+    /// 注意：必须同时用 batch_size 和 seq_len 作为 key，
+    /// 因为 zeros_like 创建的初始状态节点依赖输入的 batch 维度
+    unroll_cache: RefCell<HashMap<(usize, usize), NodeId>>,
 }
 
 impl Lstm {
@@ -191,6 +197,7 @@ impl Lstm {
             input_size,
             hidden_size,
             name: name.to_string(),
+            unroll_cache: RefCell::new(HashMap::new()),
         })
     }
 
@@ -225,7 +232,7 @@ impl Lstm {
             )));
         }
 
-        let (_, seq_len, input_size) = (shape[0], shape[1], shape[2]);
+        let (batch_size, seq_len, input_size) = (shape[0], shape[1], shape[2]);
 
         // 验证输入维度
         if input_size != self.input_size {
@@ -235,8 +242,30 @@ impl Lstm {
             )));
         }
 
-        // 展开所有时间步
-        self.unroll(x, seq_len)
+        // 获取或创建此 (batch_size, seq_len) 的展开结构
+        // 注意：必须同时用 batch_size 和 seq_len 作为缓存 key，
+        // 因为 zeros_like 创建的初始状态节点依赖输入的 batch 维度
+        let cache_key = (batch_size, seq_len);
+        let h = {
+            let cache = self.unroll_cache.borrow();
+            if let Some(&cached_id) = cache.get(&cache_key) {
+                // 缓存命中：重新计算该节点
+                drop(cache);
+                self.graph.inner_mut().forward(cached_id)?;
+                Var::new(cached_id, self.graph.inner_rc())
+            } else {
+                // 缓存未命中：创建新的展开结构
+                drop(cache);
+                let h = self.unroll(x, seq_len)?;
+                let h_id = h.node_id();
+                // 触发前向计算
+                self.graph.inner_mut().forward(h_id)?;
+                self.unroll_cache.borrow_mut().insert(cache_key, h_id);
+                h
+            }
+        };
+
+        Ok(h)
     }
 
     /// 展开 LSTM 时间步
@@ -246,8 +275,6 @@ impl Lstm {
     /// - 完整的分组信息在 `save_visualization` 时惰性推断
     fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
         // 创建初始状态（ZerosLike：根据 x 的 batch_size 动态生成）
-        // 注意：每次 forward 都创建新的 ZerosLike 节点，确保与当前输入的 batch_size 匹配
-        // 这对于变长序列处理（不同桶有不同 batch_size）是必需的
         let h0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
         let c0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
         let init_state_node_ids = vec![h0.node_id(), c0.node_id()]; // LSTM 有两个初始状态

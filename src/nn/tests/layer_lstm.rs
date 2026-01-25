@@ -391,6 +391,64 @@ fn test_lstm_long_sequence() -> Result<(), GraphError> {
     Ok(())
 }
 
+/// 测试 LSTM 缓存：不同 batch_size 使用相同 seq_len 时，应该创建不同的计算图
+///
+/// 这是 Bug 修复测试：之前没有缓存机制，每次都重新创建计算图。
+/// 现在添加缓存后，需要确保缓存 key 是 (batch_size, seq_len) 而不仅仅是 seq_len。
+#[test]
+fn test_lstm_different_batch_size_same_seq_len() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let lstm = Lstm::new(&graph, 2, 4, "lstm")?;
+
+    // 第一个输入：batch_size=2, seq_len=3
+    let x1 = graph.zeros(&[2, 3, 2])?;
+    x1.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+
+    // 第二个输入：batch_size=4, seq_len=3（相同 seq_len，不同 batch_size）
+    let x2 = graph.zeros(&[4, 3, 2])?;
+    x2.set_value(&Tensor::new(&vec![0.1f32; 24], &[4, 3, 2]))?;
+
+    // 第三个输入：batch_size=2, seq_len=3（回到第一个配置）
+    let x3 = graph.zeros(&[2, 3, 2])?;
+    x3.set_value(&Tensor::new(&vec![0.2f32; 12], &[2, 3, 2]))?;
+
+    // 三次 forward
+    let h1 = lstm.forward(&x1)?;
+    let id1 = h1.node_id();
+    let shape1 = h1.value()?.unwrap().shape().to_vec();
+
+    let h2 = lstm.forward(&x2)?;
+    let id2 = h2.node_id();
+    let shape2 = h2.value()?.unwrap().shape().to_vec();
+
+    let h3 = lstm.forward(&x3)?;
+    let id3 = h3.node_id();
+    let shape3 = h3.value()?.unwrap().shape().to_vec();
+
+    // 验证：不同 batch_size 应该返回不同的 node_id
+    assert_ne!(
+        id1, id2,
+        "batch_size=2 和 batch_size=4 应该返回不同的 node_id（即使 seq_len 相同）"
+    );
+
+    // 验证：相同 (batch_size, seq_len) 应该返回相同的 node_id（复用缓存）
+    assert_eq!(
+        id1, id3,
+        "相同的 (batch_size=2, seq_len=3) 应该返回相同的 node_id"
+    );
+
+    // 验证输出形状正确
+    assert_eq!(shape1, vec![2, 4], "batch_size=2 的输出形状应该是 [2, 4]");
+    assert_eq!(shape2, vec![4, 4], "batch_size=4 的输出形状应该是 [4, 4]");
+    assert_eq!(
+        shape3,
+        vec![2, 4],
+        "再次 batch_size=2 的输出形状应该是 [2, 4]"
+    );
+
+    Ok(())
+}
+
 /// 测试种子可重复性
 #[test]
 fn test_lstm_seeded_reproducibility() -> Result<(), GraphError> {

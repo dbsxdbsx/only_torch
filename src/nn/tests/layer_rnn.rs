@@ -522,6 +522,71 @@ fn test_rnn_recurrent_output_linear_reuse() -> Result<(), GraphError> {
     Ok(())
 }
 
+/// 测试 RNN 缓存：不同 batch_size 使用相同 seq_len 时，应该创建不同的计算图
+///
+/// 这是 Bug 修复测试：之前 RNN 只用 seq_len 作为缓存 key，导致不同 batch_size
+/// 复用了错误的计算图（zeros_like 节点依赖 batch 维度）。
+/// 修复后，缓存 key 变为 (batch_size, seq_len)。
+#[test]
+fn test_rnn_different_batch_size_same_seq_len() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    let rnn = Rnn::new(&graph, 2, 4, "rnn")?;
+
+    // 设置已知权重便于验证
+    rnn.w_ih()
+        .set_value(&Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8], &[2, 4]))?;
+    rnn.w_hh().set_value(&Tensor::new(&[0.1f32; 16], &[4, 4]))?;
+    rnn.b_h().set_value(&Tensor::zeros(&[1, 4]))?;
+
+    // 第一个输入：batch_size=2, seq_len=3
+    let x1 = graph.zeros(&[2, 3, 2])?;
+    x1.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
+
+    // 第二个输入：batch_size=4, seq_len=3（相同 seq_len，不同 batch_size）
+    let x2 = graph.zeros(&[4, 3, 2])?;
+    x2.set_value(&Tensor::new(&vec![0.1f32; 24], &[4, 3, 2]))?;
+
+    // 第三个输入：batch_size=2, seq_len=3（回到第一个配置）
+    let x3 = graph.zeros(&[2, 3, 2])?;
+    x3.set_value(&Tensor::new(&vec![0.2f32; 12], &[2, 3, 2]))?;
+
+    // 三次 forward
+    let h1 = rnn.forward(&x1)?;
+    let id1 = h1.node_id();
+    let shape1 = h1.value()?.unwrap().shape().to_vec();
+
+    let h2 = rnn.forward(&x2)?;
+    let id2 = h2.node_id();
+    let shape2 = h2.value()?.unwrap().shape().to_vec();
+
+    let h3 = rnn.forward(&x3)?;
+    let id3 = h3.node_id();
+    let shape3 = h3.value()?.unwrap().shape().to_vec();
+
+    // 验证：不同 batch_size 应该返回不同的 node_id
+    assert_ne!(
+        id1, id2,
+        "batch_size=2 和 batch_size=4 应该返回不同的 node_id（即使 seq_len 相同）"
+    );
+
+    // 验证：相同 (batch_size, seq_len) 应该返回相同的 node_id（复用缓存）
+    assert_eq!(
+        id1, id3,
+        "相同的 (batch_size=2, seq_len=3) 应该返回相同的 node_id"
+    );
+
+    // 验证输出形状正确
+    assert_eq!(shape1, vec![2, 4], "batch_size=2 的输出形状应该是 [2, 4]");
+    assert_eq!(shape2, vec![4, 4], "batch_size=4 的输出形状应该是 [4, 4]");
+    assert_eq!(
+        shape3,
+        vec![2, 4],
+        "再次 batch_size=2 的输出形状应该是 [2, 4]"
+    );
+
+    Ok(())
+}
+
 /// 测试 RNN 桥接节点的梯度正确传播
 #[test]
 fn test_rnn_recurrent_output_gradient_propagation() -> Result<(), GraphError> {

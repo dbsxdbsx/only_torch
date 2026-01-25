@@ -72,8 +72,10 @@ pub struct Rnn {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
-    /// 按 seq_len 缓存的展开结构：seq_len -> (实际输出节点 ID)
-    unroll_cache: RefCell<HashMap<usize, NodeId>>,
+    /// 按 (batch_size, seq_len) 缓存的展开结构 -> 实际输出节点 ID
+    /// 注意：必须同时用 batch_size 和 seq_len 作为 key，
+    /// 因为 zeros_like 创建的初始状态节点依赖输入的 batch 维度
+    unroll_cache: RefCell<HashMap<(usize, usize), NodeId>>,
 }
 
 impl Rnn {
@@ -166,7 +168,7 @@ impl Rnn {
             )));
         }
 
-        let (_, seq_len, input_size) = (shape[0], shape[1], shape[2]);
+        let (batch_size, seq_len, input_size) = (shape[0], shape[1], shape[2]);
 
         // 验证输入维度
         if input_size != self.input_size {
@@ -176,10 +178,13 @@ impl Rnn {
             )));
         }
 
-        // 获取或创建此 seq_len 的展开结构
+        // 获取或创建此 (batch_size, seq_len) 的展开结构
+        // 注意：必须同时用 batch_size 和 seq_len 作为缓存 key，
+        // 因为 zeros_like 创建的初始状态节点依赖输入的 batch 维度
+        let cache_key = (batch_size, seq_len);
         let h = {
             let cache = self.unroll_cache.borrow();
-            if let Some(&cached_id) = cache.get(&seq_len) {
+            if let Some(&cached_id) = cache.get(&cache_key) {
                 // 缓存命中：重新计算该节点
                 drop(cache);
                 self.graph.inner_mut().forward(cached_id)?;
@@ -191,7 +196,7 @@ impl Rnn {
                 let h_id = h.node_id();
                 // 触发前向计算
                 self.graph.inner_mut().forward(h_id)?;
-                self.unroll_cache.borrow_mut().insert(seq_len, h_id);
+                self.unroll_cache.borrow_mut().insert(cache_key, h_id);
                 h
             }
         };
