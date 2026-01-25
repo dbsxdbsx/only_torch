@@ -25,7 +25,7 @@ fn test_softmax_creation() {
 
     // 1. Input 节点作为父节点
     {
-        let input = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
+        let input = graph.new_basic_input_node(&[2, 3], Some("input1")).unwrap();
         let softmax = graph
             .new_softmax_node(input, Some("softmax_with_input"))
             .unwrap();
@@ -61,13 +61,13 @@ fn test_softmax_requires_2d_input() {
     let mut graph = GraphInner::new();
 
     // 3D 输入应该失败（Softmax 只支持 2D）
-    let input_3d = graph.new_input_node(&[2, 3, 4], Some("input_3d")).unwrap();
+    let input_3d = graph.new_basic_input_node(&[2, 3, 4], Some("input_3d")).unwrap();
     let result = graph.new_softmax_node(input_3d, Some("softmax_3d"));
     assert!(result.is_err());
 
     // 4D 输入应该失败
     let input_4d = graph
-        .new_input_node(&[2, 3, 4, 5], Some("input_4d"))
+        .new_basic_input_node(&[2, 3, 4, 5], Some("input_4d"))
         .unwrap();
     let result = graph.new_softmax_node(input_4d, Some("softmax_4d"));
     assert!(result.is_err());
@@ -78,7 +78,7 @@ fn test_softmax_requires_2d_input() {
 fn test_softmax_name_generation() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
 
     // 1. 显式命名
     let softmax1 = graph.new_softmax_node(input, Some("my_softmax")).unwrap();
@@ -100,7 +100,7 @@ fn test_softmax_name_generation() {
 #[test]
 fn test_softmax_cannot_set_value() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
     let softmax = graph.new_softmax_node(input, Some("softmax")).unwrap();
 
     let test_value = Tensor::new(&[0.1, 0.2, 0.7, 0.3, 0.3, 0.4], &[2, 3]);
@@ -315,7 +315,7 @@ fn test_softmax_backward_e2e() -> Result<(), GraphError> {
     let result = graph.new_softmax_node(input, Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值
@@ -357,7 +357,7 @@ fn test_softmax_backward_e2e_chain() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 构建网络: output = softmax(w @ x + b)
-    let x = graph.new_input_node(&[2, 3], Some("x"))?;
+    let x = graph.new_basic_input_node(&[2, 3], Some("x"))?;
     let w = graph.new_parameter_node(&[3, 4], Some("w"))?;
     let b = graph.new_parameter_node(&[2, 4], Some("b"))?;
     let wx = graph.new_mat_mul_node(x, w, Some("xw"))?;
@@ -365,7 +365,7 @@ fn test_softmax_backward_e2e_chain() -> Result<(), GraphError> {
     let output = graph.new_softmax_node(z, Some("output"))?;
 
     // loss = MSE(output, target)
-    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     // 设置输入
@@ -410,7 +410,7 @@ fn test_softmax_gradient_accumulation() -> Result<(), GraphError> {
 
     let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let result = graph.new_softmax_node(input, Some("result"))?;
-    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值

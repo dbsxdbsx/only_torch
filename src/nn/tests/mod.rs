@@ -21,9 +21,8 @@ mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
 mod node_divide; // Divide 节点（逐元素除法）
 mod node_flatten; // Flatten 节点（展平）
-mod node_gradient_router; // GradientRouter 节点（ModelState 内部使用的梯度路由器）
 mod node_identity; // Identity 节点（恒等映射，用于 detach_node）
-mod node_input;
+mod node_input; // InputVariant（BasicInput, TargetInput, SmartInput）
 mod node_leaky_relu; // LeakyReLU/ReLU 激活函数
 mod node_mat_mul;
 mod node_max_pool2d; // MaxPool2d 节点（2D 最大池化）

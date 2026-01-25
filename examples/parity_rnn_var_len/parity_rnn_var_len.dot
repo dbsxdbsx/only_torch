@@ -1,0 +1,71 @@
+digraph Model {
+    rankdir=TB;
+    newrank=true;
+    splines=ortho;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    subgraph cluster_ParityRNN {
+        label=<<B>ParityRNN</B><BR/><FONT POINT-SIZE="9">Model: 81 nodes</FONT>>;
+        style=filled;
+        fillcolor="#FFECB340";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        subgraph cluster_ParityRNN_fc {
+            label=<<B>fc</B><BR/><FONT POINT-SIZE="8">Linear: [?, 16] → [?, 2]</FONT>>;
+            style=filled;
+            fillcolor="#E3F2FD80";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "4" [label=<fc_W<BR/><B>Parameter</B><BR/>[16, 2]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "5" [label=<fc_b<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "488" [label=<mat_mul <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>MatMul</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" peripheries=2 fontsize=10];
+            "489" [label=<add <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" peripheries=2 fontsize=10];
+        }
+        subgraph cluster_ParityRNN_rnn {
+            label=<<B>rnn</B><BR/><FONT POINT-SIZE="8">RNN: [?, 1] → [?, 16]</FONT>>;
+            style="filled,bold";
+            peripheries=3;
+            penwidth=2;
+            fillcolor="#E8F5E980";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "1" [label=<rnn_W_ih<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "2" [label=<rnn_W_hh<BR/><B>Parameter</B><BR/>[16, 16]<BR/>(256 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "3" [label=<rnn_b_h<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "415" [label=<zeros_like <FONT COLOR="#E67E22">×1</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>ZerosLike</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFF9C4" peripheries=2 fontsize=10];
+            "416" [label=<select <FONT COLOR="#E67E22">×4-12</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>Select</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFF9C4" peripheries=2 fontsize=10];
+            "417" [label=<mat_mul <FONT COLOR="#E67E22">×4-12</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFF9C4" peripheries=2 fontsize=10];
+            "418" [label=<mat_mul <FONT COLOR="#E67E22">×4-12</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFF9C4" peripheries=2 fontsize=10];
+            "419" [label=<add <FONT COLOR="#E67E22">×4-12</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFF9C4" peripheries=2 fontsize=10];
+            "420" [label=<add <FONT COLOR="#E67E22">×4-12</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFF9C4" peripheries=2 fontsize=10];
+            "421" [label=<tanh <FONT COLOR="#E67E22">×4-12</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>Tanh</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFE0B2" peripheries=2 fontsize=10];
+        }
+        "414" [label=<input <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>SmartInput</B><BR/>[?, 4-12, 1]> shape=ellipse style=filled fillcolor="#E0E0E0" peripheries=2 fontsize=10];
+    }
+
+    "490" [label=<target <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" peripheries=2 fontsize=10];
+    "491" [label=<softmax_ce <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>SoftmaxCE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" peripheries=2 fontsize=10];
+
+    "414" -> "416";
+    "416" -> "417";
+    "1" -> "417";
+    "415" -> "418";
+    "2" -> "418";
+    "417" -> "419";
+    "418" -> "419";
+    "419" -> "420";
+    "3" -> "420";
+    "420" -> "421";
+    "421" -> "488";
+    "4" -> "488";
+    "488" -> "489";
+    "5" -> "489";
+    "489" -> "491";
+    "490" -> "491";
+    "414" -> "415" [style=dashed color="#E67E22" label=<t=0 <FONT COLOR="#E67E22">(×1)</FONT>> fontcolor="#E67E22" fontsize=9];
+    "421" -> "415" [style=dashed color="#E67E22" label=<t&gt;0 <FONT COLOR="#E67E22">(×3-11)</FONT>> fontcolor="#E67E22" fontsize=9 constraint=false];
+}

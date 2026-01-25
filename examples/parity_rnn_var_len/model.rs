@@ -41,7 +41,7 @@ impl ParityRNN {
         let fc = Linear::new(graph, hidden_size, 2, true, "fc")?;
 
         // ModelState 自动处理变长缓存
-        let state = ModelState::new(graph);
+        let state = ModelState::new_for::<Self>(graph);
 
         Ok(Self { rnn, fc, state })
     }

@@ -100,5 +100,13 @@ fn main() -> Result<(), GraphError> {
     }
 
     println!("\n✅ 训练成功！");
+
+    // 7. 保存计算图可视化
+    let vis_result = graph.save_visualization_grouped("examples/xor/xor", None)?;
+    println!("\n计算图已保存: {}", vis_result.dot_path.display());
+    if let Some(img_path) = &vis_result.image_path {
+        println!("可视化图像: {}", img_path.display());
+    }
+
     Ok(())
 }

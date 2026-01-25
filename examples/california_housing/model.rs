@@ -28,7 +28,7 @@ impl CaliforniaHousingMLP {
             fc2: Linear::new(graph, 128, 64, true, "fc2")?,
             fc3: Linear::new(graph, 64, 32, true, "fc3")?,
             fc4: Linear::new(graph, 32, 1, true, "fc4")?,
-            state: ModelState::new(graph),
+            state: ModelState::new_for::<Self>(graph),
         })
     }
 

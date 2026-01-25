@@ -107,7 +107,7 @@ impl Linear {
             graph.inner_mut().register_layer_group(
                 &self.name,
                 "Linear",
-                &format!("{}→{}", self.in_features, self.out_features),
+                &format!("[?, {}] → [?, {}]", self.in_features, self.out_features),
                 vec![
                     self.weights.node_id(),
                     bias.node_id(),
@@ -123,7 +123,10 @@ impl Linear {
             graph.inner_mut().register_layer_group(
                 &self.name,
                 "Linear",
-                &format!("{}→{} (no bias)", self.in_features, self.out_features),
+                &format!(
+                    "[?, {}] → [?, {}] (no bias)",
+                    self.in_features, self.out_features
+                ),
                 vec![self.weights.node_id(), xw.node_id()],
             );
             xw

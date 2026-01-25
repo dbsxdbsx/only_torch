@@ -18,17 +18,90 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
-/// 层分组信息（用于可视化时将属于同一层的节点框在一起）
+/// 分组类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupKind {
+    /// 层级分组（如 Linear、Conv2d）
+    Layer,
+    /// 模型级分组（如 Generator、Discriminator）
+    Model,
+}
+
+/// 层分组信息（用于可视化时将属于同一层/模型的节点框在一起）
 #[derive(Debug, Clone)]
 pub struct LayerGroup {
     /// 层名称（如 "fc1", "conv1"）
     pub name: String,
-    /// 层类型（如 "Linear", "Conv2d"）
+    /// 层类型（如 "Linear", "Conv2d", "Model"）
     pub layer_type: String,
     /// 层的描述信息（如 "784→128"）
     pub description: String,
-    /// 属于该层的节点 ID 列表
+    /// 属于该层的节点 ID 列表（用于可视化显示）
     pub node_ids: Vec<NodeId>,
+    /// 分组类型
+    pub kind: GroupKind,
+    /// 循环层的时间步数（None 表示非循环层）
+    /// 对于变长序列，使用 min_steps 和 max_steps
+    pub recurrent_steps: Option<usize>,
+    /// 循环层的最小时间步数（变长序列支持）
+    pub min_steps: Option<usize>,
+    /// 循环层的最大时间步数（变长序列支持）
+    pub max_steps: Option<usize>,
+    /// 需要在可视化中隐藏的节点 ID（如循环层的非代表性展开节点）
+    pub hidden_node_ids: Vec<NodeId>,
+    /// 代表性节点（折叠显示，实际代表多个节点）
+    /// 格式：(node_id, 实际重复次数)
+    pub folded_nodes: Vec<(NodeId, usize)>,
+    /// 输出代理：(隐藏的真实输出节点, 代表性输出节点)
+    /// 用于在可视化时连接代表性节点到下游（折叠层的输出流向）
+    pub output_proxy: Option<(NodeId, NodeId)>,
+}
+
+/// 循环层元信息（惰性收集可视化信息）
+///
+/// 分为两部分：
+/// - 静态信息：层创建时注册（参数节点、每步节点数）
+/// - 动态信息：forward 时更新（时间步数、起始/结束节点 ID）
+///
+/// 只在 `save_visualization` 时才根据此元信息推断完整的展开分组，
+/// 避免 forward 时的额外开销（只记录几个数值）。
+#[derive(Debug, Clone)]
+pub struct RecurrentLayerMeta {
+    /// 层名称（如 "rnn", "lstm"）
+    pub name: String,
+    /// 层类型（"RNN", "LSTM", "GRU"）
+    pub layer_type: String,
+    /// 层描述（如 "1→16"）
+    pub description: String,
+    /// 参数节点 ID 列表
+    pub param_node_ids: Vec<NodeId>,
+    /// 每个时间步的计算节点数量（不含参数和初始状态）
+    /// RNN: 6 (select, matmul, matmul, add, add, tanh)
+    pub nodes_per_step: usize,
+    /// 动态信息列表：每次 forward 调用都会追加（支持变长序列）
+    /// 惰性推断时使用最后一次调用作为代表，其他调用的节点被隐藏
+    pub unroll_infos: Vec<RecurrentUnrollInfo>,
+}
+
+/// 循环层展开的动态信息（forward 时记录）
+#[derive(Debug, Clone)]
+pub struct RecurrentUnrollInfo {
+    /// 时间步数
+    pub steps: usize,
+    /// 输入节点 ID（如 SmartInput）
+    pub input_node_id: NodeId,
+    /// 初始状态节点 ID 列表（如 [h0] 或 [h0, c0]）
+    /// - RNN/GRU：只有一个 h0
+    /// - LSTM：有两个 [h0, c0]
+    pub init_state_node_ids: Vec<NodeId>,
+    /// 第一个时间步的第一个计算节点 ID（如 Select）
+    pub first_step_start_id: NodeId,
+    /// 代表性输出节点列表（第一个时间步的各状态输出）
+    /// - RNN/GRU：[h_1]
+    /// - LSTM：[h_1, c_1]（h 和 c 的第一个时间步输出）
+    pub repr_output_node_ids: Vec<NodeId>,
+    /// 真实输出节点（最后一个时间步的隐藏状态输出，如 h_N）
+    pub real_output_node_id: NodeId,
 }
 
 /// BPTT 时间步快照：存储节点在某个时间步的状态
@@ -60,6 +133,8 @@ pub struct GraphInner {
     rng: Option<StdRng>,
     /// 层分组信息（用于可视化）
     layer_groups: Vec<LayerGroup>,
+    /// 循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
+    recurrent_layer_metas: Vec<RecurrentLayerMeta>,
 
     // ========== 循环/记忆机制相关字段（Phase 1） ==========
     /// `循环边：to_node` -> `from_node（to` 节点在 `step()` 时从 from 节点的上一步值读取）
@@ -198,7 +273,7 @@ impl Graph {
     /// ```
     pub fn input(&self, data: &Tensor) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(data.shape(), None)?;
+        let node_id = g.new_basic_input_node(data.shape(), None)?;
         g.set_node_value(node_id, Some(data))?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
@@ -206,7 +281,7 @@ impl Graph {
     /// 创建命名输入节点
     pub fn input_named(&self, data: &Tensor, name: &str) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(data.shape(), Some(name))?;
+        let node_id = g.new_basic_input_node(data.shape(), Some(name))?;
         g.set_node_value(node_id, Some(data))?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
@@ -223,7 +298,7 @@ impl Graph {
     /// ```
     pub fn input_shape(&self, shape: &[usize], name: Option<&str>) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(shape, name)?;
+        let node_id = g.new_basic_input_node(shape, name)?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
 
@@ -249,7 +324,18 @@ impl Graph {
     /// 创建零张量
     pub fn zeros(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(shape, None)?;
+        let node_id = g.new_basic_input_node(shape, None)?;
+        g.set_node_value(node_id, Some(&Tensor::zeros(shape)))?;
+        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+    }
+
+    /// 创建 Target 输入节点（用于 Loss 的目标值）
+    ///
+    /// 与 `zeros` 类似，但创建的是 Target 变体的 Input 节点，
+    /// 在可视化中会显示为 "Target" 而不是 "Input"。
+    pub fn target(&self, shape: &[usize]) -> Result<Var, GraphError> {
+        let mut g = self.inner.borrow_mut();
+        let node_id = g.new_target_input_node(shape, None)?;
         g.set_node_value(node_id, Some(&Tensor::zeros(shape)))?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
@@ -257,7 +343,7 @@ impl Graph {
     /// 创建全一张量
     pub fn ones(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(shape, None)?;
+        let node_id = g.new_basic_input_node(shape, None)?;
         g.set_node_value(node_id, Some(&Tensor::ones(shape)))?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
@@ -267,7 +353,7 @@ impl Graph {
     /// 与 `PyTorch` `torch.randn()` 语义一致。
     pub fn randn(&self, shape: &[usize]) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(shape, None)?;
+        let node_id = g.new_basic_input_node(shape, None)?;
         let data = Tensor::normal(0.0, 1.0, shape);
         g.set_node_value(node_id, Some(&data))?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
@@ -307,7 +393,7 @@ impl Graph {
     /// ```
     pub fn constant(&self, data: &Tensor) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(data.shape(), None)?;
+        let node_id = g.new_basic_input_node(data.shape(), None)?;
         g.set_node_value(node_id, Some(data))?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
@@ -315,7 +401,7 @@ impl Graph {
     /// 创建命名常量张量
     pub fn constant_named(&self, data: &Tensor, name: &str) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_input_node(data.shape(), Some(name))?;
+        let node_id = g.new_basic_input_node(data.shape(), Some(name))?;
         g.set_node_value(node_id, Some(data))?;
         Ok(Var::new(node_id, Rc::clone(&self.inner)))
     }
@@ -387,6 +473,33 @@ impl Graph {
         }
 
         result
+    }
+
+    // ==================== 可视化 ====================
+
+    /// 保存计算图可视化
+    ///
+    /// # 示例
+    /// ```ignore
+    /// graph.save_visualization("outputs/model", None)?;
+    /// ```
+    pub fn save_visualization<P: AsRef<std::path::Path>>(
+        &self,
+        base_path: P,
+        format: Option<ImageFormat>,
+    ) -> Result<VisualizationOutput, GraphError> {
+        self.inner.borrow().save_visualization(base_path, format)
+    }
+
+    /// 保存计算图可视化（启用层分组）
+    pub fn save_visualization_grouped<P: AsRef<std::path::Path>>(
+        &self,
+        base_path: P,
+        format: Option<ImageFormat>,
+    ) -> Result<VisualizationOutput, GraphError> {
+        // 惰性推断：在可视化时根据循环层元信息推断完整的分组
+        self.inner.borrow_mut().infer_recurrent_layer_groups();
+        self.inner.borrow().save_visualization_grouped(base_path, format)
     }
 }
 
@@ -471,6 +584,7 @@ impl GraphInner {
             is_eval_mode: false,
             rng: Some(StdRng::seed_from_u64(seed)),
             layer_groups: Vec::new(),
+            recurrent_layer_metas: Vec::new(),
             recurrent_edges: HashMap::new(),
             prev_values: HashMap::new(),
             time_step: 0,
@@ -493,6 +607,7 @@ impl GraphInner {
             is_eval_mode: false,
             rng: Some(StdRng::seed_from_u64(seed)),
             layer_groups: Vec::new(),
+            recurrent_layer_metas: Vec::new(),
             recurrent_edges: HashMap::new(),
             prev_values: HashMap::new(),
             time_step: 0,
@@ -514,6 +629,7 @@ impl GraphInner {
             is_eval_mode: false,
             rng: None,
             layer_groups: Vec::new(),
+            recurrent_layer_metas: Vec::new(),
             recurrent_edges: HashMap::new(),
             prev_values: HashMap::new(),
             time_step: 0,
@@ -569,7 +685,252 @@ impl GraphInner {
             layer_type: layer_type.to_string(),
             description: description.to_string(),
             node_ids,
+            kind: GroupKind::Layer,
+            recurrent_steps: None,
+            min_steps: None,
+            max_steps: None,
+            hidden_node_ids: vec![],
+            folded_nodes: vec![],
+            output_proxy: None,
         });
+    }
+
+    /// 注册循环层元信息（惰性收集，用于可视化）
+    ///
+    /// 在层创建时调用，只记录轻量级静态元信息。动态展开信息
+    /// 通过 `update_recurrent_layer_unroll_info` 在 forward 时更新。
+    ///
+    /// # 参数
+    /// - `name`: 层名称（如 "rnn", "lstm"）
+    /// - `layer_type`: 层类型（"RNN", "LSTM", "GRU"）
+    /// - `description`: 层描述（如 "1→16"）
+    /// - `param_node_ids`: 参数节点 ID 列表
+    /// - `nodes_per_step`: 每个时间步的计算节点数量
+    pub fn register_recurrent_layer_meta(
+        &mut self,
+        name: &str,
+        layer_type: &str,
+        description: &str,
+        param_node_ids: Vec<NodeId>,
+        nodes_per_step: usize,
+    ) {
+        // 检查是否已存在同名元信息，避免重复注册
+        if self
+            .recurrent_layer_metas
+            .iter()
+            .any(|m| m.name == name)
+        {
+            return;
+        }
+        self.recurrent_layer_metas.push(RecurrentLayerMeta {
+            name: name.to_string(),
+            layer_type: layer_type.to_string(),
+            description: description.to_string(),
+            param_node_ids,
+            nodes_per_step,
+            unroll_infos: Vec::new(),
+        });
+    }
+
+    /// 追加循环层的展开信息（forward 时调用，支持变长序列）
+    ///
+    /// 每次 forward 调用都会追加一条记录，用于：
+    /// - 计算步数范围（min_steps, max_steps）
+    /// - 选择代表性调用进行折叠显示
+    /// - 隐藏其他调用创建的节点
+    ///
+    /// # 参数
+    /// - `name`: 层名称
+    /// - `unroll_info`: 展开的动态信息
+    pub fn update_recurrent_layer_unroll_info(
+        &mut self,
+        name: &str,
+        unroll_info: RecurrentUnrollInfo,
+    ) {
+        if let Some(meta) = self
+            .recurrent_layer_metas
+            .iter_mut()
+            .find(|m| m.name == name)
+        {
+            meta.unroll_infos.push(unroll_info);
+        }
+    }
+
+    /// 获取循环层元信息列表
+    pub fn recurrent_layer_metas(&self) -> &[RecurrentLayerMeta] {
+        &self.recurrent_layer_metas
+    }
+
+    /// 注册一个循环层分组（内部方法，由惰性推断调用）
+    ///
+    /// # 参数
+    /// - `name`: 层名称（如 "rnn", "lstm"）
+    /// - `layer_type`: 层类型（如 "RNN", "LSTM", "GRU"）
+    /// - `description`: 层描述（如 "1→16"）
+    /// - `repr_node_ids`: 代表性节点 ID 列表（用于可视化显示）
+    /// - `folded_nodes`: 折叠节点列表，格式为 (节点ID, 重复次数)
+    /// - `hidden_node_ids`: 需要隐藏的节点 ID 列表（如展开的其他时间步）
+    /// - `output_proxy`: 输出代理 (隐藏的真实输出节点, 代表性输出节点)，用于可视化时连接下游
+    /// - `min_steps`: 最小时间步数
+    /// - `max_steps`: 最大时间步数
+    fn register_recurrent_layer_group_with_range(
+        &mut self,
+        name: &str,
+        layer_type: &str,
+        description: &str,
+        repr_node_ids: Vec<NodeId>,
+        folded_nodes: Vec<(NodeId, usize)>,
+        hidden_node_ids: Vec<NodeId>,
+        output_proxy: Option<(NodeId, NodeId)>,
+        min_steps: usize,
+        max_steps: usize,
+    ) {
+        // 检查是否已存在同名分组，避免重复注册
+        if self.layer_groups.iter().any(|g| g.name == name) {
+            return;
+        }
+        // 固定长度时 recurrent_steps = Some(steps)，变长时为 None
+        let recurrent_steps = if min_steps == max_steps {
+            Some(max_steps)
+        } else {
+            None
+        };
+        self.layer_groups.push(LayerGroup {
+            name: name.to_string(),
+            layer_type: layer_type.to_string(),
+            description: description.to_string(),
+            node_ids: repr_node_ids,
+            kind: GroupKind::Layer,
+            recurrent_steps,
+            min_steps: Some(min_steps),
+            max_steps: Some(max_steps),
+            hidden_node_ids,
+            folded_nodes,
+            output_proxy,
+        });
+    }
+
+    /// 惰性推断循环层分组（在 save_visualization 时调用）
+    ///
+    /// 根据 `recurrent_layer_metas` 中的元信息和 `unroll_info` 推断完整的分组：
+    /// - 代表性节点：参数 + 初始状态 + 第一个时间步的计算节点
+    /// - 折叠节点：第一个时间步的计算节点（代表多个重复实例）
+    /// - 隐藏节点：其他时间步的计算节点
+    /// - 输出代理：(真实输出, 代表性输出)
+    pub fn infer_recurrent_layer_groups(&mut self) {
+        // 收集需要推断的循环层（避免借用冲突）
+        let metas_to_infer: Vec<_> = self
+            .recurrent_layer_metas
+            .iter()
+            .filter(|m| !m.unroll_infos.is_empty())
+            .filter(|m| !self.layer_groups.iter().any(|g| g.name == m.name))
+            .cloned()
+            .collect();
+
+        for meta in metas_to_infer {
+            // 计算步数范围
+            let min_steps = meta.unroll_infos.iter().map(|i| i.steps).min().unwrap();
+            let max_steps = meta.unroll_infos.iter().map(|i| i.steps).max().unwrap();
+
+            // 选择最后一次调用作为代表（它的输出节点连接到下游层）
+            let repr_info = meta.unroll_infos.last().unwrap();
+
+            // 构建代表性节点列表：参数 + 初始状态 + 第一个时间步的计算节点
+            let mut repr_node_ids: Vec<NodeId> = meta.param_node_ids.clone();
+            // 添加所有初始状态节点（RNN/GRU: 1 个, LSTM: 2 个）
+            repr_node_ids.extend(repr_info.init_state_node_ids.iter().copied());
+
+            // 第一个时间步的节点 ID 范围
+            let first_step_start = repr_info.first_step_start_id.0;
+            let first_step_end = first_step_start + meta.nodes_per_step as u64;
+
+            // 折叠节点：
+            // 1. 初始状态节点（ZerosLike）：步数为 1（每次展开只使用一次）
+            // 2. 第一个时间步的计算节点：步数为 min_steps-max_steps
+            let mut folded_nodes: Vec<(NodeId, usize)> = Vec::new();
+            // 所有初始状态节点使用固定步数 1
+            for init_id in &repr_info.init_state_node_ids {
+                folded_nodes.push((*init_id, 1));
+            }
+            // 时间步计算节点使用 max_steps（显示最大值）
+            for id in first_step_start..first_step_end {
+                folded_nodes.push((NodeId(id), max_steps));
+            }
+            // 把折叠节点加入代表性节点列表
+            repr_node_ids.extend(folded_nodes.iter().map(|(id, _)| *id));
+
+            // 隐藏节点：
+            // 1. 代表性调用的其他时间步节点
+            // 2. 其他所有调用的全部节点（包括初始状态）
+            let mut hidden_node_ids = Vec::new();
+
+            // 1. 代表性调用的其他时间步（step 1 到 step N-1）
+            for step in 1..repr_info.steps {
+                let step_start = first_step_start + (step as u64) * (meta.nodes_per_step as u64);
+                let step_end = step_start + meta.nodes_per_step as u64;
+                for id in step_start..step_end {
+                    hidden_node_ids.push(NodeId(id));
+                }
+            }
+
+            // 2. 其他调用的全部节点（输入、初始状态、时间步）
+            // 注：下游节点（FC、Loss）会在 to_dot_with_options 中使用描述符扩展
+            for (idx, info) in meta.unroll_infos.iter().enumerate() {
+                // 跳过代表性调用（最后一个）
+                if idx == meta.unroll_infos.len() - 1 {
+                    continue;
+                }
+                // 隐藏该调用的输入节点（SmartInput）
+                hidden_node_ids.push(info.input_node_id);
+                // 隐藏该调用的所有初始状态节点
+                hidden_node_ids.extend(info.init_state_node_ids.iter().copied());
+                // 隐藏该调用的所有时间步节点
+                let call_first_step_start = info.first_step_start_id.0;
+                for step in 0..info.steps {
+                    let step_start =
+                        call_first_step_start + (step as u64) * (meta.nodes_per_step as u64);
+                    let step_end = step_start + meta.nodes_per_step as u64;
+                    for id in step_start..step_end {
+                        hidden_node_ids.push(NodeId(id));
+                    }
+                }
+            }
+
+            // 输出代理：(真实输出, 代表性输出)
+            // 使用第一个输出（h）作为代理，因为它是连接到下游层的主要输出
+            let output_proxy = repr_info
+                .repr_output_node_ids
+                .first()
+                .map(|&repr_id| (repr_info.real_output_node_id, repr_id));
+
+            // 存储步数范围信息到分组中
+            self.register_recurrent_layer_group_with_range(
+                &meta.name,
+                &meta.layer_type,
+                &meta.description,
+                repr_node_ids,
+                folded_nodes,
+                hidden_node_ids,
+                output_proxy,
+                min_steps,
+                max_steps,
+            );
+        }
+
+    }
+
+    /// 收集需要隐藏的"根节点"（非代表性调用的输出节点）
+    /// 这些根节点的后代会在 to_dot_with_options 中使用描述符来扩展
+    fn hidden_output_nodes(&self) -> Vec<NodeId> {
+        self.recurrent_layer_metas
+            .iter()
+            .flat_map(|meta| {
+                meta.unroll_infos
+                    .iter()
+                    .take(meta.unroll_infos.len().saturating_sub(1)) // 跳过最后一个（代表性调用）
+                    .map(|info| info.real_output_node_id)
+            })
+            .collect()
     }
 
     /// 获取所有层分组信息
@@ -764,8 +1125,8 @@ impl GraphInner {
             self.propagate_grad_to_parents(*node_id, loss_id, None)?;
         }
 
-        // 6. 处理 GradientRouter 的梯度路由
-        // GradientRouter 节点可能有梯度路由目标，需要将梯度累加到目标节点
+        // 6. 处理 SmartInput 的梯度路由
+        // SmartInput 节点可能有梯度路由目标，需要将梯度累加到目标节点
         // 然后从目标节点继续反向传播
         let routed_targets = self.process_gradient_routing()?;
 
@@ -791,25 +1152,25 @@ impl GraphInner {
         Ok(())
     }
 
-    /// 处理 `GradientRouter` 节点的梯度路由
+    /// 处理 SmartInput 节点的梯度路由
     ///
-    /// 遍历所有 `GradientRouter` 节点，如果有梯度路由目标，
-    /// 将 `GradientRouter` 的梯度累加到目标节点。
+    /// 遍历所有 SmartInput 节点，如果有梯度路由目标，
+    /// 将 SmartInput 的梯度累加到目标节点。
     ///
     /// # 返回
     /// 接收到路由梯度的目标节点 ID 列表（用于继续反向传播）
     fn process_gradient_routing(&mut self) -> Result<Vec<NodeId>, GraphError> {
-        use super::nodes::raw_node::NodeType;
+        use super::nodes::raw_node::{InputVariant, NodeType};
 
         // 收集需要路由的梯度信息：(target_id, gradient)
         let mut routing_info: Vec<(NodeId, Tensor)> = Vec::new();
 
         for node in self.nodes.values() {
-            if let NodeType::GradientRouter(router) = node.node_type() {
+            if let NodeType::Input(InputVariant::Smart(smart)) = node.node_type() {
                 // 检查是否有梯度路由目标
-                if let Some(target_id) = router.gradient_target() {
-                    // 检查 GradientRouter 是否有梯度（且未被 detach）
-                    if !router.is_detached()
+                if let Some(target_id) = smart.gradient_target() {
+                    // 检查 SmartInput 是否有梯度（且未被 detach）
+                    if !smart.is_detached()
                         && let Some(grad) = node.grad()
                     {
                         routing_info.push((target_id, grad.clone()));
@@ -864,6 +1225,8 @@ impl GraphInner {
         _loss_id: NodeId,
         target_params: Option<&std::collections::HashSet<NodeId>>,
     ) -> Result<(), GraphError> {
+        use super::nodes::raw_node::InputVariant;
+
         // 检查当前节点是否被 detach
         // 被 detach 的节点不向父节点传播梯度
         {
@@ -891,13 +1254,14 @@ impl GraphInner {
             for parent_id in &parent_ids {
                 let parent = self.get_node(*parent_id)?;
 
-                // 跳过 Input 节点（Input 不需要梯度）
-                if let NodeType::Input(_) = parent.node_type() {
-                    continue;
+                // 跳过 Data/Target Input 节点（它们不需要梯度）
+                // 但不跳过 SmartInput 节点（需要接收梯度以便路由）
+                if let NodeType::Input(variant) = parent.node_type() {
+                    match variant {
+                        InputVariant::Data(_) | InputVariant::Target(_) => continue,
+                        InputVariant::Smart(_) => {} // 不跳过 SmartInput
+                    }
                 }
-
-                // 注意：不跳过 GradientRouter 节点
-                // GradientRouter 需要接收梯度，然后通过 process_gradient_routing 路由到目标
 
                 // 如果指定了 target_params，跳过非目标的 Parameter 节点
                 // 这是核心优化：避免为不需要更新的参数计算梯度
@@ -1689,11 +2053,12 @@ impl GraphInner {
     /// 获取节点类型名称
     const fn type_name(node_type: &NodeTypeDescriptor) -> &'static str {
         match node_type {
-            NodeTypeDescriptor::Input => "Input",
+            NodeTypeDescriptor::BasicInput => "BasicInput",
+            NodeTypeDescriptor::TargetInput => "TargetInput",
+            NodeTypeDescriptor::SmartInput => "SmartInput",
             NodeTypeDescriptor::Parameter => "Parameter",
             NodeTypeDescriptor::State => "State",
             NodeTypeDescriptor::Identity => "Identity",
-            NodeTypeDescriptor::GradientRouter => "GradientRouter",
             NodeTypeDescriptor::Add => "Add",
             NodeTypeDescriptor::Divide => "Divide",
             NodeTypeDescriptor::Subtract => "Subtract",
@@ -1780,15 +2145,58 @@ impl GraphInner {
         // 图头部
         dot.push_str("digraph Model {\n");
         dot.push_str("    rankdir=TB;\n"); // 从上到下
+        dot.push_str("    newrank=true;\n"); // 允许 rank=same 跨 cluster 正常工作
+        // 使用正交线（ortho）：边保持直角转弯，回流边不会穿过其他节点
+        // 虽然回流边可能略超出 cluster 边界，但整体视觉效果更整齐
+        dot.push_str("    splines=ortho;\n");
         dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
         dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
         dot.push('\n');
 
-        // 收集 GradientRouter 节点及其所有下游节点（这些节点的 batch 维度应显示为 ?）
+        // 收集 SmartInput 节点及其所有下游节点（这些节点的 batch 维度应显示为 ?）
         let dynamic_batch_nodes = Self::find_dynamic_batch_nodes(&desc);
 
-        // 收集已分组的节点 ID（转换为 u64 以便与 descriptor 比较）
-        let grouped_node_ids: std::collections::HashSet<u64> = if group_layers {
+        // 收集曾经被 detach 过的 SmartInput 节点 ID（用于显示虚线边框）
+        use super::nodes::raw_node::InputVariant;
+        let ever_detached_nodes: std::collections::HashSet<u64> = self
+            .nodes
+            .values()
+            .filter_map(|node| {
+                if let NodeType::Input(InputVariant::Smart(smart)) = node.node_type() {
+                    if smart.was_ever_detached() {
+                        return Some(node.id().0);
+                    }
+                }
+                None
+            })
+            .collect();
+
+        // 获取变长场景的调用次数（用于标注多次调用的节点）
+        // 如果有多个 RNN 层，取最大的调用次数
+        let call_count: Option<usize> = self
+            .recurrent_layer_metas
+            .iter()
+            .map(|m| m.unroll_infos.len())
+            .max()
+            .filter(|&count| count > 1); // 只有大于 1 次才显示
+
+        // 分离 Model 分组和 Layer 分组
+        // 注意：这些分组会在后面更新以包含代表性调用的节点
+        let mut model_groups: Vec<LayerGroup> = self
+            .layer_groups
+            .iter()
+            .filter(|g| g.kind == GroupKind::Model)
+            .cloned()
+            .collect();
+        let mut layer_groups: Vec<LayerGroup> = self
+            .layer_groups
+            .iter()
+            .filter(|g| g.kind == GroupKind::Layer)
+            .cloned()
+            .collect();
+
+        // 收集所有已分组的节点 ID（初始版本，会在后面更新）
+        let mut grouped_node_ids: std::collections::HashSet<u64> = if group_layers {
             self.layer_groups
                 .iter()
                 .flat_map(|g| g.node_ids.iter().map(|id| id.0))
@@ -1797,10 +2205,403 @@ impl GraphInner {
             std::collections::HashSet::new()
         };
 
-        // 如果启用层分组，先输出 subgraph cluster
-        if group_layers && !self.layer_groups.is_empty() {
-            for (idx, group) in self.layer_groups.iter().enumerate() {
-                let cluster_color = Self::layer_group_color(idx);
+        // 收集所有需要隐藏的节点 ID（如循环层的非代表性展开节点）
+        let mut hidden_node_ids: std::collections::HashSet<u64> = if group_layers {
+            self.layer_groups
+                .iter()
+                .flat_map(|g| g.hidden_node_ids.iter().map(|id| id.0))
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        // 扩展隐藏节点的后代（从非代表性 RNN 输出开始的所有下游节点）
+        if group_layers && !self.recurrent_layer_metas.is_empty() {
+            // 构建父→子映射
+            let mut children_map: std::collections::HashMap<u64, Vec<u64>> =
+                std::collections::HashMap::new();
+            for node in &desc.nodes {
+                for &parent_id in &node.parents {
+                    children_map.entry(parent_id).or_default().push(node.id);
+                }
+            }
+
+            // 收集代表性调用的输入节点 ID（用于标记受保护路径）
+            let repr_input_ids: std::collections::HashSet<u64> = self
+                .recurrent_layer_metas
+                .iter()
+                .filter_map(|m| m.unroll_infos.last())
+                .map(|info| info.input_node_id.0)
+                .collect();
+
+            // BFS 标记代表性路径上的所有节点为"受保护"
+            let mut protected_nodes: std::collections::HashSet<u64> =
+                repr_input_ids.iter().copied().collect();
+            let mut queue: std::collections::VecDeque<u64> = repr_input_ids.iter().copied().collect();
+            while let Some(node_id) = queue.pop_front() {
+                if let Some(children) = children_map.get(&node_id) {
+                    for &child_id in children {
+                        if !protected_nodes.contains(&child_id) {
+                            protected_nodes.insert(child_id);
+                            queue.push_back(child_id);
+                        }
+                    }
+                }
+            }
+
+            // 获取需要扩展后代的根节点（非代表性调用的 RNN 输出）
+            let hidden_roots = self.hidden_output_nodes();
+
+            // BFS 扩展后代（但跳过受保护节点）
+            // 这会将非代表性调用的 FC、Loss 等下游节点添加到 hidden_node_ids
+            let mut queue: std::collections::VecDeque<u64> = hidden_roots
+                .iter()
+                .flat_map(|root| children_map.get(&root.0).into_iter().flatten().copied())
+                .filter(|id| !protected_nodes.contains(id))
+                .collect();
+
+            while let Some(node_id) = queue.pop_front() {
+                if hidden_node_ids.contains(&node_id) || protected_nodes.contains(&node_id) {
+                    continue;
+                }
+                hidden_node_ids.insert(node_id);
+                if let Some(children) = children_map.get(&node_id) {
+                    for &child_id in children {
+                        if !hidden_node_ids.contains(&child_id) && !protected_nodes.contains(&child_id) {
+                            queue.push_back(child_id);
+                        }
+                    }
+                }
+            }
+
+            // 识别 Loss 节点（不应该包含在 Model 分组中）
+            // Loss 节点包括：SoftmaxCrossEntropy、MSELoss 等
+            let loss_node_ids: std::collections::HashSet<u64> = desc
+                .nodes
+                .iter()
+                .filter(|n| {
+                    matches!(
+                        n.node_type,
+                        NodeTypeDescriptor::SoftmaxCrossEntropy | NodeTypeDescriptor::MSELoss
+                    )
+                })
+                .map(|n| n.id)
+                .collect();
+
+            // 从 protected_nodes 中排除 Loss 节点（Loss 不应该在 Model 内部）
+            let model_nodes: std::collections::HashSet<u64> = protected_nodes
+                .iter()
+                .copied()
+                .filter(|id| !loss_node_ids.contains(id))
+                .collect();
+
+            // 更新 Layer 分组（如 FC）以包含代表性调用的节点
+            // 策略：找到该层的参数节点，然后找到代表性路径上使用这些参数的计算节点
+            for layer in &mut layer_groups {
+                // 移除被隐藏的节点
+                layer.node_ids.retain(|id| !hidden_node_ids.contains(&id.0));
+
+                // 收集该层的参数节点 ID
+                let param_node_ids: std::collections::HashSet<u64> = layer
+                    .node_ids
+                    .iter()
+                    .filter(|id| {
+                        desc.nodes
+                            .iter()
+                            .find(|n| n.id == id.0)
+                            .map(|n| matches!(n.node_type, NodeTypeDescriptor::Parameter { .. }))
+                            .unwrap_or(false)
+                    })
+                    .map(|id| id.0)
+                    .collect();
+
+                if param_node_ids.is_empty() {
+                    continue;
+                }
+
+                // 找到代表性路径上使用这些参数的计算节点
+                // 注意：排除已隐藏的节点
+                for &node_id in &model_nodes {
+                    if hidden_node_ids.contains(&node_id) {
+                        continue;
+                    }
+                    if let Some(node) = desc.nodes.iter().find(|n| n.id == node_id) {
+                        // 检查该节点是否使用了该层的参数
+                        let uses_layer_param = node.parents.iter().any(|p| param_node_ids.contains(p));
+                        if uses_layer_param && !layer.node_ids.iter().any(|id| id.0 == node_id) {
+                            layer.node_ids.push(NodeId(node_id));
+                        }
+                    }
+                }
+
+                // 继续查找使用这些计算节点的后续节点（如 Add 使用 MatMul）
+                let mut current_nodes: Vec<u64> = layer
+                    .node_ids
+                    .iter()
+                    .filter(|id| !param_node_ids.contains(&id.0))
+                    .map(|id| id.0)
+                    .collect();
+
+                while !current_nodes.is_empty() {
+                    let mut next_nodes = Vec::new();
+                    for &node_id in &model_nodes {
+                        if hidden_node_ids.contains(&node_id) {
+                            continue;
+                        }
+                        if layer.node_ids.iter().any(|id| id.0 == node_id) {
+                            continue;
+                        }
+                        if let Some(node) = desc.nodes.iter().find(|n| n.id == node_id) {
+                            // 检查该节点是否使用了当前层的计算节点
+                            let uses_layer_node = node.parents.iter().any(|p| current_nodes.contains(p));
+                            // 排除使用了其他层参数的节点（属于其他层）
+                            let uses_other_param = node.parents.iter().any(|p| {
+                                desc.nodes
+                                    .iter()
+                                    .find(|n| n.id == *p)
+                                    .map(|n| {
+                                        matches!(n.node_type, NodeTypeDescriptor::Parameter { .. })
+                                            && !param_node_ids.contains(p)
+                                    })
+                                    .unwrap_or(false)
+                            });
+                            if uses_layer_node && !uses_other_param {
+                                layer.node_ids.push(NodeId(node_id));
+                                next_nodes.push(node_id);
+                            }
+                        }
+                    }
+                    current_nodes = next_nodes;
+                }
+            }
+
+            // 更新 Model 分组以包含代表性路径上的节点（排除 Loss）
+            for group in &mut model_groups {
+                // 移除非代表性调用的节点
+                group.node_ids.retain(|id| !hidden_node_ids.contains(&id.0));
+                // 添加代表性调用的节点
+                for &node_id in &model_nodes {
+                    if !group.node_ids.iter().any(|id| id.0 == node_id) {
+                        group.node_ids.push(NodeId(node_id));
+                    }
+                }
+                group.description = format!("{} nodes", group.node_ids.len());
+            }
+
+            // 更新 grouped_node_ids 以包含所有分组中的节点
+            grouped_node_ids.clear();
+            for group in &model_groups {
+                for node_id in &group.node_ids {
+                    grouped_node_ids.insert(node_id.0);
+                }
+            }
+            for layer in &layer_groups {
+                for node_id in &layer.node_ids {
+                    grouped_node_ids.insert(node_id.0);
+                }
+            }
+
+            // 隐藏"孤立"节点：所有子节点都被隐藏的非受保护节点
+            loop {
+                let mut newly_hidden = Vec::new();
+                for node in &desc.nodes {
+                    // 跳过已隐藏或受保护的节点
+                    if hidden_node_ids.contains(&node.id) || protected_nodes.contains(&node.id) {
+                        continue;
+                    }
+                    // 检查是否有可见的子节点
+                    let children = children_map.get(&node.id);
+                    let all_children_hidden = children
+                        .map(|c| !c.is_empty() && c.iter().all(|id| hidden_node_ids.contains(id)))
+                        .unwrap_or(false);
+                    if all_children_hidden {
+                        newly_hidden.push(node.id);
+                    }
+                }
+                if newly_hidden.is_empty() {
+                    break;
+                }
+                for id in newly_hidden {
+                    hidden_node_ids.insert(id);
+                }
+            }
+        }
+
+        // 收集折叠节点信息（node_id -> (min_steps, max_steps)）
+        // 注意：每个折叠节点有自己的步数，初始状态节点（ZerosLike）步数为 1，
+        //       而时间步计算节点使用层级的 min_steps/max_steps
+        let folded_node_info: std::collections::HashMap<u64, (usize, usize)> = if group_layers {
+            self.layer_groups
+                .iter()
+                .flat_map(|g| {
+                    let layer_min_s = g.min_steps.unwrap_or(0);
+                    let layer_max_s = g.max_steps.unwrap_or(0);
+                    g.folded_nodes.iter().map(move |(id, node_steps)| {
+                        // 如果节点步数与层级最大步数相同，使用层级范围
+                        // 否则使用节点自己的步数（如初始状态节点步数为 1）
+                        if *node_steps == layer_max_s {
+                            (id.0, (layer_min_s, layer_max_s))
+                        } else {
+                            (id.0, (*node_steps, *node_steps))
+                        }
+                    })
+                })
+                .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        // 收集 SmartInput 节点的序列长度范围信息（用于变长 RNN 的输入节点显示）
+        // 格式: node_id -> (min_seq_len, max_seq_len)
+        let input_seq_range_info: std::collections::HashMap<u64, (usize, usize)> = self
+            .recurrent_layer_metas
+            .iter()
+            .filter(|m| m.unroll_infos.len() > 1) // 只处理变长（多次调用）
+            .filter_map(|m| {
+                let repr_info = m.unroll_infos.last()?;
+                let min_steps = m.unroll_infos.iter().map(|i| i.steps).min()?;
+                let max_steps = m.unroll_infos.iter().map(|i| i.steps).max()?;
+                Some((repr_info.input_node_id.0, (min_steps, max_steps)))
+            })
+            .collect();
+
+        // 辅助函数：生成单个节点的 DOT 定义
+        let generate_node_def = |node: &crate::nn::descriptor::NodeDescriptor,
+                                 dynamic_batch_nodes: &std::collections::HashSet<u64>,
+                                 ever_detached_nodes: &std::collections::HashSet<u64>,
+                                 folded_info: &std::collections::HashMap<u64, (usize, usize)>,
+                                 input_seq_range: &std::collections::HashMap<u64, (usize, usize)>,
+                                 call_count: Option<usize>|
+         -> String {
+            let (shape, mut style, mut fillcolor) = Self::dot_node_style(&node.node_type);
+            let style_owned: String;
+            let fillcolor_owned: String;
+            // 检查是否为折叠节点（时间步展开，橙色 ×N 标注）
+            if let Some(&(min_steps, max_steps)) = folded_info.get(&node.id) {
+                // 折叠节点：使用深色背景，保留原始形状（通过颜色区分）
+                fillcolor_owned = Self::darken_color(fillcolor);
+                fillcolor = &fillcolor_owned;
+                // 修改节点名称，添加 ×N 或 ×min-max 标注（橙色）
+                // 如果有 call_count > 1，同时显示蓝色 (×N) 标注
+                let use_dynamic_batch = dynamic_batch_nodes.contains(&node.id);
+                let label = Self::dot_node_label_html_folded_range(
+                    node,
+                    use_dynamic_batch,
+                    min_steps,
+                    max_steps,
+                    call_count,
+                );
+                // 如果有 call_count，使用双边框（表示多次创建）
+                if call_count.is_some() {
+                    return format!(
+                        "\"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" peripheries=2 fontsize=10];\n",
+                        node.id, label, shape, style, fillcolor
+                    );
+                } else {
+                    return format!(
+                        "\"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
+                        node.id, label, shape, style, fillcolor
+                    );
+                }
+            }
+
+            if matches!(node.node_type, NodeTypeDescriptor::SmartInput)
+                && ever_detached_nodes.contains(&node.id)
+            {
+                style_owned = "\"filled,dashed\"".to_string();
+                style = &style_owned;
+            }
+            let use_dynamic_batch = dynamic_batch_nodes.contains(&node.id);
+
+            // 检查是否为变长 RNN 的输入节点，需要显示序列长度范围
+            let is_multi_call_input = input_seq_range.contains_key(&node.id);
+
+            // 检查是否为多次调用的节点
+            // - 计算节点（非参数、非输入）
+            // - TargetInput 节点（如果 call_count > 1）
+            let is_compute_node = !matches!(
+                node.node_type,
+                NodeTypeDescriptor::Parameter { .. }
+                    | NodeTypeDescriptor::SmartInput
+                    | NodeTypeDescriptor::TargetInput
+                    | NodeTypeDescriptor::BasicInput
+            );
+            let is_target_input = matches!(node.node_type, NodeTypeDescriptor::TargetInput);
+
+            let label = if let Some(&(min_seq, max_seq)) = input_seq_range.get(&node.id) {
+                // 变长输入节点：显示序列范围 + 蓝色调用次数标注
+                let count = call_count.unwrap_or(1);
+                Self::dot_node_label_html_with_seq_range(node, use_dynamic_batch, min_seq, max_seq, count)
+            } else if let Some(count) = call_count {
+                // 多次调用的计算节点或 TargetInput 节点
+                if is_compute_node || is_target_input {
+                    Self::dot_node_label_html_with_call_count(node, use_dynamic_batch, count)
+                } else {
+                    Self::dot_node_label_html_with_dynamic_batch(node, use_dynamic_batch)
+                }
+            } else {
+                Self::dot_node_label_html_with_dynamic_batch(node, use_dynamic_batch)
+            };
+
+            // 多次调用的节点使用双边框：
+            // 1. 计算节点（蓝色 (×N) 标注）
+            // 2. 变长 RNN 的输入节点（SmartInput，多次创建）
+            // 3. TargetInput 节点（如果 call_count > 1）
+            let is_multi_call_compute = call_count.is_some() && is_compute_node;
+            let is_multi_call_target = call_count.is_some() && is_target_input;
+            let use_double_border = is_multi_call_compute || is_multi_call_input || is_multi_call_target;
+
+            if use_double_border {
+                format!(
+                    "\"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" peripheries=2 fontsize=10];\n",
+                    node.id, label, shape, style, fillcolor
+                )
+            } else {
+                format!(
+                    "\"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
+                    node.id, label, shape, style, fillcolor
+                )
+            }
+        };
+
+        // 判断一个 Layer 分组是否完全包含在某个 Model 分组中
+        let is_layer_in_model = |layer: &LayerGroup, model: &LayerGroup| -> bool {
+            layer
+                .node_ids
+                .iter()
+                .all(|nid| model.node_ids.iter().any(|mid| mid.0 == nid.0))
+        };
+
+        // 收集每个 Model 分组包含的 Layer 分组
+        let model_to_layers: Vec<Vec<usize>> = model_groups
+            .iter()
+            .map(|model| {
+                layer_groups
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, layer)| {
+                        if is_layer_in_model(layer, model) {
+                            Some(idx)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // 收集已被嵌套到 Model 中的 Layer 索引
+        let nested_layer_indices: std::collections::HashSet<usize> =
+            model_to_layers.iter().flatten().copied().collect();
+
+        // 收集已在嵌套 Layer 中定义的节点 ID
+        let mut nodes_in_nested_layers: std::collections::HashSet<u64> =
+            std::collections::HashSet::new();
+
+        // 如果启用分组，先输出 Model 分组（包含嵌套的 Layer 分组）
+        if group_layers && !model_groups.is_empty() {
+            for (model_idx, group) in model_groups.iter().enumerate() {
+                let cluster_color = Self::model_group_color(model_idx);
                 dot.push_str(&format!(
                     "    subgraph cluster_{} {{\n",
                     group.name.replace(['-', '.'], "_")
@@ -1815,16 +2616,126 @@ impl GraphInner {
                 dot.push_str("        fontsize=11;\n");
                 dot.push_str("        margin=12;\n");
 
-                // 在 cluster 内定义属于该层的节点
+                // 在 Model 内部嵌套 Layer 分组
+                for &layer_idx in &model_to_layers[model_idx] {
+                    let layer = &layer_groups[layer_idx];
+                    let layer_color = Self::layer_group_color(layer_idx);
+                    let is_recurrent = layer.min_steps.is_some() && layer.max_steps.is_some();
+
+                    dot.push_str(&format!(
+                        "        subgraph cluster_{}_{} {{\n",
+                        group.name.replace(['-', '.'], "_"),
+                        layer.name.replace(['-', '.'], "_")
+                    ));
+
+                    // 层标签：只显示层类型和形状信息（时间步数已在节点上标注，无需重复）
+                    dot.push_str(&format!(
+                        "            label=<<B>{}</B><BR/><FONT POINT-SIZE=\"8\">{}: {}</FONT>>;\n",
+                        layer.name, layer.layer_type, layer.description
+                    ));
+
+                    // 循环层：使用多重边框表示重叠效果
+                    if is_recurrent {
+                        dot.push_str("            style=\"filled,bold\";\n");
+                        dot.push_str("            peripheries=3;\n");
+                        dot.push_str("            penwidth=2;\n");
+                    } else {
+                        dot.push_str("            style=filled;\n");
+                    }
+                    dot.push_str(&format!("            fillcolor=\"{layer_color}\";\n"));
+                    dot.push_str("            fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+                    dot.push_str("            fontsize=10;\n");
+                    dot.push_str("            margin=8;\n");
+
+                    // 在嵌套 Layer 内定义节点
+                    for node in &desc.nodes {
+                        if layer.node_ids.iter().any(|nid| nid.0 == node.id) {
+                            nodes_in_nested_layers.insert(node.id);
+                            dot.push_str("            ");
+                            dot.push_str(&generate_node_def(
+                                node,
+                                &dynamic_batch_nodes,
+                                &ever_detached_nodes,
+                                &folded_node_info,
+                                &input_seq_range_info,
+                                call_count,
+                            ));
+                        }
+                    }
+
+                    dot.push_str("        }\n");
+                }
+
+                // 在 Model 内定义不属于任何嵌套 Layer 的节点
+                for node in &desc.nodes {
+                    // 跳过隐藏节点（如循环层的非代表性展开节点）
+                    if hidden_node_ids.contains(&node.id) {
+                        continue;
+                    }
+                    if group.node_ids.iter().any(|nid| nid.0 == node.id)
+                        && !nodes_in_nested_layers.contains(&node.id)
+                    {
+                        dot.push_str("        ");
+                        dot.push_str(&generate_node_def(
+                            node,
+                            &dynamic_batch_nodes,
+                            &ever_detached_nodes,
+                            &folded_node_info,
+                            &input_seq_range_info,
+                            call_count,
+                        ));
+                    }
+                }
+
+                dot.push_str("    }\n\n");
+            }
+        }
+
+        // 然后输出不属于任何 Model 的独立 Layer 分组
+        if group_layers && !layer_groups.is_empty() {
+            for (idx, group) in layer_groups.iter().enumerate() {
+                // 跳过已嵌套到 Model 中的 Layer
+                if nested_layer_indices.contains(&idx) {
+                    continue;
+                }
+
+                let cluster_color = Self::layer_group_color(idx);
+                let is_recurrent = group.min_steps.is_some() && group.max_steps.is_some();
+
+                dot.push_str(&format!(
+                    "    subgraph cluster_{} {{\n",
+                    group.name.replace(['-', '.'], "_")
+                ));
+
+                // 层标签：只显示层类型和形状信息（时间步数已在节点上标注，无需重复）
+                dot.push_str(&format!(
+                    "        label=<<B>{}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
+                    group.name, group.layer_type, group.description
+                ));
+
+                // 循环层：使用多重边框表示重叠效果
+                if is_recurrent {
+                    dot.push_str("        style=\"filled,bold\";\n");
+                    dot.push_str("        peripheries=3;\n");
+                    dot.push_str("        penwidth=2;\n");
+                } else {
+                    dot.push_str("        style=filled;\n");
+                }
+                dot.push_str(&format!("        fillcolor=\"{cluster_color}\";\n"));
+                dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+                dot.push_str("        fontsize=11;\n");
+                dot.push_str("        margin=12;\n");
+
                 for node in &desc.nodes {
                     if group.node_ids.iter().any(|nid| nid.0 == node.id) {
-                        let (shape, style, fillcolor) = Self::dot_node_style(&node.node_type);
-                        let use_dynamic_batch = dynamic_batch_nodes.contains(&node.id);
-                        let label =
-                            Self::dot_node_label_html_with_dynamic_batch(node, use_dynamic_batch);
-                        dot.push_str(&format!(
-                            "        \"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
-                            node.id, label, shape, style, fillcolor
+                        dot.push_str("        ");
+                        dot.push_str(&generate_node_def(
+                            node,
+                            &dynamic_batch_nodes,
+                            &ever_detached_nodes,
+                            &folded_node_info,
+                            &input_seq_range_info,
+                            call_count,
                         ));
                     }
                 }
@@ -1835,34 +2746,152 @@ impl GraphInner {
 
         // 节点定义（未分组的节点，或不启用分组时的所有节点）
         for node in &desc.nodes {
+            // 跳过隐藏节点（如循环层的非代表性展开节点）
+            if hidden_node_ids.contains(&node.id) {
+                continue;
+            }
             if group_layers && grouped_node_ids.contains(&node.id) {
                 continue; // 已在 cluster 中定义
             }
-            let (shape, style, fillcolor) = Self::dot_node_style(&node.node_type);
-            let use_dynamic_batch = dynamic_batch_nodes.contains(&node.id);
-            let label = Self::dot_node_label_html_with_dynamic_batch(node, use_dynamic_batch);
-
-            dot.push_str(&format!(
-                "    \"{}\" [label=<{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
-                node.id, label, shape, style, fillcolor
+            // 使用统一的 generate_node_def 函数
+            dot.push_str("    ");
+            dot.push_str(&generate_node_def(
+                node,
+                &dynamic_batch_nodes,
+                &ever_detached_nodes,
+                &folded_node_info,
+                &input_seq_range_info,
+                call_count,
             ));
         }
 
         dot.push('\n');
 
         // 边定义（从父节点指向子节点）
+        // 收集输出代理信息：(真实输出节点 -> 代表性输出节点)
+        let output_proxies: std::collections::HashMap<u64, u64> = if group_layers {
+            self.layer_groups
+                .iter()
+                .filter_map(|g| g.output_proxy.map(|(real, repr)| (real.0, repr.0)))
+                .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        // 收集循环层初始状态节点 ID（这些边会用橙色虚线单独绘制）
+        // 使用最后一次调用的初始状态节点（与 infer_recurrent_layer_groups 一致）
+        let init_state_node_ids: std::collections::HashSet<u64> = if group_layers {
+            self.recurrent_layer_metas
+                .iter()
+                .filter_map(|m| m.unroll_infos.last())
+                .flat_map(|i| i.init_state_node_ids.iter().map(|id| id.0))
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
         for node in &desc.nodes {
+            // 跳过隐藏节点相关的边
+            if hidden_node_ids.contains(&node.id) {
+                continue;
+            }
+            // 跳过指向初始状态节点的边（会用橙色虚线单独绘制）
+            if init_state_node_ids.contains(&node.id) {
+                continue;
+            }
             for parent_id in &node.parents {
+                // 如果父节点是隐藏的真实输出节点，检查是否有代理
+                if hidden_node_ids.contains(parent_id) {
+                    // 检查是否有代理：如果父节点是某个真实输出，使用其代表性节点
+                    if let Some(&repr_id) = output_proxies.get(parent_id) {
+                        // 添加从代表性节点到当前节点的实线边（折叠层的输出）
+                        dot.push_str(&format!("    \"{}\" -> \"{}\";\n", repr_id, node.id));
+                    }
+                    continue;
+                }
                 dot.push_str(&format!("    \"{}\" -> \"{}\";\n", parent_id, node.id));
             }
         }
 
-        // 循环边定义（橙色虚线，标注 "t-1"）
-        for (&to_id, &from_id) in &self.recurrent_edges {
-            dot.push_str(&format!(
-                "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=\"t-1\" fontcolor=\"#E67E22\"];\n",
-                from_id.0, to_id.0
-            ));
+        // 循环层的序列内记忆箭头（橙色虚线）
+        // 这种表示方式适用于所有循环层：RNN、LSTM、GRU（固定长度和变长）
+        if group_layers {
+            for meta in &self.recurrent_layer_metas {
+                if meta.unroll_infos.is_empty() {
+                    continue;
+                }
+
+                // 使用最后一次调用作为代表（与 infer_recurrent_layer_groups 一致）
+                let repr_info = meta.unroll_infos.last().unwrap();
+
+                // 计算步数范围
+                let min_steps = meta.unroll_infos.iter().map(|i| i.steps).min().unwrap();
+                let max_steps = meta.unroll_infos.iter().map(|i| i.steps).max().unwrap();
+                let is_var_len = min_steps != max_steps;
+
+                // 计算 t>0 边的标签
+                let t_gt_0_min = min_steps.saturating_sub(1);
+                let t_gt_0_max = max_steps.saturating_sub(1);
+                let t_gt_0_label = if is_var_len {
+                    format!("×{}-{}", t_gt_0_min, t_gt_0_max)
+                } else {
+                    format!("×{}", t_gt_0_max)
+                };
+
+                // 为每对 (初始状态, 输出) 绘制边
+                // - RNN/GRU：1 对 (h0, h_1)
+                // - LSTM：2 对 (h0, h_1) 和 (c0, c_1)
+                for (idx, init_id) in repr_info.init_state_node_ids.iter().enumerate() {
+                    // 1. t=0 边：SmartInput → ZerosLike
+                    if let Some(init_node_desc) =
+                        desc.nodes.iter().find(|n| n.id == init_id.0)
+                    {
+                        for parent_id in &init_node_desc.parents {
+                            dot.push_str(&format!(
+                                "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<t=0 <FONT COLOR=\"#E67E22\">(×1)</FONT>> fontcolor=\"#E67E22\" fontsize=9];\n",
+                                parent_id, init_id.0
+                            ));
+                        }
+                    }
+
+                    // 2. t>0 边：output → ZerosLike
+                    // 如果有对应的输出节点，绘制记忆传递边
+                    if let Some(&output_id) = repr_info.repr_output_node_ids.get(idx) {
+                        dot.push_str(&format!(
+                            "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<t&gt;0 <FONT COLOR=\"#E67E22\">({})</FONT>> fontcolor=\"#E67E22\" fontsize=9 constraint=false];\n",
+                            output_id.0, init_id.0, t_gt_0_label
+                        ));
+                    }
+                }
+
+                // 3. 强制所有初始状态节点在同一行（用于 LSTM 的 h0 和 c0）
+                // 使用 Graphviz 的 rank=same 约束（配合 newrank=true 选项）
+                if repr_info.init_state_node_ids.len() > 1 {
+                    let node_ids: Vec<String> = repr_info
+                        .init_state_node_ids
+                        .iter()
+                        .map(|id| format!("\"{}\"", id.0))
+                        .collect();
+                    dot.push_str(&format!(
+                        "    {{ rank=same; {} }}\n",
+                        node_ids.join("; ")
+                    ));
+                }
+            }
+        }
+
+        // 数据流连接（紫色虚线箭头）
+        // SmartInput 节点可能有 gradient_target，表示数据从某个节点"流入"
+        for node in self.nodes.values() {
+            if let NodeType::Input(InputVariant::Smart(smart)) = node.node_type() {
+                if let Some(target_id) = smart.gradient_target() {
+                    // 绘制虚线箭头：从源节点到 SmartInput（数据流方向）
+                    dot.push_str(&format!(
+                        "    \"{}\" -> \"{}\" [style=dashed color=\"#1565C0\" label=\"data flow\" fontcolor=\"#1565C0\" fontsize=9];\n",
+                        target_id.0, node.id().0
+                    ));
+                }
+            }
         }
 
         dot.push_str("}\n");
@@ -1882,6 +2911,20 @@ impl GraphInner {
             "#FFFDE780", // 浅黄
             "#FCE4EC80", // 浅粉
             "#EFEBE980", // 浅棕
+        ];
+        COLORS[index % COLORS.len()]
+    }
+
+    /// 获取模型分组的背景颜色（半透明，使用更鲜明的暖色调）
+    fn model_group_color(index: usize) -> &'static str {
+        // Model 分组使用更鲜明的暖色调，与 Layer 分组区分
+        const COLORS: &[&str] = &[
+            "#FFECB340", // 浅琥珀（更透明）
+            "#FFCCBC40", // 浅深橙（更透明）
+            "#D1C4E940", // 浅深紫（更透明）
+            "#B2DFDB40", // 浅青绿（更透明）
+            "#F8BBD040", // 浅粉红（更透明）
+            "#DCEDC840", // 浅黄绿（更透明）
         ];
         COLORS[index % COLORS.len()]
     }
@@ -2041,7 +3084,7 @@ impl GraphInner {
         }
     }
 
-    /// 找出所有应该显示动态 batch 维度的节点（GradientRouter 及其所有下游节点）
+    /// 找出所有应该显示动态 batch 维度的节点（SmartInput 及其所有下游节点）
     ///
     /// 这些节点在可视化时 batch 维度显示为 `?`，表示 batch 是动态的。
     fn find_dynamic_batch_nodes(desc: &GraphDescriptor) -> std::collections::HashSet<u64> {
@@ -2049,11 +3092,11 @@ impl GraphInner {
 
         let mut dynamic_nodes = HashSet::new();
 
-        // 1. 找出所有 GradientRouter 节点
+        // 1. 找出所有 SmartInput 节点
         let router_ids: Vec<u64> = desc
             .nodes
             .iter()
-            .filter(|n| matches!(n.node_type, NodeTypeDescriptor::GradientRouter))
+            .filter(|n| matches!(n.node_type, NodeTypeDescriptor::SmartInput))
             .map(|n| n.id)
             .collect();
 
@@ -2087,19 +3130,21 @@ impl GraphInner {
         node_type: &NodeTypeDescriptor,
     ) -> (&'static str, &'static str, &'static str) {
         match node_type {
-            // 输入节点：椭圆形，浅蓝色
-            NodeTypeDescriptor::Input => ("ellipse", "filled", "#E3F2FD"),
+            // 基本输入节点：椭圆形，浅蓝色
+            NodeTypeDescriptor::BasicInput => ("ellipse", "filled", "#E3F2FD"),
             // 状态节点：圆柱体，浅橙色（与循环边颜色呼应，表示"记忆/存储"）
             NodeTypeDescriptor::State => ("cylinder", "filled", "#FFE0B2"),
             // Identity 节点：椭圆形，虚线边框，浅紫色（用户创建的 detach 边界）
             NodeTypeDescriptor::Identity => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
-            // GradientRouter 节点：椭圆形，虚线边框，浅灰色（内部实现节点）
-            NodeTypeDescriptor::GradientRouter => ("ellipse", "\"filled,dashed\"", "#F5F5F5"),
+            // TargetInput 节点：椭圆形，浅橙色（Loss 的目标值）
+            NodeTypeDescriptor::TargetInput => ("ellipse", "filled", "#FFE0B2"),
+            // SmartInput 节点：椭圆形，浅灰色（模型入口，曾被 detach 时显示虚线边框）
+            NodeTypeDescriptor::SmartInput => ("ellipse", "filled", "#E0E0E0"),
             // 参数节点：矩形，浅绿色
             NodeTypeDescriptor::Parameter => ("box", "filled", "#E8F5E9"),
-            // 损失节点：双椭圆，浅红色
+            // 损失节点：八边形，浅红色（多次调用时通过 peripheries=2 显示双边框）
             NodeTypeDescriptor::MSELoss | NodeTypeDescriptor::SoftmaxCrossEntropy => {
-                ("doubleoctagon", "filled", "#FFEBEE")
+                ("octagon", "filled", "#FFEBEE")
             }
             // 激活函数：菱形，浅橙色
             NodeTypeDescriptor::Sigmoid
@@ -2183,6 +3228,213 @@ impl GraphInner {
         parts.join("<BR/>")
     }
 
+    /// 生成带多次调用标注的节点标签
+    /// 名称去掉索引后缀，添加蓝色 (×N) 标注表示调用次数
+    fn dot_node_label_html_with_call_count(
+        node: &NodeDescriptor,
+        use_dynamic_batch: bool,
+        call_count: usize,
+    ) -> String {
+        let type_name = Self::type_name(&node.node_type);
+
+        // 使用 NodeDescriptor 中存储的动态形状信息
+        let shape_str = if node.dynamic_shape.is_some() {
+            node.display_shape()
+        } else if use_dynamic_batch && node.output_shape.len() > 1 {
+            let shape_parts: Vec<String> = node
+                .output_shape
+                .iter()
+                .enumerate()
+                .map(|(i, &dim)| {
+                    if i == 0 {
+                        "?".to_string()
+                    } else {
+                        dim.to_string()
+                    }
+                })
+                .collect();
+            format!("[{}]", shape_parts.join(", "))
+        } else {
+            format!("{:?}", node.output_shape)
+        };
+
+        // 去掉名称中的索引后缀（如 mat_mul_153 -> mat_mul）
+        let base_name = Self::strip_index_suffix(&node.name);
+
+        // 使用 HTML 格式：名称后添加蓝色 (×N) 标注
+        let mut parts = vec![
+            format!("{} <FONT COLOR=\"#1565C0\">(×{})</FONT>", base_name, call_count),
+            format!("<B>{}</B>", type_name),
+            shape_str,
+        ];
+
+        if let Some(params) = node.param_count {
+            parts.push(format!("({} params)", Self::format_number(params)));
+        }
+
+        parts.join("<BR/>")
+    }
+
+    /// 去掉节点名称中的索引后缀（如 mat_mul_153 -> mat_mul）
+    fn strip_index_suffix(name: &str) -> String {
+        // 找到最后一个下划线，检查后面是否全是数字
+        if let Some(last_underscore) = name.rfind('_') {
+            let suffix = &name[last_underscore + 1..];
+            if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+                return name[..last_underscore].to_string();
+            }
+        }
+        name.to_string()
+    }
+
+    /// 生成带序列长度范围的节点标签（用于变长 RNN 的 SmartInput 节点）
+    /// 形状显示为 `[?, min-max, ...]` 格式，并添加蓝色调用次数标注
+    fn dot_node_label_html_with_seq_range(
+        node: &NodeDescriptor,
+        use_dynamic_batch: bool,
+        min_seq: usize,
+        max_seq: usize,
+        call_count: usize,
+    ) -> String {
+        let type_name = Self::type_name(&node.node_type);
+
+        // 使用序列长度范围替换形状中的序列维度
+        // 假设形状为 [batch, seq_len, ...]，需要将 seq_len 维度显示为 min-max
+        let shape_str = if use_dynamic_batch && node.output_shape.len() >= 2 {
+            let shape_parts: Vec<String> = node
+                .output_shape
+                .iter()
+                .enumerate()
+                .map(|(i, &dim)| {
+                    if i == 0 {
+                        "?".to_string() // batch 维度
+                    } else if i == 1 && min_seq != max_seq {
+                        format!("{}-{}", min_seq, max_seq) // 序列维度，显示范围
+                    } else if i == 1 {
+                        dim.to_string() // 序列维度，固定长度
+                    } else {
+                        dim.to_string() // 其他维度
+                    }
+                })
+                .collect();
+            format!("[{}]", shape_parts.join(", "))
+        } else if node.output_shape.len() >= 2 && min_seq != max_seq {
+            // 不使用动态 batch，但仍需显示序列范围
+            let mut shape_parts: Vec<String> = node.output_shape.iter().map(|d| d.to_string()).collect();
+            if shape_parts.len() >= 2 {
+                shape_parts[1] = format!("{}-{}", min_seq, max_seq);
+            }
+            format!("[{}]", shape_parts.join(", "))
+        } else {
+            format!("{:?}", node.output_shape)
+        };
+
+        // 移除名称后缀，添加蓝色调用次数标注（与其他多次调用节点一致）
+        let base_name = Self::strip_index_suffix(&node.name);
+        let name_with_count = format!(
+            "{} <FONT COLOR=\"#1565C0\">(×{})</FONT>",
+            base_name, call_count
+        );
+
+        // 使用 HTML 格式：类型加粗
+        let mut parts = vec![
+            name_with_count,
+            format!("<B>{}</B>", type_name),
+            shape_str,
+        ];
+
+        if let Some(params) = node.param_count {
+            parts.push(format!("({} params)", Self::format_number(params)));
+        }
+
+        parts.join("<BR/>")
+    }
+
+    /// 生成折叠节点的 HTML 格式标签（名称后添加 ×N 标注，可选蓝色 (×N) 标注）
+    ///
+    /// # 参数
+    /// - `call_count`: 多次创建的次数（如果 > 1，则同时显示蓝色 (×N)）
+    fn dot_node_label_html_folded_range(
+        node: &NodeDescriptor,
+        use_dynamic_batch: bool,
+        min_steps: usize,
+        max_steps: usize,
+        call_count: Option<usize>,
+    ) -> String {
+        let type_name = Self::type_name(&node.node_type);
+
+        // 使用 NodeDescriptor 中存储的动态形状信息
+        let shape_str = if node.dynamic_shape.is_some() {
+            node.display_shape()
+        } else if use_dynamic_batch && node.output_shape.len() > 1 {
+            let shape_parts: Vec<String> = node
+                .output_shape
+                .iter()
+                .enumerate()
+                .map(|(i, &dim)| {
+                    if i == 0 {
+                        "?".to_string()
+                    } else {
+                        dim.to_string()
+                    }
+                })
+                .collect();
+            format!("[{}]", shape_parts.join(", "))
+        } else {
+            format!("{:?}", node.output_shape)
+        };
+
+        // 从节点名称中提取基础名称（去掉 _1 后缀）
+        let base_name = if let Some(pos) = node.name.rfind('_') {
+            if node.name[pos + 1..].chars().all(|c| c.is_ascii_digit()) {
+                &node.name[..pos]
+            } else {
+                &node.name
+            }
+        } else {
+            &node.name
+        };
+
+        // 使用 HTML 格式：名称后添加 ×N 或 ×min-max 标注
+        let steps_str = if min_steps == max_steps {
+            format!("×{}", max_steps)
+        } else {
+            format!("×{}-{}", min_steps, max_steps)
+        };
+
+        // 构建名称行：基础名称 + 橙色时间步标注 + 可选蓝色创建次数标注
+        let name_line = if let Some(count) = call_count {
+            // 双重语义：橙色 ×N（时间步）+ 蓝色 (×N)（创建次数）
+            format!(
+                "{} <FONT COLOR=\"#E67E22\">{}</FONT> <FONT COLOR=\"#1565C0\">(×{})</FONT>",
+                base_name, steps_str, count
+            )
+        } else {
+            // 单一语义：仅橙色 ×N（时间步）
+            format!("{} <FONT COLOR=\"#E67E22\">{}</FONT>", base_name, steps_str)
+        };
+
+        let mut parts = vec![name_line, format!("<B>{}</B>", type_name), shape_str];
+
+        if let Some(params) = node.param_count {
+            parts.push(format!("({} params)", Self::format_number(params)));
+        }
+
+        parts.join("<BR/>")
+    }
+
+    /// 将颜色值加深（用于折叠节点的背景）
+    fn darken_color(hex_color: &str) -> String {
+        // 简单实现：对于已知颜色返回预定义的深色版本
+        match hex_color {
+            "#FFFDE7" => "#FFF9C4".to_string(), // 浅黄 -> 深黄
+            "#FFF3E0" => "#FFE0B2".to_string(), // 浅橙 -> 深橙
+            "#E8F5E9" => "#C8E6C9".to_string(), // 浅绿 -> 深绿
+            "#E3F2FD" => "#BBDEFB".to_string(), // 浅蓝 -> 深蓝
+            _ => hex_color.to_string(),
+        }
+    }
+
     #[allow(dead_code)]
     fn dot_node_label(node: &NodeDescriptor) -> String {
         let type_name = Self::type_name(&node.node_type);
@@ -2190,7 +3442,7 @@ impl GraphInner {
         // 使用 NodeDescriptor 中的动态形状信息
         let shape_str = if node.dynamic_shape.is_some() {
             node.display_shape()
-        } else if matches!(node.node_type, NodeTypeDescriptor::GradientRouter)
+        } else if matches!(node.node_type, NodeTypeDescriptor::SmartInput)
             && node.output_shape.len() > 1
         {
             // 回退：兼容旧的 JSON（没有 dynamic_shape）
@@ -2238,13 +3490,20 @@ impl GraphInner {
     }
 
     /// 将 `NodeType` 转换为 `NodeTypeDescriptor`
-    const fn node_type_to_descriptor(&self, node_type: &NodeType) -> NodeTypeDescriptor {
+    fn node_type_to_descriptor(&self, node_type: &NodeType) -> NodeTypeDescriptor {
+        use super::nodes::raw_node::InputVariant;
         match node_type {
-            NodeType::Input(_) => NodeTypeDescriptor::Input,
+            NodeType::Input(variant) => {
+                // 根据 InputVariant 类型返回不同的描述
+                match variant {
+                    InputVariant::Data(_) => NodeTypeDescriptor::BasicInput,
+                    InputVariant::Target(_) => NodeTypeDescriptor::TargetInput,
+                    InputVariant::Smart(_) => NodeTypeDescriptor::SmartInput,
+                }
+            }
             NodeType::Parameter(_) => NodeTypeDescriptor::Parameter,
             NodeType::State(_) => NodeTypeDescriptor::State,
             NodeType::Identity(_) => NodeTypeDescriptor::Identity,
-            NodeType::GradientRouter(_) => NodeTypeDescriptor::GradientRouter,
             NodeType::Add(_) => NodeTypeDescriptor::Add,
             NodeType::Divide(_) => NodeTypeDescriptor::Divide,
             NodeType::Subtract(_) => NodeTypeDescriptor::Subtract,
@@ -2368,6 +3627,81 @@ impl GraphInner {
     pub fn get_node_children(&self, id: NodeId) -> Result<Vec<NodeId>, GraphError> {
         self.get_node(id)?; // 确保节点存在
         Ok(self.forward_edges.get(&id).cloned().unwrap_or_default())
+    }
+
+    /// 收集从 output 到 router 之间的所有节点（用于模型分组）
+    ///
+    /// 使用 BFS 从 output 向上遍历，收集所有可达的节点，直到遇到 router。
+    /// 返回的节点列表包含 router 和 output 本身。
+    pub fn collect_nodes_between(
+        &self,
+        router_id: NodeId,
+        output_id: NodeId,
+    ) -> Result<Vec<NodeId>, GraphError> {
+        use std::collections::{HashSet, VecDeque};
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        let mut result = Vec::new();
+
+        queue.push_back(output_id);
+        visited.insert(output_id);
+
+        while let Some(current) = queue.pop_front() {
+            result.push(current);
+
+            // 如果到达 router，不再继续向上遍历
+            if current == router_id {
+                continue;
+            }
+
+            // 获取父节点并加入队列
+            for parent_id in self.get_node_parents(current)? {
+                if !visited.contains(&parent_id) {
+                    visited.insert(parent_id);
+                    queue.push_back(parent_id);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// 注册一个模型分组（用于可视化时将整个模型的节点框在一起）
+    ///
+    /// # 参数
+    /// - `name`: 模型名称（如 "Generator", "Discriminator"）
+    /// - `router_id`: 模型入口节点（SmartInput）
+    /// - `output_id`: 模型输出节点
+    pub fn register_model_group(
+        &mut self,
+        name: &str,
+        router_id: NodeId,
+        output_id: NodeId,
+    ) -> Result<(), GraphError> {
+        // 检查是否已存在同名分组
+        if self.layer_groups.iter().any(|g| g.name == name) {
+            return Ok(());
+        }
+
+        // 收集模型包含的所有节点
+        let node_ids = self.collect_nodes_between(router_id, output_id)?;
+
+        self.layer_groups.push(LayerGroup {
+            name: name.to_string(),
+            layer_type: "Model".to_string(),
+            description: format!("{} nodes", node_ids.len()),
+            node_ids,
+            kind: GroupKind::Model,
+            recurrent_steps: None,
+            min_steps: None,
+            max_steps: None,
+            hidden_node_ids: vec![],
+            folded_nodes: vec![],
+            output_proxy: None,
+        });
+
+        Ok(())
     }
 
     pub fn is_node_inited(&self, id: NodeId) -> Result<bool, GraphError> {
@@ -2515,7 +3849,7 @@ impl GraphInner {
     /// # 示例
     /// ```ignore
     /// // 创建一个简单的循环：hidden 的值在下一步传给 hidden_prev
-    /// let hidden_prev = graph.new_input_node(&[hidden_size, 1], "hidden_prev")?;
+    /// let hidden_prev = graph.new_basic_input_node(&[hidden_size, 1], "hidden_prev")?;
     /// let hidden = graph.new_add_node(&[...], "hidden")?;
     /// graph.connect_recurrent(hidden, hidden_prev)?;
     /// ```
@@ -3452,45 +4786,63 @@ impl GraphInner {
         Ok(node_id)
     }
 
-    pub fn new_input_node(
+    /// 创建基本输入节点（Data 变体）
+    pub fn new_basic_input_node(
         &mut self,
         shape: &[usize],
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
-        let node = NodeHandle::new_input(shape)?;
+        let node = NodeHandle::new_basic_input(shape)?;
         self.add_node_to_list(node, name, "input", &[])
     }
 
-    /// 创建 `GradientRouter` 节点（梯度路由器）
+    /// 创建目标输入节点（Target 变体，用于 Loss 的目标值）
+    pub fn new_target_input_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let node = NodeHandle::new_target_input(shape)?;
+        self.add_node_to_list(node, name, "target", &[])
+    }
+
+    /// 创建 SmartInput 节点（智能输入）
     ///
-    /// `GradientRouter` 是 `ModelState` 内部使用的特殊节点，用于实现智能缓存：
-    /// - 像 Input 节点一样存储值（通过 `set_value` 设置）
+    /// SmartInput 是 ModelState 内部使用的特殊节点，用于实现智能缓存：
+    /// - 像 BasicInput 一样存储值（通过 `set_value` 设置）
     /// - 支持动态设置 detached 状态
     /// - 支持梯度路由到外部目标节点
+    /// - 支持动态 batch
     ///
     /// # 参数
     /// - `shape`: 节点输出形状
     /// - `name`: 节点名称（可选）
-    pub fn new_gradient_router_node(
+    pub fn new_smart_input_node(
         &mut self,
         shape: &[usize],
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
-        let node = NodeHandle::new_gradient_router(shape)?;
-        self.add_node_to_list(node, name, "router", &[])
+        let node = NodeHandle::new_smart_input(shape)?;
+        self.add_node_to_list(node, name, "input", &[])
     }
 
-    /// 设置 `GradientRouter` 节点的 detached 状态
+    /// 设置 SmartInput 节点的 detached 状态
+    ///
+    /// # 参数
+    /// - `node_id`: SmartInput 节点 ID
+    /// - `detached`: 是否阻止梯度传播
+    /// - `mark_ever_detached`: 是否标记 was_ever_detached（用于可视化显示虚线边框）
     pub fn set_router_detached(
         &mut self,
         node_id: NodeId,
         detached: bool,
+        mark_ever_detached: bool,
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(node_id)?;
-        node.set_router_detached(detached)
+        node.set_router_detached(detached, mark_ever_detached)
     }
 
-    /// 设置 `GradientRouter` 节点的梯度路由目标
+    /// 设置 SmartInput 节点的梯度路由目标
     pub fn set_gradient_target(
         &mut self,
         node_id: NodeId,
@@ -3500,7 +4852,7 @@ impl GraphInner {
         node.set_gradient_target(target)
     }
 
-    /// 获取 `GradientRouter` 节点的梯度路由目标
+    /// 获取 SmartInput 节点的梯度路由目标
     pub fn get_gradient_target(&self, node_id: NodeId) -> Result<Option<NodeId>, GraphError> {
         let node = self.get_node(node_id)?;
         Ok(node.gradient_target())
@@ -3629,7 +4981,7 @@ impl GraphInner {
     /// let kernel = graph.new_parameter_node(&[32, 1, 3, 3], Some("conv1_kernel"))?;
     ///
     /// // 输入: [batch, 1, 28, 28]（如 MNIST 图像）
-    /// let input = graph.new_input_node(&[batch_size, 1, 28, 28], Some("input"))?;
+    /// let input = graph.new_basic_input_node(&[batch_size, 1, 28, 28], Some("input"))?;
     ///
     /// // 创建卷积层: stride=1, padding=1（保持尺寸）
     /// let conv_out = graph.new_conv2d_node(input, kernel, (1, 1), (1, 1), Some("conv1"))?;

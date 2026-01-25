@@ -41,6 +41,7 @@ fn main() -> Result<(), GraphError> {
     println!("优化器: Adam (lr=0.05), 损失: CrossEntropyLoss\n");
 
     // 5. 训练（PyTorch 风格）
+    let target_accuracy = 95.0;
     for epoch in 0..200 {
         // PyTorch 风格：直接传 Tensor
         let output = model.forward(&x_train)?;
@@ -68,6 +69,12 @@ fn main() -> Result<(), GraphError> {
                 loss_val,
                 acc
             );
+
+            // 早停：达到目标准确率即停止
+            if acc >= target_accuracy {
+                println!("\n✅ 达到目标准确率 {:.1}%，提前停止训练", acc);
+                break;
+            }
         }
     }
 
@@ -103,6 +110,13 @@ fn main() -> Result<(), GraphError> {
             "True {}: {:3}  {:3}  {:3}",
             name, confusion[i][0], confusion[i][1], confusion[i][2]
         );
+    }
+
+    // 保存可视化
+    let vis_result = graph.save_visualization_grouped("examples/iris/iris", None)?;
+    println!("\n计算图已保存: {}", vis_result.dot_path.display());
+    if let Some(img_path) = &vis_result.image_path {
+        println!("可视化图像: {}", img_path.display());
     }
 
     if final_acc >= 95.0 {

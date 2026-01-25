@@ -16,7 +16,7 @@ fn test_flatten_keep_first_dim_2d() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 2D 输入 [3, 4]
-    let input = graph.new_input_node(&[3, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[3, 4], Some("input"))?;
     let flat = graph.new_flatten_node(input, true, Some("flat"))?;
 
     let input_data = Tensor::new(
@@ -42,7 +42,7 @@ fn test_flatten_keep_first_dim_2d() -> Result<(), GraphError> {
 fn test_flatten_to_row_vector() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 3], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 3], Some("input"))?;
     let flat = graph.new_flatten_node(input, false, Some("flat"))?;
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
@@ -66,7 +66,7 @@ fn test_flatten_to_row_vector() -> Result<(), GraphError> {
 fn test_flatten_square_matrix() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[4, 4], Some("input"))?;
     let flat = graph.new_flatten_node(input, false, Some("flat"))?;
 
     let input_data = Tensor::normal_seeded(0.0, 1.0, &[4, 4], 42);
@@ -156,7 +156,7 @@ fn test_flatten_backward_e2e() -> Result<(), GraphError> {
     let sigmoid = graph.new_sigmoid_node(flat, Some("sigmoid"))?;
 
     // loss = MSE(sigmoid, target)
-    let target = graph.new_input_node(&[1, 6], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 6], Some("target"))?;
     let loss = graph.new_mse_loss_node(sigmoid, target, Some("loss"))?;
 
     // 设置值
@@ -188,7 +188,7 @@ fn test_flatten_batch_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入 [batch=4, features=6]
-    let input = graph.new_input_node(&[4, 6], Some("input"))?;
+    let input = graph.new_basic_input_node(&[4, 6], Some("input"))?;
     // keep_first_dim=true: 对于 2D，形状不变
     let flat = graph.new_flatten_node(input, true, Some("flat"))?;
 
@@ -214,7 +214,7 @@ fn test_flatten_gradient_accumulation() -> Result<(), GraphError> {
     let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let flat = graph.new_flatten_node(input, false, Some("flat"))?;
     let sigmoid = graph.new_sigmoid_node(flat, Some("sigmoid"))?;
-    let target = graph.new_input_node(&[1, 6], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 6], Some("target"))?;
     let loss = graph.new_mse_loss_node(sigmoid, target, Some("loss"))?;
 
     // 设置值
@@ -256,7 +256,7 @@ fn test_flatten_with_matmul() -> Result<(), GraphError> {
     let cnn_features = 8;
     let hidden_size = 4;
 
-    let x = graph.new_input_node(&[batch_size, cnn_features], Some("cnn_out"))?;
+    let x = graph.new_basic_input_node(&[batch_size, cnn_features], Some("cnn_out"))?;
     let flat = graph.new_flatten_node(x, true, Some("flat"))?;
     let w = graph.new_parameter_node(&[cnn_features, hidden_size], Some("w"))?;
     let h = graph.new_mat_mul_node(flat, w, Some("hidden"))?;
@@ -277,7 +277,7 @@ fn test_flatten_with_matmul() -> Result<(), GraphError> {
 fn test_flatten_reshape_chain() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[3, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[3, 4], Some("input"))?;
     // 先展平为行向量 [1, 12]
     let flat = graph.new_flatten_node(input, false, Some("flat"))?;
     // 再 reshape 为 [4, 3]
@@ -324,7 +324,7 @@ fn test_flatten_single_sample_backward() -> Result<(), GraphError> {
     let y = graph.new_mat_mul_node(flat, w, Some("y"))?;
 
     // 使用 MSE loss
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(y, target, Some("loss"))?;
 
     graph.set_node_value(target, Some(&Tensor::zeros(&[1, 1])))?;

@@ -208,10 +208,8 @@ fn main() -> Result<(), GraphError> {
     let d_out_vis = discriminator.forward(&fake_vis)?;
     d_out_vis.forward()?; // 确保前向传播完成
 
-    // 保存计算图可视化（Graphviz）
-    let vis_result = graph
-        .inner()
-        .save_visualization("examples/mnist_gan/mnist_gan", None)?;
+    // 保存计算图可视化（Graphviz，启用模型分组）
+    let vis_result = graph.save_visualization_grouped("examples/mnist_gan/mnist_gan", None)?;
     println!("  计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("  可视化图像: {}", img_path.display());

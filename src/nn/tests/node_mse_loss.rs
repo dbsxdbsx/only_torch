@@ -14,8 +14,8 @@ use approx::assert_abs_diff_eq;
 fn test_mse_loss_creation() {
     let mut graph = GraphInner::new();
 
-    let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
+    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -31,8 +31,8 @@ fn test_mse_loss_creation() {
 fn test_mse_loss_shape_mismatch() {
     let mut graph = GraphInner::new();
 
-    let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 4], Some("target")).unwrap(); // 形状不匹配
+    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 4], Some("target")).unwrap(); // 形状不匹配
 
     let result = graph.new_mse_loss_node(input_id, target_id, None);
     assert!(result.is_err());
@@ -52,8 +52,8 @@ fn test_mse_loss_shape_mismatch() {
 fn test_mse_loss_forward_mean_basic() {
     let mut graph = GraphInner::new();
 
-    let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
+    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -85,8 +85,8 @@ fn test_mse_loss_forward_mean_basic() {
 fn test_mse_loss_forward_2d_matrix() {
     let mut graph = GraphInner::new();
 
-    let input_id = graph.new_input_node(&[2, 2], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+    let input_id = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
+    let target_id = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -123,8 +123,8 @@ fn test_mse_loss_forward_2d_matrix() {
 fn test_mse_loss_forward_sum() {
     let mut graph = GraphInner::new();
 
-    let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
+    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node_with_reduction(input_id, target_id, Reduction::Sum, Some("loss"))
         .unwrap();
@@ -158,7 +158,7 @@ fn test_mse_loss_backward_e2e_mean() {
     let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -196,7 +196,7 @@ fn test_mse_loss_backward_e2e_sum() {
     let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node_with_reduction(input_id, target_id, Reduction::Sum, Some("loss"))
         .unwrap();
@@ -232,7 +232,7 @@ fn test_mse_loss_backward_e2e_2d() {
     let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[2, 2], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+    let target_id = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -278,8 +278,8 @@ fn test_mse_loss_backward_e2e_2d() {
 fn test_mse_loss_batch_forward() {
     let mut graph = GraphInner::new();
 
-    let input_id = graph.new_input_node(&[3, 4], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[3, 4], Some("target")).unwrap();
+    let input_id = graph.new_basic_input_node(&[3, 4], Some("input")).unwrap();
+    let target_id = graph.new_basic_input_node(&[3, 4], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -314,7 +314,7 @@ fn test_mse_loss_batch_backward() {
     let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[3, 4], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[3, 4], Some("target")).unwrap();
+    let target_id = graph.new_basic_input_node(&[3, 4], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -359,8 +359,8 @@ fn test_mse_loss_batch_backward() {
 fn test_mse_loss_large_values() {
     let mut graph = GraphInner::new();
 
-    let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
+    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -389,8 +389,8 @@ fn test_mse_loss_large_values() {
 fn test_mse_loss_small_values() {
     let mut graph = GraphInner::new();
 
-    let input_id = graph.new_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
+    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -422,7 +422,7 @@ fn test_mse_loss_gradient_accumulation() {
     let mut graph = GraphInner::new();
 
     let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_input_node(&[1, 3], Some("target")).unwrap();
+    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(input_id, target_id, Some("loss"))
         .unwrap();
@@ -466,10 +466,10 @@ fn test_mse_loss_simple_regression_training() {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 创建网络: y_pred = x * w
-    let x_id = graph.new_input_node(&[1, 1], Some("x")).unwrap();
+    let x_id = graph.new_basic_input_node(&[1, 1], Some("x")).unwrap();
     let w_id = graph.new_parameter_node(&[1, 1], Some("w")).unwrap();
     let y_pred_id = graph.new_mat_mul_node(x_id, w_id, Some("y_pred")).unwrap();
-    let y_true_id = graph.new_input_node(&[1, 1], Some("y_true")).unwrap();
+    let y_true_id = graph.new_basic_input_node(&[1, 1], Some("y_true")).unwrap();
     let loss_id = graph
         .new_mse_loss_node(y_pred_id, y_true_id, Some("loss"))
         .unwrap();
@@ -520,8 +520,8 @@ use crate::nn::GraphError;
 fn test_mse_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[4, 8], Some("input"))?;
-    let target = graph.new_input_node(&[4, 8], Some("target"))?;
+    let input = graph.new_basic_input_node(&[4, 8], Some("input"))?;
+    let target = graph.new_basic_input_node(&[4, 8], Some("target"))?;
     let loss = graph.new_mse_loss_node(input, target, Some("loss"))?;
 
     // MSELoss 输出形状始终是 [1, 1]（标量）
@@ -542,8 +542,8 @@ fn test_mse_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
 fn test_mse_loss_dynamic_batch_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 4], Some("input"))?;
-    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
+    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
     let loss = graph.new_mse_loss_node(input, target, Some("loss"))?;
 
     // 第一次 forward：batch=2
@@ -572,10 +572,10 @@ fn test_mse_loss_dynamic_batch_backward() -> Result<(), GraphError> {
     // 使用 Input 节点接收动态 batch 数据
     // 注意：Input 节点支持动态 batch 但没有 grad
     // 为了测试梯度反传，使用 y = x * w 形式，其中 w 是可训练的 Parameter
-    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
     let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?; // [4, 4] 权重
     let pred = graph.new_mat_mul_node(input, weight, Some("pred"))?;
-    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
     let loss = graph.new_mse_loss_node(pred, target, Some("loss"))?;
 
     // 初始化权重
@@ -618,8 +618,8 @@ fn test_mse_loss_dynamic_shape_compatibility() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 两个输入都支持动态 batch
-    let input = graph.new_input_node(&[4, 8], Some("input"))?;
-    let target = graph.new_input_node(&[4, 8], Some("target"))?;
+    let input = graph.new_basic_input_node(&[4, 8], Some("input"))?;
+    let target = graph.new_basic_input_node(&[4, 8], Some("target"))?;
 
     // 验证动态形状兼容
     let input_node = graph.get_node(input)?;

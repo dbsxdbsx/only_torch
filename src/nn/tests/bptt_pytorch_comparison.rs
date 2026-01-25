@@ -32,7 +32,7 @@ fn create_simple_rnn() -> Result<(GraphInner, NodeId, NodeId, NodeId, NodeId, No
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -48,7 +48,7 @@ fn create_simple_rnn() -> Result<(GraphInner, NodeId, NodeId, NodeId, NodeId, No
     graph.connect_recurrent(hidden, h_prev)?;
 
     let output = graph.new_mat_mul_node(hidden, w_out, Some("output"))?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     Ok((graph, input, hidden, loss, target, w_scale))
@@ -159,8 +159,8 @@ fn test_longer_sequence_tanh_rnn() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -223,8 +223,8 @@ fn test_multi_param_rnn() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -316,7 +316,7 @@ fn test_sigmoid_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -337,7 +337,7 @@ fn test_sigmoid_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
     graph.connect_recurrent(hidden, h_prev)?;
 
     let output = graph.new_mat_mul_node(hidden, w_out, None)?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     graph.set_node_value(target, Some(&Tensor::new(&[0.8], &[1, 1])))?;
@@ -388,7 +388,7 @@ fn test_sigmoid_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -409,7 +409,7 @@ fn test_sigmoid_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     graph.connect_recurrent(hidden, h_prev)?;
 
     let output = graph.new_mat_mul_node(hidden, w_out, None)?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     graph.set_node_value(target, Some(&Tensor::new(&[0.8], &[1, 1])))?;
@@ -478,8 +478,8 @@ fn test_mixed_activation_rnn() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
 
     // 两个 State 节点
     let h1_prev = graph.new_state_node(&[1, 1], Some("h1_prev"))?;
@@ -592,7 +592,7 @@ fn test_leaky_relu_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -613,7 +613,7 @@ fn test_leaky_relu_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
     graph.connect_recurrent(hidden, h_prev)?;
 
     let output = graph.new_mat_mul_node(hidden, w_out, None)?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     graph.set_node_value(target, Some(&Tensor::new(&[0.7], &[1, 1])))?;
@@ -671,7 +671,7 @@ fn test_leaky_relu_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -692,7 +692,7 @@ fn test_leaky_relu_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     graph.connect_recurrent(hidden, h_prev)?;
 
     let output = graph.new_mat_mul_node(hidden, w_out, None)?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     graph.set_node_value(target, Some(&Tensor::new(&[0.7], &[1, 1])))?;
@@ -774,7 +774,7 @@ fn test_softplus_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -795,7 +795,7 @@ fn test_softplus_rnn_forward_matches_pytorch() -> Result<(), GraphError> {
     graph.connect_recurrent(hidden, h_prev)?;
 
     let output = graph.new_mat_mul_node(hidden, w_out, None)?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     graph.set_node_value(target, Some(&Tensor::new(&[1.0], &[1, 1])))?;
@@ -853,7 +853,7 @@ fn test_softplus_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -874,7 +874,7 @@ fn test_softplus_rnn_bptt_matches_pytorch() -> Result<(), GraphError> {
     graph.connect_recurrent(hidden, h_prev)?;
 
     let output = graph.new_mat_mul_node(hidden, w_out, None)?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     graph.set_node_value(target, Some(&Tensor::new(&[1.0], &[1, 1])))?;

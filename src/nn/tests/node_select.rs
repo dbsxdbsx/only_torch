@@ -19,7 +19,7 @@ fn test_select_basic_3d() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建输入节点 [2, 3, 4] (batch=2, seq_len=3, input_size=4)
-    let input = graph.new_input_node(&[2, 3, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 3, 4], Some("input"))?;
 
     // 选择 axis=1, index=1 (第 2 个时间步)
     let selected = graph.new_select_node(input, 1, 1, Some("selected"))?;
@@ -60,7 +60,7 @@ fn test_select_basic_3d() -> Result<(), GraphError> {
 fn test_select_first_timestep() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[4, 5, 3], Some("input"))?;
+    let input = graph.new_basic_input_node(&[4, 5, 3], Some("input"))?;
     let selected = graph.new_select_node(input, 1, 0, Some("t0"))?;
 
     let input_data = Tensor::normal_seeded(0.0, 1.0, &[4, 5, 3], 42);
@@ -87,7 +87,7 @@ fn test_select_last_timestep() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     let seq_len = 5;
-    let input = graph.new_input_node(&[2, seq_len, 3], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, seq_len, 3], Some("input"))?;
     let selected = graph.new_select_node(input, 1, seq_len - 1, Some("t_last"))?;
 
     let input_data = Tensor::normal_seeded(0.0, 1.0, &[2, seq_len, 3], 42);
@@ -117,7 +117,7 @@ fn test_select_last_timestep() -> Result<(), GraphError> {
 fn test_select_axis_0() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[3, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[3, 4], Some("input"))?;
     let selected = graph.new_select_node(input, 0, 1, Some("row1"))?;
 
     let input_data = Tensor::new(
@@ -233,7 +233,7 @@ fn test_select_backward_e2e() -> Result<(), GraphError> {
     let sigmoid = graph.new_sigmoid_node(mm, Some("sigmoid"))?;
 
     // loss = MSE(sigmoid, target)
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(sigmoid, target, Some("loss"))?;
 
     // 设置值
@@ -299,7 +299,7 @@ fn test_select_multiple_timesteps() -> Result<(), GraphError> {
     let sum_all = graph.new_add_node(&[sum_01, x_2], Some("sum_all"))?;
 
     // 使用 MSE loss
-    let target = graph.new_input_node(&[batch, input_size], Some("target"))?;
+    let target = graph.new_basic_input_node(&[batch, input_size], Some("target"))?;
     let loss = graph.new_mse_loss_node(sum_all, target, Some("loss"))?;
 
     // 设置值
@@ -347,7 +347,7 @@ fn test_select_rnn_like_single_step() -> Result<(), GraphError> {
     let hidden_size = 5;
 
     // 输入序列
-    let x_seq = graph.new_input_node(&[batch, seq_len, input_size], Some("x_seq"))?;
+    let x_seq = graph.new_basic_input_node(&[batch, seq_len, input_size], Some("x_seq"))?;
 
     // RNN 参数
     let w_ih = graph.new_parameter_node(&[input_size, hidden_size], Some("w_ih"))?;
@@ -360,7 +360,7 @@ fn test_select_rnn_like_single_step() -> Result<(), GraphError> {
     let h = graph.new_tanh_node(mm, Some("h"))?;
 
     // 简单的 loss
-    let target = graph.new_input_node(&[batch, hidden_size], Some("target"))?;
+    let target = graph.new_basic_input_node(&[batch, hidden_size], Some("target"))?;
     let loss = graph.new_mse_loss_node(h, target, Some("loss"))?;
 
     // 设置值
@@ -392,14 +392,14 @@ fn test_select_rnn_two_step_unroll() -> Result<(), GraphError> {
     let hidden_size = 4;
 
     // 输入序列 [batch, 2, input_size]
-    let x_seq = graph.new_input_node(&[batch, 2, input_size], Some("x_seq"))?;
+    let x_seq = graph.new_basic_input_node(&[batch, 2, input_size], Some("x_seq"))?;
 
     // RNN 参数（共享）
     let w_ih = graph.new_parameter_node(&[input_size, hidden_size], Some("w_ih"))?;
     let w_hh = graph.new_parameter_node(&[hidden_size, hidden_size], Some("w_hh"))?;
 
     // 初始隐藏状态（零）
-    let h_0 = graph.new_input_node(&[batch, hidden_size], Some("h_0"))?;
+    let h_0 = graph.new_basic_input_node(&[batch, hidden_size], Some("h_0"))?;
 
     // === 时间步 0 ===
     let x_0 = graph.new_select_node(x_seq, 1, 0, Some("x_0"))?;
@@ -416,7 +416,7 @@ fn test_select_rnn_two_step_unroll() -> Result<(), GraphError> {
     let h_2 = graph.new_tanh_node(pre_h_2, Some("h_2"))?;
 
     // Loss
-    let target = graph.new_input_node(&[batch, hidden_size], Some("target"))?;
+    let target = graph.new_basic_input_node(&[batch, hidden_size], Some("target"))?;
     let loss = graph.new_mse_loss_node(h_2, target, Some("loss"))?;
 
     // 设置值
@@ -453,7 +453,7 @@ fn test_select_rnn_two_step_unroll() -> Result<(), GraphError> {
 fn test_select_axis_out_of_bounds() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 3, 4], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3, 4], Some("input")).unwrap();
 
     // axis=3 超出 3 维张量的范围
     let result = graph.new_select_node(input, 3, 0, Some("bad_select"));
@@ -471,7 +471,7 @@ fn test_select_axis_out_of_bounds() {
 fn test_select_index_out_of_bounds() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 3, 4], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3, 4], Some("input")).unwrap();
 
     // index=5 超出 axis=1 的大小 3
     let result = graph.new_select_node(input, 1, 5, Some("bad_select"));

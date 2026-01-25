@@ -50,6 +50,7 @@ fn main() -> Result<(), GraphError> {
     println!("优化器: Adam (lr=0.05), 损失: MseLoss\n");
 
     // 4. 训练（PyTorch 风格）
+    let target_mse = 0.001; // 目标 MSE 阈值
     for epoch in 0..500 {
         // PyTorch 风格：直接传 Tensor
         let output = model.forward(&x_train)?;
@@ -62,6 +63,13 @@ fn main() -> Result<(), GraphError> {
 
         if (epoch + 1) % 100 == 0 {
             println!("Epoch {:3}: MSE = {:.6}", epoch + 1, loss_val);
+        }
+
+        // 早停：达到目标 MSE 即停止
+        if loss_val <= target_mse {
+            println!("Epoch {:3}: MSE = {:.6}", epoch + 1, loss_val);
+            println!("\n✅ 达到目标 MSE ≤ {target_mse}，提前停止训练");
+            break;
         }
     }
 
@@ -91,11 +99,19 @@ fn main() -> Result<(), GraphError> {
 
     println!("\n全部样本最大误差: {max_error:.4}");
 
+    // 保存可视化
+    let vis_result =
+        graph.save_visualization_grouped("examples/sine_regression/sine_regression", None)?;
+    println!("\n计算图已保存: {}", vis_result.dot_path.display());
+    if let Some(img_path) = &vis_result.image_path {
+        println!("可视化图像: {}", img_path.display());
+    }
+
     if max_error < 0.1 {
-        println!("✅ MSE 回归成功！");
+        println!("\n✅ MSE 回归成功！");
         Ok(())
     } else {
-        println!("❌ 拟合精度不够 (max_error > 0.1)");
+        println!("\n❌ 拟合精度不够 (max_error > 0.1)");
         Err(GraphError::ComputationError("回归精度不足".to_string()))
     }
 }

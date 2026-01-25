@@ -15,7 +15,7 @@ use crate::tensor::Tensor;
 #[test]
 fn test_node_softplus_creation() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[1, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
 
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
 
@@ -27,7 +27,7 @@ fn test_node_softplus_creation() {
 #[test]
 fn test_node_softplus_name_generation() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[1, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
 
     // 显式命名
     let sp1 = graph
@@ -50,7 +50,7 @@ fn test_node_softplus_name_generation() {
 #[test]
 fn test_node_softplus_manually_set_value() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[1, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
 
     // 直接设置 SoftPlus 节点的值应该失败
@@ -70,7 +70,7 @@ fn test_node_softplus_forward_1d() {
     // "1D" 向量前向传播测试 (实际使用 [1, 5] 形状)
     // 预期值来自 tests/python/calc_jacobi_by_pytorch/node_softplus.py
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[1, 5], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 5], Some("input")).unwrap();
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
 
     // 设置输入: [-2.0, -1.0, 0.0, 1.0, 2.0]
@@ -91,7 +91,7 @@ fn test_node_softplus_forward_1d() {
 fn test_node_softplus_forward_2d() {
     // 2D 矩阵前向传播测试
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
 
     // 设置输入: [[-1.0, 0.0, 1.0], [2.0, -2.0, 0.5]]
@@ -116,7 +116,7 @@ fn test_node_softplus_forward_2d() {
 fn test_node_softplus_numerical_stability() {
     // 数值稳定性测试：极端值
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[1, 5], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 5], Some("input")).unwrap();
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
 
     // 设置极端输入: [-50.0, -20.0, 0.0, 20.0, 50.0]
@@ -217,7 +217,7 @@ fn test_node_softplus_backward_e2e() -> Result<(), GraphError> {
     let softplus = graph.new_softplus_node(input, Some("softplus"))?;
 
     // loss = MSE(softplus, target)
-    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
     let loss = graph.new_mse_loss_node(softplus, target, Some("loss"))?;
 
     // 设置值：input=[[-1,0,1],[2,-2,0.5]], target=zeros
@@ -263,7 +263,7 @@ fn test_node_softplus_backward_e2e() -> Result<(), GraphError> {
 #[test]
 fn test_node_softplus_batch_forward() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
 
     // Batch 输入 (2 samples, 3 features)
@@ -285,7 +285,7 @@ fn test_node_softplus_after_linear() {
     // 线性层后接 SoftPlus: output = softplus(x @ w)
     let mut graph = GraphInner::new();
 
-    let x = graph.new_input_node(&[1, 2], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[1, 2], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[2, 2], Some("w")).unwrap();
     let z = graph.new_mat_mul_node(x, w, Some("z")).unwrap();
     let output = graph.new_softplus_node(z, Some("output")).unwrap();
@@ -321,7 +321,7 @@ fn test_node_softplus_gradient_accumulation() -> Result<(), GraphError> {
 
     let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let softplus = graph.new_softplus_node(input, Some("softplus"))?;
-    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
     let loss = graph.new_mse_loss_node(softplus, target, Some("loss"))?;
 
     // 设置值
@@ -357,7 +357,7 @@ fn test_node_softplus_mlp_training() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 构建简单 MLP: x -> Linear -> SoftPlus -> Linear -> output -> MSE
-    let x = graph.new_input_node(&[2, 1], Some("x"))?;
+    let x = graph.new_basic_input_node(&[2, 1], Some("x"))?;
     let w1 = graph.new_parameter_node(&[3, 2], Some("w1"))?;
     let b1 = graph.new_parameter_node(&[3, 1], Some("b1"))?;
 
@@ -369,7 +369,7 @@ fn test_node_softplus_mlp_training() -> Result<(), GraphError> {
     let output = graph.new_mat_mul_node(w2, a1, Some("output"))?; // [1, 1]
 
     // 添加 MSE 损失
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     // 设置输入
@@ -409,7 +409,7 @@ fn test_node_softplus_mlp_training() -> Result<(), GraphError> {
 fn test_softplus_vs_relu_smoothness() {
     // 验证 SoftPlus 在零点附近比 ReLU 更平滑
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[1, 5], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 5], Some("input")).unwrap();
     let softplus = graph.new_softplus_node(input, Some("softplus")).unwrap();
     let relu = graph.new_relu_node(input, Some("relu")).unwrap();
 
@@ -456,7 +456,7 @@ fn test_softplus_derivative_is_sigmoid() -> Result<(), GraphError> {
 
     // 独立计算 sigmoid 作为预期值
     let mut graph2 = GraphInner::new();
-    let input2 = graph2.new_input_node(&[1, 5], Some("input"))?;
+    let input2 = graph2.new_basic_input_node(&[1, 5], Some("input"))?;
     let sigmoid = graph2.new_sigmoid_node(input2, Some("sigmoid"))?;
     graph2.set_node_value(input2, Some(&input_data))?;
     graph2.forward(sigmoid)?;

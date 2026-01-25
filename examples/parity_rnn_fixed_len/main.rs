@@ -131,8 +131,16 @@ fn main() -> Result<(), GraphError> {
     println!("测试准确率: {final_accuracy:.1}%");
     println!("最佳准确率: {best_accuracy:.1}%");
 
+    // 保存可视化
+    let vis_result = graph
+        .save_visualization_grouped("examples/parity_rnn_fixed_len/parity_rnn_fixed_len", None)?;
+    println!("\n计算图已保存: {}", vis_result.dot_path.display());
+    if let Some(img_path) = &vis_result.image_path {
+        println!("可视化图像: {}", img_path.display());
+    }
+
     if final_accuracy >= target_accuracy {
-        println!("✅ 奇偶性检测任务成功！");
+        println!("\n✅ 奇偶性检测任务成功！");
         Ok(())
     } else {
         Err(GraphError::ComputationError(format!(

@@ -1,5 +1,30 @@
 # 更新日志
 
+## [0.10.0] - 2026-01-25
+
+### 重构
+
+- **refactor(nn): 统一 Input 节点类型架构**
+  - 将 `Input` 和 `GradientRouter` 统一为 `InputVariant` 枚举
+  - 三种变体：`Data`（通用输入）、`Target`（Loss 目标值）、`Smart`（模型入口，原 GradientRouter）
+  - 详见 [设计文档](.doc/design/input_node_unification_design.md)
+
+- **refactor(nn): 可视化样式区分不同输入类型**
+  - `Data`：浅蓝色，标签 `Input`
+  - `Target`：浅橙色，标签 `Target`
+  - `Smart`：浅绿色，标签 `Input`
+
+### 新增
+
+- **feat(examples): 所有示例添加计算图可视化**
+  - 新增 `.dot` 和 `.png` 文件：xor、iris、sine_regression、california_housing、mnist、parity_rnn_fixed_len、parity_rnn_var_len、parity_lstm_var_len、parity_gru_var_len
+  - 更新 mnist_gan 可视化
+
+### 文档
+
+- 新增 Input 节点统一设计文档
+- README 可视化示例改用 examples 目录图片
+
 ## [0.9.0] - 2026-01-22
 
 ### 新增

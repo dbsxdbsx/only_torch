@@ -146,6 +146,34 @@ impl Lstm {
         )?;
         let b_o = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_o"))?;
 
+        // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
+        // LSTM 每个时间步的节点数：26
+        // - select: 1
+        // - 4个门×5节点(2 matmul + 2 add + 1 activation) = 20
+        // - 细胞更新: 2 multiply + 1 add = 3
+        // - 隐藏更新: 1 tanh + 1 multiply = 2
+        // 总计: 1+20+3+2 = 26
+        graph.inner_mut().register_recurrent_layer_meta(
+            name,
+            "LSTM",
+            &format!("[?, {input_size}] → [?, {hidden_size}]"),
+            vec![
+                w_ii.node_id(),
+                w_hi.node_id(),
+                b_i.node_id(),
+                w_if.node_id(),
+                w_hf.node_id(),
+                b_f.node_id(),
+                w_ig.node_id(),
+                w_hg.node_id(),
+                b_g.node_id(),
+                w_io.node_id(),
+                w_ho.node_id(),
+                b_o.node_id(),
+            ],
+            26, // nodes_per_step
+        );
+
         Ok(Self {
             w_ii,
             w_hi,
@@ -212,19 +240,33 @@ impl Lstm {
     }
 
     /// 展开 LSTM 时间步
+    ///
+    /// 计算逻辑与可视化信息收集完全分离：
+    /// - 此方法只做计算 + 记录最少的必要信息（4 个节点 ID + 1 个数值）
+    /// - 完整的分组信息在 `save_visualization` 时惰性推断
     fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
         // 创建初始状态（ZerosLike：根据 x 的 batch_size 动态生成）
         // 注意：每次 forward 都创建新的 ZerosLike 节点，确保与当前输入的 batch_size 匹配
         // 这对于变长序列处理（不同桶有不同 batch_size）是必需的
         let h0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
         let c0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
+        let init_state_node_ids = vec![h0.node_id(), c0.node_id()]; // LSTM 有两个初始状态
         let mut h = h0;
         let mut c = c0;
+
+        // 记录第一个时间步的信息（用于惰性推断）
+        let mut first_step_start_id = None;
+        let mut repr_output_node_ids = Vec::new();
 
         // 展开所有时间步
         for t in 0..seq_len {
             // 选择第 t 个时间步: x_t = x[:, t, :] -> [batch, input_size]
             let x_t = x.select(1, t)?;
+
+            // 记录第一个时间步的起始节点 ID
+            if t == 0 {
+                first_step_start_id = Some(x_t.node_id());
+            }
 
             // === 输入门 ===
             // i_t = σ(x_t @ W_ii + h @ W_hi + b_i)
@@ -257,7 +299,27 @@ impl Lstm {
             // === 更新隐藏状态 ===
             // h_t = o_t ⊙ tanh(c_t)
             h = &o_gate * &c.tanh();
+
+            // 记录第一个时间步的输出节点 ID（LSTM 有 h 和 c 两个状态）
+            if t == 0 {
+                repr_output_node_ids.push(h.node_id()); // h_1
+                repr_output_node_ids.push(c.node_id()); // c_1
+            }
         }
+
+        // 更新循环层的展开信息（只记录 5 个节点 ID + 1 个数值，几乎零开销）
+        use crate::nn::graph::RecurrentUnrollInfo;
+        self.graph.inner_mut().update_recurrent_layer_unroll_info(
+            &self.name,
+            RecurrentUnrollInfo {
+                steps: seq_len,
+                input_node_id: x.node_id(),
+                init_state_node_ids,
+                first_step_start_id: first_step_start_id.unwrap(),
+                repr_output_node_ids,
+                real_output_node_id: h.node_id(),
+            },
+        );
 
         Ok(h)
     }

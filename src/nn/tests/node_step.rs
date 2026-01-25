@@ -8,7 +8,7 @@ fn test_node_step_creation() {
 
     // 1. 测试Input节点作为父节点
     {
-        let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
+        let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
         let step = graph.new_step_node(input, Some("step_with_input")).unwrap();
         // 1.1 验证基本属性
         assert_eq!(graph.get_node_name(step).unwrap(), "step_with_input");
@@ -31,7 +31,7 @@ fn test_node_step_name_generation() {
     let mut graph = GraphInner::new();
 
     // 1. 测试节点显式命名
-    let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
     let step = graph.new_step_node(input, Some("explicit_step")).unwrap();
     assert_eq!(graph.get_node_name(step).unwrap(), "explicit_step");
 
@@ -50,7 +50,7 @@ fn test_node_step_name_generation() {
 #[test]
 fn test_node_step_manually_set_value() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
     let step = graph.new_step_node(input, Some("step")).unwrap();
 
     // 1. 测试直接设置Step节点的值（应该失败）
@@ -76,7 +76,7 @@ fn test_node_step_expected_shape() {
     let mut graph = GraphInner::new();
 
     // 1. 测试基本的Step节点预期形状
-    let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
     let step = graph.new_step_node(input, Some("step")).unwrap();
     assert_eq!(graph.get_node_value_expected_shape(step).unwrap(), &[2, 2]);
     assert_eq!(graph.get_node_value_shape(step).unwrap(), None); // 实际值形状为None（未计算）
@@ -112,7 +112,7 @@ fn test_node_step_forward_propagation() {
 
         // 创建parent节点
         let parent = match parent_type {
-            "input" => graph.new_input_node(&[2, 2], Some("input_1")).unwrap(),
+            "input" => graph.new_basic_input_node(&[2, 2], Some("input_1")).unwrap(),
             "parameter" => graph
                 .new_parameter_node(&[2, 2], Some("parameter_1"))
                 .unwrap(),
@@ -154,7 +154,7 @@ fn test_node_step_forward_values() {
 
     // 1. 测试包含正数、负数、零的情况（使用 2D 张量，框架要求 2-4 维）
     // Step: x >= 0 → 1, x < 0 → 0
-    let input = graph.new_input_node(&[5, 1], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[5, 1], Some("input")).unwrap();
     let step = graph.new_step_node(input, Some("step")).unwrap();
 
     let value = Tensor::new(&[-2.0, -0.5, 0.0, 0.5, 2.0], &[5, 1]);
@@ -171,7 +171,7 @@ fn test_node_step_forward_values() {
         &[f32::INFINITY, f32::NEG_INFINITY, f32::MIN, f32::MAX],
         &[2, 2],
     );
-    let input2 = graph.new_input_node(&[2, 2], Some("input2")).unwrap();
+    let input2 = graph.new_basic_input_node(&[2, 2], Some("input2")).unwrap();
     let step2 = graph.new_step_node(input2, Some("step2")).unwrap();
 
     graph.set_node_value(input2, Some(&extreme_value)).unwrap();
@@ -196,7 +196,7 @@ fn test_node_step_backward_propagation() {
     // 1. 构建计算图: parent -> step -> mse_loss
     let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();
     let step = graph.new_step_node(parent, Some("step")).unwrap();
-    let target = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(step, target, None).unwrap();
 
     // 2. 设置输入值

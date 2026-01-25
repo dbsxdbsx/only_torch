@@ -82,8 +82,8 @@ fn test_node_relationships() {
     let mut graph = GraphInner::new();
 
     // 1. 创建节点关系
-    let input1 = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[2, 2], Some("input2")).unwrap();
+    let input1 = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
+    let input2 = graph.new_basic_input_node(&[2, 2], Some("input2")).unwrap();
     let add = graph.new_add_node(&[input1, input2], Some("add")).unwrap();
 
     // 2. 验证父子关系

@@ -1,27 +1,39 @@
+/*
+ * BasicInput 节点：基础输入节点
+ *
+ * 用于 Data 和 Target 两种变体，共用同一个结构体。
+ * - Data: 用户手动创建的通用输入
+ * - Target: Loss 的目标值（真实标签）
+ *
+ * # 动态 Batch 支持
+ * BasicInput 支持动态 batch：第一维可以是任意值。
+ * 这使得同一个计算图可以处理不同 batch_size 的输入。
+ */
+
+use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::NodeHandle;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
-use super::{NodeHandle, TraitNode};
-
-/// Input 节点：用户数据输入
+/// 基础输入节点（Data 和 Target 共用）
 ///
 /// # 动态 Batch 支持
-/// Input 节点支持动态 batch：第一维可以是任意值。
-/// 这使得同一个计算图可以处理不同 `batch_size` 的输入。
+/// BasicInput 支持动态 batch：第一维可以是任意值。
+/// 这使得同一个计算图可以处理不同 batch_size 的输入。
 #[derive(Clone)]
-pub(crate) struct Input {
+pub(crate) struct BasicInput {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    // 注意：Input 节点没有 jacobi 字段，因为输入数据不参与梯度更新
+    // 注意：Input 节点没有 grad 字段，因为输入数据不参与梯度更新
     /// 动态形状：第一维是 None（动态 batch）
     dynamic_shape: DynamicShape,
     /// 固定形状缓存（首次创建时的形状）
     fixed_shape: Vec<usize>,
 }
 
-impl Input {
+impl BasicInput {
     pub(crate) fn new(shape: &[usize]) -> Result<Self, GraphError> {
         // 1. 必要的验证：支持 2D-4D 张量
         // - 2D: 标准全连接层 [batch, features] 或 [rows, cols]
@@ -51,11 +63,11 @@ impl Input {
         })
     }
 
-    /// 创建支持动态 batch 的 Input 节点（指定特征形状）
+    /// 创建支持动态 batch 的 BasicInput 节点（指定特征形状）
     ///
     /// # 参数
     /// - `feature_shape`: 特征维度形状（不包括 batch）
-    /// - `initial_batch`: 初始 `batch_size（用于固定形状`）
+    /// - `initial_batch`: 初始 batch_size（用于固定形状）
     #[allow(dead_code)]
     pub(crate) fn with_dynamic_batch(
         feature_shape: &[usize],
@@ -84,7 +96,7 @@ impl Input {
     }
 }
 
-impl TraitNode for Input {
+impl TraitNode for BasicInput {
     fn id(&self) -> NodeId {
         self.id.unwrap()
     }

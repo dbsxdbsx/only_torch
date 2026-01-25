@@ -153,9 +153,22 @@ fn main() -> Result<(), GraphError> {
             total,
             epoch_start.elapsed().as_secs_f32()
         );
+
+        // 早停：达到目标准确率即停止
+        if acc >= 95.0 {
+            println!("\n✅ 达到目标准确率 {:.1}%，提前停止训练", acc);
+            break;
+        }
     }
 
-    // 6. 结果
+    // 6. 保存可视化
+    let vis_result = graph.save_visualization_grouped("examples/mnist/mnist", None)?;
+    println!("\n计算图已保存: {}", vis_result.dot_path.display());
+    if let Some(img_path) = &vis_result.image_path {
+        println!("可视化图像: {}", img_path.display());
+    }
+
+    // 7. 结果
     println!("\n最佳准确率: {best_acc:.1}%");
 
     if best_acc >= 95.0 {

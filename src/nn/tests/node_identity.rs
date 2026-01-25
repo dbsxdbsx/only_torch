@@ -33,7 +33,7 @@ use crate::tensor::Tensor;
 fn test_identity_forward_value_passthrough() {
     let mut graph = GraphInner::new();
 
-    let x = graph.new_input_node(&[2, 3], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 3], Some("x")).unwrap();
     let y = graph.new_identity_node(x, Some("y"), false).unwrap();
 
     // 设置输入
@@ -54,11 +54,11 @@ fn test_identity_backward_gradient_passthrough() {
     let mut graph = GraphInner::new();
 
     // x -> w -> h -> identity -> y -> loss
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let h = graph.new_mat_mul_node(w, x, Some("h")).unwrap();
     let identity = graph.new_identity_node(h, Some("identity"), false).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph
         .new_mse_loss_node(identity, target, Some("loss"))
         .unwrap();
@@ -91,7 +91,7 @@ fn test_identity_preserves_shape() {
     let shapes = vec![vec![2, 3], vec![2, 3, 4], vec![1, 2, 3, 4]];
 
     for shape in shapes {
-        let x = graph.new_input_node(&shape, None).unwrap();
+        let x = graph.new_basic_input_node(&shape, None).unwrap();
         let y = graph.new_identity_node(x, None, false).unwrap();
 
         let expected_shape = graph.get_node(x).unwrap().value_expected_shape();
@@ -114,13 +114,13 @@ fn test_identity_detached_blocks_gradient() {
     let mut graph = GraphInner::new();
 
     // x -> w1 -> h -> identity(detached) -> w2 -> y -> loss
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = graph.new_parameter_node(&[2, 2], Some("w1")).unwrap();
     let h = graph.new_mat_mul_node(w1, x, Some("h")).unwrap();
     let detached = graph.new_identity_node(h, Some("detached"), true).unwrap(); // detached=true
     let w2 = graph.new_parameter_node(&[1, 2], Some("w2")).unwrap();
     let y = graph.new_mat_mul_node(w2, detached, Some("y")).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 设置值
@@ -153,7 +153,7 @@ fn test_identity_detached_blocks_gradient() {
 fn test_identity_detached_does_not_affect_forward() {
     let mut graph = GraphInner::new();
 
-    let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 2], Some("x")).unwrap();
     let detached = graph.new_identity_node(x, Some("detached"), true).unwrap();
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);

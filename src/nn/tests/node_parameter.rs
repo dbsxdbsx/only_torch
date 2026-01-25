@@ -185,9 +185,9 @@ fn test_node_parameter_backward_propagation() {
     let mut graph = GraphInner::new();
 
     // 1. 构建计算图: input * param -> mse_loss
-    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
     let param = graph.new_parameter_node(&[2, 2], Some("param")).unwrap();
-    let target = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
 
     let mul = graph.new_multiply_node(input, param, None).unwrap();
     let loss = graph.new_mse_loss_node(mul, target, None).unwrap();
@@ -226,7 +226,7 @@ fn test_node_parameter_gradient_correctness() {
     // loss = mean((param - target)^2)
     // d_loss/d_param = 2 * (param - target) / n
     let param = graph.new_parameter_node(&[1, 2], Some("param")).unwrap();
-    let target = graph.new_input_node(&[1, 2], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 2], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(param, target, None).unwrap();
 
     // 设置值: param = [1.0, 2.0], target = [0.0, 0.0]
@@ -323,7 +323,7 @@ fn test_parameter_with_dynamic_batch_input() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建 Input（支持动态 batch）和 Parameter（固定形状）
-    let input = graph.new_input_node(&[4, 16], Some("input"))?;
+    let input = graph.new_basic_input_node(&[4, 16], Some("input"))?;
     let weight = graph.new_parameter_node(&[16, 32], Some("weight"))?;
 
     // MatMul: [batch, 16] @ [16, 32] -> [batch, 32]
@@ -360,10 +360,10 @@ fn test_parameter_gradient_with_dynamic_batch() -> Result<(), GraphError> {
     graph.set_train_mode();
 
     // 创建网络：input @ weight -> output -> loss
-    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
     let weight = graph.new_parameter_node(&[4, 8], Some("weight"))?;
     let output = graph.new_mat_mul_node(input, weight, Some("output"))?;
-    let target = graph.new_input_node(&[2, 8], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 8], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     // 设置初始值

@@ -24,8 +24,8 @@ fn test_mat_mul_creation() {
 
     // 1. 两个 Input 节点相乘
     {
-        let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-        let input2 = graph.new_input_node(&[3, 4], Some("input2")).unwrap();
+        let input1 = graph.new_basic_input_node(&[2, 3], Some("input1")).unwrap();
+        let input2 = graph.new_basic_input_node(&[3, 4], Some("input2")).unwrap();
         let mat_mul = graph
             .new_mat_mul_node(input1, input2, Some("mat_mul_inputs"))
             .unwrap();
@@ -56,7 +56,7 @@ fn test_mat_mul_creation() {
 
     // 3. 混合 Input 和 Parameter 节点相乘
     {
-        let input = graph.new_input_node(&[2, 3], Some("input3")).unwrap();
+        let input = graph.new_basic_input_node(&[2, 3], Some("input3")).unwrap();
         let param = graph.new_parameter_node(&[3, 4], Some("param3")).unwrap();
         let mat_mul = graph
             .new_mat_mul_node(input, param, Some("mat_mul_mixed"))
@@ -91,8 +91,8 @@ fn test_mat_mul_creation_invalid_shape() {
     let mut graph = GraphInner::new();
 
     // 1. 列数与行数不匹配：[2,3] @ [2,4]（3 ≠ 2）
-    let left = graph.new_input_node(&[2, 3], Some("left")).unwrap();
-    let right = graph.new_input_node(&[2, 4], Some("right")).unwrap();
+    let left = graph.new_basic_input_node(&[2, 3], Some("left")).unwrap();
+    let right = graph.new_basic_input_node(&[2, 4], Some("right")).unwrap();
 
     let result = graph.new_mat_mul_node(left, right, None);
     assert_err!(
@@ -105,7 +105,7 @@ fn test_mat_mul_creation_invalid_shape() {
     );
 
     // 2. 另一种不匹配：[2,3] @ [4,3]（3 ≠ 4）
-    let right2 = graph.new_input_node(&[4, 3], Some("right2")).unwrap();
+    let right2 = graph.new_basic_input_node(&[4, 3], Some("right2")).unwrap();
     let result = graph.new_mat_mul_node(left, right2, None);
     assert_err!(
         result,
@@ -122,8 +122,8 @@ fn test_mat_mul_creation_invalid_shape() {
 fn test_mat_mul_name_generation() {
     let mut graph = GraphInner::new();
 
-    let left = graph.new_input_node(&[2, 3], Some("l")).unwrap();
-    let right = graph.new_input_node(&[3, 4], Some("r")).unwrap();
+    let left = graph.new_basic_input_node(&[2, 3], Some("l")).unwrap();
+    let right = graph.new_basic_input_node(&[3, 4], Some("r")).unwrap();
 
     // 1. 显式命名
     let result1 = graph
@@ -147,8 +147,8 @@ fn test_mat_mul_name_generation() {
 #[test]
 fn test_mat_mul_cannot_set_value() {
     let mut graph = GraphInner::new();
-    let left = graph.new_input_node(&[2, 3], Some("l")).unwrap();
-    let right = graph.new_input_node(&[3, 4], Some("r")).unwrap();
+    let left = graph.new_basic_input_node(&[2, 3], Some("l")).unwrap();
+    let right = graph.new_basic_input_node(&[3, 4], Some("r")).unwrap();
     let result = graph.new_mat_mul_node(left, right, Some("matmul")).unwrap();
 
     let test_value = Tensor::new(&[1.0; 8], &[2, 4]);
@@ -487,7 +487,7 @@ fn test_mat_mul_backward_e2e() -> Result<(), GraphError> {
     let result = graph.new_mat_mul_node(left, right, Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值：left=[[1,2],[3,4]], right=[[1,0],[0,1]]（单位矩阵）, target=[[0,0],[0,0]]
@@ -541,7 +541,7 @@ fn test_mat_mul_gradient_accumulation() -> Result<(), GraphError> {
     let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right = graph.new_parameter_node(&[2, 2], Some("right"))?;
     let result = graph.new_mat_mul_node(left, right, Some("result"))?;
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值

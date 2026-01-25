@@ -1,44 +1,41 @@
 /*
- * GradientRouter 节点（梯度路由器）
+ * SmartInput 节点（智能输入）
  *
  * 这是一个特殊的输入节点，用于 ModelState 的智能缓存机制：
- * - 像 Input 节点一样存储值（通过 set_value 设置）
+ * - 像 BasicInput 一样存储值（通过 set_value 设置）
  * - 支持动态设置 is_detached 标志（控制梯度是否传播）
  * - 支持梯度路由：将自身梯度累加到指定的目标节点
- * - **支持动态 batch**：不同 batch_size 的值可以复用同一个 GradientRouter
+ * - **支持动态 batch**：不同 batch_size 的值可以复用同一个 SmartInput
  *
  * # 用途
- * ModelState 为每种特征形状创建一个 GradientRouter 作为模型的入口点。
- * 无论用户传入 Tensor 还是 Var，都复用同一个 GradientRouter：
+ * ModelState 为每种特征形状创建一个 SmartInput 作为模型的入口点。
+ * 无论用户传入 Tensor 还是 Var，都复用同一个 SmartInput：
  * - Tensor 输入：复制值，无梯度路由
  * - detached Var 输入：复制值，无梯度路由
  * - 非 detached Var 输入：复制值，设置梯度路由目标
  *
  * # 动态 Batch（类似 Keras）
- * GradientRouter 只验证特征维度匹配，忽略 batch 维度（第一维）：
- * - `[256, 64]` 和 `[1, 64]` 可以复用同一个 GradientRouter
+ * SmartInput 只验证特征维度匹配，忽略 batch 维度（第一维）：
+ * - `[256, 64]` 和 `[1, 64]` 可以复用同一个 SmartInput
  * - 可视化时 batch 维度显示为 `?`
- *
- * # 可视化
- * GradientRouter 是内部实现节点，在可视化时使用特殊样式（虚线、灰色）。
  */
 
-use crate::nn::GraphError;
-use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::NodeHandle;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
 
-/// `GradientRouter` 节点（梯度路由器）
+/// SmartInput 节点（智能输入）
 ///
-/// 作为 `ModelState` 缓存结构的入口点，支持：
+/// 作为 ModelState 缓存结构的入口点，支持：
 /// - 动态值更新（通过 `set_value`）
 /// - 动态 detached 状态切换
 /// - 梯度路由到外部目标节点
 /// - **动态 batch**：第一维可以是任意值
 #[derive(Clone)]
-pub(crate) struct GradientRouter {
+pub(crate) struct SmartInput {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
@@ -49,12 +46,14 @@ pub(crate) struct GradientRouter {
     fixed_shape: Vec<usize>,
     /// 是否处于 detached 状态（阻止梯度传播）
     is_detached: RefCell<bool>,
+    /// 是否曾经被 detach 过（用于可视化：显示虚线边框）
+    was_ever_detached: RefCell<bool>,
     /// 梯度路由目标（backward 后将梯度累加到此节点）
     gradient_target: RefCell<Option<NodeId>>,
 }
 
-impl GradientRouter {
-    /// 创建一个支持动态 batch 的 `GradientRouter`
+impl SmartInput {
+    /// 创建一个支持动态 batch 的 SmartInput
     ///
     /// # 参数
     /// - `initial_shape`: 首次调用时的完整形状（如 `[256, 64]`）
@@ -76,6 +75,7 @@ impl GradientRouter {
             dynamic_shape,
             fixed_shape: initial_shape.to_vec(),
             is_detached: RefCell::new(false),
+            was_ever_detached: RefCell::new(false),
             gradient_target: RefCell::new(None),
         }
     }
@@ -91,13 +91,27 @@ impl GradientRouter {
             dynamic_shape: shape,
             fixed_shape: initial_fixed.to_vec(),
             is_detached: RefCell::new(false),
+            was_ever_detached: RefCell::new(false),
             gradient_target: RefCell::new(None),
         }
     }
 
     /// 设置 detached 状态
-    pub(crate) fn set_detached(&self, detached: bool) {
+    ///
+    /// # 参数
+    /// - `detached`: 是否阻止梯度传播
+    /// - `mark_ever_detached`: 是否标记 was_ever_detached（用于可视化显示虚线边框）
+    pub(crate) fn set_detached(&self, detached: bool, mark_ever_detached: bool) {
         *self.is_detached.borrow_mut() = detached;
+        // 只有当显式 detach 时才标记（Tensor 输入不算）
+        if mark_ever_detached {
+            *self.was_ever_detached.borrow_mut() = true;
+        }
+    }
+
+    /// 检查是否曾经被 detach 过（用于可视化：显示虚线边框）
+    pub(crate) fn was_ever_detached(&self) -> bool {
+        *self.was_ever_detached.borrow()
     }
 
     /// 获取 detached 状态
@@ -119,7 +133,7 @@ impl GradientRouter {
     }
 }
 
-impl TraitNode for GradientRouter {
+impl TraitNode for SmartInput {
     fn id(&self) -> NodeId {
         self.id.unwrap()
     }
@@ -150,13 +164,13 @@ impl TraitNode for GradientRouter {
 
     fn calc_value_by_parents(
         &mut self,
-        _parents: &[crate::nn::nodes::NodeHandle],
+        _parents: &[NodeHandle],
     ) -> Result<(), GraphError> {
-        // GradientRouter 没有父节点，值通过 set_value 设置
+        // SmartInput 没有父节点，值通过 set_value 设置
         // 如果调用到这里，说明值还没设置
         if self.value.is_none() {
             return Err(GraphError::InvalidOperation(format!(
-                "{} 是 GradientRouter 节点，其值应通过 set_value 设置",
+                "{} 是 SmartInput 节点，其值应通过 set_value 设置",
                 self.display_node()
             )));
         }
@@ -174,14 +188,14 @@ impl TraitNode for GradientRouter {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &crate::nn::nodes::NodeHandle,
+        _target_parent: &NodeHandle,
         _upstream_grad: &Tensor,
-        _assistant_parent: Option<&crate::nn::nodes::NodeHandle>,
+        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // GradientRouter 没有父节点，不需要计算对父节点的梯度
+        // SmartInput 没有父节点，不需要计算对父节点的梯度
         // 梯度路由由 GraphInner 的 backward 逻辑处理
         Err(GraphError::InvalidOperation(
-            "GradientRouter 没有父节点，不应计算父节点梯度".to_string(),
+            "SmartInput 没有父节点，不应计算父节点梯度".to_string(),
         ))
     }
 
@@ -195,7 +209,7 @@ impl TraitNode for GradientRouter {
     }
 
     fn clear_value(&mut self) -> Result<(), GraphError> {
-        // GradientRouter 的值不应被清除（它是输入节点）
+        // SmartInput 的值不应被清除（它是输入节点）
         Ok(())
     }
 

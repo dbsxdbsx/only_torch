@@ -22,7 +22,7 @@ fn test_avg_pool2d_creation_single() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
-    let input = graph.new_input_node(&[1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input"))?;
 
     // 创建 AvgPool2d: kernel_size=2x2, stride=2x2（默认）
     let pool = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"))?;
@@ -40,7 +40,7 @@ fn test_avg_pool2d_creation_batch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=4, C=16, H=28, W=28]
-    let input = graph.new_input_node(&[4, 16, 28, 28], Some("input"))?;
+    let input = graph.new_basic_input_node(&[4, 16, 28, 28], Some("input"))?;
 
     // 创建 AvgPool2d: kernel_size=2x2, stride=2x2
     let pool = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"))?;
@@ -58,7 +58,7 @@ fn test_avg_pool2d_with_stride() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C=1, H=6, W=6]
-    let input = graph.new_input_node(&[2, 1, 6, 6], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 6, 6], Some("input"))?;
 
     // 创建 AvgPool2d: kernel_size=3x3, stride=2x2
     let pool = graph.new_avg_pool2d_node(input, (3, 3), Some((2, 2)), Some("pool"))?;
@@ -78,7 +78,7 @@ fn test_avg_pool2d_forward_simple() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
-    let input = graph.new_input_node(&[1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input"))?;
     let pool = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
     // 设置输入值
@@ -114,7 +114,7 @@ fn test_avg_pool2d_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C=1, H=4, W=4]
-    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
     let pool = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
     // 设置输入：第一个 batch 全 4，第二个 batch 全 8
@@ -143,7 +143,7 @@ fn test_avg_pool2d_multi_channel() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [C=2, H=4, W=4]
-    let input = graph.new_input_node(&[2, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 4, 4], Some("input"))?;
     let pool = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
     // 设置输入：第一通道全 1，第二通道全 2
@@ -180,7 +180,7 @@ fn test_avg_pool2d_jacobi() -> Result<(), GraphError> {
 
     // 将 pool 输出 reshape 为 [1, 4] 并添加 MSE loss
     let pool_flat = graph.new_reshape_node(pool, &[1, 4], Some("pool_flat"))?;
-    let target = graph.new_input_node(&[1, 4], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 4], Some("target"))?;
     let loss = graph.new_mse_loss_node(pool_flat, target, Some("loss"))?;
 
     // 设置输入值
@@ -223,7 +223,7 @@ fn test_avg_pool2d_batch_grad() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=1, C=1, H=4, W=4]
-    let input_id = graph.new_input_node(&[1, 1, 4, 4], Some("input"))?;
+    let input_id = graph.new_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
     let pool_id = graph.new_avg_pool2d_node(input_id, (2, 2), None, Some("pool"))?;
 
     let input_val = Tensor::ones(&[1, 1, 4, 4]);
@@ -257,7 +257,7 @@ fn test_avg_pool2d_after_conv2d() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 输入: [batch=2, C_in=1, H=8, W=8]
-    let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 8, 8], Some("input"))?;
     // 卷积核: [C_out=4, C_in=1, kH=3, kW=3]
     let kernel = graph.new_parameter_node(&[4, 1, 3, 3], Some("kernel"))?;
 
@@ -295,7 +295,7 @@ fn test_avg_pool2d_overlapping_windows() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
-    let input = graph.new_input_node(&[1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input"))?;
     // kernel_size=2x2, stride=1x1（重叠窗口）
     let pool = graph.new_avg_pool2d_node(input, (2, 2), Some((1, 1)), Some("pool"))?;
 
@@ -332,7 +332,7 @@ fn test_avg_pool2d_invalid_input_dims() {
     let mut graph = GraphInner::new();
 
     // 输入: [H=4, W=4]（2D，缺少通道维度）
-    let input = graph.new_input_node(&[4, 4], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[4, 4], Some("input")).unwrap();
 
     let result = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"));
     assert!(result.is_err());
@@ -344,7 +344,7 @@ fn test_avg_pool2d_kernel_too_large() {
     let mut graph = GraphInner::new();
 
     // 输入: [C=1, H=4, W=4]
-    let input = graph.new_input_node(&[1, 4, 4], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input")).unwrap();
 
     // kernel_size=5x5 超出输入尺寸
     let result = graph.new_avg_pool2d_node(input, (5, 5), None, Some("pool"));
@@ -359,7 +359,7 @@ fn test_avg_pool2d_dynamic_shape_propagation() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建 4D 输入：[batch, channels, height, width]
-    let input = graph.new_input_node(&[2, 3, 8, 8], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 3, 8, 8], Some("input"))?;
 
     // AvgPool2d: kernel=2x2, stride=2x2
     // [batch, 3, 8, 8] -> [batch, 3, 4, 4]
@@ -381,7 +381,7 @@ fn test_avg_pool2d_dynamic_batch_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建 4D 输入
-    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
     let pool = graph.new_avg_pool2d_node(input, (2, 2), Some((2, 2)), Some("pool"))?;
 
     // 设置初始值
@@ -409,12 +409,12 @@ fn test_avg_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建 4D 输入
-    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
     let pool = graph.new_avg_pool2d_node(input, (2, 2), Some((2, 2)), Some("pool"))?;
     // 输出形状: [batch, 1, 2, 2]
     let flat = graph.new_flatten_node(pool, true, Some("flat"))?;
     // 输出形状: [batch, 4]
-    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
     let loss = graph.new_mse_loss_node(flat, target, Some("loss"))?;
 
     // 设置初始值

@@ -24,8 +24,8 @@ fn test_add_creation() {
 
     // 1. 两个 Input 节点相加
     {
-        let input1 = graph.new_input_node(&[2, 3], Some("input1")).unwrap();
-        let input2 = graph.new_input_node(&[2, 3], Some("input2")).unwrap();
+        let input1 = graph.new_basic_input_node(&[2, 3], Some("input1")).unwrap();
+        let input2 = graph.new_basic_input_node(&[2, 3], Some("input2")).unwrap();
         let add = graph
             .new_add_node(&[input1, input2], Some("add_inputs"))
             .unwrap();
@@ -50,7 +50,7 @@ fn test_add_creation() {
 
     // 3. 混合 Input 和 Parameter 节点相加
     {
-        let input = graph.new_input_node(&[2, 3], Some("input3")).unwrap();
+        let input = graph.new_basic_input_node(&[2, 3], Some("input3")).unwrap();
         let param = graph.new_parameter_node(&[2, 3], Some("param3")).unwrap();
         let add = graph
             .new_add_node(&[input, param], Some("add_mixed"))
@@ -81,8 +81,8 @@ fn test_add_creation_invalid_shape() {
     let mut graph = GraphInner::new();
 
     // 1. 无法广播的形状：[2, 2] + [3, 2]（第一维 2 != 3 且都不是 1）
-    let input1 = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
-    let input2 = graph.new_input_node(&[3, 2], Some("input2")).unwrap();
+    let input1 = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
+    let input2 = graph.new_basic_input_node(&[3, 2], Some("input2")).unwrap();
 
     let result = graph.new_add_node(&[input1, input2], None);
     assert_err!(
@@ -91,7 +91,7 @@ fn test_add_creation_invalid_shape() {
     );
 
     // 2. 无法广播的形状：[2, 2] + [2, 3]（第二维 2 != 3 且都不是 1）
-    let input3 = graph.new_input_node(&[2, 3], Some("input3")).unwrap();
+    let input3 = graph.new_basic_input_node(&[2, 3], Some("input3")).unwrap();
     let result = graph.new_add_node(&[input1, input3], None);
     assert_err!(
         result,
@@ -99,8 +99,8 @@ fn test_add_creation_invalid_shape() {
     );
 
     // 3. 三个父节点中有无法广播的
-    let input4 = graph.new_input_node(&[2, 2], Some("input4")).unwrap();
-    let input5 = graph.new_input_node(&[3, 2], Some("input5")).unwrap();
+    let input4 = graph.new_basic_input_node(&[2, 2], Some("input4")).unwrap();
+    let input5 = graph.new_basic_input_node(&[3, 2], Some("input5")).unwrap();
     let result = graph.new_add_node(&[input1, input4, input5], None);
     assert_err!(
         result,
@@ -113,7 +113,7 @@ fn test_add_creation_invalid_shape() {
 fn test_add_creation_insufficient_parents() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
     let result = graph.new_add_node(&[input], None);
     assert_err!(
         result,
@@ -399,7 +399,7 @@ fn test_add_backward_e2e() -> Result<(), GraphError> {
     let result = graph.new_add_node(&[p1, p2], Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值：p1=[[1,2],[3,4]], p2=[[5,6],[7,8]], target=[[0,0],[0,0]]
@@ -451,7 +451,7 @@ fn test_add_backward_e2e_three_parents() -> Result<(), GraphError> {
     let result = graph.new_add_node(&[p1, p2, p3], Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值：p1=[[1,1],[1,1]], p2=[[2,2],[2,2]], p3=[[3,3],[3,3]], target=[[0,0],[0,0]]
@@ -499,7 +499,7 @@ fn test_add_gradient_accumulation() -> Result<(), GraphError> {
     let p1 = graph.new_parameter_node(&[2, 2], Some("p1"))?;
     let p2 = graph.new_parameter_node(&[2, 2], Some("p2"))?;
     let result = graph.new_add_node(&[p1, p2], Some("result"))?;
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值
@@ -538,32 +538,32 @@ fn test_add_broadcast_creation() {
 
     // 1. [3, 4] + [1, 4] -> [3, 4]（行广播）
     {
-        let input1 = graph.new_input_node(&[3, 4], Some("input1")).unwrap();
-        let input2 = graph.new_input_node(&[1, 4], Some("input2")).unwrap();
+        let input1 = graph.new_basic_input_node(&[3, 4], Some("input1")).unwrap();
+        let input2 = graph.new_basic_input_node(&[1, 4], Some("input2")).unwrap();
         let add = graph.new_add_node(&[input1, input2], Some("add1")).unwrap();
         assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[3, 4]);
     }
 
     // 2. [3, 4] + [3, 1] -> [3, 4]（列广播）
     {
-        let input1 = graph.new_input_node(&[3, 4], Some("input3")).unwrap();
-        let input2 = graph.new_input_node(&[3, 1], Some("input4")).unwrap();
+        let input1 = graph.new_basic_input_node(&[3, 4], Some("input3")).unwrap();
+        let input2 = graph.new_basic_input_node(&[3, 1], Some("input4")).unwrap();
         let add = graph.new_add_node(&[input1, input2], Some("add2")).unwrap();
         assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[3, 4]);
     }
 
     // 3. [3, 1] + [1, 4] -> [3, 4]（双向广播）
     {
-        let input1 = graph.new_input_node(&[3, 1], Some("input5")).unwrap();
-        let input2 = graph.new_input_node(&[1, 4], Some("input6")).unwrap();
+        let input1 = graph.new_basic_input_node(&[3, 1], Some("input5")).unwrap();
+        let input2 = graph.new_basic_input_node(&[1, 4], Some("input6")).unwrap();
         let add = graph.new_add_node(&[input1, input2], Some("add3")).unwrap();
         assert_eq!(graph.get_node_value_expected_shape(add).unwrap(), &[3, 4]);
     }
 
     // 4. [2, 3, 4] + [1, 1, 4] -> [2, 3, 4]（高维广播）
     {
-        let input1 = graph.new_input_node(&[2, 3, 4], Some("input7")).unwrap();
-        let input2 = graph.new_input_node(&[1, 1, 4], Some("input8")).unwrap();
+        let input1 = graph.new_basic_input_node(&[2, 3, 4], Some("input7")).unwrap();
+        let input2 = graph.new_basic_input_node(&[1, 1, 4], Some("input8")).unwrap();
         let add = graph.new_add_node(&[input1, input2], Some("add4")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(add).unwrap(),
@@ -704,7 +704,7 @@ fn test_add_broadcast_e2e() -> Result<(), GraphError> {
     let result = graph.new_add_node(&[matrix, bias], Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值

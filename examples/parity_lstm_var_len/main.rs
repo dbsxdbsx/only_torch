@@ -120,8 +120,16 @@ fn main() -> Result<(), GraphError> {
     println!("模型缓存形状数: {}", model.cache_size());
     println!("Criterion 缓存数: {}", criterion.cache_size());
 
+    // 保存可视化
+    let vis_result = graph
+        .save_visualization_grouped("examples/parity_lstm_var_len/parity_lstm_var_len", None)?;
+    println!("\n计算图已保存: {}", vis_result.dot_path.display());
+    if let Some(img_path) = &vis_result.image_path {
+        println!("可视化图像: {}", img_path.display());
+    }
+
     if final_accuracy >= target_accuracy {
-        println!("✅ LSTM 变长奇偶性检测任务成功！");
+        println!("\n✅ LSTM 变长奇偶性检测任务成功！");
         Ok(())
     } else {
         Err(GraphError::ComputationError(format!(

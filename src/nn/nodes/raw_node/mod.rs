@@ -4,7 +4,7 @@ mod ops;
 mod parameter;
 mod state;
 
-pub(super) use input::Input;
+pub(in crate::nn) use input::InputVariant;
 pub use loss::Reduction;
 pub(super) use loss::{MSELoss, SoftmaxCrossEntropy};
 pub(super) use ops::*;
@@ -16,11 +16,10 @@ use enum_dispatch::enum_dispatch;
 #[enum_dispatch]
 #[derive(Clone)]
 pub(in crate::nn) enum NodeType {
-    Input(Input),
+    Input(InputVariant), // 统一的输入类型（Data/Target/Smart）
     Parameter(Parameter),
-    State(State),                   // 时间状态节点（RNN 隐藏状态等）
-    Identity(Identity),             // 恒等映射（用于 detach 等）
-    GradientRouter(GradientRouter), // 梯度路由器（ModelState 内部使用）
+    State(State),       // 时间状态节点（RNN 隐藏状态等）
+    Identity(Identity), // 恒等映射（用于 detach 等）
     Add(Add),
     AvgPool2d(AvgPool2d),
     Conv2d(Conv2d),

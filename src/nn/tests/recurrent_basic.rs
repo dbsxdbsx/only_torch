@@ -36,10 +36,10 @@ fn create_accumulator_graph() -> Result<(GraphInner, NodeId, NodeId), GraphError
     let mut graph = GraphInner::new();
 
     // 输入节点（每步的新输入）
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
 
     // 循环输入节点（接收上一步的输出）
-    let prev_out = graph.new_input_node(&[1, 1], Some("prev_out"))?;
+    let prev_out = graph.new_basic_input_node(&[1, 1], Some("prev_out"))?;
 
     // 初始化 prev_out 为 0（第一步时的初始状态）
     graph.set_node_value(prev_out, Some(&Tensor::zeros(&[1, 1])))?;
@@ -183,10 +183,10 @@ fn create_weighted_recurrent_graph(
     let mut graph = GraphInner::new();
 
     // 输入节点
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
 
     // 循环输入节点
-    let prev_out = graph.new_input_node(&[1, 1], Some("prev_out"))?;
+    let prev_out = graph.new_basic_input_node(&[1, 1], Some("prev_out"))?;
     graph.set_node_value(prev_out, Some(&Tensor::zeros(&[1, 1])))?;
 
     // 权重参数
@@ -275,10 +275,10 @@ fn test_decaying_memory() {
 #[test]
 fn test_duplicate_recurrent_connection() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
-    let prev = graph.new_input_node(&[1, 1], Some("prev")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 1], Some("input")).unwrap();
+    let prev = graph.new_basic_input_node(&[1, 1], Some("prev")).unwrap();
     let output = graph.new_add_node(&[input, prev], Some("output")).unwrap();
-    let other = graph.new_input_node(&[1, 1], Some("other")).unwrap();
+    let other = graph.new_basic_input_node(&[1, 1], Some("other")).unwrap();
 
     // 第一次连接成功
     graph.connect_recurrent(output, prev).unwrap();
@@ -293,7 +293,7 @@ fn test_duplicate_recurrent_connection() {
 #[test]
 fn test_recurrent_with_invalid_nodes() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 1], Some("input")).unwrap();
     let invalid_id = NodeId(999);
 
     // 不存在的 from_node
@@ -312,15 +312,15 @@ fn test_multiple_recurrent_connections() {
     let mut graph = GraphInner::new();
 
     // 两个独立的循环
-    let input1 = graph.new_input_node(&[1, 1], Some("input1")).unwrap();
-    let prev1 = graph.new_input_node(&[1, 1], Some("prev1")).unwrap();
+    let input1 = graph.new_basic_input_node(&[1, 1], Some("input1")).unwrap();
+    let prev1 = graph.new_basic_input_node(&[1, 1], Some("prev1")).unwrap();
     graph
         .set_node_value(prev1, Some(&Tensor::zeros(&[1, 1])))
         .unwrap();
     let out1 = graph.new_add_node(&[input1, prev1], Some("out1")).unwrap();
 
-    let input2 = graph.new_input_node(&[1, 1], Some("input2")).unwrap();
-    let prev2 = graph.new_input_node(&[1, 1], Some("prev2")).unwrap();
+    let input2 = graph.new_basic_input_node(&[1, 1], Some("input2")).unwrap();
+    let prev2 = graph.new_basic_input_node(&[1, 1], Some("prev2")).unwrap();
     graph
         .set_node_value(prev2, Some(&Tensor::zeros(&[1, 1])))
         .unwrap();
@@ -377,8 +377,8 @@ fn test_vector_accumulator() {
     let mut graph = GraphInner::new();
 
     // 3 维向量累加
-    let input = graph.new_input_node(&[3, 1], Some("input")).unwrap();
-    let prev = graph.new_input_node(&[3, 1], Some("prev")).unwrap();
+    let input = graph.new_basic_input_node(&[3, 1], Some("input")).unwrap();
+    let prev = graph.new_basic_input_node(&[3, 1], Some("prev")).unwrap();
     graph
         .set_node_value(prev, Some(&Tensor::zeros(&[3, 1])))
         .unwrap();

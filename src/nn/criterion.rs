@@ -100,7 +100,7 @@ impl CrossEntropyLoss {
 
         // 缓存未命中：创建新的 loss 子图
         let graph = output.get_graph();
-        let target_node = graph.zeros(target.shape())?;
+        let target_node = graph.target(target.shape())?;
         target_node.set_value(target)?;
         let loss_node = output.cross_entropy(&target_node)?;
 
@@ -183,7 +183,7 @@ impl MseLoss {
 
         // 缓存未命中：创建新的 loss 子图
         let graph = output.get_graph();
-        let target_node = graph.zeros(target.shape())?;
+        let target_node = graph.target(target.shape())?;
         target_node.set_value(target)?;
         let loss_node = output.mse_loss(&target_node)?;
 

@@ -1,0 +1,50 @@
+digraph Model {
+    rankdir=TB;
+    newrank=true;
+    splines=ortho;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    subgraph cluster_fc1 {
+        label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: [?, 2] → [?, 4]</FONT>>;
+        style=filled;
+        fillcolor="#E3F2FD80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[2, 4]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "2" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "6" [label=<mat_mul_1<BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "7" [label=<add_1<BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    subgraph cluster_fc2 {
+        label=<<B>fc2</B><BR/><FONT POINT-SIZE="9">Linear: [?, 4] → [?, 2]</FONT>>;
+        style=filled;
+        fillcolor="#E8F5E980";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[4, 2]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "4" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        "9" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "10" [label=<add_2<BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    "5" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+    "8" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "11" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "12" [label=<softmax_ce_1<BR/><B>SoftmaxCE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+
+    "5" -> "6";
+    "1" -> "6";
+    "6" -> "7";
+    "2" -> "7";
+    "7" -> "8";
+    "8" -> "9";
+    "3" -> "9";
+    "9" -> "10";
+    "4" -> "10";
+    "10" -> "12";
+    "11" -> "12";
+}

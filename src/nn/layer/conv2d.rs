@@ -155,7 +155,7 @@ impl Conv2d {
                 &self.name,
                 "Conv2d",
                 &format!(
-                    "{}→{}, {}×{}",
+                    "[?, {}, ?, ?] → [?, {}, ?, ?], kernel {}×{}",
                     self.in_channels, self.out_channels, self.kernel_size.0, self.kernel_size.1
                 ),
                 vec![
@@ -173,7 +173,7 @@ impl Conv2d {
                 &self.name,
                 "Conv2d",
                 &format!(
-                    "{}→{}, {}×{} (no bias)",
+                    "[?, {}, ?, ?] → [?, {}, ?, ?], kernel {}×{} (no bias)",
                     self.in_channels, self.out_channels, self.kernel_size.0, self.kernel_size.1
                 ),
                 vec![self.kernel.node_id(), conv_out.node_id()],

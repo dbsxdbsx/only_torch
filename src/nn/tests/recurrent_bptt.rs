@@ -39,7 +39,7 @@ fn create_simple_rnn() -> Result<(GraphInner, NodeId, NodeId, NodeId, NodeId), G
     graph.set_train_mode();
 
     // 输入节点
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
 
     // 循环状态节点（接收上一步的 hidden）— 使用 State 节点而非 Input
     let prev_hidden = graph.new_state_node(&[1, 1], Some("prev_hidden"))?;
@@ -80,8 +80,8 @@ fn create_rnn_with_recurrent_weight()
     graph.set_train_mode();
 
     // 输入和目标
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
 
     // 循环状态节点
     let prev_hidden = graph.new_state_node(&[1, 1], Some("prev_hidden"))?;
@@ -119,8 +119,8 @@ fn create_rnn_with_loss() -> Result<(GraphInner, NodeId, NodeId, NodeId, NodeId)
     graph.set_train_mode();
 
     // 输入和目标
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
 
     // 循环状态节点 — 使用 State 节点而非 Input
     let prev_hidden = graph.new_state_node(&[1, 1], Some("prev_hidden"))?;
@@ -476,8 +476,8 @@ fn test_bptt_very_long_sequence_gradient_norm() {
         let mut graph = GraphInner::new_with_seed(42);
         graph.set_train_mode();
 
-        let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
-        let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+        let input = graph.new_basic_input_node(&[1, 1], Some("input")).unwrap();
+        let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
 
         let h_prev = graph.new_state_node(&[1, 1], Some("h_prev")).unwrap();
         graph
@@ -627,8 +627,8 @@ fn test_bptt_gradient_stability_vs_w_hh() {
         let mut graph = GraphInner::new_with_seed(42);
         graph.set_train_mode();
 
-        let input = graph.new_input_node(&[1, 1], Some("input")).unwrap();
-        let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+        let input = graph.new_basic_input_node(&[1, 1], Some("input")).unwrap();
+        let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
 
         let h_prev = graph.new_state_node(&[1, 1], Some("h_prev")).unwrap();
         graph
@@ -762,7 +762,7 @@ fn test_vjp_large_batch_hidden() -> Result<(), GraphError> {
     graph.set_train_mode();
 
     // 输入和状态
-    let input = graph.new_input_node(&[batch_size, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[batch_size, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[batch_size, hidden_size], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[batch_size, hidden_size])))?;
 
@@ -790,7 +790,7 @@ fn test_vjp_large_batch_hidden() -> Result<(), GraphError> {
     let output = graph.new_mat_mul_node(hidden, w_out, Some("output"))?;
 
     // 损失
-    let target = graph.new_input_node(&[batch_size, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[batch_size, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     let params = vec![w_ih, w_hh, w_out];

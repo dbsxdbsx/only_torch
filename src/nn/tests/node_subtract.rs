@@ -25,7 +25,7 @@ fn test_subtract_creation() {
     // 1. 矩阵(2x3) - 矩阵(2x3)
     {
         let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
-        let right = graph.new_input_node(&[2, 3], Some("right")).unwrap();
+        let right = graph.new_basic_input_node(&[2, 3], Some("right")).unwrap();
         let result = graph.new_subtract_node(left, right, Some("sub")).unwrap();
 
         assert_eq!(graph.get_node_name(result).unwrap(), "sub");
@@ -56,7 +56,7 @@ fn test_subtract_creation_invalid_shape() {
 
     // 1. 无法广播的形状：[2, 3] - [3, 4]
     let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
-    let right = graph.new_input_node(&[3, 4], Some("right")).unwrap();
+    let right = graph.new_basic_input_node(&[3, 4], Some("right")).unwrap();
 
     let result = graph.new_subtract_node(left, right, None);
     assert_err!(
@@ -65,7 +65,7 @@ fn test_subtract_creation_invalid_shape() {
     );
 
     // 2. 无法广播的形状：[2, 3] - [2, 4]
-    let right2 = graph.new_input_node(&[2, 4], Some("right2")).unwrap();
+    let right2 = graph.new_basic_input_node(&[2, 4], Some("right2")).unwrap();
     let result = graph.new_subtract_node(left, right2, None);
     assert_err!(
         result,
@@ -245,7 +245,7 @@ fn test_subtract_backward_e2e() -> Result<(), GraphError> {
     let result = graph.new_subtract_node(left, right, Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值：left=[[4,6],[8,10]], right=[[1,2],[3,4]], target=[[0,0],[0,0]]
@@ -292,8 +292,8 @@ fn test_subtract_broadcast_creation() {
 
     // 1. [3, 4] - [1, 4] -> [3, 4]（行广播）
     {
-        let left = graph.new_input_node(&[3, 4], Some("left1")).unwrap();
-        let right = graph.new_input_node(&[1, 4], Some("right1")).unwrap();
+        let left = graph.new_basic_input_node(&[3, 4], Some("left1")).unwrap();
+        let right = graph.new_basic_input_node(&[1, 4], Some("right1")).unwrap();
         let result = graph.new_subtract_node(left, right, Some("sub1")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
@@ -303,8 +303,8 @@ fn test_subtract_broadcast_creation() {
 
     // 2. [3, 1] - [1, 4] -> [3, 4]（双向广播）
     {
-        let left = graph.new_input_node(&[3, 1], Some("left2")).unwrap();
-        let right = graph.new_input_node(&[1, 4], Some("right2")).unwrap();
+        let left = graph.new_basic_input_node(&[3, 1], Some("left2")).unwrap();
+        let right = graph.new_basic_input_node(&[1, 4], Some("right2")).unwrap();
         let result = graph.new_subtract_node(left, right, Some("sub2")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
@@ -314,8 +314,8 @@ fn test_subtract_broadcast_creation() {
 
     // 3. [2, 3, 4] - [1, 1, 4] -> [2, 3, 4]（高维广播）
     {
-        let left = graph.new_input_node(&[2, 3, 4], Some("left3")).unwrap();
-        let right = graph.new_input_node(&[1, 1, 4], Some("right3")).unwrap();
+        let left = graph.new_basic_input_node(&[2, 3, 4], Some("left3")).unwrap();
+        let right = graph.new_basic_input_node(&[1, 1, 4], Some("right3")).unwrap();
         let result = graph.new_subtract_node(left, right, Some("sub3")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
@@ -449,7 +449,7 @@ fn test_subtract_broadcast_e2e() -> Result<(), GraphError> {
     let result = graph.new_subtract_node(features, bias, Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值

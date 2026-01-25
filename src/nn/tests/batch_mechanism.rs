@@ -39,7 +39,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
 
     // ========== Batch 模式 ==========
     let mut graph_batch = GraphInner::new_with_seed(seed);
-    let x_b = graph_batch.new_input_node(&[batch_size, input_dim], Some("x"))?;
+    let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
     let w_b =
         graph_batch.new_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
     let z_b = graph_batch.new_mat_mul_node(x_b, w_b, Some("z"))?;
@@ -53,7 +53,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     let mut single_outputs = Vec::new();
     for sample in samples.iter() {
         let mut graph_single = GraphInner::new_with_seed(seed);
-        let x_s = graph_single.new_input_node(&[1, input_dim], Some("x"))?;
+        let x_s = graph_single.new_basic_input_node(&[1, input_dim], Some("x"))?;
         let w_s = graph_single.new_parameter_node_seeded(
             &[input_dim, output_dim],
             Some("w"),
@@ -114,8 +114,8 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
 
     // ========== Batch 模式（统一 API）==========
     let mut graph_batch = GraphInner::new_with_seed(seed);
-    let x_b = graph_batch.new_input_node(&[batch_size, input_dim], Some("x"))?;
-    let y_b = graph_batch.new_input_node(&[batch_size, output_dim], Some("y"))?;
+    let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
+    let y_b = graph_batch.new_basic_input_node(&[batch_size, output_dim], Some("y"))?;
     let w1_b =
         graph_batch.new_parameter_node_seeded(&[input_dim, hidden_dim], Some("w1"), seed + 100)?;
     let w2_b =
@@ -142,8 +142,8 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
 
     for i in 0..batch_size {
         let mut graph_single = GraphInner::new_with_seed(seed);
-        let x_s = graph_single.new_input_node(&[1, input_dim], Some("x"))?;
-        let y_s = graph_single.new_input_node(&[1, output_dim], Some("y"))?;
+        let x_s = graph_single.new_basic_input_node(&[1, input_dim], Some("x"))?;
+        let y_s = graph_single.new_basic_input_node(&[1, output_dim], Some("y"))?;
         let w1_s = graph_single.new_parameter_node_seeded(
             &[input_dim, hidden_dim],
             Some("w1"),
@@ -223,8 +223,8 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
 
     // ========== Batch 模式 ==========
     let mut graph_batch = GraphInner::new_with_seed(seed);
-    let x_b = graph_batch.new_input_node(&[batch_size, input_dim], Some("x"))?;
-    let y_b = graph_batch.new_input_node(&[batch_size, output_dim], Some("y"))?;
+    let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
+    let y_b = graph_batch.new_basic_input_node(&[batch_size, output_dim], Some("y"))?;
     let w_b =
         graph_batch.new_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
     let z_b = graph_batch.new_mat_mul_node(x_b, w_b, None)?;
@@ -247,8 +247,8 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
 
     for i in 0..batch_size {
         let mut graph_single = GraphInner::new_with_seed(seed);
-        let x_s = graph_single.new_input_node(&[1, input_dim], Some("x"))?;
-        let y_s = graph_single.new_input_node(&[1, output_dim], Some("y"))?;
+        let x_s = graph_single.new_basic_input_node(&[1, input_dim], Some("x"))?;
+        let y_s = graph_single.new_basic_input_node(&[1, output_dim], Some("y"))?;
         let w_s = graph_single.new_parameter_node_seeded(
             &[input_dim, output_dim],
             Some("w"),

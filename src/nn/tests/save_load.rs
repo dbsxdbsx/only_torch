@@ -215,7 +215,7 @@ fn test_describe_basic() {
     let mut graph = GraphInner::new();
 
     // 构建简单的网络：input -> matmul(w) -> sigmoid -> loss
-    let x = graph.new_input_node(&[1, 4], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[1, 4], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[4, 2], Some("w")).unwrap();
     let z = graph.new_mat_mul_node(x, w, Some("z")).unwrap();
     let _a = graph.new_sigmoid_node(z, Some("a")).unwrap();
@@ -228,7 +228,7 @@ fn test_describe_basic() {
 
     // 验证节点类型
     let x_desc = desc.nodes.iter().find(|n| n.name == "x").unwrap();
-    assert!(matches!(x_desc.node_type, NodeTypeDescriptor::Input));
+    assert!(matches!(x_desc.node_type, NodeTypeDescriptor::BasicInput));
     assert_eq!(x_desc.output_shape, vec![1, 4]);
     assert!(x_desc.parents.is_empty());
 
@@ -250,7 +250,7 @@ fn test_describe_basic() {
 fn test_describe_json_roundtrip() {
     let mut graph = GraphInner::new();
 
-    let x = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
     let w = graph.new_parameter_node(&[3, 4], Some("weight")).unwrap();
     let _ = graph.new_mat_mul_node(x, w, Some("output")).unwrap();
 
@@ -269,7 +269,7 @@ fn test_describe_json_roundtrip() {
 fn test_describe_total_params() {
     let mut graph = GraphInner::new();
 
-    let _ = graph.new_input_node(&[1, 784], Some("x")).unwrap();
+    let _ = graph.new_basic_input_node(&[1, 784], Some("x")).unwrap();
     let _ = graph.new_parameter_node(&[784, 128], Some("w1")).unwrap(); // 100352
     let _ = graph.new_parameter_node(&[1, 128], Some("b1")).unwrap(); // 128
     let _ = graph.new_parameter_node(&[128, 10], Some("w2")).unwrap(); // 1280
@@ -288,7 +288,7 @@ fn test_save_load_model() {
 
     // 1. 创建并训练一个简单模型
     let mut graph = GraphInner::new();
-    let _x = graph.new_input_node(&[1, 4], Some("x")).unwrap();
+    let _x = graph.new_basic_input_node(&[1, 4], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[4, 2], Some("w")).unwrap();
     let b = graph.new_parameter_node(&[1, 2], Some("b")).unwrap();
 
@@ -311,7 +311,7 @@ fn test_save_load_model() {
 
     // 3. 创建相同结构的新图并加载模型
     let mut graph2 = GraphInner::new();
-    let _x2 = graph2.new_input_node(&[1, 4], Some("x")).unwrap();
+    let _x2 = graph2.new_basic_input_node(&[1, 4], Some("x")).unwrap();
     let w2 = graph2.new_parameter_node(&[4, 2], Some("w")).unwrap();
     let b2 = graph2.new_parameter_node(&[1, 2], Some("b")).unwrap();
 
@@ -334,7 +334,7 @@ fn test_save_model_json_readable() {
     let temp_base = "test_save_model_json_readable";
 
     let mut graph = GraphInner::new();
-    let _ = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let _ = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
     let _ = graph.new_parameter_node(&[3, 4], Some("weight")).unwrap();
 
     graph.save_model(temp_base).expect("保存模型失败");
@@ -359,7 +359,7 @@ fn test_save_model_json_readable() {
 fn test_summary_basic() {
     let mut graph = GraphInner::new();
 
-    let x = graph.new_input_node(&[1, 784], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[1, 784], Some("x")).unwrap();
     let w1 = graph.new_parameter_node(&[784, 128], Some("w1")).unwrap();
     let b1 = graph.new_parameter_node(&[1, 128], Some("b1")).unwrap();
     let z1 = graph.new_mat_mul_node(x, w1, Some("z1")).unwrap();
@@ -423,7 +423,7 @@ fn test_save_summary_txt() {
     let temp_file = "test_save_summary.txt";
 
     let mut graph = GraphInner::new();
-    let x = graph.new_input_node(&[1, 4], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[1, 4], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
     graph.save_summary(temp_file).expect("保存摘要失败");
@@ -446,7 +446,7 @@ fn test_save_summary_markdown() {
     let temp_file = "test_save_summary.md";
 
     let mut graph = GraphInner::new();
-    let x = graph.new_input_node(&[1, 4], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[1, 4], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
     graph.save_summary(temp_file).expect("保存摘要失败");
@@ -485,10 +485,10 @@ fn test_summary_markdown_string() {
 fn test_to_dot_basic() {
     let mut graph = GraphInner::new();
 
-    let x = graph.new_input_node(&[1, 4], Some("input")).unwrap();
+    let x = graph.new_basic_input_node(&[1, 4], Some("input")).unwrap();
     let w = graph.new_parameter_node(&[4, 2], Some("weight")).unwrap();
     let z = graph.new_mat_mul_node(x, w, Some("output")).unwrap();
-    let target = graph.new_input_node(&[1, 2], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 2], Some("target")).unwrap();
     let _loss = graph.new_mse_loss_node(z, target, Some("loss")).unwrap();
 
     let dot = graph.to_dot();
@@ -519,7 +519,7 @@ fn test_save_visualization_basic() {
     let base_path = "test_save_visualization_basic";
 
     let mut graph = GraphInner::new();
-    let x = graph.new_input_node(&[2, 3], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 3], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
     let result = graph
@@ -559,7 +559,7 @@ fn test_save_visualization_with_format() {
     let base_path = "test_save_visualization_svg";
 
     let mut graph = GraphInner::new();
-    let x = graph.new_input_node(&[2, 3], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 3], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
     let result = graph
@@ -586,7 +586,7 @@ fn test_save_visualization_with_format() {
 #[test]
 fn test_save_visualization_rejects_extension() {
     let mut graph = GraphInner::new();
-    let x = graph.new_input_node(&[2, 3], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 3], Some("x")).unwrap();
     let _ = graph.new_sigmoid_node(x, Some("y")).unwrap();
 
     // 测试 .dot 后缀
@@ -639,10 +639,10 @@ fn test_to_dot_node_styles() {
     let mut graph = GraphInner::new();
 
     // 各种类型节点
-    let x = graph.new_input_node(&[1, 4], Some("input")).unwrap();
+    let x = graph.new_basic_input_node(&[1, 4], Some("input")).unwrap();
     let _ = graph.new_parameter_node(&[4, 2], Some("param")).unwrap();
     let y = graph.new_sigmoid_node(x, Some("sigmoid")).unwrap();
-    let target = graph.new_input_node(&[1, 4], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 4], Some("target")).unwrap();
     let _ = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     let dot = graph.to_dot();
@@ -665,7 +665,7 @@ fn test_dynamic_shape_in_descriptor() {
     let mut graph = GraphInner::new();
 
     // 创建支持动态 batch 的节点
-    let x = graph.new_input_node(&[32, 128], Some("input")).unwrap();
+    let x = graph.new_basic_input_node(&[32, 128], Some("input")).unwrap();
     let w = graph
         .new_parameter_node(&[128, 64], Some("weight"))
         .unwrap();
@@ -714,7 +714,7 @@ fn test_dynamic_shape_json_roundtrip() {
     let mut graph = GraphInner::new();
 
     // 创建支持动态 batch 的图
-    let x = graph.new_input_node(&[16, 64], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[16, 64], Some("x")).unwrap();
     let y = graph.new_tanh_node(x, Some("y")).unwrap();
 
     // 获取描述符并序列化为 JSON
@@ -749,7 +749,7 @@ fn test_dynamic_shape_in_visualization() {
     let mut graph = GraphInner::new();
 
     // 创建支持动态 batch 的节点
-    let x = graph.new_input_node(&[8, 32], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[8, 32], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[32, 16], Some("w")).unwrap();
     let _ = graph.new_mat_mul_node(x, w, Some("y")).unwrap();
 

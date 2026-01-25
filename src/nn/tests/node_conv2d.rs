@@ -23,7 +23,7 @@ fn test_conv2d_creation_single() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [C_in=1, H=5, W=5]
-    let input = graph.new_input_node(&[1, 5, 5], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 5, 5], Some("input"))?;
     // 卷积核: [C_out=2, C_in=1, kH=3, kW=3]
     let kernel = graph.new_parameter_node(&[2, 1, 3, 3], Some("kernel"))?;
 
@@ -44,7 +44,7 @@ fn test_conv2d_creation_batch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=4, C_in=3, H=28, W=28]
-    let input = graph.new_input_node(&[4, 3, 28, 28], Some("input"))?;
+    let input = graph.new_basic_input_node(&[4, 3, 28, 28], Some("input"))?;
     // 卷积核: [C_out=16, C_in=3, kH=5, kW=5]
     let kernel = graph.new_parameter_node(&[16, 3, 5, 5], Some("kernel"))?;
 
@@ -65,7 +65,7 @@ fn test_conv2d_with_stride() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C_in=1, H=8, W=8]
-    let input = graph.new_input_node(&[2, 1, 8, 8], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 8, 8], Some("input"))?;
     // 卷积核: [C_out=4, C_in=1, kH=3, kW=3]
     let kernel = graph.new_parameter_node(&[4, 1, 3, 3], Some("kernel"))?;
 
@@ -88,9 +88,9 @@ fn test_conv2d_forward_simple() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [C_in=1, H=3, W=3]，全 1
-    let input = graph.new_input_node(&[1, 3, 3], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 3, 3], Some("input"))?;
     // 卷积核: [C_out=1, C_in=1, kH=2, kW=2]，全 1
-    let kernel = graph.new_input_node(&[1, 1, 2, 2], Some("kernel"))?;
+    let kernel = graph.new_basic_input_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
 
@@ -121,9 +121,9 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [C_in=1, H=3, W=3]
-    let input = graph.new_input_node(&[1, 3, 3], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 3, 3], Some("input"))?;
     // 卷积核: [C_out=1, C_in=1, kH=3, kW=3]
-    let kernel = graph.new_input_node(&[1, 1, 3, 3], Some("kernel"))?;
+    let kernel = graph.new_basic_input_node(&[1, 1, 3, 3], Some("kernel"))?;
 
     // padding=1 保持尺寸
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (1, 1), Some("conv"))?;
@@ -156,9 +156,9 @@ fn test_conv2d_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C_in=1, H=4, W=4]
-    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
     // 卷积核: [C_out=1, C_in=1, kH=2, kW=2]
-    let kernel = graph.new_input_node(&[1, 1, 2, 2], Some("kernel"))?;
+    let kernel = graph.new_basic_input_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
 
@@ -190,9 +190,9 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [C_in=1, H=4, W=4]
-    let input = graph.new_input_node(&[1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input"))?;
     // 卷积核: [C_out=2, C_in=1, kH=2, kW=2]
-    let kernel = graph.new_input_node(&[2, 1, 2, 2], Some("kernel"))?;
+    let kernel = graph.new_basic_input_node(&[2, 1, 2, 2], Some("kernel"))?;
 
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
 
@@ -231,7 +231,7 @@ fn test_conv2d_jacobi_to_kernel() -> Result<(), GraphError> {
 
     // 简单情况：输入 [1, 2, 2]，卷积核 [1, 1, 2, 2]
     // 输出形状：[1, 1, 1]（out_channels=1, H=1, W=1）
-    let input = graph.new_input_node(&[1, 2, 2], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 2, 2], Some("input"))?;
     let kernel = graph.new_parameter_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
@@ -240,7 +240,7 @@ fn test_conv2d_jacobi_to_kernel() -> Result<(), GraphError> {
     let conv_flat = graph.new_reshape_node(conv, &[1, 1], Some("conv_flat"))?;
 
     // 添加 MSE loss 使输出为标量 [1, 1]
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(conv_flat, target, Some("loss"))?;
 
     // 设置值
@@ -292,8 +292,8 @@ fn test_conv2d_grad_to_input() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入 [1, 2, 2]，卷积核 [1, 1, 2, 2]
-    let input_id = graph.new_input_node(&[1, 2, 2], Some("input"))?;
-    let kernel_id = graph.new_input_node(&[1, 1, 2, 2], Some("kernel"))?;
+    let input_id = graph.new_basic_input_node(&[1, 2, 2], Some("input"))?;
+    let kernel_id = graph.new_basic_input_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv_id = graph.new_conv2d_node(input_id, kernel_id, (1, 1), (0, 0), Some("conv"))?;
 
@@ -337,7 +337,7 @@ fn test_conv2d_batch_in_network() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 输入: [batch=2, C_in=1, H=4, W=4]
-    let input = graph.new_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
     // 卷积核: [C_out=1, C_in=1, kH=2, kW=2]
     let kernel = graph.new_parameter_node(&[1, 1, 2, 2], Some("kernel"))?;
 
@@ -385,7 +385,7 @@ fn test_conv2d_calc_grad_to_kernel_direct() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=2, C_in=1, H=3, W=3]
-    let input_id = graph.new_input_node(&[2, 1, 3, 3], Some("input"))?;
+    let input_id = graph.new_basic_input_node(&[2, 1, 3, 3], Some("input"))?;
     // 卷积核: [C_out=1, C_in=1, kH=2, kW=2]
     let kernel_id = graph.new_parameter_node(&[1, 1, 2, 2], Some("kernel"))?;
 
@@ -435,9 +435,9 @@ fn test_conv2d_calc_grad_to_input_direct() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 输入: [batch=1, C_in=1, H=3, W=3]
-    let input_id = graph.new_input_node(&[1, 1, 3, 3], Some("input"))?;
+    let input_id = graph.new_basic_input_node(&[1, 1, 3, 3], Some("input"))?;
     // 卷积核: [C_out=1, C_in=1, kH=2, kW=2]
-    let kernel_id = graph.new_input_node(&[1, 1, 2, 2], Some("kernel"))?;
+    let kernel_id = graph.new_basic_input_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv_id = graph.new_conv2d_node(input_id, kernel_id, (1, 1), (0, 0), Some("conv"))?;
 
@@ -483,7 +483,7 @@ fn test_conv2d_channel_mismatch() {
     let mut graph = GraphInner::new();
 
     // 输入: [C_in=3, H=5, W=5]
-    let input = graph.new_input_node(&[3, 5, 5], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[3, 5, 5], Some("input")).unwrap();
     // 卷积核: [C_out=2, C_in=1, kH=3, kW=3]（C_in 不匹配）
     let kernel = graph
         .new_parameter_node(&[2, 1, 3, 3], Some("kernel"))
@@ -499,7 +499,7 @@ fn test_conv2d_invalid_input_dims() {
     let mut graph = GraphInner::new();
 
     // 输入: [H=5, W=5]（2D，缺少通道维度，对 Conv2d 无效）
-    let input = graph.new_input_node(&[5, 5], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[5, 5], Some("input")).unwrap();
     let kernel = graph
         .new_parameter_node(&[2, 1, 3, 3], Some("kernel"))
         .unwrap();
@@ -514,7 +514,7 @@ fn test_conv2d_invalid_input_dims() {
 fn test_conv2d_invalid_kernel_dims() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[1, 5, 5], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[1, 5, 5], Some("input")).unwrap();
     // 卷积核: [kH=3, kW=3]（2D，缺少通道维度）
     let kernel = graph.new_parameter_node(&[3, 3], Some("kernel")).unwrap();
 
@@ -532,7 +532,7 @@ fn test_conv2d_dynamic_shape_propagation() -> Result<(), GraphError> {
 
     // 创建 4D 输入：[batch, channels, height, width]
     // Input 节点默认支持动态 batch
-    let input = graph.new_input_node(&[2, 1, 5, 5], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 5, 5], Some("input"))?;
     let kernel = graph.new_parameter_node(&[2, 1, 3, 3], Some("kernel"))?;
 
     // Conv2d: [batch, 1, 5, 5] -> [batch, 2, 3, 3]
@@ -554,7 +554,7 @@ fn test_conv2d_dynamic_batch_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建 4D 输入：[batch, channels, height, width]
-    let input = graph.new_input_node(&[2, 1, 5, 5], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 5, 5], Some("input"))?;
     let kernel = graph.new_parameter_node(&[2, 1, 3, 3], Some("kernel"))?;
 
     // Conv2d
@@ -586,7 +586,7 @@ fn test_conv2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建 4D 输入
-    let input = graph.new_input_node(&[2, 1, 5, 5], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 1, 5, 5], Some("input"))?;
     let kernel = graph.new_parameter_node(&[2, 1, 3, 3], Some("kernel"))?;
 
     // Conv2d -> Flatten -> MSE
@@ -594,7 +594,7 @@ fn test_conv2d_dynamic_batch_backward() -> Result<(), GraphError> {
     // 输出形状: [batch, 2, 3, 3]
     let flat = graph.new_flatten_node(conv, true, Some("flat"))?;
     // 输出形状: [batch, 18]
-    let target = graph.new_input_node(&[2, 18], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 18], Some("target"))?;
     let loss = graph.new_mse_loss_node(flat, target, Some("loss"))?;
 
     // 设置初始值

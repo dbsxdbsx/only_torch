@@ -103,6 +103,15 @@ impl Rnn {
         )?;
 
         let b_h = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_h"))?;
+        // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
+        // RNN 每个时间步的节点数：6 (select, matmul_xw, matmul_hw, add1, add2, tanh)
+        graph.inner_mut().register_recurrent_layer_meta(
+            name,
+            "RNN",
+            &format!("[?, {input_size}] → [?, {hidden_size}]"),
+            vec![w_ih.node_id(), w_hh.node_id(), b_h.node_id()],
+            6, // nodes_per_step
+        );
 
         Ok(Self {
             w_ih,
@@ -161,24 +170,56 @@ impl Rnn {
     }
 
     /// 展开 RNN 时间步
+    ///
+    /// 计算逻辑与可视化信息收集完全分离：
+    /// - 此方法只做计算 + 记录最少的必要信息（4 个节点 ID + 1 个数值）
+    /// - 完整的分组信息在 `save_visualization` 时惰性推断
     fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
         // 创建初始隐藏状态（ZerosLike：根据 x 的 batch_size 动态生成）
-        // 注意：每次 forward 都创建新的 ZerosLike 节点，确保与当前输入的 batch_size 匹配
-        // 这对于变长序列处理（不同桶有不同 batch_size）是必需的
         let h0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
+        let init_state_node_ids = vec![h0.node_id()];
         let mut h = h0;
+
+        // 记录第一个时间步的信息（用于惰性推断）
+        let mut first_step_start_id = None;
+        let mut repr_output_node_ids = Vec::new();
 
         // 展开所有时间步
         for t in 0..seq_len {
             // 选择第 t 个时间步: x_t = x[:, t, :] -> [batch, input_size]
             let x_t = x.select(1, t)?;
 
+            // 记录第一个时间步的起始节点 ID
+            if t == 0 {
+                first_step_start_id = Some(x_t.node_id());
+            }
+
             // h_new = tanh(x_t @ W_ih + h @ W_hh + b_h)
             let xw = x_t.matmul(&self.w_ih)?;
             let hw = h.matmul(&self.w_hh)?;
-            let sum = &xw + &hw + &self.b_h;
-            h = sum.tanh();
+            let sum1 = &xw + &hw;
+            let sum2 = &sum1 + &self.b_h;
+            h = sum2.tanh();
+
+            // 记录第一个时间步的输出节点 ID（RNN 只有 h）
+            if t == 0 {
+                repr_output_node_ids.push(h.node_id());
+            }
         }
+
+        // 更新循环层的展开信息（只记录 5 个节点 ID + 1 个数值，几乎零开销）
+        use crate::nn::graph::RecurrentUnrollInfo;
+        self.graph.inner_mut().update_recurrent_layer_unroll_info(
+            &self.name,
+            RecurrentUnrollInfo {
+                steps: seq_len,
+                input_node_id: x.node_id(),
+                init_state_node_ids,
+                first_step_start_id: first_step_start_id.unwrap(),
+                repr_output_node_ids,
+                real_output_node_id: h.node_id(),
+            },
+        );
 
         Ok(h)
     }

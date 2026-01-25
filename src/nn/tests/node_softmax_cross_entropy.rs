@@ -8,8 +8,8 @@ fn test_softmax_cross_entropy_creation() {
     let mut graph = GraphInner::new();
 
     // 创建 logits 和 labels 输入节点（必须是 2D）
-    let logits_id = graph.new_input_node(&[1, 3], Some("logits")).unwrap();
-    let labels_id = graph.new_input_node(&[1, 3], Some("labels")).unwrap();
+    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
+    let labels_id = graph.new_basic_input_node(&[1, 3], Some("labels")).unwrap();
 
     // 创建 SoftmaxCrossEntropy 节点
     let loss_id = graph
@@ -27,8 +27,8 @@ fn test_softmax_cross_entropy_creation() {
 fn test_softmax_cross_entropy_shape_mismatch() {
     let mut graph = GraphInner::new();
 
-    let logits_id = graph.new_input_node(&[1, 3], Some("logits")).unwrap();
-    let labels_id = graph.new_input_node(&[1, 4], Some("labels")).unwrap(); // 形状不匹配
+    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
+    let labels_id = graph.new_basic_input_node(&[1, 4], Some("labels")).unwrap(); // 形状不匹配
 
     let result = graph.new_softmax_cross_entropy_node(logits_id, labels_id, None);
     assert!(result.is_err());
@@ -43,8 +43,8 @@ fn test_softmax_cross_entropy_forward_simple() {
 
     let mut graph = GraphInner::new();
 
-    let logits_id = graph.new_input_node(&[1, 3], Some("logits")).unwrap();
-    let labels_id = graph.new_input_node(&[1, 3], Some("labels")).unwrap();
+    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
+    let labels_id = graph.new_basic_input_node(&[1, 3], Some("labels")).unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
         .unwrap();
@@ -75,8 +75,8 @@ fn test_softmax_cross_entropy_forward_uniform() {
 
     let mut graph = GraphInner::new();
 
-    let logits_id = graph.new_input_node(&[1, 4], Some("logits")).unwrap();
-    let labels_id = graph.new_input_node(&[1, 4], Some("labels")).unwrap();
+    let logits_id = graph.new_basic_input_node(&[1, 4], Some("logits")).unwrap();
+    let labels_id = graph.new_basic_input_node(&[1, 4], Some("labels")).unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
         .unwrap();
@@ -110,7 +110,7 @@ fn test_softmax_cross_entropy_backward_simple() {
     let mut graph = GraphInner::new();
 
     let logits_id = graph.new_parameter_node(&[1, 3], Some("logits")).unwrap();
-    let labels_id = graph.new_input_node(&[1, 3], Some("labels")).unwrap();
+    let labels_id = graph.new_basic_input_node(&[1, 3], Some("labels")).unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
         .unwrap();
@@ -146,7 +146,7 @@ fn test_softmax_cross_entropy_backward_uniform() {
     let mut graph = GraphInner::new();
 
     let logits_id = graph.new_parameter_node(&[1, 4], Some("logits")).unwrap();
-    let labels_id = graph.new_input_node(&[1, 4], Some("labels")).unwrap();
+    let labels_id = graph.new_basic_input_node(&[1, 4], Some("labels")).unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
         .unwrap();
@@ -184,7 +184,7 @@ fn test_softmax_cross_entropy_10_classes() {
     let mut graph = GraphInner::new();
 
     let logits_id = graph.new_parameter_node(&[1, 10], Some("logits")).unwrap();
-    let labels_id = graph.new_input_node(&[1, 10], Some("labels")).unwrap();
+    let labels_id = graph.new_basic_input_node(&[1, 10], Some("labels")).unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
         .unwrap();
@@ -234,7 +234,7 @@ fn test_softmax_cross_entropy_with_linear_layer() {
     let mut graph = GraphInner::new();
 
     // 输入: [1, 2] -> 线性层 -> [1, 3] -> softmax_cross_entropy -> loss
-    let input_id = graph.new_input_node(&[1, 2], Some("input")).unwrap();
+    let input_id = graph.new_basic_input_node(&[1, 2], Some("input")).unwrap();
     let weights_id = graph.new_parameter_node(&[2, 3], Some("weights")).unwrap();
     let bias_id = graph.new_parameter_node(&[1, 3], Some("bias")).unwrap();
 
@@ -247,7 +247,7 @@ fn test_softmax_cross_entropy_with_linear_layer() {
         .unwrap();
 
     // labels 使用 [1, 3] 形状与 logits 匹配
-    let labels_id = graph.new_input_node(&[1, 3], Some("labels")).unwrap();
+    let labels_id = graph.new_basic_input_node(&[1, 3], Some("labels")).unwrap();
     let loss_id = graph
         .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
         .unwrap();
@@ -290,8 +290,8 @@ fn test_softmax_cross_entropy_dynamic_shape_propagation() -> Result<(), GraphErr
     let mut graph = GraphInner::new();
 
     // 创建 2D 输入：[batch, num_classes]
-    let logits = graph.new_input_node(&[2, 3], Some("logits"))?;
-    let labels = graph.new_input_node(&[2, 3], Some("labels"))?;
+    let logits = graph.new_basic_input_node(&[2, 3], Some("logits"))?;
+    let labels = graph.new_basic_input_node(&[2, 3], Some("labels"))?;
 
     let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
 
@@ -308,8 +308,8 @@ fn test_softmax_cross_entropy_dynamic_batch_forward() -> Result<(), GraphError> 
     let mut graph = GraphInner::new();
 
     // 创建输入
-    let logits = graph.new_input_node(&[2, 3], Some("logits"))?;
-    let labels = graph.new_input_node(&[2, 3], Some("labels"))?;
+    let logits = graph.new_basic_input_node(&[2, 3], Some("logits"))?;
+    let labels = graph.new_basic_input_node(&[2, 3], Some("labels"))?;
     let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
 
     // 设置初始值：batch=2
@@ -351,10 +351,10 @@ fn test_softmax_cross_entropy_dynamic_batch_backward() -> Result<(), GraphError>
 
     // 使用 Input 节点接收动态 batch 数据
     // 构建 y = x * w 形式，其中 w 是可训练的 Parameter
-    let input = graph.new_input_node(&[2, 5], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 5], Some("input"))?;
     let weight = graph.new_parameter_node(&[5, 3], Some("weight"))?; // [5, 3] 权重
     let logits = graph.new_mat_mul_node(input, weight, Some("logits"))?;
-    let labels = graph.new_input_node(&[2, 3], Some("labels"))?;
+    let labels = graph.new_basic_input_node(&[2, 3], Some("labels"))?;
     let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
 
     // 初始化权重

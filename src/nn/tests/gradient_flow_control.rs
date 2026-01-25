@@ -145,7 +145,7 @@ fn test_no_grad_scope_with_forward() {
     let mut graph = GraphInner::new();
 
     // 创建简单网络: x -> tanh -> output
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let output = graph.new_tanh_node(x, Some("output")).unwrap();
 
     // 设置输入
@@ -175,10 +175,10 @@ fn test_no_grad_scope_same_input_same_loss_no_gradient() {
     let mut graph = GraphInner::new();
 
     // 创建简单回归网络
-    let x = graph.new_input_node(&[1, 2], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[1, 2], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[2, 1], Some("w")).unwrap();
     let pred = graph.new_mat_mul_node(x, w, Some("pred")).unwrap();
-    let y = graph.new_input_node(&[1, 1], Some("y")).unwrap();
+    let y = graph.new_basic_input_node(&[1, 1], Some("y")).unwrap();
     let loss = graph.new_mse_loss_node(pred, y, Some("loss")).unwrap();
 
     // 使用相同的输入数据
@@ -271,7 +271,7 @@ fn test_no_grad_scope_mutable_operations() {
     let mut graph = GraphInner::new();
 
     // 创建节点
-    let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 2], Some("x")).unwrap();
     let y = graph.new_tanh_node(x, Some("y")).unwrap();
 
     // 在 no_grad 中执行可变操作
@@ -330,7 +330,7 @@ fn test_no_grad_scope_backward_still_works() {
     let mut graph = GraphInner::new();
 
     // 创建简单网络
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
 
@@ -373,7 +373,7 @@ fn test_no_grad_scope_nodes_created_inside() {
     let mut graph = GraphInner::new();
 
     // 先创建输入节点
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
 
     // 在 no_grad_scope 内创建参数和运算节点
     let (w, y) = graph.no_grad_scope(|g| {
@@ -411,7 +411,7 @@ fn test_detach_basic() {
     let mut graph = GraphInner::new();
 
     // 创建节点
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
 
@@ -436,7 +436,7 @@ fn test_detach_blocks_gradient_flow() {
     let mut graph = GraphInner::new();
 
     // 创建简单网络: x -> w1 -> h -> w2 -> output
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = graph.new_parameter_node(&[2, 2], Some("w1")).unwrap();
     let h = graph.new_mat_mul_node(w1, x, Some("h")).unwrap();
     let w2 = graph.new_parameter_node(&[1, 2], Some("w2")).unwrap();
@@ -490,7 +490,7 @@ fn test_detach_does_not_affect_forward() {
     let mut graph = GraphInner::new();
 
     // 创建网络
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let y = graph.new_tanh_node(x, Some("y")).unwrap();
 
     // 设置输入
@@ -519,10 +519,10 @@ fn test_detach_attach_multiple_times() {
     let mut graph = GraphInner::new();
 
     // 创建简单网络用于验证 backward 效果: x -> w -> y -> loss
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     let input_data = Tensor::new(&[1.0, 2.0], &[2, 1]);
@@ -597,7 +597,7 @@ fn test_detach_gan_style_training() {
     // z(输入) -> G_w(生成器参数) -> fake_data -> D_w(判别器参数) -> d_output -> loss
 
     // 生成器部分
-    let z = graph.new_input_node(&[2, 1], Some("z")).unwrap();
+    let z = graph.new_basic_input_node(&[2, 1], Some("z")).unwrap();
     let g_w = graph.new_parameter_node(&[3, 2], Some("g_w")).unwrap();
     let fake_data = graph.new_mat_mul_node(g_w, z, Some("fake")).unwrap();
 
@@ -608,7 +608,7 @@ fn test_detach_gan_style_training() {
         .unwrap();
 
     // 添加 loss 节点使输出为标量
-    let d_target = graph.new_input_node(&[1, 1], Some("d_target")).unwrap();
+    let d_target = graph.new_basic_input_node(&[1, 1], Some("d_target")).unwrap();
     let loss = graph
         .new_mse_loss_node(d_output, d_target, Some("loss"))
         .unwrap();
@@ -657,10 +657,10 @@ fn test_detach_with_batch_mode() {
     let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> mse_loss
-    let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 2], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[2, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
-    let target = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 设置输入
@@ -690,7 +690,7 @@ fn test_detach_with_batch_mode() {
 #[test]
 fn test_detach_input_node() {
     let mut graph = GraphInner::new();
-    let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 2], Some("x")).unwrap();
 
     // 技术上可以 detach，但语义上没有意义
     // 因为 Input 节点本来就不参与反向传播
@@ -708,7 +708,7 @@ fn test_detach_node_still_functional() {
     let mut graph = GraphInner::new();
 
     // 创建简单网络: x -> w -> y
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
 
@@ -755,7 +755,7 @@ fn test_detach_gradient_values_match_pytorch() {
 
     // 创建网络: x -> w1 -> h -> w2 -> output
     // x: [2, 1], w1: [2, 2] -> h: [2, 1], w2: [1, 2] -> output: [1, 1]
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = graph.new_parameter_node(&[2, 2], Some("w1")).unwrap();
     let h = graph.new_mat_mul_node(w1, x, Some("h")).unwrap();
     let w2 = graph.new_parameter_node(&[1, 2], Some("w2")).unwrap();
@@ -820,10 +820,10 @@ fn test_detach_node_still_functional_batch() {
     let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> loss
-    let x = graph.new_input_node(&[2, 2], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 2], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[2, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
-    let target = graph.new_input_node(&[2, 2], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 设置输入并执行 forward + backward
@@ -867,7 +867,7 @@ fn test_retain_graph_basic() {
     let mut graph = GraphInner::new();
 
     // 创建简单网络: x -> w -> y
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
 
@@ -894,11 +894,11 @@ fn test_retain_graph_false_releases_intermediate_results() {
     let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> z -> loss (标量)
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[2, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
     let z = graph.new_tanh_node(y, Some("z")).unwrap();
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(z, target, Some("loss")).unwrap();
 
     // 设置输入
@@ -939,7 +939,7 @@ fn test_retain_graph_allows_multiple_backward() {
     let mut graph = GraphInner::new();
 
     // 创建网络
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
 
@@ -972,7 +972,7 @@ fn test_retain_graph_multi_task_learning() {
     let mut graph = GraphInner::new();
 
     // 创建共享 backbone: x -> w_shared -> features
-    let x = graph.new_input_node(&[4, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[4, 1], Some("x")).unwrap();
     let w_shared = graph.new_parameter_node(&[2, 4], Some("w_shared")).unwrap();
     let features = graph
         .new_mat_mul_node(w_shared, x, Some("features"))
@@ -981,7 +981,7 @@ fn test_retain_graph_multi_task_learning() {
     // 任务 1: features -> w1 -> out1 -> loss1
     let w1 = graph.new_parameter_node(&[1, 2], Some("w1")).unwrap();
     let out1 = graph.new_mat_mul_node(w1, features, Some("out1")).unwrap();
-    let target1 = graph.new_input_node(&[1, 1], Some("target1")).unwrap();
+    let target1 = graph.new_basic_input_node(&[1, 1], Some("target1")).unwrap();
     let loss1 = graph
         .new_mse_loss_node(out1, target1, Some("loss1"))
         .unwrap();
@@ -989,7 +989,7 @@ fn test_retain_graph_multi_task_learning() {
     // 任务 2: features -> w2 -> out2 -> loss2
     let w2 = graph.new_parameter_node(&[1, 2], Some("w2")).unwrap();
     let out2 = graph.new_mat_mul_node(w2, features, Some("out2")).unwrap();
-    let target2 = graph.new_input_node(&[1, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[1, 1], Some("target2")).unwrap();
     let loss2 = graph
         .new_mse_loss_node(out2, target2, Some("loss2"))
         .unwrap();
@@ -1088,10 +1088,10 @@ fn test_backward_default_releases_graph() {
     let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> loss (标量)
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[2, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 设置输入
@@ -1129,7 +1129,7 @@ fn test_retain_graph_false_requires_new_forward() {
     let mut graph = GraphInner::new();
 
     // 创建网络
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, Some("y")).unwrap();
 
@@ -1160,12 +1160,12 @@ fn test_retain_graph_with_detach() {
     let mut graph = GraphInner::new();
 
     // 创建网络: x -> w1 -> h -> w2 -> y -> loss
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = graph.new_parameter_node(&[2, 2], Some("w1")).unwrap();
     let h = graph.new_mat_mul_node(w1, x, Some("h")).unwrap();
     let w2 = graph.new_parameter_node(&[1, 2], Some("w2")).unwrap();
     let y = graph.new_mat_mul_node(w2, h, Some("y")).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 设置输入
@@ -1230,7 +1230,7 @@ fn test_backward_accumulation_for_complex_topology() {
 
     // ========== 构建拓扑 ==========
     // 输入
-    let x = graph.new_input_node(&[4, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[4, 1], Some("x")).unwrap();
 
     // 共享链: x → w_shared1 → shared_feat1 → w_shared2 → w_shared3 → shared_feat2
     let w_shared1 = graph
@@ -1260,7 +1260,7 @@ fn test_backward_accumulation_for_complex_topology() {
     let out1 = graph
         .new_mat_mul_node(w_task1, shared_feat2, Some("out1"))
         .unwrap();
-    let target1 = graph.new_input_node(&[1, 1], Some("target1")).unwrap();
+    let target1 = graph.new_basic_input_node(&[1, 1], Some("target1")).unwrap();
     let loss1 = graph
         .new_mse_loss_node(out1, target1, Some("loss1"))
         .unwrap();
@@ -1269,7 +1269,7 @@ fn test_backward_accumulation_for_complex_topology() {
     let out2 = graph
         .new_mat_mul_node(w_task2, shared_feat2, Some("out2"))
         .unwrap();
-    let target2 = graph.new_input_node(&[1, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[1, 1], Some("target2")).unwrap();
     let loss2 = graph
         .new_mse_loss_node(out2, target2, Some("loss2"))
         .unwrap();

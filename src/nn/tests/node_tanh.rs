@@ -24,7 +24,7 @@ fn test_tanh_creation() {
 
     // 1. Input 节点作为父节点
     {
-        let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
+        let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
         let tanh = graph.new_tanh_node(input, Some("tanh_with_input")).unwrap();
 
         assert_eq!(graph.get_node_name(tanh).unwrap(), "tanh_with_input");
@@ -49,7 +49,7 @@ fn test_tanh_creation() {
 fn test_tanh_name_generation() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
 
     // 1. 显式命名
     let tanh1 = graph.new_tanh_node(input, Some("my_tanh")).unwrap();
@@ -71,7 +71,7 @@ fn test_tanh_name_generation() {
 #[test]
 fn test_tanh_cannot_set_value() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
     let tanh = graph.new_tanh_node(input, Some("tanh")).unwrap();
 
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
@@ -242,7 +242,7 @@ fn test_tanh_backward_e2e() -> Result<(), GraphError> {
     let result = graph.new_tanh_node(input, Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值：input = [[0.5, -1.0], [0.0, 2.0]], target = [[0, 0], [0, 0]]
@@ -296,13 +296,13 @@ fn test_tanh_backward_e2e_chain() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 构建网络: output = tanh(w @ x)
-    let x = graph.new_input_node(&[2, 1], Some("x"))?;
+    let x = graph.new_basic_input_node(&[2, 1], Some("x"))?;
     let w = graph.new_parameter_node(&[2, 2], Some("w"))?;
     let wx = graph.new_mat_mul_node(w, x, Some("wx"))?;
     let output = graph.new_tanh_node(wx, Some("output"))?;
 
     // loss = MSE(output, target)
-    let target = graph.new_input_node(&[2, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     // 设置输入
@@ -335,7 +335,7 @@ fn test_tanh_gradient_accumulation() -> Result<(), GraphError> {
 
     let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let result = graph.new_tanh_node(input, Some("result"))?;
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值

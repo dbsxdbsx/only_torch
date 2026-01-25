@@ -74,7 +74,7 @@ fn test_add_node_after_backward() {
     let mut graph = GraphInner::new();
 
     // 1. 创建初始图: y = w * x + b，然后创建 loss = MSE(y, target)
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = graph
         .new_parameter_node_seeded(&[1, 2], Some("w"), 42)
         .unwrap();
@@ -83,7 +83,7 @@ fn test_add_node_after_backward() {
         .unwrap();
     let wx = graph.new_mat_mul_node(w, x, Some("wx")).unwrap();
     let y = graph.new_add_node(&[wx, b], Some("y")).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 2. 设置输入并进行一轮训练（使用 backward_ex + retain_graph=true 以便后续访问值）
@@ -104,7 +104,7 @@ fn test_add_node_after_backward() {
         .new_parameter_node_seeded(&[1, 1], Some("c"), 44)
         .unwrap();
     let z = graph.new_add_node(&[y, c], Some("z")).unwrap();
-    let target2 = graph.new_input_node(&[1, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[1, 1], Some("target2")).unwrap();
     let loss2 = graph.new_mse_loss_node(z, target2, Some("loss2")).unwrap();
 
     // 5. 通知图拓扑已变化
@@ -147,9 +147,9 @@ fn test_multiple_topology_changes() {
     let param = graph
         .new_parameter_node_seeded(&[2, 1], Some("param"), 42)
         .unwrap();
-    let input = graph.new_input_node(&[2, 1], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 1], Some("input")).unwrap();
     let node1 = graph.new_add_node(&[param, input], Some("node1")).unwrap();
-    let target1 = graph.new_input_node(&[2, 1], Some("target1")).unwrap();
+    let target1 = graph.new_basic_input_node(&[2, 1], Some("target1")).unwrap();
     let loss1 = graph
         .new_mse_loss_node(node1, target1, Some("loss1"))
         .unwrap();
@@ -167,7 +167,7 @@ fn test_multiple_topology_changes() {
 
     // 3. 第1次拓扑变化: 添加 node2 = tanh(node1)
     let node2 = graph.new_tanh_node(node1, Some("node2")).unwrap();
-    let target2 = graph.new_input_node(&[2, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[2, 1], Some("target2")).unwrap();
     let loss2 = graph
         .new_mse_loss_node(node2, target2, Some("loss2"))
         .unwrap();
@@ -185,7 +185,7 @@ fn test_multiple_topology_changes() {
         .new_parameter_node_seeded(&[2, 1], Some("bias"), 43)
         .unwrap();
     let node3 = graph.new_add_node(&[node2, bias], Some("node3")).unwrap();
-    let target3 = graph.new_input_node(&[2, 1], Some("target3")).unwrap();
+    let target3 = graph.new_basic_input_node(&[2, 1], Some("target3")).unwrap();
     let loss3 = graph
         .new_mse_loss_node(node3, target3, Some("loss3"))
         .unwrap();
@@ -218,7 +218,7 @@ fn test_add_multiple_branches() {
     let mut graph = GraphInner::new();
 
     // 1. 初始图
-    let input = graph.new_input_node(&[2, 1], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 1], Some("input")).unwrap();
     let param = graph
         .new_parameter_node_seeded(&[2, 1], Some("param"), 42)
         .unwrap();
@@ -307,7 +307,7 @@ fn test_chain_node_addition() {
     assert_eq!(actual, &expected);
 
     // 4. 创建 loss 节点并反向传播
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph
         .new_mse_loss_node(tanh3, target, Some("loss"))
         .unwrap();
@@ -327,7 +327,7 @@ fn test_add_to_complex_graph() {
     let mut graph = GraphInner::new();
 
     // 1. 创建一个类似 XOR 的网络结构
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = graph
         .new_parameter_node_seeded(&[4, 2], Some("w1"), 42)
         .unwrap();
@@ -351,7 +351,7 @@ fn test_add_to_complex_graph() {
     let output = graph.new_add_node(&[wx2, b2], Some("output")).unwrap();
 
     // 添加 loss 节点
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph
         .new_mse_loss_node(output, target, Some("loss"))
         .unwrap();
@@ -379,7 +379,7 @@ fn test_add_to_complex_graph() {
         .unwrap();
 
     // 添加新的 loss 节点
-    let target2 = graph.new_input_node(&[1, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[1, 1], Some("target2")).unwrap();
     let loss2 = graph
         .new_mse_loss_node(combined, target2, Some("loss2"))
         .unwrap();
@@ -413,7 +413,7 @@ fn test_multiple_on_topology_changed_calls() {
         .new_parameter_node_seeded(&[2, 1], Some("b"), 43)
         .unwrap();
     let add = graph.new_add_node(&[a, b], None).unwrap();
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(add, target, Some("loss")).unwrap();
 
     // 设置 target 值
@@ -458,7 +458,7 @@ fn test_add_node_without_explicit_topology_changed() {
         .new_parameter_node_seeded(&[2, 1], Some("b"), 43)
         .unwrap();
     let add1 = graph.new_add_node(&[a, b], None).unwrap();
-    let target1 = graph.new_input_node(&[2, 1], Some("target1")).unwrap();
+    let target1 = graph.new_basic_input_node(&[2, 1], Some("target1")).unwrap();
     let loss1 = graph
         .new_mse_loss_node(add1, target1, Some("loss1"))
         .unwrap();
@@ -474,7 +474,7 @@ fn test_add_node_without_explicit_topology_changed() {
         .new_parameter_node_seeded(&[2, 1], Some("c"), 44)
         .unwrap();
     let add2 = graph.new_add_node(&[add1, c], None).unwrap();
-    let target2 = graph.new_input_node(&[2, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[2, 1], Some("target2")).unwrap();
     let loss2 = graph
         .new_mse_loss_node(add2, target2, Some("loss2"))
         .unwrap();
@@ -527,7 +527,7 @@ fn test_neat_add_node_mutation_simulation() {
     let mut graph = GraphInner::new();
 
     // 1. 初始网络: input -> hidden -> output
-    let input = graph.new_input_node(&[2, 1], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 1], Some("input")).unwrap();
     let w1 = graph
         .new_parameter_node_seeded(&[3, 2], Some("w1"), 42)
         .unwrap();
@@ -538,7 +538,7 @@ fn test_neat_add_node_mutation_simulation() {
     let output = graph.new_mat_mul_node(w2, hidden, Some("output")).unwrap();
 
     // 添加 loss 节点
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph
         .new_mse_loss_node(output, target, Some("loss"))
         .unwrap();
@@ -577,7 +577,7 @@ fn test_neat_add_node_mutation_simulation() {
         .unwrap();
 
     // 添加新的 loss 节点
-    let target2 = graph.new_input_node(&[1, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[1, 1], Some("target2")).unwrap();
     let loss2 = graph
         .new_mse_loss_node(final_output, target2, Some("loss2"))
         .unwrap();
@@ -611,7 +611,7 @@ fn test_neat_add_connection_mutation_simulation() {
     let mut graph = GraphInner::new();
 
     // 1. 创建一个有多个并行路径的网络
-    let input = graph.new_input_node(&[2, 1], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 1], Some("input")).unwrap();
 
     // 路径1: input -> w1 -> h1
     let w1 = graph
@@ -633,7 +633,7 @@ fn test_neat_add_connection_mutation_simulation() {
         .unwrap();
 
     // 添加 loss 节点
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph
         .new_mse_loss_node(output, target, Some("loss"))
         .unwrap();
@@ -665,7 +665,7 @@ fn test_neat_add_connection_mutation_simulation() {
         .unwrap();
 
     // 添加新的 loss 节点
-    let target2 = graph.new_input_node(&[2, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[2, 1], Some("target2")).unwrap();
     let loss2 = graph
         .new_mse_loss_node(new_output, target2, Some("loss2"))
         .unwrap();
@@ -702,7 +702,7 @@ fn test_gradient_correctness_after_dynamic_add() {
         .new_parameter_node_seeded(&[2, 1], Some("b"), 43)
         .unwrap();
     let y = graph.new_add_node(&[a, b], Some("y")).unwrap();
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 2. Forward 和 backward
@@ -723,7 +723,7 @@ fn test_gradient_correctness_after_dynamic_add() {
         .new_parameter_node_seeded(&[2, 1], Some("c"), 44)
         .unwrap();
     let z = graph.new_add_node(&[y, c], Some("z")).unwrap();
-    let target2 = graph.new_input_node(&[2, 1], Some("target2")).unwrap();
+    let target2 = graph.new_basic_input_node(&[2, 1], Some("target2")).unwrap();
     let loss2 = graph.new_mse_loss_node(z, target2, Some("loss2")).unwrap();
 
     // 4. 清除旧梯度

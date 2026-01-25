@@ -24,7 +24,7 @@ fn test_leaky_relu_creation() {
 
     // 1. Input 节点作为父节点（默认 slope=0.1）
     {
-        let input = graph.new_input_node(&[2, 2], Some("input1")).unwrap();
+        let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
         let relu = graph
             .new_leaky_relu_node(input, 0.1, Some("leaky_relu_input"))
             .unwrap();
@@ -49,7 +49,7 @@ fn test_leaky_relu_creation() {
 
     // 3. 标准 ReLU (slope=0)
     {
-        let input = graph.new_input_node(&[2, 2], Some("input2")).unwrap();
+        let input = graph.new_basic_input_node(&[2, 2], Some("input2")).unwrap();
         let relu = graph.new_relu_node(input, Some("standard_relu")).unwrap();
 
         assert_eq!(graph.get_node_name(relu).unwrap(), "standard_relu");
@@ -61,7 +61,7 @@ fn test_leaky_relu_creation() {
 fn test_leaky_relu_name_generation() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
 
     // 1. 显式命名
     let relu1 = graph
@@ -85,7 +85,7 @@ fn test_leaky_relu_name_generation() {
 #[test]
 fn test_leaky_relu_invalid_slope() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
 
     // 负的 negative_slope 应该失败
     let result = graph.new_leaky_relu_node(input, -0.1, Some("invalid_relu"));
@@ -96,7 +96,7 @@ fn test_leaky_relu_invalid_slope() {
 #[test]
 fn test_leaky_relu_cannot_set_value() {
     let mut graph = GraphInner::new();
-    let input = graph.new_input_node(&[2, 2], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
     let relu = graph.new_leaky_relu_node(input, 0.1, Some("relu")).unwrap();
 
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
@@ -353,7 +353,7 @@ fn test_leaky_relu_backward_e2e() -> Result<(), GraphError> {
     let result = graph.new_leaky_relu_node(input, 0.1, Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值：input = [[0.5, -1.0], [0.0, 2.0]], target = [[0, 0], [0, 0]]
@@ -404,7 +404,7 @@ fn test_leaky_relu_backward_e2e_chain() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 构建网络: output = leaky_relu(w @ x + b)
-    let x = graph.new_input_node(&[2, 1], Some("x"))?;
+    let x = graph.new_basic_input_node(&[2, 1], Some("x"))?;
     let w = graph.new_parameter_node(&[2, 2], Some("w"))?;
     let b = graph.new_parameter_node(&[2, 1], Some("b"))?;
     let wx = graph.new_mat_mul_node(w, x, Some("wx"))?;
@@ -412,7 +412,7 @@ fn test_leaky_relu_backward_e2e_chain() -> Result<(), GraphError> {
     let output = graph.new_leaky_relu_node(z, 0.1, Some("output"))?;
 
     // loss = MSE(output, target)
-    let target = graph.new_input_node(&[2, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     // 设置输入
@@ -443,7 +443,7 @@ fn test_leaky_relu_backward_e2e_mlp() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 构建简单 MLP: x -> Linear -> LeakyReLU -> Linear -> output
-    let x = graph.new_input_node(&[2, 1], Some("x"))?;
+    let x = graph.new_basic_input_node(&[2, 1], Some("x"))?;
     let w1 = graph.new_parameter_node(&[3, 2], Some("w1"))?;
     let b1 = graph.new_parameter_node(&[3, 1], Some("b1"))?;
 
@@ -455,7 +455,7 @@ fn test_leaky_relu_backward_e2e_mlp() -> Result<(), GraphError> {
     let output = graph.new_mat_mul_node(w2, a1, Some("output"))?; // [1, 1]
 
     // loss = MSE(output, target)
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     // 设置输入
@@ -488,7 +488,7 @@ fn test_leaky_relu_gradient_accumulation() -> Result<(), GraphError> {
 
     let input = graph.new_parameter_node(&[2, 2], Some("input"))?;
     let result = graph.new_leaky_relu_node(input, 0.1, Some("result"))?;
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值

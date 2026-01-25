@@ -57,7 +57,7 @@ fn test_state_not_trainable() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建各种节点
-    let input = graph.new_input_node(&[1, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 4], Some("input"))?;
     let state = graph.new_state_node(&[1, 4], Some("hidden"))?;
     let param = graph.new_parameter_node(&[4, 4], Some("weight"))?;
 
@@ -92,7 +92,7 @@ fn test_state_accepts_grad() -> Result<(), GraphError> {
     let add = graph.new_add_node(&[state, param], Some("add"))?;
 
     // 添加 target 和 loss 节点（VJP 模式需要标量 loss）
-    let target = graph.new_input_node(&[1, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 2], Some("target"))?;
     graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
     let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
 
@@ -122,7 +122,7 @@ fn test_input_has_no_grad() -> Result<(), GraphError> {
     graph.set_train_mode();
 
     // 创建网络：input -> add -> loss
-    let input = graph.new_input_node(&[1, 2], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 2], Some("input"))?;
     graph.set_node_value(input, Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
 
     let param = graph.new_parameter_node(&[1, 2], Some("param"))?;
@@ -131,7 +131,7 @@ fn test_input_has_no_grad() -> Result<(), GraphError> {
     let add = graph.new_add_node(&[input, param], Some("add"))?;
 
     // 添加 target 和 loss 节点
-    let target = graph.new_input_node(&[1, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 2], Some("target"))?;
     graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
     let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
 
@@ -182,7 +182,7 @@ fn test_state_in_rnn_structure() -> Result<(), GraphError> {
     graph.set_train_mode();
 
     // 简单 RNN: hidden_t = tanh(h_prev + input * W)
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     let w = graph.new_parameter_node(&[1, 1], Some("W"))?;
 
@@ -201,7 +201,7 @@ fn test_state_in_rnn_structure() -> Result<(), GraphError> {
     let hidden = graph.new_tanh_node(pre_hidden, Some("hidden"))?;
 
     // 添加 target 和 loss（VJP 模式需要标量 loss）
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     graph.set_node_value(target, Some(&Tensor::new(&[0.5], &[1, 1])))?;
     let loss = graph.new_mse_loss_node(hidden, target, Some("loss"))?;
 
@@ -229,7 +229,7 @@ fn test_state_with_recurrent_connection() -> Result<(), GraphError> {
     graph.set_train_mode();
 
     // 创建循环网络
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -270,7 +270,7 @@ fn test_state_zero_grad() -> Result<(), GraphError> {
     let add = graph.new_add_node(&[state, param], Some("add"))?;
 
     // 添加 target 和 loss
-    let target = graph.new_input_node(&[1, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 2], Some("target"))?;
     graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
     let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
 
@@ -299,7 +299,7 @@ fn test_state_zero_grad() -> Result<(), GraphError> {
 fn test_state_reset_behavior() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
     graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -387,7 +387,7 @@ fn test_state_dimension_validation() {
 fn test_state_used_without_value() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 1], Some("state"))?;
     // 故意不设置 state 的值
 
@@ -416,7 +416,7 @@ fn test_state_without_recurrent_connection() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 1], Some("state"))?;
     graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -439,7 +439,7 @@ fn test_state_without_recurrent_connection() -> Result<(), GraphError> {
 fn test_duplicate_recurrent_connection_error() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 1], Some("state"))?;
     graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -467,7 +467,7 @@ fn test_state_grad_in_bptt() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
     graph.set_train_mode();
 
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 1], Some("state"))?;
     graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -479,7 +479,7 @@ fn test_state_grad_in_bptt() -> Result<(), GraphError> {
     let hidden = graph.new_tanh_node(add, None)?;
     let output = graph.new_mat_mul_node(hidden, w, Some("output"))?;
 
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     graph.connect_recurrent(hidden, state)?;
@@ -507,7 +507,7 @@ fn test_state_shape_mismatch_recurrent() -> Result<(), GraphError> {
 
     // 使用无法广播的形状：[2, 3] 和 [2, 4]
     // 第二维 3 != 4 且都不是 1，无法广播
-    let input = graph.new_input_node(&[2, 3], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 3], Some("input"))?;
     let state = graph.new_state_node(&[2, 4], Some("state"))?;
     graph.set_node_value(state, Some(&Tensor::zeros(&[2, 4])))?;
 
@@ -524,7 +524,7 @@ fn test_zero_grad_on_state() -> Result<(), GraphError> {
     graph.set_train_mode();
 
     // 构建一个会产生 State grad 的网络
-    let input = graph.new_input_node(&[1, 1], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
     let state = graph.new_state_node(&[1, 1], Some("state"))?;
     graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
 
@@ -535,7 +535,7 @@ fn test_zero_grad_on_state() -> Result<(), GraphError> {
     let hidden = graph.new_tanh_node(add, None)?;
     let output = graph.new_mat_mul_node(hidden, w, Some("output"))?;
 
-    let target = graph.new_input_node(&[1, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
     graph.connect_recurrent(hidden, state)?;
@@ -626,7 +626,7 @@ fn test_state_dynamic_batch_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建网络：state + input -> add -> tanh -> output
-    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
     let state = graph.new_state_node(&[2, 4], Some("state"))?;
 
     // 设置初始值
@@ -661,7 +661,7 @@ fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
 
     // 创建网络：input * weight + state -> output -> loss
     // 其中 input 和 state 支持动态 batch，weight 是固定形状的 Parameter
-    let input = graph.new_input_node(&[2, 4], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
     let state = graph.new_state_node(&[2, 4], Some("state"))?;
     let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?; // 固定形状 [4, 4]
 
@@ -674,7 +674,7 @@ fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
     let add = graph.new_add_node(&[proj, state], Some("add"))?;
     let output = graph.new_tanh_node(add, Some("output"))?;
 
-    let target = graph.new_input_node(&[2, 4], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
     graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
     let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 

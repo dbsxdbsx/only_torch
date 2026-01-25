@@ -6,8 +6,8 @@ fn test_forward_with_partial_forward_propagation() {
     let mut graph = GraphInner::new();
 
     // 1. 创建计算图：z = x + y, w = x + y (两个节点都依赖同样的add操作)
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
-    let y = graph.new_input_node(&[2, 1], Some("y")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
+    let y = graph.new_basic_input_node(&[2, 1], Some("y")).unwrap();
     let add1 = graph.new_add_node(&[x, y], Some("add1")).unwrap();
     let add2 = graph.new_add_node(&[x, y], Some("add2")).unwrap();
 
@@ -103,7 +103,7 @@ fn test_forward_pass_id_increment() {
     let mut graph = GraphInner::new();
 
     // 1. 创建简单的计算图：y = x + b
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let b = graph.new_parameter_node(&[2, 1], Some("b")).unwrap();
     let y = graph.new_add_node(&[x, b], Some("y")).unwrap();
 
@@ -134,7 +134,7 @@ fn test_pass_id_rollback_on_forward_error() {
     let mut graph = GraphInner::new();
 
     // 1. 创建计算图：y = x + b
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let b = graph.new_parameter_node(&[2, 1], Some("b")).unwrap();
     let y = graph.new_add_node(&[x, b], Some("y")).unwrap();
 

@@ -19,7 +19,7 @@ impl SineMLP {
         Ok(Self {
             fc1: Linear::new(graph, 1, 32, true, "fc1")?,
             fc2: Linear::new(graph, 32, 1, true, "fc2")?,
-            state: ModelState::new(graph),
+            state: ModelState::new_for::<Self>(graph),
         })
     }
 

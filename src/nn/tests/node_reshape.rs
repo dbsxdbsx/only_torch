@@ -17,7 +17,7 @@ fn test_reshape_basic_2x3_to_3x2() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建输入节点 [2, 3]
-    let input = graph.new_input_node(&[2, 3], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 3], Some("input"))?;
 
     // Reshape 到 [3, 2]
     let reshaped = graph.new_reshape_node(input, &[3, 2], Some("reshaped"))?;
@@ -47,7 +47,7 @@ fn test_reshape_preserves_row_major_order() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 创建 1x6 输入
-    let input = graph.new_input_node(&[1, 6], Some("input"))?;
+    let input = graph.new_basic_input_node(&[1, 6], Some("input"))?;
     let reshaped = graph.new_reshape_node(input, &[2, 3], Some("reshaped"))?;
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 6]);
@@ -66,7 +66,7 @@ fn test_reshape_preserves_row_major_order() -> Result<(), GraphError> {
 fn test_reshape_to_column_vector() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 3], Some("input"))?;
+    let input = graph.new_basic_input_node(&[2, 3], Some("input"))?;
     let reshaped = graph.new_reshape_node(input, &[6, 1], Some("column"))?;
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
@@ -88,7 +88,7 @@ fn test_reshape_to_column_vector() -> Result<(), GraphError> {
 fn test_reshape_to_row_vector() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[3, 2], Some("input"))?;
+    let input = graph.new_basic_input_node(&[3, 2], Some("input"))?;
     let reshaped = graph.new_reshape_node(input, &[1, 6], Some("row"))?;
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
@@ -173,7 +173,7 @@ fn test_reshape_backward_e2e() -> Result<(), GraphError> {
     let sigmoid = graph.new_sigmoid_node(reshaped, Some("sigmoid"))?;
 
     // loss = MSE(sigmoid, target)
-    let target = graph.new_input_node(&[3, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[3, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(sigmoid, target, Some("loss"))?;
 
     // 设置值
@@ -208,7 +208,7 @@ fn test_reshape_batch_forward() -> Result<(), GraphError> {
     let batch_size = 4;
 
     // 输入形状: [batch, 6]
-    let input = graph.new_input_node(&[batch_size, 6], Some("input"))?;
+    let input = graph.new_basic_input_node(&[batch_size, 6], Some("input"))?;
     // Reshape 到: [2, 12]
     let reshaped = graph.new_reshape_node(input, &[2, 12], Some("reshaped"))?;
 
@@ -247,7 +247,7 @@ fn test_reshape_gradient_accumulation() -> Result<(), GraphError> {
     let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
     let reshaped = graph.new_reshape_node(input, &[3, 2], Some("reshaped"))?;
     let sigmoid = graph.new_sigmoid_node(reshaped, Some("sigmoid"))?;
-    let target = graph.new_input_node(&[3, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[3, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(sigmoid, target, Some("loss"))?;
 
     // 设置值
@@ -284,7 +284,7 @@ fn test_reshape_gradient_accumulation() -> Result<(), GraphError> {
 fn test_reshape_shape_mismatch_error() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
 
     // 尝试 reshape 到元素数量不匹配的形状
     let result = graph.new_reshape_node(input, &[2, 2], Some("bad_reshape"));
@@ -298,7 +298,7 @@ fn test_reshape_shape_mismatch_error() {
 fn test_reshape_empty_shape_error() {
     let mut graph = GraphInner::new();
 
-    let input = graph.new_input_node(&[2, 3], Some("input")).unwrap();
+    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
 
     // 尝试 reshape 到空形状
     let result = graph.new_reshape_node(input, &[], Some("empty_reshape"));
@@ -314,8 +314,8 @@ fn test_reshape_with_add() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     // 两个输入，形状不同但 reshape 后相同
-    let a = graph.new_input_node(&[2, 3], Some("a"))?;
-    let b = graph.new_input_node(&[3, 2], Some("b"))?;
+    let a = graph.new_basic_input_node(&[2, 3], Some("a"))?;
+    let b = graph.new_basic_input_node(&[3, 2], Some("b"))?;
 
     // 将 a reshape 为 [3, 2]
     let a_reshaped = graph.new_reshape_node(a, &[3, 2], Some("a_reshaped"))?;
@@ -402,7 +402,7 @@ fn test_reshape_as_flatten_in_mlp() -> Result<(), GraphError> {
     let num_classes = 3;
 
     // 输入（假设是 CNN 输出已经展平）
-    let x = graph.new_input_node(&[batch_size, cnn_features], Some("cnn_out"))?;
+    let x = graph.new_basic_input_node(&[batch_size, cnn_features], Some("cnn_out"))?;
 
     // 全连接层
     let w1 = graph.new_parameter_node(&[cnn_features, hidden_size], Some("w1"))?;
@@ -413,7 +413,7 @@ fn test_reshape_as_flatten_in_mlp() -> Result<(), GraphError> {
     let logits = graph.new_mat_mul_node(h_act, w2, Some("logits"))?;
 
     // 标签
-    let labels = graph.new_input_node(&[batch_size, num_classes], Some("labels"))?;
+    let labels = graph.new_basic_input_node(&[batch_size, num_classes], Some("labels"))?;
     let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
 
     // 设置数据
@@ -446,13 +446,13 @@ fn test_reshape_single_sample_backward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);
 
     // 简单网络: Input [1,6] -> Reshape [2,3] -> MatMul [2,3]@[3,1]=[2,1] -> MSE
-    let x = graph.new_input_node(&[1, 6], Some("x"))?;
+    let x = graph.new_basic_input_node(&[1, 6], Some("x"))?;
     let reshaped = graph.new_reshape_node(x, &[2, 3], Some("reshaped"))?;
     let w = graph.new_parameter_node_seeded(&[3, 1], Some("w"), 100)?;
     let y = graph.new_mat_mul_node(reshaped, w, Some("y"))?;
 
     // 使用 MSE loss
-    let target = graph.new_input_node(&[2, 1], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 1], Some("target"))?;
     let loss = graph.new_mse_loss_node(y, target, Some("loss"))?;
 
     // 设置输入

@@ -38,7 +38,8 @@ impl Generator {
         Ok(Self {
             fc1: Linear::new(graph, LATENT_DIM, HIDDEN_DIM, true, "g_fc1")?,
             fc2: Linear::new(graph, HIDDEN_DIM, IMAGE_DIM, true, "g_fc2")?,
-            state: ModelState::new(graph),
+            // 使用自动反射获取类型名 "Generator" 作为分组名
+            state: ModelState::new_for::<Self>(graph),
         })
     }
 
@@ -78,7 +79,8 @@ impl Discriminator {
         Ok(Self {
             fc1: Linear::new(graph, IMAGE_DIM, HIDDEN_DIM, true, "d_fc1")?,
             fc2: Linear::new(graph, HIDDEN_DIM, 1, true, "d_fc2")?,
-            state: ModelState::new(graph),
+            // 使用自定义名称 "D" 作为分组名
+            state: ModelState::new(graph).named("D"),
         })
     }
 

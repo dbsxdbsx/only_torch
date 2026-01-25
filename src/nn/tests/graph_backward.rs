@@ -10,12 +10,12 @@ fn test_node_grad_retrieval() {
     let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = wx + b
-    let x = graph.new_input_node(&[3, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[3, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 3], Some("w")).unwrap();
     let b = graph.new_parameter_node(&[1, 1], Some("b")).unwrap();
     let wx = graph.new_mat_mul_node(w, x, None).unwrap();
     let y = graph.new_add_node(&[wx, b], None).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 2. 测试未计算时的梯度获取
@@ -72,10 +72,10 @@ fn test_node_grad_computation() {
     let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = wx
-    let x = graph.new_input_node(&[3, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[3, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 3], Some("w")).unwrap();
     let y = graph.new_mat_mul_node(w, x, None).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 2. 设置输入值并进行前向和反向传播
@@ -111,10 +111,10 @@ fn test_continuous_backward_grad_accumulation() {
     let mut graph = GraphInner::new();
 
     // 创建计算图：loss = MSE(y, target)，其中 y = x + b
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let b = graph.new_parameter_node(&[2, 1], Some("b")).unwrap();
     let y = graph.new_add_node(&[x, b], Some("y")).unwrap();
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 设置输入值
@@ -187,12 +187,12 @@ fn test_backward_without_any_forward() {
     let mut graph = GraphInner::new();
 
     // 创建计算图：loss = MSE(y, target)，其中 y = wx + b
-    let x = graph.new_input_node(&[3, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[3, 1], Some("x")).unwrap();
     let w = graph.new_parameter_node(&[1, 3], Some("w")).unwrap();
     let b = graph.new_parameter_node(&[1, 1], Some("b")).unwrap();
     let wx = graph.new_mat_mul_node(w, x, Some("wx")).unwrap();
     let y = graph.new_add_node(&[wx, b], Some("y")).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 设置输入值，但不进行任何前向传播
@@ -238,8 +238,8 @@ fn test_backward_with_partial_forward_propagation() {
     // 结构：
     //   a -> left_add -> z -> loss (参与前向传播)
     //   a -> new_add (不参与前向传播)
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
-    let y = graph.new_input_node(&[2, 1], Some("y")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
+    let y = graph.new_basic_input_node(&[2, 1], Some("y")).unwrap();
     let a = graph.new_parameter_node(&[2, 1], Some("a")).unwrap();
     let b = graph.new_parameter_node(&[2, 1], Some("b")).unwrap();
     let c = graph.new_parameter_node(&[2, 1], Some("c")).unwrap();
@@ -251,7 +251,7 @@ fn test_backward_with_partial_forward_propagation() {
         .unwrap();
 
     // 添加 loss 节点
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(z, target, Some("loss")).unwrap();
 
     // 创建一个不参与主计算路径的分支
@@ -308,10 +308,10 @@ fn test_backward_pass_id_increment() {
     let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = x + b
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let b = graph.new_parameter_node(&[2, 1], Some("b")).unwrap();
     let y = graph.new_add_node(&[x, b], Some("y")).unwrap();
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 2. 初始状态：pass_id应该为0
@@ -346,12 +346,12 @@ fn test_node_pass_id_synchronization() {
     let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(z, target)，其中 z = (x + y) * w
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
-    let y = graph.new_input_node(&[2, 1], Some("y")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
+    let y = graph.new_basic_input_node(&[2, 1], Some("y")).unwrap();
     let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
     let add = graph.new_add_node(&[x, y], Some("add")).unwrap();
     let z = graph.new_mat_mul_node(w, add, Some("z")).unwrap();
-    let target = graph.new_input_node(&[1, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(z, target, Some("loss")).unwrap();
 
     // 2. 设置输入值
@@ -429,10 +429,10 @@ fn test_pass_id_rollback_on_backward_error() {
     let mut graph = GraphInner::new();
 
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = x + b
-    let x = graph.new_input_node(&[2, 1], Some("x")).unwrap();
+    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
     let b = graph.new_parameter_node(&[2, 1], Some("b")).unwrap();
     let y = graph.new_add_node(&[x, b], Some("y")).unwrap();
-    let target = graph.new_input_node(&[2, 1], Some("target")).unwrap();
+    let target = graph.new_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
 
     // 2. 设置输入值但不对 loss 进行前向传播（只对 y 进行前向传播）

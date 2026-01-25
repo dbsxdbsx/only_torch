@@ -19,7 +19,7 @@
 <details>
 <summary>📊 MNIST GAN 计算图示例（点击展开）</summary>
 
-![MNIST GAN 计算图](tests/outputs/mnist_gan.png)
+![MNIST GAN 计算图](examples/mnist_gan/mnist_gan.png)
 
 > Generator + Discriminator 共 210,065 参数，展示 `detach` 梯度控制与多 Loss 训练
 

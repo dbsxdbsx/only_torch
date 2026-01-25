@@ -64,9 +64,10 @@ pub trait ForwardInput {
 
     /// 是否处于 detached 状态
     ///
-    /// - Tensor: 总是 true（没有梯度流）
-    /// - Var: 取决于 Var 是否被 detach
-    fn is_detached(&self) -> bool;
+    /// - `None`: 这个输入本身没有梯度流概念（如 Tensor），问它是否 detach 没有意义
+    /// - `Some(true)`: 被显式 detach（如 DetachedVar）
+    /// - `Some(false)`: 正常传播梯度（如 Var）
+    fn is_detached(&self) -> Option<bool>;
 
     /// 如果是 Var，返回其 NodeId（用于梯度路由）
     fn var_node_id(&self) -> Option<NodeId>;
@@ -81,8 +82,8 @@ impl ForwardInput for &Tensor {
         Ok((*self).clone())
     }
 
-    fn is_detached(&self) -> bool {
-        true // Tensor 没有梯度流
+    fn is_detached(&self) -> Option<bool> {
+        None // Tensor 本身没有梯度流概念
     }
 
     fn var_node_id(&self) -> Option<NodeId> {
@@ -99,8 +100,8 @@ impl ForwardInput for Tensor {
         Ok(self.clone())
     }
 
-    fn is_detached(&self) -> bool {
-        true
+    fn is_detached(&self) -> Option<bool> {
+        None // Tensor 本身没有梯度流概念
     }
 
     fn var_node_id(&self) -> Option<NodeId> {
@@ -124,8 +125,8 @@ impl ForwardInput for &Var {
             .ok_or_else(|| GraphError::ComputationError("Var 计算后仍没有值".to_string()))
     }
 
-    fn is_detached(&self) -> bool {
-        Var::is_detached(self)
+    fn is_detached(&self) -> Option<bool> {
+        Some(false) // Var 正常传播梯度
     }
 
     fn var_node_id(&self) -> Option<NodeId> {
@@ -149,8 +150,8 @@ impl ForwardInput for Var {
             .ok_or_else(|| GraphError::ComputationError("Var 计算后仍没有值".to_string()))
     }
 
-    fn is_detached(&self) -> bool {
-        Self::is_detached(self)
+    fn is_detached(&self) -> Option<bool> {
+        Some(false) // Var 正常传播梯度
     }
 
     fn var_node_id(&self) -> Option<NodeId> {
@@ -178,8 +179,8 @@ impl ForwardInput for &DetachedVar {
             .ok_or_else(|| GraphError::ComputationError("DetachedVar 计算后仍没有值".to_string()))
     }
 
-    fn is_detached(&self) -> bool {
-        true // DetachedVar 始终是 detached
+    fn is_detached(&self) -> Option<bool> {
+        Some(true) // DetachedVar 是用户显式调用 .detach() 创建的
     }
 
     fn var_node_id(&self) -> Option<NodeId> {
@@ -196,8 +197,8 @@ impl ForwardInput for DetachedVar {
         (&self).get_value()
     }
 
-    fn is_detached(&self) -> bool {
-        true
+    fn is_detached(&self) -> Option<bool> {
+        Some(true) // DetachedVar 是用户显式调用 .detach() 创建的
     }
 
     fn var_node_id(&self) -> Option<NodeId> {
@@ -229,11 +230,17 @@ struct StateCache {
 /// - 缓存键只用特征维度（忽略第一维 batch）
 /// - `[256, 64]` 和 `[1, 64]` 复用同一个缓存
 /// - 可视化时 batch 维度显示为 `?`
+///
+/// # 可视化分组
+/// 可以通过 `named()` 或 `new_for::<T>()` 为模型指定名称，
+/// 可视化时会自动将该模型的节点框在一起显示。
 pub struct ModelState {
     graph: Graph,
     /// `按特征形状缓存的子图：feature_shape` -> (router, output)
     /// 注意：缓存键不包含 batch 维度
     cache: RefCell<HashMap<Vec<usize>, StateCache>>,
+    /// 模型名称（用于可视化分组）
+    name: Option<String>,
 }
 
 impl ModelState {
@@ -245,7 +252,54 @@ impl ModelState {
         Self {
             graph: graph.clone(),
             cache: RefCell::new(HashMap::new()),
+            name: None,
         }
+    }
+
+    /// 创建带自动类型名的模型状态管理器
+    ///
+    /// 使用 Rust 反射自动获取类型名称作为模型名称，
+    /// 可视化时会将该模型的节点框在一起显示。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// impl Generator {
+    ///     pub fn new(graph: &Graph) -> Self {
+    ///         Self {
+    ///             // ... layers ...
+    ///             state: ModelState::new_for::<Self>(graph), // 自动使用 "Generator"
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn new_for<T: 'static>(graph: &Graph) -> Self {
+        // 从完整类型路径提取短名称
+        // 例如："mnist_gan::model::Generator" -> "Generator"
+        let full_name = std::any::type_name::<T>();
+        let short_name = full_name.rsplit("::").next().unwrap_or(full_name);
+        Self {
+            graph: graph.clone(),
+            cache: RefCell::new(HashMap::new()),
+            name: Some(short_name.to_string()),
+        }
+    }
+
+    /// 设置模型名称（用于可视化分组）
+    ///
+    /// 可视化时会将该模型的节点框在一起显示。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// state: ModelState::new(graph).named("Discriminator"),
+    /// ```
+    pub fn named(mut self, name: &str) -> Self {
+        self.name = Some(name.to_string());
+        self
+    }
+
+    /// 获取模型名称
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     /// `PyTorch` 风格的 forward（统一缓存 + 梯度路由）
@@ -283,8 +337,15 @@ impl ModelState {
     {
         let full_shape = x.shape();
         let value = x.get_value()?;
-        let is_detached = x.is_detached();
-        let gradient_target = if is_detached { None } else { x.var_node_id() };
+        let detach_status = x.is_detached();
+        // 只有 Some(false)（正常 Var）才需要梯度路由
+        let gradient_target = if detach_status == Some(false) {
+            x.var_node_id()
+        } else {
+            None
+        };
+        // 用于 set_router_detached：None 和 Some(true) 都阻止梯度传播
+        let should_detach = detach_status != Some(false);
 
         // 缓存键策略：统一使用特征维度（忽略第一维 batch）
         //
@@ -307,9 +368,12 @@ impl ModelState {
             c.router.set_value(&value)?;
 
             // 2. 设置 GradientRouter 的 detached 状态
-            self.graph
-                .inner_mut()
-                .set_router_detached(c.router.node_id(), is_detached)?;
+            // detach_status == Some(true) 表示显式 detach，需要标记 was_ever_detached
+            self.graph.inner_mut().set_router_detached(
+                c.router.node_id(),
+                should_detach,
+                detach_status == Some(true),
+            )?;
 
             // 3. 设置梯度路由目标
             self.graph
@@ -326,20 +390,23 @@ impl ModelState {
 
         // 1. 创建 GradientRouter 作为模型入口
         // 使用完整形状创建（包含首次调用时的 batch_size），
-        // 但缓存键使用特征形状，所以不同 batch_size 会复用同一个 GradientRouter
+        // 但缓存键使用特征形状，所以不同 batch_size 会复用同一个 SmartInput
         let router_id = self
             .graph
             .inner_mut()
-            .new_gradient_router_node(&full_shape, None)?;
+            .new_smart_input_node(&full_shape, None)?;
         let router = Var::new(router_id, self.graph.inner_rc());
 
         // 2. 设置初始值（包含实际的 batch_size）
         router.set_value(&value)?;
 
         // 3. 设置 detached 状态和梯度路由目标
-        self.graph
-            .inner_mut()
-            .set_router_detached(router_id, is_detached)?;
+        // detach_status == Some(true) 表示显式 detach，需要标记 was_ever_detached
+        self.graph.inner_mut().set_router_detached(
+            router_id,
+            should_detach,
+            detach_status == Some(true),
+        )?;
         self.graph
             .inner_mut()
             .set_gradient_target(router_id, gradient_target)?;
@@ -350,7 +417,14 @@ impl ModelState {
         // 5. 触发前向传播
         output.forward()?;
 
-        // 6. 缓存（使用特征形状作为键）
+        // 6. 注册模型分组（如果有名称）
+        if let Some(ref name) = self.name {
+            self.graph
+                .inner_mut()
+                .register_model_group(name, router_id, output.node_id())?;
+        }
+
+        // 7. 缓存（使用特征形状作为键）
         cache.insert(
             feature_shape,
             StateCache {

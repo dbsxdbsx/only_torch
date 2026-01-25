@@ -127,6 +127,32 @@ impl Gru {
         )?;
         let b_n = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_n"))?;
 
+        // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
+        // GRU 每个时间步的节点数：20
+        // - select: 1
+        // - 重置门: 2 matmul + 2 add + 1 sigmoid = 5
+        // - 更新门: 2 matmul + 2 add + 1 sigmoid = 5
+        // - 候选状态: 2 matmul + 1 multiply + 2 add + 1 tanh = 6
+        // - 隐藏更新: 1 subtract + 1 multiply + 1 add = 3
+        // 总计: 1+5+5+6+3 = 20
+        graph.inner_mut().register_recurrent_layer_meta(
+            name,
+            "GRU",
+            &format!("[?, {input_size}] → [?, {hidden_size}]"),
+            vec![
+                w_ir.node_id(),
+                w_hr.node_id(),
+                b_r.node_id(),
+                w_iz.node_id(),
+                w_hz.node_id(),
+                b_z.node_id(),
+                w_in.node_id(),
+                w_hn.node_id(),
+                b_n.node_id(),
+            ],
+            20, // nodes_per_step
+        );
+
         Ok(Self {
             w_ir,
             w_hr,
@@ -190,17 +216,31 @@ impl Gru {
     }
 
     /// 展开 GRU 时间步
+    ///
+    /// 计算逻辑与可视化信息收集完全分离：
+    /// - 此方法只做计算 + 记录最少的必要信息（4 个节点 ID + 1 个数值）
+    /// - 完整的分组信息在 `save_visualization` 时惰性推断
     fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
         // 创建初始隐藏状态（ZerosLike：根据 x 的 batch_size 动态生成）
         // 注意：每次 forward 都创建新的 ZerosLike 节点，确保与当前输入的 batch_size 匹配
         // 这对于变长序列处理（不同桶有不同 batch_size）是必需的
         let h0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
+        let init_state_node_ids = vec![h0.node_id()]; // GRU 只有一个初始状态
         let mut h = h0;
+
+        // 记录第一个时间步的信息（用于惰性推断）
+        let mut first_step_start_id = None;
+        let mut repr_output_node_ids = Vec::new();
 
         // 展开所有时间步
         for t in 0..seq_len {
             // 选择第 t 个时间步: x_t = x[:, t, :] -> [batch, input_size]
             let x_t = x.select(1, t)?;
+
+            // 记录第一个时间步的起始节点 ID
+            if t == 0 {
+                first_step_start_id = Some(x_t.node_id());
+            }
 
             // === 重置门 ===
             // r_t = σ(x_t @ W_ir + h @ W_hr + b_r)
@@ -227,7 +267,26 @@ impl Gru {
             let h_minus_n = &h - &n_gate;
             let z_diff = &z_gate * &h_minus_n;
             h = &n_gate + &z_diff;
+
+            // 记录第一个时间步的输出节点 ID（GRU 只有 h）
+            if t == 0 {
+                repr_output_node_ids.push(h.node_id());
+            }
         }
+
+        // 更新循环层的展开信息（只记录几个节点 ID + 1 个数值，几乎零开销）
+        use crate::nn::graph::RecurrentUnrollInfo;
+        self.graph.inner_mut().update_recurrent_layer_unroll_info(
+            &self.name,
+            RecurrentUnrollInfo {
+                steps: seq_len,
+                input_node_id: x.node_id(),
+                init_state_node_ids,
+                first_step_start_id: first_step_start_id.unwrap(),
+                repr_output_node_ids,
+                real_output_node_id: h.node_id(),
+            },
+        );
 
         Ok(h)
     }

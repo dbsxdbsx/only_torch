@@ -1,32 +1,84 @@
 digraph Model {
     rankdir=TB;
+    newrank=true;
+    splines=ortho;
     node [fontname="Microsoft YaHei,SimHei,Arial"];
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
-    "1" [label=<g_fc1_W<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    "2" [label=<g_fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    "3" [label=<g_fc2_W<BR/><B>Parameter</B><BR/>[128, 784]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    "4" [label=<g_fc2_b<BR/><B>Parameter</B><BR/>[1, 784]<BR/>(784 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    "5" [label=<d_fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    "6" [label=<d_fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    "7" [label=<d_fc2_W<BR/><B>Parameter</B><BR/>[128, 1]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    "8" [label=<d_fc2_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    "9" [label=<router_1<BR/><B>GradientRouter</B><BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#F5F5F5" fontsize=10];
-    "10" [label=<mat_mul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "11" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "12" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>α=0.2> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "13" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "14" [label=<add_2<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "15" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "16" [label=<input_1<BR/><B>Input</B><BR/>[256, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "17" [label=<mse_loss_1<BR/><B>MSELoss</B><BR/>[?, 1]> shape=doubleoctagon style=filled fillcolor="#FFEBEE" fontsize=10];
-    "18" [label=<router_2<BR/><B>GradientRouter</B><BR/>[?, 64]> shape=ellipse style="filled,dashed" fillcolor="#F5F5F5" fontsize=10];
-    "19" [label=<mat_mul_3<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "20" [label=<add_3<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "21" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>α=0.2> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "22" [label=<mat_mul_4<BR/><B>MatMul</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "23" [label=<add_4<BR/><B>Add</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "24" [label=<sigmoid_2<BR/><B>Sigmoid</B><BR/>[?, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    subgraph cluster_D {
+        label=<<B>D</B><BR/><FONT POINT-SIZE="9">Model: 11 nodes</FONT>>;
+        style=filled;
+        fillcolor="#FFECB340";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        subgraph cluster_D_d_fc1 {
+            label=<<B>d_fc1</B><BR/><FONT POINT-SIZE="8">Linear: [?, 784] → [?, 128]</FONT>>;
+            style=filled;
+            fillcolor="#E3F2FD80";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "5" [label=<d_fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "6" [label=<d_fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "10" [label=<mat_mul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "11" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+        subgraph cluster_D_d_fc2 {
+            label=<<B>d_fc2</B><BR/><FONT POINT-SIZE="8">Linear: [?, 128] → [?, 1]</FONT>>;
+            style=filled;
+            fillcolor="#E8F5E980";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "7" [label=<d_fc2_W<BR/><B>Parameter</B><BR/>[128, 1]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "8" [label=<d_fc2_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "13" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "14" [label=<add_2<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+        "9" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
+        "12" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>α=0.2> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "15" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    }
+
+    subgraph cluster_Generator {
+        label=<<B>Generator</B><BR/><FONT POINT-SIZE="9">Model: 11 nodes</FONT>>;
+        style=filled;
+        fillcolor="#FFCCBC40";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        subgraph cluster_Generator_g_fc1 {
+            label=<<B>g_fc1</B><BR/><FONT POINT-SIZE="8">Linear: [?, 64] → [?, 128]</FONT>>;
+            style=filled;
+            fillcolor="#FFF3E080";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "1" [label=<g_fc1_W<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "2" [label=<g_fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "19" [label=<mat_mul_3<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "20" [label=<add_3<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+        subgraph cluster_Generator_g_fc2 {
+            label=<<B>g_fc2</B><BR/><FONT POINT-SIZE="8">Linear: [?, 128] → [?, 784]</FONT>>;
+            style=filled;
+            fillcolor="#F3E5F580";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "3" [label=<g_fc2_W<BR/><B>Parameter</B><BR/>[128, 784]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "4" [label=<g_fc2_b<BR/><B>Parameter</B><BR/>[1, 784]<BR/>(784 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "22" [label=<mat_mul_4<BR/><B>MatMul</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "23" [label=<add_4<BR/><B>Add</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+        "18" [label=<input_2<BR/><B>SmartInput</B><BR/>[?, 64]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+        "21" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>α=0.2> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "24" [label=<sigmoid_2<BR/><B>Sigmoid</B><BR/>[?, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    }
+
+    "16" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "17" [label=<mse_loss_1<BR/><B>MSELoss</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
 
     "9" -> "10";
     "5" -> "10";
@@ -50,4 +102,5 @@ digraph Model {
     "22" -> "23";
     "4" -> "23";
     "23" -> "24";
+    "24" -> "9" [style=dashed color="#1565C0" label="data flow" fontcolor="#1565C0" fontsize=9];
 }

@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, AvgPool2d, Conv2d, Divide, Flatten, GradientRouter, Identity, Input, LeakyReLU, MSELoss,
-    MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus,
-    Softmax, SoftmaxCrossEntropy, State, Step, Subtract, Tanh, ZerosLike,
+    Add, AvgPool2d, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MSELoss, MatMul,
+    MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus, Softmax,
+    SoftmaxCrossEntropy, State, Step, Subtract, Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -108,8 +108,20 @@ impl NodeHandle {
         self.raw_node.clear_value()
     }
 
-    pub(in crate::nn) fn new_input(shape: &[usize]) -> Result<Self, GraphError> {
-        let input = Input::new(shape)?;
+    /// 创建基本输入节点（Data 变体）
+    pub(in crate::nn) fn new_basic_input(shape: &[usize]) -> Result<Self, GraphError> {
+        let input = InputVariant::new_data(shape)?;
+        Ok(Self {
+            raw_node: NodeType::Input(input),
+            last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
+            is_detached: false,
+        })
+    }
+
+    /// 创建目标输入节点（Target 变体，用于 Loss 的目标值）
+    pub(in crate::nn) fn new_target_input(shape: &[usize]) -> Result<Self, GraphError> {
+        let input = InputVariant::new_target(shape)?;
         Ok(Self {
             raw_node: NodeType::Input(input),
             last_forward_pass_id: 0,
@@ -263,59 +275,68 @@ impl NodeHandle {
         Self::new(Identity::new(parents)?)
     }
 
-    /// 创建 `GradientRouter` 节点（梯度路由器）
+    /// 创建 SmartInput 节点（智能输入）
     ///
-    /// `GradientRouter` 用于 `ModelState` 的智能缓存机制，支持：
+    /// SmartInput 用于 ModelState 的智能缓存机制，支持：
     /// - 动态设置 detached 状态
     /// - 梯度路由到外部目标节点
-    pub(in crate::nn) fn new_gradient_router(shape: &[usize]) -> Result<Self, GraphError> {
+    /// - 动态 batch
+    pub(in crate::nn) fn new_smart_input(shape: &[usize]) -> Result<Self, GraphError> {
         Ok(Self {
-            raw_node: NodeType::GradientRouter(GradientRouter::new(shape)),
+            raw_node: NodeType::Input(InputVariant::new_smart(shape)),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             is_detached: false,
         })
     }
 
-    /// 设置 `GradientRouter` 的 detached 状态
+    /// 设置 SmartInput 的 detached 状态
+    ///
+    /// # 参数
+    /// - `detached`: 是否阻止梯度传播
+    /// - `mark_ever_detached`: 是否标记 was_ever_detached（用于可视化显示虚线边框）
     ///
     /// # 返回
-    /// 如果节点不是 GradientRouter，返回错误
-    pub(in crate::nn) fn set_router_detached(&mut self, detached: bool) -> Result<(), GraphError> {
-        if let NodeType::GradientRouter(router) = &self.raw_node {
-            router.set_detached(detached);
+    /// 如果节点不是 SmartInput，返回错误
+    pub(in crate::nn) fn set_router_detached(
+        &mut self,
+        detached: bool,
+        mark_ever_detached: bool,
+    ) -> Result<(), GraphError> {
+        if let NodeType::Input(InputVariant::Smart(smart)) = &self.raw_node {
+            smart.set_detached(detached, mark_ever_detached);
             Ok(())
         } else {
             Err(GraphError::InvalidOperation(format!(
-                "{} 不是 GradientRouter 节点",
+                "{} 不是 SmartInput 节点",
                 self.raw_node.display_node()
             )))
         }
     }
 
-    /// 设置 `GradientRouter` 的梯度路由目标
+    /// 设置 SmartInput 的梯度路由目标
     ///
     /// # 返回
-    /// 如果节点不是 GradientRouter，返回错误
+    /// 如果节点不是 SmartInput，返回错误
     pub(in crate::nn) fn set_gradient_target(
         &mut self,
         target: Option<NodeId>,
     ) -> Result<(), GraphError> {
-        if let NodeType::GradientRouter(router) = &self.raw_node {
-            router.set_gradient_target(target);
+        if let NodeType::Input(InputVariant::Smart(smart)) = &self.raw_node {
+            smart.set_gradient_target(target);
             Ok(())
         } else {
             Err(GraphError::InvalidOperation(format!(
-                "{} 不是 GradientRouter 节点",
+                "{} 不是 SmartInput 节点",
                 self.raw_node.display_node()
             )))
         }
     }
 
-    /// 获取 `GradientRouter` 的梯度路由目标
+    /// 获取 SmartInput 的梯度路由目标
     pub(in crate::nn) fn gradient_target(&self) -> Option<NodeId> {
-        if let NodeType::GradientRouter(router) = &self.raw_node {
-            router.gradient_target()
+        if let NodeType::Input(InputVariant::Smart(smart)) = &self.raw_node {
+            smart.gradient_target()
         } else {
             None
         }
@@ -439,12 +460,12 @@ impl NodeHandle {
     /// 若返回 true，反向传播时不会向该节点的父节点传播梯度
     /// 检查节点是否处于 detached 状态
     ///
-    /// 对于 `GradientRouter` 节点，使用其内部动态标志；
+    /// 对于 SmartInput 节点，使用其内部动态标志；
     /// 对于其他节点，使用 `NodeHandle` 的静态标志。
     pub(in crate::nn) fn is_detached(&self) -> bool {
-        // GradientRouter 有自己的动态 detached 标志
-        if let NodeType::GradientRouter(router) = &self.raw_node {
-            return router.is_detached();
+        // SmartInput 有自己的动态 detached 标志
+        if let NodeType::Input(InputVariant::Smart(smart)) = &self.raw_node {
+            return smart.is_detached();
         }
         self.is_detached
     }
@@ -454,7 +475,7 @@ impl NodeHandle {
     /// - `true`: 截断该节点的梯度流，反向传播时不向父节点传播
     /// - `false`: 正常传播梯度（默认状态）
     ///
-    /// 注意：对于 `GradientRouter` 节点，应使用 `set_router_detached()` 方法。
+    /// 注意：对于 SmartInput 节点，应使用 `set_router_detached()` 方法。
     pub(in crate::nn) const fn set_detached(&mut self, detached: bool) {
         self.is_detached = detached;
     }

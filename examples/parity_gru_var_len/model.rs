@@ -24,7 +24,7 @@ impl ParityGRU {
     pub fn new(graph: &Graph, hidden_size: usize) -> Result<Self, GraphError> {
         let gru = Gru::new(graph, 1, hidden_size, "gru")?;
         let fc = Linear::new(graph, hidden_size, 2, true, "fc")?;
-        let state = ModelState::new(graph);
+        let state = ModelState::new_for::<Self>(graph);
 
         Ok(Self { gru, fc, state })
     }

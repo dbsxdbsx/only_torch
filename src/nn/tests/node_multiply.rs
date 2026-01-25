@@ -25,7 +25,7 @@ fn test_multiply_creation() {
     // 1. 矩阵(2x3) ⊙ 矩阵(2x3)
     {
         let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
-        let right = graph.new_input_node(&[2, 3], Some("right")).unwrap();
+        let right = graph.new_basic_input_node(&[2, 3], Some("right")).unwrap();
         let result = graph.new_multiply_node(left, right, Some("mul")).unwrap();
 
         assert_eq!(graph.get_node_name(result).unwrap(), "mul");
@@ -68,7 +68,7 @@ fn test_multiply_creation_invalid_shape() {
 
     // 1. 无法广播的形状：[2, 3] + [3, 4]（两个维度都不兼容）
     let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
-    let right = graph.new_input_node(&[3, 4], Some("right")).unwrap();
+    let right = graph.new_basic_input_node(&[3, 4], Some("right")).unwrap();
 
     let result = graph.new_multiply_node(left, right, None);
     assert_err!(
@@ -77,7 +77,7 @@ fn test_multiply_creation_invalid_shape() {
     );
 
     // 2. 无法广播的形状：[2, 3] + [2, 4]（第二维 3 != 4 且都不是 1）
-    let right2 = graph.new_input_node(&[2, 4], Some("right2")).unwrap();
+    let right2 = graph.new_basic_input_node(&[2, 4], Some("right2")).unwrap();
     let result = graph.new_multiply_node(left, right2, None);
     assert_err!(
         result,
@@ -398,7 +398,7 @@ fn test_multiply_backward_e2e() -> Result<(), GraphError> {
     let result = graph.new_multiply_node(left, right, Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值：left=[[1,2],[3,4]], right=[[2,2],[2,2]], target=[[0,0],[0,0]]
@@ -450,7 +450,7 @@ fn test_multiply_gradient_accumulation() -> Result<(), GraphError> {
     let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
     let right = graph.new_parameter_node(&[2, 2], Some("right"))?;
     let result = graph.new_multiply_node(left, right, Some("result"))?;
-    let target = graph.new_input_node(&[2, 2], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值
@@ -489,8 +489,8 @@ fn test_multiply_broadcast_creation() {
 
     // 1. [3, 4] ⊙ [1, 4] -> [3, 4]（行广播）
     {
-        let left = graph.new_input_node(&[3, 4], Some("left1")).unwrap();
-        let right = graph.new_input_node(&[1, 4], Some("right1")).unwrap();
+        let left = graph.new_basic_input_node(&[3, 4], Some("left1")).unwrap();
+        let right = graph.new_basic_input_node(&[1, 4], Some("right1")).unwrap();
         let result = graph.new_multiply_node(left, right, Some("mul1")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
@@ -500,8 +500,8 @@ fn test_multiply_broadcast_creation() {
 
     // 2. [3, 1] ⊙ [1, 4] -> [3, 4]（双向广播）
     {
-        let left = graph.new_input_node(&[3, 1], Some("left2")).unwrap();
-        let right = graph.new_input_node(&[1, 4], Some("right2")).unwrap();
+        let left = graph.new_basic_input_node(&[3, 1], Some("left2")).unwrap();
+        let right = graph.new_basic_input_node(&[1, 4], Some("right2")).unwrap();
         let result = graph.new_multiply_node(left, right, Some("mul2")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
@@ -511,8 +511,8 @@ fn test_multiply_broadcast_creation() {
 
     // 3. [2, 3, 4] ⊙ [1, 1, 4] -> [2, 3, 4]（高维广播）
     {
-        let left = graph.new_input_node(&[2, 3, 4], Some("left3")).unwrap();
-        let right = graph.new_input_node(&[1, 1, 4], Some("right3")).unwrap();
+        let left = graph.new_basic_input_node(&[2, 3, 4], Some("left3")).unwrap();
+        let right = graph.new_basic_input_node(&[1, 1, 4], Some("right3")).unwrap();
         let result = graph.new_multiply_node(left, right, Some("mul3")).unwrap();
         assert_eq!(
             graph.get_node_value_expected_shape(result).unwrap(),
@@ -654,7 +654,7 @@ fn test_multiply_broadcast_e2e() -> Result<(), GraphError> {
     let result = graph.new_multiply_node(features, scale, Some("result"))?;
 
     // loss = MSE(result, target)
-    let target = graph.new_input_node(&[2, 3], Some("target"))?;
+    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
     let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
 
     // 设置值
