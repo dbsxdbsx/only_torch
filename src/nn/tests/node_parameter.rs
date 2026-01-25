@@ -153,27 +153,28 @@ fn test_node_parameter_expected_shape() {
     assert_eq!(graph.get_node_value_expected_shape(param).unwrap(), &[2, 3]); // 预期形状仍然保持
 }
 
+/// 测试 Parameter 节点的前向传播行为
+///
+/// Parameter 节点是外部设置的参数，不从父节点计算。
+/// - 没有值时：forward 报错
+/// - 有值时：forward 静默成功（支持 RNN 缓存等场景）
 #[test]
 fn test_node_parameter_forward_propagation() {
     let mut graph = GraphInner::new();
     let param = graph.new_parameter_node(&[2, 2], Some("param")).unwrap();
 
-    // 1. 测试前向传播（应该失败，因为Parameter节点不支持前向传播）
-    assert_err!(
-        graph.forward(param),
-        GraphError::InvalidOperation(
-            "节点[id=1, name=param, type=Parameter]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
-        )
+    // Parameter 节点创建时默认有值（Xavier 初始化），所以 forward 应该成功
+    assert!(
+        graph.forward(param).is_ok(),
+        "有值的 Parameter 节点应该允许 forward（静默成功）"
     );
 
-    // 2. 设置新值后仍然不能前向传播
+    // 设置新值后，forward 仍然成功
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     graph.set_node_value(param, Some(&value)).unwrap();
-    assert_err!(
-        graph.forward(param),
-        GraphError::InvalidOperation(
-            "节点[id=1, name=param, type=Parameter]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
-        )
+    assert!(
+        graph.forward(param).is_ok(),
+        "有值的 Parameter 节点应该允许 forward（静默成功）"
     );
 }
 

@@ -149,6 +149,10 @@ fn test_input_has_no_grad() -> Result<(), GraphError> {
 }
 
 /// 测试 State 节点在 forward 中的行为
+///
+/// State 节点是外部设置的状态，不从父节点计算。
+/// - 没有值时：forward 报错
+/// - 有值时：forward 静默成功（支持 RNN 缓存等场景）
 #[test]
 fn test_state_forward_behavior() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -162,12 +166,11 @@ fn test_state_forward_behavior() -> Result<(), GraphError> {
         GraphError::InvalidOperation(msg) if msg.contains("是输入/参数/状态节点")
     );
 
-    // 设置值后，State 不应该被 forward 直接调用（它的值由外部设置）
+    // 设置值后，forward 静默成功（支持 RNN 缓存等场景）
     graph.set_node_value(state, Some(&Tensor::zeros(&[1, 4])))?;
-    let result = graph.forward(state);
-    assert_err!(
-        result,
-        GraphError::InvalidOperation(msg) if msg.contains("是输入/参数/状态节点")
+    assert!(
+        graph.forward(state).is_ok(),
+        "有值的 State 节点应该允许 forward（静默成功）"
     );
 
     Ok(())

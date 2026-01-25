@@ -157,7 +157,7 @@ fn test_node_input_forward_propagation() {
     let mut graph = GraphInner::new();
     let input = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
 
-    // 1. 测试前向传播（应该失败，因为Input节点不支持前向传播）
+    // 1. 测试前向传播（没有值时应该失败）
     assert_err!(
         graph.forward(input),
         GraphError::InvalidOperation(
@@ -165,14 +165,12 @@ fn test_node_input_forward_propagation() {
         )
     );
 
-    // 2. 设置值后仍然不能前向传播
+    // 2. 设置值后，forward 静默成功（支持 RNN 缓存等场景）
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     graph.set_node_value(input, Some(&value)).unwrap();
-    assert_err!(
-        graph.forward(input),
-        GraphError::InvalidOperation(
-            "节点[id=1, name=input, type=Input]是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
-        )
+    assert!(
+        graph.forward(input).is_ok(),
+        "有值的 Input 节点应该允许 forward（静默成功）"
     );
 }
 
