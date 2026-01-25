@@ -1,5 +1,33 @@
 # 更新日志
 
+## [0.10.1] - 2026-01-25
+
+### 新增
+
+- **feat(rnn): 添加 RNN 展开缓存机制**
+  - 支持动态 batch，避免重复展开相同序列长度的计算图
+
+### 修复
+
+- **fix(rnn): 修复 RNN/LSTM/GRU 缓存 key 问题**
+  - 缓存 key 仅用 seq_len 导致变 batch 失效，现已修正
+
+### 重构
+
+- **refactor(vis): 统一可视化 API**
+  - 默认启用层分组显示
+  - 可视化边线从 ortho 改为 polyline
+  - 优化循环层时间步标签及 ZerosLike 节点样式
+
+### 文档
+
+- 新增计算图可视化指南 (`.doc/design/visualization_guide.md`)
+
+### 其他
+
+- test: 更新 forward 行为测试以反映新设计
+- chore: rust lint format
+
 ## [0.10.0] - 2026-01-25
 
 ### 重构
