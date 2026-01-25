@@ -479,6 +479,8 @@ impl Graph {
 
     /// 保存计算图可视化
     ///
+    /// 自动启用层分组，将 Linear、Conv2d、RNN 等层的节点用半透明框分组显示。
+    ///
     /// # 示例
     /// ```ignore
     /// graph.save_visualization("outputs/model", None)?;
@@ -488,18 +490,9 @@ impl Graph {
         base_path: P,
         format: Option<ImageFormat>,
     ) -> Result<VisualizationOutput, GraphError> {
-        self.inner.borrow().save_visualization(base_path, format)
-    }
-
-    /// 保存计算图可视化（启用层分组）
-    pub fn save_visualization_grouped<P: AsRef<std::path::Path>>(
-        &self,
-        base_path: P,
-        format: Option<ImageFormat>,
-    ) -> Result<VisualizationOutput, GraphError> {
         // 惰性推断：在可视化时根据循环层元信息推断完整的分组
         self.inner.borrow_mut().infer_recurrent_layer_groups();
-        self.inner.borrow().save_visualization_grouped(base_path, format)
+        self.inner.borrow().save_visualization(base_path, format)
     }
 }
 
@@ -2139,14 +2132,14 @@ impl GraphInner {
     /// graph.save_visualization("outputs/model", None)?;
     /// ```
     pub fn to_dot(&self) -> String {
-        self.to_dot_with_options(false)
+        self.to_dot_with_options(true)
     }
 
-    /// 生成带层分组选项的 DOT 格式字符串
+    /// 生成带层分组选项的 DOT 格式字符串（内部方法）
     ///
     /// # 参数
     /// - `group_layers`: 是否将同一层的节点用半透明框分组显示
-    pub fn to_dot_with_options(&self, group_layers: bool) -> String {
+    fn to_dot_with_options(&self, group_layers: bool) -> String {
         let desc = self.describe();
         let mut dot = String::new();
 
@@ -3011,29 +3004,8 @@ impl GraphInner {
     ///
     /// // 指定 SVG 格式（生成 model.dot + model.svg）
     /// let result = graph.save_visualization("outputs/model", Some(ImageFormat::Svg))?;
-    ///
-    /// // 启用层分组可视化（将 Linear、Conv2d 等层用半透明框分组显示）
-    /// let result = graph.save_visualization_grouped("outputs/model", None)?;
     /// ```
     pub fn save_visualization<P: AsRef<Path>>(
-        &self,
-        base_path: P,
-        format: Option<ImageFormat>,
-    ) -> Result<VisualizationOutput, GraphError> {
-        self.save_visualization_impl(base_path, format, false)
-    }
-
-    /// 保存计算图可视化（启用层分组）
-    ///
-    /// 与 `save_visualization` 相同，但会将同一层的节点用半透明框分组显示。
-    /// 层分组信息来自 `linear()`、`conv2d()` 等 Layer API 的注册。
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // 启用层分组的可视化
-    /// graph.save_visualization_grouped("outputs/model", None)?;
-    /// ```
-    pub fn save_visualization_grouped<P: AsRef<Path>>(
         &self,
         base_path: P,
         format: Option<ImageFormat>,

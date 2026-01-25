@@ -389,7 +389,7 @@
 //     );
 
 //     // 可视化（启用层分组，显示 RNN Cell 边界框）
-//     match graph.save_visualization_grouped("tests/outputs/it3b_parity_rnn_layer", None) {
+//     match graph.save_visualization("tests/outputs/it3b_parity_rnn_layer", None) {
 //         Ok(out) => {
 //             println!("[可视化] DOT: {}", out.dot_path.display());
 //             if let Some(img) = &out.image_path {

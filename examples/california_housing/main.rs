@@ -134,7 +134,7 @@ fn main() -> Result<(), GraphError> {
 
     // ========== 保存可视化 ==========
     let vis_result =
-        graph.save_visualization_grouped("examples/california_housing/california_housing", None)?;
+        graph.save_visualization("examples/california_housing/california_housing", None)?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

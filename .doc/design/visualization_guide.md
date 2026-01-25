@@ -14,7 +14,7 @@ graph.save_visualization("model", None)?;
 // 生成：model.dot + model.png（需安装 Graphviz）
 
 // 带模型分组的可视化（推荐）
-graph.save_visualization_grouped("model", None)?;
+graph.save_visualization("model", None)?;
 ```
 
 ### 1.2 安装 Graphviz
@@ -38,7 +38,7 @@ for epoch in 0..max_epochs {
 }
 
 // 训练完成后
-graph.save_visualization_grouped("model", None)?;
+graph.save_visualization("model", None)?;
 ```
 
 ### 2.2 信息完整度对比
@@ -193,7 +193,7 @@ state: ModelState::new(graph).named("Generator"),
 
 ### 5.3 可视化效果
 
-使用 `save_visualization_grouped` 时，同一模型的节点会被框在一起：
+使用 `save_visualization` 时，同一模型的节点会被框在一起：
 
 ```
 ┌─────────────────────────────────┐
@@ -227,7 +227,7 @@ impl Graph {
         -> Result<VisResult, GraphError>;
 
     /// 保存带分组的可视化（推荐）
-    pub fn save_visualization_grouped(&self, path: &str, options: Option<VisOptions>) 
+    pub fn save_visualization(&self, path: &str, options: Option<VisOptions>) 
         -> Result<VisResult, GraphError>;
 
     /// 生成 DOT 格式字符串
@@ -262,7 +262,7 @@ println!("{}", graph.to_dot());
 
 ```rust
 // 训练完成后保存完整可视化
-let result = graph.save_visualization_grouped(
+let result = graph.save_visualization(
     &format!("outputs/{}_model", model_name),
     None
 )?;
@@ -274,7 +274,7 @@ println!("图保存至: {}", result.dot_path.display());
 ```rust
 // 同时生成 summary
 graph.save_summary("outputs/model_summary.md")?;
-graph.save_visualization_grouped("outputs/model", None)?;
+graph.save_visualization("outputs/model", None)?;
 ```
 
 ## 8. 常见问题

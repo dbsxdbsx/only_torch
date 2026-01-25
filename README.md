@@ -213,7 +213,7 @@ opt-level = 3
   - Phase 4: NEAT 集成
 
 ### 🟡 API 改进
-- only retain `save_visualization_grouped`?
+- only retain `save_visualization`?
 - what if make the input nodes also be grouped together?
 - fix still lacking some of the nodes need to append, refine with `grad: Option<Tensor>,`？
 - ✅ ~~是否需要整合单独跟批处理版本的 forward 跟 backward 相关类的方法?~~ → 已完成，详见 [自动微分统一设计](.doc/design/autodiff_unification_design.md)

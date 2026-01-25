@@ -159,7 +159,7 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
     fs::create_dir_all(output_dir).ok();
     graph
         .inner()
-        .save_visualization_grouped(format!("{output_dir}/mnist_cnn"), None)?;
+        .save_visualization(format!("{output_dir}/mnist_cnn"), None)?;
     graph
         .inner()
         .save_summary(format!("{output_dir}/mnist_cnn_summary.md"))?;

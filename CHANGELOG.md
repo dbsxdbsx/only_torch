@@ -165,7 +165,7 @@
   - 输出 {-1, 0, 1}，与 PyTorch 行为一致
 - feat: 添加 Conv2d bias 支持与层分组可视化功能
   - 新增 ChannelBiasAdd 节点用于 bias 广播
-  - 新增 `LayerGroup` 和 `save_visualization_grouped()` 实现层分组可视化
+  - 新增 `LayerGroup` 和 `save_visualization()` 实现层分组可视化
 
 ### 性能优化
 

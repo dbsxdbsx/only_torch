@@ -113,7 +113,7 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
     fs::create_dir_all(output_dir).ok();
     graph
         .inner()
-        .save_visualization_grouped(format!("{output_dir}/california_housing"), None)?;
+        .save_visualization(format!("{output_dir}/california_housing"), None)?;
     graph
         .inner()
         .save_summary(format!("{output_dir}/california_housing_summary.md"))?;
