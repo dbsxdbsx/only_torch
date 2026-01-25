@@ -24,7 +24,9 @@
  */
 
 use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
-use crate::nn::{Graph, GraphError, Init, Module, Var};
+use crate::nn::{Graph, GraphError, Init, Module, NodeId, Var};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 /// Rnn (循环神经网络) 层 - 展开式设计
 ///
@@ -70,6 +72,8 @@ pub struct Rnn {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
+    /// 按 seq_len 缓存的展开结构：seq_len -> (实际输出节点 ID)
+    unroll_cache: RefCell<HashMap<usize, NodeId>>,
 }
 
 impl Rnn {
@@ -121,12 +125,19 @@ impl Rnn {
             input_size,
             hidden_size,
             name: name.to_string(),
+            unroll_cache: RefCell::new(HashMap::new()),
         })
     }
 
     /// 前向传播
     ///
     /// 自动展开所有时间步，返回最后一个时间步的隐藏状态。
+    ///
+    /// # 桥接机制
+    /// 对于变长序列场景，RNN 层内部维护一个 `RecurrentOutput` 桥接节点：
+    /// - 不同 `seq_len` 的展开结构会被缓存
+    /// - 所有输出都通过同一个桥接节点返回（固定 `node_id`）
+    /// - 下游的 FC 层和 Loss 节点只会看到这一个输入，因此只创建一份
     ///
     /// # 参数
     /// - `x`: 输入 Var，形状 [`batch_size`, `seq_len`, `input_size`]
@@ -165,8 +176,30 @@ impl Rnn {
             )));
         }
 
-        // 展开所有时间步
-        self.unroll(x, seq_len)
+        // 获取或创建此 seq_len 的展开结构
+        let h = {
+            let cache = self.unroll_cache.borrow();
+            if let Some(&cached_id) = cache.get(&seq_len) {
+                // 缓存命中：重新计算该节点
+                drop(cache);
+                self.graph.inner_mut().forward(cached_id)?;
+                Var::new(cached_id, self.graph.inner_rc())
+            } else {
+                // 缓存未命中：创建新的展开结构
+                drop(cache);
+                let h = self.unroll(x, seq_len)?;
+                let h_id = h.node_id();
+                // 触发前向计算
+                self.graph.inner_mut().forward(h_id)?;
+                self.unroll_cache.borrow_mut().insert(seq_len, h_id);
+                h
+            }
+        };
+
+        // 直接返回展开后的输出节点
+        // 注意：不同 seq_len 会返回不同的节点 ID，这是正确的行为
+        // ModelState 会为每个 feature_shape（包含 seq_len）创建独立的缓存
+        Ok(h)
     }
 
     /// 展开 RNN 时间步

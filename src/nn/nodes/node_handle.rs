@@ -120,14 +120,14 @@ impl NodeHandle {
     }
 
     /// 创建目标输入节点（Target 变体，用于 Loss 的目标值）
-    pub(in crate::nn) fn new_target_input(shape: &[usize]) -> Result<Self, GraphError> {
-        let input = InputVariant::new_target(shape)?;
-        Ok(Self {
+    pub(in crate::nn) fn new_target_input(shape: &[usize]) -> Self {
+        let input = InputVariant::new_target(shape);
+        Self {
             raw_node: NodeType::Input(input),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             is_detached: false,
-        })
+        }
     }
 
     pub(in crate::nn) fn new_parameter(shape: &[usize]) -> Result<Self, GraphError> {
@@ -290,52 +290,73 @@ impl NodeHandle {
         })
     }
 
-    /// 设置 SmartInput 的 detached 状态
+    /// 创建 RecurrentOutput 节点（循环层输出桥接）
+    ///
+    /// RecurrentOutput 用于 RNN/LSTM/GRU 层的输出桥接，功能与 SmartInput 相同：
+    /// - 固定的 node_id，使下游层可以复用
+    /// - 支持梯度路由到实际的 RNN 输出节点
+    /// - 支持动态 batch
+    pub(in crate::nn) fn new_recurrent_output(shape: &[usize]) -> Result<Self, GraphError> {
+        Ok(Self {
+            raw_node: NodeType::Input(InputVariant::new_recurrent_output(shape)),
+            last_forward_pass_id: 0,
+            last_backward_pass_id: 0,
+            is_detached: false,
+        })
+    }
+
+    /// 设置 SmartInput/RecurrentOutput 的 detached 状态
     ///
     /// # 参数
     /// - `detached`: 是否阻止梯度传播
     /// - `mark_ever_detached`: 是否标记 was_ever_detached（用于可视化显示虚线边框）
     ///
     /// # 返回
-    /// 如果节点不是 SmartInput，返回错误
+    /// 如果节点不是 SmartInput/RecurrentOutput，返回错误
     pub(in crate::nn) fn set_router_detached(
         &mut self,
         detached: bool,
         mark_ever_detached: bool,
     ) -> Result<(), GraphError> {
-        if let NodeType::Input(InputVariant::Smart(smart)) = &self.raw_node {
+        if let NodeType::Input(InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart)) =
+            &self.raw_node
+        {
             smart.set_detached(detached, mark_ever_detached);
             Ok(())
         } else {
             Err(GraphError::InvalidOperation(format!(
-                "{} 不是 SmartInput 节点",
+                "{} 不是 SmartInput/RecurrentOutput 节点",
                 self.raw_node.display_node()
             )))
         }
     }
 
-    /// 设置 SmartInput 的梯度路由目标
+    /// 设置 SmartInput/RecurrentOutput 的梯度路由目标
     ///
     /// # 返回
-    /// 如果节点不是 SmartInput，返回错误
+    /// 如果节点不是 SmartInput/RecurrentOutput，返回错误
     pub(in crate::nn) fn set_gradient_target(
         &mut self,
         target: Option<NodeId>,
     ) -> Result<(), GraphError> {
-        if let NodeType::Input(InputVariant::Smart(smart)) = &self.raw_node {
+        if let NodeType::Input(InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart)) =
+            &self.raw_node
+        {
             smart.set_gradient_target(target);
             Ok(())
         } else {
             Err(GraphError::InvalidOperation(format!(
-                "{} 不是 SmartInput 节点",
+                "{} 不是 SmartInput/RecurrentOutput 节点",
                 self.raw_node.display_node()
             )))
         }
     }
 
-    /// 获取 SmartInput 的梯度路由目标
+    /// 获取 SmartInput/RecurrentOutput 的梯度路由目标
     pub(in crate::nn) fn gradient_target(&self) -> Option<NodeId> {
-        if let NodeType::Input(InputVariant::Smart(smart)) = &self.raw_node {
+        if let NodeType::Input(InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart)) =
+            &self.raw_node
+        {
             smart.gradient_target()
         } else {
             None
@@ -460,11 +481,13 @@ impl NodeHandle {
     /// 若返回 true，反向传播时不会向该节点的父节点传播梯度
     /// 检查节点是否处于 detached 状态
     ///
-    /// 对于 SmartInput 节点，使用其内部动态标志；
+    /// 对于 SmartInput/RecurrentOutput 节点，使用其内部动态标志；
     /// 对于其他节点，使用 `NodeHandle` 的静态标志。
     pub(in crate::nn) fn is_detached(&self) -> bool {
-        // SmartInput 有自己的动态 detached 标志
-        if let NodeType::Input(InputVariant::Smart(smart)) = &self.raw_node {
+        // SmartInput/RecurrentOutput 有自己的动态 detached 标志
+        if let NodeType::Input(InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart)) =
+            &self.raw_node
+        {
             return smart.is_detached();
         }
         self.is_detached

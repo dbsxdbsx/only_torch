@@ -285,3 +285,6 @@ fn test_sequential_parameter_creation_determinism() {
         graph1.get_node_value(w2_g1).unwrap()
     );
 }
+
+// 注意：全局节点复用机制已禁用（需要更细粒度的控制才能正确工作）
+// RNN 层使用自己的内部缓存机制（unroll_cache）来复用展开结构

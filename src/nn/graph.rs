@@ -955,6 +955,11 @@ impl GraphInner {
         let node = self.get_node(node_id)?;
         match node.node_type() {
             NodeType::Input(_) | NodeType::Parameter(_) | NodeType::State(_) => {
+                // 如果节点已经有值，就跳过（允许 forward 调用，只是不做任何事）
+                // 这对于 RecurrentOutput 等节点很重要，它们的值通过 set_value 设置
+                if node.has_value() {
+                    return Ok(());
+                }
                 return Err(GraphError::InvalidOperation(format!(
                     "{node}是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
                 )));
@@ -1166,7 +1171,9 @@ impl GraphInner {
         let mut routing_info: Vec<(NodeId, Tensor)> = Vec::new();
 
         for node in self.nodes.values() {
-            if let NodeType::Input(InputVariant::Smart(smart)) = node.node_type() {
+            if let NodeType::Input(InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart)) =
+                node.node_type()
+            {
                 // 检查是否有梯度路由目标
                 if let Some(target_id) = smart.gradient_target() {
                     // 检查 SmartInput 是否有梯度（且未被 detach）
@@ -1255,11 +1262,11 @@ impl GraphInner {
                 let parent = self.get_node(*parent_id)?;
 
                 // 跳过 Data/Target Input 节点（它们不需要梯度）
-                // 但不跳过 SmartInput 节点（需要接收梯度以便路由）
+                // 但不跳过 SmartInput/RecurrentOutput 节点（需要接收梯度以便路由）
                 if let NodeType::Input(variant) = parent.node_type() {
                     match variant {
                         InputVariant::Data(_) | InputVariant::Target(_) => continue,
-                        InputVariant::Smart(_) => {} // 不跳过 SmartInput
+                        InputVariant::Smart(_) | InputVariant::RecurrentOutput(_) => {} // 不跳过
                     }
                 }
 
@@ -2056,6 +2063,7 @@ impl GraphInner {
             NodeTypeDescriptor::BasicInput => "BasicInput",
             NodeTypeDescriptor::TargetInput => "TargetInput",
             NodeTypeDescriptor::SmartInput => "SmartInput",
+            NodeTypeDescriptor::RecurrentOutput => "RecurrentOutput",
             NodeTypeDescriptor::Parameter => "Parameter",
             NodeTypeDescriptor::State => "State",
             NodeTypeDescriptor::Identity => "Identity",
@@ -2156,13 +2164,16 @@ impl GraphInner {
         // 收集 SmartInput 节点及其所有下游节点（这些节点的 batch 维度应显示为 ?）
         let dynamic_batch_nodes = Self::find_dynamic_batch_nodes(&desc);
 
-        // 收集曾经被 detach 过的 SmartInput 节点 ID（用于显示虚线边框）
+        // 收集曾经被 detach 过的 SmartInput/RecurrentOutput 节点 ID（用于显示虚线边框）
         use super::nodes::raw_node::InputVariant;
         let ever_detached_nodes: std::collections::HashSet<u64> = self
             .nodes
             .values()
             .filter_map(|node| {
-                if let NodeType::Input(InputVariant::Smart(smart)) = node.node_type() {
+                if let NodeType::Input(
+                    InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart),
+                ) = node.node_type()
+                {
                     if smart.was_ever_detached() {
                         return Some(node.id().0);
                     }
@@ -2881,11 +2892,14 @@ impl GraphInner {
         }
 
         // 数据流连接（紫色虚线箭头）
-        // SmartInput 节点可能有 gradient_target，表示数据从某个节点"流入"
+        // SmartInput/RecurrentOutput 节点可能有 gradient_target，表示数据从某个节点"流入"
         for node in self.nodes.values() {
-            if let NodeType::Input(InputVariant::Smart(smart)) = node.node_type() {
+            if let NodeType::Input(
+                InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart),
+            ) = node.node_type()
+            {
                 if let Some(target_id) = smart.gradient_target() {
-                    // 绘制虚线箭头：从源节点到 SmartInput（数据流方向）
+                    // 绘制虚线箭头：从源节点到 SmartInput/RecurrentOutput（数据流方向）
                     dot.push_str(&format!(
                         "    \"{}\" -> \"{}\" [style=dashed color=\"#1565C0\" label=\"data flow\" fontcolor=\"#1565C0\" fontsize=9];\n",
                         target_id.0, node.id().0
@@ -3499,6 +3513,7 @@ impl GraphInner {
                     InputVariant::Data(_) => NodeTypeDescriptor::BasicInput,
                     InputVariant::Target(_) => NodeTypeDescriptor::TargetInput,
                     InputVariant::Smart(_) => NodeTypeDescriptor::SmartInput,
+                    InputVariant::RecurrentOutput(_) => NodeTypeDescriptor::RecurrentOutput,
                 }
             }
             NodeType::Parameter(_) => NodeTypeDescriptor::Parameter,
@@ -4753,6 +4768,10 @@ impl GraphInner {
 
 // 便捷的节点构建方法
 impl GraphInner {
+    /// 添加节点到列表
+    ///
+    /// 注意：目前不启用自动节点复用。RNN 层使用自己的内部缓存机制（unroll_cache + output_bridge）。
+    /// 全局节点复用机制已准备好，但需要更细粒度的控制才能正确工作（如区分不同 ModelState feature_shape）。
     fn add_node_to_list(
         &mut self,
         mut node_handle: NodeHandle,
@@ -4796,13 +4815,13 @@ impl GraphInner {
         self.add_node_to_list(node, name, "input", &[])
     }
 
-    /// 创建目标输入节点（Target 变体，用于 Loss 的目标值）
+    /// 创建目标输入节点（Target 变体，用于 Loss 的目标值，支持动态 batch）
     pub fn new_target_input_node(
         &mut self,
         shape: &[usize],
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
-        let node = NodeHandle::new_target_input(shape)?;
+        let node = NodeHandle::new_target_input(shape);
         self.add_node_to_list(node, name, "target", &[])
     }
 
@@ -4826,10 +4845,29 @@ impl GraphInner {
         self.add_node_to_list(node, name, "input", &[])
     }
 
-    /// 设置 SmartInput 节点的 detached 状态
+    /// 创建 RecurrentOutput 节点（循环层输出桥接）
+    ///
+    /// RecurrentOutput 用于 RNN/LSTM/GRU 层的输出桥接：
+    /// - 固定的 node_id，使下游层（如 FC）可以复用
+    /// - 支持梯度路由到实际的 RNN 输出节点
+    /// - 支持动态 batch
     ///
     /// # 参数
-    /// - `node_id`: SmartInput 节点 ID
+    /// - `shape`: 节点输出形状（通常是 `[batch, hidden_size]`）
+    /// - `name`: 节点名称（可选）
+    pub fn new_recurrent_output_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let node = NodeHandle::new_recurrent_output(shape)?;
+        self.add_node_to_list(node, name, "recurrent_output", &[])
+    }
+
+    /// 设置 SmartInput/RecurrentOutput 节点的 detached 状态
+    ///
+    /// # 参数
+    /// - `node_id`: SmartInput/RecurrentOutput 节点 ID
     /// - `detached`: 是否阻止梯度传播
     /// - `mark_ever_detached`: 是否标记 was_ever_detached（用于可视化显示虚线边框）
     pub fn set_router_detached(
@@ -4842,7 +4880,7 @@ impl GraphInner {
         node.set_router_detached(detached, mark_ever_detached)
     }
 
-    /// 设置 SmartInput 节点的梯度路由目标
+    /// 设置 SmartInput/RecurrentOutput 节点的梯度路由目标
     pub fn set_gradient_target(
         &mut self,
         node_id: NodeId,
