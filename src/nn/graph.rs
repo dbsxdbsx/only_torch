@@ -2801,6 +2801,35 @@ impl GraphInner {
             std::collections::HashSet::new()
         };
 
+        // 收集循环层的输出代理信息及时间步标签
+        // 映射：real_output_node_id -> (repr_output_node_id, final_step_label)
+        let recurrent_output_labels: std::collections::HashMap<u64, (u64, String)> = if group_layers
+        {
+            self.recurrent_layer_metas
+                .iter()
+                .filter_map(|m| {
+                    let repr_info = m.unroll_infos.last()?;
+                    let min_steps = m.unroll_infos.iter().map(|i| i.steps).min().unwrap();
+                    let max_steps = m.unroll_infos.iter().map(|i| i.steps).max().unwrap();
+                    let is_var_len = min_steps != max_steps;
+                    let last_step = max_steps.saturating_sub(1);
+                    let label = if is_var_len {
+                        // 变长序列：显示范围 t=min~max
+                        let min_last = min_steps.saturating_sub(1);
+                        format!("t={}~{}", min_last, last_step)
+                    } else {
+                        // 固定长度：显示具体时间步
+                        format!("t={}", last_step)
+                    };
+                    // 使用第一个 repr_output_node_id 作为代理节点（RNN/GRU 只有一个，LSTM 用 h）
+                    let repr_id = repr_info.repr_output_node_ids.first()?.0;
+                    Some((repr_info.real_output_node_id.0, (repr_id, label)))
+                })
+                .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+
         for node in &desc.nodes {
             // 跳过隐藏节点相关的边
             if hidden_node_ids.contains(&node.id) {
@@ -2813,9 +2842,15 @@ impl GraphInner {
             for parent_id in &node.parents {
                 // 如果父节点是隐藏的真实输出节点，检查是否有代理
                 if hidden_node_ids.contains(parent_id) {
-                    // 检查是否有代理：如果父节点是某个真实输出，使用其代表性节点
-                    if let Some(&repr_id) = output_proxies.get(parent_id) {
-                        // 添加从代表性节点到当前节点的实线边（折叠层的输出）
+                    // 检查是否是循环层输出（需要添加时间步标签）
+                    if let Some((repr_id, label)) = recurrent_output_labels.get(parent_id) {
+                        // 添加从代表性节点到当前节点的边（带时间步标签）
+                        dot.push_str(&format!(
+                            "    \"{}\" -> \"{}\" [color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9];\n",
+                            repr_id, node.id, label
+                        ));
+                    } else if let Some(&repr_id) = output_proxies.get(parent_id) {
+                        // 添加从代表性节点到当前节点的实线边（普通折叠层的输出）
                         dot.push_str(&format!("    \"{}\" -> \"{}\";\n", repr_id, node.id));
                     }
                     continue;
@@ -2840,37 +2875,40 @@ impl GraphInner {
                 let max_steps = meta.unroll_infos.iter().map(|i| i.steps).max().unwrap();
                 let is_var_len = min_steps != max_steps;
 
-                // 计算 t>0 边的标签
-                let t_gt_0_min = min_steps.saturating_sub(1);
-                let t_gt_0_max = max_steps.saturating_sub(1);
-                let t_gt_0_label = if is_var_len {
-                    format!("×{}-{}", t_gt_0_min, t_gt_0_max)
+                // 计算回流边时间步标签
+                // - 回流边：t=0~(max_steps-2)，即这些时刻产生的输出会回流给下一时刻
+                // - 最终输出边标签在 recurrent_output_labels 中生成
+                let recycle_last = max_steps.saturating_sub(2); // 最后一个回流的时间步
+                let recycle_label = if is_var_len {
+                    // 变长序列：t=0~(min_last~max_last)，表示回流时间步的范围
+                    let min_recycle_last = min_steps.saturating_sub(2);
+                    format!("t=0~({}~{})", min_recycle_last, recycle_last)
                 } else {
-                    format!("×{}", t_gt_0_max)
+                    // 固定长度：t=0~(N-2)
+                    format!("t=0~{}", recycle_last)
                 };
 
                 // 为每对 (初始状态, 输出) 绘制边
                 // - RNN/GRU：1 对 (h0, h_1)
                 // - LSTM：2 对 (h0, h_1) 和 (c0, c_1)
                 for (idx, init_id) in repr_info.init_state_node_ids.iter().enumerate() {
-                    // 1. t=0 边：SmartInput → ZerosLike
+                    // 1. t=0 边：SmartInput → ZerosLike（初始化）
                     if let Some(init_node_desc) =
                         desc.nodes.iter().find(|n| n.id == init_id.0)
                     {
                         for parent_id in &init_node_desc.parents {
                             dot.push_str(&format!(
-                                "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<t=0 <FONT COLOR=\"#E67E22\">(×1)</FONT>> fontcolor=\"#E67E22\" fontsize=9];\n",
+                                "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<t=0> fontcolor=\"#E67E22\" fontsize=9];\n",
                                 parent_id, init_id.0
                             ));
                         }
                     }
 
-                    // 2. t>0 边：output → ZerosLike
-                    // 如果有对应的输出节点，绘制记忆传递边
+                    // 2. 回流边：output → ZerosLike（t=1~N-1 时使用上一时刻的输出）
                     if let Some(&output_id) = repr_info.repr_output_node_ids.get(idx) {
                         dot.push_str(&format!(
-                            "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<t&gt;0 <FONT COLOR=\"#E67E22\">({})</FONT>> fontcolor=\"#E67E22\" fontsize=9 constraint=false];\n",
-                            output_id.0, init_id.0, t_gt_0_label
+                            "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9 constraint=false];\n",
+                            output_id.0, init_id.0, recycle_label
                         ));
                     }
                 }
@@ -3167,6 +3205,8 @@ impl GraphInner {
             | NodeTypeDescriptor::Sign
             | NodeTypeDescriptor::SoftPlus
             | NodeTypeDescriptor::Step => ("diamond", "filled", "#FFF3E0"),
+            // ZerosLike：虚线圆角矩形，浅黄色（占位符：只在 t=0 时使用，之后被隐藏状态替代）
+            NodeTypeDescriptor::ZerosLike => ("box", "\"filled,rounded,dashed\"", "#FFFDE7"),
             // 其他运算节点：圆角矩形，浅黄色
             _ => ("box", "\"filled,rounded\"", "#FFFDE7"),
         }
