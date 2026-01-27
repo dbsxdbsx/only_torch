@@ -28,8 +28,7 @@ src/nn/
 | 类型定义 | 1-160 | `GroupKind`, `LayerGroup`, `RecurrentLayerMeta`, `GraphInner` 结构体 | `types.rs` |
 | Graph 句柄 | 164-503 | `Graph` 结构体、创建、执行、训练控制 | `mod.rs` |
 | GraphInner 基础 | 505-1076 | 基本操作、名称生成、节点访问 | `core.rs` |
-| Batch 模式 | 1077-1348 | 批量 forward/backward | `batch.rs` |
-| 反向传播 | 1349-1504 | VJP 模式反向传播 | `backward.rs` |
+| 反向传播 | 1077-1504 | VJP 反向传播（含梯度路由、拓扑排序） | `backward.rs` |
 | 序列化 | 1505-1703 | 参数保存/加载 | `serialization.rs` |
 | 描述/摘要 | 1704-2101 | describe、summary | `describe.rs` |
 | 可视化 | 2102-3760 | Graphviz DOT 生成 | `visualization.rs` |
@@ -38,6 +37,9 @@ src/nn/
 | BPTT | 4040-4778 | BPTT 反向传播 | `bptt.rs` |
 | 节点构建 | 4779-5477 | 各种 new_*_node 方法 | `node_builders.rs` |
 | 可视化类型 | 5477-5523 | 可视化相关辅助类型 | `visualization.rs` |
+
+> **注**：原"Batch 模式"（1077-1348）实际是 VJP 反向传播的核心实现（`backward_vjp_core`、梯度路由等），
+> 与"反向传播"（1349-1504）统一归入 `backward.rs`。单样本与批量使用相同的 API，无需单独的 batch 文件。
 
 ---
 
@@ -54,8 +56,7 @@ src/nn/
 │   │   ├── mod.rs          # GraphInner 结构体定义 + re-export
 │   │   ├── core.rs         # 基础操作：new, name, 节点访问, ID 生成
 │   │   ├── forward.rs      # 前向传播逻辑
-│   │   ├── backward.rs     # VJP 反向传播
-│   │   ├── batch.rs        # Batch forward/backward
+│   │   ├── backward.rs     # VJP 反向传播（含梯度路由、拓扑排序）
 │   │   ├── mode.rs         # train/eval 模式、detach 机制
 │   │   ├── recurrent.rs    # 循环机制：connect_recurrent, step, reset
 │   │   ├── bptt.rs         # BPTT 相关
@@ -190,7 +191,6 @@ impl Graph {
 //! GraphInner：计算图的底层实现
 
 mod backward;
-mod batch;
 mod bptt;
 mod core;
 mod describe;
@@ -255,15 +255,14 @@ pub struct GraphInner {
 |------|------|------|------|
 | 1 | `inner/core.rs` | 无 | 基础操作 |
 | 2 | `inner/forward.rs` | core | 前向传播 |
-| 3 | `inner/backward.rs` | core, forward | 反向传播 |
-| 4 | `inner/batch.rs` | core, forward, backward | 批量操作 |
-| 5 | `inner/mode.rs` | core | 模式控制 |
-| 6 | `inner/recurrent.rs` | core | 循环机制 |
-| 7 | `inner/bptt.rs` | core, recurrent | BPTT |
-| 8 | `inner/node_builders.rs` | core | 节点构建 |
-| 9 | `inner/serialization.rs` | core | 序列化 |
-| 10 | `inner/describe.rs` | core | 描述 |
-| 11 | `inner/visualization.rs` | core, types | 可视化 |
+| 3 | `inner/backward.rs` | core, forward | VJP 反向传播（含梯度路由、拓扑排序） |
+| 4 | `inner/mode.rs` | core | 模式控制 |
+| 5 | `inner/recurrent.rs` | core | 循环机制 |
+| 6 | `inner/bptt.rs` | core, recurrent | BPTT |
+| 7 | `inner/node_builders.rs` | core | 节点构建 |
+| 8 | `inner/serialization.rs` | core | 序列化 |
+| 9 | `inner/describe.rs` | core | 描述 |
+| 10 | `inner/visualization.rs` | core, types | 可视化 |
 
 ### Phase 3: 提取 Graph 句柄
 
@@ -459,7 +458,7 @@ cargo run --example mnist
 | Phase | 工作内容 | 估计时间 |
 |-------|----------|----------|
 | Phase 1 | 创建目录、提取类型/错误 | 30 分钟 |
-| Phase 2 | 拆分 GraphInner（11 个文件） | 2-3 小时 |
+| Phase 2 | 拆分 GraphInner（10 个文件） | 2-3 小时 |
 | Phase 3 | 提取 Graph 句柄 | 30 分钟 |
 | Phase 4 | 更新引用、测试验证 | 1 小时 |
 | **总计** | | **4-5 小时** |
@@ -473,8 +472,7 @@ cargo run --example mnist
 - [ ] 迁移 `error.rs`（错误类型）
 - [ ] 迁移 `inner/core.rs`（基础操作）
 - [ ] 迁移 `inner/forward.rs`（前向传播）
-- [ ] 迁移 `inner/backward.rs`（反向传播）
-- [ ] 迁移 `inner/batch.rs`（批量操作）
+- [ ] 迁移 `inner/backward.rs`（VJP 反向传播，含梯度路由、拓扑排序）
 - [ ] 迁移 `inner/mode.rs`（模式控制）
 - [ ] 迁移 `inner/recurrent.rs`（循环机制）
 - [ ] 迁移 `inner/bptt.rs`（BPTT）
