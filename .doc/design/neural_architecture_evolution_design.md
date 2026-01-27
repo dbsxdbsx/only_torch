@@ -18,8 +18,46 @@
 | **创新号** | 必须（交叉对齐） | ❌ 不需要（不做交叉） |
 | **交叉操作** | 核心机制 | ❌ 不需要（只用变异） |
 | **结构变异** | 核心机制 | ✅ 核心机制 |
+| **循环/记忆** | ✅ 支持（拓扑循环） | ✅ 支持（复用现有记忆机制） |
 
-### 1.2 设计哲学
+### 1.2 两种边类型
+
+演化过程中存在两种边，它们的语义和约束完全不同：
+
+| 边类型 | 英文 | 值传递时机 | 拓扑约束 | 用途 |
+|--------|------|-----------|---------|------|
+| **普通边** | Forward Edge | 同一时间步内立即传递 | **必须保持 DAG** | 标准计算流 |
+| **循环边** | Recurrent Edge | 延迟一个时间步传递 | **允许形成图论环** | 记忆/循环机制 |
+
+**关键设计原则**：
+
+```
+单步计算永远是 DAG
+    ↓
+循环边的"环"是时间维度的，不是计算维度的
+    ↓
+不会产生死循环
+```
+
+**循环边如何避免死循环？**
+
+循环边使用**双缓冲机制**——每个时间步读取的是上一步缓存的值，而不是当前正在计算的值：
+
+```
+时间步 t=0:
+    读取: A_old = 0（初始值）
+    计算: A_new = f(input_0 + w * A_old)
+    更新: A_old ← A_new
+
+时间步 t=1:
+    读取: A_old = 上一步的值
+    计算: A_new = f(input_1 + w * A_old)
+    更新: A_old ← A_new
+```
+
+> **与 RNN/LSTM 的关系**：循环边是节点层级的记忆原语，而 RNN/LSTM 是这些原语的组合封装。详见 [记忆机制设计](./memory_mechanism_design.md)。
+
+### 1.3 设计哲学
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -35,7 +73,7 @@
 > **但梯度下降无法搜索结构**（需要进化）
 > → 各取所长：进化搜索结构 + 梯度优化权重
 
-### 1.3 模块位置
+### 1.4 模块位置
 
 Evolution 作为独立模块，与 `nn` 平级：
 
@@ -64,7 +102,7 @@ only_torch/
 - **符合惯例**：类似 PyTorch 的 `torch.nn` vs `torch.optim` 平级设计
 - **易于扩展**：未来可能有多种演化策略
 
-### 1.4 演化颗粒度
+### 1.5 演化颗粒度
 
 | 颗粒度 | 变异操作 | 搜索空间 | 灵活性 |
 |--------|----------|----------|--------|
@@ -243,10 +281,12 @@ pub struct Evolution {
     pub patience: usize,      // 默认 5
 
     // ========== 变异概率 ==========
-    pub prob_add_node: f32,       // 默认 0.20
-    pub prob_add_edge: f32,       // 默认 0.40
-    pub prob_remove_edge: f32,    // 默认 0.30
-    pub prob_remove_node: f32,    // 默认 0.10
+    pub prob_add_node: f32,              // 默认 0.15
+    pub prob_add_edge: f32,              // 默认 0.30
+    pub prob_add_recurrent_edge: f32,    // 默认 0.15
+    pub prob_remove_edge: f32,           // 默认 0.20
+    pub prob_remove_recurrent_edge: f32, // 默认 0.10
+    pub prob_remove_node: f32,           // 默认 0.10
 }
 
 impl Evolution {
@@ -255,15 +295,17 @@ impl Evolution {
         Self {
             graph,
             task: Box::new(task),
-            // 默认值（2024 论文验证的工程最优）
+            // 默认值
             target_metric: 0.95,
             eval_runs: 3,
             loss_tolerance: 1e-4,
             grad_tolerance: 1e-5,
             patience: 5,
-            prob_add_node: 0.20,
-            prob_add_edge: 0.40,
-            prob_remove_edge: 0.30,
+            prob_add_node: 0.15,
+            prob_add_edge: 0.30,
+            prob_add_recurrent_edge: 0.15,
+            prob_remove_edge: 0.20,
+            prob_remove_recurrent_edge: 0.10,
             prob_remove_node: 0.10,
         }
     }
@@ -469,10 +511,14 @@ impl ConvergenceDetector {
 
 | 操作 | 名称 | 效果 | 默认概率 |
 |------|------|------|:--------:|
-| **Add Node** | 添加节点 | 在已有边上插入新节点 | 20% |
-| **Add Edge** | 添加边 | 在两个节点间添加新连接 | 40% |
-| **Remove Edge** | 删除边 | 删除一条边 | 30% |
+| **Add Node** | 添加节点 | 在已有边上插入新节点 | 15% |
+| **Add Edge** | 添加普通边 | 在两个节点间添加前向连接（保持 DAG） | 30% |
+| **Add Recurrent Edge** | 添加循环边 | 添加跨时间步的循环连接（允许自环） | 15% |
+| **Remove Edge** | 删除边 | 删除一条普通边 | 20% |
+| **Remove Recurrent Edge** | 删除循环边 | 删除一条循环边 | 10% |
 | **Remove Node** | 删除节点 | 删除隐藏节点及其连接 | 10% |
+
+> **概率说明**：默认概率经过调整以平衡结构探索与记忆能力演化。循环边变异概率较低是因为不是所有任务都需要记忆机制。
 
 ### 4.2 Add Node（添加节点）
 
@@ -535,14 +581,16 @@ fn random_valid_node_type(rng: &mut impl Rng) -> NodeType {
 }
 ```
 
-### 4.3 Add Edge（添加边）
+### 4.3 Add Edge（添加普通边）
 
-在两个没有直接连接的节点间添加新边：
+在两个没有直接连接的节点间添加**普通边**（前向边）。
+
+**关键约束**：必须保持 DAG，即 `src` 必须在拓扑序上在 `dst` 之前。
 
 ```rust
-fn add_edge(graph: &mut Graph, rng: &mut impl Rng) -> EdgeId {
+fn add_edge(graph: &mut Graph, rng: &mut impl Rng) -> Result<EdgeId, GraphError> {
     // 1. 获取所有可能的 (src, dst) 对
-    //    - src 必须在拓扑序上在 dst 之前（保持 DAG）
+    //    - src 必须在拓扑序上在 dst 之前（保持 DAG）← 关键约束！
     //    - src 和 dst 之间没有直接边
     let candidates = graph.get_possible_new_edges();
 
@@ -553,40 +601,125 @@ fn add_edge(graph: &mut Graph, rng: &mut impl Rng) -> EdgeId {
     let weight = rng.gen_range(-1.0..1.0);
     graph.add_edge(*src, *dst, weight)
 }
+
+/// 获取所有可添加普通边的候选对（保证不破坏 DAG）
+fn get_possible_new_edges(&self) -> Vec<(NodeId, NodeId)> {
+    let topo_order = self.topological_sort();
+    let mut candidates = Vec::new();
+
+    for (i, &src) in topo_order.iter().enumerate() {
+        for &dst in &topo_order[i+1..] {  // dst 必须在 src 之后
+            if !self.has_edge(src, dst) {
+                candidates.push((src, dst));
+            }
+        }
+    }
+    candidates
+}
 ```
 
-### 4.4 Remove Edge（删除边）
+> **为什么需要 DAG 约束？** 普通边在同一时间步内立即传递值。如果形成环（A → B → C → A），则 A 的计算需要 C，C 需要 B，B 需要 A——死循环。
+
+### 4.4 Add Recurrent Edge（添加循环边）
+
+添加一条**循环边**（跨时间步的连接），用于赋予网络记忆能力。
+
+**与普通边的区别**：
+- **无 DAG 约束**：允许任意方向的连接，包括自环（A → A）
+- **延迟传递**：值在下一个时间步才可用（通过双缓冲机制）
+- **需要 State 节点**：循环边的目标是 State 节点，用于存储上一步的值
+
+```
+自环示例（节点 A 指向自己）：
+
+    ┌──────────┐
+    │          │
+    ▼          │ recurrent
+    A ─────────┘
+    
+实际执行：
+    t=0: A = f(input_0 + 0)           → A_old = 0
+    t=1: A = f(input_1 + w * A_old)   → A_old = A_{t=0}
+    t=2: A = f(input_2 + w * A_old)   → A_old = A_{t=1}
+```
 
 ```rust
-fn remove_edge(graph: &mut Graph, rng: &mut impl Rng) {
-    // 1. 获取所有可删除的边（调用前已检查非空）
+fn add_recurrent_edge(graph: &mut Graph, rng: &mut impl Rng) -> Result<(), GraphError> {
+    // 1. 获取所有可添加循环边的候选对
+    //    - 源节点：任何非 Input 节点（需要有输出值）
+    //    - 目标节点：State 节点（或自动创建）
+    //    - 该循环边尚不存在
+    let candidates = graph.get_possible_recurrent_edges();
+
+    if candidates.is_empty() {
+        return Err(GraphError::NoValidMutation);
+    }
+
+    // 2. 随机选择一对
+    let (src, dst_state) = candidates.choose(rng).unwrap();
+
+    // 3. 添加循环边，权重随机初始化
+    let weight = rng.gen_range(-1.0..1.0);
+    graph.connect_recurrent_weighted(*src, *dst_state, weight)?;
+
+    Ok(())
+}
+```
+
+> **复用现有基础设施**：循环边变异直接复用 `connect_recurrent()` API，该 API 在记忆机制设计中已实现（详见 [memory_mechanism_design.md](./memory_mechanism_design.md)）。
+
+### 4.5 Remove Edge（删除普通边）
+
+```rust
+fn remove_edge(graph: &mut Graph, rng: &mut impl Rng) -> Result<(), GraphError> {
+    // 1. 获取所有可删除的普通边（调用前已检查非空）
     let removable = graph.get_removable_edges();
 
     // 2. 随机选择一条边删除
     let edge_id = removable.choose(rng).unwrap();
-    graph.remove_edge(*edge_id);
+    graph.remove_edge(*edge_id)?;
 
     // 3. 清理孤立节点
-    graph.remove_orphan_nodes();
+    graph.remove_orphan_nodes()
 }
 ```
 
-### 4.5 Remove Node（删除节点）
+### 4.6 Remove Recurrent Edge（删除循环边）
 
 ```rust
-fn remove_node(graph: &mut Graph, rng: &mut impl Rng) {
+fn remove_recurrent_edge(graph: &mut Graph, rng: &mut impl Rng) -> Result<(), GraphError> {
+    // 1. 获取所有循环边
+    let recurrent_edges = graph.get_recurrent_edges();
+
+    if recurrent_edges.is_empty() {
+        return Err(GraphError::NoValidMutation);
+    }
+
+    // 2. 随机选择一条循环边删除
+    let (src, dst) = recurrent_edges.choose(rng).unwrap();
+    graph.disconnect_recurrent(*src, *dst)?;
+
+    // 3. 如果目标 State 节点不再被引用，可选择删除
+    graph.remove_orphan_state_nodes()
+}
+```
+
+### 4.7 Remove Node（删除节点）
+
+```rust
+fn remove_node(graph: &mut Graph, rng: &mut impl Rng) -> Result<(), GraphError> {
     // 1. 获取所有隐藏节点（调用前已检查非空）
     let hidden_nodes = graph.get_hidden_nodes();
 
     // 2. 随机选择一个节点删除
     let node_id = hidden_nodes.choose(rng).unwrap();
 
-    // 3. 删除节点及其所有连接
-    graph.remove_node(*node_id);
+    // 3. 删除节点及其所有连接（包括普通边和循环边）
+    graph.remove_node(*node_id)
 }
 ```
 
-### 4.6 random_mutation()（完整实现）
+### 4.8 random_mutation()（完整实现）
 
 **设计原则**：先检查可行性，再选择变异类型，避免失败。
 
@@ -596,6 +729,7 @@ impl Evolution {
         // 1. 收集所有可行的变异类型
         let mut candidates: Vec<(MutationType, f32)> = Vec::new();
 
+        // 普通边/节点变异
         if graph.has_edges() {
             candidates.push((MutationType::AddNode, self.prob_add_node));
         }
@@ -607,6 +741,14 @@ impl Evolution {
         }
         if graph.has_hidden_nodes() {
             candidates.push((MutationType::RemoveNode, self.prob_remove_node));
+        }
+
+        // 循环边变异
+        if graph.has_possible_recurrent_edges() {
+            candidates.push((MutationType::AddRecurrentEdge, self.prob_add_recurrent_edge));
+        }
+        if graph.has_recurrent_edges() {
+            candidates.push((MutationType::RemoveRecurrentEdge, self.prob_remove_recurrent_edge));
         }
 
         // 2. 如果没有可行变异，跳过（极端情况）
@@ -634,16 +776,22 @@ impl Evolution {
             MutationType::AddNode => {
                 let edges = graph.get_edges();
                 let edge_id = edges.choose(rng).unwrap();
-                add_node(graph, *edge_id, rng);
+                let _ = add_node(graph, *edge_id, rng);
             }
             MutationType::AddEdge => {
-                add_edge(graph, rng);
+                let _ = add_edge(graph, rng);
+            }
+            MutationType::AddRecurrentEdge => {
+                let _ = add_recurrent_edge(graph, rng);
             }
             MutationType::RemoveEdge => {
-                remove_edge(graph, rng);
+                let _ = remove_edge(graph, rng);
+            }
+            MutationType::RemoveRecurrentEdge => {
+                let _ = remove_recurrent_edge(graph, rng);
             }
             MutationType::RemoveNode => {
-                remove_node(graph, rng);
+                let _ = remove_node(graph, rng);
             }
         }
     }
@@ -803,20 +951,43 @@ loop {
 
 ```rust
 impl Graph {
-    // 拓扑查询
+    // ========== 普通边/节点查询 ==========
     fn get_hidden_nodes(&self) -> Vec<NodeId>;
     fn get_removable_edges(&self) -> Vec<EdgeId>;
-    fn get_possible_new_edges(&self) -> Vec<(NodeId, NodeId)>;
+    fn get_possible_new_edges(&self) -> Vec<(NodeId, NodeId)>;  // 保持 DAG 的候选
+    fn has_edges(&self) -> bool;
+    fn has_possible_new_edges(&self) -> bool;
+    fn has_removable_edges(&self) -> bool;
+    fn has_hidden_nodes(&self) -> bool;
 
-    // 拓扑修改
+    // ========== 循环边查询 ==========
+    fn get_recurrent_edges(&self) -> Vec<(NodeId, NodeId)>;
+    fn get_possible_recurrent_edges(&self) -> Vec<(NodeId, NodeId)>;  // 无 DAG 约束
+    fn has_recurrent_edges(&self) -> bool;
+    fn has_possible_recurrent_edges(&self) -> bool;
+
+    // ========== 普通边/节点修改 ==========
     fn add_edge(&mut self, src: NodeId, dst: NodeId, weight: f32) -> Result<EdgeId, GraphError>;
     fn remove_edge(&mut self, edge_id: EdgeId) -> Result<(), GraphError>;
     fn remove_node(&mut self, node_id: NodeId) -> Result<(), GraphError>;
     fn remove_orphan_nodes(&mut self) -> Result<(), GraphError>;
 
-    // 状态管理
+    // ========== 循环边修改（复用现有记忆机制 API）==========
+    fn connect_recurrent_weighted(&mut self, src: NodeId, dst: NodeId, weight: f32) -> Result<(), GraphError>;
+    fn disconnect_recurrent(&mut self, src: NodeId, dst: NodeId) -> Result<(), GraphError>;
+    fn remove_orphan_state_nodes(&mut self) -> Result<(), GraphError>;
+
+    // ========== 状态管理 ==========
     fn snapshot(&self) -> Result<GraphSnapshot, GraphError>;
     fn restore(&mut self, snapshot: GraphSnapshot) -> Result<(), GraphError>;
+}
+
+/// 快照需要包含循环边状态
+pub struct GraphSnapshot {
+    node_values: HashMap<NodeId, Tensor>,
+    node_grads: HashMap<NodeId, Tensor>,
+    recurrent_edges: HashMap<NodeId, NodeId>,  // 循环边拓扑
+    prev_values: HashMap<NodeId, Tensor>,       // 循环状态（双缓冲）
 }
 ```
 
@@ -932,11 +1103,13 @@ let trained = Evolution::new(graph, MyPPO::new(env)).run();
 
 | Phase | 任务 | 验收 |
 |:-----:|------|------|
-| **1** | Graph 拓扑修改 API | 单元测试：添加/删除节点边 |
-| **2** | Graph 状态快照/恢复 | 单元测试：snapshot/restore |
-| **3** | 变异操作实现 | 单元测试：4 种变异 |
-| **4** | `EvolutionTask` trait + `SupervisedTask` | 单元测试：训练+评估 |
-| **5** | `Evolution` 结构体 + `.run()` | 集成测试：XOR 进化 |
+| **1** | Graph 拓扑修改 API（普通边） | 单元测试：添加/删除节点边 |
+| **2** | Graph 循环边 API（复用记忆机制） | 单元测试：添加/删除循环边 |
+| **3** | Graph 状态快照/恢复 | 单元测试：snapshot/restore（含循环状态） |
+| **4** | 变异操作实现 | 单元测试：6 种变异 |
+| **5** | `EvolutionTask` trait + `SupervisedTask` | 单元测试：训练+评估 |
+| **6** | `Evolution` 结构体 + `.run()` | 集成测试：XOR 进化 |
+| **7** | 记忆任务验证（可选） | 集成测试：奇偶性检测（需要循环边） |
 
 ---
 
@@ -1072,10 +1245,14 @@ let (best_g, best_d) = CoEvolution::new()
 | 达标 | Task Complete | 任务指标满足用户要求（任务层判定） |
 | 全局最优 | Global Best | 历史上 loss 最低的结构（含参数快照） |
 | 添加节点 | Add Node | 在已有边上插入新节点（NEAT 标准术语） |
-| 添加边 | Add Edge | 在两个未直连的节点间添加新边 |
+| 添加边 | Add Edge | 在两个未直连的节点间添加新普通边（保持 DAG） |
+| 普通边 | Forward Edge | 同一时间步内立即传递值的边，必须保持 DAG |
+| 循环边 | Recurrent Edge | 跨时间步传递值的边，允许形成图论环（记忆机制） |
+| 自环 | Self-Loop | 节点指向自己的循环边，最简单的记忆单元 |
+| 双缓冲 | Double Buffering | 循环边避免死循环的机制：读上一步值，写当前值 |
 
 ---
 
-*本文档描述了 only_torch 的神经架构演化机制，采用 NEAT 风格拓扑变异 + 梯度训练的混合策略。*
+*本文档描述了 only_torch 的神经架构演化机制，采用 NEAT 风格拓扑变异 + 梯度训练的混合策略，支持循环边（记忆机制）的演化。*
 
-*最后更新：2026-01-25*
+*最后更新：2026-01-27*

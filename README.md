@@ -199,16 +199,8 @@ opt-level = 3
 
 ### 🔴 核心功能
 
+- 神经架构演化（详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)）
 - 记忆/循环机制（详见 [设计文档](.doc/design/memory_mechanism_design.md)）
-  - Phase 4: NEAT 集成
-
-### 🔵 NEAT 相关（长期目标）
-
-- 动态节点添加机制完善:
-  - 后期当引入 NEAT 机制后，可以给已存在节点添加父子节点后，需要把现有节点检测再完善下；
-  - 当后期（NEAT 阶段）需要在一个已经 forwarded 的图中添加节点（如将已经被使用过的 var1、var2 结合一个新的未使用的 var3 构建一个 add 节点），可能需要添加一个 `reset_forward_cnt` 方法来保证图 forward 的一致性。
-- `reset_forward_cnt` 方法（支持已 forward 图的节点扩展）
-- 根据 matrixSlow+我笔记重写全部实现！保证可以后期以 NEAT 进化，能 ok 拓展至 linear 等常用层，容易添加 edge（如已存在的 add 节点的父节点）。
 
 ### ⚫ 实战验证
 
