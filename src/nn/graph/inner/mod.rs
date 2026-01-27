@@ -61,7 +61,7 @@ pub struct GraphInner {
     /// 循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
     pub(in crate::nn::graph) recurrent_layer_metas: Vec<RecurrentLayerMeta>,
 
-    // ========== 循环/记忆机制相关字段（Phase 1） ==========
+    // ========== 循环/记忆机制相关字段 ==========
     /// 循环边：to_node -> from_node（to 节点在 step() 时从 from 节点的上一步值读取）
     pub(in crate::nn::graph) recurrent_edges: HashMap<NodeId, NodeId>,
     /// 双缓冲：存储循环节点的上一时间步值
@@ -69,7 +69,7 @@ pub struct GraphInner {
     /// 当前时间步（用于调试，每次 step() 递增，reset() 归零）
     pub(in crate::nn::graph) time_step: u64,
 
-    // ========== BPTT 相关字段（Phase 2） ==========
+    // ========== BPTT 相关字段 ==========
     /// 时间步历史：存储每个时间步的节点快照，用于 BPTT
     /// 每个元素是一个时间步的快照：NodeId -> (value, jacobi)
     /// 只在训练模式下记录

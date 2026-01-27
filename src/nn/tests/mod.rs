@@ -15,7 +15,7 @@ mod layer_lstm; // LSTM 层便捷函数
 mod layer_max_pool2d; // MaxPool2d 层便捷函数
 mod layer_rnn; // RNN 层测试（展开式设计）
 mod model_state; // ModelState（模型状态管理器）智能缓存测试
-mod module_trait; // Module trait 测试（V2 API）
+mod module_trait; // Module trait 测试
 mod node_add;
 mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
@@ -42,7 +42,7 @@ mod node_subtract; // Subtract 节点（逐元素减法）
 mod node_tanh;
 mod node_zeros_like; // ZerosLike 节点测试（动态零张量）
 mod optimizer; // 优化器测试（PyTorch 风格 API）
-mod recurrent_basic; // Phase 1: 循环/记忆机制基础测试
-mod recurrent_bptt; // Phase 2: BPTT 通过时间反向传播测试
+mod recurrent_basic; // 循环/记忆机制基础测试
+mod recurrent_bptt; // BPTT 通过时间反向传播测试
 mod save_load; // 参数保存/加载测试
-mod var_ops; // V2 API: Var 算子重载和链式调用测试
+mod var_ops; // Var 算子重载和链式调用测试

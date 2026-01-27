@@ -11,7 +11,7 @@ use crate::nn::NodeId;
 use crate::tensor::Tensor;
 
 impl GraphInner {
-    // ========== BPTT API（Phase 2） ==========
+    // ========== BPTT API ==========
 
     /// 获取当前存储的时间步历史长度
     pub fn history_len(&self) -> usize {

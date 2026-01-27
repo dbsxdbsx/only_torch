@@ -3,7 +3,7 @@
  * @Date         : 2026-01-08
  * @Description  : Smart Var - 智能变量句柄，支持算子重载和链式调用
  *
- * 这是 V2 架构的核心组件，提供 PyTorch 级用户体验。
+ * 这是架构的核心组件，提供 PyTorch 级用户体验。
  */
 
 use super::graph::GraphInner;

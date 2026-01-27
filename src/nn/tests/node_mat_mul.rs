@@ -505,7 +505,7 @@ fn test_mat_mul_backward_e2e() -> Result<(), GraphError> {
     let loss_value = graph.get_node_value(loss)?.unwrap();
     assert_abs_diff_eq!(loss_value.get_data_number().unwrap(), 7.5, epsilon = 1e-6);
 
-    // 反向传播（验证 backward 返回 loss 标量值 —— Phase 2 API 契约）
+    // 反向传播（验证 backward 返回 loss 标量值）
     graph.zero_grad()?;
     let loss_returned = graph.backward(loss)?;
     assert_abs_diff_eq!(loss_returned, 7.5, epsilon = 1e-6);

@@ -1,7 +1,7 @@
 /*
- * @Description  : Graph（V2 Graph 句柄）测试
+ * @Description  : Graph 句柄测试
  *
- * 这是 Phase 1b 验收测试的一部分，测试 Graph 句柄的核心功能。
+ * 测试 Graph 句柄的核心功能。
  */
 
 use crate::nn::graph::Graph;
