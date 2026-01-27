@@ -153,18 +153,6 @@ impl SoftmaxCrossEntropy {
         // 返回平均损失
         total_loss / batch_size as f32
     }
-
-    /// 兼容旧代码的单样本 softmax
-    #[allow(dead_code)]
-    fn stable_softmax(logits: &Tensor) -> Tensor {
-        Self::stable_softmax_batch(logits)
-    }
-
-    /// 兼容旧代码的单样本交叉熵
-    #[allow(dead_code)]
-    fn stable_cross_entropy(logits: &Tensor, labels: &Tensor) -> f32 {
-        Self::stable_cross_entropy_batch(logits, labels)
-    }
 }
 
 impl TraitNode for SoftmaxCrossEntropy {

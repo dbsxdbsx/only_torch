@@ -4,7 +4,7 @@
 //! - IDX 二进制格式解析（支持 .gz 压缩）
 //! - 像素归一化 (0-255 → 0-1)
 //! - 标签 one-hot 编码
-//! - 可选自动下载
+//! - 可选自动下载（含 MD5 校验）
 
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 
+use crate::data::download::download_file;
 use crate::data::error::DataError;
 use crate::data::transforms::{normalize_pixels, one_hot};
 use crate::tensor::Tensor;
@@ -19,8 +20,7 @@ use crate::tensor::Tensor;
 /// MNIST 下载地址（使用 AWS S3 镜像，原官网 yann.lecun.com 不稳定）
 const MNIST_BASE_URL: &str = "https://ossci-datasets.s3.amazonaws.com/mnist/";
 
-/// MNIST 文件信息
-#[allow(dead_code)]
+/// MNIST 文件信息：(文件名, MD5 校验码)
 const MNIST_FILES: [(&str, &str); 4] = [
     (
         "train-images-idx3-ubyte.gz",
@@ -214,44 +214,28 @@ fn ensure_file(data_dir: &Path, base_name: &str, download: bool) -> Result<PathB
     // 文件不存在，尝试下载
     if download {
         std::fs::create_dir_all(data_dir).map_err(DataError::IoError)?;
-        download_file(base_name, &gz_path)?;
+        download_mnist_file(base_name, &gz_path)?;
         Ok(gz_path)
     } else {
         Err(DataError::FileNotFound(uncompressed_path))
     }
 }
 
-/// 下载 MNIST 文件
-fn download_file(base_name: &str, dest_path: &Path) -> Result<(), DataError> {
+/// 下载 MNIST 文件（含 MD5 校验）
+fn download_mnist_file(base_name: &str, dest_path: &Path) -> Result<(), DataError> {
     let gz_name = format!("{base_name}.gz");
     let url = format!("{MNIST_BASE_URL}{gz_name}");
+    let expected_md5 = get_expected_md5(&gz_name);
 
-    println!("正在下载 {url} ...");
+    download_file(&url, dest_path, expected_md5)
+}
 
-    let response = ureq::get(&url)
-        .call()
-        .map_err(|e| DataError::DownloadError(format!("HTTP 请求失败: {e}")))?;
-
-    if response.status() != 200 {
-        return Err(DataError::DownloadError(format!(
-            "HTTP 状态码: {}",
-            response.status()
-        )));
-    }
-
-    let mut bytes = Vec::new();
-    response
-        .into_reader()
-        .read_to_end(&mut bytes)
-        .map_err(|e| DataError::DownloadError(format!("读取响应失败: {e}")))?;
-
-    // 验证 MD5（可选，暂时跳过详细实现）
-    // TODO: 添加 MD5 校验
-
-    std::fs::write(dest_path, &bytes).map_err(DataError::IoError)?;
-
-    println!("下载完成: {dest_path:?}");
-    Ok(())
+/// 获取文件的预期 MD5 校验码
+fn get_expected_md5(filename: &str) -> Option<&'static str> {
+    MNIST_FILES
+        .iter()
+        .find(|(name, _)| *name == filename)
+        .map(|(_, md5)| *md5)
 }
 
 /// 解析 IDX 图像文件

@@ -200,36 +200,7 @@ opt-level = 3
 ### 🔴 核心功能
 
 - 记忆/循环机制（详见 [设计文档](.doc/design/memory_mechanism_design.md)）
-  - ✅ Phase 1: Graph 支持非 DAG 模式 + 双缓冲 + step()/reset() API
-  - ✅ Phase 2: BPTT/TBPTT 训练支持（隐式展开 + 快照机制）
-  - ✅ Phase 2.5: State 节点类型（修复跨时间梯度传递）
-  - ✅ **IT-1: 奇偶性检测（固定长度 + 单序列）** ← 验收通过（98%准确率）
-  - ✅ **IT-2: 奇偶性检测（固定长度 + Batch）** ← 验收通过
-  - ✅ **IT-3a: 奇偶性检测（变长 + Batch + Padding/Mask）** ← 96.9% 准确率
-  - ✅ Phase 3: 模板层 API（`rnn()`, `lstm()`, `gru()`）
-  - ✅ **IT-3b: 奇偶性检测（RNN Layer）** ← 95.3% 准确率
-  - ✅ **IT-3c: 奇偶性检测（LSTM Layer）** ← 93.8% 准确率
-  - ✅ **IT-3d: 奇偶性检测（GRU Layer）** ← 90.6% 准确率
   - Phase 4: NEAT 集成
-
-### 🟡 API 改进
-- only retain `save_visualization`?
-- what if make the input nodes also be grouped together?
-- fix still lacking some of the nodes need to append, refine with `grad: Option<Tensor>,`？
-- ✅ ~~是否需要整合单独跟批处理版本的 forward 跟 backward 相关类的方法?~~ → 已完成，详见 [自动微分统一设计](.doc/design/autodiff_unification_design.md)
-- ✅ ~~Graph/NodeHandle 代码按功能分块重组~~ → 已完成，`graph.rs` 已重构为模块化 `graph/` 目录
-
-
-> **已评估并确认为好设计**（无需更改）：
->
-> - `InvalidOperation` vs `ComputationError`：语义边界清晰且使用一致 ✓ 已验证
-> - NodeId 作为用户接口：避免所有权复杂性和循环引用 ✓ 已验证
-> - 运算符重载：应在上层 API 实现（参见五层架构规划: [.doc/_archive/high_level_architecture_design.md](.doc/_archive/high_level_architecture_design.md)）
-
-### 🟢 辅助功能
-
-- 清理未使用的方法
-- 评估 `Tensor::uninit` 的必要性
 
 ### 🔵 NEAT 相关（长期目标）
 

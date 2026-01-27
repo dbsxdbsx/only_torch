@@ -8,11 +8,12 @@
 //! 这是回归任务的经典数据集，类似于分类任务中的 MNIST。
 
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 
+use crate::data::download::download_text;
 use crate::data::error::DataError;
 use crate::tensor::Tensor;
 
@@ -391,29 +392,8 @@ fn ensure_file(data_dir: &Path, download: bool) -> Result<PathBuf, DataError> {
 /// 下载数据集
 fn download_dataset(dest_path: &Path) -> Result<(), DataError> {
     println!("正在下载 California Housing 数据集...");
-    println!("URL: {CALIFORNIA_HOUSING_URL}");
-
-    let response = ureq::get(CALIFORNIA_HOUSING_URL)
-        .call()
-        .map_err(|e| DataError::DownloadError(format!("HTTP 请求失败: {e}")))?;
-
-    if response.status() != 200 {
-        return Err(DataError::DownloadError(format!(
-            "HTTP 状态码: {}",
-            response.status()
-        )));
-    }
-
-    let mut content = String::new();
-    response
-        .into_reader()
-        .read_to_string(&mut content)
-        .map_err(|e| DataError::DownloadError(format!("读取响应失败: {e}")))?;
-
-    std::fs::write(dest_path, &content).map_err(DataError::IoError)?;
-
-    println!("下载完成: {dest_path:?}");
-    Ok(())
+    // 注：此数据集来自 GitHub，内容可能随时更新，不做 MD5 校验
+    download_text(CALIFORNIA_HOUSING_URL, dest_path, None)
 }
 
 /// 解析 CSV 文件

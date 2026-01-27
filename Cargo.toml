@@ -68,6 +68,7 @@
     flate2="1.0" # gzip 解压
     dirs  ="5.0" # 跨平台目录
     ureq  ="2.9" # HTTP 下载（blocking）
+    md-5  ="0.10" # MD5 校验（RustCrypto）
 
     # 并行计算
     rayon="1.10" # 数据并行

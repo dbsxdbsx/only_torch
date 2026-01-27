@@ -64,7 +64,7 @@ digraph Model {
             "1280" [label=<multiply <FONT COLOR="#E67E22">×4-12</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>Multiply</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFF9C4" peripheries=2 fontsize=10];
             "1281" [label=<add <FONT COLOR="#E67E22">×4-12</FONT> <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFF9C4" peripheries=2 fontsize=10];
         }
-        "1260" [label=<input <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>SmartInput</B><BR/>[?, 4-12, 1]> shape=ellipse style=filled fillcolor="#E0E0E0" peripheries=2 fontsize=10];
+            "1260" [label=<input <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>SmartInput</B><BR/>[?, 4-12, 1]> shape=ellipse style=filled fillcolor="#E0E0E0" peripheries=2 fontsize=10];
     }
 
     "1504" [label=<target <FONT COLOR="#1565C0">(×9)</FONT><BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" peripheries=2 fontsize=10];

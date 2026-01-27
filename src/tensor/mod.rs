@@ -44,7 +44,7 @@ pub struct Tensor {
 
 impl Default for Tensor {
     fn default() -> Self {
-        Self::uninited(&[])
+        Self::zeros(&[])
     }
 }
 
@@ -67,16 +67,6 @@ impl AbsDiffEq for Tensor {
 }
 
 impl Tensor {
-    /// 创建一个空（未初始化）的张量--该张量的所有元素值为NaN，请务必之后赋予每个元素具体数值后再使用（虽然不会报错）。
-    /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
-    /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
-    /// 若为矩阵，`shape`可以是[n,m]；
-    /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
-    pub fn uninited(shape: &[usize]) -> Self {
-        let data = Array::from_elem(IxDyn(shape), f32::NAN);
-        Self { data }
-    }
-
     /// 创建一个张量，
     /// 若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
     /// 若为向量，`shape`可以是[n]、[1,n]、[n,1]；
