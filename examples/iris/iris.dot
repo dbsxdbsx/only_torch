@@ -48,9 +48,9 @@ digraph Model {
             "14" [label=<mat_mul_3<BR/><B>MatMul</B><BR/>[?, 3]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "15" [label=<add_3<BR/><B>Add</B><BR/>[?, 3]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
-        "7" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 4]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
-        "10" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 10]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "13" [label=<tanh_2<BR/><B>Tanh</B><BR/>[?, 10]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "7" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 4]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+            "10" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 10]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "13" [label=<tanh_2<BR/><B>Tanh</B><BR/>[?, 10]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     "16" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];

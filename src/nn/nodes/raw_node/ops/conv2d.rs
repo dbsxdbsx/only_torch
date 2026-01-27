@@ -52,6 +52,16 @@ pub(crate) struct Conv2d {
 }
 
 impl Conv2d {
+    /// 获取步长
+    pub(in crate::nn) const fn stride(&self) -> (usize, usize) {
+        self.stride
+    }
+
+    /// 获取填充
+    pub(in crate::nn) const fn padding(&self) -> (usize, usize) {
+        self.padding
+    }
+
     /// 创建 Conv2d 节点
     ///
     /// # 参数

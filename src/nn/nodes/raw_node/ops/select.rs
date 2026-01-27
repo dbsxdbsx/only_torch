@@ -40,6 +40,16 @@ pub(crate) struct Select {
 }
 
 impl Select {
+    /// 获取选择的轴
+    pub(in crate::nn) const fn axis(&self) -> usize {
+        self.axis
+    }
+
+    /// 获取选择的索引
+    pub(in crate::nn) const fn index(&self) -> usize {
+        self.index
+    }
+
     pub(crate) fn new(
         parents: &[&NodeHandle],
         axis: usize,

@@ -36,8 +36,8 @@ digraph Model {
             "9" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "10" [label=<add_2<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
-        "5" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
-        "8" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "5" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+            "8" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     "11" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];

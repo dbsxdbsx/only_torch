@@ -45,6 +45,16 @@ pub(crate) struct AvgPool2d {
 }
 
 impl AvgPool2d {
+    /// 获取核大小
+    pub(in crate::nn) const fn kernel_size(&self) -> (usize, usize) {
+        self.kernel_size
+    }
+
+    /// 获取步长
+    pub(in crate::nn) const fn stride(&self) -> (usize, usize) {
+        self.stride
+    }
+
     /// 创建 `AvgPool2d` 节点
     ///
     /// # 参数

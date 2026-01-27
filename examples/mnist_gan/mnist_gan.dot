@@ -36,9 +36,9 @@ digraph Model {
             "13" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "14" [label=<add_2<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
-        "9" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
-        "12" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>α=0.2> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "15" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "9" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
+            "12" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>α=0.2> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "15" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     subgraph cluster_Generator {
@@ -72,9 +72,9 @@ digraph Model {
             "22" [label=<mat_mul_4<BR/><B>MatMul</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "23" [label=<add_4<BR/><B>Add</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
-        "18" [label=<input_2<BR/><B>SmartInput</B><BR/>[?, 64]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
-        "21" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>α=0.2> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "24" [label=<sigmoid_2<BR/><B>Sigmoid</B><BR/>[?, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "18" [label=<input_2<BR/><B>SmartInput</B><BR/>[?, 64]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+            "21" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>α=0.2> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "24" [label=<sigmoid_2<BR/><B>Sigmoid</B><BR/>[?, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     "16" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];

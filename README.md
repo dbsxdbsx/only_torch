@@ -217,7 +217,7 @@ opt-level = 3
 - what if make the input nodes also be grouped together?
 - fix still lacking some of the nodes need to append, refine with `grad: Option<Tensor>,`？
 - ✅ ~~是否需要整合单独跟批处理版本的 forward 跟 backward 相关类的方法?~~ → 已完成，详见 [自动微分统一设计](.doc/design/autodiff_unification_design.md)
-- ~~Graph/NodeHandle 代码按功能分块重组~~ → 推迟至 Phase 1 完成后评估
+- ✅ ~~Graph/NodeHandle 代码按功能分块重组~~ → 已完成，`graph.rs` 已重构为模块化 `graph/` 目录
 
 
 > **已评估并确认为好设计**（无需更改）：

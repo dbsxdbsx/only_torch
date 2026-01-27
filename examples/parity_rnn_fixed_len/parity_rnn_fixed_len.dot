@@ -44,7 +44,7 @@ digraph Model {
             "12" [label=<add <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFF9C4" fontsize=10];
             "13" [label=<tanh <FONT COLOR="#E67E22">×8</FONT><BR/><B>Tanh</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFE0B2" fontsize=10];
         }
-        "6" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 8, 1]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+            "6" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 8, 1]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
     }
 
     "58" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];

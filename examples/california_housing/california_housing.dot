@@ -60,10 +60,10 @@ digraph Model {
             "19" [label=<mat_mul_4<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "20" [label=<add_4<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
-        "9" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 8]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
-        "12" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "15" [label=<softplus_2<BR/><B>SoftPlus</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "18" [label=<softplus_3<BR/><B>SoftPlus</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "9" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 8]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+            "12" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "15" [label=<softplus_2<BR/><B>SoftPlus</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "18" [label=<softplus_3<BR/><B>SoftPlus</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     "21" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
