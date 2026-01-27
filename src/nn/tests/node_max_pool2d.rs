@@ -5,8 +5,8 @@
  *
  * 测试策略：
  * 1. 基础功能测试（形状、前向传播）
- * 2. Jacobi 模式反向传播（单样本）
- * 3. Batch 模式反向传播
+ * 2. VJP 反向传播测试
+ * 3. 动态 batch 测试
  * 4. 各种参数组合（kernel_size, stride）
  */
 
@@ -16,7 +16,7 @@ use approx::assert_abs_diff_eq;
 
 // ==================== 基础功能测试 ====================
 
-/// 测试 MaxPool2d 节点创建（单样本）
+/// 测试 MaxPool2d 节点创建（3D 输入）
 #[test]
 fn test_max_pool2d_creation_single() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -110,7 +110,7 @@ fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 MaxPool2d 前向传播（Batch 模式）
+/// 测试 MaxPool2d 前向传播（4D 批量输入）
 #[test]
 fn test_max_pool2d_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -170,7 +170,7 @@ fn test_max_pool2d_multi_channel() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== Jacobi 模式测试（单样本）====================
+// ==================== VJP 反向传播测试 ====================
 
 /// 测试 MaxPool2d Jacobi 矩阵
 #[test]
@@ -232,7 +232,7 @@ fn test_max_pool2d_jacobi() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== Batch 模式测试 ====================
+// ==================== 动态 batch 测试 ====================
 
 /// 测试 MaxPool2d Batch 梯度
 #[test]

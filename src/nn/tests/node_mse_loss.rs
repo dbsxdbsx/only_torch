@@ -257,7 +257,7 @@ fn test_mse_loss_backward_e2e_2d() {
     assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-6);
 }
 
-// ========== Batch 模式测试 ==========
+// ========== 批量输入测试 ==========
 
 /// PyTorch 验证:
 /// ```python
@@ -308,7 +308,7 @@ fn test_mse_loss_batch_forward() {
     assert_abs_diff_eq!(loss[[0, 0]], 0.014_166_653, epsilon = 1e-6);
 }
 
-/// Batch 模式的反向传播测试
+/// 批量输入的反向传播测试
 #[test]
 fn test_mse_loss_batch_backward() {
     let mut graph = GraphInner::new();

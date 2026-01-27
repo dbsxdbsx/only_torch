@@ -288,9 +288,9 @@ for batch in dataloader {  // batch_size=1 也是有效的 batch
 impl Graph {
     /// 前向传播（单样本和批量统一）
     ///
-    /// 输入节点的 shape 决定是单样本还是批量：
-    /// - `[784]` 或 `[1, 784]`：单样本
-    /// - `[64, 784]`：批量（batch_size=64）
+    /// 输入遵循 Batch-First 格式：
+    /// - FC 层：`[batch, features]`（单样本用 `[1, 784]`）
+    /// - CNN 层：`[batch, C, H, W]` 或 `[C, H, W]`（3D 无 batch）
     pub fn forward(&mut self, target: NodeId) -> Result<(), GraphError>;
 
     /// 反向传播（VJP 模式，单样本和批量统一）

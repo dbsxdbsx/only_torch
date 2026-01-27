@@ -5,8 +5,8 @@
  *
  * 测试策略：
  * 1. 基础功能测试（形状、前向传播）
- * 2. Jacobi 模式反向传播（单样本）
- * 3. Batch 模式反向传播
+ * 2. VJP 反向传播测试
+ * 3. 动态 batch 测试
  * 4. 各种参数组合（stride, padding）
  */
 
@@ -17,7 +17,7 @@ use approx::assert_abs_diff_eq;
 
 // ==================== 基础功能测试 ====================
 
-/// 测试 Conv2d 节点创建（单样本）
+/// 测试 Conv2d 节点创建（3D 输入）
 #[test]
 fn test_conv2d_creation_single() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -150,7 +150,7 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Conv2d 前向传播（Batch 模式）
+/// 测试 Conv2d 前向传播（4D 批量输入）
 #[test]
 fn test_conv2d_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -219,7 +219,7 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== VJP 模式测试（单样本）====================
+// ==================== VJP 反向传播测试 ====================
 
 /// 测试 Conv2d 对卷积核的梯度（VJP 模式）
 ///
@@ -327,7 +327,7 @@ fn test_conv2d_grad_to_input() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== Batch 模式测试（通过完整网络）====================
+// ==================== 动态 batch 测试（通过完整网络）====================
 
 /// 测试 Conv2d 在完整网络中的前向传播
 ///

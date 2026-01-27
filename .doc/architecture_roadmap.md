@@ -145,8 +145,8 @@ optimizer.step()?;
 | P1c | DataLoader + MNIST   | 数据加载                               | ✅ 基础设施     |  ✅  |
 | P2  | LeakyReLU/ReLU 节点  | 底层 LeakyReLU + 便捷 ReLU (slope=0.0) | ✅ 新节点       |  ✅  |
 | P3  | Reshape/Flatten 节点 | CNN 数据流转换（PyTorch 风格）         | ✅ 结构操作     |  ✅  |
-| P4  | Conv2d 节点          | PyTorch 风格（多通道内部处理）         | ✅ Jacobi+Batch |  ✅  |
-| P5  | Pooling 节点         | MaxPool2d/AvgPool2d                    | ✅ Jacobi+Batch |  ✅  |
+| P4  | Conv2d 节点          | PyTorch 风格（多通道内部处理）         | ✅ VJP 模式     |  ✅  |
+| P5  | Pooling 节点         | MaxPool2d/AvgPool2d                    | ✅ VJP 模式     |  ✅  |
 | P6  | MNIST CNN 端到端     | LeNet 风格                             | ✅ 验证         |  🔄  |
 
 ### 阶段三：NEAT 神经进化 (8-12 周)
@@ -197,7 +197,7 @@ XOR 问题已成功解决！网络结构：`Input(2) → Hidden(4, Tanh) → Out
 
 Graph 的动态扩展能力已验证通过！关键实现：
 
-1. **新增 `on_topology_changed()` 方法**：在拓扑变化后调用，清除所有 Jacobi 但保留 value
+1. **新增 `on_topology_changed()` 方法**：在拓扑变化后调用，重置 pass_id 但保留 value
 2. **12 个综合测试**覆盖各种场景：
    - 基本动态添加（forward/backward 后添加节点）
    - 多次连续拓扑变化
@@ -213,7 +213,7 @@ graph.backward_nodes(&[w], loss)?;
 let new_node = graph.new_parameter_node(&[1, 1], Some("new"))?;
 let new_add = graph.new_add_node(&[old_node, new_node], None)?;
 
-// 通知拓扑变化（清除 Jacobi，保留 value）
+// 通知拓扑变化（重置 pass_id，保留 value）
 graph.on_topology_changed();
 
 // 继续训练
@@ -246,7 +246,7 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
 
 **已完成：**
 
-- ✅ Sigmoid 激活节点 + `jacobi_diag()` 重构
+- ✅ Sigmoid 激活节点
 - ✅ SoftmaxCrossEntropyLoss 融合节点（数值稳定）
 - ✅ DataLoader 模块 + MNIST 数据集（自动下载/缓存）
 - ✅ MNIST MLP MVP 集成测试（验证 loss 下降趋势）
@@ -255,7 +255,7 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
 
 1. ~~实现 ReLU 激活节点~~ ✅ 已完成（LeakyReLU + ReLU）
 2. ~~实现 Conv2d / Pooling 节点（CNN 基础）~~ ✅ 已完成
-   - Conv2d: 支持 stride/padding，Jacobi+Batch 双模式
+   - Conv2d: 支持 stride/padding，VJP 自动微分
    - MaxPool2d: 稀疏梯度反传（记录最大值索引）
    - AvgPool2d: 均匀梯度分配
 3. ~~实现 CNN Layer 便捷函数~~ ✅ 已完成
@@ -270,7 +270,7 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
 实现了完整的 MSELoss 节点，支持回归任务：
 
 - **支持 Reduction**：`Mean`（默认）、`Sum`
-- **双模式梯度**：Jacobi 模式 + Batch 模式
+- **VJP 模式**：统一的反向传播 API
 - **集成测试**：`test_simple_regression_full_batch.rs` 验证 y=2x+1 线性回归收敛
 
 ### ✅ 已完成：California Housing 数据集

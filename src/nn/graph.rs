@@ -5008,7 +5008,7 @@ impl GraphInner {
     ///
     /// # 设计
     /// - **`PyTorch` 风格**：单节点处理多通道，而非 `MatrixSlow` 的每通道独立节点
-    /// - 支持 Jacobi 模式（单样本）和 Batch 模式
+    /// - 自动支持批量处理（batch 维度由输入形状决定）
     ///
     /// # 参数
     /// - `input_id`: 输入节点 ID，形状 `[C_in, H, W]` 或 `[batch, C_in, H, W]`
@@ -5018,8 +5018,8 @@ impl GraphInner {
     /// - `name`: 可选的节点名称
     ///
     /// # 输出形状
-    /// - 单样本: `[C_out, H', W']`
-    /// - Batch: `[batch, C_out, H', W']`
+    /// - 3D 输入 `[C_in, H, W]` → 输出 `[C_out, H', W']`
+    /// - 4D 输入 `[batch, C_in, H, W]` → 输出 `[batch, C_out, H', W']`
     /// - 其中 `H' = (H + 2*pH - kH) / sH + 1`
     ///
     /// # 示例
@@ -5060,8 +5060,8 @@ impl GraphInner {
     /// - `name`: 可选的节点名称
     ///
     /// # 输出形状
-    /// - 单样本: `[C, H', W']`
-    /// - Batch: `[batch, C, H', W']`
+    /// - 3D 输入 `[C, H, W]` → 输出 `[C, H', W']`
+    /// - 4D 输入 `[batch, C, H, W]` → 输出 `[batch, C, H', W']`
     /// - 其中 `H' = (H - kH) / sH + 1`
     ///
     /// # 示例
@@ -5098,8 +5098,8 @@ impl GraphInner {
     /// - `name`: 可选的节点名称
     ///
     /// # 输出形状
-    /// - 单样本: `[C, H', W']`
-    /// - Batch: `[batch, C, H', W']`
+    /// - 3D 输入 `[C, H, W]` → 输出 `[C, H', W']`
+    /// - 4D 输入 `[batch, C, H, W]` → 输出 `[batch, C, H', W']`
     /// - 其中 `H' = (H - kH) / sH + 1`
     ///
     /// # 示例

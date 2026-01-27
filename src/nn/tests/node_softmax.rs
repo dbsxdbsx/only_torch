@@ -273,7 +273,7 @@ fn test_softmax_backward_vjp_non_uniform() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Softmax 梯度计算（batch 模式）
+/// 测试 Softmax 梯度计算（批量输入）
 #[test]
 fn test_softmax_backward_vjp_batch() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();

@@ -27,7 +27,7 @@ pub(crate) struct SoftmaxCrossEntropy {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
-    grad: Option<Tensor>, // Batch 模式的梯度
+    grad: Option<Tensor>, // 梯度
     /// 输出形状固定为 [1, 1]（标量损失）
     shape: Vec<usize>,
     /// 缓存 softmax 结果，用于反向传播（支持 batch）

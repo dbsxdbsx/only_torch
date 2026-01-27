@@ -93,7 +93,7 @@ pub(in crate::nn::nodes) trait TraitNode {
 
     // ========== 梯度（VJP 模式）==========
 
-    /// 计算本节点对父节点的梯度（Batch 模式）
+    /// 计算本节点对父节点的梯度（VJP 模式）
     ///
     /// # 参数
     /// - `target_parent`: 目标父节点
@@ -113,20 +113,20 @@ pub(in crate::nn::nodes) trait TraitNode {
     ) -> Result<Tensor, GraphError> {
         let _ = (target_parent, upstream_grad, assistant_parent);
         Err(GraphError::InvalidOperation(format!(
-            "{}尚未实现 calc_grad_to_parent（Batch 模式）",
+            "{}尚未实现 calc_grad_to_parent",
             self.display_node()
         )))
     }
 
-    /// 获取节点的梯度（Batch 模式）
+    /// 获取节点的梯度
     fn grad(&self) -> Option<&Tensor> {
         None // 默认不支持，需要各节点实现
     }
 
-    /// 设置节点的梯度（Batch 模式）
+    /// 设置节点的梯度
     fn set_grad(&mut self, _grad: Option<&Tensor>) -> Result<(), GraphError> {
         Err(GraphError::InvalidOperation(format!(
-            "{}尚未实现 set_grad（Batch 模式）",
+            "{}尚未实现 set_grad",
             self.display_node()
         )))
     }

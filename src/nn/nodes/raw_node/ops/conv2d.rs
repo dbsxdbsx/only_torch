@@ -5,7 +5,7 @@
  *
  * 设计决策：
  * - 单节点处理多通道（PyTorch 风格），而非每通道独立节点（MatrixSlow 风格）
- * - 支持 Jacobi 模式（单样本）和 Batch 模式
+ * - 自动支持批量处理（batch 维度由输入形状决定）
  * - 输入格式：[C_in, H, W] 或 [batch, C_in, H, W]
  * - 输出格式：[C_out, H', W'] 或 [batch, C_out, H', W']
  * - 使用 Rayon 在 batch 维度并行加速

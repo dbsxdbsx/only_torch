@@ -517,7 +517,7 @@ fn test_leaky_relu_gradient_accumulation() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== Batch 模式测试 ====================
+// ==================== 批量输入测试 ====================
 
 /// 测试 LeakyReLU Batch 前向传播
 #[test]

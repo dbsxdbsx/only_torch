@@ -201,7 +201,7 @@ fn test_reshape_backward_e2e() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Batch 模式的前向传播
+/// 测试批量输入的前向传播
 #[test]
 fn test_reshape_batch_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -440,7 +440,7 @@ fn test_reshape_as_flatten_in_mlp() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试单样本模式下的反向传播正确性
+/// 测试 2D 输入的反向传播正确性
 #[test]
 fn test_reshape_single_sample_backward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);

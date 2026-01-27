@@ -105,7 +105,7 @@ for epoch in 0..epochs {
         graph.forward_node(loss)?;
         graph.backward_nodes(&[w, b], loss)?;
         optimizer.step(&mut graph)?;
-        graph.clear_jacobi()?;
+        graph.zero_grad();
     }
 
     // 验证阶段（no_grad）
@@ -199,7 +199,7 @@ graph.forward_node(output)?;         // ❌ 无法再借用 graph！
    graph.no_grad_scope(|g| {
        g.forward_node(output)?;
        g.backward_nodes(&[w], output)?;
-       println!("Debug grad: {:?}", g.get_node_jacobi(w));
+       println!("Debug grad: {:?}", g.get_node_grad(w));
        Ok(())
    });
    ```
@@ -222,7 +222,7 @@ if !self.is_train_mode() {
 #### 对照测试
 
 - Rust 测试: `test_no_grad_scope_backward_still_works`
-- PyTorch 对照: `tests/calc_jacobi_by_pytorch/no_grad_scope_behavior.py`
+- PyTorch 对照: `tests/no_grad_scope_behavior.py`
 
 ---
 
@@ -683,8 +683,8 @@ graph.forward_node(out2)?;  // forward_pass_id = 2
 
 | 节点类型 | 行为 | 说明 |
 |----------|------|------|
-| **参数节点** | jacobi **累积** | 支持梯度累积（如多任务学习、大 batch 模拟） |
-| **中间节点** | jacobi **重新计算** | 每次 backward 独立计算，不累积 |
+| **参数节点** | grad **累积** | 支持梯度累积（如多任务学习、大 batch 模拟） |
+| **中间节点** | grad **重新计算** | 每次 backward 独立计算，不累积 |
 
 #### 核心机制：传播信号 vs 累加器
 
@@ -693,7 +693,7 @@ graph.forward_node(out2)?;  // forward_pass_id = 2
 | 概念 | 用途 | 是否跨 backward 累积 |
 |------|------|---------------------|
 | **传播信号**（upstream grad） | 链式法则向上传递 | ❌ 必须是本次 backward 新算的 |
-| **参数累加器**（param.jacobi） | 优化器更新用 | ✅ 跨 backward 累积 |
+| **参数累加器**（param.grad） | 优化器更新用 | ✅ 跨 backward 累积 |
 
 **关键规则**：
 1. 每次 backward 都从 scratch 计算一条"本次梯度流"（传播信号只用本次的）
@@ -707,15 +707,15 @@ graph.forward_node(out2)?;  // forward_pass_id = 2
 假设存在拓扑：u(param) → w(param) → out
 
 第 1 次 backward:
-  w.jacobi = ∂L1/∂w
-  u.jacobi = ∂L1/∂w × ∂w/∂u  ← 使用本次新算的 ∂L1/∂w
+  w.grad = ∂L1/∂w
+  u.grad = ∂L1/∂w × ∂w/∂u  ← 使用本次新算的 ∂L1/∂w
 
 第 2 次 backward:
-  w.jacobi += ∂L2/∂w  → 累积后 = ∂L1/∂w + ∂L2/∂w
-  u.jacobi += ∂L2/∂w × ∂w/∂u  ← 必须使用本次新算的 ∂L2/∂w，不能用累积后的！
+  w.grad += ∂L2/∂w  → 累积后 = ∂L1/∂w + ∂L2/∂w
+  u.grad += ∂L2/∂w × ∂w/∂u  ← 必须使用本次新算的 ∂L2/∂w，不能用累积后的！
 
-正确结果：u.jacobi = (∂L1/∂w + ∂L2/∂w) × ∂w/∂u = ∂(L1+L2)/∂u ✓
-错误结果（若用累积值）：u.jacobi = ∂L1/∂w×∂w/∂u + (∂L1/∂w+∂L2/∂w)×∂w/∂u
+正确结果：u.grad = (∂L1/∂w + ∂L2/∂w) × ∂w/∂u = ∂(L1+L2)/∂u ✓
+错误结果（若用累积值）：u.grad = ∂L1/∂w×∂w/∂u + (∂L1/∂w+∂L2/∂w)×∂w/∂u
                                 = 2×∂L1/∂w×∂w/∂u + ∂L2/∂w×∂w/∂u ✗ (L1 被算了两次)
 ```
 
@@ -731,15 +731,15 @@ graph.forward_node(out2)?;  // forward_pass_id = 2
 
 ```
 第 1 次 backward(out1):
-  features.jacobi = ∂L1/∂features  ← 本次新算
-  w_shared.jacobi = ∂L1/∂w_shared  ← 使用上面的 features.jacobi
+  features.grad = ∂L1/∂features  ← 本次新算
+  w_shared.grad = ∂L1/∂w_shared  ← 使用上面的 features.grad
 
 第 2 次 backward(out2):
-  features.jacobi = ∂L2/∂features  ← 本次新算（不依赖第 1 次的值！）
-  w_shared.jacobi += ∂L2/∂w_shared ← 累积到参数
+  features.grad = ∂L2/∂features  ← 本次新算（不依赖第 1 次的值！）
+  w_shared.grad += ∂L2/∂w_shared ← 累积到参数
 ```
 
-**关键洞察**：计算 `w_shared` 的梯度时，只需要**当前这次 backward** 算出来的 `∂L/∂features`，不需要上一次 backward 留下来的值。所以清除中间节点的 jacobi 不会影响参数的累积正确性。
+**关键洞察**：计算 `w_shared` 的梯度时，只需要**当前这次 backward** 算出来的 `∂L/∂features`，不需要上一次 backward 留下来的值。所以清除中间节点的 grad 不会影响参数的累积正确性。
 
 从"责任"的角度理解：
 - **参数节点**：需要知道"我对所有 loss 负多少责任" → 累积
@@ -749,17 +749,17 @@ graph.forward_node(out2)?;  // forward_pass_id = 2
 
 ```
 backward(out1, retain_graph=True):
-  - w_shared.jacobi = [1,2,3,4,...]  ✓ 保留（累加器）
-  - features.jacobi = [[1],[1]]      本次传播信号
+  - w_shared.grad = [1,2,3,4,...]  ✓ 保留（累加器）
+  - features.grad = [[1],[1]]      本次传播信号
 
 backward(out2):
-  - w_shared.jacobi = [2,4,6,8,...]  累积 = task1 + task2
-  - features.jacobi = [[1],[1]]      本次传播信号（重新计算，不是累积！）
+  - w_shared.grad = [2,4,6,8,...]  累积 = task1 + task2
+  - features.grad = [[1],[1]]      本次传播信号（重新计算，不是累积！）
 ```
 
 #### 实现细节
 
-**backward 开始时**：调用 `reset_intermediate_jacobi()` 清除中间节点的 jacobi，只保留参数节点的 jacobi。这确保：
+**backward 开始时**：调用 `reset_intermediate_grad()` 清除中间节点的 grad，只保留参数节点的 grad。这确保：
 1. 传播信号始终是"本次新算的"
 2. 参数累加器正确累积多次 backward 的贡献
 
@@ -769,7 +769,7 @@ backward(out2):
 
 这更接近 PyTorch 的语义：中间节点的梯度默认不保留（除非显式调用 `retain_grad()`）。
 
-若需要阻止参数节点的梯度累积，应在 backward 之间调用 `clear_jacobi()`。
+若需要阻止参数节点的梯度累积，应在 backward 之间调用 `zero_grad()`。
 
 ### 7.3 为何不引入 `retain_grad` 功能
 
@@ -788,29 +788,29 @@ PyTorch 提供了 `retain_grad()` 方法，允许中间节点（非叶子节点�
 
 1. **内存效率**：中间特征（如 CNN 的 feature map）可能非常大，默认保留所有梯度会显著增加内存占用
 2. **实用性低**：99% 的训练场景只需要参数梯度，`retain_grad` 主要用于调试和研究
-3. **当前能力已足够**：在 `backward(..., retain_graph=true)` 后、下一次 backward 前，中间节点的 jacobi 是可以访问的，满足大多数调试需求
+3. **当前能力已足够**：在 `backward(..., retain_graph=true)` 后、下一次 backward 前，中间节点的 grad 是可以访问的，满足大多数调试需求
 4. **API 简洁性**：避免引入额外概念，降低用户学习成本
 5. **YAGNI 原则**：在没有明确需求前，不过早引入复杂功能
 
 #### 当前的调试方式
 
 ```rust
-// 第一次 backward 后，可以立即访问中间节点的 jacobi
-graph.backward_nodes_ex(&[w], output, true)?;
+// 第一次 backward 后，可以立即访问中间节点的 grad
+graph.backward_ex(output, true)?;
 
-// 这个时间窗口内，中间节点的 jacobi 是可访问的
-let features_jacobi = graph.get_node(features_id)?.jacobi();
-println!("中间特征的梯度: {:?}", features_jacobi);
+// 这个时间窗口内，中间节点的 grad 是可访问的
+let features_grad = graph.get_node_grad(features_id)?;
+println!("中间特征的梯度: {:?}", features_grad);
 
-// 下一次 backward 会重置中间节点的 jacobi
-graph.backward_nodes_ex(&[w], output2, false)?;
+// 下一次 backward 会重置中间节点的 grad
+graph.backward_ex(output2, false)?;
 ```
 
 #### 未来扩展
 
 当前设计不阻碍未来添加 `retain_grad` 功能。如果确有需求，可以：
 1. 在节点上添加 `retains_grad` 标志
-2. 修改 `reset_intermediate_jacobi()` 跳过标记为 `retains_grad` 的节点
+2. 修改 `reset_intermediate_grad()` 跳过标记为 `retains_grad` 的节点
 
 ---
 
@@ -831,7 +831,7 @@ graph.backward_nodes_ex(&[w], output2, false)?;
 
 | Rust 测试 | PyTorch 对照脚本 |
 |-----------|------------------|
-| `test_retain_graph_multi_task_learning` | `tests/calc_jacobi_by_pytorch/multi_task_learning_retain_graph.py` |
+| `test_retain_graph_multi_task_learning` | `tests/multi_task_learning_retain_graph.py` |
 | `test_mnist_gan` | - (集成测试：验证 detach + with_params) |
 
 ---

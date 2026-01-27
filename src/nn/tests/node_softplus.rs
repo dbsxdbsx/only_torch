@@ -259,7 +259,7 @@ fn test_node_softplus_backward_e2e() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 SoftPlus 前向传播（batch 模式）
+/// 测试 SoftPlus 前向传播（批量输入）
 #[test]
 fn test_node_softplus_batch_forward() {
     let mut graph = GraphInner::new();

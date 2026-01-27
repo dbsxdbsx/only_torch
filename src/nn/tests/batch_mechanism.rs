@@ -1,13 +1,13 @@
 /*
  * @Author       : 老董
  * @Date         : 2025-12-21
- * @Description  : Batch 机制单元测试
- *                 验证 batch forward/backward 与累加单样本的结果一致
+ * @Description  : 批量处理数学一致性测试
  *
- *                 设计理念（参考 autodiff_unification_design.md）：
- *                 - 单样本是 batch_size=1 的特例
- *                 - 统一的 forward/backward API 自动处理 batch 维度
- *                 - 这些测试验证底层 batch 实现的**数学正确性**
+ *                 验证批量输入与逐样本处理的结果一致：
+ *                 - forward([batch, ...]) 的每行 == 逐样本 forward 的结果
+ *                 - backward(batch_loss) 的梯度 == 逐样本梯度的平均
+ *
+ *                 设计理念：单样本是 batch_size=1 的特例，使用统一的 API。
  */
 
 use approx::assert_abs_diff_eq;
@@ -37,7 +37,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     let batch_input = Tensor::stack(&sample_refs, false);
     assert_eq!(batch_input.shape(), &[batch_size, input_dim]);
 
-    // ========== Batch 模式 ==========
+    // ========== 批量处理 ==========
     let mut graph_batch = GraphInner::new_with_seed(seed);
     let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
     let w_b =
@@ -49,7 +49,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     graph_batch.forward(out_b)?; // 统一 API
     let batch_output = graph_batch.get_node_value(out_b)?.unwrap().clone();
 
-    // ========== 单样本模式 ==========
+    // ========== 逐样本处理 ==========
     let mut single_outputs = Vec::new();
     for sample in samples.iter() {
         let mut graph_single = GraphInner::new_with_seed(seed);
@@ -112,7 +112,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     let batch_input = Tensor::stack(&sample_refs, false);
     let batch_labels = Tensor::stack(&label_refs, false);
 
-    // ========== Batch 模式（统一 API）==========
+    // ========== 批量处理（统一 API）==========
     let mut graph_batch = GraphInner::new_with_seed(seed);
     let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
     let y_b = graph_batch.new_basic_input_node(&[batch_size, output_dim], Some("y"))?;
@@ -136,7 +136,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     let batch_grad_w1 = graph_batch.get_node_grad(w1_b)?.unwrap().clone();
     let batch_grad_w2 = graph_batch.get_node_grad(w2_b)?.unwrap().clone();
 
-    // ========== 单样本累加模式 ==========
+    // ========== 逐样本累加 ==========
     let mut accumulated_grad_w1 = Tensor::zeros(&[input_dim, hidden_dim]);
     let mut accumulated_grad_w2 = Tensor::zeros(&[hidden_dim, output_dim]);
 
@@ -174,7 +174,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
         }
     }
 
-    // 求平均（与 batch 模式的隐式平均对齐）
+    // 求平均（与批量处理的隐式平均对齐）
     let avg_grad_w1 = accumulated_grad_w1 / (batch_size as f32);
     let avg_grad_w2 = accumulated_grad_w2 / (batch_size as f32);
 
@@ -188,9 +188,9 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 batch 模式下的参数更新与单样本累加更新的一致性
+/// 测试批量处理的参数更新与逐样本累加更新的一致性
 ///
-/// 验证：使用 batch 计算的梯度更新参数 == 使用累加单样本梯度更新参数
+/// 验证：使用批量计算的梯度更新参数 == 使用逐样本累加梯度更新参数
 ///
 /// 注意：此测试直接使用 SGD 公式 θ = θ - lr * grad，不依赖 optimizer API
 #[test]
@@ -221,7 +221,7 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
     let batch_input = Tensor::stack(&sample_refs, false);
     let batch_labels = Tensor::stack(&label_refs, false);
 
-    // ========== Batch 模式 ==========
+    // ========== 批量处理 ==========
     let mut graph_batch = GraphInner::new_with_seed(seed);
     let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
     let y_b = graph_batch.new_basic_input_node(&[batch_size, output_dim], Some("y"))?;
@@ -242,7 +242,7 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
     let batch_grad = graph_batch.get_node_grad(w_b)?.unwrap().clone();
     let w_after_batch = &w_init - learning_rate * &batch_grad;
 
-    // ========== 单样本累加模式 ==========
+    // ========== 逐样本累加 ==========
     let mut accumulated_grad = Tensor::zeros(&[input_dim, output_dim]);
 
     for i in 0..batch_size {

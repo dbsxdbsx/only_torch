@@ -160,8 +160,8 @@ impl Tensor {
 | 位置 | 改动 | 效果 |
 |------|------|------|
 | `GradientAccumulator::get_average_gradient` | `gradient.clone() / scalar` → `gradient / scalar` | 少一次 Tensor clone |
-| `graph.rs` jacobi 累加 | `current + contribution` → `current += &contribution` | 避免临时张量分配 |
-| `backward_batch_node` | clone `upstream_grad` → 借用引用 | 避免大 Tensor 拷贝 |
+| `graph.rs` 梯度累加 | `current + contribution` → `current += &contribution` | 避免临时张量分配 |
+| 反向传播 | clone `upstream_grad` → 借用引用 | 避免大 Tensor 拷贝 |
 
 ---
 

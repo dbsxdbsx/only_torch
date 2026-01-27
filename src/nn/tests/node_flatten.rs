@@ -182,7 +182,7 @@ fn test_flatten_backward_e2e() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Batch 模式的前向传播
+/// 测试批量输入的前向传播
 #[test]
 fn test_flatten_batch_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -312,7 +312,7 @@ fn test_flatten_reshape_chain() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试单样本反向传播
+/// 测试 2D 输入反向传播
 #[test]
 fn test_flatten_single_sample_backward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new_with_seed(42);

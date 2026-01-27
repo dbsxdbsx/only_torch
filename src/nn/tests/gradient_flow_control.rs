@@ -653,9 +653,9 @@ fn test_detach_gan_style_training() {
     // 在 only_torch 中，如果想冻结 d_w，需要 detach 它
 }
 
-/// 测试: detach 与 Batch 模式的兼容性
+/// 测试: detach 与批量输入的兼容性
 #[test]
-fn test_detach_with_batch_mode() {
+fn test_detach_with_batch_input() {
     let mut graph = GraphInner::new();
 
     // 创建网络: x -> w -> y -> mse_loss
@@ -816,7 +816,7 @@ fn test_detach_gradient_values_match_pytorch() {
     );
 }
 
-/// 测试: detach 后的节点仍然可以正常操作，且已有的 grad 不会被清除（Batch 模式）
+/// 测试: detach 后的节点仍然可以正常操作，且已有的 grad 不会被清除
 #[test]
 fn test_detach_node_still_functional_batch() {
     let mut graph = GraphInner::new();
@@ -836,7 +836,7 @@ fn test_detach_node_still_functional_batch() {
     graph.forward(loss).unwrap();
     graph.backward(loss).unwrap();
 
-    // 验证 w 有 grad（使用 batch 模式的 get_node_grad_ref）
+    // 验证 w 有 grad
     let grad_before = graph.get_node_grad_ref(w).unwrap().unwrap().clone();
     assert!(grad_before.size() > 0);
 

@@ -9,14 +9,14 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│            Layer (便捷函数，Batch-First)                 │
+│            Layer (便捷函数)                               │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐                  |
 │  │ linear()│  │  conv() │  │pooling()│   ...            |
 │  └────┬────┘  └────┬────┘  └────┬────┘                  |
 │       │            │            │                        |
 │       ▼            ▼            ▼                        |
 │  创建并组合多个 Node，返回输出 NodeId                     |
-│  输入格式: [batch_size, features...]                     |
+│  Batch-First 格式: [batch, features...] 或 [batch, C, H, W] |
 └─────────────────────────────────────────────────────────┘
                           |
                          ▼
@@ -27,9 +27,9 @@
 │  └────────┘ └────────┘ └────────┘ └────────┘           │
 │                                                         │
 │  • 计算图的基本单元                                      │
-│  • 支持自动微分 (Jacobi / Gradient)                     │
+│  • 支持 VJP 自动微分                                     │
 │  • NEAT 进化的最小粒度                                  │
-│  • 保留两套 API：单样本 Jacobi + Batch Gradient         │
+│  • 统一 API：forward() + backward()                     │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -44,18 +44,18 @@ Node 是计算图的**原子操作单元**，每个 Node：
 - 执行单一数学运算
 - 实现 `TraitNode` 接口
 - 支持前向传播 (`calc_value_by_parents`)
-- 支持反向传播 (`calc_jacobi_to_a_parent` / `calc_grad_to_parent`)
+- 支持反向传播 (`calc_grad_to_parent` - VJP 模式)
 
-### 两套 API（有意设计）
+### 统一 API 设计
 
-Node 层保留**两套 API**，服务于不同场景：
+Node 层使用**统一的 VJP 模式 API**：
 
-| API             | 方法                                   | 适用场景                        |
-| --------------- | -------------------------------------- | ------------------------------- |
-| **Jacobi 模式** | `forward_node()` + `backward_nodes()`  | NEAT 进化、调试、研究、二阶优化 |
-| **Batch 模式**  | `forward_batch()` + `backward_batch()` | 标准训练、生产推理              |
+| API | 方法 | 说明 |
+| --- | ---- | ---- |
+| **前向传播** | `forward()` | 自动处理任意 batch 维度 |
+| **反向传播** | `backward()` | VJP 模式，单样本是 batch_size=1 的特例 |
 
-**注意**：这不是技术债，而是有意设计。详见 `batch_mechanism_design.md`。
+**设计理念**：单样本与批量使用相同的 API，底层统一使用 VJP 模式。
 
 ### 已实现的 Node
 
@@ -87,18 +87,25 @@ Layer 是**便捷函数**，内部创建并组合多个 Node，简化常见网�
 
 ### 设计原则：Batch-First
 
-**关键决策**：Layer 层**只提供 Batch 版本**，不提供单样本版本。
+**核心原则**：输入张量必须遵循 **Batch-First** 格式。
+
+| 操作类型 | 维度格式 | 说明 |
+| -------- | -------- | ---- |
+| **FC/Linear** | `[batch, features]` | 必须 2D，batch 在第一维 |
+| **CNN** | `[batch, C, H, W]` 或 `[C, H, W]` | 4D 时 batch 在第一维，3D 无 batch |
+
+**关键特性**：
+- **单样本是 batch_size=1 的特例**：FC 层单样本用 `[1, features]`，而非 `[features]`
+- **Batch 维度始终在第一位**（如果存在）
 
 | 理由           | 说明                                       |
 | -------------- | ------------------------------------------ |
 | **定位**       | Layer 是便捷 API，主要用于快速构建训练网络 |
-| **实际使用**   | 99% 训练场景都用 batch 模式                |
-| **单样本需求** | 可直接用 Node API（NEAT/调试）             |
-| **避免冗余**   | 不用每个 Layer 写两份代码                  |
-| **符合主流**   | PyTorch `nn.Linear` 天然支持 batch         |
+| **统一 API**   | 单样本与批量使用相同的 forward/backward    |
+| **符合主流**   | PyTorch `nn.Linear` 默认 Batch-First       |
 
 ```rust
-// Layer 函数签名（Batch-First）
+// Layer 函数签名
 pub fn linear(
     graph: &mut Graph,
     input: NodeId,        // [batch_size, in_features]
@@ -195,8 +202,8 @@ graph.mutate_parameter(fc.weights, 0.1)?;
 
 ### 当前状态
 
-- ✅ Node 层：核心框架完成，两套 API 实现
-- ✅ Layer 层：`linear()`, `conv2d()`, `max_pool2d()`, `avg_pool2d()` 已实现（Batch-First）
+- ✅ Node 层：核心框架完成，统一 VJP 模式
+- ✅ Layer 层：`linear()`, `conv2d()`, `max_pool2d()`, `avg_pool2d()` 已实现
 
 ### 计划
 
@@ -212,10 +219,10 @@ graph.mutate_parameter(fc.weights, 0.1)?;
 
 ## 总结
 
-| 层级      | 角色     | API 数量 | 说明                                 |
+| 层级      | 角色     | API 风格 | 说明                                 |
 | --------- | -------- | -------- | ------------------------------------ |
-| **Node**  | 原子操作 | 2 套     | Jacobi 模式 + Batch 模式（有意设计） |
-| **Layer** | 便捷 API | 1 套     | 仅 Batch 模式（Batch-First 设计）    |
+| **Node**  | 原子操作 | 统一 VJP | forward() + backward()，自动处理 batch |
+| **Layer** | 便捷 API | 统一 VJP | 封装 Node 组合，简化常见模式构建       |
 
 **核心原则**：
 

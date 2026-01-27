@@ -414,7 +414,7 @@ impl NodeHandle {
 
     // ========== 梯度（VJP 模式）==========
 
-    /// 计算本节点对父节点的梯度（Batch 模式）
+    /// 计算本节点对父节点的梯度（VJP 模式）
     pub(in crate::nn) fn calc_grad_to_parent(
         &self,
         parent: &Self,
@@ -425,12 +425,12 @@ impl NodeHandle {
             .calc_grad_to_parent(parent, upstream_grad, assistant_parent)
     }
 
-    /// 获取节点的梯度（Batch 模式）
+    /// 获取节点的梯度
     pub(in crate::nn) fn grad(&self) -> Option<&Tensor> {
         self.raw_node.grad()
     }
 
-    /// 设置节点的梯度（Batch 模式）
+    /// 设置节点的梯度
     pub(in crate::nn) fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
         self.raw_node.set_grad(grad)
     }
