@@ -101,7 +101,7 @@ impl GraphInner {
             .map_err(|e| GraphError::ComputationError(format!("读取魔数失败: {e}")))?;
         if &magic != Self::PARAMS_MAGIC {
             return Err(GraphError::ComputationError(
-                "无效的参数文件格式（魔数不匹配）".to_string(),
+                "无效的参数文件：这不是 only_torch 格式的参数文件。请确保使用 save_params() 保存的文件。".to_string(),
             ));
         }
 

@@ -119,7 +119,11 @@ fn test_load_params_invalid_magic() {
     assert!(result.is_err());
     // 使用 Debug 格式检查错误信息
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(err_msg.contains("魔数不匹配"), "错误信息: {}", err_msg);
+    assert!(
+        err_msg.contains("无效的参数文件"),
+        "错误信息: {}",
+        err_msg
+    );
 
     // 清理
     fs::remove_file(temp_file).ok();
