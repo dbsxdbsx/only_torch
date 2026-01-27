@@ -17,23 +17,23 @@ use approx::assert_abs_diff_eq;
 
 // ==================== 基础功能测试 ====================
 
-/// 测试 Conv2d 节点创建（3D 输入）
+/// 测试 Conv2d 节点创建（单样本，batch=1）
 #[test]
 fn test_conv2d_creation_single() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 输入: [C_in=1, H=5, W=5]
-    let input = graph.new_basic_input_node(&[1, 5, 5], Some("input"))?;
+    // 输入: [batch=1, C_in=1, H=5, W=5]（单样本使用 batch=1）
+    let input = graph.new_basic_input_node(&[1, 1, 5, 5], Some("input"))?;
     // 卷积核: [C_out=2, C_in=1, kH=3, kW=3]
     let kernel = graph.new_parameter_node(&[2, 1, 3, 3], Some("kernel"))?;
 
     // 创建 Conv2d: stride=1, padding=0
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
 
-    // 验证输出形状: [C_out=2, H'=3, W'=3]
+    // 验证输出形状: [batch=1, C_out=2, H'=3, W'=3]
     // H' = (5 + 0 - 3) / 1 + 1 = 3
     let output_shape = graph.get_node(conv)?.value_expected_shape();
-    assert_eq!(output_shape, &[2, 3, 3]);
+    assert_eq!(output_shape, &[1, 2, 3, 3]);
 
     Ok(())
 }
@@ -87,15 +87,15 @@ fn test_conv2d_with_stride() -> Result<(), GraphError> {
 fn test_conv2d_forward_simple() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 输入: [C_in=1, H=3, W=3]，全 1
-    let input = graph.new_basic_input_node(&[1, 3, 3], Some("input"))?;
+    // 输入: [batch=1, C_in=1, H=3, W=3]，全 1
+    let input = graph.new_basic_input_node(&[1, 1, 3, 3], Some("input"))?;
     // 卷积核: [C_out=1, C_in=1, kH=2, kW=2]，全 1
     let kernel = graph.new_basic_input_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
 
     // 设置值
-    let input_val = Tensor::ones(&[1, 3, 3]);
+    let input_val = Tensor::ones(&[1, 1, 3, 3]);
     let kernel_val = Tensor::ones(&[1, 1, 2, 2]);
 
     graph.set_node_value(input, Some(&input_val))?;
@@ -106,11 +106,11 @@ fn test_conv2d_forward_simple() -> Result<(), GraphError> {
 
     // 验证输出: 2x2 窗口求和 = 4.0（每个位置）
     let output = graph.get_node_value(conv)?.unwrap();
-    assert_eq!(output.shape(), &[1, 2, 2]);
-    assert_abs_diff_eq!(output[[0, 0, 0]], 4.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 0, 1]], 4.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 1, 0]], 4.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 1, 1]], 4.0, epsilon = 1e-6);
+    assert_eq!(output.shape(), &[1, 1, 2, 2]);
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 4.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 0, 1]], 4.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 1, 0]], 4.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 1, 1]], 4.0, epsilon = 1e-6);
 
     Ok(())
 }
@@ -120,8 +120,8 @@ fn test_conv2d_forward_simple() -> Result<(), GraphError> {
 fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 输入: [C_in=1, H=3, W=3]
-    let input = graph.new_basic_input_node(&[1, 3, 3], Some("input"))?;
+    // 输入: [batch=1, C_in=1, H=3, W=3]
+    let input = graph.new_basic_input_node(&[1, 1, 3, 3], Some("input"))?;
     // 卷积核: [C_out=1, C_in=1, kH=3, kW=3]
     let kernel = graph.new_basic_input_node(&[1, 1, 3, 3], Some("kernel"))?;
 
@@ -129,7 +129,7 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (1, 1), Some("conv"))?;
 
     // 输入全 1
-    let input_val = Tensor::ones(&[1, 3, 3]);
+    let input_val = Tensor::ones(&[1, 1, 3, 3]);
     // 卷积核全 1
     let kernel_val = Tensor::ones(&[1, 1, 3, 3]);
 
@@ -138,14 +138,14 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
 
     graph.forward(conv)?;
 
-    // 验证输出形状: [1, 3, 3]（same padding）
+    // 验证输出形状: [batch=1, C=1, H=3, W=3]（same padding）
     let output = graph.get_node_value(conv)?.unwrap();
-    assert_eq!(output.shape(), &[1, 3, 3]);
+    assert_eq!(output.shape(), &[1, 1, 3, 3]);
 
     // 中心位置：3x3 窗口全部有值，sum = 9
-    assert_abs_diff_eq!(output[[0, 1, 1]], 9.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 1, 1]], 9.0, epsilon = 1e-6);
     // 角落位置：只有 2x2 区域有值（其余被 padding 的 0 填充），sum = 4
-    assert_abs_diff_eq!(output[[0, 0, 0]], 4.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 4.0, epsilon = 1e-6);
 
     Ok(())
 }
@@ -189,15 +189,15 @@ fn test_conv2d_forward() -> Result<(), GraphError> {
 fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 输入: [C_in=1, H=4, W=4]
-    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input"))?;
+    // 输入: [batch=1, C_in=1, H=4, W=4]
+    let input = graph.new_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
     // 卷积核: [C_out=2, C_in=1, kH=2, kW=2]
     let kernel = graph.new_basic_input_node(&[2, 1, 2, 2], Some("kernel"))?;
 
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
 
     // 输入全 1
-    let input_val = Tensor::ones(&[1, 4, 4]);
+    let input_val = Tensor::ones(&[1, 1, 4, 4]);
     // 卷积核：第一个全 1，第二个全 2
     let mut kernel_data = vec![1.0f32; 4];
     kernel_data.extend(vec![2.0f32; 4]);
@@ -209,12 +209,12 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
     graph.forward(conv)?;
 
     let output = graph.get_node_value(conv)?.unwrap();
-    assert_eq!(output.shape(), &[2, 3, 3]);
+    assert_eq!(output.shape(), &[1, 2, 3, 3]);
 
     // 第一个输出通道: sum = 4
-    assert_abs_diff_eq!(output[[0, 0, 0]], 4.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 4.0, epsilon = 1e-6);
     // 第二个输出通道: sum = 8
-    assert_abs_diff_eq!(output[[1, 0, 0]], 8.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 1, 0, 0]], 8.0, epsilon = 1e-6);
 
     Ok(())
 }
@@ -229,14 +229,14 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
 fn test_conv2d_jacobi_to_kernel() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 简单情况：输入 [1, 2, 2]，卷积核 [1, 1, 2, 2]
-    // 输出形状：[1, 1, 1]（out_channels=1, H=1, W=1）
-    let input = graph.new_basic_input_node(&[1, 2, 2], Some("input"))?;
+    // 简单情况：输入 [batch=1, C=1, H=2, W=2]，卷积核 [1, 1, 2, 2]
+    // 输出形状：[batch=1, C=1, H=1, W=1]
+    let input = graph.new_basic_input_node(&[1, 1, 2, 2], Some("input"))?;
     let kernel = graph.new_parameter_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"))?;
 
-    // 将 conv 输出 [1, 1, 1] reshape 成 [1, 1] 以便与 target 匹配
+    // 将 conv 输出 [1, 1, 1, 1] reshape 成 [1, 1] 以便与 target 匹配
     let conv_flat = graph.new_reshape_node(conv, &[1, 1], Some("conv_flat"))?;
 
     // 添加 MSE loss 使输出为标量 [1, 1]
@@ -244,7 +244,7 @@ fn test_conv2d_jacobi_to_kernel() -> Result<(), GraphError> {
     let loss = graph.new_mse_loss_node(conv_flat, target, Some("loss"))?;
 
     // 设置值
-    let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 2, 2]);
+    let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]);
     let kernel_val = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[1, 1, 2, 2]);
     let target_val = Tensor::new(&[0.0], &[1, 1]);
 
@@ -291,14 +291,14 @@ fn test_conv2d_grad_to_input() -> Result<(), GraphError> {
     use crate::tensor::Tensor;
     let mut graph = GraphInner::new();
 
-    // 输入 [1, 2, 2]，卷积核 [1, 1, 2, 2]
-    let input_id = graph.new_basic_input_node(&[1, 2, 2], Some("input"))?;
+    // 输入 [batch=1, C=1, H=2, W=2]，卷积核 [1, 1, 2, 2]
+    let input_id = graph.new_basic_input_node(&[1, 1, 2, 2], Some("input"))?;
     let kernel_id = graph.new_basic_input_node(&[1, 1, 2, 2], Some("kernel"))?;
 
     let conv_id = graph.new_conv2d_node(input_id, kernel_id, (1, 1), (0, 0), Some("conv"))?;
 
     // 设置值
-    let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 2, 2]);
+    let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]);
     let kernel_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]);
 
     graph.set_node_value(input_id, Some(&input_val))?;
@@ -311,18 +311,18 @@ fn test_conv2d_grad_to_input() -> Result<(), GraphError> {
     let input_node = graph.get_node(input_id)?;
     let kernel_node = graph.get_node(kernel_id)?;
 
-    // upstream_grad 形状与 conv 输出一致：[1, 1, 1]
-    let upstream_grad = Tensor::ones(&[1, 1, 1]);
+    // upstream_grad 形状与 conv 输出一致：[batch=1, C=1, H=1, W=1]
+    let upstream_grad = Tensor::ones(&[1, 1, 1, 1]);
     let grad = conv_node.calc_grad_to_parent(input_node, &upstream_grad, Some(kernel_node))?;
 
-    // VJP 模式下验证 grad 形状与 input 值一致：[1, 2, 2]
-    assert_eq!(grad.shape(), &[1, 2, 2]);
+    // VJP 模式下验证 grad 形状与 input 值一致：[batch=1, C=1, H=2, W=2]
+    assert_eq!(grad.shape(), &[1, 1, 2, 2]);
 
     // grad 值应该等于卷积核值（因为 ∂out/∂input[i,j] = kernel[i,j]）
-    assert_abs_diff_eq!(grad[[0, 0, 0]], 1.0, epsilon = 1e-6); // kernel[0,0]
-    assert_abs_diff_eq!(grad[[0, 0, 1]], 2.0, epsilon = 1e-6); // kernel[0,1]
-    assert_abs_diff_eq!(grad[[0, 1, 0]], 3.0, epsilon = 1e-6); // kernel[1,0]
-    assert_abs_diff_eq!(grad[[0, 1, 1]], 4.0, epsilon = 1e-6); // kernel[1,1]
+    assert_abs_diff_eq!(grad[[0, 0, 0, 0]], 1.0, epsilon = 1e-6); // kernel[0,0]
+    assert_abs_diff_eq!(grad[[0, 0, 0, 1]], 2.0, epsilon = 1e-6); // kernel[0,1]
+    assert_abs_diff_eq!(grad[[0, 0, 1, 0]], 3.0, epsilon = 1e-6); // kernel[1,0]
+    assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 4.0, epsilon = 1e-6); // kernel[1,1]
 
     Ok(())
 }
@@ -482,9 +482,9 @@ fn test_conv2d_calc_grad_to_input_direct() -> Result<(), GraphError> {
 fn test_conv2d_channel_mismatch() {
     let mut graph = GraphInner::new();
 
-    // 输入: [C_in=3, H=5, W=5]
+    // 输入: [batch=1, C_in=3, H=5, W=5]
     let input = graph
-        .new_basic_input_node(&[3, 5, 5], Some("input"))
+        .new_basic_input_node(&[1, 3, 5, 5], Some("input"))
         .unwrap();
     // 卷积核: [C_out=2, C_in=1, kH=3, kW=3]（C_in 不匹配）
     let kernel = graph
@@ -495,12 +495,12 @@ fn test_conv2d_channel_mismatch() {
     assert_err!(result, GraphError::ShapeMismatch { message, .. } if message.contains("通道数"));
 }
 
-/// 测试无效的输入维度（2D 输入对于 Conv2d 无效）
+/// 测试无效的输入维度（2D 或 3D 输入对于 Conv2d 无效）
 #[test]
 fn test_conv2d_invalid_input_dims() {
     let mut graph = GraphInner::new();
 
-    // 输入: [H=5, W=5]（2D，缺少通道维度，对 Conv2d 无效）
+    // 输入: [H=5, W=5]（2D，缺少 batch 和通道维度，对 Conv2d 无效）
     let input = graph.new_basic_input_node(&[5, 5], Some("input")).unwrap();
     let kernel = graph
         .new_parameter_node(&[2, 1, 3, 3], Some("kernel"))
@@ -508,7 +508,7 @@ fn test_conv2d_invalid_input_dims() {
 
     let result = graph.new_conv2d_node(input, kernel, (1, 1), (0, 0), Some("conv"));
     assert_err!(result, GraphError::ShapeMismatch { message, .. }
-        if message.contains("3D") || message.contains("4D"));
+        if message.contains("4D"));
 }
 
 /// 测试无效的卷积核维度（2D 卷积核无效）
@@ -517,7 +517,7 @@ fn test_conv2d_invalid_kernel_dims() {
     let mut graph = GraphInner::new();
 
     let input = graph
-        .new_basic_input_node(&[1, 5, 5], Some("input"))
+        .new_basic_input_node(&[1, 1, 5, 5], Some("input"))
         .unwrap();
     // 卷积核: [kH=3, kW=3]（2D，缺少通道维度）
     let kernel = graph.new_parameter_node(&[3, 3], Some("kernel")).unwrap();

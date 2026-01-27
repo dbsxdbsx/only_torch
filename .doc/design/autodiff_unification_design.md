@@ -290,7 +290,7 @@ impl Graph {
     ///
     /// 输入遵循 Batch-First 格式：
     /// - FC 层：`[batch, features]`（单样本用 `[1, 784]`）
-    /// - CNN 层：`[batch, C, H, W]` 或 `[C, H, W]`（3D 无 batch）
+    /// - CNN 层：`[batch, C, H, W]`（单样本用 `[1, C, H, W]`）
     pub fn forward(&mut self, target: NodeId) -> Result<(), GraphError>;
 
     /// 反向传播（VJP 模式，单样本和批量统一）

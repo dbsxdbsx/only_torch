@@ -5008,18 +5008,18 @@ impl GraphInner {
     ///
     /// # 设计
     /// - **`PyTorch` 风格**：单节点处理多通道，而非 `MatrixSlow` 的每通道独立节点
-    /// - 自动支持批量处理（batch 维度由输入形状决定）
+    /// - **Batch-First 格式**：输入必须是 4D `[batch, C_in, H, W]`
+    /// - 单样本使用 `batch=1`，如 `[1, C_in, H, W]`
     ///
     /// # 参数
-    /// - `input_id`: 输入节点 ID，形状 `[C_in, H, W]` 或 `[batch, C_in, H, W]`
+    /// - `input_id`: 输入节点 ID，形状 `[batch, C_in, H, W]`
     /// - `kernel_id`: 卷积核参数节点 ID，形状 `[C_out, C_in, kH, kW]`
     /// - `stride`: 步长 `(sH, sW)`
     /// - `padding`: 零填充 `(pH, pW)`
     /// - `name`: 可选的节点名称
     ///
     /// # 输出形状
-    /// - 3D 输入 `[C_in, H, W]` → 输出 `[C_out, H', W']`
-    /// - 4D 输入 `[batch, C_in, H, W]` → 输出 `[batch, C_out, H', W']`
+    /// - 输入 `[batch, C_in, H, W]` → 输出 `[batch, C_out, H', W']`
     /// - 其中 `H' = (H + 2*pH - kH) / sH + 1`
     ///
     /// # 示例
@@ -5052,16 +5052,17 @@ impl GraphInner {
     /// # 设计
     /// - 在每个池化窗口中取最大值
     /// - 记录最大值位置用于反向传播（稀疏梯度）
+    /// - **Batch-First 格式**：输入必须是 4D `[batch, C, H, W]`
+    /// - 单样本使用 `batch=1`，如 `[1, C, H, W]`
     ///
     /// # 参数
-    /// - `input_id`: 输入节点 ID，形状 `[C, H, W]` 或 `[batch, C, H, W]`
+    /// - `input_id`: 输入节点 ID，形状 `[batch, C, H, W]`
     /// - `kernel_size`: 池化窗口大小 `(kH, kW)`
     /// - `stride`: 步长 `(sH, sW)`，`None` 时默认等于 `kernel_size`
     /// - `name`: 可选的节点名称
     ///
     /// # 输出形状
-    /// - 3D 输入 `[C, H, W]` → 输出 `[C, H', W']`
-    /// - 4D 输入 `[batch, C, H, W]` → 输出 `[batch, C, H', W']`
+    /// - 输入 `[batch, C, H, W]` → 输出 `[batch, C, H', W']`
     /// - 其中 `H' = (H - kH) / sH + 1`
     ///
     /// # 示例
@@ -5090,16 +5091,17 @@ impl GraphInner {
     /// # 设计
     /// - 计算每个池化窗口内所有值的平均
     /// - 反向传播时梯度均匀分配到窗口内所有位置
+    /// - **Batch-First 格式**：输入必须是 4D `[batch, C, H, W]`
+    /// - 单样本使用 `batch=1`，如 `[1, C, H, W]`
     ///
     /// # 参数
-    /// - `input_id`: 输入节点 ID，形状 `[C, H, W]` 或 `[batch, C, H, W]`
+    /// - `input_id`: 输入节点 ID，形状 `[batch, C, H, W]`
     /// - `kernel_size`: 池化窗口大小 `(kH, kW)`
     /// - `stride`: 步长 `(sH, sW)`，`None` 时默认等于 `kernel_size`
     /// - `name`: 可选的节点名称
     ///
     /// # 输出形状
-    /// - 3D 输入 `[C, H, W]` → 输出 `[C, H', W']`
-    /// - 4D 输入 `[batch, C, H, W]` → 输出 `[batch, C, H', W']`
+    /// - 输入 `[batch, C, H, W]` → 输出 `[batch, C, H', W']`
     /// - 其中 `H' = (H - kH) / sH + 1`
     ///
     /// # 示例

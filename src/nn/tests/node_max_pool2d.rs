@@ -16,21 +16,21 @@ use approx::assert_abs_diff_eq;
 
 // ==================== 基础功能测试 ====================
 
-/// 测试 MaxPool2d 节点创建（3D 输入）
+/// 测试 MaxPool2d 节点创建（单样本，batch=1）
 #[test]
 fn test_max_pool2d_creation_single() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 输入: [C=1, H=4, W=4]
-    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input"))?;
+    // 输入: [batch=1, C=1, H=4, W=4]（单样本使用 batch=1）
+    let input = graph.new_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
 
     // 创建 MaxPool2d: kernel_size=2x2, stride=2x2（默认）
     let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
-    // 验证输出形状: [C=1, H'=2, W'=2]
+    // 验证输出形状: [batch=1, C=1, H'=2, W'=2]
     // H' = (4 - 2) / 2 + 1 = 2
     let output_shape = graph.get_node(pool)?.value_expected_shape();
-    assert_eq!(output_shape, &[1, 2, 2]);
+    assert_eq!(output_shape, &[1, 1, 2, 2]);
 
     Ok(())
 }
@@ -79,8 +79,8 @@ fn test_max_pool2d_with_stride() -> Result<(), GraphError> {
 fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 输入: [C=1, H=4, W=4]
-    let input = graph.new_basic_input_node(&[1, 4, 4], Some("input"))?;
+    // 输入: [batch=1, C=1, H=4, W=4]
+    let input = graph.new_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
     let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
     // 设置输入值
@@ -90,7 +90,7 @@ fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
         5.0, 6.0, 7.0, 8.0,
         9.0, 10.0, 11.0, 12.0,
         13.0, 14.0, 15.0, 16.0,
-    ], &[1, 4, 4]);
+    ], &[1, 1, 4, 4]);
 
     graph.set_node_value(input, Some(&input_val))?;
     graph.forward(pool)?;
@@ -101,11 +101,11 @@ fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
     // 窗口 [2:4, 0:2]: max(9,10,13,14) = 14
     // 窗口 [2:4, 2:4]: max(11,12,15,16) = 16
     let output = graph.get_node_value(pool)?.unwrap();
-    assert_eq!(output.shape(), &[1, 2, 2]);
-    assert_abs_diff_eq!(output[[0, 0, 0]], 6.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 0, 1]], 8.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 1, 0]], 14.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(output[[0, 1, 1]], 16.0, epsilon = 1e-6);
+    assert_eq!(output.shape(), &[1, 1, 2, 2]);
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 6.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 0, 1]], 8.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 1, 0]], 14.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 1, 1]], 16.0, epsilon = 1e-6);
 
     Ok(())
 }
@@ -147,25 +147,25 @@ fn test_max_pool2d_forward() -> Result<(), GraphError> {
 fn test_max_pool2d_multi_channel() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 输入: [C=2, H=4, W=4]
-    let input = graph.new_basic_input_node(&[2, 4, 4], Some("input"))?;
+    // 输入: [batch=1, C=2, H=4, W=4]
+    let input = graph.new_basic_input_node(&[1, 2, 4, 4], Some("input"))?;
     let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
     // 设置输入：第一通道全 1，第二通道全 2
     let mut input_data = vec![1.0f32; 16];
     input_data.extend(vec![2.0f32; 16]);
-    let input_val = Tensor::new(&input_data, &[2, 4, 4]);
+    let input_val = Tensor::new(&input_data, &[1, 2, 4, 4]);
 
     graph.set_node_value(input, Some(&input_val))?;
     graph.forward(pool)?;
 
     let output = graph.get_node_value(pool)?.unwrap();
-    assert_eq!(output.shape(), &[2, 2, 2]);
+    assert_eq!(output.shape(), &[1, 2, 2, 2]);
 
     // 第一通道最大值都是 1
-    assert_abs_diff_eq!(output[[0, 0, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 1.0, epsilon = 1e-6);
     // 第二通道最大值都是 2
-    assert_abs_diff_eq!(output[[1, 0, 0]], 2.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 1, 0, 0]], 2.0, epsilon = 1e-6);
 
     Ok(())
 }
@@ -180,9 +180,9 @@ fn test_max_pool2d_multi_channel() -> Result<(), GraphError> {
 fn test_max_pool2d_jacobi() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
-    // 输入: [C=1, H=4, W=4]，使用 Parameter 以便计算梯度
-    // pool 输出: [C=1, H=2, W=2]（kernel=2x2, stride=2）
-    let input = graph.new_parameter_node(&[1, 4, 4], Some("input"))?;
+    // 输入: [batch=1, C=1, H=4, W=4]，使用 Parameter 以便计算梯度
+    // pool 输出: [batch=1, C=1, H=2, W=2]（kernel=2x2, stride=2）
+    let input = graph.new_parameter_node(&[1, 1, 4, 4], Some("input"))?;
     let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
     // 将 pool 输出 reshape 为 [1, 4] 并添加 MSE loss
@@ -197,7 +197,7 @@ fn test_max_pool2d_jacobi() -> Result<(), GraphError> {
         5.0, 6.0, 7.0, 8.0,
         9.0, 10.0, 11.0, 12.0,
         13.0, 14.0, 15.0, 16.0,
-    ], &[1, 4, 4]);
+    ], &[1, 1, 4, 4]);
     let target_val = Tensor::zeros(&[1, 4]);
 
     graph.set_node_value(input, Some(&input_val))?;
@@ -213,21 +213,21 @@ fn test_max_pool2d_jacobi() -> Result<(), GraphError> {
     graph.zero_grad()?;
     graph.backward(loss)?;
 
-    // VJP 模式下验证 grad 形状与输入值一致：[1, 4, 4]
+    // VJP 模式下验证 grad 形状与输入值一致：[1, 1, 4, 4]
     let grad = graph.get_node(input)?.grad().expect("应有 grad");
-    assert_eq!(grad.shape(), &[1, 4, 4]);
+    assert_eq!(grad.shape(), &[1, 1, 4, 4]);
 
     // MaxPool grad 是稀疏的：只有最大值位置有 grad
     // d_loss/d_pool = 2 * pool / 4 = [3, 4, 7, 8]
     // 最大值位置: (1,1)=6, (1,3)=8, (3,1)=14, (3,3)=16
-    assert_abs_diff_eq!(grad[[0, 1, 1]], 3.0, epsilon = 1e-5); // max=6, grad=2*6/4=3
-    assert_abs_diff_eq!(grad[[0, 1, 3]], 4.0, epsilon = 1e-5); // max=8, grad=2*8/4=4
-    assert_abs_diff_eq!(grad[[0, 3, 1]], 7.0, epsilon = 1e-5); // max=14, grad=2*14/4=7
-    assert_abs_diff_eq!(grad[[0, 3, 3]], 8.0, epsilon = 1e-5); // max=16, grad=2*16/4=8
+    assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 3.0, epsilon = 1e-5); // max=6, grad=2*6/4=3
+    assert_abs_diff_eq!(grad[[0, 0, 1, 3]], 4.0, epsilon = 1e-5); // max=8, grad=2*8/4=4
+    assert_abs_diff_eq!(grad[[0, 0, 3, 1]], 7.0, epsilon = 1e-5); // max=14, grad=2*14/4=7
+    assert_abs_diff_eq!(grad[[0, 0, 3, 3]], 8.0, epsilon = 1e-5); // max=16, grad=2*16/4=8
 
     // 非最大值位置为 0
-    assert_abs_diff_eq!(grad[[0, 0, 0]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(grad[[0, 0, 1]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 0, 0, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 0, 0, 1]], 0.0, epsilon = 1e-6);
 
     Ok(())
 }
@@ -341,9 +341,9 @@ fn test_max_pool2d_invalid_input_dims() {
 fn test_max_pool2d_kernel_too_large() {
     let mut graph = GraphInner::new();
 
-    // 输入: [C=1, H=4, W=4]
+    // 输入: [batch=1, C=1, H=4, W=4]
     let input = graph
-        .new_basic_input_node(&[1, 4, 4], Some("input"))
+        .new_basic_input_node(&[1, 1, 4, 4], Some("input"))
         .unwrap();
 
     // kernel_size=5x5 超出输入尺寸
