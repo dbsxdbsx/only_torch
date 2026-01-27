@@ -139,7 +139,7 @@ impl TraitNode for Identity {
         // 直接复制父节点的值
         let parent_value = parents[0].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{} 的父节点 {} 没有值",
+                "{} 的父 {} 没有值",
                 self.display_node(),
                 parents[0]
             ))

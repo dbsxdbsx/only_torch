@@ -163,7 +163,7 @@ fn test_state_forward_behavior() -> Result<(), GraphError> {
     let result = graph.forward(state);
     assert_err!(
         result,
-        GraphError::InvalidOperation(msg) if msg.contains("是输入/参数/状态节点")
+        GraphError::InvalidOperation(msg) if msg.contains("是输入/参数/状态类型")
     );
 
     // 设置值后，forward 静默成功（支持 RNN 缓存等场景）

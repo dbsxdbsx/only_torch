@@ -119,14 +119,14 @@ impl TraitNode for MSELoss {
         // 获取 input 和 target
         let input = parents[0].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的 input 父节点{}没有值",
+                "{}的 input 父{}没有值",
                 self.display_node(),
                 parents[0]
             ))
         })?;
         let target = parents[1].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的 target 父节点{}没有值",
+                "{}的 target 父{}没有值",
                 self.display_node(),
                 parents[1]
             ))

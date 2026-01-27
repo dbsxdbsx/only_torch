@@ -215,7 +215,7 @@ fn test_backward_without_any_forward() {
     assert_err!(
         graph.backward(loss),
         GraphError::ComputationError(
-            "损失节点 节点[id=7, name=loss, type=MSELoss] 没有值，请先执行 forward"
+            "损失节点[id=7, name=loss, type=MSELoss]没有值，请先执行 forward"
         )
     );
 

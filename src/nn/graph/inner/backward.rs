@@ -23,7 +23,7 @@ impl GraphInner {
     pub fn backward_ex(&mut self, loss: NodeId, retain_graph: bool) -> Result<f32, GraphError> {
         let loss_node = self.get_node(loss)?;
         let loss_value = loss_node.value().ok_or_else(|| {
-            GraphError::ComputationError(format!("损失节点 {loss_node} 没有值，请先执行 forward"))
+            GraphError::ComputationError(format!("损失{loss_node}没有值，请先执行 forward"))
         })?;
 
         let loss_scalar = loss_value.get_data_number().ok_or_else(|| {
@@ -61,7 +61,7 @@ impl GraphInner {
 
         let loss_node = self.get_node(loss_id)?;
         let loss_value = loss_node.value().ok_or_else(|| {
-            GraphError::ComputationError(format!("损失节点 {loss_node} 没有值，请先执行 forward"))
+            GraphError::ComputationError(format!("损失{loss_node}没有值，请先执行 forward"))
         })?;
 
         if loss_value.size() != 1 {

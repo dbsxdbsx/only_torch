@@ -102,7 +102,7 @@ impl TraitNode for Subtract {
         // 1. 获取两个父节点的值
         let left_value = parents[0].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的第1个父节点{}没有值",
+                "{}的第1个父{}没有值",
                 self.display_node(),
                 parents[0]
             ))
@@ -110,7 +110,7 @@ impl TraitNode for Subtract {
 
         let right_value = parents[1].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的第2个父节点{}没有值",
+                "{}的第2个父{}没有值",
                 self.display_node(),
                 parents[1]
             ))
@@ -144,7 +144,7 @@ impl TraitNode for Subtract {
             .value()
             .ok_or_else(|| {
                 GraphError::ComputationError(format!(
-                    "Subtract 梯度计算时父节点 {target_parent} 没有值"
+                    "Subtract 梯度计算时父{target_parent}没有值"
                 ))
             })?
             .shape();

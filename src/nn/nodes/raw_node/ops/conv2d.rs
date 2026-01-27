@@ -308,7 +308,7 @@ impl TraitNode for Conv2d {
         // 获取输入和卷积核
         let input = parents[0].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的输入父节点{}没有值",
+                "{}的输入父{}没有值",
                 self.display_node(),
                 parents[0]
             ))
@@ -316,7 +316,7 @@ impl TraitNode for Conv2d {
 
         let kernel = parents[1].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的卷积核父节点{}没有值",
+                "{}的卷积核父{}没有值",
                 self.display_node(),
                 parents[1]
             ))

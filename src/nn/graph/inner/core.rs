@@ -333,7 +333,7 @@ impl GraphInner {
                     return Ok(());
                 }
                 return Err(GraphError::InvalidOperation(format!(
-                    "{node}是输入/参数/状态节点，其值应通过set_value设置，而不是通过父节点前向传播计算"
+                    "{node}是输入/参数/状态类型，其值应通过 set_value 设置，而非通过父节点前向传播计算"
                 )));
             }
             _ => {}

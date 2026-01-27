@@ -105,7 +105,7 @@ impl TraitNode for Add {
         for parent in parents {
             let parent_value = parent.value().ok_or_else(|| {
                 GraphError::ComputationError(format!(
-                    "{}的父节点{}没有值。不该触及本错误，否则说明crate代码有问题",
+                    "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
                     self.display_node(),
                     parent
                 ))
@@ -144,7 +144,7 @@ impl TraitNode for Add {
         let target_shape = target_parent
             .value()
             .ok_or_else(|| {
-                GraphError::ComputationError(format!("Add 梯度计算时父节点 {target_parent} 没有值"))
+                GraphError::ComputationError(format!("Add 梯度计算时父{target_parent}没有值"))
             })?
             .shape();
 

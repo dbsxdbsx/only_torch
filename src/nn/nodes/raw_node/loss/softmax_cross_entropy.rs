@@ -192,14 +192,14 @@ impl TraitNode for SoftmaxCrossEntropy {
         // 获取 logits 和 labels
         let logits = parents[0].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的 logits 父节点{}没有值",
+                "{}的 logits 父{}没有值",
                 self.display_node(),
                 parents[0]
             ))
         })?;
         let labels = parents[1].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的 labels 父节点{}没有值",
+                "{}的 labels 父{}没有值",
                 self.display_node(),
                 parents[1]
             ))

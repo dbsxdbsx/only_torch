@@ -187,7 +187,7 @@ impl TraitNode for MaxPool2d {
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         let input = parents[0].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{}的输入父节点{}没有值",
+                "{}的输入父{}没有值",
                 self.display_node(),
                 parents[0]
             ))

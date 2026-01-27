@@ -150,7 +150,7 @@ impl TraitNode for Reshape {
         // 1. 获取父节点的值
         let parent_value = parents[0].value().ok_or_else(|| {
             GraphError::ComputationError(format!(
-                "{} 的父节点 {} 没有值。不该触及本错误，否则说明 crate 代码有问题",
+                "{} 的父 {} 没有值。不该触及本错误，否则说明 crate 代码有问题",
                 self.display_node(),
                 parents[0]
             ))
