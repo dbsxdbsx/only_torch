@@ -7,11 +7,11 @@
 use super::super::error::GraphError;
 use super::super::types::{GroupKind, LayerGroup, RecurrentLayerMeta, RecurrentUnrollInfo};
 use super::GraphInner;
-use crate::nn::nodes::{NodeHandle, NodeType};
 use crate::nn::NodeId;
+use crate::nn::nodes::{NodeHandle, NodeType};
 use crate::tensor::Tensor;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 use std::collections::HashMap;
 
 impl GraphInner {
@@ -124,15 +124,14 @@ impl GraphInner {
     }
 
     pub(in crate::nn) fn get_node(&self, id: NodeId) -> Result<&NodeHandle, GraphError> {
-        self.nodes
-            .get(&id)
-            .ok_or(GraphError::NodeNotFound(id))
+        self.nodes.get(&id).ok_or(GraphError::NodeNotFound(id))
     }
 
-    pub(in crate::nn) fn get_node_mut(&mut self, id: NodeId) -> Result<&mut NodeHandle, GraphError> {
-        self.nodes
-            .get_mut(&id)
-            .ok_or(GraphError::NodeNotFound(id))
+    pub(in crate::nn) fn get_node_mut(
+        &mut self,
+        id: NodeId,
+    ) -> Result<&mut NodeHandle, GraphError> {
+        self.nodes.get_mut(&id).ok_or(GraphError::NodeNotFound(id))
     }
 
     pub(in crate::nn) fn get_nodes(&self, ids: &[NodeId]) -> Result<Vec<&NodeHandle>, GraphError> {
@@ -142,21 +141,13 @@ impl GraphInner {
     pub fn get_node_parents(&self, id: NodeId) -> Result<Vec<NodeId>, GraphError> {
         // 先检查节点是否存在
         let _ = self.get_node(id)?;
-        Ok(self
-            .backward_edges
-            .get(&id)
-            .cloned()
-            .unwrap_or_default())
+        Ok(self.backward_edges.get(&id).cloned().unwrap_or_default())
     }
 
     pub fn get_node_children(&self, id: NodeId) -> Result<Vec<NodeId>, GraphError> {
         // 先检查节点是否存在
         let _ = self.get_node(id)?;
-        Ok(self
-            .forward_edges
-            .get(&id)
-            .cloned()
-            .unwrap_or_default())
+        Ok(self.forward_edges.get(&id).cloned().unwrap_or_default())
     }
 
     pub fn get_node_name(&self, id: NodeId) -> Result<&str, GraphError> {
@@ -221,7 +212,10 @@ impl GraphInner {
         NodeId(self.next_id)
     }
 
-    pub(in crate::nn::graph) fn check_duplicate_node_name(&self, name: &str) -> Result<(), GraphError> {
+    pub(in crate::nn::graph) fn check_duplicate_node_name(
+        &self,
+        name: &str,
+    ) -> Result<(), GraphError> {
         if self.nodes.values().any(|node| node.name() == name) {
             return Err(GraphError::DuplicateNodeName(format!(
                 "节点{}在图{}中重复",
@@ -326,7 +320,11 @@ impl GraphInner {
         name: &str,
         unroll_info: RecurrentUnrollInfo,
     ) {
-        if let Some(meta) = self.recurrent_layer_metas.iter_mut().find(|m| m.name == name) {
+        if let Some(meta) = self
+            .recurrent_layer_metas
+            .iter_mut()
+            .find(|m| m.name == name)
+        {
             meta.unroll_infos.push(unroll_info);
         }
     }

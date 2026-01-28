@@ -37,6 +37,7 @@
 
 use super::{DetachedVar, Graph, GraphError, NodeId, Var};
 use crate::tensor::Tensor;
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -206,12 +207,98 @@ impl ForwardInput for DetachedVar {
     }
 }
 
+// ============================================================================
+// ForwardOutput Trait（支持多输出）
+// ============================================================================
+
+/// 模型前向输出类型
+///
+/// 实现此 trait 的类型可以作为 `ModelState::forward()` 的返回值。
+/// 支持 `Var`、`(Var, Var)`、`(Var, Var, Var)` 等类型。
+///
+/// # 多输出支持
+///
+/// 用户可以在 forward 闭包中返回元组，实现多任务学习等场景：
+///
+/// ```ignore
+/// // 返回单个输出
+/// state.forward(&x, |input| Ok(self.fc.forward(input)))?;
+///
+/// // 返回双输出
+/// state.forward(&x, |input| {
+///     let feat = self.shared.forward(input);
+///     Ok((self.head1.forward(&feat), self.head2.forward(&feat)))
+/// })?;
+/// ```
+pub trait ForwardOutput: Clone + 'static {
+    /// 触发前向传播
+    ///
+    /// 对于多输出，只需调用其中任意一个 Var 的 forward()，
+    /// 整个计算图就会被执行。
+    fn trigger_forward(&self) -> Result<(), GraphError>;
+
+    /// 获取所有输出节点的 ID（用于可视化）
+    fn output_node_ids(&self) -> Vec<NodeId>;
+}
+
+impl ForwardOutput for Var {
+    fn trigger_forward(&self) -> Result<(), GraphError> {
+        self.forward()
+    }
+
+    fn output_node_ids(&self) -> Vec<NodeId> {
+        vec![self.node_id()]
+    }
+}
+
+impl ForwardOutput for (Var, Var) {
+    fn trigger_forward(&self) -> Result<(), GraphError> {
+        // 两个输出可能位于不同分支，都需要触发前向传播
+        self.0.forward()?;
+        self.1.forward()
+    }
+
+    fn output_node_ids(&self) -> Vec<NodeId> {
+        vec![self.0.node_id(), self.1.node_id()]
+    }
+}
+
+impl ForwardOutput for (Var, Var, Var) {
+    fn trigger_forward(&self) -> Result<(), GraphError> {
+        self.0.forward()?;
+        self.1.forward()?;
+        self.2.forward()
+    }
+
+    fn output_node_ids(&self) -> Vec<NodeId> {
+        vec![self.0.node_id(), self.1.node_id(), self.2.node_id()]
+    }
+}
+
+impl ForwardOutput for (Var, Var, Var, Var) {
+    fn trigger_forward(&self) -> Result<(), GraphError> {
+        self.0.forward()?;
+        self.1.forward()?;
+        self.2.forward()?;
+        self.3.forward()
+    }
+
+    fn output_node_ids(&self) -> Vec<NodeId> {
+        vec![
+            self.0.node_id(),
+            self.1.node_id(),
+            self.2.node_id(),
+            self.3.node_id(),
+        ]
+    }
+}
+
 /// 模型状态缓存
 struct StateCache {
     /// `GradientRouter` 节点列表（每个输入一个，为多输入扩展准备）
     routers: Vec<Var>,
-    /// 输出节点（预构建的计算图终点）
-    output: Var,
+    /// 输出（使用 `Any` 支持任意返回类型，如 `Var`、`(Var, Var)` 等）
+    output: Box<dyn Any>,
 }
 
 /// 模型状态管理器
@@ -305,14 +392,14 @@ impl ModelState {
         self.name.as_deref()
     }
 
-    /// `PyTorch` 风格的 forward（统一缓存 + 梯度路由）
+    /// `PyTorch` 风格的 forward（统一缓存 + 梯度路由 + 多输出支持）
     ///
     /// # 参数
     /// - `x`: 输入数据（`&Tensor`、`Tensor`、`&Var` 或 `Var`）
-    /// - `compute`: 计算逻辑闭包，接收 `&Var` 输入，返回 `Result<Var, GraphError>`
+    /// - `compute`: 计算逻辑闭包，接收 `&Var` 输入，返回实现 `ForwardOutput` 的类型
     ///
     /// # 返回
-    /// 模型输出节点（Var）
+    /// 模型输出（可以是 `Var`、`(Var, Var)` 等实现了 `ForwardOutput` 的类型）
     ///
     /// # Batch 维度处理
     /// 缓存键只用特征维度（忽略第一维 batch），所以：
@@ -321,22 +408,26 @@ impl ModelState {
     ///
     /// # 示例
     /// ```ignore
-    /// // 普通训练
-    /// let out = model.forward(&batch_x)?;
+    /// // 单输出
+    /// let out = model.forward(&batch_x, |input| {
+    ///     Ok(self.fc.forward(input))
+    /// })?;
+    ///
+    /// // 多输出（多任务学习）
+    /// let (cls, reg) = model.forward(&batch_x, |input| {
+    ///     let feat = self.shared.forward(input);
+    ///     Ok((self.cls_head.forward(&feat), self.reg_head.forward(&feat)))
+    /// })?;
     ///
     /// // GAN 训练
-    /// let fake = G.forward(&noise)?;
-    /// let d_fake = D.forward(&fake.detach())?;  // 复用结构，无梯度路由
-    /// let d_fake_for_g = D.forward(&fake)?;     // 复用结构，梯度路由到 fake
-    ///
-    /// // 不同 batch_size 也复用（类似 Keras）
-    /// let train_out = model.forward(&batch_256)?;  // [256, 64]
-    /// let infer_out = model.forward(&single)?;     // [1, 64] → 复用同一个缓存！
+    /// let fake = G.forward(&noise, |z| Ok(self.gen.forward(z)))?;
+    /// let d_fake = D.forward(&fake.detach(), |x| Ok(self.disc.forward(x)))?;
     /// ```
-    pub fn forward<X, F>(&self, x: X, compute: F) -> Result<Var, GraphError>
+    pub fn forward<X, R, F>(&self, x: X, compute: F) -> Result<R, GraphError>
     where
         X: ForwardInput,
-        F: FnOnce(&Var) -> Result<Var, GraphError>,
+        R: ForwardOutput,
+        F: FnOnce(&Var) -> Result<R, GraphError>,
     {
         let full_shape = x.shape();
         let value = x.get_value()?;
@@ -386,10 +477,21 @@ impl ModelState {
                 .inner_mut()
                 .set_gradient_target(router.node_id(), gradient_target)?;
 
-            // 4. 重新计算（使用新的 batch_size）
-            c.output.forward()?;
+            // 4. 从缓存取出输出并 downcast
+            let cached_output = c
+                .output
+                .downcast_ref::<R>()
+                .ok_or_else(|| {
+                    GraphError::ComputationError(
+                        "缓存输出类型不匹配（同一 ModelState 应返回相同类型）".to_string(),
+                    )
+                })?
+                .clone();
 
-            return Ok(c.output.clone());
+            // 5. 重新计算（使用新的 batch_size）
+            cached_output.trigger_forward()?;
+
+            return Ok(cached_output);
         }
 
         // 缓存未命中：创建新的子图
@@ -421,13 +523,17 @@ impl ModelState {
         let output = compute(&router)?;
 
         // 5. 触发前向传播
-        output.forward()?;
+        output.trigger_forward()?;
 
         // 6. 注册模型分组（如果有名称）
+        // 多输出时注册第一个输出节点作为代表
         if let Some(ref name) = self.name {
-            self.graph
-                .inner_mut()
-                .register_model_group(name, &[router_id], output.node_id())?;
+            let output_ids = output.output_node_ids();
+            if let Some(&first_output_id) = output_ids.first() {
+                self.graph
+                    .inner_mut()
+                    .register_model_group(name, &[router_id], first_output_id)?;
+            }
         }
 
         // 7. 缓存（使用特征形状列表作为键）
@@ -435,34 +541,40 @@ impl ModelState {
             cache_key,
             StateCache {
                 routers: vec![router],
-                output: output.clone(),
+                output: Box::new(output.clone()),
             },
         );
 
         Ok(output)
     }
 
-    /// 双输入 forward（PyTorch 风格）
+    /// 双输入 forward（PyTorch 风格，支持多输出）
     ///
     /// # 参数
     /// - `x`: 第一个输入（`&Tensor`、`Tensor`、`&Var`、`Var` 或 `DetachedVar`）
     /// - `y`: 第二个输入
-    /// - `compute`: 计算逻辑闭包，接收两个 `&Var` 输入
+    /// - `compute`: 计算逻辑闭包，接收两个 `&Var` 输入，返回实现 `ForwardOutput` 的类型
     ///
     /// # 示例
     /// ```ignore
-    /// // 多模态融合
+    /// // 多模态融合（单输出）
     /// let out = model.forward2(&image, &text, |img, txt| {
     ///     let img_feat = self.image_encoder.forward(img);
     ///     let txt_feat = self.text_encoder.forward(txt);
     ///     Ok(self.fusion.forward(&Var::concat(&[&img_feat, &txt_feat], 1)?))
     /// })?;
+    ///
+    /// // Siamese 网络（双输出）
+    /// let (feat1, feat2) = model.forward2(&x1, &x2, |a, b| {
+    ///     Ok((self.encoder.forward(a), self.encoder.forward(b)))
+    /// })?;
     /// ```
-    pub fn forward2<X, Y, F>(&self, x: X, y: Y, compute: F) -> Result<Var, GraphError>
+    pub fn forward2<X, Y, R, F>(&self, x: X, y: Y, compute: F) -> Result<R, GraphError>
     where
         X: ForwardInput,
         Y: ForwardInput,
-        F: FnOnce(&Var, &Var) -> Result<Var, GraphError>,
+        R: ForwardOutput,
+        F: FnOnce(&Var, &Var) -> Result<R, GraphError>,
     {
         // 收集两个输入的信息
         let x_shape = x.shape();
@@ -527,9 +639,20 @@ impl ModelState {
                 .inner_mut()
                 .set_gradient_target(router_y.node_id(), y_gradient_target)?;
 
+            // 从缓存取出输出并 downcast
+            let cached_output = c
+                .output
+                .downcast_ref::<R>()
+                .ok_or_else(|| {
+                    GraphError::ComputationError(
+                        "缓存输出类型不匹配（同一 ModelState 应返回相同类型）".to_string(),
+                    )
+                })?
+                .clone();
+
             // 重新计算
-            c.output.forward()?;
-            return Ok(c.output.clone());
+            cached_output.trigger_forward()?;
+            return Ok(cached_output);
         }
 
         // 缓存未命中：创建新的子图
@@ -567,15 +690,18 @@ impl ModelState {
 
         // 调用用户计算逻辑
         let output = compute(&router_x, &router_y)?;
-        output.forward()?;
+        output.trigger_forward()?;
 
-        // 注册模型分组
+        // 注册模型分组（多输出时使用第一个输出节点）
         if let Some(ref name) = self.name {
-            self.graph.inner_mut().register_model_group(
-                name,
-                &[router_x_id, router_y_id],
-                output.node_id(),
-            )?;
+            let output_ids = output.output_node_ids();
+            if let Some(&first_output_id) = output_ids.first() {
+                self.graph.inner_mut().register_model_group(
+                    name,
+                    &[router_x_id, router_y_id],
+                    first_output_id,
+                )?;
+            }
         }
 
         // 缓存
@@ -583,33 +709,40 @@ impl ModelState {
             cache_key,
             StateCache {
                 routers: vec![router_x, router_y],
-                output: output.clone(),
+                output: Box::new(output.clone()),
             },
         );
 
         Ok(output)
     }
 
-    /// 三输入 forward（PyTorch 风格）
+    /// 三输入 forward（PyTorch 风格，支持多输出）
     ///
     /// # 参数
     /// - `x`, `y`, `z`: 三个输入
-    /// - `compute`: 计算逻辑闭包，接收三个 `&Var` 输入
+    /// - `compute`: 计算逻辑闭包，接收三个 `&Var` 输入，返回实现 `ForwardOutput` 的类型
     ///
     /// # 示例
     /// ```ignore
-    /// // 三模态融合
+    /// // 三模态融合（单输出）
     /// let out = model.forward3(&audio, &video, &text, |a, v, t| {
     ///     let combined = Var::stack(&[a, v, t], 1, StackMode::Concat)?;
     ///     Ok(self.fusion.forward(&combined))
     /// })?;
+    ///
+    /// // 三输入多输出
+    /// let (out1, out2) = model.forward3(&x, &y, &z, |a, b, c| {
+    ///     let feat = self.encoder.forward3(a, b, c);
+    ///     Ok((self.head1.forward(&feat), self.head2.forward(&feat)))
+    /// })?;
     /// ```
-    pub fn forward3<X, Y, Z, F>(&self, x: X, y: Y, z: Z, compute: F) -> Result<Var, GraphError>
+    pub fn forward3<X, Y, Z, R, F>(&self, x: X, y: Y, z: Z, compute: F) -> Result<R, GraphError>
     where
         X: ForwardInput,
         Y: ForwardInput,
         Z: ForwardInput,
-        F: FnOnce(&Var, &Var, &Var) -> Result<Var, GraphError>,
+        R: ForwardOutput,
+        F: FnOnce(&Var, &Var, &Var) -> Result<R, GraphError>,
     {
         // 收集三个输入的信息
         let inputs_info: Vec<_> = [
@@ -631,7 +764,14 @@ impl ModelState {
             } else {
                 shape.clone()
             };
-            (shape, value, detach_status, gradient_target, should_detach, feature)
+            (
+                shape,
+                value,
+                detach_status,
+                gradient_target,
+                should_detach,
+                feature,
+            )
         })
         .collect();
 
@@ -655,8 +795,20 @@ impl ModelState {
                     .inner_mut()
                     .set_gradient_target(router.node_id(), gradient_target)?;
             }
-            c.output.forward()?;
-            return Ok(c.output.clone());
+
+            // 从缓存取出输出并 downcast
+            let cached_output = c
+                .output
+                .downcast_ref::<R>()
+                .ok_or_else(|| {
+                    GraphError::ComputationError(
+                        "缓存输出类型不匹配（同一 ModelState 应返回相同类型）".to_string(),
+                    )
+                })?
+                .clone();
+
+            cached_output.trigger_forward()?;
+            return Ok(cached_output);
         }
 
         // 缓存未命中：创建三个 GradientRouter
@@ -681,13 +833,16 @@ impl ModelState {
 
         // 调用用户计算逻辑
         let output = compute(&routers[0], &routers[1], &routers[2])?;
-        output.forward()?;
+        output.trigger_forward()?;
 
-        // 注册模型分组
+        // 注册模型分组（多输出时使用第一个输出节点）
         if let Some(ref name) = self.name {
-            self.graph
-                .inner_mut()
-                .register_model_group(name, &router_ids, output.node_id())?;
+            let output_ids = output.output_node_ids();
+            if let Some(&first_output_id) = output_ids.first() {
+                self.graph
+                    .inner_mut()
+                    .register_model_group(name, &router_ids, first_output_id)?;
+            }
         }
 
         // 缓存
@@ -695,7 +850,7 @@ impl ModelState {
             cache_key,
             StateCache {
                 routers,
-                output: output.clone(),
+                output: Box::new(output.clone()),
             },
         );
 

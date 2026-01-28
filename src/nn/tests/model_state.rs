@@ -6,7 +6,7 @@
 //! - 非 detached Var 输入：不缓存，每次创建新路径（需要梯度流）
 
 use crate::nn::{
-    CrossEntropyLoss, Graph, Linear, ModelState, Rnn, Var, VarActivationOps, VarLossOps,
+    CrossEntropyLoss, Graph, Linear, ModelState, Module, Rnn, Var, VarActivationOps, VarLossOps,
     VarMatrixOps,
 };
 use crate::tensor::Tensor;
@@ -142,14 +142,8 @@ fn test_model_state_var_len_rnn() {
     // 检查缓存的特征形状（不含 batch）
     // 单输入时，缓存键是 [[feature_shape]]
     let shapes = state.cached_shapes();
-    assert!(
-        shapes.contains(&vec![vec![5, 1]]),
-        "应有特征形状 [[5, 1]]"
-    );
-    assert!(
-        shapes.contains(&vec![vec![8, 1]]),
-        "应有特征形状 [[8, 1]]"
-    );
+    assert!(shapes.contains(&vec![vec![5, 1]]), "应有特征形状 [[5, 1]]");
+    assert!(shapes.contains(&vec![vec![8, 1]]), "应有特征形状 [[8, 1]]");
 }
 
 #[test]
@@ -812,4 +806,300 @@ fn test_model_state_forward3_gradient_routing() {
     assert!(w1.grad().unwrap().is_some(), "w1 应有梯度");
     assert!(w2.grad().unwrap().is_some(), "w2 应有梯度");
     assert!(w3.grad().unwrap().is_some(), "w3 应有梯度");
+}
+
+// ============================================================================
+// 多输出测试
+// ============================================================================
+
+/// 测试: 多输出基本功能（返回元组）
+///
+/// 验证 forward 闭包可以返回元组类型。
+#[test]
+fn test_model_state_multi_output_basic() {
+    let graph = Graph::new_with_seed(42);
+
+    // 共享层 + 两个输出头
+    let shared = Linear::new(&graph, 2, 8, true, "shared").unwrap();
+    let head1 = Linear::new(&graph, 8, 1, true, "head1").unwrap();
+    let head2 = Linear::new(&graph, 8, 1, true, "head2").unwrap();
+    let state = ModelState::new(&graph);
+
+    let x = Tensor::new(&[1.0, 2.0], &[1, 2]);
+
+    // 返回元组 (Var, Var)
+    let (out1, out2) = state
+        .forward(&x, |input| {
+            let feat = shared.forward(input).relu();
+            let o1 = head1.forward(&feat);
+            let o2 = head2.forward(&feat);
+            Ok((o1, o2))
+        })
+        .unwrap();
+
+    assert!(state.is_initialized());
+    assert_eq!(state.cache_size(), 1);
+
+    // 验证两个输出形状
+    let out1_val = out1.value().unwrap().unwrap();
+    let out2_val = out2.value().unwrap().unwrap();
+    assert_eq!(out1_val.shape(), &[1, 1]);
+    assert_eq!(out2_val.shape(), &[1, 1]);
+
+    // 第二次调用（复用缓存）
+    let y = Tensor::new(&[3.0, 4.0], &[1, 2]);
+    let (out1_2, out2_2) = state
+        .forward(&y, |input| {
+            let feat = shared.forward(input).relu();
+            Ok((head1.forward(&feat), head2.forward(&feat)))
+        })
+        .unwrap();
+
+    // 应复用相同节点
+    assert_eq!(out1.node_id(), out1_2.node_id());
+    assert_eq!(out2.node_id(), out2_2.node_id());
+    assert_eq!(state.cache_size(), 1);
+}
+
+/// 测试: 多输出 + 两个回归头（MSE + MSE）
+///
+/// 验证多任务学习场景：共享特征层 + 两个回归任务。
+#[test]
+fn test_model_state_multi_output_dual_regression() {
+    let graph = Graph::new_with_seed(42);
+
+    // 共享层 + 两个回归头
+    let shared = Linear::new(&graph, 2, 8, true, "shared").unwrap();
+    let reg_head1 = Linear::new(&graph, 8, 2, true, "reg_head1").unwrap();
+    let reg_head2 = Linear::new(&graph, 8, 1, true, "reg_head2").unwrap();
+    let state = ModelState::new(&graph);
+
+    let x = Tensor::new(&[1.0, -0.5], &[1, 2]);
+
+    // 双输出 forward
+    let (out1, out2) = state
+        .forward(&x, |input| {
+            let feat = shared.forward(input).relu();
+            let o1 = reg_head1.forward(&feat);
+            let o2 = reg_head2.forward(&feat);
+            Ok((o1, o2))
+        })
+        .unwrap();
+
+    // 两个回归目标
+    let target1 = graph.input(&Tensor::zeros(&[1, 2])).unwrap();
+    let target2 = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
+
+    // 计算两个 MSE loss
+    let loss1 = out1.mse_loss(&target1).unwrap();
+    let loss2 = out2.mse_loss(&target2).unwrap();
+
+    // 组合 loss
+    let total_loss = &loss1 + &loss2;
+    total_loss.backward().unwrap();
+
+    // 验证所有参数都有梯度
+    for param in shared.parameters() {
+        assert!(param.grad().unwrap().is_some(), "shared 层参数应有梯度");
+    }
+    for param in reg_head1.parameters() {
+        assert!(param.grad().unwrap().is_some(), "reg_head1 参数应有梯度");
+    }
+    for param in reg_head2.parameters() {
+        assert!(param.grad().unwrap().is_some(), "reg_head2 参数应有梯度");
+    }
+}
+
+/// 测试: 多输出 + 两个分类头（CrossEntropy + CrossEntropy）
+///
+/// 验证多任务学习场景：共享特征层 + 两个分类任务。
+#[test]
+fn test_model_state_multi_output_dual_classification() {
+    let graph = Graph::new_with_seed(42);
+
+    // 共享层 + 两个分类头（不同类别数）
+    let shared = Linear::new(&graph, 4, 8, true, "shared").unwrap();
+    let cls_head1 = Linear::new(&graph, 8, 3, true, "cls_head1").unwrap(); // 3 分类
+    let cls_head2 = Linear::new(&graph, 8, 5, true, "cls_head2").unwrap(); // 5 分类
+    let state = ModelState::new(&graph);
+
+    let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+
+    // 双输出 forward
+    let (logits1, logits2) = state
+        .forward(&x, |input| {
+            let feat = shared.forward(input).relu();
+            let l1 = cls_head1.forward(&feat);
+            let l2 = cls_head2.forward(&feat);
+            Ok((l1, l2))
+        })
+        .unwrap();
+
+    // 两个分类目标（one-hot 编码）
+    // 第一个任务：类别 1（3 分类）
+    let label1 = graph
+        .input(&Tensor::new(&[0.0, 1.0, 0.0], &[1, 3]))
+        .unwrap();
+    // 第二个任务：类别 3（5 分类）
+    let label2 = graph
+        .input(&Tensor::new(&[0.0, 0.0, 0.0, 1.0, 0.0], &[1, 5]))
+        .unwrap();
+
+    // 计算两个 CrossEntropy loss
+    let loss1 = logits1.cross_entropy(&label1).unwrap();
+    let loss2 = logits2.cross_entropy(&label2).unwrap();
+
+    // 组合 loss
+    let total_loss = &loss1 + &loss2;
+    total_loss.backward().unwrap();
+
+    // 验证所有参数都有梯度
+    for param in shared.parameters() {
+        assert!(param.grad().unwrap().is_some(), "shared 层参数应有梯度");
+    }
+    for param in cls_head1.parameters() {
+        assert!(param.grad().unwrap().is_some(), "cls_head1 参数应有梯度");
+    }
+    for param in cls_head2.parameters() {
+        assert!(param.grad().unwrap().is_some(), "cls_head2 参数应有梯度");
+    }
+}
+
+/// 测试: 多输出 + 混合头（CrossEntropy + MSE）
+///
+/// 验证多任务学习场景：共享特征层 + 分类任务 + 回归任务。
+/// 这是实际中常见的场景，如目标检测（分类 + 回归）。
+#[test]
+fn test_model_state_multi_output_mixed_cls_reg() {
+    let graph = Graph::new_with_seed(42);
+
+    // 共享层 + 分类头 + 回归头
+    let shared = Linear::new(&graph, 4, 8, true, "shared").unwrap();
+    let cls_head = Linear::new(&graph, 8, 3, true, "cls_head").unwrap(); // 3 分类
+    let reg_head = Linear::new(&graph, 8, 2, true, "reg_head").unwrap(); // 2 维回归
+    let state = ModelState::new(&graph);
+
+    let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+
+    // 双输出 forward
+    let (cls_logits, reg_pred) = state
+        .forward(&x, |input| {
+            let feat = shared.forward(input).relu();
+            let cls = cls_head.forward(&feat);
+            let reg = reg_head.forward(&feat);
+            Ok((cls, reg))
+        })
+        .unwrap();
+
+    // 分类目标（one-hot）和回归目标
+    let cls_label = graph
+        .input(&Tensor::new(&[1.0, 0.0, 0.0], &[1, 3]))
+        .unwrap();
+    let reg_target = graph.input(&Tensor::new(&[0.5, -0.5], &[1, 2])).unwrap();
+
+    // 计算两种不同类型的 loss
+    let cls_loss = cls_logits.cross_entropy(&cls_label).unwrap();
+    let reg_loss = reg_pred.mse_loss(&reg_target).unwrap();
+
+    // 组合 loss（可以加权，这里简单相加）
+    let total_loss = &cls_loss + &reg_loss;
+    total_loss.backward().unwrap();
+
+    // 验证所有参数都有梯度
+    for param in shared.parameters() {
+        assert!(param.grad().unwrap().is_some(), "shared 层参数应有梯度");
+    }
+    for param in cls_head.parameters() {
+        assert!(param.grad().unwrap().is_some(), "cls_head 参数应有梯度");
+    }
+    for param in reg_head.parameters() {
+        assert!(param.grad().unwrap().is_some(), "reg_head 参数应有梯度");
+    }
+}
+
+/// 测试: 多输出 + 三元组
+///
+/// 验证返回三个输出的场景（如 VAE: recon, mu, log_var）。
+#[test]
+fn test_model_state_multi_output_triple() {
+    let graph = Graph::new_with_seed(42);
+
+    let encoder = Linear::new(&graph, 4, 8, true, "encoder").unwrap();
+    let mu_layer = Linear::new(&graph, 8, 2, true, "mu").unwrap();
+    let logvar_layer = Linear::new(&graph, 8, 2, true, "logvar").unwrap();
+    let decoder = Linear::new(&graph, 2, 4, true, "decoder").unwrap();
+    let state = ModelState::new(&graph);
+
+    let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+
+    // 返回三元组
+    let (recon, mu, log_var) = state
+        .forward(&x, |input| {
+            let h = encoder.forward(input).relu();
+            let mu = mu_layer.forward(&h);
+            let log_var = logvar_layer.forward(&h);
+            // 简化：直接用 mu 作为 z（省略重参数化）
+            let recon = decoder.forward(&mu);
+            Ok((recon, mu, log_var))
+        })
+        .unwrap();
+
+    // 验证三个输出形状
+    assert_eq!(recon.value().unwrap().unwrap().shape(), &[1, 4]);
+    assert_eq!(mu.value().unwrap().unwrap().shape(), &[1, 2]);
+    assert_eq!(log_var.value().unwrap().unwrap().shape(), &[1, 2]);
+
+    // 验证可以对任意输出计算 loss
+    let target = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]))
+        .unwrap();
+    let recon_loss = recon.mse_loss(&target).unwrap();
+    recon_loss.backward().unwrap();
+
+    // encoder 应有梯度（通过 mu -> recon 传播）
+    for param in encoder.parameters() {
+        assert!(param.grad().unwrap().is_some(), "encoder 参数应有梯度");
+    }
+}
+
+/// 测试: forward2 多输出
+///
+/// 验证双输入方法也支持多输出返回。
+#[test]
+fn test_model_state_forward2_multi_output() {
+    let graph = Graph::new_with_seed(42);
+
+    // Siamese 风格：双输入共享编码器，返回两个特征向量
+    let encoder = Linear::new(&graph, 2, 4, true, "encoder").unwrap();
+    let state = ModelState::new(&graph);
+
+    let x1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let x2 = Tensor::new(&[3.0, 4.0], &[1, 2]);
+
+    // 双输入双输出
+    let (feat1, feat2) = state
+        .forward2(&x1, &x2, |a, b| {
+            let f1 = encoder.forward(a).relu();
+            let f2 = encoder.forward(b).relu();
+            Ok((f1, f2))
+        })
+        .unwrap();
+
+    // 验证两个输出形状
+    assert_eq!(feat1.value().unwrap().unwrap().shape(), &[1, 4]);
+    assert_eq!(feat2.value().unwrap().unwrap().shape(), &[1, 4]);
+
+    // 验证缓存复用
+    let y1 = Tensor::new(&[5.0, 6.0], &[1, 2]);
+    let y2 = Tensor::new(&[7.0, 8.0], &[1, 2]);
+
+    let (feat1_2, feat2_2) = state
+        .forward2(&y1, &y2, |a, b| {
+            Ok((encoder.forward(a).relu(), encoder.forward(b).relu()))
+        })
+        .unwrap();
+
+    assert_eq!(feat1.node_id(), feat1_2.node_id());
+    assert_eq!(feat2.node_id(), feat2_2.node_id());
+    assert_eq!(state.cache_size(), 1);
 }

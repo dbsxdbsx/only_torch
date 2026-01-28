@@ -271,11 +271,32 @@ impl Var {
     /// # 返回值
     /// 返回 loss 的标量值
     pub fn backward(&self) -> Result<f32, GraphError> {
+        self.backward_ex(false)
+    }
+
+    /// 反向传播（扩展版本，支持 retain_graph）
+    ///
+    /// # 参数
+    /// - `retain_graph`: 是否保留计算图
+    ///   - `true`: 保留图，允许多次 backward（多任务学习场景）
+    ///   - `false`: 释放中间节点的值（默认行为，节省内存）
+    ///
+    /// # 多任务学习示例
+    /// ```ignore
+    /// optimizer.zero_grad()?;
+    /// loss1.backward_ex(true)?;   // retain_graph=true，保留图
+    /// loss2.backward_ex(false)?;  // 梯度累积到共享参数
+    /// optimizer.step()?;
+    /// ```
+    ///
+    /// # 返回值
+    /// 返回 loss 的标量值
+    pub fn backward_ex(&self, retain_graph: bool) -> Result<f32, GraphError> {
         let mut g = self.graph.borrow_mut();
         // ensure-forward：先执行前向传播
         g.forward(self.id)?;
         // 然后执行反向传播
-        g.backward(self.id)
+        g.backward_ex(self.id, retain_graph)
     }
 
     // ==================== 值访问和设置 ====================
