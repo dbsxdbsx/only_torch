@@ -1,5 +1,32 @@
 # 更新日志
 
+## [0.10.2] - 2026-01-28
+
+### 重构
+
+- **refactor(graph): 模块化重构 graph.rs 为 graph/ 目录结构**
+  - 拆分为 `core.rs`、`forward.rs`、`backward.rs`、`visualization.rs` 等子模块
+  - 提升代码可维护性，为 NEAT 演化架构做准备
+
+- **refactor(cnn): 统一 CNN 层为 Batch-First 4D 格式**
+  - Conv2d/MaxPool2d/AvgPool2d 输入输出格式统一为 `[N, C, H, W]`
+
+- **refactor: 统一术语，明确 Batch-First 设计原则**
+  - 文档和代码注释统一使用 Batch-First 术语
+
+- **refactor: 代码质量提升**
+  - 统一错误信息格式，避免"节点"前缀重复
+  - 改进参数文件格式错误的提示信息
+  - 清理代码注释中的版本/阶段历史痕迹
+  - 清理冗余代码并新增通用下载模块 (`src/utils/download.rs`)
+
+### 文档
+
+- **docs: 新增 NEAT 神经架构演化设计文档**
+  - 新增 `.doc/design/neural_architecture_evolution_design.md`
+  - 整合循环边变异机制设计
+  - 为后续 NEAT/强化学习功能做架构准备
+
 ## [0.10.1] - 2026-01-25
 
 ### 新增
