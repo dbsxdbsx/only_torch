@@ -68,6 +68,7 @@ pub enum NodeTypeDescriptor {
         alpha: f32,
     },
     Sign,
+    Abs,
     SoftPlus,
     Step,
     Reshape {

@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Add, AvgPool2d, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MSELoss, MatMul,
-    MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus, Softmax,
-    SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
+    Abs, Add, AvgPool2d, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MSELoss,
+    MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus,
+    Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -263,6 +263,10 @@ impl NodeHandle {
         target_shape: &[usize],
     ) -> Result<Self, GraphError> {
         Self::new(Reshape::new(parents, target_shape)?)
+    }
+
+    pub(in crate::nn) fn new_abs(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Abs::new(parents)?)
     }
 
     pub(in crate::nn) fn new_sign(parents: &[&Self]) -> Result<Self, GraphError> {

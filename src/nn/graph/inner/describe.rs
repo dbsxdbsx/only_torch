@@ -299,6 +299,7 @@ impl GraphInner {
             NodeTypeDescriptor::Tanh => "Tanh",
             NodeTypeDescriptor::LeakyReLU { .. } => "LeakyReLU",
             NodeTypeDescriptor::Sign => "Sign",
+            NodeTypeDescriptor::Abs => "Abs",
             NodeTypeDescriptor::SoftPlus => "SoftPlus",
             NodeTypeDescriptor::Step => "Step",
             NodeTypeDescriptor::Reshape { .. } => "Reshape",
@@ -369,6 +370,7 @@ impl GraphInner {
                 alpha: node.alpha() as f32,
             },
             NodeType::Sign(_) => NodeTypeDescriptor::Sign,
+            NodeType::Abs(_) => NodeTypeDescriptor::Abs,
             NodeType::SoftPlus(_) => NodeTypeDescriptor::SoftPlus,
             NodeType::Step(_) => NodeTypeDescriptor::Step,
             NodeType::Reshape(node) => NodeTypeDescriptor::Reshape {

@@ -20,6 +20,7 @@ pub(in crate::nn) enum NodeType {
     Parameter(Parameter),
     State(State),       // 时间状态节点（RNN 隐藏状态等）
     Identity(Identity), // 恒等映射（用于 detach 等）
+    Abs(Abs),
     Add(Add),
     AvgPool2d(AvgPool2d),
     Conv2d(Conv2d),

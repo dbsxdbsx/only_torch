@@ -16,6 +16,7 @@ mod layer_max_pool2d; // MaxPool2d 层便捷函数
 mod layer_rnn; // RNN 层测试（展开式设计）
 mod model_state; // ModelState（模型状态管理器）智能缓存测试
 mod module_trait; // Module trait 测试
+mod node_abs; // Abs 绝对值函数（|x|，梯度为 sign(x)）
 mod node_add;
 mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
@@ -31,12 +32,12 @@ mod node_multiply;
 mod node_parameter;
 mod node_reshape; // Reshape 节点（形状变换）
 mod node_select; // Select 节点（张量索引选择，RNN 展开式设计用）
-mod node_stack; // Stack 节点（多张量堆叠/拼接）
 mod node_sigmoid;
 mod node_sign; // Sign 符号函数（正→1, 负→-1, 零→0）
 mod node_softmax; // Softmax 激活函数（沿最后一维归一化为概率分布）
 mod node_softmax_cross_entropy;
 mod node_softplus; // SoftPlus 激活函数（ReLU 的平滑近似）
+mod node_stack; // Stack 节点（多张量堆叠/拼接）
 mod node_state; // State 节点测试（RNN 时间状态）
 mod node_step;
 mod node_subtract; // Subtract 节点（逐元素减法）

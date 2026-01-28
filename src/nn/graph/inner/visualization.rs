@@ -7,10 +7,10 @@
 use super::super::error::{GraphError, ImageFormat, VisualizationOutput};
 use super::super::types::{GroupKind, LayerGroup};
 use super::GraphInner;
-use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
-use crate::nn::nodes::raw_node::InputVariant;
-use crate::nn::nodes::NodeType;
 use crate::nn::NodeId;
+use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
+use crate::nn::nodes::NodeType;
+use crate::nn::nodes::raw_node::InputVariant;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::process::Command;
@@ -1006,6 +1006,7 @@ impl GraphInner {
             | NodeTypeDescriptor::Tanh
             | NodeTypeDescriptor::LeakyReLU { .. }
             | NodeTypeDescriptor::Sign
+            | NodeTypeDescriptor::Abs
             | NodeTypeDescriptor::SoftPlus
             | NodeTypeDescriptor::Step => ("diamond", "filled", "#FFF3E0"),
             // ZerosLike：虚线圆角矩形，浅黄色
@@ -1257,6 +1258,7 @@ impl GraphInner {
             NodeTypeDescriptor::Tanh => "Tanh",
             NodeTypeDescriptor::LeakyReLU { .. } => "LeakyReLU",
             NodeTypeDescriptor::Sign => "Sign",
+            NodeTypeDescriptor::Abs => "Abs",
             NodeTypeDescriptor::SoftPlus => "SoftPlus",
             NodeTypeDescriptor::Step => "Step",
             NodeTypeDescriptor::Reshape { .. } => "Reshape",

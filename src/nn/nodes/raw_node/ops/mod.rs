@@ -6,6 +6,7 @@
  * @LastEditTime : 2024-12-22 00:00:00
  */
 
+mod abs;
 mod add;
 mod avg_pool2d;
 mod conv2d;
@@ -28,6 +29,7 @@ mod subtract;
 mod tanh;
 mod zeros_like;
 
+pub(crate) use abs::Abs;
 pub(crate) use add::Add;
 pub(crate) use avg_pool2d::AvgPool2d;
 pub(crate) use conv2d::Conv2d;

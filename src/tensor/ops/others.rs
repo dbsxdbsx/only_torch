@@ -391,12 +391,7 @@ impl Tensor {
             Self { data: stacked }.into_contiguous()
         } else {
             // torch.cat 模式：沿现有 axis 拼接
-            assert!(
-                axis < ndim,
-                "stack: axis {} 超出张量维度 {}",
-                axis,
-                ndim
-            );
+            assert!(axis < ndim, "stack: axis {} 超出张量维度 {}", axis, ndim);
 
             // 检查除 axis 外的维度是否一致
             for (i, t) in tensors.iter().enumerate().skip(1) {
@@ -1114,4 +1109,32 @@ impl Tensor {
             .mapv_inplace(|x| if x == 0.0 { 0.0 } else { x.signum() });
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑sign↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓abs↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 计算张量每个元素的绝对值
+    ///
+    /// - 正数返回原值
+    /// - 负数返回其相反数
+    /// - 零返回 0.0
+    /// - NaN 返回 NaN
+    /// - ±INFINITY 返回 INFINITY
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
+    /// let y = x.abs();
+    /// // y = [2.0, 1.0, 0.0, 1.0, 2.0]
+    /// ```
+    pub fn abs(&self) -> Self {
+        let data = self.data.mapv(f32::abs);
+        Self { data }
+    }
+
+    /// 就地计算张量每个元素的绝对值
+    pub fn abs_mut(&mut self) {
+        self.data.mapv_inplace(f32::abs);
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑abs↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

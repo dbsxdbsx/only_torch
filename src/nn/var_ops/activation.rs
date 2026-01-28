@@ -21,6 +21,7 @@ use std::rc::Rc;
 /// - `softplus()`: `SoftPlus` 激活
 /// - `step()`: 阶跃函数（用于二分类预测）
 /// - `sign()`: 符号函数
+/// - `abs()`: 绝对值函数
 ///
 /// # 使用示例
 /// ```ignore
@@ -29,6 +30,7 @@ use std::rc::Rc;
 /// let h = x.relu().sigmoid();
 /// let pred = output.step();
 /// let probs = logits.softmax();
+/// let magnitude = diff.abs();
 /// ```
 pub trait VarActivationOps {
     /// `ReLU` 激活：max(0, x)
@@ -59,6 +61,12 @@ pub trait VarActivationOps {
 
     /// Sign 函数（符号函数）：1 if x > 0, 0 if x == 0, -1 if x < 0
     fn sign(&self) -> Var;
+
+    /// Abs 函数（绝对值）：|x|
+    ///
+    /// 梯度为 sign(x)，在 x=0 处为 0（与 PyTorch 行为一致）。
+    /// 常用于 L1 损失、L1 正则化、距离计算等场景。
+    fn abs(&self) -> Var;
 }
 
 impl VarActivationOps for Var {
@@ -131,6 +139,15 @@ impl VarActivationOps for Var {
             .borrow_mut()
             .new_sign_node(self.node_id(), None)
             .expect("创建 Sign 节点失败");
+        Self::new(id, Rc::clone(self.graph()))
+    }
+
+    fn abs(&self) -> Var {
+        let id = self
+            .graph()
+            .borrow_mut()
+            .new_abs_node(self.node_id(), None)
+            .expect("创建 Abs 节点失败");
         Self::new(id, Rc::clone(self.graph()))
     }
 }

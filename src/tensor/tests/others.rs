@@ -653,7 +653,10 @@ fn test_stack_with_axis() {
     assert_eq!(concat.shape(), &[2, 5]);
     assert_eq!(
         concat,
-        Tensor::new(&[1.0, 2.0, 5.0, 6.0, 7.0, 3.0, 4.0, 8.0, 9.0, 10.0], &[2, 5])
+        Tensor::new(
+            &[1.0, 2.0, 5.0, 6.0, 7.0, 3.0, 4.0, 8.0, 9.0, 10.0],
+            &[2, 5]
+        )
     );
 
     // 3. 沿 axis=2 拼接 3D 张量
@@ -707,7 +710,10 @@ fn test_stack_with_axis() {
     let t3 = Tensor::new(&[5.0, 6.0], &[2]);
     let stacked = Tensor::stack(&[&t1, &t2, &t3], 0, true);
     assert_eq!(stacked.shape(), &[3, 2]);
-    assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]));
+    assert_eq!(
+        stacked,
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
+    );
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack(concat)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -756,7 +762,9 @@ fn test_split_basic() {
 fn test_split_3d() {
     // 沿 axis=1 分割 3D 张量
     let t = Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+        &[
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+        ],
         &[2, 3, 2],
     );
     let parts = t.split(1, &[1, 2]);
@@ -778,11 +786,17 @@ fn test_split_errors() {
 
     // 2. sizes 之和不等于轴大小
     let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
-    assert_panic!(t.split(0, &[1, 2]), "split: sizes 之和 3 不等于轴 0 的大小 4");
+    assert_panic!(
+        t.split(0, &[1, 2]),
+        "split: sizes 之和 3 不等于轴 0 的大小 4"
+    );
 
     // 3. sizes 之和超过轴大小
     let t = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
-    assert_panic!(t.split(0, &[2, 3]), "split: sizes 之和 5 不等于轴 0 的大小 3");
+    assert_panic!(
+        t.split(0, &[2, 3]),
+        "split: sizes 之和 5 不等于轴 0 的大小 3"
+    );
 }
 
 #[test]
@@ -1458,3 +1472,87 @@ fn test_sign_preserves_shape() {
     }
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑sign↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓abs↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_abs_basic() {
+    // 基本绝对值测试：正数、负数、零
+    let x = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
+    let y = x.abs();
+    let expected = Tensor::new(&[2.0, 1.0, 0.0, 1.0, 2.0], &[5]);
+    assert_eq!(y, expected);
+}
+
+#[test]
+fn test_abs_special_values() {
+    // 特殊值测试：无穷大、NaN
+    let x = Tensor::new(&[f32::INFINITY, f32::NEG_INFINITY, f32::NAN, -0.0], &[4]);
+    let y = x.abs();
+
+    // INFINITY -> INFINITY
+    assert_eq!(y.get(&[0]).get_data_number().unwrap(), f32::INFINITY);
+    // NEG_INFINITY -> INFINITY
+    assert_eq!(y.get(&[1]).get_data_number().unwrap(), f32::INFINITY);
+    // NaN -> NaN
+    assert!(y.get(&[2]).get_data_number().unwrap().is_nan());
+    // -0.0 -> 0.0
+    assert_eq!(y.get(&[3]).get_data_number().unwrap(), 0.0);
+}
+
+#[test]
+fn test_abs_shapes() {
+    // 不同形状的张量
+    // 标量
+    let scalar = Tensor::new(&[-5.0], &[]);
+    assert_eq!(scalar.abs(), Tensor::new(&[5.0], &[]));
+
+    // 向量
+    let vec = Tensor::new(&[3.0, -3.0], &[2]);
+    assert_eq!(vec.abs(), Tensor::new(&[3.0, 3.0], &[2]));
+
+    // 矩阵
+    let mat = Tensor::new(&[-1.0, 2.0, 0.0, -3.0], &[2, 2]);
+    assert_eq!(mat.abs(), Tensor::new(&[1.0, 2.0, 0.0, 3.0], &[2, 2]));
+
+    // 高维张量
+    let high_dim = Tensor::new(&[1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0], &[2, 2, 2]);
+    let expected = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2]);
+    assert_eq!(high_dim.abs(), expected);
+}
+
+#[test]
+fn test_abs_mut() {
+    // 就地修改版本
+    let mut x = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
+    x.abs_mut();
+    let expected = Tensor::new(&[2.0, 1.0, 0.0, 1.0, 2.0], &[5]);
+    assert_eq!(x, expected);
+}
+
+#[test]
+fn test_abs_preserves_shape() {
+    // 确保 abs 操作保持形状不变
+    let shapes: &[&[usize]] = &[&[], &[1], &[3], &[2, 3], &[2, 3, 4]];
+    for shape in shapes {
+        let size: usize = shape.iter().product::<usize>().max(1);
+        let data: Vec<f32> = (0..size)
+            .map(|i| (i as f32) - (size as f32 / 2.0))
+            .collect();
+        let x = Tensor::new(&data, shape);
+        let y = x.abs();
+        assert_eq!(y.shape(), *shape, "abs 应保持形状不变");
+    }
+}
+
+#[test]
+fn test_abs_idempotent() {
+    // 幂等性测试：对已经是正数的张量，abs 应该不变
+    let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    assert_eq!(x.abs(), x);
+
+    // 对绝对值结果再次 abs，结果应该相同
+    let y = Tensor::new(&[-1.0, -2.0, 3.0, -4.0], &[4]);
+    let abs_y = y.abs();
+    assert_eq!(abs_y.abs(), abs_y);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑abs↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
