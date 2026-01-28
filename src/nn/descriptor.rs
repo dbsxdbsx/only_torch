@@ -91,6 +91,11 @@ pub enum NodeTypeDescriptor {
         axis: usize,
         index: usize,
     },
+    /// 张量堆叠/拼接（多输入合并）
+    Stack {
+        axis: usize,
+        new_dim: bool,
+    },
     MSELoss,
     SoftmaxCrossEntropy,
     /// 动态零张量（RNN 初始隐藏状态）

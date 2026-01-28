@@ -277,8 +277,48 @@ impl Tensor {
 
     /// 获取张量数据的连续内存切片（按行主序排列）
     ///
-    /// 用于序列化、导出等需要直接访问底层数据的场景
+    /// 用于序列化、导出等需要直接访问底层数据的场景。
+    ///
+    /// # Panics
+    /// 如果张量内存不连续，会 panic。建议先调用 `is_contiguous()` 检查，
+    /// 或使用 `to_vec()` 获取数据副本。
     pub fn data_as_slice(&self) -> &[f32] {
         self.data.as_slice().expect("Tensor 数据应为连续内存布局")
+    }
+
+    // ==================== 内存布局相关 ====================
+
+    /// 检查张量是否为连续内存布局（C-contiguous / row-major）
+    ///
+    /// 连续内存意味着数据按行主序存储，可以直接通过 `data_as_slice()` 访问。
+    /// 某些操作（如沿非首维度拼接、转置）可能产生非连续布局。
+    pub fn is_contiguous(&self) -> bool {
+        self.data.is_standard_layout()
+    }
+
+    /// 确保张量为连续内存布局
+    ///
+    /// - 如果已经连续，返回 self 的克隆（零拷贝语义，共享数据）
+    /// - 如果不连续，创建连续内存的副本
+    ///
+    /// 这是内部方法，用于确保需要连续内存的操作能正常工作。
+    /// 对于终端用户，我们在 API 层面自动处理，无需手动调用。
+    pub(crate) fn into_contiguous(self) -> Self {
+        if self.is_contiguous() {
+            self
+        } else {
+            // 将非连续数据复制为连续布局
+            let contiguous_data = self.data.as_standard_layout().into_owned();
+            Self {
+                data: contiguous_data,
+            }
+        }
+    }
+
+    /// 获取张量数据的 Vec 副本（总是成功，即使内存不连续）
+    ///
+    /// 当需要获取数据但不确定内存布局时使用。
+    pub fn to_vec(&self) -> Vec<f32> {
+        self.data.iter().copied().collect()
     }
 }

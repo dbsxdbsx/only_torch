@@ -320,64 +320,166 @@ impl Tensor {
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑reshape↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓stack(concat)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    /// 将多个张量沿着首个维度堆叠起来，返回一个新的张量。
-    /// * `tensors` - 一个包含多个张量的数组的引用。
-    /// * `new_dim` - 布尔值，指示是否增加一个新的维度来堆叠。
+    /// 沿指定轴堆叠/拼接多个张量
     ///
-    /// 当 `new_dim` 为 `true` 时，确保所有张量具有相同的形状。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len(), 1]` 的张量。
-    /// 当 `new_dim` 为 `false`，每个张量的第1个维度可以不同，但其余维度须相同。除非所有张量都是标量，则它们将堆叠为形状为 `[tensors.len()]` 的张量。
-    /// 否则报错。
-    pub fn stack(tensors: &[&Self], new_dim: bool) -> Self {
+    /// 统一实现 PyTorch 的 `torch.stack` 和 `torch.cat` 功能。
+    ///
+    /// # 参数
+    /// - `tensors`: 要堆叠/拼接的张量切片
+    /// - `axis`: 操作的轴
+    /// - `new_dim`: 是否插入新维度
+    ///   - `true`: 类似 `torch.stack`，在 `axis` 位置插入新维度，所有张量形状必须相同
+    ///   - `false`: 类似 `torch.cat`，沿 `axis` 轴拼接，该轴可以不同但其他维度必须相同
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // torch.stack 风格：插入新维度
+    /// let a = Tensor::new(&[1.0, 2.0], &[2]);      // [2]
+    /// let b = Tensor::new(&[3.0, 4.0], &[2]);      // [2]
+    /// let stacked = Tensor::stack(&[&a, &b], 0, true);  // [2, 2]
+    ///
+    /// // torch.cat 风格：沿现有维度拼接
+    /// let x = Tensor::new(&[1.0, 2.0], &[1, 2]);   // [1, 2]
+    /// let y = Tensor::new(&[3.0, 4.0, 5.0], &[1, 3]); // [1, 3]
+    /// let concat = Tensor::stack(&[&x, &y], 1, false); // [1, 5]
+    /// ```
+    pub fn stack(tensors: &[&Self], axis: usize, new_dim: bool) -> Self {
         assert!(!tensors.is_empty(), "{}", TensorError::EmptyList);
 
         let all_scalars = tensors.iter().all(|t| t.is_scalar());
-        let first_shape = tensors[0].shape();
+        let first = tensors[0];
+        let first_shape = first.shape();
+        let ndim = first_shape.len();
 
-        let compatible_shapes = |t: &Self| {
-            if all_scalars {
-                true
+        // 标量特殊处理
+        if all_scalars {
+            let data: Vec<f32> = tensors
+                .iter()
+                .flat_map(|t| t.data.as_slice().unwrap())
+                .copied()
+                .collect();
+            return if new_dim {
+                Self::new(&data, &[tensors.len(), 1])
             } else {
+                Self::new(&data, &[tensors.len()])
+            };
+        }
+
+        if new_dim {
+            // torch.stack 模式：在 axis 位置插入新维度
+            assert!(
+                axis <= ndim,
+                "stack: axis {} 超出张量维度 {}（new_dim=true 时 axis 可以等于 ndim）",
+                axis,
+                ndim
+            );
+
+            // 所有张量形状必须完全相同
+            for (i, t) in tensors.iter().enumerate().skip(1) {
+                assert!(
+                    t.shape() == first_shape,
+                    "stack (new_dim=true): 张量 {} 的形状 {:?} 与第一个张量的形状 {:?} 不一致",
+                    i,
+                    t.shape(),
+                    first_shape
+                );
+            }
+
+            // 使用 ndarray::stack
+            let views: Vec<_> = tensors.iter().map(|t| t.data.view()).collect();
+            let stacked = ndarray::stack(Axis(axis), &views).expect("stack: ndarray stack 失败");
+            Self { data: stacked }.into_contiguous()
+        } else {
+            // torch.cat 模式：沿现有 axis 拼接
+            assert!(
+                axis < ndim,
+                "stack: axis {} 超出张量维度 {}",
+                axis,
+                ndim
+            );
+
+            // 检查除 axis 外的维度是否一致
+            for (i, t) in tensors.iter().enumerate().skip(1) {
                 let t_shape = t.shape();
-                let skip = usize::from(!new_dim);
-                t_shape.len() == first_shape.len()
-                    && t_shape
-                        .iter()
-                        .skip(skip)
-                        .zip(first_shape.iter().skip(skip))
-                        .all(|(a, b)| a == b)
+                assert!(
+                    t_shape.len() == ndim,
+                    "stack (new_dim=false): 张量 {} 的维度 {} 与第一个张量的维度 {} 不一致",
+                    i,
+                    t_shape.len(),
+                    ndim
+                );
+
+                for d in 0..ndim {
+                    if d != axis {
+                        assert!(
+                            t_shape[d] == first_shape[d],
+                            "stack (new_dim=false): 张量 {} 在维度 {} 的大小 {} 与第一个张量的 {} 不一致",
+                            i,
+                            d,
+                            t_shape[d],
+                            first_shape[d]
+                        );
+                    }
+                }
             }
-        };
 
-        assert!(
-            tensors.iter().all(|t| compatible_shapes(t)),
-            "{}",
-            TensorError::InconsitentShape
-        );
-
-        let data = tensors
-            .iter()
-            .flat_map(|t| t.data.as_slice().unwrap())
-            .copied()
-            .collect::<Vec<_>>();
-
-        let shape = match (new_dim, all_scalars) {
-            (true, true) => vec![tensors.len(), 1],
-            (true, false) => {
-                let mut shape = tensors[0].shape().to_vec();
-                shape.insert(0, tensors.len());
-                shape
-            }
-            (false, true) => vec![tensors.len()],
-            (false, false) => {
-                let mut shape = tensors[0].shape().to_vec();
-                shape[0] = tensors.iter().map(|t| t.shape()[0]).sum();
-                shape
-            }
-        };
-
-        Self::new(&data, &shape)
+            // 使用 ndarray::concatenate
+            let views: Vec<_> = tensors.iter().map(|t| t.data.view()).collect();
+            let concatenated =
+                ndarray::concatenate(Axis(axis), &views).expect("stack: ndarray concatenate 失败");
+            Self { data: concatenated }.into_contiguous()
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack(concat)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓split↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 沿指定轴分割张量
+    ///
+    /// 这是 `stack(..., new_dim=false)`（即 concat 模式）的逆操作。
+    /// 注意：此方法不会减少维度，如需减少维度请使用 `unbind`（尚未实现）。
+    ///
+    /// # 参数
+    /// - `axis`: 分割的轴
+    /// - `sizes`: 各部分在 axis 维度的大小，之和必须等于该轴的长度
+    ///
+    /// # 返回
+    /// 分割后的张量列表，每个张量的维度数与原张量相同
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0], &[1, 5]);
+    /// let parts = t.split(1, &[2, 3]);  // [[1, 2], [3, 4, 5]]，形状分别为 [1, 2] 和 [1, 3]
+    /// ```
+    pub fn split(&self, axis: usize, sizes: &[usize]) -> Vec<Self> {
+        let ndim = self.dimension();
+        assert!(axis < ndim, "split: axis {} 超出张量维度 {}", axis, ndim);
+
+        let total: usize = sizes.iter().sum();
+        assert!(
+            total == self.shape()[axis],
+            "split: sizes 之和 {} 不等于轴 {} 的大小 {}",
+            total,
+            axis,
+            self.shape()[axis]
+        );
+
+        let mut result = Vec::with_capacity(sizes.len());
+        let mut start = 0;
+
+        for &size in sizes {
+            // 使用 slice_axis 获取切片
+            let slice = self
+                .data
+                .slice_axis(Axis(axis), ndarray::Slice::from(start..start + size));
+            result.push(Self {
+                data: slice.to_owned(),
+            });
+            start += size;
+        }
+
+        result
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑split↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓(un)squeeze↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     pub fn squeeze(&self) -> Self {

@@ -307,6 +307,7 @@ impl GraphInner {
             NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
             NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
             NodeTypeDescriptor::Select { .. } => "Select",
+            NodeTypeDescriptor::Stack { .. } => "Stack",
             NodeTypeDescriptor::MSELoss => "MSELoss",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
             NodeTypeDescriptor::ZerosLike => "ZerosLike",
@@ -386,6 +387,10 @@ impl GraphInner {
             },
             NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
+            NodeType::Stack(node) => NodeTypeDescriptor::Stack {
+                axis: node.axis(),
+                new_dim: node.new_dim(),
+            },
             NodeType::ZerosLike(_) => NodeTypeDescriptor::ZerosLike,
         }
     }

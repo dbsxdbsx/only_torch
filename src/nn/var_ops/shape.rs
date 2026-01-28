@@ -10,6 +10,70 @@
 use crate::nn::{GraphError, Var};
 use std::rc::Rc;
 
+// ==================== Var 关联函数（多输入操作）====================
+
+impl Var {
+    /// 将多个 Var 沿指定轴堆叠/拼接
+    ///
+    /// 这是一个统一的操作，通过 `new_dim` 参数区分两种模式：
+    /// - **Stack 模式**（`new_dim=true`）：在 `axis` 位置插入新维度，类似 `torch.stack`
+    /// - **Concat 模式**（`new_dim=false`）：沿现有 `axis` 拼接，类似 `torch.cat`
+    ///
+    /// # 参数
+    /// - `vars`: 要堆叠的 Var 切片（至少 1 个，必须来自同一 Graph）
+    /// - `axis`: 堆叠/拼接的轴
+    /// - `new_dim`: 是否插入新维度
+    ///
+    /// # 形状规则
+    /// - **Stack 模式**：所有 Var 形状必须相同，输出在 `axis` 位置增加一个维度
+    /// - **Concat 模式**：除 `axis` 外其他维度必须相同，输出的 `axis` 维度是各输入之和
+    ///
+    /// # 示例
+    /// ```ignore
+    /// use only_torch::nn::Graph;
+    ///
+    /// let graph = Graph::new();
+    /// let a = graph.input(&Tensor::ones(&[2, 3]))?;
+    /// let b = graph.input(&Tensor::ones(&[2, 3]))?;
+    ///
+    /// // Stack 模式：[2,3] + [2,3] -> [2, 2, 3]
+    /// let stacked = Var::stack(&[&a, &b], 0, true)?;
+    ///
+    /// // Concat 模式：[2,3] + [2,3] -> [4, 3]
+    /// let concat = Var::stack(&[&a, &b], 0, false)?;
+    /// ```
+    pub fn stack(vars: &[&Self], axis: usize, new_dim: bool) -> Result<Self, GraphError> {
+        // 1. 验证至少有一个 Var
+        if vars.is_empty() {
+            return Err(GraphError::InvalidOperation(
+                "Var::stack 至少需要 1 个 Var".to_string(),
+            ));
+        }
+
+        // 2. 验证所有 Var 来自同一个 Graph
+        let first = vars[0];
+        for (i, var) in vars.iter().enumerate().skip(1) {
+            if !first.same_graph(var) {
+                return Err(GraphError::InvalidOperation(format!(
+                    "Var::stack: 第 {} 个 Var 来自不同的 Graph",
+                    i
+                )));
+            }
+        }
+
+        // 3. 收集所有 NodeId 并调用 graph 方法
+        let node_ids: Vec<_> = vars.iter().map(|v| v.node_id()).collect();
+        let graph_rc = Rc::clone(first.graph());
+        let new_id = graph_rc
+            .borrow_mut()
+            .new_stack_node(&node_ids, axis, new_dim, None)?;
+
+        Ok(Self::new(new_id, graph_rc))
+    }
+}
+
+// ==================== VarShapeOps Trait ====================
+
 /// 形状变换扩展 trait
 ///
 /// 提供张量形状变换的链式调用：

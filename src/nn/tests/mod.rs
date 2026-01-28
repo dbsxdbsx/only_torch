@@ -31,6 +31,7 @@ mod node_multiply;
 mod node_parameter;
 mod node_reshape; // Reshape 节点（形状变换）
 mod node_select; // Select 节点（张量索引选择，RNN 展开式设计用）
+mod node_stack; // Stack 节点（多张量堆叠/拼接）
 mod node_sigmoid;
 mod node_sign; // Sign 符号函数（正→1, 负→-1, 零→0）
 mod node_softmax; // Softmax 激活函数（沿最后一维归一化为概率分布）

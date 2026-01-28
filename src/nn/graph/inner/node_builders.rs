@@ -162,6 +162,24 @@ impl GraphInner {
         self.add_node_to_list(handle, name, "add", parents)
     }
 
+    /// 创建 Stack 节点（多张量堆叠/拼接）
+    ///
+    /// # 参数
+    /// - `parents`: 要堆叠的父节点 ID 列表
+    /// - `axis`: 沿哪个轴进行操作
+    /// - `new_dim`: true 表示插入新维度（stack），false 表示沿现有维度拼接（concat）
+    /// - `name`: 可选的节点名称
+    pub fn new_stack_node(
+        &mut self,
+        parents: &[NodeId],
+        axis: usize,
+        new_dim: bool,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_stack(&self.get_nodes(parents)?, axis, new_dim)?;
+        self.add_node_to_list(handle, name, "stack", parents)
+    }
+
     pub fn new_conv2d_node(
         &mut self,
         input_id: NodeId,

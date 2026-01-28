@@ -2,7 +2,7 @@ use super::super::graph::GraphError;
 use super::raw_node::{
     Add, AvgPool2d, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MSELoss, MatMul,
     MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus, Softmax,
-    SoftmaxCrossEntropy, State, Step, Subtract, Tanh, ZerosLike,
+    SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -177,6 +177,20 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_add(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(Add::new(parents)?)
+    }
+
+    /// 创建 Stack 节点（多张量堆叠/拼接）
+    ///
+    /// # 参数
+    /// - `parents`: 要堆叠的父节点列表
+    /// - `axis`: 沿哪个轴进行操作
+    /// - `new_dim`: true 表示插入新维度（stack），false 表示沿现有维度拼接（concat）
+    pub(in crate::nn) fn new_stack(
+        parents: &[&Self],
+        axis: usize,
+        new_dim: bool,
+    ) -> Result<Self, GraphError> {
+        Self::new(Stack::new(parents, axis, new_dim)?)
     }
 
     /// 创建 Conv2d 节点
