@@ -27,7 +27,7 @@ mod node_input; // InputVariant（BasicInput, TargetInput, SmartInput）
 mod node_leaky_relu; // LeakyReLU/ReLU 激活函数
 mod node_mat_mul;
 mod node_max_pool2d; // MaxPool2d 节点（2D 最大池化）
-mod node_mse_loss; // MSE 节点（Mean Squared Error，均方误差损失）
+mod node_mse; // MSE 节点（Mean Squared Error，均方误差损失）
 mod node_multiply;
 mod node_parameter;
 mod node_reshape; // Reshape 节点（形状变换）
