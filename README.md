@@ -54,6 +54,10 @@ let dot = graph.to_dot();
 | [parity_rnn_var_len](examples/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
 | [parity_lstm_var_len](examples/parity_lstm_var_len/) | 序列分类 | **LSTM 层**、变长序列 | `LSTM(1→16) → FC(2)` | `cargo run --example parity_lstm_var_len` |
 | [parity_gru_var_len](examples/parity_gru_var_len/) | 序列分类 | **GRU 层**、变长序列 | `GRU(1→16) → FC(2)` | `cargo run --example parity_gru_var_len` |
+| [dual_input_add](examples/dual_input_add/) | 回归 | **多输入** (`forward2`)、特征融合 | `2×Linear → Concat → 1` | `cargo run --example dual_input_add` |
+| [siamese_similarity](examples/siamese_similarity/) | 二分类 | **多输入**、共享编码器 | `共享Encoder → Concat → 1` | `cargo run --example siamese_similarity` |
+| [dual_output_classify](examples/dual_output_classify/) | 多任务 | **多输出**、多 Loss 训练 | `Shared → (Cls, Reg)` | `cargo run --example dual_output_classify` |
+| [multi_io_fusion](examples/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
 
 #### 详细说明
 
@@ -159,19 +163,70 @@ cargo run --example parity_gru_var_len
 
 </details>
 
+<details>
+<summary><b>多输入/多输出示例</b>（点击展开）</summary>
+
+**双输入加法** ⭐
+
+展示 `forward2` 多输入 API，两个独立编码器分别处理输入后融合。
+
+```bash
+cargo run --example dual_input_add
+# R² = 100%，模型完美学会加法
+```
+
+**Siamese 相似度网络** ⭐⭐
+
+展示 **共享编码器** 模式：两个输入共用同一组参数。
+
+```bash
+cargo run --example siamese_similarity
+# 准确率 90%+
+```
+
+**双输出分类器（多任务学习）** ⭐⭐
+
+展示 **多输出 forward** API：
+- 分类头：判断正/负（CrossEntropyLoss）
+- 回归头：预测绝对值（MseLoss）
+- 多 Loss 训练：`backward_ex(retain_graph=true)`
+
+```bash
+cargo run --example dual_output_classify
+# 分类 100%，回归 R² = 99%+
+```
+
+**多输入多输出融合** ⭐⭐⭐
+
+完整展示 `forward2` + 多输出元组返回：
+- 两个不同形状的输入：`[4]` 和 `[8]`
+- 两个不同类型的输出：分类 + 回归
+- 特征融合 + 多任务学习
+
+```bash
+cargo run --example multi_io_fusion
+# 分类 100%，回归 R² = 90%+
+```
+
+</details>
+
 #### 特性覆盖矩阵
 
-| 特性 | xor | iris | sine | california | mnist | parity* |
-|------|:---:|:----:|:----:|:----------:|:-----:|:-------:|
-| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `Conv2d` 层 | | | | | ✅ | |
-| `RNN/LSTM/GRU` 层 | | | | | | ✅ |
-| `ModelState` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ |
-| `MseLoss` | | | ✅ | ✅ | | |
-| `DataLoader` | | ✅ | | ✅ | ✅ | |
-| `BucketedDataLoader` | | | | | | ✅ |
-| 变长序列 | | | | | | ✅ |
+| 特性 | xor | iris | sine | california | mnist | parity* | dual_input | siamese | dual_output | multi_io |
+|------|:---:|:----:|:----:|:----------:|:-----:|:-------:|:----------:|:-------:|:-----------:|:--------:|
+| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Conv2d` 层 | | | | | ✅ | | | | | |
+| `RNN/LSTM/GRU` 层 | | | | | | ✅ | | | | |
+| `ModelState` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | | ✅ | ✅ |
+| `MseLoss` | | | ✅ | ✅ | | | ✅ | ✅ | ✅ | ✅ |
+| `DataLoader` | | ✅ | | ✅ | ✅ | | | | | |
+| `BucketedDataLoader` | | | | | | ✅ | | | | |
+| 变长序列 | | | | | | ✅ | | | | |
+| **多输入** (`forward2`) | | | | | | | ✅ | ✅ | | ✅ |
+| **多输出** (元组返回) | | | | | | | | | ✅ | ✅ |
+| 共享编码器 | | | | | | | | ✅ | | |
+| 多 Loss 训练 | | | | | | | | | ✅ | ✅ |
 
 > **底层测试**：如需了解框架底层机制（手动构建计算图、自动微分原理等），可参考 `tests/` 目录下的单元测试和 `tests/archive/` 下的早期集成测试。
 
