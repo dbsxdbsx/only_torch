@@ -182,12 +182,7 @@ fn test_node_abs_forward_values() {
     // INFINITY → INFINITY, NEG_INFINITY → INFINITY, MIN → abs(MIN), MAX → MAX
     // 注意：f32::MIN 是最小的负数，其绝对值约等于 MAX
     let expected2 = Tensor::new(
-        &[
-            f32::INFINITY,
-            f32::INFINITY,
-            f32::MIN.abs(),
-            f32::MAX.abs(),
-        ],
+        &[f32::INFINITY, f32::INFINITY, f32::MIN.abs(), f32::MAX.abs()],
         &[2, 2],
     );
     assert_eq!(result2, &expected2);

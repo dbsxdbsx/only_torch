@@ -19,7 +19,7 @@ mod shape;
 mod var;
 mod var_ops;
 
-pub use criterion::{CrossEntropyLoss, MseLoss};
+pub use criterion::{CrossEntropyLoss, MaeLoss, MseLoss};
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{Graph, GraphError, GraphInner, ImageFormat, VisualizationOutput};

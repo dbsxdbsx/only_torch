@@ -220,6 +220,7 @@ cargo run --example multi_io_fusion
 | `ModelState` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | | ✅ | ✅ |
 | `MseLoss` | | | ✅ | ✅ | | | ✅ | ✅ | ✅ | ✅ |
+| `MaeLoss` | | | 📌 | 📌 | | | 📌 | | 📌 | 📌 |
 | `DataLoader` | | ✅ | | ✅ | ✅ | | | | | |
 | `BucketedDataLoader` | | | | | | ✅ | | | | |
 | 变长序列 | | | | | | ✅ | | | | |
@@ -227,6 +228,10 @@ cargo run --example multi_io_fusion
 | **多输出** (元组返回) | | | | | | | | | ✅ | ✅ |
 | 共享编码器 | | | | | | | | ✅ | | |
 | 多 Loss 训练 | | | | | | | | | ✅ | ✅ |
+
+> 📌 = 可替换使用。`MaeLoss`（平均绝对误差）与 `MseLoss`（均方误差）的区别：
+> - `MseLoss`：对大误差敏感，适合干净数据
+> - `MaeLoss`：对异常值更鲁棒，梯度恒定，适合有噪声/异常值的数据
 
 > **底层测试**：如需了解框架底层机制（手动构建计算图、自动微分原理等），可参考 `tests/` 目录下的单元测试和 `tests/archive/` 下的早期集成测试。
 

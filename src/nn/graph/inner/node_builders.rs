@@ -417,4 +417,27 @@ impl GraphInner {
         let handle = NodeHandle::new_mse_loss_with_reduction(&parents, reduction)?;
         self.add_node_to_list(handle, name, "mse", &[input_id, target_id])
     }
+
+    pub fn new_mae_loss_node(
+        &mut self,
+        input_id: NodeId,
+        target_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[input_id, target_id])?;
+        let handle = NodeHandle::new_mae_loss(&parents)?;
+        self.add_node_to_list(handle, name, "mae", &[input_id, target_id])
+    }
+
+    pub fn new_mae_loss_node_with_reduction(
+        &mut self,
+        input_id: NodeId,
+        target_id: NodeId,
+        reduction: Reduction,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[input_id, target_id])?;
+        let handle = NodeHandle::new_mae_loss_with_reduction(&parents, reduction)?;
+        self.add_node_to_list(handle, name, "mae", &[input_id, target_id])
+    }
 }

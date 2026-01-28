@@ -25,6 +25,7 @@ mod node_flatten; // Flatten 节点（展平）
 mod node_identity; // Identity 节点（恒等映射，用于 detach_node）
 mod node_input; // InputVariant（BasicInput, TargetInput, SmartInput）
 mod node_leaky_relu; // LeakyReLU/ReLU 激活函数
+mod node_mae; // MAE 节点（Mean Absolute Error，平均绝对误差损失）
 mod node_mat_mul;
 mod node_max_pool2d; // MaxPool2d 节点（2D 最大池化）
 mod node_mse; // MSE 节点（Mean Squared Error，均方误差损失）

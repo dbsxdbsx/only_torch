@@ -214,3 +214,86 @@ impl Default for MseLoss {
         Self::new()
     }
 }
+
+// ==================== MaeLoss ====================
+
+/// 平均绝对误差损失函数（PyTorch 风格）
+///
+/// 适用于回归任务，相比 MSE 对异常值更鲁棒。
+/// 支持智能缓存：自动为不同的 output 节点创建独立的 loss 子图。
+///
+/// # 使用示例
+/// ```ignore
+/// let criterion = MaeLoss::new();
+///
+/// for (x_batch, y_batch) in train_loader.iter() {
+///     let output = model.forward(&x_batch)?;
+///     let loss = criterion.forward(&output, &y_batch)?;
+///     loss.backward()?;
+///     optimizer.step()?;
+/// }
+/// ```
+pub struct MaeLoss {
+    /// 按 output 节点 ID 缓存的 loss 状态
+    cache: RefCell<HashMap<NodeId, LossState>>,
+}
+
+impl MaeLoss {
+    /// 创建平均绝对误差损失函数
+    pub fn new() -> Self {
+        Self {
+            cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// 计算损失（PyTorch 风格）
+    ///
+    /// # 参数
+    /// - `output`: 模型输出
+    /// - `target`: 目标值
+    ///
+    /// # 返回
+    /// 损失值节点（可直接调用 `.backward()`）
+    pub fn forward(&self, output: &Var, target: &Tensor) -> Result<Var, GraphError> {
+        let output_id = output.node_id();
+        let mut cache = self.cache.borrow_mut();
+
+        if let Some(s) = cache.get(&output_id) {
+            // 缓存命中：复用已有的 loss 子图
+            s.target_node.set_value(target)?;
+            return Ok(s.loss_node.clone());
+        }
+
+        // 缓存未命中：创建新的 loss 子图
+        let graph = output.get_graph();
+        let target_node = graph.target(target.shape())?;
+        target_node.set_value(target)?;
+        let loss_node = output.mae_loss(&target_node)?;
+
+        cache.insert(
+            output_id,
+            LossState {
+                target_node,
+                loss_node: loss_node.clone(),
+            },
+        );
+
+        Ok(loss_node)
+    }
+
+    /// 获取缓存数量
+    pub fn cache_size(&self) -> usize {
+        self.cache.borrow().len()
+    }
+
+    /// 清空缓存
+    pub fn clear_cache(&self) {
+        self.cache.borrow_mut().clear();
+    }
+}
+
+impl Default for MaeLoss {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -190,7 +190,9 @@ impl GraphInner {
                 .filter(|n| {
                     matches!(
                         n.node_type,
-                        NodeTypeDescriptor::SoftmaxCrossEntropy | NodeTypeDescriptor::MSE
+                        NodeTypeDescriptor::SoftmaxCrossEntropy
+                            | NodeTypeDescriptor::MSE
+                            | NodeTypeDescriptor::MAE
                     )
                 })
                 .map(|n| n.id)
@@ -998,9 +1000,9 @@ impl GraphInner {
             // 参数节点：矩形，浅绿色
             NodeTypeDescriptor::Parameter => ("box", "filled", "#E8F5E9"),
             // 损失节点：八边形，浅红色
-            NodeTypeDescriptor::MSE | NodeTypeDescriptor::SoftmaxCrossEntropy => {
-                ("octagon", "filled", "#FFEBEE")
-            }
+            NodeTypeDescriptor::MAE
+            | NodeTypeDescriptor::MSE
+            | NodeTypeDescriptor::SoftmaxCrossEntropy => ("octagon", "filled", "#FFEBEE"),
             // 激活函数：菱形，浅橙色
             NodeTypeDescriptor::Sigmoid
             | NodeTypeDescriptor::Tanh
@@ -1274,6 +1276,7 @@ impl GraphInner {
                     "Concat" // 已有维度拼接（类似 torch.cat）
                 }
             }
+            NodeTypeDescriptor::MAE => "MAE",
             NodeTypeDescriptor::MSE => "MSE",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
             NodeTypeDescriptor::ZerosLike => "ZerosLike",

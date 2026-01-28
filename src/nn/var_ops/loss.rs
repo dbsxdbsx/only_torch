@@ -15,6 +15,7 @@ use std::rc::Rc;
 /// 提供常用损失函数的链式调用：
 /// - `cross_entropy(target)`: 交叉熵损失（含 Softmax）- 用于分类
 /// - `mse_loss(target)`: 均方误差损失 - 用于回归
+/// - `mae_loss(target)`: 平均绝对误差损失 - 用于回归（对异常值更鲁棒）
 ///
 /// # 使用示例
 /// ```ignore
@@ -22,6 +23,7 @@ use std::rc::Rc;
 ///
 /// let loss = logits.cross_entropy(&labels)?;
 /// let loss = output.mse_loss(&target)?;
+/// let loss = output.mae_loss(&target)?;
 /// ```
 pub trait VarLossOps {
     /// Cross Entropy Loss（含 Softmax）
@@ -41,6 +43,17 @@ pub trait VarLossOps {
     /// # 返回
     /// 标量损失值节点
     fn mse_loss(&self, target: &Var) -> Result<Var, GraphError>;
+
+    /// MAE Loss（平均绝对误差）
+    ///
+    /// 相比 MSE，对异常值更鲁棒，梯度恒定。
+    ///
+    /// # 参数
+    /// - `target`: 目标值
+    ///
+    /// # 返回
+    /// 标量损失值节点
+    fn mae_loss(&self, target: &Var) -> Result<Var, GraphError>;
 }
 
 impl VarLossOps for Var {
@@ -60,6 +73,15 @@ impl VarLossOps for Var {
             self.graph()
                 .borrow_mut()
                 .new_mse_loss_node(self.node_id(), target.node_id(), None)?;
+        Ok(Self::new(id, Rc::clone(self.graph())))
+    }
+
+    fn mae_loss(&self, target: &Var) -> Result<Var, GraphError> {
+        self.assert_same_graph(target);
+        let id =
+            self.graph()
+                .borrow_mut()
+                .new_mae_loss_node(self.node_id(), target.node_id(), None)?;
         Ok(Self::new(id, Rc::clone(self.graph())))
     }
 }

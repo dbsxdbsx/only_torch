@@ -315,6 +315,7 @@ impl GraphInner {
                     "Concat" // 已有维度拼接
                 }
             }
+            NodeTypeDescriptor::MAE => "MAE",
             NodeTypeDescriptor::MSE => "MSE",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
             NodeTypeDescriptor::ZerosLike => "ZerosLike",
@@ -393,6 +394,7 @@ impl GraphInner {
                 axis: node.axis(),
                 index: node.index(),
             },
+            NodeType::MAE(_) => NodeTypeDescriptor::MAE,
             NodeType::MSE(_) => NodeTypeDescriptor::MSE,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
             NodeType::Stack(node) => NodeTypeDescriptor::Stack {
