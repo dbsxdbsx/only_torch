@@ -1265,7 +1265,13 @@ impl GraphInner {
             NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
             NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
             NodeTypeDescriptor::Select { .. } => "Select",
-            NodeTypeDescriptor::Stack { .. } => "Stack",
+            NodeTypeDescriptor::Stack { new_dim, .. } => {
+                if *new_dim {
+                    "Stack" // 新增维度（类似 torch.stack）
+                } else {
+                    "Concat" // 已有维度拼接（类似 torch.cat）
+                }
+            }
             NodeTypeDescriptor::MSELoss => "MSELoss",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
             NodeTypeDescriptor::ZerosLike => "ZerosLike",
@@ -1415,18 +1421,23 @@ impl GraphInner {
             .collect()
     }
 
-    /// 注册模型分组
+    /// 注册模型分组（支持多输入）
+    ///
+    /// # 参数
+    /// - `name`: 模型名称（用于可视化）
+    /// - `router_ids`: 所有输入的 GradientRouter 节点 ID 列表
+    /// - `output_id`: 输出节点 ID
     pub fn register_model_group(
         &mut self,
         name: &str,
-        router_id: NodeId,
+        router_ids: &[NodeId],
         output_id: NodeId,
     ) -> Result<(), GraphError> {
         if self.layer_groups.iter().any(|g| g.name == name) {
             return Ok(());
         }
 
-        let node_ids = self.collect_nodes_between(router_id, output_id)?;
+        let node_ids = self.collect_nodes_from_routers(router_ids, output_id)?;
 
         self.layer_groups.push(LayerGroup {
             name: name.to_string(),
@@ -1445,15 +1456,18 @@ impl GraphInner {
         Ok(())
     }
 
-    /// 收集两个节点之间的所有节点
-    fn collect_nodes_between(
+    /// 从多个 router 收集到 output 之间的所有节点
+    ///
+    /// 从 output 开始反向 BFS，直到遇到任一 router 节点为止。
+    fn collect_nodes_from_routers(
         &self,
-        start_id: NodeId,
-        end_id: NodeId,
+        router_ids: &[NodeId],
+        output_id: NodeId,
     ) -> Result<Vec<NodeId>, GraphError> {
+        let router_set: HashSet<NodeId> = router_ids.iter().copied().collect();
         let mut result = HashSet::new();
         let mut queue = VecDeque::new();
-        queue.push_back(end_id);
+        queue.push_back(output_id);
 
         while let Some(current) = queue.pop_front() {
             if result.contains(&current) {
@@ -1461,7 +1475,8 @@ impl GraphInner {
             }
             result.insert(current);
 
-            if current == start_id {
+            // 如果当前节点是任一 router，停止向上追溯
+            if router_set.contains(&current) {
                 continue;
             }
 

@@ -307,7 +307,13 @@ impl GraphInner {
             NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
             NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
             NodeTypeDescriptor::Select { .. } => "Select",
-            NodeTypeDescriptor::Stack { .. } => "Stack",
+            NodeTypeDescriptor::Stack { new_dim, .. } => {
+                if *new_dim {
+                    "Stack" // 新增维度
+                } else {
+                    "Concat" // 已有维度拼接
+                }
+            }
             NodeTypeDescriptor::MSELoss => "MSELoss",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
             NodeTypeDescriptor::ZerosLike => "ZerosLike",

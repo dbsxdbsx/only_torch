@@ -206,10 +206,10 @@ impl ForwardInput for DetachedVar {
     }
 }
 
-/// 模型状态缓存（单个形状）
+/// 模型状态缓存
 struct StateCache {
-    /// `GradientRouter` 节点（模型入口点）
-    router: Var,
+    /// `GradientRouter` 节点列表（每个输入一个，为多输入扩展准备）
+    routers: Vec<Var>,
     /// 输出节点（预构建的计算图终点）
     output: Var,
 }
@@ -236,9 +236,12 @@ struct StateCache {
 /// 可视化时会自动将该模型的节点框在一起显示。
 pub struct ModelState {
     graph: Graph,
-    /// `按特征形状缓存的子图：feature_shape` -> (router, output)
-    /// 注意：缓存键不包含 batch 维度
-    cache: RefCell<HashMap<Vec<usize>, StateCache>>,
+    /// 按特征形状缓存的子图：`feature_shapes` -> (routers, output)
+    ///
+    /// 缓存键是所有输入的特征形状列表（不包含 batch 维度）。
+    /// - 单输入：`[[64]]` 表示特征维度为 64
+    /// - 双输入：`[[64], [32]]` 表示两个输入的特征维度分别为 64 和 32
+    cache: RefCell<HashMap<Vec<Vec<usize>>, StateCache>>,
     /// 模型名称（用于可视化分组）
     name: Option<String>,
 }
@@ -352,25 +355,28 @@ impl ModelState {
         // 由于 GradientRouter 和 State 节点都支持 DynamicShape（动态 batch），
         // 不同 batch_size 的输入可以复用同一个缓存结构。
         //
-        // 例如：[256, 64] 和 [1, 64] 都使用 [64] 作为缓存键
+        // 例如：[256, 64] 和 [1, 64] 都使用 [[64]] 作为缓存键
         let feature_shape = if full_shape.len() > 1 {
             full_shape[1..].to_vec()
         } else {
             full_shape.clone()
         };
+        // 单输入时，缓存键是包含单个元素的列表
+        let cache_key = vec![feature_shape];
 
         let mut cache = self.cache.borrow_mut();
 
-        if let Some(c) = cache.get(&feature_shape) {
+        if let Some(c) = cache.get(&cache_key) {
             // 缓存命中：复用已有结构
+            let router = &c.routers[0];
 
             // 1. 更新 GradientRouter 的值（可能 batch_size 不同）
-            c.router.set_value(&value)?;
+            router.set_value(&value)?;
 
             // 2. 设置 GradientRouter 的 detached 状态
             // detach_status == Some(true) 表示显式 detach，需要标记 was_ever_detached
             self.graph.inner_mut().set_router_detached(
-                c.router.node_id(),
+                router.node_id(),
                 should_detach,
                 detach_status == Some(true),
             )?;
@@ -378,7 +384,7 @@ impl ModelState {
             // 3. 设置梯度路由目标
             self.graph
                 .inner_mut()
-                .set_gradient_target(c.router.node_id(), gradient_target)?;
+                .set_gradient_target(router.node_id(), gradient_target)?;
 
             // 4. 重新计算（使用新的 batch_size）
             c.output.forward()?;
@@ -421,14 +427,274 @@ impl ModelState {
         if let Some(ref name) = self.name {
             self.graph
                 .inner_mut()
-                .register_model_group(name, router_id, output.node_id())?;
+                .register_model_group(name, &[router_id], output.node_id())?;
         }
 
-        // 7. 缓存（使用特征形状作为键）
+        // 7. 缓存（使用特征形状列表作为键）
         cache.insert(
-            feature_shape,
+            cache_key,
             StateCache {
-                router,
+                routers: vec![router],
+                output: output.clone(),
+            },
+        );
+
+        Ok(output)
+    }
+
+    /// 双输入 forward（PyTorch 风格）
+    ///
+    /// # 参数
+    /// - `x`: 第一个输入（`&Tensor`、`Tensor`、`&Var`、`Var` 或 `DetachedVar`）
+    /// - `y`: 第二个输入
+    /// - `compute`: 计算逻辑闭包，接收两个 `&Var` 输入
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 多模态融合
+    /// let out = model.forward2(&image, &text, |img, txt| {
+    ///     let img_feat = self.image_encoder.forward(img);
+    ///     let txt_feat = self.text_encoder.forward(txt);
+    ///     Ok(self.fusion.forward(&Var::concat(&[&img_feat, &txt_feat], 1)?))
+    /// })?;
+    /// ```
+    pub fn forward2<X, Y, F>(&self, x: X, y: Y, compute: F) -> Result<Var, GraphError>
+    where
+        X: ForwardInput,
+        Y: ForwardInput,
+        F: FnOnce(&Var, &Var) -> Result<Var, GraphError>,
+    {
+        // 收集两个输入的信息
+        let x_shape = x.shape();
+        let x_value = x.get_value()?;
+        let x_detach_status = x.is_detached();
+        let x_gradient_target = if x_detach_status == Some(false) {
+            x.var_node_id()
+        } else {
+            None
+        };
+        let x_should_detach = x_detach_status != Some(false);
+
+        let y_shape = y.shape();
+        let y_value = y.get_value()?;
+        let y_detach_status = y.is_detached();
+        let y_gradient_target = if y_detach_status == Some(false) {
+            y.var_node_id()
+        } else {
+            None
+        };
+        let y_should_detach = y_detach_status != Some(false);
+
+        // 构建缓存键：两个输入的特征形状
+        let x_feature = if x_shape.len() > 1 {
+            x_shape[1..].to_vec()
+        } else {
+            x_shape.clone()
+        };
+        let y_feature = if y_shape.len() > 1 {
+            y_shape[1..].to_vec()
+        } else {
+            y_shape.clone()
+        };
+        let cache_key = vec![x_feature, y_feature];
+
+        let mut cache = self.cache.borrow_mut();
+
+        if let Some(c) = cache.get(&cache_key) {
+            // 缓存命中：复用已有结构
+            let router_x = &c.routers[0];
+            let router_y = &c.routers[1];
+
+            // 更新第一个输入
+            router_x.set_value(&x_value)?;
+            self.graph.inner_mut().set_router_detached(
+                router_x.node_id(),
+                x_should_detach,
+                x_detach_status == Some(true),
+            )?;
+            self.graph
+                .inner_mut()
+                .set_gradient_target(router_x.node_id(), x_gradient_target)?;
+
+            // 更新第二个输入
+            router_y.set_value(&y_value)?;
+            self.graph.inner_mut().set_router_detached(
+                router_y.node_id(),
+                y_should_detach,
+                y_detach_status == Some(true),
+            )?;
+            self.graph
+                .inner_mut()
+                .set_gradient_target(router_y.node_id(), y_gradient_target)?;
+
+            // 重新计算
+            c.output.forward()?;
+            return Ok(c.output.clone());
+        }
+
+        // 缓存未命中：创建新的子图
+
+        // 创建两个 GradientRouter
+        let router_x_id = self
+            .graph
+            .inner_mut()
+            .new_smart_input_node(&x_shape, None)?;
+        let router_x = Var::new(router_x_id, self.graph.inner_rc());
+        router_x.set_value(&x_value)?;
+        self.graph.inner_mut().set_router_detached(
+            router_x_id,
+            x_should_detach,
+            x_detach_status == Some(true),
+        )?;
+        self.graph
+            .inner_mut()
+            .set_gradient_target(router_x_id, x_gradient_target)?;
+
+        let router_y_id = self
+            .graph
+            .inner_mut()
+            .new_smart_input_node(&y_shape, None)?;
+        let router_y = Var::new(router_y_id, self.graph.inner_rc());
+        router_y.set_value(&y_value)?;
+        self.graph.inner_mut().set_router_detached(
+            router_y_id,
+            y_should_detach,
+            y_detach_status == Some(true),
+        )?;
+        self.graph
+            .inner_mut()
+            .set_gradient_target(router_y_id, y_gradient_target)?;
+
+        // 调用用户计算逻辑
+        let output = compute(&router_x, &router_y)?;
+        output.forward()?;
+
+        // 注册模型分组
+        if let Some(ref name) = self.name {
+            self.graph.inner_mut().register_model_group(
+                name,
+                &[router_x_id, router_y_id],
+                output.node_id(),
+            )?;
+        }
+
+        // 缓存
+        cache.insert(
+            cache_key,
+            StateCache {
+                routers: vec![router_x, router_y],
+                output: output.clone(),
+            },
+        );
+
+        Ok(output)
+    }
+
+    /// 三输入 forward（PyTorch 风格）
+    ///
+    /// # 参数
+    /// - `x`, `y`, `z`: 三个输入
+    /// - `compute`: 计算逻辑闭包，接收三个 `&Var` 输入
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 三模态融合
+    /// let out = model.forward3(&audio, &video, &text, |a, v, t| {
+    ///     let combined = Var::stack(&[a, v, t], 1, StackMode::Concat)?;
+    ///     Ok(self.fusion.forward(&combined))
+    /// })?;
+    /// ```
+    pub fn forward3<X, Y, Z, F>(&self, x: X, y: Y, z: Z, compute: F) -> Result<Var, GraphError>
+    where
+        X: ForwardInput,
+        Y: ForwardInput,
+        Z: ForwardInput,
+        F: FnOnce(&Var, &Var, &Var) -> Result<Var, GraphError>,
+    {
+        // 收集三个输入的信息
+        let inputs_info: Vec<_> = [
+            (&x as &dyn ForwardInput, x.shape(), x.get_value()?),
+            (&y as &dyn ForwardInput, y.shape(), y.get_value()?),
+            (&z as &dyn ForwardInput, z.shape(), z.get_value()?),
+        ]
+        .into_iter()
+        .map(|(input, shape, value)| {
+            let detach_status = input.is_detached();
+            let gradient_target = if detach_status == Some(false) {
+                input.var_node_id()
+            } else {
+                None
+            };
+            let should_detach = detach_status != Some(false);
+            let feature = if shape.len() > 1 {
+                shape[1..].to_vec()
+            } else {
+                shape.clone()
+            };
+            (shape, value, detach_status, gradient_target, should_detach, feature)
+        })
+        .collect();
+
+        // 构建缓存键
+        let cache_key: Vec<Vec<usize>> = inputs_info.iter().map(|i| i.5.clone()).collect();
+
+        let mut cache = self.cache.borrow_mut();
+
+        if let Some(c) = cache.get(&cache_key) {
+            // 缓存命中
+            for (i, router) in c.routers.iter().enumerate() {
+                let (_, ref value, detach_status, gradient_target, should_detach, _) =
+                    inputs_info[i];
+                router.set_value(value)?;
+                self.graph.inner_mut().set_router_detached(
+                    router.node_id(),
+                    should_detach,
+                    detach_status == Some(true),
+                )?;
+                self.graph
+                    .inner_mut()
+                    .set_gradient_target(router.node_id(), gradient_target)?;
+            }
+            c.output.forward()?;
+            return Ok(c.output.clone());
+        }
+
+        // 缓存未命中：创建三个 GradientRouter
+        let mut routers = Vec::with_capacity(3);
+        let mut router_ids = Vec::with_capacity(3);
+
+        for (shape, value, detach_status, gradient_target, should_detach, _) in &inputs_info {
+            let router_id = self.graph.inner_mut().new_smart_input_node(shape, None)?;
+            let router = Var::new(router_id, self.graph.inner_rc());
+            router.set_value(value)?;
+            self.graph.inner_mut().set_router_detached(
+                router_id,
+                *should_detach,
+                *detach_status == Some(true),
+            )?;
+            self.graph
+                .inner_mut()
+                .set_gradient_target(router_id, *gradient_target)?;
+            router_ids.push(router_id);
+            routers.push(router);
+        }
+
+        // 调用用户计算逻辑
+        let output = compute(&routers[0], &routers[1], &routers[2])?;
+        output.forward()?;
+
+        // 注册模型分组
+        if let Some(ref name) = self.name {
+            self.graph
+                .inner_mut()
+                .register_model_group(name, &router_ids, output.node_id())?;
+        }
+
+        // 缓存
+        cache.insert(
+            cache_key,
+            StateCache {
+                routers,
                 output: output.clone(),
             },
         );
@@ -438,9 +704,10 @@ impl ModelState {
 
     /// 获取当前缓存的特征形状列表
     ///
-    /// 返回的是特征形状（不包含 batch 维度）。
-    /// 例如：如果曾用 `[256, 64]` 调用，返回 `[[64]]`。
-    pub fn cached_shapes(&self) -> Vec<Vec<usize>> {
+    /// 返回的是特征形状列表（不包含 batch 维度）。
+    /// - 单输入模型：`[[[64]]]` 表示一个缓存，输入特征维度为 64
+    /// - 双输入模型：`[[[64], [32]]]` 表示两个输入特征维度分别为 64 和 32
+    pub fn cached_shapes(&self) -> Vec<Vec<Vec<usize>>> {
         self.cache.borrow().keys().cloned().collect()
     }
 

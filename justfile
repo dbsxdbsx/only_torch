@@ -24,7 +24,7 @@ test-filter pattern:
 # ==================== Examples ====================
 
 # 运行所有 examples
-examples: example-xor example-iris example-sine example-mnist example-mnist-gan example-california example-parity
+examples: example-xor example-iris example-sine example-mnist example-mnist-gan example-california example-parity example-dual-input example-siamese
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -69,6 +69,14 @@ example-parity-lstm:
 example-parity-gru:
     @echo "=== Running Parity (GRU, Variable Length) ==="
     cargo run --example parity_gru_var_len
+
+example-dual-input:
+    @echo "=== Running Dual Input Add (forward2) ==="
+    cargo run --example dual_input_add
+
+example-siamese:
+    @echo "=== Running Siamese Similarity (shared encoder) ==="
+    cargo run --example siamese_similarity
 
 # ==================== 代码质量 ====================
 

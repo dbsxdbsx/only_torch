@@ -117,3 +117,11 @@ path = "examples/parity_gru_var_len/main.rs"
 [[example]]
 name = "mnist_gan"
 path = "examples/mnist_gan/main.rs"
+
+[[example]]
+name = "dual_input_add"
+path = "examples/dual_input_add/main.rs"
+
+[[example]]
+name = "siamese_similarity"
+path = "examples/siamese_similarity/main.rs"

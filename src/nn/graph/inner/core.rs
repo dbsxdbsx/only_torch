@@ -260,6 +260,10 @@ impl GraphInner {
     }
 
     /// 注册一个层分组
+    ///
+    /// 如果同名分组已存在，会将新的节点 ID 追加到该分组中（避免重复）。
+    /// 这支持共享层（如 Siamese 网络中的共享编码器）的正确可视化：
+    /// 多次 forward 调用产生的操作节点都会归入同一个 Layer cluster。
     pub fn register_layer_group(
         &mut self,
         name: &str,
@@ -267,9 +271,18 @@ impl GraphInner {
         description: &str,
         node_ids: Vec<NodeId>,
     ) {
-        if self.layer_groups.iter().any(|g| g.name == name) {
+        // 查找已存在的同名分组
+        if let Some(group) = self.layer_groups.iter_mut().find(|g| g.name == name) {
+            // 扩展节点列表（避免重复）
+            for id in node_ids {
+                if !group.node_ids.contains(&id) {
+                    group.node_ids.push(id);
+                }
+            }
             return;
         }
+
+        // 新建分组
         self.layer_groups.push(LayerGroup {
             name: name.to_string(),
             layer_type: layer_type.to_string(),

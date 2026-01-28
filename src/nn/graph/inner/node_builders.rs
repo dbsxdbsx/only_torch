@@ -177,7 +177,9 @@ impl GraphInner {
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_stack(&self.get_nodes(parents)?, axis, new_dim)?;
-        self.add_node_to_list(handle, name, "stack", parents)
+        // 根据 new_dim 决定节点类型名：stack（新增维度）或 concat（拼接）
+        let type_name = if new_dim { "stack" } else { "concat" };
+        self.add_node_to_list(handle, name, type_name, parents)
     }
 
     pub fn new_conv2d_node(

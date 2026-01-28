@@ -6,7 +6,8 @@
 //! - 非 detached Var 输入：不缓存，每次创建新路径（需要梯度流）
 
 use crate::nn::{
-    CrossEntropyLoss, Graph, Linear, ModelState, Rnn, VarActivationOps, VarLossOps, VarMatrixOps,
+    CrossEntropyLoss, Graph, Linear, ModelState, Rnn, Var, VarActivationOps, VarLossOps,
+    VarMatrixOps,
 };
 use crate::tensor::Tensor;
 
@@ -139,9 +140,16 @@ fn test_model_state_var_len_rnn() {
     assert_eq!(state.cache_size(), 2);
 
     // 检查缓存的特征形状（不含 batch）
+    // 单输入时，缓存键是 [[feature_shape]]
     let shapes = state.cached_shapes();
-    assert!(shapes.contains(&vec![5, 1]), "应有特征形状 [5, 1]");
-    assert!(shapes.contains(&vec![8, 1]), "应有特征形状 [8, 1]");
+    assert!(
+        shapes.contains(&vec![vec![5, 1]]),
+        "应有特征形状 [[5, 1]]"
+    );
+    assert!(
+        shapes.contains(&vec![vec![8, 1]]),
+        "应有特征形状 [[8, 1]]"
+    );
 }
 
 #[test]
@@ -485,4 +493,323 @@ fn test_model_state_gan_multi_batch_efficiency() {
         1,
         "多批次 GAN 训练应复用缓存，不应膨胀"
     );
+}
+
+// ============================================================================
+// 多输入 forward2/forward3 测试
+// ============================================================================
+
+/// 测试: forward2 基本功能
+#[test]
+fn test_model_state_forward2_basic() {
+    let graph = Graph::new_with_seed(42);
+    let fc1 = Linear::new(&graph, 2, 4, true, "fc1").unwrap();
+    let fc2 = Linear::new(&graph, 3, 4, true, "fc2").unwrap();
+    let fc_out = Linear::new(&graph, 8, 2, true, "fc_out").unwrap();
+    let state = ModelState::new(&graph);
+
+    // 双输入
+    let x1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let x2 = Tensor::new(&[3.0, 4.0, 5.0], &[1, 3]);
+
+    let output = state
+        .forward2(&x1, &x2, |a, b| {
+            let h1 = fc1.forward(a).relu();
+            let h2 = fc2.forward(b).relu();
+            // 拼接两个特征（使用 Var::stack concat 模式）
+            let combined = Var::stack(&[&h1, &h2], 1, false)?;
+            Ok(fc_out.forward(&combined))
+        })
+        .unwrap();
+
+    assert!(state.is_initialized());
+    assert_eq!(state.cache_size(), 1);
+
+    // 验证输出形状
+    let output_val = output.value().unwrap().unwrap();
+    assert_eq!(output_val.shape(), &[1, 2]);
+
+    // 第二次调用（复用缓存）
+    let x1_2 = Tensor::new(&[5.0, 6.0], &[1, 2]);
+    let x2_2 = Tensor::new(&[7.0, 8.0, 9.0], &[1, 3]);
+
+    let output2 = state
+        .forward2(&x1_2, &x2_2, |a, b| {
+            let h1 = fc1.forward(a).relu();
+            let h2 = fc2.forward(b).relu();
+            let combined = Var::stack(&[&h1, &h2], 1, false)?;
+            Ok(fc_out.forward(&combined))
+        })
+        .unwrap();
+
+    // 应复用相同节点
+    assert_eq!(output.node_id(), output2.node_id());
+    assert_eq!(state.cache_size(), 1);
+}
+
+/// 测试: forward2 缓存键区分不同特征形状
+#[test]
+fn test_model_state_forward2_different_shapes() {
+    let graph = Graph::new_with_seed(42);
+    let fc1_a = Linear::new(&graph, 2, 4, true, "fc1_a").unwrap();
+    let fc2_a = Linear::new(&graph, 3, 4, true, "fc2_a").unwrap();
+    let fc1_b = Linear::new(&graph, 4, 4, true, "fc1_b").unwrap();
+    let fc2_b = Linear::new(&graph, 5, 4, true, "fc2_b").unwrap();
+    let state = ModelState::new(&graph);
+
+    // 第一种输入形状组合 (2, 3)
+    let x1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let x2 = Tensor::new(&[3.0, 4.0, 5.0], &[1, 3]);
+
+    let output1 = state
+        .forward2(&x1, &x2, |a, b| {
+            let h1 = fc1_a.forward(a);
+            let h2 = fc2_a.forward(b);
+            Ok(h1 + &h2)
+        })
+        .unwrap();
+
+    assert_eq!(state.cache_size(), 1);
+
+    // 第二种输入形状组合 (4, 5)
+    let y1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+    let y2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0, 9.0], &[1, 5]);
+
+    let output2 = state
+        .forward2(&y1, &y2, |a, b| {
+            let h1 = fc1_b.forward(a);
+            let h2 = fc2_b.forward(b);
+            Ok(h1 + &h2)
+        })
+        .unwrap();
+
+    // 不同形状 → 不同缓存
+    assert_ne!(output1.node_id(), output2.node_id());
+    assert_eq!(state.cache_size(), 2);
+
+    // 验证缓存键
+    let shapes = state.cached_shapes();
+    assert!(shapes.contains(&vec![vec![2], vec![3]]));
+    assert!(shapes.contains(&vec![vec![4], vec![5]]));
+}
+
+/// 测试: forward2 混合输入类型（Tensor + Var）
+#[test]
+fn test_model_state_forward2_mixed_input_types() {
+    let graph = Graph::new_with_seed(42);
+    let fc1 = Linear::new(&graph, 2, 4, true, "fc1").unwrap();
+    let fc2 = Linear::new(&graph, 2, 4, true, "fc2").unwrap();
+    let state = ModelState::new(&graph);
+
+    // Tensor + Var 输入
+    let x_tensor = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let y_tensor = Tensor::new(&[3.0, 4.0], &[1, 2]);
+    let y_var = graph.input(&y_tensor).unwrap();
+
+    let output1 = state
+        .forward2(&x_tensor, &y_var, |a, b| {
+            let h1 = fc1.forward(a);
+            let h2 = fc2.forward(b);
+            Ok(h1 + &h2)
+        })
+        .unwrap();
+
+    assert_eq!(state.cache_size(), 1);
+
+    // 再次使用相同形状（Tensor + detached Var）
+    let x_tensor2 = Tensor::new(&[5.0, 6.0], &[1, 2]);
+    let y_var2 = graph.input(&Tensor::new(&[7.0, 8.0], &[1, 2])).unwrap();
+    let y_detached = y_var2.detach();
+
+    let output2 = state
+        .forward2(&x_tensor2, &y_detached, |a, b| {
+            let h1 = fc1.forward(a);
+            let h2 = fc2.forward(b);
+            Ok(h1 + &h2)
+        })
+        .unwrap();
+
+    // 相同特征形状 → 复用缓存
+    assert_eq!(output1.node_id(), output2.node_id());
+    assert_eq!(state.cache_size(), 1);
+}
+
+/// 测试: forward2 梯度路由（双输入）
+///
+/// 使用 Tensor 作为输入，验证参数能正确获得梯度。
+#[test]
+fn test_model_state_forward2_gradient_routing() {
+    let graph = Graph::new_with_seed(42);
+
+    // 创建两个可训练参数
+    let w1 = graph
+        .parameter(&[2, 4], crate::nn::var::Init::Ones, "w1")
+        .unwrap();
+    let w2 = graph
+        .parameter(&[3, 4], crate::nn::var::Init::Ones, "w2")
+        .unwrap();
+    let fc_out = Linear::new(&graph, 8, 1, true, "fc_out").unwrap();
+    let state = ModelState::new(&graph);
+
+    // 使用 Tensor 作为双输入
+    let x1_tensor = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let x2_tensor = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+
+    let output = state
+        .forward2(&x1_tensor, &x2_tensor, |a, b| {
+            let h1 = a.matmul(&w1)?;
+            let h2 = b.matmul(&w2)?;
+            let combined = Var::stack(&[&h1, &h2], 1, false)?;
+            Ok(fc_out.forward(&combined))
+        })
+        .unwrap();
+
+    // 反向传播
+    let target = Tensor::ones(&[1, 1]);
+    let target_var = graph.input(&target).unwrap();
+    let loss = output.mse_loss(&target_var).unwrap();
+    loss.backward().unwrap();
+
+    // 两个权重都应该有梯度
+    assert!(w1.grad().unwrap().is_some(), "w1 应有梯度");
+    assert!(w2.grad().unwrap().is_some(), "w2 应有梯度");
+}
+
+/// 测试: forward2 部分 detach（Tensor + detached Var）
+///
+/// 验证混合输入类型时参数仍能获得梯度。
+#[test]
+fn test_model_state_forward2_partial_detach() {
+    let graph = Graph::new_with_seed(42);
+
+    let w1 = graph
+        .parameter(&[2, 4], crate::nn::var::Init::Ones, "w1")
+        .unwrap();
+    let w2 = graph
+        .parameter(&[2, 4], crate::nn::var::Init::Ones, "w2")
+        .unwrap();
+    let state = ModelState::new(&graph);
+
+    // x1 是 Tensor，x2 是 detached Var（模拟 GAN 场景）
+    let x1_tensor = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let x2_tensor = Tensor::new(&[3.0, 4.0], &[1, 2]);
+    let x2_var = graph.input(&x2_tensor).unwrap();
+    let x2_detached = x2_var.detach();
+
+    let output = state
+        .forward2(&x1_tensor, &x2_detached, |a, b| {
+            let h1 = a.matmul(&w1)?;
+            let h2 = b.matmul(&w2)?;
+            Ok(h1 + &h2)
+        })
+        .unwrap();
+
+    let target = Tensor::zeros(&[1, 4]);
+    let target_var = graph.input(&target).unwrap();
+    let loss = output.mse_loss(&target_var).unwrap();
+    loss.backward().unwrap();
+
+    // w1 和 w2 都应该有梯度（它们本身是参数）
+    assert!(w1.grad().unwrap().is_some(), "w1 应有梯度");
+    assert!(w2.grad().unwrap().is_some(), "w2 应有梯度（作为参数）");
+}
+
+/// 测试: forward3 基本功能
+#[test]
+fn test_model_state_forward3_basic() {
+    let graph = Graph::new_with_seed(42);
+    let fc1 = Linear::new(&graph, 2, 4, true, "fc1").unwrap();
+    let fc2 = Linear::new(&graph, 3, 4, true, "fc2").unwrap();
+    let fc3 = Linear::new(&graph, 4, 4, true, "fc3").unwrap();
+    let fc_out = Linear::new(&graph, 12, 2, true, "fc_out").unwrap();
+    let state = ModelState::new(&graph);
+
+    // 三输入
+    let x1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let x2 = Tensor::new(&[3.0, 4.0, 5.0], &[1, 3]);
+    let x3 = Tensor::new(&[6.0, 7.0, 8.0, 9.0], &[1, 4]);
+
+    let output = state
+        .forward3(&x1, &x2, &x3, |a, b, c| {
+            let h1 = fc1.forward(a).relu();
+            let h2 = fc2.forward(b).relu();
+            let h3 = fc3.forward(c).relu();
+            // 拼接三个特征（使用 Var::stack concat 模式）
+            let combined = Var::stack(&[&h1, &h2, &h3], 1, false)?;
+            Ok(fc_out.forward(&combined))
+        })
+        .unwrap();
+
+    assert!(state.is_initialized());
+    assert_eq!(state.cache_size(), 1);
+
+    // 验证输出形状
+    let output_val = output.value().unwrap().unwrap();
+    assert_eq!(output_val.shape(), &[1, 2]);
+
+    // 第二次调用（复用缓存）
+    let y1 = Tensor::new(&[10.0, 11.0], &[1, 2]);
+    let y2 = Tensor::new(&[12.0, 13.0, 14.0], &[1, 3]);
+    let y3 = Tensor::new(&[15.0, 16.0, 17.0, 18.0], &[1, 4]);
+
+    let output2 = state
+        .forward3(&y1, &y2, &y3, |a, b, c| {
+            let h1 = fc1.forward(a).relu();
+            let h2 = fc2.forward(b).relu();
+            let h3 = fc3.forward(c).relu();
+            let combined = Var::stack(&[&h1, &h2, &h3], 1, false)?;
+            Ok(fc_out.forward(&combined))
+        })
+        .unwrap();
+
+    // 应复用相同节点
+    assert_eq!(output.node_id(), output2.node_id());
+    assert_eq!(state.cache_size(), 1);
+
+    // 验证缓存键
+    let shapes = state.cached_shapes();
+    assert!(shapes.contains(&vec![vec![2], vec![3], vec![4]]));
+}
+
+/// 测试: forward3 梯度路由
+///
+/// 使用 Tensor 作为输入，验证所有参数能正确获得梯度。
+#[test]
+fn test_model_state_forward3_gradient_routing() {
+    let graph = Graph::new_with_seed(42);
+
+    let w1 = graph
+        .parameter(&[2, 4], crate::nn::var::Init::Ones, "w1")
+        .unwrap();
+    let w2 = graph
+        .parameter(&[2, 4], crate::nn::var::Init::Ones, "w2")
+        .unwrap();
+    let w3 = graph
+        .parameter(&[2, 4], crate::nn::var::Init::Ones, "w3")
+        .unwrap();
+    let state = ModelState::new(&graph);
+
+    // 三个 Tensor 输入
+    let x1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let x2 = Tensor::new(&[3.0, 4.0], &[1, 2]);
+    let x3 = Tensor::new(&[5.0, 6.0], &[1, 2]);
+
+    let output = state
+        .forward3(&x1, &x2, &x3, |a, b, c| {
+            let h1 = a.matmul(&w1)?;
+            let h2 = b.matmul(&w2)?;
+            let h3 = c.matmul(&w3)?;
+            Ok((h1 + &h2) + &h3)
+        })
+        .unwrap();
+
+    let target = Tensor::zeros(&[1, 4]);
+    let target_var = graph.input(&target).unwrap();
+    let loss = output.mse_loss(&target_var).unwrap();
+    loss.backward().unwrap();
+
+    // 三个权重都应该有梯度
+    assert!(w1.grad().unwrap().is_some(), "w1 应有梯度");
+    assert!(w2.grad().unwrap().is_some(), "w2 应有梯度");
+    assert!(w3.grad().unwrap().is_some(), "w3 应有梯度");
 }
