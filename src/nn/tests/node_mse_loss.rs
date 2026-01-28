@@ -1,7 +1,7 @@
 /*
  * @Author       : 老董
  * @Date         : 2025-12-22
- * @Description  : MSELoss 节点单元测试
+ * @Description  : MSE（Mean Squared Error）节点单元测试
  */
 
 use crate::nn::{GraphInner, Reduction};
@@ -515,7 +515,7 @@ fn test_mse_loss_simple_regression_training() {
 
 use crate::nn::GraphError;
 
-/// 测试 MSELoss 节点的动态形状（输出固定为标量 [1, 1]）
+/// 测试 MSE 节点的动态形状（输出固定为标量 [1, 1]）
 #[test]
 fn test_mse_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -524,20 +524,20 @@ fn test_mse_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
     let target = graph.new_basic_input_node(&[4, 8], Some("target"))?;
     let loss = graph.new_mse_loss_node(input, target, Some("loss"))?;
 
-    // MSELoss 输出形状始终是 [1, 1]（标量）
+    // MSE 输出形状始终是 [1, 1]（标量）
     let node = graph.get_node(loss)?;
     let dyn_shape = node.dynamic_expected_shape();
 
     // 输出形状固定
-    assert!(!dyn_shape.is_dynamic(0), "MSELoss 输出维度 0 应固定");
-    assert!(!dyn_shape.is_dynamic(1), "MSELoss 输出维度 1 应固定");
+    assert!(!dyn_shape.is_dynamic(0), "MSE 输出维度 0 应固定");
+    assert!(!dyn_shape.is_dynamic(1), "MSE 输出维度 1 应固定");
     assert_eq!(dyn_shape.dim(0), Some(1));
     assert_eq!(dyn_shape.dim(1), Some(1));
 
     Ok(())
 }
 
-/// 测试 MSELoss 接受动态 batch 输入
+/// 测试 MSE 接受动态 batch 输入
 #[test]
 fn test_mse_loss_dynamic_batch_forward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -551,7 +551,7 @@ fn test_mse_loss_dynamic_batch_forward() -> Result<(), GraphError> {
     graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
     graph.forward(loss)?;
     let loss_val1 = graph.get_node_value(loss)?.unwrap();
-    assert_eq!(loss_val1.shape(), &[1, 1], "MSELoss 输出应为标量");
+    assert_eq!(loss_val1.shape(), &[1, 1], "MSE 输出应为标量");
     assert!(loss_val1[[0, 0]] > 0.0);
 
     // 第二次 forward：batch=6（不同 batch 大小）
@@ -559,12 +559,12 @@ fn test_mse_loss_dynamic_batch_forward() -> Result<(), GraphError> {
     graph.set_node_value(target, Some(&Tensor::zeros(&[6, 4])))?;
     graph.forward(loss)?;
     let loss_val2 = graph.get_node_value(loss)?.unwrap();
-    assert_eq!(loss_val2.shape(), &[1, 1], "MSELoss 输出应始终为标量");
+    assert_eq!(loss_val2.shape(), &[1, 1], "MSE 输出应始终为标量");
 
     Ok(())
 }
 
-/// 测试 MSELoss 在不同 batch 大小下的反向传播
+/// 测试 MSE 在不同 batch 大小下的反向传播
 #[test]
 fn test_mse_loss_dynamic_batch_backward() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -610,9 +610,9 @@ fn test_mse_loss_dynamic_batch_backward() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 MSELoss 的动态形状兼容性检查
+/// 测试 MSE 的动态形状兼容性检查
 ///
-/// MSELoss 验证 input 和 target 的动态形状兼容性
+/// MSE 验证 input 和 target 的动态形状兼容性
 #[test]
 fn test_mse_loss_dynamic_shape_compatibility() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
@@ -632,7 +632,7 @@ fn test_mse_loss_dynamic_shape_compatibility() -> Result<(), GraphError> {
         "Input 和 Target 的动态形状应兼容"
     );
 
-    // 创建 MSELoss 应该成功
+    // 创建 MSE 节点应该成功
     let loss = graph.new_mse_loss_node(input, target, Some("loss"))?;
     assert!(graph.get_node(loss).is_ok());
 

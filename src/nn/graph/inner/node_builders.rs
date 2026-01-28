@@ -6,9 +6,9 @@
 
 use super::super::error::GraphError;
 use super::GraphInner;
-use crate::nn::nodes::raw_node::Reduction;
-use crate::nn::nodes::NodeHandle;
 use crate::nn::NodeId;
+use crate::nn::nodes::NodeHandle;
+use crate::nn::nodes::raw_node::Reduction;
 
 impl GraphInner {
     /// 添加节点到列表
@@ -403,7 +403,7 @@ impl GraphInner {
     ) -> Result<NodeId, GraphError> {
         let parents = self.get_nodes(&[input_id, target_id])?;
         let handle = NodeHandle::new_mse_loss(&parents)?;
-        self.add_node_to_list(handle, name, "mse_loss", &[input_id, target_id])
+        self.add_node_to_list(handle, name, "mse", &[input_id, target_id])
     }
 
     pub fn new_mse_loss_node_with_reduction(
@@ -415,6 +415,6 @@ impl GraphInner {
     ) -> Result<NodeId, GraphError> {
         let parents = self.get_nodes(&[input_id, target_id])?;
         let handle = NodeHandle::new_mse_loss_with_reduction(&parents, reduction)?;
-        self.add_node_to_list(handle, name, "mse_loss", &[input_id, target_id])
+        self.add_node_to_list(handle, name, "mse", &[input_id, target_id])
     }
 }

@@ -97,7 +97,7 @@ optimizer.step()?;
 | 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU, Softplus    |  ✅  |
 | CNN  | Conv2d, MaxPool2d, AvgPool2d                     |  ✅  |
 | RNN  | RNN, LSTM, GRU (Layer 形式)                      |  ✅  |
-| 损失 | SoftmaxCrossEntropyLoss, MSELoss                 |  ✅  |
+| 损失 | SoftmaxCrossEntropy, MSE                         |  ✅  |
 | 内部 | Identity, GradientRouter, State                  |  ✅  |
 
 ## 缺失的关键节点
@@ -118,7 +118,7 @@ optimizer.step()?;
 | `test_logistic_regression.rs`      | `ch04/logistic_regression.py` |  ❌  | 需要 Sigmoid 节点 (已有) + 测试代码 |
 | `test_nn_iris.rs`                  | `ch05/nn_iris.py`             |  ❌  | 需要多层网络+Softmax                |
 | `test_mnist.rs`                    | `ch05/nn_mnist.py`            |  ✅  | **MVP：MLP + SoftmaxCrossEntropy**  |
-| `test_simple_regression_full_batch.rs` | -                         |  ✅  | **MSELoss 回归验证：y=2x+1（全批量）** |
+| `test_simple_regression_full_batch.rs` | -                         |  ✅  | **MSE 回归验证：y=2x+1（全批量）** |
 | `test_california_housing_price.rs` | -                             |  ✅  | **California Housing 房价回归**     |
 
 ---
@@ -173,7 +173,7 @@ only_torch/
 │   │   ├── 输入: Input, Parameter, Constant
 │   │   ├── 激活: LeakyReLU/ReLU, Tanh, Sigmoid, Softmax, Step
 │   │   ├── 运算: Add, Sub, Mul, Div, MatMul, Reshape
-│   │   └── 损失: MSELoss ✅, CrossEntropy ✅
+│   │   └── 损失: MSE ✅, SoftmaxCrossEntropy ✅
 │   ├── optimizer/   # 优化器
 │   │   └── SGD, Momentum, Adam, LRScheduler
 │   └── context/     # 运行上下文
@@ -265,9 +265,9 @@ let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
 4. MNIST CNN 端到端示例（LeNet 风格）
 5. 完善 MNIST MLP 示例（提升准确率，添加评估指标）
 
-### ✅ 已完成：MSELoss 损失节点
+### ✅ 已完成：MSE（Mean Squared Error）损失节点
 
-实现了完整的 MSELoss 节点，支持回归任务：
+实现了完整的 MSE 节点，支持回归任务：
 
 - **支持 Reduction**：`Mean`（默认）、`Sum`
 - **VJP 模式**：统一的反向传播 API

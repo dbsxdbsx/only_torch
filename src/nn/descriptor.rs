@@ -97,7 +97,7 @@ pub enum NodeTypeDescriptor {
         axis: usize,
         new_dim: bool,
     },
-    MSELoss,
+    MSE,
     SoftmaxCrossEntropy,
     /// 动态零张量（RNN 初始隐藏状态）
     ZerosLike,

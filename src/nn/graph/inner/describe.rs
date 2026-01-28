@@ -7,8 +7,8 @@
 use super::super::error::GraphError;
 use super::GraphInner;
 use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
-use crate::nn::nodes::raw_node::InputVariant;
 use crate::nn::nodes::NodeType;
+use crate::nn::nodes::raw_node::InputVariant;
 use std::path::Path;
 
 impl GraphInner {
@@ -315,7 +315,7 @@ impl GraphInner {
                     "Concat" // 已有维度拼接
                 }
             }
-            NodeTypeDescriptor::MSELoss => "MSELoss",
+            NodeTypeDescriptor::MSE => "MSE",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
             NodeTypeDescriptor::ZerosLike => "ZerosLike",
         }
@@ -393,7 +393,7 @@ impl GraphInner {
                 axis: node.axis(),
                 index: node.index(),
             },
-            NodeType::MSELoss(_) => NodeTypeDescriptor::MSELoss,
+            NodeType::MSE(_) => NodeTypeDescriptor::MSE,
             NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
             NodeType::Stack(node) => NodeTypeDescriptor::Stack {
                 axis: node.axis(),

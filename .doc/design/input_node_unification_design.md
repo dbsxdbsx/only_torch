@@ -108,14 +108,14 @@ struct SmartInput {
 ```
 [虚线] router_1 (GradientRouter) ─→ ... ─→ Sigmoid
                                               │
-[实线] input_1 (Input) ─────────────────────→ MSELoss
+[实线] input_1 (Input) ─────────────────────→ MSE
 ```
 
 修改后：
 ```
 [绿色] input_g (Input) ─→ ... ─→ Sigmoid    # Smart 变体
                                      │
-[橙色] target_1 (Target) ───────────→ MSELoss  # Target 变体
+[橙色] target_1 (Target) ───────────→ MSE  # Target 变体
 ```
 
 ---

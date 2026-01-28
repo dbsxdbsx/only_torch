@@ -214,9 +214,7 @@ fn test_backward_without_any_forward() {
     // 这应该失败，因为 loss 节点没有值
     assert_err!(
         graph.backward(loss),
-        GraphError::ComputationError(
-            "损失节点[id=7, name=loss, type=MSELoss]没有值，请先执行 forward"
-        )
+        GraphError::ComputationError("损失节点[id=7, name=loss, type=MSE]没有值，请先执行 forward")
     );
 
     // 验证：反向传播失败后，参数节点仍然没有梯度

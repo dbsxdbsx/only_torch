@@ -3,7 +3,7 @@ use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::tensor::Tensor;
 
-/// MSE（均方误差）损失节点
+/// MSE（Mean Squared Error，均方误差）损失节点
 ///
 /// 计算预测值和目标值之间的均方误差损失。
 ///
@@ -25,7 +25,7 @@ use crate::tensor::Tensor;
 /// ## 参考
 /// - `PyTorch`: `torch.nn.MSELoss`
 #[derive(Clone)]
-pub(crate) struct MSELoss {
+pub(crate) struct MSE {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
@@ -51,12 +51,12 @@ pub enum Reduction {
     Sum,
 }
 
-impl MSELoss {
+impl MSE {
     pub(crate) fn new(parents: &[&NodeHandle], reduction: Reduction) -> Result<Self, GraphError> {
         // 1. 验证父节点数量
         if parents.len() != 2 {
             return Err(GraphError::InvalidOperation(
-                "MSELoss 节点需要 2 个父节点（input 和 target）".to_string(),
+                "MSE 节点需要 2 个父节点（input 和 target）".to_string(),
             ));
         }
 
@@ -88,13 +88,13 @@ impl MSELoss {
         })
     }
 
-    /// 使用默认 Mean reduction 创建 `MSELoss`
+    /// 使用默认 Mean reduction 创建 MSE 节点
     pub(crate) fn new_mean(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
         Self::new(parents, Reduction::Mean)
     }
 }
 
-impl TraitNode for MSELoss {
+impl TraitNode for MSE {
     fn id(&self) -> NodeId {
         self.id.unwrap()
     }
@@ -161,7 +161,7 @@ impl TraitNode for MSELoss {
         self.value.as_ref()
     }
 
-    /// `MSELoss` 的 VJP 梯度计算
+    /// MSE 的 VJP 梯度计算
     ///
     /// 对于 input: [batch, features]，target: [batch, features]：
     /// - Mean: `dL/d_input` = 2 * (input - target) / N（N 是总元素数）

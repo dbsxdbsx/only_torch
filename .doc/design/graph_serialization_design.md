@@ -83,7 +83,7 @@ pub enum NodeTypeDescriptor {
     MaxPool2d { kernel_size: (usize, usize), stride: (usize, usize) },
     AvgPool2d { kernel_size: (usize, usize), stride: (usize, usize) },
     SoftmaxCrossEntropy,
-    MSELoss,
+    MSE,
     // ... 其他节点类型
 }
 ```

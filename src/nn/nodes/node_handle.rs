@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Abs, Add, AvgPool2d, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MSELoss,
-    MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus,
-    Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
+    Abs, Add, AvgPool2d, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MSE, MatMul,
+    MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus, Softmax,
+    SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -410,17 +410,17 @@ impl NodeHandle {
         Self::new(SoftmaxCrossEntropy::new(parents)?)
     }
 
-    /// 创建 `MSELoss` 节点（默认使用 Mean reduction）
+    /// 创建 MSE（Mean Squared Error）节点（默认使用 Mean reduction）
     pub(in crate::nn) fn new_mse_loss(parents: &[&Self]) -> Result<Self, GraphError> {
-        Self::new(MSELoss::new_mean(parents)?)
+        Self::new(MSE::new_mean(parents)?)
     }
 
-    /// 创建 `MSELoss` 节点（指定 reduction 模式）
+    /// 创建 MSE（Mean Squared Error）节点（指定 reduction 模式）
     pub(in crate::nn) fn new_mse_loss_with_reduction(
         parents: &[&Self],
         reduction: Reduction,
     ) -> Result<Self, GraphError> {
-        Self::new(MSELoss::new(parents, reduction)?)
+        Self::new(MSE::new(parents, reduction)?)
     }
 
     pub(in crate::nn) fn calc_value_by_parents(

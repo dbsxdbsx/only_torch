@@ -41,7 +41,7 @@ digraph Model {
     }
 
     "11" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "12" [label=<mse_loss_1<BR/><B>MSELoss</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "12" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
 
     "5" -> "6";
     "1" -> "6";

@@ -6,7 +6,7 @@ mod state;
 
 pub(in crate::nn) use input::InputVariant;
 pub use loss::Reduction;
-pub(super) use loss::{MSELoss, SoftmaxCrossEntropy};
+pub(super) use loss::{MSE, SoftmaxCrossEntropy};
 pub(super) use ops::*;
 pub(super) use parameter::Parameter;
 pub(super) use state::State;
@@ -28,7 +28,7 @@ pub(in crate::nn) enum NodeType {
     MatMul(MatMul),
     MaxPool2d(MaxPool2d),
     Divide(Divide),
-    MSELoss(MSELoss),
+    MSE(MSE),
     Multiply(Multiply),
     Reshape(Reshape),
     Select(Select), // 张量索引选择（RNN 展开式设计用）

@@ -64,7 +64,7 @@ graph.save_visualization("model", None)?;
 | **参数节点** | 矩形 | 浅绿 #E8F5E9 | 可训练参数（权重、偏置） |
 | **运算节点** | 圆角矩形 | 浅黄 #FFFDE7 | `MatMul`、`Add`、`Select` 等 |
 | **激活函数** | 菱形 | 浅橙 #FFF3E0 | `Sigmoid`、`Tanh`、`ReLU` 等 |
-| **损失函数** | 双八边形 | 浅红 #FFEBEE | `SoftmaxCrossEntropy`、`MSELoss` |
+| **损失函数** | 双八边形 | 浅红 #FFEBEE | `SoftmaxCrossEntropy`、`MSE` |
 
 ### 3.2 特殊节点样式
 
@@ -223,11 +223,11 @@ impl Graph {
     /// 保存可视化（DOT + PNG）
     /// - path: 输出路径（不含扩展名）
     /// - options: 可视化选项（None 使用默认）
-    pub fn save_visualization(&self, path: &str, options: Option<VisOptions>) 
+    pub fn save_visualization(&self, path: &str, options: Option<VisOptions>)
         -> Result<VisResult, GraphError>;
 
     /// 保存带分组的可视化（推荐）
-    pub fn save_visualization(&self, path: &str, options: Option<VisOptions>) 
+    pub fn save_visualization(&self, path: &str, options: Option<VisOptions>)
         -> Result<VisResult, GraphError>;
 
     /// 生成 DOT 格式字符串
