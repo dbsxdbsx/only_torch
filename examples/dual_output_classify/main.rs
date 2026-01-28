@@ -131,7 +131,8 @@ fn main() -> Result<(), GraphError> {
     // 6. 测试
     println!("\n=== 测试结果 ===");
     let mut cls_correct = 0;
-    let mut reg_errors = Vec::new();
+    let mut reg_predictions = Vec::new();
+    let mut reg_actuals = Vec::new();
 
     for (x, cls_label, reg_target) in &test_data {
         let (cls_logits, reg_pred) = model.forward(x)?;
@@ -148,11 +149,11 @@ fn main() -> Result<(), GraphError> {
             cls_correct += 1;
         }
 
-        // 回归结果
+        // 回归结果（收集用于 R² 计算）
         let reg_val = reg_pred.value()?.unwrap()[[0, 0]];
         let target_val = reg_target[[0, 0]];
-        let error = (reg_val - target_val).abs();
-        reg_errors.push(error);
+        reg_predictions.push(reg_val);
+        reg_actuals.push(target_val);
 
         let x_val = x[[0, 0]];
         let sign_str = if pred_class == 1 { "正" } else { "负" };
@@ -161,6 +162,7 @@ fn main() -> Result<(), GraphError> {
         } else {
             "✗"
         };
+        let error = (reg_val - target_val).abs();
         println!(
             "  x={:+.2}: 分类={} {} | |x|={:.2}, 预测={:.2}, 误差={:.3}",
             x_val, sign_str, correct_str, target_val, reg_val, error
@@ -169,7 +171,7 @@ fn main() -> Result<(), GraphError> {
 
     // 7. 统计结果
     let cls_accuracy = cls_correct as f32 / test_data.len() as f32 * 100.0;
-    let avg_reg_error: f32 = reg_errors.iter().sum::<f32>() / reg_errors.len() as f32;
+    let r2 = compute_r2(&reg_predictions, &reg_actuals);
 
     println!("\n=== 最终评估 ===");
     println!(
@@ -178,9 +180,9 @@ fn main() -> Result<(), GraphError> {
         cls_correct,
         test_data.len()
     );
-    println!("回归平均误差: {:.4}", avg_reg_error);
+    println!("回归 R²: {:.4} ({:.1}%)", r2, r2 * 100.0);
 
-    if cls_accuracy >= 90.0 && avg_reg_error < 0.5 {
+    if cls_accuracy >= 90.0 && r2 >= 0.9 {
         println!("\n✅ 多任务学习成功！分类和回归任务都达到良好效果。");
     } else {
         println!("\n⚠️ 可尝试增加 epoch 或调整学习率以提升效果。");
@@ -195,4 +197,26 @@ fn main() -> Result<(), GraphError> {
     }
 
     Ok(())
+}
+
+/// 计算 R² 分数（决定系数）
+fn compute_r2(predictions: &[f32], actuals: &[f32]) -> f32 {
+    let mean_actual: f32 = actuals.iter().sum::<f32>() / actuals.len() as f32;
+
+    let ss_res: f32 = predictions
+        .iter()
+        .zip(actuals.iter())
+        .map(|(pred, actual)| (actual - pred).powi(2))
+        .sum();
+
+    let ss_tot: f32 = actuals
+        .iter()
+        .map(|actual| (actual - mean_actual).powi(2))
+        .sum();
+
+    if ss_tot == 0.0 {
+        if ss_res == 0.0 { 1.0 } else { 0.0 }
+    } else {
+        1.0 - ss_res / ss_tot
+    }
 }

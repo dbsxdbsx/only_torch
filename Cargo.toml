@@ -125,3 +125,11 @@ path = "examples/dual_input_add/main.rs"
 [[example]]
 name = "siamese_similarity"
 path = "examples/siamese_similarity/main.rs"
+
+[[example]]
+name = "dual_output_classify"
+path = "examples/dual_output_classify/main.rs"
+
+[[example]]
+name = "multi_io_fusion"
+path = "examples/multi_io_fusion/main.rs"

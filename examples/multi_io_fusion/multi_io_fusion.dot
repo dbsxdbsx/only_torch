@@ -1,0 +1,118 @@
+digraph Model {
+    rankdir=TB;
+    newrank=true;
+    splines=polyline;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    subgraph cluster_MultiIOFusion {
+        label=<<B>MultiIOFusion</B><BR/><FONT POINT-SIZE="9">Model: 22 nodes</FONT>>;
+        style=filled;
+        fillcolor="#FFECB340";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+        subgraph cluster_MultiIOFusion_encoder_a {
+            label=<<B>encoder_a</B><BR/><FONT POINT-SIZE="8">Linear: [?, 4] → [?, 8]</FONT>>;
+            style=filled;
+            fillcolor="#E3F2FD80";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "1" [label=<encoder_a_W<BR/><B>Parameter</B><BR/>[4, 8]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "2" [label=<encoder_a_b<BR/><B>Parameter</B><BR/>[1, 8]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "13" [label=<mat_mul_1<BR/><B>MatMul</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "14" [label=<add_1<BR/><B>Add</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+        subgraph cluster_MultiIOFusion_encoder_b {
+            label=<<B>encoder_b</B><BR/><FONT POINT-SIZE="8">Linear: [?, 8] → [?, 8]</FONT>>;
+            style=filled;
+            fillcolor="#E8F5E980";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "3" [label=<encoder_b_W<BR/><B>Parameter</B><BR/>[8, 8]<BR/>(64 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "4" [label=<encoder_b_b<BR/><B>Parameter</B><BR/>[1, 8]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "16" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "17" [label=<add_2<BR/><B>Add</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+        subgraph cluster_MultiIOFusion_fusion {
+            label=<<B>fusion</B><BR/><FONT POINT-SIZE="8">Linear: [?, 16] → [?, 16]</FONT>>;
+            style=filled;
+            fillcolor="#FFF3E080";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "5" [label=<fusion_W<BR/><B>Parameter</B><BR/>[16, 16]<BR/>(256 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "6" [label=<fusion_b<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "20" [label=<mat_mul_3<BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "21" [label=<add_3<BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+        subgraph cluster_MultiIOFusion_cls_head {
+            label=<<B>cls_head</B><BR/><FONT POINT-SIZE="8">Linear: [?, 16] → [?, 2]</FONT>>;
+            style=filled;
+            fillcolor="#F3E5F580";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=10;
+            margin=8;
+            "7" [label=<cls_head_W<BR/><B>Parameter</B><BR/>[16, 2]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "8" [label=<cls_head_b<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "23" [label=<mat_mul_4<BR/><B>MatMul</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "24" [label=<add_4<BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+            "11" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 4]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+            "12" [label=<input_2<BR/><B>SmartInput</B><BR/>[?, 8]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
+            "15" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 8]<BR/>α=0> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "18" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 8]<BR/>α=0> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+            "19" [label=<concat_1<BR/><B>Concat</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "22" [label=<leaky_relu_3<BR/><B>LeakyReLU</B><BR/>[?, 16]<BR/>α=0> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    }
+
+    subgraph cluster_reg_head {
+        label=<<B>reg_head</B><BR/><FONT POINT-SIZE="9">Linear: [?, 16] → [?, 1]</FONT>>;
+        style=filled;
+        fillcolor="#E0F7FA80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "9" [label=<reg_head_W<BR/><B>Parameter</B><BR/>[16, 1]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "10" [label=<reg_head_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "25" [label=<mat_mul_5<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "26" [label=<add_5<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    }
+
+    "27" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "28" [label=<softmax_ce_1<BR/><B>SoftmaxCE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "29" [label=<target_2<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "30" [label=<mse_loss_1<BR/><B>MSELoss</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+
+    "11" -> "13";
+    "1" -> "13";
+    "13" -> "14";
+    "2" -> "14";
+    "14" -> "15";
+    "12" -> "16";
+    "3" -> "16";
+    "16" -> "17";
+    "4" -> "17";
+    "17" -> "18";
+    "15" -> "19";
+    "18" -> "19";
+    "19" -> "20";
+    "5" -> "20";
+    "20" -> "21";
+    "6" -> "21";
+    "21" -> "22";
+    "22" -> "23";
+    "7" -> "23";
+    "23" -> "24";
+    "8" -> "24";
+    "22" -> "25";
+    "9" -> "25";
+    "25" -> "26";
+    "10" -> "26";
+    "24" -> "28";
+    "27" -> "28";
+    "26" -> "30";
+    "29" -> "30";
+}
