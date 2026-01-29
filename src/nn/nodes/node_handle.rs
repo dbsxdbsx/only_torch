@@ -383,7 +383,7 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_leaky_relu(
         parents: &[&Self],
-        negative_slope: f64,
+        negative_slope: f32,
     ) -> Result<Self, GraphError> {
         Self::new(LeakyReLU::new(parents, negative_slope)?)
     }

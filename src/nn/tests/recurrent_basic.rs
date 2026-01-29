@@ -15,8 +15,8 @@ use crate::tensor::Tensor;
 // ==================== 辅助函数 ====================
 
 /// 创建标量张量
-fn scalar(val: f64) -> Tensor {
-    Tensor::new(&[val as f32], &[1, 1])
+fn scalar(val: f32) -> Tensor {
+    Tensor::new(&[val], &[1, 1])
 }
 
 /// 创建一个简单的累加器网络
@@ -178,7 +178,7 @@ fn test_variable_input() {
 ///
 /// 行为：output = input + weight * prev_output
 fn create_weighted_recurrent_graph(
-    weight: f64,
+    weight: f32,
 ) -> Result<(GraphInner, NodeId, NodeId), GraphError> {
     let mut graph = GraphInner::new();
 

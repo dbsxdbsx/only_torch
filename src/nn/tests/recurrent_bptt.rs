@@ -14,8 +14,8 @@ use crate::tensor::Tensor;
 // ==================== 辅助函数 ====================
 
 /// 创建标量张量
-fn scalar(val: f64) -> Tensor {
-    Tensor::new(&[val as f32], &[1, 1])
+fn scalar(val: f32) -> Tensor {
+    Tensor::new(&[val], &[1, 1])
 }
 
 /// 创建一个简单的循环网络用于测试 BPTT
@@ -157,7 +157,7 @@ fn test_bptt_history_recording() {
     // 运行几个时间步
     for i in 1..=3 {
         graph
-            .set_node_value(input, Some(&scalar(i as f64)))
+            .set_node_value(input, Some(&scalar(i as f32)))
             .unwrap();
         graph.step(output).unwrap();
     }
@@ -182,7 +182,7 @@ fn test_bptt_no_history_in_eval_mode() {
     // 运行几个时间步
     for i in 1..=3 {
         graph
-            .set_node_value(input, Some(&scalar(i as f64)))
+            .set_node_value(input, Some(&scalar(i as f32)))
             .unwrap();
         graph.step(output).unwrap();
     }
@@ -281,7 +281,7 @@ fn test_tbptt_truncation() {
     // 运行 5 个时间步
     for i in 1..=5 {
         graph
-            .set_node_value(input, Some(&scalar(i as f64)))
+            .set_node_value(input, Some(&scalar(i as f32)))
             .unwrap();
         graph.set_node_value(target, Some(&scalar(0.0))).unwrap();
         graph.step(loss).unwrap();
@@ -364,7 +364,7 @@ fn test_clear_history_preserves_recurrent_state() {
     // 运行几步
     for i in 1..=3 {
         graph
-            .set_node_value(input, Some(&scalar(i as f64)))
+            .set_node_value(input, Some(&scalar(i as f32)))
             .unwrap();
         graph.step(output).unwrap();
     }
@@ -446,7 +446,7 @@ fn test_bptt_long_sequence() {
     // 20 步序列
     for i in 1..=20 {
         graph
-            .set_node_value(input, Some(&scalar(0.1 * i as f64)))
+            .set_node_value(input, Some(&scalar(0.1 * i as f32)))
             .unwrap();
         graph.set_node_value(target, Some(&scalar(0.0))).unwrap();
         graph.step(loss).unwrap();
@@ -556,7 +556,7 @@ fn test_bptt_very_long_sequence_gradient_norm() {
         // 运行序列
         for i in 0..seq_len {
             // 使用正弦波作为输入，避免 hidden 饱和
-            let x = (i as f64 * 0.1).sin() * 0.5;
+            let x = (i as f32 * 0.1).sin() * 0.5;
             graph.set_node_value(input, Some(&scalar(x))).unwrap();
             graph.set_node_value(target, Some(&scalar(0.0))).unwrap();
             graph.step(loss).unwrap();
@@ -623,7 +623,7 @@ fn test_bptt_very_long_sequence_gradient_norm() {
 /// w_hh 较小时梯度衰减更快，但更稳定
 #[test]
 fn test_bptt_gradient_stability_vs_w_hh() {
-    fn run_bptt_with_w_hh(w_hh_value: f64, seq_len: usize) -> (f32, f32) {
+    fn run_bptt_with_w_hh(w_hh_value: f32, seq_len: usize) -> (f32, f32) {
         let mut graph = GraphInner::new_with_seed(42);
         graph.set_train_mode();
 
@@ -707,7 +707,7 @@ fn test_tbptt_vs_full_bptt_different_gradients() {
 
     // 10 步序列
     for i in 1..=10 {
-        let inp = 0.1 * i as f64;
+        let inp = 0.1 * i as f32;
         let tgt = 0.0;
 
         graph1.set_node_value(input1, Some(&scalar(inp))).unwrap();

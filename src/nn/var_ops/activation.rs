@@ -43,7 +43,7 @@ pub trait VarActivationOps {
     fn tanh(&self) -> Var;
 
     /// `LeakyReLU` 激活：x if x > 0 else alpha * x
-    fn leaky_relu(&self, alpha: f64) -> Var;
+    fn leaky_relu(&self, alpha: f32) -> Var;
 
     /// Softmax `激活：exp(x_i)` / Σ `exp(x_j)`
     ///
@@ -97,7 +97,7 @@ impl VarActivationOps for Var {
         Self::new(id, Rc::clone(self.graph()))
     }
 
-    fn leaky_relu(&self, alpha: f64) -> Var {
+    fn leaky_relu(&self, alpha: f32) -> Var {
         let id = self
             .graph()
             .borrow_mut()

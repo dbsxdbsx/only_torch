@@ -571,7 +571,7 @@ fn test_mixed_activation_rnn() -> Result<(), GraphError> {
 // output = h[T] * w_out
 // 参数: w_ih=0.5, w_hh=0.8, w_out=1.5, negative_slope=0.1
 // 序列: [1.0, -0.5, 0.3, -0.8, 0.6], 目标: 0.7
-const LEAKY_RELU_NEGATIVE_SLOPE: f64 = 0.1;
+const LEAKY_RELU_NEGATIVE_SLOPE: f32 = 0.1;
 const LEAKY_RELU_H_T1: f32 = 0.50000000;
 const LEAKY_RELU_H_T2: f32 = 0.15000001;
 const LEAKY_RELU_H_T3: f32 = 0.27000001;

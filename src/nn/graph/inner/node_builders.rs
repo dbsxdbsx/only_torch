@@ -369,7 +369,7 @@ impl GraphInner {
     pub fn new_leaky_relu_node(
         &mut self,
         parent_id: NodeId,
-        negative_slope: f64,
+        negative_slope: f32,
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
         let handle = NodeHandle::new_leaky_relu(&self.get_nodes(&[parent_id])?, negative_slope)?;

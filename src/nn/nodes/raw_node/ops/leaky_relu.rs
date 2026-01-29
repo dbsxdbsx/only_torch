@@ -24,16 +24,16 @@ pub(crate) struct LeakyReLU {
     /// 是否支持动态 batch
     supports_dynamic: bool,
     /// 负半轴斜率，默认 0.0（标准 `ReLU`）
-    negative_slope: f64,
+    negative_slope: f32,
 }
 
 impl LeakyReLU {
     /// 获取 `negative_slope（alpha）值`
-    pub(crate) const fn alpha(&self) -> f64 {
+    pub(crate) const fn alpha(&self) -> f32 {
         self.negative_slope
     }
 
-    pub(crate) fn new(parents: &[&NodeHandle], negative_slope: f64) -> Result<Self, GraphError> {
+    pub(crate) fn new(parents: &[&NodeHandle], negative_slope: f32) -> Result<Self, GraphError> {
         // 1. 必要的验证
         // 1.1 父节点数量验证
         if parents.len() != 1 {
@@ -110,7 +110,7 @@ impl TraitNode for LeakyReLU {
 
         // 2. 计算 LeakyReLU: f(x) = x if x > 0, else negative_slope * x
         // 注：不再缓存 parent_value，因为梯度计算已改为使用 value（输出）判断区域
-        let slope = self.negative_slope as f32;
+        let slope = self.negative_slope;
         let result = parent_value.where_with_f32(
             |x| x > 0.0,
             |x| x,         // x > 0 时保持原值
@@ -141,7 +141,7 @@ impl TraitNode for LeakyReLU {
         })?;
 
         // 计算局部梯度（逐元素）
-        let slope = self.negative_slope as f32;
+        let slope = self.negative_slope;
         let local_grad = value.where_with_f32(
             |y| y > 0.0,
             |_| 1.0,   // y > 0 时导数为 1
