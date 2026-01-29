@@ -1,5 +1,50 @@
 # 更新日志
 
+## [0.11.0] - 2026-01-29
+
+### 新增
+
+- **feat(tensor): 实现统一的 Stack 操作**
+  - 覆盖 PyTorch 的 `stack` 和 `cat` 功能
+  - 支持 Tensor 层和节点层操作
+
+- **feat(nn): 多输入/多输出 API**
+  - `forward2`/`forward3` 多输入前向传播
+  - `ModelState` 支持多输出及 `retain_graph` 反向传播
+  - 新增 `dual_input_add`、`siamese_similarity`、`dual_output_classify`、`multi_io_fusion` 示例
+
+- **feat(nn): 新增损失函数**
+  - `MAE`（Mean Absolute Error）损失节点
+  - `BCE Loss` 二元交叉熵损失（支持多标签分类）
+  - `Huber Loss`（Smooth L1 Loss）
+
+- **feat(metrics): 评估指标模块**
+  - 分类指标：Accuracy、Precision、Recall、F1Score 等
+  - 回归指标：MSE、MAE、R² 等
+  - 统一 API，用户无需导入 `Metric` trait
+
+- **feat(nn): Dropout 正则化节点**
+  - 支持训练/推理模式自动切换
+
+- **feat(tensor): Abs 绝对值算子**
+  - Tensor 层和节点层完整支持
+
+### 重构
+
+- **refactor: 统一浮点类型为 f32**
+  - 移除 `f64` 过度设计，简化代码
+
+- **refactor: 统一损失节点命名**
+  - `MSELoss` → `MSE`，与其他损失节点命名风格一致
+
+### 文档
+
+- docs: README 添加多输入/多输出示例说明
+
+### 其他
+
+- fix: rust lint 修复
+
 ## [0.10.2] - 2026-01-28
 
 ### 重构
