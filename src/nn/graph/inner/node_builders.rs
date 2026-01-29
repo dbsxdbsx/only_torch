@@ -384,6 +384,29 @@ impl GraphInner {
         self.new_leaky_relu_node(parent_id, 0.0, name)
     }
 
+    /// 创建 Dropout 节点
+    ///
+    /// # 参数
+    /// - `parent_id`: 输入节点
+    /// - `p`: 丢弃概率，范围 [0.0, 1.0)
+    /// - `name`: 节点名称
+    ///
+    /// # 推荐值
+    /// - 全连接层：0.5（经典值，可用 `DEFAULT_DROPOUT_P`）
+    /// - 卷积层：0.1 ~ 0.3
+    /// - 输入层后：0.1 ~ 0.2
+    pub fn new_dropout_node(
+        &mut self,
+        parent_id: NodeId,
+        p: f32,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        // 从 graph 的 rng 生成 seed（确保确定性）
+        let seed = self.next_seed();
+        let handle = NodeHandle::new_dropout(&self.get_nodes(&[parent_id])?, p, seed)?;
+        self.add_node_to_list(handle, name, "dropout", &[parent_id])
+    }
+
     pub fn new_softmax_cross_entropy_node(
         &mut self,
         logits_id: NodeId,

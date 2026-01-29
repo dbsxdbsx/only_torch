@@ -1,13 +1,22 @@
 //! MNIST MLP 模型
 //!
 //! 两层全连接网络用于手写数字识别（PyTorch 风格）
+//!
+//! 包含 Dropout 正则化，演示 train/eval 模式切换
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::nn::{
+    Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps, VarRegularizationOps,
+};
 use only_torch::tensor::Tensor;
 
 /// MNIST MLP
 ///
-/// 网络结构: Input(784) -> Linear(128, Softplus) -> Linear(10)
+/// 网络结构: Input(784) -> Linear(128, Softplus) -> Dropout(0.3) -> Linear(10)
+///
+/// # 注意
+/// 使用了 Dropout，训练/测试时需要切换模式：
+/// - 训练前：`graph.train()`（默认）
+/// - 测试前：`graph.eval()`
 pub struct MnistMLP {
     fc1: Linear,
     fc2: Linear,
@@ -25,9 +34,12 @@ impl MnistMLP {
     }
 
     /// `PyTorch` 风格 forward：直接接收 Tensor
+    ///
+    /// 注意：包含 Dropout，行为取决于当前模式（train/eval）
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
         self.state.forward(x, |input| {
             let h1 = self.fc1.forward(input).softplus();
+            let h1 = h1.dropout(0.3)?; // Dropout: 训练时丢弃 30%，评估时直接通过
             Ok(self.fc2.forward(&h1))
         })
     }

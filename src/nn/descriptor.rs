@@ -67,6 +67,10 @@ pub enum NodeTypeDescriptor {
     LeakyReLU {
         alpha: f32,
     },
+    /// Dropout 正则化（训练时丢弃，评估时直接通过）
+    Dropout {
+        p: f32,
+    },
     Sign,
     Abs,
     SoftPlus,

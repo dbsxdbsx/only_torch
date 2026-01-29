@@ -22,6 +22,7 @@ mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
 mod node_bce; // BCE 节点（Binary Cross Entropy，二元交叉熵损失）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
 mod node_divide; // Divide 节点（逐元素除法）
+mod node_dropout; // Dropout 节点（正则化，训练时随机丢弃）
 mod node_flatten; // Flatten 节点（展平）
 mod node_huber; // Huber Loss 节点（Smooth L1 Loss，强化学习标准损失函数）
 mod node_identity; // Identity 节点（恒等映射，用于 detach_node）

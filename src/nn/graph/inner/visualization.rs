@@ -1011,6 +1011,8 @@ impl GraphInner {
             | NodeTypeDescriptor::Abs
             | NodeTypeDescriptor::SoftPlus
             | NodeTypeDescriptor::Step => ("diamond", "filled", "#FFF3E0"),
+            // Dropout：菱形，浅紫色（正则化）
+            NodeTypeDescriptor::Dropout { .. } => ("diamond", "filled", "#F3E5F5"),
             // ZerosLike：虚线圆角矩形，浅黄色
             NodeTypeDescriptor::ZerosLike => ("box", "\"filled,rounded,dashed\"", "#FFFDE7"),
             // 其他运算节点：圆角矩形，浅黄色
@@ -1047,6 +1049,7 @@ impl GraphInner {
 
         let extra_info = match &node.node_type {
             NodeTypeDescriptor::LeakyReLU { alpha } => Some(format!("α={alpha}")),
+            NodeTypeDescriptor::Dropout { p } => Some(format!("p={p}")),
             _ => None,
         };
 
@@ -1259,6 +1262,7 @@ impl GraphInner {
             NodeTypeDescriptor::Softmax => "Softmax",
             NodeTypeDescriptor::Tanh => "Tanh",
             NodeTypeDescriptor::LeakyReLU { .. } => "LeakyReLU",
+            NodeTypeDescriptor::Dropout { .. } => "Dropout",
             NodeTypeDescriptor::Sign => "Sign",
             NodeTypeDescriptor::Abs => "Abs",
             NodeTypeDescriptor::SoftPlus => "SoftPlus",

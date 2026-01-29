@@ -111,6 +111,18 @@ impl GraphInner {
         self.rng.is_some()
     }
 
+    /// 生成下一个随机种子（用于 Dropout 等需要独立 rng 的节点）
+    ///
+    /// 如果 graph 有 rng，则从 rng 生成；否则使用 thread_rng
+    pub(in crate::nn::graph) fn next_seed(&mut self) -> u64 {
+        use rand::Rng;
+        if let Some(ref mut rng) = self.rng {
+            rng.r#gen()
+        } else {
+            rand::thread_rng().r#gen()
+        }
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -390,7 +402,9 @@ impl GraphInner {
             .map(|id| self.get_node(*id).unwrap().clone())
             .collect::<Vec<NodeHandle>>();
 
+        let is_training = self.is_train_mode();
         let node = self.get_node_mut(node_id)?;
+        node.set_training_mode(is_training);
         node.calc_value_by_parents(&parent_nodes)?;
         node.set_last_forward_pass_id(new_graph_forward_pass_id);
 

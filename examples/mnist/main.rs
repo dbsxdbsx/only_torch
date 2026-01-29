@@ -107,7 +107,9 @@ fn main() -> Result<(), GraphError> {
         let mut epoch_loss = 0.0;
         let mut num_batches = 0;
 
-        // 训练循环（完全 PyTorch 风格！）
+        // ========== 训练阶段 ==========
+        graph.train(); // 切换到训练模式（Dropout 生效）
+
         for (batch_x, batch_y) in train_loader.iter() {
             // PyTorch 风格：直接传 Tensor
             let output = model.forward(&batch_x)?;
@@ -122,7 +124,9 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        // 测试循环（使用 accuracy 函数简化）
+        // ========== 测试阶段 ==========
+        graph.eval(); // 切换到评估模式（Dropout 不生效）
+
         let mut total_correct = 0.0;
         let mut total = 0;
 

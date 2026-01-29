@@ -11,24 +11,28 @@
  * - `loss`: 损失函数（cross_entropy, mse_loss）
  * - `matrix`: 矩阵运算（matmul）
  * - `shape`: 形状变换（reshape, flatten）
+ * - `regularization`: 正则化（dropout）
  *
  * # 使用示例
  * ```ignore
- * use only_torch::nn::var::{Var, VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps};
+ * use only_torch::nn::var::{Var, VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps, VarRegularizationOps};
  *
  * let h = x.relu().sigmoid();
  * let y = h.matmul(&w)?;
  * let loss = y.cross_entropy(&labels)?;
  * let flat = h.flatten()?;
+ * let dropped = h.dropout();  // 训练时随机丢弃
  * ```
  */
 
 mod activation;
 mod loss;
 mod matrix;
+mod regularization;
 mod shape;
 
 pub use activation::VarActivationOps;
 pub use loss::VarLossOps;
 pub use matrix::VarMatrixOps;
+pub use regularization::VarRegularizationOps;
 pub use shape::VarShapeOps;

@@ -7,6 +7,7 @@ mod state;
 pub(in crate::nn) use input::InputVariant;
 pub use loss::Reduction;
 pub use loss::DEFAULT_HUBER_DELTA;
+pub use ops::DEFAULT_DROPOUT_P;
 pub(super) use loss::{BCE, Huber, MAE, MSE, SoftmaxCrossEntropy};
 pub(super) use ops::*;
 pub(super) use parameter::Parameter;
@@ -25,6 +26,7 @@ pub(in crate::nn) enum NodeType {
     Add(Add),
     AvgPool2d(AvgPool2d),
     Conv2d(Conv2d),
+    Dropout(Dropout), // 正则化：训练时随机丢弃，评估时直接通过
     Flatten(Flatten),
     MatMul(MatMul),
     MaxPool2d(MaxPool2d),
@@ -171,5 +173,18 @@ pub(in crate::nn::nodes) trait TraitNode {
     /// 默认返回 false。GradientRouter 和 State 应返回 true。
     fn supports_dynamic_batch(&self) -> bool {
         false
+    }
+
+    // ========== 训练模式 ==========
+
+    /// 设置训练模式
+    ///
+    /// 仅 Dropout、BatchNorm 等训练/评估行为不同的节点需要实现。
+    /// 默认空实现，大多数节点不需要关心训练模式。
+    ///
+    /// # 参数
+    /// - `is_training`: 是否处于训练模式
+    fn set_training_mode(&mut self, _is_training: bool) {
+        // 默认空实现
     }
 }

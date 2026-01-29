@@ -27,11 +27,11 @@ pub use layer::{AvgPool2d, Conv2d, Gru, Linear, Lstm, MaxPool2d, Rnn};
 pub use model_state::{ForwardInput, ForwardOutput, ModelState};
 pub use module::Module;
 pub use nodes::NodeId;
-pub use nodes::raw_node::Reduction;
+pub use nodes::raw_node::{Reduction, DEFAULT_DROPOUT_P};
 pub use optimizer::{Adam, Optimizer, SGD};
 pub use shape::{Dim, DynamicShape};
 pub use var::{DetachedVar, Init, Var};
-pub use var_ops::{VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps};
+pub use var_ops::{VarActivationOps, VarLossOps, VarMatrixOps, VarRegularizationOps, VarShapeOps};
 
 #[cfg(test)]
 mod tests;

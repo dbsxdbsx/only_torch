@@ -327,7 +327,7 @@ impl fmt::Display for RegressionMetric {
 /// ## 示例
 ///
 /// ```rust
-/// use only_torch::metrics::multi_label_accuracy;
+/// use only_torch::metrics::multilabel_loose_accuracy;
 /// use only_torch::tensor::Tensor;
 ///
 /// let preds = Tensor::new(&[0.9, 0.1, 0.8, 0.2], &[2, 2]);

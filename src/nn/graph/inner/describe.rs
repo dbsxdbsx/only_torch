@@ -298,6 +298,7 @@ impl GraphInner {
             NodeTypeDescriptor::Softmax => "Softmax",
             NodeTypeDescriptor::Tanh => "Tanh",
             NodeTypeDescriptor::LeakyReLU { .. } => "LeakyReLU",
+            NodeTypeDescriptor::Dropout { .. } => "Dropout",
             NodeTypeDescriptor::Sign => "Sign",
             NodeTypeDescriptor::Abs => "Abs",
             NodeTypeDescriptor::SoftPlus => "SoftPlus",
@@ -372,6 +373,7 @@ impl GraphInner {
             NodeType::LeakyReLU(node) => NodeTypeDescriptor::LeakyReLU {
                 alpha: node.alpha(),
             },
+            NodeType::Dropout(node) => NodeTypeDescriptor::Dropout { p: node.p() },
             NodeType::Sign(_) => NodeTypeDescriptor::Sign,
             NodeType::Abs(_) => NodeTypeDescriptor::Abs,
             NodeType::SoftPlus(_) => NodeTypeDescriptor::SoftPlus,

@@ -1,8 +1,9 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Abs, Add, AvgPool2d, BCE, Conv2d, Divide, Flatten, Huber, Identity, InputVariant, LeakyReLU,
-    MAE, MSE, MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign,
-    SoftPlus, Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
+    Abs, Add, AvgPool2d, BCE, Conv2d, Divide, Dropout, Flatten, Huber, Identity, InputVariant,
+    LeakyReLU, MAE, MSE, MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select,
+    Sigmoid, Sign, SoftPlus, Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh,
+    ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -392,6 +393,20 @@ impl NodeHandle {
         Self::new(SoftPlus::new(parents)?)
     }
 
+    /// 创建 Dropout 节点
+    ///
+    /// # 参数
+    /// - `parents`: [输入节点]
+    /// - `p`: 丢弃概率（0.0 ~ 1.0）
+    /// - `seed`: 随机数种子
+    pub(in crate::nn) fn new_dropout(
+        parents: &[&Self],
+        p: f32,
+        seed: u64,
+    ) -> Result<Self, GraphError> {
+        Self::new(Dropout::new(parents, p, seed)?)
+    }
+
     /// 创建 Select 节点（从张量中选择指定轴和索引的切片）
     ///
     /// # 参数
@@ -481,6 +496,11 @@ impl NodeHandle {
         parents: &[Self],
     ) -> Result<(), GraphError> {
         self.raw_node.calc_value_by_parents(parents)
+    }
+
+    /// 设置训练模式（仅 Dropout 等节点需要）
+    pub(in crate::nn) fn set_training_mode(&mut self, is_training: bool) {
+        self.raw_node.set_training_mode(is_training);
     }
 
     // ========== 梯度（VJP 模式）==========
