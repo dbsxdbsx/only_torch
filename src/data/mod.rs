@@ -40,6 +40,9 @@ pub mod transforms;
 mod tests;
 
 // Re-exports
-pub use dataloader::{BucketedDataLoader, DataLoader, TensorDataset, VarLenDataset, VarLenSample};
+pub use dataloader::{
+    BucketedSampling, DataLoader, Dataset, SamplingStrategy, SequentialSampling, TensorDataset,
+    VarLenDataset, VarLenSample,
+};
 pub use datasets::{CaliforniaHousingDataset, MnistDataset, default_data_dir};
 pub use error::DataError;

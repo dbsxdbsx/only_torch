@@ -10,7 +10,7 @@
 mod model;
 
 use model::ParityLSTM;
-use only_torch::data::{BucketedDataLoader, VarLenDataset, VarLenSample};
+use only_torch::data::{DataLoader, VarLenDataset, VarLenSample};
 use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 
@@ -39,17 +39,17 @@ fn main() -> Result<(), GraphError> {
     let train_dataset = generate_var_len_dataset(train_samples, min_len, max_len, seed);
     let test_dataset = generate_var_len_dataset(test_samples, min_len, max_len, seed + 1000);
 
-    let train_loader = BucketedDataLoader::new(&train_dataset)
+    let train_loader = DataLoader::from_var_len(&train_dataset)
         .shuffle(true)
         .seed(seed);
-    let test_loader = BucketedDataLoader::new(&test_dataset);
+    let test_loader = DataLoader::from_var_len(&test_dataset);
 
     println!(
         "数据集: 训练 {} 样本 ({} 种长度), 测试 {} 样本 ({} 种长度)",
         train_dataset.len(),
-        train_loader.num_buckets(),
+        train_dataset.num_buckets(),
         test_dataset.len(),
-        test_loader.num_buckets()
+        test_dataset.num_buckets()
     );
 
     let train_odd = train_dataset
@@ -139,7 +139,10 @@ fn main() -> Result<(), GraphError> {
     }
 }
 
-fn evaluate(model: &ParityLSTM, test_loader: &BucketedDataLoader<'_>) -> Result<f32, GraphError> {
+fn evaluate(
+    model: &ParityLSTM,
+    test_loader: &DataLoader<&VarLenDataset, only_torch::data::BucketedSampling>,
+) -> Result<f32, GraphError> {
     let mut total_correct = 0.0;
     let mut total = 0;
 

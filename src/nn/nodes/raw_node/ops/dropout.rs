@@ -9,10 +9,10 @@
  * - 这样评估时不需要额外操作
  */
 
+use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
 use crate::nn::shape::DynamicShape;
-use crate::nn::GraphError;
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -153,11 +153,7 @@ impl TraitNode for Dropout {
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
+            GraphError::ComputationError(format!("{}的父{}没有值", self.display_node(), parents[0]))
         })?;
 
         if self.is_training && self.p > 0.0 {
