@@ -297,3 +297,96 @@ impl Default for MaeLoss {
         Self::new()
     }
 }
+
+/// BCE（Binary Cross Entropy，二元交叉熵）损失函数（PyTorch 风格封装）
+///
+/// 采用 BCEWithLogitsLoss 形式，内置 Sigmoid 激活，数值稳定。
+/// 适用于二分类和多标签分类任务。
+///
+/// ## 使用场景
+/// - **二分类**：输出单个 logit，预测 0/1
+/// - **多标签分类**：输出多个 logits，每个独立预测 0/1（一个样本可同时属于多个类别）
+///
+/// 相比 `cross_entropy`（Softmax CE），BCE 的核心区别是：
+/// - Softmax CE：所有类别概率和 = 1（互斥类别）
+/// - BCE：每个输出独立（非互斥类别）
+///
+/// ## 智能缓存
+/// 与 `CrossEntropyLoss` 相同，按 `output` 节点 ID 缓存 loss 子图，
+/// 避免重复创建节点。
+///
+/// # 示例
+/// ```ignore
+/// let criterion = BceLoss::new();
+///
+/// for batch in dataloader {
+///     let logits = model.forward(&x_batch)?;
+///     let loss = criterion.forward(&logits, &y_batch)?;  // y_batch 是 0/1 标签
+///     loss.backward()?;
+///     optimizer.step()?;
+/// }
+/// ```
+pub struct BceLoss {
+    /// 按 output 节点 ID 缓存的 loss 状态
+    cache: RefCell<HashMap<NodeId, LossState>>,
+}
+
+impl BceLoss {
+    /// 创建二元交叉熵损失函数
+    pub fn new() -> Self {
+        Self {
+            cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// 计算损失（PyTorch 风格）
+    ///
+    /// # 参数
+    /// - `logits`: 模型输出（未激活的原始值）
+    /// - `target`: 二值标签（0 或 1）
+    ///
+    /// # 返回
+    /// 损失值节点（可直接调用 `.backward()`）
+    pub fn forward(&self, logits: &Var, target: &Tensor) -> Result<Var, GraphError> {
+        let output_id = logits.node_id();
+        let mut cache = self.cache.borrow_mut();
+
+        if let Some(s) = cache.get(&output_id) {
+            // 缓存命中：复用已有的 loss 子图
+            s.target_node.set_value(target)?;
+            return Ok(s.loss_node.clone());
+        }
+
+        // 缓存未命中：创建新的 loss 子图
+        let graph = logits.get_graph();
+        let target_node = graph.target(target.shape())?;
+        target_node.set_value(target)?;
+        let loss_node = logits.bce_loss(&target_node)?;
+
+        cache.insert(
+            output_id,
+            LossState {
+                target_node,
+                loss_node: loss_node.clone(),
+            },
+        );
+
+        Ok(loss_node)
+    }
+
+    /// 获取缓存数量
+    pub fn cache_size(&self) -> usize {
+        self.cache.borrow().len()
+    }
+
+    /// 清空缓存
+    pub fn clear_cache(&self) {
+        self.cache.borrow_mut().clear();
+    }
+}
+
+impl Default for BceLoss {
+    fn default() -> Self {
+        Self::new()
+    }
+}

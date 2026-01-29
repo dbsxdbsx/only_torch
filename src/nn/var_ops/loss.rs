@@ -13,7 +13,8 @@ use std::rc::Rc;
 /// 损失函数扩展 trait
 ///
 /// 提供常用损失函数的链式调用：
-/// - `cross_entropy(target)`: 交叉熵损失（含 Softmax）- 用于分类
+/// - `cross_entropy(target)`: 交叉熵损失（含 Softmax）- 用于多分类（互斥类别）
+/// - `bce_loss(target)`: 二元交叉熵损失（含 Sigmoid）- 用于二分类/多标签分类
 /// - `mse_loss(target)`: 均方误差损失 - 用于回归
 /// - `mae_loss(target)`: 平均绝对误差损失 - 用于回归（对异常值更鲁棒）
 ///
@@ -21,12 +22,15 @@ use std::rc::Rc;
 /// ```ignore
 /// use only_torch::nn::var::{Var, VarLossOps};
 ///
-/// let loss = logits.cross_entropy(&labels)?;
+/// let loss = logits.cross_entropy(&labels)?;  // 多分类
+/// let loss = logits.bce_loss(&targets)?;      // 二分类/多标签
 /// let loss = output.mse_loss(&target)?;
 /// let loss = output.mae_loss(&target)?;
 /// ```
 pub trait VarLossOps {
     /// Cross Entropy Loss（含 Softmax）
+    ///
+    /// 用于多分类任务，各类别互斥（一个样本只属于一个类别）。
     ///
     /// # 参数
     /// - `target`: 目标标签（one-hot 编码）
@@ -34,6 +38,18 @@ pub trait VarLossOps {
     /// # 返回
     /// 标量损失值节点
     fn cross_entropy(&self, target: &Var) -> Result<Var, GraphError>;
+
+    /// BCE Loss（二元交叉熵，含 Sigmoid）
+    ///
+    /// 用于二分类或多标签分类任务（一个样本可同时属于多个类别）。
+    /// 采用 BCEWithLogitsLoss 形式，数值稳定。
+    ///
+    /// # 参数
+    /// - `target`: 二值标签（0 或 1）
+    ///
+    /// # 返回
+    /// 标量损失值节点
+    fn bce_loss(&self, target: &Var) -> Result<Var, GraphError>;
 
     /// MSE Loss（均方误差）
     ///
@@ -64,6 +80,15 @@ impl VarLossOps for Var {
             target.node_id(),
             None,
         )?;
+        Ok(Self::new(id, Rc::clone(self.graph())))
+    }
+
+    fn bce_loss(&self, target: &Var) -> Result<Var, GraphError> {
+        self.assert_same_graph(target);
+        let id =
+            self.graph()
+                .borrow_mut()
+                .new_bce_loss_node(self.node_id(), target.node_id(), None)?;
         Ok(Self::new(id, Rc::clone(self.graph())))
     }
 

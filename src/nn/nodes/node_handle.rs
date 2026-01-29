@@ -1,6 +1,6 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Abs, Add, AvgPool2d, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MAE, MSE,
+    Abs, Add, AvgPool2d, BCE, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MAE, MSE,
     MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus,
     Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
 };
@@ -434,6 +434,22 @@ impl NodeHandle {
         reduction: Reduction,
     ) -> Result<Self, GraphError> {
         Self::new(MAE::new(parents, reduction)?)
+    }
+
+    /// 创建 BCE（Binary Cross Entropy）节点（默认使用 Mean reduction）
+    ///
+    /// 采用 BCEWithLogitsLoss 形式，内置 Sigmoid 激活，数值稳定。
+    /// 适用于二分类和多标签分类任务。
+    pub(in crate::nn) fn new_bce_loss(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(BCE::new_mean(parents)?)
+    }
+
+    /// 创建 BCE（Binary Cross Entropy）节点（指定 reduction 模式）
+    pub(in crate::nn) fn new_bce_loss_with_reduction(
+        parents: &[&Self],
+        reduction: Reduction,
+    ) -> Result<Self, GraphError> {
+        Self::new(BCE::new(parents, reduction)?)
     }
 
     pub(in crate::nn) fn calc_value_by_parents(

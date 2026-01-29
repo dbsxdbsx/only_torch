@@ -58,6 +58,7 @@ let dot = graph.to_dot();
 | [siamese_similarity](examples/siamese_similarity/) | 二分类 | **多输入**、共享编码器 | `共享Encoder → Concat → 1` | `cargo run --example siamese_similarity` |
 | [dual_output_classify](examples/dual_output_classify/) | 多任务 | **多输出**、多 Loss 训练 | `Shared → (Cls, Reg)` | `cargo run --example dual_output_classify` |
 | [multi_io_fusion](examples/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
+| [multi_label_point](examples/multi_label_point/) | **多标签分类** | **BceLoss**、multi_label_accuracy | `2 → 16 → 16 → 4` | `cargo run --example multi_label_point` |
 
 #### 详细说明
 
@@ -210,24 +211,47 @@ cargo run --example multi_io_fusion
 
 </details>
 
+<details>
+<summary><b>多标签分类示例</b>（点击展开）</summary>
+
+**多标签点分类（BCE Loss）** ⭐⭐
+
+展示 **多标签分类** 任务（一个样本可以同时属于多个类别）：
+- `BceLoss`：二元交叉熵，每个输出独立
+- `multi_label_accuracy`：标签级准确率指标
+- 与 `CrossEntropyLoss`（互斥分类）的区别
+
+```bash
+cargo run --example multi_label_point
+# 多标签准确率 85%+
+```
+
+> **BCE vs CrossEntropy**：
+> - `CrossEntropyLoss`：所有类别概率和 = 1，只能"N 选 1"
+> - `BceLoss`：每个输出独立，可以"N 选 M"（多标签）
+
+</details>
+
 #### 特性覆盖矩阵
 
-| 特性 | xor | iris | sine | california | mnist | parity* | dual_input | siamese | dual_output | multi_io |
-|------|:---:|:----:|:----:|:----------:|:-----:|:-------:|:----------:|:-------:|:-----------:|:--------:|
-| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `Conv2d` 层 | | | | | ✅ | | | | | |
-| `RNN/LSTM/GRU` 层 | | | | | | ✅ | | | | |
-| `ModelState` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | | ✅ | ✅ |
-| `MseLoss` | | | ✅ | ✅ | | | ✅ | ✅ | ✅ | ✅ |
-| `MaeLoss` | | | 📌 | 📌 | | | 📌 | | 📌 | 📌 |
-| `DataLoader` | | ✅ | | ✅ | ✅ | | | | | |
-| `BucketedDataLoader` | | | | | | ✅ | | | | |
-| 变长序列 | | | | | | ✅ | | | | |
-| **多输入** (`forward2`) | | | | | | | ✅ | ✅ | | ✅ |
-| **多输出** (元组返回) | | | | | | | | | ✅ | ✅ |
-| 共享编码器 | | | | | | | | ✅ | | |
-| 多 Loss 训练 | | | | | | | | | ✅ | ✅ |
+| 特性 | xor | iris | sine | california | mnist | parity* | dual_input | siamese | dual_output | multi_io | multi_label |
+|------|:---:|:----:|:----:|:----------:|:-----:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|
+| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Conv2d` 层 | | | | | ✅ | | | | | | |
+| `RNN/LSTM/GRU` 层 | | | | | | ✅ | | | | | |
+| `ModelState` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | | ✅ | ✅ | |
+| `MseLoss` | | | ✅ | ✅ | | | ✅ | ✅ | ✅ | ✅ | |
+| **`BceLoss`** | | | | | | | | | | | ✅ |
+| `MaeLoss` | | | 📌 | 📌 | | | 📌 | | 📌 | 📌 | |
+| `DataLoader` | | ✅ | | ✅ | ✅ | | | | | | |
+| `BucketedDataLoader` | | | | | | ✅ | | | | | |
+| 变长序列 | | | | | | ✅ | | | | | |
+| **多输入** (`forward2`) | | | | | | | ✅ | ✅ | | ✅ | |
+| **多输出** (元组返回) | | | | | | | | | ✅ | ✅ | |
+| 共享编码器 | | | | | | | | ✅ | | | |
+| 多 Loss 训练 | | | | | | | | | ✅ | ✅ | |
+| **多标签分类** | | | | | | | | | | | ✅ |
 
 > 📌 = 可替换使用。`MaeLoss`（平均绝对误差）与 `MseLoss`（均方误差）的区别：
 > - `MseLoss`：对大误差敏感，适合干净数据

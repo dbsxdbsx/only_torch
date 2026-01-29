@@ -314,6 +314,147 @@ impl fmt::Display for RegressionMetric {
     }
 }
 
+/// 多标签分类指标结果
+///
+/// 用于多标签分类任务，提供**总体准确率**和**每个标签的准确率**。
+///
+/// ## 设计理念
+///
+/// - 实现 [`Metric`] trait，保持与其他指标的 API 一致性
+/// - 内部复用 [`ClassificationMetric`]，不创造新的基础类型
+/// - 一次计算同时得到总体和分项统计，避免重复遍历
+///
+/// ## 示例
+///
+/// ```rust
+/// use only_torch::metrics::multi_label_accuracy;
+/// use only_torch::tensor::Tensor;
+///
+/// let preds = Tensor::new(&[0.9, 0.1, 0.8, 0.2], &[2, 2]);
+/// let actuals = Tensor::new(&[1.0, 0.0, 1.0, 1.0], &[2, 2]);
+///
+/// let result = multilabel_loose_accuracy(&preds, &actuals, 0.5);
+///
+/// // 总体准确率
+/// println!("总体: {:.1}%", result.percent());
+///
+/// // 各标签准确率
+/// for (i, label_metric) in result.per_label().iter().enumerate() {
+///     println!("  标签{}: {:.1}%", i, label_metric.percent());
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct MultiLabelMetric {
+    /// 总体准确率（所有标签）
+    overall: ClassificationMetric,
+    /// 每个标签的准确率
+    per_label: Vec<ClassificationMetric>,
+    /// 样本数（非标签数）
+    num_samples: usize,
+}
+
+impl MultiLabelMetric {
+    /// 创建新的多标签指标结果
+    #[inline]
+    pub(crate) fn new(
+        overall: ClassificationMetric,
+        per_label: Vec<ClassificationMetric>,
+        num_samples: usize,
+    ) -> Self {
+        Self {
+            overall,
+            per_label,
+            num_samples,
+        }
+    }
+
+    // ========== Inherent methods（用户无需导入 Metric trait）==========
+
+    /// 获取总体准确率（0.0 ~ 1.0）
+    #[inline]
+    pub fn value(&self) -> f32 {
+        self.overall.value()
+    }
+
+    /// 获取总标签数（batch × num_labels）
+    #[inline]
+    pub fn n_samples(&self) -> usize {
+        self.overall.n_samples()
+    }
+
+    /// 获取总体百分比（0.0 ~ 100.0）
+    #[inline]
+    pub fn percent(&self) -> f32 {
+        self.overall.percent()
+    }
+
+    /// 获取总体加权值（value × n_samples）
+    #[inline]
+    pub fn weighted(&self) -> f32 {
+        self.overall.weighted()
+    }
+
+    // ========== 多标签特有方法 ==========
+
+    /// 获取每个标签的准确率
+    ///
+    /// 返回一个 slice，长度等于标签数。
+    /// 每个元素是该标签的 [`ClassificationMetric`]。
+    #[inline]
+    pub fn per_label(&self) -> &[ClassificationMetric] {
+        &self.per_label
+    }
+
+    /// 获取标签数
+    #[inline]
+    pub fn num_labels(&self) -> usize {
+        self.per_label.len()
+    }
+
+    /// 获取样本数（非标签数）
+    ///
+    /// 注意：`n_samples()` 返回的是总标签数（batch × num_labels），
+    /// 而 `num_samples()` 返回的是样本数（batch）。
+    #[inline]
+    pub fn num_samples(&self) -> usize {
+        self.num_samples
+    }
+}
+
+impl Metric for MultiLabelMetric {
+    #[inline]
+    fn value(&self) -> f32 {
+        self.value()
+    }
+
+    #[inline]
+    fn n_samples(&self) -> usize {
+        self.n_samples()
+    }
+
+    #[inline]
+    fn percent(&self) -> f32 {
+        self.percent()
+    }
+
+    #[inline]
+    fn weighted(&self) -> f32 {
+        self.weighted()
+    }
+}
+
+impl fmt::Display for MultiLabelMetric {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:.2}% (n={}, labels={})",
+            self.percent(),
+            self.num_samples,
+            self.num_labels()
+        )
+    }
+}
+
 // ============================================================================
 // 导出
 // ============================================================================
@@ -322,5 +463,10 @@ impl fmt::Display for RegressionMetric {
 pub use traits::{IntoClassLabels, IntoFloatValues};
 
 // 导出常用函数
-pub use classification::{accuracy, confusion_matrix, f1_score, precision, recall};
+pub use classification::{
+    accuracy, confusion_matrix, f1_score, multilabel_loose_accuracy, multilabel_strict_accuracy,
+    precision, recall,
+};
 pub use regression::r2_score;
+
+// 注：MultiLabelMetric 已在本模块定义并自动导出

@@ -97,6 +97,7 @@ pub enum NodeTypeDescriptor {
         axis: usize,
         new_dim: bool,
     },
+    BCE,
     MAE,
     MSE,
     SoftmaxCrossEntropy,

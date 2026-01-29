@@ -1274,6 +1274,7 @@ impl GraphInner {
                     "Concat" // 已有维度拼接（类似 torch.cat）
                 }
             }
+            NodeTypeDescriptor::BCE => "BCE",
             NodeTypeDescriptor::MAE => "MAE",
             NodeTypeDescriptor::MSE => "MSE",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",

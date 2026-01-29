@@ -19,6 +19,7 @@ mod module_trait; // Module trait 测试
 mod node_abs; // Abs 绝对值函数（|x|，梯度为 sign(x)）
 mod node_add;
 mod node_avg_pool2d; // AvgPool2d 节点（2D 平均池化）
+mod node_bce; // BCE 节点（Binary Cross Entropy，二元交叉熵损失）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
 mod node_divide; // Divide 节点（逐元素除法）
 mod node_flatten; // Flatten 节点（展平）

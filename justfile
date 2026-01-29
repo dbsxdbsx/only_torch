@@ -24,7 +24,7 @@ test-filter pattern:
 # ==================== Examples ====================
 
 # 运行所有 examples
-examples: example-xor example-iris example-sine example-mnist example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io
+examples: example-xor example-iris example-sine example-mnist example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -85,6 +85,10 @@ example-dual-output:
 example-multi-io:
     @echo "=== Running Multi IO Fusion (multi-input + multi-output) ==="
     cargo run --example multi_io_fusion
+
+example-multi-label:
+    @echo "=== Running Multi Label Point (BCE Loss) ==="
+    cargo run --example multi_label_point
 
 # ==================== 代码质量 ====================
 

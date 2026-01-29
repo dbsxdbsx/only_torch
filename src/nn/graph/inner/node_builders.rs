@@ -440,4 +440,37 @@ impl GraphInner {
         let handle = NodeHandle::new_mae_loss_with_reduction(&parents, reduction)?;
         self.add_node_to_list(handle, name, "mae", &[input_id, target_id])
     }
+
+    /// 创建 BCE（Binary Cross Entropy）损失节点（默认 Mean reduction）
+    ///
+    /// 采用 BCEWithLogitsLoss 形式，内置 Sigmoid 激活，数值稳定。
+    /// 适用于二分类和多标签分类任务。
+    ///
+    /// # 参数
+    /// - `logits_id`: 未激活的原始输出节点 ID
+    /// - `target_id`: 二值标签节点 ID（0 或 1）
+    /// - `name`: 节点名称（可选）
+    pub fn new_bce_loss_node(
+        &mut self,
+        logits_id: NodeId,
+        target_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[logits_id, target_id])?;
+        let handle = NodeHandle::new_bce_loss(&parents)?;
+        self.add_node_to_list(handle, name, "bce", &[logits_id, target_id])
+    }
+
+    /// 创建 BCE（Binary Cross Entropy）损失节点（指定 reduction 模式）
+    pub fn new_bce_loss_node_with_reduction(
+        &mut self,
+        logits_id: NodeId,
+        target_id: NodeId,
+        reduction: Reduction,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[logits_id, target_id])?;
+        let handle = NodeHandle::new_bce_loss_with_reduction(&parents, reduction)?;
+        self.add_node_to_list(handle, name, "bce", &[logits_id, target_id])
+    }
 }

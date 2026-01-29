@@ -26,8 +26,9 @@
 //! 本模块的指标函数（如 `precision`、`recall`、`f1_score`）均采用 **Macro-Average** 策略，
 //! 天然支持多分类场景，无需额外参数。
 
-use super::ClassificationMetric;
 use super::traits::IntoClassLabels;
+use super::{ClassificationMetric, MultiLabelMetric};
+use crate::tensor::Tensor;
 use std::collections::HashSet;
 
 /// 计算准确率（Accuracy）
@@ -387,6 +388,246 @@ pub fn f1_score(
     };
 
     ClassificationMetric::new(value, n)
+}
+
+/// 计算多标签宽松准确率（Multilabel Loose Accuracy）
+///
+/// 又称 **Hamming Accuracy**（= 1 - Hamming Loss），用于多标签分类任务。
+/// 统计所有标签判断正确的比例（标签级准确率），同时提供每个标签的独立准确率。
+///
+/// ## 计算方式
+///
+/// 将每个样本的每个标签视为独立的二分类判断：
+/// - 总标签数 = 样本数 × 标签数
+/// - 正确数 = 所有判断正确的标签数
+/// - 准确率 = 正确数 / 总标签数
+///
+/// ## 参数
+///
+/// - `predictions`: 预测值，形状 `[batch, num_labels]`
+/// - `actuals`: 真实值，形状 `[batch, num_labels]`
+/// - `threshold`: 阈值（通常为 0.5），`>= threshold` 视为正类
+///
+/// ## 返回值
+///
+/// 返回 [`MultiLabelMetric`](super::MultiLabelMetric)，提供：
+/// - **总体指标**：`.value()`, `.percent()`, `.n_samples()`, `.weighted()`
+/// - **分项指标**：`.per_label()` 返回每个标签的 [`ClassificationMetric`]
+/// - **辅助信息**：`.num_labels()`, `.num_samples()`
+///
+/// ## 示例
+///
+/// ```rust
+/// use only_torch::metrics::multilabel_loose_accuracy;
+/// use only_torch::tensor::Tensor;
+///
+/// // 3 个样本，4 个标签
+/// let predictions = Tensor::new(
+///     &[0.8, 0.3, 0.6, 0.1,   // 样本1: [1,0,1,0]
+///       0.2, 0.9, 0.4, 0.7,   // 样本2: [0,1,0,1]
+///       0.6, 0.6, 0.6, 0.6],  // 样本3: [1,1,1,1]
+///     &[3, 4],
+/// );
+/// let actuals = Tensor::new(
+///     &[1.0, 0.0, 1.0, 0.0,   // 样本1
+///       0.0, 1.0, 0.0, 1.0,   // 样本2
+///       1.0, 1.0, 0.0, 1.0],  // 样本3: 第3个标签预测错误
+///     &[3, 4],
+/// );
+///
+/// let result = multilabel_loose_accuracy(&predictions, &actuals, 0.5);
+///
+/// // 总体准确率
+/// assert!((result.value() - 11.0/12.0).abs() < 1e-6);
+/// assert_eq!(result.n_samples(), 12);  // 3 × 4 = 12 个标签
+///
+/// // 各标签准确率
+/// assert_eq!(result.num_labels(), 4);
+/// for (i, label_acc) in result.per_label().iter().enumerate() {
+///     println!("标签{}: {:.1}%", i, label_acc.percent());
+/// }
+/// ```
+///
+/// ## 与 multilabel_strict_accuracy 的区别
+///
+/// | 指标 | 计算单位 | 严格程度 | 业界术语 |
+/// |------|---------|---------|---------|
+/// | **`multilabel_loose_accuracy`** | 标签 | 宽松 | Hamming Accuracy |
+/// | `multilabel_strict_accuracy` | 样本 | 严格 | Exact Match Ratio |
+///
+/// ## 边界情况
+///
+/// - 空 Tensor → 返回 value=0.0, n_samples=0, per_label=[]
+/// - 形状不匹配 → panic
+pub fn multilabel_loose_accuracy(
+    predictions: &Tensor,
+    actuals: &Tensor,
+    threshold: f32,
+) -> MultiLabelMetric {
+    let pred_shape = predictions.shape();
+    let actual_shape = actuals.shape();
+
+    // 验证形状
+    if pred_shape.len() != 2 || actual_shape.len() != 2 {
+        panic!(
+            "multilabel_loose_accuracy: 期望 2D Tensor，实际 predictions={:?}, actuals={:?}",
+            pred_shape, actual_shape
+        );
+    }
+
+    if pred_shape != actual_shape {
+        panic!(
+            "multilabel_loose_accuracy: 形状不匹配，predictions={:?}, actuals={:?}",
+            pred_shape, actual_shape
+        );
+    }
+
+    let batch_size = pred_shape[0];
+    let num_labels = pred_shape[1];
+    let total = batch_size * num_labels;
+
+    if total == 0 {
+        return MultiLabelMetric::new(ClassificationMetric::new(0.0, 0), vec![], 0);
+    }
+
+    // 一次遍历同时计算总体和每标签的准确率
+    let mut overall_correct = 0;
+    let mut per_label_correct = vec![0usize; num_labels];
+
+    for i in 0..batch_size {
+        for j in 0..num_labels {
+            let pred_positive = predictions[[i, j]] >= threshold;
+            let actual_positive = actuals[[i, j]] >= threshold;
+            if pred_positive == actual_positive {
+                overall_correct += 1;
+                per_label_correct[j] += 1;
+            }
+        }
+    }
+
+    // 构建每标签的 ClassificationMetric
+    let per_label: Vec<ClassificationMetric> = per_label_correct
+        .iter()
+        .map(|&correct| ClassificationMetric::new(correct as f32 / batch_size as f32, batch_size))
+        .collect();
+
+    let overall = ClassificationMetric::new(overall_correct as f32 / total as f32, total);
+
+    MultiLabelMetric::new(overall, per_label, batch_size)
+}
+
+/// 计算多标签严格准确率（Multilabel Strict Accuracy）
+///
+/// 又称 **Exact Match Ratio** / **Subset Accuracy**，用于多标签分类任务。
+/// 要求一个样本的**所有标签都预测正确**才算该样本正确。
+/// 这是比 [`multilabel_loose_accuracy`] 更严格的指标。
+///
+/// ## 计算方式
+///
+/// - 对每个样本，检查其所有标签是否完全匹配
+/// - 完全匹配的样本数 / 总样本数
+///
+/// ## 参数
+///
+/// - `predictions`: 预测值，形状 `[batch, num_labels]`
+/// - `actuals`: 真实值，形状 `[batch, num_labels]`
+/// - `threshold`: 阈值（通常为 0.5），`>= threshold` 视为正类
+///
+/// ## 返回值
+///
+/// 返回 [`ClassificationMetric`](super::ClassificationMetric)：
+/// - `.value()` - 严格准确率（0.0 ~ 1.0）
+/// - `.n_samples()` - 样本数（非标签数）
+///
+/// ## 示例
+///
+/// ```rust
+/// use only_torch::metrics::multilabel_strict_accuracy;
+/// use only_torch::tensor::Tensor;
+///
+/// // 3 个样本，4 个标签
+/// let predictions = Tensor::new(
+///     &[0.9, 0.1, 0.9, 0.1,   // 样本1: pred=[1,0,1,0] ✓ 完全匹配
+///       0.9, 0.1, 0.1, 0.1,   // 样本2: pred=[1,0,0,0] ✗ 标签1错误
+///       0.1, 0.9, 0.9, 0.1],  // 样本3: pred=[0,1,1,0] ✗ 标签1,3错误
+///     &[3, 4],
+/// );
+/// let actuals = Tensor::new(
+///     &[1.0, 0.0, 1.0, 0.0,   // 样本1: actual=[1,0,1,0]
+///       1.0, 1.0, 0.0, 0.0,   // 样本2: actual=[1,1,0,0]
+///       0.0, 0.0, 1.0, 1.0],  // 样本3: actual=[0,0,1,1]
+///     &[3, 4],
+/// );
+///
+/// let result = multilabel_strict_accuracy(&predictions, &actuals, 0.5);
+/// // 只有样本1完全匹配，所以 1/3 ≈ 33.3%
+/// assert!((result.value() - 1.0/3.0).abs() < 1e-6);
+/// assert_eq!(result.n_samples(), 3);  // 样本数，非标签数
+/// ```
+///
+/// ## 与 multilabel_loose_accuracy 的区别
+///
+/// | 指标 | 计算单位 | 严格程度 | 业界术语 |
+/// |------|---------|---------|---------|
+/// | `multilabel_loose_accuracy` | 标签 | 宽松 | Hamming Accuracy |
+/// | **`multilabel_strict_accuracy`** | 样本 | 严格 | Exact Match Ratio |
+///
+/// 例如：3 样本 × 4 标签，共 9/12 个标签正确
+/// - `multilabel_loose_accuracy` = 75%
+/// - `multilabel_strict_accuracy` = 33.3%（只有 1 个样本全对）
+///
+/// ## 边界情况
+///
+/// - 空 Tensor → 返回 value=0.0, n_samples=0
+/// - 形状不匹配 → panic
+pub fn multilabel_strict_accuracy(
+    predictions: &Tensor,
+    actuals: &Tensor,
+    threshold: f32,
+) -> ClassificationMetric {
+    let pred_shape = predictions.shape();
+    let actual_shape = actuals.shape();
+
+    // 验证形状
+    if pred_shape.len() != 2 || actual_shape.len() != 2 {
+        panic!(
+            "multilabel_strict_accuracy: 期望 2D Tensor，实际 predictions={:?}, actuals={:?}",
+            pred_shape, actual_shape
+        );
+    }
+
+    if pred_shape != actual_shape {
+        panic!(
+            "multilabel_strict_accuracy: 形状不匹配，predictions={:?}, actuals={:?}",
+            pred_shape, actual_shape
+        );
+    }
+
+    let batch_size = pred_shape[0];
+    let num_labels = pred_shape[1];
+
+    if batch_size == 0 {
+        return ClassificationMetric::new(0.0, 0);
+    }
+
+    // 统计完全匹配的样本数
+    let mut exact_match_count = 0;
+    for i in 0..batch_size {
+        let mut all_match = true;
+        for j in 0..num_labels {
+            let pred_positive = predictions[[i, j]] >= threshold;
+            let actual_positive = actuals[[i, j]] >= threshold;
+            if pred_positive != actual_positive {
+                all_match = false;
+                break;
+            }
+        }
+        if all_match {
+            exact_match_count += 1;
+        }
+    }
+
+    ClassificationMetric::new(exact_match_count as f32 / batch_size as f32, batch_size)
 }
 
 /// 计算混淆矩阵（Confusion Matrix）
