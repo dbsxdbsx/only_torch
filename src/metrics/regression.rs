@@ -2,15 +2,25 @@
 //!
 //! 用于评估回归模型性能的指标函数。
 //!
+//! ## 统一接口
+//!
+//! 所有回归指标函数返回 [`RegressionMetric`](super::RegressionMetric)，
+//! 实现了 [`Metric`](super::Metric) trait，提供统一的访问方式：
+//!
+//! - `.value()` - 获取指标值
+//! - `.n_samples()` - 获取样本数
+//! - `.percent()` - 百分比形式
+//! - `.weighted()` - 加权值（批处理累加用）
+//!
 //! ## 多态输入
 //!
 //! 所有函数都支持多种输入类型：
-//! - `&[f32]` / `Vec<f32>` - 浮点数数组
-//! - `&[f64]` / `Vec<f64>` - 双精度数组（自动转换）
+//! - `&[f32]` / `Vec<f32>` / `[f32; N]` - 浮点数数组
 //! - `&Tensor` - 自动处理：
 //!   - `[batch]` 形状 → 直接取值
 //!   - `[batch, 1]` 形状 → 展平取值
 
+use super::RegressionMetric;
 use super::traits::IntoFloatValues;
 
 /// 计算 R²（决定系数 / Coefficient of Determination）
@@ -37,7 +47,9 @@ use super::traits::IntoFloatValues;
 ///
 /// ## 返回值
 ///
-/// R² 分数，范围通常在 `(-∞, 1.0]`
+/// 返回 [`RegressionMetric`](super::RegressionMetric)，通过统一接口访问：
+/// - `.value()` - R² 分数（通常在 `(-∞, 1.0]`）
+/// - `.n_samples()` - 样本数
 ///
 /// ## 示例
 ///
@@ -46,31 +58,32 @@ use super::traits::IntoFloatValues;
 /// use only_torch::tensor::Tensor;
 ///
 /// // 方式 1：直接传 slice
-/// let r2 = r2_score(&[2.5, 0.0, 2.0, 8.0], &[3.0, -0.5, 2.0, 7.0]);
-/// assert!((r2 - 0.9486).abs() < 0.001);
+/// let result = r2_score(&[2.5, 0.0, 2.0, 8.0], &[3.0, -0.5, 2.0, 7.0]);
+/// assert!((result.value() - 0.9486).abs() < 0.001);
+/// assert_eq!(result.n_samples(), 4);
 ///
 /// // 方式 2：传 Tensor
-/// let preds = Tensor::new(&[4], &[2.5, 0.0, 2.0, 8.0]);
-/// let actuals = Tensor::new(&[4], &[3.0, -0.5, 2.0, 7.0]);
-/// let r2 = r2_score(&preds, &actuals);
-/// assert!((r2 - 0.9486).abs() < 0.001);
+/// let preds = Tensor::new(&[2.5f32, 0.0, 2.0, 8.0], &[4]);
+/// let actuals = Tensor::new(&[3.0f32, -0.5, 2.0, 7.0], &[4]);
+/// let result = r2_score(&preds, &actuals);
+/// assert!((result.value() - 0.9486).abs() < 0.001);
 /// ```
 ///
 /// ## 边界情况
 ///
 /// - 如果所有真实值相同（SS_tot = 0）：
-///   - 预测完美（SS_res = 0）→ 返回 1.0
-///   - 预测有误差 → 返回 0.0
-/// - 空输入 → 返回 0.0
+///   - 预测完美（SS_res = 0）→ 返回 value=1.0
+///   - 预测有误差 → 返回 value=0.0
+/// - 空输入 → 返回 value=0.0, n_samples=0
 pub fn r2_score(
     predictions: &(impl IntoFloatValues + ?Sized),
     actuals: &(impl IntoFloatValues + ?Sized),
-) -> f32 {
+) -> RegressionMetric {
     let pred_vals = predictions.to_float_values();
     let true_vals = actuals.to_float_values();
 
     if pred_vals.is_empty() || true_vals.is_empty() {
-        return 0.0;
+        return RegressionMetric::new(0.0, 0);
     }
 
     let n = pred_vals.len().min(true_vals.len());
@@ -92,9 +105,11 @@ pub fn r2_score(
         .sum();
 
     // 处理边界情况：所有真实值相同
-    if ss_tot == 0.0 {
-        return if ss_res == 0.0 { 1.0 } else { 0.0 };
-    }
+    let value = if ss_tot == 0.0 {
+        if ss_res == 0.0 { 1.0 } else { 0.0 }
+    } else {
+        1.0 - (ss_res / ss_tot)
+    };
 
-    1.0 - (ss_res / ss_tot)
+    RegressionMetric::new(value, n)
 }

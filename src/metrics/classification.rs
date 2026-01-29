@@ -2,6 +2,16 @@
 //!
 //! 用于评估分类模型性能的指标函数。
 //!
+//! ## 统一接口
+//!
+//! 所有分类指标函数返回 [`ClassificationMetric`](super::ClassificationMetric)，
+//! 实现了 [`Metric`](super::Metric) trait，提供统一的访问方式：
+//!
+//! - `.value()` - 获取指标值（0.0 ~ 1.0）
+//! - `.n_samples()` - 获取样本数
+//! - `.percent()` - 百分比形式
+//! - `.weighted()` - 加权值（批处理累加用）
+//!
 //! ## 多态输入
 //!
 //! 所有函数都支持多种输入类型：
@@ -16,6 +26,7 @@
 //! 本模块的指标函数（如 `precision`、`recall`、`f1_score`）均采用 **Macro-Average** 策略，
 //! 天然支持多分类场景，无需额外参数。
 
+use super::ClassificationMetric;
 use super::traits::IntoClassLabels;
 use std::collections::HashSet;
 
@@ -30,7 +41,9 @@ use std::collections::HashSet;
 ///
 /// ## 返回值
 ///
-/// 准确率，范围 `[0.0, 1.0]`
+/// 返回 [`ClassificationMetric`](super::ClassificationMetric)，通过统一接口访问：
+/// - `.value()` - 准确率（0.0 ~ 1.0）
+/// - `.n_samples()` - 样本数
 ///
 /// ## 示例
 ///
@@ -39,29 +52,30 @@ use std::collections::HashSet;
 /// use only_torch::tensor::Tensor;
 ///
 /// // 方式 1：直接传 slice
-/// let acc = accuracy(&[0, 1, 1, 0, 1], &[0, 1, 0, 0, 1]);
-/// assert!((acc - 0.8).abs() < 1e-6);  // 4/5 = 0.8
+/// let result = accuracy(&[0, 1, 1, 0, 1], &[0, 1, 0, 0, 1]);
+/// assert!((result.value() - 0.8).abs() < 1e-6);  // 4/5 = 0.8
+/// assert_eq!(result.n_samples(), 5);
 ///
 /// // 方式 2：传 Tensor（自动 argmax）
-/// let logits = Tensor::new(&[3, 2], &[0.1, 0.9, 0.8, 0.2, 0.3, 0.7]);
-/// let labels = Tensor::new(&[3, 2], &[0.0, 1.0, 1.0, 0.0, 0.0, 1.0]);
-/// let acc = accuracy(&logits, &labels);
-/// assert!((acc - 1.0).abs() < 1e-6);  // 完美预测
+/// let logits = Tensor::new(&[0.1f32, 0.9, 0.8, 0.2, 0.3, 0.7], &[3, 2]);
+/// let labels = Tensor::new(&[0.0f32, 1.0, 1.0, 0.0, 0.0, 1.0], &[3, 2]);
+/// let result = accuracy(&logits, &labels);
+/// assert!((result.value() - 1.0).abs() < 1e-6);  // 完美预测
 /// ```
 ///
 /// ## 边界情况
 ///
-/// - 空输入 → 返回 0.0
+/// - 空输入 → 返回 value=0.0, n_samples=0
 /// - 长度不一致 → 取较短者计算
 pub fn accuracy(
     predictions: &(impl IntoClassLabels + ?Sized),
     actuals: &(impl IntoClassLabels + ?Sized),
-) -> f32 {
+) -> ClassificationMetric {
     let pred_labels = predictions.to_class_labels();
     let true_labels = actuals.to_class_labels();
 
     if pred_labels.is_empty() || true_labels.is_empty() {
-        return 0.0;
+        return ClassificationMetric::new(0.0, 0);
     }
 
     let n = pred_labels.len().min(true_labels.len());
@@ -72,7 +86,7 @@ pub fn accuracy(
         .filter(|(pred, actual)| pred == actual)
         .count();
 
-    correct as f32 / n as f32
+    ClassificationMetric::new(correct as f32 / n as f32, n)
 }
 
 /// 计算精确率（Precision）- Macro-Average
@@ -91,33 +105,36 @@ pub fn accuracy(
 ///
 /// ## 返回值
 ///
-/// Macro-Precision，范围 `[0.0, 1.0]`
+/// 返回 [`ClassificationMetric`](super::ClassificationMetric)，通过统一接口访问：
+/// - `.value()` - Macro-Precision（0.0 ~ 1.0）
+/// - `.n_samples()` - 样本数
 ///
 /// ## 示例
 ///
 /// ```rust
-/// use only_torch::metrics::precision;
+/// use only_torch::metrics::{precision, Metric};
 ///
 /// // 二分类
-/// let prec = precision(&[1, 1, 0, 1, 0], &[1, 0, 0, 1, 1]);
+/// let result = precision(&[1, 1, 0, 1, 0], &[1, 0, 0, 1, 1]);
 /// // 类0: TP=1, FP=1 → Precision_0 = 0.5
 /// // 类1: TP=2, FP=1 → Precision_1 = 0.667
 /// // Macro = (0.5 + 0.667) / 2 ≈ 0.583
+/// assert!((result.value() - 0.583).abs() < 0.01);
 /// ```
 ///
 /// ## 边界情况
 ///
-/// - 空输入 → 返回 0.0
+/// - 空输入 → 返回 value=0.0, n_samples=0
 /// - 某个类从未被预测过（TP+FP=0）→ 该类不参与平均
 pub fn precision(
     predictions: &(impl IntoClassLabels + ?Sized),
     actuals: &(impl IntoClassLabels + ?Sized),
-) -> f32 {
+) -> ClassificationMetric {
     let pred_labels = predictions.to_class_labels();
     let true_labels = actuals.to_class_labels();
 
     if pred_labels.is_empty() || true_labels.is_empty() {
-        return 0.0;
+        return ClassificationMetric::new(0.0, 0);
     }
 
     let n = pred_labels.len().min(true_labels.len());
@@ -156,11 +173,13 @@ pub fn precision(
         }
     }
 
-    if valid_classes == 0 {
+    let value = if valid_classes == 0 {
         0.0
     } else {
         precision_sum / valid_classes as f32
-    }
+    };
+
+    ClassificationMetric::new(value, n)
 }
 
 /// 计算召回率（Recall）- Macro-Average
@@ -179,33 +198,36 @@ pub fn precision(
 ///
 /// ## 返回值
 ///
-/// Macro-Recall，范围 `[0.0, 1.0]`
+/// 返回 [`ClassificationMetric`](super::ClassificationMetric)，通过统一接口访问：
+/// - `.value()` - Macro-Recall（0.0 ~ 1.0）
+/// - `.n_samples()` - 样本数
 ///
 /// ## 示例
 ///
 /// ```rust
-/// use only_torch::metrics::recall;
+/// use only_torch::metrics::{recall, Metric};
 ///
 /// // 二分类
-/// let rec = recall(&[1, 1, 0, 1, 0], &[1, 0, 0, 1, 1]);
+/// let result = recall(&[1, 1, 0, 1, 0], &[1, 0, 0, 1, 1]);
 /// // 类0: TP=1, FN=1 → Recall_0 = 0.5
 /// // 类1: TP=2, FN=1 → Recall_1 = 2/3 ≈ 0.667
 /// // Macro = (0.5 + 0.667) / 2 ≈ 0.583
+/// assert!((result.value() - 0.583).abs() < 0.01);
 /// ```
 ///
 /// ## 边界情况
 ///
-/// - 空输入 → 返回 0.0
+/// - 空输入 → 返回 value=0.0, n_samples=0
 /// - 某个类从未出现在真实标签中（TP+FN=0）→ 该类不参与平均
 pub fn recall(
     predictions: &(impl IntoClassLabels + ?Sized),
     actuals: &(impl IntoClassLabels + ?Sized),
-) -> f32 {
+) -> ClassificationMetric {
     let pred_labels = predictions.to_class_labels();
     let true_labels = actuals.to_class_labels();
 
     if pred_labels.is_empty() || true_labels.is_empty() {
-        return 0.0;
+        return ClassificationMetric::new(0.0, 0);
     }
 
     let n = pred_labels.len().min(true_labels.len());
@@ -244,11 +266,13 @@ pub fn recall(
         }
     }
 
-    if valid_classes == 0 {
+    let value = if valid_classes == 0 {
         0.0
     } else {
         recall_sum / valid_classes as f32
-    }
+    };
+
+    ClassificationMetric::new(value, n)
 }
 
 /// 计算 F1 分数（F1 Score）- Macro-Average
@@ -267,33 +291,36 @@ pub fn recall(
 ///
 /// ## 返回值
 ///
-/// Macro-F1，范围 `[0.0, 1.0]`
+/// 返回 [`ClassificationMetric`](super::ClassificationMetric)，通过统一接口访问：
+/// - `.value()` - Macro-F1（0.0 ~ 1.0）
+/// - `.n_samples()` - 样本数
 ///
 /// ## 示例
 ///
 /// ```rust
-/// use only_torch::metrics::f1_score;
+/// use only_torch::metrics::{f1_score, Metric};
 ///
 /// // 二分类
-/// let f1 = f1_score(&[1, 1, 0, 1, 0], &[1, 0, 0, 1, 1]);
+/// let result = f1_score(&[1, 1, 0, 1, 0], &[1, 0, 0, 1, 1]);
 /// // 类0: Precision=0.5, Recall=0.5 → F1_0 = 0.5
 /// // 类1: Precision=0.667, Recall=0.667 → F1_1 ≈ 0.667
 /// // Macro = (0.5 + 0.667) / 2 ≈ 0.583
+/// assert!((result.value() - 0.583).abs() < 0.01);
 /// ```
 ///
 /// ## 边界情况
 ///
-/// - 空输入 → 返回 0.0
+/// - 空输入 → 返回 value=0.0, n_samples=0
 /// - 某个类的 Precision + Recall = 0 → 该类的 F1 视为 0
 pub fn f1_score(
     predictions: &(impl IntoClassLabels + ?Sized),
     actuals: &(impl IntoClassLabels + ?Sized),
-) -> f32 {
+) -> ClassificationMetric {
     let pred_labels = predictions.to_class_labels();
     let true_labels = actuals.to_class_labels();
 
     if pred_labels.is_empty() || true_labels.is_empty() {
-        return 0.0;
+        return ClassificationMetric::new(0.0, 0);
     }
 
     let n = pred_labels.len().min(true_labels.len());
@@ -353,11 +380,13 @@ pub fn f1_score(
         }
     }
 
-    if valid_classes == 0 {
+    let value = if valid_classes == 0 {
         0.0
     } else {
         f1_sum / valid_classes as f32
-    }
+    };
+
+    ClassificationMetric::new(value, n)
 }
 
 /// 计算混淆矩阵（Confusion Matrix）
@@ -381,14 +410,15 @@ pub fn f1_score(
 /// ```rust
 /// use only_torch::metrics::confusion_matrix;
 ///
-/// // 二分类
+/// // 二分类：predictions=[0,1,1,0,1], actuals=[0,1,0,0,1]
 /// let cm = confusion_matrix(&[0, 1, 1, 0, 1], &[0, 1, 0, 0, 1]);
-/// // 返回:
-/// // [[2, 0],   // 真实类0：2个预测对，0个预测错
-/// //  [1, 2]]   // 真实类1：1个预测错，2个预测对
-/// assert_eq!(cm[0][0], 2);  // TN
-/// assert_eq!(cm[1][1], 2);  // TP
-/// assert_eq!(cm[1][0], 1);  // FN
+/// // 返回 matrix[actual][pred]:
+/// // [[2, 1],   // actual=0: 2个正确(pred=0), 1个误判为1
+/// //  [0, 2]]   // actual=1: 0个误判为0, 2个正确(pred=1)
+/// assert_eq!(cm[0][0], 2);  // TN (actual=0, pred=0)
+/// assert_eq!(cm[0][1], 1);  // FP (actual=0, pred=1)
+/// assert_eq!(cm[1][0], 0);  // FN (actual=1, pred=0)
+/// assert_eq!(cm[1][1], 2);  // TP (actual=1, pred=1)
 /// ```
 ///
 /// ## 多分类示例
@@ -398,10 +428,12 @@ pub fn f1_score(
 /// use only_torch::tensor::Tensor;
 ///
 /// // 三分类，直接传 Tensor（自动 argmax）
-/// let logits = Tensor::new(&[0.9, 0.1, 0.0,   // 预测类0
-///                            0.1, 0.8, 0.1,   // 预测类1
-///                            0.0, 0.2, 0.8],  // 预测类2
-///                          &[3, 3]);
+/// let logits = Tensor::new(
+///     &[0.9f32, 0.1, 0.0,   // 预测类0
+///       0.1, 0.8, 0.1,       // 预测类1
+///       0.0, 0.2, 0.8],      // 预测类2
+///     &[3, 3],
+/// );
 /// let labels = [0, 1, 2];  // 真实标签
 ///
 /// let cm = confusion_matrix(&logits, &labels);

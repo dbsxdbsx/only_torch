@@ -189,5 +189,5 @@ fn evaluate_r2(model: &CaliforniaHousingMLP, loader: &DataLoader) -> Result<f32,
         actuals.extend(y_batch.to_float_values());
     }
 
-    Ok(r2_score(&predictions, &actuals))
+    Ok(r2_score(&predictions, &actuals).value())
 }

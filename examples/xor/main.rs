@@ -77,7 +77,7 @@ fn main() -> Result<(), GraphError> {
         let true_labels: Vec<usize> = labels.iter().map(|l| l.argmax(1)[[0]] as usize).collect();
 
         let acc = accuracy(&preds, &true_labels);
-        if acc == 1.0 {
+        if acc.value() >= 1.0 {
             println!("Epoch {:2}: 准确率 100% ✓", epoch + 1);
             break;
         }

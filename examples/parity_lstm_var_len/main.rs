@@ -146,11 +146,11 @@ fn evaluate(model: &ParityLSTM, test_loader: &BucketedDataLoader<'_>) -> Result<
     for (x_batch, y_batch) in test_loader.iter() {
         let output = model.forward(&x_batch)?;
         let logits = output.value()?.unwrap();
-        let batch_size = x_batch.shape()[0];
 
         // 直接用 accuracy，自动 argmax
-        total_correct += accuracy(&logits, &y_batch) * batch_size as f32;
-        total += batch_size;
+        let acc = accuracy(&logits, &y_batch);
+        total_correct += acc.weighted();
+        total += acc.n_samples();
     }
 
     Ok(100.0 * total_correct / total as f32)

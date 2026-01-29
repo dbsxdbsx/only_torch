@@ -26,8 +26,8 @@ use crate::tensor::Tensor;
 /// let acc = accuracy(&[0, 1, 1], &[0, 1, 0]);
 ///
 /// // 传 Tensor（自动 argmax）
-/// let logits = Tensor::new(&[3, 2], &[0.1, 0.9, 0.8, 0.2, 0.3, 0.7]);
-/// let labels = Tensor::new(&[3, 2], &[0.0, 1.0, 1.0, 0.0, 0.0, 1.0]);
+/// let logits = Tensor::new(&[0.1f32, 0.9, 0.8, 0.2, 0.3, 0.7], &[3, 2]);
+/// let labels = Tensor::new(&[0.0f32, 1.0, 1.0, 0.0, 0.0, 1.0], &[3, 2]);
 /// let acc = accuracy(&logits, &labels);
 /// ```
 pub trait IntoClassLabels {
@@ -41,7 +41,7 @@ pub trait IntoClassLabels {
 ///
 /// ## 支持的类型
 ///
-/// - `&[f32]` / `Vec<f32>` - 直接使用
+/// - `&[f32]` / `Vec<f32>` / `[f32; N]` - 直接使用
 /// - `Tensor` - 自动处理：
 ///   - `[batch]` 形状 → 直接取值
 ///   - `[batch, 1]` 形状 → 展平取值
@@ -56,8 +56,8 @@ pub trait IntoClassLabels {
 /// let r2 = r2_score(&[1.0, 2.0, 3.0], &[1.1, 2.0, 2.9]);
 ///
 /// // 传 Tensor
-/// let preds = Tensor::new(&[3, 1], &[1.0, 2.0, 3.0]);
-/// let actuals = Tensor::new(&[3, 1], &[1.1, 2.0, 2.9]);
+/// let preds = Tensor::new(&[1.0f32, 2.0, 3.0], &[3, 1]);
+/// let actuals = Tensor::new(&[1.1f32, 2.0, 2.9], &[3, 1]);
 /// let r2 = r2_score(&preds, &actuals);
 /// ```
 pub trait IntoFloatValues {
@@ -211,20 +211,6 @@ impl IntoFloatValues for Vec<f32> {
     }
 }
 
-// 为 [f64] slice 实现（转换精度）
-impl IntoFloatValues for [f64] {
-    fn to_float_values(&self) -> Vec<f32> {
-        self.iter().map(|&x| x as f32).collect()
-    }
-}
-
-// 为 Vec<f64> 实现
-impl IntoFloatValues for Vec<f64> {
-    fn to_float_values(&self) -> Vec<f32> {
-        self.iter().map(|&x| x as f32).collect()
-    }
-}
-
 // ============================================================================
 // 为固定大小数组实现（支持 &[1.0, 2.0, 3.0] 这种字面量写法）
 // ============================================================================
@@ -232,12 +218,6 @@ impl IntoFloatValues for Vec<f64> {
 impl<const N: usize> IntoFloatValues for [f32; N] {
     fn to_float_values(&self) -> Vec<f32> {
         self.to_vec()
-    }
-}
-
-impl<const N: usize> IntoFloatValues for [f64; N] {
-    fn to_float_values(&self) -> Vec<f32> {
-        self.iter().map(|&x| x as f32).collect()
     }
 }
 

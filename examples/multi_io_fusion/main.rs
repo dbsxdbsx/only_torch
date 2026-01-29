@@ -171,16 +171,15 @@ fn main() -> Result<(), GraphError> {
     println!("\n=== 最终评估 ===");
     let cls_acc = accuracy(&pred_classes, &true_classes);
     let r2 = r2_score(&reg_predictions, &reg_actuals);
-    let correct = (cls_acc * test_data.len() as f32).round() as usize;
     println!(
         "分类准确率: {:.1}% ({}/{})",
-        cls_acc * 100.0,
-        correct,
-        test_data.len()
+        cls_acc.percent(),
+        cls_acc.weighted().round() as usize,
+        cls_acc.n_samples()
     );
-    println!("回归 R²: {:.4} ({:.1}%)", r2, r2 * 100.0);
+    println!("回归 R²: {:.4} ({:.1}%)", r2.value(), r2.percent());
 
-    if cls_acc >= 0.9 && r2 >= 0.8 {
+    if cls_acc.value() >= 0.9 && r2.value() >= 0.8 {
         println!("\n✅ 多输入多输出融合成功！");
     } else {
         println!("\n⚠️ 可尝试增加 epoch 或调整学习率以提升效果。");

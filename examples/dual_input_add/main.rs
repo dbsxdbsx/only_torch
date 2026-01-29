@@ -71,7 +71,10 @@ fn main() -> Result<(), GraphError> {
     println!("  Input1(1) -> Linear(4, ReLU) ─┐");
     println!("                                ├─> Concat -> Linear(1)");
     println!("  Input2(1) -> Linear(4, ReLU) ─┘");
-    println!("\n优化器: Adam, 损失: MSE, 目标 R²: {:.0}%\n", target_r2 * 100.0);
+    println!(
+        "\n优化器: Adam, 损失: MSE, 目标 R²: {:.0}%\n",
+        target_r2 * 100.0
+    );
 
     // 5. 训练循环
     let epochs = 200;
@@ -126,14 +129,17 @@ fn main() -> Result<(), GraphError> {
 
     // 计算 R² 分数
     let r2 = r2_score(&predictions, &actuals);
-    println!("\nR² 分数: {:.4} ({:.1}%)", r2, r2 * 100.0);
+    println!("\nR² 分数: {:.4} ({:.1}%)", r2.value(), r2.percent());
 
-    if r2 >= target_r2 {
-        println!("✅ 训练成功！模型学会了加法（R² ≥ {:.0}%）。", target_r2 * 100.0);
+    if r2.value() >= target_r2 {
+        println!(
+            "✅ 训练成功！模型学会了加法（R² ≥ {:.0}%）。",
+            target_r2 * 100.0
+        );
     } else {
         println!(
             "⚠️ 未达到目标 R²（实际: {:.1}% < 目标: {:.0}%），可尝试增加 epoch 或调整学习率。",
-            r2 * 100.0,
+            r2.percent(),
             target_r2 * 100.0
         );
     }

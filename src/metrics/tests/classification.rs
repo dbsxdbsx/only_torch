@@ -8,21 +8,27 @@ fn test_accuracy_basic() {
     let predictions = vec![0, 1, 1, 0, 1];
     let actuals = vec![0, 1, 0, 0, 1];
 
-    let acc = accuracy(&predictions, &actuals);
+    let result = accuracy(&predictions, &actuals);
 
     // 4/5 = 0.8
-    assert!((acc - 0.8).abs() < 1e-6, "Accuracy = {acc}, 期望 0.8");
+    assert!(
+        (result.value() - 0.8).abs() < 1e-6,
+        "Accuracy = {}, 期望 0.8",
+        result.value()
+    );
+    assert_eq!(result.n_samples(), 5);
 }
 
 /// 完美预测：Accuracy = 1.0
 #[test]
 fn test_accuracy_perfect() {
     let labels = vec![0, 1, 2, 3, 4];
-    let acc = accuracy(&labels, &labels);
+    let result = accuracy(&labels, &labels);
 
     assert!(
-        (acc - 1.0).abs() < 1e-6,
-        "完美预测应返回 Accuracy = 1.0，实际 = {acc}"
+        (result.value() - 1.0).abs() < 1e-6,
+        "完美预测应返回 Accuracy = 1.0，实际 = {}",
+        result.value()
     );
 }
 
@@ -32,9 +38,13 @@ fn test_accuracy_all_wrong() {
     let predictions = vec![1, 0, 1, 0];
     let actuals = vec![0, 1, 0, 1];
 
-    let acc = accuracy(&predictions, &actuals);
+    let result = accuracy(&predictions, &actuals);
 
-    assert!(acc.abs() < 1e-6, "全错应返回 Accuracy = 0.0，实际 = {acc}");
+    assert!(
+        result.value().abs() < 1e-6,
+        "全错应返回 Accuracy = 0.0，实际 = {}",
+        result.value()
+    );
 }
 
 /// 多分类支持
@@ -44,12 +54,13 @@ fn test_accuracy_multiclass() {
     let predictions = vec![0, 1, 2, 1, 0, 2];
     let actuals = vec![0, 1, 2, 2, 0, 1];
 
-    let acc = accuracy(&predictions, &actuals);
+    let result = accuracy(&predictions, &actuals);
 
     // 4/6 ≈ 0.6667
     assert!(
-        (acc - 4.0 / 6.0).abs() < 1e-6,
-        "Accuracy = {acc}, 期望 ≈ 0.6667"
+        (result.value() - 4.0 / 6.0).abs() < 1e-6,
+        "Accuracy = {}, 期望 ≈ 0.6667",
+        result.value()
     );
 }
 
@@ -59,16 +70,19 @@ fn test_accuracy_empty() {
     let empty: Vec<i32> = vec![];
     let values = vec![0, 1, 2];
 
-    assert_eq!(accuracy(&empty, &values), 0.0);
-    assert_eq!(accuracy(&values, &empty), 0.0);
-    assert_eq!(accuracy(&empty, &empty), 0.0);
+    assert_eq!(accuracy(&empty, &values).value(), 0.0);
+    assert_eq!(accuracy(&values, &empty).value(), 0.0);
+    assert_eq!(accuracy(&empty, &empty).value(), 0.0);
+    // 空输入时 n_samples 应为 0
+    assert_eq!(accuracy(&empty, &values).n_samples(), 0);
 }
 
 /// 边界情况：单个样本
 #[test]
 fn test_accuracy_single_sample() {
-    assert_eq!(accuracy(&[1], &[1]), 1.0);
-    assert_eq!(accuracy(&[1], &[0]), 0.0);
+    assert_eq!(accuracy(&[1], &[1]).value(), 1.0);
+    assert_eq!(accuracy(&[1], &[0]).value(), 0.0);
+    assert_eq!(accuracy(&[1], &[1]).n_samples(), 1);
 }
 
 /// 长度不一致时取较短者
@@ -77,13 +91,15 @@ fn test_accuracy_length_mismatch() {
     let predictions = vec![0, 1, 1];
     let actuals = vec![0, 1]; // 较短
 
-    let acc = accuracy(&predictions, &actuals);
+    let result = accuracy(&predictions, &actuals);
 
     // 只用前 2 个元素，完美预测
     assert!(
-        (acc - 1.0).abs() < 1e-6,
-        "长度不一致时应取较短者，实际 Accuracy = {acc}"
+        (result.value() - 1.0).abs() < 1e-6,
+        "长度不一致时应取较短者，实际 Accuracy = {}",
+        result.value()
     );
+    assert_eq!(result.n_samples(), 2);
 }
 
 /// 支持不同整数类型
@@ -92,17 +108,29 @@ fn test_accuracy_different_types() {
     // u8 类型
     let pred_u8: Vec<u8> = vec![0, 1, 1, 0];
     let actual_u8: Vec<u8> = vec![0, 1, 0, 0];
-    assert!((accuracy(&pred_u8, &actual_u8) - 0.75).abs() < 1e-6);
+    assert!((accuracy(&pred_u8, &actual_u8).value() - 0.75).abs() < 1e-6);
 
     // i64 类型
     let pred_i64: Vec<i64> = vec![0, 1, 1, 0];
     let actual_i64: Vec<i64> = vec![0, 1, 0, 0];
-    assert!((accuracy(&pred_i64, &actual_i64) - 0.75).abs() < 1e-6);
+    assert!((accuracy(&pred_i64, &actual_i64).value() - 0.75).abs() < 1e-6);
 
     // usize 类型（常用于 argmax 结果）
     let pred_usize: Vec<usize> = vec![0, 1, 1, 0];
     let actual_usize: Vec<usize> = vec![0, 1, 0, 0];
-    assert!((accuracy(&pred_usize, &actual_usize) - 0.75).abs() < 1e-6);
+    assert!((accuracy(&pred_usize, &actual_usize).value() - 0.75).abs() < 1e-6);
+}
+
+/// 测试 Metric trait 方法
+#[test]
+fn test_accuracy_metric_trait() {
+    let result = accuracy(&[0, 1, 1, 0, 1], &[0, 1, 0, 0, 1]);
+
+    // percent() 测试
+    assert!((result.percent() - 80.0).abs() < 1e-4);
+
+    // weighted() 测试：value × n_samples
+    assert!((result.weighted() - 0.8 * 5.0).abs() < 1e-4);
 }
 
 // ==================== Precision 测试 ====================
@@ -113,16 +141,18 @@ fn test_precision_binary() {
     let predictions = vec![1, 1, 0, 1, 0];
     let actuals = vec![1, 0, 0, 1, 1];
 
-    let prec = precision(&predictions, &actuals);
+    let result = precision(&predictions, &actuals);
 
     // 类0: TP=1, FP=1 → Precision_0 = 0.5
     // 类1: TP=2, FP=1 → Precision_1 = 2/3 ≈ 0.667
     // Macro = (0.5 + 0.667) / 2 ≈ 0.583
     let expected = (0.5 + 2.0 / 3.0) / 2.0;
     assert!(
-        (prec - expected).abs() < 1e-4,
-        "Precision = {prec}, 期望 ≈ {expected}"
+        (result.value() - expected).abs() < 1e-4,
+        "Precision = {}, 期望 ≈ {expected}",
+        result.value()
     );
+    assert_eq!(result.n_samples(), 5);
 }
 
 /// Precision 多分类测试
@@ -132,7 +162,7 @@ fn test_precision_multiclass() {
     let predictions = vec![0, 1, 2, 1, 0];
     let actuals = vec![0, 1, 2, 2, 0];
 
-    let prec = precision(&predictions, &actuals);
+    let result = precision(&predictions, &actuals);
 
     // 类0: TP=2, FP=0 → Precision_0 = 1.0
     // 类1: TP=1, FP=1 → Precision_1 = 0.5
@@ -140,8 +170,9 @@ fn test_precision_multiclass() {
     // Macro = (1.0 + 0.5 + 1.0) / 3 ≈ 0.833
     let expected = (1.0 + 0.5 + 1.0) / 3.0;
     assert!(
-        (prec - expected).abs() < 1e-4,
-        "Precision = {prec}, 期望 ≈ {expected}"
+        (result.value() - expected).abs() < 1e-4,
+        "Precision = {}, 期望 ≈ {expected}",
+        result.value()
     );
 }
 
@@ -149,11 +180,12 @@ fn test_precision_multiclass() {
 #[test]
 fn test_precision_perfect() {
     let labels = vec![0, 1, 2, 0, 1];
-    let prec = precision(&labels, &labels);
+    let result = precision(&labels, &labels);
 
     assert!(
-        (prec - 1.0).abs() < 1e-6,
-        "完美预测应返回 Precision = 1.0，实际 = {prec}"
+        (result.value() - 1.0).abs() < 1e-6,
+        "完美预测应返回 Precision = 1.0，实际 = {}",
+        result.value()
     );
 }
 
@@ -163,14 +195,15 @@ fn test_precision_all_wrong_binary() {
     let predictions = vec![1, 1, 1, 1];
     let actuals = vec![0, 0, 0, 0];
 
-    let prec = precision(&predictions, &actuals);
+    let result = precision(&predictions, &actuals);
 
     // 类0: 从未被预测 → 不参与平均
     // 类1: TP=0, FP=4 → Precision_1 = 0.0
     // Macro = 0.0 / 1 = 0.0
     assert!(
-        prec.abs() < 1e-6,
-        "全错应返回 Precision = 0.0，实际 = {prec}"
+        result.value().abs() < 1e-6,
+        "全错应返回 Precision = 0.0，实际 = {}",
+        result.value()
     );
 }
 
@@ -180,19 +213,19 @@ fn test_precision_empty() {
     let empty: Vec<i32> = vec![];
     let values = vec![0, 1, 2];
 
-    assert_eq!(precision(&empty, &values), 0.0);
-    assert_eq!(precision(&values, &empty), 0.0);
-    assert_eq!(precision(&empty, &empty), 0.0);
+    assert_eq!(precision(&empty, &values).value(), 0.0);
+    assert_eq!(precision(&values, &empty).value(), 0.0);
+    assert_eq!(precision(&empty, &empty).value(), 0.0);
 }
 
 /// 边界情况：单个样本
 #[test]
 fn test_precision_single_sample() {
     // 正确预测
-    assert!((precision(&[1], &[1]) - 1.0).abs() < 1e-6);
+    assert!((precision(&[1], &[1]).value() - 1.0).abs() < 1e-6);
 
     // 错误预测
-    assert!(precision(&[1], &[0]).abs() < 1e-6);
+    assert!(precision(&[1], &[0]).value().abs() < 1e-6);
 }
 
 /// 某个类从未被预测过（不参与平均）
@@ -202,13 +235,17 @@ fn test_precision_class_never_predicted() {
     let predictions = vec![0, 0, 1, 1];
     let actuals = vec![0, 2, 1, 2];
 
-    let prec = precision(&predictions, &actuals);
+    let result = precision(&predictions, &actuals);
 
     // 类0: TP=1, FP=1 → Precision_0 = 0.5
     // 类1: TP=1, FP=1 → Precision_1 = 0.5
     // 类2: 从未被预测 → 不参与平均
     // Macro = (0.5 + 0.5) / 2 = 0.5
-    assert!((prec - 0.5).abs() < 1e-6, "Precision = {prec}, 期望 0.5");
+    assert!(
+        (result.value() - 0.5).abs() < 1e-6,
+        "Precision = {}, 期望 0.5",
+        result.value()
+    );
 }
 
 /// 类别不平衡场景：验证 Macro-Average 不被大类主导
@@ -224,7 +261,7 @@ fn test_precision_imbalanced_classes() {
     let mut actuals = vec![0; 100]; // 100 个真实为 0
     actuals.extend(vec![1, 1]); // 2 个真实为 1
 
-    let prec = precision(&predictions, &actuals);
+    let result = precision(&predictions, &actuals);
 
     // 类0: TP=100, FP=2 → Precision_0 = 100/102 ≈ 0.980
     // 类1: 从未被预测 → 不参与平均
@@ -237,8 +274,9 @@ fn test_precision_imbalanced_classes() {
     // 这是合理的——如果模型从不预测某个类，该类的 Precision 无定义
     let precision_0 = 100.0 / 102.0;
     assert!(
-        (prec - precision_0).abs() < 1e-4,
-        "Precision = {prec}, 期望 ≈ {precision_0}"
+        (result.value() - precision_0).abs() < 1e-4,
+        "Precision = {}, 期望 ≈ {precision_0}",
+        result.value()
     );
 }
 
@@ -258,7 +296,7 @@ fn test_precision_imbalanced_small_class_all_wrong() {
     actuals.extend(vec![1, 1]); // 2 个真实为 1
     actuals.extend(vec![0, 0]); // 2 个真实为 0
 
-    let prec = precision(&predictions, &actuals);
+    let result = precision(&predictions, &actuals);
 
     // 类0: TP=10, FP=2 → Precision_0 = 10/12 ≈ 0.833
     // 类1: TP=0, FP=2 → Precision_1 = 0/2 = 0.0
@@ -275,15 +313,17 @@ fn test_precision_imbalanced_small_class_all_wrong() {
     let expected_macro = (precision_0 + precision_1) / 2.0;
 
     assert!(
-        (prec - expected_macro).abs() < 1e-4,
-        "Macro-Precision = {prec}, 期望 ≈ {expected_macro}"
+        (result.value() - expected_macro).abs() < 1e-4,
+        "Macro-Precision = {}, 期望 ≈ {expected_macro}",
+        result.value()
     );
 
     // 验证 Macro 确实比 Micro 低（暴露小类问题）
     let micro_precision = 10.0 / 14.0;
     assert!(
-        prec < micro_precision,
-        "Macro ({prec}) 应该 < Micro ({micro_precision})，说明小类问题被暴露"
+        result.value() < micro_precision,
+        "Macro ({}) 应该 < Micro ({micro_precision})，说明小类问题被暴露",
+        result.value()
     );
 }
 
@@ -295,15 +335,16 @@ fn test_recall_binary() {
     let predictions = vec![1, 1, 0, 1, 0];
     let actuals = vec![1, 0, 0, 1, 1];
 
-    let rec = recall(&predictions, &actuals);
+    let result = recall(&predictions, &actuals);
 
     // 类0: TP=1, FN=1 → Recall_0 = 0.5
     // 类1: TP=2, FN=1 → Recall_1 = 2/3 ≈ 0.667
     // Macro = (0.5 + 0.667) / 2 ≈ 0.583
     let expected = (0.5 + 2.0 / 3.0) / 2.0;
     assert!(
-        (rec - expected).abs() < 1e-4,
-        "Recall = {rec}, 期望 ≈ {expected}"
+        (result.value() - expected).abs() < 1e-4,
+        "Recall = {}, 期望 ≈ {expected}",
+        result.value()
     );
 }
 
@@ -314,7 +355,7 @@ fn test_recall_multiclass() {
     let predictions = vec![0, 1, 2, 1, 0];
     let actuals = vec![0, 1, 2, 2, 0];
 
-    let rec = recall(&predictions, &actuals);
+    let result = recall(&predictions, &actuals);
 
     // 类0: TP=2, FN=0 → Recall_0 = 1.0
     // 类1: TP=1, FN=0 → Recall_1 = 1.0
@@ -322,8 +363,9 @@ fn test_recall_multiclass() {
     // Macro = (1.0 + 1.0 + 0.5) / 3 ≈ 0.833
     let expected = (1.0 + 1.0 + 0.5) / 3.0;
     assert!(
-        (rec - expected).abs() < 1e-4,
-        "Recall = {rec}, 期望 ≈ {expected}"
+        (result.value() - expected).abs() < 1e-4,
+        "Recall = {}, 期望 ≈ {expected}",
+        result.value()
     );
 }
 
@@ -331,11 +373,12 @@ fn test_recall_multiclass() {
 #[test]
 fn test_recall_perfect() {
     let labels = vec![0, 1, 2, 0, 1];
-    let rec = recall(&labels, &labels);
+    let result = recall(&labels, &labels);
 
     assert!(
-        (rec - 1.0).abs() < 1e-6,
-        "完美预测应返回 Recall = 1.0，实际 = {rec}"
+        (result.value() - 1.0).abs() < 1e-6,
+        "完美预测应返回 Recall = 1.0，实际 = {}",
+        result.value()
     );
 }
 
@@ -345,12 +388,16 @@ fn test_recall_all_wrong_binary() {
     let predictions = vec![1, 1, 1, 1];
     let actuals = vec![0, 0, 0, 0];
 
-    let rec = recall(&predictions, &actuals);
+    let result = recall(&predictions, &actuals);
 
     // 类0: TP=0, FN=4 → Recall_0 = 0.0
     // 类1: 从未在真实标签中出现 → 不参与平均
     // Macro = 0.0 / 1 = 0.0
-    assert!(rec.abs() < 1e-6, "全错应返回 Recall = 0.0，实际 = {rec}");
+    assert!(
+        result.value().abs() < 1e-6,
+        "全错应返回 Recall = 0.0，实际 = {}",
+        result.value()
+    );
 }
 
 /// 边界情况：空输入
@@ -359,19 +406,19 @@ fn test_recall_empty() {
     let empty: Vec<i32> = vec![];
     let values = vec![0, 1, 2];
 
-    assert_eq!(recall(&empty, &values), 0.0);
-    assert_eq!(recall(&values, &empty), 0.0);
-    assert_eq!(recall(&empty, &empty), 0.0);
+    assert_eq!(recall(&empty, &values).value(), 0.0);
+    assert_eq!(recall(&values, &empty).value(), 0.0);
+    assert_eq!(recall(&empty, &empty).value(), 0.0);
 }
 
 /// 边界情况：单个样本
 #[test]
 fn test_recall_single_sample() {
     // 正确预测
-    assert!((recall(&[1], &[1]) - 1.0).abs() < 1e-6);
+    assert!((recall(&[1], &[1]).value() - 1.0).abs() < 1e-6);
 
     // 错误预测
-    assert!(recall(&[1], &[0]).abs() < 1e-6);
+    assert!(recall(&[1], &[0]).value().abs() < 1e-6);
 }
 
 /// 某个类从未在真实标签中出现（不参与平均）
@@ -381,13 +428,17 @@ fn test_recall_class_never_in_actuals() {
     let predictions = vec![0, 2, 1, 2];
     let actuals = vec![0, 0, 1, 1];
 
-    let rec = recall(&predictions, &actuals);
+    let result = recall(&predictions, &actuals);
 
     // 类0: TP=1, FN=1 → Recall_0 = 0.5
     // 类1: TP=1, FN=1 → Recall_1 = 0.5
     // 类2: 从未在真实标签中出现 → 不参与平均
     // Macro = (0.5 + 0.5) / 2 = 0.5
-    assert!((rec - 0.5).abs() < 1e-6, "Recall = {rec}, 期望 0.5");
+    assert!(
+        (result.value() - 0.5).abs() < 1e-6,
+        "Recall = {}, 期望 0.5",
+        result.value()
+    );
 }
 
 /// 类别不平衡场景：验证 Macro-Average 暴露小类问题
@@ -401,7 +452,7 @@ fn test_recall_imbalanced_small_class_all_missed() {
     let mut actuals = vec![0; 10]; // 10 个真实为 0
     actuals.extend(vec![1, 1]); // 2 个真实为 1
 
-    let rec = recall(&predictions, &actuals);
+    let result = recall(&predictions, &actuals);
 
     // 类0: TP=10, FN=0 → Recall_0 = 1.0
     // 类1: TP=0, FN=2 → Recall_1 = 0.0
@@ -416,15 +467,17 @@ fn test_recall_imbalanced_small_class_all_missed() {
     let expected_macro = (1.0 + 0.0) / 2.0;
 
     assert!(
-        (rec - expected_macro).abs() < 1e-4,
-        "Macro-Recall = {rec}, 期望 ≈ {expected_macro}"
+        (result.value() - expected_macro).abs() < 1e-4,
+        "Macro-Recall = {}, 期望 ≈ {expected_macro}",
+        result.value()
     );
 
     // 验证 Macro 确实比 Micro 低（暴露小类问题）
     let micro_recall = 10.0 / 12.0;
     assert!(
-        rec < micro_recall,
-        "Macro ({rec}) 应该 < Micro ({micro_recall})，说明小类漏检问题被暴露"
+        result.value() < micro_recall,
+        "Macro ({}) 应该 < Micro ({micro_recall})，说明小类漏检问题被暴露",
+        result.value()
     );
 }
 
@@ -436,7 +489,7 @@ fn test_f1_score_binary() {
     let predictions = vec![1, 1, 0, 1, 0];
     let actuals = vec![1, 0, 0, 1, 1];
 
-    let f1 = f1_score(&predictions, &actuals);
+    let result = f1_score(&predictions, &actuals);
 
     // 类0: TP=1, FP=1, FN=1 → P=0.5, R=0.5 → F1_0 = 0.5
     // 类1: TP=2, FP=1, FN=1 → P=2/3, R=2/3 → F1_1 = 2/3
@@ -444,7 +497,11 @@ fn test_f1_score_binary() {
     let f1_0 = 0.5;
     let f1_1 = 2.0 / 3.0;
     let expected = (f1_0 + f1_1) / 2.0;
-    assert!((f1 - expected).abs() < 1e-4, "F1 = {f1}, 期望 ≈ {expected}");
+    assert!(
+        (result.value() - expected).abs() < 1e-4,
+        "F1 = {}, 期望 ≈ {expected}",
+        result.value()
+    );
 }
 
 /// F1 多分类测试
@@ -454,7 +511,7 @@ fn test_f1_score_multiclass() {
     let predictions = vec![0, 1, 2, 1, 0];
     let actuals = vec![0, 1, 2, 2, 0];
 
-    let f1 = f1_score(&predictions, &actuals);
+    let result = f1_score(&predictions, &actuals);
 
     // 类0: P=1.0, R=1.0 → F1_0 = 1.0
     // 类1: P=0.5, R=1.0 → F1_1 = 2*0.5*1.0/(0.5+1.0) = 2/3 ≈ 0.667
@@ -464,18 +521,23 @@ fn test_f1_score_multiclass() {
     let f1_1 = 2.0 * 0.5 * 1.0 / (0.5 + 1.0);
     let f1_2 = 2.0 * 1.0 * 0.5 / (1.0 + 0.5);
     let expected = (f1_0 + f1_1 + f1_2) / 3.0;
-    assert!((f1 - expected).abs() < 1e-4, "F1 = {f1}, 期望 ≈ {expected}");
+    assert!(
+        (result.value() - expected).abs() < 1e-4,
+        "F1 = {}, 期望 ≈ {expected}",
+        result.value()
+    );
 }
 
 /// 完美预测：F1 = 1.0
 #[test]
 fn test_f1_score_perfect() {
     let labels = vec![0, 1, 2, 0, 1];
-    let f1 = f1_score(&labels, &labels);
+    let result = f1_score(&labels, &labels);
 
     assert!(
-        (f1 - 1.0).abs() < 1e-6,
-        "完美预测应返回 F1 = 1.0，实际 = {f1}"
+        (result.value() - 1.0).abs() < 1e-6,
+        "完美预测应返回 F1 = 1.0，实际 = {}",
+        result.value()
     );
 }
 
@@ -485,12 +547,16 @@ fn test_f1_score_all_wrong_binary() {
     let predictions = vec![1, 1, 1, 1];
     let actuals = vec![0, 0, 0, 0];
 
-    let f1 = f1_score(&predictions, &actuals);
+    let result = f1_score(&predictions, &actuals);
 
     // 类0: TP=0, FP=0, FN=4 → P=0, R=0 → F1_0 = 0
     // 类1: TP=0, FP=4, FN=0 → P=0, R=undefined(0) → F1_1 = 0
     // Macro = 0.0
-    assert!(f1.abs() < 1e-6, "全错应返回 F1 = 0.0，实际 = {f1}");
+    assert!(
+        result.value().abs() < 1e-6,
+        "全错应返回 F1 = 0.0，实际 = {}",
+        result.value()
+    );
 }
 
 /// 边界情况：空输入
@@ -499,19 +565,19 @@ fn test_f1_score_empty() {
     let empty: Vec<i32> = vec![];
     let values = vec![0, 1, 2];
 
-    assert_eq!(f1_score(&empty, &values), 0.0);
-    assert_eq!(f1_score(&values, &empty), 0.0);
-    assert_eq!(f1_score(&empty, &empty), 0.0);
+    assert_eq!(f1_score(&empty, &values).value(), 0.0);
+    assert_eq!(f1_score(&values, &empty).value(), 0.0);
+    assert_eq!(f1_score(&empty, &empty).value(), 0.0);
 }
 
 /// 边界情况：单个样本
 #[test]
 fn test_f1_score_single_sample() {
     // 正确预测
-    assert!((f1_score(&[1], &[1]) - 1.0).abs() < 1e-6);
+    assert!((f1_score(&[1], &[1]).value() - 1.0).abs() < 1e-6);
 
     // 错误预测
-    assert!(f1_score(&[1], &[0]).abs() < 1e-6);
+    assert!(f1_score(&[1], &[0]).value().abs() < 1e-6);
 }
 
 /// 类别不平衡场景：验证 Macro-F1 暴露小类问题
@@ -523,7 +589,7 @@ fn test_f1_score_imbalanced() {
     let mut actuals = vec![0; 10];
     actuals.extend(vec![1, 1]);
 
-    let f1 = f1_score(&predictions, &actuals);
+    let result = f1_score(&predictions, &actuals);
 
     // 类0: TP=10, FP=2, FN=0 → P=10/12, R=1.0 → F1_0 = 2*(10/12)*1/(10/12+1) ≈ 0.909
     // 类1: TP=0, FP=0, FN=2 → P=0, R=0 → F1_1 = 0
@@ -535,16 +601,18 @@ fn test_f1_score_imbalanced() {
     let expected = (f1_0 + f1_1) / 2.0;
 
     assert!(
-        (f1 - expected).abs() < 1e-4,
-        "Macro-F1 = {f1}, 期望 ≈ {expected}"
+        (result.value() - expected).abs() < 1e-4,
+        "Macro-F1 = {}, 期望 ≈ {expected}",
+        result.value()
     );
 
     // 验证 Macro-F1 确实较低（暴露小类问题）
     // 如果是 Micro-F1 = Accuracy = 10/12 ≈ 0.833
     let micro_f1 = 10.0 / 12.0;
     assert!(
-        f1 < micro_f1,
-        "Macro-F1 ({f1}) 应该 < Micro-F1 ({micro_f1})，说明小类问题被暴露"
+        result.value() < micro_f1,
+        "Macro-F1 ({}) 应该 < Micro-F1 ({micro_f1})，说明小类问题被暴露",
+        result.value()
     );
 }
 
@@ -554,9 +622,9 @@ fn test_f1_is_harmonic_mean() {
     let predictions = vec![0, 1, 1, 0, 1, 0];
     let actuals = vec![0, 0, 1, 1, 1, 0];
 
-    let p = precision(&predictions, &actuals);
-    let r = recall(&predictions, &actuals);
-    let f1 = f1_score(&predictions, &actuals);
+    let p = precision(&predictions, &actuals).value();
+    let r = recall(&predictions, &actuals).value();
+    let f1 = f1_score(&predictions, &actuals).value();
 
     // 注意：Macro-F1 ≠ 2*Macro-P*Macro-R/(Macro-P+Macro-R)
     // 因为 Macro-F1 是先算每个类的 F1 再平均，而不是先算 Macro-P/R 再算 F1
@@ -583,11 +651,13 @@ fn test_accuracy_tensor_logits() {
     // 真实标签（one-hot）: 1, 0, 1
     let labels = Tensor::new(&[0.0, 1.0, 1.0, 0.0, 0.0, 1.0], &[3, 2]);
 
-    let acc = accuracy(&logits, &labels);
+    let result = accuracy(&logits, &labels);
     assert!(
-        (acc - 1.0).abs() < 1e-6,
-        "Tensor logits 完美预测应返回 1.0，实际 = {acc}"
+        (result.value() - 1.0).abs() < 1e-6,
+        "Tensor logits 完美预测应返回 1.0，实际 = {}",
+        result.value()
     );
+    assert_eq!(result.n_samples(), 3);
 }
 
 /// 测试 Tensor 与 slice 混合输入
@@ -598,10 +668,11 @@ fn test_accuracy_tensor_mixed_input() {
     // 真实标签：slice
     let labels = [0_usize, 1, 0];
 
-    let acc = accuracy(&logits, &labels);
+    let result = accuracy(&logits, &labels);
     assert!(
-        (acc - 1.0).abs() < 1e-6,
-        "Tensor 与 slice 混合完美预测应返回 1.0，实际 = {acc}"
+        (result.value() - 1.0).abs() < 1e-6,
+        "Tensor 与 slice 混合完美预测应返回 1.0，实际 = {}",
+        result.value()
     );
 }
 
@@ -612,11 +683,12 @@ fn test_accuracy_tensor_1d_labels() {
     let preds = Tensor::new(&[0.0, 1.0, 1.0, 0.0, 1.0], &[5]);
     let labels = Tensor::new(&[0.0, 1.0, 0.0, 0.0, 1.0], &[5]);
 
-    let acc = accuracy(&preds, &labels);
+    let result = accuracy(&preds, &labels);
     // 4/5 = 0.8
     assert!(
-        (acc - 0.8).abs() < 1e-6,
-        "1D Tensor 应正确计算 Accuracy，实际 = {acc}"
+        (result.value() - 0.8).abs() < 1e-6,
+        "1D Tensor 应正确计算 Accuracy，实际 = {}",
+        result.value()
     );
 }
 

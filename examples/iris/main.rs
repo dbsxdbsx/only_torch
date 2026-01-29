@@ -58,7 +58,7 @@ fn main() -> Result<(), GraphError> {
             let output = model.forward(&x_train)?;
             let preds = output.value()?.unwrap();
             // 直接传 Tensor 和 slice，自动 argmax
-            let acc = accuracy(&preds, labels) * 100.0;
+            let acc = accuracy(&preds, labels).percent();
 
             println!(
                 "Epoch {:3}: loss = {:.4}, accuracy = {:.1}%",
@@ -80,7 +80,8 @@ fn main() -> Result<(), GraphError> {
     let preds = output.value()?.unwrap();
 
     // 直接用 metrics 函数，自动 argmax
-    let final_acc = accuracy(&preds, labels) * 100.0;
+    let acc_result = accuracy(&preds, labels);
+    let final_acc = acc_result.percent();
     let cm = confusion_matrix(&preds, labels);
     let correct: usize = (0..cm.len()).map(|i| cm[i][i]).sum(); // 对角线之和
 

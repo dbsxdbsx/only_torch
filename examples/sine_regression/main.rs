@@ -102,7 +102,7 @@ fn main() -> Result<(), GraphError> {
 
     // 计算 R²（直接传 Tensor，自动处理）
     let r2 = r2_score(&predictions, &y_train);
-    println!("R² 分数: {:.4} ({:.1}%)", r2, r2 * 100.0);
+    println!("R² 分数: {:.4} ({:.1}%)", r2.value(), r2.percent());
 
     // 保存可视化
     let vis_result = graph.save_visualization("examples/sine_regression/sine_regression", None)?;

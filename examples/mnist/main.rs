@@ -129,11 +129,11 @@ fn main() -> Result<(), GraphError> {
         for (batch_x, batch_y) in test_loader.iter() {
             let output = model.forward(&batch_x)?;
             let preds = output.value()?.unwrap();
-            let batch_size = batch_x.shape()[0];
 
             // 直接用 accuracy，自动 argmax
-            total_correct += accuracy(&preds, &batch_y) * batch_size as f32;
-            total += batch_size;
+            let acc = accuracy(&preds, &batch_y);
+            total_correct += acc.weighted();
+            total += acc.n_samples();
         }
 
         let acc = total_correct / total as f32 * 100.0;

@@ -156,21 +156,20 @@ fn main() -> Result<(), GraphError> {
     }
 
     let acc = accuracy(&pred_labels, &true_labels);
-    let correct = (acc * test_data.len() as f32).round() as usize;
     println!(
         "\n准确率: {:.1}% ({}/{})",
-        acc * 100.0,
-        correct,
-        test_data.len()
+        acc.percent(),
+        acc.weighted().round() as usize,
+        acc.n_samples()
     );
 
     let target_accuracy = 0.85;
-    if acc >= target_accuracy {
+    if acc.value() >= target_accuracy {
         println!("✅ 训练成功！共享编码器验证通过。");
     } else {
         println!(
             "⚠️ 未达到目标准确率（实际: {:.1}% < 目标: {:.0}%）",
-            acc * 100.0,
+            acc.percent(),
             target_accuracy * 100.0
         );
     }
