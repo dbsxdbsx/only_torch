@@ -17,6 +17,7 @@ mod model;
 
 use model::MnistMLP;
 use only_torch::data::{DataLoader, MnistDataset, TensorDataset};
+use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 use only_torch::tensor_slice;
 use std::time::Instant;
@@ -121,29 +122,24 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        // 测试循环
-        let mut correct = 0;
+        // 测试循环（使用 accuracy 函数简化）
+        let mut total_correct = 0.0;
         let mut total = 0;
 
         for (batch_x, batch_y) in test_loader.iter() {
-            // PyTorch 风格：直接传 Tensor
             let output = model.forward(&batch_x)?;
-
             let preds = output.value()?.unwrap();
-            let pred_classes = preds.argmax(1); // [batch] 预测类别
-            let true_classes = batch_y.argmax(1); // [batch] 真实类别
-
-            // 统计正确预测数
             let batch_size = batch_x.shape()[0];
-            correct += (0..batch_size)
-                .filter(|&i| pred_classes[[i]] == true_classes[[i]])
-                .count();
+
+            // 直接用 accuracy，自动 argmax
+            total_correct += accuracy(&preds, &batch_y) * batch_size as f32;
             total += batch_size;
         }
 
-        let acc = correct as f32 / total as f32 * 100.0;
+        let acc = total_correct / total as f32 * 100.0;
         best_acc = best_acc.max(acc);
 
+        let correct = total_correct as usize;
         println!(
             "Epoch {:2}: loss = {:.4}, 准确率 = {:.1}% ({}/{}), {:.1}s",
             epoch + 1,

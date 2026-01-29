@@ -15,6 +15,7 @@ mod model;
 
 use data::{CLASS_NAMES, get_labels, load_iris};
 use model::IrisMLP;
+use only_torch::metrics::{accuracy, confusion_matrix};
 use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 
 fn main() -> Result<(), GraphError> {
@@ -56,12 +57,8 @@ fn main() -> Result<(), GraphError> {
             // 评估（重新 forward 获取最新预测）
             let output = model.forward(&x_train)?;
             let preds = output.value()?.unwrap();
-            let pred_classes = preds.argmax(1); // [n_samples] 预测类别
-
-            let correct = (0..n_samples)
-                .filter(|&i| pred_classes[[i]] as usize == labels[i])
-                .count();
-            let acc = correct as f32 / n_samples as f32 * 100.0;
+            // 直接传 Tensor 和 slice，自动 argmax
+            let acc = accuracy(&preds, labels) * 100.0;
 
             println!(
                 "Epoch {:3}: loss = {:.4}, accuracy = {:.1}%",
@@ -81,22 +78,11 @@ fn main() -> Result<(), GraphError> {
     // 6. 最终评估
     let output = model.forward(&x_train)?;
     let preds = output.value()?.unwrap();
-    let pred_classes = preds.argmax(1); // [n_samples] 预测类别
 
-    let mut correct = 0;
-    let mut confusion = [[0usize; 3]; 3]; // confusion[true][pred]
-
-    for i in 0..n_samples {
-        let pred_class = pred_classes[[i]] as usize;
-        let true_class = labels[i];
-
-        confusion[true_class][pred_class] += 1;
-        if pred_class == true_class {
-            correct += 1;
-        }
-    }
-
-    let final_acc = correct as f32 / n_samples as f32 * 100.0;
+    // 直接用 metrics 函数，自动 argmax
+    let final_acc = accuracy(&preds, labels) * 100.0;
+    let cm = confusion_matrix(&preds, labels);
+    let correct: usize = (0..cm.len()).map(|i| cm[i][i]).sum(); // 对角线之和
 
     println!("\n=== 最终结果 ===");
     println!("准确率: {final_acc:.1}% ({correct}/{n_samples})");
@@ -108,7 +94,7 @@ fn main() -> Result<(), GraphError> {
     for (i, name) in ["Set", "Ver", "Vir"].iter().enumerate() {
         println!(
             "True {}: {:3}  {:3}  {:3}",
-            name, confusion[i][0], confusion[i][1], confusion[i][2]
+            name, cm[i][0], cm[i][1], cm[i][2]
         );
     }
 

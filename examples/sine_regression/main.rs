@@ -13,6 +13,7 @@
 mod model;
 
 use model::SineMLP;
+use only_torch::metrics::r2_score;
 use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
 use only_torch::tensor::Tensor;
 
@@ -98,6 +99,10 @@ fn main() -> Result<(), GraphError> {
     }
 
     println!("\n全部样本最大误差: {max_error:.4}");
+
+    // 计算 R²（直接传 Tensor，自动处理）
+    let r2 = r2_score(&predictions, &y_train);
+    println!("R² 分数: {:.4} ({:.1}%)", r2, r2 * 100.0);
 
     // 保存可视化
     let vis_result = graph.save_visualization("examples/sine_regression/sine_regression", None)?;

@@ -18,6 +18,7 @@ mod model;
 
 use model::CaliforniaHousingMLP;
 use only_torch::data::{CaliforniaHousingDataset, DataLoader, TensorDataset};
+use only_torch::metrics::{IntoFloatValues, r2_score};
 use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
 use only_torch::tensor::Tensor;
 use std::time::Instant;
@@ -183,29 +184,10 @@ fn evaluate_r2(model: &CaliforniaHousingMLP, loader: &DataLoader) -> Result<f32,
         let output = model.forward(&x_batch)?;
         let pred = output.value()?.unwrap();
 
-        for i in 0..pred.shape()[0] {
-            predictions.push(pred[[i, 0]]);
-            actuals.push(y_batch[[i, 0]]);
-        }
+        // 直接用 trait 方法批量提取数据
+        predictions.extend(pred.to_float_values());
+        actuals.extend(y_batch.to_float_values());
     }
 
-    Ok(compute_r2(&predictions, &actuals))
-}
-
-/// 计算 R² 分数
-fn compute_r2(predictions: &[f32], actuals: &[f32]) -> f32 {
-    let mean_actual: f32 = actuals.iter().sum::<f32>() / actuals.len() as f32;
-
-    let ss_res: f32 = predictions
-        .iter()
-        .zip(actuals.iter())
-        .map(|(pred, actual)| (actual - pred).powi(2))
-        .sum();
-
-    let ss_tot: f32 = actuals
-        .iter()
-        .map(|actual| (actual - mean_actual).powi(2))
-        .sum();
-
-    1.0 - (ss_res / ss_tot)
+    Ok(r2_score(&predictions, &actuals))
 }

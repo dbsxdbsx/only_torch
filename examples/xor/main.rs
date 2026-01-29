@@ -13,6 +13,7 @@
 mod model;
 
 use model::XorMLP;
+use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 use only_torch::tensor::Tensor;
 
@@ -65,19 +66,18 @@ fn main() -> Result<(), GraphError> {
             optimizer.step()?;
         }
 
-        // 评估
-        let correct = inputs
+        // 评估：收集所有预测
+        let preds: Vec<usize> = inputs
             .iter()
-            .zip(labels.iter())
-            .filter(|(inp, lbl)| {
+            .map(|inp| {
                 let out = model.forward(inp).unwrap();
-                let pred = out.value().ok().flatten().unwrap();
-                pred.argmax(1).get_data_number().unwrap()
-                    == lbl.argmax(1).get_data_number().unwrap()
+                out.value().ok().flatten().unwrap().argmax(1)[[0]] as usize
             })
-            .count();
+            .collect();
+        let true_labels: Vec<usize> = labels.iter().map(|l| l.argmax(1)[[0]] as usize).collect();
 
-        if correct == 4 {
+        let acc = accuracy(&preds, &true_labels);
+        if acc == 1.0 {
             println!("Epoch {:2}: 准确率 100% ✓", epoch + 1);
             break;
         }

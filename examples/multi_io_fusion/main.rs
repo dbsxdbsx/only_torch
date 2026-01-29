@@ -13,6 +13,7 @@
 mod model;
 
 use model::MultiIOFusion;
+use only_torch::metrics::{accuracy, r2_score};
 use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, MseLoss, Optimizer};
 use only_torch::tensor::Tensor;
 
@@ -125,7 +126,8 @@ fn main() -> Result<(), GraphError> {
 
     // 测试
     println!("\n=== 测试结果 ===");
-    let mut correct = 0;
+    let mut pred_classes = Vec::new();
+    let mut true_classes = Vec::new();
     let mut reg_predictions = Vec::new();
     let mut reg_actuals = Vec::new();
 
@@ -141,10 +143,8 @@ fn main() -> Result<(), GraphError> {
             1
         };
         let true_cls = if cls_label[[0, 0]] > 0.5 { 0 } else { 1 };
-        let cls_correct = pred_cls == true_cls;
-        if cls_correct {
-            correct += 1;
-        }
+        pred_classes.push(pred_cls);
+        true_classes.push(true_cls);
 
         // 回归结果（收集用于 R² 计算）
         reg_pred.forward()?;
@@ -160,7 +160,7 @@ fn main() -> Result<(), GraphError> {
         let total = sum_a + sum_b;
 
         let cls_str = if pred_cls == 1 { "正" } else { "负" };
-        let mark = if cls_correct { "✓" } else { "✗" };
+        let mark = if pred_cls == true_cls { "✓" } else { "✗" };
 
         println!(
             "  sum={:+.2}: 分类={} {} | 目标={:.2}, 预测={:.2}, 误差={:.3}",
@@ -169,17 +169,18 @@ fn main() -> Result<(), GraphError> {
     }
 
     println!("\n=== 最终评估 ===");
-    let cls_accuracy = 100.0 * correct as f32 / test_data.len() as f32;
-    let r2 = compute_r2(&reg_predictions, &reg_actuals);
+    let cls_acc = accuracy(&pred_classes, &true_classes);
+    let r2 = r2_score(&reg_predictions, &reg_actuals);
+    let correct = (cls_acc * test_data.len() as f32).round() as usize;
     println!(
         "分类准确率: {:.1}% ({}/{})",
-        cls_accuracy,
+        cls_acc * 100.0,
         correct,
         test_data.len()
     );
     println!("回归 R²: {:.4} ({:.1}%)", r2, r2 * 100.0);
 
-    if cls_accuracy >= 90.0 && r2 >= 0.8 {
+    if cls_acc >= 0.9 && r2 >= 0.8 {
         println!("\n✅ 多输入多输出融合成功！");
     } else {
         println!("\n⚠️ 可尝试增加 epoch 或调整学习率以提升效果。");
@@ -193,26 +194,4 @@ fn main() -> Result<(), GraphError> {
     }
 
     Ok(())
-}
-
-/// 计算 R² 分数（决定系数）
-fn compute_r2(predictions: &[f32], actuals: &[f32]) -> f32 {
-    let mean_actual: f32 = actuals.iter().sum::<f32>() / actuals.len() as f32;
-
-    let ss_res: f32 = predictions
-        .iter()
-        .zip(actuals.iter())
-        .map(|(pred, actual)| (actual - pred).powi(2))
-        .sum();
-
-    let ss_tot: f32 = actuals
-        .iter()
-        .map(|actual| (actual - mean_actual).powi(2))
-        .sum();
-
-    if ss_tot == 0.0 {
-        if ss_res == 0.0 { 1.0 } else { 0.0 }
-    } else {
-        1.0 - ss_res / ss_tot
-    }
 }

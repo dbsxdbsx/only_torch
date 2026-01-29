@@ -16,6 +16,7 @@ mod model;
 
 use model::ParityRNN;
 use only_torch::data::{BucketedDataLoader, VarLenDataset, VarLenSample};
+use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 
 fn main() -> Result<(), GraphError> {
@@ -153,24 +154,20 @@ fn main() -> Result<(), GraphError> {
 
 /// 评估模型准确率
 fn evaluate(model: &ParityRNN, test_loader: &BucketedDataLoader<'_>) -> Result<f32, GraphError> {
-    let mut correct = 0;
+    let mut total_correct = 0.0;
     let mut total = 0;
 
     for (x_batch, y_batch) in test_loader.iter() {
         let output = model.forward(&x_batch)?;
         let logits = output.value()?.unwrap();
-
-        let pred = logits.argmax(1);
-        let true_labels = y_batch.argmax(1);
-
         let batch_size = x_batch.shape()[0];
-        correct += (0..batch_size)
-            .filter(|&i| pred[[i]] == true_labels[[i]])
-            .count();
+
+        // 直接用 accuracy，自动 argmax
+        total_correct += accuracy(&logits, &y_batch) * batch_size as f32;
         total += batch_size;
     }
 
-    Ok(100.0 * correct as f32 / total as f32)
+    Ok(100.0 * total_correct / total as f32)
 }
 
 /// 生成变长奇偶性检测数据集

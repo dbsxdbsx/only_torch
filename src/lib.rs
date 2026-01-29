@@ -8,6 +8,7 @@
 pub mod data;
 pub mod errors;
 pub mod logic;
+pub mod metrics;
 pub mod nn;
 pub mod tensor;
 pub mod utils;

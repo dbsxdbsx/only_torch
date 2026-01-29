@@ -18,6 +18,7 @@
 mod model;
 
 use model::DualInputAdder;
+use only_torch::metrics::r2_score;
 use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
 use only_torch::tensor::Tensor;
 
@@ -124,7 +125,7 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 计算 R² 分数
-    let r2 = compute_r2(&predictions, &actuals);
+    let r2 = r2_score(&predictions, &actuals);
     println!("\nR² 分数: {:.4} ({:.1}%)", r2, r2 * 100.0);
 
     if r2 >= target_r2 {
@@ -145,32 +146,4 @@ fn main() -> Result<(), GraphError> {
     }
 
     Ok(())
-}
-
-/// 计算 R² 分数（决定系数）
-///
-/// R² = 1 - SS_res / SS_tot
-/// - SS_res: 残差平方和（预测误差）
-/// - SS_tot: 总平方和（目标变量方差）
-fn compute_r2(predictions: &[f32], actuals: &[f32]) -> f32 {
-    let mean_actual: f32 = actuals.iter().sum::<f32>() / actuals.len() as f32;
-
-    let ss_res: f32 = predictions
-        .iter()
-        .zip(actuals.iter())
-        .map(|(pred, actual)| (actual - pred).powi(2))
-        .sum();
-
-    let ss_tot: f32 = actuals.iter().map(|actual| (actual - mean_actual).powi(2)).sum();
-
-    if ss_tot == 0.0 {
-        // 所有目标值相同，无法计算 R²
-        if ss_res == 0.0 {
-            1.0 // 完美预测
-        } else {
-            0.0
-        }
-    } else {
-        1.0 - ss_res / ss_tot
-    }
 }

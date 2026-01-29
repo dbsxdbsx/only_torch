@@ -10,6 +10,7 @@
 
 use approx::assert_abs_diff_eq;
 use only_torch::data::CaliforniaHousingDataset;
+use only_torch::metrics::r2_score;
 use only_torch::nn::layer::Linear;
 use only_torch::nn::optimizer::{Adam, Optimizer};
 use only_torch::nn::{Graph, GraphError, Module, VarActivationOps, VarLossOps};
@@ -166,21 +167,21 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
         graph.train();
 
         // 计算 R²
-        let r2_score = compute_r2(&predictions, &actuals);
-        best_r2 = best_r2.max(r2_score);
+        let r2_val = r2_score(&predictions, &actuals);
+        best_r2 = best_r2.max(r2_val);
 
         println!(
             "Epoch {:2}/{}: loss = {:.4}, R² = {:.2}% ({:.4}), 耗时 {:.2}s",
             epoch + 1,
             max_epochs,
             epoch_avg_loss,
-            r2_score * 100.0,
-            r2_score,
+            r2_val * 100.0,
+            r2_val,
             epoch_start.elapsed().as_secs_f32()
         );
 
         // 提前结束条件
-        if r2_score >= target_r2 {
+        if r2_val >= target_r2 {
             println!("\n🎉 达到目标 R² ≥ {:.0}%！", target_r2 * 100.0);
             break;
         }
@@ -243,24 +244,6 @@ fn build_batches(
     }
 
     batches
-}
-
-/// 计算 R² 分数
-fn compute_r2(predictions: &[f32], actuals: &[f32]) -> f32 {
-    let mean_actual: f32 = actuals.iter().sum::<f32>() / actuals.len() as f32;
-
-    let ss_res: f32 = predictions
-        .iter()
-        .zip(actuals.iter())
-        .map(|(pred, actual)| (actual - pred).powi(2))
-        .sum();
-
-    let ss_tot: f32 = actuals
-        .iter()
-        .map(|actual| (actual - mean_actual).powi(2))
-        .sum();
-
-    1.0 - (ss_res / ss_tot)
 }
 
 /// 简单验证数据集加载

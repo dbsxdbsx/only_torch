@@ -18,6 +18,7 @@ mod model;
 
 use model::ParityRNN;
 use only_torch::data::{DataLoader, TensorDataset};
+use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
 use only_torch::tensor::Tensor;
 
@@ -153,27 +154,22 @@ fn main() -> Result<(), GraphError> {
 fn evaluate(model: &ParityRNN, graph: &Graph, test_loader: &DataLoader) -> Result<f32, GraphError> {
     graph.eval();
 
-    let mut correct = 0;
+    let mut total_correct = 0.0;
     let mut total = 0;
 
     for (x_batch, y_batch) in test_loader.iter() {
-        // PyTorch 风格：直接传 Tensor
         let output = model.forward(&x_batch)?;
         let logits = output.value()?.unwrap();
-
-        let pred = logits.argmax(1);
-        let true_labels = y_batch.argmax(1);
-
         let batch_size = x_batch.shape()[0];
-        correct += (0..batch_size)
-            .filter(|&i| pred[[i]] == true_labels[[i]])
-            .count();
+
+        // 直接用 accuracy，自动 argmax
+        total_correct += accuracy(&logits, &y_batch) * batch_size as f32;
         total += batch_size;
     }
 
     graph.train();
 
-    Ok(100.0 * correct as f32 / total as f32)
+    Ok(100.0 * total_correct / total as f32)
 }
 
 /// 生成奇偶性检测数据（Tensor 格式）

@@ -18,6 +18,7 @@
 mod model;
 
 use model::SiameseSimilarity;
+use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
 use only_torch::tensor::Tensor;
 
@@ -72,7 +73,10 @@ fn main() -> Result<(), GraphError> {
     let test_data = generate_data(30, 123, threshold);
 
     // 统计数据分布
-    let train_positive = train_data.iter().filter(|(_, _, t)| t[[0, 0]] > 0.5).count();
+    let train_positive = train_data
+        .iter()
+        .filter(|(_, _, t)| t[[0, 0]] > 0.5)
+        .count();
     let test_positive = test_data.iter().filter(|(_, _, t)| t[[0, 0]] > 0.5).count();
 
     println!("网络结构（共享编码器）:");
@@ -81,7 +85,10 @@ fn main() -> Result<(), GraphError> {
     println!("             共享参数                  │");
     println!("               ↓                       │");
     println!("  Input2 ─> Encoder(8, ReLU) ─> Feat2 ─┘");
-    println!("\n任务: 判断 |x1 - x2| < {:.1} (相似=1, 不相似=0)", threshold);
+    println!(
+        "\n任务: 判断 |x1 - x2| < {:.1} (相似=1, 不相似=0)",
+        threshold
+    );
     println!(
         "数据: 训练 {} 条 (正例 {}), 测试 {} 条 (正例 {})",
         train_data.len(),
@@ -115,7 +122,8 @@ fn main() -> Result<(), GraphError> {
 
     // 6. 测试
     println!("\n=== 测试结果 ===");
-    let mut correct = 0;
+    let mut pred_labels = Vec::new();
+    let mut true_labels = Vec::new();
 
     for (x1, x2, target) in &test_data {
         let output = model.forward(x1, x2)?;
@@ -124,11 +132,10 @@ fn main() -> Result<(), GraphError> {
         let target_val = target[[0, 0]];
 
         // 预测：> 0.5 为相似
-        let pred_label = if pred_val > 0.5 { 1.0 } else { 0.0 };
-        let is_correct = (pred_label - target_val).abs() < 0.1;
-        if is_correct {
-            correct += 1;
-        }
+        let pred_label = if pred_val > 0.5 { 1 } else { 0 };
+        let true_label = target_val as i32;
+        pred_labels.push(pred_label);
+        true_labels.push(true_label);
 
         let x1_val = x1[[0, 0]];
         let x2_val = x2[[0, 0]];
@@ -139,21 +146,31 @@ fn main() -> Result<(), GraphError> {
             x2_val,
             diff,
             pred_val,
-            target_val as i32,
-            if is_correct { "✓" } else { "✗" }
+            true_label,
+            if pred_label == true_label {
+                "✓"
+            } else {
+                "✗"
+            }
         );
     }
 
-    let accuracy = correct as f32 / test_data.len() as f32;
-    println!("\n准确率: {:.1}% ({}/{})", accuracy * 100.0, correct, test_data.len());
+    let acc = accuracy(&pred_labels, &true_labels);
+    let correct = (acc * test_data.len() as f32).round() as usize;
+    println!(
+        "\n准确率: {:.1}% ({}/{})",
+        acc * 100.0,
+        correct,
+        test_data.len()
+    );
 
     let target_accuracy = 0.85;
-    if accuracy >= target_accuracy {
+    if acc >= target_accuracy {
         println!("✅ 训练成功！共享编码器验证通过。");
     } else {
         println!(
             "⚠️ 未达到目标准确率（实际: {:.1}% < 目标: {:.0}%）",
-            accuracy * 100.0,
+            acc * 100.0,
             target_accuracy * 100.0
         );
     }
