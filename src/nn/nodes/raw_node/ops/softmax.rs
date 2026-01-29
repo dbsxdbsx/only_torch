@@ -148,11 +148,7 @@ impl TraitNode for Softmax {
 
     fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
         let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
+            GraphError::ComputationError(format!("{}的父{}没有值", self.display_node(), parents[0]))
         })?;
 
         let output = Self::stable_softmax_batch(input);

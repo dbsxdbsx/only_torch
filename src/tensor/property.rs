@@ -89,7 +89,6 @@ impl Tensor {
         self.data.len()
     }
 
-
     /// 判断两个张量的形状是否严格一致。如：形状为 [1, 4]，[1, 4]和[4]是不一致的，会返回false
     pub fn is_same_shape(&self, other: &Self) -> bool {
         self.shape() == other.shape()

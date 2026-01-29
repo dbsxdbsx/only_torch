@@ -265,12 +265,8 @@ impl TraitNode for AvgPool2d {
         // 输入必须是 4D [batch, C, H', W']
         let input_shape = &self.input_shape;
         let grad_shape = upstream_grad.shape();
-        let (batch_size, channels, out_h, out_w) = (
-            grad_shape[0],
-            grad_shape[1],
-            grad_shape[2],
-            grad_shape[3],
-        );
+        let (batch_size, channels, out_h, out_w) =
+            (grad_shape[0], grad_shape[1], grad_shape[2], grad_shape[3]);
 
         let (k_h, k_w) = self.kernel_size;
         let (s_h, s_w) = self.stride;

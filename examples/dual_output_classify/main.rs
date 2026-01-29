@@ -29,11 +29,11 @@ use only_torch::metrics::{accuracy, r2_score};
 use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, MseLoss, Optimizer};
 use only_torch::tensor::Tensor;
 
-/// 生成训练数据：(x, cls_label, reg_target)
+/// 生成训练数据：(x, `cls_label`, `reg_target`)
 ///
 /// - x: 输入值
-/// - cls_label: one-hot 分类标签 [负=0, 正=1]
-/// - reg_target: 回归目标 |x|
+/// - `cls_label`: one-hot 分类标签 [负=0, 正=1]
+/// - `reg_target`: 回归目标 |x|
 fn generate_data(n: usize, seed: u64) -> Vec<(Tensor, Tensor, Tensor)> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -141,12 +141,8 @@ fn main() -> Result<(), GraphError> {
 
         // 分类结果
         let cls_probs = cls_logits.value()?.unwrap();
-        let pred_class = if cls_probs[[0, 0]] > cls_probs[[0, 1]] {
-            0
-        } else {
-            1
-        };
-        let true_class = if cls_label[[0, 0]] > 0.5 { 0 } else { 1 };
+        let pred_class = i32::from(cls_probs[[0, 0]] <= cls_probs[[0, 1]]);
+        let true_class = i32::from(cls_label[[0, 0]] <= 0.5);
         pred_classes.push(pred_class);
         true_classes.push(true_class);
 
@@ -165,8 +161,7 @@ fn main() -> Result<(), GraphError> {
         };
         let error = (reg_val - target_val).abs();
         println!(
-            "  x={:+.2}: 分类={} {} | |x|={:.2}, 预测={:.2}, 误差={:.3}",
-            x_val, sign_str, correct_str, target_val, reg_val, error
+            "  x={x_val:+.2}: 分类={sign_str} {correct_str} | |x|={target_val:.2}, 预测={reg_val:.2}, 误差={error:.3}"
         );
     }
 

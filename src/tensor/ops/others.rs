@@ -322,7 +322,7 @@ impl Tensor {
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓stack(concat)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 沿指定轴堆叠/拼接多个张量
     ///
-    /// 统一实现 PyTorch 的 `torch.stack` 和 `torch.cat` 功能。
+    /// 统一实现 `PyTorch` 的 `torch.stack` 和 `torch.cat` 功能。
     ///
     /// # 参数
     /// - `tensors`: 要堆叠/拼接的张量切片
@@ -369,9 +369,7 @@ impl Tensor {
             // torch.stack 模式：在 axis 位置插入新维度
             assert!(
                 axis <= ndim,
-                "stack: axis {} 超出张量维度 {}（new_dim=true 时 axis 可以等于 ndim）",
-                axis,
-                ndim
+                "stack: axis {axis} 超出张量维度 {ndim}（new_dim=true 时 axis 可以等于 ndim）"
             );
 
             // 所有张量形状必须完全相同
@@ -391,7 +389,7 @@ impl Tensor {
             Self { data: stacked }.into_contiguous()
         } else {
             // torch.cat 模式：沿现有 axis 拼接
-            assert!(axis < ndim, "stack: axis {} 超出张量维度 {}", axis, ndim);
+            assert!(axis < ndim, "stack: axis {axis} 超出张量维度 {ndim}");
 
             // 检查除 axis 外的维度是否一致
             for (i, t) in tensors.iter().enumerate().skip(1) {
@@ -447,7 +445,7 @@ impl Tensor {
     /// ```
     pub fn split(&self, axis: usize, sizes: &[usize]) -> Vec<Self> {
         let ndim = self.dimension();
-        assert!(axis < ndim, "split: axis {} 超出张量维度 {}", axis, ndim);
+        assert!(axis < ndim, "split: axis {axis} 超出张量维度 {ndim}");
 
         let total: usize = sizes.iter().sum();
         assert!(

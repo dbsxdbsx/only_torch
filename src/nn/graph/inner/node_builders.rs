@@ -58,7 +58,7 @@ impl GraphInner {
         self.add_node_to_list(node, name, "target", &[])
     }
 
-    /// 创建 SmartInput 节点
+    /// 创建 `SmartInput` 节点
     pub fn new_smart_input_node(
         &mut self,
         shape: &[usize],
@@ -68,7 +68,7 @@ impl GraphInner {
         self.add_node_to_list(node, name, "input", &[])
     }
 
-    /// 创建 RecurrentOutput 节点
+    /// 创建 `RecurrentOutput` 节点
     pub fn new_recurrent_output_node(
         &mut self,
         shape: &[usize],
@@ -142,7 +142,7 @@ impl GraphInner {
         self.add_node_to_list(node, name, "state", &[])
     }
 
-    /// 创建 ZerosLike 节点
+    /// 创建 `ZerosLike` 节点
     pub fn new_zeros_like_node(
         &mut self,
         reference: NodeId,

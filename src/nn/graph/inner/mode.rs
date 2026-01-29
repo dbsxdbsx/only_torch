@@ -50,7 +50,7 @@ impl GraphInner {
         Ok(self.get_node(node_id)?.is_detached())
     }
 
-    /// no_grad 上下文
+    /// `no_grad` 上下文
     pub fn no_grad_scope<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut Self) -> R,

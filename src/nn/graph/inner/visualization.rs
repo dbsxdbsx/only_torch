@@ -68,10 +68,9 @@ impl GraphInner {
                 if let NodeType::Input(
                     InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart),
                 ) = node.node_type()
+                    && smart.was_ever_detached()
                 {
-                    if smart.was_ever_detached() {
-                        return Some(node.id().0);
-                    }
+                    return Some(node.id().0);
                 }
                 None
             })
@@ -780,13 +779,12 @@ impl GraphInner {
             if let NodeType::Input(
                 InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart),
             ) = node.node_type()
+                && let Some(target_id) = smart.gradient_target()
             {
-                if let Some(target_id) = smart.gradient_target() {
-                    dot.push_str(&format!(
+                dot.push_str(&format!(
                         "    \"{}\" -> \"{}\" [style=dashed color=\"#1565C0\" label=\"data flow\" fontcolor=\"#1565C0\" fontsize=9];\n",
                         target_id.0, node.id().0
                     ));
-                }
             }
         }
 
@@ -970,11 +968,11 @@ impl GraphInner {
         // 3. BFS 找出所有下游节点
         let mut queue: VecDeque<u64> = router_ids.iter().copied().collect();
         while let Some(node_id) = queue.pop_front() {
-            if dynamic_nodes.insert(node_id) {
-                if let Some(children) = children_map.get(&node_id) {
-                    for &child_id in children {
-                        queue.push_back(child_id);
-                    }
+            if dynamic_nodes.insert(node_id)
+                && let Some(children) = children_map.get(&node_id)
+            {
+                for &child_id in children {
+                    queue.push_back(child_id);
                 }
             }
         }
@@ -1241,7 +1239,7 @@ impl GraphInner {
     }
 
     /// 获取节点类型名称（用于可视化）
-    fn type_name_for_vis(node_type: &NodeTypeDescriptor) -> &'static str {
+    const fn type_name_for_vis(node_type: &NodeTypeDescriptor) -> &'static str {
         match node_type {
             NodeTypeDescriptor::BasicInput => "BasicInput",
             NodeTypeDescriptor::TargetInput => "TargetInput",
@@ -1298,7 +1296,7 @@ impl GraphInner {
 
     // ========== 惰性推断循环层分组 ==========
 
-    /// 惰性推断循环层分组（在 save_visualization 时调用）
+    /// 惰性推断循环层分组（在 `save_visualization` 时调用）
     ///
     /// 根据 `recurrent_layer_metas` 中的元信息和 `unroll_info` 推断完整的分组：
     /// - 代表性节点：参数 + 初始状态 + 第一个时间步的计算节点
@@ -1430,7 +1428,7 @@ impl GraphInner {
     ///
     /// # 参数
     /// - `name`: 模型名称（用于可视化）
-    /// - `router_ids`: 所有输入的 GradientRouter 节点 ID 列表
+    /// - `router_ids`: 所有输入的 `GradientRouter` 节点 ID 列表
     /// - `output_id`: 输出节点 ID
     pub fn register_model_group(
         &mut self,
@@ -1498,11 +1496,12 @@ impl GraphInner {
     // ========== 节点信息查询 ==========
 
     pub fn is_node_inited(&self, id: NodeId) -> Result<bool, GraphError> {
-        self.get_node(id).map(|n| n.is_inited())
+        self.get_node(id)
+            .map(crate::nn::nodes::node_handle::NodeHandle::is_inited)
     }
 
     pub fn get_node_value_shape(&self, id: NodeId) -> Result<Option<&[usize]>, GraphError> {
-        Ok(self.get_node(id)?.value().map(|v| v.shape()))
+        Ok(self.get_node(id)?.value().map(crate::tensor::Tensor::shape))
     }
 
     pub fn get_node_value_expected_shape(&self, id: NodeId) -> Result<&[usize], GraphError> {
@@ -1517,6 +1516,6 @@ impl GraphInner {
     }
 
     pub fn get_node_value_size(&self, id: NodeId) -> Result<Option<usize>, GraphError> {
-        Ok(self.get_node(id)?.value().map(|v| v.size()))
+        Ok(self.get_node(id)?.value().map(crate::tensor::Tensor::size))
     }
 }

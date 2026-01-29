@@ -112,8 +112,7 @@ impl GraphInner {
         let version = u32::from_le_bytes(version_bytes);
         if version != Self::PARAMS_VERSION {
             return Err(GraphError::ComputationError(format!(
-                "不支持的参数文件版本: {}",
-                version
+                "不支持的参数文件版本: {version}"
             )));
         }
 

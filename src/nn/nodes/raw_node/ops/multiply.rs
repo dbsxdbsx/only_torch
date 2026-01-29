@@ -147,9 +147,7 @@ impl TraitNode for Multiply {
         let target_shape = target_parent
             .value()
             .ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "Multiply 梯度计算时父{target_parent}没有值"
-                ))
+                GraphError::ComputationError(format!("Multiply 梯度计算时父{target_parent}没有值"))
             })?
             .shape();
 

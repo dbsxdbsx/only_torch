@@ -167,7 +167,7 @@ fn test_bptt_history_recording() {
     assert_eq!(graph.current_time_step(), 3);
 
     // reset 应该清除历史
-    graph.reset();
+    graph.reset().unwrap();
     assert_eq!(graph.history_len(), 0);
     assert_eq!(graph.current_time_step(), 0);
 }
@@ -800,7 +800,7 @@ fn test_vjp_large_batch_hidden() -> Result<(), GraphError> {
     let mut total_loss = 0.0;
 
     for _epoch in 0..num_epochs {
-        graph.reset();
+        graph.reset().unwrap();
 
         // 生成随机输入序列
         for _t in 0..seq_len {

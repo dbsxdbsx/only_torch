@@ -6,20 +6,20 @@
 
 use super::super::error::GraphError;
 use super::GraphInner;
-use crate::nn::nodes::NodeType;
 use crate::nn::NodeId;
+use crate::nn::nodes::NodeType;
 use crate::tensor::Tensor;
 
 impl GraphInner {
     // ========== BPTT API ==========
 
     /// 获取当前存储的时间步历史长度
-    pub fn history_len(&self) -> usize {
+    pub const fn history_len(&self) -> usize {
         self.step_history.len()
     }
 
     /// 获取时间步历史长度（别名，兼容旧 API）
-    pub fn step_history_len(&self) -> usize {
+    pub const fn step_history_len(&self) -> usize {
         self.step_history.len()
     }
 

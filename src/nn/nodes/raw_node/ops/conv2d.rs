@@ -185,7 +185,12 @@ impl Conv2d {
         }
 
         let input_shape = input.shape();
-        let (batch_size, c, h, w) = (input_shape[0], input_shape[1], input_shape[2], input_shape[3]);
+        let (batch_size, c, h, w) = (
+            input_shape[0],
+            input_shape[1],
+            input_shape[2],
+            input_shape[3],
+        );
         let new_h = h + 2 * pad_h;
         let new_w = w + 2 * pad_w;
         let new_shape = vec![batch_size, c, new_h, new_w];
@@ -214,7 +219,7 @@ impl Conv2d {
     }
 
     /// 执行卷积运算（Rayon 并行版本）
-    /// 输入必须是 4D [batch, C_in, H, W]
+    /// 输入必须是 4D [batch, `C_in`, H, W]
     fn convolve(&self, input: &Tensor, kernel: &Tensor) -> Tensor {
         let input_shape = input.shape();
         let (batch_size, in_c, in_h, in_w) = (
@@ -254,8 +259,7 @@ impl Conv2d {
                             for ic in 0..in_c {
                                 for kh in 0..k_h {
                                     for kw in 0..k_w {
-                                        let input_val =
-                                            input[[b, ic, h_start + kh, w_start + kw]];
+                                        let input_val = input[[b, ic, h_start + kh, w_start + kw]];
                                         sum += input_val * kernel[[oc, ic, kh, kw]];
                                     }
                                 }
@@ -368,12 +372,8 @@ impl TraitNode for Conv2d {
 
         // 输入必须是 4D [batch, C_out, H', W']
         let grad_shape = upstream_grad.shape();
-        let (batch_size, out_c, out_h, out_w) = (
-            grad_shape[0],
-            grad_shape[1],
-            grad_shape[2],
-            grad_shape[3],
-        );
+        let (batch_size, out_c, out_h, out_w) =
+            (grad_shape[0], grad_shape[1], grad_shape[2], grad_shape[3]);
 
         let (k_h, k_w) = self.kernel_size;
         let (stride_h, stride_w) = self.stride;

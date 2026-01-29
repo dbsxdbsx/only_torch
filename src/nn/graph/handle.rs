@@ -6,8 +6,8 @@
 
 use super::error::{GraphError, ImageFormat, VisualizationOutput};
 use super::inner::GraphInner;
-use crate::nn::var::{Init, Var};
 use crate::nn::NodeId;
+use crate::nn::var::{Init, Var};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -16,7 +16,7 @@ use std::rc::Rc;
 ///
 /// # 设计原则
 /// - 是 `Rc<RefCell<GraphInner>>` 的薄封装
-/// - Clone 语义：多个 Graph 引用同一个 GraphInner
+/// - Clone 语义：多个 Graph 引用同一个 `GraphInner`
 /// - 创建的 Var 自动持有图引用
 #[derive(Clone)]
 pub struct Graph {
@@ -40,7 +40,7 @@ impl Graph {
         }
     }
 
-    /// 从现有 GraphInner 创建句柄
+    /// 从现有 `GraphInner` 创建句柄
     pub fn from_inner(inner: GraphInner) -> Self {
         Self {
             inner: Rc::new(RefCell::new(inner)),
@@ -52,12 +52,12 @@ impl Graph {
         Self { inner }
     }
 
-    /// 获取内部 GraphInner 的不可变引用
+    /// 获取内部 `GraphInner` 的不可变引用
     pub fn inner(&self) -> std::cell::Ref<'_, GraphInner> {
         self.inner.borrow()
     }
 
-    /// 获取内部 GraphInner 的可变引用
+    /// 获取内部 `GraphInner` 的可变引用
     pub fn inner_mut(&self) -> std::cell::RefMut<'_, GraphInner> {
         self.inner.borrow_mut()
     }
@@ -67,7 +67,7 @@ impl Graph {
         Rc::clone(&self.inner)
     }
 
-    /// 将 NodeId 包装成 Var
+    /// 将 `NodeId` 包装成 Var
     pub fn wrap_node_id(&self, node_id: NodeId) -> Var {
         Var::new(node_id, Rc::clone(&self.inner))
     }
@@ -205,7 +205,7 @@ impl Graph {
         !self.inner.borrow().is_train_mode()
     }
 
-    /// 在 no_grad 上下文中执行闭包
+    /// 在 `no_grad` 上下文中执行闭包
     pub fn no_grad_scope<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&Self) -> R,

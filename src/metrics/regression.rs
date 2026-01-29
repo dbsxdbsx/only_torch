@@ -71,10 +71,10 @@ use super::traits::IntoFloatValues;
 ///
 /// ## 边界情况
 ///
-/// - 如果所有真实值相同（SS_tot = 0）：
-///   - 预测完美（SS_res = 0）→ 返回 value=1.0
+/// - `如果所有真实值相同（SS_tot` = 0）：
+///   - `预测完美（SS_res` = 0）→ 返回 value=1.0
 ///   - 预测有误差 → 返回 value=0.0
-/// - 空输入 → 返回 value=0.0, n_samples=0
+/// - 空输入 → 返回 value=0.0, `n_samples=0`
 pub fn r2_score(
     predictions: &(impl IntoFloatValues + ?Sized),
     actuals: &(impl IntoFloatValues + ?Sized),

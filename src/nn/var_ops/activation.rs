@@ -64,7 +64,7 @@ pub trait VarActivationOps {
 
     /// Abs 函数（绝对值）：|x|
     ///
-    /// 梯度为 sign(x)，在 x=0 处为 0（与 PyTorch 行为一致）。
+    /// 梯度为 sign(x)，在 x=0 处为 0（与 `PyTorch` 行为一致）。
     /// 常用于 L1 损失、L1 正则化、距离计算等场景。
     fn abs(&self) -> Var;
 }

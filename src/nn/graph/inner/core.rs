@@ -206,7 +206,7 @@ impl GraphInner {
 
     // ========== ID/名称生成 ==========
 
-    pub(in crate::nn::graph) fn generate_valid_node_id(&mut self) -> NodeId {
+    pub(in crate::nn::graph) const fn generate_valid_node_id(&mut self) -> NodeId {
         // 生成唯一的节点ID（先递增再返回，所以第一个节点 ID 是 1）
         self.next_id += 1;
         NodeId(self.next_id)
@@ -370,8 +370,7 @@ impl GraphInner {
                     return Ok(());
                 }
                 return Err(GraphError::InvalidOperation(format!(
-                    "{}不能直接前向传播",
-                    node
+                    "{node}不能直接前向传播"
                 )));
             }
             _ => {
@@ -415,12 +414,10 @@ impl GraphInner {
     /// 重置中间节点的 grad
     pub(in crate::nn::graph) fn reset_intermediate_grad(&mut self) {
         for node in self.nodes.values_mut() {
-            match node.node_type() {
-                NodeType::Parameter(_) => {}
-                _ => {
-                    let _ = node.clear_grad();
-                    node.set_last_backward_pass_id(0);
-                }
+            if let NodeType::Parameter(_) = node.node_type() {
+            } else {
+                let _ = node.clear_grad();
+                node.set_last_backward_pass_id(0);
             }
         }
     }

@@ -119,11 +119,7 @@ fn test_load_params_invalid_magic() {
     assert!(result.is_err());
     // 使用 Debug 格式检查错误信息
     let err_msg = format!("{:?}", result.unwrap_err());
-    assert!(
-        err_msg.contains("无效的参数文件"),
-        "错误信息: {}",
-        err_msg
-    );
+    assert!(err_msg.contains("无效的参数文件"), "错误信息: {}", err_msg);
 
     // 清理
     fs::remove_file(temp_file).ok();
@@ -664,8 +660,6 @@ fn test_to_dot_node_styles() {
 /// 测试动态形状在描述符中的序列化
 #[test]
 fn test_dynamic_shape_in_descriptor() {
-    use crate::nn::descriptor::NodeDescriptor;
-
     let mut graph = GraphInner::new();
 
     // 创建支持动态 batch 的节点
@@ -675,7 +669,7 @@ fn test_dynamic_shape_in_descriptor() {
     let w = graph
         .new_parameter_node(&[128, 64], Some("weight"))
         .unwrap();
-    let y = graph.new_mat_mul_node(x, w, Some("output")).unwrap();
+    let _y = graph.new_mat_mul_node(x, w, Some("output")).unwrap();
 
     // 获取描述符
     let desc = graph.describe();
@@ -721,7 +715,7 @@ fn test_dynamic_shape_json_roundtrip() {
 
     // 创建支持动态 batch 的图
     let x = graph.new_basic_input_node(&[16, 64], Some("x")).unwrap();
-    let y = graph.new_tanh_node(x, Some("y")).unwrap();
+    let _y = graph.new_tanh_node(x, Some("y")).unwrap();
 
     // 获取描述符并序列化为 JSON
     let desc = graph.describe();

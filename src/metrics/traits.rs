@@ -186,8 +186,7 @@ impl IntoClassLabels for Tensor {
                 (0..shape[0]).map(|i| argmax[[i]] as usize).collect()
             }
             _ => panic!(
-                "IntoClassLabels: 不支持的 Tensor 形状 {:?}，期望 [batch] 或 [batch, num_classes]",
-                shape
+                "IntoClassLabels: 不支持的 Tensor 形状 {shape:?}，期望 [batch] 或 [batch, num_classes]"
             ),
         }
     }
@@ -235,16 +234,12 @@ impl IntoFloatValues for Tensor {
             2 => {
                 // 如果 features > 1，发出警告但仍取第一列
                 if shape[1] > 1 {
-                    eprintln!(
-                        "警告: IntoFloatValues 收到 {:?} 形状的 Tensor，仅取第一列",
-                        shape
-                    );
+                    eprintln!("警告: IntoFloatValues 收到 {shape:?} 形状的 Tensor，仅取第一列");
                 }
                 (0..n).map(|i| self[[i, 0]]).collect()
             }
             _ => panic!(
-                "IntoFloatValues: 不支持的 Tensor 形状 {:?}，期望 [batch] 或 [batch, 1]",
-                shape
+                "IntoFloatValues: 不支持的 Tensor 形状 {shape:?}，期望 [batch] 或 [batch, 1]"
             ),
         }
     }

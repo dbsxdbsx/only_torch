@@ -290,12 +290,8 @@ impl TraitNode for MaxPool2d {
         // 输入必须是 4D [batch, C, H', W']
         let input_shape = &self.input_shape;
         let grad_shape = upstream_grad.shape();
-        let (batch_size, channels, out_h, out_w) = (
-            grad_shape[0],
-            grad_shape[1],
-            grad_shape[2],
-            grad_shape[3],
-        );
+        let (batch_size, channels, out_h, out_w) =
+            (grad_shape[0], grad_shape[1], grad_shape[2], grad_shape[3]);
         let (in_h, in_w) = (input_shape[2], input_shape[3]);
         let single_sample_size = channels * in_h * in_w;
 

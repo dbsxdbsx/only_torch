@@ -368,7 +368,7 @@ impl GraphInner {
             NodeType::Softmax(_) => NodeTypeDescriptor::Softmax,
             NodeType::Tanh(_) => NodeTypeDescriptor::Tanh,
             NodeType::LeakyReLU(node) => NodeTypeDescriptor::LeakyReLU {
-                alpha: node.alpha() as f32,
+                alpha: node.alpha(),
             },
             NodeType::Sign(_) => NodeTypeDescriptor::Sign,
             NodeType::Abs(_) => NodeTypeDescriptor::Abs,

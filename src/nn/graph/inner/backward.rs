@@ -6,8 +6,8 @@
 
 use super::super::error::GraphError;
 use super::GraphInner;
-use crate::nn::nodes::NodeType;
 use crate::nn::NodeId;
+use crate::nn::nodes::NodeType;
 use crate::tensor::Tensor;
 use std::collections::HashSet;
 
@@ -50,11 +50,12 @@ impl GraphInner {
     }
 
     /// VJP 反向传播核心实现
-    pub(in crate::nn::graph) fn backward_vjp_core(&mut self, loss_id: NodeId) -> Result<(), GraphError> {
+    pub(in crate::nn::graph) fn backward_vjp_core(
+        &mut self,
+        loss_id: NodeId,
+    ) -> Result<(), GraphError> {
         if !self.is_train_mode() {
-            eprintln!(
-                "[only_torch 警告] 在 no_grad/eval 模式下调用 backward，这通常是误用。"
-            );
+            eprintln!("[only_torch 警告] 在 no_grad/eval 模式下调用 backward，这通常是误用。");
         }
 
         self.reset_intermediate_grad();
@@ -89,10 +90,10 @@ impl GraphInner {
         let new_pass_id = self.last_backward_pass_id;
 
         for node_id in topo_order {
-            if let Ok(node) = self.get_node_mut(node_id) {
-                if node.grad().is_some() {
-                    node.set_last_backward_pass_id(new_pass_id);
-                }
+            if let Ok(node) = self.get_node_mut(node_id)
+                && node.grad().is_some()
+            {
+                node.set_last_backward_pass_id(new_pass_id);
             }
         }
 
@@ -109,14 +110,11 @@ impl GraphInner {
             if let NodeType::Input(
                 InputVariant::Smart(smart) | InputVariant::RecurrentOutput(smart),
             ) = node.node_type()
+                && let Some(target_id) = smart.gradient_target()
+                && !smart.is_detached()
+                && let Some(grad) = node.grad()
             {
-                if let Some(target_id) = smart.gradient_target() {
-                    if !smart.is_detached() {
-                        if let Some(grad) = node.grad() {
-                            routing_info.push((target_id, grad.clone()));
-                        }
-                    }
-                }
+                routing_info.push((target_id, grad.clone()));
             }
         }
 
@@ -184,12 +182,11 @@ impl GraphInner {
                     }
                 }
 
-                if let Some(targets) = target_params {
-                    if let NodeType::Parameter(_) = parent.node_type() {
-                        if !targets.contains(parent_id) {
-                            continue;
-                        }
-                    }
+                if let Some(targets) = target_params
+                    && let NodeType::Parameter(_) = parent.node_type()
+                    && !targets.contains(parent_id)
+                {
+                    continue;
                 }
 
                 let assistant_parent_id = parent_ids.iter().find(|&&id| id != *parent_id).copied();

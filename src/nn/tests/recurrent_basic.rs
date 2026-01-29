@@ -124,7 +124,7 @@ fn test_reset_clears_state() {
     assert_eq!(graph.current_time_step(), 5);
 
     // 重置
-    graph.reset();
+    graph.reset().unwrap();
 
     // 验证时间步归零
     assert_eq!(graph.current_time_step(), 0);

@@ -254,7 +254,7 @@ fn test_softmax_dynamic_batch_backward() {
     loss.forward().unwrap();
     let loss_val1 = loss.value().unwrap().unwrap()[[0, 0]];
     assert!(loss_val1 >= 0.0);
-    graph.zero_grad();
+    graph.zero_grad().unwrap();
     loss.backward().unwrap();
 
     // 更新输入为不同的 batch_size
@@ -266,6 +266,6 @@ fn test_softmax_dynamic_batch_backward() {
     loss.forward().unwrap();
     let loss_val2 = loss.value().unwrap().unwrap()[[0, 0]];
     assert!(loss_val2 >= 0.0);
-    graph.zero_grad();
+    graph.zero_grad().unwrap();
     loss.backward().unwrap();
 }

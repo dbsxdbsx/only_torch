@@ -55,8 +55,7 @@ impl Var {
         for (i, var) in vars.iter().enumerate().skip(1) {
             if !first.same_graph(var) {
                 return Err(GraphError::InvalidOperation(format!(
-                    "Var::stack: 第 {} 个 Var 来自不同的 Graph",
-                    i
+                    "Var::stack: 第 {i} 个 Var 来自不同的 Graph"
                 )));
             }
         }

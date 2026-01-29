@@ -147,7 +147,10 @@ fn test_avg_pool2d_multi_channel() -> Result<(), GraphError> {
     let pool = graph.new_avg_pool2d_node(input, (2, 2), None, Some("pool"))?;
 
     // 设置输入：第一通道全 1，第二通道全 2
-    let input_val = Tensor::new(&[vec![1.0f32; 16], vec![2.0f32; 16]].concat(), &[1, 2, 4, 4]);
+    let input_val = Tensor::new(
+        &[vec![1.0f32; 16], vec![2.0f32; 16]].concat(),
+        &[1, 2, 4, 4],
+    );
 
     graph.set_node_value(input, Some(&input_val))?;
     graph.forward(pool)?;

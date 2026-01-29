@@ -114,5 +114,5 @@ pub fn compute_md5(data: &[u8]) -> String {
     let mut hasher = Md5::new();
     hasher.update(data);
     let result = hasher.finalize();
-    format!("{:x}", result)
+    format!("{result:x}")
 }

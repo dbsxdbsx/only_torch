@@ -9,7 +9,7 @@ use crate::tensor::Tensor;
 /// forward: abs(x) = |x|
 /// backward: d(abs)/dx = sign(x)，在 x=0 处定义为 0
 ///
-/// 与 ReLU 类似，在 x=0 处严格意义上不可微，但实践中定义为 0 不影响训练。
+/// 与 `ReLU` 类似，在 x=0 处严格意义上不可微，但实践中定义为 0 不影响训练。
 #[derive(Clone)]
 pub(crate) struct Abs {
     id: Option<NodeId>,
@@ -107,9 +107,9 @@ impl TraitNode for Abs {
         self.value.as_ref()
     }
 
-    /// Abs 的梯度: upstream_grad * sign(x)
+    /// Abs 的梯度: `upstream_grad` * sign(x)
     ///
-    /// 在 x=0 处，sign(0) = 0，所以梯度也为 0（与 PyTorch 行为一致）
+    /// 在 x=0 处，sign(0) = 0，所以梯度也为 0（与 `PyTorch` 行为一致）
     fn calc_grad_to_parent(
         &self,
         _target_parent: &NodeHandle,

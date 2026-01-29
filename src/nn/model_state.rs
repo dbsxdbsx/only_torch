@@ -233,7 +233,7 @@ impl ForwardInput for DetachedVar {
 pub trait ForwardOutput: Clone + 'static {
     /// 触发前向传播
     ///
-    /// 对于多输出，只需调用其中任意一个 Var 的 forward()，
+    /// 对于多输出，只需调用其中任意一个 Var 的 `forward()`，
     /// 整个计算图就会被执行。
     fn trigger_forward(&self) -> Result<(), GraphError>;
 

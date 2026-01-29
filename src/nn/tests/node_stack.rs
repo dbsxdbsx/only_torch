@@ -143,7 +143,11 @@ fn test_stack_creation_invalid_shape_concat() {
     let result = graph.new_stack_node(&[input1, input2], 0, false, None);
     assert_err!(
         result,
-        GraphError::ShapeMismatch([2, 3], [2, 4], "Stack (new_dim=false): 父节点 1 在维度 1 大小不一致")
+        GraphError::ShapeMismatch(
+            [2, 3],
+            [2, 4],
+            "Stack (new_dim=false): 父节点 1 在维度 1 大小不一致"
+        )
     );
 }
 
@@ -267,7 +271,10 @@ fn test_stack_forward_concat_axis1() {
     graph.forward(stack).unwrap();
 
     let output = graph.get_node_value(stack).unwrap().unwrap();
-    let expected = Tensor::new(&[1.0, 2.0, 5.0, 6.0, 7.0, 3.0, 4.0, 8.0, 9.0, 10.0], &[2, 5]);
+    let expected = Tensor::new(
+        &[1.0, 2.0, 5.0, 6.0, 7.0, 3.0, 4.0, 8.0, 9.0, 10.0],
+        &[2, 5],
+    );
     assert_eq!(output, &expected);
 }
 
@@ -332,7 +339,9 @@ fn test_stack_forward_stack_axis1() {
     assert_eq!(output.shape(), &[2, 2, 3]);
     // 期望: [[[1,2,3],[7,8,9]], [[4,5,6],[10,11,12]]]
     let expected = Tensor::new(
-        &[1.0, 2.0, 3.0, 7.0, 8.0, 9.0, 4.0, 5.0, 6.0, 10.0, 11.0, 12.0],
+        &[
+            1.0, 2.0, 3.0, 7.0, 8.0, 9.0, 4.0, 5.0, 6.0, 10.0, 11.0, 12.0,
+        ],
         &[2, 2, 3],
     );
     assert_eq!(output, &expected);

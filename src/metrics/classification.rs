@@ -65,7 +65,7 @@ use std::collections::HashSet;
 ///
 /// ## 边界情况
 ///
-/// - 空输入 → 返回 value=0.0, n_samples=0
+/// - 空输入 → 返回 value=0.0, `n_samples=0`
 /// - 长度不一致 → 取较短者计算
 pub fn accuracy(
     predictions: &(impl IntoClassLabels + ?Sized),
@@ -124,7 +124,7 @@ pub fn accuracy(
 ///
 /// ## 边界情况
 ///
-/// - 空输入 → 返回 value=0.0, n_samples=0
+/// - 空输入 → 返回 value=0.0, `n_samples=0`
 /// - 某个类从未被预测过（TP+FP=0）→ 该类不参与平均
 pub fn precision(
     predictions: &(impl IntoClassLabels + ?Sized),
@@ -145,7 +145,7 @@ pub fn precision(
     let all_classes: HashSet<usize> = pred_labels
         .iter()
         .chain(true_labels.iter())
-        .cloned()
+        .copied()
         .collect();
 
     let mut precision_sum = 0.0;
@@ -217,7 +217,7 @@ pub fn precision(
 ///
 /// ## 边界情况
 ///
-/// - 空输入 → 返回 value=0.0, n_samples=0
+/// - 空输入 → 返回 value=0.0, `n_samples=0`
 /// - 某个类从未出现在真实标签中（TP+FN=0）→ 该类不参与平均
 pub fn recall(
     predictions: &(impl IntoClassLabels + ?Sized),
@@ -238,7 +238,7 @@ pub fn recall(
     let all_classes: HashSet<usize> = pred_labels
         .iter()
         .chain(true_labels.iter())
-        .cloned()
+        .copied()
         .collect();
 
     let mut recall_sum = 0.0;
@@ -310,7 +310,7 @@ pub fn recall(
 ///
 /// ## 边界情况
 ///
-/// - 空输入 → 返回 value=0.0, n_samples=0
+/// - 空输入 → 返回 value=0.0, `n_samples=0`
 /// - 某个类的 Precision + Recall = 0 → 该类的 F1 视为 0
 pub fn f1_score(
     predictions: &(impl IntoClassLabels + ?Sized),
@@ -331,7 +331,7 @@ pub fn f1_score(
     let all_classes: HashSet<usize> = pred_labels
         .iter()
         .chain(true_labels.iter())
-        .cloned()
+        .copied()
         .collect();
 
     let mut f1_sum = 0.0;
@@ -465,8 +465,7 @@ pub fn confusion_matrix(
         .iter()
         .chain(true_labels.iter())
         .max()
-        .map(|&x| x + 1)
-        .unwrap_or(0);
+        .map_or(0, |&x| x + 1);
 
     // 构建混淆矩阵
     let mut matrix = vec![vec![0usize; num_classes]; num_classes];

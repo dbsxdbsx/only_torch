@@ -90,7 +90,10 @@ impl GraphInner {
     }
 
     /// 恢复节点值到指定快照
-    pub(in crate::nn::graph) fn restore_snapshot(&mut self, snapshot: &HashMap<NodeId, StepSnapshot>) {
+    pub(in crate::nn::graph) fn restore_snapshot(
+        &mut self,
+        snapshot: &HashMap<NodeId, StepSnapshot>,
+    ) {
         for (&node_id, snap) in snapshot {
             if let Some(node) = self.nodes.get_mut(&node_id) {
                 node.set_value_unchecked(snap.value.as_ref());

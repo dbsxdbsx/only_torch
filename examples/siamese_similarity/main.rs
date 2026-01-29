@@ -85,10 +85,7 @@ fn main() -> Result<(), GraphError> {
     println!("             共享参数                  │");
     println!("               ↓                       │");
     println!("  Input2 ─> Encoder(8, ReLU) ─> Feat2 ─┘");
-    println!(
-        "\n任务: 判断 |x1 - x2| < {:.1} (相似=1, 不相似=0)",
-        threshold
-    );
+    println!("\n任务: 判断 |x1 - x2| < {threshold:.1} (相似=1, 不相似=0)");
     println!(
         "数据: 训练 {} 条 (正例 {}), 测试 {} 条 (正例 {})",
         train_data.len(),
@@ -132,7 +129,7 @@ fn main() -> Result<(), GraphError> {
         let target_val = target[[0, 0]];
 
         // 预测：> 0.5 为相似
-        let pred_label = if pred_val > 0.5 { 1 } else { 0 };
+        let pred_label = i32::from(pred_val > 0.5);
         let true_label = target_val as i32;
         pred_labels.push(pred_label);
         true_labels.push(true_label);

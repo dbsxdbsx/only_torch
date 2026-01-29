@@ -32,12 +32,12 @@ pub(crate) struct Stack {
 
 impl Stack {
     /// 获取操作的轴
-    pub(crate) fn axis(&self) -> usize {
+    pub(crate) const fn axis(&self) -> usize {
         self.axis
     }
 
     /// 是否插入新维度
-    pub(crate) fn new_dim(&self) -> bool {
+    pub(crate) const fn new_dim(&self) -> bool {
         self.new_dim
     }
 
@@ -57,11 +57,14 @@ impl Stack {
         let ndim = first_shape.len();
 
         // 2. 验证 axis
-        let max_axis = if new_dim { ndim } else { ndim.saturating_sub(1) };
+        let max_axis = if new_dim {
+            ndim
+        } else {
+            ndim.saturating_sub(1)
+        };
         if axis > max_axis {
             return Err(GraphError::InvalidOperation(format!(
-                "Stack: axis {} 超出有效范围 [0, {}]",
-                axis, max_axis
+                "Stack: axis {axis} 超出有效范围 [0, {max_axis}]"
             )));
         }
 
@@ -76,7 +79,7 @@ impl Stack {
                     return Err(GraphError::ShapeMismatch {
                         expected: first_shape.to_vec(),
                         got: shape.to_vec(),
-                        message: format!("Stack (new_dim=true): 父节点 {} 形状不一致", i),
+                        message: format!("Stack (new_dim=true): 父节点 {i} 形状不一致"),
                     });
                 }
             }
@@ -90,7 +93,7 @@ impl Stack {
                     return Err(GraphError::ShapeMismatch {
                         expected: first_shape.to_vec(),
                         got: shape.to_vec(),
-                        message: format!("Stack (new_dim=false): 父节点 {} 维度数不一致", i),
+                        message: format!("Stack (new_dim=false): 父节点 {i} 维度数不一致"),
                     });
                 }
                 // 检查除 axis 外的维度
@@ -100,8 +103,7 @@ impl Stack {
                             expected: first_shape.to_vec(),
                             got: shape.to_vec(),
                             message: format!(
-                                "Stack (new_dim=false): 父节点 {} 在维度 {} 大小不一致",
-                                i, d
+                                "Stack (new_dim=false): 父节点 {i} 在维度 {d} 大小不一致"
                             ),
                         });
                     }
@@ -246,8 +248,7 @@ impl TraitNode for Stack {
             .position(|&id| id == target_id)
             .ok_or_else(|| {
                 GraphError::ComputationError(format!(
-                    "Stack 无法找到父节点 {} (id={}) 的索引",
-                    target_parent, target_id
+                    "Stack 无法找到父节点 {target_parent} (id={target_id}) 的索引"
                 ))
             })?;
 
@@ -307,7 +308,7 @@ impl Stack {
         let parts = tensor.split(axis, &sizes);
 
         // 返回目标部分的索引
-        let target_idx = if start > 0 { 1 } else { 0 };
+        let target_idx = usize::from(start > 0);
         parts.into_iter().nth(target_idx).unwrap()
     }
 }

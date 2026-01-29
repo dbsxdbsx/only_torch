@@ -320,7 +320,7 @@ fn test_state_reset_behavior() -> Result<(), GraphError> {
     assert!(h_before_reset != 0.0, "h_prev 在多步后应非零");
 
     // Reset
-    graph.reset();
+    graph.reset().unwrap();
 
     // h_prev 应该被重置为零
     let h_after_reset = graph.get_node_value(h_prev)?.unwrap().data_as_slice()[0];

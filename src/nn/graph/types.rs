@@ -39,7 +39,7 @@ pub struct LayerGroup {
     /// 需要在可视化中隐藏的节点 ID（如循环层的非代表性展开节点）
     pub hidden_node_ids: Vec<NodeId>,
     /// 代表性节点（折叠显示，实际代表多个节点）
-    /// 格式：(node_id, 实际重复次数)
+    /// `格式：(node_id`, 实际重复次数)
     pub folded_nodes: Vec<(NodeId, usize)>,
     /// 输出代理：(隐藏的真实输出节点, 代表性输出节点)
     /// 用于在可视化时连接代表性节点到下游（折叠层的输出流向）
@@ -77,7 +77,7 @@ pub struct RecurrentLayerMeta {
 pub struct RecurrentUnrollInfo {
     /// 时间步数
     pub steps: usize,
-    /// 输入节点 ID（如 SmartInput）
+    /// 输入节点 ID（如 `SmartInput`）
     pub input_node_id: NodeId,
     /// 初始状态节点 ID 列表（如 [h0] 或 [h0, c0]）
     /// - RNN/GRU：只有一个 h0
@@ -86,10 +86,10 @@ pub struct RecurrentUnrollInfo {
     /// 第一个时间步的第一个计算节点 ID（如 Select）
     pub first_step_start_id: NodeId,
     /// 代表性输出节点列表（第一个时间步的各状态输出）
-    /// - RNN/GRU：[h_1]
-    /// - LSTM：[h_1, c_1]（h 和 c 的第一个时间步输出）
+    /// - RNN/GRU：[`h_1`]
+    /// - LSTM：[`h_1`, `c_1`]（h 和 c 的第一个时间步输出）
     pub repr_output_node_ids: Vec<NodeId>,
-    /// 真实输出节点（最后一个时间步的隐藏状态输出，如 h_N）
+    /// 真实输出节点（最后一个时间步的隐藏状态输出，如 `h_N`）
     pub real_output_node_id: NodeId,
 }
 

@@ -30,8 +30,8 @@ mod serialization;
 mod visualization;
 
 use super::types::{LayerGroup, RecurrentLayerMeta, StepSnapshot};
-use crate::nn::nodes::NodeHandle;
 use crate::nn::NodeId;
+use crate::nn::nodes::NodeHandle;
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
@@ -43,9 +43,9 @@ use std::collections::HashMap;
 pub struct GraphInner {
     pub(in crate::nn::graph) name: String,
     pub(in crate::nn::graph) nodes: HashMap<NodeId, NodeHandle>,
-    /// 正向边：parent_id -> child_ids（父节点指向子节点）
+    /// `正向边：parent_id` -> `child_ids（父节点指向子节点`）
     pub(in crate::nn::graph) forward_edges: HashMap<NodeId, Vec<NodeId>>,
-    /// 反向边：child_id -> parent_ids（子节点指向父节点）
+    /// `反向边：child_id` -> `parent_ids（子节点指向父节点`）
     pub(in crate::nn::graph) backward_edges: HashMap<NodeId, Vec<NodeId>>,
     /// 最后一次前向传播的 id
     pub(in crate::nn::graph) last_forward_pass_id: u64,
@@ -54,7 +54,7 @@ pub struct GraphInner {
     pub(in crate::nn::graph) next_id: u64,
     pub(in crate::nn::graph) is_eval_mode: bool,
     /// 图级别的随机数生成器（用于参数初始化等）
-    /// None 表示使用默认的 thread_rng（非确定性）
+    /// None 表示使用默认的 `thread_rng（非确定性`）
     pub(in crate::nn::graph) rng: Option<StdRng>,
     /// 层分组信息（用于可视化）
     pub(in crate::nn::graph) layer_groups: Vec<LayerGroup>,
@@ -62,11 +62,11 @@ pub struct GraphInner {
     pub(in crate::nn::graph) recurrent_layer_metas: Vec<RecurrentLayerMeta>,
 
     // ========== 循环/记忆机制相关字段 ==========
-    /// 循环边：to_node -> from_node（to 节点在 step() 时从 from 节点的上一步值读取）
+    /// `循环边：to_node` -> `from_node（to` 节点在 `step()` 时从 from 节点的上一步值读取）
     pub(in crate::nn::graph) recurrent_edges: HashMap<NodeId, NodeId>,
     /// 双缓冲：存储循环节点的上一时间步值
     pub(in crate::nn::graph) prev_values: HashMap<NodeId, Tensor>,
-    /// 当前时间步（用于调试，每次 step() 递增，reset() 归零）
+    /// 当前时间步（用于调试，每次 `step()` `递增，reset()` 归零）
     pub(in crate::nn::graph) time_step: u64,
 
     // ========== BPTT 相关字段 ==========

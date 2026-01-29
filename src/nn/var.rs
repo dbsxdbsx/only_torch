@@ -274,7 +274,7 @@ impl Var {
         self.backward_ex(false)
     }
 
-    /// 反向传播（扩展版本，支持 retain_graph）
+    /// 反向传播（扩展版本，支持 `retain_graph`）
     ///
     /// # 参数
     /// - `retain_graph`: 是否保留计算图

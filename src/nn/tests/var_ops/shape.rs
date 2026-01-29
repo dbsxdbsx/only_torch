@@ -6,9 +6,9 @@
  * - Var::stack（关联函数）
  */
 
-use crate::nn::{Init, VarLossOps, VarShapeOps};
 use crate::nn::graph::Graph;
 use crate::nn::var::Var;
+use crate::nn::{Init, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 

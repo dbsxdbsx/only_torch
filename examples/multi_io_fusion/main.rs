@@ -137,12 +137,8 @@ fn main() -> Result<(), GraphError> {
         // 分类结果
         cls_logits.forward()?;
         let logits = cls_logits.value()?.unwrap();
-        let pred_cls = if logits[[0, 0]] > logits[[0, 1]] {
-            0
-        } else {
-            1
-        };
-        let true_cls = if cls_label[[0, 0]] > 0.5 { 0 } else { 1 };
+        let pred_cls = i32::from(logits[[0, 0]] <= logits[[0, 1]]);
+        let true_cls = i32::from(cls_label[[0, 0]] <= 0.5);
         pred_classes.push(pred_cls);
         true_classes.push(true_cls);
 
@@ -163,8 +159,7 @@ fn main() -> Result<(), GraphError> {
         let mark = if pred_cls == true_cls { "✓" } else { "✗" };
 
         println!(
-            "  sum={:+.2}: 分类={} {} | 目标={:.2}, 预测={:.2}, 误差={:.3}",
-            total, cls_str, mark, true_val, pred_val, error
+            "  sum={total:+.2}: 分类={cls_str} {mark} | 目标={true_val:.2}, 预测={pred_val:.2}, 误差={error:.3}"
         );
     }
 

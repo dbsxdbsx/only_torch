@@ -143,9 +143,7 @@ impl TraitNode for Subtract {
         let target_shape = target_parent
             .value()
             .ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "Subtract 梯度计算时父{target_parent}没有值"
-                ))
+                GraphError::ComputationError(format!("Subtract 梯度计算时父{target_parent}没有值"))
             })?
             .shape();
 

@@ -17,7 +17,7 @@
 //! | `.value()` | 获取主指标值（比例或数值） |
 //! | `.n_samples()` | 获取样本数 |
 //! | `.percent()` | 百分比形式（value × 100） |
-//! | `.weighted()` | 加权值（value × n_samples，批处理累加用） |
+//! | `.weighted()` | 加权值（value × `n_samples，批处理累加用`） |
 //!
 //! ## 多态输入
 //!
@@ -128,7 +128,7 @@ pub trait Metric {
         self.value() * 100.0
     }
 
-    /// 获取加权值（value × n_samples）
+    /// 获取加权值（value × `n_samples`）
     ///
     /// 用于批处理场景的加权累加，最终除以总样本数得到全局指标值。
     #[inline]
@@ -166,7 +166,7 @@ pub struct ClassificationMetric {
 impl ClassificationMetric {
     /// 创建新的分类指标结果
     #[inline]
-    pub(crate) fn new(value: f32, n_samples: usize) -> Self {
+    pub(crate) const fn new(value: f32, n_samples: usize) -> Self {
         Self {
             metric_value: value,
             sample_count: n_samples,
@@ -177,13 +177,13 @@ impl ClassificationMetric {
 
     /// 获取主指标值（0.0 ~ 1.0）
     #[inline]
-    pub fn value(&self) -> f32 {
+    pub const fn value(&self) -> f32 {
         self.metric_value
     }
 
     /// 获取样本数
     #[inline]
-    pub fn n_samples(&self) -> usize {
+    pub const fn n_samples(&self) -> usize {
         self.sample_count
     }
 
@@ -193,7 +193,7 @@ impl ClassificationMetric {
         self.metric_value * 100.0
     }
 
-    /// 获取加权值（value × n_samples），用于批处理累加
+    /// 获取加权值（value × `n_samples），用于批处理累加`
     #[inline]
     pub fn weighted(&self) -> f32 {
         self.metric_value * self.sample_count as f32
@@ -252,7 +252,7 @@ pub struct RegressionMetric {
 impl RegressionMetric {
     /// 创建新的回归指标结果
     #[inline]
-    pub(crate) fn new(value: f32, n_samples: usize) -> Self {
+    pub(crate) const fn new(value: f32, n_samples: usize) -> Self {
         Self {
             metric_value: value,
             sample_count: n_samples,
@@ -263,13 +263,13 @@ impl RegressionMetric {
 
     /// 获取主指标值
     #[inline]
-    pub fn value(&self) -> f32 {
+    pub const fn value(&self) -> f32 {
         self.metric_value
     }
 
     /// 获取样本数
     #[inline]
-    pub fn n_samples(&self) -> usize {
+    pub const fn n_samples(&self) -> usize {
         self.sample_count
     }
 
@@ -279,7 +279,7 @@ impl RegressionMetric {
         self.metric_value * 100.0
     }
 
-    /// 获取加权值（value × n_samples），用于批处理累加
+    /// 获取加权值（value × `n_samples），用于批处理累加`
     #[inline]
     pub fn weighted(&self) -> f32 {
         self.metric_value * self.sample_count as f32
