@@ -473,4 +473,56 @@ impl GraphInner {
         let handle = NodeHandle::new_bce_loss_with_reduction(&parents, reduction)?;
         self.add_node_to_list(handle, name, "bce", &[logits_id, target_id])
     }
+
+    /// 创建 Huber Loss 损失节点（默认 Mean reduction, δ=1.0）
+    ///
+    /// Huber Loss 结合 MSE（小误差）和 MAE（大误差）的优点：
+    /// - |error| ≤ δ 时行为像 MSE（对小误差敏感）
+    /// - |error| > δ 时行为像 MAE（对大误差鲁棒，梯度被"裁剪"到 ±δ）
+    ///
+    /// # 典型应用
+    /// - **强化学习**：DQN 等算法的 Q 值训练（δ=1.0 是标准配置）
+    /// - **带离群值的回归**：数据中存在异常值时
+    ///
+    /// # 参数
+    /// - `input_id`: 预测值节点 ID
+    /// - `target_id`: 目标值节点 ID
+    /// - `name`: 节点名称（可选）
+    pub fn new_huber_loss_node(
+        &mut self,
+        input_id: NodeId,
+        target_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[input_id, target_id])?;
+        let handle = NodeHandle::new_huber_loss(&parents)?;
+        self.add_node_to_list(handle, name, "huber", &[input_id, target_id])
+    }
+
+    /// 创建 Huber Loss 损失节点（指定 δ 参数）
+    pub fn new_huber_loss_node_with_delta(
+        &mut self,
+        input_id: NodeId,
+        target_id: NodeId,
+        delta: f32,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[input_id, target_id])?;
+        let handle = NodeHandle::new_huber_loss_with_delta(&parents, delta)?;
+        self.add_node_to_list(handle, name, "huber", &[input_id, target_id])
+    }
+
+    /// 创建 Huber Loss 损失节点（完全自定义参数）
+    pub fn new_huber_loss_node_with_params(
+        &mut self,
+        input_id: NodeId,
+        target_id: NodeId,
+        reduction: Reduction,
+        delta: f32,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let parents = self.get_nodes(&[input_id, target_id])?;
+        let handle = NodeHandle::new_huber_loss_with_params(&parents, reduction, delta)?;
+        self.add_node_to_list(handle, name, "huber", &[input_id, target_id])
+    }
 }

@@ -390,3 +390,123 @@ impl Default for BceLoss {
         Self::new()
     }
 }
+
+/// Huber Loss（Smooth L1 Loss）损失函数（PyTorch 风格封装）
+///
+/// 结合 MSE（小误差）和 MAE（大误差）的优点，对异常值更鲁棒。
+/// 是强化学习（DQN 等）的标准损失函数。
+///
+/// ## 行为
+/// - |error| ≤ δ 时行为像 MSE（对小误差敏感）
+/// - |error| > δ 时行为像 MAE（梯度被"裁剪"到 ±δ）
+///
+/// ## 典型应用
+/// - **强化学习**：DQN 的 Q 值训练（δ=1.0 是标准配置）
+/// - **带离群值的回归**：数据中存在异常值时
+///
+/// ## 智能缓存
+/// 与其他 Criterion 相同，按 `output` 节点 ID 缓存 loss 子图。
+///
+/// # 示例
+/// ```ignore
+/// // 默认配置（δ=1.0，强化学习标准）
+/// let criterion = HuberLoss::new();
+///
+/// // 自定义 δ
+/// let criterion = HuberLoss::with_delta(0.5);
+///
+/// for batch in dataloader {
+///     let q_values = model.forward(&states)?;
+///     let loss = criterion.forward(&q_values, &target_q)?;
+///     loss.backward()?;
+///     optimizer.step()?;
+/// }
+/// ```
+pub struct HuberLoss {
+    /// δ 参数：小误差/大误差的分界阈值
+    delta: f32,
+    /// 按 output 节点 ID 缓存的 loss 状态
+    cache: RefCell<HashMap<NodeId, LossState>>,
+}
+
+impl HuberLoss {
+    /// 创建 Huber 损失函数（默认 δ=1.0，强化学习标准配置）
+    pub fn new() -> Self {
+        Self {
+            delta: crate::nn::nodes::raw_node::DEFAULT_HUBER_DELTA,
+            cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// 创建 Huber 损失函数（指定 δ 参数）
+    pub fn with_delta(delta: f32) -> Self {
+        Self {
+            delta,
+            cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// 获取 δ 参数
+    pub fn delta(&self) -> f32 {
+        self.delta
+    }
+
+    /// 计算损失（PyTorch 风格）
+    ///
+    /// # 参数
+    /// - `input`: 模型输出（预测值）
+    /// - `target`: 目标值
+    ///
+    /// # 返回
+    /// 损失值节点（可直接调用 `.backward()`）
+    pub fn forward(&self, input: &Var, target: &Tensor) -> Result<Var, GraphError> {
+        let output_id = input.node_id();
+        let mut cache = self.cache.borrow_mut();
+
+        if let Some(s) = cache.get(&output_id) {
+            // 缓存命中：复用已有的 loss 子图
+            s.target_node.set_value(target)?;
+            return Ok(s.loss_node.clone());
+        }
+
+        // 缓存未命中：创建新的 loss 子图
+        let graph = input.get_graph();
+        let target_node = graph.target(target.shape())?;
+        target_node.set_value(target)?;
+
+        // 使用自定义 δ 创建 Huber Loss 节点
+        let loss_id = graph.inner_mut().new_huber_loss_node_with_delta(
+            input.node_id(),
+            target_node.node_id(),
+            self.delta,
+            None,
+        )?;
+        let loss_node = Var::new(loss_id, graph.inner_rc());
+
+        cache.insert(
+            output_id,
+            LossState {
+                target_node,
+                loss_node: loss_node.clone(),
+            },
+        );
+
+        Ok(loss_node)
+    }
+
+    /// 获取缓存数量
+    pub fn cache_size(&self) -> usize {
+        self.cache.borrow().len()
+    }
+
+    /// 清空缓存
+    pub fn clear_cache(&self) {
+        self.cache.borrow_mut().clear();
+    }
+}
+
+impl Default for HuberLoss {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -23,6 +23,7 @@ mod node_bce; // BCE 节点（Binary Cross Entropy，二元交叉熵损失）
 mod node_conv2d; // Conv2d 节点（2D 卷积）
 mod node_divide; // Divide 节点（逐元素除法）
 mod node_flatten; // Flatten 节点（展平）
+mod node_huber; // Huber Loss 节点（Smooth L1 Loss，强化学习标准损失函数）
 mod node_identity; // Identity 节点（恒等映射，用于 detach_node）
 mod node_input; // InputVariant（BasicInput, TargetInput, SmartInput）
 mod node_leaky_relu; // LeakyReLU/ReLU 激活函数

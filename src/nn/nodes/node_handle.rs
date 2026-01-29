@@ -1,8 +1,8 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Abs, Add, AvgPool2d, BCE, Conv2d, Divide, Flatten, Identity, InputVariant, LeakyReLU, MAE, MSE,
-    MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus,
-    Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
+    Abs, Add, AvgPool2d, BCE, Conv2d, Divide, Flatten, Huber, Identity, InputVariant, LeakyReLU,
+    MAE, MSE, MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign,
+    SoftPlus, Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -450,6 +450,30 @@ impl NodeHandle {
         reduction: Reduction,
     ) -> Result<Self, GraphError> {
         Self::new(BCE::new(parents, reduction)?)
+    }
+
+    /// 创建 Huber Loss 节点（默认 Mean reduction, δ=1.0）
+    ///
+    /// Huber Loss 结合 MSE（小误差）和 MAE（大误差）的优点，是强化学习的标准损失函数。
+    pub(in crate::nn) fn new_huber_loss(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Huber::new_default(parents)?)
+    }
+
+    /// 创建 Huber Loss 节点（指定 δ 参数，默认 Mean reduction）
+    pub(in crate::nn) fn new_huber_loss_with_delta(
+        parents: &[&Self],
+        delta: f32,
+    ) -> Result<Self, GraphError> {
+        Self::new(Huber::new_with_delta(parents, delta)?)
+    }
+
+    /// 创建 Huber Loss 节点（完全自定义参数）
+    pub(in crate::nn) fn new_huber_loss_with_params(
+        parents: &[&Self],
+        reduction: Reduction,
+        delta: f32,
+    ) -> Result<Self, GraphError> {
+        Self::new(Huber::new(parents, reduction, delta)?)
     }
 
     pub(in crate::nn) fn calc_value_by_parents(

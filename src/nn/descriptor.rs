@@ -98,6 +98,9 @@ pub enum NodeTypeDescriptor {
         new_dim: bool,
     },
     BCE,
+    Huber {
+        delta: f32,
+    },
     MAE,
     MSE,
     SoftmaxCrossEntropy,

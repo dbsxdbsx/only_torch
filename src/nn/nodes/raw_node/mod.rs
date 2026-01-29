@@ -6,7 +6,8 @@ mod state;
 
 pub(in crate::nn) use input::InputVariant;
 pub use loss::Reduction;
-pub(super) use loss::{BCE, MAE, MSE, SoftmaxCrossEntropy};
+pub use loss::DEFAULT_HUBER_DELTA;
+pub(super) use loss::{BCE, Huber, MAE, MSE, SoftmaxCrossEntropy};
 pub(super) use ops::*;
 pub(super) use parameter::Parameter;
 pub(super) use state::State;
@@ -29,6 +30,7 @@ pub(in crate::nn) enum NodeType {
     MaxPool2d(MaxPool2d),
     Divide(Divide),
     BCE(BCE),
+    Huber(Huber),
     MAE(MAE),
     MSE(MSE),
     Multiply(Multiply),

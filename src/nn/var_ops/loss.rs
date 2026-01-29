@@ -17,6 +17,7 @@ use std::rc::Rc;
 /// - `bce_loss(target)`: 二元交叉熵损失（含 Sigmoid）- 用于二分类/多标签分类
 /// - `mse_loss(target)`: 均方误差损失 - 用于回归
 /// - `mae_loss(target)`: 平均绝对误差损失 - 用于回归（对异常值更鲁棒）
+/// - `huber_loss(target)`: Huber 损失 - 用于强化学习 / 带离群值的回归
 ///
 /// # 使用示例
 /// ```ignore
@@ -26,6 +27,7 @@ use std::rc::Rc;
 /// let loss = logits.bce_loss(&targets)?;      // 二分类/多标签
 /// let loss = output.mse_loss(&target)?;
 /// let loss = output.mae_loss(&target)?;
+/// let loss = q_values.huber_loss(&target_q)?; // 强化学习
 /// ```
 pub trait VarLossOps {
     /// Cross Entropy Loss（含 Softmax）
@@ -70,6 +72,21 @@ pub trait VarLossOps {
     /// # 返回
     /// 标量损失值节点
     fn mae_loss(&self, target: &Var) -> Result<Var, GraphError>;
+
+    /// Huber Loss（Smooth L1 Loss）
+    ///
+    /// 结合 MSE（小误差）和 MAE（大误差）的优点。
+    /// 是强化学习（DQN 等）的标准损失函数。
+    ///
+    /// - |error| ≤ δ 时行为像 MSE（对小误差敏感）
+    /// - |error| > δ 时行为像 MAE（梯度被"裁剪"到 ±δ）
+    ///
+    /// # 参数
+    /// - `target`: 目标值
+    ///
+    /// # 返回
+    /// 标量损失值节点
+    fn huber_loss(&self, target: &Var) -> Result<Var, GraphError>;
 }
 
 impl VarLossOps for Var {
@@ -107,6 +124,16 @@ impl VarLossOps for Var {
             self.graph()
                 .borrow_mut()
                 .new_mae_loss_node(self.node_id(), target.node_id(), None)?;
+        Ok(Self::new(id, Rc::clone(self.graph())))
+    }
+
+    fn huber_loss(&self, target: &Var) -> Result<Var, GraphError> {
+        self.assert_same_graph(target);
+        let id = self.graph().borrow_mut().new_huber_loss_node(
+            self.node_id(),
+            target.node_id(),
+            None,
+        )?;
         Ok(Self::new(id, Rc::clone(self.graph())))
     }
 }

@@ -1,8 +1,8 @@
 //! Criterion（损失函数封装）单元测试
 //!
-//! 测试 CrossEntropyLoss、MseLoss、BceLoss 的智能缓存机制。
+//! 测试 CrossEntropyLoss、MseLoss、BceLoss、HuberLoss 的智能缓存机制。
 
-use crate::nn::{BceLoss, CrossEntropyLoss, Graph, MseLoss};
+use crate::nn::{BceLoss, CrossEntropyLoss, Graph, HuberLoss, MseLoss};
 use crate::tensor::Tensor;
 
 // ==================== CrossEntropyLoss 测试 ====================
@@ -208,6 +208,102 @@ fn test_bce_loss_clear_cache() {
 
     let target = Tensor::new(&[1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0], &[2, 4]);
     criterion.forward(&logits, &target).unwrap();
+    assert_eq!(criterion.cache_size(), 1);
+
+    criterion.clear_cache();
+    assert_eq!(criterion.cache_size(), 0);
+}
+
+// ==================== HuberLoss 测试 ====================
+
+#[test]
+fn test_huber_loss_basic() {
+    let graph = Graph::new_with_seed(42);
+
+    // 模拟 Q 值: [2, 4]（2 个样本，4 个动作的 Q 值）
+    let q_values = graph.randn(&[2, 4]).unwrap();
+    let criterion = HuberLoss::new();
+
+    // 验证默认 δ=1.0
+    assert_eq!(criterion.delta(), 1.0);
+
+    // 第一次调用
+    let target1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 0.5, 1.5, 2.5, 3.5], &[2, 4]);
+    let loss1 = criterion.forward(&q_values, &target1).unwrap();
+    let val1 = loss1.backward().unwrap();
+    assert!(val1 >= 0.0);
+
+    // 第二次调用（复用节点）
+    let target2 = Tensor::new(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], &[2, 4]);
+    let loss2 = criterion.forward(&q_values, &target2).unwrap();
+    let val2 = loss2.backward().unwrap();
+    assert!(val2 >= 0.0);
+
+    // 验证 loss 节点是同一个
+    assert_eq!(loss1.node_id(), loss2.node_id());
+    assert_eq!(criterion.cache_size(), 1);
+}
+
+#[test]
+fn test_huber_loss_with_delta() {
+    let graph = Graph::new_with_seed(42);
+
+    let output = graph.randn(&[3, 2]).unwrap();
+
+    // 使用自定义 δ
+    let criterion = HuberLoss::with_delta(0.5);
+    assert_eq!(criterion.delta(), 0.5);
+
+    let target = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    let loss = criterion.forward(&output, &target).unwrap();
+    let val = loss.backward().unwrap();
+    assert!(val >= 0.0);
+
+    assert_eq!(criterion.cache_size(), 1);
+}
+
+#[test]
+fn test_huber_loss_multi_output() {
+    let graph = Graph::new_with_seed(42);
+
+    // 两个不同的 output 节点
+    let output1 = graph.randn(&[2, 4]).unwrap();
+    let output2 = graph.randn(&[3, 4]).unwrap();
+
+    let criterion = HuberLoss::new();
+
+    // 使用 output1
+    let target1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 0.5, 1.5, 2.5, 3.5], &[2, 4]);
+    let loss1 = criterion.forward(&output1, &target1).unwrap();
+
+    // 使用 output2（不同节点，自动创建新缓存）
+    #[rustfmt::skip]
+    let target2 = Tensor::new(
+        &[1.0, 2.0, 3.0, 4.0, 0.5, 1.5, 2.5, 3.5, 0.0, 1.0, 2.0, 3.0],
+        &[3, 4],
+    );
+    let loss2 = criterion.forward(&output2, &target2).unwrap();
+
+    // 应该是不同的 loss 节点
+    assert_ne!(loss1.node_id(), loss2.node_id());
+    assert_eq!(criterion.cache_size(), 2);
+
+    // 再次使用 output1（复用）
+    let target3 = Tensor::new(&[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], &[2, 4]);
+    let loss3 = criterion.forward(&output1, &target3).unwrap();
+
+    assert_eq!(loss1.node_id(), loss3.node_id());
+    assert_eq!(criterion.cache_size(), 2); // 仍然只有 2 个缓存
+}
+
+#[test]
+fn test_huber_loss_clear_cache() {
+    let graph = Graph::new_with_seed(42);
+    let output = graph.randn(&[2, 4]).unwrap();
+    let criterion = HuberLoss::new();
+
+    let target = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 0.5, 1.5, 2.5, 3.5], &[2, 4]);
+    criterion.forward(&output, &target).unwrap();
     assert_eq!(criterion.cache_size(), 1);
 
     criterion.clear_cache();

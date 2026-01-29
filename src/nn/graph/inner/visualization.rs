@@ -192,6 +192,7 @@ impl GraphInner {
                         NodeTypeDescriptor::SoftmaxCrossEntropy
                             | NodeTypeDescriptor::MSE
                             | NodeTypeDescriptor::MAE
+                            | NodeTypeDescriptor::Huber { .. }
                     )
                 })
                 .map(|n| n.id)
@@ -998,7 +999,8 @@ impl GraphInner {
             // 参数节点：矩形，浅绿色
             NodeTypeDescriptor::Parameter => ("box", "filled", "#E8F5E9"),
             // 损失节点：八边形，浅红色
-            NodeTypeDescriptor::MAE
+            NodeTypeDescriptor::Huber { .. }
+            | NodeTypeDescriptor::MAE
             | NodeTypeDescriptor::MSE
             | NodeTypeDescriptor::SoftmaxCrossEntropy => ("octagon", "filled", "#FFEBEE"),
             // 激活函数：菱形，浅橙色
@@ -1275,6 +1277,7 @@ impl GraphInner {
                 }
             }
             NodeTypeDescriptor::BCE => "BCE",
+            NodeTypeDescriptor::Huber { .. } => "Huber",
             NodeTypeDescriptor::MAE => "MAE",
             NodeTypeDescriptor::MSE => "MSE",
             NodeTypeDescriptor::SoftmaxCrossEntropy => "SoftmaxCE",
