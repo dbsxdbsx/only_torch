@@ -20,6 +20,9 @@ TEST_SCRIPTS = [
     ("基础连续环境", "test_02_basic_continuous.py"),
     ("Box2D 环境", "test_03_box2d.py"),
     ("MuJoCo 环境", "test_04_mujoco.py"),
+    ("Atari 环境", "test_05_atari.py"),
+    ("Minari 数据集", "test_06_minari.py"),
+    ("混合动作空间", "test_07_hybrid.py"),
 ]
 
 

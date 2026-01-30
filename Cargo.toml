@@ -73,6 +73,10 @@
     # 并行计算
     rayon="1.10" # 数据并行
 
+    # Python 交互（强化学习 Gym 环境）
+    pyo3  ={version="0.27", features=["auto-initialize"]}
+    numpy ="0.27"
+
 [dev-dependencies]
     # statrs="^0.16.0"
 

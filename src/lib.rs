@@ -10,6 +10,7 @@ pub mod errors;
 pub mod logic;
 pub mod metrics;
 pub mod nn;
+pub mod rl;
 pub mod tensor;
 pub mod utils;
 pub mod vision;

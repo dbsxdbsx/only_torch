@@ -156,6 +156,18 @@ py-gym-mujoco:
     @echo "=== Running MuJoCo ==="
     python tests/python/gym/test_04_mujoco.py
 
+py-gym-atari:
+    @echo "=== Running Atari ==="
+    python tests/python/gym/test_05_atari.py
+
+py-gym-minari:
+    @echo "=== Running Minari ==="
+    python tests/python/gym/test_06_minari.py
+
+py-gym-hybrid:
+    @echo "=== Running Hybrid Action Space ==="
+    python tests/python/gym/test_07_hybrid.py
+
 # ==================== 文档 ====================
 
 # 生成文档
