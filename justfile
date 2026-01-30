@@ -132,6 +132,30 @@ clean:
 clean-all:
     cargo clean && cargo update
 
+# ==================== Python 测试 ====================
+
+# 运行所有 Gymnasium 环境测试
+py-gym:
+    @echo "=== Running All Gymnasium Tests ==="
+    python tests/python/gym/run_all_tests.py
+
+# 运行单个 gym 测试
+py-gym-basic:
+    @echo "=== Running Basic Discrete ==="
+    python tests/python/gym/test_01_basic_discrete.py
+
+py-gym-continuous:
+    @echo "=== Running Basic Continuous ==="
+    python tests/python/gym/test_02_basic_continuous.py
+
+py-gym-box2d:
+    @echo "=== Running Box2D ==="
+    python tests/python/gym/test_03_box2d.py
+
+py-gym-mujoco:
+    @echo "=== Running MuJoCo ==="
+    python tests/python/gym/test_04_mujoco.py
+
 # ==================== 文档 ====================
 
 # 生成文档
