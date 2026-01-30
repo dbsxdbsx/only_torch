@@ -288,7 +288,7 @@ opt-level = 3
 
 ### ⚫ 实战验证
 
-- 深度强化学习：CartPole（需 Gym 支持）
+- 深度强化学习：CartPole（需 Gym 支持）—— 环境搭建详见 [RL Python 环境搭建指南](.doc/rl_python_env_setup.md)
 - [CFC](https://github.com/raminmh/CfC) 实现
 
 ### 💤 低优先级
