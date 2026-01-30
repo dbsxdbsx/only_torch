@@ -7,6 +7,7 @@
 //! - 高维连续动作环境（MuJoCo Ant）
 //! - 图像观察环境（Atari Breakout）
 //! - 混合动作环境（gym-hybrid Moving/Sliding）
+//! - 自定义环境（五子棋 Gomoku）
 //!
 //! 对应 Python 测试：
 //! - `tests/python/gym/test_01_basic_discrete.py`
@@ -15,6 +16,7 @@
 //! - `tests/python/gym/test_04_mujoco.py`
 //! - `tests/python/gym/test_05_atari.py`
 //! - `tests/python/gym/test_07_hybrid.py`
+//! - `tests/python/gym/test_08_gomoku.py`
 //!
 //! 注意：所有测试使用 `#[serial]` 确保串行执行，避免 Python 模块导入竞争
 
@@ -517,6 +519,176 @@ fn test_smart_loading_gymnasium() {
 fn test_hybrid_env_print_info() {
     Python::attach(|py| {
         let env = GymEnv::new(py, "Moving-v0");
+        env.print_env_basic_info();
+        env.close();
+    });
+}
+
+// ============================================================================
+// 自定义环境（五子棋）
+// ============================================================================
+
+/// 注册五子棋自定义环境
+fn register_gomoku_envs(py: Python<'_>) {
+    // 添加项目根目录到 sys.path，确保可以导入 tests.python.custom_envs
+    let sys = py.import("sys").expect("import sys 失败");
+    let path = sys.getattr("path").expect("获取 sys.path 失败");
+
+    // 获取当前工作目录（项目根目录）
+    let os = py.import("os").expect("import os 失败");
+    let cwd = os
+        .call_method0("getcwd")
+        .expect("获取当前工作目录失败")
+        .extract::<String>()
+        .expect("提取路径字符串失败");
+
+    // 添加到 sys.path（如果不存在）
+    let contains: bool = path
+        .call_method1("__contains__", (&cwd,))
+        .expect("检查路径失败")
+        .extract()
+        .expect("提取布尔值失败");
+
+    if !contains {
+        path.call_method1("insert", (0, &cwd))
+            .expect("添加路径失败");
+    }
+
+    // 导入自定义环境模块（触发注册）
+    py.import("tests.python.custom_envs")
+        .expect("导入五子棋自定义环境模块失败");
+}
+
+/// 测试五子棋环境基本功能（Gomoku-naive2-v0）
+///
+/// 验证点：
+/// - 动作类型：SingleDiscrete
+/// - 观察空间：(3, 15, 15) 三通道
+/// - 动作空间：225 个离散动作（15x15 棋盘）
+#[test]
+#[serial]
+fn test_gomoku_env_basic() {
+    Python::attach(|py| {
+        register_gomoku_envs(py);
+
+        let env = GymEnv::new(py, "Gomoku-naive2-v0");
+
+        // 验证动作类型
+        assert_eq!(env.get_action_type(), ActionType::SingleDiscrete);
+
+        // 验证观察类型：3 通道图像（ChannelFirst）
+        assert_eq!(env.get_obs_type(), ObsType::ChannelFirst);
+
+        // 验证观察空间：(3, 15, 15)
+        let obs_prop = env.get_obs_prop();
+        assert_eq!(obs_prop.len(), 1);
+        assert_eq!(obs_prop[0].shape_vec, vec![3, 15, 15]);
+
+        // 验证动作空间：225 个离散动作
+        let action_ranges = env.get_all_action_valid_range();
+        assert_eq!(action_ranges.len(), 1);
+        assert!(action_ranges[0].is_discrete_action());
+        assert_eq!(action_ranges[0].get_discrete_action_selectable_num(), 225);
+
+        // 验证扁平化长度
+        assert_eq!(env.get_flatten_observation_len(), 3 * 15 * 15);
+
+        env.close();
+    });
+}
+
+/// 测试五子棋环境 reset 和 step
+///
+/// 验证：
+/// - reset 返回正确形状的观察
+/// - step 能正确执行动作并返回结果
+#[test]
+#[serial]
+fn test_gomoku_env_reset_step() {
+    Python::attach(|py| {
+        register_gomoku_envs(py);
+
+        let env = GymEnv::new(py, "Gomoku-naive2-v0");
+
+        // reset 验证
+        let obs = env.reset(Some(42));
+        assert_eq!(obs.len(), 1);
+        assert_eq!(obs[0].len(), 3 * 15 * 15); // 扁平化后的长度
+
+        // step 验证：在中心位置落子 (7, 7) -> action = 7*15 + 7 = 112
+        let action = vec![112.0];
+        let (next_obs, reward, done) = env.step(&action);
+        assert_eq!(next_obs[0].len(), 3 * 15 * 15);
+
+        // 奖励应该是 0（游戏继续）、1（玩家胜）或 -1（对手胜/非法）
+        assert!(reward == 0.0 || reward == 1.0 || reward == -1.0);
+
+        // 如果游戏未结束，继续验证
+        if !done {
+            // 采样并执行随机动作
+            let sampled = env.sample_action();
+            assert_eq!(sampled.len(), 1);
+            assert!(sampled[0] >= 0.0 && sampled[0] < 225.0);
+
+            let (_obs, _reward, _done) = env.step(&sampled);
+        }
+
+        env.close();
+    });
+}
+
+/// 测试五子棋环境多步对局
+///
+/// 验证环境在多步交互中的稳定性
+#[test]
+#[serial]
+fn test_gomoku_env_multiple_steps() {
+    Python::attach(|py| {
+        register_gomoku_envs(py);
+
+        // 使用 random 对手，更容易获胜
+        let env = GymEnv::new(py, "Gomoku-random-v0");
+
+        let _obs = env.reset(Some(42));
+        let mut total_steps = 0;
+        let mut game_ended = false;
+
+        // 执行多步随机动作（最多 100 步）
+        for _ in 0..100 {
+            let action = env.sample_action();
+            assert_eq!(action.len(), 1);
+
+            let (_next_obs, reward, done) = env.step(&action);
+            total_steps += 1;
+
+            if done {
+                game_ended = true;
+                // 游戏结束，验证奖励
+                assert!(
+                    reward == 1.0 || reward == -1.0 || reward == 0.0,
+                    "游戏结束时奖励应为 1.0（胜）、-1.0（负）或 0.0（平局），实际为 {}",
+                    reward
+                );
+                break;
+            }
+        }
+
+        assert!(total_steps > 0, "至少应执行一步");
+        // 随机对手下，100 步内游戏应该结束
+        assert!(game_ended, "100 步内游戏应该结束");
+
+        env.close();
+    });
+}
+
+/// 测试五子棋环境信息打印
+#[test]
+#[serial]
+fn test_gomoku_env_print_info() {
+    Python::attach(|py| {
+        register_gomoku_envs(py);
+
+        let env = GymEnv::new(py, "Gomoku-naive2-v0");
         env.print_env_basic_info();
         env.close();
     });

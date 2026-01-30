@@ -168,6 +168,10 @@ py-gym-hybrid:
     @echo "=== Running Hybrid Action Space ==="
     python tests/python/gym/test_07_hybrid.py
 
+py-gym-gomoku:
+    @echo "=== Running Gomoku Custom Environment ==="
+    python tests/python/gym/test_08_gomoku.py
+
 # ==================== 文档 ====================
 
 # 生成文档

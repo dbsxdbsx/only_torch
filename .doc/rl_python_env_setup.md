@@ -72,6 +72,11 @@ pip install --upgrade pip
 | 5 | `pip install minari` | D4RL/pointmaze/umaze-v2 | 离线数据集 | 离线数据集 | Offline RL |
 | 6 | `pip install DI-engine` | Moving-v0 | Box(10,) | Tuple(Discrete(3), Box(2,)) | 混合动作空间 |
 | 6 | | Sliding-v0 | Box(10,) | Tuple(Discrete(3), Box(2,)) | 混合动作空间 |
+| 7 | 自定义环境 | Gomoku-random-v0 | Box(3,15,15) | Discrete(225) | 五子棋-随机对手 |
+| 7 | | Gomoku-naive0-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive0 |
+| 7 | | Gomoku-naive1-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive1 |
+| 7 | | Gomoku-naive2-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive2 |
+| 7 | | Gomoku-naive3-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive3 |
 
 > **说明**：
 > - Box(n,) 表示 n 维连续向量；Discrete(n) 表示 n 选 1 离散动作
@@ -134,6 +139,7 @@ just py-gym-mujoco         # test_04: MuJoCo 环境
 just py-gym-atari          # test_05: Atari 环境
 just py-gym-minari         # test_06: Minari 离线数据集
 just py-gym-hybrid         # test_07: 混合动作空间
+just py-gym-gomoku         # test_08: 五子棋自定义环境
 ```
 
 - [x] **批次 1**：基础离散/连续环境 ✅
@@ -142,6 +148,7 @@ just py-gym-hybrid         # test_07: 混合动作空间
 - [x] **批次 4**：Atari 环境 ✅
 - [x] **批次 5**：Minari 离线数据集 ✅
 - [x] **批次 6**：混合动作空间（gym-hybrid）✅
+- [x] **批次 7**：五子棋自定义环境 ✅
 
 ## 后续步骤
 
@@ -186,91 +193,91 @@ fn test_gym_env() {
 
 ## 自定义环境支持
 
-### Gymnasium 自定义环境
+### 五子棋环境（Gomoku）
 
-Gymnasium 完全支持自定义环境，这是创建新环境的推荐方式。
+项目已实现基于 Gymnasium 的五子棋环境，位于 `tests/python/custom_envs/gomoku.py`。
 
-#### 创建自定义环境
+#### 环境特性
+
+| 特性 | 说明 |
+|------|------|
+| 棋盘大小 | 可配置（默认 15x15） |
+| 获胜条件 | 可配置（默认 5 连珠） |
+| 观察空间 | `Box(0, 1, (3, 15, 15), int8)` - 3 通道 |
+| 动作空间 | `Discrete(225)` |
+| 难度级别 | 5 级：random, naive0~3 |
+
+#### 难度级别说明
+
+| 级别 | 策略 | 强度 |
+|------|------|------|
+| `random` | 纯随机落子 | 最弱 |
+| `naive0` | 只防守，不主动扩展 | 弱 |
+| `naive1` | 搜索 3 连珠扩展 | 中等 |
+| `naive2` | 搜索 2 连珠扩展 | 较强 |
+| `naive3` | 搜索 1 连珠扩展（最积极） | 最强 |
+
+#### 测试结果（随机玩家 vs AI，10 局/级别）
+
+| 对手 | 随机玩家胜率 | 平均步数 |
+|------|--------------|----------|
+| Random | ~80% | ~59 |
+| Naive-0 | 0% | ~28 |
+| Naive-1 | 0% | ~27 |
+| Naive-2 | 0% | ~10 |
+| Naive-3 | 0% | ~5 |
+
+#### 使用方式
 
 ```python
 import gymnasium as gym
-from gymnasium import spaces
-from gymnasium.envs.registration import register
-import numpy as np
+import tests.python.custom_envs  # 触发环境注册
 
-class GomokuEnv(gym.Env):
-    """五子棋自定义环境示例"""
-    
-    metadata = {"render_modes": ["human", "rgb_array"]}
-    
-    def __init__(self, board_size=15, render_mode=None):
-        super().__init__()
-        self.board_size = board_size
-        self.render_mode = render_mode
-        
-        # 动作空间：选择棋盘上的一个位置 (0 ~ board_size^2 - 1)
-        self.action_space = spaces.Discrete(board_size * board_size)
-        
-        # 观察空间：棋盘状态 (-1=对手, 0=空, 1=自己)
-        self.observation_space = spaces.Box(
-            low=-1, high=1, 
-            shape=(board_size, board_size), 
-            dtype=np.int8
-        )
-        
-        self.board = None
-    
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        self.board = np.zeros((self.board_size, self.board_size), dtype=np.int8)
-        return self.board.copy(), {}
-    
-    def step(self, action):
-        row, col = divmod(action, self.board_size)
-        # ... 落子逻辑、胜负判断 ...
-        reward = 0.0
-        terminated = False
-        truncated = False
-        return self.board.copy(), reward, terminated, truncated, {}
-    
-    def render(self):
-        if self.render_mode == "human":
-            # 打印棋盘
-            pass
-    
-    def close(self):
-        pass
+# 方式 1: 通过 gymnasium.make()（5 个难度级别可选）
+env = gym.make('Gomoku-random-v0')  # 随机对手
+env = gym.make('Gomoku-naive0-v0')  # 最弱
+env = gym.make('Gomoku-naive1-v0')
+env = gym.make('Gomoku-naive2-v0')  # 推荐
+env = gym.make('Gomoku-naive3-v0')  # 最强
 
-# 注册环境
-register(
-    id="Gomoku-v0",
-    entry_point="custom_envs.gomoku:GomokuEnv",
-    max_episode_steps=225,  # 15x15 棋盘最多 225 步
-)
+# 方式 2: 直接实例化
+from tests.python.custom_envs.gomoku import GomokuEnv
+env = GomokuEnv(board_size=15, win_length=5, opponent='naive2')
+
+# 标准 Gymnasium API
+obs, info = env.reset(seed=42)
+obs, reward, terminated, truncated, info = env.step(action)
+env.render()  # 打印棋盘
 ```
 
-#### 项目中的自定义环境组织
+#### 观察空间编码
 
-建议在 `tests/python/custom_envs/` 目录下组织自定义环境：
+```
+通道 0: 黑子位置 (1=有棋子, 0=无)
+通道 1: 白子位置 (1=有棋子, 0=无)
+通道 2: 空位标记 (1=空, 0=已占)
+```
+
+#### 奖励设计
+
+```
++1 = 玩家获胜
+-1 = 对手获胜 / 非法落子
+ 0 = 游戏进行中 / 平局
+```
+
+### 自定义环境目录结构
 
 ```
 tests/python/
+├── __init__.py
 ├── gym/                    # 标准环境测试
 │   ├── test_01_basic_discrete.py
-│   └── ...
+│   ├── ...
+│   └── test_08_gomoku.py   # 五子棋测试
 └── custom_envs/            # 自定义环境
     ├── __init__.py         # 导入时自动注册所有环境
-    ├── gomoku.py           # 五子棋环境
-    └── ...
-```
-
-`__init__.py` 示例：
-```python
-# 导入时自动注册所有自定义环境
-from gymnasium.envs.registration import register
-
-register(id="Gomoku-v0", entry_point="tests.python.custom_envs.gomoku:GomokuEnv")
-# 添加更多自定义环境...
+    └── gomoku.py           # 五子棋环境实现
 ```
 
 ### Rust 端使用自定义环境
@@ -279,9 +286,9 @@ register(id="Gomoku-v0", entry_point="tests.python.custom_envs.gomoku:GomokuEnv"
 Python::attach(|py| {
     // 确保自定义环境模块被导入（触发注册）
     py.import("tests.python.custom_envs").expect("导入自定义环境模块失败");
-    
-    // 然后正常使用
-    let env = GymEnv::new(py, "Gomoku-v0");
+
+    // 使用五子棋环境（5 个难度可选）
+    let env = GymEnv::new(py, "Gomoku-naive2-v0");  // 推荐
     env.print_env_basic_info();
 });
 ```
@@ -341,8 +348,8 @@ Rust 层的 `GymEnv` 对用户透明地处理各种 Python 环境来源：
 │  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 │         ↑                ↑                    ↑             │
 │         │                │                    │             │
-│  CartPole-v1      Moving-v0             Gomoku-v0          │
-│  Pendulum-v1      Sliding-v0            ...                │
+│  CartPole-v1      Moving-v0             Gomoku-*-v0   │
+│  Pendulum-v1      Sliding-v0            (5 难度级别)        │
 │  MuJoCo envs...                                            │
 └─────────────────────────────────────────────────────────────┘
 ```
