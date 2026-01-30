@@ -176,7 +176,7 @@ fn to_tensor_dataset(data: &CaliforniaHousingDataset) -> (Tensor, Tensor) {
 }
 
 /// 在测试集上计算 R² 分数
-fn evaluate_r2(model: &CaliforniaHousingMLP, loader: &DataLoader) -> Result<f32, GraphError> {
+fn evaluate_r2(model: &CaliforniaHousingMLP, loader: &DataLoader<TensorDataset>) -> Result<f32, GraphError> {
     let mut predictions = Vec::new();
     let mut actuals = Vec::new();
 
