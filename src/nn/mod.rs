@@ -27,7 +27,7 @@ pub use layer::{AvgPool2d, Conv2d, Gru, Linear, Lstm, MaxPool2d, Rnn};
 pub use model_state::{ForwardInput, ForwardOutput, ModelState};
 pub use module::Module;
 pub use nodes::NodeId;
-pub use nodes::raw_node::{Reduction, DEFAULT_DROPOUT_P};
+pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
 pub use optimizer::{Adam, Optimizer, SGD};
 pub use shape::{Dim, DynamicShape};
 pub use var::{DetachedVar, Init, Var};

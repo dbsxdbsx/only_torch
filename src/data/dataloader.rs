@@ -42,7 +42,7 @@ pub trait Dataset {
     /// 返回 `(features, labels)` 张量对
     fn get_batch(&self, indices: &[usize]) -> (Tensor, Tensor);
 
-    /// 获取样本的分桶键（用于 BucketedSampling）
+    /// 获取样本的分桶键（用于 `BucketedSampling`）
     ///
     /// 默认返回 `None`，表示不支持分桶。
     /// `VarLenDataset` 返回序列长度作为分桶键。
@@ -63,8 +63,8 @@ pub trait SamplingStrategy: Clone {
     ///
     /// # 参数
     /// - `dataset_len`: 数据集大小
-    /// - `batch_size`: 批大小（某些策略可能忽略，如 BucketedSampling）
-    /// - `bucket_keys`: 可选的分桶键数组（用于 BucketedSampling）
+    /// - `batch_size`: 批大小（某些策略可能忽略，如 `BucketedSampling`）
+    /// - `bucket_keys`: 可选的分桶键数组（用于 `BucketedSampling`）
     ///
     /// # 返回
     /// 批次索引列表，每个元素是一个批次中的样本索引
@@ -249,7 +249,7 @@ impl SamplingStrategy for BucketedSampling {
 // DataLoader
 // ═══════════════════════════════════════════════════════════════
 
-/// `DataLoader` - PyTorch 风格的数据批量加载器
+/// `DataLoader` - `PyTorch` 风格的数据批量加载器
 ///
 /// 泛型参数：
 /// - `D`: 数据集类型（实现 `Dataset` trait）
@@ -257,7 +257,7 @@ impl SamplingStrategy for BucketedSampling {
 ///
 /// # 示例
 ///
-/// ## 固定长度数据（默认 SequentialSampling）
+/// ## 固定长度数据（默认 `SequentialSampling`）
 /// ```ignore
 /// let dataset = TensorDataset::new(train_x, train_y);
 /// let loader = DataLoader::new(dataset, 32)
@@ -269,7 +269,7 @@ impl SamplingStrategy for BucketedSampling {
 /// }
 /// ```
 ///
-/// ## 变长序列（切换到 BucketedSampling）
+/// ## 变长序列（切换到 `BucketedSampling`）
 /// ```ignore
 /// let dataset = VarLenDataset::new(1, 2);
 /// // ... 添加样本 ...
@@ -341,7 +341,7 @@ impl<D: Dataset, S: SamplingStrategy> DataLoader<D, S> {
 // ----- DataLoader<D, SequentialSampling> 专用方法 -----
 
 impl<D: Dataset> DataLoader<D, SequentialSampling> {
-    /// 创建新的 DataLoader（默认使用 SequentialSampling）
+    /// 创建新的 DataLoader（默认使用 `SequentialSampling`）
     ///
     /// # 参数
     /// - `dataset`: 数据集
@@ -356,19 +356,19 @@ impl<D: Dataset> DataLoader<D, SequentialSampling> {
     }
 
     /// 设置是否打乱数据
-    pub fn shuffle(mut self, shuffle: bool) -> Self {
+    pub const fn shuffle(mut self, shuffle: bool) -> Self {
         self.strategy = self.strategy.shuffle(shuffle);
         self
     }
 
     /// 设置是否丢弃最后一个不完整的批次
-    pub fn drop_last(mut self, drop_last: bool) -> Self {
+    pub const fn drop_last(mut self, drop_last: bool) -> Self {
         self.strategy = self.strategy.drop_last(drop_last);
         self
     }
 
     /// 设置随机种子
-    pub fn seed(mut self, seed: u64) -> Self {
+    pub const fn seed(mut self, seed: u64) -> Self {
         self.strategy = self.strategy.seed(seed);
         self
     }
@@ -377,11 +377,11 @@ impl<D: Dataset> DataLoader<D, SequentialSampling> {
 // ----- DataLoader<&VarLenDataset, BucketedSampling> 专用方法 -----
 
 impl<'a> DataLoader<&'a VarLenDataset, BucketedSampling> {
-    /// 从变长数据集创建 DataLoader（使用 BucketedSampling）
+    /// 从变长数据集创建 DataLoader（使用 `BucketedSampling`）
     ///
     /// # 参数
     /// - `dataset`: 变长数据集引用
-    pub fn from_var_len(dataset: &'a VarLenDataset) -> Self {
+    pub const fn from_var_len(dataset: &'a VarLenDataset) -> Self {
         Self {
             dataset,
             strategy: BucketedSampling::new(),
@@ -390,13 +390,13 @@ impl<'a> DataLoader<&'a VarLenDataset, BucketedSampling> {
     }
 
     /// 设置是否打乱（桶内打乱）
-    pub fn shuffle(mut self, shuffle: bool) -> Self {
+    pub const fn shuffle(mut self, shuffle: bool) -> Self {
         self.strategy = self.strategy.shuffle(shuffle);
         self
     }
 
     /// 设置随机种子
-    pub fn seed(mut self, seed: u64) -> Self {
+    pub const fn seed(mut self, seed: u64) -> Self {
         self.strategy = self.strategy.seed(seed);
         self
     }
@@ -406,7 +406,7 @@ impl<'a> DataLoader<&'a VarLenDataset, BucketedSampling> {
 // DataLoaderIterator
 // ═══════════════════════════════════════════════════════════════
 
-/// DataLoader 迭代器
+/// `DataLoader` 迭代器
 pub struct DataLoaderIterator<'a, D: Dataset> {
     dataset: &'a D,
     batches: Vec<Vec<usize>>,
@@ -657,18 +657,18 @@ impl VarLenDataset {
     /// 获取桶数量（不同序列长度的数量）
     pub fn num_buckets(&self) -> usize {
         let mut lengths: Vec<usize> = self.samples.iter().map(|s| s.seq_len).collect();
-        lengths.sort();
+        lengths.sort_unstable();
         lengths.dedup();
         lengths.len()
     }
 
     /// 获取样本数量
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.samples.len()
     }
 
     /// 检查数据集是否为空
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
 }
@@ -726,8 +726,3 @@ impl Dataset for &VarLenDataset {
         (*self).bucket_key(index)
     }
 }
-
-
-
-
-

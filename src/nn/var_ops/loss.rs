@@ -44,7 +44,7 @@ pub trait VarLossOps {
     /// BCE Loss（二元交叉熵，含 Sigmoid）
     ///
     /// 用于二分类或多标签分类任务（一个样本可同时属于多个类别）。
-    /// 采用 BCEWithLogitsLoss 形式，数值稳定。
+    /// 采用 `BCEWithLogitsLoss` 形式，数值稳定。
     ///
     /// # 参数
     /// - `target`: 二值标签（0 或 1）

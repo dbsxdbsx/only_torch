@@ -356,7 +356,7 @@ pub struct MultiLabelMetric {
 impl MultiLabelMetric {
     /// 创建新的多标签指标结果
     #[inline]
-    pub(crate) fn new(
+    pub(crate) const fn new(
         overall: ClassificationMetric,
         per_label: Vec<ClassificationMetric>,
         num_samples: usize,
@@ -372,13 +372,13 @@ impl MultiLabelMetric {
 
     /// 获取总体准确率（0.0 ~ 1.0）
     #[inline]
-    pub fn value(&self) -> f32 {
+    pub const fn value(&self) -> f32 {
         self.overall.value()
     }
 
-    /// 获取总标签数（batch × num_labels）
+    /// 获取总标签数（batch × `num_labels`）
     #[inline]
-    pub fn n_samples(&self) -> usize {
+    pub const fn n_samples(&self) -> usize {
         self.overall.n_samples()
     }
 
@@ -388,7 +388,7 @@ impl MultiLabelMetric {
         self.overall.percent()
     }
 
-    /// 获取总体加权值（value × n_samples）
+    /// 获取总体加权值（value × `n_samples`）
     #[inline]
     pub fn weighted(&self) -> f32 {
         self.overall.weighted()
@@ -407,16 +407,16 @@ impl MultiLabelMetric {
 
     /// 获取标签数
     #[inline]
-    pub fn num_labels(&self) -> usize {
+    pub const fn num_labels(&self) -> usize {
         self.per_label.len()
     }
 
     /// 获取样本数（非标签数）
     ///
-    /// 注意：`n_samples()` 返回的是总标签数（batch × num_labels），
+    /// 注意：`n_samples()` 返回的是总标签数（batch × `num_labels`），
     /// 而 `num_samples()` 返回的是样本数（batch）。
     #[inline]
-    pub fn num_samples(&self) -> usize {
+    pub const fn num_samples(&self) -> usize {
         self.num_samples
     }
 }

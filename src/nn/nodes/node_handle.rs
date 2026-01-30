@@ -453,7 +453,7 @@ impl NodeHandle {
 
     /// 创建 BCE（Binary Cross Entropy）节点（默认使用 Mean reduction）
     ///
-    /// 采用 BCEWithLogitsLoss 形式，内置 Sigmoid 激活，数值稳定。
+    /// 采用 `BCEWithLogitsLoss` 形式，内置 Sigmoid 激活，数值稳定。
     /// 适用于二分类和多标签分类任务。
     pub(in crate::nn) fn new_bce_loss(parents: &[&Self]) -> Result<Self, GraphError> {
         Self::new(BCE::new_mean(parents)?)

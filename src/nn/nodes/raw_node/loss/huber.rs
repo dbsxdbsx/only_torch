@@ -79,8 +79,7 @@ impl Huber {
         // 2. 验证 δ 参数
         if delta <= 0.0 {
             return Err(GraphError::InvalidOperation(format!(
-                "Huber Loss 的 δ 参数必须为正数，当前值: {}",
-                delta
+                "Huber Loss 的 δ 参数必须为正数，当前值: {delta}"
             )));
         }
 
@@ -124,7 +123,7 @@ impl Huber {
     }
 
     /// 获取 δ 参数
-    pub(crate) fn delta(&self) -> f32 {
+    pub(crate) const fn delta(&self) -> f32 {
         self.delta
     }
 }
@@ -190,7 +189,7 @@ impl TraitNode for Huber {
                 if abs_a <= delta {
                     0.5 * a * a // MSE 分支
                 } else {
-                    delta * abs_a - half_delta_sq // MAE 分支
+                    delta.mul_add(abs_a, -half_delta_sq) // MAE 分支
                 }
             })
             .sum();

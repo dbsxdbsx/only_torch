@@ -6,7 +6,7 @@
 //!
 //! - [`GymEnv`] - Gymnasium 环境封装，支持离散/连续/混合动作空间
 //! - [`MinariDataset`] - Minari 离线 RL 数据集封装
-//! - [`Step`] - 单步交互数据（obs, action, reward, next_obs, done）
+//! - [`Step`] - 单步交互数据（obs, action, reward, `next_obs`, done）
 //!
 //! ## 使用示例
 //!

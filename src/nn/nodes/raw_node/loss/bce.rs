@@ -8,7 +8,7 @@ use super::Reduction;
 /// BCE（Binary Cross Entropy，二元交叉熵）损失节点
 ///
 /// 计算 logits 和二值标签之间的二元交叉熵损失。
-/// 采用 BCEWithLogitsLoss 形式，内置 Sigmoid 激活，数值稳定。
+/// 采用 `BCEWithLogitsLoss` 形式，内置 Sigmoid 激活，数值稳定。
 ///
 /// ## 使用场景
 /// - **二分类**：输出单个 logit，预测 0/1
@@ -115,7 +115,7 @@ impl BCE {
                 // 数值稳定的 BCE 计算
                 let max_val = l.max(0.0);
                 let abs_logit = l.abs();
-                max_val - l * t + (1.0 + (-abs_logit).exp()).ln()
+                l.mul_add(-t, max_val) + (-abs_logit).exp().ln_1p()
             })
             .sum()
     }

@@ -466,7 +466,7 @@ impl GraphInner {
 
     /// 创建 BCE（Binary Cross Entropy）损失节点（默认 Mean reduction）
     ///
-    /// 采用 BCEWithLogitsLoss 形式，内置 Sigmoid 激活，数值稳定。
+    /// 采用 `BCEWithLogitsLoss` 形式，内置 Sigmoid 激活，数值稳定。
     /// 适用于二分类和多标签分类任务。
     ///
     /// # 参数

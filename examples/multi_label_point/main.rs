@@ -37,7 +37,7 @@ fn compute_labels(x: f32, y: f32) -> [f32; 4] {
     let is_right = if x > 0.5 { 1.0 } else { 0.0 };
     let is_top = if y > 0.5 { 1.0 } else { 0.0 };
     let is_diagonal_above = if x + y > 1.0 { 1.0 } else { 0.0 };
-    let is_center = if (x - 0.5).powi(2) + (y - 0.5).powi(2) < 0.15 {
+    let is_center = if (y - 0.5).mul_add(y - 0.5, (x - 0.5).powi(2)) < 0.15 {
         1.0
     } else {
         0.0
@@ -147,10 +147,7 @@ fn main() -> Result<(), GraphError> {
             let actual_str: String = actual.iter().map(|&b| if b { '1' } else { '0' }).collect();
             let match_str = if pred == actual { "✓" } else { "✗" };
 
-            println!(
-                "  ({:.2}, {:.2}): 预测={} 实际={} {}",
-                x, y, pred_str, actual_str, match_str
-            );
+            println!("  ({x:.2}, {y:.2}): 预测={pred_str} 实际={actual_str} {match_str}");
         }
     }
 

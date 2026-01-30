@@ -6,12 +6,12 @@
 //! - 自定义环境（注册到 gymnasium）
 //!
 //! 参考：https://github.com/MrRobb/gym-rs/blob/master/src/lib.rs
-//! 基于 RustRL 项目迁移，适配 only_torch
+//! 基于 `RustRL` 项目迁移，适配 `only_torch`
 
-use numpy::ndarray::{array, Array1};
 use numpy::ToPyArray;
-use pyo3::prelude::*;
+use numpy::ndarray::{Array1, array};
 use pyo3::IntoPyObjectExt;
+use pyo3::prelude::*;
 
 // ============================================================================
 // 观察空间类型定义
@@ -33,7 +33,7 @@ pub struct ObsDim {
 pub enum ObsType {
     /// 无通道维度的图像（灰度图 HW）
     NoChannel,
-    /// 通道在前的图像（CHW，如 PyTorch 风格）
+    /// 通道在前的图像（CHW，如 `PyTorch` 风格）
     ChannelFirst,
     /// 通道在后的图像（HWC，如 TensorFlow 风格）
     ChannelLast,
@@ -46,45 +46,35 @@ pub enum ObsType {
 // ============================================================================
 
 /// 动作空间整体类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ActionType {
-    /// 单维离散动作（如 CartPole）
+    /// 单维离散动作（如 `CartPole`）
     SingleDiscrete,
     /// 连续动作（单维或多维）
     Continuous,
     /// 混合动作（离散 + 连续，如 Platform）
     Mix,
     /// 未知类型（初始化前的默认值）
+    #[default]
     Unknown,
 }
 
-impl Default for ActionType {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
-
 /// 单个动作维度的具体类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ActionDimType {
     /// 整数类型（离散动作）
     Int64,
     /// 浮点类型（连续动作）
     Float64,
-    /// NumPy 标量（单元素数组）
+    /// `NumPy` 标量（单元素数组）
     NumpyFloat64Scalar,
-    /// NumPy 列表（多元素数组）
+    /// `NumPy` 列表（多元素数组）
     NumpyFloat64List,
     /// Tuple 类型（中间介质，用于混合动作空间）
     Tuple,
     /// 未知类型
+    #[default]
     Unknown,
-}
-
-impl Default for ActionDimType {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// 单个动作维度的属性
@@ -107,7 +97,7 @@ pub struct ActionDim {
 /// 返回给模型的实质性动作取值范围，用于确定输出层结构。
 #[derive(Debug, Clone, Default)]
 pub struct ActionRange {
-    /// 动作范围 (low_bound, high_bound)
+    /// 动作范围 (`low_bound`, `high_bound`)
     action_range: (f32, f32),
     /// 是否为离散动作
     is_discrete: bool,
@@ -115,7 +105,7 @@ pub struct ActionRange {
 
 impl ActionRange {
     /// 判断是否为离散动作
-    pub fn is_discrete_action(&self) -> bool {
+    pub const fn is_discrete_action(&self) -> bool {
         self.is_discrete
     }
 
@@ -235,9 +225,7 @@ impl<'py> GymEnv<'py> {
         let obs_prop_vec = init_obs_prop(&obs_space);
 
         // 解析动作空间
-        let action_space = env
-            .getattr("action_space")
-            .expect("获取 action_space 失败");
+        let action_space = env.getattr("action_space").expect("获取 action_space 失败");
         let action_prop_vec = init_act_prop(&action_space, true);
 
         // 计算动作类型和数量
@@ -265,27 +253,23 @@ impl<'py> GymEnv<'py> {
 
     /// 尝试创建环境（gymnasium 优先，gym 回退）
     ///
-    /// 返回 (env, use_legacy_gym)
+    /// 返回 (env, `use_legacy_gym`)
     fn try_make_env(py: Python<'py>, env_name: &str) -> (Bound<'py, PyAny>, bool) {
         // 1. 先尝试 gymnasium
-        if let Ok(gymnasium) = py.import("gymnasium") {
-            if let Ok(make) = gymnasium.getattr("make") {
-                if let Ok(env) = make.call1((env_name,)) {
-                    return (env, false);
-                }
-            }
+        if let Ok(gymnasium) = py.import("gymnasium")
+            && let Ok(make) = gymnasium.getattr("make")
+            && let Ok(env) = make.call1((env_name,))
+        {
+            return (env, false);
         }
 
         // 2. gymnasium 失败，回退到 gym
         // 需要先导入环境注册模块（如 gym_hybrid）
         Self::try_import_gym_env_module(py, env_name);
 
-        let gym = py.import("gym").unwrap_or_else(|_| {
-            panic!(
-                "无法加载环境 '{}': gymnasium 和 gym 模块均不可用",
-                env_name
-            )
-        });
+        let gym = py
+            .import("gym")
+            .unwrap_or_else(|_| panic!("无法加载环境 '{env_name}': gymnasium 和 gym 模块均不可用"));
 
         // 使用 kwargs 禁用 env_checker（解决 numpy 2.0 兼容性问题）
         // gym 的 env_checker 使用了 np.bool8，在 numpy 2.0 中已移除
@@ -296,12 +280,7 @@ impl<'py> GymEnv<'py> {
             .getattr("make")
             .expect("获取 gym.make 失败")
             .call((env_name,), Some(&kwargs))
-            .unwrap_or_else(|_| {
-                panic!(
-                    "无法创建环境 '{}': 请确保已安装对应的环境包",
-                    env_name
-                )
-            });
+            .unwrap_or_else(|_| panic!("无法创建环境 '{env_name}': 请确保已安装对应的环境包"));
 
         (env, true)
     }
@@ -320,7 +299,7 @@ impl<'py> GymEnv<'py> {
     /// 获取当前使用的模块类型
     ///
     /// 返回 "gymnasium" 或 "gym"
-    pub fn get_module_name(&self) -> &'static str {
+    pub const fn get_module_name(&self) -> &'static str {
         if self.use_legacy_gym {
             "gym"
         } else {
@@ -334,7 +313,7 @@ impl<'py> GymEnv<'py> {
     }
 
     /// 获取动作空间类型
-    pub fn get_action_type(&self) -> ActionType {
+    pub const fn get_action_type(&self) -> ActionType {
         self.action_type
     }
 
@@ -454,7 +433,7 @@ impl<'py> GymEnv<'py> {
     /// - `action`: 动作向量
     ///
     /// # 返回
-    /// (obs_vec, reward, done) 元组
+    /// (`obs_vec`, reward, done) 元组
     pub fn step(&self, action: &[f32]) -> (Vec<Vec<f32>>, f32, bool) {
         // 将 Rust 动作转换为 Python 对象
         let action_py = self.convert_action_to_python(action);
@@ -524,7 +503,7 @@ impl<'py> GymEnv<'py> {
     }
 
     /// 获取观察类型
-    pub fn get_obs_type(&self) -> ObsType {
+    pub const fn get_obs_type(&self) -> ObsType {
         self.obs_type
     }
 
@@ -534,7 +513,7 @@ impl<'py> GymEnv<'py> {
     }
 
     /// 获取每步所需的动作数量
-    pub fn get_action_num_for_each_step(&self) -> usize {
+    pub const fn get_action_num_for_each_step(&self) -> usize {
         self.action_num
     }
 
@@ -566,7 +545,7 @@ impl<'py> GymEnv<'py> {
 
     /// 获取扁平化的实质性动作维度列表
     ///
-    /// 去除 Tuple、NumpyFloat64List 等中间类型，返回有具体属性的 ActionDim。
+    /// 去除 Tuple、NumpyFloat64List 等中间类型，返回有具体属性的 `ActionDim`。
     pub fn get_flatten_substant_action_dim(
         &self,
         action_dim_vec_op: Option<&[ActionDim]>,
@@ -639,9 +618,7 @@ impl<'py> GymEnv<'py> {
             // 常规情况：单个 obs
             let obs = if let Ok(flattened) = obs_py.getattr("flatten") {
                 if let Ok(flat_obs) = flattened.call0() {
-                    flat_obs
-                        .extract::<Vec<f32>>()
-                        .unwrap_or_else(|_| vec![0.0])
+                    flat_obs.extract::<Vec<f32>>().unwrap_or_else(|_| vec![0.0])
                 } else {
                     obs_py.extract::<Vec<f32>>().unwrap_or_else(|_| vec![0.0])
                 }
@@ -670,7 +647,7 @@ impl<'py> GymEnv<'py> {
         match self.action_type {
             ActionType::SingleDiscrete => {
                 // 离散动作：返回整数
-                let action_int = action.first().map(|&a| a as i64).unwrap_or(0);
+                let action_int = action.first().map_or(0, |&a| a as i64);
                 action_int.into_py_any(self.py).unwrap()
             }
             ActionType::Continuous => {
@@ -706,7 +683,7 @@ impl<'py> GymEnv<'py> {
             let idx = start_index + pos;
             let action_py: Py<PyAny> = match action_dim.action_type {
                 ActionDimType::Int64 => {
-                    let v = action.get(idx).map(|&a| a as i64).unwrap_or(0);
+                    let v = action.get(idx).map_or(0, |&a| a as i64);
                     v.into_py_any(self.py).unwrap()
                 }
                 ActionDimType::Float64 => {
@@ -718,8 +695,11 @@ impl<'py> GymEnv<'py> {
                     array![v].to_pyarray(self.py).unbind().into_any()
                 }
                 ActionDimType::NumpyFloat64List => {
-                    let sub_actions =
-                        self.build_mixed_action_py(action_dim.sub_action_dim_op.as_deref(), action, idx);
+                    let sub_actions = self.build_mixed_action_py(
+                        action_dim.sub_action_dim_op.as_deref(),
+                        action,
+                        idx,
+                    );
                     let floats: Vec<f32> = sub_actions
                         .iter()
                         .filter_map(|a| a.extract::<f32>(self.py).ok())
@@ -730,8 +710,11 @@ impl<'py> GymEnv<'py> {
                         .into_any()
                 }
                 ActionDimType::Tuple => {
-                    let sub_actions =
-                        self.build_mixed_action_py(action_dim.sub_action_dim_op.as_deref(), action, idx);
+                    let sub_actions = self.build_mixed_action_py(
+                        action_dim.sub_action_dim_op.as_deref(),
+                        action,
+                        idx,
+                    );
                     sub_actions.into_py_any(self.py).unwrap()
                 }
                 ActionDimType::Unknown => {
@@ -921,7 +904,7 @@ fn init_act_prop(action_space: &Bound<'_, PyAny>, check_type: bool) -> Vec<Actio
             });
         }
         _ => {
-            panic!("不支持的动作空间类型: {}", type_name);
+            panic!("不支持的动作空间类型: {type_name}");
         }
     }
 
@@ -930,9 +913,7 @@ fn init_act_prop(action_space: &Bound<'_, PyAny>, check_type: bool) -> Vec<Actio
     }
 
     // 通过采样确定具体的动作类型
-    let sampled_action = action_space
-        .call_method0("sample")
-        .expect("采样动作失败");
+    let sampled_action = action_space.call_method0("sample").expect("采样动作失败");
     get_action_type_by_sample(&sampled_action, &mut action_prop_vec);
 
     action_prop_vec
@@ -944,9 +925,7 @@ fn get_action_type_by_sample(action_py: &Bound<'_, PyAny>, action_dims: &mut [Ac
 
     for (pos, action_dim) in action_dims.iter_mut().enumerate() {
         let cur_action = if dims_len > 1 {
-            action_py
-                .get_item(pos)
-                .expect("获取采样动作元素失败")
+            action_py.get_item(pos).expect("获取采样动作元素失败")
         } else {
             action_py.clone()
         };

@@ -31,7 +31,11 @@ fn test_list_local_datasets() {
         }
 
         // 验证返回的是 Vec<String>
-        assert!(datasets.iter().all(|s| !s.is_empty() || datasets.is_empty()));
+        assert!(
+            datasets
+                .iter()
+                .all(|s| !s.is_empty() || datasets.is_empty())
+        );
     });
 }
 

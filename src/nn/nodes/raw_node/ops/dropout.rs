@@ -29,7 +29,7 @@ pub const DEFAULT_DROPOUT_P: f32 = 0.5;
 /// - 训练：`output = input * mask / (1 - p)`，其中 mask 是随机 0/1 张量
 /// - 评估：`output = input`
 ///
-/// # PyTorch 对应
+/// # `PyTorch` 对应
 /// ```python
 /// import torch.nn as nn
 /// dropout = nn.Dropout(p=0.5)

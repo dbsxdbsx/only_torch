@@ -56,7 +56,7 @@ pub struct Episode {
 ///
 /// 提供离线 RL 数据集的加载、采样等功能。
 ///
-/// ## 与 GymEnv 的区别
+/// ## 与 `GymEnv` 的区别
 ///
 /// - `GymEnv`：在线交互式环境（reset → step → done 循环）
 /// - `MinariDataset`：离线数据集（load → sample → 读取轨迹数据）
@@ -127,12 +127,12 @@ impl<'py> MinariDataset<'py> {
     }
 
     /// 获取总 episode 数量
-    pub fn total_episodes(&self) -> usize {
+    pub const fn total_episodes(&self) -> usize {
         self.total_episodes
     }
 
     /// 获取总 step 数量
-    pub fn total_steps(&self) -> usize {
+    pub const fn total_steps(&self) -> usize {
         self.total_steps
     }
 
@@ -212,7 +212,9 @@ impl<'py> MinariDataset<'py> {
     /// 解析单个 Episode
     fn parse_episode(&self, ep_py: &Bound<'py, PyAny>) -> Episode {
         // 解析 observations
-        let obs_py = ep_py.getattr("observations").expect("获取 observations 失败");
+        let obs_py = ep_py
+            .getattr("observations")
+            .expect("获取 observations 失败");
         let observations = self.parse_observations(&obs_py);
 
         // 解析 actions
@@ -224,7 +226,9 @@ impl<'py> MinariDataset<'py> {
         let rewards: Vec<f32> = rewards_py.extract().unwrap_or_default();
 
         // 解析 terminations
-        let terminations_py = ep_py.getattr("terminations").expect("获取 terminations 失败");
+        let terminations_py = ep_py
+            .getattr("terminations")
+            .expect("获取 terminations 失败");
         let terminations: Vec<bool> = terminations_py.extract().unwrap_or_default();
 
         // 解析 truncations
@@ -263,25 +267,24 @@ impl<'py> MinariDataset<'py> {
             Err(_) => return result,
         };
 
-        let keys_list: Vec<String> = match keys.extract() {
-            Ok(k) => k,
-            Err(_) => {
-                // 尝试通过 list() 转换
-                let py = obs_py.py();
-                let builtins = py.import("builtins").ok();
-                if let Some(builtins) = builtins {
-                    if let Ok(list_fn) = builtins.getattr("list") {
-                        if let Ok(list_py) = list_fn.call1((keys,)) {
-                            list_py.extract().unwrap_or_default()
-                        } else {
-                            return result;
-                        }
+        let keys_list: Vec<String> = if let Ok(k) = keys.extract() {
+            k
+        } else {
+            // 尝试通过 list() 转换
+            let py = obs_py.py();
+            let builtins = py.import("builtins").ok();
+            if let Some(builtins) = builtins {
+                if let Ok(list_fn) = builtins.getattr("list") {
+                    if let Ok(list_py) = list_fn.call1((keys,)) {
+                        list_py.extract().unwrap_or_default()
                     } else {
                         return result;
                     }
                 } else {
                     return result;
                 }
+            } else {
+                return result;
             }
         };
 
@@ -321,10 +324,10 @@ impl<'py> MinariDataset<'py> {
         }
 
         // 尝试通过 tolist() 转换
-        if let Ok(list_py) = array_py.call_method0("tolist") {
-            if let Ok(arr) = list_py.extract::<Vec<Vec<f32>>>() {
-                return arr;
-            }
+        if let Ok(list_py) = array_py.call_method0("tolist")
+            && let Ok(arr) = list_py.extract::<Vec<Vec<f32>>>()
+        {
+            return arr;
         }
 
         // 尝试单维数组

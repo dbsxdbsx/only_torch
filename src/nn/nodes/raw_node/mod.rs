@@ -5,10 +5,10 @@ mod parameter;
 mod state;
 
 pub(in crate::nn) use input::InputVariant;
-pub use loss::Reduction;
 pub use loss::DEFAULT_HUBER_DELTA;
-pub use ops::DEFAULT_DROPOUT_P;
+pub use loss::Reduction;
 pub(super) use loss::{BCE, Huber, MAE, MSE, SoftmaxCrossEntropy};
+pub use ops::DEFAULT_DROPOUT_P;
 pub(super) use ops::*;
 pub(super) use parameter::Parameter;
 pub(super) use state::State;

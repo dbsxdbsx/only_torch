@@ -448,7 +448,7 @@ pub fn f1_score(
 /// }
 /// ```
 ///
-/// ## 与 multilabel_strict_accuracy 的区别
+/// ## 与 `multilabel_strict_accuracy` 的区别
 ///
 /// | 指标 | 计算单位 | 严格程度 | 业界术语 |
 /// |------|---------|---------|---------|
@@ -457,7 +457,7 @@ pub fn f1_score(
 ///
 /// ## 边界情况
 ///
-/// - 空 Tensor → 返回 value=0.0, n_samples=0, per_label=[]
+/// - 空 Tensor → 返回 value=0.0, `n_samples=0`, `per_label`=[]
 /// - 形状不匹配 → panic
 pub fn multilabel_loose_accuracy(
     predictions: &Tensor,
@@ -468,19 +468,15 @@ pub fn multilabel_loose_accuracy(
     let actual_shape = actuals.shape();
 
     // 验证形状
-    if pred_shape.len() != 2 || actual_shape.len() != 2 {
-        panic!(
-            "multilabel_loose_accuracy: 期望 2D Tensor，实际 predictions={:?}, actuals={:?}",
-            pred_shape, actual_shape
-        );
-    }
+    assert!(
+        !(pred_shape.len() != 2 || actual_shape.len() != 2),
+        "multilabel_loose_accuracy: 期望 2D Tensor，实际 predictions={pred_shape:?}, actuals={actual_shape:?}"
+    );
 
-    if pred_shape != actual_shape {
-        panic!(
-            "multilabel_loose_accuracy: 形状不匹配，predictions={:?}, actuals={:?}",
-            pred_shape, actual_shape
-        );
-    }
+    assert!(
+        pred_shape == actual_shape,
+        "multilabel_loose_accuracy: 形状不匹配，predictions={pred_shape:?}, actuals={actual_shape:?}"
+    );
 
     let batch_size = pred_shape[0];
     let num_labels = pred_shape[1];
@@ -565,7 +561,7 @@ pub fn multilabel_loose_accuracy(
 /// assert_eq!(result.n_samples(), 3);  // 样本数，非标签数
 /// ```
 ///
-/// ## 与 multilabel_loose_accuracy 的区别
+/// ## 与 `multilabel_loose_accuracy` 的区别
 ///
 /// | 指标 | 计算单位 | 严格程度 | 业界术语 |
 /// |------|---------|---------|---------|
@@ -578,7 +574,7 @@ pub fn multilabel_loose_accuracy(
 ///
 /// ## 边界情况
 ///
-/// - 空 Tensor → 返回 value=0.0, n_samples=0
+/// - 空 Tensor → 返回 value=0.0, `n_samples=0`
 /// - 形状不匹配 → panic
 pub fn multilabel_strict_accuracy(
     predictions: &Tensor,
@@ -589,19 +585,15 @@ pub fn multilabel_strict_accuracy(
     let actual_shape = actuals.shape();
 
     // 验证形状
-    if pred_shape.len() != 2 || actual_shape.len() != 2 {
-        panic!(
-            "multilabel_strict_accuracy: 期望 2D Tensor，实际 predictions={:?}, actuals={:?}",
-            pred_shape, actual_shape
-        );
-    }
+    assert!(
+        !(pred_shape.len() != 2 || actual_shape.len() != 2),
+        "multilabel_strict_accuracy: 期望 2D Tensor，实际 predictions={pred_shape:?}, actuals={actual_shape:?}"
+    );
 
-    if pred_shape != actual_shape {
-        panic!(
-            "multilabel_strict_accuracy: 形状不匹配，predictions={:?}, actuals={:?}",
-            pred_shape, actual_shape
-        );
-    }
+    assert!(
+        pred_shape == actual_shape,
+        "multilabel_strict_accuracy: 形状不匹配，predictions={pred_shape:?}, actuals={actual_shape:?}"
+    );
 
     let batch_size = pred_shape[0];
     let num_labels = pred_shape[1];

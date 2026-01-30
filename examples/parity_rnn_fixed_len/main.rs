@@ -151,7 +151,11 @@ fn main() -> Result<(), GraphError> {
 }
 
 /// 评估模型准确率
-fn evaluate(model: &ParityRNN, graph: &Graph, test_loader: &DataLoader<TensorDataset>) -> Result<f32, GraphError> {
+fn evaluate(
+    model: &ParityRNN,
+    graph: &Graph,
+    test_loader: &DataLoader<TensorDataset>,
+) -> Result<f32, GraphError> {
     graph.eval();
 
     let mut total_correct = 0.0;
