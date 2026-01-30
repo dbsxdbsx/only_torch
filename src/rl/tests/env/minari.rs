@@ -7,15 +7,19 @@
 //! - 数据集加载
 //! - Episode 采样
 //! - Episode 数据结构解析
+//!
+//! 注意：所有测试使用 `#[serial]` 确保串行执行，避免 Python 模块导入竞争
 
 use crate::rl::MinariDataset;
 use pyo3::Python;
+use serial_test::serial;
 
 // ============================================================================
 // 数据集列表测试
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_list_local_datasets() {
     Python::attach(|py| {
         let datasets = MinariDataset::list_local(py);
@@ -32,6 +36,7 @@ fn test_list_local_datasets() {
 }
 
 #[test]
+#[serial]
 fn test_list_remote_datasets() {
     Python::attach(|py| {
         let datasets = MinariDataset::list_remote(py);
@@ -61,6 +66,7 @@ fn test_list_remote_datasets() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_load_dataset() {
     Python::attach(|py| {
         let dataset_name = "D4RL/pointmaze/umaze-v2";
@@ -78,6 +84,7 @@ fn test_load_dataset() {
 }
 
 #[test]
+#[serial]
 fn test_dataset_print_info() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");
@@ -90,6 +97,7 @@ fn test_dataset_print_info() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_sample_single_episode() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");
@@ -112,6 +120,7 @@ fn test_sample_single_episode() {
 }
 
 #[test]
+#[serial]
 fn test_sample_multiple_episodes() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");
@@ -133,6 +142,7 @@ fn test_sample_multiple_episodes() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_episode_structure() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");
@@ -171,6 +181,7 @@ fn test_episode_structure() {
 }
 
 #[test]
+#[serial]
 fn test_episode_data_values() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");

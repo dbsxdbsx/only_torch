@@ -151,9 +151,206 @@ Python 环境验证通过后，进入 Rust 桥接阶段：
 2. 参考 [RustRL 项目](https://github.com/dbsxdbsx/rustRL) 的 `gym_env.rs` 实现
 3. 将 `tch::Tensor` 替换为 only_torch 的 Tensor
 
+## Rust 测试并行问题
+
+### 问题
+
+pyo3 在多线程并行测试时，Python 模块导入存在竞争条件，导致 `circular import` 等错误。
+
+### 解决方案
+
+使用 `serial_test` crate 控制测试串行执行：
+
+```toml
+# Cargo.toml
+[dev-dependencies]
+serial_test = "3"
+```
+
+```rust
+use serial_test::serial;
+
+#[test]
+#[serial]  // 带此属性的测试会串行执行
+fn test_gym_env() {
+    Python::attach(|py| { ... });
+}
+```
+
+### 说明
+
+- **这不是 GIL 性能问题**：Python 3.13+ 的 free-threading 模式无法解决此问题
+- **本质是模块导入竞争**：多线程同时初始化/导入 Python 模块时的竞争条件
+- 所有 `src/rl/tests/` 下的测试已添加 `#[serial]` 属性
+- 运行命令：`cargo test rl::tests`（无需 `--test-threads=1`）
+
+## 自定义环境支持
+
+### Gymnasium 自定义环境
+
+Gymnasium 完全支持自定义环境，这是创建新环境的推荐方式。
+
+#### 创建自定义环境
+
+```python
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.envs.registration import register
+import numpy as np
+
+class GomokuEnv(gym.Env):
+    """五子棋自定义环境示例"""
+    
+    metadata = {"render_modes": ["human", "rgb_array"]}
+    
+    def __init__(self, board_size=15, render_mode=None):
+        super().__init__()
+        self.board_size = board_size
+        self.render_mode = render_mode
+        
+        # 动作空间：选择棋盘上的一个位置 (0 ~ board_size^2 - 1)
+        self.action_space = spaces.Discrete(board_size * board_size)
+        
+        # 观察空间：棋盘状态 (-1=对手, 0=空, 1=自己)
+        self.observation_space = spaces.Box(
+            low=-1, high=1, 
+            shape=(board_size, board_size), 
+            dtype=np.int8
+        )
+        
+        self.board = None
+    
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.board = np.zeros((self.board_size, self.board_size), dtype=np.int8)
+        return self.board.copy(), {}
+    
+    def step(self, action):
+        row, col = divmod(action, self.board_size)
+        # ... 落子逻辑、胜负判断 ...
+        reward = 0.0
+        terminated = False
+        truncated = False
+        return self.board.copy(), reward, terminated, truncated, {}
+    
+    def render(self):
+        if self.render_mode == "human":
+            # 打印棋盘
+            pass
+    
+    def close(self):
+        pass
+
+# 注册环境
+register(
+    id="Gomoku-v0",
+    entry_point="custom_envs.gomoku:GomokuEnv",
+    max_episode_steps=225,  # 15x15 棋盘最多 225 步
+)
+```
+
+#### 项目中的自定义环境组织
+
+建议在 `tests/python/custom_envs/` 目录下组织自定义环境：
+
+```
+tests/python/
+├── gym/                    # 标准环境测试
+│   ├── test_01_basic_discrete.py
+│   └── ...
+└── custom_envs/            # 自定义环境
+    ├── __init__.py         # 导入时自动注册所有环境
+    ├── gomoku.py           # 五子棋环境
+    └── ...
+```
+
+`__init__.py` 示例：
+```python
+# 导入时自动注册所有自定义环境
+from gymnasium.envs.registration import register
+
+register(id="Gomoku-v0", entry_point="tests.python.custom_envs.gomoku:GomokuEnv")
+# 添加更多自定义环境...
+```
+
+### Rust 端使用自定义环境
+
+```rust
+Python::attach(|py| {
+    // 确保自定义环境模块被导入（触发注册）
+    py.import("tests.python.custom_envs").expect("导入自定义环境模块失败");
+    
+    // 然后正常使用
+    let env = GymEnv::new(py, "Gomoku-v0");
+    env.print_env_basic_info();
+});
+```
+
+## Rust 端智能环境加载
+
+### 设计目标
+
+Rust 层的 `GymEnv` 对用户透明地处理各种 Python 环境来源：
+
+- **gymnasium 环境**：CartPole-v1, Pendulum-v1, MuJoCo 环境等
+- **gym 环境**：gym-hybrid 的 Moving-v0, Sliding-v0 等（仅支持老 gym）
+- **自定义环境**：注册到 gymnasium 的用户自定义环境
+
+### 加载策略
+
+```
+用户调用: GymEnv::new(py, "Moving-v0")
+                    ↓
+         1. 尝试 gymnasium.make("Moving-v0")
+                    ↓ (失败: 环境未注册)
+         2. 尝试 gym.make("Moving-v0")
+                    ↓ (成功)
+         3. 返回环境，用户无感知
+```
+
+### gym 与 gymnasium 的 API 差异
+
+| 方面 | gymnasium | gym (legacy) |
+|------|-----------|--------------|
+| reset() 返回值 | `(obs, info)` | `obs` 或 `(obs, info)` |
+| step() 返回值 | `(obs, reward, terminated, truncated, info)` | `(obs, reward, done, info)` |
+| seed 设置 | `reset(seed=42)` | `env.seed(42)` |
+
+这些差异由 Rust 端的 `GymEnv` 内部统一处理，对用户完全透明。
+
+### 架构图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Rust 层 (only_torch)                     │
+├─────────────────────────────────────────────────────────────┤
+│  GymEnv                                                      │
+│  ├── new(py, "CartPole-v1")     → 自动选择 gymnasium         │
+│  ├── new(py, "Moving-v0")       → 自动回退到 gym             │
+│  ├── new(py, "Gomoku-v0")       → 自定义环境 (gymnasium)     │
+│  │                                                          │
+│  ├── reset(seed) → Vec<Vec<f32>>                           │
+│  ├── step(action) → (obs, reward, done)                    │
+│  └── sample_action() → Vec<f32>                            │
+├─────────────────────────────────────────────────────────────┤
+│                     Python 层                                │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │  gymnasium  │  │     gym     │  │  自定义环境模块      │ │
+│  │  (主要)     │  │  (兼容)     │  │  (注册到gymnasium)  │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+│         ↑                ↑                    ↑             │
+│         │                │                    │             │
+│  CartPole-v1      Moving-v0             Gomoku-v0          │
+│  Pendulum-v1      Sliding-v0            ...                │
+│  MuJoCo envs...                                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ## 参考资料
 
 - [Gymnasium 官方文档](https://gymnasium.farama.org/)
+- [Gymnasium 自定义环境教程](https://gymnasium.farama.org/introduction/create_custom_env/)
 - [MuJoCo 官网](https://mujoco.org/)
 - [Minari 官方文档](https://minari.farama.org/)
 - [Farama Foundation](https://farama.org/)

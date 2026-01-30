@@ -1,4 +1,9 @@
-//! Gymnasium 环境封装
+//! Gymnasium/Gym 环境封装
+//!
+//! 提供与 Python RL 环境交互的 Rust 接口，支持：
+//! - gymnasium 环境（推荐，现代标准）
+//! - gym 环境（兼容老式环境，如 gym-hybrid）
+//! - 自定义环境（注册到 gymnasium）
 //!
 //! 参考：https://github.com/MrRobb/gym-rs/blob/master/src/lib.rs
 //! 基于 RustRL 项目迁移，适配 only_torch
@@ -137,16 +142,19 @@ impl ActionRange {
 // GymEnv 核心实现
 // ============================================================================
 
-/// Gymnasium 环境封装
+/// Gymnasium/Gym 环境封装
 ///
-/// 提供与 Python Gymnasium 环境交互的 Rust 接口。
+/// 提供与 Python RL 环境交互的 Rust 接口。智能加载策略：
+/// 1. 优先尝试 gymnasium 模块
+/// 2. 若失败，自动回退到 gym 模块
+/// 3. 对用户完全透明
 ///
 /// ## 支持的环境类型
 ///
 /// - **离散动作**：CartPole-v1, Acrobot-v1, LunarLander-v3 等
 /// - **连续动作**：Pendulum-v1, MountainCarContinuous-v0 等
 /// - **多维连续**：BipedalWalker-v3, Ant-v5, HalfCheetah-v5 等
-/// - **混合动作**：Platform-v0 等（离散 + 连续）
+/// - **混合动作**：Moving-v0, Sliding-v0 等（离散 + 连续，来自 gym-hybrid）
 ///
 /// ## 示例
 ///
@@ -155,7 +163,10 @@ impl ActionRange {
 /// use only_torch::rl::GymEnv;
 ///
 /// Python::attach(|py| {
-///     let env = GymEnv::new(py, "CartPole-v1");
+///     // 自动选择合适的模块加载
+///     let env = GymEnv::new(py, "CartPole-v1");  // gymnasium
+///     let hybrid_env = GymEnv::new(py, "Moving-v0");  // 自动回退到 gym
+///     
 ///     let obs = env.reset(Some(42));
 ///     println!("初始观察: {:?}", obs);
 /// });
@@ -163,8 +174,10 @@ impl ActionRange {
 pub struct GymEnv<'py> {
     /// Python 解释器引用
     py: Python<'py>,
-    /// Gymnasium 环境对象
+    /// 环境对象
     env: Bound<'py, PyAny>,
+    /// 是否使用老式 gym 模块（影响 API 调用方式）
+    use_legacy_gym: bool,
 
     // 观察空间相关
     /// 观察空间属性列表
@@ -188,16 +201,21 @@ pub struct GymEnv<'py> {
 }
 
 impl<'py> GymEnv<'py> {
-    /// 创建新的 Gymnasium 环境
+    /// 创建新的环境（智能加载）
+    ///
+    /// 自动选择合适的 Python 模块：
+    /// 1. 优先尝试 gymnasium（现代标准）
+    /// 2. 若失败，自动回退到 gym（兼容老式环境如 gym-hybrid）
     ///
     /// # 参数
     /// - `py`: Python 解释器引用
-    /// - `env_name`: 环境名称，如 "CartPole-v1"
+    /// - `env_name`: 环境名称，如 "CartPole-v1" 或 "Moving-v0"
     ///
     /// # 示例
     /// ```ignore
     /// Python::attach(|py| {
-    ///     let env = GymEnv::new(py, "Pendulum-v1");
+    ///     let env = GymEnv::new(py, "Pendulum-v1");     // gymnasium
+    ///     let hybrid = GymEnv::new(py, "Moving-v0");    // 自动回退到 gym
     /// });
     /// ```
     pub fn new(py: Python<'py>, env_name: &str) -> Self {
@@ -207,13 +225,8 @@ impl<'py> GymEnv<'py> {
             let _ = argv.call_method1("append", ("",));
         }
 
-        // 导入 gymnasium 并创建环境
-        let gymnasium = py.import("gymnasium").expect("import gymnasium 失败");
-        let env = gymnasium
-            .getattr("make")
-            .expect("获取 gymnasium.make 失败")
-            .call1((env_name,))
-            .expect("创建环境失败");
+        // 智能加载：先尝试 gymnasium，失败则回退到 gym
+        let (env, use_legacy_gym) = Self::try_make_env(py, env_name);
 
         // 解析观察空间
         let obs_space = env
@@ -235,6 +248,7 @@ impl<'py> GymEnv<'py> {
         let mut env_obj = Self {
             py,
             env,
+            use_legacy_gym,
             obs_prop_vec,
             obs_type: ObsType::Vector,
             action_space,
@@ -247,6 +261,71 @@ impl<'py> GymEnv<'py> {
         // 检测观察类型
         env_obj.check_obs_type();
         env_obj
+    }
+
+    /// 尝试创建环境（gymnasium 优先，gym 回退）
+    ///
+    /// 返回 (env, use_legacy_gym)
+    fn try_make_env(py: Python<'py>, env_name: &str) -> (Bound<'py, PyAny>, bool) {
+        // 1. 先尝试 gymnasium
+        if let Ok(gymnasium) = py.import("gymnasium") {
+            if let Ok(make) = gymnasium.getattr("make") {
+                if let Ok(env) = make.call1((env_name,)) {
+                    return (env, false);
+                }
+            }
+        }
+
+        // 2. gymnasium 失败，回退到 gym
+        // 需要先导入环境注册模块（如 gym_hybrid）
+        Self::try_import_gym_env_module(py, env_name);
+
+        let gym = py.import("gym").unwrap_or_else(|_| {
+            panic!(
+                "无法加载环境 '{}': gymnasium 和 gym 模块均不可用",
+                env_name
+            )
+        });
+
+        // 使用 kwargs 禁用 env_checker（解决 numpy 2.0 兼容性问题）
+        // gym 的 env_checker 使用了 np.bool8，在 numpy 2.0 中已移除
+        let kwargs = pyo3::types::PyDict::new(py);
+        kwargs.set_item("disable_env_checker", true).unwrap();
+
+        let env = gym
+            .getattr("make")
+            .expect("获取 gym.make 失败")
+            .call((env_name,), Some(&kwargs))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "无法创建环境 '{}': 请确保已安装对应的环境包",
+                    env_name
+                )
+            });
+
+        (env, true)
+    }
+
+    /// 尝试导入 gym 环境的注册模块
+    ///
+    /// 某些环境（如 gym-hybrid）需要先导入其模块才能被 gym.make 识别
+    fn try_import_gym_env_module(py: Python<'_>, env_name: &str) {
+        // gym-hybrid 环境：Moving-v0, Sliding-v0
+        if env_name == "Moving-v0" || env_name == "Sliding-v0" {
+            let _ = py.import("gym_hybrid");
+        }
+        // 未来可在此处添加更多环境的导入逻辑
+    }
+
+    /// 获取当前使用的模块类型
+    ///
+    /// 返回 "gymnasium" 或 "gym"
+    pub fn get_module_name(&self) -> &'static str {
+        if self.use_legacy_gym {
+            "gym"
+        } else {
+            "gymnasium"
+        }
     }
 
     /// 获取环境名称
@@ -313,19 +392,55 @@ impl<'py> GymEnv<'py> {
     /// # 返回
     /// 初始观察向量列表（通常只有一个元素）
     pub fn reset(&self, seed: Option<u64>) -> Vec<Vec<f32>> {
-        let kwargs = pyo3::types::PyDict::new(self.py);
-        if let Some(s) = seed {
-            kwargs.set_item("seed", s).unwrap();
+        if self.use_legacy_gym {
+            // gym API: env.seed(seed) + env.reset()
+            if let Some(s) = seed {
+                let _ = self.env.call_method1("seed", (s,));
+            }
+            let result = self.env.call_method0("reset").expect("调用 reset 失败");
+
+            // gym 返回值处理：
+            // - 0.26+: (obs, info) tuple
+            // - 旧版/某些环境: 直接返回 obs（可能是 list/ndarray）
+            let obs = self.extract_gym_reset_obs(&result);
+            self.get_obs_vec_from_python(&obs)
+        } else {
+            // gymnasium API: reset(seed=...)
+            let kwargs = pyo3::types::PyDict::new(self.py);
+            if let Some(s) = seed {
+                kwargs.set_item("seed", s).unwrap();
+            }
+
+            let result = self
+                .env
+                .call_method("reset", (), Some(&kwargs))
+                .expect("调用 reset 失败");
+
+            // Gymnasium 返回 (obs, info)
+            let obs = result.get_item(0).expect("获取 obs 失败");
+            self.get_obs_vec_from_python(&obs)
         }
+    }
 
-        let result = self
-            .env
-            .call_method("reset", (), Some(&kwargs))
-            .expect("调用 reset 失败");
+    /// 从 gym reset 返回值中提取 obs
+    ///
+    /// gym 的返回值可能是：
+    /// - tuple (obs, info) - gym 0.26+
+    /// - obs 本身 (list/ndarray) - 旧版或某些环境
+    fn extract_gym_reset_obs<'a>(&self, result: &'a Bound<'py, PyAny>) -> Bound<'a, PyAny> {
+        let type_name = result
+            .get_type()
+            .name()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
 
-        // Gymnasium 返回 (obs, info)
-        let obs = result.get_item(0).expect("获取 obs 失败");
-        self.get_obs_vec_from_python(&obs)
+        // 如果是 tuple，取第一个元素
+        if type_name == "tuple" {
+            result.get_item(0).expect("获取 tuple[0] 失败")
+        } else {
+            // 否则直接返回（list/ndarray 都是 obs 本身）
+            result.clone()
+        }
     }
 
     /// 关闭环境
@@ -350,7 +465,7 @@ impl<'py> GymEnv<'py> {
             .call_method1("step", (action_py,))
             .expect("调用 step 失败");
 
-        // 解析返回值：(obs, reward, terminated, truncated, info)
+        // 解析返回值
         let obs_py = result.get_item(0).expect("获取 obs 失败");
         let obs_vec = self.get_obs_vec_from_python(&obs_py);
 
@@ -360,19 +475,34 @@ impl<'py> GymEnv<'py> {
             .extract()
             .expect("解析 reward 失败");
 
-        let terminated: bool = result
-            .get_item(2)
-            .expect("获取 terminated 失败")
-            .extract()
-            .expect("解析 terminated 失败");
+        // gym 和 gymnasium 的返回值差异：
+        // - gymnasium: (obs, reward, terminated, truncated, info) - 5 元素
+        // - gym: (obs, reward, done, info) - 4 元素
+        let done = if self.use_legacy_gym {
+            // gym API: 第 3 个元素是 done
+            result
+                .get_item(2)
+                .expect("获取 done 失败")
+                .extract()
+                .expect("解析 done 失败")
+        } else {
+            // gymnasium API: terminated || truncated
+            let terminated: bool = result
+                .get_item(2)
+                .expect("获取 terminated 失败")
+                .extract()
+                .expect("解析 terminated 失败");
 
-        let truncated: bool = result
-            .get_item(3)
-            .expect("获取 truncated 失败")
-            .extract()
-            .expect("解析 truncated 失败");
+            let truncated: bool = result
+                .get_item(3)
+                .expect("获取 truncated 失败")
+                .extract()
+                .expect("解析 truncated 失败");
 
-        (obs_vec, reward, terminated || truncated)
+            terminated || truncated
+        };
+
+        (obs_vec, reward, done)
     }
 
     /// 采样随机动作
@@ -863,12 +993,13 @@ fn get_action_type_by_sample(action_py: &Bound<'_, PyAny>, action_dims: &mut [Ac
     }
 }
 
-/// 计算动作总数量
+/// 计算动作总数量（最细粒度）
 fn calc_action_real_num(action_dims: &[ActionDim]) -> usize {
     let mut count = 0;
     for action_dim in action_dims {
         match action_dim.action_type {
-            ActionDimType::Tuple => {
+            ActionDimType::Tuple | ActionDimType::NumpyFloat64List => {
+                // Tuple 和 NumpyFloat64List 需要递归计算子元素
                 if let Some(sub_dims) = &action_dim.sub_action_dim_op {
                     count += calc_action_real_num(sub_dims);
                 }
