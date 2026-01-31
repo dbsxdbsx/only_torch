@@ -530,6 +530,305 @@ impl Div<&Self> for Var {
     }
 }
 
+// ==================== Var 与 Tensor 混合运算 ====================
+//
+// 支持 Var 和 Tensor 的直接运算，内部自动将 Tensor 转换为 input 节点。
+// 这让用户可以像 PyTorch 一样自然地混合使用 Var 和 Tensor。
+
+impl Var {
+    /// 将 Tensor 转换为 Var（内部辅助方法）
+    ///
+    /// 在 Graph 中创建一个 BasicInput 节点并设置值。
+    /// 用于 Var-Tensor 混合运算和 Loss 函数的 Tensor 版本。
+    pub(crate) fn tensor_to_var(&self, tensor: &Tensor) -> Self {
+        let mut g = self.graph.borrow_mut();
+        let id = g
+            .new_basic_input_node(tensor.shape(), None)
+            .expect("创建 Tensor->Var 转换节点失败");
+        g.set_node_value(id, Some(tensor))
+            .expect("设置 Tensor 值失败");
+        Self::new(id, Rc::clone(&self.graph))
+    }
+}
+
+// -------------------- Add: Var + Tensor --------------------
+
+impl Add<&Tensor> for &Var {
+    type Output = Var;
+
+    fn add(self, other: &Tensor) -> Var {
+        let other_var = self.tensor_to_var(other);
+        self + &other_var
+    }
+}
+
+impl Add<Tensor> for &Var {
+    type Output = Var;
+
+    fn add(self, other: Tensor) -> Var {
+        self + &other
+    }
+}
+
+impl Add<&Tensor> for Var {
+    type Output = Self;
+
+    fn add(self, other: &Tensor) -> Self {
+        &self + other
+    }
+}
+
+impl Add<Tensor> for Var {
+    type Output = Self;
+
+    fn add(self, other: Tensor) -> Self {
+        &self + &other
+    }
+}
+
+// -------------------- Add: Tensor + Var --------------------
+
+impl Add<&Var> for &Tensor {
+    type Output = Var;
+
+    fn add(self, other: &Var) -> Var {
+        other + self // 加法交换律
+    }
+}
+
+impl Add<Var> for &Tensor {
+    type Output = Var;
+
+    fn add(self, other: Var) -> Var {
+        self + &other
+    }
+}
+
+impl Add<&Var> for Tensor {
+    type Output = Var;
+
+    fn add(self, other: &Var) -> Var {
+        &self + other
+    }
+}
+
+impl Add<Var> for Tensor {
+    type Output = Var;
+
+    fn add(self, other: Var) -> Var {
+        &self + &other
+    }
+}
+
+// -------------------- Sub: Var - Tensor --------------------
+
+impl Sub<&Tensor> for &Var {
+    type Output = Var;
+
+    fn sub(self, other: &Tensor) -> Var {
+        let other_var = self.tensor_to_var(other);
+        self - &other_var
+    }
+}
+
+impl Sub<Tensor> for &Var {
+    type Output = Var;
+
+    fn sub(self, other: Tensor) -> Var {
+        self - &other
+    }
+}
+
+impl Sub<&Tensor> for Var {
+    type Output = Self;
+
+    fn sub(self, other: &Tensor) -> Self {
+        &self - other
+    }
+}
+
+impl Sub<Tensor> for Var {
+    type Output = Self;
+
+    fn sub(self, other: Tensor) -> Self {
+        &self - &other
+    }
+}
+
+// -------------------- Sub: Tensor - Var --------------------
+
+impl Sub<&Var> for &Tensor {
+    type Output = Var;
+
+    fn sub(self, other: &Var) -> Var {
+        let self_var = other.tensor_to_var(self);
+        &self_var - other
+    }
+}
+
+impl Sub<Var> for &Tensor {
+    type Output = Var;
+
+    fn sub(self, other: Var) -> Var {
+        self - &other
+    }
+}
+
+impl Sub<&Var> for Tensor {
+    type Output = Var;
+
+    fn sub(self, other: &Var) -> Var {
+        &self - other
+    }
+}
+
+impl Sub<Var> for Tensor {
+    type Output = Var;
+
+    fn sub(self, other: Var) -> Var {
+        &self - &other
+    }
+}
+
+// -------------------- Mul: Var * Tensor --------------------
+
+impl Mul<&Tensor> for &Var {
+    type Output = Var;
+
+    fn mul(self, other: &Tensor) -> Var {
+        let other_var = self.tensor_to_var(other);
+        self * &other_var
+    }
+}
+
+impl Mul<Tensor> for &Var {
+    type Output = Var;
+
+    fn mul(self, other: Tensor) -> Var {
+        self * &other
+    }
+}
+
+impl Mul<&Tensor> for Var {
+    type Output = Self;
+
+    fn mul(self, other: &Tensor) -> Self {
+        &self * other
+    }
+}
+
+impl Mul<Tensor> for Var {
+    type Output = Self;
+
+    fn mul(self, other: Tensor) -> Self {
+        &self * &other
+    }
+}
+
+// -------------------- Mul: Tensor * Var --------------------
+
+impl Mul<&Var> for &Tensor {
+    type Output = Var;
+
+    fn mul(self, other: &Var) -> Var {
+        other * self // 乘法交换律
+    }
+}
+
+impl Mul<Var> for &Tensor {
+    type Output = Var;
+
+    fn mul(self, other: Var) -> Var {
+        self * &other
+    }
+}
+
+impl Mul<&Var> for Tensor {
+    type Output = Var;
+
+    fn mul(self, other: &Var) -> Var {
+        &self * other
+    }
+}
+
+impl Mul<Var> for Tensor {
+    type Output = Var;
+
+    fn mul(self, other: Var) -> Var {
+        &self * &other
+    }
+}
+
+// -------------------- Div: Var / Tensor --------------------
+
+impl Div<&Tensor> for &Var {
+    type Output = Var;
+
+    fn div(self, other: &Tensor) -> Var {
+        let other_var = self.tensor_to_var(other);
+        self / &other_var
+    }
+}
+
+impl Div<Tensor> for &Var {
+    type Output = Var;
+
+    fn div(self, other: Tensor) -> Var {
+        self / &other
+    }
+}
+
+impl Div<&Tensor> for Var {
+    type Output = Self;
+
+    fn div(self, other: &Tensor) -> Self {
+        &self / other
+    }
+}
+
+impl Div<Tensor> for Var {
+    type Output = Self;
+
+    fn div(self, other: Tensor) -> Self {
+        &self / &other
+    }
+}
+
+// -------------------- Div: Tensor / Var --------------------
+
+impl Div<&Var> for &Tensor {
+    type Output = Var;
+
+    fn div(self, other: &Var) -> Var {
+        let self_var = other.tensor_to_var(self);
+        &self_var / other
+    }
+}
+
+impl Div<Var> for &Tensor {
+    type Output = Var;
+
+    fn div(self, other: Var) -> Var {
+        self / &other
+    }
+}
+
+impl Div<&Var> for Tensor {
+    type Output = Var;
+
+    fn div(self, other: &Var) -> Var {
+        &self / other
+    }
+}
+
+impl Div<Var> for Tensor {
+    type Output = Var;
+
+    fn div(self, other: Var) -> Var {
+        &self / &other
+    }
+}
+
 // Neg for &Var（实现为 -1 * self）
 impl Neg for &Var {
     type Output = Var;

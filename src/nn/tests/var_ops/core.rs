@@ -440,3 +440,483 @@ fn test_var_detach() {
     let w_grad = w.grad().unwrap();
     assert!(w_grad.is_some());
 }
+
+// ==================== Var-Tensor 混合运算测试 ====================
+
+/// 测试 Var + Tensor 混合加法
+#[test]
+fn test_var_tensor_add() {
+    let graph = Graph::new();
+    let var = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))
+        .unwrap();
+    let tensor = Tensor::new(&[10.0, 20.0, 30.0], &[3, 1]);
+
+    // Var + &Tensor
+    let result = &var + &tensor;
+    result.forward().unwrap();
+    assert_eq!(
+        result.value().unwrap().unwrap().data_as_slice(),
+        &[11.0, 22.0, 33.0]
+    );
+
+    // &Tensor + Var
+    let result2 = &tensor + var.clone();
+    result2.forward().unwrap();
+    assert_eq!(
+        result2.value().unwrap().unwrap().data_as_slice(),
+        &[11.0, 22.0, 33.0]
+    );
+}
+
+/// 测试 Var - Tensor 混合减法
+#[test]
+fn test_var_tensor_sub() {
+    let graph = Graph::new();
+    let var = graph
+        .input(&Tensor::new(&[10.0, 20.0, 30.0], &[3, 1]))
+        .unwrap();
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
+
+    // Var - Tensor
+    let result = &var - &tensor;
+    result.forward().unwrap();
+    assert_eq!(
+        result.value().unwrap().unwrap().data_as_slice(),
+        &[9.0, 18.0, 27.0]
+    );
+
+    // Tensor - Var（注意顺序）
+    let result2 = &tensor - &var;
+    result2.forward().unwrap();
+    assert_eq!(
+        result2.value().unwrap().unwrap().data_as_slice(),
+        &[-9.0, -18.0, -27.0]
+    );
+}
+
+/// 测试 Var * Tensor 混合乘法
+#[test]
+fn test_var_tensor_mul() {
+    let graph = Graph::new();
+    let var = graph
+        .input(&Tensor::new(&[2.0, 3.0, 4.0], &[3, 1]))
+        .unwrap();
+    let tensor = Tensor::new(&[10.0, 10.0, 10.0], &[3, 1]);
+
+    // Var * Tensor
+    let result = &var * &tensor;
+    result.forward().unwrap();
+    assert_eq!(
+        result.value().unwrap().unwrap().data_as_slice(),
+        &[20.0, 30.0, 40.0]
+    );
+
+    // Tensor * Var
+    let result2 = tensor * var;
+    result2.forward().unwrap();
+    assert_eq!(
+        result2.value().unwrap().unwrap().data_as_slice(),
+        &[20.0, 30.0, 40.0]
+    );
+}
+
+/// 测试 Var / Tensor 混合除法
+#[test]
+fn test_var_tensor_div() {
+    let graph = Graph::new();
+    let var = graph
+        .input(&Tensor::new(&[10.0, 20.0, 30.0], &[3, 1]))
+        .unwrap();
+    let tensor = Tensor::new(&[2.0, 4.0, 5.0], &[3, 1]);
+
+    // Var / Tensor
+    let result = &var / &tensor;
+    result.forward().unwrap();
+    assert_eq!(
+        result.value().unwrap().unwrap().data_as_slice(),
+        &[5.0, 5.0, 6.0]
+    );
+
+    // Tensor / Var
+    let result2 = &tensor / &var;
+    result2.forward().unwrap();
+    assert_eq!(
+        result2.value().unwrap().unwrap().data_as_slice(),
+        &[0.2, 0.2, 1.0 / 6.0]
+    );
+}
+
+/// 测试 mse_loss 接受 Tensor（通过 LossTarget trait）
+#[test]
+fn test_mse_loss_tensor() {
+    use crate::nn::Init;
+
+    let graph = Graph::new();
+    let pred = graph.parameter(&[2, 1], Init::Zeros, "pred").unwrap();
+    pred.set_value(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
+
+    // target 直接是 Tensor
+    let target_tensor = Tensor::new(&[1.5, 2.5], &[2, 1]);
+
+    // 直接使用 mse_loss（自动识别 Tensor 类型）
+    let loss = pred.mse_loss(&target_tensor).unwrap();
+    loss.forward().unwrap();
+
+    // mse = ((1-1.5)^2 + (2-2.5)^2) / 2 = (0.25 + 0.25) / 2 = 0.25
+    let loss_val = loss.value().unwrap().unwrap();
+    assert!((loss_val.get_data_number().unwrap() - 0.25).abs() < 1e-6);
+
+    // 反向传播也应正常工作
+    loss.backward().unwrap();
+    let grad = pred.grad().unwrap().unwrap();
+    // d(mse)/d(pred) = 2*(pred - target) / n
+    assert!((grad[[0, 0]] - (-0.5)).abs() < 1e-6); // 2*(1-1.5)/2
+    assert!((grad[[1, 0]] - (-0.5)).abs() < 1e-6); // 2*(2-2.5)/2
+}
+
+/// 测试 Var-Tensor 混合运算的反向传播
+#[test]
+fn test_var_tensor_mixed_backward() {
+    use crate::nn::Init;
+
+    let graph = Graph::new();
+    let w = graph.parameter(&[1, 1], Init::Ones, "w").unwrap();
+    let x = Tensor::new(&[2.0], &[1, 1]);
+
+    // y = w * x (Var * Tensor)
+    let y = &w * &x;
+
+    // loss = (y - 4)^2  (target 也用 Tensor)
+    let target = Tensor::new(&[4.0], &[1, 1]);
+    let loss = y.mse_loss(&target).unwrap();  // 直接传 Tensor
+
+    loss.forward().unwrap();
+    loss.backward().unwrap();
+
+    // y = w * 2 = 1 * 2 = 2
+    // loss = (2 - 4)^2 = 4
+    // d(loss)/d(w) = 2 * (y - target) * x = 2 * (2 - 4) * 2 = -8
+    let w_grad = w.grad().unwrap().unwrap();
+    assert!((w_grad[[0, 0]] - (-8.0)).abs() < 1e-6);
+}
+
+// ==================== 复杂场景综合测试 ====================
+
+/// 复杂 Var-Tensor 混合运算的梯度追踪测试
+///
+/// 场景：多参数、多 Tensor、detach、交换顺序、多路径汇合
+/// 验证：无论多复杂的计算图，梯度都能正确追踪
+#[test]
+fn test_complex_mixed_gradient_tracking() {
+    use crate::nn::Init;
+
+    let graph = Graph::new();
+
+    // ========== 创建可训练参数 ==========
+    let x = graph.parameter(&[2, 1], Init::Zeros, "x").unwrap();
+    let y = graph.parameter(&[2, 1], Init::Zeros, "y").unwrap();
+    x.set_value(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
+    y.set_value(&Tensor::new(&[3.0, 4.0], &[2, 1])).unwrap();
+
+    // ========== 创建常量 Tensor ==========
+    let t1 = Tensor::new(&[2.0, 2.0], &[2, 1]); // 乘法因子
+    let t2 = Tensor::new(&[0.5, 0.5], &[2, 1]); // 加法常量
+
+    // ========== 复杂计算图 ==========
+    // Step 1: a = x * t1  (Var * Tensor)
+    let a = &x * &t1;
+
+    // Step 2: b = t2 + y  (Tensor + Var，测试交换律)
+    let b = &t2 + &y;
+
+    // Step 3: c = a + b   (两条路径汇合)
+    let c = &a + &b;
+
+    // Step 4: d = c * scalar_tensor (标量乘法)
+    let scalar = Tensor::new(&[0.5, 0.5], &[2, 1]);
+    let d = &c * &scalar;
+
+    // Step 5: e = x.detach_node() * y (detach 后与另一个 Var 运算)
+    // detach_node 会切断 x 方向的梯度，但 y 方向仍然有梯度
+    let x_detached = x.detach_node();
+    let e = &x_detached * &y;
+
+    // Step 6: f = d + e (最终汇合)
+    let f = &d + &e;
+
+    // ========== 目标和损失 ==========
+    let target = Tensor::new(&[10.0, 20.0], &[2, 1]);
+    let loss = f.mse_loss(&target).unwrap();
+
+    // ========== 前向传播 ==========
+    loss.forward().unwrap();
+
+    // 手算中间值验证：
+    // a = x * t1 = [1, 2] * [2, 2] = [2, 4]
+    // b = t2 + y = [0.5, 0.5] + [3, 4] = [3.5, 4.5]
+    // c = a + b = [2, 4] + [3.5, 4.5] = [5.5, 8.5]
+    // d = c * 0.5 = [2.75, 4.25]
+    // e = x_detach * y = [1, 2] * [3, 4] = [3, 8]
+    // f = d + e = [2.75, 4.25] + [3, 8] = [5.75, 12.25]
+    // loss = mse(f, target) = ((5.75-10)^2 + (12.25-20)^2) / 2
+    //      = (18.0625 + 60.0625) / 2 = 39.0625
+
+    let loss_val = loss.value().unwrap().unwrap().get_data_number().unwrap();
+    assert!(
+        (loss_val - 39.0625).abs() < 1e-4,
+        "loss 前向值错误: {} vs 39.0625",
+        loss_val
+    );
+
+    // ========== 反向传播 ==========
+    loss.backward().unwrap();
+
+    // 手算梯度：
+    // d(loss)/d(f) = 2*(f - target) / n = [(5.75-10), (12.25-20)] = [-4.25, -7.75] (已除以 n=2)
+    // 实际 upstream = 2/n * (f - target) = [-4.25, -7.75]
+    //
+    // 路径 1: f <- d <- c <- a <- x
+    //   d(f)/d(d) = 1
+    //   d(d)/d(c) = scalar = 0.5
+    //   d(c)/d(a) = 1
+    //   d(a)/d(x) = t1 = 2
+    //   所以 d(loss)/d(x) via 路径1 = upstream * 1 * 0.5 * 1 * 2 = upstream * 1.0
+    //
+    // 路径 2: f <- e <- x_detach (被 detach 切断，无梯度)
+    //
+    // 因此 x 的梯度 = [-4.25, -7.75] * 1.0 = [-4.25, -7.75]
+
+    let x_grad = x.grad().unwrap().unwrap();
+    assert!(
+        (x_grad[[0, 0]] - (-4.25)).abs() < 1e-4,
+        "x[0] 梯度错误: {} vs -4.25",
+        x_grad[[0, 0]]
+    );
+    assert!(
+        (x_grad[[1, 0]] - (-7.75)).abs() < 1e-4,
+        "x[1] 梯度错误: {} vs -7.75",
+        x_grad[[1, 0]]
+    );
+
+    // y 的梯度来自两条路径：
+    // 路径 1: f <- d <- c <- b <- y
+    //   d(b)/d(y) = 1
+    //   所以贡献 = upstream * 1 * 0.5 * 1 * 1 = upstream * 0.5 = [-2.125, -3.875]
+    //
+    // 路径 2: f <- e <- y
+    //   d(e)/d(y) = x_detach.value = [1, 2]
+    //   所以贡献 = upstream * 1 * x_detach = [-4.25, -7.75] * [1, 2] = [-4.25, -15.5]
+    //
+    // 总梯度 = [-2.125, -3.875] + [-4.25, -15.5] = [-6.375, -19.375]
+
+    let y_grad = y.grad().unwrap().unwrap();
+    assert!(
+        (y_grad[[0, 0]] - (-6.375)).abs() < 1e-4,
+        "y[0] 梯度错误: {} vs -6.375",
+        y_grad[[0, 0]]
+    );
+    assert!(
+        (y_grad[[1, 0]] - (-19.375)).abs() < 1e-4,
+        "y[1] 梯度错误: {} vs -19.375",
+        y_grad[[1, 0]]
+    );
+}
+
+/// 测试 Tensor 作为"常数因子"时的梯度正确性
+///
+/// 场景：同一个 Tensor 在计算图中多次使用
+#[test]
+fn test_tensor_as_constant_multiple_uses() {
+    use crate::nn::Init;
+
+    let graph = Graph::new();
+    let w = graph.parameter(&[2, 1], Init::Zeros, "w").unwrap();
+    w.set_value(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
+
+    // 同一个 Tensor 多次使用
+    let scale = Tensor::new(&[3.0, 3.0], &[2, 1]);
+
+    // a = w * scale
+    let a = &w * &scale;
+    // b = a + scale  (同一个 Tensor 再次使用)
+    let b = &a + &scale;
+    // c = b * scale  (第三次使用)
+    let c = &b * &scale;
+
+    let target = Tensor::new(&[30.0, 60.0], &[2, 1]);
+    let loss = c.mse_loss(&target).unwrap();
+
+    loss.forward().unwrap();
+
+    // 手算：
+    // a = [1, 2] * [3, 3] = [3, 6]
+    // b = [3, 6] + [3, 3] = [6, 9]
+    // c = [6, 9] * [3, 3] = [18, 27]
+    // loss = ((18-30)^2 + (27-60)^2) / 2 = (144 + 1089) / 2 = 616.5
+
+    let loss_val = loss.value().unwrap().unwrap().get_data_number().unwrap();
+    assert!(
+        (loss_val - 616.5).abs() < 1e-4,
+        "loss 错误: {} vs 616.5",
+        loss_val
+    );
+
+    loss.backward().unwrap();
+
+    // 梯度分析：
+    // d(loss)/d(c) = 2*(c - target) / n = [(18-30), (27-60)] = [-12, -33]
+    // d(c)/d(b) = scale = [3, 3]
+    // d(b)/d(a) = 1
+    // d(a)/d(w) = scale = [3, 3]
+    // d(loss)/d(w) = [-12, -33] * 3 * 1 * 3 = [-108, -297]
+
+    let w_grad = w.grad().unwrap().unwrap();
+    assert!(
+        (w_grad[[0, 0]] - (-108.0)).abs() < 1e-4,
+        "w[0] 梯度错误: {} vs -108",
+        w_grad[[0, 0]]
+    );
+    assert!(
+        (w_grad[[1, 0]] - (-297.0)).abs() < 1e-4,
+        "w[1] 梯度错误: {} vs -297",
+        w_grad[[1, 0]]
+    );
+}
+
+/// 测试多参数共享路径时的梯度累加
+///
+/// 场景：一个 Var 同时出现在多个分支，梯度应正确累加
+#[test]
+fn test_gradient_accumulation_multiple_paths() {
+    use crate::nn::Init;
+
+    let graph = Graph::new();
+    let x = graph.parameter(&[1, 1], Init::Zeros, "x").unwrap();
+    x.set_value(&Tensor::new(&[2.0], &[1, 1])).unwrap();
+
+    // x 同时出现在两个分支
+    let t1 = Tensor::new(&[3.0], &[1, 1]);
+    let t2 = Tensor::new(&[4.0], &[1, 1]);
+
+    let branch1 = &x * &t1; // 3x
+    let branch2 = &x * &t2; // 4x
+
+    // 两个分支汇合
+    let y = &branch1 + &branch2; // 3x + 4x = 7x
+
+    let target = Tensor::new(&[21.0], &[1, 1]); // 期望 x = 3
+    let loss = y.mse_loss(&target).unwrap();
+
+    loss.forward().unwrap();
+
+    // y = 7 * 2 = 14
+    // loss = (14 - 21)^2 = 49
+
+    loss.backward().unwrap();
+
+    // d(loss)/d(y) = 2*(14 - 21) / 1 = -14
+    // d(y)/d(x) = d(3x)/d(x) + d(4x)/d(x) = 3 + 4 = 7
+    // d(loss)/d(x) = -14 * 7 = -98
+
+    let x_grad = x.grad().unwrap().unwrap();
+    assert!(
+        (x_grad[[0, 0]] - (-98.0)).abs() < 1e-4,
+        "x 梯度错误: {} vs -98",
+        x_grad[[0, 0]]
+    );
+}
+
+/// 测试 detach 完全切断梯度流
+#[test]
+fn test_detach_completely_blocks_gradient() {
+    use crate::nn::Init;
+
+    let graph = Graph::new();
+    let x = graph.parameter(&[1, 1], Init::Zeros, "x").unwrap();
+    x.set_value(&Tensor::new(&[5.0], &[1, 1])).unwrap();
+
+    // 完全通过 detach 路径
+    let x_detached = x.detach_node();
+    let t = Tensor::new(&[2.0], &[1, 1]);
+    let y = &x_detached * &t;
+
+    let target = Tensor::new(&[20.0], &[1, 1]);
+    let loss = y.mse_loss(&target).unwrap();
+
+    loss.forward().unwrap();
+    loss.backward().unwrap();
+
+    // x 应该没有梯度（被 detach 切断）
+    let x_grad = x.grad();
+    assert!(
+        x_grad.is_err() || x_grad.unwrap().is_none(),
+        "detach 后 x 不应有梯度"
+    );
+}
+
+/// 测试 Var 与 Var 运算后再与 Tensor 运算
+#[test]
+fn test_var_var_then_tensor() {
+    use crate::nn::Init;
+
+    let graph = Graph::new();
+    let a = graph.parameter(&[2, 1], Init::Zeros, "a").unwrap();
+    let b = graph.parameter(&[2, 1], Init::Zeros, "b").unwrap();
+    a.set_value(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
+    b.set_value(&Tensor::new(&[3.0, 4.0], &[2, 1])).unwrap();
+
+    // Var + Var
+    let c = &a + &b; // [4, 6]
+
+    // 结果再与 Tensor 运算
+    let t = Tensor::new(&[2.0, 2.0], &[2, 1]);
+    let d = &c * &t; // [8, 12]
+
+    // 再来一层
+    let e = &t + &d; // [10, 14]
+
+    let target = Tensor::new(&[10.0, 10.0], &[2, 1]);
+    let loss = e.mse_loss(&target).unwrap();
+
+    loss.forward().unwrap();
+
+    // e = [10, 14], target = [10, 10]
+    // loss = ((10-10)^2 + (14-10)^2) / 2 = 16 / 2 = 8
+
+    let loss_val = loss.value().unwrap().unwrap().get_data_number().unwrap();
+    assert!((loss_val - 8.0).abs() < 1e-4, "loss 错误: {} vs 8", loss_val);
+
+    loss.backward().unwrap();
+
+    // d(loss)/d(e) = 2*(e - target) / n = [0, 4]
+    // d(e)/d(d) = 1
+    // d(d)/d(c) = t = [2, 2]
+    // d(c)/d(a) = 1, d(c)/d(b) = 1
+    // d(loss)/d(a) = [0, 4] * 1 * 2 * 1 = [0, 8]
+    // d(loss)/d(b) = [0, 4] * 1 * 2 * 1 = [0, 8]
+
+    let a_grad = a.grad().unwrap().unwrap();
+    let b_grad = b.grad().unwrap().unwrap();
+
+    assert!(
+        (a_grad[[0, 0]] - 0.0).abs() < 1e-4,
+        "a[0] 梯度错误: {}",
+        a_grad[[0, 0]]
+    );
+    assert!(
+        (a_grad[[1, 0]] - 8.0).abs() < 1e-4,
+        "a[1] 梯度错误: {}",
+        a_grad[[1, 0]]
+    );
+    assert!(
+        (b_grad[[0, 0]] - 0.0).abs() < 1e-4,
+        "b[0] 梯度错误: {}",
+        b_grad[[0, 0]]
+    );
+    assert!(
+        (b_grad[[1, 0]] - 8.0).abs() < 1e-4,
+        "b[1] 梯度错误: {}",
+        b_grad[[1, 0]]
+    );
+}
