@@ -13,7 +13,7 @@
 //!
 //! ## 运行
 //! ```bash
-//! cargo run --example cartpole_ppo
+//! cargo run --example cartpole_sac
 //! ```
 
 mod model;
@@ -85,9 +85,8 @@ struct SacConfig {
     batch_size: usize,
     learning_rate: f32,
     gamma: f32,
-    tau: f32,
-    start_training_after: usize,  // 开始训练前需要收集的经验数
-    update_every: usize,          // 每 N 步更新一次
+    start_training_after: usize, // 开始训练前需要收集的经验数
+    update_every: usize,         // 每 N 步更新一次
     max_episodes: usize,
     target_reward: f32,
 }
@@ -99,7 +98,6 @@ impl Default for SacConfig {
             batch_size: 64,
             learning_rate: 0.001,
             gamma: 0.99,
-            tau: 0.005,
             start_training_after: 1000,
             update_every: 1,
             max_episodes: 500,
@@ -114,24 +112,10 @@ impl Default for SacConfig {
 
 /// 计算 V 值：V = Σ π(a|s) * (Q(s,a) - α * log π(a|s))
 ///
-/// 这是 SAC 的核心公式，用于计算状态值函数
+/// 这是 SAC 的核心公式，用于计算状态值函数（向量化实现）
 fn compute_v_from_q(probs: &Tensor, q_values: &Tensor, log_probs: &Tensor, alpha: f32) -> Tensor {
-    let batch_size = probs.shape()[0];
-    let action_dim = probs.shape()[1];
-
-    let mut v_values = vec![0.0f32; batch_size];
-
-    for b in 0..batch_size {
-        for a in 0..action_dim {
-            let p = probs[[b, a]];
-            let q = q_values[[b, a]];
-            let log_p = log_probs[[b, a]];
-            // V(s) = Σ_a π(a|s) * (Q(s,a) - α * log π(a|s))
-            v_values[b] += p * (q - alpha * log_p);
-        }
-    }
-
-    Tensor::new(&v_values, &[batch_size, 1])
+    // V = Σ_a π(a|s) * (Q(s,a) - α * log π(a|s))
+    (probs * &(q_values - &(log_probs * alpha))).sum_axis_keepdims(1)
 }
 
 /// 构建动作索引张量
@@ -241,16 +225,12 @@ fn main() -> Result<(), GraphError> {
                     let target_q_min = target_q1.minimum(&target_q2);
                     let v_next = compute_v_from_q(&next_probs, &target_q_min, &next_log_probs, agent.alpha());
                     
-                    // target = r + γ * (1-done) * V(s')
-                    let targets: Vec<f32> = batch
-                        .iter()
-                        .enumerate()
-                        .map(|(i, e)| {
-                            let mask = if e.done { 0.0 } else { 1.0 };
-                            e.reward + config.gamma * mask * v_next[[i, 0]]
-                        })
-                        .collect();
-                    let target_tensor = Tensor::new(&targets, &[batch.len(), 1]);
+                    // target = r + γ * (1-done) * V(s')（向量化计算）
+                    let rewards: Vec<f32> = batch.iter().map(|e| e.reward).collect();
+                    let rewards_tensor = Tensor::new(&rewards, &[batch.len(), 1]);
+                    let done_masks: Vec<f32> = batch.iter().map(|e| if e.done { 0.0 } else { 1.0 }).collect();
+                    let done_masks_tensor = Tensor::new(&done_masks, &[batch.len(), 1]);
+                    let target_tensor = &rewards_tensor + &(&done_masks_tensor * &(&v_next * config.gamma));
                     let action_indices = build_action_indices(&batch);
 
                     // ========== Critic1 更新 ==========
@@ -281,11 +261,7 @@ fn main() -> Result<(), GraphError> {
 
                     // 目标分布：softmax(Q / α)，鼓励选择高 Q 值的动作
                     let alpha = agent.alpha();
-                    let q_scaled = &q_min / alpha;
-                    // 手动计算 softmax: exp(x) / sum(exp(x))
-                    let q_exp = q_scaled.exp();
-                    let q_exp_sum = q_exp.sum_axis_keepdims(1);
-                    let target_probs = &q_exp / &q_exp_sum;
+                    let target_probs = (&q_min / alpha).softmax(1);
 
                     // 使用交叉熵 loss（让策略逼近 Q 值分布）
                     let actor_logits = agent.actor.forward(&obs_batch)?;
@@ -349,7 +325,7 @@ fn main() -> Result<(), GraphError> {
                 let (probs, _) = agent.actor.get_action_probs(&obs_tensor)?;
                 
                 // 测试时使用贪婪策略（argmax）
-                let action = if probs[[0, 0]] > probs[[0, 1]] { 0 } else { 1 };
+                let action = probs.argmax(1)[[0]] as usize;
 
                 let (next_obs_vec, reward, done) = env.step(&[action as f32]);
                 episode_reward += reward;
@@ -369,7 +345,7 @@ fn main() -> Result<(), GraphError> {
 
         // 7. 保存可视化
         println!("\n[5/5] 保存计算图...");
-        let vis_result = graph.save_visualization("examples/cartpole_ppo/cartpole_sac", None)?;
+        let vis_result = graph.save_visualization("examples/cartpole_sac/cartpole_sac", None)?;
         println!("计算图已保存: {}", vis_result.dot_path.display());
 
         if avg_test_reward >= config.target_reward {

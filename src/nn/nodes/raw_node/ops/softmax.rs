@@ -71,50 +71,6 @@ impl Softmax {
             output_cache: None,
         })
     }
-
-    /// 计算数值稳定的 softmax（支持 batch，Rayon 并行）
-    /// 输入: [batch, `num_classes`]
-    /// 输出: [batch, `num_classes`]
-    fn stable_softmax_batch(logits: &Tensor) -> Tensor {
-        let shape = logits.shape();
-        let batch_size = shape[0];
-        let num_classes = shape[1];
-
-        // Rayon 并行处理每个 batch 样本
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
-                let mut sample_result = vec![0.0f32; num_classes];
-
-                // 找到该样本的最大值
-                let mut max_val = logits[[b, 0]];
-                for c in 1..num_classes {
-                    if logits[[b, c]] > max_val {
-                        max_val = logits[[b, c]];
-                    }
-                }
-
-                // 计算 exp(x - max) 和 sum
-                let mut sum_exp = 0.0f32;
-                for c in 0..num_classes {
-                    let exp_val = (logits[[b, c]] - max_val).exp();
-                    sample_result[c] = exp_val;
-                    sum_exp += exp_val;
-                }
-
-                // 归一化
-                for c in 0..num_classes {
-                    sample_result[c] /= sum_exp;
-                }
-
-                sample_result
-            })
-            .collect();
-
-        // 合并结果
-        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-        Tensor::new(&all_data, shape)
-    }
 }
 
 impl TraitNode for Softmax {
@@ -151,7 +107,8 @@ impl TraitNode for Softmax {
             GraphError::ComputationError(format!("{}的父{}没有值", self.display_node(), parents[0]))
         })?;
 
-        let output = Self::stable_softmax_batch(input);
+        // 复用 Tensor 层的数值稳定 softmax 实现
+        let output = input.softmax_last_dim();
         self.output_cache = Some(output.clone());
         self.value = Some(output);
 

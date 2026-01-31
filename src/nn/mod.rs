@@ -25,7 +25,7 @@ pub(in crate::nn) use display::format_node_display;
 pub use graph::{Graph, GraphError, GraphInner, ImageFormat, VisualizationOutput};
 pub use layer::{AvgPool2d, Conv2d, Gru, Linear, Lstm, MaxPool2d, Rnn};
 pub use model_state::{ForwardInput, ForwardOutput, ModelState};
-pub use module::Module;
+pub use module::{Module, hard_update, soft_update};
 pub use nodes::NodeId;
 pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
 pub use optimizer::{Adam, Optimizer, SGD};

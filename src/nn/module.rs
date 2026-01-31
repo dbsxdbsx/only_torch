@@ -61,3 +61,47 @@ pub trait Module {
         self.parameters().len()
     }
 }
+
+/// 软更新：target = tau * source + (1 - tau) * target
+///
+/// 用于强化学习中目标网络的平滑更新。
+///
+/// # 参数
+/// - `target`: 目标网络（被更新）
+/// - `source`: 源网络（提供新参数）
+/// - `tau`: 更新系数，范围 [0, 1]
+///   - tau = 0: target 不变
+///   - tau = 1: target 完全变为 source（硬更新）
+///   - tau ∈ (0, 1): 平滑更新（常用 0.005）
+///
+/// # 示例
+/// ```ignore
+/// use only_torch::nn::{soft_update, Module};
+///
+/// // SAC 目标网络软更新
+/// soft_update(&target_critic, &critic, 0.005);
+/// ```
+pub fn soft_update<T: Module, S: Module>(target: &T, source: &S, tau: f32) {
+    for (t_var, s_var) in target.parameters().iter().zip(source.parameters().iter()) {
+        if let (Ok(Some(mut t_val)), Ok(Some(s_val))) = (t_var.value(), s_var.value()) {
+            t_val.soft_update(&s_val, tau);
+            let _ = t_var.set_value(&t_val);
+        }
+    }
+}
+
+/// 硬更新：target = source
+///
+/// 等价于 `soft_update(target, source, 1.0)`，语义更清晰。
+/// 常用于初始化目标网络。
+///
+/// # 示例
+/// ```ignore
+/// use only_torch::nn::{hard_update, Module};
+///
+/// // 初始化目标网络为与主网络相同
+/// hard_update(&target_critic, &critic);
+/// ```
+pub fn hard_update<T: Module, S: Module>(target: &T, source: &S) {
+    soft_update(target, source, 1.0);
+}

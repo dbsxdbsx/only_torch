@@ -8,7 +8,7 @@
 //! Critic: Input(4) -> Linear(64, ReLU) -> Linear(2) → 每个动作的 Q 值
 //! ```
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps, soft_update};
 use only_torch::tensor::Tensor;
 
 // ============================================================================
@@ -164,26 +164,9 @@ impl SacAgent {
 
     /// 软更新目标网络
     /// target = tau * source + (1 - tau) * target
-    pub fn soft_update_targets(&mut self) {
-        let tau = self.tau;
-        // 更新 target_critic1
-        for (target, source) in self.target_critic1.parameters().iter()
-            .zip(self.critic1.parameters().iter())
-        {
-            if let (Ok(Some(mut t_val)), Ok(Some(s_val))) = (target.value(), source.value()) {
-                t_val.soft_update(&s_val, tau);
-                let _ = target.set_value(&t_val);
-            }
-        }
-        // 更新 target_critic2
-        for (target, source) in self.target_critic2.parameters().iter()
-            .zip(self.critic2.parameters().iter())
-        {
-            if let (Ok(Some(mut t_val)), Ok(Some(s_val))) = (target.value(), source.value()) {
-                t_val.soft_update(&s_val, tau);
-                let _ = target.set_value(&t_val);
-            }
-        }
+    pub fn soft_update_targets(&self) {
+        soft_update(&self.target_critic1, &self.critic1, self.tau);
+        soft_update(&self.target_critic2, &self.critic2, self.tau);
     }
 
     /// 更新 alpha（温度参数）
@@ -195,21 +178,11 @@ impl SacAgent {
         self.log_alpha -= self.alpha_lr * alpha_grad;
     }
 
-    /// 计算策略熵 H(π) = -Σ π(a|s) * log π(a|s)
+    /// 计算策略熵 H(π) = -Σ π(a|s) * log π(a|s)（向量化实现）
     fn compute_entropy(&self, log_probs: &Tensor, probs: &Tensor) -> f32 {
-        // H = -Σ p * log(p)
-        // 返回 batch 平均熵
-        let mut entropy = 0.0;
-        let batch_size = probs.shape()[0];
-        let action_dim = probs.shape()[1];
-        
-        for b in 0..batch_size {
-            for a in 0..action_dim {
-                let p = probs[[b, a]];
-                let log_p = log_probs[[b, a]];
-                entropy -= p * log_p;
-            }
-        }
-        entropy / batch_size as f32
+        // H = -Σ p * log(p)，返回 batch 平均熵
+        let batch_size = probs.shape()[0] as f32;
+        let neg_entropy = (probs * log_probs).sum_axis_keepdims(1); // [batch, 1]
+        -neg_entropy.sum().get_data_number().unwrap() / batch_size
     }
 }

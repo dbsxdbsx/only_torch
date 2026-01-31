@@ -946,6 +946,79 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ln↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓softmax↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 沿指定轴计算 softmax（数值稳定版本）
+    ///
+    /// softmax(x_i) = exp(x_i - max(x)) / Σ exp(x_j - max(x))
+    ///
+    /// 通过先减去最大值再计算 exp，避免数值溢出。
+    ///
+    /// # 参数
+    /// - `axis`: 沿哪个轴计算 softmax
+    ///
+    /// # 返回
+    /// 新张量，形状与输入相同，沿指定轴的元素和为 1
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 2.0, 3.0], &[2, 3]);
+    /// let probs = x.softmax(1);  // 沿最后一维计算
+    ///
+    /// // 每行和为 1
+    /// assert!((probs[[0, 0]] + probs[[0, 1]] + probs[[0, 2]] - 1.0).abs() < 1e-6);
+    /// assert!((probs[[1, 0]] + probs[[1, 1]] + probs[[1, 2]] - 1.0).abs() < 1e-6);
+    ///
+    /// // softmax([1,2,3]) ≈ [0.0900, 0.2447, 0.6652]
+    /// assert!((probs[[0, 2]] - 0.6652).abs() < 0.001);
+    /// ```
+    pub fn softmax(&self, axis: usize) -> Self {
+        assert!(
+            axis < self.dimension(),
+            "softmax: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // 数值稳定：先减去 max
+        let max_vals = self.amax(axis); // 沿 axis 取最大值
+        let max_broadcast = max_vals.unsqueeze(axis as i8); // 恢复维度以便广播
+
+        // x - max(x)
+        let shifted = self - &max_broadcast;
+
+        // exp(x - max)
+        let exp_vals = shifted.exp();
+
+        // sum(exp)
+        let sum_exp = exp_vals.sum_axis_keepdims(axis);
+
+        // exp / sum
+        &exp_vals / &sum_exp
+    }
+
+    /// 沿最后一维计算 softmax（数值稳定版本）
+    ///
+    /// 等价于 `self.softmax(self.dimension() - 1)`，这是最常用的情况。
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let logits = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+    /// let probs = logits.softmax_last_dim();
+    /// // probs ≈ [[0.0900, 0.2447, 0.6652]]
+    /// ```
+    pub fn softmax_last_dim(&self) -> Self {
+        assert!(
+            self.dimension() > 0,
+            "softmax_last_dim: 张量维度必须大于 0"
+        );
+        self.softmax(self.dimension() - 1)
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑softmax↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓max/min↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 返回张量中的最大值（标量）
     ///
