@@ -1269,6 +1269,7 @@ impl GraphInner {
             NodeTypeDescriptor::Abs => "Abs",
             NodeTypeDescriptor::SoftPlus => "SoftPlus",
             NodeTypeDescriptor::Step => "Step",
+            NodeTypeDescriptor::Sum { .. } => "Sum",
             NodeTypeDescriptor::Reshape { .. } => "Reshape",
             NodeTypeDescriptor::Flatten => "Flatten",
             NodeTypeDescriptor::Conv2d { .. } => "Conv2d",

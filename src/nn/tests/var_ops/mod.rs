@@ -9,10 +9,12 @@
  * - loss: VarLossOps trait 测试
  * - matrix: VarMatrixOps trait 测试
  * - shape: VarShapeOps trait 测试
+ * - reduce: VarReduceOps trait 测试
  */
 
 mod activation;
 mod core;
 mod loss;
 mod matrix;
+mod reduce;
 mod shape;

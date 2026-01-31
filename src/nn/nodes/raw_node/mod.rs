@@ -53,6 +53,7 @@ pub(in crate::nn) enum NodeType {
     Subtract(Subtract),
     SoftPlus(SoftPlus),
     Step(Step),
+    Sum(Sum), // 归约求和（支持全局和按轴模式）
     Tanh(Tanh),
     SoftmaxCrossEntropy(SoftmaxCrossEntropy),
     ZerosLike(ZerosLike), // 动态零张量（RNN 初始隐藏状态）

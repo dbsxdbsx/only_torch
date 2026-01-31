@@ -32,7 +32,8 @@ pub use optimizer::{Adam, Optimizer, SGD};
 pub use shape::{Dim, DynamicShape};
 pub use var::{DetachedVar, Init, Var};
 pub use var_ops::{
-    GatherIndex, VarActivationOps, VarLossOps, VarMatrixOps, VarRegularizationOps, VarShapeOps,
+    GatherIndex, VarActivationOps, VarLossOps, VarMatrixOps, VarReduceOps, VarRegularizationOps,
+    VarShapeOps,
 };
 
 #[cfg(test)]

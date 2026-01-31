@@ -79,6 +79,10 @@ pub enum NodeTypeDescriptor {
     Abs,
     SoftPlus,
     Step,
+    /// 归约求和（axis=None 全局，axis=Some(i) 按轴）
+    Sum {
+        axis: Option<usize>,
+    },
     Reshape {
         target_shape: Vec<usize>,
     },

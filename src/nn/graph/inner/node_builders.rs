@@ -315,6 +315,26 @@ impl GraphInner {
         self.add_node_to_list(handle, name, "tanh", &[parent_id])
     }
 
+    /// 创建 Sum 节点（归约求和）
+    ///
+    /// # 参数
+    /// - `parent_id`: 输入节点 ID
+    /// - `axis`: 求和轴，None 表示全局求和，Some(i) 表示沿轴 i 求和
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 用途
+    /// - 全局求和：将所有元素求和为标量 [1, 1]
+    /// - 按轴求和：SAC Actor Loss 中对动作维度求和 `Σ_a π(a|s) * (...)`
+    pub fn new_sum_node(
+        &mut self,
+        parent_id: NodeId,
+        axis: Option<usize>,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_sum(&self.get_nodes(&[parent_id])?, axis)?;
+        self.add_node_to_list(handle, name, "sum", &[parent_id])
+    }
+
     pub fn new_select_node(
         &mut self,
         parent_id: NodeId,

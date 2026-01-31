@@ -34,6 +34,7 @@ mod softplus;
 mod stack;
 mod step;
 mod subtract;
+mod sum;
 mod tanh;
 mod zeros_like;
 
@@ -66,5 +67,6 @@ pub(crate) use softplus::SoftPlus;
 pub(crate) use stack::Stack;
 pub(crate) use step::Step;
 pub(crate) use subtract::Subtract;
+pub(crate) use sum::Sum;
 pub(crate) use tanh::Tanh;
 pub(crate) use zeros_like::ZerosLike;
