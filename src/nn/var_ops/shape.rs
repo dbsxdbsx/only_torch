@@ -8,7 +8,54 @@
  */
 
 use crate::nn::{GraphError, Var};
+use crate::tensor::Tensor;
 use std::rc::Rc;
+
+// ==================== GatherIndex Trait ====================
+
+/// Gather 操作的 index 参数类型
+///
+/// 实现此 trait 的类型可以作为 `gather` 的 index 参数。
+/// 支持 `&Var`、`Var`、`&Tensor`、`Tensor` 四种类型。
+///
+/// 当传入 Tensor 时，会自动转换为 input 节点。
+///
+/// # 示例
+/// ```ignore
+/// // 两种写法等价：
+/// let q_selected = q_values.gather(1, &action_idx_var)?;  // index 是 &Var
+/// let q_selected = q_values.gather(1, &action_tensor)?;   // index 是 &Tensor（自动转换）
+/// ```
+pub trait GatherIndex {
+    /// 将 index 转换为 Var
+    fn into_var(self, source: &Var) -> Var;
+}
+
+impl GatherIndex for &Var {
+    fn into_var(self, source: &Var) -> Var {
+        source.assert_same_graph(self);
+        self.clone()
+    }
+}
+
+impl GatherIndex for Var {
+    fn into_var(self, source: &Var) -> Var {
+        source.assert_same_graph(&self);
+        self
+    }
+}
+
+impl GatherIndex for &Tensor {
+    fn into_var(self, source: &Var) -> Var {
+        source.tensor_to_var(self)
+    }
+}
+
+impl GatherIndex for Tensor {
+    fn into_var(self, source: &Var) -> Var {
+        source.tensor_to_var(&self)
+    }
+}
 
 // ==================== Var 关联函数（多输入操作）====================
 
@@ -141,7 +188,7 @@ pub trait VarShapeOps {
     ///
     /// # 参数
     /// - `dim`: gather 的维度
-    /// - `index`: 索引 Var（元素为 f32，会被转换为 usize）
+    /// - `index`: 索引（支持 `&Var`、`Var`、`&Tensor`、`Tensor`）
     ///
     /// # 返回
     /// 形状与 `index` 相同的 Var
@@ -150,10 +197,10 @@ pub trait VarShapeOps {
     /// ```ignore
     /// // SAC/DQN 场景：按动作索引选择 Q 值
     /// // q_values: [batch, action_dim]
-    /// // actions: [batch, 1]
+    /// // actions: [batch, 1] 可以是 Var 或 Tensor
     /// let q_selected = q_values.gather(1, &actions)?;  // [batch, 1]
     /// ```
-    fn gather(&self, dim: usize, index: &Var) -> Result<Var, GraphError>;
+    fn gather<I: GatherIndex>(&self, dim: usize, index: I) -> Result<Var, GraphError>;
 }
 
 impl VarShapeOps for Var {
@@ -182,12 +229,12 @@ impl VarShapeOps for Var {
         Ok(Self::new(id, Rc::clone(self.graph())))
     }
 
-    fn gather(&self, dim: usize, index: &Var) -> Result<Var, GraphError> {
-        self.assert_same_graph(index);
+    fn gather<I: GatherIndex>(&self, dim: usize, index: I) -> Result<Var, GraphError> {
+        let index_var = index.into_var(self);
         let id = self
             .graph()
             .borrow_mut()
-            .new_gather_node(self.node_id(), index.node_id(), dim, None)?;
+            .new_gather_node(self.node_id(), index_var.node_id(), dim, None)?;
         Ok(Self::new(id, Rc::clone(self.graph())))
     }
 }

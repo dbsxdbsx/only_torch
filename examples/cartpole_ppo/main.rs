@@ -19,7 +19,7 @@
 mod model;
 
 use model::SacAgent;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps, VarShapeOps};
 use only_torch::rl::GymEnv;
 use only_torch::tensor::Tensor;
 use pyo3::Python;
@@ -134,40 +134,10 @@ fn compute_v_from_q(probs: &Tensor, q_values: &Tensor, log_probs: &Tensor, alpha
     Tensor::new(&v_values, &[batch_size, 1])
 }
 
-/// 根据动作索引选择 Q 值
-fn select_q_by_action(q_values: &Tensor, batch: &[Experience]) -> Tensor {
-    let batch_size = batch.len();
-    let selected: Vec<f32> = batch
-        .iter()
-        .enumerate()
-        .map(|(i, e)| q_values[[i, e.action]])
-        .collect();
-    Tensor::new(&selected, &[batch_size, 1])
-}
-
-/// 计算 SAC Actor Loss（标量版本，用于日志/调试）
-///
-/// actor_loss = Σ π(a|s) * (α * log π(a|s) - Q(s,a))
-fn compute_actor_loss_scalar(
-    probs: &Tensor,
-    log_probs: &Tensor,
-    q_min: &Tensor,
-    alpha: f32,
-) -> f32 {
-    let batch_size = probs.shape()[0];
-    let action_dim = probs.shape()[1];
-
-    let mut loss = 0.0f32;
-    for b in 0..batch_size {
-        for a in 0..action_dim {
-            let p = probs[[b, a]];
-            let log_p = log_probs[[b, a]];
-            let q = q_min[[b, a]];
-            // 最小化 π(a|s) * (α*log π - Q)，等价于最大化 Q - α*log π
-            loss += p * (alpha * log_p - q);
-        }
-    }
-    loss / batch_size as f32
+/// 构建动作索引张量
+fn build_action_indices(batch: &[Experience]) -> Tensor {
+    let actions: Vec<f32> = batch.iter().map(|e| e.action as f32).collect();
+    Tensor::new(&actions, &[batch.len(), 1])
 }
 
 // ============================================================================
@@ -280,39 +250,49 @@ fn main() -> Result<(), GraphError> {
                             e.reward + config.gamma * mask * v_next[[i, 0]]
                         })
                         .collect();
-                    let _target_tensor = Tensor::new(&targets, &[batch.len(), 1]);
+                    let target_tensor = Tensor::new(&targets, &[batch.len(), 1]);
+                    let action_indices = build_action_indices(&batch);
 
-                    // ========== Critic 更新 ==========
-                    // Critic1 更新
-                    // 注意：完整实现需要：
-                    // 1. 按动作索引选择 Q 值
-                    // 2. 计算 MSE loss
-                    // 3. 反向传播
-                    let _q1_var = agent.critic1.forward(&obs_batch)?;
-                    let _q1_selected = select_q_by_action(&agent.critic1.get_q_values(&obs_batch)?, &batch);
+                    // ========== Critic1 更新 ==========
+                    let q1_var = agent.critic1.forward(&obs_batch)?;
+                    let q1_selected = q1_var.gather(1, &action_indices)?;  // 直接传 &Tensor
+                    let critic1_loss = q1_selected.mse_loss(&target_tensor)?;
+
                     critic1_optimizer.zero_grad()?;
-                    // 待实现：构建 MSE loss 并反向传播
+                    critic1_loss.backward()?;
                     critic1_optimizer.step()?;
 
-                    // Critic2 更新（类似）
-                    let _q2_var = agent.critic2.forward(&obs_batch)?;
+                    // ========== Critic2 更新 ==========
+                    let q2_var = agent.critic2.forward(&obs_batch)?;
+                    let q2_selected = q2_var.gather(1, &action_indices)?;  // 直接传 &Tensor
+                    let critic2_loss = q2_selected.mse_loss(&target_tensor)?;
+
                     critic2_optimizer.zero_grad()?;
+                    critic2_loss.backward()?;
                     critic2_optimizer.step()?;
 
                     // ========== Actor 更新 ==========
-                    // Q 值不参与 Actor 的梯度计算（只用数值）
-                    let (probs, log_probs) = agent.actor.get_action_probs(&obs_batch)?;
+                    // SAC-Discrete: 用 Q 值加权的交叉熵损失
+                    // 计算 Q 值加权的目标分布
                     let q1 = agent.critic1.get_q_values(&obs_batch)?;
                     let q2 = agent.critic2.get_q_values(&obs_batch)?;
                     let q_min = q1.minimum(&q2);
+                    let (_, log_probs) = agent.actor.get_action_probs(&obs_batch)?;
 
-                    // 计算 Actor loss（标量版本，用于监控）
-                    let _actor_loss_value = compute_actor_loss_scalar(&probs, &log_probs, &q_min, agent.alpha());
+                    // 目标分布：softmax(Q / α)，鼓励选择高 Q 值的动作
+                    let alpha = agent.alpha();
+                    let q_scaled = &q_min / alpha;
+                    // 手动计算 softmax: exp(x) / sum(exp(x))
+                    let q_exp = q_scaled.exp();
+                    let q_exp_sum = q_exp.sum_axis_keepdims(1);
+                    let target_probs = &q_exp / &q_exp_sum;
 
-                    // 注意：完整实现需要从 Var 构建可微分的 loss
-                    // 目前的简化版本：使用策略梯度的近似
+                    // 使用交叉熵 loss（让策略逼近 Q 值分布）
+                    let actor_logits = agent.actor.forward(&obs_batch)?;
+                    let actor_loss = actor_logits.cross_entropy(&target_probs)?;
+
                     actor_optimizer.zero_grad()?;
-                    // 待实现：构建真正的 actor loss 并反向传播
+                    actor_loss.backward()?;
                     actor_optimizer.step()?;
 
                     // ========== Alpha 更新 ==========

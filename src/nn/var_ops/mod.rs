@@ -35,4 +35,4 @@ pub use activation::VarActivationOps;
 pub use loss::VarLossOps;
 pub use matrix::VarMatrixOps;
 pub use regularization::VarRegularizationOps;
-pub use shape::VarShapeOps;
+pub use shape::{GatherIndex, VarShapeOps};

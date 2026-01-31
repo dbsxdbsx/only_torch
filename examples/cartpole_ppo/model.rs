@@ -129,7 +129,6 @@ pub struct SacAgent {
     pub target_entropy: f32,
     
     // 超参数
-    pub gamma: f32,      // 折扣因子
     pub tau: f32,        // 软更新系数
     pub alpha_lr: f32,   // alpha 学习率
 }
@@ -152,8 +151,7 @@ impl SacAgent {
             
             log_alpha: 0.0,  // 初始 alpha = exp(0) = 1
             target_entropy,
-            
-            gamma: 0.99,
+
             tau: 0.005,
             alpha_lr: 0.001,
         })
@@ -166,15 +164,26 @@ impl SacAgent {
 
     /// 软更新目标网络
     /// target = tau * source + (1 - tau) * target
-    ///
-    /// 注意：需要 only_torch 支持参数软更新功能
-    /// 目前为占位实现，实际使用时需要补充
     pub fn soft_update_targets(&mut self) {
-        // 软更新逻辑：
-        // for (target_param, source_param) in target.parameters().zip(source.parameters()) {
-        //     target_param.data = tau * source_param.data + (1 - tau) * target_param.data
-        // }
-        // 待库支持后实现
+        let tau = self.tau;
+        // 更新 target_critic1
+        for (target, source) in self.target_critic1.parameters().iter()
+            .zip(self.critic1.parameters().iter())
+        {
+            if let (Ok(Some(mut t_val)), Ok(Some(s_val))) = (target.value(), source.value()) {
+                t_val.soft_update(&s_val, tau);
+                let _ = target.set_value(&t_val);
+            }
+        }
+        // 更新 target_critic2
+        for (target, source) in self.target_critic2.parameters().iter()
+            .zip(self.critic2.parameters().iter())
+        {
+            if let (Ok(Some(mut t_val)), Ok(Some(s_val))) = (target.value(), source.value()) {
+                t_val.soft_update(&s_val, tau);
+                let _ = target.set_value(&t_val);
+            }
+        }
     }
 
     /// 更新 alpha（温度参数）

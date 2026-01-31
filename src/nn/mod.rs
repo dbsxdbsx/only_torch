@@ -31,7 +31,9 @@ pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
 pub use optimizer::{Adam, Optimizer, SGD};
 pub use shape::{Dim, DynamicShape};
 pub use var::{DetachedVar, Init, Var};
-pub use var_ops::{VarActivationOps, VarLossOps, VarMatrixOps, VarRegularizationOps, VarShapeOps};
+pub use var_ops::{
+    GatherIndex, VarActivationOps, VarLossOps, VarMatrixOps, VarRegularizationOps, VarShapeOps,
+};
 
 #[cfg(test)]
 mod tests;

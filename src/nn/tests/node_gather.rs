@@ -222,6 +222,130 @@ fn test_gather_with_mse_loss() {
 // 错误处理测试
 // ============================================================================
 
+// ============================================================================
+// GatherIndex trait 测试（支持 &Tensor 作为 index）
+// ============================================================================
+
+/// 测试 gather 直接接受 &Tensor 作为 index
+#[test]
+fn test_gather_with_tensor_index() {
+    let graph = Graph::new();
+
+    // Q 值：[[1.0, 2.0, 3.0],
+    //        [4.0, 5.0, 6.0]]
+    let q_values = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
+        .unwrap();
+
+    // 动作索引：直接使用 Tensor（不需要 graph.input 转换）
+    let actions = Tensor::new(&[1.0, 2.0], &[2, 1]);
+
+    // Gather 直接接受 &Tensor
+    let selected = q_values.gather(1, &actions).unwrap();
+
+    // 前向传播
+    selected.forward().unwrap();
+
+    // 验证结果
+    let result = selected.value().unwrap().unwrap();
+    assert_eq!(result.shape(), &[2, 1]);
+    assert_eq!(result[[0, 0]], 2.0); // q_values[0, 1]
+    assert_eq!(result[[1, 0]], 6.0); // q_values[1, 2]
+}
+
+/// 测试 gather 接受 Tensor（非引用）作为 index
+#[test]
+fn test_gather_with_owned_tensor_index() {
+    let graph = Graph::new();
+
+    let input = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
+        .unwrap();
+
+    // 直接传入 owned Tensor
+    let selected = input.gather(1, Tensor::new(&[0.0, 1.0], &[2, 1])).unwrap();
+
+    selected.forward().unwrap();
+
+    let result = selected.value().unwrap().unwrap();
+    assert_eq!(result[[0, 0]], 1.0); // input[0, 0]
+    assert_eq!(result[[1, 0]], 4.0); // input[1, 1]
+}
+
+/// 测试 gather 使用 Tensor index 时的反向传播
+#[test]
+fn test_gather_tensor_index_backward() {
+    use crate::nn::VarLossOps;
+
+    let graph = Graph::new();
+
+    // 输入：参数节点
+    let q_values = graph.parameter(&[2, 3], Init::Zeros, "q").unwrap();
+    q_values
+        .set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
+        .unwrap();
+
+    // 动作索引：直接使用 Tensor
+    let actions = Tensor::new(&[1.0, 0.0], &[2, 1]);
+
+    // Gather
+    let q_selected = q_values.gather(1, &actions).unwrap();
+
+    // MSE Loss
+    let target = Tensor::new(&[2.5, 3.5], &[2, 1]);
+    let loss = q_selected.mse_loss(&target).unwrap();
+
+    // 前向 + 反向
+    loss.forward().unwrap();
+    loss.backward().unwrap();
+
+    // 验证梯度
+    let grad_q = q_values.grad().unwrap().unwrap();
+    assert_abs_diff_eq!(grad_q[[0, 1]], -0.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad_q[[1, 0]], 0.5, epsilon = 1e-6);
+}
+
+/// 测试 RL 场景：完整的 Critic 更新流程（使用 Tensor index）
+#[test]
+fn test_gather_rl_critic_update_with_tensor_index() {
+    use crate::nn::{Adam, Module, Optimizer, VarLossOps};
+    use crate::nn::layer::Linear;
+
+    let graph = Graph::new_with_seed(42);
+
+    // 简单的 Q 网络：Linear(4 -> 2)
+    let fc = Linear::new(&graph, 4, 2, true, "q_net").unwrap();
+
+    // 优化器
+    let mut optimizer = Adam::new(&graph, &fc.parameters(), 0.01);
+
+    // 模拟一个 batch
+    let obs = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], &[2, 4]);
+    let actions = Tensor::new(&[0.0, 1.0], &[2, 1]);  // 直接使用 Tensor
+    let target_q = Tensor::new(&[1.0, -1.0], &[2, 1]);
+
+    // 前向传播
+    let obs_var = graph.input(&obs).unwrap();
+    let q_values = fc.forward(&obs_var);
+    let q_selected = q_values.gather(1, &actions).unwrap();  // 直接传 &Tensor
+    let loss = q_selected.mse_loss(&target_q).unwrap();
+
+    // 反向传播和更新
+    optimizer.zero_grad().unwrap();
+    loss.backward().unwrap();
+    optimizer.step().unwrap();
+
+    // 验证参数有更新（梯度不为零）
+    for param in fc.parameters() {
+        let grad = param.grad().unwrap();
+        assert!(grad.is_some(), "参数应该有梯度");
+    }
+}
+
+// ============================================================================
+// 错误处理测试
+// ============================================================================
+
 /// 测试 dim 超出范围
 #[test]
 fn test_gather_dim_out_of_range() {

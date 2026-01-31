@@ -107,9 +107,9 @@ fn test_gather_3d_dim2() {
     let result = input.gather(2, &index);
 
     assert_eq!(result.shape(), &[2, 2, 1]);
-    assert_eq!(result[[0, 0, 0]], 1.0);  // input[0, 0, 0]
-    assert_eq!(result[[0, 1, 0]], 6.0);  // input[0, 1, 2]
-    assert_eq!(result[[1, 0, 0]], 8.0);  // input[1, 0, 1]
+    assert_eq!(result[[0, 0, 0]], 1.0); // input[0, 0, 0]
+    assert_eq!(result[[0, 1, 0]], 6.0); // input[0, 1, 2]
+    assert_eq!(result[[1, 0, 0]], 8.0); // input[1, 0, 1]
     assert_eq!(result[[1, 1, 0]], 10.0); // input[1, 1, 0]
 }
 
