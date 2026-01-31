@@ -176,6 +176,177 @@ fn test_var_chained_softplus_sigmoid() {
     assert!(result.data_as_slice()[0] > 0.5 && result.data_as_slice()[0] < 0.6);
 }
 
+// ==================== Ln 测试 ====================
+
+#[test]
+fn test_var_ln() {
+    let graph = Graph::new();
+    let e = std::f32::consts::E;
+    let x = graph
+        .input(&Tensor::new(&[1.0, e, e * e], &[3, 1]))
+        .unwrap();
+    let y = x.ln();
+    y.forward().unwrap();
+    let result = y.value().unwrap().unwrap();
+    // ln(1) = 0, ln(e) = 1, ln(e^2) = 2
+    assert!((result.data_as_slice()[0] - 0.0).abs() < 1e-5);
+    assert!((result.data_as_slice()[1] - 1.0).abs() < 1e-5);
+    assert!((result.data_as_slice()[2] - 2.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_var_ln_backward() {
+    use crate::nn::var::Init;
+
+    let graph = Graph::new();
+
+    // 简单网络：parameter -> ln -> mse_loss
+    let x = graph.parameter(&[1, 3], Init::Ones, "x").unwrap();
+    x.set_value(&Tensor::new(&[1.0, 2.0, 4.0], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[0.0, 0.5, 1.0], &[1, 3]))
+        .unwrap();
+
+    let log_x = x.ln();
+    let loss = log_x.mse_loss(&target).unwrap();
+
+    loss.backward().unwrap();
+
+    // 验证 x 有梯度
+    let x_grad = x.grad().unwrap();
+    assert!(x_grad.is_some());
+    // 梯度应该存在且非零
+    let grad_tensor = x_grad.unwrap();
+    let grad_data = grad_tensor.data_as_slice();
+    assert!(grad_data.iter().any(|&g| g.abs() > 1e-6));
+}
+
+#[test]
+fn test_var_chained_sigmoid_ln() {
+    let graph = Graph::new();
+    let x = graph
+        .input(&Tensor::new(&[0.0, 1.0, 2.0], &[3, 1]))
+        .unwrap();
+    // sigmoid -> ln 常用于计算 log 概率
+    let y = x.sigmoid().ln();
+    y.forward().unwrap();
+    let result = y.value().unwrap().unwrap();
+    // sigmoid(0) = 0.5 -> ln(0.5) ≈ -0.693
+    assert!((result.data_as_slice()[0] - (-0.6931)).abs() < 0.01);
+    // sigmoid(1) ≈ 0.731 -> ln(0.731) ≈ -0.313
+    assert!(result.data_as_slice()[1] < 0.0);
+    // sigmoid(2) ≈ 0.881 -> ln(0.881) ≈ -0.127
+    assert!(result.data_as_slice()[2] < 0.0);
+}
+
+// ==================== LogSoftmax 测试 ====================
+
+#[test]
+fn test_var_log_softmax() {
+    let graph = Graph::new();
+    // 输入 [batch=2, classes=3]
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]))
+        .unwrap();
+    let y = x.log_softmax();
+    y.forward().unwrap();
+    let result = y.value().unwrap().unwrap();
+
+    // log_softmax 输出应该都是负数
+    for val in result.data_as_slice() {
+        assert!(*val < 0.0, "log_softmax 输出应为负数");
+    }
+
+    // exp(log_softmax) 每行和应为 1
+    let row0_sum = result.data_as_slice()[0..3]
+        .iter()
+        .map(|x| x.exp())
+        .sum::<f32>();
+    let row1_sum = result.data_as_slice()[3..6]
+        .iter()
+        .map(|x| x.exp())
+        .sum::<f32>();
+    assert!((row0_sum - 1.0).abs() < 1e-5, "第一行 exp 和应为 1");
+    assert!((row1_sum - 1.0).abs() < 1e-5, "第二行 exp 和应为 1");
+}
+
+#[test]
+fn test_var_log_softmax_vs_softmax() {
+    let graph = Graph::new();
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
+        .unwrap();
+
+    let log_probs = x.log_softmax();
+    let probs = x.softmax();
+
+    log_probs.forward().unwrap();
+    probs.forward().unwrap();
+
+    let log_result = log_probs.value().unwrap().unwrap();
+    let probs_result = probs.value().unwrap().unwrap();
+
+    // exp(log_softmax) 应该等于 softmax
+    for (log_val, prob_val) in log_result.data_as_slice().iter().zip(probs_result.data_as_slice())
+    {
+        assert!(
+            (log_val.exp() - prob_val).abs() < 1e-5,
+            "exp(log_softmax) 应等于 softmax"
+        );
+    }
+}
+
+#[test]
+fn test_var_log_softmax_backward() {
+    use crate::nn::var::Init;
+
+    let graph = Graph::new();
+
+    // 简单网络：parameter -> log_softmax -> mse_loss
+    let x = graph.parameter(&[1, 3], Init::Ones, "x").unwrap();
+    x.set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[-2.0, -1.0, 0.0], &[1, 3]))
+        .unwrap();
+
+    let log_probs = x.log_softmax();
+    let loss = log_probs.mse_loss(&target).unwrap();
+
+    loss.backward().unwrap();
+
+    // 验证 x 有梯度
+    let x_grad = x.grad().unwrap();
+    assert!(x_grad.is_some());
+    // 梯度应该存在且非零
+    let grad_tensor = x_grad.unwrap();
+    let grad_data = grad_tensor.data_as_slice();
+    assert!(grad_data.iter().any(|&g| g.abs() > 1e-6));
+}
+
+#[test]
+fn test_var_log_softmax_numerical_stability() {
+    let graph = Graph::new();
+
+    // 大数值输入，测试数值稳定性
+    let x = graph
+        .input(&Tensor::new(&[1000.0, 1001.0, 1002.0], &[1, 3]))
+        .unwrap();
+    let y = x.log_softmax();
+    y.forward().unwrap();
+    let result = y.value().unwrap().unwrap();
+
+    // 输出应该是有限的（不是 NaN 或 Inf）
+    for val in result.data_as_slice() {
+        assert!(val.is_finite(), "log_softmax 输出应为有限值");
+    }
+
+    // exp 后和应为 1
+    let sum: f32 = result.data_as_slice().iter().map(|x| x.exp()).sum();
+    assert!((sum - 1.0).abs() < 1e-4);
+}
+
 // ==================== Softmax 动态形状测试 ====================
 
 /// 测试 Softmax 节点的动态形状传播

@@ -35,6 +35,7 @@ mod save_load;
 
 mod slice;
 mod softmax;
+mod log_softmax;
 
 #[derive(Debug)]
 struct TensorCheck {

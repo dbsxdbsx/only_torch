@@ -28,6 +28,8 @@ mod node_huber; // Huber Loss 节点（Smooth L1 Loss，强化学习标准损失
 mod node_identity; // Identity 节点（恒等映射，用于 detach_node）
 mod node_input; // InputVariant（BasicInput, TargetInput, SmartInput）
 mod node_leaky_relu; // LeakyReLU/ReLU 激活函数
+mod node_ln; // Ln 节点（自然对数，用于计算 log 概率）
+mod node_log_softmax; // LogSoftmax 节点（数值稳定的 log(softmax)）
 mod node_mae; // MAE 节点（Mean Absolute Error，平均绝对误差损失）
 mod node_mat_mul;
 mod node_max_pool2d; // MaxPool2d 节点（2D 最大池化）

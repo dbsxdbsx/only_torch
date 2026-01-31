@@ -429,6 +429,44 @@ impl GraphInner {
         self.add_node_to_list(handle, name, "sigmoid", &[parent_id])
     }
 
+    /// 创建 Ln 节点（自然对数）
+    ///
+    /// # 参数
+    /// - `parent_id`: 输入节点 ID
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 用途
+    /// SAC 等需要计算 log π(a|s) 的强化学习算法
+    pub fn new_ln_node(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_ln(&self.get_nodes(&[parent_id])?)?;
+        self.add_node_to_list(handle, name, "ln", &[parent_id])
+    }
+
+    /// 创建 LogSoftmax 节点
+    ///
+    /// 沿最后一维计算数值稳定的 log(softmax(x))。
+    /// 比 softmax().ln() 更稳定，避免小概率值导致的精度问题。
+    ///
+    /// # 参数
+    /// - `parent_id`: 输入节点 ID，需要 2D 张量 [batch, num_classes]
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 用途
+    /// - SAC Actor Loss 计算 log π(a|s)
+    /// - 交叉熵损失等分类任务
+    pub fn new_log_softmax_node(
+        &mut self,
+        parent_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_log_softmax(&self.get_nodes(&[parent_id])?)?;
+        self.add_node_to_list(handle, name, "log_softmax", &[parent_id])
+    }
+
     pub fn new_identity_node(
         &mut self,
         parent_id: NodeId,

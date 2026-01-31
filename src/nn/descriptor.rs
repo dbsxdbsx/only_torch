@@ -67,6 +67,10 @@ pub enum NodeTypeDescriptor {
     LeakyReLU {
         alpha: f32,
     },
+    /// 自然对数（用于计算 log 概率、KL 散度等）
+    Ln,
+    /// LogSoftmax（数值稳定的 log(softmax)）
+    LogSoftmax,
     /// Dropout 正则化（训练时丢弃，评估时直接通过）
     Dropout {
         p: f32,

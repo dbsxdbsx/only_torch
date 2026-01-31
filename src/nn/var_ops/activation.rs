@@ -18,10 +18,12 @@ use std::rc::Rc;
 /// - `tanh()`: Tanh 激活
 /// - `leaky_relu(alpha)`: `LeakyReLU` 激活
 /// - `softmax()`: Softmax 激活（沿最后一维归一化）
+/// - `log_softmax()`: LogSoftmax（数值稳定的 log(softmax)）
 /// - `softplus()`: `SoftPlus` 激活
 /// - `step()`: 阶跃函数（用于二分类预测）
 /// - `sign()`: 符号函数
 /// - `abs()`: 绝对值函数
+/// - `ln()`: 自然对数函数
 ///
 /// # 使用示例
 /// ```ignore
@@ -30,6 +32,7 @@ use std::rc::Rc;
 /// let h = x.relu().sigmoid();
 /// let pred = output.step();
 /// let probs = logits.softmax();
+/// let log_probs = logits.log_softmax();  // 数值稳定
 /// let magnitude = diff.abs();
 /// ```
 pub trait VarActivationOps {
@@ -51,6 +54,15 @@ pub trait VarActivationOps {
     /// 输入形状 [batch, `num_classes`]，输出形状相同。
     fn softmax(&self) -> Var;
 
+    /// LogSoftmax：数值稳定的 log(softmax(x))
+    ///
+    /// 沿最后一维计算 log_softmax。比 `softmax().ln()` 更数值稳定，
+    /// 避免 softmax 输出接近 0 时的精度问题。
+    ///
+    /// 输入形状 [batch, `num_classes`]，输出形状相同。
+    /// 常用于计算 log 概率（如 SAC Actor Loss）。
+    fn log_softmax(&self) -> Var;
+
     /// `SoftPlus` 激活：log(1 + exp(x))
     ///
     /// 平滑的 `ReLU` 近似，常用于需要平滑非线性的场景
@@ -67,6 +79,12 @@ pub trait VarActivationOps {
     /// 梯度为 sign(x)，在 x=0 处为 0（与 `PyTorch` 行为一致）。
     /// 常用于 L1 损失、L1 正则化、距离计算等场景。
     fn abs(&self) -> Var;
+
+    /// Ln 函数（自然对数）：ln(x)
+    ///
+    /// 梯度为 1/x。输入 x 必须为正数，否则结果为 NaN 或 -Inf。
+    /// 常用于计算 log 概率、KL 散度、交叉熵等场景。
+    fn ln(&self) -> Var;
 }
 
 impl VarActivationOps for Var {
@@ -115,6 +133,15 @@ impl VarActivationOps for Var {
         Self::new(id, Rc::clone(self.graph()))
     }
 
+    fn log_softmax(&self) -> Var {
+        let id = self
+            .graph()
+            .borrow_mut()
+            .new_log_softmax_node(self.node_id(), None)
+            .expect("创建 LogSoftmax 节点失败");
+        Self::new(id, Rc::clone(self.graph()))
+    }
+
     fn softplus(&self) -> Var {
         let id = self
             .graph()
@@ -148,6 +175,15 @@ impl VarActivationOps for Var {
             .borrow_mut()
             .new_abs_node(self.node_id(), None)
             .expect("创建 Abs 节点失败");
+        Self::new(id, Rc::clone(self.graph()))
+    }
+
+    fn ln(&self) -> Var {
+        let id = self
+            .graph()
+            .borrow_mut()
+            .new_ln_node(self.node_id(), None)
+            .expect("创建 Ln 节点失败");
         Self::new(id, Rc::clone(self.graph()))
     }
 }

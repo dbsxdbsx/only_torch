@@ -1019,6 +1019,83 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑softmax↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓log_softmax↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 沿指定轴计算 log_softmax（数值稳定版本）
+    ///
+    /// `log_softmax(x) = log(softmax(x)) = x - max(x) - log(sum(exp(x - max(x))))`
+    ///
+    /// 比直接计算 `softmax(x).ln()` 更数值稳定，避免 softmax 输出接近 0 时的精度问题。
+    ///
+    /// # 参数
+    /// - `axis`: 计算 softmax 的轴
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let logits = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 2.0, 3.0], &[2, 3]);
+    /// let log_probs = logits.log_softmax(1);
+    ///
+    /// // 检查形状
+    /// assert_eq!(log_probs.shape(), &[2, 3]);
+    ///
+    /// // log_softmax 输出应该都是负数（因为 softmax 输出 < 1）
+    /// assert!(log_probs[[0, 0]] < 0.0);
+    /// assert!(log_probs[[0, 1]] < 0.0);
+    /// assert!(log_probs[[0, 2]] < 0.0);
+    ///
+    /// // exp(log_softmax) 应该等于 softmax
+    /// let probs = log_probs.exp();
+    /// let sum = probs[[0, 0]] + probs[[0, 1]] + probs[[0, 2]];
+    /// assert!((sum - 1.0).abs() < 1e-6);
+    /// ```
+    pub fn log_softmax(&self, axis: usize) -> Self {
+        assert!(
+            axis < self.dimension(),
+            "log_softmax: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // 数值稳定：先减去 max
+        let max_vals = self.amax(axis);
+        let max_broadcast = max_vals.unsqueeze(axis as i8);
+
+        // shifted = x - max(x)
+        let shifted = self - &max_broadcast;
+
+        // log_sum_exp = log(sum(exp(shifted)))
+        let exp_vals = shifted.exp();
+        let sum_exp = exp_vals.sum_axis_keepdims(axis);
+        let log_sum_exp = sum_exp.ln();
+
+        // log_softmax = shifted - log_sum_exp
+        &shifted - &log_sum_exp
+    }
+
+    /// 沿最后一维计算 log_softmax（数值稳定版本）
+    ///
+    /// 等价于 `self.log_softmax(self.dimension() - 1)`，这是最常用的情况。
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let logits = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+    /// let log_probs = logits.log_softmax_last_dim();
+    ///
+    /// // log_softmax([1,2,3]) ≈ [-2.407, -1.407, -0.407]
+    /// assert!((log_probs[[0, 0]] - (-2.407)).abs() < 0.01);
+    /// ```
+    pub fn log_softmax_last_dim(&self) -> Self {
+        assert!(
+            self.dimension() > 0,
+            "log_softmax_last_dim: 张量维度必须大于 0"
+        );
+        self.log_softmax(self.dimension() - 1)
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑log_softmax↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓max/min↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 返回张量中的最大值（标量）
     ///
