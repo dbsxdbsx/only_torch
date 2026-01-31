@@ -8,7 +8,7 @@
 //! Critic: Input(4) -> Linear(64, ReLU) -> Linear(2) → 每个动作的 Q 值
 //! ```
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps, soft_update};
+use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
 // ============================================================================
@@ -165,8 +165,8 @@ impl SacAgent {
     /// 软更新目标网络
     /// target = tau * source + (1 - tau) * target
     pub fn soft_update_targets(&self) {
-        soft_update(&self.target_critic1, &self.critic1, self.tau);
-        soft_update(&self.target_critic2, &self.critic2, self.tau);
+        self.target_critic1.soft_update_from(&self.critic1, self.tau);
+        self.target_critic2.soft_update_from(&self.critic2, self.tau);
     }
 
     /// 更新 alpha（温度参数）
