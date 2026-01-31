@@ -1,9 +1,9 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Abs, Add, AvgPool2d, BCE, Conv2d, Divide, Dropout, Flatten, Huber, Identity, InputVariant,
-    LeakyReLU, MAE, MSE, MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape, Select,
-    Sigmoid, Sign, SoftPlus, Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Tanh,
-    ZerosLike,
+    Abs, Add, AvgPool2d, BCE, Conv2d, Divide, Dropout, Flatten, Gather, Huber, Identity,
+    InputVariant, LeakyReLU, MAE, MSE, MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape,
+    Select, Sigmoid, Sign, SoftPlus, Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract,
+    Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -419,6 +419,15 @@ impl NodeHandle {
         index: usize,
     ) -> Result<Self, GraphError> {
         Self::new(Select::new(parents, axis, index)?)
+    }
+
+    /// 创建 Gather 节点（按索引张量从指定维度收集元素）
+    ///
+    /// # 参数
+    /// - `parents`: [输入节点, 索引节点]
+    /// - `dim`: gather 的维度
+    pub(in crate::nn) fn new_gather(parents: &[&Self], dim: usize) -> Result<Self, GraphError> {
+        Self::new(Gather::new(parents, dim)?)
     }
 
     pub(in crate::nn) fn new_softmax_cross_entropy(parents: &[&Self]) -> Result<Self, GraphError> {

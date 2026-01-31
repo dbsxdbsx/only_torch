@@ -91,10 +91,14 @@ pub enum NodeTypeDescriptor {
         kernel_size: (usize, usize),
         stride: (usize, usize),
     },
-    /// 张量索引选择（RNN 展开式设计用）
+    /// 张量索引选择（RNN 展开式设计用，固定索引）
     Select {
         axis: usize,
         index: usize,
+    },
+    /// 张量按索引收集（强化学习用，动态索引）
+    Gather {
+        dim: usize,
     },
     /// 张量堆叠/拼接（多输入合并）
     Stack {

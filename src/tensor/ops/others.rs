@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use crate::errors::{Operator, TensorError};
 
 use crate::tensor::Tensor;
-use ndarray::{Array, Axis, IxDyn, Zip};
+use ndarray::{Array, Axis, Dimension, IxDyn, Zip};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -1353,4 +1353,150 @@ impl Tensor {
         self.data.mapv_inplace(f32::abs);
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑abs↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓gather↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 按索引张量从指定维度收集元素
+    ///
+    /// 类似 `PyTorch` 的 `torch.gather(input, dim, index)`。
+    /// 对于 2D 张量 `input[M, N]` 和索引 `index[M, K]`（dim=1 时）：
+    /// - `output[i, j] = input[i, index[i, j]]`
+    ///
+    /// # 参数
+    /// - `dim`: 沿哪个维度进行 gather 操作
+    /// - `index`: 索引张量（元素为 f32，会被转换为 usize）
+    ///
+    /// # 返回
+    /// 与 `index` 形状相同的张量
+    ///
+    /// # Panics
+    /// - 如果 `dim` 超出维度范围
+    /// - 如果 `index` 和 `self` 的维度数不同
+    /// - 如果 `index` 中除 `dim` 维度外的其他维度大小与 `self` 不匹配
+    /// - 如果 `index` 中的索引值超出 `self` 在 `dim` 维度的范围
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // SAC/DQN 场景：按动作索引选择 Q 值
+    /// // Q 值：[[1.0, 2.0, 3.0],   (batch=2, action_dim=3)
+    /// //        [4.0, 5.0, 6.0]]
+    /// let q_values = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    ///
+    /// // 动作索引：[[1],   (选第 0 行的索引 1)
+    /// //           [2]]   (选第 1 行的索引 2)
+    /// let actions = Tensor::new(&[1.0, 2.0], &[2, 1]);
+    ///
+    /// let selected = q_values.gather(1, &actions);
+    /// // selected = [[2.0],   <- q_values[0, 1]
+    /// //             [6.0]]   <- q_values[1, 2]
+    /// assert_eq!(selected.shape(), &[2, 1]);
+    /// assert_eq!(selected[[0, 0]], 2.0);
+    /// assert_eq!(selected[[1, 0]], 6.0);
+    /// ```
+    pub fn gather(&self, dim: usize, index: &Tensor) -> Tensor {
+        let self_shape = self.shape();
+        let index_shape = index.shape();
+        let ndim = self_shape.len();
+
+        // 1. 验证 dim
+        assert!(
+            dim < ndim,
+            "gather: dim {} 超出张量维度 {}",
+            dim,
+            ndim
+        );
+
+        // 2. 验证 index 维度数与 self 相同
+        assert!(
+            index_shape.len() == ndim,
+            "gather: index 维度数 {} 必须与输入张量维度数 {} 相同",
+            index_shape.len(),
+            ndim
+        );
+
+        // 3. 验证除 dim 外的其他维度大小一致
+        for d in 0..ndim {
+            if d != dim {
+                assert!(
+                    index_shape[d] == self_shape[d],
+                    "gather: 维度 {} 上 index 大小 {} 与输入张量大小 {} 不匹配",
+                    d,
+                    index_shape[d],
+                    self_shape[d]
+                );
+            }
+        }
+
+        // 4. 计算输出大小并收集元素
+        let output_size: usize = index_shape.iter().product();
+        let mut output_data = Vec::with_capacity(output_size);
+
+        // 使用 ndindex 遍历 index 张量的每个位置
+        for idx in ndarray::indices(index_shape) {
+            // 获取 index 中的值作为 gather 索引
+            let gather_idx = index.data[&idx] as usize;
+
+            // 验证索引范围
+            assert!(
+                gather_idx < self_shape[dim],
+                "gather: 索引 {} 超出维度 {} 的范围 [0, {})",
+                gather_idx,
+                dim,
+                self_shape[dim]
+            );
+
+            // 构建从 self 中取值的索引
+            let mut self_idx: Vec<usize> = idx.as_array_view().to_vec();
+            self_idx[dim] = gather_idx;
+
+            // 取值
+            output_data.push(self.data[IxDyn(&self_idx)]);
+        }
+
+        Tensor::new(&output_data, index_shape)
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑gather↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓soft_update↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 参数软更新（Soft Update）
+    ///
+    /// 用于强化学习中目标网络的平滑更新：
+    /// `self = τ × source + (1 - τ) × self`
+    ///
+    /// # 参数
+    /// - `source`: 源张量（如在线网络参数）
+    /// - `tau`: 更新系数，通常取较小值（如 0.005）
+    ///
+    /// # Panics
+    /// 如果 `self` 和 `source` 形状不匹配
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let mut target = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    /// let online = Tensor::new(&[10.0, 20.0, 30.0, 40.0], &[2, 2]);
+    ///
+    /// target.soft_update(&online, 0.1);
+    /// // target = 0.1 * [10, 20, 30, 40] + 0.9 * [1, 2, 3, 4]
+    /// //        = [1.9, 3.8, 5.7, 7.6]
+    /// ```
+    pub fn soft_update(&mut self, source: &Tensor, tau: f32) {
+        assert_eq!(
+            self.shape(),
+            source.shape(),
+            "soft_update: 形状不匹配，self: {:?}, source: {:?}",
+            self.shape(),
+            source.shape()
+        );
+
+        // self = τ * source + (1 - τ) * self
+        Zip::from(&mut self.data)
+            .and(&source.data)
+            .for_each(|target, &src| {
+                *target = tau * src + (1.0 - tau) * *target;
+            });
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑soft_update↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

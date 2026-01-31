@@ -1556,3 +1556,42 @@ fn test_abs_idempotent() {
     assert_eq!(abs_y.abs(), abs_y);
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑abs↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓soft_update↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_soft_update_basic() {
+    let mut target = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let source = Tensor::new(&[10.0, 20.0, 30.0, 40.0], &[2, 2]);
+
+    target.soft_update(&source, 0.1);
+
+    // target = 0.1 * source + 0.9 * target
+    // = 0.1 * [10, 20, 30, 40] + 0.9 * [1, 2, 3, 4]
+    // = [1, 2, 3, 4] + [0.9, 1.8, 2.7, 3.6]
+    // = [1.9, 3.8, 5.7, 7.6]
+    let expected = Tensor::new(&[1.9, 3.8, 5.7, 7.6], &[2, 2]);
+    assert_eq!(target, expected);
+}
+
+#[test]
+fn test_soft_update_tau_zero() {
+    // tau=0: target 完全不变
+    let mut target = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let source = Tensor::new(&[10.0, 20.0], &[1, 2]);
+
+    target.soft_update(&source, 0.0);
+
+    assert_eq!(target, Tensor::new(&[1.0, 2.0], &[1, 2]));
+}
+
+#[test]
+fn test_soft_update_tau_one() {
+    // tau=1: target 完全变为 source
+    let mut target = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    let source = Tensor::new(&[10.0, 20.0], &[1, 2]);
+
+    target.soft_update(&source, 1.0);
+
+    assert_eq!(target, Tensor::new(&[10.0, 20.0], &[1, 2]));
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑soft_update↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

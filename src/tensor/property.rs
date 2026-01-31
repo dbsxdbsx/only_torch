@@ -320,4 +320,42 @@ impl Tensor {
     pub fn to_vec(&self) -> Vec<f32> {
         self.data.iter().copied().collect()
     }
+
+    // ==================== 动态索引访问 ====================
+
+    /// 按动态索引获取单个元素
+    ///
+    /// 与固定长度数组索引 `tensor[[i, j]]` 不同，此方法接受切片索引。
+    ///
+    /// # 参数
+    /// - `index`: 索引切片，长度必须等于张量维度数
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    /// let idx = vec![0, 1];
+    /// assert_eq!(t.get_dyn(&idx), 2.0);
+    /// ```
+    pub fn get_dyn(&self, index: &[usize]) -> f32 {
+        self.data[ndarray::IxDyn(index)]
+    }
+
+    /// 按动态索引累加值到指定位置
+    ///
+    /// 主要用于 scatter/gather 的反向传播，将梯度累加到对应位置。
+    ///
+    /// # 参数
+    /// - `index`: 索引切片，长度必须等于张量维度数
+    /// - `value`: 要累加的值
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let mut t = Tensor::zeros(&[2, 2]);
+    /// t.add_at_dyn(&[0, 1], 3.0);
+    /// t.add_at_dyn(&[0, 1], 2.0);  // 累加
+    /// assert_eq!(t[[0, 1]], 5.0);
+    /// ```
+    pub fn add_at_dyn(&mut self, index: &[usize], value: f32) {
+        self.data[ndarray::IxDyn(index)] += value;
+    }
 }

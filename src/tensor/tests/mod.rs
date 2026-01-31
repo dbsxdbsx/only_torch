@@ -11,6 +11,7 @@ mod add_assign;
 mod argmax;
 mod argmin;
 mod div;
+mod gather;
 mod max_axis;
 mod maximum;
 mod min_axis;

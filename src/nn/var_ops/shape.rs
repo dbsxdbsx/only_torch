@@ -78,7 +78,8 @@ impl Var {
 /// 提供张量形状变换的链式调用：
 /// - `reshape(shape)`: 变形为指定形状
 /// - `flatten()`: 展平为一维向量（保留 batch 维度）
-/// - `select(axis, index)`: 从指定轴选择一个切片
+/// - `select(axis, index)`: 从指定轴选择一个切片（固定索引）
+/// - `gather(dim, index)`: 按索引张量收集元素（动态索引）
 ///
 /// # 使用示例
 /// ```ignore
@@ -87,6 +88,7 @@ impl Var {
 /// let reshaped = x.reshape(&[2, 4])?;
 /// let flat = x.flatten()?;
 /// let x_t = x_seq.select(1, t)?;  // 从 [batch, seq_len, input] 选择第 t 步
+/// let q_selected = q_values.gather(1, &actions)?;  // 按动作索引选择 Q 值
 /// ```
 pub trait VarShapeOps {
     /// Reshape 变形
@@ -109,14 +111,14 @@ pub trait VarShapeOps {
     /// 展平后的 Var
     fn flatten(&self) -> Result<Var, GraphError>;
 
-    /// Select 选择
+    /// Select 选择（固定索引）
     ///
     /// 从张量的指定轴选择一个索引，去掉该维度。
     /// 主要用于 RNN 展开式设计：从 `[batch, seq_len, input_size]` 提取单个时间步。
     ///
     /// # 参数
     /// - `axis`: 选择的轴
-    /// - `index`: 选择的索引
+    /// - `index`: 选择的索引（编译时已知）
     ///
     /// # 返回
     /// 选择后的 Var（维度减 1）
@@ -127,6 +129,31 @@ pub trait VarShapeOps {
     /// let x_t = x.select(1, t)?;  // [batch, input_size]
     /// ```
     fn select(&self, axis: usize, index: usize) -> Result<Var, GraphError>;
+
+    /// Gather 收集（动态索引）
+    ///
+    /// 按索引张量从指定维度收集元素。
+    /// 主要用于强化学习：按动作索引选择 Q 值。
+    ///
+    /// 与 `select` 的区别：
+    /// - `select`: 固定索引（编译时已知），去掉该维度
+    /// - `gather`: 动态索引（运行时张量），保持维度数不变
+    ///
+    /// # 参数
+    /// - `dim`: gather 的维度
+    /// - `index`: 索引 Var（元素为 f32，会被转换为 usize）
+    ///
+    /// # 返回
+    /// 形状与 `index` 相同的 Var
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // SAC/DQN 场景：按动作索引选择 Q 值
+    /// // q_values: [batch, action_dim]
+    /// // actions: [batch, 1]
+    /// let q_selected = q_values.gather(1, &actions)?;  // [batch, 1]
+    /// ```
+    fn gather(&self, dim: usize, index: &Var) -> Result<Var, GraphError>;
 }
 
 impl VarShapeOps for Var {
@@ -152,6 +179,15 @@ impl VarShapeOps for Var {
             .graph()
             .borrow_mut()
             .new_select_node(self.node_id(), axis, index, None)?;
+        Ok(Self::new(id, Rc::clone(self.graph())))
+    }
+
+    fn gather(&self, dim: usize, index: &Var) -> Result<Var, GraphError> {
+        self.assert_same_graph(index);
+        let id = self
+            .graph()
+            .borrow_mut()
+            .new_gather_node(self.node_id(), index.node_id(), dim, None)?;
         Ok(Self::new(id, Rc::clone(self.graph())))
     }
 }

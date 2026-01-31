@@ -35,7 +35,8 @@ mod node_mse; // MSE 节点（Mean Squared Error，均方误差损失）
 mod node_multiply;
 mod node_parameter;
 mod node_reshape; // Reshape 节点（形状变换）
-mod node_select; // Select 节点（张量索引选择，RNN 展开式设计用）
+mod node_select; // Select 节点（张量索引选择，RNN 展开式设计用，固定索引）
+mod node_gather; // Gather 节点（张量按索引收集，强化学习用，动态索引）
 mod node_sigmoid;
 mod node_sign; // Sign 符号函数（正→1, 负→-1, 零→0）
 mod node_softmax; // Softmax 激活函数（沿最后一维归一化为概率分布）

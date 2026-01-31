@@ -37,7 +37,8 @@ pub(in crate::nn) enum NodeType {
     MSE(MSE),
     Multiply(Multiply),
     Reshape(Reshape),
-    Select(Select), // 张量索引选择（RNN 展开式设计用）
+    Select(Select), // 张量索引选择（RNN 展开式设计用，固定索引）
+    Gather(Gather), // 张量按索引收集（强化学习用，动态索引）
     Stack(Stack),   // 张量堆叠/拼接（多输入合并）
     LeakyReLU(LeakyReLU),
     Sigmoid(Sigmoid),

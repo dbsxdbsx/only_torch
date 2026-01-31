@@ -1273,6 +1273,7 @@ impl GraphInner {
             NodeTypeDescriptor::MaxPool2d { .. } => "MaxPool2d",
             NodeTypeDescriptor::AvgPool2d { .. } => "AvgPool2d",
             NodeTypeDescriptor::Select { .. } => "Select",
+            NodeTypeDescriptor::Gather { .. } => "Gather",
             NodeTypeDescriptor::Stack { new_dim, .. } => {
                 if *new_dim {
                     "Stack" // 新增维度（类似 torch.stack）

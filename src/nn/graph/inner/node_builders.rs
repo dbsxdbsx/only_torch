@@ -326,6 +326,25 @@ impl GraphInner {
         self.add_node_to_list(handle, name, "select", &[parent_id])
     }
 
+    /// 创建 Gather 节点（按索引张量从指定维度收集元素）
+    ///
+    /// # 参数
+    /// - `input_id`: 输入数据节点 ID
+    /// - `index_id`: 索引节点 ID
+    /// - `dim`: gather 的维度
+    /// - `name`: 可选的节点名称
+    pub fn new_gather_node(
+        &mut self,
+        input_id: NodeId,
+        index_id: NodeId,
+        dim: usize,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle =
+            NodeHandle::new_gather(&self.get_nodes(&[input_id, index_id])?, dim)?;
+        self.add_node_to_list(handle, name, "gather", &[input_id, index_id])
+    }
+
     pub fn new_sigmoid_node(
         &mut self,
         parent_id: NodeId,
