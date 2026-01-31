@@ -335,6 +335,26 @@ impl GraphInner {
         self.add_node_to_list(handle, name, "sum", &[parent_id])
     }
 
+    /// 创建 Mean 节点（归约求均值）
+    ///
+    /// # 参数
+    /// - `parent_id`: 输入节点 ID
+    /// - `axis`: 求均值轴，None 表示全局均值，Some(i) 表示沿轴 i 求均值
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 用途
+    /// - 全局均值：将所有元素求均值为标量 [1, 1]
+    /// - 按轴均值：如 batch 维度求均值以计算 loss
+    pub fn new_mean_node(
+        &mut self,
+        parent_id: NodeId,
+        axis: Option<usize>,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_mean(&self.get_nodes(&[parent_id])?, axis)?;
+        self.add_node_to_list(handle, name, "mean", &[parent_id])
+    }
+
     pub fn new_select_node(
         &mut self,
         parent_id: NodeId,

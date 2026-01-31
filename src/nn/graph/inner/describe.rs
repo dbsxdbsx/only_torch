@@ -306,6 +306,7 @@ impl GraphInner {
             NodeTypeDescriptor::SoftPlus => "SoftPlus",
             NodeTypeDescriptor::Step => "Step",
             NodeTypeDescriptor::Sum { .. } => "Sum",
+            NodeTypeDescriptor::Mean { .. } => "Mean",
             NodeTypeDescriptor::Reshape { .. } => "Reshape",
             NodeTypeDescriptor::Flatten => "Flatten",
             NodeTypeDescriptor::Conv2d { .. } => "Conv2d",
@@ -389,6 +390,7 @@ impl GraphInner {
             NodeType::SoftPlus(_) => NodeTypeDescriptor::SoftPlus,
             NodeType::Step(_) => NodeTypeDescriptor::Step,
             NodeType::Sum(node) => NodeTypeDescriptor::Sum { axis: node.axis() },
+            NodeType::Mean(node) => NodeTypeDescriptor::Mean { axis: node.axis() },
             NodeType::Reshape(node) => NodeTypeDescriptor::Reshape {
                 target_shape: node.target_shape().to_vec(),
             },

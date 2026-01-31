@@ -164,9 +164,53 @@ impl Tensor {
         product_tensor.sum()
     }
 
-    /// 计算张量的均值
-    pub fn mean(&self) -> f32 {
-        self.data.mean().unwrap()
+    /// 计算张量所有元素的均值，返回形状为 [1, 1] 的张量。
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::Tensor;
+    /// let t = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    /// let result = t.mean();
+    /// assert_eq!(result.shape(), &[1, 1]);
+    /// assert_eq!(result[[0, 0]], 2.5);
+    /// ```
+    pub fn mean(&self) -> Self {
+        let mean_value = self.data.mean().unwrap();
+        Self::new(&[mean_value], &[1, 1])
+    }
+
+    /// 沿指定轴求均值，保持维度数不变（keepdims=true）
+    ///
+    /// # 参数
+    /// - `axis`: 要求均值的轴索引
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::Tensor;
+    /// let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    /// let result = t.mean_axis_keepdims(0);  // [2, 3] → [1, 3]
+    /// assert_eq!(result.shape(), &[1, 3]);
+    /// assert_eq!(result.data_as_slice(), &[2.5, 3.5, 4.5]);
+    /// ```
+    pub fn mean_axis_keepdims(&self, axis: usize) -> Self {
+        use ndarray::Axis;
+
+        assert!(
+            axis < self.dimension(),
+            "mean_axis_keepdims: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // 沿指定轴求均值
+        let meaned = self.data.mean_axis(Axis(axis)).unwrap();
+
+        // 构建新形状（在求均值的轴位置插入 1）
+        let mut new_shape: Vec<usize> = meaned.shape().to_vec();
+        new_shape.insert(axis, 1);
+
+        // 创建新张量
+        Self::new(meaned.as_slice().unwrap(), &new_shape)
     }
 
     /// 计算张量的标准差

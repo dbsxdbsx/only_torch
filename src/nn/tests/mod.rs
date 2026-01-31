@@ -50,6 +50,7 @@ mod node_softmax_cross_entropy;
 mod node_softplus; // SoftPlus 激活函数（ReLU 的平滑近似）
 mod node_stack; // Stack 节点（多张量堆叠/拼接）
 mod node_sum; // Sum 节点（归约求和，支持全局和按轴模式）
+mod node_mean; // Mean 节点（归约求均值，支持全局和按轴模式）
 mod node_state; // State 节点测试（RNN 时间状态）
 mod node_step;
 mod node_subtract; // Subtract 节点（逐元素减法）

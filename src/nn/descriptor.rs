@@ -83,6 +83,10 @@ pub enum NodeTypeDescriptor {
     Sum {
         axis: Option<usize>,
     },
+    /// 归约求均值（axis=None 全局，axis=Some(i) 按轴）
+    Mean {
+        axis: Option<usize>,
+    },
     Reshape {
         target_shape: Vec<usize>,
     },

@@ -2,8 +2,8 @@ use super::super::graph::GraphError;
 use super::raw_node::{
     Abs, Add, Amax, Amin, AvgPool2d, BCE, Conv2d, Divide, Dropout, Flatten, Gather, Huber,
     Identity, InputVariant, LeakyReLU, Ln, LogSoftmax, MAE, MSE, MatMul, MaxPool2d, Maximum,
-    Minimum, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus, Softmax,
-    SoftmaxCrossEntropy, Stack, State, Step, Subtract, Sum, Tanh, ZerosLike,
+    Mean, Minimum, Multiply, Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus,
+    Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract, Sum, Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -280,6 +280,10 @@ impl NodeHandle {
 
     pub(in crate::nn) fn new_sum(parents: &[&Self], axis: Option<usize>) -> Result<Self, GraphError> {
         Self::new(Sum::new(parents, axis)?)
+    }
+
+    pub(in crate::nn) fn new_mean(parents: &[&Self], axis: Option<usize>) -> Result<Self, GraphError> {
+        Self::new(Mean::new(parents, axis)?)
     }
 
     pub(in crate::nn) fn new_tanh(parents: &[&Self]) -> Result<Self, GraphError> {

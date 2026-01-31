@@ -31,7 +31,7 @@ fn test_node_parameter_creation() {
 
     // 1.2 验证初始化值
     let value = graph.get_node_value(param).unwrap().unwrap();
-    let mean = value.mean();
+    let mean = value.mean()[[0, 0]];
     let std_dev = value.std_dev();
     assert_abs_diff_eq!(mean, 0.0, epsilon = 0.1); // 均值应接近0
     assert_abs_diff_eq!(std_dev, 0.001, epsilon = 0.001); // 标准差应接近0.001
