@@ -93,7 +93,11 @@ fn test_softmax_numerical_stability_large_values() {
 
     // 检查和为 1（如果溢出会得到 NaN 或 Inf）
     let sum = probs[[0]] + probs[[1]] + probs[[2]];
-    assert!((sum - 1.0).abs() < 1e-6, "大数值 softmax 和应为 1，实际为 {}", sum);
+    assert!(
+        (sum - 1.0).abs() < 1e-6,
+        "大数值 softmax 和应为 1，实际为 {}",
+        sum
+    );
     assert!(!probs[[0]].is_nan(), "结果不应为 NaN");
     assert!(!probs[[0]].is_infinite(), "结果不应为 Inf");
 

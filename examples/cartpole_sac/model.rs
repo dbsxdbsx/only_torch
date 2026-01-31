@@ -139,7 +139,9 @@ impl SacAgent {
         obs_dim: usize,
         action_dim: usize,
     ) -> Result<Self, GraphError> {
-        // 目标熵 = 0.5 * log(action_dim)，参考 SAC-Discrete 论文
+        // 目标熵：离散动作的最大熵 = ln(|A|)（均匀分布时）
+        // 设为最大熵的一定比例，这里取 0.5，即目标熵约为最大熵的一半
+        // 也可尝试 0.98 * ln(|A|) 或其他值来调节探索-利用平衡
         let target_entropy = 0.5 * (action_dim as f32).ln();
         
         Ok(Self {
@@ -170,11 +172,17 @@ impl SacAgent {
     }
 
     /// 更新 alpha（温度参数）
+    ///
+    /// SAC 的 alpha loss: L_α = α * (H(π) - target_entropy)
+    /// 梯度: ∂L/∂log_α = α * (H(π) - target_entropy)
+    ///
+    /// - 若 H(π) < target_entropy，梯度为负，log_α 增大，α 增大，鼓励更多探索
+    /// - 若 H(π) > target_entropy，梯度为正，log_α 减小，α 减小，减少探索
     pub fn update_alpha(&mut self, log_probs: &Tensor, probs: &Tensor) {
-        // alpha_loss = -alpha * (log_pi + target_entropy)
-        // 简化实现：直接用标量计算
         let entropy = self.compute_entropy(log_probs, probs);
-        let alpha_grad = -(entropy - self.target_entropy);
+        let alpha = self.alpha();
+        // 梯度 = α * (H(π) - target_entropy)，注意这里乘以 α
+        let alpha_grad = alpha * (entropy - self.target_entropy);
         self.log_alpha -= self.alpha_lr * alpha_grad;
     }
 

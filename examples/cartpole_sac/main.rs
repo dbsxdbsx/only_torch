@@ -252,27 +252,35 @@ fn main() -> Result<(), GraphError> {
                     critic2_optimizer.step()?;
 
                     // ========== Actor 更新 ==========
-                    // SAC-Discrete: 用 Q 值加权的交叉熵损失
-                    // 计算 Q 值加权的目标分布
+                    // SAC-Discrete Actor Loss: 最小化 KL(π || exp(Q/α)/Z)
+                    // 展开后等价于: L = Σ_a π(a|s) * (α * log π(a|s) - Q(s,a))
+                    // 注意：KL 散度不对称，期望必须用当前策略 π 计算！
                     let q1 = agent.critic1.get_q_values(&obs_batch)?;
                     let q2 = agent.critic2.get_q_values(&obs_batch)?;
                     let q_min = q1.minimum(&q2);
-                    let (_, log_probs) = agent.actor.get_action_probs(&obs_batch)?;
 
-                    // 目标分布：softmax(Q / α)，鼓励选择高 Q 值的动作
-                    let alpha = agent.alpha();
-                    let target_probs = (&q_min / alpha).softmax(1);
-
-                    // 使用交叉熵 loss（让策略逼近 Q 值分布）
+                    // 重新计算当前策略的概率（用于 Actor Loss 和 Alpha 更新）
                     let actor_logits = agent.actor.forward(&obs_batch)?;
-                    let actor_loss = actor_logits.cross_entropy(&target_probs)?;
+                    let actor_probs = actor_logits.softmax();
+                    let actor_probs_val = actor_probs.value()?.unwrap();
+                    let actor_log_probs = (&actor_probs_val + 1e-8).ln();
 
+                    // Actor Loss = Σ_a π(a|s) * (α * log π(a|s) - Q(s,a))
+                    // 这是最小化 KL(π || softmax(Q/α))，期望用 π 计算
+                    let alpha = agent.alpha();
+                    let inside = &(&actor_log_probs * alpha) - &q_min;
+                    let actor_loss_per_sample = (&actor_probs_val * &inside).sum_axis_keepdims(1);
+                    let actor_loss = actor_loss_per_sample.mean();
+
+                    // 通过 actor_probs（Var）反向传播梯度
+                    let actor_loss_var = actor_probs.custom_loss(actor_loss)?;
                     actor_optimizer.zero_grad()?;
-                    actor_loss.backward()?;
+                    actor_loss_var.backward()?;
                     actor_optimizer.step()?;
 
                     // ========== Alpha 更新 ==========
-                    agent.update_alpha(&log_probs, &probs);
+                    // 使用 batch 数据（与 Actor 更新使用相同的概率分布）
+                    agent.update_alpha(&actor_log_probs, &actor_probs_val);
 
                     // ========== 软更新目标网络 ==========
                     agent.soft_update_targets();
