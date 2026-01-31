@@ -27,22 +27,6 @@ use rand::Rng;
 use std::collections::VecDeque;
 
 // ============================================================================
-// 辅助函数
-// ============================================================================
-
-/// 逐元素取最小值（等待 Tensor 原生支持）
-fn tensor_minimum(a: &Tensor, b: &Tensor) -> Tensor {
-    assert_eq!(a.shape(), b.shape(), "tensor_minimum: 形状不匹配");
-    let data: Vec<f32> = a
-        .flatten_view()
-        .iter()
-        .zip(b.flatten_view().iter())
-        .map(|(&x, &y)| x.min(y))
-        .collect();
-    Tensor::new(&data, a.shape())
-}
-
-// ============================================================================
 // 经验回放缓冲区
 // ============================================================================
 
@@ -284,7 +268,7 @@ fn main() -> Result<(), GraphError> {
                     let target_q2 = agent.target_critic2.get_q_values(&next_obs_batch)?;
 
                     // min(Q1', Q2') 并计算 V
-                    let target_q_min = tensor_minimum(&target_q1, &target_q2);
+                    let target_q_min = target_q1.minimum(&target_q2);
                     let v_next = compute_v_from_q(&next_probs, &target_q_min, &next_log_probs, agent.alpha());
                     
                     // target = r + γ * (1-done) * V(s')
@@ -320,7 +304,7 @@ fn main() -> Result<(), GraphError> {
                     let (probs, log_probs) = agent.actor.get_action_probs(&obs_batch)?;
                     let q1 = agent.critic1.get_q_values(&obs_batch)?;
                     let q2 = agent.critic2.get_q_values(&obs_batch)?;
-                    let q_min = tensor_minimum(&q1, &q2);
+                    let q_min = q1.minimum(&q2);
 
                     // 计算 Actor loss（标量版本，用于监控）
                     let _actor_loss_value = compute_actor_loss_scalar(&probs, &log_probs, &q_min, agent.alpha());

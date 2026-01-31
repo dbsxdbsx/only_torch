@@ -974,6 +974,120 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑max/min↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓minimum/maximum↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 逐元素取两个张量的最小值
+    ///
+    /// 类似 `PyTorch` 的 `torch.minimum(a, b)` 或 `NumPy` 的 `np.minimum(a, b)`。
+    /// 支持 NumPy 风格的广播（broadcasting）。
+    ///
+    /// # 参数
+    /// - `other`: 另一个张量
+    ///
+    /// # 返回
+    /// 新张量，形状为广播后的形状，每个元素为对应位置两个输入的较小值
+    ///
+    /// # Panics
+    /// 如果两个张量的形状不兼容（无法广播）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // 相同形状
+    /// let a = Tensor::new(&[1.0, 4.0, 3.0], &[3]);
+    /// let b = Tensor::new(&[2.0, 2.0, 5.0], &[3]);
+    /// let result = a.minimum(&b);
+    /// assert_eq!(result[[0]], 1.0);  // min(1, 2) = 1
+    /// assert_eq!(result[[1]], 2.0);  // min(4, 2) = 2
+    /// assert_eq!(result[[2]], 3.0);  // min(3, 5) = 3
+    ///
+    /// // 广播：标量与向量
+    /// let a = Tensor::new(&[1.0, 4.0, 3.0], &[3]);
+    /// let b = Tensor::new(&[2.0], &[1]);
+    /// let result = a.minimum(&b);
+    /// assert_eq!(result[[0]], 1.0);  // min(1, 2) = 1
+    /// assert_eq!(result[[1]], 2.0);  // min(4, 2) = 2
+    /// assert_eq!(result[[2]], 2.0);  // min(3, 2) = 2
+    /// ```
+    pub fn minimum(&self, other: &Tensor) -> Tensor {
+        use crate::tensor::property::broadcast_shape;
+
+        // 检查广播兼容性
+        assert!(
+            self.can_broadcast_with(other),
+            "{}",
+            TensorError::IncompatibleShape
+        );
+
+        // 计算广播后的形状
+        let result_shape =
+            broadcast_shape(self.shape(), other.shape()).expect("广播形状计算失败");
+
+        // 使用 Zip 的 and_broadcast 实现逐元素最小值
+        let result_data = Zip::from(self.data.broadcast(IxDyn(&result_shape)).unwrap())
+            .and(other.data.broadcast(IxDyn(&result_shape)).unwrap())
+            .map_collect(|&a, &b| a.min(b));
+
+        Tensor { data: result_data }
+    }
+
+    /// 逐元素取两个张量的最大值
+    ///
+    /// 类似 `PyTorch` 的 `torch.maximum(a, b)` 或 `NumPy` 的 `np.maximum(a, b)`。
+    /// 支持 NumPy 风格的广播（broadcasting）。
+    ///
+    /// # 参数
+    /// - `other`: 另一个张量
+    ///
+    /// # 返回
+    /// 新张量，形状为广播后的形状，每个元素为对应位置两个输入的较大值
+    ///
+    /// # Panics
+    /// 如果两个张量的形状不兼容（无法广播）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // 相同形状
+    /// let a = Tensor::new(&[1.0, 4.0, 3.0], &[3]);
+    /// let b = Tensor::new(&[2.0, 2.0, 5.0], &[3]);
+    /// let result = a.maximum(&b);
+    /// assert_eq!(result[[0]], 2.0);  // max(1, 2) = 2
+    /// assert_eq!(result[[1]], 4.0);  // max(4, 2) = 4
+    /// assert_eq!(result[[2]], 5.0);  // max(3, 5) = 5
+    ///
+    /// // 广播：标量与向量
+    /// let a = Tensor::new(&[1.0, 4.0, 3.0], &[3]);
+    /// let b = Tensor::new(&[2.0], &[1]);
+    /// let result = a.maximum(&b);
+    /// assert_eq!(result[[0]], 2.0);  // max(1, 2) = 2
+    /// assert_eq!(result[[1]], 4.0);  // max(4, 2) = 4
+    /// assert_eq!(result[[2]], 3.0);  // max(3, 2) = 3
+    /// ```
+    pub fn maximum(&self, other: &Tensor) -> Tensor {
+        use crate::tensor::property::broadcast_shape;
+
+        // 检查广播兼容性
+        assert!(
+            self.can_broadcast_with(other),
+            "{}",
+            TensorError::IncompatibleShape
+        );
+
+        // 计算广播后的形状
+        let result_shape =
+            broadcast_shape(self.shape(), other.shape()).expect("广播形状计算失败");
+
+        // 使用 Zip 实现逐元素最大值
+        let result_data = Zip::from(self.data.broadcast(IxDyn(&result_shape)).unwrap())
+            .and(other.data.broadcast(IxDyn(&result_shape)).unwrap())
+            .map_collect(|&a, &b| a.max(b));
+
+        Tensor { data: result_data }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑minimum/maximum↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓argmax/argmin↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 沿指定轴返回最大值的索引
     ///
@@ -1077,6 +1191,110 @@ impl Tensor {
         }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑argmax/argmin↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓max/min(axis)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 沿指定轴返回最小值
+    ///
+    /// 类似 `NumPy` 的 `np.min(x, axis=axis)` 或 `PyTorch` 的 `tensor.min(dim=axis).values`。
+    ///
+    /// # 参数
+    /// - `axis`: 沿哪个轴查找最小值
+    ///
+    /// # 返回
+    /// 形状为原张量去掉 `axis` 维度后的张量，每个元素为沿该轴的最小值
+    ///
+    /// # Panics
+    /// 如果 `axis` 超出维度范围
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // 2D 张量
+    /// let x = Tensor::new(&[1.0, 3.0, 2.0, 5.0, 4.0, 6.0], &[2, 3]);
+    /// // [[1, 3, 2],
+    /// //  [5, 4, 6]]
+    ///
+    /// let min_axis1 = x.min(1);  // 沿列方向找最小
+    /// assert_eq!(min_axis1.shape(), &[2]);
+    /// assert_eq!(min_axis1[[0]], 1.0);  // 第 0 行最小值是 1
+    /// assert_eq!(min_axis1[[1]], 4.0);  // 第 1 行最小值是 4
+    ///
+    /// let min_axis0 = x.min(0);  // 沿行方向找最小
+    /// assert_eq!(min_axis0.shape(), &[3]);
+    /// assert_eq!(min_axis0[[0]], 1.0);  // 第 0 列最小值是 1
+    /// assert_eq!(min_axis0[[1]], 3.0);  // 第 1 列最小值是 3
+    /// assert_eq!(min_axis0[[2]], 2.0);  // 第 2 列最小值是 2
+    /// ```
+    pub fn min(&self, axis: usize) -> Self {
+        assert!(
+            axis < self.dimension(),
+            "min: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // 使用 map_axis 沿指定轴找最小值
+        let min_array = self.data.map_axis(Axis(axis), |lane| {
+            lane.iter().copied().fold(f32::INFINITY, f32::min)
+        });
+
+        Self {
+            data: min_array.into_dyn(),
+        }
+    }
+
+    /// 沿指定轴返回最大值
+    ///
+    /// 类似 `NumPy` 的 `np.max(x, axis=axis)` 或 `PyTorch` 的 `tensor.max(dim=axis).values`。
+    ///
+    /// # 参数
+    /// - `axis`: 沿哪个轴查找最大值
+    ///
+    /// # 返回
+    /// 形状为原张量去掉 `axis` 维度后的张量，每个元素为沿该轴的最大值
+    ///
+    /// # Panics
+    /// 如果 `axis` 超出维度范围
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// // 2D 张量
+    /// let x = Tensor::new(&[1.0, 3.0, 2.0, 5.0, 4.0, 6.0], &[2, 3]);
+    /// // [[1, 3, 2],
+    /// //  [5, 4, 6]]
+    ///
+    /// let max_axis1 = x.max(1);  // 沿列方向找最大
+    /// assert_eq!(max_axis1.shape(), &[2]);
+    /// assert_eq!(max_axis1[[0]], 3.0);  // 第 0 行最大值是 3
+    /// assert_eq!(max_axis1[[1]], 6.0);  // 第 1 行最大值是 6
+    ///
+    /// let max_axis0 = x.max(0);  // 沿行方向找最大
+    /// assert_eq!(max_axis0.shape(), &[3]);
+    /// assert_eq!(max_axis0[[0]], 5.0);  // 第 0 列最大值是 5
+    /// assert_eq!(max_axis0[[1]], 4.0);  // 第 1 列最大值是 4
+    /// assert_eq!(max_axis0[[2]], 6.0);  // 第 2 列最大值是 6
+    /// ```
+    pub fn max(&self, axis: usize) -> Self {
+        assert!(
+            axis < self.dimension(),
+            "max: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // 使用 map_axis 沿指定轴找最大值
+        let max_array = self.data.map_axis(Axis(axis), |lane| {
+            lane.iter().copied().fold(f32::NEG_INFINITY, f32::max)
+        });
+
+        Self {
+            data: max_array.into_dyn(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑max/min(axis)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓sign↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 返回张量每个元素的符号
