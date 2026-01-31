@@ -1,8 +1,8 @@
 # DataLoader 设计文档
 
 > 创建日期：2025-12-21
-> 更新日期：2025-01-29
-> 状态：✅ 已完成 Phase 1
+> 更新日期：2026-01-31
+> 状态：✅ 已完成（RL 扩展已解耦至 `rl/` 模块）
 
 ## 1. 概述
 
@@ -104,17 +104,16 @@ let loader = DataLoader::from_var_len(&var_len_dataset)
 - [x] 更新 examples 中的用法
 - [x] 补充单元测试（21 个测试用例）
 
-### Phase 2：强化学习扩展（待定）
+### ~~Phase 2：强化学习扩展~~（已解耦）
 
-> ⚠️ 以下内容待强化学习框架确定后再规划
-
-- [ ] 设计 `Experience` 样本类型
-- [ ] 设计 `ReplayBuffer` 结构
-- [ ] 实现 `UniformSampling`（均匀随机采样）
-- [ ] 实现 `PrioritizedSampling`（优先级采样 / PER）
-- [ ] 实现 `HardSampling`（困难样本优先）
-- [ ] 实现 `HindsightSampling`（HER）
-- [ ] 评估是否复用 `SamplingStrategy` trait 或需要新抽象
+> ✅ **设计决策（2025-01）**：经评估，强化学习的数据管理（ReplayBuffer）与监督学习的
+> DataLoader 抽象层次不同，不应强行复用 `SamplingStrategy` trait。
+>
+> - **DataLoader**：遍历静态数据集，每 epoch 看到完整数据
+> - **ReplayBuffer**：从动态增长的经验池中随机采样固定数量
+>
+> 强化学习相关组件已独立实现于 `rl/` 模块（`GymEnv`、`MinariDataset`），
+> 经验回放等功能由用户在应用层自行管理。
 
 ---
 

@@ -2,6 +2,10 @@
 //!
 //! 提供与 Python Gymnasium 环境交互的 Rust 桥接层。
 //!
+//! ## 模块结构
+//!
+//! - `env/` - 环境交互层（GymEnv、MinariDataset）
+//!
 //! ## 主要组件
 //!
 //! - [`GymEnv`] - Gymnasium 环境封装，支持离散/连续/混合动作空间
@@ -30,15 +34,16 @@
 //! });
 //! ```
 
-mod gym_env;
-mod minari;
+mod env;
 
 #[cfg(test)]
 mod tests;
 
-// 重新导出核心类型
-pub use gym_env::{ActionDim, ActionDimType, ActionRange, ActionType, GymEnv, ObsDim, ObsType};
-pub use minari::{Episode, MinariDataset};
+// 重新导出环境层的核心类型
+pub use env::{
+    ActionDim, ActionDimType, ActionRange, ActionType, Episode, GymEnv, MinariDataset, ObsDim,
+    ObsType,
+};
 
 /// 单步交互数据
 ///
