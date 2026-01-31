@@ -1192,10 +1192,10 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑argmax/argmin↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
-    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓max/min(axis)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-    /// 沿指定轴返回最小值
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓amax/amin(axis)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 沿指定轴返回最小值（只返回值，不返回索引）
     ///
-    /// 类似 `NumPy` 的 `np.min(x, axis=axis)` 或 `PyTorch` 的 `tensor.min(dim=axis).values`。
+    /// 对应 `PyTorch` 的 `tensor.amin(dim=axis)`。
     ///
     /// # 参数
     /// - `axis`: 沿哪个轴查找最小值
@@ -1215,21 +1215,21 @@ impl Tensor {
     /// // [[1, 3, 2],
     /// //  [5, 4, 6]]
     ///
-    /// let min_axis1 = x.min(1);  // 沿列方向找最小
+    /// let min_axis1 = x.amin(1);  // 沿列方向找最小
     /// assert_eq!(min_axis1.shape(), &[2]);
     /// assert_eq!(min_axis1[[0]], 1.0);  // 第 0 行最小值是 1
     /// assert_eq!(min_axis1[[1]], 4.0);  // 第 1 行最小值是 4
     ///
-    /// let min_axis0 = x.min(0);  // 沿行方向找最小
+    /// let min_axis0 = x.amin(0);  // 沿行方向找最小
     /// assert_eq!(min_axis0.shape(), &[3]);
     /// assert_eq!(min_axis0[[0]], 1.0);  // 第 0 列最小值是 1
     /// assert_eq!(min_axis0[[1]], 3.0);  // 第 1 列最小值是 3
     /// assert_eq!(min_axis0[[2]], 2.0);  // 第 2 列最小值是 2
     /// ```
-    pub fn min(&self, axis: usize) -> Self {
+    pub fn amin(&self, axis: usize) -> Self {
         assert!(
             axis < self.dimension(),
-            "min: axis {} 超出维度范围 {}",
+            "amin: axis {} 超出维度范围 {}",
             axis,
             self.dimension()
         );
@@ -1244,9 +1244,9 @@ impl Tensor {
         }
     }
 
-    /// 沿指定轴返回最大值
+    /// 沿指定轴返回最大值（只返回值，不返回索引）
     ///
-    /// 类似 `NumPy` 的 `np.max(x, axis=axis)` 或 `PyTorch` 的 `tensor.max(dim=axis).values`。
+    /// 对应 `PyTorch` 的 `tensor.amax(dim=axis)`。
     ///
     /// # 参数
     /// - `axis`: 沿哪个轴查找最大值
@@ -1266,21 +1266,21 @@ impl Tensor {
     /// // [[1, 3, 2],
     /// //  [5, 4, 6]]
     ///
-    /// let max_axis1 = x.max(1);  // 沿列方向找最大
+    /// let max_axis1 = x.amax(1);  // 沿列方向找最大
     /// assert_eq!(max_axis1.shape(), &[2]);
     /// assert_eq!(max_axis1[[0]], 3.0);  // 第 0 行最大值是 3
     /// assert_eq!(max_axis1[[1]], 6.0);  // 第 1 行最大值是 6
     ///
-    /// let max_axis0 = x.max(0);  // 沿行方向找最大
+    /// let max_axis0 = x.amax(0);  // 沿行方向找最大
     /// assert_eq!(max_axis0.shape(), &[3]);
     /// assert_eq!(max_axis0[[0]], 5.0);  // 第 0 列最大值是 5
     /// assert_eq!(max_axis0[[1]], 4.0);  // 第 1 列最大值是 4
     /// assert_eq!(max_axis0[[2]], 6.0);  // 第 2 列最大值是 6
     /// ```
-    pub fn max(&self, axis: usize) -> Self {
+    pub fn amax(&self, axis: usize) -> Self {
         assert!(
             axis < self.dimension(),
-            "max: axis {} 超出维度范围 {}",
+            "amax: axis {} 超出维度范围 {}",
             axis,
             self.dimension()
         );
@@ -1294,7 +1294,7 @@ impl Tensor {
             data: max_array.into_dyn(),
         }
     }
-    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑max/min(axis)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑amax/amin(axis)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓sign↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 返回张量每个元素的符号

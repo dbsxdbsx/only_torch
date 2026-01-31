@@ -87,6 +87,18 @@ pub enum NodeTypeDescriptor {
         kernel_size: (usize, usize),
         stride: (usize, usize),
     },
+    /// 逐元素取最大值（PPO/TD3 等需要可微分 max）
+    Maximum,
+    /// 逐元素取最小值（PPO clipping、TD3 双 Q）
+    Minimum,
+    /// 沿轴取最大值（DQN 选最优动作 Q 值）
+    Amax {
+        axis: usize,
+    },
+    /// 沿轴取最小值（Double DQN 选保守 Q 值）
+    Amin {
+        axis: usize,
+    },
     AvgPool2d {
         kernel_size: (usize, usize),
         stride: (usize, usize),

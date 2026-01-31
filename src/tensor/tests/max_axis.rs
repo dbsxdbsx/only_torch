@@ -1,22 +1,22 @@
-//! max(axis) 相关测试
+//! amax(axis) 相关测试
 
 use crate::tensor::Tensor;
 
 #[test]
-fn test_max_1d() {
+fn test_amax_1d() {
     let x = Tensor::new(&[5.0, 3.0, 4.0, 1.0, 2.0], &[5]);
-    let result = x.max(0);
-    // 1D 张量沿 axis=0 的 max 返回标量（0 维张量）
+    let result = x.amax(0);
+    // 1D 张量沿 axis=0 的 amax 返回标量（0 维张量）
     assert!(result.is_scalar());
     assert_eq!(result.get_data_number().unwrap(), 5.0);
 }
 
 #[test]
-fn test_max_2d_axis0() {
+fn test_amax_2d_axis0() {
     // [[5, 3, 6],
     //  [1, 4, 2]]
     let x = Tensor::new(&[5.0, 3.0, 6.0, 1.0, 4.0, 2.0], &[2, 3]);
-    let result = x.max(0);
+    let result = x.amax(0);
 
     assert_eq!(result.shape(), &[3]);
     assert_eq!(result[[0]], 5.0); // max(5, 1) = 5
@@ -25,11 +25,11 @@ fn test_max_2d_axis0() {
 }
 
 #[test]
-fn test_max_2d_axis1() {
+fn test_amax_2d_axis1() {
     // [[5, 3, 6],
     //  [1, 4, 2]]
     let x = Tensor::new(&[5.0, 3.0, 6.0, 1.0, 4.0, 2.0], &[2, 3]);
-    let result = x.max(1);
+    let result = x.amax(1);
 
     assert_eq!(result.shape(), &[2]);
     assert_eq!(result[[0]], 6.0); // max(5, 3, 6) = 6
@@ -37,7 +37,7 @@ fn test_max_2d_axis1() {
 }
 
 #[test]
-fn test_max_3d() {
+fn test_amax_3d() {
     // [[[1, 2],
     //   [3, 4]],
     //  [[5, 6],
@@ -45,7 +45,7 @@ fn test_max_3d() {
     let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2]);
 
     // axis=0: 在第一个维度上找最大
-    let result0 = x.max(0);
+    let result0 = x.amax(0);
     assert_eq!(result0.shape(), &[2, 2]);
     assert_eq!(result0[[0, 0]], 5.0); // max(1, 5)
     assert_eq!(result0[[0, 1]], 6.0); // max(2, 6)
@@ -53,7 +53,7 @@ fn test_max_3d() {
     assert_eq!(result0[[1, 1]], 8.0); // max(4, 8)
 
     // axis=2: 在最后一个维度上找最大
-    let result2 = x.max(2);
+    let result2 = x.amax(2);
     assert_eq!(result2.shape(), &[2, 2]);
     assert_eq!(result2[[0, 0]], 2.0); // max(1, 2)
     assert_eq!(result2[[0, 1]], 4.0); // max(3, 4)
@@ -62,14 +62,14 @@ fn test_max_3d() {
 }
 
 #[test]
-fn test_max_with_negative_values() {
+fn test_amax_with_negative_values() {
     let x = Tensor::new(&[-1.0, -5.0, -3.0, -2.0], &[4]);
-    let result = x.max(0);
+    let result = x.amax(0);
     assert_eq!(result.get_data_number().unwrap(), -1.0);
 }
 
 #[test]
-fn test_max_batch_logits() {
+fn test_amax_batch_logits() {
     // 模拟 batch 中找最大 logit 的场景：batch=4, num_classes=3
     let logits = Tensor::new(
         &[
@@ -81,7 +81,7 @@ fn test_max_batch_logits() {
         &[4, 3],
     );
 
-    let max_logits = logits.max(1);
+    let max_logits = logits.amax(1);
     assert_eq!(max_logits.shape(), &[4]);
     assert_eq!(max_logits[[0]], 0.8); // max(0.5, 0.8, 0.3)
     assert_eq!(max_logits[[1]], 0.9); // max(0.2, 0.6, 0.9)
@@ -90,11 +90,11 @@ fn test_max_batch_logits() {
 }
 
 #[test]
-fn test_max_consistent_with_argmax() {
-    // 验证 max 和 argmax 的一致性
+fn test_amax_consistent_with_argmax() {
+    // 验证 amax 和 argmax 的一致性
     let x = Tensor::new(&[1.0, 3.0, 2.0, 5.0, 4.0, 6.0], &[2, 3]);
 
-    let max_vals = x.max(1);
+    let max_vals = x.amax(1);
     let max_indices = x.argmax(1);
 
     // max_vals[i] 应该等于 x[i, argmax_indices[i]]
@@ -106,16 +106,16 @@ fn test_max_consistent_with_argmax() {
 }
 
 #[test]
-#[should_panic(expected = "max: axis 2 超出维度范围 2")]
-fn test_max_invalid_axis() {
+#[should_panic(expected = "amax: axis 2 超出维度范围 2")]
+fn test_amax_invalid_axis() {
     let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    let _ = x.max(2); // 只有 axis 0 和 1 有效
+    let _ = x.amax(2); // 只有 axis 0 和 1 有效
 }
 
 #[test]
-fn test_max_all_same_values() {
+fn test_amax_all_same_values() {
     let x = Tensor::new(&[3.0, 3.0, 3.0, 3.0], &[2, 2]);
-    let result = x.max(0);
+    let result = x.amax(0);
     assert_eq!(result[[0]], 3.0);
     assert_eq!(result[[1]], 3.0);
 }

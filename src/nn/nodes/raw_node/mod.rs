@@ -30,6 +30,10 @@ pub(in crate::nn) enum NodeType {
     Flatten(Flatten),
     MatMul(MatMul),
     MaxPool2d(MaxPool2d),
+    Maximum(Maximum), // 逐元素取最大值（PPO/TD3 等需要可微分 max）
+    Minimum(Minimum), // 逐元素取最小值（PPO clipping、TD3 双 Q）
+    Amax(Amax),   // 沿轴取最大值（DQN 选最优动作 Q 值）
+    Amin(Amin),   // 沿轴取最小值（Double DQN 选保守 Q 值）
     Divide(Divide),
     BCE(BCE),
     Huber(Huber),

@@ -234,6 +234,75 @@ impl Tensor {
         // 最后 reshape 到目标形状
         result.reshape(target_shape)
     }
+
+    /// 将张量广播到指定形状（返回新张量）
+    ///
+    /// 遵循 NumPy 广播规则：
+    /// - 从右向左对齐维度
+    /// - 每个维度必须相等，或 self 的对应维度为 1
+    /// - self 的维度数不能超过目标形状
+    ///
+    /// # 参数
+    /// - `target_shape`: 目标形状
+    ///
+    /// # 返回
+    /// 广播后的新张量（数据被复制）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let a = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
+    /// let b = a.broadcast_to(&[3, 4]);
+    /// assert_eq!(b.shape(), &[3, 4]);
+    /// // b 的每一行都是 [1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3]
+    /// ```
+    ///
+    /// # Panics
+    /// 如果 self 无法广播到目标形状
+    pub fn broadcast_to(&self, target_shape: &[usize]) -> Self {
+        use ndarray::IxDyn;
+
+        let current_shape = self.shape();
+
+        // 快速路径：形状相同，直接返回克隆
+        if current_shape == target_shape {
+            return self.clone();
+        }
+
+        // 验证广播兼容性
+        assert!(
+            current_shape.len() <= target_shape.len(),
+            "broadcast_to: self 的维度数 {} 超过目标形状的维度数 {}",
+            current_shape.len(),
+            target_shape.len()
+        );
+
+        // 从右向左对齐，检查每个维度
+        let offset = target_shape.len() - current_shape.len();
+        for (i, &cur_dim) in current_shape.iter().enumerate() {
+            let tgt_dim = target_shape[offset + i];
+            assert!(
+                cur_dim == tgt_dim || cur_dim == 1,
+                "broadcast_to: 维度 {} 不兼容，self={} 无法广播到 {}",
+                i,
+                cur_dim,
+                tgt_dim
+            );
+        }
+
+        // 使用 ndarray 的 broadcast 功能
+        let broadcast_view = self
+            .data
+            .broadcast(IxDyn(target_shape))
+            .expect("broadcast_to: 广播失败");
+
+        // 将广播视图转换为拥有所有权的数组（复制数据）
+        Tensor {
+            data: broadcast_view.to_owned(),
+        }
+    }
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓判断张量是否为标量、向量、矩阵↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 判断张量是否为标量
     /// 判断标准：若形状为空或形状各维数乘积为1，则认为是标量

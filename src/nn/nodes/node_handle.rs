@@ -1,9 +1,9 @@
 use super::super::graph::GraphError;
 use super::raw_node::{
-    Abs, Add, AvgPool2d, BCE, Conv2d, Divide, Dropout, Flatten, Gather, Huber, Identity,
-    InputVariant, LeakyReLU, MAE, MSE, MatMul, MaxPool2d, Multiply, Parameter, Reduction, Reshape,
-    Select, Sigmoid, Sign, SoftPlus, Softmax, SoftmaxCrossEntropy, Stack, State, Step, Subtract,
-    Tanh, ZerosLike,
+    Abs, Add, Amax, Amin, AvgPool2d, BCE, Conv2d, Divide, Dropout, Flatten, Gather, Huber,
+    Identity, InputVariant, LeakyReLU, MAE, MSE, MatMul, MaxPool2d, Maximum, Minimum, Multiply,
+    Parameter, Reduction, Reshape, Select, Sigmoid, Sign, SoftPlus, Softmax, SoftmaxCrossEntropy,
+    Stack, State, Step, Subtract, Tanh, ZerosLike,
 };
 use super::{NodeType, TraitNode};
 use crate::tensor::Tensor;
@@ -428,6 +428,52 @@ impl NodeHandle {
     /// - `dim`: gather 的维度
     pub(in crate::nn) fn new_gather(parents: &[&Self], dim: usize) -> Result<Self, GraphError> {
         Self::new(Gather::new(parents, dim)?)
+    }
+
+    /// 创建 Maximum 节点（逐元素取最大值）
+    ///
+    /// # 参数
+    /// - `parents`: [a, b] 两个输入节点
+    ///
+    /// # 用途
+    /// PPO/TD3 等需要可微分 max 操作的场景
+    pub(in crate::nn) fn new_maximum(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Maximum::new(parents)?)
+    }
+
+    /// 创建 Minimum 节点（逐元素取最小值）
+    ///
+    /// # 参数
+    /// - `parents`: [a, b] 两个输入节点
+    ///
+    /// # 用途
+    /// PPO clipping、TD3 双 Q 网络等需要可微分 min 操作的场景
+    pub(in crate::nn) fn new_minimum(parents: &[&Self]) -> Result<Self, GraphError> {
+        Self::new(Minimum::new(parents)?)
+    }
+
+    /// 创建 Amax 节点（沿指定轴取最大值，只返回值不返回索引）
+    ///
+    /// # 参数
+    /// - `parents`: [input] 输入节点
+    /// - `axis`: reduction 的轴
+    ///
+    /// # 用途
+    /// DQN 选最优动作 Q 值、特征池化等场景
+    pub(in crate::nn) fn new_amax(parents: &[&Self], axis: usize) -> Result<Self, GraphError> {
+        Self::new(Amax::new(parents, axis)?)
+    }
+
+    /// 创建 Amin 节点（沿指定轴取最小值，只返回值不返回索引）
+    ///
+    /// # 参数
+    /// - `parents`: [input] 输入节点
+    /// - `axis`: reduction 的轴
+    ///
+    /// # 用途
+    /// Double DQN 选保守 Q 值、特征池化等场景
+    pub(in crate::nn) fn new_amin(parents: &[&Self], axis: usize) -> Result<Self, GraphError> {
+        Self::new(Amin::new(parents, axis)?)
     }
 
     pub(in crate::nn) fn new_softmax_cross_entropy(parents: &[&Self]) -> Result<Self, GraphError> {

@@ -340,9 +340,84 @@ impl GraphInner {
         dim: usize,
         name: Option<&str>,
     ) -> Result<NodeId, GraphError> {
-        let handle =
-            NodeHandle::new_gather(&self.get_nodes(&[input_id, index_id])?, dim)?;
+        let handle = NodeHandle::new_gather(&self.get_nodes(&[input_id, index_id])?, dim)?;
         self.add_node_to_list(handle, name, "gather", &[input_id, index_id])
+    }
+
+    /// 创建 Maximum 节点（逐元素取最大值）
+    ///
+    /// # 参数
+    /// - `a_id`: 第一个输入节点 ID
+    /// - `b_id`: 第二个输入节点 ID
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 用途
+    /// PPO/TD3 等需要可微分 max 操作的场景
+    pub fn new_maximum_node(
+        &mut self,
+        a_id: NodeId,
+        b_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_maximum(&self.get_nodes(&[a_id, b_id])?)?;
+        self.add_node_to_list(handle, name, "maximum", &[a_id, b_id])
+    }
+
+    /// 创建 Minimum 节点（逐元素取最小值）
+    ///
+    /// # 参数
+    /// - `a_id`: 第一个输入节点 ID
+    /// - `b_id`: 第二个输入节点 ID
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 用途
+    /// PPO clipping、TD3 双 Q 网络等需要可微分 min 操作的场景
+    pub fn new_minimum_node(
+        &mut self,
+        a_id: NodeId,
+        b_id: NodeId,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_minimum(&self.get_nodes(&[a_id, b_id])?)?;
+        self.add_node_to_list(handle, name, "minimum", &[a_id, b_id])
+    }
+
+    /// 创建 Amax 节点（沿指定轴取最大值，只返回值不返回索引）
+    ///
+    /// # 参数
+    /// - `input_id`: 输入节点 ID
+    /// - `axis`: reduction 的轴
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 用途
+    /// DQN 选最优动作 Q 值、特征池化等场景
+    pub fn new_amax_node(
+        &mut self,
+        input_id: NodeId,
+        axis: usize,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_amax(&self.get_nodes(&[input_id])?, axis)?;
+        self.add_node_to_list(handle, name, "amax", &[input_id])
+    }
+
+    /// 创建 Amin 节点（沿指定轴取最小值，只返回值不返回索引）
+    ///
+    /// # 参数
+    /// - `input_id`: 输入节点 ID
+    /// - `axis`: reduction 的轴
+    /// - `name`: 可选的节点名称
+    ///
+    /// # 用途
+    /// Double DQN 选保守 Q 值、特征池化等场景
+    pub fn new_amin_node(
+        &mut self,
+        input_id: NodeId,
+        axis: usize,
+        name: Option<&str>,
+    ) -> Result<NodeId, GraphError> {
+        let handle = NodeHandle::new_amin(&self.get_nodes(&[input_id])?, axis)?;
+        self.add_node_to_list(handle, name, "amin", &[input_id])
     }
 
     pub fn new_sigmoid_node(

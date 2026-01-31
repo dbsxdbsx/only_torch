@@ -426,3 +426,112 @@ fn test_stack_always_contiguous() {
 }
 
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑内存连续性↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓broadcast_to↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+
+/// 测试 broadcast_to 基本功能
+#[test]
+fn test_broadcast_to_basic() {
+    // [3, 1] -> [3, 4]：沿 axis=1 广播
+    let a = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
+    let b = a.broadcast_to(&[3, 4]);
+    assert_eq!(b.shape(), &[3, 4]);
+    // 每一行都被复制 4 次
+    assert_eq!(
+        b.data_as_slice(),
+        &[1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0]
+    );
+
+    // [1, 4] -> [3, 4]：沿 axis=0 广播
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+    let b = a.broadcast_to(&[3, 4]);
+    assert_eq!(b.shape(), &[3, 4]);
+    assert_eq!(
+        b.data_as_slice(),
+        &[1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0]
+    );
+}
+
+/// 测试 broadcast_to 维度扩展（低维到高维）
+#[test]
+fn test_broadcast_to_expand_dims() {
+    // [4] -> [3, 4]：增加 axis=0
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    let b = a.broadcast_to(&[3, 4]);
+    assert_eq!(b.shape(), &[3, 4]);
+    assert_eq!(
+        b.data_as_slice(),
+        &[1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0]
+    );
+
+    // [4] -> [2, 3, 4]：增加两个维度
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    let b = a.broadcast_to(&[2, 3, 4]);
+    assert_eq!(b.shape(), &[2, 3, 4]);
+    assert_eq!(b.size(), 24);
+    // 前 12 个和后 12 个应该相同
+    let slice = b.data_as_slice();
+    assert_eq!(&slice[0..12], &slice[12..24]);
+}
+
+/// 测试 broadcast_to 形状相同（快速路径）
+#[test]
+fn test_broadcast_to_same_shape() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let b = a.broadcast_to(&[2, 2]);
+    assert_eq!(b.shape(), &[2, 2]);
+    assert_eq!(b.data_as_slice(), a.data_as_slice());
+}
+
+/// 测试 broadcast_to 高维场景
+#[test]
+fn test_broadcast_to_high_dim() {
+    // [1, 3, 1] -> [2, 3, 4]
+    let a = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3, 1]);
+    let b = a.broadcast_to(&[2, 3, 4]);
+    assert_eq!(b.shape(), &[2, 3, 4]);
+
+    // 验证数据：每个 [3, 4] 切片的列应该相同
+    let slice = b.data_as_slice();
+    // 第一个 [3, 4] 块
+    assert_eq!(slice[0], 1.0); // [0, 0, 0]
+    assert_eq!(slice[1], 1.0); // [0, 0, 1]
+    assert_eq!(slice[4], 2.0); // [0, 1, 0]
+    assert_eq!(slice[8], 3.0); // [0, 2, 0]
+}
+
+/// 测试 broadcast_to 与 sum_to_shape 的互逆性
+#[test]
+fn test_broadcast_to_inverse_of_sum_to_shape() {
+    // 原始张量 [1, 4]
+    let original = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+
+    // 广播到 [3, 4]
+    let broadcast = original.broadcast_to(&[3, 4]);
+    assert_eq!(broadcast.shape(), &[3, 4]);
+
+    // 用 sum_to_shape 收缩回去
+    let summed = broadcast.sum_to_shape(&[1, 4]);
+    assert_eq!(summed.shape(), &[1, 4]);
+
+    // 结果应该是原始值的 3 倍（因为沿 axis=0 求和了 3 个相同的行）
+    assert_eq!(summed.data_as_slice(), &[3.0, 6.0, 9.0, 12.0]);
+}
+
+/// 测试 broadcast_to 不兼容形状应 panic
+#[test]
+#[should_panic(expected = "broadcast_to")]
+fn test_broadcast_to_incompatible_shape() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    a.broadcast_to(&[4]); // 3 无法广播到 4
+}
+
+/// 测试 broadcast_to 维度数超过目标应 panic
+#[test]
+#[should_panic(expected = "broadcast_to")]
+fn test_broadcast_to_dim_exceed() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    a.broadcast_to(&[4]); // 2D 无法广播到 1D
+}
+
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑broadcast_to↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

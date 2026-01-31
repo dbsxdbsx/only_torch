@@ -37,6 +37,10 @@ mod node_parameter;
 mod node_reshape; // Reshape 节点（形状变换）
 mod node_select; // Select 节点（张量索引选择，RNN 展开式设计用，固定索引）
 mod node_gather; // Gather 节点（张量按索引收集，强化学习用，动态索引）
+mod node_maximum; // Maximum 节点（逐元素取最大值，PPO/TD3 等需要可微分 max）
+mod node_minimum; // Minimum 节点（逐元素取最小值，PPO clipping、TD3 双 Q）
+mod node_amax; // Amax 节点（沿轴取最大值，DQN 选最优动作 Q 值）
+mod node_amin; // Amin 节点（沿轴取最小值，Double DQN 选保守 Q 值）
 mod node_sigmoid;
 mod node_sign; // Sign 符号函数（正→1, 负→-1, 零→0）
 mod node_softmax; // Softmax 激活函数（沿最后一维归一化为概率分布）
