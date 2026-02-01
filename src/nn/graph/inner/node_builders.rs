@@ -174,6 +174,24 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "parameter", vec![])
     }
 
+    /// 创建 State 节点（方案 C 新 API）
+    ///
+    /// 用于 RNN 中的时间状态（隐藏状态 h、LSTM 的 c 等）。
+    /// 支持动态 batch，第一维可以是任意值。
+    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
+    pub fn create_state_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::State;
+
+        let state = State::new(shape)?;
+        let raw_node: NodeType = state.into();
+
+        self.create_node_inner(raw_node, name, "state", vec![])
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表

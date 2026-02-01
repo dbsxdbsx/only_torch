@@ -11,7 +11,7 @@ pub(super) use loss::{BCE, Huber, MAE, MSE, SoftmaxCrossEntropy};
 pub use ops::DEFAULT_DROPOUT_P;
 pub(super) use ops::*;
 pub(crate) use parameter::Parameter;
-pub(super) use state::State;
+pub(in crate::nn) use state::State;
 
 use enum_dispatch::enum_dispatch;
 

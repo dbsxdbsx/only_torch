@@ -726,3 +726,104 @@ fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_state_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建 State 节点
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[4, 64], Some("hidden"))
+        .unwrap();
+
+    // 验证节点属性
+    assert_eq!(state.shape(), vec![4, 64]);
+    assert_eq!(state.name(), Some("hidden"));
+    assert!(state.is_leaf());
+    assert!(state.parents().is_empty());
+
+    // State 初始值为 None（由 reset() 设置）
+    assert!(state.value().is_none());
+}
+
+#[test]
+fn test_create_state_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[4, 64], None)
+        .unwrap();
+
+    let name = state.name().unwrap();
+    assert!(name.contains("state"), "名称应包含 'state': {}", name);
+}
+
+#[test]
+fn test_create_state_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak;
+    {
+        let state = inner
+            .borrow_mut()
+            .create_state_node(&[4, 64], None)
+            .unwrap();
+        weak = Rc::downgrade(&state);
+        assert!(weak.upgrade().is_some());
+    }
+    // state 离开作用域，节点被释放
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn test_create_state_various_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 2D: RNN 隐藏状态 [batch, hidden_size]
+    let rnn_state = inner
+        .borrow_mut()
+        .create_state_node(&[32, 128], None)
+        .unwrap();
+    assert_eq!(rnn_state.shape(), vec![32, 128]);
+
+    // 3D: 序列隐藏状态 [batch, seq_len, hidden_size]
+    let seq_state = inner
+        .borrow_mut()
+        .create_state_node(&[32, 10, 128], None)
+        .unwrap();
+    assert_eq!(seq_state.shape(), vec![32, 10, 128]);
+
+    // 4D: ConvLSTM 状态 [batch, C, H, W]
+    let conv_state = inner
+        .borrow_mut()
+        .create_state_node(&[32, 64, 8, 8], None)
+        .unwrap();
+    assert_eq!(conv_state.shape(), vec![32, 64, 8, 8]);
+}
+
+#[test]
+fn test_create_state_invalid_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 1D 形状应该失败
+    let result = inner.borrow_mut().create_state_node(&[64], None);
+    assert!(result.is_err());
+
+    // 5D 形状也应该失败
+    let result = inner
+        .borrow_mut()
+        .create_state_node(&[1, 2, 3, 4, 5], None);
+    assert!(result.is_err());
+}
