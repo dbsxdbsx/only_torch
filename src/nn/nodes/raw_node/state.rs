@@ -109,7 +109,7 @@ impl TraitNode for State {
         self.name = Some(name.to_string());
     }
 
-    fn calc_value_by_parents(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, _parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // State 节点的值由执行引擎（step/reset）管理，不通过父节点计算
         Err(GraphError::InvalidOperation(format!(
             "{}的值由执行引擎管理，不通过前向传播计算。不该触及本错误，否则说明crate代码有问题",

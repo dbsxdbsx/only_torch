@@ -9,10 +9,10 @@
  * - 当 Var 离开作用域且无其他引用时，节点自动释放
  */
 
-use super::raw_node::TraitNode;
 use super::NodeType;
-use crate::nn::graph::GraphError;
+use super::raw_node::TraitNode;
 use crate::nn::NodeId;
+use crate::nn::graph::GraphError;
 use crate::tensor::Tensor;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

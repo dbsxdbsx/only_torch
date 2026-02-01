@@ -164,25 +164,9 @@ impl TraitNode for Maximum {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let a_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的父 {} 没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        let b_value = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的父 {} 没有值",
-                self.display_node(),
-                parents[1]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 使用 Tensor::maximum
-        self.value = Some(a_value.maximum(b_value));
+        self.value = Some(parent_values[0].maximum(parent_values[1]));
         Ok(())
     }
 

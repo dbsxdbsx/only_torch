@@ -118,19 +118,10 @@ impl TraitNode for Add {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 从图中获取父节点的值
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 逐元素相加（支持广播）
         let mut result = None;
-        for parent in parents {
-            let parent_value = parent.value().ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
-                    self.display_node(),
-                    parent
-                ))
-            })?;
-
-            // 1.2 添加到结果中
+        for &parent_value in parent_values {
             match &mut result {
                 None => result = Some(parent_value.clone()),
                 Some(sum) => {
@@ -138,11 +129,7 @@ impl TraitNode for Add {
                 }
             }
         }
-
-        // 2. 将结果赋值给当前节点
         self.value = result;
-
-        // 3. 返回
         Ok(())
     }
 

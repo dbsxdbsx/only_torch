@@ -566,7 +566,12 @@ impl NodeHandle {
         &mut self,
         parents: &[Self],
     ) -> Result<(), GraphError> {
-        self.raw_node.calc_value_by_parents(parents)
+        // 从 NodeHandle 中提取值，传递给 raw_node
+        let parent_values: Vec<&Tensor> = parents
+            .iter()
+            .filter_map(|p| p.value())
+            .collect();
+        self.raw_node.calc_value_by_parents(&parent_values)
     }
 
     /// 设置训练模式（仅 Dropout 等节点需要）

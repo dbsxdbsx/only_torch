@@ -230,20 +230,15 @@ impl TraitNode for Sum {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!("{}的父{}没有值", self.display_node(), parents[0]))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let input = parent_values[0];
         // 缓存输入形状用于反向传播
         self.input_shape_cache = Some(input.shape().to_vec());
-
         // 根据 axis 计算
         let output = match self.axis {
             None => input.sum(),                     // 全局求和 -> [1, 1]
             Some(ax) => input.sum_axis_keepdims(ax), // 按轴求和
         };
-
         self.value = Some(output);
         Ok(())
     }

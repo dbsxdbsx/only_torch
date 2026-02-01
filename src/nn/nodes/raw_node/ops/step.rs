@@ -82,18 +82,10 @@ impl TraitNode for Step {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 计算Step函数值
-        self.value = Some(tensor_where!(parent_value >= 0.0, 1.0, 0.0));
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 计算Step函数值
+        let input = parent_values[0];
+        self.value = Some(tensor_where!(input >= 0.0, 1.0, 0.0));
         Ok(())
     }
 

@@ -302,8 +302,14 @@ pub(in crate::nn::nodes) trait TraitNode {
         format_node_display(self.id(), self.name(), self.get_type_name())
     }
 
-    // 根据父节点的值计算本节点的值（注意：由于该接口只在Graph中使用，所以实现时不用关心父节点的值是否已被计算，所有父节点的值可以已预先被计算过了）
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError>;
+    /// 根据父节点的值计算本节点的值
+    ///
+    /// # 参数
+    /// - `parent_values`: 父节点的值（已计算完成）
+    ///
+    /// # 说明
+    /// 方案 C 最终签名：直接接收 `&[&Tensor]`，不依赖 `NodeHandle`
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError>;
 
     fn value(&self) -> Option<&Tensor>;
 

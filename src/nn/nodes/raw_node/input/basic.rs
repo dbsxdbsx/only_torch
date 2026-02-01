@@ -10,7 +10,6 @@
  * 这使得同一个计算图可以处理不同 batch_size 的输入。
  */
 
-use crate::nn::nodes::NodeHandle;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
@@ -113,7 +112,7 @@ impl TraitNode for BasicInput {
         self.name = Some(name.to_string());
     }
 
-    fn calc_value_by_parents(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, _parent_values: &[&Tensor]) -> Result<(), GraphError> {
         Err(GraphError::InvalidOperation(format!(
             "{}被执行了前向传播。不该触及本错误，否则说明crate代码有问题",
             self.display_node()

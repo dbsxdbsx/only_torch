@@ -160,25 +160,9 @@ impl TraitNode for Gather {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let input_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的父 {} 没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        let index_value = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的索引父 {} 没有值",
-                self.display_node(),
-                parents[1]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 使用 Tensor::gather
-        self.value = Some(input_value.gather(self.dim, index_value));
+        self.value = Some(parent_values[0].gather(self.dim, parent_values[1]));
         Ok(())
     }
 

@@ -235,27 +235,21 @@ impl TraitNode for Mean {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!("{}的父{}没有值", self.display_node(), parents[0]))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let input = parent_values[0];
         // 缓存输入形状用于反向传播
         self.input_shape_cache = Some(input.shape().to_vec());
-
         // 计算归约元素数量
         let reduction_count = match self.axis {
             None => input.shape().iter().product(), // 全局均值：所有元素
             Some(ax) => input.shape()[ax],          // 按轴均值：该轴的大小
         };
         self.reduction_count_cache = Some(reduction_count);
-
         // 根据 axis 计算
         let output = match self.axis {
             None => input.mean(),                      // 全局均值 -> [1, 1]
             Some(ax) => input.mean_axis_keepdims(ax), // 按轴均值
         };
-
         self.value = Some(output);
         Ok(())
     }

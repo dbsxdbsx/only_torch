@@ -151,36 +151,22 @@ impl TraitNode for Flatten {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的父 {} 没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 动态计算目标形状（支持动态 batch）
-        // 使用实际输入的 batch 大小，而不是创建时固定的 target_shape
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let parent_value = parent_values[0];
+        // 动态计算目标形状（支持动态 batch）
         let actual_shape = parent_value.shape();
         let runtime_target_shape = if self.keep_first_dim {
             if actual_shape.len() == 2 {
-                // 2D 已经是展平状态
                 actual_shape.to_vec()
             } else {
-                // 高维：[batch, d1, d2, ...] → [batch, d1*d2*...]
                 let batch_dim = actual_shape[0];
                 let rest_dim: usize = actual_shape[1..].iter().product();
                 vec![batch_dim, rest_dim]
             }
         } else {
-            // 完全展平为行向量
             let total: usize = actual_shape.iter().product();
             vec![1, total]
         };
-
-        // 3. Reshape 到运行时计算的目标形状
         self.value = Some(parent_value.reshape(&runtime_target_shape));
         Ok(())
     }

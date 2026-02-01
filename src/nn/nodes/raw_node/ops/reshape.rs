@@ -151,32 +151,18 @@ impl TraitNode for Reshape {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的父 {} 没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 动态计算目标形状（支持动态 batch）
-        // 如果 batch 大小变化，按比例调整目标形状的第一维
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let parent_value = parent_values[0];
+        // 动态计算目标形状（支持动态 batch）
         let actual_batch = parent_value.shape()[0];
         let runtime_target_shape =
             if self.supports_dynamic && actual_batch != self.original_batch_size {
-                // 按比例调整第一维
-                // 原始：[orig_batch, ...] -> [target[0], ...]
-                // 现在：[actual_batch, ...] -> [target[0] * actual_batch / orig_batch, ...]
                 let mut new_shape = self.target_shape.clone();
                 new_shape[0] = self.target_shape[0] * actual_batch / self.original_batch_size;
                 new_shape
             } else {
                 self.target_shape.clone()
             };
-
-        // 3. Reshape 到运行时目标形状
         self.value = Some(parent_value.reshape(&runtime_target_shape));
         Ok(())
     }

@@ -320,32 +320,15 @@ impl TraitNode for Conv2d {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 获取输入和卷积核
-        let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的输入父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        let kernel = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的卷积核父{}没有值",
-                self.display_node(),
-                parents[1]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let input = parent_values[0];
+        let kernel = parent_values[1];
         // 填充输入
         let padded = self.pad_input(input);
         self.padded_input = Some(padded.clone());
         self.input_shape = input.shape().to_vec();
-
         // 执行卷积
         self.value = Some(self.convolve(&padded, kernel));
-
         Ok(())
     }
 

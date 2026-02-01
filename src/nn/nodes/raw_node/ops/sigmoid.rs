@@ -81,18 +81,9 @@ impl TraitNode for Sigmoid {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 计算 sigmoid(x) = 1 / (1 + e^(-x))
-        self.value = Some(parent_value.sigmoid());
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 计算 sigmoid(x) = 1 / (1 + e^(-x))
+        self.value = Some(parent_values[0].sigmoid());
         Ok(())
     }
 

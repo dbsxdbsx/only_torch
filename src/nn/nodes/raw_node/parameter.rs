@@ -1,7 +1,7 @@
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
-use super::{NodeHandle, TraitNode};
+use super::TraitNode;
 
 #[derive(Clone)]
 pub(crate) struct Parameter {
@@ -86,7 +86,7 @@ impl TraitNode for Parameter {
         self.name = Some(name.to_string());
     }
 
-    fn calc_value_by_parents(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, _parent_values: &[&Tensor]) -> Result<(), GraphError> {
         Err(GraphError::InvalidOperation(format!(
             "{}被执行了前向传播。不该触及本错误，否则说明crate代码有问题",
             self.display_node()

@@ -104,26 +104,15 @@ impl TraitNode for LeakyReLU {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 计算 LeakyReLU: f(x) = x if x > 0, else negative_slope * x
-        // 注：不再缓存 parent_value，因为梯度计算已改为使用 value（输出）判断区域
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 计算 LeakyReLU: f(x) = x if x > 0, else negative_slope * x
         let slope = self.negative_slope;
-        let result = parent_value.where_with_f32(
+        let result = parent_values[0].where_with_f32(
             |x| x > 0.0,
             |x| x,         // x > 0 时保持原值
             |x| slope * x, // x <= 0 时乘以 slope
         );
         self.value = Some(result);
-
         Ok(())
     }
 

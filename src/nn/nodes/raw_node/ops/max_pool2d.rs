@@ -180,15 +180,8 @@ impl TraitNode for MaxPool2d {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的输入父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let input = parent_values[0];
         // 输入必须是 4D [batch, C, H, W]
         let input_shape = input.shape();
         let (batch_size, channels, in_h, in_w) = (

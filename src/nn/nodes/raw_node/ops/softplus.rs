@@ -128,19 +128,9 @@ impl TraitNode for SoftPlus {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 计算 softplus(x) = ln(1 + e^x)（数值稳定版本）
-        // 注：不再缓存 parent_value，因为梯度计算已改为使用 value（输出）
-        self.value = Some(Self::stable_softplus(parent_value));
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 计算 softplus(x) = ln(1 + e^x)（数值稳定版本）
+        self.value = Some(Self::stable_softplus(parent_values[0]));
         Ok(())
     }
 

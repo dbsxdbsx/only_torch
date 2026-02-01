@@ -81,19 +81,9 @@ impl TraitNode for Tanh {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 计算tanh(x) = (e^x - e^(-x)) / (e^x + e^(-x))
-        // 等价于 tanh(x) = 2 / (1 + e^(-2x)) - 1，这种形式数值更稳定
-        self.value = Some(parent_value.tanh());
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 计算tanh(x) = (e^x - e^(-x)) / (e^x + e^(-x))
+        self.value = Some(parent_values[0].tanh());
         Ok(())
     }
 

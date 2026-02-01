@@ -90,21 +90,11 @@ impl TraitNode for Abs {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 缓存父节点的值用于反向传播
-        self.parent_value_cache = Some(parent_value.clone());
-
-        // 3. 计算 abs(x) = |x|
-        self.value = Some(parent_value.abs());
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 缓存父节点的值用于反向传播
+        self.parent_value_cache = Some(parent_values[0].clone());
+        // 计算 abs(x) = |x|
+        self.value = Some(parent_values[0].abs());
         Ok(())
     }
 

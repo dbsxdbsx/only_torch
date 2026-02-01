@@ -815,18 +815,34 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [x] 暂时保留 `nodes: HashMap` 用于过渡
 - [x] 单元测试：参数注册和弱引用行为（7 个测试）
 
-#### Step 2.4：节点创建流程改造
-- [ ] 新增 `NodeInner::new_xxx()` 系列工厂方法（各节点类型）
-- [ ] `GraphInner::new_xxx_node()` 返回 `Rc<NodeInner>` 并设置 parents
-- [ ] Var 算子重载使用新创建流程
-- [ ] 单元测试：节点创建和 parents 链正确性
+#### Step 2.4：节点创建流程改造 ✅ 已完成
+- [x] 新增各节点类型的 `new_from_shapes()` 工厂方法（38 个节点类型已实现）
+- [x] `GraphInner::create_xxx_node()` 返回 `Rc<NodeInner>` 并设置 parents（~50 个方法）
+- [x] 单元测试：节点创建和 parents 链正确性（587 个测试）
 
 #### Step 2.5：前向传播改造
-- [ ] 实现 `NodeInner::forward_recursive()` 基于 parents 遍历
-- [ ] 从 loss 节点向上遍历，拓扑排序执行
-- [ ] 使用 `last_forward_pass_id` 避免重复计算
-- [ ] Var.forward() 调用新实现
-- [ ] 单元测试：前向传播正确性、pass_id 去重
+
+> 采用递归实现（与当前行为一致），如深度网络有栈溢出问题，后续再优化为迭代。
+
+- [x] **2.5.1** TraitNode 签名改造（方案 C）
+  - `calc_value_by_parents` 签名从 `&[NodeHandle]` 改为 `&[&Tensor]`
+  - 更新全部 44 个节点实现
+  - `NodeHandle::calc_value_by_parents` 桥接：从父节点提取值后传递
+- [ ] **2.5.2** 实现递归前向传播
+  - 实现 `forward_recursive(pass_id)`: 递归遍历 parents 链
+  - 使用 `last_forward_pass_id` 避免重复计算
+  - 叶子节点检查值是否已设置
+- [ ] **2.5.3** GraphInner 集成新前向传播
+  - 新增 `forward_via_node_inner()` 方法
+  - 从 `Rc<NodeInner>` 开始前向传播
+  - 过渡期：保留旧 `forward()` 方法
+- [ ] **2.5.4** Var.forward() 过渡适配
+  - 如果 `self.node` 存在，使用新实现
+  - 否则回退到旧实现
+- [ ] **2.5.5** 单元测试
+  - 基础前向传播正确性
+  - pass_id 去重（菱形 DAG）
+  - 过渡期新旧路径等价性
 
 #### Step 2.6：反向传播改造
 - [ ] 实现 `NodeInner::backward_recursive()` 基于 parents 遍历
@@ -842,6 +858,8 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [ ] 移除 GraphInner 的 `nodes: HashMap<NodeId, NodeHandle>`
 - [ ] 移除 GraphInner 的 `forward_edges`, `backward_edges`
 - [ ] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法，将 `new_from_shapes()` 重命名为 `new()`
+- [ ] Var 算子方法（`try_add` 等）迁移到新 API（`create_xxx_node`）
+- [ ] 移除 GraphInner 的旧节点创建 API（`new_xxx_node` 系列方法）
 - [ ] 更新所有依赖旧结构的代码
 - [ ] 回归测试：所有现有测试通过
 

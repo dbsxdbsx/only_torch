@@ -81,22 +81,13 @@ impl TraitNode for ZerosLike {
         self.name = Some(name.to_string());
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 从第一个父节点获取 batch_size
-        let ref_value = parents.first().and_then(|p| p.value()).ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 需要参考节点有值以确定 batch_size",
-                self.display_node()
-            ))
-        })?;
-
-        let batch_size = ref_value.shape()[0];
-
+        let batch_size = parent_values[0].shape()[0];
         // 生成零张量 [batch_size, feature_dims...]
         let mut shape = vec![batch_size];
         shape.extend_from_slice(&self.feature_shape);
         self.value = Some(Tensor::zeros(&shape));
-
         Ok(())
     }
 

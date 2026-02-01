@@ -128,27 +128,9 @@ impl TraitNode for MatMul {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent1_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的第1个父{}没有值。不该触及本错误，否则说明crate代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-        let parent2_value = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的第2个父{}没有值。不该触及本错误，否则说明crate代码有问题",
-                self.display_node(),
-                parents[1]
-            ))
-        })?;
-
-        // 2. 计算结果
-        self.value = Some(parent1_value.mat_mul(parent2_value));
-
-        // 3. 返回
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 计算矩阵乘法
+        self.value = Some(parent_values[0].mat_mul(parent_values[1]));
         Ok(())
     }
 

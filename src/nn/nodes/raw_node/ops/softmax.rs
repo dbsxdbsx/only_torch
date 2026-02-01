@@ -105,16 +105,11 @@ impl TraitNode for Softmax {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!("{}的父{}没有值", self.display_node(), parents[0]))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 复用 Tensor 层的数值稳定 softmax 实现
-        let output = input.softmax_last_dim();
+        let output = parent_values[0].softmax_last_dim();
         self.output_cache = Some(output.clone());
         self.value = Some(output);
-
         Ok(())
     }
 

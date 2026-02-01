@@ -206,25 +206,10 @@ impl TraitNode for Stack {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 收集所有父节点的值
-        let parent_values: Vec<&Tensor> = parents
-            .iter()
-            .map(|p| {
-                p.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "{} 的父节点 {} 没有值",
-                        self.display_node(),
-                        p
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 调用 Tensor::stack
-        let result = Tensor::stack(&parent_values, self.axis, self.new_dim);
+        let result = Tensor::stack(parent_values, self.axis, self.new_dim);
         self.value = Some(result);
-
         Ok(())
     }
 

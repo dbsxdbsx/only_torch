@@ -123,11 +123,11 @@ impl TraitNode for InputVariant {
         }
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         match self {
-            Self::Data(inner) => inner.calc_value_by_parents(parents),
+            Self::Data(inner) => inner.calc_value_by_parents(parent_values),
             Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => {
-                inner.calc_value_by_parents(parents)
+                inner.calc_value_by_parents(parent_values)
             }
         }
     }

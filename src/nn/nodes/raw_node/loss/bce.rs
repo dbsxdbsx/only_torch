@@ -158,42 +158,22 @@ impl TraitNode for BCE {
         &self.shape
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 获取 logits 和 target
-        let logits = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的 logits 父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-        let target = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的 target 父{}没有值",
-                self.display_node(),
-                parents[1]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let logits = parent_values[0];
+        let target = parent_values[1];
         // 更新 numel（支持动态 batch size）
         self.numel_cache = logits.size();
-
         // 计算 sigmoid(logits) 并缓存，用于反向传播
-        // 使用 Tensor 内置的 sigmoid 方法（数值稳定）
         let sigmoid = logits.sigmoid();
         self.sigmoid_cache = Some(sigmoid);
         self.target_cache = Some(target.clone());
-
         // 计算数值稳定的 BCE
-        // BCE = max(logits, 0) - logits * target + log(1 + exp(-|logits|))
         let bce_sum = Self::stable_bce_sum(logits, target);
-
         // 根据 reduction 模式计算损失
         let loss_value = match self.reduction {
             Reduction::Mean => bce_sum / (self.numel_cache as f32),
             Reduction::Sum => bce_sum,
         };
-
         self.value = Some(Tensor::new(&[loss_value], &[1, 1]));
         Ok(())
     }

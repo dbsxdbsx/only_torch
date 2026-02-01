@@ -162,7 +162,7 @@ impl TraitNode for SmartInput {
         true
     }
 
-    fn calc_value_by_parents(&mut self, _parents: &[NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, _parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // SmartInput 没有父节点，值通过 set_value 设置
         // 如果调用到这里，说明值还没设置
         if self.value.is_none() {

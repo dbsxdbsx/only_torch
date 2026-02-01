@@ -81,18 +81,9 @@ impl TraitNode for Sign {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值。不该触及本错误，否则说明 crate 代码有问题",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        // 2. 计算Sign函数值：正数→1, 负数→-1, 零→0
-        self.value = Some(parent_value.sign());
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 计算Sign函数值：正数→1, 负数→-1, 零→0
+        self.value = Some(parent_values[0].sign());
         Ok(())
     }
 

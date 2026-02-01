@@ -192,31 +192,15 @@ impl TraitNode for SoftmaxCrossEntropy {
         &self.shape
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 获取 logits 和 labels
-        let logits = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的 logits 父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-        let labels = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的 labels 父{}没有值",
-                self.display_node(),
-                parents[1]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let logits = parent_values[0];
+        let labels = parent_values[1];
         // 缓存 softmax 和 labels 用于反向传播
         self.softmax_cache = Some(Self::stable_softmax_batch(logits));
         self.labels_cache = Some(labels.clone());
-
         // 计算损失（batch 平均）
         let loss = Self::stable_cross_entropy_batch(logits, labels);
         self.value = Some(Tensor::new(&[loss], &[1, 1]));
-
         Ok(())
     }
 

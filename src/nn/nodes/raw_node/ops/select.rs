@@ -149,17 +149,9 @@ impl TraitNode for Select {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的父 {} 没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 使用 Tensor::select 提取切片
-        self.value = Some(parent_value.select(self.axis, self.index));
+        self.value = Some(parent_values[0].select(self.axis, self.index));
         Ok(())
     }
 

@@ -155,19 +155,14 @@ impl TraitNode for Dropout {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!("{}的父{}没有值", self.display_node(), parents[0]))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let parent_value = parent_values[0];
         if self.is_training && self.p > 0.0 {
             // 训练模式：生成 mask，应用 dropout
             let mask = self.generate_mask(parent_value.shape());
-
             // Inverted Dropout: output = input * mask / (1 - p)
             let scale = 1.0 / (1.0 - self.p);
             let result = parent_value * &mask * scale;
-
             self.mask = Some(mask);
             self.value = Some(result);
         } else {
@@ -175,7 +170,6 @@ impl TraitNode for Dropout {
             self.mask = None;
             self.value = Some(parent_value.clone());
         }
-
         Ok(())
     }
 

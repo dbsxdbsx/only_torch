@@ -127,27 +127,9 @@ impl TraitNode for Subtract {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 1. 获取两个父节点的值
-        let left_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的第1个父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        let right_value = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的第2个父{}没有值",
-                self.display_node(),
-                parents[1]
-            ))
-        })?;
-
-        // 2. 计算逐元素减法（ndarray 原生支持广播）
-        self.value = Some(left_value - right_value);
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        // 计算逐元素减法（ndarray 原生支持广播）
+        self.value = Some(parent_values[0] - parent_values[1]);
         Ok(())
     }
 

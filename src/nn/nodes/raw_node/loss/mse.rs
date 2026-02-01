@@ -132,35 +132,17 @@ impl TraitNode for MSE {
         &self.shape
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        // 获取 input 和 target
-        let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的 input 父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-        let target = parents[1].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的 target 父{}没有值",
-                self.display_node(),
-                parents[1]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
+        let input = parent_values[0];
+        let target = parent_values[1];
         // 计算 diff = input - target
         let diff = input - target;
-
         // 计算 squared_diff = diff^2
         let squared_diff = &diff * &diff;
-
         // 更新 numel（支持动态 batch size）
         self.numel_cache = input.size();
-
         // 缓存 diff 用于反向传播
         self.diff_cache = Some(diff);
-
         // 根据 reduction 模式计算损失
         let loss_value = match self.reduction {
             Reduction::Mean => {
@@ -169,7 +151,6 @@ impl TraitNode for MSE {
             }
             Reduction::Sum => squared_diff.sum().get_data_number().unwrap(),
         };
-
         self.value = Some(Tensor::new(&[loss_value], &[1, 1]));
         Ok(())
     }

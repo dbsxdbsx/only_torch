@@ -195,17 +195,9 @@ impl TraitNode for Amin {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let input_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的父 {} 没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 使用 Tensor::amin(axis)
-        self.value = Some(input_value.amin(self.axis));
+        self.value = Some(parent_values[0].amin(self.axis));
         Ok(())
     }
 

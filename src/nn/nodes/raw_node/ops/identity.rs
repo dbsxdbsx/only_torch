@@ -142,17 +142,9 @@ impl TraitNode for Identity {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 直接复制父节点的值
-        let parent_value = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{} 的父 {} 没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
-        self.value = Some(parent_value.clone());
+        self.value = Some(parent_values[0].clone());
         Ok(())
     }
 

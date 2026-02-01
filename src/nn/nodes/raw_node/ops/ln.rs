@@ -103,20 +103,11 @@ impl TraitNode for Ln {
         self.supports_dynamic
     }
 
-    fn calc_value_by_parents(&mut self, parents: &[NodeHandle]) -> Result<(), GraphError> {
-        let input = parents[0].value().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父{}没有值",
-                self.display_node(),
-                parents[0]
-            ))
-        })?;
-
+    fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 缓存输入用于反向传播
-        self.input_cache = Some(input.clone());
-
+        self.input_cache = Some(parent_values[0].clone());
         // 计算 ln(x)
-        self.value = Some(input.ln());
+        self.value = Some(parent_values[0].ln());
         Ok(())
     }
 
