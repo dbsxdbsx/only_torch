@@ -169,6 +169,80 @@ impl NodeInner {
         self.raw_node.borrow_mut().clear_grad()
     }
 
+    // ==================== 前向传播（方案 C）====================
+
+    /// 从父节点计算当前节点的值
+    ///
+    /// 收集父节点的值，调用 `raw_node.calc_value_by_parents()`
+    fn calc_value_from_parents(&self, is_training: bool) -> Result<(), GraphError> {
+        // 收集父节点的值
+        let parent_values: Result<Vec<Tensor>, GraphError> = self
+            .parents
+            .iter()
+            .map(|p| {
+                p.value().ok_or_else(|| {
+                    GraphError::ComputationError(format!(
+                        "{}[{}] 的父节点 {}[{}] 没有值",
+                        self.type_name(),
+                        self.id,
+                        p.type_name(),
+                        p.id()
+                    ))
+                })
+            })
+            .collect();
+        let parent_values = parent_values?;
+        let parent_refs: Vec<&Tensor> = parent_values.iter().collect();
+
+        // 设置训练模式并计算
+        let mut raw = self.raw_node.borrow_mut();
+        raw.set_training_mode(is_training);
+        raw.calc_value_by_parents(&parent_refs)
+    }
+
+    /// 递归前向传播
+    ///
+    /// # 参数
+    /// - `pass_id`: 当前前向传播的 ID（用于避免重复计算）
+    /// - `is_training`: 是否训练模式
+    ///
+    /// # 逻辑
+    /// 1. 如果 `last_forward_pass_id == pass_id`，跳过（已计算）
+    /// 2. 递归确保所有父节点已计算
+    /// 3. 叶子节点检查值是否已设置
+    /// 4. 非叶子节点调用 `calc_value_from_parents`
+    /// 5. 更新 `last_forward_pass_id`
+    pub fn forward_recursive(&self, pass_id: u64, is_training: bool) -> Result<(), GraphError> {
+        // 1. 检查是否已计算
+        if self.last_forward_pass_id.get() == pass_id {
+            return Ok(());
+        }
+
+        // 2. 递归计算父节点
+        for parent in &self.parents {
+            parent.forward_recursive(pass_id, is_training)?;
+        }
+
+        // 3. 计算当前节点
+        if self.is_leaf() {
+            // 叶子节点：检查值是否已设置
+            if self.value().is_none() {
+                return Err(GraphError::ComputationError(format!(
+                    "叶子节点 {}[{}] 没有值，请先设置",
+                    self.type_name(),
+                    self.id
+                )));
+            }
+        } else {
+            // 非叶子节点：从父节点计算
+            self.calc_value_from_parents(is_training)?;
+        }
+
+        // 4. 更新 pass_id
+        self.last_forward_pass_id.set(pass_id);
+        Ok(())
+    }
+
     // ==================== 节点类型信息 ====================
 
     /// 获取节点类型的只读引用

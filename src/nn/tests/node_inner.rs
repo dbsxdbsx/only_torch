@@ -7,8 +7,9 @@
  * - 级联释放机制
  */
 
-use crate::nn::nodes::raw_node::Parameter;
+use crate::nn::nodes::raw_node::{Add, InputVariant, Parameter};
 use crate::nn::nodes::NodeInner;
+use crate::nn::shape::DynamicShape;
 use crate::nn::NodeId;
 use crate::tensor::Tensor;
 use std::rc::Rc;
@@ -241,4 +242,152 @@ fn test_node_inner_type_info() {
     assert!(!node.is_input());
     assert_eq!(node.shape(), vec![2, 3]);
     assert_eq!(node.type_name(), "Parameter");
+}
+
+// ==================== 前向传播测试（Step 2.5.2）====================
+
+/// 辅助函数：创建 Add 节点的 NodeType
+fn make_add(parent_shapes: &[&[usize]]) -> crate::nn::nodes::NodeType {
+    let dynamic_shapes: Vec<DynamicShape> = parent_shapes
+        .iter()
+        .map(|s| DynamicShape::fixed(s))
+        .collect();
+    Add::new_from_shapes(parent_shapes, &dynamic_shapes)
+        .unwrap()
+        .into()
+}
+
+/// 辅助函数：创建 Input（Data）节点的 NodeType
+fn make_input(shape: &[usize]) -> crate::nn::nodes::NodeType {
+    InputVariant::new_data(shape).unwrap().into()
+}
+
+#[test]
+fn test_forward_recursive_basic() {
+    // 简单链式结构：input1 + input2 -> add
+    let input1 = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[2, 3])));
+    let input2 = Rc::new(NodeInner::new_leaf(NodeId(2), None, make_param(&[2, 3])));
+
+    // 设置输入值
+    input1.set_value(Some(&Tensor::ones(&[2, 3]))).unwrap();
+    input2.set_value(Some(&Tensor::ones(&[2, 3]))).unwrap();
+
+    // 创建 Add 节点
+    let add = Rc::new(NodeInner::new(
+        NodeId(3),
+        None,
+        make_add(&[&[2, 3], &[2, 3]]),
+        vec![Rc::clone(&input1), Rc::clone(&input2)],
+    ));
+
+    // 执行前向传播
+    add.forward_recursive(1, false).unwrap();
+
+    // 验证结果：1 + 1 = 2
+    let result = add.value().unwrap();
+    assert_eq!(result.shape(), &[2, 3]);
+    assert!(result.data_as_slice().iter().all(|&x| (x - 2.0).abs() < 1e-6));
+
+    // 验证 pass_id 更新
+    assert_eq!(add.last_forward_pass_id(), 1);
+    assert_eq!(input1.last_forward_pass_id(), 1);
+    assert_eq!(input2.last_forward_pass_id(), 1);
+}
+
+#[test]
+fn test_forward_recursive_diamond_dag() {
+    // 菱形 DAG：测试 pass_id 去重
+    //
+    //      input
+    //      /   \
+    //   add1   add2  (both add input to itself)
+    //      \   /
+    //      output (add1 + add2)
+    //
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[2, 3])));
+    input.set_value(Some(&Tensor::ones(&[2, 3]))).unwrap();
+
+    // add1 = input + input (由于 Add 支持多个输入，这里模拟两个分支)
+    let add1 = Rc::new(NodeInner::new(
+        NodeId(2),
+        Some("add1".to_string()),
+        make_add(&[&[2, 3], &[2, 3]]),
+        vec![Rc::clone(&input), Rc::clone(&input)],
+    ));
+
+    let add2 = Rc::new(NodeInner::new(
+        NodeId(3),
+        Some("add2".to_string()),
+        make_add(&[&[2, 3], &[2, 3]]),
+        vec![Rc::clone(&input), Rc::clone(&input)],
+    ));
+
+    // output = add1 + add2
+    let output = Rc::new(NodeInner::new(
+        NodeId(4),
+        Some("output".to_string()),
+        make_add(&[&[2, 3], &[2, 3]]),
+        vec![Rc::clone(&add1), Rc::clone(&add2)],
+    ));
+
+    // 执行前向传播
+    output.forward_recursive(1, false).unwrap();
+
+    // 验证结果：(1+1) + (1+1) = 4
+    let result = output.value().unwrap();
+    assert!(result.data_as_slice().iter().all(|&x| (x - 4.0).abs() < 1e-6));
+
+    // 验证所有节点的 pass_id 都被更新
+    assert_eq!(input.last_forward_pass_id(), 1);
+    assert_eq!(add1.last_forward_pass_id(), 1);
+    assert_eq!(add2.last_forward_pass_id(), 1);
+    assert_eq!(output.last_forward_pass_id(), 1);
+}
+
+#[test]
+fn test_forward_recursive_skip_computed() {
+    // 测试 pass_id 去重：同一 pass_id 不重复计算
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[2, 3])));
+    input.set_value(Some(&Tensor::ones(&[2, 3]))).unwrap();
+
+    let add = Rc::new(NodeInner::new(
+        NodeId(2),
+        None,
+        make_add(&[&[2, 3], &[2, 3]]),
+        vec![Rc::clone(&input), Rc::clone(&input)],
+    ));
+
+    // 第一次前向传播
+    add.forward_recursive(1, false).unwrap();
+    let first_result = add.value().unwrap();
+
+    // 修改输入值
+    input.set_value(Some(&Tensor::zeros(&[2, 3]))).unwrap();
+
+    // 同一 pass_id 再次调用，应跳过计算
+    add.forward_recursive(1, false).unwrap();
+    let second_result = add.value().unwrap();
+
+    // 结果应该相同（因为被跳过）
+    assert_eq!(first_result.data_as_slice(), second_result.data_as_slice());
+
+    // 新 pass_id 会重新计算
+    add.forward_recursive(2, false).unwrap();
+    let third_result = add.value().unwrap();
+
+    // 结果应该是 0 + 0 = 0
+    assert!(third_result.data_as_slice().iter().all(|&x| x.abs() < 1e-6));
+}
+
+#[test]
+fn test_forward_recursive_leaf_no_value() {
+    // 测试叶子节点没有值时的错误
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_input(&[2, 3])));
+
+    // Input（Data）节点不会自动初始化值
+    let result = input.forward_recursive(1, false);
+
+    assert!(result.is_err());
+    let err = format!("{:?}", result.unwrap_err());
+    assert!(err.contains("没有值"));
 }

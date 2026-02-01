@@ -828,10 +828,12 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - `calc_value_by_parents` 签名从 `&[NodeHandle]` 改为 `&[&Tensor]`
   - 更新全部 44 个节点实现
   - `NodeHandle::calc_value_by_parents` 桥接：从父节点提取值后传递
-- [ ] **2.5.2** 实现递归前向传播
-  - 实现 `forward_recursive(pass_id)`: 递归遍历 parents 链
+- [x] **2.5.2** 实现递归前向传播
+  - `NodeInner::calc_value_from_parents()`: 收集父节点值，调用 raw_node
+  - `NodeInner::forward_recursive(pass_id, is_training)`: 递归遍历 parents
   - 使用 `last_forward_pass_id` 避免重复计算
   - 叶子节点检查值是否已设置
+  - 单元测试：基础前向、菱形 DAG、pass_id 去重、叶子无值错误
 - [ ] **2.5.3** GraphInner 集成新前向传播
   - 新增 `forward_via_node_inner()` 方法
   - 从 `Rc<NodeInner>` 开始前向传播
