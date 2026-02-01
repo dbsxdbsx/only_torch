@@ -153,7 +153,8 @@ fn test_ln_backward_vjp() -> Result<(), GraphError> {
     let ln_node = graph.get_node(ln_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = ln_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = ln_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad / x = 1 / x
     // 1/[1, 2, 4, 0.5] = [1, 0.5, 0.25, 2]
@@ -184,7 +185,8 @@ fn test_ln_backward_with_non_unit_upstream() -> Result<(), GraphError> {
     let ln_node = graph.get_node(ln_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = ln_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = ln_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad / x
     // [2, 3, 4, 5] / [1, 2, 4, 0.5] = [2, 1.5, 1, 10]
@@ -214,7 +216,8 @@ fn test_ln_backward_small_input() -> Result<(), GraphError> {
     let ln_node = graph.get_node(ln_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = ln_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = ln_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = 1/x
     // 1/[0.1, 0.01] = [10, 100]

@@ -342,17 +342,22 @@ pub(in crate::nn::nodes) trait TraitNode {
     /// - `assistant_parent`: 辅助父节点（用于双父节点如 `MatMul`）
     ///
     /// # 返回
-    /// 对 `target_parent` 的梯度，shape 与 `target_parent.value` 相同
+    /// 对 `target_parent` 的梯度，shape 与 `parent_values[target_parent_index]` 相同
+    ///
+    /// # 参数
+    /// - `target_parent_index`: 目标父节点在 parents 中的索引
+    /// - `parent_values`: 所有父节点的值（按 parents 顺序）
+    /// - `upstream_grad`: 上游传来的梯度
     ///
     /// # 默认实现
     /// 返回错误，需要各节点自行实现
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        let _ = (target_parent, upstream_grad, assistant_parent);
+        let _ = (target_parent_index, parent_values, upstream_grad);
         Err(GraphError::InvalidOperation(format!(
             "{}尚未实现 calc_grad_to_parent",
             self.display_node()

@@ -125,7 +125,9 @@ fn test_reshape_backward_vjp() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[3, 2]);
     let reshape_node = graph.get_node(reshape_id)?;
     let input_node = graph.get_node(input_id)?;
-    let grad = reshape_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    let parents = [input_node];
+    let grad = reshape_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // Reshape 的梯度只是形状变化，数值直接透传
     assert_eq!(grad.shape(), &[2, 3]);
@@ -150,7 +152,9 @@ fn test_reshape_backward_vjp_non_unit_upstream() -> Result<(), GraphError> {
     let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
     let reshape_node = graph.get_node(reshape_id)?;
     let input_node = graph.get_node(input_id)?;
-    let grad = reshape_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    let parents = [input_node];
+    let grad = reshape_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 梯度应该被 reshape 回输入形状，数值保持不变
     assert_eq!(grad.shape(), &[2, 3]);
@@ -382,8 +386,9 @@ fn test_reshape_chain() -> Result<(), GraphError> {
     // 通过最后一个节点计算到第一个的梯度（中间链会自动传播）
     // 由于是直接调用 calc_grad_to_parent，只能测试单步
     let reshape2_node = graph.get_node(reshape2)?;
-    let grad_to_reshape2 =
-        reshape3_node.calc_grad_to_parent(reshape2_node, &upstream_grad, None)?;
+
+    let parents = [reshape2_node];
+    let grad_to_reshape2 = reshape3_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(grad_to_reshape2.shape(), &[4, 3]);
     assert_eq!(&grad_to_reshape2, &Tensor::ones(&[4, 3]));
 

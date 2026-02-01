@@ -157,9 +157,11 @@ fn test_subtract_backward_to_left() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[2, 2]);
     let result_node = graph.get_node(result_id)?;
     let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
 
-    // Subtract 不需要 assistant_parent
-    let grad = result_node.calc_grad_to_parent(left_node, &upstream_grad, None)?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+    let grad = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad_to_left = upstream = ones
     assert_eq!(grad.shape(), &[2, 2]);
@@ -188,9 +190,12 @@ fn test_subtract_backward_to_right() -> Result<(), GraphError> {
     // 直接测试 VJP
     let upstream_grad = Tensor::ones(&[2, 2]);
     let result_node = graph.get_node(result_id)?;
+    let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
-    let grad = result_node.calc_grad_to_parent(right_node, &upstream_grad, None)?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+    let grad = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
 
     // grad_to_right = -upstream = -ones = [[-1,-1],[-1,-1]]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -220,12 +225,15 @@ fn test_subtract_backward_with_non_unit_upstream() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+
     // grad_to_left = upstream = [[2,3],[4,5]]
-    let grad_to_left = result_node.calc_grad_to_parent(left_node, &upstream_grad, None)?;
+    let grad_to_left = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_left, &upstream_grad);
 
     // grad_to_right = -upstream = [[-2,-3],[-4,-5]]
-    let grad_to_right = result_node.calc_grad_to_parent(right_node, &upstream_grad, None)?;
+    let grad_to_right = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     let expected_right = Tensor::new(&[-2.0, -3.0, -4.0, -5.0], &[2, 2]);
     assert_eq!(&grad_to_right, &expected_right);
 
@@ -386,15 +394,18 @@ fn test_subtract_broadcast_backward() -> Result<(), GraphError> {
     let matrix_node = graph.get_node(matrix)?;
     let bias_node = graph.get_node(bias)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [matrix_node, bias_node];
+
     // 对 matrix [2,3] 的梯度：直接传递 upstream_grad
-    let grad_to_matrix = result_node.calc_grad_to_parent(matrix_node, &upstream_grad, None)?;
+    let grad_to_matrix = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
     assert_eq!(&grad_to_matrix, &upstream_grad);
 
     // 对 bias [1,3] 的梯度：-upstream_grad，然后沿 axis=0 求和
     // -[[1,1,1],[1,1,1]] = [[-1,-1,-1],[-1,-1,-1]]
     // sum([[-1,-1,-1],[-1,-1,-1]], axis=0) = [[-2,-2,-2]]
-    let grad_to_bias = result_node.calc_grad_to_parent(bias_node, &upstream_grad, None)?;
+    let grad_to_bias = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_to_bias.shape(), &[1, 3]);
     let expected_bias_grad = Tensor::new(&[-2., -2., -2.], &[1, 3]);
     assert_eq!(&grad_to_bias, &expected_bias_grad);
@@ -426,12 +437,16 @@ fn test_subtract_broadcast_backward_non_unit() -> Result<(), GraphError> {
     // upstream_grad = [[1,2,3], [4,5,6]]（非全 1）
     let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
     let result_node = graph.get_node(result)?;
+    let matrix_node = graph.get_node(matrix)?;
     let bias_node = graph.get_node(bias)?;
+
+    // 新签名：使用 parents 数组和索引
+    let parents = [matrix_node, bias_node];
 
     // 对 bias [1,3] 的梯度：-upstream_grad，然后沿 axis=0 求和
     // -[[1,2,3],[4,5,6]] = [[-1,-2,-3],[-4,-5,-6]]
     // sum([[-1,-2,-3],[-4,-5,-6]], axis=0) = [[-5,-7,-9]]
-    let grad_to_bias = result_node.calc_grad_to_parent(bias_node, &upstream_grad, None)?;
+    let grad_to_bias = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_to_bias.shape(), &[1, 3]);
     let expected = Tensor::new(&[-5., -7., -9.], &[1, 3]);
     assert_eq!(&grad_to_bias, &expected);

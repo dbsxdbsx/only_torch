@@ -774,6 +774,27 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - 优先使用展开式设计（当前 RNN/LSTM/GRU 层已采用）
 - 如需传统机制，改用语义标识或值传递
 
+> **决策记录**：传统 BPTT 机制（`step()` + `connect_recurrent()`）标记为 **deprecated**，
+> Phase 3 将评估是否完全废弃。当前展开式设计能覆盖 RNN/LSTM/GRU 的主要场景。
+
+### 4.7 `Weak<GraphInner>` 失效策略
+
+**设计决策**：当 `Var.graph.upgrade()` 返回 `None`（Graph 已销毁）时，选择 **Panic** 而非优雅降级。
+
+**理由**：
+- Var 的生命周期**不应该**超过 Graph，如果发生说明使用者代码有 bug
+- PyTorch 也是类似行为：autograd graph 销毁后使用 tensor 会报错
+- 早发现问题比静默错误更好
+
+**受影响的操作**：
+| 操作 | 是否依赖 Graph | 失效时行为 |
+|------|---------------|-----------|
+| 基础运算（add, matmul） | 是（获取新 NodeId） | **Panic** |
+| 检查 is_eval_mode | 是 | **Panic** |
+| backward（沿 parents 遍历） | 否（但需要 pass_id） | **Panic** |
+
+> 不提供全局 fallback，因为这会掩盖真正的 bug。
+
 ---
 
 ## 5. 实施路径
@@ -822,8 +843,6 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 
 #### Step 2.5：前向传播改造
 
-> 采用递归实现（与当前行为一致），如深度网络有栈溢出问题，后续再优化为迭代。
-
 - [x] **2.5.1** TraitNode 签名改造（方案 C）
   - `calc_value_by_parents` 签名从 `&[NodeHandle]` 改为 `&[&Tensor]`
   - 更新全部 44 个节点实现
@@ -846,22 +865,73 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - 1744 个现有测试全部通过
 
 #### Step 2.6：反向传播改造
-- [ ] 实现 `NodeInner::backward_recursive()` 基于 parents 遍历
-- [ ] 从 loss 向上拓扑逆序计算梯度
-- [ ] 使用 `last_backward_pass_id` 和 `is_detached` 控制流
-- [ ] Var.backward() 调用新实现
-- [ ] 适配 `zero_grad()`（清除参数节点的梯度，遍历 `parameters` 注册表）
-- [ ] 单元测试：反向传播正确性、梯度累积、detach 行为
+
+> 采用拓扑逆序遍历（与当前行为一致），不是简单递归。
+> 反向传播必须先有自己的梯度，才能传播到 parents；菱形 DAG 中梯度需要累积。
+
+- [x] **2.6.1** TraitNode 签名改造
+  - `calc_grad_to_parent` 签名从 `(&NodeHandle, &Tensor, Option<&NodeHandle>)` 
+    改为 `(usize, &[&Tensor], &Tensor)` 即 `(target_index, parent_values, upstream_grad)`
+  - 更新全部 ~40 个节点实现
+  - `NodeHandle::calc_grad_to_parent` 桥接：从父节点提取值后传递
+- [ ] **2.6.2** 实现 NodeInner 梯度传播方法
+  - `calc_grad_to_parent_index()`: 封装对 raw_node 的调用
+  - `propagate_grad_to_parents()`: 遍历 parents，计算并累积梯度
+  - 跳过 `is_detached` 的节点
+- [ ] **2.6.3** 实现拓扑逆序反向传播
+  - `backward_topo_order()`: 从 loss 开始，DFS 收集节点列表
+  - 遍历列表，逐个调用 `propagate_grad_to_parents()`
+  - 使用 `last_backward_pass_id` 避免重复处理
+- [ ] **2.6.4** GraphInner 集成新反向传播
+  - 新增 `backward_via_node_inner(&Rc<NodeInner>)` 方法
+  - 过渡期：保留旧 `backward()` 方法
+- [ ] **2.6.5** Var.backward() 过渡适配
+  - 如果 `self.node` 存在，使用 `backward_via_node_inner()`
+  - 否则回退到旧实现
+- [ ] **2.6.6** zero_grad 适配
+  - 遍历 Graph.parameters 注册表（Weak 引用）
+  - 清除每个参数节点的梯度
+- [ ] **2.6.7** 单元测试
+  - 基础反向传播正确性（简单链式）
+  - 菱形 DAG 梯度累积
+  - detach 行为（梯度不穿透）
+  - pass_id 去重
 
 #### Step 2.7：移除过渡代码
-- [ ] Var.graph 从 `Rc` 改为 `Weak<RefCell<GraphInner>>`
-- [ ] 移除 Var.node 的 `Option` 包装
-- [ ] 移除 GraphInner 的 `nodes: HashMap<NodeId, NodeHandle>`
-- [ ] 移除 GraphInner 的 `forward_edges`, `backward_edges`
-- [ ] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法，将 `new_from_shapes()` 重命名为 `new()`
+
+> 清理所有过渡期的冗余代码，统一使用新架构。
+
+**Var 结构清理**：
+- [ ] 移除 `Var.id` 字段（改用 `self.node.id()` 获取）
+- [ ] 移除 `Var.node` 的 `Option` 包装（直接 `node: Rc<NodeInner>`）
+- [ ] `Var.graph` 从 `Rc` 改为 `Weak<RefCell<GraphInner>>`
+- [ ] 简化 Var 方法中的条件分支（移除旧路径回退）：
+  - `node_id()`, `value_expected_shape()`, `is_detached()`
+  - `forward()`, `value()`, `set_value()`, `grad()`
 - [ ] Var 算子方法（`try_add` 等）迁移到新 API（`create_xxx_node`）
-- [ ] 移除 GraphInner 的旧节点创建 API（`new_xxx_node` 系列方法）
-- [ ] 更新所有依赖旧结构的代码
+
+**GraphInner 清理**：
+- [ ] 移除 `nodes: HashMap<NodeId, NodeHandle>`
+- [ ] 移除 `forward_edges`, `backward_edges`
+- [ ] 移除旧的 forward/backward 方法：
+  - `forward(NodeId)`, `backward(NodeId)`, `backward_ex()`, `backward_vjp_core()`
+- [ ] 移除 `get_node` 系列方法（依赖 nodes HashMap）：
+  - `get_node()`, `get_node_mut()`
+  - `get_node_parents()`, `get_node_children()`
+  - `get_node_name()`, `get_node_value()`, `get_node_grad()` 等
+- [ ] 移除旧节点创建 API（`new_xxx_node` 系列方法）
+
+**节点类型清理**：
+- [ ] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法
+- [ ] 将 `new_from_shapes()` 重命名为 `new()`
+- [ ] 移除 `NodeHandle` 的桥接方法：
+  - `calc_value_by_parents()` 桥接
+  - `calc_grad_to_parent()` 桥接
+- [ ] **删除 `NodeHandle` 结构体**（`src/nn/nodes/node_handle.rs`）
+  - `NodeInner` 已完全取代其职责
+  - 所有功能已迁移到 `NodeInner`
+
+**验证**：
 - [ ] 回归测试：所有现有测试通过
 
 #### Step 2.8：完整性验证
@@ -872,11 +942,10 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [ ] 验证 cartpole_sac 节点不累积（**核心目标**）
 
 **补充测试场景**（评审建议）：
-- [ ] 深度网络（100+ 层）：验证递归遍历不栈溢出
 - [ ] 高频创建销毁（10000+ 次/秒）：验证 Rc alloc/dealloc 性能
 - [ ] 菱形依赖（DAG）：验证多路径汇合时**梯度**正确累积
 - [ ] detach 后子图隔离：验证梯度不穿透 detach 边界
-- [ ] Graph 销毁后 Var 操作：验证 `Weak` 失效时的健壮性（panic 或优雅降级）
+- [ ] Graph 销毁后 Var 操作：验证 `Weak` 失效时正确 **panic**（见 4.7 节决策）
 
 ### Phase 3：功能适配
 
@@ -884,7 +953,10 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [ ] **删除** `src/nn/criterion.rs`（完全移除，统一用 Var 方法）
 - [ ] 可视化模块适配（改用 Var.visualize() 遍历 parents）
 - [ ] 序列化模块适配
-- [ ] BPTT/循环机制适配（移除 RNN 层内缓存）
+- [ ] BPTT/循环机制适配：
+  - 移除 RNN 层内缓存
+  - 评估传统 BPTT 机制（`step()` + `connect_recurrent()`）是否废弃
+  - 如保留，改用语义名称而非 NodeId 标识循环边
 
 ### Phase 4：验证与文档
 
@@ -892,6 +964,15 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [ ] 性能对比测试
 - [ ] 更新用户文档
 - [ ] 更新 architecture_roadmap.md
+- [ ] 补充迁移指南（ModelState/Criterion → Var 方法），示例：
+  ```rust
+  // 旧写法
+  let criterion = CrossEntropyLoss::new();
+  let loss = model_state.forward(|| criterion.forward(&out, &target))?;
+  
+  // 新写法
+  let loss = out.cross_entropy(&target)?;
+  ```
 
 ---
 
@@ -964,7 +1045,7 @@ fn mutate_remove_connection(&mut self) {
 | `src/nn/graph/handle.rs` | 适配 | Graph API 适配 |
 | `src/nn/model_state.rs` | **删除** | 完全移除，可视化改用 Var 遍历 |
 | `src/nn/criterion.rs` | **删除** | 完全移除，统一使用 Var 方法 |
-| `src/nn/nodes/node_handle.rs` | **重构** | 拆分为 NodeInner |
+| `src/nn/nodes/node_handle.rs` | **删除** | 被 NodeInner 完全取代，整个文件移除 |
 | `src/nn/graph/inner/visualization.rs` | 适配 | 适配新的节点遍历方式 |
 
 ---

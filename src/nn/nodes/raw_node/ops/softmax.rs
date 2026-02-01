@@ -128,9 +128,9 @@ impl TraitNode for Softmax {
     /// 其中 <dL/dy, y> 是上游梯度与 softmax 输出的内积。
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         let softmax_output = self.output_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("Softmax 缓存为空，需先执行前向传播".to_string())

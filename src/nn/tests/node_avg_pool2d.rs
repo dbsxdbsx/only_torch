@@ -240,7 +240,9 @@ fn test_avg_pool2d_batch_grad() -> Result<(), GraphError> {
     let pool_node = graph.get_node(pool_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = pool_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [input_node];
+    let grad = pool_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     assert_eq!(grad.shape(), &[1, 1, 4, 4]);
 

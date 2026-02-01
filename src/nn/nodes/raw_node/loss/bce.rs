@@ -189,9 +189,9 @@ impl TraitNode for BCE {
     /// - Sum: `dL/d_logits = sigmoid(logits) - target`
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         let sigmoid = self.sigmoid_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("sigmoid 缓存为空，需先执行前向传播".to_string())
@@ -200,7 +200,7 @@ impl TraitNode for BCE {
             GraphError::ComputationError("target 缓存为空，需先执行前向传播".to_string())
         })?;
 
-        if target_parent.id() == self.parents_ids[0] {
+        if target_parent_index == 0 {
             // 对 logits 的梯度: sigmoid - target
             let diff = sigmoid - target;
             let grad = match self.reduction {

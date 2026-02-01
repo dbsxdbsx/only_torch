@@ -345,25 +345,19 @@ impl TraitNode for Conv2d {
     /// - dL/dK: 使用输入和上游梯度的相关运算
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         let padded_input = self
             .padded_input
             .as_ref()
             .ok_or_else(|| GraphError::ComputationError("缺少填充后的输入缓存".to_string()))?;
 
-        let kernel = if target_parent.id() == self.parents_ids[0] {
-            assistant_parent
-                .ok_or_else(|| GraphError::ComputationError("计算输入梯度需要卷积核".to_string()))?
-                .value()
-                .ok_or_else(|| GraphError::ComputationError("卷积核没有值".to_string()))?
-        } else {
-            target_parent
-                .value()
-                .ok_or_else(|| GraphError::ComputationError("卷积核没有值".to_string()))?
-        };
+        // 获取卷积核（parent_values[1]）
+        let kernel = parent_values.get(1).ok_or_else(|| {
+            GraphError::ComputationError("Conv2D 梯度计算需要卷积核".to_string())
+        })?;
 
         // 输入必须是 4D [batch, C_out, H', W']
         let grad_shape = upstream_grad.shape();
@@ -377,7 +371,7 @@ impl TraitNode for Conv2d {
         let padded_shape = padded_input.shape();
         let in_c = padded_shape[1];
 
-        if target_parent.id() == self.parents_ids[0] {
+        if target_parent_index == 0 {
             // ========== 计算 dL/dX（对输入的梯度）==========
             let orig_input_shape = &self.input_shape;
             let (orig_in_h, orig_in_w) = (orig_input_shape[2], orig_input_shape[3]);

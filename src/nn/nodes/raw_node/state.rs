@@ -20,7 +20,7 @@ use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
-use super::{NodeHandle, TraitNode};
+use super::TraitNode;
 
 #[derive(Clone)]
 pub(crate) struct State {
@@ -144,9 +144,9 @@ impl TraitNode for State {
     /// State 节点不计算 grad（它是叶子节点），但会接收来自 BPTT 的 grad
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         Err(GraphError::InvalidOperation(format!(
             "{}是叶子节点，没有父节点来计算 grad",

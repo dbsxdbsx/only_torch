@@ -159,7 +159,8 @@ fn test_node_softplus_backward_vjp() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[1, 5]);
     let softplus_node = graph.get_node(softplus_id)?;
     let input_node = graph.get_node(input_id)?;
-    let grad = softplus_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = softplus_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // softplus 的导数是 sigmoid(x)
     // 预期: [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708]
@@ -188,7 +189,8 @@ fn test_node_softplus_backward_vjp_non_unit_upstream() -> Result<(), GraphError>
     let upstream_grad = Tensor::new(&[2.0, 3.0, 1.0, 0.5, 4.0, 2.0], &[2, 3]);
     let softplus_node = graph.get_node(softplus_id)?;
     let input_node = graph.get_node(input_id)?;
-    let grad = softplus_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = softplus_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // sigmoid 值: [0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935]
     // grad = upstream ⊙ sigmoid
@@ -452,7 +454,8 @@ fn test_softplus_derivative_is_sigmoid() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[1, 5]);
     let softplus_node = graph.get_node(softplus_id)?;
     let input_node = graph.get_node(input_id)?;
-    let grad = softplus_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = softplus_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 独立计算 sigmoid 作为预期值
     let mut graph2 = GraphInner::new();

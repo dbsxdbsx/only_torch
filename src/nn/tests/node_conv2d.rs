@@ -313,7 +313,10 @@ fn test_conv2d_grad_to_input() -> Result<(), GraphError> {
 
     // upstream_grad 形状与 conv 输出一致：[batch=1, C=1, H=1, W=1]
     let upstream_grad = Tensor::ones(&[1, 1, 1, 1]);
-    let grad = conv_node.calc_grad_to_parent(input_node, &upstream_grad, Some(kernel_node))?;
+
+    // 新签名：使用 parents 数组和索引
+    let parents = [input_node, kernel_node];
+    let grad = conv_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // VJP 模式下验证 grad 形状与 input 值一致：[batch=1, C=1, H=2, W=2]
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
@@ -411,8 +414,9 @@ fn test_conv2d_calc_grad_to_kernel_direct() -> Result<(), GraphError> {
     let kernel_node = graph.get_node(kernel_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    // 直接调用 NodeHandle 上的 calc_grad_to_parent
-    let grad = conv_node.calc_grad_to_parent(kernel_node, &upstream_grad, Some(input_node))?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [input_node, kernel_node];
+    let grad = conv_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
@@ -456,8 +460,9 @@ fn test_conv2d_calc_grad_to_input_direct() -> Result<(), GraphError> {
     let input_node = graph.get_node(input_id)?;
     let kernel_node = graph.get_node(kernel_id)?;
 
-    // 直接调用 NodeHandle 上的 calc_grad_to_parent
-    let grad = conv_node.calc_grad_to_parent(input_node, &upstream_grad, Some(kernel_node))?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [input_node, kernel_node];
+    let grad = conv_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     assert_eq!(grad.shape(), &[1, 1, 3, 3]);
 

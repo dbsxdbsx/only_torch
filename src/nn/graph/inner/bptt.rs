@@ -7,7 +7,7 @@
 use super::super::error::GraphError;
 use super::GraphInner;
 use crate::nn::NodeId;
-use crate::nn::nodes::NodeType;
+use crate::nn::nodes::{NodeHandle, NodeType};
 use crate::tensor::Tensor;
 
 impl GraphInner {
@@ -379,11 +379,18 @@ impl GraphInner {
                         continue;
                     }
 
-                    // 使用 VJP 模式计算梯度（关键：使用 calc_grad_to_parent 而非 calc_jacobi_to_a_parent）
-                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
-                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
+                    // 使用 VJP 模式计算梯度（新签名：target_index, parents, upstream_grad）
+                    let target_index = parent_ids
+                        .iter()
+                        .position(|&id| id == parent_id)
+                        .unwrap();
+                    let parents: Vec<&NodeHandle> = parent_ids
+                        .iter()
+                        .filter_map(|&id| self.get_node(id).ok())
+                        .collect();
 
-                    let local_grad = node.calc_grad_to_parent(parent, &upstream_grad, assistant)?;
+                    let local_grad =
+                        node.calc_grad_to_parent(target_index, &parents, &upstream_grad)?;
 
                     contributions.push((parent_id, local_grad, is_param, is_state));
                 }
@@ -468,11 +475,18 @@ impl GraphInner {
                         _ => {}
                     }
 
-                    // 使用 VJP 计算梯度
-                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
-                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
+                    // 使用 VJP 计算梯度（新签名：target_index, parents, upstream_grad）
+                    let target_index = parent_ids
+                        .iter()
+                        .position(|&id| id == parent_id)
+                        .unwrap();
+                    let parents: Vec<&NodeHandle> = parent_ids
+                        .iter()
+                        .filter_map(|&id| self.get_node(id).ok())
+                        .collect();
 
-                    let local_grad = node.calc_grad_to_parent(parent, &upstream_grad, assistant)?;
+                    let local_grad =
+                        node.calc_grad_to_parent(target_index, &parents, &upstream_grad)?;
 
                     let should_update = target_nodes.contains(&parent_id);
                     contributions.push((parent_id, local_grad, should_update));
@@ -604,11 +618,18 @@ impl GraphInner {
                         continue;
                     }
 
-                    // 使用 VJP 计算梯度
-                    let assistant_parent = parent_ids.iter().find(|&&id| id != parent_id).copied();
-                    let assistant = assistant_parent.map(|id| self.get_node(id)).transpose()?;
+                    // 使用 VJP 计算梯度（新签名：target_index, parents, upstream_grad）
+                    let target_index = parent_ids
+                        .iter()
+                        .position(|&id| id == parent_id)
+                        .unwrap();
+                    let parents: Vec<&NodeHandle> = parent_ids
+                        .iter()
+                        .filter_map(|&id| self.get_node(id).ok())
+                        .collect();
 
-                    let local_grad = node.calc_grad_to_parent(parent, &upstream_grad, assistant)?;
+                    let local_grad =
+                        node.calc_grad_to_parent(target_index, &parents, &upstream_grad)?;
 
                     if debug {
                         println!("        -> local_grad={:?}", local_grad.data_as_slice());

@@ -261,8 +261,9 @@ fn test_mat_mul_backward_to_left() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
-    // MatMul 需要 assistant_parent（另一个操作数）
-    let grad = result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+    let grad = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad_to_left = upstream @ right^T
     // upstream=[2,4], right^T=[4,3] → grad=[2,3]
@@ -303,7 +304,9 @@ fn test_mat_mul_backward_to_right() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
-    let grad = result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+    let grad = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
 
     // grad_to_right = left^T @ upstream
     // left^T=[3,2], upstream=[2,4] → grad=[3,4]
@@ -336,15 +339,16 @@ fn test_mat_mul_backward_with_non_unit_upstream() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+
     // 对 left 的梯度：upstream @ right^T
-    let grad_to_left =
-        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let grad_to_left = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     let expected_left = upstream_grad.mat_mul(&right_value.transpose());
     assert_eq!(&grad_to_left, &expected_left);
 
     // 对 right 的梯度：left^T @ upstream
-    let grad_to_right =
-        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let grad_to_right = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     let expected_right = left_value.transpose().mat_mul(&upstream_grad);
     assert_eq!(&grad_to_right, &expected_right);
 
@@ -383,15 +387,16 @@ fn test_mat_mul_backward_with_negative_values() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+
     // grad_to_left = upstream @ right^T
-    let grad_to_left =
-        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let grad_to_left = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     let expected_left = upstream_grad.mat_mul(&right_value.transpose());
     assert_eq!(&grad_to_left, &expected_left);
 
     // grad_to_right = left^T @ upstream
-    let grad_to_right =
-        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let grad_to_right = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     let expected_right = left_value.transpose().mat_mul(&upstream_grad);
     assert_eq!(&grad_to_right, &expected_right);
 
@@ -427,23 +432,24 @@ fn test_mat_mul_backward_with_zero_value() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+
     // 即使有零值，梯度仍应正确计算
-    let grad_to_left =
-        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let grad_to_left = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     let expected_left = upstream_grad.mat_mul(&right_value.transpose());
     assert_eq!(&grad_to_left, &expected_left);
 
-    let grad_to_right =
-        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let grad_to_right = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     let expected_right = left_value.transpose().mat_mul(&upstream_grad);
     assert_eq!(&grad_to_right, &expected_right);
 
     Ok(())
 }
 
-/// 测试 MatMul 梯度计算缺少 assistant_parent 时报错
+/// 测试 MatMul 梯度计算父节点索引越界时报错
 #[test]
-fn test_mat_mul_backward_missing_assistant_parent() -> Result<(), GraphError> {
+fn test_mat_mul_backward_invalid_parent_index() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 3], Some("left"))?;
@@ -458,15 +464,17 @@ fn test_mat_mul_backward_missing_assistant_parent() -> Result<(), GraphError> {
     graph.set_node_value(right_id, Some(&Tensor::new(&[1.0; 12], &[3, 4])))?;
     graph.forward(result_id)?;
 
-    // 直接测试 VJP，不传 assistant_parent（应该报错）
+    // 直接测试 VJP，使用越界索引（应该报错）
     let upstream_grad = Tensor::ones(&[2, 4]);
     let result_node = graph.get_node(result_id)?;
     let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
 
-    let result = result_node.calc_grad_to_parent(left_node, &upstream_grad, None);
+    let parents = [left_node, right_node];
+    let result = result_node.calc_grad_to_parent(2, &parents, &upstream_grad); // 索引 2 越界
     assert_err!(
         result,
-        GraphError::ComputationError("MatMul 需要辅助父节点来计算梯度")
+        GraphError::ComputationError("MatMul 节点只有 2 个父节点，索引 2 无效")
     );
 
     Ok(())

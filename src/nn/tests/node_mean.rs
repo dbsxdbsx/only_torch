@@ -232,7 +232,8 @@ fn test_mean_backward_vjp_global() -> Result<(), GraphError> {
     let mean_node = graph.get_node(mean_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = mean_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = mean_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[2, 3]);
@@ -265,7 +266,8 @@ fn test_mean_backward_vjp_axis() -> Result<(), GraphError> {
     let mean_node = graph.get_node(mean_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = mean_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = mean_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[2, 3]);

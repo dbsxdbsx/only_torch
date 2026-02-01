@@ -190,8 +190,9 @@ fn test_multiply_backward_to_left() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
-    // Multiply 需要 assistant_parent（另一个操作数）
-    let grad = result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+    let grad = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad_to_left = upstream ⊙ right = ones ⊙ [5,6,7,8] = [5,6,7,8]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -225,7 +226,9 @@ fn test_multiply_backward_to_right() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
-    let grad = result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+    let grad = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
 
     // grad_to_right = upstream ⊙ left = ones ⊙ [1,2,3,4] = [1,2,3,4]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -256,15 +259,16 @@ fn test_multiply_backward_with_non_unit_upstream() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+
     // 对 left 的梯度：upstream ⊙ right = [2,2,2,2] ⊙ [5,6,7,8] = [10,12,14,16]
-    let grad_to_left =
-        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let grad_to_left = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     let expected_left = Tensor::new(&[10.0, 12.0, 14.0, 16.0], &[2, 2]);
     assert_eq!(&grad_to_left, &expected_left);
 
     // 对 right 的梯度：upstream ⊙ left = [2,2,2,2] ⊙ [1,2,3,4] = [2,4,6,8]
-    let grad_to_right =
-        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let grad_to_right = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     let expected_right = Tensor::new(&[2.0, 4.0, 6.0, 8.0], &[2, 2]);
     assert_eq!(&grad_to_right, &expected_right);
 
@@ -300,14 +304,15 @@ fn test_multiply_backward_with_negative_values() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+
     // grad_to_left = upstream ⊙ right = [[5,-6],[7,-8]]
-    let grad_to_left =
-        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let grad_to_left = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_left, &right_value);
 
     // grad_to_right = upstream ⊙ left = [[-1,2],[-3,4]]
-    let grad_to_right =
-        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let grad_to_right = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_right, &left_value);
 
     Ok(())
@@ -341,23 +346,24 @@ fn test_multiply_backward_with_zero_value() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+
     // 即使输出全为 0，梯度仍应正确计算
     // grad_to_left = upstream ⊙ right = [[5,0],[0,8]]
-    let grad_to_left =
-        result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    let grad_to_left = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_left, &right_value);
 
     // grad_to_right = upstream ⊙ left = [[0,2],[3,0]]
-    let grad_to_right =
-        result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    let grad_to_right = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_right, &left_value);
 
     Ok(())
 }
 
-/// 测试 Multiply 梯度计算缺少 assistant_parent 时报错
+/// 测试 Multiply 梯度计算父节点索引越界时报错
 #[test]
-fn test_multiply_backward_missing_assistant_parent() -> Result<(), GraphError> {
+fn test_multiply_backward_invalid_parent_index() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
@@ -369,15 +375,17 @@ fn test_multiply_backward_missing_assistant_parent() -> Result<(), GraphError> {
     graph.set_node_value(right_id, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
     graph.forward(result_id)?;
 
-    // 直接测试 VJP，不传 assistant_parent（应该报错）
+    // 直接测试 VJP，使用越界索引（应该报错）
     let upstream_grad = Tensor::ones(&[2, 2]);
     let result_node = graph.get_node(result_id)?;
     let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
 
-    let result = result_node.calc_grad_to_parent(left_node, &upstream_grad, None);
+    let parents = [left_node, right_node];
+    let result = result_node.calc_grad_to_parent(2, &parents, &upstream_grad); // 索引 2 越界
     assert_err!(
         result,
-        GraphError::ComputationError("Multiply 节点计算梯度需要辅助父节点")
+        GraphError::ComputationError("Multiply 梯度计算时父节点索引 2 超出范围")
     );
 
     Ok(())
@@ -584,10 +592,12 @@ fn test_multiply_broadcast_backward() -> Result<(), GraphError> {
     let matrix_node = graph.get_node(matrix)?;
     let scale_node = graph.get_node(scale)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [matrix_node, scale_node];
+
     // 对 matrix [2,3] 的梯度：upstream ⊙ scale（广播后）
     // upstream ⊙ [[2,3,4],[2,3,4]] = [[2,3,4],[2,3,4]]
-    let grad_to_matrix =
-        result_node.calc_grad_to_parent(matrix_node, &upstream_grad, Some(scale_node))?;
+    let grad_to_matrix = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
     let expected_matrix_grad = Tensor::new(&[2., 3., 4., 2., 3., 4.], &[2, 3]);
     assert_eq!(&grad_to_matrix, &expected_matrix_grad);
@@ -595,8 +605,7 @@ fn test_multiply_broadcast_backward() -> Result<(), GraphError> {
     // 对 scale [1,3] 的梯度：upstream ⊙ matrix，然后沿 axis=0 求和
     // upstream ⊙ [[1,2,3],[4,5,6]] = [[1,2,3],[4,5,6]]
     // sum([[1,2,3],[4,5,6]], axis=0) = [[5,7,9]]
-    let grad_to_scale =
-        result_node.calc_grad_to_parent(scale_node, &upstream_grad, Some(matrix_node))?;
+    let grad_to_scale = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_to_scale.shape(), &[1, 3]);
     let expected_scale_grad = Tensor::new(&[5., 7., 9.], &[1, 3]);
     assert_eq!(&grad_to_scale, &expected_scale_grad);
@@ -632,11 +641,13 @@ fn test_multiply_broadcast_backward_non_unit() -> Result<(), GraphError> {
     let matrix_node = graph.get_node(matrix)?;
     let scale_node = graph.get_node(scale)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [matrix_node, scale_node];
+
     // 对 scale [1,3] 的梯度：upstream ⊙ matrix，然后沿 axis=0 求和
     // [[1,2,3],[4,5,6]] ⊙ [[1,2,3],[4,5,6]] = [[1,4,9],[16,25,36]]
     // sum([[1,4,9],[16,25,36]], axis=0) = [[17,29,45]]
-    let grad_to_scale =
-        result_node.calc_grad_to_parent(scale_node, &upstream_grad, Some(matrix_node))?;
+    let grad_to_scale = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_to_scale.shape(), &[1, 3]);
     let expected = Tensor::new(&[17., 29., 45.], &[1, 3]);
     assert_eq!(&grad_to_scale, &expected);
@@ -866,11 +877,7 @@ fn test_create_multiply_auto_name() {
         .unwrap();
 
     let name = mul.name().unwrap();
-    assert!(
-        name.contains("multiply"),
-        "名称应包含 'multiply': {}",
-        name
-    );
+    assert!(name.contains("multiply"), "名称应包含 'multiply': {}", name);
 }
 
 #[test]

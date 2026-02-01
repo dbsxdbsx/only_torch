@@ -14,7 +14,6 @@ pub(crate) use basic::BasicInput;
 pub(crate) use smart::SmartInput;
 
 use super::TraitNode;
-use crate::nn::nodes::NodeHandle;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
@@ -197,16 +196,16 @@ impl TraitNode for InputVariant {
 
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         match self {
             Self::Data(_) => Err(GraphError::InvalidOperation(
                 "BasicInput 没有父节点，不应计算父节点梯度".to_string(),
             )),
             Self::Target(inner) | Self::Smart(inner) | Self::RecurrentOutput(inner) => {
-                inner.calc_grad_to_parent(target_parent, upstream_grad, assistant_parent)
+                inner.calc_grad_to_parent(target_parent_index, parent_values, upstream_grad)
             }
         }
     }

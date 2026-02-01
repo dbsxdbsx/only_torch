@@ -107,9 +107,9 @@ impl TraitNode for Abs {
     /// 在 x=0 处，sign(0) = 0，所以梯度也为 0（与 `PyTorch` 行为一致）
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // 获取缓存的父节点值
         let parent_value = self.parent_value_cache.as_ref().ok_or_else(|| {

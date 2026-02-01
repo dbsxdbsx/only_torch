@@ -20,7 +20,6 @@
  * - 可视化时 batch 维度显示为 `?`
  */
 
-use crate::nn::nodes::NodeHandle;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
@@ -185,9 +184,9 @@ impl TraitNode for SmartInput {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // SmartInput 没有父节点，不需要计算对父节点的梯度
         // 梯度路由由 GraphInner 的 backward 逻辑处理

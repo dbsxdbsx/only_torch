@@ -161,9 +161,9 @@ impl TraitNode for Select {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Select 的反向传播：将梯度放回对应位置，其他位置为 0
         //

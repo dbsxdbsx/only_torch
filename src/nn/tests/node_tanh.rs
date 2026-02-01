@@ -154,7 +154,8 @@ fn test_tanh_backward_vjp() -> Result<(), GraphError> {
     let input_node = graph.get_node(input_id)?;
 
     // Tanh 不需要 assistant_parent
-    let grad = tanh_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = tanh_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad * (1 - tanh(x)²)
     // tanh([0.5, -1.0, 0.0, 2.0]) = [0.4621, -0.7616, 0.0, 0.9640]
@@ -186,7 +187,8 @@ fn test_tanh_backward_with_non_unit_upstream() -> Result<(), GraphError> {
     let tanh_node = graph.get_node(tanh_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = tanh_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = tanh_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad * (1 - tanh²)
     // (1 - tanh²) = [0.7864, 0.4200, 1.0, 0.0707]
@@ -219,7 +221,8 @@ fn test_tanh_backward_saturation() -> Result<(), GraphError> {
     let tanh_node = graph.get_node(tanh_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = tanh_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = tanh_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // tanh(±5) ≈ ±0.9999，1 - tanh² ≈ 0.0002（梯度接近 0）
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-3);

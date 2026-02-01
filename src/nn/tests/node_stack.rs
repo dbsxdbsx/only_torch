@@ -429,9 +429,13 @@ fn test_stack_backward_to_first_parent_stack_mode() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[2, 2, 2]);
     let stack_node = graph.get_node(stack)?;
     let p1_node = graph.get_node(p1)?;
+    let p2_node = graph.get_node(p2)?;
+
+    // 新签名：使用 parents 数组和索引
+    let parents = [p1_node, p2_node];
 
     // stack 模式下，每个父节点的梯度是 upstream_grad 在 axis 维度的对应切片
-    let grad = stack_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    let grad = stack_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // p1 对应 upstream_grad[0, :, :] = [[1,1],[1,1]]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -457,10 +461,14 @@ fn test_stack_backward_to_second_parent_stack_mode() -> Result<(), GraphError> {
     // upstream_grad = [[[1,2],[3,4]], [[5,6],[7,8]]]
     let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2]);
     let stack_node = graph.get_node(stack)?;
+    let p1_node = graph.get_node(p1)?;
     let p2_node = graph.get_node(p2)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [p1_node, p2_node];
+
     // p2 对应 upstream_grad[1, :, :] = [[5,6],[7,8]]
-    let grad = stack_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    let grad = stack_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
 
     assert_eq!(grad.shape(), &[2, 2]);
     let expected = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]);
@@ -502,14 +510,17 @@ fn test_stack_backward_stack_mode_axis1() -> Result<(), GraphError> {
     let p1_node = graph.get_node(p1)?;
     let p2_node = graph.get_node(p2)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [p1_node, p2_node];
+
     // p1 对应 upstream_grad[:, 0, :] = [[1,2,3],[7,8,9]]
-    let grad_p1 = stack_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    let grad_p1 = stack_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(grad_p1.shape(), &[2, 3]);
     let expected_p1 = Tensor::new(&[1.0, 2.0, 3.0, 7.0, 8.0, 9.0], &[2, 3]);
     assert_eq!(&grad_p1, &expected_p1);
 
     // p2 对应 upstream_grad[:, 1, :] = [[4,5,6],[10,11,12]]
-    let grad_p2 = stack_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    let grad_p2 = stack_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_p2.shape(), &[2, 3]);
     let expected_p2 = Tensor::new(&[4.0, 5.0, 6.0, 10.0, 11.0, 12.0], &[2, 3]);
     assert_eq!(&grad_p2, &expected_p2);
@@ -544,14 +555,17 @@ fn test_stack_backward_concat_mode_axis1() -> Result<(), GraphError> {
     let p1_node = graph.get_node(p1)?;
     let p2_node = graph.get_node(p2)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [p1_node, p2_node];
+
     // p1 对应 upstream_grad[:, 0:2] = [[1,2],[6,7]]
-    let grad_p1 = stack_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    let grad_p1 = stack_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(grad_p1.shape(), &[2, 2]);
     let expected_p1 = Tensor::new(&[1.0, 2.0, 6.0, 7.0], &[2, 2]);
     assert_eq!(&grad_p1, &expected_p1);
 
     // p2 对应 upstream_grad[:, 2:5] = [[3,4,5],[8,9,10]]
-    let grad_p2 = stack_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    let grad_p2 = stack_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_p2.shape(), &[2, 3]);
     let expected_p2 = Tensor::new(&[3.0, 4.0, 5.0, 8.0, 9.0, 10.0], &[2, 3]);
     assert_eq!(&grad_p2, &expected_p2);
@@ -579,14 +593,17 @@ fn test_stack_backward_concat_mode() -> Result<(), GraphError> {
     let p1_node = graph.get_node(p1)?;
     let p2_node = graph.get_node(p2)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [p1_node, p2_node];
+
     // p1 对应 upstream_grad[0:2, :] = [[1,2],[3,4]]
-    let grad_p1 = stack_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    let grad_p1 = stack_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(grad_p1.shape(), &[2, 2]);
     let expected_p1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     assert_eq!(&grad_p1, &expected_p1);
 
     // p2 对应 upstream_grad[2:3, :] = [[5,6]]
-    let grad_p2 = stack_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    let grad_p2 = stack_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_p2.shape(), &[1, 2]);
     let expected_p2 = Tensor::new(&[5.0, 6.0], &[1, 2]);
     assert_eq!(&grad_p2, &expected_p2);

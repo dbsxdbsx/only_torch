@@ -138,30 +138,26 @@ impl TraitNode for Divide {
     /// 当 A 或 B 被广播时，梯度需要沿广播维度求和
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // 获取辅助父节点
-        let assistant = assistant_parent.ok_or_else(|| {
-            GraphError::ComputationError("Divide 节点计算梯度需要辅助父节点".to_string())
+        // 获取目标父节点的值和形状
+        let target_value = parent_values.get(target_parent_index).ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "Divide 梯度计算时父节点索引 {} 超出范围",
+                target_parent_index
+            ))
         })?;
+        let target_shape = target_value.shape();
 
-        // 使用实际值的形状（支持动态 batch）
-        let target_shape = target_parent
-            .value()
-            .ok_or_else(|| {
-                GraphError::ComputationError(format!("Divide 梯度计算时父{target_parent}没有值"))
-            })?
-            .shape();
-
-        if target_parent.id() == self.parents_ids[0] {
+        if target_parent_index == 0 {
             // target 是 left (A)，assistant 是 right (B)
             // ∂L/∂A = upstream_grad / B，然后 sum_to_shape
-            let b_value = assistant.value().ok_or_else(|| {
-                GraphError::ComputationError(format!("{} 的辅助父节点没有值", self.display_node()))
+            let b_value = parent_values.get(1).ok_or_else(|| {
+                GraphError::ComputationError(format!("{} 的右父节点没有值", self.display_node()))
             })?;
-            let local_grad = upstream_grad / b_value;
+            let local_grad = upstream_grad / *b_value;
 
             // 如果 A 被广播过，需要沿广播维度求和
             if local_grad.shape() == target_shape {
@@ -169,18 +165,16 @@ impl TraitNode for Divide {
             } else {
                 Ok(local_grad.sum_to_shape(target_shape))
             }
-        } else if target_parent.id() == self.parents_ids[1] {
+        } else if target_parent_index == 1 {
             // target 是 right (B)，assistant 是 left (A)
             // ∂L/∂B = -upstream_grad * A / B²，然后 sum_to_shape
-            let a_value = assistant.value().ok_or_else(|| {
-                GraphError::ComputationError(format!("{} 的辅助父节点没有值", self.display_node()))
+            let a_value = parent_values.get(0).ok_or_else(|| {
+                GraphError::ComputationError(format!("{} 的左父节点没有值", self.display_node()))
             })?;
-            let b_value = target_parent.value().ok_or_else(|| {
-                GraphError::ComputationError(format!("{} 的目标父节点没有值", self.display_node()))
-            })?;
+            let b_value = *target_value;
             // -upstream_grad * A / B²
             let b_squared = b_value * b_value;
-            let neg_grad_a = &(upstream_grad * a_value) * (-1.0_f32);
+            let neg_grad_a = &(upstream_grad * *a_value) * (-1.0_f32);
             let local_grad = &neg_grad_a / &b_squared;
 
             // 如果 B 被广播过，需要沿广播维度求和
@@ -191,9 +185,8 @@ impl TraitNode for Divide {
             }
         } else {
             Err(GraphError::ComputationError(format!(
-                "{} 不是当前 {} 的父节点",
-                target_parent,
-                self.display_node()
+                "Divide 节点只有 2 个父节点，索引 {} 无效",
+                target_parent_index
             )))
         }
     }

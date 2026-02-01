@@ -164,7 +164,8 @@ fn test_sigmoid_backward_vjp() -> Result<(), GraphError> {
     let input_node = graph.get_node(input_id)?;
 
     // Sigmoid 不需要 assistant_parent
-    let grad = sigmoid_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = sigmoid_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad * sigmoid(x) * (1 - sigmoid(x))
     // sigmoid([0.5, -1.0, 0.0, 2.0]) = [0.6225, 0.2689, 0.5, 0.8808]
@@ -196,7 +197,8 @@ fn test_sigmoid_backward_with_non_unit_upstream() -> Result<(), GraphError> {
     let sigmoid_node = graph.get_node(sigmoid_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = sigmoid_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = sigmoid_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad * y * (1 - y)
     // y * (1-y) = [0.2350, 0.1966, 0.25, 0.1050]
@@ -229,7 +231,8 @@ fn test_sigmoid_backward_saturation() -> Result<(), GraphError> {
     let sigmoid_node = graph.get_node(sigmoid_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = sigmoid_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = sigmoid_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // sigmoid(5) ≈ 0.9933，sigmoid(-5) ≈ 0.0067
     // y*(1-y) ≈ 0.0066（两者都接近 0）

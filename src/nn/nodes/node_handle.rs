@@ -582,14 +582,24 @@ impl NodeHandle {
     // ========== 梯度（VJP 模式）==========
 
     /// 计算本节点对父节点的梯度（VJP 模式）
+    ///
+    /// # 参数
+    /// - `target_parent_index`: 目标父节点在 parents 中的索引
+    /// - `parents`: 所有父节点的引用
+    /// - `upstream_grad`: 上游传来的梯度
     pub(in crate::nn) fn calc_grad_to_parent(
         &self,
-        parent: &Self,
+        target_parent_index: usize,
+        parents: &[&Self],
         upstream_grad: &Tensor,
-        assistant_parent: Option<&Self>,
     ) -> Result<Tensor, GraphError> {
+        // 桥接：从 NodeHandle 提取值，传递给 raw_node
+        let parent_values: Vec<&Tensor> = parents
+            .iter()
+            .filter_map(|p| p.value())
+            .collect();
         self.raw_node
-            .calc_grad_to_parent(parent, upstream_grad, assistant_parent)
+            .calc_grad_to_parent(target_parent_index, &parent_values, upstream_grad)
     }
 
     /// 获取节点的梯度

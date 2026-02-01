@@ -237,7 +237,8 @@ fn test_log_softmax_backward_vjp() -> Result<(), GraphError> {
     let log_softmax_node = graph.get_node(log_softmax_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = log_softmax_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = log_softmax_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[2, 3]);
@@ -272,7 +273,8 @@ fn test_log_softmax_backward_with_non_unit_upstream() -> Result<(), GraphError> 
     let log_softmax_node = graph.get_node(log_softmax_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = log_softmax_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = log_softmax_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[1, 3]);

@@ -219,21 +219,12 @@ impl TraitNode for Stack {
 
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        // 通过父节点 ID 查找索引
-        let target_id = target_parent.id();
-        let idx = self
-            .parent_ids
-            .iter()
-            .position(|&id| id == target_id)
-            .ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "Stack 无法找到父节点 {target_parent} (id={target_id}) 的索引"
-                ))
-            })?;
+        // 使用传入的索引（新签名直接提供索引）
+        let idx = target_parent_index;
 
         // 计算该父节点在 axis 维度的起始偏移
         let start_offset: usize = self.parent_sizes[..idx].iter().sum();

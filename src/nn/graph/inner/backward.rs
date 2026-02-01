@@ -171,8 +171,14 @@ impl GraphInner {
                 None => return Ok(()),
             };
 
+            // 收集所有父节点（用于新签名）
+            let parents: Vec<_> = parent_ids
+                .iter()
+                .filter_map(|&id| self.get_node(id).ok())
+                .collect();
+
             let mut grads = Vec::with_capacity(parent_ids.len());
-            for parent_id in &parent_ids {
+            for (target_index, parent_id) in parent_ids.iter().enumerate() {
                 let parent = self.get_node(*parent_id)?;
 
                 if let NodeType::Input(variant) = parent.node_type() {
@@ -189,12 +195,8 @@ impl GraphInner {
                     continue;
                 }
 
-                let assistant_parent_id = parent_ids.iter().find(|&&id| id != *parent_id).copied();
-                let assistant = assistant_parent_id
-                    .map(|id| self.get_node(id))
-                    .transpose()?;
-
-                let parent_grad = node.calc_grad_to_parent(parent, upstream_grad, assistant)?;
+                // 新签名：(target_index, parents, upstream_grad)
+                let parent_grad = node.calc_grad_to_parent(target_index, &parents, upstream_grad)?;
                 grads.push((*parent_id, parent_grad));
             }
             grads

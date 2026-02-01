@@ -267,9 +267,9 @@ impl TraitNode for MaxPool2d {
     /// - 其他位置：梯度 = 0
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         let max_indices = self
             .max_indices

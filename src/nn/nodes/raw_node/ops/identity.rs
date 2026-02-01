@@ -154,9 +154,9 @@ impl TraitNode for Identity {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // 直接传递上游梯度（Identity 的局部梯度是 1）
         Ok(upstream_grad.clone())

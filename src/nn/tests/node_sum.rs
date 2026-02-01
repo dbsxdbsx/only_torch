@@ -217,7 +217,8 @@ fn test_sum_backward_vjp_global() -> Result<(), GraphError> {
     let sum_node = graph.get_node(sum_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = sum_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = sum_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[2, 3]);
@@ -250,7 +251,8 @@ fn test_sum_backward_vjp_axis() -> Result<(), GraphError> {
     let sum_node = graph.get_node(sum_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = sum_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = sum_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[2, 3]);

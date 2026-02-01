@@ -139,20 +139,22 @@ impl TraitNode for Add {
 
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Add 节点的局部梯度是 identity，但需要处理广播
         // 如果父节点被广播过，需要将梯度沿广播维度求和
         //
         // 注意：使用实际值的形状（支持动态 batch），而不是 value_expected_shape
-        let target_shape = target_parent
-            .value()
-            .ok_or_else(|| {
-                GraphError::ComputationError(format!("Add 梯度计算时父{target_parent}没有值"))
-            })?
-            .shape();
+        let target_value = parent_values.get(target_parent_index).ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "Add 梯度计算时父节点索引 {} 超出范围（共 {} 个父节点）",
+                target_parent_index,
+                parent_values.len()
+            ))
+        })?;
+        let target_shape = target_value.shape();
 
         if upstream_grad.shape() == target_shape {
             // 形状匹配，直接传递

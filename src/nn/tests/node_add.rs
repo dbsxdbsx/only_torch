@@ -236,13 +236,15 @@ fn test_add_backward_to_first_parent() -> Result<(), GraphError> {
     graph.set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
     graph.forward(add)?;
 
-    // 直接测试 VJP
+    // 直接测试 VJP（新签名：target_index, parents, upstream_grad）
     let upstream_grad = Tensor::ones(&[2, 2]);
     let add_node = graph.get_node(add)?;
     let p1_node = graph.get_node(p1)?;
+    let p2_node = graph.get_node(p2)?;
+    let parents = [p1_node, p2_node];
 
-    // Add 不需要 assistant_parent，梯度直接传递
-    let grad = add_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    // Add 梯度恒等传递，索引 0 表示第一个父节点
+    let grad = add_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad_to_p1 = upstream_grad（恒等传递）
     assert_eq!(grad.shape(), &[2, 2]);
@@ -268,12 +270,15 @@ fn test_add_backward_to_second_parent() -> Result<(), GraphError> {
     graph.set_node_value(p2, Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))?;
     graph.forward(add)?;
 
-    // 直接测试 VJP
+    // 直接测试 VJP（新签名：target_index, parents, upstream_grad）
     let upstream_grad = Tensor::ones(&[2, 2]);
     let add_node = graph.get_node(add)?;
+    let p1_node = graph.get_node(p1)?;
     let p2_node = graph.get_node(p2)?;
+    let parents = [p1_node, p2_node];
 
-    let grad = add_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    // 索引 1 表示第二个父节点
+    let grad = add_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
 
     // grad_to_p2 = upstream_grad（恒等传递）
     assert_eq!(grad.shape(), &[2, 2]);
@@ -301,13 +306,14 @@ fn test_add_backward_with_non_unit_upstream() -> Result<(), GraphError> {
     let add_node = graph.get_node(add)?;
     let p1_node = graph.get_node(p1)?;
     let p2_node = graph.get_node(p2)?;
+    let parents = [p1_node, p2_node];
 
-    // 对 p1 的梯度：直接传递 upstream_grad
-    let grad_to_p1 = add_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
+    // 对 p1 的梯度：直接传递 upstream_grad（索引 0）
+    let grad_to_p1 = add_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_p1, &upstream_grad);
 
-    // 对 p2 的梯度：直接传递 upstream_grad
-    let grad_to_p2 = add_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    // 对 p2 的梯度：直接传递 upstream_grad（索引 1）
+    let grad_to_p2 = add_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_p2, &upstream_grad);
 
     Ok(())
@@ -339,10 +345,11 @@ fn test_add_backward_with_negative_values() -> Result<(), GraphError> {
     let add_node = graph.get_node(add)?;
     let p1_node = graph.get_node(p1)?;
     let p2_node = graph.get_node(p2)?;
+    let parents = [p1_node, p2_node];
 
     // Add 的梯度恒等传递，与值无关
-    let grad_to_p1 = add_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
-    let grad_to_p2 = add_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
+    let grad_to_p1 = add_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
+    let grad_to_p2 = add_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_p1, &upstream_grad);
     assert_eq!(&grad_to_p2, &upstream_grad);
 
@@ -371,11 +378,12 @@ fn test_add_backward_three_parents() -> Result<(), GraphError> {
     let p1_node = graph.get_node(p1)?;
     let p2_node = graph.get_node(p2)?;
     let p3_node = graph.get_node(p3)?;
+    let parents = [p1_node, p2_node, p3_node];
 
-    // 所有父节点的梯度都相同，等于 upstream_grad
-    let grad_to_p1 = add_node.calc_grad_to_parent(p1_node, &upstream_grad, None)?;
-    let grad_to_p2 = add_node.calc_grad_to_parent(p2_node, &upstream_grad, None)?;
-    let grad_to_p3 = add_node.calc_grad_to_parent(p3_node, &upstream_grad, None)?;
+    // 所有父节点的梯度都相同，等于 upstream_grad（索引 0, 1, 2）
+    let grad_to_p1 = add_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
+    let grad_to_p2 = add_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
+    let grad_to_p3 = add_node.calc_grad_to_parent(2, &parents, &upstream_grad)?;
 
     assert_eq!(&grad_to_p1, &upstream_grad);
     assert_eq!(&grad_to_p2, &upstream_grad);
@@ -636,21 +644,22 @@ fn test_add_broadcast_backward() -> Result<(), GraphError> {
     graph.set_node_value(bias, Some(&Tensor::new(&[10., 20., 30., 40.], &[1, 4])))?;
     graph.forward(result)?;
 
-    // 直接测试 VJP
+    // 直接测试 VJP（新签名：target_index, parents, upstream_grad）
     // upstream_grad = [[1,1,1,1], [1,1,1,1], [1,1,1,1]] (全1)
     let upstream_grad = Tensor::ones(&[3, 4]);
     let result_node = graph.get_node(result)?;
     let matrix_node = graph.get_node(matrix)?;
     let bias_node = graph.get_node(bias)?;
+    let parents = [matrix_node, bias_node];
 
-    // 对 matrix [3,4] 的梯度：直接传递 upstream_grad
-    let grad_to_matrix = result_node.calc_grad_to_parent(matrix_node, &upstream_grad, None)?;
+    // 对 matrix [3,4] 的梯度：直接传递 upstream_grad（索引 0）
+    let grad_to_matrix = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(grad_to_matrix.shape(), &[3, 4]);
     assert_eq!(&grad_to_matrix, &upstream_grad);
 
-    // 对 bias [1,4] 的梯度：沿 axis=0 求和
+    // 对 bias [1,4] 的梯度：沿 axis=0 求和（索引 1）
     // sum([[1,1,1,1], [1,1,1,1], [1,1,1,1]], axis=0) = [[3,3,3,3]]
-    let grad_to_bias = result_node.calc_grad_to_parent(bias_node, &upstream_grad, None)?;
+    let grad_to_bias = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_to_bias.shape(), &[1, 4]);
     let expected_bias_grad = Tensor::new(&[3., 3., 3., 3.], &[1, 4]);
     assert_eq!(&grad_to_bias, &expected_bias_grad);
@@ -682,11 +691,13 @@ fn test_add_broadcast_backward_non_unit() -> Result<(), GraphError> {
     // upstream_grad = [[1,2,3], [4,5,6]]
     let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
     let result_node = graph.get_node(result)?;
+    let matrix_node = graph.get_node(matrix)?;
     let bias_node = graph.get_node(bias)?;
+    let parents = [matrix_node, bias_node];
 
-    // 对 bias [1,3] 的梯度：沿 axis=0 求和
+    // 对 bias [1,3] 的梯度：沿 axis=0 求和（索引 1）
     // sum([[1,2,3], [4,5,6]], axis=0) = [[5,7,9]]
-    let grad_to_bias = result_node.calc_grad_to_parent(bias_node, &upstream_grad, None)?;
+    let grad_to_bias = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_to_bias.shape(), &[1, 3]);
     let expected = Tensor::new(&[5., 7., 9.], &[1, 3]);
     assert_eq!(&grad_to_bias, &expected);

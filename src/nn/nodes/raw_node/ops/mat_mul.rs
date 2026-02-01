@@ -146,38 +146,19 @@ impl TraitNode for MatMul {
     ///           这个乘法自然地对 batch 维度求和
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
-        let assistant = assistant_parent.ok_or_else(|| {
-            GraphError::ComputationError("MatMul 需要辅助父节点来计算梯度".to_string())
+        // 获取两个父节点的值
+        let a_value = parent_values.get(0).ok_or_else(|| {
+            GraphError::ComputationError(format!("{}的左父节点没有值", self.display_node()))
+        })?;
+        let b_value = parent_values.get(1).ok_or_else(|| {
+            GraphError::ComputationError(format!("{}的右父节点没有值", self.display_node()))
         })?;
 
-        // 获取父节点的值
-        let (a_value, b_value) = if target_parent.id() == self.parents_ids[0] {
-            // target 是左父节点 A
-            (
-                target_parent.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!("{}的左父节点没有值", self.display_node()))
-                })?,
-                assistant.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!("{}的右父节点没有值", self.display_node()))
-                })?,
-            )
-        } else {
-            // target 是右父节点 B
-            (
-                assistant.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!("{}的左父节点没有值", self.display_node()))
-                })?,
-                target_parent.value().ok_or_else(|| {
-                    GraphError::ComputationError(format!("{}的右父节点没有值", self.display_node()))
-                })?,
-            )
-        };
-
-        if target_parent.id() == self.parents_ids[0] {
+        if target_parent_index == 0 {
             // 计算 dL/dA = upstream_grad @ B^T
             // upstream_grad: [batch, k], B: [n, k] -> B^T: [k, n]
             // 结果: [batch, n]
@@ -195,7 +176,7 @@ impl TraitNode for MatMul {
                 });
             }
             Ok(upstream_grad.mat_mul(&b_t))
-        } else {
+        } else if target_parent_index == 1 {
             // 计算 dL/dB = A^T @ upstream_grad
             // A: [batch, n] -> A^T: [n, batch]
             // upstream_grad: [batch, k]
@@ -215,6 +196,11 @@ impl TraitNode for MatMul {
                 });
             }
             Ok(a_t.mat_mul(upstream_grad))
+        } else {
+            Err(GraphError::ComputationError(format!(
+                "MatMul 节点只有 2 个父节点，索引 {} 无效",
+                target_parent_index
+            )))
         }
     }
 

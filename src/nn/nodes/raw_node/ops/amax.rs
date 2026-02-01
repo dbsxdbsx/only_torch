@@ -207,16 +207,16 @@ impl TraitNode for Amax {
 
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Amax 的反向传播：
         // - 梯度只流向产生最大值的位置
         // - 如果有多个并列最大值，梯度平分
 
-        let input_value = target_parent.value().ok_or_else(|| {
-            GraphError::ComputationError("Amax 梯度计算时 target_parent 没有值".to_string())
+        let input_value = parent_values.get(target_parent_index).ok_or_else(|| {
+            GraphError::ComputationError("Amax 梯度计算时父节点没有值".to_string())
         })?;
 
         let max_value = self.value.as_ref().ok_or_else(|| {

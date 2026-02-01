@@ -177,15 +177,14 @@ impl TraitNode for Flatten {
 
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // 使用父节点的实际形状（支持动态 batch）
-        let parent_actual_shape = target_parent.value().map_or_else(
-            || self.parent_shape.clone(), // fallback 到固定形状
-            |v| v.shape().to_vec(),
-        );
+        let parent_actual_shape = parent_values
+            .get(target_parent_index)
+            .map_or_else(|| self.parent_shape.clone(), |v| v.shape().to_vec());
         // 将上游梯度 reshape 回父节点的实际形状
         Ok(upstream_grad.reshape(&parent_actual_shape))
     }

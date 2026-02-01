@@ -176,26 +176,21 @@ impl TraitNode for Maximum {
 
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Maximum 的反向传播：
         // - 对 target: grad = upstream * (target >= other ? 1 : 0)
         // - 当 target == other 时，梯度各 0.5
 
-        let other_parent = assistant_parent.ok_or_else(|| {
-            GraphError::ComputationError(
-                "Maximum calc_grad_to_parent 需要 assistant_parent".to_string(),
-            )
+        let target_value = parent_values.get(target_parent_index).ok_or_else(|| {
+            GraphError::ComputationError("Maximum 梯度计算时目标父节点没有值".to_string())
         })?;
 
-        let target_value = target_parent.value().ok_or_else(|| {
-            GraphError::ComputationError("Maximum 梯度计算时 target_parent 没有值".to_string())
-        })?;
-
-        let other_value = other_parent.value().ok_or_else(|| {
-            GraphError::ComputationError("Maximum 梯度计算时 assistant_parent 没有值".to_string())
+        let other_index = if target_parent_index == 0 { 1 } else { 0 };
+        let other_value = parent_values.get(other_index).ok_or_else(|| {
+            GraphError::ComputationError("Maximum 梯度计算时另一个父节点没有值".to_string())
         })?;
 
         let target_shape = target_value.shape().to_vec();

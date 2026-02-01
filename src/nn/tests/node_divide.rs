@@ -182,7 +182,9 @@ fn test_divide_backward_to_left() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
-    let grad = result_node.calc_grad_to_parent(left_node, &upstream_grad, Some(right_node))?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+    let grad = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad_to_left = upstream / right = ones / [2,3,4,5] = [0.5, 0.333, 0.25, 0.2]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -217,7 +219,9 @@ fn test_divide_backward_to_right() -> Result<(), GraphError> {
     let left_node = graph.get_node(left_id)?;
     let right_node = graph.get_node(right_id)?;
 
-    let grad = result_node.calc_grad_to_parent(right_node, &upstream_grad, Some(left_node))?;
+    // 新签名：使用 parents 数组和索引
+    let parents = [left_node, right_node];
+    let grad = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
 
     // grad_to_right = -upstream * left / right²
     //               = -1 * [4,6,8,10] / [4,9,16,25]
@@ -229,9 +233,9 @@ fn test_divide_backward_to_right() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Divide 梯度计算缺少 assistant_parent 时报错
+/// 测试 Divide 梯度计算父节点索引越界时报错
 #[test]
-fn test_divide_backward_missing_assistant_parent() -> Result<(), GraphError> {
+fn test_divide_backward_invalid_parent_index() -> Result<(), GraphError> {
     let mut graph = GraphInner::new();
 
     let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
@@ -243,15 +247,17 @@ fn test_divide_backward_missing_assistant_parent() -> Result<(), GraphError> {
     graph.set_node_value(right_id, Some(&Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2])))?;
     graph.forward(result_id)?;
 
-    // 直接测试 VJP，不传 assistant_parent（应该报错）
+    // 直接测试 VJP，使用越界索引（应该报错）
     let upstream_grad = Tensor::ones(&[2, 2]);
     let result_node = graph.get_node(result_id)?;
     let left_node = graph.get_node(left_id)?;
+    let right_node = graph.get_node(right_id)?;
 
-    let result = result_node.calc_grad_to_parent(left_node, &upstream_grad, None);
+    let parents = [left_node, right_node];
+    let result = result_node.calc_grad_to_parent(2, &parents, &upstream_grad); // 索引 2 越界
     assert_err!(
         result,
-        GraphError::ComputationError("Divide 节点计算梯度需要辅助父节点")
+        GraphError::ComputationError("Divide 梯度计算时父节点索引 2 超出范围")
     );
 
     Ok(())
@@ -409,10 +415,12 @@ fn test_divide_broadcast_backward() -> Result<(), GraphError> {
     let matrix_node = graph.get_node(matrix)?;
     let scale_node = graph.get_node(scale)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [matrix_node, scale_node];
+
     // 对 matrix [2,3] 的梯度：upstream / scale（广播后）
     // upstream / [[2,3,4],[2,3,4]] = [[0.5,0.333,0.25],[0.5,0.333,0.25]]
-    let grad_to_matrix =
-        result_node.calc_grad_to_parent(matrix_node, &upstream_grad, Some(scale_node))?;
+    let grad_to_matrix = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
     let expected_matrix_grad = Tensor::new(&[0.5, 1.0 / 3.0, 0.25, 0.5, 1.0 / 3.0, 0.25], &[2, 3]);
     assert_abs_diff_eq!(grad_to_matrix, expected_matrix_grad, epsilon = 1e-6);
@@ -422,8 +430,7 @@ fn test_divide_broadcast_backward() -> Result<(), GraphError> {
     // = -[[2/4,6/9,12/16],[4/4,9/9,16/16]]
     // = [[-0.5,-0.667,-0.75],[-1,-1,-1]]
     // sum([[-0.5,-0.667,-0.75],[-1,-1,-1]], axis=0) = [[-1.5,-1.667,-1.75]]
-    let grad_to_scale =
-        result_node.calc_grad_to_parent(scale_node, &upstream_grad, Some(matrix_node))?;
+    let grad_to_scale = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_to_scale.shape(), &[1, 3]);
     let expected_scale_grad = Tensor::new(&[-1.5, -5.0 / 3.0, -1.75], &[1, 3]);
     assert_abs_diff_eq!(grad_to_scale, expected_scale_grad, epsilon = 1e-6);
@@ -459,13 +466,15 @@ fn test_divide_broadcast_backward_non_unit() -> Result<(), GraphError> {
     let matrix_node = graph.get_node(matrix)?;
     let scale_node = graph.get_node(scale)?;
 
+    // 新签名：使用 parents 数组和索引
+    let parents = [matrix_node, scale_node];
+
     // 对 scale [1,3] 的梯度：-upstream * matrix / scale²，然后沿 axis=0 求和
     // -[[1,2,3],[4,5,6]] * [[1,2,3],[4,5,6]] / [[1,4,9],[1,4,9]]
     // = -[[1,4,9],[16,25,36]] / [[1,4,9],[1,4,9]]
     // = [[-1,-1,-1],[-16,-6.25,-4]]
     // sum = [[-17,-7.25,-5]]
-    let grad_to_scale =
-        result_node.calc_grad_to_parent(scale_node, &upstream_grad, Some(matrix_node))?;
+    let grad_to_scale = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     assert_eq!(grad_to_scale.shape(), &[1, 3]);
     let expected = Tensor::new(&[-17., -7.25, -5.], &[1, 3]);
     assert_abs_diff_eq!(grad_to_scale, expected, epsilon = 1e-6);

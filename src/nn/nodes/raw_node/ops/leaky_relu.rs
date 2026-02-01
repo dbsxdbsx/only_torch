@@ -122,9 +122,9 @@ impl TraitNode for LeakyReLU {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // LeakyReLU 的梯度: upstream_grad * (1 if x > 0 else negative_slope)
         //

@@ -133,7 +133,31 @@ impl NodeInner {
 
     // ==================== 值和梯度访问 ====================
 
-    /// 获取节点的值
+    /// 通过闭包访问节点的值（避免 clone，推荐用于只读场景）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let has_value = node.with_value(|v| v.is_some());
+    /// let shape = node.with_value(|v| v.map(|t| t.shape().to_vec()));
+    /// ```
+    pub fn with_value<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(Option<&Tensor>) -> R,
+    {
+        f(self.raw_node.borrow().value())
+    }
+
+    /// 通过闭包访问节点的梯度（避免 clone，推荐用于只读场景）
+    pub fn with_grad<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(Option<&Tensor>) -> R,
+    {
+        f(self.raw_node.borrow().grad())
+    }
+
+    /// 获取节点的值（clone 版本，用于需要 owned 值的场景）
+    ///
+    /// 注意：此方法会 clone Tensor，如果只需要读取，请使用 `with_value()`
     pub fn value(&self) -> Option<Tensor> {
         self.raw_node.borrow().value().cloned()
     }
@@ -143,7 +167,9 @@ impl NodeInner {
         self.raw_node.borrow_mut().set_value(value)
     }
 
-    /// 获取节点的梯度
+    /// 获取节点的梯度（clone 版本，用于需要 owned 值的场景）
+    ///
+    /// 注意：此方法会 clone Tensor，如果只需要读取，请使用 `with_grad()`
     pub fn grad(&self) -> Option<Tensor> {
         self.raw_node.borrow().grad().cloned()
     }
@@ -174,30 +200,46 @@ impl NodeInner {
     /// 从父节点计算当前节点的值
     ///
     /// 收集父节点的值，调用 `raw_node.calc_value_by_parents()`
+    ///
+    /// # 性能优化
+    /// 直接借用父节点的 raw_node，避免通过 `value()` 方法 clone Tensor
     fn calc_value_from_parents(&self, is_training: bool) -> Result<(), GraphError> {
-        // 收集父节点的值
-        let parent_values: Result<Vec<Tensor>, GraphError> = self
+        // 1. 先收集错误信息所需的元数据（在借用 raw_node 之前）
+        let self_type_name = self.type_name();
+        let parent_info: Vec<(String, NodeId)> = self
             .parents
             .iter()
-            .map(|p| {
-                p.value().ok_or_else(|| {
+            .map(|p| (p.type_name(), p.id()))
+            .collect();
+
+        // 2. 借用所有父节点的 raw_node（保持 borrow 存活直到计算完成）
+        let parent_borrows: Vec<std::cell::Ref<NodeType>> = self
+            .parents
+            .iter()
+            .map(|p| p.raw_node.borrow())
+            .collect();
+
+        // 3. 从 borrow 中提取值引用（零 clone！）
+        let parent_values: Result<Vec<&Tensor>, GraphError> = parent_borrows
+            .iter()
+            .enumerate()
+            .map(|(i, b)| {
+                b.value().ok_or_else(|| {
+                    let (p_type, p_id) = &parent_info[i];
                     GraphError::ComputationError(format!(
                         "{}[{}] 的父节点 {}[{}] 没有值",
-                        self.type_name(),
-                        self.id,
-                        p.type_name(),
-                        p.id()
+                        self_type_name, self.id, p_type, p_id
                     ))
                 })
             })
             .collect();
         let parent_values = parent_values?;
-        let parent_refs: Vec<&Tensor> = parent_values.iter().collect();
 
-        // 设置训练模式并计算
+        // 4. 设置训练模式并计算
+        // 注意：self.raw_node 与 parent.raw_node 是不同的 RefCell，可以同时借用
         let mut raw = self.raw_node.borrow_mut();
         raw.set_training_mode(is_training);
-        raw.calc_value_by_parents(&parent_refs)
+        raw.calc_value_by_parents(&parent_values)
     }
 
     /// 递归前向传播
@@ -225,8 +267,9 @@ impl NodeInner {
 
         // 3. 计算当前节点
         if self.is_leaf() {
-            // 叶子节点：检查值是否已设置
-            if self.value().is_none() {
+            // 叶子节点：检查值是否已设置（使用 with_value 避免 clone）
+            let has_value = self.with_value(|v| v.is_some());
+            if !has_value {
                 return Err(GraphError::ComputationError(format!(
                     "叶子节点 {}[{}] 没有值，请先设置",
                     self.type_name(),

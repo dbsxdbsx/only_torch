@@ -207,16 +207,16 @@ impl TraitNode for Amin {
 
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Amin 的反向传播：
         // - 梯度只流向产生最小值的位置
         // - 如果有多个并列最小值，梯度平分
 
-        let input_value = target_parent.value().ok_or_else(|| {
-            GraphError::ComputationError("Amin 梯度计算时 target_parent 没有值".to_string())
+        let input_value = parent_values.get(target_parent_index).ok_or_else(|| {
+            GraphError::ComputationError("Amin 梯度计算时父节点没有值".to_string())
         })?;
 
         let min_value = self.value.as_ref().ok_or_else(|| {

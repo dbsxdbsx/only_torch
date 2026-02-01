@@ -166,15 +166,15 @@ impl TraitNode for MSE {
     /// - Sum: `dL/d_input` = 2 * (input - target)
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         let diff = self.diff_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("diff 缓存为空，需先执行前向传播".to_string())
         })?;
 
-        if target_parent.id() == self.parents_ids[0] {
+        if target_parent_index == 0 {
             // 对 input 的梯度
             let grad = match self.reduction {
                 Reduction::Mean => diff * (2.0 / self.numel_cache as f32),

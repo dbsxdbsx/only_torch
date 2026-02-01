@@ -266,9 +266,9 @@ impl TraitNode for Mean {
     /// VJP: grad_to_parent = broadcast(upstream_grad, input_shape) / n
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         let input_shape = self.input_shape_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("Mean 输入形状缓存为空，需先执行前向传播".to_string())

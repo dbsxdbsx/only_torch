@@ -143,9 +143,9 @@ impl TraitNode for LogSoftmax {
     ///         = `upstream_grad_i` - `softmax_i` * `sum(upstream_grad)`
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         let softmax_output = self.softmax_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("LogSoftmax 缓存为空，需先执行前向传播".to_string())

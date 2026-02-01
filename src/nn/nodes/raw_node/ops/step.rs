@@ -96,9 +96,9 @@ impl TraitNode for Step {
     /// Step 函数不可微，VJP 返回零向量（梯度不流经此节点）
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         Ok(Tensor::zeros(upstream_grad.shape()))
     }

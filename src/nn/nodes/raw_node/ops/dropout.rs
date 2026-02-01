@@ -179,9 +179,9 @@ impl TraitNode for Dropout {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Dropout 的梯度：
         // - 训练模式：grad = upstream_grad * mask / (1 - p)

@@ -146,26 +146,27 @@ impl TraitNode for Subtract {
     /// 当 A 或 B 被广播时，梯度需要沿广播维度求和
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // 使用实际值的形状（支持动态 batch）
-        let target_shape = target_parent
-            .value()
-            .ok_or_else(|| {
-                GraphError::ComputationError(format!("Subtract 梯度计算时父{target_parent}没有值"))
-            })?
-            .shape();
+        let target_value = parent_values.get(target_parent_index).ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "Subtract 梯度计算时父节点索引 {} 超出范围",
+                target_parent_index
+            ))
+        })?;
+        let target_shape = target_value.shape();
 
-        if target_parent.id() == self.parents_ids[0] {
+        if target_parent_index == 0 {
             // target 是 left (A)：∂L/∂A = upstream_grad
             if upstream_grad.shape() == target_shape {
                 Ok(upstream_grad.clone())
             } else {
                 Ok(upstream_grad.sum_to_shape(target_shape))
             }
-        } else if target_parent.id() == self.parents_ids[1] {
+        } else if target_parent_index == 1 {
             // target 是 right (B)：∂L/∂B = -upstream_grad
             let neg_grad = upstream_grad * (-1.0_f32);
             if neg_grad.shape() == target_shape {
@@ -175,9 +176,8 @@ impl TraitNode for Subtract {
             }
         } else {
             Err(GraphError::ComputationError(format!(
-                "{} 不是当前 {} 的父节点",
-                target_parent,
-                self.display_node()
+                "Subtract 节点只有 2 个父节点，索引 {} 无效",
+                target_parent_index
             )))
         }
     }

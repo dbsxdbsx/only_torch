@@ -247,9 +247,9 @@ impl TraitNode for AvgPool2d {
     /// - 每个输入位置的梯度 = 所有包含该位置的输出的 `upstream_grad` / `pool_size` 之和
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // 输入必须是 4D [batch, C, H', W']
         let input_shape = &self.input_shape;

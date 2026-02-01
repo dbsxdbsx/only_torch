@@ -93,9 +93,9 @@ impl TraitNode for Sigmoid {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Sigmoid 的梯度: upstream_grad * sigmoid(x) * (1 - sigmoid(x))
         let value = self.value().ok_or_else(|| {

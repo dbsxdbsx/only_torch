@@ -172,38 +172,32 @@ impl TraitNode for Gather {
 
     fn calc_grad_to_parent(
         &self,
-        target_parent: &NodeHandle,
+        target_parent_index: usize,
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // Gather 的反向传播：
         // - 对 input（parents[0]）：scatter 梯度回原位置
         // - 对 index（parents[1]）：不需要梯度（返回全零张量）
 
-        // 判断 target_parent 是 input 还是 index
-        let index_parent = assistant_parent.ok_or_else(|| {
-            GraphError::ComputationError(
-                "Gather calc_grad_to_parent 需要 assistant_parent（index 节点）".to_string(),
-            )
-        })?;
-
-        // 检查 target_parent 是否是 index 节点
-        if target_parent.id() == index_parent.id() {
+        // target_parent_index == 1 表示 index 节点
+        if target_parent_index == 1 {
             // 对 index 节点，返回全零梯度（index 不参与梯度计算）
-            return Ok(Tensor::zeros(target_parent.value_expected_shape()));
+            let index_value = parent_values.get(1).ok_or_else(|| {
+                GraphError::ComputationError("Gather 梯度计算需要 index 节点值".to_string())
+            })?;
+            return Ok(Tensor::zeros(index_value.shape()));
         }
 
-        // 对 input 节点，执行 scatter 操作
-        let index_value = index_parent.value().ok_or_else(|| {
+        // target_parent_index == 0，对 input 节点，执行 scatter 操作
+        let index_value = parent_values.get(1).ok_or_else(|| {
             GraphError::ComputationError("Gather 反向传播时 index 节点没有值".to_string())
         })?;
 
         // 获取实际的输入形状（可能是动态 batch）
-        let actual_input_shape = if let Some(parent_value) = target_parent.value() {
-            parent_value.shape().to_vec()
-        } else {
-            self.input_shape.clone()
-        };
+        let actual_input_shape = parent_values
+            .get(0)
+            .map_or_else(|| self.input_shape.clone(), |v| v.shape().to_vec());
 
         // 创建全零梯度张量
         let mut grad_input = Tensor::zeros(&actual_input_shape);

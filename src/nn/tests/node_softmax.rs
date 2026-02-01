@@ -221,7 +221,8 @@ fn test_softmax_backward_vjp() -> Result<(), GraphError> {
     let softmax_node = graph.get_node(softmax_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = softmax_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = softmax_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 对于均匀 softmax 和全 1 upstream_grad：
     // grad_j = upstream_grad_j * y_j - y_j * Σ(upstream_grad_i * y_i)
@@ -252,7 +253,8 @@ fn test_softmax_backward_vjp_non_uniform() -> Result<(), GraphError> {
     let softmax_node = graph.get_node(softmax_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = softmax_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = softmax_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // softmax([1,2,3]) ≈ [0.09, 0.24, 0.67]
     // grad_j = upstream_grad_j * y_j - y_j * Σ(upstream_grad_i * y_i)
@@ -291,7 +293,8 @@ fn test_softmax_backward_vjp_batch() -> Result<(), GraphError> {
     let softmax_node = graph.get_node(softmax_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = softmax_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = softmax_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证形状
     assert_eq!(grad.shape(), &[2, 3]);

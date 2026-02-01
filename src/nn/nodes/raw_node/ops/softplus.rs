@@ -140,9 +140,9 @@ impl TraitNode for SoftPlus {
 
     fn calc_grad_to_parent(
         &self,
-        _target_parent: &NodeHandle,
+        _target_parent_index: usize,
+        _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-        _assistant_parent: Option<&NodeHandle>,
     ) -> Result<Tensor, GraphError> {
         // SoftPlus 的梯度: upstream_grad * sigmoid(x) = upstream_grad * (1 - exp(-y))
         //

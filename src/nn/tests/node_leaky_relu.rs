@@ -209,7 +209,8 @@ fn test_relu_backward_vjp() -> Result<(), GraphError> {
     let relu_node = graph.get_node(relu_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = relu_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = relu_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad * (1 if x > 0 else 0)
     // 对于 [0.5, -1.0, 0.0, 2.0]：梯度为 [1, 0, 0, 1]
@@ -244,7 +245,8 @@ fn test_leaky_relu_backward_vjp() -> Result<(), GraphError> {
     let relu_node = graph.get_node(relu_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = relu_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = relu_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad * (1 if x > 0 else 0.1)
     // 对于 [0.5, -1.0, 0.0, 2.0]：梯度为 [1, 0.1, 0.1, 1]
@@ -275,7 +277,8 @@ fn test_leaky_relu_backward_with_non_unit_upstream() -> Result<(), GraphError> {
     let relu_node = graph.get_node(relu_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = relu_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = relu_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // grad = upstream_grad * (1 if x > 0 else 0.1)
     // = [2*1, 3*0.1, 4*0.1, 5*1] = [2, 0.3, 0.4, 5]
@@ -305,7 +308,8 @@ fn test_leaky_relu_backward_all_positive() -> Result<(), GraphError> {
     let relu_node = graph.get_node(relu_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = relu_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = relu_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 全正值时梯度全为 1
     assert_eq!(&grad, &Tensor::ones(&[2, 2]));
@@ -330,7 +334,8 @@ fn test_leaky_relu_backward_all_negative() -> Result<(), GraphError> {
     let relu_node = graph.get_node(relu_id)?;
     let input_node = graph.get_node(input_id)?;
 
-    let grad = relu_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+    let parents = [input_node];
+    let grad = relu_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 全负值时梯度全为 0.1
     let expected = Tensor::new(&[0.1, 0.1, 0.1, 0.1], &[2, 2]);

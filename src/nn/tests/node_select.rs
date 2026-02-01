@@ -162,7 +162,9 @@ fn test_select_backward_vjp() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[2, 4]);
     let select_node = graph.get_node(select_id)?;
     let input_node = graph.get_node(input_id)?;
-    let grad = select_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    let parents = [input_node];
+    let grad = select_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证梯度形状
     assert_eq!(grad.shape(), &[2, 3, 4]);
@@ -202,7 +204,9 @@ fn test_select_backward_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     let select_node = graph.get_node(select_id)?;
     let input_node = graph.get_node(input_id)?;
-    let grad = select_node.calc_grad_to_parent(input_node, &upstream_grad, None)?;
+
+    let parents = [input_node];
+    let grad = select_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
 
     // 验证梯度：只有 [:, 2, :] 处有值
     for i in 0..2 {
