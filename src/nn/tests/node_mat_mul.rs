@@ -680,3 +680,121 @@ fn test_mat_mul_dynamic_batch_backward() {
     let w_grad2 = w.grad().unwrap().unwrap();
     assert_eq!(w_grad2.shape(), &[4, 8], "w 梯度形状仍应为 [4, 8]");
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_mat_mul_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // [4, 8] @ [8, 6] = [4, 6]
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("a"))
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_parameter_node(&[8, 6], Some("b"))
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_mat_mul_node(vec![a.clone(), b.clone()], Some("result"))
+        .unwrap();
+
+    assert_eq!(result.shape(), vec![4, 6]);
+    assert_eq!(result.name(), Some("result"));
+    assert!(!result.is_leaf());
+    assert_eq!(result.parents().len(), 2);
+}
+
+#[test]
+fn test_create_mat_mul_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_parameter_node(&[8, 6], None)
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_mat_mul_node(vec![a, b], None)
+        .unwrap();
+
+    let name = result.name().unwrap();
+    assert!(name.contains("matmul"), "名称应包含 'matmul': {}", name);
+}
+
+#[test]
+fn test_create_mat_mul_incompatible_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // [4, 8] @ [7, 6] 应该失败（8 != 7）
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_parameter_node(&[7, 6], None)
+        .unwrap();
+
+    let result = inner.borrow_mut().create_mat_mul_node(vec![a, b], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_mat_mul_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_result;
+    let weak_a;
+    {
+        let a = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        let b = inner
+            .borrow_mut()
+            .create_parameter_node(&[8, 6], None)
+            .unwrap();
+        weak_a = Rc::downgrade(&a);
+
+        let result = inner
+            .borrow_mut()
+            .create_mat_mul_node(vec![a, b], None)
+            .unwrap();
+        weak_result = Rc::downgrade(&result);
+
+        assert!(weak_result.upgrade().is_some());
+        assert!(weak_a.upgrade().is_some());
+    }
+    assert!(weak_result.upgrade().is_none());
+    assert!(weak_a.upgrade().is_none());
+}
+
+#[test]
+fn test_create_mat_mul_requires_two_parents() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    let result = inner.borrow_mut().create_mat_mul_node(vec![a], None);
+    assert!(result.is_err());
+}

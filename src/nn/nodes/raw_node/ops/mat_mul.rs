@@ -20,29 +20,37 @@ pub(crate) struct MatMul {
 }
 
 impl MatMul {
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        // 1. 必要的验证
-        // 1.1 父节点数量验证
-        if parents.len() != 2 {
+    /// 从父节点形状信息创建 MatMul 节点（核心实现）
+    ///
+    /// # 参数
+    /// - `parent_shapes`: 父节点的固定形状 [left, right]
+    /// - `parent_dynamic_shapes`: 父节点的动态形状
+    /// - `parent_ids`: 父节点 ID（用于梯度计算时区分左右）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shapes: &[&[usize]],
+        parent_dynamic_shapes: &[DynamicShape],
+        parent_ids: Vec<NodeId>,
+    ) -> Result<Self, GraphError> {
+        // 1. 验证父节点数量
+        if parent_shapes.len() != 2 {
             return Err(GraphError::InvalidOperation(
                 "MatMul节点需要正好2个父节点".to_string(),
             ));
         }
+        if parent_shapes.len() != parent_dynamic_shapes.len() {
+            return Err(GraphError::InvalidOperation(
+                "父节点形状数量与动态形状数量不匹配".to_string(),
+            ));
+        }
 
-        // 1.2 验证矩阵乘法的形状兼容性
-        let parent1_dyn = parents[0].dynamic_expected_shape();
-        let parent2_dyn = parents[1].dynamic_expected_shape();
-        let parent1_fixed = parents[0].value_expected_shape();
-        let parent2_fixed = parents[1].value_expected_shape();
+        let parent1_fixed = parent_shapes[0];
+        let parent2_fixed = parent_shapes[1];
 
-        // 获取内层维度进行验证：parent1[1] 必须等于 parent2[0]
-        // 注意：必须使用 fixed_shape 验证内层维度，因为：
-        // - 对于 Input 节点，dynamic_shape 的 dim(0) 是 None（动态 batch）
-        // - 但矩阵乘法的内层维度必须是确定值且必须匹配
-        let parent1_cols = parent1_fixed[1]; // parent1 的列数
-        let parent2_rows = parent2_fixed[0]; // parent2 的行数
+        // 2. 验证矩阵乘法的形状兼容性
+        // parent1[1] 必须等于 parent2[0]
+        let parent1_cols = parent1_fixed[1];
+        let parent2_rows = parent2_fixed[0];
 
-        // 验证内层维度兼容性
         if parent1_cols != parent2_rows {
             return Err(GraphError::ShapeMismatch {
                 expected: vec![parent1_fixed[0], parent2_fixed[1]],
@@ -53,11 +61,12 @@ impl MatMul {
             });
         }
 
-        // 2. 计算输出形状
-        // 输出形状 = [parent1的batch/行, parent2的列]
-        // 如果 parent1 支持动态 batch，输出也支持
-        let supports_dynamic = parents[0].supports_dynamic_batch();
-        let output_batch = parent1_dyn.dim(0); // 可能是 None（动态）或 Some(n)
+        // 3. 计算输出形状
+        let parent1_dyn = &parent_dynamic_shapes[0];
+        let parent2_dyn = &parent_dynamic_shapes[1];
+
+        let supports_dynamic = parent1_dyn.has_dynamic_dims();
+        let output_batch = parent1_dyn.dim(0);
         let output_cols = parent2_dyn.dim(1).or(Some(parent2_fixed[1]));
 
         let dynamic_shape = DynamicShape::new(&[output_batch, output_cols]);
@@ -71,8 +80,22 @@ impl MatMul {
             fixed_shape,
             dynamic_shape,
             supports_dynamic,
-            parents_ids: vec![parents[0].id(), parents[1].id()],
+            parents_ids: parent_ids,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        let shapes: Vec<Vec<usize>> = parents
+            .iter()
+            .map(|p| p.value_expected_shape().to_vec())
+            .collect();
+        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
+        let dynamic_shapes: Vec<DynamicShape> =
+            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        Self::new_from_shapes(&shapes_ref, &dynamic_shapes, parent_ids)
     }
 }
 

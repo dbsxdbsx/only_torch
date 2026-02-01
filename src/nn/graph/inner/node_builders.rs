@@ -294,6 +294,32 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "divide", parents)
     }
 
+    /// 创建 MatMul 节点（方案 C 新 API）
+    ///
+    /// 矩阵乘法 (left @ right)，要求 left 的列数等于 right 的行数。
+    /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
+    pub fn create_mat_mul_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::MatMul;
+
+        // 1. 从父节点提取形状信息
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        // 2. 使用 new_from_shapes 创建 MatMul 节点
+        let mat_mul =
+            MatMul::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+        let raw_node: NodeType = mat_mul.into();
+
+        // 3. 创建 NodeInner 并注册
+        self.create_node_inner(raw_node, name, "matmul", parents)
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表
