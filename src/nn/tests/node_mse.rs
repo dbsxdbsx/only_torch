@@ -638,3 +638,126 @@ fn test_mse_loss_dynamic_shape_compatibility() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_mse_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("target"))
+        .unwrap();
+
+    let mse = inner
+        .borrow_mut()
+        .create_mse_mean_node(input.clone(), target.clone(), Some("mse"))
+        .unwrap();
+
+    // MSE 输出形状固定为 [1, 1]
+    assert_eq!(mse.shape(), vec![1, 1]);
+    assert_eq!(mse.name(), Some("mse"));
+    assert!(!mse.is_leaf());
+    assert_eq!(mse.parents().len(), 2);
+}
+
+#[test]
+fn test_create_mse_node_shape_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], None) // 形状不匹配
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_mse_mean_node(input, target, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_mse_node_output_always_scalar() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 测试不同输入形状，输出始终为 [1, 1]
+    let input_2d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let target_2d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let mse_2d = inner
+        .borrow_mut()
+        .create_mse_mean_node(input_2d, target_2d, None)
+        .unwrap();
+    assert_eq!(mse_2d.shape(), vec![1, 1]);
+
+    let input_4d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4, 5], None)
+        .unwrap();
+    let target_4d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4, 5], None)
+        .unwrap();
+    let mse_4d = inner
+        .borrow_mut()
+        .create_mse_mean_node(input_4d, target_4d, None)
+        .unwrap();
+    assert_eq!(mse_4d.shape(), vec![1, 1]);
+}
+
+#[test]
+fn test_create_mse_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_mse;
+    let weak_input;
+    let weak_target;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let target = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_target = Rc::downgrade(&target);
+
+        let mse = inner
+            .borrow_mut()
+            .create_mse_mean_node(input, target, None)
+            .unwrap();
+        weak_mse = Rc::downgrade(&mse);
+
+        assert!(weak_mse.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+        assert!(weak_target.upgrade().is_some());
+    }
+    assert!(weak_mse.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+    assert!(weak_target.upgrade().is_none());
+}

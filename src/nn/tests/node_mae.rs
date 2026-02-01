@@ -755,3 +755,111 @@ fn test_mae_vs_mse_comparison() {
     // MAE > MSE when |diff| < 1
     assert!(mae_loss[[0, 0]] > mse_loss[[0, 0]]);
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_mae_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("target"))
+        .unwrap();
+
+    let mae = inner
+        .borrow_mut()
+        .create_mae_mean_node(input.clone(), target.clone(), Some("mae"))
+        .unwrap();
+
+    // MAE 输出形状固定为 [1, 1]
+    assert_eq!(mae.shape(), vec![1, 1]);
+    assert_eq!(mae.name(), Some("mae"));
+    assert!(!mae.is_leaf());
+    assert_eq!(mae.parents().len(), 2);
+}
+
+#[test]
+fn test_create_mae_node_shape_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], None) // 形状不匹配
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_mae_mean_node(input, target, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_mae_node_output_always_scalar() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let mae = inner
+        .borrow_mut()
+        .create_mae_mean_node(input, target, None)
+        .unwrap();
+    assert_eq!(mae.shape(), vec![1, 1]);
+}
+
+#[test]
+fn test_create_mae_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_mae;
+    let weak_input;
+    let weak_target;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let target = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_target = Rc::downgrade(&target);
+
+        let mae = inner
+            .borrow_mut()
+            .create_mae_mean_node(input, target, None)
+            .unwrap();
+        weak_mae = Rc::downgrade(&mae);
+
+        assert!(weak_mae.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+        assert!(weak_target.upgrade().is_some());
+    }
+    assert!(weak_mae.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+    assert!(weak_target.upgrade().is_none());
+}

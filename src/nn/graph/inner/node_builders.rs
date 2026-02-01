@@ -681,6 +681,202 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "softplus", vec![parent])
     }
 
+    /// 创建 MSE 损失节点（方案 C 新 API）
+    ///
+    /// MSE: mean((input - target)^2)
+    pub fn create_mse_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        reduction: crate::nn::nodes::raw_node::Reduction,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::MSE;
+
+        let input_shape = input.shape();
+        let target_shape = target.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+        let target_dynamic_shape = target.dynamic_shape();
+
+        let mse = MSE::new_from_shapes(
+            &input_shape,
+            &target_shape,
+            &input_dynamic_shape,
+            &target_dynamic_shape,
+            vec![input.id(), target.id()],
+            reduction,
+        )?;
+        let raw_node: NodeType = mse.into();
+
+        self.create_node_inner(raw_node, name, "mse", vec![input, target])
+    }
+
+    /// 创建 MSE 损失节点（Mean reduction，方案 C 新 API）
+    pub fn create_mse_mean_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        self.create_mse_node(input, target, crate::nn::nodes::raw_node::Reduction::Mean, name)
+    }
+
+    /// 创建 MAE 损失节点（方案 C 新 API）
+    ///
+    /// MAE: mean(|input - target|)
+    pub fn create_mae_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        reduction: crate::nn::nodes::raw_node::Reduction,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::MAE;
+
+        let input_shape = input.shape();
+        let target_shape = target.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+        let target_dynamic_shape = target.dynamic_shape();
+
+        let mae = MAE::new_from_shapes(
+            &input_shape,
+            &target_shape,
+            &input_dynamic_shape,
+            &target_dynamic_shape,
+            vec![input.id(), target.id()],
+            reduction,
+        )?;
+        let raw_node: NodeType = mae.into();
+
+        self.create_node_inner(raw_node, name, "mae", vec![input, target])
+    }
+
+    /// 创建 MAE 损失节点（Mean reduction，方案 C 新 API）
+    pub fn create_mae_mean_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        self.create_mae_node(input, target, crate::nn::nodes::raw_node::Reduction::Mean, name)
+    }
+
+    /// 创建 BCE 损失节点（方案 C 新 API）
+    ///
+    /// BCE: Binary Cross Entropy with Logits
+    pub fn create_bce_node(
+        &mut self,
+        logits: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        reduction: crate::nn::nodes::raw_node::Reduction,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::BCE;
+
+        let logits_shape = logits.shape();
+        let target_shape = target.shape();
+        let logits_dynamic_shape = logits.dynamic_shape();
+        let target_dynamic_shape = target.dynamic_shape();
+
+        let bce = BCE::new_from_shapes(
+            &logits_shape,
+            &target_shape,
+            &logits_dynamic_shape,
+            &target_dynamic_shape,
+            vec![logits.id(), target.id()],
+            reduction,
+        )?;
+        let raw_node: NodeType = bce.into();
+
+        self.create_node_inner(raw_node, name, "bce", vec![logits, target])
+    }
+
+    /// 创建 BCE 损失节点（Mean reduction，方案 C 新 API）
+    pub fn create_bce_mean_node(
+        &mut self,
+        logits: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        self.create_bce_node(logits, target, crate::nn::nodes::raw_node::Reduction::Mean, name)
+    }
+
+    /// 创建 Huber 损失节点（方案 C 新 API）
+    ///
+    /// Huber Loss: 结合 MSE 和 MAE 的优点
+    pub fn create_huber_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        reduction: crate::nn::nodes::raw_node::Reduction,
+        delta: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Huber;
+
+        let input_shape = input.shape();
+        let target_shape = target.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+        let target_dynamic_shape = target.dynamic_shape();
+
+        let huber = Huber::new_from_shapes(
+            &input_shape,
+            &target_shape,
+            &input_dynamic_shape,
+            &target_dynamic_shape,
+            vec![input.id(), target.id()],
+            reduction,
+            delta,
+        )?;
+        let raw_node: NodeType = huber.into();
+
+        self.create_node_inner(raw_node, name, "huber", vec![input, target])
+    }
+
+    /// 创建 Huber 损失节点（默认参数：Mean reduction, δ=1.0）
+    pub fn create_huber_default_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        self.create_huber_node(
+            input,
+            target,
+            crate::nn::nodes::raw_node::Reduction::Mean,
+            crate::nn::nodes::raw_node::DEFAULT_HUBER_DELTA,
+            name,
+        )
+    }
+
+    /// 创建 SoftmaxCrossEntropy 损失节点（方案 C 新 API）
+    ///
+    /// 融合 Softmax + CrossEntropy，数值稳定
+    pub fn create_softmax_cross_entropy_node(
+        &mut self,
+        logits: Rc<NodeInner>,
+        labels: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::SoftmaxCrossEntropy;
+
+        let logits_shape = logits.shape();
+        let labels_shape = labels.shape();
+        let logits_dynamic_shape = logits.dynamic_shape();
+        let labels_dynamic_shape = labels.dynamic_shape();
+
+        let sce = SoftmaxCrossEntropy::new_from_shapes(
+            &logits_shape,
+            &labels_shape,
+            &logits_dynamic_shape,
+            &labels_dynamic_shape,
+            vec![logits.id(), labels.id()],
+        )?;
+        let raw_node: NodeType = sce.into();
+
+        self.create_node_inner(raw_node, name, "softmax_ce", vec![logits, labels])
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表

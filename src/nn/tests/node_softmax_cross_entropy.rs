@@ -397,3 +397,111 @@ fn test_softmax_cross_entropy_dynamic_batch_backward() -> Result<(), GraphError>
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_softmax_cross_entropy_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("logits"))
+        .unwrap();
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("labels"))
+        .unwrap();
+
+    let sce = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits.clone(), labels.clone(), Some("sce"))
+        .unwrap();
+
+    // SoftmaxCrossEntropy 输出形状固定为 [1, 1]
+    assert_eq!(sce.shape(), vec![1, 1]);
+    assert_eq!(sce.name(), Some("sce"));
+    assert!(!sce.is_leaf());
+    assert_eq!(sce.parents().len(), 2);
+}
+
+#[test]
+fn test_create_softmax_cross_entropy_node_shape_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], None) // 形状不匹配
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits, labels, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_softmax_cross_entropy_node_output_always_scalar() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let sce = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits, labels, None)
+        .unwrap();
+    assert_eq!(sce.shape(), vec![1, 1]);
+}
+
+#[test]
+fn test_create_softmax_cross_entropy_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_sce;
+    let weak_logits;
+    let weak_labels;
+    {
+        let logits = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_logits = Rc::downgrade(&logits);
+
+        let labels = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_labels = Rc::downgrade(&labels);
+
+        let sce = inner
+            .borrow_mut()
+            .create_softmax_cross_entropy_node(logits, labels, None)
+            .unwrap();
+        weak_sce = Rc::downgrade(&sce);
+
+        assert!(weak_sce.upgrade().is_some());
+        assert!(weak_logits.upgrade().is_some());
+        assert!(weak_labels.upgrade().is_some());
+    }
+    assert!(weak_sce.upgrade().is_none());
+    assert!(weak_logits.upgrade().is_none());
+    assert!(weak_labels.upgrade().is_none());
+}

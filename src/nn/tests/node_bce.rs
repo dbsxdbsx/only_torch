@@ -644,3 +644,111 @@ fn test_bce_loss_dynamic_batch_forward() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_bce_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("logits"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("target"))
+        .unwrap();
+
+    let bce = inner
+        .borrow_mut()
+        .create_bce_mean_node(logits.clone(), target.clone(), Some("bce"))
+        .unwrap();
+
+    // BCE 输出形状固定为 [1, 1]
+    assert_eq!(bce.shape(), vec![1, 1]);
+    assert_eq!(bce.name(), Some("bce"));
+    assert!(!bce.is_leaf());
+    assert_eq!(bce.parents().len(), 2);
+}
+
+#[test]
+fn test_create_bce_node_shape_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], None) // 形状不匹配
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_bce_mean_node(logits, target, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_bce_node_output_always_scalar() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let bce = inner
+        .borrow_mut()
+        .create_bce_mean_node(logits, target, None)
+        .unwrap();
+    assert_eq!(bce.shape(), vec![1, 1]);
+}
+
+#[test]
+fn test_create_bce_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_bce;
+    let weak_logits;
+    let weak_target;
+    {
+        let logits = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_logits = Rc::downgrade(&logits);
+
+        let target = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_target = Rc::downgrade(&target);
+
+        let bce = inner
+            .borrow_mut()
+            .create_bce_mean_node(logits, target, None)
+            .unwrap();
+        weak_bce = Rc::downgrade(&bce);
+
+        assert!(weak_bce.upgrade().is_some());
+        assert!(weak_logits.upgrade().is_some());
+        assert!(weak_target.upgrade().is_some());
+    }
+    assert!(weak_bce.upgrade().is_none());
+    assert!(weak_logits.upgrade().is_none());
+    assert!(weak_target.upgrade().is_none());
+}

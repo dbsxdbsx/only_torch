@@ -692,3 +692,140 @@ fn test_huber_vs_mae_large_error() {
     // Huber(大误差) = MAE - 0.5*δ = MAE - 0.5（当 δ=1）
     assert_abs_diff_eq!(huber_loss, mae_loss - 0.5, epsilon = 1e-6);
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_huber_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("target"))
+        .unwrap();
+
+    let huber = inner
+        .borrow_mut()
+        .create_huber_default_node(input.clone(), target.clone(), Some("huber"))
+        .unwrap();
+
+    // Huber 输出形状固定为 [1, 1]
+    assert_eq!(huber.shape(), vec![1, 1]);
+    assert_eq!(huber.name(), Some("huber"));
+    assert!(!huber.is_leaf());
+    assert_eq!(huber.parents().len(), 2);
+}
+
+#[test]
+fn test_create_huber_node_custom_delta() {
+    use crate::nn::nodes::raw_node::Reduction;
+
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+
+    // 自定义 delta = 0.5
+    let huber = inner
+        .borrow_mut()
+        .create_huber_node(input, target, Reduction::Mean, 0.5, None)
+        .unwrap();
+
+    assert_eq!(huber.shape(), vec![1, 1]);
+}
+
+#[test]
+fn test_create_huber_node_invalid_delta() {
+    use crate::nn::nodes::raw_node::Reduction;
+
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+
+    // delta <= 0 应该失败
+    let result = inner
+        .borrow_mut()
+        .create_huber_node(input, target, Reduction::Mean, -1.0, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_huber_node_shape_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], None) // 形状不匹配
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_huber_default_node(input, target, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_huber_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_huber;
+    let weak_input;
+    let weak_target;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let target = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_target = Rc::downgrade(&target);
+
+        let huber = inner
+            .borrow_mut()
+            .create_huber_default_node(input, target, None)
+            .unwrap();
+        weak_huber = Rc::downgrade(&huber);
+
+        assert!(weak_huber.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+        assert!(weak_target.upgrade().is_some());
+    }
+    assert!(weak_huber.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+    assert!(weak_target.upgrade().is_none());
+}

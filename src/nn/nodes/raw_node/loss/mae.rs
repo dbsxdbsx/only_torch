@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
 use super::Reduction;
@@ -46,27 +47,24 @@ pub(crate) struct MAE {
 }
 
 impl MAE {
-    pub(crate) fn new(parents: &[&NodeHandle], reduction: Reduction) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "MAE 节点需要 2 个父节点（input 和 target）".to_string(),
-            ));
-        }
-
-        // 2. 验证形状兼容性（使用动态形状比较，支持动态 batch）
-        let input_dyn_shape = parents[0].dynamic_expected_shape();
-        let target_dyn_shape = parents[1].dynamic_expected_shape();
-        if !input_dyn_shape.is_compatible(&target_dyn_shape) {
+    /// 从父节点形状信息创建 MAE 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        input_shape: &[usize],
+        target_shape: &[usize],
+        input_dynamic_shape: &DynamicShape,
+        target_dynamic_shape: &DynamicShape,
+        parent_ids: Vec<NodeId>,
+        reduction: Reduction,
+    ) -> Result<Self, GraphError> {
+        // 验证形状兼容性
+        if !input_dynamic_shape.is_compatible(target_dynamic_shape) {
             return Err(GraphError::ShapeMismatch {
-                expected: parents[0].value_expected_shape().to_vec(),
-                got: parents[1].value_expected_shape().to_vec(),
+                expected: input_shape.to_vec(),
+                got: target_shape.to_vec(),
                 message: "input 和 target 动态形状必须兼容".to_string(),
             });
         }
 
-        // 计算元素总数（使用固定形状作为初始估计，运行时会更新）
-        let input_shape = parents[0].value_expected_shape();
         let numel: usize = input_shape.iter().product();
 
         Ok(Self {
@@ -74,12 +72,30 @@ impl MAE {
             name: None,
             value: None,
             grad: None,
-            shape: vec![1, 1], // 损失是标量
+            shape: vec![1, 1],
             reduction,
             diff_cache: None,
             numel_cache: numel,
-            parents_ids: vec![parents[0].id(), parents[1].id()],
+            parents_ids: parent_ids,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle], reduction: Reduction) -> Result<Self, GraphError> {
+        if parents.len() != 2 {
+            return Err(GraphError::InvalidOperation(
+                "MAE 节点需要 2 个父节点（input 和 target）".to_string(),
+            ));
+        }
+
+        Self::new_from_shapes(
+            &parents[0].value_expected_shape(),
+            &parents[1].value_expected_shape(),
+            &parents[0].dynamic_expected_shape(),
+            &parents[1].dynamic_expected_shape(),
+            vec![parents[0].id(), parents[1].id()],
+            reduction,
+        )
     }
 
     /// 使用默认 Mean reduction 创建 MAE 节点

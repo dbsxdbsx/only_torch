@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
 use super::Reduction;
@@ -59,27 +60,24 @@ pub(crate) struct BCE {
 }
 
 impl BCE {
-    pub(crate) fn new(parents: &[&NodeHandle], reduction: Reduction) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "BCE 节点需要 2 个父节点（logits 和 target）".to_string(),
-            ));
-        }
-
-        // 2. 验证形状兼容性（使用动态形状比较，支持动态 batch）
-        let logits_dyn_shape = parents[0].dynamic_expected_shape();
-        let target_dyn_shape = parents[1].dynamic_expected_shape();
-        if !logits_dyn_shape.is_compatible(&target_dyn_shape) {
+    /// 从父节点形状信息创建 BCE 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        logits_shape: &[usize],
+        target_shape: &[usize],
+        logits_dynamic_shape: &DynamicShape,
+        target_dynamic_shape: &DynamicShape,
+        parent_ids: Vec<NodeId>,
+        reduction: Reduction,
+    ) -> Result<Self, GraphError> {
+        // 验证形状兼容性
+        if !logits_dynamic_shape.is_compatible(target_dynamic_shape) {
             return Err(GraphError::ShapeMismatch {
-                expected: parents[0].value_expected_shape().to_vec(),
-                got: parents[1].value_expected_shape().to_vec(),
+                expected: logits_shape.to_vec(),
+                got: target_shape.to_vec(),
                 message: "logits 和 target 动态形状必须兼容".to_string(),
             });
         }
 
-        // 计算元素总数（使用固定形状作为初始估计，运行时会更新）
-        let logits_shape = parents[0].value_expected_shape();
         let numel: usize = logits_shape.iter().product();
 
         Ok(Self {
@@ -87,13 +85,31 @@ impl BCE {
             name: None,
             value: None,
             grad: None,
-            shape: vec![1, 1], // 损失是标量
+            shape: vec![1, 1],
             reduction,
             sigmoid_cache: None,
             target_cache: None,
             numel_cache: numel,
-            parents_ids: vec![parents[0].id(), parents[1].id()],
+            parents_ids: parent_ids,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle], reduction: Reduction) -> Result<Self, GraphError> {
+        if parents.len() != 2 {
+            return Err(GraphError::InvalidOperation(
+                "BCE 节点需要 2 个父节点（logits 和 target）".to_string(),
+            ));
+        }
+
+        Self::new_from_shapes(
+            &parents[0].value_expected_shape(),
+            &parents[1].value_expected_shape(),
+            &parents[0].dynamic_expected_shape(),
+            &parents[1].dynamic_expected_shape(),
+            vec![parents[0].id(), parents[1].id()],
+            reduction,
+        )
     }
 
     /// 使用默认 Mean reduction 创建 BCE 节点
