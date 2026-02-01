@@ -452,3 +452,115 @@ fn test_avg_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_avg_pool2d_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 输入: [2, 3, 8, 8]，kernel=2x2，stride=2
+    // 输出: [2, 3, 4, 4]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 8, 8], Some("input"))
+        .unwrap();
+
+    let pool = inner
+        .borrow_mut()
+        .create_avg_pool2d_node(input.clone(), (2, 2), Some((2, 2)), Some("pool"))
+        .unwrap();
+
+    assert_eq!(pool.shape(), vec![2, 3, 4, 4]);
+    assert_eq!(pool.name(), Some("pool"));
+    assert!(!pool.is_leaf());
+    assert_eq!(pool.parents().len(), 1);
+}
+
+#[test]
+fn test_create_avg_pool2d_default_stride() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // stride=None -> 默认等于 kernel_size
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 6, 6], None)
+        .unwrap();
+
+    let pool = inner
+        .borrow_mut()
+        .create_avg_pool2d_node(input, (3, 3), None, None)
+        .unwrap();
+
+    // (6 - 3) / 3 + 1 = 2
+    assert_eq!(pool.shape(), vec![1, 1, 2, 2]);
+}
+
+#[test]
+fn test_create_avg_pool2d_overlapping() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 重叠池化：kernel=3x3，stride=1
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2, 5, 5], None)
+        .unwrap();
+
+    let pool = inner
+        .borrow_mut()
+        .create_avg_pool2d_node(input, (3, 3), Some((1, 1)), None)
+        .unwrap();
+
+    // (5 - 3) / 1 + 1 = 3
+    assert_eq!(pool.shape(), vec![1, 2, 3, 3]);
+}
+
+#[test]
+fn test_create_avg_pool2d_kernel_too_large() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 4, 4], None)
+        .unwrap();
+
+    // kernel 5x5 > 输入 4x4 -> 应失败
+    let result = inner
+        .borrow_mut()
+        .create_avg_pool2d_node(input, (5, 5), None, None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_avg_pool2d_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_pool;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[1, 1, 8, 8], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let pool = inner
+            .borrow_mut()
+            .create_avg_pool2d_node(input, (2, 2), None, None)
+            .unwrap();
+        weak_pool = Rc::downgrade(&pool);
+
+        assert!(weak_pool.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_pool.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

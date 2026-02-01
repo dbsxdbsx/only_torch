@@ -62,35 +62,35 @@ impl Conv2d {
         self.padding
     }
 
-    /// 创建 Conv2d 节点
+    /// 从父节点形状信息创建 Conv2d 节点（核心实现）
     ///
     /// # 参数
-    /// - `parents`: [输入节点, 卷积核节点]
+    /// - `parent_shapes`: [输入形状, 卷积核形状]
+    /// - `parent_dynamic_shapes`: 父节点的动态形状
+    /// - `parent_ids`: 父节点 ID
     /// - `stride`: 步长 (sH, sW)
     /// - `padding`: 填充 (pH, pW)
-    ///
-    /// # 输入形状约定
-    /// - 输入: [`C_in`, H, W] 或 [batch, `C_in`, H, W]
-    /// - 卷积核: [`C_out`, `C_in`, kH, kW]
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shapes: &[&[usize]],
+        parent_dynamic_shapes: &[DynamicShape],
+        parent_ids: Vec<NodeId>,
         stride: (usize, usize),
         padding: (usize, usize),
     ) -> Result<Self, GraphError> {
         // 1. 验证父节点数量
-        if parents.len() != 2 {
+        if parent_shapes.len() != 2 {
             return Err(GraphError::InvalidOperation(
                 "Conv2d 节点需要 2 个父节点：[输入, 卷积核]".to_string(),
             ));
         }
 
-        let input_shape = parents[0].value_expected_shape();
-        let kernel_shape = parents[1].value_expected_shape();
+        let input_shape = parent_shapes[0];
+        let kernel_shape = parent_shapes[1];
 
         // 2. 验证卷积核形状：必须是 4D [C_out, C_in, kH, kW]
         if kernel_shape.len() != 4 {
             return Err(GraphError::ShapeMismatch {
-                expected: vec![0, 0, 0, 0], // 占位
+                expected: vec![0, 0, 0, 0],
                 got: kernel_shape.to_vec(),
                 message: format!("卷积核必须是 4D [C_out, C_in, kH, kW]，得到 {kernel_shape:?}"),
             });
@@ -101,22 +101,18 @@ impl Conv2d {
         let kernel_h = kernel_shape[2];
         let kernel_w = kernel_shape[3];
 
-        // 3. 验证输入形状：必须是 4D [batch, C_in, H, W]（Batch-First）
+        // 3. 验证输入形状：必须是 4D [batch, C_in, H, W]
         if input_shape.len() != 4 {
             return Err(GraphError::ShapeMismatch {
-                expected: vec![0, 0, 0, 0], // 占位
+                expected: vec![0, 0, 0, 0],
                 got: input_shape.to_vec(),
                 message: format!(
                     "Conv2d 输入必须是 4D [batch, C_in, H, W]，得到 {input_shape:?}。单样本请使用 [1, C_in, H, W]"
                 ),
             });
         }
-        let (batch_size, input_c, input_h, input_w) = (
-            input_shape[0],
-            input_shape[1],
-            input_shape[2],
-            input_shape[3],
-        );
+        let (batch_size, input_c, input_h, input_w) =
+            (input_shape[0], input_shape[1], input_shape[2], input_shape[3]);
 
         // 4. 验证通道数匹配
         if input_c != in_channels {
@@ -140,18 +136,16 @@ impl Conv2d {
             )));
         }
 
-        // 6. 确定输出形状：始终是 4D [batch, C_out, H', W']
+        // 6. 确定输出形状
         let fixed_shape = vec![batch_size, out_channels, output_h, output_w];
 
         // 7. 计算动态形状
-        let parent = &parents[0];
-        let parent_dyn = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
+        let parent_dyn = &parent_dynamic_shapes[0];
+        let supports_dynamic = parent_dyn.has_dynamic_dims();
 
-        // 如果父节点第一维是动态的，输出也保持第一维动态
         let dynamic_shape = if supports_dynamic && parent_dyn.is_dynamic(0) {
             let mut dims: Vec<Option<usize>> = fixed_shape.iter().map(|&d| Some(d)).collect();
-            dims[0] = None; // 第一维动态
+            dims[0] = None;
             DynamicShape::new(&dims)
         } else {
             DynamicShape::fixed(&fixed_shape)
@@ -165,7 +159,7 @@ impl Conv2d {
             fixed_shape,
             dynamic_shape,
             supports_dynamic,
-            parents_ids: vec![parents[0].id(), parents[1].id()],
+            parents_ids: parent_ids,
             in_channels,
             out_channels,
             kernel_size: (kernel_h, kernel_w),
@@ -174,6 +168,24 @@ impl Conv2d {
             padded_input: None,
             input_shape: input_shape.to_vec(),
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(
+        parents: &[&NodeHandle],
+        stride: (usize, usize),
+        padding: (usize, usize),
+    ) -> Result<Self, GraphError> {
+        let shapes: Vec<Vec<usize>> = parents
+            .iter()
+            .map(|p| p.value_expected_shape().to_vec())
+            .collect();
+        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
+        let dynamic_shapes: Vec<DynamicShape> =
+            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        Self::new_from_shapes(&shapes_ref, &dynamic_shapes, parent_ids, stride, padding)
     }
 
     /// 对输入进行零填充（Rayon 并行版本）

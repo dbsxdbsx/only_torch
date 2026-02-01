@@ -632,3 +632,135 @@ fn test_conv2d_dynamic_batch_backward() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_conv2d_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 输入: [2, 3, 8, 8], 卷积核: [16, 3, 3, 3]
+    // 输出: [2, 16, 6, 6]（stride=1, padding=0）
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 8, 8], Some("input"))
+        .unwrap();
+    let kernel = inner
+        .borrow_mut()
+        .create_parameter_node(&[16, 3, 3, 3], Some("kernel"))
+        .unwrap();
+
+    let conv = inner
+        .borrow_mut()
+        .create_conv2d_node(vec![input.clone(), kernel.clone()], (1, 1), (0, 0), Some("conv"))
+        .unwrap();
+
+    assert_eq!(conv.shape(), vec![2, 16, 6, 6]);
+    assert_eq!(conv.name(), Some("conv"));
+    assert!(!conv.is_leaf());
+    assert_eq!(conv.parents().len(), 2);
+}
+
+#[test]
+fn test_create_conv2d_with_padding() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 输入: [1, 1, 5, 5], 卷积核: [2, 1, 3, 3]
+    // padding=1 -> 输出: [1, 2, 5, 5]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 5, 5], None)
+        .unwrap();
+    let kernel = inner
+        .borrow_mut()
+        .create_parameter_node(&[2, 1, 3, 3], None)
+        .unwrap();
+
+    let conv = inner
+        .borrow_mut()
+        .create_conv2d_node(vec![input, kernel], (1, 1), (1, 1), None)
+        .unwrap();
+
+    assert_eq!(conv.shape(), vec![1, 2, 5, 5]);
+}
+
+#[test]
+fn test_create_conv2d_with_stride() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 输入: [1, 1, 8, 8], 卷积核: [4, 1, 3, 3]
+    // stride=2 -> 输出: [1, 4, 3, 3]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 8, 8], None)
+        .unwrap();
+    let kernel = inner
+        .borrow_mut()
+        .create_parameter_node(&[4, 1, 3, 3], None)
+        .unwrap();
+
+    let conv = inner
+        .borrow_mut()
+        .create_conv2d_node(vec![input, kernel], (2, 2), (0, 0), None)
+        .unwrap();
+
+    assert_eq!(conv.shape(), vec![1, 4, 3, 3]);
+}
+
+#[test]
+fn test_create_conv2d_channel_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 输入通道 3，卷积核输入通道 4 -> 应该失败
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3, 8, 8], None)
+        .unwrap();
+    let kernel = inner
+        .borrow_mut()
+        .create_parameter_node(&[16, 4, 3, 3], None) // 4 != 3
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_conv2d_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_conv;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[1, 3, 8, 8], None)
+            .unwrap();
+        let kernel = inner
+            .borrow_mut()
+            .create_parameter_node(&[16, 3, 3, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let conv = inner
+            .borrow_mut()
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), None)
+            .unwrap();
+        weak_conv = Rc::downgrade(&conv);
+
+        assert!(weak_conv.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_conv.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

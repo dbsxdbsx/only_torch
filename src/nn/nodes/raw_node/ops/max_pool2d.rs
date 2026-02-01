@@ -57,81 +57,59 @@ impl MaxPool2d {
         self.stride
     }
 
-    /// 创建 `MaxPool2d` 节点
+    /// 从父节点形状信息创建 MaxPool2d 节点（核心实现）
     ///
     /// # 参数
-    /// - `parents`: [输入节点]
+    /// - `parent_shape`: 输入形状 [batch, C, H, W]
+    /// - `parent_dynamic_shape`: 父节点的动态形状
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
-    /// - `stride`: 步长 (sH, sW)，默认等于 `kernel_size`
-    ///
-    /// # 输入形状约定
-    /// - 输入必须是 4D: [batch, C, H, W]（Batch-First）
-    /// - 单样本使用 [1, C, H, W]
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
+    /// - `stride`: 步长 (sH, sW)，None 则默认等于 kernel_size
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shape: &[usize],
+        parent_dynamic_shape: &DynamicShape,
         kernel_size: (usize, usize),
         stride: Option<(usize, usize)>,
     ) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "MaxPool2d 节点需要 1 个父节点".to_string(),
-            ));
-        }
-
-        let input_shape = parents[0].value_expected_shape();
-
-        // 2. 验证输入形状：必须是 4D [batch, C, H, W]（Batch-First）
-        if input_shape.len() != 4 {
+        // 1. 验证输入形状：必须是 4D [batch, C, H, W]
+        if parent_shape.len() != 4 {
             return Err(GraphError::ShapeMismatch {
                 expected: vec![0, 0, 0, 0],
-                got: input_shape.to_vec(),
+                got: parent_shape.to_vec(),
                 message: format!(
-                    "MaxPool2d 输入必须是 4D [batch, C, H, W]，得到 {input_shape:?}。单样本请使用 [1, C, H, W]"
+                    "MaxPool2d 输入必须是 4D [batch, C, H, W]，得到 {parent_shape:?}。单样本请使用 [1, C, H, W]"
                 ),
             });
         }
-        let (batch_size, channels, input_h, input_w) = (
-            input_shape[0],
-            input_shape[1],
-            input_shape[2],
-            input_shape[3],
-        );
+        let (batch_size, channels, input_h, input_w) =
+            (parent_shape[0], parent_shape[1], parent_shape[2], parent_shape[3]);
 
         let (k_h, k_w) = kernel_size;
-        let (s_h, s_w) = stride.unwrap_or(kernel_size); // 默认 stride = kernel_size
+        let (s_h, s_w) = stride.unwrap_or(kernel_size);
 
-        // 3. 验证池化窗口不超过输入尺寸
+        // 2. 验证池化窗口不超过输入尺寸
         if k_h > input_h || k_w > input_w {
             return Err(GraphError::InvalidOperation(format!(
                 "MaxPool2d 池化窗口 {k_h}x{k_w} 超出输入尺寸 {input_h}x{input_w}"
             )));
         }
 
-        // 4. 计算输出尺寸
+        // 3. 计算输出尺寸
         let output_h = (input_h - k_h) / s_h + 1;
         let output_w = (input_w - k_w) / s_w + 1;
 
         if output_h == 0 || output_w == 0 {
             return Err(GraphError::InvalidOperation(format!(
                 "MaxPool2d 输出尺寸无效：输入 {}x{}，核 {}x{}，步长 {:?}",
-                input_h,
-                input_w,
-                k_h,
-                k_w,
-                (s_h, s_w)
+                input_h, input_w, k_h, k_w, (s_h, s_w)
             )));
         }
 
-        // 5. 确定输出形状：始终是 4D [batch, C, H', W']
+        // 4. 确定输出形状
         let fixed_shape = vec![batch_size, channels, output_h, output_w];
 
-        // 计算动态形状
-        let parent = &parents[0];
-        let parent_dyn = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
-
-        let dynamic_shape = if supports_dynamic && parent_dyn.is_dynamic(0) {
+        // 5. 计算动态形状
+        let supports_dynamic = parent_dynamic_shape.has_dynamic_dims();
+        let dynamic_shape = if supports_dynamic && parent_dynamic_shape.is_dynamic(0) {
             let mut dims: Vec<Option<usize>> = fixed_shape.iter().map(|&d| Some(d)).collect();
             dims[0] = None;
             DynamicShape::new(&dims)
@@ -150,8 +128,26 @@ impl MaxPool2d {
             kernel_size,
             stride: (s_h, s_w),
             max_indices: None,
-            input_shape: input_shape.to_vec(),
+            input_shape: parent_shape.to_vec(),
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(
+        parents: &[&NodeHandle],
+        kernel_size: (usize, usize),
+        stride: Option<(usize, usize)>,
+    ) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "MaxPool2d 节点需要 1 个父节点".to_string(),
+            ));
+        }
+
+        let input_shape = parents[0].value_expected_shape();
+        let parent_dynamic_shape = parents[0].dynamic_expected_shape();
+
+        Self::new_from_shapes(&input_shape, &parent_dynamic_shape, kernel_size, stride)
     }
 }
 

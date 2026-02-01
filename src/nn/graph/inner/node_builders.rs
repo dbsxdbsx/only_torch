@@ -320,6 +320,108 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "matmul", parents)
     }
 
+    /// 创建 Conv2d 节点（方案 C 新 API）
+    ///
+    /// 2D 卷积操作，输入必须是 4D [batch, C_in, H, W]。
+    /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
+    ///
+    /// # 参数
+    /// - `parents`: [输入节点, 卷积核节点]
+    /// - `stride`: 步长 (sH, sW)
+    /// - `padding`: 填充 (pH, pW)
+    pub fn create_conv2d_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        stride: (usize, usize),
+        padding: (usize, usize),
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Conv2d;
+
+        // 1. 从父节点提取形状信息
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        // 2. 使用 new_from_shapes 创建 Conv2d 节点
+        let conv2d = Conv2d::new_from_shapes(
+            &parent_shapes_ref,
+            &parent_dynamic_shapes,
+            parent_ids,
+            stride,
+            padding,
+        )?;
+        let raw_node: NodeType = conv2d.into();
+
+        // 3. 创建 NodeInner 并注册
+        self.create_node_inner(raw_node, name, "conv2d", parents)
+    }
+
+    /// 创建 MaxPool2d 节点（方案 C 新 API）
+    ///
+    /// 2D 最大池化操作，输入必须是 4D [batch, C, H, W]。
+    /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
+    ///
+    /// # 参数
+    /// - `parent`: 输入节点
+    /// - `kernel_size`: 池化窗口大小 (kH, kW)
+    /// - `stride`: 步长，None 则默认等于 kernel_size
+    pub fn create_max_pool2d_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        kernel_size: (usize, usize),
+        stride: Option<(usize, usize)>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::MaxPool2d;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let max_pool = MaxPool2d::new_from_shapes(
+            &parent_shape,
+            &parent_dynamic_shape,
+            kernel_size,
+            stride,
+        )?;
+        let raw_node: NodeType = max_pool.into();
+
+        self.create_node_inner(raw_node, name, "maxpool2d", vec![parent])
+    }
+
+    /// 创建 AvgPool2d 节点（方案 C 新 API）
+    ///
+    /// 2D 平均池化操作，输入必须是 4D [batch, C, H, W]。
+    /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
+    ///
+    /// # 参数
+    /// - `parent`: 输入节点
+    /// - `kernel_size`: 池化窗口大小 (kH, kW)
+    /// - `stride`: 步长，None 则默认等于 kernel_size
+    pub fn create_avg_pool2d_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        kernel_size: (usize, usize),
+        stride: Option<(usize, usize)>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::AvgPool2d;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let avg_pool = AvgPool2d::new_from_shapes(
+            &parent_shape,
+            &parent_dynamic_shape,
+            kernel_size,
+            stride,
+        )?;
+        let raw_node: NodeType = avg_pool.into();
+
+        self.create_node_inner(raw_node, name, "avgpool2d", vec![parent])
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表
