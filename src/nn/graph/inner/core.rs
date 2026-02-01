@@ -490,6 +490,30 @@ impl GraphInner {
         Ok(())
     }
 
+    // ========== 方案 C：新前向传播 API ==========
+
+    /// 通过 NodeInner 进行前向传播（方案 C）
+    ///
+    /// 与旧 `forward()` 方法不同，此方法直接使用 `Rc<NodeInner>` 的递归前向传播，
+    /// 不依赖 GraphInner 中存储的节点。
+    ///
+    /// # 参数
+    /// - `node`: 目标节点（通常是 loss 节点）
+    ///
+    /// # 返回
+    /// - `Ok(())`: 前向传播成功
+    /// - `Err(GraphError)`: 前向传播失败
+    pub fn forward_via_node_inner(
+        &mut self,
+        node: &std::rc::Rc<crate::nn::nodes::NodeInner>,
+    ) -> Result<(), GraphError> {
+        let pass_id = self.last_forward_pass_id + 1;
+        let is_training = !self.is_eval_mode;
+        node.forward_recursive(pass_id, is_training)?;
+        self.last_forward_pass_id = pass_id;
+        Ok(())
+    }
+
     /// 释放中间节点的值和梯度
     pub(in crate::nn::graph) fn release_intermediate_results(&mut self) -> Result<(), GraphError> {
         for node in self.nodes.values_mut() {

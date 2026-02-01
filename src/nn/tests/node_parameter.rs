@@ -434,7 +434,11 @@ fn test_create_parameter_auto_name() {
         .unwrap();
 
     let name = param.name().unwrap();
-    assert!(name.contains("parameter"), "名称应包含 'parameter': {}", name);
+    assert!(
+        name.contains("parameter"),
+        "名称应包含 'parameter': {}",
+        name
+    );
 }
 
 #[test]

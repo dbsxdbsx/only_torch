@@ -314,10 +314,17 @@ impl Var {
 
     /// 前向传播
     ///
-    /// 注意：过渡期仍使用 GraphInner 的前向传播逻辑
-    /// 方案 C 完成后将改为基于 parents 遍历
+    /// 前向传播
+    ///
+    /// 过渡期：优先使用新的 NodeInner 路径，回退到旧路径
     pub fn forward(&self) -> Result<(), GraphError> {
-        self.graph.borrow_mut().forward(self.node_id())
+        if let Some(ref node) = self.node {
+            // 方案 C 新路径：通过 NodeInner 递归前向传播
+            self.graph.borrow_mut().forward_via_node_inner(node)
+        } else {
+            // 旧路径：通过 GraphInner 前向传播
+            self.graph.borrow_mut().forward(self.node_id())
+        }
     }
 
     /// 反向传播（ensure-forward 语义）

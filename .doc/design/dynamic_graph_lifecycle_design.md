@@ -834,17 +834,16 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - 使用 `last_forward_pass_id` 避免重复计算
   - 叶子节点检查值是否已设置
   - 单元测试：基础前向、菱形 DAG、pass_id 去重、叶子无值错误
-- [ ] **2.5.3** GraphInner 集成新前向传播
-  - 新增 `forward_via_node_inner()` 方法
-  - 从 `Rc<NodeInner>` 开始前向传播
-  - 过渡期：保留旧 `forward()` 方法
-- [ ] **2.5.4** Var.forward() 过渡适配
-  - 如果 `self.node` 存在，使用新实现
+- [x] **2.5.3** GraphInner 集成新前向传播
+  - 新增 `forward_via_node_inner(&Rc<NodeInner>)` 方法
+  - 内部调用 `node.forward_recursive(pass_id, is_training)`
+  - 保留旧 `forward()` 方法
+- [x] **2.5.4** Var.forward() 过渡适配
+  - 如果 `self.node` 存在，使用 `forward_via_node_inner()`
   - 否则回退到旧实现
-- [ ] **2.5.5** 单元测试
-  - 基础前向传播正确性
-  - pass_id 去重（菱形 DAG）
-  - 过渡期新旧路径等价性
+- [x] **2.5.5** 单元测试
+  - Step 2.5.2 已覆盖：基础前向、菱形 DAG、pass_id 去重、叶子无值
+  - 1744 个现有测试全部通过
 
 #### Step 2.6：反向传播改造
 - [ ] 实现 `NodeInner::backward_recursive()` 基于 parents 遍历

@@ -7,8 +7,8 @@
  * - 清理已失效参数
  */
 
-use crate::nn::nodes::raw_node::Parameter;
 use crate::nn::nodes::NodeInner;
+use crate::nn::nodes::raw_node::Parameter;
 use crate::nn::{Graph, NodeId};
 use std::rc::Rc;
 
@@ -74,11 +74,7 @@ fn test_parameter_weak_reference_behavior() {
 
     // 在作用域内创建参数
     {
-        let node = Rc::new(NodeInner::new_leaf(
-            NodeId(1),
-            None,
-            make_param(&[2, 3]),
-        ));
+        let node = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[2, 3])));
 
         inner
             .borrow_mut()
@@ -148,17 +144,9 @@ fn test_duplicate_parameter_name_error() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let node1 = Rc::new(NodeInner::new_leaf(
-        NodeId(1),
-        None,
-        make_param(&[2, 3]),
-    ));
+    let node1 = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[2, 3])));
 
-    let node2 = Rc::new(NodeInner::new_leaf(
-        NodeId(2),
-        None,
-        make_param(&[2, 3]),
-    ));
+    let node2 = Rc::new(NodeInner::new_leaf(NodeId(2), None, make_param(&[2, 3])));
 
     // 第一次注册成功
     inner
@@ -180,11 +168,7 @@ fn test_replace_dead_parameter() {
 
     // 注册一个会被释放的参数
     {
-        let node1 = Rc::new(NodeInner::new_leaf(
-            NodeId(1),
-            None,
-            make_param(&[2, 3]),
-        ));
+        let node1 = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[2, 3])));
         inner
             .borrow_mut()
             .register_parameter("replaceable".to_string(), Rc::downgrade(&node1))
@@ -193,11 +177,7 @@ fn test_replace_dead_parameter() {
     // node1 已释放
 
     // 注册同名的新参数应该成功（因为旧的已失效）
-    let node2 = Rc::new(NodeInner::new_leaf(
-        NodeId(2),
-        None,
-        make_param(&[2, 3]),
-    ));
+    let node2 = Rc::new(NodeInner::new_leaf(NodeId(2), None, make_param(&[2, 3])));
     inner
         .borrow_mut()
         .register_parameter("replaceable".to_string(), Rc::downgrade(&node2))
