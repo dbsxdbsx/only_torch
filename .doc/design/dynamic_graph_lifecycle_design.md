@@ -891,7 +891,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [x] **2.6.5** Var.backward() 过渡适配
   - 如果 `self.node` 存在，使用 `backward_via_node_inner()`
   - 否则回退到旧实现
-- [ ] **2.6.6** zero_grad 适配
+- [x] **2.6.6** zero_grad 适配
   - 遍历 Graph.parameters 注册表（Weak 引用）
   - 清除每个参数节点的梯度
 - [ ] **2.6.7** 单元测试

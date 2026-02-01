@@ -196,7 +196,8 @@ impl GraphInner {
                 }
 
                 // 新签名：(target_index, parents, upstream_grad)
-                let parent_grad = node.calc_grad_to_parent(target_index, &parents, upstream_grad)?;
+                let parent_grad =
+                    node.calc_grad_to_parent(target_index, &parents, upstream_grad)?;
                 grads.push((*parent_id, parent_grad));
             }
             grads
@@ -265,8 +266,15 @@ impl GraphInner {
     }
 
     /// 清零梯度（PyTorch 风格）
+    ///
+    /// 过渡期同时清除两种路径的梯度：
+    /// - 旧路径：遍历 `nodes` HashMap
+    /// - 新路径：遍历 `parameters` 注册表
     pub fn zero_grad(&mut self) -> Result<(), GraphError> {
-        self.clear_grad()
+        // 旧路径：清除 nodes HashMap 中的梯度
+        self.clear_grad()?;
+        // 新路径：清除 parameters 注册表中的梯度
+        self.zero_grad_via_parameters()
     }
 
     /// 拓扑变化通知

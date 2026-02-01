@@ -274,6 +274,25 @@ impl GraphInner {
         before - self.parameters.len()
     }
 
+    /// 清零参数梯度（方案 C 新路径）
+    ///
+    /// 遍历 parameters 注册表，清除每个有效参数节点的梯度。
+    /// 这是新路径的 `zero_grad` 实现，与旧路径的 `clear_grad()` 不同：
+    /// - 旧路径：遍历 `nodes` HashMap 清除所有节点
+    /// - 新路径：只遍历 `parameters` 注册表清除参数节点
+    ///
+    /// # 注意
+    /// 中间节点的梯度会在 `backward_via_node_inner` 完成后被释放（如果 retain_graph=false），
+    /// 所以只清除参数梯度是正确的行为。
+    pub fn zero_grad_via_parameters(&self) -> Result<(), GraphError> {
+        for weak in self.parameters.values() {
+            if let Some(node) = weak.upgrade() {
+                node.clear_grad()?;
+            }
+        }
+        Ok(())
+    }
+
     /// 检查参数是否已注册
     pub fn has_parameter(&self, name: &str) -> bool {
         self.parameters
