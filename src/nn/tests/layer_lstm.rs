@@ -10,7 +10,7 @@
  */
 
 use crate::nn::layer::{Linear, Lstm};
-use crate::nn::{CrossEntropyLoss, Graph, GraphError, Module};
+use crate::nn::{Graph, GraphError, Module};
 use crate::tensor::Tensor;
 
 // ==================== 基础功能测试 ====================

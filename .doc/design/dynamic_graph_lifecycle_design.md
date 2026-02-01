@@ -931,7 +931,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [x] RNN, GRU, LSTM 移除 `unroll_cache`（无缓存设计，按 4.2 节）
 
 *其他模块适配*：
-- [x] Criterion 迁移到新 API（临时方案，后续按 4.3 节移除）
+- [x] Criterion 已移除（按 4.3 节，删除 `src/nn/criterion.rs`，统一用 Var 方法）
 - [x] ModelState 已移除（按 4.1 节，删除 `src/nn/model_state.rs`）
 
 *过渡期兼容*：
@@ -991,7 +991,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 ### Phase 3：功能适配
 
 - [x] **删除** `src/nn/model_state.rs`（完全移除）
-- [ ] **删除** `src/nn/criterion.rs`（完全移除，统一用 Var 方法）
+- [x] **删除** `src/nn/criterion.rs`（完全移除，统一用 Var 方法）
 - [ ] 可视化模块适配（改用 Var.visualize() 遍历 parents）
 - [ ] 序列化模块适配
 - [x] BPTT/循环机制适配：

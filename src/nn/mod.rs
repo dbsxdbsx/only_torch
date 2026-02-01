@@ -6,7 +6,7 @@
  * @Description  : 负责神经网络（neural network）的构建
  */
 
-mod criterion;
+// mod criterion; // 方案 C：已移除，见文档 4.3 节，统一用 Var 方法（如 mse_loss()）
 pub mod debug;
 mod descriptor;
 mod display;
@@ -20,7 +20,7 @@ mod shape;
 mod var;
 mod var_ops;
 
-pub use criterion::{BceLoss, CrossEntropyLoss, HuberLoss, MaeLoss, MseLoss};
+// pub use criterion::{...}; // 方案 C：已移除，见文档 4.3 节
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{Graph, GraphError, GraphInner, ImageFormat, VisualizationOutput};
