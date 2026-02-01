@@ -19,7 +19,10 @@
 mod model;
 
 use model::SacAgent;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps, VarShapeOps};
+use only_torch::nn::{
+    Adam, Graph, GraphError, Module, Optimizer, VarActivationOps, VarLossOps, VarReduceOps,
+    VarShapeOps,
+};
 use only_torch::rl::GymEnv;
 use only_torch::tensor::Tensor;
 use pyo3::Python;
@@ -167,7 +170,11 @@ fn main() -> Result<(), GraphError> {
         let mut episode_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
         let mut total_steps = 0usize;
 
+        // 调试计时
+        use std::time::Instant;
+
         for episode in 0..config.max_episodes {
+            let episode_start = Instant::now();
             let mut obs = env.reset(None)[0].clone();
             let mut episode_reward = 0.0;
             let mut episode_length = 0;
@@ -259,31 +266,42 @@ fn main() -> Result<(), GraphError> {
                     let q2 = agent.critic2.get_q_values(&obs_batch)?;
                     let q_min = q1.minimum(&q2);
 
-                    // 重新计算当前策略的概率（用于 Actor Loss 和 Alpha 更新）
+                    // Actor 前向传播（整个计算保持在计算图中）
                     let actor_logits = agent.actor.forward(&obs_batch)?;
-                    let actor_probs = actor_logits.softmax();
-                    let actor_probs_val = actor_probs.value()?.unwrap();
-                    let actor_log_probs = (&actor_probs_val + 1e-8).ln();
 
-                    // Actor Loss = Σ_a π(a|s) * (α * log π(a|s) - Q(s,a))
-                    // 这是最小化 KL(π || softmax(Q/α))，期望用 π 计算
+                    // log_softmax 比 softmax + ln 数值更稳定
+                    let log_probs = actor_logits.log_softmax(); // Var [batch, action_dim]
+                    let probs = actor_logits.softmax(); // Var [batch, action_dim]
+
+                    // inside = α * log π(a|s) - Q(s,a)
+                    // Var * Tensor（广播标量）= Var，Var - Tensor = Var
                     let alpha = agent.alpha();
-                    let inside = &(&actor_log_probs * alpha) - &q_min;
-                    let actor_loss_per_sample = (&actor_probs_val * &inside).sum_axis_keepdims(1);
-                    let actor_loss = actor_loss_per_sample.mean();
+                    let alpha_tensor = Tensor::ones(&[1, 1]) * alpha; // 广播标量
+                    let inside = &log_probs * &alpha_tensor - &q_min; // Var [batch, action_dim]
 
-                    // 通过 actor_probs（Var）反向传播梯度
-                    let actor_loss_var = actor_probs.custom_loss(actor_loss)?;
+                    // Actor Loss = Σ_a π(a|s) * inside，然后对 batch 求均值
+                    let weighted = &probs * &inside; // Var * Var = Var
+                    let action_sum = weighted.sum_axis(1); // Var [batch, 1]
+                    let actor_loss = action_sum.mean(); // Var [1, 1]
+
+                    // 先执行前向传播，获取 alpha 更新所需的值（backward 后会释放中间值）
+                    actor_loss.forward()?;
+                    let probs_val = probs.value()?.unwrap();
+                    let log_probs_val = log_probs.value()?.unwrap();
+
+                    // 然后执行反向传播和优化
                     actor_optimizer.zero_grad()?;
-                    actor_loss_var.backward()?;
+                    actor_loss.backward()?;
                     actor_optimizer.step()?;
 
                     // ========== Alpha 更新 ==========
-                    // 使用 batch 数据（与 Actor 更新使用相同的概率分布）
-                    agent.update_alpha(&actor_log_probs, &actor_probs_val);
+                    agent.update_alpha(&log_probs_val, &probs_val);
 
                     // ========== 软更新目标网络 ==========
                     agent.soft_update_targets();
+
+                    // 注意：这里不做 prune，因为 ModelState 的缓存需要保持稳定
+                    // 临时节点的清理由 backward() 后的 release_intermediate_results() 处理
                 }
 
                 if done {
@@ -300,18 +318,19 @@ fn main() -> Result<(), GraphError> {
 
             let avg_reward: f32 = episode_rewards.iter().sum::<f32>() / episode_rewards.len() as f32;
 
-            // 打印进度
-            if (episode + 1) % 20 == 0 || avg_reward >= config.target_reward {
-                println!(
-                    "Episode {:4}: 奖励={:6.1}, 长度={:3}, 平均(100)={:6.1}, α={:.3}, buffer={}",
-                    episode + 1,
-                    episode_reward,
-                    episode_length,
-                    avg_reward,
-                    agent.alpha(),
-                    buffer.len(),
-                );
-            }
+            // 打印进度（每个 episode 都打印，便于调试）
+            let episode_time = episode_start.elapsed().as_secs_f32();
+            let node_count = graph.node_count();
+            println!(
+                "Ep {:3}: r={:5.1}, len={:3}, avg={:5.1}, α={:.3}, nodes={:5}, time={:.2}s",
+                episode + 1,
+                episode_reward,
+                episode_length,
+                avg_reward,
+                agent.alpha(),
+                node_count,
+                episode_time,
+            );
 
             // 检查是否达标
             if episode_rewards.len() >= 100 && avg_reward >= config.target_reward {
@@ -351,15 +370,12 @@ fn main() -> Result<(), GraphError> {
         let avg_test_reward: f32 = test_rewards.iter().sum::<f32>() / test_rewards.len() as f32;
         println!("\n测试平均奖励: {:.1}", avg_test_reward);
 
-        // 7. 保存可视化
-        println!("\n[5/5] 保存计算图...");
-        let vis_result = graph.save_visualization("examples/cartpole_sac/cartpole_sac", None)?;
-        println!("计算图已保存: {}", vis_result.dot_path.display());
-
+        // 7. 完成
+        println!("\n[5/5] 完成！");
         if avg_test_reward >= config.target_reward {
-            println!("\n✅ CartPole SAC-Discrete 示例成功！");
+            println!("✅ CartPole SAC-Discrete 示例成功！");
         } else {
-            println!("\n⚠️ 测试奖励未达标");
+            println!("⚠️ 测试奖励未达标（可能需要更多训练）");
         }
 
         Ok(())

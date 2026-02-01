@@ -39,11 +39,16 @@ impl SacActor {
         })
     }
 
-    /// 获取动作概率和 log 概率
+    /// 获取动作概率和 log 概率（纯 Tensor 操作，不创建计算图节点）
+    ///
+    /// 这个方法用于动作选择，不需要梯度，所以直接用 Tensor 的 softmax。
     pub fn get_action_probs(&self, x: &Tensor) -> Result<(Tensor, Tensor), GraphError> {
         let logits = self.forward(x)?;
-        let probs = logits.softmax();
-        let probs_val = probs.value()?.unwrap();
+        logits.forward()?; // 触发前向传播
+        let logits_val = logits.value()?.unwrap();
+
+        // 使用 Tensor 的 softmax（不创建 Var 节点）
+        let probs_val = logits_val.softmax(1);
 
         // log_probs = ln(probs + eps) 防止 log(0)
         let eps = 1e-8;
@@ -57,6 +62,11 @@ impl SacActor {
         let p0 = probs[[0, 0]];
         let r: f32 = rng.gen_range(0.0..1.0);
         if r < p0 { 0 } else { 1 }
+    }
+
+    /// 清空 ModelState 缓存（配合 `graph.prune_nodes_after()` 使用）
+    pub fn clear_cache(&self) {
+        self.state.clear_cache();
     }
 }
 
@@ -100,6 +110,11 @@ impl SacCritic {
     pub fn get_q_values(&self, x: &Tensor) -> Result<Tensor, GraphError> {
         let q = self.forward(x)?;
         Ok(q.value()?.unwrap())
+    }
+
+    /// 清空 ModelState 缓存（配合 `graph.prune_nodes_after()` 使用）
+    pub fn clear_cache(&self) {
+        self.state.clear_cache();
     }
 }
 
@@ -192,5 +207,17 @@ impl SacAgent {
         let batch_size = probs.shape()[0] as f32;
         let neg_entropy = (probs * log_probs).sum_axis_keepdims(1); // [batch, 1]
         -neg_entropy.sum().get_data_number().unwrap() / batch_size
+    }
+
+    /// 清空所有模型的 ModelState 缓存
+    ///
+    /// 配合 `graph.prune_nodes_after()` 使用：prune 会删除缓存引用的节点，
+    /// 必须同时清空缓存以避免访问已删除的节点。
+    pub fn clear_all_caches(&self) {
+        self.actor.clear_cache();
+        self.critic1.clear_cache();
+        self.critic2.clear_cache();
+        self.target_critic1.clear_cache();
+        self.target_critic2.clear_cache();
     }
 }

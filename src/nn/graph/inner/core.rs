@@ -435,4 +435,70 @@ impl GraphInner {
             }
         }
     }
+
+    /// 设置节点检查点
+    ///
+    /// 记录当前的节点 ID 基线。之后可以调用 `prune_nodes_after_checkpoint()`
+    /// 删除检查点之后创建的所有节点。
+    ///
+    /// # 使用场景
+    /// 在强化学习等场景中，模型结构（由 ModelState 缓存）在训练开始前就已构建完成。
+    /// 训练过程中闭包外创建的临时节点（如 softmax、算术运算等）是在检查点之后创建的，
+    /// 可以安全删除而不影响模型结构。
+    ///
+    /// # 返回
+    /// 检查点的 NodeId 值
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 模型和优化器初始化完成后
+    /// let checkpoint = graph.checkpoint();
+    ///
+    /// // 训练循环
+    /// for epoch in 0..epochs {
+    ///     // ... 训练代码 ...
+    ///     graph.prune_nodes_after(checkpoint)?;
+    /// }
+    /// ```
+    pub fn checkpoint(&self) -> NodeId {
+        NodeId(self.next_id)
+    }
+
+    /// 删除检查点之后创建的所有节点
+    ///
+    /// 配合 `checkpoint()` 使用，用于清理训练过程中累积的临时节点。
+    ///
+    /// # 参数
+    /// - `checkpoint`: 由 `checkpoint()` 返回的检查点值
+    ///
+    /// # 返回
+    /// 被删除的节点数量
+    ///
+    /// # 安全性
+    /// 只删除 ID >= checkpoint 的节点，不会影响：
+    /// - 模型参数（Parameter 节点）
+    /// - ModelState 缓存的计算图结构
+    /// - Input/State 节点（如果在检查点之前创建）
+    pub fn prune_nodes_after(&mut self, checkpoint: NodeId) -> Result<usize, GraphError> {
+        let before = self.nodes.len();
+
+        // 删除 ID >= checkpoint 的节点
+        self.nodes.retain(|id, _| id.0 < checkpoint.0);
+
+        // 清理对应的边
+        self.forward_edges.retain(|id, _| id.0 < checkpoint.0);
+        self.backward_edges.retain(|id, _| id.0 < checkpoint.0);
+
+        // 清理 forward_edges 中指向已删除节点的引用
+        for children in self.forward_edges.values_mut() {
+            children.retain(|id| id.0 < checkpoint.0);
+        }
+
+        // 清理 backward_edges 中指向已删除节点的引用
+        for parents in self.backward_edges.values_mut() {
+            parents.retain(|id| id.0 < checkpoint.0);
+        }
+
+        Ok(before - self.nodes.len())
+    }
 }

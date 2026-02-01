@@ -1,6 +1,6 @@
 # Only Torch 架构路线图
 
-> 最后更新: 2026-01-21
+> 最后更新: 2026-02-01
 > 战略定位: **简化版 PyTorch in Rust**，为 NEAT 预留扩展性
 > 当前阶段: **Phase 2 完成，PyTorch 风格 API 已实现**
 
@@ -10,7 +10,7 @@
 .doc/
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
-│   ├── architecture_v2_design.md                   # ⭐ 3+1层架构设计（主设计文档）
+│   ├── dynamic_graph_lifecycle_design.md           # ⭐⭐ 动态图生命周期设计（方案 C，下一代架构）
 │   ├── api_layering_and_seed_design.md             # API分层与种子管理
 │   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制（重要）
 │   ├── broadcast_mechanism_design.md               # 广播机制设计
@@ -23,6 +23,7 @@
 ├── reference/                           # 参考资料
 │   └── python_MatrixSlow_pid.md         # MatrixSlow 项目分析
 └── _archive/                            # 暂缓/历史文档
+    ├── architecture_v2_design.md           # 旧架构设计（已被 dynamic_graph_lifecycle 取代）
     └── graph_execution_refactor.md         # 底层重构方案（暂缓）
 ```
 
