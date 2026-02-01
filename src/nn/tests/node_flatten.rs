@@ -435,3 +435,123 @@ fn test_flatten_dynamic_batch_backward() {
     graph.zero_grad().unwrap();
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_flatten_node_keep_first() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 4D 输入: [2, 3, 4, 4] -> 展平为 [2, 48]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4, 4], Some("input"))
+        .unwrap();
+
+    let flat = inner
+        .borrow_mut()
+        .create_flatten_node(input.clone(), true, Some("flat"))
+        .unwrap();
+
+    assert_eq!(flat.shape(), vec![2, 48]);
+    assert_eq!(flat.name(), Some("flat"));
+    assert!(!flat.is_leaf());
+    assert_eq!(flat.parents().len(), 1);
+}
+
+#[test]
+fn test_create_flatten_node_no_keep_first() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 4D 输入: [2, 3, 4, 4] -> 完全展平为 [1, 96]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4, 4], None)
+        .unwrap();
+
+    let flat = inner
+        .borrow_mut()
+        .create_flatten_node(input, false, None)
+        .unwrap();
+
+    assert_eq!(flat.shape(), vec![1, 96]);
+}
+
+#[test]
+fn test_create_flatten_node_2d_keep_first() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 2D 输入: [3, 4] -> keep_first_dim=true 时形状不变
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    let flat = inner
+        .borrow_mut()
+        .create_flatten_node(input, true, None)
+        .unwrap();
+
+    assert_eq!(flat.shape(), vec![3, 4]);
+}
+
+#[test]
+fn test_create_flatten_node_2d_no_keep_first() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 2D 输入: [3, 4] -> keep_first_dim=false 时展平为 [1, 12]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    let flat = inner
+        .borrow_mut()
+        .create_flatten_node(input, false, None)
+        .unwrap();
+
+    assert_eq!(flat.shape(), vec![1, 12]);
+}
+
+#[test]
+fn test_create_flatten_node_drop_releases() {
+    use crate::nn::Graph;
+
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_flat;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3, 4, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let flat = inner
+            .borrow_mut()
+            .create_flatten_node(input, true, None)
+            .unwrap();
+        weak_flat = Rc::downgrade(&flat);
+
+        assert!(weak_flat.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_flat.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

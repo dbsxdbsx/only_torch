@@ -48,21 +48,17 @@ impl Gather {
         self.dim
     }
 
-    pub(crate) fn new(parents: &[&NodeHandle], dim: usize) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量（需要 2 个：input 和 index）
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "Gather 节点需要 2 个父节点（input 和 index）".to_string(),
-            ));
-        }
-
-        let input = &parents[0];
-        let index = &parents[1];
-        let input_shape = input.value_expected_shape();
-        let index_shape = index.value_expected_shape();
+    /// 从父节点形状信息创建 Gather 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        input_shape: &[usize],
+        index_shape: &[usize],
+        input_dynamic_shape: &DynamicShape,
+        index_dynamic_shape: &DynamicShape,
+        dim: usize,
+    ) -> Result<Self, GraphError> {
         let ndim = input_shape.len();
 
-        // 2. 验证 dim
+        // 1. 验证 dim
         if dim >= ndim {
             return Err(GraphError::InvalidOperation(format!(
                 "Gather dim {} 超出输入张量维度 {}",
@@ -70,7 +66,7 @@ impl Gather {
             )));
         }
 
-        // 3. 验证 index 维度数与 input 相同
+        // 2. 验证 index 维度数与 input 相同
         if index_shape.len() != ndim {
             return Err(GraphError::InvalidOperation(format!(
                 "Gather: index 维度数 {} 必须与输入张量维度数 {} 相同",
@@ -79,7 +75,7 @@ impl Gather {
             )));
         }
 
-        // 4. 验证除 dim 外的其他维度大小一致
+        // 3. 验证除 dim 外的其他维度大小一致
         for d in 0..ndim {
             if d != dim && index_shape[d] != input_shape[d] {
                 return Err(GraphError::InvalidOperation(format!(
@@ -89,16 +85,13 @@ impl Gather {
             }
         }
 
-        // 5. 输出形状与 index 形状相同
+        // 4. 输出形状与 index 形状相同
         let fixed_shape = index_shape.to_vec();
 
-        // 6. 计算动态形状
-        let index_dyn = index.dynamic_expected_shape();
-        let dynamic_shape = index_dyn.clone();
-
-        // 是否支持动态 batch 取决于 input 和 index
+        // 5. 计算动态形状
+        let dynamic_shape = index_dynamic_shape.clone();
         let supports_dynamic =
-            input.supports_dynamic_batch() && index.supports_dynamic_batch();
+            input_dynamic_shape.has_dynamic_dims() && index_dynamic_shape.has_dynamic_dims();
 
         Ok(Self {
             id: None,
@@ -111,6 +104,30 @@ impl Gather {
             dim,
             input_shape: input_shape.to_vec(),
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle], dim: usize) -> Result<Self, GraphError> {
+        if parents.len() != 2 {
+            return Err(GraphError::InvalidOperation(
+                "Gather 节点需要 2 个父节点（input 和 index）".to_string(),
+            ));
+        }
+
+        let input = &parents[0];
+        let index = &parents[1];
+        let input_shape = input.value_expected_shape();
+        let index_shape = index.value_expected_shape();
+        let input_dynamic_shape = input.dynamic_expected_shape();
+        let index_dynamic_shape = index.dynamic_expected_shape();
+
+        Self::new_from_shapes(
+            &input_shape,
+            &index_shape,
+            &input_dynamic_shape,
+            &index_dynamic_shape,
+            dim,
+        )
     }
 }
 

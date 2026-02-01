@@ -44,56 +44,42 @@ pub(crate) struct Flatten {
 }
 
 impl Flatten {
-    /// 创建 Flatten 节点
+    /// 从父节点形状信息创建 Flatten 节点（核心实现）
     ///
     /// # 参数
-    /// - `parents`: 父节点（只能有 1 个）
+    /// - `parent_shape`: 父节点形状
+    /// - `parent_dynamic_shape`: 父节点的动态形状
     /// - `keep_first_dim`: 是否保留首维度
-    ///   - `true`: `[m, n]` → `[m, n]`（2D 已经是展平状态）
-    ///   - `false`: `[m, n]` → `[1, m*n]`（完全展平为行向量）
-    pub(crate) fn new(parents: &[&NodeHandle], keep_first_dim: bool) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Flatten 节点只需要 1 个父节点".to_string(),
-            ));
-        }
-
-        // 2. 获取父节点形状
-        let parent = &parents[0];
-        let parent_shape = parent.value_expected_shape().to_vec();
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shape: &[usize],
+        parent_dynamic_shape: &DynamicShape,
+        keep_first_dim: bool,
+    ) -> Result<Self, GraphError> {
         let total_elements: usize = parent_shape.iter().product();
 
-        // 3. 计算目标形状
+        // 计算目标形状
         let target_shape = if keep_first_dim {
-            // 保留首维度：对于 2D 张量，形状不变
-            // 对于高维张量（未来扩展），会展平为 [first_dim, rest]
             if parent_shape.len() == 2 {
-                // 2D 已经是展平状态
-                parent_shape.clone()
+                parent_shape.to_vec()
             } else {
-                // 高维：[d0, d1, d2, ...] → [d0, d1*d2*...]
                 let first_dim = parent_shape[0];
                 let rest_dim = total_elements / first_dim;
                 vec![first_dim, rest_dim]
             }
         } else {
-            // 完全展平为行向量
             vec![1, total_elements]
         };
 
-        // 4. 计算动态形状
-        let parent_dyn = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
-
-        // 如果父节点第一维是动态的且保留首维度，输出也保持第一维动态
-        let dynamic_shape = if supports_dynamic && parent_dyn.is_dynamic(0) && keep_first_dim {
-            let mut dims: Vec<Option<usize>> = target_shape.iter().map(|&d| Some(d)).collect();
-            dims[0] = None; // 第一维动态
-            DynamicShape::new(&dims)
-        } else {
-            DynamicShape::fixed(&target_shape)
-        };
+        // 计算动态形状
+        let supports_dynamic = parent_dynamic_shape.has_dynamic_dims();
+        let dynamic_shape =
+            if supports_dynamic && parent_dynamic_shape.is_dynamic(0) && keep_first_dim {
+                let mut dims: Vec<Option<usize>> = target_shape.iter().map(|&d| Some(d)).collect();
+                dims[0] = None;
+                DynamicShape::new(&dims)
+            } else {
+                DynamicShape::fixed(&target_shape)
+            };
 
         Ok(Self {
             id: None,
@@ -103,9 +89,24 @@ impl Flatten {
             target_shape,
             dynamic_shape,
             supports_dynamic,
-            parent_shape,
+            parent_shape: parent_shape.to_vec(),
             keep_first_dim,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle], keep_first_dim: bool) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "Flatten 节点只需要 1 个父节点".to_string(),
+            ));
+        }
+
+        let parent = &parents[0];
+        let parent_shape = parent.value_expected_shape();
+        let parent_dynamic_shape = parent.dynamic_expected_shape();
+
+        Self::new_from_shapes(&parent_shape, &parent_dynamic_shape, keep_first_dim)
     }
 
     /// 获取目标形状

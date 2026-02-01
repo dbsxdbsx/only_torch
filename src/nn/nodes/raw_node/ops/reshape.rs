@@ -43,30 +43,25 @@ pub(crate) struct Reshape {
 }
 
 impl Reshape {
-    pub(crate) fn new(parents: &[&NodeHandle], target_shape: &[usize]) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Reshape 节点只需要 1 个父节点".to_string(),
-            ));
-        }
-
-        // 2. 获取父节点形状
-        let parent = &parents[0];
-        let parent_shape = parent.value_expected_shape().to_vec();
-        let parent_size: usize = parent_shape.iter().product();
-
-        // 3. 验证目标形状
+    /// 从父节点形状信息创建 Reshape 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shape: &[usize],
+        parent_dynamic_shape: &DynamicShape,
+        target_shape: &[usize],
+    ) -> Result<Self, GraphError> {
+        // 1. 验证目标形状
         if target_shape.is_empty() {
             return Err(GraphError::InvalidOperation(
                 "Reshape 目标形状不能为空".to_string(),
             ));
         }
 
+        let parent_size: usize = parent_shape.iter().product();
         let target_size: usize = target_shape.iter().product();
+
         if parent_size != target_size {
             return Err(GraphError::ShapeMismatch {
-                expected: parent_shape.clone(),
+                expected: parent_shape.to_vec(),
                 got: target_shape.to_vec(),
                 message: format!(
                     "Reshape 目标形状 {target_shape:?}（{target_size}个元素）与输入形状 {parent_shape:?}（{parent_size}个元素）的元素总数不匹配"
@@ -74,21 +69,16 @@ impl Reshape {
             });
         }
 
-        // 4. 计算动态形状
-        // Reshape 保持父节点的 dynamic batch 特性
-        let parent_dyn = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
-
-        // 如果父节点第一维是动态的，输出也保持第一维动态
-        let dynamic_shape = if supports_dynamic && parent_dyn.is_dynamic(0) {
+        // 2. 计算动态形状
+        let supports_dynamic = parent_dynamic_shape.has_dynamic_dims();
+        let dynamic_shape = if supports_dynamic && parent_dynamic_shape.is_dynamic(0) {
             let mut dims: Vec<Option<usize>> = target_shape.iter().map(|&d| Some(d)).collect();
-            dims[0] = None; // 第一维动态
+            dims[0] = None;
             DynamicShape::new(&dims)
         } else {
             DynamicShape::fixed(target_shape)
         };
 
-        // 记录原始 batch 大小（用于动态 batch 时按比例调整）
         let original_batch_size = parent_shape[0];
 
         Ok(Self {
@@ -100,8 +90,23 @@ impl Reshape {
             dynamic_shape,
             supports_dynamic,
             original_batch_size,
-            parent_shape,
+            parent_shape: parent_shape.to_vec(),
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle], target_shape: &[usize]) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "Reshape 节点只需要 1 个父节点".to_string(),
+            ));
+        }
+
+        let parent = &parents[0];
+        let parent_shape = parent.value_expected_shape();
+        let parent_dynamic_shape = parent.dynamic_expected_shape();
+
+        Self::new_from_shapes(&parent_shape, &parent_dynamic_shape, target_shape)
     }
 
     /// 获取目标形状

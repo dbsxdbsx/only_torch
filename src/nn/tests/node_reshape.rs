@@ -571,3 +571,109 @@ fn test_reshape_dynamic_batch_backward() {
     graph.zero_grad().unwrap();
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_reshape_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // [2, 6] -> [3, 4]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 6], Some("input"))
+        .unwrap();
+
+    let reshaped = inner
+        .borrow_mut()
+        .create_reshape_node(input.clone(), &[3, 4], Some("reshaped"))
+        .unwrap();
+
+    assert_eq!(reshaped.shape(), vec![3, 4]);
+    assert_eq!(reshaped.name(), Some("reshaped"));
+    assert!(!reshaped.is_leaf());
+    assert_eq!(reshaped.parents().len(), 1);
+}
+
+#[test]
+fn test_create_reshape_node_3d_to_2d() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // [2, 3, 4] -> [2, 12]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], None)
+        .unwrap();
+
+    let reshaped = inner
+        .borrow_mut()
+        .create_reshape_node(input, &[2, 12], None)
+        .unwrap();
+
+    assert_eq!(reshaped.shape(), vec![2, 12]);
+}
+
+#[test]
+fn test_create_reshape_node_size_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // [2, 3] (6 元素) -> [2, 2] (4 元素) 应失败
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_reshape_node(input, &[2, 2], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_reshape_node_empty_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_reshape_node(input, &[], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_reshape_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_reshaped;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 6], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let reshaped = inner
+            .borrow_mut()
+            .create_reshape_node(input, &[3, 4], None)
+            .unwrap();
+        weak_reshaped = Rc::downgrade(&reshaped);
+
+        assert!(weak_reshaped.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_reshaped.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

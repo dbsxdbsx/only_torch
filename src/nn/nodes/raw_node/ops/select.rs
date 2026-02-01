@@ -50,22 +50,14 @@ impl Select {
         self.index
     }
 
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
+    /// 从父节点形状信息创建 Select 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shape: &[usize],
+        parent_dynamic_shape: &DynamicShape,
         axis: usize,
         index: usize,
     ) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Select 节点只需要 1 个父节点".to_string(),
-            ));
-        }
-
-        let parent = &parents[0];
-        let parent_shape = parent.value_expected_shape();
-
-        // 2. 验证轴
+        // 1. 验证轴
         if axis >= parent_shape.len() {
             return Err(GraphError::InvalidOperation(format!(
                 "Select axis {} 超出张量维度 {}",
@@ -74,7 +66,7 @@ impl Select {
             )));
         }
 
-        // 3. 验证索引
+        // 2. 验证索引
         if index >= parent_shape[axis] {
             return Err(GraphError::InvalidOperation(format!(
                 "Select index {} 超出 axis {} 的大小 {}",
@@ -82,19 +74,17 @@ impl Select {
             )));
         }
 
-        // 4. 计算输出形状（去掉被 select 的维度）
+        // 3. 计算输出形状（去掉被 select 的维度）
         let mut fixed_shape: Vec<usize> = parent_shape.to_vec();
         fixed_shape.remove(axis);
 
-        // 5. 计算动态形状（去掉被 select 的维度）
-        let parent_dyn = parent.dynamic_expected_shape();
-        let parent_dims = parent_dyn.dims();
+        // 4. 计算动态形状
+        let parent_dims = parent_dynamic_shape.dims();
         let mut output_dims: Vec<Option<usize>> = parent_dims.to_vec();
         output_dims.remove(axis);
         let dynamic_shape = DynamicShape::new(&output_dims);
 
-        // 是否支持动态 batch 取决于父节点
-        let supports_dynamic = parent.supports_dynamic_batch();
+        let supports_dynamic = parent_dynamic_shape.has_dynamic_dims();
 
         Ok(Self {
             id: None,
@@ -108,6 +98,25 @@ impl Select {
             index,
             parent_shape: parent_shape.to_vec(),
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(
+        parents: &[&NodeHandle],
+        axis: usize,
+        index: usize,
+    ) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "Select 节点只需要 1 个父节点".to_string(),
+            ));
+        }
+
+        let parent = &parents[0];
+        let parent_shape = parent.value_expected_shape();
+        let parent_dynamic_shape = parent.dynamic_expected_shape();
+
+        Self::new_from_shapes(&parent_shape, &parent_dynamic_shape, axis, index)
     }
 }
 

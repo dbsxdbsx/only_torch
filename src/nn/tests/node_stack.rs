@@ -839,3 +839,141 @@ fn test_stack_backward_e2e_concat_axis1() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_stack_node_concat_axis0() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // concat 模式：[2, 3] + [1, 3] -> [3, 3]
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("p2"))
+        .unwrap();
+
+    let stack = inner
+        .borrow_mut()
+        .create_stack_node(vec![p1.clone(), p2.clone()], 0, false, Some("stack"))
+        .unwrap();
+
+    assert_eq!(stack.shape(), vec![3, 3]);
+    assert_eq!(stack.name(), Some("stack"));
+    assert!(!stack.is_leaf());
+    assert_eq!(stack.parents().len(), 2);
+}
+
+#[test]
+fn test_create_stack_node_stack_axis0() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // stack 模式：在 axis=0 插入新维度
+    // [2, 3] + [2, 3] -> [2, 2, 3]
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+
+    let stack = inner
+        .borrow_mut()
+        .create_stack_node(vec![p1, p2], 0, true, None)
+        .unwrap();
+
+    assert_eq!(stack.shape(), vec![2, 2, 3]);
+}
+
+#[test]
+fn test_create_stack_node_three_parents() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], None)
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], None)
+        .unwrap();
+    let p3 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], None)
+        .unwrap();
+
+    let stack = inner
+        .borrow_mut()
+        .create_stack_node(vec![p1, p2, p3], 0, true, None)
+        .unwrap();
+
+    // [2, 2] * 3 -> [3, 2, 2]
+    assert_eq!(stack.shape(), vec![3, 2, 2]);
+}
+
+#[test]
+fn test_create_stack_node_shape_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // stack 模式要求形状完全相同
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], None) // 形状不同
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_stack_node(vec![p1, p2], 0, true, None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_stack_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_stack;
+    let weak_p1;
+    let weak_p2;
+    {
+        let p1 = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        let p2 = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_p1 = Rc::downgrade(&p1);
+        weak_p2 = Rc::downgrade(&p2);
+
+        let stack = inner
+            .borrow_mut()
+            .create_stack_node(vec![p1, p2], 0, true, None)
+            .unwrap();
+        weak_stack = Rc::downgrade(&stack);
+
+        assert!(weak_stack.upgrade().is_some());
+        assert!(weak_p1.upgrade().is_some());
+        assert!(weak_p2.upgrade().is_some());
+    }
+    assert!(weak_stack.upgrade().is_none());
+    assert!(weak_p1.upgrade().is_none());
+    assert!(weak_p2.upgrade().is_none());
+}

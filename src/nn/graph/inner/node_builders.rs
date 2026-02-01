@@ -422,6 +422,138 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "avgpool2d", vec![parent])
     }
 
+    /// 创建 Flatten 节点（方案 C 新 API）
+    ///
+    /// 将输入展平为 2D 张量。
+    /// - `keep_first_dim = true`: [d0, d1, d2, ...] → [d0, d1*d2*...]
+    /// - `keep_first_dim = false`: [d0, d1, ...] → [1, d0*d1*...]
+    pub fn create_flatten_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        keep_first_dim: bool,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Flatten;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let flatten =
+            Flatten::new_from_shapes(&parent_shape, &parent_dynamic_shape, keep_first_dim)?;
+        let raw_node: NodeType = flatten.into();
+
+        self.create_node_inner(raw_node, name, "flatten", vec![parent])
+    }
+
+    /// 创建 Reshape 节点（方案 C 新 API）
+    ///
+    /// 改变张量形状而不改变数据，目标形状元素总数必须与输入相同。
+    pub fn create_reshape_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        target_shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Reshape;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let reshape =
+            Reshape::new_from_shapes(&parent_shape, &parent_dynamic_shape, target_shape)?;
+        let raw_node: NodeType = reshape.into();
+
+        self.create_node_inner(raw_node, name, "reshape", vec![parent])
+    }
+
+    /// 创建 Stack 节点（方案 C 新 API）
+    ///
+    /// 将多个张量沿指定轴堆叠/拼接。
+    /// - `new_dim=true`: 在指定位置插入新维度后堆叠（类似 torch.stack）
+    /// - `new_dim=false`: 沿现有维度拼接（类似 torch.cat）
+    pub fn create_stack_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        axis: usize,
+        new_dim: bool,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Stack;
+
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        let stack = Stack::new_from_shapes(
+            &parent_shapes_ref,
+            &parent_dynamic_shapes,
+            parent_ids,
+            axis,
+            new_dim,
+        )?;
+        let raw_node: NodeType = stack.into();
+
+        self.create_node_inner(raw_node, name, "stack", parents)
+    }
+
+    /// 创建 Select 节点（方案 C 新 API）
+    ///
+    /// 从张量中选择指定轴和索引的切片，输出维度减少 1。
+    pub fn create_select_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        axis: usize,
+        index: usize,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Select;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let select =
+            Select::new_from_shapes(&parent_shape, &parent_dynamic_shape, axis, index)?;
+        let raw_node: NodeType = select.into();
+
+        self.create_node_inner(raw_node, name, "select", vec![parent])
+    }
+
+    /// 创建 Gather 节点（方案 C 新 API）
+    ///
+    /// 按索引张量从指定维度收集元素。
+    /// 用于 SAC/DQN 等强化学习算法：按动作索引选择 Q 值。
+    ///
+    /// # 参数
+    /// - `input`: 输入数据节点（如 Q 值）
+    /// - `index`: 索引节点（如动作索引）
+    /// - `dim`: gather 的维度
+    pub fn create_gather_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        index: Rc<NodeInner>,
+        dim: usize,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Gather;
+
+        let input_shape = input.shape();
+        let index_shape = index.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+        let index_dynamic_shape = index.dynamic_shape();
+
+        let gather = Gather::new_from_shapes(
+            &input_shape,
+            &index_shape,
+            &input_dynamic_shape,
+            &index_dynamic_shape,
+            dim,
+        )?;
+        let raw_node: NodeType = gather.into();
+
+        self.create_node_inner(raw_node, name, "gather", vec![input, index])
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表

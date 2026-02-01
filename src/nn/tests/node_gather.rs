@@ -379,3 +379,135 @@ fn test_gather_shape_mismatch() {
     let result = input.gather(1, &index);
     assert!(result.is_err());
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_gather_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // input: [2, 3], index: [2, 1], dim=1 -> output: [2, 1]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+    let index = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 1], Some("index"))
+        .unwrap();
+
+    let gathered = inner
+        .borrow_mut()
+        .create_gather_node(input.clone(), index.clone(), 1, Some("gathered"))
+        .unwrap();
+
+    assert_eq!(gathered.shape(), vec![2, 1]);
+    assert_eq!(gathered.name(), Some("gathered"));
+    assert!(!gathered.is_leaf());
+    assert_eq!(gathered.parents().len(), 2);
+}
+
+#[test]
+fn test_create_gather_node_dim0() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // input: [3, 4], index: [2, 4], dim=0 -> output: [2, 4]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+    let index = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], None)
+        .unwrap();
+
+    let gathered = inner
+        .borrow_mut()
+        .create_gather_node(input, index, 0, None)
+        .unwrap();
+
+    assert_eq!(gathered.shape(), vec![2, 4]);
+}
+
+#[test]
+fn test_create_gather_node_3d() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // input: [2, 3, 4], index: [2, 1, 4], dim=1 -> output: [2, 1, 4]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], None)
+        .unwrap();
+    let index = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 1, 4], None)
+        .unwrap();
+
+    let gathered = inner
+        .borrow_mut()
+        .create_gather_node(input, index, 1, None)
+        .unwrap();
+
+    assert_eq!(gathered.shape(), vec![2, 1, 4]);
+}
+
+#[test]
+fn test_create_gather_node_dim_out_of_range() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+    let index = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 1], None)
+        .unwrap();
+
+    // dim=2 超出 2D 张量范围
+    let result = inner
+        .borrow_mut()
+        .create_gather_node(input, index, 2, None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_gather_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_gathered;
+    let weak_input;
+    let weak_index;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        let index = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 1], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+        weak_index = Rc::downgrade(&index);
+
+        let gathered = inner
+            .borrow_mut()
+            .create_gather_node(input, index, 1, None)
+            .unwrap();
+        weak_gathered = Rc::downgrade(&gathered);
+
+        assert!(weak_gathered.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+        assert!(weak_index.upgrade().is_some());
+    }
+    assert!(weak_gathered.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+    assert!(weak_index.upgrade().is_none());
+}

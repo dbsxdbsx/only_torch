@@ -41,27 +41,26 @@ impl Stack {
         self.new_dim
     }
 
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
+    /// 从父节点形状信息创建 Stack 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shapes: &[&[usize]],
+        parent_dynamic_shapes: &[DynamicShape],
+        parent_ids: Vec<NodeId>,
         axis: usize,
         new_dim: bool,
     ) -> Result<Self, GraphError> {
         // 1. 验证父节点数量
-        if parents.is_empty() {
+        if parent_shapes.is_empty() {
             return Err(GraphError::InvalidOperation(
                 "Stack 节点至少需要 1 个父节点".to_string(),
             ));
         }
 
-        let first_shape = parents[0].value_expected_shape();
+        let first_shape = parent_shapes[0];
         let ndim = first_shape.len();
 
         // 2. 验证 axis
-        let max_axis = if new_dim {
-            ndim
-        } else {
-            ndim.saturating_sub(1)
-        };
+        let max_axis = if new_dim { ndim } else { ndim.saturating_sub(1) };
         if axis > max_axis {
             return Err(GraphError::InvalidOperation(format!(
                 "Stack: axis {axis} 超出有效范围 [0, {max_axis}]"
@@ -69,13 +68,11 @@ impl Stack {
         }
 
         // 3. 验证形状并收集 parent_sizes
-        let mut parent_sizes = Vec::with_capacity(parents.len());
+        let mut parent_sizes = Vec::with_capacity(parent_shapes.len());
 
         if new_dim {
-            // stack 模式：所有父节点形状必须完全相同
-            for (i, parent) in parents.iter().enumerate().skip(1) {
-                let shape = parent.value_expected_shape();
-                if shape != first_shape {
+            for (i, shape) in parent_shapes.iter().enumerate().skip(1) {
+                if *shape != first_shape {
                     return Err(GraphError::ShapeMismatch {
                         expected: first_shape.to_vec(),
                         got: shape.to_vec(),
@@ -83,12 +80,9 @@ impl Stack {
                     });
                 }
             }
-            // stack 模式下每个父节点贡献 1 个切片
-            parent_sizes = vec![1; parents.len()];
+            parent_sizes = vec![1; parent_shapes.len()];
         } else {
-            // concat 模式：除 axis 外其他维度必须相同
-            for (i, parent) in parents.iter().enumerate() {
-                let shape = parent.value_expected_shape();
+            for (i, shape) in parent_shapes.iter().enumerate() {
                 if shape.len() != ndim {
                     return Err(GraphError::ShapeMismatch {
                         expected: first_shape.to_vec(),
@@ -96,7 +90,6 @@ impl Stack {
                         message: format!("Stack (new_dim=false): 父节点 {i} 维度数不一致"),
                     });
                 }
-                // 检查除 axis 外的维度
                 for (d, (&s1, &s2)) in first_shape.iter().zip(shape.iter()).enumerate() {
                     if d != axis && s1 != s2 {
                         return Err(GraphError::ShapeMismatch {
@@ -114,54 +107,41 @@ impl Stack {
 
         // 4. 计算输出形状
         let fixed_shape = if new_dim {
-            // 在 axis 位置插入新维度
             let mut shape = first_shape.to_vec();
-            shape.insert(axis, parents.len());
+            shape.insert(axis, parent_shapes.len());
             shape
         } else {
-            // axis 维度是所有父节点在该维度的大小之和
             let mut shape = first_shape.to_vec();
             shape[axis] = parent_sizes.iter().sum();
             shape
         };
 
         // 5. 计算动态形状
-        // Stack/Concat 不涉及广播，直接基于 fixed_shape 构建
-        // 但需要保留父节点的动态维度信息
-        let supports_dynamic = parents.iter().any(|p| p.supports_dynamic_batch());
-        let first_dyn = parents[0].dynamic_expected_shape();
+        let supports_dynamic = parent_dynamic_shapes.iter().any(|d| d.has_dynamic_dims());
+        let first_dyn = &parent_dynamic_shapes[0];
 
         let dynamic_shape = if new_dim {
-            // Stack 模式：在 axis 位置插入固定维度（父节点数量），其他维度继承
             let mut dims: Vec<Option<usize>> = Vec::with_capacity(fixed_shape.len());
             for (i, &size) in fixed_shape.iter().enumerate() {
                 if i == axis {
-                    // 新插入的维度是固定的（父节点数量）
                     dims.push(Some(size));
                 } else {
-                    // 其他维度继承第一个父节点的动态性
                     let orig_idx = if i < axis { i } else { i - 1 };
                     dims.push(first_dyn.dim(orig_idx));
                 }
             }
             DynamicShape::new(&dims)
         } else {
-            // Concat 模式：axis 维度是固定的，其他维度继承
             let mut dims: Vec<Option<usize>> = Vec::with_capacity(fixed_shape.len());
             for (i, &size) in fixed_shape.iter().enumerate() {
                 if i == axis {
-                    // 拼接轴是固定的（各父节点 axis 维度之和）
                     dims.push(Some(size));
                 } else {
-                    // 其他维度继承第一个父节点的动态性
                     dims.push(first_dyn.dim(i));
                 }
             }
             DynamicShape::new(&dims)
         };
-
-        // 6. 记录父节点 ID（用于 backward 时识别目标父节点）
-        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
         Ok(Self {
             id: None,
@@ -176,6 +156,24 @@ impl Stack {
             dynamic_shape,
             supports_dynamic,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(
+        parents: &[&NodeHandle],
+        axis: usize,
+        new_dim: bool,
+    ) -> Result<Self, GraphError> {
+        let shapes: Vec<Vec<usize>> = parents
+            .iter()
+            .map(|p| p.value_expected_shape().to_vec())
+            .collect();
+        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
+        let dynamic_shapes: Vec<DynamicShape> =
+            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        Self::new_from_shapes(&shapes_ref, &dynamic_shapes, parent_ids, axis, new_dim)
     }
 }
 

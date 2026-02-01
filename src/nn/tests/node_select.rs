@@ -587,3 +587,112 @@ fn test_select_dynamic_batch_backward() {
     graph.zero_grad().unwrap();
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_select_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // [2, 3, 4] select axis=1, index=0 -> [2, 4]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], Some("input"))
+        .unwrap();
+
+    let selected = inner
+        .borrow_mut()
+        .create_select_node(input.clone(), 1, 0, Some("selected"))
+        .unwrap();
+
+    assert_eq!(selected.shape(), vec![2, 4]);
+    assert_eq!(selected.name(), Some("selected"));
+    assert!(!selected.is_leaf());
+    assert_eq!(selected.parents().len(), 1);
+}
+
+#[test]
+fn test_create_select_node_axis0() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // [3, 4, 5] select axis=0, index=2 -> [4, 5]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4, 5], None)
+        .unwrap();
+
+    let selected = inner
+        .borrow_mut()
+        .create_select_node(input, 0, 2, None)
+        .unwrap();
+
+    assert_eq!(selected.shape(), vec![4, 5]);
+}
+
+#[test]
+fn test_create_select_node_last_axis() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // [2, 3, 4] select axis=2, index=1 -> [2, 3]
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], None)
+        .unwrap();
+
+    let selected = inner
+        .borrow_mut()
+        .create_select_node(input, 2, 1, None)
+        .unwrap();
+
+    assert_eq!(selected.shape(), vec![2, 3]);
+}
+
+#[test]
+fn test_create_select_node_index_out_of_bounds() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], None)
+        .unwrap();
+
+    // index=5 超出 axis=1 的大小 3
+    let result = inner
+        .borrow_mut()
+        .create_select_node(input, 1, 5, None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_select_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_selected;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let selected = inner
+            .borrow_mut()
+            .create_select_node(input, 1, 0, None)
+            .unwrap();
+        weak_selected = Rc::downgrade(&selected);
+
+        assert!(weak_selected.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_selected.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}
