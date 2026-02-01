@@ -92,38 +92,38 @@ pub trait VarReduceOps {
 
 impl VarReduceOps for Var {
     fn sum(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_sum_node(self.node_id(), None, None)
+            .create_sum_node(Rc::clone(self.node()), None, None)
             .expect("创建 Sum 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn sum_axis(&self, axis: usize) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_sum_node(self.node_id(), Some(axis), None)
+            .create_sum_node(Rc::clone(self.node()), Some(axis), None)
             .expect("创建 Sum 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn mean(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_mean_node(self.node_id(), None, None)
+            .create_mean_node(Rc::clone(self.node()), None, None)
             .expect("创建 Mean 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn mean_axis(&self, axis: usize) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_mean_node(self.node_id(), Some(axis), None)
+            .create_mean_node(Rc::clone(self.node()), Some(axis), None)
             .expect("创建 Mean 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 }

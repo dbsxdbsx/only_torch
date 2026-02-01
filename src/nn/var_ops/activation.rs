@@ -89,101 +89,101 @@ pub trait VarActivationOps {
 
 impl VarActivationOps for Var {
     fn relu(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_relu_node(self.node_id(), None)
+            .create_relu_node(Rc::clone(self.node()), None)
             .expect("创建 ReLU 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn sigmoid(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_sigmoid_node(self.node_id(), None)
+            .create_sigmoid_node(Rc::clone(self.node()), None)
             .expect("创建 Sigmoid 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn tanh(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_tanh_node(self.node_id(), None)
+            .create_tanh_node(Rc::clone(self.node()), None)
             .expect("创建 Tanh 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn leaky_relu(&self, alpha: f32) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_leaky_relu_node(self.node_id(), alpha, None)
+            .create_leaky_relu_node(Rc::clone(self.node()), alpha, None)
             .expect("创建 LeakyReLU 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn softmax(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_softmax_node(self.node_id(), None)
+            .create_softmax_node(Rc::clone(self.node()), None)
             .expect("创建 Softmax 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn log_softmax(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_log_softmax_node(self.node_id(), None)
+            .create_log_softmax_node(Rc::clone(self.node()), None)
             .expect("创建 LogSoftmax 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn softplus(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_softplus_node(self.node_id(), None)
+            .create_softplus_node(Rc::clone(self.node()), None)
             .expect("创建 SoftPlus 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn step(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_step_node(self.node_id(), None)
+            .create_step_node(Rc::clone(self.node()), None)
             .expect("创建 Step 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn sign(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_sign_node(self.node_id(), None)
+            .create_sign_node(Rc::clone(self.node()), None)
             .expect("创建 Sign 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn abs(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_abs_node(self.node_id(), None)
+            .create_abs_node(Rc::clone(self.node()), None)
             .expect("创建 Abs 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn ln(&self) -> Var {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_ln_node(self.node_id(), None)
+            .create_ln_node(Rc::clone(self.node()), None)
             .expect("创建 Ln 节点失败");
-        Self::new(id, Rc::clone(self.graph()))
+        Self::new_with_rc_graph(node, &graph)
     }
 }

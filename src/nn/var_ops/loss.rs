@@ -101,51 +101,56 @@ pub trait VarLossOps {
 impl VarLossOps for Var {
     fn cross_entropy<T: LossTarget>(&self, target: T) -> Result<Var, GraphError> {
         let target_var = target.into_var(self);
-        let id = self.graph().borrow_mut().new_softmax_cross_entropy_node(
-            self.node_id(),
-            target_var.node_id(),
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_softmax_cross_entropy_node(
+            Rc::clone(self.node()),
+            Rc::clone(target_var.node()),
             None,
         )?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     fn bce_loss<T: LossTarget>(&self, target: T) -> Result<Var, GraphError> {
         let target_var = target.into_var(self);
-        let id = self.graph().borrow_mut().new_bce_loss_node(
-            self.node_id(),
-            target_var.node_id(),
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_bce_mean_node(
+            Rc::clone(self.node()),
+            Rc::clone(target_var.node()),
             None,
         )?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     fn mse_loss<T: LossTarget>(&self, target: T) -> Result<Var, GraphError> {
         let target_var = target.into_var(self);
-        let id = self.graph().borrow_mut().new_mse_loss_node(
-            self.node_id(),
-            target_var.node_id(),
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_mse_mean_node(
+            Rc::clone(self.node()),
+            Rc::clone(target_var.node()),
             None,
         )?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     fn mae_loss<T: LossTarget>(&self, target: T) -> Result<Var, GraphError> {
         let target_var = target.into_var(self);
-        let id = self.graph().borrow_mut().new_mae_loss_node(
-            self.node_id(),
-            target_var.node_id(),
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_mae_mean_node(
+            Rc::clone(self.node()),
+            Rc::clone(target_var.node()),
             None,
         )?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     fn huber_loss<T: LossTarget>(&self, target: T) -> Result<Var, GraphError> {
         let target_var = target.into_var(self);
-        let id = self.graph().borrow_mut().new_huber_loss_node(
-            self.node_id(),
-            target_var.node_id(),
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_huber_default_node(
+            Rc::clone(self.node()),
+            Rc::clone(target_var.node()),
             None,
         )?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 }

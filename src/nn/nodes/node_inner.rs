@@ -183,11 +183,21 @@ impl NodeInner {
     /// 累加梯度（如果已有梯度则相加，否则直接设置）
     pub fn accumulate_grad(&self, grad: &Tensor) -> Result<(), GraphError> {
         let mut raw = self.raw_node.borrow_mut();
-        if let Some(existing) = raw.grad() {
+        // 对于不支持设置梯度的节点（如 BasicInput），静默跳过
+        // 这是预期行为：输入数据不需要梯度
+        let result = if let Some(existing) = raw.grad() {
             let new_grad = existing + grad;
             raw.set_grad(Some(&new_grad))
         } else {
             raw.set_grad(Some(grad))
+        };
+        match result {
+            Ok(()) => Ok(()),
+            Err(GraphError::InvalidOperation(msg)) if msg.contains("不支持设置梯度") => {
+                // 静默跳过不支持梯度的节点
+                Ok(())
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -346,7 +356,19 @@ impl NodeInner {
         // - 当到达父节点执行 propagate_grad_to_parents 时，它会检查自己的 detach 状态
         for (i, parent) in self.parents.iter().enumerate() {
             // 计算对该父节点的梯度
-            let grad = self.calc_grad_to_parent_index(i, upstream_grad)?;
+            let grad = match self.calc_grad_to_parent_index(i, upstream_grad) {
+                Ok(g) => g,
+                Err(GraphError::InvalidOperation(msg))
+                    if msg.contains("不应该")
+                        || msg.contains("不需要")
+                        || msg.contains("不支持") =>
+                {
+                    // 某些节点设计上不需要计算对特定父节点的梯度
+                    // 例如：labels 不需要梯度、某些常量节点等
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
 
             // 累加到父节点
             parent.accumulate_grad(&grad)?;

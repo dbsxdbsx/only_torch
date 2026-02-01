@@ -107,14 +107,14 @@ impl Var {
             }
         }
 
-        // 3. 收集所有 NodeId 并调用 graph 方法
-        let node_ids: Vec<_> = vars.iter().map(|v| v.node_id()).collect();
-        let graph_rc = Rc::clone(first.graph());
-        let new_id = graph_rc
+        // 3. 收集所有 NodeInner 并调用 graph 方法
+        let nodes: Vec<_> = vars.iter().map(|v| Rc::clone(v.node())).collect();
+        let graph = first.graph();
+        let node = graph
             .borrow_mut()
-            .new_stack_node(&node_ids, axis, new_dim, None)?;
+            .create_stack_node(nodes, axis, new_dim, None)?;
 
-        Ok(Self::new(new_id, graph_rc))
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 }
 
@@ -205,36 +205,40 @@ pub trait VarShapeOps {
 
 impl VarShapeOps for Var {
     fn reshape(&self, shape: &[usize]) -> Result<Var, GraphError> {
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_reshape_node(self.node_id(), shape, None)?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+            .create_reshape_node(Rc::clone(self.node()), shape, None)?;
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     fn flatten(&self) -> Result<Var, GraphError> {
         // keep_first_dim = true: 保留 batch 维度，展平为 [batch, other_elements]
-        let id = self
-            .graph()
+        let graph = self.graph();
+        let node = graph
             .borrow_mut()
-            .new_flatten_node(self.node_id(), true, None)?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+            .create_flatten_node(Rc::clone(self.node()), true, None)?;
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     fn select(&self, axis: usize, index: usize) -> Result<Var, GraphError> {
-        let id = self
-            .graph()
-            .borrow_mut()
-            .new_select_node(self.node_id(), axis, index, None)?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+        let graph = self.graph();
+        let node =
+            graph
+                .borrow_mut()
+                .create_select_node(Rc::clone(self.node()), axis, index, None)?;
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     fn gather<I: GatherIndex>(&self, dim: usize, index: I) -> Result<Var, GraphError> {
         let index_var = index.into_var(self);
-        let id = self
-            .graph()
-            .borrow_mut()
-            .new_gather_node(self.node_id(), index_var.node_id(), dim, None)?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_gather_node(
+            Rc::clone(self.node()),
+            Rc::clone(index_var.node()),
+            dim,
+            None,
+        )?;
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 }

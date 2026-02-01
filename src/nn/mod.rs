@@ -28,6 +28,7 @@ pub use layer::{AvgPool2d, Conv2d, Gru, Linear, Lstm, MaxPool2d, Rnn};
 pub use model_state::{ForwardInput, ForwardOutput, ModelState};
 pub use module::Module;
 pub use nodes::NodeId;
+pub use nodes::node_inner::NodeInner; // 方案 C 新增：供内部模块使用
 pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
 pub use optimizer::{Adam, Optimizer, SGD};
 pub use shape::{Dim, DynamicShape};

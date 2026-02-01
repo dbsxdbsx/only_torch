@@ -12,9 +12,10 @@
  */
 
 use crate::nn::graph::Graph;
-use crate::nn::{Init, VarLossOps};
+use crate::nn::{Init, Var, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
+use std::rc::Rc;
 
 // ==================== 前向传播测试 ====================
 
@@ -32,11 +33,11 @@ fn test_amax_forward_3d_axis0() {
         ))
         .unwrap();
 
-    let max_id = graph
+    let max_node = graph
         .inner_mut()
-        .new_amax_node(input.node_id(), 0, Some("amax"))
+        .create_amax_node(Rc::clone(input.node()), 0, Some("amax"))
         .unwrap();
-    let max_var = graph.wrap_node_id(max_id);
+    let max_var = Var::new_with_rc_graph(max_node, &graph.inner_rc());
 
     max_var.forward().unwrap();
 
@@ -61,11 +62,11 @@ fn test_amax_forward_3d_axis1() {
         .unwrap();
 
     // 沿 axis=1 求最大值
-    let max_id = graph
+    let max_node = graph
         .inner_mut()
-        .new_amax_node(input.node_id(), 1, None)
+        .create_amax_node(Rc::clone(input.node()), 1, None)
         .unwrap();
-    let max_var = graph.wrap_node_id(max_id);
+    let max_var = Var::new_with_rc_graph(max_node, &graph.inner_rc());
 
     max_var.forward().unwrap();
 
@@ -90,11 +91,11 @@ fn test_amax_forward_3d_axis2() {
         .unwrap();
 
     // 沿 axis=2 求最大值
-    let max_id = graph
+    let max_node = graph
         .inner_mut()
-        .new_amax_node(input.node_id(), 2, None)
+        .create_amax_node(Rc::clone(input.node()), 2, None)
         .unwrap();
-    let max_var = graph.wrap_node_id(max_id);
+    let max_var = Var::new_with_rc_graph(max_node, &graph.inner_rc());
 
     max_var.forward().unwrap();
 
@@ -117,17 +118,19 @@ fn test_amax_backward_basic() {
     //  [[7, 8, 9], [10, 11, 12]]]
     input
         .set_value(&Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
             &[2, 2, 3],
         ))
         .unwrap();
 
     // axis=2: amax = [[3, 6], [9, 12]]
-    let max_id = graph
+    let max_node = graph
         .inner_mut()
-        .new_amax_node(input.node_id(), 2, None)
+        .create_amax_node(Rc::clone(input.node()), 2, None)
         .unwrap();
-    let max_var = graph.wrap_node_id(max_id);
+    let max_var = Var::new_with_rc_graph(max_node, &graph.inner_rc());
 
     // MSE loss with target zeros [2, 2]
     let target = Tensor::zeros(&[2, 2]);
@@ -181,11 +184,11 @@ fn test_amax_backward_tie() {
         .unwrap();
 
     // axis=2: amax = [[3, 6], [2, 5]]
-    let max_id = graph
+    let max_node = graph
         .inner_mut()
-        .new_amax_node(input.node_id(), 2, None)
+        .create_amax_node(Rc::clone(input.node()), 2, None)
         .unwrap();
-    let max_var = graph.wrap_node_id(max_id);
+    let max_var = Var::new_with_rc_graph(max_node, &graph.inner_rc());
 
     // MSE loss with target zeros
     let target = Tensor::zeros(&[2, 2]);
@@ -229,15 +232,18 @@ fn test_amax_backward_axis0() {
     // [[[1, 5], [3, 2]],
     //  [[4, 2], [6, 8]]]
     input
-        .set_value(&Tensor::new(&[1.0, 5.0, 3.0, 2.0, 4.0, 2.0, 6.0, 8.0], &[2, 2, 2]))
+        .set_value(&Tensor::new(
+            &[1.0, 5.0, 3.0, 2.0, 4.0, 2.0, 6.0, 8.0],
+            &[2, 2, 2],
+        ))
         .unwrap();
 
     // axis=0: amax = [[4, 5], [6, 8]]
-    let max_id = graph
+    let max_node = graph
         .inner_mut()
-        .new_amax_node(input.node_id(), 0, None)
+        .create_amax_node(Rc::clone(input.node()), 0, None)
         .unwrap();
-    let max_var = graph.wrap_node_id(max_id);
+    let max_var = Var::new_with_rc_graph(max_node, &graph.inner_rc());
 
     // MSE loss with target zeros
     let target = Tensor::zeros(&[2, 2]);
@@ -293,11 +299,11 @@ fn test_amax_dqn_style() {
         .unwrap();
 
     // amax Q 值 = [[0.5, 0.8], [0.9, 0.7]]
-    let max_q_id = graph
+    let max_q_node = graph
         .inner_mut()
-        .new_amax_node(q_values.node_id(), 2, Some("max_q"))
+        .create_amax_node(Rc::clone(q_values.node()), 2, Some("max_q"))
         .unwrap();
-    let max_q = graph.wrap_node_id(max_q_id);
+    let max_q = Var::new_with_rc_graph(max_q_node, &graph.inner_rc());
 
     // DQN loss: (amax_Q - target_Q)^2
     let target_q = Tensor::new(&[1.0, 1.0, 1.0, 1.0], &[2, 2]);
@@ -351,14 +357,14 @@ fn test_amax_invalid_axis() {
         .unwrap();
 
     // axis=3 超出 3D 张量的范围
-    let result = graph.inner_mut().new_amax_node(input.node_id(), 3, None);
+    let result = graph
+        .inner_mut()
+        .create_amax_node(Rc::clone(input.node()), 3, None);
 
     assert!(result.is_err());
 }
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
-
-use std::rc::Rc;
 
 #[test]
 fn test_create_amax_node_axis0() {
@@ -410,9 +416,7 @@ fn test_create_amax_node_invalid_axis() {
         .unwrap();
 
     // axis=2 超出范围
-    let result = inner
-        .borrow_mut()
-        .create_amax_node(input, 2, None);
+    let result = inner.borrow_mut().create_amax_node(input, 2, None);
 
     assert!(result.is_err());
 }
@@ -431,10 +435,7 @@ fn test_create_amax_node_drop_releases() {
             .unwrap();
         weak_input = Rc::downgrade(&input);
 
-        let amax = inner
-            .borrow_mut()
-            .create_amax_node(input, 0, None)
-            .unwrap();
+        let amax = inner.borrow_mut().create_amax_node(input, 0, None).unwrap();
         weak_amax = Rc::downgrade(&amax);
 
         assert!(weak_amax.upgrade().is_some());

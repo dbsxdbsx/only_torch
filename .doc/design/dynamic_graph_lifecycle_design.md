@@ -903,28 +903,66 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 #### Step 2.7：移除过渡代码
 
 > 清理所有过渡期的冗余代码，统一使用新架构。
+> **原则**：一次性迁移所有 Var 创建路径，然后清理旧代码。不做渐进式过渡。
 
-**Var 结构清理**：
-- [ ] 移除 `Var.id` 字段（改用 `self.node.id()` 获取）
-- [ ] 移除 `Var.node` 的 `Option` 包装（直接 `node: Rc<NodeInner>`）
-- [ ] `Var.graph` 从 `Rc` 改为 `Weak<RefCell<GraphInner>>`
-- [ ] 简化 Var 方法中的条件分支（移除旧路径回退）：
-  - `node_id()`, `value_expected_shape()`, `is_detached()`
-  - `forward()`, `value()`, `set_value()`, `grad()`
-- [ ] Var 算子方法（`try_add` 等）迁移到新 API（`create_xxx_node`）
+**2.7.1 Var 全面迁移**：
 
-**GraphInner 清理**：
-- [ ] 移除 `nodes: HashMap<NodeId, NodeHandle>`
-- [ ] 移除 `forward_edges`, `backward_edges`
+一次性完成所有 Var 创建路径的迁移，并清理 Var 结构：
+
+*Graph 创建方法*：
+- [x] `Graph.input()`, `Graph.target()`, `Graph.smart_input()` 迁移到 `create_xxx_node`
+- [x] `Graph.parameter()`, `Graph.parameter_with_init()` 迁移
+- [x] `Graph.state()` 迁移
+- [x] `Graph.randn()`, `Graph.zeros()`, `Graph.ones()`, `Graph.constant()` 等迁移
+
+*Var 算子方法*：
+- [x] `try_add`, `try_sub`, `try_mul`, `try_div` 迁移
+- [x] `tensor_to_var` 迁移
+- [x] `var_ops/` 下所有方法迁移（activation, loss, matrix, shape, reduce, regularization）
+
+*Var 结构清理*：
+- [x] 移除 `Var.node` 的 `Option` 包装（直接 `node: Rc<NodeInner>`）
+- [x] 移除 `Var.id` 字段（改用 `self.node.id()` 获取）
+- [x] 移除 Var 方法中的旧路径分支（`node_id()`, `forward()`, `value()` 等）
+- [x] `Var.graph` 从 `Rc` 改为 `Weak<RefCell<GraphInner>>`
+
+*Layer 模块适配*：
+- [x] Conv2d, AvgPool2d, MaxPool2d 迁移
+- [x] RNN, GRU, LSTM 缓存改为存储 `Rc<NodeInner>`（临时方案，后续按 4.2 节移除缓存）
+
+*其他模块适配*：
+- [x] Criterion 迁移到新 API（临时方案，后续按 4.3 节移除）
+- [x] ModelState 迁移到新 API（临时方案，后续按 4.1 节移除）
+
+*过渡期兼容*：
+- [x] `create_node_inner` 同时注册 NodeHandle 到 nodes HashMap（供旧 forward 路径使用）
+- [x] `Graph.forward()` 改用 `forward_via_node_inner`
+- [x] 梯度传播跳过不支持梯度的节点（BasicInput 等）
+
+*验证*：
+- [ ] 所有单元测试通过（当前 1651 通过，90 失败）
+  - 失败原因：`ZerosLike` 节点在 `forward_recursive` 中被当作叶子节点处理
+  - 影响范围：RNN/GRU/LSTM 层、dynamic_batch 测试、部分 optimizer 测试
+
+**2.7.2 模块适配**：
+- [ ] Optimizer 适配：`step()` 改用 Var 的 `node` 访问值/梯度
+- [ ] 可视化模块适配：改用 `Var.visualize()` 遍历 parents
+- [ ] BPTT 模块适配（或标记 deprecated）
+- [ ] Recurrent 模块适配
+- [ ] Describe 模块适配
+
+**2.7.3 GraphInner 清理**：
 - [ ] 移除旧的 forward/backward 方法：
   - `forward(NodeId)`, `backward(NodeId)`, `backward_ex()`, `backward_vjp_core()`
+- [ ] 移除旧节点创建 API（`new_xxx_node` 系列方法）
 - [ ] 移除 `get_node` 系列方法（依赖 nodes HashMap）：
   - `get_node()`, `get_node_mut()`
   - `get_node_parents()`, `get_node_children()`
   - `get_node_name()`, `get_node_value()`, `get_node_grad()` 等
-- [ ] 移除旧节点创建 API（`new_xxx_node` 系列方法）
+- [ ] 移除 `nodes: HashMap<NodeId, NodeHandle>`
+- [ ] 移除 `forward_edges`, `backward_edges`
 
-**节点类型清理**：
+**2.7.4 节点类型清理**：
 - [ ] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法
 - [ ] 将 `new_from_shapes()` 重命名为 `new()`
 - [ ] 移除 `NodeHandle` 的桥接方法：
@@ -934,8 +972,8 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - `NodeInner` 已完全取代其职责
   - 所有功能已迁移到 `NodeInner`
 
-**验证**：
-- [ ] 回归测试：所有现有测试通过
+**2.7.5 验证**：
+- [ ] 回归测试：所有现有单元测试通过
 
 #### Step 2.8：完整性验证
 - [ ] 运行所有单元测试

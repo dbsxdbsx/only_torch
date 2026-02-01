@@ -45,8 +45,8 @@ impl GraphInner {
         // 创建 NodeInner
         let node_inner = Rc::new(NodeInner::new(
             node_id,
-            Some(node_name),
-            raw_node,
+            Some(node_name.clone()),
+            raw_node.clone(),
             parents.clone(),
         ));
 
@@ -62,6 +62,12 @@ impl GraphInner {
             .entry(node_id)
             .or_default()
             .extend(&parent_ids);
+
+        // 过渡期：同时注册 NodeHandle 到 nodes HashMap
+        // 这样旧的 forward(node_id) API 仍然可以工作
+        let mut node_handle = NodeHandle::new(raw_node)?;
+        node_handle.bind_id_and_name(node_id, &node_name);
+        self.nodes.insert(node_id, node_handle);
 
         Ok(node_inner)
     }
@@ -379,12 +385,8 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let max_pool = MaxPool2d::new_from_shapes(
-            &parent_shape,
-            &parent_dynamic_shape,
-            kernel_size,
-            stride,
-        )?;
+        let max_pool =
+            MaxPool2d::new_from_shapes(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
         let raw_node: NodeType = max_pool.into();
 
         self.create_node_inner(raw_node, name, "maxpool2d", vec![parent])
@@ -411,12 +413,8 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let avg_pool = AvgPool2d::new_from_shapes(
-            &parent_shape,
-            &parent_dynamic_shape,
-            kernel_size,
-            stride,
-        )?;
+        let avg_pool =
+            AvgPool2d::new_from_shapes(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
         let raw_node: NodeType = avg_pool.into();
 
         self.create_node_inner(raw_node, name, "avgpool2d", vec![parent])
@@ -459,8 +457,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let reshape =
-            Reshape::new_from_shapes(&parent_shape, &parent_dynamic_shape, target_shape)?;
+        let reshape = Reshape::new_from_shapes(&parent_shape, &parent_dynamic_shape, target_shape)?;
         let raw_node: NodeType = reshape.into();
 
         self.create_node_inner(raw_node, name, "reshape", vec![parent])
@@ -512,8 +509,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let select =
-            Select::new_from_shapes(&parent_shape, &parent_dynamic_shape, axis, index)?;
+        let select = Select::new_from_shapes(&parent_shape, &parent_dynamic_shape, axis, index)?;
         let raw_node: NodeType = select.into();
 
         self.create_node_inner(raw_node, name, "select", vec![parent])
@@ -718,7 +714,12 @@ impl GraphInner {
         target: Rc<NodeInner>,
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
-        self.create_mse_node(input, target, crate::nn::nodes::raw_node::Reduction::Mean, name)
+        self.create_mse_node(
+            input,
+            target,
+            crate::nn::nodes::raw_node::Reduction::Mean,
+            name,
+        )
     }
 
     /// 创建 MAE 损失节点（方案 C 新 API）
@@ -758,7 +759,12 @@ impl GraphInner {
         target: Rc<NodeInner>,
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
-        self.create_mae_node(input, target, crate::nn::nodes::raw_node::Reduction::Mean, name)
+        self.create_mae_node(
+            input,
+            target,
+            crate::nn::nodes::raw_node::Reduction::Mean,
+            name,
+        )
     }
 
     /// 创建 BCE 损失节点（方案 C 新 API）
@@ -798,7 +804,12 @@ impl GraphInner {
         target: Rc<NodeInner>,
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
-        self.create_bce_node(logits, target, crate::nn::nodes::raw_node::Reduction::Mean, name)
+        self.create_bce_node(
+            logits,
+            target,
+            crate::nn::nodes::raw_node::Reduction::Mean,
+            name,
+        )
     }
 
     /// 创建 Huber 损失节点（方案 C 新 API）

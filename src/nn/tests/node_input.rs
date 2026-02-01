@@ -406,7 +406,8 @@ fn test_input_dynamic_batch_training() {
 // - 梯度路由（将梯度传回源 Var）
 
 use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
-use crate::nn::{Graph, Init};
+use crate::nn::{Graph, Init, Var};
+use std::rc::Rc;
 
 /// 测试: SmartInput 基本创建和值设置
 #[test]
@@ -529,11 +530,12 @@ fn test_smart_input_gradient_routing() {
     let fake = z.matmul(&g_w).unwrap(); // [1,1] @ [1,2] -> [1,2]
 
     // 创建 SmartInput（模拟 ModelState 的入口）
-    let router_id = graph
+    let router_node = graph
         .inner_mut()
-        .new_smart_input_node(&[1, 2], Some("router"))
+        .create_smart_input_node(&[1, 2], Some("router"))
         .unwrap();
-    let router = crate::nn::Var::new(router_id, graph.inner_rc());
+    let router_id = router_node.id();
+    let router = Var::new_with_rc_graph(router_node, &graph.inner_rc());
 
     // 设置 SmartInput 的值（从 fake 复制）
     fake.forward().unwrap();
@@ -582,11 +584,12 @@ fn test_smart_input_detached_no_routing() {
     let fake = z.matmul(&g_w).unwrap();
 
     // 创建 SmartInput 并设置为 detached（模拟训练 D）
-    let router_id = graph
+    let router_node = graph
         .inner_mut()
-        .new_smart_input_node(&[1, 2], None)
+        .create_smart_input_node(&[1, 2], None)
         .unwrap();
-    let router = crate::nn::Var::new(router_id, graph.inner_rc());
+    let router_id = router_node.id();
+    let router = Var::new_with_rc_graph(router_node, &graph.inner_rc());
 
     fake.forward().unwrap();
     router.set_value(&fake.value().unwrap().unwrap()).unwrap();
@@ -714,8 +717,6 @@ fn test_smart_input_feature_shape_must_match() {
 }
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
-
-use std::rc::Rc;
 
 #[test]
 fn test_create_basic_input_node() {

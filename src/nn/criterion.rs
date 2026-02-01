@@ -475,13 +475,14 @@ impl HuberLoss {
         target_node.set_value(target)?;
 
         // 使用自定义 δ 创建 Huber Loss 节点
-        let loss_id = graph.inner_mut().new_huber_loss_node_with_delta(
-            input.node_id(),
-            target_node.node_id(),
+        let loss_inner = graph.inner_mut().create_huber_node(
+            std::rc::Rc::clone(input.node()),
+            std::rc::Rc::clone(target_node.node()),
+            crate::nn::Reduction::Mean,
             self.delta,
             None,
         )?;
-        let loss_node = Var::new(loss_id, graph.inner_rc());
+        let loss_node = Var::new_with_rc_graph(loss_inner, &graph.inner_rc());
 
         cache.insert(
             output_id,

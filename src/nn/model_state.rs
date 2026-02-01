@@ -499,11 +499,12 @@ impl ModelState {
         // 1. 创建 GradientRouter 作为模型入口
         // 使用完整形状创建（包含首次调用时的 batch_size），
         // 但缓存键使用特征形状，所以不同 batch_size 会复用同一个 SmartInput
-        let router_id = self
+        let router_node = self
             .graph
             .inner_mut()
-            .new_smart_input_node(&full_shape, None)?;
-        let router = Var::new(router_id, self.graph.inner_rc());
+            .create_smart_input_node(&full_shape, None)?;
+        let router_id = router_node.id();
+        let router = Var::new_with_rc_graph(router_node, &self.graph.inner_rc());
 
         // 2. 设置初始值（包含实际的 batch_size）
         router.set_value(&value)?;
@@ -658,11 +659,12 @@ impl ModelState {
         // 缓存未命中：创建新的子图
 
         // 创建两个 GradientRouter
-        let router_x_id = self
+        let router_x_node = self
             .graph
             .inner_mut()
-            .new_smart_input_node(&x_shape, None)?;
-        let router_x = Var::new(router_x_id, self.graph.inner_rc());
+            .create_smart_input_node(&x_shape, None)?;
+        let router_x_id = router_x_node.id();
+        let router_x = Var::new_with_rc_graph(router_x_node, &self.graph.inner_rc());
         router_x.set_value(&x_value)?;
         self.graph.inner_mut().set_router_detached(
             router_x_id,
@@ -673,11 +675,12 @@ impl ModelState {
             .inner_mut()
             .set_gradient_target(router_x_id, x_gradient_target)?;
 
-        let router_y_id = self
+        let router_y_node = self
             .graph
             .inner_mut()
-            .new_smart_input_node(&y_shape, None)?;
-        let router_y = Var::new(router_y_id, self.graph.inner_rc());
+            .create_smart_input_node(&y_shape, None)?;
+        let router_y_id = router_y_node.id();
+        let router_y = Var::new_with_rc_graph(router_y_node, &self.graph.inner_rc());
         router_y.set_value(&y_value)?;
         self.graph.inner_mut().set_router_detached(
             router_y_id,
@@ -816,8 +819,12 @@ impl ModelState {
         let mut router_ids = Vec::with_capacity(3);
 
         for (shape, value, detach_status, gradient_target, should_detach, _) in &inputs_info {
-            let router_id = self.graph.inner_mut().new_smart_input_node(shape, None)?;
-            let router = Var::new(router_id, self.graph.inner_rc());
+            let router_node = self
+                .graph
+                .inner_mut()
+                .create_smart_input_node(shape, None)?;
+            let router_id = router_node.id();
+            let router = Var::new_with_rc_graph(router_node, &self.graph.inner_rc());
             router.set_value(value)?;
             self.graph.inner_mut().set_router_detached(
                 router_id,

@@ -42,10 +42,10 @@ pub trait VarMatrixOps {
 impl VarMatrixOps for Var {
     fn matmul(&self, other: &Var) -> Result<Var, GraphError> {
         self.assert_same_graph(other);
-        let id =
-            self.graph()
-                .borrow_mut()
-                .new_mat_mul_node(self.node_id(), other.node_id(), None)?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_mat_mul_node(vec![Rc::clone(self.node()), Rc::clone(other.node())], None)?;
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 }

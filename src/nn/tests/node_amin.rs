@@ -12,9 +12,10 @@
  */
 
 use crate::nn::graph::Graph;
-use crate::nn::{Init, VarLossOps};
+use crate::nn::{Init, Var, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
+use std::rc::Rc;
 
 // ==================== 前向传播测试 ====================
 
@@ -32,11 +33,11 @@ fn test_amin_forward_3d_axis0() {
         ))
         .unwrap();
 
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_amin_node(input.node_id(), 0, Some("amin"))
+        .create_amin_node(Rc::clone(input.node()), 0, Some("amin"))
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     min_var.forward().unwrap();
 
@@ -61,11 +62,11 @@ fn test_amin_forward_3d_axis1() {
         .unwrap();
 
     // 沿 axis=1 求最小值
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_amin_node(input.node_id(), 1, None)
+        .create_amin_node(Rc::clone(input.node()), 1, None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     min_var.forward().unwrap();
 
@@ -90,11 +91,11 @@ fn test_amin_forward_3d_axis2() {
         .unwrap();
 
     // 沿 axis=2 求最小值
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_amin_node(input.node_id(), 2, None)
+        .create_amin_node(Rc::clone(input.node()), 2, None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     min_var.forward().unwrap();
 
@@ -117,17 +118,19 @@ fn test_amin_backward_basic() {
     //  [[9, 8, 7], [12, 11, 10]]]
     input
         .set_value(&Tensor::new(
-            &[3.0, 2.0, 1.0, 6.0, 5.0, 4.0, 9.0, 8.0, 7.0, 12.0, 11.0, 10.0],
+            &[
+                3.0, 2.0, 1.0, 6.0, 5.0, 4.0, 9.0, 8.0, 7.0, 12.0, 11.0, 10.0,
+            ],
             &[2, 2, 3],
         ))
         .unwrap();
 
     // axis=2: amin = [[1, 4], [7, 10]]
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_amin_node(input.node_id(), 2, None)
+        .create_amin_node(Rc::clone(input.node()), 2, None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     // MSE loss with target zeros [2, 2]
     let target = Tensor::zeros(&[2, 2]);
@@ -181,11 +184,11 @@ fn test_amin_backward_tie() {
         .unwrap();
 
     // axis=2: amin = [[1, 0], [3, 2]]
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_amin_node(input.node_id(), 2, None)
+        .create_amin_node(Rc::clone(input.node()), 2, None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     // MSE loss with target zeros
     let target = Tensor::zeros(&[2, 2]);
@@ -229,15 +232,18 @@ fn test_amin_backward_axis0() {
     // [[[8, 3], [6, 7]],
     //  [[4, 5], [2, 1]]]
     input
-        .set_value(&Tensor::new(&[8.0, 3.0, 6.0, 7.0, 4.0, 5.0, 2.0, 1.0], &[2, 2, 2]))
+        .set_value(&Tensor::new(
+            &[8.0, 3.0, 6.0, 7.0, 4.0, 5.0, 2.0, 1.0],
+            &[2, 2, 2],
+        ))
         .unwrap();
 
     // axis=0: amin = [[4, 3], [2, 1]]
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_amin_node(input.node_id(), 0, None)
+        .create_amin_node(Rc::clone(input.node()), 0, None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     // MSE loss with target zeros
     let target = Tensor::zeros(&[2, 2]);
@@ -293,11 +299,11 @@ fn test_amin_double_dqn_style() {
         .unwrap();
 
     // amin Q 值 = [[0.1, 0.2], [0.1, 0.2]]
-    let min_q_id = graph
+    let min_q_node = graph
         .inner_mut()
-        .new_amin_node(q_values.node_id(), 2, Some("min_q"))
+        .create_amin_node(Rc::clone(q_values.node()), 2, Some("min_q"))
         .unwrap();
-    let min_q = graph.wrap_node_id(min_q_id);
+    let min_q = Var::new_with_rc_graph(min_q_node, &graph.inner_rc());
 
     // Double DQN loss: (amin_Q - target_Q)^2
     let target_q = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[2, 2]);
@@ -351,14 +357,14 @@ fn test_amin_invalid_axis() {
         .unwrap();
 
     // axis=3 超出 3D 张量的范围
-    let result = graph.inner_mut().new_amin_node(input.node_id(), 3, None);
+    let result = graph
+        .inner_mut()
+        .create_amin_node(Rc::clone(input.node()), 3, None);
 
     assert!(result.is_err());
 }
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
-
-use std::rc::Rc;
 
 #[test]
 fn test_create_amin_node_axis0() {
@@ -410,9 +416,7 @@ fn test_create_amin_node_invalid_axis() {
         .unwrap();
 
     // axis=2 超出范围
-    let result = inner
-        .borrow_mut()
-        .create_amin_node(input, 2, None);
+    let result = inner.borrow_mut().create_amin_node(input, 2, None);
 
     assert!(result.is_err());
 }
@@ -431,10 +435,7 @@ fn test_create_amin_node_drop_releases() {
             .unwrap();
         weak_input = Rc::downgrade(&input);
 
-        let amin = inner
-            .borrow_mut()
-            .create_amin_node(input, 0, None)
-            .unwrap();
+        let amin = inner.borrow_mut().create_amin_node(input, 0, None).unwrap();
         weak_amin = Rc::downgrade(&amin);
 
         assert!(weak_amin.upgrade().is_some());

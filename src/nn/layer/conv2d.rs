@@ -120,34 +120,34 @@ impl Conv2d {
     /// # 返回
     /// 输出 Var，形状 [`batch_size`, `out_channels`, H', W']
     pub fn forward(&self, x: &Var) -> Var {
+        use std::rc::Rc;
         let graph = x.get_graph();
 
         // Conv2d: [batch, C_in, H, W] * [C_out, C_in, kH, kW] -> [batch, C_out, H', W']
         let conv_out = {
-            let mut g = graph.inner_mut();
-            let conv_id = g
-                .new_conv2d_node(
-                    x.node_id(),
-                    self.kernel.node_id(),
+            let conv_node = graph
+                .inner_mut()
+                .create_conv2d_node(
+                    vec![Rc::clone(x.node()), Rc::clone(self.kernel.node())],
                     self.stride,
                     self.padding,
                     Some(&format!("{}_conv", self.name)),
                 )
                 .expect("Conv2d conv 失败");
-            Var::new(conv_id, graph.inner_rc())
+            Var::new_with_rc_graph(conv_node, &graph.inner_rc())
         };
 
         // 如果有 bias，直接加法（Add 支持广播：[batch, C, H, W] + [1, C, 1, 1]）
         if let Some(ref bias) = self.bias {
             let output = {
-                let mut g = graph.inner_mut();
-                let out_id = g
-                    .new_add_node(
-                        &[conv_out.node_id(), bias.node_id()],
+                let out_node = graph
+                    .inner_mut()
+                    .create_add_node(
+                        vec![Rc::clone(conv_out.node()), Rc::clone(bias.node())],
                         Some(&format!("{}_out", self.name)),
                     )
                     .expect("Conv2d bias add 失败");
-                Var::new(out_id, graph.inner_rc())
+                Var::new_with_rc_graph(out_node, &graph.inner_rc())
             };
 
             // 注册层分组（用于可视化）

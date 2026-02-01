@@ -71,16 +71,16 @@ impl MaxPool2d {
     /// 输出 Var，形状 [`batch_size`, channels, H', W']
     pub fn forward(&self, x: &Var) -> Var {
         let graph = x.get_graph();
-        let mut g = graph.inner_mut();
-        let out_id = g
-            .new_max_pool2d_node(
-                x.node_id(),
+        let node = graph
+            .inner_mut()
+            .create_max_pool2d_node(
+                std::rc::Rc::clone(x.node()),
                 self.kernel_size,
                 self.stride,
                 Some(&format!("{}_out", self.name)),
             )
             .expect("MaxPool2d forward 失败");
-        Var::new(out_id, graph.inner_rc())
+        Var::new_with_rc_graph(node, &graph.inner_rc())
     }
 
     /// 获取池化窗口大小

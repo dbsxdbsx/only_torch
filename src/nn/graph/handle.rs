@@ -72,115 +72,133 @@ impl Graph {
         self.inner.borrow().nodes.len()
     }
 
-    /// 将 `NodeId` 包装成 Var
-    pub fn wrap_node_id(&self, node_id: NodeId) -> Var {
-        Var::new(node_id, Rc::clone(&self.inner))
-    }
-
     // ==================== 创建变量 ====================
 
     /// 创建输入节点并设置数据
     pub fn input(&self, data: &Tensor) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_basic_input_node(data.shape(), None)?;
-        g.set_node_value(node_id, Some(data))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_basic_input_node(data.shape(), None)?;
+        node.set_value(Some(data))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建命名输入节点
     pub fn input_named(&self, data: &Tensor, name: &str) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_basic_input_node(data.shape(), Some(name))?;
-        g.set_node_value(node_id, Some(data))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_basic_input_node(data.shape(), Some(name))?;
+        node.set_value(Some(data))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建带形状的输入节点
     pub fn input_shape(&self, shape: &[usize], name: Option<&str>) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_basic_input_node(shape, name)?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_basic_input_node(shape, name)?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建参数节点
     pub fn parameter(&self, shape: &[usize], init: Init, name: &str) -> Result<Var, GraphError> {
         let mut g = self.inner.borrow_mut();
-        let node_id = g.new_parameter_node(shape, Some(name))?;
         let init_data = if let Some(ref mut rng) = g.rng {
             init.generate_with_rng(shape, rng)
         } else {
             init.generate(shape)
         };
-        g.set_node_value(node_id, Some(&init_data))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = g.create_parameter_node(shape, Some(name))?;
+        drop(g); // 释放借用
+        node.set_value(Some(&init_data))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建零张量
     pub fn zeros(&self, shape: &[usize]) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_basic_input_node(shape, None)?;
-        g.set_node_value(node_id, Some(&Tensor::zeros(shape)))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_basic_input_node(shape, None)?;
+        node.set_value(Some(&Tensor::zeros(shape)))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建 Target 输入节点
     pub fn target(&self, shape: &[usize]) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_target_input_node(shape, None)?;
-        g.set_node_value(node_id, Some(&Tensor::zeros(shape)))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_target_input_node(shape, None)?;
+        node.set_value(Some(&Tensor::zeros(shape)))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建全一张量
     pub fn ones(&self, shape: &[usize]) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_basic_input_node(shape, None)?;
-        g.set_node_value(node_id, Some(&Tensor::ones(shape)))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_basic_input_node(shape, None)?;
+        node.set_value(Some(&Tensor::ones(shape)))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建随机张量
     pub fn randn(&self, shape: &[usize]) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_basic_input_node(shape, None)?;
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_basic_input_node(shape, None)?;
         let data = Tensor::normal(0.0, 1.0, shape);
-        g.set_node_value(node_id, Some(&data))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        node.set_value(Some(&data))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建动态零张量节点
     pub fn zeros_like(
         &self,
-        reference: &Var,
+        _reference: &Var,
         feature_shape: &[usize],
         name: Option<&str>,
     ) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_zeros_like_node(reference.node_id(), feature_shape, name)?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_zeros_like_node(feature_shape, name)?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建常量张量
     pub fn constant(&self, data: &Tensor) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_basic_input_node(data.shape(), None)?;
-        g.set_node_value(node_id, Some(data))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_basic_input_node(data.shape(), None)?;
+        node.set_value(Some(data))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     /// 创建命名常量张量
     pub fn constant_named(&self, data: &Tensor, name: &str) -> Result<Var, GraphError> {
-        let mut g = self.inner.borrow_mut();
-        let node_id = g.new_basic_input_node(data.shape(), Some(name))?;
-        g.set_node_value(node_id, Some(data))?;
-        Ok(Var::new(node_id, Rc::clone(&self.inner)))
+        let node = self
+            .inner
+            .borrow_mut()
+            .create_basic_input_node(data.shape(), Some(name))?;
+        node.set_value(Some(data))?;
+        Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
     // ==================== 执行 ====================
 
     /// 前向传播
     pub fn forward(&self, output: &Var) -> Result<(), GraphError> {
-        self.inner.borrow_mut().forward(output.node_id())
+        self.inner
+            .borrow_mut()
+            .forward_via_node_inner(output.node())
     }
 
     /// 反向传播

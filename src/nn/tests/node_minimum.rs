@@ -11,9 +11,10 @@
  */
 
 use crate::nn::graph::Graph;
-use crate::nn::{Init, VarLossOps};
+use crate::nn::{Init, Var, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
+use std::rc::Rc;
 
 // ==================== 前向传播测试 ====================
 
@@ -26,11 +27,11 @@ fn test_minimum_forward_same_shape() {
     let b = graph.input(&Tensor::new(&[2.0, 4.0, 6.0], &[3, 1])).unwrap();
 
     // 创建 Minimum 节点
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_minimum_node(a.node_id(), b.node_id(), Some("min"))
+        .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), Some("min"))
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     // 前向传播
     min_var.forward().unwrap();
@@ -52,11 +53,11 @@ fn test_minimum_forward_broadcast() {
         .input(&Tensor::new(&[0.0, 1.5, 2.5, 4.0], &[1, 4]))
         .unwrap();
 
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_minimum_node(a.node_id(), b.node_id(), None)
+        .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     min_var.forward().unwrap();
 
@@ -84,11 +85,11 @@ fn test_minimum_backward_basic() {
     b.set_value(&Tensor::new(&[2.0, 4.0, 3.0], &[3, 1])).unwrap(); // 最后一个相等
 
     // min(a, b) = [1, 4, 3]
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_minimum_node(a.node_id(), b.node_id(), None)
+        .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     // 用 MSE loss 来触发反向传播
     let target = Tensor::new(&[2.0, 5.0, 4.0], &[3, 1]);
@@ -134,11 +135,11 @@ fn test_minimum_backward_broadcast() {
     a.set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1])).unwrap();
     b.set_value(&Tensor::new(&[0.0, 2.0, 4.0], &[1, 3])).unwrap();
 
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_minimum_node(a.node_id(), b.node_id(), None)
+        .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     // a_broadcast = [[1,1,1], [2,2,2], [3,3,3]]
     // b_broadcast = [[0,2,4], [0,2,4], [0,2,4]]
@@ -206,11 +207,11 @@ fn test_minimum_td3_style() {
         .unwrap();
 
     // TD3 用 min(Q1, Q2)
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_minimum_node(q1.node_id(), q2.node_id(), None)
+        .create_minimum_node(Rc::clone(q1.node()), Rc::clone(q2.node()), None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     // min(Q1, Q2) = [1, 2, 2, 3]
     // 用 MSE loss，target 全零
@@ -252,11 +253,11 @@ fn test_minimum_equal_values_gradient_split() {
     a.set_value(&Tensor::new(&[3.0, 3.0], &[2, 1])).unwrap();
     b.set_value(&Tensor::new(&[3.0, 3.0], &[2, 1])).unwrap(); // 完全相等
 
-    let min_id = graph
+    let min_node = graph
         .inner_mut()
-        .new_minimum_node(a.node_id(), b.node_id(), None)
+        .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), None)
         .unwrap();
-    let min_var = graph.wrap_node_id(min_id);
+    let min_var = Var::new_with_rc_graph(min_node, &graph.inner_rc());
 
     let target = Tensor::new(&[5.0, 5.0], &[2, 1]);
     let loss = min_var.mse_loss(&target).unwrap();
@@ -294,14 +295,12 @@ fn test_minimum_incompatible_shapes() {
 
     let result = graph
         .inner_mut()
-        .new_minimum_node(a.node_id(), b.node_id(), None);
+        .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), None);
 
     assert!(result.is_err());
 }
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
-
-use std::rc::Rc;
 
 #[test]
 fn test_create_minimum_node_same_shape() {

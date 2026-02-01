@@ -23,9 +23,10 @@
  */
 
 use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
-use crate::nn::{Graph, GraphError, Init, Module, NodeId, Var};
+use crate::nn::{Graph, GraphError, Init, Module, NodeId, NodeInner, Var};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Lstm (长短期记忆) 层 - 展开式设计
 ///
@@ -76,10 +77,10 @@ pub struct Lstm {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
-    /// 按 (`batch_size`, `seq_len`) 缓存的展开结构 -> 实际输出节点 ID
+    /// 按 (`batch_size`, `seq_len`) 缓存的展开结构 -> 实际输出节点
     /// 注意：必须同时用 `batch_size` 和 `seq_len` 作为 key，
     /// 因为 `zeros_like` 创建的初始状态节点依赖输入的 batch 维度
-    unroll_cache: RefCell<HashMap<(usize, usize), NodeId>>,
+    unroll_cache: RefCell<HashMap<(usize, usize), Rc<NodeInner>>>,
 }
 
 impl Lstm {
@@ -248,19 +249,26 @@ impl Lstm {
         let cache_key = (batch_size, seq_len);
         let h = {
             let cache = self.unroll_cache.borrow();
-            if let Some(&cached_id) = cache.get(&cache_key) {
+            if let Some(cached_node) = cache.get(&cache_key) {
                 // 缓存命中：重新计算该节点
+                let node = Rc::clone(cached_node);
                 drop(cache);
-                self.graph.inner_mut().forward(cached_id)?;
-                Var::new(cached_id, self.graph.inner_rc())
+                self.graph
+                    .inner_mut()
+                    .forward_via_node_inner(&node)?;
+                Var::new_with_rc_graph(node, &self.graph.inner_rc())
             } else {
                 // 缓存未命中：创建新的展开结构
                 drop(cache);
                 let h = self.unroll(x, seq_len)?;
-                let h_id = h.node_id();
+                let h_node = Rc::clone(h.node());
                 // 触发前向计算
-                self.graph.inner_mut().forward(h_id)?;
-                self.unroll_cache.borrow_mut().insert(cache_key, h_id);
+                self.graph
+                    .inner_mut()
+                    .forward_via_node_inner(&h_node)?;
+                self.unroll_cache
+                    .borrow_mut()
+                    .insert(cache_key, h_node);
                 h
             }
         };

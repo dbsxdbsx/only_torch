@@ -48,10 +48,16 @@ pub trait VarRegularizationOps {
 
 impl VarRegularizationOps for Var {
     fn dropout(&self, p: f32) -> Result<Var, GraphError> {
-        let id = self
-            .graph()
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let graph = self.graph();
+        // 使用时间戳作为随机种子
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        let node = graph
             .borrow_mut()
-            .new_dropout_node(self.node_id(), p, None)?;
-        Ok(Self::new(id, Rc::clone(self.graph())))
+            .create_dropout_node(Rc::clone(self.node()), p, seed, None)?;
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 }
