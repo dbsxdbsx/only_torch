@@ -793,13 +793,70 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 
 ### Phase 2：核心实现
 
-- [x] 实现新的 `NodeInner` 结构（`src/nn/nodes/node_inner.rs`，含 9 个单元测试）
-- [ ] 修改 `Var` 为 `Rc<NodeInner>` + `Weak<RefCell<GraphInner>>`
-- [ ] 修改 `GraphInner`，移除集中式节点存储
-- [ ] 实现参数注册表
-- [ ] 修改前向传播流程
-- [ ] 修改反向传播流程
-- [ ] 单元测试全覆盖
+> **实施策略**：渐进式迁移，保持 API 兼容，每步可独立测试
+
+#### Step 2.1：NodeInner 工厂方法 ✅ 已完成
+- [x] 实现 `NodeInner` 结构（`src/nn/nodes/node_inner.rs`）
+- [x] 基础创建方法（`new`, `new_leaf`）
+- [x] 访问器和修改器方法
+- [x] 单元测试（9 个，覆盖创建、引用计数、级联释放）
+
+#### Step 2.2：Var 结构过渡改造
+- [ ] 添加 `node: Option<Rc<NodeInner>>` 字段（过渡期）
+- [ ] 修改 `node_id()` 优先从 `self.node` 获取
+- [ ] 修改 `value()`, `grad()` 等优先从 `self.node` 访问
+- [ ] 保持旧路径 `graph.borrow().xxx(self.id)` 作为后备
+- [ ] 单元测试：验证新旧路径等价
+
+#### Step 2.3：GraphInner 参数注册表
+- [ ] 添加 `parameters: HashMap<String, Weak<NodeInner>>`
+- [ ] 添加 `next_node_id: Cell<u64>` 计数器
+- [ ] 实现参数注册/查询 API
+- [ ] 暂时保留 `nodes: HashMap` 用于过渡
+- [ ] 单元测试：参数注册和弱引用行为
+
+#### Step 2.4：节点创建流程改造
+- [ ] 新增 `NodeInner::new_xxx()` 系列工厂方法（各节点类型）
+- [ ] `GraphInner::new_xxx_node()` 返回 `Rc<NodeInner>` 并设置 parents
+- [ ] Var 算子重载使用新创建流程
+- [ ] 单元测试：节点创建和 parents 链正确性
+
+#### Step 2.5：前向传播改造
+- [ ] 实现 `NodeInner::forward_recursive()` 基于 parents 遍历
+- [ ] 从 loss 节点向上遍历，拓扑排序执行
+- [ ] 使用 `last_forward_pass_id` 避免重复计算
+- [ ] Var.forward() 调用新实现
+- [ ] 单元测试：前向传播正确性、pass_id 去重
+
+#### Step 2.6：反向传播改造
+- [ ] 实现 `NodeInner::backward_recursive()` 基于 parents 遍历
+- [ ] 从 loss 向上拓扑逆序计算梯度
+- [ ] 使用 `last_backward_pass_id` 和 `is_detached` 控制流
+- [ ] Var.backward() 调用新实现
+- [ ] 适配 `zero_grad()`（清除参数节点的梯度，遍历 `parameters` 注册表）
+- [ ] 单元测试：反向传播正确性、梯度累积、detach 行为
+
+#### Step 2.7：移除过渡代码
+- [ ] Var.graph 从 `Rc` 改为 `Weak<RefCell<GraphInner>>`
+- [ ] 移除 Var.node 的 `Option` 包装
+- [ ] 移除 GraphInner 的 `nodes: HashMap<NodeId, NodeHandle>`
+- [ ] 移除 GraphInner 的 `forward_edges`, `backward_edges`
+- [ ] 更新所有依赖旧结构的代码
+- [ ] 回归测试：所有现有测试通过
+
+#### Step 2.8：完整性验证
+- [ ] 运行所有单元测试
+- [ ] 运行所有集成测试
+- [ ] 验证 xor 示例收敛
+- [ ] 验证 mnist 示例准确率
+- [ ] 验证 cartpole_sac 节点不累积（**核心目标**）
+
+**补充测试场景**（评审建议）：
+- [ ] 深度网络（100+ 层）：验证递归遍历不栈溢出
+- [ ] 高频创建销毁（10000+ 次/秒）：验证 Rc alloc/dealloc 性能
+- [ ] 菱形依赖（DAG）：验证多路径汇合时**梯度**正确累积
+- [ ] detach 后子图隔离：验证梯度不穿透 detach 边界
+- [ ] Graph 销毁后 Var 操作：验证 `Weak` 失效时的健壮性（panic 或优雅降级）
 
 ### Phase 3：功能适配
 

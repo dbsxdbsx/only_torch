@@ -7,6 +7,7 @@
  */
 
 use super::graph::GraphInner;
+use super::nodes::NodeInner;
 use super::{GraphError, NodeId};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
@@ -78,8 +79,9 @@ impl Init {
 
 /// 智能变量句柄 - 携带图引用，支持算子重载和链式调用
 ///
-/// # 设计原则
-/// - 持有 `Rc<RefCell<GraphInner>>` 引用，实现算子重载
+/// # 设计原则（方案 C 过渡版本）
+/// - 持有 `Rc<NodeInner>` 直接控制节点生命周期（新）
+/// - 持有 `Rc<RefCell<GraphInner>>` 引用用于全局配置（过渡期）
 /// - 用户无需关心内部实现，像 `PyTorch` tensor 一样使用
 /// - Clone 语义（非 Copy），但开销极低（Rc clone）
 ///
@@ -95,31 +97,67 @@ impl Init {
 /// ```
 #[derive(Clone)]
 pub struct Var {
-    /// 节点 ID
+    /// 节点 ID（过渡期保留，用于旧路径访问）
     id: NodeId,
-    /// 图引用（用户不可见）
+    /// 节点内部结构（方案 C 新增，优先使用）
+    /// 过渡期为 Option，最终会变为必须字段
+    node: Option<Rc<NodeInner>>,
+    /// 图引用（过渡期仍为 Rc，最终会变为 Weak）
     graph: Rc<RefCell<GraphInner>>,
 }
 
 impl std::fmt::Debug for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Var").field("id", &self.id).finish()
+        let id = self.node_id();
+        f.debug_struct("Var")
+            .field("id", &id)
+            .field("has_node", &self.node.is_some())
+            .finish()
     }
 }
 
 impl Var {
-    /// 创建新的 Var（内部使用）
-    pub(crate) const fn new(id: NodeId, graph: Rc<RefCell<GraphInner>>) -> Self {
-        Self { id, graph }
+    /// 创建新的 Var（内部使用，旧路径 - 过渡期兼容）
+    pub(crate) fn new(id: NodeId, graph: Rc<RefCell<GraphInner>>) -> Self {
+        Self {
+            id,
+            node: None, // 过渡期：旧代码创建的 Var 没有 node
+            graph,
+        }
+    }
+
+    /// 创建新的 Var（新路径 - 方案 C）
+    ///
+    /// 直接持有 NodeInner，id 从 node 获取
+    pub(crate) fn new_with_node(node: Rc<NodeInner>, graph: Rc<RefCell<GraphInner>>) -> Self {
+        let id = node.id();
+        Self {
+            id,
+            node: Some(node),
+            graph,
+        }
     }
 
     /// 获取节点 ID
-    pub const fn node_id(&self) -> NodeId {
-        self.id
+    ///
+    /// 优先从 `self.node` 获取，回退到 `self.id`
+    pub fn node_id(&self) -> NodeId {
+        if let Some(ref node) = self.node {
+            node.id()
+        } else {
+            self.id
+        }
+    }
+
+    /// 获取 NodeInner 的引用（方案 C 新增）
+    ///
+    /// 过渡期可能返回 None
+    pub(crate) fn node(&self) -> Option<&Rc<NodeInner>> {
+        self.node.as_ref()
     }
 
     /// 获取内部图引用（供 trait 和内部模块使用）
-    pub(crate) const fn graph(&self) -> &Rc<RefCell<GraphInner>> {
+    pub(crate) fn graph(&self) -> &Rc<RefCell<GraphInner>> {
         &self.graph
     }
 
@@ -139,21 +177,29 @@ impl Var {
     /// 获取节点的预期输出形状
     ///
     /// 这个形状在节点创建时就已确定。
+    /// 优先从 `self.node` 获取，回退到旧路径
     pub fn value_expected_shape(&self) -> Vec<usize> {
-        self.graph
-            .borrow()
-            .get_node_value_expected_shape(self.id)
-            .expect("获取形状失败")
-            .to_vec()
+        if let Some(ref node) = self.node {
+            // 方案 C 新路径：直接从 NodeInner 获取
+            node.shape()
+        } else {
+            // 旧路径：通过 GraphInner 获取
+            self.graph
+                .borrow()
+                .get_node_value_expected_shape(self.id)
+                .expect("获取形状失败")
+                .to_vec()
+        }
     }
 
     /// 获取节点的动态形状
     ///
     /// 返回支持动态维度的形状表示（如 `[?, 128]`）
+    /// 注意：方案 C 过渡期暂不支持从 NodeInner 获取动态形状，始终使用旧路径
     pub fn dynamic_expected_shape(&self) -> crate::nn::shape::DynamicShape {
         self.graph
             .borrow()
-            .get_node_dynamic_expected_shape(self.id)
+            .get_node_dynamic_expected_shape(self.node_id())
             .expect("获取动态形状失败")
     }
 
@@ -233,11 +279,12 @@ impl Var {
         let new_id = self
             .graph
             .borrow_mut()
-            .new_identity_node(self.id, None, true)
+            .new_identity_node(self.node_id(), None, true)
             .expect("内部错误：detach_node 创建 Identity 节点失败");
         Self {
-            graph: self.graph.clone(),
             id: new_id,
+            node: None, // 过渡期：旧路径创建的节点没有 NodeInner
+            graph: self.graph.clone(),
         }
     }
 
@@ -248,18 +295,29 @@ impl Var {
     /// # 用途
     /// - `ModelState` 使用此方法判断 Var 输入是否可以缓存
     /// - detached Var 只需要值，不需要梯度流，因此可以像 Tensor 一样缓存
+    ///
+    /// 优先从 `self.node` 获取，回退到旧路径
     pub fn is_detached(&self) -> bool {
-        self.graph
-            .borrow()
-            .is_node_detached(self.id)
-            .unwrap_or(false)
+        if let Some(ref node) = self.node {
+            // 方案 C 新路径：直接从 NodeInner 获取
+            node.is_detached()
+        } else {
+            // 旧路径：通过 GraphInner 获取
+            self.graph
+                .borrow()
+                .is_node_detached(self.id)
+                .unwrap_or(false)
+        }
     }
 
     // ==================== 执行 ====================
 
     /// 前向传播
+    ///
+    /// 注意：过渡期仍使用 GraphInner 的前向传播逻辑
+    /// 方案 C 完成后将改为基于 parents 遍历
     pub fn forward(&self) -> Result<(), GraphError> {
-        self.graph.borrow_mut().forward(self.id)
+        self.graph.borrow_mut().forward(self.node_id())
     }
 
     /// 反向传播（ensure-forward 语义）
@@ -291,36 +349,64 @@ impl Var {
     ///
     /// # 返回值
     /// 返回 loss 的标量值
+    ///
+    /// 注意：过渡期仍使用 GraphInner 的反向传播逻辑
+    /// 方案 C 完成后将改为基于 parents 遍历
     pub fn backward_ex(&self, retain_graph: bool) -> Result<f32, GraphError> {
         let mut g = self.graph.borrow_mut();
+        let id = self.node_id();
         // ensure-forward：先执行前向传播
-        g.forward(self.id)?;
+        g.forward(id)?;
         // 然后执行反向传播
-        g.backward_ex(self.id, retain_graph)
+        g.backward_ex(id, retain_graph)
     }
 
     // ==================== 值访问和设置 ====================
 
     /// 获取节点的值（克隆的 Tensor）
+    ///
+    /// 优先从 `self.node` 获取，回退到旧路径
     pub fn value(&self) -> Result<Option<Tensor>, GraphError> {
-        Ok(self.graph.borrow().get_node_value(self.id)?.cloned())
+        if let Some(ref node) = self.node {
+            // 方案 C 新路径：直接从 NodeInner 获取
+            Ok(node.value())
+        } else {
+            // 旧路径：通过 GraphInner 获取
+            Ok(self.graph.borrow().get_node_value(self.id)?.cloned())
+        }
     }
 
     /// 设置节点的值
+    ///
+    /// 优先使用 `self.node`，回退到旧路径
     pub fn set_value(&self, value: &Tensor) -> Result<(), GraphError> {
-        self.graph.borrow_mut().set_node_value(self.id, Some(value))
+        if let Some(ref node) = self.node {
+            // 方案 C 新路径：直接设置 NodeInner
+            node.set_value(Some(value))
+        } else {
+            // 旧路径：通过 GraphInner 设置
+            self.graph.borrow_mut().set_node_value(self.id, Some(value))
+        }
     }
 
     /// 获取标量值（假设是 1x1 Tensor）
     pub fn item(&self) -> Result<f32, GraphError> {
-        let val = self.value()?.ok_or(GraphError::NodeNotFound(self.id))?;
+        let val = self.value()?.ok_or(GraphError::NodeNotFound(self.node_id()))?;
         val.get_data_number()
             .ok_or_else(|| GraphError::InvalidOperation("Tensor 不是标量".to_string()))
     }
 
     /// 获取节点的梯度
+    ///
+    /// 优先从 `self.node` 获取，回退到旧路径
     pub fn grad(&self) -> Result<Option<Tensor>, GraphError> {
-        self.graph.borrow().get_node_grad(self.id)
+        if let Some(ref node) = self.node {
+            // 方案 C 新路径：直接从 NodeInner 获取
+            Ok(node.grad())
+        } else {
+            // 旧路径：通过 GraphInner 获取
+            self.graph.borrow().get_node_grad(self.id)
+        }
     }
 
     // ==================== 安全版本（返回 Result）====================
@@ -335,7 +421,7 @@ impl Var {
         let id = self
             .graph
             .borrow_mut()
-            .new_add_node(&[self.id, other.id], None)?;
+            .new_add_node(&[self.node_id(), other.node_id()], None)?;
         Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 
@@ -349,7 +435,7 @@ impl Var {
             ));
         }
         let mut g = self.graph.borrow_mut();
-        let id = g.new_subtract_node(self.id, other.id, None)?;
+        let id = g.new_subtract_node(self.node_id(), other.node_id(), None)?;
         Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 
@@ -363,7 +449,7 @@ impl Var {
         let id = self
             .graph
             .borrow_mut()
-            .new_multiply_node(self.id, other.id, None)?;
+            .new_multiply_node(self.node_id(), other.node_id(), None)?;
         Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 
@@ -379,7 +465,7 @@ impl Var {
         let id = self
             .graph
             .borrow_mut()
-            .new_divide_node(self.id, other.id, None)?;
+            .new_divide_node(self.node_id(), other.node_id(), None)?;
         Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 }
@@ -843,7 +929,7 @@ impl Neg for &Var {
             .expect("设置 -1 值失败");
         // -self = -1 * self（Multiply 支持广播）
         let id = g
-            .new_multiply_node(neg_one_id, self.id, None)
+            .new_multiply_node(neg_one_id, self.node_id(), None)
             .expect("创建取反节点失败");
         Var::new(id, Rc::clone(&self.graph))
     }
