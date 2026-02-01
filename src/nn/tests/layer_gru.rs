@@ -7,11 +7,10 @@
  * - 基础功能：创建、参数形状、Module trait
  * - 前向传播：形状验证、数值计算
  * - 反向传播：梯度流动
- * - ModelState 集成：智能缓存
  */
 
 use crate::nn::layer::{Gru, Linear};
-use crate::nn::{CrossEntropyLoss, Graph, GraphError, ModelState, Module};
+use crate::nn::{CrossEntropyLoss, Graph, GraphError, Module};
 use crate::tensor::Tensor;
 
 // ==================== 基础功能测试 ====================
@@ -180,27 +179,7 @@ fn test_gru_backward() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试梯度传播到输入（通过 ModelState 的 input 节点）
-#[test]
-fn test_gru_gradient_to_input() -> Result<(), GraphError> {
-    let graph = Graph::new_with_seed(42);
-    let gru = Gru::new(&graph, 2, 3, "gru")?;
-    let state = ModelState::new(&graph);
-
-    let x = Tensor::new(&vec![0.1f32; 8], &[1, 4, 2]);
-    let h = state.forward(&x, |input| gru.forward(input))?;
-
-    // 简单的 L2 loss
-    use crate::nn::VarLossOps;
-    let target = graph.zeros(&[1, 3])?;
-    let loss = h.mse_loss(&target)?;
-    loss.backward()?;
-
-    // GRU 参数应该有梯度
-    assert!(gru.w_ir().grad()?.is_some());
-
-    Ok(())
-}
+// test_gru_gradient_to_input 已移除（依赖 ModelState）
 
 // ==================== 数值正确性测试 ====================
 
@@ -267,71 +246,8 @@ fn test_gru_hidden_propagation() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== ModelState 集成测试 ====================
-
-/// 测试与 ModelState 配合使用
-#[test]
-fn test_gru_with_model_state() -> Result<(), GraphError> {
-    let graph = Graph::new_with_seed(42);
-    let gru = Gru::new(&graph, 3, 8, "gru")?;
-    let fc = Linear::new(&graph, 8, 2, true, "fc")?;
-    let state = ModelState::new(&graph);
-    let criterion = CrossEntropyLoss::new();
-
-    // 定义 forward 逻辑
-    let forward = |x: &Tensor| -> Result<_, GraphError> {
-        state.forward(x, |input| {
-            let h = gru.forward(input)?;
-            Ok(fc.forward(&h))
-        })
-    };
-
-    // 第一次调用
-    let x1 = Tensor::new(&vec![0.1f32; 12], &[2, 2, 3]);
-    let y1 = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]);
-    let output1 = forward(&x1)?;
-    let loss1 = criterion.forward(&output1, &y1)?;
-    loss1.backward()?;
-
-    // 第二次调用（复用）
-    let x2 = Tensor::new(&vec![0.2f32; 12], &[2, 2, 3]);
-    let output2 = forward(&x2)?;
-
-    // 应该是同一个节点
-    assert_eq!(output1.node_id(), output2.node_id());
-
-    Ok(())
-}
-
-/// 测试智能缓存支持变长
-#[test]
-fn test_gru_model_state_cache() -> Result<(), GraphError> {
-    let graph = Graph::new_with_seed(42);
-    let gru = Gru::new(&graph, 2, 4, "gru")?;
-    let fc = Linear::new(&graph, 4, 2, true, "fc")?;
-    let state = ModelState::new(&graph);
-
-    let forward = |x: &Tensor| -> Result<_, GraphError> {
-        state.forward(x, |input| {
-            let h = gru.forward(input)?;
-            Ok(fc.forward(&h))
-        })
-    };
-
-    // seq_len = 3
-    let x1 = Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]);
-    let out1 = forward(&x1)?;
-
-    // seq_len = 5（不同长度，应该创建新缓存）
-    let x2 = Tensor::new(&vec![0.1f32; 20], &[2, 5, 2]);
-    let out2 = forward(&x2)?;
-
-    // 应该是不同的节点
-    assert_ne!(out1.node_id(), out2.node_id());
-    assert_eq!(state.cache_size(), 2);
-
-    Ok(())
-}
+// ==================== ModelState 集成测试（已移除）====================
+// ModelState 已按文档 4.1 节移除，相关测试已删除
 
 // ==================== 边界情况测试 ====================
 

@@ -15,20 +15,17 @@
  * - 输入: [batch, seq_len, input_size]
  * - 输出: [batch, hidden_size]（最后一个时间步的隐藏状态）
  *
- * 展开式设计：
+ * 展开式设计（无缓存，方案 C 4.2 节）：
  * - 每次 forward 根据输入序列长度动态展开时间步
  * - 使用 Select 节点从序列中提取每个时间步
  * - BPTT 通过图的反向传播自动完成
- * - 配合 ModelState 实现 PyTorch 风格的 API
+ * - 不维护缓存，每次 forward 都创建新节点
  */
 
 use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
-use crate::nn::{Graph, GraphError, Init, Module, NodeId, NodeInner, Var};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
+use crate::nn::{Graph, GraphError, Init, Module, Var};
 
-/// Lstm (长短期记忆) 层 - 展开式设计
+/// Lstm (长短期记忆) 层 - 展开式设计（无缓存）
 ///
 /// `PyTorch` 风格的 LSTM 层，包含输入门、遗忘门、候选细胞和输出门。
 ///
@@ -36,24 +33,9 @@ use std::rc::Rc;
 /// - 输入：[`batch_size`, `seq_len`, `input_size`]
 /// - 输出：[`batch_size`, `hidden_size`]（最后一个时间步）
 ///
-/// # 使用示例
-/// ```ignore
-/// // 定义模型
-/// pub struct MyLstmModel {
-///     lstm: Lstm,
-///     fc: Linear,
-///     state: ModelState,
-/// }
-///
-/// impl MyLstmModel {
-///     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-///         self.state.forward(x, |input| {
-///             let h = self.lstm.forward(input)?;
-///             Ok(self.fc.forward(&h))
-///         })
-///     }
-/// }
-/// ```
+/// # 无缓存设计（方案 C 4.2 节）
+/// 每次 `forward` 都重新创建展开节点，开销可忽略（只是创建节点引用）。
+/// 这样节点会在不再引用时自动释放，避免内存泄漏。
 pub struct Lstm {
     // === 输入门参数 ===
     w_ii: Var, // [input_size, hidden_size]
@@ -77,10 +59,6 @@ pub struct Lstm {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
-    /// 按 (`batch_size`, `seq_len`) 缓存的展开结构 -> 实际输出节点
-    /// 注意：必须同时用 `batch_size` 和 `seq_len` 作为 key，
-    /// 因为 `zeros_like` 创建的初始状态节点依赖输入的 batch 维度
-    unroll_cache: RefCell<HashMap<(usize, usize), Rc<NodeInner>>>,
 }
 
 impl Lstm {
@@ -198,7 +176,6 @@ impl Lstm {
             input_size,
             hidden_size,
             name: name.to_string(),
-            unroll_cache: RefCell::new(HashMap::new()),
         })
     }
 
@@ -206,20 +183,15 @@ impl Lstm {
     ///
     /// 自动展开所有时间步，返回最后一个时间步的隐藏状态。
     ///
+    /// # 无缓存设计（方案 C 4.2 节）
+    /// 每次 forward 都重新创建展开节点。由于方案 C 的节点生命周期由引用计数管理，
+    /// 不再引用的节点会自动释放，因此无需缓存。开销可忽略（只是创建节点引用）。
+    ///
     /// # 参数
     /// - `x`: 输入 Var，形状 [`batch_size`, `seq_len`, `input_size`]
     ///
     /// # 返回
     /// 最后一个时间步的隐藏状态 Var，形状 [`batch_size`, `hidden_size`]
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // 与 ModelState 配合使用（推荐）
-    /// self.state.forward(x, |input| {
-    ///     let h = self.lstm.forward(input)?;
-    ///     Ok(self.fc.forward(&h))
-    /// })
-    /// ```
     pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
         // 使用实际值的形状（支持动态 batch）
         let value = x
@@ -233,7 +205,7 @@ impl Lstm {
             )));
         }
 
-        let (batch_size, seq_len, input_size) = (shape[0], shape[1], shape[2]);
+        let (_batch_size, seq_len, input_size) = (shape[0], shape[1], shape[2]);
 
         // 验证输入维度
         if input_size != self.input_size {
@@ -243,37 +215,8 @@ impl Lstm {
             )));
         }
 
-        // 获取或创建此 (batch_size, seq_len) 的展开结构
-        // 注意：必须同时用 batch_size 和 seq_len 作为缓存 key，
-        // 因为 zeros_like 创建的初始状态节点依赖输入的 batch 维度
-        let cache_key = (batch_size, seq_len);
-        let h = {
-            let cache = self.unroll_cache.borrow();
-            if let Some(cached_node) = cache.get(&cache_key) {
-                // 缓存命中：重新计算该节点
-                let node = Rc::clone(cached_node);
-                drop(cache);
-                self.graph
-                    .inner_mut()
-                    .forward_via_node_inner(&node)?;
-                Var::new_with_rc_graph(node, &self.graph.inner_rc())
-            } else {
-                // 缓存未命中：创建新的展开结构
-                drop(cache);
-                let h = self.unroll(x, seq_len)?;
-                let h_node = Rc::clone(h.node());
-                // 触发前向计算
-                self.graph
-                    .inner_mut()
-                    .forward_via_node_inner(&h_node)?;
-                self.unroll_cache
-                    .borrow_mut()
-                    .insert(cache_key, h_node);
-                h
-            }
-        };
-
-        Ok(h)
+        // 每次都重新展开（无缓存设计）
+        self.unroll(x, seq_len)
     }
 
     /// 展开 LSTM 时间步

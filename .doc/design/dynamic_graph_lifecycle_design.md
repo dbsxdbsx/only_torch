@@ -928,11 +928,11 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 
 *Layer 模块适配*：
 - [x] Conv2d, AvgPool2d, MaxPool2d 迁移
-- [x] RNN, GRU, LSTM 缓存改为存储 `Rc<NodeInner>`（临时方案，后续按 4.2 节移除缓存）
+- [x] RNN, GRU, LSTM 移除 `unroll_cache`（无缓存设计，按 4.2 节）
 
 *其他模块适配*：
 - [x] Criterion 迁移到新 API（临时方案，后续按 4.3 节移除）
-- [x] ModelState 迁移到新 API（临时方案，后续按 4.1 节移除）
+- [x] ModelState 已移除（按 4.1 节，删除 `src/nn/model_state.rs`）
 
 *过渡期兼容*：
 - [x] `create_node_inner` 同时注册 NodeHandle 到 nodes HashMap（供旧 forward 路径使用）
@@ -990,14 +990,14 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 
 ### Phase 3：功能适配
 
-- [ ] **删除** `src/nn/model_state.rs`（完全移除）
+- [x] **删除** `src/nn/model_state.rs`（完全移除）
 - [ ] **删除** `src/nn/criterion.rs`（完全移除，统一用 Var 方法）
 - [ ] 可视化模块适配（改用 Var.visualize() 遍历 parents）
 - [ ] 序列化模块适配
-- [ ] BPTT/循环机制适配：
-  - 移除 RNN 层内缓存
-  - 评估传统 BPTT 机制（`step()` + `connect_recurrent()`）是否废弃
-  - 如保留，改用语义名称而非 NodeId 标识循环边
+- [x] BPTT/循环机制适配：
+  - [x] 移除 RNN/GRU/LSTM 层内 `unroll_cache`（无缓存设计，每次 forward 重建节点）
+  - [ ] 评估传统 BPTT 机制（`step()` + `connect_recurrent()`）是否废弃
+  - [ ] 如保留，改用语义名称而非 NodeId 标识循环边
 
 ### Phase 4：验证与文档
 

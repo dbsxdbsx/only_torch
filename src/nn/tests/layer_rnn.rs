@@ -11,7 +11,7 @@
 
 use crate::nn::graph::Graph;
 use crate::nn::layer::{Linear, Rnn};
-use crate::nn::{GraphError, ModelState, Module, VarLossOps};
+use crate::nn::{GraphError, Module, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -174,68 +174,8 @@ fn test_rnn_seeded_reproducibility() {
     assert_eq!(w_hh_1.data_as_slice(), w_hh_2.data_as_slice());
 }
 
-// ==================== ModelState 集成测试 ====================
-
-/// 测试 Rnn 与 ModelState 集成
-#[test]
-fn test_rnn_with_model_state() {
-    let graph = Graph::new_with_seed(42);
-    let rnn = Rnn::new(&graph, 4, 8, "rnn").unwrap();
-    let fc = Linear::new(&graph, 8, 2, true, "fc").unwrap();
-    let state = ModelState::new(&graph);
-
-    // 输入 Tensor
-    let x_data: Vec<f32> = (0..24).map(|i| i as f32 * 0.1).collect();
-    let x = Tensor::new(&x_data, &[2, 3, 4]);
-
-    // 使用 ModelState 进行 forward
-    let output = state
-        .forward(&x, |input| {
-            let h = rnn.forward(input)?;
-            Ok(fc.forward(&h))
-        })
-        .unwrap();
-
-    output.forward().unwrap();
-    let result = output.value().unwrap().unwrap();
-    assert_eq!(result.shape(), &[2, 2]);
-
-    // 验证 ModelState 已初始化
-    assert!(state.is_initialized());
-}
-
-/// 测试 ModelState 缓存复用
-#[test]
-fn test_rnn_model_state_cache() {
-    let graph = Graph::new_with_seed(42);
-    let rnn = Rnn::new(&graph, 4, 8, "rnn").unwrap();
-    let fc = Linear::new(&graph, 8, 2, true, "fc").unwrap();
-    let state = ModelState::new(&graph);
-
-    let x1 = Tensor::new(&vec![0.1f32; 24], &[2, 3, 4]);
-    let x2 = Tensor::new(&vec![0.2f32; 24], &[2, 3, 4]);
-
-    // 第一次调用
-    let output1 = state
-        .forward(&x1, |input| {
-            let h = rnn.forward(input)?;
-            Ok(fc.forward(&h))
-        })
-        .unwrap();
-    let id1 = output1.node_id();
-
-    // 第二次调用（应该复用缓存）
-    let output2 = state
-        .forward(&x2, |input| {
-            let h = rnn.forward(input)?;
-            Ok(fc.forward(&h))
-        })
-        .unwrap();
-    let id2 = output2.node_id();
-
-    // 节点 ID 应该相同（复用）
-    assert_eq!(id1, id2);
-}
+// ==================== ModelState 集成测试（已移除）====================
+// ModelState 已按文档 4.1 节移除，相关测试已删除
 
 // ==================== 数值正确性测试 ====================
 
@@ -457,74 +397,7 @@ fn test_rnn_recurrent_output_bridge_same_node_id() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 RNN + Linear + ModelState：验证变长输入时整个模型只创建一次
-///
-/// 注意：Linear 层本身没有缓存机制，需要通过 ModelState 来实现复用。
-/// 这个测试验证的是：当使用 ModelState 时，RNN 的桥接节点使得整个模型可以复用。
-#[test]
-fn test_rnn_recurrent_output_linear_reuse() -> Result<(), GraphError> {
-    let graph = Graph::new_with_seed(42);
-    let rnn = Rnn::new(&graph, 2, 4, "rnn")?;
-    let fc = Linear::new(&graph, 4, 2, true, "fc")?;
-    let state = ModelState::new(&graph);
-
-    // 第一次 forward：seq_len=3
-    let x1 = Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]);
-    let y1 = state.forward(&x1, |input| {
-        let h = rnn.forward(input)?;
-        Ok(fc.forward(&h))
-    })?;
-    let fc_output_id_1 = y1.node_id();
-
-    // 第二次 forward：seq_len=5（不同长度）
-    let x2 = Tensor::new(&vec![0.2f32; 20], &[2, 5, 2]);
-    let y2 = state.forward(&x2, |input| {
-        let h = rnn.forward(input)?;
-        Ok(fc.forward(&h))
-    })?;
-    let fc_output_id_2 = y2.node_id();
-
-    // 第三次 forward：seq_len=7（又不同长度）
-    let x3 = Tensor::new(&vec![0.3f32; 28], &[2, 7, 2]);
-    let y3 = state.forward(&x3, |input| {
-        let h = rnn.forward(input)?;
-        Ok(fc.forward(&h))
-    })?;
-    let fc_output_id_3 = y3.node_id();
-
-    // 验证 RNN 桥接节点是同一个
-    // 注意：由于 RNN 返回桥接节点，后续的 fc.forward 会看到同一个输入节点
-    // 但 Linear 没有缓存，所以每次调用会创建新节点
-    // 只有当 Linear 也在 ModelState 闭包内时，才会复用
-
-    // 实际上，由于我们每次都用不同的 seq_len 调用 ModelState.forward，
-    // ModelState 会为每个 seq_len 创建新的子图，包括 FC 部分
-    // 这是预期行为，因为 ModelState 按 feature_shape 缓存
-
-    // 但是！由于 RNN 的桥接节点，FC 层的输入形状始终是 [batch, hidden_size]
-    // 所以 ModelState 应该只创建一份 FC 子图
-
-    // 检查：不同 seq_len 是否产生相同的 ModelState 输出节点
-    // 这验证了 RNN 桥接节点的效果
-    println!("fc_output_id_1: {:?}", fc_output_id_1);
-    println!("fc_output_id_2: {:?}", fc_output_id_2);
-    println!("fc_output_id_3: {:?}", fc_output_id_3);
-
-    // 注意：由于节点复用，y1、y2、y3 都指向同一个 FC 输出节点。
-    // 当获取值时，返回的是最后一次 forward 后的值。
-    // 这对于训练是正确的（每次只处理一个 batch），但不能通过 value() 比较不同调用的结果。
-
-    // 验证每次调用后值是正确计算的
-    // 这里只验证最后一次调用的值存在且形状正确
-    let v3 = y3.value()?.unwrap();
-    assert_eq!(
-        v3.shape(),
-        &[2, 2],
-        "输出形状应该是 [batch=2, out_features=2]"
-    );
-
-    Ok(())
-}
+// test_rnn_recurrent_output_linear_reuse 已移除（依赖 ModelState）
 
 /// 测试 RNN 缓存：不同 batch_size 使用相同 seq_len 时，应该创建不同的计算图
 ///
