@@ -6,7 +6,6 @@
 
 use super::error::{GraphError, ImageFormat, VisualizationOutput};
 use super::inner::GraphInner;
-use crate::nn::NodeId;
 use crate::nn::var::{Init, Var};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
@@ -210,7 +209,7 @@ impl Graph {
 
     /// 清零所有参数的梯度
     pub fn zero_grad(&self) -> Result<(), GraphError> {
-        self.inner.borrow_mut().clear_grad()
+        self.inner.borrow_mut().zero_grad()
     }
 
     /// 设置训练模式
@@ -242,42 +241,9 @@ impl Graph {
         result
     }
 
-    /// 设置节点检查点
-    ///
-    /// 记录当前的节点 ID 基线。之后可以调用 `prune_nodes_after()`
-    /// 删除检查点之后创建的所有节点。
-    ///
-    /// # 使用场景
-    /// 在强化学习等场景中，模型结构（由 ModelState 缓存）在训练开始前就已构建完成。
-    /// 训练过程中闭包外创建的临时节点是在检查点之后创建的，可以安全删除。
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // 模型和优化器初始化完成后
-    /// let checkpoint = graph.checkpoint();
-    ///
-    /// // 训练循环
-    /// for epoch in 0..epochs {
-    ///     // ... 训练代码（会创建临时节点）...
-    ///     graph.prune_nodes_after(checkpoint)?;  // 清理临时节点
-    /// }
-    /// ```
-    pub fn checkpoint(&self) -> NodeId {
-        self.inner.borrow().checkpoint()
-    }
-
-    /// 删除检查点之后创建的所有节点
-    ///
-    /// 配合 `checkpoint()` 使用，用于清理训练过程中累积的临时节点。
-    ///
-    /// # 参数
-    /// - `checkpoint`: 由 `checkpoint()` 返回的检查点值
-    ///
-    /// # 返回
-    /// 被删除的节点数量
-    pub fn prune_nodes_after(&self, checkpoint: NodeId) -> Result<usize, GraphError> {
-        self.inner.borrow_mut().prune_nodes_after(checkpoint)
-    }
+    // 注意：checkpoint() 和 prune_nodes_after() 已在方案 C 中移除
+    // 新架构下，节点由 Rc 引用计数自动管理，Var 离开作用域时自动释放，
+    // 不再需要手动清理节点。
 
     // ==================== 可视化 ====================
 

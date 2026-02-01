@@ -1500,8 +1500,10 @@ impl GraphInner {
                 continue;
             }
 
-            if let Ok(parents) = self.get_node_parents(current) {
-                for parent in parents {
+            // 过渡期：使用 backward_edges 获取父节点
+            // Phase 3 后改用 NodeInner.parents()
+            if let Some(parents) = self.backward_edges.get(&current) {
+                for &parent in parents {
                     queue.push_back(parent);
                 }
             }
@@ -1510,29 +1512,47 @@ impl GraphInner {
         Ok(result.into_iter().collect())
     }
 
-    // ========== 节点信息查询 ==========
+    // ========== 节点信息查询（过渡期 API，供测试使用） ==========
+    // 注意：这些方法基于 nodes HashMap，在 Phase 3 后会重新设计
+    // 新代码应优先使用 Var/NodeInner 的方法
+
+    /// 获取节点（内部辅助方法）
+    fn get_node_for_query(
+        &self,
+        id: NodeId,
+    ) -> Result<&crate::nn::nodes::node_handle::NodeHandle, GraphError> {
+        self.nodes
+            .get(&id)
+            .ok_or_else(|| GraphError::ComputationError(format!("节点 {:?} 不存在", id)))
+    }
 
     pub fn is_node_inited(&self, id: NodeId) -> Result<bool, GraphError> {
-        self.get_node(id)
+        self.get_node_for_query(id)
             .map(crate::nn::nodes::node_handle::NodeHandle::is_inited)
     }
 
     pub fn get_node_value_shape(&self, id: NodeId) -> Result<Option<&[usize]>, GraphError> {
-        Ok(self.get_node(id)?.value().map(crate::tensor::Tensor::shape))
+        Ok(self
+            .get_node_for_query(id)?
+            .value()
+            .map(crate::tensor::Tensor::shape))
     }
 
     pub fn get_node_value_expected_shape(&self, id: NodeId) -> Result<&[usize], GraphError> {
-        Ok(self.get_node(id)?.value_expected_shape())
+        Ok(self.get_node_for_query(id)?.value_expected_shape())
     }
 
     pub fn get_node_dynamic_expected_shape(
         &self,
         id: NodeId,
     ) -> Result<crate::nn::shape::DynamicShape, GraphError> {
-        Ok(self.get_node(id)?.dynamic_expected_shape())
+        Ok(self.get_node_for_query(id)?.dynamic_expected_shape())
     }
 
     pub fn get_node_value_size(&self, id: NodeId) -> Result<Option<usize>, GraphError> {
-        Ok(self.get_node(id)?.value().map(crate::tensor::Tensor::size))
+        Ok(self
+            .get_node_for_query(id)?
+            .value()
+            .map(crate::tensor::Tensor::size))
     }
 }

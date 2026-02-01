@@ -952,15 +952,23 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [x] Describe 模块保留（调试功能，依赖 nodes HashMap，待 2.7.3 适配）
 
 **2.7.3 GraphInner 清理**：
-- [ ] 移除旧的 forward/backward 方法：
+- [x] 移除旧的 forward/backward 方法：
   - `forward(NodeId)`, `backward(NodeId)`, `backward_ex()`, `backward_vjp_core()`
-- [ ] 移除旧节点创建 API（`new_xxx_node` 系列方法）
-- [ ] 移除 `get_node` 系列方法（依赖 nodes HashMap）：
+  - 清理 `backward.rs`：仅保留 `zero_grad()` 方法
+- [x] 移除旧节点创建 API（`new_xxx_node` 系列方法）
+- [x] 移除 `get_node` 系列方法（依赖 nodes HashMap）：
   - `get_node()`, `get_node_mut()`
   - `get_node_parents()`, `get_node_children()`
   - `get_node_name()`, `get_node_value()`, `get_node_grad()` 等
-- [ ] 移除 `nodes: HashMap<NodeId, NodeHandle>`
-- [ ] 移除 `forward_edges`, `backward_edges`
+  - `get_trainable_nodes()`, `check_duplicate_node_name()`, `generate_valid_new_node_name()`
+  - `release_intermediate_results()`, `reset_intermediate_grad()`
+- [x] 移除 `mode.rs` 中依赖旧 API 的方法（`detach_node`, `attach_node`, `is_node_detached`）
+- [x] 移除 `handle.rs` 中依赖旧 API 的方法（`checkpoint`, `prune_nodes_after`）
+- [x] 删除 `bptt.rs` 和 `recurrent.rs`（已废弃，新架构使用展开式 RNN）
+- [x] 适配 `serialization.rs` 使用 parameters 注册表
+- [x] 适配 `visualization.rs` 辅助方法（过渡期使用 nodes HashMap）
+- [ ] 移除 `nodes: HashMap<NodeId, NodeHandle>`（Phase 3 后移除，describe/visualization 依赖）
+- [ ] 移除 `forward_edges`, `backward_edges`（Phase 3 后移除，describe/visualization 依赖）
 
 **2.7.4 节点类型清理**：
 - [ ] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法
@@ -976,8 +984,6 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [ ] 回归测试：所有现有单元测试通过
 
 #### Step 2.8：完整性验证
-- [ ] 运行所有单元测试
-- [ ] 运行所有集成测试
 - [ ] 验证 xor 示例收敛
 - [ ] 验证 mnist 示例准确率
 - [ ] 验证 cartpole_sac 节点不累积（**核心目标**）

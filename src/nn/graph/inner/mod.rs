@@ -18,21 +18,22 @@
  */
 
 mod backward;
-mod bptt;
 mod core;
 mod describe;
 mod evolution;
 mod mode;
 mod model_io;
 mod node_builders;
-mod recurrent;
 mod serialization;
 mod visualization;
 
+// 注意：bptt.rs 和 recurrent.rs 已在方案 C 2.7.3 中删除
+// 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
+
 use super::types::{LayerGroup, RecurrentLayerMeta, StepSnapshot};
-use crate::nn::nodes::NodeInner;
 use crate::nn::NodeId;
 use crate::nn::nodes::NodeHandle;
+use crate::nn::nodes::NodeInner;
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;
 use std::collections::HashMap;

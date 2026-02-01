@@ -1,7 +1,10 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-01-27
+ * @LastEditTime : 2026-02-02
  * @Description  : GraphInner 底层参数序列化（save_params/load_params）
+ *
+ * 方案 C 适配：使用 parameters 注册表管理参数
  *
  * 职责：纯二进制序列化，只处理参数的读写
  *
@@ -12,9 +15,7 @@
 
 use super::super::error::GraphError;
 use super::GraphInner;
-use crate::nn::nodes::NodeType;
 use crate::tensor::Tensor;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
@@ -26,19 +27,15 @@ impl GraphInner {
     const PARAMS_VERSION: u32 = 1;
 
     /// 保存所有可训练参数到二进制文件
+    ///
+    /// 方案 C：遍历 parameters 注册表获取参数
     pub fn save_params<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
         let file = File::create(path.as_ref())
             .map_err(|e| GraphError::ComputationError(format!("无法创建参数文件: {e}")))?;
         let mut writer = BufWriter::new(file);
 
-        let param_nodes: Vec<_> = self
-            .nodes
-            .iter()
-            .filter_map(|(&id, node)| match node.node_type() {
-                NodeType::Parameter(_) => Some((id, node)),
-                _ => None,
-            })
-            .collect();
+        // 方案 C：从 parameters 注册表获取所有有效参数
+        let params = self.get_all_parameters();
 
         writer
             .write_all(Self::PARAMS_MAGIC)
@@ -47,11 +44,10 @@ impl GraphInner {
             .write_all(&Self::PARAMS_VERSION.to_le_bytes())
             .map_err(|e| GraphError::ComputationError(format!("写入版本失败: {e}")))?;
         writer
-            .write_all(&(param_nodes.len() as u32).to_le_bytes())
+            .write_all(&(params.len() as u32).to_le_bytes())
             .map_err(|e| GraphError::ComputationError(format!("写入参数数量失败: {e}")))?;
 
-        for (_id, node) in &param_nodes {
-            let name = node.name();
+        for (name, node) in &params {
             let value = node
                 .value()
                 .ok_or_else(|| GraphError::ComputationError(format!("参数 {name} 没有值")))?;
@@ -90,6 +86,8 @@ impl GraphInner {
     }
 
     /// 从二进制文件加载参数
+    ///
+    /// 方案 C：通过 parameters 注册表查找参数并设置值
     pub fn load_params<P: AsRef<Path>>(&mut self, path: P) -> Result<(), GraphError> {
         let file = File::open(path.as_ref())
             .map_err(|e| GraphError::ComputationError(format!("无法打开参数文件: {e}")))?;
@@ -121,15 +119,6 @@ impl GraphInner {
             .read_exact(&mut count_bytes)
             .map_err(|e| GraphError::ComputationError(format!("读取参数数量失败: {e}")))?;
         let param_count = u32::from_le_bytes(count_bytes);
-
-        let name_to_id: HashMap<String, crate::nn::NodeId> = self
-            .nodes
-            .iter()
-            .filter_map(|(&id, node)| match node.node_type() {
-                NodeType::Parameter(_) => Some((node.name().to_string(), id)),
-                _ => None,
-            })
-            .collect();
 
         for _ in 0..param_count {
             let mut name_len_bytes = [0u8; 4];
@@ -170,9 +159,10 @@ impl GraphInner {
                 data.push(f32::from_le_bytes(val_bytes));
             }
 
-            if let Some(&node_id) = name_to_id.get(&name) {
+            // 方案 C：通过 parameters 注册表查找参数并设置值
+            if let Some(node) = self.get_parameter(&name) {
                 let tensor = Tensor::new(&data, &shape);
-                self.set_node_value(node_id, Some(&tensor))?;
+                node.set_value(Some(&tensor))?;
             }
         }
 

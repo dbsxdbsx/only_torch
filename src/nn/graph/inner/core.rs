@@ -1,15 +1,17 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-01-27
- * @Description  : GraphInner 核心操作 + 前向传播
+ * @LastEditTime : 2026-02-02
+ * @Description  : GraphInner 核心操作
+ *
+ * 方案 C 清理：已移除旧的 forward/get_node 系列方法
+ * 新架构使用 NodeInner 进行前向/反向传播，不依赖 nodes HashMap
  */
 
 use super::super::error::GraphError;
 use super::super::types::{GroupKind, LayerGroup, RecurrentLayerMeta, RecurrentUnrollInfo};
 use super::GraphInner;
 use crate::nn::NodeId;
-use crate::nn::nodes::{NodeHandle, NodeType};
-use crate::tensor::Tensor;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
@@ -130,81 +132,6 @@ impl GraphInner {
         &self.name
     }
 
-    pub fn nodes(&self) -> Vec<NodeId> {
-        self.nodes.keys().copied().collect()
-    }
-
-    pub fn nodes_count(&self) -> usize {
-        self.nodes.len()
-    }
-
-    pub(in crate::nn) fn get_node(&self, id: NodeId) -> Result<&NodeHandle, GraphError> {
-        self.nodes.get(&id).ok_or(GraphError::NodeNotFound(id))
-    }
-
-    pub(in crate::nn) fn get_node_mut(
-        &mut self,
-        id: NodeId,
-    ) -> Result<&mut NodeHandle, GraphError> {
-        self.nodes.get_mut(&id).ok_or(GraphError::NodeNotFound(id))
-    }
-
-    pub(in crate::nn) fn get_nodes(&self, ids: &[NodeId]) -> Result<Vec<&NodeHandle>, GraphError> {
-        ids.iter().map(|&id| self.get_node(id)).collect()
-    }
-
-    pub fn get_node_parents(&self, id: NodeId) -> Result<Vec<NodeId>, GraphError> {
-        // 先检查节点是否存在
-        let _ = self.get_node(id)?;
-        Ok(self.backward_edges.get(&id).cloned().unwrap_or_default())
-    }
-
-    pub fn get_node_children(&self, id: NodeId) -> Result<Vec<NodeId>, GraphError> {
-        // 先检查节点是否存在
-        let _ = self.get_node(id)?;
-        Ok(self.forward_edges.get(&id).cloned().unwrap_or_default())
-    }
-
-    pub fn get_node_name(&self, id: NodeId) -> Result<&str, GraphError> {
-        Ok(self.get_node(id)?.name())
-    }
-
-    pub fn has_node_value(&self, node_id: NodeId) -> Result<bool, GraphError> {
-        self.nodes
-            .get(&node_id)
-            .map(NodeHandle::has_value)
-            .ok_or(GraphError::NodeNotFound(node_id))
-    }
-
-    pub fn get_node_value(&self, id: NodeId) -> Result<Option<&Tensor>, GraphError> {
-        Ok(self.get_node(id)?.value())
-    }
-
-    pub fn set_node_value(&mut self, id: NodeId, value: Option<&Tensor>) -> Result<(), GraphError> {
-        self.get_node_mut(id)?.set_value(value)
-    }
-
-    pub fn get_node_grad(&self, id: NodeId) -> Result<Option<Tensor>, GraphError> {
-        let node = self.get_node(id)?;
-        // 输入节点不应该有梯度
-        if let NodeType::Input(_) = node.node_type() {
-            return Err(GraphError::InvalidOperation(format!(
-                "输入{node}不应该有梯度"
-            )));
-        }
-        Ok(node.grad().cloned())
-    }
-
-    pub fn get_node_grad_ref(&self, node_id: NodeId) -> Result<Option<&Tensor>, GraphError> {
-        let node = self.get_node(node_id)?;
-        if let NodeType::Input(_) = node.node_type() {
-            return Err(GraphError::InvalidOperation(format!(
-                "输入{node}不应该有梯度"
-            )));
-        }
-        Ok(node.grad())
-    }
-
     // ========== 方案 C：参数注册表 API ==========
 
     /// 注册参数到参数注册表
@@ -301,62 +228,12 @@ impl GraphInner {
             .unwrap_or(false)
     }
 
-    // ========== 旧的参数访问 API（过渡期保留）==========
-
-    /// 获取所有可训练的参数节点
-    pub fn get_trainable_nodes(&self) -> Vec<NodeId> {
-        self.nodes
-            .iter()
-            .filter_map(|(&id, node)| {
-                if let NodeType::Parameter(_) = node.node_type() {
-                    Some(id)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
     // ========== ID/名称生成 ==========
 
     pub(in crate::nn::graph) const fn generate_valid_node_id(&mut self) -> NodeId {
         // 生成唯一的节点ID（先递增再返回，所以第一个节点 ID 是 1）
         self.next_id += 1;
         NodeId(self.next_id)
-    }
-
-    pub(in crate::nn::graph) fn check_duplicate_node_name(
-        &self,
-        name: &str,
-    ) -> Result<(), GraphError> {
-        if self.nodes.values().any(|node| node.name() == name) {
-            return Err(GraphError::DuplicateNodeName(format!(
-                "节点{}在图{}中重复",
-                name,
-                self.name()
-            )));
-        }
-        Ok(())
-    }
-
-    pub(in crate::nn::graph) fn generate_valid_new_node_name(
-        &self,
-        base_name: &str,
-        node_type: &str,
-    ) -> Result<String, GraphError> {
-        if !base_name.is_empty() {
-            self.check_duplicate_node_name(base_name)?;
-            return Ok(base_name.to_string());
-        }
-
-        let mut counter = 1;
-        loop {
-            let name = format!("{node_type}_{counter}");
-            if self.check_duplicate_node_name(&name).is_ok() {
-                return Ok(name);
-            }
-            counter += 1;
-        }
     }
 
     // ========== 层分组相关 ==========
@@ -445,71 +322,6 @@ impl GraphInner {
     /// 获取循环层元信息列表
     pub fn recurrent_layer_metas(&self) -> &[RecurrentLayerMeta] {
         &self.recurrent_layer_metas
-    }
-
-    // ========== 前向传播 ==========
-
-    pub fn forward(&mut self, node_id: NodeId) -> Result<(), GraphError> {
-        let node = self.get_node(node_id)?;
-        match node.node_type() {
-            NodeType::Input(_) | NodeType::Parameter(_) | NodeType::State(_) => {
-                if node.has_value() {
-                    return Ok(());
-                }
-                return Err(GraphError::InvalidOperation(format!(
-                    "{node}是输入/参数/状态类型，其值应通过 set_value 设置，而非通过父节点前向传播计算"
-                )));
-            }
-            _ => {}
-        }
-
-        let new_graph_forward_pass_id = self.last_forward_pass_id + 1;
-        self.forward_node_internal(node_id, new_graph_forward_pass_id)?;
-        self.last_forward_pass_id = new_graph_forward_pass_id;
-        Ok(())
-    }
-
-    fn forward_node_internal(
-        &mut self,
-        node_id: NodeId,
-        new_graph_forward_pass_id: u64,
-    ) -> Result<(), GraphError> {
-        let node = self.get_node_mut(node_id)?;
-
-        match node.node_type() {
-            NodeType::Input(_) | NodeType::Parameter(_) | NodeType::State(_) => {
-                if node.has_value() {
-                    node.set_last_forward_pass_id(new_graph_forward_pass_id);
-                    return Ok(());
-                }
-                return Err(GraphError::InvalidOperation(format!(
-                    "{node}不能直接前向传播"
-                )));
-            }
-            _ => {
-                if node.last_forward_pass_id() == new_graph_forward_pass_id {
-                    return Ok(());
-                }
-            }
-        }
-
-        let parents_ids = self.get_node_parents(node_id)?;
-        for parent_id in &parents_ids {
-            self.forward_node_internal(*parent_id, new_graph_forward_pass_id)?;
-        }
-
-        let parent_nodes = parents_ids
-            .iter()
-            .map(|id| self.get_node(*id).unwrap().clone())
-            .collect::<Vec<NodeHandle>>();
-
-        let is_training = self.is_train_mode();
-        let node = self.get_node_mut(node_id)?;
-        node.set_training_mode(is_training);
-        node.calc_value_by_parents(&parent_nodes)?;
-        node.set_last_forward_pass_id(new_graph_forward_pass_id);
-
-        Ok(())
     }
 
     // ========== 方案 C：新前向传播 API ==========
@@ -604,102 +416,13 @@ impl GraphInner {
         node.backward_propagate(pass_id)?;
         self.last_backward_pass_id = pass_id;
 
-        // 6. 释放中间结果（如果需要）
-        if !retain_graph {
-            self.release_intermediate_results()?;
-        }
+        // 6. 中间结果释放说明
+        // 方案 C 架构下，中间节点由 Rc<NodeInner> 管理，
+        // 当 Var 离开作用域时自动释放，无需显式清理。
+        // retain_graph 参数暂时保留以保持 API 兼容性，
+        // 未来可能用于控制是否清除中间节点的梯度。
+        let _ = retain_graph; // 标记参数已使用，避免 warning
 
         Ok(loss_scalar)
-    }
-
-    /// 释放中间节点的值和梯度
-    pub(in crate::nn::graph) fn release_intermediate_results(&mut self) -> Result<(), GraphError> {
-        for node in self.nodes.values_mut() {
-            match node.node_type() {
-                NodeType::Input(_) | NodeType::Parameter(_) | NodeType::State(_) => {}
-                _ => {
-                    node.clear_value()?;
-                    let _ = node.clear_grad();
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// 重置中间节点的 grad
-    pub(in crate::nn::graph) fn reset_intermediate_grad(&mut self) {
-        for node in self.nodes.values_mut() {
-            if let NodeType::Parameter(_) = node.node_type() {
-            } else {
-                let _ = node.clear_grad();
-                node.set_last_backward_pass_id(0);
-            }
-        }
-    }
-
-    /// 设置节点检查点
-    ///
-    /// 记录当前的节点 ID 基线。之后可以调用 `prune_nodes_after_checkpoint()`
-    /// 删除检查点之后创建的所有节点。
-    ///
-    /// # 使用场景
-    /// 在强化学习等场景中，模型结构（由 ModelState 缓存）在训练开始前就已构建完成。
-    /// 训练过程中闭包外创建的临时节点（如 softmax、算术运算等）是在检查点之后创建的，
-    /// 可以安全删除而不影响模型结构。
-    ///
-    /// # 返回
-    /// 检查点的 NodeId 值
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // 模型和优化器初始化完成后
-    /// let checkpoint = graph.checkpoint();
-    ///
-    /// // 训练循环
-    /// for epoch in 0..epochs {
-    ///     // ... 训练代码 ...
-    ///     graph.prune_nodes_after(checkpoint)?;
-    /// }
-    /// ```
-    pub fn checkpoint(&self) -> NodeId {
-        NodeId(self.next_id)
-    }
-
-    /// 删除检查点之后创建的所有节点
-    ///
-    /// 配合 `checkpoint()` 使用，用于清理训练过程中累积的临时节点。
-    ///
-    /// # 参数
-    /// - `checkpoint`: 由 `checkpoint()` 返回的检查点值
-    ///
-    /// # 返回
-    /// 被删除的节点数量
-    ///
-    /// # 安全性
-    /// 只删除 ID >= checkpoint 的节点，不会影响：
-    /// - 模型参数（Parameter 节点）
-    /// - ModelState 缓存的计算图结构
-    /// - Input/State 节点（如果在检查点之前创建）
-    pub fn prune_nodes_after(&mut self, checkpoint: NodeId) -> Result<usize, GraphError> {
-        let before = self.nodes.len();
-
-        // 删除 ID >= checkpoint 的节点
-        self.nodes.retain(|id, _| id.0 < checkpoint.0);
-
-        // 清理对应的边
-        self.forward_edges.retain(|id, _| id.0 < checkpoint.0);
-        self.backward_edges.retain(|id, _| id.0 < checkpoint.0);
-
-        // 清理 forward_edges 中指向已删除节点的引用
-        for children in self.forward_edges.values_mut() {
-            children.retain(|id| id.0 < checkpoint.0);
-        }
-
-        // 清理 backward_edges 中指向已删除节点的引用
-        for parents in self.backward_edges.values_mut() {
-            parents.retain(|id| id.0 < checkpoint.0);
-        }
-
-        Ok(before - self.nodes.len())
     }
 }
