@@ -42,7 +42,7 @@ impl Stack {
     }
 
     /// 从父节点形状信息创建 Stack 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shapes: &[&[usize]],
         parent_dynamic_shapes: &[DynamicShape],
         parent_ids: Vec<NodeId>,
@@ -158,23 +158,6 @@ impl Stack {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
-        axis: usize,
-        new_dim: bool,
-    ) -> Result<Self, GraphError> {
-        let shapes: Vec<Vec<usize>> = parents
-            .iter()
-            .map(|p| p.value_expected_shape().to_vec())
-            .collect();
-        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
-        let dynamic_shapes: Vec<DynamicShape> =
-            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
-        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
-
-        Self::new_from_shapes(&shapes_ref, &dynamic_shapes, parent_ids, axis, new_dim)
-    }
 }
 
 impl TraitNode for Stack {

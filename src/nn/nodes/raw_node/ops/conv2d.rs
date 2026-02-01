@@ -70,7 +70,7 @@ impl Conv2d {
     /// - `parent_ids`: 父节点 ID
     /// - `stride`: 步长 (sH, sW)
     /// - `padding`: 填充 (pH, pW)
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shapes: &[&[usize]],
         parent_dynamic_shapes: &[DynamicShape],
         parent_ids: Vec<NodeId>,
@@ -170,23 +170,6 @@ impl Conv2d {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
-        stride: (usize, usize),
-        padding: (usize, usize),
-    ) -> Result<Self, GraphError> {
-        let shapes: Vec<Vec<usize>> = parents
-            .iter()
-            .map(|p| p.value_expected_shape().to_vec())
-            .collect();
-        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
-        let dynamic_shapes: Vec<DynamicShape> =
-            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
-        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
-
-        Self::new_from_shapes(&shapes_ref, &dynamic_shapes, parent_ids, stride, padding)
-    }
 
     /// 对输入进行零填充（Rayon 并行版本）
     /// 输入必须是 4D [batch, C, H, W]

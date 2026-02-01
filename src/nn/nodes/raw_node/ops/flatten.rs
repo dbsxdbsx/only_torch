@@ -50,7 +50,7 @@ impl Flatten {
     /// - `parent_shape`: 父节点形状
     /// - `parent_dynamic_shape`: 父节点的动态形状
     /// - `keep_first_dim`: 是否保留首维度
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,
         keep_first_dim: bool,
@@ -94,20 +94,6 @@ impl Flatten {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle], keep_first_dim: bool) -> Result<Self, GraphError> {
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Flatten 节点只需要 1 个父节点".to_string(),
-            ));
-        }
-
-        let parent = &parents[0];
-        let parent_shape = parent.value_expected_shape();
-        let parent_dynamic_shape = parent.dynamic_expected_shape();
-
-        Self::new_from_shapes(&parent_shape, &parent_dynamic_shape, keep_first_dim)
-    }
 
     /// 获取目标形状
     #[allow(dead_code)]

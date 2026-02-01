@@ -62,7 +62,7 @@ impl AvgPool2d {
     /// - `parent_dynamic_shape`: 父节点的动态形状
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
     /// - `stride`: 步长 (sH, sW)，None 则默认等于 kernel_size
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,
         kernel_size: (usize, usize),
@@ -129,23 +129,6 @@ impl AvgPool2d {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
-        kernel_size: (usize, usize),
-        stride: Option<(usize, usize)>,
-    ) -> Result<Self, GraphError> {
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "AvgPool2d 节点需要 1 个父节点".to_string(),
-            ));
-        }
-
-        let input_shape = parents[0].value_expected_shape();
-        let parent_dynamic_shape = parents[0].dynamic_expected_shape();
-
-        Self::new_from_shapes(&input_shape, &parent_dynamic_shape, kernel_size, stride)
-    }
 }
 
 impl TraitNode for AvgPool2d {

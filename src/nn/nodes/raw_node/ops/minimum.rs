@@ -43,7 +43,7 @@ pub(crate) struct Minimum {
 
 impl Minimum {
     /// 从父节点形状信息创建 Minimum 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         a_shape: &[usize],
         b_shape: &[usize],
         a_dynamic_shape: &DynamicShape,
@@ -76,23 +76,8 @@ impl Minimum {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "Minimum 节点需要 2 个父节点".to_string(),
-            ));
-        }
 
-        Self::new_from_shapes(
-            &parents[0].value_expected_shape(),
-            &parents[1].value_expected_shape(),
-            &parents[0].dynamic_expected_shape(),
-            &parents[1].dynamic_expected_shape(),
-        )
-    }
-
-    #[deprecated(note = "保留旧 API 签名，委托给 new_from_shapes")]
+    #[deprecated(note = "保留旧 API 签名，委托给 new")]
     #[allow(dead_code)]
     fn _new_legacy(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
         // 1. 验证父节点数量（需要 2 个）

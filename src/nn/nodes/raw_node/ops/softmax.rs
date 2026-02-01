@@ -40,7 +40,7 @@ pub(crate) struct Softmax {
 
 impl Softmax {
     /// 从父节点形状信息创建 Softmax 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,
     ) -> Result<Self, GraphError> {
@@ -63,17 +63,6 @@ impl Softmax {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Softmax 节点需要正好 1 个父节点".to_string(),
-            ));
-        }
-
-        let parent = &parents[0];
-        Self::new_from_shapes(&parent.value_expected_shape(), &parent.dynamic_expected_shape())
-    }
 }
 
 impl TraitNode for Softmax {

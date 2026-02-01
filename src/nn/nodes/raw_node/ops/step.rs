@@ -21,7 +21,7 @@ pub(crate) struct Step {
 
 impl Step {
     /// 从父节点形状信息创建 Step 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,
     ) -> Result<Self, GraphError> {
@@ -38,19 +38,6 @@ impl Step {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Step节点只需要1个父节点".to_string(),
-            ));
-        }
-
-        Self::new_from_shapes(
-            &parents[0].value_expected_shape(),
-            &parents[0].dynamic_expected_shape(),
-        )
-    }
 }
 
 impl TraitNode for Step {

@@ -971,14 +971,16 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [ ] 移除 `forward_edges`, `backward_edges`（Phase 3 后移除，describe/visualization 依赖）
 
 **2.7.4 节点类型清理**：
-- [ ] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法
-- [ ] 将 `new_from_shapes()` 重命名为 `new()`
-- [ ] 移除 `NodeHandle` 的桥接方法：
+- [x] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法（约 30 个文件）
+- [x] 将 `new_from_shapes()` 重命名为 `new()`
+- [x] 移除 `NodeHandle` 的桥接方法和工厂方法：
   - `calc_value_by_parents()` 桥接
   - `calc_grad_to_parent()` 桥接
+  - 所有 `new_xxx()` 工厂方法
 - [ ] **删除 `NodeHandle` 结构体**（`src/nn/nodes/node_handle.rs`）
   - `NodeInner` 已完全取代其职责
-  - 所有功能已迁移到 `NodeInner`
+  - 暂时保留供 `nodes` HashMap 使用（describe/visualization 依赖）
+  - Phase 3 后与 `nodes` 字段一起移除
 
 **2.7.5 验证**：
 - [ ] 回归测试：所有现有单元测试通过

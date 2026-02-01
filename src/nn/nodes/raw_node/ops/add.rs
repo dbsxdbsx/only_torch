@@ -1,6 +1,6 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::nodes::NodeId;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -19,12 +19,12 @@ pub(crate) struct Add {
 }
 
 impl Add {
-    /// 从父节点形状信息创建 Add 节点（核心实现）
+    /// 从父节点形状信息创建 Add 节点
     ///
     /// # 参数
     /// - `parent_shapes`: 父节点的固定形状列表
     /// - `parent_dynamic_shapes`: 父节点的动态形状列表
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shapes: &[&[usize]],
         parent_dynamic_shapes: &[DynamicShape],
     ) -> Result<Self, GraphError> {
@@ -71,21 +71,6 @@ impl Add {
             dynamic_shape,
             supports_dynamic,
         })
-    }
-
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        // 提取形状信息
-        let shapes: Vec<Vec<usize>> = parents
-            .iter()
-            .map(|p| p.value_expected_shape().to_vec())
-            .collect();
-        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
-        let dynamic_shapes: Vec<DynamicShape> =
-            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
-
-        // 委托给核心实现
-        Self::new_from_shapes(&shapes_ref, &dynamic_shapes)
     }
 }
 

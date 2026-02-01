@@ -48,7 +48,7 @@ pub(crate) struct MAE {
 
 impl MAE {
     /// 从父节点形状信息创建 MAE 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         input_shape: &[usize],
         target_shape: &[usize],
         input_dynamic_shape: &DynamicShape,
@@ -80,28 +80,6 @@ impl MAE {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle], reduction: Reduction) -> Result<Self, GraphError> {
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "MAE 节点需要 2 个父节点（input 和 target）".to_string(),
-            ));
-        }
-
-        Self::new_from_shapes(
-            &parents[0].value_expected_shape(),
-            &parents[1].value_expected_shape(),
-            &parents[0].dynamic_expected_shape(),
-            &parents[1].dynamic_expected_shape(),
-            vec![parents[0].id(), parents[1].id()],
-            reduction,
-        )
-    }
-
-    /// 使用默认 Mean reduction 创建 MAE 节点
-    pub(crate) fn new_mean(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        Self::new(parents, Reduction::Mean)
-    }
 }
 
 impl TraitNode for MAE {

@@ -55,7 +55,7 @@ pub(crate) struct Mean {
 
 impl Mean {
     /// 从父节点形状信息创建 Mean 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         input_shape: &[usize],
         input_dynamic_shape: &DynamicShape,
         axis: Option<usize>,
@@ -110,22 +110,8 @@ impl Mean {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle], axis: Option<usize>) -> Result<Self, GraphError> {
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Mean 节点需要正好 1 个父节点".to_string(),
-            ));
-        }
 
-        Self::new_from_shapes(
-            &parents[0].value_expected_shape(),
-            &parents[0].dynamic_expected_shape(),
-            axis,
-        )
-    }
-
-    #[deprecated(note = "保留旧 API 签名，委托给 new_from_shapes")]
+    #[deprecated(note = "保留旧 API 签名，委托给 new")]
     #[allow(dead_code)]
     fn _new_legacy(parents: &[&NodeHandle], axis: Option<usize>) -> Result<Self, GraphError> {
         // 1. 验证父节点数量

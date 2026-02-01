@@ -64,7 +64,7 @@ impl Dropout {
     }
 
     /// 从父节点形状信息创建 Dropout 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,
         p: f32,
@@ -93,21 +93,6 @@ impl Dropout {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle], p: f32, seed: u64) -> Result<Self, GraphError> {
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Dropout 节点只需要 1 个父节点".to_string(),
-            ));
-        }
-
-        Self::new_from_shapes(
-            &parents[0].value_expected_shape(),
-            &parents[0].dynamic_expected_shape(),
-            p,
-            seed,
-        )
-    }
 
     /// 生成 dropout mask
     ///

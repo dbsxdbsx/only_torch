@@ -41,7 +41,7 @@ pub(crate) struct SoftmaxCrossEntropy {
 
 impl SoftmaxCrossEntropy {
     /// 从父节点形状信息创建 SoftmaxCrossEntropy 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         logits_shape: &[usize],
         labels_shape: &[usize],
         logits_dynamic_shape: &DynamicShape,
@@ -69,22 +69,6 @@ impl SoftmaxCrossEntropy {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "SoftmaxCrossEntropy 节点需要 2 个父节点（logits 和 labels）".to_string(),
-            ));
-        }
-
-        Self::new_from_shapes(
-            &parents[0].value_expected_shape(),
-            &parents[1].value_expected_shape(),
-            &parents[0].dynamic_expected_shape(),
-            &parents[1].dynamic_expected_shape(),
-            vec![parents[0].id(), parents[1].id()],
-        )
-    }
 
     /// 计算数值稳定的 softmax（支持 batch，Rayon 并行）
     /// 输入: [batch, `num_classes`] 或 [1, `num_classes`]

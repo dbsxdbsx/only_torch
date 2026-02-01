@@ -61,7 +61,7 @@ pub(crate) struct BCE {
 
 impl BCE {
     /// 从父节点形状信息创建 BCE 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         logits_shape: &[usize],
         target_shape: &[usize],
         logits_dynamic_shape: &DynamicShape,
@@ -94,28 +94,6 @@ impl BCE {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle], reduction: Reduction) -> Result<Self, GraphError> {
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "BCE 节点需要 2 个父节点（logits 和 target）".to_string(),
-            ));
-        }
-
-        Self::new_from_shapes(
-            &parents[0].value_expected_shape(),
-            &parents[1].value_expected_shape(),
-            &parents[0].dynamic_expected_shape(),
-            &parents[1].dynamic_expected_shape(),
-            vec![parents[0].id(), parents[1].id()],
-            reduction,
-        )
-    }
-
-    /// 使用默认 Mean reduction 创建 BCE 节点
-    pub(crate) fn new_mean(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        Self::new(parents, Reduction::Mean)
-    }
 
     /// 计算数值稳定的 BCE 损失总和
     ///

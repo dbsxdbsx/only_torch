@@ -256,7 +256,7 @@ fn make_add(parent_shapes: &[&[usize]]) -> crate::nn::nodes::NodeType {
         .iter()
         .map(|s| DynamicShape::fixed(s))
         .collect();
-    Add::new_from_shapes(parent_shapes, &dynamic_shapes)
+    Add::new(parent_shapes, &dynamic_shapes)
         .unwrap()
         .into()
 }

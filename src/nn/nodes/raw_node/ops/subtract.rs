@@ -36,7 +36,7 @@ impl Subtract {
     /// - `parent_shapes`: 父节点的固定形状列表 [left, right]
     /// - `parent_dynamic_shapes`: 父节点的动态形状列表
     /// - `parent_ids`: 父节点 ID 列表（用于梯度计算时区分被减数和减数）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shapes: &[&[usize]],
         parent_dynamic_shapes: &[DynamicShape],
         parent_ids: Vec<NodeId>,
@@ -81,21 +81,6 @@ impl Subtract {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        // 提取形状信息
-        let shapes: Vec<Vec<usize>> = parents
-            .iter()
-            .map(|p| p.value_expected_shape().to_vec())
-            .collect();
-        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
-        let dynamic_shapes: Vec<DynamicShape> =
-            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
-        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
-
-        // 委托给核心实现
-        Self::new_from_shapes(&shapes_ref, &dynamic_shapes, parent_ids)
-    }
 }
 
 impl TraitNode for Subtract {

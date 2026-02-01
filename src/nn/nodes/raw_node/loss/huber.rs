@@ -66,7 +66,7 @@ pub const DEFAULT_HUBER_DELTA: f32 = 1.0;
 
 impl Huber {
     /// 从父节点形状信息创建 Huber 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         input_shape: &[usize],
         target_shape: &[usize],
         input_dynamic_shape: &DynamicShape,
@@ -107,38 +107,6 @@ impl Huber {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
-        reduction: Reduction,
-        delta: f32,
-    ) -> Result<Self, GraphError> {
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "Huber 节点需要 2 个父节点（input 和 target）".to_string(),
-            ));
-        }
-
-        Self::new_from_shapes(
-            &parents[0].value_expected_shape(),
-            &parents[1].value_expected_shape(),
-            &parents[0].dynamic_expected_shape(),
-            &parents[1].dynamic_expected_shape(),
-            vec![parents[0].id(), parents[1].id()],
-            reduction,
-            delta,
-        )
-    }
-
-    /// 使用默认参数创建 Huber 节点（Mean reduction, δ=1.0）
-    pub(crate) fn new_default(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        Self::new(parents, Reduction::Mean, DEFAULT_HUBER_DELTA)
-    }
-
-    /// 使用指定 δ 创建 Huber 节点（Mean reduction）
-    pub(crate) fn new_with_delta(parents: &[&NodeHandle], delta: f32) -> Result<Self, GraphError> {
-        Self::new(parents, Reduction::Mean, delta)
-    }
 
     /// 获取 δ 参数
     pub(crate) const fn delta(&self) -> f32 {

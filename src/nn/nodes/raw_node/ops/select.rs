@@ -51,7 +51,7 @@ impl Select {
     }
 
     /// 从父节点形状信息创建 Select 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,
         axis: usize,
@@ -100,24 +100,6 @@ impl Select {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(
-        parents: &[&NodeHandle],
-        axis: usize,
-        index: usize,
-    ) -> Result<Self, GraphError> {
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Select 节点只需要 1 个父节点".to_string(),
-            ));
-        }
-
-        let parent = &parents[0];
-        let parent_shape = parent.value_expected_shape();
-        let parent_dynamic_shape = parent.dynamic_expected_shape();
-
-        Self::new_from_shapes(&parent_shape, &parent_dynamic_shape, axis, index)
-    }
 }
 
 impl TraitNode for Select {

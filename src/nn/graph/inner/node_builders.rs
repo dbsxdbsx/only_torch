@@ -217,8 +217,8 @@ impl GraphInner {
         let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
 
-        // 2. 使用 new_from_shapes 创建 Add 节点
-        let add = Add::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes)?;
+        // 2. 创建 Add 节点
+        let add = Add::new(&parent_shapes_ref, &parent_dynamic_shapes)?;
         let raw_node: NodeType = add.into();
 
         // 3. 创建 NodeInner 并注册
@@ -242,9 +242,9 @@ impl GraphInner {
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        // 2. 使用 new_from_shapes 创建 Subtract 节点
+        // 2. 使用 new 创建 Subtract 节点
         let subtract =
-            Subtract::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+            Subtract::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
         let raw_node: NodeType = subtract.into();
 
         // 3. 创建 NodeInner 并注册
@@ -268,9 +268,9 @@ impl GraphInner {
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        // 2. 使用 new_from_shapes 创建 Multiply 节点
+        // 2. 使用 new 创建 Multiply 节点
         let multiply =
-            Multiply::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+            Multiply::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
         let raw_node: NodeType = multiply.into();
 
         // 3. 创建 NodeInner 并注册
@@ -294,9 +294,9 @@ impl GraphInner {
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        // 2. 使用 new_from_shapes 创建 Divide 节点
+        // 2. 使用 new 创建 Divide 节点
         let divide =
-            Divide::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+            Divide::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
         let raw_node: NodeType = divide.into();
 
         // 3. 创建 NodeInner 并注册
@@ -320,9 +320,9 @@ impl GraphInner {
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        // 2. 使用 new_from_shapes 创建 MatMul 节点
+        // 2. 使用 new 创建 MatMul 节点
         let mat_mul =
-            MatMul::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+            MatMul::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
         let raw_node: NodeType = mat_mul.into();
 
         // 3. 创建 NodeInner 并注册
@@ -353,8 +353,8 @@ impl GraphInner {
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        // 2. 使用 new_from_shapes 创建 Conv2d 节点
-        let conv2d = Conv2d::new_from_shapes(
+        // 2. 使用 new 创建 Conv2d 节点
+        let conv2d = Conv2d::new(
             &parent_shapes_ref,
             &parent_dynamic_shapes,
             parent_ids,
@@ -389,7 +389,7 @@ impl GraphInner {
         let parent_dynamic_shape = parent.dynamic_shape();
 
         let max_pool =
-            MaxPool2d::new_from_shapes(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
+            MaxPool2d::new(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
         let raw_node: NodeType = max_pool.into();
 
         self.create_node_inner(raw_node, name, "maxpool2d", vec![parent])
@@ -417,7 +417,7 @@ impl GraphInner {
         let parent_dynamic_shape = parent.dynamic_shape();
 
         let avg_pool =
-            AvgPool2d::new_from_shapes(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
+            AvgPool2d::new(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
         let raw_node: NodeType = avg_pool.into();
 
         self.create_node_inner(raw_node, name, "avgpool2d", vec![parent])
@@ -440,7 +440,7 @@ impl GraphInner {
         let parent_dynamic_shape = parent.dynamic_shape();
 
         let flatten =
-            Flatten::new_from_shapes(&parent_shape, &parent_dynamic_shape, keep_first_dim)?;
+            Flatten::new(&parent_shape, &parent_dynamic_shape, keep_first_dim)?;
         let raw_node: NodeType = flatten.into();
 
         self.create_node_inner(raw_node, name, "flatten", vec![parent])
@@ -460,7 +460,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let reshape = Reshape::new_from_shapes(&parent_shape, &parent_dynamic_shape, target_shape)?;
+        let reshape = Reshape::new(&parent_shape, &parent_dynamic_shape, target_shape)?;
         let raw_node: NodeType = reshape.into();
 
         self.create_node_inner(raw_node, name, "reshape", vec![parent])
@@ -485,7 +485,7 @@ impl GraphInner {
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        let stack = Stack::new_from_shapes(
+        let stack = Stack::new(
             &parent_shapes_ref,
             &parent_dynamic_shapes,
             parent_ids,
@@ -512,7 +512,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let select = Select::new_from_shapes(&parent_shape, &parent_dynamic_shape, axis, index)?;
+        let select = Select::new(&parent_shape, &parent_dynamic_shape, axis, index)?;
         let raw_node: NodeType = select.into();
 
         self.create_node_inner(raw_node, name, "select", vec![parent])
@@ -541,7 +541,7 @@ impl GraphInner {
         let input_dynamic_shape = input.dynamic_shape();
         let index_dynamic_shape = index.dynamic_shape();
 
-        let gather = Gather::new_from_shapes(
+        let gather = Gather::new(
             &input_shape,
             &index_shape,
             &input_dynamic_shape,
@@ -566,7 +566,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let sigmoid = Sigmoid::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let sigmoid = Sigmoid::new(&parent_shape, &parent_dynamic_shape)?;
         let raw_node: NodeType = sigmoid.into();
 
         self.create_node_inner(raw_node, name, "sigmoid", vec![parent])
@@ -585,7 +585,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let tanh = Tanh::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let tanh = Tanh::new(&parent_shape, &parent_dynamic_shape)?;
         let raw_node: NodeType = tanh.into();
 
         self.create_node_inner(raw_node, name, "tanh", vec![parent])
@@ -606,7 +606,7 @@ impl GraphInner {
         let parent_dynamic_shape = parent.dynamic_shape();
 
         let leaky_relu =
-            LeakyReLU::new_from_shapes(&parent_shape, &parent_dynamic_shape, negative_slope)?;
+            LeakyReLU::new(&parent_shape, &parent_dynamic_shape, negative_slope)?;
         let raw_node: NodeType = leaky_relu.into();
 
         self.create_node_inner(raw_node, name, "leaky_relu", vec![parent])
@@ -636,7 +636,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let softmax = Softmax::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let softmax = Softmax::new(&parent_shape, &parent_dynamic_shape)?;
         let raw_node: NodeType = softmax.into();
 
         self.create_node_inner(raw_node, name, "softmax", vec![parent])
@@ -655,7 +655,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let log_softmax = LogSoftmax::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let log_softmax = LogSoftmax::new(&parent_shape, &parent_dynamic_shape)?;
         let raw_node: NodeType = log_softmax.into();
 
         self.create_node_inner(raw_node, name, "log_softmax", vec![parent])
@@ -674,7 +674,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let softplus = SoftPlus::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let softplus = SoftPlus::new(&parent_shape, &parent_dynamic_shape)?;
         let raw_node: NodeType = softplus.into();
 
         self.create_node_inner(raw_node, name, "softplus", vec![parent])
@@ -697,7 +697,7 @@ impl GraphInner {
         let input_dynamic_shape = input.dynamic_shape();
         let target_dynamic_shape = target.dynamic_shape();
 
-        let mse = MSE::new_from_shapes(
+        let mse = MSE::new(
             &input_shape,
             &target_shape,
             &input_dynamic_shape,
@@ -742,7 +742,7 @@ impl GraphInner {
         let input_dynamic_shape = input.dynamic_shape();
         let target_dynamic_shape = target.dynamic_shape();
 
-        let mae = MAE::new_from_shapes(
+        let mae = MAE::new(
             &input_shape,
             &target_shape,
             &input_dynamic_shape,
@@ -787,7 +787,7 @@ impl GraphInner {
         let logits_dynamic_shape = logits.dynamic_shape();
         let target_dynamic_shape = target.dynamic_shape();
 
-        let bce = BCE::new_from_shapes(
+        let bce = BCE::new(
             &logits_shape,
             &target_shape,
             &logits_dynamic_shape,
@@ -833,7 +833,7 @@ impl GraphInner {
         let input_dynamic_shape = input.dynamic_shape();
         let target_dynamic_shape = target.dynamic_shape();
 
-        let huber = Huber::new_from_shapes(
+        let huber = Huber::new(
             &input_shape,
             &target_shape,
             &input_dynamic_shape,
@@ -879,7 +879,7 @@ impl GraphInner {
         let logits_dynamic_shape = logits.dynamic_shape();
         let labels_dynamic_shape = labels.dynamic_shape();
 
-        let sce = SoftmaxCrossEntropy::new_from_shapes(
+        let sce = SoftmaxCrossEntropy::new(
             &logits_shape,
             &labels_shape,
             &logits_dynamic_shape,
@@ -908,7 +908,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let sum = Sum::new_from_shapes(&input_shape, &input_dynamic_shape, axis)?;
+        let sum = Sum::new(&input_shape, &input_dynamic_shape, axis)?;
         let raw_node: NodeType = sum.into();
 
         self.create_node_inner(raw_node, name, "sum", vec![input])
@@ -929,7 +929,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let mean = Mean::new_from_shapes(&input_shape, &input_dynamic_shape, axis)?;
+        let mean = Mean::new(&input_shape, &input_dynamic_shape, axis)?;
         let raw_node: NodeType = mean.into();
 
         self.create_node_inner(raw_node, name, "mean", vec![input])
@@ -949,7 +949,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let amax = Amax::new_from_shapes(&input_shape, &input_dynamic_shape, axis)?;
+        let amax = Amax::new(&input_shape, &input_dynamic_shape, axis)?;
         let raw_node: NodeType = amax.into();
 
         self.create_node_inner(raw_node, name, "amax", vec![input])
@@ -969,7 +969,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let amin = Amin::new_from_shapes(&input_shape, &input_dynamic_shape, axis)?;
+        let amin = Amin::new(&input_shape, &input_dynamic_shape, axis)?;
         let raw_node: NodeType = amin.into();
 
         self.create_node_inner(raw_node, name, "amin", vec![input])
@@ -992,7 +992,7 @@ impl GraphInner {
         let b_dynamic_shape = b.dynamic_shape();
 
         let maximum =
-            Maximum::new_from_shapes(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
+            Maximum::new(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
         let raw_node: NodeType = maximum.into();
 
         self.create_node_inner(raw_node, name, "maximum", vec![a, b])
@@ -1015,7 +1015,7 @@ impl GraphInner {
         let b_dynamic_shape = b.dynamic_shape();
 
         let minimum =
-            Minimum::new_from_shapes(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
+            Minimum::new(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
         let raw_node: NodeType = minimum.into();
 
         self.create_node_inner(raw_node, name, "minimum", vec![a, b])
@@ -1046,7 +1046,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let identity = Identity::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let identity = Identity::new(&input_shape, &input_dynamic_shape)?;
         let raw_node: NodeType = identity.into();
 
         let node = self.create_node_inner(raw_node, name, "identity", vec![input])?;
@@ -1074,7 +1074,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let dropout = Dropout::new_from_shapes(&input_shape, &input_dynamic_shape, p, seed)?;
+        let dropout = Dropout::new(&input_shape, &input_dynamic_shape, p, seed)?;
         let raw_node: NodeType = dropout.into();
 
         self.create_node_inner(raw_node, name, "dropout", vec![input])
@@ -1090,7 +1090,7 @@ impl GraphInner {
     ) -> Result<Rc<NodeInner>, GraphError> {
         use crate::nn::nodes::raw_node::ZerosLike;
 
-        let zeros_like = ZerosLike::new_from_shapes(feature_shape);
+        let zeros_like = ZerosLike::new(feature_shape);
         let raw_node: NodeType = zeros_like.into();
 
         self.create_node_inner(raw_node, name, "zeros_like", vec![])
@@ -1109,7 +1109,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let abs = Abs::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let abs = Abs::new(&input_shape, &input_dynamic_shape)?;
         let raw_node: NodeType = abs.into();
 
         self.create_node_inner(raw_node, name, "abs", vec![input])
@@ -1128,7 +1128,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let sign = Sign::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let sign = Sign::new(&input_shape, &input_dynamic_shape)?;
         let raw_node: NodeType = sign.into();
 
         self.create_node_inner(raw_node, name, "sign", vec![input])
@@ -1147,7 +1147,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let step = Step::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let step = Step::new(&input_shape, &input_dynamic_shape)?;
         let raw_node: NodeType = step.into();
 
         self.create_node_inner(raw_node, name, "step", vec![input])
@@ -1166,7 +1166,7 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let ln = Ln::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let ln = Ln::new(&input_shape, &input_dynamic_shape)?;
         let raw_node: NodeType = ln.into();
 
         self.create_node_inner(raw_node, name, "ln", vec![input])

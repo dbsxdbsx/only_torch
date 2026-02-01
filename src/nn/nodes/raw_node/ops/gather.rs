@@ -49,7 +49,7 @@ impl Gather {
     }
 
     /// 从父节点形状信息创建 Gather 节点（核心实现）
-    pub(in crate::nn) fn new_from_shapes(
+    pub(in crate::nn) fn new(
         input_shape: &[usize],
         index_shape: &[usize],
         input_dynamic_shape: &DynamicShape,
@@ -106,29 +106,6 @@ impl Gather {
         })
     }
 
-    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
-    pub(crate) fn new(parents: &[&NodeHandle], dim: usize) -> Result<Self, GraphError> {
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "Gather 节点需要 2 个父节点（input 和 index）".to_string(),
-            ));
-        }
-
-        let input = &parents[0];
-        let index = &parents[1];
-        let input_shape = input.value_expected_shape();
-        let index_shape = index.value_expected_shape();
-        let input_dynamic_shape = input.dynamic_expected_shape();
-        let index_dynamic_shape = index.dynamic_expected_shape();
-
-        Self::new_from_shapes(
-            &input_shape,
-            &index_shape,
-            &input_dynamic_shape,
-            &index_dynamic_shape,
-            dim,
-        )
-    }
 }
 
 impl TraitNode for Gather {
