@@ -881,7 +881,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - **detach 完整支持**（避免 Step 2.7 移除旧 API 后功能缺失）：
     - `GraphInner::create_identity_node_inner()`: 新路径创建 Identity 节点（支持 detached 参数）
     - 迁移 `Var::detach_node()` 使用新路径，返回带 `Rc<NodeInner>` 的 Var
-- [ ] **2.6.3** 实现拓扑逆序反向传播
+- [x] **2.6.3** 实现拓扑逆序反向传播
   - `backward_topo_order()`: 从 loss 开始，DFS 收集节点列表
   - 遍历列表，逐个调用 `propagate_grad_to_parents()`
   - 使用 `last_backward_pass_id` 避免重复处理

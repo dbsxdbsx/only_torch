@@ -15,6 +15,7 @@ use crate::nn::NodeId;
 use crate::nn::graph::GraphError;
 use crate::tensor::Tensor;
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 /// 节点内部结构 - 方案 C 的核心
@@ -213,11 +214,8 @@ impl NodeInner {
             .collect();
 
         // 2. 借用所有父节点的 raw_node（保持 borrow 存活直到计算完成）
-        let parent_borrows: Vec<std::cell::Ref<NodeType>> = self
-            .parents
-            .iter()
-            .map(|p| p.raw_node.borrow())
-            .collect();
+        let parent_borrows: Vec<std::cell::Ref<NodeType>> =
+            self.parents.iter().map(|p| p.raw_node.borrow()).collect();
 
         // 3. 从 borrow 中提取值引用（零 clone！）
         let parent_values: Result<Vec<&Tensor>, GraphError> = parent_borrows
@@ -304,17 +302,11 @@ impl NodeInner {
         upstream_grad: &Tensor,
     ) -> Result<Tensor, GraphError> {
         // 1. 借用所有父节点的 raw_node
-        let parent_borrows: Vec<std::cell::Ref<NodeType>> = self
-            .parents
-            .iter()
-            .map(|p| p.raw_node.borrow())
-            .collect();
+        let parent_borrows: Vec<std::cell::Ref<NodeType>> =
+            self.parents.iter().map(|p| p.raw_node.borrow()).collect();
 
         // 2. 从 borrow 中提取值引用
-        let parent_values: Vec<&Tensor> = parent_borrows
-            .iter()
-            .filter_map(|b| b.value())
-            .collect();
+        let parent_values: Vec<&Tensor> = parent_borrows.iter().filter_map(|b| b.value()).collect();
 
         // 3. 调用 raw_node 的梯度计算
         self.raw_node
@@ -357,6 +349,82 @@ impl NodeInner {
 
             // 累加到父节点
             parent.accumulate_grad(&grad)?;
+        }
+
+        Ok(())
+    }
+
+    /// 收集反向传播的拓扑顺序
+    ///
+    /// 从当前节点（通常是 loss）开始，DFS 遍历所有祖先节点，
+    /// 返回拓扑逆序的节点列表（先子节点后父节点）。
+    ///
+    /// # 参数
+    /// - `self`: 起始节点的 Rc 引用（需要 &Rc<Self> 以便 clone）
+    ///
+    /// # 返回
+    /// 拓扑逆序的节点列表，用于反向传播遍历
+    pub fn backward_topo_order(self: &Rc<Self>) -> Vec<Rc<NodeInner>> {
+        let mut result = Vec::new();
+        let mut visited = HashSet::new();
+
+        fn dfs(
+            node: &Rc<NodeInner>,
+            visited: &mut HashSet<NodeId>,
+            result: &mut Vec<Rc<NodeInner>>,
+        ) {
+            if visited.contains(&node.id()) {
+                return;
+            }
+            visited.insert(node.id());
+            result.push(node.clone());
+
+            for parent in node.parents() {
+                dfs(parent, visited, result);
+            }
+        }
+
+        dfs(self, &mut visited, &mut result);
+        result
+    }
+
+    /// 执行完整的反向传播
+    ///
+    /// 从当前节点（loss）开始，按拓扑逆序遍历所有节点，
+    /// 将梯度传播到各父节点。
+    ///
+    /// # 参数
+    /// - `pass_id`: 反向传播 ID（用于避免重复处理）
+    ///
+    /// # 前置条件
+    /// - 当前节点（loss）的梯度已设置（通常为 1.0）
+    ///
+    /// # 逻辑
+    /// 1. 收集拓扑顺序
+    /// 2. 遍历每个节点：
+    ///    - 跳过已处理的节点（pass_id 检查）
+    ///    - 获取节点梯度，调用 `propagate_grad_to_parents`
+    ///    - 更新 `last_backward_pass_id`
+    pub fn backward_propagate(self: &Rc<Self>, pass_id: u64) -> Result<(), GraphError> {
+        let topo_order = self.backward_topo_order();
+
+        for node in &topo_order {
+            // 跳过已处理的节点
+            if node.last_backward_pass_id() == pass_id {
+                continue;
+            }
+
+            // 获取当前节点的梯度
+            let grad = match node.grad() {
+                Some(g) => g,
+                None => continue, // 没有梯度的节点跳过
+            };
+
+            // 向父节点传播梯度
+            node.propagate_grad_to_parents(&grad)?;
+
+            // 更新 pass_id
+            node.set_last_backward_pass_id(pass_id);
         }
 
         Ok(())
