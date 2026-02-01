@@ -16,49 +16,266 @@ pub(in crate::nn) use state::State;
 use enum_dispatch::enum_dispatch;
 use strum::{EnumCount, VariantNames};
 
-#[enum_dispatch]
-#[derive(Clone, EnumCount, VariantNames)]
-pub(in crate::nn) enum NodeType {
-    Input(InputVariant), // 统一的输入类型（Data/Target/Smart）
-    Parameter(Parameter),
-    State(State),       // 时间状态节点（RNN 隐藏状态等）
-    Identity(Identity), // 恒等映射（用于 detach 等）
-    Abs(Abs),
-    Add(Add),
-    AvgPool2d(AvgPool2d),
-    Conv2d(Conv2d),
-    Dropout(Dropout), // 正则化：训练时随机丢弃，评估时直接通过
-    Flatten(Flatten),
-    MatMul(MatMul),
-    MaxPool2d(MaxPool2d),
-    Maximum(Maximum), // 逐元素取最大值（PPO/TD3 等需要可微分 max）
-    Minimum(Minimum), // 逐元素取最小值（PPO clipping、TD3 双 Q）
-    Amax(Amax),       // 沿轴取最大值（DQN 选最优动作 Q 值）
-    Amin(Amin),       // 沿轴取最小值（Double DQN 选保守 Q 值）
-    Divide(Divide),
-    BCE(BCE),
-    Huber(Huber),
-    MAE(MAE),
-    MSE(MSE),
-    Multiply(Multiply),
-    Reshape(Reshape),
-    Select(Select), // 张量索引选择（RNN 展开式设计用，固定索引）
-    Gather(Gather), // 张量按索引收集（强化学习用，动态索引）
-    Stack(Stack),   // 张量堆叠/拼接（多输入合并）
-    LeakyReLU(LeakyReLU),
-    Ln(Ln),
-    LogSoftmax(LogSoftmax),
-    Sigmoid(Sigmoid),
-    Sign(Sign),
-    Softmax(Softmax),
-    Subtract(Subtract),
-    SoftPlus(SoftPlus),
-    Step(Step),
-    Sum(Sum),   // 归约求和（支持全局和按轴模式）
-    Mean(Mean), // 归约求均值（支持全局和按轴模式）
-    Tanh(Tanh),
-    SoftmaxCrossEntropy(SoftmaxCrossEntropy),
-    ZerosLike(ZerosLike), // 动态零张量（RNN 初始隐藏状态）
+/// 统一定义 NodeType 枚举和元数据
+///
+/// 添加新节点时，只需在此宏调用中添加一项，枚举和元数据自动同步。
+/// `debug.rs` 会自动读取 `NODE_METADATA` 常量，无需额外维护。
+macro_rules! define_node_types {
+    (
+        $(
+            $(#[$attr:meta])*
+            $variant:ident($inner:ty) {
+                category: $cat:literal,
+                description: $desc:literal,
+                var_method: $var:expr $(,)?
+            }
+        ),* $(,)?
+    ) => {
+        #[enum_dispatch]
+        #[derive(Clone, EnumCount, VariantNames)]
+        pub(in crate::nn) enum NodeType {
+            $(
+                $(#[$attr])*
+                $variant($inner),
+            )*
+        }
+
+        /// 节点元数据（由 define_node_types! 宏自动生成）
+        ///
+        /// 格式：(类别, 描述, Var 方法)
+        /// 顺序与 `NodeType::VARIANTS` 完全一致
+        pub const NODE_METADATA: &[(&str, &str, Option<&str>)] = &[
+            $( ($cat, $desc, $var), )*
+        ];
+    };
+}
+
+// ============================================================================
+// 节点类型定义（枚举变体 + 元数据）
+//
+// 添加新节点时，在对应分类下添加一项即可，格式：
+//   VariantName(InnerType) {
+//       category: "分类名",
+//       description: "简要描述",
+//       var_method: Some("方法名") 或 None,
+//   },
+// ============================================================================
+define_node_types! {
+    // ==================== 输入/参数/状态 ====================
+    Input(InputVariant) {
+        category: "输入",
+        description: "外部数据输入（Data/Target/Smart/RecurrentOutput）",
+        var_method: None,
+    },
+    Parameter(Parameter) {
+        category: "参数",
+        description: "可学习参数（weight/bias）",
+        var_method: None,
+    },
+    State(State) {
+        category: "状态",
+        description: "时间状态节点（RNN 隐藏状态）",
+        var_method: None,
+    },
+
+    // ==================== 算术运算 ====================
+    Add(Add) {
+        category: "算术",
+        description: "逐元素加法（支持广播）",
+        var_method: Some("+ 运算符"),
+    },
+    Subtract(Subtract) {
+        category: "算术",
+        description: "逐元素减法（支持广播）",
+        var_method: Some("- 运算符"),
+    },
+    Multiply(Multiply) {
+        category: "算术",
+        description: "逐元素乘法（支持广播）",
+        var_method: Some("* 运算符"),
+    },
+    Divide(Divide) {
+        category: "算术",
+        description: "逐元素除法（支持广播）",
+        var_method: Some("/ 运算符"),
+    },
+
+    // ==================== 矩阵/卷积运算 ====================
+    MatMul(MatMul) {
+        category: "矩阵/卷积",
+        description: "矩阵乘法",
+        var_method: Some("matmul()"),
+    },
+    Conv2d(Conv2d) {
+        category: "矩阵/卷积",
+        description: "2D 卷积",
+        var_method: None,
+    },
+    MaxPool2d(MaxPool2d) {
+        category: "矩阵/卷积",
+        description: "2D 最大池化",
+        var_method: None,
+    },
+    AvgPool2d(AvgPool2d) {
+        category: "矩阵/卷积",
+        description: "2D 平均池化",
+        var_method: None,
+    },
+
+    // ==================== 形状变换 ====================
+    Reshape(Reshape) {
+        category: "形状",
+        description: "张量变形",
+        var_method: Some("reshape()"),
+    },
+    Flatten(Flatten) {
+        category: "形状",
+        description: "展平（保留 batch 维）",
+        var_method: Some("flatten()"),
+    },
+    Select(Select) {
+        category: "形状",
+        description: "固定索引选择（RNN 时间步）",
+        var_method: Some("select()"),
+    },
+    Gather(Gather) {
+        category: "形状",
+        description: "动态索引收集（强化学习）",
+        var_method: Some("gather()"),
+    },
+    Stack(Stack) {
+        category: "形状",
+        description: "张量堆叠/拼接",
+        var_method: Some("Var::stack()"),
+    },
+
+    // ==================== 比较/归约 ====================
+    Maximum(Maximum) {
+        category: "归约",
+        description: "逐元素取最大值",
+        var_method: None,
+    },
+    Minimum(Minimum) {
+        category: "归约",
+        description: "逐元素取最小值",
+        var_method: None,
+    },
+    Amax(Amax) {
+        category: "归约",
+        description: "沿轴取最大值",
+        var_method: None,
+    },
+    Amin(Amin) {
+        category: "归约",
+        description: "沿轴取最小值",
+        var_method: None,
+    },
+    Sum(Sum) {
+        category: "归约",
+        description: "归约求和",
+        var_method: Some("sum() / sum_axis()"),
+    },
+    Mean(Mean) {
+        category: "归约",
+        description: "归约求均值",
+        var_method: Some("mean() / mean_axis()"),
+    },
+
+    // ==================== 激活函数 ====================
+    Sigmoid(Sigmoid) {
+        category: "激活",
+        description: "Sigmoid 激活",
+        var_method: Some("sigmoid()"),
+    },
+    Tanh(Tanh) {
+        category: "激活",
+        description: "Tanh 激活",
+        var_method: Some("tanh()"),
+    },
+    LeakyReLU(LeakyReLU) {
+        category: "激活",
+        description: "LeakyReLU 激活（含 ReLU）",
+        var_method: Some("leaky_relu() / relu()"),
+    },
+    Softmax(Softmax) {
+        category: "激活",
+        description: "Softmax 归一化",
+        var_method: Some("softmax()"),
+    },
+    LogSoftmax(LogSoftmax) {
+        category: "激活",
+        description: "数值稳定的 log(softmax)",
+        var_method: Some("log_softmax()"),
+    },
+    SoftPlus(SoftPlus) {
+        category: "激活",
+        description: "SoftPlus 激活（平滑 ReLU）",
+        var_method: Some("softplus()"),
+    },
+    Step(Step) {
+        category: "激活",
+        description: "阶跃函数",
+        var_method: Some("step()"),
+    },
+    Sign(Sign) {
+        category: "激活",
+        description: "符号函数",
+        var_method: Some("sign()"),
+    },
+    Abs(Abs) {
+        category: "激活",
+        description: "绝对值",
+        var_method: Some("abs()"),
+    },
+    Ln(Ln) {
+        category: "激活",
+        description: "自然对数",
+        var_method: Some("ln()"),
+    },
+
+    // ==================== 损失函数 ====================
+    MSE(MSE) {
+        category: "损失",
+        description: "均方误差损失",
+        var_method: Some("mse_loss()"),
+    },
+    MAE(MAE) {
+        category: "损失",
+        description: "平均绝对误差损失",
+        var_method: Some("mae_loss()"),
+    },
+    BCE(BCE) {
+        category: "损失",
+        description: "二元交叉熵损失",
+        var_method: Some("bce_loss()"),
+    },
+    Huber(Huber) {
+        category: "损失",
+        description: "Huber 损失（强化学习）",
+        var_method: Some("huber_loss()"),
+    },
+    SoftmaxCrossEntropy(SoftmaxCrossEntropy) {
+        category: "损失",
+        description: "Softmax + 交叉熵损失",
+        var_method: Some("cross_entropy()"),
+    },
+
+    // ==================== 辅助节点 ====================
+    Identity(Identity) {
+        category: "辅助",
+        description: "恒等映射（用于 detach）",
+        var_method: Some("detach_node()"),
+    },
+    Dropout(Dropout) {
+        category: "辅助",
+        description: "随机丢弃（正则化）",
+        var_method: Some("dropout()"),
+    },
+    ZerosLike(ZerosLike) {
+        category: "辅助",
+        description: "动态零张量（RNN 初始状态）",
+        var_method: None,
+    },
 }
 
 use super::{GraphError, NodeHandle, NodeId};
