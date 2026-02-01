@@ -206,6 +206,18 @@ impl NodeInner {
         self.raw_node.borrow_mut().clear_grad()
     }
 
+    // ==================== 形状查询（方案 C 2.7.2）====================
+
+    /// 获取节点的期望输出形状（静态形状）
+    pub fn value_expected_shape(&self) -> Vec<usize> {
+        self.raw_node.borrow().value_expected_shape().to_vec()
+    }
+
+    /// 获取节点的动态期望形状（支持动态维度）
+    pub fn dynamic_expected_shape(&self) -> crate::nn::shape::DynamicShape {
+        self.raw_node.borrow().dynamic_expected_shape()
+    }
+
     // ==================== 前向传播（方案 C）====================
 
     /// 从父节点计算当前节点的值

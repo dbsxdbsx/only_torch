@@ -143,9 +143,7 @@ impl Var {
     /// # Panics
     /// 如果 Graph 已被释放，则 panic
     pub(crate) fn graph(&self) -> Rc<RefCell<GraphInner>> {
-        self.graph
-            .upgrade()
-            .expect("Graph 已被释放，Var 不再有效")
+        self.graph.upgrade().expect("Graph 已被释放，Var 不再有效")
     }
 
     /// 尝试获取内部图引用（不 panic）
@@ -178,10 +176,7 @@ impl Var {
     ///
     /// 返回支持动态维度的形状表示（如 `[?, 128]`）
     pub fn dynamic_expected_shape(&self) -> crate::nn::shape::DynamicShape {
-        self.graph()
-            .borrow()
-            .get_node_dynamic_expected_shape(self.node_id())
-            .expect("获取动态形状失败")
+        self.node().dynamic_expected_shape()
     }
 
     /// 断言两个 Var 来自同一个 Graph，否则 panic（供 trait 使用）
@@ -285,9 +280,7 @@ impl Var {
     ///
     /// 递归执行从当前节点到所有父节点的前向计算
     pub fn forward(&self) -> Result<(), GraphError> {
-        self.graph()
-            .borrow_mut()
-            .forward_via_node_inner(&self.node)
+        self.graph().borrow_mut().forward_via_node_inner(&self.node)
     }
 
     /// 反向传播（ensure-forward 语义）
@@ -364,10 +357,9 @@ impl Var {
             ));
         }
         let graph = self.graph();
-        let node = graph.borrow_mut().create_add_node(
-            vec![Rc::clone(&self.node), Rc::clone(&other.node)],
-            None,
-        )?;
+        let node = graph
+            .borrow_mut()
+            .create_add_node(vec![Rc::clone(&self.node), Rc::clone(&other.node)], None)?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 
@@ -381,10 +373,9 @@ impl Var {
             ));
         }
         let graph = self.graph();
-        let node = graph.borrow_mut().create_subtract_node(
-            vec![Rc::clone(&self.node), Rc::clone(&other.node)],
-            None,
-        )?;
+        let node = graph
+            .borrow_mut()
+            .create_subtract_node(vec![Rc::clone(&self.node), Rc::clone(&other.node)], None)?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 
@@ -396,10 +387,9 @@ impl Var {
             ));
         }
         let graph = self.graph();
-        let node = graph.borrow_mut().create_multiply_node(
-            vec![Rc::clone(&self.node), Rc::clone(&other.node)],
-            None,
-        )?;
+        let node = graph
+            .borrow_mut()
+            .create_multiply_node(vec![Rc::clone(&self.node), Rc::clone(&other.node)], None)?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 
@@ -413,10 +403,9 @@ impl Var {
             ));
         }
         let graph = self.graph();
-        let node = graph.borrow_mut().create_divide_node(
-            vec![Rc::clone(&self.node), Rc::clone(&other.node)],
-            None,
-        )?;
+        let node = graph
+            .borrow_mut()
+            .create_divide_node(vec![Rc::clone(&self.node), Rc::clone(&other.node)], None)?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 }
@@ -583,8 +572,7 @@ impl Var {
             .borrow_mut()
             .create_basic_input_node(tensor.shape(), None)
             .expect("创建 Tensor->Var 转换节点失败");
-        node.set_value(Some(tensor))
-            .expect("设置 Tensor 值失败");
+        node.set_value(Some(tensor)).expect("设置 Tensor 值失败");
         Self::new_with_rc_graph(node, &graph)
     }
 }

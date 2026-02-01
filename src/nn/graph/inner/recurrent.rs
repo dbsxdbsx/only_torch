@@ -2,6 +2,11 @@
  * @Author       : 老董
  * @Date         : 2026-01-27
  * @Description  : GraphInner 循环机制（connect_recurrent, step, reset）
+ *
+ * ⚠️ DEPRECATED（方案 C 2.7.2）：
+ * 此模块基于 step() + connect_recurrent() 实现传统循环机制。
+ * 新架构采用"展开式设计"，RNN 层在 forward 时展开所有时间步，
+ * 无需显式声明循环边。保留此模块仅为向后兼容，后续版本可能移除。
  */
 
 use super::super::error::GraphError;
@@ -11,9 +16,12 @@ use crate::nn::NodeId;
 use std::collections::HashMap;
 
 impl GraphInner {
-    // ========== 循环/记忆机制 API ==========
+    // ========== 循环/记忆机制 API（DEPRECATED）==========
 
     /// 声明循环连接
+    ///
+    /// ⚠️ DEPRECATED：新架构使用展开式 RNN，无需显式循环边
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，无需显式循环边")]
     pub fn connect_recurrent(
         &mut self,
         from_node: NodeId,
@@ -34,21 +42,27 @@ impl GraphInner {
     }
 
     /// 获取节点的循环连接源
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，无需显式循环边")]
     pub fn get_recurrent_source(&self, to_node: NodeId) -> Option<NodeId> {
         self.recurrent_edges.get(&to_node).copied()
     }
 
     /// 检查图中是否有循环连接
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，无需显式循环边")]
     pub fn has_recurrent_edges(&self) -> bool {
         !self.recurrent_edges.is_empty()
     }
 
     /// 获取当前时间步
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，无需时间步计数")]
     pub const fn current_time_step(&self) -> u64 {
         self.time_step
     }
 
     /// 执行一个时间步的前向传播
+    ///
+    /// ⚠️ DEPRECATED：新架构使用展开式 RNN，无需 step() 方法
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，无需 step() 方法")]
     pub fn step(&mut self, output_node: NodeId) -> Result<(), GraphError> {
         for (&to_node, &from_node) in &self.recurrent_edges.clone() {
             let prev_value = self.prev_values.get(&from_node).cloned();
@@ -103,8 +117,11 @@ impl GraphInner {
 
     /// 重置循环状态
     ///
+    /// ⚠️ DEPRECATED：新架构使用展开式 RNN，无需手动 reset()
+    ///
     /// 清除历史记录并将所有循环目标节点重置为零张量。
     /// 只有全部节点重置成功后才会重置时间步，确保状态一致性。
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，无需手动 reset()")]
     pub fn reset(&mut self) -> Result<(), GraphError> {
         self.prev_values.clear();
         self.step_history.clear();

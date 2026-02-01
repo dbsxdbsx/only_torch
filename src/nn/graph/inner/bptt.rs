@@ -2,6 +2,12 @@
  * @Author       : 老董
  * @Date         : 2026-01-27
  * @Description  : GraphInner BPTT（通过时间反向传播）
+ *
+ * ⚠️ DEPRECATED（方案 C 2.7.2）：
+ * 此模块基于传统的 step() + 快照机制实现 BPTT。
+ * 新架构采用"展开式设计"，RNN 层在 forward 时展开所有时间步，
+ * BPTT 通过标准的 loss.backward() 自动完成，无需此模块。
+ * 保留此模块仅为向后兼容，后续版本可能移除。
  */
 
 use super::super::error::GraphError;
@@ -11,14 +17,16 @@ use crate::nn::nodes::{NodeHandle, NodeType};
 use crate::tensor::Tensor;
 
 impl GraphInner {
-    // ========== BPTT API ==========
+    // ========== BPTT API（DEPRECATED）==========
 
     /// 获取当前存储的时间步历史长度
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，不再需要 step 历史")]
     pub const fn history_len(&self) -> usize {
         self.step_history.len()
     }
 
     /// 获取时间步历史长度（别名，兼容旧 API）
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，不再需要 step 历史")]
     pub const fn step_history_len(&self) -> usize {
         self.step_history.len()
     }
@@ -27,11 +35,14 @@ impl GraphInner {
     ///
     /// 与 `reset()` 不同，此方法只清除历史记录，不影响当前的循环状态和时间步。
     /// 用于 TBPTT 截断后开始新的截断窗口。
+    #[deprecated(since = "0.12.0", note = "新架构使用展开式 RNN，不再需要 BPTT 历史")]
     pub fn clear_history(&mut self) {
         self.step_history.clear();
     }
 
     /// 通过时间反向传播（BPTT）
+    ///
+    /// ⚠️ DEPRECATED：新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
     ///
     /// 遍历所有存储的时间步，从最后一步向前反向传播，累加梯度到参数节点。
     ///
@@ -64,15 +75,22 @@ impl GraphInner {
     /// graph.zero_grad();
     /// graph.reset();
     /// ```
+    #[deprecated(
+        since = "0.12.0",
+        note = "新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成"
+    )]
     pub fn backward_through_time(
         &mut self,
         target_nodes: &[NodeId],
         loss_node: NodeId,
     ) -> Result<(), GraphError> {
+        #[allow(deprecated)]
         self.backward_through_time_truncated(target_nodes, loss_node, None)
     }
 
     /// 截断的通过时间反向传播（TBPTT）
+    ///
+    /// ⚠️ DEPRECATED：新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
     ///
     /// 与 `backward_through_time` 相同，但只反向传播最近的 `truncation_steps` 个时间步。
     /// 用于处理长序列时限制内存使用和梯度消失/爆炸问题。
@@ -94,6 +112,10 @@ impl GraphInner {
     ///   [t=3,4,5] → backward → step
     ///   [t=6,7,8,9] → backward → step
     /// ```
+    #[deprecated(
+        since = "0.12.0",
+        note = "新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成"
+    )]
     pub fn backward_through_time_truncated(
         &mut self,
         target_nodes: &[NodeId],
@@ -380,10 +402,7 @@ impl GraphInner {
                     }
 
                     // 使用 VJP 模式计算梯度（新签名：target_index, parents, upstream_grad）
-                    let target_index = parent_ids
-                        .iter()
-                        .position(|&id| id == parent_id)
-                        .unwrap();
+                    let target_index = parent_ids.iter().position(|&id| id == parent_id).unwrap();
                     let parents: Vec<&NodeHandle> = parent_ids
                         .iter()
                         .filter_map(|&id| self.get_node(id).ok())
@@ -476,10 +495,7 @@ impl GraphInner {
                     }
 
                     // 使用 VJP 计算梯度（新签名：target_index, parents, upstream_grad）
-                    let target_index = parent_ids
-                        .iter()
-                        .position(|&id| id == parent_id)
-                        .unwrap();
+                    let target_index = parent_ids.iter().position(|&id| id == parent_id).unwrap();
                     let parents: Vec<&NodeHandle> = parent_ids
                         .iter()
                         .filter_map(|&id| self.get_node(id).ok())
@@ -619,10 +635,7 @@ impl GraphInner {
                     }
 
                     // 使用 VJP 计算梯度（新签名：target_index, parents, upstream_grad）
-                    let target_index = parent_ids
-                        .iter()
-                        .position(|&id| id == parent_id)
-                        .unwrap();
+                    let target_index = parent_ids.iter().position(|&id| id == parent_id).unwrap();
                     let parents: Vec<&NodeHandle> = parent_ids
                         .iter()
                         .filter_map(|&id| self.get_node(id).ok())

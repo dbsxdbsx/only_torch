@@ -945,11 +945,11 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - 影响范围：RNN/GRU/LSTM 层、dynamic_batch 测试、部分 optimizer 测试
 
 **2.7.2 模块适配**：
-- [ ] Optimizer 适配：`step()` 改用 Var 的 `node` 访问值/梯度
-- [ ] 可视化模块适配：改用 `Var.visualize()` 遍历 parents
-- [ ] BPTT 模块适配（或标记 deprecated）
-- [ ] Recurrent 模块适配
-- [ ] Describe 模块适配
+- [x] Optimizer 适配：`step()` 改用 Var 的 `node()` 直接访问值/梯度（不再依赖 GraphInner）
+- [x] 可视化模块适配：`Var.dynamic_expected_shape()` 改用 `NodeInner` API（辅助方法待 2.7.3 清理）
+- [x] BPTT 模块标记 `#[deprecated]`（新架构使用展开式 RNN，BPTT 通过标准 backward 自动完成）
+- [x] Recurrent 模块标记 `#[deprecated]`（`connect_recurrent`/`step`/`reset` 等，新架构无需显式循环边）
+- [x] Describe 模块保留（调试功能，依赖 nodes HashMap，待 2.7.3 适配）
 
 **2.7.3 GraphInner 清理**：
 - [ ] 移除旧的 forward/backward 方法：

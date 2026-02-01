@@ -1,24 +1,22 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-01-17
- * @LastEditTime : 2026-01-17
+ * @LastEditTime : 2026-02-02
  * @Description  : Optimizer API - PyTorch 风格
  *
  * 设计依据：architecture_v2_design.md §4.2.6
  *
- * 核心特性：
- * - Optimizer 持有 Rc<RefCell<GraphInner>> 引用
+ * 核心特性（方案 C 2.7.2 适配）：
+ * - 直接通过 Var.node() 访问 NodeInner 进行值/梯度操作
+ * - 不再依赖 GraphInner 的 get_node 系列方法
  * - params 存储 Vec<Var>（保留完整 Var 能力，支持未来 param_groups 等扩展）
  * - zero_grad() 不再需要 &mut Graph 参数
  * - step() 不再需要 &mut Graph 参数
  * - minimize(&self, loss: &Var) 一步完成训练
  */
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
-use crate::nn::graph::GraphInner;
 use crate::nn::{Graph, GraphError, NodeId, Var};
 use crate::tensor::Tensor;
 
@@ -85,8 +83,6 @@ pub trait Optimizer {
 /// optimizer.step()?;
 /// ```
 pub struct SGD {
-    /// 图引用
-    graph: Rc<RefCell<GraphInner>>,
     /// 要优化的参数（保留完整 Var，支持未来 `param_groups` 等扩展）
     params: Vec<Var>,
     /// 学习率
@@ -97,12 +93,11 @@ impl SGD {
     /// 创建新的 SGD 优化器
     ///
     /// # 参数
-    /// - `graph`: 图句柄
+    /// - `_graph`: 图句柄（保留参数以保持 API 兼容，但不再使用）
     /// - `params`: 要优化的参数 Var 列表
     /// - `lr`: 学习率
-    pub fn new(graph: &Graph, params: &[Var], lr: f32) -> Self {
+    pub fn new(_graph: &Graph, params: &[Var], lr: f32) -> Self {
         Self {
-            graph: graph.inner_rc(),
             params: params.to_vec(),
             lr,
         }
@@ -118,23 +113,23 @@ impl SGD {
 
 impl Optimizer for SGD {
     fn zero_grad(&mut self) -> Result<(), GraphError> {
-        let mut g = self.graph.borrow_mut();
         for param in &self.params {
-            g.clear_node_grad(param.node_id())?;
+            param.node().clear_grad()?;
         }
         Ok(())
     }
 
     fn step(&mut self) -> Result<(), GraphError> {
-        let mut g = self.graph.borrow_mut();
         for param in &self.params {
-            let node_id = param.node_id();
-            if let Some(grad) = g.get_node_grad(node_id)? {
-                let current = g.get_node_value(node_id)?.ok_or_else(|| {
-                    GraphError::ComputationError(format!("参数节点 {node_id:?} 没有值"))
+            if let Some(grad) = param.node().grad() {
+                let current = param.node().value().ok_or_else(|| {
+                    GraphError::ComputationError(format!(
+                        "参数节点 {:?} 没有值",
+                        param.node_id()
+                    ))
                 })?;
                 let new_value = current - self.lr * &grad;
-                g.set_node_value(node_id, Some(&new_value))?;
+                param.node().set_value(Some(&new_value))?;
             }
         }
         Ok(())
@@ -175,8 +170,6 @@ impl Optimizer for SGD {
 /// optimizer.step()?;
 /// ```
 pub struct Adam {
-    /// 图引用
-    graph: Rc<RefCell<GraphInner>>,
     /// 要优化的参数（保留完整 Var，支持未来 `param_groups` 等扩展）
     params: Vec<Var>,
     /// 学习率
@@ -199,16 +192,16 @@ impl Adam {
     /// 创建新的 Adam 优化器
     ///
     /// # 参数
-    /// - `graph`: 图句柄
+    /// - `_graph`: 图句柄（保留参数以保持 API 兼容，但不再使用）
     /// - `params`: 要优化的参数 Var 列表
     /// - `lr`: 学习率
-    pub fn new(graph: &Graph, params: &[Var], lr: f32) -> Self {
-        Self::new_with_config(graph, params, lr, 0.9, 0.999, 1e-8)
+    pub fn new(_graph: &Graph, params: &[Var], lr: f32) -> Self {
+        Self::new_with_config(_graph, params, lr, 0.9, 0.999, 1e-8)
     }
 
     /// 创建带完整配置的 Adam 优化器
     pub fn new_with_config(
-        graph: &Graph,
+        _graph: &Graph,
         params: &[Var],
         lr: f32,
         beta1: f32,
@@ -216,7 +209,6 @@ impl Adam {
         epsilon: f32,
     ) -> Self {
         Self {
-            graph: graph.inner_rc(),
             params: params.to_vec(),
             lr,
             beta1,
@@ -257,21 +249,19 @@ impl Adam {
 
 impl Optimizer for Adam {
     fn zero_grad(&mut self) -> Result<(), GraphError> {
-        let mut g = self.graph.borrow_mut();
         for param in &self.params {
-            g.clear_node_grad(param.node_id())?;
+            param.node().clear_grad()?;
         }
         Ok(())
     }
 
     fn step(&mut self) -> Result<(), GraphError> {
         self.t += 1;
-        let mut g = self.graph.borrow_mut();
 
         for param in &self.params {
             let node_id = param.node_id();
-            if let Some(grad) = g.get_node_grad(node_id)? {
-                let current = g.get_node_value(node_id)?.ok_or_else(|| {
+            if let Some(grad) = param.node().grad() {
+                let current = param.node().value().ok_or_else(|| {
                     GraphError::ComputationError(format!("参数节点 {node_id:?} 没有值"))
                 })?;
 
@@ -306,7 +296,7 @@ impl Optimizer for Adam {
                 let update = &m_hat / &denom;
                 let new_value = current - self.lr * &update;
 
-                g.set_node_value(node_id, Some(&new_value))?;
+                param.node().set_value(Some(&new_value))?;
             }
         }
         Ok(())
