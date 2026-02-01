@@ -192,6 +192,108 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "state", vec![])
     }
 
+    /// 创建 Add 节点（方案 C 新 API）
+    ///
+    /// 逐元素加法，支持广播。
+    /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
+    pub fn create_add_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Add;
+
+        // 1. 从父节点提取形状信息
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+
+        // 2. 使用 new_from_shapes 创建 Add 节点
+        let add = Add::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes)?;
+        let raw_node: NodeType = add.into();
+
+        // 3. 创建 NodeInner 并注册
+        self.create_node_inner(raw_node, name, "add", parents)
+    }
+
+    /// 创建 Subtract 节点（方案 C 新 API）
+    ///
+    /// 逐元素减法 (left - right)，支持广播。
+    /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
+    pub fn create_subtract_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Subtract;
+
+        // 1. 从父节点提取形状信息
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        // 2. 使用 new_from_shapes 创建 Subtract 节点
+        let subtract =
+            Subtract::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+        let raw_node: NodeType = subtract.into();
+
+        // 3. 创建 NodeInner 并注册
+        self.create_node_inner(raw_node, name, "subtract", parents)
+    }
+
+    /// 创建 Multiply 节点（方案 C 新 API）
+    ///
+    /// 逐元素乘法（Hadamard积），支持广播。
+    /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
+    pub fn create_multiply_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Multiply;
+
+        // 1. 从父节点提取形状信息
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        // 2. 使用 new_from_shapes 创建 Multiply 节点
+        let multiply =
+            Multiply::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+        let raw_node: NodeType = multiply.into();
+
+        // 3. 创建 NodeInner 并注册
+        self.create_node_inner(raw_node, name, "multiply", parents)
+    }
+
+    /// 创建 Divide 节点（方案 C 新 API）
+    ///
+    /// 逐元素除法 (left / right)，支持广播。
+    /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
+    pub fn create_divide_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Divide;
+
+        // 1. 从父节点提取形状信息
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        // 2. 使用 new_from_shapes 创建 Divide 节点
+        let divide =
+            Divide::new_from_shapes(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+        let raw_node: NodeType = divide.into();
+
+        // 3. 创建 NodeInner 并注册
+        self.create_node_inner(raw_node, name, "divide", parents)
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表

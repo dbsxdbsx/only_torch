@@ -610,3 +610,171 @@ fn test_subtract_dynamic_batch_backward() {
     let bias_grad2 = bias.grad().unwrap().unwrap();
     assert_eq!(bias_grad2.shape(), &[1, 4], "bias 梯度形状仍应为 [1, 4]");
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_subtract_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建两个输入节点作为父节点
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("a"))
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("b"))
+        .unwrap();
+
+    // 创建 Subtract 节点
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![a.clone(), b.clone()], Some("diff"))
+        .unwrap();
+
+    // 验证节点属性
+    assert_eq!(sub.shape(), vec![4, 8]);
+    assert_eq!(sub.name(), Some("diff"));
+    assert!(!sub.is_leaf());
+    assert_eq!(sub.parents().len(), 2);
+}
+
+#[test]
+fn test_create_subtract_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![a, b], None)
+        .unwrap();
+
+    let name = sub.name().unwrap();
+    assert!(
+        name.contains("subtract"),
+        "名称应包含 'subtract': {}",
+        name
+    );
+}
+
+#[test]
+fn test_create_subtract_broadcast_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 不同形状的父节点（支持广播）
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 8], None) // 可以广播到 [4, 8]
+        .unwrap();
+
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![a, b], None)
+        .unwrap();
+
+    // 验证广播后的形状
+    assert_eq!(sub.shape(), vec![4, 8]);
+}
+
+#[test]
+fn test_create_subtract_incompatible_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 7], None) // 无法广播
+        .unwrap();
+
+    // 应该失败
+    let result = inner.borrow_mut().create_subtract_node(vec![a, b], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_subtract_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_sub;
+    let weak_a;
+    {
+        let a = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        let b = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        weak_a = Rc::downgrade(&a);
+
+        let sub = inner
+            .borrow_mut()
+            .create_subtract_node(vec![a, b], None)
+            .unwrap();
+        weak_sub = Rc::downgrade(&sub);
+
+        assert!(weak_sub.upgrade().is_some());
+        assert!(weak_a.upgrade().is_some());
+    }
+    // sub 离开作用域，sub 和其父节点都被释放
+    assert!(weak_sub.upgrade().is_none());
+    assert!(weak_a.upgrade().is_none());
+}
+
+#[test]
+fn test_create_subtract_requires_two_parents() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    // 只有一个父节点应该失败
+    let result = inner.borrow_mut().create_subtract_node(vec![a], None);
+    assert!(result.is_err());
+
+    // 三个父节点也应该失败
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let c = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let result = inner
+        .borrow_mut()
+        .create_subtract_node(vec![a, b, c], None);
+    assert!(result.is_err());
+}

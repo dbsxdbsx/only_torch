@@ -841,6 +841,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [ ] 移除 Var.node 的 `Option` 包装
 - [ ] 移除 GraphInner 的 `nodes: HashMap<NodeId, NodeHandle>`
 - [ ] 移除 GraphInner 的 `forward_edges`, `backward_edges`
+- [ ] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法，将 `new_from_shapes()` 重命名为 `new()`
 - [ ] 更新所有依赖旧结构的代码
 - [ ] 回归测试：所有现有测试通过
 

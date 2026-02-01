@@ -202,6 +202,11 @@ impl NodeInner {
         self.raw_node.borrow().value_expected_shape().to_vec()
     }
 
+    /// 获取节点的动态形状
+    pub fn dynamic_shape(&self) -> crate::nn::shape::DynamicShape {
+        self.raw_node.borrow().dynamic_expected_shape()
+    }
+
     /// 获取节点类型的显示名称
     pub fn type_name(&self) -> String {
         self.raw_node.borrow().get_type_name().to_string()

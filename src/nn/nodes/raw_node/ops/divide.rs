@@ -29,30 +29,38 @@ pub(crate) struct Divide {
 }
 
 impl Divide {
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+    /// 从父节点形状信息创建 Divide 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shapes: &[&[usize]],
+        parent_dynamic_shapes: &[DynamicShape],
+        parent_ids: Vec<NodeId>,
+    ) -> Result<Self, GraphError> {
         // 1. 验证父节点数量
-        if parents.len() != 2 {
+        if parent_shapes.len() != 2 {
             return Err(GraphError::InvalidOperation(
                 "Divide 节点需要正好 2 个父节点".to_string(),
             ));
         }
+        if parent_shapes.len() != parent_dynamic_shapes.len() {
+            return Err(GraphError::InvalidOperation(
+                "父节点形状数量与动态形状数量不匹配".to_string(),
+            ));
+        }
 
         // 2. 计算广播后的固定形状
-        let left_shape = parents[0].value_expected_shape();
-        let right_shape = parents[1].value_expected_shape();
-
-        let fixed_shape =
-            broadcast_shape(left_shape, right_shape).ok_or_else(|| GraphError::ShapeMismatch {
-                expected: left_shape.to_vec(),
-                got: right_shape.to_vec(),
+        let fixed_shape = broadcast_shape(parent_shapes[0], parent_shapes[1]).ok_or_else(|| {
+            GraphError::ShapeMismatch {
+                expected: parent_shapes[0].to_vec(),
+                got: parent_shapes[1].to_vec(),
                 message: "Divide 节点的父节点形状无法广播".to_string(),
-            })?;
+            }
+        })?;
 
         // 3. 计算动态形状
-        let supports_dynamic = parents.iter().any(|p| p.supports_dynamic_batch());
-        let dynamic_shape = parents[0]
-            .dynamic_expected_shape()
-            .broadcast_with(&parents[1].dynamic_expected_shape());
+        let supports_dynamic = parent_dynamic_shapes
+            .iter()
+            .any(|ds| ds.has_dynamic_dims());
+        let dynamic_shape = parent_dynamic_shapes[0].broadcast_with(&parent_dynamic_shapes[1]);
 
         // 4. 返回
         Ok(Self {
@@ -63,8 +71,22 @@ impl Divide {
             fixed_shape,
             dynamic_shape,
             supports_dynamic,
-            parents_ids: vec![parents[0].id(), parents[1].id()],
+            parents_ids: parent_ids,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        let shapes: Vec<Vec<usize>> = parents
+            .iter()
+            .map(|p| p.value_expected_shape().to_vec())
+            .collect();
+        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
+        let dynamic_shapes: Vec<DynamicShape> =
+            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        Self::new_from_shapes(&shapes_ref, &dynamic_shapes, parent_ids)
     }
 }
 

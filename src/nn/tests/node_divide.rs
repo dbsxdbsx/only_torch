@@ -130,6 +130,31 @@ fn test_divide_forward() {
     assert_eq!(output, &expected);
 }
 
+/// 测试除数为零时的行为
+///
+/// 当前实现：Tensor 层检测到除零会 panic
+/// 这是一种安全策略，防止产生 Inf/NaN 导致后续计算异常
+#[test]
+#[should_panic(expected = "作为除数的张量中存在为零元素")]
+fn test_divide_by_zero_panics() {
+    let mut graph = GraphInner::new();
+
+    let left = graph.new_basic_input_node(&[2, 2], Some("left")).unwrap();
+    let right = graph.new_basic_input_node(&[2, 2], Some("right")).unwrap();
+    let result = graph.new_divide_node(left, right, Some("result")).unwrap();
+
+    // left = [1, 2, 3, 4], right = [1, 0, 1, 1]（包含零）
+    graph
+        .set_node_value(left, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    graph
+        .set_node_value(right, Some(&Tensor::new(&[1.0, 0.0, 1.0, 1.0], &[2, 2])))
+        .unwrap();
+
+    // 前向传播应该 panic
+    graph.forward(result).unwrap();
+}
+
 // ==================== 节点级反向传播测试（直接调用 calc_grad_to_parent）====================
 
 /// 测试 Divide 对 left（被除数）的梯度计算
@@ -619,4 +644,142 @@ fn test_divide_dynamic_batch_backward() {
     // 验证 scale 仍有正确形状的梯度
     let scale_grad2 = scale.grad().unwrap().unwrap();
     assert_eq!(scale_grad2.shape(), &[1, 4], "scale 梯度形状仍应为 [1, 4]");
+}
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_divide_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("a"))
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("b"))
+        .unwrap();
+
+    let div = inner
+        .borrow_mut()
+        .create_divide_node(vec![a.clone(), b.clone()], Some("quot"))
+        .unwrap();
+
+    assert_eq!(div.shape(), vec![4, 8]);
+    assert_eq!(div.name(), Some("quot"));
+    assert!(!div.is_leaf());
+    assert_eq!(div.parents().len(), 2);
+}
+
+#[test]
+fn test_create_divide_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    let div = inner
+        .borrow_mut()
+        .create_divide_node(vec![a, b], None)
+        .unwrap();
+
+    let name = div.name().unwrap();
+    assert!(name.contains("divide"), "名称应包含 'divide': {}", name);
+}
+
+#[test]
+fn test_create_divide_broadcast_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 8], None)
+        .unwrap();
+
+    let div = inner
+        .borrow_mut()
+        .create_divide_node(vec![a, b], None)
+        .unwrap();
+
+    assert_eq!(div.shape(), vec![4, 8]);
+}
+
+#[test]
+fn test_create_divide_incompatible_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 7], None)
+        .unwrap();
+
+    let result = inner.borrow_mut().create_divide_node(vec![a, b], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_divide_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_div;
+    let weak_a;
+    {
+        let a = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        let b = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        weak_a = Rc::downgrade(&a);
+
+        let div = inner
+            .borrow_mut()
+            .create_divide_node(vec![a, b], None)
+            .unwrap();
+        weak_div = Rc::downgrade(&div);
+
+        assert!(weak_div.upgrade().is_some());
+        assert!(weak_a.upgrade().is_some());
+    }
+    assert!(weak_div.upgrade().is_none());
+    assert!(weak_a.upgrade().is_none());
+}
+
+#[test]
+fn test_create_divide_requires_two_parents() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    let result = inner.borrow_mut().create_divide_node(vec![a], None);
+    assert!(result.is_err());
 }

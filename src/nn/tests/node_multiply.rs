@@ -815,3 +815,145 @@ fn test_multiply_dynamic_batch_backward() {
     let scale_grad2 = scale.grad().unwrap().unwrap();
     assert_eq!(scale_grad2.shape(), &[1, 4], "scale 梯度形状仍应为 [1, 4]");
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_multiply_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("a"))
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("b"))
+        .unwrap();
+
+    let mul = inner
+        .borrow_mut()
+        .create_multiply_node(vec![a.clone(), b.clone()], Some("prod"))
+        .unwrap();
+
+    assert_eq!(mul.shape(), vec![4, 8]);
+    assert_eq!(mul.name(), Some("prod"));
+    assert!(!mul.is_leaf());
+    assert_eq!(mul.parents().len(), 2);
+}
+
+#[test]
+fn test_create_multiply_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    let mul = inner
+        .borrow_mut()
+        .create_multiply_node(vec![a, b], None)
+        .unwrap();
+
+    let name = mul.name().unwrap();
+    assert!(
+        name.contains("multiply"),
+        "名称应包含 'multiply': {}",
+        name
+    );
+}
+
+#[test]
+fn test_create_multiply_broadcast_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 8], None)
+        .unwrap();
+
+    let mul = inner
+        .borrow_mut()
+        .create_multiply_node(vec![a, b], None)
+        .unwrap();
+
+    assert_eq!(mul.shape(), vec![4, 8]);
+}
+
+#[test]
+fn test_create_multiply_incompatible_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 7], None)
+        .unwrap();
+
+    let result = inner.borrow_mut().create_multiply_node(vec![a, b], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_multiply_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_mul;
+    let weak_a;
+    {
+        let a = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        let b = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        weak_a = Rc::downgrade(&a);
+
+        let mul = inner
+            .borrow_mut()
+            .create_multiply_node(vec![a, b], None)
+            .unwrap();
+        weak_mul = Rc::downgrade(&mul);
+
+        assert!(weak_mul.upgrade().is_some());
+        assert!(weak_a.upgrade().is_some());
+    }
+    assert!(weak_mul.upgrade().is_none());
+    assert!(weak_a.upgrade().is_none());
+}
+
+#[test]
+fn test_create_multiply_requires_two_parents() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    let result = inner.borrow_mut().create_multiply_node(vec![a], None);
+    assert!(result.is_err());
+}

@@ -860,3 +860,177 @@ fn test_add_dynamic_batch_backward() {
     let bias_grad2 = bias.grad().unwrap().unwrap();
     assert_eq!(bias_grad2.shape(), &[1, 4], "bias 梯度形状仍应为 [1, 4]");
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_add_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建两个输入节点作为父节点
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("a"))
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("b"))
+        .unwrap();
+
+    // 创建 Add 节点
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![a.clone(), b.clone()], Some("sum"))
+        .unwrap();
+
+    // 验证节点属性
+    assert_eq!(add.shape(), vec![4, 8]);
+    assert_eq!(add.name(), Some("sum"));
+    assert!(!add.is_leaf()); // Add 不是叶子节点
+    assert_eq!(add.parents().len(), 2);
+}
+
+#[test]
+fn test_create_add_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![a, b], None)
+        .unwrap();
+
+    let name = add.name().unwrap();
+    assert!(name.contains("add"), "名称应包含 'add': {}", name);
+}
+
+#[test]
+fn test_create_add_broadcast_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 不同形状的父节点（支持广播）
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 8], None) // 可以广播到 [4, 8]
+        .unwrap();
+
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![a, b], None)
+        .unwrap();
+
+    // 验证广播后的形状
+    assert_eq!(add.shape(), vec![4, 8]);
+}
+
+#[test]
+fn test_create_add_incompatible_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 7], None) // 无法广播
+        .unwrap();
+
+    // 应该失败
+    let result = inner.borrow_mut().create_add_node(vec![a, b], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_add_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_add;
+    let weak_a;
+    {
+        let a = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        let b = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 8], None)
+            .unwrap();
+        weak_a = Rc::downgrade(&a);
+
+        let add = inner
+            .borrow_mut()
+            .create_add_node(vec![a, b], None)
+            .unwrap();
+        weak_add = Rc::downgrade(&add);
+
+        assert!(weak_add.upgrade().is_some());
+        assert!(weak_a.upgrade().is_some()); // a 被 add 持有
+    }
+    // add 离开作用域，add 和其父节点都被释放
+    assert!(weak_add.upgrade().is_none());
+    assert!(weak_a.upgrade().is_none());
+}
+
+#[test]
+fn test_create_add_multiple_parents() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 三个输入
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+    let c = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![a, b, c], None)
+        .unwrap();
+
+    assert_eq!(add.parents().len(), 3);
+    assert_eq!(add.shape(), vec![4, 8]);
+}
+
+#[test]
+fn test_create_add_insufficient_parents() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], None)
+        .unwrap();
+
+    // 只有一个父节点应该失败
+    let result = inner.borrow_mut().create_add_node(vec![a], None);
+    assert!(result.is_err());
+}

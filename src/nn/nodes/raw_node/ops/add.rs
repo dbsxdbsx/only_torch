@@ -19,22 +19,30 @@ pub(crate) struct Add {
 }
 
 impl Add {
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        // 1. 必要的验证
-        // 1.1 父节点数量验证
-        if parents.len() < 2 {
+    /// 从父节点形状信息创建 Add 节点（核心实现）
+    ///
+    /// # 参数
+    /// - `parent_shapes`: 父节点的固定形状列表
+    /// - `parent_dynamic_shapes`: 父节点的动态形状列表
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shapes: &[&[usize]],
+        parent_dynamic_shapes: &[DynamicShape],
+    ) -> Result<Self, GraphError> {
+        // 1. 验证父节点数量
+        if parent_shapes.len() < 2 {
             return Err(GraphError::InvalidOperation(
                 "Add节点至少需要2个父节点".to_string(),
             ));
         }
+        if parent_shapes.len() != parent_dynamic_shapes.len() {
+            return Err(GraphError::InvalidOperation(
+                "父节点形状数量与动态形状数量不匹配".to_string(),
+            ));
+        }
 
-        // 1.2 计算广播后的固定形状
-        let mut fixed_shape = parents[0].value_expected_shape().to_vec();
-
-        for parent in parents.iter().skip(1) {
-            let parent_shape = parent.value_expected_shape();
-
-            // 使用 broadcast_shape 计算广播后的形状
+        // 2. 计算广播后的固定形状
+        let mut fixed_shape = parent_shapes[0].to_vec();
+        for parent_shape in parent_shapes.iter().skip(1) {
             fixed_shape = broadcast_shape(&fixed_shape, parent_shape).ok_or_else(|| {
                 GraphError::ShapeMismatch {
                     expected: fixed_shape.clone(),
@@ -44,20 +52,16 @@ impl Add {
             })?;
         }
 
-        // 1.3 计算动态形状（使用父节点的动态形状）
-        // 如果任一父节点支持动态 batch，输出也支持
-        let supports_dynamic = parents.iter().any(|p| p.supports_dynamic_batch());
-
-        // 合并所有父节点的动态形状
-        let mut dynamic_shape = parents[0].dynamic_expected_shape();
-        for parent in parents.iter().skip(1) {
-            let parent_dyn = parent.dynamic_expected_shape();
-            // 对于 Add，输出形状是广播后的形状
-            // 简化处理：如果任一维度是动态的，输出该维度也是动态的
-            dynamic_shape = dynamic_shape.broadcast_with(&parent_dyn);
+        // 3. 计算动态形状
+        let supports_dynamic = parent_dynamic_shapes
+            .iter()
+            .any(|ds| ds.has_dynamic_dims());
+        let mut dynamic_shape = parent_dynamic_shapes[0].clone();
+        for parent_dyn in parent_dynamic_shapes.iter().skip(1) {
+            dynamic_shape = dynamic_shape.broadcast_with(parent_dyn);
         }
 
-        // 2. 返回
+        // 4. 返回
         Ok(Self {
             id: None,
             name: None,
@@ -67,6 +71,21 @@ impl Add {
             dynamic_shape,
             supports_dynamic,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        // 提取形状信息
+        let shapes: Vec<Vec<usize>> = parents
+            .iter()
+            .map(|p| p.value_expected_shape().to_vec())
+            .collect();
+        let shapes_ref: Vec<&[usize]> = shapes.iter().map(|s| s.as_slice()).collect();
+        let dynamic_shapes: Vec<DynamicShape> =
+            parents.iter().map(|p| p.dynamic_expected_shape()).collect();
+
+        // 委托给核心实现
+        Self::new_from_shapes(&shapes_ref, &dynamic_shapes)
     }
 }
 

@@ -9,7 +9,7 @@ pub use loss::DEFAULT_HUBER_DELTA;
 pub use loss::Reduction;
 pub(super) use loss::{BCE, Huber, MAE, MSE, SoftmaxCrossEntropy};
 pub use ops::DEFAULT_DROPOUT_P;
-pub(super) use ops::*;
+pub(in crate::nn) use ops::*;
 pub(crate) use parameter::Parameter;
 pub(in crate::nn) use state::State;
 
