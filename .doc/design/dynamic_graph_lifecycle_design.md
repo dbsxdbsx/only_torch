@@ -200,10 +200,10 @@ pub struct NodeInner {
     id: NodeId,
     name: Option<String>,
     
-    // === 原 NodeHandle 的核心内容 ===
-    raw_node: NodeType,                     // 包含 value: Option<Tensor> 和 grad: Option<Tensor>
+    // === 原 NodeHandle 的核心内容（使用 RefCell，因为 value/grad 是非 Copy 类型）===
+    raw_node: RefCell<NodeType>,            // 包含 value: Option<Tensor> 和 grad: Option<Tensor>
     
-    // === 内部可变字段（使用 Cell，因为被 Rc 包装）===
+    // === 内部可变字段（使用 Cell，适用于 Copy 类型）===
     last_forward_pass_id: Cell<u64>,
     last_backward_pass_id: Cell<u64>,
     is_detached: Cell<bool>,
@@ -218,9 +218,11 @@ pub struct NodeInner {
 
 **设计说明**：
 - **单线程设计**：使用 `Rc`/`Weak` 而非 `Arc`（性能更好，足够当前需求）
-- **内部可变性**：`Cell<T>` 用于需要修改的字段（`Cell` 适用于 `Copy` 类型）
+- **内部可变性**：
+  - `RefCell<T>` 用于 `raw_node`（`value`/`grad` 是非 Copy 类型，需要运行时借用检查）
+  - `Cell<T>` 用于 `last_forward_pass_id` 等（Copy 类型，无需借用检查）
 - **value/grad 位置**：存储在 `raw_node: NodeType` 内部，每个节点类型自己管理
-- **延迟计算**：`raw_node.value` 为 `Option<Tensor>`，`None` 表示尚未计算
+- **延迟计算**：`raw_node.borrow().value` 为 `Option<Tensor>`，`None` 表示尚未计算
 
 ### 3.3 节点分类与生命周期
 
