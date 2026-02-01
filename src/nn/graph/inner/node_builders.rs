@@ -2,15 +2,139 @@
  * @Author       : 老董
  * @Date         : 2026-01-27
  * @Description  : GraphInner 节点构建方法（new_*_node）
+ *
+ * 方案 C 新增：
+ * - create_node_inner(): 通用节点创建，返回 Rc<NodeInner>
+ * - create_basic_input_node() 等: 各节点类型的新创建方法
  */
 
 use super::super::error::GraphError;
 use super::GraphInner;
 use crate::nn::NodeId;
-use crate::nn::nodes::NodeHandle;
 use crate::nn::nodes::raw_node::Reduction;
+use crate::nn::nodes::{NodeHandle, NodeInner, NodeType};
+use std::rc::Rc;
 
 impl GraphInner {
+    // ==================== 方案 C：新节点创建 API ====================
+
+    /// 创建 NodeInner（方案 C 核心方法）
+    ///
+    /// # 参数
+    /// - `raw_node`: 节点类型（NodeType）
+    /// - `name`: 可选的节点名称
+    /// - `node_type_str`: 节点类型字符串（用于生成默认名称）
+    /// - `parents`: 父节点的强引用列表
+    ///
+    /// # 过渡期行为
+    /// - 设置 forward_edges/backward_edges（保持与旧代码兼容）
+    ///
+    /// # 返回
+    /// 返回 `Rc<NodeInner>`，调用者持有强引用
+    pub(in crate::nn::graph) fn create_node_inner(
+        &mut self,
+        raw_node: NodeType,
+        name: Option<&str>,
+        node_type_str: &str,
+        parents: Vec<Rc<NodeInner>>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        // 生成 ID 和名称
+        let node_id = self.generate_valid_node_id();
+        let node_name = self.generate_valid_new_node_name(name.unwrap_or(""), node_type_str)?;
+
+        // 创建 NodeInner
+        let node_inner = Rc::new(NodeInner::new(
+            node_id,
+            Some(node_name),
+            raw_node,
+            parents.clone(),
+        ));
+
+        // 过渡期：设置边（供旧代码的可视化等功能使用）
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+        for &parent_id in &parent_ids {
+            self.forward_edges
+                .entry(parent_id)
+                .or_default()
+                .push(node_id);
+        }
+        self.backward_edges
+            .entry(node_id)
+            .or_default()
+            .extend(&parent_ids);
+
+        Ok(node_inner)
+    }
+
+    /// 创建 BasicInput 节点（方案 C 新 API）
+    ///
+    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
+    pub fn create_basic_input_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::InputVariant;
+
+        let input_variant = InputVariant::new_data(shape)?;
+        let raw_node: NodeType = input_variant.into();
+
+        self.create_node_inner(raw_node, name, "input", vec![])
+    }
+
+    /// 创建 TargetInput 节点（方案 C 新 API）
+    ///
+    /// 用于 Loss 的目标值（真实标签），支持动态 batch。
+    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
+    pub fn create_target_input_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::InputVariant;
+
+        let input_variant = InputVariant::new_target(shape);
+        let raw_node: NodeType = input_variant.into();
+
+        self.create_node_inner(raw_node, name, "target", vec![])
+    }
+
+    /// 创建 SmartInput 节点（方案 C 新 API）
+    ///
+    /// 用于 ModelState 的智能入口，支持动态 batch 和梯度路由。
+    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
+    pub fn create_smart_input_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::InputVariant;
+
+        let input_variant = InputVariant::new_smart(shape);
+        let raw_node: NodeType = input_variant.into();
+
+        self.create_node_inner(raw_node, name, "input", vec![])
+    }
+
+    /// 创建 RecurrentOutput 节点（方案 C 新 API）
+    ///
+    /// 用于 RNN/LSTM/GRU 循环层的输出桥接。
+    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
+    pub fn create_recurrent_output_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::InputVariant;
+
+        let input_variant = InputVariant::new_recurrent_output(shape);
+        let raw_node: NodeType = input_variant.into();
+
+        self.create_node_inner(raw_node, name, "recurrent_output", vec![])
+    }
+
+    // ==================== 旧节点创建 API（过渡期保留）====================
+
     /// 添加节点到列表
     pub(in crate::nn::graph) fn add_node_to_list(
         &mut self,

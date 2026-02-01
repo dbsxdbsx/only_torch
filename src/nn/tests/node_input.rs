@@ -712,3 +712,384 @@ fn test_smart_input_feature_shape_must_match() {
         );
     }
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_basic_input_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建 BasicInput 节点
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 3], Some("x"))
+        .unwrap();
+
+    // 验证节点属性
+    assert_eq!(input.shape(), vec![4, 3]);
+    assert_eq!(input.name(), Some("x"));
+    assert!(input.is_leaf()); // 叶子节点，无父节点
+    assert!(input.parents().is_empty());
+}
+
+#[test]
+fn test_create_basic_input_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 不指定名称，应该自动生成
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 3], None)
+        .unwrap();
+
+    // 验证自动生成的名称
+    let name = input.name().unwrap();
+    assert!(name.contains("input"), "名称应包含 'input': {}", name);
+}
+
+#[test]
+fn test_create_basic_input_reference_counting() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input;
+    {
+        // 在作用域内创建
+        input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 3], None)
+            .unwrap();
+
+        // 此时引用计数为 1
+        assert_eq!(Rc::strong_count(&input), 1);
+    }
+
+    // 变量仍然有效
+    assert_eq!(Rc::strong_count(&input), 1);
+    assert_eq!(input.shape(), vec![4, 3]);
+}
+
+#[test]
+fn test_create_basic_input_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 使用 Weak 来观察节点是否被释放
+    let weak;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 3], None)
+            .unwrap();
+        weak = Rc::downgrade(&input);
+
+        // 作用域内，Weak 可以升级
+        assert!(weak.upgrade().is_some());
+    }
+    // input 离开作用域，节点被释放
+
+    // Weak 无法升级
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn test_create_multiple_basic_inputs() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建多个输入节点
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 3], Some("x"))
+        .unwrap();
+    let y = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 3], Some("y"))
+        .unwrap();
+
+    // 验证是不同的节点
+    assert_ne!(x.id(), y.id());
+    assert_eq!(x.name(), Some("x"));
+    assert_eq!(y.name(), Some("y"));
+}
+
+#[test]
+fn test_create_basic_input_invalid_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 1D 形状应该失败（BasicInput 要求 2-4D）
+    let result = inner.borrow_mut().create_basic_input_node(&[10], None);
+    assert!(result.is_err());
+
+    // 5D 形状也应该失败
+    let result = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2, 3, 4, 5], None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_basic_input_various_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 2D: 全连接层输入 [batch, features]
+    let fc_input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[32, 784], None)
+        .unwrap();
+    assert_eq!(fc_input.shape(), vec![32, 784]);
+
+    // 3D: RNN 输入 [batch, seq_len, features]
+    let rnn_input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[16, 10, 128], None)
+        .unwrap();
+    assert_eq!(rnn_input.shape(), vec![16, 10, 128]);
+
+    // 4D: CNN 输入 [batch, C, H, W]
+    let cnn_input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[8, 3, 32, 32], None)
+        .unwrap();
+    assert_eq!(cnn_input.shape(), vec![8, 3, 32, 32]);
+}
+
+// ==================== TargetInput 方案 C 测试 ====================
+
+#[test]
+fn test_create_target_input_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建 TargetInput 节点（用于 Loss 的目标值）
+    let target = inner
+        .borrow_mut()
+        .create_target_input_node(&[4, 10], Some("y_true"))
+        .unwrap();
+
+    // 验证节点属性
+    assert_eq!(target.shape(), vec![4, 10]);
+    assert_eq!(target.name(), Some("y_true"));
+    assert!(target.is_leaf());
+    assert!(target.parents().is_empty());
+}
+
+#[test]
+fn test_create_target_input_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let target = inner
+        .borrow_mut()
+        .create_target_input_node(&[4, 10], None)
+        .unwrap();
+
+    let name = target.name().unwrap();
+    assert!(name.contains("target"), "名称应包含 'target': {}", name);
+}
+
+#[test]
+fn test_create_target_input_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak;
+    {
+        let target = inner
+            .borrow_mut()
+            .create_target_input_node(&[4, 10], None)
+            .unwrap();
+        weak = Rc::downgrade(&target);
+        assert!(weak.upgrade().is_some());
+    }
+    // target 离开作用域，节点被释放
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn test_create_target_input_various_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 分类任务：[batch, num_classes]
+    let cls_target = inner
+        .borrow_mut()
+        .create_target_input_node(&[32, 10], None)
+        .unwrap();
+    assert_eq!(cls_target.shape(), vec![32, 10]);
+
+    // 回归任务：[batch, output_dim]
+    let reg_target = inner
+        .borrow_mut()
+        .create_target_input_node(&[16, 1], None)
+        .unwrap();
+    assert_eq!(reg_target.shape(), vec![16, 1]);
+
+    // 序列任务：[batch, seq_len, vocab_size]
+    let seq_target = inner
+        .borrow_mut()
+        .create_target_input_node(&[8, 20, 1000], None)
+        .unwrap();
+    assert_eq!(seq_target.shape(), vec![8, 20, 1000]);
+}
+
+// ==================== SmartInput 方案 C 测试 ====================
+
+#[test]
+fn test_create_smart_input_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建 SmartInput 节点（ModelState 使用）
+    let smart = inner
+        .borrow_mut()
+        .create_smart_input_node(&[4, 128], Some("model_input"))
+        .unwrap();
+
+    // 验证节点属性
+    assert_eq!(smart.shape(), vec![4, 128]);
+    assert_eq!(smart.name(), Some("model_input"));
+    assert!(smart.is_leaf());
+    assert!(smart.parents().is_empty());
+}
+
+#[test]
+fn test_create_smart_input_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let smart = inner
+        .borrow_mut()
+        .create_smart_input_node(&[4, 128], None)
+        .unwrap();
+
+    let name = smart.name().unwrap();
+    assert!(name.contains("input"), "名称应包含 'input': {}", name);
+}
+
+#[test]
+fn test_create_smart_input_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak;
+    {
+        let smart = inner
+            .borrow_mut()
+            .create_smart_input_node(&[4, 128], None)
+            .unwrap();
+        weak = Rc::downgrade(&smart);
+        assert!(weak.upgrade().is_some());
+    }
+    // smart 离开作用域，节点被释放
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn test_create_smart_input_various_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 全连接模型输入 [batch, features]
+    let fc_input = inner
+        .borrow_mut()
+        .create_smart_input_node(&[32, 784], None)
+        .unwrap();
+    assert_eq!(fc_input.shape(), vec![32, 784]);
+
+    // RNN 模型输入 [batch, seq_len, features]
+    let rnn_input = inner
+        .borrow_mut()
+        .create_smart_input_node(&[16, 10, 128], None)
+        .unwrap();
+    assert_eq!(rnn_input.shape(), vec![16, 10, 128]);
+
+    // CNN 模型输入 [batch, C, H, W]
+    let cnn_input = inner
+        .borrow_mut()
+        .create_smart_input_node(&[8, 3, 32, 32], None)
+        .unwrap();
+    assert_eq!(cnn_input.shape(), vec![8, 3, 32, 32]);
+}
+
+// ==================== RecurrentOutput 方案 C 测试 ====================
+
+#[test]
+fn test_create_recurrent_output_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建 RecurrentOutput 节点（RNN/LSTM/GRU 输出桥接）
+    let recurrent = inner
+        .borrow_mut()
+        .create_recurrent_output_node(&[4, 64], Some("rnn_out"))
+        .unwrap();
+
+    // 验证节点属性
+    assert_eq!(recurrent.shape(), vec![4, 64]);
+    assert_eq!(recurrent.name(), Some("rnn_out"));
+    assert!(recurrent.is_leaf());
+    assert!(recurrent.parents().is_empty());
+}
+
+#[test]
+fn test_create_recurrent_output_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let recurrent = inner
+        .borrow_mut()
+        .create_recurrent_output_node(&[4, 64], None)
+        .unwrap();
+
+    let name = recurrent.name().unwrap();
+    assert!(
+        name.contains("recurrent"),
+        "名称应包含 'recurrent': {}",
+        name
+    );
+}
+
+#[test]
+fn test_create_recurrent_output_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak;
+    {
+        let recurrent = inner
+            .borrow_mut()
+            .create_recurrent_output_node(&[4, 64], None)
+            .unwrap();
+        weak = Rc::downgrade(&recurrent);
+        assert!(weak.upgrade().is_some());
+    }
+    // recurrent 离开作用域，节点被释放
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn test_create_recurrent_output_various_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // RNN 隐藏状态 [batch, hidden_size]
+    let rnn_hidden = inner
+        .borrow_mut()
+        .create_recurrent_output_node(&[16, 128], None)
+        .unwrap();
+    assert_eq!(rnn_hidden.shape(), vec![16, 128]);
+
+    // LSTM 输出 [batch, seq_len, hidden_size]
+    let lstm_out = inner
+        .borrow_mut()
+        .create_recurrent_output_node(&[8, 10, 256], None)
+        .unwrap();
+    assert_eq!(lstm_out.shape(), vec![8, 10, 256]);
+}
