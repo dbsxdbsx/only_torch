@@ -14,9 +14,10 @@ pub(crate) use parameter::Parameter;
 pub(in crate::nn) use state::State;
 
 use enum_dispatch::enum_dispatch;
+use strum::{EnumCount, VariantNames};
 
 #[enum_dispatch]
-#[derive(Clone)]
+#[derive(Clone, EnumCount, VariantNames)]
 pub(in crate::nn) enum NodeType {
     Input(InputVariant), // 统一的输入类型（Data/Target/Smart）
     Parameter(Parameter),

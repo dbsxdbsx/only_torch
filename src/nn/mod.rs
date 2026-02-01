@@ -2,11 +2,12 @@
  * @Author       : 老董
  * @Date         : 2024-01-31 20:23:53
  * @LastEditors  : 老董
- * @LastEditTime : 2025-01-04 19:37:27
+ * @LastEditTime : 2026-02-01 00:00:00
  * @Description  : 负责神经网络（neural network）的构建
  */
 
 mod criterion;
+pub mod debug;
 mod descriptor;
 mod display;
 mod graph;

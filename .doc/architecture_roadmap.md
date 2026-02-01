@@ -11,6 +11,7 @@
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
 │   ├── dynamic_graph_lifecycle_design.md           # ⭐⭐ 动态图生命周期设计（方案 C，下一代架构）
+│   ├── future_node_types.md                        # ⭐ 待扩展节点规划 + 调试工具
 │   ├── api_layering_and_seed_design.md             # API分层与种子管理
 │   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制（重要）
 │   ├── broadcast_mechanism_design.md               # 广播机制设计
@@ -36,9 +37,10 @@
 ─────────────────────────────────
 tensor/            ~85%     ✅ 基本完成
 nn/graph           ~95%     ✅ 核心完成 + PyTorch 风格 API
-nn/nodes           ~80%     ✅ Conv2d/Pool/RNN/LSTM/GRU 已完成
+nn/nodes           ~80%     ✅ 40 个节点类型（Conv2d/Pool/RNN/LSTM/GRU...）
+nn/debug           100%     ✅ 节点类型枚举 + 调试工具（strum 自动获取）
 nn/model_state     100%     ✅ 智能缓存 + ForwardInput trait
-nn/criterion       100%     ✅ MseLoss/CrossEntropyLoss
+nn/criterion       100%     ✅ MseLoss/CrossEntropyLoss/BceLoss/HuberLoss/MaeLoss
 nn/optimizer       ~70%     ✅ SGD/Adam可用，缺Momentum等
 data/              ~75%     ✅ MNIST + California Housing + DataLoader
 vision/            ~70%     ✅ 基本完成
@@ -91,20 +93,31 @@ optimizer.step()?;
 
 ## 已实现节点
 
-| 类型 | 节点                                             | 状态 |
-| :--- | :----------------------------------------------- | :--: |
-| 输入 | Input, Parameter                                 |  ✅  |
-| 运算 | Add, MatMul, Reshape, Flatten, Select            |  ✅  |
-| 激活 | Step, Tanh, Sigmoid, LeakyReLU/ReLU, Softplus    |  ✅  |
-| CNN  | Conv2d, MaxPool2d, AvgPool2d                     |  ✅  |
-| RNN  | RNN, LSTM, GRU (Layer 形式)                      |  ✅  |
-| 损失 | SoftmaxCrossEntropy, MSE                         |  ✅  |
-| 内部 | Identity, GradientRouter, State                  |  ✅  |
+> 使用 `nn::debug::print_registered_node_types()` 可查看完整列表（自动从 `NodeType` 枚举获取）
 
-## 缺失的关键节点
+| 类型 | 节点                                                        | 数量 |
+| :--- | :---------------------------------------------------------- | :--: |
+| 输入 | Input (Data/Target/Smart/RecurrentOutput), Parameter, State |  3   |
+| 算术 | Add, Subtract, Multiply, Divide                             |  4   |
+| 矩阵 | MatMul, Conv2d, MaxPool2d, AvgPool2d                        |  4   |
+| 形状 | Reshape, Flatten, Select, Gather, Stack                     |  5   |
+| 归约 | Maximum, Minimum, Amax, Amin, Sum, Mean                     |  6   |
+| 激活 | Sigmoid, Tanh, LeakyReLU, Softmax, LogSoftmax, SoftPlus, Step, Sign, Abs, Ln | 10 |
+| 损失 | MSE, MAE, BCE, Huber, SoftmaxCrossEntropy                   |  5   |
+| 辅助 | Identity, Dropout, ZerosLike                                |  3   |
+| **合计** |                                                         | **40** |
 
-- **激活函数**: Softmax (独立版)
-- **运算节点**: Sub, Neg, Mul(逐元素), Div
+详细信息见 [future_node_types.md](design/future_node_types.md)
+
+## 待扩展节点
+
+> 详见 [future_node_types.md](design/future_node_types.md)
+
+| 优先级 | 节点 | 用途 |
+| :----: | :--- | :--- |
+| 🔴 高 | Exp, Sqrt, Clamp | SAC/PPO 强化学习必需 |
+| 🟡 中 | Transpose, LayerNorm, GELU | Transformer 架构支持 |
+| 🟢 低 | ELU, Embedding, Split | 特定场景 |
 
 ## 集成测试进度
 

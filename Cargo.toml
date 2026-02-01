@@ -30,6 +30,7 @@
 [dependencies]
     # 代码重构
     enum_dispatch="0.3"
+    strum       = { version = "0.26", features = ["derive"] }  # 枚举遍历和元数据
 
     # 数值相关
     approx     ="*"
