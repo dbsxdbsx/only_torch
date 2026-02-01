@@ -369,3 +369,69 @@ fn test_node_abs_idempotent() {
     // abs(abs(x)) == abs(x)
     assert_abs_diff_eq!(result1, result2, epsilon = 1e-6);
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_abs_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let abs = inner
+        .borrow_mut()
+        .create_abs_node(input.clone(), Some("abs"))
+        .unwrap();
+
+    assert_eq!(abs.shape(), vec![3, 4]);
+    assert_eq!(abs.name(), Some("abs"));
+}
+
+#[test]
+fn test_create_abs_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 5, 8], None)
+        .unwrap();
+
+    let abs = inner
+        .borrow_mut()
+        .create_abs_node(input.clone(), None)
+        .unwrap();
+
+    assert_eq!(abs.shape(), vec![2, 5, 8]);
+}
+
+#[test]
+fn test_create_abs_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_abs;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let abs = inner.borrow_mut().create_abs_node(input, None).unwrap();
+        weak_abs = Rc::downgrade(&abs);
+
+        assert!(weak_abs.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_abs.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

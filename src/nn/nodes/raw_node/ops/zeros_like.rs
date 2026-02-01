@@ -30,19 +30,13 @@ pub(crate) struct ZerosLike {
 }
 
 impl ZerosLike {
-    /// 创建 `ZerosLike` 节点
+    /// 从特征形状创建 ZerosLike 节点（核心实现）
     ///
     /// # 参数
     /// - `feature_shape`: 输出的特征维度（不包括 batch）
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // 创建一个输出 [?, hidden_size] 形状的零张量节点
-    /// let h0 = ZerosLike::new(&[hidden_size]);
-    /// ```
-    pub(crate) fn new(feature_shape: &[usize]) -> Self {
+    pub(in crate::nn) fn new_from_shapes(feature_shape: &[usize]) -> Self {
         let dynamic_shape = DynamicShape::with_dynamic_batch(feature_shape);
-        let mut fixed_shape = vec![1]; // 使用 batch=1 作为占位符
+        let mut fixed_shape = vec![1];
         fixed_shape.extend_from_slice(feature_shape);
 
         Self {
@@ -53,6 +47,20 @@ impl ZerosLike {
             dynamic_shape,
             fixed_shape,
         }
+    }
+
+    /// 创建 `ZerosLike` 节点（过渡期 API，委托给 new_from_shapes）
+    ///
+    /// # 参数
+    /// - `feature_shape`: 输出的特征维度（不包括 batch）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 创建一个输出 [?, hidden_size] 形状的零张量节点
+    /// let h0 = ZerosLike::new(&[hidden_size]);
+    /// ```
+    pub(crate) fn new(feature_shape: &[usize]) -> Self {
+        Self::new_from_shapes(feature_shape)
     }
 }
 

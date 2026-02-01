@@ -300,3 +300,69 @@ fn test_sign_dynamic_batch_forward() {
     let value2 = result.value().unwrap().unwrap();
     assert_eq!(value2.shape(), &[8, 16], "第二次 forward: batch=8");
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_sign_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let sign = inner
+        .borrow_mut()
+        .create_sign_node(input.clone(), Some("sign"))
+        .unwrap();
+
+    assert_eq!(sign.shape(), vec![3, 4]);
+    assert_eq!(sign.name(), Some("sign"));
+}
+
+#[test]
+fn test_create_sign_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 5, 8], None)
+        .unwrap();
+
+    let sign = inner
+        .borrow_mut()
+        .create_sign_node(input.clone(), None)
+        .unwrap();
+
+    assert_eq!(sign.shape(), vec![2, 5, 8]);
+}
+
+#[test]
+fn test_create_sign_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_sign;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let sign = inner.borrow_mut().create_sign_node(input, None).unwrap();
+        weak_sign = Rc::downgrade(&sign);
+
+        assert!(weak_sign.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_sign.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

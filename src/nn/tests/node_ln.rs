@@ -463,3 +463,69 @@ fn test_ln_dynamic_batch_backward() {
     );
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_ln_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let ln = inner
+        .borrow_mut()
+        .create_ln_node(input.clone(), Some("ln"))
+        .unwrap();
+
+    assert_eq!(ln.shape(), vec![3, 4]);
+    assert_eq!(ln.name(), Some("ln"));
+}
+
+#[test]
+fn test_create_ln_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 5, 8], None)
+        .unwrap();
+
+    let ln = inner
+        .borrow_mut()
+        .create_ln_node(input.clone(), None)
+        .unwrap();
+
+    assert_eq!(ln.shape(), vec![2, 5, 8]);
+}
+
+#[test]
+fn test_create_ln_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_ln;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let ln = inner.borrow_mut().create_ln_node(input, None).unwrap();
+        weak_ln = Rc::downgrade(&ln);
+
+        assert!(weak_ln.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_ln.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

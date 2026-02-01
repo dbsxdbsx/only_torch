@@ -80,29 +80,36 @@ pub(crate) struct Identity {
 }
 
 impl Identity {
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        // 验证：必须有且仅有 1 个父节点
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Identity 节点只需要 1 个父节点".to_string(),
-            ));
-        }
-
-        // 从父节点继承动态形状信息
-        let parent = &parents[0];
-        let fixed_shape = parent.value_expected_shape().to_vec();
-        let dynamic_shape = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
+    /// 从父节点形状信息创建 Identity 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shape: &[usize],
+        parent_dynamic_shape: &DynamicShape,
+    ) -> Result<Self, GraphError> {
+        let supports_dynamic = parent_dynamic_shape.dims().first() == Some(&None);
 
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
-            fixed_shape,
-            dynamic_shape,
+            fixed_shape: parent_shape.to_vec(),
+            dynamic_shape: parent_dynamic_shape.clone(),
             supports_dynamic,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "Identity 节点只需要 1 个父节点".to_string(),
+            ));
+        }
+
+        Self::new_from_shapes(
+            &parents[0].value_expected_shape(),
+            &parents[0].dynamic_expected_shape(),
+        )
     }
 }
 

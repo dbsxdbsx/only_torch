@@ -1007,6 +1007,140 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "minimum", vec![a, b])
     }
 
+    // ==================== 其他节点（方案 C 新 API）====================
+
+    /// 创建 Identity 节点（方案 C 新 API）
+    ///
+    /// 恒等映射，用于梯度截断边界
+    pub fn create_identity_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Identity;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let identity = Identity::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = identity.into();
+
+        self.create_node_inner(raw_node, name, "identity", vec![input])
+    }
+
+    /// 创建 Dropout 节点（方案 C 新 API）
+    ///
+    /// 训练时随机丢弃部分神经元
+    pub fn create_dropout_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        p: f32,
+        seed: u64,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Dropout;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let dropout = Dropout::new_from_shapes(&input_shape, &input_dynamic_shape, p, seed)?;
+        let raw_node: NodeType = dropout.into();
+
+        self.create_node_inner(raw_node, name, "dropout", vec![input])
+    }
+
+    /// 创建 ZerosLike 节点（方案 C 新 API）
+    ///
+    /// 根据参考形状生成动态 batch 零张量
+    pub fn create_zeros_like_node(
+        &mut self,
+        feature_shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::ZerosLike;
+
+        let zeros_like = ZerosLike::new_from_shapes(feature_shape);
+        let raw_node: NodeType = zeros_like.into();
+
+        self.create_node_inner(raw_node, name, "zeros_like", vec![])
+    }
+
+    /// 创建 Abs 节点（方案 C 新 API）
+    ///
+    /// 逐元素绝对值
+    pub fn create_abs_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Abs;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let abs = Abs::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = abs.into();
+
+        self.create_node_inner(raw_node, name, "abs", vec![input])
+    }
+
+    /// 创建 Sign 节点（方案 C 新 API）
+    ///
+    /// 逐元素符号函数
+    pub fn create_sign_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Sign;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let sign = Sign::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = sign.into();
+
+        self.create_node_inner(raw_node, name, "sign", vec![input])
+    }
+
+    /// 创建 Step 节点（方案 C 新 API）
+    ///
+    /// 逐元素阶跃函数
+    pub fn create_step_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Step;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let step = Step::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = step.into();
+
+        self.create_node_inner(raw_node, name, "step", vec![input])
+    }
+
+    /// 创建 Ln 节点（方案 C 新 API）
+    ///
+    /// 逐元素自然对数
+    pub fn create_ln_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Ln;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let ln = Ln::new_from_shapes(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = ln.into();
+
+        self.create_node_inner(raw_node, name, "ln", vec![input])
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表

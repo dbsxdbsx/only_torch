@@ -578,3 +578,77 @@ fn test_dropout_expected_value_preserved() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_dropout_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let dropout = inner
+        .borrow_mut()
+        .create_dropout_node(input.clone(), 0.5, 42, Some("dropout"))
+        .unwrap();
+
+    assert_eq!(dropout.shape(), vec![3, 4]);
+    assert_eq!(dropout.name(), Some("dropout"));
+}
+
+#[test]
+fn test_create_dropout_node_invalid_p() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    // p >= 1.0 无效
+    let result = inner
+        .borrow_mut()
+        .create_dropout_node(input.clone(), 1.0, 42, None);
+    assert!(result.is_err());
+
+    // p < 0 无效
+    let result2 = inner
+        .borrow_mut()
+        .create_dropout_node(input, -0.1, 42, None);
+    assert!(result2.is_err());
+}
+
+#[test]
+fn test_create_dropout_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_dropout;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let dropout = inner
+            .borrow_mut()
+            .create_dropout_node(input, 0.3, 42, None)
+            .unwrap();
+        weak_dropout = Rc::downgrade(&dropout);
+
+        assert!(weak_dropout.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_dropout.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

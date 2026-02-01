@@ -253,3 +253,55 @@ fn test_zeros_like_dynamic_batch_with_backward() {
     let w_grad = w_hh.grad().unwrap();
     assert!(w_grad.is_some(), "w_hh 应该有梯度");
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_zeros_like_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let zeros = inner
+        .borrow_mut()
+        .create_zeros_like_node(&[16], Some("zeros"))
+        .unwrap();
+
+    // 输出 [1, 16]（batch=1 占位符）
+    assert_eq!(zeros.shape(), vec![1, 16]);
+    assert_eq!(zeros.name(), Some("zeros"));
+    assert!(zeros.is_leaf()); // ZerosLike 是叶节点
+}
+
+#[test]
+fn test_create_zeros_like_node_multi_dim() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let zeros = inner
+        .borrow_mut()
+        .create_zeros_like_node(&[8, 16], None)
+        .unwrap();
+
+    // 输出 [1, 8, 16]
+    assert_eq!(zeros.shape(), vec![1, 8, 16]);
+}
+
+#[test]
+fn test_create_zeros_like_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_zeros;
+    {
+        let zeros = inner
+            .borrow_mut()
+            .create_zeros_like_node(&[16], None)
+            .unwrap();
+        weak_zeros = Rc::downgrade(&zeros);
+
+        assert!(weak_zeros.upgrade().is_some());
+    }
+    assert!(weak_zeros.upgrade().is_none());
+}

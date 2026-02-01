@@ -63,46 +63,50 @@ impl Dropout {
         self.p
     }
 
-    /// 创建 Dropout 节点
-    ///
-    /// # 参数
-    /// - `parents`: 父节点（只需 1 个）
-    /// - `p`: 丢弃概率（0.0 ~ 1.0）
-    /// - `seed`: 随机数种子
-    pub(crate) fn new(parents: &[&NodeHandle], p: f32, seed: u64) -> Result<Self, GraphError> {
-        // 1. 验证
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Dropout 节点只需要 1 个父节点".to_string(),
-            ));
-        }
-
+    /// 从父节点形状信息创建 Dropout 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shape: &[usize],
+        parent_dynamic_shape: &DynamicShape,
+        p: f32,
+        seed: u64,
+    ) -> Result<Self, GraphError> {
         if !(0.0..1.0).contains(&p) {
             return Err(GraphError::InvalidOperation(format!(
                 "Dropout 的 p 必须在 [0, 1) 范围内，但得到: {p}"
             )));
         }
 
-        // 2. 从父节点继承形状信息
-        let parent = &parents[0];
-        let fixed_shape = parent.value_expected_shape().to_vec();
-        let dynamic_shape = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
+        let supports_dynamic = parent_dynamic_shape.dims().first() == Some(&None);
 
-        // 3. 创建节点
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
-            fixed_shape,
-            dynamic_shape,
+            fixed_shape: parent_shape.to_vec(),
+            dynamic_shape: parent_dynamic_shape.clone(),
             supports_dynamic,
             p,
-            is_training: true, // 默认训练模式
+            is_training: true,
             rng: StdRng::seed_from_u64(seed),
             mask: None,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle], p: f32, seed: u64) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "Dropout 节点只需要 1 个父节点".to_string(),
+            ));
+        }
+
+        Self::new_from_shapes(
+            &parents[0].value_expected_shape(),
+            &parents[0].dynamic_expected_shape(),
+            p,
+            seed,
+        )
     }
 
     /// 生成 dropout mask

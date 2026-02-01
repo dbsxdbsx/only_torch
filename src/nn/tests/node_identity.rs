@@ -403,3 +403,72 @@ fn test_identity_dynamic_batch_backward() {
     );
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_identity_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let identity = inner
+        .borrow_mut()
+        .create_identity_node(input.clone(), Some("identity"))
+        .unwrap();
+
+    assert_eq!(identity.shape(), vec![3, 4]);
+    assert_eq!(identity.name(), Some("identity"));
+    assert!(!identity.is_leaf());
+}
+
+#[test]
+fn test_create_identity_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 5, 8], None)
+        .unwrap();
+
+    let identity = inner
+        .borrow_mut()
+        .create_identity_node(input.clone(), None)
+        .unwrap();
+
+    assert_eq!(identity.shape(), vec![2, 5, 8]);
+}
+
+#[test]
+fn test_create_identity_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_identity;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let identity = inner
+            .borrow_mut()
+            .create_identity_node(input, None)
+            .unwrap();
+        weak_identity = Rc::downgrade(&identity);
+
+        assert!(weak_identity.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_identity.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}
