@@ -10,7 +10,7 @@ pub use loss::Reduction;
 pub(super) use loss::{BCE, Huber, MAE, MSE, SoftmaxCrossEntropy};
 pub use ops::DEFAULT_DROPOUT_P;
 pub(super) use ops::*;
-pub(super) use parameter::Parameter;
+pub(crate) use parameter::Parameter;
 pub(super) use state::State;
 
 use enum_dispatch::enum_dispatch;

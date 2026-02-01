@@ -1,4 +1,5 @@
 mod batch_mechanism; // Batch 机制测试
+mod node_inner; // NodeInner 核心数据结构测试（方案 C）
 mod bptt_pytorch_comparison; // BPTT PyTorch 对照测试
 mod criterion; // Criterion（损失函数封装）智能缓存测试
 mod gradient_flow_control; // 梯度流控制机制测试（no_grad、detach、retain_graph）

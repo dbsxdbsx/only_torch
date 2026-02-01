@@ -789,11 +789,11 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [x] 设计边管理策略（parents 用 `Rc` **强引用**，保证反向传播时存活）
 - [x] 设计 Graph 新角色（仅保留参数注册表和全局配置）
 - [x] 确定 API 兼容性策略（渐进式迁移）
-- [ ] 评审通过后进入 Phase 2
+- [x] 评审通过后进入 Phase 2
 
 ### Phase 2：核心实现
 
-- [ ] 实现新的 `NodeInner` 结构
+- [x] 实现新的 `NodeInner` 结构（`src/nn/nodes/node_inner.rs`，含 9 个单元测试）
 - [ ] 修改 `Var` 为 `Rc<NodeInner>` + `Weak<RefCell<GraphInner>>`
 - [ ] 修改 `GraphInner`，移除集中式节点存储
 - [ ] 实现参数注册表
