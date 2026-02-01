@@ -286,6 +286,82 @@ impl NodeInner {
         Ok(())
     }
 
+    // ==================== 反向传播（方案 C）====================
+
+    /// 计算对指定父节点的梯度
+    ///
+    /// 封装对 `raw_node.calc_grad_to_parent()` 的调用
+    ///
+    /// # 参数
+    /// - `target_index`: 目标父节点的索引
+    /// - `upstream_grad`: 上游梯度（从子节点传来）
+    ///
+    /// # 性能优化
+    /// 直接借用父节点的 raw_node，避免 clone Tensor
+    fn calc_grad_to_parent_index(
+        &self,
+        target_index: usize,
+        upstream_grad: &Tensor,
+    ) -> Result<Tensor, GraphError> {
+        // 1. 借用所有父节点的 raw_node
+        let parent_borrows: Vec<std::cell::Ref<NodeType>> = self
+            .parents
+            .iter()
+            .map(|p| p.raw_node.borrow())
+            .collect();
+
+        // 2. 从 borrow 中提取值引用
+        let parent_values: Vec<&Tensor> = parent_borrows
+            .iter()
+            .filter_map(|b| b.value())
+            .collect();
+
+        // 3. 调用 raw_node 的梯度计算
+        self.raw_node
+            .borrow()
+            .calc_grad_to_parent(target_index, &parent_values, upstream_grad)
+    }
+
+    /// 向父节点传播梯度
+    ///
+    /// 遍历所有父节点，计算梯度并累加到父节点
+    ///
+    /// # 参数
+    /// - `upstream_grad`: 上游梯度（当前节点收到的梯度）
+    ///
+    /// # 逻辑
+    /// 1. 如果当前节点是 detached，跳过（不传播梯度）
+    /// 2. 如果是叶子节点，跳过（无父节点）
+    /// 3. 遍历父节点，计算梯度并累加
+    /// 4. 跳过 detached 的父节点
+    pub fn propagate_grad_to_parents(&self, upstream_grad: &Tensor) -> Result<(), GraphError> {
+        // 1. 检查 detach 状态
+        if self.is_detached() {
+            return Ok(());
+        }
+
+        // 2. 叶子节点无需传播
+        if self.is_leaf() {
+            return Ok(());
+        }
+
+        // 3. 遍历父节点，计算并累加梯度
+        for (i, parent) in self.parents.iter().enumerate() {
+            // 跳过 detached 的父节点
+            if parent.is_detached() {
+                continue;
+            }
+
+            // 计算对该父节点的梯度
+            let grad = self.calc_grad_to_parent_index(i, upstream_grad)?;
+
+            // 累加到父节点
+            parent.accumulate_grad(&grad)?;
+        }
+
+        Ok(())
+    }
+
     // ==================== 节点类型信息 ====================
 
     /// 获取节点类型的只读引用

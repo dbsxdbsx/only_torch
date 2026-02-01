@@ -420,12 +420,13 @@ fn test_create_identity_node() {
 
     let identity = inner
         .borrow_mut()
-        .create_identity_node(input.clone(), Some("identity"))
+        .create_identity_node(input.clone(), Some("identity"), false)
         .unwrap();
 
     assert_eq!(identity.shape(), vec![3, 4]);
     assert_eq!(identity.name(), Some("identity"));
     assert!(!identity.is_leaf());
+    assert!(!identity.is_detached());
 }
 
 #[test]
@@ -440,7 +441,7 @@ fn test_create_identity_node_preserves_shape() {
 
     let identity = inner
         .borrow_mut()
-        .create_identity_node(input.clone(), None)
+        .create_identity_node(input.clone(), None, false)
         .unwrap();
 
     assert_eq!(identity.shape(), vec![2, 5, 8]);
@@ -462,7 +463,7 @@ fn test_create_identity_node_drop_releases() {
 
         let identity = inner
             .borrow_mut()
-            .create_identity_node(input, None)
+            .create_identity_node(input, None, false)
             .unwrap();
         weak_identity = Rc::downgrade(&identity);
 

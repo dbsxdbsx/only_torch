@@ -1,8 +1,8 @@
 # 动态图生命周期设计（方案 C）
 
-> **状态**：设计中  
-> **作者**：架构评审  
-> **创建日期**：2026-02-01  
+> **状态**：设计中
+> **作者**：架构评审
+> **创建日期**：2026-02-01
 > **目标**：实现 PyTorch 风格的节点自动生命周期管理，从根本上解决节点累积问题
 
 ---
@@ -29,11 +29,11 @@
 ```
 当前架构：
   Graph.nodes: HashMap<NodeId, NodeHandle>  ← 集中存储
-  
+
   每次前向传播：
     - 闭包内节点：被 ModelState 缓存，复用 ✅
     - 闭包外节点：每次新建，永不删除 ❌
-    
+
   训练 100 epochs × 1000 batches：
     - 闭包外产生 100,000+ 个冗余节点
     - HashMap 越来越大，查找/遍历开销上升
@@ -199,15 +199,15 @@ pub struct NodeInner {
     // === 节点标识（用于可视化/调试）===
     id: NodeId,
     name: Option<String>,
-    
+
     // === 原 NodeHandle 的核心内容（使用 RefCell，因为 value/grad 是非 Copy 类型）===
     raw_node: RefCell<NodeType>,            // 包含 value: Option<Tensor> 和 grad: Option<Tensor>
-    
+
     // === 内部可变字段（使用 Cell，适用于 Copy 类型）===
     last_forward_pass_id: Cell<u64>,
     last_backward_pass_id: Cell<u64>,
     is_detached: Cell<bool>,
-    
+
     // === 父节点引用（强引用，保证反向传播时存活）===
     parents: Vec<Rc<NodeInner>>,
 }
@@ -332,9 +332,9 @@ impl Var {
         let mut visited = HashSet::new();
         self.backward_with_cycle_check(&mut visited)
     }
-    
+
     fn backward_with_cycle_check(
-        &self, 
+        &self,
         visited: &mut HashSet<NodeId>
     ) -> Result<f32, GraphError> {
         // 检测循环
@@ -344,12 +344,12 @@ impl Var {
                 self.node.id
             )));
         }
-        
+
         // 递归处理 parents
         for parent in &self.node.parents {
             // ... 计算梯度
         }
-        
+
         visited.remove(&self.node.id);  // 回溯时移除（允许 DAG 中的菱形结构）
         Ok(loss_value)
     }
@@ -367,19 +367,19 @@ pub struct Graph {
 
 pub struct GraphInner {
     name: String,
-    
+
     // 全局计数器
     next_node_id: u64,              // 分配新 NodeId
     forward_pass_id: u64,           // 前向传播批次标记
     backward_pass_id: u64,          // 反向传播批次标记
-    
+
     // 参数注册表（弱引用，不控制参数生命周期）
     parameters: HashMap<String, Weak<NodeInner>>,
-    
+
     // 状态相关
     is_eval_mode: bool,
     rng: Option<StdRng>,
-    
+
     // 循环/BPTT 相关（保留）
     recurrent_edges: HashMap<NodeId, NodeId>,
     prev_values: HashMap<NodeId, Tensor>,
@@ -459,7 +459,7 @@ impl Var {
         // 2. 计算梯度（与现在相同的 VJP 机制）
         // 3. 累积到参数节点的 grad 字段
         // 4. 返回 loss 值
-        
+
         // 注意：不需要清理节点，Var 离开作用域时自动释放
     }
 }
@@ -569,14 +569,14 @@ impl Var {
         let mut visited = HashSet::new();
         let mut nodes = Vec::new();
         let mut edges = Vec::new();
-        
+
         self.collect_graph(&mut visited, &mut nodes, &mut edges);
-        
+
         let dot = generate_dot(&nodes, &edges);
         std::fs::write(path, dot)?;
         Ok(())
     }
-    
+
     fn collect_graph(
         &self,
         visited: &mut HashSet<NodeId>,
@@ -587,36 +587,36 @@ impl Var {
         if !visited.insert(self.node.id) {
             return;
         }
-        
+
         // 收集当前节点
         nodes.push(NodeInfo {
             id: self.node.id,
             name: self.node.name.clone(),
             node_type: self.node.raw_node.describe(),
         });
-        
+
         // 递归遍历所有父节点
         for parent in &self.node.parents {
             edges.push(EdgeInfo {
                 from: parent.id,
                 to: self.node.id,
             });
-            
+
             // 递归
             self.wrap_parent(parent).collect_graph(visited, nodes, edges);
         }
     }
-    
+
     /// 合并多个出口点的计算图
     pub fn visualize_all(vars: &[&Var], path: &str) -> Result<(), GraphError> {
         let mut visited = HashSet::new();
         let mut nodes = Vec::new();
         let mut edges = Vec::new();
-        
+
         for var in vars {
             var.collect_graph(&mut visited, &mut nodes, &mut edges);
         }
-        
+
         let dot = generate_dot(&nodes, &edges);
         std::fs::write(path, dot)?;
         Ok(())
@@ -743,10 +743,10 @@ fn visualize_model(model: &MyModel) -> Result<(), GraphError> {
     // 用形状占位符构建图（不执行实际计算）
     let x = Var::input_shape(&[1, INPUT_DIM])?;
     let output = model.forward(&x)?;
-    
+
     // 从 output 向上游遍历整个图
     output.visualize("model.png")?;
-    
+
     Ok(())
     // ← output 离开作用域，运算节点自动清理
 }
@@ -870,14 +870,17 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 > 反向传播必须先有自己的梯度，才能传播到 parents；菱形 DAG 中梯度需要累积。
 
 - [x] **2.6.1** TraitNode 签名改造
-  - `calc_grad_to_parent` 签名从 `(&NodeHandle, &Tensor, Option<&NodeHandle>)` 
+  - `calc_grad_to_parent` 签名从 `(&NodeHandle, &Tensor, Option<&NodeHandle>)`
     改为 `(usize, &[&Tensor], &Tensor)` 即 `(target_index, parent_values, upstream_grad)`
   - 更新全部 ~40 个节点实现
   - `NodeHandle::calc_grad_to_parent` 桥接：从父节点提取值后传递
-- [ ] **2.6.2** 实现 NodeInner 梯度传播方法
+- [x] **2.6.2** 实现 NodeInner 梯度传播方法 + detach 完整支持
   - `calc_grad_to_parent_index()`: 封装对 raw_node 的调用
   - `propagate_grad_to_parents()`: 遍历 parents，计算并累积梯度
   - 跳过 `is_detached` 的节点
+  - **detach 完整支持**（避免 Step 2.7 移除旧 API 后功能缺失）：
+    - `GraphInner::create_identity_node_inner()`: 新路径创建 Identity 节点（支持 detached 参数）
+    - 迁移 `Var::detach_node()` 使用新路径，返回带 `Rc<NodeInner>` 的 Var
 - [ ] **2.6.3** 实现拓扑逆序反向传播
   - `backward_topo_order()`: 从 loss 开始，DFS 收集节点列表
   - 遍历列表，逐个调用 `propagate_grad_to_parents()`
@@ -969,7 +972,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   // 旧写法
   let criterion = CrossEntropyLoss::new();
   let loss = model_state.forward(|| criterion.forward(&out, &target))?;
-  
+
   // 新写法
   let loss = out.cross_entropy(&target)?;
   ```
@@ -1103,7 +1106,7 @@ impl MyModel {
             fc2: Linear::new(256, 10),
         }
     }
-    
+
     fn forward(&self, x: &Var) -> Var {
         self.fc2.forward(&self.fc1.forward(x).relu())
     }
@@ -1117,14 +1120,14 @@ for (data, target) in dataloader {
     // 输入：直接从 Tensor 创建 Var
     let x = Var::input(&data);
     let t = Var::input(&target);
-    
+
     // 前向
     let output = model.forward(&x);
     let loss = output.cross_entropy(&t)?;
-    
+
     // 反向
     loss.backward()?;
-    
+
     // 优化
     optimizer.step()?;
     optimizer.zero_grad()?;
@@ -1148,10 +1151,10 @@ impl Var {
             parents: vec![],
             // ...
         });
-        
+
         // 立即执行 forward（设置值）
         node.set_value(tensor);
-        
+
         Self { node, graph: Weak::new() }  // graph 为空
     }
 }
@@ -1163,7 +1166,7 @@ impl Var {
 trait Module {
     /// 收集所有参数
     fn parameters(&self) -> Vec<Var>;
-    
+
     /// 设置训练/评估模式
     fn train(&mut self);
     fn eval(&mut self);

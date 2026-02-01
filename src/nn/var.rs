@@ -276,15 +276,30 @@ impl Var {
     /// let y = x_detached.sigmoid();  // 可以继续构建图
     /// ```
     pub fn detach_node(&self) -> Self {
-        let new_id = self
-            .graph
-            .borrow_mut()
-            .new_identity_node(self.node_id(), None, true)
-            .expect("内部错误：detach_node 创建 Identity 节点失败");
-        Self {
-            id: new_id,
-            node: None, // 过渡期：旧路径创建的节点没有 NodeInner
-            graph: self.graph.clone(),
+        if let Some(ref node) = self.node {
+            // 方案 C 新路径：使用 create_identity_node
+            let new_node = self
+                .graph
+                .borrow_mut()
+                .create_identity_node(node.clone(), None, true) // detached=true
+                .expect("内部错误：detach_node 创建 Identity 节点失败");
+            Self {
+                id: new_node.id(),
+                node: Some(new_node),
+                graph: self.graph.clone(),
+            }
+        } else {
+            // 旧路径回退（过渡期）
+            let new_id = self
+                .graph
+                .borrow_mut()
+                .new_identity_node(self.node_id(), None, true)
+                .expect("内部错误：detach_node 创建 Identity 节点失败");
+            Self {
+                id: new_id,
+                node: None,
+                graph: self.graph.clone(),
+            }
         }
     }
 

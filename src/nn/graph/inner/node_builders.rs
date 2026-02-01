@@ -1012,10 +1012,20 @@ impl GraphInner {
     /// 创建 Identity 节点（方案 C 新 API）
     ///
     /// 恒等映射，用于梯度截断边界
+    ///
+    /// # 参数
+    /// - `input`: 输入节点
+    /// - `name`: 节点名称
+    /// - `detached`: 是否设置为 detached（梯度截断）
+    ///
+    /// # detached 说明
+    /// - `detached = false`: 正常 Identity，梯度正常传播
+    /// - `detached = true`: 梯度截断，用于 `Var::detach_node()`
     pub fn create_identity_node(
         &mut self,
         input: Rc<NodeInner>,
         name: Option<&str>,
+        detached: bool,
     ) -> Result<Rc<NodeInner>, GraphError> {
         use crate::nn::nodes::raw_node::Identity;
 
@@ -1025,7 +1035,14 @@ impl GraphInner {
         let identity = Identity::new_from_shapes(&input_shape, &input_dynamic_shape)?;
         let raw_node: NodeType = identity.into();
 
-        self.create_node_inner(raw_node, name, "identity", vec![input])
+        let node = self.create_node_inner(raw_node, name, "identity", vec![input])?;
+
+        // 设置 detached 状态
+        if detached {
+            node.set_detached(true);
+        }
+
+        Ok(node)
     }
 
     /// 创建 Dropout 节点（方案 C 新 API）
