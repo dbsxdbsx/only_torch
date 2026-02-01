@@ -322,12 +322,15 @@ impl NodeInner {
     /// - `upstream_grad`: 上游梯度（当前节点收到的梯度）
     ///
     /// # 逻辑
-    /// 1. 如果当前节点是 detached，跳过（不传播梯度）
+    /// 1. 如果当前节点是 detached，跳过（不向上游传播梯度）
     /// 2. 如果是叶子节点，跳过（无父节点）
     /// 3. 遍历父节点，计算梯度并累加
-    /// 4. 跳过 detached 的父节点
+    ///
+    /// # detach 语义
+    /// - detached 节点可以**收到**梯度（作为其他节点的父节点）
+    /// - 但 detached 节点**不会向上游**传播梯度（在此方法开头检查）
     pub fn propagate_grad_to_parents(&self, upstream_grad: &Tensor) -> Result<(), GraphError> {
-        // 1. 检查 detach 状态
+        // 1. 检查 detach 状态：detached 节点不向上游传播梯度
         if self.is_detached() {
             return Ok(());
         }
@@ -338,12 +341,10 @@ impl NodeInner {
         }
 
         // 3. 遍历父节点，计算并累加梯度
+        // 注意：不检查父节点的 detach 状态，因为：
+        // - 父节点可以收到梯度
+        // - 当到达父节点执行 propagate_grad_to_parents 时，它会检查自己的 detach 状态
         for (i, parent) in self.parents.iter().enumerate() {
-            // 跳过 detached 的父节点
-            if parent.is_detached() {
-                continue;
-            }
-
             // 计算对该父节点的梯度
             let grad = self.calc_grad_to_parent_index(i, upstream_grad)?;
 

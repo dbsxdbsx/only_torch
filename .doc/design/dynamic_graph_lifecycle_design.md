@@ -894,7 +894,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [x] **2.6.6** zero_grad 适配
   - 遍历 Graph.parameters 注册表（Weak 引用）
   - 清除每个参数节点的梯度
-- [ ] **2.6.7** 单元测试
+- [x] **2.6.7** 单元测试
   - 基础反向传播正确性（简单链式）
   - 菱形 DAG 梯度累积
   - detach 行为（梯度不穿透）

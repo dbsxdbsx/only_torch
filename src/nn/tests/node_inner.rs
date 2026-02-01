@@ -7,10 +7,10 @@
  * - 级联释放机制
  */
 
-use crate::nn::nodes::raw_node::{Add, InputVariant, Parameter};
-use crate::nn::nodes::NodeInner;
-use crate::nn::shape::DynamicShape;
 use crate::nn::NodeId;
+use crate::nn::nodes::NodeInner;
+use crate::nn::nodes::raw_node::{Add, InputVariant, Parameter};
+use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use std::rc::Rc;
 
@@ -22,7 +22,11 @@ fn make_param(shape: &[usize]) -> crate::nn::nodes::NodeType {
 #[test]
 fn test_node_inner_leaf_creation() {
     // 创建一个参数节点（叶子节点）
-    let node = NodeInner::new_leaf(NodeId(1), Some("test_param".to_string()), make_param(&[2, 3]));
+    let node = NodeInner::new_leaf(
+        NodeId(1),
+        Some("test_param".to_string()),
+        make_param(&[2, 3]),
+    );
 
     assert_eq!(node.id(), NodeId(1));
     assert_eq!(node.name(), Some("test_param"));
@@ -286,7 +290,12 @@ fn test_forward_recursive_basic() {
     // 验证结果：1 + 1 = 2
     let result = add.value().unwrap();
     assert_eq!(result.shape(), &[2, 3]);
-    assert!(result.data_as_slice().iter().all(|&x| (x - 2.0).abs() < 1e-6));
+    assert!(
+        result
+            .data_as_slice()
+            .iter()
+            .all(|&x| (x - 2.0).abs() < 1e-6)
+    );
 
     // 验证 pass_id 更新
     assert_eq!(add.last_forward_pass_id(), 1);
@@ -335,7 +344,12 @@ fn test_forward_recursive_diamond_dag() {
 
     // 验证结果：(1+1) + (1+1) = 4
     let result = output.value().unwrap();
-    assert!(result.data_as_slice().iter().all(|&x| (x - 4.0).abs() < 1e-6));
+    assert!(
+        result
+            .data_as_slice()
+            .iter()
+            .all(|&x| (x - 4.0).abs() < 1e-6)
+    );
 
     // 验证所有节点的 pass_id 都被更新
     assert_eq!(input.last_forward_pass_id(), 1);
@@ -390,4 +404,190 @@ fn test_forward_recursive_leaf_no_value() {
     assert!(result.is_err());
     let err = format!("{:?}", result.unwrap_err());
     assert!(err.contains("没有值"));
+}
+
+// ==================== 反向传播测试（2.6.7）====================
+
+/// 辅助函数：创建 [1,1] 形状的 Add 节点（简化测试代码）
+fn make_add_1x1() -> crate::nn::nodes::NodeType {
+    make_add(&[&[1, 1], &[1, 1]])
+}
+
+/// 测试基础反向传播（简单链式）
+///
+/// 结构：input -> add (input + input) -> loss
+/// 验证梯度正确传播到输入节点
+#[test]
+fn test_backward_propagate_basic() {
+    // input (值=2) -> add -> loss
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[1, 1])));
+    input
+        .set_value(Some(&Tensor::new(&[2.0], &[1, 1])))
+        .unwrap();
+
+    // add = input + input = 4
+    let add = Rc::new(NodeInner::new(
+        NodeId(2),
+        None,
+        make_add_1x1(),
+        vec![input.clone(), input.clone()],
+    ));
+
+    // 前向传播
+    add.forward_recursive(1, false).unwrap();
+    assert_eq!(add.value().unwrap()[[0, 0]], 4.0);
+
+    // 设置 loss 梯度为 1（模拟 MSE 等损失函数）
+    add.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
+
+    // 反向传播
+    add.backward_propagate(1).unwrap();
+
+    // 验证 input 的梯度：d(add)/d(input) = 1 + 1 = 2（因为 input 出现两次）
+    let input_grad = input.grad().unwrap();
+    assert_eq!(input_grad[[0, 0]], 2.0);
+}
+
+/// 测试菱形 DAG 梯度累积
+///
+/// 结构：
+///     input
+///    /     \
+///  add1   add2  (都是 input + input)
+///    \     /
+///     output (add1 + add2)
+///
+/// 验证 input 的梯度正确累积来自两条路径的贡献
+#[test]
+fn test_backward_propagate_diamond_dag() {
+    // input (值=1)
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[1, 1])));
+    input.set_value(Some(&Tensor::ones(&[1, 1]))).unwrap();
+
+    // add1 = input + input = 2
+    let add1 = Rc::new(NodeInner::new(
+        NodeId(2),
+        None,
+        make_add_1x1(),
+        vec![input.clone(), input.clone()],
+    ));
+
+    // add2 = input + input = 2
+    let add2 = Rc::new(NodeInner::new(
+        NodeId(3),
+        None,
+        make_add_1x1(),
+        vec![input.clone(), input.clone()],
+    ));
+
+    // output = add1 + add2 = 4
+    let output = Rc::new(NodeInner::new(
+        NodeId(4),
+        None,
+        make_add_1x1(),
+        vec![add1.clone(), add2.clone()],
+    ));
+
+    // 前向传播
+    output.forward_recursive(1, false).unwrap();
+    assert_eq!(output.value().unwrap()[[0, 0]], 4.0);
+
+    // 设置 output 梯度为 1
+    output.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
+
+    // 反向传播
+    output.backward_propagate(1).unwrap();
+
+    // 验证梯度累积：
+    // - output 对 add1 的梯度 = 1
+    // - output 对 add2 的梯度 = 1
+    // - add1 对 input 的梯度 = 2（input 出现两次）
+    // - add2 对 input 的梯度 = 2（input 出现两次）
+    // - input 总梯度 = 2 + 2 = 4
+    let input_grad = input.grad().unwrap();
+    assert_eq!(input_grad[[0, 0]], 4.0);
+
+    // 中间节点的梯度
+    assert_eq!(add1.grad().unwrap()[[0, 0]], 1.0);
+    assert_eq!(add2.grad().unwrap()[[0, 0]], 1.0);
+}
+
+/// 测试 detach 行为（梯度不穿透）
+///
+/// 结构：input -> add (detached) -> output
+/// 验证 detach 节点阻止梯度传播
+#[test]
+fn test_backward_propagate_detach() {
+    // input
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[1, 1])));
+    input.set_value(Some(&Tensor::ones(&[1, 1]))).unwrap();
+
+    // add1 = input + input（被 detach）
+    let add1 = Rc::new(NodeInner::new(
+        NodeId(2),
+        None,
+        make_add_1x1(),
+        vec![input.clone(), input.clone()],
+    ));
+    add1.set_detached(true); // 设置为 detached
+
+    // output = add1 + add1
+    let output = Rc::new(NodeInner::new(
+        NodeId(3),
+        None,
+        make_add_1x1(),
+        vec![add1.clone(), add1.clone()],
+    ));
+
+    // 前向传播
+    output.forward_recursive(1, false).unwrap();
+
+    // 设置 output 梯度
+    output.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
+
+    // 反向传播
+    output.backward_propagate(1).unwrap();
+
+    // 验证：add1 收到梯度（作为 output 的父节点）
+    assert_eq!(add1.grad().unwrap()[[0, 0]], 2.0);
+
+    // 验证：input 没有梯度（因为 add1 被 detach，梯度不再向上传播）
+    assert!(input.grad().is_none());
+}
+
+/// 测试 pass_id 去重
+///
+/// 验证同一 pass_id 不会重复处理节点
+#[test]
+fn test_backward_propagate_pass_id() {
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[1, 1])));
+    input.set_value(Some(&Tensor::ones(&[1, 1]))).unwrap();
+
+    let add = Rc::new(NodeInner::new(
+        NodeId(2),
+        None,
+        make_add_1x1(),
+        vec![input.clone(), input.clone()],
+    ));
+
+    // 前向传播
+    add.forward_recursive(1, false).unwrap();
+
+    // 第一次反向传播
+    add.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
+    add.backward_propagate(1).unwrap();
+    let grad1 = input.grad().unwrap()[[0, 0]];
+    assert_eq!(grad1, 2.0);
+
+    // 同一 pass_id 再次调用，不应重复处理
+    add.backward_propagate(1).unwrap();
+    let grad2 = input.grad().unwrap()[[0, 0]];
+    assert_eq!(grad2, 2.0); // 梯度不变
+
+    // 新 pass_id，重新设置梯度
+    input.clear_grad().unwrap();
+    add.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
+    add.backward_propagate(2).unwrap();
+    let grad3 = input.grad().unwrap()[[0, 0]];
+    assert_eq!(grad3, 2.0); // 新的一轮
 }
