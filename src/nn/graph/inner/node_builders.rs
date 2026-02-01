@@ -133,6 +133,47 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "recurrent_output", vec![])
     }
 
+    /// 创建 Parameter 节点（方案 C 新 API）
+    ///
+    /// 可训练参数（权重、偏置等），支持 Kaiming 初始化。
+    /// 如果 Graph 有固定种子，使用该种子初始化；否则使用随机初始化。
+    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
+    pub fn create_parameter_node(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Parameter;
+
+        let param = if let Some(ref mut rng) = self.rng {
+            use rand::Rng;
+            let seed: u64 = rng.r#gen();
+            Parameter::new_seeded(shape, seed)?
+        } else {
+            Parameter::new(shape)?
+        };
+        let raw_node: NodeType = param.into();
+
+        self.create_node_inner(raw_node, name, "parameter", vec![])
+    }
+
+    /// 创建带固定种子的 Parameter 节点（方案 C 新 API）
+    ///
+    /// 使用指定种子进行 Kaiming 初始化，确保可重复性。
+    pub fn create_parameter_node_seeded(
+        &mut self,
+        shape: &[usize],
+        name: Option<&str>,
+        seed: u64,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Parameter;
+
+        let param = Parameter::new_seeded(shape, seed)?;
+        let raw_node: NodeType = param.into();
+
+        self.create_node_inner(raw_node, name, "parameter", vec![])
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表

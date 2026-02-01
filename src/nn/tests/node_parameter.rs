@@ -396,3 +396,118 @@ fn test_parameter_gradient_with_dynamic_batch() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_parameter_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 创建 Parameter 节点
+    let param = inner
+        .borrow_mut()
+        .create_parameter_node(&[4, 8], Some("weight"))
+        .unwrap();
+
+    // 验证节点属性
+    assert_eq!(param.shape(), vec![4, 8]);
+    assert_eq!(param.name(), Some("weight"));
+    assert!(param.is_leaf());
+    assert!(param.parents().is_empty());
+
+    // 验证有初始化值
+    assert!(param.value().is_some());
+}
+
+#[test]
+fn test_create_parameter_auto_name() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let param = inner
+        .borrow_mut()
+        .create_parameter_node(&[4, 8], None)
+        .unwrap();
+
+    let name = param.name().unwrap();
+    assert!(name.contains("parameter"), "名称应包含 'parameter': {}", name);
+}
+
+#[test]
+fn test_create_parameter_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak;
+    {
+        let param = inner
+            .borrow_mut()
+            .create_parameter_node(&[4, 8], None)
+            .unwrap();
+        weak = Rc::downgrade(&param);
+        assert!(weak.upgrade().is_some());
+    }
+    // param 离开作用域，节点被释放
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn test_create_parameter_seeded() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 使用相同种子创建两个参数
+    let param1 = inner
+        .borrow_mut()
+        .create_parameter_node_seeded(&[4, 8], Some("w1"), 42)
+        .unwrap();
+    let param2 = inner
+        .borrow_mut()
+        .create_parameter_node_seeded(&[4, 8], Some("w2"), 42)
+        .unwrap();
+
+    // 验证值相同（相同种子）
+    let v1 = param1.value().unwrap();
+    let v2 = param2.value().unwrap();
+    assert_eq!(v1.data_as_slice(), v2.data_as_slice());
+}
+
+#[test]
+fn test_create_parameter_various_shapes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // FC 权重 [in_features, out_features]
+    let fc_weight = inner
+        .borrow_mut()
+        .create_parameter_node(&[784, 256], None)
+        .unwrap();
+    assert_eq!(fc_weight.shape(), vec![784, 256]);
+
+    // CNN 卷积核 [C_out, C_in, kH, kW]
+    let conv_kernel = inner
+        .borrow_mut()
+        .create_parameter_node(&[64, 3, 3, 3], None)
+        .unwrap();
+    assert_eq!(conv_kernel.shape(), vec![64, 3, 3, 3]);
+}
+
+#[test]
+fn test_create_parameter_invalid_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 1D 形状应该失败
+    let result = inner.borrow_mut().create_parameter_node(&[10], None);
+    assert!(result.is_err());
+
+    // 5D 形状也应该失败
+    let result = inner
+        .borrow_mut()
+        .create_parameter_node(&[1, 2, 3, 4, 5], None);
+    assert!(result.is_err());
+}
