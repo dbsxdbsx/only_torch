@@ -1000,12 +1000,16 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 
 - [x] **删除** `src/nn/model_state.rs`（完全移除）
 - [x] **删除** `src/nn/criterion.rs`（完全移除，统一用 Var 方法）
-- [ ] 可视化模块适配（改用 Var.visualize() 遍历 parents）
-- [ ] 序列化模块适配
+- [x] 可视化模块适配（改用 Var.visualize() 遍历 parents）
+  - 新增 `Var::to_dot()` / `Var::save_visualization()` 方法
+  - 新增 `Var::visualize_all()` 静态方法支持多输出场景
+  - 从 Var 遍历 parents 链，不再依赖 nodes HashMap
+- [x] 序列化模块适配（2.7.3 中完成：使用 parameters 注册表）
 - [x] BPTT/循环机制适配：
   - [x] 移除 RNN/GRU/LSTM 层内 `unroll_cache`（无缓存设计，每次 forward 重建节点）
-  - [ ] 评估传统 BPTT 机制（`step()` + `connect_recurrent()`）是否废弃
-  - [ ] 如保留，改用语义名称而非 NodeId 标识循环边
+  - [x] 评估传统 BPTT 机制（`step()` + `connect_recurrent()`）→ **决定废弃**
+    - 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
+    - `bptt.rs` 和 `recurrent.rs` 已在 2.7.3 删除
 
 ### Phase 4：验证与文档
 

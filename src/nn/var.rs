@@ -408,6 +408,210 @@ impl Var {
             .create_divide_node(vec![Rc::clone(&self.node), Rc::clone(&other.node)], None)?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
+
+    // ==================== 可视化 ====================
+
+    /// 生成以该 Var 为输出的计算图的 DOT 格式字符串
+    ///
+    /// 从当前 Var 开始，沿 parents 链遍历整个上游计算图，生成 Graphviz DOT 格式。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let loss = model.forward(&x)?.cross_entropy(&target)?;
+    /// println!("{}", loss.to_dot());
+    /// ```
+    pub fn to_dot(&self) -> String {
+        Self::vars_to_dot(&[self])
+    }
+
+    /// 保存以该 Var 为输出的计算图可视化
+    ///
+    /// # 参数
+    /// - `base_path`: 输出文件路径（不含后缀，自动生成 .dot 和 .png）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let loss = model.forward(&x)?.cross_entropy(&target)?;
+    /// loss.save_visualization("model")?;  // 生成 model.dot 和 model.png
+    /// ```
+    pub fn save_visualization<P: AsRef<std::path::Path>>(
+        &self,
+        base_path: P,
+    ) -> Result<super::VisualizationOutput, GraphError> {
+        Self::save_visualization_for_vars(&[self], base_path)
+    }
+
+    /// 合并多个 Var 的计算图并生成 DOT 格式字符串
+    ///
+    /// 适用于多输出场景（如 GAN 的 g_loss 和 d_loss）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let dot = Var::visualize_all_to_dot(&[&g_loss, &d_loss]);
+    /// ```
+    pub fn visualize_all_to_dot(vars: &[&Self]) -> String {
+        Self::vars_to_dot(vars)
+    }
+
+    /// 合并多个 Var 的计算图并保存可视化
+    ///
+    /// # 示例
+    /// ```ignore
+    /// Var::visualize_all(&[&g_loss, &d_loss], "gan")?;
+    /// ```
+    pub fn visualize_all<P: AsRef<std::path::Path>>(
+        vars: &[&Self],
+        base_path: P,
+    ) -> Result<super::VisualizationOutput, GraphError> {
+        Self::save_visualization_for_vars(vars, base_path)
+    }
+
+    /// 内部方法：从多个 Var 生成 DOT 格式
+    fn vars_to_dot(vars: &[&Self]) -> String {
+        use std::collections::{HashSet, VecDeque};
+
+        // 1. 收集所有节点（BFS 遍历 parents）
+        let mut visited: HashSet<NodeId> = HashSet::new();
+        let mut nodes: Vec<Rc<NodeInner>> = Vec::new();
+        let mut queue: VecDeque<Rc<NodeInner>> = VecDeque::new();
+
+        for var in vars {
+            queue.push_back(Rc::clone(&var.node));
+        }
+
+        while let Some(node) = queue.pop_front() {
+            let id = node.id();
+            if visited.contains(&id) {
+                continue;
+            }
+            visited.insert(id);
+            nodes.push(Rc::clone(&node));
+
+            // 将父节点加入队列
+            for parent in node.parents() {
+                queue.push_back(Rc::clone(parent));
+            }
+        }
+
+        // 2. 生成 DOT 格式
+        let mut dot = String::new();
+        dot.push_str("digraph ComputeGraph {\n");
+        dot.push_str("    rankdir=TB;\n");
+        dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
+        dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n\n");
+
+        // 生成节点
+        for node in &nodes {
+            let id = node.id().0;
+            let name = node.name().map(|s| s.to_string()).unwrap_or_else(|| format!("node_{}", id));
+            let node_type = node.type_name();
+            let shape = node.value_expected_shape();
+            let shape_str = format!("{:?}", shape);
+
+            // 根据节点类型选择样式
+            let (node_shape, fill_color) = match node_type.as_str() {
+                "Input" | "SmartInput" | "RecurrentOutput" => ("ellipse", "#E3F2FD"),
+                "Parameter" => ("box", "#E8F5E9"),
+                "ZerosLike" => ("ellipse", "#F3E5F5"),
+                t if t.contains("Loss") || t.contains("BCE") || t.contains("MSE") 
+                    || t.contains("MAE") || t.contains("Huber") || t.contains("CrossEntropy") => {
+                    ("doubleoctagon", "#FFEBEE")
+                }
+                _ => ("box", "#FFFDE7"),
+            };
+
+            dot.push_str(&format!(
+                "    n{} [label=\"{}\\n{}\\n{}\", shape={}, style=filled, fillcolor=\"{}\"];\n",
+                id, name, node_type, shape_str, node_shape, fill_color
+            ));
+        }
+
+        dot.push('\n');
+
+        // 生成边（父节点 -> 子节点）
+        for node in &nodes {
+            let child_id = node.id().0;
+            for parent in node.parents() {
+                let parent_id = parent.id().0;
+                dot.push_str(&format!("    n{} -> n{};\n", parent_id, child_id));
+            }
+        }
+
+        dot.push_str("}\n");
+        dot
+    }
+
+    /// 内部方法：保存多个 Var 的可视化
+    fn save_visualization_for_vars<P: AsRef<std::path::Path>>(
+        vars: &[&Self],
+        base_path: P,
+    ) -> Result<super::VisualizationOutput, GraphError> {
+        use std::fs::File;
+        use std::io::Write;
+        use std::process::Command;
+
+        let base = base_path.as_ref();
+
+        // 检查路径不应包含后缀
+        if let Some(ext) = base.extension() {
+            return Err(GraphError::InvalidOperation(format!(
+                "base_path 不应包含文件后缀（如 .{}），请使用不带后缀的路径",
+                ext.to_string_lossy()
+            )));
+        }
+
+        let dot_path = base.with_extension("dot");
+        let png_path = base.with_extension("png");
+
+        // 生成 DOT 内容
+        let dot_content = Self::vars_to_dot(vars);
+
+        // 保存 .dot 文件
+        let mut file = File::create(&dot_path).map_err(|e| {
+            GraphError::ComputationError(format!("无法创建 DOT 文件: {}", e))
+        })?;
+        file.write_all(dot_content.as_bytes()).map_err(|e| {
+            GraphError::ComputationError(format!("写入 DOT 文件失败: {}", e))
+        })?;
+
+        // 尝试用 Graphviz 生成 PNG
+        let graphviz_available = Command::new("dot")
+            .arg("-V")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if graphviz_available {
+            let output = Command::new("dot")
+                .arg("-Tpng")
+                .arg(&dot_path)
+                .arg("-o")
+                .arg(&png_path)
+                .output();
+
+            match output {
+                Ok(o) if o.status.success() => Ok(super::VisualizationOutput {
+                    dot_path,
+                    image_path: Some(png_path),
+                    graphviz_available: true,
+                    graphviz_hint: None,
+                }),
+                _ => Ok(super::VisualizationOutput {
+                    dot_path,
+                    image_path: None,
+                    graphviz_available: true,
+                    graphviz_hint: Some("Graphviz 执行失败".to_string()),
+                }),
+            }
+        } else {
+            Ok(super::VisualizationOutput {
+                dot_path,
+                image_path: None,
+                graphviz_available: false,
+                graphviz_hint: Some("请安装 Graphviz: https://graphviz.org/download/".to_string()),
+            })
+        }
+    }
 }
 
 // ==================== 算子重载 ====================
