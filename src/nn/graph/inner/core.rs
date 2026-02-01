@@ -39,6 +39,7 @@ impl GraphInner {
             prev_values: HashMap::new(),
             time_step: 0,
             step_history: Vec::new(),
+            parameters: HashMap::new(), // 方案 C 新增
             #[cfg(test)]
             bptt_debug: false,
         }
@@ -62,6 +63,7 @@ impl GraphInner {
             prev_values: HashMap::new(),
             time_step: 0,
             step_history: Vec::new(),
+            parameters: HashMap::new(), // 方案 C 新增
             #[cfg(test)]
             bptt_debug: false,
         }
@@ -84,6 +86,7 @@ impl GraphInner {
             prev_values: HashMap::new(),
             time_step: 0,
             step_history: Vec::new(),
+            parameters: HashMap::new(), // 方案 C 新增
             #[cfg(test)]
             bptt_debug: false,
         }
@@ -201,6 +204,82 @@ impl GraphInner {
         }
         Ok(node.grad())
     }
+
+    // ========== 方案 C：参数注册表 API ==========
+
+    /// 注册参数到参数注册表
+    ///
+    /// # 参数
+    /// - `name`: 参数名称（如 "linear1.weight"）
+    /// - `node`: 参数节点的弱引用
+    ///
+    /// # 返回
+    /// - 如果名称已存在且指向有效节点，返回错误
+    /// - 如果名称已存在但节点已失效，则替换
+    pub fn register_parameter(
+        &mut self,
+        name: String,
+        node: std::rc::Weak<crate::nn::nodes::NodeInner>,
+    ) -> Result<(), GraphError> {
+        // 检查是否已存在同名参数
+        if let Some(existing) = self.parameters.get(&name) {
+            if existing.upgrade().is_some() {
+                return Err(GraphError::InvalidOperation(format!(
+                    "参数 '{}' 已存在且仍有效",
+                    name
+                )));
+            }
+            // 已失效，允许替换
+        }
+        self.parameters.insert(name, node);
+        Ok(())
+    }
+
+    /// 获取指定名称的参数
+    ///
+    /// 如果参数存在且仍有效，返回其强引用
+    pub fn get_parameter(
+        &self,
+        name: &str,
+    ) -> Option<std::rc::Rc<crate::nn::nodes::NodeInner>> {
+        self.parameters.get(name).and_then(|weak| weak.upgrade())
+    }
+
+    /// 获取所有有效的参数（过滤掉已失效的弱引用）
+    ///
+    /// 返回 (名称, 节点) 对的列表
+    pub fn get_all_parameters(&self) -> Vec<(String, std::rc::Rc<crate::nn::nodes::NodeInner>)> {
+        self.parameters
+            .iter()
+            .filter_map(|(name, weak)| weak.upgrade().map(|rc| (name.clone(), rc)))
+            .collect()
+    }
+
+    /// 获取参数注册表中的参数数量（包括可能已失效的）
+    pub fn registered_parameters_count(&self) -> usize {
+        self.parameters.len()
+    }
+
+    /// 获取有效参数的数量（过滤掉已失效的）
+    pub fn valid_parameters_count(&self) -> usize {
+        self.parameters.values().filter(|w| w.upgrade().is_some()).count()
+    }
+
+    /// 清理已失效的参数引用
+    ///
+    /// 返回清理掉的数量
+    pub fn cleanup_dead_parameters(&mut self) -> usize {
+        let before = self.parameters.len();
+        self.parameters.retain(|_, weak| weak.upgrade().is_some());
+        before - self.parameters.len()
+    }
+
+    /// 检查参数是否已注册
+    pub fn has_parameter(&self, name: &str) -> bool {
+        self.parameters.get(name).map(|w| w.upgrade().is_some()).unwrap_or(false)
+    }
+
+    // ========== 旧的参数访问 API（过渡期保留）==========
 
     /// 获取所有可训练的参数节点
     pub fn get_trainable_nodes(&self) -> Vec<NodeId> {

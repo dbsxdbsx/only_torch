@@ -801,19 +801,19 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [x] 访问器和修改器方法
 - [x] 单元测试（9 个，覆盖创建、引用计数、级联释放）
 
-#### Step 2.2：Var 结构过渡改造
-- [ ] 添加 `node: Option<Rc<NodeInner>>` 字段（过渡期）
-- [ ] 修改 `node_id()` 优先从 `self.node` 获取
-- [ ] 修改 `value()`, `grad()` 等优先从 `self.node` 访问
-- [ ] 保持旧路径 `graph.borrow().xxx(self.id)` 作为后备
-- [ ] 单元测试：验证新旧路径等价
+#### Step 2.2：Var 结构过渡改造 ✅ 已完成
+- [x] 添加 `node: Option<Rc<NodeInner>>` 字段（过渡期）
+- [x] 修改 `node_id()` 优先从 `self.node` 获取
+- [x] 修改 `value()`, `grad()` 等优先从 `self.node` 访问
+- [x] 保持旧路径 `graph.borrow().xxx(self.id)` 作为后备
+- [x] 单元测试：验证新旧路径等价（8 个测试）
 
 #### Step 2.3：GraphInner 参数注册表
-- [ ] 添加 `parameters: HashMap<String, Weak<NodeInner>>`
-- [ ] 添加 `next_node_id: Cell<u64>` 计数器
-- [ ] 实现参数注册/查询 API
-- [ ] 暂时保留 `nodes: HashMap` 用于过渡
-- [ ] 单元测试：参数注册和弱引用行为
+- [x] 添加 `parameters: HashMap<String, Weak<NodeInner>>`
+- [x] `next_node_id` 计数器：复用现有 `next_id: u64`，无需额外改动
+- [x] 实现参数注册/查询 API（7 个方法）
+- [x] 暂时保留 `nodes: HashMap` 用于过渡
+- [x] 单元测试：参数注册和弱引用行为（7 个测试）
 
 #### Step 2.4：节点创建流程改造
 - [ ] 新增 `NodeInner::new_xxx()` 系列工厂方法（各节点类型）

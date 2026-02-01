@@ -30,18 +30,25 @@ mod serialization;
 mod visualization;
 
 use super::types::{LayerGroup, RecurrentLayerMeta, StepSnapshot};
+use crate::nn::nodes::NodeInner;
 use crate::nn::NodeId;
 use crate::nn::nodes::NodeHandle;
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
+use std::rc::Weak;
 
 /// 图的完整定义（核心实现）
 ///
 /// 这是计算图的核心实现。用户通常通过 `Graph` 句柄使用此结构，
 /// 高级用户（如 NEAT）可通过 `graph.inner()` 访问底层操作。
+///
+/// # 方案 C 过渡期说明
+/// - `nodes` HashMap 在过渡期保留，最终会被移除
+/// - `parameters` 是新的参数注册表（弱引用，不控制生命周期）
 pub struct GraphInner {
     pub(in crate::nn::graph) name: String,
+    /// 节点存储（过渡期保留，最终会被移除）
     pub(in crate::nn::graph) nodes: HashMap<NodeId, NodeHandle>,
     /// `正向边：parent_id` -> `child_ids（父节点指向子节点`）
     pub(in crate::nn::graph) forward_edges: HashMap<NodeId, Vec<NodeId>>,
@@ -53,6 +60,18 @@ pub struct GraphInner {
     pub(in crate::nn::graph) last_backward_pass_id: u64,
     pub(in crate::nn::graph) next_id: u64,
     pub(in crate::nn::graph) is_eval_mode: bool,
+
+    // ========== 方案 C 新增字段 ==========
+    /// 参数注册表（弱引用，不控制参数生命周期）
+    ///
+    /// - key: 参数名称（如 "linear1.weight"）
+    /// - value: 弱引用，当 Layer 销毁时自动失效
+    ///
+    /// 用途：
+    /// - `zero_grad()`: 遍历清除所有参数梯度
+    /// - `parameters()`: 获取所有存活的参数
+    /// - 序列化：保存/加载命名参数
+    pub(in crate::nn::graph) parameters: HashMap<String, Weak<NodeInner>>,
     /// 图级别的随机数生成器（用于参数初始化等）
     /// None 表示使用默认的 `thread_rng（非确定性`）
     pub(in crate::nn::graph) rng: Option<StdRng>,

@@ -1,4 +1,5 @@
 mod batch_mechanism; // Batch 机制测试
+mod graph_parameters; // GraphInner 参数注册表测试（方案 C Step 2.3）
 mod node_inner; // NodeInner 核心数据结构测试（方案 C）
 mod var_transition; // Var 过渡期测试（方案 C Step 2.2）
 mod bptt_pytorch_comparison; // BPTT PyTorch 对照测试
