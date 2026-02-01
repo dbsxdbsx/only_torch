@@ -520,3 +520,94 @@ fn test_sum_dynamic_batch_backward() {
     graph.zero_grad().unwrap();
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_sum_node_global() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let sum = inner
+        .borrow_mut()
+        .create_sum_node(input.clone(), None, Some("sum"))
+        .unwrap();
+
+    // 全局求和输出 [1, 1]
+    assert_eq!(sum.shape(), vec![1, 1]);
+    assert_eq!(sum.name(), Some("sum"));
+    assert!(!sum.is_leaf());
+}
+
+#[test]
+fn test_create_sum_node_axis() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    // 沿 axis=1 求和
+    let sum = inner
+        .borrow_mut()
+        .create_sum_node(input.clone(), Some(1), None)
+        .unwrap();
+
+    // 输出 [3, 1]
+    assert_eq!(sum.shape(), vec![3, 1]);
+}
+
+#[test]
+fn test_create_sum_node_invalid_axis() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    // axis=2 超出范围
+    let result = inner
+        .borrow_mut()
+        .create_sum_node(input, Some(2), None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_sum_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_sum;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let sum = inner
+            .borrow_mut()
+            .create_sum_node(input, None, None)
+            .unwrap();
+        weak_sum = Rc::downgrade(&sum);
+
+        assert!(weak_sum.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_sum.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

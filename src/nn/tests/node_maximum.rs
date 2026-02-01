@@ -297,3 +297,111 @@ fn test_maximum_incompatible_shapes() {
 
     assert!(result.is_err());
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_maximum_node_same_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("a"))
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("b"))
+        .unwrap();
+
+    let max = inner
+        .borrow_mut()
+        .create_maximum_node(a.clone(), b.clone(), Some("max"))
+        .unwrap();
+
+    assert_eq!(max.shape(), vec![3, 4]);
+    assert_eq!(max.name(), Some("max"));
+    assert_eq!(max.parents().len(), 2);
+}
+
+#[test]
+fn test_create_maximum_node_broadcast() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], None)
+        .unwrap();
+
+    let max = inner
+        .borrow_mut()
+        .create_maximum_node(a.clone(), b.clone(), None)
+        .unwrap();
+
+    // 广播后形状 [3, 4]
+    assert_eq!(max.shape(), vec![3, 4]);
+}
+
+#[test]
+fn test_create_maximum_node_shape_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 6], None)
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_maximum_node(a, b, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_maximum_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_max;
+    let weak_a;
+    let weak_b;
+    {
+        let a = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_a = Rc::downgrade(&a);
+
+        let b = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_b = Rc::downgrade(&b);
+
+        let max = inner
+            .borrow_mut()
+            .create_maximum_node(a, b, None)
+            .unwrap();
+        weak_max = Rc::downgrade(&max);
+
+        assert!(weak_max.upgrade().is_some());
+        assert!(weak_a.upgrade().is_some());
+        assert!(weak_b.upgrade().is_some());
+    }
+    assert!(weak_max.upgrade().is_none());
+    assert!(weak_a.upgrade().is_none());
+    assert!(weak_b.upgrade().is_none());
+}

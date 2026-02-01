@@ -52,7 +52,78 @@ pub(crate) struct Sum {
 }
 
 impl Sum {
+    /// 从父节点形状信息创建 Sum 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        input_shape: &[usize],
+        input_dynamic_shape: &DynamicShape,
+        axis: Option<usize>,
+    ) -> Result<Self, GraphError> {
+        // 验证 axis 有效性
+        if let Some(ax) = axis {
+            if ax >= input_shape.len() {
+                return Err(GraphError::InvalidOperation(format!(
+                    "Sum: axis {} 超出输入维度范围 {}",
+                    ax,
+                    input_shape.len()
+                )));
+            }
+        }
+
+        // 计算输出形状
+        let fixed_shape = match axis {
+            None => vec![1, 1],
+            Some(ax) => {
+                let mut shape = input_shape.to_vec();
+                shape[ax] = 1;
+                shape
+            }
+        };
+
+        // 动态形状
+        let dynamic_shape = match axis {
+            None => DynamicShape::new(&[Some(1), Some(1)]),
+            Some(ax) => {
+                let mut dims: Vec<_> = input_dynamic_shape.dims().to_vec();
+                if ax < dims.len() {
+                    dims[ax] = Some(1);
+                }
+                DynamicShape::new(&dims)
+            }
+        };
+
+        // 是否支持动态 batch
+        let supports_dynamic = input_dynamic_shape.dims().first() == Some(&None);
+
+        Ok(Self {
+            id: None,
+            name: None,
+            value: None,
+            grad: None,
+            axis,
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
+            input_shape_cache: None,
+        })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
     pub(crate) fn new(parents: &[&NodeHandle], axis: Option<usize>) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "Sum 节点需要正好 1 个父节点".to_string(),
+            ));
+        }
+
+        Self::new_from_shapes(
+            &parents[0].value_expected_shape(),
+            &parents[0].dynamic_expected_shape(),
+            axis,
+        )
+    }
+
+    #[deprecated(note = "保留旧 API 签名，委托给 new_from_shapes")]
+    pub(crate) fn _new_legacy(parents: &[&NodeHandle], axis: Option<usize>) -> Result<Self, GraphError> {
         // 1. 验证父节点数量
         if parents.len() != 1 {
             return Err(GraphError::InvalidOperation(

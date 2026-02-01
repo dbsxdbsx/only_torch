@@ -355,3 +355,91 @@ fn test_amax_invalid_axis() {
 
     assert!(result.is_err());
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_amax_node_axis0() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let amax = inner
+        .borrow_mut()
+        .create_amax_node(input.clone(), 0, Some("amax"))
+        .unwrap();
+
+    // 沿 axis=0 取 max 后移除该轴，输出 [4]
+    assert_eq!(amax.shape(), vec![4]);
+    assert_eq!(amax.name(), Some("amax"));
+}
+
+#[test]
+fn test_create_amax_node_axis1() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    let amax = inner
+        .borrow_mut()
+        .create_amax_node(input.clone(), 1, None)
+        .unwrap();
+
+    // 沿 axis=1 取 max 后，输出 [3]
+    assert_eq!(amax.shape(), vec![3]);
+}
+
+#[test]
+fn test_create_amax_node_invalid_axis() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    // axis=2 超出范围
+    let result = inner
+        .borrow_mut()
+        .create_amax_node(input, 2, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_amax_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_amax;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let amax = inner
+            .borrow_mut()
+            .create_amax_node(input, 0, None)
+            .unwrap();
+        weak_amax = Rc::downgrade(&amax);
+
+        assert!(weak_amax.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_amax.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

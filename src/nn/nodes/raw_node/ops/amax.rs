@@ -42,7 +42,71 @@ pub(crate) struct Amax {
 }
 
 impl Amax {
+    /// 从父节点形状信息创建 Amax 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        input_shape: &[usize],
+        input_dynamic_shape: &DynamicShape,
+        axis: usize,
+    ) -> Result<Self, GraphError> {
+        // 验证 axis 有效
+        if axis >= input_shape.len() {
+            return Err(GraphError::InvalidOperation(format!(
+                "Amax: axis {} 超出输入维度 {}",
+                axis,
+                input_shape.len()
+            )));
+        }
+
+        // 计算 reduction 后的形状（移除指定轴）
+        let mut fixed_shape: Vec<usize> = input_shape.to_vec();
+        fixed_shape.remove(axis);
+        if fixed_shape.is_empty() {
+            fixed_shape.push(1);
+        }
+
+        // 动态形状（也需要移除指定轴）
+        let mut dynamic_dims: Vec<_> = input_dynamic_shape.dims().to_vec();
+        if axis < dynamic_dims.len() {
+            dynamic_dims.remove(axis);
+        }
+        if dynamic_dims.is_empty() {
+            dynamic_dims.push(Some(1));
+        }
+        let dynamic_shape = DynamicShape::new(&dynamic_dims);
+
+        // 是否支持动态 batch
+        let supports_dynamic = input_dynamic_shape.dims().first() == Some(&None);
+
+        Ok(Self {
+            id: None,
+            name: None,
+            value: None,
+            grad: None,
+            axis,
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
+        })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
     pub(crate) fn new(parents: &[&NodeHandle], axis: usize) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "Amax 节点需要 1 个父节点".to_string(),
+            ));
+        }
+
+        Self::new_from_shapes(
+            &parents[0].value_expected_shape(),
+            &parents[0].dynamic_expected_shape(),
+            axis,
+        )
+    }
+
+    #[deprecated(note = "保留旧 API 签名，委托给 new_from_shapes")]
+    #[allow(dead_code)]
+    fn _new_legacy(parents: &[&NodeHandle], axis: usize) -> Result<Self, GraphError> {
         // 1. 验证父节点数量（需要 1 个）
         if parents.len() != 1 {
             return Err(GraphError::InvalidOperation(

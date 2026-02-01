@@ -877,6 +877,136 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "softmax_ce", vec![logits, labels])
     }
 
+    // ==================== 归约节点（方案 C 新 API）====================
+
+    /// 创建 Sum 归约节点（方案 C 新 API）
+    ///
+    /// - `axis = None`：全局求和，输出 [1, 1]
+    /// - `axis = Some(i)`：沿轴 i 求和（keepdims=true）
+    pub fn create_sum_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        axis: Option<usize>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Sum;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let sum = Sum::new_from_shapes(&input_shape, &input_dynamic_shape, axis)?;
+        let raw_node: NodeType = sum.into();
+
+        self.create_node_inner(raw_node, name, "sum", vec![input])
+    }
+
+    /// 创建 Mean 归约节点（方案 C 新 API）
+    ///
+    /// - `axis = None`：全局均值，输出 [1, 1]
+    /// - `axis = Some(i)`：沿轴 i 均值（keepdims=true）
+    pub fn create_mean_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        axis: Option<usize>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Mean;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let mean = Mean::new_from_shapes(&input_shape, &input_dynamic_shape, axis)?;
+        let raw_node: NodeType = mean.into();
+
+        self.create_node_inner(raw_node, name, "mean", vec![input])
+    }
+
+    /// 创建 Amax 归约节点（方案 C 新 API）
+    ///
+    /// 沿指定轴取最大值（移除该轴）
+    pub fn create_amax_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        axis: usize,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Amax;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let amax = Amax::new_from_shapes(&input_shape, &input_dynamic_shape, axis)?;
+        let raw_node: NodeType = amax.into();
+
+        self.create_node_inner(raw_node, name, "amax", vec![input])
+    }
+
+    /// 创建 Amin 归约节点（方案 C 新 API）
+    ///
+    /// 沿指定轴取最小值（移除该轴）
+    pub fn create_amin_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        axis: usize,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Amin;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let amin = Amin::new_from_shapes(&input_shape, &input_dynamic_shape, axis)?;
+        let raw_node: NodeType = amin.into();
+
+        self.create_node_inner(raw_node, name, "amin", vec![input])
+    }
+
+    /// 创建 Maximum 节点（方案 C 新 API）
+    ///
+    /// 逐元素取两个张量的最大值
+    pub fn create_maximum_node(
+        &mut self,
+        a: Rc<NodeInner>,
+        b: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Maximum;
+
+        let a_shape = a.shape();
+        let b_shape = b.shape();
+        let a_dynamic_shape = a.dynamic_shape();
+        let b_dynamic_shape = b.dynamic_shape();
+
+        let maximum =
+            Maximum::new_from_shapes(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
+        let raw_node: NodeType = maximum.into();
+
+        self.create_node_inner(raw_node, name, "maximum", vec![a, b])
+    }
+
+    /// 创建 Minimum 节点（方案 C 新 API）
+    ///
+    /// 逐元素取两个张量的最小值
+    pub fn create_minimum_node(
+        &mut self,
+        a: Rc<NodeInner>,
+        b: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Minimum;
+
+        let a_shape = a.shape();
+        let b_shape = b.shape();
+        let a_dynamic_shape = a.dynamic_shape();
+        let b_dynamic_shape = b.dynamic_shape();
+
+        let minimum =
+            Minimum::new_from_shapes(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
+        let raw_node: NodeType = minimum.into();
+
+        self.create_node_inner(raw_node, name, "minimum", vec![a, b])
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表

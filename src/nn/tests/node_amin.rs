@@ -355,3 +355,91 @@ fn test_amin_invalid_axis() {
 
     assert!(result.is_err());
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_amin_node_axis0() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let amin = inner
+        .borrow_mut()
+        .create_amin_node(input.clone(), 0, Some("amin"))
+        .unwrap();
+
+    // 沿 axis=0 取 min 后移除该轴，输出 [4]
+    assert_eq!(amin.shape(), vec![4]);
+    assert_eq!(amin.name(), Some("amin"));
+}
+
+#[test]
+fn test_create_amin_node_axis1() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    let amin = inner
+        .borrow_mut()
+        .create_amin_node(input.clone(), 1, None)
+        .unwrap();
+
+    // 沿 axis=1 取 min 后，输出 [3]
+    assert_eq!(amin.shape(), vec![3]);
+}
+
+#[test]
+fn test_create_amin_node_invalid_axis() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    // axis=2 超出范围
+    let result = inner
+        .borrow_mut()
+        .create_amin_node(input, 2, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_amin_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_amin;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let amin = inner
+            .borrow_mut()
+            .create_amin_node(input, 0, None)
+            .unwrap();
+        weak_amin = Rc::downgrade(&amin);
+
+        assert!(weak_amin.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_amin.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

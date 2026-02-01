@@ -298,3 +298,111 @@ fn test_minimum_incompatible_shapes() {
 
     assert!(result.is_err());
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use std::rc::Rc;
+
+#[test]
+fn test_create_minimum_node_same_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("a"))
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("b"))
+        .unwrap();
+
+    let min = inner
+        .borrow_mut()
+        .create_minimum_node(a.clone(), b.clone(), Some("min"))
+        .unwrap();
+
+    assert_eq!(min.shape(), vec![3, 4]);
+    assert_eq!(min.name(), Some("min"));
+    assert_eq!(min.parents().len(), 2);
+}
+
+#[test]
+fn test_create_minimum_node_broadcast() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], None)
+        .unwrap();
+
+    let min = inner
+        .borrow_mut()
+        .create_minimum_node(a.clone(), b.clone(), None)
+        .unwrap();
+
+    // 广播后形状 [3, 4]
+    assert_eq!(min.shape(), vec![3, 4]);
+}
+
+#[test]
+fn test_create_minimum_node_shape_mismatch() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let a = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+    let b = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 6], None)
+        .unwrap();
+
+    let result = inner
+        .borrow_mut()
+        .create_minimum_node(a, b, None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_minimum_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_min;
+    let weak_a;
+    let weak_b;
+    {
+        let a = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_a = Rc::downgrade(&a);
+
+        let b = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_b = Rc::downgrade(&b);
+
+        let min = inner
+            .borrow_mut()
+            .create_minimum_node(a, b, None)
+            .unwrap();
+        weak_min = Rc::downgrade(&min);
+
+        assert!(weak_min.upgrade().is_some());
+        assert!(weak_a.upgrade().is_some());
+        assert!(weak_b.upgrade().is_some());
+    }
+    assert!(weak_min.upgrade().is_none());
+    assert!(weak_a.upgrade().is_none());
+    assert!(weak_b.upgrade().is_none());
+}

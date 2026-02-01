@@ -42,7 +42,59 @@ pub(crate) struct Minimum {
 }
 
 impl Minimum {
+    /// 从父节点形状信息创建 Minimum 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        a_shape: &[usize],
+        b_shape: &[usize],
+        a_dynamic_shape: &DynamicShape,
+        b_dynamic_shape: &DynamicShape,
+    ) -> Result<Self, GraphError> {
+        // 计算广播后的形状
+        let fixed_shape = broadcast_shape(a_shape, b_shape).ok_or_else(|| {
+            GraphError::ShapeMismatch {
+                expected: a_shape.to_vec(),
+                got: b_shape.to_vec(),
+                message: "Minimum 节点的父节点形状无法广播".to_string(),
+            }
+        })?;
+
+        // 动态形状
+        let dynamic_shape = a_dynamic_shape.broadcast_with(b_dynamic_shape);
+
+        // 是否支持动态 batch
+        let supports_dynamic = a_dynamic_shape.dims().first() == Some(&None)
+            || b_dynamic_shape.dims().first() == Some(&None);
+
+        Ok(Self {
+            id: None,
+            name: None,
+            value: None,
+            grad: None,
+            fixed_shape,
+            dynamic_shape,
+            supports_dynamic,
+        })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
     pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        if parents.len() != 2 {
+            return Err(GraphError::InvalidOperation(
+                "Minimum 节点需要 2 个父节点".to_string(),
+            ));
+        }
+
+        Self::new_from_shapes(
+            &parents[0].value_expected_shape(),
+            &parents[1].value_expected_shape(),
+            &parents[0].dynamic_expected_shape(),
+            &parents[1].dynamic_expected_shape(),
+        )
+    }
+
+    #[deprecated(note = "保留旧 API 签名，委托给 new_from_shapes")]
+    #[allow(dead_code)]
+    fn _new_legacy(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
         // 1. 验证父节点数量（需要 2 个）
         if parents.len() != 2 {
             return Err(GraphError::InvalidOperation(

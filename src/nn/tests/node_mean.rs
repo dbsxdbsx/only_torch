@@ -563,3 +563,93 @@ fn test_mean_equals_sum_div_n() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_mean_node_global() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+
+    let mean = inner
+        .borrow_mut()
+        .create_mean_node(input.clone(), None, Some("mean"))
+        .unwrap();
+
+    // 全局均值输出 [1, 1]
+    assert_eq!(mean.shape(), vec![1, 1]);
+    assert_eq!(mean.name(), Some("mean"));
+}
+
+#[test]
+fn test_create_mean_node_axis() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    // 沿 axis=0 求均值
+    let mean = inner
+        .borrow_mut()
+        .create_mean_node(input.clone(), Some(0), None)
+        .unwrap();
+
+    // 输出 [1, 4]
+    assert_eq!(mean.shape(), vec![1, 4]);
+}
+
+#[test]
+fn test_create_mean_node_invalid_axis() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], None)
+        .unwrap();
+
+    // axis=5 超出范围
+    let result = inner
+        .borrow_mut()
+        .create_mean_node(input, Some(5), None);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_mean_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_mean;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[3, 4], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let mean = inner
+            .borrow_mut()
+            .create_mean_node(input, None, None)
+            .unwrap();
+        weak_mean = Rc::downgrade(&mean);
+
+        assert!(weak_mean.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_mean.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}
