@@ -480,3 +480,116 @@ fn test_sigmoid_dynamic_batch_backward() {
     );
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_sigmoid_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+
+    let sigmoid = inner
+        .borrow_mut()
+        .create_sigmoid_node(input.clone(), Some("sigmoid"))
+        .unwrap();
+
+    assert_eq!(sigmoid.shape(), vec![2, 3]);
+    assert_eq!(sigmoid.name(), Some("sigmoid"));
+    assert!(!sigmoid.is_leaf());
+    assert_eq!(sigmoid.parents().len(), 1);
+}
+
+#[test]
+fn test_create_sigmoid_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 测试各种形状都正确保留（节点必须是 2-4 维）
+    let input_2d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 10], None)
+        .unwrap();
+    let sigmoid_2d = inner
+        .borrow_mut()
+        .create_sigmoid_node(input_2d, None)
+        .unwrap();
+    assert_eq!(sigmoid_2d.shape(), vec![3, 10]);
+
+    let input_3d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], None)
+        .unwrap();
+    let sigmoid_3d = inner
+        .borrow_mut()
+        .create_sigmoid_node(input_3d, None)
+        .unwrap();
+    assert_eq!(sigmoid_3d.shape(), vec![2, 3, 4]);
+
+    let input_4d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4, 5], None)
+        .unwrap();
+    let sigmoid_4d = inner
+        .borrow_mut()
+        .create_sigmoid_node(input_4d, None)
+        .unwrap();
+    assert_eq!(sigmoid_4d.shape(), vec![2, 3, 4, 5]);
+}
+
+#[test]
+fn test_create_sigmoid_node_chain() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 测试连续两个 sigmoid
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], None)
+        .unwrap();
+    let sig1 = inner
+        .borrow_mut()
+        .create_sigmoid_node(input, None)
+        .unwrap();
+    let sig2 = inner
+        .borrow_mut()
+        .create_sigmoid_node(sig1.clone(), None)
+        .unwrap();
+
+    assert_eq!(sig2.shape(), vec![2, 2]);
+    assert_eq!(sig2.parents().len(), 1);
+}
+
+#[test]
+fn test_create_sigmoid_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_sigmoid;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let sigmoid = inner
+            .borrow_mut()
+            .create_sigmoid_node(input, None)
+            .unwrap();
+        weak_sigmoid = Rc::downgrade(&sigmoid);
+
+        assert!(weak_sigmoid.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_sigmoid.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

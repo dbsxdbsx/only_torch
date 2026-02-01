@@ -454,3 +454,100 @@ fn test_tanh_dynamic_batch_backward() {
     );
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_tanh_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+
+    let tanh = inner
+        .borrow_mut()
+        .create_tanh_node(input.clone(), Some("tanh"))
+        .unwrap();
+
+    assert_eq!(tanh.shape(), vec![2, 3]);
+    assert_eq!(tanh.name(), Some("tanh"));
+    assert!(!tanh.is_leaf());
+    assert_eq!(tanh.parents().len(), 1);
+}
+
+#[test]
+fn test_create_tanh_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 测试各种形状都正确保留（节点必须是 2-4 维）
+    let input_2d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 10], None)
+        .unwrap();
+    let tanh_2d = inner
+        .borrow_mut()
+        .create_tanh_node(input_2d, None)
+        .unwrap();
+    assert_eq!(tanh_2d.shape(), vec![3, 10]);
+
+    let input_4d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4, 5], None)
+        .unwrap();
+    let tanh_4d = inner
+        .borrow_mut()
+        .create_tanh_node(input_4d, None)
+        .unwrap();
+    assert_eq!(tanh_4d.shape(), vec![2, 3, 4, 5]);
+}
+
+#[test]
+fn test_create_tanh_node_chain() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 测试连续两个 tanh
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], None)
+        .unwrap();
+    let t1 = inner.borrow_mut().create_tanh_node(input, None).unwrap();
+    let t2 = inner
+        .borrow_mut()
+        .create_tanh_node(t1.clone(), None)
+        .unwrap();
+
+    assert_eq!(t2.shape(), vec![2, 2]);
+    assert_eq!(t2.parents().len(), 1);
+}
+
+#[test]
+fn test_create_tanh_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_tanh;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let tanh = inner.borrow_mut().create_tanh_node(input, None).unwrap();
+        weak_tanh = Rc::downgrade(&tanh);
+
+        assert!(weak_tanh.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_tanh.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

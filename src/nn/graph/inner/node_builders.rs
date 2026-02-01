@@ -554,6 +554,133 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "gather", vec![input, index])
     }
 
+    /// 创建 Sigmoid 节点（方案 C 新 API）
+    ///
+    /// Sigmoid 激活函数：sigmoid(x) = 1 / (1 + e^(-x))
+    pub fn create_sigmoid_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Sigmoid;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let sigmoid = Sigmoid::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = sigmoid.into();
+
+        self.create_node_inner(raw_node, name, "sigmoid", vec![parent])
+    }
+
+    /// 创建 Tanh 节点（方案 C 新 API）
+    ///
+    /// Tanh 激活函数：tanh(x) = (e^x - e^(-x)) / (e^x + e^(-x))
+    pub fn create_tanh_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Tanh;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let tanh = Tanh::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = tanh.into();
+
+        self.create_node_inner(raw_node, name, "tanh", vec![parent])
+    }
+
+    /// 创建 LeakyReLU 节点（方案 C 新 API）
+    ///
+    /// LeakyReLU: f(x) = x if x > 0, else negative_slope * x
+    pub fn create_leaky_relu_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        negative_slope: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::LeakyReLU;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let leaky_relu =
+            LeakyReLU::new_from_shapes(&parent_shape, &parent_dynamic_shape, negative_slope)?;
+        let raw_node: NodeType = leaky_relu.into();
+
+        self.create_node_inner(raw_node, name, "leaky_relu", vec![parent])
+    }
+
+    /// 创建 ReLU 节点（方案 C 新 API）
+    ///
+    /// ReLU: f(x) = max(0, x)，等价于 LeakyReLU(negative_slope=0)
+    pub fn create_relu_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        self.create_leaky_relu_node(parent, 0.0, name)
+    }
+
+    /// 创建 Softmax 节点（方案 C 新 API）
+    ///
+    /// Softmax: softmax(x)_i = exp(x_i) / Σ exp(x_j)，沿最后一维归一化
+    pub fn create_softmax_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Softmax;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let softmax = Softmax::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = softmax.into();
+
+        self.create_node_inner(raw_node, name, "softmax", vec![parent])
+    }
+
+    /// 创建 LogSoftmax 节点（方案 C 新 API）
+    ///
+    /// LogSoftmax: log(softmax(x))，数值稳定版本
+    pub fn create_log_softmax_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::LogSoftmax;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let log_softmax = LogSoftmax::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = log_softmax.into();
+
+        self.create_node_inner(raw_node, name, "log_softmax", vec![parent])
+    }
+
+    /// 创建 SoftPlus 节点（方案 C 新 API）
+    ///
+    /// SoftPlus: f(x) = ln(1 + e^x)，ReLU 的平滑近似
+    pub fn create_softplus_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::SoftPlus;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let softplus = SoftPlus::new_from_shapes(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = softplus.into();
+
+        self.create_node_inner(raw_node, name, "softplus", vec![parent])
+    }
+
     // ==================== 旧节点创建 API（过渡期保留）====================
 
     /// 添加节点到列表

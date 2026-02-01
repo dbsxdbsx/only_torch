@@ -634,3 +634,128 @@ fn test_leaky_relu_dynamic_batch_backward() {
     );
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_leaky_relu_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+
+    let leaky_relu = inner
+        .borrow_mut()
+        .create_leaky_relu_node(input.clone(), 0.1, Some("leaky_relu"))
+        .unwrap();
+
+    assert_eq!(leaky_relu.shape(), vec![2, 3]);
+    assert_eq!(leaky_relu.name(), Some("leaky_relu"));
+    assert!(!leaky_relu.is_leaf());
+    assert_eq!(leaky_relu.parents().len(), 1);
+}
+
+#[test]
+fn test_create_relu_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+
+    // create_relu_node 是 create_leaky_relu_node(0.0) 的简写
+    let relu = inner
+        .borrow_mut()
+        .create_relu_node(input.clone(), Some("relu"))
+        .unwrap();
+
+    assert_eq!(relu.shape(), vec![2, 3]);
+    assert_eq!(relu.name(), Some("relu"));
+    assert!(!relu.is_leaf());
+}
+
+#[test]
+fn test_create_leaky_relu_node_negative_slope_error() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], None)
+        .unwrap();
+
+    // negative_slope 不能为负数
+    let result = inner
+        .borrow_mut()
+        .create_leaky_relu_node(input, -0.1, None);
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        GraphError::InvalidOperation(msg) => {
+            assert!(msg.contains("negative_slope应为非负数"));
+        }
+        _ => panic!("应该返回 InvalidOperation 错误"),
+    }
+}
+
+#[test]
+fn test_create_leaky_relu_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 测试各种形状都正确保留（节点必须是 2-4 维）
+    let input_2d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 10], None)
+        .unwrap();
+    let relu_2d = inner
+        .borrow_mut()
+        .create_leaky_relu_node(input_2d, 0.01, None)
+        .unwrap();
+    assert_eq!(relu_2d.shape(), vec![3, 10]);
+
+    let input_4d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4, 5], None)
+        .unwrap();
+    let relu_4d = inner
+        .borrow_mut()
+        .create_leaky_relu_node(input_4d, 0.2, None)
+        .unwrap();
+    assert_eq!(relu_4d.shape(), vec![2, 3, 4, 5]);
+}
+
+#[test]
+fn test_create_leaky_relu_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_relu;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let relu = inner
+            .borrow_mut()
+            .create_leaky_relu_node(input, 0.1, None)
+            .unwrap();
+        weak_relu = Rc::downgrade(&relu);
+
+        assert!(weak_relu.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_relu.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

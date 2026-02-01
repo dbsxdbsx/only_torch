@@ -28,31 +28,32 @@ pub(crate) struct SoftPlus {
 }
 
 impl SoftPlus {
+    /// 从父节点形状信息创建 SoftPlus 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shape: &[usize],
+        parent_dynamic_shape: &DynamicShape,
+    ) -> Result<Self, GraphError> {
+        Ok(Self {
+            id: None,
+            name: None,
+            value: None,
+            grad: None,
+            fixed_shape: parent_shape.to_vec(),
+            dynamic_shape: parent_dynamic_shape.clone(),
+            supports_dynamic: parent_dynamic_shape.has_dynamic_dims(),
+        })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
     pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        // 1. 必要的验证
-        // 1.1 父节点数量验证
         if parents.len() != 1 {
             return Err(GraphError::InvalidOperation(
                 "SoftPlus节点只需要1个父节点".to_string(),
             ));
         }
 
-        // 2. 从父节点继承动态形状信息
         let parent = &parents[0];
-        let fixed_shape = parent.value_expected_shape().to_vec();
-        let dynamic_shape = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
-
-        // 3. 返回
-        Ok(Self {
-            id: None,
-            name: None,
-            value: None,
-            grad: None,
-            fixed_shape,
-            dynamic_shape,
-            supports_dynamic,
-        })
+        Self::new_from_shapes(&parent.value_expected_shape(), &parent.dynamic_expected_shape())
     }
 
     /// 数值稳定的 `SoftPlus` 计算

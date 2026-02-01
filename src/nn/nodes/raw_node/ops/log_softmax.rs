@@ -50,37 +50,43 @@ pub(crate) struct LogSoftmax {
 }
 
 impl LogSoftmax {
-    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "LogSoftmax 节点需要正好 1 个父节点".to_string(),
-            ));
-        }
-
-        // 2. 获取输入形状
-        let parent = &parents[0];
-        let fixed_shape = parent.value_expected_shape().to_vec();
-        if fixed_shape.len() != 2 {
+    /// 从父节点形状信息创建 LogSoftmax 节点（核心实现）
+    pub(in crate::nn) fn new_from_shapes(
+        parent_shape: &[usize],
+        parent_dynamic_shape: &DynamicShape,
+    ) -> Result<Self, GraphError> {
+        // 验证形状：LogSoftmax 需要 2D 输入
+        if parent_shape.len() != 2 {
             return Err(GraphError::InvalidOperation(format!(
-                "LogSoftmax 节点需要 2D 输入 [batch, num_classes]，但得到 {fixed_shape:?}"
+                "LogSoftmax 节点需要 2D 输入 [batch, num_classes]，但得到 {parent_shape:?}"
             )));
         }
-
-        // 3. 从父节点继承动态形状信息
-        let dynamic_shape = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
 
         Ok(Self {
             id: None,
             name: None,
             value: None,
             grad: None,
-            fixed_shape,
-            dynamic_shape,
-            supports_dynamic,
+            fixed_shape: parent_shape.to_vec(),
+            dynamic_shape: parent_dynamic_shape.clone(),
+            supports_dynamic: parent_dynamic_shape.has_dynamic_dims(),
             softmax_cache: None,
         })
+    }
+
+    /// 从 NodeHandle 创建（过渡期 API，委托给 new_from_shapes）
+    pub(crate) fn new(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
+        if parents.len() != 1 {
+            return Err(GraphError::InvalidOperation(
+                "LogSoftmax 节点需要正好 1 个父节点".to_string(),
+            ));
+        }
+
+        let parent = &parents[0];
+        Self::new_from_shapes(
+            &parent.value_expected_shape(),
+            &parent.dynamic_expected_shape(),
+        )
     }
 }
 

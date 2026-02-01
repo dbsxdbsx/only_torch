@@ -503,3 +503,94 @@ fn test_log_softmax_dynamic_batch_backward() {
     graph.zero_grad().unwrap();
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_log_softmax_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+
+    let log_softmax = inner
+        .borrow_mut()
+        .create_log_softmax_node(input.clone(), Some("log_softmax"))
+        .unwrap();
+
+    assert_eq!(log_softmax.shape(), vec![2, 3]);
+    assert_eq!(log_softmax.name(), Some("log_softmax"));
+    assert!(!log_softmax.is_leaf());
+    assert_eq!(log_softmax.parents().len(), 1);
+}
+
+#[test]
+fn test_create_log_softmax_node_requires_2d() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 3D 输入应该失败
+    let input_3d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], None)
+        .unwrap();
+
+    let result = inner.borrow_mut().create_log_softmax_node(input_3d, None);
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        GraphError::InvalidOperation(msg) => {
+            assert!(msg.contains("2D"));
+        }
+        _ => panic!("应该返回 InvalidOperation 错误"),
+    }
+}
+
+#[test]
+fn test_create_log_softmax_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[5, 10], None)
+        .unwrap();
+    let log_softmax = inner
+        .borrow_mut()
+        .create_log_softmax_node(input, None)
+        .unwrap();
+    assert_eq!(log_softmax.shape(), vec![5, 10]);
+}
+
+#[test]
+fn test_create_log_softmax_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_log_softmax;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let log_softmax = inner
+            .borrow_mut()
+            .create_log_softmax_node(input, None)
+            .unwrap();
+        weak_log_softmax = Rc::downgrade(&log_softmax);
+
+        assert!(weak_log_softmax.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_log_softmax.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}

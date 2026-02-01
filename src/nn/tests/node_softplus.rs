@@ -560,3 +560,106 @@ fn test_softplus_dynamic_batch_backward() {
     );
     loss.backward().unwrap();
 }
+
+// ==================== 方案 C：新节点创建 API 测试 ====================
+
+use crate::nn::Graph;
+use std::rc::Rc;
+
+#[test]
+fn test_create_softplus_node() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("input"))
+        .unwrap();
+
+    let softplus = inner
+        .borrow_mut()
+        .create_softplus_node(input.clone(), Some("softplus"))
+        .unwrap();
+
+    assert_eq!(softplus.shape(), vec![2, 3]);
+    assert_eq!(softplus.name(), Some("softplus"));
+    assert!(!softplus.is_leaf());
+    assert_eq!(softplus.parents().len(), 1);
+}
+
+#[test]
+fn test_create_softplus_node_preserves_shape() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 测试各种形状都正确保留（节点必须是 2-4 维）
+    let input_2d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 10], None)
+        .unwrap();
+    let sp_2d = inner
+        .borrow_mut()
+        .create_softplus_node(input_2d, None)
+        .unwrap();
+    assert_eq!(sp_2d.shape(), vec![3, 10]);
+
+    let input_4d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4, 5], None)
+        .unwrap();
+    let sp_4d = inner
+        .borrow_mut()
+        .create_softplus_node(input_4d, None)
+        .unwrap();
+    assert_eq!(sp_4d.shape(), vec![2, 3, 4, 5]);
+}
+
+#[test]
+fn test_create_softplus_node_chain() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 测试连续两个 softplus
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], None)
+        .unwrap();
+    let sp1 = inner
+        .borrow_mut()
+        .create_softplus_node(input, None)
+        .unwrap();
+    let sp2 = inner
+        .borrow_mut()
+        .create_softplus_node(sp1.clone(), None)
+        .unwrap();
+
+    assert_eq!(sp2.shape(), vec![2, 2]);
+    assert_eq!(sp2.parents().len(), 1);
+}
+
+#[test]
+fn test_create_softplus_node_drop_releases() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let weak_softplus;
+    let weak_input;
+    {
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
+        weak_input = Rc::downgrade(&input);
+
+        let softplus = inner
+            .borrow_mut()
+            .create_softplus_node(input, None)
+            .unwrap();
+        weak_softplus = Rc::downgrade(&softplus);
+
+        assert!(weak_softplus.upgrade().is_some());
+        assert!(weak_input.upgrade().is_some());
+    }
+    assert!(weak_softplus.upgrade().is_none());
+    assert!(weak_input.upgrade().is_none());
+}
