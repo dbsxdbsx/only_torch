@@ -238,10 +238,7 @@ impl GraphInner {
     /// 获取指定名称的参数
     ///
     /// 如果参数存在且仍有效，返回其强引用
-    pub fn get_parameter(
-        &self,
-        name: &str,
-    ) -> Option<std::rc::Rc<crate::nn::nodes::NodeInner>> {
+    pub fn get_parameter(&self, name: &str) -> Option<std::rc::Rc<crate::nn::nodes::NodeInner>> {
         self.parameters.get(name).and_then(|weak| weak.upgrade())
     }
 
@@ -262,7 +259,10 @@ impl GraphInner {
 
     /// 获取有效参数的数量（过滤掉已失效的）
     pub fn valid_parameters_count(&self) -> usize {
-        self.parameters.values().filter(|w| w.upgrade().is_some()).count()
+        self.parameters
+            .values()
+            .filter(|w| w.upgrade().is_some())
+            .count()
     }
 
     /// 清理已失效的参数引用
@@ -276,7 +276,10 @@ impl GraphInner {
 
     /// 检查参数是否已注册
     pub fn has_parameter(&self, name: &str) -> bool {
-        self.parameters.get(name).map(|w| w.upgrade().is_some()).unwrap_or(false)
+        self.parameters
+            .get(name)
+            .map(|w| w.upgrade().is_some())
+            .unwrap_or(false)
     }
 
     // ========== 旧的参数访问 API（过渡期保留）==========
@@ -512,6 +515,82 @@ impl GraphInner {
         node.forward_recursive(pass_id, is_training)?;
         self.last_forward_pass_id = pass_id;
         Ok(())
+    }
+
+    /// 通过 NodeInner 进行反向传播（方案 C）
+    ///
+    /// 与旧 `backward()` 方法不同，此方法直接使用 `Rc<NodeInner>` 的拓扑逆序反向传播，
+    /// 不依赖 GraphInner 中存储的节点。
+    ///
+    /// # 参数
+    /// - `node`: loss 节点
+    /// - `retain_graph`: 是否保留计算图（默认 false，释放中间结果）
+    ///
+    /// # 返回
+    /// - `Ok(loss_scalar)`: 反向传播成功，返回 loss 标量值
+    /// - `Err(GraphError)`: 反向传播失败
+    ///
+    /// # 注意
+    /// - 当前不支持 BPTT（循环网络），BPTT 功能将在后续版本评估
+    /// - 如果检测到 step_history 非空，会发出警告
+    pub fn backward_via_node_inner(
+        &mut self,
+        node: &std::rc::Rc<crate::nn::nodes::NodeInner>,
+        retain_graph: bool,
+    ) -> Result<f32, GraphError> {
+        use crate::tensor::Tensor;
+
+        // 1. 检查训练模式
+        if !self.is_train_mode() {
+            eprintln!("[only_torch 警告] 在 no_grad/eval 模式下调用 backward，这通常是误用。");
+        }
+
+        // 2. 检查 BPTT（当前不支持）
+        if !self.step_history.is_empty() && !self.recurrent_edges.is_empty() {
+            eprintln!(
+                "[only_torch 警告] 检测到循环网络结构，但 backward_via_node_inner 当前不支持 BPTT。\
+                 请使用旧路径 backward() 或等待后续版本。"
+            );
+        }
+
+        // 3. 获取 loss 值并验证
+        let loss_value = node.value().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "损失节点 {}[{}] 没有值，请先执行 forward",
+                node.type_name(),
+                node.id()
+            ))
+        })?;
+
+        if loss_value.size() != 1 {
+            return Err(GraphError::InvalidOperation(format!(
+                "反向传播要求损失为标量（size=1），但得到 shape={:?}",
+                loss_value.shape()
+            )));
+        }
+
+        let loss_scalar = loss_value.get_data_number().ok_or_else(|| {
+            GraphError::ComputationError(format!(
+                "无法从损失节点获取标量值，形状: {:?}",
+                loss_value.shape()
+            ))
+        })?;
+
+        // 4. 设置 loss 梯度为 1
+        let loss_grad = Tensor::ones(&[1, 1]);
+        node.set_grad(Some(&loss_grad))?;
+
+        // 5. 执行反向传播
+        let pass_id = self.last_backward_pass_id + 1;
+        node.backward_propagate(pass_id)?;
+        self.last_backward_pass_id = pass_id;
+
+        // 6. 释放中间结果（如果需要）
+        if !retain_graph {
+            self.release_intermediate_results()?;
+        }
+
+        Ok(loss_scalar)
     }
 
     /// 释放中间节点的值和梯度

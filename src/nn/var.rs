@@ -372,15 +372,24 @@ impl Var {
     /// # 返回值
     /// 返回 loss 的标量值
     ///
-    /// 注意：过渡期仍使用 GraphInner 的反向传播逻辑
-    /// 方案 C 完成后将改为基于 parents 遍历
+    /// 过渡期：优先使用新的 NodeInner 路径，回退到旧路径
     pub fn backward_ex(&self, retain_graph: bool) -> Result<f32, GraphError> {
-        let mut g = self.graph.borrow_mut();
-        let id = self.node_id();
-        // ensure-forward：先执行前向传播
-        g.forward(id)?;
-        // 然后执行反向传播
-        g.backward_ex(id, retain_graph)
+        if let Some(ref node) = self.node {
+            // 方案 C 新路径：通过 NodeInner 反向传播
+            let mut g = self.graph.borrow_mut();
+            // ensure-forward：先执行前向传播
+            g.forward_via_node_inner(node)?;
+            // 然后执行反向传播
+            g.backward_via_node_inner(node, retain_graph)
+        } else {
+            // 旧路径：通过 GraphInner 反向传播
+            let mut g = self.graph.borrow_mut();
+            let id = self.node_id();
+            // ensure-forward：先执行前向传播
+            g.forward(id)?;
+            // 然后执行反向传播
+            g.backward_ex(id, retain_graph)
+        }
     }
 
     // ==================== 值访问和设置 ====================
@@ -413,7 +422,9 @@ impl Var {
 
     /// 获取标量值（假设是 1x1 Tensor）
     pub fn item(&self) -> Result<f32, GraphError> {
-        let val = self.value()?.ok_or(GraphError::NodeNotFound(self.node_id()))?;
+        let val = self
+            .value()?
+            .ok_or(GraphError::NodeNotFound(self.node_id()))?;
         val.get_data_number()
             .ok_or_else(|| GraphError::InvalidOperation("Tensor 不是标量".to_string()))
     }
@@ -468,10 +479,10 @@ impl Var {
                 "不能对来自不同 Graph 的 Var 进行乘法".to_string(),
             ));
         }
-        let id = self
-            .graph
-            .borrow_mut()
-            .new_multiply_node(self.node_id(), other.node_id(), None)?;
+        let id =
+            self.graph
+                .borrow_mut()
+                .new_multiply_node(self.node_id(), other.node_id(), None)?;
         Ok(Self::new(id, Rc::clone(&self.graph)))
     }
 

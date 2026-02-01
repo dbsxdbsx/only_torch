@@ -885,10 +885,10 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - `backward_topo_order()`: 从 loss 开始，DFS 收集节点列表
   - 遍历列表，逐个调用 `propagate_grad_to_parents()`
   - 使用 `last_backward_pass_id` 避免重复处理
-- [ ] **2.6.4** GraphInner 集成新反向传播
+- [x] **2.6.4** GraphInner 集成新反向传播
   - 新增 `backward_via_node_inner(&Rc<NodeInner>)` 方法
   - 过渡期：保留旧 `backward()` 方法
-- [ ] **2.6.5** Var.backward() 过渡适配
+- [x] **2.6.5** Var.backward() 过渡适配
   - 如果 `self.node` 存在，使用 `backward_via_node_inner()`
   - 否则回退到旧实现
 - [ ] **2.6.6** zero_grad 适配
