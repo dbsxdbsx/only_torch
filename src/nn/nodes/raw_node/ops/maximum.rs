@@ -8,7 +8,7 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::nodes::NodeId;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -64,49 +64,6 @@ impl Maximum {
         // 是否支持动态 batch
         let supports_dynamic = a_dynamic_shape.dims().first() == Some(&None)
             || b_dynamic_shape.dims().first() == Some(&None);
-
-        Ok(Self {
-            id: None,
-            name: None,
-            value: None,
-            grad: None,
-            fixed_shape,
-            dynamic_shape,
-            supports_dynamic,
-        })
-    }
-
-
-    #[deprecated(note = "保留旧 API 签名，委托给 new")]
-    #[allow(dead_code)]
-    fn _new_legacy(parents: &[&NodeHandle]) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量（需要 2 个）
-        if parents.len() != 2 {
-            return Err(GraphError::InvalidOperation(
-                "Maximum 节点需要 2 个父节点".to_string(),
-            ));
-        }
-
-        let a_shape = parents[0].value_expected_shape();
-        let b_shape = parents[1].value_expected_shape();
-
-        // 2. 计算广播后的形状
-        let fixed_shape = broadcast_shape(a_shape, b_shape).ok_or_else(|| {
-            GraphError::ShapeMismatch {
-                expected: a_shape.to_vec(),
-                got: b_shape.to_vec(),
-                message: "Maximum 节点的父节点形状无法广播".to_string(),
-            }
-        })?;
-
-        // 3. 动态形状
-        let a_dyn = parents[0].dynamic_expected_shape();
-        let b_dyn = parents[1].dynamic_expected_shape();
-        let dynamic_shape = a_dyn.broadcast_with(&b_dyn);
-
-        // 4. 是否支持动态 batch
-        let supports_dynamic =
-            parents[0].supports_dynamic_batch() || parents[1].supports_dynamic_batch();
 
         Ok(Self {
             id: None,

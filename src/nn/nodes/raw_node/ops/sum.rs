@@ -14,7 +14,7 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::nodes::NodeId;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -93,80 +93,6 @@ impl Sum {
 
         // 是否支持动态 batch
         let supports_dynamic = input_dynamic_shape.dims().first() == Some(&None);
-
-        Ok(Self {
-            id: None,
-            name: None,
-            value: None,
-            grad: None,
-            axis,
-            fixed_shape,
-            dynamic_shape,
-            supports_dynamic,
-            input_shape_cache: None,
-        })
-    }
-
-
-    #[deprecated(note = "保留旧 API 签名，委托给 new")]
-    pub(crate) fn _new_legacy(parents: &[&NodeHandle], axis: Option<usize>) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Sum 节点需要正好 1 个父节点".to_string(),
-            ));
-        }
-
-        // 2. 获取输入形状
-        let parent = &parents[0];
-        let input_shape = parent.value_expected_shape();
-
-        // 3. 验证 axis 有效性
-        if let Some(ax) = axis {
-            if ax >= input_shape.len() {
-                return Err(GraphError::InvalidOperation(format!(
-                    "Sum: axis {} 超出输入维度范围 {}",
-                    ax,
-                    input_shape.len()
-                )));
-            }
-        }
-
-        // 4. 计算输出形状
-        let fixed_shape = match axis {
-            None => vec![1, 1], // 全局求和
-            Some(ax) => {
-                // 按轴求和，keepdims=true
-                let mut shape = input_shape.to_vec();
-                shape[ax] = 1;
-                shape
-            }
-        };
-
-        // 5. 处理动态形状
-        let parent_dynamic = parent.dynamic_expected_shape();
-        let supports_dynamic = parent.supports_dynamic_batch();
-
-        let dynamic_shape = match axis {
-            None => {
-                // 全局求和输出固定 [1, 1]
-                DynamicShape::fixed(&[1, 1])
-            }
-            Some(ax) => {
-                // 按轴求和，保持除 axis 外的动态性
-                // 第 axis 维变为固定 1
-                let dims: Vec<Option<usize>> = (0..input_shape.len())
-                    .map(|i| {
-                        if i == ax {
-                            Some(1) // 被求和的维度变为固定 1
-                        } else {
-                            parent_dynamic.dim(i) // 保持原有动态性
-                        }
-                    })
-                    .collect();
-                DynamicShape::new(&dims)
-            }
-        };
 
         Ok(Self {
             id: None,

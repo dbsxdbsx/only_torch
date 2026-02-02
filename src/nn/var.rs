@@ -503,7 +503,10 @@ impl Var {
         // 生成节点
         for node in &nodes {
             let id = node.id().0;
-            let name = node.name().map(|s| s.to_string()).unwrap_or_else(|| format!("node_{}", id));
+            let name = node
+                .name()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("node_{}", id));
             let node_type = node.type_name();
             let shape = node.value_expected_shape();
             let shape_str = format!("{:?}", shape);
@@ -513,8 +516,13 @@ impl Var {
                 "Input" | "SmartInput" | "RecurrentOutput" => ("ellipse", "#E3F2FD"),
                 "Parameter" => ("box", "#E8F5E9"),
                 "ZerosLike" => ("ellipse", "#F3E5F5"),
-                t if t.contains("Loss") || t.contains("BCE") || t.contains("MSE") 
-                    || t.contains("MAE") || t.contains("Huber") || t.contains("CrossEntropy") => {
+                t if t.contains("Loss")
+                    || t.contains("BCE")
+                    || t.contains("MSE")
+                    || t.contains("MAE")
+                    || t.contains("Huber")
+                    || t.contains("CrossEntropy") =>
+                {
                     ("doubleoctagon", "#FFEBEE")
                 }
                 _ => ("box", "#FFFDE7"),
@@ -567,12 +575,10 @@ impl Var {
         let dot_content = Self::vars_to_dot(vars);
 
         // 保存 .dot 文件
-        let mut file = File::create(&dot_path).map_err(|e| {
-            GraphError::ComputationError(format!("无法创建 DOT 文件: {}", e))
-        })?;
-        file.write_all(dot_content.as_bytes()).map_err(|e| {
-            GraphError::ComputationError(format!("写入 DOT 文件失败: {}", e))
-        })?;
+        let mut file = File::create(&dot_path)
+            .map_err(|e| GraphError::ComputationError(format!("无法创建 DOT 文件: {}", e)))?;
+        file.write_all(dot_content.as_bytes())
+            .map_err(|e| GraphError::ComputationError(format!("写入 DOT 文件失败: {}", e)))?;
 
         // 尝试用 Graphviz 生成 PNG
         let graphviz_available = Command::new("dot")

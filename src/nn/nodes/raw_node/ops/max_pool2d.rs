@@ -16,7 +16,7 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::nodes::NodeId;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;

@@ -8,7 +8,7 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::raw_node::TraitNode;
-use crate::nn::nodes::{NodeHandle, NodeId};
+use crate::nn::nodes::NodeId;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -76,63 +76,6 @@ impl Amin {
 
         // 是否支持动态 batch
         let supports_dynamic = input_dynamic_shape.dims().first() == Some(&None);
-
-        Ok(Self {
-            id: None,
-            name: None,
-            value: None,
-            grad: None,
-            axis,
-            fixed_shape,
-            dynamic_shape,
-            supports_dynamic,
-        })
-    }
-
-
-    #[deprecated(note = "保留旧 API 签名，委托给 new")]
-    #[allow(dead_code)]
-    fn _new_legacy(parents: &[&NodeHandle], axis: usize) -> Result<Self, GraphError> {
-        // 1. 验证父节点数量（需要 1 个）
-        if parents.len() != 1 {
-            return Err(GraphError::InvalidOperation(
-                "Amin 节点需要 1 个父节点".to_string(),
-            ));
-        }
-
-        let input_shape = parents[0].value_expected_shape();
-
-        // 2. 验证 axis 有效
-        if axis >= input_shape.len() {
-            return Err(GraphError::InvalidOperation(format!(
-                "Amin: axis {} 超出输入维度 {}",
-                axis,
-                input_shape.len()
-            )));
-        }
-
-        // 3. 计算 reduction 后的形状（移除指定轴）
-        let mut fixed_shape: Vec<usize> = input_shape.to_vec();
-        fixed_shape.remove(axis);
-
-        // 如果结果是标量，至少保留一个维度
-        if fixed_shape.is_empty() {
-            fixed_shape.push(1);
-        }
-
-        // 4. 动态形状（也需要移除指定轴）
-        let parent_dynamic = parents[0].dynamic_expected_shape();
-        let mut dynamic_dims: Vec<_> = parent_dynamic.dims().to_vec();
-        if axis < dynamic_dims.len() {
-            dynamic_dims.remove(axis);
-        }
-        if dynamic_dims.is_empty() {
-            dynamic_dims.push(Some(1)); // Dim = Option<usize>，Some(n) 表示固定值
-        }
-        let dynamic_shape = DynamicShape::new(&dynamic_dims);
-
-        // 5. 是否支持动态 batch
-        let supports_dynamic = parents[0].supports_dynamic_batch();
 
         Ok(Self {
             id: None,

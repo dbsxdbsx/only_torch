@@ -278,7 +278,7 @@ define_node_types! {
     },
 }
 
-use super::{GraphError, NodeHandle, NodeId};
+use super::{GraphError, NodeId};
 use crate::nn::format_node_display;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;

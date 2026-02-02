@@ -27,9 +27,6 @@ impl GraphInner {
     pub fn new_with_seed(seed: u64) -> Self {
         Self {
             name: "default_graph".to_string(),
-            nodes: HashMap::new(),
-            forward_edges: HashMap::new(),
-            backward_edges: HashMap::new(),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
@@ -41,7 +38,7 @@ impl GraphInner {
             prev_values: HashMap::new(),
             time_step: 0,
             step_history: Vec::new(),
-            parameters: HashMap::new(), // 方案 C 新增
+            parameters: HashMap::new(),
             #[cfg(test)]
             bptt_debug: false,
         }
@@ -51,9 +48,6 @@ impl GraphInner {
     pub fn with_name_and_seed(name: &str, seed: u64) -> Self {
         Self {
             name: name.to_string(),
-            nodes: HashMap::new(),
-            forward_edges: HashMap::new(),
-            backward_edges: HashMap::new(),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
@@ -65,7 +59,7 @@ impl GraphInner {
             prev_values: HashMap::new(),
             time_step: 0,
             step_history: Vec::new(),
-            parameters: HashMap::new(), // 方案 C 新增
+            parameters: HashMap::new(),
             #[cfg(test)]
             bptt_debug: false,
         }
@@ -74,9 +68,6 @@ impl GraphInner {
     pub fn with_name(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            nodes: HashMap::new(),
-            forward_edges: HashMap::new(),
-            backward_edges: HashMap::new(),
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
@@ -88,7 +79,7 @@ impl GraphInner {
             prev_values: HashMap::new(),
             time_step: 0,
             step_history: Vec::new(),
-            parameters: HashMap::new(), // 方案 C 新增
+            parameters: HashMap::new(),
             #[cfg(test)]
             bptt_debug: false,
         }

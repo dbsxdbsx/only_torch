@@ -11,7 +11,7 @@
 use super::super::error::GraphError;
 use super::GraphInner;
 use crate::nn::NodeId;
-use crate::nn::nodes::{NodeHandle, NodeInner, NodeType};
+use crate::nn::nodes::{NodeInner, NodeType};
 use std::rc::Rc;
 
 impl GraphInner {
@@ -48,29 +48,10 @@ impl GraphInner {
         // 创建 NodeInner
         let node_inner = Rc::new(NodeInner::new(
             node_id,
-            Some(node_name.clone()),
-            raw_node.clone(),
-            parents.clone(),
+            Some(node_name),
+            raw_node,
+            parents,
         ));
-
-        // 过渡期：设置边（供旧代码的可视化等功能使用）
-        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
-        for &parent_id in &parent_ids {
-            self.forward_edges
-                .entry(parent_id)
-                .or_default()
-                .push(node_id);
-        }
-        self.backward_edges
-            .entry(node_id)
-            .or_default()
-            .extend(&parent_ids);
-
-        // 过渡期：同时注册 NodeHandle 到 nodes HashMap
-        // 这样旧的 forward(node_id) API 仍然可以工作
-        let mut node_handle = NodeHandle::new(raw_node)?;
-        node_handle.bind_id_and_name(node_id, &node_name);
-        self.nodes.insert(node_id, node_handle);
 
         Ok(node_inner)
     }

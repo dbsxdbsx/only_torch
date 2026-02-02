@@ -4,7 +4,7 @@
  * @Description  : Graph 句柄（用户级 API）
  */
 
-use super::error::{GraphError, ImageFormat, VisualizationOutput};
+use super::error::GraphError;
 use super::inner::GraphInner;
 use crate::nn::var::{Init, Var};
 use crate::tensor::Tensor;
@@ -66,9 +66,12 @@ impl Graph {
         Rc::clone(&self.inner)
     }
 
-    /// 获取当前节点数量（用于调试）
-    pub fn node_count(&self) -> usize {
-        self.inner.borrow().nodes.len()
+    /// 获取注册的参数数量
+    ///
+    /// 返回通过 `register_parameter()` 注册且仍存活的参数数量。
+    /// Phase 3 后不再跟踪所有节点，只跟踪参数。
+    pub fn parameter_count(&self) -> usize {
+        self.inner.borrow().get_all_parameters().len()
     }
 
     // ==================== 创建变量 ====================
@@ -247,15 +250,11 @@ impl Graph {
 
     // ==================== 可视化 ====================
 
-    /// 保存计算图可视化
-    pub fn save_visualization<P: AsRef<std::path::Path>>(
-        &self,
-        base_path: P,
-        format: Option<ImageFormat>,
-    ) -> Result<VisualizationOutput, GraphError> {
-        self.inner.borrow_mut().infer_recurrent_layer_groups();
-        self.inner.borrow().save_visualization(base_path, format)
-    }
+    // Phase 3: save_visualization() 已移除
+    // 新的可视化功能请使用 Var::save_visualization() 或 Var::to_dot()
+    // 示例：
+    //   let output = model.forward(&input)?;
+    //   output.save_visualization("model")?;
 }
 
 impl Default for Graph {

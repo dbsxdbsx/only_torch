@@ -32,7 +32,6 @@ mod visualization;
 
 use super::types::{LayerGroup, RecurrentLayerMeta, StepSnapshot};
 use crate::nn::NodeId;
-use crate::nn::nodes::NodeHandle;
 use crate::nn::nodes::NodeInner;
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;
@@ -49,12 +48,6 @@ use std::rc::Weak;
 /// - `parameters` 是新的参数注册表（弱引用，不控制生命周期）
 pub struct GraphInner {
     pub(in crate::nn::graph) name: String,
-    /// 节点存储（过渡期保留，最终会被移除）
-    pub(in crate::nn::graph) nodes: HashMap<NodeId, NodeHandle>,
-    /// `正向边：parent_id` -> `child_ids（父节点指向子节点`）
-    pub(in crate::nn::graph) forward_edges: HashMap<NodeId, Vec<NodeId>>,
-    /// `反向边：child_id` -> `parent_ids（子节点指向父节点`）
-    pub(in crate::nn::graph) backward_edges: HashMap<NodeId, Vec<NodeId>>,
     /// 最后一次前向传播的 id
     pub(in crate::nn::graph) last_forward_pass_id: u64,
     /// 最后一次反向传播的 id
@@ -62,7 +55,7 @@ pub struct GraphInner {
     pub(in crate::nn::graph) next_id: u64,
     pub(in crate::nn::graph) is_eval_mode: bool,
 
-    // ========== 方案 C 新增字段 ==========
+    // ========== 方案 C 字段 ==========
     /// 参数注册表（弱引用，不控制参数生命周期）
     ///
     /// - key: 参数名称（如 "linear1.weight"）

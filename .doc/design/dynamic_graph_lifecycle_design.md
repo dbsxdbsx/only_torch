@@ -967,8 +967,8 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [x] 删除 `bptt.rs` 和 `recurrent.rs`（已废弃，新架构使用展开式 RNN）
 - [x] 适配 `serialization.rs` 使用 parameters 注册表
 - [x] 适配 `visualization.rs` 辅助方法（过渡期使用 nodes HashMap）
-- [ ] 移除 `nodes: HashMap<NodeId, NodeHandle>`（Phase 3 后移除，describe/visualization 依赖）
-- [ ] 移除 `forward_edges`, `backward_edges`（Phase 3 后移除，describe/visualization 依赖）
+- [x] 移除 `nodes: HashMap<NodeId, NodeHandle>`（Phase 3 完成）
+- [x] 移除 `forward_edges`, `backward_edges`（Phase 3 完成）
 
 **2.7.4 节点类型清理**：
 - [x] 移除操作节点的 `new(&[&NodeHandle])` 过渡方法（约 30 个文件）
@@ -977,10 +977,9 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - `calc_value_by_parents()` 桥接
   - `calc_grad_to_parent()` 桥接
   - 所有 `new_xxx()` 工厂方法
-- [ ] **删除 `NodeHandle` 结构体**（`src/nn/nodes/node_handle.rs`）
+- [x] **删除 `NodeHandle` 结构体**（`src/nn/nodes/node_handle.rs`）
   - `NodeInner` 已完全取代其职责
-  - 暂时保留供 `nodes` HashMap 使用（describe/visualization 依赖）
-  - Phase 3 后与 `nodes` 字段一起移除
+  - Phase 3 完成删除
 
 **2.7.5 验证**：
 - [ ] 回归测试：所有现有单元测试通过
@@ -996,7 +995,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 - [ ] detach 后子图隔离：验证梯度不穿透 detach 边界
 - [ ] Graph 销毁后 Var 操作：验证 `Weak` 失效时正确 **panic**（见 4.7 节决策）
 
-### Phase 3：功能适配
+### Phase 3：功能适配 ✅ 完成
 
 - [x] **删除** `src/nn/model_state.rs`（完全移除）
 - [x] **删除** `src/nn/criterion.rs`（完全移除，统一用 Var 方法）
@@ -1010,6 +1009,10 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
   - [x] 评估传统 BPTT 机制（`step()` + `connect_recurrent()`）→ **决定废弃**
     - 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
     - `bptt.rs` 和 `recurrent.rs` 已在 2.7.3 删除
+- [x] 移除 `GraphInner` 的 `nodes`/`forward_edges`/`backward_edges` 字段
+- [x] 删除 `NodeHandle` 结构体（`src/nn/nodes/node_handle.rs`）
+- [x] 移除 `GraphInner` 的旧可视化方法（`to_dot`/`save_visualization`）
+- [x] 简化 `describe.rs`/`model_io.rs`（移除对 nodes 的依赖）
 
 ### Phase 4：验证与文档
 
