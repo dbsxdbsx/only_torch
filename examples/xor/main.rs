@@ -76,8 +76,7 @@ fn main() -> Result<(), GraphError> {
             .iter()
             .map(|inp| {
                 let out = model.forward(inp).unwrap();
-                // 需要显式触发前向传播计算值
-                out.forward().unwrap();
+                // value() 会自动触发 forward，无需手动调用
                 out.value().ok().flatten().unwrap().argmax(1)[[0]] as usize
             })
             .collect();
@@ -94,7 +93,7 @@ fn main() -> Result<(), GraphError> {
     println!("\n=== 预测结果 ===");
     for (input, label) in inputs.iter().zip(labels.iter()) {
         let output = model.forward(input)?;
-        output.forward()?; // 触发前向计算
+        // value() 会自动触发 forward
         let pred_tensor = output.value()?.unwrap();
         let pred = pred_tensor.argmax(1).get_data_number().unwrap() as i32;
         let expected = label.argmax(1).get_data_number().unwrap() as i32;
@@ -115,6 +114,9 @@ fn main() -> Result<(), GraphError> {
         println!("\n计算图已保存: {}", vis_result.dot_path.display());
         if let Some(img_path) = &vis_result.image_path {
             println!("可视化图像: {}", img_path.display());
+        }
+        if let Some(hint) = &vis_result.graphviz_hint {
+            println!("Graphviz 提示: {}", hint);
         }
     }
 

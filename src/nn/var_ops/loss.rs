@@ -40,13 +40,15 @@ impl LossTarget for Var {
 
 impl LossTarget for &Tensor {
     fn into_var(self, source: &Var) -> Var {
-        source.tensor_to_var(self)
+        // 使用 TargetInput 节点，在可视化中显示为橙色椭圆
+        source.tensor_to_target_var(self)
     }
 }
 
 impl LossTarget for Tensor {
     fn into_var(self, source: &Var) -> Var {
-        source.tensor_to_var(&self)
+        // 使用 TargetInput 节点，在可视化中显示为橙色椭圆
+        source.tensor_to_target_var(&self)
     }
 }
 

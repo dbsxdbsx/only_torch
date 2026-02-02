@@ -324,7 +324,15 @@ impl Var {
     // ==================== 值访问和设置 ====================
 
     /// 获取节点的值（克隆的 Tensor）
+    ///
+    /// # 自动 forward 语义
+    /// 如果节点尚未计算（value 为 None），会自动触发前向传播。
+    /// 这让用户无需手动调用 `forward()` 即可直接获取值。
     pub fn value(&self) -> Result<Option<Tensor>, GraphError> {
+        // 如果值还没计算，自动触发 forward
+        if self.node.value().is_none() {
+            self.forward()?;
+        }
         Ok(self.node.value())
     }
 
@@ -468,7 +476,11 @@ impl Var {
 
     /// 内部方法：从多个 Var 生成 DOT 格式
     fn vars_to_dot(vars: &[&Self]) -> String {
-        use std::collections::{HashSet, VecDeque};
+        use std::collections::{HashMap, HashSet, VecDeque};
+
+        if vars.is_empty() {
+            return "digraph ComputeGraph {}\n".to_string();
+        }
 
         // 1. 收集所有节点（BFS 遍历 parents）
         let mut visited: HashSet<NodeId> = HashSet::new();
@@ -493,29 +505,72 @@ impl Var {
             }
         }
 
-        // 2. 生成 DOT 格式
-        let mut dot = String::new();
-        dot.push_str("digraph ComputeGraph {\n");
-        dot.push_str("    rankdir=TB;\n");
-        dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
-        dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n\n");
+        // 2. 获取层分组信息（从图中）
+        let layer_groups = vars[0]
+            .graph
+            .upgrade()
+            .map(|g| g.borrow().layer_groups().to_vec())
+            .unwrap_or_default();
 
-        // 生成节点
-        for node in &nodes {
+        // 收集已分组的节点 ID -> 所属层索引
+        let mut node_to_group: HashMap<u64, usize> = HashMap::new();
+        for (group_idx, group) in layer_groups.iter().enumerate() {
+            for node_id in &group.node_ids {
+                // 只记录在当前可视化范围内的节点
+                if visited.contains(node_id) {
+                    node_to_group.insert(node_id.0, group_idx);
+                }
+            }
+        }
+
+        // 层分组颜色（交替使用不同颜色）
+        let group_colors = ["#E3F2FD80", "#E8F5E980", "#FFF3E080", "#F3E5F580"];
+
+        // 节点定义生成闭包
+        let generate_node_def = |node: &Rc<NodeInner>| -> String {
             let id = node.id().0;
+            let node_type = node.type_name();
             let name = node
                 .name()
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("node_{}", id));
-            let node_type = node.type_name();
+                .unwrap_or_else(|| node_type.to_lowercase());
             let shape = node.value_expected_shape();
-            let shape_str = format!("{:?}", shape);
+
+            // 形状字符串：Parameter 显示固定形状，其他节点第一维显示为 ? (batch 维度)
+            let shape_str = if node_type == "Parameter" || shape.is_empty() {
+                format!("{:?}", shape)
+            } else {
+                let dims: Vec<String> = shape
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &d)| {
+                        if i == 0 {
+                            "?".to_string()
+                        } else {
+                            d.to_string()
+                        }
+                    })
+                    .collect();
+                format!("[{}]", dims.join(", "))
+            };
+
+            // Parameter 节点显示参数数量
+            let param_count_str = if node_type == "Parameter" && !shape.is_empty() {
+                let count: usize = shape.iter().product();
+                format!("<BR/>({} params)", count)
+            } else {
+                String::new()
+            };
 
             // 根据节点类型选择样式
-            let (node_shape, fill_color) = match node_type.as_str() {
-                "Input" | "SmartInput" | "RecurrentOutput" => ("ellipse", "#E3F2FD"),
-                "Parameter" => ("box", "#E8F5E9"),
-                "ZerosLike" => ("ellipse", "#F3E5F5"),
+            let (node_shape, style, fill_color) = match node_type.as_str() {
+                "Input" | "BasicInput" => ("ellipse", "filled", "#E3F2FD"),
+                "SmartInput" | "RecurrentOutput" => ("ellipse", "filled", "#E0E0E0"),
+                "TargetInput" => ("ellipse", "filled", "#FFE0B2"),
+                "State" => ("cylinder", "filled", "#FFE0B2"),
+                "Identity" => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
+                "Parameter" => ("box", "filled", "#E8F5E9"),
+                "ZerosLike" => ("box", "\"filled,rounded,dashed\"", "#FFFDE7"),
                 t if t.contains("Loss")
                     || t.contains("BCE")
                     || t.contains("MSE")
@@ -523,25 +578,84 @@ impl Var {
                     || t.contains("Huber")
                     || t.contains("CrossEntropy") =>
                 {
-                    ("doubleoctagon", "#FFEBEE")
+                    ("octagon", "filled", "#FFEBEE")
                 }
-                _ => ("box", "#FFFDE7"),
+                "Sigmoid" | "Tanh" | "ReLU" | "LeakyReLU" | "Sign" | "SoftPlus" | "Step"
+                | "Softmax" => ("diamond", "filled", "#FFF3E0"),
+                _ => ("box", "\"filled,rounded\"", "#FFFDE7"),
             };
 
+            format!(
+                "\"{}\" [label=<{}<BR/><B>{}</B><BR/>{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
+                id, name, node_type, shape_str, param_count_str, node_shape, style, fill_color
+            )
+        };
+
+        // 3. 生成 DOT 格式
+        let mut dot = String::new();
+        dot.push_str("digraph ComputeGraph {\n");
+        dot.push_str("    rankdir=TB;\n");
+        dot.push_str("    newrank=true;\n");
+        dot.push_str("    splines=polyline;\n");
+        dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
+        dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n\n");
+
+        // 4. 输出层分组（cluster）
+        for (group_idx, group) in layer_groups.iter().enumerate() {
+            // 检查该层是否有节点在当前可视化范围内
+            let group_node_ids: Vec<u64> = group
+                .node_ids
+                .iter()
+                .filter(|id| visited.contains(id))
+                .map(|id| id.0)
+                .collect();
+
+            if group_node_ids.is_empty() {
+                continue;
+            }
+
+            let cluster_color = group_colors[group_idx % group_colors.len()];
             dot.push_str(&format!(
-                "    n{} [label=\"{}\\n{}\\n{}\", shape={}, style=filled, fillcolor=\"{}\"];\n",
-                id, name, node_type, shape_str, node_shape, fill_color
+                "    subgraph cluster_{} {{\n",
+                group.name.replace(['-', '.'], "_")
             ));
+            dot.push_str(&format!(
+                "        label=<<B>{}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
+                group.name, group.layer_type, group.description
+            ));
+            dot.push_str("        style=filled;\n");
+            dot.push_str(&format!("        fillcolor=\"{}\";\n", cluster_color));
+            dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+            dot.push_str("        fontsize=11;\n");
+            dot.push_str("        margin=12;\n");
+
+            // 在 cluster 内定义节点
+            for node in &nodes {
+                if group_node_ids.contains(&node.id().0) {
+                    dot.push_str("            ");
+                    dot.push_str(&generate_node_def(node));
+                }
+            }
+
+            dot.push_str("    }\n\n");
+        }
+
+        // 5. 输出未分组的节点
+        for node in &nodes {
+            if !node_to_group.contains_key(&node.id().0) {
+                dot.push_str("    ");
+                dot.push_str(&generate_node_def(node));
+            }
         }
 
         dot.push('\n');
 
-        // 生成边（父节点 -> 子节点）
+        // 6. 生成边（父节点 -> 子节点）
         for node in &nodes {
             let child_id = node.id().0;
             for parent in node.parents() {
                 let parent_id = parent.id().0;
-                dot.push_str(&format!("    n{} -> n{};\n", parent_id, child_id));
+                dot.push_str(&format!("    \"{}\" -> \"{}\";\n", parent_id, child_id));
             }
         }
 
@@ -575,10 +689,16 @@ impl Var {
         let dot_content = Self::vars_to_dot(vars);
 
         // 保存 .dot 文件
-        let mut file = File::create(&dot_path)
-            .map_err(|e| GraphError::ComputationError(format!("无法创建 DOT 文件: {}", e)))?;
-        file.write_all(dot_content.as_bytes())
-            .map_err(|e| GraphError::ComputationError(format!("写入 DOT 文件失败: {}", e)))?;
+        {
+            let mut file = File::create(&dot_path)
+                .map_err(|e| GraphError::ComputationError(format!("无法创建 DOT 文件: {}", e)))?;
+            file.write_all(dot_content.as_bytes())
+                .map_err(|e| GraphError::ComputationError(format!("写入 DOT 文件失败: {}", e)))?;
+            // 确保文件内容刷新到磁盘
+            file.sync_all()
+                .map_err(|e| GraphError::ComputationError(format!("同步 DOT 文件失败: {}", e)))?;
+            // file 在此作用域结束时会被自动关闭
+        }
 
         // 尝试用 Graphviz 生成 PNG
         let graphviz_available = Command::new("dot")
@@ -602,11 +722,30 @@ impl Var {
                     graphviz_available: true,
                     graphviz_hint: None,
                 }),
-                _ => Ok(super::VisualizationOutput {
+                Ok(o) => {
+                    // 执行失败，提取错误信息
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    let hint = if stderr.is_empty() {
+                        format!("Graphviz 执行失败 (exit: {:?})", o.status.code())
+                    } else {
+                        format!(
+                            "Graphviz 执行失败 (exit: {:?}): {}",
+                            o.status.code(),
+                            stderr.trim()
+                        )
+                    };
+                    Ok(super::VisualizationOutput {
+                        dot_path,
+                        image_path: None,
+                        graphviz_available: true,
+                        graphviz_hint: Some(hint),
+                    })
+                }
+                Err(e) => Ok(super::VisualizationOutput {
                     dot_path,
                     image_path: None,
                     graphviz_available: true,
-                    graphviz_hint: Some("Graphviz 执行失败".to_string()),
+                    graphviz_hint: Some(format!("无法执行 Graphviz: {}", e)),
                 }),
             }
         } else {
@@ -775,13 +914,27 @@ impl Var {
     /// 将 Tensor 转换为 Var（内部辅助方法）
     ///
     /// 在 Graph 中创建一个 BasicInput 节点并设置值。
-    /// 用于 Var-Tensor 混合运算和 Loss 函数的 Tensor 版本。
+    /// 用于 Var-Tensor 混合运算（如加减乘除）。
     pub(crate) fn tensor_to_var(&self, tensor: &Tensor) -> Self {
         let graph = self.graph();
         let node = graph
             .borrow_mut()
             .create_basic_input_node(tensor.shape(), None)
             .expect("创建 Tensor->Var 转换节点失败");
+        node.set_value(Some(tensor)).expect("设置 Tensor 值失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    /// 将 Tensor 转换为 TargetInput 类型的 Var（用于损失函数的目标值）
+    ///
+    /// 与 `tensor_to_var` 的区别：创建 TargetInput 节点而非普通 Input，
+    /// 在可视化中显示为橙色椭圆，便于区分模型输入和损失目标。
+    pub(crate) fn tensor_to_target_var(&self, tensor: &Tensor) -> Self {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_target_input_node(tensor.shape(), None)
+            .expect("创建 TargetInput 节点失败");
         node.set_value(Some(tensor)).expect("设置 Tensor 值失败");
         Self::new_with_rc_graph(node, &graph)
     }

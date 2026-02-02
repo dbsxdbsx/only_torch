@@ -91,6 +91,14 @@ pub struct GraphInner {
     /// BPTT 调试标志（仅用于调试）
     #[cfg(test)]
     pub(in crate::nn::graph) bptt_debug: bool,
+
+    // ========== 动态图节点命名 ==========
+    /// 节点类型计数器：用于同批次内区分同类型节点
+    /// key: 节点类型字符串, value: 当前计数
+    pub(in crate::nn::graph) node_type_counts: HashMap<String, u64>,
+    /// 上次重置计数器时的 forward_pass_id
+    /// 当 forward 完成后，下一次创建节点时会检测到 pass_id 变化并重置计数器
+    pub(in crate::nn::graph) counts_reset_pass_id: u64,
 }
 
 impl Default for GraphInner {

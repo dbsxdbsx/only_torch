@@ -41,6 +41,8 @@ impl GraphInner {
             parameters: HashMap::new(),
             #[cfg(test)]
             bptt_debug: false,
+            node_type_counts: HashMap::new(),
+            counts_reset_pass_id: 0,
         }
     }
 
@@ -62,6 +64,8 @@ impl GraphInner {
             parameters: HashMap::new(),
             #[cfg(test)]
             bptt_debug: false,
+            node_type_counts: HashMap::new(),
+            counts_reset_pass_id: 0,
         }
     }
 
@@ -82,6 +86,8 @@ impl GraphInner {
             parameters: HashMap::new(),
             #[cfg(test)]
             bptt_debug: false,
+            node_type_counts: HashMap::new(),
+            counts_reset_pass_id: 0,
         }
     }
 

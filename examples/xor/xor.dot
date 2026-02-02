@@ -1,30 +1,50 @@
 digraph ComputeGraph {
     rankdir=TB;
+    newrank=true;
+    splines=polyline;
     node [fontname="Microsoft YaHei,SimHei,Arial"];
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
-    n820 [label="softmax_ce_820\nSoftmaxCrossEntropy\n[1, 1]", shape=doubleoctagon, style=filled, fillcolor="#FFEBEE"];
-    n818 [label="add_818\nAdd\n[1, 2]", shape=box, style=filled, fillcolor="#FFFDE7"];
-    n819 [label="input_819\nInput\n[1, 2]", shape=ellipse, style=filled, fillcolor="#E3F2FD"];
-    n817 [label="matmul_817\nMatMul\n[1, 2]", shape=box, style=filled, fillcolor="#FFFDE7"];
-    n4 [label="fc2_b\nParameter\n[1, 2]", shape=box, style=filled, fillcolor="#E8F5E9"];
-    n816 [label="tanh_816\nTanh\n[1, 4]", shape=box, style=filled, fillcolor="#FFFDE7"];
-    n3 [label="fc2_W\nParameter\n[4, 2]", shape=box, style=filled, fillcolor="#E8F5E9"];
-    n815 [label="add_815\nAdd\n[1, 4]", shape=box, style=filled, fillcolor="#FFFDE7"];
-    n814 [label="matmul_814\nMatMul\n[1, 4]", shape=box, style=filled, fillcolor="#FFFDE7"];
-    n2 [label="fc1_b\nParameter\n[1, 4]", shape=box, style=filled, fillcolor="#E8F5E9"];
-    n813 [label="input_813\nInput\n[1, 2]", shape=ellipse, style=filled, fillcolor="#E3F2FD"];
-    n1 [label="fc1_W\nParameter\n[2, 4]", shape=box, style=filled, fillcolor="#E8F5E9"];
+    subgraph cluster_fc1 {
+        label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: [?, 2] → [?, 4]</FONT>>;
+        style=filled;
+        fillcolor="#E3F2FD80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "815" [label=<add_1<BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "814" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "2" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[2, 4]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
 
-    n818 -> n820;
-    n819 -> n820;
-    n817 -> n818;
-    n4 -> n818;
-    n816 -> n817;
-    n3 -> n817;
-    n815 -> n816;
-    n814 -> n815;
-    n2 -> n815;
-    n813 -> n814;
-    n1 -> n814;
+    subgraph cluster_fc2 {
+        label=<<B>fc2</B><BR/><FONT POINT-SIZE="9">Linear: [?, 4] → [?, 2]</FONT>>;
+        style=filled;
+        fillcolor="#E8F5E980";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "818" [label=<add_2<BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "817" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "4" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[4, 2]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    "820" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "819" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "816" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "813" [label=<input_1<BR/><B>Input</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+
+    "818" -> "820";
+    "819" -> "820";
+    "817" -> "818";
+    "4" -> "818";
+    "816" -> "817";
+    "3" -> "817";
+    "815" -> "816";
+    "814" -> "815";
+    "2" -> "815";
+    "813" -> "814";
+    "1" -> "814";
 }

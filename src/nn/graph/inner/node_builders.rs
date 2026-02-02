@@ -37,21 +37,33 @@ impl GraphInner {
         node_type_str: &str,
         parents: Vec<Rc<NodeInner>>,
     ) -> Result<Rc<NodeInner>, GraphError> {
-        // 生成 ID 和名称
+        // 生成 ID
         let node_id = self.generate_valid_node_id();
-        // 方案 C 简化：直接使用提供的名称或 {type}_{id} 格式
+
+        // 动态图节点命名：
+        // - 用户指定名字：直接使用
+        // - 自动命名：{type}_{批次内计数}，如 input_1, matmul_1
+        //   计数器在每次 forward 完成后重置，确保同逻辑位置节点名字稳定
         let node_name = match name {
             Some(n) if !n.is_empty() => n.to_string(),
-            _ => format!("{}_{}", node_type_str, node_id.0),
+            _ => {
+                // 检查是否需要重置计数器（新批次开始）
+                if self.last_forward_pass_id != self.counts_reset_pass_id {
+                    self.node_type_counts.clear();
+                    self.counts_reset_pass_id = self.last_forward_pass_id;
+                }
+                // 递增该类型的计数
+                let count = self
+                    .node_type_counts
+                    .entry(node_type_str.to_string())
+                    .or_insert(0);
+                *count += 1;
+                format!("{}_{}", node_type_str, *count)
+            }
         };
 
         // 创建 NodeInner
-        let node_inner = Rc::new(NodeInner::new(
-            node_id,
-            Some(node_name),
-            raw_node,
-            parents,
-        ));
+        let node_inner = Rc::new(NodeInner::new(node_id, Some(node_name), raw_node, parents));
 
         Ok(node_inner)
     }
@@ -224,8 +236,7 @@ impl GraphInner {
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
         // 2. 使用 new 创建 Subtract 节点
-        let subtract =
-            Subtract::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+        let subtract = Subtract::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
         let raw_node: NodeType = subtract.into();
 
         // 3. 创建 NodeInner 并注册
@@ -250,8 +261,7 @@ impl GraphInner {
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
         // 2. 使用 new 创建 Multiply 节点
-        let multiply =
-            Multiply::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+        let multiply = Multiply::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
         let raw_node: NodeType = multiply.into();
 
         // 3. 创建 NodeInner 并注册
@@ -276,8 +286,7 @@ impl GraphInner {
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
         // 2. 使用 new 创建 Divide 节点
-        let divide =
-            Divide::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+        let divide = Divide::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
         let raw_node: NodeType = divide.into();
 
         // 3. 创建 NodeInner 并注册
@@ -302,8 +311,7 @@ impl GraphInner {
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
         // 2. 使用 new 创建 MatMul 节点
-        let mat_mul =
-            MatMul::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
+        let mat_mul = MatMul::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids)?;
         let raw_node: NodeType = mat_mul.into();
 
         // 3. 创建 NodeInner 并注册
@@ -369,8 +377,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let max_pool =
-            MaxPool2d::new(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
+        let max_pool = MaxPool2d::new(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
         let raw_node: NodeType = max_pool.into();
 
         self.create_node_inner(raw_node, name, "maxpool2d", vec![parent])
@@ -397,8 +404,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let avg_pool =
-            AvgPool2d::new(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
+        let avg_pool = AvgPool2d::new(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
         let raw_node: NodeType = avg_pool.into();
 
         self.create_node_inner(raw_node, name, "avgpool2d", vec![parent])
@@ -420,8 +426,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let flatten =
-            Flatten::new(&parent_shape, &parent_dynamic_shape, keep_first_dim)?;
+        let flatten = Flatten::new(&parent_shape, &parent_dynamic_shape, keep_first_dim)?;
         let raw_node: NodeType = flatten.into();
 
         self.create_node_inner(raw_node, name, "flatten", vec![parent])
@@ -586,8 +591,7 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let leaky_relu =
-            LeakyReLU::new(&parent_shape, &parent_dynamic_shape, negative_slope)?;
+        let leaky_relu = LeakyReLU::new(&parent_shape, &parent_dynamic_shape, negative_slope)?;
         let raw_node: NodeType = leaky_relu.into();
 
         self.create_node_inner(raw_node, name, "leaky_relu", vec![parent])
@@ -972,8 +976,7 @@ impl GraphInner {
         let a_dynamic_shape = a.dynamic_shape();
         let b_dynamic_shape = b.dynamic_shape();
 
-        let maximum =
-            Maximum::new(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
+        let maximum = Maximum::new(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
         let raw_node: NodeType = maximum.into();
 
         self.create_node_inner(raw_node, name, "maximum", vec![a, b])
@@ -995,8 +998,7 @@ impl GraphInner {
         let a_dynamic_shape = a.dynamic_shape();
         let b_dynamic_shape = b.dynamic_shape();
 
-        let minimum =
-            Minimum::new(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
+        let minimum = Minimum::new(&a_shape, &b_shape, &a_dynamic_shape, &b_dynamic_shape)?;
         let raw_node: NodeType = minimum.into();
 
         self.create_node_inner(raw_node, name, "minimum", vec![a, b])
