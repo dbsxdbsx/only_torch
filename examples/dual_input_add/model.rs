@@ -19,7 +19,6 @@ pub struct DualInputAdder {
     fc1: Linear,
     fc2: Linear,
     fc_out: Linear,
-    graph: Graph,
 }
 
 impl DualInputAdder {
@@ -28,16 +27,13 @@ impl DualInputAdder {
             fc1: Linear::new(graph, 1, 4, true, "fc1")?,
             fc2: Linear::new(graph, 1, 4, true, "fc2")?,
             fc_out: Linear::new(graph, 8, 1, true, "fc_out")?,
-            graph: graph.clone(),
         })
     }
 
     /// 双输入 forward：接收两个 Tensor，预测它们的和
     pub fn forward(&self, x1: &Tensor, x2: &Tensor) -> Result<Var, GraphError> {
-        let a = self.graph.input(x1)?;
-        let b = self.graph.input(x2)?;
-        let h1 = self.fc1.forward(&a).relu();
-        let h2 = self.fc2.forward(&b).relu();
+        let h1 = self.fc1.forward(x1).relu();
+        let h2 = self.fc2.forward(x2).relu();
         // 拼接两个分支的特征
         let combined = Var::stack(&[&h1, &h2], 1, false)?;
         Ok(self.fc_out.forward(&combined))

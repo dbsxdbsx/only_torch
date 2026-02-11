@@ -10,7 +10,7 @@
  * 计算：output = x @ W + b
  */
 
-use crate::nn::{Graph, GraphError, Init, Module, Var, VarMatrixOps};
+use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var, VarMatrixOps};
 
 // ==================== 新版 Linear 结构体（推荐）====================
 
@@ -97,14 +97,18 @@ impl Linear {
     /// 计算 `x @ W + b`
     ///
     /// # 参数
-    /// - `x`: 输入 Var，形状 [`batch_size`, `in_features`]
+    /// - `x`: 输入，支持 `&Tensor`、`Tensor`、`&Var`、`Var`（自动转换）
     ///
     /// # 返回
     /// 输出 Var，形状 [`batch_size`, `out_features`]
     ///
     /// # Panics
     /// 如果输入形状不匹配
-    pub fn forward(&self, x: &Var) -> Var {
+    pub fn forward(&self, x: impl IntoVar) -> Var {
+        // 自动将 Tensor 转为 Var（从 weights 获取 Graph）
+        let x = x
+            .into_var(&self.weights.get_graph())
+            .expect("Linear 输入转换失败");
         // x @ W: [batch, in] @ [in, out] = [batch, out]
         let xw = x.matmul(&self.weights).expect("Linear matmul 失败");
 

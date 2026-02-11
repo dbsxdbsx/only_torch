@@ -12,8 +12,8 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "5321" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "5320" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3197" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3196" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "2" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
             "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[8, 128]<BR/>(1,024 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
@@ -25,8 +25,8 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "5324" [label=<add_2<BR/><B>Add</B><BR/>[?, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "5323" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3200" [label=<add_2<BR/><B>Add</B><BR/>[?, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3199" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "4" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 64]<BR/>(64 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
             "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 64]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
@@ -38,8 +38,8 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "5327" [label=<add_3<BR/><B>Add</B><BR/>[?, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "5326" [label=<matmul_3<BR/><B>MatMul</B><BR/>[?, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3203" [label=<add_3<BR/><B>Add</B><BR/>[?, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3202" [label=<matmul_3<BR/><B>MatMul</B><BR/>[?, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "6" [label=<fc3_b<BR/><B>Parameter</B><BR/>[1, 32]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
             "5" [label=<fc3_W<BR/><B>Parameter</B><BR/>[64, 32]<BR/>(2,048 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
@@ -51,38 +51,38 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "5330" [label=<add_4<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "5329" [label=<matmul_4<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3206" [label=<add_4<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3205" [label=<matmul_4<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "8" [label=<fc4_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
             "7" [label=<fc4_W<BR/><B>Parameter</B><BR/>[32, 1]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
-    "5332" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
-    "5331" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "5328" [label=<softplus_3<BR/><B>SoftPlus</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "5325" [label=<softplus_2<BR/><B>SoftPlus</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "5322" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "5319" [label=<input_1<BR/><B>Input</B><BR/>[?, 8]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "3208" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "3207" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "3204" [label=<softplus_3<BR/><B>SoftPlus</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "3201" [label=<softplus_2<BR/><B>SoftPlus</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "3198" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "3195" [label=<input_1<BR/><B>Input</B><BR/>[?, 8]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
-    "5330" -> "5332";
-    "5331" -> "5332";
-    "5329" -> "5330";
-    "8" -> "5330";
-    "5328" -> "5329";
-    "7" -> "5329";
-    "5327" -> "5328";
-    "5326" -> "5327";
-    "6" -> "5327";
-    "5325" -> "5326";
-    "5" -> "5326";
-    "5324" -> "5325";
-    "5323" -> "5324";
-    "4" -> "5324";
-    "5322" -> "5323";
-    "3" -> "5323";
-    "5321" -> "5322";
-    "5320" -> "5321";
-    "2" -> "5321";
-    "5319" -> "5320";
-    "1" -> "5320";
+    "3206" -> "3208";
+    "3207" -> "3208";
+    "3205" -> "3206";
+    "8" -> "3206";
+    "3204" -> "3205";
+    "7" -> "3205";
+    "3203" -> "3204";
+    "3202" -> "3203";
+    "6" -> "3203";
+    "3201" -> "3202";
+    "5" -> "3202";
+    "3200" -> "3201";
+    "3199" -> "3200";
+    "4" -> "3200";
+    "3198" -> "3199";
+    "3" -> "3199";
+    "3197" -> "3198";
+    "3196" -> "3197";
+    "2" -> "3197";
+    "3195" -> "3196";
+    "1" -> "3196";
 }

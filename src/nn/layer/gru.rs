@@ -21,7 +21,7 @@
  */
 
 use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
-use crate::nn::{Graph, GraphError, Init, Module, Var};
+use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
 /// Gru (门控循环单元) 层 - 展开式设计（无缓存）
 ///
@@ -168,7 +168,10 @@ impl Gru {
     ///
     /// # 返回
     /// 最后一个时间步的隐藏状态 Var，形状 [`batch_size`, `hidden_size`]
-    pub fn forward(&self, x: &Var) -> Result<Var, GraphError> {
+    pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let x = x
+            .into_var(&self.w_ir.get_graph())
+            .expect("Gru 输入转换失败");
         // 使用实际值的形状（支持动态 batch）
         let value = x
             .value()?
@@ -192,7 +195,7 @@ impl Gru {
         }
 
         // 每次都重新展开（无缓存设计）
-        self.unroll(x, seq_len)
+        self.unroll(&x, seq_len)
     }
 
     /// 展开 GRU 时间步

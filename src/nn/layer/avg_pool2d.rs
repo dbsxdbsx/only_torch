@@ -12,7 +12,8 @@
  * W' = (W - kernel_w) / stride_w + 1
  */
 
-use crate::nn::Var;
+use crate::nn::graph::Graph;
+use crate::nn::{IntoVar, Var};
 
 // ==================== 新版 AvgPool2d 结构体（推荐）====================
 
@@ -32,10 +33,12 @@ use crate::nn::Var;
 ///
 /// # 使用示例
 /// ```ignore
-/// let pool = AvgPool2d::new((2, 2), None, "pool1");
+/// let pool = AvgPool2d::new(&graph, (2, 2), None, "pool1");
 /// let h = pool.forward(&x);  // 下采样
 /// ```
 pub struct AvgPool2d {
+    /// Graph 引用（用于 IntoVar 转换）
+    graph: Graph,
     /// 池化窗口大小 (`kernel_h`, `kernel_w`)
     kernel_size: (usize, usize),
     /// 步长 (`stride_h`, `stride_w)，None` 时等于 `kernel_size`
@@ -48,14 +51,18 @@ impl AvgPool2d {
     /// 创建新的 `AvgPool2d` 层
     ///
     /// # 参数
+    /// - `graph`: 计算图句柄
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
     /// - `stride`: 步长 (sH, sW)，若为 None 则默认等于 `kernel_size`
     /// - `name`: 层名称前缀
-    ///
-    /// # 返回
-    /// `AvgPool2d` 层实例
-    pub fn new(kernel_size: (usize, usize), stride: Option<(usize, usize)>, name: &str) -> Self {
+    pub fn new(
+        graph: &Graph,
+        kernel_size: (usize, usize),
+        stride: Option<(usize, usize)>,
+        name: &str,
+    ) -> Self {
         Self {
+            graph: graph.clone(),
             kernel_size,
             stride,
             name: name.to_string(),
@@ -65,11 +72,14 @@ impl AvgPool2d {
     /// 前向传播
     ///
     /// # 参数
-    /// - `x`: 输入 Var，形状 [`batch_size`, channels, H, W]
+    /// - `x`: 输入，支持 `&Tensor`、`&Var` 等（自动转换）
     ///
     /// # 返回
     /// 输出 Var，形状 [`batch_size`, channels, H', W']
-    pub fn forward(&self, x: &Var) -> Var {
+    pub fn forward(&self, x: impl IntoVar) -> Var {
+        let x = x
+            .into_var(&self.graph)
+            .expect("AvgPool2d 输入转换失败");
         let graph = x.get_graph();
         let node = graph
             .inner_mut()

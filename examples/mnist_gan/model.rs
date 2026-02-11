@@ -14,6 +14,7 @@
  */
 
 use only_torch::nn::{Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps};
+use only_torch::tensor::Tensor;
 
 /// 噪声维度（latent space）
 pub const LATENT_DIM: usize = 64;
@@ -27,7 +28,6 @@ const HIDDEN_DIM: usize = 128;
 /// 将随机噪声转换为 28x28 的图像
 /// 结构：z(64) -> FC(128, LeakyReLU) -> FC(784, Sigmoid)
 pub struct Generator {
-    graph: Graph,
     fc1: Linear,
     fc2: Linear,
 }
@@ -37,7 +37,6 @@ impl Generator {
         // with_model_name: 可视化时自动将层分组到 "Generator" cluster 内
         let graph = graph.with_model_name("Generator");
         Ok(Self {
-            graph: graph.clone(),
             fc1: Linear::new(&graph, LATENT_DIM, HIDDEN_DIM, true, "fc1")?,
             fc2: Linear::new(&graph, HIDDEN_DIM, IMAGE_DIM, true, "fc2")?,
         })
@@ -45,11 +44,10 @@ impl Generator {
 
     /// 前向传播
     ///
-    /// 输入: [batch, LATENT_DIM] 的噪声（Tensor 或 Var）
+    /// 输入: [batch, LATENT_DIM] 的噪声（Tensor）
     /// 输出: [batch, IMAGE_DIM] 的生成图像 Var（值域 [0, 1]）
-    pub fn forward(&self, z: impl IntoVar) -> Result<Var, GraphError> {
-        let input = z.into_var(&self.graph)?;
-        let h1 = self.fc1.forward(&input).leaky_relu(0.2);
+    pub fn forward(&self, z: &Tensor) -> Result<Var, GraphError> {
+        let h1 = self.fc1.forward(z).leaky_relu(0.2);
         let out = self.fc2.forward(&h1).sigmoid();
         Ok(out)
     }
@@ -66,7 +64,6 @@ impl Module for Generator {
 /// 判断输入图像是真实的还是生成的
 /// 结构：image(784) -> FC(128, LeakyReLU) -> FC(1, Sigmoid)
 pub struct Discriminator {
-    graph: Graph,
     fc1: Linear,
     fc2: Linear,
 }
@@ -75,7 +72,6 @@ impl Discriminator {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
         let graph = graph.with_model_name("Discriminator");
         Ok(Self {
-            graph: graph.clone(),
             fc1: Linear::new(&graph, IMAGE_DIM, HIDDEN_DIM, true, "fc1")?,
             fc2: Linear::new(&graph, HIDDEN_DIM, 1, true, "fc2")?,
         })
@@ -86,8 +82,7 @@ impl Discriminator {
     /// 输入: [batch, IMAGE_DIM] 的图像（Tensor 或 Var 均可）
     /// 输出: [batch, 1] 的判别概率（经过 sigmoid，值域 [0, 1]）
     pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
-        let input = x.into_var(&self.graph)?;
-        let h1 = self.fc1.forward(&input).leaky_relu(0.2);
+        let h1 = self.fc1.forward(x).leaky_relu(0.2);
         let out = self.fc2.forward(&h1).sigmoid();
         Ok(out)
     }

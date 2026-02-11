@@ -11,7 +11,6 @@ use only_torch::tensor::Tensor;
 pub struct SineMLP {
     fc1: Linear,
     fc2: Linear,
-    graph: Graph,
 }
 
 impl SineMLP {
@@ -19,14 +18,12 @@ impl SineMLP {
         Ok(Self {
             fc1: Linear::new(graph, 1, 32, true, "fc1")?,
             fc2: Linear::new(graph, 32, 1, true, "fc2")?,
-            graph: graph.clone(),
         })
     }
 
     /// `PyTorch` 风格 forward：直接接收 Tensor
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        Ok(self.fc2.forward(&self.fc1.forward(&input).tanh()))
+        Ok(self.fc2.forward(&self.fc1.forward(x).tanh()))
     }
 }
 

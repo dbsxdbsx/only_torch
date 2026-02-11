@@ -14,7 +14,6 @@ pub struct CaliforniaHousingMLP {
     fc2: Linear,
     fc3: Linear,
     fc4: Linear,
-    graph: Graph,
 }
 
 impl CaliforniaHousingMLP {
@@ -28,7 +27,6 @@ impl CaliforniaHousingMLP {
             fc2: Linear::new(graph, 128, 64, true, "fc2")?,
             fc3: Linear::new(graph, 64, 32, true, "fc3")?,
             fc4: Linear::new(graph, 32, 1, true, "fc4")?,
-            graph: graph.clone(),
         })
     }
 
@@ -40,8 +38,7 @@ impl CaliforniaHousingMLP {
     /// # 返回
     /// 预测房价，形状 `[batch, 1]`
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        let a1 = self.fc1.forward(&input).softplus();
+        let a1 = self.fc1.forward(x).softplus();
         let a2 = self.fc2.forward(&a1).softplus();
         let a3 = self.fc3.forward(&a2).softplus();
         Ok(self.fc4.forward(&a3))

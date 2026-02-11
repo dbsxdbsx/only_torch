@@ -12,7 +12,6 @@ use only_torch::tensor::Tensor;
 
 /// XOR 多层感知机
 pub struct XorMLP {
-    graph: Graph,
     fc1: Linear,
     fc2: Linear,
 }
@@ -20,16 +19,14 @@ pub struct XorMLP {
 impl XorMLP {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
         Ok(Self {
-            graph: graph.clone(),
             fc1: Linear::new(graph, 2, 4, true, "fc1")?,
             fc2: Linear::new(graph, 4, 2, true, "fc2")?,
         })
     }
 
-    /// PyTorch 风格 forward：接收 &Tensor，返回 Var
+    /// PyTorch 风格 forward：接收 &Tensor，Linear 自动转为 Var
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        let h1 = self.fc1.forward(&input).tanh();
+        let h1 = self.fc1.forward(x).tanh(); // Linear 内部自动 Tensor → Var
         let out = self.fc2.forward(&h1);
         Ok(out)
     }

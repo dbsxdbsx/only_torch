@@ -31,8 +31,6 @@ pub struct MultiIOFusion {
     cls_head: Linear,
     /// 回归头
     reg_head: Linear,
-    /// 计算图
-    graph: Graph,
 }
 
 impl MultiIOFusion {
@@ -54,7 +52,6 @@ impl MultiIOFusion {
             fusion,
             cls_head,
             reg_head,
-            graph: graph.clone(),
         })
     }
 
@@ -68,11 +65,9 @@ impl MultiIOFusion {
     /// - `cls_logits`: 分类 logits `[batch, 2]`
     /// - `reg_pred`: 回归预测 `[batch, 1]`
     pub fn forward(&self, input_a: &Tensor, input_b: &Tensor) -> Result<(Var, Var), GraphError> {
-        let a = self.graph.input(input_a)?;
-        let b = self.graph.input(input_b)?;
         // 分别编码两个输入
-        let feat_a = self.encoder_a.forward(&a).relu();
-        let feat_b = self.encoder_b.forward(&b).relu();
+        let feat_a = self.encoder_a.forward(input_a).relu();
+        let feat_b = self.encoder_b.forward(input_b).relu();
 
         // 拼接特征 [batch, 8] + [batch, 8] -> [batch, 16]
         let combined = Var::stack(&[&feat_a, &feat_b], 1, false)?;

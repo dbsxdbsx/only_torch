@@ -27,8 +27,6 @@ pub struct DualOutputClassifier {
     cls_head: Linear,
     /// 回归头（预测绝对值）
     reg_head: Linear,
-    /// 计算图
-    graph: Graph,
 }
 
 impl DualOutputClassifier {
@@ -44,7 +42,6 @@ impl DualOutputClassifier {
             shared,
             cls_head,
             reg_head,
-            graph: graph.clone(),
         })
     }
 
@@ -54,9 +51,8 @@ impl DualOutputClassifier {
     /// - `cls_logits`: 分类 logits `[batch, 2]`
     /// - `reg_pred`: 回归预测 `[batch, 1]`
     pub fn forward(&self, x: &Tensor) -> Result<(Var, Var), GraphError> {
-        let input = self.graph.input(x)?;
         // 共享特征提取（使用 tanh 保留正负信息）
-        let feat = self.shared.forward(&input).tanh();
+        let feat = self.shared.forward(x).tanh();
 
         // 分类头（二分类 logits）
         let cls_logits = self.cls_head.forward(&feat);

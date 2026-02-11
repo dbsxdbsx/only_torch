@@ -26,8 +26,6 @@ pub struct SiameseSimilarity {
     encoder: Linear,
     /// 分类器（判断是否相似）
     classifier: Linear,
-    /// 计算图
-    graph: Graph,
 }
 
 impl SiameseSimilarity {
@@ -40,17 +38,14 @@ impl SiameseSimilarity {
         Ok(Self {
             encoder,
             classifier,
-            graph: graph.clone(),
         })
     }
 
     /// 双输入 forward（验证共享编码器）
     pub fn forward(&self, x1: &Tensor, x2: &Tensor) -> Result<Var, GraphError> {
-        let a = self.graph.input(x1)?;
-        let b = self.graph.input(x2)?;
         // 两个输入经过**同一个**编码器（共享参数）
-        let feat1 = self.encoder.forward(&a).relu();
-        let feat2 = self.encoder.forward(&b).relu();
+        let feat1 = self.encoder.forward(x1).relu();
+        let feat2 = self.encoder.forward(x2).relu();
 
         // 拼接两个特征向量
         let combined = Var::stack(&[&feat1, &feat2], 1, false)?;

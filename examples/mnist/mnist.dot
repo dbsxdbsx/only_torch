@@ -12,8 +12,8 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "3808" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "3807" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "2722" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "2721" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "2" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
             "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
@@ -25,28 +25,28 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "3812" [label=<add_2<BR/><B>Add</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "3811" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "2726" [label=<add_2<BR/><B>Add</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "2725" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "4" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 10]<BR/>(10 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
             "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 10]<BR/>(1,280 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
-    "3814" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
-    "3813" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 10]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "3810" [label=<dropout_1<BR/><B>Dropout</B><BR/>[?, 128]<BR/>(p=0.3)> shape=diamond style=filled fillcolor="#E1BEE7" fontsize=10];
-    "3809" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "3806" [label=<input_1<BR/><B>Input</B><BR/>[?, 784]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "2728" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "2727" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 10]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "2724" [label=<dropout_1<BR/><B>Dropout</B><BR/>[?, 128]<BR/>(p=0.3)> shape=diamond style=filled fillcolor="#E1BEE7" fontsize=10];
+    "2723" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "2720" [label=<input_1<BR/><B>Input</B><BR/>[?, 784]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
-    "3812" -> "3814";
-    "3813" -> "3814";
-    "3811" -> "3812";
-    "4" -> "3812";
-    "3810" -> "3811";
-    "3" -> "3811";
-    "3809" -> "3810";
-    "3808" -> "3809";
-    "3807" -> "3808";
-    "2" -> "3808";
-    "3806" -> "3807";
-    "1" -> "3807";
+    "2726" -> "2728";
+    "2727" -> "2728";
+    "2725" -> "2726";
+    "4" -> "2726";
+    "2724" -> "2725";
+    "3" -> "2725";
+    "2723" -> "2724";
+    "2722" -> "2723";
+    "2721" -> "2722";
+    "2" -> "2722";
+    "2720" -> "2721";
+    "1" -> "2721";
 }

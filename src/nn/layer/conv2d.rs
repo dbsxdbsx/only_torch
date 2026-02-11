@@ -14,7 +14,7 @@
  * 计算：output = conv2d(x, K) + b
  */
 
-use crate::nn::{Graph, GraphError, Init, Module, Var};
+use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
 // ==================== 新版 Conv2d 结构体（推荐）====================
 
@@ -119,8 +119,11 @@ impl Conv2d {
     ///
     /// # 返回
     /// 输出 Var，形状 [`batch_size`, `out_channels`, H', W']
-    pub fn forward(&self, x: &Var) -> Var {
+    pub fn forward(&self, x: impl IntoVar) -> Var {
         use std::rc::Rc;
+        let x = x
+            .into_var(&self.kernel.get_graph())
+            .expect("Conv2d 输入转换失败");
         let graph = x.get_graph();
 
         // Conv2d: [batch, C_in, H, W] * [C_out, C_in, kH, kW] -> [batch, C_out, H', W']

@@ -12,8 +12,8 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "200334" [label=<add_1<BR/><B>Add</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "200333" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "200333" [label=<add_1<BR/><B>Add</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "200332" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "2" [label=<encoder_a_b<BR/><B>Parameter</B><BR/>[1, 8]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
             "1" [label=<encoder_a_W<BR/><B>Parameter</B><BR/>[4, 8]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
@@ -76,10 +76,10 @@ digraph ComputeGraph {
     "200349" [label=<target_2<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
     "200342" [label=<leaky_relu_3<BR/><B>LeakyReLU</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     "200339" [label=<stack_1<BR/><B>Stack</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "200335" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "200334" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     "200338" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     "200331" [label=<input_1<BR/><B>Input</B><BR/>[?, 4]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "200332" [label=<input_2<BR/><B>Input</B><BR/>[?, 8]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "200335" [label=<input_2<BR/><B>Input</B><BR/>[?, 8]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
     "200344" -> "200348";
     "200347" -> "200348";
@@ -98,16 +98,16 @@ digraph ComputeGraph {
     "6" -> "200341";
     "200339" -> "200340";
     "5" -> "200340";
-    "200335" -> "200339";
+    "200334" -> "200339";
     "200338" -> "200339";
-    "200334" -> "200335";
-    "200337" -> "200338";
     "200333" -> "200334";
-    "2" -> "200334";
+    "200337" -> "200338";
+    "200332" -> "200333";
+    "2" -> "200333";
     "200336" -> "200337";
     "4" -> "200337";
-    "200331" -> "200333";
-    "1" -> "200333";
-    "200332" -> "200336";
+    "200331" -> "200332";
+    "1" -> "200332";
+    "200335" -> "200336";
     "3" -> "200336";
 }

@@ -29,7 +29,6 @@ pub struct MultiLabelPointClassifier {
     fc1: Linear,
     fc2: Linear,
     fc3: Linear,
-    graph: Graph,
 }
 
 impl MultiLabelPointClassifier {
@@ -38,7 +37,6 @@ impl MultiLabelPointClassifier {
             fc1: Linear::new(graph, 2, 32, true, "fc1")?,
             fc2: Linear::new(graph, 32, 32, true, "fc2")?,
             fc3: Linear::new(graph, 32, 4, true, "fc3")?, // 4 个独立的 logits
-            graph: graph.clone(),
         })
     }
 
@@ -49,8 +47,7 @@ impl MultiLabelPointClassifier {
     ///
     /// 注意：BCE Loss 内置 Sigmoid，所以这里输出 logits 而非概率
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        let h1 = self.fc1.forward(&input).tanh();
+        let h1 = self.fc1.forward(x).tanh();
         let h2 = self.fc2.forward(&h1).tanh();
         Ok(self.fc3.forward(&h2))
     }
@@ -59,8 +56,7 @@ impl MultiLabelPointClassifier {
     ///
     /// 对 logits 应用 Sigmoid，返回各属性的概率
     pub fn predict_probs(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        let h1 = self.fc1.forward(&input).tanh();
+        let h1 = self.fc1.forward(x).tanh();
         let h2 = self.fc2.forward(&h1).tanh();
         Ok(self.fc3.forward(&h2).sigmoid())
     }

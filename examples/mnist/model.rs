@@ -20,7 +20,6 @@ use only_torch::tensor::Tensor;
 pub struct MnistMLP {
     fc1: Linear,
     fc2: Linear,
-    graph: Graph,
 }
 
 impl MnistMLP {
@@ -29,7 +28,6 @@ impl MnistMLP {
             // 784 = 28x28 (MNIST 图片展平后的维度)
             fc1: Linear::new(graph, 784, 128, true, "fc1")?,
             fc2: Linear::new(graph, 128, 10, true, "fc2")?,
-            graph: graph.clone(),
         })
     }
 
@@ -37,8 +35,7 @@ impl MnistMLP {
     ///
     /// 注意：包含 Dropout，行为取决于当前模式（train/eval）
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        let h1 = self.fc1.forward(&input).softplus();
+        let h1 = self.fc1.forward(x).softplus();
         let h1 = h1.dropout(0.3)?; // Dropout: 训练时丢弃 30%，评估时直接通过
         Ok(self.fc2.forward(&h1))
     }
