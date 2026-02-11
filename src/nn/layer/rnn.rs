@@ -73,24 +73,31 @@ impl Rnn {
         hidden_size: usize,
         name: &str,
     ) -> Result<Self, GraphError> {
+        // 如果 graph 有 model_name，自动拼接为 "ModelName/layer_name" 格式
+        let full_name = match graph.model_name() {
+            Some(model) => format!("{model}/{name}"),
+            None => name.to_string(),
+        };
+
         // 创建参数节点
         let w_ih = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_ih"),
+            &format!("{full_name}_W_ih"),
         )?;
 
         let w_hh = graph.parameter(
             &[hidden_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_hh"),
+            &format!("{full_name}_W_hh"),
         )?;
 
-        let b_h = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_h"))?;
+        let b_h =
+            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_h"))?;
         // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
         // RNN 每个时间步的节点数：6 (select, matmul_xw, matmul_hw, add1, add2, tanh)
         graph.inner_mut().register_recurrent_layer_meta(
-            name,
+            &full_name,
             "RNN",
             &format!("[?, {input_size}] → [?, {hidden_size}]"),
             vec![w_ih.node_id(), w_hh.node_id(), b_h.node_id()],
@@ -104,7 +111,7 @@ impl Rnn {
             graph: graph.clone(),
             input_size,
             hidden_size,
-            name: name.to_string(),
+            name: full_name,
         })
     }
 

@@ -17,7 +17,7 @@ mod model;
 use model::ParityRNN;
 use only_torch::data::{DataLoader, VarLenDataset, VarLenSample};
 use only_torch::metrics::accuracy;
-use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 
 fn main() -> Result<(), GraphError> {
     println!("=== 变长奇偶性检测（智能缓存 + 分桶批处理）===\n");
@@ -38,7 +38,7 @@ fn main() -> Result<(), GraphError> {
     println!("  隐藏层大小: {hidden_size}");
     println!("  学习率: {lr}");
     println!("  优化器: Adam");
-    println!("  损失函数: CrossEntropyLoss");
+    println!("  损失函数: CrossEntropy");
     println!();
 
     // ========== 数据准备 ==========
@@ -76,9 +76,6 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(seed);
     let model = ParityRNN::new(&graph, hidden_size)?;
 
-    // 损失函数（智能缓存，自动处理不同 output 节点）
-    let criterion = CrossEntropyLoss::new();
-
     // 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), lr);
 
@@ -97,7 +94,7 @@ fn main() -> Result<(), GraphError> {
             // PyTorch 风格训练（与 fixed_len 完全相同！）
             optimizer.zero_grad()?;
             let output = model.forward(&x_batch)?;
-            let loss = criterion.forward(&output, &y_batch)?;
+            let loss = output.cross_entropy(&y_batch)?;
             let loss_val = loss.backward()?;
             optimizer.step()?;
 
@@ -131,12 +128,14 @@ fn main() -> Result<(), GraphError> {
     println!("\n========== 最终结果 ==========");
     println!("测试准确率: {final_accuracy:.1}%");
     println!("最佳准确率: {best_accuracy:.1}%");
-    println!("模型缓存形状数: {}", model.cache_size());
-    println!("Criterion 缓存数: {}", criterion.cache_size());
-
-    // 保存可视化
+    // 保存可视化（从最后一个 loss 回溯）
+    // 做一次 forward 用于可视化
+    // 用测试集的第一个 batch 做可视化
+    let (vis_x, vis_y) = test_loader.iter().next().unwrap();
+    let vis_output = model.forward(&vis_x)?;
+    let vis_loss = vis_output.cross_entropy(&vis_y)?;
     let vis_result =
-        graph.save_visualization("examples/parity_rnn_var_len/parity_rnn_var_len", None)?;
+        vis_loss.save_visualization("examples/parity_rnn_var_len/parity_rnn_var_len")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

@@ -488,6 +488,120 @@ impl Var {
             }
         }
 
+        // === RNN 时间步折叠 ===
+        // 读取循环层元信息，计算需要隐藏的节点和输出重定向
+        let recurrent_metas = vars[0]
+            .graph
+            .upgrade()
+            .map(|g| g.borrow().recurrent_layer_metas().to_vec())
+            .unwrap_or_default();
+
+        // 需要隐藏的节点 ID（步骤 1..N-1 的计算节点）
+        let mut rnn_hidden_ids: HashSet<u64> = HashSet::new();
+        // 输出重定向：real_output → repr_output（最后一步 → 第一步）
+        let mut rnn_output_redirects: HashMap<u64, u64> = HashMap::new();
+        // RNN cluster 信息：(name, layer_type, description, visible_node_ids)
+        let mut rnn_clusters: Vec<(String, String, String, Vec<u64>)> = Vec::new();
+        // RNN 节点标注信息（步数范围：跨所有 forward 调用统计 min~max）
+        let mut rnn_step_ranges: HashMap<u64, (usize, usize)> = HashMap::new(); // 计算节点 → (min, max)
+        let mut rnn_init_state_ids: HashSet<u64> = HashSet::new(); // 初始状态节点(×1)
+        let mut rnn_input_step_ranges: HashMap<u64, (usize, usize)> = HashMap::new(); // input 节点 → 步数范围
+        // RNN 特殊边信息
+        let mut rnn_feedback_edges: Vec<(u64, u64, usize, usize)> = Vec::new(); // (repr_output, init_state, min, max)
+        let mut rnn_init_edges: HashSet<(u64, u64)> = HashSet::new(); // (input, init_state) 橙色虚线
+        let mut rnn_output_repr_step_ranges: HashMap<u64, (usize, usize)> = HashMap::new(); // repr_output → (min, max)
+
+        for meta in &recurrent_metas {
+            // 查找与当前可视化图匹配的展开信息
+            // （visited 中包含该 unroll 的 first_step_start_id）
+            let matching_info = meta
+                .unroll_infos
+                .iter()
+                .rev()
+                .find(|info| visited.contains(&info.first_step_start_id));
+            if let Some(info) = matching_info {
+                if info.steps <= 1 {
+                    continue; // 单步不需要折叠
+                }
+
+                let base = info.first_step_start_id.0;
+                let nps = meta.nodes_per_step;
+
+                // 步骤 1..N-1 的节点全部隐藏
+                for step in 1..info.steps {
+                    for offset in 0..nps {
+                        let hidden_id = base + (step * nps) as u64 + offset as u64;
+                        rnn_hidden_ids.insert(hidden_id);
+                    }
+                }
+
+                // 重定向：最后一步的输出 → 第一步的代表输出
+                if let Some(&repr_id) = info.repr_output_node_ids.first() {
+                    rnn_output_redirects.insert(info.real_output_node_id.0, repr_id.0);
+                }
+
+                // 收集可见的 RNN 节点（参数 + 初始状态 + 第一步计算节点）
+                let mut visible_ids: Vec<u64> = Vec::new();
+                // 参数节点
+                for pid in &meta.param_node_ids {
+                    if visited.contains(pid) {
+                        visible_ids.push(pid.0);
+                    }
+                }
+                // 初始状态节点
+                for sid in &info.init_state_node_ids {
+                    if visited.contains(sid) {
+                        visible_ids.push(sid.0);
+                    }
+                }
+                // 第一步计算节点
+                for offset in 0..nps {
+                    let step0_id = base + offset as u64;
+                    if visited.contains(&NodeId(step0_id)) {
+                        visible_ids.push(step0_id);
+                    }
+                }
+
+                // 计算所有 forward 调用的步数范围（用于标注）
+                let min_steps = meta.unroll_infos.iter().map(|i| i.steps).min().unwrap_or(info.steps);
+                let max_steps = meta.unroll_infos.iter().map(|i| i.steps).max().unwrap_or(info.steps);
+                let step_range_str = if min_steps == max_steps {
+                    format!("{}", min_steps)
+                } else {
+                    format!("{}-{}", min_steps, max_steps)
+                };
+
+                let desc = format!(
+                    "{}: {} (×{} steps)",
+                    meta.layer_type, meta.description, step_range_str
+                );
+                rnn_clusters.push((meta.name.clone(), meta.layer_type.clone(), desc, visible_ids));
+
+                // 记录 RNN 节点标注和特殊边信息（使用步数范围）
+                for offset in 0..nps {
+                    let step0_id = base + offset as u64;
+                    rnn_step_ranges.insert(step0_id, (min_steps, max_steps));
+                }
+                for sid in &info.init_state_node_ids {
+                    rnn_init_state_ids.insert(sid.0);
+                    rnn_init_edges.insert((info.input_node_id.0, sid.0));
+                }
+                for &repr_id in &info.repr_output_node_ids {
+                    rnn_output_repr_step_ranges.insert(repr_id.0, (min_steps, max_steps));
+                    for sid in &info.init_state_node_ids {
+                        rnn_feedback_edges.push((repr_id.0, sid.0, min_steps, max_steps));
+                    }
+                }
+                rnn_input_step_ranges.insert(info.input_node_id.0, (min_steps, max_steps));
+
+                // 把 RNN cluster 的节点也加入 node_to_group（防止被当作"未分组"节点）
+                let rnn_group_idx = layer_groups.len() + rnn_clusters.len() - 1;
+                for &nid in rnn_clusters.last().unwrap().3.iter() {
+                    node_to_group.insert(nid, rnn_group_idx);
+                }
+            }
+        }
+
         // 层分组颜色（交替使用不同颜色）
         let group_colors = ["#E3F2FD80", "#E8F5E980", "#FFF3E080", "#F3E5F580"];
 
@@ -507,15 +621,24 @@ impl Var {
             let shape = node.value_expected_shape();
 
             // 形状字符串：Parameter 显示固定形状，其他节点第一维显示为 ? (batch 维度)
+            // 对 RNN 输入节点，序列维度（dim 1）显示步数范围
             let shape_str = if node_type == "Parameter" || shape.is_empty() {
                 format!("{:?}", shape)
             } else {
+                let input_range = rnn_input_step_ranges.get(&id);
                 let dims: Vec<String> = shape
                     .iter()
                     .enumerate()
                     .map(|(i, &d)| {
                         if i == 0 {
                             "?".to_string()
+                        } else if i == 1 {
+                            if let Some(&(min_s, max_s)) = input_range {
+                                if min_s != max_s {
+                                    return format!("{}-{}", min_s, max_s);
+                                }
+                            }
+                            d.to_string()
                         } else {
                             d.to_string()
                         }
@@ -585,9 +708,28 @@ impl Var {
                 _ => ("box", "\"filled,rounded\"", "#FFFDE7"),
             };
 
+            // RNN 步数标注：计算节点显示 ×N（或 ×min-max），初始状态节点显示 ×1
+            let rnn_step_str = if let Some(&(min_s, max_s)) = rnn_step_ranges.get(&id) {
+                if min_s == max_s {
+                    format!(" <FONT COLOR=\"#E67E22\">×{}</FONT>", min_s)
+                } else {
+                    format!(" <FONT COLOR=\"#E67E22\">×{}-{}</FONT>", min_s, max_s)
+                }
+            } else if rnn_init_state_ids.contains(&id) {
+                " <FONT COLOR=\"#E67E22\">×1</FONT>".to_string()
+            } else {
+                String::new()
+            };
+            // 双层边框：仅用于实际存在多个副本的节点（橙色 ×N, N>1）
+            let peripheries_str = if let Some(&(min_s, _)) = rnn_step_ranges.get(&id) {
+                if min_s > 1 { " peripheries=2" } else { "" }
+            } else {
+                ""
+            };
+
             format!(
-                "\"{}\" [label=<{}<BR/><B>{}</B><BR/>{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
-                id, name, node_type, shape_str, param_count_str, hyperparam_str, node_shape, style, fill_color
+                "\"{}\" [label=<{}{}<BR/><B>{}</B><BR/>{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10{}];\n",
+                id, name, rnn_step_str, node_type, shape_str, param_count_str, hyperparam_str, node_shape, style, fill_color, peripheries_str
             )
         };
 
@@ -638,6 +780,16 @@ impl Var {
                 }
             }
         }
+        // RNN 节点加入 node_to_model（RNN 不调用 register_layer_group，
+        // 需要从 RecurrentLayerMeta + rnn_clusters 中提取模型归属）
+        // 包含：参数节点 + 可见的计算/状态节点，确保拓扑推断能追溯到 input
+        for (name, _, _, visible_ids) in &rnn_clusters {
+            if let Some((model, _)) = name.split_once('/') {
+                for &nid in visible_ids {
+                    node_to_model.insert(nid, model.to_string());
+                }
+            }
+        }
 
         // 仅在存在模型分组时执行推断
         if !model_groups.is_empty() {
@@ -681,10 +833,11 @@ impl Var {
                             }
                         }
                     } else {
-                        // 叶子节点上推：所有子节点都在同一模型 → 归入该模型
+                        // 叶子节点上推：所有（非隐藏的）子节点都在同一模型 → 归入该模型
                         if let Some(children) = node_children.get(&nid) {
                             let child_models: Vec<Option<&str>> = children
                                 .iter()
+                                .filter(|c| !rnn_hidden_ids.contains(c)) // 排除 RNN 隐藏节点
                                 .map(|c| node_to_model.get(c).map(|s| s.as_str()))
                                 .collect();
 
@@ -803,6 +956,18 @@ impl Var {
                 dot.push_str(&format!("{indent}}}\n\n"));
             };
 
+        // 建立 RNN cluster 的模型归属索引
+        let mut rnn_clusters_for_model: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, (name, _, _, _)) in rnn_clusters.iter().enumerate() {
+            if let Some((model, _)) = name.split_once('/') {
+                rnn_clusters_for_model
+                    .entry(model.to_string())
+                    .or_default()
+                    .push(i);
+            }
+        }
+        let mut rendered_rnn_clusters: HashSet<usize> = HashSet::new();
+
         // 渲染模型级嵌套 cluster
         for (model_idx, (model_name, layers)) in model_groups.iter().enumerate() {
             let model_id = model_name.replace(['-', '.', ' ', '/'], "_");
@@ -856,10 +1021,51 @@ impl Var {
                 );
             }
 
+            // RNN 折叠 cluster（属于该模型的，嵌套在模型内部）
+            if let Some(rnn_indices) = rnn_clusters_for_model.get(model_name.as_str()) {
+                for &idx in rnn_indices {
+                    let (rnn_name, _, desc, visible_ids) = &rnn_clusters[idx];
+                    let layer_name =
+                        rnn_name.split_once('/').map(|(_, l)| l).unwrap_or(rnn_name);
+                    let cluster_id = format!(
+                        "{model_id}_{}",
+                        layer_name.replace(['-', '.', ' ', '/'], "_")
+                    );
+                    let color =
+                        group_colors[(layer_groups.len() + idx) % group_colors.len()];
+
+                    dot.push_str(&format!(
+                        "        subgraph cluster_{cluster_id} {{\n"
+                    ));
+                    dot.push_str(&format!(
+                        "            label=<<B>{layer_name}</B><BR/><FONT POINT-SIZE=\"9\">{desc}</FONT>>;\n"
+                    ));
+                    dot.push_str("            style=\"filled,bold\";\n");
+                    dot.push_str("            peripheries=3;\n");
+                    dot.push_str("            penwidth=2;\n");
+                    dot.push_str(&format!("            fillcolor=\"{color}\";\n"));
+                    dot.push_str(
+                        "            fontname=\"Microsoft YaHei,SimHei,Arial\";\n",
+                    );
+                    dot.push_str("            fontsize=11;\n");
+                    dot.push_str("            margin=12;\n");
+
+                    for node in &nodes {
+                        if visible_ids.contains(&node.id().0) {
+                            dot.push_str("            ");
+                            dot.push_str(&generate_node_def(node));
+                        }
+                    }
+
+                    dot.push_str("        }\n\n");
+                    rendered_rnn_clusters.insert(idx);
+                }
+            }
+
             // 推断归属的节点（不在任何 layer group 中，但拓扑推断属于此模型）
             for node in &nodes {
                 let nid = node.id().0;
-                if !node_to_group.contains_key(&nid) {
+                if !node_to_group.contains_key(&nid) && !rnn_hidden_ids.contains(&nid) {
                     if let Some(m) = node_to_model.get(&nid) {
                         if m == model_name {
                             dot.push_str("        ");
@@ -889,10 +1095,45 @@ impl Var {
             render_layer_cluster(&mut dot, "    ", &cluster_id, &group.name, group, color);
         }
 
-        // 5. 输出未分组的节点（排除已推断归入模型的节点）
+        // 5. 输出 RNN 折叠 cluster（加粗边框，三层轮廓；跳过已嵌套在模型内的）
+        for (i, (name, _layer_type, desc, visible_ids)) in rnn_clusters.iter().enumerate() {
+            if rendered_rnn_clusters.contains(&i) {
+                continue; // 已在模型 cluster 内渲染
+            }
+            // 独立渲染时，显示完整名称（去掉可能的模型前缀）
+            let display_name = name.split_once('/').map(|(_, l)| l).unwrap_or(name);
+            let cluster_id = format!("rnn_{}", name.replace(['-', '.', ' ', '/'], "_"));
+            let color = group_colors[(layer_groups.len() + i) % group_colors.len()];
+
+            dot.push_str(&format!("    subgraph cluster_{cluster_id} {{\n"));
+            dot.push_str(&format!(
+                "        label=<<B>{display_name}</B><BR/><FONT POINT-SIZE=\"9\">{desc}</FONT>>;\n"
+            ));
+            dot.push_str("        style=\"filled,bold\";\n");
+            dot.push_str("        peripheries=3;\n");
+            dot.push_str("        penwidth=2;\n");
+            dot.push_str(&format!("        fillcolor=\"{color}\";\n"));
+            dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+            dot.push_str("        fontsize=11;\n");
+            dot.push_str("        margin=12;\n");
+
+            for node in &nodes {
+                if visible_ids.contains(&node.id().0) {
+                    dot.push_str("        ");
+                    dot.push_str(&generate_node_def(node));
+                }
+            }
+
+            dot.push_str("    }\n\n");
+        }
+
+        // 6. 输出未分组的节点（排除已推断归入模型的节点 + RNN 隐藏节点）
         for node in &nodes {
             let nid = node.id().0;
-            if !node_to_group.contains_key(&nid) && !node_to_model.contains_key(&nid) {
+            if !node_to_group.contains_key(&nid)
+                && !node_to_model.contains_key(&nid)
+                && !rnn_hidden_ids.contains(&nid)
+            {
                 dot.push_str("    ");
                 dot.push_str(&generate_node_def(node));
             }
@@ -900,13 +1141,57 @@ impl Var {
 
         dot.push('\n');
 
-        // 6. 生成边（父节点 -> 子节点），跨模型边通过虚拟 Input 中转
+        // 7. 生成边（父节点 -> 子节点），跨模型边通过虚拟 Input 中转
         for node in &nodes {
             let child_id = node.id().0;
+
+            // 跳过 RNN 隐藏节点的边
+            if rnn_hidden_ids.contains(&child_id) {
+                continue;
+            }
+
             let child_model = node_to_model.get(&child_id);
 
             for parent in node.parents() {
-                let parent_id = parent.id().0;
+                let original_parent_id = parent.id().0;
+
+                // RNN 输出重定向：如果父节点是被折叠的 real_output，
+                // 重定向到 repr_output（第一步的输出）
+                // 注意：必须在隐藏检查之前执行，否则 real_output 会被当作隐藏节点跳过
+                let parent_id =
+                    *rnn_output_redirects
+                        .get(&original_parent_id)
+                        .unwrap_or(&original_parent_id);
+                let was_redirected = original_parent_id != parent_id;
+
+                // 跳过隐藏父节点的边（重定向后再检查）
+                if rnn_hidden_ids.contains(&parent_id) {
+                    continue;
+                }
+
+                // RNN 特殊边样式
+                let edge_attrs = if rnn_init_edges.contains(&(parent_id, child_id)) {
+                    // A2: input → init_state 橙色虚线，标注 t=0
+                    " [style=dashed color=\"#E67E22\" label=<t=0> fontcolor=\"#E67E22\" fontsize=9]".to_string()
+                } else if was_redirected {
+                    // A3: repr_output → 下游层，橙色实线标注最后一步
+                    if let Some(&(min_s, max_s)) = rnn_output_repr_step_ranges.get(&parent_id) {
+                        let t_label = if min_s == max_s {
+                            format!("t={}", min_s - 1)
+                        } else {
+                            format!("t={}~{}", min_s - 1, max_s - 1)
+                        };
+                        format!(
+                            " [color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9]",
+                            t_label
+                        )
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
                 let parent_model = node_to_model.get(&parent_id);
 
                 // 检查是否为跨模型边
@@ -923,12 +1208,36 @@ impl Var {
                             "    \"{}\" -> \"{}\" [style=dashed color=\"#999999\"];\n",
                             parent_id, virt_id
                         ));
-                        dot.push_str(&format!("    \"{}\" -> \"{}\";\n", virt_id, child_id));
+                        dot.push_str(&format!(
+                            "    \"{}\" -> \"{}\"{};\n",
+                            virt_id, child_id, edge_attrs
+                        ));
                     }
                 } else {
-                    dot.push_str(&format!("    \"{}\" -> \"{}\";\n", parent_id, child_id));
+                    dot.push_str(&format!(
+                        "    \"{}\" -> \"{}\"{};\n",
+                        parent_id, child_id, edge_attrs
+                    ));
                 }
             }
+        }
+
+        // A1: RNN 回流反馈边（概念性虚线，表示隐藏状态循环）
+        for (repr_id, init_state_id, min_steps, max_steps) in &rnn_feedback_edges {
+            let label = if min_steps == max_steps {
+                if *min_steps <= 2 {
+                    "t=0".to_string()
+                } else {
+                    format!("t=0~{}", min_steps - 2)
+                }
+            } else {
+                // 变长：显示范围 t=0~(min_last~max_last)
+                format!("t=0~({}~{})", min_steps - 2, max_steps - 2)
+            };
+            dot.push_str(&format!(
+                "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9 constraint=false];\n",
+                repr_id, init_state_id, label
+            ));
         }
 
         dot.push_str("}\n");

@@ -16,43 +16,21 @@ use only_torch::tensor::Tensor;
 
 /// 奇偶性检测 RNN 模型（PyTorch 风格）
 pub struct ParityRNN {
-    graph: Graph,
     rnn: Rnn,
     fc: Linear,
 }
 
 impl ParityRNN {
-    /// 创建奇偶性检测模型
-    ///
-    /// # 参数
-    /// - `graph`: 计算图
-    /// - `hidden_size`: RNN 隐藏层大小
     pub fn new(graph: &Graph, hidden_size: usize) -> Result<Self, GraphError> {
-        // RNN: input_size=1 (单个 bit), hidden_size 由参数指定
-        let rnn = Rnn::new(graph, 1, hidden_size, "rnn")?;
-
-        // Linear: hidden_size -> 2 (二分类：偶数/奇数)
-        let fc = Linear::new(graph, hidden_size, 2, true, "fc")?;
-
-        Ok(Self {
-            graph: graph.clone(),
-            rnn,
-            fc,
-        })
+        let graph = graph.with_model_name("ParityRNN");
+        let rnn = Rnn::new(&graph, 1, hidden_size, "rnn")?;
+        let fc = Linear::new(&graph, hidden_size, 2, true, "fc")?;
+        Ok(Self { rnn, fc })
     }
 
-    /// 前向传播（PyTorch 风格）
-    ///
-    /// # 参数
-    /// - `x`: 输入张量 `[batch, seq_len, 1]`
-    ///
-    /// # 返回
-    /// 2 类 logits，形状 `[batch, 2]`
+    /// 前向传播：接收 &Tensor，RNN 层自动转为 Var
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        // RNN 处理序列
-        let h = self.rnn.forward(&input)?;
-        // Linear 输出分类 logits
+        let h = self.rnn.forward(x)?; // RNN 内部自动 Tensor → Var
         Ok(self.fc.forward(&h))
     }
 }
