@@ -134,6 +134,11 @@ impl Var {
         self.node.id()
     }
 
+    /// 获取节点名称
+    pub fn name(&self) -> Option<&str> {
+        self.node.name()
+    }
+
     /// 获取 NodeInner 的引用
     pub(crate) fn node(&self) -> &Rc<NodeInner> {
         &self.node
@@ -1981,12 +1986,11 @@ mod tests {
         use crate::nn::Graph;
         let graph = Graph::new();
         let x = graph.input(&crate::tensor::Tensor::ones(&[1, 2])).unwrap();
-        let initial_count = graph.inner().nodes_count();
 
         // detach() 创建新的 Identity 节点
         let x_detached = x.detach();
-        let after_count = graph.inner().nodes_count();
-        assert_eq!(initial_count + 1, after_count, "detach() 应创建一个新节点");
+        // 验证 detach 产生了不同的节点
+        assert_ne!(x.node_id(), x_detached.node_id(), "detach() 应创建一个新节点");
         assert!(x_detached.is_detached(), "detach 返回的 Var 应标记为 detached");
     }
 

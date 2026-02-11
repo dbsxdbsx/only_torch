@@ -355,13 +355,12 @@ fn test_var_different_graph_panic() {
 /// 测试 get_graph 能恢复图句柄
 #[test]
 fn test_var_get_graph() {
-    let x = {
-        let graph = Graph::new();
-        graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap()
-        // graph 在这里 drop
-    };
+    // 在动态图架构下，Var 持有 Weak<GraphInner>，
+    // 因此 Graph handle 必须保持存活，Var 才能恢复 Graph。
+    let graph = Graph::new();
+    let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
 
-    // 即使原始 graph handle 已 drop，x 仍持有 GraphInner
+    // 通过 Var 恢复 Graph handle
     let recovered_graph = x.get_graph();
 
     // 可以通过恢复的 graph 创建新 Var

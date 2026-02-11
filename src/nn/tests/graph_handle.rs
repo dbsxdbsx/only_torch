@@ -63,9 +63,7 @@ fn test_graph_handle_input_named() {
     let x = graph.input_named(&data, "my_input").unwrap();
 
     // 检查名称
-    let inner = graph.inner();
-    let name = inner.get_node_name(x.node_id()).unwrap();
-    assert_eq!(name, "my_input");
+    assert_eq!(x.name(), Some("my_input"));
 }
 
 // ==================== 参数创建测试 ====================
@@ -248,9 +246,7 @@ fn test_graph_handle_constant_named() {
     let data = Tensor::new(&[1.0, 2.0], &[2, 1]);
     let c = graph.constant_named(&data, "my_const").unwrap();
 
-    let inner = graph.inner();
-    let name = inner.get_node_name(c.node_id()).unwrap();
-    assert_eq!(name, "my_const");
+    assert_eq!(c.name(), Some("my_const"));
 }
 
 // ==================== 执行测试 ====================
@@ -305,9 +301,6 @@ fn test_graph_handle_zero_grad() {
     let target = graph.input(&Tensor::new(&[4.0], &[1, 1])).unwrap();
     let loss = y.mse_loss(&target).unwrap();
 
-    // 记录 backward 前的节点数
-    let node_count_before = graph.inner().nodes_count();
-
     // 第一次 backward
     loss.backward().unwrap();
 
@@ -322,13 +315,6 @@ fn test_graph_handle_zero_grad() {
 
     // zero_grad
     graph.zero_grad().unwrap();
-
-    // 验证：节点数不变（节点仍存在）
-    assert_eq!(
-        graph.inner().nodes_count(),
-        node_count_before,
-        "zero_grad 不应删除节点"
-    );
 
     // 验证：参数值不变
     let w_value = w.value().unwrap().unwrap();
@@ -392,15 +378,13 @@ fn test_graph_handle_inner_access() {
     let graph = Graph::new();
 
     // 通过 inner() 可以访问 GraphInner
-    let node_count = graph.inner().nodes_count();
-    assert_eq!(node_count, 0);
+    assert_eq!(graph.parameter_count(), 0);
 
-    // 创建一个节点
-    let _ = graph.zeros(&[1, 1]).unwrap();
+    // 创建一个参数节点（需要保持 Var 存活，否则 Rc 引用计数降为 0 导致参数被回收）
+    let _w = graph.parameter(&[2, 3], Init::Ones, "w").unwrap();
 
-    // 节点数应该增加
-    let node_count_after = graph.inner().nodes_count();
-    assert_eq!(node_count_after, 1);
+    // 参数数应该增加
+    assert_eq!(graph.parameter_count(), 1);
 }
 
 // ==================== no_grad_scope 测试 ====================

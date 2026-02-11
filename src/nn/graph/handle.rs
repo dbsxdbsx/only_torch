@@ -152,6 +152,8 @@ impl Graph {
             init.generate(shape)
         };
         let node = g.create_parameter_node(shape, Some(name))?;
+        // 注册参数到 GraphInner（使 zero_grad/parameter_count 等正常工作）
+        g.register_parameter(name.to_string(), std::rc::Rc::downgrade(&node))?;
         drop(g); // 释放借用
         node.set_value(Some(&init_data))?;
         Ok(Var::new_with_rc_graph(node, &self.inner))
