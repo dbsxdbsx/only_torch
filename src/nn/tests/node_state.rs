@@ -1,396 +1,464 @@
 /*
- * State 节点单元测试
- *
- * TODO(RNN 重构): State 节点是旧的"显式时间步"设计的一部分。
- * 待 LSTM/GRU 完成展开式重构后，可能需要评估 State 节点的保留价值。
- * 新的 Rnn 层使用"展开式设计"，不依赖 State 节点。
+ * @Author       : 老董
+ * @Description  : State 节点单元测试
  *
  * State 节点用于 RNN 的时间状态（如隐藏状态 h、LSTM 的 c）。
+ * 与 Input 的区别：State 可接收梯度（用于 BPTT）。
+ * 与 Parameter 的区别：State 不被优化器更新。
  *
- * 与 Input 节点的关键区别：
- *   - State 可以接收并存储梯度（用于 BPTT 梯度传递）
- *   - Input 不能接收梯度（是"梯度汇点"）
- *
- * 与 Parameter 节点的关键区别：
- *   - State 不被优化器更新（不在 get_trainable_nodes() 中）
- *   - Parameter 被优化器更新
- *
- * VJP 迁移说明：
- *   - 统一 API: backward + get_node_grad + zero_grad
- *   - 新 API: backward + get_node_grad + zero_grad
+ * 注：循环连接相关测试（connect_recurrent/step/BPTT）已移至展开式 RNN 测试。
  */
 
-use crate::assert_err;
-use crate::nn::{GraphError, GraphInner};
+use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
+use std::rc::Rc;
+
+// ==================== 基础创建与值操作测试 ====================
 
 /// 测试 State 节点的基本创建
-#[cfg(any())]
 #[test]
-fn test_state_node_creation() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    let state = graph.new_state_node(&[1, 64], Some("hidden"))?;
+fn test_state_node_creation() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 验证节点存在且可获取
-    assert!(graph.get_node_value(state)?.is_none()); // 初始值为 None
-    Ok(())
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[1, 64], Some("hidden"))
+        .unwrap();
+
+    // 初始值为 None
+    assert!(state.value().is_none());
+    assert_eq!(state.shape(), vec![1, 64]);
+    assert_eq!(state.name(), Some("hidden"));
+    assert!(state.is_leaf());
+    assert!(state.parents().is_empty());
 }
 
 /// 测试 State 节点的值设置
-#[cfg(any())]
 #[test]
-fn test_state_node_set_value() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    let state = graph.new_state_node(&[1, 4], Some("hidden"))?;
+fn test_state_node_set_value() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 设置值
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[1, 4], Some("hidden"))
+        .unwrap();
+
     let tensor = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
-    graph.set_node_value(state, Some(&tensor))?;
+    state.set_value(Some(&tensor)).unwrap();
 
-    // 验证值
-    let value = graph.get_node_value(state)?.unwrap();
+    let value = state.value().unwrap();
     assert_eq!(value.data_as_slice(), &[1.0, 2.0, 3.0, 4.0]);
-    Ok(())
+    assert_eq!(value.shape(), &[1, 4]);
 }
 
-/// 测试 State 节点不在 trainable nodes 中
-#[cfg(any())]
+/// 测试 State 节点不在可训练参数中
+///
+/// State 不被优化器更新，不应出现在 parameters 注册表中
 #[test]
-fn test_state_not_trainable() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_state_not_trainable() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建各种节点
-    let input = graph.new_basic_input_node(&[1, 4], Some("input"))?;
-    let state = graph.new_state_node(&[1, 4], Some("hidden"))?;
-    let param = graph.new_parameter_node(&[4, 4], Some("weight"))?;
+    let _input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], Some("input"))
+        .unwrap();
+    let _state = inner
+        .borrow_mut()
+        .create_state_node(&[1, 4], Some("hidden"))
+        .unwrap();
+    let param = inner
+        .borrow_mut()
+        .create_parameter_node(&[4, 4], Some("weight"))
+        .unwrap();
 
-    // 获取可训练节点
-    let trainable = graph.get_trainable_nodes();
+    // 注册 Parameter
+    inner
+        .borrow_mut()
+        .register_parameter("weight".to_string(), Rc::downgrade(&param))
+        .unwrap();
 
-    // 只有 Parameter 在 trainable 中
-    assert!(!trainable.contains(&input), "Input 不应可训练");
-    assert!(!trainable.contains(&state), "State 不应可训练");
-    assert!(trainable.contains(&param), "Parameter 应可训练");
-    assert_eq!(trainable.len(), 1, "只有 Parameter 应可训练");
+    // 只有 Parameter 在 parameters 注册表中
+    let all_params = inner.borrow().get_all_parameters();
+    assert_eq!(all_params.len(), 1, "只有 Parameter 应在注册表中");
+    assert_eq!(all_params[0].0, "weight");
+}
+
+// ==================== 前向传播测试 ====================
+
+/// 测试 State 节点在 forward 中的行为
+///
+/// State 是叶子节点，值由外部管理：
+/// - 没有值时：forward 报错
+/// - 有值时：forward 静默成功
+#[test]
+fn test_state_forward_behavior() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[1, 4], Some("state"))?;
+
+    // 未设值时 forward 应该失败
+    let result = inner.borrow_mut().forward_via_node_inner(&state);
+    assert!(result.is_err(), "未设值的 State 节点 forward 应失败");
+    let err_msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        err_msg.contains("没有值"),
+        "错误应提示没有值，实际: {}",
+        err_msg
+    );
+
+    // 设置值后 forward 应成功
+    state.set_value(Some(&Tensor::zeros(&[1, 4])))?;
+    inner.borrow_mut().forward_via_node_inner(&state)?;
 
     Ok(())
 }
+
+/// 测试 State 节点作为计算输入（无循环连接）
+///
+/// State 可以作为普通输入参与前向计算
+#[test]
+fn test_state_without_recurrent_connection() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1], Some("input"))?;
+    input.set_value(Some(&Tensor::new(&[1.0], &[1, 1])))?;
+
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[1, 1], Some("state"))?;
+    state.set_value(Some(&Tensor::zeros(&[1, 1])))?;
+
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![input.clone(), state.clone()], Some("add"))?;
+    let output = inner
+        .borrow_mut()
+        .create_tanh_node(add, Some("output"))?;
+
+    inner.borrow_mut().forward_via_node_inner(&output)?;
+
+    let val = output.value().unwrap();
+    let v = val.data_as_slice()[0];
+    // tanh(1.0 + 0.0) = tanh(1.0) ≈ 0.7616
+    assert!(
+        (v - 0.7616).abs() < 0.01,
+        "输出应为 tanh(1) ≈ 0.7616，实际: {}",
+        v
+    );
+
+    Ok(())
+}
+
+// ==================== 反向传播 & 梯度测试 ====================
 
 /// 测试 State 节点可以接收梯度（与 Input 的关键区别）
 ///
-/// 在 VJP 模式下，State 节点在 backward 后应该有 grad
-#[cfg(any())]
+/// 在 backward 后，State 节点应有 grad
 #[test]
 fn test_state_accepts_grad() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建网络：state -> add -> loss
-    let state = graph.new_state_node(&[1, 2], Some("state"))?;
-    graph.set_node_value(state, Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
+    // 创建网络：state + param -> add -> MSE loss
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[1, 2], Some("state"))?;
+    state.set_value(Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
 
-    let param = graph.new_parameter_node(&[1, 2], Some("param"))?;
-    graph.set_node_value(param, Some(&Tensor::new(&[0.5, 0.5], &[1, 2])))?;
+    let param = inner
+        .borrow_mut()
+        .create_parameter_node(&[1, 2], Some("param"))?;
+    inner
+        .borrow_mut()
+        .register_parameter("param".to_string(), Rc::downgrade(&param))?;
+    param.set_value(Some(&Tensor::new(&[0.5, 0.5], &[1, 2])))?;
 
-    // state + param -> add
-    let add = graph.new_add_node(&[state, param], Some("add"))?;
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![state.clone(), param.clone()], Some("add"))?;
 
-    // 添加 target 和 loss 节点（VJP 模式需要标量 loss）
-    let target = graph.new_basic_input_node(&[1, 2], Some("target"))?;
-    graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
-    let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2], Some("target"))?;
+    target.set_value(Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
 
-    // 前向传播
-    graph.forward(loss)?;
+    let loss = inner
+        .borrow_mut()
+        .create_mse_mean_node(add, target, Some("loss"))?;
 
-    // 反向传播（VJP 模式）
-    graph.backward(loss)?;
+    // 设置训练模式、前向传播、反向传播
+    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
 
-    // State 应该能接收 grad（与 Input 的关键区别）
-    let state_grad = graph.get_node_grad(state)?;
+    // State 应该能接收 grad
+    let state_grad = state.grad();
     assert!(state_grad.is_some(), "State 节点在 backward 后应有 grad");
-
-    // 验证 grad 形状
-    let grad = state_grad.unwrap();
-    assert_eq!(grad.shape(), &[1, 2]); // [输入维度]
+    assert_eq!(state_grad.unwrap().shape(), &[1, 2]);
 
     Ok(())
 }
 
 /// 测试 Input 节点不能有梯度（对照测试）
 ///
-/// 在 VJP 模式下，调用 get_node_grad(input) 应返回错误
-#[cfg(any())]
+/// Input 节点在 backward 后不应有 grad（与 State 对比）
 #[test]
 fn test_input_has_no_grad() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建网络：input -> add -> loss
-    let input = graph.new_basic_input_node(&[1, 2], Some("input"))?;
-    graph.set_node_value(input, Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2], Some("input"))?;
+    input.set_value(Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
 
-    let param = graph.new_parameter_node(&[1, 2], Some("param"))?;
-    graph.set_node_value(param, Some(&Tensor::new(&[0.5, 0.5], &[1, 2])))?;
+    let param = inner
+        .borrow_mut()
+        .create_parameter_node(&[1, 2], Some("param"))?;
+    inner
+        .borrow_mut()
+        .register_parameter("param".to_string(), Rc::downgrade(&param))?;
+    param.set_value(Some(&Tensor::new(&[0.5, 0.5], &[1, 2])))?;
 
-    let add = graph.new_add_node(&[input, param], Some("add"))?;
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![input.clone(), param.clone()], Some("add"))?;
 
-    // 添加 target 和 loss 节点
-    let target = graph.new_basic_input_node(&[1, 2], Some("target"))?;
-    graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
-    let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2], Some("target"))?;
+    target.set_value(Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
 
-    graph.forward(loss)?;
-    graph.backward(loss)?;
+    let loss = inner
+        .borrow_mut()
+        .create_mse_mean_node(add, target, Some("loss"))?;
 
-    // Input 节点查询 grad 应该返回错误
-    let grad_result = graph.get_node_grad(input);
-    assert_err!(
-        grad_result,
-        GraphError::InvalidOperation(msg) if msg.contains("不应该有梯度")
-    );
+    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
 
-    Ok(())
-}
-
-/// 测试 State 节点在 forward 中的行为
-///
-/// State 节点是外部设置的状态，不从父节点计算。
-/// - 没有值时：forward 报错
-/// - 有值时：forward 静默成功（支持 RNN 缓存等场景）
-#[cfg(any())]
-#[test]
-fn test_state_forward_behavior() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    let state = graph.new_state_node(&[1, 4], Some("state"))?;
-
-    // 尝试对未设值的 State 进行前向传播应该失败
-    let result = graph.forward(state);
-    assert_err!(
-        result,
-        GraphError::InvalidOperation(msg) if msg.contains("是输入/参数/状态类型")
-    );
-
-    // 设置值后，forward 静默成功（支持 RNN 缓存等场景）
-    graph.set_node_value(state, Some(&Tensor::zeros(&[1, 4])))?;
+    // Input 节点不应有 grad（accumulate_grad 静默跳过不支持梯度的节点）
     assert!(
-        graph.forward(state).is_ok(),
-        "有值的 State 节点应该允许 forward（静默成功）"
+        input.grad().is_none(),
+        "Input 节点不应有 grad（梯度汇点）"
     );
+
+    // 对比：param 应有 grad
+    assert!(param.grad().is_some(), "Parameter 应有 grad");
 
     Ok(())
 }
 
-/// 测试 State 节点在简单 RNN 结构中的使用
+/// 测试 State 节点在简单 RNN 结构中的梯度传递
 ///
-/// 验证 State 节点能正确接收和传递梯度
-#[cfg(any())]
+/// 验证 State 作为 h_prev 参与计算时能正确接收梯度
 #[test]
 fn test_state_in_rnn_structure() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 简单 RNN: hidden_t = tanh(h_prev + input * W)
-    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
-    let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
-    let w = graph.new_parameter_node(&[1, 1], Some("W"))?;
+    // 简单 RNN: hidden = tanh(h_prev + input * W)
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1], Some("input"))?;
+    input.set_value(Some(&Tensor::new(&[1.0], &[1, 1])))?;
 
-    // 设置初始值
-    graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-    graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
-    graph.set_node_value(w, Some(&Tensor::new(&[0.5], &[1, 1])))?;
+    let h_prev = inner
+        .borrow_mut()
+        .create_state_node(&[1, 1], Some("h_prev"))?;
+    h_prev.set_value(Some(&Tensor::zeros(&[1, 1])))?;
+
+    let w = inner
+        .borrow_mut()
+        .create_parameter_node(&[1, 1], Some("W"))?;
+    inner
+        .borrow_mut()
+        .register_parameter("W".to_string(), Rc::downgrade(&w))?;
+    w.set_value(Some(&Tensor::new(&[0.5], &[1, 1])))?;
 
     // input * W
-    let scaled = graph.new_mat_mul_node(input, w, Some("scaled"))?;
+    let scaled = inner
+        .borrow_mut()
+        .create_mat_mul_node(vec![input.clone(), w.clone()], Some("scaled"))?;
 
     // h_prev + scaled
-    let pre_hidden = graph.new_add_node(&[h_prev, scaled], Some("pre_hidden"))?;
+    let pre_hidden = inner
+        .borrow_mut()
+        .create_add_node(vec![h_prev.clone(), scaled], Some("pre_hidden"))?;
 
-    // tanh
-    let hidden = graph.new_tanh_node(pre_hidden, Some("hidden"))?;
+    // tanh(pre_hidden)
+    let hidden = inner
+        .borrow_mut()
+        .create_tanh_node(pre_hidden, Some("hidden"))?;
 
-    // 添加 target 和 loss（VJP 模式需要标量 loss）
-    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
-    graph.set_node_value(target, Some(&Tensor::new(&[0.5], &[1, 1])))?;
-    let loss = graph.new_mse_loss_node(hidden, target, Some("loss"))?;
+    // target 和 loss
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1], Some("target"))?;
+    target.set_value(Some(&Tensor::new(&[0.5], &[1, 1])))?;
 
-    // 前向传播
-    graph.forward(loss)?;
+    let loss = inner
+        .borrow_mut()
+        .create_mse_mean_node(hidden, target, Some("loss"))?;
 
-    // 反向传播
-    graph.backward(loss)?;
+    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
 
-    // 验证 W 有梯度
-    let w_grad = graph.get_node_grad(w)?;
-    assert!(w_grad.is_some(), "W 应有 grad");
+    // W 应有梯度
+    assert!(w.grad().is_some(), "W 应有 grad");
 
-    // 验证 h_prev 也有梯度（这是 State 与 Input 的关键区别）
-    let h_prev_grad = graph.get_node_grad(h_prev)?;
-    assert!(h_prev_grad.is_some(), "h_prev (State) 应有 grad");
-
-    Ok(())
-}
-
-/// 测试 State 节点与循环连接的配合
-#[cfg(any())]
-#[test]
-fn test_state_with_recurrent_connection() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
-
-    // 创建循环网络
-    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
-    let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
-    graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
-
-    let add = graph.new_add_node(&[input, h_prev], Some("add"))?;
-    let hidden = graph.new_tanh_node(add, Some("hidden"))?;
-
-    // 建立循环连接：hidden -> h_prev
-    graph.connect_recurrent(hidden, h_prev)?;
-
-    // 第一步
-    graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-    graph.step(hidden)?;
-    let h1 = graph.get_node_value(hidden)?.unwrap().data_as_slice()[0];
-
-    // 第二步（h_prev 应该自动被更新为上一步的 hidden）
-    graph.set_node_value(input, Some(&Tensor::new(&[0.5], &[1, 1])))?;
-    graph.step(hidden)?;
-    let h2 = graph.get_node_value(hidden)?.unwrap().data_as_slice()[0];
-
-    // h2 应该大于 h1（因为累加了 h_prev）
-    assert!(h2 > h1, "h2 ({}) 应大于 h1 ({})，因为循环累加", h2, h1);
+    // h_prev (State) 应有梯度 —— 与 Input 的关键区别
+    assert!(h_prev.grad().is_some(), "h_prev (State) 应有 grad");
 
     Ok(())
 }
 
-/// 测试 State 节点的 zero_grad
-#[cfg(any())]
+/// 测试 State 节点的 zero_grad 行为
+///
+/// zero_grad 只清除 Parameter 注册表中的参数梯度。
+/// State 不在注册表中，其梯度不受 zero_grad 影响。
+/// 需手动调用 clear_grad() 清除 State 梯度。
 #[test]
 fn test_state_zero_grad() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let state = graph.new_state_node(&[1, 2], Some("state"))?;
-    graph.set_node_value(state, Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[1, 2], Some("state"))?;
+    state.set_value(Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))?;
 
-    let param = graph.new_parameter_node(&[1, 2], Some("param"))?;
-    graph.set_node_value(param, Some(&Tensor::new(&[0.5, 0.5], &[1, 2])))?;
+    let param = inner
+        .borrow_mut()
+        .create_parameter_node(&[1, 2], Some("param"))?;
+    inner
+        .borrow_mut()
+        .register_parameter("param".to_string(), Rc::downgrade(&param))?;
+    param.set_value(Some(&Tensor::new(&[0.5, 0.5], &[1, 2])))?;
 
-    let add = graph.new_add_node(&[state, param], Some("add"))?;
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![state.clone(), param.clone()], Some("add"))?;
 
-    // 添加 target 和 loss
-    let target = graph.new_basic_input_node(&[1, 2], Some("target"))?;
-    graph.set_node_value(target, Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
-    let loss = graph.new_mse_loss_node(add, target, Some("loss"))?;
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2], Some("target"))?;
+    target.set_value(Some(&Tensor::new(&[1.0, 1.0], &[1, 2])))?;
 
-    graph.forward(loss)?;
-    graph.backward(loss)?;
+    let loss = inner
+        .borrow_mut()
+        .create_mse_mean_node(add, target, Some("loss"))?;
 
-    // 验证有 grad
-    assert!(graph.get_node_grad(state)?.is_some());
+    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
 
-    // 清除 grad
-    graph.zero_grad()?;
+    // backward 后 State 和 Parameter 都有 grad
+    assert!(state.grad().is_some(), "State 应有 grad");
+    assert!(param.grad().is_some(), "Parameter 应有 grad");
 
-    // State 的 grad 应该被清除
-    // 注意：zero_grad 清除所有非 Parameter 节点的 grad
-    let state_grad_after = graph.get_node_grad(state)?;
+    // zero_grad 只清除 Parameter 的 grad
+    inner.borrow_mut().zero_grad()?;
     assert!(
-        state_grad_after.is_none(),
-        "State grad 应被 zero_grad() 清除"
+        param.grad().is_none(),
+        "Parameter grad 应被 zero_grad() 清除"
+    );
+
+    // State 的 grad 需手动清除
+    state.clear_grad()?;
+    assert!(
+        state.grad().is_none(),
+        "State grad 应在 clear_grad() 后被清除"
     );
 
     Ok(())
 }
 
-/// 测试 State 节点的 reset 行为
-#[cfg(any())]
-#[test]
-fn test_state_reset_behavior() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
-    let h_prev = graph.new_state_node(&[1, 1], Some("h_prev"))?;
-    graph.set_node_value(h_prev, Some(&Tensor::zeros(&[1, 1])))?;
-
-    let add = graph.new_add_node(&[input, h_prev], Some("add"))?;
-    let hidden = graph.new_tanh_node(add, Some("hidden"))?;
-
-    graph.connect_recurrent(hidden, h_prev)?;
-
-    // 执行几步
-    graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-    graph.step(hidden)?;
-    graph.step(hidden)?;
-
-    let h_before_reset = graph.get_node_value(h_prev)?.unwrap().data_as_slice()[0];
-    assert!(h_before_reset != 0.0, "h_prev 在多步后应非零");
-
-    // Reset
-    graph.reset().unwrap();
-
-    // h_prev 应该被重置为零
-    let h_after_reset = graph.get_node_value(h_prev)?.unwrap().data_as_slice()[0];
-    assert_eq!(
-        h_after_reset, 0.0,
-        "h_prev 在 reset 后应为 0（实际得到 {}）",
-        h_after_reset
-    );
-
-    Ok(())
-}
+// ==================== 多 State 节点测试 ====================
 
 /// 测试多个 State 节点（如 LSTM 的 h 和 c）
-#[cfg(any())]
 #[test]
-fn test_multiple_state_nodes() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_multiple_state_nodes() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let h = graph.new_state_node(&[1, 64], Some("hidden"))?;
-    let c = graph.new_state_node(&[1, 64], Some("cell"))?;
+    let h = inner
+        .borrow_mut()
+        .create_state_node(&[1, 64], Some("hidden"))
+        .unwrap();
+    let c = inner
+        .borrow_mut()
+        .create_state_node(&[1, 64], Some("cell"))
+        .unwrap();
 
-    graph.set_node_value(h, Some(&Tensor::zeros(&[1, 64])))?;
-    graph.set_node_value(c, Some(&Tensor::zeros(&[1, 64])))?;
+    h.set_value(Some(&Tensor::zeros(&[1, 64]))).unwrap();
+    c.set_value(Some(&Tensor::zeros(&[1, 64]))).unwrap();
 
-    // 验证两个 State 节点都存在且独立
-    assert!(graph.get_node_value(h)?.is_some());
-    assert!(graph.get_node_value(c)?.is_some());
+    // 两个 State 独立存在
+    assert!(h.value().is_some());
+    assert!(c.value().is_some());
+    assert_ne!(h.id(), c.id(), "两个 State 应有不同 ID");
 
-    // 两个都不应该在 trainable 中
-    let trainable = graph.get_trainable_nodes();
-    assert!(!trainable.contains(&h));
-    assert!(!trainable.contains(&c));
-
-    Ok(())
+    // 两个都不在 parameters 注册表中
+    let all_params = inner.borrow().get_all_parameters();
+    assert!(
+        all_params.is_empty(),
+        "State 不应出现在 parameters 注册表中"
+    );
 }
 
+// ==================== 维度验证测试 ====================
+
 /// 测试 State 节点的维度验证
-#[cfg(any())]
+///
+/// 支持 2D-4D，1D 和 5D 应失败
 #[test]
 fn test_state_dimension_validation() {
-    let mut graph = GraphInner::new();
+    use crate::assert_err;
 
-    // 2D 应该成功
-    assert!(graph.new_state_node(&[1, 64], None).is_ok());
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 3D 应该成功
-    assert!(graph.new_state_node(&[2, 10, 64], None).is_ok());
+    // 2D: 基础 RNN [batch, hidden_size]
+    assert!(inner.borrow_mut().create_state_node(&[1, 64], None).is_ok());
 
-    // 4D 应该成功（ConvLSTM）
-    assert!(graph.new_state_node(&[2, 32, 7, 7], None).is_ok());
+    // 3D: 序列状态 [batch, seq_len, hidden_size]
+    assert!(
+        inner
+            .borrow_mut()
+            .create_state_node(&[2, 10, 64], None)
+            .is_ok()
+    );
 
-    // 1D 应该失败
+    // 4D: ConvLSTM [batch, C, H, W]
+    assert!(
+        inner
+            .borrow_mut()
+            .create_state_node(&[2, 32, 7, 7], None)
+            .is_ok()
+    );
+
+    // 1D 应失败
     assert_err!(
-        graph.new_state_node(&[64], None),
+        inner.borrow_mut().create_state_node(&[64], None),
         GraphError::DimensionMismatch { expected, got, .. } if *expected == 2 && *got == 1
     );
 
-    // 5D 应该失败
+    // 5D 应失败
     assert_err!(
-        graph.new_state_node(&[1, 2, 3, 4, 5], None),
+        inner
+            .borrow_mut()
+            .create_state_node(&[1, 2, 3, 4, 5], None),
         GraphError::DimensionMismatch { expected, got, .. } if *expected == 2 && *got == 5
     );
 }
@@ -398,187 +466,37 @@ fn test_state_dimension_validation() {
 // ==================== 误用场景测试 ====================
 
 /// 测试 State 节点未初始化值时的行为
-#[cfg(any())]
+///
+/// State 作为计算节点的输入，若无值则 forward 应报错
 #[test]
 fn test_state_used_without_value() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
-    let state = graph.new_state_node(&[1, 1], Some("state"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1], Some("input"))?;
+    input.set_value(Some(&Tensor::new(&[1.0], &[1, 1])))?;
+
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[1, 1], Some("state"))?;
     // 故意不设置 state 的值
 
-    // 创建使用 state 的计算节点
-    let add = graph.new_add_node(&[input, state], Some("add"))?;
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![input, state], Some("add"))?;
 
-    // 设置 input 值
-    graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-
-    // forward 时，state 没有值应该会导致错误
-    let result = graph.forward(add);
-
-    // 预期：应该报错或返回合理的默认值
-    // 当前实现：State 节点没有值时不能前向传播
-    assert_err!(
-        result,
-        GraphError::InvalidOperation(msg) if msg.contains("不能直接前向传播")
-    );
-
-    Ok(())
-}
-
-/// 测试 State 节点作为普通计算节点使用（无循环连接）
-#[cfg(any())]
-#[test]
-fn test_state_without_recurrent_connection() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
-
-    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
-    let state = graph.new_state_node(&[1, 1], Some("state"))?;
-    graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
-
-    // 使用 state 但不建立循环连接
-    let add = graph.new_add_node(&[input, state], Some("add"))?;
-    let output = graph.new_tanh_node(add, Some("output"))?;
-
-    // 这应该能正常前向传播（state 作为常量）
-    graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-    graph.forward(output)?;
-
-    let val = graph.get_node_value(output)?.unwrap().data_as_slice()[0];
-    // tanh(1.0 + 0.0) = tanh(1.0) ≈ 0.7616
-    assert!((val - 0.7616).abs() < 0.01, "输出应为 tanh(1) ≈ 0.7616");
-    Ok(())
-}
-
-/// 测试重复建立循环连接
-#[cfg(any())]
-#[test]
-fn test_duplicate_recurrent_connection_error() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
-    let state = graph.new_state_node(&[1, 1], Some("state"))?;
-    graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
-
-    let add = graph.new_add_node(&[input, state], None)?;
-    let hidden = graph.new_tanh_node(add, Some("hidden"))?;
-
-    // 第一次连接应该成功
-    graph.connect_recurrent(hidden, state)?;
-
-    // 第二次连接到同一个 state 应该失败
-    let result = graph.connect_recurrent(hidden, state);
-    assert_err!(
-        result,
-        GraphError::InvalidOperation(msg) if msg.contains("已经有循环连接源")
-    );
-    Ok(())
-}
-
-/// 测试 State 节点的 grad 在 BPTT 场景下的行为
-///
-/// BPTT 需要 State 节点接收并传递梯度（跨时间步）
-/// 使用 backward_through_time 专用方法
-#[cfg(any())]
-#[test]
-fn test_state_grad_in_bptt() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
-
-    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
-    let state = graph.new_state_node(&[1, 1], Some("state"))?;
-    graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
-
-    let w = graph.new_parameter_node(&[1, 1], Some("w"))?;
-    graph.set_node_value(w, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-
-    // 简单网络：output = tanh(input + state) * w
-    let add = graph.new_add_node(&[input, state], None)?;
-    let hidden = graph.new_tanh_node(add, None)?;
-    let output = graph.new_mat_mul_node(hidden, w, Some("output"))?;
-
-    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
-    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
-
-    graph.connect_recurrent(hidden, state)?;
-
-    // 前向传播多步
-    graph.set_node_value(target, Some(&Tensor::new(&[0.5], &[1, 1])))?;
-    for &x in &[1.0, 0.5] {
-        graph.set_node_value(input, Some(&Tensor::new(&[x], &[1, 1])))?;
-        graph.step(loss)?;
-    }
-
-    // 使用 BPTT（会自动包含 State 节点）
-    graph.backward_through_time(&[w], loss)?;
-
-    // w 应该有梯度（通过 get_node_grad 获取）
-    let w_grad = graph.get_node_grad(w)?;
-    assert!(w_grad.is_some(), "w 应在 BPTT 后有 grad");
-    Ok(())
-}
-
-/// 测试 State 节点形状不匹配的循环连接
-#[cfg(any())]
-#[test]
-fn test_state_shape_mismatch_recurrent() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 使用无法广播的形状：[2, 3] 和 [2, 4]
-    // 第二维 3 != 4 且都不是 1，无法广播
-    let input = graph.new_basic_input_node(&[2, 3], Some("input"))?;
-    let state = graph.new_state_node(&[2, 4], Some("state"))?;
-    graph.set_node_value(state, Some(&Tensor::zeros(&[2, 4])))?;
-
-    // 这应该在 Add 节点创建时就报错（形状无法广播）
-    let result = graph.new_add_node(&[input, state], None);
-    assert_err!(result, GraphError::ShapeMismatch { .. });
-    Ok(())
-}
-
-/// 测试 zero_grad 对 State 节点的影响
-#[cfg(any())]
-#[test]
-fn test_zero_grad_on_state() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
-
-    // 构建一个会产生 State grad 的网络
-    let input = graph.new_basic_input_node(&[1, 1], Some("input"))?;
-    let state = graph.new_state_node(&[1, 1], Some("state"))?;
-    graph.set_node_value(state, Some(&Tensor::zeros(&[1, 1])))?;
-
-    let w = graph.new_parameter_node(&[1, 1], Some("w"))?;
-    graph.set_node_value(w, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-
-    let add = graph.new_add_node(&[input, state], None)?;
-    let hidden = graph.new_tanh_node(add, None)?;
-    let output = graph.new_mat_mul_node(hidden, w, Some("output"))?;
-
-    let target = graph.new_basic_input_node(&[1, 1], Some("target"))?;
-    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
-
-    graph.connect_recurrent(hidden, state)?;
-
-    // 前向和反向传播，产生 grad
-    graph.set_node_value(input, Some(&Tensor::new(&[1.0], &[1, 1])))?;
-    graph.set_node_value(target, Some(&Tensor::new(&[0.5], &[1, 1])))?;
-    graph.forward(loss)?;
-    graph.backward(loss)?;
-
-    // 验证 State 有 grad
-    let state_grad = graph.get_node_grad(state)?;
-    assert!(state_grad.is_some(), "State 节点在 backward 后应有 grad");
-
-    // zero_grad 应该清除 State 的 grad
-    graph.zero_grad()?;
-
-    let cleared_grad = graph.get_node_grad(state)?;
+    // forward 时 state 无值应报错
+    let result = inner.borrow_mut().forward_via_node_inner(&add);
+    assert!(result.is_err(), "State 无值时 forward 应失败");
+    let err_msg = format!("{:?}", result.unwrap_err());
     assert!(
-        cleared_grad.is_none(),
-        "State grad 应在 zero_grad() 后被清除"
+        err_msg.contains("没有值"),
+        "错误应提示没有值，实际: {}",
+        err_msg
     );
+
     Ok(())
 }
 
@@ -586,174 +504,196 @@ fn test_zero_grad_on_state() -> Result<(), GraphError> {
 
 /// 测试 State 节点的动态形状传播
 ///
-/// State 节点也是动态 batch 的源头，其 dynamic_expected_shape 的第一维应为 None
-#[cfg(any())]
+/// State 的 dynamic_expected_shape 第一维应为 None（动态 batch）
 #[test]
-fn test_state_dynamic_shape_propagation() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_state_dynamic_shape_propagation() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建 2D State 节点
-    let state = graph.new_state_node(&[4, 64], Some("hidden"))?;
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[4, 64], Some("hidden"))
+        .unwrap();
 
-    // 获取节点的动态形状
-    let node = graph.get_node(state)?;
-    let dyn_shape = node.dynamic_expected_shape();
-
+    let dyn_shape = state.dynamic_shape();
     assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
     assert!(!dyn_shape.is_dynamic(1), "特征维度应该是固定的");
     assert_eq!(dyn_shape.dim(1), Some(64), "特征维度应该是 64");
-    assert!(
-        node.supports_dynamic_batch(),
-        "State 节点应该支持动态 batch"
-    );
-
-    Ok(())
 }
 
 /// 测试 State 节点在不同维度下的动态形状
-#[cfg(any())]
 #[test]
-fn test_state_dynamic_shape_various_dims() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_state_dynamic_shape_various_dims() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 2D: [batch, hidden_size] (基础 RNN)
-    let state_2d = graph.new_state_node(&[4, 64], Some("hidden_2d"))?;
-    let node_2d = graph.get_node(state_2d)?;
-    let dyn_2d = node_2d.dynamic_expected_shape();
-    assert!(dyn_2d.is_dynamic(0));
-    assert!(!dyn_2d.is_dynamic(1));
+    // 2D: [batch, hidden_size]
+    let state_2d = inner
+        .borrow_mut()
+        .create_state_node(&[4, 64], Some("hidden_2d"))
+        .unwrap();
+    let dyn_2d = state_2d.dynamic_shape();
+    assert!(dyn_2d.is_dynamic(0), "2D: batch 应该是动态的");
+    assert!(!dyn_2d.is_dynamic(1), "2D: hidden_size 应该是固定的");
 
-    // 3D: [batch, seq_len, hidden_size] (序列状态)
-    let state_3d = graph.new_state_node(&[4, 10, 64], Some("hidden_3d"))?;
-    let node_3d = graph.get_node(state_3d)?;
-    let dyn_3d = node_3d.dynamic_expected_shape();
-    assert!(dyn_3d.is_dynamic(0), "3D: batch 维度应该是动态的");
+    // 3D: [batch, seq_len, hidden_size]
+    let state_3d = inner
+        .borrow_mut()
+        .create_state_node(&[4, 10, 64], Some("hidden_3d"))
+        .unwrap();
+    let dyn_3d = state_3d.dynamic_shape();
+    assert!(dyn_3d.is_dynamic(0), "3D: batch 应该是动态的");
     assert!(!dyn_3d.is_dynamic(1), "3D: seq_len 应该是固定的");
     assert!(!dyn_3d.is_dynamic(2), "3D: hidden_size 应该是固定的");
 
-    // 4D: [batch, channels, height, width] (ConvLSTM 状态)
-    let state_4d = graph.new_state_node(&[4, 32, 7, 7], Some("hidden_4d"))?;
-    let node_4d = graph.get_node(state_4d)?;
-    let dyn_4d = node_4d.dynamic_expected_shape();
-    assert!(dyn_4d.is_dynamic(0), "4D: batch 维度应该是动态的");
+    // 4D: [batch, C, H, W]（ConvLSTM）
+    let state_4d = inner
+        .borrow_mut()
+        .create_state_node(&[4, 32, 7, 7], Some("hidden_4d"))
+        .unwrap();
+    let dyn_4d = state_4d.dynamic_shape();
+    assert!(dyn_4d.is_dynamic(0), "4D: batch 应该是动态的");
     assert!(!dyn_4d.is_dynamic(1), "4D: channels 应该是固定的");
     assert!(!dyn_4d.is_dynamic(2), "4D: height 应该是固定的");
     assert!(!dyn_4d.is_dynamic(3), "4D: width 应该是固定的");
-
-    Ok(())
 }
 
 /// 测试 State 节点在不同 batch_size 下的前向计算
-#[cfg(any())]
 #[test]
 fn test_state_dynamic_batch_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建网络：state + input -> add -> tanh -> output
-    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
-    let state = graph.new_state_node(&[2, 4], Some("state"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], Some("input"))?;
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[2, 4], Some("state"))?;
 
-    // 设置初始值
-    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
-    graph.set_node_value(state, Some(&Tensor::zeros(&[2, 4])))?;
+    input.set_value(Some(&Tensor::ones(&[2, 4])))?;
+    state.set_value(Some(&Tensor::zeros(&[2, 4])))?;
 
-    let add = graph.new_add_node(&[input, state], Some("add"))?;
-    let output = graph.new_tanh_node(add, Some("output"))?;
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![input.clone(), state.clone()], Some("add"))?;
+    let output = inner
+        .borrow_mut()
+        .create_tanh_node(add, Some("output"))?;
 
-    // 第一次 forward：batch=2
-    graph.forward(output)?;
-    let value1 = graph.get_node_value(output)?.unwrap();
+    // 第一次 forward: batch=2
+    inner.borrow_mut().forward_via_node_inner(&output)?;
+    let value1 = output.value().unwrap();
     assert_eq!(value1.shape(), &[2, 4], "第一次 forward: batch=2");
 
-    // 更新为不同的 batch 大小
-    graph.set_node_value(input, Some(&Tensor::ones(&[6, 4])))?;
-    graph.set_node_value(state, Some(&Tensor::zeros(&[6, 4])))?;
+    // 更新为不同 batch 大小
+    input.set_value(Some(&Tensor::ones(&[6, 4])))?;
+    state.set_value(Some(&Tensor::zeros(&[6, 4])))?;
 
-    // 第二次 forward：batch=6
-    graph.forward(output)?;
-    let value2 = graph.get_node_value(output)?.unwrap();
+    // 第二次 forward: batch=6
+    inner.borrow_mut().forward_via_node_inner(&output)?;
+    let value2 = output.value().unwrap();
     assert_eq!(value2.shape(), &[6, 4], "第二次 forward: batch=6");
 
     Ok(())
 }
 
 /// 测试 State 节点在不同 batch_size 下的反向传播
-#[cfg(any())]
 #[test]
 #[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-    graph.set_train_mode();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建网络：input * weight + state -> output -> loss
-    // 其中 input 和 state 支持动态 batch，weight 是固定形状的 Parameter
-    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
-    let state = graph.new_state_node(&[2, 4], Some("state"))?;
-    let weight = graph.new_parameter_node(&[4, 4], Some("weight"))?; // 固定形状 [4, 4]
+    // 网络：input @ weight + state -> tanh -> output -> MSE loss
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], Some("input"))?;
+    let state = inner
+        .borrow_mut()
+        .create_state_node(&[2, 4], Some("state"))?;
+    let weight = inner
+        .borrow_mut()
+        .create_parameter_node(&[4, 4], Some("weight"))?;
+    inner
+        .borrow_mut()
+        .register_parameter("weight".to_string(), Rc::downgrade(&weight))?;
 
-    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
-    graph.set_node_value(state, Some(&Tensor::ones(&[2, 4])))?;
-    graph.set_node_value(weight, Some(&Tensor::normal_seeded(0.0, 0.1, &[4, 4], 42)))?;
+    input.set_value(Some(&Tensor::ones(&[2, 4])))?;
+    state.set_value(Some(&Tensor::ones(&[2, 4])))?;
+    weight.set_value(Some(&Tensor::normal_seeded(0.0, 0.1, &[4, 4], 42)))?;
 
-    // input @ weight + state -> tanh -> output
-    let proj = graph.new_mat_mul_node(input, weight, Some("proj"))?;
-    let add = graph.new_add_node(&[proj, state], Some("add"))?;
-    let output = graph.new_tanh_node(add, Some("output"))?;
+    // input @ weight
+    let proj = inner
+        .borrow_mut()
+        .create_mat_mul_node(vec![input.clone(), weight.clone()], Some("proj"))?;
+    // proj + state
+    let add = inner
+        .borrow_mut()
+        .create_add_node(vec![proj, state.clone()], Some("add"))?;
+    // tanh
+    let output = inner
+        .borrow_mut()
+        .create_tanh_node(add, Some("output"))?;
 
-    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
-    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
-    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], Some("target"))?;
+    target.set_value(Some(&Tensor::zeros(&[2, 4])))?;
 
-    // 第一次训练：batch=2
-    graph.forward(loss)?;
-    graph.zero_grad()?;
-    graph.backward(loss)?;
+    let loss = inner
+        .borrow_mut()
+        .create_mse_mean_node(output, target.clone(), Some("loss"))?;
+
+    // 第一次训练: batch=2
+    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+    inner.borrow_mut().zero_grad()?;
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
 
     // 验证 State 有梯度
-    let state_grad1 = graph.get_node_grad(state)?;
-    assert!(state_grad1.is_some(), "State 应该有梯度");
+    let state_grad1 = state.grad();
+    assert!(state_grad1.is_some(), "State 应有梯度");
     assert_eq!(state_grad1.unwrap().shape(), &[2, 4]);
 
     // 验证 weight 梯度形状
-    let weight_grad1 = graph.get_node_grad(weight)?;
-    assert!(weight_grad1.is_some(), "Weight 应该有梯度");
+    let weight_grad1 = weight.grad();
+    assert!(weight_grad1.is_some(), "Weight 应有梯度");
     assert_eq!(weight_grad1.unwrap().shape(), &[4, 4]);
 
-    // 更新为不同的 batch 大小（只有 Input 和 State 支持动态 batch）
-    graph.set_node_value(input, Some(&Tensor::ones(&[5, 4])))?;
-    graph.set_node_value(state, Some(&Tensor::ones(&[5, 4])))?;
-    graph.set_node_value(target, Some(&Tensor::zeros(&[5, 4])))?;
+    // 更新为不同 batch 大小
+    input.set_value(Some(&Tensor::ones(&[5, 4])))?;
+    state.set_value(Some(&Tensor::ones(&[5, 4])))?;
+    state.clear_grad()?;
+    target.set_value(Some(&Tensor::zeros(&[5, 4])))?;
 
-    // 第二次训练：batch=5
-    graph.forward(loss)?;
-    graph.zero_grad()?;
-    graph.backward(loss)?;
+    // 第二次训练: batch=5
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+    inner.borrow_mut().zero_grad()?;
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
 
-    // 验证 State 梯度形状正确（随 batch 变化）
-    let state_grad2 = graph.get_node_grad(state)?;
-    assert!(state_grad2.is_some(), "State 应该有梯度");
+    // 验证 State 梯度形状随 batch 变化
+    let state_grad2 = state.grad();
+    assert!(state_grad2.is_some(), "State 应有梯度");
     assert_eq!(
         state_grad2.unwrap().shape(),
         &[5, 4],
-        "State 梯度应该适应新的 batch 大小"
+        "State 梯度应适应新 batch 大小"
     );
 
-    // 验证 weight 梯度形状保持不变
-    let weight_grad2 = graph.get_node_grad(weight)?;
-    assert!(weight_grad2.is_some(), "Weight 应该有梯度");
+    // weight 梯度形状应保持不变
+    let weight_grad2 = weight.grad();
+    assert!(weight_grad2.is_some(), "Weight 应有梯度");
     assert_eq!(
         weight_grad2.unwrap().shape(),
         &[4, 4],
-        "Weight 梯度形状应保持不变（与 batch 大小无关）"
+        "Weight 梯度形状应保持不变"
     );
 
     Ok(())
 }
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
-
-use crate::nn::Graph;
-use std::rc::Rc;
 
 #[test]
 fn test_create_state_node() {

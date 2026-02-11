@@ -1,134 +1,125 @@
 /*
  * Dropout 节点单元测试
  *
- * 测试覆盖：
- * 1. 基本创建和参数验证
- * 2. 训练模式 vs 评估模式行为
- * 3. 前向传播（Inverted Dropout 缩放）
- * 4. 反向传播（梯度也需要 mask 和缩放）
- * 5. 确定性（相同 seed 产生相同结果）
- * 6. 动态形状支持
+ * 测试策略（六段式）：
+ * 1. 基础创建 → 默认 p=0.5; 自定义 p; 无效 p; cannot_set_value
+ * 2. 训练/评估模式行为 → 训练丢弃; 评估直通; 训练→评估切换; 评估→训练切换; 多次 forward 不同 mask
+ * 3. 反向传播 → 训练 mask 梯度; p=0 梯度完全通过; 评估 vs 训练对比
+ * 4. 确定性 → 相同 seed 同结果; 不同 seed 不同结果（底层 API 指定 seed）
+ * 5. 统计特性 → 丢弃率符合 p; 期望值保持（Inverted Dropout）; p=0 为 identity
+ * 6. 动态 batch + Create API（KEEP AS-IS）
+ *
+ * Inverted Dropout: 训练时保留元素按 1/(1-p) 缩放，保证期望不变。
+ * 高层 .dropout(p) 使用系统时间 seed（不确定），确定性测试用底层 API 指定 seed。
  */
 
-use crate::nn::GraphError;
-use crate::nn::graph::GraphInner;
+use crate::nn::{Graph, GraphError, Init, Var, VarLossOps, VarRegularizationOps};
 use crate::tensor::Tensor;
 
-// ==================== 基本创建测试 ====================
+// ==================== 1. 基础创建测试 ====================
 
-/// 测试默认 p=0.5 的 Dropout 创建
-#[cfg(any())]
+/// 高层 API 创建 Dropout（默认 p=0.5）
 #[test]
-fn test_dropout_create_default() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+fn test_dropout_create_default() {
+    let graph = Graph::new_with_seed(42);
 
-    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.5, Some("dropout"))?;
+    let x = graph.input(&Tensor::ones(&[2, 4])).unwrap();
+    let dropped = x.dropout(0.5).unwrap();
 
-    // 验证节点创建成功
-    assert!(graph.get_node(dropout).is_ok());
-
-    Ok(())
+    // 验证输出形状与输入一致
+    assert_eq!(dropped.value_expected_shape(), vec![2, 4]);
 }
 
-/// 测试自定义 p 的 Dropout 创建
-#[cfg(any())]
+/// 高层 API 创建不同 p 值的 Dropout
 #[test]
-fn test_dropout_create_custom_p() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+fn test_dropout_create_custom_p() {
+    let graph = Graph::new_with_seed(42);
 
-    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
+    let x = graph.input(&Tensor::ones(&[2, 4])).unwrap();
 
-    // 测试不同的 p 值
-    let _d1 = graph.new_dropout_node(input, 0.1, Some("d1"))?;
-    let _d2 = graph.new_dropout_node(input, 0.3, Some("d2"))?;
-    let _d3 = graph.new_dropout_node(input, 0.7, Some("d3"))?;
+    // 各种合法 p 值
+    let _d1 = x.dropout(0.1).unwrap();
+    let _d2 = x.dropout(0.3).unwrap();
+    let _d3 = x.dropout(0.7).unwrap();
 
-    // p=0.0 应该也可以创建（相当于 identity）
-    let _d0 = graph.new_dropout_node(input, 0.0, Some("d0"))?;
-
-    Ok(())
+    // p=0 等价 identity，应创建成功
+    let _d0 = x.dropout(0.0).unwrap();
 }
 
-/// 测试无效 p 值应该报错
-#[cfg(any())]
+/// 无效 p 值应报错
 #[test]
 fn test_dropout_invalid_p() {
-    let mut graph = GraphInner::new_with_seed(42);
-    let input = graph.new_basic_input_node(&[2, 4], Some("input")).unwrap();
+    let graph = Graph::new_with_seed(42);
 
-    // p >= 1.0 应该失败
-    assert!(graph.new_dropout_node(input, 1.0, None).is_err());
-    assert!(graph.new_dropout_node(input, 1.5, None).is_err());
+    let x = graph.input(&Tensor::ones(&[2, 4])).unwrap();
 
-    // p < 0 应该失败
-    assert!(graph.new_dropout_node(input, -0.1, None).is_err());
+    // p >= 1.0
+    assert!(x.dropout(1.0).is_err());
+    assert!(x.dropout(1.5).is_err());
+
+    // p < 0
+    assert!(x.dropout(-0.1).is_err());
 }
 
-// ==================== 训练/评估模式测试 ====================
+/// Dropout 节点不能直接设置值
+#[test]
+fn test_dropout_cannot_set_value() {
+    let graph = Graph::new_with_seed(42);
 
-/// 测试：训练模式下输出应该有元素被置零
-#[cfg(any())]
+    let x = graph.input(&Tensor::ones(&[2, 4])).unwrap();
+    let dropped = x.dropout(0.5).unwrap();
+
+    let test_value = Tensor::ones(&[2, 4]);
+    let err = dropped.set_value(&test_value);
+    assert!(err.is_err(), "Dropout 节点不应支持直接设值");
+}
+
+// ==================== 2. 训练/评估模式行为 ====================
+
+/// 训练模式下输出应有元素被置零（Inverted Dropout 缩放为 2.0）
 #[test]
 fn test_dropout_train_mode_drops_elements() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_train_mode();
+    let graph = Graph::new_with_seed(42);
+    graph.inner_mut().set_train_mode();
 
-    let input = graph.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.5, Some("dropout"))?;
+    let x = graph.input(&Tensor::ones(&[1, 100]))?;
+    let dropped = x.dropout(0.5)?;
 
-    // 设置输入为全 1
-    let input_data = Tensor::ones(&[1, 100]);
-    graph.set_node_value(input, Some(&input_data))?;
+    dropped.forward()?;
+    let output = dropped.value()?.unwrap();
 
-    // 前向传播
-    graph.forward(dropout)?;
-
-    let output = graph.get_node_value(dropout)?.unwrap();
-
-    // 训练模式下，应该有一些元素被置零（或被缩放）
-    // 由于 p=0.5，大约一半元素应该是 0，另一半是 2.0（1 / (1-0.5) = 2）
-    let mut zeros_count = 0;
-    let mut twos_count = 0;
+    // p=0.5 → 保留元素缩放为 1/(1-0.5)=2.0, 丢弃为 0
+    let mut zeros = 0;
+    let mut twos = 0;
     for i in 0..100 {
-        let val = output[[0, i]];
-        if val == 0.0 {
-            zeros_count += 1;
-        } else if (val - 2.0).abs() < 1e-6 {
-            twos_count += 1;
+        let v = output[[0, i]];
+        if v == 0.0 {
+            zeros += 1;
+        } else if (v - 2.0).abs() < 1e-6 {
+            twos += 1;
         }
     }
 
-    // 验证有元素被丢弃
-    assert!(zeros_count > 0, "训练模式应该有元素被丢弃");
-    // 验证保留的元素被缩放
-    assert!(twos_count > 0, "保留的元素应该被缩放为 2.0");
-    // 验证总数正确
-    assert_eq!(zeros_count + twos_count, 100, "所有元素应该是 0 或 2.0");
+    assert!(zeros > 0, "训练模式应有元素被丢弃");
+    assert!(twos > 0, "保留元素应被缩放为 2.0");
+    assert_eq!(zeros + twos, 100, "所有元素应为 0 或 2.0");
 
     Ok(())
 }
 
-/// 测试：评估模式下输出应该等于输入
-#[cfg(any())]
+/// 评估模式下输出等于输入（直通）
 #[test]
 fn test_dropout_eval_mode_passthrough() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_eval_mode(); // 评估模式
+    let graph = Graph::new_with_seed(42);
+    graph.inner_mut().set_eval_mode();
 
-    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.5, Some("dropout"))?;
-
-    // 设置输入
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
-    graph.set_node_value(input, Some(&input_data))?;
+    let x = graph.input(&input_data)?;
+    let dropped = x.dropout(0.5)?;
 
-    // 前向传播
-    graph.forward(dropout)?;
+    dropped.forward()?;
+    let output = dropped.value()?.unwrap();
 
-    let output = graph.get_node_value(dropout)?.unwrap();
-
-    // 评估模式下，输出应该完全等于输入
     for i in 0..2 {
         for j in 0..4 {
             assert!(
@@ -141,205 +132,139 @@ fn test_dropout_eval_mode_passthrough() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试：训练→评估模式切换后行为正确
-#[cfg(any())]
+/// 训练→评估模式切换后行为正确
 #[test]
 fn test_dropout_mode_switch_train_to_eval() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
-    let input = graph.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.5, Some("dropout"))?;
-
-    let input_data = Tensor::ones(&[1, 100]);
-    graph.set_node_value(input, Some(&input_data))?;
+    let x = graph.input(&Tensor::ones(&[1, 100]))?;
+    let dropped = x.dropout(0.5)?;
 
     // 1. 训练模式
-    graph.set_train_mode();
-    graph.forward(dropout)?;
-    let train_output = graph.get_node_value(dropout)?.unwrap().clone();
+    graph.inner_mut().set_train_mode();
+    dropped.forward()?;
+    let train_output = dropped.value()?.unwrap();
 
-    // 训练模式应该有变化
-    let mut has_zeros = false;
-    for i in 0..100 {
-        if train_output[[0, i]] == 0.0 {
-            has_zeros = true;
-            break;
-        }
-    }
-    assert!(has_zeros, "训练模式应该有元素被丢弃");
+    let has_zeros = (0..100).any(|i| train_output[[0, i]] == 0.0);
+    assert!(has_zeros, "训练模式应有元素被丢弃");
 
-    // 清除值以便重新计算
-    graph.get_node_mut(dropout)?.clear_value()?;
+    // 2. 切换到评估模式，重新 forward
+    graph.inner_mut().set_eval_mode();
+    dropped.forward()?;
+    let eval_output = dropped.value()?.unwrap();
 
-    // 2. 评估模式
-    graph.set_eval_mode();
-    graph.forward(dropout)?;
-    let eval_output = graph.get_node_value(dropout)?.unwrap();
-
-    // 评估模式应该全是 1
     for i in 0..100 {
         assert!(
             (eval_output[[0, i]] - 1.0).abs() < 1e-6,
-            "评估模式应该直接通过"
+            "评估模式应直通，元素 {i} 值 {} != 1.0",
+            eval_output[[0, i]]
         );
     }
 
     Ok(())
 }
 
-/// 测试：评估→训练模式切换后行为正确
-#[cfg(any())]
+/// 评估→训练模式切换后行为正确
 #[test]
 fn test_dropout_mode_switch_eval_to_train() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+    let graph = Graph::new_with_seed(42);
 
-    let input = graph.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.5, Some("dropout"))?;
+    let x = graph.input(&Tensor::ones(&[1, 100]))?;
+    let dropped = x.dropout(0.5)?;
 
-    let input_data = Tensor::ones(&[1, 100]);
-    graph.set_node_value(input, Some(&input_data))?;
+    // 1. 评估模式
+    graph.inner_mut().set_eval_mode();
+    dropped.forward()?;
+    let eval_output = dropped.value()?.unwrap();
 
-    // 1. 先评估模式
-    graph.set_eval_mode();
-    graph.forward(dropout)?;
-    let eval_output = graph.get_node_value(dropout)?.unwrap().clone();
-
-    // 评估模式应该全是 1（无丢弃）
     for i in 0..100 {
         assert!(
             (eval_output[[0, i]] - 1.0).abs() < 1e-6,
-            "评估模式应该直接通过"
+            "评估模式应直通"
         );
     }
 
-    // 清除值以便重新计算
-    graph.get_node_mut(dropout)?.clear_value()?;
+    // 2. 切换到训练模式，重新 forward
+    graph.inner_mut().set_train_mode();
+    dropped.forward()?;
+    let train_output = dropped.value()?.unwrap();
 
-    // 2. 切换到训练模式
-    graph.set_train_mode();
-    graph.forward(dropout)?;
-    let train_output = graph.get_node_value(dropout)?.unwrap();
-
-    // 训练模式应该有丢弃
-    let mut has_zeros = false;
-    for i in 0..100 {
-        if train_output[[0, i]] == 0.0 {
-            has_zeros = true;
-            break;
-        }
-    }
-    assert!(has_zeros, "切换到训练模式后应该有元素被丢弃");
+    let has_zeros = (0..100).any(|i| train_output[[0, i]] == 0.0);
+    assert!(has_zeros, "切换到训练模式后应有元素被丢弃");
 
     Ok(())
 }
 
-/// 测试：训练模式下多次 forward 产生不同的 mask
-#[cfg(any())]
+/// 训练模式下多次 forward 产生不同 mask
 #[test]
 fn test_dropout_different_masks_each_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_train_mode();
+    let graph = Graph::new_with_seed(42);
+    graph.inner_mut().set_train_mode();
 
-    let input = graph.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.5, Some("dropout"))?;
-
-    graph.set_node_value(input, Some(&Tensor::ones(&[1, 100])))?;
+    let x = graph.input(&Tensor::ones(&[1, 100]))?;
+    let dropped = x.dropout(0.5)?;
 
     // 第一次 forward
-    graph.forward(dropout)?;
-    let output1 = graph.get_node_value(dropout)?.unwrap().clone();
+    dropped.forward()?;
+    let output1 = dropped.value()?.unwrap();
 
-    // 清除值，重新 forward
-    graph.get_node_mut(dropout)?.clear_value()?;
-    graph.forward(dropout)?;
-    let output2 = graph.get_node_value(dropout)?.unwrap();
+    // 第二次 forward（pass_id 递增，触发重新计算）
+    dropped.forward()?;
+    let output2 = dropped.value()?.unwrap();
 
-    // 两次 forward 应该产生不同的 mask（概率极高）
-    let mut found_diff = false;
-    for i in 0..100 {
-        if (output1[[0, i]] - output2[[0, i]]).abs() > 1e-6 {
-            found_diff = true;
-            break;
-        }
-    }
-    assert!(found_diff, "训练模式下每次 forward 应该产生不同的随机 mask");
+    // 两次结果应不同（概率极高）
+    let found_diff = (0..100).any(|i| (output1[[0, i]] - output2[[0, i]]).abs() > 1e-6);
+    assert!(
+        found_diff,
+        "训练模式下多次 forward 应产生不同 mask"
+    );
 
     Ok(())
 }
 
-// ==================== 反向传播测试 ====================
+// ==================== 3. 反向传播测试 ====================
 
-/// 测试：训练模式下反向传播正确（通过参数节点验证）
-#[cfg(any())]
+/// 训练模式下梯度在被丢弃位置为 0
 #[test]
 fn test_dropout_backward_train_mode() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_train_mode();
+    let graph = Graph::new_with_seed(42);
+    graph.inner_mut().set_train_mode();
 
-    // 使用 Parameter 节点作为输入，这样可以检查梯度
-    // w -> dropout -> loss
-    let w = graph.new_parameter_node(&[1, 10], Some("w"))?;
-    graph.set_node_value(w, Some(&Tensor::ones(&[1, 10])))?;
+    // w -> dropout -> mse_loss
+    let w = graph.parameter(&[1, 10], Init::Ones, "w")?;
+    let dropped = w.dropout(0.5)?;
+    let target = graph.input(&Tensor::zeros(&[1, 10]))?;
+    let loss = dropped.mse_loss(&target)?;
 
-    let dropout = graph.new_dropout_node(w, 0.5, Some("dropout"))?;
-    let target = graph.new_basic_input_node(&[1, 10], Some("target"))?;
-    let loss = graph.new_mse_loss_node(dropout, target, Some("loss"))?;
+    graph.zero_grad()?;
+    loss.backward()?;
 
-    // 设置 target
-    graph.set_node_value(target, Some(&Tensor::zeros(&[1, 10])))?;
-
-    // 前向 + 反向
-    graph.forward(loss)?;
-    graph.backward(loss)?;
-
-    // 检查参数 w 的梯度
-    let w_grad = graph.get_node(w)?.grad();
-    assert!(w_grad.is_some(), "参数 w 应该有梯度");
-
-    // 由于训练模式下 Dropout 会丢弃一些元素，
-    // 梯度在被丢弃位置应该是 0
-    let grad = w_grad.unwrap();
-    let mut zeros_count = 0;
-    for i in 0..10 {
-        if grad[[0, i]] == 0.0 {
-            zeros_count += 1;
-        }
-    }
-    assert!(zeros_count > 0, "训练模式下梯度在被丢弃位置应该是 0");
+    let grad = w.grad()?.expect("参数 w 应有梯度");
+    let zeros_count = (0..10).filter(|&i| grad[[0, i]] == 0.0).count();
+    assert!(zeros_count > 0, "训练模式下被丢弃位置的梯度应为 0");
 
     Ok(())
 }
 
-/// 测试：p=0 时梯度完全通过（无丢弃，相当于 identity）
-#[cfg(any())]
+/// p=0 时梯度完全通过（等价 identity）
 #[test]
 fn test_dropout_backward_p_zero_passthrough() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_train_mode();
+    let graph = Graph::new_with_seed(42);
+    graph.inner_mut().set_train_mode();
 
-    // 使用 Parameter 节点
-    let w = graph.new_parameter_node(&[1, 4], Some("w"))?;
-    graph.set_node_value(w, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4])))?;
+    let w = graph.parameter(&[1, 4], Init::Ones, "w")?;
+    w.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]))?;
 
-    // p=0 相当于 identity，梯度应该直接通过
-    let dropout = graph.new_dropout_node(w, 0.0, Some("dropout"))?;
-    let target = graph.new_basic_input_node(&[1, 4], Some("target"))?;
-    let loss = graph.new_mse_loss_node(dropout, target, Some("loss"))?;
+    // p=0 → identity，梯度应直接通过
+    let dropped = w.dropout(0.0)?;
+    let target = graph.input(&Tensor::zeros(&[1, 4]))?;
+    let loss = dropped.mse_loss(&target)?;
 
-    // 设置 target
-    graph.set_node_value(target, Some(&Tensor::zeros(&[1, 4])))?;
+    graph.zero_grad()?;
+    loss.backward()?;
 
-    // 前向 + 反向
-    graph.forward(loss)?;
-    graph.backward(loss)?;
-
-    // 检查参数 w 的梯度
-    let w_grad = graph.get_node(w)?.grad();
-    assert!(w_grad.is_some(), "参数 w 应该有梯度");
-
-    // p=0 时梯度应该直接通过
-    // 梯度应该是 2*(pred - target)/N = 2*[1,2,3,4]/4 = [0.5, 1.0, 1.5, 2.0]
-    let grad = w_grad.unwrap();
+    // MSE Mean VJP: grad = 2*(pred - target)/N = 2*[1,2,3,4]/4 = [0.5, 1.0, 1.5, 2.0]
+    let grad = w.grad()?.expect("参数 w 应有梯度");
     let expected = [0.5, 1.0, 1.5, 2.0];
     for (i, &e) in expected.iter().enumerate() {
         let g = grad[[0, i]];
@@ -352,146 +277,180 @@ fn test_dropout_backward_p_zero_passthrough() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试：评估模式下前向传播无丢弃（与训练模式对比）
-#[cfg(any())]
+/// 评估模式 vs 训练模式前向对比
 #[test]
 fn test_dropout_eval_vs_train_same_input() -> Result<(), GraphError> {
-    // 使用相同的 seed 创建两个 graph
-    let mut graph_train = GraphInner::new_with_seed(42);
-    let mut graph_eval = GraphInner::new_with_seed(42);
+    // 训练模式图
+    let graph_train = Graph::new_with_seed(42);
+    graph_train.inner_mut().set_train_mode();
 
-    graph_train.set_train_mode();
-    graph_eval.set_eval_mode();
+    let x_train = graph_train.input(&Tensor::ones(&[1, 100]))?;
+    let d_train = x_train.dropout(0.5)?;
 
-    // 创建相同结构
-    let input_train = graph_train.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout_train = graph_train.new_dropout_node(input_train, 0.5, Some("dropout"))?;
+    d_train.forward()?;
+    let output_train = d_train.value()?.unwrap();
 
-    let input_eval = graph_eval.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout_eval = graph_eval.new_dropout_node(input_eval, 0.5, Some("dropout"))?;
+    // 评估模式图
+    let graph_eval = Graph::new_with_seed(42);
+    graph_eval.inner_mut().set_eval_mode();
 
-    // 设置相同输入
-    let input_data = Tensor::ones(&[1, 100]);
-    graph_train.set_node_value(input_train, Some(&input_data))?;
-    graph_eval.set_node_value(input_eval, Some(&input_data))?;
+    let x_eval = graph_eval.input(&Tensor::ones(&[1, 100]))?;
+    let d_eval = x_eval.dropout(0.5)?;
 
-    // 前向传播
-    graph_train.forward(dropout_train)?;
-    graph_eval.forward(dropout_eval)?;
+    d_eval.forward()?;
+    let output_eval = d_eval.value()?.unwrap();
 
-    let output_train = graph_train.get_node_value(dropout_train)?.unwrap();
-    let output_eval = graph_eval.get_node_value(dropout_eval)?.unwrap();
+    // 训练模式应有 0 值
+    let train_has_zeros = (0..100).any(|i| output_train[[0, i]] == 0.0);
+    assert!(train_has_zeros, "训练模式应有元素被丢弃");
 
-    // 训练模式应该有 0 值
-    let mut train_has_zeros = false;
-    for i in 0..100 {
-        if output_train[[0, i]] == 0.0 {
-            train_has_zeros = true;
-            break;
-        }
-    }
-    assert!(train_has_zeros, "训练模式应该有元素被丢弃");
-
-    // 评估模式应该全是 1（无 0 值）
+    // 评估模式应全为 1（无丢弃）
     for i in 0..100 {
         assert!(
             (output_eval[[0, i]] - 1.0).abs() < 1e-6,
-            "评估模式输出应等于输入，无丢弃"
+            "评估模式输出应等于输入"
         );
     }
 
     Ok(())
 }
 
-// ==================== 确定性测试 ====================
+// ==================== 4. 确定性测试（底层 API 指定 seed）====================
 
-/// 测试：相同 seed 产生相同结果
-#[cfg(any())]
+/// 辅助函数：用底层 API 创建带指定 seed 的 Dropout Var
+fn create_dropout_with_seed(
+    graph: &Graph,
+    input: &Var,
+    p: f32,
+    seed: u64,
+    name: Option<&str>,
+) -> Result<Var, GraphError> {
+    let inner = graph.inner_rc();
+    let node = inner
+        .borrow_mut()
+        .create_dropout_node(std::rc::Rc::clone(input.node()), p, seed, name)?;
+    Ok(Var::new_with_rc_graph(node, &inner))
+}
+
+/// 相同 seed → 相同结果
 #[test]
-fn test_dropout_deterministic() -> Result<(), GraphError> {
-    // 第一次运行
-    let mut graph1 = GraphInner::new_with_seed(42);
-    graph1.set_train_mode();
-    let input1 = graph1.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout1 = graph1.new_dropout_node(input1, 0.5, Some("dropout"))?;
-    graph1.set_node_value(input1, Some(&Tensor::ones(&[1, 100])))?;
-    graph1.forward(dropout1)?;
-    let output1 = graph1.get_node_value(dropout1)?.unwrap().clone();
+fn test_dropout_deterministic_same_seed() -> Result<(), GraphError> {
+    // 第一次
+    let graph1 = Graph::new_with_seed(42);
+    graph1.inner_mut().set_train_mode();
+    let x1 = graph1.input(&Tensor::ones(&[1, 100]))?;
+    let d1 = create_dropout_with_seed(&graph1, &x1, 0.5, 42, Some("d"))?;
+    d1.forward()?;
+    let output1 = d1.value()?.unwrap();
 
-    // 第二次运行（相同 seed）
-    let mut graph2 = GraphInner::new_with_seed(42);
-    graph2.set_train_mode();
-    let input2 = graph2.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout2 = graph2.new_dropout_node(input2, 0.5, Some("dropout"))?;
-    graph2.set_node_value(input2, Some(&Tensor::ones(&[1, 100])))?;
-    graph2.forward(dropout2)?;
-    let output2 = graph2.get_node_value(dropout2)?.unwrap();
+    // 第二次（相同 seed）
+    let graph2 = Graph::new_with_seed(42);
+    graph2.inner_mut().set_train_mode();
+    let x2 = graph2.input(&Tensor::ones(&[1, 100]))?;
+    let d2 = create_dropout_with_seed(&graph2, &x2, 0.5, 42, Some("d"))?;
+    d2.forward()?;
+    let output2 = d2.value()?.unwrap();
 
-    // 应该完全相同
+    // 应完全相同
     for i in 0..100 {
         assert!(
             (output1[[0, i]] - output2[[0, i]]).abs() < 1e-6,
-            "相同 seed 应该产生相同结果"
+            "相同 seed 应产生相同结果，位置 {i}: {} vs {}",
+            output1[[0, i]],
+            output2[[0, i]]
         );
     }
 
     Ok(())
 }
 
-/// 测试：不同 seed 产生不同结果
-#[cfg(any())]
+/// 不同 seed → 不同结果
 #[test]
-fn test_dropout_different_seeds() -> Result<(), GraphError> {
+fn test_dropout_deterministic_different_seed() -> Result<(), GraphError> {
     // seed = 42
-    let mut graph1 = GraphInner::new_with_seed(42);
-    graph1.set_train_mode();
-    let input1 = graph1.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout1 = graph1.new_dropout_node(input1, 0.5, Some("dropout"))?;
-    graph1.set_node_value(input1, Some(&Tensor::ones(&[1, 100])))?;
-    graph1.forward(dropout1)?;
-    let output1 = graph1.get_node_value(dropout1)?.unwrap().clone();
+    let graph1 = Graph::new_with_seed(42);
+    graph1.inner_mut().set_train_mode();
+    let x1 = graph1.input(&Tensor::ones(&[1, 100]))?;
+    let d1 = create_dropout_with_seed(&graph1, &x1, 0.5, 42, Some("d"))?;
+    d1.forward()?;
+    let output1 = d1.value()?.unwrap();
 
     // seed = 123
-    let mut graph2 = GraphInner::new_with_seed(123);
-    graph2.set_train_mode();
-    let input2 = graph2.new_basic_input_node(&[1, 100], Some("input"))?;
-    let dropout2 = graph2.new_dropout_node(input2, 0.5, Some("dropout"))?;
-    graph2.set_node_value(input2, Some(&Tensor::ones(&[1, 100])))?;
-    graph2.forward(dropout2)?;
-    let output2 = graph2.get_node_value(dropout2)?.unwrap();
+    let graph2 = Graph::new_with_seed(123);
+    graph2.inner_mut().set_train_mode();
+    let x2 = graph2.input(&Tensor::ones(&[1, 100]))?;
+    let d2 = create_dropout_with_seed(&graph2, &x2, 0.5, 123, Some("d"))?;
+    d2.forward()?;
+    let output2 = d2.value()?.unwrap();
 
-    // 应该不同（找到至少一个不同的元素）
-    let mut found_diff = false;
-    for i in 0..100 {
-        if (output1[[0, i]] - output2[[0, i]]).abs() > 1e-6 {
-            found_diff = true;
-            break;
-        }
-    }
-    assert!(found_diff, "不同 seed 应该产生不同结果");
+    let found_diff = (0..100).any(|i| (output1[[0, i]] - output2[[0, i]]).abs() > 1e-6);
+    assert!(found_diff, "不同 seed 应产生不同结果");
 
     Ok(())
 }
 
-// ==================== p=0 特殊情况测试 ====================
+// ==================== 5. 统计特性测试 ====================
 
-/// 测试：p=0 时相当于 identity
-#[cfg(any())]
+/// 丢弃率大致符合 p
 #[test]
-fn test_dropout_p_zero() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_train_mode();
+fn test_dropout_drop_rate() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    graph.inner_mut().set_train_mode();
 
-    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.0, Some("dropout"))?;
+    let x = graph.input(&Tensor::ones(&[1, 10000]))?;
+    let dropped = x.dropout(0.3)?;
+
+    dropped.forward()?;
+    let output = dropped.value()?.unwrap();
+
+    let zeros_count = (0..10000).filter(|&i| output[[0, i]] == 0.0).count();
+    let drop_rate = zeros_count as f64 / 10000.0;
+
+    assert!(
+        (drop_rate - 0.3).abs() < 0.05,
+        "丢弃率 {drop_rate} 应接近 0.3"
+    );
+
+    Ok(())
+}
+
+/// Inverted Dropout 保持期望值不变
+#[test]
+fn test_dropout_expected_value_preserved() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    graph.inner_mut().set_train_mode();
+
+    let x = graph.input(&Tensor::ones(&[1, 10000]))?;
+    let dropped = x.dropout(0.5)?;
+
+    dropped.forward()?;
+    let output = dropped.value()?.unwrap();
+
+    let sum: f64 = (0..10000).map(|i| output[[0, i]] as f64).sum();
+    let mean = sum / 10000.0;
+
+    // E[output] = (1-p) * (1/(1-p)) * input = input = 1.0
+    assert!(
+        (mean - 1.0).abs() < 0.1,
+        "输出均值 {mean} 应接近 1.0（Inverted Dropout）"
+    );
+
+    Ok(())
+}
+
+/// p=0 时等价 identity
+#[test]
+fn test_dropout_p_zero_is_identity() -> Result<(), GraphError> {
+    let graph = Graph::new_with_seed(42);
+    graph.inner_mut().set_train_mode();
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
-    graph.set_node_value(input, Some(&input_data))?;
+    let x = graph.input(&input_data)?;
+    let dropped = x.dropout(0.0)?;
 
-    graph.forward(dropout)?;
-    let output = graph.get_node_value(dropout)?.unwrap();
+    dropped.forward()?;
+    let output = dropped.value()?.unwrap();
 
-    // p=0 时输出应该等于输入
     for i in 0..2 {
         for j in 0..4 {
             assert!(
@@ -504,101 +463,8 @@ fn test_dropout_p_zero() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== 动态形状测试 ====================
+// ==================== 6. 动态 batch + Create API（KEEP AS-IS）====================
 
-/// 测试：支持不同 batch size
-#[cfg(any())]
-#[test]
-fn test_dropout_dynamic_batch() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_train_mode();
-
-    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.5, Some("dropout"))?;
-
-    // batch=2
-    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
-    graph.forward(dropout)?;
-    let output1 = graph.get_node_value(dropout)?.unwrap();
-    assert_eq!(output1.shape(), &[2, 4]);
-
-    // 清除并用不同 batch
-    graph.get_node_mut(dropout)?.clear_value()?;
-    graph.set_node_value(input, Some(&Tensor::ones(&[5, 4])))?;
-    graph.forward(dropout)?;
-    let output2 = graph.get_node_value(dropout)?.unwrap();
-    assert_eq!(output2.shape(), &[5, 4]);
-
-    Ok(())
-}
-
-// ==================== 统计特性测试 ====================
-
-/// 测试：丢弃率大致符合 p
-#[cfg(any())]
-#[test]
-fn test_dropout_drop_rate() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_train_mode();
-
-    let input = graph.new_basic_input_node(&[1, 10000], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.3, Some("dropout"))?;
-
-    graph.set_node_value(input, Some(&Tensor::ones(&[1, 10000])))?;
-    graph.forward(dropout)?;
-
-    let output = graph.get_node_value(dropout)?.unwrap();
-    let mut zeros_count = 0;
-    for i in 0..10000 {
-        if output[[0, i]] == 0.0 {
-            zeros_count += 1;
-        }
-    }
-    let drop_rate = zeros_count as f64 / 10000.0;
-
-    // 丢弃率应该大致等于 0.3（允许一定误差）
-    assert!(
-        (drop_rate - 0.3).abs() < 0.05,
-        "丢弃率 {drop_rate} 应该接近 0.3"
-    );
-
-    Ok(())
-}
-
-/// 测试：保留元素的期望值不变（Inverted Dropout 特性）
-#[cfg(any())]
-#[test]
-fn test_dropout_expected_value_preserved() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-    graph.set_train_mode();
-
-    let input = graph.new_basic_input_node(&[1, 10000], Some("input"))?;
-    let dropout = graph.new_dropout_node(input, 0.5, Some("dropout"))?;
-
-    // 输入全为 1.0
-    graph.set_node_value(input, Some(&Tensor::ones(&[1, 10000])))?;
-    graph.forward(dropout)?;
-
-    let output = graph.get_node_value(dropout)?.unwrap();
-    let mut sum = 0.0;
-    for i in 0..10000 {
-        sum += output[[0, i]];
-    }
-    let mean = sum / 10000.0;
-
-    // 由于 Inverted Dropout，期望值应该接近 1.0
-    // E[output] = (1-p) * (1/(1-p)) * input = input
-    assert!(
-        (mean - 1.0).abs() < 0.1,
-        "输出均值 {mean} 应该接近输入均值 1.0（Inverted Dropout 特性）"
-    );
-
-    Ok(())
-}
-
-// ==================== 方案 C：新节点创建 API 测试 ====================
-
-use crate::nn::Graph;
 use std::rc::Rc;
 
 #[test]
