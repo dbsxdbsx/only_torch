@@ -484,7 +484,6 @@ fn test_log_softmax_dynamic_batch_forward() {
 
 /// 测试 LogSoftmax 节点在不同 batch_size 下的反向传播
 #[test]
-#[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_log_softmax_dynamic_batch_backward() {
     use crate::nn::Graph;
     use crate::nn::var_ops::{VarActivationOps, VarLossOps};

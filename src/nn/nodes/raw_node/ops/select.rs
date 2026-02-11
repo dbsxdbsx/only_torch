@@ -147,7 +147,7 @@ impl TraitNode for Select {
     fn calc_grad_to_parent(
         &self,
         _target_parent_index: usize,
-        _parent_values: &[&Tensor],
+        parent_values: &[&Tensor],
         upstream_grad: &Tensor,
     ) -> Result<Tensor, GraphError> {
         // Select 的反向传播：将梯度放回对应位置，其他位置为 0
@@ -155,9 +155,12 @@ impl TraitNode for Select {
         // 前向：output = input[:, index, :] （假设 axis=1）
         // 反向：grad_input 是一个全零张量，只在 [:, index, :] 处填入 upstream_grad
         //
-        // 使用 scatter 操作：在 parent_shape 大小的零张量中，将 upstream_grad 放入 (axis, index) 处
+        // 使用 scatter 操作：在 parent 实际形状大小的零张量中，将 upstream_grad 放入 (axis, index) 处
+        // 注意：必须用 parent_values 的运行时形状，不能用 self.parent_shape（构建时静态形状），
+        // 否则动态 batch 场景下形状不匹配
 
-        let mut grad_input = Tensor::zeros(&self.parent_shape);
+        let actual_parent_shape = parent_values[0].shape();
+        let mut grad_input = Tensor::zeros(actual_parent_shape);
 
         // 将 upstream_grad 扩展一个维度后放入对应位置
         // upstream_grad: [batch, input_size] → expanded: [batch, 1, input_size]

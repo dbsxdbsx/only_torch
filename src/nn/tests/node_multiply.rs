@@ -507,7 +507,6 @@ fn test_multiply_dynamic_batch_forward() {
 
 /// 测试 Multiply 节点在不同 batch_size 下的反向传播
 #[test]
-#[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_multiply_dynamic_batch_backward() {
     let graph = Graph::new();
 

@@ -564,7 +564,6 @@ fn test_select_dynamic_batch_forward() {
 /// 测试 Select 节点在不同 batch_size 下的反向传播
 /// 使用 3D 输入（模拟 RNN 输入序列），符合 Select 的典型业务场景
 #[test]
-#[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_select_dynamic_batch_backward() {
     use crate::nn::Graph;
     use crate::nn::var_ops::{VarLossOps, VarShapeOps};

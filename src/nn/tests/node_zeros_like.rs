@@ -208,7 +208,6 @@ fn test_zeros_like_with_matmul_backward() {
 
 /// 测试 ZerosLike 动态 batch 与反向传播
 #[test]
-#[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_zeros_like_dynamic_batch_with_backward() {
     use crate::nn::var_ops::VarLossOps;
 

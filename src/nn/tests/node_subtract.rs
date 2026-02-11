@@ -245,10 +245,7 @@ fn test_subtract_broadcast_vjp() -> Result<(), GraphError> {
         .unwrap();
 
     matrix
-        .set_value(Some(&Tensor::new(
-            &[10., 20., 30., 40., 50., 60.],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[10., 20., 30., 40., 50., 60.], &[2, 3])))
         .unwrap();
     bias.set_value(Some(&Tensor::new(&[1., 2., 3.], &[1, 3])))
         .unwrap();
@@ -291,10 +288,7 @@ fn test_subtract_broadcast_vjp_non_unit() -> Result<(), GraphError> {
         .unwrap();
 
     matrix
-        .set_value(Some(&Tensor::new(
-            &[10., 20., 30., 40., 50., 60.],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[10., 20., 30., 40., 50., 60.], &[2, 3])))
         .unwrap();
     bias.set_value(Some(&Tensor::new(&[1., 2., 3.], &[1, 3])))
         .unwrap();
@@ -498,7 +492,6 @@ fn test_subtract_dynamic_batch_forward() {
 
 /// 测试 Subtract 节点在不同 batch_size 下的反向传播
 #[test]
-#[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_subtract_dynamic_batch_backward() {
     use crate::nn::var_ops::VarLossOps;
 
@@ -597,11 +590,7 @@ fn test_create_subtract_auto_name() {
         .unwrap();
 
     let name = sub.name().unwrap();
-    assert!(
-        name.contains("subtract"),
-        "名称应包含 'subtract': {}",
-        name
-    );
+    assert!(name.contains("subtract"), "名称应包含 'subtract': {}", name);
 }
 
 #[test]
@@ -706,8 +695,6 @@ fn test_create_subtract_requires_two_parents() {
         .borrow_mut()
         .create_basic_input_node(&[4, 8], None)
         .unwrap();
-    let result = inner
-        .borrow_mut()
-        .create_subtract_node(vec![a, b, c], None);
+    let result = inner.borrow_mut().create_subtract_node(vec![a, b, c], None);
     assert!(result.is_err());
 }

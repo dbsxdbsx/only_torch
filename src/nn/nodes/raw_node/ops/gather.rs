@@ -173,13 +173,12 @@ impl TraitNode for Gather {
             GraphError::ComputationError("Gather 反向传播时 index 节点没有值".to_string())
         })?;
 
-        // 获取实际的输入形状（可能是动态 batch）
-        let actual_input_shape = parent_values
-            .get(0)
-            .map_or_else(|| self.input_shape.clone(), |v| v.shape().to_vec());
+        // 获取实际的输入形状（支持动态 batch）
+        // 注意：必须用 parent_values 的运行时形状，不能用 self.input_shape（构建时静态形状）
+        let actual_input_shape = parent_values[0].shape();
 
         // 创建全零梯度张量
-        let mut grad_input = Tensor::zeros(&actual_input_shape);
+        let mut grad_input = Tensor::zeros(actual_input_shape);
 
         // Scatter：将 upstream_grad 的值按 index 放回 grad_input 对应位置
         // 使用 ndarray 的索引遍历

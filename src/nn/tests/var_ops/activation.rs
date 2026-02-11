@@ -407,7 +407,6 @@ fn test_softmax_dynamic_batch_forward() {
 /// TODO: softmax backward 在 batch_size 变化时缓存了旧 batch 的中间张量，
 /// 导致形状不兼容。需在 Softmax 的 calc_jacobi 中处理动态 batch。
 #[test]
-#[ignore = "softmax backward 动态 batch 形状不兼容 bug，待修复"]
 fn test_softmax_dynamic_batch_backward() {
     use crate::nn::var_ops::VarLossOps;
 

@@ -164,12 +164,11 @@ impl TraitNode for Reshape {
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
     ) -> Result<Tensor, GraphError> {
-        // 使用父节点的实际形状（支持动态 batch）
-        let parent_actual_shape = parent_values
-            .get(target_parent_index)
-            .map_or_else(|| self.parent_shape.clone(), |v| v.shape().to_vec());
+        // 使用父节点的运行时形状（支持动态 batch）
+        // 注意：必须用 parent_values 的运行时形状，不能用 self.parent_shape（构建时静态形状）
+        let parent_actual_shape = parent_values[target_parent_index].shape();
         // Reshape 的梯度就是将上游梯度 reshape 回父节点的实际形状
-        Ok(upstream_grad.reshape(&parent_actual_shape))
+        Ok(upstream_grad.reshape(parent_actual_shape))
     }
 
     fn grad(&self) -> Option<&Tensor> {
