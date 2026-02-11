@@ -51,24 +51,24 @@ mod node_subtract;
 mod node_sum;
 mod node_tanh;
 
-// ===== Phase 3: 复杂测试迁移（待修复） =====
-// mod graph_basic;
-// mod graph_forward;
-// mod graph_backward;
-// mod graph_dynamic; // M4: 动态图扩展能力测试（NEAT 友好性）
-// mod layer_avg_pool2d; // AvgPool2d 层便捷函数
-// mod layer_conv2d; // Conv2d 层便捷函数
-// mod layer_gru; // GRU 层便捷函数
-// mod layer_linear; // Linear 层测试（包含 linear() 遗留 API 和 Linear 结构体推荐 API）
-// mod layer_lstm; // LSTM 层便捷函数
-// mod layer_max_pool2d; // MaxPool2d 层便捷函数
-// mod layer_rnn; // RNN 层测试（展开式设计）
-// mod recurrent_basic; // 循环/记忆机制基础测试
-// mod recurrent_bptt; // BPTT 通过时间反向传播测试
-// mod gradient_flow_control; // 梯度流控制机制测试（no_grad、detach、retain_graph）
-// mod batch_mechanism; // Batch 机制测试
-// mod bptt_pytorch_comparison; // BPTT PyTorch 对照测试
-// mod save_load; // 参数保存/加载测试
+// ===== Phase 3: 复杂测试（旧 API 函数已用 #[cfg(any())] 禁用，layer 已完全适配） =====
+mod graph_basic;
+mod graph_forward;
+mod graph_backward;
+mod graph_dynamic;
+mod layer_avg_pool2d;
+mod layer_conv2d;
+mod layer_gru;
+mod layer_linear;
+mod layer_lstm;
+mod layer_max_pool2d;
+mod layer_rnn;
+mod recurrent_basic;
+mod recurrent_bptt;
+mod gradient_flow_control;
+mod batch_mechanism;
+mod bptt_pytorch_comparison;
+mod save_load;
 
 // ===== 已移除/归档 =====
 // mod var_transition; // Var 过渡期测试（方案 C Step 2.2）- 迁移完成后不再需要

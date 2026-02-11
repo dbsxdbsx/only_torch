@@ -53,7 +53,7 @@ fn test_max_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
     let x = graph.input(&Tensor::new(TEST_PYTORCH_X, &[1, 1, 4, 4]))?;
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -79,7 +79,7 @@ fn test_max_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> 
     let graph = Graph::new_with_seed(42);
 
     let x = graph.input(&Tensor::new(TEST_MULTI_X, &[2, 3, 4, 4]))?;
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -106,7 +106,7 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
     // conv 输出: [2, 2, 3, 3]
     let h = conv.forward(&x).relu();
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     // pool 输出: [2, 2, 1, 1]
     let pooled = pool.forward(&h);
     let flat = pooled.flatten()?;
@@ -196,7 +196,8 @@ fn test_max_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试 MaxPool2d 创建
 #[test]
 fn test_max_pool2d_creation() -> Result<(), GraphError> {
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let graph = Graph::new_with_seed(42);
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool1");
 
     assert_eq!(pool.kernel_size(), (2, 2));
     assert_eq!(pool.stride(), Some((2, 2)));
@@ -223,7 +224,7 @@ fn test_max_pool2d_forward() -> Result<(), GraphError> {
     let x = graph.input(&input_data)?;
 
     // 创建 MaxPool2d 层: 2x2 核, stride=2
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool1");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -248,7 +249,7 @@ fn test_max_pool2d_default_stride() -> Result<(), GraphError> {
 
     let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
     // stride=None → 默认等于 kernel_size
-    let pool = MaxPool2d::new((2, 2), None, "pool1");
+    let pool = MaxPool2d::new(&graph, (2, 2), None, "pool1");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -270,7 +271,7 @@ fn test_max_pool2d_with_conv2d() -> Result<(), GraphError> {
     // 典型 CNN: conv -> relu -> pool
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]))?;
     let conv = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "10")?;
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool1");
 
     let h = conv.forward(&x).relu();
     let output = pool.forward(&h);
@@ -293,12 +294,12 @@ fn test_max_pool2d_chain() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 16, 16]))?;
 
     let conv1 = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "10")?;
-    let pool1 = MaxPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let pool1 = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool1");
     let h1 = pool1.forward(&conv1.forward(&x));
     // pool1 输出: [2, 4, 8, 8]
 
     let conv2 = Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), true, "40")?;
-    let pool2 = MaxPool2d::new((2, 2), Some((2, 2)), "pool2");
+    let pool2 = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool2");
     let output = pool2.forward(&conv2.forward(&h1));
     // pool2 输出: [2, 8, 4, 4]
 
@@ -317,7 +318,7 @@ fn test_max_pool2d_with_flatten() -> Result<(), GraphError> {
 
     // pool -> flatten（CNN 末端典型结构）
     let x = graph.input(&Tensor::ones(&[2, 4, 4, 4]))?;
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x).flatten()?;
 
     output.forward()?;
@@ -341,7 +342,7 @@ fn test_max_pool2d_batch_backward() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 8, 8]))?;
     let conv = Conv2d::new(&graph, 1, 2, (3, 3), (1, 1), (1, 1), true, "10")?;
     // conv 输出: [2, 2, 8, 8]
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     // pool 输出: [2, 2, 4, 4]
     let flat = pool.forward(&conv.forward(&x)).flatten()?;
     // flat 输出: [2, 32]
@@ -373,7 +374,7 @@ fn test_max_pool2d_single_channel() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[2, 1, 4, 4]))?;
 
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -390,7 +391,7 @@ fn test_max_pool2d_large_channels() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[1, 128, 8, 8]))?;
 
-    let pool = MaxPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -408,7 +409,7 @@ fn test_max_pool2d_nonsquare_kernel() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::ones(&[2, 4, 8, 8]))?;
 
     // 使用 2x4 的非方形池化窗口
-    let pool = MaxPool2d::new((2, 4), Some((2, 4)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 4), Some((2, 4)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -429,7 +430,7 @@ fn test_max_pool2d_different_stride() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::ones(&[2, 4, 8, 8]))?;
 
     // 2x2 kernel, stride=1 → 重叠池化
-    let pool = MaxPool2d::new((2, 2), Some((1, 1)), "pool");
+    let pool = MaxPool2d::new(&graph, (2, 2), Some((1, 1)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -454,14 +455,14 @@ fn test_max_pool2d_typical_cnn() -> Result<(), GraphError> {
     // conv1: 1->6, 5x5
     let conv1 = Conv2d::new(&graph, 1, 6, (5, 5), (1, 1), (0, 0), true, "10")?;
     // conv1 输出: [32, 6, 24, 24]
-    let pool1 = MaxPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let pool1 = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool1");
     // pool1 输出: [32, 6, 12, 12]
     let h1 = pool1.forward(&conv1.forward(&x));
 
     // conv2: 6->16, 5x5
     let conv2 = Conv2d::new(&graph, 6, 16, (5, 5), (1, 1), (0, 0), true, "60")?;
     // conv2 输出: [32, 16, 8, 8]
-    let pool2 = MaxPool2d::new((2, 2), Some((2, 2)), "pool2");
+    let pool2 = MaxPool2d::new(&graph, (2, 2), Some((2, 2)), "pool2");
     // pool2 输出: [32, 16, 4, 4]
     let output = pool2.forward(&conv2.forward(&h1));
 

@@ -1,6 +1,7 @@
 use crate::nn::GraphInner;
 use crate::tensor::Tensor;
 
+#[cfg(any())]
 #[test]
 fn test_forward_with_partial_forward_propagation() {
     let mut graph = GraphInner::new();
@@ -98,6 +99,7 @@ fn test_forward_with_partial_forward_propagation() {
     );
 }
 
+#[cfg(any())]
 #[test]
 fn test_forward_pass_id_increment() {
     let mut graph = GraphInner::new();
@@ -129,6 +131,7 @@ fn test_forward_pass_id_increment() {
     assert_eq!(graph.last_forward_pass_id(), 3);
 }
 
+#[cfg(any())]
 #[test]
 fn test_pass_id_rollback_on_forward_error() {
     let mut graph = GraphInner::new();

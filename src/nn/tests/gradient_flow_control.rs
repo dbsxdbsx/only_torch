@@ -13,6 +13,7 @@ use crate::tensor::Tensor;
 // ============================================================================
 
 /// 测试: is_grad_enabled 与 is_train_mode 一致
+#[cfg(any())]
 #[test]
 fn test_is_grad_enabled_equals_is_train_mode() {
     let mut graph = GraphInner::new();
@@ -33,6 +34,7 @@ fn test_is_grad_enabled_equals_is_train_mode() {
 }
 
 /// 测试: no_grad_scope 基本功能 - 临时禁用梯度
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_basic() {
     let mut graph = GraphInner::new();
@@ -53,6 +55,7 @@ fn test_no_grad_scope_basic() {
 }
 
 /// 测试: no_grad_scope 从评估模式开始
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_from_eval_mode() {
     let mut graph = GraphInner::new();
@@ -71,6 +74,7 @@ fn test_no_grad_scope_from_eval_mode() {
 }
 
 /// 测试: no_grad_scope 返回值传递
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_return_value() {
     let mut graph = GraphInner::new();
@@ -89,6 +93,7 @@ fn test_no_grad_scope_return_value() {
 }
 
 /// 测试: no_grad_scope 错误传播
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_error_propagation() {
     let mut graph = GraphInner::new();
@@ -109,6 +114,7 @@ fn test_no_grad_scope_error_propagation() {
 }
 
 /// 测试: no_grad_scope 嵌套调用
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_nested() {
     let mut graph = GraphInner::new();
@@ -140,6 +146,7 @@ fn test_no_grad_scope_nested() {
 }
 
 /// 测试: no_grad_scope 与前向传播集成
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_with_forward() {
     let mut graph = GraphInner::new();
@@ -170,6 +177,7 @@ fn test_no_grad_scope_with_forward() {
 }
 
 /// 测试: no_grad_scope 核心保证 - 相同输入产生相同 loss，区别仅在于梯度
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_same_input_same_loss_no_gradient() {
     let mut graph = GraphInner::new();
@@ -228,6 +236,7 @@ fn test_no_grad_scope_same_input_same_loss_no_gradient() {
 }
 
 /// 测试: no_grad_scope 多次调用
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_multiple_calls() {
     let mut graph = GraphInner::new();
@@ -244,6 +253,7 @@ fn test_no_grad_scope_multiple_calls() {
 }
 
 /// 测试: no_grad_scope 与 set_eval_mode 交互
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_interaction_with_eval_mode() {
     let mut graph = GraphInner::new();
@@ -266,6 +276,7 @@ fn test_no_grad_scope_interaction_with_eval_mode() {
 }
 
 /// 测试: no_grad_scope 闭包中的可变借用
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_mutable_operations() {
     let mut graph = GraphInner::new();
@@ -290,6 +301,7 @@ fn test_no_grad_scope_mutable_operations() {
 }
 
 /// 测试: no_grad_scope 与种子的交互
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_with_seeded_graph() {
     let mut graph = GraphInner::new_with_seed(42);
@@ -325,6 +337,7 @@ fn test_no_grad_scope_with_seeded_graph() {
 /// - stderr 输出警告信息："[only_torch 警告] 在 no_grad/eval 模式下调用 backward..."
 ///
 /// 参考: `.doc/design/gradient_flow_control_design.md` 1.7 节
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_backward_still_works() {
     let mut graph = GraphInner::new();
@@ -368,6 +381,7 @@ fn test_no_grad_scope_backward_still_works() {
 }
 
 /// 测试: no_grad_scope 内创建的节点在退出后的梯度行为
+#[cfg(any())]
 #[test]
 fn test_no_grad_scope_nodes_created_inside() {
     let mut graph = GraphInner::new();
@@ -406,6 +420,7 @@ fn test_no_grad_scope_nodes_created_inside() {
 // ============================================================================
 
 /// 测试: detach_node / attach_node / is_node_detached 基本功能
+#[cfg(any())]
 #[test]
 fn test_detach_basic() {
     let mut graph = GraphInner::new();
@@ -431,6 +446,7 @@ fn test_detach_basic() {
 }
 
 /// 测试: detach 阻止梯度回流
+#[cfg(any())]
 #[test]
 fn test_detach_blocks_gradient_flow() {
     let mut graph = GraphInner::new();
@@ -485,6 +501,7 @@ fn test_detach_blocks_gradient_flow() {
 }
 
 /// 测试: detach 不影响前向传播
+#[cfg(any())]
 #[test]
 fn test_detach_does_not_affect_forward() {
     let mut graph = GraphInner::new();
@@ -514,6 +531,7 @@ fn test_detach_does_not_affect_forward() {
 }
 
 /// 测试: 多次 detach/attach 切换（包括幂等性和实际 backward 效果验证）
+#[cfg(any())]
 #[test]
 fn test_detach_attach_multiple_times() {
     let mut graph = GraphInner::new();
@@ -578,6 +596,7 @@ fn test_detach_attach_multiple_times() {
 }
 
 /// 测试: detach 节点不存在时返回错误
+#[cfg(any())]
 #[test]
 fn test_detach_nonexistent_node() {
     let mut graph = GraphInner::new();
@@ -589,6 +608,7 @@ fn test_detach_nonexistent_node() {
 }
 
 /// 测试: GAN 风格训练模式
+#[cfg(any())]
 #[test]
 fn test_detach_gan_style_training() {
     let mut graph = GraphInner::new();
@@ -654,6 +674,7 @@ fn test_detach_gan_style_training() {
 }
 
 /// 测试: detach 与批量输入的兼容性
+#[cfg(any())]
 #[test]
 fn test_detach_with_batch_input() {
     let mut graph = GraphInner::new();
@@ -689,6 +710,7 @@ fn test_detach_with_batch_input() {
 }
 
 /// 测试: Input 节点不能被 detach（语义上没意义但不应报错）
+#[cfg(any())]
 #[test]
 fn test_detach_input_node() {
     let mut graph = GraphInner::new();
@@ -705,6 +727,7 @@ fn test_detach_input_node() {
 }
 
 /// 测试: detach 后的节点仍然可以正常操作，且已有的 grad 不会被清除（Single 模式）
+#[cfg(any())]
 #[test]
 fn test_detach_node_still_functional() {
     let mut graph = GraphInner::new();
@@ -751,6 +774,7 @@ fn test_detach_node_still_functional() {
 /// 验证:
 /// 1. w1 应无梯度 (被 detach 阻断)
 /// 2. w2 的梯度数值与 PyTorch 精确匹配
+#[cfg(any())]
 #[test]
 fn test_detach_gradient_values_match_pytorch() {
     let mut graph = GraphInner::new();
@@ -817,6 +841,7 @@ fn test_detach_gradient_values_match_pytorch() {
 }
 
 /// 测试: detach 后的节点仍然可以正常操作，且已有的 grad 不会被清除
+#[cfg(any())]
 #[test]
 fn test_detach_node_still_functional_batch() {
     let mut graph = GraphInner::new();
@@ -864,6 +889,7 @@ fn test_detach_node_still_functional_batch() {
 // ============================================================================
 
 /// 测试: backward_ex 基本功能
+#[cfg(any())]
 #[test]
 fn test_retain_graph_basic() {
     let mut graph = GraphInner::new();
@@ -891,6 +917,7 @@ fn test_retain_graph_basic() {
 }
 
 /// 测试: retain_graph=false 释放中间节点的值和梯度
+#[cfg(any())]
 #[test]
 fn test_retain_graph_false_releases_intermediate_results() {
     let mut graph = GraphInner::new();
@@ -936,6 +963,7 @@ fn test_retain_graph_false_releases_intermediate_results() {
 }
 
 /// 测试: retain_graph=true 允许多次 backward
+#[cfg(any())]
 #[test]
 fn test_retain_graph_allows_multiple_backward() {
     let mut graph = GraphInner::new();
@@ -969,6 +997,7 @@ fn test_retain_graph_allows_multiple_backward() {
 
 /// 测试: 多任务学习场景 - 两个 loss 共享 backbone
 /// PyTorch 对照: tests/python/calc_jacobi_by_pytorch/multi_task_learning_retain_graph.py
+#[cfg(any())]
 #[test]
 fn test_retain_graph_multi_task_learning() {
     let mut graph = GraphInner::new();
@@ -1089,6 +1118,7 @@ fn test_retain_graph_multi_task_learning() {
 }
 
 /// 测试: backward 默认行为（等价于 retain_graph=false，与 PyTorch 一致）
+#[cfg(any())]
 #[test]
 fn test_backward_default_releases_graph() {
     let mut graph = GraphInner::new();
@@ -1130,6 +1160,7 @@ fn test_backward_default_releases_graph() {
 }
 
 /// 测试: retain_graph=false 后再次 backward 需要重新 forward
+#[cfg(any())]
 #[test]
 fn test_retain_graph_false_requires_new_forward() {
     let mut graph = GraphInner::new();
@@ -1161,6 +1192,7 @@ fn test_retain_graph_false_requires_new_forward() {
 }
 
 /// 测试: 混合使用 retain_graph 和 detach
+#[cfg(any())]
 #[test]
 fn test_retain_graph_with_detach() {
     let mut graph = GraphInner::new();
@@ -1230,6 +1262,7 @@ fn test_retain_graph_with_detach() {
 /// 中间特征节点: shared_feat1, shared_feat2 (共享但不累积，每次重新计算)
 ///
 /// 关键测试点: w_shared2 与 w_shared3 是**相邻参数节点**，验证链式累积是否正确
+#[cfg(any())]
 #[test]
 fn test_backward_accumulation_for_complex_topology() {
     let mut graph = GraphInner::new();

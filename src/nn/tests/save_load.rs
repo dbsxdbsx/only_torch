@@ -10,6 +10,7 @@ use approx::assert_abs_diff_eq;
 use std::fs;
 
 /// 测试基本的参数保存和加载
+#[cfg(any())]
 #[test]
 fn test_save_load_params_basic() {
     let temp_file = "test_save_load_params_basic.bin";
@@ -64,6 +65,7 @@ fn test_save_load_params_basic() {
 }
 
 /// 测试部分参数加载（迁移学习场景）
+#[cfg(any())]
 #[test]
 fn test_save_load_params_partial() {
     let temp_file = "test_save_load_params_partial.bin";
@@ -103,6 +105,7 @@ fn test_save_load_params_partial() {
 }
 
 /// 测试无效文件格式检测
+#[cfg(any())]
 #[test]
 fn test_load_params_invalid_magic() {
     let temp_file = "test_load_params_invalid_magic.bin";
@@ -126,6 +129,7 @@ fn test_load_params_invalid_magic() {
 }
 
 /// 测试文件不存在的错误处理
+#[cfg(any())]
 #[test]
 fn test_load_params_file_not_found() {
     let mut graph = GraphInner::new();
@@ -145,6 +149,7 @@ fn test_load_params_file_not_found() {
 }
 
 /// 测试空图的保存和加载
+#[cfg(any())]
 #[test]
 fn test_save_load_params_empty_graph() {
     let temp_file = "test_save_load_params_empty.bin";
@@ -162,6 +167,7 @@ fn test_save_load_params_empty_graph() {
 }
 
 /// 测试中文名称参数的保存加载（验证 UTF-8 编码）
+#[cfg(any())]
 #[test]
 fn test_save_load_params_utf8_names() {
     let temp_file = "test_save_load_params_utf8.bin";
@@ -210,6 +216,7 @@ fn test_save_load_params_utf8_names() {
 // ========== GraphDescriptor 测试 ==========
 
 /// 测试基本的图描述
+#[cfg(any())]
 #[test]
 fn test_describe_basic() {
     let mut graph = GraphInner::new();
@@ -246,6 +253,7 @@ fn test_describe_basic() {
 }
 
 /// 测试 JSON 序列化/反序列化
+#[cfg(any())]
 #[test]
 fn test_describe_json_roundtrip() {
     let mut graph = GraphInner::new();
@@ -265,6 +273,7 @@ fn test_describe_json_roundtrip() {
 }
 
 /// 测试总参数量计算
+#[cfg(any())]
 #[test]
 fn test_describe_total_params() {
     let mut graph = GraphInner::new();
@@ -282,6 +291,7 @@ fn test_describe_total_params() {
 // ========== save_model / load_model 测试 ==========
 
 /// 测试完整模型保存和加载
+#[cfg(any())]
 #[test]
 fn test_save_load_model() {
     let temp_base = "test_save_load_model";
@@ -329,6 +339,7 @@ fn test_save_load_model() {
 }
 
 /// 测试 JSON 文件内容可读
+#[cfg(any())]
 #[test]
 fn test_save_model_json_readable() {
     let temp_base = "test_save_model_json_readable";
@@ -355,6 +366,7 @@ fn test_save_model_json_readable() {
 // ========== summary 测试 ==========
 
 /// 测试 summary 输出基本格式
+#[cfg(any())]
 #[test]
 fn test_summary_basic() {
     let mut graph = GraphInner::new();
@@ -392,6 +404,7 @@ fn test_summary_basic() {
 }
 
 /// 测试参数量格式化（千分位分隔）
+#[cfg(any())]
 #[test]
 fn test_summary_param_formatting() {
     let mut graph = GraphInner::new();
@@ -407,6 +420,7 @@ fn test_summary_param_formatting() {
 }
 
 /// 测试空图的 summary
+#[cfg(any())]
 #[test]
 fn test_summary_empty_graph() {
     let graph = GraphInner::new();
@@ -418,6 +432,7 @@ fn test_summary_empty_graph() {
 }
 
 /// 测试 summary 保存到文本文件
+#[cfg(any())]
 #[test]
 fn test_save_summary_txt() {
     let temp_file = "test_save_summary.txt";
@@ -441,6 +456,7 @@ fn test_save_summary_txt() {
 }
 
 /// 测试 summary 保存到 Markdown 文件
+#[cfg(any())]
 #[test]
 fn test_save_summary_markdown() {
     let temp_file = "test_save_summary.md";
@@ -463,6 +479,7 @@ fn test_save_summary_markdown() {
 }
 
 /// 测试 summary_markdown 方法
+#[cfg(any())]
 #[test]
 fn test_summary_markdown_string() {
     let mut graph = GraphInner::new();
@@ -481,6 +498,7 @@ fn test_summary_markdown_string() {
 // ========== to_dot 测试 ==========
 
 /// 测试 DOT 输出基本格式
+#[cfg(any())]
 #[test]
 fn test_to_dot_basic() {
     let mut graph = GraphInner::new();
@@ -514,6 +532,7 @@ fn test_to_dot_basic() {
 }
 
 /// 测试 save_visualization 基本功能
+#[cfg(any())]
 #[test]
 fn test_save_visualization_basic() {
     let base_path = "test_save_visualization_basic";
@@ -554,6 +573,7 @@ fn test_save_visualization_basic() {
 }
 
 /// 测试指定图像格式
+#[cfg(any())]
 #[test]
 fn test_save_visualization_with_format() {
     let base_path = "test_save_visualization_svg";
@@ -583,6 +603,7 @@ fn test_save_visualization_with_format() {
 }
 
 /// 测试路径包含后缀时应报错
+#[cfg(any())]
 #[test]
 fn test_save_visualization_rejects_extension() {
     let mut graph = GraphInner::new();
@@ -634,6 +655,7 @@ fn test_image_format() {
 }
 
 /// 测试各节点类型的样式
+#[cfg(any())]
 #[test]
 fn test_to_dot_node_styles() {
     let mut graph = GraphInner::new();
@@ -658,6 +680,7 @@ fn test_to_dot_node_styles() {
 }
 
 /// 测试动态形状在描述符中的序列化
+#[cfg(any())]
 #[test]
 fn test_dynamic_shape_in_descriptor() {
     let mut graph = GraphInner::new();
@@ -707,6 +730,7 @@ fn test_dynamic_shape_in_descriptor() {
 }
 
 /// 测试动态形状在 JSON 中的序列化/反序列化
+#[cfg(any())]
 #[test]
 fn test_dynamic_shape_json_roundtrip() {
     use crate::nn::descriptor::GraphDescriptor;
@@ -744,6 +768,7 @@ fn test_dynamic_shape_json_roundtrip() {
 }
 
 /// 测试可视化中动态形状的显示
+#[cfg(any())]
 #[test]
 fn test_dynamic_shape_in_visualization() {
     let mut graph = GraphInner::new();

@@ -53,7 +53,7 @@ fn test_avg_pool2d_forward_pytorch_comparison() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
     let x = graph.input(&Tensor::new(TEST_PYTORCH_X, &[1, 1, 4, 4]))?;
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -79,7 +79,7 @@ fn test_avg_pool2d_multi_channel_pytorch_comparison() -> Result<(), GraphError> 
     let graph = Graph::new_with_seed(42);
 
     let x = graph.input(&Tensor::new(TEST_MULTI_X, &[2, 3, 4, 4]))?;
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -106,7 +106,7 @@ fn test_avg_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
     let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
     // conv 输出: [2, 2, 3, 3]
     let h = conv.forward(&x).relu();
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     // pool 输出: [2, 2, 1, 1]
     let pooled = pool.forward(&h);
     let flat = pooled.flatten()?;
@@ -196,7 +196,8 @@ fn test_avg_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 /// 测试 AvgPool2d 创建
 #[test]
 fn test_avg_pool2d_creation() -> Result<(), GraphError> {
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let graph = Graph::new_with_seed(42);
+    let pool = AvgPool2d::new(&graph,  (2, 2), Some((2, 2)), "pool1");
 
     assert_eq!(pool.kernel_size(), (2, 2));
     assert_eq!(pool.stride(), Some((2, 2)));
@@ -223,7 +224,7 @@ fn test_avg_pool2d_forward() -> Result<(), GraphError> {
     let x = graph.input(&input_data)?;
 
     // 创建 AvgPool2d 层: 2x2 核, stride=2
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool1");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -248,7 +249,7 @@ fn test_avg_pool2d_default_stride() -> Result<(), GraphError> {
 
     let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
     // stride=None → 默认等于 kernel_size
-    let pool = AvgPool2d::new((2, 2), None, "pool1");
+    let pool = AvgPool2d::new(&graph, (2, 2), None, "pool1");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -270,7 +271,7 @@ fn test_avg_pool2d_with_conv2d() -> Result<(), GraphError> {
     // 典型 CNN: conv -> relu -> avg_pool
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]))?;
     let conv = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "10")?;
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool1");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool1");
 
     let h = conv.forward(&x).relu();
     let output = pool.forward(&h);
@@ -292,7 +293,7 @@ fn test_avg_pool2d_global_average_pooling() -> Result<(), GraphError> {
     // GAP: 将特征图池化到 1x1
     let x = graph.input(&Tensor::ones(&[2, 64, 7, 7]))?;
     // 使用 7x7 的池化窗口实现全局平均池化
-    let gap = AvgPool2d::new((7, 7), None, "gap");
+    let gap = AvgPool2d::new(&graph, (7, 7), None, "gap");
     let output = gap.forward(&x);
 
     output.forward()?;
@@ -314,7 +315,7 @@ fn test_avg_pool2d_with_flatten() -> Result<(), GraphError> {
 
     // pool -> flatten（CNN 末端典型结构）
     let x = graph.input(&Tensor::ones(&[2, 4, 4, 4]))?;
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x).flatten()?;
 
     output.forward()?;
@@ -338,7 +339,7 @@ fn test_avg_pool2d_batch_backward() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 8, 8]))?;
     let conv = Conv2d::new(&graph, 1, 2, (3, 3), (1, 1), (1, 1), true, "10")?;
     // conv 输出: [2, 2, 8, 8]
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     // pool 输出: [2, 2, 4, 4]
     let flat = pool.forward(&conv.forward(&x)).flatten()?;
     // flat 输出: [2, 32]
@@ -370,7 +371,7 @@ fn test_avg_pool2d_single_channel() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[2, 1, 4, 4]))?;
 
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -387,7 +388,7 @@ fn test_avg_pool2d_large_channels() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[1, 128, 8, 8]))?;
 
-    let pool = AvgPool2d::new((2, 2), Some((2, 2)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -405,7 +406,7 @@ fn test_avg_pool2d_nonsquare_kernel() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::ones(&[2, 4, 8, 8]))?;
 
     // 使用 2x4 的非方形池化窗口
-    let pool = AvgPool2d::new((2, 4), Some((2, 4)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 4), Some((2, 4)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -426,7 +427,7 @@ fn test_avg_pool2d_different_stride() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::ones(&[2, 4, 8, 8]))?;
 
     // 2x2 kernel, stride=1 → 重叠池化
-    let pool = AvgPool2d::new((2, 2), Some((1, 1)), "pool");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((1, 1)), "pool");
     let output = pool.forward(&x);
 
     output.forward()?;
@@ -448,7 +449,7 @@ fn test_avg_pool2d_resnet_gap() -> Result<(), GraphError> {
     let features = graph.input(&Tensor::ones(&[batch_size, 512, 7, 7]))?;
 
     // 全局平均池化: 7x7 → 1x1
-    let gap = AvgPool2d::new((7, 7), None, "gap");
+    let gap = AvgPool2d::new(&graph, (7, 7), None, "gap");
     let pooled = gap.forward(&features);
     // gap 输出: [16, 512, 1, 1]
 
