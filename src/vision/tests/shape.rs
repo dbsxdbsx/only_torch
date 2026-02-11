@@ -68,6 +68,6 @@ fn test_resize_luma_image() {
     let resized_image = Vision::resize_image(&luma_image, height, width, false).unwrap();
     assert_eq!(resized_image.shape(), &[height, width]);
     assert_eq!(resized_image.is_image().unwrap(), ColorType::L8);
-    Vision::save_image(&resized_image, "./assets/lenna_resized_expand.png").unwrap();
+    Vision::save_image(&resized_image, "./assets/lenna_luma_resized_expand.png").unwrap();
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑改变图像尺寸↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
