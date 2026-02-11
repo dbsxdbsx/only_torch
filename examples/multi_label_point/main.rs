@@ -45,28 +45,31 @@ fn compute_labels(x: f32, y: f32) -> [f32; 4] {
     [is_right, is_top, is_diagonal_above, is_center]
 }
 
-/// 生成训练数据
-fn generate_data(n: usize, seed: u64) -> Vec<(Tensor, Tensor)> {
+/// 生成批量数据（直接返回 batch Tensor）
+fn generate_data(n: usize, seed: u64) -> (Tensor, Tensor) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    let mut data = Vec::with_capacity(n);
+    let mut inputs = Vec::with_capacity(n * 2);
+    let mut targets = Vec::with_capacity(n * 4);
+
     for i in 0..n {
         let mut hasher = DefaultHasher::new();
         (seed, i).hash(&mut hasher);
         let h = hasher.finish();
 
-        // (x, y) ∈ [0, 1]²
         let x = (h % 1000) as f32 / 1000.0;
         let y = ((h >> 16) % 1000) as f32 / 1000.0;
 
-        let input = Tensor::new(&[x, y], &[1, 2]);
-        let labels = compute_labels(x, y);
-        let target = Tensor::new(&labels, &[1, 4]);
-
-        data.push((input, target));
+        inputs.push(x);
+        inputs.push(y);
+        targets.extend_from_slice(&compute_labels(x, y));
     }
-    data
+
+    (
+        Tensor::new(&inputs, &[n, 2]),
+        Tensor::new(&targets, &[n, 4]),
+    )
 }
 
 fn main() -> Result<(), GraphError> {
@@ -79,12 +82,15 @@ fn main() -> Result<(), GraphError> {
     // 2. 优化器（学习率调低以稳定训练）
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.02);
 
-    // 4. 生成数据（增加训练样本以提高泛化能力）
-    let train_data = generate_data(500, 42);
-    let test_data = generate_data(100, 123);
+    // 4. 生成数据（batch 模式）
+    let n_train = 500;
+    let n_test = 100;
+    let (x_train, y_train) = generate_data(n_train, 42);
+    let (x_test, y_test) = generate_data(n_test, 123);
 
     println!("网络: Input(2) -> Linear(32, Tanh) -> Linear(32, Tanh) -> Linear(4)");
     println!("损失: BCE Loss（多标签二元交叉熵）");
+    println!("训练样本: {n_train}, 测试样本: {n_test}");
     println!("优化器: Adam\n");
 
     println!("标签说明:");
@@ -93,68 +99,48 @@ fn main() -> Result<(), GraphError> {
     println!("  - 对角线上: x + y > 1");
     println!("  - 中心圆: (x-0.5)² + (y-0.5)² < 0.15\n");
 
-    // 5. 训练循环
-    let epochs = 500;
+    // 5. 训练循环（batch 模式，整个训练集一次 forward）
+    let epochs = 200;
     for epoch in 0..epochs {
-        let mut total_loss = 0.0;
+        let logits = model.forward(&x_train)?;
+        let loss = logits.bce_loss(&y_train)?;
 
-        for (input, target) in &train_data {
-            let logits = model.forward(input)?;
-            let loss = logits.bce_loss(target)?;
-
-            optimizer.zero_grad()?;
-            let loss_val = loss.backward()?;
-            optimizer.step()?;
-
-            total_loss += loss_val;
-        }
+        optimizer.zero_grad()?;
+        let loss_val = loss.backward()?;
+        optimizer.step()?;
 
         if (epoch + 1) % 50 == 0 || epoch == 0 {
-            let avg_loss = total_loss / train_data.len() as f32;
-            println!("Epoch {:3}: 平均损失 = {:.4}", epoch + 1, avg_loss);
+            println!("Epoch {:3}: 损失 = {:.4}", epoch + 1, loss_val);
         }
     }
 
     // 6. 测试
     println!("\n=== 测试结果（部分样本）===");
 
-    // 收集所有预测和真实值用于统计
-    let mut all_preds = Vec::with_capacity(test_data.len() * 4);
-    let mut all_actuals = Vec::with_capacity(test_data.len() * 4);
+    let probs = model.predict_probs(&x_test)?;
+    let probs_tensor = probs.value()?.unwrap();
 
-    for (i, (input, target)) in test_data.iter().enumerate() {
-        let probs = model.predict_probs(input)?;
-        let probs_tensor = probs.value()?.unwrap();
+    for i in 0..10.min(n_test) {
+        let x = x_test[[i, 0]];
+        let y = x_test[[i, 1]];
 
-        let x = input[[0, 0]];
-        let y = input[[0, 1]];
+        let pred: Vec<bool> = (0..4).map(|j| probs_tensor[[i, j]] > 0.5).collect();
+        let actual: Vec<bool> = (0..4).map(|j| y_test[[i, j]] > 0.5).collect();
 
-        // 收集预测概率和真实值
-        for j in 0..4 {
-            all_preds.push(probs_tensor[[0, j]]);
-            all_actuals.push(target[[0, j]]);
-        }
+        let pred_str: String = pred.iter().map(|&b| if b { '1' } else { '0' }).collect();
+        let actual_str: String = actual.iter().map(|&b| if b { '1' } else { '0' }).collect();
+        let match_str = if pred == actual { "✓" } else { "✗" };
 
-        // 只显示前 10 个样本
-        if i < 10 {
-            let pred: Vec<bool> = (0..4).map(|j| probs_tensor[[0, j]] > 0.5).collect();
-            let actual: Vec<bool> = (0..4).map(|j| target[[0, j]] > 0.5).collect();
-
-            let pred_str: String = pred.iter().map(|&b| if b { '1' } else { '0' }).collect();
-            let actual_str: String = actual.iter().map(|&b| if b { '1' } else { '0' }).collect();
-            let match_str = if pred == actual { "✓" } else { "✗" };
-
-            println!("  ({x:.2}, {y:.2}): 预测={pred_str} 实际={actual_str} {match_str}");
-        }
+        println!("  ({x:.2}, {y:.2}): 预测={pred_str} 实际={actual_str} {match_str}");
     }
 
     // 7. 使用 metrics 模块计算准确率
-    let pred_tensor = Tensor::new(&all_preds, &[test_data.len(), 4]);
-    let actual_tensor = Tensor::new(&all_actuals, &[test_data.len(), 4]);
+    let pred_tensor = probs_tensor;
+    let actual_tensor = &y_test;
 
     // 两种多标签评估指标
-    let loose = multilabel_loose_accuracy(&pred_tensor, &actual_tensor, 0.5);
-    let strict = multilabel_strict_accuracy(&pred_tensor, &actual_tensor, 0.5);
+    let loose = multilabel_loose_accuracy(&pred_tensor, actual_tensor, 0.5);
+    let strict = multilabel_strict_accuracy(&pred_tensor, actual_tensor, 0.5);
 
     println!("\n=== 最终评估 ===");
     println!(
@@ -203,10 +189,13 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 8. 保存计算图可视化
-    // 训练后做一次 forward + loss 用于生成计算图
-    let (input_vis, target_vis) = &train_data[0];
-    let logits_vis = model.forward(input_vis)?;
-    let loss_vis = logits_vis.bce_loss(target_vis)?;
+    let sample_input = Tensor::new(&[x_test[[0, 0]], x_test[[0, 1]]], &[1, 2]);
+    let sample_target = Tensor::new(
+        &[y_test[[0, 0]], y_test[[0, 1]], y_test[[0, 2]], y_test[[0, 3]]],
+        &[1, 4],
+    );
+    let logits_vis = model.forward(&sample_input)?;
+    let loss_vis = logits_vis.bce_loss(&sample_target)?;
     let vis_result = loss_vis.save_visualization("examples/multi_label_point/multi_label_point")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {

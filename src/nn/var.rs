@@ -423,23 +423,14 @@ impl Var {
         Self::save_visualization_for_vars(&[self], base_path)
     }
 
-    /// 合并多个 Var 的计算图并生成 DOT 格式字符串
+    /// 合并多个 Var 的计算图并保存可视化（不引入额外节点）
     ///
-    /// 适用于多输出场景（如 GAN 的 g_loss 和 d_loss）
-    ///
-    /// # 示例
-    /// ```ignore
-    /// let dot = Var::visualize_all_to_dot(&[&g_loss, &d_loss]);
-    /// ```
-    pub fn visualize_all_to_dot(vars: &[&Self]) -> String {
-        Self::vars_to_dot(vars)
-    }
-
-    /// 合并多个 Var 的计算图并保存可视化
+    /// 适用于多输出/多 loss 场景，将所有分支合并到一张图中。
     ///
     /// # 示例
     /// ```ignore
-    /// Var::visualize_all(&[&g_loss, &d_loss], "gan")?;
+    /// // 多任务学习：两个 loss 分支合并显示
+    /// Var::visualize_all(&[&cls_loss, &reg_loss], "multi_task")?;
     /// ```
     pub fn visualize_all<P: AsRef<std::path::Path>>(
         vars: &[&Self],
@@ -536,10 +527,38 @@ impl Var {
             // Parameter 节点显示参数数量
             let param_count_str = if node_type == "Parameter" && !shape.is_empty() {
                 let count: usize = shape.iter().product();
-                format!("<BR/>({} params)", count)
+                // 千分位格式化
+                let s = count.to_string();
+                let bytes = s.as_bytes();
+                let mut formatted = String::new();
+                for (i, &b) in bytes.iter().enumerate() {
+                    if i > 0 && (bytes.len() - i) % 3 == 0 {
+                        formatted.push(',');
+                    }
+                    formatted.push(b as char);
+                }
+                format!("<BR/>({formatted} params)")
             } else {
                 String::new()
             };
+
+            // 超参数信息（Dropout p, LeakyReLU alpha 等）
+            let hyperparam_str = node.with_raw_node(|raw| {
+                use super::nodes::raw_node::NodeType;
+                match raw {
+                    NodeType::Dropout(d) => format!("<BR/>(p={:.1})", d.p()),
+                    NodeType::LeakyReLU(lr) => {
+                        let a = lr.alpha();
+                        // alpha=0 就是标准 ReLU，不显示
+                        if a != 0.0 {
+                            format!("<BR/>(α={a})")
+                        } else {
+                            String::new()
+                        }
+                    }
+                    _ => String::new(),
+                }
+            });
 
             // 根据节点类型选择样式
             let (node_shape, style, fill_color) = match node_type.as_str() {
@@ -560,13 +579,15 @@ impl Var {
                     ("octagon", "filled", "#FFEBEE")
                 }
                 "Sigmoid" | "Tanh" | "ReLU" | "LeakyReLU" | "Sign" | "SoftPlus" | "Step"
-                | "Softmax" => ("diamond", "filled", "#FFF3E0"),
+                | "Softmax" | "LogSoftmax" | "Abs" | "Ln" => ("diamond", "filled", "#FFF3E0"),
+                // 正则化节点：菱形 + 浅紫色，区别于激活函数（训练/推理行为不同）
+                "Dropout" | "BatchNorm" => ("diamond", "filled", "#E1BEE7"),
                 _ => ("box", "\"filled,rounded\"", "#FFFDE7"),
             };
 
             format!(
-                "\"{}\" [label=<{}<BR/><B>{}</B><BR/>{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
-                id, name, node_type, shape_str, param_count_str, node_shape, style, fill_color
+                "\"{}\" [label=<{}<BR/><B>{}</B><BR/>{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10];\n",
+                id, name, node_type, shape_str, param_count_str, hyperparam_str, node_shape, style, fill_color
             )
         };
 
@@ -787,9 +808,32 @@ impl Var {
             let model_id = model_name.replace(['-', '.', ' ', '/'], "_");
             let model_color = model_colors[model_idx % model_colors.len()];
 
+            // 统计该模型的总参数量
+            let model_param_count: usize = nodes
+                .iter()
+                .filter(|n| {
+                    node_to_model.get(&n.id().0).map(|m| m.as_str()) == Some(model_name)
+                        && n.type_name() == "Parameter"
+                })
+                .map(|n| n.value_expected_shape().iter().product::<usize>())
+                .sum();
+
             dot.push_str(&format!("    subgraph cluster_model_{model_id} {{\n"));
+            // 千分位格式化参数量
+            let param_str = {
+                let s = model_param_count.to_string();
+                let bytes = s.as_bytes();
+                let mut result = String::new();
+                for (i, &b) in bytes.iter().enumerate() {
+                    if i > 0 && (bytes.len() - i) % 3 == 0 {
+                        result.push(',');
+                    }
+                    result.push(b as char);
+                }
+                result
+            };
             dot.push_str(&format!(
-                "        label=<<B>{model_name}</B>>;\n"
+                "        label=<<B>{model_name}</B><BR/><FONT POINT-SIZE=\"9\">({param_str} params)</FONT>>;\n"
             ));
             dot.push_str("        style=\"filled,bold\";\n");
             dot.push_str(&format!("        fillcolor=\"{model_color}\";\n"));

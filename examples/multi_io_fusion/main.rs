@@ -14,7 +14,7 @@ mod model;
 
 use model::MultiIOFusion;
 use only_torch::metrics::{accuracy, r2_score};
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, Var, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 生成训练数据
@@ -176,11 +176,16 @@ fn main() -> Result<(), GraphError> {
         println!("\n⚠️ 可尝试增加 epoch 或调整学习率以提升效果。");
     }
 
-    // 保存可视化（训练后做一次 forward + loss）
-    let (input_a, input_b, cls_label, _reg_target) = &train_data[0];
-    let (cls_logits, _reg_pred) = model.forward(input_a, input_b)?;
-    let loss = cls_logits.cross_entropy(cls_label)?;
-    let vis_result = loss.save_visualization("examples/multi_io_fusion/multi_io_fusion")?;
+    // 保存可视化（训练后做一次完整 forward + 双 loss）
+    let (input_a, input_b, cls_label, reg_target) = &train_data[0];
+    let (cls_logits, reg_pred) = model.forward(input_a, input_b)?;
+    let cls_loss = cls_logits.cross_entropy(cls_label)?;
+    let reg_loss = reg_pred.mse_loss(reg_target)?;
+    // 从多个 loss 合并回溯，显示完整的双分支结构
+    let vis_result = Var::visualize_all(
+        &[&cls_loss, &reg_loss],
+        "examples/multi_io_fusion/multi_io_fusion",
+    )?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

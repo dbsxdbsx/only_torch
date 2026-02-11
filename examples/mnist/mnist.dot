@@ -1,59 +1,52 @@
-digraph Model {
+digraph ComputeGraph {
     rankdir=TB;
     newrank=true;
     splines=polyline;
     node [fontname="Microsoft YaHei,SimHei,Arial"];
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
-    subgraph cluster_MnistMLP {
-        label=<<B>MnistMLP</B><BR/><FONT POINT-SIZE="9">Model: 11 nodes</FONT>>;
+    subgraph cluster_fc1 {
+        label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: [?, 784] → [?, 128]</FONT>>;
         style=filled;
-        fillcolor="#FFECB340";
+        fillcolor="#E3F2FD80";
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-        subgraph cluster_MnistMLP_fc1 {
-            label=<<B>fc1</B><BR/><FONT POINT-SIZE="8">Linear: [?, 784] → [?, 128]</FONT>>;
-            style=filled;
-            fillcolor="#E3F2FD80";
-            fontname="Microsoft YaHei,SimHei,Arial";
-            fontsize=10;
-            margin=8;
-            "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "3808" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3807" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "2" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "6" [label=<mat_mul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "7" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        }
-        subgraph cluster_MnistMLP_fc2 {
-            label=<<B>fc2</B><BR/><FONT POINT-SIZE="8">Linear: [?, 128] → [?, 10]</FONT>>;
-            style=filled;
-            fillcolor="#E8F5E980";
-            fontname="Microsoft YaHei,SimHei,Arial";
-            fontsize=10;
-            margin=8;
-            "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 10]<BR/>(1,280 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "4" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 10]<BR/>(10 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "10" [label=<mat_mul_2<BR/><B>MatMul</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "11" [label=<add_2<BR/><B>Add</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        }
-            "5" [label=<input_1<BR/><B>SmartInput</B><BR/>[?, 784]> shape=ellipse style=filled fillcolor="#E0E0E0" fontsize=10];
-            "8" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-            "9" [label=<dropout_1<BR/><B>Dropout</B><BR/>[?, 128]<BR/>p=0.3> shape=diamond style=filled fillcolor="#F3E5F5" fontsize=10];
+            "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
-    "12" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 10]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "13" [label=<softmax_ce_1<BR/><B>SoftmaxCE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    subgraph cluster_fc2 {
+        label=<<B>fc2</B><BR/><FONT POINT-SIZE="9">Linear: [?, 128] → [?, 10]</FONT>>;
+        style=filled;
+        fillcolor="#E8F5E980";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "3812" [label=<add_2<BR/><B>Add</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "3811" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "4" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 10]<BR/>(10 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 10]<BR/>(1,280 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
 
-    "5" -> "6";
-    "1" -> "6";
-    "6" -> "7";
-    "2" -> "7";
-    "7" -> "8";
-    "8" -> "9";
-    "9" -> "10";
-    "3" -> "10";
-    "10" -> "11";
-    "4" -> "11";
-    "11" -> "13";
-    "12" -> "13";
+    "3814" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "3813" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 10]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "3810" [label=<dropout_1<BR/><B>Dropout</B><BR/>[?, 128]<BR/>(p=0.3)> shape=diamond style=filled fillcolor="#E1BEE7" fontsize=10];
+    "3809" [label=<softplus_1<BR/><B>SoftPlus</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "3806" [label=<input_1<BR/><B>Input</B><BR/>[?, 784]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+
+    "3812" -> "3814";
+    "3813" -> "3814";
+    "3811" -> "3812";
+    "4" -> "3812";
+    "3810" -> "3811";
+    "3" -> "3811";
+    "3809" -> "3810";
+    "3808" -> "3809";
+    "3807" -> "3808";
+    "2" -> "3808";
+    "3806" -> "3807";
+    "1" -> "3807";
 }

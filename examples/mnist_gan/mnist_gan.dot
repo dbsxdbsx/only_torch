@@ -6,7 +6,7 @@ digraph ComputeGraph {
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
     subgraph cluster_model_Discriminator {
-        label=<<B>Discriminator</B>>;
+        label=<<B>Discriminator</B><BR/><FONT POINT-SIZE="9">(100,609 params)</FONT>>;
         style="filled,bold";
         fillcolor="#FFEBEE40";
         fontname="Microsoft YaHei,SimHei,Arial";
@@ -23,7 +23,7 @@ digraph ComputeGraph {
                 "12017" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "12016" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "6" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "5" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "5" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
         subgraph cluster_Discriminator_fc2 {
@@ -40,12 +40,12 @@ digraph ComputeGraph {
         }
 
         "12021" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "12018" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "12018" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "virt_12015_Discriminator" [label=<Input<BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
     }
 
     subgraph cluster_model_Generator {
-        label=<<B>Generator</B>>;
+        label=<<B>Generator</B><BR/><FONT POINT-SIZE="9">(109,456 params)</FONT>>;
         style="filled,bold";
         fillcolor="#E8EAF640";
         fontname="Microsoft YaHei,SimHei,Arial";
@@ -62,7 +62,7 @@ digraph ComputeGraph {
                 "12011" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "12010" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "2" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
         subgraph cluster_Generator_fc2 {
@@ -75,11 +75,11 @@ digraph ComputeGraph {
                 "12014" [label=<add_2<BR/><B>Add</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "12013" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "4" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 784]<BR/>(784 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 784]<BR/>(100352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 784]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
         "12015" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "12012" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "12012" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "12009" [label=<input_1<BR/><B>Input</B><BR/>[?, 64]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 
