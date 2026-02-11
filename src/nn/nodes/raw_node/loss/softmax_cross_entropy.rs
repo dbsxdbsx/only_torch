@@ -36,6 +36,7 @@ pub(crate) struct SoftmaxCrossEntropy {
     /// 缓存 labels，用于反向传播
     labels_cache: Option<Tensor>,
     /// 父节点 ID，用于区分 logits 和 labels
+    #[allow(dead_code)]
     parents_ids: Vec<NodeId>,
 }
 

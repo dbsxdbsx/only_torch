@@ -22,6 +22,7 @@ pub(crate) struct LeakyReLU {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
     /// 负半轴斜率，默认 0.0（标准 `ReLU`）
     negative_slope: f32,

@@ -44,10 +44,13 @@ pub(crate) struct SmartInput {
     /// 用于 `value_expected_shape` 的固定形状缓存（首次调用时的形状）
     fixed_shape: Vec<usize>,
     /// 是否处于 detached 状态（阻止梯度传播）
+    #[allow(dead_code)]
     is_detached: RefCell<bool>,
     /// 是否曾经被 detach 过（用于可视化：显示虚线边框）
+    #[allow(dead_code)]
     was_ever_detached: RefCell<bool>,
     /// 梯度路由目标（backward 后将梯度累加到此节点）
+    #[allow(dead_code)]
     gradient_target: RefCell<Option<NodeId>>,
 }
 
@@ -100,6 +103,7 @@ impl SmartInput {
     /// # 参数
     /// - `detached`: 是否阻止梯度传播
     /// - `mark_ever_detached`: 是否标记 `was_ever_detached（用于可视化显示虚线边框`）
+    #[allow(dead_code)]
     pub(crate) fn set_detached(&self, detached: bool, mark_ever_detached: bool) {
         *self.is_detached.borrow_mut() = detached;
         // 只有当显式 detach 时才标记（Tensor 输入不算）
@@ -109,11 +113,13 @@ impl SmartInput {
     }
 
     /// 检查是否曾经被 detach 过（用于可视化：显示虚线边框）
+    #[allow(dead_code)]
     pub(crate) fn was_ever_detached(&self) -> bool {
         *self.was_ever_detached.borrow()
     }
 
     /// 获取 detached 状态
+    #[allow(dead_code)]
     pub(crate) fn is_detached(&self) -> bool {
         *self.is_detached.borrow()
     }
@@ -122,11 +128,13 @@ impl SmartInput {
     ///
     /// 当 backward 计算出此节点的梯度后，会将梯度累加到目标节点。
     /// 设置为 None 表示不进行梯度路由。
+    #[allow(dead_code)]
     pub(crate) fn set_gradient_target(&self, target: Option<NodeId>) {
         *self.gradient_target.borrow_mut() = target;
     }
 
     /// 获取梯度路由目标
+    #[allow(dead_code)]
     pub(crate) fn gradient_target(&self) -> Option<NodeId> {
         *self.gradient_target.borrow()
     }

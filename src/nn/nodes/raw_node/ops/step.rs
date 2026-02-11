@@ -16,6 +16,7 @@ pub(crate) struct Step {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
 }
 

@@ -33,6 +33,7 @@ pub(crate) struct Softmax {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
     /// 缓存输出结果，用于反向传播
     output_cache: Option<Tensor>,

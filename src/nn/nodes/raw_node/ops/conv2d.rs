@@ -34,7 +34,9 @@ pub(crate) struct Conv2d {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
+    #[allow(dead_code)]
     parents_ids: Vec<NodeId>, // [input_id, kernel_id]
 
     // 卷积参数（保留供后续 NEAT 进化时使用）
@@ -53,11 +55,13 @@ pub(crate) struct Conv2d {
 
 impl Conv2d {
     /// 获取步长
+    #[allow(dead_code)]
     pub(in crate::nn) const fn stride(&self) -> (usize, usize) {
         self.stride
     }
 
     /// 获取填充
+    #[allow(dead_code)]
     pub(in crate::nn) const fn padding(&self) -> (usize, usize) {
         self.padding
     }

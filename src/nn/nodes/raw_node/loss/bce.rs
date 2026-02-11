@@ -56,6 +56,7 @@ pub(crate) struct BCE {
     /// 缓存元素总数，用于 mean reduction
     numel_cache: usize,
     /// 父节点 ID，用于区分 logits 和 target
+    #[allow(dead_code)]
     parents_ids: Vec<NodeId>,
 }
 

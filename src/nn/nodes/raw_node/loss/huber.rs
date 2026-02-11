@@ -58,6 +58,7 @@ pub(crate) struct Huber {
     /// 缓存元素总数，用于 mean reduction
     numel_cache: usize,
     /// 父节点 ID，用于区分 input 和 target
+    #[allow(dead_code)]
     parents_ids: Vec<NodeId>,
 }
 
@@ -107,8 +108,8 @@ impl Huber {
         })
     }
 
-
     /// 获取 δ 参数
+    #[allow(dead_code)]
     pub(crate) const fn delta(&self) -> f32 {
         self.delta
     }

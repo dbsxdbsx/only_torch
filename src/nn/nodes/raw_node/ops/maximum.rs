@@ -38,6 +38,7 @@ pub(crate) struct Maximum {
     /// 动态形状
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
 }
 

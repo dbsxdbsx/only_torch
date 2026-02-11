@@ -30,6 +30,7 @@ pub(crate) struct Select {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
     /// 选择的轴
     axis: usize,
@@ -41,11 +42,13 @@ pub(crate) struct Select {
 
 impl Select {
     /// 获取选择的轴
+    #[allow(dead_code)]
     pub(in crate::nn) const fn axis(&self) -> usize {
         self.axis
     }
 
     /// 获取选择的索引
+    #[allow(dead_code)]
     pub(in crate::nn) const fn index(&self) -> usize {
         self.index
     }

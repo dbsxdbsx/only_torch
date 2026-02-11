@@ -15,6 +15,7 @@ pub(crate) struct Add {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch（继承自父节点）
+    #[allow(dead_code)]
     supports_dynamic: bool,
 }
 

@@ -24,7 +24,9 @@ pub(crate) struct Divide {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
+    #[allow(dead_code)]
     parents_ids: Vec<NodeId>, // [left, right] 用于区分被除数和除数
 }
 

@@ -21,6 +21,7 @@ pub(crate) struct Abs {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
     /// 缓存父节点的值，用于反向传播计算 sign(x)
     parent_value_cache: Option<Tensor>,

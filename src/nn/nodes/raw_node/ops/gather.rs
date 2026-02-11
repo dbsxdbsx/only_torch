@@ -35,6 +35,7 @@ pub(crate) struct Gather {
     /// 动态形状
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
     /// gather 的维度
     dim: usize,
@@ -44,6 +45,7 @@ pub(crate) struct Gather {
 
 impl Gather {
     /// 获取 gather 的维度
+    #[allow(dead_code)]
     pub(in crate::nn) const fn dim(&self) -> usize {
         self.dim
     }

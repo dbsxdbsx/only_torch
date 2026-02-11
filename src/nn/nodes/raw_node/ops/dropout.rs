@@ -45,6 +45,7 @@ pub(crate) struct Dropout {
     /// 动态形状
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
     /// 丢弃概率（0.0 ~ 1.0）
     p: f32,

@@ -38,6 +38,7 @@ pub(crate) struct Amin {
     /// 动态形状
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
 }
 
@@ -90,6 +91,7 @@ impl Amin {
     }
 
     /// 获取 axis
+    #[allow(dead_code)]
     pub(crate) fn axis(&self) -> usize {
         self.axis
     }

@@ -36,6 +36,7 @@ pub(crate) struct Flatten {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
     /// 父节点的原始形状（用于反向传播）
     parent_shape: Vec<usize>,

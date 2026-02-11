@@ -97,5 +97,6 @@ pub struct RecurrentUnrollInfo {
 #[derive(Clone)]
 pub(crate) struct StepSnapshot {
     /// 节点的值
+    #[allow(dead_code)]
     pub value: Option<Tensor>,
 }

@@ -33,6 +33,7 @@ pub(crate) struct MaxPool2d {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
 
     // 池化参数
@@ -48,11 +49,13 @@ pub(crate) struct MaxPool2d {
 
 impl MaxPool2d {
     /// 获取核大小
+    #[allow(dead_code)]
     pub(in crate::nn) const fn kernel_size(&self) -> (usize, usize) {
         self.kernel_size
     }
 
     /// 获取步长
+    #[allow(dead_code)]
     pub(in crate::nn) const fn stride(&self) -> (usize, usize) {
         self.stride
     }

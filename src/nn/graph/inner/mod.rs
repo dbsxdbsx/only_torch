@@ -78,8 +78,10 @@ pub struct GraphInner {
     /// `循环边：to_node` -> `from_node（to` 节点在 `step()` 时从 from 节点的上一步值读取）
     pub(in crate::nn::graph) recurrent_edges: HashMap<NodeId, NodeId>,
     /// 双缓冲：存储循环节点的上一时间步值
+    #[allow(dead_code)]
     pub(in crate::nn::graph) prev_values: HashMap<NodeId, Tensor>,
     /// 当前时间步（用于调试，每次 `step()` `递增，reset()` 归零）
+    #[allow(dead_code)]
     pub(in crate::nn::graph) time_step: u64,
 
     // ========== BPTT 相关字段 ==========

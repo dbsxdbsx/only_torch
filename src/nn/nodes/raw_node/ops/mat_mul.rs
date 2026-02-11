@@ -15,7 +15,9 @@ pub(crate) struct MatMul {
     /// 动态形状（支持动态 batch）
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch（继承自父节点）
+    #[allow(dead_code)]
     supports_dynamic: bool,
+    #[allow(dead_code)]
     parents_ids: Vec<NodeId>, // 用于区分左右父节点
 }
 

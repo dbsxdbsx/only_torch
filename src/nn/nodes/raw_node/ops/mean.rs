@@ -46,6 +46,7 @@ pub(crate) struct Mean {
     /// 动态形状
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
     /// 缓存输入形状，用于反向传播
     input_shape_cache: Option<Vec<usize>>,
@@ -111,6 +112,7 @@ impl Mean {
     }
 
     /// 获取 axis 配置
+    #[allow(dead_code)]
     pub fn axis(&self) -> Option<usize> {
         self.axis
     }

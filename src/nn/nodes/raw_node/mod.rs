@@ -288,10 +288,12 @@ use std::any::type_name;
 pub(in crate::nn::nodes) trait TraitNode {
     fn id(&self) -> NodeId;
 
+    #[allow(dead_code)]
     fn set_id(&mut self, id: NodeId);
 
     fn name(&self) -> &str;
 
+    #[allow(dead_code)]
     fn set_name(&mut self, name: &str);
 
     fn get_type_name(&self) -> &'static str {
@@ -324,12 +326,14 @@ pub(in crate::nn::nodes) trait TraitNode {
     ///
     /// 与 `set_value(None)` 不同，此方法专门用于内存管理，
     /// 对于不允许直接设置值的节点（如运算节点）也能正常清除。
+    #[allow(dead_code)]
     fn clear_value(&mut self) -> Result<(), GraphError>;
 
     /// 强制设置节点的值（绕过类型检查）
     ///
     /// ⚠️ 仅供内部使用（如 BPTT 快照恢复）。
     /// 普通用户应使用 `set_value`，它会检查节点类型。
+    #[allow(dead_code)]
     fn set_value_unchecked(&mut self, value: Option<&Tensor>);
 
     // ========== 梯度（VJP 模式）==========
@@ -384,6 +388,7 @@ pub(in crate::nn::nodes) trait TraitNode {
 
     // ========== 通用方法 ==========
 
+    #[allow(dead_code)]
     fn is_inited(&self) -> bool {
         self.value().is_some()
     }
@@ -409,6 +414,7 @@ pub(in crate::nn::nodes) trait TraitNode {
     /// 检查此节点是否支持动态 batch
     ///
     /// 默认返回 false。GradientRouter 和 State 应返回 true。
+    #[allow(dead_code)]
     fn supports_dynamic_batch(&self) -> bool {
         false
     }

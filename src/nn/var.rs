@@ -116,6 +116,7 @@ impl Var {
     /// 创建新的 Var（方案 C 正式版本）
     ///
     /// 直接持有 NodeInner，graph 为 Weak 引用
+    #[allow(dead_code)]
     pub(crate) fn new(node: Rc<NodeInner>, graph: Weak<RefCell<GraphInner>>) -> Self {
         Self { node, graph }
     }
@@ -147,6 +148,7 @@ impl Var {
     }
 
     /// 尝试获取内部图引用（不 panic）
+    #[allow(dead_code)]
     pub(crate) fn try_graph(&self) -> Option<Rc<RefCell<GraphInner>>> {
         self.graph.upgrade()
     }

@@ -19,6 +19,7 @@ pub(crate) struct Stack {
     /// 是否插入新维度
     new_dim: bool,
     /// 父节点 ID 列表（用于 backward 时识别目标父节点）
+    #[allow(dead_code)]
     parent_ids: Vec<NodeId>,
     /// 各父节点在 axis 维度的大小（用于 backward 时 split）
     parent_sizes: Vec<usize>,
@@ -27,16 +28,19 @@ pub(crate) struct Stack {
     /// 动态形状
     dynamic_shape: DynamicShape,
     /// 是否支持动态 batch
+    #[allow(dead_code)]
     supports_dynamic: bool,
 }
 
 impl Stack {
     /// 获取操作的轴
+    #[allow(dead_code)]
     pub(crate) const fn axis(&self) -> usize {
         self.axis
     }
 
     /// 是否插入新维度
+    #[allow(dead_code)]
     pub(crate) const fn new_dim(&self) -> bool {
         self.new_dim
     }

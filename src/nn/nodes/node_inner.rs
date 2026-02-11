@@ -54,6 +54,7 @@ impl NodeInner {
     /// - `name`: 节点名称
     /// - `raw_node`: 节点类型（包含 value/grad）
     /// - `parents`: 父节点列表（强引用）
+    #[allow(private_interfaces)]
     pub fn new(
         id: NodeId,
         name: Option<String>,
@@ -72,6 +73,7 @@ impl NodeInner {
     }
 
     /// 创建叶子节点（无父节点）
+    #[allow(private_interfaces)]
     pub fn new_leaf(id: NodeId, name: Option<String>, raw_node: NodeType) -> Self {
         Self::new(id, name, raw_node, vec![])
     }
@@ -468,6 +470,7 @@ impl NodeInner {
     // ==================== 节点类型信息 ====================
 
     /// 获取节点类型的只读引用
+    #[allow(private_interfaces, private_bounds)]
     pub fn with_raw_node<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&NodeType) -> R,
@@ -476,6 +479,7 @@ impl NodeInner {
     }
 
     /// 获取节点类型的可变引用
+    #[allow(private_interfaces, private_bounds)]
     pub fn with_raw_node_mut<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut NodeType) -> R,
