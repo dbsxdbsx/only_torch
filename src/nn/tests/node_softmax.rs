@@ -3,141 +3,41 @@
  * @Description  : Softmax 节点单元测试
  *
  * 测试策略：
- * 1. 基础功能测试（创建、形状验证、命名）
- * 2. 前向传播测试
- * 3. VJP 单元测试（直接调用 calc_grad_to_parent）
- * 4. 端到端反向传播测试（通过 graph.backward）
- * 5. 梯度累积测试
- * 6. 动态形状测试
+ * 1. 前向传播测试（高层 Graph + Var API）→ basic [2,3], 数值稳定性, 极端差异, cannot_set_value
+ * 2. VJP 单元测试（底层 calc_grad_to_parent_index）→ 均匀输入+全1 upstream→grad 全0；非均匀 [1,2,3]+[1,0,0]→grad sum=0；batch [2,3]+非单位 upstream→行 grad sum=0
+ * 3. 端到端反向传播测试（高层）→ one-hot target，验证 row grad sums=0
+ * 4. 梯度累积测试（高层）
+ * 5. 动态形状测试（KEEP AS-IS）
+ * 6. 新节点创建 API 测试（KEEP AS-IS）
+ *
+ * 关键点：Softmax 要求 2D 输入。softmax(x) 逐行归一化，每行和为 1。
+ * VJP: grad_j = upstream_j * y_j - y_j * Σ(upstream_i * y_i)。行梯度 sum = 0。
+ * 高层 API: VarActivationOps 的 .softmax()
  */
 
-use crate::assert_err;
-use crate::nn::{GraphError, GraphInner};
+use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
+use std::rc::Rc;
 
-// ==================== 基础功能测试 ====================
-
-/// 测试 Softmax 节点创建
-#[cfg(any())]
-#[test]
-fn test_softmax_creation() {
-    let mut graph = GraphInner::new();
-
-    // 1. Input 节点作为父节点
-    {
-        let input = graph.new_basic_input_node(&[2, 3], Some("input1")).unwrap();
-        let softmax = graph
-            .new_softmax_node(input, Some("softmax_with_input"))
-            .unwrap();
-
-        assert_eq!(graph.get_node_name(softmax).unwrap(), "softmax_with_input");
-        assert_eq!(graph.get_node_parents(softmax).unwrap().len(), 1);
-        assert_eq!(graph.get_node_children(softmax).unwrap().len(), 0);
-        assert_eq!(
-            graph.get_node_value_expected_shape(softmax).unwrap(),
-            &[2, 3]
-        );
-    }
-
-    // 2. Parameter 节点作为父节点
-    {
-        let param = graph.new_parameter_node(&[4, 5], Some("param1")).unwrap();
-        let softmax = graph
-            .new_softmax_node(param, Some("softmax_with_param"))
-            .unwrap();
-
-        assert_eq!(graph.get_node_name(softmax).unwrap(), "softmax_with_param");
-        assert_eq!(graph.get_node_parents(softmax).unwrap().len(), 1);
-        assert_eq!(
-            graph.get_node_value_expected_shape(softmax).unwrap(),
-            &[4, 5]
-        );
-    }
-}
-
-/// 测试 Softmax 节点要求 2D 输入
-#[cfg(any())]
-#[test]
-fn test_softmax_requires_2d_input() {
-    let mut graph = GraphInner::new();
-
-    // 3D 输入应该失败（Softmax 只支持 2D）
-    let input_3d = graph
-        .new_basic_input_node(&[2, 3, 4], Some("input_3d"))
-        .unwrap();
-    let result = graph.new_softmax_node(input_3d, Some("softmax_3d"));
-    assert!(result.is_err());
-
-    // 4D 输入应该失败
-    let input_4d = graph
-        .new_basic_input_node(&[2, 3, 4, 5], Some("input_4d"))
-        .unwrap();
-    let result = graph.new_softmax_node(input_4d, Some("softmax_4d"));
-    assert!(result.is_err());
-}
-
-/// 测试 Softmax 节点命名
-#[cfg(any())]
-#[test]
-fn test_softmax_name_generation() {
-    let mut graph = GraphInner::new();
-
-    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
-
-    // 1. 显式命名
-    let softmax1 = graph.new_softmax_node(input, Some("my_softmax")).unwrap();
-    assert_eq!(graph.get_node_name(softmax1).unwrap(), "my_softmax");
-
-    // 2. 自动命名
-    let softmax2 = graph.new_softmax_node(input, None).unwrap();
-    assert_eq!(graph.get_node_name(softmax2).unwrap(), "softmax_1");
-
-    // 3. 名称重复
-    let result = graph.new_softmax_node(input, Some("my_softmax"));
-    assert_err!(
-        result,
-        GraphError::DuplicateNodeName("节点my_softmax在图default_graph中重复")
-    );
-}
-
-/// 测试 Softmax 节点不能直接设置值
-#[cfg(any())]
-#[test]
-fn test_softmax_cannot_set_value() {
-    let mut graph = GraphInner::new();
-    let input = graph.new_basic_input_node(&[2, 3], Some("input")).unwrap();
-    let softmax = graph.new_softmax_node(input, Some("softmax")).unwrap();
-
-    let test_value = Tensor::new(&[0.1, 0.2, 0.7, 0.3, 0.3, 0.4], &[2, 3]);
-    assert_err!(
-        graph.set_node_value(softmax, Some(&test_value)),
-        GraphError::InvalidOperation(
-            "节点[id=2, name=softmax, type=Softmax]的值只能通过前向传播计算得到，不能直接设置"
-        )
-    );
-}
-
-// ==================== 前向传播测试 ====================
+// ==================== 前向传播测试（高层 Graph + Var API）====================
 
 /// 测试 Softmax 前向传播
-#[cfg(any())]
+///
+/// 第一行 [1, 2, 3]：softmax ≈ [0.09, 0.24, 0.67]，每行 sum=1
+/// 第二行 [1, 1, 1]：softmax = [1/3, 1/3, 1/3]
 #[test]
 fn test_softmax_forward() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    let input = graph.new_parameter_node(&[2, 3], Some("input")).unwrap();
-    let softmax = graph.new_softmax_node(input, Some("softmax")).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]))
+        .unwrap();
+    let result = x.softmax();
 
-    // 测试数据
-    // 第一行 [1, 2, 3]：softmax ≈ [0.09, 0.24, 0.67]
-    // 第二行 [1, 1, 1]：softmax = [1/3, 1/3, 1/3]
-    let input_value = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]);
-    graph.set_node_value(input, Some(&input_value)).unwrap();
+    result.forward().unwrap();
 
-    graph.forward(softmax).unwrap();
-
-    let output = graph.get_node_value(softmax).unwrap().unwrap();
+    let output = result.value().unwrap().unwrap();
     assert_eq!(output.shape(), &[2, 3]);
 
     // 验证每行归一化为 1
@@ -154,87 +54,93 @@ fn test_softmax_forward() {
 }
 
 /// 测试 Softmax 前向传播（数值稳定性）
-#[cfg(any())]
+///
+/// softmax([100,100,100]) = [1/3, 1/3, 1/3]（大数值→均匀）
 #[test]
 fn test_softmax_forward_numerical_stability() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    let input = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let softmax = graph.new_softmax_node(input, Some("softmax")).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[100.0, 100.0, 100.0], &[1, 3]))
+        .unwrap();
+    let result = x.softmax();
 
-    // 使用大数值测试数值稳定性
-    // 如果不使用 log-sum-exp 技巧，exp(100) 会溢出
-    let input_value = Tensor::new(&[100.0, 100.0, 100.0], &[1, 3]);
-    graph.set_node_value(input, Some(&input_value)).unwrap();
+    result.forward().unwrap();
 
-    graph.forward(softmax).unwrap();
-
-    let output = graph.get_node_value(softmax).unwrap().unwrap();
-
-    // 应该是均匀分布 [1/3, 1/3, 1/3]
+    let output = result.value().unwrap().unwrap();
     assert_abs_diff_eq!(output[[0, 0]], 1.0 / 3.0, epsilon = 1e-5);
     assert_abs_diff_eq!(output[[0, 1]], 1.0 / 3.0, epsilon = 1e-5);
     assert_abs_diff_eq!(output[[0, 2]], 1.0 / 3.0, epsilon = 1e-5);
 }
 
 /// 测试 Softmax 前向传播（极端差异）
-#[cfg(any())]
+///
+/// softmax([-100, 100, -100]) ≈ [0, 1, 0]（一个主导→接近 one-hot）
 #[test]
 fn test_softmax_forward_extreme_difference() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    let input = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let softmax = graph.new_softmax_node(input, Some("softmax")).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[-100.0, 100.0, -100.0], &[1, 3]))
+        .unwrap();
+    let result = x.softmax();
 
-    // 一个很大，其他很小：应该接近 [0, 1, 0]
-    let input_value = Tensor::new(&[-100.0, 100.0, -100.0], &[1, 3]);
-    graph.set_node_value(input, Some(&input_value)).unwrap();
+    result.forward().unwrap();
 
-    graph.forward(softmax).unwrap();
-
-    let output = graph.get_node_value(softmax).unwrap().unwrap();
-
+    let output = result.value().unwrap().unwrap();
     assert_abs_diff_eq!(output[[0, 0]], 0.0, epsilon = 1e-30);
     assert_abs_diff_eq!(output[[0, 1]], 1.0, epsilon = 1e-30);
     assert_abs_diff_eq!(output[[0, 2]], 0.0, epsilon = 1e-30);
 }
 
-// ==================== 节点级反向传播测试（直接调用 calc_grad_to_parent）====================
-
-/// 测试 Softmax 对父节点的梯度计算
-///
-/// 对于 y = softmax(x)，有：
-/// - ∂y_i/∂x_j = y_i * (δ_ij - y_j)
-/// - VJP: grad_to_parent_j = Σ_i upstream_grad_i * y_i * (δ_ij - y_j)
-///                         = upstream_grad_j * y_j - y_j * Σ_i (upstream_grad_i * y_i)
-#[cfg(any())]
+/// 测试 Softmax 节点不能直接设置值
 #[test]
-fn test_softmax_backward_vjp() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_softmax_cannot_set_value() {
+    let graph = Graph::new();
 
-    let input_id = graph.new_parameter_node(&[1, 3], Some("input"))?;
-    let softmax_id = graph.new_softmax_node(input_id, Some("softmax"))?;
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]))
+        .unwrap();
+    let result = x.softmax();
 
-    // 设置值：均匀输入 -> 均匀 softmax
-    let input_value = Tensor::new(&[0.0, 0.0, 0.0], &[1, 3]);
-    graph.set_node_value(input_id, Some(&input_value))?;
-    graph.forward(softmax_id)?;
+    let test_value = Tensor::new(&[0.1, 0.2, 0.7, 0.3, 0.3, 0.4], &[2, 3]);
+    let err = result.set_value(&test_value);
+    assert!(err.is_err(), "Softmax 节点不应支持直接设值");
+}
 
-    // 验证 softmax 输出
-    let softmax_output = graph.get_node_value(softmax_id)?.unwrap();
+// ==================== VJP 单元测试（底层 calc_grad_to_parent_index）====================
+//
+// 使用底层 API 创建节点，通过 calc_grad_to_parent_index 直接验证梯度计算公式。
+// VJP: grad_j = upstream_j * y_j - y_j * Σ(upstream_i * y_i)。行梯度 sum = 0。
+
+/// 测试 Softmax VJP：均匀输入 + 全 1 upstream → grad 全 0
+///
+/// 均匀 softmax y=[1/3,1/3,1/3]，upstream=[1,1,1]
+/// grad_j = 1*(1/3) - (1/3)*(1*1/3*3) = 1/3 - 1/3 = 0
+#[test]
+fn test_softmax_vjp_uniform_input_unit_upstream() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("x"))
+        .unwrap();
+    let sm = inner
+        .borrow_mut()
+        .create_softmax_node(x.clone(), Some("sm"))
+        .unwrap();
+
+    x.set_value(Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
+        .unwrap();
+    sm.forward_recursive(1, false).unwrap();
+
+    let softmax_output = sm.value().expect("softmax 应有值");
     assert_abs_diff_eq!(softmax_output[[0, 0]], 1.0 / 3.0, epsilon = 1e-5);
 
-    // 直接测试 VJP
-    let upstream_grad = Tensor::ones(&[1, 3]);
-    let softmax_node = graph.get_node(softmax_id)?;
-    let input_node = graph.get_node(input_id)?;
+    let upstream = Tensor::ones(&[1, 3]);
+    let grad = sm.calc_grad_to_parent_index(0, &upstream)?;
 
-    let parents = [input_node];
-    let grad = softmax_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
-
-    // 对于均匀 softmax 和全 1 upstream_grad：
-    // grad_j = upstream_grad_j * y_j - y_j * Σ(upstream_grad_i * y_i)
-    //        = 1 * (1/3) - (1/3) * (1 * 1/3 * 3) = 1/3 - 1/3 = 0
     assert_eq!(grad.shape(), &[1, 3]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-5);
     assert_abs_diff_eq!(grad[[0, 1]], 0.0, epsilon = 1e-5);
@@ -243,73 +149,70 @@ fn test_softmax_backward_vjp() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Softmax 梯度计算（非均匀情况）
-#[cfg(any())]
+/// 测试 Softmax VJP：非均匀输入 [1,2,3] + 选择性 upstream [1,0,0] → grad sum=0
+///
+/// softmax([1,2,3]) ≈ [0.09, 0.24, 0.67]
+/// grad_0 = y_0*(1-y_0) > 0，grad_1 = -y_1*y_0 < 0，grad_2 = -y_2*y_0 < 0
+/// 行梯度和 = 0
 #[test]
-fn test_softmax_backward_vjp_non_uniform() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_softmax_vjp_non_uniform_selective_upstream() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let input_id = graph.new_parameter_node(&[1, 3], Some("input"))?;
-    let softmax_id = graph.new_softmax_node(input_id, Some("softmax"))?;
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("x"))
+        .unwrap();
+    let sm = inner
+        .borrow_mut()
+        .create_softmax_node(x.clone(), Some("sm"))
+        .unwrap();
 
-    // 设置值
-    let input_value = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
-    graph.set_node_value(input_id, Some(&input_value))?;
-    graph.forward(softmax_id)?;
+    x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])))
+        .unwrap();
+    sm.forward_recursive(1, false).unwrap();
 
-    // upstream_grad = [1, 0, 0]（只对第一个输出有梯度）
-    let upstream_grad = Tensor::new(&[1.0, 0.0, 0.0], &[1, 3]);
-    let softmax_node = graph.get_node(softmax_id)?;
-    let input_node = graph.get_node(input_id)?;
+    let upstream = Tensor::new(&[1.0, 0.0, 0.0], &[1, 3]);
+    let grad = sm.calc_grad_to_parent_index(0, &upstream)?;
 
-    let parents = [input_node];
-    let grad = softmax_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
-
-    // softmax([1,2,3]) ≈ [0.09, 0.24, 0.67]
-    // grad_j = upstream_grad_j * y_j - y_j * Σ(upstream_grad_i * y_i)
-    //        = upstream_grad_j * y_j - y_j * (1 * y_0)
-    //        = upstream_grad_j * y_j - y_j * y_0
-    // grad_0 = 1 * y_0 - y_0 * y_0 = y_0 * (1 - y_0) > 0
-    // grad_1 = 0 * y_1 - y_1 * y_0 = -y_1 * y_0 < 0
-    // grad_2 = 0 * y_2 - y_2 * y_0 = -y_2 * y_0 < 0
     assert_eq!(grad.shape(), &[1, 3]);
     assert!(grad[[0, 0]] > 0.0, "第一个梯度应该为正");
     assert!(grad[[0, 1]] < 0.0, "第二个梯度应该为负");
     assert!(grad[[0, 2]] < 0.0, "第三个梯度应该为负");
 
-    // 梯度和为 0（softmax 的特性）
     let grad_sum: f32 = grad.data_as_slice().iter().sum();
     assert_abs_diff_eq!(grad_sum, 0.0, epsilon = 1e-5);
 
     Ok(())
 }
 
-/// 测试 Softmax 梯度计算（批量输入）
-#[cfg(any())]
+/// 测试 Softmax VJP：batch [2,3] + 非单位 upstream → 每行 grad sum=0
 #[test]
-fn test_softmax_backward_vjp_batch() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_softmax_vjp_batch_non_unit_upstream() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let input_id = graph.new_parameter_node(&[2, 3], Some("input"))?;
-    let softmax_id = graph.new_softmax_node(input_id, Some("softmax"))?;
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("x"))
+        .unwrap();
+    let sm = inner
+        .borrow_mut()
+        .create_softmax_node(x.clone(), Some("sm"))
+        .unwrap();
 
-    // 设置值
-    let input_value = Tensor::new(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0], &[2, 3]);
-    graph.set_node_value(input_id, Some(&input_value))?;
-    graph.forward(softmax_id)?;
+    x.set_value(Some(&Tensor::new(
+        &[1.0, 2.0, 3.0, 0.0, 0.0, 0.0],
+        &[2, 3],
+    )))
+    .unwrap();
+    sm.forward_recursive(1, false).unwrap();
 
-    // 非单位 upstream_grad
-    let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]);
-    let softmax_node = graph.get_node(softmax_id)?;
-    let input_node = graph.get_node(input_id)?;
+    let upstream = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]);
+    let grad = sm.calc_grad_to_parent_index(0, &upstream)?;
 
-    let parents = [input_node];
-    let grad = softmax_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
-
-    // 验证形状
     assert_eq!(grad.shape(), &[2, 3]);
 
-    // 每行梯度和应该为 0
     let row0_sum: f32 = grad.data_as_slice()[0..3].iter().sum();
     let row1_sum: f32 = grad.data_as_slice()[3..6].iter().sum();
     assert_abs_diff_eq!(row0_sum, 0.0, epsilon = 1e-5);
@@ -318,45 +221,36 @@ fn test_softmax_backward_vjp_batch() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== 端到端反向传播测试 ====================
+// ==================== 端到端反向传播测试（高层 Graph + Var API）====================
 
-/// 测试 Softmax 通过 graph.backward() 的端到端反向传播
-#[cfg(any())]
+/// 测试 Softmax 端到端反向传播
+///
+/// result = softmax(x)，loss = MSE(result, target)，target 为 one-hot
+/// 验证 input 梯度存在且每行 grad sum=0
 #[test]
 fn test_softmax_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    // 创建计算图：result = softmax(input)
-    let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
-    let result = graph.new_softmax_node(input, Some("result"))?;
+    let x = graph.parameter(&[2, 3], Init::Zeros, "x")?;
+    x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]))?;
 
-    // loss = MSE(result, target)
-    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
-    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+    let result = x.softmax();
+    let target = graph.input(&Tensor::new(
+        &[0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+        &[2, 3],
+    ))?;
+    let loss = result.mse_loss(&target)?;
 
-    // 设置值
-    let input_value = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]);
-    // target 是 one-hot：第一行选择第三个，第二行选择第一个
-    let target_value = Tensor::new(&[0.0, 0.0, 1.0, 1.0, 0.0, 0.0], &[2, 3]);
-    graph.set_node_value(input, Some(&input_value))?;
-    graph.set_node_value(target, Some(&target_value))?;
+    loss.forward().unwrap();
+    let loss_val = loss.value().unwrap().unwrap();
+    assert!(loss_val[[0, 0]] > 0.0);
 
-    // 前向传播
-    graph.forward(loss)?;
-
-    // 验证 loss 为正
-    let loss_value = graph.get_node_value(loss)?.unwrap();
-    assert!(loss_value[[0, 0]] > 0.0);
-
-    // 反向传播
     graph.zero_grad()?;
-    graph.backward(loss)?;
+    loss.backward()?;
 
-    // 验证梯度存在且形状正确
-    let input_grad = graph.get_node(input)?.grad().expect("input 应有 grad");
+    let input_grad = x.grad()?.expect("x 应有 grad");
     assert_eq!(input_grad.shape(), &[2, 3]);
 
-    // 每行梯度和应该为 0（softmax 的特性）
     let row0_sum: f32 = input_grad.data_as_slice()[0..3].iter().sum();
     let row1_sum: f32 = input_grad.data_as_slice()[3..6].iter().sum();
     assert_abs_diff_eq!(row0_sum, 0.0, epsilon = 1e-5);
@@ -365,105 +259,45 @@ fn test_softmax_backward_e2e() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Softmax 在链式网络中的端到端反向传播
-///
-/// 网络结构: x -> MatMul(w) -> Add(b) -> Softmax -> output
-#[cfg(any())]
-#[test]
-fn test_softmax_backward_e2e_chain() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
-
-    // 构建网络: output = softmax(w @ x + b)
-    let x = graph.new_basic_input_node(&[2, 3], Some("x"))?;
-    let w = graph.new_parameter_node(&[3, 4], Some("w"))?;
-    let b = graph.new_parameter_node(&[2, 4], Some("b"))?;
-    let wx = graph.new_mat_mul_node(x, w, Some("xw"))?;
-    let z = graph.new_add_node(&[wx, b], Some("z"))?;
-    let output = graph.new_softmax_node(z, Some("output"))?;
-
-    // loss = MSE(output, target)
-    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
-    let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
-
-    // 设置输入
-    graph.set_node_value(x, Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 3], 100)))?;
-    graph.set_node_value(w, Some(&Tensor::normal_seeded(0.0, 0.5, &[3, 4], 101)))?;
-    graph.set_node_value(b, Some(&Tensor::zeros(&[2, 4])))?;
-    // one-hot target
-    let mut target_data = Tensor::zeros(&[2, 4]);
-    target_data[[0, 0]] = 1.0;
-    target_data[[1, 2]] = 1.0;
-    graph.set_node_value(target, Some(&target_data))?;
-
-    // 前向传播
-    graph.forward(loss)?;
-
-    // 验证输出是概率分布
-    let output_val = graph.get_node_value(output)?.unwrap();
-    let row0_sum: f32 = (0..4).map(|j| output_val[[0, j]]).sum();
-    let row1_sum: f32 = (0..4).map(|j| output_val[[1, j]]).sum();
-    assert_abs_diff_eq!(row0_sum, 1.0, epsilon = 1e-5);
-    assert_abs_diff_eq!(row1_sum, 1.0, epsilon = 1e-5);
-
-    // 反向传播
-    graph.zero_grad()?;
-    graph.backward(loss)?;
-
-    // 验证 w 和 b 的梯度存在且形状正确
-    let w_grad = graph.get_node(w)?.grad().expect("w 应有 grad");
-    let b_grad = graph.get_node(b)?.grad().expect("b 应有 grad");
-    assert_eq!(w_grad.shape(), &[3, 4]);
-    assert_eq!(b_grad.shape(), &[2, 4]);
-
-    Ok(())
-}
-
-// ==================== 梯度累积测试 ====================
+// ==================== 梯度累积测试（高层 Graph + Var API）====================
 
 /// 测试 Softmax 梯度累积
-#[cfg(any())]
 #[test]
 fn test_softmax_gradient_accumulation() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    let input = graph.new_parameter_node(&[2, 3], Some("input"))?;
-    let result = graph.new_softmax_node(input, Some("result"))?;
-    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
-    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+    let x = graph.parameter(&[2, 3], Init::Zeros, "x")?;
+    x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0], &[2, 3]))?;
 
-    // 设置值
-    graph.set_node_value(
-        input,
-        Some(&Tensor::new(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0], &[2, 3])),
-    )?;
-    graph.set_node_value(
-        target,
-        Some(&Tensor::new(&[0.0, 0.0, 1.0, 1.0, 0.0, 0.0], &[2, 3])),
-    )?;
-    graph.forward(loss)?;
+    let result = x.softmax();
+    let target = graph.input(&Tensor::new(
+        &[0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+        &[2, 3],
+    ))?;
+    let loss = result.mse_loss(&target)?;
+
+    loss.forward().unwrap();
 
     // 第 1 次反向传播
     graph.zero_grad()?;
-    graph.backward(loss)?;
-    let grad_first = graph.get_node(input)?.grad().unwrap().clone();
+    loss.backward()?;
+    let grad_first = x.grad()?.unwrap().clone();
 
     // 第 2 次反向传播（梯度累积）
-    graph.forward(loss)?;
-    graph.backward(loss)?;
-    let grad_second = graph.get_node(input)?.grad().unwrap();
-    assert_eq!(grad_second, &(&grad_first * 2.0));
+    loss.backward()?;
+    let grad_second = x.grad()?.unwrap();
+    assert_eq!(&grad_second, &(&grad_first * 2.0));
 
     // zero_grad 后重新计算
     graph.zero_grad()?;
-    graph.forward(loss)?;
-    graph.backward(loss)?;
-    let grad_after_clear = graph.get_node(input)?.grad().unwrap();
-    assert_eq!(grad_after_clear, &grad_first);
+    loss.backward()?;
+    let grad_after_clear = x.grad()?.unwrap();
+    assert_eq!(&grad_after_clear, &grad_first);
 
     Ok(())
 }
 
-// ==================== 动态形状测试 ====================
+// ==================== 动态形状测试（KEEP AS-IS）====================
 
 /// 测试 Softmax 节点的动态形状传播
 #[test]
@@ -564,10 +398,7 @@ fn test_softmax_dynamic_batch_backward() {
     loss.backward().unwrap();
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
-
-use crate::nn::Graph;
-use std::rc::Rc;
+// ==================== 方案 C：新节点创建 API 测试（KEEP AS-IS）====================
 
 #[test]
 fn test_create_softmax_node() {
