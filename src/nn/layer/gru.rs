@@ -73,44 +73,53 @@ impl Gru {
         hidden_size: usize,
         name: &str,
     ) -> Result<Self, GraphError> {
+        // 如果 graph 有 model_name，自动拼接为 "ModelName/layer_name" 格式
+        let full_name = match graph.model_name() {
+            Some(model) => format!("{model}/{name}"),
+            None => name.to_string(),
+        };
+
         // === 重置门参数 ===
         let w_ir = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_ir"),
+            &format!("{full_name}_W_ir"),
         )?;
         let w_hr = graph.parameter(
             &[hidden_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_hr"),
+            &format!("{full_name}_W_hr"),
         )?;
-        let b_r = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_r"))?;
+        let b_r =
+            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_r"))?;
 
         // === 更新门参数 ===
         let w_iz = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_iz"),
+            &format!("{full_name}_W_iz"),
         )?;
         let w_hz = graph.parameter(
             &[hidden_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_hz"),
+            &format!("{full_name}_W_hz"),
         )?;
-        let b_z = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_z"))?;
+        let b_z =
+            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_z"))?;
 
         // === 候选状态参数 ===
         let w_in = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_in"),
+            &format!("{full_name}_W_in"),
         )?;
         let w_hn = graph.parameter(
             &[hidden_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_hn"),
+            &format!("{full_name}_W_hn"),
         )?;
-        let b_n = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_n"))?;
+        let b_n =
+            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_n"))?;
 
         // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
         // GRU 每个时间步的节点数：20
@@ -121,7 +130,7 @@ impl Gru {
         // - 隐藏更新: 1 subtract + 1 multiply + 1 add = 3
         // 总计: 1+5+5+6+3 = 20
         graph.inner_mut().register_recurrent_layer_meta(
-            name,
+            &full_name,
             "GRU",
             &format!("[?, {input_size}] → [?, {hidden_size}]"),
             vec![
@@ -151,7 +160,7 @@ impl Gru {
             graph: graph.clone(),
             input_size,
             hidden_size,
-            name: name.to_string(),
+            name: full_name,
         })
     }
 

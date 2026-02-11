@@ -12,7 +12,7 @@ mod model;
 use model::ParityLSTM;
 use only_torch::data::{DataLoader, VarLenDataset, VarLenSample};
 use only_torch::metrics::accuracy;
-use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 
 fn main() -> Result<(), GraphError> {
     println!("=== 变长奇偶性检测（LSTM，智能缓存 + 分桶批处理）===\n");
@@ -69,7 +69,6 @@ fn main() -> Result<(), GraphError> {
     // ========== 模型构建 ==========
     let graph = Graph::new_with_seed(seed);
     let model = ParityLSTM::new(&graph, hidden_size)?;
-    let criterion = CrossEntropyLoss::new();
     let mut optimizer = Adam::new(&graph, &model.parameters(), lr);
 
     // ========== 训练循环 ==========
@@ -85,7 +84,7 @@ fn main() -> Result<(), GraphError> {
 
             optimizer.zero_grad()?;
             let output = model.forward(&x_batch)?;
-            let loss = criterion.forward(&output, &y_batch)?;
+            let loss = output.cross_entropy(&y_batch)?;
             let loss_val = loss.backward()?;
             optimizer.step()?;
 
@@ -118,12 +117,13 @@ fn main() -> Result<(), GraphError> {
     println!("\n========== 最终结果 ==========");
     println!("测试准确率: {final_accuracy:.1}%");
     println!("最佳准确率: {best_accuracy:.1}%");
-    println!("模型缓存形状数: {}", model.cache_size());
-    println!("Criterion 缓存数: {}", criterion.cache_size());
 
-    // 保存可视化
+    // 保存可视化（从最后一个 loss 回溯）
+    let (vis_x, vis_y) = test_loader.iter().next().unwrap();
+    let vis_output = model.forward(&vis_x)?;
+    let vis_loss = vis_output.cross_entropy(&vis_y)?;
     let vis_result =
-        graph.save_visualization("examples/parity_lstm_var_len/parity_lstm_var_len", None)?;
+        vis_loss.save_visualization("examples/parity_lstm_var_len/parity_lstm_var_len")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

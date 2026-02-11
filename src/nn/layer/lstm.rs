@@ -78,58 +78,68 @@ impl Lstm {
         hidden_size: usize,
         name: &str,
     ) -> Result<Self, GraphError> {
+        // 如果 graph 有 model_name，自动拼接为 "ModelName/layer_name" 格式
+        let full_name = match graph.model_name() {
+            Some(model) => format!("{model}/{name}"),
+            None => name.to_string(),
+        };
+
         // === 输入门参数 ===
         let w_ii = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_ii"),
+            &format!("{full_name}_W_ii"),
         )?;
         let w_hi = graph.parameter(
             &[hidden_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_hi"),
+            &format!("{full_name}_W_hi"),
         )?;
-        let b_i = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_i"))?;
+        let b_i =
+            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_i"))?;
 
         // === 遗忘门参数 ===
         let w_if = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_if"),
+            &format!("{full_name}_W_if"),
         )?;
         let w_hf = graph.parameter(
             &[hidden_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_hf"),
+            &format!("{full_name}_W_hf"),
         )?;
         // 遗忘门偏置初始化为 1（帮助记忆）
-        let b_f = graph.parameter(&[1, hidden_size], Init::Ones, &format!("{name}_b_f"))?;
+        let b_f =
+            graph.parameter(&[1, hidden_size], Init::Ones, &format!("{full_name}_b_f"))?;
 
         // === 候选细胞参数 ===
         let w_ig = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_ig"),
+            &format!("{full_name}_W_ig"),
         )?;
         let w_hg = graph.parameter(
             &[hidden_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_hg"),
+            &format!("{full_name}_W_hg"),
         )?;
-        let b_g = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_g"))?;
+        let b_g =
+            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_g"))?;
 
         // === 输出门参数 ===
         let w_io = graph.parameter(
             &[input_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_io"),
+            &format!("{full_name}_W_io"),
         )?;
         let w_ho = graph.parameter(
             &[hidden_size, hidden_size],
             Init::Kaiming,
-            &format!("{name}_W_ho"),
+            &format!("{full_name}_W_ho"),
         )?;
-        let b_o = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{name}_b_o"))?;
+        let b_o =
+            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_o"))?;
 
         // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
         // LSTM 每个时间步的节点数：26
@@ -139,7 +149,7 @@ impl Lstm {
         // - 隐藏更新: 1 tanh + 1 multiply = 2
         // 总计: 1+20+3+2 = 26
         graph.inner_mut().register_recurrent_layer_meta(
-            name,
+            &full_name,
             "LSTM",
             &format!("[?, {input_size}] → [?, {hidden_size}]"),
             vec![
@@ -175,7 +185,7 @@ impl Lstm {
             graph: graph.clone(),
             input_size,
             hidden_size,
-            name: name.to_string(),
+            name: full_name,
         })
     }
 

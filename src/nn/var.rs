@@ -588,9 +588,15 @@ impl Var {
                 }
                 for &repr_id in &info.repr_output_node_ids {
                     rnn_output_repr_step_ranges.insert(repr_id.0, (min_steps, max_steps));
-                    for sid in &info.init_state_node_ids {
-                        rnn_feedback_edges.push((repr_id.0, sid.0, min_steps, max_steps));
-                    }
+                }
+                // 反馈边：repr_output 与 init_state 按顺序 1:1 配对（非交叉乘积）
+                // RNN/GRU: [h] zip [h0] = 1 条；LSTM: [h, c] zip [h0, c0] = 2 条
+                for (repr_id, sid) in info
+                    .repr_output_node_ids
+                    .iter()
+                    .zip(&info.init_state_node_ids)
+                {
+                    rnn_feedback_edges.push((repr_id.0, sid.0, min_steps, max_steps));
                 }
                 rnn_input_step_ranges.insert(info.input_node_id.0, (min_steps, max_steps));
 
