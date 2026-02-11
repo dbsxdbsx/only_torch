@@ -6,39 +6,27 @@
  *
  * # 用途
  *
- * Identity 节点通过 `Var::detach_node()` 创建，用于在计算图中建立**显式的梯度截断边界**。
+ * Identity 节点通过 `Var::detach()` 创建，用于在计算图中建立**显式的梯度截断边界**。
  *
  * ## 典型使用场景
  *
- * 1. **需要在 detach 后继续构建图**
+ * 1. **GAN 训练中阻止梯度流向生成器**
  *    ```ignore
- *    let x_detached = x.detach_node();  // 创建 Identity 节点
- *    let y = x_detached.sigmoid();      // 可以继续构建图
- *    let z = y.matmul(&w);              // 继续链式操作
+ *    let fake = generator.forward(&noise)?;
+ *    let d_out = discriminator.forward(fake.detach())?;  // 梯度阻断
  *    ```
  *
- * 2. **调试/可视化时需要看到明确的 detach 边界**
- *    Identity 节点在 Graphviz 中显示为独立节点（椭圆形，虚线，浅紫色），
- *    方便定位梯度截断位置。
+ * 2. **调试/可视化时看到明确的 detach 边界**
+ *    Identity 节点在 Graphviz 中显示为独立节点（椭圆形，虚线，浅紫色）。
  *
  * 3. **迁移学习/多任务学习**
- *    冻结部分网络时，可以在共享特征提取器后添加 Identity 节点，
+ *    冻结部分网络时，在共享特征提取器后添加 detach，
  *    使不同任务头有独立的梯度流控制。
- *
- * ## 与 DetachedVar 的区别
- *
- * | 方法 | 返回类型 | 是否创建图节点 | 适用场景 |
- * |------|---------|--------------|---------|
- * | `var.detach()` | `DetachedVar` | ❌ | ModelState.forward() |
- * | `var.detach_node()` | `Var` | ✅ Identity | 直接图操作、可视化 |
- *
- * 对于绝大多数场景（包括 GAN 训练），直接使用 `detach()` 即可，无需使用本节点。
- * `detach_node()` 仅用于需要在 detach 后继续构建图的高级场景。
  *
  * # 可视化
  *
  * Identity 节点使用特殊样式：椭圆形、虚线边框、浅紫色背景。
- * 这表明它是用户有意识创建的 detach 边界，区别于内部使用的 GradientRouter（灰色）。
+ * 表明用户有意识创建的 detach 边界。
  */
 
 use crate::nn::GraphError;
@@ -50,17 +38,7 @@ use crate::tensor::Tensor;
 /// Identity 节点（恒等映射）
 ///
 /// 直接传递父节点的值，不做任何变换。
-/// 通过 `Var::detach_node()` 创建，用于在图中建立显式的梯度截断边界。
-///
-/// # 何时使用
-///
-/// - 需要在 detach 后继续对结果进行图操作（如 `x.detach_node().sigmoid()`）
-/// - 需要在可视化中看到明确的 detach 边界
-/// - 迁移学习/多任务学习中的梯度流控制
-///
-/// # 何时不使用
-///
-/// - 仅需要将 detached 值传入 `ModelState::forward()` → 使用 `var.detach()` 返回的 `DetachedVar`
+/// 通过 `Var::detach()` 创建，用于在图中建立显式的梯度截断边界。
 ///
 /// # 可视化
 ///

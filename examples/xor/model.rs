@@ -26,11 +26,9 @@ impl XorMLP {
         })
     }
 
-    /// PyTorch 风格 forward：接收 Tensor，返回 Var
+    /// PyTorch 风格 forward：接收 &Tensor，返回 Var
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        // 创建输入节点
         let input = self.graph.input(x)?;
-        // 前向传播
         let h1 = self.fc1.forward(&input).tanh();
         let out = self.fc2.forward(&h1);
         Ok(out)

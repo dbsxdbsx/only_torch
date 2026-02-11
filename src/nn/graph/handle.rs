@@ -20,6 +20,12 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct Graph {
     inner: Rc<RefCell<GraphInner>>,
+    /// 模型名称（可选，用于可视化分组）
+    ///
+    /// 通过 `with_model_name("Generator")` 设置后，该 Graph 创建的所有 Layer
+    /// 会自动将层名拼接为 `"Generator/fc1"` 格式，可视化时渲染为嵌套 cluster。
+    /// 不设置则无模型分组，行为与默认一致。
+    model_name: Option<String>,
 }
 
 impl Graph {
@@ -29,6 +35,7 @@ impl Graph {
     pub fn new() -> Self {
         Self {
             inner: Rc::new(RefCell::new(GraphInner::new())),
+            model_name: None,
         }
     }
 
@@ -36,6 +43,7 @@ impl Graph {
     pub fn new_with_seed(seed: u64) -> Self {
         Self {
             inner: Rc::new(RefCell::new(GraphInner::new_with_seed(seed))),
+            model_name: None,
         }
     }
 
@@ -43,12 +51,42 @@ impl Graph {
     pub fn from_inner(inner: GraphInner) -> Self {
         Self {
             inner: Rc::new(RefCell::new(inner)),
+            model_name: None,
         }
     }
 
     /// 从现有 Rc 创建句柄
-    pub(crate) const fn from_rc(inner: Rc<RefCell<GraphInner>>) -> Self {
-        Self { inner }
+    pub(crate) fn from_rc(inner: Rc<RefCell<GraphInner>>) -> Self {
+        Self {
+            inner,
+            model_name: None,
+        }
+    }
+
+    // ==================== 模型分组 ====================
+
+    /// 创建带模型名的 Graph（用于可视化分组）
+    ///
+    /// 返回一个新的 Graph clone，共享同一个 `GraphInner`，
+    /// 但携带模型名。用这个 Graph 创建的 Layer 会自动将层名
+    /// 拼接为 `"模型名/层名"` 格式，可视化时渲染为嵌套 cluster。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let graph = graph.with_model_name("Generator");
+    /// // 后续创建的层名自动变为 "Generator/fc1"、"Generator/fc2"
+    /// let fc1 = Linear::new(&graph, 64, 128, true, "fc1")?;
+    /// ```
+    pub fn with_model_name(&self, name: &str) -> Self {
+        Self {
+            inner: Rc::clone(&self.inner),
+            model_name: Some(name.to_string()),
+        }
+    }
+
+    /// 获取当前模型名（供 Layer 查询）
+    pub fn model_name(&self) -> Option<&str> {
+        self.model_name.as_deref()
     }
 
     /// 获取内部 `GraphInner` 的不可变引用

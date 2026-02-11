@@ -59,16 +59,26 @@ impl Linear {
         use_bias: bool,
         name: &str,
     ) -> Result<Self, GraphError> {
+        // 如果 graph 有 model_name，自动拼接为 "ModelName/layer_name" 格式
+        let full_name = match graph.model_name() {
+            Some(model) => format!("{model}/{name}"),
+            None => name.to_string(),
+        };
+
         // 创建权重参数：Kaiming 初始化适合 ReLU
         let weights = graph.parameter(
             &[in_features, out_features],
             Init::Kaiming,
-            &format!("{name}_W"),
+            &format!("{full_name}_W"),
         )?;
 
         // 创建偏置参数（可选）：零初始化
         let bias = if use_bias {
-            Some(graph.parameter(&[1, out_features], Init::Zeros, &format!("{name}_b"))?)
+            Some(graph.parameter(
+                &[1, out_features],
+                Init::Zeros,
+                &format!("{full_name}_b"),
+            )?)
         } else {
             None
         };
@@ -78,7 +88,7 @@ impl Linear {
             bias,
             in_features,
             out_features,
-            name: name.to_string(),
+            name: full_name,
         })
     }
 

@@ -1017,7 +1017,7 @@ impl GraphInner {
     ///
     /// # detached 说明
     /// - `detached = false`: 正常 Identity，梯度正常传播
-    /// - `detached = true`: 梯度截断，用于 `Var::detach_node()`
+    /// - `detached = true`: 梯度截断，用于 `Var::detach()`
     pub fn create_identity_node(
         &mut self,
         input: Rc<NodeInner>,

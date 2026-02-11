@@ -1,5 +1,5 @@
 /*
- * MNIST GAN 训练示例
+ * MNIST GAN 训练示例（Phase 3 新版本）
  *
  * 使用 PyTorch 风格的 Only-Torch API 训练 GAN。
  *
@@ -11,21 +11,22 @@
  * ```
  *
  * # 关键特性演示
- * 1. `ForwardInput` trait: D 可以接收 Tensor（真实图像）或 Var（生成图像）
- * 2. 函数式 `detach()`: 训练 D 时阻止梯度流向 G
- * 3. `ModelState` 智能缓存: Tensor 输入缓存，Var 输入不缓存
+ * 1. `IntoVar` trait：forward 同时接受 Tensor 和 Var
+ * 2. Var 方法计算损失：`output.mse_loss(&target)?`
+ * 3. 函数式 `detach()`: 训练 D 时阻止梯度流向 G
+ * 4. 计算图可视化：从 loss Var 回溯整个图结构
  */
 
 mod model;
 
 use model::{Discriminator, Generator, LATENT_DIM};
 use only_torch::data::MnistDataset;
-use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 use only_torch::tensor_slice;
 use std::time::Instant;
 
-/// 训练配置（与 archive 版本一致）
+/// 训练配置
 const BATCH_SIZE: usize = 256;
 const EPOCHS: usize = 15;
 const LR_D: f32 = 0.0005; // D 学习率
@@ -59,9 +60,6 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let generator = Generator::new(&graph)?;
     let discriminator = Discriminator::new(&graph)?;
-
-    // 损失函数（使用 MSE 作为简化的 GAN 损失）
-    let criterion = MseLoss::new();
 
     // 优化器（beta1=0.5 对 GAN 更稳定）
     let mut g_optimizer =
@@ -106,10 +104,10 @@ fn main() -> Result<(), GraphError> {
             // === 训练 Discriminator ===
             d_optimizer.zero_grad()?;
 
-            // D 对真实图像的判别
+            // D 对真实图像的判别（直接传 Tensor，IntoVar 自动转换）
             let real_out = discriminator.forward(&real_images)?;
             let real_labels = Tensor::ones(&[BATCH_SIZE, 1]);
-            let d_real_loss = criterion.forward(&real_out, &real_labels)?;
+            let d_real_loss = real_out.mse_loss(&real_labels)?;
 
             // 记录 D(real) 平均值
             let real_out_val = real_out.value()?.unwrap();
@@ -126,12 +124,11 @@ fn main() -> Result<(), GraphError> {
             // G 生成假图像
             let fake_images = generator.forward(&z)?;
 
-            // D 对假图像的判别（使用 detach 阻止梯度流向 G）
+            // D 对假图像的判别（detach 阻止梯度流向 G）
             d_optimizer.zero_grad()?;
-            let fake_detached = fake_images.detach();
-            let fake_out = discriminator.forward(&fake_detached)?;
+            let fake_out = discriminator.forward(fake_images.detach())?;
             let fake_labels = Tensor::zeros(&[BATCH_SIZE, 1]);
-            let d_fake_loss = criterion.forward(&fake_out, &fake_labels)?;
+            let d_fake_loss = fake_out.mse_loss(&fake_labels)?;
 
             // 记录 D(fake) 平均值
             let fake_out_val = fake_out.value()?.unwrap();
@@ -155,9 +152,9 @@ fn main() -> Result<(), GraphError> {
             let z_g = Tensor::normal_seeded(0.0, 1.0, &[BATCH_SIZE, LATENT_DIM], noise_seed_g);
             let fake_images_g = generator.forward(&z_g)?;
 
-            // G 希望 D 把假图像判别为真
+            // G 希望 D 把假图像判别为真（直接传 Var）
             let fake_out_for_g = discriminator.forward(&fake_images_g)?;
-            let g_loss = criterion.forward(&fake_out_for_g, &real_labels)?;
+            let g_loss = fake_out_for_g.mse_loss(&real_labels)?;
             let g_loss_val = g_loss.backward()?;
             g_optimizer.step()?;
 
@@ -196,27 +193,29 @@ fn main() -> Result<(), GraphError> {
     // 4. 生成样本并保存可视化
     println!("\n[4/4] 生成样本并保存可视化...");
 
-    // 生成一张图像用于验证
+    // 构建完整 GAN 计算图：G -> D -> Loss
     let z_vis = Tensor::normal(0.0, 1.0, &[1, LATENT_DIM]);
     let fake_vis = generator.forward(&z_vis)?;
 
-    // 获取生成的图像值
     let fake_val = fake_vis.value()?.unwrap();
     println!("  生成图像形状: {:?}", fake_val.shape());
 
-    // 通过 D 判别，构建完整的 GAN 计算图
     let d_out_vis = discriminator.forward(&fake_vis)?;
-    d_out_vis.forward()?; // 确保前向传播完成
+    // 添加 loss 节点，使完整链路（G -> D -> Loss）可见
+    let loss_vis = d_out_vis.mse_loss(&Tensor::ones(&[1, 1]))?;
 
-    // 保存计算图可视化（Graphviz，启用模型分组）
-    let vis_result = graph.save_visualization("examples/mnist_gan/mnist_gan", None)?;
+    // 从 loss 回溯保存完整计算图
+    let vis_result = loss_vis.save_visualization("examples/mnist_gan/mnist_gan")?;
     println!("  计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("  可视化图像: {}", img_path.display());
     }
+    if let Some(hint) = &vis_result.graphviz_hint {
+        println!("  Graphviz 提示: {}", hint);
+    }
 
     println!("\n=== GAN 训练示例完成 ===");
-    println!("✅ 演示了 ForwardInput trait 和函数式 detach() 的使用");
+    println!("✅ 演示了 IntoVar trait、Var 损失计算和 detach() 的使用");
 
     Ok(())
 }

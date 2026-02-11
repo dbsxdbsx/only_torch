@@ -427,9 +427,9 @@ fn test_var_detach() {
         .unwrap();
 
     let h = &x * &w;
-    let h_detached = h.detach_node();
+    let h_detached = h.detach();
 
-    // detach_node 后的 Var 仍可参与计算
+    // detach 后的 Var 仍可参与计算
     let y = &h_detached * &w;
     let target = graph.input(&Tensor::new(&[2.0], &[1, 1])).unwrap();
     let loss = y.mse_loss(&target).unwrap();
@@ -637,9 +637,9 @@ fn test_complex_mixed_gradient_tracking() {
     let scalar = Tensor::new(&[0.5, 0.5], &[2, 1]);
     let d = &c * &scalar;
 
-    // Step 5: e = x.detach_node() * y (detach 后与另一个 Var 运算)
-    // detach_node 会切断 x 方向的梯度，但 y 方向仍然有梯度
-    let x_detached = x.detach_node();
+    // Step 5: e = x.detach() * y (detach 后与另一个 Var 运算)
+    // detach 会切断 x 方向的梯度，但 y 方向仍然有梯度
+    let x_detached = x.detach();
     let e = &x_detached * &y;
 
     // Step 6: f = d + e (最终汇合)
@@ -837,7 +837,7 @@ fn test_detach_completely_blocks_gradient() {
     x.set_value(&Tensor::new(&[5.0], &[1, 1])).unwrap();
 
     // 完全通过 detach 路径
-    let x_detached = x.detach_node();
+    let x_detached = x.detach();
     let t = Tensor::new(&[2.0], &[1, 1]);
     let y = &x_detached * &t;
 

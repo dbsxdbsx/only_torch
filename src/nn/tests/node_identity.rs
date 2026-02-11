@@ -1,7 +1,7 @@
 /*
  * Identity 节点测试
  *
- * Identity 节点是恒等映射（y = x），通过 `Var::detach_node()` 创建。
+ * Identity 节点是恒等映射（y = x），通过 `Var::detach()` 创建。
  * 用于在计算图中建立显式的梯度截断边界。
  *
  * # 与 DetachedVar 的区别
@@ -9,13 +9,13 @@
  * | 方法 | 返回类型 | 创建节点 | 用途 |
  * |------|---------|---------|------|
  * | `var.detach()` | `DetachedVar` | ❌ | ModelState.forward()（推荐） |
- * | `var.detach_node()` | `Var` | ✅ Identity | 直接图操作、可视化调试 |
+ * | `var.detach()` | `Var` | ✅ Identity | 直接图操作、可视化调试 |
  *
  * # 测试覆盖
  * 1. 基本功能：前向传播（值透传）
  * 2. 反向传播：梯度透传
  * 3. detach 语义：阻断梯度流（is_detached=true 时）
- * 4. 函数式 detach_node API
+ * 4. 函数式 detach API
  *
  * # 可视化
  * Identity 节点在 Graphviz 中显示为椭圆形、虚线边框、浅紫色背景。
@@ -180,8 +180,8 @@ fn test_var_detach_returns_new_var() {
         .unwrap();
     let h = x.matmul(&w).unwrap();
 
-    // detach_node 返回新的 Var（创建 Identity 节点）
-    let h_detached = h.detach_node();
+    // detach 返回新的 Var（创建 Identity 节点）
+    let h_detached = h.detach();
 
     // 验证是不同的节点
     assert_ne!(
@@ -205,8 +205,8 @@ fn test_var_detach_original_unchanged() {
     // 记录原节点的 detach 状态
     let original_detached = graph.inner().is_node_detached(h.node_id()).unwrap();
 
-    // 调用 detach_node（创建 Identity 节点）
-    let _h_detached = h.detach_node();
+    // 调用 detach（创建 Identity 节点）
+    let _h_detached = h.detach();
 
     // 原节点状态不变
     let after_detached = graph.inner().is_node_detached(h.node_id()).unwrap();
@@ -236,8 +236,8 @@ fn test_var_detach_blocks_gradient_gan_style() {
         .parameter(&[2, 1], crate::nn::var::Init::Ones, "d_w")
         .unwrap();
 
-    // === 场景 1: 使用 detach_node，训练 D ===
-    let fake_detached = fake.detach_node();
+    // === 场景 1: 使用 detach，训练 D ===
+    let fake_detached = fake.detach();
     let d_out_for_d = fake_detached.matmul(&d_w).unwrap(); // [2,2] @ [2,1] -> [2,1]
     let target = graph.input(&Tensor::zeros(&[2, 1])).unwrap();
     let d_loss = d_out_for_d.mse_loss(&target).unwrap();
@@ -294,10 +294,10 @@ fn test_var_detach_multiple_times() {
 
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
 
-    let d1 = x.detach_node();
-    let d2 = x.detach_node();
+    let d1 = x.detach();
+    let d2 = x.detach();
 
-    // 每次 detach_node 都创建新节点
+    // 每次 detach 都创建新节点
     assert_ne!(d1.node_id(), d2.node_id(), "多次 detach 应该创建不同的节点");
     assert_ne!(d1.node_id(), x.node_id(), "detached 节点应该与原节点不同");
     assert_ne!(d2.node_id(), x.node_id(), "detached 节点应该与原节点不同");
@@ -310,7 +310,7 @@ fn test_var_detach_value_correct() {
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     let x = graph.input(&input_data).unwrap();
-    let x_detached = x.detach_node();
+    let x_detached = x.detach();
 
     // 前向传播
     x_detached.forward().unwrap();
@@ -331,8 +331,8 @@ fn test_identity_dynamic_shape_propagation() {
     let x = graph.input(&Tensor::zeros(&[4, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
 
-    // 创建 Identity（detach_node）
-    let result = h0.detach_node();
+    // 创建 Identity（detach）
+    let result = h0.detach();
 
     // 验证动态形状传播
     let dyn_shape = result.dynamic_expected_shape();
@@ -350,8 +350,8 @@ fn test_identity_dynamic_batch_forward() {
     let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
 
-    // Identity（detach_node）
-    let result = h0.detach_node();
+    // Identity（detach）
+    let result = h0.detach();
 
     // 第一次 forward：batch=2
     result.forward().unwrap();
@@ -379,7 +379,7 @@ fn test_identity_dynamic_batch_backward() {
     let h0 = graph.zeros_like(&x, &[4], None).unwrap(); // [?, 4]
 
     // Identity（非 detached，梯度可以流过）
-    let result = h0.detach_node();
+    let result = h0.detach();
 
     // 创建目标和损失
     let target = graph.input(&Tensor::zeros(&[2, 4])).unwrap();

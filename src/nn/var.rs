@@ -6,7 +6,7 @@
  * 这是架构的核心组件，提供 PyTorch 级用户体验。
  */
 
-use super::graph::GraphInner;
+use super::graph::{Graph, GraphInner};
 use super::nodes::NodeInner;
 use super::{GraphError, NodeId};
 use crate::tensor::Tensor;
@@ -210,53 +210,27 @@ impl Var {
     /// let d_fake_for_g = D.forward(&fake_images)?;  // 原 Var，梯度正常流动
     /// g_loss.backward()?;  // 梯度流向 G
     /// ```
-    /// 创建一个 detached 视图（轻量级包装，不创建图节点）
-    ///
-    /// 返回 `DetachedVar`，它是原 Var 的轻量级包装：
-    /// - **不创建任何图节点**
-    /// - 实现 `ForwardInput` trait，行为像 detached Var
-    /// - 用于 GAN 训练等需要梯度截断的场景
-    ///
-    /// # 与 `detach_node()` 的区别
-    /// - `detach()` → 返回 `DetachedVar`（轻量级，推荐用于 `ModelState`）
-    /// - `detach_node()` → 返回 `Var`（创建 Identity 节点，用于直接图操作）
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // GAN 训练（推荐）
-    /// let fake = G.forward(&noise)?;
-    /// let d_fake = D.forward(&fake.detach())?;  // DetachedVar，无图节点创建
-    /// ```
-    pub fn detach(&self) -> DetachedVar {
-        DetachedVar {
-            inner: self.clone(),
-        }
-    }
-
-    /// 创建一个 detached 节点（创建 Identity 节点）
+    /// 创建一个 detached 的 Var（与 PyTorch `tensor.detach()` 语义一致）
     ///
     /// 在图中创建一个新的 Identity 节点，标记为 detached。
-    /// 返回指向该节点的 Var。
-    ///
-    /// # 何时使用
-    /// - 需要在图中保留明确的 detach 边界
-    /// - 需要对 detached 结果进行进一步的图操作
-    ///
-    /// # 注意
-    /// 对于 `ModelState` 场景，推荐使用 `detach()` 方法（更高效）。
+    /// 返回的 Var：
+    /// - 与原 Var 共享前向计算的值
+    /// - 反向传播时，梯度不会通过此节点传回原 Var
+    /// - 可以继续参与后续的图计算
     ///
     /// # 示例
     /// ```ignore
-    /// // 需要在图中操作 detached 结果
-    /// let x_detached = x.detach_node();
-    /// let y = x_detached.sigmoid();  // 可以继续构建图
+    /// // GAN 训练：训练 D 时阻止梯度流向 G
+    /// let fake_images = G.forward(&noise)?;
+    /// let d_fake = D.forward(&fake_images.detach())?;  // 梯度阻断
+    /// d_loss.backward()?;  // 梯度不会流向 G
     /// ```
-    pub fn detach_node(&self) -> Self {
+    pub fn detach(&self) -> Self {
         let new_node = self
             .graph()
             .borrow_mut()
             .create_identity_node(Rc::clone(&self.node), None, true) // detached=true
-            .expect("内部错误：detach_node 创建 Identity 节点失败");
+            .expect("内部错误：detach 创建 Identity 节点失败");
         Self {
             node: new_node,
             graph: self.graph.clone(),
@@ -530,10 +504,15 @@ impl Var {
         let generate_node_def = |node: &Rc<NodeInner>| -> String {
             let id = node.id().0;
             let node_type = node.type_name();
-            let name = node
+            let raw_name = node
                 .name()
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| node_type.to_lowercase());
+            // 可视化时去掉模型前缀（"Generator/fc1_W" → "fc1_W"）
+            let name = match raw_name.split_once('/') {
+                Some((_, after)) => after.to_string(),
+                None => raw_name,
+            };
             let shape = node.value_expected_shape();
 
             // 形状字符串：Parameter 显示固定形状，其他节点第一维显示为 ? (batch 维度)
@@ -600,49 +579,276 @@ impl Var {
         dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
         dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n\n");
 
-        // 4. 输出层分组（cluster）
-        for (group_idx, group) in layer_groups.iter().enumerate() {
-            // 检查该层是否有节点在当前可视化范围内
-            let group_node_ids: Vec<u64> = group
-                .node_ids
-                .iter()
-                .filter(|id| visited.contains(id))
-                .map(|id| id.0)
-                .collect();
+        // 4. 输出层分组（cluster），支持嵌套（Model / Layer）
+        //
+        // 层名含 "/" 时（如 "Generator/fc1"）：
+        //   外层 cluster = "Generator"（模型），内层 cluster = "fc1"（层）
+        // 层名不含 "/" 时（如 "fc1"）：
+        //   单层 cluster（现有行为）
 
-            if group_node_ids.is_empty() {
-                continue;
+        // 将分组按模型前缀归类
+        use super::graph::LayerGroup;
+        let mut model_groups: std::collections::BTreeMap<
+            String,
+            Vec<(usize, String, &LayerGroup)>,
+        > = std::collections::BTreeMap::new();
+        let mut standalone_groups: Vec<(usize, &LayerGroup)> = Vec::new();
+
+        for (group_idx, group) in layer_groups.iter().enumerate() {
+            if let Some((model, layer)) = group.name.split_once('/') {
+                model_groups
+                    .entry(model.to_string())
+                    .or_default()
+                    .push((group_idx, layer.to_string(), group));
+            } else {
+                standalone_groups.push((group_idx, group));
+            }
+        }
+
+        // === 拓扑推断：将未分组节点归入正确的模型 ===
+        // 初始映射：从 layer group 名称中提取模型归属
+        let mut node_to_model: HashMap<u64, String> = HashMap::new();
+        for group in &layer_groups {
+            if let Some((model, _)) = group.name.split_once('/') {
+                for node_id in &group.node_ids {
+                    if visited.contains(node_id) {
+                        node_to_model.insert(node_id.0, model.to_string());
+                    }
+                }
+            }
+        }
+
+        // 仅在存在模型分组时执行推断
+        if !model_groups.is_empty() {
+            // 建立 node_id -> children 映射（用于叶子节点上推）
+            let mut node_children: HashMap<u64, Vec<u64>> = HashMap::new();
+            for node in &nodes {
+                for parent in node.parents() {
+                    node_children
+                        .entry(parent.id().0)
+                        .or_default()
+                        .push(node.id().0);
+                }
             }
 
-            let cluster_color = group_colors[group_idx % group_colors.len()];
-            dot.push_str(&format!(
-                "    subgraph cluster_{} {{\n",
-                group.name.replace(['-', '.'], "_")
-            ));
-            dot.push_str(&format!(
-                "        label=<<B>{}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
-                group.name, group.layer_type, group.description
-            ));
-            dot.push_str("        style=filled;\n");
-            dot.push_str(&format!("        fillcolor=\"{}\";\n", cluster_color));
-            dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
-            dot.push_str("        fontsize=11;\n");
-            dot.push_str("        margin=12;\n");
+            // 迭代推断，直到稳定
+            loop {
+                let mut changed = false;
 
-            // 在 cluster 内定义节点
+                for node in &nodes {
+                    let nid = node.id().0;
+                    if node_to_model.contains_key(&nid) {
+                        continue;
+                    }
+
+                    let parents = node.parents();
+
+                    if !parents.is_empty() {
+                        // 向下传播：所有父节点都在同一模型 → 归入该模型
+                        let parent_models: Vec<Option<&str>> = parents
+                            .iter()
+                            .map(|p| node_to_model.get(&p.id().0).map(|s| s.as_str()))
+                            .collect();
+
+                        if parent_models.iter().all(|m| m.is_some()) {
+                            let unique: HashSet<&str> =
+                                parent_models.iter().filter_map(|m| *m).collect();
+                            if unique.len() == 1 {
+                                let model = unique.into_iter().next().unwrap().to_string();
+                                node_to_model.insert(nid, model);
+                                changed = true;
+                            }
+                        }
+                    } else {
+                        // 叶子节点上推：所有子节点都在同一模型 → 归入该模型
+                        if let Some(children) = node_children.get(&nid) {
+                            let child_models: Vec<Option<&str>> = children
+                                .iter()
+                                .map(|c| node_to_model.get(c).map(|s| s.as_str()))
+                                .collect();
+
+                            if !child_models.is_empty()
+                                && child_models.iter().all(|m| m.is_some())
+                            {
+                                let unique: HashSet<&str> =
+                                    child_models.iter().filter_map(|m| *m).collect();
+                                if unique.len() == 1 {
+                                    let model = unique.into_iter().next().unwrap().to_string();
+                                    node_to_model.insert(nid, model);
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !changed {
+                    break;
+                }
+            }
+        }
+
+        // === 预计算跨模型边和虚拟 Input 节点 ===
+        // key: (parent_id, child_model) → virtual_node_id
+        let mut virtual_input_map: HashMap<(u64, String), String> = HashMap::new();
+        // model_name → [(virt_id, shape_str)]
+        let mut virtual_inputs_by_model: HashMap<String, Vec<(String, String)>> = HashMap::new();
+
+        for node in &nodes {
+            let child_id = node.id().0;
+            let child_model = node_to_model.get(&child_id);
+            for parent in node.parents() {
+                let parent_id = parent.id().0;
+                let parent_model = node_to_model.get(&parent_id);
+
+                if let (Some(pm), Some(cm)) = (parent_model, child_model) {
+                    if pm != cm {
+                        let key = (parent_id, cm.clone());
+                        if !virtual_input_map.contains_key(&key) {
+                            let virt_id = format!("virt_{}_{}", parent_id, cm.replace(' ', "_"));
+                            // 形状信息
+                            let shape = parent.value_expected_shape();
+                            let shape_str = if shape.is_empty() {
+                                String::new()
+                            } else {
+                                let dims: Vec<String> = shape
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, &d)| {
+                                        if i == 0 {
+                                            "?".to_string()
+                                        } else {
+                                            d.to_string()
+                                        }
+                                    })
+                                    .collect();
+                                format!("[{}]", dims.join(", "))
+                            };
+                            virtual_inputs_by_model
+                                .entry(cm.clone())
+                                .or_default()
+                                .push((virt_id.clone(), shape_str));
+                            virtual_input_map.insert(key, virt_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 模型级 cluster 颜色（柔和半透明）
+        let model_colors = ["#FFEBEE40", "#E8EAF640", "#E0F2F140", "#FFF8E140"];
+
+        // 辅助闭包：渲染单个层 cluster 的内容
+        let render_layer_cluster =
+            |dot: &mut String,
+             indent: &str,
+             cluster_id: &str,
+             display_name: &str,
+             group: &LayerGroup,
+             color: &str| {
+                let group_node_ids: Vec<u64> = group
+                    .node_ids
+                    .iter()
+                    .filter(|id| visited.contains(id))
+                    .map(|id| id.0)
+                    .collect();
+
+                if group_node_ids.is_empty() {
+                    return;
+                }
+
+                dot.push_str(&format!(
+                    "{indent}subgraph cluster_{cluster_id} {{\n"
+                ));
+                dot.push_str(&format!(
+                    "{indent}    label=<<B>{display_name}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
+                    group.layer_type, group.description
+                ));
+                dot.push_str(&format!("{indent}    style=filled;\n"));
+                dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
+                dot.push_str(&format!(
+                    "{indent}    fontname=\"Microsoft YaHei,SimHei,Arial\";\n"
+                ));
+                dot.push_str(&format!("{indent}    fontsize=11;\n"));
+                dot.push_str(&format!("{indent}    margin=12;\n"));
+
+                for node in &nodes {
+                    if group_node_ids.contains(&node.id().0) {
+                        dot.push_str(&format!("{indent}        "));
+                        dot.push_str(&generate_node_def(node));
+                    }
+                }
+
+                dot.push_str(&format!("{indent}}}\n\n"));
+            };
+
+        // 渲染模型级嵌套 cluster
+        for (model_idx, (model_name, layers)) in model_groups.iter().enumerate() {
+            let model_id = model_name.replace(['-', '.', ' ', '/'], "_");
+            let model_color = model_colors[model_idx % model_colors.len()];
+
+            dot.push_str(&format!("    subgraph cluster_model_{model_id} {{\n"));
+            dot.push_str(&format!(
+                "        label=<<B>{model_name}</B>>;\n"
+            ));
+            dot.push_str("        style=\"filled,bold\";\n");
+            dot.push_str(&format!("        fillcolor=\"{model_color}\";\n"));
+            dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+            dot.push_str("        fontsize=13;\n");
+            dot.push_str("        margin=16;\n\n");
+
+            // 内层 layer cluster
+            for (group_idx, layer_name, group) in layers {
+                let cluster_id =
+                    format!("{model_id}_{}", layer_name.replace(['-', '.', ' ', '/'], "_"));
+                let color = group_colors[*group_idx % group_colors.len()];
+                render_layer_cluster(
+                    &mut dot,
+                    "        ",
+                    &cluster_id,
+                    layer_name,
+                    group,
+                    color,
+                );
+            }
+
+            // 推断归属的节点（不在任何 layer group 中，但拓扑推断属于此模型）
             for node in &nodes {
-                if group_node_ids.contains(&node.id().0) {
-                    dot.push_str("            ");
-                    dot.push_str(&generate_node_def(node));
+                let nid = node.id().0;
+                if !node_to_group.contains_key(&nid) {
+                    if let Some(m) = node_to_model.get(&nid) {
+                        if m == model_name {
+                            dot.push_str("        ");
+                            dot.push_str(&generate_node_def(node));
+                        }
+                    }
+                }
+            }
+
+            // 跨模型虚拟 Input 节点（纯可视化，虚线椭圆）
+            if let Some(virt_inputs) = virtual_inputs_by_model.get(model_name.as_str()) {
+                for (virt_id, shape_str) in virt_inputs {
+                    dot.push_str(&format!(
+                        "        \"{}\" [label=<Input<BR/>{}> shape=ellipse style=\"filled,dashed\" fillcolor=\"#E0E0E0\" fontsize=10];\n",
+                        virt_id, shape_str
+                    ));
                 }
             }
 
             dot.push_str("    }\n\n");
         }
 
-        // 5. 输出未分组的节点
+        // 渲染独立分组（无模型前缀，保持现有行为）
+        for (group_idx, group) in &standalone_groups {
+            let cluster_id = group.name.replace(['-', '.', ' ', '/'], "_");
+            let color = group_colors[*group_idx % group_colors.len()];
+            render_layer_cluster(&mut dot, "    ", &cluster_id, &group.name, group, color);
+        }
+
+        // 5. 输出未分组的节点（排除已推断归入模型的节点）
         for node in &nodes {
-            if !node_to_group.contains_key(&node.id().0) {
+            let nid = node.id().0;
+            if !node_to_group.contains_key(&nid) && !node_to_model.contains_key(&nid) {
                 dot.push_str("    ");
                 dot.push_str(&generate_node_def(node));
             }
@@ -650,12 +856,34 @@ impl Var {
 
         dot.push('\n');
 
-        // 6. 生成边（父节点 -> 子节点）
+        // 6. 生成边（父节点 -> 子节点），跨模型边通过虚拟 Input 中转
         for node in &nodes {
             let child_id = node.id().0;
+            let child_model = node_to_model.get(&child_id);
+
             for parent in node.parents() {
                 let parent_id = parent.id().0;
-                dot.push_str(&format!("    \"{}\" -> \"{}\";\n", parent_id, child_id));
+                let parent_model = node_to_model.get(&parent_id);
+
+                // 检查是否为跨模型边
+                let is_cross_model = match (parent_model, child_model) {
+                    (Some(pm), Some(cm)) => pm != cm,
+                    _ => false,
+                };
+
+                if is_cross_model {
+                    // 通过虚拟 Input 节点中转
+                    let key = (parent_id, child_model.unwrap().clone());
+                    if let Some(virt_id) = virtual_input_map.get(&key) {
+                        dot.push_str(&format!(
+                            "    \"{}\" -> \"{}\" [style=dashed color=\"#999999\"];\n",
+                            parent_id, virt_id
+                        ));
+                        dot.push_str(&format!("    \"{}\" -> \"{}\";\n", virt_id, child_id));
+                    }
+                } else {
+                    dot.push_str(&format!("    \"{}\" -> \"{}\";\n", parent_id, child_id));
+                }
             }
         }
 
@@ -1250,53 +1478,54 @@ impl Neg for Var {
     }
 }
 
-// ==================== DetachedVar ====================
+// ==================== IntoVar ====================
 
-/// Detached Var（轻量级包装器）
+/// 前向传播输入类型转换 trait
 ///
-/// 这是 `Var::detach()` 返回的类型，用于表示"梯度截断"的 Var 视图：
-/// - **不创建图节点**：与之前的 Identity 节点方式不同，这是零成本抽象
-/// - **实现 `ForwardInput`**：可直接传入 `ModelState::forward()`
-/// - **行为像 detached Var**：梯度不会流回原 Var
+/// 允许模型的 forward 方法同时接受 `&Tensor` 和 `&Var`，
+/// 与 PyTorch 中统一使用 Tensor 的体验类似。
 ///
-/// # 用法
+/// # 示例
 /// ```ignore
-/// let fake = G.forward(&noise)?;
-/// let d_fake = D.forward(&fake.detach())?;  // DetachedVar，无图节点创建
-/// ```
+/// // 模型定义
+/// impl MyModel {
+///     pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+///         let input = x.into_var(&self.graph)?;
+///         let h = self.fc1.forward(&input).relu();
+///         Ok(self.fc2.forward(&h))
+///     }
+/// }
 ///
-/// # 与 Var 的区别
-/// - `Var::is_detached()` 检查节点本身的 detached 标志
-/// - `DetachedVar` 是一个包装器，表示"以 detached 方式使用这个 Var"
-#[derive(Clone)]
-pub struct DetachedVar {
-    inner: Var,
+/// // 使用时：Tensor 和 Var 都可以
+/// let out1 = model.forward(&tensor)?;  // &Tensor
+/// let out2 = model.forward(&var)?;     // &Var
+/// let out3 = model.forward(var)?;      // Var
+/// ```
+pub trait IntoVar {
+    fn into_var(self, graph: &Graph) -> Result<Var, GraphError>;
 }
 
-impl DetachedVar {
-    /// 获取内部 Var 的引用
-    pub const fn inner(&self) -> &Var {
-        &self.inner
+impl IntoVar for &Tensor {
+    fn into_var(self, graph: &Graph) -> Result<Var, GraphError> {
+        graph.input(self)
     }
+}
 
-    /// 获取值
-    pub fn value(&self) -> Result<Option<Tensor>, GraphError> {
-        self.inner.value()
+impl IntoVar for Tensor {
+    fn into_var(self, graph: &Graph) -> Result<Var, GraphError> {
+        graph.input(&self)
     }
+}
 
-    /// 获取预期形状
-    pub fn value_expected_shape(&self) -> Vec<usize> {
-        self.inner.value_expected_shape()
+impl IntoVar for &Var {
+    fn into_var(self, _graph: &Graph) -> Result<Var, GraphError> {
+        Ok(self.clone())
     }
+}
 
-    /// 触发前向传播
-    pub fn forward(&self) -> Result<(), GraphError> {
-        self.inner.forward()
-    }
-
-    /// 始终返回 true（这是 `DetachedVar` 的核心特性）
-    pub const fn is_detached(&self) -> bool {
-        true
+impl IntoVar for Var {
+    fn into_var(self, _graph: &Graph) -> Result<Var, GraphError> {
+        Ok(self)
     }
 }
 
@@ -1331,26 +1560,18 @@ mod tests {
     }
 
     #[test]
-    fn test_detached_var_is_lightweight() {
-        // 验证 DetachedVar 不创建图节点
+    fn test_detach_creates_node() {
+        // 验证 detach() 创建 Identity 节点（与 PyTorch 行为一致）
         use crate::nn::Graph;
         let graph = Graph::new();
         let x = graph.input(&crate::tensor::Tensor::ones(&[1, 2])).unwrap();
         let initial_count = graph.inner().nodes_count();
 
-        // detach() 不应该创建新节点
-        let _ = x.detach();
-        let after_detach_count = graph.inner().nodes_count();
-        assert_eq!(initial_count, after_detach_count, "detach() 不应创建新节点");
-
-        // detach_node() 应该创建新节点
-        let _ = x.detach_node();
-        let after_detach_node_count = graph.inner().nodes_count();
-        assert_eq!(
-            initial_count + 1,
-            after_detach_node_count,
-            "detach_node() 应创建一个新节点"
-        );
+        // detach() 创建新的 Identity 节点
+        let x_detached = x.detach();
+        let after_count = graph.inner().nodes_count();
+        assert_eq!(initial_count + 1, after_count, "detach() 应创建一个新节点");
+        assert!(x_detached.is_detached(), "detach 返回的 Var 应标记为 detached");
     }
 
     #[test]

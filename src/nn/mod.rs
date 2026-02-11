@@ -32,7 +32,7 @@ pub use nodes::node_inner::NodeInner; // 方案 C 新增：供内部模块使用
 pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
 pub use optimizer::{Adam, Optimizer, SGD};
 pub use shape::{Dim, DynamicShape};
-pub use var::{DetachedVar, Init, Var};
+pub use var::{Init, IntoVar, Var};
 pub use var_ops::{
     GatherIndex, VarActivationOps, VarLossOps, VarMatrixOps, VarReduceOps, VarRegularizationOps,
     VarShapeOps,

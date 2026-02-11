@@ -264,7 +264,7 @@ define_node_types! {
     Identity(Identity) {
         category: "辅助",
         description: "恒等映射（用于 detach）",
-        var_method: Some("detach_node()"),
+        var_method: Some("detach()"),
     },
     Dropout(Dropout) {
         category: "辅助",

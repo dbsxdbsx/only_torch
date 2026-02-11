@@ -90,7 +90,7 @@ fn test_var_is_detached_still_works() {
 
     assert!(!x.is_detached());
 
-    let x_detached = x.detach_node();
+    let x_detached = x.detach();
     assert!(x_detached.is_detached());
 }
 
