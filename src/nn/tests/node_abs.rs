@@ -1,294 +1,246 @@
-use crate::assert_err;
-use crate::nn::{GraphError, GraphInner};
+/*
+ * @Author       : 老董
+ * @Description  : Abs 节点单元测试（逐元素绝对值）
+ *
+ * 测试策略：
+ * 1. 基础功能测试（创建、形状验证、命名）→ 底层 create_* API（文件末尾）
+ * 2. 前向传播测试 → 高层 Graph + Var API
+ * 3. VJP 单元测试（calc_grad_to_parent_index）→ 底层 NodeInner
+ * 4. 端到端反向传播测试 → 高层 Graph + Var API
+ * 5. 梯度累积测试 → 高层 Graph + Var API
+ * 6. 动态形状测试 → 高层 Graph + Var API
+ * 7. 特殊场景测试（幂等性、L1 损失组件）→ 高层 API
+ *
+ * 梯度公式：
+ *   abs(x) 的导数 = sign(x) = { 1 if x > 0, -1 if x < 0, 0 if x = 0 }
+ *   （x=0 处梯度为 0，与 PyTorch 行为一致）
+ */
+
+use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
+use approx::assert_abs_diff_eq;
 
-#[cfg(any())]
+// ==================== 前向传播测试（高层 Graph + Var API）====================
+
+/// 测试 Abs 前向传播（包含正数、负数、零）
 #[test]
-fn test_node_abs_creation() {
-    let mut graph = GraphInner::new();
+fn test_abs_forward() {
+    let graph = Graph::new();
 
-    // 1. 测试 Input 节点作为父节点
-    {
-        let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
-        let abs = graph.new_abs_node(input, Some("abs_with_input")).unwrap();
-        // 1.1 验证基本属性
-        assert_eq!(graph.get_node_name(abs).unwrap(), "abs_with_input");
-        assert_eq!(graph.get_node_parents(abs).unwrap().len(), 1);
-        assert_eq!(graph.get_node_children(abs).unwrap().len(), 0);
-    }
-
-    // 2. 测试 Parameter 节点作为父节点
-    {
-        let param = graph.new_parameter_node(&[2, 2], Some("param1")).unwrap();
-        let abs = graph.new_abs_node(param, Some("abs_with_param")).unwrap();
-        assert_eq!(graph.get_node_name(abs).unwrap(), "abs_with_param");
-        assert_eq!(graph.get_node_parents(abs).unwrap().len(), 1);
-        assert_eq!(graph.get_node_children(abs).unwrap().len(), 0);
-    }
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_abs_name_generation() {
-    let mut graph = GraphInner::new();
-
-    // 1. 测试节点显式命名
-    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
-    let abs = graph.new_abs_node(input, Some("explicit_abs")).unwrap();
-    assert_eq!(graph.get_node_name(abs).unwrap(), "explicit_abs");
-
-    // 2. 测试节点自动命名
-    let abs2 = graph.new_abs_node(input, None).unwrap();
-    assert_eq!(graph.get_node_name(abs2).unwrap(), "abs_1");
-
-    // 3. 测试节点名称重复
-    let result = graph.new_abs_node(input, Some("explicit_abs"));
-    assert_err!(
-        result,
-        GraphError::DuplicateNodeName("节点explicit_abs在图default_graph中重复")
-    );
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_abs_manually_set_value() {
-    let mut graph = GraphInner::new();
-    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
-    let abs = graph.new_abs_node(input, Some("abs")).unwrap();
-
-    // 1. 测试直接设置 Abs 节点的值（应该失败）
-    let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    assert_err!(
-        graph.set_node_value(abs, Some(&test_value)),
-        GraphError::InvalidOperation(
-            "节点[id=2, name=abs, type=Abs]的值只能通过前向传播计算得到，不能直接设置"
-        )
-    );
-
-    // 2. 测试清除 Abs 节点的值（也应该失败）
-    assert_err!(
-        graph.set_node_value(abs, None),
-        GraphError::InvalidOperation(
-            "节点[id=2, name=abs, type=Abs]的值只能通过前向传播计算得到，不能直接设置"
-        )
-    );
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_abs_expected_shape() {
-    let mut graph = GraphInner::new();
-
-    // 1. 测试基本的 Abs 节点预期形状
-    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
-    let abs = graph.new_abs_node(input, Some("abs")).unwrap();
-    assert_eq!(graph.get_node_value_expected_shape(abs).unwrap(), &[2, 2]);
-    assert_eq!(graph.get_node_value_shape(abs).unwrap(), None); // 实际值形状为 None（未计算）
-
-    // 2. 测试前向传播后的形状
-    let value = Tensor::zeros(&[2, 2]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward(abs).unwrap();
-
-    // 2.1 验证前向传播后的形状
-    assert_eq!(graph.get_node_value_shape(abs).unwrap().unwrap(), &[2, 2]); // 实际值形状
-    assert_eq!(graph.get_node_value_expected_shape(abs).unwrap(), &[2, 2]); // 预期形状保持不变
-
-    // 2.2 测试父节点值在首次前向传播后，再次设置新值后的形状检查
-    let value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-
-    // 2.2.1 验证预期形状和实际形状
-    assert_eq!(graph.get_node_value_expected_shape(abs).unwrap(), &[2, 2]);
-    assert_eq!(graph.get_node_value_shape(abs).unwrap().unwrap(), &[2, 2]);
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_abs_forward_propagation() {
-    // 1. 准备测试数据
-    // Abs: |x|
-    let value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    let expected = Tensor::new(&[0.5, 1.0, 0.0, 2.0], &[2, 2]);
-
-    // 2. 测试不同节点类型组合的前向传播
-    let node_types = ["input", "parameter"];
-    for parent_type in node_types {
-        let mut graph = GraphInner::new();
-
-        // 创建 parent 节点
-        let parent = match parent_type {
-            "input" => graph
-                .new_basic_input_node(&[2, 2], Some("input_1"))
-                .unwrap(),
-            "parameter" => graph
-                .new_parameter_node(&[2, 2], Some("parameter_1"))
-                .unwrap(),
-            _ => unreachable!(),
-        };
-
-        // Abs 节点
-        let abs = graph.new_abs_node(parent, Some("abs")).unwrap();
-
-        // 如果节点是 parameter，因创建时其值已隐式初始化过了，所以前向传播应成功
-        if parent_type == "parameter" {
-            graph.forward(abs).unwrap();
-        } else {
-            // 如果是 input 节点，因创建时其值未初始化，所以前向传播应失败
-            assert_err!(
-                graph.forward(abs),
-                GraphError::InvalidOperation(msg) if msg.contains("不能直接前向传播")
-            );
-
-            // 设置 input 节点的值
-            graph.set_node_value(parent, Some(&value)).unwrap();
-
-            // 设置值后前向传播应成功
-            graph.forward(abs).unwrap();
-            let result = graph.get_node_value(abs).unwrap().unwrap();
-
-            // 只有当节点是 input 时才检查输出值
-            if parent_type == "input" {
-                assert_eq!(result, &expected);
-            }
-        }
-    }
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_abs_forward_values() {
-    // 测试 Abs 节点的具体输出值
-    let mut graph = GraphInner::new();
-
-    // 1. 测试包含正数、负数、零的情况（使用 2D 张量，框架要求 2-4 维）
-    let input = graph.new_basic_input_node(&[5, 1], Some("input")).unwrap();
-    let abs = graph.new_abs_node(input, Some("abs")).unwrap();
-
-    let value = Tensor::new(&[-2.0, -0.5, 0.0, 0.5, 2.0], &[5, 1]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward(abs).unwrap();
-
-    let result = graph.get_node_value(abs).unwrap().unwrap();
-    let expected = Tensor::new(&[2.0, 0.5, 0.0, 0.5, 2.0], &[5, 1]);
-    assert_eq!(result, &expected);
-
-    // 2. 测试极端值
-    let extreme_value = Tensor::new(
-        &[f32::INFINITY, f32::NEG_INFINITY, f32::MIN, f32::MAX],
-        &[2, 2],
-    );
-    let input2 = graph.new_basic_input_node(&[2, 2], Some("input2")).unwrap();
-    let abs2 = graph.new_abs_node(input2, Some("abs2")).unwrap();
-
-    graph.set_node_value(input2, Some(&extreme_value)).unwrap();
-    graph.forward(abs2).unwrap();
-
-    let result2 = graph.get_node_value(abs2).unwrap().unwrap();
-    // INFINITY → INFINITY, NEG_INFINITY → INFINITY, MIN → abs(MIN), MAX → MAX
-    // 注意：f32::MIN 是最小的负数，其绝对值约等于 MAX
-    let expected2 = Tensor::new(
-        &[f32::INFINITY, f32::INFINITY, f32::MIN.abs(), f32::MAX.abs()],
-        &[2, 2],
-    );
-    assert_eq!(result2, &expected2);
-}
-
-/// 测试 Abs 节点的反向传播（VJP 模式）
-///
-/// Abs 的梯度是 sign(x)：
-/// - x > 0 时，梯度 = 1
-/// - x < 0 时，梯度 = -1
-/// - x = 0 时，梯度 = 0（与 PyTorch 行为一致）
-#[cfg(any())]
-#[test]
-fn test_node_abs_backward_propagation() {
-    use approx::assert_abs_diff_eq;
-
-    let mut graph = GraphInner::new();
-
-    // 1. 构建计算图: parent -> abs -> mse_loss
-    let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();
-    let abs = graph.new_abs_node(parent, Some("abs")).unwrap();
-    let target = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
-    let loss = graph.new_mse_loss_node(abs, target, None).unwrap();
-
-    // 2. 设置输入值
-    // parent = [0.5, -1.0, 0.0, 2.0]
-    // abs(parent) = [0.5, 1.0, 0.0, 2.0]
-    // target = [0.0, 0.0, 0.0, 0.0]
-    let parent_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    let target_value = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[2, 2]);
-    graph.set_node_value(parent, Some(&parent_value)).unwrap();
-    graph.set_node_value(target, Some(&target_value)).unwrap();
-
-    // 3. 前向传播
-    graph.forward(loss).unwrap();
-
-    // abs(parent) = [0.5, 1.0, 0.0, 2.0]
-    // loss = mean((abs - target)^2) = mean([0.25, 1.0, 0.0, 4.0]) = 1.3125
-    let loss_val = graph
-        .get_node_value(loss)
-        .unwrap()
-        .unwrap()
-        .get_data_number()
+    let x = graph
+        .input(&Tensor::new(&[0.5, -1.0, 0.0, 2.0, -3.0, 0.0], &[2, 3]))
         .unwrap();
+    let result = x.abs();
+
+    result.forward().unwrap();
+
+    let output = result.value().unwrap().unwrap();
+    let expected = Tensor::new(&[0.5, 1.0, 0.0, 2.0, 3.0, 0.0], &[2, 3]);
+    assert_eq!(output, expected);
+}
+
+/// 测试 Abs 前向传播（极端值）
+#[test]
+fn test_abs_forward_extreme_values() {
+    let graph = Graph::new();
+
+    let x = graph
+        .input(&Tensor::new(
+            &[f32::INFINITY, f32::NEG_INFINITY, f32::MIN, f32::MAX],
+            &[2, 2],
+        ))
+        .unwrap();
+    let result = x.abs();
+
+    result.forward().unwrap();
+
+    let output = result.value().unwrap().unwrap();
+    let expected = Tensor::new(
+        &[f32::INFINITY, f32::INFINITY, f32::MIN.abs(), f32::MAX],
+        &[2, 2],
+    );
+    assert_eq!(output, expected);
+}
+
+/// 测试 Abs 节点不能直接设置值
+#[test]
+fn test_abs_cannot_set_value() {
+    let graph = Graph::new();
+
+    let x = graph
+        .input(&Tensor::new(&[1.0, -2.0, 3.0, -4.0], &[2, 2]))
+        .unwrap();
+    let result = x.abs();
+
+    let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let err = result.set_value(&test_value);
+    assert!(err.is_err(), "Abs 节点不应支持直接设值");
+}
+
+// ==================== VJP 单元测试（底层 NodeInner + calc_grad_to_parent_index）====================
+//
+// 使用底层 API 创建节点，通过 calc_grad_to_parent_index 直接验证梯度计算公式。
+// abs'(x) = sign(x)
+
+/// 测试 Abs VJP（全 1 上游梯度）
+///
+/// abs'(x) = sign(x)，VJP: grad = upstream ⊙ sign(x)
+#[test]
+fn test_abs_vjp_unit_upstream() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("x"))
+        .unwrap();
+    let abs = inner
+        .borrow_mut()
+        .create_abs_node(x.clone(), Some("abs"))
+        .unwrap();
+
+    // x = [0.5, -1.0, 0.0, 2.0]
+    x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
+        .unwrap();
+    abs.forward_recursive(1, false).unwrap();
+
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let grad = abs.calc_grad_to_parent_index(0, &upstream_grad)?;
+
+    // sign([0.5, -1.0, 0.0, 2.0]) = [1, -1, 0, 1]
+    assert_eq!(grad.shape(), &[2, 2]);
+    let expected = Tensor::new(&[1.0, -1.0, 0.0, 1.0], &[2, 2]);
+    assert_eq!(&grad, &expected);
+
+    Ok(())
+}
+
+/// 测试 Abs VJP（非单位上游梯度）
+#[test]
+fn test_abs_vjp_non_unit_upstream() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("x"))
+        .unwrap();
+    let abs = inner
+        .borrow_mut()
+        .create_abs_node(x.clone(), Some("abs"))
+        .unwrap();
+
+    // x = [0.5, -1.0, 0.0, 2.0]
+    x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
+        .unwrap();
+    abs.forward_recursive(1, false).unwrap();
+
+    // upstream = [2, 3, 4, 5]
+    let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
+    let grad = abs.calc_grad_to_parent_index(0, &upstream_grad)?;
+
+    // grad = upstream ⊙ sign(x) = [2, 3, 4, 5] ⊙ [1, -1, 0, 1] = [2, -3, 0, 5]
+    let expected = Tensor::new(&[2.0, -3.0, 0.0, 5.0], &[2, 2]);
+    assert_eq!(&grad, &expected);
+
+    Ok(())
+}
+
+/// 测试 Abs VJP（全负数输入）
+#[test]
+fn test_abs_vjp_all_negative() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("x"))
+        .unwrap();
+    let abs = inner
+        .borrow_mut()
+        .create_abs_node(x.clone(), Some("abs"))
+        .unwrap();
+
+    // x = [-1, -2, -3, -4]
+    x.set_value(Some(&Tensor::new(&[-1.0, -2.0, -3.0, -4.0], &[2, 2])))
+        .unwrap();
+    abs.forward_recursive(1, false).unwrap();
+
+    let upstream_grad = Tensor::ones(&[2, 2]);
+    let grad = abs.calc_grad_to_parent_index(0, &upstream_grad)?;
+
+    // sign([-1, -2, -3, -4]) = [-1, -1, -1, -1]
+    let expected = Tensor::new(&[-1.0, -1.0, -1.0, -1.0], &[2, 2]);
+    assert_eq!(&grad, &expected);
+
+    Ok(())
+}
+
+// ==================== 端到端反向传播测试（高层 Graph + Var API）====================
+
+/// 测试 Abs 端到端反向传播：result = abs(x) → loss = MSE(result, target)
+#[test]
+fn test_abs_backward_e2e() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let x = graph.parameter(&[2, 2], Init::Zeros, "x")?;
+    x.set_value(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]))?;
+
+    let result = x.abs();
+    let target = graph.input(&Tensor::zeros(&[2, 2]))?;
+    let loss = result.mse_loss(&target)?;
+
+    // abs(x) = [0.5, 1.0, 0.0, 2.0]
+    // loss = mean([0.25, 1.0, 0.0, 4.0]) = 1.3125
+    graph.zero_grad()?;
+    let loss_val = loss.backward()?;
     assert_abs_diff_eq!(loss_val, 1.3125, epsilon = 1e-6);
 
-    // 4. 初始时梯度应为空
-    assert!(graph.get_node_grad(parent).unwrap().is_none());
+    let x_grad = x.grad()?.expect("x 应有 grad");
+    assert_eq!(x_grad.shape(), &[2, 2]);
 
-    // 5. 反向传播
-    graph.zero_grad().unwrap();
-    graph.backward(loss).unwrap();
+    // ∂loss/∂result = 2*(result - target)/n = result/2 = [0.25, 0.5, 0.0, 1.0]
+    // ∂result/∂x = sign(x) = [1, -1, 0, 1]
+    // ∂loss/∂x = [0.25, -0.5, 0.0, 1.0]
+    assert_abs_diff_eq!(x_grad[[0, 0]], 0.25, epsilon = 1e-6);
+    assert_abs_diff_eq!(x_grad[[0, 1]], -0.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(x_grad[[1, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(x_grad[[1, 1]], 1.0, epsilon = 1e-6);
 
-    // 6. 验证 parent 的梯度
-    // dL/d_abs = 2 * (abs - target) / N = [0.25, 0.5, 0.0, 1.0]
-    // d_abs/d_parent = sign(parent) = [1, -1, 0, 1]
-    // dL/d_parent = dL/d_abs * d_abs/d_parent = [0.25, -0.5, 0.0, 1.0]
-    let grad = graph.get_node_grad(parent).unwrap().unwrap();
-    assert_eq!(grad.shape(), &[2, 2]);
-
-    assert_abs_diff_eq!(grad[[0, 0]], 0.25, epsilon = 1e-6); // 0.5 > 0, sign = 1
-    assert_abs_diff_eq!(grad[[0, 1]], -0.5, epsilon = 1e-6); // -1.0 < 0, sign = -1
-    assert_abs_diff_eq!(grad[[1, 0]], 0.0, epsilon = 1e-6); // 0.0 = 0, sign = 0
-    assert_abs_diff_eq!(grad[[1, 1]], 1.0, epsilon = 1e-6); // 2.0 > 0, sign = 1
-
-    // 7. zero_grad 后梯度应清零
-    graph.zero_grad().unwrap();
-    assert!(graph.get_node_grad(parent).unwrap().is_none());
+    Ok(())
 }
 
-/// 测试 Abs 作为 L1 损失的核心组件
-/// L1 Loss = mean(|pred - target|)
-#[cfg(any())]
+// ==================== 梯度累积测试（高层 Graph + Var API）====================
+
+/// 测试梯度累积：多次 backward 不调用 zero_grad，梯度应累加
 #[test]
-fn test_node_abs_as_l1_loss_component() {
-    use approx::assert_abs_diff_eq;
+fn test_abs_gradient_accumulation() -> Result<(), GraphError> {
+    let graph = Graph::new();
 
-    let mut graph = GraphInner::new();
+    let x = graph.parameter(&[2, 2], Init::Zeros, "x")?;
+    x.set_value(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]))?;
 
-    // 构建计算图: pred - target -> abs -> mean (通过 mse_loss 近似)
-    let pred = graph.new_parameter_node(&[2, 2], Some("pred")).unwrap();
-    let target = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
-    let diff = graph.new_subtract_node(pred, target, Some("diff")).unwrap();
-    let abs_diff = graph.new_abs_node(diff, Some("abs_diff")).unwrap();
+    let result = x.abs();
+    let target = graph.input(&Tensor::zeros(&[2, 2]))?;
+    let loss = result.mse_loss(&target)?;
 
-    // 设置值
-    // pred = [1.0, 2.0, 3.0, 4.0], target = [0.5, 2.5, 2.0, 5.0]
-    // diff = [0.5, -0.5, 1.0, -1.0]
-    // abs_diff = [0.5, 0.5, 1.0, 1.0]
-    let pred_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    let target_value = Tensor::new(&[0.5, 2.5, 2.0, 5.0], &[2, 2]);
-    graph.set_node_value(pred, Some(&pred_value)).unwrap();
-    graph.set_node_value(target, Some(&target_value)).unwrap();
+    // 第 1 次 backward
+    graph.zero_grad()?;
+    loss.backward()?;
+    let grad_first = x.grad()?.unwrap().clone();
 
-    // 前向传播
-    graph.forward(abs_diff).unwrap();
+    // 第 2 次 backward（不 zero_grad → 梯度累积）
+    loss.backward()?;
+    let grad_second = x.grad()?.unwrap();
+    assert_eq!(&grad_second, &(&grad_first * 2.0));
 
-    let result = graph.get_node_value(abs_diff).unwrap().unwrap();
-    let expected = Tensor::new(&[0.5, 0.5, 1.0, 1.0], &[2, 2]);
-    assert_abs_diff_eq!(result, &expected, epsilon = 1e-6);
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    loss.backward()?;
+    let grad_after_clear = x.grad()?.unwrap();
+    assert_eq!(&grad_after_clear, &grad_first);
+
+    Ok(())
 }
 
 // ==================== 动态形状测试 ====================
@@ -296,19 +248,13 @@ fn test_node_abs_as_l1_loss_component() {
 /// 测试 Abs 节点的动态形状传播
 #[test]
 fn test_abs_dynamic_shape_propagation() {
-    use crate::nn::Graph;
-
     let graph = Graph::new();
 
-    // 创建一个支持动态 batch 的输入（使用 ZerosLike）
     let x = graph.input(&Tensor::zeros(&[4, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
 
-    // 创建 Abs
-    use crate::nn::var_ops::VarActivationOps;
     let result = h0.abs();
 
-    // 验证动态形状传播
     let dyn_shape = result.dynamic_expected_shape();
     assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
     assert!(!dyn_shape.is_dynamic(1), "特征维度应该是固定的");
@@ -318,70 +264,78 @@ fn test_abs_dynamic_shape_propagation() {
 /// 测试 Abs 节点在不同 batch_size 下的前向和反向计算
 #[test]
 fn test_abs_dynamic_batch_forward_backward() {
-    use crate::nn::Graph;
-    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
-
     let graph = Graph::new();
 
-    // 创建支持动态 batch 的节点
     let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[4], None).unwrap(); // [?, 4]
 
-    // Abs
     let result = h0.abs();
 
-    // 创建目标和损失
     let target = graph.input(&Tensor::zeros(&[2, 4])).unwrap();
     let loss = result.mse_loss(&target).unwrap();
 
-    // 第一次 forward：batch=2
+    // 第一次 forward + backward：batch=2
     loss.forward().unwrap();
-    let value1 = result.value().unwrap().unwrap();
-    assert_eq!(value1.shape(), &[2, 4], "第一次 forward: batch=2");
-
-    // 第一次 backward
+    assert_eq!(result.value().unwrap().unwrap().shape(), &[2, 4]);
     loss.backward().unwrap();
 
     // 更新输入为不同的 batch_size
     x.set_value(&Tensor::zeros(&[8, 8])).unwrap();
     target.set_value(&Tensor::zeros(&[8, 4])).unwrap();
 
-    // 第二次 forward：batch=8
+    // 第二次 forward + backward：batch=8
     loss.forward().unwrap();
-    let value2 = result.value().unwrap().unwrap();
-    assert_eq!(value2.shape(), &[8, 4], "第二次 forward: batch=8");
-
-    // 第二次 backward
+    assert_eq!(result.value().unwrap().unwrap().shape(), &[8, 4]);
     loss.backward().unwrap();
 }
 
+// ==================== 特殊场景测试 ====================
+
 /// 测试 Abs 的幂等性：abs(abs(x)) == abs(x)
-#[cfg(any())]
 #[test]
-fn test_node_abs_idempotent() {
-    use approx::assert_abs_diff_eq;
+fn test_abs_idempotent() {
+    let graph = Graph::new();
 
-    let mut graph = GraphInner::new();
+    let x = graph
+        .input(&Tensor::new(&[-2.0, -1.0, 1.0, 2.0], &[2, 2]))
+        .unwrap();
+    let abs1 = x.abs();
+    let abs2 = abs1.abs();
 
-    let input = graph.new_basic_input_node(&[2, 2], Some("input")).unwrap();
-    let abs1 = graph.new_abs_node(input, Some("abs1")).unwrap();
-    let abs2 = graph.new_abs_node(abs1, Some("abs2")).unwrap();
+    abs2.forward().unwrap();
 
-    let value = Tensor::new(&[-2.0, -1.0, 1.0, 2.0], &[2, 2]);
-    graph.set_node_value(input, Some(&value)).unwrap();
+    let val1 = abs1.value().unwrap().unwrap();
+    let val2 = abs2.value().unwrap().unwrap();
+    assert_abs_diff_eq!(&val1, &val2, epsilon = 1e-6);
+}
 
-    graph.forward(abs2).unwrap();
+/// 测试 Abs 作为 L1 损失的核心组件
+/// L1 Loss ≈ mean(|pred - target|)
+#[test]
+fn test_abs_as_l1_loss_component() -> Result<(), GraphError> {
+    let graph = Graph::new();
 
-    let result1 = graph.get_node_value(abs1).unwrap().unwrap();
-    let result2 = graph.get_node_value(abs2).unwrap().unwrap();
+    let pred = graph.parameter(&[2, 2], Init::Zeros, "pred")?;
+    let target_input = graph.input(&Tensor::new(&[0.5, 2.5, 2.0, 5.0], &[2, 2]))?;
 
-    // abs(abs(x)) == abs(x)
-    assert_abs_diff_eq!(result1, result2, epsilon = 1e-6);
+    pred.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))?;
+
+    // diff = pred - target = [0.5, -0.5, 1.0, -1.0]
+    // abs_diff = [0.5, 0.5, 1.0, 1.0]
+    let diff = &pred - &target_input;
+    let abs_diff = diff.abs();
+
+    abs_diff.forward()?;
+
+    let output = abs_diff.value()?.unwrap();
+    let expected = Tensor::new(&[0.5, 0.5, 1.0, 1.0], &[2, 2]);
+    assert_abs_diff_eq!(&output, &expected, epsilon = 1e-6);
+
+    Ok(())
 }
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
 
-use crate::nn::Graph;
 use std::rc::Rc;
 
 #[test]
@@ -401,6 +355,8 @@ fn test_create_abs_node() {
 
     assert_eq!(abs.shape(), vec![3, 4]);
     assert_eq!(abs.name(), Some("abs"));
+    assert!(!abs.is_leaf());
+    assert_eq!(abs.parents().len(), 1);
 }
 
 #[test]

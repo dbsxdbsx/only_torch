@@ -1,257 +1,140 @@
-use crate::assert_err;
-use crate::nn::{GraphError, GraphInner};
+/*
+ * @Author       : 老董
+ * @Description  : Sign 节点单元测试（符号函数）
+ *
+ * 测试策略：
+ * 1. 基础功能测试（创建、形状验证、命名）→ 底层 create_* API（文件末尾）
+ * 2. 前向传播测试 → 高层 Graph + Var API
+ * 3. VJP 单元测试（calc_grad_to_parent_index）→ 底层 NodeInner
+ * 4. 端到端反向传播测试 → 高层 Graph + Var API
+ * 5. 动态形状测试 → 高层 Graph + Var API
+ *
+ * 梯度公式：
+ *   sign(x) 处处不可微（VJP 返回 0），与 PyTorch 行为一致。
+ *   因此无梯度累积测试（0 + 0 = 0 没有意义）。
+ */
+
+use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
+use approx::assert_abs_diff_eq;
 
-#[cfg(any())]
+// ==================== 前向传播测试（高层 Graph + Var API）====================
+
+/// 测试 Sign 前向传播（正数 → 1, 负数 → -1, 零 → 0）
 #[test]
-fn test_node_sign_creation() {
-    let mut graph = GraphInner::new();
+fn test_sign_forward() {
+    let graph = Graph::new();
 
-    // 1. 测试Input节点作为父节点
-    {
-        let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
-        let sign = graph.new_sign_node(input, Some("sign_with_input")).unwrap();
-        // 1.1 验证基本属性
-        assert_eq!(graph.get_node_name(sign).unwrap(), "sign_with_input");
-        assert_eq!(graph.get_node_parents(sign).unwrap().len(), 1);
-        assert_eq!(graph.get_node_children(sign).unwrap().len(), 0);
-    }
-
-    // 2. 测试Parameter节点作为父节点
-    {
-        let param = graph.new_parameter_node(&[2, 2], Some("param1")).unwrap();
-        let sign = graph.new_sign_node(param, Some("sign_with_param")).unwrap();
-        assert_eq!(graph.get_node_name(sign).unwrap(), "sign_with_param");
-        assert_eq!(graph.get_node_parents(sign).unwrap().len(), 1);
-        assert_eq!(graph.get_node_children(sign).unwrap().len(), 0);
-    }
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_sign_name_generation() {
-    let mut graph = GraphInner::new();
-
-    // 1. 测试节点显式命名
-    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
-    let sign = graph.new_sign_node(input, Some("explicit_sign")).unwrap();
-    assert_eq!(graph.get_node_name(sign).unwrap(), "explicit_sign");
-
-    // 2. 测试节点自动命名
-    let sign2 = graph.new_sign_node(input, None).unwrap();
-    assert_eq!(graph.get_node_name(sign2).unwrap(), "sign_1");
-
-    // 3. 测试节点名称重复
-    let result = graph.new_sign_node(input, Some("explicit_sign"));
-    assert_err!(
-        result,
-        GraphError::DuplicateNodeName("节点explicit_sign在图default_graph中重复")
-    );
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_sign_manually_set_value() {
-    let mut graph = GraphInner::new();
-    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
-    let sign = graph.new_sign_node(input, Some("sign")).unwrap();
-
-    // 1. 测试直接设置Sign节点的值（应该失败）
-    let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    assert_err!(
-        graph.set_node_value(sign, Some(&test_value)),
-        GraphError::InvalidOperation(
-            "节点[id=2, name=sign, type=Sign]的值只能通过前向传播计算得到，不能直接设置"
-        )
-    );
-
-    // 2. 测试清除Sign节点的值（也应该失败）
-    assert_err!(
-        graph.set_node_value(sign, None),
-        GraphError::InvalidOperation(
-            "节点[id=2, name=sign, type=Sign]的值只能通过前向传播计算得到，不能直接设置"
-        )
-    );
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_sign_expected_shape() {
-    let mut graph = GraphInner::new();
-
-    // 1. 测试基本的Sign节点预期形状
-    let input = graph.new_basic_input_node(&[2, 2], Some("input1")).unwrap();
-    let sign = graph.new_sign_node(input, Some("sign")).unwrap();
-    assert_eq!(graph.get_node_value_expected_shape(sign).unwrap(), &[2, 2]);
-    assert_eq!(graph.get_node_value_shape(sign).unwrap(), None); // 实际值形状为None（未计算）
-
-    // 2. 测试前向传播后的形状
-    let value = Tensor::zeros(&[2, 2]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward(sign).unwrap();
-
-    // 2.1 验证前向传播后的形状
-    assert_eq!(graph.get_node_value_shape(sign).unwrap().unwrap(), &[2, 2]); // 实际值形状
-    assert_eq!(graph.get_node_value_expected_shape(sign).unwrap(), &[2, 2]); // 预期形状保持不变
-
-    // 2.2 测试父节点值在首次前向传播后，再次设置新值后的形状检查
-    let value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-
-    // 2.2.1 验证预期形状和实际形状
-    assert_eq!(graph.get_node_value_expected_shape(sign).unwrap(), &[2, 2]);
-    assert_eq!(graph.get_node_value_shape(sign).unwrap().unwrap(), &[2, 2]); // 虽然值已过期，但由于值仍然存在，所以形状不变
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_sign_forward_propagation() {
-    // 1. 准备测试数据
-    // Sign: 正数→1, 负数→-1, 零→0
-    let value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    let expected = Tensor::new(&[1.0, -1.0, 0.0, 1.0], &[2, 2]);
-
-    // 2. 测试不同节点类型组合的前向传播
-    let node_types = ["input", "parameter"];
-    for parent_type in node_types {
-        let mut graph = GraphInner::new();
-
-        // 创建parent节点
-        let parent = match parent_type {
-            "input" => graph
-                .new_basic_input_node(&[2, 2], Some("input_1"))
-                .unwrap(),
-            "parameter" => graph
-                .new_parameter_node(&[2, 2], Some("parameter_1"))
-                .unwrap(),
-            _ => unreachable!(),
-        };
-
-        // Sign节点
-        let sign = graph.new_sign_node(parent, Some("sign")).unwrap();
-
-        // 如果节点是parameter，因创建时其值已隐式初始化过了，所以前向传播应成功
-        if parent_type == "parameter" {
-            graph.forward(sign).unwrap();
-        } else {
-            // 如果是input节点，因创建时其值未初始化，所以前向传播应失败
-            assert_err!(
-                graph.forward(sign),
-                GraphError::InvalidOperation(msg) if msg.contains("不能直接前向传播")
-            );
-
-            // 设置input节点的值
-            graph.set_node_value(parent, Some(&value)).unwrap();
-
-            // 设置值后前向传播应成功
-            graph.forward(sign).unwrap();
-            let result = graph.get_node_value(sign).unwrap().unwrap();
-
-            // 只有当节点是input时才检查输出值
-            if parent_type == "input" {
-                assert_eq!(result, &expected);
-            }
-        }
-    }
-}
-
-#[cfg(any())]
-#[test]
-fn test_node_sign_forward_values() {
-    // 测试 Sign 节点的具体输出值
-    let mut graph = GraphInner::new();
-
-    // 1. 测试包含正数、负数、零的情况（使用 2D 张量，框架要求 2-4 维）
-    let input = graph.new_basic_input_node(&[5, 1], Some("input")).unwrap();
-    let sign = graph.new_sign_node(input, Some("sign")).unwrap();
-
-    let value = Tensor::new(&[-2.0, -0.5, 0.0, 0.5, 2.0], &[5, 1]);
-    graph.set_node_value(input, Some(&value)).unwrap();
-    graph.forward(sign).unwrap();
-
-    let result = graph.get_node_value(sign).unwrap().unwrap();
-    let expected = Tensor::new(&[-1.0, -1.0, 0.0, 1.0, 1.0], &[5, 1]);
-    assert_eq!(result, &expected);
-
-    // 2. 测试极端值
-    let extreme_value = Tensor::new(
-        &[f32::INFINITY, f32::NEG_INFINITY, f32::MIN, f32::MAX],
-        &[2, 2],
-    );
-    let input2 = graph.new_basic_input_node(&[2, 2], Some("input2")).unwrap();
-    let sign2 = graph.new_sign_node(input2, Some("sign2")).unwrap();
-
-    graph.set_node_value(input2, Some(&extreme_value)).unwrap();
-    graph.forward(sign2).unwrap();
-
-    let result2 = graph.get_node_value(sign2).unwrap().unwrap();
-    // INFINITY → 1, NEG_INFINITY → -1, MIN → -1, MAX → 1
-    let expected2 = Tensor::new(&[1.0, -1.0, -1.0, 1.0], &[2, 2]);
-    assert_eq!(result2, &expected2);
-}
-
-/// 测试 Sign 节点的反向传播（VJP 模式）
-///
-/// Sign 是不可微节点，VJP 返回 0（梯度不流经此节点）。
-/// 这与 PyTorch 行为一致：`torch.sign(x).backward()` 时 x.grad 为 0。
-#[cfg(any())]
-#[test]
-fn test_node_sign_backward_propagation() {
-    use approx::assert_abs_diff_eq;
-
-    let mut graph = GraphInner::new();
-
-    // 1. 构建计算图: parent -> sign -> mse_loss
-    let parent = graph.new_parameter_node(&[2, 2], Some("parent")).unwrap();
-    let sign = graph.new_sign_node(parent, Some("sign")).unwrap();
-    let target = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
-    let loss = graph.new_mse_loss_node(sign, target, None).unwrap();
-
-    // 2. 设置输入值
-    let parent_value = Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]);
-    let target_value = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[2, 2]);
-    graph.set_node_value(parent, Some(&parent_value)).unwrap();
-    graph.set_node_value(target, Some(&target_value)).unwrap();
-
-    // 3. 前向传播
-    graph.forward(loss).unwrap();
-
-    // sign(parent) = [1, -1, 0, 1]
-    // loss = mean((sign - target)^2) = mean([1, 1, 0, 1]) = 0.75
-    let loss_val = graph
-        .get_node_value(loss)
-        .unwrap()
-        .unwrap()
-        .get_data_number()
+    let x = graph
+        .input(&Tensor::new(
+            &[-2.0, -0.5, 0.0, 0.5, 2.0, 0.0],
+            &[2, 3],
+        ))
         .unwrap();
+    let result = x.sign();
+
+    result.forward().unwrap();
+
+    let output = result.value().unwrap().unwrap();
+    let expected = Tensor::new(&[-1.0, -1.0, 0.0, 1.0, 1.0, 0.0], &[2, 3]);
+    assert_eq!(output, expected);
+}
+
+/// 测试 Sign 前向传播（极端值）
+#[test]
+fn test_sign_forward_extreme_values() {
+    let graph = Graph::new();
+
+    let x = graph
+        .input(&Tensor::new(
+            &[f32::INFINITY, f32::NEG_INFINITY, f32::MIN, f32::MAX],
+            &[2, 2],
+        ))
+        .unwrap();
+    let result = x.sign();
+
+    result.forward().unwrap();
+
+    let output = result.value().unwrap().unwrap();
+    // INFINITY → 1, NEG_INFINITY → -1, MIN（最小负数） → -1, MAX → 1
+    let expected = Tensor::new(&[1.0, -1.0, -1.0, 1.0], &[2, 2]);
+    assert_eq!(output, expected);
+}
+
+/// 测试 Sign 节点不能直接设置值
+#[test]
+fn test_sign_cannot_set_value() {
+    let graph = Graph::new();
+
+    let x = graph
+        .input(&Tensor::new(&[1.0, -2.0, 3.0, -4.0], &[2, 2]))
+        .unwrap();
+    let result = x.sign();
+
+    let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let err = result.set_value(&test_value);
+    assert!(err.is_err(), "Sign 节点不应支持直接设值");
+}
+
+// ==================== VJP 单元测试（底层 NodeInner + calc_grad_to_parent_index）====================
+//
+// Sign 是不可微函数，VJP 返回全零梯度（与 PyTorch 行为一致）。
+
+/// 测试 Sign VJP：梯度恒为 0
+#[test]
+fn test_sign_vjp_always_zero() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("x"))
+        .unwrap();
+    let sign = inner
+        .borrow_mut()
+        .create_sign_node(x.clone(), Some("sign"))
+        .unwrap();
+
+    // x = [0.5, -1.0, 0.0, 2.0]
+    x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
+        .unwrap();
+    sign.forward_recursive(1, false).unwrap();
+
+    let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
+    let grad = sign.calc_grad_to_parent_index(0, &upstream_grad)?;
+
+    // Sign 不可微，梯度恒为 0
+    assert_eq!(grad.shape(), &[2, 2]);
+    assert_eq!(&grad, &Tensor::zeros(&[2, 2]));
+
+    Ok(())
+}
+
+// ==================== 端到端反向传播测试（高层 Graph + Var API）====================
+
+/// 测试 Sign 端到端反向传播：梯度不流经 Sign 节点
+#[test]
+fn test_sign_backward_e2e() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let x = graph.parameter(&[2, 2], Init::Zeros, "x")?;
+    x.set_value(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]))?;
+
+    let result = x.sign();
+    let target = graph.input(&Tensor::zeros(&[2, 2]))?;
+    let loss = result.mse_loss(&target)?;
+
+    // sign(x) = [1, -1, 0, 1]
+    // loss = mean([1, 1, 0, 1]) = 0.75
+    graph.zero_grad()?;
+    let loss_val = loss.backward()?;
     assert_abs_diff_eq!(loss_val, 0.75, epsilon = 1e-6);
 
-    // 4. 初始时梯度应为空
-    assert!(graph.get_node_grad(parent).unwrap().is_none());
+    // Sign 不可微，参数梯度应全为 0
+    let x_grad = x.grad()?.expect("x 应有 grad");
+    assert_eq!(&x_grad, &Tensor::zeros(&[2, 2]));
 
-    // 5. 反向传播
-    graph.zero_grad().unwrap();
-    graph.backward(loss).unwrap();
-
-    // 6. 验证 parent 的梯度应该全为 0（Sign 不可微）
-    let grad = graph.get_node_grad(parent).unwrap().unwrap();
-    assert_eq!(grad.shape(), &[2, 2]);
-
-    // Sign 的 VJP 返回 0，所以梯度不会传播到 parent
-    assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(grad[[0, 1]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(grad[[1, 0]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(grad[[1, 1]], 0.0, epsilon = 1e-6);
-
-    // 7. 测试梯度累积（0 + 0 = 0）- 需要重新 forward（PyTorch 语义）
-    graph.forward(loss).unwrap();
-    graph.backward(loss).unwrap();
-    let grad_accumulated = graph.get_node_grad(parent).unwrap().unwrap();
-    assert_abs_diff_eq!(grad_accumulated[[0, 0]], 0.0, epsilon = 1e-6);
-
-    // 8. zero_grad 后梯度应清零
-    graph.zero_grad().unwrap();
-    assert!(graph.get_node_grad(parent).unwrap().is_none());
+    Ok(())
 }
 
 // ==================== 动态形状测试 ====================
@@ -259,19 +142,13 @@ fn test_node_sign_backward_propagation() {
 /// 测试 Sign 节点的动态形状传播
 #[test]
 fn test_sign_dynamic_shape_propagation() {
-    use crate::nn::Graph;
-
     let graph = Graph::new();
 
-    // 创建一个支持动态 batch 的输入（使用 ZerosLike）
     let x = graph.input(&Tensor::zeros(&[4, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
 
-    // 创建 Sign
-    use crate::nn::var_ops::VarActivationOps;
     let result = h0.sign();
 
-    // 验证动态形状传播
     let dyn_shape = result.dynamic_expected_shape();
     assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
     assert!(!dyn_shape.is_dynamic(1), "特征维度应该是固定的");
@@ -279,38 +156,30 @@ fn test_sign_dynamic_shape_propagation() {
 }
 
 /// 测试 Sign 节点在不同 batch_size 下的前向计算
-/// 注：Sign 是不可微函数，梯度恒为 0，因此不测试 backward
+/// 注：Sign 不可微，梯度恒为 0，因此不测试 backward
 #[test]
 fn test_sign_dynamic_batch_forward() {
-    use crate::nn::Graph;
-    use crate::nn::var_ops::VarActivationOps;
-
     let graph = Graph::new();
 
-    // 创建支持动态 batch 的节点
     let x = graph.input(&Tensor::zeros(&[2, 8])).unwrap();
-    let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
+    let h0 = graph.zeros_like(&x, &[16], None).unwrap();
 
-    // Sign
     let result = h0.sign();
 
     // 第一次 forward：batch=2
     result.forward().unwrap();
-    let value1 = result.value().unwrap().unwrap();
-    assert_eq!(value1.shape(), &[2, 16], "第一次 forward: batch=2");
+    assert_eq!(result.value().unwrap().unwrap().shape(), &[2, 16]);
 
-    // 更新输入为不同的 batch_size
+    // 更新 batch_size
     x.set_value(&Tensor::zeros(&[8, 8])).unwrap();
 
     // 第二次 forward：batch=8
     result.forward().unwrap();
-    let value2 = result.value().unwrap().unwrap();
-    assert_eq!(value2.shape(), &[8, 16], "第二次 forward: batch=8");
+    assert_eq!(result.value().unwrap().unwrap().shape(), &[8, 16]);
 }
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
 
-use crate::nn::Graph;
 use std::rc::Rc;
 
 #[test]
@@ -330,6 +199,8 @@ fn test_create_sign_node() {
 
     assert_eq!(sign.shape(), vec![3, 4]);
     assert_eq!(sign.name(), Some("sign"));
+    assert!(!sign.is_leaf());
+    assert_eq!(sign.parents().len(), 1);
 }
 
 #[test]
