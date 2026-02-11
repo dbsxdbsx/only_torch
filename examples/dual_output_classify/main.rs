@@ -26,7 +26,7 @@ mod model;
 
 use model::DualOutputClassifier;
 use only_torch::metrics::{accuracy, r2_score};
-use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, MseLoss, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 生成训练数据：(x, `cls_label`, `reg_target`)
@@ -70,11 +70,7 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = DualOutputClassifier::new(&graph)?;
 
-    // 2. 损失函数（使用 Criterion 自动缓存 loss 节点）
-    let cls_criterion = CrossEntropyLoss::new();
-    let reg_criterion = MseLoss::new();
-
-    // 3. 优化器
+    // 2. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.01);
 
     // 4. 生成训练和测试数据
@@ -100,9 +96,9 @@ fn main() -> Result<(), GraphError> {
             // 双输出 forward
             let (cls_logits, reg_pred) = model.forward(x)?;
 
-            // 计算两个 loss（使用 Criterion，自动缓存）
-            let cls_loss = cls_criterion.forward(&cls_logits, cls_label)?;
-            let reg_loss = reg_criterion.forward(&reg_pred, reg_target)?;
+            // 计算两个 loss（VarLossOps）
+            let cls_loss = cls_logits.cross_entropy(cls_label)?;
+            let reg_loss = reg_pred.mse_loss(reg_target)?;
 
             // 多任务 backward：
             // 1. 清零梯度
@@ -184,9 +180,11 @@ fn main() -> Result<(), GraphError> {
         println!("\n⚠️ 可尝试增加 epoch 或调整学习率以提升效果。");
     }
 
-    // 8. 保存计算图可视化
-    let vis_result =
-        graph.save_visualization("examples/dual_output_classify/dual_output_classify", None)?;
+    // 8. 保存计算图可视化（训练后做一次 forward + loss）
+    let (x, cls_label, _reg_target) = &train_data[0];
+    let (cls_logits, _reg_pred) = model.forward(x)?;
+    let loss = cls_logits.cross_entropy(cls_label)?;
+    let vis_result = loss.save_visualization("examples/dual_output_classify/dual_output_classify")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

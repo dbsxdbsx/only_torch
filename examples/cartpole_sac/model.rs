@@ -8,7 +8,7 @@
 //! Critic: Input(4) -> Linear(64, ReLU) -> Linear(2) → 每个动作的 Q 值
 //! ```
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
 // ============================================================================
@@ -19,7 +19,7 @@ use only_torch::tensor::Tensor;
 pub struct SacActor {
     fc1: Linear,
     fc2: Linear,
-    state: ModelState,
+    graph: Graph,
 }
 
 impl SacActor {
@@ -27,16 +27,15 @@ impl SacActor {
         Ok(Self {
             fc1: Linear::new(graph, obs_dim, 64, true, "actor_fc1")?,
             fc2: Linear::new(graph, 64, action_dim, true, "actor_fc2")?,
-            state: ModelState::new(graph),
+            graph: graph.clone(),
         })
     }
 
     /// 前向传播，返回 logits
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        self.state.forward(x, |input| {
-            let h = self.fc1.forward(input).relu();
-            Ok(self.fc2.forward(&h))
-        })
+        let input = self.graph.input(x)?;
+        let h = self.fc1.forward(&input).relu();
+        Ok(self.fc2.forward(&h))
     }
 
     /// 获取动作概率和 log 概率（纯 Tensor 操作，不创建计算图节点）
@@ -63,11 +62,6 @@ impl SacActor {
         let r: f32 = rng.gen_range(0.0..1.0);
         if r < p0 { 0 } else { 1 }
     }
-
-    /// 清空 ModelState 缓存（配合 `graph.prune_nodes_after()` 使用）
-    pub fn clear_cache(&self) {
-        self.state.clear_cache();
-    }
 }
 
 impl Module for SacActor {
@@ -81,12 +75,12 @@ impl Module for SacActor {
 // ============================================================================
 
 /// SAC Critic：输出每个动作的 Q 值
-/// 
+///
 /// 离散 SAC 中，Q 网络输出 [batch, action_dim]，每个动作一个 Q 值
 pub struct SacCritic {
     fc1: Linear,
     fc2: Linear,
-    state: ModelState,
+    graph: Graph,
 }
 
 impl SacCritic {
@@ -94,27 +88,21 @@ impl SacCritic {
         Ok(Self {
             fc1: Linear::new(graph, obs_dim, 64, true, &format!("{}_fc1", name))?,
             fc2: Linear::new(graph, 64, action_dim, true, &format!("{}_fc2", name))?,
-            state: ModelState::new(graph),
+            graph: graph.clone(),
         })
     }
 
     /// 前向传播，返回每个动作的 Q 值
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        self.state.forward(x, |input| {
-            let h = self.fc1.forward(input).relu();
-            Ok(self.fc2.forward(&h))
-        })
+        let input = self.graph.input(x)?;
+        let h = self.fc1.forward(&input).relu();
+        Ok(self.fc2.forward(&h))
     }
 
     /// 获取 Q 值张量
     pub fn get_q_values(&self, x: &Tensor) -> Result<Tensor, GraphError> {
         let q = self.forward(x)?;
         Ok(q.value()?.unwrap())
-    }
-
-    /// 清空 ModelState 缓存（配合 `graph.prune_nodes_after()` 使用）
-    pub fn clear_cache(&self) {
-        self.state.clear_cache();
     }
 }
 
@@ -129,7 +117,7 @@ impl Module for SacCritic {
 // ============================================================================
 
 /// SAC-Discrete 智能体
-/// 
+///
 /// 包含：Actor、双 Q 网络、目标网络、温度参数
 pub struct SacAgent {
     pub actor: SacActor,
@@ -138,14 +126,14 @@ pub struct SacAgent {
     // 目标网络（用于计算 target Q）
     pub target_critic1: SacCritic,
     pub target_critic2: SacCritic,
-    
+
     // 温度参数（控制探索程度）
     pub log_alpha: f32,
     pub target_entropy: f32,
-    
+
     // 超参数
-    pub tau: f32,        // 软更新系数
-    pub alpha_lr: f32,   // alpha 学习率
+    pub tau: f32,      // 软更新系数
+    pub alpha_lr: f32, // alpha 学习率
 }
 
 impl SacAgent {
@@ -158,15 +146,15 @@ impl SacAgent {
         // 设为最大熵的一定比例，这里取 0.5，即目标熵约为最大熵的一半
         // 也可尝试 0.98 * ln(|A|) 或其他值来调节探索-利用平衡
         let target_entropy = 0.5 * (action_dim as f32).ln();
-        
+
         Ok(Self {
             actor: SacActor::new(graph, obs_dim, action_dim)?,
             critic1: SacCritic::new(graph, obs_dim, action_dim, "critic1")?,
             critic2: SacCritic::new(graph, obs_dim, action_dim, "critic2")?,
             target_critic1: SacCritic::new(graph, obs_dim, action_dim, "target_critic1")?,
             target_critic2: SacCritic::new(graph, obs_dim, action_dim, "target_critic2")?,
-            
-            log_alpha: 0.0,  // 初始 alpha = exp(0) = 1
+
+            log_alpha: 0.0, // 初始 alpha = exp(0) = 1
             target_entropy,
 
             tau: 0.005,
@@ -207,17 +195,5 @@ impl SacAgent {
         let batch_size = probs.shape()[0] as f32;
         let neg_entropy = (probs * log_probs).sum_axis_keepdims(1); // [batch, 1]
         -neg_entropy.sum().get_data_number().unwrap() / batch_size
-    }
-
-    /// 清空所有模型的 ModelState 缓存
-    ///
-    /// 配合 `graph.prune_nodes_after()` 使用：prune 会删除缓存引用的节点，
-    /// 必须同时清空缓存以避免访问已删除的节点。
-    pub fn clear_all_caches(&self) {
-        self.actor.clear_cache();
-        self.critic1.clear_cache();
-        self.critic2.clear_cache();
-        self.target_critic1.clear_cache();
-        self.target_critic2.clear_cache();
     }
 }

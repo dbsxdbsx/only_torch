@@ -18,7 +18,7 @@ mod model;
 use model::MnistMLP;
 use only_torch::data::{DataLoader, MnistDataset, TensorDataset};
 use only_torch::metrics::accuracy;
-use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor_slice;
 use std::time::Instant;
 
@@ -83,9 +83,6 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = MnistMLP::new(&graph)?;
 
-    // 损失函数（PyTorch 风格）
-    let criterion = CrossEntropyLoss::new();
-
     // 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), learning_rate);
 
@@ -113,7 +110,7 @@ fn main() -> Result<(), GraphError> {
         for (batch_x, batch_y) in train_loader.iter() {
             // PyTorch 风格：直接传 Tensor
             let output = model.forward(&batch_x)?;
-            let loss = criterion.forward(&output, &batch_y)?;
+            let loss = output.cross_entropy(&batch_y)?;
 
             // 反向传播 + 参数更新
             optimizer.zero_grad()?;
@@ -162,7 +159,11 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 6. 保存可视化
-    let vis_result = graph.save_visualization("examples/mnist/mnist", None)?;
+    // 训练后做一次 forward + loss 用于生成计算图
+    let (batch_x, batch_y) = train_loader.iter().next().expect("训练集非空");
+    let output_vis = model.forward(&batch_x)?;
+    let loss_vis = output_vis.cross_entropy(&batch_y)?;
+    let vis_result = loss_vis.save_visualization("examples/mnist/mnist")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

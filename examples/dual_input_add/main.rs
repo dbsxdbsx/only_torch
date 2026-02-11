@@ -19,7 +19,7 @@ mod model;
 
 use model::DualInputAdder;
 use only_torch::metrics::r2_score;
-use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 生成训练数据：(x1, x2, x1+x2)
@@ -54,10 +54,7 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = DualInputAdder::new(&graph)?;
 
-    // 2. 损失函数（带缓存，复用 loss 节点）
-    let criterion = MseLoss::new();
-
-    // 3. 优化器
+    // 2. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.01);
 
     // 4. 生成训练数据
@@ -85,8 +82,8 @@ fn main() -> Result<(), GraphError> {
             // 双输入 forward
             let output = model.forward(x1, x2)?;
 
-            // MSE 损失（使用 criterion，自动缓存复用 loss 节点）
-            let loss = criterion.forward(&output, target)?;
+            // MSE 损失（VarLossOps）
+            let loss = output.mse_loss(target)?;
 
             // 反向传播 + 参数更新
             optimizer.zero_grad()?;
@@ -144,8 +141,11 @@ fn main() -> Result<(), GraphError> {
         );
     }
 
-    // 7. 保存计算图可视化
-    let vis_result = graph.save_visualization("examples/dual_input_add/dual_input_add", None)?;
+    // 7. 保存计算图可视化（训练后做一次 forward + loss）
+    let (x1, x2, target) = &train_data[0];
+    let output = model.forward(x1, x2)?;
+    let loss = output.mse_loss(target)?;
+    let vis_result = loss.save_visualization("examples/dual_input_add/dual_input_add")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

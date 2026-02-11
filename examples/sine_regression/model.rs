@@ -2,7 +2,7 @@
 //!
 //! 使用 MLP 拟合 y = sin(x)（PyTorch 风格）
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
 /// 正弦拟合 MLP
@@ -11,7 +11,7 @@ use only_torch::tensor::Tensor;
 pub struct SineMLP {
     fc1: Linear,
     fc2: Linear,
-    state: ModelState,
+    graph: Graph,
 }
 
 impl SineMLP {
@@ -19,15 +19,14 @@ impl SineMLP {
         Ok(Self {
             fc1: Linear::new(graph, 1, 32, true, "fc1")?,
             fc2: Linear::new(graph, 32, 1, true, "fc2")?,
-            state: ModelState::new_for::<Self>(graph),
+            graph: graph.clone(),
         })
     }
 
     /// `PyTorch` 风格 forward：直接接收 Tensor
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        self.state.forward(x, |input| {
-            Ok(self.fc2.forward(&self.fc1.forward(input).tanh()))
-        })
+        let input = self.graph.input(x)?;
+        Ok(self.fc2.forward(&self.fc1.forward(&input).tanh()))
     }
 }
 

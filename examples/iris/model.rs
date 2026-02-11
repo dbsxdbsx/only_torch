@@ -2,7 +2,7 @@
 //!
 //! 三层 MLP 用于三分类任务（PyTorch 风格）
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
 /// Iris 分类 MLP
@@ -12,7 +12,7 @@ pub struct IrisMLP {
     fc1: Linear,
     fc2: Linear,
     fc3: Linear,
-    state: ModelState,
+    graph: Graph,
 }
 
 impl IrisMLP {
@@ -21,17 +21,16 @@ impl IrisMLP {
             fc1: Linear::new(graph, 4, 10, true, "fc1")?,
             fc2: Linear::new(graph, 10, 10, true, "fc2")?,
             fc3: Linear::new(graph, 10, 3, true, "fc3")?,
-            state: ModelState::new_for::<Self>(graph),
+            graph: graph.clone(),
         })
     }
 
     /// `PyTorch` 风格 forward：直接接收 Tensor
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        self.state.forward(x, |input| {
-            let h1 = self.fc1.forward(input).tanh();
-            let h2 = self.fc2.forward(&h1).tanh();
-            Ok(self.fc3.forward(&h2))
-        })
+        let input = self.graph.input(x)?;
+        let h1 = self.fc1.forward(&input).tanh();
+        let h2 = self.fc2.forward(&h1).tanh();
+        Ok(self.fc3.forward(&h2))
     }
 }
 

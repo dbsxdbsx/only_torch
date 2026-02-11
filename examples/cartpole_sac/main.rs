@@ -300,7 +300,6 @@ fn main() -> Result<(), GraphError> {
                     // ========== 软更新目标网络 ==========
                     agent.soft_update_targets();
 
-                    // 注意：这里不做 prune，因为 ModelState 的缓存需要保持稳定
                     // 临时节点的清理由 backward() 后的 release_intermediate_results() 处理
                 }
 
@@ -320,15 +319,15 @@ fn main() -> Result<(), GraphError> {
 
             // 打印进度（每个 episode 都打印，便于调试）
             let episode_time = episode_start.elapsed().as_secs_f32();
-            let node_count = graph.node_count();
+            let param_count = graph.parameter_count();
             println!(
-                "Ep {:3}: r={:5.1}, len={:3}, avg={:5.1}, α={:.3}, nodes={:5}, time={:.2}s",
+                "Ep {:3}: r={:5.1}, len={:3}, avg={:5.1}, α={:.3}, params={:5}, time={:.2}s",
                 episode + 1,
                 episode_reward,
                 episode_length,
                 avg_reward,
                 agent.alpha(),
-                node_count,
+                param_count,
                 episode_time,
             );
 

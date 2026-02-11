@@ -16,7 +16,7 @@ mod model;
 use data::{CLASS_NAMES, get_labels, load_iris};
 use model::IrisMLP;
 use only_torch::metrics::{accuracy, confusion_matrix};
-use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 
 fn main() -> Result<(), GraphError> {
     println!("=== Iris 鸢尾花分类示例（PyTorch 风格）===\n");
@@ -30,10 +30,7 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = IrisMLP::new(&graph)?;
 
-    // 3. 损失函数（PyTorch 风格）
-    let criterion = CrossEntropyLoss::new();
-
-    // 4. 优化器
+    // 3. 优化器（VarLossOps 方法计算损失）
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.05);
 
     println!("数据: {n_samples} 个样本，4 个特征，3 个类别");
@@ -46,7 +43,7 @@ fn main() -> Result<(), GraphError> {
     for epoch in 0..200 {
         // PyTorch 风格：直接传 Tensor
         let output = model.forward(&x_train)?;
-        let loss = criterion.forward(&output, &y_train)?;
+        let loss = output.cross_entropy(&y_train)?;
 
         // 反向传播 + 参数更新
         optimizer.zero_grad()?;
@@ -78,6 +75,7 @@ fn main() -> Result<(), GraphError> {
     // 6. 最终评估
     let output = model.forward(&x_train)?;
     let preds = output.value()?.unwrap();
+    let loss = output.cross_entropy(&y_train)?;
 
     // 直接用 metrics 函数，自动 argmax
     let acc_result = accuracy(&preds, labels);
@@ -100,7 +98,7 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 保存可视化
-    let vis_result = graph.save_visualization("examples/iris/iris", None)?;
+    let vis_result = loss.save_visualization("examples/iris/iris")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

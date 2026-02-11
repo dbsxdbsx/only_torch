@@ -26,7 +26,7 @@ mod model;
 
 use model::MultiLabelPointClassifier;
 use only_torch::metrics::{multilabel_loose_accuracy, multilabel_strict_accuracy};
-use only_torch::nn::{Adam, BceLoss, Graph, GraphError, Module, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 标签名称
@@ -76,10 +76,7 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = MultiLabelPointClassifier::new(&graph)?;
 
-    // 2. BCE 损失函数（核心：多标签分类）
-    let criterion = BceLoss::new();
-
-    // 3. 优化器（学习率调低以稳定训练）
+    // 2. 优化器（学习率调低以稳定训练）
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.02);
 
     // 4. 生成数据（增加训练样本以提高泛化能力）
@@ -103,7 +100,7 @@ fn main() -> Result<(), GraphError> {
 
         for (input, target) in &train_data {
             let logits = model.forward(input)?;
-            let loss = criterion.forward(&logits, target)?;
+            let loss = logits.bce_loss(target)?;
 
             optimizer.zero_grad()?;
             let loss_val = loss.backward()?;
@@ -206,8 +203,11 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 8. 保存计算图可视化
-    let vis_result =
-        graph.save_visualization("examples/multi_label_point/multi_label_point", None)?;
+    // 训练后做一次 forward + loss 用于生成计算图
+    let (input_vis, target_vis) = &train_data[0];
+    let logits_vis = model.forward(input_vis)?;
+    let loss_vis = logits_vis.bce_loss(target_vis)?;
+    let vis_result = loss_vis.save_visualization("examples/multi_label_point/multi_label_point")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

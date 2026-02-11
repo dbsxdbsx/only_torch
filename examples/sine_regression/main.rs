@@ -14,7 +14,7 @@ mod model;
 
 use model::SineMLP;
 use only_torch::metrics::r2_score;
-use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 生成 batch 数据: y = sin(x), x ∈ [-π, π]
@@ -41,10 +41,7 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = SineMLP::new(&graph)?;
 
-    // 2. 损失函数（PyTorch 风格）
-    let criterion = MseLoss::new();
-
-    // 3. 优化器
+    // 2. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.05);
 
     println!("网络: Input(1) -> Linear(32, Tanh) -> Linear(1)");
@@ -55,7 +52,7 @@ fn main() -> Result<(), GraphError> {
     for epoch in 0..500 {
         // PyTorch 风格：直接传 Tensor
         let output = model.forward(&x_train)?;
-        let loss = criterion.forward(&output, &y_train)?;
+        let loss = output.mse_loss(&y_train)?;
 
         // 反向传播 + 参数更新
         optimizer.zero_grad()?;
@@ -77,6 +74,7 @@ fn main() -> Result<(), GraphError> {
     // 5. 评估（在训练数据上）
     let output = model.forward(&x_train)?;
     let predictions = output.value()?.unwrap();
+    let loss = output.mse_loss(&y_train)?;
 
     println!("\n=== 预测结果（部分样本）===");
     let indices = [0, 12, 25, 37, 49]; // 选几个代表点
@@ -105,7 +103,7 @@ fn main() -> Result<(), GraphError> {
     println!("R² 分数: {:.4} ({:.1}%)", r2.value(), r2.percent());
 
     // 保存可视化
-    let vis_result = graph.save_visualization("examples/sine_regression/sine_regression", None)?;
+    let vis_result = loss.save_visualization("examples/sine_regression/sine_regression")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

@@ -19,7 +19,7 @@ mod model;
 use model::CaliforniaHousingMLP;
 use only_torch::data::{CaliforniaHousingDataset, DataLoader, TensorDataset};
 use only_torch::metrics::{IntoFloatValues, r2_score};
-use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 use std::time::Instant;
 
@@ -72,9 +72,6 @@ fn main() -> Result<(), GraphError> {
 
     println!("  参数数量: {} 个 Var", model.parameters().len());
 
-    // 损失函数（PyTorch 风格）
-    let criterion = MseLoss::new();
-
     // 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), learning_rate);
 
@@ -100,7 +97,7 @@ fn main() -> Result<(), GraphError> {
         // 训练
         for (x_batch, y_batch) in train_loader.iter() {
             let output = model.forward(&x_batch)?;
-            let loss = criterion.forward(&output, &y_batch)?;
+            let loss = output.mse_loss(&y_batch)?;
 
             optimizer.zero_grad()?;
             let loss_val = loss.backward()?;
@@ -134,8 +131,11 @@ fn main() -> Result<(), GraphError> {
     }
 
     // ========== 保存可视化 ==========
-    let vis_result =
-        graph.save_visualization("examples/california_housing/california_housing", None)?;
+    // 训练后做一次 forward + loss 用于生成计算图
+    let (x_vis, y_vis) = train_loader.iter().next().expect("训练集非空");
+    let output_vis = model.forward(&x_vis)?;
+    let loss_vis = output_vis.mse_loss(&y_vis)?;
+    let vis_result = loss_vis.save_visualization("examples/california_housing/california_housing")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

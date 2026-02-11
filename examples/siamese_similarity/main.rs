@@ -19,7 +19,7 @@ mod model;
 
 use model::SiameseSimilarity;
 use only_torch::metrics::accuracy;
-use only_torch::nn::{Adam, Graph, GraphError, Module, MseLoss, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 生成训练数据：(x1, x2, label)
@@ -61,10 +61,7 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = SiameseSimilarity::new(&graph)?;
 
-    // 2. 损失函数（用 MSE 替代 BCE，验证目的足够）
-    let criterion = MseLoss::new();
-
-    // 3. 优化器
+    // 2. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.01);
 
     // 4. 生成数据
@@ -102,7 +99,7 @@ fn main() -> Result<(), GraphError> {
 
         for (x1, x2, target) in &train_data {
             let output = model.forward(x1, x2)?;
-            let loss = criterion.forward(&output, target)?;
+            let loss = output.mse_loss(target)?;
 
             optimizer.zero_grad()?;
             let loss_val = loss.backward()?;
@@ -171,9 +168,11 @@ fn main() -> Result<(), GraphError> {
         );
     }
 
-    // 7. 保存计算图可视化
-    let vis_result =
-        graph.save_visualization("examples/siamese_similarity/siamese_similarity", None)?;
+    // 7. 保存计算图可视化（训练后做一次 forward + loss）
+    let (x1, x2, target) = &train_data[0];
+    let output = model.forward(x1, x2)?;
+    let loss = output.mse_loss(target)?;
+    let vis_result = loss.save_visualization("examples/siamese_similarity/siamese_similarity")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

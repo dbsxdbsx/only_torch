@@ -8,7 +8,7 @@
  * - 梯度正确累积到共享参数
  */
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
 /// Siamese 相似度网络
@@ -26,8 +26,8 @@ pub struct SiameseSimilarity {
     encoder: Linear,
     /// 分类器（判断是否相似）
     classifier: Linear,
-    /// 模型状态
-    state: ModelState,
+    /// 计算图
+    graph: Graph,
 }
 
 impl SiameseSimilarity {
@@ -37,28 +37,26 @@ impl SiameseSimilarity {
         // 分类器：16 -> 1（两个 8 维特征拼接后输出相似度）
         let classifier = Linear::new(graph, 16, 1, true, "classifier")?;
 
-        let state = ModelState::new_for::<Self>(graph);
-
         Ok(Self {
             encoder,
             classifier,
-            state,
+            graph: graph.clone(),
         })
     }
 
     /// 双输入 forward（验证共享编码器）
     pub fn forward(&self, x1: &Tensor, x2: &Tensor) -> Result<Var, GraphError> {
-        self.state.forward2(x1, x2, |a, b| {
-            // 两个输入经过**同一个**编码器（共享参数）
-            let feat1 = self.encoder.forward(a).relu();
-            let feat2 = self.encoder.forward(b).relu();
+        let a = self.graph.input(x1)?;
+        let b = self.graph.input(x2)?;
+        // 两个输入经过**同一个**编码器（共享参数）
+        let feat1 = self.encoder.forward(&a).relu();
+        let feat2 = self.encoder.forward(&b).relu();
 
-            // 拼接两个特征向量
-            let combined = Var::stack(&[&feat1, &feat2], 1, false)?;
+        // 拼接两个特征向量
+        let combined = Var::stack(&[&feat1, &feat2], 1, false)?;
 
-            // 分类器输出相似度（sigmoid 归一化到 0~1）
-            Ok(self.classifier.forward(&combined).sigmoid())
-        })
+        // 分类器输出相似度（sigmoid 归一化到 0~1）
+        Ok(self.classifier.forward(&combined).sigmoid())
     }
 }
 

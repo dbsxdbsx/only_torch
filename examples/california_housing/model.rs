@@ -2,7 +2,7 @@
 //!
 //! 使用 MLP 预测加州房价（PyTorch 风格）
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
 /// California Housing 回归 MLP
@@ -14,7 +14,7 @@ pub struct CaliforniaHousingMLP {
     fc2: Linear,
     fc3: Linear,
     fc4: Linear,
-    state: ModelState,
+    graph: Graph,
 }
 
 impl CaliforniaHousingMLP {
@@ -28,7 +28,7 @@ impl CaliforniaHousingMLP {
             fc2: Linear::new(graph, 128, 64, true, "fc2")?,
             fc3: Linear::new(graph, 64, 32, true, "fc3")?,
             fc4: Linear::new(graph, 32, 1, true, "fc4")?,
-            state: ModelState::new_for::<Self>(graph),
+            graph: graph.clone(),
         })
     }
 
@@ -40,12 +40,11 @@ impl CaliforniaHousingMLP {
     /// # 返回
     /// 预测房价，形状 `[batch, 1]`
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        self.state.forward(x, |input| {
-            let a1 = self.fc1.forward(input).softplus();
-            let a2 = self.fc2.forward(&a1).softplus();
-            let a3 = self.fc3.forward(&a2).softplus();
-            Ok(self.fc4.forward(&a3))
-        })
+        let input = self.graph.input(x)?;
+        let a1 = self.fc1.forward(&input).softplus();
+        let a2 = self.fc2.forward(&a1).softplus();
+        let a3 = self.fc3.forward(&a2).softplus();
+        Ok(self.fc4.forward(&a3))
     }
 }
 

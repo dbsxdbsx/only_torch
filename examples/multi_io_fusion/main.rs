@@ -14,7 +14,7 @@ mod model;
 
 use model::MultiIOFusion;
 use only_torch::metrics::{accuracy, r2_score};
-use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, MseLoss, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 生成训练数据
@@ -82,10 +82,6 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let model = MultiIOFusion::new(&graph)?;
 
-    // 损失函数
-    let cls_criterion = CrossEntropyLoss::new();
-    let reg_criterion = MseLoss::new();
-
     // 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.01);
 
@@ -102,8 +98,8 @@ fn main() -> Result<(), GraphError> {
         for (input_a, input_b, cls_label, reg_target) in &train_data {
             let (cls_logits, reg_pred) = model.forward(input_a, input_b)?;
 
-            let cls_loss = cls_criterion.forward(&cls_logits, cls_label)?;
-            let reg_loss = reg_criterion.forward(&reg_pred, reg_target)?;
+            let cls_loss = cls_logits.cross_entropy(cls_label)?;
+            let reg_loss = reg_pred.mse_loss(reg_target)?;
 
             optimizer.zero_grad()?;
             let cls_val = cls_loss.backward_ex(true)?;
@@ -180,8 +176,11 @@ fn main() -> Result<(), GraphError> {
         println!("\n⚠️ 可尝试增加 epoch 或调整学习率以提升效果。");
     }
 
-    // 保存可视化
-    let vis_result = graph.save_visualization("examples/multi_io_fusion/multi_io_fusion", None)?;
+    // 保存可视化（训练后做一次 forward + loss）
+    let (input_a, input_b, cls_label, _reg_target) = &train_data[0];
+    let (cls_logits, _reg_pred) = model.forward(input_a, input_b)?;
+    let loss = cls_logits.cross_entropy(cls_label)?;
+    let vis_result = loss.save_visualization("examples/multi_io_fusion/multi_io_fusion")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

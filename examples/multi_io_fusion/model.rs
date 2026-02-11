@@ -3,12 +3,12 @@
  * @Date         : 2026-01-28
  * @Description  : 多输入多输出融合模型
  *
- * 展示 forward2 + 多输出的完整用法：
+ * 展示双输入 + 多输出的完整用法：
  * - 两个不同形状的输入
  * - 两个不同类型的输出（分类 + 回归）
  */
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
 /// 多输入多输出融合模型
@@ -31,8 +31,8 @@ pub struct MultiIOFusion {
     cls_head: Linear,
     /// 回归头
     reg_head: Linear,
-    /// 模型状态
-    state: ModelState,
+    /// 计算图
+    graph: Graph,
 }
 
 impl MultiIOFusion {
@@ -48,15 +48,13 @@ impl MultiIOFusion {
         // 回归头：16 -> 1
         let reg_head = Linear::new(graph, 16, 1, true, "reg_head")?;
 
-        let state = ModelState::new_for::<Self>(graph);
-
         Ok(Self {
             encoder_a,
             encoder_b,
             fusion,
             cls_head,
             reg_head,
-            state,
+            graph: graph.clone(),
         })
     }
 
@@ -70,25 +68,25 @@ impl MultiIOFusion {
     /// - `cls_logits`: 分类 logits `[batch, 2]`
     /// - `reg_pred`: 回归预测 `[batch, 1]`
     pub fn forward(&self, input_a: &Tensor, input_b: &Tensor) -> Result<(Var, Var), GraphError> {
-        self.state.forward2(input_a, input_b, |a, b| {
-            // 分别编码两个输入
-            let feat_a = self.encoder_a.forward(a).relu();
-            let feat_b = self.encoder_b.forward(b).relu();
+        let a = self.graph.input(input_a)?;
+        let b = self.graph.input(input_b)?;
+        // 分别编码两个输入
+        let feat_a = self.encoder_a.forward(&a).relu();
+        let feat_b = self.encoder_b.forward(&b).relu();
 
-            // 拼接特征 [batch, 8] + [batch, 8] -> [batch, 16]
-            let combined = Var::stack(&[&feat_a, &feat_b], 1, false)?;
+        // 拼接特征 [batch, 8] + [batch, 8] -> [batch, 16]
+        let combined = Var::stack(&[&feat_a, &feat_b], 1, false)?;
 
-            // 融合层
-            let fused = self.fusion.forward(&combined).relu();
+        // 融合层
+        let fused = self.fusion.forward(&combined).relu();
 
-            // 分类头
-            let cls_logits = self.cls_head.forward(&fused);
+        // 分类头
+        let cls_logits = self.cls_head.forward(&fused);
 
-            // 回归头
-            let reg_pred = self.reg_head.forward(&fused);
+        // 回归头
+        let reg_pred = self.reg_head.forward(&fused);
 
-            Ok((cls_logits, reg_pred))
-        })
+        Ok((cls_logits, reg_pred))
     }
 }
 
