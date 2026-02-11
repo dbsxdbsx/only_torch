@@ -285,7 +285,7 @@ use crate::tensor::Tensor;
 use std::any::type_name;
 
 #[enum_dispatch(NodeType)]
-pub(in crate::nn::nodes) trait TraitNode {
+pub(in crate::nn) trait TraitNode {
     fn id(&self) -> NodeId;
 
     #[allow(dead_code)]

@@ -62,6 +62,12 @@ impl GraphInner {
             }
         };
 
+        // 同步 ID 和名称到 raw_node（用于错误消息中的 display_node()）
+        use crate::nn::nodes::raw_node::TraitNode;
+        let mut raw_node = raw_node;
+        raw_node.set_id(node_id);
+        raw_node.set_name(&node_name);
+
         // 创建 NodeInner
         let node_inner = Rc::new(NodeInner::new(node_id, Some(node_name), raw_node, parents));
 

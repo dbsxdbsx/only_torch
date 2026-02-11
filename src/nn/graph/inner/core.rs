@@ -405,11 +405,27 @@ impl GraphInner {
             ))
         })?;
 
-        // 4. 设置 loss 梯度为 1
+        // 4. 清除中间节点梯度（避免多次 backward 时梯度在中间节点累积）
+        //
+        // 设计说明：
+        // - 参数节点的梯度由用户通过 zero_grad() 控制（支持梯度累积语义）
+        // - 中间节点（运算节点）的梯度必须每次 backward 重新计算
+        // - 这与 PyTorch 行为一致：PyTorch 每次 forward 重建图，中间梯度自然不会累积
+        //   本框架复用计算图，因此需要手动清除
+        {
+            let topo_order = node.backward_topo_order();
+            for n in &topo_order {
+                if !n.is_leaf() {
+                    let _ = n.clear_grad();
+                }
+            }
+        }
+
+        // 5. 设置 loss 梯度为 1
         let loss_grad = Tensor::ones(&[1, 1]);
         node.set_grad(Some(&loss_grad))?;
 
-        // 5. 执行反向传播
+        // 6. 执行反向传播
         let pass_id = self.last_backward_pass_id + 1;
         node.backward_propagate(pass_id)?;
         self.last_backward_pass_id = pass_id;

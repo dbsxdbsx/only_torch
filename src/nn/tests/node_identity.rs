@@ -21,7 +21,7 @@
  * Identity 节点在 Graphviz 中显示为椭圆形、虚线边框、浅紫色背景。
  */
 
-use crate::nn::{Graph, GraphInner, VarLossOps, VarMatrixOps};
+use crate::nn::{Graph, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 
 // ============================================================================
@@ -29,78 +29,81 @@ use crate::tensor::Tensor;
 // ============================================================================
 
 /// 测试: Identity 节点前向传播（值透传）
-#[cfg(any())]
+///
+/// 使用高层 API：var.detach() 创建 Identity 节点
 #[test]
 fn test_identity_forward_value_passthrough() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    let x = graph.new_basic_input_node(&[2, 3], Some("x")).unwrap();
-    let y = graph.new_identity_node(x, Some("y"), false).unwrap();
-
-    // 设置输入
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    graph.set_node_value(x, Some(&input_data)).unwrap();
+    let x = graph.input(&input_data).unwrap();
 
-    // 前向传播
-    graph.forward(y).unwrap();
+    // detach() 创建 Identity 节点（detached=true，但前向传播仍透传值）
+    let y = x.detach();
 
-    // 验证输出与输入相同
-    let output = graph.get_node_value(y).unwrap().unwrap();
+    y.forward().unwrap();
+
+    let output = y.value().unwrap().unwrap();
     assert_eq!(output, &input_data, "Identity 应该透传输入值");
 }
 
-/// 测试: Identity 节点反向传播（梯度透传）
-#[cfg(any())]
+/// 测试: 非 detached Identity 节点反向传播（梯度透传）
+///
+/// 使用底层 API 创建非 detached 的 Identity 节点，验证梯度正常流过
 #[test]
 fn test_identity_backward_gradient_passthrough() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    // x -> w -> h -> identity -> y -> loss
-    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
-    let w = graph.new_parameter_node(&[1, 2], Some("w")).unwrap();
-    let h = graph.new_mat_mul_node(w, x, Some("h")).unwrap();
-    let identity = graph.new_identity_node(h, Some("identity"), false).unwrap();
-    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
-    let loss = graph
-        .new_mse_loss_node(identity, target, Some("loss"))
+    let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
+    let w = graph
+        .parameter(&[1, 2], crate::nn::var::Init::Ones, "w")
         .unwrap();
+    let h = w.matmul(&x).unwrap(); // [1,2] @ [2,1] -> [1,1]
 
-    // 设置值
-    graph
-        .set_node_value(x, Some(&Tensor::new(&[1.0, 2.0], &[2, 1])))
+    // 使用底层 API 创建非 detached 的 Identity 节点
+    let inner = graph.inner_rc();
+    let identity_node = inner
+        .borrow_mut()
+        .create_identity_node(h.node().clone(), Some("identity"), false)
         .unwrap();
-    graph
-        .set_node_value(target, Some(&Tensor::zeros(&[1, 1])))
-        .unwrap();
+    let identity = crate::nn::Var::new_with_rc_graph(identity_node, &inner);
+
+    let target = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
+    let loss = identity.mse_loss(&target).unwrap();
 
     // 前向 + 反向
-    graph.forward(loss).unwrap();
-    graph.backward(loss).unwrap();
+    loss.backward().unwrap();
 
-    // w 应该有梯度（梯度通过 Identity 正常传递）
+    // w 应该有梯度（梯度通过非 detached Identity 正常传递）
     assert!(
-        graph.get_node_grad(w).unwrap().is_some(),
+        w.grad().unwrap().is_some(),
         "梯度应该通过 Identity 节点正常传递"
     );
 }
 
 /// 测试: Identity 节点形状保持
-#[cfg(any())]
+///
+/// 使用底层 API 创建 Identity，验证各种形状的传播
 #[test]
 fn test_identity_preserves_shape() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 测试各种形状（框架要求 2-4 维）
-    let shapes = vec![vec![2, 3], vec![2, 3, 4], vec![1, 2, 3, 4]];
+    let shapes: Vec<Vec<usize>> = vec![vec![2, 3], vec![2, 3, 4], vec![1, 2, 3, 4]];
 
     for shape in shapes {
-        let x = graph.new_basic_input_node(&shape, None).unwrap();
-        let y = graph.new_identity_node(x, None, false).unwrap();
+        let x = inner
+            .borrow_mut()
+            .create_basic_input_node(&shape, None)
+            .unwrap();
+        let y = inner
+            .borrow_mut()
+            .create_identity_node(x.clone(), None, false)
+            .unwrap();
 
-        let expected_shape = graph.get_node(x).unwrap().value_expected_shape();
-        let actual_shape = graph.get_node(y).unwrap().value_expected_shape();
         assert_eq!(
-            expected_shape, actual_shape,
+            x.value_expected_shape(),
+            y.value_expected_shape(),
             "Identity 应该保持形状: {:?}",
             shape
         );
@@ -112,61 +115,57 @@ fn test_identity_preserves_shape() {
 // ============================================================================
 
 /// 测试: detached Identity 阻断梯度流
-#[cfg(any())]
+///
+/// 使用高层 API：var.detach() 自然创建 detached Identity
 #[test]
 fn test_identity_detached_blocks_gradient() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    // x -> w1 -> h -> identity(detached) -> w2 -> y -> loss
-    let x = graph.new_basic_input_node(&[2, 1], Some("x")).unwrap();
-    let w1 = graph.new_parameter_node(&[2, 2], Some("w1")).unwrap();
-    let h = graph.new_mat_mul_node(w1, x, Some("h")).unwrap();
-    let detached = graph.new_identity_node(h, Some("detached"), true).unwrap(); // detached=true
-    let w2 = graph.new_parameter_node(&[1, 2], Some("w2")).unwrap();
-    let y = graph.new_mat_mul_node(w2, detached, Some("y")).unwrap();
-    let target = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
-    let loss = graph.new_mse_loss_node(y, target, Some("loss")).unwrap();
-
-    // 设置值
-    graph
-        .set_node_value(x, Some(&Tensor::new(&[1.0, 2.0], &[2, 1])))
+    // x -> w1 -> h -> detach -> w2 -> y -> loss
+    let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
+    let w1 = graph
+        .parameter(&[2, 2], crate::nn::var::Init::Ones, "w1")
         .unwrap();
-    graph
-        .set_node_value(target, Some(&Tensor::zeros(&[1, 1])))
-        .unwrap();
+    let h = w1.matmul(&x).unwrap(); // [2,2] @ [2,1] -> [2,1]
 
-    // 前向 + 反向
-    graph.forward(loss).unwrap();
-    graph.backward(loss).unwrap();
+    let detached = h.detach(); // detached Identity
+
+    let w2 = graph
+        .parameter(&[1, 2], crate::nn::var::Init::Ones, "w2")
+        .unwrap();
+    let y = w2.matmul(&detached).unwrap(); // [1,2] @ [2,1] -> [1,1]
+
+    let target = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
+    let loss = y.mse_loss(&target).unwrap();
+
+    loss.backward().unwrap();
 
     // w2 应该有梯度（在 detach 点之后）
     assert!(
-        graph.get_node_grad(w2).unwrap().is_some(),
+        w2.grad().unwrap().is_some(),
         "w2 应该有梯度（在 detach 点之后）"
     );
 
     // w1 不应该有梯度（被 detached Identity 阻断）
     assert!(
-        graph.get_node_grad(w1).unwrap().is_none(),
+        w1.grad().unwrap().is_none(),
         "w1 不应该有梯度（被 detached Identity 阻断）"
     );
 }
 
 /// 测试: detached Identity 不影响前向传播
-#[cfg(any())]
 #[test]
 fn test_identity_detached_does_not_affect_forward() {
-    let mut graph = GraphInner::new();
-
-    let x = graph.new_basic_input_node(&[2, 2], Some("x")).unwrap();
-    let detached = graph.new_identity_node(x, Some("detached"), true).unwrap();
+    let graph = Graph::new();
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    graph.set_node_value(x, Some(&input_data)).unwrap();
-    graph.forward(detached).unwrap();
+    let x = graph.input(&input_data).unwrap();
+    let detached = x.detach();
+
+    detached.forward().unwrap();
 
     // 即使 detached，值仍然正确透传
-    let output = graph.get_node_value(detached).unwrap().unwrap();
+    let output = detached.value().unwrap().unwrap();
     assert_eq!(output, &input_data, "detached Identity 仍应透传值");
 }
 
@@ -197,7 +196,8 @@ fn test_var_detach_returns_new_var() {
 }
 
 /// 测试: Var::detach() 原节点不受影响
-#[cfg(any())]
+///
+/// 使用 Var::is_detached() 替代已移除的 graph.inner().is_node_detached()
 #[test]
 fn test_var_detach_original_unchanged() {
     let graph = Graph::new();
@@ -208,19 +208,17 @@ fn test_var_detach_original_unchanged() {
         .unwrap();
     let h = (&x).matmul(&w).unwrap();
 
-    // 记录原节点的 detach 状态
-    let original_detached = graph.inner().is_node_detached(h.node_id()).unwrap();
+    // 原节点不是 detached
+    assert!(!h.is_detached(), "原节点应该是 attached 状态");
 
-    // 调用 detach（创建 Identity 节点）
-    let _h_detached = h.detach();
+    // 调用 detach（创建新的 Identity 节点）
+    let h_detached = h.detach();
 
     // 原节点状态不变
-    let after_detached = graph.inner().is_node_detached(h.node_id()).unwrap();
-    assert_eq!(
-        original_detached, after_detached,
-        "原节点的 detach 状态不应改变"
-    );
-    assert!(!after_detached, "原节点应该仍然是 attached 状态");
+    assert!(!h.is_detached(), "原节点的 detach 状态不应改变");
+
+    // 新节点是 detached
+    assert!(h_detached.is_detached(), "detach 返回的节点应该是 detached");
 }
 
 /// 测试: Var::detach() 阻断梯度流（GAN 风格）
