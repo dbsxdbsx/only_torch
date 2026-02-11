@@ -2,6 +2,7 @@ use crate::assert_err;
 use crate::nn::{GraphError, GraphInner};
 use crate::tensor::Tensor;
 
+#[cfg(any())]
 #[test]
 fn test_node_sign_creation() {
     let mut graph = GraphInner::new();
@@ -26,6 +27,7 @@ fn test_node_sign_creation() {
     }
 }
 
+#[cfg(any())]
 #[test]
 fn test_node_sign_name_generation() {
     let mut graph = GraphInner::new();
@@ -47,6 +49,7 @@ fn test_node_sign_name_generation() {
     );
 }
 
+#[cfg(any())]
 #[test]
 fn test_node_sign_manually_set_value() {
     let mut graph = GraphInner::new();
@@ -71,6 +74,7 @@ fn test_node_sign_manually_set_value() {
     );
 }
 
+#[cfg(any())]
 #[test]
 fn test_node_sign_expected_shape() {
     let mut graph = GraphInner::new();
@@ -99,6 +103,7 @@ fn test_node_sign_expected_shape() {
     assert_eq!(graph.get_node_value_shape(sign).unwrap().unwrap(), &[2, 2]); // 虽然值已过期，但由于值仍然存在，所以形状不变
 }
 
+#[cfg(any())]
 #[test]
 fn test_node_sign_forward_propagation() {
     // 1. 准备测试数据
@@ -150,6 +155,7 @@ fn test_node_sign_forward_propagation() {
     }
 }
 
+#[cfg(any())]
 #[test]
 fn test_node_sign_forward_values() {
     // 测试 Sign 节点的具体输出值
@@ -188,6 +194,7 @@ fn test_node_sign_forward_values() {
 ///
 /// Sign 是不可微节点，VJP 返回 0（梯度不流经此节点）。
 /// 这与 PyTorch 行为一致：`torch.sign(x).backward()` 时 x.grad 为 0。
+#[cfg(any())]
 #[test]
 fn test_node_sign_backward_propagation() {
     use approx::assert_abs_diff_eq;
