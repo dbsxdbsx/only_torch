@@ -611,19 +611,74 @@ impl Var {
         // 层分组颜色（交替使用不同颜色）
         let group_colors = ["#E3F2FD80", "#E8F5E980", "#FFF3E080", "#F3E5F580"];
 
+        // === DOT 输出归一化：消除训练历史导致的 ID/名称波动 ===
+        // 仅对可见节点（排除 RNN 隐藏节点）建立映射
+        // 节点 ID 映射：原始 ID → 顺序编号（1, 2, 3, ...）
+        let id_remap: HashMap<u64, u64> = nodes
+            .iter()
+            .filter(|n| !rnn_hidden_ids.contains(&n.id().0))
+            .enumerate()
+            .map(|(i, n)| (n.id().0, (i + 1) as u64))
+            .collect();
+        // 节点名称映射：非 Parameter 节点按可视化顺序重新编号
+        let name_remap: HashMap<u64, String> = {
+            let mut type_counters: HashMap<String, usize> = HashMap::new();
+            nodes
+                .iter()
+                .filter(|n| !rnn_hidden_ids.contains(&n.id().0))
+                .map(|n| {
+                    let id = n.id().0;
+                    let node_type = n.type_name();
+                    let raw_name = n
+                        .name()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| node_type.to_lowercase());
+                    // 去掉模型前缀
+                    let display = match raw_name.split_once('/') {
+                        Some((_, after)) => after.to_string(),
+                        None => raw_name,
+                    };
+                    if node_type == "Parameter" {
+                        // Parameter 名称已稳定（如 rnn_W_ih），保持不变
+                        (id, display)
+                    } else {
+                        // 提取名称前缀（strip 末尾的 _N）并重新编号
+                        let prefix = if let Some(pos) = display.rfind('_') {
+                            if display[pos + 1..].chars().all(|c| c.is_ascii_digit())
+                                && pos + 1 < display.len()
+                            {
+                                &display[..pos]
+                            } else {
+                                &display
+                            }
+                        } else {
+                            &display
+                        };
+                        let counter = type_counters.entry(prefix.to_string()).or_insert(0);
+                        *counter += 1;
+                        (id, format!("{}_{}", prefix, counter))
+                    }
+                })
+                .collect()
+        };
+        // ID 转换辅助闭包
+        let rid = |id: u64| -> u64 { *id_remap.get(&id).unwrap_or(&id) };
+
         // 节点定义生成闭包
         let generate_node_def = |node: &Rc<NodeInner>| -> String {
             let id = node.id().0;
+            let stable_id = rid(id);
             let node_type = node.type_name();
-            let raw_name = node
-                .name()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| node_type.to_lowercase());
-            // 可视化时去掉模型前缀（"Generator/fc1_W" → "fc1_W"）
-            let name = match raw_name.split_once('/') {
-                Some((_, after)) => after.to_string(),
-                None => raw_name,
-            };
+            let name = name_remap.get(&id).cloned().unwrap_or_else(|| {
+                let raw = node
+                    .name()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| node_type.to_lowercase());
+                match raw.split_once('/') {
+                    Some((_, after)) => after.to_string(),
+                    None => raw,
+                }
+            });
             let shape = node.value_expected_shape();
 
             // 形状字符串：Parameter 显示固定形状，其他节点第一维显示为 ? (batch 维度)
@@ -735,7 +790,7 @@ impl Var {
 
             format!(
                 "\"{}\" [label=<{}{}<BR/><B>{}</B><BR/>{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10{}];\n",
-                id, name, rnn_step_str, node_type, shape_str, param_count_str, hyperparam_str, node_shape, style, fill_color, peripheries_str
+                stable_id, name, rnn_step_str, node_type, shape_str, param_count_str, hyperparam_str, node_shape, style, fill_color, peripheries_str
             )
         };
 
@@ -885,7 +940,7 @@ impl Var {
                     if pm != cm {
                         let key = (parent_id, cm.clone());
                         if !virtual_input_map.contains_key(&key) {
-                            let virt_id = format!("virt_{}_{}", parent_id, cm.replace(' ', "_"));
+                            let virt_id = format!("virt_{}_{}", rid(parent_id), cm.replace(' ', "_"));
                             // 形状信息
                             let shape = parent.value_expected_shape();
                             let shape_str = if shape.is_empty() {
@@ -1212,17 +1267,17 @@ impl Var {
                     if let Some(virt_id) = virtual_input_map.get(&key) {
                         dot.push_str(&format!(
                             "    \"{}\" -> \"{}\" [style=dashed color=\"#999999\"];\n",
-                            parent_id, virt_id
+                            rid(parent_id), virt_id
                         ));
                         dot.push_str(&format!(
                             "    \"{}\" -> \"{}\"{};\n",
-                            virt_id, child_id, edge_attrs
+                            virt_id, rid(child_id), edge_attrs
                         ));
                     }
                 } else {
                     dot.push_str(&format!(
                         "    \"{}\" -> \"{}\"{};\n",
-                        parent_id, child_id, edge_attrs
+                        rid(parent_id), rid(child_id), edge_attrs
                     ));
                 }
             }
@@ -1242,7 +1297,7 @@ impl Var {
             };
             dot.push_str(&format!(
                 "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9 constraint=false];\n",
-                repr_id, init_state_id, label
+                rid(*repr_id), rid(*init_state_id), label
             ));
         }
 

@@ -20,10 +20,10 @@ digraph ComputeGraph {
             fontname="Microsoft YaHei,SimHei,Arial";
             fontsize=11;
             margin=12;
-                "12017" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "12016" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "6" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "5" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "9" [label=<add_2<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "10" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "11" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "13" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
         subgraph cluster_Discriminator_fc2 {
@@ -33,15 +33,15 @@ digraph ComputeGraph {
             fontname="Microsoft YaHei,SimHei,Arial";
             fontsize=11;
             margin=12;
-                "12020" [label=<add_2<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "12019" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "8" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "7" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 1]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "4" [label=<add_1<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "5" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "6" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "8" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 1]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
-        "12021" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "12018" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "virt_12015_Discriminator" [label=<Input<BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
+        "2" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "7" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "virt_12_Discriminator" [label=<Input<BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
     }
 
     subgraph cluster_model_Generator {
@@ -59,10 +59,10 @@ digraph ComputeGraph {
             fontname="Microsoft YaHei,SimHei,Arial";
             fontsize=11;
             margin=12;
-                "12011" [label=<add_1<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "12010" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "2" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "1" [label=<fc1_W<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "19" [label=<add_4<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "20" [label=<matmul_4<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "21" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "23" [label=<fc1_W<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
         subgraph cluster_Generator_fc2 {
@@ -72,41 +72,41 @@ digraph ComputeGraph {
             fontname="Microsoft YaHei,SimHei,Arial";
             fontsize=11;
             margin=12;
-                "12014" [label=<add_2<BR/><B>Add</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "12013" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "4" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 784]<BR/>(784 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "3" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 784]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "14" [label=<add_3<BR/><B>Add</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "15" [label=<matmul_3<BR/><B>MatMul</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "16" [label=<fc2_b<BR/><B>Parameter</B><BR/>[1, 784]<BR/>(784 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "18" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 784]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
-        "12015" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "12012" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "12009" [label=<input_1<BR/><B>Input</B><BR/>[?, 64]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "12" [label=<sigmoid_2<BR/><B>Sigmoid</B><BR/>[?, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "17" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "22" [label=<input_1<BR/><B>Input</B><BR/>[?, 64]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 
-    "12023" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
-    "12022" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "1" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
 
-    "12021" -> "12023";
-    "12022" -> "12023";
-    "12020" -> "12021";
-    "12019" -> "12020";
-    "8" -> "12020";
-    "12018" -> "12019";
-    "7" -> "12019";
-    "12017" -> "12018";
-    "12016" -> "12017";
-    "6" -> "12017";
-    "12015" -> "virt_12015_Discriminator" [style=dashed color="#999999"];
-    "virt_12015_Discriminator" -> "12016";
-    "5" -> "12016";
-    "12014" -> "12015";
-    "12013" -> "12014";
-    "4" -> "12014";
-    "12012" -> "12013";
-    "3" -> "12013";
-    "12011" -> "12012";
-    "12010" -> "12011";
-    "2" -> "12011";
-    "12009" -> "12010";
-    "1" -> "12010";
+    "2" -> "1";
+    "3" -> "1";
+    "4" -> "2";
+    "5" -> "4";
+    "6" -> "4";
+    "7" -> "5";
+    "8" -> "5";
+    "9" -> "7";
+    "10" -> "9";
+    "11" -> "9";
+    "12" -> "virt_12_Discriminator" [style=dashed color="#999999"];
+    "virt_12_Discriminator" -> "10";
+    "13" -> "10";
+    "14" -> "12";
+    "15" -> "14";
+    "16" -> "14";
+    "17" -> "15";
+    "18" -> "15";
+    "19" -> "17";
+    "20" -> "19";
+    "21" -> "19";
+    "22" -> "20";
+    "23" -> "20";
 }

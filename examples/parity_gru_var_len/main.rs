@@ -12,7 +12,7 @@ mod model;
 use model::ParityGRU;
 use only_torch::data::{DataLoader, VarLenDataset, VarLenSample};
 use only_torch::metrics::accuracy;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, Var, VarLossOps};
 
 fn main() -> Result<(), GraphError> {
     println!("=== 变长奇偶性检测（GRU，智能缓存 + 分桶批处理）===\n");
@@ -73,6 +73,7 @@ fn main() -> Result<(), GraphError> {
 
     // ========== 训练循环 ==========
     let mut best_accuracy = 0.0f32;
+    let mut last_loss: Option<Var> = None;
     println!("开始训练...\n");
 
     for epoch in 0..max_epochs {
@@ -90,6 +91,7 @@ fn main() -> Result<(), GraphError> {
 
             epoch_loss += loss_val * batch_size as f32;
             num_samples += batch_size;
+            last_loss = Some(loss);
         }
 
         if (epoch + 1) % 10 == 0 || epoch == 0 {
@@ -118,15 +120,14 @@ fn main() -> Result<(), GraphError> {
     println!("测试准确率: {final_accuracy:.1}%");
     println!("最佳准确率: {best_accuracy:.1}%");
 
-    // 保存可视化（从最后一个 loss 回溯）
-    let (vis_x, vis_y) = test_loader.iter().next().unwrap();
-    let vis_output = model.forward(&vis_x)?;
-    let vis_loss = vis_output.cross_entropy(&vis_y)?;
-    let vis_result =
-        vis_loss.save_visualization("examples/parity_gru_var_len/parity_gru_var_len")?;
-    println!("\n计算图已保存: {}", vis_result.dot_path.display());
-    if let Some(img_path) = &vis_result.image_path {
-        println!("可视化图像: {}", img_path.display());
+    // 保存可视化（从训练循环的最后一个 loss 回溯）
+    if let Some(loss) = &last_loss {
+        let vis_result =
+            loss.save_visualization("examples/parity_gru_var_len/parity_gru_var_len")?;
+        println!("\n计算图已保存: {}", vis_result.dot_path.display());
+        if let Some(img_path) = &vis_result.image_path {
+            println!("可视化图像: {}", img_path.display());
+        }
     }
 
     if final_accuracy >= target_accuracy {
