@@ -3,207 +3,135 @@
  * @Description  : Subtract 节点单元测试（逐元素减法）
  *
  * 测试策略：
- * 1. 基础功能测试（创建、形状验证、命名）
- * 2. 前向传播测试
- * 3. VJP 单元测试（直接调用 calc_grad_to_parent）
- * 4. 端到端反向传播测试（通过 graph.backward）
- * 5. 广播测试
+ * 1. 基础功能测试（创建、形状验证、命名）→ 底层 create_* API（文件末尾）
+ * 2. 前向传播测试 → 高层 Graph + Var API
+ * 3. VJP 单元测试（calc_grad_to_parent）→ 底层 NodeInner + calc_grad_to_parent_index
+ * 4. 端到端反向传播测试 → 高层 Graph + Var API
+ * 5. 梯度累积测试 → 高层 Graph + Var API
+ * 6. 广播测试 → 混合（高层前向/e2e + 底层 VJP）
  */
 
-use crate::assert_err;
-use crate::nn::{GraphError, GraphInner};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
-// ==================== 基础功能测试 ====================
+// ==================== 前向传播测试（高层 Graph + Var API）====================
 
-/// 测试 Subtract 节点创建
-#[cfg(any())]
-#[test]
-fn test_subtract_creation() {
-    let mut graph = GraphInner::new();
-
-    // 1. 矩阵(2x3) - 矩阵(2x3)
-    {
-        let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
-        let right = graph.new_basic_input_node(&[2, 3], Some("right")).unwrap();
-        let result = graph.new_subtract_node(left, right, Some("sub")).unwrap();
-
-        assert_eq!(graph.get_node_name(result).unwrap(), "sub");
-        assert_eq!(graph.get_node_parents(result).unwrap().len(), 2);
-        assert_eq!(
-            graph.get_node_value_expected_shape(result).unwrap(),
-            &[2, 3]
-        );
-    }
-
-    // 2. 标量(1x1) - 标量(1x1)
-    {
-        let s1 = graph.new_parameter_node(&[1, 1], Some("s1")).unwrap();
-        let s2 = graph.new_parameter_node(&[1, 1], Some("s2")).unwrap();
-        let result = graph.new_subtract_node(s1, s2, Some("sub_scalar")).unwrap();
-
-        assert_eq!(
-            graph.get_node_value_expected_shape(result).unwrap(),
-            &[1, 1]
-        );
-    }
-}
-
-/// 测试 Subtract 创建时的形状校验（广播不兼容的情况）
-#[cfg(any())]
-#[test]
-fn test_subtract_creation_invalid_shape() {
-    let mut graph = GraphInner::new();
-
-    // 1. 无法广播的形状：[2, 3] - [3, 4]
-    let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
-    let right = graph.new_basic_input_node(&[3, 4], Some("right")).unwrap();
-
-    let result = graph.new_subtract_node(left, right, None);
-    assert_err!(
-        result,
-        GraphError::ShapeMismatch([2, 3], [3, 4], "Subtract 节点的父节点形状无法广播")
-    );
-
-    // 2. 无法广播的形状：[2, 3] - [2, 4]
-    let right2 = graph.new_basic_input_node(&[2, 4], Some("right2")).unwrap();
-    let result = graph.new_subtract_node(left, right2, None);
-    assert_err!(
-        result,
-        GraphError::ShapeMismatch([2, 3], [2, 4], "Subtract 节点的父节点形状无法广播")
-    );
-}
-
-/// 测试 Subtract 节点命名
-#[cfg(any())]
-#[test]
-fn test_subtract_name_generation() {
-    let mut graph = GraphInner::new();
-
-    let left = graph.new_parameter_node(&[2, 3], Some("l")).unwrap();
-    let right = graph.new_parameter_node(&[2, 3], Some("r")).unwrap();
-
-    // 1. 显式命名
-    let result1 = graph
-        .new_subtract_node(left, right, Some("my_sub"))
-        .unwrap();
-    assert_eq!(graph.get_node_name(result1).unwrap(), "my_sub");
-
-    // 2. 自动命名
-    let result2 = graph.new_subtract_node(left, right, None).unwrap();
-    assert_eq!(graph.get_node_name(result2).unwrap(), "subtract_1");
-
-    // 3. 名称重复
-    let result = graph.new_subtract_node(left, right, Some("my_sub"));
-    assert_err!(
-        result,
-        GraphError::DuplicateNodeName("节点my_sub在图default_graph中重复")
-    );
-}
-
-// ==================== 前向传播测试 ====================
-
-/// 测试 Subtract 前向传播
-#[cfg(any())]
+/// 测试 Subtract 前向传播（两个父节点）
 #[test]
 fn test_subtract_forward() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    let left = graph.new_parameter_node(&[2, 3], Some("left")).unwrap();
-    let right = graph.new_parameter_node(&[2, 3], Some("right")).unwrap();
-    let result = graph
-        .new_subtract_node(left, right, Some("result"))
+    let left = graph
+        .input(&Tensor::new(&[6.0, 8.0, 12.0, 20.0, 30.0, 42.0], &[2, 3]))
         .unwrap();
+    let right = graph
+        .input(&Tensor::new(&[2.0, 4.0, 3.0, 5.0, 6.0, 7.0], &[2, 3]))
+        .unwrap();
+    let result = &left - &right;
+
+    result.forward().unwrap();
 
     // left=[6,8,12,20,30,42], right=[2,4,3,5,6,7]
-    // result = [6-2, 8-4, 12-3, 20-5, 30-6, 42-7] = [4,4,9,15,24,35]
-    graph
-        .set_node_value(
-            left,
-            Some(&Tensor::new(&[6.0, 8.0, 12.0, 20.0, 30.0, 42.0], &[2, 3])),
-        )
-        .unwrap();
-    graph
-        .set_node_value(
-            right,
-            Some(&Tensor::new(&[2.0, 4.0, 3.0, 5.0, 6.0, 7.0], &[2, 3])),
-        )
-        .unwrap();
-
-    graph.forward(result).unwrap();
-
-    let output = graph.get_node_value(result).unwrap().unwrap();
+    // result = [4,4,9,15,24,35]
+    let output = result.value().unwrap().unwrap();
     let expected = Tensor::new(&[4.0, 4.0, 9.0, 15.0, 24.0, 35.0], &[2, 3]);
-    assert_eq!(output, &expected);
+    assert_eq!(output, expected);
 }
 
-// ==================== 节点级反向传播测试（直接调用 calc_grad_to_parent）====================
-
-/// 测试 Subtract 对 left（被减数）的梯度计算
-///
-/// 对于 result = A - B：
-/// ∂L/∂A = upstream_grad
-#[cfg(any())]
+/// 测试 Subtract 节点不能直接设置值（高层 Var API）
 #[test]
-fn test_subtract_backward_to_left() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_subtract_cannot_set_value() {
+    let graph = Graph::new();
 
-    let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
-    let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
-    let result_id = graph.new_subtract_node(left_id, right_id, Some("result"))?;
+    let left = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
+        .unwrap();
+    let right = graph
+        .input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))
+        .unwrap();
+    let sub = &left - &right;
 
-    // 设置值
-    graph.set_node_value(left_id, Some(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2])))?;
-    graph.set_node_value(right_id, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
-    graph.forward(result_id)?;
+    let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let result = sub.set_value(&test_value);
+    assert!(result.is_err(), "Subtract 节点不应支持直接设值");
+}
 
-    // 直接测试 VJP
+// ==================== VJP 单元测试（底层 NodeInner + calc_grad_to_parent_index）====================
+//
+// 使用底层 API 创建节点，通过 calc_grad_to_parent_index 直接验证每个父节点的梯度计算公式。
+
+/// 测试 Subtract 对 left（被减数）的 VJP
+///
+/// result = left - right, ∂result/∂left = I → VJP: grad = upstream_grad
+///
+/// 使用 NodeInner::calc_grad_to_parent_index 直接测试梯度公式
+#[test]
+fn test_subtract_vjp_to_left() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let left = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("left"))
+        .unwrap();
+    let right = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("right"))
+        .unwrap();
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![left.clone(), right.clone()], Some("sub"))
+        .unwrap();
+
+    left.set_value(Some(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2])))
+        .unwrap();
+    right
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    sub.forward_recursive(1, false).unwrap();
+
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let result_node = graph.get_node(result_id)?;
-    let left_node = graph.get_node(left_id)?;
-    let right_node = graph.get_node(right_id)?;
+    let grad = sub.calc_grad_to_parent_index(0, &upstream_grad)?;
 
-    // 新签名：使用 parents 数组和索引
-    let parents = [left_node, right_node];
-    let grad = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
-
-    // grad_to_left = upstream = ones
     assert_eq!(grad.shape(), &[2, 2]);
     assert_eq!(&grad, &upstream_grad);
 
     Ok(())
 }
 
-/// 测试 Subtract 对 right（减数）的梯度计算
+/// 测试 Subtract 对 right（减数）的 VJP
 ///
-/// 对于 result = A - B：
-/// ∂L/∂B = -upstream_grad
-#[cfg(any())]
+/// result = left - right, ∂result/∂right = -I → VJP: grad = -upstream_grad
 #[test]
-fn test_subtract_backward_to_right() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_subtract_vjp_to_right() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
-    let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
-    let result_id = graph.new_subtract_node(left_id, right_id, Some("result"))?;
+    let left = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("left"))
+        .unwrap();
+    let right = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("right"))
+        .unwrap();
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![left.clone(), right.clone()], Some("sub"))
+        .unwrap();
 
-    // 设置值
-    graph.set_node_value(left_id, Some(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2])))?;
-    graph.set_node_value(right_id, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
-    graph.forward(result_id)?;
+    left.set_value(Some(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2])))
+        .unwrap();
+    right
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    sub.forward_recursive(1, false).unwrap();
 
-    // 直接测试 VJP
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let result_node = graph.get_node(result_id)?;
-    let left_node = graph.get_node(left_id)?;
-    let right_node = graph.get_node(right_id)?;
+    let grad = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
 
-    // 新签名：使用 parents 数组和索引
-    let parents = [left_node, right_node];
-    let grad = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
-
-    // grad_to_right = -upstream = -ones = [[-1,-1],[-1,-1]]
+    // grad_to_right = -upstream = [[-1,-1],[-1,-1]]
     assert_eq!(grad.shape(), &[2, 2]);
     let expected = Tensor::new(&[-1.0, -1.0, -1.0, -1.0], &[2, 2]);
     assert_eq!(&grad, &expected);
@@ -211,312 +139,236 @@ fn test_subtract_backward_to_right() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 Subtract 梯度计算（非全 1 上游梯度）
-#[cfg(any())]
+/// 测试 Subtract VJP（非全 1 上游梯度）
 #[test]
-fn test_subtract_backward_with_non_unit_upstream() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_subtract_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let left_id = graph.new_parameter_node(&[2, 2], Some("left"))?;
-    let right_id = graph.new_parameter_node(&[2, 2], Some("right"))?;
-    let result_id = graph.new_subtract_node(left_id, right_id, Some("result"))?;
+    let left = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("left"))
+        .unwrap();
+    let right = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("right"))
+        .unwrap();
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![left.clone(), right.clone()], Some("sub"))
+        .unwrap();
 
-    // 设置值
-    graph.set_node_value(left_id, Some(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2])))?;
-    graph.set_node_value(right_id, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
-    graph.forward(result_id)?;
+    left.set_value(Some(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2])))
+        .unwrap();
+    right
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    sub.forward_recursive(1, false).unwrap();
 
     // upstream_grad = [[2,3],[4,5]]
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let result_node = graph.get_node(result_id)?;
-    let left_node = graph.get_node(left_id)?;
-    let right_node = graph.get_node(right_id)?;
-
-    // 新签名：使用 parents 数组和索引
-    let parents = [left_node, right_node];
+    let grad_to_left = sub.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad_to_right = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
 
     // grad_to_left = upstream = [[2,3],[4,5]]
-    let grad_to_left = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
     assert_eq!(&grad_to_left, &upstream_grad);
-
     // grad_to_right = -upstream = [[-2,-3],[-4,-5]]
-    let grad_to_right = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
     let expected_right = Tensor::new(&[-2.0, -3.0, -4.0, -5.0], &[2, 2]);
     assert_eq!(&grad_to_right, &expected_right);
 
     Ok(())
 }
 
-// ==================== 端到端反向传播测试 ====================
+/// 测试 Subtract VJP（负数值，验证梯度公式在负数下仍正确）
+#[test]
+fn test_subtract_vjp_with_negative_values() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-/// 测试 Subtract 通过 graph.backward() 的端到端反向传播
-#[cfg(any())]
+    let left = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("left"))
+        .unwrap();
+    let right = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("right"))
+        .unwrap();
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![left.clone(), right.clone()], Some("sub"))
+        .unwrap();
+
+    left.set_value(Some(&Tensor::new(&[-1.0, -2.0, -3.0, -4.0], &[2, 2])))
+        .unwrap();
+    right
+        .set_value(Some(&Tensor::new(&[5.0, -6.0, 7.0, -8.0], &[2, 2])))
+        .unwrap();
+    sub.forward_recursive(1, false).unwrap();
+
+    // 验证前向传播: [-1-5, -2-(-6), -3-7, -4-(-8)] = [-6, 4, -10, 4]
+    let output = sub.value().unwrap();
+    assert_eq!(output, Tensor::new(&[-6.0, 4.0, -10.0, 4.0], &[2, 2]));
+
+    let upstream_grad = Tensor::new(&[-1.0, 2.0, -3.0, 4.0], &[2, 2]);
+    let grad_to_left = sub.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad_to_right = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
+    // left 梯度 = upstream_grad
+    assert_eq!(&grad_to_left, &upstream_grad);
+    // right 梯度 = -upstream_grad = [1, -2, 3, -4]
+    let expected_right = Tensor::new(&[1.0, -2.0, 3.0, -4.0], &[2, 2]);
+    assert_eq!(&grad_to_right, &expected_right);
+
+    Ok(())
+}
+
+// ==================== 广播 VJP 测试（底层 API）====================
+
+/// 测试 Subtract 广播 VJP：[2,3] - [1,3]
+///
+/// 对 [1,3] bias 的梯度需要先取负再沿 axis=0 求和
+#[test]
+fn test_subtract_broadcast_vjp() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let matrix = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("matrix"))
+        .unwrap();
+    let bias = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("bias"))
+        .unwrap();
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![matrix.clone(), bias.clone()], Some("sub"))
+        .unwrap();
+
+    matrix
+        .set_value(Some(&Tensor::new(
+            &[10., 20., 30., 40., 50., 60.],
+            &[2, 3],
+        )))
+        .unwrap();
+    bias.set_value(Some(&Tensor::new(&[1., 2., 3.], &[1, 3])))
+        .unwrap();
+    sub.forward_recursive(1, false).unwrap();
+
+    let upstream_grad = Tensor::ones(&[2, 3]);
+
+    // 对 matrix [2,3] 的梯度：直接传递
+    let grad_to_matrix = sub.calc_grad_to_parent_index(0, &upstream_grad)?;
+    assert_eq!(grad_to_matrix.shape(), &[2, 3]);
+    assert_eq!(&grad_to_matrix, &upstream_grad);
+
+    // 对 bias [1,3] 的梯度：-upstream，然后沿 axis=0 求和
+    // -[[1,1,1],[1,1,1]] = [[-1,-1,-1],[-1,-1,-1]]
+    // sum(axis=0) = [[-2,-2,-2]]
+    let grad_to_bias = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
+    assert_eq!(grad_to_bias.shape(), &[1, 3]);
+    assert_eq!(&grad_to_bias, &Tensor::new(&[-2., -2., -2.], &[1, 3]));
+
+    Ok(())
+}
+
+/// 测试 Subtract 广播 VJP（非全 1 上游梯度）
+#[test]
+fn test_subtract_broadcast_vjp_non_unit() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let matrix = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("matrix"))
+        .unwrap();
+    let bias = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("bias"))
+        .unwrap();
+    let sub = inner
+        .borrow_mut()
+        .create_subtract_node(vec![matrix.clone(), bias.clone()], Some("sub"))
+        .unwrap();
+
+    matrix
+        .set_value(Some(&Tensor::new(
+            &[10., 20., 30., 40., 50., 60.],
+            &[2, 3],
+        )))
+        .unwrap();
+    bias.set_value(Some(&Tensor::new(&[1., 2., 3.], &[1, 3])))
+        .unwrap();
+    sub.forward_recursive(1, false).unwrap();
+
+    // upstream = [[1,2,3],[4,5,6]]
+    // -upstream = [[-1,-2,-3],[-4,-5,-6]], sum(axis=0) = [[-5,-7,-9]]
+    let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+
+    let grad_to_bias = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
+    assert_eq!(grad_to_bias.shape(), &[1, 3]);
+    assert_eq!(&grad_to_bias, &Tensor::new(&[-5., -7., -9.], &[1, 3]));
+
+    Ok(())
+}
+
+// ==================== 端到端反向传播测试（高层 Graph + Var API）====================
+
+/// 测试 Subtract 端到端反向传播：result = left - right → loss = MSE(result, target)
 #[test]
 fn test_subtract_backward_e2e() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    // 创建计算图：result = left - right
-    let left = graph.new_parameter_node(&[2, 2], Some("left"))?;
-    let right = graph.new_parameter_node(&[2, 2], Some("right"))?;
-    let result = graph.new_subtract_node(left, right, Some("result"))?;
+    let left = graph.parameter(&[2, 2], Init::Zeros, "left")?;
+    let right = graph.parameter(&[2, 2], Init::Zeros, "right")?;
+    left.set_value(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2]))?;
+    right.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))?;
 
-    // loss = MSE(result, target)
-    let target = graph.new_basic_input_node(&[2, 2], Some("target"))?;
-    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+    let result = &left - &right;
+    let target = graph.input(&Tensor::zeros(&[2, 2]))?;
+    let loss = result.mse_loss(&target)?;
 
-    // 设置值：left=[[4,6],[8,10]], right=[[1,2],[3,4]], target=[[0,0],[0,0]]
-    // result = [[3,4],[5,6]]
-    graph.set_node_value(left, Some(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2])))?;
-    graph.set_node_value(right, Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
-    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 2])))?;
-
-    // 前向传播
-    graph.forward(loss)?;
-
-    // result = [[3,4],[5,6]]
-    // loss = mean((result - 0)^2) = mean([9,16,25,36]) = 86/4 = 21.5
-    let loss_value = graph.get_node_value(loss)?.unwrap();
-    assert_abs_diff_eq!(loss_value.get_data_number().unwrap(), 21.5, epsilon = 1e-6);
-
-    // 反向传播
+    // result = [[3,4],[5,6]], loss = mean([9,16,25,36]) = 86/4 = 21.5
     graph.zero_grad()?;
-    graph.backward(loss)?;
+    let loss_val = loss.backward()?;
+    assert_abs_diff_eq!(loss_val, 21.5, epsilon = 1e-6);
 
-    // 验证梯度存在且形状正确
-    let left_grad = graph.get_node(left)?.grad().expect("left 应有 grad");
-    let right_grad = graph.get_node(right)?.grad().expect("right 应有 grad");
-    assert_eq!(left_grad.shape(), &[2, 2]);
-    assert_eq!(right_grad.shape(), &[2, 2]);
+    let left_grad = left.grad()?.expect("left 应有 grad");
+    let right_grad = right.grad()?.expect("right 应有 grad");
 
     // ∂loss/∂result = 2*(result - target)/n = result/2 = [[1.5,2],[2.5,3]]
     // ∂loss/∂left = ∂loss/∂result = [[1.5,2],[2.5,3]]
     // ∂loss/∂right = -∂loss/∂result = [[-1.5,-2],[-2.5,-3]]
     let expected_left_grad = Tensor::new(&[1.5, 2.0, 2.5, 3.0], &[2, 2]);
     let expected_right_grad = Tensor::new(&[-1.5, -2.0, -2.5, -3.0], &[2, 2]);
-    assert_abs_diff_eq!(left_grad, &expected_left_grad, epsilon = 1e-6);
-    assert_abs_diff_eq!(right_grad, &expected_right_grad, epsilon = 1e-6);
-
-    Ok(())
-}
-
-// ==================== 广播测试 ====================
-
-/// 测试 Subtract 节点支持广播的创建
-#[cfg(any())]
-#[test]
-fn test_subtract_broadcast_creation() {
-    let mut graph = GraphInner::new();
-
-    // 1. [3, 4] - [1, 4] -> [3, 4]（行广播）
-    {
-        let left = graph.new_basic_input_node(&[3, 4], Some("left1")).unwrap();
-        let right = graph.new_basic_input_node(&[1, 4], Some("right1")).unwrap();
-        let result = graph.new_subtract_node(left, right, Some("sub1")).unwrap();
-        assert_eq!(
-            graph.get_node_value_expected_shape(result).unwrap(),
-            &[3, 4]
-        );
-    }
-
-    // 2. [3, 1] - [1, 4] -> [3, 4]（双向广播）
-    {
-        let left = graph.new_basic_input_node(&[3, 1], Some("left2")).unwrap();
-        let right = graph.new_basic_input_node(&[1, 4], Some("right2")).unwrap();
-        let result = graph.new_subtract_node(left, right, Some("sub2")).unwrap();
-        assert_eq!(
-            graph.get_node_value_expected_shape(result).unwrap(),
-            &[3, 4]
-        );
-    }
-
-    // 3. [2, 3, 4] - [1, 1, 4] -> [2, 3, 4]（高维广播）
-    {
-        let left = graph
-            .new_basic_input_node(&[2, 3, 4], Some("left3"))
-            .unwrap();
-        let right = graph
-            .new_basic_input_node(&[1, 1, 4], Some("right3"))
-            .unwrap();
-        let result = graph.new_subtract_node(left, right, Some("sub3")).unwrap();
-        assert_eq!(
-            graph.get_node_value_expected_shape(result).unwrap(),
-            &[2, 3, 4]
-        );
-    }
-}
-
-/// 测试 Subtract 广播前向传播
-///
-/// [2, 3] - [1, 3] -> [2, 3]
-#[cfg(any())]
-#[test]
-fn test_subtract_broadcast_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 创建节点：[2, 3] - [1, 3] -> [2, 3]
-    let matrix = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
-    let bias = graph.new_parameter_node(&[1, 3], Some("bias"))?;
-    let result = graph.new_subtract_node(matrix, bias, Some("result"))?;
-
-    // matrix = [[10,20,30], [40,50,60]]
-    // bias = [[1, 2, 3]]
-    // result = [[10-1,20-2,30-3], [40-1,50-2,60-3]] = [[9,18,27], [39,48,57]]
-    graph.set_node_value(
-        matrix,
-        Some(&Tensor::new(&[10., 20., 30., 40., 50., 60.], &[2, 3])),
-    )?;
-    graph.set_node_value(bias, Some(&Tensor::new(&[1., 2., 3.], &[1, 3])))?;
-
-    graph.forward(result)?;
-
-    let output = graph.get_node_value(result)?.unwrap();
-    let expected = Tensor::new(&[9., 18., 27., 39., 48., 57.], &[2, 3]);
-    assert_eq!(output, &expected);
-
-    Ok(())
-}
-
-/// 测试 Subtract 广播反向传播（关键测试）
-///
-/// [2, 3] - [1, 3] -> [2, 3]
-/// 反向传播时，对 [1, 3] 的梯度需要沿 axis=0 求和
-#[cfg(any())]
-#[test]
-fn test_subtract_broadcast_backward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 创建节点：result = matrix - bias
-    let matrix = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
-    let bias = graph.new_parameter_node(&[1, 3], Some("bias"))?;
-    let result = graph.new_subtract_node(matrix, bias, Some("result"))?;
-
-    // 设置值（具体值不重要，Subtract 的梯度与值无关）
-    graph.set_node_value(
-        matrix,
-        Some(&Tensor::new(&[10., 20., 30., 40., 50., 60.], &[2, 3])),
-    )?;
-    graph.set_node_value(bias, Some(&Tensor::new(&[1., 2., 3.], &[1, 3])))?;
-    graph.forward(result)?;
-
-    // 直接测试 VJP
-    // upstream_grad = [[1,1,1], [1,1,1]] (全1)
-    let upstream_grad = Tensor::ones(&[2, 3]);
-    let result_node = graph.get_node(result)?;
-    let matrix_node = graph.get_node(matrix)?;
-    let bias_node = graph.get_node(bias)?;
-
-    // 新签名：使用 parents 数组和索引
-    let parents = [matrix_node, bias_node];
-
-    // 对 matrix [2,3] 的梯度：直接传递 upstream_grad
-    let grad_to_matrix = result_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
-    assert_eq!(grad_to_matrix.shape(), &[2, 3]);
-    assert_eq!(&grad_to_matrix, &upstream_grad);
-
-    // 对 bias [1,3] 的梯度：-upstream_grad，然后沿 axis=0 求和
-    // -[[1,1,1],[1,1,1]] = [[-1,-1,-1],[-1,-1,-1]]
-    // sum([[-1,-1,-1],[-1,-1,-1]], axis=0) = [[-2,-2,-2]]
-    let grad_to_bias = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
-    assert_eq!(grad_to_bias.shape(), &[1, 3]);
-    let expected_bias_grad = Tensor::new(&[-2., -2., -2.], &[1, 3]);
-    assert_eq!(&grad_to_bias, &expected_bias_grad);
-
-    Ok(())
-}
-
-/// 测试 Subtract 广播反向传播（非全 1 上游梯度）
-///
-/// 实际训练中，upstream_grad 几乎不会是全 1，而是由链式法则层层计算得到的各种值。
-/// 此测试验证 sum_to_shape 在这种真实场景下的正确性。
-#[cfg(any())]
-#[test]
-fn test_subtract_broadcast_backward_non_unit() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 创建节点：result = matrix - bias
-    let matrix = graph.new_parameter_node(&[2, 3], Some("matrix"))?;
-    let bias = graph.new_parameter_node(&[1, 3], Some("bias"))?;
-    let result = graph.new_subtract_node(matrix, bias, Some("result"))?;
-
-    // 设置值
-    graph.set_node_value(
-        matrix,
-        Some(&Tensor::new(&[10., 20., 30., 40., 50., 60.], &[2, 3])),
-    )?;
-    graph.set_node_value(bias, Some(&Tensor::new(&[1., 2., 3.], &[1, 3])))?;
-    graph.forward(result)?;
-
-    // upstream_grad = [[1,2,3], [4,5,6]]（非全 1）
-    let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
-    let result_node = graph.get_node(result)?;
-    let matrix_node = graph.get_node(matrix)?;
-    let bias_node = graph.get_node(bias)?;
-
-    // 新签名：使用 parents 数组和索引
-    let parents = [matrix_node, bias_node];
-
-    // 对 bias [1,3] 的梯度：-upstream_grad，然后沿 axis=0 求和
-    // -[[1,2,3],[4,5,6]] = [[-1,-2,-3],[-4,-5,-6]]
-    // sum([[-1,-2,-3],[-4,-5,-6]], axis=0) = [[-5,-7,-9]]
-    let grad_to_bias = result_node.calc_grad_to_parent(1, &parents, &upstream_grad)?;
-    assert_eq!(grad_to_bias.shape(), &[1, 3]);
-    let expected = Tensor::new(&[-5., -7., -9.], &[1, 3]);
-    assert_eq!(&grad_to_bias, &expected);
+    assert_abs_diff_eq!(&left_grad, &expected_left_grad, epsilon = 1e-6);
+    assert_abs_diff_eq!(&right_grad, &expected_right_grad, epsilon = 1e-6);
 
     Ok(())
 }
 
 /// 测试 Subtract 广播端到端反向传播
-///
-/// 验证广播在完整训练场景中的正确性
-#[cfg(any())]
 #[test]
 fn test_subtract_broadcast_e2e() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    // 模拟偏置减法：result = features - bias
-    // features [2,3], bias [1,3]
-    let features = graph.new_parameter_node(&[2, 3], Some("features"))?;
-    let bias = graph.new_parameter_node(&[1, 3], Some("bias"))?;
-    let result = graph.new_subtract_node(features, bias, Some("result"))?;
+    let features = graph.parameter(&[2, 3], Init::Zeros, "features")?;
+    let bias = graph.parameter(&[1, 3], Init::Zeros, "bias")?;
+    features.set_value(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]))?;
+    bias.set_value(&Tensor::ones(&[1, 3]))?;
 
-    // loss = MSE(result, target)
-    let target = graph.new_basic_input_node(&[2, 3], Some("target"))?;
-    let loss = graph.new_mse_loss_node(result, target, Some("loss"))?;
+    let result = &features - &bias;
+    let target = graph.input(&Tensor::zeros(&[2, 3]))?;
+    let loss = result.mse_loss(&target)?;
 
-    // 设置值
-    // features = [[1,2,3], [4,5,6]]
-    // bias = [[1,1,1]]
-    // result = [[0,1,2], [3,4,5]]
-    // target = [[0,0,0], [0,0,0]]
-    graph.set_node_value(
-        features,
-        Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])),
-    )?;
-    graph.set_node_value(bias, Some(&Tensor::ones(&[1, 3])))?;
-    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 3])))?;
-
-    graph.forward(loss)?;
-
-    // 反向传播
+    // result = [[0,1,2],[3,4,5]], target = 0
     graph.zero_grad()?;
-    graph.backward(loss)?;
+    loss.backward()?;
 
-    // 验证梯度形状
-    let features_grad = graph
-        .get_node(features)?
-        .grad()
-        .expect("features 应有 grad");
-    let bias_grad = graph.get_node(bias)?.grad().expect("bias 应有 grad");
+    let features_grad = features.grad()?.expect("features 应有 grad");
+    let bias_grad = bias.grad()?.expect("bias 应有 grad");
+    assert_eq!(features_grad.shape(), &[2, 3]);
+    assert_eq!(bias_grad.shape(), &[1, 3]);
 
-    assert_eq!(
-        features_grad.shape(),
-        &[2, 3],
-        "features 梯度形状应为 [2,3]"
-    );
-    assert_eq!(bias_grad.shape(), &[1, 3], "bias 梯度形状应为 [1,3]");
-
-    // result = [[0,1,2], [3,4,5]]
     // ∂loss/∂result = 2*(result - target)/n = result/3
     //               = [[0, 1/3, 2/3], [1, 4/3, 5/3]]
     //
@@ -526,7 +378,65 @@ fn test_subtract_broadcast_e2e() -> Result<(), GraphError> {
     //             = -[[1, 5/3, 7/3]]
     //             = [[-1, -5/3, -7/3]]
     let expected_bias_grad = Tensor::new(&[-1., -5. / 3., -7. / 3.], &[1, 3]);
-    assert_abs_diff_eq!(bias_grad, &expected_bias_grad, epsilon = 1e-4);
+    assert_abs_diff_eq!(&bias_grad, &expected_bias_grad, epsilon = 1e-4);
+
+    Ok(())
+}
+
+// ==================== 梯度累积测试（高层 Graph + Var API）====================
+
+/// 测试梯度累积：多次 backward 不调用 zero_grad，梯度应累加
+#[test]
+fn test_subtract_gradient_accumulation() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let left = graph.parameter(&[2, 2], Init::Zeros, "left")?;
+    let right = graph.parameter(&[2, 2], Init::Zeros, "right")?;
+    left.set_value(&Tensor::new(&[4.0, 6.0, 8.0, 10.0], &[2, 2]))?;
+    right.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))?;
+
+    let result = &left - &right;
+    let target = graph.input(&Tensor::zeros(&[2, 2]))?;
+    let loss = result.mse_loss(&target)?;
+
+    // 第 1 次 backward（内部 ensure-forward，自动执行前向传播）
+    graph.zero_grad()?;
+    loss.backward()?;
+    let grad_first = left.grad()?.unwrap().clone();
+
+    // 第 2 次 backward（不 zero_grad → 梯度累积）
+    // 注意：backward 内部有 ensure-forward，无需手动调 forward
+    loss.backward()?;
+    let grad_second = left.grad()?.unwrap();
+    assert_eq!(&grad_second, &(&grad_first * 2.0));
+
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    loss.backward()?;
+    let grad_after_clear = left.grad()?.unwrap();
+    assert_eq!(&grad_after_clear, &grad_first);
+
+    Ok(())
+}
+
+// ==================== 广播前向传播测试（高层 API）====================
+
+/// 测试 Subtract 广播前向传播：[2,3] - [1,3] → [2,3]
+#[test]
+fn test_subtract_broadcast_forward() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let matrix = graph.input(&Tensor::new(&[10., 20., 30., 40., 50., 60.], &[2, 3]))?;
+    let bias = graph.input(&Tensor::new(&[1., 2., 3.], &[1, 3]))?;
+    let result = &matrix - &bias;
+
+    result.forward()?;
+
+    // matrix = [[10,20,30],[40,50,60]], bias = [[1,2,3]]
+    // result = [[9,18,27],[39,48,57]]
+    let output = result.value()?.unwrap();
+    let expected = Tensor::new(&[9., 18., 27., 39., 48., 57.], &[2, 3]);
+    assert_eq!(output, expected);
 
     Ok(())
 }
@@ -536,8 +446,6 @@ fn test_subtract_broadcast_e2e() -> Result<(), GraphError> {
 /// 测试 Subtract 节点的动态形状传播
 #[test]
 fn test_subtract_dynamic_shape_propagation() {
-    use crate::nn::Graph;
-
     let graph = Graph::new();
 
     // 创建一个支持动态 batch 的输入（使用 ZerosLike）
@@ -562,8 +470,6 @@ fn test_subtract_dynamic_shape_propagation() {
 /// 测试 Subtract 节点在不同 batch_size 下的前向计算
 #[test]
 fn test_subtract_dynamic_batch_forward() {
-    use crate::nn::Graph;
-
     let graph = Graph::new();
 
     // 创建支持动态 batch 的节点
@@ -594,7 +500,6 @@ fn test_subtract_dynamic_batch_forward() {
 #[test]
 #[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_subtract_dynamic_batch_backward() {
-    use crate::nn::Graph;
     use crate::nn::var_ops::VarLossOps;
 
     let graph = Graph::new();
@@ -642,7 +547,6 @@ fn test_subtract_dynamic_batch_backward() {
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
 
-use crate::nn::Graph;
 use std::rc::Rc;
 
 #[test]

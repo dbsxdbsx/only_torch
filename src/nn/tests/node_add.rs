@@ -5,7 +5,7 @@
  * 测试策略：
  * 1. 基础功能测试（创建、形状验证、命名）→ 底层 create_* API（文件末尾）
  * 2. 前向传播测试 → 高层 Graph + Var API
- * 3. VJP 单元测试（calc_grad_to_parent）→ 底层 NodeInner + with_raw_node
+ * 3. VJP 单元测试（calc_grad_to_parent）→ 底层 NodeInner + calc_grad_to_parent_index
  * 4. 端到端反向传播测试 → 高层 Graph + Var API
  * 5. 梯度累积测试 → 高层 Graph + Var API
  * 6. 广播测试 → 混合（高层前向/e2e + 底层 VJP）
@@ -73,9 +73,9 @@ fn test_add_cannot_set_value() {
     assert!(result.is_err(), "Add 节点不应支持直接设值");
 }
 
-// ==================== VJP 单元测试（底层 NodeInner + with_raw_node）====================
+// ==================== VJP 单元测试（底层 NodeInner + calc_grad_to_parent_index）====================
 //
-// 使用底层 API 创建节点，通过 with_raw_node 直接访问 calc_grad_to_parent，
+// 使用底层 API 创建节点，通过 calc_grad_to_parent_index 直接验证每个父节点的梯度计算公式，
 // 独立验证每个父节点的梯度计算公式。
 
 /// 测试 Add 对第一个父节点的 VJP
