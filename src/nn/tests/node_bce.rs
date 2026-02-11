@@ -1,49 +1,21 @@
 /*
  * @Author       : 老董
- * @Date         : 2026-01-29
- * @Description  : BCE（Binary Cross Entropy）节点单元测试
+ * @Description  : BCE（Binary Cross Entropy with Logits）损失节点单元测试
  *
- * BCE 采用 BCEWithLogitsLoss 形式（内置 Sigmoid），数值稳定。
- * 适用于二分类和多标签分类任务。
+ * 测试策略：
+ * 1. 前向传播测试（高层 API）→ basic 0.4205; 2D 0.2201; 数值稳定性; 多标签; cannot_set_value
+ * 2. VJP 单元测试（底层）→ Mean VJP; Sum VJP
+ * 3. 端到端反向传播测试（高层）→ mean/sum/2D/batch
+ * 4. 梯度累积测试
+ * 5. 动态形状测试
+ * 6. 新节点创建 API 测试（KEEP AS-IS）
  */
 
-use crate::nn::{GraphError, GraphInner, Reduction};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
-// ========== 基本功能测试 ==========
-
-#[cfg(any())]
-#[test]
-fn test_bce_loss_creation() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
-
-    // 验证节点存在且预期形状正确
-    assert_eq!(
-        graph.get_node_value_expected_shape(loss_id).unwrap(),
-        &[1, 1]
-    );
-}
-
-#[cfg(any())]
-#[test]
-fn test_bce_loss_shape_mismatch() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 4], Some("target")).unwrap(); // 形状不匹配
-
-    let result = graph.new_bce_loss_node(logits_id, target_id, None);
-    assert!(result.is_err());
-}
-
-// ========== Mean Reduction 测试 ==========
+// ==================== 1. 前向传播测试（高层 Graph + Var API）====================
 
 /// PyTorch 验证:
 /// ```python
@@ -55,31 +27,23 @@ fn test_bce_loss_shape_mismatch() {
 /// loss = nn.BCEWithLogitsLoss(reduction='mean')(logits, target)
 /// print(f"loss = {loss.item()}")  # loss = 0.4204719067
 /// ```
-#[cfg(any())]
 #[test]
 fn test_bce_loss_forward_mean_basic() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
 
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
+    let logits = graph
+        .input(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3]))
         .unwrap();
-
-    // 设置输入值
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3])))
+    let target = graph
+        .input(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3]))
         .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
-        .unwrap();
+    let loss = logits.bce_loss(&target).unwrap();
 
-    // 前向传播
-    graph.forward(loss_id).unwrap();
+    loss.forward().unwrap();
 
-    // 验证损失值（PyTorch: 0.4204719067）
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    assert_abs_diff_eq!(loss[[0, 0]], 0.420_471_9, epsilon = 1e-5);
+    let loss_val = loss.item().unwrap();
+    // PyTorch: 0.4204719067
+    assert_abs_diff_eq!(loss_val, 0.420_471_9, epsilon = 1e-5);
 }
 
 /// PyTorch 验证:
@@ -89,68 +53,250 @@ fn test_bce_loss_forward_mean_basic() {
 /// loss = nn.BCEWithLogitsLoss(reduction='mean')(logits, target)
 /// print(f"loss = {loss.item()}")  # loss = 0.2200948894
 /// ```
-#[cfg(any())]
 #[test]
 fn test_bce_loss_forward_2d_matrix() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_basic_input_node(&[2, 2], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
+    let graph = Graph::new();
 
     #[rustfmt::skip]
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[1.0, 2.0, -1.0, -2.0], &[2, 2])))
+    let logits = graph
+        .input(&Tensor::new(&[1.0, 2.0, -1.0, -2.0], &[2, 2]))
         .unwrap();
     #[rustfmt::skip]
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 1.0, 0.0, 0.0], &[2, 2])))
+    let target = graph
+        .input(&Tensor::new(&[1.0, 1.0, 0.0, 0.0], &[2, 2]))
         .unwrap();
+    let loss = logits.bce_loss(&target).unwrap();
 
-    graph.forward(loss_id).unwrap();
+    loss.forward().unwrap();
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
+    let loss_val = loss.item().unwrap();
     // PyTorch: 0.2200948894
-    assert_abs_diff_eq!(loss[[0, 0]], 0.220_094_9, epsilon = 1e-5);
+    assert_abs_diff_eq!(loss_val, 0.220_094_9, epsilon = 1e-5);
 }
 
-// ========== Sum Reduction 测试 ==========
+/// 测试大正数 logits 的数值稳定性
+/// 大正数 logits 时 sigmoid ≈ 1，BCE 应该趋近于 0（当 target=1）
+#[test]
+fn test_bce_loss_large_positive_logits() {
+    let graph = Graph::new();
 
+    let logits = graph
+        .input(&Tensor::new(&[10.0, 20.0, 30.0], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[1.0, 1.0, 1.0], &[1, 3]))
+        .unwrap();
+    let loss = logits.bce_loss(&target).unwrap();
+
+    loss.forward().unwrap();
+
+    let loss_val = loss.item().unwrap();
+    assert!(
+        loss_val < 1e-4,
+        "大正数 logits 配合 target=1 时损失应接近 0，实际: {}",
+        loss_val
+    );
+    assert!(loss_val >= 0.0, "损失不应为负");
+}
+
+/// 测试大负数 logits 的数值稳定性
+/// 大负数 logits 时 sigmoid ≈ 0，BCE 应该趋近于 0（当 target=0）
+#[test]
+fn test_bce_loss_large_negative_logits() {
+    let graph = Graph::new();
+
+    let logits = graph
+        .input(&Tensor::new(&[-10.0, -20.0, -30.0], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3]))
+        .unwrap();
+    let loss = logits.bce_loss(&target).unwrap();
+
+    loss.forward().unwrap();
+
+    let loss_val = loss.item().unwrap();
+    assert!(
+        loss_val < 1e-4,
+        "大负数 logits 配合 target=0 时损失应接近 0，实际: {}",
+        loss_val
+    );
+    assert!(loss_val >= 0.0, "损失不应为负");
+}
+
+/// 测试错误预测时的高损失
+#[test]
+fn test_bce_loss_wrong_prediction_high_loss() {
+    let graph = Graph::new();
+
+    // 大正数预测 0，大负数预测 1（完全错误）
+    let logits = graph
+        .input(&Tensor::new(&[10.0, -10.0], &[1, 2]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[0.0, 1.0], &[1, 2]))
+        .unwrap();
+    let loss = logits.bce_loss(&target).unwrap();
+
+    loss.forward().unwrap();
+
+    let loss_val = loss.item().unwrap();
+    assert!(
+        loss_val > 5.0,
+        "错误预测时损失应该很大，实际: {}",
+        loss_val
+    );
+}
+
+/// 测试多标签分类场景 — BCE 相对于 Softmax CE 的核心优势
+#[test]
+fn test_bce_loss_multi_label_classification() {
+    let graph = Graph::new();
+
+    // 预测: [高概率, 高概率, 低概率]
+    // 标签: [1, 1, 0] — 同时属于前两个类别
+    let logits = graph
+        .input(&Tensor::new(&[2.0, 2.0, -2.0], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[1.0, 1.0, 0.0], &[1, 3]))
+        .unwrap();
+    let loss = logits.bce_loss(&target).unwrap();
+
+    loss.forward().unwrap();
+
+    let loss_val = loss.item().unwrap();
+    assert!(
+        loss_val < 0.2,
+        "正确预测时损失应该很小，实际: {}",
+        loss_val
+    );
+}
+
+/// 测试 BCE loss 节点不能直接设置值
+#[test]
+fn test_bce_loss_cannot_set_value() {
+    let graph = Graph::new();
+
+    let logits = graph
+        .input(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3]))
+        .unwrap();
+    let loss = logits.bce_loss(&target).unwrap();
+
+    let err = loss.set_value(&Tensor::new(&[0.0], &[1, 1]));
+    assert!(err.is_err(), "BCE loss 节点不应支持直接设值");
+}
+
+// ==================== 2. VJP 单元测试（底层 NodeInner + calc_grad_to_parent_index）====================
+//
+// BCE with logits 梯度公式:
+//   Mean: grad = (sigmoid(logits) - target) / N
+//   Sum:  grad = sigmoid(logits) - target
+
+/// BCE Mean VJP 测试
+///
+/// logits = [0.5, -0.5, 1.0], target = [1.0, 0.0, 1.0]
+/// sigmoid([0.5, -0.5, 1.0]) ≈ [0.6225, 0.3775, 0.7311]
+/// (sigmoid - target) / 3 = [-0.1258, 0.1258, -0.0896]
+#[test]
+fn test_bce_vjp_mean() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("logits"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("target"))
+        .unwrap();
+    let bce = inner
+        .borrow_mut()
+        .create_bce_mean_node(logits.clone(), target.clone(), Some("bce"))
+        .unwrap();
+
+    logits
+        .set_value(Some(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3])))
+        .unwrap();
+    target
+        .set_value(Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
+        .unwrap();
+    bce.forward_recursive(1, false).unwrap();
+
+    // 上游梯度为标量 1.0（loss 输出 [1,1]）
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = bce.calc_grad_to_parent_index(0, &upstream)?;
+
+    // PyTorch 验证: [-0.125_846_9, 0.125_846_9, -0.089_647_1]
+    assert_eq!(grad.shape(), &[1, 3]);
+    assert_abs_diff_eq!(grad[[0, 0]], -0.125_846_9, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[0, 1]], 0.125_846_9, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[0, 2]], -0.089_647_1, epsilon = 1e-5);
+
+    Ok(())
+}
+
+/// BCE Sum VJP 测试
+///
 /// PyTorch 验证:
 /// ```python
 /// logits = torch.tensor([[0.5, -0.5, 1.0]], requires_grad=True)
 /// target = torch.tensor([[1.0, 0.0, 1.0]])
 /// loss = nn.BCEWithLogitsLoss(reduction='sum')(logits, target)
 /// print(f"loss = {loss.item()}")  # loss = 1.2614157200
+/// loss.backward()
+/// print(f"grad = {logits.grad}")  # [-0.3775, 0.3775, -0.2689]
 /// ```
-#[cfg(any())]
 #[test]
-fn test_bce_loss_forward_sum() {
-    let mut graph = GraphInner::new();
+fn test_bce_vjp_sum() -> Result<(), GraphError> {
+    use crate::nn::nodes::raw_node::Reduction;
 
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node_with_reduction(logits_id, target_id, Reduction::Sum, Some("loss"))
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("logits"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("target"))
+        .unwrap();
+    let bce = inner
+        .borrow_mut()
+        .create_bce_node(logits.clone(), target.clone(), Reduction::Sum, Some("bce"))
         .unwrap();
 
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3])))
+    logits
+        .set_value(Some(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3])))
         .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
+    target
+        .set_value(Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
         .unwrap();
+    bce.forward_recursive(1, false).unwrap();
 
-    graph.forward(loss_id).unwrap();
+    // 验证 Sum 前向值
+    let bce_val = bce.value().unwrap();
+    assert_abs_diff_eq!(bce_val[[0, 0]], 1.261_415_7, epsilon = 1e-5);
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // PyTorch: 1.2614157200
-    assert_abs_diff_eq!(loss[[0, 0]], 1.261_415_7, epsilon = 1e-5);
+    // VJP
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = bce.calc_grad_to_parent_index(0, &upstream)?;
+
+    // sigmoid - target（不除以 N）
+    assert_eq!(grad.shape(), &[1, 3]);
+    assert_abs_diff_eq!(grad[[0, 0]], -0.377_540_7, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[0, 1]], 0.377_540_7, epsilon = 1e-5);
+    assert_abs_diff_eq!(grad[[0, 2]], -0.268_941_4, epsilon = 1e-5);
+
+    Ok(())
 }
 
-// ========== 端到端反向传播测试（通过 graph.backward）==========
+// ==================== 3. 端到端反向传播测试（高层 Graph + Var API）====================
 
 /// PyTorch 验证:
 /// ```python
@@ -160,81 +306,29 @@ fn test_bce_loss_forward_sum() {
 /// loss.backward()
 /// print(f"grad = {logits.grad}")
 /// # grad = tensor([[-0.1258,  0.1258, -0.0896]])
-/// # 梯度公式: (sigmoid(logits) - target) / N
 /// ```
-#[cfg(any())]
 #[test]
-fn test_bce_loss_backward_e2e_mean() {
-    let mut graph = GraphInner::new();
+fn test_bce_loss_backward_e2e_mean() -> Result<(), GraphError> {
+    let graph = Graph::new();
 
-    let logits_id = graph.new_parameter_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
+    let logits = graph.parameter(&[1, 3], Init::Zeros, "logits")?;
+    logits.set_value(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3]))?;
 
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
-        .unwrap();
+    let target = graph.input(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3]))?;
+    let loss = logits.bce_loss(&target)?;
 
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    graph.zero_grad()?;
+    loss.backward()?;
 
-    // 获取梯度
-    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
-
-    // 预期梯度: (sigmoid(logits) - target) / N
-    // sigmoid([0.5, -0.5, 1.0]) ≈ [0.6225, 0.3775, 0.7311]
-    // (sigmoid - target) = [-0.3775, 0.3775, -0.2689]
-    // / 3 = [-0.1258, 0.1258, -0.0896]
+    let grad = logits.grad()?.expect("logits 应有 grad");
     let expected_grad = Tensor::new(&[-0.125_846_9, 0.125_846_9, -0.089_647_1], &[1, 3]);
-
     assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
+
+    Ok(())
 }
 
-/// PyTorch 验证:
-/// ```python
-/// logits = torch.tensor([[0.5, -0.5, 1.0]], requires_grad=True)
-/// target = torch.tensor([[1.0, 0.0, 1.0]])
-/// loss = nn.BCEWithLogitsLoss(reduction='sum')(logits, target)
-/// loss.backward()
-/// print(f"grad = {logits.grad}")
-/// # grad = tensor([[-0.3775,  0.3775, -0.2689]])
-/// ```
-#[cfg(any())]
-#[test]
-fn test_bce_loss_backward_e2e_sum() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_parameter_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node_with_reduction(logits_id, target_id, Reduction::Sum, Some("loss"))
-        .unwrap();
-
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
-        .unwrap();
-
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
-
-    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
-    // sigmoid - target（不除以 N）
-    let expected_grad = Tensor::new(&[-0.377_540_7, 0.377_540_7, -0.268_941_4], &[1, 3]);
-
-    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
-}
-
-/// 测试 2D 矩阵的梯度
+/// 2D 矩阵的端到端反向传播
+///
 /// PyTorch 验证:
 /// ```python
 /// logits = torch.tensor([[1.0, 2.0], [-1.0, -2.0]], requires_grad=True)
@@ -245,49 +339,40 @@ fn test_bce_loss_backward_e2e_sum() {
 /// # grad = tensor([[-0.0672, -0.0298],
 /// #                [ 0.0672,  0.0298]])
 /// ```
-#[cfg(any())]
 #[test]
-fn test_bce_loss_backward_e2e_2d() {
-    let mut graph = GraphInner::new();
+fn test_bce_loss_backward_e2e_2d() -> Result<(), GraphError> {
+    let graph = Graph::new();
 
-    let logits_id = graph.new_parameter_node(&[2, 2], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[2, 2], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
+    let logits = graph.parameter(&[2, 2], Init::Zeros, "logits")?;
+    #[rustfmt::skip]
+    logits.set_value(&Tensor::new(&[1.0, 2.0, -1.0, -2.0], &[2, 2]))?;
 
     #[rustfmt::skip]
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[1.0, 2.0, -1.0, -2.0], &[2, 2])))
-        .unwrap();
-    #[rustfmt::skip]
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 1.0, 0.0, 0.0], &[2, 2])))
-        .unwrap();
+    let target = graph.input(&Tensor::new(&[1.0, 1.0, 0.0, 0.0], &[2, 2]))?;
+    let loss = logits.bce_loss(&target)?;
 
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    graph.zero_grad()?;
+    loss.backward()?;
 
-    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
-    // PyTorch 验证的梯度值
+    let grad = logits.grad()?.expect("logits 应有 grad");
     #[rustfmt::skip]
     let expected_grad = Tensor::new(&[
         -0.067_235_4, -0.029_800_7,
          0.067_235_4,  0.029_800_7,
     ], &[2, 2]);
-
     assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
+
+    Ok(())
 }
 
-// ========== 批量输入测试 ==========
-
+/// 批量输入的端到端反向传播
+///
 /// PyTorch 验证:
 /// ```python
 /// logits = torch.tensor([
 ///     [0.5, -0.5, 1.0, -1.0],
 ///     [1.5, -1.5, 2.0, -2.0],
-///     [0.0, 0.0, 0.5, -0.5]
+///     [0.0,  0.0, 0.5, -0.5]
 /// ], requires_grad=True)
 /// target = torch.tensor([
 ///     [1.0, 0.0, 1.0, 0.0],
@@ -296,247 +381,57 @@ fn test_bce_loss_backward_e2e_2d() {
 /// ])
 /// loss = nn.BCEWithLogitsLoss(reduction='mean')(logits, target)
 /// print(f"loss = {loss.item()}")  # loss = 0.4638172686
+/// loss.backward()
 /// ```
-#[cfg(any())]
 #[test]
-fn test_bce_loss_batch_forward() {
-    let mut graph = GraphInner::new();
+fn test_bce_loss_backward_e2e_batch() -> Result<(), GraphError> {
+    let graph = Graph::new();
 
-    let logits_id = graph.new_basic_input_node(&[3, 4], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[3, 4], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
-
+    let logits = graph.parameter(&[3, 4], Init::Zeros, "logits")?;
     #[rustfmt::skip]
-    let logits_data = Tensor::new(&[
+    logits.set_value(&Tensor::new(&[
         0.5, -0.5, 1.0, -1.0,
         1.5, -1.5, 2.0, -2.0,
         0.0,  0.0, 0.5, -0.5,
-    ], &[3, 4]);
+    ], &[3, 4]))?;
 
     #[rustfmt::skip]
-    let target_data = Tensor::new(&[
+    let target = graph.input(&Tensor::new(&[
         1.0, 0.0, 1.0, 0.0,
         1.0, 0.0, 1.0, 0.0,
         0.0, 1.0, 0.0, 1.0,
-    ], &[3, 4]);
+    ], &[3, 4]))?;
 
-    graph.set_node_value(logits_id, Some(&logits_data)).unwrap();
-    graph.set_node_value(target_id, Some(&target_data)).unwrap();
+    let loss = logits.bce_loss(&target)?;
 
-    graph.forward(loss_id).unwrap();
+    // 验证前向传播
+    loss.forward().unwrap();
+    let loss_val = loss.item().unwrap();
+    assert_abs_diff_eq!(loss_val, 0.463_817_3, epsilon = 1e-5);
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // PyTorch: 0.4638172686
-    assert_abs_diff_eq!(loss[[0, 0]], 0.463_817_3, epsilon = 1e-5);
-}
+    // 反向传播
+    graph.zero_grad()?;
+    loss.backward()?;
 
-/// 批量输入的反向传播测试
-#[cfg(any())]
-#[test]
-fn test_bce_loss_batch_backward() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_parameter_node(&[3, 4], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[3, 4], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
-
-    #[rustfmt::skip]
-    let logits_data = Tensor::new(&[
-        0.5, -0.5, 1.0, -1.0,
-        1.5, -1.5, 2.0, -2.0,
-        0.0,  0.0, 0.5, -0.5,
-    ], &[3, 4]);
-
-    #[rustfmt::skip]
-    let target_data = Tensor::new(&[
-        1.0, 0.0, 1.0, 0.0,
-        1.0, 0.0, 1.0, 0.0,
-        0.0, 1.0, 0.0, 1.0,
-    ], &[3, 4]);
-
-    graph.set_node_value(logits_id, Some(&logits_data)).unwrap();
-    graph.set_node_value(target_id, Some(&target_data)).unwrap();
-
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
-
-    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
-
-    // PyTorch 验证的梯度值（sigmoid - target）/ 12
-    // 确保梯度形状正确
+    let grad = logits.grad()?.expect("logits 应有 grad");
     assert_eq!(grad.shape(), &[3, 4]);
     // 梯度值应该在合理范围内
     for &val in grad.flatten_view().iter() {
         assert!(val.abs() < 1.0, "梯度值应该在合理范围内");
     }
+
+    Ok(())
 }
 
-// ========== 数值稳定性测试 ==========
-
-/// 测试大正数 logits 的数值稳定性
-/// 大正数 logits 时 sigmoid ≈ 1，BCE 应该趋近于 0（当 target=1）
-#[cfg(any())]
-#[test]
-fn test_bce_loss_large_positive_logits() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
-
-    // 大正数 logits
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[10.0, 20.0, 30.0], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 1.0, 1.0], &[1, 3])))
-        .unwrap();
-
-    graph.forward(loss_id).unwrap();
-
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // 当 target=1 且 logits 很大时，BCE ≈ 0
-    assert!(
-        loss[[0, 0]] < 1e-4,
-        "大正数 logits 配合 target=1 时损失应接近 0"
-    );
-    assert!(loss[[0, 0]] >= 0.0, "损失不应为负");
-}
-
-/// 测试大负数 logits 的数值稳定性
-/// 大负数 logits 时 sigmoid ≈ 0，BCE 应该趋近于 0（当 target=0）
-#[cfg(any())]
-#[test]
-fn test_bce_loss_large_negative_logits() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
-
-    // 大负数 logits
-    graph
-        .set_node_value(
-            logits_id,
-            Some(&Tensor::new(&[-10.0, -20.0, -30.0], &[1, 3])),
-        )
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
-        .unwrap();
-
-    graph.forward(loss_id).unwrap();
-
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // 当 target=0 且 logits 很小时，BCE ≈ 0
-    assert!(
-        loss[[0, 0]] < 1e-4,
-        "大负数 logits 配合 target=0 时损失应接近 0"
-    );
-    assert!(loss[[0, 0]] >= 0.0, "损失不应为负");
-}
-
-/// 测试错误预测时的高损失
-#[cfg(any())]
-#[test]
-fn test_bce_loss_wrong_prediction_high_loss() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_basic_input_node(&[1, 2], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 2], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
-
-    // 大正数预测 0，大负数预测 1（完全错误）
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[10.0, -10.0], &[1, 2])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[0.0, 1.0], &[1, 2])))
-        .unwrap();
-
-    graph.forward(loss_id).unwrap();
-
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // 错误预测时损失应该很大
-    assert!(loss[[0, 0]] > 5.0, "错误预测时损失应该很大");
-}
-
-// ========== 梯度累积测试 ==========
-
-#[cfg(any())]
-#[test]
-fn test_bce_loss_gradient_accumulation() {
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_parameter_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
-
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
-        .unwrap();
-
-    // 第一次前向+反向
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
-
-    let grad_first = graph.get_node(logits_id).unwrap().grad().unwrap().clone();
-
-    // 第二次反向传播（梯度累积）
-    graph.forward(loss_id).unwrap();
-    graph.backward(loss_id).unwrap();
-    let grad_second = graph.get_node(logits_id).unwrap().grad().unwrap();
-    assert_abs_diff_eq!(grad_second, &(&grad_first * 2.0), epsilon = 1e-6);
-
-    // zero_grad 后重新计算
-    graph.zero_grad().unwrap();
-    graph.forward(loss_id).unwrap();
-    graph.backward(loss_id).unwrap();
-    let grad_after_clear = graph.get_node(logits_id).unwrap().grad().unwrap();
-    assert_abs_diff_eq!(grad_after_clear, &grad_first, epsilon = 1e-6);
-}
-
-// ========== 端到端训练测试 ==========
-
-/// 简单的二分类训练测试
+/// 简单的二分类训练测试（端到端）
 /// 目标: 学习一个线性分类器 y = sigmoid(w * x)
-#[cfg(any())]
 #[test]
-fn test_bce_loss_simple_binary_classification_training() {
-    let mut graph = GraphInner::new_with_seed(42);
+fn test_bce_loss_simple_binary_classification_training() -> Result<(), GraphError> {
+    let graph = Graph::new();
 
-    // 创建网络: logit = x * w, loss = BCE(logit, target)
-    let x_id = graph.new_basic_input_node(&[1, 1], Some("x")).unwrap();
-    let w_id = graph.new_parameter_node(&[1, 1], Some("w")).unwrap();
-    let logit_id = graph.new_mat_mul_node(x_id, w_id, Some("logit")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 1], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logit_id, target_id, Some("loss"))
-        .unwrap();
-
-    // 初始化权重为 0
-    graph
-        .set_node_value(w_id, Some(&Tensor::new(&[0.0], &[1, 1])))
-        .unwrap();
-
-    let lr = 0.5;
+    // 创建 w 参数
+    let w = graph.parameter(&[1, 1], Init::Zeros, "w")?;
+    w.set_value(&Tensor::new(&[0.0], &[1, 1]))?;
 
     // 训练数据: x > 0 -> y = 1, x < 0 -> y = 0
     let training_data = [
@@ -548,86 +443,89 @@ fn test_bce_loss_simple_binary_classification_training() {
         (-3.0, 0.0),
     ];
 
-    // 训练 100 个 epoch
+    let lr = 0.5;
+
     for _ in 0..100 {
         for &(x_val, y_val) in &training_data {
-            graph
-                .set_node_value(x_id, Some(&Tensor::new(&[x_val], &[1, 1])))
-                .unwrap();
-            graph
-                .set_node_value(target_id, Some(&Tensor::new(&[y_val], &[1, 1])))
-                .unwrap();
+            let x = graph.input(&Tensor::new(&[x_val], &[1, 1]))?;
+            let logit = x.matmul(&w)?;
+            let target = graph.input(&Tensor::new(&[y_val], &[1, 1]))?;
+            let loss = logit.bce_loss(&target)?;
 
-            graph.zero_grad().unwrap();
-            graph.forward(loss_id).unwrap();
-            graph.backward(loss_id).unwrap();
+            graph.zero_grad()?;
+            loss.backward()?;
 
             // 手动 SGD 更新
-            let w_val = graph.get_node_value(w_id).unwrap().unwrap();
-            let w_grad = graph.get_node_grad(w_id).unwrap().unwrap();
-            let new_w = w_val - lr * &w_grad;
-            graph.set_node_value(w_id, Some(&new_w)).unwrap();
+            let w_val = w.value()?.unwrap();
+            let w_grad = w.grad()?.unwrap();
+            w.set_value(&(w_val - lr * &w_grad))?;
         }
     }
 
-    // 验证学习到的权重为正数（正样本 x>0 应该预测为 1）
-    let learned_w = graph.get_node_value(w_id).unwrap().unwrap();
+    let learned_w = w.item().unwrap();
     assert!(
-        learned_w[[0, 0]] > 0.5,
+        learned_w > 0.5,
         "学习到的权重应为正数（实际: {}）",
-        learned_w[[0, 0]]
+        learned_w
     );
+
+    Ok(())
 }
 
-// ==================== 多标签分类测试 ====================
+// ==================== 4. 梯度累积测试（高层 Graph + Var API）====================
 
-/// 测试多标签分类场景
-/// 这是 BCE 相对于 Softmax CE 的核心优势
-#[cfg(any())]
+/// 测试 BCE 梯度累积
+///
+/// 验证语义：参数的 grad 在多次 backward 之间累积，直到调用 zero_grad()。
 #[test]
-fn test_bce_loss_multi_label_classification() {
-    let mut graph = GraphInner::new();
+fn test_bce_loss_gradient_accumulation() -> Result<(), GraphError> {
+    let graph = Graph::new();
 
-    // 多标签场景：3 个独立的二分类标签
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_bce_loss_node(logits_id, target_id, Some("loss"))
-        .unwrap();
+    let logits = graph.parameter(&[1, 3], Init::Zeros, "logits")?;
+    logits.set_value(&Tensor::new(&[0.5, -0.5, 1.0], &[1, 3]))?;
 
-    // 预测: [高概率, 高概率, 低概率]
-    // 标签: [1, 1, 0] - 同时属于前两个类别
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[2.0, 2.0, -2.0], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[1.0, 1.0, 0.0], &[1, 3])))
-        .unwrap();
+    let target = graph.input(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3]))?;
+    let loss = logits.bce_loss(&target)?;
 
-    graph.forward(loss_id).unwrap();
+    // 第 1 次反向传播
+    graph.zero_grad()?;
+    loss.backward()?;
+    let grad_first = logits.grad()?.unwrap().clone();
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // 预测正确，损失应该很小
-    assert!(loss[[0, 0]] < 0.2, "正确预测时损失应该很小");
+    // 第 2 次反向传播（梯度累积）
+    loss.backward()?;
+    let grad_second = logits.grad()?.unwrap();
+    assert_abs_diff_eq!(grad_second, &(&grad_first * 2.0), epsilon = 1e-6);
+
+    // zero_grad 后重新计算
+    graph.zero_grad()?;
+    loss.backward()?;
+    let grad_after_clear = logits.grad()?.unwrap();
+    assert_abs_diff_eq!(grad_after_clear, &grad_first, epsilon = 1e-6);
+
+    Ok(())
 }
 
-// ==================== 动态形状测试 ====================
+// ==================== 5. 动态形状测试 ====================
 
 /// 测试 BCE 节点的动态形状（输出固定为标量 [1, 1]）
-#[cfg(any())]
 #[test]
 fn test_bce_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let logits = graph.new_basic_input_node(&[4, 8], Some("logits"))?;
-    let target = graph.new_basic_input_node(&[4, 8], Some("target"))?;
-    let loss = graph.new_bce_loss_node(logits, target, Some("loss"))?;
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("logits"))?;
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("target"))?;
+    let bce = inner
+        .borrow_mut()
+        .create_bce_mean_node(logits, target, Some("bce"))?;
 
-    // BCE 输出形状始终是 [1, 1]（标量）
-    let node = graph.get_node(loss)?;
-    let dyn_shape = node.dynamic_expected_shape();
-
-    // 输出形状固定
+    // BCE 输出形状固定为 [1, 1]
+    let dyn_shape = bce.dynamic_shape();
     assert!(!dyn_shape.is_dynamic(0), "BCE 输出维度 0 应固定");
     assert!(!dyn_shape.is_dynamic(1), "BCE 输出维度 1 应固定");
     assert_eq!(dyn_shape.dim(0), Some(1));
@@ -637,35 +535,32 @@ fn test_bce_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
 }
 
 /// 测试 BCE 接受动态 batch 输入
-#[cfg(any())]
 #[test]
 fn test_bce_loss_dynamic_batch_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    let logits = graph.new_basic_input_node(&[2, 4], Some("logits"))?;
-    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
-    let loss = graph.new_bce_loss_node(logits, target, Some("loss"))?;
+    let graph = Graph::new();
 
     // 第一次 forward：batch=2
-    graph.set_node_value(logits, Some(&Tensor::ones(&[2, 4])))?;
-    graph.set_node_value(target, Some(&Tensor::ones(&[2, 4])))?;
-    graph.forward(loss)?;
-    let loss_val1 = graph.get_node_value(loss)?.unwrap();
+    let logits = graph.input(&Tensor::ones(&[2, 4]))?;
+    let target = graph.input(&Tensor::ones(&[2, 4]))?;
+    let loss = logits.bce_loss(&target)?;
+
+    loss.forward()?;
+    let loss_val1 = loss.value()?.unwrap();
     assert_eq!(loss_val1.shape(), &[1, 1], "BCE 输出应为标量");
 
     // 第二次 forward：batch=6（不同 batch 大小）
-    graph.set_node_value(logits, Some(&Tensor::ones(&[6, 4])))?;
-    graph.set_node_value(target, Some(&Tensor::ones(&[6, 4])))?;
-    graph.forward(loss)?;
-    let loss_val2 = graph.get_node_value(loss)?.unwrap();
+    logits.set_value(&Tensor::ones(&[6, 4]))?;
+    target.set_value(&Tensor::ones(&[6, 4]))?;
+
+    loss.forward()?;
+    let loss_val2 = loss.value()?.unwrap();
     assert_eq!(loss_val2.shape(), &[1, 1], "BCE 输出应始终为标量");
 
     Ok(())
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 6. 方案 C：新节点创建 API 测试 ====================
 
-use crate::nn::Graph;
 use std::rc::Rc;
 
 #[test]

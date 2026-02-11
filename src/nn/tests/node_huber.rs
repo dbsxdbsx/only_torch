@@ -1,148 +1,79 @@
 /*
  * @Author       : 老董
- * @Date         : 2026-01-29
- * @Description  : Huber Loss（Smooth L1 Loss）节点单元测试
+ * @Description  : Huber Loss（Smooth L1 Loss）损失节点单元测试
  *
- * Huber Loss 结合 MSE（小误差）和 MAE（大误差）的优点，
- * 是强化学习（DQN 等）的标准损失函数。
+ * 测试策略：
+ * 1. 前向传播测试（高层 API）→ 小误差 MSE 行为; 大误差 MAE 行为; 混合; cannot_set_value
+ * 2. VJP 单元测试（底层）→ 小误差 VJP; 大误差 VJP; 混合 VJP; Sum VJP; 自定义 delta VJP
+ * 3. 端到端反向传播测试（高层）
+ * 4. 梯度累积测试
+ * 5. 动态形状测试
+ * 6. 新节点创建 API 测试（KEEP AS-IS）
  */
 
-use crate::nn::{GraphError, GraphInner, Reduction};
+use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
-// ========== 基本功能测试 ==========
+// ==================== 1. 前向传播测试（高层 Graph + Var API）====================
 
-#[cfg(any())]
-#[test]
-fn test_huber_loss_creation() {
-    let mut graph = GraphInner::new();
-
-    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
-        .unwrap();
-
-    // 验证节点存在且预期形状正确
-    assert_eq!(
-        graph.get_node_value_expected_shape(loss_id).unwrap(),
-        &[1, 1]
-    );
-}
-
-#[cfg(any())]
-#[test]
-fn test_huber_loss_shape_mismatch() {
-    let mut graph = GraphInner::new();
-
-    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 4], Some("target")).unwrap(); // 形状不匹配
-
-    let result = graph.new_huber_loss_node(input_id, target_id, None);
-    assert!(result.is_err());
-}
-
-#[cfg(any())]
-#[test]
-fn test_huber_loss_invalid_delta() {
-    let mut graph = GraphInner::new();
-
-    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-
-    // δ=0 应该失败
-    let result = graph.new_huber_loss_node_with_delta(input_id, target_id, 0.0, None);
-    assert!(result.is_err());
-
-    // δ<0 应该失败
-    let result = graph.new_huber_loss_node_with_delta(input_id, target_id, -1.0, None);
-    assert!(result.is_err());
-}
-
-// ========== 小误差测试（MSE 行为）==========
-
-/// 当 |error| ≤ δ 时，Huber Loss 行为像 MSE
+/// 小误差时 Huber Loss 行为像 MSE
 ///
 /// PyTorch 验证:
 /// ```python
-/// import torch
-/// import torch.nn.functional as F
-///
 /// input = torch.tensor([[0.1, 0.2, 0.3]], requires_grad=True)
-/// target = torch.tensor([[0.15, 0.25, 0.35]])  # diff = [-0.05, -0.05, -0.05]
+/// target = torch.tensor([[0.15, 0.25, 0.35]])
 /// loss = F.smooth_l1_loss(input, target, reduction='mean', beta=1.0)
-/// # loss = 0.00125 (与 MSE/2 相同：0.5 * mean(0.05^2) = 0.5 * 0.0025 = 0.00125)
+/// # loss = 0.00125
 /// ```
-#[cfg(any())]
 #[test]
-fn test_huber_loss_small_error_mse_behavior() {
-    let mut graph = GraphInner::new();
+fn test_huber_forward_small_error_mse_behavior() {
+    let graph = Graph::new();
 
-    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let input = graph
+        .input(&Tensor::new(&[0.1, 0.2, 0.3], &[1, 3]))
         .unwrap();
-
-    // 小误差 (|diff| = 0.05 < δ=1.0)
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.1, 0.2, 0.3], &[1, 3])))
+    let target = graph
+        .input(&Tensor::new(&[0.15, 0.25, 0.35], &[1, 3]))
         .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[0.15, 0.25, 0.35], &[1, 3])))
-        .unwrap();
+    let loss = input.huber_loss(&target).unwrap();
 
-    graph.forward(loss_id).unwrap();
+    loss.forward().unwrap();
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
+    let loss_val = loss.item().unwrap();
     // Huber(小误差) = 0.5 * diff² = 0.5 * 0.0025 = 0.00125 (每个元素)
     // mean = 0.00125
-    assert_abs_diff_eq!(loss[[0, 0]], 0.00125, epsilon = 1e-6);
+    assert_abs_diff_eq!(loss_val, 0.00125, epsilon = 1e-6);
 }
 
-// ========== 大误差测试（MAE 行为）==========
-
-/// 当 |error| > δ 时，Huber Loss 行为像 MAE
+/// 大误差时 Huber Loss 行为像 MAE
 ///
 /// PyTorch 验证:
 /// ```python
 /// input = torch.tensor([[0.0, 0.0, 0.0]], requires_grad=True)
-/// target = torch.tensor([[2.0, 3.0, 4.0]])  # diff = [-2, -3, -4], |diff| > 1
+/// target = torch.tensor([[2.0, 3.0, 4.0]])
 /// loss = F.smooth_l1_loss(input, target, reduction='mean', beta=1.0)
-/// # 每个元素: δ * |a| - 0.5 * δ² = 1 * |diff| - 0.5
-/// # = (2-0.5) + (3-0.5) + (4-0.5) = 1.5 + 2.5 + 3.5 = 7.5
-/// # mean = 7.5 / 3 = 2.5
+/// # = (1.5 + 2.5 + 3.5) / 3 = 2.5
 /// ```
-#[cfg(any())]
 #[test]
-fn test_huber_loss_large_error_mae_behavior() {
-    let mut graph = GraphInner::new();
+fn test_huber_forward_large_error_mae_behavior() {
+    let graph = Graph::new();
 
-    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let input = graph
+        .input(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3]))
         .unwrap();
-
-    // 大误差 (|diff| = 2, 3, 4 > δ=1.0)
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
+    let target = graph
+        .input(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3]))
         .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
-        .unwrap();
+    let loss = input.huber_loss(&target).unwrap();
 
-    graph.forward(loss_id).unwrap();
+    loss.forward().unwrap();
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
+    let loss_val = loss.item().unwrap();
     // Huber(大误差) = δ * |a| - 0.5 * δ² = |a| - 0.5 (当 δ=1)
-    // = (2-0.5) + (3-0.5) + (4-0.5) = 7.5
-    // mean = 7.5 / 3 = 2.5
-    assert_abs_diff_eq!(loss[[0, 0]], 2.5, epsilon = 1e-6);
+    // mean = (1.5 + 2.5 + 3.5) / 3 = 2.5
+    assert_abs_diff_eq!(loss_val, 2.5, epsilon = 1e-6);
 }
-
-// ========== 混合误差测试 ==========
 
 /// 同时包含小误差和大误差的情况
 ///
@@ -151,115 +82,100 @@ fn test_huber_loss_large_error_mae_behavior() {
 /// input = torch.tensor([[0.0, 0.0, 0.0, 0.0]], requires_grad=True)
 /// target = torch.tensor([[0.5, 1.0, 1.5, 2.0]])
 /// loss = F.smooth_l1_loss(input, target, reduction='mean', beta=1.0)
-/// # diff = [-0.5, -1.0, -1.5, -2.0]
-/// # |diff| <= 1: 0.5, 1.0 -> 0.5 * 0.25, 0.5 * 1.0 = 0.125, 0.5
-/// # |diff| > 1: 1.5, 2.0 -> 1.5 - 0.5, 2.0 - 0.5 = 1.0, 1.5
-/// # sum = 0.125 + 0.5 + 1.0 + 1.5 = 3.125
-/// # mean = 3.125 / 4 = 0.78125
+/// # = (0.125 + 0.5 + 1.0 + 1.5) / 4 = 0.78125
 /// ```
-#[cfg(any())]
 #[test]
-fn test_huber_loss_mixed_errors() {
-    let mut graph = GraphInner::new();
+fn test_huber_forward_mixed_errors() {
+    let graph = Graph::new();
 
-    let input_id = graph.new_basic_input_node(&[1, 4], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 4], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let input = graph
+        .input(&Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 4]))
         .unwrap();
-
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 4])))
+    let target = graph
+        .input(&Tensor::new(&[0.5, 1.0, 1.5, 2.0], &[1, 4]))
         .unwrap();
-    graph
-        .set_node_value(
-            target_id,
-            Some(&Tensor::new(&[0.5, 1.0, 1.5, 2.0], &[1, 4])),
-        )
-        .unwrap();
+    let loss = input.huber_loss(&target).unwrap();
 
-    graph.forward(loss_id).unwrap();
+    loss.forward().unwrap();
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // PyTorch: 0.78125
-    assert_abs_diff_eq!(loss[[0, 0]], 0.78125, epsilon = 1e-6);
+    let loss_val = loss.item().unwrap();
+    assert_abs_diff_eq!(loss_val, 0.78125, epsilon = 1e-6);
 }
 
-// ========== Sum Reduction 测试 ==========
-
-/// PyTorch 验证:
-/// ```python
-/// input = torch.tensor([[0.0, 0.0, 0.0]], requires_grad=True)
-/// target = torch.tensor([[2.0, 3.0, 4.0]])
-/// loss = F.smooth_l1_loss(input, target, reduction='sum', beta=1.0)
-/// # sum = 7.5
-/// ```
-#[cfg(any())]
+/// 验证小误差时 Huber ≈ 0.5 * MSE
 #[test]
-fn test_huber_loss_sum_reduction() {
-    let mut graph = GraphInner::new();
+fn test_huber_vs_mse_small_error() {
+    let graph = Graph::new();
 
-    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node_with_params(input_id, target_id, Reduction::Sum, 1.0, Some("loss"))
+    let input = graph
+        .input(&Tensor::new(&[0.1, 0.2, 0.3], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[0.15, 0.25, 0.35], &[1, 3]))
         .unwrap();
 
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
-        .unwrap();
+    let mse = input.mse_loss(&target).unwrap();
+    let huber = input.huber_loss(&target).unwrap();
 
-    graph.forward(loss_id).unwrap();
+    mse.forward().unwrap();
+    huber.forward().unwrap();
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    assert_abs_diff_eq!(loss[[0, 0]], 7.5, epsilon = 1e-6);
+    let mse_val = mse.item().unwrap();
+    let huber_val = huber.item().unwrap();
+
+    // Huber(小误差) = 0.5 * MSE
+    assert_abs_diff_eq!(huber_val, 0.5 * mse_val, epsilon = 1e-6);
 }
 
-// ========== 自定义 δ 测试 ==========
-
-/// PyTorch 验证:
-/// ```python
-/// input = torch.tensor([[0.0, 0.0]], requires_grad=True)
-/// target = torch.tensor([[0.3, 1.0]])  # diff = [-0.3, -1.0]
-/// loss = F.smooth_l1_loss(input, target, reduction='mean', beta=0.5)
-/// # |0.3| <= 0.5: 0.5 * 0.09 = 0.045
-/// # |1.0| > 0.5: 0.5 * 1.0 - 0.5 * 0.25 = 0.5 - 0.125 = 0.375
-/// # mean = (0.045 + 0.375) / 2 = 0.21
-/// ```
-#[cfg(any())]
+/// 验证大误差时 Huber ≈ MAE - 0.5*δ（当 δ=1）
 #[test]
-fn test_huber_loss_custom_delta() {
-    let mut graph = GraphInner::new();
+fn test_huber_vs_mae_large_error() {
+    let graph = Graph::new();
 
-    let input_id = graph.new_basic_input_node(&[1, 2], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 2], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node_with_delta(input_id, target_id, 0.5, Some("loss"))
+    let input = graph
+        .input(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3]))
         .unwrap();
 
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0], &[1, 2])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[0.3, 1.0], &[1, 2])))
-        .unwrap();
+    let mae = input.mae_loss(&target).unwrap();
+    let huber = input.huber_loss(&target).unwrap();
 
-    graph.forward(loss_id).unwrap();
+    mae.forward().unwrap();
+    huber.forward().unwrap();
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // 手动计算:
-    // |0.3| <= 0.5: 0.5 * 0.3² = 0.045
-    // |1.0| > 0.5: 0.5 * 1.0 - 0.5 * 0.25 = 0.375
-    // mean = (0.045 + 0.375) / 2 = 0.21
-    assert_abs_diff_eq!(loss[[0, 0]], 0.21, epsilon = 1e-6);
+    let mae_val = mae.item().unwrap();
+    let huber_val = huber.item().unwrap();
+
+    // Huber(大误差) = MAE - 0.5*δ = MAE - 0.5（当 δ=1）
+    assert_abs_diff_eq!(huber_val, mae_val - 0.5, epsilon = 1e-6);
 }
 
-// ========== 反向传播测试（小误差）==========
+/// Huber 损失节点不能直接设置值
+#[test]
+fn test_huber_cannot_set_value() {
+    let graph = Graph::new();
 
-/// 小误差时梯度与 MSE 相同
+    let input = graph
+        .input(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
+    let loss = input.huber_loss(&target).unwrap();
+
+    let err = loss.set_value(&Tensor::new(&[0.0], &[1, 1]));
+    assert!(err.is_err(), "Huber 损失节点不应支持直接设值");
+}
+
+// ==================== 2. VJP 单元测试（底层 calc_grad_to_parent_index）====================
+//
+// 使用底层 API 创建节点，通过 calc_grad_to_parent_index 直接验证梯度计算公式。
+// 小误差: dL/da = a, 大误差: dL/da = δ * sign(a)
+// Mean reduction: / N
+
+/// 小误差 VJP：梯度 = diff / N
 ///
 /// PyTorch 验证:
 /// ```python
@@ -267,346 +183,393 @@ fn test_huber_loss_custom_delta() {
 /// target = torch.tensor([[0.15, 0.25, 0.35]])
 /// loss = F.smooth_l1_loss(input, target, reduction='mean', beta=1.0)
 /// loss.backward()
-/// # grad = diff / N = [-0.05, -0.05, -0.05] / 3 ≈ [-0.0167, -0.0167, -0.0167]
+/// # grad = [-0.0167, -0.0167, -0.0167]
 /// ```
-#[cfg(any())]
 #[test]
-fn test_huber_loss_backward_small_error() {
-    let mut graph = GraphInner::new();
+fn test_huber_vjp_small_error() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("target"))
+        .unwrap();
+    let huber = inner
+        .borrow_mut()
+        .create_huber_default_node(input.clone(), target.clone(), Some("huber"))
         .unwrap();
 
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.1, 0.2, 0.3], &[1, 3])))
+    input
+        .set_value(Some(&Tensor::new(&[0.1, 0.2, 0.3], &[1, 3])))
         .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[0.15, 0.25, 0.35], &[1, 3])))
+    target
+        .set_value(Some(&Tensor::new(&[0.15, 0.25, 0.35], &[1, 3])))
         .unwrap();
+    huber.forward_recursive(1, false).unwrap();
 
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = huber.calc_grad_to_parent_index(0, &upstream)?;
 
-    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
-
-    // 小误差时梯度 = diff / N = (input - target) / N
     // diff = [-0.05, -0.05, -0.05], N = 3
-    // grad = [-0.0167, -0.0167, -0.0167]
-    let expected_grad = Tensor::new(&[-0.016_666_67, -0.016_666_67, -0.016_666_67], &[1, 3]);
-    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
+    // grad = diff / N = [-0.0167, -0.0167, -0.0167]
+    let expected = Tensor::new(&[-0.016_666_67, -0.016_666_67, -0.016_666_67], &[1, 3]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
+
+    Ok(())
 }
 
-// ========== 反向传播测试（大误差）==========
-
-/// 大误差时梯度被"裁剪"到 ±δ/N
+/// 大误差 VJP：梯度 = δ * sign(diff) / N
 ///
 /// PyTorch 验证:
 /// ```python
 /// input = torch.tensor([[0.0, 0.0, 0.0]], requires_grad=True)
-/// target = torch.tensor([[2.0, 3.0, 4.0]])  # 全部 > δ
+/// target = torch.tensor([[2.0, 3.0, 4.0]])
 /// loss = F.smooth_l1_loss(input, target, reduction='mean', beta=1.0)
 /// loss.backward()
-/// # grad = δ * sign(diff) / N = 1 * [-1, -1, -1] / 3 ≈ [-0.333, -0.333, -0.333]
+/// # grad = [-0.333, -0.333, -0.333]
 /// ```
-#[cfg(any())]
 #[test]
-fn test_huber_loss_backward_large_error() {
-    let mut graph = GraphInner::new();
+fn test_huber_vjp_large_error() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("target"))
+        .unwrap();
+    let huber = inner
+        .borrow_mut()
+        .create_huber_default_node(input.clone(), target.clone(), Some("huber"))
         .unwrap();
 
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
+    input
+        .set_value(Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
         .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
+    target
+        .set_value(Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
         .unwrap();
+    huber.forward_recursive(1, false).unwrap();
 
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = huber.calc_grad_to_parent_index(0, &upstream)?;
 
-    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
+    // diff = [-2, -3, -4], sign = [-1, -1, -1]
+    // grad = δ * sign(diff) / N = 1 * [-1, -1, -1] / 3
+    let expected = Tensor::new(&[-0.333_333_34, -0.333_333_34, -0.333_333_34], &[1, 3]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
 
-    // 大误差时梯度 = δ * sign(diff) / N = 1 * sign(input - target) / 3
-    // diff = [0-2, 0-3, 0-4] = [-2, -3, -4], sign = [-1, -1, -1]
-    // grad = [-1, -1, -1] / 3 ≈ [-0.333, -0.333, -0.333]
-    let expected_grad = Tensor::new(&[-0.333_333_34, -0.333_333_34, -0.333_333_34], &[1, 3]);
-    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
+    Ok(())
 }
 
-// ========== 反向传播测试（混合误差）==========
-
-/// 混合误差时梯度根据 |diff| 分段计算
-#[cfg(any())]
+/// 混合误差 VJP：分段计算
+///
+/// diff = [-0.5, -1.0, -1.5, -2.0]
+/// |diff| <= 1: grad_elem = diff       → [-0.5, -1.0]
+/// |diff| > 1:  grad_elem = δ*sign(diff) → [-1, -1]
+/// Mean: / 4 → [-0.125, -0.25, -0.25, -0.25]
 #[test]
-fn test_huber_loss_backward_mixed_error() {
-    let mut graph = GraphInner::new();
+fn test_huber_vjp_mixed_error() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let input_id = graph.new_parameter_node(&[1, 4], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 4], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], Some("target"))
+        .unwrap();
+    let huber = inner
+        .borrow_mut()
+        .create_huber_default_node(input.clone(), target.clone(), Some("huber"))
         .unwrap();
 
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 4])))
+    input
+        .set_value(Some(&Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 4])))
         .unwrap();
-    graph
-        .set_node_value(
-            target_id,
-            Some(&Tensor::new(&[0.5, 1.0, 1.5, 2.0], &[1, 4])),
+    target
+        .set_value(Some(&Tensor::new(&[0.5, 1.0, 1.5, 2.0], &[1, 4])))
+        .unwrap();
+    huber.forward_recursive(1, false).unwrap();
+
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = huber.calc_grad_to_parent_index(0, &upstream)?;
+
+    let expected = Tensor::new(&[-0.125, -0.25, -0.25, -0.25], &[1, 4]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
+
+    Ok(())
+}
+
+/// Sum Reduction VJP：不除以 N
+///
+/// PyTorch 验证:
+/// ```python
+/// input = torch.tensor([[0.0, 0.0, 0.0]], requires_grad=True)
+/// target = torch.tensor([[2.0, 3.0, 4.0]])
+/// loss = F.smooth_l1_loss(input, target, reduction='sum', beta=1.0)
+/// # loss = 7.5
+/// loss.backward()
+/// # grad = [-1, -1, -1]
+/// ```
+#[test]
+fn test_huber_vjp_sum_reduction() -> Result<(), GraphError> {
+    use crate::nn::nodes::raw_node::Reduction;
+
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("target"))
+        .unwrap();
+    let huber = inner
+        .borrow_mut()
+        .create_huber_node(
+            input.clone(),
+            target.clone(),
+            Reduction::Sum,
+            1.0,
+            Some("huber"),
         )
         .unwrap();
 
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
-
-    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
-
-    // diff = [-0.5, -1.0, -1.5, -2.0]
-    // |diff| <= 1: grad = diff = [-0.5, -1.0]
-    // |diff| > 1: grad = δ * sign(diff) = 1 * [-1, -1]
-    // 未归一化: [-0.5, -1.0, -1.0, -1.0]
-    // Mean reduction: / 4 = [-0.125, -0.25, -0.25, -0.25]
-    let expected_grad = Tensor::new(&[-0.125, -0.25, -0.25, -0.25], &[1, 4]);
-    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
-}
-
-// ========== Sum Reduction 反向传播 ==========
-
-#[cfg(any())]
-#[test]
-fn test_huber_loss_backward_sum() {
-    let mut graph = GraphInner::new();
-
-    let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node_with_params(input_id, target_id, Reduction::Sum, 1.0, Some("loss"))
+    input
+        .set_value(Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
         .unwrap();
-
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
+    target
+        .set_value(Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
         .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
-        .unwrap();
+    huber.forward_recursive(1, false).unwrap();
 
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    // 验证 Sum 前向值
+    let loss_val = huber.value().unwrap();
+    assert_abs_diff_eq!(loss_val[[0, 0]], 7.5, epsilon = 1e-6);
 
-    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
+    // VJP
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = huber.calc_grad_to_parent_index(0, &upstream)?;
 
     // Sum reduction: 不除以 N
     // grad = δ * sign(diff) = [-1, -1, -1]
-    let expected_grad = Tensor::new(&[-1.0, -1.0, -1.0], &[1, 3]);
-    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-6);
+    let expected = Tensor::new(&[-1.0, -1.0, -1.0], &[1, 3]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-6);
+
+    Ok(())
 }
 
-// ========== 批量输入测试 ==========
-
-#[cfg(any())]
+/// 自定义 delta=0.5 的 VJP
+///
+/// PyTorch 验证:
+/// ```python
+/// input = torch.tensor([[0.0, 0.0]], requires_grad=True)
+/// target = torch.tensor([[0.3, 1.0]])
+/// loss = F.smooth_l1_loss(input, target, reduction='mean', beta=0.5)
+/// # loss = 0.21
+/// ```
 #[test]
-fn test_huber_loss_batch_forward() {
-    let mut graph = GraphInner::new();
+fn test_huber_vjp_custom_delta() -> Result<(), GraphError> {
+    use crate::nn::nodes::raw_node::Reduction;
 
-    let input_id = graph.new_basic_input_node(&[3, 4], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[3, 4], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2], Some("target"))
+        .unwrap();
+    let huber = inner
+        .borrow_mut()
+        .create_huber_node(
+            input.clone(),
+            target.clone(),
+            Reduction::Mean,
+            0.5,
+            Some("huber"),
+        )
         .unwrap();
 
-    #[rustfmt::skip]
-    let input_data = Tensor::new(&[
-        1.0, 2.0, 3.0, 4.0,
-        0.5, 1.5, 2.5, 3.5,
-        2.0, 3.0, 4.0, 5.0,
-    ], &[3, 4]);
+    input
+        .set_value(Some(&Tensor::new(&[0.0, 0.0], &[1, 2])))
+        .unwrap();
+    target
+        .set_value(Some(&Tensor::new(&[0.3, 1.0], &[1, 2])))
+        .unwrap();
+    huber.forward_recursive(1, false).unwrap();
 
-    #[rustfmt::skip]
-    let target_data = Tensor::new(&[
-        1.2, 2.1, 2.9, 4.1,
-        0.6, 1.4, 2.6, 3.4,
-        1.9, 3.1, 4.0, 5.2,
-    ], &[3, 4]);
+    // 验证前向值
+    // |0.3| <= 0.5: 0.5 * 0.09 = 0.045
+    // |1.0| > 0.5:  0.5 * 1.0 - 0.5 * 0.25 = 0.375
+    // mean = (0.045 + 0.375) / 2 = 0.21
+    let loss_val = huber.value().unwrap();
+    assert_abs_diff_eq!(loss_val[[0, 0]], 0.21, epsilon = 1e-6);
 
-    graph.set_node_value(input_id, Some(&input_data)).unwrap();
-    graph.set_node_value(target_id, Some(&target_data)).unwrap();
+    // VJP
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = huber.calc_grad_to_parent_index(0, &upstream)?;
 
-    graph.forward(loss_id).unwrap();
+    // |0.3| <= 0.5: grad_elem = diff = -0.3    → / N=2 → -0.15
+    // |1.0| > 0.5:  grad_elem = δ*sign = -0.5  → / N=2 → -0.25
+    let expected = Tensor::new(&[-0.15, -0.25], &[1, 2]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
 
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    // 所有 |diff| < 1，所以使用 MSE 公式: 0.5 * diff²
-    // 与 MSE 测试类似，但乘以 0.5
-    // MSE = 0.014166653, Huber = 0.5 * MSE_unnormalized / N
-    assert!(loss[[0, 0]] > 0.0);
-    assert!(loss[[0, 0]] < 0.1); // 小误差，损失应该较小
+    Ok(())
 }
 
-#[cfg(any())]
+// ==================== 3. 端到端反向传播测试（高层 Graph + Var API）====================
+
+/// 混合误差端到端反向传播
 #[test]
-fn test_huber_loss_batch_backward() {
-    let mut graph = GraphInner::new();
+fn test_huber_backward_e2e_mixed() {
+    let graph = Graph::new();
 
-    let input_id = graph.new_parameter_node(&[2, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[2, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let input = graph
+        .parameter(&[1, 4], Init::Zeros, "input")
         .unwrap();
+    input
+        .set_value(&Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 4]))
+        .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[0.5, 1.0, 1.5, 2.0], &[1, 4]))
+        .unwrap();
+    let loss = input.huber_loss(&target).unwrap();
 
-    #[rustfmt::skip]
-    let input_data = Tensor::new(&[
-        0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0,
-    ], &[2, 3]);
-
-    #[rustfmt::skip]
-    let target_data = Tensor::new(&[
-        0.5, 1.5, 2.5,  // 小、大、大
-        0.3, 1.0, 2.0,  // 小、边界、大
-    ], &[2, 3]);
-
-    graph.set_node_value(input_id, Some(&input_data)).unwrap();
-    graph.set_node_value(target_id, Some(&target_data)).unwrap();
-
-    graph.forward(loss_id).unwrap();
     graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    loss.backward().unwrap();
 
-    let grad = graph.get_node(input_id).unwrap().grad().unwrap();
-    assert_eq!(grad.shape(), &[2, 3]);
+    let grad = input.grad().unwrap().unwrap();
 
-    // 验证梯度形状和方向正确
-    // 所有 diff 为负（input < target），所以所有梯度应为负
-    for &g in grad.flatten_view().iter() {
-        assert!(g <= 0.0, "梯度应为负（input < target）");
-    }
+    // diff = [-0.5, -1.0, -1.5, -2.0]
+    // |diff| <= 1: grad_elem = diff       → [-0.5, -1.0]
+    // |diff| > 1:  grad_elem = δ*sign(diff) → [-1, -1]
+    // Mean: / 4 → [-0.125, -0.25, -0.25, -0.25]
+    let expected = Tensor::new(&[-0.125, -0.25, -0.25, -0.25], &[1, 4]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
 }
 
-// ========== 梯度累积测试 ==========
-
-#[cfg(any())]
+/// 简化的回归训练测试
+///
+/// 验证 Huber Loss 能驱动参数向目标收敛
 #[test]
-fn test_huber_loss_gradient_accumulation() {
-    let mut graph = GraphInner::new();
+fn test_huber_regression_training() {
+    let graph = Graph::new();
 
-    let input_id = graph.new_parameter_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("loss"))
+    let input = graph
+        .parameter(&[1, 3], Init::Zeros, "input")
         .unwrap();
+    // input 从零开始，目标是 [2.0, 3.0, 4.0]
+    let target = graph
+        .input(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3]))
+        .unwrap();
+    let loss = input.huber_loss(&target).unwrap();
 
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
+    // 记录初始 loss
+    loss.forward().unwrap();
+    let initial_loss = loss.item().unwrap();
+
+    let lr = 0.5_f32;
+
+    // 训练 30 步
+    for _ in 0..30 {
+        graph.zero_grad().unwrap();
+        loss.backward().unwrap();
+
+        let grad = input.grad().unwrap().unwrap();
+        let val = input.value().unwrap().unwrap();
+        let new_val = &val - lr * &grad;
+        input.set_value(&new_val).unwrap();
+    }
+
+    // 验证 loss 显著下降
+    loss.forward().unwrap();
+    let final_loss = loss.item().unwrap();
+    assert!(
+        final_loss < initial_loss / 10.0,
+        "Loss 应显著下降 (初始: {initial_loss}, 最终: {final_loss})"
+    );
+
+    // 验证参数趋近目标
+    let learned = input.value().unwrap().unwrap();
+    assert_abs_diff_eq!(learned[[0, 0]], 2.0, epsilon = 0.5);
+    assert_abs_diff_eq!(learned[[0, 1]], 3.0, epsilon = 0.5);
+    assert_abs_diff_eq!(learned[[0, 2]], 4.0, epsilon = 0.5);
+}
+
+// ==================== 4. 梯度累积测试 ====================
+
+#[test]
+fn test_huber_gradient_accumulation() {
+    let graph = Graph::new();
+
+    let input = graph
+        .parameter(&[1, 3], Init::Zeros, "input")
         .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
+    input
+        .set_value(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3]))
         .unwrap();
+    let target = graph
+        .input(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3]))
+        .unwrap();
+    let loss = input.huber_loss(&target).unwrap();
 
     // 第一次前向+反向
-    graph.forward(loss_id).unwrap();
     graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    loss.backward().unwrap();
+    let grad_first = input.grad().unwrap().unwrap().clone();
 
-    let grad_first = graph.get_node(input_id).unwrap().grad().unwrap().clone();
-
-    // 第二次反向传播（梯度累积）
-    graph.forward(loss_id).unwrap();
-    graph.backward(loss_id).unwrap();
-    let grad_second = graph.get_node(input_id).unwrap().grad().unwrap();
-    assert_eq!(grad_second, &(&grad_first * 2.0));
+    // 第二次反向传播（梯度累积，不 zero_grad）
+    loss.backward().unwrap();
+    let grad_second = input.grad().unwrap().unwrap();
+    assert_eq!(&grad_second, &(&grad_first * 2.0));
 
     // zero_grad 后重新计算
     graph.zero_grad().unwrap();
-    graph.forward(loss_id).unwrap();
-    graph.backward(loss_id).unwrap();
-    let grad_after_clear = graph.get_node(input_id).unwrap().grad().unwrap();
-    assert_eq!(grad_after_clear, &grad_first);
+    loss.backward().unwrap();
+    let grad_after_clear = input.grad().unwrap().unwrap();
+    assert_eq!(&grad_after_clear, &grad_first);
 }
 
-// ========== 端到端训练测试 ==========
-
-/// 简单的回归训练测试
-/// 验证 Huber Loss 能正确训练模型
-#[cfg(any())]
-#[test]
-fn test_huber_loss_simple_regression_training() {
-    let mut graph = GraphInner::new_with_seed(42);
-
-    // 创建网络: y_pred = x * w
-    let x_id = graph.new_basic_input_node(&[1, 1], Some("x")).unwrap();
-    let w_id = graph.new_parameter_node(&[1, 1], Some("w")).unwrap();
-    let y_pred_id = graph.new_mat_mul_node(x_id, w_id, Some("y_pred")).unwrap();
-    let y_true_id = graph.new_basic_input_node(&[1, 1], Some("y_true")).unwrap();
-    let loss_id = graph
-        .new_huber_loss_node(y_pred_id, y_true_id, Some("loss"))
-        .unwrap();
-
-    // 初始化权重为 0.5（目标是 2.0）
-    graph
-        .set_node_value(w_id, Some(&Tensor::new(&[0.5], &[1, 1])))
-        .unwrap();
-
-    let lr = 0.1;
-
-    // 训练数据: x=1 -> y=2, x=2 -> y=4, x=3 -> y=6
-    let training_data = [(1.0_f32, 2.0_f32), (2.0, 4.0), (3.0, 6.0)];
-
-    // 训练 50 个 epoch
-    for _ in 0..50 {
-        for &(x_val, y_val) in &training_data {
-            graph
-                .set_node_value(x_id, Some(&Tensor::new(&[x_val], &[1, 1])))
-                .unwrap();
-            graph
-                .set_node_value(y_true_id, Some(&Tensor::new(&[y_val], &[1, 1])))
-                .unwrap();
-
-            graph.zero_grad().unwrap();
-            graph.forward(loss_id).unwrap();
-            graph.backward(loss_id).unwrap();
-
-            // 手动 SGD 更新：w = w - lr * grad
-            let w_val = graph.get_node_value(w_id).unwrap().unwrap();
-            let w_grad = graph.get_node_grad(w_id).unwrap().unwrap();
-            let new_w = w_val - lr * &w_grad;
-            graph.set_node_value(w_id, Some(&new_w)).unwrap();
-        }
-    }
-
-    // 验证学习到的权重接近 2.0
-    let learned_w = graph.get_node_value(w_id).unwrap().unwrap();
-    assert_abs_diff_eq!(learned_w[[0, 0]], 2.0, epsilon = 0.1);
-}
-
-// ========== 动态形状测试 ==========
+// ==================== 5. 动态形状测试 ====================
 
 /// 测试 Huber Loss 节点的动态形状（输出固定为标量 [1, 1]）
-#[cfg(any())]
 #[test]
-fn test_huber_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_huber_dynamic_shape_output_fixed() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let input = graph.new_basic_input_node(&[4, 8], Some("input"))?;
-    let target = graph.new_basic_input_node(&[4, 8], Some("target"))?;
-    let loss = graph.new_huber_loss_node(input, target, Some("loss"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 8], Some("target"))
+        .unwrap();
+    let huber = inner
+        .borrow_mut()
+        .create_huber_default_node(input, target, Some("huber"))
+        .unwrap();
 
-    // Huber 输出形状始终是 [1, 1]（标量）
-    let node = graph.get_node(loss)?;
-    let dyn_shape = node.dynamic_expected_shape();
+    let dyn_shape = huber.dynamic_expected_shape();
 
-    // 输出形状固定
+    // Huber 输出形状固定
     assert!(!dyn_shape.is_dynamic(0), "Huber 输出维度 0 应固定");
     assert!(!dyn_shape.is_dynamic(1), "Huber 输出维度 1 应固定");
     assert_eq!(dyn_shape.dim(0), Some(1));
@@ -616,106 +579,44 @@ fn test_huber_loss_dynamic_shape_output_fixed() -> Result<(), GraphError> {
 }
 
 /// 测试 Huber Loss 接受动态 batch 输入
-#[cfg(any())]
 #[test]
-fn test_huber_loss_dynamic_batch_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_huber_dynamic_batch_forward() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let input = graph.new_basic_input_node(&[2, 4], Some("input"))?;
-    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
-    let loss = graph.new_huber_loss_node(input, target, Some("loss"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], Some("input"))
+        .unwrap();
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], Some("target"))
+        .unwrap();
+    let huber = inner
+        .borrow_mut()
+        .create_huber_default_node(input.clone(), target.clone(), Some("huber"))
+        .unwrap();
 
     // 第一次 forward：batch=2
-    graph.set_node_value(input, Some(&Tensor::ones(&[2, 4])))?;
-    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
-    graph.forward(loss)?;
-    let loss_val1 = graph.get_node_value(loss)?.unwrap();
+    input.set_value(Some(&Tensor::ones(&[2, 4]))).unwrap();
+    target.set_value(Some(&Tensor::zeros(&[2, 4]))).unwrap();
+    huber.forward_recursive(1, false).unwrap();
+    let loss_val1 = huber.value().unwrap();
     assert_eq!(loss_val1.shape(), &[1, 1], "Huber 输出应为标量");
     assert!(loss_val1[[0, 0]] > 0.0);
 
     // 第二次 forward：batch=6（不同 batch 大小）
-    graph.set_node_value(input, Some(&Tensor::ones(&[6, 4])))?;
-    graph.set_node_value(target, Some(&Tensor::zeros(&[6, 4])))?;
-    graph.forward(loss)?;
-    let loss_val2 = graph.get_node_value(loss)?.unwrap();
+    input.set_value(Some(&Tensor::ones(&[6, 4]))).unwrap();
+    target.set_value(Some(&Tensor::zeros(&[6, 4]))).unwrap();
+    huber.forward_recursive(2, false).unwrap();
+    let loss_val2 = huber.value().unwrap();
     assert_eq!(loss_val2.shape(), &[1, 1], "Huber 输出应始终为标量");
 
     Ok(())
 }
 
-// ========== 与 MSE/MAE 的对比测试 ==========
-
-/// 验证小误差时 Huber ≈ 0.5 * MSE
-#[cfg(any())]
-#[test]
-fn test_huber_vs_mse_small_error() {
-    let mut graph = GraphInner::new();
-
-    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-
-    let mse_id = graph
-        .new_mse_loss_node(input_id, target_id, Some("mse"))
-        .unwrap();
-    let huber_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("huber"))
-        .unwrap();
-
-    // 小误差
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.1, 0.2, 0.3], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[0.15, 0.25, 0.35], &[1, 3])))
-        .unwrap();
-
-    graph.forward(mse_id).unwrap();
-    graph.forward(huber_id).unwrap();
-
-    let mse_loss = graph.get_node_value(mse_id).unwrap().unwrap()[[0, 0]];
-    let huber_loss = graph.get_node_value(huber_id).unwrap().unwrap()[[0, 0]];
-
-    // Huber(小误差) = 0.5 * MSE
-    assert_abs_diff_eq!(huber_loss, 0.5 * mse_loss, epsilon = 1e-6);
-}
-
-/// 验证大误差时 Huber ≈ MAE - 0.5*δ（当 δ=1）
-#[cfg(any())]
-#[test]
-fn test_huber_vs_mae_large_error() {
-    let mut graph = GraphInner::new();
-
-    let input_id = graph.new_basic_input_node(&[1, 3], Some("input")).unwrap();
-    let target_id = graph.new_basic_input_node(&[1, 3], Some("target")).unwrap();
-
-    let mae_id = graph
-        .new_mae_loss_node(input_id, target_id, Some("mae"))
-        .unwrap();
-    let huber_id = graph
-        .new_huber_loss_node(input_id, target_id, Some("huber"))
-        .unwrap();
-
-    // 大误差
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(target_id, Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
-        .unwrap();
-
-    graph.forward(mae_id).unwrap();
-    graph.forward(huber_id).unwrap();
-
-    let mae_loss = graph.get_node_value(mae_id).unwrap().unwrap()[[0, 0]];
-    let huber_loss = graph.get_node_value(huber_id).unwrap().unwrap()[[0, 0]];
-
-    // Huber(大误差) = MAE - 0.5*δ = MAE - 0.5（当 δ=1）
-    assert_abs_diff_eq!(huber_loss, mae_loss - 0.5, epsilon = 1e-6);
-}
-
 // ==================== 方案 C：新节点创建 API 测试 ====================
 
-use crate::nn::Graph;
 use std::rc::Rc;
 
 #[test]

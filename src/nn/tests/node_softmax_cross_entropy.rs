@@ -1,406 +1,516 @@
+/*
+ * @Author       : 老董
+ * @Description  : SoftmaxCrossEntropy 损失节点单元测试
+ *
+ * 测试策略：
+ * 1. 前向传播测试（高层 API）→ simple 0.4076; uniform 1.3863; 10 classes; cannot_set_value
+ * 2. VJP 单元测试（底层）→ simple grad; uniform grad; 10 classes grad
+ * 3. 端到端反向传播测试（高层）→ 含线性层的链式网络
+ * 4. 梯度累积测试
+ * 5. 动态形状测试
+ * 6. 新节点创建 API 测试（KEEP AS-IS）
+ */
+
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
+use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
-use crate::nn::{GraphError, GraphInner};
-use crate::tensor::Tensor;
+// ==================== 1. 前向传播测试（高层 Graph + Var API）====================
 
-#[cfg(any())]
+/// PyTorch 验证:
+/// ```python
+/// logits = [1.0, 2.0, 3.0], labels = [0, 0, 1]
+/// softmax = [0.09003057, 0.24472848, 0.66524094]
+/// loss = 0.40760597
+/// ```
 #[test]
-fn test_softmax_cross_entropy_creation() {
-    let mut graph = GraphInner::new();
+fn test_sce_forward_simple() {
+    let graph = Graph::new();
 
-    // 创建 logits 和 labels 输入节点（必须是 2D）
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let labels_id = graph.new_basic_input_node(&[1, 3], Some("labels")).unwrap();
-
-    // 创建 SoftmaxCrossEntropy 节点
-    let loss_id = graph
-        .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
+    let logits = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
         .unwrap();
+    let labels = graph
+        .input(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3]))
+        .unwrap();
+    let loss = logits.cross_entropy(&labels).unwrap();
 
-    // 验证节点存在且预期形状正确
-    assert_eq!(
-        graph.get_node_value_expected_shape(loss_id).unwrap(),
-        &[1, 1]
-    );
+    loss.forward().unwrap();
+
+    let loss_val = loss.item().unwrap();
+    assert_abs_diff_eq!(loss_val, 0.40760597, epsilon = 1e-5);
 }
 
-#[cfg(any())]
+/// PyTorch 验证:
+/// ```python
+/// logits = [1.0, 1.0, 1.0, 1.0], labels = [0, 1, 0, 0]
+/// softmax = [0.25, 0.25, 0.25, 0.25]
+/// loss = 1.3862944 (= -ln(0.25))
+/// ```
 #[test]
-fn test_softmax_cross_entropy_shape_mismatch() {
-    let mut graph = GraphInner::new();
+fn test_sce_forward_uniform() {
+    let graph = Graph::new();
 
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let labels_id = graph.new_basic_input_node(&[1, 4], Some("labels")).unwrap(); // 形状不匹配
+    let logits = graph
+        .input(&Tensor::new(&[1.0, 1.0, 1.0, 1.0], &[1, 4]))
+        .unwrap();
+    let labels = graph
+        .input(&Tensor::new(&[0.0, 1.0, 0.0, 0.0], &[1, 4]))
+        .unwrap();
+    let loss = logits.cross_entropy(&labels).unwrap();
 
-    let result = graph.new_softmax_cross_entropy_node(logits_id, labels_id, None);
-    assert!(result.is_err());
+    loss.forward().unwrap();
+
+    let loss_val = loss.item().unwrap();
+    assert_abs_diff_eq!(loss_val, 1.3862944, epsilon = 1e-5);
 }
 
-#[cfg(any())]
+/// 10 类分类前向传播
+///
+/// PyTorch 验证:
+/// ```python
+/// logits = [0.5, 1.5, -0.5, 2.0, 0.0, -1.0, 1.0, 0.5, -0.5, 1.5]
+/// labels = [0,0,0,1,0,0,0,0,0,0] (类别 3)
+/// loss = 1.2168376
+/// ```
 #[test]
-fn test_softmax_cross_entropy_forward_simple() {
-    // PyTorch 验证值：
-    // logits = [1.0, 2.0, 3.0], labels = [0, 0, 1]
-    // softmax = [0.09003057, 0.24472848, 0.66524094]
-    // loss = 0.40760597
+fn test_sce_forward_10_classes() {
+    let graph = Graph::new();
 
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_basic_input_node(&[1, 3], Some("logits")).unwrap();
-    let labels_id = graph.new_basic_input_node(&[1, 3], Some("labels")).unwrap();
-    let loss_id = graph
-        .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
+    let logits = graph
+        .input(&Tensor::new(
+            &[0.5, 1.5, -0.5, 2.0, 0.0, -1.0, 1.0, 0.5, -0.5, 1.5],
+            &[1, 10],
+        ))
         .unwrap();
-
-    // 设置输入值
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])))
+    let mut labels_data = vec![0.0; 10];
+    labels_data[3] = 1.0;
+    let labels = graph
+        .input(&Tensor::new(&labels_data, &[1, 10]))
         .unwrap();
-    graph
-        .set_node_value(labels_id, Some(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3])))
-        .unwrap();
+    let loss = logits.cross_entropy(&labels).unwrap();
 
-    // 前向传播
-    graph.forward(loss_id).unwrap();
+    loss.forward().unwrap();
 
-    // 验证损失值
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    let expected_loss = Tensor::new(&[0.40760597], &[1, 1]);
-    assert_abs_diff_eq!(loss, &expected_loss, epsilon = 1e-5);
+    let loss_val = loss.item().unwrap();
+    assert_abs_diff_eq!(loss_val, 1.2168376, epsilon = 1e-5);
 }
 
-#[cfg(any())]
+/// SoftmaxCrossEntropy 损失节点不能直接设置值
 #[test]
-fn test_softmax_cross_entropy_forward_uniform() {
-    // PyTorch 验证值：
-    // logits = [1.0, 1.0, 1.0, 1.0], labels = [0, 1, 0, 0]
-    // softmax = [0.25, 0.25, 0.25, 0.25]
-    // loss = 1.3862944 (= -ln(0.25))
+fn test_sce_cannot_set_value() {
+    let graph = Graph::new();
 
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_basic_input_node(&[1, 4], Some("logits")).unwrap();
-    let labels_id = graph.new_basic_input_node(&[1, 4], Some("labels")).unwrap();
-    let loss_id = graph
-        .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
+    let logits = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
         .unwrap();
-
-    graph
-        .set_node_value(
-            logits_id,
-            Some(&Tensor::new(&[1.0, 1.0, 1.0, 1.0], &[1, 4])),
-        )
+    let labels = graph
+        .input(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3]))
         .unwrap();
-    graph
-        .set_node_value(
-            labels_id,
-            Some(&Tensor::new(&[0.0, 1.0, 0.0, 0.0], &[1, 4])),
-        )
-        .unwrap();
+    let loss = logits.cross_entropy(&labels).unwrap();
 
-    graph.forward(loss_id).unwrap();
-
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    let expected_loss = Tensor::new(&[1.3862944], &[1, 1]);
-    assert_abs_diff_eq!(loss, &expected_loss, epsilon = 1e-5);
+    let err = loss.set_value(&Tensor::new(&[0.0], &[1, 1]));
+    assert!(err.is_err(), "SCE 损失节点不应支持直接设值");
 }
 
-#[cfg(any())]
+// ==================== 2. VJP 单元测试（底层 calc_grad_to_parent_index）====================
+//
+// 使用底层 API 创建节点，通过 calc_grad_to_parent_index 直接验证梯度计算公式。
+// SCE 梯度 = softmax(logits) - labels
+
+/// PyTorch 验证:
+/// ```python
+/// logits = [1.0, 2.0, 3.0], labels = [0, 0, 1]
+/// grad = [0.09003057, 0.24472848, -0.33475903]
+/// ```
 #[test]
-fn test_softmax_cross_entropy_backward_simple() {
-    // PyTorch 验证值：
-    // logits = [1.0, 2.0, 3.0], labels = [0, 0, 1]
-    // grad = [0.09003057, 0.24472848, -0.33475903]
+fn test_sce_vjp_simple() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_parameter_node(&[1, 3], Some("logits")).unwrap();
-    let labels_id = graph.new_basic_input_node(&[1, 3], Some("labels")).unwrap();
-    let loss_id = graph
-        .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("logits"))
+        .unwrap();
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("labels"))
+        .unwrap();
+    let sce = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits.clone(), labels.clone(), Some("sce"))
         .unwrap();
 
-    graph
-        .set_node_value(logits_id, Some(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])))
+    logits
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])))
         .unwrap();
-    graph
-        .set_node_value(labels_id, Some(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3])))
+    labels
+        .set_value(Some(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3])))
         .unwrap();
+    sce.forward_recursive(1, false).unwrap();
 
-    // 前向传播
-    graph.forward(loss_id).unwrap();
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = sce.calc_grad_to_parent_index(0, &upstream)?;
 
-    // 反向传播
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
-
-    // 验证 logits 的梯度
-    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
     assert_eq!(grad.shape(), &[1, 3]);
+    let expected = Tensor::new(&[0.09003057, 0.24472848, -0.33475903], &[1, 3]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
 
-    let expected_grad = Tensor::new(&[0.09003057, 0.24472848, -0.33475903], &[1, 3]);
-    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
+    Ok(())
 }
 
-#[cfg(any())]
+/// PyTorch 验证:
+/// ```python
+/// logits = [1.0, 1.0, 1.0, 1.0], labels = [0, 1, 0, 0]
+/// grad = [0.25, -0.75, 0.25, 0.25]
+/// ```
 #[test]
-fn test_softmax_cross_entropy_backward_uniform() {
-    // PyTorch 验证值：
-    // logits = [1.0, 1.0, 1.0, 1.0], labels = [0, 1, 0, 0]
-    // grad = [0.25, -0.75, 0.25, 0.25]
+fn test_sce_vjp_uniform() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_parameter_node(&[1, 4], Some("logits")).unwrap();
-    let labels_id = graph.new_basic_input_node(&[1, 4], Some("labels")).unwrap();
-    let loss_id = graph
-        .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], Some("logits"))
+        .unwrap();
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], Some("labels"))
+        .unwrap();
+    let sce = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits.clone(), labels.clone(), Some("sce"))
         .unwrap();
 
-    graph
-        .set_node_value(
-            logits_id,
-            Some(&Tensor::new(&[1.0, 1.0, 1.0, 1.0], &[1, 4])),
-        )
+    logits
+        .set_value(Some(&Tensor::new(&[1.0, 1.0, 1.0, 1.0], &[1, 4])))
         .unwrap();
-    graph
-        .set_node_value(
-            labels_id,
-            Some(&Tensor::new(&[0.0, 1.0, 0.0, 0.0], &[1, 4])),
-        )
+    labels
+        .set_value(Some(&Tensor::new(&[0.0, 1.0, 0.0, 0.0], &[1, 4])))
         .unwrap();
+    sce.forward_recursive(1, false).unwrap();
 
-    graph.forward(loss_id).unwrap();
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = sce.calc_grad_to_parent_index(0, &upstream)?;
 
-    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
-    let expected_grad = Tensor::new(&[0.25, -0.75, 0.25, 0.25], &[1, 4]);
-    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
+    let expected = Tensor::new(&[0.25, -0.75, 0.25, 0.25], &[1, 4]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
+
+    Ok(())
 }
 
-#[cfg(any())]
+/// 10 类分类 VJP
+///
+/// PyTorch 验证:
+/// ```python
+/// logits = [0.5, 1.5, -0.5, 2.0, 0.0, -1.0, 1.0, 0.5, -0.5, 1.5]
+/// labels = [0,0,0,1,0,0,0,0,0,0]
+/// grad = [0.0660834, 0.1796333, 0.02431072, -0.7038347, 0.04008161,
+///          0.0147452, 0.10895311, 0.0660834, 0.02431072, 0.1796333]
+/// ```
 #[test]
-fn test_softmax_cross_entropy_10_classes() {
-    // PyTorch 验证值：
-    // logits = [0.5, 1.5, -0.5, 2.0, 0.0, -1.0, 1.0, 0.5, -0.5, 1.5]
-    // labels = [0,0,0,1,0,0,0,0,0,0] (类别 3)
-    // loss = 1.2168376
-    // grad = [0.0660834, 0.1796333, 0.02431072, -0.7038347, ...]
+fn test_sce_vjp_10_classes() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    let mut graph = GraphInner::new();
-
-    let logits_id = graph.new_parameter_node(&[1, 10], Some("logits")).unwrap();
-    let labels_id = graph
-        .new_basic_input_node(&[1, 10], Some("labels"))
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 10], Some("logits"))
         .unwrap();
-    let loss_id = graph
-        .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 10], Some("labels"))
         .unwrap();
-
-    graph
-        .set_node_value(
-            logits_id,
-            Some(&Tensor::new(
-                &[0.5, 1.5, -0.5, 2.0, 0.0, -1.0, 1.0, 0.5, -0.5, 1.5],
-                &[1, 10],
-            )),
-        )
+    let sce = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits.clone(), labels.clone(), Some("sce"))
         .unwrap();
 
-    let mut labels = vec![0.0; 10];
-    labels[3] = 1.0;
-    graph
-        .set_node_value(labels_id, Some(&Tensor::new(&labels, &[1, 10])))
+    logits
+        .set_value(Some(&Tensor::new(
+            &[0.5, 1.5, -0.5, 2.0, 0.0, -1.0, 1.0, 0.5, -0.5, 1.5],
+            &[1, 10],
+        )))
         .unwrap();
+    let mut labels_data = vec![0.0; 10];
+    labels_data[3] = 1.0;
+    labels
+        .set_value(Some(&Tensor::new(&labels_data, &[1, 10])))
+        .unwrap();
+    sce.forward_recursive(1, false).unwrap();
 
-    graph.forward(loss_id).unwrap();
+    // 验证前向值
+    let loss_val = sce.value().unwrap();
+    assert_abs_diff_eq!(loss_val[[0, 0]], 1.2168376, epsilon = 1e-5);
 
-    // 验证损失
-    let loss = graph.get_node_value(loss_id).unwrap().unwrap();
-    let expected_loss = Tensor::new(&[1.2168376], &[1, 1]);
-    assert_abs_diff_eq!(loss, &expected_loss, epsilon = 1e-5);
-
-    // 验证梯度
-    graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
-    let grad = graph.get_node(logits_id).unwrap().grad().unwrap();
+    // VJP
+    let upstream = Tensor::ones(&[1, 1]);
+    let grad = sce.calc_grad_to_parent_index(0, &upstream)?;
 
     #[rustfmt::skip]
-    let expected_grad = Tensor::new(
+    let expected = Tensor::new(
         &[0.0660834, 0.1796333, 0.02431072, -0.7038347, 0.04008161,
           0.0147452, 0.10895311, 0.0660834, 0.02431072, 0.1796333],
         &[1, 10]
     );
-    assert_abs_diff_eq!(grad, &expected_grad, epsilon = 1e-5);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
+
+    Ok(())
 }
 
-#[cfg(any())]
+// ==================== 3. 端到端反向传播测试（高层 Graph + Var API）====================
+
+/// 简单反向传播：验证高层 API 梯度与 VJP 一致
 #[test]
-fn test_softmax_cross_entropy_with_linear_layer() {
-    // 简单网络: input -> linear -> softmax_cross_entropy
-    // 验证梯度能正确传播到线性层权重
+fn test_sce_backward_e2e_simple() {
+    let graph = Graph::new();
 
-    let mut graph = GraphInner::new();
+    let logits = graph
+        .parameter(&[1, 3], Init::Zeros, "logits")
+        .unwrap();
+    logits
+        .set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
+    let labels = graph
+        .input(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3]))
+        .unwrap();
+    let loss = logits.cross_entropy(&labels).unwrap();
 
-    // 输入: [1, 2] -> 线性层 -> [1, 3] -> softmax_cross_entropy -> loss
-    let input_id = graph.new_basic_input_node(&[1, 2], Some("input")).unwrap();
-    let weights_id = graph.new_parameter_node(&[2, 3], Some("weights")).unwrap();
-    let bias_id = graph.new_parameter_node(&[1, 3], Some("bias")).unwrap();
-
-    // input @ weights + bias
-    let matmul_id = graph
-        .new_mat_mul_node(input_id, weights_id, Some("matmul"))
-        .unwrap();
-    let logits_id = graph
-        .new_add_node(&[matmul_id, bias_id], Some("logits"))
-        .unwrap();
-
-    // labels 使用 [1, 3] 形状与 logits 匹配
-    let labels_id = graph.new_basic_input_node(&[1, 3], Some("labels")).unwrap();
-    let loss_id = graph
-        .new_softmax_cross_entropy_node(logits_id, labels_id, Some("loss"))
-        .unwrap();
-
-    // 设置值
-    graph
-        .set_node_value(input_id, Some(&Tensor::new(&[1.0, 2.0], &[1, 2])))
-        .unwrap();
-    graph
-        .set_node_value(
-            weights_id,
-            Some(&Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6], &[2, 3])),
-        )
-        .unwrap();
-    graph
-        .set_node_value(bias_id, Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
-        .unwrap();
-    graph
-        .set_node_value(labels_id, Some(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3])))
-        .unwrap();
-
-    // 前向传播
-    graph.forward(loss_id).unwrap();
-
-    // 反向传播到权重
     graph.zero_grad().unwrap();
-    graph.backward(loss_id).unwrap();
+    loss.backward().unwrap();
 
-    // 验证权重有梯度
-    let weights_grad = graph.get_node(weights_id).unwrap().grad().unwrap();
-    assert_eq!(weights_grad.shape(), &[2, 3]); // 权重形状 [2, 3]
+    let grad = logits.grad().unwrap().unwrap();
+    let expected = Tensor::new(&[0.09003057, 0.24472848, -0.33475903], &[1, 3]);
+    assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
 }
 
-// ==================== 动态形状测试 ====================
+/// 含线性层的链式网络反向传播
+///
+/// input [1, 2] -> matmul(weights [2, 3]) -> + bias [1, 3] -> cross_entropy -> loss
+#[test]
+fn test_sce_backward_with_linear_layer() {
+    let graph = Graph::new();
+
+    // 输入
+    let input = graph
+        .input(&Tensor::new(&[1.0, 2.0], &[1, 2]))
+        .unwrap();
+
+    // 权重和偏置（可训练参数）
+    let weights = graph
+        .parameter(&[2, 3], Init::Zeros, "weights")
+        .unwrap();
+    weights
+        .set_value(&Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6], &[2, 3]))
+        .unwrap();
+    let bias = graph
+        .parameter(&[1, 3], Init::Zeros, "bias")
+        .unwrap();
+    // bias 保持零初始化
+
+    // input @ weights + bias -> logits
+    let logits = input.matmul(&weights).unwrap() + &bias;
+
+    // labels
+    let labels = graph
+        .input(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3]))
+        .unwrap();
+    let loss = logits.cross_entropy(&labels).unwrap();
+
+    // 反向传播
+    graph.zero_grad().unwrap();
+    loss.backward().unwrap();
+
+    // 验证权重有梯度且形状正确
+    let weights_grad = weights.grad().unwrap().unwrap();
+    assert_eq!(weights_grad.shape(), &[2, 3]);
+
+    // 验证偏置有梯度且形状正确
+    let bias_grad = bias.grad().unwrap().unwrap();
+    assert_eq!(bias_grad.shape(), &[1, 3]);
+}
+
+// ==================== 4. 梯度累积测试 ====================
+
+#[test]
+fn test_sce_gradient_accumulation() {
+    let graph = Graph::new();
+
+    let logits = graph
+        .parameter(&[1, 3], Init::Zeros, "logits")
+        .unwrap();
+    logits
+        .set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
+    let labels = graph
+        .input(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3]))
+        .unwrap();
+    let loss = logits.cross_entropy(&labels).unwrap();
+
+    // 第一次前向+反向
+    graph.zero_grad().unwrap();
+    loss.backward().unwrap();
+    let grad_first = logits.grad().unwrap().unwrap().clone();
+
+    // 第二次反向传播（梯度累积，不 zero_grad）
+    loss.backward().unwrap();
+    let grad_second = logits.grad().unwrap().unwrap();
+    assert_abs_diff_eq!(&grad_second, &(&grad_first * 2.0), epsilon = 1e-6);
+
+    // zero_grad 后重新计算
+    graph.zero_grad().unwrap();
+    loss.backward().unwrap();
+    let grad_after_clear = logits.grad().unwrap().unwrap();
+    assert_abs_diff_eq!(&grad_after_clear, &grad_first, epsilon = 1e-6);
+}
+
+// ==================== 5. 动态形状测试 ====================
 
 /// 测试 SoftmaxCrossEntropy 节点的动态形状传播
-/// 注：Loss 节点输出固定为 [1, 1]，但输入可以有动态 batch
-#[cfg(any())]
+/// Loss 输出固定为 [1, 1]
 #[test]
-fn test_softmax_cross_entropy_dynamic_shape_propagation() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_sce_dynamic_shape_propagation() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建 2D 输入：[batch, num_classes]
-    let logits = graph.new_basic_input_node(&[2, 3], Some("logits"))?;
-    let labels = graph.new_basic_input_node(&[2, 3], Some("labels"))?;
-
-    let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("logits"))
+        .unwrap();
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("labels"))
+        .unwrap();
+    let sce = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits, labels, Some("sce"))
+        .unwrap();
 
     // Loss 输出固定为 [1, 1]
-    let loss_node = graph.get_node(loss)?;
-    assert_eq!(loss_node.value_expected_shape(), &[1, 1]);
+    assert_eq!(sce.shape(), vec![1, 1]);
 
     Ok(())
 }
 
 /// 测试 SoftmaxCrossEntropy 在不同 batch_size 下的前向计算
-#[cfg(any())]
 #[test]
-fn test_softmax_cross_entropy_dynamic_batch_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_sce_dynamic_batch_forward() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建输入
-    let logits = graph.new_basic_input_node(&[2, 3], Some("logits"))?;
-    let labels = graph.new_basic_input_node(&[2, 3], Some("labels"))?;
-    let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
+    let logits = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("logits"))
+        .unwrap();
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("labels"))
+        .unwrap();
+    let sce = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits.clone(), labels.clone(), Some("sce"))
+        .unwrap();
 
-    // 设置初始值：batch=2
+    // batch=2
     let mut labels_data = Tensor::zeros(&[2, 3]);
     labels_data[[0, 0]] = 1.0;
     labels_data[[1, 2]] = 1.0;
-    graph.set_node_value(logits, Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 3], 42)))?;
-    graph.set_node_value(labels, Some(&labels_data))?;
+    logits
+        .set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 3], 42)))
+        .unwrap();
+    labels.set_value(Some(&labels_data)).unwrap();
+    sce.forward_recursive(1, false).unwrap();
+    let val1 = sce.value().unwrap();
+    assert_eq!(val1.shape(), &[1, 1], "Loss 输出固定为 [1, 1]");
+    assert!(val1[[0, 0]] > 0.0);
 
-    // 第一次 forward：batch=2
-    graph.forward(loss)?;
-    let value1 = graph.get_node_value(loss)?.unwrap();
-    assert_eq!(value1.shape(), &[1, 1], "Loss 输出固定为 [1, 1]");
-    let loss_val1 = value1[[0, 0]];
-    assert!(loss_val1 > 0.0);
-
-    // 更新输入为不同的 batch_size
+    // batch=5（不同 batch 大小）
     let mut labels_data2 = Tensor::zeros(&[5, 3]);
     for i in 0..5 {
         labels_data2[[i, i % 3]] = 1.0;
     }
-    graph.set_node_value(logits, Some(&Tensor::normal_seeded(0.0, 1.0, &[5, 3], 100)))?;
-    graph.set_node_value(labels, Some(&labels_data2))?;
-
-    // 第二次 forward：batch=5
-    graph.forward(loss)?;
-    let value2 = graph.get_node_value(loss)?.unwrap();
-    assert_eq!(value2.shape(), &[1, 1], "Loss 输出固定为 [1, 1]");
-    let loss_val2 = value2[[0, 0]];
-    assert!(loss_val2 > 0.0);
+    logits
+        .set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[5, 3], 100)))
+        .unwrap();
+    labels.set_value(Some(&labels_data2)).unwrap();
+    sce.forward_recursive(2, false).unwrap();
+    let val2 = sce.value().unwrap();
+    assert_eq!(val2.shape(), &[1, 1], "Loss 输出固定为 [1, 1]");
+    assert!(val2[[0, 0]] > 0.0);
 
     Ok(())
 }
 
 /// 测试 SoftmaxCrossEntropy 在不同 batch_size 下的反向传播
-#[cfg(any())]
+///
+/// 使用 backward_via_node_inner 确保中间节点梯度被正确清除，
+/// 避免动态 batch 形状切换时的梯度形状冲突。
 #[test]
-#[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
-fn test_softmax_cross_entropy_dynamic_batch_backward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_sce_dynamic_batch_backward() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 使用 Input 节点接收动态 batch 数据
-    // 构建 y = x * w 形式，其中 w 是可训练的 Parameter
-    let input = graph.new_basic_input_node(&[2, 5], Some("input"))?;
-    let weight = graph.new_parameter_node(&[5, 3], Some("weight"))?; // [5, 3] 权重
-    let logits = graph.new_mat_mul_node(input, weight, Some("logits"))?;
-    let labels = graph.new_basic_input_node(&[2, 3], Some("labels"))?;
-    let loss = graph.new_softmax_cross_entropy_node(logits, labels, Some("loss"))?;
+    // input -> matmul(weight) -> logits -> cross_entropy -> loss
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 5], Some("input"))
+        .unwrap();
+    let weight = inner
+        .borrow_mut()
+        .create_parameter_node(&[5, 3], Some("weight"))
+        .unwrap();
+    // 注册参数使 zero_grad 能正常工作
+    inner
+        .borrow_mut()
+        .register_parameter("weight".to_string(), std::rc::Rc::downgrade(&weight))?;
+    let logits = inner
+        .borrow_mut()
+        .create_mat_mul_node(vec![input.clone(), weight.clone()], Some("logits"))
+        .unwrap();
+    let labels = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("labels"))
+        .unwrap();
+    let sce = inner
+        .borrow_mut()
+        .create_softmax_cross_entropy_node(logits, labels.clone(), Some("sce"))
+        .unwrap();
 
     // 初始化权重
-    graph.set_node_value(weight, Some(&Tensor::normal_seeded(0.0, 0.1, &[5, 3], 42)))?;
+    weight
+        .set_value(Some(&Tensor::normal_seeded(0.0, 0.1, &[5, 3], 42)))
+        .unwrap();
 
-    // 设置初始值：batch=2
+    // batch=2
     let mut labels_data = Tensor::zeros(&[2, 3]);
     labels_data[[0, 0]] = 1.0;
     labels_data[[1, 2]] = 1.0;
-    graph.set_node_value(input, Some(&Tensor::ones(&[2, 5])))?;
-    graph.set_node_value(labels, Some(&labels_data))?;
+    input.set_value(Some(&Tensor::ones(&[2, 5]))).unwrap();
+    labels.set_value(Some(&labels_data)).unwrap();
 
-    // 第一次训练：batch=2
-    graph.forward(loss)?;
-    graph.zero_grad()?;
-    graph.backward(loss)?;
-    let grad1 = graph.get_node(weight)?.grad().unwrap().clone();
+    sce.forward_recursive(1, false).unwrap();
+    inner.borrow_mut().zero_grad()?;
+    // backward_via_node_inner 会清除中间节点梯度、设置 loss grad=1 并反向传播
+    inner
+        .borrow_mut()
+        .backward_via_node_inner(&sce, false)?;
+    let grad1 = weight.grad().unwrap().clone();
     assert_eq!(grad1.shape(), &[5, 3], "权重梯度形状应保持不变");
 
-    // 更新输入为不同的 batch_size
+    // batch=4（不同 batch 大小）
     let mut labels_data2 = Tensor::zeros(&[4, 3]);
     for i in 0..4 {
         labels_data2[[i, i % 3]] = 1.0;
     }
-    graph.set_node_value(input, Some(&Tensor::ones(&[4, 5])))?;
-    graph.set_node_value(labels, Some(&labels_data2))?;
+    input.set_value(Some(&Tensor::ones(&[4, 5]))).unwrap();
+    labels.set_value(Some(&labels_data2)).unwrap();
 
-    // 第二次训练：batch=4
-    graph.zero_grad()?;
-    graph.forward(loss)?;
-    graph.backward(loss)?;
-    let grad2 = graph.get_node(weight)?.grad().unwrap();
+    sce.forward_recursive(2, false).unwrap();
+    inner.borrow_mut().zero_grad()?;
+    inner
+        .borrow_mut()
+        .backward_via_node_inner(&sce, false)?;
+    let grad2 = weight.grad().unwrap();
     assert_eq!(
         grad2.shape(),
         &[5, 3],
@@ -412,7 +522,6 @@ fn test_softmax_cross_entropy_dynamic_batch_backward() -> Result<(), GraphError>
 
 // ==================== 方案 C：新节点创建 API 测试 ====================
 
-use crate::nn::Graph;
 use std::rc::Rc;
 
 #[test]
