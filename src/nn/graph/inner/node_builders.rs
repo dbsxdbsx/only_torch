@@ -1065,9 +1065,12 @@ impl GraphInner {
 
     /// 创建 ZerosLike 节点（方案 C 新 API）
     ///
-    /// 根据参考形状生成动态 batch 零张量
+    /// 以 `reference` 为父节点，前向传播时读取其 batch_size 生成零张量。
+    /// 反向传播时 `calc_grad_to_parent` 返回 `InvalidOperation("不支持")`，
+    /// 被 `propagate_grad_to_parents` 的 `continue` 逻辑安全跳过。
     pub fn create_zeros_like_node(
         &mut self,
+        reference: Rc<NodeInner>,
         feature_shape: &[usize],
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
@@ -1076,7 +1079,7 @@ impl GraphInner {
         let zeros_like = ZerosLike::new(feature_shape);
         let raw_node: NodeType = zeros_like.into();
 
-        self.create_node_inner(raw_node, name, "zeros_like", vec![])
+        self.create_node_inner(raw_node, name, "zeros_like", vec![reference])
     }
 
     /// 创建 Abs 节点（方案 C 新 API）

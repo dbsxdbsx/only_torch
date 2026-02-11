@@ -199,16 +199,20 @@ impl Graph {
     }
 
     /// 创建动态零张量节点
+    ///
+    /// 以 `reference` 为父节点，前向传播时自动读取其 batch_size 生成零张量。
+    /// 反向传播时不向 reference 传播梯度（`ZerosLike` 是常量节点）。
     pub fn zeros_like(
         &self,
-        _reference: &Var,
+        reference: &Var,
         feature_shape: &[usize],
         name: Option<&str>,
     ) -> Result<Var, GraphError> {
-        let node = self
-            .inner
-            .borrow_mut()
-            .create_zeros_like_node(feature_shape, name)?;
+        let node = self.inner.borrow_mut().create_zeros_like_node(
+            std::rc::Rc::clone(reference.node()),
+            feature_shape,
+            name,
+        )?;
         Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 

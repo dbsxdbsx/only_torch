@@ -19,7 +19,7 @@ mod model;
 use model::ParityRNN;
 use only_torch::data::{DataLoader, TensorDataset};
 use only_torch::metrics::accuracy;
-use only_torch::nn::{Adam, CrossEntropyLoss, Graph, GraphError, Module, Optimizer};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 fn main() -> Result<(), GraphError> {
@@ -70,14 +70,12 @@ fn main() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(seed);
     let model = ParityRNN::new(&graph, hidden_size)?;
 
-    // 损失函数（PyTorch 风格！）
-    let criterion = CrossEntropyLoss::new();
-
     // 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), lr);
 
     // ========== 训练循环（完全 PyTorch 风格！）==========
     let mut best_accuracy = 0.0f32;
+    let mut last_loss: Option<only_torch::nn::Var> = None;
     println!("开始训练...\n");
 
     for epoch in 0..max_epochs {
@@ -92,8 +90,8 @@ fn main() -> Result<(), GraphError> {
             // 1. 前向传播
             let output = model.forward(&x_batch)?;
 
-            // 2. 计算 loss
-            let loss = criterion.forward(&output, &y_batch)?;
+            // 2. 计算 loss（Var 方法）
+            let loss = output.cross_entropy(&y_batch)?;
 
             // 3. 反向传播（自动 BPTT！）
             let loss_val = loss.backward()?;
@@ -103,6 +101,7 @@ fn main() -> Result<(), GraphError> {
 
             epoch_loss += loss_val;
             num_batches += 1;
+            last_loss = Some(loss);
         }
 
         // 每 10 个 epoch 评估
@@ -132,12 +131,14 @@ fn main() -> Result<(), GraphError> {
     println!("测试准确率: {final_accuracy:.1}%");
     println!("最佳准确率: {best_accuracy:.1}%");
 
-    // 保存可视化
-    let vis_result =
-        graph.save_visualization("examples/parity_rnn_fixed_len/parity_rnn_fixed_len", None)?;
-    println!("\n计算图已保存: {}", vis_result.dot_path.display());
-    if let Some(img_path) = &vis_result.image_path {
-        println!("可视化图像: {}", img_path.display());
+    // 保存可视化（从 Var 遍历计算图）
+    if let Some(loss) = &last_loss {
+        let vis_result =
+            loss.save_visualization("examples/parity_rnn_fixed_len/parity_rnn_fixed_len")?;
+        println!("\n计算图已保存: {}", vis_result.dot_path.display());
+        if let Some(img_path) = &vis_result.image_path {
+            println!("可视化图像: {}", img_path.display());
+        }
     }
 
     if final_accuracy >= target_accuracy {

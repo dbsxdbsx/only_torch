@@ -11,17 +11,14 @@
 //! x: [batch, seq_len, 1] → RNN → h: [batch, hidden] → Linear → [batch, 2]
 //! ```
 
-use only_torch::nn::{Graph, GraphError, Linear, ModelState, Module, Rnn, Var};
+use only_torch::nn::{Graph, GraphError, Linear, Module, Rnn, Var};
 use only_torch::tensor::Tensor;
 
 /// 奇偶性检测 RNN 模型（PyTorch 风格）
-///
-/// 使用 `ModelState` 自动管理计算图缓存，
-/// 代码风格与 XOR 等 MLP 模型完全一致。
 pub struct ParityRNN {
+    graph: Graph,
     rnn: Rnn,
     fc: Linear,
-    state: ModelState,
 }
 
 impl ParityRNN {
@@ -37,10 +34,11 @@ impl ParityRNN {
         // Linear: hidden_size -> 2 (二分类：偶数/奇数)
         let fc = Linear::new(graph, hidden_size, 2, true, "fc")?;
 
-        // ModelState 管理输入缓存
-        let state = ModelState::new_for::<Self>(graph);
-
-        Ok(Self { rnn, fc, state })
+        Ok(Self {
+            graph: graph.clone(),
+            rnn,
+            fc,
+        })
     }
 
     /// 前向传播（PyTorch 风格）
@@ -50,23 +48,17 @@ impl ParityRNN {
     ///
     /// # 返回
     /// 2 类 logits，形状 `[batch, 2]`
-    ///
-    /// # 注意
-    /// 与 XOR 模型一样简洁！使用 `state.forward` + `rnn.forward`
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        self.state.forward(x, |input| {
-            // RNN 处理序列（与 Linear 一样，接受 Var）
-            let h = self.rnn.forward(input)?;
-            // Linear 输出分类 logits
-            Ok(self.fc.forward(&h))
-        })
+        let input = self.graph.input(x)?;
+        // RNN 处理序列
+        let h = self.rnn.forward(&input)?;
+        // Linear 输出分类 logits
+        Ok(self.fc.forward(&h))
     }
 }
 
 impl Module for ParityRNN {
     fn parameters(&self) -> Vec<Var> {
-        let mut params = self.rnn.parameters();
-        params.extend(self.fc.parameters());
-        params
+        [self.rnn.parameters(), self.fc.parameters()].concat()
     }
 }
