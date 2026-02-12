@@ -1,25 +1,39 @@
 /*
- * Identity 节点（纯恒等映射）
+ * Detach 节点（梯度屏障）
  *
  * forward: y = x（直接传递父节点的值）
- * backward: 直接传递上游梯度（局部梯度 = 1）
+ * backward: 阻断梯度传播（不向上游传递梯度）
  *
- * # 与 Detach 的区别
+ * # 与 Identity 的区别
  *
  * | 节点 | forward | backward | 用途 |
  * |------|---------|----------|------|
- * | Identity | y = x | 透传梯度 | pass-through / NEAT 占位 / skip connection |
- * | Detach   | y = x | 阻断梯度 | 显式梯度截断边界（通过 `Var::detach()` 创建） |
+ * | Identity | y = x | 透传梯度 | pass-through / NEAT 占位 |
+ * | Detach   | y = x | 阻断梯度 | 显式梯度截断边界 |
  *
  * # 用途
  *
- * 1. **NEAT 演化**：作为 pass-through 空节点，后续可被变异为其他类型
- * 2. **Skip connection**：ResNet 残差连接中的恒等分支
- * 3. **Sequential 占位**：模块化构建中的 no-op 占位符
+ * Detach 节点通过 `Var::detach()` 创建，用于在计算图中建立**显式的梯度截断边界**。
+ *
+ * ## 典型使用场景
+ *
+ * 1. **GAN 训练中阻止梯度流向生成器**
+ *    ```ignore
+ *    let fake = generator.forward(&noise)?;
+ *    let d_out = discriminator.forward(fake.detach())?;  // 梯度阻断
+ *    ```
+ *
+ * 2. **调试/可视化时看到明确的 detach 边界**
+ *    Detach 节点在 Graphviz 中显示为独立节点（椭圆形，虚线，浅紫色）。
+ *
+ * 3. **迁移学习/多任务学习**
+ *    冻结部分网络时，在共享特征提取器后添加 detach，
+ *    使不同任务头有独立的梯度流控制。
  *
  * # 可视化
  *
- * Identity 节点使用样式：椭圆形、虚线边框、浅灰色背景。
+ * Detach 节点使用特殊样式：椭圆形、虚线边框、浅紫色背景。
+ * 表明用户有意识创建的梯度截断边界。
  */
 
 use crate::nn::GraphError;
@@ -28,16 +42,18 @@ use crate::nn::nodes::NodeId;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
-/// Identity 节点（纯恒等映射）
+/// Detach 节点（梯度屏障）
 ///
-/// 直接传递父节点的值，不做任何变换。
-/// 反向传播时透传梯度（局部梯度 = 1）。
+/// 前向传播：直接传递父节点的值（与 Identity 相同）。
+/// 反向传播：阻断梯度传播，不向上游传递任何梯度。
+///
+/// 通过 `Var::detach()` 创建。
 ///
 /// # 可视化
 ///
-/// 椭圆形、虚线边框、浅灰色背景（`#E0E0E0`）
+/// 椭圆形、虚线边框、浅紫色背景（`#E1BEE7`）
 #[derive(Clone)]
-pub(crate) struct Identity {
+pub(crate) struct Detach {
     id: Option<NodeId>,
     name: Option<String>,
     value: Option<Tensor>,
@@ -51,8 +67,8 @@ pub(crate) struct Identity {
     supports_dynamic: bool,
 }
 
-impl Identity {
-    /// 从父节点形状信息创建 Identity 节点（核心实现）
+impl Detach {
+    /// 从父节点形状信息创建 Detach 节点
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,
@@ -69,10 +85,9 @@ impl Identity {
             supports_dynamic,
         })
     }
-
 }
 
-impl TraitNode for Identity {
+impl TraitNode for Detach {
     fn id(&self) -> NodeId {
         self.id.unwrap()
     }
@@ -102,7 +117,7 @@ impl TraitNode for Identity {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 直接复制父节点的值
+        // 与 Identity 相同：直接复制父节点的值
         self.value = Some(parent_values[0].clone());
         Ok(())
     }
@@ -115,10 +130,13 @@ impl TraitNode for Identity {
         &self,
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
-        upstream_grad: &Tensor,
+        _upstream_grad: &Tensor,
     ) -> Result<Tensor, GraphError> {
-        // 直接传递上游梯度（Identity 的局部梯度是 1）
-        Ok(upstream_grad.clone())
+        // Detach 的核心：不应该向上游传播梯度
+        Err(GraphError::InvalidOperation(format!(
+            "{}不应该向上游传播梯度（Detach 节点是梯度屏障）",
+            self.display_node()
+        )))
     }
 
     fn grad(&self) -> Option<&Tensor> {

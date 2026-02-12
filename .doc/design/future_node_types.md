@@ -26,7 +26,7 @@
 
 ## 1. 当前已实现概览
 
-截至 2026-02-01，项目已实现 **40 个节点类型**（详见 `NodeType` 枚举）：
+截至 2026-02-12，项目已实现 **41 个节点类型**（详见 `NodeType` 枚举）：
 
 | 类别 | 数量 | 节点 |
 |------|------|------|
@@ -37,7 +37,7 @@
 | 比较/归约 | 6 | Maximum、Minimum、Amax、Amin、Sum、Mean |
 | 激活函数 | 10 | Sigmoid、Tanh、LeakyReLU、Softmax、LogSoftmax、SoftPlus、Step、Sign、Abs、Ln |
 | 损失函数 | 5 | MSE、MAE、BCE、Huber、SoftmaxCrossEntropy |
-| 辅助节点 | 3 | Identity、Dropout、ZerosLike |
+| 辅助节点 | 4 | Identity、Detach、Dropout、ZerosLike |
 
 ---
 

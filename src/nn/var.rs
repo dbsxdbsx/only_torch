@@ -196,30 +196,9 @@ impl Var {
 
     // ==================== 梯度流控制 ====================
 
-    /// 创建一个 detached 的副本（函数式 detach）
-    ///
-    /// 返回一个新的 Var，它是当前节点的 Identity 副本，但梯度流被阻断。
-    /// 原节点**不受影响**。
-    ///
-    /// # 语义（与 `PyTorch` 一致）
-    /// - 返回的 Var 与原 Var 共享前向计算的值
-    /// - 但反向传播时，梯度不会通过返回的 Var 传递到原 Var
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // GAN 训练：训练 D 时阻止梯度流向 G
-    /// let fake_images = G.forward(&noise)?;
-    /// let fake_detached = fake_images.detach();  // 新 Var，阻断梯度
-    /// let d_fake = D.forward(&fake_detached)?;
-    /// d_loss.backward()?;  // 梯度不会流向 G
-    ///
-    /// // 训练 G 时正常使用
-    /// let d_fake_for_g = D.forward(&fake_images)?;  // 原 Var，梯度正常流动
-    /// g_loss.backward()?;  // 梯度流向 G
-    /// ```
     /// 创建一个 detached 的 Var（与 PyTorch `tensor.detach()` 语义一致）
     ///
-    /// 在图中创建一个新的 Identity 节点，标记为 detached。
+    /// 在图中创建一个新的 Detach 节点。
     /// 返回的 Var：
     /// - 与原 Var 共享前向计算的值
     /// - 反向传播时，梯度不会通过此节点传回原 Var
@@ -236,8 +215,8 @@ impl Var {
         let new_node = self
             .graph()
             .borrow_mut()
-            .create_identity_node(Rc::clone(&self.node), None, true) // detached=true
-            .expect("内部错误：detach 创建 Identity 节点失败");
+            .create_detach_node(Rc::clone(&self.node), None)
+            .expect("内部错误：detach 创建 Detach 节点失败");
         Self {
             node: new_node,
             graph: self.graph.clone(),
@@ -247,12 +226,16 @@ impl Var {
     /// 检查此 Var 对应的节点是否处于 detached 状态
     ///
     /// detached 节点在反向传播时不会传递梯度给其父节点。
+    /// 判断依据：节点类型为 `Detach`，或底层标志位 `is_detached` 为 true。
     ///
     /// # 用途
     /// - `ModelState` 使用此方法判断 Var 输入是否可以缓存
     /// - detached Var 只需要值，不需要梯度流，因此可以像 Tensor 一样缓存
     pub fn is_detached(&self) -> bool {
-        self.node.is_detached()
+        use crate::nn::nodes::NodeType;
+        self.node
+            .with_raw_node(|raw| matches!(raw, NodeType::Detach(_)))
+            || self.node.is_detached()
     }
 
     // ==================== 执行 ====================
@@ -516,7 +499,8 @@ impl Var {
                 type_name: node.type_name(),
                 shape: node.value_expected_shape(),
                 parent_ids: node.parents().iter().map(|p| p.id()).collect(),
-                is_detached: node.is_detached(),
+                is_detached: node.is_detached()
+                    || node.type_name() == "Detach",
                 hyperparam_html,
             }
         };
@@ -788,23 +772,12 @@ impl Var {
                 .map(|n| {
                     let id = n.id.0;
                     let node_type = &n.type_name;
-                    // detached Identity → 显示为 "detach"
-                    let type_label = if n.is_detached && node_type == "Identity" {
-                        "detach"
-                    } else {
-                        &node_type.to_lowercase()
-                    };
+                    let type_label = node_type.to_lowercase();
                     let raw_name = n
                         .name
                         .as_deref()
-                        .unwrap_or(type_label)
+                        .unwrap_or(&type_label)
                         .to_string();
-                    // 如果原始名称含 "identity" 且是 detach 节点，替换前缀
-                    let raw_name = if n.is_detached && raw_name.starts_with("identity") {
-                        raw_name.replacen("identity", "detach", 1)
-                    } else {
-                        raw_name
-                    };
                     let display = match raw_name.split_once('/') {
                         Some((_, after)) => after.to_string(),
                         None => raw_name,
@@ -905,7 +878,8 @@ impl Var {
                 "Input" | "BasicInput" => ("ellipse", "filled", "#E3F2FD"),
                 "TargetInput" => ("ellipse", "filled", "#FFE0B2"),
                 "State" => ("cylinder", "filled", "#FFE0B2"),
-                "Identity" => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
+                "Identity" => ("ellipse", "\"filled,dashed\"", "#E0E0E0"),
+                "Detach" => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
                 "Parameter" => ("box", "filled", "#E8F5E9"),
                 "ZerosLike" => ("box", "\"filled,rounded,dashed\"", "#FFFDE7"),
                 t if t.contains("Loss")
@@ -1740,7 +1714,8 @@ impl Var {
                 "Input" | "BasicInput" => ("ellipse", "filled", "#E3F2FD"),
                 "TargetInput" => ("ellipse", "filled", "#FFE0B2"),
                 "State" => ("cylinder", "filled", "#FFE0B2"),
-                "Identity" => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
+                "Identity" => ("ellipse", "\"filled,dashed\"", "#E0E0E0"),
+                "Detach" => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
                 "Parameter" => ("box", "filled", "#E8F5E9"),
                 "ZerosLike" => ("box", "\"filled,rounded,dashed\"", "#FFFDE7"),
                 t if t.contains("Loss")
@@ -2972,12 +2947,12 @@ mod tests {
 
     #[test]
     fn test_detach_creates_node() {
-        // 验证 detach() 创建 Identity 节点（与 PyTorch 行为一致）
+        // 验证 detach() 创建 Detach 节点（与 PyTorch 行为一致）
         use crate::nn::Graph;
         let graph = Graph::new();
         let x = graph.input(&crate::tensor::Tensor::ones(&[1, 2])).unwrap();
 
-        // detach() 创建新的 Identity 节点
+        // detach() 创建新的 Detach 节点
         let x_detached = x.detach();
         // 验证 detach 产生了不同的节点
         assert_ne!(x.node_id(), x_detached.node_id(), "detach() 应创建一个新节点");

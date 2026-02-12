@@ -941,22 +941,14 @@ impl GraphInner {
 
     // ==================== 其他节点 ====================
 
-    /// 创建 Identity 节点    ///
-    /// 恒等映射，用于梯度截断边界
+    /// 创建 Identity 节点（纯恒等映射）
     ///
-    /// # 参数
-    /// - `input`: 输入节点
-    /// - `name`: 节点名称
-    /// - `detached`: 是否设置为 detached（梯度截断）
-    ///
-    /// # detached 说明
-    /// - `detached = false`: 正常 Identity，梯度正常传播
-    /// - `detached = true`: 梯度截断，用于 `Var::detach()`
+    /// 前向传播透传值，反向传播透传梯度。
+    /// 用于 NEAT 占位、skip connection 等场景。
     pub fn create_identity_node(
         &mut self,
         input: Rc<NodeInner>,
         name: Option<&str>,
-        detached: bool,
     ) -> Result<Rc<NodeInner>, GraphError> {
         use crate::nn::nodes::raw_node::Identity;
 
@@ -966,14 +958,27 @@ impl GraphInner {
         let identity = Identity::new(&input_shape, &input_dynamic_shape)?;
         let raw_node: NodeType = identity.into();
 
-        let node = self.create_node_inner(raw_node, name, "identity", vec![input])?;
+        self.create_node_inner(raw_node, name, "identity", vec![input])
+    }
 
-        // 设置 detached 状态
-        if detached {
-            node.set_detached(true);
-        }
+    /// 创建 Detach 节点（梯度屏障）
+    ///
+    /// 前向传播透传值，反向传播**阻断**梯度。
+    /// 通过 `Var::detach()` 调用。
+    pub fn create_detach_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Detach;
 
-        Ok(node)
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let detach = Detach::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = detach.into();
+
+        self.create_node_inner(raw_node, name, "detach", vec![input])
     }
 
     /// 创建 Dropout 节点    ///

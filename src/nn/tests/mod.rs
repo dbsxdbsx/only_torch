@@ -21,6 +21,7 @@ mod node_add;
 mod node_avg_pool2d;
 mod node_bce;
 mod node_conv2d;
+mod node_detach;
 mod node_divide;
 mod node_dropout;
 mod node_flatten;

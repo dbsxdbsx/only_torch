@@ -263,7 +263,12 @@ define_node_types! {
     // ==================== 辅助节点 ====================
     Identity(Identity) {
         category: "辅助",
-        description: "恒等映射（用于 detach）",
+        description: "恒等映射（pass-through）",
+        var_method: None,
+    },
+    Detach(Detach) {
+        category: "辅助",
+        description: "梯度屏障（阻断反向传播）",
         var_method: Some("detach()"),
     },
     Dropout(Dropout) {
