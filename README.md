@@ -59,6 +59,7 @@ let dot = graph.to_dot();
 | [dual_output_classify](examples/dual_output_classify/) | 多任务 | **多输出**、多 Loss 训练 | `Shared → (Cls, Reg)` | `cargo run --example dual_output_classify` |
 | [multi_io_fusion](examples/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
 | [multi_label_point](examples/multi_label_point/) | **多标签分类** | **BceLoss**、multi_label_accuracy | `2 → 16 → 16 → 4` | `cargo run --example multi_label_point` |
+| [cartpole_sac](examples/cartpole_sac/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
 
 #### 详细说明
 
@@ -284,7 +285,7 @@ opt-level = 3
 
 ### ⚫ 实战验证
 
-- 深度强化学习：CartPole SAC-Discrete 示例（需 Gym 支持）—— 环境搭建详见 [RL Python 环境搭建指南](.doc/rl_python_env_setup.md)
+- Hybrid SAC（离散+连续混合动作空间）—— 参考论文 Delalleau et al. 2019
 - [CFC](https://github.com/raminmh/CfC) 实现
 
 ### 💤 低优先级

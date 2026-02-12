@@ -21,7 +21,7 @@
 - **feat(rl): 强化学习基础设施**
   - `GymEnv`：与 Python Gymnasium 环境交互
   - `Minari`：离线 RL 数据集加载
-  - CartPole SAC-Discrete 示例（待注册）
+  - CartPole SAC-Discrete 示例（Twin Q、自动温度调节、目标网络软更新）
 
 - **feat(nn): RNN/LSTM/GRU 展开式设计**
   - 一次性处理整个序列，标准 `backward()` 自动完成 BPTT
@@ -37,9 +37,10 @@
 ### 测试
 
 - **test: 全量测试迁移完成**
-  - 1576 个单元测试全部通过（0 failed, 0 ignored）
+  - 1579 个单元测试全部通过（0 failed, 0 ignored）
   - 12 个 Batch 的节点测试从旧 API 迁移到新 API
-  - 15 个示例全部迁移到新 API 并验证通过
+  - 16 个示例全部迁移到新 API 并验证通过（含 cartpole_sac RL 示例）
+  - 新增 `backward_ex` 高层 API 测试（多 loss 梯度累积、多次 backward）
 
 ### 文档
 
