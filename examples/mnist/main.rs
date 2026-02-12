@@ -112,6 +112,8 @@ fn main() -> Result<(), GraphError> {
             let output = model.forward(&batch_x)?;
             let loss = output.cross_entropy(&batch_y)?;
 
+            graph.snapshot_once_from(&[&loss]);
+
             // 反向传播 + 参数更新
             optimizer.zero_grad()?;
             let loss_val = loss.backward()?;
@@ -158,12 +160,8 @@ fn main() -> Result<(), GraphError> {
         }
     }
 
-    // 6. 保存可视化
-    // 训练后做一次 forward + loss 用于生成计算图
-    let (batch_x, batch_y) = train_loader.iter().next().expect("训练集非空");
-    let output_vis = model.forward(&batch_x)?;
-    let loss_vis = output_vis.cross_entropy(&batch_y)?;
-    let vis_result = loss_vis.save_visualization("examples/mnist/mnist")?;
+    // 6. 保存可视化（从训练时拍的快照渲染）
+    let vis_result = graph.visualize_snapshot("examples/mnist/mnist")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

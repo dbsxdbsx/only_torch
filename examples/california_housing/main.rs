@@ -99,6 +99,8 @@ fn main() -> Result<(), GraphError> {
             let output = model.forward(&x_batch)?;
             let loss = output.mse_loss(&y_batch)?;
 
+            graph.snapshot_once_from(&[&loss]);
+
             optimizer.zero_grad()?;
             let loss_val = loss.backward()?;
             optimizer.step()?;
@@ -130,12 +132,8 @@ fn main() -> Result<(), GraphError> {
         }
     }
 
-    // ========== 保存可视化 ==========
-    // 训练后做一次 forward + loss 用于生成计算图
-    let (x_vis, y_vis) = train_loader.iter().next().expect("训练集非空");
-    let output_vis = model.forward(&x_vis)?;
-    let loss_vis = output_vis.mse_loss(&y_vis)?;
-    let vis_result = loss_vis.save_visualization("examples/california_housing/california_housing")?;
+    // ========== 保存可视化（从训练时拍的快照渲染）==========
+    let vis_result = graph.visualize_snapshot("examples/california_housing/california_housing")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

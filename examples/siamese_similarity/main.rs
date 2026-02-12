@@ -100,6 +100,8 @@ fn main() -> Result<(), GraphError> {
         let output = model.forward(&train_x1, &train_x2)?;
         let loss = output.mse_loss(&train_labels)?;
 
+        graph.snapshot_once_from(&[&loss]);
+
         optimizer.zero_grad()?;
         let loss_val = loss.backward()?;
         optimizer.step()?;
@@ -163,10 +165,8 @@ fn main() -> Result<(), GraphError> {
         );
     }
 
-    // 7. 保存计算图可视化（训练后做一次 forward + loss）
-    let output = model.forward(&train_x1, &train_x2)?;
-    let loss = output.mse_loss(&train_labels)?;
-    let vis_result = loss.save_visualization("examples/siamese_similarity/siamese_similarity")?;
+    // 7. 保存计算图可视化（从训练时拍的快照渲染）
+    let vis_result = graph.visualize_snapshot("examples/siamese_similarity/siamese_similarity")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

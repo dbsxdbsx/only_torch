@@ -14,7 +14,7 @@ mod model;
 
 use model::MultiIOFusion;
 use only_torch::metrics::{accuracy, r2_score};
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, Var, VarLossOps};
+use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 生成批量数据：(a_batch [N,4], b_batch [N,8], cls_batch [N,2], reg_batch [N,1])
@@ -93,6 +93,8 @@ fn main() -> Result<(), GraphError> {
         let cls_loss = cls_logits.cross_entropy(&train_cls)?;
         let reg_loss = reg_pred.mse_loss(&train_reg)?;
 
+        graph.snapshot_once(&[("Classification Loss", &cls_loss), ("Regression Loss", &reg_loss)]);
+
         optimizer.zero_grad()?;
         let cls_val = cls_loss.backward()?;
         let reg_val = reg_loss.backward()?;
@@ -158,15 +160,8 @@ fn main() -> Result<(), GraphError> {
         println!("\n⚠️ 可尝试增加 epoch 或调整学习率以提升效果。");
     }
 
-    // 保存可视化（训练后做一次完整 forward + 双 loss）
-    let (cls_logits, reg_pred) = model.forward(&train_a, &train_b)?;
-    let cls_loss = cls_logits.cross_entropy(&train_cls)?;
-    let reg_loss = reg_pred.mse_loss(&train_reg)?;
-    // 从多个 loss 合并回溯，显示完整的双分支结构
-    let vis_result = Var::visualize_all(
-        &[&cls_loss, &reg_loss],
-        "examples/multi_io_fusion/multi_io_fusion",
-    )?;
+    // 保存可视化（从训练时拍的快照渲染）
+    let vis_result = graph.visualize_snapshot("examples/multi_io_fusion/multi_io_fusion")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

@@ -105,6 +105,8 @@ fn main() -> Result<(), GraphError> {
         let logits = model.forward(&x_train)?;
         let loss = logits.bce_loss(&y_train)?;
 
+        graph.snapshot_once_from(&[&loss]);
+
         optimizer.zero_grad()?;
         let loss_val = loss.backward()?;
         optimizer.step()?;
@@ -188,15 +190,8 @@ fn main() -> Result<(), GraphError> {
         println!("   可尝试增加 epoch 或调整学习率。");
     }
 
-    // 8. 保存计算图可视化
-    let sample_input = Tensor::new(&[x_test[[0, 0]], x_test[[0, 1]]], &[1, 2]);
-    let sample_target = Tensor::new(
-        &[y_test[[0, 0]], y_test[[0, 1]], y_test[[0, 2]], y_test[[0, 3]]],
-        &[1, 4],
-    );
-    let logits_vis = model.forward(&sample_input)?;
-    let loss_vis = logits_vis.bce_loss(&sample_target)?;
-    let vis_result = loss_vis.save_visualization("examples/multi_label_point/multi_label_point")?;
+    // 8. 保存计算图可视化（从训练时拍的快照渲染）
+    let vis_result = graph.visualize_snapshot("examples/multi_label_point/multi_label_point")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

@@ -12,10 +12,10 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "14" [label=<add_3<BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "16" [label=<matmul_3<BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "17" [label=<shared_b<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "19" [label=<shared_W<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "8" [label=<add_2<BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "9" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "10" [label=<shared_b<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "12" [label=<shared_W<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
     subgraph cluster_cls_head {
@@ -25,10 +25,10 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "3" [label=<add_1<BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "7" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "8" [label=<cls_head_b<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "11" [label=<cls_head_W<BR/><B>Parameter</B><BR/>[16, 2]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "2" [label=<add_1<BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "4" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "5" [label=<cls_head_b<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "7" [label=<cls_head_W<BR/><B>Parameter</B><BR/>[16, 2]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
     subgraph cluster_reg_head {
@@ -38,36 +38,36 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "9" [label=<add_2<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "12" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "13" [label=<reg_head_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "15" [label=<reg_head_W<BR/><B>Parameter</B><BR/>[16, 1]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "16" [label=<add_3<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "17" [label=<matmul_3<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "18" [label=<reg_head_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "19" [label=<reg_head_W<BR/><B>Parameter</B><BR/>[16, 1]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
-    "1" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
-    "2" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
-    "4" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "5" [label=<abs_1<BR/><B>Abs</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "6" [label=<target_2<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "10" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "18" [label=<input_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "1" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]<BR/><FONT COLOR="#1976D2" POINT-SIZE="9">▸ Classification Loss</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#1976D2"];
+    "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "6" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "11" [label=<input_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "13" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]<BR/><FONT COLOR="#D32F2F" POINT-SIZE="9">▸ Regression Loss</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#D32F2F"];
+    "14" [label=<abs_1<BR/><B>Abs</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "15" [label=<target_2<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
 
-    "3" -> "1";
-    "4" -> "1";
-    "5" -> "2";
-    "6" -> "2";
-    "7" -> "3";
-    "8" -> "3";
-    "9" -> "5";
-    "10" -> "7";
-    "11" -> "7";
-    "12" -> "9";
-    "13" -> "9";
-    "14" -> "10";
-    "10" -> "12";
-    "15" -> "12";
-    "16" -> "14";
-    "17" -> "14";
-    "18" -> "16";
-    "19" -> "16";
+    "2" -> "1" [color="#1976D2"];
+    "3" -> "1" [color="#1976D2"];
+    "4" -> "2" [color="#1976D2"];
+    "5" -> "2" [color="#1976D2"];
+    "6" -> "4" [color="#1976D2"];
+    "7" -> "4" [color="#1976D2"];
+    "8" -> "6" [color="#888888"];
+    "9" -> "8" [color="#888888"];
+    "10" -> "8" [color="#888888"];
+    "11" -> "9" [color="#888888"];
+    "12" -> "9" [color="#888888"];
+    "14" -> "13" [color="#D32F2F"];
+    "15" -> "13" [color="#D32F2F"];
+    "16" -> "14" [color="#D32F2F"];
+    "17" -> "16" [color="#D32F2F"];
+    "18" -> "16" [color="#D32F2F"];
+    "6" -> "17" [color="#D32F2F"];
+    "19" -> "17" [color="#D32F2F"];
 }

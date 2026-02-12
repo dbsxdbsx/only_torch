@@ -153,6 +153,14 @@ fn main() -> Result<(), GraphError> {
             // G 希望 D 把假图像判别为真
             let fake_out_for_g = discriminator.forward(&fake_images_g)?;
             let g_loss = fake_out_for_g.mse_loss(1)?; // G 希望被判为真（目标为 1）
+
+            // 快照完整 GAN 训练图：D(real) + D(fake with detach) + G→D（仅首次）
+            graph.snapshot_once(&[
+                ("D Real Loss", &d_real_loss),
+                ("D Fake Loss", &d_fake_loss),
+                ("G Loss", &g_loss),
+            ]);
+
             let g_loss_val = g_loss.backward()?;
             g_optimizer.step()?;
 
@@ -188,28 +196,23 @@ fn main() -> Result<(), GraphError> {
         train_start.elapsed().as_secs_f32()
     );
 
-    // 4. 生成样本并保存可视化
-    println!("\n[4/4] 生成样本并保存可视化...");
+    // 4. 保存可视化
+    println!("\n[4/4] 保存计算图可视化...");
 
-    // 构建完整 GAN 计算图：G -> D -> Loss
-    let z_vis = Tensor::normal(0.0, 1.0, &[1, LATENT_DIM]);
-    let fake_vis = generator.forward(&z_vis)?;
-
-    let fake_val = fake_vis.value()?.unwrap();
-    println!("  生成图像形状: {:?}", fake_val.shape());
-
-    let d_out_vis = discriminator.forward(&fake_vis)?;
-    // 添加 loss 节点，使完整链路（G -> D -> Loss）可见
-    let loss_vis = d_out_vis.mse_loss(1)?;
-
-    // 从 loss 回溯保存完整计算图
-    let vis_result = loss_vis.save_visualization("examples/mnist_gan/mnist_gan")?;
-    println!("  计算图已保存: {}", vis_result.dot_path.display());
+    // 4a. 训练图（从快照渲染：G→D→Loss 完整训练流程）
+    let vis_result = graph.visualize_snapshot("examples/mnist_gan/mnist_gan")?;
+    println!("  训练图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
-        println!("  可视化图像: {}", img_path.display());
+        println!("  训练图图像: {}", img_path.display());
     }
-    if let Some(hint) = &vis_result.graphviz_hint {
-        println!("  Graphviz 提示: {}", hint);
+
+    // 4b. 推理图（只有 Generator：noise → G → image）
+    let z_infer = Tensor::normal(0.0, 1.0, &[1, LATENT_DIM]);
+    let output_infer = generator.forward(&z_infer)?;
+    let vis_infer = output_infer.save_visualization("examples/mnist_gan/mnist_gan_inference")?;
+    println!("  推理图已保存: {}", vis_infer.dot_path.display());
+    if let Some(img_path) = &vis_infer.image_path {
+        println!("  推理图图像: {}", img_path.display());
     }
 
     println!("\n=== GAN 训练示例完成 ===");

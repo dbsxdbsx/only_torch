@@ -788,11 +788,23 @@ impl Var {
                 .map(|n| {
                     let id = n.id.0;
                     let node_type = &n.type_name;
+                    // detached Identity → 显示为 "detach"
+                    let type_label = if n.is_detached && node_type == "Identity" {
+                        "detach"
+                    } else {
+                        &node_type.to_lowercase()
+                    };
                     let raw_name = n
                         .name
                         .as_deref()
-                        .unwrap_or(&node_type.to_lowercase())
+                        .unwrap_or(type_label)
                         .to_string();
+                    // 如果原始名称含 "identity" 且是 detach 节点，替换前缀
+                    let raw_name = if n.is_detached && raw_name.starts_with("identity") {
+                        raw_name.replacen("identity", "detach", 1)
+                    } else {
+                        raw_name
+                    };
                     let display = match raw_name.split_once('/') {
                         Some((_, after)) => after.to_string(),
                         None => raw_name,
