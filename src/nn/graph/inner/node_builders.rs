@@ -1090,4 +1090,63 @@ impl GraphInner {
 
         self.create_node_inner(raw_node, name, "ln", vec![input])
     }
+
+    /// 创建 Sqrt 节点
+    ///
+    /// 逐元素平方根: y = √x
+    pub fn create_sqrt_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Sqrt;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let sqrt = Sqrt::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = sqrt.into();
+
+        self.create_node_inner(raw_node, name, "sqrt", vec![input])
+    }
+
+    /// 创建 Clip 节点
+    ///
+    /// 逐元素值域裁剪: y = clip(x, min, max)
+    pub fn create_clip_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        min: f32,
+        max: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Clip;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let clip = Clip::new(&input_shape, &input_dynamic_shape, min, max)?;
+        let raw_node: NodeType = clip.into();
+
+        self.create_node_inner(raw_node, name, "clip", vec![input])
+    }
+
+    /// 创建 Exp 节点
+    ///
+    /// 逐元素指数函数: y = e^x
+    pub fn create_exp_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Exp;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let exp = Exp::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = exp.into();
+
+        self.create_node_inner(raw_node, name, "exp", vec![input])
+    }
 }

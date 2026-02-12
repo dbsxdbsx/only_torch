@@ -85,6 +85,25 @@ pub trait VarActivationOps {
     /// 梯度为 1/x。输入 x 必须为正数，否则结果为 NaN 或 -Inf。
     /// 常用于计算 log 概率、KL 散度、交叉熵等场景。
     fn ln(&self) -> Var;
+
+    /// Exp 函数（指数）：e^x
+    ///
+    /// 梯度为 e^x（等于自身前向输出值）。与 Ln 互为反函数。
+    /// 常用于 SAC Actor 的 `log_std.exp() → std` 转换、概率密度计算等场景。
+    fn exp(&self) -> Var;
+
+    /// Clip 函数（值域裁剪）：clip(x, min, max)
+    ///
+    /// 将每个元素限制在 `[min, max]` 范围内。边界处梯度为 0。
+    /// 等价于 NumPy `np.clip()` / PyTorch `torch.clamp()`。
+    /// 常用于 SAC `log_std` 裁剪、PPO ratio clipping、数值稳定等场景。
+    fn clip(&self, min: f32, max: f32) -> Var;
+
+    /// Sqrt 函数（平方根）：√x
+    ///
+    /// 梯度为 0.5/√x。输入 x 应为非负数，否则结果为 NaN。
+    /// 常用于 Adam 优化器的 `sqrt(v + eps)`、距离计算等场景。
+    fn sqrt(&self) -> Var;
 }
 
 impl VarActivationOps for Var {
@@ -184,6 +203,33 @@ impl VarActivationOps for Var {
             .borrow_mut()
             .create_ln_node(Rc::clone(self.node()), None)
             .expect("创建 Ln 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn exp(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_exp_node(Rc::clone(self.node()), None)
+            .expect("创建 Exp 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn clip(&self, min: f32, max: f32) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_clip_node(Rc::clone(self.node()), min, max, None)
+            .expect("创建 Clip 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn sqrt(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_sqrt_node(Rc::clone(self.node()), None)
+            .expect("创建 Sqrt 节点失败");
         Self::new_with_rc_graph(node, &graph)
     }
 }

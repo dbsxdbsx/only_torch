@@ -1543,6 +1543,35 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑abs↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓clip↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素进行值域裁剪: clip(x, min, max)
+    ///
+    /// 将每个元素限制在 `[min, max]` 范围内。
+    /// 等价于 NumPy 的 `np.clip()` 或 PyTorch 的 `torch.clamp()`。
+    ///
+    /// # 参数
+    /// - `min`: 下界
+    /// - `max`: 上界（要求 `min <= max`）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[-3.0, -1.0, 0.0, 1.0, 3.0], &[5]);
+    /// let y = x.clip(-2.0, 2.0);
+    /// // y = [-2.0, -1.0, 0.0, 1.0, 2.0]
+    /// ```
+    pub fn clip(&self, min: f32, max: f32) -> Self {
+        let data = self.data.mapv(|x| x.clamp(min, max));
+        Self { data }
+    }
+
+    /// 就地对张量的每个元素进行值域裁剪
+    pub fn clip_mut(&mut self, min: f32, max: f32) {
+        self.data.mapv_inplace(|x| x.clamp(min, max));
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑clip↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓gather↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 按索引张量从指定维度收集元素
     ///

@@ -232,6 +232,23 @@ define_node_types! {
         description: "自然对数",
         var_method: Some("ln()"),
     },
+    Exp(Exp) {
+        category: "激活",
+        description: "指数函数",
+        var_method: Some("exp()"),
+    },
+    Sqrt(Sqrt) {
+        category: "激活",
+        description: "平方根",
+        var_method: Some("sqrt()"),
+    },
+
+    // ==================== 裁剪 ====================
+    Clip(Clip) {
+        category: "裁剪",
+        description: "值域裁剪（clip/clamp）",
+        var_method: Some("clip()"),
+    },
 
     // ==================== 损失函数 ====================
     MSE(MSE) {
