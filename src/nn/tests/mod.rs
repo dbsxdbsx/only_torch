@@ -52,10 +52,12 @@ mod node_sum;
 mod node_tanh;
 
 // ===== Phase 3: 复杂测试（旧 API 函数已用 #[cfg(any())] 禁用，layer 已完全适配） =====
-mod graph_basic;
-mod graph_forward;
+mod batch_mechanism;
+mod gradient_flow_control;
 mod graph_backward;
+mod graph_basic;
 mod graph_dynamic;
+mod graph_forward;
 mod layer_avg_pool2d;
 mod layer_conv2d;
 mod layer_gru;
@@ -63,14 +65,12 @@ mod layer_linear;
 mod layer_lstm;
 mod layer_max_pool2d;
 mod layer_rnn;
-mod recurrent_basic;
-mod recurrent_bptt;
-mod gradient_flow_control;
-mod batch_mechanism;
-mod bptt_pytorch_comparison;
 mod save_load;
 
 // ===== 已移除/归档 =====
 // mod var_transition; // Var 过渡期测试（方案 C Step 2.2）- 迁移完成后不再需要
 // mod criterion; // Criterion 已移除，见文档 4.3 节
 // mod model_state; // ModelState 已移除，见文档 4.1 节
+// mod recurrent_basic; // 旧式显式时间步测试，已被展开式 RNN 设计取代
+// mod recurrent_bptt; // 旧式 BPTT 测试，标准 backward() 已覆盖
+// mod bptt_pytorch_comparison; // 旧式 BPTT PyTorch 对照，已被 layer_rnn 等测试覆盖
