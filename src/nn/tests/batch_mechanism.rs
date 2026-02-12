@@ -8,17 +8,18 @@
  *                 - backward(batch_loss) 的梯度 == 逐样本梯度的平均
  *
  *                 设计理念：单样本是 batch_size=1 的特例，使用统一的 API。
+ *
+ *                 使用底层 Graph + inner_rc() API（graph_dynamic 模式）。
  */
 
 use approx::assert_abs_diff_eq;
 
-use crate::nn::{GraphError, GraphInner};
+use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 
 /// 测试 batch forward 与单样本 forward 的一致性
 ///
 /// 验证：forward([batch, ...]) 的每一行 == 单独 forward 每个样本的结果
-#[cfg(any())]
 #[test]
 fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     let seed = 42u64;
@@ -39,33 +40,36 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     assert_eq!(batch_input.shape(), &[batch_size, input_dim]);
 
     // ========== 批量处理 ==========
-    let mut graph_batch = GraphInner::new_with_seed(seed);
-    let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
-    let w_b =
-        graph_batch.new_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
-    let z_b = graph_batch.new_mat_mul_node(x_b, w_b, Some("z"))?;
-    let out_b = graph_batch.new_sigmoid_node(z_b, Some("out"))?;
+    let graph_batch = Graph::new_with_seed(seed);
+    let inner_batch = graph_batch.inner_rc();
+    let mut gi_batch = inner_batch.borrow_mut();
 
-    graph_batch.set_node_value(x_b, Some(&batch_input))?;
-    graph_batch.forward(out_b)?; // 统一 API
-    let batch_output = graph_batch.get_node_value(out_b)?.unwrap().clone();
+    let x_b = gi_batch.create_basic_input_node(&[batch_size, input_dim], Some("x"))?;
+    let w_b = gi_batch
+        .create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
+    let z_b = gi_batch.create_mat_mul_node(vec![x_b.clone(), w_b.clone()], Some("z"))?;
+    let out_b = gi_batch.create_sigmoid_node(z_b.clone(), Some("out"))?;
+
+    x_b.set_value(Some(&batch_input))?;
+    gi_batch.forward_via_node_inner(&out_b)?;
+    let batch_output = out_b.value().unwrap().clone();
 
     // ========== 逐样本处理 ==========
     let mut single_outputs = Vec::new();
     for sample in samples.iter() {
-        let mut graph_single = GraphInner::new_with_seed(seed);
-        let x_s = graph_single.new_basic_input_node(&[1, input_dim], Some("x"))?;
-        let w_s = graph_single.new_parameter_node_seeded(
-            &[input_dim, output_dim],
-            Some("w"),
-            seed + 100,
-        )?;
-        let z_s = graph_single.new_mat_mul_node(x_s, w_s, Some("z"))?;
-        let out_s = graph_single.new_sigmoid_node(z_s, Some("out"))?;
+        let graph_single = Graph::new_with_seed(seed);
+        let inner_single = graph_single.inner_rc();
+        let mut gi_single = inner_single.borrow_mut();
 
-        graph_single.set_node_value(x_s, Some(sample))?;
-        graph_single.forward(out_s)?;
-        single_outputs.push(graph_single.get_node_value(out_s)?.unwrap().clone());
+        let x_s = gi_single.create_basic_input_node(&[1, input_dim], Some("x"))?;
+        let w_s = gi_single
+            .create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
+        let z_s = gi_single.create_mat_mul_node(vec![x_s.clone(), w_s.clone()], Some("z"))?;
+        let out_s = gi_single.create_sigmoid_node(z_s.clone(), Some("out"))?;
+
+        x_s.set_value(Some(sample))?;
+        gi_single.forward_via_node_inner(&out_s)?;
+        single_outputs.push(out_s.value().unwrap().clone());
     }
 
     // ========== 验证 ==========
@@ -87,7 +91,6 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
 /// 验证：backward(batch_loss) 的梯度 == Σ backward(single_loss) / batch_size
 ///
 /// 这是 VJP 模式下 batch 处理的**核心数学等价性**验证
-#[cfg(any())]
 #[test]
 fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     let seed = 42u64;
@@ -115,63 +118,63 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     let batch_labels = Tensor::stack(&label_refs, 0, false);
 
     // ========== 批量处理（统一 API）==========
-    let mut graph_batch = GraphInner::new_with_seed(seed);
-    let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
-    let y_b = graph_batch.new_basic_input_node(&[batch_size, output_dim], Some("y"))?;
-    let w1_b =
-        graph_batch.new_parameter_node_seeded(&[input_dim, hidden_dim], Some("w1"), seed + 100)?;
-    let w2_b =
-        graph_batch.new_parameter_node_seeded(&[hidden_dim, output_dim], Some("w2"), seed + 101)?;
+    let graph_batch = Graph::new_with_seed(seed);
+    let inner_batch = graph_batch.inner_rc();
+    let mut gi_batch = inner_batch.borrow_mut();
 
-    let z1_b = graph_batch.new_mat_mul_node(x_b, w1_b, None)?;
-    let a1_b = graph_batch.new_sigmoid_node(z1_b, None)?;
-    let z2_b = graph_batch.new_mat_mul_node(a1_b, w2_b, None)?;
+    let x_b = gi_batch.create_basic_input_node(&[batch_size, input_dim], Some("x"))?;
+    let y_b = gi_batch.create_basic_input_node(&[batch_size, output_dim], Some("y"))?;
+    let w1_b = gi_batch
+        .create_parameter_node_seeded(&[input_dim, hidden_dim], Some("w1"), seed + 100)?;
+    let w2_b = gi_batch
+        .create_parameter_node_seeded(&[hidden_dim, output_dim], Some("w2"), seed + 101)?;
+
+    let z1_b = gi_batch.create_mat_mul_node(vec![x_b.clone(), w1_b.clone()], None)?;
+    let a1_b = gi_batch.create_sigmoid_node(z1_b.clone(), None)?;
+    let z2_b = gi_batch.create_mat_mul_node(vec![a1_b.clone(), w2_b.clone()], None)?;
     // 使用 MSE loss（输出标量 [1,1]，内部自动对 batch 求平均）
-    let loss_b = graph_batch.new_mse_loss_node(z2_b, y_b, Some("loss"))?;
+    let loss_b = gi_batch.create_mse_mean_node(z2_b.clone(), y_b.clone(), Some("loss"))?;
 
     // Batch forward + backward（统一 API）
-    graph_batch.set_node_value(x_b, Some(&batch_input))?;
-    graph_batch.set_node_value(y_b, Some(&batch_labels))?;
-    graph_batch.forward(loss_b)?;
-    graph_batch.backward(loss_b)?;
+    x_b.set_value(Some(&batch_input))?;
+    y_b.set_value(Some(&batch_labels))?;
+    gi_batch.forward_via_node_inner(&loss_b)?;
+    gi_batch.backward_via_node_inner(&loss_b, false)?;
 
-    let batch_grad_w1 = graph_batch.get_node_grad(w1_b)?.unwrap().clone();
-    let batch_grad_w2 = graph_batch.get_node_grad(w2_b)?.unwrap().clone();
+    let batch_grad_w1 = w1_b.grad().unwrap().clone();
+    let batch_grad_w2 = w2_b.grad().unwrap().clone();
 
     // ========== 逐样本累加 ==========
     let mut accumulated_grad_w1 = Tensor::zeros(&[input_dim, hidden_dim]);
     let mut accumulated_grad_w2 = Tensor::zeros(&[hidden_dim, output_dim]);
 
     for i in 0..batch_size {
-        let mut graph_single = GraphInner::new_with_seed(seed);
-        let x_s = graph_single.new_basic_input_node(&[1, input_dim], Some("x"))?;
-        let y_s = graph_single.new_basic_input_node(&[1, output_dim], Some("y"))?;
-        let w1_s = graph_single.new_parameter_node_seeded(
-            &[input_dim, hidden_dim],
-            Some("w1"),
-            seed + 100,
-        )?;
-        let w2_s = graph_single.new_parameter_node_seeded(
-            &[hidden_dim, output_dim],
-            Some("w2"),
-            seed + 101,
-        )?;
+        let graph_single = Graph::new_with_seed(seed);
+        let inner_single = graph_single.inner_rc();
+        let mut gi_single = inner_single.borrow_mut();
 
-        let z1_s = graph_single.new_mat_mul_node(x_s, w1_s, None)?;
-        let a1_s = graph_single.new_sigmoid_node(z1_s, None)?;
-        let z2_s = graph_single.new_mat_mul_node(a1_s, w2_s, None)?;
-        let loss_s = graph_single.new_mse_loss_node(z2_s, y_s, Some("loss"))?;
+        let x_s = gi_single.create_basic_input_node(&[1, input_dim], Some("x"))?;
+        let y_s = gi_single.create_basic_input_node(&[1, output_dim], Some("y"))?;
+        let w1_s = gi_single
+            .create_parameter_node_seeded(&[input_dim, hidden_dim], Some("w1"), seed + 100)?;
+        let w2_s = gi_single
+            .create_parameter_node_seeded(&[hidden_dim, output_dim], Some("w2"), seed + 101)?;
 
-        graph_single.set_node_value(x_s, Some(&samples[i]))?;
-        graph_single.set_node_value(y_s, Some(&labels[i]))?;
-        graph_single.forward(loss_s)?;
-        graph_single.backward(loss_s)?;
+        let z1_s = gi_single.create_mat_mul_node(vec![x_s.clone(), w1_s.clone()], None)?;
+        let a1_s = gi_single.create_sigmoid_node(z1_s.clone(), None)?;
+        let z2_s = gi_single.create_mat_mul_node(vec![a1_s.clone(), w2_s.clone()], None)?;
+        let loss_s = gi_single.create_mse_mean_node(z2_s.clone(), y_s.clone(), Some("loss"))?;
+
+        x_s.set_value(Some(&samples[i]))?;
+        y_s.set_value(Some(&labels[i]))?;
+        gi_single.forward_via_node_inner(&loss_s)?;
+        gi_single.backward_via_node_inner(&loss_s, false)?;
 
         // 累加梯度
-        if let Some(grad) = graph_single.get_node_grad(w1_s)? {
+        if let Some(grad) = w1_s.grad() {
             accumulated_grad_w1 = accumulated_grad_w1 + grad;
         }
-        if let Some(grad) = graph_single.get_node_grad(w2_s)? {
+        if let Some(grad) = w2_s.grad() {
             accumulated_grad_w2 = accumulated_grad_w2 + grad;
         }
     }
@@ -195,7 +198,6 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
 /// 验证：使用批量计算的梯度更新参数 == 使用逐样本累加梯度更新参数
 ///
 /// 注意：此测试直接使用 SGD 公式 θ = θ - lr * grad，不依赖 optimizer API
-#[cfg(any())]
 #[test]
 fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphError> {
     let seed = 42u64;
@@ -225,48 +227,51 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
     let batch_labels = Tensor::stack(&label_refs, 0, false);
 
     // ========== 批量处理 ==========
-    let mut graph_batch = GraphInner::new_with_seed(seed);
-    let x_b = graph_batch.new_basic_input_node(&[batch_size, input_dim], Some("x"))?;
-    let y_b = graph_batch.new_basic_input_node(&[batch_size, output_dim], Some("y"))?;
-    let w_b =
-        graph_batch.new_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
-    let z_b = graph_batch.new_mat_mul_node(x_b, w_b, None)?;
-    let loss_b = graph_batch.new_mse_loss_node(z_b, y_b, Some("loss"))?;
+    let graph_batch = Graph::new_with_seed(seed);
+    let inner_batch = graph_batch.inner_rc();
+    let mut gi_batch = inner_batch.borrow_mut();
 
-    let w_init = graph_batch.get_node_value(w_b)?.unwrap().clone();
+    let x_b = gi_batch.create_basic_input_node(&[batch_size, input_dim], Some("x"))?;
+    let y_b = gi_batch.create_basic_input_node(&[batch_size, output_dim], Some("y"))?;
+    let w_b = gi_batch
+        .create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
+    let z_b = gi_batch.create_mat_mul_node(vec![x_b.clone(), w_b.clone()], None)?;
+    let loss_b = gi_batch.create_mse_mean_node(z_b.clone(), y_b.clone(), Some("loss"))?;
+
+    let w_init = w_b.value().unwrap().clone();
 
     // Batch forward + backward
-    graph_batch.set_node_value(x_b, Some(&batch_input))?;
-    graph_batch.set_node_value(y_b, Some(&batch_labels))?;
-    graph_batch.forward(loss_b)?;
-    graph_batch.backward(loss_b)?;
+    x_b.set_value(Some(&batch_input))?;
+    y_b.set_value(Some(&batch_labels))?;
+    gi_batch.forward_via_node_inner(&loss_b)?;
+    gi_batch.backward_via_node_inner(&loss_b, false)?;
 
     // 手动应用 SGD 更新：θ = θ - lr * grad
-    let batch_grad = graph_batch.get_node_grad(w_b)?.unwrap().clone();
+    let batch_grad = w_b.grad().unwrap().clone();
     let w_after_batch = &w_init - learning_rate * &batch_grad;
 
     // ========== 逐样本累加 ==========
     let mut accumulated_grad = Tensor::zeros(&[input_dim, output_dim]);
 
     for i in 0..batch_size {
-        let mut graph_single = GraphInner::new_with_seed(seed);
-        let x_s = graph_single.new_basic_input_node(&[1, input_dim], Some("x"))?;
-        let y_s = graph_single.new_basic_input_node(&[1, output_dim], Some("y"))?;
-        let w_s = graph_single.new_parameter_node_seeded(
-            &[input_dim, output_dim],
-            Some("w"),
-            seed + 100,
-        )?;
-        let z_s = graph_single.new_mat_mul_node(x_s, w_s, None)?;
-        let loss_s = graph_single.new_mse_loss_node(z_s, y_s, Some("loss"))?;
+        let graph_single = Graph::new_with_seed(seed);
+        let inner_single = graph_single.inner_rc();
+        let mut gi_single = inner_single.borrow_mut();
 
-        graph_single.set_node_value(x_s, Some(&samples[i]))?;
-        graph_single.set_node_value(y_s, Some(&labels[i]))?;
-        graph_single.forward(loss_s)?;
-        graph_single.backward(loss_s)?;
+        let x_s = gi_single.create_basic_input_node(&[1, input_dim], Some("x"))?;
+        let y_s = gi_single.create_basic_input_node(&[1, output_dim], Some("y"))?;
+        let w_s = gi_single
+            .create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
+        let z_s = gi_single.create_mat_mul_node(vec![x_s.clone(), w_s.clone()], None)?;
+        let loss_s = gi_single.create_mse_mean_node(z_s.clone(), y_s.clone(), Some("loss"))?;
+
+        x_s.set_value(Some(&samples[i]))?;
+        y_s.set_value(Some(&labels[i]))?;
+        gi_single.forward_via_node_inner(&loss_s)?;
+        gi_single.backward_via_node_inner(&loss_s, false)?;
 
         // 累加梯度
-        if let Some(grad) = graph_single.get_node_grad(w_s)? {
+        if let Some(grad) = w_s.grad() {
             accumulated_grad = accumulated_grad + grad;
         }
     }
