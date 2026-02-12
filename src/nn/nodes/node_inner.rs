@@ -1,7 +1,7 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-02-01
- * @Description  : NodeInner - 方案 C 的核心节点结构
+ * @Description  : NodeInner - 核心节点结构
  *
  * 这是动态图生命周期管理的核心组件：
  * - 被 Rc 包装，通过引用计数控制生命周期
@@ -18,7 +18,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
-/// 节点内部结构 - 方案 C 的核心
+/// 节点内部结构
 ///
 /// 与旧的 `NodeHandle` 不同，`NodeInner` 直接被 `Rc` 包装：
 /// - `Var` 持有 `Rc<NodeInner>`，控制节点生命周期
@@ -208,7 +208,7 @@ impl NodeInner {
         self.raw_node.borrow_mut().clear_grad()
     }
 
-    // ==================== 形状查询（方案 C 2.7.2）====================
+    // ==================== 形状查询 ====================
 
     /// 获取节点的期望输出形状（静态形状）
     pub fn value_expected_shape(&self) -> Vec<usize> {
@@ -220,7 +220,7 @@ impl NodeInner {
         self.raw_node.borrow().dynamic_expected_shape()
     }
 
-    // ==================== 前向传播（方案 C）====================
+    // ==================== 前向传播 ====================
 
     /// 从父节点计算当前节点的值
     ///
@@ -308,7 +308,7 @@ impl NodeInner {
         Ok(())
     }
 
-    // ==================== 反向传播（方案 C）====================
+    // ==================== 反向传播 ====================
 
     /// 计算对指定父节点的梯度
     ///

@@ -639,7 +639,7 @@ fn test_detach_attach_multiple_times() {
     assert!(!w.is_detached()); // 仍然是 attached
 
     // ===== 4. 验证 detach 状态确实影响 backward =====
-    // 注意：方案 C 中 set_detached 阻止节点 **向上游传播** 梯度，
+    // 注意：set_detached 阻止节点 **向上游传播** 梯度，
     // 而非阻止节点 **接收** 梯度。因此需要 detach 中间节点 y 来阻断流向 w 的梯度。
 
     // attached 状态：w 应该有梯度
@@ -1247,7 +1247,7 @@ fn test_multi_task_learning() {
     );
 }
 
-/// 测试: backward 默认行为（方案 C 中值由 Rc 管理）
+/// 测试: backward 默认行为（值由 Rc 管理）
 #[test]
 fn test_backward_default_releases_graph() {
     let graph = Graph::new();
@@ -1299,7 +1299,7 @@ fn test_backward_default_releases_graph() {
     assert!(w.value().is_some());
 }
 
-/// 测试: 多次 backward 无需重新 forward（方案 C 中值不被释放）
+/// 测试: 多次 backward 无需重新 forward（值不被释放）
 #[test]
 fn test_multiple_backward_without_new_forward() {
     let graph = Graph::new();
@@ -1387,15 +1387,15 @@ fn test_multiple_backward_with_detach() {
     // w2 应该有梯度
     assert!(w2.grad().is_some());
 
-    // h 和 y 的值应该存在（方案 C 中由 Rc 管理）
+    // h 和 y 的值应该存在（由 Rc 管理）
     assert!(h.value().is_some());
     assert!(y.value().is_some());
 
-    // 验证 detach 效果：方案 C 中 detach 节点仍可接收梯度（只阻止向上游传播）
+    // 验证 detach 效果：detach 节点仍可接收梯度（只阻止向上游传播）
     // h 从 y 收到梯度，但不向 w1 传播
     assert!(
         h.grad().is_some(),
-        "方案 C: detach 节点仍可接收来自下游的梯度（只阻止向上传播）"
+        "detach 节点仍可接收来自下游的梯度（只阻止向上传播）"
     );
 
     // w1 不应有梯度（因为 h 被 detach 阻断了梯度流）

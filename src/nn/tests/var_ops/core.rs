@@ -963,7 +963,7 @@ fn test_var_backward_multi_loss() {
     );
 }
 
-/// 方案 C：同一 loss 可多次 backward（值由 Rc 管理，天然支持）
+/// 同一 loss 可多次 backward（值由 Rc 管理，天然支持）
 #[test]
 fn test_var_backward_multiple_times() {
     use crate::nn::var_ops::{VarLossOps, VarMatrixOps};

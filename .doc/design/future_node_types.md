@@ -9,7 +9,7 @@
 ## 相关文档
 
 - [architecture_roadmap.md](../architecture_roadmap.md) - 项目主入口，整体架构路线图
-- [dynamic_graph_lifecycle_design.md](./dynamic_graph_lifecycle_design.md) - 方案 C 动态图生命周期设计
+- [dynamic_graph_lifecycle_design.md](../_archive/dynamic_graph_lifecycle_design.md) - 动态图生命周期设计（已归档）
 - [node_vs_layer_design.md](./node_vs_layer_design.md) - Node vs Layer 架构设计
 
 ---

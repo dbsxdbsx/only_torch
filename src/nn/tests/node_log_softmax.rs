@@ -319,7 +319,7 @@ fn test_log_softmax_dynamic_batch_backward() {
     loss.backward().unwrap();
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 use std::rc::Rc;
 

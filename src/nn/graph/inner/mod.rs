@@ -27,7 +27,7 @@ mod node_builders;
 mod serialization;
 mod visualization;
 
-// 注意：bptt.rs 和 recurrent.rs 已在方案 C 2.7.3 中删除
+// 注意：bptt.rs 和 recurrent.rs 已删除
 // 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
 
 use super::types::{LayerGroup, RecurrentLayerMeta};
@@ -41,9 +41,7 @@ use std::rc::Weak;
 /// 这是计算图的核心实现。用户通常通过 `Graph` 句柄使用此结构，
 /// 高级用户（如 NEAT）可通过 `graph.inner()` 访问底层操作。
 ///
-/// # 方案 C 过渡期说明
-/// - `nodes` HashMap 在过渡期保留，最终会被移除
-/// - `parameters` 是新的参数注册表（弱引用，不控制生命周期）
+/// `parameters` 是参数注册表（弱引用，不控制生命周期）
 pub struct GraphInner {
     pub(in crate::nn::graph) name: String,
     /// 最后一次前向传播的 id
@@ -53,7 +51,7 @@ pub struct GraphInner {
     pub(in crate::nn::graph) next_id: u64,
     pub(in crate::nn::graph) is_eval_mode: bool,
 
-    // ========== 方案 C 字段 ==========
+    // ========== 参数管理 ==========
     /// 参数注册表（弱引用，不控制参数生命周期）
     ///
     /// - key: 参数名称（如 "linear1.weight"）

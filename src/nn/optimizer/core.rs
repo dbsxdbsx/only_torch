@@ -6,7 +6,7 @@
  *
  * 设计依据：architecture_v2_design.md §4.2.6
  *
- * 核心特性（方案 C 2.7.2 适配）：
+ * 核心特性：
  * - 直接通过 Var.node() 访问 NodeInner 进行值/梯度操作
  * - 不再依赖 GraphInner 的 get_node 系列方法
  * - params 存储 Vec<Var>（保留完整 Var 能力，支持未来 param_groups 等扩展）

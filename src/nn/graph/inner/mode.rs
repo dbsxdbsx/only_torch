@@ -4,7 +4,7 @@
  * @LastEditTime : 2026-02-02
  * @Description  : GraphInner train/eval 模式
  *
- * 方案 C 清理：detach 机制改用 Var::detach() 通过 NodeInner 实现
+ * detach 机制通过 Var::detach() 和 NodeInner 实现
  */
 
 use super::GraphInner;
@@ -40,6 +40,6 @@ impl GraphInner {
         result
     }
 
-    // 注意：detach/attach_node/is_node_detached 已在方案 C 中移除
+    // 注意：detach/attach_node/is_node_detached 已移除
     // 新架构下，detach 通过 Var::detach() 和 NodeInner.set_detached() 实现
 }

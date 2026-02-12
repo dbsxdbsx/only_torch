@@ -300,7 +300,7 @@ fn test_minimum_incompatible_shapes() {
     assert!(result.is_err());
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 #[test]
 fn test_create_minimum_node_same_shape() {

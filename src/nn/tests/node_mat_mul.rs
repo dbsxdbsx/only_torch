@@ -526,7 +526,7 @@ fn test_mat_mul_dynamic_batch_backward() {
     assert_eq!(w_grad2.shape(), &[4, 8], "w 梯度形状仍应为 [4, 8]");
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 #[test]
 fn test_create_mat_mul_node() {

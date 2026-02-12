@@ -378,7 +378,7 @@ fn test_input_dynamic_batch_training() {
     assert!(loss_val2 >= 0.0);
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 #[test]
 fn test_create_basic_input_node() {
@@ -523,7 +523,7 @@ fn test_create_basic_input_various_shapes() {
     assert_eq!(cnn_input.shape(), vec![8, 3, 32, 32]);
 }
 
-// ==================== TargetInput 方案 C 测试 ====================
+// ==================== TargetInput 测试 ====================
 
 #[test]
 fn test_create_target_input_node() {

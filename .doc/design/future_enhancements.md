@@ -146,11 +146,11 @@ impl TanhNormal {
 
 ---
 
-## ~~3. 多输入模型扩展~~ （已由方案 C 解决）
+## ~~3. 多输入模型扩展~~ （已由动态图架构解决）
 
 > **状态**：✅ 已解决
 >
-> 方案 C（动态图迁移）移除了 `ModelState` 和 `ForwardInput`，多输入现在**天然支持**：
+> 动态图架构移除了 `ModelState` 和 `ForwardInput`，多输入现在**天然支持**：
 > 直接多次调用 `graph.input()` 创建多个输入 Var，在 forward 中自由组合即可。
 >
 > **已有示例**：`dual_input_add`、`siamese_similarity`、`multi_io_fusion`
@@ -168,11 +168,11 @@ impl TanhNormal {
 
 ---
 
-## ~~4. 多输出模型扩展~~ （已由方案 C 解决）
+## ~~4. 多输出模型扩展~~ （已由动态图架构解决）
 
 > **状态**：✅ 已解决
 >
-> 方案 C 下，forward 直接返回多个 Var（元组/结构体）即可，无需特殊支持。
+> 动态图架构下，forward 直接返回多个 Var（元组/结构体）即可，无需特殊支持。
 >
 > **已有示例**：`dual_output_classify`、`multi_label_point`、`multi_io_fusion`
 
@@ -370,7 +370,7 @@ pub enum GraphError {
 │  过程宏简化           │     │  API 便捷方法 / 错误精细化  │
 └─────────────────────┘     └───────────────────────────┘
 
-注：多输入/多输出扩展已由方案 C 解决（§3/§4），不再是待办项。
+注：多输入/多输出扩展已由动态图架构解决（§3/§4），不再是待办项。
 ```
 
 ---
@@ -382,7 +382,7 @@ pub enum GraphError {
 | 🔴 高 | **NEAT** | 项目愿景核心，基础功能稳定后实现 |
 | 🔴 高 | **概率分布模块** | SAC-Continuous / Hybrid SAC 开发时实现（依赖 Exp + Clamp 节点） |
 | 🟡 中 | **Exp / Clamp 节点** | 概率分布模块的前置依赖，需先实现 |
-| ✅ 完成 | ~~多输入/多输出~~ | 已由方案 C 解决，示例已有演示 |
+| ✅ 完成 | ~~多输入/多输出~~ | 已由动态图架构解决，示例已有演示 |
 | 🟢 低 | **过程宏** | API 稳定后，作为用户体验优化 |
 | 🟢 低 | **API 便捷方法** | 按需添加，不影响核心功能 |
 | 🟢 低 | **错误类型精细化** | 可选优化，当前 `InvalidOperation` 已可用 |
@@ -393,7 +393,7 @@ pub enum GraphError {
 
 - [神经架构演化设计](./neural_architecture_evolution_design.md) — **核心设计文档**，详细描述混合策略
 - [待扩展节点类型规划](./future_node_types.md) — Exp/Clamp/概率分布等节点的详细规划
-- [动态图生命周期设计](./dynamic_graph_lifecycle_design.md) — 方案 C，已解决多输入/多输出和节点累积问题
+- [动态图生命周期设计](../_archive/dynamic_graph_lifecycle_design.md) — 已归档，已解决多输入/多输出和节点累积问题
 - [Hybrid SAC 论文](./../paper/RL/SAC复合actions.pdf) — Delalleau et al. 2019，离散+连续+混合动作框架
 - [NEAT 论文](./../paper/NEAT_2002/summary.md)
 - [EXAMM 论文](./../paper/EXAMM_2019/summary.md)

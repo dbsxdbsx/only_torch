@@ -559,7 +559,7 @@ fn test_bce_loss_dynamic_batch_forward() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== 6. 方案 C：新节点创建 API 测试 ====================
+// ==================== 6. 节点创建 API 测试 ====================
 
 use std::rc::Rc;
 

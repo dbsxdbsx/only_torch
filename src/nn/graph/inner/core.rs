@@ -4,7 +4,7 @@
  * @LastEditTime : 2026-02-02
  * @Description  : GraphInner 核心操作
  *
- * 方案 C 清理：已移除旧的 forward/get_node 系列方法
+ * 已移除旧的 forward/get_node 系列方法
  * 新架构使用 NodeInner 进行前向/反向传播，不依赖 nodes HashMap
  */
 
@@ -112,7 +112,7 @@ impl GraphInner {
         &self.name
     }
 
-    // ========== 方案 C：参数注册表 API ==========
+    // ========== 参数注册表 API ==========
 
     /// 注册参数到参数注册表
     ///
@@ -181,12 +181,9 @@ impl GraphInner {
         before - self.parameters.len()
     }
 
-    /// 清零参数梯度（方案 C 新路径）
+    /// 清零参数梯度
     ///
     /// 遍历 parameters 注册表，清除每个有效参数节点的梯度。
-    /// 这是新路径的 `zero_grad` 实现，与旧路径的 `clear_grad()` 不同：
-    /// - 旧路径：遍历 `nodes` HashMap 清除所有节点
-    /// - 新路径：只遍历 `parameters` 注册表清除参数节点
     ///
     /// # 注意
     /// 中间节点的梯度会在每次 `backward_via_node_inner` 开始时自动清除，
@@ -304,9 +301,9 @@ impl GraphInner {
         &self.recurrent_layer_metas
     }
 
-    // ========== 方案 C：新前向传播 API ==========
+    // ========== 前向传播 API ==========
 
-    /// 通过 NodeInner 进行前向传播（方案 C）
+    /// 通过 NodeInner 进行前向传播
     ///
     /// 与旧 `forward()` 方法不同，此方法直接使用 `Rc<NodeInner>` 的递归前向传播，
     /// 不依赖 GraphInner 中存储的节点。

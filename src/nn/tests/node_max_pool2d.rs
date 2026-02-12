@@ -8,7 +8,7 @@
  * 2. VJP（calc_grad_to_parent_index）→ 稀疏梯度验证
  * 3. E2E 反向传播 → loss 梯度验证; conv+pool 串联
  * 4. 动态形状 + 动态 batch（前向 + 反向）
- * 5. Create API（方案 C 节点创建）
+ * 5. Create API
  */
 
 use crate::nn::{Graph, GraphError};
@@ -573,7 +573,7 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== 5. 方案 C：Create API 测试 ====================
+// ==================== 5. Create API 测试 ====================
 
 use std::rc::Rc;
 

@@ -288,7 +288,7 @@ impl Graph {
         result
     }
 
-    // 注意：checkpoint() 和 prune_nodes_after() 已在方案 C 中移除
+    // 注意：checkpoint() 和 prune_nodes_after() 已移除
     // 新架构下，节点由 Rc 引用计数自动管理，Var 离开作用域时自动释放，
     // 不再需要手动清理节点。
 

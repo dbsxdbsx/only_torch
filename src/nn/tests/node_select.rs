@@ -606,7 +606,7 @@ fn test_select_dynamic_batch_backward() {
     loss.backward().unwrap();
 }
 
-// ==================== 5. 方案 C：新节点创建 API 测试（KEEP AS-IS）====================
+// ==================== 5. 节点创建 API 测试 ====================
 
 use std::rc::Rc;
 

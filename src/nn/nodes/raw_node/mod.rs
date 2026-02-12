@@ -310,7 +310,7 @@ pub(in crate::nn) trait TraitNode {
     /// - `parent_values`: 父节点的值（已计算完成）
     ///
     /// # 说明
-    /// 方案 C 最终签名：直接接收 `&[&Tensor]`，不依赖 `NodeHandle`
+    /// 直接接收 `&[&Tensor]`，不依赖 `NodeHandle`
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError>;
 
     fn value(&self) -> Option<&Tensor>;

@@ -325,7 +325,7 @@ fn test_ln_dynamic_batch_backward() {
     loss.backward().unwrap();
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 #[test]
 fn test_create_ln_node() {

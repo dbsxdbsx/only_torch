@@ -10,7 +10,7 @@
 .doc/
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
-│   ├── dynamic_graph_lifecycle_design.md           # ⭐⭐ 动态图生命周期设计（方案 C，下一代架构）
+│   # dynamic_graph_lifecycle_design.md 已归档至 _archive/
 │   ├── future_node_types.md                        # ⭐ 待扩展节点规划 + 调试工具
 │   ├── api_layering_and_seed_design.md             # API分层与种子管理
 │   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制（重要）

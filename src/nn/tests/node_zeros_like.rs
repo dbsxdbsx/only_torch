@@ -254,7 +254,7 @@ fn test_zeros_like_dynamic_batch_with_backward() {
     assert!(w_grad.is_some(), "w_hh 应该有梯度");
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 use std::rc::Rc;
 

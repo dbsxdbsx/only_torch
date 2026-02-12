@@ -4,7 +4,7 @@
  * @LastEditTime : 2026-02-02
  * @Description  : GraphInner 底层参数序列化（save_params/load_params）
  *
- * 方案 C 适配：使用 parameters 注册表管理参数
+ * 使用 parameters 注册表管理参数
  *
  * 职责：纯二进制序列化，只处理参数的读写
  *
@@ -28,13 +28,13 @@ impl GraphInner {
 
     /// 保存所有可训练参数到二进制文件
     ///
-    /// 方案 C：遍历 parameters 注册表获取参数
+    /// 遍历 parameters 注册表获取参数
     pub fn save_params<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
         let file = File::create(path.as_ref())
             .map_err(|e| GraphError::ComputationError(format!("无法创建参数文件: {e}")))?;
         let mut writer = BufWriter::new(file);
 
-        // 方案 C：从 parameters 注册表获取所有有效参数
+        // 从 parameters 注册表获取所有有效参数
         let params = self.get_all_parameters();
 
         writer
@@ -87,7 +87,7 @@ impl GraphInner {
 
     /// 从二进制文件加载参数
     ///
-    /// 方案 C：通过 parameters 注册表查找参数并设置值
+    /// 通过 parameters 注册表查找参数并设置值
     pub fn load_params<P: AsRef<Path>>(&mut self, path: P) -> Result<(), GraphError> {
         let file = File::open(path.as_ref())
             .map_err(|e| GraphError::ComputationError(format!("无法打开参数文件: {e}")))?;
@@ -159,7 +159,7 @@ impl GraphInner {
                 data.push(f32::from_le_bytes(val_bytes));
             }
 
-            // 方案 C：通过 parameters 注册表查找参数并设置值
+            // 通过 parameters 注册表查找参数并设置值
             if let Some(node) = self.get_parameter(&name) {
                 let tensor = Tensor::new(&data, &shape);
                 node.set_value(Some(&tensor))?;

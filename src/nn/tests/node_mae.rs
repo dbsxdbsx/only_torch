@@ -657,7 +657,7 @@ fn test_mae_dynamic_shape_compatibility() {
     assert_eq!(loss_val.shape(), &[1, 1]);
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 #[test]
 fn test_create_mae_node() {

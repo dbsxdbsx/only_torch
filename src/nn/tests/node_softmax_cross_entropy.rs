@@ -520,7 +520,7 @@ fn test_sce_dynamic_batch_backward() -> Result<(), GraphError> {
     Ok(())
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 use std::rc::Rc;
 

@@ -79,7 +79,7 @@ impl Init {
 
 /// 智能变量句柄 - 携带图引用，支持算子重载和链式调用
 ///
-/// # 设计原则（方案 C 正式版本）
+/// # 设计原则
 /// - 持有 `Rc<NodeInner>` 直接控制节点生命周期
 /// - 持有 `Weak<RefCell<GraphInner>>` 引用用于全局配置
 /// - 用户无需关心内部实现，像 `PyTorch` tensor 一样使用
@@ -113,7 +113,7 @@ impl std::fmt::Debug for Var {
 }
 
 impl Var {
-    /// 创建新的 Var（方案 C 正式版本）
+    /// 创建新的 Var
     ///
     /// 直接持有 NodeInner，graph 为 Weak 引用
     #[allow(dead_code)]

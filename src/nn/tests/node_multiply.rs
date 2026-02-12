@@ -551,7 +551,7 @@ fn test_multiply_dynamic_batch_backward() {
     assert_eq!(scale_grad2.shape(), &[1, 4], "scale 梯度形状仍应为 [1, 4]");
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 节点创建 API 测试 ====================
 
 use std::rc::Rc;
 
