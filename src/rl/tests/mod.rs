@@ -8,6 +8,6 @@
 //!
 //! 强化学习的经验回放（ReplayBuffer）由用户在应用层自行管理，
 //! 库只提供环境交互层（GymEnv、MinariDataset）。
-//! 参见 `examples/cartpole_ppo/` 了解如何使用。
+//! 参见 `examples/cartpole_sac/` 了解 SAC-Discrete 完整训练示例。
 
 mod env;
