@@ -3,108 +3,49 @@
  * @Date         : 2025-12-22
  * @Description  : MaxPool2d 节点单元测试
  *
- * 测试策略：
- * 1. 基础功能测试（形状、前向传播）
- * 2. VJP 反向传播测试
- * 3. 动态 batch 测试
- * 4. 各种参数组合（kernel_size, stride）
+ * 测试策略（五段式，底层 inner_rc API）：
+ * 1. 前向传播 → simple [6,8,14,16]; batch; 多通道; stride; 错误处理
+ * 2. VJP（calc_grad_to_parent_index）→ 稀疏梯度验证
+ * 3. E2E 反向传播 → loss 梯度验证; conv+pool 串联
+ * 4. 动态形状 + 动态 batch（前向 + 反向）
+ * 5. Create API（方案 C 节点创建）
  */
 
-use crate::nn::{GraphError, GraphInner};
+use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
-// ==================== 基础功能测试 ====================
-
-/// 测试 MaxPool2d 节点创建（单样本，batch=1）
-#[cfg(any())]
-#[test]
-fn test_max_pool2d_creation_single() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 输入: [batch=1, C=1, H=4, W=4]（单样本使用 batch=1）
-    let input = graph.new_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-
-    // 创建 MaxPool2d: kernel_size=2x2, stride=2x2（默认）
-    let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
-
-    // 验证输出形状: [batch=1, C=1, H'=2, W'=2]
-    // H' = (4 - 2) / 2 + 1 = 2
-    let output_shape = graph.get_node(pool)?.value_expected_shape();
-    assert_eq!(output_shape, &[1, 1, 2, 2]);
-
-    Ok(())
-}
-
-/// 测试 MaxPool2d 节点创建（Batch）
-#[cfg(any())]
-#[test]
-fn test_max_pool2d_creation_batch() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 输入: [batch=4, C=16, H=28, W=28]
-    let input = graph.new_basic_input_node(&[4, 16, 28, 28], Some("input"))?;
-
-    // 创建 MaxPool2d: kernel_size=2x2, stride=2x2
-    let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
-
-    // 验证输出形状: [batch=4, C=16, H'=14, W'=14]
-    let output_shape = graph.get_node(pool)?.value_expected_shape();
-    assert_eq!(output_shape, &[4, 16, 14, 14]);
-
-    Ok(())
-}
-
-/// 测试 MaxPool2d 带自定义 stride
-#[cfg(any())]
-#[test]
-fn test_max_pool2d_with_stride() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 输入: [batch=2, C=1, H=6, W=6]
-    let input = graph.new_basic_input_node(&[2, 1, 6, 6], Some("input"))?;
-
-    // 创建 MaxPool2d: kernel_size=3x3, stride=2x2
-    let pool = graph.new_max_pool2d_node(input, (3, 3), Some((2, 2)), Some("pool"))?;
-
-    // 验证输出形状: [batch=2, C=1, H'=2, W'=2]
-    // H' = (6 - 3) / 2 + 1 = 2
-    let output_shape = graph.get_node(pool)?.value_expected_shape();
-    assert_eq!(output_shape, &[2, 1, 2, 2]);
-
-    Ok(())
-}
-
-// ==================== 前向传播测试 ====================
+// ==================== 1. 前向传播测试（底层 inner_rc API）====================
 
 /// 测试 MaxPool2d 前向传播（简单情况）
-#[cfg(any())]
+///
+/// 输入 4x4 递增矩阵，kernel=2x2, stride=2：
+/// 窗口 [0:2,0:2]=max(1,2,5,6)=6; [0:2,2:4]=max(3,4,7,8)=8
+/// 窗口 [2:4,0:2]=max(9,10,13,14)=14; [2:4,2:4]=max(11,12,15,16)=16
 #[test]
 fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 输入: [batch=1, C=1, H=4, W=4]
-    let input = graph.new_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
-    // 设置输入值
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
-        1.0, 2.0, 3.0, 4.0,
-        5.0, 6.0, 7.0, 8.0,
-        9.0, 10.0, 11.0, 12.0,
+         1.0,  2.0,  3.0,  4.0,
+         5.0,  6.0,  7.0,  8.0,
+         9.0, 10.0, 11.0, 12.0,
         13.0, 14.0, 15.0, 16.0,
     ], &[1, 1, 4, 4]);
 
-    graph.set_node_value(input, Some(&input_val))?;
-    graph.forward(pool)?;
+    input.set_value(Some(&input_val))?;
+    pool.forward_recursive(1, false)?;
 
-    // 验证输出
-    // 窗口 [0:2, 0:2]: max(1,2,5,6) = 6
-    // 窗口 [0:2, 2:4]: max(3,4,7,8) = 8
-    // 窗口 [2:4, 0:2]: max(9,10,13,14) = 14
-    // 窗口 [2:4, 2:4]: max(11,12,15,16) = 16
-    let output = graph.get_node_value(pool)?.unwrap();
+    let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 2, 2]);
     assert_abs_diff_eq!(output[[0, 0, 0, 0]], 6.0, epsilon = 1e-6);
     assert_abs_diff_eq!(output[[0, 0, 0, 1]], 8.0, epsilon = 1e-6);
@@ -114,360 +55,526 @@ fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 MaxPool2d 前向传播（4D 批量输入）
-#[cfg(any())]
+/// 测试 MaxPool2d 前向传播（batch=2）
+///
+/// 第一个 batch 全 1 → 最大值 1；第二个 batch 递增 → [6,8,14,16]
 #[test]
-fn test_max_pool2d_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_max_pool2d_forward_batch() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 输入: [batch=2, C=1, H=4, W=4]
-    let input = graph.new_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
-    // 设置输入：第一个 batch 全 1，第二个 batch 递增
-    let mut input_data = vec![1.0f32; 16];
+    // 第一个 batch 全 1，第二个 batch 递增
+    let mut data = vec![1.0f32; 16];
     for i in 0..16 {
-        input_data.push((i + 1) as f32);
+        data.push((i + 1) as f32);
     }
-    let input_val = Tensor::new(&input_data, &[2, 1, 4, 4]);
+    input.set_value(Some(&Tensor::new(&data, &[2, 1, 4, 4])))?;
+    pool.forward_recursive(1, false)?;
 
-    graph.set_node_value(input, Some(&input_val))?;
-    graph.forward(pool)?;
-
-    let output = graph.get_node_value(pool)?.unwrap();
+    let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[2, 1, 2, 2]);
 
-    // 第一个 batch: 全 1，最大值都是 1
+    // batch 0: 全 1，最大值仍为 1
     assert_abs_diff_eq!(output[[0, 0, 0, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 1, 1]], 1.0, epsilon = 1e-6);
 
-    // 第二个 batch: 与上面的 simple 测试相同
+    // batch 1: 递增，与 simple 一致
     assert_abs_diff_eq!(output[[1, 0, 0, 0]], 6.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[1, 0, 0, 1]], 8.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[1, 0, 1, 0]], 14.0, epsilon = 1e-6);
     assert_abs_diff_eq!(output[[1, 0, 1, 1]], 16.0, epsilon = 1e-6);
 
     Ok(())
 }
 
-/// 测试 MaxPool2d 多通道
-#[cfg(any())]
-#[test]
-fn test_max_pool2d_multi_channel() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 输入: [batch=1, C=2, H=4, W=4]
-    let input = graph.new_basic_input_node(&[1, 2, 4, 4], Some("input"))?;
-    let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
-
-    // 设置输入：第一通道全 1，第二通道全 2
-    let mut input_data = vec![1.0f32; 16];
-    input_data.extend(vec![2.0f32; 16]);
-    let input_val = Tensor::new(&input_data, &[1, 2, 4, 4]);
-
-    graph.set_node_value(input, Some(&input_val))?;
-    graph.forward(pool)?;
-
-    let output = graph.get_node_value(pool)?.unwrap();
-    assert_eq!(output.shape(), &[1, 2, 2, 2]);
-
-    // 第一通道最大值都是 1
-    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 1.0, epsilon = 1e-6);
-    // 第二通道最大值都是 2
-    assert_abs_diff_eq!(output[[0, 1, 0, 0]], 2.0, epsilon = 1e-6);
-
-    Ok(())
-}
-
-// ==================== VJP 反向传播测试 ====================
-
-/// 测试 MaxPool2d Jacobi 矩阵
-#[cfg(any())]
-#[test]
-/// 测试 MaxPool2d 梯度（VJP 模式）
+/// 测试 MaxPool2d 多通道前向传播
 ///
-/// 构建完整计算图：input -> pool -> reshape -> mse_loss
-fn test_max_pool2d_jacobi() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
-
-    // 输入: [batch=1, C=1, H=4, W=4]，使用 Parameter 以便计算梯度
-    // pool 输出: [batch=1, C=1, H=2, W=2]（kernel=2x2, stride=2）
-    let input = graph.new_parameter_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"))?;
-
-    // 将 pool 输出 reshape 为 [1, 4] 并添加 MSE loss
-    let pool_flat = graph.new_reshape_node(pool, &[1, 4], Some("pool_flat"))?;
-    let target = graph.new_basic_input_node(&[1, 4], Some("target"))?;
-    let loss = graph.new_mse_loss_node(pool_flat, target, Some("loss"))?;
-
-    // 设置输入值
-    #[rustfmt::skip]
-    let input_val = Tensor::new(&[
-        1.0, 2.0, 3.0, 4.0,
-        5.0, 6.0, 7.0, 8.0,
-        9.0, 10.0, 11.0, 12.0,
-        13.0, 14.0, 15.0, 16.0,
-    ], &[1, 1, 4, 4]);
-    let target_val = Tensor::zeros(&[1, 4]);
-
-    graph.set_node_value(input, Some(&input_val))?;
-    graph.set_node_value(target, Some(&target_val))?;
-
-    // 前向传播
-    graph.forward(loss)?;
-
-    // pool 输出 = [6, 8, 14, 16]（每个 2x2 区域的最大值）
-    // loss = mean((6-0)^2 + (8-0)^2 + (14-0)^2 + (16-0)^2) / 4
-
-    // 反向传播
-    graph.zero_grad()?;
-    graph.backward(loss)?;
-
-    // VJP 模式下验证 grad 形状与输入值一致：[1, 1, 4, 4]
-    let grad = graph.get_node(input)?.grad().expect("应有 grad");
-    assert_eq!(grad.shape(), &[1, 1, 4, 4]);
-
-    // MaxPool grad 是稀疏的：只有最大值位置有 grad
-    // d_loss/d_pool = 2 * pool / 4 = [3, 4, 7, 8]
-    // 最大值位置: (1,1)=6, (1,3)=8, (3,1)=14, (3,3)=16
-    assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 3.0, epsilon = 1e-5); // max=6, grad=2*6/4=3
-    assert_abs_diff_eq!(grad[[0, 0, 1, 3]], 4.0, epsilon = 1e-5); // max=8, grad=2*8/4=4
-    assert_abs_diff_eq!(grad[[0, 0, 3, 1]], 7.0, epsilon = 1e-5); // max=14, grad=2*14/4=7
-    assert_abs_diff_eq!(grad[[0, 0, 3, 3]], 8.0, epsilon = 1e-5); // max=16, grad=2*16/4=8
-
-    // 非最大值位置为 0
-    assert_abs_diff_eq!(grad[[0, 0, 0, 0]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(grad[[0, 0, 0, 1]], 0.0, epsilon = 1e-6);
-
-    Ok(())
-}
-
-// ==================== 动态 batch 测试 ====================
-
-/// 测试 MaxPool2d Batch 梯度
-#[cfg(any())]
+/// [1,2,4,4]: 第一通道全 1，第二通道全 2 → 各通道最大值不变
 #[test]
-fn test_max_pool2d_batch_grad() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_max_pool2d_forward_multi_channel() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 输入: [batch=1, C=1, H=4, W=4]
-    let input_id = graph.new_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool_id = graph.new_max_pool2d_node(input_id, (2, 2), None, Some("pool"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2, 4, 4], Some("input"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
-    #[rustfmt::skip]
-    let input_val = Tensor::new(&[
-        1.0, 2.0, 3.0, 4.0,
-        5.0, 6.0, 7.0, 8.0,
-        9.0, 10.0, 11.0, 12.0,
-        13.0, 14.0, 15.0, 16.0,
-    ], &[1, 1, 4, 4]);
+    let mut data = vec![1.0f32; 16];
+    data.extend(vec![2.0f32; 16]);
+    input.set_value(Some(&Tensor::new(&data, &[1, 2, 4, 4])))?;
+    pool.forward_recursive(1, false)?;
 
-    graph.set_node_value(input_id, Some(&input_val))?;
-    graph.forward(pool_id)?;
-
-    // upstream_grad 全 1
-    let upstream_grad = Tensor::ones(&[1, 1, 2, 2]);
-
-    let pool_node = graph.get_node(pool_id)?;
-    let input_node = graph.get_node(input_id)?;
-
-    // 新签名：使用 parents 数组和索引
-    let parents = [input_node];
-    let grad = pool_node.calc_grad_to_parent(0, &parents, &upstream_grad)?;
-
-    assert_eq!(grad.shape(), &[1, 1, 4, 4]);
-
-    // 梯度只在最大值位置为 1，其他为 0
-    // 位置 [0,0,1,1]=6 是窗口 [0:2,0:2] 的最大值 → grad=1
-    assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 1.0, epsilon = 1e-6);
-    // 位置 [0,0,0,0]=1 不是任何窗口的最大值 → grad=0
-    assert_abs_diff_eq!(grad[[0, 0, 0, 0]], 0.0, epsilon = 1e-6);
-
-    // 位置 [0,0,1,3]=8 是窗口 [0:2,2:4] 的最大值 → grad=1
-    assert_abs_diff_eq!(grad[[0, 0, 1, 3]], 1.0, epsilon = 1e-6);
-
-    // 位置 [0,0,3,3]=16 是窗口 [2:4,2:4] 的最大值 → grad=1
-    assert_abs_diff_eq!(grad[[0, 0, 3, 3]], 1.0, epsilon = 1e-6);
+    let output = pool.value().unwrap();
+    assert_eq!(output.shape(), &[1, 2, 2, 2]);
+    // 第一通道 → 1.0
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 0, 1, 1]], 1.0, epsilon = 1e-6);
+    // 第二通道 → 2.0
+    assert_abs_diff_eq!(output[[0, 1, 0, 0]], 2.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(output[[0, 1, 1, 1]], 2.0, epsilon = 1e-6);
 
     Ok(())
 }
 
-/// 测试 MaxPool2d 与 Conv2d 串联
-#[cfg(any())]
+/// 测试 MaxPool2d 自定义 stride
+///
+/// kernel=3x3, stride=2 对 6x6 输入 → 输出 2x2
 #[test]
-fn test_max_pool2d_after_conv2d() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new_with_seed(42);
+fn test_max_pool2d_forward_with_stride() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 输入: [batch=2, C_in=1, H=8, W=8]
-    let input = graph.new_basic_input_node(&[2, 1, 8, 8], Some("input"))?;
-    // 卷积核: [C_out=4, C_in=1, kH=3, kW=3]
-    let kernel = graph.new_parameter_node(&[4, 1, 3, 3], Some("kernel"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 6, 6], Some("input"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input.clone(), (3, 3), Some((2, 2)), Some("pool"))?;
 
-    // Conv2d: stride=1, padding=1（保持尺寸）
-    let conv = graph.new_conv2d_node(input, kernel, (1, 1), (1, 1), Some("conv"))?;
-    // 输出: [2, 4, 8, 8]
+    // 6x6 递增输入
+    let data: Vec<f32> = (1..=36).map(|x| x as f32).collect();
+    input.set_value(Some(&Tensor::new(&data, &[1, 1, 6, 6])))?;
+    pool.forward_recursive(1, false)?;
 
-    // MaxPool2d: 2x2
-    let pool = graph.new_max_pool2d_node(conv, (2, 2), None, Some("pool"))?;
-    // 输出: [2, 4, 4, 4]
+    let output = pool.value().unwrap();
+    // (6 - 3) / 2 + 1 = 2
+    assert_eq!(output.shape(), &[1, 1, 2, 2]);
 
-    // 验证形状
-    assert_eq!(graph.get_node(conv)?.value_expected_shape(), &[2, 4, 8, 8]);
-    assert_eq!(graph.get_node(pool)?.value_expected_shape(), &[2, 4, 4, 4]);
-
-    // 设置输入并前向传播
-    let input_val = Tensor::ones(&[2, 1, 8, 8]);
-    let kernel_val = Tensor::ones(&[4, 1, 3, 3]);
-
-    graph.set_node_value(input, Some(&input_val))?;
-    graph.set_node_value(kernel, Some(&kernel_val))?;
-
-    graph.forward(pool)?;
-
-    // 验证池化输出有值
-    let pool_output = graph.get_node_value(pool)?.unwrap();
-    assert_eq!(pool_output.shape(), &[2, 4, 4, 4]);
-
-    // 由于 conv 输入全 1，卷积核全 1，且 padding=1
-    // 中心区域卷积结果 = 9（3x3 窗口全 1）
-    // 边缘区域卷积结果较小
-    // MaxPool 后应该取最大值
+    // 窗口 [0:3, 0:3]: max(1..9) = 15（第 3 行第 3 列）
+    // 6x6 矩阵:
+    //  1  2  3  4  5  6
+    //  7  8  9 10 11 12
+    // 13 14 15 16 17 18
+    // 19 20 21 22 23 24
+    // 25 26 27 28 29 30
+    // 31 32 33 34 35 36
+    // 窗口 [0:3, 0:3] = {1,2,3,7,8,9,13,14,15} → max=15
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 15.0, epsilon = 1e-6);
+    // 窗口 [0:3, 2:5] = {3,4,5,9,10,11,15,16,17} → max=17
+    assert_abs_diff_eq!(output[[0, 0, 0, 1]], 17.0, epsilon = 1e-6);
+    // 窗口 [2:5, 0:3] = {13,14,15,19,20,21,25,26,27} → max=27
+    assert_abs_diff_eq!(output[[0, 0, 1, 0]], 27.0, epsilon = 1e-6);
+    // 窗口 [2:5, 2:5] = {15,16,17,21,22,23,27,28,29} → max=29
+    assert_abs_diff_eq!(output[[0, 0, 1, 1]], 29.0, epsilon = 1e-6);
 
     Ok(())
 }
 
-// ==================== 错误处理测试 ====================
-
-/// 测试无效的输入维度
-#[cfg(any())]
+/// 测试无效输入维度 → 应报错
 #[test]
 fn test_max_pool2d_invalid_input_dims() {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 输入: [H=4, W=4]（2D，缺少通道维度）
-    let input = graph.new_basic_input_node(&[4, 4], Some("input")).unwrap();
-
-    let result = graph.new_max_pool2d_node(input, (2, 2), None, Some("pool"));
-    assert!(result.is_err());
-}
-
-/// 测试池化窗口过大
-#[cfg(any())]
-#[test]
-fn test_max_pool2d_kernel_too_large() {
-    let mut graph = GraphInner::new();
-
-    // 输入: [batch=1, C=1, H=4, W=4]
-    let input = graph
-        .new_basic_input_node(&[1, 1, 4, 4], Some("input"))
+    // 2D 输入（缺少 batch 和通道维度）
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 4], Some("input"))
         .unwrap();
 
-    // kernel_size=5x5 超出输入尺寸
-    let result = graph.new_max_pool2d_node(input, (5, 5), None, Some("pool"));
+    let result = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input, (2, 2), None, Some("pool"));
     assert!(result.is_err());
 }
 
-// ==================== 动态形状测试 ====================
-
-/// 测试 MaxPool2d 节点的动态形状传播
-#[cfg(any())]
+/// 测试池化窗口超出输入尺寸 → 应报错
 #[test]
-fn test_max_pool2d_dynamic_shape_propagation() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+fn test_max_pool2d_kernel_too_large() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建 4D 输入：[batch, channels, height, width]
-    let input = graph.new_basic_input_node(&[2, 3, 8, 8], Some("input"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 4, 4], Some("input"))
+        .unwrap();
 
-    // MaxPool2d: kernel=2x2, stride=2x2
-    // [batch, 3, 8, 8] -> [batch, 3, 4, 4]
-    let pool = graph.new_max_pool2d_node(input, (2, 2), Some((2, 2)), Some("pool"))?;
+    let result = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input, (5, 5), None, Some("pool"));
+    assert!(result.is_err());
+}
 
-    // 验证动态形状传播
-    let pool_node = graph.get_node(pool)?;
-    let dyn_shape = pool_node.dynamic_expected_shape();
-    assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
-    assert!(!dyn_shape.is_dynamic(1), "channels 维度应该是固定的");
-    assert_eq!(dyn_shape.dim(1), Some(3), "channels 应该是 3");
+// ==================== 2. VJP 单元测试（calc_grad_to_parent_index）====================
+//
+// MaxPool 梯度是稀疏的：只有最大值位置传递 upstream，其他位置为 0。
+
+/// 测试 MaxPool2d VJP（upstream=ones）
+///
+/// 4x4 递增输入，kernel=2x2, stride=2：
+/// 最大值位置 (1,1)=6, (1,3)=8, (3,1)=14, (3,3)=16 → grad=1
+/// 其他位置 → grad=0
+#[test]
+fn test_max_pool2d_vjp_sparse_basic() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+
+    #[rustfmt::skip]
+    let input_val = Tensor::new(&[
+         1.0,  2.0,  3.0,  4.0,
+         5.0,  6.0,  7.0,  8.0,
+         9.0, 10.0, 11.0, 12.0,
+        13.0, 14.0, 15.0, 16.0,
+    ], &[1, 1, 4, 4]);
+
+    input.set_value(Some(&input_val))?;
+    pool.forward_recursive(1, false)?;
+
+    let upstream = Tensor::ones(&[1, 1, 2, 2]);
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    assert_eq!(grad.shape(), &[1, 1, 4, 4]);
+
+    // 最大值位置 → grad=1
+    assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 1.0, epsilon = 1e-6); // max=6
+    assert_abs_diff_eq!(grad[[0, 0, 1, 3]], 1.0, epsilon = 1e-6); // max=8
+    assert_abs_diff_eq!(grad[[0, 0, 3, 1]], 1.0, epsilon = 1e-6); // max=14
+    assert_abs_diff_eq!(grad[[0, 0, 3, 3]], 1.0, epsilon = 1e-6); // max=16
+
+    // 非最大值位置 → grad=0
+    assert_abs_diff_eq!(grad[[0, 0, 0, 0]], 0.0, epsilon = 1e-6); // 1
+    assert_abs_diff_eq!(grad[[0, 0, 0, 1]], 0.0, epsilon = 1e-6); // 2
+    assert_abs_diff_eq!(grad[[0, 0, 0, 2]], 0.0, epsilon = 1e-6); // 3
+    assert_abs_diff_eq!(grad[[0, 0, 2, 0]], 0.0, epsilon = 1e-6); // 9
+    assert_abs_diff_eq!(grad[[0, 0, 2, 2]], 0.0, epsilon = 1e-6); // 11
 
     Ok(())
 }
 
-/// 测试 MaxPool2d 在不同 batch_size 下的前向计算
-#[cfg(any())]
+/// 测试 MaxPool2d VJP（非单位 upstream）
+///
+/// upstream = [[2, 3], [5, 7]] → 最大值位置取对应 upstream 值
+#[test]
+fn test_max_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+
+    #[rustfmt::skip]
+    let input_val = Tensor::new(&[
+         1.0,  2.0,  3.0,  4.0,
+         5.0,  6.0,  7.0,  8.0,
+         9.0, 10.0, 11.0, 12.0,
+        13.0, 14.0, 15.0, 16.0,
+    ], &[1, 1, 4, 4]);
+
+    input.set_value(Some(&input_val))?;
+    pool.forward_recursive(1, false)?;
+
+    let upstream = Tensor::new(&[2.0, 3.0, 5.0, 7.0], &[1, 1, 2, 2]);
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+
+    // 最大值位置取对应的 upstream 值
+    assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 2.0, epsilon = 1e-6); // max=6, upstream=2
+    assert_abs_diff_eq!(grad[[0, 0, 1, 3]], 3.0, epsilon = 1e-6); // max=8, upstream=3
+    assert_abs_diff_eq!(grad[[0, 0, 3, 1]], 5.0, epsilon = 1e-6); // max=14, upstream=5
+    assert_abs_diff_eq!(grad[[0, 0, 3, 3]], 7.0, epsilon = 1e-6); // max=16, upstream=7
+
+    // 非最大值位置仍为 0
+    assert_abs_diff_eq!(grad[[0, 0, 0, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 0, 2, 2]], 0.0, epsilon = 1e-6);
+
+    Ok(())
+}
+
+/// 测试 MaxPool2d VJP（batch=2）
+///
+/// 验证多 batch 下的稀疏梯度独立性
+#[test]
+fn test_max_pool2d_vjp_batch() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+
+    // batch 0: 全 3.0（所有位置都是最大值，梯度均匀分配）
+    // batch 1: 递增 1..16
+    let mut data = vec![3.0f32; 16];
+    for i in 0..16 {
+        data.push((i + 1) as f32);
+    }
+    input.set_value(Some(&Tensor::new(&data, &[2, 1, 4, 4])))?;
+    pool.forward_recursive(1, false)?;
+
+    let upstream = Tensor::ones(&[2, 1, 2, 2]);
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    assert_eq!(grad.shape(), &[2, 1, 4, 4]);
+
+    // batch 1: 标准递增矩阵，最大值位置 (1,1)=6, (1,3)=8, (3,1)=14, (3,3)=16
+    assert_abs_diff_eq!(grad[[1, 0, 1, 1]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 0, 1, 3]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 0, 3, 1]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 0, 3, 3]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[1, 0, 0, 0]], 0.0, epsilon = 1e-6);
+
+    Ok(())
+}
+
+// ==================== 3. E2E 反向传播测试（底层构建完整图）====================
+
+/// 测试 MaxPool2d E2E 反向传播（稀疏梯度到 Parameter）
+///
+/// 结构：param(input) → pool → reshape → mse_loss(target=0)
+/// pool 输出 [6,8,14,16]，loss = mean([36,64,196,256]) = 138
+/// param 梯度：只有最大值位置有 d_loss/d_pool_i * 1（稀疏）
+#[test]
+fn test_max_pool2d_e2e_backward_sparse() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let param = inner
+        .borrow_mut()
+        .create_parameter_node(&[1, 1, 4, 4], Some("param"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(param.clone(), (2, 2), None, Some("pool"))?;
+    let flat = inner
+        .borrow_mut()
+        .create_reshape_node(pool.clone(), &[1, 4], Some("flat"))?;
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], Some("target"))?;
+    let loss = inner
+        .borrow_mut()
+        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+
+    #[rustfmt::skip]
+    let input_val = Tensor::new(&[
+         1.0,  2.0,  3.0,  4.0,
+         5.0,  6.0,  7.0,  8.0,
+         9.0, 10.0, 11.0, 12.0,
+        13.0, 14.0, 15.0, 16.0,
+    ], &[1, 1, 4, 4]);
+
+    param.set_value(Some(&input_val))?;
+    target.set_value(Some(&Tensor::zeros(&[1, 4])))?;
+
+    // 前向 + 反向
+    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+
+    // pool 输出 = [6, 8, 14, 16]
+    let pool_val = pool.value().unwrap();
+    assert_abs_diff_eq!(pool_val[[0, 0, 0, 0]], 6.0, epsilon = 1e-6);
+
+    // loss = mean([36, 64, 196, 256]) = 552/4 = 138
+    let loss_val = loss.value().unwrap();
+    assert_abs_diff_eq!(loss_val[[0, 0]], 138.0, epsilon = 1e-4);
+
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+
+    // 验证 param 梯度
+    let grad = param.grad().expect("param 应有 grad");
+    assert_eq!(grad.shape(), &[1, 1, 4, 4]);
+
+    // d_loss/d_pool_i = 2 * pool_i / N (N=4)
+    // pool = [6, 8, 14, 16]
+    // d_loss/d_pool = [3, 4, 7, 8]
+    // MaxPool 将这些梯度稀疏传递到最大值位置
+    assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 3.0, epsilon = 1e-4); // max=6
+    assert_abs_diff_eq!(grad[[0, 0, 1, 3]], 4.0, epsilon = 1e-4); // max=8
+    assert_abs_diff_eq!(grad[[0, 0, 3, 1]], 7.0, epsilon = 1e-4); // max=14
+    assert_abs_diff_eq!(grad[[0, 0, 3, 3]], 8.0, epsilon = 1e-4); // max=16
+
+    // 非最大值位置 → 0
+    assert_abs_diff_eq!(grad[[0, 0, 0, 0]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 0, 0, 1]], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(grad[[0, 0, 2, 2]], 0.0, epsilon = 1e-6);
+
+    Ok(())
+}
+
+/// 测试 Conv2d + MaxPool2d 串联的 E2E 反向传播
+///
+/// 结构：input → conv2d(kernel) → pool → flatten → mse_loss
+/// 验证梯度能穿透 pool → conv 正确传播到 kernel
+#[test]
+fn test_max_pool2d_e2e_conv_pool_cascade() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 输入: [1, 1, 4, 4]，全 1
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
+    // 卷积核: [1, 1, 3, 3]（参数，需要梯度）
+    let kernel = inner
+        .borrow_mut()
+        .create_parameter_node(&[1, 1, 3, 3], Some("kernel"))?;
+
+    // conv: stride=1, padding=1 → 输出 [1, 1, 4, 4]
+    let conv = inner.borrow_mut().create_conv2d_node(
+        vec![input.clone(), kernel.clone()],
+        (1, 1),
+        (1, 1),
+        Some("conv"),
+    )?;
+
+    // pool: kernel=2x2 → 输出 [1, 1, 2, 2]
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(conv.clone(), (2, 2), None, Some("pool"))?;
+
+    // flatten → [1, 4]
+    let flat = inner
+        .borrow_mut()
+        .create_flatten_node(pool.clone(), true, Some("flat"))?;
+
+    // MSE loss → target=0
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], Some("target"))?;
+    let loss = inner
+        .borrow_mut()
+        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+
+    // 设置值
+    input.set_value(Some(&Tensor::ones(&[1, 1, 4, 4])))?;
+    kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
+    target.set_value(Some(&Tensor::zeros(&[1, 4])))?;
+
+    // 前向 + 反向
+    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+
+    // 验证 conv 输出形状
+    assert_eq!(conv.value().unwrap().shape(), &[1, 1, 4, 4]);
+    // 验证 pool 输出形状
+    assert_eq!(pool.value().unwrap().shape(), &[1, 1, 2, 2]);
+    // 验证 loss 为正数
+    let loss_val = loss.value().unwrap()[[0, 0]];
+    assert!(loss_val > 0.0, "loss 应为正值: {}", loss_val);
+
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+
+    // 验证 kernel 有梯度且形状正确
+    let kernel_grad = kernel.grad().expect("kernel 应有 grad");
+    assert_eq!(kernel_grad.shape(), &[1, 1, 3, 3]);
+
+    // 验证梯度非全零（梯度穿透 pool → conv）
+    let grad_sum: f32 = kernel_grad.data_as_slice().iter().sum();
+    assert!(grad_sum.abs() > 1e-6, "kernel 梯度不应全零");
+
+    Ok(())
+}
+
+// ==================== 4. 动态形状 + 动态 batch 测试 ====================
+
+/// 测试 MaxPool2d 动态 batch 前向传播
+///
+/// 先 batch=2 再 batch=5，验证输出形状自适应
 #[test]
 fn test_max_pool2d_dynamic_batch_forward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建 4D 输入
-    let input = graph.new_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = graph.new_max_pool2d_node(input, (2, 2), Some((2, 2)), Some("pool"))?;
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(input.clone(), (2, 2), Some((2, 2)), Some("pool"))?;
 
-    // 设置初始值
-    graph.set_node_value(input, Some(&Tensor::ones(&[2, 1, 4, 4])))?;
+    // 第一次 forward: batch=2
+    input.set_value(Some(&Tensor::ones(&[2, 1, 4, 4])))?;
+    inner.borrow_mut().forward_via_node_inner(&pool)?;
+    let val1 = pool.value().unwrap();
+    assert_eq!(val1.shape(), &[2, 1, 2, 2], "第一次 forward: batch=2");
 
-    // 第一次 forward：batch=2
-    graph.forward(pool)?;
-    let value1 = graph.get_node_value(pool)?.unwrap();
-    assert_eq!(value1.shape(), &[2, 1, 2, 2], "第一次 forward: batch=2");
-
-    // 更新输入为不同的 batch_size
-    graph.set_node_value(input, Some(&Tensor::ones(&[5, 1, 4, 4])))?;
-
-    // 第二次 forward：batch=5
-    graph.forward(pool)?;
-    let value2 = graph.get_node_value(pool)?.unwrap();
-    assert_eq!(value2.shape(), &[5, 1, 2, 2], "第二次 forward: batch=5");
+    // 第二次 forward: batch=5
+    input.set_value(Some(&Tensor::ones(&[5, 1, 4, 4])))?;
+    inner.borrow_mut().forward_via_node_inner(&pool)?;
+    let val2 = pool.value().unwrap();
+    assert_eq!(val2.shape(), &[5, 1, 2, 2], "第二次 forward: batch=5");
 
     Ok(())
 }
 
-/// 测试 MaxPool2d 在不同 batch_size 下的反向传播
-#[cfg(any())]
+/// 测试 MaxPool2d 动态 batch 反向传播
+///
+/// 先 batch=2 再 batch=4，验证反向传播在不同 batch 下正确工作
 #[test]
-#[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
-    let mut graph = GraphInner::new();
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
 
-    // 创建 4D 输入
-    let input = graph.new_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = graph.new_max_pool2d_node(input, (2, 2), Some((2, 2)), Some("pool"))?;
-    // 输出形状: [batch, 1, 2, 2]
-    let flat = graph.new_flatten_node(pool, true, Some("flat"))?;
-    // 输出形状: [batch, 4]
-    let target = graph.new_basic_input_node(&[2, 4], Some("target"))?;
-    let loss = graph.new_mse_loss_node(flat, target, Some("loss"))?;
+    // 用 parameter 以便接收梯度
+    let param = inner
+        .borrow_mut()
+        .create_parameter_node(&[2, 1, 4, 4], Some("param"))?;
+    let pool = inner
+        .borrow_mut()
+        .create_max_pool2d_node(param.clone(), (2, 2), Some((2, 2)), Some("pool"))?;
+    let flat = inner
+        .borrow_mut()
+        .create_flatten_node(pool.clone(), true, Some("flat"))?;
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 4], Some("target"))?;
+    let loss = inner
+        .borrow_mut()
+        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
-    // 设置初始值
-    graph.set_node_value(
-        input,
-        Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 4, 4], 42)),
-    )?;
-    graph.set_node_value(target, Some(&Tensor::zeros(&[2, 4])))?;
+    inner.borrow_mut().set_train_mode();
 
-    // 第一次训练：batch=2
-    graph.forward(loss)?;
-    let loss_val1 = graph.get_node_value(loss)?.unwrap()[[0, 0]];
-    assert!(loss_val1 >= 0.0);
-    graph.zero_grad()?;
-    graph.backward(loss)?;
+    // === 第一次：batch=2 ===
+    param.set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 4, 4], 42)))?;
+    target.set_value(Some(&Tensor::zeros(&[2, 4])))?;
 
-    // 更新输入为不同的 batch_size
-    graph.set_node_value(
-        input,
-        Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 4, 4], 100)),
-    )?;
-    graph.set_node_value(target, Some(&Tensor::zeros(&[4, 4])))?;
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+    let loss_val1 = loss.value().unwrap()[[0, 0]];
+    assert!(loss_val1 >= 0.0, "loss 应非负: {}", loss_val1);
 
-    // 第二次训练：batch=4
-    graph.forward(loss)?;
-    let loss_val2 = graph.get_node_value(loss)?.unwrap()[[0, 0]];
-    assert!(loss_val2 >= 0.0);
-    graph.zero_grad()?;
-    graph.backward(loss)?;
+    param.clear_grad()?;
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    let grad1 = param.grad().expect("batch=2 时 param 应有 grad");
+    assert_eq!(grad1.shape(), &[2, 1, 4, 4]);
+
+    // === 第二次：batch=4（动态 batch）===
+    param.set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 4, 4], 100)))?;
+    target.set_value(Some(&Tensor::zeros(&[4, 4])))?;
+
+    inner.borrow_mut().forward_via_node_inner(&loss)?;
+    let loss_val2 = loss.value().unwrap()[[0, 0]];
+    assert!(loss_val2 >= 0.0, "loss 应非负: {}", loss_val2);
+
+    param.clear_grad()?;
+    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    let grad2 = param.grad().expect("batch=4 时 param 应有 grad");
+    assert_eq!(grad2.shape(), &[4, 1, 4, 4]);
 
     Ok(())
 }
 
-// ==================== 方案 C：新节点创建 API 测试 ====================
+// ==================== 5. 方案 C：Create API 测试 ====================
 
-use crate::nn::Graph;
 use std::rc::Rc;
 
 #[test]
