@@ -398,6 +398,50 @@ impl Var {
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 
+    /// 逐元素取最小值：`min(self, other)`
+    ///
+    /// 用于 TD3/SAC 的 Twin Q 网络：`min(Q1, Q2)` 减少 Q 值过估计。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let q_min = q1_var.minimum(&q2_var)?;
+    /// ```
+    pub fn minimum(&self, other: &Self) -> Result<Self, GraphError> {
+        if !self.same_graph(other) {
+            return Err(GraphError::InvalidOperation(
+                "不能对来自不同 Graph 的 Var 进行 minimum".to_string(),
+            ));
+        }
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_minimum_node(
+            Rc::clone(&self.node),
+            Rc::clone(&other.node),
+            None,
+        )?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    /// 逐元素取最大值：`max(self, other)`
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let q_max = q1_var.maximum(&q2_var)?;
+    /// ```
+    pub fn maximum(&self, other: &Self) -> Result<Self, GraphError> {
+        if !self.same_graph(other) {
+            return Err(GraphError::InvalidOperation(
+                "不能对来自不同 Graph 的 Var 进行 maximum".to_string(),
+            ));
+        }
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_maximum_node(
+            Rc::clone(&self.node),
+            Rc::clone(&other.node),
+            None,
+        )?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
     // ==================== 可视化 ====================
 
     /// 生成以该 Var 为输出的计算图的 DOT 格式字符串
@@ -1035,8 +1079,15 @@ impl Var {
         }
         let mut rendered_rnn_clusters: HashSet<usize> = HashSet::new();
 
-        // 渲染模型级嵌套 cluster
+        // 渲染模型级嵌套 cluster（跳过没有可见节点的空模型）
         for (model_idx, (model_name, layers)) in model_groups.iter().enumerate() {
+            let has_visible_nodes = nodes
+                .iter()
+                .any(|n| node_to_model.get(&n.id().0).map(|m| m.as_str()) == Some(model_name));
+            if !has_visible_nodes {
+                continue;
+            }
+
             let model_id = model_name.replace(['-', '.', ' ', '/'], "_");
             let model_color = model_colors[model_idx % model_colors.len()];
 

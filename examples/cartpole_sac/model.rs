@@ -8,7 +8,7 @@
 //! Critic: Input(4) -> Linear(64, ReLU) -> Linear(2) → 每个动作的 Q 值
 //! ```
 
-use only_torch::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
+use only_torch::nn::{Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
 // ============================================================================
@@ -19,34 +19,33 @@ use only_torch::tensor::Tensor;
 pub struct SacActor {
     fc1: Linear,
     fc2: Linear,
-    graph: Graph,
 }
 
 impl SacActor {
     pub fn new(graph: &Graph, obs_dim: usize, action_dim: usize) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("Actor");
         Ok(Self {
-            fc1: Linear::new(graph, obs_dim, 64, true, "actor_fc1")?,
-            fc2: Linear::new(graph, 64, action_dim, true, "actor_fc2")?,
-            graph: graph.clone(),
+            fc1: Linear::new(&graph, obs_dim, 64, true, "fc1")?,
+            fc2: Linear::new(&graph, 64, action_dim, true, "fc2")?,
         })
     }
 
     /// 前向传播，返回 logits
-    pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        let h = self.fc1.forward(&input).relu();
+    ///
+    /// 接受 `&Tensor`（自动创建 Input 节点）或 `&Var`（复用已有 Var）
+    pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let h = self.fc1.forward(x).relu();
         Ok(self.fc2.forward(&h))
     }
 
     /// 获取动作概率和 log 概率（纯 Tensor 操作，不创建计算图节点）
     ///
-    /// 这个方法用于动作选择，不需要梯度，所以直接用 Tensor 的 softmax。
+    /// 用于动作选择，不需要梯度，所以直接用 Tensor 的 softmax。
     pub fn get_action_probs(&self, x: &Tensor) -> Result<(Tensor, Tensor), GraphError> {
         let logits = self.forward(x)?;
-        logits.forward()?; // 触发前向传播
+        logits.forward()?;
         let logits_val = logits.value()?.unwrap();
 
-        // 使用 Tensor 的 softmax（不创建 Var 节点）
         let probs_val = logits_val.softmax(1);
 
         // log_probs = ln(probs + eps) 防止 log(0)
@@ -56,7 +55,7 @@ impl SacActor {
         Ok((probs_val, log_probs))
     }
 
-    /// 按概率分布采样动作（通用版，支持任意 action_dim）
+    /// 按概率分布采样动作
     pub fn sample_action(&self, probs: &Tensor, rng: &mut impl rand::Rng) -> usize {
         let r: f32 = rng.gen_range(0.0..1.0);
         let mut cumsum = 0.0;
@@ -67,7 +66,7 @@ impl SacActor {
                 return i;
             }
         }
-        action_dim - 1 // 数值精度 fallback
+        action_dim - 1
     }
 }
 
@@ -87,26 +86,26 @@ impl Module for SacActor {
 pub struct SacCritic {
     fc1: Linear,
     fc2: Linear,
-    graph: Graph,
 }
 
 impl SacCritic {
     pub fn new(graph: &Graph, obs_dim: usize, action_dim: usize, name: &str) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name(name);
         Ok(Self {
-            fc1: Linear::new(graph, obs_dim, 64, true, &format!("{}_fc1", name))?,
-            fc2: Linear::new(graph, 64, action_dim, true, &format!("{}_fc2", name))?,
-            graph: graph.clone(),
+            fc1: Linear::new(&graph, obs_dim, 64, true, "fc1")?,
+            fc2: Linear::new(&graph, 64, action_dim, true, "fc2")?,
         })
     }
 
     /// 前向传播，返回每个动作的 Q 值
-    pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        let input = self.graph.input(x)?;
-        let h = self.fc1.forward(&input).relu();
+    ///
+    /// 接受 `&Tensor`（自动创建 Input 节点）或 `&Var`（复用已有 Var）
+    pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let h = self.fc1.forward(x).relu();
         Ok(self.fc2.forward(&h))
     }
 
-    /// 获取 Q 值张量
+    /// 获取 Q 值张量（不保留计算图）
     pub fn get_q_values(&self, x: &Tensor) -> Result<Tensor, GraphError> {
         let q = self.forward(x)?;
         Ok(q.value()?.unwrap())
@@ -156,10 +155,10 @@ impl SacAgent {
 
         Ok(Self {
             actor: SacActor::new(graph, obs_dim, action_dim)?,
-            critic1: SacCritic::new(graph, obs_dim, action_dim, "critic1")?,
-            critic2: SacCritic::new(graph, obs_dim, action_dim, "critic2")?,
-            target_critic1: SacCritic::new(graph, obs_dim, action_dim, "target_critic1")?,
-            target_critic2: SacCritic::new(graph, obs_dim, action_dim, "target_critic2")?,
+            critic1: SacCritic::new(graph, obs_dim, action_dim, "Critic1")?,
+            critic2: SacCritic::new(graph, obs_dim, action_dim, "Critic2")?,
+            target_critic1: SacCritic::new(graph, obs_dim, action_dim, "TargetCritic1")?,
+            target_critic2: SacCritic::new(graph, obs_dim, action_dim, "TargetCritic2")?,
 
             log_alpha: 0.0, // 初始 alpha = exp(0) = 1
             target_entropy,
