@@ -10,8 +10,9 @@
  */
 
 use crate::nn::layer::{Linear, Lstm};
-use crate::nn::{Graph, GraphError, Module};
+use crate::nn::{Graph, GraphError, Module, VarLossOps};
 use crate::tensor::Tensor;
+use approx::assert_abs_diff_eq;
 
 // ==================== 基础功能测试 ====================
 
@@ -307,12 +308,11 @@ fn test_lstm_long_sequence() -> Result<(), GraphError> {
     Ok(())
 }
 
-/// 测试 LSTM 缓存：不同 batch_size 使用相同 seq_len 时，应该创建不同的计算图
+/// 测试 LSTM 行为：不同 batch_size 下输出形状正确，相同输入产生相同输出，梯度能正确回传
 ///
 /// 这是 Bug 修复测试：之前没有缓存机制，每次都重新创建计算图。
 /// 现在添加缓存后，需要确保缓存 key 是 (batch_size, seq_len) 而不仅仅是 seq_len。
 #[test]
-#[ignore = "动态图架构下 NodeId 不再稳定，需重新设计测试"]
 fn test_lstm_different_batch_size_same_seq_len() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let lstm = Lstm::new(&graph, 2, 4, "lstm")?;
@@ -325,43 +325,35 @@ fn test_lstm_different_batch_size_same_seq_len() -> Result<(), GraphError> {
     let x2 = graph.zeros(&[4, 3, 2])?;
     x2.set_value(&Tensor::new(&vec![0.1f32; 24], &[4, 3, 2]))?;
 
-    // 第三个输入：batch_size=2, seq_len=3（回到第一个配置）
+    // 第三个输入：batch_size=2, seq_len=3，与 x1 相同值，用于验证相同输入产生相同输出
     let x3 = graph.zeros(&[2, 3, 2])?;
-    x3.set_value(&Tensor::new(&vec![0.2f32; 12], &[2, 3, 2]))?;
+    x3.set_value(&Tensor::new(&vec![0.1f32; 12], &[2, 3, 2]))?;
 
-    // 三次 forward
+    // 1. 验证不同 batch_size 下输出形状正确
     let h1 = lstm.forward(&x1)?;
-    let id1 = h1.node_id();
-    let shape1 = h1.value()?.unwrap().shape().to_vec();
-
+    h1.forward()?;
     let h2 = lstm.forward(&x2)?;
-    let id2 = h2.node_id();
-    let shape2 = h2.value()?.unwrap().shape().to_vec();
-
+    h2.forward()?;
     let h3 = lstm.forward(&x3)?;
-    let id3 = h3.node_id();
-    let shape3 = h3.value()?.unwrap().shape().to_vec();
+    h3.forward()?;
 
-    // 验证：不同 batch_size 应该返回不同的 node_id
-    assert_ne!(
-        id1, id2,
-        "batch_size=2 和 batch_size=4 应该返回不同的 node_id（即使 seq_len 相同）"
-    );
+    assert_eq!(h1.value()?.unwrap().shape(), &[2, 4], "batch_size=2 的输出形状应该是 [2, 4]");
+    assert_eq!(h2.value()?.unwrap().shape(), &[4, 4], "batch_size=4 的输出形状应该是 [4, 4]");
+    assert_eq!(h3.value()?.unwrap().shape(), &[2, 4], "再次 batch_size=2 的输出形状应该是 [2, 4]");
 
-    // 验证：相同 (batch_size, seq_len) 应该返回相同的 node_id（复用缓存）
-    assert_eq!(
-        id1, id3,
-        "相同的 (batch_size=2, seq_len=3) 应该返回相同的 node_id"
-    );
+    // 2. 验证相同输入产生相同数值输出
+    let h1_val = h1.value()?.unwrap();
+    let h3_val = h3.value()?.unwrap();
+    assert_eq!(h1_val.shape(), h3_val.shape());
+    for i in 0..h1_val.size() {
+        assert_abs_diff_eq!(h1_val.data_as_slice()[i], h3_val.data_as_slice()[i], epsilon = 1e-5);
+    }
 
-    // 验证输出形状正确
-    assert_eq!(shape1, vec![2, 4], "batch_size=2 的输出形状应该是 [2, 4]");
-    assert_eq!(shape2, vec![4, 4], "batch_size=4 的输出形状应该是 [4, 4]");
-    assert_eq!(
-        shape3,
-        vec![2, 4],
-        "再次 batch_size=2 的输出形状应该是 [2, 4]"
-    );
+    // 3. 验证梯度能正确回传
+    let target = graph.input(&Tensor::zeros(&[2, 4]))?;
+    let loss = h1.mse_loss(&target)?;
+    loss.backward()?;
+    assert!(lstm.w_ii().grad()?.is_some(), "LSTM 权重 w_ii 应有梯度");
 
     Ok(())
 }
