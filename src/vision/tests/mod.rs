@@ -12,4 +12,5 @@ mod shape;
 
 mod draw;
 
+mod detect;
 mod process;

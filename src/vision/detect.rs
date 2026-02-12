@@ -120,22 +120,3 @@ fn detect_circles_gray_image(
 
     circles
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    #[test]
-    // unit test for detecting circle
-    fn test_detect_circles_by_hough() {
-        let tensor = Vision::load_image("./assets/lenna.png").unwrap();
-        let circles = Vision::detect_circles_by_hough(
-            &tensor, // 1.0,
-            20.0, 70.0, // 增加以过滤更多噪声
-            20.0, // 增加以过滤更多噪声
-            10,   // 调整以匹配圆的大小
-            30,   // 调整以匹配圆的大小
-        )
-        .unwrap();
-        println!("{:?}", circles);
-    }
-}

@@ -52,6 +52,10 @@ mod node_subtract;
 mod node_sum;
 mod node_tanh;
 
+// ===== 其他单元测试 =====
+mod shape; // DynamicShape 动态维度形状系统测试
+mod var_init; // Init 参数初始化策略测试
+
 // ===== 复杂测试 =====
 mod batch_mechanism;
 mod gradient_flow_control;
