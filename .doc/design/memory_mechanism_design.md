@@ -120,12 +120,15 @@ VJP 方式：
 
 ### 2.3 代码对应
 
-```rust
-// Jacobian 模式（用于单样本调试）
-node.calc_jacobi_to_a_parent(...)  // 返回 [1, N] 或 [N, M] 矩阵
+> **历史记录**：`calc_jacobi_to_a_parent`、`get_node_jacobi` 等 Jacobian 模式 API 已废弃，当前统一为 VJP 模式（`grad` / `node.grad()`）。
 
-// VJP 模式（用于训练）
+```rust
+// Jacobian 模式（已废弃，曾用于单样本调试）
+// node.calc_jacobi_to_a_parent(...)  // 返回 [1, N] 或 [N, M] 矩阵
+
+// VJP 模式（当前，用于训练）
 node.calc_grad_to_parent(parent, upstream_grad, ...)  // 返回与 parent 同形的梯度
+// 梯度获取：node.grad() 或 graph.get_node_grad(node_id)
 ```
 
 ---
@@ -143,8 +146,8 @@ node.calc_grad_to_parent(parent, upstream_grad, ...)  // 返回与 parent 同形
 ```rust
 // state.rs 中的关键设计
 impl TraitNode for State {
-    fn set_jacobi(...) { ... }  // Input 节点不实现这个
-    fn set_grad(...) { ... }    // VJP 模式支持
+    // fn set_jacobi(...) { ... }  // 已废弃（Jacobian 模式）
+    fn set_grad(...) { ... }    // VJP 模式支持（当前）
 }
 ```
 
@@ -174,7 +177,7 @@ impl TraitNode for State {
 ├─────────────────────────────────────────────────────────────────┤
 │ 第3层：训练语义层                                                │
 │   职责：forward/backward、BPTT 时间调度、Optimizer              │
-│   梯度流控制：detach / no_grad / retain_graph                   │
+│   梯度流控制：detach / no_grad（动态图架构下天然支持多次 backward，无需 retain_graph）│
 │                                                                 │
 │   🔸 记忆机制组件：BPTT 展开/梯度传递、TBPTT 截断                │
 ├─────────────────────────────────────────────────────────────────┤
@@ -291,8 +294,8 @@ graph.clear_history()    // 清除历史（保留循环状态）
 ```rust
 pub struct State {
     value: Option<Tensor>,
-    jacobi: Option<Tensor>,  // Jacobian 模式梯度
-    grad: Option<Tensor>,    // VJP 模式梯度
+    // jacobi: Option<Tensor>,  // 已废弃（Jacobian 模式）
+    grad: Option<Tensor>,    // VJP 模式梯度（当前）
     shape: Vec<usize>,
 }
 ```
@@ -459,7 +462,7 @@ recurrent_edges: HashMap<NodeId, (NodeId, u32)>  // (from_node, depth)
 
 ```rust
 // 方案：添加可选的初始 State 参数
-let h_0 = graph.new_parameter_node(&[batch, hidden], Some("h_0"))?;
+let h_0 = graph.parameter(&[batch, hidden], Some("h_0"))?;
 graph.set_initial_state(h_prev, h_0)?;
 ```
 
@@ -532,6 +535,8 @@ graph.set_initial_state(h_prev, h_0)?;
 
 ## 10. 关键 API 示例
 
+> **历史记录**：`new_parameter_node`、`get_node_jacobi` 已废弃，当前 API 为 `graph.parameter()`、`node.grad()`。
+
 ```rust
 // 创建循环网络
 let h_prev = graph.new_state_node(&[batch, hidden], Some("h_prev"))?;
@@ -548,9 +553,9 @@ for input in sequence {
 }
 graph.backward_through_time(&params, loss)?;
 
-// SGD 更新
+// SGD 更新（当前使用 graph.get_node_grad() 或 node.grad()，旧 API 为 get_node_jacobi）
 for &p in &params {
-    if let Some(grad) = graph.get_node_jacobi(p)? {
+    if let Some(grad) = graph.get_node_grad(p)? {
         let val = graph.get_node_value(p)?.unwrap();
         let grad_reshaped = grad.reshape(val.shape());
         graph.set_node_value(p, Some(&(val - &grad_reshaped * lr)))?;

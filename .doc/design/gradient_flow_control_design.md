@@ -808,48 +808,56 @@ loss2.backward()?;
 
 ## 10. 与高层 API 的集成
 
-本文档描述的梯度流控制机制已在 [架构 V2 设计](architecture_v2_design.md) 中的高层 API 中得到支持：
+本文档描述的梯度流控制机制已在当前高层 API 中得到支持。高层 API 采用 PyTorch 风格，以 `Var` 为核心，支持算子重载与方法链。
 
-| 功能 | PyTorch 风格 API | 说明 |
-|------|-----------------|------|
-| **detach（推荐）** | `var.detach()` → `DetachedVar` | 轻量级，不创建节点 |
+| 功能 | 当前 API | 说明 |
+|------|----------|------|
+| **detach（推荐）** | `var.detach()` → `DetachedVar` | 轻量级，不创建节点，用于 GAN/RL 梯度隔离 |
 | **detach（图操作）** | `var.detach_node()` → `Var` | 创建 Identity 节点 |
 | **backward** | `loss.backward()?` | 自动前向（ensure-forward） |
-| **ModelState** | `model.forward(&x)?` | 统一接受 Tensor/Var/DetachedVar |
-| **Criterion** | `criterion.forward(&output, &target)?` | 智能缓存损失子图 |
+| **Var** | 节点变量 | 支持算子重载（`+`, `-`, `*`, `/`）和方法链（`.matmul()`, `.sigmoid()` 等） |
+| **Loss** | `var.mse_loss()`, `var.cross_entropy()`, `var.bce_loss()` 等 | 直接在 Var 上调用，target 支持 Var/Tensor/标量 |
+| **Optimizer** | `SGD::new()`, `Adam::new()` + 传入 `params` | 选择性优化：传入要更新的参数子集 |
+| **Module** | `parameters()`, `forward()` | 定义参数与前向，Layer 实现此 trait |
 
 ### 10.1 核心组件
 
 ```rust
-// ModelState: 封装模型的前向计算和缓存
-pub struct ModelState { ... }
+// Var: 节点变量，支持算子重载和方法链
+let z = x.matmul(&w) + &b;
+let out = z.sigmoid();
 
-impl ModelState {
-    pub fn forward(&self, x: impl ForwardInput) -> Result<Var, GraphError> { ... }
+// Module trait: 定义 parameters() 和 forward()
+impl Module for MyModel {
+    fn parameters(&self) -> Vec<Var> {
+        [self.fc1.parameters(), self.fc2.parameters()].concat()
+    }
 }
 
-// Criterion: 封装损失函数和缓存
-pub struct MseLoss { ... }
-pub struct CrossEntropyLoss { ... }
+// Layer: Linear, Conv2d, MaxPool2d, AvgPool2d, RNN, LSTM, GRU
+let fc = Linear::new(&graph, in_dim, out_dim, true, "fc")?;
+let out = fc.forward(&x);
 
-impl MseLoss {
-    pub fn forward(&self, output: &Var, target: &Tensor) -> Result<Var, GraphError> { ... }
-}
+// Optimizer: SGD, Adam，传入要优化的参数子集（选择性优化）
+let mut optimizer = Adam::new(&graph, &model.parameters(), 0.001);
+// 或只优化部分参数：&model.fc1.parameters()
+
+// Loss: 直接在 Var 上调用
+let loss = logits.cross_entropy(&labels)?;
+let loss = output.mse_loss(&target)?;
+let loss = real_out.mse_loss(1)?;   // 标量广播，GAN 目标为 1
+
+// DetachedVar: 梯度隔离（GAN 训练 D 时阻止梯度流向 G）
+let fake = generator.forward(&z)?;
+let fake_detached = fake.detach();
+let d_loss = discriminator.forward(&fake_detached)?.mse_loss(1)?;
 ```
 
-### 10.2 GradientRouter 内部机制
+### 10.2 ~~GradientRouter~~（已移除）
 
-`GradientRouter` 是 `ModelState` 的内部实现节点，用户无需直接使用：
+`GradientRouter` 为旧架构的内部实现节点，已移除。梯度流控制现由 `detach()` → `DetachedVar` 和 `Optimizer` 的参数选择实现。
 
-| 属性 | 说明 |
-|------|------|
-| `value` | 动态设置的输入值 |
-| `is_detached` | 是否阻止梯度向上传播 |
-| `gradient_target` | 梯度路由目标节点 ID |
-
-**可视化**：GradientRouter 在 Graphviz 中显示为椭圆形、虚线边框、浅灰色背景。
-
-高层 API 的设计原则是**薄封装**：`Var` 只是 `NodeId` 的类型安全包装，所有梯度流控制的语义与底层完全一致。
+高层 API 的设计原则是**薄封装**：`Var` 是 `NodeId` 的类型安全包装，`DetachedVar` 表示不参与梯度传播的只读视图，所有梯度流控制语义与底层机制完全一致。
 
 ---
 

@@ -4,11 +4,15 @@
 
 本文档说明了only_torch项目中关于梯度累积和雅可比矩阵管理的设计决策。
 
+> **API 说明**：当前 API 已统一为 PyTorch 风格：`loss.backward()`、`zero_grad()`、`node.grad()`。下文中部分示例与表格可能引用旧 API（如 `backward_nodes`、`clear_jacobi`、`get_node_jacobi`），已标注为历史或已更新。
+
 ## 核心设计原则
 
-### 1. 手动清除雅可比矩阵
+### 1. 手动清除梯度
 
-**设计决策**：`set_node_value()`方法**不会**自动清除节点的雅可比矩阵，需要用户手动调用 `clear_jacobi()`。
+> **历史记录**：以下内容反映迁移前的设计，当前 API 已统一为 `zero_grad()`。
+
+**设计决策**：`set_node_value()`方法**不会**自动清除节点的梯度，需要用户手动调用 `zero_grad()`（旧 API 为 `clear_jacobi()`）。
 
 **理由**：
 
@@ -19,13 +23,15 @@
 
 ### 2. 支持梯度累积
 
-**行为**：连续调用 `backward_nodes()`会累积雅可比矩阵。
+> **历史记录**：以下行为描述迁移前的设计，当前 API 已统一为 `loss.backward()`。
+
+**行为**：连续调用 `loss.backward()` 会累积梯度（旧 API 为 `backward_nodes()`）。
 
 ```rust
 // 示例：梯度累积
-graph.backward_nodes(&[param], loss).unwrap(); // 第1次：grad = ∇L
-graph.backward_nodes(&[param], loss).unwrap(); // 第2次：grad = 2∇L
-graph.backward_nodes(&[param], loss).unwrap(); // 第3次：grad = 3∇L
+loss.backward(); // 第1次：grad = ∇L
+loss.backward(); // 第2次：grad = 2∇L
+loss.backward(); // 第3次：grad = 3∇L
 ```
 
 **应用场景**：
@@ -45,11 +51,11 @@ for epoch in 0..epochs {
         graph.forward_node(loss)?;
 
         // 2. 反向传播（计算梯度）
-        graph.backward_nodes(&[w, b], loss)?;
+        loss.backward()?;
 
         // 3. 获取梯度并更新参数
-        let w_grad = graph.get_node_grad(w)?.unwrap();
-        let b_grad = graph.get_node_grad(b)?.unwrap();
+        let w_grad = w.grad()?.unwrap();
+        let b_grad = b.grad()?.unwrap();
 
         let w_value = graph.get_node_value(w)?.unwrap();
         let b_value = graph.get_node_value(b)?.unwrap();
@@ -58,7 +64,7 @@ for epoch in 0..epochs {
         graph.set_node_value(b, Some(&(b_value - lr * b_grad)))?;
 
         // 4. 手动清除梯度（重要！）
-        graph.clear_jacobi()?;
+        graph.zero_grad()?;
     }
 }
 ```
@@ -72,13 +78,13 @@ for epoch in 0..epochs {
     for (i, batch) in batches.enumerate() {
         // 前向传播和反向传播
         graph.forward_node(loss)?;
-        graph.backward_nodes(&[w, b], loss)?; // 梯度会自动累积
+        loss.backward()?; // 梯度会自动累积
 
         // 每accumulation_steps步更新一次参数
         if (i + 1) % accumulation_steps == 0 {
             // 获取累积的梯度
-            let w_grad = graph.get_node_grad(w)?.unwrap();
-            let b_grad = graph.get_node_grad(b)?.unwrap();
+            let w_grad = w.grad()?.unwrap();
+            let b_grad = b.grad()?.unwrap();
 
             // 更新参数（注意要除以累积步数）
             let w_value = graph.get_node_value(w)?.unwrap();
@@ -88,7 +94,7 @@ for epoch in 0..epochs {
             graph.set_node_value(b, Some(&(b_value - lr * b_grad / accumulation_steps as f32)))?;
 
             // 清除累积的梯度
-            graph.clear_jacobi()?;
+            graph.zero_grad()?;
         }
     }
 }
@@ -98,7 +104,7 @@ for epoch in 0..epochs {
 
 | 框架                     | set_value行为    | 梯度累积     | 清除方式                |
 | ------------------------ | ---------------- | ------------ | ----------------------- |
-| **only_torch**     | 不自动清除       | 支持         | 手动 `clear_jacobi()` |
+| **only_torch**     | 不自动清除       | 支持         | 手动 `zero_grad()`     |
 | **PyTorch**        | 自动清除         | 支持         | 自动或 `zero_grad()`  |
 | **TensorFlow 1.x** | 不自动清除       | 支持         | 手动或优化器            |
 | **JAX**            | 不适用（函数式） | 通过函数组合 | 不适用                  |
@@ -110,39 +116,39 @@ for epoch in 0..epochs {
 ```rust
 // ❌ 错误：忘记清除梯度
 for i in 0..iterations {
-    graph.backward_nodes(&[param], loss)?;
+    loss.backward()?;
     // 梯度会意外累积！
 }
 
 // ✅ 正确：手动清除梯度
 for i in 0..iterations {
-    graph.backward_nodes(&[param], loss)?;
+    loss.backward()?;
     // 使用梯度...
-    graph.clear_jacobi()?; // 清除梯度
+    graph.zero_grad()?; // 清除梯度
 }
 ```
 
 ### 2. 参数更新不会清除梯度
 
 ```rust
-graph.backward_nodes(&[param], loss)?;
-let grad = graph.get_node_grad(param)?.unwrap();
+loss.backward()?;
+let grad = param.grad()?.unwrap();
 
 // 更新参数值
 graph.set_node_value(param, Some(&new_value))?;
 
 // ⚠️ 梯度仍然存在！需要手动清除
-assert!(graph.get_node_jacobi(param)?.is_some()); // 梯度还在
-graph.clear_jacobi()?; // 手动清除
+assert!(param.grad()?.is_some()); // 梯度还在
+graph.zero_grad()?; // 手动清除
 ```
 
 ### 3. 梯度累积的数学含义
 
 连续的反向传播会累积梯度：
 
-- 第1次：`jacobi = ∇L₁`
-- 第2次：`jacobi = ∇L₁ + ∇L₂`
-- 第3次：`jacobi = ∇L₁ + ∇L₂ + ∇L₃`
+- 第1次：`grad = ∇L₁`
+- 第2次：`grad = ∇L₁ + ∇L₂`
+- 第3次：`grad = ∇L₁ + ∇L₂ + ∇L₃`
 
 这在数学上等价于对损失函数之和求导：`∇(L₁ + L₂ + L₃)`
 
@@ -209,11 +215,11 @@ for child_id in children_ids {
 
 ### 核心功能测试
 
-1. **`test_continuous_backward_jacobi_accumulation`**：
+1. **`test_continuous_backward_jacobi_accumulation`**（旧名，现对应 backward/grad 相关测试）：
 
    - 验证梯度正确累积
    - 验证 `set_value`不会自动清除梯度
-   - 验证 `clear_jacobi()`正确清除梯度
+   - 验证 `zero_grad()`正确清除梯度（旧 API 为 `clear_jacobi()`）
 2. **`test_backward_with_partial_forward_propagation`**：
 
    - 验证部分前向传播情况下的反向传播

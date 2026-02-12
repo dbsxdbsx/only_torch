@@ -54,7 +54,7 @@ let dot = graph.to_dot();
 | [parity_rnn_var_len](examples/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
 | [parity_lstm_var_len](examples/parity_lstm_var_len/) | 序列分类 | **LSTM 层**、变长序列 | `LSTM(1→16) → FC(2)` | `cargo run --example parity_lstm_var_len` |
 | [parity_gru_var_len](examples/parity_gru_var_len/) | 序列分类 | **GRU 层**、变长序列 | `GRU(1→16) → FC(2)` | `cargo run --example parity_gru_var_len` |
-| [dual_input_add](examples/dual_input_add/) | 回归 | **多输入** (`forward2`)、特征融合 | `2×Linear → Concat → 1` | `cargo run --example dual_input_add` |
+| [dual_input_add](examples/dual_input_add/) | 回归 | **多输入**、特征融合 | `2×Linear → Concat → 1` | `cargo run --example dual_input_add` |
 | [siamese_similarity](examples/siamese_similarity/) | 二分类 | **多输入**、共享编码器 | `共享Encoder → Concat → 1` | `cargo run --example siamese_similarity` |
 | [dual_output_classify](examples/dual_output_classify/) | 多任务 | **多输出**、多 Loss 训练 | `Shared → (Cls, Reg)` | `cargo run --example dual_output_classify` |
 | [multi_io_fusion](examples/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
@@ -168,7 +168,7 @@ cargo run --example parity_gru_var_len
 
 **双输入加法** ⭐
 
-展示 `forward2` 多输入 API，两个独立编码器分别处理输入后融合。
+展示多输入 API，两个独立编码器分别处理输入后融合。
 
 ```bash
 cargo run --example dual_input_add
@@ -198,7 +198,7 @@ cargo run --example dual_output_classify
 
 **多输入多输出融合** ⭐⭐⭐
 
-完整展示 `forward2` + 多输出元组返回：
+完整展示多输入 + 多输出元组返回：
 - 两个不同形状的输入：`[4]` 和 `[8]`
 - 两个不同类型的输出：分类 + 回归
 - 特征融合 + 多任务学习
@@ -245,7 +245,7 @@ cargo run --example multi_label_point
 | `DataLoader` | | ✅ | | ✅ | ✅ | | | | | | |
 | `BucketedDataLoader` | | | | | | ✅ | | | | | |
 | 变长序列 | | | | | | ✅ | | | | | |
-| **多输入** (`forward2`) | | | | | | | ✅ | ✅ | | ✅ | |
+| **多输入** | | | | | | | ✅ | ✅ | | ✅ | |
 | **多输出** (元组返回) | | | | | | | | | ✅ | ✅ | |
 | 共享编码器 | | | | | | | | ✅ | | | |
 | 多 Loss 训练 | | | | | | | | | ✅ | ✅ | |

@@ -1,5 +1,7 @@
 # Optimizer 架构设计
 
+> **API 说明**：旧 API（如 `one_step`、`one_step_batch`、`backward_batch`、`new_parameter_node`）已在 VJP 统一重构中移除。当前 API 为：`optimizer.step()`、`loss.backward()`、`graph.parameter()`。
+
 ## 1. 设计目标
 
 基于 MatrixSlow Python 版本的 optimizer 设计，为 only_torch 项目设计一个可扩展、可维护的优化器架构，支持多种优化算法。
@@ -17,7 +19,7 @@
 ```
 Optimizer Trait (优化器特征)
 ├── 核心方法:
-│   ├── one_step()     # 单步训练（前向+反向传播+梯度累积）
+│   ├── step()         # 单步训练（前向+反向传播+梯度累积）；旧 API 为 one_step()
 │   ├── update()       # 参数更新（执行具体优化算法）
 │   └── reset()        # 重置累积状态
 ├── 已实现:
@@ -36,10 +38,12 @@ Optimizer Trait (优化器特征)
 
 ### 4.1 Optimizer Trait
 
+> **历史记录**：以下接口反映迁移前的设计，当前 API 已统一为 `optimizer.step()`。
+
 ```rust
 pub trait Optimizer {
-    /// 执行一步训练：前向传播 + 反向传播 + 梯度累积
-    fn one_step(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError>;
+    /// 执行一步训练：前向传播 + 反向传播 + 梯度累积（当前为 step()，旧 API 为 one_step）
+    fn step(&mut self, graph: &mut Graph, target_node: NodeId) -> Result<(), GraphError>;
 
     /// 更新参数（执行具体的优化算法）
     fn update(&mut self, graph: &mut Graph) -> Result<(), GraphError>;
@@ -217,8 +221,8 @@ impl Optimizer for Adam {
 // 创建计算图和网络结构
 let mut graph = Graph::new();
 let x = graph.new_input_node(&[3, 1], Some("x"))?;
-let w = graph.new_parameter_node(&[1, 3], Some("w"))?;
-let b = graph.new_parameter_node(&[1, 1], Some("b"))?;
+let w = graph.parameter(&[1, 3], Some("w"))?;
+let b = graph.parameter(&[1, 1], Some("b"))?;
 let output = graph.new_add_node(&[graph.new_mat_mul_node(w, x, None)?, b], None)?;
 let loss = graph.new_mse_loss_node(output, target, Some("loss"))?;
 
@@ -232,8 +236,8 @@ for epoch in 0..50 {
         graph.set_node_value(x, Some(&features))?;
         graph.set_node_value(label_node, Some(&label))?;
 
-        // 执行一步训练（前向+反向传播+梯度累积）
-        optimizer.one_step(&mut graph, loss)?;
+        // 执行一步训练（前向+反向传播+梯度累积）；旧 API 为 one_step()
+        optimizer.step(&mut graph, loss)?;
     }
 
     // 更新参数
@@ -251,7 +255,7 @@ for (features, label) in train_data {
     graph.set_node_value(x, Some(&features))?;
     graph.set_node_value(label_node, Some(&label))?;
 
-    optimizer.one_step(&mut graph, loss)?;
+    optimizer.step(&mut graph, loss)?;
     current_batch_size += 1;
 
     // 当积累到一个mini batch时，执行参数更新
@@ -263,6 +267,8 @@ for (features, label) in train_data {
 ```
 
 ### 6.3 GAN 训练（with_params + detach）
+
+> **历史记录**：以下示例中的 `backward_batch`、`update_batch` 已废弃，当前 API 为 `loss.backward()`、`optimizer.update()`。
 
 ```rust
 // 构建 GAN 网络
@@ -277,16 +283,16 @@ for epoch in 0..epochs {
     // === 训练 Discriminator ===
     graph.detach_node(fake_images)?;  // 阻止 D 的 loss 更新 G
     graph.forward_batch(d_loss)?;
-    graph.clear_grad()?;
-    graph.backward_batch(d_loss)?;
-    optimizer_d.update_batch(&mut graph)?;
+    graph.zero_grad()?;
+    d_loss.backward()?;
+    optimizer_d.update(&mut graph)?;
 
     // === 训练 Generator ===
     graph.attach_node(fake_images)?;  // 恢复梯度流
     graph.forward_batch(g_loss)?;
-    graph.clear_grad()?;
-    graph.backward_batch(g_loss)?;
-    optimizer_g.update_batch(&mut graph)?;
+    graph.zero_grad()?;
+    g_loss.backward()?;
+    optimizer_g.update(&mut graph)?;
 }
 ```
 
@@ -305,12 +311,12 @@ let mut optimizer_new = SGD::with_params(&new_params, 0.01);
 
 for batch in data_loader {
     graph.forward_batch(loss)?;
-    graph.clear_grad()?;
-    graph.backward_batch(loss)?;
+    graph.zero_grad()?;
+    loss.backward()?;
 
     // 两个优化器都更新
-    optimizer_pretrained.update_batch(&mut graph)?;
-    optimizer_new.update_batch(&mut graph)?;
+    optimizer_pretrained.update(&mut graph)?;
+    optimizer_new.update(&mut graph)?;
 }
 ```
 

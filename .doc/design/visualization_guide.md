@@ -170,7 +170,9 @@ select ×8
 
 ## 5. 模型分组
 
-### 5.1 使用 ModelState 自动分组
+> **历史记录**：以下内容反映迁移前的设计，`ModelState` 已统一为 `Module` trait。当前通过实现 `Module` trait 的模块自动参与分组。
+
+### 5.1 使用 Module trait 自动分组
 
 ```rust
 impl MyModel {
@@ -178,8 +180,7 @@ impl MyModel {
         Self {
             rnn: Rnn::new(graph, 1, 16, "rnn")?,
             fc: Linear::new(graph, 16, 2, "fc")?,
-            // 自动使用类型名 "MyModel" 作为分组名
-            state: ModelState::new_for::<Self>(graph),
+            // 实现 Module trait 的模块自动使用类型名作为分组名（旧 API 为 ModelState::new_for::<Self>(graph)）
         }
     }
 }
@@ -188,7 +189,8 @@ impl MyModel {
 ### 5.2 手动指定分组名
 
 ```rust
-state: ModelState::new(graph).named("Generator"),
+// 旧 API: state: ModelState::new(graph).named("Generator")
+// 当前：在 Module 实现中指定分组名
 ```
 
 ### 5.3 可视化效果

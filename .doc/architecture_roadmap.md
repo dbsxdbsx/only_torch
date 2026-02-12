@@ -1,8 +1,8 @@
 # Only Torch 架构路线图
 
-> 最后更新: 2026-02-01
+> 最后更新: 2026-02-12
 > 战略定位: **简化版 PyTorch in Rust**，为 NEAT 预留扩展性
-> 当前阶段: **Phase 2 完成，PyTorch 风格 API 已实现**
+> 当前阶段: **动态图架构已稳定，PyTorch 风格 API 已实现**
 
 ## 文档索引
 
@@ -10,22 +10,31 @@
 .doc/
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
-│   # dynamic_graph_lifecycle_design.md 已归档至 _archive/
 │   ├── future_node_types.md                        # ⭐ 待扩展节点规划 + 调试工具
-│   ├── api_layering_and_seed_design.md             # API分层与种子管理
-│   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制（重要）
+│   ├── future_enhancements.md                      # 未来功能规划
+│   ├── neural_architecture_evolution_design.md      # ⭐ NEAT 神经架构演化（核心愿景）
+│   ├── api_layering_and_seed_design.md             # API 分层与种子管理
+│   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制
 │   ├── broadcast_mechanism_design.md               # 广播机制设计
-│   ├── gradient_clear_and_accumulation_design.md   # 梯度机制
-│   ├── gradient_flow_control_design.md             # ⭐ 梯度流控制（detach/GradientRouter）
+│   ├── gradient_clear_and_accumulation_design.md   # 梯度清零与累积机制
+│   ├── gradient_flow_control_design.md             # ⭐ 梯度流控制（detach/no_grad）
+│   ├── data_loader_design.md                       # DataLoader 设计
+│   ├── graph_serialization_design.md               # 序列化与可视化
 │   ├── memory_mechanism_design.md                  # 记忆/循环机制设计
 │   ├── node_vs_layer_design.md                     # Node vs Layer 架构设计
 │   ├── optimization_strategy.md                    # 性能优化策略
-│   └── optimizer_architecture_design.md            # 优化器架构
+│   ├── optimizer_architecture_design.md            # 优化器架构
+│   └── visualization_guide.md                      # 可视化使用指南
 ├── reference/                           # 参考资料
 │   └── python_MatrixSlow_pid.md         # MatrixSlow 项目分析
-└── _archive/                            # 暂缓/历史文档
-    ├── architecture_v2_design.md           # 旧架构设计（已被 dynamic_graph_lifecycle 取代）
-    └── graph_execution_refactor.md         # 底层重构方案（暂缓）
+└── _archive/                            # 已完成/历史文档
+    ├── architecture_v2_design.md
+    ├── autodiff_unification_design.md
+    ├── dynamic_graph_lifecycle_design.md
+    ├── graph_execution_refactor.md
+    ├── graph_refactoring_design.md
+    ├── input_node_unification_design.md
+    └── multi_input_forward_design.md
 ```
 
 ---
@@ -36,44 +45,47 @@
 模块               完成度    状态
 ─────────────────────────────────
 tensor/            ~85%     ✅ 基本完成
-nn/graph           ~95%     ✅ 核心完成 + PyTorch 风格 API
+nn/graph           ~95%     ✅ 动态图架构 + PyTorch 风格 API
 nn/nodes           ~80%     ✅ 40 个节点类型（Conv2d/Pool/RNN/LSTM/GRU...）
+nn/layer           ~80%     ✅ Linear/Conv2d/MaxPool2d/AvgPool2d/RNN/LSTM/GRU
 nn/debug           100%     ✅ 节点类型枚举 + 调试工具（strum 自动获取）
-nn/model_state     100%     ✅ 智能缓存 + ForwardInput trait
-nn/criterion       100%     ✅ MseLoss/CrossEntropyLoss/BceLoss/HuberLoss/MaeLoss
-nn/optimizer       ~70%     ✅ SGD/Adam可用，缺Momentum等
+nn/optimizer       ~70%     ✅ SGD/Adam 可用，缺 Momentum 等
 data/              ~75%     ✅ MNIST + California Housing + DataLoader
 vision/            ~70%     ✅ 基本完成
+rl/                ~30%     ✅ GymEnv + SAC-Discrete（CartPole 示例）
 logic/             0%       ❌ 预留
 neat/              0%       ❌ 远期特色
 ```
 
-## 🎉 PyTorch 风格 API 里程碑（2026-01-21）
+## PyTorch 风格 API
 
 ### 核心组件
 
 | 组件 | 说明 | 状态 |
 |------|------|------|
-| **ModelState** | 模型前向计算封装，智能缓存 | ✅ |
-| **ForwardInput** | 统一输入 trait（Tensor/Var/DetachedVar） | ✅ |
-| **GradientRouter** | 内部节点，梯度路由 | ✅ |
-| **DetachedVar** | 轻量 detach 包装 | ✅ |
-| **MseLoss/CrossEntropyLoss** | Criterion 损失函数封装 | ✅ |
+| **Graph** | 计算图（参数注册表、种子管理） | ✅ |
+| **Var** | 节点变量（Rc 引用计数管理生命周期） | ✅ |
+| **Module** trait | 模型定义（parameters + forward） | ✅ |
+| **Layer** | Linear/Conv2d/MaxPool2d/AvgPool2d/RNN/LSTM/GRU | ✅ |
+| **Optimizer** | SGD/Adam + with_params 选择性优化 | ✅ |
+| **DetachedVar** | 轻量 detach 包装（GAN/RL 梯度隔离） | ✅ |
+| **Loss** 方法 | `var.mse_loss()` / `var.cross_entropy()` / `var.bce_loss()` 等 | ✅ |
 
 ### 示例 API 风格
 
 ```rust
 // 创建模型（PyTorch 风格）
-let generator = Generator::new(&graph)?;
-let discriminator = Discriminator::new(&graph)?;
-let criterion = MseLoss::new();
+let graph = Graph::new_with_seed(42);
+let model = MyModel::new(&graph)?;
+let mut optimizer = Adam::new(&graph, model.parameters(), 0.001);
 
 // 训练循环
-let fake = generator.forward(&noise)?;
-let d_fake = discriminator.forward(&fake.detach())?;  // ✨ detach
-let loss = criterion.forward(&d_fake, &labels)?;
-loss.backward()?;
-optimizer.step()?;
+for (x, target) in &dataloader {
+    optimizer.zero_grad()?;
+    let output = model.forward(&x)?;
+    let loss_val = output.mse_loss(&target)?.backward()?;
+    optimizer.step()?;
+}
 ```
 
 ### 示例覆盖
@@ -83,13 +95,19 @@ optimizer.step()?;
 | `xor` | 基础 MLP | ✅ |
 | `sine_regression` | 回归任务 | ✅ |
 | `iris` | 多分类 | ✅ |
-| `mnist` | 图像分类 | ✅ |
+| `mnist` | CNN 图像分类 | ✅ |
 | `mnist_gan` | GAN 训练 + detach | ✅ |
-| `california_housing` | 房价回归 | ✅ |
+| `california_housing` | 房价回归 + DataLoader | ✅ |
 | `parity_rnn_fixed_len` | RNN 展开式 | ✅ |
-| `parity_rnn_var_len` | RNN 变长 + 智能缓存 | ✅ |
+| `parity_rnn_var_len` | RNN 变长 + BucketedDataLoader | ✅ |
 | `parity_lstm_var_len` | LSTM 变长 | ✅ |
 | `parity_gru_var_len` | GRU 变长 | ✅ |
+| `dual_input_add` | 多输入 | ✅ |
+| `siamese_similarity` | 共享编码器 | ✅ |
+| `dual_output_classify` | 多输出 + 多 Loss | ✅ |
+| `multi_io_fusion` | 多输入 + 多输出 | ✅ |
+| `multi_label_point` | BceLoss 多标签 | ✅ |
+| `cartpole_sac` | SAC-Discrete 强化学习 | ✅ |
 
 ## 已实现节点
 
@@ -97,7 +115,7 @@ optimizer.step()?;
 
 | 类型 | 节点                                                        | 数量 |
 | :--- | :---------------------------------------------------------- | :--: |
-| 输入 | Input (Data/Target/Smart/RecurrentOutput), Parameter, State |  3   |
+| 输入 | Input (Data/Target), Parameter, State                       |  3   |
 | 算术 | Add, Subtract, Multiply, Divide                             |  4   |
 | 矩阵 | MatMul, Conv2d, MaxPool2d, AvgPool2d                        |  4   |
 | 形状 | Reshape, Flatten, Select, Gather, Stack                     |  5   |
@@ -182,21 +200,16 @@ optimizer.step()?;
 only_torch/
 ├── tensor/          # 张量核心 ✅
 ├── nn/
-│   ├── graph        # 计算图 ✅
-│   ├── nodes/       # 节点层
-│   │   ├── 输入: Input, Parameter, Constant
-│   │   ├── 激活: LeakyReLU/ReLU, Tanh, Sigmoid, Softmax, Step
-│   │   ├── 运算: Add, Sub, Mul, Div, MatMul, Reshape
-│   │   └── 损失: MSE ✅, SoftmaxCrossEntropy ✅
-│   ├── optimizer/   # 优化器
-│   │   └── SGD, Momentum, Adam, LRScheduler
-│   └── context/     # 运行上下文
-│       └── no_grad, train/eval模式
+│   ├── graph/       # 计算图（动态图 + Rc 生命周期）✅
+│   ├── nodes/       # 40 个节点类型 ✅
+│   ├── layer/       # Linear/Conv2d/Pool/RNN/LSTM/GRU ✅
+│   ├── optimizer/   # SGD/Adam ✅
+│   └── module       # Module trait ✅
 ├── vision/          # 视觉处理 ✅
-├── data/            # 数据加载 ✅
-│   └── MnistDataset, CaliforniaHousingDataset, transforms
-├── neat/            # 神经进化 (远期)
-└── rl/              # 强化学习 (远期)
+├── data/            # DataLoader + MNIST + California Housing ✅
+├── rl/              # GymEnv + SAC-Discrete ✅
+├── neat/            # 神经进化（远期核心）
+└── logic/           # 逻辑推理（预留）
 ```
 
 ---
@@ -207,94 +220,24 @@ only_torch/
 
 XOR 问题已成功解决！网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 收敛到 100%准确率。
 
-### ✅ 已完成：M4 验证 NEAT 友好性
+### ✅ 已完成：动态图 NEAT 友好性验证
 
-Graph 的动态扩展能力已验证通过！关键实现：
+Graph 的动态扩展能力已验证通过（12 个综合测试覆盖基本动态添加、NEAT 变异模拟等场景）。
+动态图架构下，Var 持有 `Rc<NodeInner>`，节点用完自动释放，天然适配 NEAT 拓扑变异。
 
-1. **新增 `on_topology_changed()` 方法**：在拓扑变化后调用，重置 pass_id 但保留 value
-2. **12 个综合测试**覆盖各种场景：
-   - 基本动态添加（forward/backward 后添加节点）
-   - 多次连续拓扑变化
-   - 链式添加、分支添加
-   - NEAT 变异模拟（添加节点、添加连接）
+### ✅ 已完成：Graph 种子管理
 
 ```rust
-// 使用示例
-graph.forward_node(loss)?;
-graph.backward_nodes(&[w], loss)?;
-
-// NEAT 变异：添加新节点
-let new_node = graph.new_parameter_node(&[1, 1], Some("new"))?;
-let new_add = graph.new_add_node(&[old_node, new_node], None)?;
-
-// 通知拓扑变化（重置 pass_id，保留 value）
-graph.on_topology_changed();
-
-// 继续训练
-graph.forward_node(new_loss)?;
-graph.backward_nodes(&[w, new_node], new_loss)?;
+let graph = Graph::new_with_seed(42);  // 确定性训练
+let w = graph.parameter(&[3, 2], Init::Normal { mean: 0.0, std: 1.0 }, "w")?;
 ```
 
-### ✅ 已完成：M4b Graph 级别种子 API
+### ✅ 阶段二核心完成
 
-Graph 级别的种子管理已实现：
-
-```rust
-// 创建带种子的图（确定性）
-let graph = Graph::new_with_seed(42);
-
-// 或动态设置种子
-let mut graph = Graph::new();
-graph.set_seed(42);
-
-// 参数创建自动使用 Graph 的 RNG
-let w = graph.new_parameter_node(&[3, 2], Some("w"))?;
-
-// Granular API 仍可覆盖
-let b = graph.new_parameter_node_seeded(&[1, 1], Some("b"), 999)?;
-```
-
-**8 个新测试**验证了：确定性、NEAT 多图并行、种子覆盖等场景。
-
-### 🎉 阶段二核心完成！
-
-**已完成：**
-
-- ✅ Sigmoid 激活节点
-- ✅ SoftmaxCrossEntropyLoss 融合节点（数值稳定）
-- ✅ DataLoader 模块 + MNIST 数据集（自动下载/缓存）
-- ✅ MNIST MLP MVP 集成测试（验证 loss 下降趋势）
-
-**下一步：**
-
-1. ~~实现 ReLU 激活节点~~ ✅ 已完成（LeakyReLU + ReLU）
-2. ~~实现 Conv2d / Pooling 节点（CNN 基础）~~ ✅ 已完成
-   - Conv2d: 支持 stride/padding，VJP 自动微分
-   - MaxPool2d: 稀疏梯度反传（记录最大值索引）
-   - AvgPool2d: 均匀梯度分配
-3. ~~实现 CNN Layer 便捷函数~~ ✅ 已完成
-   - `conv2d()`: 创建卷积层（自动创建 kernel 参数）
-   - `max_pool2d()`: 最大池化层
-   - `avg_pool2d()`: 平均池化层
-4. MNIST CNN 端到端示例（LeNet 风格）
-5. 完善 MNIST MLP 示例（提升准确率，添加评估指标）
-
-### ✅ 已完成：MSE（Mean Squared Error）损失节点
-
-实现了完整的 MSE 节点，支持回归任务：
-
-- **支持 Reduction**：`Mean`（默认）、`Sum`
-- **VJP 模式**：统一的反向传播 API
-- **集成测试**：`test_simple_regression_full_batch.rs` 验证 y=2x+1 线性回归收敛
-
-### ✅ 已完成：California Housing 数据集
-
-实现了回归任务的经典数据集（类似分类任务的 MNIST）：
-
-- **数据规模**：20,433 个样本，8 个特征
-- **特征标准化**：Z-score 标准化，加速收敛
-- **数据划分**：支持 train_test_split + 随机种子
-- **集成测试**：`test_california_housing_price.rs` 验证 MLP 回归
+- 40 个节点类型（含 Conv2d/Pool/RNN/LSTM/GRU）
+- 5 种损失函数（MSE/MAE/BCE/Huber/CrossEntropy）
+- DataLoader + BucketedDataLoader
+- 16 个示例覆盖 MLP/CNN/RNN/GAN/多任务/RL
 
 ---
 
