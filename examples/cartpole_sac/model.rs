@@ -56,11 +56,18 @@ impl SacActor {
         Ok((probs_val, log_probs))
     }
 
-    /// 采样动作（根据概率分布）
+    /// 按概率分布采样动作（通用版，支持任意 action_dim）
     pub fn sample_action(&self, probs: &Tensor, rng: &mut impl rand::Rng) -> usize {
-        let p0 = probs[[0, 0]];
         let r: f32 = rng.gen_range(0.0..1.0);
-        if r < p0 { 0 } else { 1 }
+        let mut cumsum = 0.0;
+        let action_dim = probs.shape()[1];
+        for i in 0..action_dim {
+            cumsum += probs[[0, i]];
+            if r < cumsum {
+                return i;
+            }
+        }
+        action_dim - 1 // 数值精度 fallback
     }
 }
 

@@ -149,6 +149,9 @@ fn main() -> Result<(), GraphError> {
         println!("\n[2/5] 创建 SAC Agent...");
         let graph = Graph::new_with_seed(42);
         let mut agent = SacAgent::new(&graph, obs_dim, action_dim)?;
+        // 目标网络必须从在线网络初始化（标准 SAC 要求）
+        agent.target_critic1.hard_update_from(&agent.critic1);
+        agent.target_critic2.hard_update_from(&agent.critic2);
 
         println!("  Actor:  {} -> 64 -> {} (Softmax)", obs_dim, action_dim);
         println!("  Critic: {} -> 64 -> {} (Q values)", obs_dim, action_dim);
@@ -284,7 +287,7 @@ fn main() -> Result<(), GraphError> {
                     let action_sum = weighted.sum_axis(1); // Var [batch, 1]
                     let actor_loss = action_sum.mean(); // Var [1, 1]
 
-                    // 先执行前向传播，获取 alpha 更新所需的值（backward 后会释放中间值）
+                    // 先 forward 获取 alpha 更新所需的中间值（backward 也会 ensure-forward，此处显式调用确保值可用）
                     actor_loss.forward()?;
                     let probs_val = probs.value()?.unwrap();
                     let log_probs_val = log_probs.value()?.unwrap();
@@ -300,7 +303,7 @@ fn main() -> Result<(), GraphError> {
                     // ========== 软更新目标网络 ==========
                     agent.soft_update_targets();
 
-                    // 临时节点的清理由 backward() 后的 release_intermediate_results() 处理
+                    // 方案 C：运算节点在 Var 离开作用域时由 Rc 引用计数自动释放
                 }
 
                 if done {

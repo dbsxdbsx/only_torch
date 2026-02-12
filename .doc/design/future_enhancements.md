@@ -69,95 +69,127 @@
 
 ---
 
-## 2. 多输入模型扩展
+## 2. 概率分布模块
 
-**优先级**：🟡 中
+**优先级**：🔴 高（SAC-Continuous / Hybrid SAC 的核心依赖）
 
-**背景**：强化学习等场景需要多输入支持，如 Critic 模型需要同时接收 state 和 action。
+**背景**：SAC-Continuous 的策略网络需要对连续动作进行重参数化采样（reparameterization trick），并计算 log_prob 用于熵正则化和 Actor loss。这需要一个完整的概率分布模块，是当前项目**最大的系统性缺口**。
 
-### 方案 A：多个 ForwardInput 参数
+> **注**：SAC-Discrete（当前 cartpole_sac）不需要此模块——softmax + log_softmax 已足够。
+> 此模块仅在扩展到连续/混合动作空间时才需要。
+
+### 需要实现的分布
+
+| 分布 | 核心方法 | 用途 |
+|------|---------|------|
+| **Normal** | `rsample()` `log_prob()` `entropy()` | 连续动作基础采样 |
+| **TanhNormal** | `sample()` + tanh squash + log_prob 修正 | SAC-Continuous 标准策略 |
+| **Categorical** | `sample()` `log_prob()` `entropy()` | Hybrid SAC 离散部分（计算图内版本） |
+
+### 设计方案
+
+建议作为独立模块 `src/nn/distributions/`，组合已有计算图节点：
 
 ```rust
-// 扩展 ModelState
-pub fn forward2<X1, X2, F>(&self, x1: X1, x2: X2, compute: F) -> Result<Var, GraphError>
-where
-    X1: ForwardInput,
-    X2: ForwardInput,
-    F: FnOnce(&Var, &Var) -> Result<Var, GraphError>;
+// src/nn/distributions/mod.rs
+pub mod normal;
+pub mod tanh_normal;
+pub mod categorical;
+
+pub use normal::Normal;
+pub use tanh_normal::TanhNormal;
+pub use categorical::Categorical;
 ```
 
-### 方案 B：元组作为输入
-
 ```rust
-// 为元组实现 ForwardInput trait
-impl<A: ForwardInput, B: ForwardInput> ForwardInput for (A, B) {
-    type Output = (Var, Var);
-    // ...
+// Normal 分布核心 API
+pub struct Normal {
+    mean: Var,   // 均值（来自网络输出）
+    std: Var,    // 标准差（来自网络输出，通常经 exp/softplus 变换）
 }
 
-// 使用
-let output = model.forward((state, action), |(s, a)| {
-    let combined = s.concat(a)?;
-    self.critic.forward(&combined)
-})?;
+impl Normal {
+    /// 重参数化采样：mean + std * ε, ε ~ N(0,1)
+    pub fn rsample(&self) -> Var { ... }
+    /// 对数概率密度
+    pub fn log_prob(&self, value: &Var) -> Var { ... }
+    /// 熵
+    pub fn entropy(&self) -> Var { ... }
+}
 ```
-
-### 缓存键处理
 
 ```rust
-// 多输入时缓存键为形状元组
-cache_key = (state.feature_shape(), action.feature_shape())
-// 例如: ([4], [2])
+// TanhNormal 分布核心 API（Squashed Gaussian）
+pub struct TanhNormal {
+    base_dist: Normal,
+}
+
+impl TanhNormal {
+    /// 采样 + tanh squashing
+    pub fn rsample(&self) -> (Var, Var) { /* (squashed_action, raw_action) */ }
+    /// log_prob 带 tanh 修正：log π(a|s) = log N(u|μ,σ) - Σ log(1 - tanh²(u) + ε)
+    pub fn log_prob(&self, raw_action: &Var) -> Var { ... }
+}
 ```
 
-### 应用场景
+### 依赖
 
-- **Critic 网络**：Q(s, a) 需要 state 和 action 两个输入
-- **Siamese 网络**：两个输入共享编码器
-- **条件生成**：输入 + 条件向量
+- **Exp 节点**（Var 层）：`log_std.exp()` → std
+- **Clamp 节点**（Var 层）：`log_std` 数值裁剪
+- **Tensor::normal()**：已有，用于生成 ε ~ N(0,1)
+
+### 参考
+
+- PyTorch: `torch.distributions.Normal`, `torch.distributions.TransformedDistribution`
+- rustRL: 使用外部 crate `tch-distr`（`tch_distr::Normal`）
+- 论文: Haarnoja et al. 2018 Appendix C（Enforcing Action Bounds）
 
 ---
 
-## 3. 多输出模型扩展
+## ~~3. 多输入模型扩展~~ （已由方案 C 解决）
 
-**优先级**：🟡 中
+> **状态**：✅ 已解决
+>
+> 方案 C（动态图迁移）移除了 `ModelState` 和 `ForwardInput`，多输入现在**天然支持**：
+> 直接多次调用 `graph.input()` 创建多个输入 Var，在 forward 中自由组合即可。
+>
+> **已有示例**：`dual_input_add`、`siamese_similarity`、`multi_io_fusion`
 
-**背景**：部分模型需要多个输出，如 Actor-Critic 共享特征层但有不同输出头。
+<details>
+<summary>原方案（仅供参考，已不适用）</summary>
 
-### 方案 A：返回元组
+**原优先级**：🟡 中
 
-```rust
-pub fn forward(&self, x: &Tensor) -> Result<(Var, Var), GraphError> {
-    self.state.forward(x, |input| {
-        let features = self.shared.forward(input);
-        let actor_out = self.actor.forward(&features);
-        let critic_out = self.critic.forward(&features);
-        Ok((actor_out, critic_out))
-    })
-}
-```
+**原背景**：强化学习等场景需要多输入支持，如 Critic 模型需要同时接收 state 和 action。
 
-### 方案 B：暴露多个输出方法
+方案 A / B 均基于已删除的 `ModelState` 和 `ForwardInput` trait，不再适用。
 
-```rust
-impl ActorCritic {
-    pub fn forward_actor(&self, x: &Tensor) -> Result<Var, GraphError> { ... }
-    pub fn forward_critic(&self, x: &Tensor) -> Result<Var, GraphError> { ... }
-    pub fn forward_both(&self, x: &Tensor) -> Result<(Var, Var), GraphError> { ... }
-}
-```
-
-### 应用场景
-
-| 场景 | 输出 | 说明 |
-|------|------|------|
-| **Multi-head** | 多个分类头 | 多任务学习 |
-| **Actor-Critic** | (action_probs, state_value) | 强化学习 |
-| **VAE** | (reconstruction, latent) | 变分自编码器 |
+</details>
 
 ---
 
-## 4. 过程宏简化模型定义
+## ~~4. 多输出模型扩展~~ （已由方案 C 解决）
+
+> **状态**：✅ 已解决
+>
+> 方案 C 下，forward 直接返回多个 Var（元组/结构体）即可，无需特殊支持。
+>
+> **已有示例**：`dual_output_classify`、`multi_label_point`、`multi_io_fusion`
+
+<details>
+<summary>原方案（仅供参考，已不适用）</summary>
+
+**原优先级**：🟡 中
+
+**原背景**：部分模型需要多个输出，如 Actor-Critic 共享特征层但有不同输出头。
+
+方案 A / B 均基于已删除的 `ModelState`，不再适用。
+
+</details>
+
+---
+
+## 5. 过程宏简化模型定义
 
 **优先级**：🟢 低（优化体验，非必需）
 
@@ -227,7 +259,7 @@ impl XorMLP {
 
 ---
 
-## 5. API 便捷方法扩展
+## 6. API 便捷方法扩展
 
 **优先级**：🟢 低（便捷性优化）
 
@@ -283,7 +315,7 @@ impl Var {
 
 ---
 
-## 6. 错误类型精细化
+## 7. 错误类型精细化
 
 **优先级**：🟢 低（可选优化）
 
@@ -318,25 +350,27 @@ pub enum GraphError {
 ## 依赖关系图
 
 ```
-┌─────────────────┐
-│  NEAT 支持       │ ← 项目愿景核心（Phase 3-5）
-└────────┬────────┘
+┌─────────────────────┐
+│  NEAT 支持           │ ← 项目愿景核心
+└────────┬────────────┘
          │ 可能需要
          ▼
-┌─────────────────┐     ┌─────────────────┐
-│  多输入扩展      │────▶│  多输出扩展      │
-└─────────────────┘     └─────────────────┘
-         │                      │
-         └──────────┬───────────┘
-                    ▼
-         ┌─────────────────┐
-         │  过程宏简化      │ ← 优化体验
-         └─────────────────┘
-                    │
-                    ▼
-    ┌───────────────────────────┐
-    │  API 便捷方法 / 错误精细化  │ ← 可选优化
-    └───────────────────────────┘
+┌─────────────────────┐
+│  概率分布模块         │ ← SAC-Continuous / Hybrid SAC 核心依赖
+│  (Normal/TanhNormal) │
+└────────┬────────────┘
+         │ 依赖
+         ▼
+┌─────────────────────┐
+│  Exp / Clamp 节点    │ ← 分布模块的底层依赖
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐     ┌───────────────────────────┐
+│  过程宏简化           │     │  API 便捷方法 / 错误精细化  │
+└─────────────────────┘     └───────────────────────────┘
+
+注：多输入/多输出扩展已由方案 C 解决（§3/§4），不再是待办项。
 ```
 
 ---
@@ -346,7 +380,9 @@ pub enum GraphError {
 | 优先级 | 功能 | 触发条件 |
 |--------|------|---------|
 | 🔴 高 | **NEAT** | 项目愿景核心，基础功能稳定后实现 |
-| 🟡 中 | **多输入/多输出** | 遇到 RL 等具体需求时实现 |
+| 🔴 高 | **概率分布模块** | SAC-Continuous / Hybrid SAC 开发时实现（依赖 Exp + Clamp 节点） |
+| 🟡 中 | **Exp / Clamp 节点** | 概率分布模块的前置依赖，需先实现 |
+| ✅ 完成 | ~~多输入/多输出~~ | 已由方案 C 解决，示例已有演示 |
 | 🟢 低 | **过程宏** | API 稳定后，作为用户体验优化 |
 | 🟢 低 | **API 便捷方法** | 按需添加，不影响核心功能 |
 | 🟢 低 | **错误类型精细化** | 可选优化，当前 `InvalidOperation` 已可用 |
@@ -356,6 +392,9 @@ pub enum GraphError {
 ## 参考资料
 
 - [神经架构演化设计](./neural_architecture_evolution_design.md) — **核心设计文档**，详细描述混合策略
+- [待扩展节点类型规划](./future_node_types.md) — Exp/Clamp/概率分布等节点的详细规划
+- [动态图生命周期设计](./dynamic_graph_lifecycle_design.md) — 方案 C，已解决多输入/多输出和节点累积问题
+- [Hybrid SAC 论文](./../paper/RL/SAC复合actions.pdf) — Delalleau et al. 2019，离散+连续+混合动作框架
 - [NEAT 论文](./../paper/NEAT_2002/summary.md)
 - [EXAMM 论文](./../paper/EXAMM_2019/summary.md)
 - [记忆机制设计](./memory_mechanism_design.md) — 包含 NEAT 循环与 RNN 的关系

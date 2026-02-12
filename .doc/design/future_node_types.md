@@ -103,7 +103,30 @@
 | **Attention** | 注意力计算 | Transformer 核心组件 | 🟢 低 |
 | **Pad** | 填充 | 序列对齐、卷积边界处理 | 🟢 低 |
 
-### 2.7 其他可能需要的节点
+### 2.7 概率分布节点（模块级）
+
+> **说明**：以下不是单个计算图节点，而是需要作为**独立模块**（`src/nn/distributions/`）实现的概率分布。
+> 它们组合已有节点（Exp、Ln、Tanh 等）提供高层 API，是 SAC-Continuous / Hybrid SAC 的**最大缺口**。
+>
+> **参考实现**：PyTorch `torch.distributions`、rustRL 使用的 `tch-distr` crate。
+
+| 分布 | 核心方法 | 用途 | 优先级 |
+|------|---------|------|--------|
+| **Normal** | `rsample()`（重参数化采样）、`log_prob()`、`entropy()` | SAC-Continuous Actor：连续动作采样 | 🔴 高 |
+| **TanhNormal** | `sample()` + tanh squash + log_prob 修正 | SAC-Continuous：Squashed Gaussian 策略（Haarnoja 2018 Appendix C） | 🔴 高 |
+| **Categorical** | `sample()`、`log_prob()`、`entropy()` | SAC-Discrete / Hybrid：离散动作采样（当前 cartpole_sac 用纯 Tensor 手工实现，Hybrid 需计算图内版本） | 🟡 中 |
+
+**TanhNormal log_prob 修正公式**（Enforcing Action Bounds）：
+
+```
+log π(a|s) = log N(u|μ,σ) - Σ log(1 - tanh²(u) + ε)
+```
+
+其中 `u` 是 squash 前的原始采样值，`a = tanh(u)`。
+
+**依赖关系**：Normal / TanhNormal 依赖 §2.1 的 **Exp** 节点和 §2.2 的 **Clamp** 节点。
+
+### 2.8 其他可能需要的节点
 
 | 节点 | 功能 | 用途 | 优先级 |
 |------|------|------|--------|
@@ -118,21 +141,33 @@
 
 ### 🔴 高优先级（强化学习必需）
 
-这些节点是 SAC、PPO 等强化学习算法的**核心依赖**，缺失会直接影响算法实现：
+这些是 SAC-Continuous / Hybrid SAC / PPO 等强化学习算法的**核心依赖**：
+
+**计算图节点**（缺失会直接阻塞算法实现）：
 
 1. **Exp** - SAC Actor 的 `log_std.exp()` → std 转换
 2. **Clamp** - SAC 的 `log_std` 裁剪（`[-20, 2]`），PPO 的 ratio clipping（`[1-ε, 1+ε]`）
 3. **Sqrt** - Adam 优化器的 `sqrt(v + ε)`（如果内置优化器需要）
 
+**概率分布模块**（比单个节点更关键的系统性缺口）：
+
+4. **Normal 分布** - 连续动作 SAC 的重参数化采样 + log_prob
+5. **TanhNormal 分布** - Squashed Gaussian 策略（标准 SAC-Continuous 必需）
+
+> **注**：SAC-Discrete（当前 cartpole_sac 示例）不需要以上任何内容，已有 softmax / log_softmax 足够。
+> 以上仅在扩展到 SAC-Continuous / Hybrid SAC 时才需要。
+
 **临时替代方案**：
 - Exp：可用 `softplus(x) ≈ ln(1 + e^x)` 近似，但不精确
 - Clamp：可用 `maximum(minimum(x, max), min)` 组合实现
 - Sqrt：Adam 可在 Tensor 级别实现，无需计算图节点
+- Normal/TanhNormal：无替代方案，必须实现
 
 ### 🟡 中优先级（功能扩展）
 
-这些节点用于**扩展模型能力**，支持更复杂的网络架构：
+这些用于**扩展模型能力**，支持更复杂的网络架构：
 
+- **Categorical 分布** - Hybrid SAC 中离散部分需要在计算图内采样
 - **Transpose/Permute** - 多头注意力、复杂张量操作
 - **LayerNorm/BatchNorm** - Transformer、CNN 架构
 - **GELU/Swish** - 现代激活函数
@@ -141,7 +176,7 @@
 
 ### 🟢 低优先级（锦上添花）
 
-这些节点用于**特定场景**或有简单替代方案：
+这些用于**特定场景**或有简单替代方案：
 
 - **Square** - 可用 `x * x` 替代
 - **ELU/SELU/Mish** - 特定网络架构
