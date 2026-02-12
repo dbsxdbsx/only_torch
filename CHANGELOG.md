@@ -1,5 +1,51 @@
 # 更新日志
 
+## [0.12.0] - 2026-02-12
+
+### 破坏性变更
+
+- **refactor(nn): 动态图架构迁移（方案 C）**
+  - `Var` 持有 `Rc<NodeInner>`，节点生命周期由引用计数自动管理
+  - 移除 `ModelState`、`Criterion` — 不再需要闭包式缓存机制
+  - 移除 `GraphInner::new_*_node()` / `forward(NodeId)` / `get_node_value(NodeId)` 等旧 API
+  - 新 API：`Graph` + `Var` 算子重载 + `Module` trait + `Optimizer`
+
+### 新增
+
+- **feat(nn): PyTorch 风格动态图 API**
+  - `graph.input()` / `graph.parameter()` 创建变量
+  - `&a + &b`、`a.matmul(&b)` 等算子重载
+  - `var.forward()` / `var.backward()` 自动前向/反向传播
+  - `var.mse_loss()` / `var.cross_entropy_loss()` 等损失函数方法链
+
+- **feat(rl): 强化学习基础设施**
+  - `GymEnv`：与 Python Gymnasium 环境交互
+  - `Minari`：离线 RL 数据集加载
+  - CartPole SAC-Discrete 示例（待注册）
+
+- **feat(nn): RNN/LSTM/GRU 展开式设计**
+  - 一次性处理整个序列，标准 `backward()` 自动完成 BPTT
+  - 支持动态 batch_size 和变长序列
+
+### 重构
+
+- **refactor: 移除旧式循环机制残留**
+  - 删除 `connect_recurrent` / `step` / `backward_through_time` 等旧 API
+  - 删除 `StepSnapshot` / `recurrent_edges` / `prev_values` 等旧字段
+  - 展开式 RNN 设计完全取代旧式显式时间步方案
+
+### 测试
+
+- **test: 全量测试迁移完成**
+  - 1576 个单元测试全部通过（0 failed, 0 ignored）
+  - 12 个 Batch 的节点测试从旧 API 迁移到新 API
+  - 15 个示例全部迁移到新 API 并验证通过
+
+### 文档
+
+- 更新 README：移除 `ModelState` 引用，更新为新 API 描述
+- 更新动态图设计文档状态为"已完成"
+
 ## [0.11.0] - 2026-01-29
 
 ### 新增

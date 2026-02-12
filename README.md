@@ -38,7 +38,7 @@ let dot = graph.to_dot();
 
 ### 使用示例
 
-> 所有示例均采用 **PyTorch 风格 API**，使用 `ModelState` + `Criterion` 智能缓存机制。
+> 所有示例均采用 **PyTorch 风格动态图 API**（`Graph` + `Var` + `Module` + `Optimizer`），训练循环简洁直观。
 > 运行方式：`cargo run --example <名称>` 或 `just example-<名称>`
 
 #### 示例概览
@@ -100,7 +100,6 @@ cargo run --example sine_regression
 **California Housing 房价预测** ⭐⭐
 
 使用真实房价数据集（20,000+ 样本），展示：
-- `ModelState` 模型状态管理
 - `MseLoss` 损失函数
 - `DataLoader` 批量加载
 - R² 评估指标
@@ -145,8 +144,7 @@ cargo run --example parity_rnn_fixed_len
 
 展示 **变长序列** 处理的完整流程：
 - `VarLenDataset` + `BucketedDataLoader` 分桶加载
-- `ModelState` 按形状智能缓存
-- `CrossEntropyLoss` 按输出节点智能缓存
+- 动态图自动适配不同序列长度
 
 ```bash
 cargo run --example parity_rnn_var_len
@@ -239,7 +237,6 @@ cargo run --example multi_label_point
 | `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `Conv2d` 层 | | | | | ✅ | | | | | | |
 | `RNN/LSTM/GRU` 层 | | | | | | ✅ | | | | | |
-| `ModelState` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | | ✅ | ✅ | |
 | `MseLoss` | | | ✅ | ✅ | | | ✅ | ✅ | ✅ | ✅ | |
 | **`BceLoss`** | | | | | | | | | | | ✅ |
@@ -284,11 +281,10 @@ opt-level = 3
 ### 🔴 核心功能
 
 - 神经架构演化（详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)）
-- 记忆/循环机制（详见 [设计文档](.doc/design/memory_mechanism_design.md)）
 
 ### ⚫ 实战验证
 
-- 深度强化学习：CartPole（需 Gym 支持）—— 环境搭建详见 [RL Python 环境搭建指南](.doc/rl_python_env_setup.md)
+- 深度强化学习：CartPole SAC-Discrete 示例（需 Gym 支持）—— 环境搭建详见 [RL Python 环境搭建指南](.doc/rl_python_env_setup.md)
 - [CFC](https://github.com/raminmh/CfC) 实现
 
 ### 💤 低优先级
