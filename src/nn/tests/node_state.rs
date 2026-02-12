@@ -600,7 +600,6 @@ fn test_state_dynamic_batch_forward() -> Result<(), GraphError> {
 
 /// 测试 State 节点在不同 batch_size 下的反向传播
 #[test]
-#[ignore = "动态 batch backward 形状不兼容 bug，待修复"]
 fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
