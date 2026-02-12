@@ -406,8 +406,7 @@ fn main() -> Result<(), GraphError> {
         let q1_for_loss = agent.critic1.forward(&sample_obs)?;
         let action_idx = Tensor::zeros(&[1, 1]);
         let q1_selected = q1_for_loss.gather(1, &action_idx)?;
-        let target_q = Tensor::zeros(&[1, 1]);
-        let critic1_loss_vis = q1_selected.mse_loss(&target_q)?;
+        let critic1_loss_vis = q1_selected.mse_loss(0)?;
 
         // 合并 Actor Loss + Critic Loss 到一张图
         let vis_result = Var::visualize_all(

@@ -12,7 +12,7 @@
  *
  * # 关键特性演示
  * 1. `IntoVar` trait：forward 同时接受 Tensor 和 Var
- * 2. Var 方法计算损失：`output.mse_loss(&target)?`
+ * 2. Var 方法计算损失：`output.mse_loss(1)?`（标量自动广播）
  * 3. 函数式 `detach()`: 训练 D 时阻止梯度流向 G
  * 4. 计算图可视化：从 loss Var 回溯整个图结构
  */
@@ -106,8 +106,7 @@ fn main() -> Result<(), GraphError> {
 
             // D 对真实图像的判别（直接传 Tensor，IntoVar 自动转换）
             let real_out = discriminator.forward(&real_images)?;
-            let real_labels = Tensor::ones(&[BATCH_SIZE, 1]);
-            let d_real_loss = real_out.mse_loss(&real_labels)?;
+            let d_real_loss = real_out.mse_loss(1)?; // 真实图像的目标为 1
 
             // 记录 D(real) 平均值
             let real_out_val = real_out.value()?.unwrap();
@@ -127,8 +126,7 @@ fn main() -> Result<(), GraphError> {
             // D 对假图像的判别（detach 阻止梯度流向 G）
             d_optimizer.zero_grad()?;
             let fake_out = discriminator.forward(fake_images.detach())?;
-            let fake_labels = Tensor::zeros(&[BATCH_SIZE, 1]);
-            let d_fake_loss = fake_out.mse_loss(&fake_labels)?;
+            let d_fake_loss = fake_out.mse_loss(0)?; // 伪造图像的目标为 0
 
             // 记录 D(fake) 平均值
             let fake_out_val = fake_out.value()?.unwrap();
@@ -152,9 +150,9 @@ fn main() -> Result<(), GraphError> {
             let z_g = Tensor::normal_seeded(0.0, 1.0, &[BATCH_SIZE, LATENT_DIM], noise_seed_g);
             let fake_images_g = generator.forward(&z_g)?;
 
-            // G 希望 D 把假图像判别为真（直接传 Var）
+            // G 希望 D 把假图像判别为真
             let fake_out_for_g = discriminator.forward(&fake_images_g)?;
-            let g_loss = fake_out_for_g.mse_loss(&real_labels)?;
+            let g_loss = fake_out_for_g.mse_loss(1)?; // G 希望被判为真（目标为 1）
             let g_loss_val = g_loss.backward()?;
             g_optimizer.step()?;
 
@@ -202,7 +200,7 @@ fn main() -> Result<(), GraphError> {
 
     let d_out_vis = discriminator.forward(&fake_vis)?;
     // 添加 loss 节点，使完整链路（G -> D -> Loss）可见
-    let loss_vis = d_out_vis.mse_loss(&Tensor::ones(&[1, 1]))?;
+    let loss_vis = d_out_vis.mse_loss(1)?;
 
     // 从 loss 回溯保存完整计算图
     let vis_result = loss_vis.save_visualization("examples/mnist_gan/mnist_gan")?;
@@ -215,7 +213,7 @@ fn main() -> Result<(), GraphError> {
     }
 
     println!("\n=== GAN 训练示例完成 ===");
-    println!("✅ 演示了 IntoVar trait、Var 损失计算和 detach() 的使用");
+    println!("✅ 演示了 IntoVar trait、标量损失（mse_loss(1)）和 detach() 的使用");
 
     Ok(())
 }

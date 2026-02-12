@@ -16,9 +16,17 @@ use std::rc::Rc;
 /// Loss 函数的 target 参数类型
 ///
 /// 实现此 trait 的类型可以作为 Loss 函数的 target 参数。
-/// 支持 `&Var`、`Var`、`&Tensor`、`Tensor` 四种类型。
+/// 支持以下类型：
+/// - `&Var`、`Var`：直接使用已有的计算图变量
+/// - `&Tensor`、`Tensor`：自动转换为 TargetInput 节点
+/// - 数值标量（`i32`/`i64`/`u32`/`u64`/`usize`/`isize`/`f32`/`f64`）：自动广播为与 source 同形状的张量
 ///
-/// 当传入 Tensor 时，会自动转换为 input 节点。
+/// # 标量广播示例
+/// ```ignore
+/// // GAN 训练中常见的"目标为 1"或"目标为 0"
+/// let d_real_loss = real_out.mse_loss(1)?;   // 等价于 mse_loss(&Tensor::ones(&output_shape))
+/// let d_fake_loss = fake_out.mse_loss(0)?;   // 等价于 mse_loss(&Tensor::zeros(&output_shape))
+/// ```
 pub trait LossTarget {
     /// 将 target 转换为 Var（如果已经是 Var 则克隆，如果是 Tensor 则创建 input 节点）
     fn into_var(self, source: &Var) -> Var;
@@ -52,11 +60,33 @@ impl LossTarget for Tensor {
     }
 }
 
+/// 为数值标量类型批量实现 LossTarget：自动广播为与 source 同形状的填充张量
+macro_rules! impl_loss_target_for_scalar {
+    ($($ty:ty),+) => {
+        $(
+            impl LossTarget for $ty {
+                fn into_var(self, source: &Var) -> Var {
+                    let shape = source.node().shape();
+                    let tensor = Tensor::full(self as f32, &shape);
+                    source.tensor_to_target_var(&tensor)
+                }
+            }
+        )+
+    };
+}
+
+impl_loss_target_for_scalar!(f32, f64, i32, i64, u32, u64, usize, isize);
+
 // ==================== VarLossOps Trait ====================
 
 /// 损失函数扩展 trait
 ///
-/// 提供常用损失函数的链式调用，支持 `&Var`、`Var`、`&Tensor`、`Tensor` 作为 target：
+/// 提供常用损失函数的链式调用，target 支持多种类型：
+/// - `&Var` / `Var`：使用已有的计算图变量
+/// - `&Tensor` / `Tensor`：自动转换为 TargetInput 节点
+/// - 数值标量（`i32`/`i64`/`u32`/`u64`/`usize`/`isize`/`f32`/`f64`）：自动广播为同形状张量
+///
+/// 可用损失函数：
 /// - `cross_entropy(target)`: 交叉熵损失（含 Softmax）- 用于多分类（互斥类别）
 /// - `bce_loss(target)`: 二元交叉熵损失（含 Sigmoid）- 用于二分类/多标签分类
 /// - `mse_loss(target)`: 均方误差损失 - 用于回归
@@ -71,6 +101,8 @@ impl LossTarget for Tensor {
 /// let loss = output.mse_loss(&target_tensor)?;   // target 是 &Tensor（自动转换）
 /// let loss = output.mse_loss(target_tensor)?;    // target 是 Tensor（也可以）
 /// let loss = q_values.huber_loss(&target_q)?;    // 强化学习
+/// let loss = real_out.mse_loss(1)?;              // 标量广播：GAN 目标为 1
+/// let loss = fake_out.mse_loss(0)?;              // 标量广播：GAN 目标为 0
 /// ```
 pub trait VarLossOps {
     /// Cross Entropy Loss（含 Softmax）
