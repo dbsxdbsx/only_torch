@@ -10,6 +10,11 @@
   - 移除 `GraphInner::new_*_node()` / `forward(NodeId)` / `get_node_value(NodeId)` 等旧 API
   - 新 API：`Graph` + `Var` 算子重载 + `Module` trait + `Optimizer`
 
+- **refactor(nn): 移除旧式循环机制**
+  - 删除 `connect_recurrent` / `step` / `backward_through_time` 等旧 API
+  - 删除 `StepSnapshot` / `recurrent_edges` / `prev_values` 等旧字段
+  - 展开式 RNN/LSTM/GRU 设计完全取代旧式显式时间步方案
+
 ### 新增
 
 - **feat(nn): PyTorch 风格动态图 API**
@@ -26,13 +31,6 @@
 - **feat(nn): RNN/LSTM/GRU 展开式设计**
   - 一次性处理整个序列，标准 `backward()` 自动完成 BPTT
   - 支持动态 batch_size 和变长序列
-
-### 重构
-
-- **refactor: 移除旧式循环机制残留**
-  - 删除 `connect_recurrent` / `step` / `backward_through_time` 等旧 API
-  - 删除 `StepSnapshot` / `recurrent_edges` / `prev_values` 等旧字段
-  - 展开式 RNN 设计完全取代旧式显式时间步方案
 
 ### 测试
 
