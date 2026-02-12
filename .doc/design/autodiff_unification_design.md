@@ -295,13 +295,12 @@ impl Graph {
 
     /// 反向传播（VJP 模式，单样本和批量统一）
     ///
-    /// 这是 `backward_ex(loss, false)` 的简写，覆盖 90% 的训练场景。
-    ///
     /// # 语义
     /// - 计算 loss 对**所有** requires_grad 参数的梯度
     /// - 梯度存储在节点的 `grad` 字段
     /// - 梯度会累积（需要先调用 `zero_grad()` 清零）
     /// - 返回 loss 的标量值（方便用户打印）
+    /// - 动态图架构下天然支持多次 backward（Rc 引用计数管理中间结果生命周期）
     ///
     /// # 梯度隔离
     /// GAN 等场景的梯度隔离通过 `detach()` 实现，而非 `target_params`。
@@ -312,28 +311,6 @@ impl Graph {
     /// 可通过 optimizer 选择性绑定参数，或参考 [梯度流控制设计 - 附录 B](gradient_flow_control_design.md#附录-brequires_grad--冻结机制可选功能)
     /// 了解可选的 `requires_grad` / 冻结机制（Optional TODO）。
     pub fn backward(&mut self, loss: NodeId) -> Result<f32, GraphError>;
-
-    /// 反向传播（扩展版本，支持 retain_graph）
-    ///
-    /// # 参数
-    /// - `loss`: 损失节点 ID
-    /// - `retain_graph`: 是否保留计算图（用于多次 backward）
-    ///
-    /// # 使用场景
-    /// | 场景 | `retain_graph` |
-    /// |------|----------------|
-    /// | 标准训练 | `false` |
-    /// | 多任务学习（多 loss 累加） | `true` |
-    ///
-    /// # 设计决策：移除 `target_params`
-    /// PyTorch 的 `backward()` 没有 `target_params` 参数。
-    /// GAN 等场景的梯度隔离通过 `detach()` 实现，语义更清晰、性能更优。
-    /// 详见 [梯度流控制设计 - 附录 A](gradient_flow_control_design.md#附录-a设计决策为什么用-detach-而非-target_params)。
-    pub fn backward_ex(
-        &mut self,
-        loss: NodeId,
-        retain_graph: bool,
-    ) -> Result<f32, GraphError>;
 
     /// 清零所有参数的梯度（PyTorch 风格）
     pub fn zero_grad(&mut self) -> Result<(), GraphError>;
@@ -693,7 +670,8 @@ pub fn compute_full_jacobian(
 | 2026-01-02 | 废弃 API 最终完全删除 | `#[deprecated]` 仅是过渡手段，避免技术债务长期累积 |
 | 2026-01-06 | Loss 函数默认使用 Mean reduction | 覆盖 90% 场景；学习率与 batch size 解耦；与 PyTorch 一致 |
 | 2026-01-06 | 不可微节点（Step/Sign）的 VJP 返回 0 | 与 PyTorch 行为一致；保守策略，梯度不流经这些节点 |
-| 2026-01-06 | 提供 `backward()` + `backward_ex()` 双 API | 简单场景用 `backward()`；多任务学习用 `backward_ex(loss, retain_graph=true)` |
+| 2026-01-06 | ~~提供 `backward()` + `backward_ex()` 双 API~~ | ~~简单场景用 `backward()`；多任务学习用 `backward_ex(loss, retain_graph=true)`~~ |
+| 2026-02-12 | 移除 `backward_ex()` 和 `retain_graph` 参数 | 动态图架构下 Rc 引用计数天然支持多次 backward，`retain_graph` 为 no-op，统一为单一 `backward()` API |
 | 2026-01-06 | 移除 `target_params` 参数，改用 `detach()` | PyTorch 风格：语义更清晰、性能更优、与主流框架一致。详见 [附录 A](gradient_flow_control_design.md#附录-a设计决策为什么用-detach-而非-target_params) |
 | 2026-01-06 | `backward()` 返回 `f32`（loss 值） | 方便用户打印 loss，与 `architecture_v2_design.md` 保持一致 |
 | 2026-01-20 | 移除 PerceptionLoss 节点 | 不常用，可用 CrossEntropy 替代 |
@@ -779,7 +757,7 @@ pub fn binary<B, FLhs, FRhs>(
 | `graph.backward_nodes(&params, loss)` | `graph.backward(loss)` | ⚠️ `params` 已忽略，改用 `detach()` 控制梯度流 |
 | `graph.backward_batch(loss, None)` | `graph.backward(loss)` | 简化版（计算所有梯度） |
 | `graph.backward_batch(loss, Some(&params))` | `graph.backward(loss)` | ⚠️ `params` 已忽略，改用 `detach()` 控制梯度流 |
-| `graph.backward_nodes_ex(&params, loss, retain)` | `graph.backward_ex(loss, retain)` | ⚠️ `params` 已移除，改用 `detach()` |
+| `graph.backward_nodes_ex(&params, loss, retain)` | `graph.backward(loss)` | ⚠️ `params` 和 `retain_graph` 均已移除 |
 | `graph.clear_jacobi()` | `graph.zero_grad()` | 重命名 + 语义统一 |
 | `graph.clear_grad()` | `graph.zero_grad()` | 重命名 |
 | `graph.get_node_jacobi(id)` | `graph.get_node_grad(id)` | 统一到 grad |

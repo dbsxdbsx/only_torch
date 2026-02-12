@@ -375,7 +375,7 @@ fn test_flatten_single_sample_backward() -> Result<(), GraphError> {
     let mut g = inner.borrow_mut();
     g.forward_via_node_inner(&loss_node)?;
     g.zero_grad()?;
-    let loss_val = g.backward_via_node_inner(&loss_node, false)?;
+    let loss_val = g.backward_via_node_inner(&loss_node)?;
     drop(g);
 
     assert!(loss_val >= 0.0);

@@ -114,7 +114,7 @@ fn test_add_node_after_backward() {
     x.set_value(Some(&x_value)).unwrap();
     target.set_value(Some(&target_value)).unwrap();
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 3. 验证反向传播成功
     assert!(w.grad().is_some());
@@ -151,7 +151,7 @@ fn test_add_node_after_backward() {
     let target2_value = Tensor::new(&[1.0], &[1, 1]);
     target2.set_value(Some(&target2_value)).unwrap();
     gi.forward_via_node_inner(&loss2).unwrap();
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    gi.backward_via_node_inner(&loss2).unwrap();
 
     // 9. 所有参数都有新的梯度
     assert!(w.grad().is_some());
@@ -201,7 +201,7 @@ fn test_multiple_topology_changes() {
 
     // 2. 第 1 轮训练
     gi.forward_via_node_inner(&loss1).unwrap();
-    gi.backward_via_node_inner(&loss1, false).unwrap();
+    gi.backward_via_node_inner(&loss1).unwrap();
     let value1 = node1.value().unwrap();
 
     // 3. 第 1 次拓扑变化: 添加 node2 = tanh(node1)
@@ -220,7 +220,7 @@ fn test_multiple_topology_changes() {
     let target2_value = Tensor::new(&[0.5, 0.8], &[2, 1]);
     target2.set_value(Some(&target2_value)).unwrap();
     gi.forward_via_node_inner(&loss2).unwrap();
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    gi.backward_via_node_inner(&loss2).unwrap();
     let value2 = node2.value().unwrap();
 
     // 5. 第 2 次拓扑变化: 添加 node3 = node2 + bias
@@ -244,7 +244,7 @@ fn test_multiple_topology_changes() {
     let target3_value = Tensor::new(&[0.6, 0.9], &[2, 1]);
     target3.set_value(Some(&target3_value)).unwrap();
     gi.forward_via_node_inner(&loss3).unwrap();
-    gi.backward_via_node_inner(&loss3, false).unwrap();
+    gi.backward_via_node_inner(&loss3).unwrap();
     let value3 = node3.value().unwrap();
 
     // 7. 验证计算链正确
@@ -386,7 +386,7 @@ fn test_chain_node_addition() {
     let target_value = Tensor::new(&[0.5, 0.5], &[2, 1]);
     target.set_value(Some(&target_value)).unwrap();
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 5. 验证梯度存在
     assert!(a.grad().is_some());
@@ -454,7 +454,7 @@ fn test_add_to_complex_graph() {
     x.set_value(Some(&x_value)).unwrap();
     target.set_value(Some(&target_value)).unwrap();
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 3. 动态添加一个新的隐藏层节点（NEAT 变异：添加节点）
     let w_new = gi
@@ -489,7 +489,7 @@ fn test_add_to_complex_graph() {
     let target2_value = Tensor::new(&[1.0], &[1, 1]);
     target2.set_value(Some(&target2_value)).unwrap();
     gi.forward_via_node_inner(&loss2).unwrap();
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    gi.backward_via_node_inner(&loss2).unwrap();
 
     // 7. 所有参数都有梯度
     assert!(w1.grad().is_some());
@@ -532,7 +532,7 @@ fn test_multiple_zero_grad_calls() {
 
     // Forward 和 backward
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 多次调用 zero_grad 应该是安全的
     gi.zero_grad().unwrap();
@@ -548,7 +548,7 @@ fn test_multiple_zero_grad_calls() {
 
     // 可以继续训练
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     assert!(a.grad().is_some());
     assert!(b.grad().is_some());
@@ -587,7 +587,7 @@ fn test_add_node_without_explicit_zero_grad() {
     let target1_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
     target1.set_value(Some(&target1_value)).unwrap();
     gi.forward_via_node_inner(&loss1).unwrap();
-    gi.backward_via_node_inner(&loss1, false).unwrap();
+    gi.backward_via_node_inner(&loss1).unwrap();
 
     // 3. 添加新节点但不调用 zero_grad
     let c = gi
@@ -623,7 +623,7 @@ fn test_add_node_without_explicit_zero_grad() {
     let target2_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
     target2.set_value(Some(&target2_value)).unwrap();
     gi.forward_via_node_inner(&loss2).unwrap();
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    gi.backward_via_node_inner(&loss2).unwrap();
 
     // 所有参数都有梯度
     let a_grad = a.grad().unwrap();
@@ -685,7 +685,7 @@ fn test_neat_add_node_mutation_simulation() {
     input.set_value(Some(&input_value)).unwrap();
     target.set_value(Some(&target_value)).unwrap();
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 3. NEAT 变异: 在 hidden 和 output 之间添加新节点（旁路）
     // hidden -> w_new*hidden -> new_hidden -> tanh -> w3*tanh -> new_output
@@ -733,7 +733,7 @@ fn test_neat_add_node_mutation_simulation() {
     let target2_value = Tensor::new(&[1.0], &[1, 1]);
     target2.set_value(Some(&target2_value)).unwrap();
     gi.forward_via_node_inner(&loss2).unwrap();
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    gi.backward_via_node_inner(&loss2).unwrap();
 
     // 6. 所有参数都有梯度
     assert!(w1.grad().is_some());
@@ -805,7 +805,7 @@ fn test_neat_add_connection_mutation_simulation() {
     input.set_value(Some(&input_value)).unwrap();
     target.set_value(Some(&target_value)).unwrap();
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 3. NEAT 变异: 添加从 h1 到 h2 路径的跨层连接
     // 新结构: h2_enhanced = h2 + w3 * h1
@@ -847,7 +847,7 @@ fn test_neat_add_connection_mutation_simulation() {
     let target2_value = Tensor::new(&[0.5, 0.5], &[2, 1]);
     target2.set_value(Some(&target2_value)).unwrap();
     gi.forward_via_node_inner(&loss2).unwrap();
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    gi.backward_via_node_inner(&loss2).unwrap();
 
     // 6. 所有参数都有梯度
     assert!(w1.grad().is_some());
@@ -893,7 +893,7 @@ fn test_gradient_correctness_after_dynamic_add() {
     let target_value = a_value.clone() + b_value.clone();
     target.set_value(Some(&target_value)).unwrap();
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 保存原始梯度
     let a_grad_original = a.grad().unwrap();
@@ -923,7 +923,7 @@ fn test_gradient_correctness_after_dynamic_add() {
     let target2_value = a_value.clone() + b_value.clone() + c_value.clone();
     target2.set_value(Some(&target2_value)).unwrap();
     gi.forward_via_node_inner(&loss2).unwrap();
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    gi.backward_via_node_inner(&loss2).unwrap();
 
     // 6. 验证梯度的数值正确性
     // 当 target2 = z 时，梯度应该接近 0

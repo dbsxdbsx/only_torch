@@ -920,11 +920,11 @@ fn test_var_var_then_tensor() {
     );
 }
 
-// ==================== backward_ex 高层 API 测试 ====================
+// ==================== 多 loss backward 高层 API 测试 ====================
 
-/// 多 loss 共享参数，backward_ex(true) + backward_ex(false) 梯度累积正确
+/// 多 loss 共享参数，多次 backward() 梯度累积正确
 #[test]
-fn test_var_backward_ex_multi_loss() {
+fn test_var_backward_multi_loss() {
     use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
 
     let graph = Graph::new();
@@ -941,10 +941,10 @@ fn test_var_backward_ex_multi_loss() {
     let t2 = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
     let loss2 = y2.mse_loss(&t2).unwrap();
 
-    // 多 loss backward
+    // 多 loss backward（动态图下天然支持多次 backward，梯度自动累积）
     graph.zero_grad().unwrap();
-    let v1 = loss1.backward_ex(true).unwrap();
-    let v2 = loss2.backward_ex(false).unwrap();
+    let v1 = loss1.backward().unwrap();
+    let v2 = loss2.backward().unwrap();
     assert!(v1 > 0.0);
     assert!(v2 > 0.0);
 
@@ -960,38 +960,6 @@ fn test_var_backward_ex_multi_loss() {
     assert!(
         w_grad_multi[[0, 0]].abs() > w_grad_single[[0, 0]].abs(),
         "多 loss 梯度应大于单 loss 梯度"
-    );
-}
-
-/// 单 loss 场景，backward() 和 backward_ex(false) 行为一致
-#[test]
-fn test_var_backward_ex_single_loss() {
-    use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
-
-    let graph = Graph::new_with_seed(42);
-    let w = graph
-        .parameter(&[2, 1], Init::Normal { mean: 0.0, std: 1.0 }, "w")
-        .unwrap();
-    let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
-    let y = x.matmul(&w).unwrap();
-    let t = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
-    let loss = y.mse_loss(&t).unwrap();
-
-    // backward()
-    graph.zero_grad().unwrap();
-    let v1 = loss.backward().unwrap();
-    let grad1 = w.grad().unwrap().unwrap();
-
-    // backward_ex(false)
-    graph.zero_grad().unwrap();
-    let v2 = loss.backward_ex(false).unwrap();
-    let grad2 = w.grad().unwrap().unwrap();
-
-    // 两者应完全一致
-    assert!((v1 - v2).abs() < 1e-6, "loss 值应一致: {} vs {}", v1, v2);
-    assert!(
-        (grad1[[0, 0]] - grad2[[0, 0]]).abs() < 1e-6,
-        "梯度应一致"
     );
 }
 
@@ -1014,7 +982,7 @@ fn test_var_backward_multiple_times() {
     let v1 = loss.backward().unwrap();
     let grad1 = w.grad().unwrap().unwrap().clone();
 
-    // 第二次 backward（方案 C 下不需要 retain_graph=true）
+    // 第二次 backward（动态图下天然支持多次 backward）
     graph.zero_grad().unwrap();
     let v2 = loss.backward().unwrap();
     let grad2 = w.grad().unwrap().unwrap();

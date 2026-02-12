@@ -102,8 +102,8 @@ fn main() -> Result<(), GraphError> {
             let reg_loss = reg_pred.mse_loss(reg_target)?;
 
             optimizer.zero_grad()?;
-            let cls_val = cls_loss.backward_ex(true)?;
-            let reg_val = reg_loss.backward_ex(false)?;
+            let cls_val = cls_loss.backward()?;
+            let reg_val = reg_loss.backward()?;
             optimizer.step()?;
 
             total_cls_loss += cls_val;

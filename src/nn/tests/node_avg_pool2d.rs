@@ -423,7 +423,7 @@ fn test_avg_pool2d_e2e_loss_grad() -> Result<(), GraphError> {
     assert_abs_diff_eq!(loss_val[[0, 0]], 1.0, epsilon = 1e-5);
 
     // 反向：通过 backward_via_node_inner 自动处理种子梯度和中间节点清理
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     let grad = input.grad().expect("input 应有 grad");
     assert_eq!(grad.shape(), &[1, 1, 4, 4]);
@@ -573,7 +573,7 @@ fn test_avg_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let loss_val1 = loss.value().unwrap()[[0, 0]];
     assert!(loss_val1 >= 0.0);
 
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     let grad1 = input.grad().expect("第一次反向应有 grad");
     assert_eq!(grad1.shape(), &[2, 1, 4, 4]);
@@ -589,7 +589,7 @@ fn test_avg_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let loss_val2 = loss.value().unwrap()[[0, 0]];
     assert!(loss_val2 >= 0.0);
 
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     let grad2 = input.grad().expect("第二次反向应有 grad");
     assert_eq!(grad2.shape(), &[4, 1, 4, 4]);

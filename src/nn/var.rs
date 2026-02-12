@@ -266,40 +266,28 @@ impl Var {
 
     /// 反向传播（ensure-forward 语义）
     ///
-    /// # 语义：ensure-forward
+    /// # 语义
     /// - 自动先执行 forward()，确保 loss 值已计算
     /// - 然后执行反向传播
-    ///
-    /// # 返回值
-    /// 返回 loss 的标量值
-    pub fn backward(&self) -> Result<f32, GraphError> {
-        self.backward_ex(false)
-    }
-
-    /// 反向传播（扩展版本，支持 `retain_graph`）
-    ///
-    /// # 参数
-    /// - `retain_graph`: 保留以保持 API 兼容
-    ///   - 方案 C 中此参数暂时为 no-op（值由 Rc 管理，天然支持多次 backward）
-    ///   - 多任务学习场景仍建议使用 `backward_ex(true)` + `backward_ex(false)` 模式以保持代码意图清晰
+    /// - 动态图架构下，中间结果由 Rc 引用计数管理，天然支持多次 backward
     ///
     /// # 多任务学习示例
     /// ```ignore
     /// optimizer.zero_grad()?;
-    /// loss1.backward_ex(true)?;   // 第一个 loss，标记"还有后续"
-    /// loss2.backward_ex(false)?;  // 最后一个 loss，梯度累积到共享参数
+    /// let v1 = loss1.backward()?;  // 第一个 loss
+    /// let v2 = loss2.backward()?;  // 第二个 loss，梯度自动累积到共享参数
     /// optimizer.step()?;
     /// ```
     ///
     /// # 返回值
     /// 返回 loss 的标量值
-    pub fn backward_ex(&self, retain_graph: bool) -> Result<f32, GraphError> {
+    pub fn backward(&self) -> Result<f32, GraphError> {
         let graph_rc = self.graph();
         let mut g = graph_rc.borrow_mut();
         // ensure-forward：先执行前向传播
         g.forward_via_node_inner(&self.node)?;
         // 然后执行反向传播
-        g.backward_via_node_inner(&self.node, retain_graph)
+        g.backward_via_node_inner(&self.node)
     }
 
     // ==================== 值访问和设置 ====================

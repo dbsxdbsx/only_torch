@@ -189,7 +189,7 @@ cargo run --example siamese_similarity
 展示 **多输出 forward** API：
 - 分类头：判断正/负（CrossEntropyLoss）
 - 回归头：预测绝对值（MseLoss）
-- 多 Loss 训练：`backward_ex(retain_graph=true)`
+- 多 Loss 训练：多次 `backward()` 天然支持梯度累积
 
 ```bash
 cargo run --example dual_output_classify
@@ -313,7 +313,7 @@ opt-level = 3
 - [性能优化策略](.doc/design/optimization_strategy.md) - 针对 CPU-only 和 NEAT 小规模不规则网络的优化方向，包括个体并行、Batch 向量化、SIMD 等策略的优先级分析
 - [性能优化候选项](.doc/optimization_candidates.md) - 待 benchmark 验证的具体优化点记录
 - [本项目的梯度设计机制说明](.doc/design/gradient_clear_and_accumulation_design.md) - 详细说明了梯度/雅可比矩阵相关的设计决策，包括手动清除梯度的原理、累计机制等的使用模式和最佳实践
-- [梯度流控制机制](.doc/design/gradient_flow_control_design.md) - `no_grad`、`detach`、`retain_graph` 三种梯度控制机制的设计，包括 GAN、Actor-Critic、多任务学习等高级训练模式
+- [梯度流控制机制](.doc/design/gradient_flow_control_design.md) - `no_grad`、`detach` 等梯度控制机制的设计，包括 GAN、Actor-Critic、多任务学习等高级训练模式
 - [DataLoader 设计文档](.doc/design/data_loader_design.md) - PyTorch 风格的数据批量加载器，支持 `TensorDataset`、自动分批、shuffle、drop_last、变长序列分桶等功能，含架构改进计划
 - [Batch Forward/Backward 机制设计](.doc/design/batch_mechanism_design.md) - 批量训练机制的设计决策，包括 Gradient-based 反向传播、API 设计、性能优化（约 18x 加速）等
 - [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md) - 统一的图描述层（IR）设计，支持模型保存/加载（JSON+bin）、Graphviz 可视化、Keras 风格 summary 输出

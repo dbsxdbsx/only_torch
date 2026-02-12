@@ -4,8 +4,8 @@
  * @LastEditTime : 2026-02-02
  * @Description  : GraphInner 反向传播相关方法
  *
- * 方案 C 清理：已移除旧的 backward/backward_ex/backward_vjp_core 等方法
- * 新架构使用 backward_via_node_inner() 通过 NodeInner 进行反向传播
+ * 动态图架构：已移除旧的 backward/backward_ex/backward_vjp_core 等方法
+ * 统一使用 backward_via_node_inner() 通过 NodeInner 进行反向传播
  */
 
 use super::super::error::GraphError;

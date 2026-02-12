@@ -1,6 +1,6 @@
 //! 梯度流控制机制测试
 //!
-//! 测试 `no_grad`、`detach`、`retain_graph` 三种梯度控制机制
+//! 测试 `no_grad`、`detach`、多次 backward 等梯度控制机制
 //! 参考设计文档: `.doc/design/gradient_flow_control_design.md`
 //!
 //! 使用底层 `Graph::new()` + `inner_rc()` + `GraphInner` API
@@ -227,7 +227,7 @@ fn test_no_grad_scope_same_input_same_loss_no_gradient() {
     let normal_loss_value = loss.value().unwrap().get_data_number().unwrap();
 
     // 正常模式可以计算梯度
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     let normal_gradient = w.grad();
     assert!(normal_gradient.is_some(), "正常模式应产生梯度");
 
@@ -395,7 +395,7 @@ fn test_no_grad_scope_backward_still_works() {
 
         // backward 也应该正常工作（打印警告但不报错）
         // y 是 [1,1]（标量），可以作为 loss
-        g.backward_via_node_inner(&y, false)
+        g.backward_via_node_inner(&y)
     });
 
     // backward 应该成功执行
@@ -444,7 +444,7 @@ fn test_no_grad_scope_nodes_created_inside() {
     assert!(y.value().is_some());
 
     // 正常反向传播应该工作（y 是 [1,1]，标量）
-    gi.backward_via_node_inner(&y, false).unwrap();
+    gi.backward_via_node_inner(&y).unwrap();
     assert!(
         w.grad().is_some(),
         "退出 no_grad_scope 后，在其中创建的节点应能正常计算梯度"
@@ -518,7 +518,7 @@ fn test_detach_blocks_gradient_flow() {
     gi.forward_via_node_inner(&output).unwrap();
 
     // ===== 场景 1: 正常反向传播 =====
-    gi.backward_via_node_inner(&output, false).unwrap();
+    gi.backward_via_node_inner(&output).unwrap();
 
     // w1 和 w2 都应该有梯度
     assert!(w1.grad().is_some());
@@ -530,7 +530,7 @@ fn test_detach_blocks_gradient_flow() {
     // ===== 场景 2: detach h，w1 不应该有梯度 =====
     h.set_detached(true);
     gi.forward_via_node_inner(&output).unwrap();
-    gi.backward_via_node_inner(&output, false).unwrap();
+    gi.backward_via_node_inner(&output).unwrap();
 
     // w1 不应该有梯度（被 h 的 detach 阻断）
     assert!(
@@ -546,7 +546,7 @@ fn test_detach_blocks_gradient_flow() {
 
     // ===== 场景 3: 恢复后 w1 应该有梯度 =====
     gi.forward_via_node_inner(&output).unwrap();
-    gi.backward_via_node_inner(&output, false).unwrap();
+    gi.backward_via_node_inner(&output).unwrap();
     assert!(w1.grad().is_some());
     assert!(w2.grad().is_some());
 }
@@ -644,14 +644,14 @@ fn test_detach_attach_multiple_times() {
 
     // attached 状态：w 应该有梯度
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     assert!(w.grad().is_some());
     gi.zero_grad().unwrap();
 
     // detach y（中间节点）：梯度被 y 阻断，w 不应有梯度
     y.set_detached(true);
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     assert!(
         w.grad().is_none(),
         "y 被 detach 后，w 不应有梯度"
@@ -661,7 +661,7 @@ fn test_detach_attach_multiple_times() {
     // 恢复 attached：w 应该又有梯度
     y.set_detached(false);
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     assert!(w.grad().is_some());
 }
 
@@ -731,7 +731,7 @@ fn test_detach_gan_style_training() {
 
     // ===== 训练判别器：detach fake_data =====
     fake_data.set_detached(true);
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // d_w 应该有梯度
     assert!(d_w.grad().is_some());
@@ -746,7 +746,7 @@ fn test_detach_gan_style_training() {
     // ===== 训练生成器：attach fake_data =====
     fake_data.set_detached(false);
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // g_w 应该有梯度
     assert!(g_w.grad().is_some());
@@ -789,7 +789,7 @@ fn test_detach_with_batch_input() {
 
     // detach y 后 batch 反向传播
     y.set_detached(true);
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // w 不应该有 batch 梯度（因为 y 被 detach，梯度不会传到 w）
     assert!(
@@ -820,7 +820,7 @@ fn test_detach_node_still_functional() {
     let input_data = Tensor::new(&[1.0, 2.0], &[2, 1]);
     x.set_value(Some(&input_data)).unwrap();
     gi.forward_via_node_inner(&y).unwrap();
-    gi.backward_via_node_inner(&y, false).unwrap();
+    gi.backward_via_node_inner(&y).unwrap();
 
     // 验证 w 有 grad
     let grad_before = w.grad().unwrap();
@@ -905,7 +905,7 @@ fn test_detach_gradient_values_match_pytorch() {
     h.set_detached(true);
 
     // 反向传播
-    gi.backward_via_node_inner(&output, false).unwrap();
+    gi.backward_via_node_inner(&output).unwrap();
 
     // ===== 验证梯度（PyTorch 对照值）=====
     // w1 应无梯度（被 detach 阻断）
@@ -954,7 +954,7 @@ fn test_detach_node_still_functional_batch() {
     x.set_value(Some(&input_data)).unwrap();
     target.set_value(Some(&target_data)).unwrap();
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 验证 w 有 grad
     let grad_before = w.grad().unwrap();
@@ -980,7 +980,7 @@ fn test_detach_node_still_functional_batch() {
 }
 
 // ============================================================================
-// 3. retain_graph 机制测试
+// 3. 多次 backward 测试（动态图架构天然支持）
 // ============================================================================
 
 /// 测试: backward_via_node_inner 基本功能
@@ -1008,21 +1008,20 @@ fn test_retain_graph_basic() {
     // 前向传播
     gi.forward_via_node_inner(&y).unwrap();
 
-    // 使用 retain_graph=true 反向传播
-    gi.backward_via_node_inner(&y, true).unwrap();
+    // 反向传播
+    gi.backward_via_node_inner(&y).unwrap();
 
     // w 应该有梯度
     assert!(w.grad().is_some());
 
-    // y 的值应该仍然存在（方案 C 中值由 Rc 管理，不会被释放）
+    // y 的值应该仍然存在（动态图中值由 Rc 管理，不会被释放）
     assert!(y.value().is_some());
 }
 
-/// 测试: 方案 C 中间结果生命周期由 Rc 管理
+/// 测试: 中间结果生命周期由 Rc 管理
 ///
-/// 注意：方案 C 中 retain_graph 参数暂时为 no-op，
-/// 中间结果由 Rc<NodeInner> 引用计数管理，不会在 backward 后被释放。
-/// 此测试验证这一新语义。
+/// 动态图架构下中间结果由 Rc<NodeInner> 引用计数管理，
+/// 不会在 backward 后被释放。此测试验证这一语义。
 #[test]
 fn test_intermediate_results_managed_by_rc() {
     let graph = Graph::new();
@@ -1062,25 +1061,24 @@ fn test_intermediate_results_managed_by_rc() {
     assert!(y.value().is_some());
     assert!(z.value().is_some());
 
-    // 反向传播（无论 retain_graph 值如何）
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    // 反向传播
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // w（参数节点）应该有梯度
     assert!(w.grad().is_some());
 
-    // 方案 C：中间节点的值由 Rc 管理，backward 不清除
-    // 值仍然存在（与旧路径不同）
-    assert!(y.value().is_some(), "方案 C 中值由 Rc 管理，不会被释放");
-    assert!(z.value().is_some(), "方案 C 中值由 Rc 管理，不会被释放");
+    // 动态图：中间节点的值由 Rc 管理，backward 不清除
+    assert!(y.value().is_some(), "动态图中值由 Rc 管理，不会被释放");
+    assert!(z.value().is_some(), "动态图中值由 Rc 管理，不会被释放");
 
     // Input 和 Parameter 的值应该保留
     assert!(x.value().is_some());
     assert!(w.value().is_some());
 }
 
-/// 测试: 允许多次 backward（方案 C 中值不被释放，天然支持）
+/// 测试: 允许多次 backward（动态图中值不被释放，天然支持）
 #[test]
-fn test_retain_graph_allows_multiple_backward() {
+fn test_multiple_backward() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
     let mut gi = inner.borrow_mut();
@@ -1104,14 +1102,14 @@ fn test_retain_graph_allows_multiple_backward() {
     gi.forward_via_node_inner(&y).unwrap();
 
     // 第一次 backward
-    gi.backward_via_node_inner(&y, true).unwrap();
+    gi.backward_via_node_inner(&y).unwrap();
     let grad1 = w.grad().unwrap();
 
     // 清除梯度
     gi.zero_grad().unwrap();
 
-    // 第二次 backward（方案 C 中值不被释放，天然支持多次 backward）
-    gi.backward_via_node_inner(&y, true).unwrap();
+    // 第二次 backward（动态图中值不被释放，天然支持多次 backward）
+    gi.backward_via_node_inner(&y).unwrap();
     let grad2 = w.grad().unwrap();
 
     // 两次计算应该得到相同的梯度
@@ -1121,7 +1119,7 @@ fn test_retain_graph_allows_multiple_backward() {
 /// 测试: 多任务学习场景 - 两个 loss 共享 backbone
 /// PyTorch 对照: tests/python/calc_jacobi_by_pytorch/multi_task_learning_retain_graph.py
 #[test]
-fn test_retain_graph_multi_task_learning() {
+fn test_multi_task_learning() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
     let mut gi = inner.borrow_mut();
@@ -1205,8 +1203,8 @@ fn test_retain_graph_multi_task_learning() {
     let expected_out2 = Tensor::new(&[20.0], &[1, 1]);
     assert_eq!(out2_value, expected_out2, "out2 前向值不匹配");
 
-    // ========== 任务 1 backward（保留图，因为任务 2 也需要）==========
-    gi.backward_via_node_inner(&loss1, true).unwrap();
+    // ========== 任务 1 backward ==========
+    gi.backward_via_node_inner(&loss1).unwrap();
 
     // 验证 w_shared 和 w1 的梯度
     let w_shared_grad_1 = w_shared.grad().unwrap();
@@ -1223,8 +1221,8 @@ fn test_retain_graph_multi_task_learning() {
         "w2 在 task1 backward 后不应有梯度"
     );
 
-    // ========== 任务 2 backward（梯度累积）==========
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    // ========== 任务 2 backward（梯度自动累积）==========
+    gi.backward_via_node_inner(&loss2).unwrap();
 
     // 验证 w2 的梯度
     let w2_grad = w2.grad().unwrap();
@@ -1288,13 +1286,13 @@ fn test_backward_default_releases_graph() {
     assert!(y.value().is_some());
 
     // backward
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // w 应该有梯度
     assert!(w.grad().is_some());
 
-    // 方案 C：y 的值由 Rc 管理，不会在 backward 后被释放
-    assert!(y.value().is_some(), "方案 C 中中间值不会被释放");
+    // 动态图：y 的值由 Rc 管理，不会在 backward 后被释放
+    assert!(y.value().is_some(), "动态图中中间值不会被释放");
 
     // x 和 w（Input/Parameter）的值应该保留
     assert!(x.value().is_some());
@@ -1327,23 +1325,23 @@ fn test_multiple_backward_without_new_forward() {
     gi.forward_via_node_inner(&y).unwrap();
 
     // 第一次 backward
-    gi.backward_via_node_inner(&y, false).unwrap();
+    gi.backward_via_node_inner(&y).unwrap();
     let grad1 = w.grad().unwrap();
 
     // 清除梯度
     gi.zero_grad().unwrap();
 
-    // 方案 C：值不被释放，无需重新 forward 即可再次 backward
-    gi.backward_via_node_inner(&y, false).unwrap();
+    // 动态图：值不被释放，无需重新 forward 即可再次 backward
+    gi.backward_via_node_inner(&y).unwrap();
     let grad2 = w.grad().unwrap();
 
     // 两次应该得到相同结果
     assert_eq!(grad1, grad2, "多次 backward 应产生相同梯度");
 }
 
-/// 测试: 混合使用 retain_graph 和 detach
+/// 测试: 多次 backward 与 detach 混合使用
 #[test]
-fn test_retain_graph_with_detach() {
+fn test_multiple_backward_with_detach() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
     let mut gi = inner.borrow_mut();
@@ -1384,7 +1382,7 @@ fn test_retain_graph_with_detach() {
     h.set_detached(true);
 
     // 反向传播
-    gi.backward_via_node_inner(&loss, true).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // w2 应该有梯度
     assert!(w2.grad().is_some());
@@ -1543,8 +1541,8 @@ fn test_backward_accumulation_for_complex_topology() {
     gi.forward_via_node_inner(&loss1).unwrap();
     gi.forward_via_node_inner(&loss2).unwrap();
 
-    // ========== 第 1 次 backward (loss1, retain_graph=true) ==========
-    gi.backward_via_node_inner(&loss1, true).unwrap();
+    // ========== 第 1 次 backward (loss1) ==========
+    gi.backward_via_node_inner(&loss1).unwrap();
 
     let w_shared1_after_task1 = w_shared1.grad().unwrap();
     let w_shared2_after_task1 = w_shared2.grad().unwrap();
@@ -1571,8 +1569,8 @@ fn test_backward_accumulation_for_complex_topology() {
         "shared_feat2 应有本次 forward 的值"
     );
 
-    // ========== 第 2 次 backward (loss2, retain_graph=false) ==========
-    gi.backward_via_node_inner(&loss2, false).unwrap();
+    // ========== 第 2 次 backward (loss2) ==========
+    gi.backward_via_node_inner(&loss2).unwrap();
 
     let w_shared1_accumulated = w_shared1.grad().unwrap();
     let w_shared2_accumulated = w_shared2.grad().unwrap();

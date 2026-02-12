@@ -198,7 +198,7 @@ fn test_state_accepts_grad() -> Result<(), GraphError> {
     // 设置训练模式、前向传播、反向传播
     inner.borrow_mut().set_train_mode();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // State 应该能接收 grad
     let state_grad = state.grad();
@@ -244,7 +244,7 @@ fn test_input_has_no_grad() -> Result<(), GraphError> {
 
     inner.borrow_mut().set_train_mode();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // Input 节点不应有 grad（accumulate_grad 静默跳过不支持梯度的节点）
     assert!(
@@ -312,7 +312,7 @@ fn test_state_in_rnn_structure() -> Result<(), GraphError> {
 
     inner.borrow_mut().set_train_mode();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // W 应有梯度
     assert!(w.grad().is_some(), "W 应有 grad");
@@ -361,7 +361,7 @@ fn test_state_zero_grad() -> Result<(), GraphError> {
 
     inner.borrow_mut().set_train_mode();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // backward 后 State 和 Parameter 都有 grad
     assert!(state.grad().is_some(), "State 应有 grad");
@@ -648,7 +648,7 @@ fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
     inner.borrow_mut().set_train_mode();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
     inner.borrow_mut().zero_grad()?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // 验证 State 有梯度
     let state_grad1 = state.grad();
@@ -669,7 +669,7 @@ fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
     // 第二次训练: batch=5
     inner.borrow_mut().forward_via_node_inner(&loss)?;
     inner.borrow_mut().zero_grad()?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // 验证 State 梯度形状随 batch 变化
     let state_grad2 = state.grad();

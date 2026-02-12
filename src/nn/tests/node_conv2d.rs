@@ -539,7 +539,7 @@ fn test_conv2d_backward_kernel_grad() -> Result<(), GraphError> {
     assert_abs_diff_eq!(loss_val, 25.0, epsilon = 1e-6);
 
     inner.borrow_mut().zero_grad()?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // 验证 kernel 梯度
     let grad = kernel.grad().expect("kernel 应有 grad");
@@ -618,7 +618,7 @@ fn test_conv2d_backward_batch_network() -> Result<(), GraphError> {
 
     // 反向传播
     inner.borrow_mut().zero_grad()?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // kernel 应有梯度，形状正确
     let grad = kernel.grad().expect("kernel 应有 grad");
@@ -672,7 +672,7 @@ fn test_conv2d_gradient_accumulation() -> Result<(), GraphError> {
     // 第一次 backward
     kernel.clear_grad()?;
     inner.borrow_mut().forward_via_node_inner(&loss)?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
     let grad_first = kernel.grad().unwrap().clone();
 
     // 验证已知值（同 test_conv2d_backward_kernel_grad）
@@ -685,20 +685,20 @@ fn test_conv2d_gradient_accumulation() -> Result<(), GraphError> {
     kernel.clear_grad()?;
     assert!(kernel.grad().is_none(), "clear_grad 后 kernel 梯度应为 None");
     inner.borrow_mut().forward_via_node_inner(&loss)?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
     let grad_second = kernel.grad().unwrap();
     assert_eq!(&grad_second, &grad_first, "clear_grad 后重新 backward 应得到相同梯度");
 
     // 第三次 backward（不清零）→ 梯度翻倍
     inner.borrow_mut().forward_via_node_inner(&loss)?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
     let grad_accumulated = kernel.grad().unwrap();
     assert_eq!(&grad_accumulated, &(&grad_first * 2.0));
 
     // clear_grad 后恢复单次值
     kernel.clear_grad()?;
     inner.borrow_mut().forward_via_node_inner(&loss)?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
     let grad_after_clear = kernel.grad().unwrap();
     assert_eq!(&grad_after_clear, &grad_first);
 
@@ -816,7 +816,7 @@ fn test_conv2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let loss_val1 = loss.value().unwrap().get_data_number().unwrap();
     assert!(loss_val1 >= 0.0);
     inner.borrow_mut().zero_grad()?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // 更新输入为不同 batch_size
     input.set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 5, 5], 100)))?;
@@ -827,7 +827,7 @@ fn test_conv2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let loss_val2 = loss.value().unwrap().get_data_number().unwrap();
     assert!(loss_val2 >= 0.0);
     inner.borrow_mut().zero_grad()?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // kernel 梯度形状不随 batch 变化
     let grad = kernel.grad().expect("kernel 应有 grad");

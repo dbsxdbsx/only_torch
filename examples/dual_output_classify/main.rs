@@ -102,11 +102,10 @@ fn main() -> Result<(), GraphError> {
 
             // 多任务 backward：
             // 1. 清零梯度
-            // 2. 第一个 loss backward（retain_graph=true 保留图）
-            // 3. 第二个 loss backward（梯度累积到共享参数）
+            // 2. 两个 loss 分别 backward（梯度自动累积到共享参数）
             optimizer.zero_grad()?;
-            let cls_val = cls_loss.backward_ex(true)?; // retain_graph=true
-            let reg_val = reg_loss.backward_ex(false)?; // 第二个不需要保留
+            let cls_val = cls_loss.backward()?;
+            let reg_val = reg_loss.backward()?;
             optimizer.step()?;
 
             total_cls_loss += cls_val;

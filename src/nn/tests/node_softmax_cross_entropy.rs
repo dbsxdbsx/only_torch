@@ -493,7 +493,7 @@ fn test_sce_dynamic_batch_backward() -> Result<(), GraphError> {
     // backward_via_node_inner 会清除中间节点梯度、设置 loss grad=1 并反向传播
     inner
         .borrow_mut()
-        .backward_via_node_inner(&sce, false)?;
+        .backward_via_node_inner(&sce)?;
     let grad1 = weight.grad().unwrap().clone();
     assert_eq!(grad1.shape(), &[5, 3], "权重梯度形状应保持不变");
 
@@ -509,7 +509,7 @@ fn test_sce_dynamic_batch_backward() -> Result<(), GraphError> {
     inner.borrow_mut().zero_grad()?;
     inner
         .borrow_mut()
-        .backward_via_node_inner(&sce, false)?;
+        .backward_via_node_inner(&sce)?;
     let grad2 = weight.grad().unwrap();
     assert_eq!(
         grad2.shape(),

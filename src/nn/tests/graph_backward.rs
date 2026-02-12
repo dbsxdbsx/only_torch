@@ -56,7 +56,7 @@ fn test_node_grad_retrieval() {
     gi.forward_via_node_inner(&loss).unwrap();
 
     // 5. 反向传播
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 6. 验证梯度
     // 6.1 输入节点仍然不应该有梯度
@@ -96,7 +96,7 @@ fn test_node_grad_computation() {
     target.set_value(Some(&target_value)).unwrap();
 
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 3. 验证梯度形状与参数形状一致
     let w_grad = w.grad().unwrap();
@@ -143,8 +143,8 @@ fn test_continuous_backward_grad_accumulation() {
     // 验证初始状态：没有梯度
     assert_eq!(b.grad(), None);
 
-    // 第1次反向传播（使用 backward_via_node_inner + retain_graph=true 以便后续继续 backward）
-    gi.backward_via_node_inner(&loss, true).unwrap();
+    // 第1次反向传播
+    gi.backward_via_node_inner(&loss).unwrap();
     let first_grad = b.grad().unwrap().clone();
 
     // 对于 y = x + b，dy/db = I
@@ -155,7 +155,7 @@ fn test_continuous_backward_grad_accumulation() {
     assert_abs_diff_eq!(first_grad[[1, 0]], 0.2, epsilon = 1e-5);
 
     // 第2次反向传播（连续）- 应该累积梯度
-    gi.backward_via_node_inner(&loss, true).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     let second_grad = b.grad().unwrap().clone();
 
     // 累积后应该是2倍
@@ -163,7 +163,7 @@ fn test_continuous_backward_grad_accumulation() {
     assert_abs_diff_eq!(second_grad[[1, 0]], 0.4, epsilon = 1e-5);
 
     // 第3次反向传播 - 继续累积
-    gi.backward_via_node_inner(&loss, true).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     let third_grad = b.grad().unwrap().clone();
 
     // 累积后应该是3倍
@@ -175,14 +175,14 @@ fn test_continuous_backward_grad_accumulation() {
     assert_eq!(b.grad(), None);
 
     // 清除后再次反向传播，应该重新开始
-    gi.backward_via_node_inner(&loss, true).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     let after_clear_grad = b.grad().unwrap().clone();
     assert_abs_diff_eq!(after_clear_grad[[0, 0]], 0.1, epsilon = 1e-5);
     assert_abs_diff_eq!(after_clear_grad[[1, 0]], 0.2, epsilon = 1e-5);
 
     // 测试 set_value 不会自动清除梯度的行为（需要手动 zero_grad）
     // 先进行反向传播，确保有梯度
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     let grad_before_set = b.grad().unwrap().clone();
 
     // 设置新的参数值，梯度应该仍然存在（不自动清除）
@@ -229,7 +229,7 @@ fn test_backward_without_any_forward() {
     // 关键测试：在没有任何前向传播的情况下尝试反向传播
     // 这应该失败，因为 loss 节点没有值
     assert_err!(
-        gi.backward_via_node_inner(&loss, false),
+        gi.backward_via_node_inner(&loss),
         GraphError::ComputationError(msg) if msg.contains("没有值") && msg.contains("请先执行 forward")
     );
 
@@ -302,7 +302,7 @@ fn test_backward_with_partial_forward_propagation() {
     // 关键测试：反向传播
     // 即使 a 有一个子节点(new_add)没有前向传播，反向传播也应该成功
     // 并且只考虑已前向传播的子节点(left_add)
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
 
     // 验证反向传播成功 - a 有梯度
     let a_grad = a.grad().unwrap();
@@ -346,16 +346,16 @@ fn test_backward_pass_id_increment() {
     target.set_value(Some(&target_value)).unwrap();
     gi.forward_via_node_inner(&loss).unwrap();
 
-    // 4. 第1次反向传播（retain_graph=true 以便继续 backward）
-    gi.backward_via_node_inner(&loss, true).unwrap();
+    // 4. 第1次反向传播
+    gi.backward_via_node_inner(&loss).unwrap();
     assert_eq!(gi.last_backward_pass_id(), 1);
 
     // 5. 第2次反向传播
-    gi.backward_via_node_inner(&loss, true).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     assert_eq!(gi.last_backward_pass_id(), 2);
 
     // 6. 第3次反向传播（最后一次可以不保留图）
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     assert_eq!(gi.last_backward_pass_id(), 3);
 }
 
@@ -400,7 +400,7 @@ fn test_node_pass_id_synchronization() {
     assert_eq!(loss.last_forward_pass_id(), graph_forward_pass_id);
 
     // 4. 反向传播并验证节点pass_id同步
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     let graph_backward_pass_id = gi.last_backward_pass_id();
 
     // 验证参与反向传播的节点的反向pass_id都与图的pass_id一致
@@ -447,7 +447,7 @@ fn test_pass_id_rollback_on_backward_error() {
     assert_eq!(initial_backward_pass_id, 0);
 
     // 4. 尝试反向传播，应该失败（因为 loss 节点没有值）
-    let backward_result = gi.backward_via_node_inner(&loss, false);
+    let backward_result = gi.backward_via_node_inner(&loss);
     assert!(backward_result.is_err());
 
     // 验证反向传播失败后pass_id被正确回滚
@@ -455,6 +455,6 @@ fn test_pass_id_rollback_on_backward_error() {
 
     // 5. 正确地进行前向传播后，反向传播应该成功
     gi.forward_via_node_inner(&loss).unwrap();
-    gi.backward_via_node_inner(&loss, false).unwrap();
+    gi.backward_via_node_inner(&loss).unwrap();
     assert_eq!(gi.last_backward_pass_id(), 1);
 }

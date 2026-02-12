@@ -388,7 +388,7 @@ fn test_max_pool2d_e2e_backward_sparse() -> Result<(), GraphError> {
     let loss_val = loss.value().unwrap();
     assert_abs_diff_eq!(loss_val[[0, 0]], 138.0, epsilon = 1e-4);
 
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // 验证 param 梯度
     let grad = param.grad().expect("param 应有 grad");
@@ -472,7 +472,7 @@ fn test_max_pool2d_e2e_conv_pool_cascade() -> Result<(), GraphError> {
     let loss_val = loss.value().unwrap()[[0, 0]];
     assert!(loss_val > 0.0, "loss 应为正值: {}", loss_val);
 
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // 验证 kernel 有梯度且形状正确
     let kernel_grad = kernel.grad().expect("kernel 应有 grad");
@@ -553,7 +553,7 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     assert!(loss_val1 >= 0.0, "loss 应非负: {}", loss_val1);
 
     param.clear_grad()?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
     let grad1 = param.grad().expect("batch=2 时 param 应有 grad");
     assert_eq!(grad1.shape(), &[2, 1, 4, 4]);
 
@@ -566,7 +566,7 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     assert!(loss_val2 >= 0.0, "loss 应非负: {}", loss_val2);
 
     param.clear_grad()?;
-    inner.borrow_mut().backward_via_node_inner(&loss, false)?;
+    inner.borrow_mut().backward_via_node_inner(&loss)?;
     let grad2 = param.grad().expect("batch=4 时 param 应有 grad");
     assert_eq!(grad2.shape(), &[4, 1, 4, 4]);
 

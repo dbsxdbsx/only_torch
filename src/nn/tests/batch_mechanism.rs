@@ -139,7 +139,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     x_b.set_value(Some(&batch_input))?;
     y_b.set_value(Some(&batch_labels))?;
     gi_batch.forward_via_node_inner(&loss_b)?;
-    gi_batch.backward_via_node_inner(&loss_b, false)?;
+    gi_batch.backward_via_node_inner(&loss_b)?;
 
     let batch_grad_w1 = w1_b.grad().unwrap().clone();
     let batch_grad_w2 = w2_b.grad().unwrap().clone();
@@ -168,7 +168,7 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
         x_s.set_value(Some(&samples[i]))?;
         y_s.set_value(Some(&labels[i]))?;
         gi_single.forward_via_node_inner(&loss_s)?;
-        gi_single.backward_via_node_inner(&loss_s, false)?;
+        gi_single.backward_via_node_inner(&loss_s)?;
 
         // 累加梯度
         if let Some(grad) = w1_s.grad() {
@@ -244,7 +244,7 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
     x_b.set_value(Some(&batch_input))?;
     y_b.set_value(Some(&batch_labels))?;
     gi_batch.forward_via_node_inner(&loss_b)?;
-    gi_batch.backward_via_node_inner(&loss_b, false)?;
+    gi_batch.backward_via_node_inner(&loss_b)?;
 
     // 手动应用 SGD 更新：θ = θ - lr * grad
     let batch_grad = w_b.grad().unwrap().clone();
@@ -268,7 +268,7 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
         x_s.set_value(Some(&samples[i]))?;
         y_s.set_value(Some(&labels[i]))?;
         gi_single.forward_via_node_inner(&loss_s)?;
-        gi_single.backward_via_node_inner(&loss_s, false)?;
+        gi_single.backward_via_node_inner(&loss_s)?;
 
         // 累加梯度
         if let Some(grad) = w_s.grad() {

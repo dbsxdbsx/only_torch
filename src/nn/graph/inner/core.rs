@@ -189,7 +189,7 @@ impl GraphInner {
     /// - 新路径：只遍历 `parameters` 注册表清除参数节点
     ///
     /// # 注意
-    /// 中间节点的梯度会在 `backward_via_node_inner` 完成后被释放（如果 retain_graph=false），
+    /// 中间节点的梯度会在每次 `backward_via_node_inner` 开始时自动清除，
     /// 所以只清除参数梯度是正确的行为。
     pub fn zero_grad_via_parameters(&self) -> Result<(), GraphError> {
         for weak in self.parameters.values() {
@@ -328,24 +328,21 @@ impl GraphInner {
         Ok(())
     }
 
-    /// 通过 NodeInner 进行反向传播（方案 C）
+    /// 通过 NodeInner 进行反向传播
     ///
-    /// 与旧 `backward()` 方法不同，此方法直接使用 `Rc<NodeInner>` 的拓扑逆序反向传播，
-    /// 不依赖 GraphInner 中存储的节点。
+    /// 直接使用 `Rc<NodeInner>` 的拓扑逆序反向传播，不依赖 GraphInner 中存储的节点。
+    /// 动态图架构下，中间结果由 Rc 引用计数管理，天然支持多次 backward，
+    /// 无需显式的 `retain_graph` 参数。
     ///
     /// # 参数
     /// - `node`: loss 节点
-    /// - `retain_graph`: 是否保留计算图（默认 false，释放中间结果）
     ///
     /// # 返回
     /// - `Ok(loss_scalar)`: 反向传播成功，返回 loss 标量值
     /// - `Err(GraphError)`: 反向传播失败
-    ///
-    /// # 注意
     pub fn backward_via_node_inner(
         &mut self,
         node: &std::rc::Rc<crate::nn::nodes::NodeInner>,
-        retain_graph: bool,
     ) -> Result<f32, GraphError> {
         use crate::tensor::Tensor;
 
@@ -401,13 +398,6 @@ impl GraphInner {
         let pass_id = self.last_backward_pass_id + 1;
         node.backward_propagate(pass_id)?;
         self.last_backward_pass_id = pass_id;
-
-        // 6. 中间结果释放说明
-        // 方案 C 架构下，中间节点由 Rc<NodeInner> 管理，
-        // 当 Var 离开作用域时自动释放，无需显式清理。
-        // retain_graph 参数暂时保留以保持 API 兼容性，
-        // 未来可能用于控制是否清除中间节点的梯度。
-        let _ = retain_graph; // 标记参数已使用，避免 warning
 
         Ok(loss_scalar)
     }
