@@ -54,11 +54,11 @@ impl SiameseSimilarity {
         // 两个输入经过**同一个**双层编码器（共享参数）
         let feat1 = self
             .encoder2
-            .forward(&self.encoder1.forward(x1).relu())
+            .forward(self.encoder1.forward(x1).relu())
             .relu();
         let feat2 = self
             .encoder2
-            .forward(&self.encoder1.forward(x2).relu())
+            .forward(self.encoder1.forward(x2).relu())
             .relu();
 
         // 拼接两个特征向量
@@ -67,7 +67,7 @@ impl SiameseSimilarity {
         // 双层分类器输出相似度
         Ok(self
             .classifier2
-            .forward(&self.classifier1.forward(&combined).relu())
+            .forward(self.classifier1.forward(&combined).relu())
             .sigmoid())
     }
 }

@@ -119,11 +119,8 @@ fn test_sum_vjp_global() -> Result<(), GraphError> {
         .create_sum_node(x.clone(), None, Some("s"))
         .unwrap();
 
-    x.set_value(Some(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    )))
-    .unwrap();
+    x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
+        .unwrap();
     sum.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0], &[1, 1]);
@@ -154,11 +151,8 @@ fn test_sum_vjp_axis1() -> Result<(), GraphError> {
         .create_sum_node(x.clone(), Some(1), Some("s"))
         .unwrap();
 
-    x.set_value(Some(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    )))
-    .unwrap();
+    x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
+        .unwrap();
     sum.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[1.0, 2.0], &[2, 1]);
@@ -365,8 +359,8 @@ fn test_sum_dynamic_batch_forward() {
 /// 测试 Sum 节点在不同 batch_size 下的反向传播
 #[test]
 fn test_sum_dynamic_batch_backward() {
-    use crate::nn::var_ops::{VarLossOps, VarReduceOps};
     use crate::nn::Graph;
+    use crate::nn::var_ops::{VarLossOps, VarReduceOps};
 
     let graph = Graph::new();
 
@@ -452,9 +446,7 @@ fn test_create_sum_node_invalid_axis() {
         .unwrap();
 
     // axis=2 超出范围
-    let result = inner
-        .borrow_mut()
-        .create_sum_node(input, Some(2), None);
+    let result = inner.borrow_mut().create_sum_node(input, Some(2), None);
 
     assert!(result.is_err());
 }

@@ -699,9 +699,7 @@ fn test_create_mse_node_shape_mismatch() {
         .create_basic_input_node(&[2, 4], None) // 形状不匹配
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_mse_mean_node(input, target, None);
+    let result = inner.borrow_mut().create_mse_mean_node(input, target, None);
 
     assert!(result.is_err());
 }

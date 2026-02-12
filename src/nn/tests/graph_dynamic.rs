@@ -101,9 +101,7 @@ fn test_add_node_after_backward() {
     let y = gi
         .create_add_node(vec![wx.clone(), b.clone()], Some("y"))
         .unwrap();
-    let target = gi
-        .create_basic_input_node(&[1, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(y.clone(), target.clone(), Some("loss"))
         .unwrap();
@@ -180,9 +178,7 @@ fn test_multiple_topology_changes() {
         .unwrap();
     gi.register_parameter("param".to_string(), Rc::downgrade(&param))
         .unwrap();
-    let input = gi
-        .create_basic_input_node(&[2, 1], Some("input"))
-        .unwrap();
+    let input = gi.create_basic_input_node(&[2, 1], Some("input")).unwrap();
     let node1 = gi
         .create_add_node(vec![param.clone(), input.clone()], Some("node1"))
         .unwrap();
@@ -205,9 +201,7 @@ fn test_multiple_topology_changes() {
     let value1 = node1.value().unwrap();
 
     // 3. 第 1 次拓扑变化: 添加 node2 = tanh(node1)
-    let node2 = gi
-        .create_tanh_node(node1.clone(), Some("node2"))
-        .unwrap();
+    let node2 = gi.create_tanh_node(node1.clone(), Some("node2")).unwrap();
     let target2 = gi
         .create_basic_input_node(&[2, 1], Some("target2"))
         .unwrap();
@@ -269,9 +263,7 @@ fn test_add_multiple_branches() {
     let mut gi = inner.borrow_mut();
 
     // 1. 初始图
-    let input = gi
-        .create_basic_input_node(&[2, 1], Some("input"))
-        .unwrap();
+    let input = gi.create_basic_input_node(&[2, 1], Some("input")).unwrap();
     let param = gi
         .create_parameter_node_seeded(&[2, 1], Some("param"), 42)
         .unwrap();
@@ -287,14 +279,10 @@ fn test_add_multiple_branches() {
     gi.forward_via_node_inner(&base).unwrap();
 
     // 3. 添加分支1: branch1 = tanh(base)
-    let branch1 = gi
-        .create_tanh_node(base.clone(), Some("branch1"))
-        .unwrap();
+    let branch1 = gi.create_tanh_node(base.clone(), Some("branch1")).unwrap();
 
     // 4. 添加分支2: branch2 = tanh(base)
-    let branch2 = gi
-        .create_tanh_node(base.clone(), Some("branch2"))
-        .unwrap();
+    let branch2 = gi.create_tanh_node(base.clone(), Some("branch2")).unwrap();
 
     // 5. 合并分支: merged = branch1 + branch2
     let merged = gi
@@ -358,14 +346,10 @@ fn test_chain_node_addition() {
     let tanh1 = gi.create_tanh_node(add.clone(), Some("tanh1")).unwrap();
     gi.forward_via_node_inner(&tanh1).unwrap();
 
-    let tanh2 = gi
-        .create_tanh_node(tanh1.clone(), Some("tanh2"))
-        .unwrap();
+    let tanh2 = gi.create_tanh_node(tanh1.clone(), Some("tanh2")).unwrap();
     gi.forward_via_node_inner(&tanh2).unwrap();
 
-    let tanh3 = gi
-        .create_tanh_node(tanh2.clone(), Some("tanh3"))
-        .unwrap();
+    let tanh3 = gi.create_tanh_node(tanh2.clone(), Some("tanh3")).unwrap();
     gi.forward_via_node_inner(&tanh3).unwrap();
 
     // 3. 验证链式计算正确
@@ -377,9 +361,7 @@ fn test_chain_node_addition() {
     assert_eq!(actual, expected);
 
     // 4. 创建 loss 节点并反向传播
-    let target = gi
-        .create_basic_input_node(&[2, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(tanh3.clone(), target.clone(), Some("loss"))
         .unwrap();
@@ -441,9 +423,7 @@ fn test_add_to_complex_graph() {
         .unwrap();
 
     // Loss 节点
-    let target = gi
-        .create_basic_input_node(&[1, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(output.clone(), target.clone(), Some("loss"))
         .unwrap();
@@ -519,9 +499,7 @@ fn test_multiple_zero_grad_calls() {
     let add = gi
         .create_add_node(vec![a.clone(), b.clone()], None)
         .unwrap();
-    let target = gi
-        .create_basic_input_node(&[2, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(add.clone(), target.clone(), Some("loss"))
         .unwrap();
@@ -651,9 +629,7 @@ fn test_neat_add_node_mutation_simulation() {
     let mut gi = inner.borrow_mut();
 
     // 1. 初始网络: input -> w1*input -> hidden, hidden -> w2*hidden -> output
-    let input = gi
-        .create_basic_input_node(&[2, 1], Some("input"))
-        .unwrap();
+    let input = gi.create_basic_input_node(&[2, 1], Some("input")).unwrap();
     let w1 = gi
         .create_parameter_node_seeded(&[3, 2], Some("w1"), 42)
         .unwrap();
@@ -672,9 +648,7 @@ fn test_neat_add_node_mutation_simulation() {
         .unwrap();
 
     // Loss 节点
-    let target = gi
-        .create_basic_input_node(&[1, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(output.clone(), target.clone(), Some("loss"))
         .unwrap();
@@ -756,9 +730,7 @@ fn test_neat_add_connection_mutation_simulation() {
     let mut gi = inner.borrow_mut();
 
     // 1. 创建一个有多个并行路径的网络
-    let input = gi
-        .create_basic_input_node(&[2, 1], Some("input"))
-        .unwrap();
+    let input = gi.create_basic_input_node(&[2, 1], Some("input")).unwrap();
 
     // 路径1: input -> w1 -> h1 -> tanh
     let w1 = gi
@@ -769,9 +741,7 @@ fn test_neat_add_connection_mutation_simulation() {
     let h1 = gi
         .create_mat_mul_node(vec![w1.clone(), input.clone()], Some("h1"))
         .unwrap();
-    let h1_tanh = gi
-        .create_tanh_node(h1.clone(), Some("h1_tanh"))
-        .unwrap();
+    let h1_tanh = gi.create_tanh_node(h1.clone(), Some("h1_tanh")).unwrap();
 
     // 路径2: input -> w2 -> h2 -> tanh
     let w2 = gi
@@ -782,9 +752,7 @@ fn test_neat_add_connection_mutation_simulation() {
     let h2 = gi
         .create_mat_mul_node(vec![w2.clone(), input.clone()], Some("h2"))
         .unwrap();
-    let h2_tanh = gi
-        .create_tanh_node(h2.clone(), Some("h2_tanh"))
-        .unwrap();
+    let h2_tanh = gi.create_tanh_node(h2.clone(), Some("h2_tanh")).unwrap();
 
     // 输出: h1_tanh + h2_tanh
     let output = gi
@@ -792,9 +760,7 @@ fn test_neat_add_connection_mutation_simulation() {
         .unwrap();
 
     // Loss 节点
-    let target = gi
-        .create_basic_input_node(&[2, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(output.clone(), target.clone(), Some("loss"))
         .unwrap();
@@ -880,9 +846,7 @@ fn test_gradient_correctness_after_dynamic_add() {
     let y = gi
         .create_add_node(vec![a.clone(), b.clone()], Some("y"))
         .unwrap();
-    let target = gi
-        .create_basic_input_node(&[2, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(y.clone(), target.clone(), Some("loss"))
         .unwrap();

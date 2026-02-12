@@ -588,7 +588,7 @@ fn test_var_tensor_mixed_backward() {
 
     // loss = (y - 4)^2  (target 也用 Tensor)
     let target = Tensor::new(&[4.0], &[1, 1]);
-    let loss = y.mse_loss(&target).unwrap();  // 直接传 Tensor
+    let loss = y.mse_loss(&target).unwrap(); // 直接传 Tensor
 
     loss.forward().unwrap();
     loss.backward().unwrap();
@@ -884,7 +884,11 @@ fn test_var_var_then_tensor() {
     // loss = ((10-10)^2 + (14-10)^2) / 2 = 16 / 2 = 8
 
     let loss_val = loss.value().unwrap().unwrap().get_data_number().unwrap();
-    assert!((loss_val - 8.0).abs() < 1e-4, "loss 错误: {} vs 8", loss_val);
+    assert!(
+        (loss_val - 8.0).abs() < 1e-4,
+        "loss 错误: {} vs 8",
+        loss_val
+    );
 
     loss.backward().unwrap();
 
@@ -970,7 +974,14 @@ fn test_var_backward_multiple_times() {
 
     let graph = Graph::new_with_seed(42);
     let w = graph
-        .parameter(&[2, 1], Init::Normal { mean: 0.0, std: 1.0 }, "w")
+        .parameter(
+            &[2, 1],
+            Init::Normal {
+                mean: 0.0,
+                std: 1.0,
+            },
+            "w",
+        )
         .unwrap();
     let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
     let y = x.matmul(&w).unwrap();

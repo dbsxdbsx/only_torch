@@ -26,10 +26,7 @@ fn test_sign_forward() {
     let graph = Graph::new();
 
     let x = graph
-        .input(&Tensor::new(
-            &[-2.0, -0.5, 0.0, 0.5, 2.0, 0.0],
-            &[2, 3],
-        ))
+        .input(&Tensor::new(&[-2.0, -0.5, 0.0, 0.5, 2.0, 0.0], &[2, 3]))
         .unwrap();
     let result = x.sign();
 

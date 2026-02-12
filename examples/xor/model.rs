@@ -1,6 +1,6 @@
 //! XOR 模型定义
 //!
-//! 使用 Linear 层的 PyTorch 风格实现（Phase 3 新 API）。
+//! 使用 Linear 层的 `PyTorch` 风格实现（Phase 3 新 API）。
 //!
 //! ## 网络结构
 //! ```text
@@ -24,7 +24,7 @@ impl XorMLP {
         })
     }
 
-    /// PyTorch 风格 forward：接收 &Tensor，Linear 自动转为 Var
+    /// `PyTorch` 风格 forward：接收 &Tensor，Linear 自动转为 Var
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
         let h1 = self.fc1.forward(x).tanh(); // Linear 内部自动 Tensor → Var
         let out = self.fc2.forward(&h1);

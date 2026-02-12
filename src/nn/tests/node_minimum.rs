@@ -23,8 +23,12 @@ use std::rc::Rc;
 fn test_minimum_forward_same_shape() {
     let graph = Graph::new();
 
-    let a = graph.input(&Tensor::new(&[1.0, 5.0, 3.0], &[3, 1])).unwrap();
-    let b = graph.input(&Tensor::new(&[2.0, 4.0, 6.0], &[3, 1])).unwrap();
+    let a = graph
+        .input(&Tensor::new(&[1.0, 5.0, 3.0], &[3, 1]))
+        .unwrap();
+    let b = graph
+        .input(&Tensor::new(&[2.0, 4.0, 6.0], &[3, 1]))
+        .unwrap();
 
     // 创建 Minimum 节点
     let min_node = graph
@@ -48,7 +52,9 @@ fn test_minimum_forward_broadcast() {
     let graph = Graph::new();
 
     // a: [3, 1], b: [1, 4] -> 广播后 [3, 4]
-    let a = graph.input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1])).unwrap();
+    let a = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))
+        .unwrap();
     let b = graph
         .input(&Tensor::new(&[0.0, 1.5, 2.5, 4.0], &[1, 4]))
         .unwrap();
@@ -81,8 +87,10 @@ fn test_minimum_backward_basic() {
 
     let a = graph.parameter(&[3, 1], Init::Zeros, "a").unwrap();
     let b = graph.parameter(&[3, 1], Init::Zeros, "b").unwrap();
-    a.set_value(&Tensor::new(&[1.0, 5.0, 3.0], &[3, 1])).unwrap();
-    b.set_value(&Tensor::new(&[2.0, 4.0, 3.0], &[3, 1])).unwrap(); // 最后一个相等
+    a.set_value(&Tensor::new(&[1.0, 5.0, 3.0], &[3, 1]))
+        .unwrap();
+    b.set_value(&Tensor::new(&[2.0, 4.0, 3.0], &[3, 1]))
+        .unwrap(); // 最后一个相等
 
     // min(a, b) = [1, 4, 3]
     let min_node = graph
@@ -132,8 +140,10 @@ fn test_minimum_backward_broadcast() {
     // a: [3, 1], b: [1, 3] -> 广播后 [3, 3]
     let a = graph.parameter(&[3, 1], Init::Zeros, "a").unwrap();
     let b = graph.parameter(&[1, 3], Init::Zeros, "b").unwrap();
-    a.set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1])).unwrap();
-    b.set_value(&Tensor::new(&[0.0, 2.0, 4.0], &[1, 3])).unwrap();
+    a.set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))
+        .unwrap();
+    b.set_value(&Tensor::new(&[0.0, 2.0, 4.0], &[1, 3]))
+        .unwrap();
 
     let min_node = graph
         .inner_mut()
@@ -293,9 +303,10 @@ fn test_minimum_incompatible_shapes() {
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4, 1]))
         .unwrap();
 
-    let result = graph
-        .inner_mut()
-        .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), None);
+    let result =
+        graph
+            .inner_mut()
+            .create_minimum_node(Rc::clone(a.node()), Rc::clone(b.node()), None);
 
     assert!(result.is_err());
 }
@@ -363,9 +374,7 @@ fn test_create_minimum_node_shape_mismatch() {
         .create_basic_input_node(&[5, 6], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_minimum_node(a, b, None);
+    let result = inner.borrow_mut().create_minimum_node(a, b, None);
 
     assert!(result.is_err());
 }
@@ -391,10 +400,7 @@ fn test_create_minimum_node_drop_releases() {
             .unwrap();
         weak_b = Rc::downgrade(&b);
 
-        let min = inner
-            .borrow_mut()
-            .create_minimum_node(a, b, None)
-            .unwrap();
+        let min = inner.borrow_mut().create_minimum_node(a, b, None).unwrap();
         weak_min = Rc::downgrade(&min);
 
         assert!(weak_min.upgrade().is_some());

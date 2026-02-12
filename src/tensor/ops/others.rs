@@ -1055,10 +1055,7 @@ impl Tensor {
     /// // probs ≈ [[0.0900, 0.2447, 0.6652]]
     /// ```
     pub fn softmax_last_dim(&self) -> Self {
-        assert!(
-            self.dimension() > 0,
-            "softmax_last_dim: 张量维度必须大于 0"
-        );
+        assert!(self.dimension() > 0, "softmax_last_dim: 张量维度必须大于 0");
         self.softmax(self.dimension() - 1)
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑softmax↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
@@ -1214,8 +1211,7 @@ impl Tensor {
         );
 
         // 计算广播后的形状
-        let result_shape =
-            broadcast_shape(self.shape(), other.shape()).expect("广播形状计算失败");
+        let result_shape = broadcast_shape(self.shape(), other.shape()).expect("广播形状计算失败");
 
         // 使用 Zip 的 and_broadcast 实现逐元素最小值
         let result_data = Zip::from(self.data.broadcast(IxDyn(&result_shape)).unwrap())
@@ -1270,8 +1266,7 @@ impl Tensor {
         );
 
         // 计算广播后的形状
-        let result_shape =
-            broadcast_shape(self.shape(), other.shape()).expect("广播形状计算失败");
+        let result_shape = broadcast_shape(self.shape(), other.shape()).expect("广播形状计算失败");
 
         // 使用 Zip 实现逐元素最大值
         let result_data = Zip::from(self.data.broadcast(IxDyn(&result_shape)).unwrap())
@@ -1594,12 +1589,7 @@ impl Tensor {
         let ndim = self_shape.len();
 
         // 1. 验证 dim
-        assert!(
-            dim < ndim,
-            "gather: dim {} 超出张量维度 {}",
-            dim,
-            ndim
-        );
+        assert!(dim < ndim, "gather: dim {} 超出张量维度 {}", dim, ndim);
 
         // 2. 验证 index 维度数与 self 相同
         assert!(

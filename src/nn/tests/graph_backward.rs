@@ -22,13 +22,21 @@ fn test_node_grad_retrieval() {
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = wx + b
     let x = gi.create_basic_input_node(&[3, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 3], Some("w")).unwrap();
-    gi.register_parameter("w".to_string(), Rc::downgrade(&w)).unwrap();
+    gi.register_parameter("w".to_string(), Rc::downgrade(&w))
+        .unwrap();
     let b = gi.create_parameter_node(&[1, 1], Some("b")).unwrap();
-    gi.register_parameter("b".to_string(), Rc::downgrade(&b)).unwrap();
-    let wx = gi.create_mat_mul_node(vec![w.clone(), x.clone()], None).unwrap();
-    let y = gi.create_add_node(vec![wx.clone(), b.clone()], None).unwrap();
+    gi.register_parameter("b".to_string(), Rc::downgrade(&b))
+        .unwrap();
+    let wx = gi
+        .create_mat_mul_node(vec![w.clone(), x.clone()], None)
+        .unwrap();
+    let y = gi
+        .create_add_node(vec![wx.clone(), b.clone()], None)
+        .unwrap();
     let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
-    let loss = gi.create_mse_mean_node(y.clone(), target.clone(), Some("loss")).unwrap();
+    let loss = gi
+        .create_mse_mean_node(y.clone(), target.clone(), Some("loss"))
+        .unwrap();
 
     // 2. 测试未计算时的梯度获取
     // 2.1 输入节点不应该有梯度（新 API 下 grad() 返回 None）
@@ -82,10 +90,15 @@ fn test_node_grad_computation() {
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = wx
     let x = gi.create_basic_input_node(&[3, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 3], Some("w")).unwrap();
-    gi.register_parameter("w".to_string(), Rc::downgrade(&w)).unwrap();
-    let y = gi.create_mat_mul_node(vec![w.clone(), x.clone()], None).unwrap();
+    gi.register_parameter("w".to_string(), Rc::downgrade(&w))
+        .unwrap();
+    let y = gi
+        .create_mat_mul_node(vec![w.clone(), x.clone()], None)
+        .unwrap();
     let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
-    let loss = gi.create_mse_mean_node(y.clone(), target.clone(), Some("loss")).unwrap();
+    let loss = gi
+        .create_mse_mean_node(y.clone(), target.clone(), Some("loss"))
+        .unwrap();
 
     // 2. 设置输入值并进行前向和反向传播
     let x_value = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
@@ -124,10 +137,15 @@ fn test_continuous_backward_grad_accumulation() {
     // 创建计算图：loss = MSE(y, target)，其中 y = x + b
     let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let b = gi.create_parameter_node(&[2, 1], Some("b")).unwrap();
-    gi.register_parameter("b".to_string(), Rc::downgrade(&b)).unwrap();
-    let y = gi.create_add_node(vec![x.clone(), b.clone()], Some("y")).unwrap();
+    gi.register_parameter("b".to_string(), Rc::downgrade(&b))
+        .unwrap();
+    let y = gi
+        .create_add_node(vec![x.clone(), b.clone()], Some("y"))
+        .unwrap();
     let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
-    let loss = gi.create_mse_mean_node(y.clone(), target.clone(), Some("loss")).unwrap();
+    let loss = gi
+        .create_mse_mean_node(y.clone(), target.clone(), Some("loss"))
+        .unwrap();
 
     // 设置输入值
     let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
@@ -203,13 +221,21 @@ fn test_backward_without_any_forward() {
     // 创建计算图：loss = MSE(y, target)，其中 y = wx + b
     let x = gi.create_basic_input_node(&[3, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 3], Some("w")).unwrap();
-    gi.register_parameter("w".to_string(), Rc::downgrade(&w)).unwrap();
+    gi.register_parameter("w".to_string(), Rc::downgrade(&w))
+        .unwrap();
     let b = gi.create_parameter_node(&[1, 1], Some("b")).unwrap();
-    gi.register_parameter("b".to_string(), Rc::downgrade(&b)).unwrap();
-    let wx = gi.create_mat_mul_node(vec![w.clone(), x.clone()], Some("wx")).unwrap();
-    let y = gi.create_add_node(vec![wx.clone(), b.clone()], Some("y")).unwrap();
+    gi.register_parameter("b".to_string(), Rc::downgrade(&b))
+        .unwrap();
+    let wx = gi
+        .create_mat_mul_node(vec![w.clone(), x.clone()], Some("wx"))
+        .unwrap();
+    let y = gi
+        .create_add_node(vec![wx.clone(), b.clone()], Some("y"))
+        .unwrap();
     let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
-    let loss = gi.create_mse_mean_node(y.clone(), target.clone(), Some("loss")).unwrap();
+    let loss = gi
+        .create_mse_mean_node(y.clone(), target.clone(), Some("loss"))
+        .unwrap();
 
     // 设置输入值，但不进行任何前向传播
     let x_value = Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]);
@@ -257,22 +283,35 @@ fn test_backward_with_partial_forward_propagation() {
     let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let y = gi.create_basic_input_node(&[2, 1], Some("y")).unwrap();
     let a = gi.create_parameter_node(&[2, 1], Some("a")).unwrap();
-    gi.register_parameter("a".to_string(), Rc::downgrade(&a)).unwrap();
+    gi.register_parameter("a".to_string(), Rc::downgrade(&a))
+        .unwrap();
     let b = gi.create_parameter_node(&[2, 1], Some("b")).unwrap();
-    gi.register_parameter("b".to_string(), Rc::downgrade(&b)).unwrap();
+    gi.register_parameter("b".to_string(), Rc::downgrade(&b))
+        .unwrap();
     let c = gi.create_parameter_node(&[2, 1], Some("c")).unwrap();
-    gi.register_parameter("c".to_string(), Rc::downgrade(&c)).unwrap();
+    gi.register_parameter("c".to_string(), Rc::downgrade(&c))
+        .unwrap();
 
-    let left_add = gi.create_add_node(vec![x.clone(), a.clone()], Some("left_add")).unwrap();
-    let right_add = gi.create_add_node(vec![y.clone(), b.clone()], Some("right_add")).unwrap();
-    let z = gi.create_add_node(vec![left_add.clone(), right_add.clone()], Some("z")).unwrap();
+    let left_add = gi
+        .create_add_node(vec![x.clone(), a.clone()], Some("left_add"))
+        .unwrap();
+    let right_add = gi
+        .create_add_node(vec![y.clone(), b.clone()], Some("right_add"))
+        .unwrap();
+    let z = gi
+        .create_add_node(vec![left_add.clone(), right_add.clone()], Some("z"))
+        .unwrap();
 
     // 添加 loss 节点
     let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
-    let loss = gi.create_mse_mean_node(z.clone(), target.clone(), Some("loss")).unwrap();
+    let loss = gi
+        .create_mse_mean_node(z.clone(), target.clone(), Some("loss"))
+        .unwrap();
 
     // 创建一个不参与主计算路径的分支
-    let new_add = gi.create_add_node(vec![a.clone(), c.clone()], Some("new_add")).unwrap();
+    let new_add = gi
+        .create_add_node(vec![a.clone(), c.clone()], Some("new_add"))
+        .unwrap();
 
     // 设置输入值
     let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
@@ -329,10 +368,15 @@ fn test_backward_pass_id_increment() {
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = x + b
     let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let b = gi.create_parameter_node(&[2, 1], Some("b")).unwrap();
-    gi.register_parameter("b".to_string(), Rc::downgrade(&b)).unwrap();
-    let y = gi.create_add_node(vec![x.clone(), b.clone()], Some("y")).unwrap();
+    gi.register_parameter("b".to_string(), Rc::downgrade(&b))
+        .unwrap();
+    let y = gi
+        .create_add_node(vec![x.clone(), b.clone()], Some("y"))
+        .unwrap();
     let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
-    let loss = gi.create_mse_mean_node(y.clone(), target.clone(), Some("loss")).unwrap();
+    let loss = gi
+        .create_mse_mean_node(y.clone(), target.clone(), Some("loss"))
+        .unwrap();
 
     // 2. 初始状态：pass_id应该为0
     assert_eq!(gi.last_backward_pass_id(), 0);
@@ -371,11 +415,18 @@ fn test_node_pass_id_synchronization() {
     let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let y = gi.create_basic_input_node(&[2, 1], Some("y")).unwrap();
     let w = gi.create_parameter_node(&[1, 2], Some("w")).unwrap();
-    gi.register_parameter("w".to_string(), Rc::downgrade(&w)).unwrap();
-    let add = gi.create_add_node(vec![x.clone(), y.clone()], Some("add")).unwrap();
-    let z = gi.create_mat_mul_node(vec![w.clone(), add.clone()], Some("z")).unwrap();
+    gi.register_parameter("w".to_string(), Rc::downgrade(&w))
+        .unwrap();
+    let add = gi
+        .create_add_node(vec![x.clone(), y.clone()], Some("add"))
+        .unwrap();
+    let z = gi
+        .create_mat_mul_node(vec![w.clone(), add.clone()], Some("z"))
+        .unwrap();
     let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
-    let loss = gi.create_mse_mean_node(z.clone(), target.clone(), Some("loss")).unwrap();
+    let loss = gi
+        .create_mse_mean_node(z.clone(), target.clone(), Some("loss"))
+        .unwrap();
 
     // 2. 设置输入值
     let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);
@@ -426,10 +477,15 @@ fn test_pass_id_rollback_on_backward_error() {
     // 1. 创建计算图：loss = MSE(y, target)，其中 y = x + b
     let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let b = gi.create_parameter_node(&[2, 1], Some("b")).unwrap();
-    gi.register_parameter("b".to_string(), Rc::downgrade(&b)).unwrap();
-    let y = gi.create_add_node(vec![x.clone(), b.clone()], Some("y")).unwrap();
+    gi.register_parameter("b".to_string(), Rc::downgrade(&b))
+        .unwrap();
+    let y = gi
+        .create_add_node(vec![x.clone(), b.clone()], Some("y"))
+        .unwrap();
     let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
-    let loss = gi.create_mse_mean_node(y.clone(), target.clone(), Some("loss")).unwrap();
+    let loss = gi
+        .create_mse_mean_node(y.clone(), target.clone(), Some("loss"))
+        .unwrap();
 
     // 2. 设置输入值但不对 loss 进行前向传播（只对 y 进行前向传播）
     let x_value = Tensor::new(&[1.0, 2.0], &[2, 1]);

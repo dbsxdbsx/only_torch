@@ -176,8 +176,7 @@ fn test_log_softmax_backward_e2e() -> Result<(), GraphError> {
     x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]))?;
 
     let result = x.log_softmax();
-    let target = graph
-        .input(&Tensor::new(&[-2.0, -1.0, 0.0, -1.1, -1.1, -1.1], &[2, 3]))?;
+    let target = graph.input(&Tensor::new(&[-2.0, -1.0, 0.0, -1.1, -1.1, -1.1], &[2, 3]))?;
     let loss = result.mse_loss(&target)?;
 
     loss.forward().unwrap();
@@ -203,8 +202,7 @@ fn test_log_softmax_gradient_accumulation() -> Result<(), GraphError> {
     x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]))?;
 
     let result = x.log_softmax();
-    let target = graph
-        .input(&Tensor::new(&[-2.0, -1.0, 0.0, -1.1, -1.1, -1.1], &[2, 3]))?;
+    let target = graph.input(&Tensor::new(&[-2.0, -1.0, 0.0, -1.1, -1.1, -1.1], &[2, 3]))?;
     let loss = result.mse_loss(&target)?;
 
     loss.forward().unwrap();

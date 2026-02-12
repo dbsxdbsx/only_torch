@@ -123,10 +123,7 @@ impl Optimizer for SGD {
         for param in &self.params {
             if let Some(grad) = param.node().grad() {
                 let current = param.node().value().ok_or_else(|| {
-                    GraphError::ComputationError(format!(
-                        "参数节点 {:?} 没有值",
-                        param.node_id()
-                    ))
+                    GraphError::ComputationError(format!("参数节点 {:?} 没有值", param.node_id()))
                 })?;
                 let new_value = current - self.lr * &grad;
                 param.node().set_value(Some(&new_value))?;

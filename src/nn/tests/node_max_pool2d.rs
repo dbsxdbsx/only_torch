@@ -30,9 +30,10 @@ fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -66,9 +67,10 @@ fn test_max_pool2d_forward_batch() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     // 第一个 batch 全 1，第二个 batch 递增
     let mut data = vec![1.0f32; 16];
@@ -105,9 +107,10 @@ fn test_max_pool2d_forward_multi_channel() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 2, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     let mut data = vec![1.0f32; 16];
     data.extend(vec![2.0f32; 16]);
@@ -137,9 +140,12 @@ fn test_max_pool2d_forward_with_stride() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 6, 6], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (3, 3), Some((2, 2)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_max_pool2d_node(
+        input.clone(),
+        (3, 3),
+        Some((2, 2)),
+        Some("pool"),
+    )?;
 
     // 6x6 递增输入
     let data: Vec<f32> = (1..=36).map(|x| x as f32).collect();
@@ -222,9 +228,10 @@ fn test_max_pool2d_vjp_sparse_basic() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -268,9 +275,10 @@ fn test_max_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -310,9 +318,10 @@ fn test_max_pool2d_vjp_batch() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     // batch 0: 全 3.0（所有位置都是最大值，梯度均匀分配）
     // batch 1: 递增 1..16
@@ -352,18 +361,20 @@ fn test_max_pool2d_e2e_backward_sparse() -> Result<(), GraphError> {
     let param = inner
         .borrow_mut()
         .create_parameter_node(&[1, 1, 4, 4], Some("param"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(param.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_max_pool2d_node(param.clone(), (2, 2), None, Some("pool"))?;
     let flat = inner
         .borrow_mut()
         .create_reshape_node(pool.clone(), &[1, 4], Some("flat"))?;
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 4], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -438,9 +449,10 @@ fn test_max_pool2d_e2e_conv_pool_cascade() -> Result<(), GraphError> {
     )?;
 
     // pool: kernel=2x2 → 输出 [1, 1, 2, 2]
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(conv.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_max_pool2d_node(conv.clone(), (2, 2), None, Some("pool"))?;
 
     // flatten → [1, 4]
     let flat = inner
@@ -451,9 +463,10 @@ fn test_max_pool2d_e2e_conv_pool_cascade() -> Result<(), GraphError> {
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 4], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     // 设置值
     input.set_value(Some(&Tensor::ones(&[1, 1, 4, 4])))?;
@@ -498,9 +511,12 @@ fn test_max_pool2d_dynamic_batch_forward() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), Some((2, 2)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_max_pool2d_node(
+        input.clone(),
+        (2, 2),
+        Some((2, 2)),
+        Some("pool"),
+    )?;
 
     // 第一次 forward: batch=2
     input.set_value(Some(&Tensor::ones(&[2, 1, 4, 4])))?;
@@ -529,18 +545,22 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let param = inner
         .borrow_mut()
         .create_parameter_node(&[2, 1, 4, 4], Some("param"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_max_pool2d_node(param.clone(), (2, 2), Some((2, 2)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_max_pool2d_node(
+        param.clone(),
+        (2, 2),
+        Some((2, 2)),
+        Some("pool"),
+    )?;
     let flat = inner
         .borrow_mut()
         .create_flatten_node(pool.clone(), true, Some("flat"))?;
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 4], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     inner.borrow_mut().set_train_mode();
 

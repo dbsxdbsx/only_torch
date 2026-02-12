@@ -1,6 +1,6 @@
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
@@ -69,7 +69,6 @@ impl SoftmaxCrossEntropy {
             parents_ids: parent_ids,
         })
     }
-
 
     /// 计算数值稳定的 softmax（支持 batch，Rayon 并行）
     /// 输入: [batch, `num_classes`] 或 [1, `num_classes`]

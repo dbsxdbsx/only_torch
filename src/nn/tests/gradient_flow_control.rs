@@ -165,12 +165,8 @@ fn test_no_grad_scope_with_forward() {
     let mut gi = inner.borrow_mut();
 
     // 创建简单网络: x -> tanh -> output
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
-    let output = gi
-        .create_tanh_node(Rc::clone(&x), Some("output"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
+    let output = gi.create_tanh_node(Rc::clone(&x), Some("output")).unwrap();
 
     // 设置输入
     let input_data = Tensor::new(&[0.5, -0.3], &[2, 1]);
@@ -200,18 +196,14 @@ fn test_no_grad_scope_same_input_same_loss_no_gradient() {
     let mut gi = inner.borrow_mut();
 
     // 创建简单回归网络
-    let x = gi
-        .create_basic_input_node(&[1, 2], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[1, 2], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[2, 1], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
     let pred = gi
         .create_mat_mul_node(vec![Rc::clone(&x), Rc::clone(&w)], Some("pred"))
         .unwrap();
-    let y = gi
-        .create_basic_input_node(&[1, 1], Some("y"))
-        .unwrap();
+    let y = gi.create_basic_input_node(&[1, 1], Some("y")).unwrap();
     let loss = gi
         .create_mse_mean_node(Rc::clone(&pred), Rc::clone(&y), Some("loss"))
         .unwrap();
@@ -304,12 +296,8 @@ fn test_no_grad_scope_mutable_operations() {
     let mut gi = inner.borrow_mut();
 
     // 创建节点
-    let x = gi
-        .create_basic_input_node(&[2, 2], Some("x"))
-        .unwrap();
-    let y_node = gi
-        .create_tanh_node(Rc::clone(&x), Some("y"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 2], Some("x")).unwrap();
+    let y_node = gi.create_tanh_node(Rc::clone(&x), Some("y")).unwrap();
 
     // 在 no_grad 中执行可变操作
     gi.no_grad_scope(|g| {
@@ -371,9 +359,7 @@ fn test_no_grad_scope_backward_still_works() {
     let mut gi = inner.borrow_mut();
 
     // 创建简单网络: x -> w -> y (标量)
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
@@ -417,9 +403,7 @@ fn test_no_grad_scope_nodes_created_inside() {
     let mut gi = inner.borrow_mut();
 
     // 先创建输入节点
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
 
     // 在 no_grad_scope 内创建参数和运算节点
     let (w, y) = gi.no_grad_scope(|g| {
@@ -463,9 +447,7 @@ fn test_detach_basic() {
     let mut gi = inner.borrow_mut();
 
     // 创建节点
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 2], Some("w")).unwrap();
     let y = gi
         .create_mat_mul_node(vec![Rc::clone(&w), Rc::clone(&x)], Some("y"))
@@ -494,9 +476,7 @@ fn test_detach_blocks_gradient_flow() {
     let mut gi = inner.borrow_mut();
 
     // 创建简单网络: x -> w1 -> h -> w2 -> output (标量)
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = gi.create_parameter_node(&[2, 2], Some("w1")).unwrap();
     gi.register_parameter("w1".to_string(), Rc::downgrade(&w1))
         .unwrap();
@@ -559,12 +539,8 @@ fn test_detach_does_not_affect_forward() {
     let mut gi = inner.borrow_mut();
 
     // 创建网络
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
-    let y = gi
-        .create_tanh_node(Rc::clone(&x), Some("y"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
+    let y = gi.create_tanh_node(Rc::clone(&x), Some("y")).unwrap();
 
     // 设置输入
     let input_data = Tensor::new(&[0.5, -0.3], &[2, 1]);
@@ -594,18 +570,14 @@ fn test_detach_attach_multiple_times() {
     let mut gi = inner.borrow_mut();
 
     // 创建简单网络: x -> w -> y -> loss
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
     let y = gi
         .create_mat_mul_node(vec![Rc::clone(&w), Rc::clone(&x)], Some("y"))
         .unwrap();
-    let target = gi
-        .create_basic_input_node(&[1, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(Rc::clone(&y), Rc::clone(&target), Some("loss"))
         .unwrap();
@@ -652,10 +624,7 @@ fn test_detach_attach_multiple_times() {
     y.set_detached(true);
     gi.forward_via_node_inner(&loss).unwrap();
     gi.backward_via_node_inner(&loss).unwrap();
-    assert!(
-        w.grad().is_none(),
-        "y 被 detach 后，w 不应有梯度"
-    );
+    assert!(w.grad().is_none(), "y 被 detach 后，w 不应有梯度");
     gi.zero_grad().unwrap();
 
     // 恢复 attached：w 应该又有梯度
@@ -672,9 +641,7 @@ fn test_detach_input_node() {
     let inner = graph.inner_rc();
     let mut gi = inner.borrow_mut();
 
-    let x = gi
-        .create_basic_input_node(&[2, 2], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 2], Some("x")).unwrap();
 
     // 技术上可以 detach，但语义上没有意义
     x.set_detached(true);
@@ -696,9 +663,7 @@ fn test_detach_gan_style_training() {
     // z(输入) -> G_w(生成器参数) -> fake_data -> D_w(判别器参数) -> d_output -> loss
 
     // 生成器部分
-    let z = gi
-        .create_basic_input_node(&[2, 1], Some("z"))
-        .unwrap();
+    let z = gi.create_basic_input_node(&[2, 1], Some("z")).unwrap();
     let g_w = gi.create_parameter_node(&[3, 2], Some("g_w")).unwrap();
     gi.register_parameter("g_w".to_string(), Rc::downgrade(&g_w))
         .unwrap();
@@ -762,18 +727,14 @@ fn test_detach_with_batch_input() {
     let mut gi = inner.borrow_mut();
 
     // 创建网络: x -> w -> y -> mse_loss
-    let x = gi
-        .create_basic_input_node(&[2, 2], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 2], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[2, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
     let y = gi
         .create_mat_mul_node(vec![Rc::clone(&w), Rc::clone(&x)], Some("y"))
         .unwrap();
-    let target = gi
-        .create_basic_input_node(&[2, 2], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[2, 2], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(Rc::clone(&y), Rc::clone(&target), Some("loss"))
         .unwrap();
@@ -806,9 +767,7 @@ fn test_detach_node_still_functional() {
     let mut gi = inner.borrow_mut();
 
     // 创建简单网络: x -> w -> y (标量)
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
@@ -861,9 +820,7 @@ fn test_detach_gradient_values_match_pytorch() {
 
     // 创建网络: x -> w1 -> h -> w2 -> output
     // x: [2, 1], w1: [2, 2] -> h: [2, 1], w2: [1, 2] -> output: [1, 1]
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = gi.create_parameter_node(&[2, 2], Some("w1")).unwrap();
     gi.register_parameter("w1".to_string(), Rc::downgrade(&w1))
         .unwrap();
@@ -909,19 +866,13 @@ fn test_detach_gradient_values_match_pytorch() {
 
     // ===== 验证梯度（PyTorch 对照值）=====
     // w1 应无梯度（被 detach 阻断）
-    assert!(
-        w1.grad().is_none(),
-        "w1 应无梯度 (被 h 的 detach 阻断)"
-    );
+    assert!(w1.grad().is_none(), "w1 应无梯度 (被 h 的 detach 阻断)");
 
     // w2 梯度应与 PyTorch 精确匹配
     // PyTorch 输出: w2.grad = [[3., 3.]]
     let expected_w2_grad = Tensor::new(&[3.0, 3.0], &[1, 2]);
     let actual_w2_grad = w2.grad().unwrap();
-    assert_eq!(
-        actual_w2_grad, expected_w2_grad,
-        "w2 梯度应与 PyTorch 匹配"
-    );
+    assert_eq!(actual_w2_grad, expected_w2_grad, "w2 梯度应与 PyTorch 匹配");
 }
 
 /// 测试: detach 后的节点仍然可以正常操作，且已有的 grad 不会被清除（Batch 模式）
@@ -932,18 +883,14 @@ fn test_detach_node_still_functional_batch() {
     let mut gi = inner.borrow_mut();
 
     // 创建网络: x -> w -> y -> loss
-    let x = gi
-        .create_basic_input_node(&[2, 2], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 2], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[2, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
     let y = gi
         .create_mat_mul_node(vec![Rc::clone(&w), Rc::clone(&x)], Some("y"))
         .unwrap();
-    let target = gi
-        .create_basic_input_node(&[2, 2], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[2, 2], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(Rc::clone(&y), Rc::clone(&target), Some("loss"))
         .unwrap();
@@ -991,9 +938,7 @@ fn test_retain_graph_basic() {
     let mut gi = inner.borrow_mut();
 
     // 创建简单网络: x -> w -> y (标量)
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
@@ -1029,21 +974,15 @@ fn test_intermediate_results_managed_by_rc() {
     let mut gi = inner.borrow_mut();
 
     // 创建网络: x -> w -> y -> z -> loss (标量)
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[2, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
     let y = gi
         .create_mat_mul_node(vec![Rc::clone(&w), Rc::clone(&x)], Some("y"))
         .unwrap();
-    let z = gi
-        .create_tanh_node(Rc::clone(&y), Some("z"))
-        .unwrap();
-    let target = gi
-        .create_basic_input_node(&[2, 1], Some("target"))
-        .unwrap();
+    let z = gi.create_tanh_node(Rc::clone(&y), Some("z")).unwrap();
+    let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(Rc::clone(&z), Rc::clone(&target), Some("loss"))
         .unwrap();
@@ -1084,9 +1023,7 @@ fn test_multiple_backward() {
     let mut gi = inner.borrow_mut();
 
     // 创建网络: x -> w -> y (标量)
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
@@ -1125,19 +1062,12 @@ fn test_multi_task_learning() {
     let mut gi = inner.borrow_mut();
 
     // 创建共享 backbone: x -> w_shared -> features
-    let x = gi
-        .create_basic_input_node(&[4, 1], Some("x"))
-        .unwrap();
-    let w_shared = gi
-        .create_parameter_node(&[2, 4], Some("w_shared"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[4, 1], Some("x")).unwrap();
+    let w_shared = gi.create_parameter_node(&[2, 4], Some("w_shared")).unwrap();
     gi.register_parameter("w_shared".to_string(), Rc::downgrade(&w_shared))
         .unwrap();
     let features = gi
-        .create_mat_mul_node(
-            vec![Rc::clone(&w_shared), Rc::clone(&x)],
-            Some("features"),
-        )
+        .create_mat_mul_node(vec![Rc::clone(&w_shared), Rc::clone(&x)], Some("features"))
         .unwrap();
 
     // 任务 1: features -> w1 -> out1 -> loss1
@@ -1145,10 +1075,7 @@ fn test_multi_task_learning() {
     gi.register_parameter("w1".to_string(), Rc::downgrade(&w1))
         .unwrap();
     let out1 = gi
-        .create_mat_mul_node(
-            vec![Rc::clone(&w1), Rc::clone(&features)],
-            Some("out1"),
-        )
+        .create_mat_mul_node(vec![Rc::clone(&w1), Rc::clone(&features)], Some("out1"))
         .unwrap();
     let target1 = gi
         .create_basic_input_node(&[1, 1], Some("target1"))
@@ -1162,10 +1089,7 @@ fn test_multi_task_learning() {
     gi.register_parameter("w2".to_string(), Rc::downgrade(&w2))
         .unwrap();
     let out2 = gi
-        .create_mat_mul_node(
-            vec![Rc::clone(&w2), Rc::clone(&features)],
-            Some("out2"),
-        )
+        .create_mat_mul_node(vec![Rc::clone(&w2), Rc::clone(&features)], Some("out2"))
         .unwrap();
     let target2 = gi
         .create_basic_input_node(&[1, 1], Some("target2"))
@@ -1180,9 +1104,7 @@ fn test_multi_task_learning() {
     x.set_value(Some(&input_data)).unwrap();
     target1.set_value(Some(&target_data)).unwrap();
     target2.set_value(Some(&target_data)).unwrap();
-    w_shared
-        .set_value(Some(&Tensor::ones(&[2, 4])))
-        .unwrap();
+    w_shared.set_value(Some(&Tensor::ones(&[2, 4]))).unwrap();
     w1.set_value(Some(&Tensor::ones(&[1, 2]))).unwrap();
     w2.set_value(Some(&Tensor::ones(&[1, 2]))).unwrap();
 
@@ -1216,10 +1138,7 @@ fn test_multi_task_learning() {
     assert_eq!(w1_grad, expected_w1_grad, "w1 梯度不匹配");
 
     // w2 此时不应有梯度（不在 loss1 的计算图中）
-    assert!(
-        w2.grad().is_none(),
-        "w2 在 task1 backward 后不应有梯度"
-    );
+    assert!(w2.grad().is_none(), "w2 在 task1 backward 后不应有梯度");
 
     // ========== 任务 2 backward（梯度自动累积）==========
     gi.backward_via_node_inner(&loss2).unwrap();
@@ -1255,18 +1174,14 @@ fn test_backward_default_releases_graph() {
     let mut gi = inner.borrow_mut();
 
     // 创建网络: x -> w -> y -> loss (标量)
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[2, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
     let y = gi
         .create_mat_mul_node(vec![Rc::clone(&w), Rc::clone(&x)], Some("y"))
         .unwrap();
-    let target = gi
-        .create_basic_input_node(&[2, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[2, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(Rc::clone(&y), Rc::clone(&target), Some("loss"))
         .unwrap();
@@ -1307,9 +1222,7 @@ fn test_multiple_backward_without_new_forward() {
     let mut gi = inner.borrow_mut();
 
     // 创建网络
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w = gi.create_parameter_node(&[1, 2], Some("w")).unwrap();
     gi.register_parameter("w".to_string(), Rc::downgrade(&w))
         .unwrap();
@@ -1347,9 +1260,7 @@ fn test_multiple_backward_with_detach() {
     let mut gi = inner.borrow_mut();
 
     // 创建网络: x -> w1 -> h -> w2 -> y -> loss
-    let x = gi
-        .create_basic_input_node(&[2, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[2, 1], Some("x")).unwrap();
     let w1 = gi.create_parameter_node(&[2, 2], Some("w1")).unwrap();
     gi.register_parameter("w1".to_string(), Rc::downgrade(&w1))
         .unwrap();
@@ -1362,9 +1273,7 @@ fn test_multiple_backward_with_detach() {
     let y = gi
         .create_mat_mul_node(vec![Rc::clone(&w2), Rc::clone(&h)], Some("y"))
         .unwrap();
-    let target = gi
-        .create_basic_input_node(&[1, 1], Some("target"))
-        .unwrap();
+    let target = gi.create_basic_input_node(&[1, 1], Some("target")).unwrap();
     let loss = gi
         .create_mse_mean_node(Rc::clone(&y), Rc::clone(&target), Some("loss"))
         .unwrap();
@@ -1433,9 +1342,7 @@ fn test_backward_accumulation_for_complex_topology() {
 
     // ========== 构建拓扑 ==========
     // 输入
-    let x = gi
-        .create_basic_input_node(&[4, 1], Some("x"))
-        .unwrap();
+    let x = gi.create_basic_input_node(&[4, 1], Some("x")).unwrap();
 
     // 共享链: x → w_shared1 → shared_feat1 → w_shared2 → w_shared3 → shared_feat2
     let w_shared1 = gi
@@ -1476,9 +1383,7 @@ fn test_backward_accumulation_for_complex_topology() {
         .unwrap();
 
     // 分叉: shared_feat2 → w_task1 → out1 → loss1, shared_feat2 → w_task2 → out2 → loss2
-    let w_task1 = gi
-        .create_parameter_node(&[1, 2], Some("w_task1"))
-        .unwrap();
+    let w_task1 = gi.create_parameter_node(&[1, 2], Some("w_task1")).unwrap();
     gi.register_parameter("w_task1".to_string(), Rc::downgrade(&w_task1))
         .unwrap();
     let out1 = gi
@@ -1494,9 +1399,7 @@ fn test_backward_accumulation_for_complex_topology() {
         .create_mse_mean_node(Rc::clone(&out1), Rc::clone(&target1), Some("loss1"))
         .unwrap();
 
-    let w_task2 = gi
-        .create_parameter_node(&[1, 2], Some("w_task2"))
-        .unwrap();
+    let w_task2 = gi.create_parameter_node(&[1, 2], Some("w_task2")).unwrap();
     gi.register_parameter("w_task2".to_string(), Rc::downgrade(&w_task2))
         .unwrap();
     let out2 = gi
@@ -1515,27 +1418,13 @@ fn test_backward_accumulation_for_complex_topology() {
     // ========== 设置固定值 ==========
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4, 1])))
         .unwrap();
-    target1
-        .set_value(Some(&Tensor::zeros(&[1, 1])))
-        .unwrap();
-    target2
-        .set_value(Some(&Tensor::zeros(&[1, 1])))
-        .unwrap();
-    w_shared1
-        .set_value(Some(&Tensor::ones(&[2, 4])))
-        .unwrap();
-    w_shared2
-        .set_value(Some(&Tensor::ones(&[2, 2])))
-        .unwrap();
-    w_shared3
-        .set_value(Some(&Tensor::ones(&[2, 2])))
-        .unwrap();
-    w_task1
-        .set_value(Some(&Tensor::ones(&[1, 2])))
-        .unwrap();
-    w_task2
-        .set_value(Some(&Tensor::ones(&[1, 2])))
-        .unwrap();
+    target1.set_value(Some(&Tensor::zeros(&[1, 1]))).unwrap();
+    target2.set_value(Some(&Tensor::zeros(&[1, 1]))).unwrap();
+    w_shared1.set_value(Some(&Tensor::ones(&[2, 4]))).unwrap();
+    w_shared2.set_value(Some(&Tensor::ones(&[2, 2]))).unwrap();
+    w_shared3.set_value(Some(&Tensor::ones(&[2, 2]))).unwrap();
+    w_task1.set_value(Some(&Tensor::ones(&[1, 2]))).unwrap();
+    w_task2.set_value(Some(&Tensor::ones(&[1, 2]))).unwrap();
 
     // ========== 前向传播 ==========
     gi.forward_via_node_inner(&loss1).unwrap();

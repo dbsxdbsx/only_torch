@@ -13,8 +13,8 @@
  */
 
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -159,7 +159,7 @@ impl TraitNode for Mean {
         self.reduction_count_cache = Some(reduction_count);
         // 根据 axis 计算
         let output = match self.axis {
-            None => input.mean(),                      // 全局均值 -> [1, 1]
+            None => input.mean(),                     // 全局均值 -> [1, 1]
             Some(ax) => input.mean_axis_keepdims(ax), // 按轴均值
         };
         self.value = Some(output);

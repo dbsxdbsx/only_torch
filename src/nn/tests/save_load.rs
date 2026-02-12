@@ -19,11 +19,7 @@ use std::fs;
 use std::rc::Rc;
 
 /// 辅助函数：创建参数节点并注册到图中
-fn make_param(
-    gi: &Rc<RefCell<GraphInner>>,
-    shape: &[usize],
-    name: &str,
-) -> Rc<NodeInner> {
+fn make_param(gi: &Rc<RefCell<GraphInner>>, shape: &[usize], name: &str) -> Rc<NodeInner> {
     let node = gi
         .borrow_mut()
         .create_parameter_node(shape, Some(name))
@@ -169,7 +165,9 @@ fn test_save_load_params_empty_graph() {
     // 创建没有参数节点的图
     let graph = Graph::new();
     let gi = graph.inner_rc();
-    gi.borrow().save_params(temp_file).expect("保存空图参数失败");
+    gi.borrow()
+        .save_params(temp_file)
+        .expect("保存空图参数失败");
 
     // 加载到另一个空图
     let graph2 = Graph::new();
@@ -196,10 +194,8 @@ fn test_save_load_params_utf8_names() {
     // 设置值
     let w1_data: Vec<f32> = (0..6).map(|i| i as f32).collect();
     let b1_data: Vec<f32> = vec![0.5, 1.5, 2.5];
-    w1.set_value(Some(&Tensor::new(&w1_data, &[2, 3])))
-        .unwrap();
-    b1.set_value(Some(&Tensor::new(&b1_data, &[1, 3])))
-        .unwrap();
+    w1.set_value(Some(&Tensor::new(&w1_data, &[2, 3]))).unwrap();
+    b1.set_value(Some(&Tensor::new(&b1_data, &[1, 3]))).unwrap();
 
     gi.borrow().save_params(temp_file).expect("保存参数失败");
 
@@ -245,10 +241,8 @@ fn test_save_load_model() {
     // 设置特定的参数值
     let w_data: Vec<f32> = (0..8).map(|i| i as f32 * 0.1).collect();
     let b_data: Vec<f32> = vec![1.0, 2.0];
-    w.set_value(Some(&Tensor::new(&w_data, &[4, 2])))
-        .unwrap();
-    b.set_value(Some(&Tensor::new(&b_data, &[1, 2])))
-        .unwrap();
+    w.set_value(Some(&Tensor::new(&w_data, &[4, 2]))).unwrap();
+    b.set_value(Some(&Tensor::new(&b_data, &[1, 2]))).unwrap();
 
     // 2. 保存模型（Phase 3：仅保存 .bin，不再生成 .json）
     gi.borrow().save_model(temp_base).expect("保存模型失败");
@@ -341,10 +335,7 @@ fn test_to_dot_basic() {
         .unwrap();
     let z = gi
         .borrow_mut()
-        .create_mat_mul_node(
-            vec![Rc::clone(&x), Rc::clone(&w)],
-            Some("output"),
-        )
+        .create_mat_mul_node(vec![Rc::clone(&x), Rc::clone(&w)], Some("output"))
         .unwrap();
     let target = gi
         .borrow_mut()
@@ -508,10 +499,7 @@ fn test_to_dot_node_styles() {
         .unwrap();
     let z = gi
         .borrow_mut()
-        .create_mat_mul_node(
-            vec![Rc::clone(&x), Rc::clone(&w)],
-            Some("matmul"),
-        )
+        .create_mat_mul_node(vec![Rc::clone(&x), Rc::clone(&w)], Some("matmul"))
         .unwrap();
     let sigmoid = gi
         .borrow_mut()
@@ -523,11 +511,7 @@ fn test_to_dot_node_styles() {
         .unwrap();
     let loss = gi
         .borrow_mut()
-        .create_mse_mean_node(
-            Rc::clone(&sigmoid),
-            Rc::clone(&target),
-            Some("loss"),
-        )
+        .create_mse_mean_node(Rc::clone(&sigmoid), Rc::clone(&target), Some("loss"))
         .unwrap();
 
     // Phase 3: to_dot 移至 Var
@@ -561,10 +545,7 @@ fn test_dynamic_shape_in_visualization() {
         .unwrap();
     let y = gi
         .borrow_mut()
-        .create_mat_mul_node(
-            vec![Rc::clone(&x), Rc::clone(&w)],
-            Some("y"),
-        )
+        .create_mat_mul_node(vec![Rc::clone(&x), Rc::clone(&w)], Some("y"))
         .unwrap();
 
     // Phase 3: to_dot 移至 Var

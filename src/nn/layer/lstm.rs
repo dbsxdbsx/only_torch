@@ -95,8 +95,7 @@ impl Lstm {
             Init::Kaiming,
             &format!("{full_name}_W_hi"),
         )?;
-        let b_i =
-            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_i"))?;
+        let b_i = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_i"))?;
 
         // === 遗忘门参数 ===
         let w_if = graph.parameter(
@@ -110,8 +109,7 @@ impl Lstm {
             &format!("{full_name}_W_hf"),
         )?;
         // 遗忘门偏置初始化为 1（帮助记忆）
-        let b_f =
-            graph.parameter(&[1, hidden_size], Init::Ones, &format!("{full_name}_b_f"))?;
+        let b_f = graph.parameter(&[1, hidden_size], Init::Ones, &format!("{full_name}_b_f"))?;
 
         // === 候选细胞参数 ===
         let w_ig = graph.parameter(
@@ -124,8 +122,7 @@ impl Lstm {
             Init::Kaiming,
             &format!("{full_name}_W_hg"),
         )?;
-        let b_g =
-            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_g"))?;
+        let b_g = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_g"))?;
 
         // === 输出门参数 ===
         let w_io = graph.parameter(
@@ -138,8 +135,7 @@ impl Lstm {
             Init::Kaiming,
             &format!("{full_name}_W_ho"),
         )?;
-        let b_o =
-            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_o"))?;
+        let b_o = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_o"))?;
 
         // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
         // LSTM 每个时间步的节点数：26

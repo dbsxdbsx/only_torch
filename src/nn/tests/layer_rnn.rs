@@ -391,7 +391,11 @@ fn test_rnn_recurrent_output_bridge_same_node_id() -> Result<(), GraphError> {
     let h3_val = h3.value()?.unwrap();
     assert_eq!(h1_val.shape(), h3_val.shape());
     for i in 0..h1_val.size() {
-        assert_abs_diff_eq!(h1_val.data_as_slice()[i], h3_val.data_as_slice()[i], epsilon = 1e-5);
+        assert_abs_diff_eq!(
+            h1_val.data_as_slice()[i],
+            h3_val.data_as_slice()[i],
+            epsilon = 1e-5
+        );
     }
 
     // 3. 验证梯度能正确回传
@@ -443,16 +447,32 @@ fn test_rnn_different_batch_size_same_seq_len() -> Result<(), GraphError> {
     let h3 = rnn.forward(&x3)?;
     h3.forward()?;
 
-    assert_eq!(h1.value()?.unwrap().shape(), &[2, 4], "batch_size=2 的输出形状应该是 [2, 4]");
-    assert_eq!(h2.value()?.unwrap().shape(), &[4, 4], "batch_size=4 的输出形状应该是 [4, 4]");
-    assert_eq!(h3.value()?.unwrap().shape(), &[2, 4], "再次 batch_size=2 的输出形状应该是 [2, 4]");
+    assert_eq!(
+        h1.value()?.unwrap().shape(),
+        &[2, 4],
+        "batch_size=2 的输出形状应该是 [2, 4]"
+    );
+    assert_eq!(
+        h2.value()?.unwrap().shape(),
+        &[4, 4],
+        "batch_size=4 的输出形状应该是 [4, 4]"
+    );
+    assert_eq!(
+        h3.value()?.unwrap().shape(),
+        &[2, 4],
+        "再次 batch_size=2 的输出形状应该是 [2, 4]"
+    );
 
     // 2. 验证相同输入产生相同数值输出
     let h1_val = h1.value()?.unwrap();
     let h3_val = h3.value()?.unwrap();
     assert_eq!(h1_val.shape(), h3_val.shape());
     for i in 0..h1_val.size() {
-        assert_abs_diff_eq!(h1_val.data_as_slice()[i], h3_val.data_as_slice()[i], epsilon = 1e-5);
+        assert_abs_diff_eq!(
+            h1_val.data_as_slice()[i],
+            h3_val.data_as_slice()[i],
+            epsilon = 1e-5
+        );
     }
 
     // 3. 验证梯度能正确回传

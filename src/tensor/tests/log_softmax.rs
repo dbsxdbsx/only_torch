@@ -146,7 +146,12 @@ fn test_log_softmax_3d() {
     for i in 0..2 {
         for j in 0..2 {
             let sum = log_probs[[i, j, 0]].exp() + log_probs[[i, j, 1]].exp();
-            assert!((sum - 1.0).abs() < 1e-6, "切片 [{}, {}, :] exp 和应为 1", i, j);
+            assert!(
+                (sum - 1.0).abs() < 1e-6,
+                "切片 [{}, {}, :] exp 和应为 1",
+                i,
+                j
+            );
         }
     }
 }

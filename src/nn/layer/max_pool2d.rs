@@ -77,9 +77,7 @@ impl MaxPool2d {
     /// # 返回
     /// 输出 Var，形状 [`batch_size`, channels, H', W']
     pub fn forward(&self, x: impl IntoVar) -> Var {
-        let x = x
-            .into_var(&self.graph)
-            .expect("MaxPool2d 输入转换失败");
+        let x = x.into_var(&self.graph).expect("MaxPool2d 输入转换失败");
         let graph = x.get_graph();
         let node = graph
             .inner_mut()

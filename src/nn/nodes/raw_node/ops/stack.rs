@@ -1,6 +1,6 @@
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -64,7 +64,11 @@ impl Stack {
         let ndim = first_shape.len();
 
         // 2. 验证 axis
-        let max_axis = if new_dim { ndim } else { ndim.saturating_sub(1) };
+        let max_axis = if new_dim {
+            ndim
+        } else {
+            ndim.saturating_sub(1)
+        };
         if axis > max_axis {
             return Err(GraphError::InvalidOperation(format!(
                 "Stack: axis {axis} 超出有效范围 [0, {max_axis}]"
@@ -161,7 +165,6 @@ impl Stack {
             supports_dynamic,
         })
     }
-
 }
 
 impl TraitNode for Stack {

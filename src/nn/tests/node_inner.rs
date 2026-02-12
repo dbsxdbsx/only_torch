@@ -256,9 +256,7 @@ fn make_add(parent_shapes: &[&[usize]]) -> crate::nn::nodes::NodeType {
         .iter()
         .map(|s| DynamicShape::fixed(s))
         .collect();
-    Add::new(parent_shapes, &dynamic_shapes)
-        .unwrap()
-        .into()
+    Add::new(parent_shapes, &dynamic_shapes).unwrap().into()
 }
 
 /// 辅助函数：创建 Input（Data）节点的 NodeType

@@ -8,6 +8,8 @@
 
 mod abs;
 mod add;
+mod amax;
+mod amin;
 mod avg_pool2d;
 mod conv2d;
 mod detach;
@@ -25,8 +27,6 @@ mod maximum;
 mod mean;
 mod minimum;
 mod multiply;
-mod amax;
-mod amin;
 mod reshape;
 mod select;
 mod sigmoid;
@@ -42,6 +42,8 @@ mod zeros_like;
 
 pub(crate) use abs::Abs;
 pub(crate) use add::Add;
+pub(crate) use amax::Amax;
+pub(crate) use amin::Amin;
 pub(crate) use avg_pool2d::AvgPool2d;
 pub(crate) use conv2d::Conv2d;
 pub(crate) use detach::Detach;
@@ -60,8 +62,6 @@ pub(crate) use maximum::Maximum;
 pub(crate) use mean::Mean;
 pub(crate) use minimum::Minimum;
 pub(crate) use multiply::Multiply;
-pub(crate) use amax::Amax;
-pub(crate) use amin::Amin;
 pub(crate) use reshape::Reshape;
 pub(crate) use select::Select;
 pub(crate) use sigmoid::Sigmoid;

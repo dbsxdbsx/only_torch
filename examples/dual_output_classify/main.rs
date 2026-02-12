@@ -29,7 +29,7 @@ use only_torch::metrics::{accuracy, r2_score};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
-/// 生成批量数据：(x_batch [N,1], cls_batch [N,2], reg_batch [N,1])
+/// `生成批量数据：(x_batch` [N,1], `cls_batch` [N,2], `reg_batch` [N,1])
 fn generate_batch_data(n: usize, seed: u64) -> (Tensor, Tensor, Tensor) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -92,7 +92,10 @@ fn main() -> Result<(), GraphError> {
         let cls_loss = cls_logits.cross_entropy(&train_cls)?;
         let reg_loss = reg_pred.mse_loss(&train_reg)?;
 
-        graph.snapshot_once(&[("Classification Loss", &cls_loss), ("Regression Loss", &reg_loss)]);
+        graph.snapshot_once(&[
+            ("Classification Loss", &cls_loss),
+            ("Regression Loss", &reg_loss),
+        ]);
 
         optimizer.zero_grad()?;
         let cls_val = cls_loss.backward()?;
@@ -102,7 +105,9 @@ fn main() -> Result<(), GraphError> {
         if (epoch + 1) % 30 == 0 || epoch == 0 {
             println!(
                 "Epoch {:3}: 分类损失 = {:.4}, 回归损失 = {:.4}",
-                epoch + 1, cls_val, reg_val
+                epoch + 1,
+                cls_val,
+                reg_val
             );
         }
     }
@@ -165,7 +170,8 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 8. 保存计算图可视化（从训练时拍的快照渲染）
-    let vis_result = graph.visualize_snapshot("examples/dual_output_classify/dual_output_classify")?;
+    let vis_result =
+        graph.visualize_snapshot("examples/dual_output_classify/dual_output_classify")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

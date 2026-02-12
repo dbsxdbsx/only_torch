@@ -429,10 +429,7 @@ fn test_create_sigmoid_node_chain() {
         .borrow_mut()
         .create_basic_input_node(&[2, 2], None)
         .unwrap();
-    let sig1 = inner
-        .borrow_mut()
-        .create_sigmoid_node(input, None)
-        .unwrap();
+    let sig1 = inner.borrow_mut().create_sigmoid_node(input, None).unwrap();
     let sig2 = inner
         .borrow_mut()
         .create_sigmoid_node(sig1.clone(), None)
@@ -456,10 +453,7 @@ fn test_create_sigmoid_node_drop_releases() {
             .unwrap();
         weak_input = Rc::downgrade(&input);
 
-        let sigmoid = inner
-            .borrow_mut()
-            .create_sigmoid_node(input, None)
-            .unwrap();
+        let sigmoid = inner.borrow_mut().create_sigmoid_node(input, None).unwrap();
         weak_sigmoid = Rc::downgrade(&sigmoid);
 
         assert!(weak_sigmoid.upgrade().is_some());

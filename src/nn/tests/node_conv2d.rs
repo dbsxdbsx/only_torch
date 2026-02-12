@@ -242,12 +242,10 @@ fn test_conv2d_channel_mismatch() {
         .create_parameter_node(&[2, 1, 3, 3], Some("kernel"))
         .unwrap();
 
-    let result = inner.borrow_mut().create_conv2d_node(
-        vec![input, kernel],
-        (1, 1),
-        (0, 0),
-        Some("conv"),
-    );
+    let result =
+        inner
+            .borrow_mut()
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), Some("conv"));
     assert_err!(result, GraphError::ShapeMismatch { message, .. } if message.contains("通道数"));
 }
 
@@ -267,12 +265,10 @@ fn test_conv2d_invalid_input_dims() {
         .create_parameter_node(&[2, 1, 3, 3], Some("kernel"))
         .unwrap();
 
-    let result = inner.borrow_mut().create_conv2d_node(
-        vec![input, kernel],
-        (1, 1),
-        (0, 0),
-        Some("conv"),
-    );
+    let result =
+        inner
+            .borrow_mut()
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), Some("conv"));
     assert_err!(result, GraphError::ShapeMismatch { message, .. }
         if message.contains("4D"));
 }
@@ -293,12 +289,10 @@ fn test_conv2d_invalid_kernel_dims() {
         .create_parameter_node(&[3, 3], Some("kernel"))
         .unwrap();
 
-    let result = inner.borrow_mut().create_conv2d_node(
-        vec![input, kernel],
-        (1, 1),
-        (0, 0),
-        Some("conv"),
-    );
+    let result =
+        inner
+            .borrow_mut()
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), Some("conv"));
     assert_err!(result, GraphError::ShapeMismatch { message, .. }
         if message.contains("4D") || message.contains("C_out"));
 }
@@ -515,9 +509,10 @@ fn test_conv2d_backward_kernel_grad() -> Result<(), GraphError> {
     )?;
 
     // conv 输出 [1, 1, 1, 1] → reshape 为 [1, 1]
-    let conv_flat = inner
-        .borrow_mut()
-        .create_reshape_node(conv.clone(), &[1, 1], Some("conv_flat"))?;
+    let conv_flat =
+        inner
+            .borrow_mut()
+            .create_reshape_node(conv.clone(), &[1, 1], Some("conv_flat"))?;
 
     let target = inner
         .borrow_mut()
@@ -586,9 +581,10 @@ fn test_conv2d_backward_batch_network() -> Result<(), GraphError> {
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 9], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     // batch 0 全 1, batch 1 全 2
     let mut input_data = vec![1.0f32; 16];
@@ -683,11 +679,17 @@ fn test_conv2d_gradient_accumulation() -> Result<(), GraphError> {
 
     // clear_grad 后再 backward → 恢复单次值（验证可重复性）
     kernel.clear_grad()?;
-    assert!(kernel.grad().is_none(), "clear_grad 后 kernel 梯度应为 None");
+    assert!(
+        kernel.grad().is_none(),
+        "clear_grad 后 kernel 梯度应为 None"
+    );
     inner.borrow_mut().forward_via_node_inner(&loss)?;
     inner.borrow_mut().backward_via_node_inner(&loss)?;
     let grad_second = kernel.grad().unwrap();
-    assert_eq!(&grad_second, &grad_first, "clear_grad 后重新 backward 应得到相同梯度");
+    assert_eq!(
+        &grad_second, &grad_first,
+        "clear_grad 后重新 backward 应得到相同梯度"
+    );
 
     // 第三次 backward（不清零）→ 梯度翻倍
     inner.borrow_mut().forward_via_node_inner(&loss)?;
@@ -721,12 +723,10 @@ fn test_conv2d_dynamic_shape_propagation() -> Result<(), GraphError> {
         .borrow_mut()
         .create_parameter_node(&[2, 1, 3, 3], Some("kernel"))?;
 
-    let conv = inner.borrow_mut().create_conv2d_node(
-        vec![input, kernel],
-        (1, 1),
-        (0, 0),
-        Some("conv"),
-    )?;
+    let conv =
+        inner
+            .borrow_mut()
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), Some("conv"))?;
 
     let dyn_shape = conv.dynamic_expected_shape();
     assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
@@ -856,7 +856,12 @@ fn test_create_conv2d_node() {
 
     let conv = inner
         .borrow_mut()
-        .create_conv2d_node(vec![input.clone(), kernel.clone()], (1, 1), (0, 0), Some("conv"))
+        .create_conv2d_node(
+            vec![input.clone(), kernel.clone()],
+            (1, 1),
+            (0, 0),
+            Some("conv"),
+        )
         .unwrap();
 
     assert_eq!(conv.shape(), vec![2, 16, 6, 6]);

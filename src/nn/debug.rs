@@ -16,7 +16,7 @@
  * 添加一项，枚举和元数据自动同步，本文件无需修改。
  */
 
-use super::nodes::raw_node::{NodeType, NODE_METADATA};
+use super::nodes::raw_node::{NODE_METADATA, NodeType};
 use std::fmt;
 use strum::{EnumCount, VariantNames};
 
@@ -76,10 +76,11 @@ pub fn describe_registered_node_types() -> Vec<NodeTypeInfo> {
         .iter()
         .enumerate()
         .map(|(i, &name)| {
-            let (category, description, var_method) = NODE_METADATA
-                .get(i)
-                .copied()
-                .unwrap_or(("未分类", "（索引越界，请检查 NODE_METADATA）", None));
+            let (category, description, var_method) = NODE_METADATA.get(i).copied().unwrap_or((
+                "未分类",
+                "（索引越界，请检查 NODE_METADATA）",
+                None,
+            ));
             NodeTypeInfo {
                 name,
                 category,
@@ -129,10 +130,7 @@ pub fn print_registered_node_types() {
             let var_info = node
                 .var_method
                 .map_or(String::new(), |m| format!(" → Var::{m}"));
-            println!(
-                "  • {:<24} {:<28}{var_info}",
-                node.name, node.description
-            );
+            println!("  • {:<24} {:<28}{var_info}", node.name, node.description);
         }
         println!();
     }
@@ -154,4 +152,3 @@ pub fn get_node_type_summary() -> Vec<(&'static str, usize)> {
         .filter(|(_, count)| *count > 0)
         .collect()
 }
-

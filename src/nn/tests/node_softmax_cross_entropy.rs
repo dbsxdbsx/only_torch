@@ -85,9 +85,7 @@ fn test_sce_forward_10_classes() {
         .unwrap();
     let mut labels_data = vec![0.0; 10];
     labels_data[3] = 1.0;
-    let labels = graph
-        .input(&Tensor::new(&labels_data, &[1, 10]))
-        .unwrap();
+    let labels = graph.input(&Tensor::new(&labels_data, &[1, 10])).unwrap();
     let loss = logits.cross_entropy(&labels).unwrap();
 
     loss.forward().unwrap();
@@ -265,9 +263,7 @@ fn test_sce_vjp_10_classes() -> Result<(), GraphError> {
 fn test_sce_backward_e2e_simple() {
     let graph = Graph::new();
 
-    let logits = graph
-        .parameter(&[1, 3], Init::Zeros, "logits")
-        .unwrap();
+    let logits = graph.parameter(&[1, 3], Init::Zeros, "logits").unwrap();
     logits
         .set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
         .unwrap();
@@ -292,20 +288,14 @@ fn test_sce_backward_with_linear_layer() {
     let graph = Graph::new();
 
     // 输入
-    let input = graph
-        .input(&Tensor::new(&[1.0, 2.0], &[1, 2]))
-        .unwrap();
+    let input = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
 
     // 权重和偏置（可训练参数）
-    let weights = graph
-        .parameter(&[2, 3], Init::Zeros, "weights")
-        .unwrap();
+    let weights = graph.parameter(&[2, 3], Init::Zeros, "weights").unwrap();
     weights
         .set_value(&Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6], &[2, 3]))
         .unwrap();
-    let bias = graph
-        .parameter(&[1, 3], Init::Zeros, "bias")
-        .unwrap();
+    let bias = graph.parameter(&[1, 3], Init::Zeros, "bias").unwrap();
     // bias 保持零初始化
 
     // input @ weights + bias -> logits
@@ -336,9 +326,7 @@ fn test_sce_backward_with_linear_layer() {
 fn test_sce_gradient_accumulation() {
     let graph = Graph::new();
 
-    let logits = graph
-        .parameter(&[1, 3], Init::Zeros, "logits")
-        .unwrap();
+    let logits = graph.parameter(&[1, 3], Init::Zeros, "logits").unwrap();
     logits
         .set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
         .unwrap();
@@ -491,9 +479,7 @@ fn test_sce_dynamic_batch_backward() -> Result<(), GraphError> {
     sce.forward_recursive(1, false).unwrap();
     inner.borrow_mut().zero_grad()?;
     // backward_via_node_inner 会清除中间节点梯度、设置 loss grad=1 并反向传播
-    inner
-        .borrow_mut()
-        .backward_via_node_inner(&sce)?;
+    inner.borrow_mut().backward_via_node_inner(&sce)?;
     let grad1 = weight.grad().unwrap().clone();
     assert_eq!(grad1.shape(), &[5, 3], "权重梯度形状应保持不变");
 
@@ -507,9 +493,7 @@ fn test_sce_dynamic_batch_backward() -> Result<(), GraphError> {
 
     sce.forward_recursive(2, false).unwrap();
     inner.borrow_mut().zero_grad()?;
-    inner
-        .borrow_mut()
-        .backward_via_node_inner(&sce)?;
+    inner.borrow_mut().backward_via_node_inner(&sce)?;
     let grad2 = weight.grad().unwrap();
     assert_eq!(
         grad2.shape(),

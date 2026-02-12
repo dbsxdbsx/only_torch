@@ -22,7 +22,7 @@ use only_torch::metrics::r2_score;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
-/// 生成批量数据：(x1_batch [N,1], x2_batch [N,1], y_batch [N,1])
+/// `生成批量数据：(x1_batch` [N,1], `x2_batch` [N,1], `y_batch` [N,1])
 fn generate_batch_data(n: usize, seed: u64) -> (Tensor, Tensor, Tensor) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};

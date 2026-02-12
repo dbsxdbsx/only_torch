@@ -462,9 +462,7 @@ fn test_mae_simple_regression() {
     for _ in 0..100 {
         for &(x_val, y_val) in &training_data {
             x.set_value(&Tensor::new(&[x_val], &[1, 1])).unwrap();
-            y_true
-                .set_value(&Tensor::new(&[y_val], &[1, 1]))
-                .unwrap();
+            y_true.set_value(&Tensor::new(&[y_val], &[1, 1])).unwrap();
 
             graph.zero_grad().unwrap();
             loss.forward().unwrap();
@@ -699,9 +697,7 @@ fn test_create_mae_node_shape_mismatch() {
         .create_basic_input_node(&[2, 4], None) // 形状不匹配
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_mae_mean_node(input, target, None);
+    let result = inner.borrow_mut().create_mae_mean_node(input, target, None);
 
     assert!(result.is_err());
 }

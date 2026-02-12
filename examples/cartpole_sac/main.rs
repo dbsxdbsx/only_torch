@@ -1,4 +1,4 @@
-//! # CartPole SAC-Discrete 强化学习示例
+//! # `CartPole` SAC-Discrete 强化学习示例
 //!
 //! 展示 `only_torch` 在强化学习场景的应用：
 //! - SAC（Soft Actor-Critic）算法的离散动作版本
@@ -69,7 +69,7 @@ impl ReplayBuffer {
         let indices: Vec<usize> = (0..self.buffer.len()).collect();
         let sampled: Vec<usize> = indices
             .choose_multiple(rng, batch_size.min(self.buffer.len()))
-            .cloned()
+            .copied()
             .collect();
         sampled.iter().map(|&i| self.buffer[i].clone()).collect()
     }
@@ -155,21 +155,27 @@ fn main() -> Result<(), GraphError> {
         agent.target_critic1.hard_update_from(&agent.critic1);
         agent.target_critic2.hard_update_from(&agent.critic2);
 
-        println!("  Actor:  {} -> 64 -> {} (Softmax)", obs_dim, action_dim);
-        println!("  Critic: {} -> 64 -> {} (Q values)", obs_dim, action_dim);
+        println!("  Actor:  {obs_dim} -> 64 -> {action_dim} (Softmax)");
+        println!("  Critic: {obs_dim} -> 64 -> {action_dim} (Q values)");
         println!("  Target Entropy: {:.3}", agent.target_entropy);
 
         // 3. 优化器
-        let mut actor_optimizer = Adam::new(&graph, &agent.actor.parameters(), config.learning_rate);
-        let mut critic1_optimizer = Adam::new(&graph, &agent.critic1.parameters(), config.learning_rate);
-        let mut critic2_optimizer = Adam::new(&graph, &agent.critic2.parameters(), config.learning_rate);
+        let mut actor_optimizer =
+            Adam::new(&graph, &agent.actor.parameters(), config.learning_rate);
+        let mut critic1_optimizer =
+            Adam::new(&graph, &agent.critic1.parameters(), config.learning_rate);
+        let mut critic2_optimizer =
+            Adam::new(&graph, &agent.critic2.parameters(), config.learning_rate);
 
         // 4. 经验回放缓冲区
         let mut buffer = ReplayBuffer::new(config.buffer_size);
 
         // 5. 训练循环
         println!("\n[3/5] 开始训练...");
-        println!("  目标: 单回合奖励 >= {}（CartPole-v0 最大 200 步）\n", config.target_reward);
+        println!(
+            "  目标: 单回合奖励 >= {}（CartPole-v0 最大 200 步）\n",
+            config.target_reward
+        );
 
         let mut rng = rand::thread_rng();
         let mut episode_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
@@ -208,47 +214,57 @@ fn main() -> Result<(), GraphError> {
                 });
 
                 // SAC 更新
-                if buffer.len() >= config.start_training_after 
-                   && total_steps % config.update_every == 0 
+                if buffer.len() >= config.start_training_after
+                    && total_steps.is_multiple_of(config.update_every)
                 {
                     // 采样 batch
                     let batch = buffer.sample(config.batch_size, &mut rng);
-                    
+
                     // 构建 batch tensors
-                    let obs_data: Vec<f32> = batch.iter()
-                        .flat_map(|e| e.obs.iter().cloned())
-                        .collect();
+                    let obs_data: Vec<f32> =
+                        batch.iter().flat_map(|e| e.obs.iter().copied()).collect();
                     let obs_batch = Tensor::new(&obs_data, &[batch.len(), obs_dim]);
 
                     // ========== Critic 更新 ==========
                     // 计算 target Q
-                    let next_obs_data: Vec<f32> = batch.iter()
-                        .flat_map(|e| e.next_obs.iter().cloned())
+                    let next_obs_data: Vec<f32> = batch
+                        .iter()
+                        .flat_map(|e| e.next_obs.iter().copied())
                         .collect();
                     let next_obs_batch = Tensor::new(&next_obs_data, &[batch.len(), obs_dim]);
-                    
+
                     // 计算 target Q（这里使用 Tensor 操作，自然不参与梯度计算）
                     // 这等价于 PyTorch 的 with torch.no_grad():
-                    let (next_probs, next_log_probs) = agent.actor.get_action_probs(&next_obs_batch)?;
+                    let (next_probs, next_log_probs) =
+                        agent.actor.get_action_probs(&next_obs_batch)?;
                     let target_q1 = agent.target_critic1.get_q_values(&next_obs_batch)?;
                     let target_q2 = agent.target_critic2.get_q_values(&next_obs_batch)?;
 
                     // min(Q1', Q2') 并计算 V
                     let target_q_min = target_q1.minimum(&target_q2);
-                    let v_next = compute_v_from_q(&next_probs, &target_q_min, &next_log_probs, agent.alpha());
-                    
+                    let v_next = compute_v_from_q(
+                        &next_probs,
+                        &target_q_min,
+                        &next_log_probs,
+                        agent.alpha(),
+                    );
+
                     // target = r + γ * (1-done) * V(s')（向量化计算）
                     let rewards: Vec<f32> = batch.iter().map(|e| e.reward).collect();
                     let rewards_tensor = Tensor::new(&rewards, &[batch.len(), 1]);
-                    let done_masks: Vec<f32> = batch.iter().map(|e| if e.done { 0.0 } else { 1.0 }).collect();
+                    let done_masks: Vec<f32> = batch
+                        .iter()
+                        .map(|e| if e.done { 0.0 } else { 1.0 })
+                        .collect();
                     let done_masks_tensor = Tensor::new(&done_masks, &[batch.len(), 1]);
-                    let target_tensor = &rewards_tensor + &(&done_masks_tensor * &(&v_next * config.gamma));
+                    let target_tensor =
+                        &rewards_tensor + &(&done_masks_tensor * &(&v_next * config.gamma));
                     let action_indices = build_action_indices(&batch);
 
                     // ========== Critic1 更新 ==========
-                    let q1_var = agent.critic1.forward(
-                        &graph.input_named(&obs_batch, "obs")?,
-                    )?;
+                    let q1_var = agent
+                        .critic1
+                        .forward(&graph.input_named(&obs_batch, "obs")?)?;
                     let q1_selected = q1_var.gather(1, &action_indices)?;
                     let critic1_loss = q1_selected.mse_loss(&target_tensor)?;
 
@@ -257,9 +273,9 @@ fn main() -> Result<(), GraphError> {
                     critic1_optimizer.step()?;
 
                     // ========== Critic2 更新 ==========
-                    let q2_var = agent.critic2.forward(
-                        &graph.input_named(&obs_batch, "obs")?,
-                    )?;
+                    let q2_var = agent
+                        .critic2
+                        .forward(&graph.input_named(&obs_batch, "obs")?)?;
                     let q2_selected = q2_var.gather(1, &action_indices)?;
                     let critic2_loss = q2_selected.mse_loss(&target_tensor)?;
 
@@ -276,9 +292,9 @@ fn main() -> Result<(), GraphError> {
                     let q_min = q1.minimum(&q2);
 
                     // Actor 前向传播（整个计算保持在计算图中）
-                    let actor_logits = agent.actor.forward(
-                        &graph.input_named(&obs_batch, "obs")?,
-                    )?;
+                    let actor_logits = agent
+                        .actor
+                        .forward(&graph.input_named(&obs_batch, "obs")?)?;
 
                     // log_softmax 比 softmax + ln 数值更稳定
                     let log_probs = actor_logits.log_softmax(); // Var [batch, action_dim]
@@ -333,7 +349,8 @@ fn main() -> Result<(), GraphError> {
                 episode_rewards.pop_front();
             }
 
-            let avg_reward: f32 = episode_rewards.iter().sum::<f32>() / episode_rewards.len() as f32;
+            let avg_reward: f32 =
+                episode_rewards.iter().sum::<f32>() / episode_rewards.len() as f32;
 
             // 打印进度
             let episode_time = episode_start.elapsed().as_secs_f32();
@@ -353,7 +370,9 @@ fn main() -> Result<(), GraphError> {
             if episode_reward >= config.target_reward {
                 println!(
                     "\n✅ 达到目标！Ep {} 获得 R={:.0}（目标 >= {:.0}）",
-                    episode + 1, episode_reward, config.target_reward
+                    episode + 1,
+                    episode_reward,
+                    config.target_reward
                 );
                 break;
             }
@@ -370,7 +389,7 @@ fn main() -> Result<(), GraphError> {
             loop {
                 let obs_tensor = Tensor::new(&obs, &[1, obs_dim]);
                 let (probs, _) = agent.actor.get_action_probs(&obs_tensor)?;
-                
+
                 // 测试时使用贪婪策略（argmax）
                 let action = probs.argmax(1)[[0]] as usize;
 
@@ -388,7 +407,10 @@ fn main() -> Result<(), GraphError> {
         }
 
         let avg_test_reward: f32 = test_rewards.iter().sum::<f32>() / test_rewards.len() as f32;
-        println!("\n测试平均奖励: {:.1}（目标 >= {:.0}）", avg_test_reward, config.target_reward);
+        println!(
+            "\n测试平均奖励: {:.1}（目标 >= {:.0}）",
+            avg_test_reward, config.target_reward
+        );
 
         // 7. 保存计算图可视化（从训练时拍的快照渲染，无需重建前向传播）
         println!("\n[5/6] 保存计算图可视化...");
@@ -398,15 +420,18 @@ fn main() -> Result<(), GraphError> {
             println!("  可视化图像: {}", img_path.display());
         }
         if let Some(hint) = &vis_result.graphviz_hint {
-            println!("  Graphviz 提示: {}", hint);
+            println!("  Graphviz 提示: {hint}");
         }
 
         // 8. 完成
         println!("\n[6/6] 完成！");
         if avg_test_reward >= config.target_reward {
-            println!("✅ CartPole SAC-Discrete 示例成功！（测试平均 R={:.1}）", avg_test_reward);
+            println!("✅ CartPole SAC-Discrete 示例成功！（测试平均 R={avg_test_reward:.1}）");
         } else {
-            println!("⚠️ 测试平均奖励未达标（{:.1} < {:.0}，可能需要更多训练）", avg_test_reward, config.target_reward);
+            println!(
+                "⚠️ 测试平均奖励未达标（{:.1} < {:.0}，可能需要更多训练）",
+                avg_test_reward, config.target_reward
+            );
         }
 
         Ok(())

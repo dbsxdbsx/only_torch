@@ -103,24 +103,17 @@ fn test_node_relationships() {
         .inner_mut()
         .create_basic_input_node(&[2, 2], Some("input1"))
         .unwrap();
-    input1
-        .set_value(Some(&Tensor::zeros(&[2, 2])))
-        .unwrap();
+    input1.set_value(Some(&Tensor::zeros(&[2, 2]))).unwrap();
 
     let input2 = graph
         .inner_mut()
         .create_basic_input_node(&[2, 2], Some("input2"))
         .unwrap();
-    input2
-        .set_value(Some(&Tensor::zeros(&[2, 2])))
-        .unwrap();
+    input2.set_value(Some(&Tensor::zeros(&[2, 2]))).unwrap();
 
     let add = graph
         .inner_mut()
-        .create_add_node(
-            vec![Rc::clone(&input1), Rc::clone(&input2)],
-            Some("add"),
-        )
+        .create_add_node(vec![Rc::clone(&input1), Rc::clone(&input2)], Some("add"))
         .unwrap();
 
     // 2. 验证父节点关系
@@ -278,9 +271,7 @@ fn test_seeded_parameter_overrides_graph_seed() {
 #[test]
 fn test_neat_compatibility_multiple_graphs() {
     // 创建多个带种子的图（模拟 NEAT 种群）
-    let graphs: Vec<Graph> = (0..5)
-        .map(|i| Graph::new_with_seed(i as u64))
-        .collect();
+    let graphs: Vec<Graph> = (0..5).map(|i| Graph::new_with_seed(i as u64)).collect();
 
     // 每个图独立创建参数
     let params: Vec<_> = graphs

@@ -31,9 +31,10 @@ fn test_avg_pool2d_forward_simple() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     #[rustfmt::skip]
     let tensor = Tensor::new(&[
@@ -67,9 +68,10 @@ fn test_avg_pool2d_forward_batch() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     let tensor = Tensor::new(
         &[vec![4.0f32; 16], vec![8.0f32; 16]].concat(),
@@ -103,9 +105,10 @@ fn test_avg_pool2d_forward_multi_channel() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 2, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     let tensor = Tensor::new(
         &[vec![1.0f32; 16], vec![2.0f32; 16]].concat(),
@@ -134,9 +137,12 @@ fn test_avg_pool2d_forward_with_stride() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 6, 6], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (3, 3), Some((2, 2)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_avg_pool2d_node(
+        input.clone(),
+        (3, 3),
+        Some((2, 2)),
+        Some("pool"),
+    )?;
 
     assert_eq!(pool.shape(), vec![1, 1, 2, 2]);
 
@@ -164,9 +170,12 @@ fn test_avg_pool2d_forward_overlapping_windows() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), Some((1, 1)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_avg_pool2d_node(
+        input.clone(),
+        (2, 2),
+        Some((1, 1)),
+        Some("pool"),
+    )?;
 
     assert_eq!(pool.shape(), vec![1, 1, 3, 3]);
 
@@ -251,9 +260,10 @@ fn test_avg_pool2d_vjp_unit_upstream() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     input.set_value(Some(&Tensor::ones(&[1, 1, 4, 4])))?;
     pool.forward_recursive(1, false)?;
@@ -283,9 +293,10 @@ fn test_avg_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     input.set_value(Some(&Tensor::ones(&[1, 1, 4, 4])))?;
     pool.forward_recursive(1, false)?;
@@ -324,9 +335,10 @@ fn test_avg_pool2d_vjp_batch() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     input.set_value(Some(&Tensor::ones(&[2, 1, 4, 4])))?;
     pool.forward_recursive(1, false)?;
@@ -356,9 +368,12 @@ fn test_avg_pool2d_vjp_overlapping() -> Result<(), GraphError> {
         .borrow_mut()
         .create_basic_input_node(&[1, 1, 3, 3], Some("input"))?;
     // kernel=2x2, stride=1x1 → output [1,1,2,2]
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), Some((1, 1)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_avg_pool2d_node(
+        input.clone(),
+        (2, 2),
+        Some((1, 1)),
+        Some("pool"),
+    )?;
 
     assert_eq!(pool.shape(), vec![1, 1, 2, 2]);
 
@@ -398,18 +413,20 @@ fn test_avg_pool2d_e2e_loss_grad() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_parameter_node(&[1, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
     let flat = inner
         .borrow_mut()
         .create_reshape_node(pool.clone(), &[1, 4], Some("flat"))?;
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 4], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     // 设值：全 1 input，全 0 target
     input.set_value(Some(&Tensor::ones(&[1, 1, 4, 4])))?;
@@ -464,9 +481,10 @@ fn test_avg_pool2d_e2e_conv_pool_chain() -> Result<(), GraphError> {
     assert_eq!(conv.shape(), vec![2, 4, 8, 8]);
 
     // AvgPool2d: kernel=2x2 → [2,4,4,4]
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(conv.clone(), (2, 2), None, Some("pool"))?;
+    let pool =
+        inner
+            .borrow_mut()
+            .create_avg_pool2d_node(conv.clone(), (2, 2), None, Some("pool"))?;
     assert_eq!(pool.shape(), vec![2, 4, 4, 4]);
 
     // 全 1 输入 + 全 1 卷积核
@@ -498,9 +516,12 @@ fn test_avg_pool2d_dynamic_shape_propagation() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 3, 8, 8], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), Some((2, 2)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_avg_pool2d_node(
+        input.clone(),
+        (2, 2),
+        Some((2, 2)),
+        Some("pool"),
+    )?;
 
     let dyn_shape = pool.dynamic_shape();
     assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
@@ -521,9 +542,12 @@ fn test_avg_pool2d_dynamic_batch_forward() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), Some((2, 2)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_avg_pool2d_node(
+        input.clone(),
+        (2, 2),
+        Some((2, 2)),
+        Some("pool"),
+    )?;
 
     // 第一次 forward：batch=2
     input.set_value(Some(&Tensor::ones(&[2, 1, 4, 4])))?;
@@ -552,18 +576,22 @@ fn test_avg_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let input = inner
         .borrow_mut()
         .create_parameter_node(&[2, 1, 4, 4], Some("input"))?;
-    let pool = inner
-        .borrow_mut()
-        .create_avg_pool2d_node(input.clone(), (2, 2), Some((2, 2)), Some("pool"))?;
+    let pool = inner.borrow_mut().create_avg_pool2d_node(
+        input.clone(),
+        (2, 2),
+        Some((2, 2)),
+        Some("pool"),
+    )?;
     let flat = inner
         .borrow_mut()
         .create_flatten_node(pool.clone(), true, Some("flat"))?;
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 4], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     // 第一次训练：batch=2
     input.set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 4, 4], 42)))?;

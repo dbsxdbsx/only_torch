@@ -30,9 +30,7 @@ use std::rc::Rc;
 fn test_relu_forward() {
     let graph = Graph::new();
 
-    let x = graph
-        .parameter(&[2, 2], Init::Zeros, "x")
-        .unwrap();
+    let x = graph.parameter(&[2, 2], Init::Zeros, "x").unwrap();
     x.set_value(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]))
         .unwrap();
 
@@ -53,9 +51,7 @@ fn test_relu_forward() {
 fn test_leaky_relu_forward() {
     let graph = Graph::new();
 
-    let x = graph
-        .parameter(&[2, 2], Init::Zeros, "x")
-        .unwrap();
+    let x = graph.parameter(&[2, 2], Init::Zeros, "x").unwrap();
     x.set_value(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2]))
         .unwrap();
 
@@ -428,9 +424,7 @@ fn test_create_leaky_relu_node_negative_slope_error() {
         .create_basic_input_node(&[2, 3], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_leaky_relu_node(input, -0.1, None);
+    let result = inner.borrow_mut().create_leaky_relu_node(input, -0.1, None);
 
     assert!(result.is_err());
     match result.unwrap_err() {

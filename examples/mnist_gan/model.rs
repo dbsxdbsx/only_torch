@@ -26,7 +26,7 @@ const HIDDEN_DIM: usize = 128;
 /// 生成器
 ///
 /// 将随机噪声转换为 28x28 的图像
-/// 结构：z(64) -> FC(128, LeakyReLU) -> FC(784, Sigmoid)
+/// 结构：z(64) -> FC(128, `LeakyReLU`) -> FC(784, Sigmoid)
 pub struct Generator {
     fc1: Linear,
     fc2: Linear,
@@ -44,8 +44,8 @@ impl Generator {
 
     /// 前向传播
     ///
-    /// 输入: [batch, LATENT_DIM] 的噪声（Tensor）
-    /// 输出: [batch, IMAGE_DIM] 的生成图像 Var（值域 [0, 1]）
+    /// 输入: [batch, `LATENT_DIM`] 的噪声（Tensor）
+    /// 输出: [batch, `IMAGE_DIM`] 的生成图像 Var（值域 [0, 1]）
     pub fn forward(&self, z: &Tensor) -> Result<Var, GraphError> {
         let h1 = self.fc1.forward(z).leaky_relu(0.2);
         let out = self.fc2.forward(&h1).sigmoid();
@@ -62,7 +62,7 @@ impl Module for Generator {
 /// 判别器
 ///
 /// 判断输入图像是真实的还是生成的
-/// 结构：image(784) -> FC(128, LeakyReLU) -> FC(1, Sigmoid)
+/// 结构：image(784) -> FC(128, `LeakyReLU`) -> FC(1, Sigmoid)
 pub struct Discriminator {
     fc1: Linear,
     fc2: Linear,
@@ -79,7 +79,7 @@ impl Discriminator {
 
     /// 前向传播
     ///
-    /// 输入: [batch, IMAGE_DIM] 的图像（Tensor 或 Var 均可）
+    /// 输入: [batch, `IMAGE_DIM`] 的图像（Tensor 或 Var 均可）
     /// 输出: [batch, 1] 的判别概率（经过 sigmoid，值域 [0, 1]）
     pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
         let h1 = self.fc1.forward(x).leaky_relu(0.2);

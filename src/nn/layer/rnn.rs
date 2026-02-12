@@ -92,8 +92,7 @@ impl Rnn {
             &format!("{full_name}_W_hh"),
         )?;
 
-        let b_h =
-            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_h"))?;
+        let b_h = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_h"))?;
         // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
         // RNN 每个时间步的节点数：6 (select, matmul_xw, matmul_hw, add1, add2, tanh)
         graph.inner_mut().register_recurrent_layer_meta(

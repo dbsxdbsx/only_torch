@@ -22,7 +22,7 @@ use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
-/// 生成批量数据：(x1_batch [N,1], x2_batch [N,1], label_batch [N,1])
+/// `生成批量数据：(x1_batch` [N,1], `x2_batch` [N,1], `label_batch` [N,1])
 /// label = 1 如果 |x1 - x2| < threshold，否则 0
 fn generate_batch_data(n: usize, seed: u64, threshold: f32) -> (Tensor, Tensor, Tensor) {
     use std::collections::hash_map::DefaultHasher;
@@ -74,12 +74,8 @@ fn main() -> Result<(), GraphError> {
     // 统计数据分布
     let n_train = train_labels.shape()[0];
     let n_test = test_labels.shape()[0];
-    let train_positive = (0..n_train)
-        .filter(|&i| train_labels[[i, 0]] > 0.5)
-        .count();
-    let test_positive = (0..n_test)
-        .filter(|&i| test_labels[[i, 0]] > 0.5)
-        .count();
+    let train_positive = (0..n_train).filter(|&i| train_labels[[i, 0]] > 0.5).count();
+    let test_positive = (0..n_test).filter(|&i| test_labels[[i, 0]] > 0.5).count();
 
     println!("网络结构（共享编码器）:");
     println!("  Input1 ─> Enc(16→8, ReLU) ─> Feat1 ─┐");
@@ -89,8 +85,7 @@ fn main() -> Result<(), GraphError> {
     println!("  Input2 ─> Enc(16→8, ReLU) ─> Feat2 ─┘");
     println!("\n任务: 判断 |x1 - x2| < {threshold:.1} (相似=1, 不相似=0)");
     println!(
-        "数据: 训练 {} 条 (正例 {}), 测试 {} 条 (正例 {})",
-        n_train, train_positive, n_test, test_positive
+        "数据: 训练 {n_train} 条 (正例 {train_positive}), 测试 {n_test} 条 (正例 {test_positive})"
     );
     println!("优化器: Adam (lr=0.01), 损失: MSE, 目标准确率: 85%\n");
 

@@ -1,6 +1,6 @@
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -85,7 +85,6 @@ impl MatMul {
             parents_ids: parent_ids,
         })
     }
-
 }
 
 impl TraitNode for MatMul {

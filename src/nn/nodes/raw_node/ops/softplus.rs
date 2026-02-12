@@ -1,6 +1,6 @@
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -44,7 +44,6 @@ impl SoftPlus {
             supports_dynamic: parent_dynamic_shape.has_dynamic_dims(),
         })
     }
-
 
     /// 数值稳定的 `SoftPlus` 计算
     ///

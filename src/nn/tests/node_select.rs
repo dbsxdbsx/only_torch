@@ -224,9 +224,7 @@ fn test_select_vjp_scatter_non_unit() -> Result<(), GraphError> {
         .create_select_node(input.clone(), 1, 2, Some("sel"))
         .unwrap();
 
-    input
-        .set_value(Some(&Tensor::zeros(&[2, 3, 4])))
-        .unwrap();
+    input.set_value(Some(&Tensor::zeros(&[2, 3, 4]))).unwrap();
     selected.forward_recursive(1, false).unwrap();
 
     // 非 unit 上游梯度
@@ -263,13 +261,7 @@ fn test_select_vjp_scatter_non_unit() -> Result<(), GraphError> {
 fn test_select_e2e_sigmoid_chain() {
     let graph = Graph::new();
 
-    let input = graph
-        .parameter(
-            &[2, 3, 4],
-            Init::Zeros,
-            "input",
-        )
-        .unwrap();
+    let input = graph.parameter(&[2, 3, 4], Init::Zeros, "input").unwrap();
     input
         .set_value(&Tensor::normal_seeded(0.0, 1.0, &[2, 3, 4], 42))
         .unwrap();
@@ -346,9 +338,7 @@ fn test_select_e2e_multi_select_rnn() {
     let sum_01 = &x_0 + &x_1;
     let sum_all = &sum_01 + &x_2;
 
-    let target = graph
-        .input(&Tensor::zeros(&[batch, input_size]))
-        .unwrap();
+    let target = graph.input(&Tensor::zeros(&[batch, input_size])).unwrap();
     let loss = sum_all.mse_loss(&target).unwrap();
 
     graph.zero_grad().unwrap();
@@ -407,9 +397,7 @@ fn test_select_e2e_rnn_single_step() {
     let mm = x_0.matmul(&w_ih).unwrap();
     let h = mm.tanh();
 
-    let target = graph
-        .input(&Tensor::zeros(&[batch, hidden_size]))
-        .unwrap();
+    let target = graph.input(&Tensor::zeros(&[batch, hidden_size])).unwrap();
     let loss = h.mse_loss(&target).unwrap();
 
     graph.zero_grad().unwrap();
@@ -470,9 +458,7 @@ fn test_select_e2e_rnn_two_step_unroll() {
     ))
     .unwrap();
 
-    let h_0 = graph
-        .input(&Tensor::zeros(&[batch, hidden_size]))
-        .unwrap();
+    let h_0 = graph.input(&Tensor::zeros(&[batch, hidden_size])).unwrap();
 
     // === 时间步 0 ===
     let x_0 = x_seq.select(1, 0).unwrap();
@@ -488,9 +474,7 @@ fn test_select_e2e_rnn_two_step_unroll() {
     let pre_h_2 = &xw_1 + &hw_1;
     let h_2 = pre_h_2.tanh();
 
-    let target = graph
-        .input(&Tensor::zeros(&[batch, hidden_size]))
-        .unwrap();
+    let target = graph.input(&Tensor::zeros(&[batch, hidden_size])).unwrap();
     let loss = h_2.mse_loss(&target).unwrap();
 
     graph.zero_grad().unwrap();
@@ -681,9 +665,7 @@ fn test_create_select_node_index_out_of_bounds() {
         .unwrap();
 
     // index=5 超出 axis=1 的大小 3
-    let result = inner
-        .borrow_mut()
-        .create_select_node(input, 1, 5, None);
+    let result = inner.borrow_mut().create_select_node(input, 1, 5, None);
     assert!(result.is_err());
 }
 

@@ -140,9 +140,7 @@ fn test_state_without_recurrent_connection() -> Result<(), GraphError> {
     let add = inner
         .borrow_mut()
         .create_add_node(vec![input.clone(), state.clone()], Some("add"))?;
-    let output = inner
-        .borrow_mut()
-        .create_tanh_node(add, Some("output"))?;
+    let output = inner.borrow_mut().create_tanh_node(add, Some("output"))?;
 
     inner.borrow_mut().forward_via_node_inner(&output)?;
 
@@ -247,10 +245,7 @@ fn test_input_has_no_grad() -> Result<(), GraphError> {
     inner.borrow_mut().backward_via_node_inner(&loss)?;
 
     // Input 节点不应有 grad（accumulate_grad 静默跳过不支持梯度的节点）
-    assert!(
-        input.grad().is_none(),
-        "Input 节点不应有 grad（梯度汇点）"
-    );
+    assert!(input.grad().is_none(), "Input 节点不应有 grad（梯度汇点）");
 
     // 对比：param 应有 grad
     assert!(param.grad().is_some(), "Parameter 应有 grad");
@@ -577,9 +572,7 @@ fn test_state_dynamic_batch_forward() -> Result<(), GraphError> {
     let add = inner
         .borrow_mut()
         .create_add_node(vec![input.clone(), state.clone()], Some("add"))?;
-    let output = inner
-        .borrow_mut()
-        .create_tanh_node(add, Some("output"))?;
+    let output = inner.borrow_mut().create_tanh_node(add, Some("output"))?;
 
     // 第一次 forward: batch=2
     inner.borrow_mut().forward_via_node_inner(&output)?;
@@ -631,9 +624,7 @@ fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
         .borrow_mut()
         .create_add_node(vec![proj, state.clone()], Some("add"))?;
     // tanh
-    let output = inner
-        .borrow_mut()
-        .create_tanh_node(add, Some("output"))?;
+    let output = inner.borrow_mut().create_tanh_node(add, Some("output"))?;
 
     let target = inner
         .borrow_mut()
@@ -784,8 +775,6 @@ fn test_create_state_invalid_shape() {
     assert!(result.is_err());
 
     // 5D 形状也应该失败
-    let result = inner
-        .borrow_mut()
-        .create_state_node(&[1, 2, 3, 4, 5], None);
+    let result = inner.borrow_mut().create_state_node(&[1, 2, 3, 4, 5], None);
     assert!(result.is_err());
 }

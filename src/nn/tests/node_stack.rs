@@ -93,10 +93,7 @@ fn test_stack_forward_stack_axis1() {
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
         .unwrap();
     let p2 = graph
-        .input(&Tensor::new(
-            &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
-            &[2, 3],
-        ))
+        .input(&Tensor::new(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 3]))
         .unwrap();
     let result = Var::stack(&[&p1, &p2], 1, true).unwrap();
 
@@ -106,7 +103,9 @@ fn test_stack_forward_stack_axis1() {
     let output = result.value().unwrap().unwrap();
     assert_eq!(output.shape(), &[2, 2, 3]);
     let expected = Tensor::new(
-        &[1.0, 2.0, 3.0, 7.0, 8.0, 9.0, 4.0, 5.0, 6.0, 10.0, 11.0, 12.0],
+        &[
+            1.0, 2.0, 3.0, 7.0, 8.0, 9.0, 4.0, 5.0, 6.0, 10.0, 11.0, 12.0,
+        ],
         &[2, 2, 3],
     );
     assert_eq!(output, expected);
@@ -221,22 +220,19 @@ fn test_stack_error_invalid_axis() {
         .unwrap();
 
     // concat 模式：axis 最大为 ndim-1 = 1
-    let result = inner.borrow_mut().create_stack_node(
-        vec![input1.clone(), input2.clone()],
-        2,
-        false,
-        None,
-    );
+    let result =
+        inner
+            .borrow_mut()
+            .create_stack_node(vec![input1.clone(), input2.clone()], 2, false, None);
     assert_err!(
         result,
         GraphError::InvalidOperation("Stack: axis 2 超出有效范围 [0, 1]")
     );
 
     // stack 模式：axis 最大为 ndim = 2
-    let result =
-        inner
-            .borrow_mut()
-            .create_stack_node(vec![input1, input2], 3, true, None);
+    let result = inner
+        .borrow_mut()
+        .create_stack_node(vec![input1, input2], 3, true, None);
     assert_err!(
         result,
         GraphError::InvalidOperation("Stack: axis 3 超出有效范围 [0, 2]")
@@ -336,10 +332,7 @@ fn test_stack_vjp_stack_to_second_parent() -> Result<(), GraphError> {
 
     // p2 → upstream[1, :, :] = [[5,6],[7,8]]
     assert_eq!(grad_p2.shape(), &[2, 2]);
-    assert_eq!(
-        &grad_p2,
-        &Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])
-    );
+    assert_eq!(&grad_p2, &Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]));
 
     Ok(())
 }
@@ -375,10 +368,7 @@ fn test_stack_vjp_concat_axis0() -> Result<(), GraphError> {
     // p1 → upstream[0:2, :] = [[1,2],[3,4]]
     let grad_p1 = stack.calc_grad_to_parent_index(0, &upstream)?;
     assert_eq!(grad_p1.shape(), &[2, 2]);
-    assert_eq!(
-        &grad_p1,
-        &Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])
-    );
+    assert_eq!(&grad_p1, &Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
 
     // p2 → upstream[2:3, :] = [[5,6]]
     let grad_p2 = stack.calc_grad_to_parent_index(1, &upstream)?;
@@ -425,10 +415,7 @@ fn test_stack_vjp_concat_axis1() -> Result<(), GraphError> {
     // p1 → upstream[:, 0:2] = [[1,2],[6,7]]
     let grad_p1 = stack.calc_grad_to_parent_index(0, &upstream)?;
     assert_eq!(grad_p1.shape(), &[2, 2]);
-    assert_eq!(
-        &grad_p1,
-        &Tensor::new(&[1.0, 2.0, 6.0, 7.0], &[2, 2])
-    );
+    assert_eq!(&grad_p1, &Tensor::new(&[1.0, 2.0, 6.0, 7.0], &[2, 2]));
 
     // p2 → upstream[:, 2:5] = [[3,4,5],[8,9,10]]
     let grad_p2 = stack.calc_grad_to_parent_index(1, &upstream)?;
@@ -460,11 +447,8 @@ fn test_stack_vjp_stack_axis1() -> Result<(), GraphError> {
         .create_stack_node(vec![p1.clone(), p2.clone()], 1, true, Some("stack"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    )))
-    .unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
+        .unwrap();
     p2.set_value(Some(&Tensor::new(
         &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
         &[2, 3],

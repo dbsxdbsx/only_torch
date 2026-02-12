@@ -201,11 +201,8 @@ fn test_softmax_vjp_batch_non_unit_upstream() -> Result<(), GraphError> {
         .create_softmax_node(x.clone(), Some("sm"))
         .unwrap();
 
-    x.set_value(Some(&Tensor::new(
-        &[1.0, 2.0, 3.0, 0.0, 0.0, 0.0],
-        &[2, 3],
-    )))
-    .unwrap();
+    x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0], &[2, 3])))
+        .unwrap();
     sm.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]);
@@ -235,10 +232,7 @@ fn test_softmax_backward_e2e() -> Result<(), GraphError> {
     x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]))?;
 
     let result = x.softmax();
-    let target = graph.input(&Tensor::new(
-        &[0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
-        &[2, 3],
-    ))?;
+    let target = graph.input(&Tensor::new(&[0.0, 0.0, 1.0, 1.0, 0.0, 0.0], &[2, 3]))?;
     let loss = result.mse_loss(&target)?;
 
     loss.forward().unwrap();
@@ -270,10 +264,7 @@ fn test_softmax_gradient_accumulation() -> Result<(), GraphError> {
     x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0], &[2, 3]))?;
 
     let result = x.softmax();
-    let target = graph.input(&Tensor::new(
-        &[0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
-        &[2, 3],
-    ))?;
+    let target = graph.input(&Tensor::new(&[0.0, 0.0, 1.0, 1.0, 0.0, 0.0], &[2, 3]))?;
     let loss = result.mse_loss(&target)?;
 
     loss.forward().unwrap();

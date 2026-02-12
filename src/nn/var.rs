@@ -467,9 +467,7 @@ impl Var {
     ///
     /// **节点排序策略**：按路径逐个 BFS，第一个 loss 路径的全部节点排在前面，
     /// 第二个 loss 路径的新增节点排在后面。这样同一模型的节点编号连续、直观。
-    pub(crate) fn build_snapshot(
-        named_vars: &[(&str, &Self)],
-    ) -> super::VisualizationSnapshot {
+    pub(crate) fn build_snapshot(named_vars: &[(&str, &Self)]) -> super::VisualizationSnapshot {
         use std::collections::{HashSet, VecDeque};
 
         let mut visited: HashSet<NodeId> = HashSet::new();
@@ -499,8 +497,7 @@ impl Var {
                 type_name: node.type_name(),
                 shape: node.value_expected_shape(),
                 parent_ids: node.parents().iter().map(|p| p.id()).collect(),
-                is_detached: node.is_detached()
-                    || node.type_name() == "Detach",
+                is_detached: node.is_detached() || node.type_name() == "Detach",
                 hyperparam_html,
             }
         };
@@ -552,19 +549,13 @@ impl Var {
         }
 
         // 快照节点 ID 查找表
-        let node_map: HashMap<u64, &super::SnapshotNode> = snapshot
-            .nodes
-            .iter()
-            .map(|n| (n.id.0, n))
-            .collect();
+        let node_map: HashMap<u64, &super::SnapshotNode> =
+            snapshot.nodes.iter().map(|n| (n.id.0, n)).collect();
         let visited: HashSet<NodeId> = snapshot.nodes.iter().map(|n| n.id).collect();
 
         // 输出节点 ID 集合
-        let output_node_ids: HashSet<u64> = snapshot
-            .named_outputs
-            .iter()
-            .map(|(_, id)| id.0)
-            .collect();
+        let output_node_ids: HashSet<u64> =
+            snapshot.named_outputs.iter().map(|(_, id)| id.0).collect();
 
         // === 多 Loss 路径着色：per-root BFS ===
         // 路径颜色表
@@ -590,10 +581,7 @@ impl Var {
                     if !bfs_visited.insert(nid) {
                         continue;
                     }
-                    node_to_paths
-                        .entry(nid)
-                        .or_default()
-                        .insert(path_idx);
+                    node_to_paths.entry(nid).or_default().insert(path_idx);
                     if let Some(snode) = node_map.get(&nid) {
                         for pid in &snode.parent_ids {
                             bfs_queue.push_back(pid.0);
@@ -711,8 +699,18 @@ impl Var {
                     }
                 }
 
-                let min_steps = meta.unroll_infos.iter().map(|i| i.steps).min().unwrap_or(info.steps);
-                let max_steps = meta.unroll_infos.iter().map(|i| i.steps).max().unwrap_or(info.steps);
+                let min_steps = meta
+                    .unroll_infos
+                    .iter()
+                    .map(|i| i.steps)
+                    .min()
+                    .unwrap_or(info.steps);
+                let max_steps = meta
+                    .unroll_infos
+                    .iter()
+                    .map(|i| i.steps)
+                    .max()
+                    .unwrap_or(info.steps);
                 let step_range_str = if min_steps == max_steps {
                     format!("{}", min_steps)
                 } else {
@@ -723,7 +721,12 @@ impl Var {
                     "{}: {} (×{} steps)",
                     meta.layer_type, meta.description, step_range_str
                 );
-                rnn_clusters.push((meta.name.clone(), meta.layer_type.clone(), desc, visible_ids));
+                rnn_clusters.push((
+                    meta.name.clone(),
+                    meta.layer_type.clone(),
+                    desc,
+                    visible_ids,
+                ));
 
                 for offset in 0..nps {
                     let step0_id = base + offset as u64;
@@ -773,11 +776,7 @@ impl Var {
                     let id = n.id.0;
                     let node_type = &n.type_name;
                     let type_label = node_type.to_lowercase();
-                    let raw_name = n
-                        .name
-                        .as_deref()
-                        .unwrap_or(&type_label)
-                        .to_string();
+                    let raw_name = n.name.as_deref().unwrap_or(&type_label).to_string();
                     let display = match raw_name.split_once('/') {
                         Some((_, after)) => after.to_string(),
                         None => raw_name,
@@ -867,11 +866,7 @@ impl Var {
             };
 
             // 超参数
-            let hyperparam_str = snode
-                .hyperparam_html
-                .as_deref()
-                .unwrap_or("")
-                .to_string();
+            let hyperparam_str = snode.hyperparam_html.as_deref().unwrap_or("").to_string();
 
             // 节点样式
             let (node_shape, style, fill_color) = match node_type.as_str() {
@@ -916,7 +911,11 @@ impl Var {
                 let color = output_path_color(id);
                 format!(" penwidth=2.5 color=\"{}\"", color)
             } else if let Some(&(min_s, _)) = rnn_step_ranges.get(&id) {
-                if min_s > 1 { " peripheries=2".to_string() } else { String::new() }
+                if min_s > 1 {
+                    " peripheries=2".to_string()
+                } else {
+                    String::new()
+                }
             } else {
                 String::new()
             };
@@ -937,7 +936,18 @@ impl Var {
 
             format!(
                 "\"{}\" [label=<{}{}<BR/><B>{}</B><BR/>{}{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10{}];\n",
-                stable_id, name, rnn_step_str, node_type, shape_str, param_count_str, hyperparam_str, output_suffix, node_shape, style, fill_color, output_border_str
+                stable_id,
+                name,
+                rnn_step_str,
+                node_type,
+                shape_str,
+                param_count_str,
+                hyperparam_str,
+                output_suffix,
+                node_shape,
+                style,
+                fill_color,
+                output_border_str
             )
         };
 
@@ -960,10 +970,11 @@ impl Var {
 
         for (group_idx, group) in layer_groups.iter().enumerate() {
             if let Some((model, layer)) = group.name.split_once('/') {
-                model_groups
-                    .entry(model.to_string())
-                    .or_default()
-                    .push((group_idx, layer.to_string(), group));
+                model_groups.entry(model.to_string()).or_default().push((
+                    group_idx,
+                    layer.to_string(),
+                    group,
+                ));
             } else {
                 standalone_groups.push((group_idx, group));
             }
@@ -993,10 +1004,7 @@ impl Var {
             let mut node_children: HashMap<u64, Vec<u64>> = HashMap::new();
             for snode in &snapshot.nodes {
                 for pid in &snode.parent_ids {
-                    node_children
-                        .entry(pid.0)
-                        .or_default()
-                        .push(snode.id.0);
+                    node_children.entry(pid.0).or_default().push(snode.id.0);
                 }
             }
 
@@ -1062,7 +1070,8 @@ impl Var {
                     if pm != cm {
                         let key = (parent_id, cm.clone());
                         if !virtual_input_map.contains_key(&key) {
-                            let virt_id = format!("virt_{}_{}", rid(parent_id), cm.replace(' ', "_"));
+                            let virt_id =
+                                format!("virt_{}_{}", rid(parent_id), cm.replace(' ', "_"));
                             let shape_str = if let Some(parent_node) = node_map.get(&parent_id) {
                                 let shape = &parent_node.shape;
                                 if shape.is_empty() {
@@ -1072,7 +1081,11 @@ impl Var {
                                         .iter()
                                         .enumerate()
                                         .map(|(i, &d)| {
-                                            if i == 0 { "?".to_string() } else { d.to_string() }
+                                            if i == 0 {
+                                                "?".to_string()
+                                            } else {
+                                                d.to_string()
+                                            }
                                         })
                                         .collect();
                                     format!("[{}]", dims.join(", "))
@@ -1094,41 +1107,42 @@ impl Var {
         let model_colors = ["#FFEBEE40", "#E8EAF640", "#E0F2F140", "#FFF8E140"];
 
         // 层 cluster 渲染闭包
-        let render_layer_cluster =
-            |dot: &mut String,
-             indent: &str,
-             cluster_id: &str,
-             display_name: &str,
-             group: &LayerGroup,
-             color: &str| {
-                let group_node_ids: Vec<u64> = group
-                    .node_ids
-                    .iter()
-                    .filter(|id| visited.contains(id))
-                    .map(|id| id.0)
-                    .collect();
-                if group_node_ids.is_empty() {
-                    return;
-                }
-                dot.push_str(&format!("{indent}subgraph cluster_{cluster_id} {{\n"));
-                dot.push_str(&format!(
+        let render_layer_cluster = |dot: &mut String,
+                                    indent: &str,
+                                    cluster_id: &str,
+                                    display_name: &str,
+                                    group: &LayerGroup,
+                                    color: &str| {
+            let group_node_ids: Vec<u64> = group
+                .node_ids
+                .iter()
+                .filter(|id| visited.contains(id))
+                .map(|id| id.0)
+                .collect();
+            if group_node_ids.is_empty() {
+                return;
+            }
+            dot.push_str(&format!("{indent}subgraph cluster_{cluster_id} {{\n"));
+            dot.push_str(&format!(
                     "{indent}    label=<<B>{display_name}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
                     group.layer_type, group.description
                 ));
-                dot.push_str(&format!("{indent}    style=filled;\n"));
-                dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
-                dot.push_str(&format!("{indent}    fontname=\"Microsoft YaHei,SimHei,Arial\";\n"));
-                dot.push_str(&format!("{indent}    fontsize=11;\n"));
-                dot.push_str(&format!("{indent}    margin=12;\n"));
+            dot.push_str(&format!("{indent}    style=filled;\n"));
+            dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
+            dot.push_str(&format!(
+                "{indent}    fontname=\"Microsoft YaHei,SimHei,Arial\";\n"
+            ));
+            dot.push_str(&format!("{indent}    fontsize=11;\n"));
+            dot.push_str(&format!("{indent}    margin=12;\n"));
 
-                for snode in &snapshot.nodes {
-                    if group_node_ids.contains(&snode.id.0) {
-                        dot.push_str(&format!("{indent}        "));
-                        dot.push_str(&generate_node_def(snode));
-                    }
+            for snode in &snapshot.nodes {
+                if group_node_ids.contains(&snode.id.0) {
+                    dot.push_str(&format!("{indent}        "));
+                    dot.push_str(&generate_node_def(snode));
                 }
-                dot.push_str(&format!("{indent}}}\n\n"));
-            };
+            }
+            dot.push_str(&format!("{indent}}}\n\n"));
+        };
 
         // RNN cluster 的模型归属
         let mut rnn_clusters_for_model: HashMap<String, Vec<usize>> = HashMap::new();
@@ -1144,9 +1158,10 @@ impl Var {
 
         // 渲染模型级嵌套 cluster
         for (model_idx, (model_name, layers)) in model_groups.iter().enumerate() {
-            let has_visible_nodes = snapshot.nodes.iter().any(|n| {
-                node_to_model.get(&n.id.0).map(|m| m.as_str()) == Some(model_name)
-            });
+            let has_visible_nodes = snapshot
+                .nodes
+                .iter()
+                .any(|n| node_to_model.get(&n.id.0).map(|m| m.as_str()) == Some(model_name));
             if !has_visible_nodes {
                 continue;
             }
@@ -1187,8 +1202,10 @@ impl Var {
             dot.push_str("        margin=16;\n\n");
 
             for (group_idx, layer_name, group) in layers {
-                let cluster_id =
-                    format!("{model_id}_{}", layer_name.replace(['-', '.', ' ', '/'], "_"));
+                let cluster_id = format!(
+                    "{model_id}_{}",
+                    layer_name.replace(['-', '.', ' ', '/'], "_")
+                );
                 let color = group_colors[*group_idx % group_colors.len()];
                 render_layer_cluster(&mut dot, "        ", &cluster_id, layer_name, group, color);
             }
@@ -1319,7 +1336,8 @@ impl Var {
 
                 // RNN 特殊边样式
                 let rnn_edge_attrs = if rnn_init_edges.contains(&(parent_id, child_id)) {
-                    " style=dashed color=\"#E67E22\" label=<t=0> fontcolor=\"#E67E22\" fontsize=9".to_string()
+                    " style=dashed color=\"#E67E22\" label=<t=0> fontcolor=\"#E67E22\" fontsize=9"
+                        .to_string()
                 } else if was_redirected {
                     if let Some(&(min_s, max_s)) = rnn_output_repr_step_ranges.get(&parent_id) {
                         let t_label = if min_s == max_s {
@@ -1327,7 +1345,10 @@ impl Var {
                         } else {
                             format!("t={}~{}", min_s - 1, max_s - 1)
                         };
-                        format!(" color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9", t_label)
+                        format!(
+                            " color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9",
+                            t_label
+                        )
                     } else {
                         String::new()
                     }
@@ -1367,17 +1388,22 @@ impl Var {
                         // 跨模型虚线（保持灰色虚线）
                         dot.push_str(&format!(
                             "    \"{}\" -> \"{}\" [style=dashed color=\"#999999\"];\n",
-                            rid(parent_id), virt_id
+                            rid(parent_id),
+                            virt_id
                         ));
                         dot.push_str(&format!(
                             "    \"{}\" -> \"{}\"{};\n",
-                            virt_id, rid(child_id), edge_attrs
+                            virt_id,
+                            rid(child_id),
+                            edge_attrs
                         ));
                     }
                 } else {
                     dot.push_str(&format!(
                         "    \"{}\" -> \"{}\"{};\n",
-                        rid(parent_id), rid(child_id), edge_attrs
+                        rid(parent_id),
+                        rid(child_id),
+                        edge_attrs
                     ));
                 }
             }
@@ -1528,8 +1554,18 @@ impl Var {
                 }
 
                 // 计算所有 forward 调用的步数范围（用于标注）
-                let min_steps = meta.unroll_infos.iter().map(|i| i.steps).min().unwrap_or(info.steps);
-                let max_steps = meta.unroll_infos.iter().map(|i| i.steps).max().unwrap_or(info.steps);
+                let min_steps = meta
+                    .unroll_infos
+                    .iter()
+                    .map(|i| i.steps)
+                    .min()
+                    .unwrap_or(info.steps);
+                let max_steps = meta
+                    .unroll_infos
+                    .iter()
+                    .map(|i| i.steps)
+                    .max()
+                    .unwrap_or(info.steps);
                 let step_range_str = if min_steps == max_steps {
                     format!("{}", min_steps)
                 } else {
@@ -1540,7 +1576,12 @@ impl Var {
                     "{}: {} (×{} steps)",
                     meta.layer_type, meta.description, step_range_str
                 );
-                rnn_clusters.push((meta.name.clone(), meta.layer_type.clone(), desc, visible_ids));
+                rnn_clusters.push((
+                    meta.name.clone(),
+                    meta.layer_type.clone(),
+                    desc,
+                    visible_ids,
+                ));
 
                 // 记录 RNN 节点标注和特殊边信息（使用步数范围）
                 for offset in 0..nps {
@@ -1755,7 +1796,17 @@ impl Var {
 
             format!(
                 "\"{}\" [label=<{}{}<BR/><B>{}</B><BR/>{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10{}];\n",
-                stable_id, name, rnn_step_str, node_type, shape_str, param_count_str, hyperparam_str, node_shape, style, fill_color, peripheries_str
+                stable_id,
+                name,
+                rnn_step_str,
+                node_type,
+                shape_str,
+                param_count_str,
+                hyperparam_str,
+                node_shape,
+                style,
+                fill_color,
+                peripheries_str
             )
         };
 
@@ -1785,10 +1836,11 @@ impl Var {
 
         for (group_idx, group) in layer_groups.iter().enumerate() {
             if let Some((model, layer)) = group.name.split_once('/') {
-                model_groups
-                    .entry(model.to_string())
-                    .or_default()
-                    .push((group_idx, layer.to_string(), group));
+                model_groups.entry(model.to_string()).or_default().push((
+                    group_idx,
+                    layer.to_string(),
+                    group,
+                ));
             } else {
                 standalone_groups.push((group_idx, group));
             }
@@ -1867,8 +1919,7 @@ impl Var {
                                 .map(|c| node_to_model.get(c).map(|s| s.as_str()))
                                 .collect();
 
-                            if !child_models.is_empty()
-                                && child_models.iter().all(|m| m.is_some())
+                            if !child_models.is_empty() && child_models.iter().all(|m| m.is_some())
                             {
                                 let unique: HashSet<&str> =
                                     child_models.iter().filter_map(|m| *m).collect();
@@ -1905,7 +1956,8 @@ impl Var {
                     if pm != cm {
                         let key = (parent_id, cm.clone());
                         if !virtual_input_map.contains_key(&key) {
-                            let virt_id = format!("virt_{}_{}", rid(parent_id), cm.replace(' ', "_"));
+                            let virt_id =
+                                format!("virt_{}_{}", rid(parent_id), cm.replace(' ', "_"));
                             // 形状信息
                             let shape = parent.value_expected_shape();
                             let shape_str = if shape.is_empty() {
@@ -1939,48 +1991,45 @@ impl Var {
         let model_colors = ["#FFEBEE40", "#E8EAF640", "#E0F2F140", "#FFF8E140"];
 
         // 辅助闭包：渲染单个层 cluster 的内容
-        let render_layer_cluster =
-            |dot: &mut String,
-             indent: &str,
-             cluster_id: &str,
-             display_name: &str,
-             group: &LayerGroup,
-             color: &str| {
-                let group_node_ids: Vec<u64> = group
-                    .node_ids
-                    .iter()
-                    .filter(|id| visited.contains(id))
-                    .map(|id| id.0)
-                    .collect();
+        let render_layer_cluster = |dot: &mut String,
+                                    indent: &str,
+                                    cluster_id: &str,
+                                    display_name: &str,
+                                    group: &LayerGroup,
+                                    color: &str| {
+            let group_node_ids: Vec<u64> = group
+                .node_ids
+                .iter()
+                .filter(|id| visited.contains(id))
+                .map(|id| id.0)
+                .collect();
 
-                if group_node_ids.is_empty() {
-                    return;
-                }
+            if group_node_ids.is_empty() {
+                return;
+            }
 
-                dot.push_str(&format!(
-                    "{indent}subgraph cluster_{cluster_id} {{\n"
-                ));
-                dot.push_str(&format!(
+            dot.push_str(&format!("{indent}subgraph cluster_{cluster_id} {{\n"));
+            dot.push_str(&format!(
                     "{indent}    label=<<B>{display_name}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
                     group.layer_type, group.description
                 ));
-                dot.push_str(&format!("{indent}    style=filled;\n"));
-                dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
-                dot.push_str(&format!(
-                    "{indent}    fontname=\"Microsoft YaHei,SimHei,Arial\";\n"
-                ));
-                dot.push_str(&format!("{indent}    fontsize=11;\n"));
-                dot.push_str(&format!("{indent}    margin=12;\n"));
+            dot.push_str(&format!("{indent}    style=filled;\n"));
+            dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
+            dot.push_str(&format!(
+                "{indent}    fontname=\"Microsoft YaHei,SimHei,Arial\";\n"
+            ));
+            dot.push_str(&format!("{indent}    fontsize=11;\n"));
+            dot.push_str(&format!("{indent}    margin=12;\n"));
 
-                for node in &nodes {
-                    if group_node_ids.contains(&node.id().0) {
-                        dot.push_str(&format!("{indent}        "));
-                        dot.push_str(&generate_node_def(node));
-                    }
+            for node in &nodes {
+                if group_node_ids.contains(&node.id().0) {
+                    dot.push_str(&format!("{indent}        "));
+                    dot.push_str(&generate_node_def(node));
                 }
+            }
 
-                dot.push_str(&format!("{indent}}}\n\n"));
-            };
+            dot.push_str(&format!("{indent}}}\n\n"));
+        };
 
         // 建立 RNN cluster 的模型归属索引
         let mut rnn_clusters_for_model: HashMap<String, Vec<usize>> = HashMap::new();
@@ -2041,35 +2090,26 @@ impl Var {
 
             // 内层 layer cluster
             for (group_idx, layer_name, group) in layers {
-                let cluster_id =
-                    format!("{model_id}_{}", layer_name.replace(['-', '.', ' ', '/'], "_"));
-                let color = group_colors[*group_idx % group_colors.len()];
-                render_layer_cluster(
-                    &mut dot,
-                    "        ",
-                    &cluster_id,
-                    layer_name,
-                    group,
-                    color,
+                let cluster_id = format!(
+                    "{model_id}_{}",
+                    layer_name.replace(['-', '.', ' ', '/'], "_")
                 );
+                let color = group_colors[*group_idx % group_colors.len()];
+                render_layer_cluster(&mut dot, "        ", &cluster_id, layer_name, group, color);
             }
 
             // RNN 折叠 cluster（属于该模型的，嵌套在模型内部）
             if let Some(rnn_indices) = rnn_clusters_for_model.get(model_name.as_str()) {
                 for &idx in rnn_indices {
                     let (rnn_name, _, desc, visible_ids) = &rnn_clusters[idx];
-                    let layer_name =
-                        rnn_name.split_once('/').map(|(_, l)| l).unwrap_or(rnn_name);
+                    let layer_name = rnn_name.split_once('/').map(|(_, l)| l).unwrap_or(rnn_name);
                     let cluster_id = format!(
                         "{model_id}_{}",
                         layer_name.replace(['-', '.', ' ', '/'], "_")
                     );
-                    let color =
-                        group_colors[(layer_groups.len() + idx) % group_colors.len()];
+                    let color = group_colors[(layer_groups.len() + idx) % group_colors.len()];
 
-                    dot.push_str(&format!(
-                        "        subgraph cluster_{cluster_id} {{\n"
-                    ));
+                    dot.push_str(&format!("        subgraph cluster_{cluster_id} {{\n"));
                     dot.push_str(&format!(
                         "            label=<<B>{layer_name}</B><BR/><FONT POINT-SIZE=\"9\">{desc}</FONT>>;\n"
                     ));
@@ -2077,9 +2117,7 @@ impl Var {
                     dot.push_str("            peripheries=3;\n");
                     dot.push_str("            penwidth=2;\n");
                     dot.push_str(&format!("            fillcolor=\"{color}\";\n"));
-                    dot.push_str(
-                        "            fontname=\"Microsoft YaHei,SimHei,Arial\";\n",
-                    );
+                    dot.push_str("            fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
                     dot.push_str("            fontsize=11;\n");
                     dot.push_str("            margin=12;\n");
 
@@ -2191,10 +2229,9 @@ impl Var {
                 // RNN 输出重定向：如果父节点是被折叠的 real_output，
                 // 重定向到 repr_output（第一步的输出）
                 // 注意：必须在隐藏检查之前执行，否则 real_output 会被当作隐藏节点跳过
-                let parent_id =
-                    *rnn_output_redirects
-                        .get(&original_parent_id)
-                        .unwrap_or(&original_parent_id);
+                let parent_id = *rnn_output_redirects
+                    .get(&original_parent_id)
+                    .unwrap_or(&original_parent_id);
                 let was_redirected = original_parent_id != parent_id;
 
                 // 跳过隐藏父节点的边（重定向后再检查）
@@ -2205,7 +2242,8 @@ impl Var {
                 // RNN 特殊边样式
                 let edge_attrs = if rnn_init_edges.contains(&(parent_id, child_id)) {
                     // A2: input → init_state 橙色虚线，标注 t=0
-                    " [style=dashed color=\"#E67E22\" label=<t=0> fontcolor=\"#E67E22\" fontsize=9]".to_string()
+                    " [style=dashed color=\"#E67E22\" label=<t=0> fontcolor=\"#E67E22\" fontsize=9]"
+                        .to_string()
                 } else if was_redirected {
                     // A3: repr_output → 下游层，橙色实线标注最后一步
                     if let Some(&(min_s, max_s)) = rnn_output_repr_step_ranges.get(&parent_id) {
@@ -2239,17 +2277,22 @@ impl Var {
                     if let Some(virt_id) = virtual_input_map.get(&key) {
                         dot.push_str(&format!(
                             "    \"{}\" -> \"{}\" [style=dashed color=\"#999999\"];\n",
-                            rid(parent_id), virt_id
+                            rid(parent_id),
+                            virt_id
                         ));
                         dot.push_str(&format!(
                             "    \"{}\" -> \"{}\"{};\n",
-                            virt_id, rid(child_id), edge_attrs
+                            virt_id,
+                            rid(child_id),
+                            edge_attrs
                         ));
                     }
                 } else {
                     dot.push_str(&format!(
                         "    \"{}\" -> \"{}\"{};\n",
-                        rid(parent_id), rid(child_id), edge_attrs
+                        rid(parent_id),
+                        rid(child_id),
+                        edge_attrs
                     ));
                 }
             }

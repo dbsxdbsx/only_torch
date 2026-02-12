@@ -197,7 +197,7 @@ fn test_avg_pool2d_backward_pytorch_comparison() -> Result<(), GraphError> {
 #[test]
 fn test_avg_pool2d_creation() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    let pool = AvgPool2d::new(&graph,  (2, 2), Some((2, 2)), "pool1");
+    let pool = AvgPool2d::new(&graph, (2, 2), Some((2, 2)), "pool1");
 
     assert_eq!(pool.kernel_size(), (2, 2));
     assert_eq!(pool.stride(), Some((2, 2)));

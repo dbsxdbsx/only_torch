@@ -45,8 +45,8 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
     let mut gi_batch = inner_batch.borrow_mut();
 
     let x_b = gi_batch.create_basic_input_node(&[batch_size, input_dim], Some("x"))?;
-    let w_b = gi_batch
-        .create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
+    let w_b =
+        gi_batch.create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
     let z_b = gi_batch.create_mat_mul_node(vec![x_b.clone(), w_b.clone()], Some("z"))?;
     let out_b = gi_batch.create_sigmoid_node(z_b.clone(), Some("out"))?;
 
@@ -62,8 +62,11 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
         let mut gi_single = inner_single.borrow_mut();
 
         let x_s = gi_single.create_basic_input_node(&[1, input_dim], Some("x"))?;
-        let w_s = gi_single
-            .create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
+        let w_s = gi_single.create_parameter_node_seeded(
+            &[input_dim, output_dim],
+            Some("w"),
+            seed + 100,
+        )?;
         let z_s = gi_single.create_mat_mul_node(vec![x_s.clone(), w_s.clone()], Some("z"))?;
         let out_s = gi_single.create_sigmoid_node(z_s.clone(), Some("out"))?;
 
@@ -124,10 +127,10 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
 
     let x_b = gi_batch.create_basic_input_node(&[batch_size, input_dim], Some("x"))?;
     let y_b = gi_batch.create_basic_input_node(&[batch_size, output_dim], Some("y"))?;
-    let w1_b = gi_batch
-        .create_parameter_node_seeded(&[input_dim, hidden_dim], Some("w1"), seed + 100)?;
-    let w2_b = gi_batch
-        .create_parameter_node_seeded(&[hidden_dim, output_dim], Some("w2"), seed + 101)?;
+    let w1_b =
+        gi_batch.create_parameter_node_seeded(&[input_dim, hidden_dim], Some("w1"), seed + 100)?;
+    let w2_b =
+        gi_batch.create_parameter_node_seeded(&[hidden_dim, output_dim], Some("w2"), seed + 101)?;
 
     let z1_b = gi_batch.create_mat_mul_node(vec![x_b.clone(), w1_b.clone()], None)?;
     let a1_b = gi_batch.create_sigmoid_node(z1_b.clone(), None)?;
@@ -155,10 +158,16 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
 
         let x_s = gi_single.create_basic_input_node(&[1, input_dim], Some("x"))?;
         let y_s = gi_single.create_basic_input_node(&[1, output_dim], Some("y"))?;
-        let w1_s = gi_single
-            .create_parameter_node_seeded(&[input_dim, hidden_dim], Some("w1"), seed + 100)?;
-        let w2_s = gi_single
-            .create_parameter_node_seeded(&[hidden_dim, output_dim], Some("w2"), seed + 101)?;
+        let w1_s = gi_single.create_parameter_node_seeded(
+            &[input_dim, hidden_dim],
+            Some("w1"),
+            seed + 100,
+        )?;
+        let w2_s = gi_single.create_parameter_node_seeded(
+            &[hidden_dim, output_dim],
+            Some("w2"),
+            seed + 101,
+        )?;
 
         let z1_s = gi_single.create_mat_mul_node(vec![x_s.clone(), w1_s.clone()], None)?;
         let a1_s = gi_single.create_sigmoid_node(z1_s.clone(), None)?;
@@ -233,8 +242,8 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
 
     let x_b = gi_batch.create_basic_input_node(&[batch_size, input_dim], Some("x"))?;
     let y_b = gi_batch.create_basic_input_node(&[batch_size, output_dim], Some("y"))?;
-    let w_b = gi_batch
-        .create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
+    let w_b =
+        gi_batch.create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
     let z_b = gi_batch.create_mat_mul_node(vec![x_b.clone(), w_b.clone()], None)?;
     let loss_b = gi_batch.create_mse_mean_node(z_b.clone(), y_b.clone(), Some("loss"))?;
 
@@ -260,8 +269,11 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
 
         let x_s = gi_single.create_basic_input_node(&[1, input_dim], Some("x"))?;
         let y_s = gi_single.create_basic_input_node(&[1, output_dim], Some("y"))?;
-        let w_s = gi_single
-            .create_parameter_node_seeded(&[input_dim, output_dim], Some("w"), seed + 100)?;
+        let w_s = gi_single.create_parameter_node_seeded(
+            &[input_dim, output_dim],
+            Some("w"),
+            seed + 100,
+        )?;
         let z_s = gi_single.create_mat_mul_node(vec![x_s.clone(), w_s.clone()], None)?;
         let loss_s = gi_single.create_mse_mean_node(z_s.clone(), y_s.clone(), Some("loss"))?;
 

@@ -16,8 +16,8 @@
  */
 
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
@@ -115,8 +115,12 @@ impl Conv2d {
                 ),
             });
         }
-        let (batch_size, input_c, input_h, input_w) =
-            (input_shape[0], input_shape[1], input_shape[2], input_shape[3]);
+        let (batch_size, input_c, input_h, input_w) = (
+            input_shape[0],
+            input_shape[1],
+            input_shape[2],
+            input_shape[3],
+        );
 
         // 4. 验证通道数匹配
         if input_c != in_channels {
@@ -173,7 +177,6 @@ impl Conv2d {
             input_shape: input_shape.to_vec(),
         })
     }
-
 
     /// 对输入进行零填充（Rayon 并行版本）
     /// 输入必须是 4D [batch, C, H, W]
@@ -342,9 +345,9 @@ impl TraitNode for Conv2d {
             .ok_or_else(|| GraphError::ComputationError("缺少填充后的输入缓存".to_string()))?;
 
         // 获取卷积核（parent_values[1]）
-        let kernel = parent_values.get(1).ok_or_else(|| {
-            GraphError::ComputationError("Conv2D 梯度计算需要卷积核".to_string())
-        })?;
+        let kernel = parent_values
+            .get(1)
+            .ok_or_else(|| GraphError::ComputationError("Conv2D 梯度计算需要卷积核".to_string()))?;
 
         // 输入必须是 4D [batch, C_out, H', W']
         let grad_shape = upstream_grad.shape();

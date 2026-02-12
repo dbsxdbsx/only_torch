@@ -7,8 +7,8 @@
  */
 
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -51,13 +51,12 @@ impl Minimum {
         b_dynamic_shape: &DynamicShape,
     ) -> Result<Self, GraphError> {
         // 计算广播后的形状
-        let fixed_shape = broadcast_shape(a_shape, b_shape).ok_or_else(|| {
-            GraphError::ShapeMismatch {
+        let fixed_shape =
+            broadcast_shape(a_shape, b_shape).ok_or_else(|| GraphError::ShapeMismatch {
                 expected: a_shape.to_vec(),
                 got: b_shape.to_vec(),
                 message: "Minimum 节点的父节点形状无法广播".to_string(),
-            }
-        })?;
+            })?;
 
         // 动态形状
         let dynamic_shape = a_dynamic_shape.broadcast_with(b_dynamic_shape);

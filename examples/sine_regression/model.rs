@@ -23,7 +23,7 @@ impl SineMLP {
 
     /// `PyTorch` 风格 forward：直接接收 Tensor
     pub fn forward(&self, x: &Tensor) -> Result<Var, GraphError> {
-        Ok(self.fc2.forward(&self.fc1.forward(x).tanh()))
+        Ok(self.fc2.forward(self.fc1.forward(x).tanh()))
     }
 }
 

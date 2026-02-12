@@ -16,8 +16,8 @@
  */
 
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
@@ -81,8 +81,12 @@ impl AvgPool2d {
                 ),
             });
         }
-        let (batch_size, channels, input_h, input_w) =
-            (parent_shape[0], parent_shape[1], parent_shape[2], parent_shape[3]);
+        let (batch_size, channels, input_h, input_w) = (
+            parent_shape[0],
+            parent_shape[1],
+            parent_shape[2],
+            parent_shape[3],
+        );
 
         let (k_h, k_w) = kernel_size;
         let (s_h, s_w) = stride.unwrap_or(kernel_size);
@@ -101,7 +105,11 @@ impl AvgPool2d {
         if output_h == 0 || output_w == 0 {
             return Err(GraphError::InvalidOperation(format!(
                 "AvgPool2d 输出尺寸无效：输入 {}x{}，核 {}x{}，步长 {:?}",
-                input_h, input_w, k_h, k_w, (s_h, s_w)
+                input_h,
+                input_w,
+                k_h,
+                k_w,
+                (s_h, s_w)
             )));
         }
 
@@ -131,7 +139,6 @@ impl AvgPool2d {
             input_shape: parent_shape.to_vec(),
         })
     }
-
 }
 
 impl TraitNode for AvgPool2d {

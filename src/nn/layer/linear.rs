@@ -74,11 +74,7 @@ impl Linear {
 
         // 创建偏置参数（可选）：零初始化
         let bias = if use_bias {
-            Some(graph.parameter(
-                &[1, out_features],
-                Init::Zeros,
-                &format!("{full_name}_b"),
-            )?)
+            Some(graph.parameter(&[1, out_features], Init::Zeros, &format!("{full_name}_b"))?)
         } else {
             None
         };

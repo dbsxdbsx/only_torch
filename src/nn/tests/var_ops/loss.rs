@@ -102,9 +102,7 @@ fn test_scalar_mse_loss_i32_one() {
 #[test]
 fn test_scalar_mse_loss_f64() {
     let graph = Graph::new();
-    let pred = graph
-        .input(&Tensor::new(&[0.5, 0.5], &[2, 1]))
-        .unwrap();
+    let pred = graph.input(&Tensor::new(&[0.5, 0.5], &[2, 1])).unwrap();
 
     // target = 0.5，pred = 0.5，loss 应为 0
     let loss = pred.mse_loss(0.5_f64).unwrap();
@@ -116,9 +114,7 @@ fn test_scalar_mse_loss_f64() {
 #[test]
 fn test_scalar_mse_loss_f32() {
     let graph = Graph::new();
-    let pred = graph
-        .input(&Tensor::new(&[2.0, 3.0], &[2, 1]))
-        .unwrap();
+    let pred = graph.input(&Tensor::new(&[2.0, 3.0], &[2, 1])).unwrap();
 
     // MSE((2,3), (1.5,1.5)) = mean((0.5)^2 + (1.5)^2) = mean(0.25 + 2.25) = 1.25
     let loss = pred.mse_loss(1.5_f32).unwrap();
@@ -130,9 +126,7 @@ fn test_scalar_mse_loss_f32() {
 #[test]
 fn test_scalar_mse_loss_u32() {
     let graph = Graph::new();
-    let pred = graph
-        .input(&Tensor::new(&[2.0, 2.0], &[2, 1]))
-        .unwrap();
+    let pred = graph.input(&Tensor::new(&[2.0, 2.0], &[2, 1])).unwrap();
     let loss = pred.mse_loss(2_u32).unwrap();
     loss.forward().unwrap();
     assert!(loss.item().unwrap().abs() < 1e-6);
@@ -142,9 +136,7 @@ fn test_scalar_mse_loss_u32() {
 #[test]
 fn test_scalar_mse_loss_i64_u64() {
     let graph = Graph::new();
-    let pred = graph
-        .input(&Tensor::new(&[0.0, 0.0], &[2, 1]))
-        .unwrap();
+    let pred = graph.input(&Tensor::new(&[0.0, 0.0], &[2, 1])).unwrap();
 
     let loss_i64 = pred.mse_loss(0_i64).unwrap();
     loss_i64.forward().unwrap();
@@ -160,9 +152,7 @@ fn test_scalar_mse_loss_i64_u64() {
 fn test_scalar_bce_loss() {
     let graph = Graph::new();
     // 预测 logits 较大正值 -> sigmoid 接近 1 -> target=1 -> loss 接近 0
-    let pred = graph
-        .input(&Tensor::new(&[5.0, 5.0], &[2, 1]))
-        .unwrap();
+    let pred = graph.input(&Tensor::new(&[5.0, 5.0], &[2, 1])).unwrap();
     let loss = pred.bce_loss(1).unwrap();
     loss.forward().unwrap();
     assert!(loss.item().unwrap() < 0.1);
@@ -172,9 +162,7 @@ fn test_scalar_bce_loss() {
 #[test]
 fn test_scalar_mae_loss() {
     let graph = Graph::new();
-    let pred = graph
-        .input(&Tensor::new(&[1.0, 3.0], &[2, 1]))
-        .unwrap();
+    let pred = graph.input(&Tensor::new(&[1.0, 3.0], &[2, 1])).unwrap();
     // MAE((1,3), (2,2)) = mean(|1-2| + |3-2|) = mean(1 + 1) = 1.0
     let loss = pred.mae_loss(2).unwrap();
     loss.forward().unwrap();
@@ -185,9 +173,7 @@ fn test_scalar_mae_loss() {
 #[test]
 fn test_scalar_huber_loss() {
     let graph = Graph::new();
-    let pred = graph
-        .input(&Tensor::new(&[1.0, 1.0], &[2, 1]))
-        .unwrap();
+    let pred = graph.input(&Tensor::new(&[1.0, 1.0], &[2, 1])).unwrap();
     // pred == target(全 1)，loss 应为 0
     let loss = pred.huber_loss(1).unwrap();
     loss.forward().unwrap();

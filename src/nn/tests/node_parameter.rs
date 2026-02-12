@@ -283,12 +283,8 @@ fn test_node_parameter_gradient_correctness() {
 
     // param = [[1.0, 2.0]], target = [[0.0, 0.0]]
     let param = graph.parameter(&[1, 2], Init::Zeros, "param").unwrap();
-    param
-        .set_value(&Tensor::new(&[1.0, 2.0], &[1, 2]))
-        .unwrap();
-    let target = graph
-        .input(&Tensor::new(&[0.0, 0.0], &[1, 2]))
-        .unwrap();
+    param.set_value(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
+    let target = graph.input(&Tensor::new(&[0.0, 0.0], &[1, 2])).unwrap();
 
     // loss = mean((1-0)^2 + (2-0)^2) = mean(1 + 4) = 2.5
     let loss = param.mse_loss(&target).unwrap();

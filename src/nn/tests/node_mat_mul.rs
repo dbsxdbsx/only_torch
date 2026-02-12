@@ -82,9 +82,7 @@ fn test_mat_mul_cannot_set_value() {
     let a = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))
         .unwrap();
-    let b = graph
-        .input(&Tensor::new(&[1.0; 12], &[3, 4]))
-        .unwrap();
+    let b = graph.input(&Tensor::new(&[1.0; 12], &[3, 4])).unwrap();
 
     let result = a.matmul(&b).unwrap();
 
@@ -320,10 +318,7 @@ fn test_mat_mul_vjp_invalid_parent_index() -> Result<(), GraphError> {
         .create_mat_mul_node(vec![left.clone(), right.clone()], Some("mm"))
         .unwrap();
 
-    left.set_value(Some(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    )))?;
+    left.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))?;
     right.set_value(Some(&Tensor::new(&[1.0; 12], &[3, 4])))?;
     mm.forward_recursive(1, false)?;
 

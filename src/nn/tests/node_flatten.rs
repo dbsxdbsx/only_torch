@@ -140,9 +140,21 @@ fn test_flatten_with_matmul() -> Result<(), GraphError> {
     let cnn_features = 8;
     let hidden_size = 4;
 
-    let x = graph.input(&Tensor::normal_seeded(0.0, 1.0, &[batch_size, cnn_features], 100))?;
+    let x = graph.input(&Tensor::normal_seeded(
+        0.0,
+        1.0,
+        &[batch_size, cnn_features],
+        100,
+    ))?;
     let flat = x.flatten()?;
-    let w = graph.parameter(&[cnn_features, hidden_size], Init::Normal { mean: 0.0, std: 0.1 }, "w")?;
+    let w = graph.parameter(
+        &[cnn_features, hidden_size],
+        Init::Normal {
+            mean: 0.0,
+            std: 0.1,
+        },
+        "w",
+    )?;
     let h = flat.matmul(&w)?;
 
     h.forward()?;
@@ -241,10 +253,7 @@ fn test_flatten_vjp_unit_upstream() -> Result<(), GraphError> {
         .unwrap();
 
     input
-        .set_value(Some(&Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
     flat.forward_recursive(1, false).unwrap();
 
@@ -276,10 +285,7 @@ fn test_flatten_vjp_non_unit_upstream() -> Result<(), GraphError> {
         .unwrap();
 
     input
-        .set_value(Some(&Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
     flat.forward_recursive(1, false).unwrap();
 
@@ -362,10 +368,7 @@ fn test_flatten_single_sample_backward() -> Result<(), GraphError> {
 
     // 设置值
     x_node
-        .set_value(Some(&Tensor::new(
-            &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6], &[2, 3])))
         .unwrap();
     target_node
         .set_value(Some(&Tensor::zeros(&[1, 1])))

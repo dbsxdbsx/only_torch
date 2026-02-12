@@ -22,8 +22,12 @@ use approx::assert_abs_diff_eq;
 fn test_add_forward() {
     let graph = Graph::new();
 
-    let p1 = graph.input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])).unwrap();
-    let p2 = graph.input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])).unwrap();
+    let p1 = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
+        .unwrap();
+    let p2 = graph
+        .input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))
+        .unwrap();
     let add = &p1 + &p2;
 
     add.forward().unwrap();
@@ -40,17 +44,29 @@ fn test_add_forward_three_parents() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
-    let p3 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p3")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
+    let p3 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p3"))
+        .unwrap();
     let add = inner
         .borrow_mut()
         .create_add_node(vec![p1.clone(), p2.clone(), p3.clone()], Some("add"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
-    p3.set_value(Some(&Tensor::new(&[10.0, 10.0, 10.0, 10.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
+    p3.set_value(Some(&Tensor::new(&[10.0, 10.0, 10.0, 10.0], &[2, 2])))
+        .unwrap();
 
     add.forward_recursive(1, false).unwrap();
 
@@ -64,8 +80,12 @@ fn test_add_forward_three_parents() {
 fn test_add_cannot_set_value() {
     let graph = Graph::new();
 
-    let p1 = graph.input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])).unwrap();
-    let p2 = graph.input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])).unwrap();
+    let p1 = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
+        .unwrap();
+    let p2 = graph
+        .input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))
+        .unwrap();
     let add = &p1 + &p2;
 
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
@@ -88,15 +108,23 @@ fn test_add_vjp_to_first_parent() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let add = inner
         .borrow_mut()
         .create_add_node(vec![p1.clone(), p2.clone()], Some("add"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
@@ -114,15 +142,23 @@ fn test_add_vjp_to_second_parent() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let add = inner
         .borrow_mut()
         .create_add_node(vec![p1.clone(), p2.clone()], Some("add"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
@@ -140,15 +176,23 @@ fn test_add_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let add = inner
         .borrow_mut()
         .create_add_node(vec![p1.clone(), p2.clone()], Some("add"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
@@ -166,15 +210,23 @@ fn test_add_vjp_with_negative_values() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let add = inner
         .borrow_mut()
         .create_add_node(vec![p1.clone(), p2.clone()], Some("add"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[-1.0, -2.0, -3.0, -4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, -6.0, 7.0, -8.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[-1.0, -2.0, -3.0, -4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, -6.0, 7.0, -8.0], &[2, 2])))
+        .unwrap();
     add.forward_recursive(1, false).unwrap();
 
     // 验证前向传播
@@ -196,17 +248,29 @@ fn test_add_vjp_three_parents() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
-    let p3 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p3")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
+    let p3 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p3"))
+        .unwrap();
     let add = inner
         .borrow_mut()
         .create_add_node(vec![p1.clone(), p2.clone(), p3.clone()], Some("add"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
-    p3.set_value(Some(&Tensor::new(&[10.0, 10.0, 10.0, 10.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
+    p3.set_value(Some(&Tensor::new(&[10.0, 10.0, 10.0, 10.0], &[2, 2])))
+        .unwrap();
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 4.0, 6.0, 8.0], &[2, 2]);
@@ -231,8 +295,14 @@ fn test_add_broadcast_vjp() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let matrix = inner.borrow_mut().create_basic_input_node(&[3, 4], Some("matrix")).unwrap();
-    let bias = inner.borrow_mut().create_basic_input_node(&[1, 4], Some("bias")).unwrap();
+    let matrix = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("matrix"))
+        .unwrap();
+    let bias = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 4], Some("bias"))
+        .unwrap();
     let add = inner
         .borrow_mut()
         .create_add_node(vec![matrix.clone(), bias.clone()], Some("add"))
@@ -244,7 +314,8 @@ fn test_add_broadcast_vjp() -> Result<(), GraphError> {
             &[3, 4],
         )))
         .unwrap();
-    bias.set_value(Some(&Tensor::new(&[10., 20., 30., 40.], &[1, 4]))).unwrap();
+    bias.set_value(Some(&Tensor::new(&[10., 20., 30., 40.], &[1, 4])))
+        .unwrap();
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[3, 4]);
@@ -268,15 +339,24 @@ fn test_add_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let matrix = inner.borrow_mut().create_basic_input_node(&[2, 3], Some("matrix")).unwrap();
-    let bias = inner.borrow_mut().create_basic_input_node(&[1, 3], Some("bias")).unwrap();
+    let matrix = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("matrix"))
+        .unwrap();
+    let bias = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("bias"))
+        .unwrap();
     let add = inner
         .borrow_mut()
         .create_add_node(vec![matrix.clone(), bias.clone()], Some("add"))
         .unwrap();
 
-    matrix.set_value(Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]))).unwrap();
-    bias.set_value(Some(&Tensor::new(&[10., 20., 30.], &[1, 3]))).unwrap();
+    matrix
+        .set_value(Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])))
+        .unwrap();
+    bias.set_value(Some(&Tensor::new(&[10., 20., 30.], &[1, 3])))
+        .unwrap();
     add.forward_recursive(1, false).unwrap();
 
     // upstream = [[1,2,3],[4,5,6]], sum(axis=0) = [[5,7,9]]

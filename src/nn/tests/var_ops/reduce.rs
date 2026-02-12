@@ -3,9 +3,9 @@
  * @Description  : VarReduceOps 单元测试
  */
 
+use crate::nn::Graph;
 use crate::nn::var::Init;
 use crate::nn::var_ops::{VarLossOps, VarReduceOps};
-use crate::nn::Graph;
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -119,7 +119,9 @@ fn test_var_sum_chained() {
     let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
             &[2, 2, 3],
         ))
         .unwrap();
@@ -249,7 +251,9 @@ fn test_var_mean_chained() {
     let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
             &[2, 2, 3],
         ))
         .unwrap();

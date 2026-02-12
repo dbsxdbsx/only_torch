@@ -90,8 +90,7 @@ impl Gru {
             Init::Kaiming,
             &format!("{full_name}_W_hr"),
         )?;
-        let b_r =
-            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_r"))?;
+        let b_r = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_r"))?;
 
         // === 更新门参数 ===
         let w_iz = graph.parameter(
@@ -104,8 +103,7 @@ impl Gru {
             Init::Kaiming,
             &format!("{full_name}_W_hz"),
         )?;
-        let b_z =
-            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_z"))?;
+        let b_z = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_z"))?;
 
         // === 候选状态参数 ===
         let w_in = graph.parameter(
@@ -118,8 +116,7 @@ impl Gru {
             Init::Kaiming,
             &format!("{full_name}_W_hn"),
         )?;
-        let b_n =
-            graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_n"))?;
+        let b_n = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_n"))?;
 
         // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
         // GRU 每个时间步的节点数：20

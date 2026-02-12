@@ -50,11 +50,7 @@ fn test_get_node_type_summary() {
 
     // 验证总数等于节点数
     let total: usize = summary.iter().map(|(_, count)| count).sum();
-    assert_eq!(
-        total,
-        node_type_count(),
-        "分类统计总数应等于节点总数"
-    );
+    assert_eq!(total, node_type_count(), "分类统计总数应等于节点总数");
 }
 
 /// 测试 NodeTypeInfo 的 Display 实现

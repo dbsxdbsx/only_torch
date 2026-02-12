@@ -29,10 +29,7 @@ fn test_softplus_forward() {
     let graph = Graph::new();
 
     let x = graph
-        .input(&Tensor::new(
-            &[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5],
-            &[2, 3],
-        ))
+        .input(&Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]))
         .unwrap();
     let result = x.softplus();
 
@@ -55,10 +52,7 @@ fn test_softplus_numerical_stability() {
     let graph = Graph::new();
 
     let x = graph
-        .input(&Tensor::new(
-            &[-50.0, -20.0, 0.0, 20.0, 50.0],
-            &[1, 5],
-        ))
+        .input(&Tensor::new(&[-50.0, -20.0, 0.0, 20.0, 50.0], &[1, 5]))
         .unwrap();
     let result = x.softplus();
 
@@ -174,10 +168,7 @@ fn test_softplus_backward_e2e() -> Result<(), GraphError> {
     let graph = Graph::new();
 
     let x = graph.parameter(&[2, 3], Init::Zeros, "x")?;
-    x.set_value(&Tensor::new(
-        &[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5],
-        &[2, 3],
-    ))?;
+    x.set_value(&Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]))?;
 
     let result = x.softplus();
     let target = graph.input(&Tensor::zeros(&[2, 3]))?;
@@ -218,10 +209,7 @@ fn test_softplus_gradient_accumulation() -> Result<(), GraphError> {
     let graph = Graph::new();
 
     let x = graph.parameter(&[2, 3], Init::Zeros, "x")?;
-    x.set_value(&Tensor::new(
-        &[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5],
-        &[2, 3],
-    ))?;
+    x.set_value(&Tensor::new(&[-1.0, 0.0, 1.0, 2.0, -2.0, 0.5], &[2, 3]))?;
 
     let result = x.softplus();
     let target = graph.input(&Tensor::zeros(&[2, 3]))?;

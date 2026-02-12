@@ -10,8 +10,8 @@
  */
 
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;
@@ -93,7 +93,6 @@ impl Dropout {
             mask: None,
         })
     }
-
 
     /// 生成 dropout mask
     ///

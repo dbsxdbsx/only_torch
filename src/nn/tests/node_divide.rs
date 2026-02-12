@@ -318,10 +318,7 @@ fn test_divide_broadcast_vjp() -> Result<(), GraphError> {
     // matrix = [[2,6,12], [4,9,16]]
     // scale = [[2, 3, 4]]
     matrix
-        .set_value(Some(&Tensor::new(
-            &[2., 6., 12., 4., 9., 16.],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[2., 6., 12., 4., 9., 16.], &[2, 3])))
         .unwrap();
     scale
         .set_value(Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))
@@ -334,8 +331,7 @@ fn test_divide_broadcast_vjp() -> Result<(), GraphError> {
     // upstream / [[2,3,4],[2,3,4]] = [[0.5,0.333,0.25],[0.5,0.333,0.25]]
     let grad_to_matrix = result.calc_grad_to_parent_index(0, &upstream_grad)?;
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
-    let expected_matrix_grad =
-        Tensor::new(&[0.5, 1.0 / 3.0, 0.25, 0.5, 1.0 / 3.0, 0.25], &[2, 3]);
+    let expected_matrix_grad = Tensor::new(&[0.5, 1.0 / 3.0, 0.25, 0.5, 1.0 / 3.0, 0.25], &[2, 3]);
     assert_abs_diff_eq!(grad_to_matrix, expected_matrix_grad, epsilon = 1e-6);
 
     // 对 scale [1,3] 的梯度：-upstream * matrix / scale²，然后沿 axis=0 求和
@@ -457,7 +453,11 @@ fn test_divide_broadcast_e2e() -> Result<(), GraphError> {
 
     let features_grad = features.grad()?.expect("features 应有 grad");
     let scale_grad = scale.grad()?.expect("scale 应有 grad");
-    assert_eq!(features_grad.shape(), &[2, 3], "features 梯度形状应为 [2,3]");
+    assert_eq!(
+        features_grad.shape(),
+        &[2, 3],
+        "features 梯度形状应为 [2,3]"
+    );
     assert_eq!(scale_grad.shape(), &[1, 3], "scale 梯度形状应为 [1,3]");
 
     // result = [[1,2,3], [2,4,6]]
@@ -546,9 +546,7 @@ fn test_divide_dynamic_shape_propagation() {
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
 
     // 创建一个固定形状的参数（非零，避免除零）
-    let scale = graph
-        .parameter(&[1, 16], Init::Ones, "scale")
-        .unwrap();
+    let scale = graph.parameter(&[1, 16], Init::Ones, "scale").unwrap();
 
     // Divide: h0 / scale
     let result = &h0 / &scale;
@@ -568,9 +566,7 @@ fn test_divide_dynamic_batch_forward() {
     // 创建支持动态 batch 的节点
     let x = graph.input(&Tensor::ones(&[2, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
-    let scale = graph
-        .parameter(&[1, 16], Init::Ones, "scale")
-        .unwrap();
+    let scale = graph.parameter(&[1, 16], Init::Ones, "scale").unwrap();
 
     // Divide: h0 / scale（结果全零，因为 h0 是零）
     let result = &h0 / &scale;
@@ -597,9 +593,7 @@ fn test_divide_dynamic_batch_backward() {
     // 创建支持动态 batch 的节点
     let x = graph.input(&Tensor::ones(&[2, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[4], None).unwrap(); // [?, 4]
-    let scale = graph
-        .parameter(&[1, 4], Init::Ones, "scale")
-        .unwrap();
+    let scale = graph.parameter(&[1, 4], Init::Ones, "scale").unwrap();
 
     // Divide: h0 / scale
     let result = &h0 / &scale;

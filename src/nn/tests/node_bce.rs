@@ -130,22 +130,14 @@ fn test_bce_loss_wrong_prediction_high_loss() {
     let graph = Graph::new();
 
     // 大正数预测 0，大负数预测 1（完全错误）
-    let logits = graph
-        .input(&Tensor::new(&[10.0, -10.0], &[1, 2]))
-        .unwrap();
-    let target = graph
-        .input(&Tensor::new(&[0.0, 1.0], &[1, 2]))
-        .unwrap();
+    let logits = graph.input(&Tensor::new(&[10.0, -10.0], &[1, 2])).unwrap();
+    let target = graph.input(&Tensor::new(&[0.0, 1.0], &[1, 2])).unwrap();
     let loss = logits.bce_loss(&target).unwrap();
 
     loss.forward().unwrap();
 
     let loss_val = loss.item().unwrap();
-    assert!(
-        loss_val > 5.0,
-        "错误预测时损失应该很大，实际: {}",
-        loss_val
-    );
+    assert!(loss_val > 5.0, "错误预测时损失应该很大，实际: {}", loss_val);
 }
 
 /// 测试多标签分类场景 — BCE 相对于 Softmax CE 的核心优势
@@ -166,11 +158,7 @@ fn test_bce_loss_multi_label_classification() {
     loss.forward().unwrap();
 
     let loss_val = loss.item().unwrap();
-    assert!(
-        loss_val < 0.2,
-        "正确预测时损失应该很小，实际: {}",
-        loss_val
-    );
+    assert!(loss_val < 0.2, "正确预测时损失应该很小，实际: {}", loss_val);
 }
 
 /// 测试 BCE loss 节点不能直接设置值

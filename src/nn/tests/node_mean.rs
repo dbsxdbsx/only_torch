@@ -247,8 +247,8 @@ fn test_mean_gradient_accumulation() -> Result<(), GraphError> {
 /// 测试 Mean 节点的动态形状传播
 #[test]
 fn test_mean_dynamic_shape_propagation() {
-    use crate::nn::var_ops::VarReduceOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarReduceOps;
 
     let graph = Graph::new();
 
@@ -273,8 +273,8 @@ fn test_mean_dynamic_shape_propagation() {
 /// 测试 Mean 节点在不同 batch_size 下的前向计算
 #[test]
 fn test_mean_dynamic_batch_forward() {
-    use crate::nn::var_ops::VarReduceOps;
     use crate::nn::Graph;
+    use crate::nn::var_ops::VarReduceOps;
 
     let graph = Graph::new();
 
@@ -313,8 +313,8 @@ fn test_mean_dynamic_batch_forward() {
 /// 测试 Mean 节点在不同 batch_size 下的反向传播
 #[test]
 fn test_mean_dynamic_batch_backward() {
-    use crate::nn::var_ops::{VarLossOps, VarReduceOps};
     use crate::nn::Graph;
+    use crate::nn::var_ops::{VarLossOps, VarReduceOps};
 
     let graph = Graph::new();
 
@@ -397,9 +397,7 @@ fn test_create_mean_node_invalid_axis() {
         .unwrap();
 
     // axis=5 超出范围
-    let result = inner
-        .borrow_mut()
-        .create_mean_node(input, Some(5), None);
+    let result = inner.borrow_mut().create_mean_node(input, Some(5), None);
 
     assert!(result.is_err());
 }

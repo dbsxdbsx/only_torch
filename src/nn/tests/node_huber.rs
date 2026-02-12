@@ -440,9 +440,7 @@ fn test_huber_vjp_custom_delta() -> Result<(), GraphError> {
 fn test_huber_backward_e2e_mixed() {
     let graph = Graph::new();
 
-    let input = graph
-        .parameter(&[1, 4], Init::Zeros, "input")
-        .unwrap();
+    let input = graph.parameter(&[1, 4], Init::Zeros, "input").unwrap();
     input
         .set_value(&Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 4]))
         .unwrap();
@@ -471,9 +469,7 @@ fn test_huber_backward_e2e_mixed() {
 fn test_huber_regression_training() {
     let graph = Graph::new();
 
-    let input = graph
-        .parameter(&[1, 3], Init::Zeros, "input")
-        .unwrap();
+    let input = graph.parameter(&[1, 3], Init::Zeros, "input").unwrap();
     // input 从零开始，目标是 [2.0, 3.0, 4.0]
     let target = graph
         .input(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3]))
@@ -518,9 +514,7 @@ fn test_huber_regression_training() {
 fn test_huber_gradient_accumulation() {
     let graph = Graph::new();
 
-    let input = graph
-        .parameter(&[1, 3], Init::Zeros, "input")
-        .unwrap();
+    let input = graph.parameter(&[1, 3], Init::Zeros, "input").unwrap();
     input
         .set_value(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3]))
         .unwrap();

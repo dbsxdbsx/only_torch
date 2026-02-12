@@ -109,11 +109,11 @@ fn test_gather_backward_basic() {
     let grad_input = input.grad().unwrap().unwrap();
     assert_eq!(grad_input.shape(), &[2, 3]);
     assert_abs_diff_eq!(grad_input[[0, 0]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(grad_input[[0, 1]], 1.0, epsilon = 1e-6);  // 2*(2-1)/2
+    assert_abs_diff_eq!(grad_input[[0, 1]], 1.0, epsilon = 1e-6); // 2*(2-1)/2
     assert_abs_diff_eq!(grad_input[[0, 2]], 0.0, epsilon = 1e-6);
     assert_abs_diff_eq!(grad_input[[1, 0]], 0.0, epsilon = 1e-6);
     assert_abs_diff_eq!(grad_input[[1, 1]], 0.0, epsilon = 1e-6);
-    assert_abs_diff_eq!(grad_input[[1, 2]], 5.0, epsilon = 1e-6);  // 2*(6-1)/2
+    assert_abs_diff_eq!(grad_input[[1, 2]], 5.0, epsilon = 1e-6); // 2*(6-1)/2
 }
 
 /// 测试 Gather 反向传播 - 相同索引累加
@@ -308,8 +308,8 @@ fn test_gather_tensor_index_backward() {
 /// 测试 RL 场景：完整的 Critic 更新流程（使用 Tensor index）
 #[test]
 fn test_gather_rl_critic_update_with_tensor_index() {
-    use crate::nn::{Adam, Module, Optimizer, VarLossOps};
     use crate::nn::layer::Linear;
+    use crate::nn::{Adam, Module, Optimizer, VarLossOps};
 
     let graph = Graph::new_with_seed(42);
 
@@ -321,13 +321,13 @@ fn test_gather_rl_critic_update_with_tensor_index() {
 
     // 模拟一个 batch
     let obs = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], &[2, 4]);
-    let actions = Tensor::new(&[0.0, 1.0], &[2, 1]);  // 直接使用 Tensor
+    let actions = Tensor::new(&[0.0, 1.0], &[2, 1]); // 直接使用 Tensor
     let target_q = Tensor::new(&[1.0, -1.0], &[2, 1]);
 
     // 前向传播
     let obs_var = graph.input(&obs).unwrap();
     let q_values = fc.forward(&obs_var);
-    let q_selected = q_values.gather(1, &actions).unwrap();  // 直接传 &Tensor
+    let q_selected = q_values.gather(1, &actions).unwrap(); // 直接传 &Tensor
     let loss = q_selected.mse_loss(&target_q).unwrap();
 
     // 反向传播和更新
@@ -471,9 +471,7 @@ fn test_create_gather_node_dim_out_of_range() {
         .unwrap();
 
     // dim=2 超出 2D 张量范围
-    let result = inner
-        .borrow_mut()
-        .create_gather_node(input, index, 2, None);
+    let result = inner.borrow_mut().create_gather_node(input, index, 2, None);
     assert!(result.is_err());
 }
 

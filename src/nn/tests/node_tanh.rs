@@ -370,20 +370,14 @@ fn test_create_tanh_node_preserves_shape() {
         .borrow_mut()
         .create_basic_input_node(&[3, 10], None)
         .unwrap();
-    let tanh_2d = inner
-        .borrow_mut()
-        .create_tanh_node(input_2d, None)
-        .unwrap();
+    let tanh_2d = inner.borrow_mut().create_tanh_node(input_2d, None).unwrap();
     assert_eq!(tanh_2d.shape(), vec![3, 10]);
 
     let input_4d = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 3, 4, 5], None)
         .unwrap();
-    let tanh_4d = inner
-        .borrow_mut()
-        .create_tanh_node(input_4d, None)
-        .unwrap();
+    let tanh_4d = inner.borrow_mut().create_tanh_node(input_4d, None).unwrap();
     assert_eq!(tanh_4d.shape(), vec![2, 3, 4, 5]);
 }
 

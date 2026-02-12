@@ -63,11 +63,7 @@ fn test_node_input_creation_with_invalid_shape() {
 
     // 3D 和 4D 应该成功
     assert!(graph.input_shape(&[3, 28, 28], Some("input_3d")).is_ok());
-    assert!(
-        graph
-            .input_shape(&[4, 3, 28, 28], Some("input_4d"))
-            .is_ok()
-    );
+    assert!(graph.input_shape(&[4, 3, 28, 28], Some("input_4d")).is_ok());
 }
 
 /// 测试 Input 节点的命名机制
@@ -165,10 +161,7 @@ fn test_node_input_forward_propagation() {
 
     // 1. 无值时 forward 应失败
     let result = x.forward();
-    assert!(
-        result.is_err(),
-        "无值的 Input 节点 forward 应失败"
-    );
+    assert!(result.is_err(), "无值的 Input 节点 forward 应失败");
 
     // 2. 设置值后 forward 应成功
     let value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
@@ -195,10 +188,7 @@ fn test_node_input_no_grad() {
         .unwrap();
 
     // 2. Input 节点的 grad 应返回 None（不是错误，而是没有梯度）
-    assert!(
-        x.grad().unwrap().is_none(),
-        "Input 节点不应有梯度"
-    );
+    assert!(x.grad().unwrap().is_none(), "Input 节点不应有梯度");
 
     // 3. zero_grad 后仍然无梯度
     graph.zero_grad().unwrap();
@@ -234,16 +224,10 @@ fn test_node_input_in_computation_graph() {
     loss.backward().unwrap();
 
     // 3. 验证：Parameter 节点应该有梯度
-    assert!(
-        param.grad().unwrap().is_some(),
-        "参数节点应该有梯度"
-    );
+    assert!(param.grad().unwrap().is_some(), "参数节点应该有梯度");
 
     // 4. 验证：Input 节点不应有梯度（梯度到 Input 时无害跳过）
-    assert!(
-        input.grad().unwrap().is_none(),
-        "Input 节点不应有梯度"
-    );
+    assert!(input.grad().unwrap().is_none(), "Input 节点不应有梯度");
     assert!(
         target.grad().unwrap().is_none(),
         "Target Input 节点不应有梯度"
@@ -601,4 +585,3 @@ fn test_create_target_input_various_shapes() {
         .unwrap();
     assert_eq!(seq_target.shape(), vec![8, 20, 1000]);
 }
-

@@ -178,10 +178,7 @@ fn test_dropout_mode_switch_eval_to_train() -> Result<(), GraphError> {
     let eval_output = dropped.value()?.unwrap();
 
     for i in 0..100 {
-        assert!(
-            (eval_output[[0, i]] - 1.0).abs() < 1e-6,
-            "评估模式应直通"
-        );
+        assert!((eval_output[[0, i]] - 1.0).abs() < 1e-6, "评估模式应直通");
     }
 
     // 2. 切换到训练模式，重新 forward
@@ -214,10 +211,7 @@ fn test_dropout_different_masks_each_forward() -> Result<(), GraphError> {
 
     // 两次结果应不同（概率极高）
     let found_diff = (0..100).any(|i| (output1[[0, i]] - output2[[0, i]]).abs() > 1e-6);
-    assert!(
-        found_diff,
-        "训练模式下多次 forward 应产生不同 mask"
-    );
+    assert!(found_diff, "训练模式下多次 forward 应产生不同 mask");
 
     Ok(())
 }
@@ -326,9 +320,10 @@ fn create_dropout_with_seed(
     name: Option<&str>,
 ) -> Result<Var, GraphError> {
     let inner = graph.inner_rc();
-    let node = inner
-        .borrow_mut()
-        .create_dropout_node(std::rc::Rc::clone(input.node()), p, seed, name)?;
+    let node =
+        inner
+            .borrow_mut()
+            .create_dropout_node(std::rc::Rc::clone(input.node()), p, seed, name)?;
     Ok(Var::new_with_rc_graph(node, &inner))
 }
 

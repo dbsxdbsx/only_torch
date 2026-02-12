@@ -1,9 +1,9 @@
 //! # XOR 异或问题示例
 //!
-//! 展示 `only_torch` 的 **PyTorch 风格** API（Phase 3 新版本）：
+//! 展示 `only_torch` 的 **`PyTorch` 风格** API（Phase 3 新版本）：
 //! - `model.forward(&tensor)` - 直接传入 Tensor
 //! - `output.softmax_cross_entropy(&target)` - Var 方法计算损失
-//! - 训练循环与 PyTorch 几乎一致
+//! - 训练循环与 `PyTorch` 几乎一致
 //!
 //! ## 运行
 //! ```bash
@@ -116,7 +116,7 @@ fn main() -> Result<(), GraphError> {
             println!("可视化图像: {}", img_path.display());
         }
         if let Some(hint) = &vis_result.graphviz_hint {
-            println!("Graphviz 提示: {}", hint);
+            println!("Graphviz 提示: {hint}");
         }
     }
 

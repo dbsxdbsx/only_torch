@@ -241,10 +241,7 @@ fn test_reshape_vjp_unit_upstream() -> Result<(), GraphError> {
         .unwrap();
 
     input
-        .set_value(Some(&Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
     reshaped.forward_recursive(1, false).unwrap();
 
@@ -274,10 +271,7 @@ fn test_reshape_vjp_non_unit_upstream() -> Result<(), GraphError> {
         .unwrap();
 
     input
-        .set_value(Some(&Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
     reshaped.forward_recursive(1, false).unwrap();
 
@@ -540,9 +534,7 @@ fn test_create_reshape_node_size_mismatch() {
         .create_basic_input_node(&[2, 3], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_reshape_node(input, &[2, 2], None);
+    let result = inner.borrow_mut().create_reshape_node(input, &[2, 2], None);
     assert!(result.is_err());
 }
 
@@ -556,9 +548,7 @@ fn test_create_reshape_node_empty_shape() {
         .create_basic_input_node(&[2, 3], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_reshape_node(input, &[], None);
+    let result = inner.borrow_mut().create_reshape_node(input, &[], None);
     assert!(result.is_err());
 }
 

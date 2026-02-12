@@ -7,8 +7,8 @@
  */
 
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -65,9 +65,7 @@ impl Subtract {
         })?;
 
         // 3. 计算动态形状
-        let supports_dynamic = parent_dynamic_shapes
-            .iter()
-            .any(|ds| ds.has_dynamic_dims());
+        let supports_dynamic = parent_dynamic_shapes.iter().any(|ds| ds.has_dynamic_dims());
         let dynamic_shape = parent_dynamic_shapes[0].broadcast_with(&parent_dynamic_shapes[1]);
 
         // 4. 返回
@@ -82,7 +80,6 @@ impl Subtract {
             parents_ids: parent_ids,
         })
     }
-
 }
 
 impl TraitNode for Subtract {

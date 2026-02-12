@@ -1,6 +1,6 @@
 use crate::nn::GraphError;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::NodeId;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -54,9 +54,7 @@ impl Add {
         }
 
         // 3. 计算动态形状
-        let supports_dynamic = parent_dynamic_shapes
-            .iter()
-            .any(|ds| ds.has_dynamic_dims());
+        let supports_dynamic = parent_dynamic_shapes.iter().any(|ds| ds.has_dynamic_dims());
         let mut dynamic_shape = parent_dynamic_shapes[0].clone();
         for parent_dyn in parent_dynamic_shapes.iter().skip(1) {
             dynamic_shape = dynamic_shape.broadcast_with(parent_dyn);

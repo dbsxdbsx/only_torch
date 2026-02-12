@@ -1,4 +1,4 @@
-//! CartPole SAC-Discrete 模型定义
+//! `CartPole` SAC-Discrete 模型定义
 //!
 //! SAC（Soft Actor-Critic）的离散动作版本
 //!
@@ -82,14 +82,19 @@ impl Module for SacActor {
 
 /// SAC Critic：输出每个动作的 Q 值
 ///
-/// 离散 SAC 中，Q 网络输出 [batch, action_dim]，每个动作一个 Q 值
+/// 离散 SAC 中，Q 网络输出 [batch, `action_dim`]，每个动作一个 Q 值
 pub struct SacCritic {
     fc1: Linear,
     fc2: Linear,
 }
 
 impl SacCritic {
-    pub fn new(graph: &Graph, obs_dim: usize, action_dim: usize, name: &str) -> Result<Self, GraphError> {
+    pub fn new(
+        graph: &Graph,
+        obs_dim: usize,
+        action_dim: usize,
+        name: &str,
+    ) -> Result<Self, GraphError> {
         let graph = graph.with_model_name(name);
         Ok(Self {
             fc1: Linear::new(&graph, obs_dim, 64, true, "fc1")?,
@@ -143,11 +148,7 @@ pub struct SacAgent {
 }
 
 impl SacAgent {
-    pub fn new(
-        graph: &Graph,
-        obs_dim: usize,
-        action_dim: usize,
-    ) -> Result<Self, GraphError> {
+    pub fn new(graph: &Graph, obs_dim: usize, action_dim: usize) -> Result<Self, GraphError> {
         // 目标熵：离散动作的最大熵 = ln(|A|)（均匀分布时）
         // 设为最大熵的一定比例，这里取 0.5，即目标熵约为最大熵的一半
         // 也可尝试 0.98 * ln(|A|) 或其他值来调节探索-利用平衡
@@ -176,17 +177,19 @@ impl SacAgent {
     /// 软更新目标网络
     /// target = tau * source + (1 - tau) * target
     pub fn soft_update_targets(&self) {
-        self.target_critic1.soft_update_from(&self.critic1, self.tau);
-        self.target_critic2.soft_update_from(&self.critic2, self.tau);
+        self.target_critic1
+            .soft_update_from(&self.critic1, self.tau);
+        self.target_critic2
+            .soft_update_from(&self.critic2, self.tau);
     }
 
     /// 更新 alpha（温度参数）
     ///
-    /// SAC 的 alpha loss: L_α = α * (H(π) - target_entropy)
-    /// 梯度: ∂L/∂log_α = α * (H(π) - target_entropy)
+    /// SAC 的 alpha loss: `L_α` = α * (H(π) - `target_entropy`)
+    /// 梯度: ∂`L/∂log_α` = α * (H(π) - `target_entropy`)
     ///
-    /// - 若 H(π) < target_entropy，梯度为负，log_α 增大，α 增大，鼓励更多探索
-    /// - 若 H(π) > target_entropy，梯度为正，log_α 减小，α 减小，减少探索
+    /// - 若 H(π) < `target_entropy，梯度为负，log_α` 增大，α 增大，鼓励更多探索
+    /// - 若 H(π) > `target_entropy，梯度为正，log_α` 减小，α 减小，减少探索
     pub fn update_alpha(&mut self, log_probs: &Tensor, probs: &Tensor) {
         let entropy = self.compute_entropy(log_probs, probs);
         let alpha = self.alpha();

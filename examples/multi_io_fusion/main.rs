@@ -17,7 +17,7 @@ use only_torch::metrics::{accuracy, r2_score};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
-/// 生成批量数据：(a_batch [N,4], b_batch [N,8], cls_batch [N,2], reg_batch [N,1])
+/// `生成批量数据：(a_batch` [N,4], `b_batch` [N,8], `cls_batch` [N,2], `reg_batch` [N,1])
 fn generate_batch_data(count: usize, seed: u64) -> (Tensor, Tensor, Tensor, Tensor) {
     let mut a_data = Vec::with_capacity(count * 4);
     let mut b_data = Vec::with_capacity(count * 8);
@@ -93,7 +93,10 @@ fn main() -> Result<(), GraphError> {
         let cls_loss = cls_logits.cross_entropy(&train_cls)?;
         let reg_loss = reg_pred.mse_loss(&train_reg)?;
 
-        graph.snapshot_once(&[("Classification Loss", &cls_loss), ("Regression Loss", &reg_loss)]);
+        graph.snapshot_once(&[
+            ("Classification Loss", &cls_loss),
+            ("Regression Loss", &reg_loss),
+        ]);
 
         optimizer.zero_grad()?;
         let cls_val = cls_loss.backward()?;
@@ -103,7 +106,9 @@ fn main() -> Result<(), GraphError> {
         if epoch == 0 || (epoch + 1) % 20 == 0 {
             println!(
                 "Epoch {:3}: 分类损失 = {:.4}, 回归损失 = {:.4}",
-                epoch + 1, cls_val, reg_val
+                epoch + 1,
+                cls_val,
+                reg_val
             );
         }
     }

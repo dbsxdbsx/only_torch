@@ -22,8 +22,12 @@ use approx::assert_abs_diff_eq;
 fn test_multiply_forward() {
     let graph = Graph::new();
 
-    let p1 = graph.input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])).unwrap();
-    let p2 = graph.input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])).unwrap();
+    let p1 = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
+        .unwrap();
+    let p2 = graph
+        .input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))
+        .unwrap();
     let mul = &p1 * &p2;
 
     mul.forward().unwrap();
@@ -39,8 +43,12 @@ fn test_multiply_forward() {
 fn test_multiply_cannot_set_value() {
     let graph = Graph::new();
 
-    let p1 = graph.input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])).unwrap();
-    let p2 = graph.input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])).unwrap();
+    let p1 = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
+        .unwrap();
+    let p2 = graph
+        .input(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))
+        .unwrap();
     let mul = &p1 * &p2;
 
     let test_value = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
@@ -62,15 +70,23 @@ fn test_multiply_vjp_to_left() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let mul = inner
         .borrow_mut()
         .create_multiply_node(vec![p1.clone(), p2.clone()], Some("mul"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
     mul.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
@@ -91,15 +107,23 @@ fn test_multiply_vjp_to_right() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let mul = inner
         .borrow_mut()
         .create_multiply_node(vec![p1.clone(), p2.clone()], Some("mul"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
     mul.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
@@ -118,16 +142,24 @@ fn test_multiply_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let mul = inner
         .borrow_mut()
         .create_multiply_node(vec![p1.clone(), p2.clone()], Some("mul"))
         .unwrap();
 
     // left=[[1,2],[3,4]], right=[[5,6],[7,8]]
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
     mul.forward_recursive(1, false).unwrap();
 
     // upstream = [[2,2],[2,2]]
@@ -135,7 +167,10 @@ fn test_multiply_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
 
     // grad_to_left = upstream ⊙ right = [2,2,2,2] ⊙ [5,6,7,8] = [10,12,14,16]
     let grad_to_p1 = mul.calc_grad_to_parent_index(0, &upstream_grad)?;
-    assert_eq!(&grad_to_p1, &Tensor::new(&[10.0, 12.0, 14.0, 16.0], &[2, 2]));
+    assert_eq!(
+        &grad_to_p1,
+        &Tensor::new(&[10.0, 12.0, 14.0, 16.0], &[2, 2])
+    );
 
     // grad_to_right = upstream ⊙ left = [2,2,2,2] ⊙ [1,2,3,4] = [2,4,6,8]
     let grad_to_p2 = mul.calc_grad_to_parent_index(1, &upstream_grad)?;
@@ -150,8 +185,14 @@ fn test_multiply_vjp_with_negative_values() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let mul = inner
         .borrow_mut()
         .create_multiply_node(vec![p1.clone(), p2.clone()], Some("mul"))
@@ -189,8 +230,14 @@ fn test_multiply_backward_with_zero_value() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let mul = inner
         .borrow_mut()
         .create_multiply_node(vec![p1.clone(), p2.clone()], Some("mul"))
@@ -227,15 +274,23 @@ fn test_multiply_backward_invalid_parent_index() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let p1 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p1")).unwrap();
-    let p2 = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("p2")).unwrap();
+    let p1 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p1"))
+        .unwrap();
+    let p2 = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("p2"))
+        .unwrap();
     let mul = inner
         .borrow_mut()
         .create_multiply_node(vec![p1.clone(), p2.clone()], Some("mul"))
         .unwrap();
 
-    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))).unwrap();
-    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]))).unwrap();
+    p1.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
+        .unwrap();
+    p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
+        .unwrap();
     mul.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
@@ -255,8 +310,14 @@ fn test_multiply_broadcast_vjp() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let matrix = inner.borrow_mut().create_basic_input_node(&[2, 3], Some("matrix")).unwrap();
-    let scale = inner.borrow_mut().create_basic_input_node(&[1, 3], Some("scale")).unwrap();
+    let matrix = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("matrix"))
+        .unwrap();
+    let scale = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("scale"))
+        .unwrap();
     let mul = inner
         .borrow_mut()
         .create_multiply_node(vec![matrix.clone(), scale.clone()], Some("mul"))
@@ -266,7 +327,9 @@ fn test_multiply_broadcast_vjp() -> Result<(), GraphError> {
     matrix
         .set_value(Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])))
         .unwrap();
-    scale.set_value(Some(&Tensor::new(&[2., 3., 4.], &[1, 3]))).unwrap();
+    scale
+        .set_value(Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))
+        .unwrap();
     mul.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 3]);
@@ -274,7 +337,10 @@ fn test_multiply_broadcast_vjp() -> Result<(), GraphError> {
     // 对 matrix [2,3] 的梯度：upstream ⊙ scale（广播后）= [[2,3,4],[2,3,4]]
     let grad_to_matrix = mul.calc_grad_to_parent_index(0, &upstream_grad)?;
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
-    assert_eq!(&grad_to_matrix, &Tensor::new(&[2., 3., 4., 2., 3., 4.], &[2, 3]));
+    assert_eq!(
+        &grad_to_matrix,
+        &Tensor::new(&[2., 3., 4., 2., 3., 4.], &[2, 3])
+    );
 
     // 对 scale [1,3] 的梯度：sum(upstream ⊙ matrix, axis=0) = sum([[1,2,3],[4,5,6]], axis=0) = [[5,7,9]]
     let grad_to_scale = mul.calc_grad_to_parent_index(1, &upstream_grad)?;
@@ -293,8 +359,14 @@ fn test_multiply_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let matrix = inner.borrow_mut().create_basic_input_node(&[2, 3], Some("matrix")).unwrap();
-    let scale = inner.borrow_mut().create_basic_input_node(&[1, 3], Some("scale")).unwrap();
+    let matrix = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("matrix"))
+        .unwrap();
+    let scale = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("scale"))
+        .unwrap();
     let mul = inner
         .borrow_mut()
         .create_multiply_node(vec![matrix.clone(), scale.clone()], Some("mul"))
@@ -304,7 +376,9 @@ fn test_multiply_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     matrix
         .set_value(Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])))
         .unwrap();
-    scale.set_value(Some(&Tensor::new(&[2., 3., 4.], &[1, 3]))).unwrap();
+    scale
+        .set_value(Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))
+        .unwrap();
     mul.forward_recursive(1, false).unwrap();
 
     // upstream = [[1,2,3],[4,5,6]]（非全 1）
@@ -462,9 +536,7 @@ fn test_multiply_dynamic_shape_propagation() {
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
 
     // 创建一个固定形状的参数
-    let scale = graph
-        .parameter(&[1, 16], Init::Ones, "scale")
-        .unwrap();
+    let scale = graph.parameter(&[1, 16], Init::Ones, "scale").unwrap();
 
     // Multiply: h0 * scale
     let result = &h0 * &scale;
@@ -484,9 +556,7 @@ fn test_multiply_dynamic_batch_forward() {
     // 创建支持动态 batch 的节点
     let x = graph.input(&Tensor::ones(&[2, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
-    let scale = graph
-        .parameter(&[1, 16], Init::Ones, "scale")
-        .unwrap();
+    let scale = graph.parameter(&[1, 16], Init::Ones, "scale").unwrap();
 
     // Multiply: h0 * scale（结果全零，因为 h0 是零）
     let result = &h0 * &scale;
@@ -513,9 +583,7 @@ fn test_multiply_dynamic_batch_backward() {
     // 创建支持动态 batch 的节点
     let x = graph.input(&Tensor::ones(&[2, 8])).unwrap();
     let h0 = graph.zeros_like(&x, &[4], None).unwrap(); // [?, 4]
-    let scale = graph
-        .parameter(&[1, 4], Init::Ones, "scale")
-        .unwrap();
+    let scale = graph.parameter(&[1, 4], Init::Ones, "scale").unwrap();
 
     // Multiply: h0 * scale
     let result = &h0 * &scale;

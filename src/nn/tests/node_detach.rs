@@ -47,9 +47,7 @@ fn test_detach_forward_value_passthrough() {
 fn test_detach_is_detached() {
     let graph = Graph::new();
 
-    let x = graph
-        .input(&Tensor::new(&[1.0, 2.0], &[2, 1]))
-        .unwrap();
+    let x = graph.input(&Tensor::new(&[1.0, 2.0], &[2, 1])).unwrap();
     let y = x.detach();
 
     assert!(y.is_detached(), "Detach 节点应该被识别为 detached");
@@ -400,10 +398,7 @@ fn test_create_detach_node_drop_releases() {
             .unwrap();
         weak_input = Rc::downgrade(&input);
 
-        let detach = inner
-            .borrow_mut()
-            .create_detach_node(input, None)
-            .unwrap();
+        let detach = inner.borrow_mut().create_detach_node(input, None).unwrap();
         weak_detach = Rc::downgrade(&detach);
 
         assert!(weak_detach.upgrade().is_some());

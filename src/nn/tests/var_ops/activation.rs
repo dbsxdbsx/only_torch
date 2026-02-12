@@ -288,7 +288,10 @@ fn test_var_log_softmax_vs_softmax() {
     let probs_result = probs.value().unwrap().unwrap();
 
     // exp(log_softmax) 应该等于 softmax
-    for (log_val, prob_val) in log_result.data_as_slice().iter().zip(probs_result.data_as_slice())
+    for (log_val, prob_val) in log_result
+        .data_as_slice()
+        .iter()
+        .zip(probs_result.data_as_slice())
     {
         assert!(
             (log_val.exp() - prob_val).abs() < 1e-5,
