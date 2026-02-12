@@ -38,7 +38,8 @@ pub(crate) struct Flatten {
     /// 是否支持动态 batch
     #[allow(dead_code)]
     supports_dynamic: bool,
-    /// 父节点的原始形状（用于反向传播）
+    /// 父节点的原始形状（反向传播 / NEAT 可视化预留）
+    #[allow(dead_code)]
     parent_shape: Vec<usize>,
     /// 是否保留首维度
     keep_first_dim: bool,

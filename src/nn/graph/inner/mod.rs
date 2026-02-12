@@ -30,10 +30,8 @@ mod visualization;
 // 注意：bptt.rs 和 recurrent.rs 已在方案 C 2.7.3 中删除
 // 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
 
-use super::types::{LayerGroup, RecurrentLayerMeta, StepSnapshot};
-use crate::nn::NodeId;
+use super::types::{LayerGroup, RecurrentLayerMeta};
 use crate::nn::nodes::NodeInner;
-use crate::tensor::Tensor;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
 use std::rc::Weak;
@@ -73,26 +71,6 @@ pub struct GraphInner {
     pub(in crate::nn::graph) layer_groups: Vec<LayerGroup>,
     /// 循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
     pub(in crate::nn::graph) recurrent_layer_metas: Vec<RecurrentLayerMeta>,
-
-    // ========== 循环/记忆机制相关字段 ==========
-    /// `循环边：to_node` -> `from_node（to` 节点在 `step()` 时从 from 节点的上一步值读取）
-    pub(in crate::nn::graph) recurrent_edges: HashMap<NodeId, NodeId>,
-    /// 双缓冲：存储循环节点的上一时间步值
-    #[allow(dead_code)]
-    pub(in crate::nn::graph) prev_values: HashMap<NodeId, Tensor>,
-    /// 当前时间步（用于调试，每次 `step()` `递增，reset()` 归零）
-    #[allow(dead_code)]
-    pub(in crate::nn::graph) time_step: u64,
-
-    // ========== BPTT 相关字段 ==========
-    /// 时间步历史：存储每个时间步的节点快照，用于 BPTT
-    /// 每个元素是一个时间步的快照：NodeId -> (value, jacobi)
-    /// 只在训练模式下记录
-    pub(in crate::nn::graph) step_history: Vec<HashMap<NodeId, StepSnapshot>>,
-
-    /// BPTT 调试标志（仅用于调试）
-    #[cfg(test)]
-    pub(in crate::nn::graph) bptt_debug: bool,
 
     // ========== 动态图节点命名 ==========
     /// 节点类型计数器：用于同批次内区分同类型节点

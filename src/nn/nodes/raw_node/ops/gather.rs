@@ -39,7 +39,8 @@ pub(crate) struct Gather {
     supports_dynamic: bool,
     /// gather 的维度
     dim: usize,
-    /// 输入数据的形状（用于反向传播时创建 scatter tensor）
+    /// 输入数据的形状（反向传播 / NEAT 可视化预留）
+    #[allow(dead_code)]
     input_shape: Vec<usize>,
 }
 

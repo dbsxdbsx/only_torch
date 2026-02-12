@@ -5,7 +5,6 @@
  */
 
 use crate::nn::NodeId;
-use crate::tensor::Tensor;
 
 /// 分组类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,12 +90,4 @@ pub struct RecurrentUnrollInfo {
     pub repr_output_node_ids: Vec<NodeId>,
     /// 真实输出节点（最后一个时间步的隐藏状态输出，如 `h_N`）
     pub real_output_node_id: NodeId,
-}
-
-/// BPTT 时间步快照：存储节点在某个时间步的状态
-#[derive(Clone)]
-pub(crate) struct StepSnapshot {
-    /// 节点的值
-    #[allow(dead_code)]
-    pub value: Option<Tensor>,
 }

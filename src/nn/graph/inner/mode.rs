@@ -26,12 +26,6 @@ impl GraphInner {
         self.is_train_mode()
     }
 
-    /// 设置 BPTT 调试模式
-    #[cfg(test)]
-    pub fn set_bptt_debug(&mut self, debug: bool) {
-        self.bptt_debug = debug;
-    }
-
     /// `no_grad` 上下文
     pub fn no_grad_scope<F, R>(&mut self, f: F) -> R
     where

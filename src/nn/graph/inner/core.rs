@@ -34,13 +34,7 @@ impl GraphInner {
             rng: Some(StdRng::seed_from_u64(seed)),
             layer_groups: Vec::new(),
             recurrent_layer_metas: Vec::new(),
-            recurrent_edges: HashMap::new(),
-            prev_values: HashMap::new(),
-            time_step: 0,
-            step_history: Vec::new(),
             parameters: HashMap::new(),
-            #[cfg(test)]
-            bptt_debug: false,
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
         }
@@ -57,13 +51,7 @@ impl GraphInner {
             rng: Some(StdRng::seed_from_u64(seed)),
             layer_groups: Vec::new(),
             recurrent_layer_metas: Vec::new(),
-            recurrent_edges: HashMap::new(),
-            prev_values: HashMap::new(),
-            time_step: 0,
-            step_history: Vec::new(),
             parameters: HashMap::new(),
-            #[cfg(test)]
-            bptt_debug: false,
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
         }
@@ -79,13 +67,7 @@ impl GraphInner {
             rng: None,
             layer_groups: Vec::new(),
             recurrent_layer_metas: Vec::new(),
-            recurrent_edges: HashMap::new(),
-            prev_values: HashMap::new(),
-            time_step: 0,
-            step_history: Vec::new(),
             parameters: HashMap::new(),
-            #[cfg(test)]
-            bptt_debug: false,
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
         }
@@ -360,8 +342,6 @@ impl GraphInner {
     /// - `Err(GraphError)`: 反向传播失败
     ///
     /// # 注意
-    /// - 当前不支持 BPTT（循环网络），BPTT 功能将在后续版本评估
-    /// - 如果检测到 step_history 非空，会发出警告
     pub fn backward_via_node_inner(
         &mut self,
         node: &std::rc::Rc<crate::nn::nodes::NodeInner>,
@@ -374,15 +354,7 @@ impl GraphInner {
             eprintln!("[only_torch 警告] 在 no_grad/eval 模式下调用 backward，这通常是误用。");
         }
 
-        // 2. 检查 BPTT（当前不支持）
-        if !self.step_history.is_empty() && !self.recurrent_edges.is_empty() {
-            eprintln!(
-                "[only_torch 警告] 检测到循环网络结构，但 backward_via_node_inner 当前不支持 BPTT。\
-                 请使用旧路径 backward() 或等待后续版本。"
-            );
-        }
-
-        // 3. 获取 loss 值并验证
+        // 2. 获取 loss 值并验证
         let loss_value = node.value().ok_or_else(|| {
             GraphError::ComputationError(format!(
                 "损失节点 {}[{}] 没有值，请先执行 forward",

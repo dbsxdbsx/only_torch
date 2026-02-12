@@ -36,7 +36,8 @@ pub(crate) struct Select {
     axis: usize,
     /// 选择的索引
     index: usize,
-    /// 父节点的形状（用于反向传播时创建 scatter tensor）
+    /// 父节点的形状（反向传播 / NEAT 可视化预留）
+    #[allow(dead_code)]
     parent_shape: Vec<usize>,
 }
 
