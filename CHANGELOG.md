@@ -15,6 +15,10 @@
   - 删除 `StepSnapshot` / `recurrent_edges` / `prev_values` 等旧字段
   - 展开式 RNN/LSTM/GRU 设计完全取代旧式显式时间步方案
 
+- **refactor(nn): 移除 `backward_ex()` 和 `retain_graph` 参数**
+  - 动态图架构下节点自动管理生命周期，`retain_graph` 不再需要
+  - 统一使用 `backward()` 即可支持多 loss 梯度累积、多次反向传播
+
 ### 新增
 
 - **feat(nn): PyTorch 风格动态图 API**
@@ -38,7 +42,6 @@
   - 1579 个单元测试全部通过（0 failed, 0 ignored）
   - 12 个 Batch 的节点测试从旧 API 迁移到新 API
   - 16 个示例全部迁移到新 API 并验证通过（含 cartpole_sac RL 示例）
-  - 新增 `backward_ex` 高层 API 测试（多 loss 梯度累积、多次 backward）
 
 ### 文档
 
