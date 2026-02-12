@@ -9,7 +9,7 @@
  */
 
 use crate::nn::graph::Graph;
-use crate::nn::{VarActivationOps, VarLossOps, VarMatrixOps};
+use crate::nn::{Init, VarActivationOps, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 
 // ==================== 算子重载测试 ====================
@@ -917,5 +917,112 @@ fn test_var_var_then_tensor() {
         (b_grad[[1, 0]] - 8.0).abs() < 1e-4,
         "b[1] 梯度错误: {}",
         b_grad[[1, 0]]
+    );
+}
+
+// ==================== backward_ex 高层 API 测试 ====================
+
+/// 多 loss 共享参数，backward_ex(true) + backward_ex(false) 梯度累积正确
+#[test]
+fn test_var_backward_ex_multi_loss() {
+    use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
+
+    let graph = Graph::new();
+    // 共享权重 [2, 1]
+    let w = graph.parameter(&[2, 1], Init::Ones, "w").unwrap();
+    // 两个不同 loss（输入 [1, 2] @ 权重 [2, 1] = [1, 1]）
+    let x1 = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
+    let y1 = x1.matmul(&w).unwrap();
+    let t1 = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
+    let loss1 = y1.mse_loss(&t1).unwrap();
+
+    let x2 = graph.input(&Tensor::new(&[3.0, 4.0], &[1, 2])).unwrap();
+    let y2 = x2.matmul(&w).unwrap();
+    let t2 = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
+    let loss2 = y2.mse_loss(&t2).unwrap();
+
+    // 多 loss backward
+    graph.zero_grad().unwrap();
+    let v1 = loss1.backward_ex(true).unwrap();
+    let v2 = loss2.backward_ex(false).unwrap();
+    assert!(v1 > 0.0);
+    assert!(v2 > 0.0);
+
+    // w 应该有梯度（来自两个 loss 的累积）
+    let w_grad_multi = w.grad().unwrap().unwrap();
+
+    // 单独 backward loss1 验证梯度累积效果
+    graph.zero_grad().unwrap();
+    loss1.backward().unwrap();
+    let w_grad_single = w.grad().unwrap().unwrap();
+
+    // 两个 loss 累积的梯度应该比单 loss 的绝对值大
+    assert!(
+        w_grad_multi[[0, 0]].abs() > w_grad_single[[0, 0]].abs(),
+        "多 loss 梯度应大于单 loss 梯度"
+    );
+}
+
+/// 单 loss 场景，backward() 和 backward_ex(false) 行为一致
+#[test]
+fn test_var_backward_ex_single_loss() {
+    use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
+
+    let graph = Graph::new_with_seed(42);
+    let w = graph
+        .parameter(&[2, 1], Init::Normal { mean: 0.0, std: 1.0 }, "w")
+        .unwrap();
+    let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
+    let y = x.matmul(&w).unwrap();
+    let t = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
+    let loss = y.mse_loss(&t).unwrap();
+
+    // backward()
+    graph.zero_grad().unwrap();
+    let v1 = loss.backward().unwrap();
+    let grad1 = w.grad().unwrap().unwrap();
+
+    // backward_ex(false)
+    graph.zero_grad().unwrap();
+    let v2 = loss.backward_ex(false).unwrap();
+    let grad2 = w.grad().unwrap().unwrap();
+
+    // 两者应完全一致
+    assert!((v1 - v2).abs() < 1e-6, "loss 值应一致: {} vs {}", v1, v2);
+    assert!(
+        (grad1[[0, 0]] - grad2[[0, 0]]).abs() < 1e-6,
+        "梯度应一致"
+    );
+}
+
+/// 方案 C：同一 loss 可多次 backward（值由 Rc 管理，天然支持）
+#[test]
+fn test_var_backward_multiple_times() {
+    use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
+
+    let graph = Graph::new_with_seed(42);
+    let w = graph
+        .parameter(&[2, 1], Init::Normal { mean: 0.0, std: 1.0 }, "w")
+        .unwrap();
+    let x = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
+    let y = x.matmul(&w).unwrap();
+    let t = graph.input(&Tensor::zeros(&[1, 1])).unwrap();
+    let loss = y.mse_loss(&t).unwrap();
+
+    // 第一次 backward
+    graph.zero_grad().unwrap();
+    let v1 = loss.backward().unwrap();
+    let grad1 = w.grad().unwrap().unwrap().clone();
+
+    // 第二次 backward（方案 C 下不需要 retain_graph=true）
+    graph.zero_grad().unwrap();
+    let v2 = loss.backward().unwrap();
+    let grad2 = w.grad().unwrap().unwrap();
+
+    // 两次应完全一致
+    assert!((v1 - v2).abs() < 1e-6, "两次 backward 的 loss 值应一致");
+    assert!(
+        (grad1[[0, 0]] - grad2[[0, 0]]).abs() < 1e-6,
+        "两次 backward 的梯度应一致"
     );
 }

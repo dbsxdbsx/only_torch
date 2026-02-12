@@ -279,15 +279,15 @@ impl Var {
     /// 反向传播（扩展版本，支持 `retain_graph`）
     ///
     /// # 参数
-    /// - `retain_graph`: 是否保留计算图
-    ///   - `true`: 保留图，允许多次 backward（多任务学习场景）
-    ///   - `false`: 释放中间节点的值（默认行为，节省内存）
+    /// - `retain_graph`: 保留以保持 API 兼容
+    ///   - 方案 C 中此参数暂时为 no-op（值由 Rc 管理，天然支持多次 backward）
+    ///   - 多任务学习场景仍建议使用 `backward_ex(true)` + `backward_ex(false)` 模式以保持代码意图清晰
     ///
     /// # 多任务学习示例
     /// ```ignore
     /// optimizer.zero_grad()?;
-    /// loss1.backward_ex(true)?;   // retain_graph=true，保留图
-    /// loss2.backward_ex(false)?;  // 梯度累积到共享参数
+    /// loss1.backward_ex(true)?;   // 第一个 loss，标记"还有后续"
+    /// loss2.backward_ex(false)?;  // 最后一个 loss，梯度累积到共享参数
     /// optimizer.step()?;
     /// ```
     ///
