@@ -478,7 +478,947 @@ impl Var {
         Self::save_visualization_for_vars(vars, base_path)
     }
 
-    /// 内部方法：从多个 Var 生成 DOT 格式
+    /// 从多个命名 Var 构建可视化快照（BFS 遍历 + 提取轻量级节点信息）
+    ///
+    /// 快照与 `Rc<NodeInner>` 完全解耦，创建后不依赖节点生命周期。
+    ///
+    /// **节点排序策略**：按路径逐个 BFS，第一个 loss 路径的全部节点排在前面，
+    /// 第二个 loss 路径的新增节点排在后面。这样同一模型的节点编号连续、直观。
+    pub(crate) fn build_snapshot(
+        named_vars: &[(&str, &Self)],
+    ) -> super::VisualizationSnapshot {
+        use std::collections::{HashSet, VecDeque};
+
+        let mut visited: HashSet<NodeId> = HashSet::new();
+        let mut snapshot_nodes: Vec<super::SnapshotNode> = Vec::new();
+
+        // 提取单个节点信息的闭包
+        let extract_node = |node: &Rc<NodeInner>| -> super::SnapshotNode {
+            let hyperparam_html = node.with_raw_node(|raw| {
+                use super::nodes::raw_node::NodeType;
+                match raw {
+                    NodeType::Dropout(d) => Some(format!("<BR/>(p={:.1})", d.p())),
+                    NodeType::LeakyReLU(lr) => {
+                        let a = lr.alpha();
+                        if a != 0.0 {
+                            Some(format!("<BR/>(α={a})"))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            });
+
+            super::SnapshotNode {
+                id: node.id(),
+                name: node.name().map(|s| s.to_string()),
+                type_name: node.type_name(),
+                shape: node.value_expected_shape(),
+                parent_ids: node.parents().iter().map(|p| p.id()).collect(),
+                is_detached: node.is_detached(),
+                hyperparam_html,
+            }
+        };
+
+        // 按路径逐个 BFS：先收集第一个 loss 的全部节点，再收集第二个 loss 的新增节点...
+        // 这样同一模型的节点在 snapshot_nodes 中连续排列，编号更直观
+        for (_, var) in named_vars {
+            let mut queue: VecDeque<Rc<NodeInner>> = VecDeque::new();
+            queue.push_back(Rc::clone(&var.node));
+
+            while let Some(node) = queue.pop_front() {
+                let id = node.id();
+                if visited.contains(&id) {
+                    continue;
+                }
+                visited.insert(id);
+                snapshot_nodes.push(extract_node(&node));
+
+                for parent in node.parents() {
+                    queue.push_back(Rc::clone(parent));
+                }
+            }
+        }
+
+        let named_outputs = named_vars
+            .iter()
+            .map(|(name, var)| (name.to_string(), var.node.id()))
+            .collect();
+
+        super::VisualizationSnapshot {
+            nodes: snapshot_nodes,
+            named_outputs,
+        }
+    }
+
+    /// 从可视化快照 + 图元数据生成 DOT 格式字符串（含多 Loss 路径边着色）
+    ///
+    /// 这是新的 DOT 生成入口，从 `VisualizationSnapshot` 驱动，
+    /// 不依赖 `Rc<NodeInner>` 生命周期。
+    pub(crate) fn snapshot_to_dot(
+        snapshot: &super::VisualizationSnapshot,
+        layer_groups: &[super::graph::LayerGroup],
+        recurrent_metas: &[super::graph::RecurrentLayerMeta],
+    ) -> String {
+        use std::collections::{HashMap, HashSet};
+
+        if snapshot.nodes.is_empty() {
+            return "digraph ComputeGraph {}\n".to_string();
+        }
+
+        // 快照节点 ID 查找表
+        let node_map: HashMap<u64, &super::SnapshotNode> = snapshot
+            .nodes
+            .iter()
+            .map(|n| (n.id.0, n))
+            .collect();
+        let visited: HashSet<NodeId> = snapshot.nodes.iter().map(|n| n.id).collect();
+
+        // 输出节点 ID 集合
+        let output_node_ids: HashSet<u64> = snapshot
+            .named_outputs
+            .iter()
+            .map(|(_, id)| id.0)
+            .collect();
+
+        // === 多 Loss 路径着色：per-root BFS ===
+        // 路径颜色表
+        const PATH_COLORS: &[&str] = &[
+            "#1976D2", // 蓝
+            "#D32F2F", // 红
+            "#388E3C", // 绿
+            "#F57C00", // 橙
+            "#7B1FA2", // 紫
+            "#00796B", // 青
+        ];
+        let multi_path = snapshot.named_outputs.len() > 1;
+
+        // node_id → 所属路径索引集合
+        let mut node_to_paths: HashMap<u64, HashSet<usize>> = HashMap::new();
+        if multi_path {
+            for (path_idx, (_, root_id)) in snapshot.named_outputs.iter().enumerate() {
+                // BFS from this root
+                let mut bfs_visited: HashSet<u64> = HashSet::new();
+                let mut bfs_queue = std::collections::VecDeque::new();
+                bfs_queue.push_back(root_id.0);
+                while let Some(nid) = bfs_queue.pop_front() {
+                    if !bfs_visited.insert(nid) {
+                        continue;
+                    }
+                    node_to_paths
+                        .entry(nid)
+                        .or_default()
+                        .insert(path_idx);
+                    if let Some(snode) = node_map.get(&nid) {
+                        for pid in &snode.parent_ids {
+                            bfs_queue.push_back(pid.0);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 获取节点的路径颜色（用于边和输出标记）
+        let get_edge_color = |parent_id: u64, child_id: u64| -> &str {
+            if !multi_path {
+                return "#333333"; // 单路径默认深灰
+            }
+            let parent_paths = node_to_paths.get(&parent_id);
+            let child_paths = node_to_paths.get(&child_id);
+            match (parent_paths, child_paths) {
+                (Some(pp), Some(cp)) => {
+                    // 取交集
+                    let common: HashSet<_> = pp.intersection(cp).collect();
+                    if common.len() == 1 {
+                        let idx = **common.iter().next().unwrap();
+                        PATH_COLORS[idx % PATH_COLORS.len()]
+                    } else {
+                        "#888888" // 共享边：灰色
+                    }
+                }
+                _ => "#333333",
+            }
+        };
+
+        // 输出节点对应的路径颜色
+        let output_path_color = |node_id: u64| -> &str {
+            if !multi_path {
+                return "#C62828"; // 单路径默认红色
+            }
+            for (idx, (_, id)) in snapshot.named_outputs.iter().enumerate() {
+                if id.0 == node_id {
+                    return PATH_COLORS[idx % PATH_COLORS.len()];
+                }
+            }
+            "#C62828"
+        };
+
+        // 输出节点对应的路径名称
+        let output_path_name = |node_id: u64| -> Option<&str> {
+            for (name, id) in &snapshot.named_outputs {
+                if id.0 == node_id {
+                    return Some(name.as_str());
+                }
+            }
+            None
+        };
+
+        // 收集已分组的节点 ID → 所属层索引
+        let mut node_to_group: HashMap<u64, usize> = HashMap::new();
+        for (group_idx, group) in layer_groups.iter().enumerate() {
+            for node_id in &group.node_ids {
+                if visited.contains(node_id) {
+                    node_to_group.insert(node_id.0, group_idx);
+                }
+            }
+        }
+
+        // === RNN 时间步折叠 ===
+        let mut rnn_hidden_ids: HashSet<u64> = HashSet::new();
+        let mut rnn_output_redirects: HashMap<u64, u64> = HashMap::new();
+        let mut rnn_clusters: Vec<(String, String, String, Vec<u64>)> = Vec::new();
+        let mut rnn_step_ranges: HashMap<u64, (usize, usize)> = HashMap::new();
+        let mut rnn_init_state_ids: HashSet<u64> = HashSet::new();
+        let mut rnn_input_step_ranges: HashMap<u64, (usize, usize)> = HashMap::new();
+        let mut rnn_feedback_edges: Vec<(u64, u64, usize, usize)> = Vec::new();
+        let mut rnn_init_edges: HashSet<(u64, u64)> = HashSet::new();
+        let mut rnn_output_repr_step_ranges: HashMap<u64, (usize, usize)> = HashMap::new();
+
+        for meta in recurrent_metas {
+            let matching_info = meta
+                .unroll_infos
+                .iter()
+                .rev()
+                .find(|info| visited.contains(&info.first_step_start_id));
+            if let Some(info) = matching_info {
+                if info.steps <= 1 {
+                    continue;
+                }
+                let base = info.first_step_start_id.0;
+                let nps = meta.nodes_per_step;
+
+                for step in 1..info.steps {
+                    for offset in 0..nps {
+                        let hidden_id = base + (step * nps) as u64 + offset as u64;
+                        rnn_hidden_ids.insert(hidden_id);
+                    }
+                }
+
+                if let Some(&repr_id) = info.repr_output_node_ids.first() {
+                    rnn_output_redirects.insert(info.real_output_node_id.0, repr_id.0);
+                }
+
+                let mut visible_ids: Vec<u64> = Vec::new();
+                for pid in &meta.param_node_ids {
+                    if visited.contains(pid) {
+                        visible_ids.push(pid.0);
+                    }
+                }
+                for sid in &info.init_state_node_ids {
+                    if visited.contains(sid) {
+                        visible_ids.push(sid.0);
+                    }
+                }
+                for offset in 0..nps {
+                    let step0_id = base + offset as u64;
+                    if visited.contains(&NodeId(step0_id)) {
+                        visible_ids.push(step0_id);
+                    }
+                }
+
+                let min_steps = meta.unroll_infos.iter().map(|i| i.steps).min().unwrap_or(info.steps);
+                let max_steps = meta.unroll_infos.iter().map(|i| i.steps).max().unwrap_or(info.steps);
+                let step_range_str = if min_steps == max_steps {
+                    format!("{}", min_steps)
+                } else {
+                    format!("{}-{}", min_steps, max_steps)
+                };
+
+                let desc = format!(
+                    "{}: {} (×{} steps)",
+                    meta.layer_type, meta.description, step_range_str
+                );
+                rnn_clusters.push((meta.name.clone(), meta.layer_type.clone(), desc, visible_ids));
+
+                for offset in 0..nps {
+                    let step0_id = base + offset as u64;
+                    rnn_step_ranges.insert(step0_id, (min_steps, max_steps));
+                }
+                for sid in &info.init_state_node_ids {
+                    rnn_init_state_ids.insert(sid.0);
+                    rnn_init_edges.insert((info.input_node_id.0, sid.0));
+                }
+                for &repr_id in &info.repr_output_node_ids {
+                    rnn_output_repr_step_ranges.insert(repr_id.0, (min_steps, max_steps));
+                }
+                for (repr_id, sid) in info
+                    .repr_output_node_ids
+                    .iter()
+                    .zip(&info.init_state_node_ids)
+                {
+                    rnn_feedback_edges.push((repr_id.0, sid.0, min_steps, max_steps));
+                }
+                rnn_input_step_ranges.insert(info.input_node_id.0, (min_steps, max_steps));
+
+                let rnn_group_idx = layer_groups.len() + rnn_clusters.len() - 1;
+                for &nid in rnn_clusters.last().unwrap().3.iter() {
+                    node_to_group.insert(nid, rnn_group_idx);
+                }
+            }
+        }
+
+        // 层分组颜色
+        let group_colors = ["#E3F2FD80", "#E8F5E980", "#FFF3E080", "#F3E5F580"];
+
+        // === DOT 输出归一化 ===
+        let id_remap: HashMap<u64, u64> = snapshot
+            .nodes
+            .iter()
+            .filter(|n| !rnn_hidden_ids.contains(&n.id.0))
+            .enumerate()
+            .map(|(i, n)| (n.id.0, (i + 1) as u64))
+            .collect();
+        let name_remap: HashMap<u64, String> = {
+            let mut type_counters: HashMap<String, usize> = HashMap::new();
+            snapshot
+                .nodes
+                .iter()
+                .filter(|n| !rnn_hidden_ids.contains(&n.id.0))
+                .map(|n| {
+                    let id = n.id.0;
+                    let node_type = &n.type_name;
+                    let raw_name = n
+                        .name
+                        .as_deref()
+                        .unwrap_or(&node_type.to_lowercase())
+                        .to_string();
+                    let display = match raw_name.split_once('/') {
+                        Some((_, after)) => after.to_string(),
+                        None => raw_name,
+                    };
+                    if node_type == "Parameter" {
+                        (id, display)
+                    } else {
+                        let prefix = if let Some(pos) = display.rfind('_') {
+                            if display[pos + 1..].chars().all(|c| c.is_ascii_digit())
+                                && pos + 1 < display.len()
+                            {
+                                &display[..pos]
+                            } else {
+                                &display
+                            }
+                        } else {
+                            &display
+                        };
+                        let counter = type_counters.entry(prefix.to_string()).or_insert(0);
+                        *counter += 1;
+                        (id, format!("{}_{}", prefix, counter))
+                    }
+                })
+                .collect()
+        };
+        let rid = |id: u64| -> u64 { *id_remap.get(&id).unwrap_or(&id) };
+
+        // 节点定义生成闭包
+        let generate_node_def = |snode: &super::SnapshotNode| -> String {
+            let id = snode.id.0;
+            let stable_id = rid(id);
+            let node_type = &snode.type_name;
+            let name = name_remap.get(&id).cloned().unwrap_or_else(|| {
+                let raw = snode
+                    .name
+                    .as_deref()
+                    .unwrap_or(&node_type.to_lowercase())
+                    .to_string();
+                match raw.split_once('/') {
+                    Some((_, after)) => after.to_string(),
+                    None => raw,
+                }
+            });
+            let shape = &snode.shape;
+
+            // 形状字符串
+            let shape_str = if node_type == "Parameter" || shape.is_empty() {
+                format!("{:?}", shape)
+            } else {
+                let input_range = rnn_input_step_ranges.get(&id);
+                let dims: Vec<String> = shape
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &d)| {
+                        if i == 0 {
+                            "?".to_string()
+                        } else if i == 1 {
+                            if let Some(&(min_s, max_s)) = input_range {
+                                if min_s != max_s {
+                                    return format!("{}-{}", min_s, max_s);
+                                }
+                            }
+                            d.to_string()
+                        } else {
+                            d.to_string()
+                        }
+                    })
+                    .collect();
+                format!("[{}]", dims.join(", "))
+            };
+
+            // Parameter 参数数量
+            let param_count_str = if node_type == "Parameter" && !shape.is_empty() {
+                let count: usize = shape.iter().product();
+                let s = count.to_string();
+                let bytes = s.as_bytes();
+                let mut formatted = String::new();
+                for (i, &b) in bytes.iter().enumerate() {
+                    if i > 0 && (bytes.len() - i) % 3 == 0 {
+                        formatted.push(',');
+                    }
+                    formatted.push(b as char);
+                }
+                format!("<BR/>({formatted} params)")
+            } else {
+                String::new()
+            };
+
+            // 超参数
+            let hyperparam_str = snode
+                .hyperparam_html
+                .as_deref()
+                .unwrap_or("")
+                .to_string();
+
+            // 节点样式
+            let (node_shape, style, fill_color) = match node_type.as_str() {
+                "Input" | "BasicInput" => ("ellipse", "filled", "#E3F2FD"),
+                "TargetInput" => ("ellipse", "filled", "#FFE0B2"),
+                "State" => ("cylinder", "filled", "#FFE0B2"),
+                "Identity" => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
+                "Parameter" => ("box", "filled", "#E8F5E9"),
+                "ZerosLike" => ("box", "\"filled,rounded,dashed\"", "#FFFDE7"),
+                t if t.contains("Loss")
+                    || t.contains("BCE")
+                    || t.contains("MSE")
+                    || t.contains("MAE")
+                    || t.contains("Huber")
+                    || t.contains("CrossEntropy") =>
+                {
+                    ("octagon", "filled", "#FFEBEE")
+                }
+                "Sigmoid" | "Tanh" | "ReLU" | "LeakyReLU" | "Sign" | "SoftPlus" | "Step"
+                | "Softmax" | "LogSoftmax" | "Abs" | "Ln" => ("diamond", "filled", "#FFF3E0"),
+                "Dropout" | "BatchNorm" => ("diamond", "filled", "#E1BEE7"),
+                _ => ("box", "\"filled,rounded\"", "#FFFDE7"),
+            };
+
+            // RNN 步数标注
+            let rnn_step_str = if let Some(&(min_s, max_s)) = rnn_step_ranges.get(&id) {
+                if min_s == max_s {
+                    format!(" <FONT COLOR=\"#E67E22\">×{}</FONT>", min_s)
+                } else {
+                    format!(" <FONT COLOR=\"#E67E22\">×{}-{}</FONT>", min_s, max_s)
+                }
+            } else if rnn_init_state_ids.contains(&id) {
+                " <FONT COLOR=\"#E67E22\">×1</FONT>".to_string()
+            } else {
+                String::new()
+            };
+
+            // 输出节点标记：彩色粗边框 + 路径名称（替代旧版 peripheries=2 + ★ Output）
+            let is_output = output_node_ids.contains(&id);
+            let output_border_str = if is_output {
+                let color = output_path_color(id);
+                format!(" penwidth=2.5 color=\"{}\"", color)
+            } else if let Some(&(min_s, _)) = rnn_step_ranges.get(&id) {
+                if min_s > 1 { " peripheries=2".to_string() } else { String::new() }
+            } else {
+                String::new()
+            };
+
+            let output_suffix = if is_output {
+                if let Some(path_name) = output_path_name(id) {
+                    let color = output_path_color(id);
+                    format!(
+                        "<BR/><FONT COLOR=\"{}\" POINT-SIZE=\"9\">▸ {}</FONT>",
+                        color, path_name
+                    )
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+
+            format!(
+                "\"{}\" [label=<{}{}<BR/><B>{}</B><BR/>{}{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10{}];\n",
+                stable_id, name, rnn_step_str, node_type, shape_str, param_count_str, hyperparam_str, output_suffix, node_shape, style, fill_color, output_border_str
+            )
+        };
+
+        // === DOT 输出 ===
+        let mut dot = String::new();
+        dot.push_str("digraph ComputeGraph {\n");
+        dot.push_str("    rankdir=TB;\n");
+        dot.push_str("    newrank=true;\n");
+        dot.push_str("    splines=polyline;\n");
+        dot.push_str("    node [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n");
+        dot.push_str("    edge [fontname=\"Microsoft YaHei,SimHei,Arial\"];\n\n");
+
+        // === 模型/层 cluster 分组 ===
+        use super::graph::LayerGroup;
+        let mut model_groups: std::collections::BTreeMap<
+            String,
+            Vec<(usize, String, &LayerGroup)>,
+        > = std::collections::BTreeMap::new();
+        let mut standalone_groups: Vec<(usize, &LayerGroup)> = Vec::new();
+
+        for (group_idx, group) in layer_groups.iter().enumerate() {
+            if let Some((model, layer)) = group.name.split_once('/') {
+                model_groups
+                    .entry(model.to_string())
+                    .or_default()
+                    .push((group_idx, layer.to_string(), group));
+            } else {
+                standalone_groups.push((group_idx, group));
+            }
+        }
+
+        // 拓扑推断：将未分组节点归入正确的模型
+        let mut node_to_model: HashMap<u64, String> = HashMap::new();
+        for group in layer_groups {
+            if let Some((model, _)) = group.name.split_once('/') {
+                for node_id in &group.node_ids {
+                    if visited.contains(node_id) {
+                        node_to_model.insert(node_id.0, model.to_string());
+                    }
+                }
+            }
+        }
+        for (name, _, _, visible_ids) in &rnn_clusters {
+            if let Some((model, _)) = name.split_once('/') {
+                for &nid in visible_ids {
+                    node_to_model.insert(nid, model.to_string());
+                }
+            }
+        }
+
+        // 迭代推断
+        if !model_groups.is_empty() {
+            let mut node_children: HashMap<u64, Vec<u64>> = HashMap::new();
+            for snode in &snapshot.nodes {
+                for pid in &snode.parent_ids {
+                    node_children
+                        .entry(pid.0)
+                        .or_default()
+                        .push(snode.id.0);
+                }
+            }
+
+            loop {
+                let mut changed = false;
+                for snode in &snapshot.nodes {
+                    let nid = snode.id.0;
+                    if node_to_model.contains_key(&nid) {
+                        continue;
+                    }
+
+                    if !snode.parent_ids.is_empty() {
+                        let parent_models: Vec<Option<&str>> = snode
+                            .parent_ids
+                            .iter()
+                            .map(|p| node_to_model.get(&p.0).map(|s| s.as_str()))
+                            .collect();
+                        if parent_models.iter().all(|m| m.is_some()) {
+                            let unique: HashSet<&str> =
+                                parent_models.iter().filter_map(|m| *m).collect();
+                            if unique.len() == 1 {
+                                let model = unique.into_iter().next().unwrap().to_string();
+                                node_to_model.insert(nid, model);
+                                changed = true;
+                            }
+                        }
+                    } else {
+                        // 叶子节点：所有子节点归同一模型 → 也归入
+                        if let Some(children) = node_children.get(&nid) {
+                            let child_models: Vec<Option<&str>> = children
+                                .iter()
+                                .map(|c| node_to_model.get(c).map(|s| s.as_str()))
+                                .collect();
+                            if child_models.iter().all(|m| m.is_some()) {
+                                let unique: HashSet<&str> =
+                                    child_models.iter().filter_map(|m| *m).collect();
+                                if unique.len() == 1 {
+                                    let model = unique.into_iter().next().unwrap().to_string();
+                                    node_to_model.insert(nid, model);
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if !changed {
+                    break;
+                }
+            }
+        }
+
+        // 虚拟 Input 节点（跨模型边中转）
+        let mut virtual_input_map: HashMap<(u64, String), String> = HashMap::new();
+        let mut virtual_inputs_by_model: HashMap<String, Vec<(String, String)>> = HashMap::new();
+
+        for snode in &snapshot.nodes {
+            let child_id = snode.id.0;
+            let child_model = node_to_model.get(&child_id);
+            for pid in &snode.parent_ids {
+                let parent_id = pid.0;
+                let parent_model = node_to_model.get(&parent_id);
+                if let (Some(pm), Some(cm)) = (parent_model, child_model) {
+                    if pm != cm {
+                        let key = (parent_id, cm.clone());
+                        if !virtual_input_map.contains_key(&key) {
+                            let virt_id = format!("virt_{}_{}", rid(parent_id), cm.replace(' ', "_"));
+                            let shape_str = if let Some(parent_node) = node_map.get(&parent_id) {
+                                let shape = &parent_node.shape;
+                                if shape.is_empty() {
+                                    String::new()
+                                } else {
+                                    let dims: Vec<String> = shape
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, &d)| {
+                                            if i == 0 { "?".to_string() } else { d.to_string() }
+                                        })
+                                        .collect();
+                                    format!("[{}]", dims.join(", "))
+                                }
+                            } else {
+                                String::new()
+                            };
+                            virtual_inputs_by_model
+                                .entry(cm.clone())
+                                .or_default()
+                                .push((virt_id.clone(), shape_str));
+                            virtual_input_map.insert(key, virt_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        let model_colors = ["#FFEBEE40", "#E8EAF640", "#E0F2F140", "#FFF8E140"];
+
+        // 层 cluster 渲染闭包
+        let render_layer_cluster =
+            |dot: &mut String,
+             indent: &str,
+             cluster_id: &str,
+             display_name: &str,
+             group: &LayerGroup,
+             color: &str| {
+                let group_node_ids: Vec<u64> = group
+                    .node_ids
+                    .iter()
+                    .filter(|id| visited.contains(id))
+                    .map(|id| id.0)
+                    .collect();
+                if group_node_ids.is_empty() {
+                    return;
+                }
+                dot.push_str(&format!("{indent}subgraph cluster_{cluster_id} {{\n"));
+                dot.push_str(&format!(
+                    "{indent}    label=<<B>{display_name}</B><BR/><FONT POINT-SIZE=\"9\">{}: {}</FONT>>;\n",
+                    group.layer_type, group.description
+                ));
+                dot.push_str(&format!("{indent}    style=filled;\n"));
+                dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
+                dot.push_str(&format!("{indent}    fontname=\"Microsoft YaHei,SimHei,Arial\";\n"));
+                dot.push_str(&format!("{indent}    fontsize=11;\n"));
+                dot.push_str(&format!("{indent}    margin=12;\n"));
+
+                for snode in &snapshot.nodes {
+                    if group_node_ids.contains(&snode.id.0) {
+                        dot.push_str(&format!("{indent}        "));
+                        dot.push_str(&generate_node_def(snode));
+                    }
+                }
+                dot.push_str(&format!("{indent}}}\n\n"));
+            };
+
+        // RNN cluster 的模型归属
+        let mut rnn_clusters_for_model: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, (name, _, _, _)) in rnn_clusters.iter().enumerate() {
+            if let Some((model, _)) = name.split_once('/') {
+                rnn_clusters_for_model
+                    .entry(model.to_string())
+                    .or_default()
+                    .push(i);
+            }
+        }
+        let mut rendered_rnn_clusters: HashSet<usize> = HashSet::new();
+
+        // 渲染模型级嵌套 cluster
+        for (model_idx, (model_name, layers)) in model_groups.iter().enumerate() {
+            let has_visible_nodes = snapshot.nodes.iter().any(|n| {
+                node_to_model.get(&n.id.0).map(|m| m.as_str()) == Some(model_name)
+            });
+            if !has_visible_nodes {
+                continue;
+            }
+
+            let model_id = model_name.replace(['-', '.', ' ', '/'], "_");
+            let model_color = model_colors[model_idx % model_colors.len()];
+
+            let model_param_count: usize = snapshot
+                .nodes
+                .iter()
+                .filter(|n| {
+                    node_to_model.get(&n.id.0).map(|m| m.as_str()) == Some(model_name)
+                        && n.type_name == "Parameter"
+                })
+                .map(|n| n.shape.iter().product::<usize>())
+                .sum();
+
+            dot.push_str(&format!("    subgraph cluster_model_{model_id} {{\n"));
+            let param_str = {
+                let s = model_param_count.to_string();
+                let bytes = s.as_bytes();
+                let mut result = String::new();
+                for (i, &b) in bytes.iter().enumerate() {
+                    if i > 0 && (bytes.len() - i) % 3 == 0 {
+                        result.push(',');
+                    }
+                    result.push(b as char);
+                }
+                result
+            };
+            dot.push_str(&format!(
+                "        label=<<B>{model_name}</B><BR/><FONT POINT-SIZE=\"9\">({param_str} params)</FONT>>;\n"
+            ));
+            dot.push_str("        style=\"filled,bold\";\n");
+            dot.push_str(&format!("        fillcolor=\"{model_color}\";\n"));
+            dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+            dot.push_str("        fontsize=13;\n");
+            dot.push_str("        margin=16;\n\n");
+
+            for (group_idx, layer_name, group) in layers {
+                let cluster_id =
+                    format!("{model_id}_{}", layer_name.replace(['-', '.', ' ', '/'], "_"));
+                let color = group_colors[*group_idx % group_colors.len()];
+                render_layer_cluster(&mut dot, "        ", &cluster_id, layer_name, group, color);
+            }
+
+            // RNN 折叠 cluster
+            if let Some(rnn_indices) = rnn_clusters_for_model.get(model_name.as_str()) {
+                for &idx in rnn_indices {
+                    let (rnn_name, _, desc, visible_ids) = &rnn_clusters[idx];
+                    let layer_name = rnn_name.split_once('/').map(|(_, l)| l).unwrap_or(rnn_name);
+                    let cluster_id = format!(
+                        "{model_id}_{}",
+                        layer_name.replace(['-', '.', ' ', '/'], "_")
+                    );
+                    let color = group_colors[(layer_groups.len() + idx) % group_colors.len()];
+                    dot.push_str(&format!("        subgraph cluster_{cluster_id} {{\n"));
+                    dot.push_str(&format!(
+                        "            label=<<B>{layer_name}</B><BR/><FONT POINT-SIZE=\"9\">{desc}</FONT>>;\n"
+                    ));
+                    dot.push_str("            style=\"filled,bold\";\n");
+                    dot.push_str("            peripheries=3;\n");
+                    dot.push_str("            penwidth=2;\n");
+                    dot.push_str(&format!("            fillcolor=\"{color}\";\n"));
+                    dot.push_str("            fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+                    dot.push_str("            fontsize=11;\n");
+                    dot.push_str("            margin=12;\n");
+                    for snode in &snapshot.nodes {
+                        if visible_ids.contains(&snode.id.0) {
+                            dot.push_str("            ");
+                            dot.push_str(&generate_node_def(snode));
+                        }
+                    }
+                    dot.push_str("        }\n\n");
+                    rendered_rnn_clusters.insert(idx);
+                }
+            }
+
+            // 推断归属的散装节点
+            for snode in &snapshot.nodes {
+                let nid = snode.id.0;
+                if !node_to_group.contains_key(&nid) && !rnn_hidden_ids.contains(&nid) {
+                    if let Some(m) = node_to_model.get(&nid) {
+                        if m == model_name {
+                            dot.push_str("        ");
+                            dot.push_str(&generate_node_def(snode));
+                        }
+                    }
+                }
+            }
+
+            // 跨模型虚拟 Input 节点
+            if let Some(virt_inputs) = virtual_inputs_by_model.get(model_name.as_str()) {
+                for (virt_id, shape_str) in virt_inputs {
+                    dot.push_str(&format!(
+                        "        \"{}\" [label=<Input<BR/>{}> shape=ellipse style=\"filled,dashed\" fillcolor=\"#E0E0E0\" fontsize=10];\n",
+                        virt_id, shape_str
+                    ));
+                }
+            }
+            dot.push_str("    }\n\n");
+        }
+
+        // 独立分组
+        for (group_idx, group) in &standalone_groups {
+            let cluster_id = group.name.replace(['-', '.', ' ', '/'], "_");
+            let color = group_colors[*group_idx % group_colors.len()];
+            render_layer_cluster(&mut dot, "    ", &cluster_id, &group.name, group, color);
+        }
+
+        // 独立 RNN 折叠 cluster
+        for (i, (name, _layer_type, desc, visible_ids)) in rnn_clusters.iter().enumerate() {
+            if rendered_rnn_clusters.contains(&i) {
+                continue;
+            }
+            let display_name = name.split_once('/').map(|(_, l)| l).unwrap_or(name);
+            let cluster_id = format!("rnn_{}", name.replace(['-', '.', ' ', '/'], "_"));
+            let color = group_colors[(layer_groups.len() + i) % group_colors.len()];
+            dot.push_str(&format!("    subgraph cluster_{cluster_id} {{\n"));
+            dot.push_str(&format!(
+                "        label=<<B>{display_name}</B><BR/><FONT POINT-SIZE=\"9\">{desc}</FONT>>;\n"
+            ));
+            dot.push_str("        style=\"filled,bold\";\n");
+            dot.push_str("        peripheries=3;\n");
+            dot.push_str("        penwidth=2;\n");
+            dot.push_str(&format!("        fillcolor=\"{color}\";\n"));
+            dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+            dot.push_str("        fontsize=11;\n");
+            dot.push_str("        margin=12;\n");
+            for snode in &snapshot.nodes {
+                if visible_ids.contains(&snode.id.0) {
+                    dot.push_str("        ");
+                    dot.push_str(&generate_node_def(snode));
+                }
+            }
+            dot.push_str("    }\n\n");
+        }
+
+        // 未分组节点
+        for snode in &snapshot.nodes {
+            let nid = snode.id.0;
+            if !node_to_group.contains_key(&nid)
+                && !node_to_model.contains_key(&nid)
+                && !rnn_hidden_ids.contains(&nid)
+            {
+                dot.push_str("    ");
+                dot.push_str(&generate_node_def(snode));
+            }
+        }
+        dot.push('\n');
+
+        // === 边生成（含路径着色）===
+        for snode in &snapshot.nodes {
+            let child_id = snode.id.0;
+            if rnn_hidden_ids.contains(&child_id) {
+                continue;
+            }
+            let child_model = node_to_model.get(&child_id);
+
+            for pid in &snode.parent_ids {
+                let original_parent_id = pid.0;
+                let parent_id = *rnn_output_redirects
+                    .get(&original_parent_id)
+                    .unwrap_or(&original_parent_id);
+                let was_redirected = original_parent_id != parent_id;
+
+                if rnn_hidden_ids.contains(&parent_id) {
+                    continue;
+                }
+
+                // RNN 特殊边样式
+                let rnn_edge_attrs = if rnn_init_edges.contains(&(parent_id, child_id)) {
+                    " style=dashed color=\"#E67E22\" label=<t=0> fontcolor=\"#E67E22\" fontsize=9".to_string()
+                } else if was_redirected {
+                    if let Some(&(min_s, max_s)) = rnn_output_repr_step_ranges.get(&parent_id) {
+                        let t_label = if min_s == max_s {
+                            format!("t={}", min_s - 1)
+                        } else {
+                            format!("t={}~{}", min_s - 1, max_s - 1)
+                        };
+                        format!(" color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9", t_label)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
+                // 路径着色（仅在非 RNN 特殊边时应用）
+                let path_color_attr = if rnn_edge_attrs.is_empty() {
+                    let color = get_edge_color(parent_id, child_id);
+                    if color != "#333333" {
+                        format!(" color=\"{}\"", color)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
+                let edge_attrs = if !rnn_edge_attrs.is_empty() {
+                    format!(" [{}]", rnn_edge_attrs)
+                } else if !path_color_attr.is_empty() {
+                    format!(" [{}]", path_color_attr.trim())
+                } else {
+                    String::new()
+                };
+
+                let parent_model = node_to_model.get(&parent_id);
+                let is_cross_model = match (parent_model, child_model) {
+                    (Some(pm), Some(cm)) => pm != cm,
+                    _ => false,
+                };
+
+                if is_cross_model {
+                    let key = (parent_id, child_model.unwrap().clone());
+                    if let Some(virt_id) = virtual_input_map.get(&key) {
+                        // 跨模型虚线（保持灰色虚线）
+                        dot.push_str(&format!(
+                            "    \"{}\" -> \"{}\" [style=dashed color=\"#999999\"];\n",
+                            rid(parent_id), virt_id
+                        ));
+                        dot.push_str(&format!(
+                            "    \"{}\" -> \"{}\"{};\n",
+                            virt_id, rid(child_id), edge_attrs
+                        ));
+                    }
+                } else {
+                    dot.push_str(&format!(
+                        "    \"{}\" -> \"{}\"{};\n",
+                        rid(parent_id), rid(child_id), edge_attrs
+                    ));
+                }
+            }
+        }
+
+        // RNN 回流反馈边
+        for (repr_id, init_state_id, min_steps, max_steps) in &rnn_feedback_edges {
+            let label = if min_steps == max_steps {
+                if *min_steps <= 2 {
+                    "t=0".to_string()
+                } else {
+                    format!("t=0~{}", min_steps - 2)
+                }
+            } else {
+                format!("t=0~({}~{})", min_steps - 2, max_steps - 2)
+            };
+            dot.push_str(&format!(
+                "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9 constraint=false];\n",
+                rid(*repr_id), rid(*init_state_id), label
+            ));
+        }
+
+        dot.push_str("}\n");
+        dot
+    }
+
+    /// 内部方法：从多个 Var 生成 DOT 格式（旧路径，保留向后兼容）
     fn vars_to_dot(vars: &[&Self]) -> String {
         use std::collections::{HashMap, HashSet, VecDeque};
 

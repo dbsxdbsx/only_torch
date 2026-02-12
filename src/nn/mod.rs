@@ -23,7 +23,10 @@ mod var_ops;
 // pub use criterion::{...}; // 已移除
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
-pub use graph::{Graph, GraphError, GraphInner, ImageFormat, VisualizationOutput};
+pub use graph::{
+    Graph, GraphError, GraphInner, ImageFormat, SnapshotNode, VisualizationOutput,
+    VisualizationSnapshot,
+};
 pub use layer::{AvgPool2d, Conv2d, Gru, Linear, Lstm, MaxPool2d, Rnn};
 // pub use model_state::{ForwardInput, ForwardOutput, ModelState}; // 已移除
 pub use module::Module;

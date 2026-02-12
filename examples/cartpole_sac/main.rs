@@ -20,7 +20,7 @@ mod model;
 
 use model::SacAgent;
 use only_torch::nn::{
-    Adam, Graph, GraphError, Module, Optimizer, Var, VarActivationOps, VarLossOps, VarReduceOps,
+    Adam, Graph, GraphError, Module, Optimizer, VarActivationOps, VarLossOps, VarReduceOps,
     VarShapeOps,
 };
 use only_torch::rl::GymEnv;
@@ -246,8 +246,10 @@ fn main() -> Result<(), GraphError> {
                     let action_indices = build_action_indices(&batch);
 
                     // ========== Critic1 更新 ==========
-                    let q1_var = agent.critic1.forward(&obs_batch)?;
-                    let q1_selected = q1_var.gather(1, &action_indices)?;  // 直接传 &Tensor
+                    let q1_var = agent.critic1.forward(
+                        &graph.input_named(&obs_batch, "obs")?,
+                    )?;
+                    let q1_selected = q1_var.gather(1, &action_indices)?;
                     let critic1_loss = q1_selected.mse_loss(&target_tensor)?;
 
                     critic1_optimizer.zero_grad()?;
@@ -255,8 +257,10 @@ fn main() -> Result<(), GraphError> {
                     critic1_optimizer.step()?;
 
                     // ========== Critic2 更新 ==========
-                    let q2_var = agent.critic2.forward(&obs_batch)?;
-                    let q2_selected = q2_var.gather(1, &action_indices)?;  // 直接传 &Tensor
+                    let q2_var = agent.critic2.forward(
+                        &graph.input_named(&obs_batch, "obs")?,
+                    )?;
+                    let q2_selected = q2_var.gather(1, &action_indices)?;
                     let critic2_loss = q2_selected.mse_loss(&target_tensor)?;
 
                     critic2_optimizer.zero_grad()?;
@@ -272,7 +276,9 @@ fn main() -> Result<(), GraphError> {
                     let q_min = q1.minimum(&q2);
 
                     // Actor 前向传播（整个计算保持在计算图中）
-                    let actor_logits = agent.actor.forward(&obs_batch)?;
+                    let actor_logits = agent.actor.forward(
+                        &graph.input_named(&obs_batch, "obs")?,
+                    )?;
 
                     // log_softmax 比 softmax + ln 数值更稳定
                     let log_probs = actor_logits.log_softmax(); // Var [batch, action_dim]
@@ -281,8 +287,8 @@ fn main() -> Result<(), GraphError> {
                     // inside = α * log π(a|s) - Q(s,a)
                     // Var * Tensor（广播标量）= Var，Var - Tensor = Var
                     let alpha = agent.alpha();
-                    let alpha_tensor = Tensor::ones(&[1, 1]) * alpha; // 广播标量
-                    let inside = &log_probs * &alpha_tensor - &q_min; // Var [batch, action_dim]
+                    let alpha_tensor = Tensor::ones(&[1, 1]) * alpha;
+                    let inside = &log_probs * &alpha_tensor - &q_min;
 
                     // Actor Loss = Σ_a π(a|s) * inside，然后对 batch 求均值
                     let weighted = &probs * &inside; // Var * Var = Var
@@ -304,6 +310,13 @@ fn main() -> Result<(), GraphError> {
 
                     // ========== 软更新目标网络 ==========
                     agent.soft_update_targets();
+
+                    // 可视化快照：仅首次训练步骤时拍摄，后续自动跳过
+                    graph.snapshot_once(&[
+                        ("Actor Loss", &actor_loss),
+                        ("Critic1 Loss", &critic1_loss),
+                        ("Critic2 Loss", &critic2_loss),
+                    ]);
 
                     // 运算节点在 Var 离开作用域时由 Rc 引用计数自动释放
                 }
@@ -377,42 +390,9 @@ fn main() -> Result<(), GraphError> {
         let avg_test_reward: f32 = test_rewards.iter().sum::<f32>() / test_rewards.len() as f32;
         println!("\n测试平均奖励: {:.1}（目标 >= {:.0}）", avg_test_reward, config.target_reward);
 
-        // 7. 保存计算图可视化
+        // 7. 保存计算图可视化（从训练时拍的快照渲染，无需重建前向传播）
         println!("\n[5/6] 保存计算图可视化...");
-
-        // 构建连通的 SAC 计算图：Actor + Critics -> Actor Loss
-        // （仿 GAN 做法：专门为可视化构建一次前向传播）
-        let sample_obs = Tensor::zeros(&[1, obs_dim]);
-        let obs_var = graph.input_named(&sample_obs, "obs")?;
-
-        // Actor 路径
-        let actor_logits = agent.actor.forward(&obs_var)?;
-        let log_probs_vis = actor_logits.log_softmax();
-        let probs_vis = actor_logits.softmax();
-
-        // Critic 路径（detach 阻止梯度流向 Critic，与训练一致）
-        let q1_vis = agent.critic1.forward(&obs_var)?.detach();
-        let q2_vis = agent.critic2.forward(&obs_var)?.detach();
-        let q_min_vis = q1_vis.minimum(&q2_vis)?;
-
-        // Actor Loss = Σ π(a|s) * (α * log π(a|s) - Q(s,a))，对 batch 求均值
-        let alpha_val = Tensor::ones(&[1, 1]) * agent.alpha();
-        let alpha_vis = graph.input_named(&alpha_val, "α")?;
-        let inside_vis = &log_probs_vis * &alpha_vis - &q_min_vis;
-        let weighted_vis = &probs_vis * &inside_vis;
-        let actor_loss_vis = weighted_vis.sum_axis(1).mean();
-
-        // Critic Loss 路径（展示一个 Critic 的训练流程）
-        let q1_for_loss = agent.critic1.forward(&sample_obs)?;
-        let action_idx = Tensor::zeros(&[1, 1]);
-        let q1_selected = q1_for_loss.gather(1, &action_idx)?;
-        let critic1_loss_vis = q1_selected.mse_loss(0)?;
-
-        // 合并 Actor Loss + Critic Loss 到一张图
-        let vis_result = Var::visualize_all(
-            &[&actor_loss_vis, &critic1_loss_vis],
-            "examples/cartpole_sac/cartpole_sac",
-        )?;
+        let vis_result = graph.visualize_snapshot("examples/cartpole_sac/cartpole_sac")?;
         println!("  计算图已保存: {}", vis_result.dot_path.display());
         if let Some(img_path) = &vis_result.image_path {
             println!("  可视化图像: {}", img_path.display());

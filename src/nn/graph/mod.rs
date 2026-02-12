@@ -19,4 +19,7 @@ pub use handle::Graph;
 pub use inner::GraphInner;
 // 这些类型用于可视化分组，作为公共 API 导出供外部使用
 #[allow(unused_imports)]
-pub use types::{GroupKind, LayerGroup, RecurrentLayerMeta, RecurrentUnrollInfo};
+pub use types::{
+    GroupKind, LayerGroup, RecurrentLayerMeta, RecurrentUnrollInfo, SnapshotNode,
+    VisualizationSnapshot,
+};

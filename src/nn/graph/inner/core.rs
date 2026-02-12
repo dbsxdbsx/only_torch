@@ -37,6 +37,7 @@ impl GraphInner {
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
+            visualization_snapshot: None,
         }
     }
 
@@ -54,6 +55,7 @@ impl GraphInner {
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
+            visualization_snapshot: None,
         }
     }
 
@@ -70,6 +72,7 @@ impl GraphInner {
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
+            visualization_snapshot: None,
         }
     }
 

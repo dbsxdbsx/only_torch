@@ -91,3 +91,48 @@ pub struct RecurrentUnrollInfo {
     /// 真实输出节点（最后一个时间步的隐藏状态输出，如 `h_N`）
     pub real_output_node_id: NodeId,
 }
+
+// ==================== 可视化快照 ====================
+
+/// 可视化快照中的单个节点——从活 `NodeInner` 提取的轻量级副本
+///
+/// 只保留渲染 DOT 所需的最少信息，不持有 `Rc<NodeInner>` 引用。
+/// 快照创建后完全独立于节点生命周期，Var 被 drop 也不影响。
+#[derive(Debug, Clone)]
+pub struct SnapshotNode {
+    /// 节点 ID
+    pub id: NodeId,
+    /// 节点名称（如 "fc1_W", "add_3"）
+    pub name: Option<String>,
+    /// 节点类型名（如 "Parameter", "MatMul", "MSE"）
+    pub type_name: String,
+    /// 期望输出形状
+    pub shape: Vec<usize>,
+    /// 父节点 ID 列表（数据流方向：parent → self）
+    pub parent_ids: Vec<NodeId>,
+    /// 是否已 detach
+    pub is_detached: bool,
+    /// 超参数 HTML 片段（如 Dropout 的 `<BR/>(p=0.5)`，无超参数时为 None）
+    pub hyperparam_html: Option<String>,
+}
+
+/// 可视化拓扑快照——计算图的轻量级结构副本
+///
+/// 在 Var 还活着时由 `Graph::snapshot_once` 创建。
+/// 存储在 `GraphInner` 中，之后随时可用于生成 DOT/PNG。
+///
+/// # 使用场景
+/// ```ignore
+/// // 训练循环内，backward 之后、Var drop 之前
+/// graph.snapshot_once(&[("Actor Loss", &actor_loss), ("Critic Loss", &critic1_loss)]);
+///
+/// // 训练结束后，任意时刻渲染
+/// graph.visualize_snapshot("examples/cartpole_sac/cartpole_sac")?;
+/// ```
+#[derive(Debug, Clone)]
+pub struct VisualizationSnapshot {
+    /// 所有可达节点（BFS 收集，顺序与遍历顺序一致）
+    pub nodes: Vec<SnapshotNode>,
+    /// 命名输出端点：(用户给的名称, 对应节点 ID)
+    pub named_outputs: Vec<(String, NodeId)>,
+}

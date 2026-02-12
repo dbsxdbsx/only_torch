@@ -292,13 +292,174 @@ impl Graph {
     // 新架构下，节点由 Rc 引用计数自动管理，Var 离开作用域时自动释放，
     // 不再需要手动清理节点。
 
-    // ==================== 可视化 ====================
+    // ==================== 可视化快照 ====================
 
-    // Phase 3: save_visualization() 已移除
-    // 新的可视化功能请使用 Var::save_visualization() 或 Var::to_dot()
-    // 示例：
-    //   let output = model.forward(&input)?;
-    //   output.save_visualization("model")?;
+    /// 快照当前计算图拓扑（仅首次调用生效，后续自动跳过）
+    ///
+    /// 在训练循环中 Var 还活着时调用，快照后 Var 可安全 drop。
+    /// 之后任意时刻调用 `visualize_snapshot` 生成可视化文件。
+    ///
+    /// # 参数
+    /// - `named_outputs`: 命名输出端点，每个 `(名称, &Var)` 对应一条优化路径
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 训练步骤末尾，backward 之后
+    /// graph.snapshot_once(&[
+    ///     ("Actor Loss", &actor_loss),
+    ///     ("Critic Loss", &critic1_loss),
+    /// ]);
+    /// ```
+    pub fn snapshot_once(&self, named_outputs: &[(&str, &Var)]) {
+        let mut inner = self.inner.borrow_mut();
+        if inner.visualization_snapshot.is_some() {
+            return; // 已拍过快照，跳过
+        }
+        let snapshot = Var::build_snapshot(named_outputs);
+        inner.visualization_snapshot = Some(snapshot);
+    }
+
+    /// 快照当前计算图拓扑（无名称版本，自动命名为 "Output 1", "Output 2"...）
+    ///
+    /// 功能同 `snapshot_once`，适用于不需要路径名称的场景。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// graph.snapshot_once_from(&[&loss]);
+    /// ```
+    pub fn snapshot_once_from(&self, outputs: &[&Var]) {
+        let mut inner = self.inner.borrow_mut();
+        if inner.visualization_snapshot.is_some() {
+            return;
+        }
+        let named: Vec<(String, &Var)> = outputs
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let name = if outputs.len() == 1 {
+                    "Output".to_string()
+                } else {
+                    format!("Output {}", i + 1)
+                };
+                (name, *v)
+            })
+            .collect();
+        let named_refs: Vec<(&str, &Var)> = named.iter().map(|(n, v)| (n.as_str(), *v)).collect();
+        let snapshot = Var::build_snapshot(&named_refs);
+        inner.visualization_snapshot = Some(snapshot);
+    }
+
+    /// 从已存储的快照渲染可视化文件（.dot + .png）
+    ///
+    /// 必须先调用 `snapshot_once` 或 `snapshot_once_from`。
+    /// 可在训练结束后任意时刻调用，不依赖 Var 生命周期。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// graph.visualize_snapshot("examples/cartpole_sac/cartpole_sac")?;
+    /// ```
+    pub fn visualize_snapshot<P: AsRef<std::path::Path>>(
+        &self,
+        base_path: P,
+    ) -> Result<super::VisualizationOutput, GraphError> {
+        use std::fs::File;
+        use std::io::Write;
+        use std::process::Command;
+
+        let inner = self.inner.borrow();
+        let snapshot = inner.visualization_snapshot.as_ref().ok_or_else(|| {
+            GraphError::InvalidOperation(
+                "未调用 snapshot_once，无法渲染可视化。请在训练循环中先调用 graph.snapshot_once(...)".to_string(),
+            )
+        })?;
+
+        let base = base_path.as_ref();
+        if let Some(ext) = base.extension() {
+            return Err(GraphError::InvalidOperation(format!(
+                "base_path 不应包含文件后缀（如 .{}），请使用不带后缀的路径",
+                ext.to_string_lossy()
+            )));
+        }
+
+        let dot_path = base.with_extension("dot");
+        let png_path = base.with_extension("png");
+
+        // 从快照 + 图元数据生成 DOT
+        let layer_groups = inner.layer_groups().to_vec();
+        let recurrent_metas = inner.recurrent_layer_metas().to_vec();
+        let dot_content = Var::snapshot_to_dot(snapshot, &layer_groups, &recurrent_metas);
+
+        // 保存 .dot 文件
+        {
+            let mut file = File::create(&dot_path)
+                .map_err(|e| GraphError::ComputationError(format!("无法创建 DOT 文件: {}", e)))?;
+            file.write_all(dot_content.as_bytes())
+                .map_err(|e| GraphError::ComputationError(format!("写入 DOT 文件失败: {}", e)))?;
+            file.sync_all()
+                .map_err(|e| GraphError::ComputationError(format!("同步 DOT 文件失败: {}", e)))?;
+        }
+
+        // 尝试用 Graphviz 生成 PNG
+        let graphviz_available = Command::new("dot")
+            .arg("-V")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if graphviz_available {
+            let output = Command::new("dot")
+                .arg("-Tpng")
+                .arg(&dot_path)
+                .arg("-o")
+                .arg(&png_path)
+                .output();
+
+            match output {
+                Ok(o) if o.status.success() => Ok(super::VisualizationOutput {
+                    dot_path,
+                    image_path: Some(png_path),
+                    graphviz_available: true,
+                    graphviz_hint: None,
+                }),
+                Ok(o) => {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    let hint = if stderr.is_empty() {
+                        format!("Graphviz 执行失败 (exit: {:?})", o.status.code())
+                    } else {
+                        format!(
+                            "Graphviz 执行失败 (exit: {:?}): {}",
+                            o.status.code(),
+                            stderr.trim()
+                        )
+                    };
+                    Ok(super::VisualizationOutput {
+                        dot_path,
+                        image_path: None,
+                        graphviz_available: true,
+                        graphviz_hint: Some(hint),
+                    })
+                }
+                Err(e) => Ok(super::VisualizationOutput {
+                    dot_path,
+                    image_path: None,
+                    graphviz_available: true,
+                    graphviz_hint: Some(format!("无法执行 Graphviz: {}", e)),
+                }),
+            }
+        } else {
+            Ok(super::VisualizationOutput {
+                dot_path,
+                image_path: None,
+                graphviz_available: false,
+                graphviz_hint: Some("请安装 Graphviz: https://graphviz.org/download/".to_string()),
+            })
+        }
+    }
+
+    /// 清除已有的可视化快照（允许重新拍摄）
+    pub fn clear_snapshot(&self) {
+        self.inner.borrow_mut().visualization_snapshot = None;
+    }
 }
 
 impl Default for Graph {

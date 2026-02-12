@@ -77,6 +77,13 @@ pub struct GraphInner {
     /// 上次重置计数器时的 forward_pass_id
     /// 当 forward 完成后，下一次创建节点时会检测到 pass_id 变化并重置计数器
     pub(in crate::nn::graph) counts_reset_pass_id: u64,
+
+    // ========== 可视化快照 ==========
+    /// 可视化拓扑快照（由 `Graph::snapshot_once` 写入）
+    ///
+    /// 在训练循环中 Var 还活着时拍快照，之后 Var 被 drop 也不影响。
+    /// 通过 `Graph::visualize_snapshot` 从快照渲染 DOT/PNG。
+    pub(in crate::nn::graph) visualization_snapshot: Option<super::types::VisualizationSnapshot>,
 }
 
 impl Default for GraphInner {
