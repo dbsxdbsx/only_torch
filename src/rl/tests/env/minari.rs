@@ -41,6 +41,7 @@ fn test_list_local_datasets() {
 
 #[test]
 #[serial]
+#[ignore = "需要联网：调用 Minari 远程 API"]
 fn test_list_remote_datasets() {
     Python::attach(|py| {
         let datasets = MinariDataset::list_remote(py);
@@ -71,6 +72,7 @@ fn test_list_remote_datasets() {
 
 #[test]
 #[serial]
+#[ignore = "需要联网：首次运行需下载数据集"]
 fn test_load_dataset() {
     Python::attach(|py| {
         let dataset_name = "D4RL/pointmaze/umaze-v2";
@@ -89,6 +91,7 @@ fn test_load_dataset() {
 
 #[test]
 #[serial]
+#[ignore = "需要联网：首次运行需下载数据集"]
 fn test_dataset_print_info() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");
@@ -102,6 +105,7 @@ fn test_dataset_print_info() {
 
 #[test]
 #[serial]
+#[ignore = "需要联网：首次运行需下载数据集"]
 fn test_sample_single_episode() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");
@@ -125,6 +129,7 @@ fn test_sample_single_episode() {
 
 #[test]
 #[serial]
+#[ignore = "需要联网：首次运行需下载数据集"]
 fn test_sample_multiple_episodes() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");
@@ -147,6 +152,7 @@ fn test_sample_multiple_episodes() {
 
 #[test]
 #[serial]
+#[ignore = "需要联网：首次运行需下载数据集"]
 fn test_episode_structure() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");
@@ -186,6 +192,7 @@ fn test_episode_structure() {
 
 #[test]
 #[serial]
+#[ignore = "需要联网：首次运行需下载数据集"]
 fn test_episode_data_values() {
     Python::attach(|py| {
         let dataset = MinariDataset::load(py, "D4RL/pointmaze/umaze-v2");

@@ -9,9 +9,17 @@ all: clean test lint examples
 
 # ==================== 测试 ====================
 
-# 运行所有单元测试
+# 运行常规单元测试（跳过 #[ignore] 标记的测试）
 test:
     cargo test
+
+# 运行全量测试（包含 #[ignore] 标记的联网等测试）
+test-all:
+    cargo test -- --include-ignored
+
+# 仅运行 #[ignore] 标记的测试（联网等特殊测试）
+test-ignored:
+    cargo test -- --ignored
 
 # 运行所有单元测试（单线程，用于调试）
 test-serial:
@@ -89,6 +97,16 @@ example-multi-io:
 example-multi-label:
     @echo "=== Running Multi Label Point (BCE Loss) ==="
     cargo run --example multi_label_point
+
+# ==================== RL Examples（需要 Python + gymnasium） ====================
+
+# 运行所有 RL examples
+examples-rl: example-cartpole-sac
+
+# SAC-Discrete CartPole 强化学习示例
+example-cartpole-sac:
+    @echo "=== Running CartPole SAC (requires Python + gymnasium) ==="
+    cargo run --example cartpole_sac
 
 # ==================== 代码质量 ====================
 
