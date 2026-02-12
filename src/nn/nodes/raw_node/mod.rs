@@ -64,7 +64,7 @@ define_node_types! {
     // ==================== 输入/参数/状态 ====================
     Input(InputVariant) {
         category: "输入",
-        description: "外部数据输入（Data/Target/Smart/RecurrentOutput）",
+        description: "外部数据输入（Data/Target）",
         var_method: None,
     },
     Parameter(Parameter) {

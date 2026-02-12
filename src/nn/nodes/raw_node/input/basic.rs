@@ -1,8 +1,8 @@
 /*
- * BasicInput 节点：基础输入节点
+ * BasicInput 节点：输入节点
  *
- * 用于 Data 和 Target 两种变体，共用同一个结构体。
- * - Data: 用户手动创建的通用输入
+ * 统一的输入节点实现，通过 InputVariant 区分用途：
+ * - Data: 用户数据输入
  * - Target: Loss 的目标值（真实标签）
  *
  * # 动态 Batch 支持
@@ -15,11 +15,13 @@ use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
-/// 基础输入节点（Data 和 Target 共用）
+/// 输入节点
+///
+/// 通过 `InputVariant` 区分用途（Data/Target），底层共用此结构体。
 ///
 /// # 动态 Batch 支持
-/// `BasicInput` 支持动态 batch：第一维可以是任意值。
-/// 这使得同一个计算图可以处理不同 `batch_size` 的输入。
+/// 支持动态 batch：第一维可以是任意值，
+/// 使同一个计算图可以处理不同 `batch_size` 的输入。
 #[derive(Clone)]
 pub(crate) struct BasicInput {
     id: Option<NodeId>,

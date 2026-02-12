@@ -76,7 +76,7 @@ pub struct RecurrentLayerMeta {
 pub struct RecurrentUnrollInfo {
     /// 时间步数
     pub steps: usize,
-    /// 输入节点 ID（如 `SmartInput`）
+    /// 输入节点 ID
     pub input_node_id: NodeId,
     /// 初始状态节点 ID 列表（如 [h0] 或 [h0, c0]）
     /// - RNN/GRU：只有一个 h0

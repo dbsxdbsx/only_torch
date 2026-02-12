@@ -74,9 +74,10 @@ impl GraphInner {
         Ok(node_inner)
     }
 
-    /// 创建 BasicInput 节点（方案 C 新 API）
+    /// 创建 Data 输入节点
     ///
-    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
+    /// 用户数据入口，可视化中显示为蓝色椭圆。
+    /// 返回 `Rc<NodeInner>`，叶子节点（无父节点）。
     pub fn create_basic_input_node(
         &mut self,
         shape: &[usize],
@@ -90,10 +91,10 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "input", vec![])
     }
 
-    /// 创建 TargetInput 节点（方案 C 新 API）
+    /// 创建 Target 输入节点
     ///
-    /// 用于 Loss 的目标值（真实标签），支持动态 batch。
-    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
+    /// Loss 的目标值（真实标签），可视化中显示为橙色椭圆。
+    /// 底层与 Data 共用 BasicInput，区别仅在于 InputVariant 变体。
     pub fn create_target_input_node(
         &mut self,
         shape: &[usize],
@@ -101,44 +102,10 @@ impl GraphInner {
     ) -> Result<Rc<NodeInner>, GraphError> {
         use crate::nn::nodes::raw_node::InputVariant;
 
-        let input_variant = InputVariant::new_target(shape);
+        let input_variant = InputVariant::new_target(shape)?;
         let raw_node: NodeType = input_variant.into();
 
         self.create_node_inner(raw_node, name, "target", vec![])
-    }
-
-    /// 创建 SmartInput 节点（方案 C 新 API）
-    ///
-    /// 用于 ModelState 的智能入口，支持动态 batch 和梯度路由。
-    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
-    pub fn create_smart_input_node(
-        &mut self,
-        shape: &[usize],
-        name: Option<&str>,
-    ) -> Result<Rc<NodeInner>, GraphError> {
-        use crate::nn::nodes::raw_node::InputVariant;
-
-        let input_variant = InputVariant::new_smart(shape);
-        let raw_node: NodeType = input_variant.into();
-
-        self.create_node_inner(raw_node, name, "input", vec![])
-    }
-
-    /// 创建 RecurrentOutput 节点（方案 C 新 API）
-    ///
-    /// 用于 RNN/LSTM/GRU 循环层的输出桥接。
-    /// 返回 `Rc<NodeInner>`，这是一个叶子节点（无父节点）
-    pub fn create_recurrent_output_node(
-        &mut self,
-        shape: &[usize],
-        name: Option<&str>,
-    ) -> Result<Rc<NodeInner>, GraphError> {
-        use crate::nn::nodes::raw_node::InputVariant;
-
-        let input_variant = InputVariant::new_recurrent_output(shape);
-        let raw_node: NodeType = input_variant.into();
-
-        self.create_node_inner(raw_node, name, "recurrent_output", vec![])
     }
 
     /// 创建 Parameter 节点（方案 C 新 API）

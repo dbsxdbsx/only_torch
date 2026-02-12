@@ -754,7 +754,6 @@ impl Var {
             // 根据节点类型选择样式
             let (node_shape, style, fill_color) = match node_type.as_str() {
                 "Input" | "BasicInput" => ("ellipse", "filled", "#E3F2FD"),
-                "SmartInput" | "RecurrentOutput" => ("ellipse", "filled", "#E0E0E0"),
                 "TargetInput" => ("ellipse", "filled", "#FFE0B2"),
                 "State" => ("cylinder", "filled", "#FFE0B2"),
                 "Identity" => ("ellipse", "\"filled,dashed\"", "#E1BEE7"),
