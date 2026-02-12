@@ -29,38 +29,37 @@ use only_torch::metrics::{accuracy, r2_score};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, Var, VarLossOps};
 use only_torch::tensor::Tensor;
 
-/// 生成训练数据：(x, `cls_label`, `reg_target`)
-///
-/// - x: 输入值
-/// - `cls_label`: one-hot 分类标签 [负=0, 正=1]
-/// - `reg_target`: 回归目标 |x|
-fn generate_data(n: usize, seed: u64) -> Vec<(Tensor, Tensor, Tensor)> {
+/// 生成批量数据：(x_batch [N,1], cls_batch [N,2], reg_batch [N,1])
+fn generate_batch_data(n: usize, seed: u64) -> (Tensor, Tensor, Tensor) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    let mut data = Vec::with_capacity(n);
+    let mut xs = Vec::with_capacity(n);
+    let mut cls = Vec::with_capacity(n * 2);
+    let mut reg = Vec::with_capacity(n);
+
     for i in 0..n {
         let mut hasher = DefaultHasher::new();
         (seed, i).hash(&mut hasher);
         let h = hasher.finish();
 
-        // x ∈ [-5, 5)，避免 x=0（边界情况）
         let x = ((h % 1000) as f32 / 100.0) - 5.0;
-        let x = if x.abs() < 0.1 { x + 0.5 } else { x }; // 避免太接近 0
+        let x = if x.abs() < 0.1 { x + 0.5 } else { x };
 
-        // 分类标签：负数 -> [1, 0]，正数 -> [0, 1]
-        let cls_label = if x < 0.0 {
-            Tensor::new(&[1.0, 0.0], &[1, 2])
+        xs.push(x);
+        if x < 0.0 {
+            cls.extend_from_slice(&[1.0, 0.0]);
         } else {
-            Tensor::new(&[0.0, 1.0], &[1, 2])
-        };
-
-        // 回归目标：|x|
-        let reg_target = Tensor::new(&[x.abs()], &[1, 1]);
-
-        data.push((Tensor::new(&[x], &[1, 1]), cls_label, reg_target));
+            cls.extend_from_slice(&[0.0, 1.0]);
+        }
+        reg.push(x.abs());
     }
-    data
+
+    (
+        Tensor::new(&xs, &[n, 1]),
+        Tensor::new(&cls, &[n, 2]),
+        Tensor::new(&reg, &[n, 1]),
+    )
 }
 
 fn main() -> Result<(), GraphError> {
@@ -73,9 +72,9 @@ fn main() -> Result<(), GraphError> {
     // 2. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.01);
 
-    // 4. 生成训练和测试数据
-    let train_data = generate_data(100, 42);
-    let test_data = generate_data(20, 123);
+    // 4. 生成训练和测试数据（batch 模式）
+    let (train_x, train_cls, train_reg) = generate_batch_data(100, 42);
+    let (test_x, test_cls, test_reg) = generate_batch_data(20, 123);
 
     println!("网络结构:");
     println!("  Input(1) -> Shared(8, ReLU) ─┬─> ClsHead(2) -> CrossEntropy");
@@ -85,69 +84,53 @@ fn main() -> Result<(), GraphError> {
     println!("  - 回归：预测绝对值");
     println!("\n优化器: Adam, Loss: CrossEntropy + MSE\n");
 
-    // 5. 训练循环
-    // 多任务学习：分别对两个 loss backward，梯度会累积到共享参数
+    // 5. 训练循环（full-batch，多任务学习）
     let epochs = 150;
     for epoch in 0..epochs {
-        let mut total_cls_loss = 0.0;
-        let mut total_reg_loss = 0.0;
+        let (cls_logits, reg_pred) = model.forward(&train_x)?;
 
-        for (x, cls_label, reg_target) in &train_data {
-            // 双输出 forward
-            let (cls_logits, reg_pred) = model.forward(x)?;
+        let cls_loss = cls_logits.cross_entropy(&train_cls)?;
+        let reg_loss = reg_pred.mse_loss(&train_reg)?;
 
-            // 计算两个 loss（VarLossOps）
-            let cls_loss = cls_logits.cross_entropy(cls_label)?;
-            let reg_loss = reg_pred.mse_loss(reg_target)?;
-
-            // 多任务 backward：
-            // 1. 清零梯度
-            // 2. 两个 loss 分别 backward（梯度自动累积到共享参数）
-            optimizer.zero_grad()?;
-            let cls_val = cls_loss.backward()?;
-            let reg_val = reg_loss.backward()?;
-            optimizer.step()?;
-
-            total_cls_loss += cls_val;
-            total_reg_loss += reg_val;
-        }
+        optimizer.zero_grad()?;
+        let cls_val = cls_loss.backward()?;
+        let reg_val = reg_loss.backward()?;
+        optimizer.step()?;
 
         if (epoch + 1) % 30 == 0 || epoch == 0 {
-            let avg_cls_loss = total_cls_loss / train_data.len() as f32;
-            let avg_reg_loss = total_reg_loss / train_data.len() as f32;
             println!(
                 "Epoch {:3}: 分类损失 = {:.4}, 回归损失 = {:.4}",
-                epoch + 1,
-                avg_cls_loss,
-                avg_reg_loss
+                epoch + 1, cls_val, reg_val
             );
         }
     }
 
     // 6. 测试
     println!("\n=== 测试结果 ===");
-    let mut pred_classes = Vec::new();
-    let mut true_classes = Vec::new();
-    let mut reg_predictions = Vec::new();
-    let mut reg_actuals = Vec::new();
+    let (cls_logits, reg_pred) = model.forward(&test_x)?;
+    cls_logits.forward()?;
+    reg_pred.forward()?;
+    let cls_vals = cls_logits.value()?.unwrap();
+    let reg_vals = reg_pred.value()?.unwrap();
 
-    for (x, cls_label, reg_target) in &test_data {
-        let (cls_logits, reg_pred) = model.forward(x)?;
+    let n_test = test_x.shape()[0];
+    let mut pred_classes = Vec::with_capacity(n_test);
+    let mut true_classes = Vec::with_capacity(n_test);
+    let mut reg_predictions = Vec::with_capacity(n_test);
+    let mut reg_actuals = Vec::with_capacity(n_test);
 
-        // 分类结果
-        let cls_probs = cls_logits.value()?.unwrap();
-        let pred_class = i32::from(cls_probs[[0, 0]] <= cls_probs[[0, 1]]);
-        let true_class = i32::from(cls_label[[0, 0]] <= 0.5);
+    for i in 0..n_test {
+        let pred_class = i32::from(cls_vals[[i, 0]] <= cls_vals[[i, 1]]);
+        let true_class = i32::from(test_cls[[i, 0]] <= 0.5);
         pred_classes.push(pred_class);
         true_classes.push(true_class);
 
-        // 回归结果（收集用于 R² 计算）
-        let reg_val = reg_pred.value()?.unwrap()[[0, 0]];
-        let target_val = reg_target[[0, 0]];
+        let reg_val = reg_vals[[i, 0]];
+        let target_val = test_reg[[i, 0]];
         reg_predictions.push(reg_val);
         reg_actuals.push(target_val);
 
-        let x_val = x[[0, 0]];
+        let x_val = test_x[[i, 0]];
         let sign_str = if pred_class == 1 { "正" } else { "负" };
         let correct_str = if pred_class == true_class {
             "✓"
@@ -180,10 +163,9 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 8. 保存计算图可视化（训练后做一次完整 forward + 双 loss）
-    let (x, cls_label, reg_target) = &train_data[0];
-    let (cls_logits, reg_pred) = model.forward(x)?;
-    let cls_loss = cls_logits.cross_entropy(cls_label)?;
-    let reg_loss = reg_pred.mse_loss(reg_target)?;
+    let (cls_logits, reg_pred) = model.forward(&train_x)?;
+    let cls_loss = cls_logits.cross_entropy(&train_cls)?;
+    let reg_loss = reg_pred.mse_loss(&train_reg)?;
     // 从多个 loss 合并回溯，显示完整的双分支结构
     let vis_result = Var::visualize_all(
         &[&cls_loss, &reg_loss],

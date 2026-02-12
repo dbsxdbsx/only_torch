@@ -22,36 +22,38 @@ use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
-/// 生成训练数据：(x1, x2, label)
+/// 生成批量数据：(x1_batch [N,1], x2_batch [N,1], label_batch [N,1])
 /// label = 1 如果 |x1 - x2| < threshold，否则 0
-fn generate_data(n: usize, seed: u64, threshold: f32) -> Vec<(Tensor, Tensor, Tensor)> {
+fn generate_batch_data(n: usize, seed: u64, threshold: f32) -> (Tensor, Tensor, Tensor) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    let mut data = Vec::with_capacity(n);
+    let mut x1s = Vec::with_capacity(n);
+    let mut x2s = Vec::with_capacity(n);
+    let mut labels = Vec::with_capacity(n);
+
     for i in 0..n {
         let mut hasher = DefaultHasher::new();
         (seed, i).hash(&mut hasher);
         let h = hasher.finish();
 
-        // 生成两个数 [-5, 5)
         let x1 = ((h % 1000) as f32 / 100.0) - 5.0;
         let x2 = (((h >> 16) % 1000) as f32 / 100.0) - 5.0;
 
-        // 标签：相近为 1，否则为 0
-        let label = if (x1 - x2).abs() < threshold {
+        x1s.push(x1);
+        x2s.push(x2);
+        labels.push(if (x1 - x2).abs() < threshold {
             1.0
         } else {
             0.0
-        };
-
-        data.push((
-            Tensor::new(&[x1], &[1, 1]),
-            Tensor::new(&[x2], &[1, 1]),
-            Tensor::new(&[label], &[1, 1]),
-        ));
+        });
     }
-    data
+
+    (
+        Tensor::new(&x1s, &[n, 1]),
+        Tensor::new(&x2s, &[n, 1]),
+        Tensor::new(&labels, &[n, 1]),
+    )
 }
 
 fn main() -> Result<(), GraphError> {
@@ -64,75 +66,68 @@ fn main() -> Result<(), GraphError> {
     // 2. 优化器
     let mut optimizer = Adam::new(&graph, &model.parameters(), 0.01);
 
-    // 4. 生成数据
+    // 4. 生成数据（batch 模式）
     let threshold = 2.0;
-    let train_data = generate_data(200, 42, threshold);
-    let test_data = generate_data(30, 123, threshold);
+    let (train_x1, train_x2, train_labels) = generate_batch_data(200, 42, threshold);
+    let (test_x1, test_x2, test_labels) = generate_batch_data(30, 123, threshold);
 
     // 统计数据分布
-    let train_positive = train_data
-        .iter()
-        .filter(|(_, _, t)| t[[0, 0]] > 0.5)
+    let n_train = train_labels.shape()[0];
+    let n_test = test_labels.shape()[0];
+    let train_positive = (0..n_train)
+        .filter(|&i| train_labels[[i, 0]] > 0.5)
         .count();
-    let test_positive = test_data.iter().filter(|(_, _, t)| t[[0, 0]] > 0.5).count();
+    let test_positive = (0..n_test)
+        .filter(|&i| test_labels[[i, 0]] > 0.5)
+        .count();
 
     println!("网络结构（共享编码器）:");
-    println!("  Input1 ─> Encoder(8, ReLU) ─> Feat1 ─┐");
-    println!("               ↑                       ├─> Concat ─> Classifier(1) ─> Sigmoid");
+    println!("  Input1 ─> Enc(16→8, ReLU) ─> Feat1 ─┐");
+    println!("               ↑                       ├─> Concat ─> Cls(8→1, ReLU→Sigmoid)");
     println!("             共享参数                  │");
     println!("               ↓                       │");
-    println!("  Input2 ─> Encoder(8, ReLU) ─> Feat2 ─┘");
+    println!("  Input2 ─> Enc(16→8, ReLU) ─> Feat2 ─┘");
     println!("\n任务: 判断 |x1 - x2| < {threshold:.1} (相似=1, 不相似=0)");
     println!(
         "数据: 训练 {} 条 (正例 {}), 测试 {} 条 (正例 {})",
-        train_data.len(),
-        train_positive,
-        test_data.len(),
-        test_positive
+        n_train, train_positive, n_test, test_positive
     );
-    println!("优化器: Adam, 损失: MSE, 目标准确率: 85%\n");
+    println!("优化器: Adam (lr=0.01), 损失: MSE, 目标准确率: 85%\n");
 
-    // 5. 训练循环
+    // 5. 训练循环（full-batch）
     let epochs = 300;
     for epoch in 0..epochs {
-        let mut total_loss = 0.0;
+        let output = model.forward(&train_x1, &train_x2)?;
+        let loss = output.mse_loss(&train_labels)?;
 
-        for (x1, x2, target) in &train_data {
-            let output = model.forward(x1, x2)?;
-            let loss = output.mse_loss(target)?;
-
-            optimizer.zero_grad()?;
-            let loss_val = loss.backward()?;
-            optimizer.step()?;
-
-            total_loss += loss_val;
-        }
+        optimizer.zero_grad()?;
+        let loss_val = loss.backward()?;
+        optimizer.step()?;
 
         if (epoch + 1) % 50 == 0 || epoch == 0 {
-            let avg_loss = total_loss / train_data.len() as f32;
-            println!("Epoch {:3}: 平均损失 = {:.6}", epoch + 1, avg_loss);
+            println!("Epoch {:3}: 平均损失 = {:.6}", epoch + 1, loss_val);
         }
     }
 
     // 6. 测试
     println!("\n=== 测试结果 ===");
-    let mut pred_labels = Vec::new();
-    let mut true_labels = Vec::new();
+    let output = model.forward(&test_x1, &test_x2)?;
+    let pred_tensor = output.value()?.unwrap();
 
-    for (x1, x2, target) in &test_data {
-        let output = model.forward(x1, x2)?;
-        let pred = output.value()?.unwrap();
-        let pred_val = pred[[0, 0]];
-        let target_val = target[[0, 0]];
+    let mut pred_labels = Vec::with_capacity(n_test);
+    let mut true_labels = Vec::with_capacity(n_test);
 
-        // 预测：> 0.5 为相似
+    for i in 0..n_test {
+        let pred_val = pred_tensor[[i, 0]];
+        let target_val = test_labels[[i, 0]];
+
         let pred_label = i32::from(pred_val > 0.5);
         let true_label = target_val as i32;
         pred_labels.push(pred_label);
         true_labels.push(true_label);
 
-        let x1_val = x1[[0, 0]];
-        let x2_val = x2[[0, 0]];
+        let x1_val = test_x1[[i, 0]];
+        let x2_val = test_x2[[i, 0]];
         let diff = (x1_val - x2_val).abs();
         println!(
             "  x1={:5.2}, x2={:5.2}, |diff|={:.2}, 预测={:.2}, 真实={}, {}",
@@ -169,9 +164,8 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 7. 保存计算图可视化（训练后做一次 forward + loss）
-    let (x1, x2, target) = &train_data[0];
-    let output = model.forward(x1, x2)?;
-    let loss = output.mse_loss(target)?;
+    let output = model.forward(&train_x1, &train_x2)?;
+    let loss = output.mse_loss(&train_labels)?;
     let vis_result = loss.save_visualization("examples/siamese_similarity/siamese_similarity")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {

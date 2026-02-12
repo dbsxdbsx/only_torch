@@ -22,29 +22,33 @@ use only_torch::metrics::r2_score;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
-/// 生成训练数据：(x1, x2, x1+x2)
-fn generate_data(n: usize, seed: u64) -> Vec<(Tensor, Tensor, Tensor)> {
+/// 生成批量数据：(x1_batch [N,1], x2_batch [N,1], y_batch [N,1])
+fn generate_batch_data(n: usize, seed: u64) -> (Tensor, Tensor, Tensor) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    let mut data = Vec::with_capacity(n);
+    let mut x1s = Vec::with_capacity(n);
+    let mut x2s = Vec::with_capacity(n);
+    let mut ys = Vec::with_capacity(n);
+
     for i in 0..n {
-        // 简单的伪随机数生成
         let mut hasher = DefaultHasher::new();
         (seed, i).hash(&mut hasher);
         let h = hasher.finish();
 
         let x1 = ((h % 1000) as f32 / 100.0) - 5.0; // [-5, 5)
         let x2 = (((h >> 16) % 1000) as f32 / 100.0) - 5.0;
-        let y = x1 + x2;
 
-        data.push((
-            Tensor::new(&[x1], &[1, 1]),
-            Tensor::new(&[x2], &[1, 1]),
-            Tensor::new(&[y], &[1, 1]),
-        ));
+        x1s.push(x1);
+        x2s.push(x2);
+        ys.push(x1 + x2);
     }
-    data
+
+    (
+        Tensor::new(&x1s, &[n, 1]),
+        Tensor::new(&x2s, &[n, 1]),
+        Tensor::new(&ys, &[n, 1]),
+    )
 }
 
 fn main() -> Result<(), GraphError> {
@@ -55,11 +59,11 @@ fn main() -> Result<(), GraphError> {
     let model = DualInputAdder::new(&graph)?;
 
     // 2. 优化器
-    let mut optimizer = Adam::new(&graph, &model.parameters(), 0.01);
+    let mut optimizer = Adam::new(&graph, &model.parameters(), 0.05);
 
-    // 4. 生成训练数据
-    let train_data = generate_data(50, 42);
-    let test_data = generate_data(10, 123);
+    // 4. 生成训练和测试数据（batch 模式）
+    let (train_x1, train_x2, train_y) = generate_batch_data(50, 42);
+    let (test_x1, test_x2, test_y) = generate_batch_data(10, 123);
 
     // 目标 R² 分数
     let target_r2 = 0.95;
@@ -73,42 +77,33 @@ fn main() -> Result<(), GraphError> {
         target_r2 * 100.0
     );
 
-    // 5. 训练循环
+    // 5. 训练循环（full-batch）
     let epochs = 200;
     for epoch in 0..epochs {
-        let mut total_loss = 0.0;
+        let output = model.forward(&train_x1, &train_x2)?;
+        let loss = output.mse_loss(&train_y)?;
 
-        for (x1, x2, target) in &train_data {
-            // 双输入 forward
-            let output = model.forward(x1, x2)?;
-
-            // MSE 损失（VarLossOps）
-            let loss = output.mse_loss(target)?;
-
-            // 反向传播 + 参数更新
-            optimizer.zero_grad()?;
-            let loss_val = loss.backward()?;
-            optimizer.step()?;
-
-            total_loss += loss_val;
-        }
+        optimizer.zero_grad()?;
+        let loss_val = loss.backward()?;
+        optimizer.step()?;
 
         if (epoch + 1) % 50 == 0 || epoch == 0 {
-            let avg_loss = total_loss / train_data.len() as f32;
-            println!("Epoch {:3}: 平均损失 = {:.6}", epoch + 1, avg_loss);
+            println!("Epoch {:3}: 平均损失 = {:.6}", epoch + 1, loss_val);
         }
     }
 
-    // 6. 测试（收集预测值和真实值用于计算 R²）
+    // 6. 测试
     println!("\n=== 测试结果 ===");
-    let mut predictions = Vec::new();
-    let mut actuals = Vec::new();
+    let output = model.forward(&test_x1, &test_x2)?;
+    let pred_tensor = output.value()?.unwrap();
 
-    for (x1, x2, target) in &test_data {
-        let output = model.forward(x1, x2)?;
-        let pred = output.value()?.unwrap();
-        let pred_val = pred[[0, 0]];
-        let target_val = target[[0, 0]];
+    let n_test = test_y.shape()[0];
+    let mut predictions = Vec::with_capacity(n_test);
+    let mut actuals = Vec::with_capacity(n_test);
+
+    for i in 0..n_test {
+        let pred_val = pred_tensor[[i, 0]];
+        let target_val = test_y[[i, 0]];
         let error = (pred_val - target_val).abs();
 
         predictions.push(pred_val);
@@ -116,8 +111,8 @@ fn main() -> Result<(), GraphError> {
 
         println!(
             "  {:.2} + {:.2} = {:.2} (预测: {:.2}, 误差: {:.3})",
-            x1[[0, 0]],
-            x2[[0, 0]],
+            test_x1[[i, 0]],
+            test_x2[[i, 0]],
             target_val,
             pred_val,
             error
@@ -142,9 +137,8 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 7. 保存计算图可视化（训练后做一次 forward + loss）
-    let (x1, x2, target) = &train_data[0];
-    let output = model.forward(x1, x2)?;
-    let loss = output.mse_loss(target)?;
+    let output = model.forward(&train_x1, &train_x2)?;
+    let loss = output.mse_loss(&train_y)?;
     let vis_result = loss.save_visualization("examples/dual_input_add/dual_input_add")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
