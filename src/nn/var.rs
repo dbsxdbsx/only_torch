@@ -989,6 +989,10 @@ impl Var {
         if !model_cluster_indices.is_empty() {
             let mut node_children: HashMap<u64, Vec<u64>> = HashMap::new();
             for snode in &snapshot.nodes {
+                // 被 RNN 折叠隐藏的节点不参与推断
+                if rnn_hidden_ids.contains(&snode.id.0) {
+                    continue;
+                }
                 for pid in &snode.parent_ids {
                     node_children.entry(pid.0).or_default().push(snode.id.0);
                 }
@@ -998,7 +1002,9 @@ impl Var {
                 let mut changed = false;
                 for snode in &snapshot.nodes {
                     let nid = snode.id.0;
-                    if node_to_model.contains_key(&nid) {
+                    if node_to_model.contains_key(&nid)
+                        || rnn_hidden_ids.contains(&nid)
+                    {
                         continue;
                     }
 
@@ -1006,6 +1012,7 @@ impl Var {
                         let parent_models: Vec<Option<&str>> = snode
                             .parent_ids
                             .iter()
+                            .filter(|p| !rnn_hidden_ids.contains(&p.0))
                             .map(|p| node_to_model.get(&p.0).map(|s| s.as_str()))
                             .collect();
                         if parent_models.iter().all(|m| m.is_some()) {

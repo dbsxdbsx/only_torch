@@ -47,11 +47,11 @@ digraph ComputeGraph {
                 "17" [label=<zeros_like_1 <FONT COLOR="#E67E22">×1</FONT><BR/><B>ZerosLike</B><BR/>[?, 16]> shape=box style="filled,rounded,dashed" fillcolor="#FFFDE7" fontsize=10];
         }
 
+        "10" [label=<input_1<BR/><B>Input</B><BR/>[?, 4-12, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 
     "1" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]<BR/><FONT COLOR="#C62828" POINT-SIZE="9">▸ Output</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#C62828"];
     "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "10" [label=<input_1<BR/><B>Input</B><BR/>[?, 4-12, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
     "2" -> "1";
     "3" -> "1";
