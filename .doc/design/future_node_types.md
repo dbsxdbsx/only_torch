@@ -114,7 +114,7 @@
 |------|---------|------|--------|
 | **Normal** | `rsample()`（重参数化采样）、`log_prob()`、`entropy()` | SAC-Continuous Actor：连续动作采样 | 🔴 高 |
 | **TanhNormal** | `sample()` + tanh squash + log_prob 修正 | SAC-Continuous：Squashed Gaussian 策略（Haarnoja 2018 Appendix C） | 🔴 高 |
-| **Categorical** | `sample()`、`log_prob()`、`entropy()` | SAC-Discrete / Hybrid：离散动作采样（当前 cartpole_sac 用纯 Tensor 手工实现，Hybrid 需计算图内版本） | 🟡 中 |
+| **Categorical** | `sample()`、`log_prob()`、`entropy()` | SAC-Discrete / Hybrid：离散动作采样（当前 sac/cartpole 用纯 Tensor 手工实现，Hybrid 需计算图内版本） | 🟡 中 |
 
 **TanhNormal log_prob 修正公式**（Enforcing Action Bounds）：
 
@@ -154,7 +154,7 @@ log π(a|s) = log N(u|μ,σ) - Σ log(1 - tanh²(u) + ε)
 4. **Normal 分布** - 连续动作 SAC 的重参数化采样 + log_prob
 5. **TanhNormal 分布** - Squashed Gaussian 策略（标准 SAC-Continuous 必需）
 
-> **注**：SAC-Discrete（当前 cartpole_sac 示例）不需要以上任何内容，已有 softmax / log_softmax 足够。
+> **注**：SAC-Discrete（当前 sac/cartpole 示例）不需要以上任何内容，已有 softmax / log_softmax 足够。
 > 以上仅在扩展到 SAC-Continuous / Hybrid SAC 时才需要。
 
 **临时替代方案**：

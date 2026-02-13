@@ -15,14 +15,21 @@
 //! ```bash
 //! cargo run --example cartpole_sac
 //! ```
+//!
+//! 关于 SAC 算法的完整说明（Entropy、Alpha 等核心概念），
+//! 请参阅 [`examples/sac/README.md`](../README.md)。
+//!
+//! ## 原始运行命令
+//! ```bash
+//! cargo run --example cartpole_sac
+//! ```
 
 mod model;
 
 use model::SacAgent;
 use only_torch::nn::distributions::Categorical;
 use only_torch::nn::{
-    Adam, Graph, GraphError, Module, Optimizer, VarActivationOps, VarLossOps, VarReduceOps,
-    VarShapeOps,
+    Adam, Graph, GraphError, Module, Optimizer, VarLossOps, VarReduceOps, VarShapeOps,
 };
 use only_torch::rl::GymEnv;
 use only_torch::tensor::Tensor;
@@ -284,7 +291,10 @@ fn main() -> Result<(), GraphError> {
                     critic2_optimizer.step()?;
 
                     // ========== Actor 更新 ==========
-                    // SAC-Discrete Actor Loss: L = -α * H(π) - E_π[Q]
+                    // SAC-Discrete Actor Loss（原始公式，兼容未来 Continuous/Hybrid 扩展）:
+                    //   L = mean(Σ_a π(a) × (α·log π(a) - Q(a)))
+                    // 等价于 L = -(E_π[Q] + α·H(π))，但以 log_prob 为核心构建，
+                    // 便于未来用"哑值填充"统一 Discrete/Continuous/Hybrid 三种 Action 类型
                     let q1 = agent.critic1.get_q_values(&obs_batch)?;
                     let q2 = agent.critic2.get_q_values(&obs_batch)?;
                     let q_min = q1.minimum(&q2);
@@ -295,22 +305,27 @@ fn main() -> Result<(), GraphError> {
                         .forward(&graph.input_named(&obs_batch, "obs")?)?;
                     let dist = Categorical::new(actor_logits);
 
-                    // 使用分布 API 计算 entropy 和 E_π[Q]
-                    let entropy = dist.entropy(); // Var [batch, 1]
+                    // 直接使用 probs + log_probs 组合公式（不经过 entropy()）
                     let probs = dist.probs(); // Var [batch, action_dim]（缓存的，无冗余节点）
-                    let expected_q = (&probs * &q_min).sum_axis(1); // Var [batch, 1]
+                    let log_probs = dist.log_probs(); // Var [batch, action_dim]（缓存的）
 
-                    // Actor Loss = mean(-α * H - E_π[Q])
                     let alpha = agent.alpha();
-                    let neg_alpha = Tensor::new(&[-alpha], &[1, 1]);
-                    let actor_loss = (&entropy * neg_alpha - &expected_q).mean();
+                    let alpha_tensor = Tensor::new(&[alpha], &[1, 1]);
+                    // α·log π(a) - Q(a)：entropy penalty 减去 Q 值
+                    let actor_loss = (&probs * (&log_probs * alpha_tensor - &q_min))
+                        .sum_axis(1) // Σ_a → [batch, 1]
+                        .mean(); // batch 平均
 
-                    // 先 forward 获取 entropy 值用于 alpha 更新
+                    // 先 forward，再从已计算的 Tensor 离线算 entropy（仅用于 alpha 自适应）
                     actor_loss.forward()?;
-                    let entropy_val = entropy.value()?.unwrap();
-                    let batch_size = entropy_val.shape()[0] as f32;
-                    let avg_entropy =
-                        entropy_val.sum().get_data_number().unwrap() / batch_size;
+                    let probs_val = probs.value()?.unwrap();
+                    let log_probs_val = log_probs.value()?.unwrap();
+                    let batch_size = probs_val.shape()[0] as f32;
+                    let avg_entropy = -(probs_val * log_probs_val)
+                        .sum()
+                        .get_data_number()
+                        .unwrap()
+                        / batch_size;
 
                     // 反向传播和优化
                     actor_optimizer.zero_grad()?;
@@ -410,7 +425,7 @@ fn main() -> Result<(), GraphError> {
 
         // 7. 保存计算图可视化（从训练时拍的快照渲染，无需重建前向传播）
         println!("\n[5/6] 保存计算图可视化...");
-        let vis_result = graph.visualize_snapshot("examples/cartpole_sac/cartpole_sac")?;
+        let vis_result = graph.visualize_snapshot("examples/sac/cartpole/cartpole_sac")?;
         println!("  计算图已保存: {}", vis_result.dot_path.display());
         if let Some(img_path) = &vis_result.image_path {
             println!("  可视化图像: {}", img_path.display());

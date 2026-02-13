@@ -987,7 +987,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 #### Step 2.8：完整性验证
 - [ ] 验证 xor 示例收敛
 - [ ] 验证 mnist 示例准确率
-- [ ] 验证 cartpole_sac 节点不累积（**核心目标**）
+- [ ] 验证 sac/cartpole 节点不累积（**核心目标**）
 
 **补充测试场景**（评审建议）：
 - [ ] 高频创建销毁（10000+ 次/秒）：验证 Rc alloc/dealloc 性能
@@ -1045,7 +1045,7 @@ BPTT 相关字段（`step_history` 等）保留在 GraphInner 中。
 | `mnist_gan` | GAN 训练，detach 行为 |
 | `california_housing` | 回归任务 |
 | `parity_*` | RNN/LSTM/GRU 变长序列 |
-| `cartpole_sac` | **重点**：强化学习，节点不累积 |
+| `sac/cartpole` | **重点**：强化学习，节点不累积 |
 
 ### 6.2 性能测试
 

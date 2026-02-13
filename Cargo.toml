@@ -146,4 +146,4 @@ path = "examples/multi_label_point/main.rs"
 
 [[example]]
 name = "cartpole_sac"
-path = "examples/cartpole_sac/main.rs"
+path = "examples/sac/cartpole/main.rs"

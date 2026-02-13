@@ -107,7 +107,7 @@ for (x, target) in &dataloader {
 | `dual_output_classify` | 多输出 + 多 Loss | ✅ |
 | `multi_io_fusion` | 多输入 + 多输出 | ✅ |
 | `multi_label_point` | BceLoss 多标签 | ✅ |
-| `cartpole_sac` | SAC-Discrete 强化学习 | ✅ |
+| `sac/cartpole` | SAC-Discrete 强化学习 | ✅ |
 
 ## 已实现节点
 

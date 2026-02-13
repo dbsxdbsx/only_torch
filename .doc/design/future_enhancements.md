@@ -75,7 +75,7 @@
 
 **背景**：SAC-Continuous 的策略网络需要对连续动作进行重参数化采样（reparameterization trick），并计算 log_prob 用于熵正则化和 Actor loss。这需要一个完整的概率分布模块，是当前项目**最大的系统性缺口**。
 
-> **注**：SAC-Discrete（当前 cartpole_sac）不需要此模块——softmax + log_softmax 已足够。
+> **注**：SAC-Discrete（当前 sac/cartpole）不需要此模块——softmax + log_softmax 已足够。
 > 此模块仅在扩展到连续/混合动作空间时才需要。
 
 ### 需要实现的分布

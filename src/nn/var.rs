@@ -1012,9 +1012,7 @@ impl Var {
                 let mut changed = false;
                 for snode in &snapshot.nodes {
                     let nid = snode.id.0;
-                    if node_to_model.contains_key(&nid)
-                        || rnn_hidden_ids.contains(&nid)
-                    {
+                    if node_to_model.contains_key(&nid) || rnn_hidden_ids.contains(&nid) {
                         continue;
                     }
 
@@ -1110,50 +1108,47 @@ impl Var {
         let model_colors = ["#FFEBEE40", "#E8EAF640", "#E0F2F140", "#FFF8E140"];
 
         // Cluster 渲染闭包（按 GroupStyle 区分视觉样式）
-        let render_cluster =
-            |dot: &mut String, indent: &str, cluster: &ClusterInfo, cluster_id: &str, color: &str| {
-                if cluster.visible_node_ids.is_empty() {
-                    return;
-                }
-                let display_name = cluster
-                    .display_name
-                    .as_ref()
-                    .map(|n| n.split('/').last().unwrap_or(n).to_string())
-                    .unwrap_or_else(|| cluster.group_type.clone());
+        let render_cluster = |dot: &mut String,
+                              indent: &str,
+                              cluster: &ClusterInfo,
+                              cluster_id: &str,
+                              color: &str| {
+            if cluster.visible_node_ids.is_empty() {
+                return;
+            }
+            let display_name = cluster
+                .display_name
+                .as_ref()
+                .map(|n| n.split('/').last().unwrap_or(n).to_string())
+                .unwrap_or_else(|| cluster.group_type.clone());
 
-                dot.push_str(&format!("{indent}subgraph cluster_{cluster_id} {{\n"));
-                match cluster.style {
-                    GroupStyle::Layer => {
-                        let desc = cluster.description.as_deref().unwrap_or("");
-                        dot.push_str(&format!(
+            dot.push_str(&format!("{indent}subgraph cluster_{cluster_id} {{\n"));
+            match cluster.style {
+                GroupStyle::Layer => {
+                    let desc = cluster.description.as_deref().unwrap_or("");
+                    dot.push_str(&format!(
                             "{indent}    label=<<B>{display_name}</B><BR/><FONT POINT-SIZE=\"9\">{}: {desc}</FONT>>;\n",
                             cluster.group_type
                         ));
-                        dot.push_str(&format!("{indent}    style=filled;\n"));
-                        dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
-                    }
-                    GroupStyle::Distribution => {
-                        dot.push_str(&format!(
-                            "{indent}    label=<<B>{}</B>>;\n",
-                            cluster.group_type
-                        ));
-                        dot.push_str(&format!("{indent}    style=\"filled,dashed\";\n"));
-                        dot.push_str(&format!("{indent}    fillcolor=\"#F3E5F540\";\n"));
-                    }
-                    GroupStyle::Recurrent => {
-                        // 用折叠步数范围丰富描述
-                        let base_desc = cluster.description.as_deref().unwrap_or("");
-                        let enriched = if let Some(name) = &cluster.display_name {
-                            if let Some(&(min_s, max_s)) = folding_step_ranges.get(name) {
-                                if min_s != max_s {
-                                    if let Some(pos) = base_desc.rfind("(×") {
-                                        format!(
-                                            "{}(×{}-{} steps)",
-                                            &base_desc[..pos], min_s, max_s
-                                        )
-                                    } else {
-                                        base_desc.to_string()
-                                    }
+                    dot.push_str(&format!("{indent}    style=filled;\n"));
+                    dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
+                }
+                GroupStyle::Distribution => {
+                    dot.push_str(&format!(
+                        "{indent}    label=<<B>{}</B>>;\n",
+                        cluster.group_type
+                    ));
+                    dot.push_str(&format!("{indent}    style=\"filled,dashed\";\n"));
+                    dot.push_str(&format!("{indent}    fillcolor=\"#F3E5F540\";\n"));
+                }
+                GroupStyle::Recurrent => {
+                    // 用折叠步数范围丰富描述
+                    let base_desc = cluster.description.as_deref().unwrap_or("");
+                    let enriched = if let Some(name) = &cluster.display_name {
+                        if let Some(&(min_s, max_s)) = folding_step_ranges.get(name) {
+                            if min_s != max_s {
+                                if let Some(pos) = base_desc.rfind("(×") {
+                                    format!("{}(×{}-{} steps)", &base_desc[..pos], min_s, max_s)
                                 } else {
                                     base_desc.to_string()
                                 }
@@ -1162,29 +1157,32 @@ impl Var {
                             }
                         } else {
                             base_desc.to_string()
-                        };
-                        dot.push_str(&format!(
+                        }
+                    } else {
+                        base_desc.to_string()
+                    };
+                    dot.push_str(&format!(
                             "{indent}    label=<<B>{display_name}</B><BR/><FONT POINT-SIZE=\"9\">{enriched}</FONT>>;\n"
                         ));
-                        dot.push_str(&format!("{indent}    style=\"filled,bold\";\n"));
-                        dot.push_str(&format!("{indent}    peripheries=3;\n"));
-                        dot.push_str(&format!("{indent}    penwidth=2;\n"));
-                        dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
-                    }
+                    dot.push_str(&format!("{indent}    style=\"filled,bold\";\n"));
+                    dot.push_str(&format!("{indent}    peripheries=3;\n"));
+                    dot.push_str(&format!("{indent}    penwidth=2;\n"));
+                    dot.push_str(&format!("{indent}    fillcolor=\"{color}\";\n"));
                 }
-                dot.push_str(&format!(
-                    "{indent}    fontname=\"Microsoft YaHei,SimHei,Arial\";\n"
-                ));
-                dot.push_str(&format!("{indent}    fontsize=11;\n"));
-                dot.push_str(&format!("{indent}    margin=12;\n"));
-                for snode in &snapshot.nodes {
-                    if cluster.visible_node_ids.contains(&snode.id.0) {
-                        dot.push_str(&format!("{indent}        "));
-                        dot.push_str(&generate_node_def(snode));
-                    }
+            }
+            dot.push_str(&format!(
+                "{indent}    fontname=\"Microsoft YaHei,SimHei,Arial\";\n"
+            ));
+            dot.push_str(&format!("{indent}    fontsize=11;\n"));
+            dot.push_str(&format!("{indent}    margin=12;\n"));
+            for snode in &snapshot.nodes {
+                if cluster.visible_node_ids.contains(&snode.id.0) {
+                    dot.push_str(&format!("{indent}        "));
+                    dot.push_str(&generate_node_def(snode));
                 }
-                dot.push_str(&format!("{indent}}}\n\n"));
-            };
+            }
+            dot.push_str(&format!("{indent}}}\n\n"));
+        };
 
         // Distribution cluster 按模型归属分类
         let mut dist_for_model: HashMap<String, Vec<usize>> = HashMap::new();
@@ -1525,7 +1523,6 @@ impl Var {
 
         Self::snapshot_to_dot(&snapshot, &folding_metas)
     }
-
 
     /// 内部方法：保存多个 Var 的可视化
     fn save_visualization_for_vars<P: AsRef<std::path::Path>>(

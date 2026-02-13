@@ -181,7 +181,7 @@ impl SacAgent {
     /// - 若 H(π) > `target_entropy`，α 减小，减少探索
     ///
     /// # 参数
-    /// - `avg_entropy` — 当前策略的 batch 平均熵（来自 `Categorical::entropy()`）
+    /// - `avg_entropy` — 当前策略的 batch 平均熵（从 probs/log_probs 离线计算）
     pub fn update_alpha(&mut self, avg_entropy: f32) {
         let alpha = self.alpha();
         let alpha_grad = alpha * (avg_entropy - self.target_entropy);
