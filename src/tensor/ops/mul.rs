@@ -12,6 +12,7 @@
  */
 
 use crate::errors::TensorError;
+use crate::tensor::next_source_id;
 use crate::tensor::Tensor;
 use std::ops::Mul;
 
@@ -22,6 +23,7 @@ impl Mul<Tensor> for f32 {
     fn mul(self, tensor: Tensor) -> Tensor {
         Tensor {
             data: self * &tensor.data,
+            source_id: next_source_id(),
         }
     }
 }
@@ -31,6 +33,7 @@ impl<'a> Mul<&'a Tensor> for f32 {
     fn mul(self, tensor: &'a Tensor) -> Tensor {
         Tensor {
             data: self * &tensor.data,
+            source_id: next_source_id(),
         }
     }
 }
@@ -43,6 +46,7 @@ impl Mul<f32> for Tensor {
     fn mul(self, scalar: f32) -> Self {
         Self {
             data: &self.data * scalar,
+            source_id: next_source_id(),
         }
     }
 }
@@ -52,6 +56,7 @@ impl Mul<f32> for &Tensor {
     fn mul(self, scalar: f32) -> Tensor {
         Tensor {
             data: &self.data * scalar,
+            source_id: next_source_id(),
         }
     }
 }
@@ -110,5 +115,6 @@ fn mul_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
     // 使用 ndarray 的原生广播
     Tensor {
         data: &tensor_1.data * &tensor_2.data,
+        source_id: next_source_id(),
     }
 }

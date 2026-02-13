@@ -12,6 +12,7 @@
  */
 
 use crate::errors::TensorError;
+use crate::tensor::next_source_id;
 use crate::tensor::Tensor;
 use std::ops::Div;
 
@@ -27,6 +28,7 @@ impl Div<Tensor> for f32 {
         );
         Tensor {
             data: self / &tensor.data,
+            source_id: next_source_id(),
         }
     }
 }
@@ -41,6 +43,7 @@ impl<'a> Div<&'a Tensor> for f32 {
         );
         Tensor {
             data: self / &tensor.data,
+            source_id: next_source_id(),
         }
     }
 }
@@ -54,6 +57,7 @@ impl Div<f32> for Tensor {
         assert!(!(scalar == 0.), "{}", TensorError::DivByZero);
         Self {
             data: &self.data / scalar,
+            source_id: next_source_id(),
         }
     }
 }
@@ -64,6 +68,7 @@ impl Div<f32> for &Tensor {
         assert!(!(scalar == 0.), "{}", TensorError::DivByZero);
         Tensor {
             data: &self.data / scalar,
+            source_id: next_source_id(),
         }
     }
 }
@@ -129,5 +134,6 @@ fn div_within_tensors(tensor_1: &Tensor, tensor_2: &Tensor) -> Tensor {
     // 使用 ndarray 的原生广播
     Tensor {
         data: &tensor_1.data / &tensor_2.data,
+        source_id: next_source_id(),
     }
 }

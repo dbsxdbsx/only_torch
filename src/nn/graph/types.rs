@@ -107,6 +107,8 @@ pub struct SnapshotNode {
     pub hyperparam_html: Option<String>,
     /// 节点分组标签（如属于某个概率分布的 cluster）
     pub node_group_tag: Option<NodeGroupTag>,
+    /// 数据源 ID（仅 Input/TargetInput 节点，用于检测同源数据节点）
+    pub data_source_id: Option<u64>,
 }
 
 /// 可视化拓扑快照——计算图的轻量级结构副本

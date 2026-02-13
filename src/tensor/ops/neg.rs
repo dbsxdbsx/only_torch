@@ -4,6 +4,7 @@
  * @Description  : 张量的取反（Negate），对每个元素取反并返回新张量。
  */
 
+use crate::tensor::next_source_id;
 use crate::tensor::Tensor;
 use std::ops::Neg;
 
@@ -14,6 +15,7 @@ impl Neg for Tensor {
     fn neg(self) -> Self {
         Self {
             data: -&self.data,
+            source_id: next_source_id(),
         }
     }
 }
@@ -24,6 +26,7 @@ impl Neg for &Tensor {
     fn neg(self) -> Tensor {
         Tensor {
             data: -&self.data,
+            source_id: next_source_id(),
         }
     }
 }

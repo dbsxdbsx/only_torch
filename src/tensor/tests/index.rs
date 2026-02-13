@@ -177,9 +177,7 @@ fn test_get_with_vector() {
 fn test_get_with_matrix() {
     let data = &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.];
     let shape = &[4, 3];
-    let tensor = Tensor {
-        data: Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap(),
-    };
+    let tensor = Tensor::new(data, shape);
 
     let result = tensor.get(&[0]);
     let expected = Tensor::new(&[1., 2., 3.], &[3]);

@@ -8,6 +8,8 @@
 
 use std::collections::HashSet;
 
+use super::super::next_source_id;
+
 use crate::errors::{Operator, TensorError};
 
 use crate::tensor::Tensor;
@@ -221,7 +223,7 @@ impl Tensor {
     /// 计算张量每个元素的平方根
     pub fn sqrt(&self) -> Self {
         let sqrt_data = self.data.mapv(f32::sqrt);
-        Self { data: sqrt_data }
+        Self { data: sqrt_data, source_id: next_source_id() }
     }
 
     /// 不改变形状情况下，将张量的元素按从小到大的顺序排列，并将其返回（不影响原张量）
@@ -230,7 +232,7 @@ impl Tensor {
         let mut sorted_data = flat_data.as_slice().unwrap().to_owned();
         sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let ordered_data = Array::from_shape_vec(self.data.shape(), sorted_data).unwrap();
-        Self { data: ordered_data }
+        Self { data: ordered_data, source_id: next_source_id() }
     }
 
     /// 不改变形状情况下，将张量的元素按从小到大的顺序排列（影响原张量）
@@ -273,6 +275,7 @@ impl Tensor {
 
         Self {
             data: shuffled_data,
+            source_id: next_source_id(),
         }
     }
 
@@ -348,6 +351,7 @@ impl Tensor {
         );
         Self {
             data: self.data.clone().into_shape(shape).unwrap(),
+            source_id: next_source_id(),
         }
     }
 
@@ -430,7 +434,7 @@ impl Tensor {
             // 使用 ndarray::stack
             let views: Vec<_> = tensors.iter().map(|t| t.data.view()).collect();
             let stacked = ndarray::stack(Axis(axis), &views).expect("stack: ndarray stack 失败");
-            Self { data: stacked }.into_contiguous()
+            Self { data: stacked, source_id: next_source_id() }.into_contiguous()
         } else {
             // torch.cat 模式：沿现有 axis 拼接
             assert!(axis < ndim, "stack: axis {axis} 超出张量维度 {ndim}");
@@ -464,7 +468,7 @@ impl Tensor {
             let views: Vec<_> = tensors.iter().map(|t| t.data.view()).collect();
             let concatenated =
                 ndarray::concatenate(Axis(axis), &views).expect("stack: ndarray concatenate 失败");
-            Self { data: concatenated }.into_contiguous()
+            Self { data: concatenated, source_id: next_source_id() }.into_contiguous()
         }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack(concat)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
@@ -510,6 +514,7 @@ impl Tensor {
                 .slice_axis(Axis(axis), ndarray::Slice::from(start..start + size));
             result.push(Self {
                 data: slice.to_owned(),
+                source_id: next_source_id(),
             });
             start += size;
         }
@@ -529,6 +534,7 @@ impl Tensor {
         let squeezed_data = self.data.clone().into_shape(new_shape).unwrap();
         Self {
             data: squeezed_data,
+            source_id: next_source_id(),
         }
     }
 
@@ -631,6 +637,7 @@ impl Tensor {
         let permuted_data = self.data.clone().permuted_axes(axes);
         Self {
             data: permuted_data,
+            source_id: next_source_id(),
         }
     }
 
@@ -700,6 +707,7 @@ impl Tensor {
         let total_elements = self.data.len();
         Self {
             data: self.data.clone().into_shape(vec![total_elements]).unwrap(),
+            source_id: next_source_id(),
         }
     }
 
@@ -775,6 +783,7 @@ impl Tensor {
             }
             return Self {
                 data: Array::from_shape_vec(IxDyn(&[n, n]), diag_data).unwrap(),
+                source_id: next_source_id(),
             };
         }
 
@@ -787,7 +796,7 @@ impl Tensor {
         );
         let diag_data = self.data.diag().to_owned();
         let diag_vector = Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
-        Self { data: diag_vector }
+        Self { data: diag_vector, source_id: next_source_id() }
     }
 
     /// 就地修改当前张量。输入张量必须是1维或2维，否则会 panic。根据输入类型：
@@ -910,7 +919,7 @@ impl Tensor {
     /// ```
     pub fn tanh(&self) -> Self {
         let data = self.data.mapv(f32::tanh);
-        Self { data }
+        Self { data, source_id: next_source_id() }
     }
 
     /// 就地对张量的每个元素应用双曲正切函数(tanh)
@@ -934,7 +943,7 @@ impl Tensor {
     /// ```
     pub fn sigmoid(&self) -> Self {
         let data = self.data.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-        Self { data }
+        Self { data, source_id: next_source_id() }
     }
 
     /// 就地对张量的每个元素应用 Sigmoid 函数
@@ -956,7 +965,7 @@ impl Tensor {
     /// ```
     pub fn exp(&self) -> Self {
         let data = self.data.mapv(f32::exp);
-        Self { data }
+        Self { data, source_id: next_source_id() }
     }
 
     /// 就地对张量的每个元素计算指数函数
@@ -981,7 +990,7 @@ impl Tensor {
     /// ```
     pub fn ln(&self) -> Self {
         let data = self.data.mapv(f32::ln);
-        Self { data }
+        Self { data, source_id: next_source_id() }
     }
 
     /// 就地对张量的每个元素计算自然对数
@@ -1218,7 +1227,10 @@ impl Tensor {
             .and(other.data.broadcast(IxDyn(&result_shape)).unwrap())
             .map_collect(|&a, &b| a.min(b));
 
-        Tensor { data: result_data }
+        Tensor {
+            data: result_data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 逐元素取两个张量的最大值
@@ -1273,7 +1285,10 @@ impl Tensor {
             .and(other.data.broadcast(IxDyn(&result_shape)).unwrap())
             .map_collect(|&a, &b| a.max(b));
 
-        Tensor { data: result_data }
+        Tensor {
+            data: result_data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑minimum/maximum↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -1331,6 +1346,7 @@ impl Tensor {
 
         Self {
             data: argmax_array.into_dyn(),
+            source_id: next_source_id(),
         }
     }
 
@@ -1377,6 +1393,7 @@ impl Tensor {
 
         Self {
             data: argmin_array.into_dyn(),
+            source_id: next_source_id(),
         }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑argmax/argmin↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
@@ -1430,6 +1447,7 @@ impl Tensor {
 
         Self {
             data: min_array.into_dyn(),
+            source_id: next_source_id(),
         }
     }
 
@@ -1481,6 +1499,7 @@ impl Tensor {
 
         Self {
             data: max_array.into_dyn(),
+            source_id: next_source_id(),
         }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑amax/amin(axis)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
@@ -1505,7 +1524,7 @@ impl Tensor {
         // 注：Rust 的 f32::signum() 对 0.0 返回 1.0，这与 PyTorch 行为不同
         // 这里显式处理零值，使其返回 0.0
         let data = self.data.mapv(|x| if x == 0.0 { 0.0 } else { x.signum() });
-        Self { data }
+        Self { data, source_id: next_source_id() }
     }
 
     /// 就地计算张量每个元素的符号
@@ -1534,7 +1553,7 @@ impl Tensor {
     /// ```
     pub fn abs(&self) -> Self {
         let data = self.data.mapv(f32::abs);
-        Self { data }
+        Self { data, source_id: next_source_id() }
     }
 
     /// 就地计算张量每个元素的绝对值
@@ -1563,7 +1582,7 @@ impl Tensor {
     /// ```
     pub fn clip(&self, min: f32, max: f32) -> Self {
         let data = self.data.mapv(|x| x.clamp(min, max));
-        Self { data }
+        Self { data, source_id: next_source_id() }
     }
 
     /// 就地对张量的每个元素进行值域裁剪

@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-use super::Tensor;
+use super::{next_source_id, Tensor};
 use ndarray::{Array, AxisDescription, IxDyn, Slice};
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓index特性↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
@@ -99,6 +99,7 @@ impl Tensor {
 
         let t = Self {
             data: Self::slice_array(&self.data, &start, &end, &step),
+            source_id: next_source_id(),
         };
         t.squeeze() //将所有仅为1的维度优化掉
     }

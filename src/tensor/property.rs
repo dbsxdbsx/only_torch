@@ -6,7 +6,7 @@
  * @LastEditTime : 2024-10-25 05:39:09
  */
 
-use super::Tensor;
+use super::{next_source_id, Tensor};
 use ndarray::{ArrayViewD, ArrayViewMutD};
 
 /// 计算两个形状广播后的输出形状（NumPy 风格）
@@ -300,6 +300,7 @@ impl Tensor {
         // 将广播视图转换为拥有所有权的数组（复制数据）
         Tensor {
             data: broadcast_view.to_owned(),
+            source_id: next_source_id(),
         }
     }
 
@@ -379,6 +380,7 @@ impl Tensor {
             let contiguous_data = self.data.as_standard_layout().into_owned();
             Self {
                 data: contiguous_data,
+                source_id: next_source_id(),
             }
         }
     }

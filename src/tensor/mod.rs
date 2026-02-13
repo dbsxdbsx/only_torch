@@ -5,8 +5,17 @@ use rand::SeedableRng;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::errors::{ComparisonOperator, TensorError};
+
+/// 全局 Tensor 数据源 ID 计数器（用于同源数据追踪）
+static TENSOR_SOURCE_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// 生成下一个唯一的数据源 ID
+fn next_source_id() -> u64 {
+    TENSOR_SOURCE_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
 mod ops {
     pub mod add;
     pub mod add_assign;
@@ -41,6 +50,14 @@ mod tests;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tensor {
     data: ArrayD<f32>,
+    /// 数据源身份 ID（用于同源数据追踪）
+    ///
+    /// - 每个新创建的 Tensor 获得唯一 ID
+    /// - `clone()` 保持同一 ID（同一份数据）
+    /// - 运算产生的新 Tensor 获得新 ID（新数据）
+    /// - 序列化时跳过（运行时身份，非持久化信息）
+    #[serde(skip, default = "next_source_id")]
+    source_id: u64,
 }
 
 impl Default for Tensor {
@@ -76,7 +93,15 @@ impl Tensor {
     /// 注：除了`data`长度为1且shape为`[]`的情况（标量），`data`的长度必须和`shape`中所有元素的乘积相等。
     pub fn new(data: &[f32], shape: &[usize]) -> Self {
         let data = Array::from_shape_vec(IxDyn(shape), data.to_vec()).unwrap();
-        Self { data }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+
+    /// 获取数据源身份 ID（用于同源数据追踪）
+    pub fn source_id(&self) -> u64 {
+        self.source_id
     }
 
     /// 创建一个随机张量，其值在[min, max]的闭区间，若为标量，`shape`可以是[]、[1]、[1,1]、[1,1,1]...
@@ -99,7 +124,10 @@ impl Tensor {
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     pub fn full(value: f32, shape: &[usize]) -> Self {
         let data = Array::from_elem(IxDyn(shape), value);
-        Self { data }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 创建一个全0的张量。
@@ -109,7 +137,10 @@ impl Tensor {
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     pub fn zeros(shape: &[usize]) -> Self {
         let data = Array::zeros(IxDyn(shape));
-        Self { data }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 创建一个全1的张量。
@@ -119,7 +150,10 @@ impl Tensor {
     /// 若为更高维度的数组，`shape`可以是[c,n,m,...]；
     pub fn ones(shape: &[usize]) -> Self {
         let data = Array::ones(IxDyn(shape));
-        Self { data }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 创建一个含`n`个对角元素的单位矩阵。
@@ -137,7 +171,10 @@ impl Tensor {
         let data = Array::eye(n);
         let shape = vec![n, n];
         let data = Array::from_shape_vec(IxDyn(&shape), data.into_raw_vec()).unwrap();
-        Self { data }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 创建一个服从正态分布的随机张量，其值在指定的均值和标准差范围内。
@@ -231,6 +268,7 @@ impl Tensor {
     pub fn from_view(view: ArrayViewD<'_, f32>) -> Self {
         Self {
             data: view.to_owned(),
+            source_id: next_source_id(),
         }
     }
 }

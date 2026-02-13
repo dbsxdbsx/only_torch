@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 
-use super::Tensor;
+use super::{Tensor, next_source_id};
 
 // 保存和加载张量
 impl Tensor {
@@ -15,6 +15,6 @@ impl Tensor {
         let mut serialized_data = Vec::new();
         file.read_to_end(&mut serialized_data).unwrap();
         let data = bincode::deserialize(&serialized_data).unwrap();
-        Self { data }
+        Self { data, source_id: next_source_id() }
     }
 }

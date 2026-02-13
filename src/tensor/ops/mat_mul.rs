@@ -1,4 +1,4 @@
-use crate::tensor::Tensor;
+use crate::tensor::{next_source_id, Tensor};
 
 impl Tensor {
     /// 实现矩阵乘法(`mat_mul`这个名称参考了python的`numpy`库)。
@@ -31,6 +31,7 @@ impl Tensor {
         // 创建并返回新的张量
         Self {
             data: result_data.into_dyn(),
+            source_id: next_source_id(),
         }
     }
 }

@@ -496,6 +496,15 @@ impl Var {
                 }
             });
 
+            // 提取 Input/TargetInput 节点的数据源 ID（用于同源数据追踪）
+            let data_source_id = node.with_raw_node(|raw| {
+                use super::nodes::raw_node::NodeType;
+                match raw {
+                    NodeType::Input(variant) => variant.value_source_id(),
+                    _ => None,
+                }
+            });
+
             super::SnapshotNode {
                 id: node.id(),
                 name: node.name().map(|s| s.to_string()),
@@ -505,6 +514,7 @@ impl Var {
                 is_detached: node.is_detached() || node.type_name() == "Detach",
                 hyperparam_html,
                 node_group_tag: node.node_group_tag(),
+                data_source_id,
             }
         };
 
@@ -1431,6 +1441,49 @@ impl Var {
                 "    \"{}\" -> \"{}\" [style=dashed color=\"#E67E22\" label=<{}> fontcolor=\"#E67E22\" fontsize=9 constraint=false];\n",
                 rid(*repr_id), rid(*init_state_id), label
             ));
+        }
+
+        // === 同源数据节点链式虚线标注 ===
+        // 按 data_source_id 分组，相同 source_id 的 Input/TargetInput 节点表示使用了同一份数据
+        let mut source_groups: HashMap<u64, Vec<u64>> = HashMap::new();
+        for snode in &snapshot.nodes {
+            if let Some(sid) = snode.data_source_id {
+                if !rnn_hidden_ids.contains(&snode.id.0) {
+                    source_groups.entry(sid).or_default().push(snode.id.0);
+                }
+            }
+        }
+        for (_sid, ids) in &source_groups {
+            if ids.len() < 2 {
+                continue;
+            }
+            // 按模型名排序，确保链的顺序稳定
+            let mut sorted = ids.clone();
+            sorted.sort_by_key(|id| node_to_model.get(id).cloned().unwrap_or_default());
+            // 取共享数据的节点名作为标签
+            let shared_name = sorted
+                .first()
+                .and_then(|id| {
+                    let original_id = *id;
+                    snapshot
+                        .nodes
+                        .iter()
+                        .find(|n| n.id.0 == original_id)
+                        .and_then(|n| n.name.clone())
+                })
+                .unwrap_or_default();
+            // 去除名字中的模型前缀（如 "Actor/obs" → "obs"）
+            let label = match shared_name.split_once('/') {
+                Some((_, after)) => after,
+                None => &shared_name,
+            };
+            // 链式连接：A -- B -- C（n-1 条边）
+            for pair in sorted.windows(2) {
+                dot.push_str(&format!(
+                    "    \"{}\" -> \"{}\" [style=dashed dir=none color=\"#4FC3F7\" constraint=false label=<= {}> fontcolor=\"#4FC3F7\" fontsize=8];\n",
+                    rid(pair[0]), rid(pair[1]), label
+                ));
+            }
         }
 
         dot.push_str("}\n");
