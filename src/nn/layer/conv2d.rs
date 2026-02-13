@@ -14,6 +14,7 @@
  * 计算：output = conv2d(x, K) + b
  */
 
+use crate::nn::graph::NodeGroupContext;
 use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
 // ==================== 新版 Conv2d 结构体（推荐）====================
@@ -54,6 +55,8 @@ pub struct Conv2d {
     padding: (usize, usize),
     /// 层名称（用于可视化分组）
     name: String,
+    /// 分组实例 ID（用于可视化 cluster）
+    instance_id: usize,
 }
 
 impl Conv2d {
@@ -98,6 +101,8 @@ impl Conv2d {
             None
         };
 
+        let instance_id = graph.inner_mut().next_node_group_instance_id();
+
         Ok(Self {
             kernel,
             bias,
@@ -107,6 +112,7 @@ impl Conv2d {
             stride,
             padding,
             name: name.to_string(),
+            instance_id,
         })
     }
 
@@ -126,6 +132,25 @@ impl Conv2d {
             .expect("Conv2d 输入转换失败");
         let graph = x.get_graph();
 
+        // 分组上下文：自动标记 forward 期间创建的节点 + Parameter 节点
+        let desc = if self.bias.is_some() {
+            format!(
+                "[?, {}, ?, ?] → [?, {}, ?, ?], kernel {}×{}",
+                self.in_channels, self.out_channels, self.kernel_size.0, self.kernel_size.1
+            )
+        } else {
+            format!(
+                "[?, {}, ?, ?] → [?, {}, ?, ?], kernel {}×{} (no bias)",
+                self.in_channels, self.out_channels, self.kernel_size.0, self.kernel_size.1
+            )
+        };
+        let _guard =
+            NodeGroupContext::for_layer(&x, "Conv2d", self.instance_id, &self.name, &desc);
+        _guard.tag_existing(&self.kernel);
+        if let Some(ref bias) = self.bias {
+            _guard.tag_existing(bias);
+        }
+
         // Conv2d: [batch, C_in, H, W] * [C_out, C_in, kH, kW] -> [batch, C_out, H', W']
         let conv_out = {
             let conv_node = graph
@@ -142,45 +167,15 @@ impl Conv2d {
 
         // 如果有 bias，直接加法（Add 支持广播：[batch, C, H, W] + [1, C, 1, 1]）
         if let Some(ref bias) = self.bias {
-            let output = {
-                let out_node = graph
-                    .inner_mut()
-                    .create_add_node(
-                        vec![Rc::clone(conv_out.node()), Rc::clone(bias.node())],
-                        Some(&format!("{}_out", self.name)),
-                    )
-                    .expect("Conv2d bias add 失败");
-                Var::new_with_rc_graph(out_node, &graph.inner_rc())
-            };
-
-            // 注册层分组（用于可视化）
-            graph.inner_mut().register_layer_group(
-                &self.name,
-                "Conv2d",
-                &format!(
-                    "[?, {}, ?, ?] → [?, {}, ?, ?], kernel {}×{}",
-                    self.in_channels, self.out_channels, self.kernel_size.0, self.kernel_size.1
-                ),
-                vec![
-                    self.kernel.node_id(),
-                    bias.node_id(),
-                    conv_out.node_id(),
-                    output.node_id(),
-                ],
-            );
-
-            output
+            let out_node = graph
+                .inner_mut()
+                .create_add_node(
+                    vec![Rc::clone(conv_out.node()), Rc::clone(bias.node())],
+                    Some(&format!("{}_out", self.name)),
+                )
+                .expect("Conv2d bias add 失败");
+            Var::new_with_rc_graph(out_node, &graph.inner_rc())
         } else {
-            // 无 bias 时，直接返回 conv_out
-            graph.inner_mut().register_layer_group(
-                &self.name,
-                "Conv2d",
-                &format!(
-                    "[?, {}, ?, ?] → [?, {}, ?, ?], kernel {}×{} (no bias)",
-                    self.in_channels, self.out_channels, self.kernel_size.0, self.kernel_size.1
-                ),
-                vec![self.kernel.node_id(), conv_out.node_id()],
-            );
             conv_out
         }
     }

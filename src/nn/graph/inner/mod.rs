@@ -30,7 +30,7 @@ mod visualization;
 // 注意：bptt.rs 和 recurrent.rs 已删除
 // 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
 
-use super::types::{LayerGroup, NodeGroupTag, RecurrentLayerMeta};
+use super::types::{NodeGroupTag, RecurrentFoldingMeta};
 use crate::nn::nodes::NodeInner;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
@@ -65,10 +65,8 @@ pub struct GraphInner {
     /// 图级别的随机数生成器（用于参数初始化等）
     /// None 表示使用默认的 `thread_rng（非确定性`）
     pub(in crate::nn::graph) rng: Option<StdRng>,
-    /// 层分组信息（用于可视化）
-    pub(in crate::nn::graph) layer_groups: Vec<LayerGroup>,
-    /// 循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
-    pub(in crate::nn::graph) recurrent_layer_metas: Vec<RecurrentLayerMeta>,
+    /// 循环层折叠渲染元信息（仅保留折叠所需的最小信息）
+    pub(in crate::nn::graph) recurrent_folding_metas: Vec<RecurrentFoldingMeta>,
 
     // ========== 动态图节点命名 ==========
     /// 节点类型计数器：用于同批次内区分同类型节点
@@ -86,6 +84,8 @@ pub struct GraphInner {
     pub(in crate::nn::graph) node_group_context: Option<NodeGroupTag>,
     /// 下一个分组实例 ID（全局递增）
     pub(in crate::nn::graph) next_node_group_id: usize,
+    /// 当前上下文是否标记 Parameter 节点（Layer/Recurrent 为 true，Distribution 为 false）
+    pub(in crate::nn::graph) node_group_include_params: bool,
 
     // ========== 可视化快照 ==========
     /// 可视化拓扑快照（由 `Graph::snapshot_once` 写入）

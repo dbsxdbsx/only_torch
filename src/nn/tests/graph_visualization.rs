@@ -16,7 +16,7 @@ use crate::tensor::Tensor;
 /// 辅助：从 snapshot 生成 DOT 字符串
 fn build_dot_from_named_outputs(named_outputs: &[(&str, &Var)]) -> String {
     let snapshot = Var::build_snapshot(named_outputs);
-    Var::snapshot_to_dot(&snapshot, &[], &[])
+    Var::snapshot_to_dot(&snapshot, &[])
 }
 
 // ==================== DOT 输出 cluster 存在 ====================

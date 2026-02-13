@@ -9,7 +9,7 @@
  */
 
 use super::super::error::GraphError;
-use super::super::types::{GroupKind, LayerGroup, RecurrentLayerMeta, RecurrentUnrollInfo};
+use super::super::types::{RecurrentFoldingMeta, RecurrentUnrollInfo};
 use super::GraphInner;
 use crate::nn::NodeId;
 use rand::SeedableRng;
@@ -32,13 +32,13 @@ impl GraphInner {
             next_id: 0,
             is_eval_mode: false,
             rng: Some(StdRng::seed_from_u64(seed)),
-            layer_groups: Vec::new(),
-            recurrent_layer_metas: Vec::new(),
+            recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
             node_group_context: None,
             next_node_group_id: 0,
+            node_group_include_params: false,
             visualization_snapshot: None,
         }
     }
@@ -52,13 +52,13 @@ impl GraphInner {
             next_id: 0,
             is_eval_mode: false,
             rng: Some(StdRng::seed_from_u64(seed)),
-            layer_groups: Vec::new(),
-            recurrent_layer_metas: Vec::new(),
+            recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
             node_group_context: None,
             next_node_group_id: 0,
+            node_group_include_params: false,
             visualization_snapshot: None,
         }
     }
@@ -71,13 +71,13 @@ impl GraphInner {
             next_id: 0,
             is_eval_mode: false,
             rng: None,
-            layer_groups: Vec::new(),
-            recurrent_layer_metas: Vec::new(),
+            recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
             node_group_context: None,
             next_node_group_id: 0,
+            node_group_include_params: false,
             visualization_snapshot: None,
         }
     }
@@ -229,82 +229,32 @@ impl GraphInner {
         NodeId(self.next_id)
     }
 
-    // ========== 层分组相关 ==========
+    // ========== 循环层折叠渲染 ==========
 
-    /// 获取所有层分组信息
-    pub fn layer_groups(&self) -> &[LayerGroup] {
-        &self.layer_groups
-    }
-
-    /// 注册一个层分组
-    ///
-    /// 如果同名分组已存在，会将新的节点 ID 追加到该分组中（避免重复）。
-    /// 这支持共享层（如 Siamese 网络中的共享编码器）的正确可视化：
-    /// 多次 forward 调用产生的操作节点都会归入同一个 Layer cluster。
-    pub fn register_layer_group(
-        &mut self,
-        name: &str,
-        layer_type: &str,
-        description: &str,
-        node_ids: Vec<NodeId>,
-    ) {
-        // 查找已存在的同名分组
-        if let Some(group) = self.layer_groups.iter_mut().find(|g| g.name == name) {
-            // 扩展节点列表（避免重复）
-            for id in node_ids {
-                if !group.node_ids.contains(&id) {
-                    group.node_ids.push(id);
-                }
-            }
+    /// 注册循环层折叠渲染元信息（仅保留折叠所需的最小信息）
+    pub fn register_recurrent_folding_meta(&mut self, name: &str, nodes_per_step: usize) {
+        if self
+            .recurrent_folding_metas
+            .iter()
+            .any(|m| m.name == name)
+        {
             return;
         }
-
-        // 新建分组
-        self.layer_groups.push(LayerGroup {
+        self.recurrent_folding_metas.push(RecurrentFoldingMeta {
             name: name.to_string(),
-            layer_type: layer_type.to_string(),
-            description: description.to_string(),
-            node_ids,
-            kind: GroupKind::Layer,
-            recurrent_steps: None,
-            min_steps: None,
-            max_steps: None,
-            hidden_node_ids: vec![],
-            folded_nodes: vec![],
-            output_proxy: None,
-        });
-    }
-
-    /// 注册循环层元信息
-    pub fn register_recurrent_layer_meta(
-        &mut self,
-        name: &str,
-        layer_type: &str,
-        description: &str,
-        param_node_ids: Vec<NodeId>,
-        nodes_per_step: usize,
-    ) {
-        if self.recurrent_layer_metas.iter().any(|m| m.name == name) {
-            return;
-        }
-        self.recurrent_layer_metas.push(RecurrentLayerMeta {
-            name: name.to_string(),
-            layer_type: layer_type.to_string(),
-            description: description.to_string(),
-            param_node_ids,
             nodes_per_step,
             unroll_infos: Vec::new(),
         });
     }
 
-    /// 追加循环层的展开信息
-    pub fn update_recurrent_layer_unroll_info(
+    /// 追加循环层折叠渲染的展开信息
+    pub fn update_recurrent_folding_info(
         &mut self,
         name: &str,
         unroll_info: RecurrentUnrollInfo,
     ) {
         if let Some(meta) = self
-            .recurrent_layer_metas
+            .recurrent_folding_metas
             .iter_mut()
             .find(|m| m.name == name)
         {
@@ -312,9 +262,9 @@ impl GraphInner {
         }
     }
 
-    /// 获取循环层元信息列表
-    pub fn recurrent_layer_metas(&self) -> &[RecurrentLayerMeta] {
-        &self.recurrent_layer_metas
+    /// 获取循环层折叠渲染元信息列表
+    pub fn recurrent_folding_metas(&self) -> &[RecurrentFoldingMeta] {
+        &self.recurrent_folding_metas
     }
 
     // ========== 前向传播 API ==========

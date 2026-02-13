@@ -47,8 +47,9 @@ pub struct NodeInner {
     parents: Vec<Rc<NodeInner>>,
 
     // === 节点分组标签（用于可视化 cluster）===
-    /// 如果该节点是在某个分组上下文中创建的，则记录所属分组
-    node_group_tag: Option<NodeGroupTag>,
+    /// 如果该节点是在某个分组上下文中创建的，则记录所属分组。
+    /// 使用 RefCell 支持后补标签（如 Layer 的 Parameter 节点在 guard 之前创建）。
+    node_group_tag: RefCell<Option<NodeGroupTag>>,
 }
 
 impl NodeInner {
@@ -74,7 +75,7 @@ impl NodeInner {
             last_backward_pass_id: Cell::new(0),
             is_detached: Cell::new(false),
             parents,
-            node_group_tag: None,
+            node_group_tag: RefCell::new(None),
         }
     }
 
@@ -142,14 +143,14 @@ impl NodeInner {
 
     // ==================== 节点分组标签 ====================
 
-    /// 获取节点分组标签
-    pub fn node_group_tag(&self) -> Option<&NodeGroupTag> {
-        self.node_group_tag.as_ref()
+    /// 获取节点分组标签的克隆（通过 RefCell 借用）
+    pub fn node_group_tag(&self) -> Option<NodeGroupTag> {
+        self.node_group_tag.borrow().clone()
     }
 
-    /// 设置节点分组标签（由 `create_node_inner` 在分组上下文中自动调用）
-    pub fn set_node_group_tag(&mut self, tag: Option<NodeGroupTag>) {
-        self.node_group_tag = tag;
+    /// 设置节点分组标签（支持通过 &self 后补标签，如 Layer 的 Parameter 节点）
+    pub fn set_node_group_tag(&self, tag: Option<NodeGroupTag>) {
+        *self.node_group_tag.borrow_mut() = tag;
     }
 
     // ==================== 值和梯度访问 ====================

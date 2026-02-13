@@ -65,11 +65,14 @@ impl GraphInner {
         raw_node.set_name(&node_name);
 
         // 节点分组自动标记：如果当前有活跃的分组上下文，
-        // 给计算节点打标签（排除 Input/TargetInput/Parameter 等数据节点）
+        // 给计算节点打标签。
+        // - Input 节点始终排除（外部数据）
+        // - Parameter 节点：当 node_group_include_params=true 时标记（Layer/Recurrent），
+        //   否则排除（Distribution）
         let group_tag = if self.node_group_context.is_some() {
-            // Input 包含 Data 和 Target 两种变体，都属于外部数据节点
-            let is_data_node = matches!(raw_node, NodeType::Input(_) | NodeType::Parameter(_));
-            if is_data_node {
+            let is_input = matches!(raw_node, NodeType::Input(_));
+            let is_param = matches!(raw_node, NodeType::Parameter(_));
+            if is_input || (is_param && !self.node_group_include_params) {
                 None
             } else {
                 self.node_group_context.clone()
@@ -79,7 +82,7 @@ impl GraphInner {
         };
 
         // 创建 NodeInner
-        let mut node = NodeInner::new(node_id, Some(node_name), raw_node, parents);
+        let node = NodeInner::new(node_id, Some(node_name), raw_node, parents);
         if group_tag.is_some() {
             node.set_node_group_tag(group_tag);
         }

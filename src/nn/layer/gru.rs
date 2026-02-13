@@ -20,6 +20,7 @@
  * - 不维护缓存，每次 forward 都创建新节点
  */
 
+use crate::nn::graph::NodeGroupContext;
 use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
 use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
@@ -54,6 +55,8 @@ pub struct Gru {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
+    /// 分组实例 ID（用于可视化 cluster）
+    instance_id: usize,
 }
 
 impl Gru {
@@ -118,7 +121,7 @@ impl Gru {
         )?;
         let b_n = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_n"))?;
 
-        // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
+        // 注册折叠渲染元信息（仅保留折叠所需的最小信息）
         // GRU 每个时间步的节点数：20
         // - select: 1
         // - 重置门: 2 matmul + 2 add + 1 sigmoid = 5
@@ -126,23 +129,11 @@ impl Gru {
         // - 候选状态: 2 matmul + 1 multiply + 2 add + 1 tanh = 6
         // - 隐藏更新: 1 subtract + 1 multiply + 1 add = 3
         // 总计: 1+5+5+6+3 = 20
-        graph.inner_mut().register_recurrent_layer_meta(
-            &full_name,
-            "GRU",
-            &format!("[?, {input_size}] → [?, {hidden_size}]"),
-            vec![
-                w_ir.node_id(),
-                w_hr.node_id(),
-                b_r.node_id(),
-                w_iz.node_id(),
-                w_hz.node_id(),
-                b_z.node_id(),
-                w_in.node_id(),
-                w_hn.node_id(),
-                b_n.node_id(),
-            ],
-            20, // nodes_per_step
-        );
+        graph
+            .inner_mut()
+            .register_recurrent_folding_meta(&full_name, 20);
+
+        let instance_id = graph.inner_mut().next_node_group_instance_id();
 
         Ok(Self {
             w_ir,
@@ -158,6 +149,7 @@ impl Gru {
             input_size,
             hidden_size,
             name: full_name,
+            instance_id,
         })
     }
 
@@ -210,17 +202,46 @@ impl Gru {
     /// - 此方法只做计算 + 记录最少的必要信息（4 个节点 ID + 1 个数值）
     /// - 完整的分组信息在 `save_visualization` 时惰性推断
     fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
+        // 分组上下文：自动标记 unroll 期间创建的节点
+        let desc = format!(
+            "GRU: [?, {}] → [?, {}] (×{} steps)",
+            self.input_size, self.hidden_size, seq_len
+        );
+        let _guard = NodeGroupContext::for_recurrent(
+            x,
+            "GRU",
+            self.instance_id,
+            &self.name,
+            &desc,
+        );
+        // 后补标签给参数节点
+        _guard.tag_existing(&self.w_ir);
+        _guard.tag_existing(&self.w_hr);
+        _guard.tag_existing(&self.b_r);
+        _guard.tag_existing(&self.w_iz);
+        _guard.tag_existing(&self.w_hz);
+        _guard.tag_existing(&self.b_z);
+        _guard.tag_existing(&self.w_in);
+        _guard.tag_existing(&self.w_hn);
+        _guard.tag_existing(&self.b_n);
+
         // 创建初始隐藏状态（ZerosLike：根据 x 的 batch_size 动态生成）
         let h0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
+        _guard.tag_existing(&h0); // 初始状态纳入分组
         let init_state_node_ids = vec![h0.node_id()]; // GRU 只有一个初始状态
         let mut h = h0;
 
-        // 记录第一个时间步的信息（用于惰性推断）
+        // 记录第一个时间步的信息（用于折叠渲染）
         let mut first_step_start_id = None;
         let mut repr_output_node_ids = Vec::new();
 
         // 展开所有时间步
         for t in 0..seq_len {
+            // 步骤 1..N-1 标记为隐藏（可视化时折叠）
+            if t > 0 {
+                _guard.set_hidden(true);
+            }
+
             // 选择第 t 个时间步: x_t = x[:, t, :] -> [batch, input_size]
             let x_t = x.select(1, t)?;
 
@@ -230,27 +251,23 @@ impl Gru {
             }
 
             // === 重置门 ===
-            // r_t = σ(x_t @ W_ir + h @ W_hr + b_r)
             let x_ir = x_t.matmul(&self.w_ir)?;
             let h_hr = h.matmul(&self.w_hr)?;
             let r_gate = (&x_ir + &h_hr + &self.b_r).sigmoid();
 
             // === 更新门 ===
-            // z_t = σ(x_t @ W_iz + h @ W_hz + b_z)
             let x_iz = x_t.matmul(&self.w_iz)?;
             let h_hz = h.matmul(&self.w_hz)?;
             let z_gate = (&x_iz + &h_hz + &self.b_z).sigmoid();
 
             // === 候选状态 ===
-            // n_t = tanh(x_t @ W_in + r_t ⊙ (h @ W_hn) + b_n)
             let x_in = x_t.matmul(&self.w_in)?;
             let h_hn = h.matmul(&self.w_hn)?;
             let r_h_hn = &r_gate * &h_hn;
             let n_gate = (&x_in + &r_h_hn + &self.b_n).tanh();
 
             // === 更新隐藏状态 ===
-            // h_t = (1 - z_t) ⊙ n_t + z_t ⊙ h
-            // 重写为: h_t = n_t + z_t ⊙ (h - n_t) 以减少计算
+            // h_t = n_t + z_t ⊙ (h - n_t)
             let h_minus_n = &h - &n_gate;
             let z_diff = &z_gate * &h_minus_n;
             h = &n_gate + &z_diff;
@@ -261,9 +278,9 @@ impl Gru {
             }
         }
 
-        // 更新循环层的展开信息（只记录几个节点 ID + 1 个数值，几乎零开销）
+        // 更新折叠渲染元信息
         use crate::nn::graph::RecurrentUnrollInfo;
-        self.graph.inner_mut().update_recurrent_layer_unroll_info(
+        self.graph.inner_mut().update_recurrent_folding_info(
             &self.name,
             RecurrentUnrollInfo {
                 steps: seq_len,

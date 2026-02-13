@@ -35,29 +35,29 @@ digraph ComputeGraph {
             fontname="Microsoft YaHei,SimHei,Arial";
             fontsize=11;
             margin=12;
-            "7" [label=<rnn_b_h<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "8" [label=<rnn_W_ih<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "9" [label=<rnn_W_hh<BR/><B>Parameter</B><BR/>[16, 16]<BR/>(256 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "11" [label=<tanh_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Tanh</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
-            "12" [label=<add_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "13" [label=<add_3 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "14" [label=<matmul_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "15" [label=<matmul_3 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "16" [label=<select_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Select</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "17" [label=<zeros_like_1 <FONT COLOR="#E67E22">×1</FONT><BR/><B>ZerosLike</B><BR/>[?, 16]> shape=box style="filled,rounded,dashed" fillcolor="#FFFDE7" fontsize=10];
+                "7" [label=<rnn_b_h<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "8" [label=<rnn_W_ih<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "9" [label=<rnn_W_hh<BR/><B>Parameter</B><BR/>[16, 16]<BR/>(256 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "11" [label=<tanh_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Tanh</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
+                "12" [label=<add_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "13" [label=<add_3 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "14" [label=<matmul_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "15" [label=<matmul_3 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "16" [label=<select_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Select</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "17" [label=<zeros_like_1 <FONT COLOR="#E67E22">×1</FONT><BR/><B>ZerosLike</B><BR/>[?, 16]> shape=box style="filled,rounded,dashed" fillcolor="#FFFDE7" fontsize=10];
         }
 
-        "10" [label=<input_1<BR/><B>Input</B><BR/>[?, 8, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 
-    "1" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10];
+    "1" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]<BR/><FONT COLOR="#C62828" POINT-SIZE="9">▸ Output</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#C62828"];
     "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "10" [label=<input_1<BR/><B>Input</B><BR/>[?, 8, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
     "2" -> "1";
     "3" -> "1";
     "4" -> "2";
     "5" -> "2";
-    "11" -> "4" [color="#E67E22" label=<t=7> fontcolor="#E67E22" fontsize=9];
+    "11" -> "4" [ color="#E67E22" label=<t=7> fontcolor="#E67E22" fontsize=9];
     "6" -> "4";
     "12" -> "11";
     "13" -> "12";
@@ -69,6 +69,6 @@ digraph ComputeGraph {
     "17" -> "15";
     "9" -> "15";
     "10" -> "16";
-    "10" -> "17" [style=dashed color="#E67E22" label=<t=0> fontcolor="#E67E22" fontsize=9];
+    "10" -> "17" [ style=dashed color="#E67E22" label=<t=0> fontcolor="#E67E22" fontsize=9];
     "11" -> "17" [style=dashed color="#E67E22" label=<t=0~6> fontcolor="#E67E22" fontsize=9 constraint=false];
 }

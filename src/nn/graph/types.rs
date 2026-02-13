@@ -8,79 +8,52 @@ use crate::nn::NodeId;
 
 // ==================== 节点分组标签 ====================
 
+/// 分组的视觉渲染风格
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GroupStyle {
+    /// 层 cluster：实线填充、粗边框、显示描述（Linear / Conv2d 等）
+    Layer,
+    /// 分布 cluster：虚线、半透明紫色（Categorical / Normal / TanhNormal）
+    Distribution,
+    /// 循环层 cluster：三重边框、粗边框、显示步数（RNN / LSTM / GRU）
+    Recurrent,
+}
+
 /// 通用节点分组标签
 ///
-/// 当前用于概率分布的 cluster 可视化（如 Categorical、Normal），
-/// 未来将统一替代 `LayerGroup` 的显式注册机制（阶段二）。
-///
+/// 统一用于所有 cluster 可视化：Layer、Distribution、Recurrent。
 /// 同一 `(group_type, instance_id)` 的节点在可视化中归入同一个 cluster 子图。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NodeGroupTag {
-    /// 分组类型名（如 "Categorical" / "Normal" / "TanhNormal"）
+    /// 分组类型名（如 "Linear" / "Categorical" / "RNN" 等）
     pub group_type: String,
     /// 实例 ID（区分同类型的多个实例）
     pub instance_id: usize,
+    /// 显示名称（Layer/Recurrent: "Actor/fc1"，Distribution: None）
+    /// 含 `/` 时用于推断模型层级（如 "Actor/fc1" → 模型 "Actor"、层 "fc1"）
+    pub display_name: Option<String>,
+    /// 描述信息（Layer: "[?, 784] -> [?, 128]"，Distribution: None）
+    pub description: Option<String>,
+    /// 视觉渲染风格
+    pub style: GroupStyle,
+    /// 是否在可视化中隐藏（RNN 步骤 1..N-1 的节点设为 true）
+    pub hidden: bool,
 }
 
-// ==================== 层/模型分组（旧体系，阶段二统一后移除）====================
+// ==================== 循环层折叠渲染 ====================
 
-/// 分组类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GroupKind {
-    /// 层级分组（如 Linear、Conv2d）
-    Layer,
-    /// 模型级分组（如 Generator、Discriminator）
-    Model,
-}
-
-/// 层分组信息（用于可视化时将属于同一层/模型的节点框在一起）
-#[derive(Debug, Clone)]
-pub struct LayerGroup {
-    /// 层名称（如 "fc1", "conv1"）
-    pub name: String,
-    /// 层类型（如 "Linear", "Conv2d", "Model"）
-    pub layer_type: String,
-    /// 层的描述信息（如 "784→128"）
-    pub description: String,
-    /// 属于该层的节点 ID 列表（用于可视化显示）
-    pub node_ids: Vec<NodeId>,
-    /// 分组类型
-    pub kind: GroupKind,
-    /// 循环层的时间步数（None 表示非循环层）
-    /// 对于变长序列，使用 `min_steps` 和 `max_steps`
-    pub recurrent_steps: Option<usize>,
-    /// 循环层的最小时间步数（变长序列支持）
-    pub min_steps: Option<usize>,
-    /// 循环层的最大时间步数（变长序列支持）
-    pub max_steps: Option<usize>,
-    /// 需要在可视化中隐藏的节点 ID（如循环层的非代表性展开节点）
-    pub hidden_node_ids: Vec<NodeId>,
-    /// 代表性节点（折叠显示，实际代表多个节点）
-    /// `格式：(node_id`, 实际重复次数)
-    pub folded_nodes: Vec<(NodeId, usize)>,
-    /// 输出代理：(隐藏的真实输出节点, 代表性输出节点)
-    /// 用于在可视化时连接代表性节点到下游（折叠层的输出流向）
-    pub output_proxy: Option<(NodeId, NodeId)>,
-}
-
-/// 循环层元信息（惰性收集可视化信息）
+/// 循环层折叠渲染元信息（仅保留时间步折叠所需的最小信息）
+///
+/// cluster 分组职责已迁移到 `NodeGroupTag`（通过 `NodeGroupContext::for_recurrent`），
+/// 此结构仅负责折叠渲染：隐藏重复时间步、边重定向、反馈边、步数标注。
 ///
 /// 分为两部分：
-/// - 静态信息：层创建时注册（参数节点、每步节点数）
+/// - 静态信息：层创建时注册（每步节点数）
 /// - 动态信息：forward 时更新（时间步数、起始/结束节点 ID）
-///
-/// 只在 `save_visualization` 时才根据此元信息推断完整的展开分组，
-/// 避免 forward 时的额外开销（只记录几个数值）。
 #[derive(Debug, Clone)]
-pub struct RecurrentLayerMeta {
-    /// 层名称（如 "rnn", "lstm"）
+pub struct RecurrentFoldingMeta {
+    /// 层名称（用于关联到对应的 NodeGroupTag）
     pub name: String,
-    /// 层类型（"RNN", "LSTM", "GRU"）
-    pub layer_type: String,
-    /// 层描述（如 "1→16"）
-    pub description: String,
-    /// 参数节点 ID 列表
-    pub param_node_ids: Vec<NodeId>,
     /// 每个时间步的计算节点数量（不含参数和初始状态）
     /// RNN: 6 (select, matmul, matmul, add, add, tanh)
     pub nodes_per_step: usize,

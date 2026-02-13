@@ -22,6 +22,7 @@
  * - forward(&Var) 接收 Var，与 Linear 等层保持一致
  */
 
+use crate::nn::graph::NodeGroupContext;
 use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
 use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
@@ -54,6 +55,8 @@ pub struct Rnn {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
+    /// 分组实例 ID（用于可视化 cluster）
+    instance_id: usize,
 }
 
 impl Rnn {
@@ -93,15 +96,14 @@ impl Rnn {
         )?;
 
         let b_h = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_h"))?;
-        // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
+
+        // 注册折叠渲染元信息（仅保留折叠所需的最小信息）
         // RNN 每个时间步的节点数：6 (select, matmul_xw, matmul_hw, add1, add2, tanh)
-        graph.inner_mut().register_recurrent_layer_meta(
-            &full_name,
-            "RNN",
-            &format!("[?, {input_size}] → [?, {hidden_size}]"),
-            vec![w_ih.node_id(), w_hh.node_id(), b_h.node_id()],
-            6, // nodes_per_step
-        );
+        graph
+            .inner_mut()
+            .register_recurrent_folding_meta(&full_name, 6);
+
+        let instance_id = graph.inner_mut().next_node_group_instance_id();
 
         Ok(Self {
             w_ih,
@@ -111,6 +113,7 @@ impl Rnn {
             input_size,
             hidden_size,
             name: full_name,
+            instance_id,
         })
     }
 
@@ -159,21 +162,42 @@ impl Rnn {
 
     /// 展开 RNN 时间步
     ///
-    /// 计算逻辑与可视化信息收集完全分离：
-    /// - 此方法只做计算 + 记录最少的必要信息（4 个节点 ID + 1 个数值）
-    /// - 完整的分组信息在 `save_visualization` 时惰性推断
+    /// 使用 NodeGroupContext 统一分组机制 + RecurrentFoldingMeta 记录折叠渲染信息。
     fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
+        // 分组上下文：自动标记 unroll 期间创建的节点
+        let desc = format!(
+            "RNN: [?, {}] → [?, {}] (×{} steps)",
+            self.input_size, self.hidden_size, seq_len
+        );
+        let _guard = NodeGroupContext::for_recurrent(
+            x,
+            "RNN",
+            self.instance_id,
+            &self.name,
+            &desc,
+        );
+        // 后补标签给参数节点
+        _guard.tag_existing(&self.w_ih);
+        _guard.tag_existing(&self.w_hh);
+        _guard.tag_existing(&self.b_h);
+
         // 创建初始隐藏状态（ZerosLike：根据 x 的 batch_size 动态生成）
         let h0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
+        _guard.tag_existing(&h0); // 初始状态纳入分组
         let init_state_node_ids = vec![h0.node_id()];
         let mut h = h0;
 
-        // 记录第一个时间步的信息（用于惰性推断）
+        // 记录第一个时间步的信息（用于折叠渲染）
         let mut first_step_start_id = None;
         let mut repr_output_node_ids = Vec::new();
 
         // 展开所有时间步
         for t in 0..seq_len {
+            // 步骤 1..N-1 标记为隐藏（可视化时折叠）
+            if t > 0 {
+                _guard.set_hidden(true);
+            }
+
             // 选择第 t 个时间步: x_t = x[:, t, :] -> [batch, input_size]
             let x_t = x.select(1, t)?;
 
@@ -195,9 +219,9 @@ impl Rnn {
             }
         }
 
-        // 更新循环层的展开信息（只记录 5 个节点 ID + 1 个数值，几乎零开销）
+        // 更新折叠渲染元信息（只记录最少的必要信息）
         use crate::nn::graph::RecurrentUnrollInfo;
-        self.graph.inner_mut().update_recurrent_layer_unroll_info(
+        self.graph.inner_mut().update_recurrent_folding_info(
             &self.name,
             RecurrentUnrollInfo {
                 steps: seq_len,

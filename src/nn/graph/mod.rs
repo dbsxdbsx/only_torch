@@ -17,10 +17,9 @@ mod types;
 pub use error::{GraphError, ImageFormat, VisualizationOutput};
 pub use handle::Graph;
 pub use inner::GraphInner;
-// 这些类型用于可视化分组，作为公共 API 导出供外部使用
-#[allow(unused_imports)]
+// 可视化分组类型导出
 pub use types::{
-    GroupKind, LayerGroup, NodeGroupTag, RecurrentLayerMeta, RecurrentUnrollInfo, SnapshotNode,
+    GroupStyle, NodeGroupTag, RecurrentFoldingMeta, RecurrentUnrollInfo, SnapshotNode,
     VisualizationSnapshot,
 };
 
@@ -49,37 +48,131 @@ pub(crate) struct NodeGroupContext {
     graph: Rc<RefCell<GraphInner>>,
     /// 是否真正 push 了上下文（外层优先：已有上下文时为 false）
     did_push: bool,
+    /// 之前的 include_params 值（drop 时恢复）
+    prev_include_params: bool,
 }
 
 impl NodeGroupContext {
-    /// 创建分组上下文
+    /// Distribution 用：创建分组上下文（不标记 Parameter/Input 节点）
     ///
     /// # 参数
     /// - `var`: 任意一个属于目标 Graph 的 Var（用于获取图引用）
     /// - `group_type`: 分组类型名（如 "Categorical"）
     /// - `instance_id`: 实例 ID（由 `GraphInner::next_node_group_instance_id()` 获取）
     pub fn new(var: &Var, group_type: &str, instance_id: usize) -> Self {
+        Self::create(
+            var,
+            group_type,
+            instance_id,
+            None,
+            None,
+            types::GroupStyle::Distribution,
+            false, // 不标记 Parameter 节点
+        )
+    }
+
+    /// Layer 用：创建分组上下文（标记 Parameter 节点，含名称/描述）
+    ///
+    /// 与 `new` 的区别：
+    /// - Parameter 节点也会被自动标记（`include_params = true`）
+    /// - 携带 `display_name` 和 `description`（用于可视化 cluster 标签）
+    pub fn for_layer(
+        var: &Var,
+        layer_type: &str,
+        instance_id: usize,
+        qualified_name: &str,
+        description: &str,
+    ) -> Self {
+        Self::create(
+            var,
+            layer_type,
+            instance_id,
+            Some(qualified_name),
+            Some(description),
+            types::GroupStyle::Layer,
+            true, // 标记 Parameter 节点
+        )
+    }
+
+    /// Recurrent 层用：创建分组上下文（标记 Parameter 节点，三重边框样式）
+    pub fn for_recurrent(
+        var: &Var,
+        layer_type: &str,
+        instance_id: usize,
+        qualified_name: &str,
+        description: &str,
+    ) -> Self {
+        Self::create(
+            var,
+            layer_type,
+            instance_id,
+            Some(qualified_name),
+            Some(description),
+            types::GroupStyle::Recurrent,
+            true, // 标记 Parameter 节点
+        )
+    }
+
+    /// 将已有节点纳入当前分组（用于在 guard 之前创建的 Parameter / 初始状态等节点）
+    pub fn tag_existing(&self, var: &Var) {
+        let tag = self.graph.borrow().node_group_context.clone();
+        if let Some(tag) = tag {
+            var.node().set_node_group_tag(Some(tag));
+        }
+    }
+
+    /// 切换后续自动标记的 hidden 标志（RNN 步骤 1..N-1 时调用）
+    pub fn set_hidden(&self, hidden: bool) {
+        let mut g = self.graph.borrow_mut();
+        if let Some(ref mut tag) = g.node_group_context {
+            tag.hidden = hidden;
+        }
+    }
+
+    // ==================== 内部实现 ====================
+
+    fn create(
+        var: &Var,
+        group_type: &str,
+        instance_id: usize,
+        display_name: Option<&str>,
+        description: Option<&str>,
+        style: types::GroupStyle,
+        include_params: bool,
+    ) -> Self {
         let graph = var.graph();
-        let did_push = {
+        let (did_push, prev_include_params) = {
             let mut g = graph.borrow_mut();
+            let prev = g.node_group_include_params;
             if g.node_group_context.is_none() {
                 g.node_group_context = Some(NodeGroupTag {
                     group_type: group_type.to_string(),
                     instance_id,
+                    display_name: display_name.map(|s| s.to_string()),
+                    description: description.map(|s| s.to_string()),
+                    style,
+                    hidden: false,
                 });
-                true
+                g.node_group_include_params = include_params;
+                (true, prev)
             } else {
-                false // 已在外层分组上下文中，不覆盖
+                (false, prev) // 已在外层分组上下文中，不覆盖
             }
         };
-        Self { graph, did_push }
+        Self {
+            graph,
+            did_push,
+            prev_include_params,
+        }
     }
 }
 
 impl Drop for NodeGroupContext {
     fn drop(&mut self) {
         if self.did_push {
-            self.graph.borrow_mut().node_group_context = None;
+            let mut g = self.graph.borrow_mut();
+            g.node_group_context = None;
+            g.node_group_include_params = self.prev_include_params;
         }
     }
 }

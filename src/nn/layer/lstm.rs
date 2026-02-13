@@ -22,6 +22,7 @@
  * - 不维护缓存，每次 forward 都创建新节点
  */
 
+use crate::nn::graph::NodeGroupContext;
 use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
 use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
@@ -59,6 +60,8 @@ pub struct Lstm {
     hidden_size: usize,
     #[allow(dead_code)]
     name: String,
+    /// 分组实例 ID（用于可视化 cluster）
+    instance_id: usize,
 }
 
 impl Lstm {
@@ -137,33 +140,18 @@ impl Lstm {
         )?;
         let b_o = graph.parameter(&[1, hidden_size], Init::Zeros, &format!("{full_name}_b_o"))?;
 
-        // 注册循环层元信息（惰性收集：只在可视化时才根据此信息推断完整分组）
+        // 注册折叠渲染元信息（仅保留折叠所需的最小信息）
         // LSTM 每个时间步的节点数：26
         // - select: 1
-        // - 4个门×5节点(2 matmul + 2 add + 1 activation) = 20
+        // - 4 个门 × 5 节点(2 matmul + 2 add + 1 activation) = 20
         // - 细胞更新: 2 multiply + 1 add = 3
         // - 隐藏更新: 1 tanh + 1 multiply = 2
         // 总计: 1+20+3+2 = 26
-        graph.inner_mut().register_recurrent_layer_meta(
-            &full_name,
-            "LSTM",
-            &format!("[?, {input_size}] → [?, {hidden_size}]"),
-            vec![
-                w_ii.node_id(),
-                w_hi.node_id(),
-                b_i.node_id(),
-                w_if.node_id(),
-                w_hf.node_id(),
-                b_f.node_id(),
-                w_ig.node_id(),
-                w_hg.node_id(),
-                b_g.node_id(),
-                w_io.node_id(),
-                w_ho.node_id(),
-                b_o.node_id(),
-            ],
-            26, // nodes_per_step
-        );
+        graph
+            .inner_mut()
+            .register_recurrent_folding_meta(&full_name, 26);
+
+        let instance_id = graph.inner_mut().next_node_group_instance_id();
 
         Ok(Self {
             w_ii,
@@ -182,6 +170,7 @@ impl Lstm {
             input_size,
             hidden_size,
             name: full_name,
+            instance_id,
         })
     }
 
@@ -234,19 +223,52 @@ impl Lstm {
     /// - 此方法只做计算 + 记录最少的必要信息（4 个节点 ID + 1 个数值）
     /// - 完整的分组信息在 `save_visualization` 时惰性推断
     fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
+        // 分组上下文：自动标记 unroll 期间创建的节点
+        let desc = format!(
+            "LSTM: [?, {}] → [?, {}] (×{} steps)",
+            self.input_size, self.hidden_size, seq_len
+        );
+        let _guard = NodeGroupContext::for_recurrent(
+            x,
+            "LSTM",
+            self.instance_id,
+            &self.name,
+            &desc,
+        );
+        // 后补标签给所有参数节点
+        _guard.tag_existing(&self.w_ii);
+        _guard.tag_existing(&self.w_hi);
+        _guard.tag_existing(&self.b_i);
+        _guard.tag_existing(&self.w_if);
+        _guard.tag_existing(&self.w_hf);
+        _guard.tag_existing(&self.b_f);
+        _guard.tag_existing(&self.w_ig);
+        _guard.tag_existing(&self.w_hg);
+        _guard.tag_existing(&self.b_g);
+        _guard.tag_existing(&self.w_io);
+        _guard.tag_existing(&self.w_ho);
+        _guard.tag_existing(&self.b_o);
+
         // 创建初始状态（ZerosLike：根据 x 的 batch_size 动态生成）
         let h0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
         let c0 = self.graph.zeros_like(x, &[self.hidden_size], None)?;
+        _guard.tag_existing(&h0); // 初始状态纳入分组
+        _guard.tag_existing(&c0);
         let init_state_node_ids = vec![h0.node_id(), c0.node_id()]; // LSTM 有两个初始状态
         let mut h = h0;
         let mut c = c0;
 
-        // 记录第一个时间步的信息（用于惰性推断）
+        // 记录第一个时间步的信息（用于折叠渲染）
         let mut first_step_start_id = None;
         let mut repr_output_node_ids = Vec::new();
 
         // 展开所有时间步
         for t in 0..seq_len {
+            // 步骤 1..N-1 标记为隐藏（可视化时折叠）
+            if t > 0 {
+                _guard.set_hidden(true);
+            }
+
             // 选择第 t 个时间步: x_t = x[:, t, :] -> [batch, input_size]
             let x_t = x.select(1, t)?;
 
@@ -256,47 +278,41 @@ impl Lstm {
             }
 
             // === 输入门 ===
-            // i_t = σ(x_t @ W_ii + h @ W_hi + b_i)
             let x_ii = x_t.matmul(&self.w_ii)?;
             let h_hi = h.matmul(&self.w_hi)?;
             let i_gate = (&x_ii + &h_hi + &self.b_i).sigmoid();
 
             // === 遗忘门 ===
-            // f_t = σ(x_t @ W_if + h @ W_hf + b_f)
             let x_if = x_t.matmul(&self.w_if)?;
             let h_hf = h.matmul(&self.w_hf)?;
             let f_gate = (&x_if + &h_hf + &self.b_f).sigmoid();
 
             // === 候选细胞 ===
-            // g_t = tanh(x_t @ W_ig + h @ W_hg + b_g)
             let x_ig = x_t.matmul(&self.w_ig)?;
             let h_hg = h.matmul(&self.w_hg)?;
             let g_gate = (&x_ig + &h_hg + &self.b_g).tanh();
 
             // === 输出门 ===
-            // o_t = σ(x_t @ W_io + h @ W_ho + b_o)
             let x_io = x_t.matmul(&self.w_io)?;
             let h_ho = h.matmul(&self.w_ho)?;
             let o_gate = (&x_io + &h_ho + &self.b_o).sigmoid();
 
             // === 更新细胞状态 ===
-            // c_t = f_t ⊙ c + i_t ⊙ g_t
             c = &f_gate * &c + &i_gate * &g_gate;
 
             // === 更新隐藏状态 ===
-            // h_t = o_t ⊙ tanh(c_t)
             h = &o_gate * &c.tanh();
 
             // 记录第一个时间步的输出节点 ID（LSTM 有 h 和 c 两个状态）
             if t == 0 {
-                repr_output_node_ids.push(h.node_id()); // h_1
-                repr_output_node_ids.push(c.node_id()); // c_1
+                repr_output_node_ids.push(h.node_id());
+                repr_output_node_ids.push(c.node_id());
             }
         }
 
-        // 更新循环层的展开信息（只记录 5 个节点 ID + 1 个数值，几乎零开销）
+        // 更新折叠渲染元信息
         use crate::nn::graph::RecurrentUnrollInfo;
-        self.graph.inner_mut().update_recurrent_layer_unroll_info(
+        self.graph.inner_mut().update_recurrent_folding_info(
             &self.name,
             RecurrentUnrollInfo {
                 steps: seq_len,

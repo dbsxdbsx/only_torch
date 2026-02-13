@@ -13,27 +13,10 @@ digraph ComputeGraph {
         fontsize=13;
         margin=16;
 
-        subgraph cluster_Discriminator_fc1 {
-            label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: [?, 784] → [?, 128]</FONT>>;
-            style=filled;
-            fillcolor="#E3F2FD80";
-            fontname="Microsoft YaHei,SimHei,Arial";
-            fontsize=11;
-            margin=12;
-                "9" [label=<add_2<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "10" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "11" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "13" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "20" [label=<add_4<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "21" [label=<matmul_4<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "40" [label=<add_8<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "41" [label=<matmul_8<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        }
-
         subgraph cluster_Discriminator_fc2 {
             label=<<B>fc2</B><BR/><FONT POINT-SIZE="9">Linear: [?, 128] → [?, 1]</FONT>>;
             style=filled;
-            fillcolor="#E8F5E980";
+            fillcolor="#E3F2FD80";
             fontname="Microsoft YaHei,SimHei,Arial";
             fontsize=11;
             margin=12;
@@ -45,6 +28,23 @@ digraph ComputeGraph {
                 "18" [label=<matmul_3<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "37" [label=<add_7<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "38" [label=<matmul_7<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+
+        subgraph cluster_Discriminator_fc1 {
+            label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: [?, 784] → [?, 128]</FONT>>;
+            style=filled;
+            fillcolor="#E8F5E980";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=11;
+            margin=12;
+                "9" [label=<add_2<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "10" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "11" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "13" [label=<fc1_W<BR/><B>Parameter</B><BR/>[784, 128]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "20" [label=<add_4<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "21" [label=<matmul_4<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "40" [label=<add_8<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "41" [label=<matmul_8<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
 
         "2" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
@@ -66,25 +66,10 @@ digraph ComputeGraph {
         fontsize=13;
         margin=16;
 
-        subgraph cluster_Generator_fc1 {
-            label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: [?, 64] → [?, 128]</FONT>>;
-            style=filled;
-            fillcolor="#FFF3E080";
-            fontname="Microsoft YaHei,SimHei,Arial";
-            fontsize=11;
-            margin=12;
-                "29" [label=<add_6<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "30" [label=<matmul_6<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "31" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "33" [label=<fc1_W<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-                "46" [label=<add_10<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-                "47" [label=<matmul_10<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        }
-
         subgraph cluster_Generator_fc2 {
             label=<<B>fc2</B><BR/><FONT POINT-SIZE="9">Linear: [?, 128] → [?, 784]</FONT>>;
             style=filled;
-            fillcolor="#F3E5F580";
+            fillcolor="#FFF3E080";
             fontname="Microsoft YaHei,SimHei,Arial";
             fontsize=11;
             margin=12;
@@ -94,6 +79,21 @@ digraph ComputeGraph {
                 "28" [label=<fc2_W<BR/><B>Parameter</B><BR/>[128, 784]<BR/>(100,352 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
                 "43" [label=<add_9<BR/><B>Add</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
                 "44" [label=<matmul_9<BR/><B>MatMul</B><BR/>[?, 784]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        }
+
+        subgraph cluster_Generator_fc1 {
+            label=<<B>fc1</B><BR/><FONT POINT-SIZE="9">Linear: [?, 64] → [?, 128]</FONT>>;
+            style=filled;
+            fillcolor="#F3E5F580";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=11;
+            margin=12;
+                "29" [label=<add_6<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "30" [label=<matmul_6<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "31" [label=<fc1_b<BR/><B>Parameter</B><BR/>[1, 128]<BR/>(128 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "33" [label=<fc1_W<BR/><B>Parameter</B><BR/>[64, 128]<BR/>(8,192 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "46" [label=<add_10<BR/><B>Add</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "47" [label=<matmul_10<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
 
         "22" [label=<detach_1<BR/><B>Detach</B><BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E1BEE7" fontsize=10];

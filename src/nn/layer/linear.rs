@@ -10,6 +10,7 @@
  * 计算：output = x @ W + b
  */
 
+use crate::nn::graph::NodeGroupContext;
 use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var, VarMatrixOps};
 
 // ==================== 新版 Linear 结构体（推荐）====================
@@ -38,6 +39,8 @@ pub struct Linear {
     out_features: usize,
     /// 层名称（用于可视化分组）
     name: String,
+    /// 分组实例 ID（用于可视化 cluster）
+    instance_id: usize,
 }
 
 impl Linear {
@@ -79,12 +82,15 @@ impl Linear {
             None
         };
 
+        let instance_id = graph.inner_mut().next_node_group_instance_id();
+
         Ok(Self {
             weights,
             bias,
             in_features,
             out_features,
             name: full_name,
+            instance_id,
         })
     }
 
@@ -105,40 +111,30 @@ impl Linear {
         let x = x
             .into_var(&self.weights.get_graph())
             .expect("Linear 输入转换失败");
+
+        // 分组上下文：自动标记 forward 期间创建的节点 + Parameter 节点
+        let desc = if self.bias.is_some() {
+            format!("[?, {}] → [?, {}]", self.in_features, self.out_features)
+        } else {
+            format!(
+                "[?, {}] → [?, {}] (no bias)",
+                self.in_features, self.out_features
+            )
+        };
+        let _guard =
+            NodeGroupContext::for_layer(&x, "Linear", self.instance_id, &self.name, &desc);
+        _guard.tag_existing(&self.weights);
+        if let Some(ref bias) = self.bias {
+            _guard.tag_existing(bias);
+        }
+
         // x @ W: [batch, in] @ [in, out] = [batch, out]
         let xw = x.matmul(&self.weights).expect("Linear matmul 失败");
 
         // 如果有 bias，直接加法（Add 支持广播：[batch, out] + [1, out]）
         if let Some(ref bias) = self.bias {
-            let output = &xw + bias;
-
-            // 注册层分组（用于可视化）
-            let graph = x.get_graph();
-            graph.inner_mut().register_layer_group(
-                &self.name,
-                "Linear",
-                &format!("[?, {}] → [?, {}]", self.in_features, self.out_features),
-                vec![
-                    self.weights.node_id(),
-                    bias.node_id(),
-                    xw.node_id(),
-                    output.node_id(),
-                ],
-            );
-
-            output
+            &xw + bias
         } else {
-            // 无 bias 时，直接返回 xw
-            let graph = x.get_graph();
-            graph.inner_mut().register_layer_group(
-                &self.name,
-                "Linear",
-                &format!(
-                    "[?, {}] → [?, {}] (no bias)",
-                    self.in_features, self.out_features
-                ),
-                vec![self.weights.node_id(), xw.node_id()],
-            );
             xw
         }
     }

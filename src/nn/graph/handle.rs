@@ -384,10 +384,9 @@ impl Graph {
         let dot_path = base.with_extension("dot");
         let png_path = base.with_extension("png");
 
-        // 从快照 + 图元数据生成 DOT
-        let layer_groups = inner.layer_groups().to_vec();
-        let recurrent_metas = inner.recurrent_layer_metas().to_vec();
-        let dot_content = Var::snapshot_to_dot(snapshot, &layer_groups, &recurrent_metas);
+        // 从快照 + 折叠元信息生成 DOT
+        let folding_metas = inner.recurrent_folding_metas().to_vec();
+        let dot_content = Var::snapshot_to_dot(snapshot, &folding_metas);
 
         // 保存 .dot 文件
         {
