@@ -122,10 +122,13 @@ pub enum NodeTypeDescriptor {
     Gather {
         dim: usize,
     },
-    /// 张量堆叠/拼接（多输入合并）
+    /// 张量堆叠（插入新维度）
     Stack {
         axis: usize,
-        new_dim: bool,
+    },
+    /// 张量拼接（沿现有维度）
+    Concat {
+        axis: usize,
     },
     BCE,
     Huber {

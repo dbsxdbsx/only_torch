@@ -60,57 +60,22 @@ impl GatherIndex for Tensor {
 // ==================== Var 关联函数（多输入操作）====================
 
 impl Var {
-    /// 将多个 Var 沿指定轴堆叠/拼接
+    /// 沿新维度堆叠多个 Var（类似 `torch.stack`）
     ///
-    /// 这是一个统一的操作，通过 `new_dim` 参数区分两种模式：
-    /// - **Stack 模式**（`new_dim=true`）：在 `axis` 位置插入新维度，类似 `torch.stack`
-    /// - **Concat 模式**（`new_dim=false`）：沿现有 `axis` 拼接，类似 `torch.cat`
+    /// 在 `axis` 位置插入新维度，所有 Var 形状必须完全相同。
     ///
     /// # 参数
     /// - `vars`: 要堆叠的 Var 切片（至少 1 个，必须来自同一 Graph）
-    /// - `axis`: 堆叠/拼接的轴
-    /// - `new_dim`: 是否插入新维度
-    ///
-    /// # 形状规则
-    /// - **Stack 模式**：所有 Var 形状必须相同，输出在 `axis` 位置增加一个维度
-    /// - **Concat 模式**：除 `axis` 外其他维度必须相同，输出的 `axis` 维度是各输入之和
+    /// - `axis`: 插入新维度的位置（0 到 ndim）
     ///
     /// # 示例
     /// ```ignore
-    /// use only_torch::nn::Graph;
-    ///
     /// let graph = Graph::new();
     /// let a = graph.input(&Tensor::ones(&[2, 3]))?;
     /// let b = graph.input(&Tensor::ones(&[2, 3]))?;
-    ///
-    /// // Stack 模式：[2,3] + [2,3] -> [2, 2, 3]
-    /// let stacked = Var::stack(&[&a, &b], 0, true)?;
-    ///
-    /// // Concat 模式：[2,3] + [2,3] -> [4, 3]
-    /// let concat = Var::stack(&[&a, &b], 0, false)?;
+    /// let stacked = Var::stack(&[&a, &b], 0)?;  // [2, 2, 3]
     /// ```
-    /// 沿现有轴拼接多个 Var（类似 `torch.cat`）
-    ///
-    /// 这是 `Var::stack(vars, axis, false)` 的语义化别名，
-    /// 方法名更直观地表达"拼接"（concatenation）语义。
-    ///
-    /// # 参数
-    /// - `vars`: 要拼接的 Var 切片（至少 1 个，必须来自同一 Graph）
-    /// - `axis`: 拼接的轴（必须是已有维度）
-    ///
-    /// # 形状规则
-    /// 除 `axis` 外其他维度必须相同，输出的 `axis` 维度是各输入之和。
-    ///
-    /// # 示例
-    /// ```ignore
-    /// // SAC Critic：拼接 obs 和 action
-    /// let input = Var::cat(&[&obs_var, &act_var], 1)?;  // [batch, obs_dim+action_dim]
-    /// ```
-    pub fn cat(vars: &[&Self], axis: usize) -> Result<Self, GraphError> {
-        Self::stack(vars, axis, false)
-    }
-
-    pub fn stack(vars: &[&Self], axis: usize, new_dim: bool) -> Result<Self, GraphError> {
+    pub fn stack(vars: &[&Self], axis: usize) -> Result<Self, GraphError> {
         // 1. 验证至少有一个 Var
         if vars.is_empty() {
             return Err(GraphError::InvalidOperation(
@@ -131,9 +96,46 @@ impl Var {
         // 3. 收集所有 NodeInner 并调用 graph 方法
         let nodes: Vec<_> = vars.iter().map(|v| Rc::clone(v.node())).collect();
         let graph = first.graph();
-        let node = graph
-            .borrow_mut()
-            .create_stack_node(nodes, axis, new_dim, None)?;
+        let node = graph.borrow_mut().create_stack_node(nodes, axis, None)?;
+
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    /// 沿现有维度拼接多个 Var（类似 `torch.cat` / `tf.concat`）
+    ///
+    /// 沿 `axis` 轴拼接，该轴大小可以不同，但其他维度必须相同。
+    ///
+    /// # 参数
+    /// - `vars`: 要拼接的 Var 切片（至少 1 个，必须来自同一 Graph）
+    /// - `axis`: 拼接的轴（必须是已有维度）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // SAC Critic：拼接 obs 和 action
+    /// let input = Var::concat(&[&obs_var, &act_var], 1)?;  // [batch, obs_dim+action_dim]
+    /// ```
+    pub fn concat(vars: &[&Self], axis: usize) -> Result<Self, GraphError> {
+        // 1. 验证至少有一个 Var
+        if vars.is_empty() {
+            return Err(GraphError::InvalidOperation(
+                "Var::concat 至少需要 1 个 Var".to_string(),
+            ));
+        }
+
+        // 2. 验证所有 Var 来自同一个 Graph
+        let first = vars[0];
+        for (i, var) in vars.iter().enumerate().skip(1) {
+            if !first.same_graph(var) {
+                return Err(GraphError::InvalidOperation(format!(
+                    "Var::concat: 第 {i} 个 Var 来自不同的 Graph"
+                )));
+            }
+        }
+
+        // 3. 收集所有 NodeInner 并调用 graph 方法
+        let nodes: Vec<_> = vars.iter().map(|v| Rc::clone(v.node())).collect();
+        let graph = first.graph();
+        let node = graph.borrow_mut().create_concat_node(nodes, axis, None)?;
 
         Ok(Self::new_with_rc_graph(node, &graph))
     }

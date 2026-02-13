@@ -465,260 +465,10 @@ fn test_reshape_mut() {
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑reshape↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
-/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓stack(concat)↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-#[test]
-fn test_stack_without_new_dim() {
-    // 1.空张量的堆叠
-    assert_panic!(Tensor::stack(&[], 0, false), TensorError::EmptyList);
-    // 2.标量的堆叠
-    let t1 = Tensor::new(&[5.0], &[]);
-    let t2 = Tensor::new(&[6.0], &[1]);
-    let t3 = Tensor::new(&[7.0], &[1, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2, &t3], 0, false);
-    assert_eq!(stacked, Tensor::new(&[5.0, 6.0, 7.0], &[3]));
-
-    // 3.向量的堆叠
-    let t1 = Tensor::new(&[1.0, 2.0], &[2]);
-    let t2 = Tensor::new(&[3.0, 4.0], &[2]);
-    let stacked = Tensor::stack(&[&t1, &t2], 0, false);
-    assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]));
-    // (不添加新维度的情况下，张量的第1个维度可以不同)
-    let t1 = Tensor::new(&[1., 2.], &[2]);
-    let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3]);
-    let stacked = Tensor::stack(&[&t1, &t2], 0, false);
-    assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 6.0, 7.0, 8.0], &[5]));
-    // (不添加新维度的情况下，除张量的第1个维度不同外，其他维度若不同则会报错)
-    let t1 = Tensor::new(&[1., 2.], &[2]);
-    let t2 = Tensor::new(&[6.0, 7.0, 8.0], &[3, 1]);
-    assert_panic!(
-        Tensor::stack(&[&t1, &t2], 0, false),
-        "stack (new_dim=false): 张量 1 的维度 2 与第一个张量的维度 1 不一致"
-    );
-
-    // 4.矩阵的堆叠
-    let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
-    let t2 = Tensor::new(&[7., 8., 9., 10., 11., 12.], &[2, 3]);
-    let stacked = Tensor::stack(&[&t1, &t2], 0, false);
-    assert_eq!(
-        stacked,
-        Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5., 6., 7., 8., 9., 10., 11., 12.],
-            &[4, 3]
-        )
-    );
-    // (不添加新维度的情况下，张量的第1个维度可以不同)
-    let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
-    let t2 = Tensor::new(&[7.0, 8.0, 9.0], &[1, 3]);
-    let stacked = Tensor::stack(&[&t1, &t2], 0, false);
-    assert_eq!(
-        stacked,
-        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])
-    );
-    // (不添加新维度的情况下，除张量的第1个维度不同外，其他维度若不同则会报错)
-    let t1 = Tensor::new(&[1., 2., 3.0, 4.0, 5., 6.], &[2, 3]);
-    let t2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0], &[1, 4]);
-    assert_panic!(
-        Tensor::stack(&[&t1, &t2], 0, false),
-        "stack (new_dim=false): 张量 1 在维度 1 的大小 4 与第一个张量的 3 不一致"
-    );
-
-    // 5.高维张量的堆叠
-    let t1 = Tensor::new(
-        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
-        &[2, 3, 2, 1],
-    );
-    let t2 = Tensor::new(
-        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
-        &[2, 3, 2, 1],
-    );
-    let stacked = Tensor::stack(&[&t1, &t2], 0, false);
-    assert_eq!(
-        stacked,
-        Tensor::new(
-            &[
-                1.0, 2.0, 3.0, 4.0, 5., 6., 7., 8., 9., 10., 11., 12., 1., 2., 3., 4., 5., 6., 7.,
-                8., 9., 10., 11., 12.
-            ],
-            &[4, 3, 2, 1]
-        )
-    );
-    // (不添加新维度的情况下，张量的第1个维度可以不同)
-    let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 1, 2, 1]);
-    let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2], 0, false);
-    assert_eq!(
-        stacked,
-        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,], &[4, 1, 2, 1])
-    );
-    // (不添加新维度的情况下，除张量的第1个维度不同外，其他维度若不同则会报错)
-    let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 1, 2, 1]);
-    let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 1, 2]);
-    assert_panic!(
-        Tensor::stack(&[&t1, &t2], 0, false),
-        "stack (new_dim=false): 张量 1 的维度 3 与第一个张量的维度 4 不一致"
-    );
-}
-
-#[test]
-fn test_stack_with_new_dim() {
-    // 1. 空张量的堆叠
-    assert_panic!(Tensor::stack(&[], 0, true), TensorError::EmptyList);
-
-    // 2. 标量的堆叠
-    let t1 = Tensor::new(&[5.0], &[]);
-    let t2 = Tensor::new(&[6.0], &[1]);
-    let t3 = Tensor::new(&[7.0], &[1, 1]);
-    let stacked = Tensor::stack(&[&t1, &t2, &t3], 0, true);
-    assert_eq!(stacked, Tensor::new(&[5.0, 6.0, 7.0], &[3, 1]));
-
-    // 3. 向量的堆叠
-    let t1 = Tensor::new(&[1.0, 2.0], &[2]);
-    let t2 = Tensor::new(&[3.0, 4.0], &[2]);
-    let stacked = Tensor::stack(&[&t1, &t2], 0, true);
-    assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
-    // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
-    let t1 = Tensor::new(&[1., 2.], &[2, 1]);
-    let t2 = Tensor::new(&[5.0, 6.0, 7.0], &[3, 1]);
-    assert_panic!(
-        Tensor::stack(&[&t1, &t2], 0, true),
-        "stack (new_dim=true): 张量 1 的形状 [3, 1] 与第一个张量的形状 [2, 1] 不一致"
-    );
-
-    // 4. 矩阵的堆叠
-    let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let t2 = Tensor::new(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 3]);
-    let stacked = Tensor::stack(&[&t1, &t2], 0, true);
-    assert_eq!(
-        stacked,
-        Tensor::new(
-            &[
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0
-            ],
-            &[2, 2, 3]
-        )
-    );
-    // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
-    let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-    let t2 = Tensor::new(&[5.0, 6.0], &[2, 1]);
-    assert_panic!(
-        Tensor::stack(&[&t1, &t2], 0, true),
-        "stack (new_dim=true): 张量 1 的形状 [2, 1] 与第一个张量的形状 [2, 2] 不一致"
-    );
-
-    // 5.高维张量的堆叠
-    let t1 = Tensor::new(
-        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
-        &[2, 3, 2],
-    );
-    let t2 = Tensor::new(
-        &[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.],
-        &[2, 3, 2],
-    );
-    let stacked = Tensor::stack(&[&t1, &t2], 0, true);
-    assert_eq!(
-        stacked,
-        Tensor::new(
-            &[
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, //
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0
-            ],
-            &[2, 2, 3, 2]
-        )
-    );
-    // (添加新维度的情况下，形状必须严格一致，若不同则会报错)
-    let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1, 1]);
-    let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2, 1]);
-    assert_panic!(
-        Tensor::stack(&[&t1, &t2], 0, true),
-        "stack (new_dim=true): 张量 1 的形状 [2, 2, 1] 与第一个张量的形状 [2, 2, 1, 1] 不一致"
-    );
-}
-
-/// 测试沿非首维度（axis != 0）的 stack 操作
-#[test]
-fn test_stack_with_axis() {
-    // === new_dim=false（concat 模式）===
-
-    // 1. 沿 axis=1 拼接 2D 张量
-    let t1 = Tensor::new(&[1.0, 2.0], &[1, 2]); // [1, 2]
-    let t2 = Tensor::new(&[3.0, 4.0, 5.0], &[1, 3]); // [1, 3]
-    let concat = Tensor::stack(&[&t1, &t2], 1, false);
-    assert_eq!(concat.shape(), &[1, 5]);
-    assert_eq!(concat, Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0], &[1, 5]));
-
-    // 2. 沿 axis=1 拼接更大的 2D 张量
-    let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]); // [2, 2]
-    let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0, 9.0, 10.0], &[2, 3]); // [2, 3]
-    let concat = Tensor::stack(&[&t1, &t2], 1, false);
-    assert_eq!(concat.shape(), &[2, 5]);
-    assert_eq!(
-        concat,
-        Tensor::new(
-            &[1.0, 2.0, 5.0, 6.0, 7.0, 3.0, 4.0, 8.0, 9.0, 10.0],
-            &[2, 5]
-        )
-    );
-
-    // 3. 沿 axis=2 拼接 3D 张量
-    let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 2, 2]); // [1, 2, 2]
-    let t2 = Tensor::new(&[5.0, 6.0], &[1, 2, 1]); // [1, 2, 1]
-    let concat = Tensor::stack(&[&t1, &t2], 2, false);
-    assert_eq!(concat.shape(), &[1, 2, 3]);
-    assert_eq!(
-        concat,
-        Tensor::new(&[1.0, 2.0, 5.0, 3.0, 4.0, 6.0], &[1, 2, 3])
-    );
-
-    // 4. axis 超出维度应 panic
-    let t1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
-    let t2 = Tensor::new(&[3.0, 4.0], &[1, 2]);
-    assert_panic!(
-        Tensor::stack(&[&t1, &t2], 2, false),
-        "stack: axis 2 超出张量维度 2"
-    );
-
-    // 5. 除 axis 外其他维度不一致应 panic
-    let t1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
-    let t2 = Tensor::new(&[3.0, 4.0, 5.0, 6.0], &[2, 2]);
-    assert_panic!(
-        Tensor::stack(&[&t1, &t2], 1, false),
-        "stack (new_dim=false): 张量 1 在维度 0 的大小 2 与第一个张量的 1 不一致"
-    );
-
-    // === new_dim=true（stack 模式）===
-
-    // 6. 沿 axis=1 堆叠（插入新维度）
-    let t1 = Tensor::new(&[1.0, 2.0], &[2]); // [2]
-    let t2 = Tensor::new(&[3.0, 4.0], &[2]); // [2]
-    let stacked = Tensor::stack(&[&t1, &t2], 1, true);
-    assert_eq!(stacked.shape(), &[2, 2]);
-    assert_eq!(stacked, Tensor::new(&[1.0, 3.0, 2.0, 4.0], &[2, 2]));
-
-    // 7. 沿 axis=2 堆叠 2D 张量
-    let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]); // [2, 2]
-    let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]); // [2, 2]
-    let stacked = Tensor::stack(&[&t1, &t2], 2, true);
-    assert_eq!(stacked.shape(), &[2, 2, 2]);
-    assert_eq!(
-        stacked,
-        Tensor::new(&[1.0, 5.0, 2.0, 6.0, 3.0, 7.0, 4.0, 8.0], &[2, 2, 2])
-    );
-
-    // 8. 三个张量堆叠
-    let t1 = Tensor::new(&[1.0, 2.0], &[2]);
-    let t2 = Tensor::new(&[3.0, 4.0], &[2]);
-    let t3 = Tensor::new(&[5.0, 6.0], &[2]);
-    let stacked = Tensor::stack(&[&t1, &t2, &t3], 0, true);
-    assert_eq!(stacked.shape(), &[3, 2]);
-    assert_eq!(
-        stacked,
-        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
-    );
-}
-/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack(concat)↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+// stack 和 concat 测试已移至独立文件：stack.rs / concat.rs
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓split↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
-/// 测试 split 方法（concat 模式的逆操作，即 new_dim=false 时的逆操作）
+/// 测试 split 方法（Tensor::concat 的逆操作）
 #[test]
 fn test_split_basic() {
     // 1. 沿 axis=0 分割 1D 张量
@@ -801,20 +551,20 @@ fn test_split_errors() {
 
 #[test]
 fn test_split_stack_roundtrip() {
-    // 验证 split 是 stack 的逆操作
+    // 验证 split 是 concat 的逆操作
 
-    // 1. axis=0, new_dim=false (concat)
+    // 1. axis=0 (concat)
     let t1 = Tensor::new(&[1.0, 2.0], &[2]);
     let t2 = Tensor::new(&[3.0, 4.0, 5.0], &[3]);
-    let stacked = Tensor::stack(&[&t1, &t2], 0, false);
+    let stacked = Tensor::concat(&[&t1, &t2], 0);
     let parts = stacked.split(0, &[2, 3]);
     assert_eq!(parts[0], t1);
     assert_eq!(parts[1], t2);
 
-    // 2. axis=1, new_dim=false (concat)
+    // 2. axis=1 (concat)
     let t1 = Tensor::new(&[1.0, 2.0], &[1, 2]);
     let t2 = Tensor::new(&[3.0, 4.0, 5.0], &[1, 3]);
-    let stacked = Tensor::stack(&[&t1, &t2], 1, false);
+    let stacked = Tensor::concat(&[&t1, &t2], 1);
     let parts = stacked.split(1, &[2, 3]);
     assert_eq!(parts[0], t1);
     assert_eq!(parts[1], t2);
@@ -822,7 +572,7 @@ fn test_split_stack_roundtrip() {
     // 3. 更复杂的 2D 情况
     let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     let t2 = Tensor::new(&[5.0, 6.0, 7.0, 8.0, 9.0, 10.0], &[2, 3]);
-    let stacked = Tensor::stack(&[&t1, &t2], 1, false);
+    let stacked = Tensor::concat(&[&t1, &t2], 1);
     let parts = stacked.split(1, &[2, 3]);
     assert_eq!(parts[0], t1);
     assert_eq!(parts[1], t2);

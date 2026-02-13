@@ -891,6 +891,8 @@ impl Var {
                 {
                     ("octagon", "filled", "#FFEBEE")
                 }
+                // 多输入合并节点：梯形（倒三角感），浅青色，突出数据流汇聚点
+                "Stack" | "Concat" => ("invtrapezium", "filled", "#E0F2F1"),
                 "Sigmoid" | "Tanh" | "ReLU" | "LeakyReLU" | "Sign" | "SoftPlus" | "Step"
                 | "Softmax" | "LogSoftmax" | "Abs" | "Ln" => ("diamond", "filled", "#FFF3E0"),
                 "Dropout" | "BatchNorm" => ("diamond", "filled", "#E1BEE7"),

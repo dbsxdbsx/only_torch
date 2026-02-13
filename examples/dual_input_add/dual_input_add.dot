@@ -52,7 +52,7 @@ digraph ComputeGraph {
                 "19" [label=<fc2_W<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
-        "6" [label=<stack_1<BR/><B>Stack</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "6" [label=<concat_1<BR/><B>Concat</B><BR/>[?, 8]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
         "8" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "9" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "16" [label=<input_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];

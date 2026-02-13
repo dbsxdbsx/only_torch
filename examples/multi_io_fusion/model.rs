@@ -71,7 +71,7 @@ impl MultiIOFusion {
         let feat_b = self.encoder_b.forward(input_b).relu();
 
         // 拼接特征 [batch, 8] + [batch, 8] -> [batch, 16]
-        let combined = Var::stack(&[&feat_a, &feat_b], 1, false)?;
+        let combined = Var::concat(&[&feat_a, &feat_b], 1)?;
 
         // 融合层
         let fused = self.fusion.forward(&combined).relu();

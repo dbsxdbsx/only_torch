@@ -63,7 +63,7 @@ impl SiameseSimilarity {
             .relu();
 
         // 拼接两个特征向量
-        let combined = Var::stack(&[&feat1, &feat2], 1, false)?;
+        let combined = Var::concat(&[&feat1, &feat2], 1)?;
 
         // 双层分类器输出相似度
         Ok(self

@@ -454,13 +454,13 @@ fn test_is_contiguous() {
     // stack 沿 axis=0 应该是连续的
     let a = Tensor::new(&[1.0, 2.0], &[1, 2]);
     let b = Tensor::new(&[3.0, 4.0], &[1, 2]);
-    let stacked = Tensor::stack(&[&a, &b], 0, false);
+    let stacked = Tensor::concat(&[&a, &b], 0);
     assert!(stacked.is_contiguous());
 
     // stack 沿 axis=1 也应该是连续的（因为我们自动转换了）
     let c = Tensor::new(&[1.0, 2.0], &[2, 1]);
     let d = Tensor::new(&[3.0, 4.0], &[2, 1]);
-    let concat_axis1 = Tensor::stack(&[&c, &d], 1, false);
+    let concat_axis1 = Tensor::concat(&[&c, &d], 1);
     assert!(concat_axis1.is_contiguous());
 }
 
@@ -478,7 +478,7 @@ fn test_stack_always_contiguous() {
     // 沿 axis=1 拼接（这是之前会产生非连续结果的操作）
     let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     let b = Tensor::new(&[5.0, 6.0, 7.0, 8.0, 9.0, 10.0], &[2, 3]);
-    let concat = Tensor::stack(&[&a, &b], 1, false);
+    let concat = Tensor::concat(&[&a, &b], 1);
 
     // 应该可以安全调用 data_as_slice 而不 panic
     assert_eq!(concat.shape(), &[2, 5]);

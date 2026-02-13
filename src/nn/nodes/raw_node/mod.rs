@@ -150,8 +150,13 @@ define_node_types! {
     },
     Stack(Stack) {
         category: "形状",
-        description: "张量堆叠/拼接",
+        description: "张量堆叠（插入新维度）",
         var_method: Some("Var::stack()"),
+    },
+    Concat(Concat) {
+        category: "形状",
+        description: "张量拼接（沿现有维度）",
+        var_method: Some("Var::concat()"),
     },
 
     // ==================== 比较/归约 ====================

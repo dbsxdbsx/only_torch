@@ -36,7 +36,7 @@ fn test_batch_forward_equals_single() -> Result<(), GraphError> {
 
     // 合并成 batch（使用 stack 沿第一维度连接）
     let sample_refs: Vec<&Tensor> = samples.iter().collect();
-    let batch_input = Tensor::stack(&sample_refs, 0, false);
+    let batch_input = Tensor::concat(&sample_refs, 0);
     assert_eq!(batch_input.shape(), &[batch_size, input_dim]);
 
     // ========== 批量处理 ==========
@@ -117,8 +117,8 @@ fn test_batch_gradient_equals_accumulated_single() -> Result<(), GraphError> {
     // 合并成 batch
     let sample_refs: Vec<&Tensor> = samples.iter().collect();
     let label_refs: Vec<&Tensor> = labels.iter().collect();
-    let batch_input = Tensor::stack(&sample_refs, 0, false);
-    let batch_labels = Tensor::stack(&label_refs, 0, false);
+    let batch_input = Tensor::concat(&sample_refs, 0);
+    let batch_labels = Tensor::concat(&label_refs, 0);
 
     // ========== 批量处理（统一 API）==========
     let graph_batch = Graph::new_with_seed(seed);
@@ -232,8 +232,8 @@ fn test_batch_parameter_update_equals_accumulated_single() -> Result<(), GraphEr
     // 合并成 batch
     let sample_refs: Vec<&Tensor> = samples.iter().collect();
     let label_refs: Vec<&Tensor> = labels.iter().collect();
-    let batch_input = Tensor::stack(&sample_refs, 0, false);
-    let batch_labels = Tensor::stack(&label_refs, 0, false);
+    let batch_input = Tensor::concat(&sample_refs, 0);
+    let batch_labels = Tensor::concat(&label_refs, 0);
 
     // ========== 批量处理 ==========
     let graph_batch = Graph::new_with_seed(seed);

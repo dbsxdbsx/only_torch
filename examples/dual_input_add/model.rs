@@ -36,7 +36,7 @@ impl DualInputAdder {
         let h1 = self.fc1.forward(x1).relu();
         let h2 = self.fc2.forward(x2).relu();
         // 拼接两个分支的特征
-        let combined = Var::stack(&[&h1, &h2], 1, false)?;
+        let combined = Var::concat(&[&h1, &h2], 1)?;
         Ok(self.fc_out.forward(&combined))
     }
 }

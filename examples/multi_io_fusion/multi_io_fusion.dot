@@ -79,7 +79,7 @@ digraph ComputeGraph {
         }
 
         "6" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "11" [label=<stack_1<BR/><B>Stack</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "11" [label=<concat_1<BR/><B>Concat</B><BR/>[?, 16]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
         "13" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "14" [label=<leaky_relu_3<BR/><B>LeakyReLU</B><BR/>[?, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "21" [label=<input_1<BR/><B>Input</B><BR/>[?, 4]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];

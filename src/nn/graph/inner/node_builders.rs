@@ -447,15 +447,14 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "reshape", vec![parent])
     }
 
-    /// 创建 Stack 节点    ///
-    /// 将多个张量沿指定轴堆叠/拼接。
-    /// - `new_dim=true`: 在指定位置插入新维度后堆叠（类似 torch.stack）
-    /// - `new_dim=false`: 沿现有维度拼接（类似 torch.cat）
+    /// 创建 Stack 节点
+    ///
+    /// 在指定位置插入新维度后堆叠（类似 `torch.stack`）。
+    /// 所有父节点形状必须完全相同。
     pub fn create_stack_node(
         &mut self,
         parents: Vec<Rc<NodeInner>>,
         axis: usize,
-        new_dim: bool,
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
         use crate::nn::nodes::raw_node::Stack;
@@ -470,11 +469,38 @@ impl GraphInner {
             &parent_dynamic_shapes,
             parent_ids,
             axis,
-            new_dim,
         )?;
         let raw_node: NodeType = stack.into();
 
         self.create_node_inner(raw_node, name, "stack", parents)
+    }
+
+    /// 创建 Concat 节点
+    ///
+    /// 沿现有维度拼接（类似 `torch.cat` / `tf.concat`）。
+    /// 除 `axis` 外其他维度必须相同。
+    pub fn create_concat_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        axis: usize,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Concat;
+
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        let concat = Concat::new(
+            &parent_shapes_ref,
+            &parent_dynamic_shapes,
+            parent_ids,
+            axis,
+        )?;
+        let raw_node: NodeType = concat.into();
+
+        self.create_node_inner(raw_node, name, "concat", parents)
     }
 
     /// 创建 Select 节点    ///

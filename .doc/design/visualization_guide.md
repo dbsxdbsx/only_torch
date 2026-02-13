@@ -63,6 +63,7 @@ graph.save_visualization("model", None)?;
 | **输入节点** | 椭圆 | 浅蓝 #E3F2FD | `BasicInput`、`TargetInput`、`SmartInput` |
 | **参数节点** | 矩形 | 浅绿 #E8F5E9 | 可训练参数（权重、偏置） |
 | **运算节点** | 圆角矩形 | 浅黄 #FFFDE7 | `MatMul`、`Add`、`Select` 等 |
+| **合并节点** | 倒梯形 | 浅青 #E0F2F1 | `Stack`、`Concat`（多输入数据流汇聚） |
 | **激活函数** | 菱形 | 浅橙 #FFF3E0 | `Sigmoid`、`Tanh`、`ReLU` 等 |
 | **损失函数** | 双八边形 | 浅红 #FFEBEE | `SoftmaxCrossEntropy`、`MSE` |
 

@@ -1,9 +1,9 @@
 /*
- * @Description  : VarShapeOps trait 测试 + Var::stack 测试
+ * @Description  : VarShapeOps trait 测试 + Var::stack / Var::concat 测试
  *
  * 测试形状变换扩展 trait 的独立功能：
  * - reshape, flatten, select
- * - Var::stack（关联函数）
+ * - Var::stack、Var::concat（关联函数）
  */
 
 use crate::nn::graph::Graph;
@@ -105,7 +105,7 @@ fn test_var_stack_stack_mode() {
         .unwrap();
 
     // Stack 模式：[2, 2] + [2, 2] -> [2, 2, 2]
-    let stacked = Var::stack(&[&a, &b], 0, true).unwrap();
+    let stacked = Var::stack(&[&a, &b], 0).unwrap();
     stacked.forward().unwrap();
 
     let result = stacked.value().unwrap().unwrap();
@@ -128,7 +128,7 @@ fn test_var_stack_concat_mode() {
         .unwrap();
 
     // Concat 模式：[2, 2] + [2, 2] -> [4, 2]
-    let concat = Var::stack(&[&a, &b], 0, false).unwrap();
+    let concat = Var::concat(&[&a, &b], 0).unwrap();
     concat.forward().unwrap();
 
     let result = concat.value().unwrap().unwrap();
@@ -151,7 +151,7 @@ fn test_var_stack_concat_axis1() {
         .unwrap();
 
     // Concat 沿 axis=1：[2, 2] + [2, 3] -> [2, 5]
-    let concat = Var::stack(&[&a, &b], 1, false).unwrap();
+    let concat = Var::concat(&[&a, &b], 1).unwrap();
     concat.forward().unwrap();
 
     let result = concat.value().unwrap().unwrap();
@@ -172,7 +172,7 @@ fn test_var_stack_three_vars() {
     let c = graph.input(&Tensor::new(&[5.0, 6.0], &[1, 2])).unwrap();
 
     // Concat：[1,2] + [1,2] + [1,2] -> [3, 2]
-    let concat = Var::stack(&[&a, &b, &c], 0, false).unwrap();
+    let concat = Var::concat(&[&a, &b, &c], 0).unwrap();
     concat.forward().unwrap();
 
     let result = concat.value().unwrap().unwrap();
@@ -180,29 +180,29 @@ fn test_var_stack_three_vars() {
     assert_eq!(result.data_as_slice(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
-/// 测试 Var::stack - 空列表应报错
+/// 测试 Var::concat - 空列表应报错
 #[test]
-fn test_var_stack_empty_error() {
+fn test_var_concat_empty_error() {
     let empty: Vec<&Var> = vec![];
-    let result = Var::stack(&empty, 0, false);
+    let result = Var::concat(&empty, 0);
     assert!(result.is_err());
 }
 
-/// 测试 Var::stack - 不同 Graph 应报错
+/// 测试 Var::concat - 不同 Graph 应报错
 #[test]
-fn test_var_stack_different_graph_error() {
+fn test_var_concat_different_graph_error() {
     let graph1 = Graph::new();
     let graph2 = Graph::new();
     let a = graph1.input(&Tensor::ones(&[2, 2])).unwrap();
     let b = graph2.input(&Tensor::ones(&[2, 2])).unwrap();
 
-    let result = Var::stack(&[&a, &b], 0, false);
+    let result = Var::concat(&[&a, &b], 0);
     assert!(result.is_err());
 }
 
-/// 测试 Var::stack 反向传播（端到端）
+/// 测试 Var::concat 反向传播（端到端）
 #[test]
-fn test_var_stack_backward() {
+fn test_var_concat_backward() {
     let graph = Graph::new();
 
     // 创建参数节点
@@ -211,12 +211,12 @@ fn test_var_stack_backward() {
     p1.set_value(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
     p2.set_value(&Tensor::new(&[3.0, 4.0], &[1, 2])).unwrap();
 
-    // Stack: [1, 2] + [1, 2] -> [2, 2]
-    let stacked = Var::stack(&[&p1, &p2], 0, false).unwrap();
+    // Concat: [1, 2] + [1, 2] -> [2, 2]
+    let concat = Var::concat(&[&p1, &p2], 0).unwrap();
 
     // 创建 target 和 loss
     let target = graph.input(&Tensor::zeros(&[2, 2])).unwrap();
-    let loss = stacked.mse_loss(&target).unwrap();
+    let loss = concat.mse_loss(&target).unwrap();
 
     // 反向传播
     let loss_val = loss.backward().unwrap();

@@ -6,7 +6,7 @@
 //! ```text
 //! Actor:  obs(3) → 256(ReLU) → 256(ReLU) → [mean(1), log_std(1)]
 //!         → TanhNormal → action ∈ [-1,1] → scale to [-2,2]
-//! Critic: [obs(3), act(1)] → Cat → 256(ReLU) → 256(ReLU) → 1 (Q value)
+//! Critic: [obs(3), act(1)] → Concat → 256(ReLU) → 256(ReLU) → 1 (Q value)
 //! ```
 
 use only_torch::nn::distributions::TanhNormal;
@@ -96,7 +96,7 @@ impl Module for SacActor {
 
 /// SAC Critic：输入 (obs, action)，输出标量 Q 值
 ///
-/// 使用 `Var::cat` 拼接 obs 和 action，与 PyTorch/rustRL 标准实现一致
+/// 使用 `Var::concat` 拼接 obs 和 action，与 PyTorch/rustRL 标准实现一致
 pub struct SacCritic {
     graph: Graph,
     fc1: Linear,
@@ -123,7 +123,7 @@ impl SacCritic {
 
     /// 前向传播：拼接 obs 和 action（均为 Var），输出 Q 值
     pub fn forward_q(&self, obs: &Var, action: &Var) -> Result<Var, GraphError> {
-        let input = Var::cat(&[obs, action], 1)?;
+        let input = Var::concat(&[obs, action], 1)?;
         let h = self.fc1.forward(&input).relu();
         let h = self.fc2.forward(&h).relu();
         Ok(self.fc3.forward(&h))

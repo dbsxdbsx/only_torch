@@ -71,7 +71,7 @@ digraph ComputeGraph {
 
         "2" [label=<sigmoid_1<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "7" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "12" [label=<stack_1<BR/><B>Stack</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "12" [label=<concat_1<BR/><B>Concat</B><BR/>[?, 16]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
         "14" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "15" [label=<leaky_relu_3<BR/><B>LeakyReLU</B><BR/>[?, 8]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "21" [label=<leaky_relu_4<BR/><B>LeakyReLU</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];

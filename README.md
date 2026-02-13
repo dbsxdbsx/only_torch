@@ -61,7 +61,7 @@ let dot = graph.to_dot();
 | [multi_io_fusion](examples/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
 | [multi_label_point](examples/multi_label_point/) | **多标签分类** | **BceLoss**、multi_label_accuracy | `2 → 16 → 16 → 4` | `cargo run --example multi_label_point` |
 | [cartpole_sac](examples/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
-| [pendulum_sac](examples/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、Var::cat | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
+| [pendulum_sac](examples/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、Var::concat | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
 
 #### 详细说明
 
@@ -271,7 +271,7 @@ cargo run --example cartpole_sac
 
 使用 SAC 连续动作版本解决经典 Pendulum 摆锤控制任务，展示：
 - `TanhNormal` 分布：重参数化采样 + Jacobian 修正
-- `Var::cat`：拼接 obs + action 输入 Critic（标准 SAC 架构）
+- `Var::concat`：拼接 obs + action 输入 Critic（标准 SAC 架构）
 - 动作缩放：TanhNormal [-1,1] → 环境范围 [-2,2]
 - 与离散版本的 Actor Loss 对比（log_prob 直接构建 vs 概率加权求和）
 

@@ -3,7 +3,7 @@
 //! 展示 `only_torch` 在连续动作强化学习场景的应用：
 //! - SAC（Soft Actor-Critic）算法的连续动作版本
 //! - TanhNormal 分布 + 重参数化采样
-//! - Critic 使用 `Var::cat` 拼接 obs + action
+//! - Critic 使用 `Var::concat` 拼接 obs + action
 //! - 动作缩放：TanhNormal 输出 [-1,1] → 环境范围 [-2,2]
 //!
 //! ## 运行
@@ -299,7 +299,7 @@ fn main() -> Result<(), GraphError> {
                     // log_prob: [batch, action_dim] → sum → [batch, 1]
                     let log_prob_sum = log_prob_var.sum_axis(1); // [batch, 1]
 
-                    // Q(s, a) — 梯度从 Q 经由 Cat → action → Actor params 流回
+                    // Q(s, a) — 梯度从 Q 经由 Concat → action → Actor params 流回
                     let q1_actor = agent.critic1.forward_q(&obs_var_actor, &action_var)?;
                     let q2_actor = agent.critic2.forward_q(&obs_var_actor, &action_var)?;
                     // min(Q1, Q2) = 0.5 * (Q1 + Q2 - |Q1 - Q2|)
