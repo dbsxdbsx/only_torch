@@ -255,6 +255,24 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "divide", parents)
     }
 
+    /// 创建 Negate 节点    ///
+    /// 逐元素取反 (-x)
+    pub fn create_negate_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Negate;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let negate = Negate::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = negate.into();
+
+        self.create_node_inner(raw_node, name, "negate", vec![input])
+    }
+
     /// 创建 MatMul 节点    ///
     /// 矩阵乘法 (left @ right)，要求 left 的列数等于 right 的行数。
     /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。

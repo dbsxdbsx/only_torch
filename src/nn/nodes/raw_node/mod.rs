@@ -99,6 +99,11 @@ define_node_types! {
         description: "逐元素除法（支持广播）",
         var_method: Some("/ 运算符"),
     },
+    Negate(Negate) {
+        category: "算术",
+        description: "逐元素取反（一元 -x）",
+        var_method: Some("- 一元运算符"),
+    },
 
     // ==================== 矩阵/卷积运算 ====================
     MatMul(MatMul) {

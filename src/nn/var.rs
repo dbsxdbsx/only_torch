@@ -2454,7 +2454,7 @@ impl Add<&Self> for Var {
     }
 }
 
-// Sub for &Var (实现为 self + (-1 * other))
+// Sub for &Var（使用原生 Subtract 节点）
 impl Sub for &Var {
     type Output = Var;
 
@@ -2875,25 +2875,16 @@ impl Div<Var> for Tensor {
     }
 }
 
-// Neg for &Var（实现为 -1 * self）
+// Neg for &Var（原生 Negate 节点）
 impl Neg for &Var {
     type Output = Var;
 
     fn neg(self) -> Var {
         let graph = self.graph();
-        let mut g = graph.borrow_mut();
-        // 创建 -1 常量
-        let neg_one_node = g
-            .create_basic_input_node(&[1, 1], None)
-            .expect("创建 -1 节点失败");
-        neg_one_node
-            .set_value(Some(&Tensor::new(&[-1.0], &[1, 1])))
-            .expect("设置 -1 值失败");
-        // -self = -1 * self（Multiply 支持广播）
-        let node = g
-            .create_multiply_node(vec![neg_one_node, Rc::clone(&self.node)], None)
-            .expect("创建取反节点失败");
-        drop(g); // 释放借用
+        let node = graph
+            .borrow_mut()
+            .create_negate_node(Rc::clone(&self.node), None)
+            .expect("创建 Negate 节点失败");
         Var::new_with_rc_graph(node, &graph)
     }
 }

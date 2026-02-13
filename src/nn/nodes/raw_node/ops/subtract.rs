@@ -152,7 +152,7 @@ impl TraitNode for Subtract {
             }
         } else if target_parent_index == 1 {
             // target 是 right (B)：∂L/∂B = -upstream_grad
-            let neg_grad = upstream_grad * (-1.0_f32);
+            let neg_grad = -upstream_grad;
             if neg_grad.shape() == target_shape {
                 Ok(neg_grad)
             } else {

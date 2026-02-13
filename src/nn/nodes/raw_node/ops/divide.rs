@@ -160,7 +160,7 @@ impl TraitNode for Divide {
             let b_value = *target_value;
             // -upstream_grad * A / B²
             let b_squared = b_value * b_value;
-            let neg_grad_a = &(upstream_grad * *a_value) * (-1.0_f32);
+            let neg_grad_a = -&(upstream_grad * *a_value);
             let local_grad = &neg_grad_a / &b_squared;
 
             // 如果 B 被广播过，需要沿广播维度求和

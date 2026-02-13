@@ -39,6 +39,7 @@ mod node_max_pool2d;
 mod node_mean;
 mod node_mse;
 mod node_multiply;
+mod node_negate;
 mod node_parameter;
 mod node_reshape;
 mod node_select;
