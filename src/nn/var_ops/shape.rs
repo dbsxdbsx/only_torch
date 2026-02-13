@@ -89,6 +89,27 @@ impl Var {
     /// // Concat 模式：[2,3] + [2,3] -> [4, 3]
     /// let concat = Var::stack(&[&a, &b], 0, false)?;
     /// ```
+    /// 沿现有轴拼接多个 Var（类似 `torch.cat`）
+    ///
+    /// 这是 `Var::stack(vars, axis, false)` 的语义化别名，
+    /// 方法名更直观地表达"拼接"（concatenation）语义。
+    ///
+    /// # 参数
+    /// - `vars`: 要拼接的 Var 切片（至少 1 个，必须来自同一 Graph）
+    /// - `axis`: 拼接的轴（必须是已有维度）
+    ///
+    /// # 形状规则
+    /// 除 `axis` 外其他维度必须相同，输出的 `axis` 维度是各输入之和。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // SAC Critic：拼接 obs 和 action
+    /// let input = Var::cat(&[&obs_var, &act_var], 1)?;  // [batch, obs_dim+action_dim]
+    /// ```
+    pub fn cat(vars: &[&Self], axis: usize) -> Result<Self, GraphError> {
+        Self::stack(vars, axis, false)
+    }
+
     pub fn stack(vars: &[&Self], axis: usize, new_dim: bool) -> Result<Self, GraphError> {
         // 1. 验证至少有一个 Var
         if vars.is_empty() {

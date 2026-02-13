@@ -52,7 +52,7 @@ nn/debug           100%     ✅ 节点类型枚举 + 调试工具（strum 自动
 nn/optimizer       ~70%     ✅ SGD/Adam 可用，缺 Momentum 等
 data/              ~75%     ✅ MNIST + California Housing + DataLoader
 vision/            ~70%     ✅ 基本完成
-rl/                ~30%     ✅ GymEnv + SAC-Discrete（CartPole 示例）
+rl/                ~45%     ✅ GymEnv + SAC-Discrete（CartPole）+ SAC-Continuous（Pendulum）
 logic/             0%       ❌ 预留
 neat/              0%       ❌ 远期特色
 ```
@@ -108,6 +108,7 @@ for (x, target) in &dataloader {
 | `multi_io_fusion` | 多输入 + 多输出 | ✅ |
 | `multi_label_point` | BceLoss 多标签 | ✅ |
 | `sac/cartpole` | SAC-Discrete 强化学习 | ✅ |
+| `sac/pendulum` | SAC-Continuous 强化学习 | ✅ |
 
 ## 已实现节点
 
@@ -207,7 +208,7 @@ only_torch/
 │   └── module       # Module trait ✅
 ├── vision/          # 视觉处理 ✅
 ├── data/            # DataLoader + MNIST + California Housing ✅
-├── rl/              # GymEnv + SAC-Discrete ✅
+├── rl/              # GymEnv + SAC-Discrete + SAC-Continuous ✅
 ├── neat/            # 神经进化（远期核心）
 └── logic/           # 逻辑推理（预留）
 ```

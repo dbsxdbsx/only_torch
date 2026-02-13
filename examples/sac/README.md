@@ -7,6 +7,7 @@
 | 子目录 | 说明 | 运行命令 |
 |--------|------|---------|
 | [cartpole/](cartpole/) | SAC-Discrete，CartPole 平衡杆任务 | `cargo run --example cartpole_sac` |
+| [pendulum/](pendulum/) | SAC-Continuous，Pendulum 摆锤控制 | `cargo run --example pendulum_sac` |
 
 ---
 

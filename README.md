@@ -61,6 +61,7 @@ let dot = graph.to_dot();
 | [multi_io_fusion](examples/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
 | [multi_label_point](examples/multi_label_point/) | **多标签分类** | **BceLoss**、multi_label_accuracy | `2 → 16 → 16 → 4` | `cargo run --example multi_label_point` |
 | [cartpole_sac](examples/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
+| [pendulum_sac](examples/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、Var::cat | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
 
 #### 详细说明
 
@@ -266,30 +267,45 @@ cargo run --example cartpole_sac
 # 约 50 episode 后平均奖励达到 200+
 ```
 
+**Pendulum SAC-Continuous** ⭐⭐⭐
+
+使用 SAC 连续动作版本解决经典 Pendulum 摆锤控制任务，展示：
+- `TanhNormal` 分布：重参数化采样 + Jacobian 修正
+- `Var::cat`：拼接 obs + action 输入 Critic（标准 SAC 架构）
+- 动作缩放：TanhNormal [-1,1] → 环境范围 [-2,2]
+- 与离散版本的 Actor Loss 对比（log_prob 直接构建 vs 概率加权求和）
+
+```bash
+cargo run --example pendulum_sac
+# 约 25 episode 后单回合奖励达到 -300+
+```
+
 </details>
 
 #### 特性覆盖矩阵
 
-| 特性 | xor | iris | sine | california | mnist | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | cartpole_sac |
-|------|:---:|:----:|:----:|:----------:|:-----:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:------------:|
-| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `Conv2d` 层 | | | | | ✅ | | | | | | | | |
-| `RNN/LSTM/GRU` 层 | | | | | | | ✅ | | | | | | |
-| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | | ✅ | | | ✅ | ✅ | | |
-| `MseLoss` | | | ✅ | ✅ | | ✅ | | ✅ | ✅ | ✅ | ✅ | | ✅ |
-| **`BceLoss`** | | | | | | | | | | | | ✅ | |
-| `MaeLoss` | | | 📌 | 📌 | | | | 📌 | | 📌 | 📌 | | |
-| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | | | | | | | |
-| `BucketedDataLoader` | | | | | | | ✅ | | | | | | |
-| 变长序列 | | | | | | | ✅ | | | | | | |
-| **多输入** | | | | | | | | ✅ | ✅ | | ✅ | | |
-| **多输出** (元组返回) | | | | | | | | | | ✅ | ✅ | | |
-| 共享编码器 | | | | | | | | | ✅ | | | | |
-| 多 Loss 训练 | | | | | ✅ | | | | ✅ | ✅ | | | ✅ |
-| **多标签分类** | | | | | | | | | | | | ✅ | |
-| **GAN / detach** | | | | | | ✅ | | | | | | | |
-| **GymEnv (RL)** | | | | | | | | | | | | | ✅ |
-| **经验回放** | | | | | | | | | | | | | ✅ |
+| 特性 | xor | iris | sine | california | mnist | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | cartpole_sac | pendulum_sac |
+|------|:---:|:----:|:----:|:----------:|:-----:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:------------:|:------------:|
+| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Conv2d` 层 | | | | | ✅ | | | | | | | | | |
+| `RNN/LSTM/GRU` 层 | | | | | | | ✅ | | | | | | | |
+| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | | ✅ | | | ✅ | ✅ | | | |
+| `MseLoss` | | | ✅ | ✅ | | ✅ | | ✅ | ✅ | ✅ | ✅ | | ✅ | ✅ |
+| **`BceLoss`** | | | | | | | | | | | | ✅ | | |
+| `MaeLoss` | | | 📌 | 📌 | | | | 📌 | | 📌 | 📌 | | | |
+| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | | | | | | | | |
+| `BucketedDataLoader` | | | | | | | ✅ | | | | | | | |
+| 变长序列 | | | | | | | ✅ | | | | | | | |
+| **多输入** | | | | | | | | ✅ | ✅ | | ✅ | | | |
+| **多输出** (元组返回) | | | | | | | | | | ✅ | ✅ | | | |
+| 共享编码器 | | | | | | | | | ✅ | | | | | |
+| 多 Loss 训练 | | | | | ✅ | | | | ✅ | ✅ | | | ✅ | ✅ |
+| **多标签分类** | | | | | | | | | | | | ✅ | | |
+| **GAN / detach** | | | | | | ✅ | | | | | | | | |
+| **GymEnv (RL)** | | | | | | | | | | | | | ✅ | ✅ |
+| **经验回放** | | | | | | | | | | | | | ✅ | ✅ |
+| **TanhNormal 分布** | | | | | | | | | | | | | | ✅ |
+| **Var::cat** | | | | | | | | | | | | | | ✅ |
 
 > 📌 = 可替换使用。`MaeLoss`（平均绝对误差）与 `MseLoss`（均方误差）的区别：
 > - `MseLoss`：对大误差敏感，适合干净数据
