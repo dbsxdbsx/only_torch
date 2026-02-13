@@ -310,3 +310,4 @@ std::fs::write("model.dot", graph.to_dot())?;
 - [Graph 序列化与可视化设计](graph_serialization_design.md) - 基础架构设计
 - [记忆/循环机制设计](memory_mechanism_design.md) - RNN/LSTM/GRU 实现细节
 - [梯度流控制机制](gradient_flow_control_design.md) - `detach`、`no_grad` 等机制
+- [Input 节点语义与数据共享设计](input_node_semantics_design.md) - Input/TargetInput 归属原则、跨模型数据共享标注方案
