@@ -23,6 +23,7 @@
 
 use crate::nn::Var;
 use crate::nn::VarActivationOps;
+use crate::nn::graph::NodeGroupContext;
 use crate::tensor::Tensor;
 
 /// 正态分布
@@ -46,6 +47,8 @@ pub struct Normal {
     std: Var,
     /// ln(σ) — 构造时缓存，entropy() 和 log_prob() 共享
     log_std: Var,
+    /// 分组实例 ID（用于可视化 cluster 标记）
+    instance_id: usize,
 }
 
 impl Normal {
@@ -57,11 +60,14 @@ impl Normal {
     /// - `mean` — 均值（来自网络输出的 Var）
     /// - `std` — 标准差（来自网络输出的 Var，必须 > 0）
     pub fn new(mean: Var, std: Var) -> Self {
+        let instance_id = mean.graph().borrow_mut().next_node_group_instance_id();
+        let _guard = NodeGroupContext::new(&mean, "Normal", instance_id);
         let log_std = std.ln();
         Self {
             mean,
             std,
             log_std,
+            instance_id,
         }
     }
 
@@ -88,6 +94,7 @@ impl Normal {
     /// # 返回
     /// Var，在计算图中，可反向传播
     pub fn rsample(&self) -> Var {
+        let _guard = NodeGroupContext::new(&self.mean, "Normal", self.instance_id);
         let shape = self.mean.value_expected_shape();
         let eps = Tensor::normal(0.0, 1.0, &shape);
         &self.mean + &self.std * eps
@@ -102,6 +109,7 @@ impl Normal {
     /// # 参数
     /// - `value` — 要计算概率的值（形状应与 mean/std 兼容）
     pub fn log_prob(&self, value: &Var) -> Var {
+        let _guard = NodeGroupContext::new(&self.mean, "Normal", self.instance_id);
         let diff = value - &self.mean;
         let normalized = &diff / &self.std;
         let squared = &normalized * &normalized;
@@ -126,6 +134,7 @@ impl Normal {
     ///
     /// 使用缓存的 log_std，不会创建冗余的 ln(σ) 节点。
     pub fn entropy(&self) -> Var {
+        let _guard = NodeGroupContext::new(&self.mean, "Normal", self.instance_id);
         let const_val = 0.5 + 0.5 * (2.0_f32 * std::f32::consts::PI).ln();
         let const_tensor = Tensor::new(&[const_val], &[1, 1]);
         &self.log_std + const_tensor

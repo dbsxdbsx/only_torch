@@ -256,3 +256,39 @@ fn test_tanh_normal_sac_e2e() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 节点分组标记测试 ====================
+
+/// TanhNormal 内部所有节点统一标记为 "TanhNormal"（而非 "Normal"）
+#[test]
+fn test_tanh_normal_node_group_tagging() {
+    let graph = Graph::new();
+    let mean = graph
+        .input(&Tensor::new(&[0.0, 1.0], &[1, 2]))
+        .unwrap();
+    let std = graph
+        .input(&Tensor::new(&[1.0, 0.5], &[1, 2]))
+        .unwrap();
+
+    let dist = TanhNormal::new(mean.clone(), std.clone());
+
+    // rsample() 产生的节点应标记为 "TanhNormal"
+    let (squashed, raw) = dist.rsample();
+    assert_eq!(
+        squashed.node_group_tag().unwrap().group_type,
+        "TanhNormal"
+    );
+    assert_eq!(raw.node_group_tag().unwrap().group_type, "TanhNormal");
+
+    // log_prob() 产生的节点应标记为 "TanhNormal"
+    let lp = dist.log_prob(&raw);
+    assert_eq!(lp.node_group_tag().unwrap().group_type, "TanhNormal");
+
+    // 内部 Normal 的 log_std 也应标记为 "TanhNormal"（外层优先）
+    // 通过 mean()/std() 访问的是原始 Var clone，不创建新节点
+    // 直接验证 rsample 内部的节点统一标签即可
+
+    // 用户传入的 mean/std Input 节点不应有标签
+    assert!(mean.node_group_tag().is_none());
+    assert!(std.node_group_tag().is_none());
+}

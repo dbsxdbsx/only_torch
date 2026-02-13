@@ -56,6 +56,10 @@ mod node_subtract;
 mod node_sum;
 mod node_tanh;
 
+// ===== 图基础设施测试 =====
+mod graph_node_group_context; // NodeGroupContext 节点分组上下文机制
+mod graph_visualization; // 计算图可视化（DOT cluster 生成）
+
 // ===== 概率分布测试 =====
 mod distribution_categorical; // Categorical 分布（离散分类，SAC-Discrete / Hybrid SAC）
 mod distribution_normal; // Normal 分布（log_prob / entropy / rsample / 梯度）

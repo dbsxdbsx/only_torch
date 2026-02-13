@@ -64,9 +64,27 @@ impl GraphInner {
         raw_node.set_id(node_id);
         raw_node.set_name(&node_name);
 
-        // 创建 NodeInner
-        let node_inner = Rc::new(NodeInner::new(node_id, Some(node_name), raw_node, parents));
+        // 节点分组自动标记：如果当前有活跃的分组上下文，
+        // 给计算节点打标签（排除 Input/TargetInput/Parameter 等数据节点）
+        let group_tag = if self.node_group_context.is_some() {
+            // Input 包含 Data 和 Target 两种变体，都属于外部数据节点
+            let is_data_node = matches!(raw_node, NodeType::Input(_) | NodeType::Parameter(_));
+            if is_data_node {
+                None
+            } else {
+                self.node_group_context.clone()
+            }
+        } else {
+            None
+        };
 
+        // 创建 NodeInner
+        let mut node = NodeInner::new(node_id, Some(node_name), raw_node, parents);
+        if group_tag.is_some() {
+            node.set_node_group_tag(group_tag);
+        }
+
+        let node_inner = Rc::new(node);
         Ok(node_inner)
     }
 

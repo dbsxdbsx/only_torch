@@ -313,3 +313,48 @@ fn test_categorical_sac_discrete_e2e() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 节点分组标记测试 ====================
+
+/// Categorical 的缓存节点和方法产生的节点均带正确的分组标签
+#[test]
+fn test_categorical_node_group_tagging() {
+    let graph = Graph::new();
+    let logits = graph
+        .input(&Tensor::new(&[1.0, 2.0, 0.5], &[1, 3]))
+        .unwrap();
+
+    let dist = Categorical::new(logits.clone());
+
+    // 缓存节点（softmax, log_softmax）应带 "Categorical" 标签
+    let probs = dist.probs();
+    let log_probs = dist.log_probs();
+    assert_eq!(
+        probs.node_group_tag().unwrap().group_type,
+        "Categorical"
+    );
+    assert_eq!(
+        log_probs.node_group_tag().unwrap().group_type,
+        "Categorical"
+    );
+    // 同一实例的 instance_id 相同
+    assert_eq!(
+        probs.node_group_tag().unwrap().instance_id,
+        log_probs.node_group_tag().unwrap().instance_id
+    );
+
+    // entropy() 产生的节点也应带标签
+    let entropy = dist.entropy();
+    assert_eq!(
+        entropy.node_group_tag().unwrap().group_type,
+        "Categorical"
+    );
+
+    // log_prob() 产生的节点也应带标签
+    let action = Tensor::new(&[1.0], &[1, 1]);
+    let lp = dist.log_prob(&action);
+    assert_eq!(lp.node_group_tag().unwrap().group_type, "Categorical");
+
+    // 原始 logits（用户传入的 Input 节点）不应有标签
+    assert!(logits.node_group_tag().is_none());
+}

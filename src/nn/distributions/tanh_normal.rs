@@ -19,6 +19,7 @@
 use super::Normal;
 use crate::nn::Var;
 use crate::nn::VarActivationOps;
+use crate::nn::graph::NodeGroupContext;
 use crate::tensor::Tensor;
 
 /// TanhNormal 分布（Squashed Gaussian）
@@ -43,6 +44,8 @@ use crate::tensor::Tensor;
 #[derive(Clone)]
 pub struct TanhNormal {
     base_dist: Normal,
+    /// 分组实例 ID（用于可视化 cluster 标记）
+    instance_id: usize,
 }
 
 /// TanhNormal 的 epsilon 值（数值稳定常量）
@@ -55,8 +58,13 @@ impl TanhNormal {
     /// - `mean` — 正态分布均值（来自网络输出的 Var）
     /// - `std` — 正态分布标准差（来自网络输出的 Var，必须 > 0）
     pub fn new(mean: Var, std: Var) -> Self {
+        let instance_id = mean.graph().borrow_mut().next_node_group_instance_id();
+        // TanhNormal 先 push 上下文，Normal::new() 内部的 push 会因"外层优先"被跳过，
+        // 所有节点统一标记为 "TanhNormal"
+        let _guard = NodeGroupContext::new(&mean, "TanhNormal", instance_id);
         Self {
             base_dist: Normal::new(mean, std),
+            instance_id,
         }
     }
 
@@ -79,6 +87,7 @@ impl TanhNormal {
     /// # 注意
     /// 必须保留 `raw_action` 用于 `log_prob()` 计算。
     pub fn rsample(&self) -> (Var, Var) {
+        let _guard = NodeGroupContext::new(&self.base_dist.mean(), "TanhNormal", self.instance_id);
         let raw = self.base_dist.rsample();
         let squashed = raw.tanh();
         (squashed, raw)
@@ -91,6 +100,7 @@ impl TanhNormal {
     /// # 参数
     /// - `raw_action` — tanh 前的原始采样值 u（来自 `rsample()` 的第二个返回值）
     pub fn log_prob(&self, raw_action: &Var) -> Var {
+        let _guard = NodeGroupContext::new(&self.base_dist.mean(), "TanhNormal", self.instance_id);
         let base_lp = self.base_dist.log_prob(raw_action);
 
         // Jacobian 修正：-log(1 - tanh²(u) + ε)

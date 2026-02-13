@@ -6,6 +6,24 @@
 
 use crate::nn::NodeId;
 
+// ==================== 节点分组标签 ====================
+
+/// 通用节点分组标签
+///
+/// 当前用于概率分布的 cluster 可视化（如 Categorical、Normal），
+/// 未来将统一替代 `LayerGroup` 的显式注册机制（阶段二）。
+///
+/// 同一 `(group_type, instance_id)` 的节点在可视化中归入同一个 cluster 子图。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NodeGroupTag {
+    /// 分组类型名（如 "Categorical" / "Normal" / "TanhNormal"）
+    pub group_type: String,
+    /// 实例 ID（区分同类型的多个实例）
+    pub instance_id: usize,
+}
+
+// ==================== 层/模型分组（旧体系，阶段二统一后移除）====================
+
 /// 分组类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GroupKind {
@@ -114,6 +132,8 @@ pub struct SnapshotNode {
     pub is_detached: bool,
     /// 超参数 HTML 片段（如 Dropout 的 `<BR/>(p=0.5)`，无超参数时为 None）
     pub hyperparam_html: Option<String>,
+    /// 节点分组标签（如属于某个概率分布的 cluster）
+    pub node_group_tag: Option<NodeGroupTag>,
 }
 
 /// 可视化拓扑快照——计算图的轻量级结构副本

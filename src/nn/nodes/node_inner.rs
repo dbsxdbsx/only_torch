@@ -13,6 +13,7 @@ use super::NodeType;
 use super::raw_node::TraitNode;
 use crate::nn::NodeId;
 use crate::nn::graph::GraphError;
+use crate::nn::graph::NodeGroupTag;
 use crate::tensor::Tensor;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -44,6 +45,10 @@ pub struct NodeInner {
     // === 父节点引用（强引用，保证反向传播时存活）===
     /// 父节点列表，顺序与 `raw_node.calc_value_by_parents` 的参数顺序一致
     parents: Vec<Rc<NodeInner>>,
+
+    // === 节点分组标签（用于可视化 cluster）===
+    /// 如果该节点是在某个分组上下文中创建的，则记录所属分组
+    node_group_tag: Option<NodeGroupTag>,
 }
 
 impl NodeInner {
@@ -69,6 +74,7 @@ impl NodeInner {
             last_backward_pass_id: Cell::new(0),
             is_detached: Cell::new(false),
             parents,
+            node_group_tag: None,
         }
     }
 
@@ -132,6 +138,18 @@ impl NodeInner {
     /// 设置 detach 状态
     pub fn set_detached(&self, detached: bool) {
         self.is_detached.set(detached);
+    }
+
+    // ==================== 节点分组标签 ====================
+
+    /// 获取节点分组标签
+    pub fn node_group_tag(&self) -> Option<&NodeGroupTag> {
+        self.node_group_tag.as_ref()
+    }
+
+    /// 设置节点分组标签（由 `create_node_inner` 在分组上下文中自动调用）
+    pub fn set_node_group_tag(&mut self, tag: Option<NodeGroupTag>) {
+        self.node_group_tag = tag;
     }
 
     // ==================== 值和梯度访问 ====================

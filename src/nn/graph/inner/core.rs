@@ -37,6 +37,8 @@ impl GraphInner {
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
+            node_group_context: None,
+            next_node_group_id: 0,
             visualization_snapshot: None,
         }
     }
@@ -55,6 +57,8 @@ impl GraphInner {
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
+            node_group_context: None,
+            next_node_group_id: 0,
             visualization_snapshot: None,
         }
     }
@@ -72,6 +76,8 @@ impl GraphInner {
             parameters: HashMap::new(),
             node_type_counts: HashMap::new(),
             counts_reset_pass_id: 0,
+            node_group_context: None,
+            next_node_group_id: 0,
             visualization_snapshot: None,
         }
     }
@@ -86,6 +92,13 @@ impl GraphInner {
     #[allow(dead_code)]
     pub(in crate::nn) const fn last_backward_pass_id(&self) -> u64 {
         self.last_backward_pass_id
+    }
+
+    /// 获取下一个节点分组实例 ID（全局递增）
+    pub fn next_node_group_instance_id(&mut self) -> usize {
+        let id = self.next_node_group_id;
+        self.next_node_group_id += 1;
+        id
     }
 
     /// 设置/重置图的随机种子

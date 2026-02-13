@@ -391,3 +391,42 @@ fn test_normal_sac_style_e2e() -> Result<(), GraphError> {
 
     Ok(())
 }
+
+// ==================== 节点分组标记测试 ====================
+
+/// Normal 的缓存 log_std 和方法产生的节点均带正确的分组标签
+#[test]
+fn test_normal_node_group_tagging() {
+    let graph = Graph::new();
+    let mean = graph
+        .input(&Tensor::new(&[0.0, 1.0], &[1, 2]))
+        .unwrap();
+    let std = graph
+        .input(&Tensor::new(&[1.0, 0.5], &[1, 2]))
+        .unwrap();
+
+    let dist = Normal::new(mean.clone(), std.clone());
+
+    // 缓存的 log_std 应带 "Normal" 标签
+    let log_std = dist.log_std();
+    assert_eq!(log_std.node_group_tag().unwrap().group_type, "Normal");
+
+    // rsample() 产生的节点应带标签
+    let sample = dist.rsample();
+    assert_eq!(sample.node_group_tag().unwrap().group_type, "Normal");
+
+    // entropy() 产生的节点应带标签
+    let entropy = dist.entropy();
+    assert_eq!(entropy.node_group_tag().unwrap().group_type, "Normal");
+
+    // log_prob() 产生的节点应带标签
+    let value = graph
+        .input(&Tensor::new(&[0.5, 0.5], &[1, 2]))
+        .unwrap();
+    let lp = dist.log_prob(&value);
+    assert_eq!(lp.node_group_tag().unwrap().group_type, "Normal");
+
+    // 用户传入的 mean/std Input 节点不应有标签
+    assert!(mean.node_group_tag().is_none());
+    assert!(std.node_group_tag().is_none());
+}

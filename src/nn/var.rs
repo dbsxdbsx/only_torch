@@ -139,6 +139,11 @@ impl Var {
         self.node.name()
     }
 
+    /// 获取节点分组标签（用于可视化 cluster）
+    pub fn node_group_tag(&self) -> Option<&super::graph::NodeGroupTag> {
+        self.node.node_group_tag()
+    }
+
     /// 获取 NodeInner 的引用
     pub(crate) fn node(&self) -> &Rc<NodeInner> {
         &self.node
@@ -499,6 +504,7 @@ impl Var {
                 parent_ids: node.parents().iter().map(|p| p.id()).collect(),
                 is_detached: node.is_detached() || node.type_name() == "Detach",
                 hyperparam_html,
+                node_group_tag: node.node_group_tag().cloned(),
             }
         };
 
@@ -643,6 +649,20 @@ impl Var {
                 if visited.contains(node_id) {
                     node_to_group.insert(node_id.0, group_idx);
                 }
+            }
+        }
+
+        // 收集节点分组标签（分布 cluster）：(group_type, instance_id) → 节点 ID 列表
+        let mut node_group_clusters: HashMap<(String, usize), Vec<u64>> = HashMap::new();
+        let mut node_in_group_cluster: HashSet<u64> = HashSet::new();
+        for snode in &snapshot.nodes {
+            if let Some(tag) = &snode.node_group_tag {
+                let key = (tag.group_type.clone(), tag.instance_id);
+                node_group_clusters
+                    .entry(key)
+                    .or_default()
+                    .push(snode.id.0);
+                node_in_group_cluster.insert(snode.id.0);
             }
         }
 
@@ -1242,10 +1262,54 @@ impl Var {
                 }
             }
 
-            // 推断归属的散装节点
+            // 分布 cluster（嵌套在模型 cluster 内部）
+            for ((group_type, instance_id), group_node_ids) in &node_group_clusters {
+                // 检查该 cluster 的节点是否属于当前模型
+                let model_nodes: Vec<u64> = group_node_ids
+                    .iter()
+                    .filter(|&&nid| {
+                        node_to_model
+                            .get(&nid)
+                            .is_some_and(|m| m == model_name)
+                    })
+                    .copied()
+                    .collect();
+                if model_nodes.is_empty() {
+                    continue;
+                }
+                let cluster_id = format!(
+                    "{model_id}_group_{}_{instance_id}",
+                    group_type.to_lowercase()
+                );
+                dot.push_str(&format!(
+                    "        subgraph cluster_{cluster_id} {{\n"
+                ));
+                dot.push_str(&format!(
+                    "            label=<<B>{group_type}</B>>;\n"
+                ));
+                dot.push_str("            style=\"filled,dashed\";\n");
+                dot.push_str("            fillcolor=\"#F3E5F540\";\n");
+                dot.push_str(
+                    "            fontname=\"Microsoft YaHei,SimHei,Arial\";\n",
+                );
+                dot.push_str("            fontsize=11;\n");
+                dot.push_str("            margin=12;\n");
+                for snode in &snapshot.nodes {
+                    if model_nodes.contains(&snode.id.0) {
+                        dot.push_str("            ");
+                        dot.push_str(&generate_node_def(snode));
+                    }
+                }
+                dot.push_str("        }\n\n");
+            }
+
+            // 推断归属的散装节点（排除已归入分布 cluster 的节点）
             for snode in &snapshot.nodes {
                 let nid = snode.id.0;
-                if !node_to_group.contains_key(&nid) && !rnn_hidden_ids.contains(&nid) {
+                if !node_to_group.contains_key(&nid)
+                    && !rnn_hidden_ids.contains(&nid)
+                    && !node_in_group_cluster.contains(&nid)
+                {
                     if let Some(m) = node_to_model.get(&nid) {
                         if m == model_name {
                             dot.push_str("        ");
@@ -1302,12 +1366,43 @@ impl Var {
             dot.push_str("    }\n\n");
         }
 
-        // 未分组节点
+        // 顶层分布 cluster（不属于任何模型的分组节点）
+        for ((group_type, instance_id), group_node_ids) in &node_group_clusters {
+            let toplevel_nodes: Vec<u64> = group_node_ids
+                .iter()
+                .filter(|&&nid| !node_to_model.contains_key(&nid))
+                .copied()
+                .collect();
+            if toplevel_nodes.is_empty() {
+                continue;
+            }
+            let cluster_id =
+                format!("group_{}_{instance_id}", group_type.to_lowercase());
+            dot.push_str(&format!("    subgraph cluster_{cluster_id} {{\n"));
+            dot.push_str(&format!(
+                "        label=<<B>{group_type}</B>>;\n"
+            ));
+            dot.push_str("        style=\"filled,dashed\";\n");
+            dot.push_str("        fillcolor=\"#F3E5F540\";\n");
+            dot.push_str("        fontname=\"Microsoft YaHei,SimHei,Arial\";\n");
+            dot.push_str("        fontsize=11;\n");
+            dot.push_str("        margin=12;\n");
+            for snode in &snapshot.nodes {
+                if toplevel_nodes.contains(&snode.id.0) {
+                    dot.push_str("        ");
+                    dot.push_str(&generate_node_def(snode));
+                }
+            }
+            dot.push_str("    }\n\n");
+        }
+
+        // 未分组节点（排除已归入分布 cluster 的节点）
         for snode in &snapshot.nodes {
             let nid = snode.id.0;
             if !node_to_group.contains_key(&nid)
                 && !node_to_model.contains_key(&nid)
                 && !rnn_hidden_ids.contains(&nid)
+                && !node_in_group_cluster.contains(&nid)
             {
                 dot.push_str("    ");
                 dot.push_str(&generate_node_def(snode));

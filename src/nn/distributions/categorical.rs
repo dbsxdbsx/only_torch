@@ -18,6 +18,7 @@
  */
 
 use crate::nn::Var;
+use crate::nn::graph::NodeGroupContext;
 use crate::nn::{VarActivationOps, VarReduceOps, VarShapeOps};
 use crate::tensor::Tensor;
 
@@ -51,6 +52,8 @@ pub struct Categorical {
     probs: Var,
     /// log_softmax(logits) — 构造时缓存，所有方法共享
     log_probs: Var,
+    /// 分组实例 ID（用于可视化 cluster 标记）
+    instance_id: usize,
 }
 
 impl Categorical {
@@ -62,12 +65,18 @@ impl Categorical {
     /// # 参数
     /// - `logits` — 未归一化的对数概率，形状 `[batch, num_classes]`
     pub fn new(logits: Var) -> Self {
+        let instance_id = logits
+            .graph()
+            .borrow_mut()
+            .next_node_group_instance_id();
+        let _guard = NodeGroupContext::new(&logits, "Categorical", instance_id);
         let probs = logits.softmax();
         let log_probs = logits.log_softmax();
         Self {
             logits,
             probs,
             log_probs,
+            instance_id,
         }
     }
 
@@ -118,6 +127,7 @@ impl Categorical {
     /// # 返回
     /// Var，形状 `[batch, 1]`
     pub fn log_prob(&self, action: &Tensor) -> Var {
+        let _guard = NodeGroupContext::new(&self.logits, "Categorical", self.instance_id);
         self.log_probs
             .gather(1, action)
             .expect("Categorical log_prob: gather 失败")
@@ -132,6 +142,7 @@ impl Categorical {
     /// # 返回
     /// Var，形状 `[batch, 1]`
     pub fn entropy(&self) -> Var {
+        let _guard = NodeGroupContext::new(&self.logits, "Categorical", self.instance_id);
         let weighted = &self.probs * &self.log_probs;
         (-&weighted).sum_axis(1)
     }

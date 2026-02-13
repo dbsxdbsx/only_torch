@@ -30,7 +30,7 @@ mod visualization;
 // 注意：bptt.rs 和 recurrent.rs 已删除
 // 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
 
-use super::types::{LayerGroup, RecurrentLayerMeta};
+use super::types::{LayerGroup, NodeGroupTag, RecurrentLayerMeta};
 use crate::nn::nodes::NodeInner;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
@@ -77,6 +77,15 @@ pub struct GraphInner {
     /// 上次重置计数器时的 forward_pass_id
     /// 当 forward 完成后，下一次创建节点时会检测到 pass_id 变化并重置计数器
     pub(in crate::nn::graph) counts_reset_pass_id: u64,
+
+    // ========== 节点分组上下文 ==========
+    /// 当前激活的分组上下文（非栈，"外层优先"策略）
+    ///
+    /// 由 `NodeGroupContext` RAII guard 设置/清除。
+    /// 在上下文激活期间，`create_node_inner` 会自动给新建的计算节点打上此标签。
+    pub(in crate::nn::graph) node_group_context: Option<NodeGroupTag>,
+    /// 下一个分组实例 ID（全局递增）
+    pub(in crate::nn::graph) next_node_group_id: usize,
 
     // ========== 可视化快照 ==========
     /// 可视化拓扑快照（由 `Graph::snapshot_once` 写入）
