@@ -32,7 +32,7 @@ test-filter pattern:
 # ==================== Examples ====================
 
 # 运行所有 examples（含 RL）
-examples: example-xor example-iris example-sine example-mnist example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-cartpole-sac
+examples: example-xor example-iris example-sine example-mnist example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-cartpole-sac example-pendulum-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -101,6 +101,10 @@ example-multi-label:
 example-cartpole-sac:
     @echo "=== Running CartPole SAC (requires Python + gymnasium) ==="
     cargo run --example cartpole_sac
+
+example-pendulum-sac:
+    @echo "=== Running Pendulum SAC (requires Python + gymnasium) ==="
+    cargo run --example pendulum_sac
 
 # ==================== 代码质量 ====================
 
