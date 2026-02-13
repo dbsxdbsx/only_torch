@@ -31,12 +31,13 @@ pub struct DualOutputClassifier {
 
 impl DualOutputClassifier {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("DualOutputClassifier");
         // 共享层：1 -> 16（增加容量）
-        let shared = Linear::new(graph, 1, 16, true, "shared")?;
+        let shared = Linear::new(&graph, 1, 16, true, "shared")?;
         // 分类头：16 -> 2（二分类 logits）
-        let cls_head = Linear::new(graph, 16, 2, true, "cls_head")?;
+        let cls_head = Linear::new(&graph, 16, 2, true, "cls_head")?;
         // 回归头：16 -> 1（绝对值预测）
-        let reg_head = Linear::new(graph, 16, 1, true, "reg_head")?;
+        let reg_head = Linear::new(&graph, 16, 1, true, "reg_head")?;
 
         Ok(Self {
             shared,

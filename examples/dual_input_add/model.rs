@@ -23,10 +23,11 @@ pub struct DualInputAdder {
 
 impl DualInputAdder {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("DualInputAdder");
         Ok(Self {
-            fc1: Linear::new(graph, 1, 4, true, "fc1")?,
-            fc2: Linear::new(graph, 1, 4, true, "fc2")?,
-            fc_out: Linear::new(graph, 8, 1, true, "fc_out")?,
+            fc1: Linear::new(&graph, 1, 4, true, "fc1")?,
+            fc2: Linear::new(&graph, 1, 4, true, "fc2")?,
+            fc_out: Linear::new(&graph, 8, 1, true, "fc_out")?,
         })
     }
 

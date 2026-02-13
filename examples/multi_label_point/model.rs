@@ -33,10 +33,11 @@ pub struct MultiLabelPointClassifier {
 
 impl MultiLabelPointClassifier {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("MultiLabelPointClassifier");
         Ok(Self {
-            fc1: Linear::new(graph, 2, 32, true, "fc1")?,
-            fc2: Linear::new(graph, 32, 32, true, "fc2")?,
-            fc3: Linear::new(graph, 32, 4, true, "fc3")?, // 4 个独立的 logits
+            fc1: Linear::new(&graph, 2, 32, true, "fc1")?,
+            fc2: Linear::new(&graph, 32, 32, true, "fc2")?,
+            fc3: Linear::new(&graph, 32, 4, true, "fc3")?, // 4 个独立的 logits
         })
     }
 

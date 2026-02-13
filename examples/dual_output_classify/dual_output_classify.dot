@@ -5,51 +5,61 @@ digraph ComputeGraph {
     node [fontname="Microsoft YaHei,SimHei,Arial"];
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
-    subgraph cluster_group_linear_1 {
-        label=<<B>cls_head</B><BR/><FONT POINT-SIZE="9">Linear: [?, 16] → [?, 2]</FONT>>;
-        style=filled;
-        fillcolor="#E3F2FD80";
+    subgraph cluster_model_DualOutputClassifier {
+        label=<<B>DualOutputClassifier</B><BR/><FONT POINT-SIZE="9">(83 params)</FONT>>;
+        style="filled,bold";
+        fillcolor="#FFEBEE40";
         fontname="Microsoft YaHei,SimHei,Arial";
-        fontsize=11;
-        margin=12;
-            "2" [label=<add_1<BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "4" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "5" [label=<cls_head_b<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "7" [label=<cls_head_W<BR/><B>Parameter</B><BR/>[16, 2]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    }
+        fontsize=13;
+        margin=16;
 
-    subgraph cluster_group_linear_0 {
-        label=<<B>shared</B><BR/><FONT POINT-SIZE="9">Linear: [?, 1] → [?, 16]</FONT>>;
-        style=filled;
-        fillcolor="#E8F5E980";
-        fontname="Microsoft YaHei,SimHei,Arial";
-        fontsize=11;
-        margin=12;
-            "8" [label=<add_2<BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "9" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "10" [label=<shared_b<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "12" [label=<shared_W<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    }
+        subgraph cluster_DualOutputClassifier_cls_head {
+            label=<<B>cls_head</B><BR/><FONT POINT-SIZE="9">Linear: [?, 16] → [?, 2]</FONT>>;
+            style=filled;
+            fillcolor="#E3F2FD80";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=11;
+            margin=12;
+                "2" [label=<add_1<BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "4" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "5" [label=<cls_head_b<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "7" [label=<cls_head_W<BR/><B>Parameter</B><BR/>[16, 2]<BR/>(32 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        }
 
-    subgraph cluster_group_linear_2 {
-        label=<<B>reg_head</B><BR/><FONT POINT-SIZE="9">Linear: [?, 16] → [?, 1]</FONT>>;
-        style=filled;
-        fillcolor="#FFF3E080";
-        fontname="Microsoft YaHei,SimHei,Arial";
-        fontsize=11;
-        margin=12;
-            "16" [label=<add_3<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "17" [label=<matmul_3<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "18" [label=<reg_head_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "19" [label=<reg_head_W<BR/><B>Parameter</B><BR/>[16, 1]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        subgraph cluster_DualOutputClassifier_shared {
+            label=<<B>shared</B><BR/><FONT POINT-SIZE="9">Linear: [?, 1] → [?, 16]</FONT>>;
+            style=filled;
+            fillcolor="#E8F5E980";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=11;
+            margin=12;
+                "8" [label=<add_2<BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "9" [label=<matmul_2<BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "10" [label=<shared_b<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "12" [label=<shared_W<BR/><B>Parameter</B><BR/>[1, 16]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        }
+
+        subgraph cluster_DualOutputClassifier_reg_head {
+            label=<<B>reg_head</B><BR/><FONT POINT-SIZE="9">Linear: [?, 16] → [?, 1]</FONT>>;
+            style=filled;
+            fillcolor="#FFF3E080";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=11;
+            margin=12;
+                "16" [label=<add_3<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "17" [label=<matmul_3<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "18" [label=<reg_head_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "19" [label=<reg_head_W<BR/><B>Parameter</B><BR/>[16, 1]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        }
+
+        "6" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "11" [label=<input_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "14" [label=<abs_1<BR/><B>Abs</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     "1" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]<BR/><FONT COLOR="#1976D2" POINT-SIZE="9">▸ Classification Loss</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#1976D2"];
     "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "6" [label=<tanh_1<BR/><B>Tanh</B><BR/>[?, 16]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "11" [label=<input_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "13" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]<BR/><FONT COLOR="#D32F2F" POINT-SIZE="9">▸ Regression Loss</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#D32F2F"];
-    "14" [label=<abs_1<BR/><B>Abs</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     "15" [label=<target_2<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
 
     "2" -> "1" [color="#1976D2"];

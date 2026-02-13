@@ -24,10 +24,11 @@ pub struct MnistMLP {
 
 impl MnistMLP {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("MnistMLP");
         Ok(Self {
             // 784 = 28x28 (MNIST 图片展平后的维度)
-            fc1: Linear::new(graph, 784, 128, true, "fc1")?,
-            fc2: Linear::new(graph, 128, 10, true, "fc2")?,
+            fc1: Linear::new(&graph, 784, 128, true, "fc1")?,
+            fc2: Linear::new(&graph, 128, 10, true, "fc2")?,
         })
     }
 

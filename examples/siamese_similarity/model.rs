@@ -34,12 +34,13 @@ pub struct SiameseSimilarity {
 
 impl SiameseSimilarity {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("SiameseSimilarity");
         // 共享编码器：1 -> 16 -> 8（两层，容量更大）
-        let encoder1 = Linear::new(graph, 1, 16, true, "shared_enc1")?;
-        let encoder2 = Linear::new(graph, 16, 8, true, "shared_enc2")?;
+        let encoder1 = Linear::new(&graph, 1, 16, true, "shared_enc1")?;
+        let encoder2 = Linear::new(&graph, 16, 8, true, "shared_enc2")?;
         // 分类器：16 -> 8 -> 1（两层，更强的非线性拟合）
-        let classifier1 = Linear::new(graph, 16, 8, true, "classifier1")?;
-        let classifier2 = Linear::new(graph, 8, 1, true, "classifier2")?;
+        let classifier1 = Linear::new(&graph, 16, 8, true, "classifier1")?;
+        let classifier2 = Linear::new(&graph, 8, 1, true, "classifier2")?;
 
         Ok(Self {
             encoder1,

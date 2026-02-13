@@ -35,16 +35,17 @@ pub struct MultiIOFusion {
 
 impl MultiIOFusion {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("MultiIOFusion");
         // 编码器 A：4 -> 8
-        let encoder_a = Linear::new(graph, 4, 8, true, "encoder_a")?;
+        let encoder_a = Linear::new(&graph, 4, 8, true, "encoder_a")?;
         // 编码器 B：8 -> 8
-        let encoder_b = Linear::new(graph, 8, 8, true, "encoder_b")?;
+        let encoder_b = Linear::new(&graph, 8, 8, true, "encoder_b")?;
         // 融合层：16 -> 16（拼接后的特征）
-        let fusion = Linear::new(graph, 16, 16, true, "fusion")?;
+        let fusion = Linear::new(&graph, 16, 16, true, "fusion")?;
         // 分类头：16 -> 2
-        let cls_head = Linear::new(graph, 16, 2, true, "cls_head")?;
+        let cls_head = Linear::new(&graph, 16, 2, true, "cls_head")?;
         // 回归头：16 -> 1
-        let reg_head = Linear::new(graph, 16, 1, true, "reg_head")?;
+        let reg_head = Linear::new(&graph, 16, 1, true, "reg_head")?;
 
         Ok(Self {
             encoder_a,

@@ -22,11 +22,12 @@ impl CaliforniaHousingMLP {
     /// # 参数
     /// - `graph`: 计算图（使用 `Graph::new_with_seed` 确保可复现）
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("CaliforniaHousingMLP");
         Ok(Self {
-            fc1: Linear::new(graph, 8, 128, true, "fc1")?,
-            fc2: Linear::new(graph, 128, 64, true, "fc2")?,
-            fc3: Linear::new(graph, 64, 32, true, "fc3")?,
-            fc4: Linear::new(graph, 32, 1, true, "fc4")?,
+            fc1: Linear::new(&graph, 8, 128, true, "fc1")?,
+            fc2: Linear::new(&graph, 128, 64, true, "fc2")?,
+            fc3: Linear::new(&graph, 64, 32, true, "fc3")?,
+            fc4: Linear::new(&graph, 32, 1, true, "fc4")?,
         })
     }
 

@@ -18,9 +18,10 @@ pub struct XorMLP {
 
 impl XorMLP {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("XorMLP");
         Ok(Self {
-            fc1: Linear::new(graph, 2, 4, true, "fc1")?,
-            fc2: Linear::new(graph, 4, 2, true, "fc2")?,
+            fc1: Linear::new(&graph, 2, 4, true, "fc1")?,
+            fc2: Linear::new(&graph, 4, 2, true, "fc2")?,
         })
     }
 

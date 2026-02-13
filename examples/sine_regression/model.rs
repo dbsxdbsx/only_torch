@@ -15,9 +15,10 @@ pub struct SineMLP {
 
 impl SineMLP {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("SineMLP");
         Ok(Self {
-            fc1: Linear::new(graph, 1, 32, true, "fc1")?,
-            fc2: Linear::new(graph, 32, 1, true, "fc2")?,
+            fc1: Linear::new(&graph, 1, 32, true, "fc1")?,
+            fc2: Linear::new(&graph, 32, 1, true, "fc2")?,
         })
     }
 

@@ -16,10 +16,11 @@ pub struct IrisMLP {
 
 impl IrisMLP {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
+        let graph = graph.with_model_name("IrisMLP");
         Ok(Self {
-            fc1: Linear::new(graph, 4, 10, true, "fc1")?,
-            fc2: Linear::new(graph, 10, 10, true, "fc2")?,
-            fc3: Linear::new(graph, 10, 3, true, "fc3")?,
+            fc1: Linear::new(&graph, 4, 10, true, "fc1")?,
+            fc2: Linear::new(&graph, 10, 10, true, "fc2")?,
+            fc3: Linear::new(&graph, 10, 3, true, "fc3")?,
         })
     }
 
