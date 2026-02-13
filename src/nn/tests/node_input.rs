@@ -11,7 +11,7 @@
  * 6. TargetInput（Target 变体，底层同 BasicInput）
  */
 
-use crate::nn::var_ops::{VarActivationOps, VarLossOps};
+use crate::nn::var::ops::{VarActivationOps, VarLossOps};
 use crate::nn::{Graph, GraphError, Init};
 use crate::tensor::Tensor;
 use std::rc::Rc;

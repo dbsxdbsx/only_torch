@@ -6,7 +6,7 @@
  */
 
 use crate::nn::Graph;
-use crate::nn::var_ops::VarMatrixOps;
+use crate::nn::var::ops::VarMatrixOps;
 use crate::tensor::Tensor;
 
 /// 测试 ZerosLike 基本功能
@@ -172,7 +172,7 @@ fn test_zeros_like_3d_input() {
 /// 测试 ZerosLike 与 MatMul 结合使用并进行反向传播
 #[test]
 fn test_zeros_like_with_matmul_backward() {
-    use crate::nn::var_ops::VarLossOps;
+    use crate::nn::var::ops::VarLossOps;
 
     let graph = Graph::new();
 
@@ -209,7 +209,7 @@ fn test_zeros_like_with_matmul_backward() {
 /// 测试 ZerosLike 动态 batch 与反向传播
 #[test]
 fn test_zeros_like_dynamic_batch_with_backward() {
-    use crate::nn::var_ops::VarLossOps;
+    use crate::nn::var::ops::VarLossOps;
 
     let graph = Graph::new();
 

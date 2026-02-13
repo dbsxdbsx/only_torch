@@ -408,7 +408,7 @@ fn test_softmax_dynamic_batch_forward() {
 /// 测试 Softmax 节点在不同 batch_size 下的反向传播
 #[test]
 fn test_softmax_dynamic_batch_backward() {
-    use crate::nn::var_ops::VarLossOps;
+    use crate::nn::var::ops::VarLossOps;
 
     let graph = Graph::new();
 

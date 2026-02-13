@@ -436,7 +436,7 @@ fn test_flatten_gradient_accumulation() -> Result<(), GraphError> {
 #[test]
 fn test_flatten_dynamic_shape_propagation() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::var::ops::VarShapeOps;
 
     let graph = Graph::new();
 
@@ -461,7 +461,7 @@ fn test_flatten_dynamic_shape_propagation() {
 #[test]
 fn test_flatten_dynamic_batch_forward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::var::ops::VarShapeOps;
 
     let graph = Graph::new();
 
@@ -489,7 +489,7 @@ fn test_flatten_dynamic_batch_forward() {
 #[test]
 fn test_flatten_dynamic_batch_backward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
+    use crate::nn::var::ops::{VarLossOps, VarShapeOps};
 
     let graph = Graph::new();
 

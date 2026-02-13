@@ -17,16 +17,20 @@ fn next_source_id() -> u64 {
     TENSOR_SOURCE_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 mod ops {
+    pub mod activation;
     pub mod add;
     pub mod add_assign;
     pub mod div;
     pub mod div_assign;
+    pub mod elementwise;
     pub mod eq;
     pub mod mat_mul;
     pub mod mul;
     pub mod neg;
     pub mod mul_assign;
     pub mod others;
+    pub mod shape;
+    pub mod reduce;
     pub mod sub;
     pub mod sub_assign;
 }

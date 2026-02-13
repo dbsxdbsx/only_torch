@@ -929,7 +929,7 @@ fn test_var_var_then_tensor() {
 /// 多 loss 共享参数，多次 backward() 梯度累积正确
 #[test]
 fn test_var_backward_multi_loss() {
-    use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
+    use crate::nn::var::ops::{VarLossOps, VarMatrixOps};
 
     let graph = Graph::new();
     // 共享权重 [2, 1]
@@ -970,7 +970,7 @@ fn test_var_backward_multi_loss() {
 /// 同一 loss 可多次 backward（值由 Rc 管理，天然支持）
 #[test]
 fn test_var_backward_multiple_times() {
-    use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
+    use crate::nn::var::ops::{VarLossOps, VarMatrixOps};
 
     let graph = Graph::new_with_seed(42);
     let w = graph

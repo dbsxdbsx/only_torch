@@ -5,7 +5,7 @@
 
 use crate::nn::Graph;
 use crate::nn::var::Init;
-use crate::nn::var_ops::{VarLossOps, VarReduceOps};
+use crate::nn::var::ops::{VarLossOps, VarReduceOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 

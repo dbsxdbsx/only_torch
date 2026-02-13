@@ -430,7 +430,7 @@ fn test_mat_mul_dynamic_shape_propagation() {
         .unwrap();
 
     // MatMul: h0 @ w -> [?, 32]
-    use crate::nn::var_ops::VarMatrixOps;
+    use crate::nn::var::ops::VarMatrixOps;
     let result = h0.matmul(&w).unwrap();
 
     // 验证动态形状传播
@@ -444,7 +444,7 @@ fn test_mat_mul_dynamic_shape_propagation() {
 #[test]
 fn test_mat_mul_dynamic_batch_forward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarMatrixOps;
+    use crate::nn::var::ops::VarMatrixOps;
 
     let graph = Graph::new();
 
@@ -476,7 +476,7 @@ fn test_mat_mul_dynamic_batch_forward() {
 #[test]
 fn test_mat_mul_dynamic_batch_backward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::{VarLossOps, VarMatrixOps};
+    use crate::nn::var::ops::{VarLossOps, VarMatrixOps};
 
     let graph = Graph::new();
 

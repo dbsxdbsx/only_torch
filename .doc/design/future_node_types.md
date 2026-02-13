@@ -197,7 +197,7 @@ log π(a|s) = log N(u|μ,σ) - Σ log(1 - tanh²(u) + ε)
 // 3. 实现 TraitNode trait
 // 4. 在 NodeType 枚举中添加变体
 // 5. 在 GraphInner 中添加 new_xxx_node() 方法
-// 6. 在 var_ops 中添加 Var 扩展方法
+// 6. 在 var/ops 中添加 Var 扩展方法
 // 7. 添加测试文件 src/nn/tests/node_xxx.rs
 ```
 
@@ -265,7 +265,7 @@ let summary = get_node_type_summary();
 - [ ] `src/nn/nodes/raw_node/mod.rs` - NodeType 枚举添加变体（strum 自动识别）
 - [ ] `src/nn/debug.rs` - `get_node_metadata()` 添加描述（否则测试失败提醒）
 - [ ] `src/nn/graph/inner/node_builders.rs` - GraphInner 构建方法
-- [ ] `src/nn/var_ops/xxx.rs` - Var 扩展方法（如需要）
+- [ ] `src/nn/var/ops/xxx.rs` - Var 扩展方法（如需要）
 - [ ] `src/nn/tests/node_xxx.rs` - 测试文件
 - [ ] `src/nn/tests/mod.rs` - 测试模块注册
 - [ ] Python 对照测试（复杂计算验证）

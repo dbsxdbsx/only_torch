@@ -23,7 +23,7 @@
  */
 
 use crate::nn::graph::NodeGroupContext;
-use crate::nn::var_ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
+use crate::nn::var::ops::{VarActivationOps, VarMatrixOps, VarShapeOps};
 use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
 /// Lstm (长短期记忆) 层 - 展开式设计（无缓存）

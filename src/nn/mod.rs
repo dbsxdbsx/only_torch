@@ -19,7 +19,6 @@ mod nodes;
 pub mod optimizer;
 mod shape;
 mod var;
-mod var_ops;
 
 // pub use criterion::{...}; // 已移除
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
@@ -37,7 +36,7 @@ pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
 pub use optimizer::{Adam, Optimizer, SGD};
 pub use shape::{Dim, DynamicShape};
 pub use var::{Init, IntoVar, Var};
-pub use var_ops::{
+pub use var::ops::{
     GatherIndex, VarActivationOps, VarLossOps, VarMatrixOps, VarReduceOps, VarRegularizationOps,
     VarShapeOps,
 };

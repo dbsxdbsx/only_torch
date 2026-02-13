@@ -248,7 +248,7 @@ fn test_mean_gradient_accumulation() -> Result<(), GraphError> {
 #[test]
 fn test_mean_dynamic_shape_propagation() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarReduceOps;
+    use crate::nn::var::ops::VarReduceOps;
 
     let graph = Graph::new();
 
@@ -274,7 +274,7 @@ fn test_mean_dynamic_shape_propagation() {
 #[test]
 fn test_mean_dynamic_batch_forward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarReduceOps;
+    use crate::nn::var::ops::VarReduceOps;
 
     let graph = Graph::new();
 
@@ -314,7 +314,7 @@ fn test_mean_dynamic_batch_forward() {
 #[test]
 fn test_mean_dynamic_batch_backward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::{VarLossOps, VarReduceOps};
+    use crate::nn::var::ops::{VarLossOps, VarReduceOps};
 
     let graph = Graph::new();
 

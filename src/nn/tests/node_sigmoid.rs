@@ -280,7 +280,7 @@ fn test_sigmoid_dynamic_shape_propagation() {
     let h0 = graph.zeros_like(&x, &[16], None).unwrap(); // [?, 16]
 
     // 创建 Sigmoid: h0 -> sigmoid(h0) -> [?, 16]
-    use crate::nn::var_ops::VarActivationOps;
+    use crate::nn::var::ops::VarActivationOps;
     let result = h0.sigmoid();
 
     // 验证动态形状传播
@@ -294,7 +294,7 @@ fn test_sigmoid_dynamic_shape_propagation() {
 #[test]
 fn test_sigmoid_dynamic_batch_forward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarActivationOps;
+    use crate::nn::var::ops::VarActivationOps;
 
     let graph = Graph::new();
 
@@ -323,7 +323,7 @@ fn test_sigmoid_dynamic_batch_forward() {
 #[test]
 fn test_sigmoid_dynamic_batch_backward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
+    use crate::nn::var::ops::{VarActivationOps, VarLossOps};
 
     let graph = Graph::new();
 

@@ -399,7 +399,7 @@ fn test_reshape_dynamic_shape_propagation() {
 
     // Reshape: [batch, 3, 4] -> [batch, 12]（保持 batch 维度）
     // 注意：这里 target_shape 是 [2, 12]，对应 batch=2 时的形状
-    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::var::ops::VarShapeOps;
     let reshaped = x.reshape(&[2, 12]).unwrap();
 
     // 验证动态形状传播
@@ -416,7 +416,7 @@ fn test_reshape_dynamic_shape_propagation() {
 #[test]
 fn test_reshape_dynamic_batch_forward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarShapeOps;
+    use crate::nn::var::ops::VarShapeOps;
 
     let graph = Graph::new();
 
@@ -444,7 +444,7 @@ fn test_reshape_dynamic_batch_forward() {
 #[test]
 fn test_reshape_dynamic_batch_backward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::{VarLossOps, VarShapeOps};
+    use crate::nn::var::ops::{VarLossOps, VarShapeOps};
 
     let graph = Graph::new();
 

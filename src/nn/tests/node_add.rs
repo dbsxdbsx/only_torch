@@ -594,7 +594,7 @@ fn test_add_dynamic_batch_forward() {
 #[test]
 fn test_add_dynamic_batch_backward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarLossOps;
+    use crate::nn::var::ops::VarLossOps;
 
     let graph = Graph::new();
 

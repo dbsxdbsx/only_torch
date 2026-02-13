@@ -294,7 +294,7 @@ fn test_softmax_gradient_accumulation() -> Result<(), GraphError> {
 #[test]
 fn test_softmax_dynamic_shape_propagation() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarActivationOps;
+    use crate::nn::var::ops::VarActivationOps;
 
     let graph = Graph::new();
 
@@ -316,7 +316,7 @@ fn test_softmax_dynamic_shape_propagation() {
 #[test]
 fn test_softmax_dynamic_batch_forward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::VarActivationOps;
+    use crate::nn::var::ops::VarActivationOps;
 
     let graph = Graph::new();
 
@@ -353,7 +353,7 @@ fn test_softmax_dynamic_batch_forward() {
 #[test]
 fn test_softmax_dynamic_batch_backward() {
     use crate::nn::Graph;
-    use crate::nn::var_ops::{VarActivationOps, VarLossOps};
+    use crate::nn::var::ops::{VarActivationOps, VarLossOps};
 
     let graph = Graph::new();
 

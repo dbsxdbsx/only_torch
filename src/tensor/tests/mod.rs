@@ -23,7 +23,9 @@ mod minimum;
 mod mul;
 mod mul_assign;
 mod new;
+mod elementwise;
 mod others;
+mod reduce;
 mod property;
 mod sub;
 mod sub_assign;
@@ -36,6 +38,7 @@ mod source_id;
 
 mod concat;
 mod log_softmax;
+mod shape;
 mod slice;
 mod softmax;
 mod stack;
