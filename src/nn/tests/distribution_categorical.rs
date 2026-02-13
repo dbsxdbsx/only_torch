@@ -35,11 +35,7 @@ fn test_categorical_log_prob_basic() {
     let dist = Categorical::new(logits);
 
     // 测试每个动作的 log_prob
-    for (action_idx, expected) in [
-        (0, -1.46436882_f32),
-        (1, -0.46436882),
-        (2, -1.96436882),
-    ] {
+    for (action_idx, expected) in [(0, -1.46436882_f32), (1, -0.46436882), (2, -1.96436882)] {
         let action = Tensor::new(&[action_idx as f32], &[1, 1]);
         let lp = dist.log_prob(&action);
         lp.forward().unwrap();
@@ -212,10 +208,7 @@ fn test_categorical_sample_distribution() {
 
     // 粗略检查比例：action=1 占比应 > 40%（放宽阈值避免随机失败）
     let ratio = counts[1] as f32 / num_samples as f32;
-    assert!(
-        ratio > 0.4,
-        "action=1 占比应 > 40%，实际 {ratio:.2}%"
-    );
+    assert!(ratio > 0.4, "action=1 占比应 > 40%，实际 {ratio:.2}%");
 }
 
 // ==================== 梯度测试 ====================

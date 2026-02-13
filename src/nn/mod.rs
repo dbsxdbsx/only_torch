@@ -9,8 +9,8 @@
 // mod criterion; // 已移除，统一用 Var 方法（如 mse_loss()）
 pub mod debug;
 mod descriptor;
-pub mod distributions;
 mod display;
+pub mod distributions;
 mod graph;
 pub mod layer;
 // mod model_state; // 已移除
