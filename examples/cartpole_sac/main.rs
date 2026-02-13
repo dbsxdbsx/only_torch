@@ -19,6 +19,7 @@
 mod model;
 
 use model::SacAgent;
+use only_torch::nn::distributions::Categorical;
 use only_torch::nn::{
     Adam, Graph, GraphError, Module, Optimizer, VarActivationOps, VarLossOps, VarReduceOps,
     VarShapeOps,
@@ -191,10 +192,9 @@ fn main() -> Result<(), GraphError> {
             let mut episode_length = 0;
 
             loop {
-                // 选择动作
+                // 选择动作：使用 Categorical 分布采样
                 let obs_tensor = Tensor::new(&obs, &[1, obs_dim]);
-                let (probs, _log_probs) = agent.actor.get_action_probs(&obs_tensor)?;
-                let action = agent.actor.sample_action(&probs, &mut rng);
+                let (action, _probs) = agent.actor.sample_action(&obs_tensor)?;
 
                 // 执行动作
                 let (next_obs_vec, reward, done) = env.step(&[action as f32]);
@@ -284,45 +284,41 @@ fn main() -> Result<(), GraphError> {
                     critic2_optimizer.step()?;
 
                     // ========== Actor 更新 ==========
-                    // SAC-Discrete Actor Loss: 最小化 KL(π || exp(Q/α)/Z)
-                    // 展开后等价于: L = Σ_a π(a|s) * (α * log π(a|s) - Q(s,a))
-                    // 注意：KL 散度不对称，期望必须用当前策略 π 计算！
+                    // SAC-Discrete Actor Loss: L = -α * H(π) - E_π[Q]
                     let q1 = agent.critic1.get_q_values(&obs_batch)?;
                     let q2 = agent.critic2.get_q_values(&obs_batch)?;
                     let q_min = q1.minimum(&q2);
 
-                    // Actor 前向传播（整个计算保持在计算图中）
+                    // Actor 前向传播 → 构建 Categorical 分布
                     let actor_logits = agent
                         .actor
                         .forward(&graph.input_named(&obs_batch, "obs")?)?;
+                    let dist = Categorical::new(actor_logits);
 
-                    // log_softmax 比 softmax + ln 数值更稳定
-                    let log_probs = actor_logits.log_softmax(); // Var [batch, action_dim]
-                    let probs = actor_logits.softmax(); // Var [batch, action_dim]
+                    // 使用分布 API 计算 entropy 和 E_π[Q]
+                    let entropy = dist.entropy(); // Var [batch, 1]
+                    let probs = dist.probs(); // Var [batch, action_dim]（缓存的，无冗余节点）
+                    let expected_q = (&probs * &q_min).sum_axis(1); // Var [batch, 1]
 
-                    // inside = α * log π(a|s) - Q(s,a)
-                    // Var * Tensor（广播标量）= Var，Var - Tensor = Var
+                    // Actor Loss = mean(-α * H - E_π[Q])
                     let alpha = agent.alpha();
-                    let alpha_tensor = Tensor::ones(&[1, 1]) * alpha;
-                    let inside = &log_probs * &alpha_tensor - &q_min;
+                    let neg_alpha = Tensor::new(&[-alpha], &[1, 1]);
+                    let actor_loss = (&entropy * neg_alpha - &expected_q).mean();
 
-                    // Actor Loss = Σ_a π(a|s) * inside，然后对 batch 求均值
-                    let weighted = &probs * &inside; // Var * Var = Var
-                    let action_sum = weighted.sum_axis(1); // Var [batch, 1]
-                    let actor_loss = action_sum.mean(); // Var [1, 1]
-
-                    // 先 forward 获取 alpha 更新所需的中间值（backward 也会 ensure-forward，此处显式调用确保值可用）
+                    // 先 forward 获取 entropy 值用于 alpha 更新
                     actor_loss.forward()?;
-                    let probs_val = probs.value()?.unwrap();
-                    let log_probs_val = log_probs.value()?.unwrap();
+                    let entropy_val = entropy.value()?.unwrap();
+                    let batch_size = entropy_val.shape()[0] as f32;
+                    let avg_entropy =
+                        entropy_val.sum().get_data_number().unwrap() / batch_size;
 
-                    // 然后执行反向传播和优化
+                    // 反向传播和优化
                     actor_optimizer.zero_grad()?;
                     actor_loss.backward()?;
                     actor_optimizer.step()?;
 
                     // ========== Alpha 更新 ==========
-                    agent.update_alpha(&log_probs_val, &probs_val);
+                    agent.update_alpha(avg_entropy);
 
                     // ========== 软更新目标网络 ==========
                     agent.soft_update_targets();

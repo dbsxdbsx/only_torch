@@ -396,6 +396,15 @@ impl NodeInner {
     /// 从当前节点（通常是 loss）开始，DFS 遍历所有祖先节点，
     /// 返回拓扑逆序的节点列表（先子节点后父节点）。
     ///
+    /// # 实现
+    /// 使用**后序 DFS + 反转**确保正确的反向传播顺序：
+    /// - 后序 DFS：先递归访问所有父节点（输入），再压入当前节点
+    ///   → 产生正向拓扑序（输入在前，输出在后）
+    /// - 反转：得到反向拓扑序（loss 在前，输入在后）
+    ///
+    /// 这保证了当处理某个节点时，所有消费该节点输出的下游节点
+    /// 都已将梯度传播回来，避免中间节点因梯度不完整而传播错误梯度。
+    ///
     /// # 参数
     /// - `self`: 起始节点的 Rc 引用（需要 &Rc<Self> 以便 clone）
     ///
@@ -414,14 +423,20 @@ impl NodeInner {
                 return;
             }
             visited.insert(node.id());
-            result.push(node.clone());
 
+            // 后序：先递归访问所有父节点
             for parent in node.parents() {
                 dfs(parent, visited, result);
             }
+
+            // 再压入当前节点（保证当前节点排在所有父节点之后）
+            result.push(node.clone());
         }
 
         dfs(self, &mut visited, &mut result);
+
+        // 反转：从正向拓扑序 → 反向拓扑序（loss 在前，输入在后）
+        result.reverse();
         result
     }
 

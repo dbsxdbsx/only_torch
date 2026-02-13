@@ -6,7 +6,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError};
+use crate::nn::{Graph, GraphError, Init, Linear, Module, VarActivationOps, VarReduceOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 use std::rc::Rc;
@@ -513,4 +513,136 @@ fn test_pass_id_rollback_on_backward_error() {
     gi.forward_via_node_inner(&loss).unwrap();
     gi.backward_via_node_inner(&loss).unwrap();
     assert_eq!(gi.last_backward_pass_id(), 1);
+}
+
+/// 测试中间节点有多个子节点时的梯度传播
+///
+/// 回归测试：修复 backward_topo_order 使用前序 DFS 导致共享中间节点
+/// 被过早处理的 bug。当中间节点（如 Linear 层输出）有多个消费者时，
+/// 必须等所有消费者的梯度回传完毕后，才能向上游传播。
+///
+/// 测试方法：
+///   方式一（合并）: loss = sum(linear_out * (a + b + c))
+///   方式二（拆分）: loss = sum(linear_out * a) + sum(linear_out * b) + sum(linear_out * c)
+/// 数学上完全等价，Linear 的权重梯度应一致。
+#[test]
+fn test_intermediate_node_multi_children_gradient() -> Result<(), GraphError> {
+    let obs_data = vec![1.0, -0.5, 0.3, 0.8, -0.2, 1.1]; // [2, 3]
+    let a_data = vec![2.0, 3.0, 1.0, 0.5]; // [2, 2]
+    let b_data = vec![0.5, 1.0, 3.0, 2.0];
+    let c_data = vec![1.5, 0.5, 0.5, 1.5];
+    // a + b + c
+    let abc_data: Vec<f32> = a_data
+        .iter()
+        .zip(&b_data)
+        .zip(&c_data)
+        .map(|((a, b), c)| a + b + c)
+        .collect();
+
+    // === 方式一：合并——Linear 输出只有 1 个消费者 ===
+    let grad_combined = {
+        let graph = Graph::new_with_seed(42);
+        let fc = Linear::new(&graph, 3, 2, true, "fc")?;
+        let obs = graph.input(&Tensor::new(&obs_data, &[2, 3]))?;
+        let out = fc.forward(&obs); // 中间节点 [2, 2]
+
+        let abc = Tensor::new(&abc_data, &[2, 2]);
+        let loss = (&out * &abc).sum();
+
+        graph.zero_grad()?;
+        loss.backward()?;
+        fc.parameters()[0].grad()?.unwrap().clone()
+    };
+
+    // === 方式二：拆分——Linear 输出有 3 个消费者 ===
+    let grad_split = {
+        let graph = Graph::new_with_seed(42);
+        let fc = Linear::new(&graph, 3, 2, true, "fc")?;
+        let obs = graph.input(&Tensor::new(&obs_data, &[2, 3]))?;
+        let out = fc.forward(&obs); // 中间节点 [2, 2]
+
+        let a = Tensor::new(&a_data, &[2, 2]);
+        let b = Tensor::new(&b_data, &[2, 2]);
+        let c = Tensor::new(&c_data, &[2, 2]);
+        // out 被 3 个算子消费
+        let loss = (&out * &a).sum() + (&out * &b).sum() + (&out * &c).sum();
+
+        graph.zero_grad()?;
+        loss.backward()?;
+        fc.parameters()[0].grad()?.unwrap().clone()
+    };
+
+    // 权重梯度必须一致
+    let shape = grad_combined.shape().to_vec();
+    for i in 0..shape[0] {
+        for j in 0..shape[1] {
+            assert_abs_diff_eq!(
+                grad_combined[[i, j]],
+                grad_split[[i, j]],
+                epsilon = 1e-5
+            );
+        }
+    }
+    Ok(())
+}
+
+/// 测试更深层菱形图的梯度传播（两级中间节点共享）
+///
+/// 结构：param -> Linear1 -> ReLU(中间节点1) -> Linear2 -> 中间节点2
+///       中间节点2 被 2 个消费者使用
+/// 验证即使菱形出现在更深层，梯度也能正确传播。
+#[test]
+fn test_deep_diamond_gradient_propagation() -> Result<(), GraphError> {
+    let obs_data = vec![1.0, -0.5, 0.3, 0.8]; // [2, 2]
+    let a_data = vec![2.0, 3.0]; // [2, 1]
+    let b_data = vec![0.5, 1.0];
+    let ab_data: Vec<f32> = a_data.iter().zip(&b_data).map(|(a, b)| a + b).collect();
+
+    // === 方式一：合并 ===
+    let grad_combined = {
+        let graph = Graph::new_with_seed(99);
+        let fc1 = Linear::new(&graph, 2, 3, true, "fc1")?;
+        let fc2 = Linear::new(&graph, 3, 1, true, "fc2")?;
+        let obs = graph.input(&Tensor::new(&obs_data, &[2, 2]))?;
+        let h = fc1.forward(&obs).relu(); // 中间节点1
+        let out = fc2.forward(&h); // 中间节点2 [2, 1]
+
+        let ab = Tensor::new(&ab_data, &[2, 1]);
+        let loss = (&out * &ab).sum();
+
+        graph.zero_grad()?;
+        loss.backward()?;
+        fc1.parameters()[0].grad()?.unwrap().clone()
+    };
+
+    // === 方式二：拆分——out 有 2 个消费者 ===
+    let grad_split = {
+        let graph = Graph::new_with_seed(99);
+        let fc1 = Linear::new(&graph, 2, 3, true, "fc1")?;
+        let fc2 = Linear::new(&graph, 3, 1, true, "fc2")?;
+        let obs = graph.input(&Tensor::new(&obs_data, &[2, 2]))?;
+        let h = fc1.forward(&obs).relu();
+        let out = fc2.forward(&h); // 中间节点2 被 2 个消费者使用
+
+        let a = Tensor::new(&a_data, &[2, 1]);
+        let b = Tensor::new(&b_data, &[2, 1]);
+        let loss = (&out * &a).sum() + (&out * &b).sum();
+
+        graph.zero_grad()?;
+        loss.backward()?;
+        fc1.parameters()[0].grad()?.unwrap().clone()
+    };
+
+    // fc1 权重梯度必须一致
+    let shape = grad_combined.shape().to_vec();
+    for i in 0..shape[0] {
+        for j in 0..shape[1] {
+            assert_abs_diff_eq!(
+                grad_combined[[i, j]],
+                grad_split[[i, j]],
+                epsilon = 1e-5
+            );
+        }
+    }
+    Ok(())
 }

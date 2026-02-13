@@ -55,6 +55,11 @@ mod node_subtract;
 mod node_sum;
 mod node_tanh;
 
+// ===== 概率分布测试 =====
+mod distribution_categorical; // Categorical 分布（离散分类，SAC-Discrete / Hybrid SAC）
+mod distribution_normal; // Normal 分布（log_prob / entropy / rsample / 梯度）
+mod distribution_tanh_normal; // TanhNormal 分布（Squashed Gaussian，SAC-Continuous 标准策略）
+
 // ===== 其他单元测试 =====
 mod shape; // DynamicShape 动态维度形状系统测试
 mod var_init; // Init 参数初始化策略测试

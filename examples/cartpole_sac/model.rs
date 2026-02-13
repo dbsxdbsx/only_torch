@@ -8,6 +8,7 @@
 //! Critic: Input(4) -> Linear(64, ReLU) -> Linear(2) → 每个动作的 Q 值
 //! ```
 
+use only_torch::nn::distributions::Categorical;
 use only_torch::nn::{Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps};
 use only_torch::tensor::Tensor;
 
@@ -38,35 +39,23 @@ impl SacActor {
         Ok(self.fc2.forward(&h))
     }
 
-    /// 获取动作概率和 log 概率（纯 Tensor 操作，不创建计算图节点）
+    /// 从 logits 构建 Categorical 分布并采样动作
     ///
-    /// 用于动作选择，不需要梯度，所以直接用 Tensor 的 softmax。
-    pub fn get_action_probs(&self, x: &Tensor) -> Result<(Tensor, Tensor), GraphError> {
+    /// 返回 (action_index, probs_tensor)。
+    pub fn sample_action(&self, x: &Tensor) -> Result<(usize, Tensor), GraphError> {
         let logits = self.forward(x)?;
-        logits.forward()?;
-        let logits_val = logits.value()?.unwrap();
-
-        let probs_val = logits_val.softmax(1);
-
-        // log_probs = ln(probs + eps) 防止 log(0)
-        let eps = 1e-8;
-        let log_probs = (probs_val.clone() + eps).ln();
-
-        Ok((probs_val, log_probs))
+        let dist = Categorical::new(logits);
+        let action_tensor = dist.sample(); // Tensor [1, 1]
+        let action = action_tensor[[0, 0]] as usize;
+        let probs = dist.probs().value()?.unwrap(); // Var → Tensor
+        Ok((action, probs))
     }
 
-    /// 按概率分布采样动作
-    pub fn sample_action(&self, probs: &Tensor, rng: &mut impl rand::Rng) -> usize {
-        let r: f32 = rng.gen_range(0.0..1.0);
-        let mut cumsum = 0.0;
-        let action_dim = probs.shape()[1];
-        for i in 0..action_dim {
-            cumsum += probs[[0, i]];
-            if r < cumsum {
-                return i;
-            }
-        }
-        action_dim - 1
+    /// 获取动作概率和 log 概率（纯 Tensor 操作，用于 target V 计算）
+    pub fn get_action_probs(&self, x: &Tensor) -> Result<(Tensor, Tensor), GraphError> {
+        let logits_val = self.forward(x)?.value()?.unwrap();
+        // log_softmax 比 softmax + ln 数值更稳定，无需手动加 eps
+        Ok((logits_val.softmax(1), logits_val.log_softmax(1)))
     }
 }
 
@@ -188,21 +177,14 @@ impl SacAgent {
     /// SAC 的 alpha loss: `L_α` = α * (H(π) - `target_entropy`)
     /// 梯度: ∂`L/∂log_α` = α * (H(π) - `target_entropy`)
     ///
-    /// - 若 H(π) < `target_entropy，梯度为负，log_α` 增大，α 增大，鼓励更多探索
-    /// - 若 H(π) > `target_entropy，梯度为正，log_α` 减小，α 减小，减少探索
-    pub fn update_alpha(&mut self, log_probs: &Tensor, probs: &Tensor) {
-        let entropy = self.compute_entropy(log_probs, probs);
+    /// - 若 H(π) < `target_entropy`，α 增大，鼓励更多探索
+    /// - 若 H(π) > `target_entropy`，α 减小，减少探索
+    ///
+    /// # 参数
+    /// - `avg_entropy` — 当前策略的 batch 平均熵（来自 `Categorical::entropy()`）
+    pub fn update_alpha(&mut self, avg_entropy: f32) {
         let alpha = self.alpha();
-        // 梯度 = α * (H(π) - target_entropy)，注意这里乘以 α
-        let alpha_grad = alpha * (entropy - self.target_entropy);
+        let alpha_grad = alpha * (avg_entropy - self.target_entropy);
         self.log_alpha -= self.alpha_lr * alpha_grad;
-    }
-
-    /// 计算策略熵 H(π) = -Σ π(a|s) * log π(a|s)（向量化实现）
-    fn compute_entropy(&self, log_probs: &Tensor, probs: &Tensor) -> f32 {
-        // H = -Σ p * log(p)，返回 batch 平均熵
-        let batch_size = probs.shape()[0] as f32;
-        let neg_entropy = (probs * log_probs).sum_axis_keepdims(1); // [batch, 1]
-        -neg_entropy.sum().get_data_number().unwrap() / batch_size
     }
 }

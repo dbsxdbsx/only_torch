@@ -1712,4 +1712,83 @@ impl Tensor {
             });
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑soft_update↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓multinomial↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 按概率向量进行多项分布采样
+    ///
+    /// 类似 PyTorch 的 `torch.multinomial(probs, num_samples)`。
+    /// 对每一行概率向量独立采样，返回采样得到的类别索引。
+    ///
+    /// # 参数
+    /// - `num_samples` — 每行采样次数
+    ///
+    /// # 输入
+    /// 2D 张量 `[batch, num_classes]`，每行为归一化概率（和为 1）
+    ///
+    /// # 返回
+    /// 2D 张量 `[batch, num_samples]`，元素为采样到的类别索引（f32）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let probs = Tensor::new(&[0.1, 0.7, 0.2], &[1, 3]);
+    /// let sample = probs.multinomial(1);
+    /// assert_eq!(sample.shape(), &[1, 1]);
+    /// // sample[[0, 0]] 为 0, 1, 或 2（按概率 0.1, 0.7, 0.2 采样）
+    /// ```
+    pub fn multinomial(&self, num_samples: usize) -> Self {
+        let mut rng = thread_rng();
+        self.multinomial_with_rng(num_samples, &mut rng)
+    }
+
+    /// 带 RNG 的多项分布采样（可复现）
+    ///
+    /// 与 `multinomial()` 功能相同，但使用指定的 RNG 以确保可复现性。
+    pub fn multinomial_with_rng(
+        &self,
+        num_samples: usize,
+        rng: &mut impl rand::Rng,
+    ) -> Self {
+        let shape = self.shape();
+        assert_eq!(
+            shape.len(),
+            2,
+            "multinomial: 输入须为 2D [batch, num_classes]，实际维度: {}",
+            shape.len()
+        );
+        assert!(
+            num_samples >= 1,
+            "multinomial: num_samples 至少为 1"
+        );
+
+        let batch = shape[0];
+        let num_classes = shape[1];
+        let mut result = Vec::with_capacity(batch * num_samples);
+
+        for b in 0..batch {
+            for _ in 0..num_samples {
+                let r: f32 = rng.gen_range(0.0..1.0);
+                let mut cumsum = 0.0;
+                let mut sampled = num_classes - 1; // 兜底：概率和不足时取最后一类
+                for c in 0..num_classes {
+                    cumsum += self[[b, c]];
+                    if r < cumsum {
+                        sampled = c;
+                        break;
+                    }
+                }
+                result.push(sampled as f32);
+            }
+        }
+
+        Self::new(&result, &[batch, num_samples])
+    }
+
+    /// 带种子的多项分布采样（可复现）
+    pub fn multinomial_seeded(&self, num_samples: usize, seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(seed);
+        self.multinomial_with_rng(num_samples, &mut rng)
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑multinomial↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }
