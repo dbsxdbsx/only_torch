@@ -198,8 +198,8 @@ digraph ComputeGraph {
     "48" -> "46" [color="#388E3C"];
     "49" -> "47" [color="#388E3C"];
     "50" -> "47" [color="#388E3C"];
-    "27" -> "41" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= input_1> fontcolor="#4FC3F7" fontsize=8];
     "21" -> "35" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= obs> fontcolor="#4FC3F7" fontsize=8];
     "35" -> "49" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= obs> fontcolor="#4FC3F7" fontsize=8];
     "25" -> "39" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= target_1> fontcolor="#4FC3F7" fontsize=8];
+    "27" -> "41" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= input_1> fontcolor="#4FC3F7" fontsize=8];
 }
