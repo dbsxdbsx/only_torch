@@ -451,12 +451,12 @@ impl TraitNode for Conv2d {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let input = parent_values[0];
         let kernel = parent_values[1];
-        // 填充输入
-        let padded = self.pad_input(input);
-        self.padded_input = Some(padded.clone());
+        // 填充输入并缓存（move 而非 clone，省去一次完整 Tensor 拷贝）
+        self.padded_input = Some(self.pad_input(input));
         self.input_shape = input.shape().to_vec();
-        // 执行卷积
-        self.value = Some(self.convolve(&padded, kernel));
+        // 引用缓存执行卷积
+        let result = self.convolve(self.padded_input.as_ref().unwrap(), kernel);
+        self.value = Some(result);
         Ok(())
     }
 
