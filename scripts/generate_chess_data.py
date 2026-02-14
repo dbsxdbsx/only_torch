@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-中国象棋合成训练数据生成器
+中国象棋合成训练数据生成器 v2
 
-为 only_torch CNN 棋子分类器生成多样化训练 patch：
-- 15 类：1 空位 + 7 红子 + 7 黑子
-- 多字体、多颜色、多棋盘背景、多棋子/格比例
-- 输出二进制格式供 Rust 直接读取
+改进:
+- 字形变体 (繁体/异体字: 帥/俥/傌/砲/將 等)
+- 训练集/测试集风格分离 (不同字体、不同配色方案)
+- 输出 train/ 和 test/ 子目录
 
-用法：
-    python scripts/generate_chess_data.py                    # 默认生成
+用法:
+    python scripts/generate_chess_data.py                    # 默认: 生成训练+测试集
     python scripts/generate_chess_data.py --preview          # 仅预览，不保存二进制
-    python scripts/generate_chess_data.py --samples 100000   # 指定样本数量
+    python scripts/generate_chess_data.py --train-samples 12000 --test-samples 3000
     python scripts/generate_chess_data.py --output data/chess # 指定输出目录
 """
 
@@ -30,140 +30,136 @@ from PIL import Image, ImageDraw, ImageFont
 
 # 15 类: 0=空位, 1-7=红方, 8-14=黑方
 CLASSES = {
-    0: ("empty", "空位", None, None),
-    # 红方 (红色字)
-    1: ("red_king", "红帅", "帅", "red"),
-    2: ("red_advisor", "红仕", "仕", "red"),
-    3: ("red_bishop", "红相", "相", "red"),
-    4: ("red_rook", "红車", "車", "red"),
-    5: ("red_knight", "红馬", "馬", "red"),
-    6: ("red_cannon", "红炮", "炮", "red"),
-    7: ("red_pawn", "红兵", "兵", "red"),
-    # 黑方 (黑色字)
-    8: ("black_king", "黑将", "将", "black"),
-    9: ("black_advisor", "黑士", "士", "black"),
-    10: ("black_bishop", "黑象", "象", "black"),
-    11: ("black_rook", "黑車", "車", "black"),
-    12: ("black_knight", "黑馬", "馬", "black"),
-    13: ("black_cannon", "黑炮", "炮", "black"),
-    14: ("black_pawn", "黑卒", "卒", "black"),
+    0: ("empty", "空位"),
+    1: ("red_king", "红帅"),
+    2: ("red_advisor", "红仕"),
+    3: ("red_bishop", "红相"),
+    4: ("red_rook", "红車"),
+    5: ("red_knight", "红馬"),
+    6: ("red_cannon", "红炮"),
+    7: ("red_pawn", "红兵"),
+    8: ("black_king", "黑将"),
+    9: ("black_advisor", "黑士"),
+    10: ("black_bishop", "黑象"),
+    11: ("black_rook", "黑車"),
+    12: ("black_knight", "黑馬"),
+    13: ("black_cannon", "黑炮"),
+    14: ("black_pawn", "黑卒"),
 }
 
-# ==================== 样式配置 ====================
+# 每类可用的字形变体（同一类别，不同写法）
+# 训练集和测试集都包含全部变体，确保模型能识别所有写法
+CHAR_VARIANTS = {
+    # 红方
+    1: ["帅", "帥"],                 # 简体/繁体
+    2: ["仕"],
+    3: ["相"],
+    4: ["車", "俥", "车"],           # 传统/红方专用/简体
+    5: ["馬", "傌", "马"],           # 传统/红方专用/简体
+    6: ["炮", "砲"],                 # 常见/异体
+    7: ["兵"],
+    # 黑方
+    8: ["将", "將"],                 # 简体/繁体
+    9: ["士"],
+    10: ["象"],
+    11: ["車", "车"],                # 传统/简体
+    12: ["馬", "马"],                # 传统/简体
+    13: ["炮", "砲"],                # 常见/异体
+    14: ["卒"],
+}
 
-# 可用的中文字体 (Windows)
-FONT_PATHS = [
-    "C:/Windows/Fonts/simkai.ttf",    # 楷体
-    "C:/Windows/Fonts/simsun.ttc",    # 宋体
-    "C:/Windows/Fonts/simhei.ttf",    # 黑体
-    "C:/Windows/Fonts/simfang.ttf",   # 仿宋
-    "C:/Windows/Fonts/msyh.ttc",      # 微软雅黑
-]
 
-# 红方字色变体
-RED_TEXT_COLORS = [
-    (200, 30, 30),    # 标准红
-    (180, 20, 20),    # 深红
-    (220, 50, 30),    # 亮红
-    (160, 10, 10),    # 暗红
-    (190, 40, 40),    # 中红
-]
+def get_side(class_id: int) -> str | None:
+    """红/黑方判断"""
+    if class_id == 0:
+        return None
+    return "red" if class_id <= 7 else "black"
 
-# 黑方字色变体
-BLACK_TEXT_COLORS = [
-    (30, 30, 30),     # 标准黑
-    (50, 50, 50),     # 深灰
-    (10, 10, 10),     # 纯黑
-    (60, 50, 40),     # 暖黑
-]
 
-# 棋子圆形背景色
-PIECE_BG_COLORS = [
-    (240, 220, 180),  # 米黄
-    (245, 230, 190),  # 浅黄
-    (235, 210, 170),  # 深米
-    (250, 240, 210),  # 象牙白
-    (230, 215, 185),  # 暖米
-    (255, 245, 220),  # 奶白
-    (225, 205, 165),  # 深暖米
-]
+# ==================== 样式池（训练/测试分离） ====================
+#
+# 核心原则：训练集和测试集使用不同的字体和配色方案，
+# 确保测试时模型面对的是"从未见过"的视觉风格。
+# 字形变体两边都有，风格差异来自字体和颜色。
 
-# 圆形边框色
-BORDER_COLORS = [
-    (60, 40, 20),     # 深棕
-    (40, 30, 15),     # 暗棕
-    (80, 50, 25),     # 中棕
-    (30, 30, 30),     # 深灰
-    (100, 70, 40),    # 浅棕
-]
+FONT_DIR = "C:/Windows/Fonts"
 
-# 棋盘背景色
-BOARD_BG_COLORS = [
-    (200, 210, 190),  # 浅绿灰（类似象棋奇兵）
-    (220, 190, 140),  # 木纹色
-    (200, 180, 130),  # 深木色
-    (210, 200, 170),  # 米色
-    (180, 200, 180),  # 淡绿
-    (190, 180, 160),  # 暖灰
-    (215, 195, 150),  # 黄木色
-    (230, 220, 200),  # 浅米
-]
+STYLE_POOLS = {
+    "train": {
+        "fonts": [
+            f"{FONT_DIR}/simkai.ttf",       # 楷体
+            f"{FONT_DIR}/simsun.ttc",       # 宋体
+            f"{FONT_DIR}/simhei.ttf",       # 黑体
+        ],
+        "board_bgs": [
+            (200, 210, 190),    # 浅绿灰
+            (220, 190, 140),    # 木纹色
+            (200, 180, 130),    # 深木色
+            (210, 200, 170),    # 米色
+            (180, 200, 180),    # 淡绿
+        ],
+        "piece_bgs": [
+            (240, 220, 180),    # 米黄
+            (245, 230, 190),    # 浅黄
+            (235, 210, 170),    # 深米
+            (250, 240, 210),    # 象牙白
+        ],
+        "red_text_colors": [
+            (200, 30, 30),      # 标准红
+            (180, 20, 20),      # 深红
+            (220, 50, 30),      # 亮红
+        ],
+        "black_text_colors": [
+            (30, 30, 30),       # 标准黑
+            (50, 50, 50),       # 深灰
+        ],
+        "border_colors": [
+            (60, 40, 20),       # 深棕
+            (40, 30, 15),       # 暗棕
+            (80, 50, 25),       # 中棕
+        ],
+        "grid_line_colors": [
+            (40, 40, 40),       # 深黑
+            (60, 50, 40),       # 暖黑
+            (80, 70, 60),       # 灰棕
+        ],
+    },
+    "test": {
+        "fonts": [
+            f"{FONT_DIR}/simfang.ttf",      # 仿宋
+            f"{FONT_DIR}/msyh.ttc",         # 微软雅黑
+        ],
+        "board_bgs": [
+            (190, 180, 160),    # 暖灰
+            (215, 195, 150),    # 黄木色
+            (230, 220, 200),    # 浅米
+        ],
+        "piece_bgs": [
+            (230, 215, 185),    # 暖米
+            (255, 245, 220),    # 奶白
+            (225, 205, 165),    # 深暖米
+        ],
+        "red_text_colors": [
+            (160, 10, 10),      # 暗红
+            (190, 40, 40),      # 中红
+        ],
+        "black_text_colors": [
+            (10, 10, 10),       # 纯黑
+            (60, 50, 40),       # 暖黑
+        ],
+        "border_colors": [
+            (30, 30, 30),       # 深灰
+            (100, 70, 40),      # 浅棕
+        ],
+        "grid_line_colors": [
+            (50, 50, 50),       # 灰
+            (30, 30, 30),       # 纯黑
+        ],
+    },
+}
 
-# 格线颜色
-GRID_LINE_COLORS = [
-    (40, 40, 40),     # 深黑
-    (60, 50, 40),     # 暖黑
-    (80, 70, 60),     # 灰棕
-    (50, 50, 50),     # 灰
-    (30, 30, 30),     # 纯黑
-]
 
 # ==================== 棋盘网格特征 ====================
-
-# 中国象棋 9 列 10 行，各格点的背景特征
-# 特征：交叉类型（十字、T 形、L 形、斜线等）
-def get_grid_feature(row: int, col: int) -> str:
-    """获取格点 (row, col) 的背景特征类型"""
-    # 九宫斜线 (row=0-2/7-9, col=3-5)
-    is_palace = (row <= 2 and 3 <= col <= 5) or (row >= 7 and 3 <= col <= 5)
-
-    # 楚河汉界区域 (row=4,5)
-    is_river = row in (4, 5)
-
-    # 边界判断
-    at_top = row == 0
-    at_bottom = row == 9
-    at_left = col == 0
-    at_right = col == 8
-
-    features = []
-    if is_palace:
-        features.append("palace")
-    if is_river:
-        features.append("river")
-    if at_top or at_bottom:
-        features.append("edge_h")
-    if at_left or at_right:
-        features.append("edge_v")
-    if not features:
-        features.append("normal")
-
-    return "_".join(features)
-
-
-# ==================== 生成函数 ====================
-
-def load_fonts() -> list:
-    """加载可用的中文字体"""
-    fonts = []
-    for path in FONT_PATHS:
-        if os.path.exists(path):
-            fonts.append(path)
-    if not fonts:
-        print("警告：未找到任何中文字体，尝试默认字体")
-        fonts.append("arial.ttf")
-    return fonts
-
 
 def draw_grid_background(
     draw: ImageDraw.Draw,
@@ -179,15 +175,13 @@ def draw_grid_background(
     根据 (row, col) 位置绘制正确的格线样式（十字、T 形、L 形、斜线等）
     """
     cx, cy = size // 2, size // 2
-    half = size // 2
 
-    # 基本格线：根据位置画对应方向的线段
     at_top = row == 0
     at_bottom = row == 9
     at_left = col == 0
     at_right = col == 8
-    is_river_top = row == 4    # 楚河上方
-    is_river_bottom = row == 5  # 汉界下方
+    is_river_top = row == 4
+    is_river_bottom = row == 5
 
     # 水平线
     if not at_left:
@@ -206,20 +200,16 @@ def draw_grid_background(
     is_palace_bottom = (7 <= row <= 9) and (3 <= col <= 5)
 
     if is_palace_top or is_palace_bottom:
-        # 右下斜线
         if col < 5 and ((is_palace_top and row < 2) or (is_palace_bottom and row < 9)):
             draw.line([(cx, cy), (size - 1, size - 1)], fill=line_color, width=line_width)
-        # 左上斜线
         if col > 3 and ((is_palace_top and row > 0) or (is_palace_bottom and row > 7)):
             draw.line([(0, 0), (cx, cy)], fill=line_color, width=line_width)
-        # 左下斜线
         if col > 3 and ((is_palace_top and row < 2) or (is_palace_bottom and row < 9)):
             draw.line([(0, size - 1), (cx, cy)], fill=line_color, width=line_width)
-        # 右上斜线
         if col < 5 and ((is_palace_top and row > 0) or (is_palace_bottom and row > 7)):
             draw.line([(size - 1, 0), (cx, cy)], fill=line_color, width=line_width)
 
-    # 兵/炮位星位标记（简化版：小十字角标）
+    # 兵/炮位星位标记
     pawn_positions = {
         (3, 0), (3, 2), (3, 4), (3, 6), (3, 8),
         (6, 0), (6, 2), (6, 4), (6, 6), (6, 8),
@@ -244,10 +234,11 @@ def draw_grid_background(
                 )
 
 
+# ==================== 绘制函数 ====================
+
 def draw_piece(
     img: Image.Image,
     char: str,
-    side: str,
     font_path: str,
     piece_diameter: int,
     text_color: tuple,
@@ -298,6 +289,7 @@ def draw_piece(
 
 def generate_patch(
     class_id: int,
+    char: str | None,
     patch_size: int,
     output_size: int,
     row: int,
@@ -317,16 +309,13 @@ def generate_patch(
 
     Args:
         class_id: 类别 (0-14)
-        patch_size: 原始 patch 大小（模拟裁切尺寸）
+        char: 要绘制的字符（从 CHAR_VARIANTS 中随机选取），空位时为 None
+        patch_size: 原始 patch 大小
         output_size: 最终输出大小（resize 后）
         row, col: 棋盘格点位置 (0-9, 0-8)
         font_path: 字体路径
         piece_ratio: 棋子直径/patch 大小 比例
-        board_bg: 棋盘背景色
-        grid_line_color: 格线颜色
-        piece_bg: 棋子圆形背景色
-        border_color: 圆形边框色
-        text_color: 文字颜色
+        board_bg / grid_line_color / piece_bg / border_color / text_color: 样式参数
         offset_x, offset_y: 微小偏移 (px)
         brightness_factor: 亮度因子
     """
@@ -339,18 +328,17 @@ def generate_patch(
     draw_grid_background(draw, patch_size, row, col, board_bg, grid_line_color, line_width)
 
     # 3. 如果不是空位，画棋子
-    if class_id > 0:
-        _, _, char, side = CLASSES[class_id]
+    if class_id > 0 and char is not None:
         piece_diameter = int(patch_size * piece_ratio)
         border_width = max(1, piece_diameter // 20)
 
         draw_piece(
-            img, char, side, font_path,
+            img, char, font_path,
             piece_diameter, text_color, piece_bg,
             border_color, border_width
         )
 
-    # 4. 应用偏移（通过裁切+重填实现）
+    # 4. 应用偏移
     if offset_x != 0 or offset_y != 0:
         shifted = Image.new("RGB", (patch_size, patch_size), board_bg)
         shifted.paste(img, (offset_x, offset_y))
@@ -369,26 +357,55 @@ def generate_patch(
     return img
 
 
+# ==================== 数据集生成 ====================
+
+def load_fonts(split: str) -> list:
+    """加载指定 split 可用的字体"""
+    pool = STYLE_POOLS[split]
+    fonts = []
+    for path in pool["fonts"]:
+        if os.path.exists(path):
+            fonts.append(path)
+    if not fonts:
+        print(f"  警告：[{split}] 未找到任何字体，尝试 fallback 到全部字体")
+        # fallback: 尝试所有字体
+        for sp in STYLE_POOLS.values():
+            for path in sp["fonts"]:
+                if os.path.exists(path) and path not in fonts:
+                    fonts.append(path)
+    if not fonts:
+        print("  警告：未找到任何中文字体，使用默认字体")
+        fonts.append("arial.ttf")
+    return fonts
+
+
 def generate_dataset(
     num_samples: int,
     output_size: int = 48,
     seed: int = 42,
+    split: str = "train",
 ) -> tuple:
-    """生成完整的训练数据集
+    """生成数据集（训练集或测试集）
+
+    Args:
+        num_samples: 样本总数
+        output_size: 输出 patch 尺寸
+        seed: 随机种子
+        split: "train" 或 "test"，决定使用哪个样式池
 
     Returns:
-        (images_array, labels_array): np.ndarray
-        - images: [N, 3, H, W] float32, 归一化到 [0, 1]
+        (images_array, labels_array):
+        - images: [N, 3, H, W] float32, [0, 1]
         - labels: [N] uint8
     """
     random.seed(seed)
     np.random.seed(seed)
 
-    fonts = load_fonts()
-    print(f"  可用字体: {len(fonts)} 种")
+    fonts = load_fonts(split)
+    pool = STYLE_POOLS[split]
+    print(f"  [{split}] 可用字体: {len(fonts)} 种")
 
-    # 每类的基础样本数（空位可以少一些，棋子类别平均分配）
-    # class 0 (空位) 占 ~20%，其余 14 类平均分配 ~80%
+    # 类别样本分配: 空位 ~20%，其余 14 类平均分配 ~80%
     empty_count = int(num_samples * 0.2)
     piece_count_per_class = (num_samples - empty_count) // 14
     leftover = num_samples - empty_count - piece_count_per_class * 14
@@ -397,37 +414,50 @@ def generate_dataset(
     for cid in range(1, 15):
         class_counts[cid] = piece_count_per_class
 
-    print(f"  类别分布: 空位 {class_counts[0]}, 每种棋子 ~{piece_count_per_class}")
+    print(f"  [{split}] 类别分布: 空位 {class_counts[0]}, 每种棋子 ~{piece_count_per_class}")
 
     images = []
     labels = []
     total = 0
 
+    # 统计字形变体使用情况
+    variant_stats = {}
+
     for class_id, count in class_counts.items():
         for _ in range(count):
-            # 随机选取样式参数
+            # 随机选取样式参数（从 split 对应的样式池中）
             font_path = random.choice(fonts)
             piece_ratio = random.uniform(0.60, 0.92)
-            board_bg = random.choice(BOARD_BG_COLORS)
-            grid_color = random.choice(GRID_LINE_COLORS)
-            piece_bg = random.choice(PIECE_BG_COLORS)
-            border_color = random.choice(BORDER_COLORS)
+            board_bg = random.choice(pool["board_bgs"])
+            grid_color = random.choice(pool["grid_line_colors"])
+            piece_bg = random.choice(pool["piece_bgs"])
+            border_color = random.choice(pool["border_colors"])
 
+            # 选择字形变体
             if class_id == 0:
-                text_color = (0, 0, 0)  # 不会用到
-            elif class_id <= 7:
-                text_color = random.choice(RED_TEXT_COLORS)
+                char = None
+                text_color = (0, 0, 0)
             else:
-                text_color = random.choice(BLACK_TEXT_COLORS)
+                variants = CHAR_VARIANTS[class_id]
+                char = random.choice(variants)
+                # 统计
+                key = f"{CLASSES[class_id][1]}:{char}"
+                variant_stats[key] = variant_stats.get(key, 0) + 1
 
-            # 随机格点位置（不遵守棋规，覆盖全部背景类型）
+                side = get_side(class_id)
+                if side == "red":
+                    text_color = random.choice(pool["red_text_colors"])
+                else:
+                    text_color = random.choice(pool["black_text_colors"])
+
+            # 随机格点位置
             row = random.randint(0, 9)
             col = random.randint(0, 8)
 
-            # 原始 patch 大小（模拟不同棋盘缩放）
+            # 原始 patch 大小
             patch_size = random.randint(40, 80)
 
-            # 微小偏移 (±2px in output space, 按比例映射到 patch space)
+            # 微小偏移
             max_offset = max(1, patch_size // 20)
             offset_x = random.randint(-max_offset, max_offset)
             offset_y = random.randint(-max_offset, max_offset)
@@ -437,6 +467,7 @@ def generate_dataset(
 
             img = generate_patch(
                 class_id=class_id,
+                char=char,
                 patch_size=patch_size,
                 output_size=output_size,
                 row=row, col=col,
@@ -452,7 +483,7 @@ def generate_dataset(
                 brightness_factor=brightness,
             )
 
-            # 转为 numpy 数组 [3, H, W], 归一化到 [0,1]
+            # 转为 numpy 数组 [3, H, W], [0,1]
             arr = np.array(img, dtype=np.float32) / 255.0
             arr = arr.transpose(2, 0, 1)  # HWC → CHW
             images.append(arr)
@@ -460,7 +491,7 @@ def generate_dataset(
 
             total += 1
             if total % 5000 == 0:
-                print(f"  已生成 {total}/{num_samples} 样本...")
+                print(f"  [{split}] 已生成 {total}/{num_samples} 样本...")
 
     # 打乱顺序
     indices = list(range(len(images)))
@@ -471,39 +502,38 @@ def generate_dataset(
     images_arr = np.array(images, dtype=np.float32)
     labels_arr = np.array(labels, dtype=np.uint8)
 
+    # 打印字形变体统计
+    print(f"\n  [{split}] 字形变体统计:")
+    for key in sorted(variant_stats.keys()):
+        print(f"    {key}: {variant_stats[key]} 样本")
+
     return images_arr, labels_arr
 
+
+# ==================== 保存函数 ====================
 
 def save_binary(images: np.ndarray, labels: np.ndarray, output_dir: str):
     """保存为 Rust 可读取的二进制格式
 
-    images.bin 格式:
-        header: [uint32 N] [uint32 C] [uint32 H] [uint32 W]
-        data: N*C*H*W float32 values (little-endian)
-
-    labels.bin 格式:
-        header: [uint32 N]
-        data: N uint8 values
+    images.bin: header [u32 N, C, H, W] + float32 data
+    labels.bin: header [u32 N] + u8 data
     """
     os.makedirs(output_dir, exist_ok=True)
 
     n, c, h, w = images.shape
 
-    # 保存图像
     img_path = os.path.join(output_dir, "images.bin")
     with open(img_path, "wb") as f:
         f.write(struct.pack("<IIII", n, c, h, w))
         f.write(images.tobytes())
     print(f"  图像数据: {img_path} ({os.path.getsize(img_path) / 1024 / 1024:.1f} MB)")
 
-    # 保存标签
     lbl_path = os.path.join(output_dir, "labels.bin")
     with open(lbl_path, "wb") as f:
         f.write(struct.pack("<I", n))
         f.write(labels.tobytes())
     print(f"  标签数据: {lbl_path} ({os.path.getsize(lbl_path) / 1024:.1f} KB)")
 
-    # 保存元数据
     meta = {
         "num_samples": int(n),
         "channels": int(c),
@@ -511,6 +541,7 @@ def save_binary(images: np.ndarray, labels: np.ndarray, output_dir: str):
         "width": int(w),
         "num_classes": 15,
         "classes": {str(k): v[1] for k, v in CLASSES.items()},
+        "char_variants": {str(k): v for k, v in CHAR_VARIANTS.items()},
         "format": "float32 [0,1] normalized, CHW layout",
     }
     meta_path = os.path.join(output_dir, "metadata.json")
@@ -519,7 +550,13 @@ def save_binary(images: np.ndarray, labels: np.ndarray, output_dir: str):
     print(f"  元数据: {meta_path}")
 
 
-def save_preview(images: np.ndarray, labels: np.ndarray, output_dir: str, count: int = 150):
+def save_preview(
+    images: np.ndarray,
+    labels: np.ndarray,
+    output_dir: str,
+    split: str,
+    count: int = 150,
+):
     """保存预览图（每类展示若干样本，按列排列）"""
     os.makedirs(output_dir, exist_ok=True)
 
@@ -527,9 +564,8 @@ def save_preview(images: np.ndarray, labels: np.ndarray, output_dir: str, count:
     patch_h = images.shape[2]
     patch_w = images.shape[3]
     margin = 2
-    header_h = 18
+    header_h = 20
 
-    # 按类收集样本
     class_samples = {}
     for cid in range(15):
         idxs = np.where(labels == cid)[0]
@@ -543,7 +579,6 @@ def save_preview(images: np.ndarray, labels: np.ndarray, output_dir: str, count:
     preview = Image.new("RGB", (total_w, total_h), (255, 255, 255))
     draw = ImageDraw.Draw(preview)
 
-    # 列标题
     try:
         header_font = ImageFont.truetype("C:/Windows/Fonts/simhei.ttf", 11)
     except Exception:
@@ -554,7 +589,6 @@ def save_preview(images: np.ndarray, labels: np.ndarray, output_dir: str, count:
         label_text = CLASSES[cid][1][:2]
         draw.text((x + 2, 2), label_text, fill=(0, 0, 0), font=header_font)
 
-    # 绘制样本
     for cid in range(15):
         for row_idx, global_idx in enumerate(class_samples[cid]):
             x = margin + cid * (patch_w + margin)
@@ -566,51 +600,86 @@ def save_preview(images: np.ndarray, labels: np.ndarray, output_dir: str, count:
             if y + patch_h <= total_h:
                 preview.paste(patch_img, (x, y))
 
-    preview_path = os.path.join(output_dir, "preview.png")
+    preview_path = os.path.join(output_dir, f"preview_{split}.png")
     preview.save(preview_path)
     print(f"  预览图: {preview_path}")
     return preview_path
 
 
+# ==================== 主函数 ====================
+
 def main():
-    parser = argparse.ArgumentParser(description="中国象棋合成训练数据生成器")
-    parser.add_argument("--samples", type=int, default=15000, help="总样本数量")
+    parser = argparse.ArgumentParser(description="中国象棋合成训练数据生成器 v2")
+    parser.add_argument("--train-samples", type=int, default=12000, help="训练集样本数")
+    parser.add_argument("--test-samples", type=int, default=3000, help="测试集样本数")
     parser.add_argument("--size", type=int, default=28, help="输出 patch 尺寸")
-    parser.add_argument("--output", type=str, default="data/chinese_chess", help="输出目录")
-    parser.add_argument("--seed", type=int, default=42, help="随机种子")
+    parser.add_argument("--output", type=str, default="data/chinese_chess", help="输出根目录")
+    parser.add_argument("--train-seed", type=int, default=42, help="训练集随机种子")
+    parser.add_argument("--test-seed", type=int, default=12345, help="测试集随机种子")
     parser.add_argument("--preview", action="store_true", help="仅生成预览（不保存二进制）")
-    parser.add_argument("--preview-count", type=int, default=150, help="预览样本数量")
+    parser.add_argument("--preview-count", type=int, default=150, help="预览中每个 split 的样本数")
+    parser.add_argument("--split", type=str, default="both", choices=["train", "test", "both"],
+                        help="生成哪个 split")
     args = parser.parse_args()
 
     print("=" * 60)
-    print("中国象棋合成训练数据生成器")
+    print("中国象棋合成训练数据生成器 v2")
     print("=" * 60)
     print(f"\n配置：")
-    print(f"  样本数量: {args.samples}")
     print(f"  输出尺寸: {args.size}x{args.size}")
     print(f"  输出目录: {args.output}")
-    print(f"  随机种子: {args.seed}")
 
-    print(f"\n生成数据中...")
-    images, labels = generate_dataset(args.samples, args.size, args.seed)
-    print(f"  完成！形状: images={images.shape}, labels={labels.shape}")
-
-    # 统计
-    print(f"\n类别统计：")
-    for cid in range(15):
-        count = np.sum(labels == cid)
+    # 打印字形变体信息
+    print(f"\n字形变体：")
+    for cid in range(1, 15):
         name = CLASSES[cid][1]
-        print(f"  [{cid:2d}] {name}: {count} 样本")
+        variants = CHAR_VARIANTS[cid]
+        print(f"  {name}: {' / '.join(variants)}")
 
-    # 保存预览
-    print(f"\n保存预览图...")
-    preview_path = save_preview(images, labels, args.output, args.preview_count)
+    splits_to_generate = []
+    if args.split in ("train", "both"):
+        splits_to_generate.append(("train", args.train_samples, args.train_seed))
+    if args.split in ("test", "both"):
+        splits_to_generate.append(("test", args.test_samples, args.test_seed))
 
-    if not args.preview:
-        # 保存二进制数据
-        print(f"\n保存二进制数据...")
-        save_binary(images, labels, args.output)
+    for split, num_samples, seed in splits_to_generate:
+        print(f"\n{'─' * 50}")
+        print(f"生成 [{split}] 数据集 ({num_samples} 样本, seed={seed})")
+        print(f"{'─' * 50}")
 
+        # 打印该 split 使用的字体
+        pool = STYLE_POOLS[split]
+        available_fonts = [p for p in pool["fonts"] if os.path.exists(p)]
+        print(f"  字体: {[os.path.basename(f) for f in available_fonts]}")
+
+        images, labels = generate_dataset(num_samples, args.size, seed, split)
+        print(f"  完成！形状: images={images.shape}, labels={labels.shape}")
+
+        # 类别统计
+        print(f"\n  类别统计：")
+        for cid in range(15):
+            count = np.sum(labels == cid)
+            name = CLASSES[cid][1]
+            print(f"    [{cid:2d}] {name}: {count} 样本")
+
+        # 保存
+        split_dir = os.path.join(args.output, split)
+
+        print(f"\n  保存预览图...")
+        save_preview(images, labels, split_dir, split, args.preview_count)
+
+        if not args.preview:
+            print(f"\n  保存二进制数据...")
+            save_binary(images, labels, split_dir)
+
+    # 风格分离说明
+    print(f"\n{'=' * 60}")
+    print("风格分离说明：")
+    print("  训练集字体: 楷体, 宋体, 黑体")
+    print("  测试集字体: 仿宋, 微软雅黑")
+    print("  训练集和测试集使用不同的配色方案")
+    print("  字形变体 (繁体/异体字) 在两个集合中均包含")
+    print(f"{'=' * 60}")
     print(f"\n[OK] 完成！")
 
 
