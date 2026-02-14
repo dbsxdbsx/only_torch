@@ -214,37 +214,31 @@ Batch 思维（样本间）：
 
 **场景**：Tensor 层的基础运算。
 
-**当前状态**：
+**当前状态**：✅ 已实现，通过 feature flag 可选启用
 
 ```toml
 # Cargo.toml - 当前配置
-ndarray = {version="^0.15", features=["serde"]}
-# 未启用 BLAS
-```
-
-**优化路径**：
-
-| 级别 | 配置                  | 收益  | 复杂度 |
-| :--- | :-------------------- | :---- | :----- |
-| 基础 | LLVM 自动优化（当前） | 1-3x  | 零     |
-| 中级 | 启用 OpenBLAS         | 3-10x | 低     |
-| 高级 | Intel MKL（仅 x86）   | 5-20x | 中     |
-
-**建议**：
-
-- MVP 阶段保持现状（LLVM 自动优化）
-- 性能调优阶段按需添加 BLAS
-- 提供 feature flag 让用户选择
-
-```toml
-# 未来可选配置
 [features]
-default = []
-blas-openblas = ["ndarray/blas", "blas-src/openblas"]
-blas-mkl = ["ndarray/blas", "blas-src/intel-mkl"]
+blas-mkl     = ["ndarray/blas", "dep:intel-mkl-src"]     # Intel CPU 推荐
+blas-openblas = ["ndarray/blas", "dep:openblas-src"]      # 跨平台备选
+
+[dependencies]
+intel-mkl-src = { version = "0.8", optional = true, default-features = false,
+                  features = ["mkl-static-lp64-seq"] }
+openblas-src  = { version = "0.10", optional = true, features = ["static"] }
 ```
 
-**优先级**：⭐⭐⭐（中）—— 对小矩阵收益有限
+**配置选择理由**：
+- `lp64`：与 ndarray/cblas-sys 的 32 位整数索引兼容（ilp64 会导致 ABI 不匹配）
+- `static`：自动下载 MKL 仅支持静态链接；无 DLL 依赖
+- `seq`：单线程 MKL，避免与 Rayon 线程池冲突
+
+**实测收益**（Chinese Chess CNN，debug，50 epoch）：训练总耗时 43.1s → 36.7s（**快 15%**）
+
+**关键设计决策**：无需条件编译不同代码路径。MKL 加速在 `ndarray::dot()` 内部透明发生，
+per-sample Rayon 并行策略在有无 BLAS 时完全一致。
+
+**优先级**：⭐⭐⭐（中）—— 对小矩阵收益有限，但零改动即可获得
 
 ---
 
@@ -324,11 +318,11 @@ for batch in data {
 | 优化                            | 收益预估    | 状态 | 说明                                                       |
 | :------------------------------ | :---------- | :----- | :--------------------------------------------------------- |
 | GradResult 零拷贝梯度传递       | 反向 ~10-15% | ✅ 已完成 | `GradResult` 枚举替代裸 Tensor 返回，Add/Identity/Negate 等零分配 |
-| Conv2d 反向 im2col 批量化       | Conv2d ~10-20% | ✅ 已完成 | `batch_im2col` + `build_batch_grad_matrix`，N 次小 GEMM → 1 次大 GEMM |
+| Conv2d 反向并行策略统一          | — | ✅ 已完成 | 批量大 GEMM 方案被撤回（`seq` MKL 下反而更慢），统一为 per-sample Rayon 路径 |
 | 优化器 set_value_owned          | 每参数省 1 次 clone | ✅ 已完成 | TraitNode → NodeInner → SGD/Adam 全链路零拷贝参数更新 |
 | Adam 中间变量优化               | 减少临时分配 | ✅ 已完成 | 偏差修正外提、原地标量操作 |
 | 节点 cache clone 消除           | 视节点而定 | ✅ 已完成 | Conv2d padded_input move、LeakyReLU 去 parent_value 缓存 |
-| BLAS 可选支持                   | matmul ~1.3-1.5x | 🔲 待验证 | feature flag 已定义，待 benchmark 和文档 |
+| BLAS 可选支持（MKL/OpenBLAS）   | 训练 ~15% | ✅ 已完成 | feature flag + MKL seq + 透明加速，无需条件编译 |
 | 内存布局优化                    | 待测        | 🔲 远期 | 大规模网络时连续存储节点值                                  |
 
 ### 远期阶段

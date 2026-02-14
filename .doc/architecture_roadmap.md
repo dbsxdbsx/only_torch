@@ -2,7 +2,7 @@
 
 > 最后更新: 2026-02-15
 > 战略定位: **简化版 PyTorch in Rust**，为 NEAT 预留扩展性
-> 当前阶段: **动态图架构已稳定，PyTorch 风格 API 已实现，性能调优阶段完成**
+> 当前阶段: **动态图架构已稳定，PyTorch 风格 API 已实现，性能调优阶段完成（含可选 BLAS 加速）**
 
 ## 文档索引
 
@@ -49,7 +49,7 @@ nn/graph           ~95%     ✅ 动态图架构 + PyTorch 风格 API
 nn/nodes           ~85%     ✅ 61 个节点类型（含完整激活函数族 + 选择/排序）
 nn/layer           ~80%     ✅ Linear/Conv2d/MaxPool2d/AvgPool2d/RNN/LSTM/GRU
 nn/debug           100%     ✅ 节点类型枚举 + 调试工具（strum 自动获取）
-nn/optimizer       ~70%     ✅ SGD/Adam 可用（已含 set_value_owned 零拷贝优化）
+nn/optimizer       ~70%     ✅ SGD/Adam 可用（set_value_owned 零拷贝 + 可选 BLAS 加速）
 data/              ~75%     ✅ MNIST + California Housing + DataLoader
 vision/            ~70%     ✅ 基本完成
 rl/                ~45%     ✅ GymEnv + SAC-Discrete（CartPole）+ SAC-Continuous（Pendulum）

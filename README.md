@@ -9,7 +9,7 @@
 - only torch Rust --- 只用 Rust（不用 C++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不打算支持 Python 接口）；亦不用第三方 lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
 - only torch CPU --- 不用 GPU，因要照顾多平台也不想被某个 GPU 厂商制约，且基于 NEAT 进化的网络结构也不太好被 GPU 优化（也省得考虑数据从 CPU 的堆栈迁移到其他设备内存的开销问题了）。
 - only torch node --- 没有全连接、卷积、resnet 这类先入为主的算子概念，具体模型结构均基于 NEAT 进化。
-- only torch tensor --- 所有的数据类型都是内置类型 tensor（实现可能会参考[peroxide](https://crates.io/crates/peroxide)），不需要第三方处理库，如[numpy](https://github.com/PyO3/Rust-numpy)，[array](https://doc.Rust-lang.org/std/primitive.array.html)或[openBLAS](https://github.com/xianyi/OpenBLAS/wiki/User-Manual)（[关于 blas 的一些说明](https://blog.csdn.net/u013677156/article/details/77865405)）。
+- only torch tensor --- 所有的数据类型都是内置类型 tensor，默认不依赖第三方数值库。可通过 feature flag 可选启用 [Intel MKL](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html) 或 [OpenBLAS](https://github.com/xianyi/OpenBLAS) 加速矩阵运算（约 15% 训练提速）。
 - only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了 f32 外的数据类型。
 
 ### 计算图可视化
@@ -358,6 +358,20 @@ opt-level = 3
 > - 将本项目作为 crate 依赖导入到你自己的项目时（用户）
 >
 > **注意**：此设置仅影响当前项目的构建行为。当你把 `only_torch` 作为依赖使用时，需要在**你自己的项目**的 `Cargo.toml` 中添加此配置才能生效。
+
+#### 可选 BLAS 加速
+
+通过 feature flag 启用 Intel MKL 或 OpenBLAS，矩阵运算自动加速（训练约快 15%）：
+
+```bash
+# Intel CPU 推荐（本地无 MKL 时自动下载预编译二进制）
+cargo build --features blas-mkl
+
+# 跨平台备选
+cargo build --features blas-openblas
+```
+
+> 不启用任何 BLAS feature 时，框架使用纯 Rust 后端，无外部依赖，功能完全一致。
 
 ## TODO
 

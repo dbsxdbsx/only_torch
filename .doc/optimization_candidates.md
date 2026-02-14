@@ -19,15 +19,9 @@
 
 ---
 
-### 2. BLAS 可选支持（Phase 6）
+### 2. RNN 场景更多优化
 
-**位置**：`Cargo.toml` features
-
-**现状**：已在 `Cargo.toml` 中定义 `blas-mkl` / `blas-openblas` feature flag，但尚未进行 benchmark 对比和文档完善。
-
-**收益预估**：matmul ~1.3-1.5x（小矩阵收益有限）
-
-**状态**：feature flag 已定义，待 benchmark 验证和文档说明
+参见 #1，等 RNN 处理大规模数据时统一评估
 
 ---
 
@@ -100,16 +94,16 @@ pub(in crate::nn) enum GradResult {
 
 **影响范围**：全部 59 个节点 + trait 签名 + `propagate_grad_to_parents` 调用方
 
-### E. Conv2d 反向 im2col 批量化（2026-02-15）
+### E. Conv2d 反向传播并行策略（2026-02-15）
 
 **原始问题**：反向传播中每个 batch 样本独立做 `im2col + GEMM`，N 次小矩阵乘法。
 
-**解决方案**：
+**尝试方案**：`batch_im2col` 将所有样本拼成大矩阵做单次 GEMM。
 
-| 梯度 | 优化前 | 优化后 |
-|------|--------|--------|
-| dL/dK（权重） | N 次 `im2col` + N 次小 GEMM + reduce | 1 次 `batch_im2col` 垂直拼接 + 1 次大 GEMM（自然求和） |
-| dL/dX（输入） | N 次小 GEMM + N 次 `col2im` | 1 次大 GEMM + 并行 `col2im` |
+**最终结论**：批量化方案被**撤回**。因为 MKL 配置为 `seq`（单线程，避免与 Rayon 冲突），
+单次大 GEMM 只用一个核心，反而不如 per-sample Rayon 并行（多核各跑一个小 GEMM）。
+参考 Burn/Candle/PyTorch 的做法后统一为 per-sample Rayon 路径。
+启用 BLAS 后 `dot()` 内部自动用 MKL 加速，代码无需区分。
 
 ### F. 优化器 set_value_owned + Adam 中间变量优化（2026-02-15）
 
@@ -121,7 +115,32 @@ pub(in crate::nn) enum GradResult {
 | Adam `grad_sq *= (1-β2)` 原地操作 | 省去 `scaled_grad_squared` 临时 Tensor |
 | Adam `denom += ε` 原地操作 | 省去 `&v_sqrt + eps` 临时 Tensor |
 
-### G. 节点 cache clone 消除（2026-02-15）
+### G. BLAS 可选支持 — Intel MKL / OpenBLAS（2026-02-15）
+
+**位置**：`Cargo.toml` features + `lib.rs`
+
+**解决方案**：通过 feature flag 启用 BLAS 后端，`ndarray::dot()` 自动路由到 MKL/OpenBLAS：
+
+```toml
+[features]
+blas-mkl     = ["ndarray/blas", "dep:intel-mkl-src"]     # Intel CPU 推荐
+blas-openblas = ["ndarray/blas", "dep:openblas-src"]      # 跨平台备选
+```
+
+配置选择 `mkl-static-lp64-seq`（lp64 = 与 cblas-sys 兼容；seq = 避免与 Rayon 线程冲突）。
+
+**实测效果**（Chinese Chess CNN，debug 模式，50 epoch）：
+
+| 指标 | 无 BLAS | 有 MKL | 提升 |
+|------|---------|--------|------|
+| 训练总耗时 | 43.1s | **36.7s** | **14.9%** |
+| 推理 batch=1 | 1.5ms | 1.4ms | 6.7% |
+| 推理 batch=256 | 70.2ms | 68.9ms | 1.9% |
+
+**设计决策**：无需条件编译不同代码路径。MKL 加速完全透明（在 `dot()` 内部），
+per-sample Rayon 并行策略在有无 BLAS 时完全一致。
+
+### H. 节点 cache clone 消除（2026-02-15）
 
 | 节点 | 优化前 | 优化后 |
 |------|--------|--------|

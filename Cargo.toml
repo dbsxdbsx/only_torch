@@ -27,7 +27,23 @@
 [profile.dev.package."*"]
     opt-level=3
 
+[features]
+    default=[]
+    # BLAS 加速：Intel MKL（推荐 Intel CPU）
+    # 用法：cargo build --features blas-mkl
+    # 注：本地无 MKL 时会自动从 GitHub Container Registry 下载预编译二进制
+    blas-mkl=["ndarray/blas", "dep:intel-mkl-src"]
+    # BLAS 加速：OpenBLAS（跨平台备选）
+    # 用法：cargo build --features blas-openblas
+    blas-openblas=["ndarray/blas", "dep:openblas-src"]
+
 [dependencies]
+    # BLAS 后端（可选，通过 feature 启用）
+    # lp64 = 32 位整型索引（与 ndarray/cblas-sys 兼容）
+    # seq = 单线程（避免与 rayon 线程池冲突）
+    intel-mkl-src ={version="0.8", optional=true, default-features=false, features=["mkl-static-lp64-seq"]}
+    openblas-src  ={version="0.10", optional=true, features=["static"]}
+
     # 代码重构
     enum_dispatch="0.3"
     strum       = { version = "0.26", features = ["derive"] }  # 枚举遍历和元数据
