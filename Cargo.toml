@@ -149,6 +149,10 @@ name = "multi_label_point"
 path = "examples/multi_label_point/main.rs"
 
 [[example]]
+name = "chinese_chess"
+path = "examples/chinese_chess/main.rs"
+
+[[example]]
 name = "cartpole_sac"
 path = "examples/sac/cartpole/main.rs"
 

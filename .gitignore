@@ -9,6 +9,9 @@ Cargo.lock
 # 二进制文件
 **/*.bin
 
+# 生成的训练数据
+/data/
+
 # 临时笔记/问题记录（本地使用）
 /issues
 __pycache__/
