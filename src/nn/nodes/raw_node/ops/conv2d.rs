@@ -20,6 +20,7 @@ use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
+use ndarray::Array2;
 use rayon::prelude::*;
 
 /// 2D 卷积节点
@@ -178,7 +179,7 @@ impl Conv2d {
         })
     }
 
-    /// 对输入进行零填充（Rayon 并行版本）
+    /// 对输入进行零填充
     /// 输入必须是 4D [batch, C, H, W]
     fn pad_input(&self, input: &Tensor) -> Tensor {
         let (pad_h, pad_w) = self.padding;
@@ -215,13 +216,89 @@ impl Conv2d {
             })
             .collect();
 
-        // 合并结果
         let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
         Tensor::new(&all_data, &new_shape)
     }
 
-    /// 执行卷积运算（Rayon 并行版本）
-    /// 输入必须是 4D [batch, `C_in`, H, W]
+    /// im2col：将单样本输入 [C_in, H, W] 展开为列矩阵 [out_h*out_w, C_in*k_h*k_w]
+    ///
+    /// 每个输出位置对应的感受野窗口被展开为一行，使卷积变为矩阵乘法：
+    /// output = kernel_mat [out_c, C_in*k_h*k_w] × col^T [C_in*k_h*k_w, out_h*out_w]
+    fn im2col(
+        input: &Tensor,       // 单样本 [C_in, H, W]（已填充）
+        b: usize,             // batch 索引（input 实际是 4D 但只取第 b 个）
+        in_c: usize,
+        k_h: usize,
+        k_w: usize,
+        out_h: usize,
+        out_w: usize,
+        stride_h: usize,
+        stride_w: usize,
+    ) -> Array2<f32> {
+        let col_h = out_h * out_w;
+        let col_w = in_c * k_h * k_w;
+        let mut col = Array2::<f32>::zeros((col_h, col_w));
+
+        for oh in 0..out_h {
+            for ow in 0..out_w {
+                let row = oh * out_w + ow;
+                let h_start = oh * stride_h;
+                let w_start = ow * stride_w;
+                let mut col_idx = 0;
+                for ic in 0..in_c {
+                    for kh in 0..k_h {
+                        for kw in 0..k_w {
+                            col[[row, col_idx]] = input[[b, ic, h_start + kh, w_start + kw]];
+                            col_idx += 1;
+                        }
+                    }
+                }
+            }
+        }
+        col
+    }
+
+    /// col2im：im2col 的逆操作，将列矩阵累加回 [C_in, H, W] 形状
+    ///
+    /// 注意：有重叠区域时需要累加（而非覆盖），用于反向传播 dL/dX
+    fn col2im(
+        col: &Array2<f32>,    // [out_h*out_w, C_in*k_h*k_w]
+        in_c: usize,
+        in_h: usize,
+        in_w: usize,
+        k_h: usize,
+        k_w: usize,
+        out_h: usize,
+        out_w: usize,
+        stride_h: usize,
+        stride_w: usize,
+    ) -> Vec<f32> {
+        let mut result = vec![0.0f32; in_c * in_h * in_w];
+
+        for oh in 0..out_h {
+            for ow in 0..out_w {
+                let row = oh * out_w + ow;
+                let h_start = oh * stride_h;
+                let w_start = ow * stride_w;
+                let mut col_idx = 0;
+                for ic in 0..in_c {
+                    for kh in 0..k_h {
+                        for kw in 0..k_w {
+                            let idx = ic * in_h * in_w + (h_start + kh) * in_w + (w_start + kw);
+                            result[idx] += col[[row, col_idx]];
+                            col_idx += 1;
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// im2col + GEMM 卷积（Rayon 批并行）
+    ///
+    /// 核心优化：将嵌套循环卷积转化为矩阵乘法
+    /// kernel_mat [out_c, in_c*k_h*k_w] × col^T [in_c*k_h*k_w, out_h*out_w] → [out_c, out_h*out_w]
     fn convolve(&self, input: &Tensor, kernel: &Tensor) -> Tensor {
         let input_shape = input.shape();
         let (batch_size, in_c, in_h, in_w) = (
@@ -242,40 +319,29 @@ impl Conv2d {
         let out_h = (in_h - k_h) / stride_h + 1;
         let out_w = (in_w - k_w) / stride_w + 1;
 
-        // 输出形状：始终是 4D [batch, C_out, H', W']
         let output_shape = vec![batch_size, out_c, out_h, out_w];
-        let single_sample_size = out_c * out_h * out_w;
+
+        // 将 kernel [out_c, in_c, k_h, k_w] reshape 为 [out_c, in_c*k_h*k_w]
+        let k_flat = kernel.flatten_view();
+        let col_w = in_c * k_h * k_w;
+        let kernel_mat = Array2::from_shape_vec(
+            (out_c, col_w),
+            k_flat.to_vec(),
+        ).unwrap();
 
         // Rayon 并行计算每个 batch 样本
         let batch_results: Vec<Vec<f32>> = (0..batch_size)
             .into_par_iter()
             .map(|b| {
-                let mut sample_data = vec![0.0f32; single_sample_size];
-                for oc in 0..out_c {
-                    for oh in 0..out_h {
-                        for ow in 0..out_w {
-                            let mut sum = 0.0f32;
-                            let h_start = oh * stride_h;
-                            let w_start = ow * stride_w;
-
-                            for ic in 0..in_c {
-                                for kh in 0..k_h {
-                                    for kw in 0..k_w {
-                                        let input_val = input[[b, ic, h_start + kh, w_start + kw]];
-                                        sum += input_val * kernel[[oc, ic, kh, kw]];
-                                    }
-                                }
-                            }
-                            let idx = oc * out_h * out_w + oh * out_w + ow;
-                            sample_data[idx] = sum;
-                        }
-                    }
-                }
-                sample_data
+                // im2col: [out_h*out_w, col_w]
+                let col = Self::im2col(input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w);
+                // GEMM: kernel_mat [out_c, col_w] × col^T [col_w, out_h*out_w] → [out_c, out_h*out_w]
+                let result = kernel_mat.dot(&col.t());
+                // result 是 [out_c, out_h*out_w]，展平为行优先顺序（与 NCHW 一致）
+                result.iter().copied().collect()
             })
             .collect();
 
-        // 合并结果
         let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
         Tensor::new(&all_data, &output_shape)
     }
@@ -375,104 +441,121 @@ impl TraitNode for Conv2d {
         let padded_shape = padded_input.shape();
         let in_c = padded_shape[1];
 
+        // kernel 展平为 [out_c, in_c*k_h*k_w]
+        let col_w = in_c * k_h * k_w;
+        let k_flat = kernel.flatten_view();
+        let kernel_mat = Array2::from_shape_vec(
+            (out_c, col_w),
+            k_flat.to_vec(),
+        ).unwrap();
+
         if target_parent_index == 0 {
-            // ========== 计算 dL/dX（对输入的梯度）==========
+            // ========== dL/dX（对输入的梯度）==========
+            // 上游梯度 [batch, out_c, out_h, out_w] reshape 为 [out_c, out_h*out_w]
+            // dX_col = kernel^T [col_w, out_c] × grad_mat [out_c, out_h*out_w] → [col_w, out_h*out_w]
+            // 然后 col2im 映射回输入空间
+
             let orig_input_shape = &self.input_shape;
             let (orig_in_h, orig_in_w) = (orig_input_shape[2], orig_input_shape[3]);
-            let single_sample_size = in_c * orig_in_h * orig_in_w;
 
-            // Rayon 并行处理每个 batch 样本
+            let padded_h = orig_in_h + 2 * pad_h;
+            let padded_w = orig_in_w + 2 * pad_w;
+
+            // kernel^T [col_w, out_c]
+            let kernel_t = kernel_mat.t();
+
+            // Rayon 并行
             let batch_results: Vec<Vec<f32>> = (0..batch_size)
                 .into_par_iter()
                 .map(|b| {
-                    let mut sample_grad = vec![0.0f32; single_sample_size];
-
+                    // 上游梯度 → [out_c, out_h*out_w]
+                    let spatial = out_h * out_w;
+                    let mut grad_mat_data = Vec::with_capacity(out_c * spatial);
                     for oc in 0..out_c {
                         for oh in 0..out_h {
                             for ow in 0..out_w {
-                                let grad_val = upstream_grad[[b, oc, oh, ow]];
-                                let h_start = oh * stride_h;
-                                let w_start = ow * stride_w;
-
-                                for ic in 0..in_c {
-                                    for kh in 0..k_h {
-                                        for kw in 0..k_w {
-                                            let orig_h = (h_start + kh) as isize - pad_h as isize;
-                                            let orig_w = (w_start + kw) as isize - pad_w as isize;
-
-                                            if orig_h >= 0
-                                                && orig_h < orig_in_h as isize
-                                                && orig_w >= 0
-                                                && orig_w < orig_in_w as isize
-                                            {
-                                                let orig_h = orig_h as usize;
-                                                let orig_w = orig_w as usize;
-                                                let idx = ic * orig_in_h * orig_in_w
-                                                    + orig_h * orig_in_w
-                                                    + orig_w;
-                                                sample_grad[idx] +=
-                                                    grad_val * kernel[[oc, ic, kh, kw]];
-                                            }
-                                        }
-                                    }
-                                }
+                                grad_mat_data.push(upstream_grad[[b, oc, oh, ow]]);
                             }
                         }
                     }
-                    sample_grad
+                    let grad_mat = Array2::from_shape_vec((out_c, spatial), grad_mat_data).unwrap();
+
+                    // GEMM: kernel^T [col_w, out_c] × grad_mat [out_c, spatial] → [col_w, spatial]
+                    let dx_col = kernel_t.dot(&grad_mat);
+                    // 转置为 [spatial, col_w] 供 col2im 使用
+                    let dx_col_t = dx_col.t().to_owned();
+
+                    // col2im 映射到填充后的输入空间
+                    let padded_grad = Self::col2im(
+                        &dx_col_t, in_c, padded_h, padded_w, k_h, k_w, out_h, out_w,
+                        stride_h, stride_w,
+                    );
+
+                    // 裁剪 padding 区域，还原到原始输入尺寸
+                    if pad_h == 0 && pad_w == 0 {
+                        padded_grad
+                    } else {
+                        let mut result = Vec::with_capacity(in_c * orig_in_h * orig_in_w);
+                        for ic in 0..in_c {
+                            for ih in 0..orig_in_h {
+                                for iw in 0..orig_in_w {
+                                    let idx = ic * padded_h * padded_w
+                                        + (ih + pad_h) * padded_w
+                                        + (iw + pad_w);
+                                    result.push(padded_grad[idx]);
+                                }
+                            }
+                        }
+                        result
+                    }
                 })
                 .collect();
 
             let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
             Ok(Tensor::new(&all_data, orig_input_shape))
         } else {
-            // ========== 计算 dL/dK（对卷积核的梯度）==========
-            // dK 需要跨 batch 累加，使用 map-reduce 模式
-            let kernel_shape = kernel.shape();
-            let kernel_size = out_c * in_c * k_h * k_w;
+            // ========== dL/dK（对卷积核的梯度）==========
+            // 对每个样本：grad_mat [out_c, out_h*out_w] × col [out_h*out_w, col_w] → [out_c, col_w]
+            // 跨 batch 累加
 
-            // Rayon 并行 + reduce 累加
-            let batch_kernel_grads: Vec<Vec<f32>> = (0..batch_size)
+            let kernel_shape = kernel.shape();
+
+            // Rayon 并行 map-reduce
+            let batch_kernel_grads: Vec<Array2<f32>> = (0..batch_size)
                 .into_par_iter()
                 .map(|b| {
-                    let mut sample_kernel_grad = vec![0.0f32; kernel_size];
+                    // im2col
+                    let col = Self::im2col(
+                        padded_input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w,
+                    );
 
+                    // 上游梯度 → [out_c, out_h*out_w]
+                    let spatial = out_h * out_w;
+                    let mut grad_mat_data = Vec::with_capacity(out_c * spatial);
                     for oc in 0..out_c {
                         for oh in 0..out_h {
                             for ow in 0..out_w {
-                                let grad_val = upstream_grad[[b, oc, oh, ow]];
-                                let h_start = oh * stride_h;
-                                let w_start = ow * stride_w;
-
-                                for ic in 0..in_c {
-                                    for kh in 0..k_h {
-                                        for kw in 0..k_w {
-                                            let input_val =
-                                                padded_input[[b, ic, h_start + kh, w_start + kw]];
-                                            let idx = oc * in_c * k_h * k_w
-                                                + ic * k_h * k_w
-                                                + kh * k_w
-                                                + kw;
-                                            sample_kernel_grad[idx] += grad_val * input_val;
-                                        }
-                                    }
-                                }
+                                grad_mat_data.push(upstream_grad[[b, oc, oh, ow]]);
                             }
                         }
                     }
-                    sample_kernel_grad
+                    let grad_mat = Array2::from_shape_vec((out_c, spatial), grad_mat_data).unwrap();
+
+                    // GEMM: grad_mat [out_c, spatial] × col [spatial, col_w] → [out_c, col_w]
+                    grad_mat.dot(&col)
                 })
                 .collect();
 
             // Reduce: 累加所有 batch 样本的梯度
-            let mut total_kernel_grad = vec![0.0f32; kernel_size];
-            for sample_grad in batch_kernel_grads {
-                for (i, g) in sample_grad.into_iter().enumerate() {
-                    total_kernel_grad[i] += g;
-                }
+            let mut total = Array2::<f32>::zeros((out_c, col_w));
+            for sample_grad in &batch_kernel_grads {
+                total = total + sample_grad;
             }
 
-            Ok(Tensor::new(&total_kernel_grad, kernel_shape))
+            Ok(Tensor::new(
+                total.as_slice().unwrap(),
+                kernel_shape,
+            ))
         }
     }
 
