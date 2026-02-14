@@ -9,6 +9,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use ndarray::Dimension;
@@ -158,7 +159,7 @@ impl TraitNode for Gather {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // Gather 的反向传播：
         // - 对 input（parents[0]）：scatter 梯度回原位置
         // - 对 index（parents[1]）：不需要梯度（返回全零张量）
@@ -169,7 +170,7 @@ impl TraitNode for Gather {
             let index_value = parent_values.get(1).ok_or_else(|| {
                 GraphError::ComputationError("Gather 梯度计算需要 index 节点值".to_string())
             })?;
-            return Ok(Tensor::zeros(index_value.shape()));
+            return Ok(GradResult::Computed(Tensor::zeros(index_value.shape())));
         }
 
         // target_parent_index == 0，对 input 节点，执行 scatter 操作
@@ -205,7 +206,7 @@ impl TraitNode for Gather {
             grad_input.add_at_dyn(&input_idx, grad_val);
         }
 
-        Ok(grad_input)
+        Ok(GradResult::Computed(grad_input))
     }
 
     fn grad(&self) -> Option<&Tensor> {

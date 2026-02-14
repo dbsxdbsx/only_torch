@@ -9,6 +9,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -154,7 +155,7 @@ impl TraitNode for Select {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // Select 的反向传播：将梯度放回对应位置，其他位置为 0
         //
         // 前向：output = input[:, index, :] （假设 axis=1）
@@ -180,7 +181,7 @@ impl TraitNode for Select {
         // 使用 slice 赋值（scatter）
         grad_input.scatter_at(self.axis, self.index, &expanded_grad);
 
-        Ok(grad_input)
+        Ok(GradResult::Computed(grad_input))
     }
 
     fn grad(&self) -> Option<&Tensor> {

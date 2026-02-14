@@ -10,7 +10,7 @@
  */
 
 use super::NodeType;
-use super::raw_node::TraitNode;
+use super::raw_node::{GradResult, TraitNode};
 use crate::nn::NodeId;
 use crate::nn::graph::GraphError;
 use crate::nn::graph::NodeGroupTag;
@@ -222,6 +222,29 @@ impl NodeInner {
         }
     }
 
+    /// 累加取反梯度：已有梯度时 -= delta（零分配），首次时 set_grad(-delta)
+    ///
+    /// 用于 `GradResult::Negated`，避免先分配 `-upstream_grad` 再累加。
+    pub fn accumulate_grad_negated(&self, delta: &Tensor) -> Result<(), GraphError> {
+        let mut raw = self.raw_node.borrow_mut();
+        let result = if let Some(existing) = raw.grad_mut() {
+            // 快速路径：原地 -= 避免临时 Tensor
+            *existing -= delta;
+            Ok(())
+        } else {
+            // 首次设置：需要分配一次（不可避免）
+            let negated = -delta;
+            raw.set_grad(Some(&negated))
+        };
+        match result {
+            Ok(()) => Ok(()),
+            Err(GraphError::InvalidOperation(msg)) if msg.contains("不支持设置梯度") => {
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// 清除梯度
     pub fn clear_grad(&self) -> Result<(), GraphError> {
         self.raw_node.borrow_mut().clear_grad()
@@ -337,13 +360,16 @@ impl NodeInner {
     /// - `target_index`: 目标父节点的索引
     /// - `upstream_grad`: 上游梯度（从子节点传来）
     ///
+    /// # 返回
+    /// `GradResult` 枚举，调用方根据变体选择零拷贝或分配策略
+    ///
     /// # 性能优化
     /// 直接借用父节点的 raw_node，避免 clone Tensor
     pub(crate) fn calc_grad_to_parent_index(
         &self,
         target_index: usize,
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // 1. 借用所有父节点的 raw_node
         let parent_borrows: Vec<std::cell::Ref<NodeType>> =
             self.parents.iter().map(|p| p.raw_node.borrow()).collect();
@@ -389,8 +415,8 @@ impl NodeInner {
         // - 当到达父节点执行 propagate_grad_to_parents 时，它会检查自己的 detach 状态
         for (i, parent) in self.parents.iter().enumerate() {
             // 计算对该父节点的梯度
-            let grad = match self.calc_grad_to_parent_index(i, upstream_grad) {
-                Ok(g) => g,
+            let result = match self.calc_grad_to_parent_index(i, upstream_grad) {
+                Ok(r) => r,
                 Err(GraphError::InvalidOperation(msg))
                     if msg.contains("不应该")
                         || msg.contains("不需要")
@@ -403,8 +429,20 @@ impl NodeInner {
                 Err(e) => return Err(e),
             };
 
-            // 累加到父节点
-            parent.accumulate_grad(&grad)?;
+            // 根据 GradResult 类型选择累加策略
+            match result {
+                GradResult::PassThrough => {
+                    // 零拷贝：直接用 upstream_grad 累加
+                    parent.accumulate_grad(upstream_grad)?;
+                }
+                GradResult::Negated => {
+                    // 零分配累加：已有梯度时 -= upstream_grad
+                    parent.accumulate_grad_negated(upstream_grad)?;
+                }
+                GradResult::Computed(grad) => {
+                    parent.accumulate_grad(&grad)?;
+                }
+            }
         }
 
         Ok(())

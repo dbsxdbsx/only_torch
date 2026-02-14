@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -58,7 +59,7 @@ impl TraitNode for HardSigmoid {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // hard_sigmoid'(x) = 0 if |x| >= 3, 1/6 otherwise
         let x = parent_values[0];
         let local_grad = x.where_with_f32(
@@ -66,7 +67,7 @@ impl TraitNode for HardSigmoid {
             |_| 1.0 / 6.0,
             |_| 0.0,
         );
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }

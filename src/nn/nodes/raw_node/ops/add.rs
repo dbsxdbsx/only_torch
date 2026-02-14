@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -126,7 +127,7 @@ impl TraitNode for Add {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // Add 节点的局部梯度是 identity，但需要处理广播
         // 如果父节点被广播过，需要将梯度沿广播维度求和
         //
@@ -141,11 +142,11 @@ impl TraitNode for Add {
         let target_shape = target_value.shape();
 
         if upstream_grad.shape() == target_shape {
-            // 形状匹配，直接传递
-            Ok(upstream_grad.clone())
+            // 形状匹配，直接传递（零拷贝）
+            Ok(GradResult::PassThrough)
         } else {
             // 被广播过，需要对广播维度求和
-            Ok(upstream_grad.sum_to_shape(target_shape))
+            Ok(GradResult::Computed(upstream_grad.sum_to_shape(target_shape)))
         }
     }
 

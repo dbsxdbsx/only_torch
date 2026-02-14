@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -85,7 +86,7 @@ impl TraitNode for Tanh {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // Tanh 的梯度: upstream_grad * (1 - tanh²(x))
         let value = self.value().ok_or_else(|| {
             GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
@@ -96,7 +97,7 @@ impl TraitNode for Tanh {
         let local_grad = Tensor::ones(value.shape()) - tanh_squared;
 
         // 逐元素乘以上游梯度
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> {

@@ -18,6 +18,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
@@ -253,7 +254,7 @@ impl TraitNode for AvgPool2d {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // 输入必须是 4D [batch, C, H', W']
         let input_shape = &self.input_shape;
         let grad_shape = upstream_grad.shape();
@@ -296,7 +297,7 @@ impl TraitNode for AvgPool2d {
             .collect();
 
         let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-        Ok(Tensor::new(&all_data, input_shape))
+        Ok(GradResult::Computed(Tensor::new(&all_data, input_shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

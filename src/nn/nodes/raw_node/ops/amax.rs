@@ -9,6 +9,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -141,7 +142,7 @@ impl TraitNode for Amax {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // Amax 的反向传播：
         // - 梯度只流向产生最大值的位置
         // - 如果有多个并列最大值，梯度平分
@@ -202,7 +203,7 @@ impl TraitNode for Amax {
             }
         }
 
-        Ok(Tensor::new(&grad_data, input_shape))
+        Ok(GradResult::Computed(Tensor::new(&grad_data, input_shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

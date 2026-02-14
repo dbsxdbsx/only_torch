@@ -108,7 +108,7 @@ fn test_softplus_vjp_unit_upstream() -> Result<(), GraphError> {
     sp.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[1, 5]);
-    let grad = sp.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = sp.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     // grad = sigmoid(x) = [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708]
     let expected = [0.11920292, 0.26894143, 0.5, 0.73105860, 0.88079708];
@@ -143,7 +143,7 @@ fn test_softplus_vjp_non_unit_upstream() -> Result<(), GraphError> {
     sp.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 1.0, 0.5, 4.0, 2.0], &[2, 3]);
-    let grad = sp.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = sp.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     // sigmoid(x) = [0.26894143, 0.5, 0.73105860, 0.88079709, 0.11920292, 0.62245935]
     // grad = upstream ⊙ sigmoid

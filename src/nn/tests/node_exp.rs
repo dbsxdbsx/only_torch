@@ -125,7 +125,7 @@ fn test_exp_vjp_unit_upstream() -> Result<(), GraphError> {
     exp.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = exp.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = exp.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     let e = std::f32::consts::E;
     assert_eq!(grad.shape(), &[2, 2]);
@@ -159,7 +159,7 @@ fn test_exp_vjp_non_unit_upstream() -> Result<(), GraphError> {
     exp.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0], &[1, 2]);
-    let grad = exp.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = exp.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     let e = std::f32::consts::E;
     assert_eq!(grad.shape(), &[1, 2]);

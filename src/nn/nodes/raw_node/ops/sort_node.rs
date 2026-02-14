@@ -10,6 +10,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -134,7 +135,7 @@ impl TraitNode for SortNode {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // Sort 反向传播：逆置换
         //
         // 前向：sorted[..., i, ...] = input[..., indices[i], ...]
@@ -150,7 +151,7 @@ impl TraitNode for SortNode {
         })?;
 
         let parent_shape = parent_values[0].shape();
-        Ok(upstream_grad.scatter_by_sort_indices(self.axis, indices, parent_shape))
+        Ok(GradResult::Computed(upstream_grad.scatter_by_sort_indices(self.axis, indices, parent_shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

@@ -248,7 +248,7 @@ fn test_mse_vjp_mean_basic() -> Result<(), GraphError> {
 
     // VJP: upstream=1 (标量损失)
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = mse.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = mse.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // 预期: 2*(input-target)/N = 2*[-0.5,-0.5,-0.5]/3 = [-1/3, -1/3, -1/3]
     assert_eq!(grad.shape(), &[1, 3]);
@@ -295,7 +295,7 @@ fn test_mse_vjp_mean_2d() -> Result<(), GraphError> {
     mse.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = mse.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = mse.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // 预期: 2*(-0.5)/4 = -0.25
     assert_eq!(grad.shape(), &[2, 2]);
@@ -348,7 +348,7 @@ fn test_mse_vjp_sum_forward_and_grad() -> Result<(), GraphError> {
 
     // VJP: 2*(input-target) = 2*[-0.5,-0.5,-0.5] = [-1, -1, -1]
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = mse.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = mse.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 3]);
     let expected = Tensor::new(&[-1.0, -1.0, -1.0], &[1, 3]);

@@ -101,7 +101,7 @@ fn test_negate_vjp_unit_upstream() -> Result<(), GraphError> {
     neg.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = neg.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = neg.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     // grad = -upstream = [-1, -1, -1, -1]
     let expected = Tensor::new(&[-1.0, -1.0, -1.0, -1.0], &[2, 2]);
@@ -132,7 +132,7 @@ fn test_negate_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     // upstream = [2, 3, 4, 5]
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = neg.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = neg.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     // grad = -upstream = [-2, -3, -4, -5]
     let expected = Tensor::new(&[-2.0, -3.0, -4.0, -5.0], &[2, 2]);

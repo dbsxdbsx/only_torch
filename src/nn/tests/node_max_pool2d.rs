@@ -245,7 +245,7 @@ fn test_max_pool2d_vjp_sparse_basic() -> Result<(), GraphError> {
     pool.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
-    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     assert_eq!(grad.shape(), &[1, 1, 4, 4]);
 
     // 最大值位置 → grad=1
@@ -292,7 +292,7 @@ fn test_max_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
     pool.forward_recursive(1, false)?;
 
     let upstream = Tensor::new(&[2.0, 3.0, 5.0, 7.0], &[1, 1, 2, 2]);
-    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // 最大值位置取对应的 upstream 值
     assert_abs_diff_eq!(grad[[0, 0, 1, 1]], 2.0, epsilon = 1e-6); // max=6, upstream=2
@@ -333,7 +333,7 @@ fn test_max_pool2d_vjp_batch() -> Result<(), GraphError> {
     pool.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 1, 2, 2]);
-    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     assert_eq!(grad.shape(), &[2, 1, 4, 4]);
 
     // batch 1: 标准递增矩阵，最大值位置 (1,1)=6, (1,3)=8, (3,1)=14, (3,3)=16

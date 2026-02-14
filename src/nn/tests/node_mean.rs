@@ -111,7 +111,7 @@ fn test_mean_vjp_global() -> Result<(), GraphError> {
     m.forward_recursive(1, false)?;
 
     let upstream_grad = Tensor::new(&[6.0], &[1, 1]);
-    let grad = m.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = m.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 3]);
     for val in grad.data_as_slice() {
@@ -142,7 +142,7 @@ fn test_mean_vjp_axis1() -> Result<(), GraphError> {
     m.forward_recursive(1, false)?;
 
     let upstream_grad = Tensor::new(&[3.0, 6.0], &[2, 1]);
-    let grad = m.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = m.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 3]);
     assert_abs_diff_eq!(grad[[0, 0]], 1.0, epsilon = 1e-6);

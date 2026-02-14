@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -167,7 +168,7 @@ impl TraitNode for Concat {
         target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let idx = target_parent_index;
 
         // 计算该父节点在 axis 维度的起始偏移
@@ -175,7 +176,7 @@ impl TraitNode for Concat {
         let size = self.parent_sizes[idx];
 
         // concat 反向：按偏移分段提取梯度（使用 Tensor::narrow）
-        Ok(upstream_grad.narrow(self.axis, start_offset, size))
+        Ok(GradResult::Computed(upstream_grad.narrow(self.axis, start_offset, size)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

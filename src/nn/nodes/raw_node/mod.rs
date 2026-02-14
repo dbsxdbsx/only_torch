@@ -385,6 +385,51 @@ use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use std::any::type_name;
 
+/// 反向传播梯度计算结果
+///
+/// 替代原先 `calc_grad_to_parent` 直接返回 `Tensor` 的方式，
+/// 通过区分梯度类型避免不必要的 Tensor 分配：
+///
+/// - `PassThrough`：梯度直接等于 `upstream_grad`（零拷贝）
+/// - `Negated`：梯度等于 `-upstream_grad`（累加时零分配）
+/// - `Computed(Tensor)`：新计算的梯度
+///
+/// # 性能收益
+/// - Add / Identity / Dropout(eval)：`PassThrough` 消除 clone
+/// - Negate / Subtract(B)：`Negated` 消除 `-upstream_grad` 临时 Tensor
+///
+/// # 可扩展性
+/// 未来可添加 `Scaled(f32)` 等变体，进一步减少分配
+#[derive(Debug)]
+pub(in crate::nn) enum GradResult {
+    /// 梯度直接等于 upstream_grad（零拷贝）
+    ///
+    /// 适用于 Add（无广播）、Identity、Dropout（eval 模式）等
+    PassThrough,
+
+    /// 梯度等于 -upstream_grad（累加时原地减法，零分配）
+    ///
+    /// 适用于 Negate、Subtract 的第二个父节点（无广播）
+    Negated,
+
+    /// 新计算的梯度
+    Computed(Tensor),
+}
+
+impl GradResult {
+    /// 根据 upstream_grad 解析为具体的 Tensor
+    ///
+    /// 主要用于测试：将 PassThrough/Negated 转化为实际 Tensor 值
+    #[cfg(test)]
+    pub(in crate::nn) fn resolve(self, upstream_grad: &Tensor) -> Tensor {
+        match self {
+            GradResult::PassThrough => upstream_grad.clone(),
+            GradResult::Negated => -upstream_grad,
+            GradResult::Computed(t) => t,
+        }
+    }
+}
+
 #[enum_dispatch(NodeType)]
 pub(in crate::nn) trait TraitNode {
     fn id(&self) -> NodeId;
@@ -442,17 +487,15 @@ pub(in crate::nn) trait TraitNode {
     /// 计算本节点对父节点的梯度（VJP 模式）
     ///
     /// # 参数
-    /// - `target_parent`: 目标父节点
-    /// - `upstream_grad`: 从下游传来的梯度，shape 与本节点 value 相同
-    /// - `assistant_parent`: 辅助父节点（用于双父节点如 `MatMul`）
-    ///
-    /// # 返回
-    /// 对 `target_parent` 的梯度，shape 与 `parent_values[target_parent_index]` 相同
-    ///
-    /// # 参数
     /// - `target_parent_index`: 目标父节点在 parents 中的索引
     /// - `parent_values`: 所有父节点的值（按 parents 顺序）
     /// - `upstream_grad`: 上游传来的梯度
+    ///
+    /// # 返回
+    /// `GradResult` 枚举：
+    /// - `PassThrough`：梯度等于 upstream_grad（零拷贝）
+    /// - `Negated`：梯度等于 -upstream_grad（零分配累加）
+    /// - `Computed(Tensor)`：新计算的梯度
     ///
     /// # 默认实现
     /// 返回错误，需要各节点自行实现
@@ -461,7 +504,7 @@ pub(in crate::nn) trait TraitNode {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let _ = (target_parent_index, parent_values, upstream_grad);
         Err(GraphError::InvalidOperation(format!(
             "{}尚未实现 calc_grad_to_parent",

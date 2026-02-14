@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -84,7 +85,7 @@ impl TraitNode for ReLU {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // ReLU 梯度: upstream_grad * (1 if x > 0 else 0)
         //
         // 使用 value（输出）而非 parent_value（输入）判断区域，
@@ -96,12 +97,12 @@ impl TraitNode for ReLU {
             GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
-        Ok(upstream_grad.where_with_tensor(
+        Ok(GradResult::Computed(upstream_grad.where_with_tensor(
             value,
             |_, y| y > 0.0,     // 用 value 判断区域
             |g, _| g,           // y > 0 时保留梯度
             |_, _| 0.0,         // y <= 0 时梯度为 0
-        ))
+        )))
     }
 
     fn grad(&self) -> Option<&Tensor> {

@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -137,7 +138,7 @@ impl TraitNode for MatMul {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // 获取两个父节点的值
         let a_value = parent_values.get(0).ok_or_else(|| {
             GraphError::ComputationError(format!("{}的左父节点没有值", self.display_node()))
@@ -163,7 +164,7 @@ impl TraitNode for MatMul {
                     ),
                 });
             }
-            Ok(upstream_grad.mat_mul(&b_t))
+            Ok(GradResult::Computed(upstream_grad.mat_mul(&b_t)))
         } else if target_parent_index == 1 {
             // 计算 dL/dB = A^T @ upstream_grad
             // A: [batch, n] -> A^T: [n, batch]
@@ -183,7 +184,7 @@ impl TraitNode for MatMul {
                     ),
                 });
             }
-            Ok(a_t.mat_mul(upstream_grad))
+            Ok(GradResult::Computed(a_t.mat_mul(upstream_grad)))
         } else {
             Err(GraphError::ComputationError(format!(
                 "MatMul 节点只有 2 个父节点，索引 {} 无效",

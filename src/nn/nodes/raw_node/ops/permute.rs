@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::hash_dedup_params;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
@@ -124,9 +125,9 @@ impl TraitNode for Permute {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // 逆排列恢复原始维度顺序
-        Ok(upstream_grad.permute(&self.inverse_dims))
+        Ok(GradResult::Computed(upstream_grad.permute(&self.inverse_dims)))
     }
 
     fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }

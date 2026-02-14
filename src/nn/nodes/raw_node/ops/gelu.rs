@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -80,7 +81,7 @@ impl TraitNode for Gelu {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // GELU 梯度必须从 parent_values（输入 x）计算，无法从 value 反推
         // gelu'(x) = 0.5*(1+tanh(z)) + x*0.5*(1-tanh(z)^2)*sqrt(2/pi)*(1+3*0.044715*x^2)
         // 其中 z = sqrt(2/pi)*(x + 0.044715*x^3)
@@ -100,7 +101,7 @@ impl TraitNode for Gelu {
             |_| unreachable!(),
         );
 
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> {

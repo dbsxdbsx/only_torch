@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -63,7 +64,7 @@ impl TraitNode for Selu {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // selu'(x) = LAMBDA if x > 0, else LAMBDA * ALPHA * exp(x)
         let x = parent_values[0];
         let local_grad = x.where_with_f32(
@@ -71,7 +72,7 @@ impl TraitNode for Selu {
             |_| SELU_LAMBDA,
             |x_val| SELU_LAMBDA * SELU_ALPHA * x_val.exp(),
         );
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }

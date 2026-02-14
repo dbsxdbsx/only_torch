@@ -139,7 +139,7 @@ fn test_softmax_vjp_uniform_input_unit_upstream() -> Result<(), GraphError> {
     assert_abs_diff_eq!(softmax_output[[0, 0]], 1.0 / 3.0, epsilon = 1e-5);
 
     let upstream = Tensor::ones(&[1, 3]);
-    let grad = sm.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = sm.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 3]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-5);
@@ -173,7 +173,7 @@ fn test_softmax_vjp_non_uniform_selective_upstream() -> Result<(), GraphError> {
     sm.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[1.0, 0.0, 0.0], &[1, 3]);
-    let grad = sm.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = sm.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 3]);
     assert!(grad[[0, 0]] > 0.0, "第一个梯度应该为正");
@@ -206,7 +206,7 @@ fn test_softmax_vjp_batch_non_unit_upstream() -> Result<(), GraphError> {
     sm.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]);
-    let grad = sm.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = sm.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 3]);
 

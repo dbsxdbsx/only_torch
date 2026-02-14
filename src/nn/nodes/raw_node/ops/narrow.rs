@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -112,12 +113,12 @@ impl TraitNode for Narrow {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // 创建与 parent 同形状的零张量，在 [start..start+length] 位置放入 upstream_grad
         let parent_shape = parent_values[0].shape();
         let mut grad = Tensor::zeros(parent_shape);
         grad.scatter_range(self.axis, self.start, upstream_grad);
-        Ok(grad)
+        Ok(GradResult::Computed(grad))
     }
 
     fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }

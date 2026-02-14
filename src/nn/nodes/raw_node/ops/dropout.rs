@@ -12,6 +12,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;
@@ -167,17 +168,17 @@ impl TraitNode for Dropout {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // Dropout 的梯度：
         // - 训练模式：grad = upstream_grad * mask / (1 - p)
         // - 评估模式：grad = upstream_grad
         if let Some(mask) = &self.mask {
             // 训练模式：梯度也需要乘以 mask 和缩放因子
             let scale = 1.0 / (1.0 - self.p);
-            Ok(upstream_grad * mask * scale)
+            Ok(GradResult::Computed(upstream_grad * mask * scale))
         } else {
-            // 评估模式：梯度直接通过
-            Ok(upstream_grad.clone())
+            // 评估模式：梯度直接通过（零拷贝）
+            Ok(GradResult::PassThrough)
         }
     }
 

@@ -15,6 +15,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -187,7 +188,7 @@ impl TraitNode for Mean {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let input_shape = self.input_shape_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("Mean 输入形状缓存为空，需先执行前向传播".to_string())
         })?;
@@ -198,7 +199,7 @@ impl TraitNode for Mean {
 
         // 将上游梯度广播回输入形状，然后除以归约元素数量
         let grad = upstream_grad.broadcast_to(input_shape) / (reduction_count as f32);
-        Ok(grad)
+        Ok(GradResult::Computed(grad))
     }
 
     fn grad(&self) -> Option<&Tensor> {

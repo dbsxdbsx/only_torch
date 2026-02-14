@@ -142,11 +142,11 @@ fn test_where_cond_vjp_all_true() -> Result<(), GraphError> {
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
 
     // grad_x = cond * upstream = [2, 3, 4, 5]
-    let grad_x = wc.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_x = wc.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     assert_eq!(&grad_x, &Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]));
 
     // grad_y = (1-cond) * upstream = [0, 0, 0, 0]
-    let grad_y = wc.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_y = wc.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
     assert_eq!(&grad_y, &Tensor::zeros(&[2, 2]));
 
     Ok(())
@@ -182,11 +182,11 @@ fn test_where_cond_vjp_all_false() -> Result<(), GraphError> {
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
 
     // grad_x = 0 * upstream = [0, 0, 0, 0]
-    let grad_x = wc.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_x = wc.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     assert_eq!(&grad_x, &Tensor::zeros(&[2, 2]));
 
     // grad_y = 1 * upstream = [2, 3, 4, 5]
-    let grad_y = wc.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_y = wc.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
     assert_eq!(&grad_y, &Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]));
 
     Ok(())
@@ -223,11 +223,11 @@ fn test_where_cond_vjp_mixed() -> Result<(), GraphError> {
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
 
     // grad_x = cond * upstream = [2, 0, 0, 5]
-    let grad_x = wc.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_x = wc.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     assert_eq!(&grad_x, &Tensor::new(&[2.0, 0.0, 0.0, 5.0], &[2, 2]));
 
     // grad_y = (1-cond) * upstream = [0, 3, 4, 0]
-    let grad_y = wc.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_y = wc.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
     assert_eq!(&grad_y, &Tensor::new(&[0.0, 3.0, 4.0, 0.0], &[2, 2]));
 
     Ok(())

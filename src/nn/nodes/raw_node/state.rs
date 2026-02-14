@@ -21,6 +21,7 @@ use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
 use super::TraitNode;
+use super::GradResult;
 
 #[derive(Clone)]
 pub(crate) struct State {
@@ -151,7 +152,7 @@ impl TraitNode for State {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         Err(GraphError::InvalidOperation(format!(
             "{}是叶子节点，没有父节点来计算 grad",
             self.display_node()

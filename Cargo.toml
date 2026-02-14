@@ -87,6 +87,18 @@
 name    = "conv2d"
 harness = false
 
+[[bench]]
+name    = "backward"
+harness = false
+
+[[bench]]
+name    = "end_to_end"
+harness = false
+
+[[bench]]
+name    = "tensor_ops"
+harness = false
+
 # ==================== 示例 ====================
 
 [[example]]

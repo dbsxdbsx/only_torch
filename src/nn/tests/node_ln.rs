@@ -106,7 +106,7 @@ fn test_ln_vjp_unit_upstream() -> Result<(), GraphError> {
     ln.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = ln.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = ln.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 1.0, epsilon = 1e-6);
@@ -139,7 +139,7 @@ fn test_ln_vjp_non_unit_upstream() -> Result<(), GraphError> {
     ln.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = ln.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = ln.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 2.0, epsilon = 1e-6);
@@ -172,7 +172,7 @@ fn test_ln_vjp_small_input() -> Result<(), GraphError> {
     ln.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[1, 2]);
-    let grad = ln.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = ln.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_abs_diff_eq!(grad[[0, 0]], 10.0, epsilon = 1e-5);
     assert_abs_diff_eq!(grad[[0, 1]], 100.0, epsilon = 1e-4);

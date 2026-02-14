@@ -134,7 +134,7 @@ fn test_clip_vjp_unit_upstream() -> Result<(), GraphError> {
     clip.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 3]);
-    let grad = clip.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = clip.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 3]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-6); // x=-3 < min → 0
@@ -170,7 +170,7 @@ fn test_clip_vjp_non_unit_upstream() -> Result<(), GraphError> {
     clip.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[3.0, 5.0, 7.0, 9.0], &[1, 4]);
-    let grad = clip.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = clip.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[1, 4]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-6); // 3 * 0 = 0
@@ -202,7 +202,7 @@ fn test_clip_vjp_all_clipped() -> Result<(), GraphError> {
     clip.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[1, 3]);
-    let grad = clip.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = clip.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     // x=-5 被裁剪, x=5 被裁剪, x=-1==min 边界处也为 0
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-6);

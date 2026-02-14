@@ -205,7 +205,7 @@ fn test_stack_vjp_to_first_parent() -> Result<(), GraphError> {
     stack.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[2, 2, 2]);
-    let grad_p1 = stack.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_p1 = stack.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // p1 → upstream[0, :, :] = [[1,1],[1,1]]
     assert_eq!(grad_p1.shape(), &[2, 2]);
@@ -243,7 +243,7 @@ fn test_stack_vjp_to_second_parent() -> Result<(), GraphError> {
 
     // upstream = [[[1,2],[3,4]], [[5,6],[7,8]]]
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2]);
-    let grad_p2 = stack.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_p2 = stack.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
 
     // p2 → upstream[1, :, :] = [[5,6],[7,8]]
     assert_eq!(grad_p2.shape(), &[2, 2]);
@@ -289,7 +289,7 @@ fn test_stack_vjp_axis1() -> Result<(), GraphError> {
     );
 
     // p1 → upstream[:, 0, :] = [[1,2,3],[7,8,9]]
-    let grad_p1 = stack.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_p1 = stack.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     assert_eq!(grad_p1.shape(), &[2, 3]);
     assert_eq!(
         &grad_p1,
@@ -297,7 +297,7 @@ fn test_stack_vjp_axis1() -> Result<(), GraphError> {
     );
 
     // p2 → upstream[:, 1, :] = [[4,5,6],[10,11,12]]
-    let grad_p2 = stack.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_p2 = stack.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
     assert_eq!(grad_p2.shape(), &[2, 3]);
     assert_eq!(
         &grad_p2,

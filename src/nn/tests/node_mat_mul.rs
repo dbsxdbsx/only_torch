@@ -128,7 +128,7 @@ fn test_mat_mul_vjp_to_left() -> Result<(), GraphError> {
     mm.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 4]);
-    let grad_to_left = mm.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_to_left = mm.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     let expected = upstream.mat_mul(&right_value.transpose());
     assert_eq!(grad_to_left.shape(), &[2, 3]);
@@ -168,7 +168,7 @@ fn test_mat_mul_vjp_to_right() -> Result<(), GraphError> {
     mm.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 4]);
-    let grad_to_right = mm.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_to_right = mm.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
 
     let expected = left_value.transpose().mat_mul(&upstream);
     assert_eq!(grad_to_right.shape(), &[3, 4]);
@@ -204,11 +204,11 @@ fn test_mat_mul_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
-    let grad_to_left = mm.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_to_left = mm.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     let expected_left = upstream.mat_mul(&right_value.transpose());
     assert_eq!(&grad_to_left, &expected_left);
 
-    let grad_to_right = mm.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_to_right = mm.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
     let expected_right = left_value.transpose().mat_mul(&upstream);
     assert_eq!(&grad_to_right, &expected_right);
 
@@ -246,11 +246,11 @@ fn test_mat_mul_vjp_negative_values() -> Result<(), GraphError> {
 
     let upstream = Tensor::ones(&[2, 2]);
 
-    let grad_to_left = mm.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_to_left = mm.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     let expected_left = upstream.mat_mul(&right_value.transpose());
     assert_eq!(&grad_to_left, &expected_left);
 
-    let grad_to_right = mm.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_to_right = mm.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
     let expected_right = left_value.transpose().mat_mul(&upstream);
     assert_eq!(&grad_to_right, &expected_right);
 
@@ -288,11 +288,11 @@ fn test_mat_mul_vjp_zero_values() -> Result<(), GraphError> {
 
     let upstream = Tensor::ones(&[2, 2]);
 
-    let grad_to_left = mm.calc_grad_to_parent_index(0, &upstream)?;
+    let grad_to_left = mm.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
     let expected_left = upstream.mat_mul(&right_value.transpose());
     assert_eq!(&grad_to_left, &expected_left);
 
-    let grad_to_right = mm.calc_grad_to_parent_index(1, &upstream)?;
+    let grad_to_right = mm.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
     let expected_right = left_value.transpose().mat_mul(&upstream);
     assert_eq!(&grad_to_right, &expected_right);
 

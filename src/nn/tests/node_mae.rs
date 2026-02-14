@@ -245,7 +245,7 @@ fn test_mae_vjp_mean() -> Result<(), GraphError> {
 
     // VJP: upstream = 1.0 → grad = sign(diff) / N = [-1/3, -1/3, -1/3]
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = mae.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = mae.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 3]);
     let expected_grad = Tensor::new(&[-0.333_333_34, -0.333_333_34, -0.333_333_34], &[1, 3]);
@@ -292,7 +292,7 @@ fn test_mae_vjp_sum() -> Result<(), GraphError> {
 
     // VJP: upstream = 1.0 → grad = sign(diff) = [-1, -1, -1]
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = mae.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = mae.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 3]);
     let expected_grad = Tensor::new(&[-1.0, -1.0, -1.0], &[1, 3]);

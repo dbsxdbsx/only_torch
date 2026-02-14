@@ -174,7 +174,7 @@ fn test_sort_vjp_inverse_permutation() -> Result<(), GraphError> {
 
     // upstream = [10, 20, 30]
     let upstream = Tensor::new(&[10.0, 20.0, 30.0], &[1, 3]);
-    let grad = sorted.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = sorted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 3]);
 
@@ -226,7 +226,7 @@ fn test_sort_vjp_2d_non_unit() -> Result<(), GraphError> {
     sorted.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let grad = sorted.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = sorted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 3]);
 

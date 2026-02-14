@@ -8,6 +8,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -127,7 +128,7 @@ impl TraitNode for Multiply {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // 获取目标父节点和辅助父节点的值
         let target_value = parent_values.get(target_parent_index).ok_or_else(|| {
             GraphError::ComputationError(format!(
@@ -148,9 +149,9 @@ impl TraitNode for Multiply {
 
             // 如果 A 被广播过，需要沿广播维度求和
             if local_grad.shape() == target_shape {
-                Ok(local_grad)
+                Ok(GradResult::Computed(local_grad))
             } else {
-                Ok(local_grad.sum_to_shape(target_shape))
+                Ok(GradResult::Computed(local_grad.sum_to_shape(target_shape)))
             }
         } else if target_parent_index == 1 {
             // target 是 right (B)，assistant 是 left (A)
@@ -162,9 +163,9 @@ impl TraitNode for Multiply {
 
             // 如果 B 被广播过，需要沿广播维度求和
             if local_grad.shape() == target_shape {
-                Ok(local_grad)
+                Ok(GradResult::Computed(local_grad))
             } else {
-                Ok(local_grad.sum_to_shape(target_shape))
+                Ok(GradResult::Computed(local_grad.sum_to_shape(target_shape)))
             }
         } else {
             Err(GraphError::ComputationError(format!(

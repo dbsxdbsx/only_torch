@@ -12,6 +12,7 @@ mod basic;
 
 pub(crate) use basic::BasicInput;
 
+use super::GradResult;
 use super::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
@@ -145,7 +146,7 @@ impl TraitNode for InputVariant {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         Err(GraphError::InvalidOperation(
             "Input 节点没有父节点，不应计算父节点梯度".to_string(),
         ))

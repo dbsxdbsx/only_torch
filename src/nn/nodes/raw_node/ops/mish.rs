@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -59,7 +60,7 @@ impl TraitNode for Mish {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // mish'(x) = tanh(sp) + x * sech^2(sp) * sigmoid(x)
         // sp = softplus(x)
         const THRESHOLD: f32 = 20.0;
@@ -82,7 +83,7 @@ impl TraitNode for Mish {
             },
             |_| unreachable!(),
         );
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }

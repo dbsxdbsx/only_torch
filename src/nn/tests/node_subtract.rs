@@ -92,7 +92,7 @@ fn test_subtract_vjp_to_left() -> Result<(), GraphError> {
     sub.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = sub.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = sub.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_eq!(&grad, &upstream_grad);
@@ -129,7 +129,7 @@ fn test_subtract_vjp_to_right() -> Result<(), GraphError> {
     sub.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad = sub.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
 
     // grad_to_right = -upstream = [[-1,-1],[-1,-1]]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -167,8 +167,8 @@ fn test_subtract_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
 
     // upstream_grad = [[2,3],[4,5]]
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad_to_left = sub.calc_grad_to_parent_index(0, &upstream_grad)?;
-    let grad_to_right = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad_to_left = sub.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_right = sub.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
 
     // grad_to_left = upstream = [[2,3],[4,5]]
     assert_eq!(&grad_to_left, &upstream_grad);
@@ -210,8 +210,8 @@ fn test_subtract_vjp_with_negative_values() -> Result<(), GraphError> {
     assert_eq!(output, Tensor::new(&[-6.0, 4.0, -10.0, 4.0], &[2, 2]));
 
     let upstream_grad = Tensor::new(&[-1.0, 2.0, -3.0, 4.0], &[2, 2]);
-    let grad_to_left = sub.calc_grad_to_parent_index(0, &upstream_grad)?;
-    let grad_to_right = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad_to_left = sub.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_right = sub.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
     // left 梯度 = upstream_grad
     assert_eq!(&grad_to_left, &upstream_grad);
     // right 梯度 = -upstream_grad = [1, -2, 3, -4]
@@ -254,14 +254,14 @@ fn test_subtract_broadcast_vjp() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[2, 3]);
 
     // 对 matrix [2,3] 的梯度：直接传递
-    let grad_to_matrix = sub.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad_to_matrix = sub.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
     assert_eq!(&grad_to_matrix, &upstream_grad);
 
     // 对 bias [1,3] 的梯度：-upstream，然后沿 axis=0 求和
     // -[[1,1,1],[1,1,1]] = [[-1,-1,-1],[-1,-1,-1]]
     // sum(axis=0) = [[-2,-2,-2]]
-    let grad_to_bias = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad_to_bias = sub.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
     assert_eq!(grad_to_bias.shape(), &[1, 3]);
     assert_eq!(&grad_to_bias, &Tensor::new(&[-2., -2., -2.], &[1, 3]));
 
@@ -298,7 +298,7 @@ fn test_subtract_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     // -upstream = [[-1,-2,-3],[-4,-5,-6]], sum(axis=0) = [[-5,-7,-9]]
     let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
 
-    let grad_to_bias = sub.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad_to_bias = sub.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
     assert_eq!(grad_to_bias.shape(), &[1, 3]);
     assert_eq!(&grad_to_bias, &Tensor::new(&[-5., -7., -9.], &[1, 3]));
 

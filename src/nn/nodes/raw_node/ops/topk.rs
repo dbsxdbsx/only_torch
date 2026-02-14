@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::hash_dedup_params;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
@@ -129,7 +130,7 @@ impl TraitNode for TopK {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let parent_shape = parent_values[0].shape();
         let indices = self.indices.as_ref().ok_or_else(|| {
             GraphError::InvalidOperation(
@@ -162,7 +163,7 @@ impl TraitNode for TopK {
             grad.add_at_dyn(&parent_idx, grad_val);
         }
 
-        Ok(grad)
+        Ok(GradResult::Computed(grad))
     }
 
     fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }

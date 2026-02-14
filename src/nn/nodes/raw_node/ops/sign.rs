@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -84,8 +85,8 @@ impl TraitNode for Sign {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
-        Ok(Tensor::zeros(upstream_grad.shape()))
+    ) -> Result<GradResult, GraphError> {
+        Ok(GradResult::Computed(Tensor::zeros(upstream_grad.shape())))
     }
 
     fn grad(&self) -> Option<&Tensor> {

@@ -11,6 +11,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -143,7 +144,7 @@ impl TraitNode for Clip {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let input = self.input_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("Clip 输入缓存为空，需先执行前向传播".to_string())
         })?;
@@ -162,7 +163,7 @@ impl TraitNode for Clip {
             input.shape(),
         );
 
-        Ok(upstream_grad * &mask)
+        Ok(GradResult::Computed(upstream_grad * &mask))
     }
 
     fn grad(&self) -> Option<&Tensor> {

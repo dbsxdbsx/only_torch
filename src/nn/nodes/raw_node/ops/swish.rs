@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -59,7 +60,7 @@ impl TraitNode for Swish {
         _target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // swish'(x) = sigmoid(x) * (1 + x * (1 - sigmoid(x)))
         let x = parent_values[0];
         let local_grad = x.where_with_f32(
@@ -70,7 +71,7 @@ impl TraitNode for Swish {
             },
             |_| unreachable!(),
         );
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }

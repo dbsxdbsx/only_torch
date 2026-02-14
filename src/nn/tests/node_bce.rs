@@ -217,7 +217,7 @@ fn test_bce_vjp_mean() -> Result<(), GraphError> {
 
     // 上游梯度为标量 1.0（loss 输出 [1,1]）
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = bce.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = bce.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // PyTorch 验证: [-0.125_846_9, 0.125_846_9, -0.089_647_1]
     assert_eq!(grad.shape(), &[1, 3]);
@@ -273,7 +273,7 @@ fn test_bce_vjp_sum() -> Result<(), GraphError> {
 
     // VJP
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = bce.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = bce.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // sigmoid - target（不除以 N）
     assert_eq!(grad.shape(), &[1, 3]);

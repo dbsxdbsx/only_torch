@@ -330,7 +330,7 @@ fn test_conv2d_vjp_to_input() -> Result<(), GraphError> {
 
     // upstream 形状 = conv 输出: [1, 1, 1, 1]
     let upstream = Tensor::ones(&[1, 1, 1, 1]);
-    let grad = conv.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = conv.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // grad 形状 = input 形状
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
@@ -374,7 +374,7 @@ fn test_conv2d_vjp_to_kernel() -> Result<(), GraphError> {
     conv.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[1, 1, 1, 1]);
-    let grad = conv.calc_grad_to_parent_index(1, &upstream)?;
+    let grad = conv.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
 
@@ -422,7 +422,7 @@ fn test_conv2d_vjp_to_kernel_batch() -> Result<(), GraphError> {
 
     // upstream 全 1，形状 [2, 1, 2, 2]
     let upstream = Tensor::ones(&[2, 1, 2, 2]);
-    let grad = conv.calc_grad_to_parent_index(1, &upstream)?;
+    let grad = conv.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
 
@@ -465,7 +465,7 @@ fn test_conv2d_vjp_to_input_multi_output() -> Result<(), GraphError> {
     conv.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
-    let grad = conv.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = conv.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 3, 3]);
 

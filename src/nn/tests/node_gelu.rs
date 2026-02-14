@@ -99,7 +99,7 @@ fn test_gelu_vjp_unit_upstream() -> Result<(), GraphError> {
     gelu.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = gelu.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = gelu.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.8674, epsilon = 1e-3);
@@ -130,7 +130,7 @@ fn test_gelu_vjp_non_unit_upstream() -> Result<(), GraphError> {
     gelu.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = gelu.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = gelu.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 2.0 * 0.8674, epsilon = 1e-2);

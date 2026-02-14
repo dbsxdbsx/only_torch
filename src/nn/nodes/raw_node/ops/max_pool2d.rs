@@ -17,6 +17,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
@@ -273,7 +274,7 @@ impl TraitNode for MaxPool2d {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let max_indices = self
             .max_indices
             .as_ref()
@@ -310,7 +311,7 @@ impl TraitNode for MaxPool2d {
                 }
             });
 
-        Ok(Tensor::new(&all_data, input_shape))
+        Ok(GradResult::Computed(Tensor::new(&all_data, input_shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

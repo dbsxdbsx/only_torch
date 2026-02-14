@@ -193,7 +193,7 @@ fn test_narrow_vjp_unit_upstream() -> Result<(), GraphError> {
     narrowed.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[2, 2]);
-    let grad = narrowed.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = narrowed.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 4]);
 
@@ -234,7 +234,7 @@ fn test_narrow_vjp_non_unit_upstream() -> Result<(), GraphError> {
     narrowed.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = narrowed.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = narrowed.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 4]);
 

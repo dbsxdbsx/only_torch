@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -93,8 +94,9 @@ impl TraitNode for Negate {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
-        Ok(-upstream_grad)
+    ) -> Result<GradResult, GraphError> {
+        // Negate 的局部梯度是 -1，标记为取反（累加时零分配）
+        Ok(GradResult::Negated)
     }
 
     fn grad(&self) -> Option<&Tensor> {

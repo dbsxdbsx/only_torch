@@ -13,6 +13,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
@@ -132,7 +133,7 @@ impl TraitNode for LogSoftmax {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let softmax_output = self.softmax_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("LogSoftmax 缓存为空，需先执行前向传播".to_string())
         })?;
@@ -163,7 +164,7 @@ impl TraitNode for LogSoftmax {
 
         // 合并结果
         let all_grads: Vec<f32> = batch_grads.into_iter().flatten().collect();
-        Ok(Tensor::new(&all_grads, shape))
+        Ok(GradResult::Computed(Tensor::new(&all_grads, shape)))
     }
 
     fn grad(&self) -> Option<&Tensor> {

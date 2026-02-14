@@ -128,7 +128,7 @@ fn test_add_vjp_to_first_parent() -> Result<(), GraphError> {
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = add.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = add.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_eq!(&grad, &upstream_grad);
@@ -162,7 +162,7 @@ fn test_add_vjp_to_second_parent() -> Result<(), GraphError> {
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = add.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad = add.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_eq!(&grad, &upstream_grad);
@@ -196,8 +196,8 @@ fn test_add_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    let grad_to_p1 = add.calc_grad_to_parent_index(0, &upstream_grad)?;
-    let grad_to_p2 = add.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad_to_p1 = add.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_p2 = add.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
     assert_eq!(&grad_to_p1, &upstream_grad);
     assert_eq!(&grad_to_p2, &upstream_grad);
 
@@ -234,8 +234,8 @@ fn test_add_vjp_with_negative_values() -> Result<(), GraphError> {
     assert_eq!(output, Tensor::new(&[4.0, -8.0, 4.0, -12.0], &[2, 2]));
 
     let upstream_grad = Tensor::new(&[-1.0, 2.0, -3.0, 4.0], &[2, 2]);
-    let grad_to_p1 = add.calc_grad_to_parent_index(0, &upstream_grad)?;
-    let grad_to_p2 = add.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad_to_p1 = add.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_p2 = add.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
     assert_eq!(&grad_to_p1, &upstream_grad);
     assert_eq!(&grad_to_p2, &upstream_grad);
 
@@ -274,9 +274,9 @@ fn test_add_vjp_three_parents() -> Result<(), GraphError> {
     add.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 4.0, 6.0, 8.0], &[2, 2]);
-    let grad_0 = add.calc_grad_to_parent_index(0, &upstream_grad)?;
-    let grad_1 = add.calc_grad_to_parent_index(1, &upstream_grad)?;
-    let grad_2 = add.calc_grad_to_parent_index(2, &upstream_grad)?;
+    let grad_0 = add.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_1 = add.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_2 = add.calc_grad_to_parent_index(2, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(&grad_0, &upstream_grad);
     assert_eq!(&grad_1, &upstream_grad);
@@ -321,12 +321,12 @@ fn test_add_broadcast_vjp() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[3, 4]);
 
     // 对 matrix [3,4] 的梯度：直接传递
-    let grad_to_matrix = add.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad_to_matrix = add.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
     assert_eq!(grad_to_matrix.shape(), &[3, 4]);
     assert_eq!(&grad_to_matrix, &upstream_grad);
 
     // 对 bias [1,4] 的梯度：沿 axis=0 求和 → [[3,3,3,3]]
-    let grad_to_bias = add.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad_to_bias = add.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
     assert_eq!(grad_to_bias.shape(), &[1, 4]);
     assert_eq!(&grad_to_bias, &Tensor::new(&[3., 3., 3., 3.], &[1, 4]));
 
@@ -363,7 +363,7 @@ fn test_add_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     // upstream = [[1,2,3],[4,5,6]], sum(axis=0) = [[5,7,9]]
     let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
 
-    let grad_to_bias = add.calc_grad_to_parent_index(1, &upstream_grad)?;
+    let grad_to_bias = add.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
     assert_eq!(grad_to_bias.shape(), &[1, 3]);
     assert_eq!(&grad_to_bias, &Tensor::new(&[5., 7., 9.], &[1, 3]));
 

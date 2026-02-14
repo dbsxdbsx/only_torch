@@ -9,6 +9,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -133,7 +134,7 @@ impl TraitNode for Subtract {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // 使用实际值的形状（支持动态 batch）
         let target_value = parent_values.get(target_parent_index).ok_or_else(|| {
             GraphError::ComputationError(format!(
@@ -146,17 +147,20 @@ impl TraitNode for Subtract {
         if target_parent_index == 0 {
             // target 是 left (A)：∂L/∂A = upstream_grad
             if upstream_grad.shape() == target_shape {
-                Ok(upstream_grad.clone())
+                // 形状匹配，直接传递（零拷贝）
+                Ok(GradResult::PassThrough)
             } else {
-                Ok(upstream_grad.sum_to_shape(target_shape))
+                Ok(GradResult::Computed(upstream_grad.sum_to_shape(target_shape)))
             }
         } else if target_parent_index == 1 {
             // target 是 right (B)：∂L/∂B = -upstream_grad
-            let neg_grad = -upstream_grad;
-            if neg_grad.shape() == target_shape {
-                Ok(neg_grad)
+            if upstream_grad.shape() == target_shape {
+                // 形状匹配，标记为取反（累加时零分配）
+                Ok(GradResult::Negated)
             } else {
-                Ok(neg_grad.sum_to_shape(target_shape))
+                // 有广播时，需要先取反再求和
+                let neg_grad = -upstream_grad;
+                Ok(GradResult::Computed(neg_grad.sum_to_shape(target_shape)))
             }
         } else {
             Err(GraphError::ComputationError(format!(

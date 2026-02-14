@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -147,7 +148,7 @@ impl TraitNode for MSE {
         target_parent_index: usize,
         _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let diff = self.diff_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("diff 缓存为空，需先执行前向传播".to_string())
         })?;
@@ -158,7 +159,7 @@ impl TraitNode for MSE {
                 Reduction::Mean => diff * (2.0 / self.numel_cache as f32),
                 Reduction::Sum => diff * 2.0,
             };
-            Ok(grad)
+            Ok(GradResult::Computed(grad))
         } else {
             // 对 target 的梯度（通常不需要）
             Err(GraphError::InvalidOperation(

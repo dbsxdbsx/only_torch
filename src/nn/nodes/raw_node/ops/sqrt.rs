@@ -10,6 +10,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -110,7 +111,7 @@ impl TraitNode for Sqrt {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let output = self.value.as_ref().ok_or_else(|| {
             GraphError::ComputationError("Sqrt 前向值为空，需先执行前向传播".to_string())
         })?;
@@ -125,7 +126,7 @@ impl TraitNode for Sqrt {
             output.shape(),
         );
 
-        Ok(upstream_grad * &half_recip)
+        Ok(GradResult::Computed(upstream_grad * &half_recip))
     }
 
     fn grad(&self) -> Option<&Tensor> {

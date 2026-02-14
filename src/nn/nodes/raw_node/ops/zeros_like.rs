@@ -13,6 +13,7 @@ use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 
 /// `ZerosLike` 节点：根据参考节点的 `batch_size` 生成零张量
 #[derive(Clone)]
@@ -104,7 +105,7 @@ impl TraitNode for ZerosLike {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // ZerosLike 的梯度对父节点是零（因为它是常量）
         // 但实际上这个方法不应该被调用，因为 ZerosLike 的输出不依赖于父节点的值
         Err(GraphError::InvalidOperation(format!(

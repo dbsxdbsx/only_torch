@@ -9,6 +9,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -121,7 +122,7 @@ impl TraitNode for Minimum {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // Minimum 的反向传播：
         // - 对 target: grad = upstream * (target <= other ? 1 : 0)
         // - 当 target == other 时，梯度各 0.5
@@ -169,9 +170,9 @@ impl TraitNode for Minimum {
 
         // 3. 如果 target 被广播过，用 sum_to_shape 收缩回原始形状
         if output_shape != target_shape.as_slice() {
-            Ok(grad.sum_to_shape(&target_shape))
+            Ok(GradResult::Computed(grad.sum_to_shape(&target_shape)))
         } else {
-            Ok(grad)
+            Ok(GradResult::Computed(grad))
         }
     }
 

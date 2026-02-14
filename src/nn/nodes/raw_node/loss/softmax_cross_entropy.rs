@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
@@ -203,7 +204,7 @@ impl TraitNode for SoftmaxCrossEntropy {
         target_parent_index: usize,
         _parent_values: &[&Tensor],
         _upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         if target_parent_index == 0 {
             // 对 logits 的梯度
             let softmax = self.softmax_cache.as_ref().ok_or_else(|| {
@@ -216,7 +217,7 @@ impl TraitNode for SoftmaxCrossEntropy {
             // dL/d_logits = (softmax - labels) / batch_size
             let batch_size = softmax.shape()[0] as f32;
             let grad = (softmax - labels) / batch_size;
-            Ok(grad)
+            Ok(GradResult::Computed(grad))
         } else {
             // 对 labels 的梯度（通常不需要，labels 是常量）
             Err(GraphError::InvalidOperation(

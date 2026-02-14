@@ -269,7 +269,7 @@ fn test_avg_pool2d_vjp_unit_upstream() -> Result<(), GraphError> {
     pool.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
-    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 4, 4]);
     // 非重叠窗口：每个输入位置仅被一个窗口覆盖，梯度 = 1 / 4 = 0.25
@@ -303,7 +303,7 @@ fn test_avg_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     // upstream_grad: 每个窗口不同值
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[1, 1, 2, 2]);
-    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 4, 4]);
     // 窗口 [0:2,0:2] 对应 upstream=2，grad = 2/4 = 0.5
@@ -344,7 +344,7 @@ fn test_avg_pool2d_vjp_batch() -> Result<(), GraphError> {
     pool.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 1, 2, 2]);
-    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 1, 4, 4]);
     // 两个 batch 梯度都是 0.25
@@ -381,7 +381,7 @@ fn test_avg_pool2d_vjp_overlapping() -> Result<(), GraphError> {
     pool.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
-    let grad = pool.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = pool.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 3, 3]);
     // 角落位置 (0,0): 仅被 1 个窗口覆盖 → 0.25

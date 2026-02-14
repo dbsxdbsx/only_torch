@@ -148,7 +148,7 @@ fn test_sce_vjp_simple() -> Result<(), GraphError> {
     sce.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = sce.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = sce.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 3]);
     let expected = Tensor::new(&[0.09003057, 0.24472848, -0.33475903], &[1, 3]);
@@ -189,7 +189,7 @@ fn test_sce_vjp_uniform() -> Result<(), GraphError> {
     sce.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = sce.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = sce.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     let expected = Tensor::new(&[0.25, -0.75, 0.25, 0.25], &[1, 4]);
     assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
@@ -243,7 +243,7 @@ fn test_sce_vjp_10_classes() -> Result<(), GraphError> {
 
     // VJP
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = sce.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = sce.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     #[rustfmt::skip]
     let expected = Tensor::new(

@@ -25,6 +25,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -114,10 +115,10 @@ impl TraitNode for Identity {
         &self,
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
-        upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
-        // 直接传递上游梯度（Identity 的局部梯度是 1）
-        Ok(upstream_grad.clone())
+        _upstream_grad: &Tensor,
+    ) -> Result<GradResult, GraphError> {
+        // Identity 的局部梯度是 1，直接传递上游梯度（零拷贝）
+        Ok(GradResult::PassThrough)
     }
 
     fn grad(&self) -> Option<&Tensor> {

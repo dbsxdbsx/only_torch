@@ -108,7 +108,7 @@ fn test_sigmoid_vjp_unit_upstream() -> Result<(), GraphError> {
     sigmoid.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = sigmoid.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = sigmoid.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.23500371, epsilon = 1e-6);
@@ -142,7 +142,7 @@ fn test_sigmoid_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     // upstream_grad = [[2,3],[4,5]]
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = sigmoid.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = sigmoid.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     // y*(1-y) = [0.23500371, 0.19661194, 0.25, 0.10499363]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -177,7 +177,7 @@ fn test_sigmoid_vjp_saturation() -> Result<(), GraphError> {
     sigmoid.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[1, 2]);
-    let grad = sigmoid.calc_grad_to_parent_index(0, &upstream_grad)?;
+    let grad = sigmoid.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
 
     // sigmoid(5) ≈ 0.9933，sigmoid(-5) ≈ 0.0067
     // y*(1-y) ≈ 0.0066（两者都接近 0）

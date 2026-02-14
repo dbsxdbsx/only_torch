@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -121,14 +122,14 @@ impl TraitNode for WhereCond {
         target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         match target_parent_index {
             // grad_x = condition * upstream_grad
-            0 => Ok(&self.condition * upstream_grad),
+            0 => Ok(GradResult::Computed(&self.condition * upstream_grad)),
             // grad_y = (1 - condition) * upstream_grad
             1 => {
                 let inv_cond = Tensor::ones(self.condition.shape()) - &self.condition;
-                Ok(&inv_cond * upstream_grad)
+                Ok(GradResult::Computed(&inv_cond * upstream_grad))
             }
             _ => Err(GraphError::InvalidOperation(format!(
                 "WhereCond: parent_index {} 无效（应为 0 或 1）",

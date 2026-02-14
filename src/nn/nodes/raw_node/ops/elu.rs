@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -65,7 +66,7 @@ impl TraitNode for Elu {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // elu'(x) = 1 if x > 0, else value + alpha（从 value 反推）
         let value = self.value().ok_or_else(|| {
             GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
@@ -76,7 +77,7 @@ impl TraitNode for Elu {
             |_| 1.0,
             |y| y + alpha, // elu'(x) = elu(x) + alpha = value + alpha 当 x <= 0
         );
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }

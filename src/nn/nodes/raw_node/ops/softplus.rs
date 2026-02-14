@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -107,7 +108,7 @@ impl TraitNode for SoftPlus {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // SoftPlus 的梯度: upstream_grad * sigmoid(x) = upstream_grad * (1 - exp(-y))
         //
         // 重要：使用 value（输出）计算 sigmoid，而非 parent_value（输入）
@@ -120,7 +121,7 @@ impl TraitNode for SoftPlus {
         let local_grad = Self::sigmoid_from_softplus(value);
 
         // 逐元素乘以上游梯度
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> {

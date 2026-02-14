@@ -1,6 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -97,7 +98,7 @@ impl TraitNode for Abs {
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         // 获取缓存的父节点值
         let parent_value = self.parent_value_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError(format!(
@@ -110,7 +111,7 @@ impl TraitNode for Abs {
         let local_grad = parent_value.sign();
 
         // 逐元素乘以上游梯度
-        Ok(upstream_grad * &local_grad)
+        Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
     fn grad(&self) -> Option<&Tensor> {

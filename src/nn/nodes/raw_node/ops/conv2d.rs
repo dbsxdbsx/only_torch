@@ -18,6 +18,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
+use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use ndarray::Array2;
@@ -418,7 +419,7 @@ impl TraitNode for Conv2d {
         target_parent_index: usize,
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    ) -> Result<GradResult, GraphError> {
         let padded_input = self
             .padded_input
             .as_ref()
@@ -512,7 +513,7 @@ impl TraitNode for Conv2d {
                 .collect();
 
             let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-            Ok(Tensor::new(&all_data, orig_input_shape))
+            Ok(GradResult::Computed(Tensor::new(&all_data, orig_input_shape)))
         } else {
             // ========== dL/dK（对卷积核的梯度）==========
             // 对每个样本：grad_mat [out_c, out_h*out_w] × col [out_h*out_w, col_w] → [out_c, col_w]
@@ -552,10 +553,10 @@ impl TraitNode for Conv2d {
                 total = total + sample_grad;
             }
 
-            Ok(Tensor::new(
+            Ok(GradResult::Computed(Tensor::new(
                 total.as_slice().unwrap(),
                 kernel_shape,
-            ))
+            )))
         }
     }
 

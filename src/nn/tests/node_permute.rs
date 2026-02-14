@@ -186,7 +186,7 @@ fn test_permute_vjp_2d() -> Result<(), GraphError> {
 
     // upstream shape = [3, 2]（permuted 的输出形状）
     let upstream = Tensor::new(&[10.0, 40.0, 20.0, 50.0, 30.0, 60.0], &[3, 2]);
-    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 3]);
     // grad = upstream.permute([1, 0])
@@ -227,7 +227,7 @@ fn test_permute_vjp_3d() -> Result<(), GraphError> {
 
     // upstream 全 1.0，形状 [2, 4, 3]
     let upstream = Tensor::ones(&[2, 4, 3]);
-    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // grad = upstream.permute([0, 2, 1]) → 全 1 排列后仍全 1
     assert_eq!(grad.shape(), &[2, 3, 4]);
@@ -269,7 +269,7 @@ fn test_permute_vjp_3d_non_self_inverse() -> Result<(), GraphError> {
     // 构造非 unit upstream [4, 2, 3]
     let upstream_data: Vec<f32> = (1..=24).map(|i| i as f32 * 0.1).collect();
     let upstream = Tensor::new(&upstream_data, &[4, 2, 3]);
-    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?;
+    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
 
     // grad = upstream.permute([1, 2, 0])
     // 验证：grad[i, j, k] == upstream[k, i, j]
