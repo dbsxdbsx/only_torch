@@ -372,7 +372,7 @@ impl NodeInner {
     ///
     /// # 性能优化
     /// 直接借用父节点的 raw_node，避免 clone Tensor
-    pub(crate) fn calc_grad_to_parent_index(
+    pub(in crate::nn) fn calc_grad_to_parent_index(
         &self,
         target_index: usize,
         upstream_grad: &Tensor,

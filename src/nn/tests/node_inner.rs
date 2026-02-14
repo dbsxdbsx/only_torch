@@ -9,7 +9,7 @@
 
 use crate::nn::NodeId;
 use crate::nn::nodes::NodeInner;
-use crate::nn::nodes::raw_node::{Add, InputVariant, Parameter};
+use crate::nn::nodes::raw_node::{Add, InputVariant, Negate, Parameter};
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use std::rc::Rc;
@@ -588,4 +588,166 @@ fn test_backward_propagate_pass_id() {
     add.backward_propagate(2).unwrap();
     let grad3 = input.grad().unwrap()[[0, 0]];
     assert_eq!(grad3, 2.0); // 新的一轮
+}
+
+// ==================== GradResult::Negated 路径测试 ====================
+
+/// 辅助函数：创建 [1,1] 形状的 Negate 节点
+fn make_negate_1x1() -> crate::nn::nodes::NodeType {
+    let shape = &[1, 1];
+    let dyn_shape = DynamicShape::fixed(shape);
+    Negate::new(shape, &dyn_shape).unwrap().into()
+}
+
+/// 测试 GradResult::Negated 路径 — 首次设置梯度
+///
+/// 结构：input -> negate(-input)
+/// Negate 返回 GradResult::Negated，触发 accumulate_grad_negated。
+/// 首次累加时 input 无梯度，应设置为 -upstream_grad。
+#[test]
+fn test_backward_negated_first_accumulation() {
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[1, 1])));
+    input
+        .set_value(Some(&Tensor::new(&[3.0], &[1, 1])))
+        .unwrap();
+
+    let neg = Rc::new(NodeInner::new(
+        NodeId(2),
+        None,
+        make_negate_1x1(),
+        vec![input.clone()],
+    ));
+
+    // 前向传播
+    neg.forward_recursive(1, false).unwrap();
+    assert_eq!(neg.value().unwrap()[[0, 0]], -3.0);
+
+    // 设置 negate 节点梯度为 5（模拟从下游收到的梯度）
+    neg.set_grad(Some(&Tensor::new(&[5.0], &[1, 1]))).unwrap();
+
+    // 反向传播
+    neg.backward_propagate(1).unwrap();
+
+    // input 首次接收梯度：Negated 路径 → -upstream = -5
+    let input_grad = input.grad().unwrap();
+    assert_eq!(input_grad[[0, 0]], -5.0);
+}
+
+/// 测试 GradResult::Negated 路径 — 原地减法累加
+///
+/// 结构：
+///   input -> negate1 -> add
+///   input -> negate2 -↗
+///
+/// 两个 negate 节点都返回 GradResult::Negated，input 接收两次 Negated 梯度。
+/// 第一次：set_grad(-upstream1)
+/// 第二次：existing -= upstream2（原地减法，零分配）
+#[test]
+fn test_backward_negated_inplace_subtraction() {
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[1, 1])));
+    input
+        .set_value(Some(&Tensor::new(&[2.0], &[1, 1])))
+        .unwrap();
+
+    // negate1 = -input = -2
+    let neg1 = Rc::new(NodeInner::new(
+        NodeId(2),
+        None,
+        make_negate_1x1(),
+        vec![input.clone()],
+    ));
+
+    // negate2 = -input = -2
+    let neg2 = Rc::new(NodeInner::new(
+        NodeId(3),
+        None,
+        make_negate_1x1(),
+        vec![input.clone()],
+    ));
+
+    // output = neg1 + neg2 = -4
+    let output = Rc::new(NodeInner::new(
+        NodeId(4),
+        None,
+        make_add_1x1(),
+        vec![neg1.clone(), neg2.clone()],
+    ));
+
+    // 前向传播
+    output.forward_recursive(1, false).unwrap();
+    assert_eq!(output.value().unwrap()[[0, 0]], -4.0);
+
+    // 设置 output 梯度为 1
+    output.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
+
+    // 反向传播
+    output.backward_propagate(1).unwrap();
+
+    // 梯度路径分析：
+    //   output → neg1：Add PassThrough → neg1.grad = 1
+    //   output → neg2：Add PassThrough → neg2.grad = 1
+    //   neg1 → input：Negated → accumulate_grad_negated(1)
+    //     首次：input.grad = -1
+    //   neg2 → input：Negated → accumulate_grad_negated(1)
+    //     第二次：input.grad -= 1 → -1 - 1 = -2
+    let input_grad = input.grad().unwrap();
+    assert_eq!(input_grad[[0, 0]], -2.0);
+
+    // 验证中间节点
+    assert_eq!(neg1.grad().unwrap()[[0, 0]], 1.0);
+    assert_eq!(neg2.grad().unwrap()[[0, 0]], 1.0);
+}
+
+/// 测试 GradResult::Negated + PassThrough 混合路径
+///
+/// 结构：input -> negate -> add (negate + input) → output
+///
+/// output 的两个父节点：
+///   对 negate：Add PassThrough → negate.grad = upstream
+///   对 input：Add PassThrough → input.grad += upstream
+///
+/// negate 向 input 传播：Negated → input.grad -= upstream
+///
+/// input 最终梯度 = upstream（PassThrough）+ (-upstream)（Negated）= 0
+#[test]
+fn test_backward_mixed_passthrough_and_negated() {
+    let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_param(&[1, 1])));
+    input
+        .set_value(Some(&Tensor::new(&[3.0], &[1, 1])))
+        .unwrap();
+
+    // neg = -input = -3
+    let neg = Rc::new(NodeInner::new(
+        NodeId(2),
+        None,
+        make_negate_1x1(),
+        vec![input.clone()],
+    ));
+
+    // output = neg + input = -3 + 3 = 0
+    let output = Rc::new(NodeInner::new(
+        NodeId(3),
+        None,
+        make_add_1x1(),
+        vec![neg.clone(), input.clone()],
+    ));
+
+    // 前向传播
+    output.forward_recursive(1, false).unwrap();
+    assert_eq!(output.value().unwrap()[[0, 0]], 0.0);
+
+    // 设置 output 梯度为 1
+    output.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
+
+    // 反向传播
+    output.backward_propagate(1).unwrap();
+
+    // 梯度分析：
+    //   output → neg：PassThrough → neg.grad = 1
+    //   output → input：PassThrough → input.grad = 1
+    //   neg → input：Negated → input.grad -= 1 → 1 - 1 = 0
+    //
+    // 数学验证：output = -input + input = 0，∂output/∂input = 0 ✓
+    let input_grad = input.grad().unwrap();
+    assert_eq!(input_grad[[0, 0]], 0.0);
 }

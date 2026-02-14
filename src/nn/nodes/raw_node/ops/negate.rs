@@ -93,7 +93,7 @@ impl TraitNode for Negate {
         &self,
         _target_parent_index: usize,
         _parent_values: &[&Tensor],
-        upstream_grad: &Tensor,
+        _upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         // Negate 的局部梯度是 -1，标记为取反（累加时零分配）
         Ok(GradResult::Negated)
