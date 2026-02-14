@@ -272,6 +272,7 @@ entropy bonus = α_d · H(π_d) + α_c · Σ_{a^d} π(a^d|s) · H(π_c|a^d)
 
 ## 扩展阅读
 
+- [SAC 变体的数学基础与严谨性分析](sac_mathematical_foundations.md) — Hybrid Action 6 种模式、收敛性对比、KL 散度方向、双温度理论分析
 - [Beta 分布作为连续 SAC 策略的备选方案](beta_distribution_note.md) — 用有界分布替代 Gaussian+tanh，消除边界偏差
 
 ## 参考文献

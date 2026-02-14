@@ -98,3 +98,5 @@ dist.rsample_and_log_prob()     // (Var, Var) — 采样+log_prob 一步完成
 - PyTorch: `torch.distributions.Categorical`, `torch.distributions.Normal`
 - Haarnoja et al. 2018 Appendix C（TanhNormal 的 Jacobian 修正）
 - [RL 路线图](../../.cursor/plans/) Phase 2 详细规划
+- [SAC 数学基础分析](../../examples/sac/sac_mathematical_foundations.md) — SAC 各变体的收敛性、KL 散度方向、测度论等理论深度分析
+- [Beta 分布备选方案](../../examples/sac/beta_distribution_note.md) — 有界分布替代 Gaussian+tanh 的理论优势
