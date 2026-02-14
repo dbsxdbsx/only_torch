@@ -26,18 +26,21 @@
 
 ## 1. 当前已实现概览
 
-截至 2026-02-12，项目已实现 **41 个节点类型**（详见 `NodeType` 枚举）：
+截至 2026-02-14，项目已实现 **53 个节点类型**（详见 `NodeType` 枚举）+ 多种 Var 级操作：
 
 | 类别 | 数量 | 节点 |
 |------|------|------|
 | 输入/参数/状态 | 3 | Input、Parameter、State |
 | 算术运算 | 4 | Add、Subtract、Multiply、Divide |
 | 矩阵/卷积 | 4 | MatMul、Conv2d、MaxPool2d、AvgPool2d |
-| 形状变换 | 5 | Reshape、Flatten、Select、Gather、Stack |
+| 形状变换 | 7 | Reshape、Flatten、Select、Gather、Stack、Narrow、Permute |
 | 比较/归约 | 6 | Maximum、Minimum、Amax、Amin、Sum、Mean |
-| 激活函数 | 10 | Sigmoid、Tanh、LeakyReLU、Softmax、LogSoftmax、SoftPlus、Step、Sign、Abs、Ln |
+| 激活函数 | 17 | Sigmoid、Tanh、LeakyReLU、Softmax、LogSoftmax、SoftPlus、Step、Sign、Abs、Ln、GELU、Swish、ELU、SELU、Mish、HardSwish、HardSigmoid |
 | 损失函数 | 5 | MSE、MAE、BCE、Huber、SoftmaxCrossEntropy |
+| 条件/筛选 | 3 | Where、TopK、Sort |
 | 辅助节点 | 4 | Identity、Detach、Dropout、ZerosLike |
+
+> 此外还有 Var 级操作（无独立 NodeType）：Squeeze、Unsqueeze、Split
 
 ---
 
@@ -66,24 +69,26 @@
 
 | 节点 | 功能 | 用途 | 优先级 |
 |------|------|------|--------|
-| **Transpose/Permute** | 维度转置 | 多头注意力：`[B,H,S,D] ↔ [B,S,H,D]` | 🟡 中 |
-| **Squeeze** | 移除大小为 1 的维度 | `[1,3,1] → [3]` | 🟡 中 |
-| **Unsqueeze** | 插入大小为 1 的维度 | `[3] → [1,3,1]` | 🟡 中 |
-| **Split** | 张量分割 | 多输出网络、GRU 门分离 | 🟡 中 |
+| ~~**Transpose/Permute**~~ | 维度转置 | 多头注意力：`[B,H,S,D] ↔ [B,S,H,D]` | ✅ 已实现 |
+| ~~**Squeeze**~~ | 移除大小为 1 的维度 | `[1,3,1] → [3]` | ✅ 已实现（Var 方法） |
+| ~~**Unsqueeze**~~ | 插入大小为 1 的维度 | `[3] → [1,3,1]` | ✅ 已实现（Var 方法） |
+| ~~**Split**~~ | 张量分割 | 多输出网络、GRU 门分离 | ✅ 已实现（Var 方法） |
 | **Chunk** | 等分分割 | 类似 Split，但按数量等分 | 🟢 低 |
 | **Repeat/Tile** | 张量重复 | 广播扩展 | 🟢 低 |
 
-### 2.4 激活函数节点
+### ~~2.4 激活函数节点~~ （已全部完成）
 
-| 节点 | 公式 | 用途 | 优先级 |
+> **状态**：✅ 7 个激活函数已全部实现，位于 `src/nn/nodes/raw_node/ops/`。
+
+| 节点 | 公式 | 用途 | 状态 |
 |------|------|------|--------|
-| **GELU** | `y = x · Φ(x)` | Transformer 标准激活（BERT、GPT） | 🟡 中 |
-| **ELU** | `y = x if x>0 else α(e^x-1)` | 平滑 ReLU 变体 | 🟢 低 |
-| **SELU** | `y = λ · ELU(x)` | 自归一化网络 | 🟢 低 |
-| **Swish/SiLU** | `y = x · sigmoid(x)` | EfficientNet、Transformer 变体 | 🟡 中 |
-| **Mish** | `y = x · tanh(softplus(x))` | YOLO v4+ | 🟢 低 |
-| **HardSwish** | `y = x · ReLU6(x+3)/6` | MobileNet v3 | 🟢 低 |
-| **HardSigmoid** | `y = ReLU6(x+3)/6` | 轻量 Sigmoid 近似 | 🟢 低 |
+| ~~**GELU**~~ | `y = x · Φ(x)` | Transformer 标准激活（BERT、GPT） | ✅ 已实现 |
+| ~~**ELU**~~ | `y = x if x>0 else α(e^x-1)` | 平滑 ReLU 变体 | ✅ 已实现 |
+| ~~**SELU**~~ | `y = λ · ELU(x)` | 自归一化网络 | ✅ 已实现 |
+| ~~**Swish/SiLU**~~ | `y = x · sigmoid(x)` | EfficientNet、Transformer 变体 | ✅ 已实现 |
+| ~~**Mish**~~ | `y = x · tanh(softplus(x))` | YOLO v4+ | ✅ 已实现 |
+| ~~**HardSwish**~~ | `y = x · ReLU6(x+3)/6` | MobileNet v3 | ✅ 已实现 |
+| ~~**HardSigmoid**~~ | `y = ReLU6(x+3)/6` | 轻量 Sigmoid 近似 | ✅ 已实现 |
 
 ### 2.5 归一化层节点
 
@@ -120,10 +125,10 @@
 
 | 节点 | 功能 | 用途 | 优先级 |
 |------|------|------|--------|
-| **Where/Cond** | 条件选择 | `y = cond ? a : b` | 🟡 中 |
+| ~~**Where/Cond**~~ | 条件选择 | `y = cond ? a : b` | ✅ 已实现 |
 | **OneHot** | 独热编码 | 分类标签转换 | 🟢 低 |
-| **TopK** | 取前 K 个最大值 | Beam Search、采样 | 🟢 低 |
-| **Sort/ArgSort** | 排序 | 排序相关任务 | 🟢 低 |
+| ~~**TopK**~~ | 取前 K 个最大值 | Beam Search、采样 | ✅ 已实现 |
+| ~~**Sort/ArgSort**~~ | 排序 | 排序相关任务 | ✅ 已实现 |
 
 ---
 
@@ -148,20 +153,20 @@
 这些用于**扩展模型能力**，支持更复杂的网络架构：
 
 - ~~**Categorical 分布**~~ ✅ 已实现
-- **Transpose/Permute** - 多头注意力、复杂张量操作
+- ~~**Transpose/Permute**~~ ✅ 已实现 — 多头注意力、复杂张量操作
 - **LayerNorm/BatchNorm** - Transformer、CNN 架构
-- **GELU/Swish** - 现代激活函数
-- **Split/Squeeze/Unsqueeze** - 灵活的张量操作
-- **Where/Cond** - 条件分支
+- ~~**GELU/Swish**~~ ✅ 已实现 — 现代激活函数（含 ELU、SELU、Mish、HardSwish、HardSigmoid）
+- ~~**Split/Squeeze/Unsqueeze**~~ ✅ 已实现 — 灵活的张量操作（Var 方法）
+- ~~**Where/Cond**~~ ✅ 已实现 — 条件分支
 
 ### 🟢 低优先级（锦上添花）
 
 这些用于**特定场景**或有简单替代方案：
 
 - **Square** - 可用 `x * x` 替代
-- **ELU/SELU/Mish** - 特定网络架构
+- ~~**ELU/SELU/Mish**~~ ✅ 已实现 — 特定网络架构
 - **Embedding** - NLP 任务
-- **TopK/Sort** - 特定算法
+- ~~**TopK/Sort**~~ ✅ 已实现 — 特定算法
 
 ---
 

@@ -1,13 +1,165 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-02-13
- * @Description  : 张量激活与数学函数：tanh、sigmoid、exp、ln、sqrt、softmax、log_softmax
+ * @Description  : 张量激活与数学函数
  */
 
 use super::super::next_source_id;
 use crate::tensor::Tensor;
 
 impl Tensor {
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓leaky_relu↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 Leaky ReLU 激活函数
+    ///
+    /// `leaky_relu(x, alpha) = x if x > 0, else alpha * x`
+    ///
+    /// 当 `alpha = 0` 时等价于标准 ReLU。
+    ///
+    /// # 参数
+    /// - `alpha`: 负半轴斜率（非负数）
+    pub fn leaky_relu(&self, alpha: f32) -> Self {
+        let data = self.data.mapv(|x| if x > 0.0 { x } else { alpha * x });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑leaky_relu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓softplus↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用数值稳定的 SoftPlus 激活函数
+    ///
+    /// `softplus(x) = ln(1 + e^x)`
+    ///
+    /// 数值稳定策略：
+    /// - `x > 20`: 直接返回 x（避免 e^x 溢出）
+    /// - `0 < x <= 20`: `x + ln(1 + e^(-x))`（恒等变换）
+    /// - `x <= 0`: `ln(1 + e^x)`（标准公式）
+    pub fn softplus(&self) -> Self {
+        const THRESHOLD: f32 = 20.0;
+        let data = self.data.mapv(|val| {
+            if val > THRESHOLD {
+                val
+            } else if val > 0.0 {
+                val + (-val).exp().ln_1p()
+            } else {
+                val.exp().ln_1p()
+            }
+        });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑softplus↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓step_fn↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 Step（阶跃）函数
+    ///
+    /// `step(x) = 1 if x >= 0, else 0`
+    ///
+    /// Step 函数不可微，梯度恒为 0（在 Node 层处理）。
+    pub fn step_fn(&self) -> Self {
+        let data = self.data.mapv(|x| if x >= 0.0 { 1.0 } else { 0.0 });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑step_fn↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓gelu↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 GELU 激活函数（tanh 近似版，GPT-2 风格）
+    ///
+    /// `gelu(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))`
+    pub fn gelu(&self) -> Self {
+        const SQRT_2_OVER_PI: f32 = 0.7978845608; // sqrt(2/pi)
+        const COEFF: f32 = 0.044715;
+        let data = self.data.mapv(|x| {
+            let z = SQRT_2_OVER_PI * (x + COEFF * x * x * x);
+            0.5 * x * (1.0 + z.tanh())
+        });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑gelu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓swish↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 Swish/SiLU 激活函数
+    ///
+    /// `swish(x) = x * sigmoid(x)`
+    pub fn swish(&self) -> Self {
+        let data = self.data.mapv(|x| {
+            let sig = 1.0 / (1.0 + (-x).exp());
+            x * sig
+        });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑swish↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓elu↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 ELU 激活函数
+    ///
+    /// `elu(x, alpha) = x if x > 0, else alpha * (exp(x) - 1)`
+    pub fn elu(&self, alpha: f32) -> Self {
+        let data = self.data.mapv(|x| {
+            if x > 0.0 { x } else { alpha * (x.exp() - 1.0) }
+        });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑elu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓selu↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 SELU 激活函数
+    ///
+    /// `selu(x) = LAMBDA * elu(x, ALPHA)`，使用固定常数
+    pub fn selu(&self) -> Self {
+        const LAMBDA: f32 = 1.0507009873554805;
+        const ALPHA: f32 = 1.6732632423543772;
+        let data = self.data.mapv(|x| {
+            if x > 0.0 { LAMBDA * x } else { LAMBDA * ALPHA * (x.exp() - 1.0) }
+        });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑selu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓mish↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 Mish 激活函数
+    ///
+    /// `mish(x) = x * tanh(softplus(x))`
+    ///
+    /// 内部使用数值稳定的 softplus 计算。
+    pub fn mish(&self) -> Self {
+        const THRESHOLD: f32 = 20.0;
+        let data = self.data.mapv(|x| {
+            // 数值稳定的 softplus
+            let sp = if x > THRESHOLD {
+                x
+            } else if x > 0.0 {
+                x + (-x).exp().ln_1p()
+            } else {
+                x.exp().ln_1p()
+            };
+            x * sp.tanh()
+        });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑mish↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓hard_swish↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 HardSwish 激活函数
+    ///
+    /// 分段定义：`0 if x <= -3, x if x >= 3, x*(x+3)/6 otherwise`
+    pub fn hard_swish(&self) -> Self {
+        let data = self.data.mapv(|x| {
+            if x <= -3.0 { 0.0 } else if x >= 3.0 { x } else { x * (x + 3.0) / 6.0 }
+        });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑hard_swish↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓hard_sigmoid↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 HardSigmoid 激活函数
+    ///
+    /// 分段定义：`0 if x <= -3, 1 if x >= 3, (x+3)/6 otherwise`
+    pub fn hard_sigmoid(&self) -> Self {
+        let data = self.data.mapv(|x| {
+            if x <= -3.0 { 0.0 } else if x >= 3.0 { 1.0 } else { (x + 3.0) / 6.0 }
+        });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑hard_sigmoid↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /// 计算张量每个元素的平方根
     pub fn sqrt(&self) -> Self {
         let sqrt_data = self.data.mapv(f32::sqrt);

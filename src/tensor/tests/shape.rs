@@ -764,3 +764,40 @@ fn test_jacobi_diag() {
     assert_eq!(result.shape(), &[1, 1]);
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑jacobi_diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓narrow↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_narrow_basic() {
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let n = t.narrow(1, 1, 2);
+    assert_eq!(n.shape(), &[2, 2]);
+    assert!((n[[0, 0]] - 2.0).abs() < 1e-6);
+    assert!((n[[0, 1]] - 3.0).abs() < 1e-6);
+    assert!((n[[1, 0]] - 5.0).abs() < 1e-6);
+    assert!((n[[1, 1]] - 6.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_narrow_axis0() {
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    let n = t.narrow(0, 0, 2);
+    assert_eq!(n.shape(), &[2, 2]);
+    assert!((n[[0, 0]] - 1.0).abs() < 1e-6);
+    assert!((n[[1, 1]] - 4.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_narrow_full_length() {
+    let t = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+    let n = t.narrow(1, 0, 3);
+    assert_eq!(n.shape(), &[1, 3]);
+    assert!((n[[0, 0]] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+#[should_panic(expected = "narrow")]
+fn test_narrow_out_of_bounds() {
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    t.narrow(1, 1, 3); // start(1) + length(3) > axis_size(2)
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑narrow↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

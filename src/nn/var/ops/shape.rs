@@ -224,6 +224,85 @@ pub trait VarShapeOps {
     /// let q_selected = q_values.gather(1, &actions)?;  // [batch, 1]
     /// ```
     fn gather<I: GatherIndex>(&self, dim: usize, index: I) -> Result<Var, GraphError>;
+
+    /// 沿指定轴取连续子范围（不降维）
+    ///
+    /// 等价于 PyTorch 的 `tensor.narrow(dim, start, length)`。
+    ///
+    /// # 参数
+    /// - `axis`: 操作的轴
+    /// - `start`: 起始索引
+    /// - `length`: 取的长度
+    fn narrow(&self, axis: usize, start: usize, length: usize) -> Result<Var, GraphError>;
+
+    /// 沿指定轴拆分为多段
+    ///
+    /// 内部创建 N 个 Narrow 节点，返回 `Vec<Var>`。
+    /// 梯度通过各 Narrow 节点独立反向传播，自动正确合并。
+    ///
+    /// # 参数
+    /// - `axis`: 拆分的轴
+    /// - `sizes`: 各段大小，之和必须等于轴大小
+    fn split(&self, axis: usize, sizes: &[usize]) -> Result<Vec<Var>, GraphError>;
+
+    /// Squeeze: 移除指定轴上 size=1 的维度（或所有 size=1 维度）
+    ///
+    /// 内部通过 `reshape` 实现，不创建新节点类型。
+    ///
+    /// # 参数
+    /// - `axis`: `Some(i)` 移除第 i 维（须为 size=1），`None` 移除所有 size=1 维
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // [1, 3, 1, 4] squeeze(Some(0)) → [3, 1, 4]
+    /// // [1, 3, 1, 4] squeeze(None)    → [3, 4]
+    /// ```
+    fn squeeze(&self, axis: Option<usize>) -> Result<Var, GraphError>;
+
+    /// Unsqueeze: 在指定位置插入 size=1 的维度
+    ///
+    /// 内部通过 `reshape` 实现，不创建新节点类型。
+    ///
+    /// # 参数
+    /// - `axis`: 插入位置（0..=ndim）
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // [3, 4] unsqueeze(0) → [1, 3, 4]
+    /// // [3, 4] unsqueeze(1) → [3, 1, 4]
+    /// // [3, 4] unsqueeze(2) → [3, 4, 1]
+    /// ```
+    fn unsqueeze(&self, axis: usize) -> Result<Var, GraphError>;
+
+    /// 维度重排（转置的一般形式）
+    ///
+    /// 等价于 PyTorch 的 `tensor.permute(dims)`。
+    ///
+    /// # 参数
+    /// - `dims`: 维度排列顺序，如 `&[0, 2, 1]` 交换后两维
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // x: [batch, seq_len, hidden] → [batch, hidden, seq_len]
+    /// let y = x.permute(&[0, 2, 1])?;
+    /// ```
+    fn permute(&self, dims: &[usize]) -> Result<Var, GraphError>;
+
+    /// 交换两个维度（permute 的便捷接口）
+    ///
+    /// 等价于 PyTorch 的 `tensor.transpose(dim0, dim1)`。
+    /// 内部构造恒等排列并交换 dim0/dim1，然后调用 `permute`。
+    ///
+    /// # 参数
+    /// - `dim0`: 第一个维度
+    /// - `dim1`: 第二个维度
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // x: [2, 3, 4] → transpose(1, 2) → [2, 4, 3]
+    /// let y = x.transpose(1, 2)?;
+    /// ```
+    fn transpose(&self, dim0: usize, dim1: usize) -> Result<Var, GraphError>;
 }
 
 impl VarShapeOps for Var {
@@ -263,5 +342,114 @@ impl VarShapeOps for Var {
             None,
         )?;
         Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    fn narrow(&self, axis: usize, start: usize, length: usize) -> Result<Var, GraphError> {
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_narrow_node(
+            Rc::clone(self.node()),
+            axis,
+            start,
+            length,
+            None,
+        )?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    fn split(&self, axis: usize, sizes: &[usize]) -> Result<Vec<Var>, GraphError> {
+        // 验证 sizes 之和等于轴大小
+        let shape = self.node().shape();
+        if axis >= shape.len() {
+            return Err(GraphError::InvalidOperation(format!(
+                "split: axis {axis} 超出维度 {}",
+                shape.len()
+            )));
+        }
+        let total: usize = sizes.iter().sum();
+        if total != shape[axis] {
+            return Err(GraphError::InvalidOperation(format!(
+                "split: sizes 之和 {total} 不等于轴 {axis} 的大小 {}",
+                shape[axis]
+            )));
+        }
+
+        // 创建 N 个 Narrow 节点
+        let mut result = Vec::with_capacity(sizes.len());
+        let mut start = 0;
+        for &size in sizes {
+            result.push(self.narrow(axis, start, size)?);
+            start += size;
+        }
+        Ok(result)
+    }
+
+    fn squeeze(&self, axis: Option<usize>) -> Result<Var, GraphError> {
+        let shape = self.node().shape();
+        match axis {
+            Some(i) => {
+                if i >= shape.len() {
+                    return Err(GraphError::InvalidOperation(format!(
+                        "squeeze: axis {i} 超出维度 {}",
+                        shape.len()
+                    )));
+                }
+                if shape[i] != 1 {
+                    return Err(GraphError::InvalidOperation(format!(
+                        "squeeze: axis {i} 的大小为 {}（非 1），无法 squeeze",
+                        shape[i]
+                    )));
+                }
+                let mut new_shape = shape.clone();
+                new_shape.remove(i);
+                // 至少保留 1 维
+                if new_shape.is_empty() {
+                    new_shape.push(1);
+                }
+                self.reshape(&new_shape)
+            }
+            None => {
+                let new_shape: Vec<usize> = shape.iter().copied().filter(|&d| d != 1).collect();
+                // 至少保留 1 维（全 1 的情况）
+                if new_shape.is_empty() {
+                    self.reshape(&[1])
+                } else {
+                    self.reshape(&new_shape)
+                }
+            }
+        }
+    }
+
+    fn unsqueeze(&self, axis: usize) -> Result<Var, GraphError> {
+        let shape = self.node().shape();
+        let ndim = shape.len();
+        if axis > ndim {
+            return Err(GraphError::InvalidOperation(format!(
+                "unsqueeze: axis {axis} 超出范围 0..={ndim}"
+            )));
+        }
+        let mut new_shape = shape.clone();
+        new_shape.insert(axis, 1);
+        self.reshape(&new_shape)
+    }
+
+    fn permute(&self, dims: &[usize]) -> Result<Var, GraphError> {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_permute_node(Rc::clone(self.node()), dims, None)?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    fn transpose(&self, dim0: usize, dim1: usize) -> Result<Var, GraphError> {
+        let ndim = self.node().shape().len();
+        if dim0 >= ndim || dim1 >= ndim {
+            return Err(GraphError::InvalidOperation(format!(
+                "transpose: dim0={dim0} 或 dim1={dim1} 超出维度 {ndim}"
+            )));
+        }
+        // 构造恒等排列并交换 dim0/dim1
+        let mut dims: Vec<usize> = (0..ndim).collect();
+        dims.swap(dim0, dim1);
+        self.permute(&dims)
     }
 }

@@ -265,6 +265,61 @@ impl super::Tensor {
         let mut target_view = self.data.slice_mut(slice_info.as_slice());
         target_view.assign(&source.data);
     }
+
+    /// 将 `source` 张量放入 `self` 的指定轴连续范围位置（scatter_at 的范围版）
+    ///
+    /// 这是 `narrow` 的逆操作，用于 Narrow 节点的反向传播。
+    ///
+    /// # 参数
+    /// - `axis`: 目标轴
+    /// - `start`: 起始索引
+    /// - `source`: 源张量，沿 `axis` 的大小即为 length
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // self: [2, 5] 全零，在 axis=1, start=1 处放入 [2, 3] 的 source
+    /// let mut grad = Tensor::zeros(&[2, 5]);
+    /// let source = Tensor::ones(&[2, 3]);
+    /// grad.scatter_range(1, 1, &source);
+    /// // 现在 grad[:, 1..4] = 1.0，其他位置为 0.0
+    /// ```
+    pub fn scatter_range(&mut self, axis: usize, start: usize, source: &Self) {
+        let ndim = self.dimension();
+        assert!(
+            axis < ndim,
+            "scatter_range: axis {axis} 超出张量维度 {ndim}"
+        );
+
+        let length = source.shape()[axis];
+        assert!(
+            start + length <= self.shape()[axis],
+            "scatter_range: start({start}) + length({length}) 超出轴 {axis} 的大小 {}",
+            self.shape()[axis]
+        );
+
+        use ndarray::SliceInfoElem;
+
+        let slice_info: Vec<SliceInfoElem> = (0..ndim)
+            .map(|i| {
+                if i == axis {
+                    SliceInfoElem::Slice {
+                        start: start as isize,
+                        end: Some((start + length) as isize),
+                        step: 1,
+                    }
+                } else {
+                    SliceInfoElem::Slice {
+                        start: 0,
+                        end: None,
+                        step: 1,
+                    }
+                }
+            })
+            .collect();
+
+        let mut target_view = self.data.slice_mut(slice_info.as_slice());
+        target_view.assign(&source.data);
+    }
 }
 
 /// 简化切片语法的宏

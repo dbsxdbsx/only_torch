@@ -45,30 +45,6 @@ impl SoftPlus {
         })
     }
 
-    /// 数值稳定的 `SoftPlus` 计算
-    ///
-    /// 对于大正数 x，直接使用 ln(1 + e^x) 会导致 e^x 溢出
-    /// 使用恒等变换: softplus(x) = x + ln(1 + e^(-x)) 当 x > 0
-    ///              softplus(x) = ln(1 + e^x) 当 x <= 0
-    fn stable_softplus(x: &Tensor) -> Tensor {
-        // 阈值：超过此值时使用稳定公式避免溢出
-        const THRESHOLD: f32 = 20.0;
-
-        x.where_with_f32(
-            |val| val > THRESHOLD,
-            |val| val, // x > threshold: softplus(x) ≈ x
-            |val| {
-                if val > 0.0 {
-                    // 0 < x <= threshold: x + ln(1 + e^(-x))
-                    val + (-val).exp().ln_1p()
-                } else {
-                    // x <= 0: ln(1 + e^x)
-                    val.exp().ln_1p()
-                }
-            },
-        )
-    }
-
     /// 从 softplus(x) 计算 sigmoid(x)
     ///
     /// 数学推导:
@@ -118,8 +94,7 @@ impl TraitNode for SoftPlus {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 计算 softplus(x) = ln(1 + e^x)（数值稳定版本）
-        self.value = Some(Self::stable_softplus(parent_values[0]));
+        self.value = Some(parent_values[0].softplus());
         Ok(())
     }
 

@@ -214,6 +214,44 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑split↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓narrow↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 沿指定轴取连续子范围（不降维）
+    ///
+    /// 等价于 PyTorch 的 `tensor.narrow(dim, start, length)`。
+    ///
+    /// # 参数
+    /// - `axis`: 操作的轴
+    /// - `start`: 起始索引
+    /// - `length`: 取的长度
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    /// let n = t.narrow(1, 1, 2);  // 沿 axis=1 从 index 1 开始取 2 个
+    /// assert_eq!(n.shape(), &[2, 2]);
+    /// // n = [[2, 3], [5, 6]]
+    /// ```
+    pub fn narrow(&self, axis: usize, start: usize, length: usize) -> Self {
+        let ndim = self.dimension();
+        assert!(axis < ndim, "narrow: axis {axis} 超出张量维度 {ndim}");
+        assert!(
+            start + length <= self.shape()[axis],
+            "narrow: start({start}) + length({length}) 超出轴 {axis} 的大小 {}",
+            self.shape()[axis]
+        );
+
+        let slice = self
+            .data
+            .slice_axis(Axis(axis), ndarray::Slice::from(start..start + length));
+        Self {
+            data: slice.to_owned(),
+            source_id: next_source_id(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑narrow↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓(un)squeeze↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     pub fn squeeze(&self) -> Self {
         let mut new_shape = Vec::new();

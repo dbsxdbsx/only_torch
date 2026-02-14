@@ -94,14 +94,7 @@ impl TraitNode for LeakyReLU {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 计算 LeakyReLU: f(x) = x if x > 0, else negative_slope * x
-        let slope = self.negative_slope;
-        let result = parent_values[0].where_with_f32(
-            |x| x > 0.0,
-            |x| x,         // x > 0 时保持原值
-            |x| slope * x, // x <= 0 时乘以 slope
-        );
-        self.value = Some(result);
+        self.value = Some(parent_values[0].leaky_relu(self.negative_slope));
         Ok(())
     }
 

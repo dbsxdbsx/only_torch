@@ -148,6 +148,16 @@ define_node_types! {
         description: "动态索引收集（强化学习）",
         var_method: Some("gather()"),
     },
+    Narrow(Narrow) {
+        category: "形状",
+        description: "沿轴取连续范围（不降维）",
+        var_method: Some("narrow()"),
+    },
+    Permute(Permute) {
+        category: "形状",
+        description: "维度重排（转置的一般形式）",
+        var_method: Some("permute() / transpose()"),
+    },
     Stack(Stack) {
         category: "形状",
         description: "张量堆叠（插入新维度）",
@@ -157,6 +167,18 @@ define_node_types! {
         category: "形状",
         description: "张量拼接（沿现有维度）",
         var_method: Some("Var::concat()"),
+    },
+
+    // ==================== 选择 ====================
+    TopK(TopK) {
+        category: "选择",
+        description: "Top-K 选择",
+        var_method: Some("topk()"),
+    },
+    SortNode(SortNode) {
+        category: "选择",
+        description: "沿轴排序",
+        var_method: Some("sort_values()"),
     },
 
     // ==================== 比较/归约 ====================
@@ -222,6 +244,41 @@ define_node_types! {
         description: "SoftPlus 激活（平滑 ReLU）",
         var_method: Some("softplus()"),
     },
+    Gelu(Gelu) {
+        category: "激活",
+        description: "GELU 激活（tanh 近似）",
+        var_method: Some("gelu()"),
+    },
+    Swish(Swish) {
+        category: "激活",
+        description: "Swish/SiLU 激活",
+        var_method: Some("swish() / silu()"),
+    },
+    Elu(Elu) {
+        category: "激活",
+        description: "ELU 激活",
+        var_method: Some("elu(alpha)"),
+    },
+    Selu(Selu) {
+        category: "激活",
+        description: "SELU 自归一化激活",
+        var_method: Some("selu()"),
+    },
+    Mish(Mish) {
+        category: "激活",
+        description: "Mish 激活",
+        var_method: Some("mish()"),
+    },
+    HardSwish(HardSwish) {
+        category: "激活",
+        description: "HardSwish 激活（CPU 友好）",
+        var_method: Some("hard_swish()"),
+    },
+    HardSigmoid(HardSigmoid) {
+        category: "激活",
+        description: "HardSigmoid 激活（CPU 友好）",
+        var_method: Some("hard_sigmoid()"),
+    },
     Step(Step) {
         category: "激活",
         description: "阶跃函数",
@@ -258,6 +315,13 @@ define_node_types! {
         category: "裁剪",
         description: "值域裁剪（clip/clamp）",
         var_method: Some("clip()"),
+    },
+
+    // ==================== 条件 ====================
+    WhereCond(WhereCond) {
+        category: "条件",
+        description: "条件选择（where）",
+        var_method: Some("Var::where_cond()"),
     },
 
     // ==================== 损失函数 ====================

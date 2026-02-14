@@ -118,25 +118,6 @@ impl Concat {
         })
     }
 
-    /// 沿指定轴切片（反向传播辅助方法）
-    fn slice_along_axis(tensor: &Tensor, axis: usize, start: usize, len: usize) -> Tensor {
-        let axis_size = tensor.shape()[axis];
-        let rest = axis_size - start - len;
-
-        let mut sizes = Vec::new();
-        if start > 0 {
-            sizes.push(start);
-        }
-        sizes.push(len);
-        if rest > 0 {
-            sizes.push(rest);
-        }
-
-        let parts = tensor.split(axis, &sizes);
-
-        let target_idx = usize::from(start > 0);
-        parts.into_iter().nth(target_idx).unwrap()
-    }
 }
 
 impl TraitNode for Concat {
@@ -193,8 +174,8 @@ impl TraitNode for Concat {
         let start_offset: usize = self.parent_sizes[..idx].iter().sum();
         let size = self.parent_sizes[idx];
 
-        // concat 反向：按偏移分段提取梯度
-        Ok(Self::slice_along_axis(upstream_grad, self.axis, start_offset, size))
+        // concat 反向：按偏移分段提取梯度（使用 Tensor::narrow）
+        Ok(upstream_grad.narrow(self.axis, start_offset, size))
     }
 
     fn grad(&self) -> Option<&Tensor> {

@@ -188,3 +188,99 @@ fn test_soft_update_tau_one() {
     assert_eq!(target, Tensor::new(&[10.0, 20.0], &[1, 2]));
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑soft_update↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓sort_along_axis↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_sort_along_axis_ascending() {
+    // 1D 升序
+    let t = Tensor::new(&[3.0, 1.0, 4.0, 1.0, 5.0], &[5]);
+    let (sorted, indices) = t.sort_along_axis(0, false);
+    assert_eq!(sorted.data.as_slice().unwrap(), &[1.0, 1.0, 3.0, 4.0, 5.0]);
+    // 索引指向原始位置
+    assert_eq!(indices[[0]], 1.0); // 值 1.0 原在 index 1
+    assert_eq!(indices[[1]], 3.0); // 值 1.0 原在 index 3
+    assert_eq!(indices[[2]], 0.0); // 值 3.0 原在 index 0
+}
+
+#[test]
+fn test_sort_along_axis_descending() {
+    let t = Tensor::new(&[3.0, 1.0, 4.0, 1.0, 5.0], &[5]);
+    let (sorted, indices) = t.sort_along_axis(0, true);
+    assert_eq!(sorted.data.as_slice().unwrap(), &[5.0, 4.0, 3.0, 1.0, 1.0]);
+    assert_eq!(indices[[0]], 4.0); // 值 5.0 原在 index 4
+    assert_eq!(indices[[1]], 2.0); // 值 4.0 原在 index 2
+}
+
+#[test]
+fn test_sort_along_axis_2d_axis1() {
+    // 2D 沿 axis=1（行内排序）
+    let t = Tensor::new(&[3.0, 1.0, 2.0, 6.0, 4.0, 5.0], &[2, 3]);
+    let (sorted, indices) = t.sort_along_axis(1, false);
+    assert_eq!(sorted.shape(), &[2, 3]);
+    // 第一行: [3,1,2] -> [1,2,3]
+    assert_eq!(sorted[[0, 0]], 1.0);
+    assert_eq!(sorted[[0, 1]], 2.0);
+    assert_eq!(sorted[[0, 2]], 3.0);
+    assert_eq!(indices[[0, 0]], 1.0);
+    assert_eq!(indices[[0, 1]], 2.0);
+    assert_eq!(indices[[0, 2]], 0.0);
+    // 第二行: [6,4,5] -> [4,5,6]
+    assert_eq!(sorted[[1, 0]], 4.0);
+    assert_eq!(sorted[[1, 1]], 5.0);
+    assert_eq!(sorted[[1, 2]], 6.0);
+}
+
+#[test]
+fn test_sort_along_axis_2d_axis0() {
+    // 2D 沿 axis=0（列内排序）
+    let t = Tensor::new(&[3.0, 1.0, 6.0, 4.0], &[2, 2]);
+    let (sorted, idx) = t.sort_along_axis(0, false);
+    // 第一列: [3,6] -> [3,6]（已排序），索引 [0,1]
+    assert_eq!(sorted[[0, 0]], 3.0);
+    assert_eq!(sorted[[1, 0]], 6.0);
+    assert_eq!(idx[[0, 0]], 0.0);
+    assert_eq!(idx[[1, 0]], 1.0);
+    // 第二列: [1,4] -> [1,4]（已排序），索引 [0,1]
+    assert_eq!(sorted[[0, 1]], 1.0);
+    assert_eq!(sorted[[1, 1]], 4.0);
+    assert_eq!(idx[[0, 1]], 0.0);
+    assert_eq!(idx[[1, 1]], 1.0);
+}
+
+#[test]
+fn test_sort_along_axis_already_sorted() {
+    // 已排序输入，索引应为 0,1,2,...
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    let (sorted, indices) = t.sort_along_axis(0, false);
+    assert_eq!(sorted, t);
+    for i in 0..4 {
+        assert_eq!(indices[[i]], i as f32);
+    }
+}
+
+#[test]
+fn test_sort_along_axis_shape_preserved() {
+    let t = Tensor::new(&[2.0, 1.0, 4.0, 3.0, 6.0, 5.0], &[2, 3]);
+    let (sorted, idx) = t.sort_along_axis(1, false);
+    assert_eq!(sorted.shape(), &[2, 3]);
+    assert_eq!(idx.shape(), &[2, 3]);
+}
+
+#[test]
+#[should_panic(expected = "sort_along_axis: axis")]
+fn test_sort_along_axis_invalid_axis() {
+    let t = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let _ = t.sort_along_axis(1, false); // 1D 张量只有 axis=0
+}
+
+#[test]
+fn test_sort_along_axis_negative_values() {
+    // 含负数排序
+    let t = Tensor::new(&[-3.0, 2.0, -1.0, 0.0, 5.0, -4.0], &[6]);
+    let (sorted, _) = t.sort_along_axis(0, false);
+    assert_eq!(
+        sorted.data.as_slice().unwrap(),
+        &[-4.0, -3.0, -1.0, 0.0, 2.0, 5.0]
+    );
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑sort_along_axis↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

@@ -2,6 +2,78 @@ use crate::tensor::Tensor;
 use crate::{assert_panic, tensor_where, tensor_where_f32, tensor_where_tensor};
 use approx::assert_abs_diff_eq;
 
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓where_mask↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_where_mask_basic() {
+    // 基本掩码选择：非零为 true
+    let cond = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[4]);
+    let x = Tensor::new(&[10.0, 20.0, 30.0, 40.0], &[4]);
+    let y = Tensor::new(&[100.0, 200.0, 300.0, 400.0], &[4]);
+    let result = Tensor::where_mask(&cond, &x, &y);
+    let expected = Tensor::new(&[10.0, 200.0, 30.0, 400.0], &[4]);
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn test_where_mask_all_true() {
+    let cond = Tensor::new(&[1.0, 1.0, 1.0], &[3]);
+    let x = Tensor::new(&[10.0, 20.0, 30.0], &[3]);
+    let y = Tensor::new(&[100.0, 200.0, 300.0], &[3]);
+    let result = Tensor::where_mask(&cond, &x, &y);
+    assert_eq!(result, x);
+}
+
+#[test]
+fn test_where_mask_all_false() {
+    let cond = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
+    let x = Tensor::new(&[10.0, 20.0, 30.0], &[3]);
+    let y = Tensor::new(&[100.0, 200.0, 300.0], &[3]);
+    let result = Tensor::where_mask(&cond, &x, &y);
+    assert_eq!(result, y);
+}
+
+#[test]
+fn test_where_mask_nonbinary_condition() {
+    // 非零值均视为 true（-1.0, 0.5, 99.0 都是非零）
+    let cond = Tensor::new(&[-1.0, 0.0, 0.5, 0.0, 99.0], &[5]);
+    let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0], &[5]);
+    let y = Tensor::new(&[10.0, 20.0, 30.0, 40.0, 50.0], &[5]);
+    let result = Tensor::where_mask(&cond, &x, &y);
+    let expected = Tensor::new(&[1.0, 20.0, 3.0, 40.0, 5.0], &[5]);
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn test_where_mask_2d() {
+    // 2D 张量，验证形状保持
+    let cond = Tensor::new(&[1.0, 0.0, 0.0, 1.0, 1.0, 0.0], &[2, 3]);
+    let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let y = Tensor::new(&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0], &[2, 3]);
+    let result = Tensor::where_mask(&cond, &x, &y);
+    assert_eq!(result.shape(), &[2, 3]);
+    let expected = Tensor::new(&[1.0, 20.0, 30.0, 4.0, 5.0, 60.0], &[2, 3]);
+    assert_eq!(result, expected);
+}
+
+#[test]
+#[should_panic(expected = "where_mask: 三个张量形状必须相同")]
+fn test_where_mask_shape_mismatch_condition() {
+    let cond = Tensor::new(&[1.0, 0.0], &[2]);
+    let x = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let y = Tensor::new(&[4.0, 5.0, 6.0], &[3]);
+    let _ = Tensor::where_mask(&cond, &x, &y);
+}
+
+#[test]
+#[should_panic(expected = "where_mask: 三个张量形状必须相同")]
+fn test_where_mask_shape_mismatch_xy() {
+    let cond = Tensor::new(&[1.0, 0.0, 1.0], &[3]);
+    let x = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let y = Tensor::new(&[4.0, 5.0], &[2]);
+    let _ = Tensor::where_mask(&cond, &x, &y);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑where_mask↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓where_with↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_where_with() {

@@ -28,15 +28,19 @@
  */
 
 mod activation;
+mod filter;
 mod loss;
 mod matrix;
 mod reduce;
 mod regularization;
+mod selection;
 mod shape;
 
 pub use activation::VarActivationOps;
+pub use filter::VarFilterOps;
 pub use loss::VarLossOps;
 pub use matrix::VarMatrixOps;
 pub use reduce::VarReduceOps;
 pub use regularization::VarRegularizationOps;
+pub use selection::VarSelectionOps;
 pub use shape::{GatherIndex, VarShapeOps};

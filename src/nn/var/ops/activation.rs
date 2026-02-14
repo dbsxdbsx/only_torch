@@ -63,6 +63,32 @@ pub trait VarActivationOps {
     /// 常用于计算 log 概率（如 SAC Actor Loss）。
     fn log_softmax(&self) -> Var;
 
+    /// GELU 激活（tanh 近似版）：0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    ///
+    /// GPT-2 风格的近似实现，广泛用于 Transformer 架构。
+    fn gelu(&self) -> Var;
+
+    /// Swish/SiLU 激活：x * sigmoid(x)
+    fn swish(&self) -> Var;
+
+    /// SiLU 激活（Swish 的别名）：x * sigmoid(x)
+    fn silu(&self) -> Var;
+
+    /// ELU 激活：x if x > 0, else alpha * (exp(x) - 1)
+    fn elu(&self, alpha: f32) -> Var;
+
+    /// SELU 自归一化激活：LAMBDA * elu(x, ALPHA)
+    fn selu(&self) -> Var;
+
+    /// Mish 激活：x * tanh(softplus(x))
+    fn mish(&self) -> Var;
+
+    /// HardSwish 激活（CPU 友好）：分段函数
+    fn hard_swish(&self) -> Var;
+
+    /// HardSigmoid 激活（CPU 友好）：分段函数
+    fn hard_sigmoid(&self) -> Var;
+
     /// `SoftPlus` 激活：log(1 + exp(x))
     ///
     /// 平滑的 `ReLU` 近似，常用于需要平滑非线性的场景
@@ -158,6 +184,73 @@ impl VarActivationOps for Var {
             .borrow_mut()
             .create_log_softmax_node(Rc::clone(self.node()), None)
             .expect("创建 LogSoftmax 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn gelu(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_gelu_node(Rc::clone(self.node()), None)
+            .expect("创建 GELU 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn swish(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_swish_node(Rc::clone(self.node()), None)
+            .expect("创建 Swish 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn silu(&self) -> Var {
+        self.swish()
+    }
+
+    fn elu(&self, alpha: f32) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_elu_node(Rc::clone(self.node()), alpha, None)
+            .expect("创建 ELU 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn selu(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_selu_node(Rc::clone(self.node()), None)
+            .expect("创建 SELU 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn mish(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_mish_node(Rc::clone(self.node()), None)
+            .expect("创建 Mish 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn hard_swish(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_hard_swish_node(Rc::clone(self.node()), None)
+            .expect("创建 HardSwish 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn hard_sigmoid(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_hard_sigmoid_node(Rc::clone(self.node()), None)
+            .expect("创建 HardSigmoid 节点失败");
         Self::new_with_rc_graph(node, &graph)
     }
 

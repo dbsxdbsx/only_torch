@@ -30,6 +30,7 @@ mod property;
 mod sub;
 mod sub_assign;
 
+mod activation;
 mod filter;
 mod print;
 
@@ -42,6 +43,7 @@ mod shape;
 mod slice;
 mod softmax;
 mod stack;
+mod topk;
 
 #[derive(Debug)]
 struct TensorCheck {

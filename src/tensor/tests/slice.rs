@@ -456,3 +456,42 @@ fn test_scatter_at_panic_index_out_of_bounds() {
 }
 
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑scatter_at↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓scatter_range↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_scatter_range_basic() {
+    let mut target = Tensor::zeros(&[2, 5]);
+    let source = Tensor::ones(&[2, 3]);
+    target.scatter_range(1, 1, &source);
+    // target[:, 1..4] = 1, rest = 0
+    assert!((target[[0, 0]] - 0.0).abs() < 1e-6);
+    assert!((target[[0, 1]] - 1.0).abs() < 1e-6);
+    assert!((target[[0, 2]] - 1.0).abs() < 1e-6);
+    assert!((target[[0, 3]] - 1.0).abs() < 1e-6);
+    assert!((target[[0, 4]] - 0.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_scatter_range_axis0() {
+    let mut target = Tensor::zeros(&[4, 2]);
+    let source = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    target.scatter_range(0, 1, &source);
+    assert!((target[[0, 0]] - 0.0).abs() < 1e-6);
+    assert!((target[[1, 0]] - 1.0).abs() < 1e-6);
+    assert!((target[[2, 1]] - 4.0).abs() < 1e-6);
+    assert!((target[[3, 0]] - 0.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_scatter_range_narrow_inverse() {
+    // scatter_range 是 narrow 的逆操作
+    let original = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let narrowed = original.narrow(1, 1, 2); // [[2,3],[5,6]]
+
+    let mut reconstructed = Tensor::zeros(&[2, 3]);
+    reconstructed.scatter_range(1, 1, &narrowed);
+    assert!((reconstructed[[0, 0]] - 0.0).abs() < 1e-6);
+    assert!((reconstructed[[0, 1]] - 2.0).abs() < 1e-6);
+    assert!((reconstructed[[0, 2]] - 3.0).abs() < 1e-6);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑scatter_range↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

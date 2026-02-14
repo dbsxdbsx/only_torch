@@ -591,6 +591,71 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "gather", vec![input, index])
     }
 
+    /// 创建 Narrow 节点
+    ///
+    /// Narrow: 沿单轴取连续子范围（不降维）
+    pub fn create_narrow_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        axis: usize,
+        start: usize,
+        length: usize,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Narrow;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let narrow = Narrow::new(&parent_shape, &parent_dynamic_shape, axis, start, length)?;
+        let raw_node: NodeType = narrow.into();
+
+        self.create_node_inner(raw_node, name, "narrow", vec![parent])
+    }
+
+    /// 创建 Permute 节点
+    ///
+    /// 维度重排（转置的一般形式）：output = input.permute(dims)
+    pub fn create_permute_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        dims: &[usize],
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Permute;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let permute = Permute::new(&parent_shape, &parent_dynamic_shape, dims)?;
+        let raw_node: NodeType = permute.into();
+
+        self.create_node_inner(raw_node, name, "permute", vec![parent])
+    }
+
+    /// 创建 TopK 节点
+    ///
+    /// 沿指定轴选取前 k 大元素。
+    /// forward 输出 values，内部保存 indices 用于 backward scatter。
+    pub fn create_topk_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        k: usize,
+        axis: usize,
+        sorted: bool,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::TopK;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let topk = TopK::new(&parent_shape, &parent_dynamic_shape, k, axis, sorted)?;
+        let raw_node: NodeType = topk.into();
+
+        self.create_node_inner(raw_node, name, "topk", vec![parent])
+    }
+
     /// 创建 Sigmoid 节点    ///
     /// Sigmoid 激活函数：sigmoid(x) = 1 / (1 + e^(-x))
     pub fn create_sigmoid_node(
@@ -690,6 +755,140 @@ impl GraphInner {
         let raw_node: NodeType = log_softmax.into();
 
         self.create_node_inner(raw_node, name, "log_softmax", vec![parent])
+    }
+
+    /// 创建 GELU 节点
+    ///
+    /// GELU: gelu(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    pub fn create_gelu_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Gelu;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let gelu = Gelu::new(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = gelu.into();
+
+        self.create_node_inner(raw_node, name, "gelu", vec![parent])
+    }
+
+    /// 创建 Swish/SiLU 节点
+    ///
+    /// Swish: swish(x) = x * sigmoid(x)
+    pub fn create_swish_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Swish;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let swish = Swish::new(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = swish.into();
+
+        self.create_node_inner(raw_node, name, "swish", vec![parent])
+    }
+
+    /// 创建 ELU 节点
+    ///
+    /// ELU: elu(x, alpha) = x if x > 0, else alpha * (exp(x) - 1)
+    pub fn create_elu_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        alpha: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Elu;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let elu = Elu::new(&parent_shape, &parent_dynamic_shape, alpha)?;
+        let raw_node: NodeType = elu.into();
+
+        self.create_node_inner(raw_node, name, "elu", vec![parent])
+    }
+
+    /// 创建 SELU 节点
+    ///
+    /// SELU: selu(x) = LAMBDA * elu(x, ALPHA)
+    pub fn create_selu_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Selu;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let selu = Selu::new(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = selu.into();
+
+        self.create_node_inner(raw_node, name, "selu", vec![parent])
+    }
+
+    /// 创建 Mish 节点
+    ///
+    /// Mish: mish(x) = x * tanh(softplus(x))
+    pub fn create_mish_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Mish;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let mish = Mish::new(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = mish.into();
+
+        self.create_node_inner(raw_node, name, "mish", vec![parent])
+    }
+
+    /// 创建 HardSwish 节点
+    ///
+    /// HardSwish: 分段函数，CPU 友好（无 exp）
+    pub fn create_hard_swish_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::HardSwish;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let hard_swish = HardSwish::new(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = hard_swish.into();
+
+        self.create_node_inner(raw_node, name, "hard_swish", vec![parent])
+    }
+
+    /// 创建 HardSigmoid 节点
+    ///
+    /// HardSigmoid: 分段函数，CPU 友好（无 exp）
+    pub fn create_hard_sigmoid_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::HardSigmoid;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let hard_sigmoid = HardSigmoid::new(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = hard_sigmoid.into();
+
+        self.create_node_inner(raw_node, name, "hard_sigmoid", vec![parent])
     }
 
     /// 创建 SoftPlus 节点    ///
@@ -1228,6 +1427,65 @@ impl GraphInner {
         let raw_node: NodeType = clip.into();
 
         self.create_node_inner(raw_node, name, "clip", vec![input])
+    }
+
+    /// 创建 WhereCond 节点
+    ///
+    /// 条件选择：`output = where(condition, x, y)`
+    /// condition 是固定 Tensor（不参与梯度），x 和 y 是 Var 父节点。
+    pub fn create_where_cond_node(
+        &mut self,
+        x: Rc<NodeInner>,
+        y: Rc<NodeInner>,
+        condition: crate::tensor::Tensor,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::WhereCond;
+
+        let x_shape = x.shape();
+        let y_shape = y.shape();
+        let x_dynamic_shape = x.dynamic_shape();
+
+        // 验证 x 和 y 形状一致
+        if x_shape != y_shape {
+            return Err(GraphError::ShapeMismatch {
+                expected: x_shape.clone(),
+                got: y_shape,
+                message: "WhereCond: x 和 y 的形状必须一致".to_string(),
+            });
+        }
+
+        let where_cond = WhereCond::new(&x_shape, &x_dynamic_shape, condition)?;
+        let raw_node: NodeType = where_cond.into();
+
+        self.create_node_inner(raw_node, name, "where_cond", vec![x, y])
+    }
+
+    /// 创建 SortNode 节点
+    ///
+    /// 沿指定轴排序（可微），返回排序后的值。
+    /// 内部缓存排序索引，反向传播时通过逆置换 scatter 梯度。
+    ///
+    /// # 参数
+    /// - `parent`: 输入节点
+    /// - `axis`: 排序轴
+    /// - `descending`: 是否降序
+    pub fn create_sort_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        axis: usize,
+        descending: bool,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::SortNode;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let sort_node = SortNode::new(&parent_shape, &parent_dynamic_shape, axis, descending)?;
+        let raw_node: NodeType = sort_node.into();
+
+        self.create_node_inner(raw_node, name, "sort", vec![parent])
     }
 
     /// 创建 Exp 节点

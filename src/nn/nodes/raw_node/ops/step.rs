@@ -3,7 +3,6 @@ use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
-use crate::tensor_where;
 
 #[derive(Clone)]
 pub(crate) struct Step {
@@ -70,9 +69,7 @@ impl TraitNode for Step {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 计算Step函数值
-        let input = parent_values[0];
-        self.value = Some(tensor_where!(input >= 0.0, 1.0, 0.0));
+        self.value = Some(parent_values[0].step_fn());
         Ok(())
     }
 

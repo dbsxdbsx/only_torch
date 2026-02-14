@@ -29,6 +29,18 @@
   - `Sqrt`：平方根
   - `Negate`：取负（补全基础算术运算对称性）
 
+- **feat(nn): 批量新增基础节点（18 项，节点总数 41 → 53）**
+  - 7 个现代激活函数节点：`GELU`、`Swish/SiLU`、`ELU`、`SELU`、`Mish`、`HardSwish`、`HardSigmoid`
+  - 形状操作节点：`Narrow`（沿轴连续切片）、`Permute`（维度重排 / 转置）
+  - 条件/筛选节点：`Where`（掩码选择）、`TopK`（取前 K 大值）、`Sort`（沿轴排序）
+  - 3 个 Var 便捷方法（无独立 NodeType）：`squeeze`、`unsqueeze`、`split`
+  - 统一 Tensor → Node → Var 三层架构，每层均有独立测试
+  - 11 个 Python 对照脚本（PyTorch 前向值 + Jacobian 验证）
+
+- **refactor(nn): 补齐 3 个已有节点的 Tensor 层方法**
+  - `LeakyReLU`、`SoftPlus`、`Step` 的前向计算下沉到 Tensor 方法，统一三层调用路径
+  - 附带将 `Concat` 内的 `slice_along_axis` 重构为 `Tensor::narrow`
+
 - **feat(vis): Graph 快照可视化 + 多 Loss 路径边着色**
   - 支持在任意时刻对计算图进行快照可视化
   - 多 Loss 场景下自动为不同 Loss 路径着色
