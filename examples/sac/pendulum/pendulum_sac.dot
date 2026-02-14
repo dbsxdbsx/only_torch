@@ -231,17 +231,17 @@ digraph ComputeGraph {
     "33" [label=<input_5<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "35" [label=<input_6<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "62" [label=<input_7<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "70" [label=<stack_1<BR/><B>Stack</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "72" [label=<stack_2<BR/><B>Stack</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "70" [label=<concat_1<BR/><B>Concat</B><BR/>[?, 4]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
+    "72" [label=<concat_2<BR/><B>Concat</B><BR/>[?, 4]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
     "75" [label=<obs_1<BR/><B>Input</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "85" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]<BR/><FONT COLOR="#D32F2F" POINT-SIZE="9">▸ Critic1 Loss</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#D32F2F"];
     "87" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "95" [label=<stack_3<BR/><B>Stack</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "95" [label=<concat_3<BR/><B>Concat</B><BR/>[?, 4]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
     "96" [label=<obs_2<BR/><B>Input</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "97" [label=<action_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "98" [label=<mse_2<BR/><B>MSE</B><BR/>[?, 1]<BR/><FONT COLOR="#388E3C" POINT-SIZE="9">▸ Critic2 Loss</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#388E3C"];
     "100" [label=<target_2<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "108" [label=<stack_4<BR/><B>Stack</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "108" [label=<concat_4<BR/><B>Concat</B><BR/>[?, 4]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
     "109" [label=<obs_3<BR/><B>Input</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "110" [label=<action_2<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
@@ -379,6 +379,6 @@ digraph ComputeGraph {
     "110" -> "108" [color="#388E3C"];
     "75" -> "96" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= obs> fontcolor="#4FC3F7" fontsize=8];
     "96" -> "109" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= obs> fontcolor="#4FC3F7" fontsize=8];
-    "87" -> "100" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= target_1> fontcolor="#4FC3F7" fontsize=8];
     "97" -> "110" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= action> fontcolor="#4FC3F7" fontsize=8];
+    "87" -> "100" [style=dashed dir=none color="#4FC3F7" constraint=false label=<= target_1> fontcolor="#4FC3F7" fontsize=8];
 }

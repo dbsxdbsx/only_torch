@@ -1032,7 +1032,8 @@ impl Var {
 
         // === 同源数据节点链式虚线标注 ===
         // 按 data_source_id 分组，相同 source_id 的 Input/TargetInput 节点表示使用了同一份数据
-        let mut source_groups: HashMap<u64, Vec<u64>> = HashMap::new();
+        let mut source_groups: std::collections::BTreeMap<u64, Vec<u64>> =
+            std::collections::BTreeMap::new();
         for snode in &snapshot.nodes {
             if let Some(sid) = snode.data_source_id {
                 if !rnn_hidden_ids.contains(&snode.id.0) {
