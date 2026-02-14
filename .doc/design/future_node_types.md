@@ -47,8 +47,8 @@
 
 | 节点 | 公式 | 用途 | 优先级 |
 |------|------|------|--------|
-| **Exp** | `y = e^x` | SAC：`log_std.exp()` → std | 🔴 高 |
-| **Sqrt** | `y = √x` | Adam 优化器：`sqrt(v + ε)` | 🔴 高 |
+| ~~**Exp**~~ | `y = e^x` | SAC：`log_std.exp()` → std | ✅ 已实现 |
+| ~~**Sqrt**~~ | `y = √x` | Adam 优化器：`sqrt(v + ε)` | ✅ 已实现 |
 | **Pow** | `y = x^n` | 通用幂运算 | 🟡 中 |
 | **Square** | `y = x²` | 可用 `x * x` 替代，但语义更清晰 | 🟢 低 |
 | **Reciprocal** | `y = 1/x` | 可用 `1.0 / x` 替代 | 🟢 低 |
@@ -58,7 +58,7 @@
 
 | 节点 | 公式 | 用途 | 优先级 |
 |------|------|------|--------|
-| **Clamp/Clip** | `y = clamp(x, min, max)` | SAC：`log_std` 裁剪 (`-20` ~ `2`)；PPO：ratio clipping | 🔴 高 |
+| ~~**Clamp/Clip**~~ | `y = clamp(x, min, max)` | SAC：`log_std` 裁剪；PPO：ratio clipping | ✅ 已实现 |
 | **ReLU6** | `y = min(max(0, x), 6)` | MobileNet 等轻量网络 | 🟢 低 |
 | **HardTanh** | `y = clamp(x, -1, 1)` | 硬 Tanh 激活 | 🟢 低 |
 
@@ -103,28 +103,18 @@
 | **Attention** | 注意力计算 | Transformer 核心组件 | 🟢 低 |
 | **Pad** | 填充 | 序列对齐、卷积边界处理 | 🟢 低 |
 
-### 2.7 概率分布节点（模块级）
+### ~~2.7 概率分布节点（模块级）~~ （已完成）
 
-> **说明**：以下不是单个计算图节点，而是需要作为**独立模块**（`src/nn/distributions/`）实现的概率分布。
-> 它们组合已有节点（Exp、Ln、Tanh 等）提供高层 API，是 SAC-Continuous / Hybrid SAC 的**最大缺口**。
+> **状态**：✅ 已全部实现，位于 `src/nn/distributions/`。
+> 详见 [概率分布模块设计](./distributions_design.md)、[RL 路线图](./rl_roadmap.md)。
 >
-> **参考实现**：PyTorch `torch.distributions`、rustRL 使用的 `tch-distr` crate。
+> SAC-Discrete、SAC-Continuous、Hybrid SAC 三个示例均已使用。
 
-| 分布 | 核心方法 | 用途 | 优先级 |
-|------|---------|------|--------|
-| **Normal** | `rsample()`（重参数化采样）、`log_prob()`、`entropy()` | SAC-Continuous Actor：连续动作采样 | 🔴 高 |
-| **TanhNormal** | `sample()` + tanh squash + log_prob 修正 | SAC-Continuous：Squashed Gaussian 策略（Haarnoja 2018 Appendix C） | 🔴 高 |
-| **Categorical** | `sample()`、`log_prob()`、`entropy()` | SAC-Discrete / Hybrid：离散动作采样（当前 sac/cartpole 用纯 Tensor 手工实现，Hybrid 需计算图内版本） | 🟡 中 |
-
-**TanhNormal log_prob 修正公式**（Enforcing Action Bounds）：
-
-```
-log π(a|s) = log N(u|μ,σ) - Σ log(1 - tanh²(u) + ε)
-```
-
-其中 `u` 是 squash 前的原始采样值，`a = tanh(u)`。
-
-**依赖关系**：Normal / TanhNormal 依赖 §2.1 的 **Exp** 节点和 §2.2 的 **Clamp** 节点。
+| 分布 | 状态 |
+|------|------|
+| ~~**Normal**~~ | ✅ 已实现（rsample / log_prob / entropy） |
+| ~~**TanhNormal**~~ | ✅ 已实现（Squashed Gaussian + Jacobian 修正） |
+| ~~**Categorical**~~ | ✅ 已实现（probs / log_probs / entropy / sample） |
 
 ### 2.8 其他可能需要的节点
 
@@ -139,35 +129,25 @@ log π(a|s) = log N(u|μ,σ) - Σ log(1 - tanh²(u) + ε)
 
 ## 3. 优先级说明
 
-### 🔴 高优先级（强化学习必需）
+### ~~🔴 原高优先级（强化学习必需）~~ — 已全部完成
 
-这些是 SAC-Continuous / Hybrid SAC / PPO 等强化学习算法的**核心依赖**：
+以下节点和模块最初作为 SAC-Continuous / Hybrid SAC 的核心依赖而列为高优先级，现已全部实现：
 
-**计算图节点**（缺失会直接阻塞算法实现）：
+- ~~Exp~~ ✅ — `src/nn/nodes/raw_node/ops/exp.rs`
+- ~~Clamp/Clip~~ ✅ — `src/nn/nodes/raw_node/ops/clip.rs`
+- ~~Sqrt~~ ✅ — `src/nn/nodes/raw_node/ops/sqrt.rs`
+- ~~Normal 分布~~ ✅ — `src/nn/distributions/normal.rs`
+- ~~TanhNormal 分布~~ ✅ — `src/nn/distributions/tanh_normal.rs`
+- ~~Categorical 分布~~ ✅ — `src/nn/distributions/categorical.rs`
 
-1. **Exp** - SAC Actor 的 `log_std.exp()` → std 转换
-2. **Clamp** - SAC 的 `log_std` 裁剪（`[-20, 2]`），PPO 的 ratio clipping（`[1-ε, 1+ε]`）
-3. **Sqrt** - Adam 优化器的 `sqrt(v + ε)`（如果内置优化器需要）
-
-**概率分布模块**（比单个节点更关键的系统性缺口）：
-
-4. **Normal 分布** - 连续动作 SAC 的重参数化采样 + log_prob
-5. **TanhNormal 分布** - Squashed Gaussian 策略（标准 SAC-Continuous 必需）
-
-> **注**：SAC-Discrete（当前 sac/cartpole 示例）不需要以上任何内容，已有 softmax / log_softmax 足够。
-> 以上仅在扩展到 SAC-Continuous / Hybrid SAC 时才需要。
-
-**临时替代方案**：
-- Exp：可用 `softplus(x) ≈ ln(1 + e^x)` 近似，但不精确
-- Clamp：可用 `maximum(minimum(x, max), min)` 组合实现
-- Sqrt：Adam 可在 Tensor 级别实现，无需计算图节点
-- Normal/TanhNormal：无替代方案，必须实现
+> SAC-Discrete、SAC-Continuous、Hybrid SAC 三个示例均已完成并可运行。
+> RL 后续改良方向详见 [RL 路线图](./rl_roadmap.md)。
 
 ### 🟡 中优先级（功能扩展）
 
 这些用于**扩展模型能力**，支持更复杂的网络架构：
 
-- **Categorical 分布** - Hybrid SAC 中离散部分需要在计算图内采样
+- ~~**Categorical 分布**~~ ✅ 已实现
 - **Transpose/Permute** - 多头注意力、复杂张量操作
 - **LayerNorm/BatchNorm** - Transformer、CNN 架构
 - **GELU/Swish** - 现代激活函数

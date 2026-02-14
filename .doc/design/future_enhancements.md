@@ -69,14 +69,19 @@
 
 ---
 
-## 2. 概率分布模块
+## ~~2. 概率分布模块~~ （已完成）
 
-**优先级**：🔴 高（SAC-Continuous / Hybrid SAC 的核心依赖）
+> **状态**：✅ 已完成
+>
+> 已实现 Categorical / Normal / TanhNormal 三种分布，详见 [概率分布模块设计](./distributions_design.md)。
+> SAC-Discrete、SAC-Continuous、Hybrid SAC 三个示例均已使用。
 
-**背景**：SAC-Continuous 的策略网络需要对连续动作进行重参数化采样（reparameterization trick），并计算 log_prob 用于熵正则化和 Actor loss。这需要一个完整的概率分布模块，是当前项目**最大的系统性缺口**。
+<details>
+<summary>原规划（仅供参考）</summary>
 
-> **注**：SAC-Discrete（当前 sac/cartpole）不需要此模块——softmax + log_softmax 已足够。
-> 此模块仅在扩展到连续/混合动作空间时才需要。
+**原优先级**：🔴 高（SAC-Continuous / Hybrid SAC 的核心依赖）
+
+**原背景**：SAC-Continuous 的策略网络需要对连续动作进行重参数化采样（reparameterization trick），并计算 log_prob 用于熵正则化和 Actor loss。
 
 ### 需要实现的分布
 
@@ -143,6 +148,8 @@ impl TanhNormal {
 - PyTorch: `torch.distributions.Normal`, `torch.distributions.TransformedDistribution`
 - rustRL: 使用外部 crate `tch-distr`（`tch_distr::Normal`）
 - 论文: Haarnoja et al. 2018 Appendix C（Enforcing Action Bounds）
+
+</details>
 
 ---
 
@@ -374,26 +381,17 @@ pub enum GraphError {
 
 ```
 ┌─────────────────────┐
-│  NEAT 支持           │ ← 项目愿景核心
-└────────┬────────────┘
-         │ 可能需要
-         ▼
-┌─────────────────────┐
-│  概率分布模块         │ ← SAC-Continuous / Hybrid SAC 核心依赖
-│  (Normal/TanhNormal) │
-└────────┬────────────┘
-         │ 依赖
-         ▼
-┌─────────────────────┐
-│  Exp / Clamp 节点    │ ← 分布模块的底层依赖
-└────────┬────────────┘
-         │
-         ▼
+│  NEAT 支持           │ ← 项目愿景核心（唯一 🔴 高优先级待办）
+└─────────────────────┘
+
 ┌─────────────────────┐     ┌───────────────────────────┐
 │  过程宏简化           │     │  API 便捷方法 / 错误精细化  │
 └─────────────────────┘     └───────────────────────────┘
 
-注：多输入/多输出扩展已由动态图架构解决（§3/§4），不再是待办项。
+已完成项（不再阻塞）：
+  ✅ 概率分布模块（Categorical / Normal / TanhNormal）
+  ✅ Exp / Clamp / Sqrt 节点
+  ✅ 多输入/多输出扩展（动态图架构解决）
 ```
 
 ---
@@ -410,6 +408,7 @@ pub enum GraphError {
 | 🟢 低 | **过程宏** | API 稳定后，作为用户体验优化 |
 | 🟢 低 | **API 便捷方法** | 按需添加，不影响核心功能 |
 | 🟢 低 | **错误类型精细化** | 可选优化，当前 `InvalidOperation` 已可用 |
+| 💤 暂缓 | **强化学习改良** | 环境层 + SAC 三变体示例已完成，后续改良详见 [RL 路线图](./rl_roadmap.md) |
 
 ---
 
@@ -418,6 +417,7 @@ pub enum GraphError {
 - [神经架构演化设计](./neural_architecture_evolution_design.md) — **核心设计文档**，详细描述混合策略
 - [待扩展节点类型规划](./future_node_types.md) — Exp/Clamp/概率分布等节点的详细规划
 - [动态图生命周期设计](../_archive/dynamic_graph_lifecycle_design.md) — 已归档，已解决多输入/多输出和节点累积问题
+- [强化学习路线图](./rl_roadmap.md) — RL 模块的当前状态、已知差距、SAC 统一公式技巧、未来方向
 - [Hybrid SAC 论文](./../paper/RL/SAC复合actions.pdf) — Delalleau et al. 2019，离散+连续+混合动作框架
 - [NEAT 论文](./../paper/NEAT_2002/summary.md)
 - [EXAMM 论文](./../paper/EXAMM_2019/summary.md)

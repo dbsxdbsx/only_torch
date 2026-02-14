@@ -390,6 +390,7 @@ opt-level = 3
 - [记忆/循环机制设计](.doc/design/memory_mechanism_design.md) - NEAT 风格循环与传统 RNN 循环的关系、Hybrid 设计方案、BPTT/TBPTT 训练策略、实现路径及相关论文
 - [神经架构演化设计](.doc/design/neural_architecture_evolution_design.md) - **核心特色**：NEAT 风格拓扑变异 + 梯度训练的混合策略，包括变异操作、收敛判定、Lamarckian 权重继承
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
+- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 模块当前状态、设计决策、已知差距（Step 死代码、示例重复等）、SAC 统一公式技巧、未来方向
 - [未来功能规划](.doc/design/future_enhancements.md) - 多输入/多输出扩展、过程宏简化等未来功能的设计规划
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
