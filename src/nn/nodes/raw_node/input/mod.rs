@@ -107,6 +107,12 @@ impl TraitNode for InputVariant {
         }
     }
 
+    fn set_value_owned(&mut self, value: Tensor) -> Result<(), GraphError> {
+        match self {
+            Self::Data(inner) | Self::Target(inner) => inner.set_value_owned(value),
+        }
+    }
+
     fn clear_value(&mut self) -> Result<(), GraphError> {
         match self {
             Self::Data(inner) | Self::Target(inner) => inner.clear_value(),

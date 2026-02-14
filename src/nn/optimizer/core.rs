@@ -126,7 +126,7 @@ impl Optimizer for SGD {
                     GraphError::ComputationError(format!("参数节点 {:?} 没有值", param.node_id()))
                 })?;
                 let new_value = current - self.lr * &grad;
-                param.node().set_value(Some(&new_value))?;
+                param.node().set_value_owned(new_value)?;
             }
         }
         Ok(())
@@ -255,6 +255,11 @@ impl Optimizer for Adam {
     fn step(&mut self) -> Result<(), GraphError> {
         self.t += 1;
 
+        // 偏差修正因子提到循环外（所有参数共享同一 t）
+        let bc1 = 1.0 - self.beta1.powi(self.t as i32);
+        let bc2 = 1.0 - self.beta2.powi(self.t as i32);
+        let step_size = self.lr / bc1; // 合并 lr 和 bc1，省去 m_hat 张量除法
+
         for param in &self.params {
             let node_id = param.node_id();
             if let Some(grad) = param.node().grad() {
@@ -262,38 +267,31 @@ impl Optimizer for Adam {
                     GraphError::ComputationError(format!("参数节点 {node_id:?} 没有值"))
                 })?;
 
-                // 预计算
-                let scaled_grad = &grad * (1.0 - self.beta1);
-                let grad_squared = &grad * &grad;
-                let scaled_grad_squared = &grad_squared * (1.0 - self.beta2);
-
-                // 更新一阶矩
+                // 更新一阶矩: m = β1*m + (1-β1)*g
                 let m = self
                     .m
                     .entry(node_id)
                     .or_insert_with(|| Tensor::zeros(grad.shape()));
                 *m *= self.beta1;
-                *m += &scaled_grad;
+                *m += &(&grad * (1.0 - self.beta1));
 
-                // 更新二阶矩
+                // 更新二阶矩: v = β2*v + (1-β2)*g²
+                let mut grad_sq = &grad * &grad;
+                grad_sq *= 1.0 - self.beta2; // 原地乘标量，省去 scaled_grad_squared 临时分配
                 let v = self
                     .v
                     .entry(node_id)
                     .or_insert_with(|| Tensor::zeros(grad.shape()));
                 *v *= self.beta2;
-                *v += &scaled_grad_squared;
+                *v += &grad_sq;
 
-                // 偏差修正
-                let m_hat = &*m / (1.0 - self.beta1.powi(self.t as i32));
-                let v_hat = &*v / (1.0 - self.beta2.powi(self.t as i32));
+                // 参数更新: θ = θ - (lr/bc1) * m / (√(v/bc2) + ε)
+                let mut denom = (&*v / bc2).sqrt();
+                denom += self.epsilon; // 原地加标量，省去 &v_sqrt + eps 临时分配
+                let update = &*m / &denom;
+                let new_value = current - step_size * &update;
 
-                // 更新参数
-                let v_sqrt = v_hat.sqrt();
-                let denom = &v_sqrt + self.epsilon;
-                let update = &m_hat / &denom;
-                let new_value = current - self.lr * &update;
-
-                param.node().set_value(Some(&new_value))?;
+                param.node().set_value_owned(new_value)?;
             }
         }
         Ok(())

@@ -468,6 +468,15 @@ pub(in crate::nn) trait TraitNode {
         )))
     }
 
+    /// 设置节点的值（move 语义，零拷贝）
+    ///
+    /// 优化器更新参数时使用：`new_value` 已计算完毕，直接 move 进来，
+    /// 避免 `set_value(Some(&val))` 内部的 clone。
+    /// 默认实现退回到 `set_value`（clone 版本），需要时各节点可 override。
+    fn set_value_owned(&mut self, value: Tensor) -> Result<(), GraphError> {
+        self.set_value(Some(&value))
+    }
+
     /// 清除节点的值（用于释放内存）
     ///
     /// 与 `set_value(None)` 不同，此方法专门用于内存管理，

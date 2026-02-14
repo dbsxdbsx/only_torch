@@ -102,6 +102,11 @@ impl TraitNode for Parameter {
         Ok(())
     }
 
+    fn set_value_owned(&mut self, value: Tensor) -> Result<(), GraphError> {
+        self.value = Some(value);
+        Ok(())
+    }
+
     fn grad(&self) -> Option<&Tensor> {
         self.grad.as_ref()
     }

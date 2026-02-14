@@ -189,6 +189,13 @@ impl NodeInner {
         self.raw_node.borrow_mut().set_value(value)
     }
 
+    /// 设置节点的值（move 语义，零拷贝）
+    ///
+    /// 优化器更新参数时使用，避免 `set_value(Some(&val))` 的 clone 开销。
+    pub fn set_value_owned(&self, value: Tensor) -> Result<(), GraphError> {
+        self.raw_node.borrow_mut().set_value_owned(value)
+    }
+
     /// 获取节点的梯度（clone 版本，用于需要 owned 值的场景）
     ///
     /// 注意：此方法会 clone Tensor，如果只需要读取，请使用 `with_grad()`

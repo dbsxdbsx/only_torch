@@ -130,6 +130,11 @@ impl TraitNode for BasicInput {
         Ok(())
     }
 
+    fn set_value_owned(&mut self, value: Tensor) -> Result<(), GraphError> {
+        self.value = Some(value);
+        Ok(())
+    }
+
     fn clear_value(&mut self) -> Result<(), GraphError> {
         self.value = None;
         Ok(())
