@@ -1,5 +1,76 @@
 # 更新日志
 
+## [0.13.0] - 2026-02-14
+
+### 破坏性变更
+
+- **feat: 全面分离 Stack 与 Concat 为独立操作**
+  - `Stack` 和 `Concat` 不再合并为同一节点，各自拥有独立的语义和实现
+  - 新增 `Var::cat` 便捷方法（对应 PyTorch 的 `torch.cat`）
+
+- **refactor(nn): 将 Detach 从 Identity 标志位拆分为独立节点类型**
+  - `Detach` 不再是 `Identity` 的特殊标志，而是完整独立的计算图节点
+
+- **refactor(vis): 统一节点分组机制，删除旧 LayerGroup/RecurrentLayerMeta 体系**
+  - 新的节点分组上下文机制取代旧式 `LayerGroup` / `RecurrentLayerMeta`
+
+### 新增
+
+- **feat(graph): 实现通用 CSE（公共子表达式消除）节点去重机制**
+
+- **feat(nn): 新增概率分布模块**
+  - `Categorical`：离散分类分布（支持 log_prob / entropy / sample）
+  - `Normal`：正态分布
+  - `TanhNormal`：Tanh 压缩正态分布（SAC 连续动作策略核心）
+
+- **feat(nn): 新增计算图节点**
+  - `Exp`：指数函数
+  - `Clip`：值域裁剪
+  - `Sqrt`：平方根
+  - `Negate`：取负（补全基础算术运算对称性）
+
+- **feat(vis): Graph 快照可视化 + 多 Loss 路径边着色**
+  - 支持在任意时刻对计算图进行快照可视化
+  - 多 Loss 场景下自动为不同 Loss 路径着色
+
+- **feat(vis): 节点分组上下文机制 + 分布 cluster 可视化**
+  - 基于上下文的灵活分组，支持概率分布模块的 cluster 展示
+
+- **feat(vis): Tensor source_id 追踪 + 同源数据节点链式虚线标注**
+  - 追踪数据来源，同源输入以虚线可视化关联
+
+- **feat(rl): 新增 SAC 示例**
+  - SAC-Continuous Pendulum 示例
+  - Moving-v0 Hybrid SAC 示例（方式 B — 独立连续分支）
+
+### 修复
+
+- fix(vis): 修复 `.dot` 输出中同源数据虚线边顺序不确定的问题
+- fix(vis): 修复 RNN/LSTM/GRU 场景 Input 节点未归入模型 scope 的 bug
+- fix(docs): 移除公开文档中的本地私有路径
+
+### 重构
+
+- refactor: 大文件按功能域拆分，降低单文件复杂度
+- refactor(examples): 8 个示例改用 snapshot 可视化 + GAN 多 Loss 着色 + detach 节点命名
+- refactor(examples): 4 个示例从逐样本训练改为 full-batch 模式
+- refactor(test): 将内联单元测试迁移到独立 tests/ 目录
+
+### 测试
+
+- test(tensor): 补充 source_id corner case 单元测试
+
+### 文档
+
+- 新增 Input 节点语义与数据共享可视化设计文档
+- 新增 RL 路线图，整理 RL 相关文档过时内容
+- 新增 SAC 数学基础分析文档
+
+### 其他
+
+- chore: Minari 联网测试加 `#[ignore]`，justfile 细化测试命令
+- chore: rustfmt 格式化 + lint 清理
+
 ## [0.12.0] - 2026-02-12
 
 ### 破坏性变更
