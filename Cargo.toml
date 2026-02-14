@@ -151,3 +151,7 @@ path = "examples/sac/cartpole/main.rs"
 [[example]]
 name = "pendulum_sac"
 path = "examples/sac/pendulum/main.rs"
+
+[[example]]
+name = "moving_sac"
+path = "examples/sac/moving/main.rs"
