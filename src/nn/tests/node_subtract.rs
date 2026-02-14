@@ -11,7 +11,7 @@
  * 6. 广播测试 → 混合（高层前向/e2e + 底层 VJP）
  */
 
-use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
+use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 

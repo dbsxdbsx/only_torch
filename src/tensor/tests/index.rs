@@ -1,5 +1,3 @@
-use ndarray::{Array, IxDyn};
-
 use crate::assert_panic;
 use crate::tensor::Tensor;
 

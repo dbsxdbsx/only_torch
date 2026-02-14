@@ -6,7 +6,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::{Graph, GraphError, Init, Linear, Module, VarActivationOps, VarReduceOps};
+use crate::nn::{Graph, GraphError, Linear, Module, VarActivationOps, VarReduceOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 use std::rc::Rc;
