@@ -37,6 +37,7 @@ mod node_identity;
 mod node_input;
 mod node_leaky_relu;
 mod node_ln;
+mod node_relu;
 mod node_log_softmax;
 mod node_mae;
 mod node_mat_mul;

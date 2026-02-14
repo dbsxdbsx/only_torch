@@ -711,14 +711,23 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "leaky_relu", vec![parent])
     }
 
-    /// 创建 ReLU 节点    ///
-    /// ReLU: f(x) = max(0, x)，等价于 LeakyReLU(negative_slope=0)
+    /// 创建 ReLU 节点
+    ///
+    /// ReLU: f(x) = max(0, x)
     pub fn create_relu_node(
         &mut self,
         parent: Rc<NodeInner>,
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
-        self.create_leaky_relu_node(parent, 0.0, name)
+        use crate::nn::nodes::raw_node::ReLU;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let relu = ReLU::new(&parent_shape, &parent_dynamic_shape)?;
+        let raw_node: NodeType = relu.into();
+
+        self.create_node_inner(raw_node, name, "relu", vec![parent])
     }
 
     /// 创建 Softmax 节点    ///

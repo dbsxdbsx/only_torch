@@ -224,10 +224,15 @@ define_node_types! {
         description: "Tanh 激活",
         var_method: Some("tanh()"),
     },
+    ReLU(ReLU) {
+        category: "激活",
+        description: "ReLU 激活",
+        var_method: Some("relu()"),
+    },
     LeakyReLU(LeakyReLU) {
         category: "激活",
-        description: "LeakyReLU 激活（含 ReLU）",
-        var_method: Some("leaky_relu() / relu()"),
+        description: "LeakyReLU 激活",
+        var_method: Some("leaky_relu()"),
     },
     Softmax(Softmax) {
         category: "激活",

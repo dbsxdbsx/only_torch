@@ -1,10 +1,61 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-02-14
- * @Description  : Tensor 激活函数测试：leaky_relu 等
+ * @Description  : Tensor 激活函数测试：relu、leaky_relu 等
  */
 
 use crate::tensor::Tensor;
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓relu↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_relu_basic() {
+    let x = Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[5]);
+    let y = x.relu();
+    let expected = [0.0, 0.0, 0.0, 1.0, 2.0];
+    for (i, &e) in expected.iter().enumerate() {
+        assert!(
+            (y[[i]] - e).abs() < 1e-6,
+            "relu index {i}: got {}, expected {e}",
+            y[[i]]
+        );
+    }
+}
+
+#[test]
+fn test_relu_2d() {
+    let x = Tensor::new(&[-1.0, 2.0, -3.0, 4.0, -5.0, 6.0], &[2, 3]);
+    let y = x.relu();
+    assert_eq!(y.shape(), &[2, 3]);
+    assert!((y[[0, 0]] - 0.0).abs() < 1e-6); // -1.0 → 0
+    assert!((y[[0, 1]] - 2.0).abs() < 1e-6); // 2.0 → 2.0
+    assert!((y[[1, 2]] - 6.0).abs() < 1e-6); // 6.0 → 6.0
+}
+
+#[test]
+fn test_relu_matches_leaky_relu_zero() {
+    // relu(x) 应与 leaky_relu(x, 0.0) 结果一致
+    let x = Tensor::new(&[-3.0, -1.0, 0.0, 1.0, 3.0], &[5]);
+    let y_relu = x.relu();
+    let y_leaky = x.leaky_relu(0.0);
+    for i in 0..5 {
+        assert!(
+            (y_relu[[i]] - y_leaky[[i]]).abs() < 1e-6,
+            "relu 与 leaky_relu(0.0) 不一致，index {i}: relu={}, leaky={}",
+            y_relu[[i]],
+            y_leaky[[i]]
+        );
+    }
+}
+
+#[test]
+fn test_relu_no_nan() {
+    let x = Tensor::new(&[f32::MAX, f32::MIN, 0.0, -0.0], &[4]);
+    let y = x.relu();
+    for i in 0..4 {
+        assert!(!y[[i]].is_nan(), "relu 产生了 NaN，index {i}");
+    }
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑relu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓leaky_relu↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]

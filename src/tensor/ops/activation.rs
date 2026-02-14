@@ -8,6 +8,16 @@ use super::super::next_source_id;
 use crate::tensor::Tensor;
 
 impl Tensor {
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓relu↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素应用 ReLU 激活函数
+    ///
+    /// `relu(x) = max(0, x)`
+    pub fn relu(&self) -> Self {
+        let data = self.data.mapv(|x| if x > 0.0 { x } else { 0.0 });
+        Self { data, source_id: next_source_id() }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑relu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓leaky_relu↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 对张量的每个元素应用 Leaky ReLU 激活函数
     ///
