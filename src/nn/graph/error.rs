@@ -9,9 +9,11 @@ use crate::nn::NodeId;
 /// Graph 操作错误类型
 #[derive(Debug, PartialEq, Eq)]
 pub enum GraphError {
+    // ---- 图/节点查找 ----
     GraphNotFound(String),
     NodeNotFound(NodeId),
-    InvalidOperation(String),
+
+    // ---- 形状 ----
     ShapeMismatch {
         expected: Vec<usize>,
         got: Vec<usize>,
@@ -22,9 +24,28 @@ pub enum GraphError {
         got: usize,
         message: String,
     },
-    ComputationError(String),
+
+    // ---- 计算状态 ----
+    /// 节点值尚未计算（需先 forward）
+    ValueNotComputed(NodeId),
+    /// 节点梯度尚未计算（需先 backward）
+    GradientNotComputed(NodeId),
+
+    // ---- 图结构 ----
+    /// 操作涉及不同计算图的 Var
+    GraphMismatch(String),
+    /// 节点已 detach，不支持此操作
+    NodeDetached(NodeId),
+
+    // ---- 命名 ----
     DuplicateName(String),
     DuplicateNodeName(String),
+
+    // ---- 通用 ----
+    /// 无效操作（渐进替换为更精确的变体）
+    InvalidOperation(String),
+    /// 计算过程中的错误
+    ComputationError(String),
 }
 
 // ========== 可视化相关类型 ==========

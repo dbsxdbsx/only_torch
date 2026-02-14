@@ -136,6 +136,26 @@ pub trait VarActivationOps {
     /// 指数 p 为常量。梯度为 p * x^(p-1)。
     /// 常用于 Norm 层、自定义 Loss 等需要通用幂运算的场景。
     fn pow(&self, exponent: f32) -> Var;
+
+    /// Square 函数：x²
+    ///
+    /// 等价于 `pow(2.0)`，但语义更清晰。
+    fn square(&self) -> Var;
+
+    /// Reciprocal 函数：1/x
+    ///
+    /// 等价于 `pow(-1.0)`。输入 x 不应为 0。
+    fn reciprocal(&self) -> Var;
+
+    /// ReLU6 激活：min(max(x, 0), 6)
+    ///
+    /// 移动端和量化网络常用。等价于 `clip(relu(x), 0, 6)`。
+    fn relu6(&self) -> Var;
+
+    /// HardTanh 激活：clip(x, min, max)
+    ///
+    /// 默认范围 [-1, 1]，等价于 `clip(x, -1, 1)`。
+    fn hard_tanh(&self, min_val: f32, max_val: f32) -> Var;
 }
 
 impl VarActivationOps for Var {
@@ -339,5 +359,21 @@ impl VarActivationOps for Var {
             .create_pow_node(Rc::clone(self.node()), exponent, None)
             .expect("创建 Pow 节点失败");
         Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn square(&self) -> Var {
+        self.pow(2.0)
+    }
+
+    fn reciprocal(&self) -> Var {
+        self.pow(-1.0)
+    }
+
+    fn relu6(&self) -> Var {
+        self.clip(0.0, 6.0)
+    }
+
+    fn hard_tanh(&self, min_val: f32, max_val: f32) -> Var {
+        self.clip(min_val, max_val)
     }
 }
