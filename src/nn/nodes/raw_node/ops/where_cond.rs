@@ -141,6 +141,10 @@ impl TraitNode for WhereCond {
         self.grad.as_ref()
     }
 
+    fn grad_mut(&mut self) -> Option<&mut Tensor> {
+        self.grad.as_mut()
+    }
+
     fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
         self.grad = grad.cloned();
         Ok(())

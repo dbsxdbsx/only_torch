@@ -90,21 +90,26 @@ impl TraitNode for ReLU {
         // 使用 value（输出）而非 parent_value（输入）判断区域，
         // 这对 BPTT 很关键（BPTT 只恢复 value，不恢复 parent_value）
         // 数学等价：output > 0 ⟺ input > 0
+        //
+        // 优化：融合 mask 和乘法为单次遍历，从 2 次 Tensor 分配减为 1 次
         let value = self.value().ok_or_else(|| {
             GraphError::ComputationError(format!("{}没有值，无法计算梯度", self.display_node()))
         })?;
 
-        let local_grad = value.where_with_f32(
-            |y| y > 0.0,
-            |_| 1.0, // y > 0 时导数为 1
-            |_| 0.0, // y <= 0 时导数为 0
-        );
-
-        Ok(upstream_grad * &local_grad)
+        Ok(upstream_grad.where_with_tensor(
+            value,
+            |_, y| y > 0.0,     // 用 value 判断区域
+            |g, _| g,           // y > 0 时保留梯度
+            |_, _| 0.0,         // y <= 0 时梯度为 0
+        ))
     }
 
     fn grad(&self) -> Option<&Tensor> {
         self.grad.as_ref()
+    }
+
+    fn grad_mut(&mut self) -> Option<&mut Tensor> {
+        self.grad.as_mut()
     }
 
     fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {

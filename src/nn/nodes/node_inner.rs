@@ -206,9 +206,9 @@ impl NodeInner {
         let mut raw = self.raw_node.borrow_mut();
         // 对于不支持设置梯度的节点（如 BasicInput），静默跳过
         // 这是预期行为：输入数据不需要梯度
-        let result = if let Some(existing) = raw.grad() {
-            let new_grad = existing + grad;
-            raw.set_grad(Some(&new_grad))
+        let result = if raw.grad().is_some() {
+            // 已有梯度：原地累加（避免创建临时 Tensor）
+            raw.accumulate_grad_inplace(grad)
         } else {
             raw.set_grad(Some(grad))
         };

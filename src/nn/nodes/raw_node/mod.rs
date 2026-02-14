@@ -482,6 +482,25 @@ pub(in crate::nn) trait TraitNode {
         )))
     }
 
+    /// 原地累加梯度（避免创建临时 Tensor）
+    ///
+    /// 所有含 `grad` 字段的节点均已实现 `grad_mut()`，
+    /// 直接 `+=` 避免临时 Tensor 分配。
+    fn accumulate_grad_inplace(&mut self, delta: &Tensor) -> Result<(), GraphError> {
+        if let Some(existing) = self.grad_mut() {
+            *existing += delta;
+            Ok(())
+        } else {
+            // 首次设置梯度（grad 为 None）
+            self.set_grad(Some(delta))
+        }
+    }
+
+    /// 获取梯度的可变引用（用于 in-place 累加）
+    fn grad_mut(&mut self) -> Option<&mut Tensor> {
+        None // 默认不支持，各节点按需实现
+    }
+
     /// 清除节点的梯度
     fn clear_grad(&mut self) -> Result<(), GraphError> {
         self.set_grad(None)

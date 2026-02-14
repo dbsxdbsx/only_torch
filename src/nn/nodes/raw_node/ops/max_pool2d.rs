@@ -287,12 +287,15 @@ impl TraitNode for MaxPool2d {
         let (in_h, in_w) = (input_shape[2], input_shape[3]);
         let single_sample_size = channels * in_h * in_w;
 
-        // Rayon 并行处理每个 batch 样本
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
-            .into_par_iter()
-            .map(|b| {
-                let mut sample_grad = vec![0.0f32; single_sample_size];
+        // 预分配单一连续 buffer（避免 Vec<Vec> + flatten 的双重分配）
+        let total_size = batch_size * single_sample_size;
+        let mut all_data = vec![0.0f32; total_size];
 
+        // Rayon 并行处理每个 batch 样本（通过 chunks_mut 直接写入预分配 buffer）
+        all_data
+            .par_chunks_mut(single_sample_size)
+            .enumerate()
+            .for_each(|(b, sample_grad)| {
                 for c in 0..channels {
                     for oh in 0..out_h {
                         for ow in 0..out_w {
@@ -305,16 +308,17 @@ impl TraitNode for MaxPool2d {
                         }
                     }
                 }
-                sample_grad
-            })
-            .collect();
+            });
 
-        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
         Ok(Tensor::new(&all_data, input_shape))
     }
 
     fn grad(&self) -> Option<&Tensor> {
         self.grad.as_ref()
+    }
+
+    fn grad_mut(&mut self) -> Option<&mut Tensor> {
+        self.grad.as_mut()
     }
 
     fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {

@@ -170,6 +170,10 @@ impl TraitNode for TopK {
         self.grad = grad.cloned();
         Ok(())
     }
+
+    fn grad_mut(&mut self) -> Option<&mut Tensor> {
+        self.grad.as_mut()
+    }
     fn clear_value(&mut self) -> Result<(), GraphError> {
         self.value = None;
         self.indices = None;

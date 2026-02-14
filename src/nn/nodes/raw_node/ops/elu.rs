@@ -84,6 +84,10 @@ impl TraitNode for Elu {
         self.grad = grad.cloned();
         Ok(())
     }
+
+    fn grad_mut(&mut self) -> Option<&mut Tensor> {
+        self.grad.as_mut()
+    }
     fn clear_value(&mut self) -> Result<(), GraphError> { self.value = None; Ok(()) }
     fn set_value_unchecked(&mut self, value: Option<&Tensor>) { self.value = value.cloned(); }
 }
