@@ -49,7 +49,8 @@ let dot = graph.to_dot();
 | [iris](examples/iris/) | 多分类 | CrossEntropyLoss、真实数据集 | `4 → 8 → 3` | `cargo run --example iris` |
 | [sine_regression](examples/sine_regression/) | 回归 | MseLoss、函数拟合 | `1 → 32 → 1` | `cargo run --example sine_regression` |
 | [california_housing](examples/california_housing/) | 回归 | MseLoss、真实数据集、DataLoader | `8 → 128 → 64 → 32 → 1` | `cargo run --example california_housing` |
-| [mnist](examples/mnist/) | 图像分类 | CNN、MaxPool、大规模数据 | LeNet 风格 | `cargo run --example mnist` |
+| [mnist](examples/mnist/) | 图像分类 | MLP、Dropout、大规模数据 | `784 → 128 → 10` | `cargo run --example mnist` |
+| [mnist_cnn](examples/mnist_cnn/) | 图像分类 | **CNN**、Conv2d、MaxPool2d | LeNet 风格 `Conv(1→4→8)` | `cargo run --example mnist_cnn` |
 | [mnist_gan](examples/mnist_gan/) | **图像生成** | **GAN**、detach 梯度控制、多 Loss | `G(64→256→784) D(784→256→1)` | `cargo run --example mnist_gan` |
 | [parity_rnn_fixed_len](examples/parity_rnn_fixed_len/) | 序列分类 | **RNN 层**、固定长度序列 | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_fixed_len` |
 | [parity_rnn_var_len](examples/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
@@ -118,16 +119,28 @@ cargo run --example california_housing
 <details>
 <summary><b>图像分类示例</b>（点击展开）</summary>
 
-**MNIST 手写数字识别** ⭐⭐⭐
+**MNIST 手写数字识别（MLP）** ⭐⭐⭐
 
-基于 LeNet 风格的 CNN 架构，展示：
-- `Conv2d` 卷积层
-- `MaxPool2d` / `AvgPool2d` 池化层
+两层全连接网络进行手写数字分类，展示：
+- `Linear` 层 + `Softplus` 激活
+- `Dropout` 正则化（train/eval 模式切换）
 - 大规模图像数据处理
 
 ```bash
 cargo run --example mnist
-# 达到 90%+ 准确率
+# 达到 95%+ 准确率
+```
+
+**MNIST CNN 手写数字识别** ⭐⭐⭐
+
+LeNet 风格卷积神经网络，展示：
+- `Conv2d` 卷积层 + `MaxPool2d` 池化层
+- CNN 的平移不变性优势（相比 MLP 参数更少、泛化更好）
+- 推理速度基准测试（batch=90 仅需 ~43ms，适用于实时图像识别场景）
+
+```bash
+cargo run --example mnist_cnn
+# 达到 85%+ 准确率，训练 ~16s
 ```
 
 </details>
@@ -297,29 +310,30 @@ cargo run --example moving_sac
 
 #### 特性覆盖矩阵
 
-| 特性 | xor | iris | sine | california | mnist | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | cartpole_sac | pendulum_sac | moving_sac |
-|------|:---:|:----:|:----:|:----------:|:-----:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:------------:|:------------:|:----------:|
-| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `Conv2d` 层 | | | | | ✅ | | | | | | | | | | |
-| `RNN/LSTM/GRU` 层 | | | | | | | ✅ | | | | | | | | |
-| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | | ✅ | | | ✅ | ✅ | | | | |
-| `MseLoss` | | | ✅ | ✅ | | ✅ | | ✅ | ✅ | ✅ | ✅ | | ✅ | ✅ | ✅ |
-| **`BceLoss`** | | | | | | | | | | | | ✅ | | | |
-| `MaeLoss` | | | 📌 | 📌 | | | | 📌 | | 📌 | 📌 | | | | |
-| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | | | | | | | | | |
-| `BucketedDataLoader` | | | | | | | ✅ | | | | | | | | |
-| 变长序列 | | | | | | | ✅ | | | | | | | | |
-| **多输入** | | | | | | | | ✅ | ✅ | | ✅ | | | | |
-| **多输出** (元组返回) | | | | | | | | | | ✅ | ✅ | | | | |
-| 共享编码器 | | | | | | | | | ✅ | | | | | | |
-| 多 Loss 训练 | | | | | ✅ | | | | ✅ | ✅ | | | ✅ | ✅ | ✅ |
-| **多标签分类** | | | | | | | | | | | | ✅ | | | |
-| **GAN / detach** | | | | | | ✅ | | | | | | | | | |
-| **GymEnv (RL)** | | | | | | | | | | | | | ✅ | ✅ | ✅ |
-| **经验回放** | | | | | | | | | | | | | ✅ | ✅ | ✅ |
-| **TanhNormal 分布** | | | | | | | | | | | | | | ✅ | ✅ |
-| **Categorical 分布** | | | | | | | | | | | | | ✅ | | ✅ |
-| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | ✅ |
+| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | cartpole_sac | pendulum_sac | moving_sac |
+|------|:---:|:----:|:----:|:----------:|:-----:|:---------:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:------------:|:------------:|:----------:|
+| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Conv2d` 层 | | | | | | ✅ | | | | | | | | | | |
+| `MaxPool2d` 层 | | | | | | ✅ | | | | | | | | | | |
+| `RNN/LSTM/GRU` 层 | | | | | | | | ✅ | | | | | | | | |
+| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | ✅ | | | ✅ | ✅ | | | | |
+| `MseLoss` | | | ✅ | ✅ | | | ✅ | | ✅ | ✅ | ✅ | ✅ | | ✅ | ✅ | ✅ |
+| **`BceLoss`** | | | | | | | | | | | | | ✅ | | | |
+| `MaeLoss` | | | 📌 | 📌 | | | | | 📌 | | 📌 | 📌 | | | | |
+| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | | | | | | | |
+| `BucketedDataLoader` | | | | | | | | ✅ | | | | | | | | |
+| 变长序列 | | | | | | | | ✅ | | | | | | | | |
+| **多输入** | | | | | | | | | ✅ | ✅ | | ✅ | | | | |
+| **多输出** (元组返回) | | | | | | | | | | | ✅ | ✅ | | | | |
+| 共享编码器 | | | | | | | | | | ✅ | | | | | | |
+| 多 Loss 训练 | | | | | ✅ | | | | | ✅ | ✅ | | | ✅ | ✅ | ✅ |
+| **多标签分类** | | | | | | | | | | | | | ✅ | | | |
+| **GAN / detach** | | | | | | | ✅ | | | | | | | | | |
+| **GymEnv (RL)** | | | | | | | | | | | | | | ✅ | ✅ | ✅ |
+| **经验回放** | | | | | | | | | | | | | | ✅ | ✅ | ✅ |
+| **TanhNormal 分布** | | | | | | | | | | | | | | | ✅ | ✅ |
+| **Categorical 分布** | | | | | | | | | | | | | | ✅ | | ✅ |
+| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | | ✅ |
 
 > 📌 = 可替换使用。`MaeLoss`（平均绝对误差）与 `MseLoss`（均方误差）的区别：
 > - `MseLoss`：对大误差敏感，适合干净数据

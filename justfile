@@ -32,7 +32,7 @@ test-filter pattern:
 # ==================== Examples ====================
 
 # 运行所有 examples（含 RL）
-examples: example-xor example-iris example-sine example-mnist example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-cartpole-sac example-pendulum-sac example-moving-sac
+examples: example-xor example-iris example-sine example-mnist example-mnist-cnn example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-cartpole-sac example-pendulum-sac example-moving-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -53,6 +53,10 @@ example-sine:
 example-mnist:
     @echo "=== Running MNIST ==="
     cargo run --example mnist
+
+example-mnist-cnn:
+    @echo "=== Running MNIST CNN ==="
+    cargo run --example mnist_cnn
 
 example-mnist-gan:
     @echo "=== Running MNIST GAN ==="
