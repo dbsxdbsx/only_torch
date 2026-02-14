@@ -137,6 +137,12 @@ impl TraitNode for Reshape {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        use crate::nn::nodes::raw_node::hash_dedup_params;
+        let vals: Vec<u64> = self.target_shape.iter().map(|&s| s as u64).collect();
+        Some(hash_dedup_params(&vals))
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let parent_value = parent_values[0];
         // 动态计算目标形状（支持动态 batch）

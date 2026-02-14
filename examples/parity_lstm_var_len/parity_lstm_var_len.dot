@@ -71,10 +71,9 @@ digraph ComputeGraph {
                 "41" [label=<matmul_7 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
                 "42" [label=<add_9 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
                 "43" [label=<select_1 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>Select</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-                "44" [label=<zeros_like_2 <FONT COLOR="#E67E22">×1</FONT><BR/><B>ZerosLike</B><BR/>[?, 16]> shape=box style="filled,rounded,dashed" fillcolor="#FFFDE7" fontsize=10];
-                "45" [label=<add_10 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-                "46" [label=<matmul_8 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-                "47" [label=<matmul_9 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "44" [label=<add_10 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>Add</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "45" [label=<matmul_8 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "46" [label=<matmul_9 <FONT COLOR="#E67E22">×4-12</FONT><BR/><B>MatMul</B><BR/>[?, 16]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
         }
 
         "10" [label=<input_1<BR/><B>Input</B><BR/>[?, 4-12, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
@@ -117,26 +116,25 @@ digraph ComputeGraph {
     "20" -> "35";
     "43" -> "36";
     "14" -> "36";
-    "44" -> "37";
+    "24" -> "37";
     "15" -> "37";
     "43" -> "38";
     "16" -> "38";
-    "44" -> "39";
+    "24" -> "39";
     "17" -> "39";
     "43" -> "40";
     "18" -> "40";
-    "44" -> "41";
+    "24" -> "41";
     "19" -> "41";
-    "45" -> "42";
+    "44" -> "42";
     "7" -> "42";
     "10" -> "43";
-    "10" -> "44" [ style=dashed color="#E67E22" label=<t=0> fontcolor="#E67E22" fontsize=9];
-    "46" -> "45";
-    "47" -> "45";
-    "43" -> "46";
-    "8" -> "46";
-    "44" -> "47";
-    "9" -> "47";
-    "30" -> "44" [style=dashed color="#E67E22" label=<t=0~(2~10)> fontcolor="#E67E22" fontsize=9 constraint=false];
+    "45" -> "44";
+    "46" -> "44";
+    "43" -> "45";
+    "8" -> "45";
+    "24" -> "46";
+    "9" -> "46";
+    "30" -> "24" [style=dashed color="#E67E22" label=<t=0~(2~10)> fontcolor="#E67E22" fontsize=9 constraint=false];
     "20" -> "24" [style=dashed color="#E67E22" label=<t=0~(2~10)> fontcolor="#E67E22" fontsize=9 constraint=false];
 }

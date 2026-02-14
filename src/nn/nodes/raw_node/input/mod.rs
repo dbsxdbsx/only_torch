@@ -136,6 +136,10 @@ impl TraitNode for InputVariant {
         }
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        None // Input 节点不参与 CSE 去重
+    }
+
     fn calc_grad_to_parent(
         &self,
         _target_parent_index: usize,

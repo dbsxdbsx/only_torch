@@ -205,4 +205,8 @@ impl TraitNode for Dropout {
     fn set_training_mode(&mut self, is_training: bool) {
         self.is_training = is_training;
     }
+
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        None // Dropout 含内部 RNG，不参与 CSE 去重
+    }
 }

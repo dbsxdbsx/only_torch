@@ -139,6 +139,10 @@ impl TraitNode for Gather {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        Some(self.dim as u64)
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 使用 Tensor::gather
         self.value = Some(parent_values[0].gather(self.dim, parent_values[1]));

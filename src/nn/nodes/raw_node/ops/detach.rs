@@ -116,6 +116,10 @@ impl TraitNode for Detach {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        None // Detach 是梯度控制节点，每次调用必须创建独立梯度边界
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 与 Identity 相同：直接复制父节点的值
         self.value = Some(parent_values[0].clone());

@@ -58,6 +58,7 @@ mod node_sum;
 mod node_tanh;
 
 // ===== 图基础设施测试 =====
+mod cse_dedup; // CSE（公共子表达式消除）节点去重机制
 mod graph_node_group_context; // NodeGroupContext 节点分组上下文机制
 mod graph_visualization; // 计算图可视化（DOT cluster 生成）
 

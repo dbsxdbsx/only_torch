@@ -39,6 +39,8 @@ impl GraphInner {
             node_group_context: None,
             next_node_group_id: 0,
             node_group_include_params: false,
+            cse_cache: HashMap::new(),
+            cse_cache_reset_pass_id: 0,
             visualization_snapshot: None,
         }
     }
@@ -59,6 +61,8 @@ impl GraphInner {
             node_group_context: None,
             next_node_group_id: 0,
             node_group_include_params: false,
+            cse_cache: HashMap::new(),
+            cse_cache_reset_pass_id: 0,
             visualization_snapshot: None,
         }
     }
@@ -78,6 +82,8 @@ impl GraphInner {
             node_group_context: None,
             next_node_group_id: 0,
             node_group_include_params: false,
+            cse_cache: HashMap::new(),
+            cse_cache_reset_pass_id: 0,
             visualization_snapshot: None,
         }
     }

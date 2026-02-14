@@ -174,4 +174,8 @@ impl TraitNode for State {
     fn supports_dynamic_batch(&self) -> bool {
         true
     }
+
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        None // State 节点不参与 CSE 去重
+    }
 }

@@ -144,6 +144,12 @@ impl TraitNode for Sum {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        use crate::nn::nodes::raw_node::hash_dedup_params;
+        let axis_val = self.axis.map_or(u64::MAX, |a| a as u64);
+        Some(hash_dedup_params(&[axis_val]))
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let input = parent_values[0];
         // 缓存输入形状用于反向传播

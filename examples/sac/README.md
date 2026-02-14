@@ -8,6 +8,7 @@
 |--------|------|---------|
 | [cartpole/](cartpole/) | SAC-Discrete，CartPole 平衡杆任务 | `cargo run --example cartpole_sac` |
 | [pendulum/](pendulum/) | SAC-Continuous，Pendulum 摆锤控制 | `cargo run --example pendulum_sac` |
+| [moving/](moving/) | Hybrid SAC，Moving-v0 混合动作空间 | `cargo run --example moving_sac` |
 
 ---
 

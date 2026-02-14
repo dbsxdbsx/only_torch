@@ -89,6 +89,10 @@ impl TraitNode for LeakyReLU {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        Some(self.negative_slope.to_bits() as u64)
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 计算 LeakyReLU: f(x) = x if x > 0, else negative_slope * x
         let slope = self.negative_slope;

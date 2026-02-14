@@ -168,6 +168,10 @@ impl TraitNode for Concat {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        Some(self.axis as u64)
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         self.value = Some(Tensor::concat(parent_values, self.axis));
         Ok(())

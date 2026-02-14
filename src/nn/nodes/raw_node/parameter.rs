@@ -123,4 +123,8 @@ impl TraitNode for Parameter {
     fn value_expected_shape(&self) -> &[usize] {
         &self.shape
     }
+
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        None // Parameter 节点不参与 CSE 去重
+    }
 }

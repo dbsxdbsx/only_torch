@@ -138,6 +138,10 @@ impl TraitNode for Flatten {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        Some(self.keep_first_dim as u64)
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let parent_value = parent_values[0];
         // 动态计算目标形状（支持动态 batch）

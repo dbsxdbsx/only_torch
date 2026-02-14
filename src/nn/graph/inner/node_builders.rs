@@ -33,7 +33,35 @@ impl GraphInner {
         node_type_str: &str,
         parents: Vec<Rc<NodeInner>>,
     ) -> Result<Rc<NodeInner>, GraphError> {
-        // 生成 ID
+        use crate::nn::nodes::raw_node::TraitNode;
+
+        // ===== CSE：计算去重 key（raw_node move 前）=====
+        // 条件：自动命名（name 为空）且节点类型参与去重（fingerprint 非 None）
+        let dedup_key = if name.is_none() || name == Some("") {
+            raw_node.dedup_fingerprint().map(|fp| {
+                // 缓存随 forward_pass_id 变化清空（同 node_type_counts 机制）
+                if self.last_forward_pass_id != self.cse_cache_reset_pass_id {
+                    self.cse_cache.clear();
+                    self.cse_cache_reset_pass_id = self.last_forward_pass_id;
+                }
+                let parent_ids: Vec<_> = parents.iter().map(|p| p.id()).collect();
+                let group_ctx = self.node_group_context.clone();
+                (node_type_str.to_string(), parent_ids, fp, group_ctx)
+            })
+        } else {
+            None
+        };
+
+        // ===== CSE：查缓存 =====
+        if let Some(ref key) = dedup_key {
+            if let Some(weak) = self.cse_cache.get(key) {
+                if let Some(existing) = weak.upgrade() {
+                    return Ok(existing); // 命中：复用已有节点，raw_node 被 drop
+                }
+            }
+        }
+
+        // ===== 原有逻辑：生成 ID、命名、创建节点 =====
         let node_id = self.generate_valid_node_id();
 
         // 动态图节点命名：
@@ -59,7 +87,6 @@ impl GraphInner {
         };
 
         // 同步 ID 和名称到 raw_node（用于错误消息中的 display_node()）
-        use crate::nn::nodes::raw_node::TraitNode;
         let mut raw_node = raw_node;
         raw_node.set_id(node_id);
         raw_node.set_name(&node_name);
@@ -88,6 +115,13 @@ impl GraphInner {
         }
 
         let node_inner = Rc::new(node);
+
+        // ===== CSE：写入缓存 =====
+        if let Some(key) = dedup_key {
+            self.cse_cache
+                .insert(key, Rc::downgrade(&node_inner));
+        }
+
         Ok(node_inner)
     }
 

@@ -310,6 +310,20 @@ impl TraitNode for Conv2d {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        use crate::nn::nodes::raw_node::hash_dedup_params;
+        Some(hash_dedup_params(&[
+            self.in_channels as u64,
+            self.out_channels as u64,
+            self.kernel_size.0 as u64,
+            self.kernel_size.1 as u64,
+            self.stride.0 as u64,
+            self.stride.1 as u64,
+            self.padding.0 as u64,
+            self.padding.1 as u64,
+        ]))
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let input = parent_values[0];
         let kernel = parent_values[1];

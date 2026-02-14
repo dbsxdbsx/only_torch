@@ -134,6 +134,11 @@ impl TraitNode for Select {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        use crate::nn::nodes::raw_node::hash_dedup_params;
+        Some(hash_dedup_params(&[self.axis as u64, self.index as u64]))
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 使用 Tensor::select 提取切片
         self.value = Some(parent_values[0].select(self.axis, self.index));

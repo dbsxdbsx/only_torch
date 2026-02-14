@@ -110,6 +110,14 @@ impl TraitNode for Clip {
         self.supports_dynamic
     }
 
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        use crate::nn::nodes::raw_node::hash_dedup_params;
+        Some(hash_dedup_params(&[
+            self.min.to_bits() as u64,
+            self.max.to_bits() as u64,
+        ]))
+    }
+
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 缓存输入用于反向传播
         self.input_cache = Some(parent_values[0].clone());

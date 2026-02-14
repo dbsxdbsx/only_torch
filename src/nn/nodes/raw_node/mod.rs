@@ -463,4 +463,31 @@ pub(in crate::nn) trait TraitNode {
     fn set_training_mode(&mut self, _is_training: bool) {
         // 默认空实现
     }
+
+    // ========== CSE 去重 ==========
+
+    /// CSE（公共子表达式消除）去重指纹
+    ///
+    /// 返回 `Some(hash)` 表示该节点类型参与去重，hash 编码运算特有配置参数。
+    /// 返回 `None` 表示不参与（如 Input / Parameter / State / Dropout）。
+    ///
+    /// 两个节点可去重的充要条件：
+    /// 1. 同类型（`node_type_str` 相同）
+    /// 2. 同父节点（parent `NodeId` 列表相同，按序比较）
+    /// 3. 同配置（`dedup_fingerprint` 值相同）
+    /// 4. 同分组上下文（`node_group_context` 相同）
+    /// 5. 自动命名（用户未指定 name）
+    fn dedup_fingerprint(&self) -> Option<u64> {
+        Some(0) // 默认参与去重，无额外参数的纯运算
+    }
+}
+
+/// CSE 去重辅助：将多个 u64 参数组合为一个指纹哈希值
+pub(in crate::nn) fn hash_dedup_params(values: &[u64]) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for &v in values {
+        hasher.write_u64(v);
+    }
+    hasher.finish()
 }

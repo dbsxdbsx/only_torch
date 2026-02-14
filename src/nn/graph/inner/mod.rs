@@ -31,7 +31,7 @@ mod visualization;
 // 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
 
 use super::types::{NodeGroupTag, RecurrentFoldingMeta};
-use crate::nn::nodes::NodeInner;
+use crate::nn::nodes::{NodeId, NodeInner};
 use rand::rngs::StdRng;
 use std::collections::HashMap;
 use std::rc::Weak;
@@ -86,6 +86,18 @@ pub struct GraphInner {
     pub(in crate::nn::graph) next_node_group_id: usize,
     /// 当前上下文是否标记 Parameter 节点（Layer/Recurrent 为 true，Distribution 为 false）
     pub(in crate::nn::graph) node_group_include_params: bool,
+
+    // ========== CSE 去重缓存 ==========
+    /// CSE（公共子表达式消除）节点去重缓存
+    ///
+    /// key: (node_type_str, parent_node_ids, fingerprint, group_context)
+    /// value: `Weak<NodeInner>`（不阻止节点被 Rc 回收）
+    ///
+    /// 随 `forward_pass_id` 变化自动清空（同 `node_type_counts` 机制）。
+    pub(in crate::nn::graph) cse_cache:
+        HashMap<(String, Vec<NodeId>, u64, Option<NodeGroupTag>), Weak<NodeInner>>,
+    /// CSE 缓存上次重置时的 forward_pass_id
+    pub(in crate::nn::graph) cse_cache_reset_pass_id: u64,
 
     // ========== 可视化快照 ==========
     /// 可视化拓扑快照（由 `Graph::snapshot_once` 写入）
