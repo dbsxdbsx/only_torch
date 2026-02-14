@@ -28,8 +28,8 @@ pub use graph::{
     VisualizationSnapshot,
 };
 pub use layer::{
-    AvgPool2d, BatchNorm, Conv2d, Embedding, Gru, LayerNorm, Linear, Lstm, MaxPool2d,
-    MultiHeadAttention, RMSNorm, Rnn,
+    AvgPool2d, BatchNorm, Conv2d, Embedding, GroupNorm, Gru, InstanceNorm, LayerNorm, Linear, Lstm,
+    MaxPool2d, MultiHeadAttention, RMSNorm, Rnn,
 };
 // pub use model_state::{ForwardInput, ForwardOutput, ModelState}; // 已移除
 pub use module::Module;

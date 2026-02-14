@@ -364,4 +364,40 @@ impl Var {
         )?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
+
+    /// 创建与当前 Var 相同形状的全零 Var
+    ///
+    /// 返回一个新的输入节点，值为全零。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let target = prediction.zeros_like()?;
+    /// ```
+    pub fn zeros_like(&self) -> Result<Self, GraphError> {
+        let shape = self.node().shape();
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_basic_input_node(&shape, None)?;
+        node.set_value(Some(&Tensor::zeros(&shape)))?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    /// 创建与当前 Var 相同形状的随机 Var
+    ///
+    /// 返回一个新的输入节点，值为 U(-1, 1) 均匀分布。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let noise = z.rand_like()?; // GAN 生成器噪声
+    /// ```
+    pub fn rand_like(&self) -> Result<Self, GraphError> {
+        let shape = self.node().shape();
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_basic_input_node(&shape, None)?;
+        node.set_value(Some(&Tensor::random(-1.0, 1.0, &shape)))?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
 }

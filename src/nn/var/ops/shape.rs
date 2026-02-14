@@ -319,6 +319,35 @@ pub trait VarShapeOps {
     /// let y = x.pad(&[(0,0), (0,0), (1,1), (1,1)], 0.0)?;
     /// ```
     fn pad(&self, paddings: &[(usize, usize)], value: f32) -> Result<Var, GraphError>;
+
+    /// 将张量沿指定维度等分为 n 块
+    ///
+    /// 类似 PyTorch 的 `torch.chunk()`。
+    /// 如果维度大小不能被 n 整除，最后一块会更小。
+    ///
+    /// # 参数
+    /// - `n`: 块数
+    /// - `dim`: 沿哪个维度分割
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // x: [6, 4] → chunk(3, 0) → 3 个 [2, 4]
+    /// let chunks = x.chunk(3, 0)?;
+    /// ```
+    fn chunk(&self, n: usize, dim: usize) -> Result<Vec<Var>, GraphError>;
+
+    /// 沿各维度重复张量
+    ///
+    /// 类似 PyTorch 的 `tensor.repeat(repeats)` / NumPy 的 `np.tile()`。
+    ///
+    /// # 参数
+    /// - `repeats`: 每个维度的重复次数
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let y = x.repeat(&[2, 3])?;  // [H, W] → [2*H, 3*W]
+    /// ```
+    fn repeat(&self, repeats: &[usize]) -> Result<Var, GraphError>;
 }
 
 impl VarShapeOps for Var {
@@ -475,6 +504,43 @@ impl VarShapeOps for Var {
             Rc::clone(self.node()),
             paddings.to_vec(),
             value,
+            None,
+        )?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    fn chunk(&self, n: usize, dim: usize) -> Result<Vec<Var>, GraphError> {
+        let shape = self.node().shape();
+        let ndim = shape.len();
+        if dim >= ndim {
+            return Err(GraphError::InvalidOperation(format!(
+                "chunk: dim {dim} 超出维度 {ndim}"
+            )));
+        }
+        if n == 0 {
+            return Err(GraphError::InvalidOperation(
+                "chunk: n 必须 > 0".to_string(),
+            ));
+        }
+
+        let dim_size = shape[dim];
+        let chunk_size = (dim_size + n - 1) / n; // 向上取整
+        let mut result = Vec::new();
+        let mut start = 0;
+        while start < dim_size {
+            let len = chunk_size.min(dim_size - start);
+            result.push(self.narrow(dim, start, len)?);
+            start += len;
+        }
+
+        Ok(result)
+    }
+
+    fn repeat(&self, repeats: &[usize]) -> Result<Var, GraphError> {
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_repeat_node(
+            Rc::clone(self.node()),
+            repeats.to_vec(),
             None,
         )?;
         Ok(Self::new_with_rc_graph(node, &graph))

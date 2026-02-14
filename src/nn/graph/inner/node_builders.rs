@@ -1480,6 +1480,26 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "rms_norm", vec![input])
     }
 
+    /// 创建 Repeat 节点
+    ///
+    /// 沿各维度重复张量
+    pub fn create_repeat_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        repeats: Vec<usize>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Repeat;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let repeat = Repeat::new(&input_shape, &input_dynamic_shape, repeats)?;
+        let raw_node: NodeType = repeat.into();
+
+        self.create_node_inner(raw_node, name, "repeat", vec![input])
+    }
+
     /// 创建 Pad 节点
     ///
     /// 常量值填充: y = pad(x, paddings, value)

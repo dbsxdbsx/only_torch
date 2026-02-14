@@ -484,3 +484,115 @@ impl Neg for Var {
         -&self
     }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// 标量运算: Var * f32, Var + f32, Var - f32, Var / f32
+// ═══════════════════════════════════════════════════════════════
+
+// -------------------- Mul: Var * f32 --------------------
+
+impl Mul<f32> for &Var {
+    type Output = Var;
+
+    fn mul(self, scalar: f32) -> Var {
+        let shape = self.node().shape();
+        let t = Tensor::new(&vec![scalar; 1], &vec![1; shape.len()]);
+        self * t
+    }
+}
+
+impl Mul<f32> for Var {
+    type Output = Self;
+
+    fn mul(self, scalar: f32) -> Self {
+        &self * scalar
+    }
+}
+
+impl Mul<&Var> for f32 {
+    type Output = Var;
+
+    fn mul(self, var: &Var) -> Var {
+        var * self
+    }
+}
+
+impl Mul<Var> for f32 {
+    type Output = Var;
+
+    fn mul(self, var: Var) -> Var {
+        &var * self
+    }
+}
+
+// -------------------- Add: Var + f32 --------------------
+
+impl Add<f32> for &Var {
+    type Output = Var;
+
+    fn add(self, scalar: f32) -> Var {
+        let shape = self.node().shape();
+        let t = Tensor::new(&vec![scalar; 1], &vec![1; shape.len()]);
+        self + t
+    }
+}
+
+impl Add<f32> for Var {
+    type Output = Self;
+
+    fn add(self, scalar: f32) -> Self {
+        &self + scalar
+    }
+}
+
+impl Add<&Var> for f32 {
+    type Output = Var;
+
+    fn add(self, var: &Var) -> Var {
+        var + self
+    }
+}
+
+impl Add<Var> for f32 {
+    type Output = Var;
+
+    fn add(self, var: Var) -> Var {
+        &var + self
+    }
+}
+
+// -------------------- Sub: Var - f32 --------------------
+
+impl Sub<f32> for &Var {
+    type Output = Var;
+
+    fn sub(self, scalar: f32) -> Var {
+        self + (-scalar)
+    }
+}
+
+impl Sub<f32> for Var {
+    type Output = Self;
+
+    fn sub(self, scalar: f32) -> Self {
+        &self - scalar
+    }
+}
+
+// -------------------- Div: Var / f32 --------------------
+
+impl Div<f32> for &Var {
+    type Output = Var;
+
+    fn div(self, scalar: f32) -> Var {
+        self * (1.0 / scalar)
+    }
+}
+
+impl Div<f32> for Var {
+    type Output = Self;
+
+    fn div(self, scalar: f32) -> Self {
+        &self / scalar
+    }
+}

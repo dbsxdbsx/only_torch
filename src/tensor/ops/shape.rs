@@ -754,6 +754,13 @@ impl Tensor {
     }
 
     /// 计算给定形状的步幅（strides）
+    ///
+    /// 公开接口供节点反向传播使用。
+    pub fn compute_strides_static(shape: &[usize]) -> Vec<usize> {
+        Self::compute_strides(shape)
+    }
+
+    /// 计算给定形状的步幅（内部使用）
     fn compute_strides(shape: &[usize]) -> Vec<usize> {
         let ndim = shape.len();
         let mut strides = vec![1usize; ndim];
@@ -763,4 +770,61 @@ impl Tensor {
         strides
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑pad↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓repeat↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 沿各维度重复张量
+    ///
+    /// 类似 PyTorch 的 `tensor.repeat(repeats)` / NumPy 的 `np.tile()`。
+    ///
+    /// # 参数
+    /// - `repeats`: 每个维度的重复次数，长度必须等于维度数
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    /// let y = x.repeat(&[2, 3]);
+    /// assert_eq!(y.shape(), &[4, 6]);
+    /// ```
+    pub fn repeat(&self, repeats: &[usize]) -> Self {
+        let ndim = self.dimension();
+        assert_eq!(
+            repeats.len(),
+            ndim,
+            "repeat: repeats 长度 {} 与维度数 {} 不一致",
+            repeats.len(),
+            ndim
+        );
+
+        let old_shape = self.shape();
+        let new_shape: Vec<usize> = old_shape
+            .iter()
+            .zip(repeats.iter())
+            .map(|(&s, &r)| s * r)
+            .collect();
+
+        let total = new_shape.iter().product();
+        let flat = self.flatten_view();
+        let mut data = vec![0.0f32; total];
+
+        let old_strides = Self::compute_strides(old_shape);
+        let new_strides = Self::compute_strides(&new_shape);
+
+        for i in 0..total {
+            // 将新索引转为老索引（取模）
+            let mut remaining = i;
+            let mut old_linear = 0;
+            for d in 0..ndim {
+                let idx_in_dim = remaining / new_strides[d];
+                remaining %= new_strides[d];
+                let old_idx = idx_in_dim % old_shape[d];
+                old_linear += old_idx * old_strides[d];
+            }
+            data[i] = flat[old_linear];
+        }
+
+        Self::new(&data, &new_shape)
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑repeat↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

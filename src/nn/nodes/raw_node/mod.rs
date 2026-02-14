@@ -324,6 +324,11 @@ define_node_types! {
         description: "常量值填充",
         var_method: Some("pad(paddings, value)"),
     },
+    Repeat(Repeat) {
+        category: "形状",
+        description: "沿轴重复张量",
+        var_method: Some("repeat(repeats)"),
+    },
 
     // ==================== 裁剪 ====================
     Clip(Clip) {
