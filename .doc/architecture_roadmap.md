@@ -1,8 +1,8 @@
 # Only Torch 架构路线图
 
-> 最后更新: 2026-02-12
+> 最后更新: 2026-02-15
 > 战略定位: **简化版 PyTorch in Rust**，为 NEAT 预留扩展性
-> 当前阶段: **动态图架构已稳定，PyTorch 风格 API 已实现**
+> 当前阶段: **动态图架构已稳定，PyTorch 风格 API 已实现，性能调优阶段完成**
 
 ## 文档索引
 
@@ -46,10 +46,10 @@
 ─────────────────────────────────
 tensor/            ~85%     ✅ 基本完成
 nn/graph           ~95%     ✅ 动态图架构 + PyTorch 风格 API
-nn/nodes           ~80%     ✅ 40 个节点类型（Conv2d/Pool/RNN/LSTM/GRU...）
+nn/nodes           ~85%     ✅ 61 个节点类型（含完整激活函数族 + 选择/排序）
 nn/layer           ~80%     ✅ Linear/Conv2d/MaxPool2d/AvgPool2d/RNN/LSTM/GRU
 nn/debug           100%     ✅ 节点类型枚举 + 调试工具（strum 自动获取）
-nn/optimizer       ~70%     ✅ SGD/Adam 可用，缺 Momentum 等
+nn/optimizer       ~70%     ✅ SGD/Adam 可用（已含 set_value_owned 零拷贝优化）
 data/              ~75%     ✅ MNIST + California Housing + DataLoader
 vision/            ~70%     ✅ 基本完成
 rl/                ~45%     ✅ GymEnv + SAC-Discrete（CartPole）+ SAC-Continuous（Pendulum）
@@ -117,14 +117,19 @@ for (x, target) in &dataloader {
 | 类型 | 节点                                                        | 数量 |
 | :--- | :---------------------------------------------------------- | :--: |
 | 输入 | Input (Data/Target), Parameter, State                       |  3   |
-| 算术 | Add, Subtract, Multiply, Divide                             |  4   |
-| 矩阵 | MatMul, Conv2d, MaxPool2d, AvgPool2d                        |  4   |
-| 形状 | Reshape, Flatten, Select, Gather, Stack                     |  5   |
+| 算术 | Add, Subtract, Multiply, Divide, Negate                     |  5   |
+| 矩阵/卷积 | MatMul, Conv2d, MaxPool2d, AvgPool2d                   |  4   |
+| 形状 | Reshape, Flatten, Select, Gather, Narrow, Permute, Stack, Concat |  8   |
+| 选择 | TopK, SortNode                                              |  2   |
 | 归约 | Maximum, Minimum, Amax, Amin, Sum, Mean                     |  6   |
-| 激活 | Sigmoid, Tanh, LeakyReLU, Softmax, LogSoftmax, SoftPlus, Step, Sign, Abs, Ln | 10 |
+| 激活 | Sigmoid, Tanh, ReLU, LeakyReLU, Softmax, LogSoftmax, SoftPlus, GELU, Swish, ELU, SELU, Mish, HardSwish, HardSigmoid, Step, Sign, Abs, Ln, Exp, Sqrt | 20 |
+| 裁剪 | Clip                                                        |  1   |
+| 条件 | WhereCond                                                   |  1   |
 | 损失 | MSE, MAE, BCE, Huber, SoftmaxCrossEntropy                   |  5   |
-| 辅助 | Identity, Dropout, ZerosLike                                |  3   |
-| **合计** |                                                         | **40** |
+| 辅助 | Identity, Dropout, ZerosLike, Detach                        |  4   |
+| **合计** |                                                         | **59 + 2 复合** |
+
+> 注：Input 和 Parameter 各含子类型，实际枚举变体总数 61。
 
 详细信息见 [future_node_types.md](design/future_node_types.md)
 
@@ -134,9 +139,9 @@ for (x, target) in &dataloader {
 
 | 优先级 | 节点 | 用途 |
 | :----: | :--- | :--- |
-| 🔴 高 | Exp, Sqrt, Clamp | SAC/PPO 强化学习必需 |
-| 🟡 中 | Transpose, LayerNorm, GELU | Transformer 架构支持 |
-| 🟢 低 | ELU, Embedding, Split | 特定场景 |
+| 🟡 中 | LayerNorm, BatchNorm | Transformer / CNN 归一化 |
+| 🟡 中 | Embedding | NLP / 离散输入嵌入 |
+| 🟢 低 | Split | 张量分割 |
 
 ## 集成测试进度
 

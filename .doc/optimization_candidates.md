@@ -1,92 +1,33 @@
 # 性能优化候选项
 
-> 本文档记录待验证的性能优化点，需 benchmark 数据支持后再决定是否实施。
-> 最后更新: 2026-02-14
+> 本文档记录性能优化的候选项、已实施项和已否决项。
+> 最后更新: 2026-02-15
 
 ---
 
 ## 待优化项
 
-### 1. `calc_grad_to_parent` 返回 owned Tensor 问题（架构级）
-
-**位置**：`TraitNode` trait → `calc_grad_to_parent`
-
-**现状**：
-```rust
-fn calc_grad_to_parent(..., upstream_grad: &Tensor) -> Result<Tensor, GraphError>
-```
-
-**问题**：trait 签名要求返回 owned `Tensor`，即使是 Add 这种"直接传递 upstream_grad"的节点也必须 clone。Profile 数据显示 Add 反向占 12%，其中大部分是 clone 开销。
-
-**可能的方案**：
-- 方案 A：改为 `&mut Tensor` 输出参数，避免分配：`fn calc_grad_to_parent(..., output: &mut Tensor)`
-- 方案 B：引入 `Cow<Tensor>` 返回类型，允许借用或拥有
-- 方案 C：为 identity 梯度（Add、Identity 等）添加特殊标记，跳过计算
-
-**影响范围**：所有 59 个节点的 `calc_grad_to_parent` 实现
-**收益预估**：反向传播整体 ~10-15%（消除 Add/Identity 的 clone）
-**状态**：待设计，需权衡 API 复杂度
-
----
-
-### 2. 前向传播 clone NodeHandle 问题
-
-**位置**：`src/nn/graph.rs` → `forward_node_internal`
-
-**现状**：
-```rust
-let parent_nodes = parents_ids
-    .iter()
-    .map(|id| self.get_node(*id).unwrap().clone())
-    .collect::<Vec<NodeHandle>>();
-```
-
-**问题**：`NodeHandle.clone()` 会深拷贝内部的 `Tensor`，在大网络/大 batch 下可能有显著开销。
-
-**可能的解法**：`Rc<Tensor>` 或 `Arc<Tensor>` 共享 Tensor 数据（需较大架构变动）
-
-**状态**：待 benchmark 验证（当前 profile 显示前向只占 <1%，不紧急）
-
----
-
-### 3. 节点 cache 的 Tensor clone
-
-**位置**：多个节点的 `calc_value_by_parents` 实现
-
-**示例**：
-```rust
-// src/nn/nodes/raw_node/ops/conv2d.rs
-self.padded_input = Some(padded.clone());
-```
-
-**问题**：反向传播缓存需要 clone，但某些场景可重新计算或用 `Rc<Tensor>` 共享。
-
-**状态**：待分析必要性（Conv2d 的 padded_input clone 在 profile 中不显著）
-
----
-
-### 4. RNN 场景 `select` + `set_value` 二次复制问题
+### 1. RNN 场景 `select` + `set_value` 二次复制问题
 
 **位置**：`src/nn/layer/rnn.rs` → `forward`
 
 **现状**：每个时间步两次数据复制。当前规模开销可忽略（~1.2 MB 总冗余）。
 
-**推荐方案**：方案 A（新增 `set_value_owned` 方法），最小改动。
+**推荐方案**：方案 A（使用已有的 `set_value_owned` 方法），最小改动。
 
 **状态**：暂缓（YAGNI），等 RNN 处理大规模数据时再实施
 
 ---
 
-### 5. Conv2d 反向 im2col 批量化
+### 2. BLAS 可选支持（Phase 6）
 
-**位置**：`src/nn/nodes/raw_node/ops/conv2d.rs` → `calc_grad_to_parent`
+**位置**：`Cargo.toml` features
 
-**现状**：每个 batch 样本独立做 im2col + GEMM，Rayon 在 batch 维度并行。
+**现状**：已在 `Cargo.toml` 中定义 `blas-mkl` / `blas-openblas` feature flag，但尚未进行 benchmark 对比和文档完善。
 
-**可能的优化**：将所有 batch 的 im2col 合并为一次大矩阵乘法（减少 GEMM 调用次数，利用更大矩阵的 SIMD 效率）。
+**收益预估**：matmul ~1.3-1.5x（小矩阵收益有限）
 
-**收益预估**：Conv2d 反向 ~10-20%（release 模式下收益有限，debug 模式收益更大）
-**状态**：待实现
+**状态**：feature flag 已定义，待 benchmark 验证和文档说明
 
 ---
 
@@ -95,6 +36,12 @@ self.padded_input = Some(padded.clone());
 ### `&[&NodeHandle]` vs `&[NodeHandle]`
 
 **结论**：`&[&NodeHandle]` **不推荐**。双重间接引用增加指针追踪开销、缓存局部性差。
+
+### 前向传播 clone NodeHandle 问题
+
+**原始问题**：`NodeHandle.clone()` 深拷贝内部 `Tensor`。
+
+**结论**：v2 动态图架构已彻底消除此问题。`NodeInner` 由 `Rc` 管理，前向传播通过 `borrow()` 零拷贝借用父节点值，无需 clone `NodeHandle`。
 
 ---
 
@@ -131,30 +78,80 @@ self.padded_input = Some(padded.clone());
 | 完整训练步 batch32 | 12.3 ms | 4.4 ms | 2.8x |
 | 完整训练步 batch64 | 26.3 ms | 5.8 ms | 4.5x |
 
+### D. GradResult 零拷贝梯度传递（2026-02-15）
+
+**原始问题**：`calc_grad_to_parent` 返回 `Result<Tensor>`，Add/Identity 等节点被迫 clone `upstream_grad`。Profile 显示 Add 反向占 12%，其中大部分是 clone。
+
+**解决方案**：引入 `GradResult` 枚举替代裸 `Tensor` 返回：
+
+```rust
+pub(in crate::nn) enum GradResult {
+    PassThrough,       // 零拷贝，直接用 upstream_grad 累加
+    Negated,           // 零分配，累加时原地 -=
+    Computed(Tensor),  // 新计算的梯度
+}
+```
+
+| 节点 | 变体 | 效果 |
+|------|------|------|
+| Add（无广播）、Identity、Subtract（第一父节点）、Dropout（eval） | `PassThrough` | 零 clone |
+| Negate、Subtract（第二父节点） | `Negated` | 零分配（`accumulate_grad_negated` 原地 `-=`） |
+| 其余 53 个节点 | `Computed` | 行为不变 |
+
+**影响范围**：全部 59 个节点 + trait 签名 + `propagate_grad_to_parents` 调用方
+
+### E. Conv2d 反向 im2col 批量化（2026-02-15）
+
+**原始问题**：反向传播中每个 batch 样本独立做 `im2col + GEMM`，N 次小矩阵乘法。
+
+**解决方案**：
+
+| 梯度 | 优化前 | 优化后 |
+|------|--------|--------|
+| dL/dK（权重） | N 次 `im2col` + N 次小 GEMM + reduce | 1 次 `batch_im2col` 垂直拼接 + 1 次大 GEMM（自然求和） |
+| dL/dX（输入） | N 次小 GEMM + N 次 `col2im` | 1 次大 GEMM + 并行 `col2im` |
+
+### F. 优化器 set_value_owned + Adam 中间变量优化（2026-02-15）
+
+| 改动 | 效果 |
+|------|------|
+| `TraitNode` 新增 `set_value_owned(Tensor)` | 优化器更新参数时零拷贝（消除 `set_value(Some(&val))` 的 clone） |
+| SGD/Adam `step()` 改用 `set_value_owned` | 每个参数更新省一次完整 Tensor clone |
+| Adam 偏差修正因子外提到循环外 | 所有参数共享 `bc1`/`bc2`，省去重复计算 |
+| Adam `grad_sq *= (1-β2)` 原地操作 | 省去 `scaled_grad_squared` 临时 Tensor |
+| Adam `denom += ε` 原地操作 | 省去 `&v_sqrt + eps` 临时 Tensor |
+
+### G. 节点 cache clone 消除（2026-02-15）
+
+| 节点 | 优化前 | 优化后 |
+|------|--------|--------|
+| Conv2d `padded_input` | `Some(padded.clone())` 缓存 | `Some(self.pad_input(input))` 直接 move |
+| LeakyReLU | 缓存完整 `parent_value` | 不再缓存，反向时用 `value`（输出）判断区域，数学等价 |
+| ChannelBiasAdd | `let mut result = input.clone()` | 节点已删除，由通用 Add + 广播替代 |
+
 ---
 
 ## Benchmark 基础设施（✅ 已搭建）
 
-已引入 `criterion` 框架，benchmark 文件：`benches/conv2d.rs`
+已引入 `criterion` 框架，4 个 benchmark 文件覆盖各层面：
+
+| 文件 | 覆盖范围 | 场景 |
+|------|---------|------|
+| `benches/tensor_ops.rs` | Tensor 底层操作 | clone/add/mul/negate/matmul/where（7 组） |
+| `benches/backward.rs` | 节点反向传播 | Add/Negate/Subtract 链路 + MLP backward（4 组） |
+| `benches/conv2d.rs` | Conv2d 卷积 | forward/full_step/two_layer_cnn（3 组） |
+| `benches/end_to_end.rs` | 端到端训练步 | MLP(XOR/MNIST)/CNN(MNIST) × 多 batch_size（2 组） |
 
 ```bash
-# 运行 benchmark 并生成报告
-cargo bench --bench conv2d
+# 运行所有 benchmark
+cargo bench
 
-# 保存基准线
-cargo bench --bench conv2d -- --save-baseline before
+# 运行特定 benchmark
+cargo bench --bench backward
 
-# 对比
-cargo bench --bench conv2d -- --baseline before
+# 保存基准线并对比
+cargo bench -- --save-baseline before
+cargo bench -- --baseline before
 ```
 
 报告输出在 `target/criterion/` 目录。
-
-### 测试场景（已实现）
-
-| 组 | 场景 | 说明 |
-|---|------|------|
-| conv2d_forward | 4 种配置 | 隔离前向卷积性能 |
-| conv2d_full_step | 3 种配置 | 前向+反向+优化器完整步 |
-| two_layer_cnn | 3 种配置 | 模拟真实 MNIST/象棋 CNN |
-

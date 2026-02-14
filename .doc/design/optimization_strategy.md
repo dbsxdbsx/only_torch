@@ -1,7 +1,7 @@
 # 性能优化策略
 
-> 最后更新: 2026-02-14
-> 状态: **MVP 阶段优化已完成**（im2col + 梯度 in-place + benchmark）
+> 最后更新: 2026-02-15
+> 状态: **性能调优阶段已完成**（GradResult 零拷贝 + Conv2d 批量化 + 优化器改进 + cache clone 消除）
 > 适用范围: Only Torch 全局
 
 ---
@@ -306,27 +306,30 @@ for batch in data {
 
 ## 优化优先级路线图
 
-### MVP 阶段
+### MVP 阶段（✅ 已完成）
 
 | 优化                       |   状态    | 说明                                                        |
 | :------------------------- | :-------: | :---------------------------------------------------------- |
 | Rayon 个体并行             | 🔲 待实现 | NEAT 进化的核心                                             |
-| Batch 训练                 | 🔲 待实现 | 详见 [batch_mechanism_design.md](batch_mechanism_design.md) |
+| Batch 训练                 |  ✅ 已完成 | 详见 [batch_mechanism_design.md](batch_mechanism_design.md) |
 | LLVM 自动优化              |  ✅ 已有  | release 模式自动                                            |
 | Conv2d im2col + GEMM       |  ✅ 已完成 | 完整训练步 2.6-4.4x 加速（2026-02-14）                     |
 | 梯度 in-place 累加         |  ✅ 已完成 | 全部 59 节点 `grad_mut()` + `+=`（2026-02-14）             |
 | ReLU 反向融合              |  ✅ 已完成 | mask + multiply 单次遍历（2026-02-14）                     |
 | MaxPool2d 反向预分配       |  ✅ 已完成 | `par_chunks_mut` 消除 Vec<Vec>（2026-02-14）               |
-| Benchmark 基础设施         |  ✅ 已完成 | criterion `benches/conv2d.rs`（2026-02-14）                |
+| Benchmark 基础设施         |  ✅ 已完成 | criterion 4 个 bench 文件（2026-02-14）                    |
 
-### 性能调优阶段（下一步）
+### 性能调优阶段（✅ 已完成）
 
-| 优化                            | 收益预估    | 复杂度 | 说明                                                       |
+| 优化                            | 收益预估    | 状态 | 说明                                                       |
 | :------------------------------ | :---------- | :----- | :--------------------------------------------------------- |
-| `calc_grad_to_parent` 接口重构  | 反向 ~10-15% | 高     | 改为输出参数或 `Cow`，消除 Add 等 identity 节点的 clone     |
-| Conv2d 反向 im2col 批量化       | Conv2d ~10-20% | 中   | 合并 batch 的 im2col 为单次大矩阵乘法                      |
-| BLAS 可选支持                   | matmul ~1.3-1.5x | 低 | `ndarray/blas` feature flag，实测差距不大，优先级低         |
-| 内存布局优化                    | 待测        | 高     | 大规模网络时连续存储节点值                                  |
+| GradResult 零拷贝梯度传递       | 反向 ~10-15% | ✅ 已完成 | `GradResult` 枚举替代裸 Tensor 返回，Add/Identity/Negate 等零分配 |
+| Conv2d 反向 im2col 批量化       | Conv2d ~10-20% | ✅ 已完成 | `batch_im2col` + `build_batch_grad_matrix`，N 次小 GEMM → 1 次大 GEMM |
+| 优化器 set_value_owned          | 每参数省 1 次 clone | ✅ 已完成 | TraitNode → NodeInner → SGD/Adam 全链路零拷贝参数更新 |
+| Adam 中间变量优化               | 减少临时分配 | ✅ 已完成 | 偏差修正外提、原地标量操作 |
+| 节点 cache clone 消除           | 视节点而定 | ✅ 已完成 | Conv2d padded_input move、LeakyReLU 去 parent_value 缓存 |
+| BLAS 可选支持                   | matmul ~1.3-1.5x | 🔲 待验证 | feature flag 已定义，待 benchmark 和文档 |
+| 内存布局优化                    | 待测        | 🔲 远期 | 大规模网络时连续存储节点值                                  |
 
 ### 远期阶段
 
