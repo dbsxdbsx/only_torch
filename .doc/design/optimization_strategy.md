@@ -382,9 +382,10 @@ NEAT 网络各部分的向量化潜力：
 
 ---
 
-## 附录：PyTorch CPU 内核优化技术参考
+## 附录：CPU 内核优化技术参考
 
-> 以下技术来源于 PyTorch ATen CPU 内核（`aten/src/ATen/native/cpu/`），可作为未来优化参考。
+> 来源：PyTorch ATen CPU 内核 + Intel oneDNN + Intel CPU 训练论文
+> 详细论文笔记见 [Intel CPU Training 2022](../paper/Intel_CPU_Training_2022/summary.md)
 
 ### 1. 并行化技术
 
@@ -611,3 +612,69 @@ for i in aligned_len..len {
 | 半精度浮点  | `half`                 | f16/bf16 支持         |
 | BLAS        | `ndarray` + `blas-src` | 线性代数加速          |
 | 内存对齐    | `aligned`              | 对齐内存分配          |
+
+---
+
+### 7. oneDNN CPU 内核优化参考
+
+> 来源：[oneDNN](https://github.com/uxlfoundation/oneDNN)（C++，Apache 2.0）
+> oneDNN 是 Intel 开源的深度学习原语库，其 `src/cpu/` 目录包含所有 CPU 优化实现。
+
+#### 关键源码目录对照
+
+| oneDNN 路径 | 内容 | 对应 only_torch 模块 |
+|-------------|------|---------------------|
+| `src/cpu/gemm/` | GEMM（矩阵乘法）分块实现 | `Tensor` 矩阵运算 |
+| `src/cpu/x64/jit_*_conv*` | 卷积 kernel（direct/Winograd/im2col） | `Conv2d` 节点 |
+| `src/cpu/x64/jit_uni_batch_normalization.*` | BatchNorm SIMD 实现 | `BatchNorm` 节点 |
+| `src/cpu/x64/jit_uni_eltwise.*` | 激活函数 SIMD 实现 | 激活函数节点 |
+| `src/cpu/x64/jit_uni_pool*` | 池化 SIMD 实现 | `MaxPool2d` 节点 |
+| `src/common/memory_desc.hpp` | 内存格式定义（nchw/nhwc/blocked） | Tensor 内存布局 |
+
+#### Cache Tiling（缓存分块）
+
+将大矩阵分块为适合 L1/L2 cache 的小块，逐块计算以最大化缓存命中率。
+
+```rust
+// 概念性示例：GEMM 分块
+// C[M,N] = A[M,K] * B[K,N]
+let tile_m = 64;  // 适合 L1 cache
+let tile_n = 64;
+let tile_k = 256; // 适合 L2 cache
+
+for m in (0..M).step_by(tile_m) {
+    for n in (0..N).step_by(tile_n) {
+        for k in (0..K).step_by(tile_k) {
+            // 在 tile 内计算，数据全在 cache 中
+            micro_kernel(&a[m..m+tile_m, k..k+tile_k],
+                        &b[k..k+tile_k, n..n+tile_n],
+                        &mut c[m..m+tile_m, n..n+tile_n]);
+        }
+    }
+}
+```
+
+#### Blocked Memory Format（分块内存格式）
+
+oneDNN 使用 `nChw16c` 等 blocked 格式，让 16 个 channel 连续存放，对 AVX-512（16 个 f32 lane）天然友好。
+
+```
+NCHW（默认）：
+  data[n][c][h][w]  →  同一 channel 的所有空间位置连续
+                       SIMD 处理 channel 维度时需要跳跃访问
+
+nChw16c（blocked）：
+  data[n][C/16][h][w][16]  →  16 个 channel 连续存放
+                               SIMD 一次加载 16 个 channel 值
+```
+
+**对 only_torch 的意义**：当前我们使用 NCHW 格式。当性能成为瓶颈时，可考虑在 Conv2d 内部将输入转为 blocked 格式，计算后再转回——这正是 oneDNN 的策略。
+
+#### 训练特有优化（来自 Intel 论文）
+
+| 优化 | 说明 | 适用时机 |
+|------|------|----------|
+| **层融合（训练模式）** | Conv + FrozenBN + ReLU 可融合；含可训练权重的层需保留中间值 | 固定结构训练 |
+| **优化器融合** | 将参数遍历+梯度应用合并为单次操作，减少内存遍历 | Optimizer 实现 |
+| **in-place 反向传播** | 反向传播中尽量原地修改梯度 Tensor，避免分配临时变量 | 已在 `optimization_candidates.md` 中有相关讨论 |
+| **BF16 混合精度** | 计算用 BF16（速度翻倍），loss 保持 f32（避免精度崩溃） | 远期特性 |
