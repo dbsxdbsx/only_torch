@@ -130,6 +130,12 @@ pub trait VarActivationOps {
     /// 梯度为 0.5/√x。输入 x 应为非负数，否则结果为 NaN。
     /// 常用于 Adam 优化器的 `sqrt(v + eps)`、距离计算等场景。
     fn sqrt(&self) -> Var;
+
+    /// Pow 函数（幂运算）：x^p
+    ///
+    /// 指数 p 为常量。梯度为 p * x^(p-1)。
+    /// 常用于 Norm 层、自定义 Loss 等需要通用幂运算的场景。
+    fn pow(&self, exponent: f32) -> Var;
 }
 
 impl VarActivationOps for Var {
@@ -323,6 +329,15 @@ impl VarActivationOps for Var {
             .borrow_mut()
             .create_sqrt_node(Rc::clone(self.node()), None)
             .expect("创建 Sqrt 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn pow(&self, exponent: f32) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_pow_node(Rc::clone(self.node()), exponent, None)
+            .expect("创建 Pow 节点失败");
         Self::new_with_rc_graph(node, &graph)
     }
 }

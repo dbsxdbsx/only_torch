@@ -314,6 +314,16 @@ define_node_types! {
         description: "平方根",
         var_method: Some("sqrt()"),
     },
+    Pow(Pow) {
+        category: "算术",
+        description: "逐元素幂运算（常量指数）",
+        var_method: Some("pow(exponent)"),
+    },
+    Pad(Pad) {
+        category: "形状",
+        description: "常量值填充",
+        var_method: Some("pad(paddings, value)"),
+    },
 
     // ==================== 裁剪 ====================
     Clip(Clip) {
@@ -371,6 +381,21 @@ define_node_types! {
         category: "辅助",
         description: "随机丢弃（正则化）",
         var_method: Some("dropout()"),
+    },
+    BatchNormOp(BatchNormOp) {
+        category: "归一化",
+        description: "批归一化运算（不含 gamma/beta）",
+        var_method: None,
+    },
+    LayerNormOp(LayerNormOp) {
+        category: "归一化",
+        description: "层归一化运算（不含 gamma/beta）",
+        var_method: None,
+    },
+    RMSNormOp(RMSNormOp) {
+        category: "归一化",
+        description: "RMS 归一化运算（不含 gamma）",
+        var_method: None,
     },
     ZerosLike(ZerosLike) {
         category: "辅助",

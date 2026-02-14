@@ -236,3 +236,105 @@ fn test_dot_sum_with_or_without_ownership() {
     assert_eq!(tensor2, Tensor::new(&[4., 5., 6.], &[3]));
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`dot_sum`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓`variance`↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+
+/// 全局方差：2x3 矩阵（numpy 对照值：2.9166667）
+#[test]
+fn test_variance_2d() {
+    let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    let var = t.variance();
+    assert_eq!(var.shape(), &[1, 1]);
+    assert!((var[[0, 0]] - 2.9166667).abs() < 1e-5);
+}
+
+/// 全局方差：单元素张量（方差应为 0）
+#[test]
+fn test_variance_single_element() {
+    let t = Tensor::new(&[5.0], &[1]);
+    let var = t.variance();
+    assert!((var[[0, 0]] - 0.0).abs() < 1e-7);
+}
+
+/// 全局方差：1D 向量（numpy 对照值：5.0）
+#[test]
+fn test_variance_1d() {
+    let t = Tensor::new(&[2., 4., 6., 8.], &[4]);
+    let var = t.variance();
+    assert!((var[[0, 0]] - 5.0).abs() < 1e-5);
+}
+
+/// 全局方差：3D 张量（numpy 对照值：5.25）
+#[test]
+fn test_variance_3d() {
+    let t = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
+    let var = t.variance();
+    assert!((var[[0, 0]] - 5.25).abs() < 1e-5);
+}
+
+/// 沿轴方差：2x3 矩阵 axis=0（numpy 对照值：[2.25, 2.25, 2.25]）
+#[test]
+fn test_var_axis_keepdims_2d_axis0() {
+    let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    let var = t.var_axis_keepdims(0);
+    assert_eq!(var.shape(), &[1, 3]);
+    let data = var.data_as_slice();
+    assert!((data[0] - 2.25).abs() < 1e-5);
+    assert!((data[1] - 2.25).abs() < 1e-5);
+    assert!((data[2] - 2.25).abs() < 1e-5);
+}
+
+/// 沿轴方差：2x3 矩阵 axis=1（numpy 对照值：[0.6666667, 0.6666667]）
+#[test]
+fn test_var_axis_keepdims_2d_axis1() {
+    let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    let var = t.var_axis_keepdims(1);
+    assert_eq!(var.shape(), &[2, 1]);
+    let data = var.data_as_slice();
+    assert!((data[0] - 0.6666667).abs() < 1e-5);
+    assert!((data[1] - 0.6666667).abs() < 1e-5);
+}
+
+/// 沿轴方差：2x2x2 张量各轴（numpy 对照值）
+#[test]
+fn test_var_axis_keepdims_3d() {
+    let t = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
+
+    // axis=0 → [1, 2, 2]，值全为 4.0
+    let var0 = t.var_axis_keepdims(0);
+    assert_eq!(var0.shape(), &[1, 2, 2]);
+    for &v in var0.data_as_slice() {
+        assert!((v - 4.0).abs() < 1e-5);
+    }
+
+    // axis=1 → [2, 1, 2]，值全为 1.0
+    let var1 = t.var_axis_keepdims(1);
+    assert_eq!(var1.shape(), &[2, 1, 2]);
+    for &v in var1.data_as_slice() {
+        assert!((v - 1.0).abs() < 1e-5);
+    }
+
+    // axis=2 → [2, 2, 1]，值全为 0.25
+    let var2 = t.var_axis_keepdims(2);
+    assert_eq!(var2.shape(), &[2, 2, 1]);
+    for &v in var2.data_as_slice() {
+        assert!((v - 0.25).abs() < 1e-5);
+    }
+}
+
+/// 沿轴方差：axis 超出范围应 panic
+#[test]
+fn test_var_axis_keepdims_out_of_range() {
+    let t = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+    assert_panic!(t.var_axis_keepdims(2));
+}
+
+/// 沿轴方差：1D 向量 axis=0（numpy 对照值：5.0）
+#[test]
+fn test_var_axis_keepdims_1d() {
+    let t = Tensor::new(&[2., 4., 6., 8.], &[4]);
+    let var = t.var_axis_keepdims(0);
+    assert_eq!(var.shape(), &[1]);
+    assert!((var.data_as_slice()[0] - 5.0).abs() < 1e-5);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑`variance`↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

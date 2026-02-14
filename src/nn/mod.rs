@@ -27,7 +27,10 @@ pub use graph::{
     Graph, GraphError, GraphInner, ImageFormat, SnapshotNode, VisualizationOutput,
     VisualizationSnapshot,
 };
-pub use layer::{AvgPool2d, Conv2d, Gru, Linear, Lstm, MaxPool2d, Rnn};
+pub use layer::{
+    AvgPool2d, BatchNorm, Conv2d, Embedding, Gru, LayerNorm, Linear, Lstm, MaxPool2d,
+    MultiHeadAttention, RMSNorm, Rnn,
+};
 // pub use model_state::{ForwardInput, ForwardOutput, ModelState}; // 已移除
 pub use module::Module;
 pub use nodes::NodeId;

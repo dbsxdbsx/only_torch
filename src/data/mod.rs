@@ -46,3 +46,7 @@ pub use dataloader::{
 };
 pub use datasets::{CaliforniaHousingDataset, MnistDataset, default_data_dir};
 pub use error::DataError;
+pub use transforms::{
+    CenterCrop, ColorJitter, Compose, GaussianNoise, Normalize, RandomApply, RandomCrop,
+    RandomErasing, RandomHorizontalFlip, RandomRotation, Transform,
+};

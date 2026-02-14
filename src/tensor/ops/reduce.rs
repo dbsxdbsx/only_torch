@@ -180,6 +180,56 @@ impl Tensor {
         Self::new(meaned.as_slice().unwrap(), &new_shape)
     }
 
+    /// 计算张量所有元素的总体方差（ddof=0），返回形状为 [1, 1] 的张量。
+    ///
+    /// 公式：`var = mean((x - mean(x))^2)`
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::Tensor;
+    /// let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    /// let var = t.variance();
+    /// assert!((var[[0, 0]] - 2.9166667).abs() < 1e-5);
+    /// ```
+    pub fn variance(&self) -> Self {
+        let mean_val = self.data.mean().unwrap();
+        let n = self.data.len() as f32;
+        let var = self.data.iter().map(|&x| (x - mean_val).powi(2)).sum::<f32>() / n;
+        Self::new(&[var], &[1, 1])
+    }
+
+    /// 沿指定轴计算总体方差（ddof=0），保持维度数不变（keepdims=true）
+    ///
+    /// # 参数
+    /// - `axis`: 要计算方差的轴索引
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::Tensor;
+    /// let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    /// let var0 = t.var_axis_keepdims(0);  // [2, 3] → [1, 3]
+    /// assert_eq!(var0.shape(), &[1, 3]);
+    /// // 每列方差：[(1-2.5)^2+(4-2.5)^2]/2 = 2.25
+    /// assert!((var0.data_as_slice()[0] - 2.25).abs() < 1e-5);
+    /// ```
+    pub fn var_axis_keepdims(&self, axis: usize) -> Self {
+        assert!(
+            axis < self.dimension(),
+            "var_axis_keepdims: axis {} 超出维度范围 {}",
+            axis,
+            self.dimension()
+        );
+
+        // ndarray 的 var_axis(Axis, ddof) 直接计算方差，ddof=0.0 即总体方差
+        let var_array = self.data.var_axis(Axis(axis), 0.0);
+
+        // 构建新形状（在方差的轴位置插入 1）
+        let mut new_shape: Vec<usize> = var_array.shape().to_vec();
+        new_shape.insert(axis, 1);
+
+        Self::new(var_array.as_slice().unwrap(), &new_shape)
+    }
+
     /// 计算张量的标准差
     pub fn std_dev(&self) -> f32 {
         self.data.std_axis(ndarray::Axis(0), 0.).mean().unwrap()

@@ -16,6 +16,7 @@
  * - DataLoader<D, S>: 组合数据集和采样策略
  */
 
+use crate::data::transforms::Transform;
 use crate::tensor::Tensor;
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
@@ -284,6 +285,7 @@ pub struct DataLoader<D: Dataset, S: SamplingStrategy = SequentialSampling> {
     dataset: D,
     strategy: S,
     batch_size: usize,
+    transform: Option<Box<dyn Transform>>,
 }
 
 // ----- DataLoader 通用方法 -----
@@ -302,6 +304,26 @@ impl<D: Dataset, S: SamplingStrategy> DataLoader<D, S> {
     /// 获取批大小
     pub const fn batch_size(&self) -> usize {
         self.batch_size
+    }
+
+    /// 设置数据变换
+    ///
+    /// 变换在每次取批次时自动应用于特征张量（逐样本变换后重新组装）。
+    ///
+    /// # 示例
+    ///
+    /// ```ignore
+    /// use only_torch::data::{DataLoader, TensorDataset, Compose, Normalize};
+    ///
+    /// let transform = Compose::new(vec![
+    ///     Box::new(Normalize::new(vec![0.5], vec![0.5])),
+    /// ]);
+    /// let loader = DataLoader::new(dataset, 32)
+    ///     .with_transform(transform);
+    /// ```
+    pub fn with_transform(mut self, transform: impl Transform + 'static) -> Self {
+        self.transform = Some(Box::new(transform));
+        self
     }
 
     /// 创建迭代器
@@ -329,6 +351,7 @@ impl<D: Dataset, S: SamplingStrategy> DataLoader<D, S> {
             dataset: &self.dataset,
             batches,
             current_batch: 0,
+            transform: self.transform.as_deref(),
         }
     }
 
@@ -352,6 +375,7 @@ impl<D: Dataset> DataLoader<D, SequentialSampling> {
             dataset,
             strategy: SequentialSampling::new(),
             batch_size,
+            transform: None,
         }
     }
 
@@ -386,6 +410,7 @@ impl<'a> DataLoader<&'a VarLenDataset, BucketedSampling> {
             dataset,
             strategy: BucketedSampling::new(),
             batch_size: 0, // 分桶采样不使用 batch_size
+            transform: None,
         }
     }
 
@@ -411,6 +436,7 @@ pub struct DataLoaderIterator<'a, D: Dataset> {
     dataset: &'a D,
     batches: Vec<Vec<usize>>,
     current_batch: usize,
+    transform: Option<&'a dyn Transform>,
 }
 
 impl<D: Dataset> Iterator for DataLoaderIterator<'_, D> {
@@ -424,8 +450,58 @@ impl<D: Dataset> Iterator for DataLoaderIterator<'_, D> {
         let indices = &self.batches[self.current_batch];
         self.current_batch += 1;
 
-        Some(self.dataset.get_batch(indices))
+        let (features, labels) = self.dataset.get_batch(indices);
+
+        // 应用变换（逐样本变换后重新组装）
+        let features = if let Some(transform) = self.transform {
+            apply_transform_to_batch(&features, transform)
+        } else {
+            features
+        };
+
+        Some((features, labels))
     }
+}
+
+/// 对 batch 中的每个样本逐个应用变换后重新组装
+///
+/// # 参数
+/// - `batch`: [N, ...rest] 形状的批次张量
+/// - `transform`: 变换函数
+fn apply_transform_to_batch(batch: &Tensor, transform: &dyn Transform) -> Tensor {
+    let shape = batch.shape();
+    let n = shape[0];
+
+    if n == 0 {
+        return batch.clone();
+    }
+
+    let sample_shape = &shape[1..];
+    let sample_size: usize = sample_shape.iter().product();
+    let flat = batch.flatten_view();
+
+    // 变换第一个样本以获取输出形状
+    let first_sample_data: Vec<f32> = flat.iter().take(sample_size).copied().collect();
+    let first_sample = Tensor::new(&first_sample_data, sample_shape);
+    let first_transformed = transform.apply(&first_sample);
+    let out_sample_shape = first_transformed.shape().to_vec();
+    let out_sample_size: usize = out_sample_shape.iter().product();
+
+    let mut result_data = Vec::with_capacity(n * out_sample_size);
+    result_data.extend_from_slice(&first_transformed.flatten_view().to_vec());
+
+    // 变换剩余样本
+    for i in 1..n {
+        let start = i * sample_size;
+        let sample_data: Vec<f32> = flat.iter().skip(start).take(sample_size).copied().collect();
+        let sample = Tensor::new(&sample_data, sample_shape);
+        let transformed = transform.apply(&sample);
+        result_data.extend_from_slice(&transformed.flatten_view().to_vec());
+    }
+
+    let mut new_shape = vec![n];
+    new_shape.extend_from_slice(&out_sample_shape);
+    Tensor::new(&result_data, &new_shape)
 }
 
 impl<D: Dataset> ExactSizeIterator for DataLoaderIterator<'_, D> {

@@ -22,8 +22,14 @@ impl Tensor {
             "{}",
             TensorError::IncompatibleShape
         );
+        // 确保连续布局后再 reshape（permute 等操作可能产生非连续布局）
+        let contiguous = if self.is_contiguous() {
+            self.data.clone()
+        } else {
+            self.data.as_standard_layout().into_owned()
+        };
         Self {
-            data: self.data.clone().into_shape(shape).unwrap(),
+            data: contiguous.into_shape(shape).unwrap(),
             source_id: next_source_id(),
         }
     }
@@ -36,6 +42,10 @@ impl Tensor {
             "{}",
             TensorError::IncompatibleShape
         );
+        // 确保连续布局后再 reshape
+        if !self.is_contiguous() {
+            self.data = self.data.as_standard_layout().into_owned();
+        }
         self.data = self.data.clone().into_shape(shape).unwrap();
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑reshape↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
@@ -632,4 +642,125 @@ impl Tensor {
         self.flatten().diag()
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑jacobi_diag↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓pad↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量进行常量值填充
+    ///
+    /// 每个维度可指定前后的填充量。
+    ///
+    /// # 参数
+    /// - `paddings`: 每个维度的填充量 `(before, after)`，长度必须等于张量维数
+    /// - `value`: 填充值
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+    /// let padded = x.pad(&[(1, 1), (2, 2)], 0.0);
+    /// assert_eq!(padded.shape(), &[4, 7]);
+    /// ```
+    pub fn pad(&self, paddings: &[(usize, usize)], value: f32) -> Self {
+        let ndim = self.dimension();
+        assert_eq!(
+            paddings.len(),
+            ndim,
+            "pad: paddings 长度 {} 与维度数 {} 不一致",
+            paddings.len(),
+            ndim
+        );
+
+        // 计算新形状
+        let old_shape = self.shape();
+        let new_shape: Vec<usize> = old_shape
+            .iter()
+            .zip(paddings.iter())
+            .map(|(&dim, &(before, after))| dim + before + after)
+            .collect();
+
+        // 创建填充后的张量（先全部填充 value）
+        let total_size: usize = new_shape.iter().product();
+        let mut data = vec![value; total_size];
+
+        // 将原始数据复制到正确位置
+        let flat = self.flatten_view();
+        let old_strides = Self::compute_strides(&old_shape);
+        let new_strides = Self::compute_strides(&new_shape);
+
+        for i in 0..self.size() {
+            // 将线性索引 i 转为原始多维索引
+            let mut remaining = i;
+            let mut new_linear = 0;
+            for d in 0..ndim {
+                let idx_in_dim = remaining / old_strides[d];
+                remaining %= old_strides[d];
+                // 在新张量中偏移 paddings[d].0
+                new_linear += (idx_in_dim + paddings[d].0) * new_strides[d];
+            }
+            data[new_linear] = flat[i];
+        }
+
+        Self::new(&data, &new_shape)
+    }
+
+    /// 从张量中提取指定范围的切片（pad 的逆操作）
+    ///
+    /// 每个维度指定起始和结束索引（不含结束）。
+    ///
+    /// # 参数
+    /// - `ranges`: 每个维度的 `(start, end)` 范围
+    pub fn slice_ranges(&self, ranges: &[(usize, usize)]) -> Self {
+        let ndim = self.dimension();
+        assert_eq!(
+            ranges.len(),
+            ndim,
+            "slice_ranges: ranges 长度 {} 与维度数 {} 不一致",
+            ranges.len(),
+            ndim
+        );
+
+        let old_shape = self.shape();
+        let new_shape: Vec<usize> = ranges
+            .iter()
+            .zip(old_shape.iter())
+            .map(|(&(start, end), &dim)| {
+                assert!(
+                    start <= end && end <= dim,
+                    "slice_ranges: 无效范围 [{}, {}) 对于维度大小 {}",
+                    start, end, dim
+                );
+                end - start
+            })
+            .collect();
+
+        let flat = self.flatten_view();
+        let old_strides = Self::compute_strides(old_shape);
+        let new_strides = Self::compute_strides(&new_shape);
+        let new_size: usize = new_shape.iter().product();
+        let mut data = vec![0.0f32; new_size];
+
+        for i in 0..new_size {
+            let mut remaining = i;
+            let mut old_linear = 0;
+            for d in 0..ndim {
+                let idx_in_dim = remaining / new_strides[d];
+                remaining %= new_strides[d];
+                old_linear += (idx_in_dim + ranges[d].0) * old_strides[d];
+            }
+            data[i] = flat[old_linear];
+        }
+
+        Self::new(&data, &new_shape)
+    }
+
+    /// 计算给定形状的步幅（strides）
+    fn compute_strides(shape: &[usize]) -> Vec<usize> {
+        let ndim = shape.len();
+        let mut strides = vec![1usize; ndim];
+        for d in (0..ndim.saturating_sub(1)).rev() {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+        strides
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑pad↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 }

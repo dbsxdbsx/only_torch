@@ -7,18 +7,28 @@
  * 详见 .doc/design/node_vs_layer_design.md
  */
 
+mod attention;
 mod avg_pool2d;
+mod batch_norm;
 mod conv2d;
+mod embedding;
 mod gru;
+mod layer_norm;
 mod linear;
 mod lstm;
 mod max_pool2d;
+mod rms_norm;
 mod rnn;
 
+pub use attention::MultiHeadAttention;
 pub use avg_pool2d::AvgPool2d;
+pub use batch_norm::BatchNorm;
 pub use conv2d::Conv2d;
+pub use embedding::Embedding;
 pub use gru::Gru;
+pub use layer_norm::LayerNorm;
 pub use linear::Linear;
 pub use lstm::Lstm;
 pub use max_pool2d::MaxPool2d;
+pub use rms_norm::RMSNorm;
 pub use rnn::Rnn;

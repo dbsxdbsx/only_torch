@@ -1417,6 +1417,110 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "sqrt", vec![input])
     }
 
+    /// 创建 BatchNormOp 节点
+    ///
+    /// 批归一化核心计算（不含 gamma/beta）
+    pub fn create_batch_norm_op_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        eps: f32,
+        momentum: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::BatchNormOp;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let bn = BatchNormOp::new(&input_shape, &input_dynamic_shape, eps, momentum)?;
+        let raw_node: NodeType = bn.into();
+
+        self.create_node_inner(raw_node, name, "batch_norm", vec![input])
+    }
+
+    /// 创建 LayerNormOp 节点
+    ///
+    /// 层归一化核心计算（不含 gamma/beta）
+    pub fn create_layer_norm_op_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        normalized_dims: usize,
+        eps: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::LayerNormOp;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let ln = LayerNormOp::new(&input_shape, &input_dynamic_shape, normalized_dims, eps)?;
+        let raw_node: NodeType = ln.into();
+
+        self.create_node_inner(raw_node, name, "layer_norm", vec![input])
+    }
+
+    /// 创建 RMSNormOp 节点
+    ///
+    /// RMS 归一化核心计算（不含 gamma）
+    pub fn create_rms_norm_op_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        normalized_dims: usize,
+        eps: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::RMSNormOp;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let rn = RMSNormOp::new(&input_shape, &input_dynamic_shape, normalized_dims, eps)?;
+        let raw_node: NodeType = rn.into();
+
+        self.create_node_inner(raw_node, name, "rms_norm", vec![input])
+    }
+
+    /// 创建 Pad 节点
+    ///
+    /// 常量值填充: y = pad(x, paddings, value)
+    pub fn create_pad_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        paddings: Vec<(usize, usize)>,
+        pad_value: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Pad;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let pad = Pad::new(&input_shape, &input_dynamic_shape, paddings, pad_value)?;
+        let raw_node: NodeType = pad.into();
+
+        self.create_node_inner(raw_node, name, "pad", vec![input])
+    }
+
+    /// 创建 Pow 节点
+    ///
+    /// 逐元素幂运算: y = x^p
+    pub fn create_pow_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        exponent: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Pow;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let pow = Pow::new(&input_shape, &input_dynamic_shape, exponent)?;
+        let raw_node: NodeType = pow.into();
+
+        self.create_node_inner(raw_node, name, "pow", vec![input])
+    }
+
     /// 创建 Clip 节点
     ///
     /// 逐元素值域裁剪: y = clip(x, min, max)

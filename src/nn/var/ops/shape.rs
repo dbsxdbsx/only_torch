@@ -303,6 +303,22 @@ pub trait VarShapeOps {
     /// let y = x.transpose(1, 2)?;
     /// ```
     fn transpose(&self, dim0: usize, dim1: usize) -> Result<Var, GraphError>;
+
+    /// Pad 常量值填充
+    ///
+    /// 对张量进行常量值填充，每个维度可指定前后的填充量。
+    /// 主要用于 CNN same-padding 和序列对齐。
+    ///
+    /// # 参数
+    /// - `paddings`: 每个维度的填充量 `(before, after)`，长度必须等于维度数
+    /// - `value`: 填充值
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 4D CNN padding: 只在 H/W 维度填充
+    /// let y = x.pad(&[(0,0), (0,0), (1,1), (1,1)], 0.0)?;
+    /// ```
+    fn pad(&self, paddings: &[(usize, usize)], value: f32) -> Result<Var, GraphError>;
 }
 
 impl VarShapeOps for Var {
@@ -451,5 +467,16 @@ impl VarShapeOps for Var {
         let mut dims: Vec<usize> = (0..ndim).collect();
         dims.swap(dim0, dim1);
         self.permute(&dims)
+    }
+
+    fn pad(&self, paddings: &[(usize, usize)], value: f32) -> Result<Var, GraphError> {
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_pad_node(
+            Rc::clone(self.node()),
+            paddings.to_vec(),
+            value,
+            None,
+        )?;
+        Ok(Self::new_with_rc_graph(node, &graph))
     }
 }
