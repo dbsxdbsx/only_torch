@@ -44,13 +44,13 @@
 ```
 模块               完成度    状态
 ─────────────────────────────────
-tensor/            ~85%     ✅ 基本完成
-nn/graph           ~95%     ✅ 动态图架构 + PyTorch 风格 API
-nn/nodes           ~85%     ✅ 61 个节点类型（含完整激活函数族 + 选择/排序）
-nn/layer           ~80%     ✅ Linear/Conv2d/MaxPool2d/AvgPool2d/RNN/LSTM/GRU
+tensor/            ~90%     ✅ 基本完成（含 variance/pow/pad/repeat/square/reciprocal/log10/log2/relu6/hard_tanh/one_hot）
+nn/graph           ~95%     ✅ 动态图架构 + PyTorch 风格 API + GraphError 精细化
+nn/nodes           ~95%     ✅ 73 个节点类型（含完整激活函数族 + 归一化族 + 选择/排序）
+nn/layer           ~90%     ✅ Linear/Conv2d/Pool/RNN/LSTM/GRU + BatchNorm/LayerNorm/RMSNorm/GroupNorm/InstanceNorm + Embedding/MultiHeadAttention
 nn/debug           100%     ✅ 节点类型枚举 + 调试工具（strum 自动获取）
 nn/optimizer       ~70%     ✅ SGD/Adam 可用（set_value_owned 零拷贝 + 可选 BLAS 加速）
-data/              ~75%     ✅ MNIST + California Housing + DataLoader
+data/              ~85%     ✅ MNIST + California Housing + DataLoader + Transform 管线（8 种数据增强）
 vision/            ~70%     ✅ 基本完成
 rl/                ~45%     ✅ GymEnv + SAC-Discrete（CartPole）+ SAC-Continuous（Pendulum）
 logic/             0%       ❌ 预留
@@ -66,7 +66,7 @@ neat/              0%       ❌ 远期特色
 | **Graph** | 计算图（参数注册表、种子管理） | ✅ |
 | **Var** | 节点变量（Rc 引用计数管理生命周期） | ✅ |
 | **Module** trait | 模型定义（parameters + forward） | ✅ |
-| **Layer** | Linear/Conv2d/MaxPool2d/AvgPool2d/RNN/LSTM/GRU | ✅ |
+| **Layer** | Linear/Conv2d/Pool/RNN/LSTM/GRU/BatchNorm/LayerNorm/RMSNorm/GroupNorm/InstanceNorm/Embedding/MultiHeadAttention | ✅ |
 | **Optimizer** | SGD/Adam + with_params 选择性优化 | ✅ |
 | **DetachedVar** | 轻量 detach 包装（GAN/RL 梯度隔离） | ✅ |
 | **Loss** 方法 | `var.mse_loss()` / `var.cross_entropy()` / `var.bce_loss()` 等 | ✅ |
@@ -117,31 +117,29 @@ for (x, target) in &dataloader {
 | 类型 | 节点                                                        | 数量 |
 | :--- | :---------------------------------------------------------- | :--: |
 | 输入 | Input (Data/Target), Parameter, State                       |  3   |
-| 算术 | Add, Subtract, Multiply, Divide, Negate                     |  5   |
+| 算术 | Add, Subtract, Multiply, Divide, Negate, Pow, Square, Reciprocal |  8   |
 | 矩阵/卷积 | MatMul, Conv2d, MaxPool2d, AvgPool2d                   |  4   |
-| 形状 | Reshape, Flatten, Select, Gather, Narrow, Permute, Stack, Concat |  8   |
+| 形状 | Reshape, Flatten, Select, Gather, Narrow, Permute, Stack, Concat, Pad, Repeat |  10  |
 | 选择 | TopK, SortNode                                              |  2   |
 | 归约 | Maximum, Minimum, Amax, Amin, Sum, Mean                     |  6   |
-| 激活 | Sigmoid, Tanh, ReLU, LeakyReLU, Softmax, LogSoftmax, SoftPlus, GELU, Swish, ELU, SELU, Mish, HardSwish, HardSigmoid, Step, Sign, Abs, Ln, Exp, Sqrt | 20 |
+| 激活 | Sigmoid, Tanh, ReLU, LeakyReLU, ReLU6, HardTanh, Softmax, LogSoftmax, SoftPlus, GELU, Swish, ELU, SELU, Mish, HardSwish, HardSigmoid, Step, Sign, Abs, Ln, Log10, Log2, Exp, Sqrt | 24 |
 | 裁剪 | Clip                                                        |  1   |
 | 条件 | WhereCond                                                   |  1   |
 | 损失 | MSE, MAE, BCE, Huber, SoftmaxCrossEntropy                   |  5   |
+| 归一化 | BatchNormOp, LayerNormOp, RMSNormOp                       |  3   |
 | 辅助 | Identity, Dropout, ZerosLike, Detach                        |  4   |
-| **合计** |                                                         | **59 + 2 复合** |
+| **合计** |                                                         | **71 + 2 复合** |
 
-> 注：Input 和 Parameter 各含子类型，实际枚举变体总数 61。
+> 注：Input 和 Parameter 各含子类型，实际枚举变体总数 73。
 
 详细信息见 [future_node_types.md](design/future_node_types.md)
 
 ## 待扩展节点
 
 > 详见 [future_node_types.md](design/future_node_types.md)
-
-| 优先级 | 节点 | 用途 |
-| :----: | :--- | :--- |
-| 🟡 中 | LayerNorm, BatchNorm | Transformer / CNN 归一化 |
-| 🟡 中 | Embedding | NLP / 离散输入嵌入 |
-| 🟢 低 | Split | 张量分割 |
+>
+> **状态**：✅ 原规划节点已全部完成（含 BatchNorm/LayerNorm/RMSNorm/Embedding/Attention 等）。
+> 未来可按需添加新节点类型。
 
 ## 集成测试进度
 
@@ -207,12 +205,12 @@ only_torch/
 ├── tensor/          # 张量核心 ✅
 ├── nn/
 │   ├── graph/       # 计算图（动态图 + Rc 生命周期）✅
-│   ├── nodes/       # 40 个节点类型 ✅
-│   ├── layer/       # Linear/Conv2d/Pool/RNN/LSTM/GRU ✅
+│   ├── nodes/       # 73 个节点类型 ✅
+│   ├── layer/       # Linear/Conv2d/Pool/RNN/LSTM/GRU/Norm/Embedding/Attention ✅
 │   ├── optimizer/   # SGD/Adam ✅
 │   └── module       # Module trait ✅
 ├── vision/          # 视觉处理 ✅
-├── data/            # DataLoader + MNIST + California Housing ✅
+├── data/            # DataLoader + MNIST + California Housing + Transform 管线 ✅
 ├── rl/              # GymEnv + SAC-Discrete + SAC-Continuous ✅
 ├── neat/            # 神经进化（远期核心）
 └── logic/           # 逻辑推理（预留）
@@ -240,9 +238,10 @@ let w = graph.parameter(&[3, 2], Init::Normal { mean: 0.0, std: 1.0 }, "w")?;
 
 ### ✅ 阶段二核心完成
 
-- 40 个节点类型（含 Conv2d/Pool/RNN/LSTM/GRU）
+- 73 个节点类型（含 Conv2d/Pool/RNN/LSTM/GRU/归一化/对数/激活 全族）
+- 14 个 Layer（Linear/Conv2d/Pool/RNN/LSTM/GRU/BatchNorm/LayerNorm/RMSNorm/GroupNorm/InstanceNorm/Embedding/MultiHeadAttention）
 - 5 种损失函数（MSE/MAE/BCE/Huber/CrossEntropy）
-- DataLoader + BucketedDataLoader
+- DataLoader + BucketedDataLoader + Transform 管线（8 种数据增强）
 - 16 个示例覆盖 MLP/CNN/RNN/GAN/多任务/RL
 
 ---

@@ -219,9 +219,15 @@ impl TanhNormal {
 
 ---
 
-## 6. 过程宏简化模型定义
+## ~~6. 过程宏简化模型定义~~ （暂不执行）
 
-**优先级**：🟢 低（优化体验，非必需）
+> **状态**：💤 暂不执行
+>
+> 当前 Rust stable 仍要求过程宏必须放在独立 crate 中，需新建 `only_torch_macros` crate + workspace 配置。
+> 而动态图架构已移除 `ModelState`，剩余样板代码仅 `parameters()` 方法（约 5 行），投入产出比低。
+> 待 RFC 3698（声明式 derive 宏）进入 stable 后可重新评估。
+
+**原优先级**：🟢 低（优化体验，非必需）
 
 **背景**：当前模型定义需要手动添加 `state` 字段和实现 `forward`/`parameters` 方法，可通过过程宏自动生成。
 
@@ -289,91 +295,28 @@ impl XorMLP {
 
 ---
 
-## 7. API 便捷方法扩展
+## ~~7. API 便捷方法扩展~~ （已完成）
 
-**优先级**：🟢 低（便捷性优化）
-
-### 5.1 `zeros_like` / `randn_like` 方法
-
-**问题**：创建零张量、随机张量需要通过 `graph` 调用
-
-```rust
-// 当前
-let fake_labels = graph.zeros(&[batch_size, 1])?;
-let noise = graph.randn(&[batch_size, latent_dim])?;
-```
-
-**改进**：从已有 Var 推断图
-
-```rust
-impl Var {
-    pub fn zeros_like(&self) -> Result<Var, GraphError>;
-    pub fn randn_like(&self) -> Result<Var, GraphError>;
-}
-
-// 使用
-let fake_labels = d_real.zeros_like()?;
-let noise = latent.randn_like()?;
-```
-
-### 5.2 标量运算支持
-
-**当前问题**：只支持 Var 之间的运算
-
-**改进**：支持 Var 与标量运算
-
-```rust
-// 目标
-let scaled = var * 2.0;
-let shifted = var + 1.0;
-let mask = var > 0.5;  // 返回 mask Var
-```
-
-### 5.3 `Var::attach()` 方法
-
-**当前**：`graph.attach_node(node_id)`
-
-**改进**：与 `detach()` 对称的 API
-
-```rust
-impl Var {
-    pub fn attach(&self) -> Result<(), GraphError> {
-        self.graph.borrow_mut().attach_node(self.id)
-    }
-}
-```
+> **状态**：✅ 已完成
+>
+> 所有计划中的 API 便捷方法均已实现：
+> - `Var::zeros_like()` — 全零 Var
+> - `Var::rand_like()` — U(-1,1) 均匀分布 Var
+> - `Var::randn_like()` — N(0,1) 标准正态分布 Var
+> - `Var * f32`, `Var + f32`, `Var - f32`, `Var / f32` — 标量运算
+> - `Var::attach()` — 与 `detach()` 对称的 Identity 节点包装
 
 ---
 
-## 8. 错误类型精细化
+## ~~8. 错误类型精细化~~ （已完成）
 
-**优先级**：🟢 低（可选优化）
-
-**当前状态**：使用 `InvalidOperation(String)` 覆盖多种错误
-
-**改进**：更精确的错误类型，便于用户处理
-
-```rust
-pub enum GraphError {
-    // ... 现有错误 ...
-
-    /// 节点值尚未计算（需要先调用 forward）
-    ValueNotComputed(NodeId),
-
-    /// 节点梯度尚未计算（需要先调用 backward）
-    GradientNotComputed(NodeId),
-
-    /// 两个 Var 来自不同的 Graph
-    GraphMismatch { left_graph_id: usize, right_graph_id: usize },
-
-    /// 节点已被 detach，不能参与梯度计算
-    NodeDetached(NodeId),
-}
-```
-
-**好处**：
-- 错误信息更明确
-- 用户可以 match 特定错误类型进行处理
+> **状态**：✅ 已完成
+>
+> `GraphError` 已新增以下变体：
+> - `ValueNotComputed` — 节点值尚未计算
+> - `GradientNotComputed` — 节点梯度尚未计算
+> - `GraphMismatch` — 两个 Var 来自不同的 Graph
+> - `NodeDetached` — 节点已被 detach
 
 ---
 
@@ -398,17 +341,17 @@ pub enum GraphError {
 
 ## 实施建议
 
-| 优先级 | 功能 | 触发条件 |
-|--------|------|---------|
-| 🔴 高 | **NEAT** | 项目愿景核心，基础功能稳定后实现 |
-| ✅ 完成 | ~~概率分布模块~~ | 已实现 Categorical / Normal / TanhNormal，详见 [分布模块设计](./distributions_design.md) |
-| ✅ 完成 | ~~Exp / Clip 节点~~ | 已实现，为分布模块提供底层支持 |
-| 🟡 中 | **数据共享可视化** | 多模型共享 Input 的链式虚线标注，详见 [Input 语义设计](./input_node_semantics_design.md) |
-| ✅ 完成 | ~~多输入/多输出~~ | 已由动态图架构解决，示例已有演示 |
-| 🟢 低 | **过程宏** | API 稳定后，作为用户体验优化 |
-| 🟢 低 | **API 便捷方法** | 按需添加，不影响核心功能 |
-| 🟢 低 | **错误类型精细化** | 可选优化，当前 `InvalidOperation` 已可用 |
-| 💤 暂缓 | **强化学习改良** | 环境层 + SAC 三变体示例已完成，后续改良详见 [RL 路线图](./rl_roadmap.md) |
+| 优先级 | 功能 | 状态 |
+|--------|------|------|
+| 🔴 高 | **NEAT** | ❌ 待实现（项目愿景核心） |
+| ✅ 完成 | ~~概率分布模块~~ | 已实现 Categorical / Normal / TanhNormal |
+| ✅ 完成 | ~~Exp / Clip 等基础节点~~ | 73 个节点类型全部实现 |
+| 🟡 中 | **数据共享可视化** | ❌ 待实现（多模型共享 Input 的链式虚线标注） |
+| ✅ 完成 | ~~多输入/多输出~~ | 已由动态图架构解决 |
+| 💤 暂缓 | **过程宏** | 暂不执行（等待 RFC 3698） |
+| ✅ 完成 | ~~API 便捷方法~~ | zeros_like / randn_like / 标量运算 / attach |
+| ✅ 完成 | ~~错误类型精细化~~ | ValueNotComputed / GradientNotComputed 等已添加 |
+| 💤 暂缓 | **强化学习改良** | 后续方向详见 [RL 路线图](./rl_roadmap.md) |
 
 ---
 
