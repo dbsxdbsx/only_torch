@@ -1,33 +1,86 @@
 # Only-Torch Justfile
 # 使用: just <command>
 
+# ==================== BLAS 自动检测 ====================
+# 优先级：MKL > OpenBLAS > 纯 Rust（matrixmultiply）
+# 检测方式：环境变量 > 常见安装路径 > pkg-config/ldconfig
+# 手动覆盖：设置 MKLROOT 或 OPENBLAS_DIR 环境变量即可
+
+_detected_blas := ```
+    if [ -n "$MKLROOT" ]; then
+        echo "blas-mkl"
+    elif [ -d "/c/Program Files (x86)/Intel/oneAPI/mkl/latest" ] || \
+         [ -d "/c/Program Files/Intel/oneAPI/mkl/latest" ] || \
+         [ -d "/opt/intel/oneapi/mkl/latest" ] || \
+         [ -d "/opt/intel/mkl" ]; then
+        echo "blas-mkl"
+    elif [ -n "$OPENBLAS_DIR" ]; then
+        echo "blas-openblas"
+    elif pkg-config --exists openblas 2>/dev/null; then
+        echo "blas-openblas"
+    elif ldconfig -p 2>/dev/null | grep -q libopenblas; then
+        echo "blas-openblas"
+    fi
+```
+
+_blas_flag := if _detected_blas != "" { "--features " + _detected_blas } else { "" }
+_blas_name := if _detected_blas == "blas-mkl" { "Intel MKL" } else if _detected_blas == "blas-openblas" { "OpenBLAS" } else { "pure Rust" }
+
 # 默认命令：运行测试和 lint
 default: test lint
 
 # 完整检查：清理、测试、lint、所有 examples
 all: clean test lint examples
 
+# 查看 BLAS 检测状态
+blas-status:
+    @echo "BLAS backend: {{_blas_name}}"
+    @echo "Cargo flag:   {{_blas_flag}}"
+
 # ==================== 测试 ====================
 
 # 运行常规单元测试（跳过 #[ignore] 标记的测试）
 test:
-    cargo test
+    cargo test {{_blas_flag}}
 
 # 运行全量测试（包含 #[ignore] 标记的联网等测试）
 test-all:
-    cargo test -- --include-ignored
+    cargo test {{_blas_flag}} -- --include-ignored
 
 # 仅运行 #[ignore] 标记的测试（联网等特殊测试）
 test-ignored:
-    cargo test -- --ignored
+    cargo test {{_blas_flag}} -- --ignored
 
 # 运行所有单元测试（单线程，用于调试）
 test-serial:
-    cargo test -- --test-threads=1
+    cargo test {{_blas_flag}} -- --test-threads=1
 
 # 运行特定测试（用法: just test-filter <pattern>）
 test-filter pattern:
-    cargo test {{pattern}}
+    cargo test {{_blas_flag}} {{pattern}}
+
+# ==================== 基准测试 ====================
+
+# 运行所有 benchmarks
+bench:
+    cargo bench {{_blas_flag}}
+
+# 运行特定 benchmark（用法: just bench-filter <pattern>）
+bench-filter pattern:
+    cargo bench {{_blas_flag}} -- {{pattern}}
+
+# 单独 benchmark 组
+bench-conv2d:
+    cargo bench --bench conv2d {{_blas_flag}}
+
+bench-backward:
+    cargo bench --bench backward {{_blas_flag}}
+
+bench-end-to-end:
+    cargo bench --bench end_to_end {{_blas_flag}}
+
+bench-tensor:
+    cargo bench --bench tensor_ops {{_blas_flag}}
 
 # ==================== Examples ====================
 
@@ -39,90 +92,90 @@ example-parity: example-parity-fixed example-parity-var example-parity-lstm exam
 
 # 单个 examples
 example-xor:
-    @echo "=== Running XOR ==="
-    cargo run --example xor
+    @echo "=== Running XOR [{{_blas_name}}] ==="
+    cargo run --example xor {{_blas_flag}}
 
 example-iris:
-    @echo "=== Running Iris ==="
-    cargo run --example iris
+    @echo "=== Running Iris [{{_blas_name}}] ==="
+    cargo run --example iris {{_blas_flag}}
 
 example-sine:
-    @echo "=== Running Sine Regression ==="
-    cargo run --example sine_regression
+    @echo "=== Running Sine Regression [{{_blas_name}}] ==="
+    cargo run --example sine_regression {{_blas_flag}}
 
 example-mnist:
-    @echo "=== Running MNIST ==="
-    cargo run --example mnist
+    @echo "=== Running MNIST [{{_blas_name}}] ==="
+    cargo run --example mnist {{_blas_flag}}
 
 example-mnist-cnn:
-    @echo "=== Running MNIST CNN ==="
-    cargo run --example mnist_cnn
+    @echo "=== Running MNIST CNN [{{_blas_name}}] ==="
+    cargo run --example mnist_cnn {{_blas_flag}}
 
 example-mnist-gan:
-    @echo "=== Running MNIST GAN ==="
-    cargo run --example mnist_gan
+    @echo "=== Running MNIST GAN [{{_blas_name}}] ==="
+    cargo run --example mnist_gan {{_blas_flag}}
 
 example-california:
-    @echo "=== Running California Housing ==="
-    cargo run --example california_housing
+    @echo "=== Running California Housing [{{_blas_name}}] ==="
+    cargo run --example california_housing {{_blas_flag}}
 
 example-parity-fixed:
-    @echo "=== Running Parity (RNN, Fixed Length) ==="
-    cargo run --example parity_rnn_fixed_len
+    @echo "=== Running Parity (RNN, Fixed Length) [{{_blas_name}}] ==="
+    cargo run --example parity_rnn_fixed_len {{_blas_flag}}
 
 example-parity-var:
-    @echo "=== Running Parity (RNN, Variable Length) ==="
-    cargo run --example parity_rnn_var_len
+    @echo "=== Running Parity (RNN, Variable Length) [{{_blas_name}}] ==="
+    cargo run --example parity_rnn_var_len {{_blas_flag}}
 
 example-parity-lstm:
-    @echo "=== Running Parity (LSTM, Variable Length) ==="
-    cargo run --example parity_lstm_var_len
+    @echo "=== Running Parity (LSTM, Variable Length) [{{_blas_name}}] ==="
+    cargo run --example parity_lstm_var_len {{_blas_flag}}
 
 example-parity-gru:
-    @echo "=== Running Parity (GRU, Variable Length) ==="
-    cargo run --example parity_gru_var_len
+    @echo "=== Running Parity (GRU, Variable Length) [{{_blas_name}}] ==="
+    cargo run --example parity_gru_var_len {{_blas_flag}}
 
 example-dual-input:
-    @echo "=== Running Dual Input Add (forward2) ==="
-    cargo run --example dual_input_add
+    @echo "=== Running Dual Input Add (forward2) [{{_blas_name}}] ==="
+    cargo run --example dual_input_add {{_blas_flag}}
 
 example-siamese:
-    @echo "=== Running Siamese Similarity (shared encoder) ==="
-    cargo run --example siamese_similarity
+    @echo "=== Running Siamese Similarity (shared encoder) [{{_blas_name}}] ==="
+    cargo run --example siamese_similarity {{_blas_flag}}
 
 example-dual-output:
-    @echo "=== Running Dual Output Classify (multi-output) ==="
-    cargo run --example dual_output_classify
+    @echo "=== Running Dual Output Classify (multi-output) [{{_blas_name}}] ==="
+    cargo run --example dual_output_classify {{_blas_flag}}
 
 example-multi-io:
-    @echo "=== Running Multi IO Fusion (multi-input + multi-output) ==="
-    cargo run --example multi_io_fusion
+    @echo "=== Running Multi IO Fusion (multi-input + multi-output) [{{_blas_name}}] ==="
+    cargo run --example multi_io_fusion {{_blas_flag}}
 
 example-multi-label:
-    @echo "=== Running Multi Label Point (BCE Loss) ==="
-    cargo run --example multi_label_point
+    @echo "=== Running Multi Label Point (BCE Loss) [{{_blas_name}}] ==="
+    cargo run --example multi_label_point {{_blas_flag}}
 
 example-cartpole-sac:
-    @echo "=== Running CartPole SAC (requires Python + gymnasium) ==="
-    cargo run --example cartpole_sac
+    @echo "=== Running CartPole SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example cartpole_sac {{_blas_flag}}
 
 example-pendulum-sac:
-    @echo "=== Running Pendulum SAC (requires Python + gymnasium) ==="
-    cargo run --example pendulum_sac
+    @echo "=== Running Pendulum SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example pendulum_sac {{_blas_flag}}
 
 example-moving-sac:
-    @echo "=== Running Moving Hybrid SAC (requires Python + gymnasium) ==="
-    cargo run --example moving_sac
+    @echo "=== Running Moving Hybrid SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example moving_sac {{_blas_flag}}
 
 # ==================== 代码质量 ====================
 
 # 运行 clippy lint
 lint:
-    cargo clippy
+    cargo clippy {{_blas_flag}}
 
 # 运行 clippy 并自动修复
 lint-fix:
-    cargo clippy --fix --allow-dirty --allow-staged
+    cargo clippy {{_blas_flag}} --fix --allow-dirty --allow-staged
 
 # 格式化代码
 fmt:
@@ -136,15 +189,15 @@ fmt-check:
 
 # Debug 构建
 build:
-    cargo build
+    cargo build {{_blas_flag}}
 
 # Release 构建
 build-release:
-    cargo build --release
+    cargo build --release {{_blas_flag}}
 
 # 检查编译（不生成二进制）
 check:
-    cargo check
+    cargo check {{_blas_flag}}
 
 # ==================== 清理 ====================
 

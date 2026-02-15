@@ -76,6 +76,38 @@ fn test_color_jitter_saturation_grayscale_input() {
 }
 
 #[test]
+fn test_color_jitter_output_clamped() {
+    // brightness=0.5 时 factor 最大 1.5，输入 1.0 会溢出到 1.5
+    // 修复后应裁剪到 [0, 1]
+    let jitter = ColorJitter::new(0.5, 0.5, 0.5);
+    let input = Tensor::new(&[1.0; 12], &[3, 2, 2]);
+
+    for _ in 0..100 {
+        let output = jitter.apply(&input);
+        let flat = output.flatten_view();
+        for &v in flat.iter() {
+            assert!(
+                v >= 0.0 && v <= 1.0,
+                "输出应在 [0, 1] 范围内，得到 {v}"
+            );
+        }
+    }
+
+    // 同样验证接近 0 的输入不会变成负数
+    let dark = Tensor::new(&[0.05; 12], &[3, 2, 2]);
+    for _ in 0..100 {
+        let output = jitter.apply(&dark);
+        let flat = output.flatten_view();
+        for &v in flat.iter() {
+            assert!(
+                v >= 0.0 && v <= 1.0,
+                "暗像素输出应在 [0, 1] 范围内，得到 {v}"
+            );
+        }
+    }
+}
+
+#[test]
 #[should_panic(expected = "brightness 必须 >= 0")]
 fn test_color_jitter_negative_brightness() {
     ColorJitter::new(-0.1, 0.0, 0.0);

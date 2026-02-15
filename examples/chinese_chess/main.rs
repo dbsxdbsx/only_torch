@@ -16,9 +16,21 @@
 //! cargo run --example chinese_chess
 //! ```
 //!
+//! ## 网络架构
+//! ```text
+//! Input [batch, 3, 28, 28]
+//!   → Conv1 (3→16, 3x3, pad=1) → ReLU → MaxPool(2x2)   [batch, 16, 14, 14]
+//!   → Conv2 (16→32, 3x3, pad=1) → ReLU → MaxPool(2x2)  [batch, 32, 7, 7]
+//!   → Flatten                                              [batch, 1568]
+//!   → FC1 (1568→128) → ReLU → Dropout(0.2)
+//!   → FC2 (128→15)
+//! ```
+//!
+//! ## 运行时数据增强
+//! 训练时对每个样本应用：RandomCrop(±3px) → RandomRotation(±5°) → ColorJitter → RandomErasing(30%)
+//!
 //! ## 性能目标
 //! - 准确率: ≥95%
-//! - 训练时间: <30s
 //! - 推理 batch=90: <100ms（棋盘扫描场景）
 
 mod data;
@@ -26,7 +38,10 @@ mod model;
 
 use data::{load_chess_data, CLASS_NAMES};
 use model::ChessPieceCNN;
-use only_torch::data::{DataLoader, TensorDataset};
+use only_torch::data::{
+    ColorJitter, Compose, DataLoader, RandomCrop, RandomErasing, RandomRotation, TensorDataset,
+    Transform,
+};
 use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
@@ -37,48 +52,46 @@ fn main() -> Result<(), GraphError> {
     let total_start = Instant::now();
     println!("=== 中国象棋棋子 CNN 分类器 ===\n");
 
-    // 1. 加载数据
+    // 1. 加载数据（train/test 已在生成阶段按风格分离）
     println!("[1/4] 加载训练数据...");
     let load_start = Instant::now();
 
-    let (all_images, all_labels) = load_chess_data("data/chinese_chess")
+    let ((train_x, train_y), (test_x, test_y)) = load_chess_data("data/chinese_chess")
         .map_err(|e| GraphError::ComputationError(e))?;
 
-    let total_samples = all_images.shape()[0];
+    let train_samples = train_x.shape()[0];
+    let test_samples = test_x.shape()[0];
     println!(
-        "  数据形状: images={:?}, labels={:?} ({:.1}s)",
-        all_images.shape(),
-        all_labels.shape(),
+        "  加载完成 ({:.1}s)",
         load_start.elapsed().as_secs_f32()
     );
 
-    // 2. 配置（诊断模式：极少数据 + 高学习率 + 多轮，看能否过拟合）
+    // 2. 配置
     let batch_size = 256;
-    let train_samples = (total_samples * 8 / 10).min(1024);
-    let test_samples = ((total_samples - train_samples) as usize).min(512);
-    let max_epochs = 50;
+    let max_epochs = 100;
     let learning_rate = 0.01;
-    let target_accuracy = 90.0;
+    let target_accuracy = 95.0;
+    let early_stop_patience = 5;
 
     println!("\n[2/4] 配置：");
     println!("  - Batch: {batch_size}");
     println!("  - 训练样本: {train_samples}");
     println!("  - 测试样本: {test_samples}");
-    println!("  - Epochs: {max_epochs}");
+    println!("  - Epochs: {max_epochs} (early stop patience={early_stop_patience})");
     println!("  - 学习率: {learning_rate}");
     println!("  - 目标准确率: {target_accuracy}%");
 
-    // 3. 划分数据集
-    let train_x = tensor_slice!(all_images, 0usize..train_samples, .., .., ..);
-    let train_y = tensor_slice!(all_labels, 0usize..train_samples, ..);
+    // 3. 运行时数据增强（仅训练集）
+    let train_transform = Compose::new(vec![
+        Box::new(RandomCrop::new(28, 28).padding(3)),    // ±3px 裁切偏移
+        Box::new(RandomRotation::new(5.0)),              // ±5° 旋转
+        Box::new(ColorJitter::new(0.15, 0.15, 0.1)),    // 亮度/对比度/饱和度扰动
+        Box::new(RandomErasing::new(0.3)),               // 30% 概率随机遮挡
+    ]);
 
-    let test_start = train_samples;
-    let test_end = train_samples + test_samples;
-    let test_x = tensor_slice!(all_images, test_start..test_end, .., .., ..);
-    let test_y = tensor_slice!(all_labels, test_start..test_end, ..);
-
-    // 为推理基准测试保留副本
-    let test_x_for_bench = test_x.clone();
+    // 为推理基准测试和每类准确率保留副本
+    let test_x_for_eval = test_x.clone();
+    let test_y_for_eval = test_y.clone();
 
     let train_loader =
         DataLoader::new(TensorDataset::new(train_x, train_y), batch_size).drop_last(true);
@@ -102,13 +115,15 @@ fn main() -> Result<(), GraphError> {
         })
         .sum();
 
-    println!("\n  网络: Conv(3->8) -> Pool -> Conv(8->16) -> Pool -> FC(784->48) -> FC(48->15)");
+    println!("\n  网络: Conv(3→16) → Pool → Conv(16→32) → Pool → FC(1568→128) → FC(128→15)");
     println!("  参数量: {param_count}");
+    println!("  数据增强: RandomCrop(±3) → Rotation(±5°) → ColorJitter → RandomErasing(30%)");
 
     // 5. 训练
     println!("\n[3/4] 开始训练...\n");
     let train_start = Instant::now();
     let mut best_acc = 0.0f32;
+    let mut no_improve_count = 0;
 
     for epoch in 0..max_epochs {
         let epoch_start = Instant::now();
@@ -117,7 +132,10 @@ fn main() -> Result<(), GraphError> {
 
         graph.train();
         for (batch_x, batch_y) in train_loader.iter() {
-            let output = model.forward(&batch_x)?;
+            // 逐样本应用数据增强，再重组 batch
+            let augmented = apply_transform_batch(&batch_x, &train_transform);
+
+            let output = model.forward(&augmented)?;
             let loss = output.cross_entropy(&batch_y)?;
             graph.snapshot_once_from(&[&loss]);
 
@@ -129,7 +147,7 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        // 测试
+        // 测试（不做增强）
         graph.eval();
         let mut total_correct = 0.0;
         let mut total = 0;
@@ -142,11 +160,14 @@ fn main() -> Result<(), GraphError> {
             total += acc.n_samples();
         }
 
-        let acc = total_correct / total as f32 * 100.0;
-        best_acc = best_acc.max(acc);
+        let acc = if total > 0 {
+            total_correct / total as f32 * 100.0
+        } else {
+            0.0
+        };
 
         println!(
-            "Epoch {:2}: loss = {:.4}, 准确率 = {:.1}% ({}/{}), {:.1}s",
+            "Epoch {:3}: loss = {:.4}, 准确率 = {:.1}% ({}/{}), {:.1}s",
             epoch + 1,
             epoch_loss / num_batches as f32,
             acc,
@@ -155,10 +176,24 @@ fn main() -> Result<(), GraphError> {
             epoch_start.elapsed().as_secs_f32()
         );
 
+        if acc > best_acc {
+            best_acc = acc;
+            no_improve_count = 0;
+        } else {
+            no_improve_count += 1;
+        }
+
         if acc >= target_accuracy {
             println!(
                 "\n达到目标准确率 {acc:.1}%，提前停止训练（第 {} 轮）",
                 epoch + 1
+            );
+            break;
+        }
+
+        if no_improve_count >= early_stop_patience {
+            println!(
+                "\n连续 {early_stop_patience} 轮无提升，提前停止（最佳 {best_acc:.1}%）"
             );
             break;
         }
@@ -169,11 +204,11 @@ fn main() -> Result<(), GraphError> {
 
     // 6. 每类准确率
     println!("\n各类准确率：");
-    print_per_class_accuracy(&graph, &model, &test_x_for_bench, &all_labels, train_samples, test_samples)?;
+    print_per_class_accuracy(&graph, &model, &test_x_for_eval, &test_y_for_eval)?;
 
     // 7. 推理基准测试
     println!("\n[4/4] 推理速度基准测试...\n");
-    inference_benchmark(&graph, &model, &test_x_for_bench)?;
+    inference_benchmark(&graph, &model, &test_x_for_eval)?;
 
     // 8. 保存可视化
     let vis_result = graph.visualize_snapshot("examples/chinese_chess/chinese_chess")?;
@@ -199,19 +234,49 @@ fn main() -> Result<(), GraphError> {
     }
 }
 
+/// 对 batch 中的每个样本逐一应用 Transform，再重组为 batch
+///
+/// Transform 操作的是单样本 [C, H, W]，不支持 batch 维度。
+fn apply_transform_batch(batch: &Tensor, transform: &dyn Transform) -> Tensor {
+    let shape = batch.shape();
+    let n = shape[0];
+    let c = shape[1];
+    let h = shape[2];
+    let w = shape[3];
+    let sample_size = c * h * w;
+
+    let batch_data = batch.data_as_slice();
+    let mut augmented_data = Vec::with_capacity(n * sample_size);
+
+    for i in 0..n {
+        let start = i * sample_size;
+        let end = start + sample_size;
+        let sample = Tensor::new(&batch_data[start..end], &[c, h, w]);
+        let transformed = transform.apply(&sample);
+
+        let t_shape = transformed.shape();
+        assert_eq!(
+            t_shape, &[c, h, w],
+            "Transform 后形状变化: 期望 [{c},{h},{w}]，得到 {t_shape:?}"
+        );
+        augmented_data.extend_from_slice(transformed.data_as_slice());
+    }
+
+    Tensor::new(&augmented_data, &[n, c, h, w])
+}
+
 /// 打印每类准确率
 fn print_per_class_accuracy(
     graph: &Graph,
     model: &ChessPieceCNN,
     test_images: &Tensor,
-    all_labels: &Tensor,
-    train_samples: usize,
-    test_samples: usize,
+    test_labels: &Tensor,
 ) -> Result<(), GraphError> {
     graph.eval();
 
     let batch_size = 256;
     let num_classes = 15;
+    let test_samples = test_images.shape()[0];
     let mut class_correct = vec![0usize; num_classes];
     let mut class_total = vec![0usize; num_classes];
 
@@ -238,10 +303,9 @@ fn print_per_class_accuracy(
             }
 
             // 找真实类
-            let label_offset = train_samples + offset + i;
             let mut true_class = 0;
             for j in 0..num_classes {
-                if all_labels[[label_offset, j]] > 0.5 {
+                if test_labels[[offset + i, j]] > 0.5 {
                     true_class = j;
                     break;
                 }
@@ -281,7 +345,8 @@ fn inference_benchmark(
     let batch_sizes = [1, 10, 90, 256];
 
     for &bs in &batch_sizes {
-        let batch = tensor_slice!(test_images, 0usize..bs, .., .., ..);
+        let actual_bs = bs.min(test_images.shape()[0]);
+        let batch = tensor_slice!(test_images, 0usize..actual_bs, .., .., ..);
 
         // 预热
         let _ = model.forward(&batch)?;
@@ -294,11 +359,11 @@ fn inference_benchmark(
         }
         let elapsed = start.elapsed();
         let avg_ms = elapsed.as_secs_f64() * 1000.0 / runs as f64;
-        let per_sample_us = avg_ms * 1000.0 / bs as f64;
+        let per_sample_us = avg_ms * 1000.0 / actual_bs as f64;
 
         println!(
             "  batch={:>3}: {:.1}ms 总计, {:.0}us/样本",
-            bs, avg_ms, per_sample_us
+            actual_bs, avg_ms, per_sample_us
         );
     }
 

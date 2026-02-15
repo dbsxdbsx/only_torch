@@ -13,14 +13,14 @@ use only_torch::tensor::Tensor;
 /// 网络结构:
 /// ```text
 /// Input [batch, 3, 28, 28]
-///   → Conv1 (3→8, 3x3, pad=1) → ReLU → MaxPool(2x2)   [batch, 8, 14, 14]
-///   → Conv2 (8→16, 3x3, pad=1) → ReLU → MaxPool(2x2)  [batch, 16, 7, 7]
-///   → Flatten                                            [batch, 784]
-///   → FC1 (784→48) → ReLU → Dropout(0.2)
-///   → FC2 (48→15)
+///   → Conv1 (3→16, 3x3, pad=1) → ReLU → MaxPool(2x2)   [batch, 16, 14, 14]
+///   → Conv2 (16→32, 3x3, pad=1) → ReLU → MaxPool(2x2)  [batch, 32, 7, 7]
+///   → Flatten                                              [batch, 1568]
+///   → FC1 (1568→128) → ReLU → Dropout(0.2)
+///   → FC2 (128→15)
 /// ```
 ///
-/// - 参数量: ~39K
+/// - 参数量: ~205K
 /// - 15 类: 1 空位 + 7 红子 + 7 黑子
 pub struct ChessPieceCNN {
     conv1: Conv2d,
@@ -35,14 +35,13 @@ impl ChessPieceCNN {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
         let graph = graph.with_model_name("ChessPieceCNN");
         Ok(Self {
-            // 3 通道 RGB → 8 个卷积核（需要足够多的核来捕捉汉字笔画特征）
-            conv1: Conv2d::new(&graph, 3, 8, (3, 3), (1, 1), (1, 1), true, "conv1")?,
+            conv1: Conv2d::new(&graph, 3, 16, (3, 3), (1, 1), (1, 1), true, "conv1")?,
             pool1: MaxPool2d::new(&graph, (2, 2), None, "pool1"),
-            conv2: Conv2d::new(&graph, 8, 16, (3, 3), (1, 1), (1, 1), true, "conv2")?,
+            conv2: Conv2d::new(&graph, 16, 32, (3, 3), (1, 1), (1, 1), true, "conv2")?,
             pool2: MaxPool2d::new(&graph, (2, 2), None, "pool2"),
-            // 16 * 7 * 7 = 784
-            fc1: Linear::new(&graph, 784, 48, true, "fc1")?,
-            fc2: Linear::new(&graph, 48, 15, true, "fc2")?,
+            // 32 * 7 * 7 = 1568
+            fc1: Linear::new(&graph, 1568, 128, true, "fc1")?,
+            fc2: Linear::new(&graph, 128, 15, true, "fc2")?,
         })
     }
 

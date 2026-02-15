@@ -88,7 +88,8 @@ impl Transform for ColorJitter {
             }
         }
 
-        result
+        // 裁剪到 [0, 1]，防止亮度/对比度/饱和度调整后溢出
+        result.clip(0.0, 1.0)
     }
 }
 

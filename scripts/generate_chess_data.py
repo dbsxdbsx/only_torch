@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-中国象棋合成训练数据生成器 v2
+中国象棋合成训练数据生成器 v3
 
-改进:
+改进 (v3):
+- 三种棋子风格模式: 经典浅底 / 木纹自然色 / 饱和对比色
+- 扩充棋盘底色: 纯绿、蓝绿/青、灰色、白色、棕褐等
+- 网格线颜色自适应: 深色棋盘自动使用浅色线条
 - 字形变体 (繁体/异体字: 帥/俥/傌/砲/將 等)
 - 训练集/测试集风格分离 (不同字体、不同配色方案)
-- 输出 train/ 和 test/ 子目录
 
 用法:
     python scripts/generate_chess_data.py                    # 默认: 生成训练+测试集
@@ -97,31 +99,18 @@ STYLE_POOLS = {
             (200, 180, 130),    # 深木色
             (210, 200, 170),    # 米色
             (180, 200, 180),    # 淡绿
+            (60, 140, 70),      # 纯绿 (兵河五四)
+            (160, 190, 180),    # 蓝绿/青 (象棋奇兵)
+            (170, 170, 170),    # 灰色 (兵河五四)
         ],
-        "piece_bgs": [
-            (240, 220, 180),    # 米黄
-            (245, 230, 190),    # 浅黄
-            (235, 210, 170),    # 深米
-            (250, 240, 210),    # 象牙白
-        ],
-        "red_text_colors": [
-            (200, 30, 30),      # 标准红
-            (180, 20, 20),      # 深红
-            (220, 50, 30),      # 亮红
-        ],
-        "black_text_colors": [
-            (30, 30, 30),       # 标准黑
-            (50, 50, 50),       # 深灰
-        ],
-        "border_colors": [
-            (60, 40, 20),       # 深棕
-            (40, 30, 15),       # 暗棕
-            (80, 50, 25),       # 中棕
-        ],
-        "grid_line_colors": [
+        "grid_line_colors_dark": [
             (40, 40, 40),       # 深黑
             (60, 50, 40),       # 暖黑
             (80, 70, 60),       # 灰棕
+        ],
+        "grid_line_colors_light": [
+            (200, 200, 200),    # 浅灰
+            (230, 230, 230),    # 白
         ],
     },
     "test": {
@@ -133,30 +122,118 @@ STYLE_POOLS = {
             (190, 180, 160),    # 暖灰
             (215, 195, 150),    # 黄木色
             (230, 220, 200),    # 浅米
+            (235, 235, 230),    # 白色/极浅 (兵河五四)
+            (165, 145, 120),    # 棕褐/复古 (兵河五四)
         ],
-        "piece_bgs": [
-            (230, 215, 185),    # 暖米
-            (255, 245, 220),    # 奶白
-            (225, 205, 165),    # 深暖米
-        ],
-        "red_text_colors": [
-            (160, 10, 10),      # 暗红
-            (190, 40, 40),      # 中红
-        ],
-        "black_text_colors": [
-            (10, 10, 10),       # 纯黑
-            (60, 50, 40),       # 暖黑
-        ],
-        "border_colors": [
-            (30, 30, 30),       # 深灰
-            (100, 70, 40),      # 浅棕
-        ],
-        "grid_line_colors": [
+        "grid_line_colors_dark": [
             (50, 50, 50),       # 灰
             (30, 30, 30),       # 纯黑
         ],
+        "grid_line_colors_light": [
+            (220, 215, 200),    # 米白
+        ],
     },
 }
+
+
+# ==================== 棋子风格模式 ====================
+#
+# 三种棋子视觉风格，覆盖主流象棋软件的设计差异：
+#   A — 经典浅底（象棋奇兵风格）：浅米色底 + 红字/黑字
+#   B — 木纹自然色（象棋名手风格）：棕色底，红黑两方底色接近
+#   C — 饱和对比色（兵河五四风格）：红方饱和红底+白字，黑方深色底+金字
+#
+# 生成概率：A 40%, B 30%, C 30%
+
+PIECE_MODE_WEIGHTS = [0.4, 0.3, 0.3]  # A, B, C
+
+PIECE_MODES = {
+    "train": {
+        "A": {
+            "piece_bgs": [(240, 220, 180), (245, 230, 190), (235, 210, 170), (250, 240, 210)],
+            "red_text": [(200, 30, 30), (180, 20, 20), (220, 50, 30)],
+            "black_text": [(30, 30, 30), (50, 50, 50)],
+            "border": [(60, 40, 20), (40, 30, 15), (80, 50, 25)],
+        },
+        "B": {
+            "red_piece_bgs": [(160, 110, 70), (170, 120, 80)],
+            "black_piece_bgs": [(130, 90, 55), (120, 85, 50)],
+            "red_text": [(120, 30, 20), (100, 20, 15)],
+            "black_text": [(60, 40, 25), (50, 35, 20)],
+            "border": [(90, 60, 30), (80, 55, 25)],
+        },
+        "C": {
+            "red_piece_bgs": [(190, 40, 30), (200, 50, 35)],
+            "black_piece_bgs": [(40, 40, 40), (55, 50, 45), (30, 50, 30)],
+            "red_text": [(255, 240, 220), (255, 220, 180)],
+            "black_text": [(220, 200, 120), (255, 240, 200)],
+            "red_border": [(150, 30, 20), (160, 25, 15)],
+            "black_border": [(20, 20, 20), (60, 55, 50)],
+        },
+    },
+    "test": {
+        "A": {
+            "piece_bgs": [(230, 215, 185), (255, 245, 220), (225, 205, 165)],
+            "red_text": [(160, 10, 10), (190, 40, 40)],
+            "black_text": [(10, 10, 10), (60, 50, 40)],
+            "border": [(30, 30, 30), (100, 70, 40)],
+        },
+        "B": {
+            "red_piece_bgs": [(155, 105, 65), (165, 115, 75)],
+            "black_piece_bgs": [(125, 85, 50), (115, 80, 45)],
+            "red_text": [(110, 25, 15), (95, 15, 10)],
+            "black_text": [(55, 35, 20), (45, 30, 15)],
+            "border": [(85, 55, 25), (75, 50, 20)],
+        },
+        "C": {
+            "red_piece_bgs": [(180, 35, 25), (170, 45, 30)],
+            "black_piece_bgs": [(35, 35, 50), (45, 30, 25)],
+            "red_text": [(250, 235, 210), (245, 230, 190)],
+            "black_text": [(215, 195, 110), (250, 235, 195)],
+            "red_border": [(140, 25, 15), (130, 30, 20)],
+            "black_border": [(20, 20, 40), (50, 40, 30)],
+        },
+    },
+}
+
+
+def select_piece_style(class_id: int, split: str) -> tuple:
+    """根据棋子风格模式选择协调的配色方案
+
+    Returns: (piece_bg, text_color, border_color, mode_name)
+    """
+    mode_name = random.choices(['A', 'B', 'C'], weights=PIECE_MODE_WEIGHTS)[0]
+    mode = PIECE_MODES[split][mode_name]
+    side = get_side(class_id)
+
+    if mode_name == 'A':
+        # 经典浅底：红黑共用底色，靠文字颜色区分
+        piece_bg = random.choice(mode["piece_bgs"])
+        border_color = random.choice(mode["border"])
+        text_color = random.choice(mode["red_text"] if side == "red" else mode["black_text"])
+    else:
+        # 模式 B/C：红黑两方使用不同底色
+        if side == "red":
+            piece_bg = random.choice(mode["red_piece_bgs"])
+            text_color = random.choice(mode["red_text"])
+            border_key = "red_border" if "red_border" in mode else "border"
+            border_color = random.choice(mode[border_key])
+        else:
+            piece_bg = random.choice(mode["black_piece_bgs"])
+            text_color = random.choice(mode["black_text"])
+            border_key = "black_border" if "black_border" in mode else "border"
+            border_color = random.choice(mode[border_key])
+
+    return piece_bg, text_color, border_color, mode_name
+
+
+def select_grid_color(board_bg: tuple, pool: dict) -> tuple:
+    """根据棋盘底色亮度自动选择网格线颜色"""
+    lum = 0.299 * board_bg[0] + 0.587 * board_bg[1] + 0.114 * board_bg[2]
+    if lum < 140:
+        return random.choice(pool["grid_line_colors_light"])
+    else:
+        return random.choice(pool["grid_line_colors_dark"])
 
 
 # ==================== 棋盘网格特征 ====================
@@ -420,23 +497,24 @@ def generate_dataset(
     labels = []
     total = 0
 
-    # 统计字形变体使用情况
+    # 统计字形变体和风格模式使用情况
     variant_stats = {}
+    mode_stats = {}
 
     for class_id, count in class_counts.items():
         for _ in range(count):
-            # 随机选取样式参数（从 split 对应的样式池中）
+            # 随机选取样式参数
             font_path = random.choice(fonts)
             piece_ratio = random.uniform(0.60, 0.92)
             board_bg = random.choice(pool["board_bgs"])
-            grid_color = random.choice(pool["grid_line_colors"])
-            piece_bg = random.choice(pool["piece_bgs"])
-            border_color = random.choice(pool["border_colors"])
+            grid_color = select_grid_color(board_bg, pool)
 
-            # 选择字形变体
+            # 选择字形变体 + 棋子配色
             if class_id == 0:
                 char = None
                 text_color = (0, 0, 0)
+                piece_bg = (0, 0, 0)      # 空位不画棋子
+                border_color = (0, 0, 0)
             else:
                 variants = CHAR_VARIANTS[class_id]
                 char = random.choice(variants)
@@ -444,11 +522,8 @@ def generate_dataset(
                 key = f"{CLASSES[class_id][1]}:{char}"
                 variant_stats[key] = variant_stats.get(key, 0) + 1
 
-                side = get_side(class_id)
-                if side == "red":
-                    text_color = random.choice(pool["red_text_colors"])
-                else:
-                    text_color = random.choice(pool["black_text_colors"])
+                piece_bg, text_color, border_color, mode = select_piece_style(class_id, split)
+                mode_stats[mode] = mode_stats.get(mode, 0) + 1
 
             # 随机格点位置
             row = random.randint(0, 9)
@@ -506,6 +581,16 @@ def generate_dataset(
     print(f"\n  [{split}] 字形变体统计:")
     for key in sorted(variant_stats.keys()):
         print(f"    {key}: {variant_stats[key]} 样本")
+
+    # 打印棋子风格模式统计
+    if mode_stats:
+        total_pieces = sum(mode_stats.values())
+        mode_labels = {'A': '经典浅底', 'B': '木纹自然色', 'C': '饱和对比色'}
+        print(f"\n  [{split}] 棋子风格模式统计:")
+        for m in ['A', 'B', 'C']:
+            cnt = mode_stats.get(m, 0)
+            pct = cnt / total_pieces * 100 if total_pieces > 0 else 0
+            print(f"    模式 {m} ({mode_labels[m]}): {cnt} 样本 ({pct:.1f}%)")
 
     return images_arr, labels_arr
 
@@ -609,7 +694,7 @@ def save_preview(
 # ==================== 主函数 ====================
 
 def main():
-    parser = argparse.ArgumentParser(description="中国象棋合成训练数据生成器 v2")
+    parser = argparse.ArgumentParser(description="中国象棋合成训练数据生成器 v3")
     parser.add_argument("--train-samples", type=int, default=12000, help="训练集样本数")
     parser.add_argument("--test-samples", type=int, default=3000, help="测试集样本数")
     parser.add_argument("--size", type=int, default=28, help="输出 patch 尺寸")
@@ -623,7 +708,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("中国象棋合成训练数据生成器 v2")
+    print("中国象棋合成训练数据生成器 v3")
     print("=" * 60)
     print(f"\n配置：")
     print(f"  输出尺寸: {args.size}x{args.size}")
@@ -677,6 +762,9 @@ def main():
     print("风格分离说明：")
     print("  训练集字体: 楷体, 宋体, 黑体")
     print("  测试集字体: 仿宋, 微软雅黑")
+    print("  棋子风格: 3 种模式 (经典浅底 / 木纹自然色 / 饱和对比色)")
+    print("  棋盘底色: 含暖木/绿/蓝绿/灰/白/复古 等色系")
+    print("  网格线: 根据棋盘亮度自动选择深色/浅色线条")
     print("  训练集和测试集使用不同的配色方案")
     print("  字形变体 (繁体/异体字) 在两个集合中均包含")
     print(f"{'=' * 60}")
