@@ -50,7 +50,7 @@ digraph ComputeGraph {
                 "11" [label=<log_softmax_1<BR/><B>LogSoftmax</B><BR/>[?, 2]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         }
 
-        "13" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "13" [label=<relu_1<BR/><B>ReLU</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "18" [label=<obs_1<BR/><B>Input</B><BR/>[?, 4]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 
@@ -88,7 +88,7 @@ digraph ComputeGraph {
                 "33" [label=<fc1_W<BR/><B>Parameter</B><BR/>[4, 64]<BR/>(256 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
-        "27" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "27" [label=<relu_2<BR/><B>ReLU</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "32" [label=<obs_2<BR/><B>Input</B><BR/>[?, 4]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 
@@ -126,7 +126,7 @@ digraph ComputeGraph {
                 "47" [label=<fc1_W<BR/><B>Parameter</B><BR/>[4, 64]<BR/>(256 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
         }
 
-        "41" [label=<leaky_relu_3<BR/><B>LeakyReLU</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "41" [label=<relu_3<BR/><B>ReLU</B><BR/>[?, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "46" [label=<obs_3<BR/><B>Input</B><BR/>[?, 4]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 

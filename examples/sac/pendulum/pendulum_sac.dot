@@ -92,8 +92,8 @@ digraph ComputeGraph {
 
         "40" [label=<exp_1<BR/><B>Exp</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         "47" [label=<clip_1<BR/><B>Clip</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-        "67" [label=<leaky_relu_5<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "77" [label=<leaky_relu_6<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "67" [label=<relu_5<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "77" [label=<relu_6<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     subgraph cluster_model_Critic1 {
@@ -149,10 +149,10 @@ digraph ComputeGraph {
                 "92" [label=<matmul_13<BR/><B>MatMul</B><BR/>[?, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
 
-        "28" [label=<leaky_relu_1<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "49" [label=<leaky_relu_3<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "87" [label=<leaky_relu_7<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "90" [label=<leaky_relu_8<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "28" [label=<relu_1<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "49" [label=<relu_3<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "87" [label=<relu_7<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "90" [label=<relu_8<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     subgraph cluster_model_Critic2 {
@@ -208,10 +208,10 @@ digraph ComputeGraph {
                 "105" [label=<matmul_16<BR/><B>MatMul</B><BR/>[?, 32]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
 
-        "30" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "51" [label=<leaky_relu_4<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "100" [label=<leaky_relu_9<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "103" [label=<leaky_relu_10<BR/><B>LeakyReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "30" [label=<relu_2<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "51" [label=<relu_4<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "100" [label=<relu_9<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "103" [label=<relu_10<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     }
 
     "1" [label=<mean_1<BR/><B>Mean</B><BR/>[?, 1]<BR/><FONT COLOR="#1976D2" POINT-SIZE="9">▸ Actor Loss</FONT>> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 penwidth=2.5 color="#1976D2"];
