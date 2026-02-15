@@ -221,9 +221,11 @@ only_torch/
 | 优先级 | 功能 | 状态 | 详细设计 |
 |:------:|------|------|----------|
 | 🔴 高 | **NEAT 神经架构演化** | 待实现 | [neural_architecture_evolution_design.md](design/neural_architecture_evolution_design.md) |
-| 🟡 中 | **数据共享可视化** | 待实现 | [input_node_semantics_design.md](design/input_node_semantics_design.md) |
 | 💤 暂缓 | **过程宏** `#[derive(Model)]` | 等待 RFC 3698 | 样板代码仅 `parameters()` 约 5 行，投入产出比低 |
 | 💤 暂缓 | **强化学习改良** | 基础完成 | [rl_roadmap.md](design/rl_roadmap.md) |
+
+> 注：数据共享可视化（同源 Input 节点间的蓝色虚线标注）已通过 Tensor `source_id` 机制实现，
+> 详见 [input_node_semantics_design.md](design/input_node_semantics_design.md)。
 
 ---
 
