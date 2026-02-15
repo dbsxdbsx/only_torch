@@ -10,20 +10,21 @@
 .doc/
 ├── architecture_roadmap.md              # ← 你在这里（主入口）
 ├── design/                              # 当前有效的设计文档
-│   ├── future_node_types.md                        # ⭐ 待扩展节点规划 + 调试工具
-│   ├── future_enhancements.md                      # 未来功能规划
 │   ├── neural_architecture_evolution_design.md      # ⭐ NEAT 神经架构演化（核心愿景）
+│   ├── input_node_semantics_design.md              # 数据共享可视化设计
 │   ├── api_layering_and_seed_design.md             # API 分层与种子管理
 │   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制
 │   ├── broadcast_mechanism_design.md               # 广播机制设计
 │   ├── gradient_clear_and_accumulation_design.md   # 梯度清零与累积机制
 │   ├── gradient_flow_control_design.md             # ⭐ 梯度流控制（detach/no_grad）
 │   ├── data_loader_design.md                       # DataLoader 设计
+│   ├── distributions_design.md                     # 概率分布模块设计
 │   ├── graph_serialization_design.md               # 序列化与可视化
 │   ├── memory_mechanism_design.md                  # 记忆/循环机制设计
 │   ├── node_vs_layer_design.md                     # Node vs Layer 架构设计
 │   ├── optimization_strategy.md                    # 性能优化策略
 │   ├── optimizer_architecture_design.md            # 优化器架构
+│   ├── rl_roadmap.md                               # RL 模块路线图
 │   └── visualization_guide.md                      # 可视化使用指南
 ├── reference/                           # 参考资料
 │   └── python_MatrixSlow_pid.md         # MatrixSlow 项目分析
@@ -31,6 +32,8 @@
     ├── architecture_v2_design.md
     ├── autodiff_unification_design.md
     ├── dynamic_graph_lifecycle_design.md
+    ├── future_enhancements.md           # 原未来功能规划（已全部完成/归档）
+    ├── future_node_types.md             # 原节点扩展规划（已全部完成/归档）
     ├── graph_execution_refactor.md
     ├── graph_refactoring_design.md
     ├── input_node_unification_design.md
@@ -132,14 +135,9 @@ for (x, target) in &dataloader {
 
 > 注：Input 和 Parameter 各含子类型，实际枚举变体总数 73。
 
-详细信息见 [future_node_types.md](design/future_node_types.md)
-
-## 待扩展节点
-
-> 详见 [future_node_types.md](design/future_node_types.md)
+> 运行 `nn::debug::print_registered_node_types()` 可查看完整列表（自动从 `NodeType` 枚举获取）。
 >
-> **状态**：✅ 原规划节点已全部完成（含 BatchNorm/LayerNorm/RMSNorm/Embedding/Attention 等）。
-> 未来可按需添加新节点类型。
+> 原规划节点已全部完成，未来可按需添加新节点类型。
 
 ## 集成测试进度
 
@@ -218,31 +216,30 @@ only_torch/
 
 ---
 
-## 下一步行动计划
+## 未来方向
 
-### ✅ 已完成：M2 Tanh 节点 & M3 XOR 示例
+| 优先级 | 功能 | 状态 | 详细设计 |
+|:------:|------|------|----------|
+| 🔴 高 | **NEAT 神经架构演化** | 待实现 | [neural_architecture_evolution_design.md](design/neural_architecture_evolution_design.md) |
+| 🟡 中 | **数据共享可视化** | 待实现 | [input_node_semantics_design.md](design/input_node_semantics_design.md) |
+| 💤 暂缓 | **过程宏** `#[derive(Model)]` | 等待 RFC 3698 | 样板代码仅 `parameters()` 约 5 行，投入产出比低 |
+| 💤 暂缓 | **强化学习改良** | 基础完成 | [rl_roadmap.md](design/rl_roadmap.md) |
 
-XOR 问题已成功解决！网络结构：`Input(2) → Hidden(4, Tanh) → Output(1)`，约 30 个 epoch 收敛到 100%准确率。
+---
 
-### ✅ 已完成：动态图 NEAT 友好性验证
+## 新增节点检查清单
 
-Graph 的动态扩展能力已验证通过（12 个综合测试覆盖基本动态添加、NEAT 变异模拟等场景）。
-动态图架构下，Var 持有 `Rc<NodeInner>`，节点用完自动释放，天然适配 NEAT 拓扑变异。
+新增节点时，确保完成以下步骤：
 
-### ✅ 已完成：Graph 种子管理
-
-```rust
-let graph = Graph::new_with_seed(42);  // 确定性训练
-let w = graph.parameter(&[3, 2], Init::Normal { mean: 0.0, std: 1.0 }, "w")?;
-```
-
-### ✅ 阶段二核心完成
-
-- 73 个节点类型（含 Conv2d/Pool/RNN/LSTM/GRU/归一化/对数/激活 全族）
-- 14 个 Layer（Linear/Conv2d/Pool/RNN/LSTM/GRU/BatchNorm/LayerNorm/RMSNorm/GroupNorm/InstanceNorm/Embedding/MultiHeadAttention）
-- 5 种损失函数（MSE/MAE/BCE/Huber/CrossEntropy）
-- DataLoader + BucketedDataLoader + Transform 管线（8 种数据增强）
-- 16 个示例覆盖 MLP/CNN/RNN/GAN/多任务/RL
+- [ ] `src/tensor/ops/` — Tensor 级方法 + 测试
+- [ ] `src/nn/nodes/raw_node/ops/xxx.rs` — 节点实现（`TraitNode` trait）
+- [ ] `src/nn/nodes/raw_node/ops/mod.rs` — 模块导出
+- [ ] `src/nn/nodes/raw_node/mod.rs` — `define_node_types!` 添加变体（含元数据）
+- [ ] `src/nn/graph/inner/node_builders.rs` — `create_xxx_node()` 构建方法
+- [ ] `src/nn/var/ops/` — Var 扩展方法（如需要）
+- [ ] `src/nn/tests/node_xxx.rs` — 节点测试 + `mod.rs` 注册
+- [ ] Python 对照值（复杂计算验证）
+- [ ] `cargo test` 全部通过
 
 ---
 
