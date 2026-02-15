@@ -400,4 +400,44 @@ impl Var {
         node.set_value(Some(&Tensor::random(-1.0, 1.0, &shape)))?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
+
+    /// 创建与当前 Var 相同形状的正态分布随机 Var
+    ///
+    /// 返回一个新的输入节点，值为 N(0, 1) 标准正态分布。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let noise = z.randn_like()?; // GAN 生成器标准正态噪声
+    /// ```
+    pub fn randn_like(&self) -> Result<Self, GraphError> {
+        let shape = self.node().shape();
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_basic_input_node(&shape, None)?;
+        node.set_value(Some(&Tensor::normal(0.0, 1.0, &shape)))?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    /// 重新激活梯度（与 `detach()` 对称）
+    ///
+    /// 创建一个新的 Identity 节点，恢复梯度流。
+    /// 适用于需要在 detach 后重新参与梯度计算的场景。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let detached = x.detach();  // 梯度阻断
+    /// let reattached = detached.attach();  // 恢复梯度
+    /// ```
+    pub fn attach(&self) -> Self {
+        let graph = self.graph();
+        let new_node = graph
+            .borrow_mut()
+            .create_identity_node(Rc::clone(&self.node), None)
+            .expect("内部错误：attach 创建 Identity 节点失败");
+        Self {
+            node: new_node,
+            graph: self.graph.clone(),
+        }
+    }
 }

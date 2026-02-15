@@ -32,7 +32,10 @@ mod sub_assign;
 
 mod activation;
 mod filter;
+mod pad;
+mod pow;
 mod print;
+mod repeat;
 
 mod save_load;
 mod source_id;

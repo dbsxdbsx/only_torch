@@ -234,3 +234,98 @@ fn test_var_concat_backward() {
     assert_abs_diff_eq!(&p1_grad, &Tensor::new(&[0.5, 1.0], &[1, 2]), epsilon = 1e-6);
     assert_abs_diff_eq!(&p2_grad, &Tensor::new(&[1.5, 2.0], &[1, 2]), epsilon = 1e-6);
 }
+
+// ===== chunk 测试 =====
+
+/// chunk 等分测试：[6, 4] → chunk(3, 0) → 3 个 [2, 4]
+#[test]
+fn test_chunk_even_split() {
+    let graph = Graph::new();
+    let data: Vec<f32> = (1..=24).map(|i| i as f32).collect();
+    let x = graph.input(&Tensor::new(&data, &[6, 4])).unwrap();
+
+    let chunks = x.chunk(3, 0).unwrap();
+    assert_eq!(chunks.len(), 3);
+
+    for chunk in &chunks {
+        chunk.forward().unwrap();
+        let val = chunk.value().unwrap().unwrap();
+        assert_eq!(val.shape(), &[2, 4]);
+    }
+
+    // 第一块 = 前两行
+    let v0 = chunks[0].value().unwrap().unwrap();
+    assert_abs_diff_eq!(v0[[0, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(v0[[1, 3]], 8.0, epsilon = 1e-6);
+}
+
+/// chunk 不整除测试：[5, 4] → chunk(3, 0) → [2,4], [2,4], [1,4]
+#[test]
+fn test_chunk_uneven_split() {
+    let graph = Graph::new();
+    let data: Vec<f32> = (1..=20).map(|i| i as f32).collect();
+    let x = graph.input(&Tensor::new(&data, &[5, 4])).unwrap();
+
+    let chunks = x.chunk(3, 0).unwrap();
+    assert_eq!(chunks.len(), 3);
+
+    for chunk in &chunks {
+        chunk.forward().unwrap();
+    }
+
+    let v0 = chunks[0].value().unwrap().unwrap();
+    let v1 = chunks[1].value().unwrap().unwrap();
+    let v2 = chunks[2].value().unwrap().unwrap();
+    assert_eq!(v0.shape(), &[2, 4]);
+    assert_eq!(v1.shape(), &[2, 4]);
+    assert_eq!(v2.shape(), &[1, 4]);
+}
+
+/// chunk 沿 dim=1 分割测试
+#[test]
+fn test_chunk_dim1() {
+    let graph = Graph::new();
+    let data: Vec<f32> = (1..=12).map(|i| i as f32).collect();
+    let x = graph.input(&Tensor::new(&data, &[3, 4])).unwrap();
+
+    let chunks = x.chunk(2, 1).unwrap();
+    assert_eq!(chunks.len(), 2);
+
+    for chunk in &chunks {
+        chunk.forward().unwrap();
+        let val = chunk.value().unwrap().unwrap();
+        assert_eq!(val.shape(), &[3, 2]);
+    }
+}
+
+/// chunk n=1 返回自身（narrow 包装）
+#[test]
+fn test_chunk_single() {
+    let graph = Graph::new();
+    let x = graph.input(&Tensor::ones(&[4, 3])).unwrap();
+
+    let chunks = x.chunk(1, 0).unwrap();
+    assert_eq!(chunks.len(), 1);
+
+    chunks[0].forward().unwrap();
+    let val = chunks[0].value().unwrap().unwrap();
+    assert_eq!(val.shape(), &[4, 3]);
+}
+
+/// chunk dim 超出范围应报错
+#[test]
+fn test_chunk_invalid_dim() {
+    let graph = Graph::new();
+    let x = graph.input(&Tensor::ones(&[4, 3])).unwrap();
+
+    assert!(x.chunk(2, 5).is_err());
+}
+
+/// chunk n=0 应报错
+#[test]
+fn test_chunk_zero_n() {
+    let graph = Graph::new();
+    let x = graph.input(&Tensor::ones(&[4, 3])).unwrap();
+
+    assert!(x.chunk(0, 0).is_err());
+}

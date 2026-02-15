@@ -360,3 +360,131 @@ fn test_hard_sigmoid_basic() {
     assert!((y[[4]] - 1.0).abs() < 1e-6); // x >= 3: 1
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑hard_sigmoid↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓square↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_tensor_square() {
+    let x = Tensor::new(&[-3.0, -2.0, 0.0, 1.0, 2.0, 3.0], &[2, 3]);
+    let y = x.square();
+    assert_eq!(y.shape(), &[2, 3]);
+    assert!((y[[0, 0]] - 9.0).abs() < 1e-6);
+    assert!((y[[0, 1]] - 4.0).abs() < 1e-6);
+    assert!((y[[0, 2]] - 0.0).abs() < 1e-6);
+    assert!((y[[1, 0]] - 1.0).abs() < 1e-6);
+    assert!((y[[1, 1]] - 4.0).abs() < 1e-6);
+    assert!((y[[1, 2]] - 9.0).abs() < 1e-6);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑square↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓reciprocal↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_tensor_reciprocal() {
+    let x = Tensor::new(&[1.0, 2.0, 4.0, 5.0, 0.5, 10.0], &[2, 3]);
+    let y = x.reciprocal();
+    assert_eq!(y.shape(), &[2, 3]);
+    assert!((y[[0, 0]] - 1.0).abs() < 1e-6);
+    assert!((y[[0, 1]] - 0.5).abs() < 1e-6);
+    assert!((y[[0, 2]] - 0.25).abs() < 1e-6);
+    assert!((y[[1, 0]] - 0.2).abs() < 1e-6);
+    assert!((y[[1, 1]] - 2.0).abs() < 1e-6);
+    assert!((y[[1, 2]] - 0.1).abs() < 1e-6);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑reciprocal↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓log10↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_tensor_log10() {
+    let x = Tensor::new(&[1.0, 10.0, 100.0, 1000.0], &[2, 2]);
+    let y = x.log10();
+    assert!((y[[0, 0]] - 0.0).abs() < 1e-6);
+    assert!((y[[0, 1]] - 1.0).abs() < 1e-6);
+    assert!((y[[1, 0]] - 2.0).abs() < 1e-5);
+    assert!((y[[1, 1]] - 3.0).abs() < 1e-5);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑log10↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓log2↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_tensor_log2() {
+    let x = Tensor::new(&[1.0, 2.0, 4.0, 8.0], &[2, 2]);
+    let y = x.log2();
+    assert!((y[[0, 0]] - 0.0).abs() < 1e-6);
+    assert!((y[[0, 1]] - 1.0).abs() < 1e-6);
+    assert!((y[[1, 0]] - 2.0).abs() < 1e-5);
+    assert!((y[[1, 1]] - 3.0).abs() < 1e-5);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑log2↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓relu6↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_tensor_relu6() {
+    let x = Tensor::new(&[-2.0, -1.0, 0.0, 3.0, 6.0, 7.0], &[2, 3]);
+    let y = x.relu6();
+    assert!((y[[0, 0]] - 0.0).abs() < 1e-6);
+    assert!((y[[0, 1]] - 0.0).abs() < 1e-6);
+    assert!((y[[0, 2]] - 0.0).abs() < 1e-6);
+    assert!((y[[1, 0]] - 3.0).abs() < 1e-6);
+    assert!((y[[1, 1]] - 6.0).abs() < 1e-6);
+    assert!((y[[1, 2]] - 6.0).abs() < 1e-6);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑relu6↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓hard_tanh↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_tensor_hard_tanh() {
+    let x = Tensor::new(&[-2.0, -0.5, 0.5, 2.0], &[2, 2]);
+    let y = x.hard_tanh(-1.0, 1.0);
+    assert!((y[[0, 0]] - (-1.0)).abs() < 1e-6);
+    assert!((y[[0, 1]] - (-0.5)).abs() < 1e-6);
+    assert!((y[[1, 0]] - 0.5).abs() < 1e-6);
+    assert!((y[[1, 1]] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_tensor_hard_tanh_custom_range() {
+    let x = Tensor::new(&[-5.0, 0.0, 3.0, 10.0], &[2, 2]);
+    let y = x.hard_tanh(-3.0, 5.0);
+    assert!((y[[0, 0]] - (-3.0)).abs() < 1e-6);
+    assert!((y[[0, 1]] - 0.0).abs() < 1e-6);
+    assert!((y[[1, 0]] - 3.0).abs() < 1e-6);
+    assert!((y[[1, 1]] - 5.0).abs() < 1e-6);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑hard_tanh↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓one_hot↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+#[test]
+fn test_tensor_one_hot() {
+    let indices = Tensor::new(&[0.0, 2.0, 1.0], &[3]);
+    let encoded = indices.one_hot(3);
+    assert_eq!(encoded.shape(), &[3, 3]);
+    // [0] → [1, 0, 0]
+    assert!((encoded[[0, 0]] - 1.0).abs() < 1e-6);
+    assert!((encoded[[0, 1]] - 0.0).abs() < 1e-6);
+    assert!((encoded[[0, 2]] - 0.0).abs() < 1e-6);
+    // [2] → [0, 0, 1]
+    assert!((encoded[[1, 0]] - 0.0).abs() < 1e-6);
+    assert!((encoded[[1, 2]] - 1.0).abs() < 1e-6);
+    // [1] → [0, 1, 0]
+    assert!((encoded[[2, 1]] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_tensor_one_hot_2d() {
+    let indices = Tensor::new(&[0.0, 1.0, 2.0, 0.0], &[2, 2]);
+    let encoded = indices.one_hot(3);
+    assert_eq!(encoded.shape(), &[2, 2, 3]);
+    // [0,0]=0 → [1,0,0]
+    assert!((encoded[[0, 0, 0]] - 1.0).abs() < 1e-6);
+    // [0,1]=1 → [0,1,0]
+    assert!((encoded[[0, 1, 1]] - 1.0).abs() < 1e-6);
+    // [1,0]=2 → [0,0,1]
+    assert!((encoded[[1, 0, 2]] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+#[should_panic(expected = "one_hot")]
+fn test_tensor_one_hot_index_out_of_range() {
+    let indices = Tensor::new(&[0.0, 5.0], &[2]);
+    let _encoded = indices.one_hot(3);
+}
+/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑one_hot↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

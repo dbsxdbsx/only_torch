@@ -294,6 +294,170 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑pow↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓square↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素计算平方
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+    /// let y = x.square();
+    /// // y = [1.0, 4.0, 9.0, 16.0]
+    /// ```
+    pub fn square(&self) -> Self {
+        let data = self.data.mapv(|x| x * x);
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑square↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓reciprocal↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素计算倒数: 1/x
+    ///
+    /// 注意：输入 x 不应包含 0，否则结果为 Inf。
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 2.0, 4.0, 5.0], &[4]);
+    /// let y = x.reciprocal();
+    /// // y = [1.0, 0.5, 0.25, 0.2]
+    /// ```
+    pub fn reciprocal(&self) -> Self {
+        let data = self.data.mapv(|x| 1.0 / x);
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑reciprocal↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓log10↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素计算以 10 为底的对数
+    ///
+    /// 注意：输入 x 必须为正数。
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 10.0, 100.0, 1000.0], &[4]);
+    /// let y = x.log10();
+    /// // y = [0.0, 1.0, 2.0, 3.0]
+    /// ```
+    pub fn log10(&self) -> Self {
+        let data = self.data.mapv(f32::log10);
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑log10↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓log2↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 对张量的每个元素计算以 2 为底的对数
+    ///
+    /// 注意：输入 x 必须为正数。
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[1.0, 2.0, 4.0, 8.0], &[4]);
+    /// let y = x.log2();
+    /// // y = [0.0, 1.0, 2.0, 3.0]
+    /// ```
+    pub fn log2(&self) -> Self {
+        let data = self.data.mapv(f32::log2);
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑log2↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓relu6↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// ReLU6 激活：min(max(0, x), 6)
+    ///
+    /// 移动端和量化网络常用。
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[-1.0, 0.0, 3.0, 7.0], &[4]);
+    /// let y = x.relu6();
+    /// // y = [0.0, 0.0, 3.0, 6.0]
+    /// ```
+    pub fn relu6(&self) -> Self {
+        let data = self.data.mapv(|x| x.max(0.0).min(6.0));
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑relu6↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓hard_tanh↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// HardTanh 激活：min(max(min_val, x), max_val)
+    ///
+    /// # 参数
+    /// - `min_val`: 最小值下限
+    /// - `max_val`: 最大值上限
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let x = Tensor::new(&[-2.0, -0.5, 0.5, 2.0], &[4]);
+    /// let y = x.hard_tanh(-1.0, 1.0);
+    /// // y = [-1.0, -0.5, 0.5, 1.0]
+    /// ```
+    pub fn hard_tanh(&self, min_val: f32, max_val: f32) -> Self {
+        let data = self.data.mapv(|x| x.max(min_val).min(max_val));
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑hard_tanh↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓one_hot↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 将整数索引张量转换为 one-hot 编码张量
+    ///
+    /// 输入张量中的值被视为整数索引（向下取整），输出在对应位置为 1.0，其余为 0.0。
+    ///
+    /// # 参数
+    /// - `num_classes`: 类别总数（one-hot 编码的维度）
+    ///
+    /// # 示例
+    /// ```
+    /// use only_torch::tensor::Tensor;
+    ///
+    /// let indices = Tensor::new(&[0.0, 2.0, 1.0], &[3]);
+    /// let encoded = indices.one_hot(3);
+    /// // encoded = [[1,0,0], [0,0,1], [0,1,0]], shape [3, 3]
+    /// ```
+    pub fn one_hot(&self, num_classes: usize) -> Self {
+        let flat = self.flatten_view();
+        let n = flat.len();
+        let mut data = vec![0.0f32; n * num_classes];
+        for i in 0..n {
+            let idx = flat[i] as usize;
+            assert!(idx < num_classes, "one_hot: 索引 {} 超出类别数 {}", idx, num_classes);
+            data[i * num_classes + idx] = 1.0;
+        }
+        // 输出形状：原形状 + [num_classes]
+        let mut new_shape = self.shape().to_vec();
+        new_shape.push(num_classes);
+        Self::new(&data, &new_shape)
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑one_hot↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓softmax↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 沿指定轴计算 softmax（数值稳定版本）
     ///

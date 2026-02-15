@@ -284,6 +284,16 @@ define_node_types! {
         description: "HardSigmoid 激活（CPU 友好）",
         var_method: Some("hard_sigmoid()"),
     },
+    ReLU6(ReLU6) {
+        category: "激活",
+        description: "ReLU6 激活（移动端/量化）",
+        var_method: Some("relu6()"),
+    },
+    HardTanh(HardTanh) {
+        category: "激活",
+        description: "HardTanh 激活（值域裁剪）",
+        var_method: Some("hard_tanh()"),
+    },
     Step(Step) {
         category: "激活",
         description: "阶跃函数",
@@ -304,6 +314,16 @@ define_node_types! {
         description: "自然对数",
         var_method: Some("ln()"),
     },
+    Log10(Log10) {
+        category: "激活",
+        description: "以 10 为底的对数",
+        var_method: Some("log10()"),
+    },
+    Log2(Log2) {
+        category: "激活",
+        description: "以 2 为底的对数",
+        var_method: Some("log2()"),
+    },
     Exp(Exp) {
         category: "激活",
         description: "指数函数",
@@ -318,6 +338,16 @@ define_node_types! {
         category: "算术",
         description: "逐元素幂运算（常量指数）",
         var_method: Some("pow(exponent)"),
+    },
+    Square(Square) {
+        category: "算术",
+        description: "逐元素平方",
+        var_method: Some("square()"),
+    },
+    Reciprocal(Reciprocal) {
+        category: "算术",
+        description: "逐元素倒数",
+        var_method: Some("reciprocal()"),
     },
     Pad(Pad) {
         category: "形状",

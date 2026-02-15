@@ -1639,4 +1639,120 @@ impl GraphInner {
 
         self.create_node_inner(raw_node, name, "exp", vec![input])
     }
+
+    /// 创建 Square 节点
+    ///
+    /// 逐元素平方: y = x²
+    pub fn create_square_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Square;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let square = Square::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = square.into();
+
+        self.create_node_inner(raw_node, name, "square", vec![input])
+    }
+
+    /// 创建 Reciprocal 节点
+    ///
+    /// 逐元素倒数: y = 1/x
+    pub fn create_reciprocal_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Reciprocal;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let reciprocal = Reciprocal::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = reciprocal.into();
+
+        self.create_node_inner(raw_node, name, "reciprocal", vec![input])
+    }
+
+    /// 创建 Log10 节点
+    ///
+    /// 逐元素以 10 为底的对数: y = log10(x)
+    pub fn create_log10_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Log10;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let log10 = Log10::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = log10.into();
+
+        self.create_node_inner(raw_node, name, "log10", vec![input])
+    }
+
+    /// 创建 Log2 节点
+    ///
+    /// 逐元素以 2 为底的对数: y = log2(x)
+    pub fn create_log2_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Log2;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let log2 = Log2::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = log2.into();
+
+        self.create_node_inner(raw_node, name, "log2", vec![input])
+    }
+
+    /// 创建 ReLU6 节点
+    ///
+    /// ReLU6 激活: y = min(max(0, x), 6)
+    pub fn create_relu6_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::ReLU6;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let relu6 = ReLU6::new(&input_shape, &input_dynamic_shape)?;
+        let raw_node: NodeType = relu6.into();
+
+        self.create_node_inner(raw_node, name, "relu6", vec![input])
+    }
+
+    /// 创建 HardTanh 节点
+    ///
+    /// HardTanh 激活: y = min(max(min_val, x), max_val)
+    pub fn create_hard_tanh_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        min_val: f32,
+        max_val: f32,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::HardTanh;
+
+        let input_shape = input.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+
+        let hard_tanh = HardTanh::new(&input_shape, &input_dynamic_shape, min_val, max_val)?;
+        let raw_node: NodeType = hard_tanh.into();
+
+        self.create_node_inner(raw_node, name, "hard_tanh", vec![input])
+    }
 }

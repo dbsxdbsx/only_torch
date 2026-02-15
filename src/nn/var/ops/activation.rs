@@ -147,15 +147,19 @@ pub trait VarActivationOps {
     /// 等价于 `pow(-1.0)`。输入 x 不应为 0。
     fn reciprocal(&self) -> Var;
 
-    /// ReLU6 激活：min(max(x, 0), 6)
+    /// ReLU6 激活：min(max(0, x), 6)
     ///
-    /// 移动端和量化网络常用。等价于 `clip(relu(x), 0, 6)`。
+    /// 移动端和量化网络常用。
     fn relu6(&self) -> Var;
 
-    /// HardTanh 激活：clip(x, min, max)
-    ///
-    /// 默认范围 [-1, 1]，等价于 `clip(x, -1, 1)`。
+    /// HardTanh 激活：min(max(min_val, x), max_val)
     fn hard_tanh(&self, min_val: f32, max_val: f32) -> Var;
+
+    /// 以 10 为底的对数：log10(x)
+    fn log10(&self) -> Var;
+
+    /// 以 2 为底的对数：log2(x)
+    fn log2(&self) -> Var;
 }
 
 impl VarActivationOps for Var {
@@ -362,18 +366,56 @@ impl VarActivationOps for Var {
     }
 
     fn square(&self) -> Var {
-        self.pow(2.0)
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_square_node(Rc::clone(self.node()), None)
+            .expect("创建 Square 节点失败");
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn reciprocal(&self) -> Var {
-        self.pow(-1.0)
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_reciprocal_node(Rc::clone(self.node()), None)
+            .expect("创建 Reciprocal 节点失败");
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn relu6(&self) -> Var {
-        self.clip(0.0, 6.0)
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_relu6_node(Rc::clone(self.node()), None)
+            .expect("创建 ReLU6 节点失败");
+        Self::new_with_rc_graph(node, &graph)
     }
 
     fn hard_tanh(&self, min_val: f32, max_val: f32) -> Var {
-        self.clip(min_val, max_val)
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_hard_tanh_node(Rc::clone(self.node()), min_val, max_val, None)
+            .expect("创建 HardTanh 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn log10(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_log10_node(Rc::clone(self.node()), None)
+            .expect("创建 Log10 节点失败");
+        Self::new_with_rc_graph(node, &graph)
+    }
+
+    fn log2(&self) -> Var {
+        let graph = self.graph();
+        let node = graph
+            .borrow_mut()
+            .create_log2_node(Rc::clone(self.node()), None)
+            .expect("创建 Log2 节点失败");
+        Self::new_with_rc_graph(node, &graph)
     }
 }
