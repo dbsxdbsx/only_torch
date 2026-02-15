@@ -92,6 +92,8 @@ STYLE_POOLS = {
             f"{FONT_DIR}/simkai.ttf",       # 楷体
             f"{FONT_DIR}/simsun.ttc",       # 宋体
             f"{FONT_DIR}/simhei.ttf",       # 黑体
+            f"{FONT_DIR}/simfang.ttf",      # 仿宋
+            f"{FONT_DIR}/msyh.ttc",         # 微软雅黑
         ],
         "board_bgs": [
             (200, 210, 190),    # 浅绿灰
@@ -115,6 +117,9 @@ STYLE_POOLS = {
     },
     "test": {
         "fonts": [
+            f"{FONT_DIR}/simkai.ttf",       # 楷体
+            f"{FONT_DIR}/simsun.ttc",       # 宋体
+            f"{FONT_DIR}/simhei.ttf",       # 黑体
             f"{FONT_DIR}/simfang.ttf",      # 仿宋
             f"{FONT_DIR}/msyh.ttc",         # 微软雅黑
         ],
@@ -760,8 +765,8 @@ def main():
     # 风格分离说明
     print(f"\n{'=' * 60}")
     print("风格分离说明：")
-    print("  训练集字体: 楷体, 宋体, 黑体")
-    print("  测试集字体: 仿宋, 微软雅黑")
+    print("  字体: 楷体, 宋体, 黑体, 仿宋, 微软雅黑 (共享)")
+    print("  泛化测试: 基于棋子配色方案 + 棋盘底色差异")
     print("  棋子风格: 3 种模式 (经典浅底 / 木纹自然色 / 饱和对比色)")
     print("  棋盘底色: 含暖木/绿/蓝绿/灰/白/复古 等色系")
     print("  网格线: 根据棋盘亮度自动选择深色/浅色线条")

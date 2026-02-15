@@ -38,10 +38,7 @@ mod model;
 
 use data::{load_chess_data, CLASS_NAMES};
 use model::ChessPieceCNN;
-use only_torch::data::{
-    ColorJitter, Compose, DataLoader, RandomCrop, RandomErasing, RandomRotation, TensorDataset,
-    Transform,
-};
+use only_torch::data::{ColorJitter, DataLoader, TensorDataset, Transform};
 use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
@@ -69,9 +66,9 @@ fn main() -> Result<(), GraphError> {
     // 2. 配置
     let batch_size = 256;
     let max_epochs = 100;
-    let learning_rate = 0.01;
+    let learning_rate = 0.001;
     let target_accuracy = 95.0;
-    let early_stop_patience = 5;
+    let early_stop_patience = 10;
 
     println!("\n[2/4] 配置：");
     println!("  - Batch: {batch_size}");
@@ -82,12 +79,8 @@ fn main() -> Result<(), GraphError> {
     println!("  - 目标准确率: {target_accuracy}%");
 
     // 3. 运行时数据增强（仅训练集）
-    let train_transform = Compose::new(vec![
-        Box::new(RandomCrop::new(28, 28).padding(3)),    // ±3px 裁切偏移
-        Box::new(RandomRotation::new(5.0)),              // ±5° 旋转
-        Box::new(ColorJitter::new(0.15, 0.15, 0.1)),    // 亮度/对比度/饱和度扰动
-        Box::new(RandomErasing::new(0.3)),               // 30% 概率随机遮挡
-    ]);
+    // 仅用温和的色彩扰动 — 28x28 小图上叠加裁切/旋转/遮挡太激进会阻碍学习
+    let train_transform = ColorJitter::new(0.15, 0.15, 0.1);
 
     // 为推理基准测试和每类准确率保留副本
     let test_x_for_eval = test_x.clone();
@@ -117,7 +110,7 @@ fn main() -> Result<(), GraphError> {
 
     println!("\n  网络: Conv(3→16) → Pool → Conv(16→32) → Pool → FC(1568→128) → FC(128→15)");
     println!("  参数量: {param_count}");
-    println!("  数据增强: RandomCrop(±3) → Rotation(±5°) → ColorJitter → RandomErasing(30%)");
+    println!("  数据增强: ColorJitter(b=0.15, c=0.15, s=0.1)");
 
     // 5. 训练
     println!("\n[3/4] 开始训练...\n");
@@ -132,7 +125,7 @@ fn main() -> Result<(), GraphError> {
 
         graph.train();
         for (batch_x, batch_y) in train_loader.iter() {
-            // 逐样本应用数据增强，再重组 batch
+            // 逐样本应用色彩扰动
             let augmented = apply_transform_batch(&batch_x, &train_transform);
 
             let output = model.forward(&augmented)?;
