@@ -5,15 +5,16 @@
  *
  * Genome-centric 层级进化：
  * - gene.rs: 基因数据结构（LayerGene, NetworkGenome, LayerConfig 等）
+ * - mutation.rs: 变异操作（Mutation trait + MutationRegistry）
+ * - builder.rs: Genome → Graph 转换 + Lamarckian 权重继承
  *
  * 后续阶段将扩展：
- * - mutation.rs: 变异操作（Phase 2）
- * - builder.rs: Genome → Graph 转换（Phase 3）
  * - convergence.rs: 收敛检测（Phase 4）
  * - task.rs: 演化任务 trait（Phase 5）
  * - callback.rs: 回调接口（Phase 6）
  */
 
+pub mod builder;
 pub mod gene;
 pub mod mutation;
 
