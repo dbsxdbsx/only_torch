@@ -152,6 +152,40 @@ pub enum LossType {
     MSE,
 }
 
+// ==================== 任务指标 ====================
+
+/// 任务指标选择器（驱动 loss 推断 + 评估函数选择）
+///
+/// 与 metrics::Metric trait 的区别：
+/// - TaskMetric 是任务类型的标识符（评估之前，用于推断 loss）
+/// - metrics::Metric 是计算结果的统一接口（评估之后）
+#[derive(Clone, Debug, PartialEq)]
+pub enum TaskMetric {
+    /// 分类准确率 → 自动推断 CrossEntropy (output_dim > 1) 或 BCE (output_dim == 1)
+    Accuracy,
+    /// 决定系数 → 自动推断 MSE
+    R2,
+    /// 多标签准确率 → 自动推断 BCE
+    MultiLabelAccuracy,
+}
+
+impl TaskMetric {
+    /// 是否为离散指标（需要 loss tiebreaker 辅助比较）
+    pub fn is_discrete(&self) -> bool {
+        matches!(self, TaskMetric::Accuracy | TaskMetric::MultiLabelAccuracy)
+    }
+}
+
+/// 根据 TaskMetric + output_dim 返回兼容的 loss 列表
+pub fn compatible_losses(metric: &TaskMetric, output_dim: usize) -> Vec<LossType> {
+    match metric {
+        TaskMetric::Accuracy if output_dim == 1 => vec![LossType::BCE, LossType::MSE],
+        TaskMetric::Accuracy => vec![LossType::CrossEntropy],
+        TaskMetric::R2 => vec![LossType::MSE],
+        TaskMetric::MultiLabelAccuracy => vec![LossType::BCE],
+    }
+}
+
 /// 训练配置（与 Genome 绑定，未来可参与演化）
 ///
 /// Phase 7A 使用 Default，后续版本可加入超参数变异操作。
@@ -355,6 +389,23 @@ impl NetworkGenome {
     /// 设置权重快照（供 capture_weights 使用）
     pub fn set_weight_snapshots(&mut self, snapshots: HashMap<u64, Vec<Tensor>>) {
         self.weight_snapshots = snapshots;
+    }
+
+    /// 当前生效的 loss 函数（显式指定 > 自动推断）
+    pub fn effective_loss(&self, metric: &TaskMetric) -> LossType {
+        self.training_config
+            .loss_override
+            .clone()
+            .unwrap_or_else(|| Self::infer_loss(metric, self.output_dim))
+    }
+
+    fn infer_loss(metric: &TaskMetric, output_dim: usize) -> LossType {
+        match metric {
+            TaskMetric::Accuracy if output_dim > 1 => LossType::CrossEntropy,
+            TaskMetric::Accuracy => LossType::BCE,
+            TaskMetric::R2 => LossType::MSE,
+            TaskMetric::MultiLabelAccuracy => LossType::BCE,
+        }
     }
 
     // ==================== 内部方法 ====================

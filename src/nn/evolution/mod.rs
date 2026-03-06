@@ -15,6 +15,7 @@
  */
 
 pub mod gene;
+pub mod mutation;
 
 #[cfg(test)]
 mod tests;

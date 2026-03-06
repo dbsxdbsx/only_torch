@@ -890,3 +890,58 @@ fn test_resolve_multiple_skip_edges_add_mixed_dims_error() {
 
     assert!(genome.resolve_dimensions().is_err());
 }
+
+// ==================== TaskMetric + loss 推断 ====================
+
+#[test]
+fn test_compatible_losses_accuracy_binary() {
+    let losses = compatible_losses(&TaskMetric::Accuracy, 1);
+    assert_eq!(losses, vec![LossType::BCE, LossType::MSE]);
+}
+
+#[test]
+fn test_compatible_losses_accuracy_multiclass() {
+    let losses = compatible_losses(&TaskMetric::Accuracy, 3);
+    assert_eq!(losses, vec![LossType::CrossEntropy]);
+}
+
+#[test]
+fn test_compatible_losses_r2() {
+    let losses = compatible_losses(&TaskMetric::R2, 1);
+    assert_eq!(losses, vec![LossType::MSE]);
+}
+
+#[test]
+fn test_compatible_losses_multi_label() {
+    let losses = compatible_losses(&TaskMetric::MultiLabelAccuracy, 5);
+    assert_eq!(losses, vec![LossType::BCE]);
+}
+
+#[test]
+fn test_effective_loss_default_infer() {
+    let genome = NetworkGenome::minimal(2, 1);
+    assert_eq!(genome.effective_loss(&TaskMetric::Accuracy), LossType::BCE);
+
+    let genome = NetworkGenome::minimal(2, 3);
+    assert_eq!(
+        genome.effective_loss(&TaskMetric::Accuracy),
+        LossType::CrossEntropy
+    );
+
+    let genome = NetworkGenome::minimal(2, 1);
+    assert_eq!(genome.effective_loss(&TaskMetric::R2), LossType::MSE);
+}
+
+#[test]
+fn test_effective_loss_override() {
+    let mut genome = NetworkGenome::minimal(2, 1);
+    genome.training_config.loss_override = Some(LossType::MSE);
+    assert_eq!(genome.effective_loss(&TaskMetric::Accuracy), LossType::MSE);
+}
+
+#[test]
+fn test_task_metric_is_discrete() {
+    assert!(TaskMetric::Accuracy.is_discrete());
+    assert!(TaskMetric::MultiLabelAccuracy.is_discrete());
+    assert!(!TaskMetric::R2.is_discrete());
+}
