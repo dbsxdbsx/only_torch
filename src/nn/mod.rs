@@ -8,6 +8,7 @@
 
 // mod criterion; // 已移除，统一用 Var 方法（如 mse_loss()）
 pub mod debug;
+pub mod evolution;
 mod descriptor;
 mod display;
 pub mod distributions;

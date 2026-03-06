@@ -14,13 +14,11 @@
  * - model_io.rs: save_model/load_model 高层模型 I/O
  * - describe.rs: describe/summary
  * - visualization.rs: DOT 可视化
- * - evolution.rs: Evolution API (骨架)
  */
 
 mod backward;
 mod core;
 mod describe;
-mod evolution;
 mod mode;
 mod model_io;
 mod node_builders;
