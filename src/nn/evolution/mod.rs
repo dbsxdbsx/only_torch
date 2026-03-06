@@ -8,13 +8,15 @@
  * - mutation.rs: 变异操作（Mutation trait + MutationRegistry）
  * - builder.rs: Genome → Graph 转换 + Lamarckian 权重继承
  *
+ * - convergence.rs: 训练收敛检测（ConvergenceDetector）
+ *
  * 后续阶段将扩展：
- * - convergence.rs: 收敛检测（Phase 4）
  * - task.rs: 演化任务 trait（Phase 5）
  * - callback.rs: 回调接口（Phase 6）
  */
 
 pub mod builder;
+pub mod convergence;
 pub mod gene;
 pub mod mutation;
 
