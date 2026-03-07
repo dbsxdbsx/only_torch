@@ -11,7 +11,6 @@
  * - convergence.rs: 训练收敛检测（ConvergenceDetector）
  *
  * 后续阶段将扩展：
- * - task.rs: 演化任务 trait（Phase 5）
  * - callback.rs: 回调接口（Phase 6）
  */
 
@@ -19,6 +18,7 @@ pub mod builder;
 pub mod convergence;
 pub mod gene;
 pub mod mutation;
+pub mod task;
 
 #[cfg(test)]
 mod tests;
