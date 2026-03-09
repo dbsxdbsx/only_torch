@@ -23,7 +23,8 @@ mod data;
 
 use data::{load_iris, CLASS_NAMES};
 use only_torch::nn::evolution::gene::TaskMetric;
-use only_torch::nn::evolution::Evolution;
+use only_torch::nn::evolution::{Evolution, EvolutionResult};
+use std::path::Path;
 
 fn main() {
     println!("=== Iris 鸢尾花神经架构演化示例 ===\n");
@@ -55,6 +56,18 @@ fn main() {
     if let Some(img) = &vis.image_path {
         println!("可视化图像: {}", img.display());
     }
+
+    // ==================== 模型保存/加载 ====================
+    let model_path = "examples/evolution_iris/iris_model";
+    result.save(model_path).expect("保存模型失败");
+    println!("\n模型已保存: {model_path}.otm");
+
+    let loaded = EvolutionResult::load(model_path).expect("加载模型失败");
+    println!("从磁盘加载后架构: {}", loaded.architecture());
+    println!("加载模型准确率: {:.1}%", loaded.fitness.primary * 100.0);
+
+    // 清理临时模型文件
+    let _ = std::fs::remove_file(Path::new(model_path).with_extension("otm"));
 
     println!("\n✅ 系统自动发现了解决 Iris 三分类问题的网络架构！");
 }

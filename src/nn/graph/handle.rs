@@ -238,6 +238,37 @@ impl Graph {
         Ok(Var::new_with_rc_graph(node, &self.inner))
     }
 
+    // ==================== 模型权重保存/加载 ====================
+
+    /// 保存模型权重
+    ///
+    /// 将所有注册的参数保存到二进制文件。
+    /// `path` 不含文件后缀，自动添加 `.bin`。
+    ///
+    /// 加载时需要先用代码构建相同结构的图，再调用 `load_weights`。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// // 保存
+    /// graph.save_weights("models/my_xor")?;
+    ///
+    /// // 加载
+    /// let graph = Graph::new_with_seed(42);
+    /// let model = XorMLP::new(&graph)?;
+    /// graph.load_weights("models/my_xor")?;
+    /// ```
+    pub fn save_weights<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), GraphError> {
+        self.inner.borrow().save_model(path)
+    }
+
+    /// 加载模型权重
+    ///
+    /// 从二进制文件加载参数到已构建的图中。
+    /// 用户需要先用代码构建与保存时相同结构的图。
+    pub fn load_weights<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), GraphError> {
+        self.inner.borrow_mut().load_model(path)
+    }
+
     // ==================== 执行 ====================
 
     /// 前向传播

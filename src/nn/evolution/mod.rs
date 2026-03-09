@@ -21,6 +21,7 @@ pub mod convergence;
 pub mod gene;
 pub mod mutation;
 pub mod error;
+pub mod model_io;
 pub mod task;
 
 #[cfg(test)]
@@ -47,7 +48,7 @@ use self::task::{EvolutionTask, FitnessScore, SupervisedTask};
 /// `run()` 无论是否达标都返回 `Ok(EvolutionResult)`，
 /// `status` 告诉用户"为什么停了"。
 /// `Err` 仅用于真正的系统错误（Graph 构建失败等）。
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EvolutionStatus {
     /// primary >= target_metric，达标停止
     TargetReached,

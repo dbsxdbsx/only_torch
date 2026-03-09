@@ -22,6 +22,8 @@ pub enum EvolutionError {
     InvalidConfig(String),
     /// 底层计算图错误
     Graph(GraphError),
+    /// 文件 I/O 错误（save/load）
+    IoError(String),
 }
 
 impl fmt::Display for EvolutionError {
@@ -30,6 +32,7 @@ impl fmt::Display for EvolutionError {
             EvolutionError::InvalidData(msg) => write!(f, "{msg}"),
             EvolutionError::InvalidConfig(msg) => write!(f, "{msg}"),
             EvolutionError::Graph(e) => write!(f, "{e}"),
+            EvolutionError::IoError(msg) => write!(f, "{msg}"),
         }
     }
 }

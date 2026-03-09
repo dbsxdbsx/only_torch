@@ -53,7 +53,7 @@ pub fn auto_batch_size(n_samples: usize) -> usize {
 /// `tiebreak_loss` 用于离散指标（如 Accuracy）的同分比较：
 /// 同 accuracy 时，test loss 更低的结构更优。
 /// 接受/回滚逻辑通过字典序比较实现。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FitnessScore {
     /// 主目标（越高越好），如 Accuracy / R² / Reward
     pub primary: f32,

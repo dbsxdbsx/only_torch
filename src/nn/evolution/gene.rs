@@ -8,6 +8,8 @@
  * 权重快照实现 Lamarckian 继承。
  */
 
+use serde::{Deserialize, Serialize};
+
 use crate::tensor::Tensor;
 use std::collections::HashMap;
 use std::fmt;
@@ -45,7 +47,7 @@ impl std::error::Error for GenomeError {}
 
 // ==================== 激活函数类型 ====================
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ActivationType {
     ReLU,
     LeakyReLU { alpha: f32 },
@@ -78,7 +80,7 @@ impl fmt::Display for ActivationType {
 ///
 /// 聚合操作由 SkipEdge 携带策略，build() 时自动派生。
 /// 只存输出侧参数，输入维度由 `resolve_dimensions()` 推导。
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LayerConfig {
     Linear { out_features: usize },
     Activation { activation_type: ActivationType },
@@ -104,7 +106,7 @@ impl fmt::Display for LayerConfig {
 // ==================== 聚合策略 ====================
 
 /// 聚合策略（与 SkipEdge 绑定）
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AggregateStrategy {
     Add,
     Concat { dim: i32 },
@@ -114,7 +116,7 @@ pub enum AggregateStrategy {
 
 // ==================== 层基因 ====================
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LayerGene {
     pub innovation_number: u64,
     pub layer_config: LayerConfig,
@@ -127,7 +129,7 @@ pub struct LayerGene {
 ///
 /// 聚合操作不作为独立层存在于 layers 中，
 /// 而是在 build() 时根据 SkipEdge 信息自动在目标层输入处生成。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SkipEdge {
     pub innovation_number: u64,
     pub from_innovation: u64,
@@ -138,14 +140,14 @@ pub struct SkipEdge {
 
 // ==================== 训练配置 ====================
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum OptimizerType {
     SGD,
     Adam,
 }
 
 /// 损失函数类型（由 TaskMetric 自动推断）
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LossType {
     BCE,
     CrossEntropy,
@@ -159,7 +161,7 @@ pub enum LossType {
 /// 与 metrics::Metric trait 的区别：
 /// - TaskMetric 是任务类型的标识符（评估之前，用于推断 loss）
 /// - metrics::Metric 是计算结果的统一接口（评估之后）
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TaskMetric {
     /// 分类准确率 → 自动推断 CrossEntropy (output_dim > 1) 或 BCE (output_dim == 1)
     Accuracy,
@@ -189,7 +191,7 @@ pub fn compatible_losses(metric: &TaskMetric, output_dim: usize) -> Vec<LossType
 /// 训练配置（与 Genome 绑定，未来可参与演化）
 ///
 /// 当前使用 Default，后续版本可加入超参数变异操作。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TrainingConfig {
     pub optimizer_type: OptimizerType,
     pub learning_rate: f32,
@@ -229,6 +231,7 @@ pub struct ResolvedDim {
 /// 最小结构下 layers 只有输出头一层。
 ///
 /// 权重快照实现 Lamarckian 继承——clone 时权重一并复制，回滚无需依赖旧 Graph。
+#[derive(Serialize, Deserialize)]
 pub struct NetworkGenome {
     pub layers: Vec<LayerGene>,
     pub skip_edges: Vec<SkipEdge>,
@@ -236,8 +239,8 @@ pub struct NetworkGenome {
     pub output_dim: usize,
     pub training_config: TrainingConfig,
     pub generated_by: String,
-    next_innovation: u64,
-    weight_snapshots: HashMap<u64, Vec<Tensor>>,
+    pub(crate) next_innovation: u64,
+    pub(crate) weight_snapshots: HashMap<u64, Vec<Tensor>>,
 }
 
 impl Clone for NetworkGenome {
@@ -274,6 +277,31 @@ impl fmt::Debug for NetworkGenome {
 }
 
 impl NetworkGenome {
+    /// 从完整字段重建 NetworkGenome（反序列化用）
+    ///
+    /// 仅供 `model_io` 模块在加载 .otm 文件时调用。
+    pub(crate) fn from_parts(
+        layers: Vec<LayerGene>,
+        skip_edges: Vec<SkipEdge>,
+        input_dim: usize,
+        output_dim: usize,
+        training_config: TrainingConfig,
+        generated_by: String,
+        next_innovation: u64,
+        weight_snapshots: HashMap<u64, Vec<Tensor>>,
+    ) -> Self {
+        Self {
+            layers,
+            skip_edges,
+            input_dim,
+            output_dim,
+            training_config,
+            generated_by,
+            next_innovation,
+            weight_snapshots,
+        }
+    }
+
     /// 最小初始网络：layers = [Linear(out=output_dim)]（仅输出头，无隐藏层）
     ///
     /// # Panics

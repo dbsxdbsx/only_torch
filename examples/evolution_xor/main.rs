@@ -15,8 +15,9 @@
  */
 
 use only_torch::nn::evolution::gene::TaskMetric;
-use only_torch::nn::evolution::Evolution;
+use only_torch::nn::evolution::{Evolution, EvolutionResult};
 use only_torch::tensor::Tensor;
+use std::path::Path;
 
 /// XOR 数据集（二分类标量标签）
 fn xor_data() -> (Vec<Tensor>, Vec<Tensor>) {
@@ -67,6 +68,18 @@ fn main() {
     if let Some(img) = &vis.image_path {
         println!("可视化图像: {}", img.display());
     }
+
+    // ==================== 模型保存/加载 ====================
+    let model_path = "examples/evolution_xor/xor_model";
+    result.save(model_path).expect("保存模型失败");
+    println!("\n模型已保存: {model_path}.otm");
+
+    let loaded = EvolutionResult::load(model_path).expect("加载模型失败");
+    let pred_loaded = loaded.predict(&Tensor::new(&[1.0, 0.0], &[2])).expect("推理失败");
+    println!("从磁盘加载后 XOR(1,0) 预测: {:?}", pred_loaded.to_vec());
+
+    // 清理临时模型文件
+    let _ = std::fs::remove_file(Path::new(model_path).with_extension("otm"));
 
     println!("\n✅ 系统自动发现了解决 XOR 问题的网络架构！");
 }
