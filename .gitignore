@@ -6,6 +6,9 @@ Cargo.lock
 **/.vscode
 .cursor/
 
+# AI agent 本地私有配置（Skills 等）
+.agents/
+
 # 二进制文件
 **/*.bin
 
