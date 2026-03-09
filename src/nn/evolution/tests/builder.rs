@@ -674,6 +674,11 @@ fn test_build_with_all_activation_types() {
         ActivationType::SiLU,
         ActivationType::Softplus,
         ActivationType::ReLU6,
+        ActivationType::ELU { alpha: 1.0 },
+        ActivationType::SELU,
+        ActivationType::Mish,
+        ActivationType::HardSwish,
+        ActivationType::HardSigmoid,
     ];
 
     for act in activations {

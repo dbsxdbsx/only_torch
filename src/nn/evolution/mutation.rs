@@ -290,7 +290,22 @@ fn default_activations() -> Vec<ActivationType> {
         ActivationType::SiLU,
         ActivationType::Softplus,
         ActivationType::ReLU6,
+        ActivationType::ELU { alpha: 1.0 },
+        ActivationType::SELU,
+        ActivationType::Mish,
+        ActivationType::HardSwish,
+        ActivationType::HardSigmoid,
     ]
+}
+
+/// 判断层配置是否包含可变异的连续参数（供 MutateLayerParamMutation 使用）
+fn is_parameterized_layer(config: &LayerConfig) -> bool {
+    matches!(
+        config,
+        LayerConfig::Activation {
+            activation_type: ActivationType::LeakyReLU { .. } | ActivationType::ELU { .. }
+        } | LayerConfig::Dropout { .. }
+    )
 }
 
 /// 检查指定位置（在 enabled 层序列中）的相邻层是否有 Activation
@@ -768,14 +783,7 @@ impl Mutation for MutateLayerParamMutation {
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
         let hidden = hidden_layer_indices(genome);
-        hidden.iter().any(|&i| {
-            matches!(
-                genome.layers[i].layer_config,
-                LayerConfig::Activation {
-                    activation_type: ActivationType::LeakyReLU { .. }
-                } | LayerConfig::Dropout { .. }
-            )
-        })
+        hidden.iter().any(|&i| is_parameterized_layer(&genome.layers[i].layer_config))
     }
 
     fn apply(
@@ -787,14 +795,7 @@ impl Mutation for MutateLayerParamMutation {
         let hidden = hidden_layer_indices(genome);
         let candidates: Vec<usize> = hidden
             .into_iter()
-            .filter(|&i| {
-                matches!(
-                    genome.layers[i].layer_config,
-                    LayerConfig::Activation {
-                        activation_type: ActivationType::LeakyReLU { .. }
-                    } | LayerConfig::Dropout { .. }
-                )
-            })
+            .filter(|&i| is_parameterized_layer(&genome.layers[i].layer_config))
             .collect();
 
         if candidates.is_empty() {
@@ -808,7 +809,14 @@ impl Mutation for MutateLayerParamMutation {
             LayerConfig::Activation {
                 activation_type: ActivationType::LeakyReLU { alpha },
             } => {
+                // 负半轴斜率，典型值 0.01〜0.3
                 *alpha = rng.gen_range(0.001..=0.5);
+            }
+            LayerConfig::Activation {
+                activation_type: ActivationType::ELU { alpha },
+            } => {
+                // 负半轴饱和值，典型值 1.0（PyTorch 默认）
+                *alpha = rng.gen_range(0.1..=2.0);
             }
             LayerConfig::Dropout { p } => {
                 *p = rng.gen_range(0.05..=0.8);

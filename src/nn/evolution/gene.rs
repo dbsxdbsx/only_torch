@@ -57,6 +57,11 @@ pub enum ActivationType {
     SiLU,
     Softplus,
     ReLU6,
+    ELU { alpha: f32 },
+    SELU,
+    Mish,
+    HardSwish,
+    HardSigmoid,
 }
 
 impl fmt::Display for ActivationType {
@@ -70,6 +75,11 @@ impl fmt::Display for ActivationType {
             ActivationType::SiLU => write!(f, "SiLU"),
             ActivationType::Softplus => write!(f, "Softplus"),
             ActivationType::ReLU6 => write!(f, "ReLU6"),
+            ActivationType::ELU { alpha } => write!(f, "ELU({alpha})"),
+            ActivationType::SELU => write!(f, "SELU"),
+            ActivationType::Mish => write!(f, "Mish"),
+            ActivationType::HardSwish => write!(f, "HardSwish"),
+            ActivationType::HardSigmoid => write!(f, "HardSigmoid"),
         }
     }
 }

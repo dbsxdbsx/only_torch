@@ -75,6 +75,11 @@ fn apply_activation(var: &Var, act_type: &ActivationType) -> Var {
         ActivationType::SiLU => var.silu(),
         ActivationType::Softplus => var.softplus(),
         ActivationType::ReLU6 => var.relu6(),
+        ActivationType::ELU { alpha } => var.elu(*alpha),
+        ActivationType::SELU => var.selu(),
+        ActivationType::Mish => var.mish(),
+        ActivationType::HardSwish => var.hard_swish(),
+        ActivationType::HardSigmoid => var.hard_sigmoid(),
     }
 }
 
