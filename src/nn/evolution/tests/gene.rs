@@ -613,6 +613,335 @@ fn test_display_various_layer_types() {
     );
 }
 
+// ==================== Display: skip edge 注解 ====================
+
+#[test]
+fn test_display_single_skip_edge() {
+    // Input(2) → Linear(4) → [Linear(1)]
+    // skip: Input(2) ──(Add)──→ Linear(4)  (维度兼容：input_dim=2, Linear(4) main_in=2)
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let i1 = genome.next_innovation_number();
+    let output_inn = genome.layers.last().unwrap().innovation_number;
+
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    let skip_inn = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: skip_inn,
+        from_innovation: i1,
+        to_innovation: output_inn,
+        strategy: AggregateStrategy::Concat { dim: -1 },
+        enabled: true,
+    });
+
+    let display = format!("{genome}");
+    assert_eq!(
+        display,
+        "Input(2) → Linear(4) → [Linear(1)]\n\
+         \x20 └─ skip: Linear(4) ──(Concat)──→ [Linear(1)]"
+    );
+}
+
+#[test]
+fn test_display_multiple_skip_edges() {
+    // Input(2) → Linear(2) → ReLU → [Linear(1)]
+    // skip1: Input(2) ──(Add)──→ ReLU  (维度 2==2 OK)
+    // skip2: Linear(2) ──(Concat)──→ [Linear(1)]
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let i1 = genome.next_innovation_number();
+    let i2 = genome.next_innovation_number();
+    let output_inn = genome.layers.last().unwrap().innovation_number;
+
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 2 },
+            enabled: true,
+        },
+    );
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+
+    let s1 = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: s1,
+        from_innovation: INPUT_INNOVATION,
+        to_innovation: i2,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+    let s2 = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: s2,
+        from_innovation: i1,
+        to_innovation: output_inn,
+        strategy: AggregateStrategy::Concat { dim: -1 },
+        enabled: true,
+    });
+
+    let display = format!("{genome}");
+    assert!(
+        display.contains("├─ skip:"),
+        "多条 skip edge 时非末尾应用 ├─，实际: {display}"
+    );
+    assert!(
+        display.contains("└─ skip:"),
+        "末尾 skip edge 应用 └─，实际: {display}"
+    );
+    assert!(
+        display.contains("(Add)"),
+        "应包含 Add 策略，实际: {display}"
+    );
+    assert!(
+        display.contains("(Concat)"),
+        "应包含 Concat 策略，实际: {display}"
+    );
+}
+
+#[test]
+fn test_display_disabled_skip_edge_not_shown() {
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let i1 = genome.next_innovation_number();
+    let output_inn = genome.layers.last().unwrap().innovation_number;
+
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    let skip_inn = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: skip_inn,
+        from_innovation: INPUT_INNOVATION,
+        to_innovation: output_inn,
+        strategy: AggregateStrategy::Add,
+        enabled: false, // disabled
+    });
+
+    // disabled skip edge 不出现 → 单行输出
+    assert_eq!(
+        format!("{genome}"),
+        "Input(2) → Linear(4) → [Linear(1)]"
+    );
+}
+
+#[test]
+fn test_main_path_summary_ignores_skip_edges() {
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let i1 = genome.next_innovation_number();
+    let output_inn = genome.layers.last().unwrap().innovation_number;
+
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    let skip_inn = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: skip_inn,
+        from_innovation: i1,
+        to_innovation: output_inn,
+        strategy: AggregateStrategy::Concat { dim: -1 },
+        enabled: true,
+    });
+
+    // main_path_summary 始终单行，不含 skip
+    assert_eq!(
+        genome.main_path_summary(),
+        "Input(2) → Linear(4) → [Linear(1)]"
+    );
+    // Display 包含 skip
+    assert!(format!("{genome}").contains("skip:"));
+}
+
+// ==================== Display: 重名消歧 ====================
+
+#[test]
+fn test_display_duplicate_hidden_layers_disambiguated() {
+    // Input(2) → Linear(4)#1 → ReLU → Linear(4)#2 → [Linear(1)]
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let i1 = genome.next_innovation_number();
+    let i2 = genome.next_innovation_number();
+    let i3 = genome.next_innovation_number();
+
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    genome.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: i3,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    assert_eq!(
+        format!("{genome}"),
+        "Input(2) → Linear(4)#1 → ReLU → Linear(4)#2 → [Linear(1)]"
+    );
+}
+
+#[test]
+fn test_display_skip_edge_uses_disambiguated_names() {
+    // Input(2) → Linear(4)#1 → ReLU#1 → Linear(4)#2 → ReLU#2 → [Linear(1)]
+    // skip: Linear(4)#1 ──(Add)──→ ReLU#2
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let i1 = genome.next_innovation_number();
+    let i2 = genome.next_innovation_number();
+    let i3 = genome.next_innovation_number();
+    let i4 = genome.next_innovation_number();
+
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    genome.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: i3,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    genome.layers.insert(
+        3,
+        LayerGene {
+            innovation_number: i4,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+
+    let s = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: s,
+        from_innovation: i1,
+        to_innovation: i4,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    let display = format!("{genome}");
+    assert!(
+        display.contains("Linear(4)#1 →"),
+        "第一个 Linear(4) 应有 #1: {display}"
+    );
+    assert!(
+        display.contains("Linear(4)#2 →"),
+        "第二个 Linear(4) 应有 #2: {display}"
+    );
+    assert!(
+        display.contains("skip: Linear(4)#1 ──(Add)──→ ReLU#2"),
+        "skip edge 应使用消歧名称: {display}"
+    );
+}
+
+#[test]
+fn test_display_same_config_hidden_vs_output_no_suffix() {
+    // Hidden Linear(4) 与 output head [Linear(4)] 显示名不同，无需 #N
+    let mut genome = NetworkGenome::minimal(2, 4);
+    let i1 = genome.next_innovation_number();
+
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    assert_eq!(
+        format!("{genome}"),
+        "Input(2) → Linear(4) → [Linear(4)]"
+    );
+}
+
+#[test]
+fn test_main_path_summary_duplicate_names_disambiguated() {
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let i1 = genome.next_innovation_number();
+    let i2 = genome.next_innovation_number();
+
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    assert_eq!(
+        genome.main_path_summary(),
+        "Input(2) → Linear(4)#1 → Linear(4)#2 → [Linear(1)]"
+    );
+}
+
 // ==================== TrainingConfig ====================
 
 #[test]

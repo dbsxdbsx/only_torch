@@ -489,22 +489,114 @@ impl NetworkGenome {
 
 // ==================== Display ====================
 
-/// 输出人类可读的架构描述（一行 ASCII）
-///
-/// 输出头用 `[]` 标注，`enabled=false` 的层不出现。
-/// 示例：`"Input(2) → Linear(4) → ReLU → [Linear(1)]"`
-impl fmt::Display for NetworkGenome {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Input({})", self.input_dim)?;
+impl NetworkGenome {
+    /// 主路径单行摘要（用于 DefaultCallback 日志等单行场景）
+    ///
+    /// 与 `Display` 的第一行内容相同，不含 skip edge 注解。
+    /// 当存在重名层时，自动追加 `#N` 后缀做消歧。
+    pub fn main_path_summary(&self) -> String {
+        let names = self.build_display_names();
+        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+        let mut parts: Vec<&str> = Vec::with_capacity(enabled.len() + 1);
+        parts.push(names[&INPUT_INNOVATION].as_str());
+        for layer in &enabled {
+            parts.push(names[&layer.innovation_number].as_str());
+        }
+        parts.join(" → ")
+    }
 
+    /// 构建 innovation_number → 显示名称 的映射
+    ///
+    /// 当同一显示名称出现多次时，自动追加 `#1`, `#2`, … 后缀做消歧。
+    /// 用于主路径摘要及 skip edge 注解中引用层的人类可读名称。
+    fn build_display_names(&self) -> HashMap<u64, String> {
         let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
 
+        // 第一遍：收集 (innovation, raw_name)
+        let mut entries: Vec<(u64, String)> = Vec::with_capacity(enabled.len() + 1);
+        entries.push((INPUT_INNOVATION, format!("Input({})", self.input_dim)));
         for (i, layer) in enabled.iter().enumerate() {
             let is_last = i == enabled.len() - 1;
-            if is_last {
-                write!(f, " → [{}]", layer.layer_config)?;
+            let name = if is_last {
+                format!("[{}]", layer.layer_config)
             } else {
-                write!(f, " → {}", layer.layer_config)?;
+                format!("{}", layer.layer_config)
+            };
+            entries.push((layer.innovation_number, name));
+        }
+
+        // 第二遍：统计每个名称出现次数
+        let mut freq: HashMap<String, usize> = HashMap::new();
+        for (_, name) in &entries {
+            *freq.entry(name.clone()).or_insert(0) += 1;
+        }
+
+        // 第三遍：对重名追加 #N 后缀
+        let mut seq: HashMap<String, usize> = HashMap::new();
+        let mut names = HashMap::new();
+        for (inn, name) in entries {
+            let display = if freq[&name] > 1 {
+                let n = seq.entry(name.clone()).or_insert(0);
+                *n += 1;
+                format!("{}#{}", name, n)
+            } else {
+                name
+            };
+            names.insert(inn, display);
+        }
+
+        names
+    }
+}
+
+/// 输出人类可读的架构描述
+///
+/// 输出头用 `[]` 标注，`enabled=false` 的层和 skip edge 不出现。
+/// 无 skip edge 时为单行，有 skip edge 时追加脚注式注解。
+///
+/// 无重名时：
+/// ```text
+/// Input(2) → Linear(4) → ReLU → [Linear(1)]
+///   ├─ skip: Input(2) ──(Add)──→ ReLU
+///   └─ skip: Linear(4) ──(Concat)──→ [Linear(1)]
+/// ```
+///
+/// 存在重名层时自动追加 `#N` 消歧：
+/// ```text
+/// Input(2) → Linear(4)#1 → ReLU → Linear(4)#2 → [Linear(1)]
+///   └─ skip: Linear(4)#1 ──(Add)──→ Linear(4)#2
+/// ```
+impl fmt::Display for NetworkGenome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 主路径
+        write!(f, "{}", self.main_path_summary())?;
+
+        // Skip edge 注解
+        let active_skips: Vec<&SkipEdge> = self
+            .skip_edges
+            .iter()
+            .filter(|e| e.enabled)
+            .collect();
+
+        if !active_skips.is_empty() {
+            let names = self.build_display_names();
+            for (i, skip) in active_skips.iter().enumerate() {
+                let from = names.get(&skip.from_innovation)
+                    .map(|s| s.as_str()).unwrap_or("?");
+                let to = names.get(&skip.to_innovation)
+                    .map(|s| s.as_str()).unwrap_or("?");
+                let strategy = match &skip.strategy {
+                    AggregateStrategy::Add => "Add",
+                    AggregateStrategy::Concat { .. } => "Concat",
+                    AggregateStrategy::Mean => "Mean",
+                    AggregateStrategy::Max => "Max",
+                };
+                let prefix = if i == active_skips.len() - 1 {
+                    "└─"
+                } else {
+                    "├─"
+                };
+                write!(f, "\n  {prefix} skip: {from} ──({strategy})──→ {to}")?;
             }
         }
 

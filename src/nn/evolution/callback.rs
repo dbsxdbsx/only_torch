@@ -105,7 +105,11 @@ impl EvolutionCallback for DefaultCallback {
 
         println!(
             "[Gen {:>3}] {:<45} | fitness={:.3} | {}{}",
-            generation, genome, score.primary, genome.generated_by, star
+            generation,
+            genome.main_path_summary(),
+            score.primary,
+            genome.generated_by,
+            star
         );
     }
 
