@@ -11,7 +11,7 @@
  * - bptt.rs: BPTT
  * - node_builders.rs: new_*_node
  * - serialization.rs: save_params/load_params 底层参数序列化
- * - model_io.rs: save_model/load_model 高层模型 I/O
+ * - model_io.rs: save_weights/load_weights 权重 I/O
  * - describe.rs: describe/summary
  * - visualization.rs: DOT 可视化
  */

@@ -258,7 +258,7 @@ impl Graph {
     /// graph.load_weights("models/my_xor")?;
     /// ```
     pub fn save_weights<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), GraphError> {
-        self.inner.borrow().save_model(path)
+        self.inner.borrow().save_weights(path)
     }
 
     /// 加载模型权重
@@ -266,7 +266,7 @@ impl Graph {
     /// 从二进制文件加载参数到已构建的图中。
     /// 用户需要先用代码构建与保存时相同结构的图。
     pub fn load_weights<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), GraphError> {
-        self.inner.borrow_mut().load_model(path)
+        self.inner.borrow_mut().load_weights(path)
     }
 
     // ==================== 执行 ====================

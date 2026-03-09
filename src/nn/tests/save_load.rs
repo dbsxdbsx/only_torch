@@ -5,7 +5,7 @@
  *
  * Phase 3 适配说明：
  * - describe() / summary_string() / summary_markdown() / save_summary() 已移除，相关测试已删除
- * - save_model() 仅保存 .bin（不再生成 JSON 描述文件）
+ * - save_weights() 仅保存 .bin（不再生成 JSON 描述文件）
  * - 可视化功能移至 Var（to_dot / save_visualization），不再支持自定义图片格式
  * - 使用 Graph + inner_rc() 底层 API 重写
  */
@@ -220,12 +220,12 @@ fn test_save_load_params_utf8_names() {
     fs::remove_file(temp_file).ok();
 }
 
-// ========== save_model / load_model 测试 ==========
+// ========== save_weights / load_weights 测试 ==========
 
-/// 测试完整模型保存和加载
+/// 测试权重保存和加载
 #[test]
-fn test_save_load_model() {
-    let temp_base = "test_save_load_model";
+fn test_save_load_weights() {
+    let temp_base = "test_save_load_weights";
 
     // 1. 创建并训练一个简单模型
     let graph = Graph::new();
@@ -244,11 +244,11 @@ fn test_save_load_model() {
     w.set_value(Some(&Tensor::new(&w_data, &[4, 2]))).unwrap();
     b.set_value(Some(&Tensor::new(&b_data, &[1, 2]))).unwrap();
 
-    // 2. 保存模型（Phase 3：仅保存 .bin，不再生成 .json）
-    gi.borrow().save_model(temp_base).expect("保存模型失败");
+    // 2. 保存权重
+    gi.borrow().save_weights(temp_base).expect("保存权重失败");
 
     // 验证 .bin 文件存在
-    assert!(std::path::Path::new("test_save_load_model.bin").exists());
+    assert!(std::path::Path::new("test_save_load_weights.bin").exists());
 
     // 3. 创建相同结构的新图并加载模型
     let graph2 = Graph::new();
@@ -262,8 +262,8 @@ fn test_save_load_model() {
     let b2 = make_param(&gi2, &[1, 2], "b");
 
     gi2.borrow_mut()
-        .load_model(temp_base)
-        .expect("加载模型失败");
+        .load_weights(temp_base)
+        .expect("加载权重失败");
 
     // 4. 验证参数值
     let w_loaded = w2.value().unwrap();
@@ -272,13 +272,13 @@ fn test_save_load_model() {
     assert_abs_diff_eq!(&b_loaded, &Tensor::new(&b_data, &[1, 2]), epsilon = 1e-6);
 
     // 清理
-    fs::remove_file("test_save_load_model.bin").ok();
+    fs::remove_file("test_save_load_weights.bin").ok();
 }
 
-/// 测试 .bin 文件内容有效（原 test_save_model_json_readable 适配）
+/// 测试 .bin 文件内容有效
 #[test]
-fn test_save_model_bin_valid() {
-    let temp_base = "test_save_model_bin_valid";
+fn test_save_weights_bin_valid() {
+    let temp_base = "test_save_weights_bin_valid";
 
     let graph = Graph::new();
     let gi = graph.inner_rc();
@@ -289,10 +289,10 @@ fn test_save_model_bin_valid() {
         .unwrap();
     let _weight = make_param(&gi, &[3, 4], "weight");
 
-    gi.borrow().save_model(temp_base).expect("保存模型失败");
+    gi.borrow().save_weights(temp_base).expect("保存权重失败");
 
     // 验证 .bin 文件存在且有内容
-    let bin_path = "test_save_model_bin_valid.bin";
+    let bin_path = "test_save_weights_bin_valid.bin";
     let content = fs::read(bin_path).expect("读取 bin 文件失败");
 
     // 验证魔数 "OTPR"
