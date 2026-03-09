@@ -1,6 +1,6 @@
-## 这是啥？
+﻿## 这是啥？
 
-一个用纯 Rust（不用 C++）打造的仿 Pytorch 的玩具型 AI 框架（目前尚不成熟，请勿使用）。该项目不打算支持 GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非 CPU 设备。但可能会加入 NEAT 等网络进化的算法。
+一个用纯 Rust（不用 C++）打造的仿 Pytorch 的玩具型 AI 框架（目前尚不成熟，请勿使用）。该项目不打算支持 GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非 CPU 设备。已实现 NEAT 风格的神经架构演化 MVP，可从最小网络自动搜索最优架构。
 
 ### 名字由来
 
@@ -8,7 +8,7 @@
 
 - only torch Rust --- 只用 Rust（不用 C++是因为其在复杂逻辑项目中容易写出内存不安全代码）；也不打算支持 Python 接口）；亦不用第三方 lib（所以排除[tch-rs](https://github.com/LaurentMazare/tch-rs)），这样对跨平台支持会比较友好。
 - only torch CPU --- 不用 GPU，因要照顾多平台也不想被某个 GPU 厂商制约，且基于 NEAT 进化的网络结构也不太好被 GPU 优化（也省得考虑数据从 CPU 的堆栈迁移到其他设备内存的开销问题了）。
-- only torch node --- 没有全连接、卷积、resnet 这类先入为主的算子概念，具体模型结构均基于 NEAT 进化。
+- only torch node --- 没有全连接、卷积、resnet 这类先入为主的算子概念，具体模型结构均可基于 NEAT 演化自动发现（已有 MVP 实现）。
 - only torch tensor --- 所有的数据类型都是内置类型 tensor，默认不依赖第三方数值库。可通过 feature flag 可选启用 [Intel MKL](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html) 或 [OpenBLAS](https://github.com/xianyi/OpenBLAS) 加速矩阵运算（约 15% 训练提速）。
 - only torch f32 --- 网络的参数（包括模型的输入、输出）不需要除了 f32 外的数据类型。
 
@@ -64,6 +64,9 @@ let dot = graph.to_dot();
 | [cartpole_sac](examples/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
 | [pendulum_sac](examples/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、动作缩放 | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
 | [moving_sac](examples/sac/moving/) | **强化学习** | **Hybrid SAC**、独立连续分支、双温度 | `Actor(10→256→离散+连续) Critic(12→256→3)` | `cargo run --example moving_sac` |
+| [chinese_chess](examples/chinese_chess/) | 图像分类 | **CNN**、数据增强、15 类分类 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess` |
+| [evolution_xor](examples/evolution_xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
+| [evolution_iris](examples/evolution_iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
 
 #### 详细说明
 
@@ -265,6 +268,26 @@ cargo run --example multi_label_point
 </details>
 
 <details>
+<summary><b>中国象棋示例</b>（点击展开）</summary>
+
+**中国象棋棋子 CNN 分类器** ⭐⭐⭐
+
+使用 CNN 对合成的中国象棋棋子 patch 进行 15 类分类（空位 + 红方 7 子 + 黑方 7 子），展示：
+- 多层 `Conv2d` + `MaxPool2d` 特征提取
+- 运行时数据增强（`ColorJitter`）
+- Early stopping + per-class 准确率报告
+- 推理速度基准测试
+
+```bash
+# 先生成训练数据
+python scripts/generate_chess_data.py
+cargo run --example chinese_chess
+# 目标准确率 ≥95%
+```
+
+</details>
+
+<details>
 <summary><b>强化学习示例</b>（点击展开）</summary>
 
 **CartPole SAC-Discrete** ⭐⭐⭐
@@ -308,32 +331,71 @@ cargo run --example moving_sac
 
 </details>
 
+<details>
+<summary><b>神经架构演化示例</b>（点击展开）</summary>
+
+**Evolution XOR** ⭐⭐⭐
+
+与 `examples/xor`（手动定义网络 + 训练循环）不同，本示例展示 **Evolution API**——只提供数据和目标，系统从最小结构 `Input(2) → [Linear(1)]` 出发，通过层级变异自动发现解决方案。
+
+```rust
+let result = Evolution::supervised(train, test, TaskMetric::Accuracy)
+    .with_target_metric(1.0)
+    .with_seed(42)
+    .run()?;
+let pred = result.predict(&input)?;
+result.visualize("output/evolution_xor")?;
+```
+
+```bash
+cargo run --example evolution_xor
+# 自动演化到 100% XOR 准确率
+```
+
+**Evolution Iris** ⭐⭐⭐
+
+150 样本 Iris 三分类任务，展示：
+- 自动 mini-batch 训练策略（150 样本 > 128 → auto batch_size=64）
+- 自动推断 CrossEntropy loss + argmax accuracy
+- 层级变异：插入层、删除层、改激活函数、调学习率、skip connection 等
+
+```bash
+cargo run --example evolution_iris
+# 自动演化到 ≥95% 准确率
+```
+
+</details>
+
 #### 特性覆盖矩阵
 
-| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | cartpole_sac | pendulum_sac | moving_sac |
-|------|:---:|:----:|:----:|:----------:|:-----:|:---------:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:------------:|:------------:|:----------:|
-| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `Conv2d` 层 | | | | | | ✅ | | | | | | | | | | |
-| `MaxPool2d` 层 | | | | | | ✅ | | | | | | | | | | |
-| `RNN/LSTM/GRU` 层 | | | | | | | | ✅ | | | | | | | | |
-| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | ✅ | | | ✅ | ✅ | | | | |
-| `MseLoss` | | | ✅ | ✅ | | | ✅ | | ✅ | ✅ | ✅ | ✅ | | ✅ | ✅ | ✅ |
-| **`BceLoss`** | | | | | | | | | | | | | ✅ | | | |
-| `MaeLoss` | | | 📌 | 📌 | | | | | 📌 | | 📌 | 📌 | | | | |
-| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | | | | | | | |
-| `BucketedDataLoader` | | | | | | | | ✅ | | | | | | | | |
-| 变长序列 | | | | | | | | ✅ | | | | | | | | |
-| **多输入** | | | | | | | | | ✅ | ✅ | | ✅ | | | | |
-| **多输出** (元组返回) | | | | | | | | | | | ✅ | ✅ | | | | |
-| 共享编码器 | | | | | | | | | | ✅ | | | | | | |
-| 多 Loss 训练 | | | | | ✅ | | | | | ✅ | ✅ | | | ✅ | ✅ | ✅ |
-| **多标签分类** | | | | | | | | | | | | | ✅ | | | |
-| **GAN / detach** | | | | | | | ✅ | | | | | | | | | |
-| **GymEnv (RL)** | | | | | | | | | | | | | | ✅ | ✅ | ✅ |
-| **经验回放** | | | | | | | | | | | | | | ✅ | ✅ | ✅ |
-| **TanhNormal 分布** | | | | | | | | | | | | | | | ✅ | ✅ |
-| **Categorical 分布** | | | | | | | | | | | | | | ✅ | | ✅ |
-| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | | ✅ |
+| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | chinese_chess | cartpole_sac | pendulum_sac | moving_sac | evo_xor | evo_iris |
+|------|:---:|:----:|:----:|:----------:|:-----:|:---------:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:-------------:|:------------:|:------------:|:----------:|:-------:|:--------:|
+| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Conv2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | |
+| `MaxPool2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | |
+| `RNN/LSTM/GRU` 层 | | | | | | | | ✅ | | | | | | | | | | | |
+| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | ✅ | | | ✅ | ✅ | | ✅ | | | | ✅ | ✅ |
+| `MseLoss` | | | ✅ | ✅ | | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | ✅ | ✅ | ✅ | | |
+| **`BceLoss`** | | | | | | | | | | | | | ✅ | | | | | ✅ | |
+| `MaeLoss` | | | 📌 | 📌 | | | | | 📌 | | 📌 | 📌 | | | | | | | |
+| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | | | | | ✅ | | | | | |
+| `BucketedDataLoader` | | | | | | | | ✅ | | | | | | | | | | | |
+| 变长序列 | | | | | | | | ✅ | | | | | | | | | | | |
+| **多输入** | | | | | | | | | ✅ | ✅ | | ✅ | | | | | | | |
+| **多输出** (元组返回) | | | | | | | | | | | ✅ | ✅ | | | | | | | |
+| 共享编码器 | | | | | | | | | | ✅ | | | | | | | | | |
+| 多 Loss 训练 | | | | | ✅ | | | | | ✅ | ✅ | | | | ✅ | ✅ | ✅ | | |
+| **多标签分类** | | | | | | | | | | | | | ✅ | | | | | | |
+| **GAN / detach** | | | | | | | ✅ | | | | | | | | | | | | |
+| **数据增强** | | | | | | | | | | | | | | ✅ | | | | | |
+| **GymEnv (RL)** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | |
+| **经验回放** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | |
+| **TanhNormal 分布** | | | | | | | | | | | | | | | | ✅ | ✅ | | |
+| **Categorical 分布** | | | | | | | | | | | | | | | ✅ | | ✅ | | |
+| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | | | ✅ | | |
+| **Evolution API** | | | | | | | | | | | | | | | | | | ✅ | ✅ |
+| **自动架构搜索** | | | | | | | | | | | | | | | | | | ✅ | ✅ |
+| **Lamarckian 权重继承** | | | | | | | | | | | | | | | | | | ✅ | ✅ |
 
 > 📌 = 可替换使用。`MaeLoss`（平均绝对误差）与 `MseLoss`（均方误差）的区别：
 > - `MseLoss`：对大误差敏感，适合干净数据
@@ -379,7 +441,13 @@ cargo build --features blas-openblas
 
 ### 🔴 核心功能
 
-- 神经架构演化（详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)）
+- 演化模块完善（详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)）
+  - ✅ MVP 已完成：层级变异 + 收敛检测 + Lamarckian 权重继承 + skip connection + 超参数演化
+  - `build()` 补全 RNN/LSTM/GRU/Dropout 层类型支持
+  - 种群级演化（speciation + crossover）
+  - 演化与 DataLoader / metrics 模块深度集成
+  - 模型序列化 / 反序列化（save/load）
+  - RL 任务对接
 
 ### ⚫ 实战验证
 

@@ -1,5 +1,80 @@
 # 更新日志
 
+## [0.14.0] - 2026-03-09
+
+### 新增
+
+- **feat(evolution): 神经架构演化模块 MVP（核心特色功能）**
+  - 完整的 Genome-centric 层级演化系统，用户只需提供数据和目标——零模型代码
+  - `gene.rs`: 基因数据结构（`NetworkGenome`、`LayerGene`、`SkipEdge`、`TrainingConfig` 等）
+  - `mutation.rs`: `Mutation` trait + `MutationRegistry`，内置 12 种变异操作
+    - 结构变异：`InsertLayer`、`RemoveLayer`、`AddSkipEdge`、`RemoveSkipEdge`
+    - 参数变异：`GrowHiddenSize`、`ShrinkHiddenSize`、`ChangeActivation`
+    - 训练超参数变异：`MutateLearningRate`、`MutateOptimizer`、`MutateBatchSize`、`MutateLossFunction`
+    - 聚合变异：`ChangeAggregateStrategy`
+  - `builder.rs`: Genome → Graph 自动转换 + Lamarckian 权重继承（跨代权重复用）
+  - `convergence.rs`: `ConvergenceDetector` 训练收敛检测（loss plateau + gradient norm 双判据）
+  - `task.rs`: `EvolutionTask` trait + `SupervisedTask` 监督学习实现，支持 full-batch / mini-batch
+  - `callback.rs`: 回调接口（`EvolutionCallback` + `DefaultCallback`），支持自定义日志/停止策略
+  - `Evolution` 主控结构体：Builder 模式 API，`run()` 驱动完整演化主循环
+  - `EvolutionResult`：`predict()` 推理 + `visualize()` 计算图可视化
+  - `SkipEdge` DAG 拓扑演化：支持 `Add`/`Concat`/`Mean`/`Max` 四种聚合策略
+  - `NetworkGenome` Display：主路径摘要 + skip edge 注解 + 重名层自动消歧
+  - 停滞探测机制：连续 N 代 primary 未提升后强制结构变异
+  - 完整的单元测试和集成测试覆盖
+
+- **feat(evolution): 新增 2 个演化示例**
+  - `evolution_xor`: XOR 零模型代码演化，从 `Input(2) → [Linear(1)]` 自动发现解决方案
+  - `evolution_iris`: Iris 鸢尾花演化，150 样本自动 mini-batch + CrossEntropy 推断
+
+- **feat(examples): 新增中国象棋棋子 CNN 分类器示例**
+  - 15 类分类（空位 + 红方 7 子 + 黑方 7 子），28x28 合成 patch
+  - Conv(3→16) → Pool → Conv(16→32) → Pool → FC(1568→128) → FC(128→15)
+  - 运行时数据增强（ColorJitter）、early stopping、per-class 准确率报告
+
+- **feat(nn): 批量新增 18 项基础节点（节点总数 41 → 53）**
+  - 已在 0.13.0 CHANGELOG 中列出（该批提交实际落入本版本）
+
+- **feat(nn): 将 ReLU 从 LeakyReLU 中独立为一等节点**
+
+- **feat: 可选 BLAS 加速（Intel MKL / OpenBLAS）**
+  - 通过 `--features blas-mkl` 或 `--features blas-openblas` 启用
+  - justfile 自动检测本地 BLAS 后端（MKL > OpenBLAS > 纯 Rust）
+
+### 性能优化
+
+- **perf(conv2d): im2col + GEMM 替换嵌套循环卷积，训练速度提升 2.6-4.4x**
+- perf(conv2d): 反向传播 im2col 批量化，N 次小 GEMM 合并为 1 次大 GEMM
+- perf(conv2d): 前向传播 padded_input 缓存改用 move 消除 clone
+- perf(nn): 反向传播全局优化——in-place 梯度累加 + ReLU 融合 + MaxPool 预分配
+- perf(nn): `GradResult` 零拷贝梯度传递 + benchmark 基础设施
+- perf(optimizer): `set_value_owned` 零拷贝参数更新 + Adam 临时分配优化
+
+### 修复
+
+- fix: 消除编译警告 + 补充 `GradResult::Negated` 路径单元测试
+- fix: 补齐 roadmap 遗漏项（Tensor 测试 + 独立节点 + Var API）
+
+### 重构
+
+- refactor: 计算图表示中 LeakyReLU 替换为 ReLU
+- refactor(evolution): 移除所有 Phase N 工程阶段注释
+- refactor(evolution): `EvolutionError` + 延迟实例化，`supervised()` 恢复无错构造
+- refactor(evolution): 隐藏 `Graph`，`EvolutionResult` 仅暴露 `predict()` / `visualize()` API
+- refactor(examples): 更新中国象棋模型架构和数据增强
+
+### 文档
+
+- docs: 归档已完成的规划文档，整合至 architecture_roadmap
+- docs: 更新性能优化文档，反映 Phase 1-5 完成状态
+- docs: 更新文档反映 roadmap 完成状态
+- docs: 新增 oneDNN CPU 内核优化参考
+- docs: 数据共享可视化已通过 source_id 实现，更新未来方向
+
+### 其他
+
+- feat: Phase 1-5 feature expansion（CNN / data augmentation / Transformer / API convenience methods / Repeat node / Chunk / Norm variants / error refinement / utility activation methods）
+
 ## [0.13.0] - 2026-02-14
 
 ### 破坏性变更
