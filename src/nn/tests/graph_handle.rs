@@ -71,7 +71,8 @@ fn test_graph_handle_input_named() {
 /// 测试 parameter 方法
 #[test]
 fn test_graph_handle_parameter() {
-    let graph = Graph::new();
+    // 使用固定 seed 保证确定性（Xavier 用正态分布，无 seed 时偶发极端值）
+    let graph = Graph::new_with_seed(42);
 
     let w = graph.parameter(&[3, 2], Init::Xavier, "weight").unwrap();
 

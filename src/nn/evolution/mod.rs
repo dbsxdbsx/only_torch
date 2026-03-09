@@ -125,6 +125,8 @@ pub struct Evolution {
     /// 停滞耐心值：primary fitness 连续多少代未严格提升后，
     /// 强制选择结构变异（InsertLayer / RemoveLayer）以探索新拓扑
     stagnation_patience: usize,
+    /// 训练 batch size（None = Task 自动策略，Some = 显式指定）
+    batch_size: Option<usize>,
 }
 
 impl Evolution {
@@ -165,6 +167,7 @@ impl Evolution {
             max_generations: 100,
             verbose: true,
             stagnation_patience: 20,
+            batch_size: None,
         }
     }
 
@@ -227,13 +230,26 @@ impl Evolution {
         self
     }
 
+    /// 设置训练 batch size（覆盖 SupervisedTask 的自动策略）
+    ///
+    /// 仅对支持 batch size 配置的 Task 生效（如 SupervisedTask）。
+    /// 自定义 Task 可自行忽略此设置。
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        assert!(batch_size > 0, "batch_size 必须 > 0");
+        self.batch_size = Some(batch_size);
+        self
+    }
+
     // ==================== 主循环 ====================
 
     /// 运行演化主循环
     ///
     /// 无论是否达标都返回 `Ok(EvolutionResult)`，
     /// `status` 字段标识停止原因。`Err` 仅用于系统错误。
-    pub fn run(self) -> Result<EvolutionResult, GraphError> {
+    pub fn run(mut self) -> Result<EvolutionResult, GraphError> {
+        // 传递 batch size 配置到 task
+        self.task.configure_batch_size(self.batch_size);
+
         let using_default_callback = self.custom_callback.is_none();
         let mut callback: Box<dyn EvolutionCallback> = self
             .custom_callback

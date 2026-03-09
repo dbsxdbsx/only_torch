@@ -23,6 +23,24 @@ use super::builder::BuildResult;
 use super::convergence::{ConvergenceConfig, ConvergenceDetector};
 use super::gene::{LossType, NetworkGenome, OptimizerType, TaskMetric};
 
+// ==================== auto_batch_size ====================
+
+/// 自动选择 batch size
+///
+/// 策略：
+/// - n ≤ 128: full-batch（小数据集，mini-batch 梯度噪声有害）
+/// - 128 < n ≤ 10000: batch_size = 64
+/// - n > 10000: batch_size = 256
+pub fn auto_batch_size(n_samples: usize) -> usize {
+    if n_samples <= 128 {
+        n_samples
+    } else if n_samples <= 10000 {
+        64
+    } else {
+        256
+    }
+}
+
 // ==================== FitnessScore ====================
 
 /// 适应度分数
@@ -72,6 +90,12 @@ pub trait EvolutionTask {
         build: &BuildResult,
         rng: &mut StdRng,
     ) -> Result<FitnessScore, GraphError>;
+
+    /// 配置训练 batch size（默认空操作）
+    ///
+    /// `SupervisedTask` 使用此值覆盖自动策略；
+    /// 自定义 Task（如 RL/半监督）忽略此方法，使用自身的采样策略。
+    fn configure_batch_size(&mut self, _batch_size: Option<usize>) {}
 }
 
 // ==================== SupervisedTask ====================
@@ -79,13 +103,14 @@ pub trait EvolutionTask {
 /// 监督学习任务
 ///
 /// 构造器接受 per-sample 的 `Vec<Tensor>`，内部立即 stack 成 batched Tensor。
-/// Phase 7A 全量训练，每 epoch 一次 `set_value`，零额外分配。
+/// 自动根据数据量选择 full-batch 或 mini-batch 训练策略。
 pub struct SupervisedTask {
     train_x: Tensor, // [n_train, input_dim]
     train_y: Tensor, // [n_train, output_dim]
     test_x: Tensor,  // [n_test, input_dim]
     test_y: Tensor,  // [n_test, output_dim]
     metric: TaskMetric,
+    batch_size: Option<usize>, // None = 自动策略，Some = 显式指定
 }
 
 impl SupervisedTask {
@@ -126,12 +151,31 @@ impl SupervisedTask {
             test_x: Tensor::stack(&test_x_refs, 0),
             test_y: Tensor::stack(&test_y_refs, 0),
             metric,
+            batch_size: None,
         }
     }
 
     /// 获取任务指标类型
     pub fn metric(&self) -> &TaskMetric {
         &self.metric
+    }
+
+    /// 显式设置 batch size（覆盖自动策略）
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        assert!(batch_size > 0, "batch_size 必须 > 0");
+        self.batch_size = Some(batch_size);
+        self
+    }
+
+    /// 解析实际使用的 batch size
+    ///
+    /// 优先级：genome 显式值（Phase 9）> 用户设置 > 自动策略
+    fn effective_batch_size(&self, genome: &NetworkGenome, n_samples: usize) -> usize {
+        genome
+            .training_config
+            .batch_size
+            .or(self.batch_size)
+            .unwrap_or_else(|| auto_batch_size(n_samples))
     }
 }
 
@@ -144,15 +188,14 @@ impl EvolutionTask for SupervisedTask {
         _rng: &mut StdRng,
     ) -> Result<f32, GraphError> {
         assert!(
-            genome.training_config.batch_size.is_none(),
-            "Phase 7A 不支持 mini-batch，batch_size 必须为 None"
-        );
-        assert!(
             genome.training_config.weight_decay == 0.0,
-            "Phase 7A 不支持 weight_decay，必须为 0.0"
+            "weight_decay 尚未支持，必须为 0.0"
         );
 
         build.graph.train();
+
+        let n_samples = self.train_x.shape()[0];
+        let bs = self.effective_batch_size(genome, n_samples);
 
         // target / loss / optimizer 各创建一次，不在 epoch 内重建
         let target = build.graph.target(self.train_y.shape())?;
@@ -166,24 +209,59 @@ impl EvolutionTask for SupervisedTask {
             OptimizerType::SGD => Box::new(SGD::new(&build.graph, &params, lr)),
         };
 
-        // 全量训练：数据只设一次
-        build.input.set_value(&self.train_x)?;
-        target.set_value(&self.train_y)?;
-
         let mut detector = ConvergenceDetector::new(convergence.clone());
         let mut final_loss = f32::NAN;
 
-        for epoch in 0.. {
-            let loss_val = optimizer.minimize(&loss_var)?;
-            let grad_norm = compute_grad_norm(&params)?;
-            final_loss = loss_val;
+        if bs >= n_samples {
+            // ====== Full-batch 路径（与 Phase 7A 行为完全一致）======
+            build.input.set_value(&self.train_x)?;
+            target.set_value(&self.train_y)?;
 
-            if detector.should_stop(epoch, loss_val, grad_norm).is_some() {
-                break;
+            for epoch in 0.. {
+                let loss_val = optimizer.minimize(&loss_var)?;
+                let grad_norm = compute_grad_norm(&params)?;
+                final_loss = loss_val;
+
+                if detector.should_stop(epoch, loss_val, grad_norm).is_some() {
+                    break;
+                }
+            }
+        } else {
+            // ====== Mini-batch 路径 ======
+            for epoch in 0.. {
+                let mut epoch_loss_sum = 0.0;
+                let mut n_batches = 0;
+                let mut offset = 0;
+
+                while offset < n_samples {
+                    let end = (offset + bs).min(n_samples);
+                    let batch_x = self.train_x.narrow(0, offset, end - offset);
+                    let batch_y = self.train_y.narrow(0, offset, end - offset);
+
+                    build.input.set_value(&batch_x)?;
+                    target.set_value(&batch_y)?;
+
+                    let loss_val = optimizer.minimize(&loss_var)?;
+                    epoch_loss_sum += loss_val;
+                    n_batches += 1;
+                    offset = end;
+                }
+
+                let avg_loss = epoch_loss_sum / n_batches as f32;
+                let grad_norm = compute_grad_norm(&params)?;
+                final_loss = avg_loss;
+
+                if detector.should_stop(epoch, avg_loss, grad_norm).is_some() {
+                    break;
+                }
             }
         }
 
         Ok(final_loss)
+    }
+
+    fn configure_batch_size(&mut self, batch_size: Option<usize>) {
+        self.batch_size = batch_size;
     }
 
     fn evaluate(

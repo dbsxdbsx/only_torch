@@ -337,24 +337,28 @@ fn test_loss_explicit_override() {
     assert_eq!(loss, LossType::MSE);
 }
 
-// ==================== Phase 7A 约束 ====================
+// ==================== Phase 7D 约束 ====================
 
 #[test]
-#[should_panic(expected = "batch_size 必须为 None")]
-fn test_phase7a_batch_size_panics() {
+fn test_genome_batch_size_used_when_set() {
+    // Phase 7D: genome.training_config.batch_size 不再 panic，
+    // 而是作为最高优先级的 batch_size 使用
     let task = xor_task();
-    let mut genome = NetworkGenome::minimal(2, 1);
+    let mut genome = genome_with_hidden(2, 1);
     genome.training_config.batch_size = Some(2);
 
     let mut rng = StdRng::seed_from_u64(42);
     let build = build_and_restore(&genome, &mut rng);
 
-    let _ = task.train(&genome, &build, &short_convergence(), &mut rng);
+    let loss = task
+        .train(&genome, &build, &short_convergence(), &mut rng)
+        .unwrap();
+    assert!(loss.is_finite(), "genome batch_size=2 应正常训练");
 }
 
 #[test]
 #[should_panic(expected = "weight_decay")]
-fn test_phase7a_weight_decay_panics() {
+fn test_phase7d_weight_decay_panics() {
     let task = xor_task();
     let mut genome = NetworkGenome::minimal(2, 1);
     genome.training_config.weight_decay = 0.01;
@@ -626,6 +630,139 @@ fn test_binary_classification_all_negative_logits() {
         (primary - 2.0 / 3.0).abs() < 1e-6,
         "全负 logit 下 accuracy 应为 2/3，实际: {primary}"
     );
+}
+
+// ==================== Batch size（Phase 7D）====================
+
+#[test]
+fn test_auto_batch_size_thresholds() {
+    // 小数据集：full-batch
+    assert_eq!(auto_batch_size(1), 1);
+    assert_eq!(auto_batch_size(4), 4);
+    assert_eq!(auto_batch_size(128), 128);
+    // 中等数据集：batch_size = 64
+    assert_eq!(auto_batch_size(129), 64);
+    assert_eq!(auto_batch_size(1000), 64);
+    assert_eq!(auto_batch_size(10000), 64);
+    // 大数据集：batch_size = 256
+    assert_eq!(auto_batch_size(10001), 256);
+    assert_eq!(auto_batch_size(60000), 256);
+}
+
+/// 创建 n 个样本的合成数据集（二分类，input_dim=2）
+fn medium_data(n: usize) -> (Vec<Tensor>, Vec<Tensor>) {
+    (
+        (0..n)
+            .map(|i| {
+                let x = (i as f32) / (n as f32);
+                Tensor::new(&[x, 1.0 - x], &[2])
+            })
+            .collect(),
+        (0..n)
+            .map(|i| Tensor::new(&[if i % 2 == 0 { 1.0 } else { 0.0 }], &[1]))
+            .collect(),
+    )
+}
+
+#[test]
+fn test_mini_batch_training_medium_dataset() {
+    // 200 样本 → auto_batch_size = 64，触发 mini-batch 路径
+    let data = medium_data(200);
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    let genome = genome_with_hidden(2, 1);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+
+    let loss = task
+        .train(&genome, &build, &short_convergence(), &mut rng)
+        .unwrap();
+
+    assert!(loss.is_finite(), "mini-batch 训练应产生有限 loss: {loss}");
+}
+
+#[test]
+fn test_mini_batch_parameters_change() {
+    let data = medium_data(200);
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    let genome = genome_with_hidden(2, 1);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+
+    let params_before: Vec<Tensor> = build
+        .all_parameters()
+        .iter()
+        .map(|p| p.value().unwrap().unwrap())
+        .collect();
+
+    task.train(&genome, &build, &short_convergence(), &mut rng)
+        .unwrap();
+
+    let params_after: Vec<Tensor> = build
+        .all_parameters()
+        .iter()
+        .map(|p| p.value().unwrap().unwrap())
+        .collect();
+
+    let any_changed = params_before
+        .iter()
+        .zip(params_after.iter())
+        .any(|(a, b)| a != b);
+    assert!(any_changed, "mini-batch 训练后至少应有一个参数变化");
+}
+
+#[test]
+fn test_explicit_batch_size_via_configure() {
+    let data = xor_data();
+    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    task.configure_batch_size(Some(2)); // 强制 batch_size=2（4 样本分成 2 个 batch）
+
+    let genome = genome_with_hidden(2, 1);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+
+    let loss = task
+        .train(&genome, &build, &short_convergence(), &mut rng)
+        .unwrap();
+
+    assert!(loss.is_finite(), "显式 batch_size=2 应正常训练");
+}
+
+#[test]
+fn test_genome_batch_size_overrides_task_setting() {
+    let data = xor_data();
+    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    task.configure_batch_size(Some(3)); // task-level: 3
+
+    let mut genome = genome_with_hidden(2, 1);
+    genome.training_config.batch_size = Some(2); // genome-level: 2（优先级更高）
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+
+    // genome 的 batch_size=2 应优先于 task 的 batch_size=3
+    let loss = task
+        .train(&genome, &build, &short_convergence(), &mut rng)
+        .unwrap();
+
+    assert!(loss.is_finite(), "genome batch_size 覆盖应正常训练");
+}
+
+#[test]
+fn test_mini_batch_evaluate_still_full_batch() {
+    // evaluate() 始终使用全量测试集，不受 batch_size 影响
+    let data = medium_data(200);
+    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    task.configure_batch_size(Some(32));
+
+    let genome = genome_with_hidden(2, 1);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+
+    task.train(&genome, &build, &short_convergence(), &mut rng)
+        .unwrap();
+
+    let score = task.evaluate(&genome, &build, &mut rng).unwrap();
+    assert!(score.primary >= 0.0 && score.primary <= 1.0);
 }
 
 // ==================== 训练后 loss 下降 ====================

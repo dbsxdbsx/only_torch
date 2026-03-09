@@ -200,3 +200,7 @@ path = "examples/sac/moving/main.rs"
 [[example]]
 name = "evolution_xor"
 path = "examples/evolution_xor/main.rs"
+
+[[example]]
+name = "evolution_iris"
+path = "examples/evolution_iris/main.rs"
