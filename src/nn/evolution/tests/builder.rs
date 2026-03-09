@@ -1,3 +1,266 @@
+
+// ==================== SkipEdge 聚合 ====================
+
+/// 辅助：构建含一个 skip edge 的基因组
+///
+/// 结构：Input(2) → Linear(4)[inn=2] → ReLU[inn=3] → Linear(1)[inn=1]
+/// skip edge: 从 INPUT(0) 到 Linear(1)[inn=1]，使用指定策略
+fn genome_with_skip(strategy: AggregateStrategy) -> NetworkGenome {
+    let mut g = NetworkGenome::minimal(2, 1);
+    // 隐藏层
+    let inn_h = g.next_innovation_number(); // 2
+    g.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: inn_h,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    let inn_act = g.next_innovation_number(); // 3
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: inn_act,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    // skip edge: INPUT(0) → 输出头(1)
+    // Add/Mean/Max 需 in_dim 一致；INPUT dim=2, main path dim=4 ⇒ 不匹配
+    // 所以 Add/Mean/Max 的 skip 需要 dim 匹配的拓扑
+    // 这里仅用于 Concat (dim=1)，其余策略用专门的辅助函数
+    let se_inn = g.next_innovation_number(); // 4
+    g.skip_edges.push(SkipEdge {
+        innovation_number: se_inn,
+        from_innovation: INPUT_INNOVATION, // 0
+        to_innovation: 1,                  // 输出头
+        strategy,
+        enabled: true,
+    });
+    g
+}
+
+/// 辅助：构建 Add/Mean/Max 兼容的 skip 基因组（维度对齐）
+///
+/// 结构：Input(4) → Linear(4)[inn=2] → ReLU[inn=3] → Linear(1)[inn=1]
+/// skip edge: INPUT(0, dim=4) → ReLU 之后、输出头(1) 之前，main path dim=4
+fn genome_with_same_dim_skip(strategy: AggregateStrategy) -> NetworkGenome {
+    let mut g = NetworkGenome::minimal(4, 1);
+    let inn_h = g.next_innovation_number(); // 2
+    g.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: inn_h,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    let inn_act = g.next_innovation_number(); // 3
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: inn_act,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    let se_inn = g.next_innovation_number(); // 4
+    g.skip_edges.push(SkipEdge {
+        innovation_number: se_inn,
+        from_innovation: INPUT_INNOVATION,
+        to_innovation: 1, // 输出头
+        strategy,
+        enabled: true,
+    });
+    g
+}
+
+#[test]
+fn test_build_skip_edge_add() {
+    let genome = genome_with_same_dim_skip(AggregateStrategy::Add);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+    build.input.set_value(&input_data).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+}
+
+#[test]
+fn test_build_skip_edge_concat() {
+    // Input(2) → Linear(4) → ReLU → [concat with Input(2)] → Linear(1)
+    // 输出头接收 main_dim=4 + skip_dim=2 = 6
+    let genome = genome_with_skip(AggregateStrategy::Concat { dim: 1 });
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let input_data = Tensor::new(&[1.0, 2.0], &[1, 2]);
+    build.input.set_value(&input_data).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+
+    // 输出头的 W 形状 = [6, 1]（因为 Concat 后 in_dim=6）
+    let w = build.layer_params[&1][0].value().unwrap().unwrap();
+    assert_eq!(w.shape(), &[6, 1]);
+}
+
+#[test]
+fn test_build_skip_edge_mean() {
+    let genome = genome_with_same_dim_skip(AggregateStrategy::Mean);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+    build.input.set_value(&input_data).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+}
+
+#[test]
+fn test_build_skip_edge_max() {
+    let genome = genome_with_same_dim_skip(AggregateStrategy::Max);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+    build.input.set_value(&input_data).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+}
+
+#[test]
+fn test_build_skip_edge_multi_path() {
+    // Input(4) → Linear(4)[inn=2] → ReLU[inn=3] → Linear(4)[inn=4] → Tanh[inn=5] → Linear(1)[inn=1]
+    // skip edge 1: INPUT(0) → inn=1 (Add)
+    // skip edge 2: inn=2 → inn=1 (Add) — 隐藏层输出也跳到输出头
+    // main path 到输出头时 dim=4, INPUT dim=4, inn=2 out=4 → 全部 dim=4 → Add 兼容
+    let mut g = NetworkGenome::minimal(4, 1);
+    let inn_h1 = g.next_innovation_number(); // 2
+    g.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: inn_h1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    let inn_act1 = g.next_innovation_number(); // 3
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: inn_act1,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    let inn_h2 = g.next_innovation_number(); // 4
+    g.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: inn_h2,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    let inn_act2 = g.next_innovation_number(); // 5
+    g.layers.insert(
+        3,
+        LayerGene {
+            innovation_number: inn_act2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+
+    // 两条 skip edges 都指向输出头
+    let se1 = g.next_innovation_number(); // 6
+    g.skip_edges.push(SkipEdge {
+        innovation_number: se1,
+        from_innovation: INPUT_INNOVATION,
+        to_innovation: 1,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+    let se2 = g.next_innovation_number(); // 7
+    g.skip_edges.push(SkipEdge {
+        innovation_number: se2,
+        from_innovation: inn_h1, // Linear(4) 输出
+        to_innovation: 1,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = g.build(&mut rng).unwrap();
+
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+    build.input.set_value(&input_data).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+}
+
+#[test]
+fn test_build_skip_edge_backward() {
+    // 验证 skip edge 路径支持反向传播
+    let genome = genome_with_same_dim_skip(AggregateStrategy::Add);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+    build.input.set_value(&input_data).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    // 反向传播
+    build.graph.backward(&build.output).unwrap();
+
+    // 所有参数都应有梯度
+    for param in build.all_parameters() {
+        let grad = param.grad().unwrap();
+        assert!(grad.is_some(), "参数应该有梯度");
+    }
+}
+
+#[test]
+fn test_build_skip_edge_disabled() {
+    // disabled skip edge 不参与构建
+    let mut genome = genome_with_same_dim_skip(AggregateStrategy::Add);
+    genome.skip_edges[0].enabled = false;
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 输出头的 W 形状 = [4, 1]（无聚合，正常的 main path）
+    let w = build.layer_params[&1][0].value().unwrap().unwrap();
+    assert_eq!(w.shape(), &[4, 1]);
+
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+    build.input.set_value(&input_data).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+}
+
 use crate::nn::evolution::gene::*;
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;

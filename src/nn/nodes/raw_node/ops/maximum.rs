@@ -144,9 +144,12 @@ impl TraitNode for Maximum {
         let other_broadcast = other_value.broadcast_to(output_shape);
 
         // 2. 在广播后的形状上逐元素计算 mask
-        let target_slice = target_broadcast.data_as_slice();
-        let other_slice = other_broadcast.data_as_slice();
-        let upstream_slice = upstream_grad.data_as_slice();
+        let target_contiguous = target_broadcast.into_contiguous();
+        let other_contiguous = other_broadcast.into_contiguous();
+        let upstream_contiguous = upstream_grad.clone().into_contiguous();
+        let target_slice = target_contiguous.data_as_slice();
+        let other_slice = other_contiguous.data_as_slice();
+        let upstream_slice = upstream_contiguous.data_as_slice();
 
         let mut grad_data = Vec::with_capacity(upstream_slice.len());
 

@@ -351,7 +351,7 @@ After:   Input → Linear → ReLU → Linear ──┐
 | MutateLayerParam | 0.05 | LeakyReLU alpha 等 |
 | MutateLossFunction | 0.02 | 切换兼容 loss（BCE↔MSE 等） |
 
-**Phase 7B 追加注册（3 种）**：
+**Phase 8 追加注册（3 种 SkipEdge 变异）**：
 
 | 变异类型 | 权重 | 说明 |
 |----------|------|------|
@@ -359,7 +359,7 @@ After:   Input → Linear → ReLU → Linear ──┐
 | RemoveSkipEdge | 0.05 | 移除跳跃连接 |
 | MutateAggregateStrategy | 0.03 | 改变聚合策略 |
 
-> **设计理念**：`ShrinkHiddenSize` 权重略高于 `GrowHiddenSize`，鼓励演化出更紧凑的网络。跳跃连接相关变异推迟到 Phase 7B，权重较低，避免网络过早变得复杂。
+> **设计理念**：`ShrinkHiddenSize` 权重略高于 `GrowHiddenSize`，鼓励演化出更紧凑的网络。跳跃连接相关变异权重较低，避免网络过早变得复杂。
 
 ---
 
@@ -380,6 +380,16 @@ After:   Input → Linear → ReLU → Linear ──┐
   → Input → Linear(4) → ReLU → Linear(2) → Tanh → Linear(output_dim)
   → ...
 ```
+
+#### 最小复杂度优先（InsertLayer 初始尺寸）
+
+`InsertLayerMutation` 插入 Linear 层时，尺寸上界为 `min(input_dim, max_hidden_size)`，
+而非 `max_hidden_size`。这意味着 XOR（input_dim=2）插入的隐藏层尺寸只会是 1 或 2，
+后续由 `GrowHiddenSizeMutation` 按需扩展。
+
+> **原理**：`max_hidden_size` 是层最终能增长到的天花板（给 Grow 用），
+> 不应作为新层的初始尺寸。这与 NEAT 论文的核心原则一致——
+> 复杂度只有在被适应度评估证明有益时才增长。
 
 #### 输出头（Output Head）
 
@@ -856,15 +866,16 @@ impl ConvergenceDetector {
 
 | Phase | 任务 | 验收标准 | 状态 |
 |:-----:|------|----------|:----:|
-| **1** | LayerGene / NetworkGenome 数据结构 | 单元测试 | ⏳ |
-| **2** | 变异操作实现（InsertLayer, RemoveLayer, MutateHiddenSize...） | 单元测试 | ⏳ |
-| **3** | Genome → Graph 转换 | 能构建并 forward | ⏳ |
-| **4** | ConvergenceDetector | 单元测试 | ⏳ |
-| **5** | EvolutionTask trait + SupervisedTask | 单元测试 | ⏳ |
-| **6** | Evolution 结构体 + .run() | 集成测试：XOR 进化 | ⏳ |
-| **7A** | XOR 演化 MVP（Linear + Activation） | 集成测试：XOR 100% | ⏳ |
-| **7B** | SkipEdge + Dropout + 更多超参数演化 | MutateLR/Optimizer/BatchSize | 💤 |
-| **8** | 记忆任务验证（RNN/LSTM） | 集成测试：Parity 任务 | 💤 |
+| **1** | LayerGene / NetworkGenome 数据结构 | 单元测试 | ✅ |
+| **2** | 变异操作实现（InsertLayer, RemoveLayer, MutateHiddenSize...） | 单元测试 | ✅ |
+| **3** | Genome → Graph 转换 | 能构建并 forward | ✅ |
+| **4** | ConvergenceDetector | 单元测试 | ✅ |
+| **5** | EvolutionTask trait + SupervisedTask | 单元测试 | ✅ |
+| **6** | Evolution 结构体 + .run() | 集成测试：XOR 进化 | ✅ |
+| **7A** | XOR 演化 MVP（Linear + Activation） | 集成测试：XOR 100% | ✅ |
+| **7B** | 停滞检测 + 训练超参数变异 + Fitness tiebreak | MutateLR/LossFunction/LayerParam | ✅ |
+| **8** | SkipEdge 跳跃连接演化（DAG 拓扑） | 4 种聚合策略 + 3 种变异 + 集成测试 | ✅ |
+| **9** | 记忆任务验证（RNN/LSTM） | 集成测试：Parity 任务 | 💤 |
 
 ---
 
@@ -1197,4 +1208,4 @@ Generation 15: Input → Linear(4) → ReLU ──┐
 
 *本文档描述了 only_torch 的神经架构演化机制，采用层级拓扑变异 + 梯度训练的混合策略。*
 
-*最后更新：2026-01-27*
+*最后更新：2026-03-09*

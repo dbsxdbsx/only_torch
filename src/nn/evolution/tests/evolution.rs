@@ -442,9 +442,11 @@ fn test_eval_runs_takes_conservative_value() {
 // ==================== NoApplicableMutation ====================
 
 #[test]
-fn test_no_applicable_mutation_returns_status() {
-    // 极端约束：max_layers=1 + R2 指标（只有 MSE 一种 loss，MutateLossFunction 不可用）
-    // 最小基因组只有输出头，只有 InsertLayer 可用；但 max_layers=1 阻止 InsertLayer
+fn test_extreme_constraints_graceful() {
+    // 极端约束：max_layers=1 + R2 指标（只有 MSE 一种 loss）
+    // 最小基因组只有输出头，层级变异全部被阻止。
+    // 但 AddSkipEdge 可以在 INPUT→输出头上反复操作（添加后 fitness 不改善→回滚→再添加），
+    // 因此演化会跑满 MaxGenerations 而非 NoApplicableMutation。
     let train = (
         vec![Tensor::new(&[1.0], &[1]), Tensor::new(&[2.0], &[1])],
         vec![Tensor::new(&[2.0], &[1]), Tensor::new(&[4.0], &[1])],
@@ -453,8 +455,8 @@ fn test_no_applicable_mutation_returns_status() {
 
     let result = Evolution::supervised(train, test, TaskMetric::R2)
         .with_seed(42)
-        .with_target_metric(2.0) // 不可达，确保不因达标而提前退出
-        .with_max_generations(100)
+        .with_target_metric(2.0) // 不可达
+        .with_max_generations(10)
         .with_constraints(SizeConstraints {
             max_layers: 1,
             ..Default::default()
@@ -465,8 +467,8 @@ fn test_no_applicable_mutation_returns_status() {
 
     assert_eq!(
         result.status,
-        EvolutionStatus::NoApplicableMutation,
-        "极端约束下应返回 NoApplicableMutation"
+        EvolutionStatus::MaxGenerations,
+        "极端约束下 AddSkipEdge 仍可操作，应跑满 MaxGenerations"
     );
 }
 
@@ -601,6 +603,9 @@ fn test_mutation_names_are_known_operations() {
         "ShrinkHiddenSize",
         "MutateLayerParam",
         "MutateLossFunction",
+        "AddSkipEdge",
+        "RemoveSkipEdge",
+        "MutateAggregateStrategy",
     ];
 
     let s = state.borrow();

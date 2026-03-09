@@ -9,7 +9,8 @@
  */
 
 use super::gene::{
-    compatible_losses, ActivationType, LayerConfig, LayerGene, LossType, NetworkGenome, TaskMetric,
+    compatible_losses, ActivationType, AggregateStrategy, LayerConfig, LayerGene, LossType,
+    NetworkGenome, SkipEdge, TaskMetric, INPUT_INNOVATION,
 };
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
@@ -166,7 +167,7 @@ impl MutationRegistry {
         ))
     }
 
-    /// Phase 7A 默认注册表（7 种变异）
+    /// 默认注册表（10 种变异：7 种 Phase 7A + 3 种 Phase 8 SkipEdge）
     pub fn default_registry(metric: &TaskMetric) -> Self {
         let mut reg = Self::new();
         reg.register(0.15, InsertLayerMutation::default());
@@ -181,6 +182,10 @@ impl MutationRegistry {
                 task_metric: metric.clone(),
             },
         );
+        // Phase 8: SkipEdge 变异
+        reg.register(0.08, AddSkipEdgeMutation);
+        reg.register(0.05, RemoveSkipEdgeMutation);
+        reg.register(0.03, MutateAggregateStrategyMutation);
         reg
     }
 
@@ -412,7 +417,9 @@ impl Mutation for InsertLayerMutation {
                 activation_type: *act,
             }
         } else {
-            let size = rng.gen_range(constraints.min_hidden_size..=constraints.max_hidden_size);
+            // 最小复杂度优先：新插入层从小尺寸开始，让 GrowHiddenSizeMutation 按需扩展
+            let small_cap = genome.input_dim.min(constraints.max_hidden_size).max(constraints.min_hidden_size);
+            let size = rng.gen_range(constraints.min_hidden_size..=small_cap);
             LayerConfig::Linear {
                 out_features: size,
             }
@@ -427,6 +434,14 @@ impl Mutation for InsertLayerMutation {
                 enabled: true,
             },
         );
+
+        // 插入新层可能改变主干维度流，导致已有 skip edge 维度不兼容
+        if genome.resolve_dimensions().is_err() {
+            genome.layers.remove(insert_vec_idx);
+            return Err(MutationError::ConstraintViolation(
+                "插入层后 skip edge 维度不兼容".into(),
+            ));
+        }
 
         Ok(())
     }
@@ -462,7 +477,14 @@ impl Mutation for RemoveLayerMutation {
             ));
         }
         let &idx = candidates.choose(rng).unwrap();
+        let removed_inn = genome.layers[idx].innovation_number;
         genome.layers.remove(idx);
+
+        // 清理引用已删除层的 skip edges（避免悬空引用）
+        genome.skip_edges.retain(|e| {
+            e.from_innovation != removed_inn && e.to_innovation != removed_inn
+        });
+
         Ok(())
     }
 }
@@ -630,8 +652,8 @@ impl Mutation for GrowHiddenSizeMutation {
                 genome.layers[idx].layer_config = LayerConfig::Linear {
                     out_features: old_size,
                 };
-                Err(MutationError::InternalError(
-                    "增长后维度推导失败".into(),
+                Err(MutationError::ConstraintViolation(
+                    "增长后维度不兼容（skip edge 约束）".into(),
                 ))
             }
             _ => Ok(()),
@@ -684,13 +706,29 @@ impl Mutation for ShrinkHiddenSizeMutation {
         }
 
         let &idx = candidates.choose(rng).unwrap();
-        if let LayerConfig::Linear { ref mut out_features } = genome.layers[idx].layer_config {
-            *out_features = shrink_size(
-                *out_features,
-                constraints.min_hidden_size,
-                &constraints.size_strategy,
-                rng,
-            );
+        let old_size = match genome.layers[idx].layer_config {
+            LayerConfig::Linear { out_features } => out_features,
+            _ => unreachable!(),
+        };
+        let new_size = shrink_size(
+            old_size,
+            constraints.min_hidden_size,
+            &constraints.size_strategy,
+            rng,
+        );
+
+        genome.layers[idx].layer_config = LayerConfig::Linear {
+            out_features: new_size,
+        };
+
+        // 缩小后验证维度兼容性（skip edge 可能依赖该层尺寸）
+        if genome.resolve_dimensions().is_err() {
+            genome.layers[idx].layer_config = LayerConfig::Linear {
+                out_features: old_size,
+            };
+            return Err(MutationError::ConstraintViolation(
+                "缩小后维度不兼容（skip edge 约束）".into(),
+            ));
         }
 
         Ok(())
@@ -792,5 +830,252 @@ impl Mutation for MutateLossFunctionMutation {
 
         genome.training_config.loss_override = Some((*new_loss).clone());
         Ok(())
+    }
+}
+
+// ==================== AddSkipEdgeMutation ====================
+
+/// 随机可选的聚合策略列表
+fn all_aggregate_strategies() -> Vec<AggregateStrategy> {
+    vec![
+        AggregateStrategy::Add,
+        AggregateStrategy::Concat { dim: 1 },
+        AggregateStrategy::Mean,
+        AggregateStrategy::Max,
+    ]
+}
+
+pub struct AddSkipEdgeMutation;
+
+impl AddSkipEdgeMutation {
+    /// 收集所有可行的 (from, to, strategy) 候选
+    ///
+    /// 预过滤逻辑：
+    /// 1. DAG 前向约束：from 在层序列中的位置 < to
+    /// 2. 不重复：已存在的 (from, to) 对被排除
+    /// 3. 目标层 group 约束：已有 skip edge 的目标层只许沿用已有策略
+    /// 4. 维度兼容性：trial resolve_dimensions 验证
+    fn feasible_candidates(
+        genome: &NetworkGenome,
+    ) -> Vec<(u64, u64, AggregateStrategy)> {
+        let enabled: Vec<u64> = genome
+            .layers
+            .iter()
+            .filter(|l| l.enabled)
+            .map(|l| l.innovation_number)
+            .collect();
+
+        let existing: std::collections::HashSet<(u64, u64)> = genome
+            .skip_edges
+            .iter()
+            .filter(|e| e.enabled)
+            .map(|e| (e.from_innovation, e.to_innovation))
+            .collect();
+
+        let mut candidates = Vec::new();
+
+        for (to_idx, &to_inn) in enabled.iter().enumerate() {
+            // 确定该目标层允许的策略
+            let group_strategy = genome
+                .skip_edges
+                .iter()
+                .find(|e| e.enabled && e.to_innovation == to_inn)
+                .map(|e| e.strategy.clone());
+            let strategies = match group_strategy {
+                Some(s) => vec![s],
+                None => all_aggregate_strategies(),
+            };
+
+            // 收集所有前向 from
+            let mut froms = Vec::new();
+            if !existing.contains(&(INPUT_INNOVATION, to_inn)) {
+                froms.push(INPUT_INNOVATION);
+            }
+            for &from_inn in &enabled[..to_idx] {
+                if !existing.contains(&(from_inn, to_inn)) {
+                    froms.push(from_inn);
+                }
+            }
+
+            // 对每个 (from, strategy) 组合做 trial 验证
+            for &from in &froms {
+                for strategy in &strategies {
+                    let mut trial = genome.clone();
+                    trial.skip_edges.push(SkipEdge {
+                        innovation_number: u64::MAX, // placeholder
+                        from_innovation: from,
+                        to_innovation: to_inn,
+                        strategy: strategy.clone(),
+                        enabled: true,
+                    });
+                    if trial.resolve_dimensions().is_ok() {
+                        candidates.push((from, to_inn, strategy.clone()));
+                    }
+                }
+            }
+        }
+
+        candidates
+    }
+}
+
+impl Mutation for AddSkipEdgeMutation {
+    fn name(&self) -> &str {
+        "AddSkipEdge"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        // 快速预筛：至少有 1 个 enabled 层才可能有候选对
+        genome.layers.iter().any(|l| l.enabled)
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let candidates = Self::feasible_candidates(genome);
+        if candidates.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有可行的 skip edge 候选".into(),
+            ));
+        }
+
+        let &(from, to, ref strategy) = candidates.choose(rng).unwrap();
+        let inn = genome.next_innovation_number();
+        genome.skip_edges.push(SkipEdge {
+            innovation_number: inn,
+            from_innovation: from,
+            to_innovation: to,
+            strategy: strategy.clone(),
+            enabled: true,
+        });
+        Ok(())
+    }
+}
+
+// ==================== RemoveSkipEdgeMutation ====================
+
+pub struct RemoveSkipEdgeMutation;
+
+impl Mutation for RemoveSkipEdgeMutation {
+    fn name(&self) -> &str {
+        "RemoveSkipEdge"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        genome.skip_edges.iter().any(|e| e.enabled)
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let enabled_indices: Vec<usize> = genome
+            .skip_edges
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.enabled)
+            .map(|(i, _)| i)
+            .collect();
+
+        if enabled_indices.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有可移除的 skip edge".into(),
+            ));
+        }
+
+        let &idx = enabled_indices.choose(rng).unwrap();
+        genome.skip_edges.remove(idx);
+        Ok(())
+    }
+}
+
+// ==================== MutateAggregateStrategyMutation ====================
+
+pub struct MutateAggregateStrategyMutation;
+
+impl Mutation for MutateAggregateStrategyMutation {
+    fn name(&self) -> &str {
+        "MutateAggregateStrategy"
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        genome.skip_edges.iter().any(|e| e.enabled)
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        // 收集所有不同的 target group
+        let mut target_inns: Vec<u64> = genome
+            .skip_edges
+            .iter()
+            .filter(|e| e.enabled)
+            .map(|e| e.to_innovation)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if target_inns.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有 skip edge target group".into(),
+            ));
+        }
+
+        // 打乱顺序，依次尝试每个 target group
+        target_inns.shuffle(rng);
+
+        for target in &target_inns {
+            let current_strategy = genome
+                .skip_edges
+                .iter()
+                .find(|e| e.enabled && e.to_innovation == *target)
+                .map(|e| e.strategy.clone())
+                .unwrap();
+
+            // 计算可行的替代策略（排除当前 + trial 验证）
+            let feasible: Vec<AggregateStrategy> = all_aggregate_strategies()
+                .into_iter()
+                .filter(|s| s != &current_strategy)
+                .filter(|s| {
+                    let mut trial = genome.clone();
+                    for edge in &mut trial.skip_edges {
+                        if edge.enabled && edge.to_innovation == *target {
+                            edge.strategy = s.clone();
+                        }
+                    }
+                    trial.resolve_dimensions().is_ok()
+                })
+                .collect();
+
+            if let Some(new_strategy) = feasible.choose(rng) {
+                let new_strategy = new_strategy.clone();
+                for edge in &mut genome.skip_edges {
+                    if edge.enabled && edge.to_innovation == *target {
+                        edge.strategy = new_strategy.clone();
+                    }
+                }
+                return Ok(());
+            }
+        }
+
+        Err(MutationError::NotApplicable(
+            "所有 target group 均无可行替代策略".into(),
+        ))
     }
 }

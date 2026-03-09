@@ -428,9 +428,9 @@ fn test_mutate_loss_not_applicable_r2() {
 // ==================== MutationRegistry ====================
 
 #[test]
-fn test_default_registry_has_7_mutations() {
+fn test_default_registry_has_10_mutations() {
     let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy);
-    assert_eq!(reg.len(), 7);
+    assert_eq!(reg.len(), 10);
 }
 
 #[test]
@@ -501,7 +501,7 @@ fn test_insert_never_after_output_head() {
 }
 
 #[test]
-fn test_minimal_only_insert_applicable() {
+fn test_minimal_only_insert_and_add_skip_applicable() {
     let g = NetworkGenome::minimal(2, 1);
     let c = constraints();
 
@@ -511,6 +511,276 @@ fn test_minimal_only_insert_applicable() {
     assert!(!GrowHiddenSizeMutation.is_applicable(&g, &c));
     assert!(!ShrinkHiddenSizeMutation.is_applicable(&g, &c));
     assert!(!MutateLayerParamMutation.is_applicable(&g, &c));
+    // minimal 有 INPUT(0) → 输出头(1) 候选对，所以 AddSkipEdge 可用
+    assert!(AddSkipEdgeMutation.is_applicable(&g, &c));
+    assert!(!RemoveSkipEdgeMutation.is_applicable(&g, &c));
+    assert!(!MutateAggregateStrategyMutation.is_applicable(&g, &c));
+}
+
+// ==================== AddSkipEdgeMutation ====================
+
+#[test]
+fn test_add_skip_edge_happy_path() {
+    let mut g = genome_with_hidden();
+    let mut r = rng();
+    let m = AddSkipEdgeMutation;
+    let c = constraints();
+
+    assert!(m.is_applicable(&g, &c));
+    m.apply(&mut g, &c, &mut r).unwrap();
+
+    assert_eq!(g.skip_edges.len(), 1);
+    assert!(g.skip_edges[0].enabled);
+    assert!(g.resolve_dimensions().is_ok());
+}
+
+#[test]
+fn test_add_skip_edge_dag_validity() {
+    // 添加多条 skip edge，全部必须是前向连接
+    let mut g = genome_with_hidden();
+    let mut r = rng();
+    let m = AddSkipEdgeMutation;
+    let c = constraints();
+
+    for _ in 0..10 {
+        if m.is_applicable(&g, &c) {
+            let _ = m.apply(&mut g, &c, &mut r);
+        }
+    }
+
+    let enabled: Vec<u64> = g
+        .layers
+        .iter()
+        .filter(|l| l.enabled)
+        .map(|l| l.innovation_number)
+        .collect();
+
+    for edge in &g.skip_edges {
+        if !edge.enabled {
+            continue;
+        }
+        if edge.from_innovation == INPUT_INNOVATION {
+            // INPUT 始终在所有层之前，DAG 合法
+            continue;
+        }
+        let from_pos = enabled
+            .iter()
+            .position(|&inn| inn == edge.from_innovation)
+            .expect("from 必须在 enabled 层中");
+        let to_pos = enabled
+            .iter()
+            .position(|&inn| inn == edge.to_innovation)
+            .expect("to 必须在 enabled 层中");
+        assert!(
+            from_pos < to_pos,
+            "skip edge 必须是前向连接: from={} (pos={}) → to={} (pos={})",
+            edge.from_innovation,
+            from_pos,
+            edge.to_innovation,
+            to_pos
+        );
+    }
+}
+
+#[test]
+fn test_add_skip_edge_forward_direction_only() {
+    // 手动构造 genome，确认只有前向连接被添加
+    let mut g = NetworkGenome::minimal(4, 1);
+    // 仅有输出头 (inn=1)，所以唯一候选对是 INPUT(0)→inn=1
+    let mut r = rng();
+    let m = AddSkipEdgeMutation;
+    let c = constraints();
+
+    m.apply(&mut g, &c, &mut r).unwrap();
+    assert_eq!(g.skip_edges[0].from_innovation, INPUT_INNOVATION);
+    assert_eq!(g.skip_edges[0].to_innovation, 1);
+}
+
+// ==================== RemoveSkipEdgeMutation ====================
+
+#[test]
+fn test_remove_skip_edge_happy_path() {
+    let mut g = genome_with_hidden();
+    let mut r = rng();
+    let c = constraints();
+
+    // 先添加一条
+    AddSkipEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
+    assert_eq!(g.skip_edges.len(), 1);
+
+    // 移除
+    RemoveSkipEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
+    assert_eq!(g.skip_edges.len(), 0);
+    assert!(g.resolve_dimensions().is_ok());
+}
+
+#[test]
+fn test_remove_skip_edge_no_edges_not_applicable() {
+    let g = genome_with_hidden(); // 无 skip edges
+    let c = constraints();
+    assert!(!RemoveSkipEdgeMutation.is_applicable(&g, &c));
+}
+
+// ==================== MutateAggregateStrategyMutation ====================
+
+#[test]
+fn test_mutate_aggregate_strategy_happy_path() {
+    let mut g = genome_with_hidden();
+    let mut r = rng();
+    let c = constraints();
+
+    // 添加 skip edge
+    AddSkipEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
+
+    // 变异策略（可能多次尝试以确保成功）
+    for _ in 0..10 {
+        let result = MutateAggregateStrategyMutation.apply(&mut g, &c, &mut r);
+        if result.is_ok() {
+            break;
+        }
+    }
+    // 策略应该被改变了（极高概率，因为有3个替代选项）
+    assert!(g.resolve_dimensions().is_ok());
+}
+
+#[test]
+fn test_mutate_aggregate_strategy_same_target_unified() {
+    // 同一目标层的所有 skip edge 应统一切换策略
+    let mut g = NetworkGenome::minimal(4, 1);
+    let inn_h = g.next_innovation_number(); // 2
+    g.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: inn_h,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    let inn_act = g.next_innovation_number(); // 3
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: inn_act,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+
+    // 两条 skip edge 都指向输出头(1)
+    let se1 = g.next_innovation_number();
+    g.skip_edges.push(SkipEdge {
+        innovation_number: se1,
+        from_innovation: INPUT_INNOVATION,
+        to_innovation: 1,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+    let se2 = g.next_innovation_number();
+    g.skip_edges.push(SkipEdge {
+        innovation_number: se2,
+        from_innovation: inn_h,
+        to_innovation: 1,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    let mut r = rng();
+    let c = constraints();
+
+    // 变异策略（多次尝试，部分策略可能因维度不兼容被拒绝）
+    for _ in 0..10 {
+        let _ = MutateAggregateStrategyMutation.apply(&mut g, &c, &mut r);
+    }
+
+    // 核心断言：同目标层的所有 skip edge 必须使用相同策略
+    let to_1_edges: Vec<_> = g
+        .skip_edges
+        .iter()
+        .filter(|e| e.enabled && e.to_innovation == 1)
+        .collect();
+    if to_1_edges.len() >= 2 {
+        let first_strategy = &to_1_edges[0].strategy;
+        for edge in &to_1_edges[1..] {
+            assert_eq!(
+                &edge.strategy, first_strategy,
+                "同目标层的 skip edge 必须使用相同策略"
+            );
+        }
+    }
+    assert!(g.resolve_dimensions().is_ok());
+}
+
+#[test]
+fn test_skip_edge_is_not_cycle() {
+    // skip edge 是前向连接，不是环路（DAG 拓扑排序证明）
+    let mut g = genome_with_hidden();
+    let mut r = rng();
+    let m = AddSkipEdgeMutation;
+    let c = constraints();
+
+    // 添加多条 skip edge
+    for _ in 0..20 {
+        let _ = m.apply(&mut g, &c, &mut r);
+    }
+
+    // 所有 skip edge 的 from 必须在 to 之前（或为 INPUT）
+    // 这意味着没有环路
+    let enabled_order: Vec<u64> = g
+        .layers
+        .iter()
+        .filter(|l| l.enabled)
+        .map(|l| l.innovation_number)
+        .collect();
+
+    for edge in &g.skip_edges {
+        if !edge.enabled || edge.from_innovation == INPUT_INNOVATION {
+            continue;
+        }
+        let from_pos = enabled_order
+            .iter()
+            .position(|&inn| inn == edge.from_innovation);
+        let to_pos = enabled_order
+            .iter()
+            .position(|&inn| inn == edge.to_innovation);
+        assert!(
+            from_pos < to_pos,
+            "发现后向 skip edge: from={} → to={}",
+            edge.from_innovation,
+            edge.to_innovation
+        );
+    }
+
+    // 基因组仍然合法
+    assert!(g.resolve_dimensions().is_ok());
+}
+
+#[test]
+fn test_skip_edge_dimension_check() {
+    // 手动构造维度不兼容的 skip edge（Add 要求同维度）→ resolve_dimensions 报错
+    let mut g = NetworkGenome::minimal(2, 1);
+    let inn_h = g.next_innovation_number(); // 2
+    g.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: inn_h,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    // INPUT dim=2, main path at 输出头 dim=4 → Add 不兼容
+    let se_inn = g.next_innovation_number();
+    g.skip_edges.push(SkipEdge {
+        innovation_number: se_inn,
+        from_innovation: INPUT_INNOVATION,
+        to_innovation: 1, // 输出头
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    assert!(g.resolve_dimensions().is_err());
 }
 
 // ==================== 组合鲁棒性 ====================

@@ -15,7 +15,9 @@ use rand::Rng;
 use crate::nn::{Graph, GraphError, Linear, Var, VarActivationOps};
 use crate::tensor::Tensor;
 
-use super::gene::{ActivationType, LayerConfig, NetworkGenome};
+use super::gene::{
+    ActivationType, AggregateStrategy, LayerConfig, NetworkGenome, SkipEdge, INPUT_INNOVATION,
+};
 
 // ==================== BuildResult ====================
 
@@ -76,13 +78,68 @@ fn apply_activation(var: &Var, act_type: &ActivationType) -> Var {
     }
 }
 
+/// 将 main path 输出与 incoming skip edges 聚合
+///
+/// 约束：同一目标层的所有 skip edges 必须使用相同的 AggregateStrategy。
+/// 聚合语义：将 main + 所有 skip 源按策略合并，作为目标层的输入。
+fn apply_aggregation(
+    main: &Var,
+    incoming: &[&SkipEdge],
+    var_map: &HashMap<u64, Var>,
+) -> Result<Var, GraphError> {
+    // 收集所有 skip 源 Var
+    let skip_vars: Vec<&Var> = incoming
+        .iter()
+        .map(|e| {
+            var_map.get(&e.from_innovation).unwrap_or_else(|| {
+                panic!(
+                    "skip edge 源 innovation={} 未在 var_map 中找到",
+                    e.from_innovation
+                )
+            })
+        })
+        .collect();
+
+    let strategy = &incoming[0].strategy;
+
+    match strategy {
+        AggregateStrategy::Add => {
+            let mut result = main.clone();
+            for sv in &skip_vars {
+                result = result.try_add(sv)?;
+            }
+            Ok(result)
+        }
+        AggregateStrategy::Concat { dim } => {
+            let mut all_vars: Vec<&Var> = vec![main];
+            all_vars.extend(skip_vars);
+            Var::concat(&all_vars, *dim as usize)
+        }
+        AggregateStrategy::Mean => {
+            let mut result = main.clone();
+            for sv in &skip_vars {
+                result = result.try_add(sv)?;
+            }
+            let n = (1 + skip_vars.len()) as f32;
+            Ok(result / n)
+        }
+        AggregateStrategy::Max => {
+            let mut result = main.clone();
+            for sv in &skip_vars {
+                result = result.maximum(sv)?;
+            }
+            Ok(result)
+        }
+    }
+}
+
 // ==================== NetworkGenome 构建与权重管理 ====================
 
 impl NetworkGenome {
     /// 从基因组构建计算图
     ///
     /// 内部调用 resolve_dimensions() 推导维度链，逐层创建 Layer 并收集参数。
-    /// 遇到 skip_edge 的目标层时，自动在其输入处生成聚合操作（Phase 7B）。
+    /// 遇到 skip_edge 的目标层时，自动在其输入处生成聚合操作。
     ///
     /// rng 用于派生 Graph seed，确保参数初始化受 Evolution seed 控制。
     pub fn build(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
@@ -97,12 +154,28 @@ impl NetworkGenome {
         let mut current = input.clone();
         let mut layer_params: HashMap<u64, Vec<Var>> = HashMap::new();
 
+        // innovation_number → Var 映射，供 skip edge 查找源层输出
+        let mut var_map: HashMap<u64, Var> = HashMap::new();
+        var_map.insert(INPUT_INNOVATION, input.clone());
+
         for dim in &resolved {
             let layer = self
                 .layers
                 .iter()
                 .find(|l| l.innovation_number == dim.innovation_number && l.enabled)
                 .expect("resolve_dimensions 返回的创新号必须对应一个启用的层");
+
+            // 聚合：检查是否有 incoming skip edges 指向当前层
+            let incoming: Vec<_> = self
+                .skip_edges
+                .iter()
+                .filter(|e| e.enabled && e.to_innovation == layer.innovation_number)
+                .collect();
+
+            if !incoming.is_empty() {
+                current =
+                    apply_aggregation(&current, &incoming, &var_map)?;
+            }
 
             match &layer.layer_config {
                 LayerConfig::Linear { out_features } => {
@@ -130,6 +203,9 @@ impl NetworkGenome {
                     )));
                 }
             }
+
+            // 记录当前层的输出，供后续 skip edge 作为源
+            var_map.insert(layer.innovation_number, current.clone());
         }
 
         Ok(BuildResult {
