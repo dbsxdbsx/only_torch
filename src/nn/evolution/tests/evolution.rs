@@ -501,8 +501,40 @@ fn test_evolution_result_fields() {
     assert!(result.fitness.primary.is_finite());
     assert!(!result.architecture_summary.is_empty());
     assert!(result.architecture_summary.starts_with("Input("));
-    // graph 存在且可用（不检查具体内容，只验证不 panic）
-    let _ = result.graph.parameter_count();
+    assert!(result.architecture() == result.architecture_summary);
+}
+
+// ==================== predict() ====================
+
+#[test]
+fn test_predict_single_sample() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(1.0)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    // 1D 输入 [input_dim]
+    let pred = result.predict(&Tensor::new(&[1.0, 0.0], &[2])).unwrap();
+    assert_eq!(pred.shape(), &[1, 1]); // [1, output_dim]
+    assert!(pred.to_vec()[0].is_finite());
+}
+
+#[test]
+fn test_predict_batch() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(1.0)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    // 2D 输入 [batch, input_dim]
+    let batch_input = Tensor::new(&[0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0], &[4, 2]);
+    let pred = result.predict(&batch_input).unwrap();
+    assert_eq!(pred.shape()[0], 4);
+    assert_eq!(pred.shape()[1], 1); // output_dim
 }
 
 // ==================== Builder methods ====================

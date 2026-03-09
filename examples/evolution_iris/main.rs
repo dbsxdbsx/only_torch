@@ -46,10 +46,10 @@ fn main() {
     println!("状态: {:?}", result.status);
     println!("代数: {}", result.generations);
     println!("准确率: {:.1}%", result.fitness.primary * 100.0);
-    println!("最终架构: {}", result.architecture_summary);
+    println!("最终架构: {}", result.architecture());
 
-    // 可视化演化后的计算图（复用已有的 Graphviz 管线）
-    let vis = result.graph.visualize_snapshot("examples/evolution_iris/evolution_iris")
+    // 可视化演化后的计算图
+    let vis = result.visualize("examples/evolution_iris/evolution_iris")
         .expect("可视化失败");
     println!("\n计算图已保存: {}", vis.dot_path.display());
     if let Some(img) = &vis.image_path {

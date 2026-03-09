@@ -54,12 +54,16 @@ fn main() {
     println!("状态: {:?}", result.status);
     println!("代数: {}", result.generations);
     println!("准确率: {:.0}%", result.fitness.primary * 100.0);
-    println!("最终架构: {}", result.architecture_summary);
+    println!("最终架构: {}", result.architecture());
 
-    // 可视化演化后的计算图（复用已有的 Graphviz 管线）
-    let vis = result.graph.visualize_snapshot("examples/evolution_xor/evolution_xor")
+    // 推理验证
+    let pred = result.predict(&Tensor::new(&[1.0, 0.0], &[2])).expect("推理失败");
+    println!("\nXOR(1,0) 预测: {:?}", pred.to_vec());
+
+    // 可视化演化后的计算图
+    let vis = result.visualize("examples/evolution_xor/evolution_xor")
         .expect("可视化失败");
-    println!("\n计算图已保存: {}", vis.dot_path.display());
+    println!("计算图已保存: {}", vis.dot_path.display());
     if let Some(img) = &vis.image_path {
         println!("可视化图像: {}", img.display());
     }

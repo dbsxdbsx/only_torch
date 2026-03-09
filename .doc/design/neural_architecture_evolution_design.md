@@ -25,8 +25,14 @@ let result = Evolution::supervised(train, test, TaskMetric::Accuracy)
     .run()
     .expect("演化出错");
 
-println!("架构: {}", result.architecture_summary);
+println!("架构: {}", result.architecture());
 println!("准确率: {:.1}%", result.fitness.primary * 100.0);
+
+// 推理：一行
+let predictions = result.predict(&new_data)?;
+
+// 可视化：一行
+result.visualize("output/my_model")?;
 ```
 
 ### 1.2 可调参数
@@ -395,14 +401,25 @@ pub trait EvolutionCallback {
 
 ### 8.3 计算图可视化
 
-`EvolutionResult.graph` 可直接使用已有的 Graphviz 可视化管线：
+`EvolutionResult` 提供 `visualize()` 方法，内部委托已有的 Graphviz 管线：
 
 ```rust
-let vis = result.graph.visualize_snapshot("output/evolution")?;
+let vis = result.visualize("output/evolution")?;
 // 生成 .dot + .png（含 Loss/Target 节点、模型聚类、激活菱形样式）
 ```
 
 演化主循环在达标和非达标路径均自动调用 `snapshot_once_from()`，用户无需手动触发。
+
+### 8.4 推理
+
+`EvolutionResult` 提供 `predict()` 方法，封装了 Graph / Var 等内部细节：
+
+```rust
+// 单样本 [input_dim] 或批量 [batch, input_dim]
+let predictions = result.predict(&input)?;  // 返回 [batch, output_dim]
+```
+
+用户无需接触 `Graph`、`Var`、`BuildResult` 等计算图层类型。
 
 ---
 
@@ -430,9 +447,8 @@ src/nn/evolution/
 ---
 
 ## 10. 关键设计决策
-
 | 决策 | 理由 |
-|---|---|
+||---|---|
 | Genome-Centric（每代重建图） | 基因组自包含，clone 即回滚，避免 Graph 内部状态纠缠 |
 | Mutation trait + 注册表 | 可插拔设计，添加新变异不修改 Evolution（EXAMM/LayerNAS 标准做法） |
 | `>=` 非严格接受 | 解决 stepping stone 问题（XOR 等任务需多步结构变化才能突破） |
@@ -446,6 +462,7 @@ src/nn/evolution/
 | `run()` 演化未达标不是 Err | 搜索未达标用 EvolutionStatus 区分，Err 仅用于数据验证失败和系统错误 |
 | Log ladder 学习率变异 | 单 genome + rollback 下，离散台阶避免冗余值、便于回访、日志可读 |
 | Optimizer 切换 + lr band snap | Adam/SGD 有效 lr 范围不同，裸切换几乎必被回滚 |
+| Graph 不暴露给用户 | 抽象一致性：演化是 AutoML 层 API，Graph 是计算图层；封装后内部可自由重构 |
 
 ---
 

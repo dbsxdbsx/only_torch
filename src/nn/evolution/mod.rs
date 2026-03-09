@@ -29,7 +29,7 @@ mod tests;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use crate::nn::{Graph, GraphError};
+use crate::nn::{GraphError, VisualizationOutput};
 use crate::tensor::Tensor;
 
 use self::builder::BuildResult;
@@ -61,13 +61,13 @@ pub enum EvolutionStatus {
 
 // ==================== EvolutionResult ====================
 
-/// 演化结果（搜索结果报告）
+/// 演化结果（搜索结果报告 + 推理句柄）
 ///
-/// 不直接暴露 Genome 内部表示。
-/// `graph` 是当前逃生口，后续 `EvolvedModel` 会包装它。
+/// 封装了演化产出的网络，用户通过 `predict()` 进行推理，
+/// 通过 `visualize()` 生成计算图可视化——无需接触 `Graph` / `Var` 等内部类型。
 pub struct EvolutionResult {
-    /// 最终 best 的计算图
-    pub graph: Graph,
+    /// 内部构建结果（持有 input/output Var + Graph，支持推理和可视化）
+    build: BuildResult,
     /// 最终适应度分数
     pub fitness: FitnessScore,
     /// 演化经历的总代数
@@ -79,6 +79,67 @@ pub struct EvolutionResult {
     /// 内部基因组（不暴露给用户，用于继续演化）
     #[allow(dead_code)]
     pub(crate) genome: NetworkGenome,
+}
+
+impl EvolutionResult {
+    /// 推理：输入数据，返回模型预测
+    ///
+    /// 接受 `[batch, input_dim]` 或 `[input_dim]`（自动添加 batch 维度）。
+    /// 返回 `[batch, output_dim]`。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let result = Evolution::supervised(train, test, TaskMetric::Accuracy)
+    ///     .with_target_metric(0.95)
+    ///     .run()?;
+    /// let predictions = result.predict(&new_data)?;
+    /// ```
+    pub fn predict(&self, input: &Tensor) -> Result<Tensor, EvolutionError> {
+        self.build.graph.eval();
+
+        // 1D [input_dim] → 2D [1, input_dim]
+        let input_2d = if input.dimension() == 1 {
+            input.reshape(&[1, input.size()])
+        } else {
+            input.clone()
+        };
+
+        self.build.input.set_value(&input_2d)?;
+        self.build.graph.forward(&self.build.output)?;
+
+        self.build
+            .output
+            .value()?
+            .ok_or_else(|| {
+                EvolutionError::Graph(GraphError::ComputationError(
+                    "推理时输出节点无值".into(),
+                ))
+            })
+    }
+
+    /// 可视化演化后的计算图（生成 .dot + .png）
+    ///
+    /// `base_path` 不含文件后缀，如 `"output/my_model"`。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let vis = result.visualize("output/evolution_result")?;
+    /// println!("DOT: {}", vis.dot_path.display());
+    /// ```
+    pub fn visualize<P: AsRef<std::path::Path>>(
+        &self,
+        base_path: P,
+    ) -> Result<VisualizationOutput, EvolutionError> {
+        self.build
+            .graph
+            .visualize_snapshot(base_path)
+            .map_err(EvolutionError::Graph)
+    }
+
+    /// 获取人类可读的架构描述
+    pub fn architecture(&self) -> &str {
+        &self.architecture_summary
+    }
 }
 
 // ==================== is_at_least_as_good ====================
@@ -413,7 +474,7 @@ impl Evolution {
                 // 优先包含 Loss + TargetInput 以呈现完整管线
                 snapshot_with_loss(&*task, &genome, &build);
                 return Ok(EvolutionResult {
-                    graph: build.graph,
+                    build,
                     fitness: score,
                     generations: generation,
                     architecture_summary: format!("{genome}"),
@@ -530,7 +591,7 @@ fn build_final_result(
     });
 
     Ok(EvolutionResult {
-        graph: build.graph,
+        build,
         fitness,
         generations,
         architecture_summary: format!("{genome}"),
