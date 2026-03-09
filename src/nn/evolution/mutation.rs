@@ -10,7 +10,7 @@
 
 use super::gene::{
     compatible_losses, ActivationType, AggregateStrategy, LayerConfig, LayerGene, LossType,
-    NetworkGenome, SkipEdge, TaskMetric, INPUT_INNOVATION,
+    NetworkGenome, OptimizerType, SkipEdge, TaskMetric, INPUT_INNOVATION,
 };
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
@@ -167,7 +167,7 @@ impl MutationRegistry {
         ))
     }
 
-    /// 默认注册表（10 种变异：7 种 Phase 7A + 3 种 Phase 8 SkipEdge）
+    /// 默认注册表（12 种变异：7 种 Phase 7A + 3 种 Phase 8 SkipEdge + 2 种 Phase 10 超参数）
     pub fn default_registry(metric: &TaskMetric) -> Self {
         let mut reg = Self::new();
         reg.register(0.15, InsertLayerMutation::default());
@@ -186,6 +186,9 @@ impl MutationRegistry {
         reg.register(0.08, AddSkipEdgeMutation);
         reg.register(0.05, RemoveSkipEdgeMutation);
         reg.register(0.03, MutateAggregateStrategyMutation);
+        // Phase 10: 训练超参数变异
+        reg.register(0.05, MutateLearningRateMutation);
+        reg.register(0.02, MutateOptimizerMutation);
         reg
     }
 
@@ -477,13 +480,28 @@ impl Mutation for RemoveLayerMutation {
             ));
         }
         let &idx = candidates.choose(rng).unwrap();
-        let removed_inn = genome.layers[idx].innovation_number;
-        genome.layers.remove(idx);
+        let removed_gene = genome.layers.remove(idx);
+        let removed_inn = removed_gene.innovation_number;
 
-        // 清理引用已删除层的 skip edges（避免悬空引用）
+        // 清理引用已删除层的 skip edges（保留副本用于回滚）
+        let removed_edges: Vec<_> = genome
+            .skip_edges
+            .iter()
+            .filter(|e| e.from_innovation == removed_inn || e.to_innovation == removed_inn)
+            .cloned()
+            .collect();
         genome.skip_edges.retain(|e| {
             e.from_innovation != removed_inn && e.to_innovation != removed_inn
         });
+
+        // 验证删除后维度兼容性（剩余 skip edge 可能因主干维度变化而不兼容）
+        if genome.resolve_dimensions().is_err() {
+            genome.layers.insert(idx, removed_gene);
+            genome.skip_edges.extend(removed_edges);
+            return Err(MutationError::ConstraintViolation(
+                "删除层后 skip edge 维度不兼容".into(),
+            ));
+        }
 
         Ok(())
     }
@@ -829,6 +847,130 @@ impl Mutation for MutateLossFunctionMutation {
         })?;
 
         genome.training_config.loss_override = Some((*new_loss).clone());
+        Ok(())
+    }
+}
+
+// ==================== MutateLearningRateMutation (Phase 10A) ====================
+
+/// 学习率离散台阶（覆盖 5 个数量级，共 13 个台阶）
+///
+/// 离散 ladder 而非连续 log-uniform 的理由：
+/// 1. 单 genome 局部变异 + 接受/回滚下，离散台阶避免产生大量"几乎一样"的值
+/// 2. 回滚后再次变异能稳定地访问到上次的好值
+/// 3. verbose 日志更可读（lr: 1e-2 → 5e-3）
+/// 4. 测试断言更确定性
+pub(crate) const LR_LADDER: &[f32] = &[
+    1e-5, 2e-5, 5e-5,
+    1e-4, 2e-4, 5e-4,
+    1e-3, 2e-3, 5e-3,
+    1e-2, 2e-2, 5e-2,
+    1e-1,
+];
+
+/// Adam 有效学习率区间
+pub(crate) const ADAM_LR_BAND: (f32, f32) = (1e-4, 1e-2);
+
+/// SGD 有效学习率区间
+pub(crate) const SGD_LR_BAND: (f32, f32) = (5e-3, 1e-1);
+
+/// 将任意 lr 值 snap 到 ladder 中最近的台阶索引（log 空间距离）
+pub(crate) fn snap_to_nearest_index(value: f32, ladder: &[f32]) -> usize {
+    let log_value = value.ln();
+    ladder
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            let da = (a.ln() - log_value).abs();
+            let db = (b.ln() - log_value).abs();
+            da.partial_cmp(&db).unwrap()
+        })
+        .map(|(i, _)| i)
+        .unwrap()
+}
+
+/// 若 lr 在 band 内则保持不变，否则 snap 到 band 内最近的 ladder 台阶值
+pub(crate) fn snap_to_nearest_in_band(lr: f32, band: (f32, f32), ladder: &[f32]) -> f32 {
+    if lr >= band.0 && lr <= band.1 {
+        return lr;
+    }
+    let log_lr = lr.ln();
+    ladder
+        .iter()
+        .filter(|&&v| v >= band.0 && v <= band.1)
+        .min_by(|a, b| {
+            let da = (a.ln() - log_lr).abs();
+            let db = (b.ln() - log_lr).abs();
+            da.partial_cmp(&db).unwrap()
+        })
+        .copied()
+        .unwrap_or(if lr < band.0 { band.0 } else { band.1 })
+}
+
+pub struct MutateLearningRateMutation;
+
+impl Mutation for MutateLearningRateMutation {
+    fn name(&self) -> &str {
+        "MutateLearningRate"
+    }
+
+    fn is_applicable(&self, _genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        true
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let current_lr = genome.training_config.learning_rate;
+        let current_idx = snap_to_nearest_index(current_lr, LR_LADDER);
+
+        // 80% 移动 1 步，20% 移动 2 步
+        let steps: i32 = if rng.gen_bool(0.8) { 1 } else { 2 };
+        // 上下等概率
+        let direction: i32 = if rng.gen_bool(0.5) { 1 } else { -1 };
+
+        let new_idx = (current_idx as i32 + steps * direction)
+            .clamp(0, (LR_LADDER.len() - 1) as i32) as usize;
+
+        genome.training_config.learning_rate = LR_LADDER[new_idx];
+        Ok(())
+    }
+}
+
+// ==================== MutateOptimizerMutation (Phase 10B) ====================
+
+pub struct MutateOptimizerMutation;
+
+impl Mutation for MutateOptimizerMutation {
+    fn name(&self) -> &str {
+        "MutateOptimizer"
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        // 仅输出头时不切换（结构太简单，优化器选择无意义）
+        genome.layer_count() > 1
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        _rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let (new_optimizer, target_band) = match genome.training_config.optimizer_type {
+            OptimizerType::Adam => (OptimizerType::SGD, SGD_LR_BAND),
+            OptimizerType::SGD => (OptimizerType::Adam, ADAM_LR_BAND),
+        };
+
+        genome.training_config.optimizer_type = new_optimizer;
+        genome.training_config.learning_rate = snap_to_nearest_in_band(
+            genome.training_config.learning_rate,
+            target_band,
+            LR_LADDER,
+        );
         Ok(())
     }
 }

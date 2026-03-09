@@ -428,9 +428,9 @@ fn test_mutate_loss_not_applicable_r2() {
 // ==================== MutationRegistry ====================
 
 #[test]
-fn test_default_registry_has_10_mutations() {
+fn test_default_registry_has_12_mutations() {
     let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy);
-    assert_eq!(reg.len(), 10);
+    assert_eq!(reg.len(), 12);
 }
 
 #[test]
@@ -515,6 +515,9 @@ fn test_minimal_only_insert_and_add_skip_applicable() {
     assert!(AddSkipEdgeMutation.is_applicable(&g, &c));
     assert!(!RemoveSkipEdgeMutation.is_applicable(&g, &c));
     assert!(!MutateAggregateStrategyMutation.is_applicable(&g, &c));
+    // Phase 10: MutateLearningRate 始终可用，MutateOptimizer 仅输出头时不可用
+    assert!(MutateLearningRateMutation.is_applicable(&g, &c));
+    assert!(!MutateOptimizerMutation.is_applicable(&g, &c));
 }
 
 // ==================== AddSkipEdgeMutation ====================
@@ -833,4 +836,228 @@ fn test_seed_reproducibility() {
 
     assert_eq!(run(123), run(123));
     assert_eq!(run(999), run(999));
+}
+
+// ==================== MutateLearningRateMutation (Phase 10A) ====================
+
+#[test]
+fn test_mutate_lr_result_is_valid_ladder_value() {
+    let mut g = genome_with_hidden();
+    let mut r = rng();
+    let m = MutateLearningRateMutation;
+    let c = constraints();
+
+    for _ in 0..50 {
+        m.apply(&mut g, &c, &mut r).unwrap();
+        let lr = g.training_config.learning_rate;
+        assert!(
+            LR_LADDER.iter().any(|&v| (v - lr).abs() < 1e-10),
+            "变异后 lr={lr} 不在 LR_LADDER 中"
+        );
+    }
+}
+
+#[test]
+fn test_mutate_lr_boundary_clamp_bottom() {
+    // lr=1e-5（最小值）只能上移
+    let m = MutateLearningRateMutation;
+    let c = constraints();
+
+    for seed in 0..200u64 {
+        let mut g = NetworkGenome::minimal(2, 1);
+        g.training_config.learning_rate = 1e-5;
+        let mut r = StdRng::seed_from_u64(seed);
+        m.apply(&mut g, &c, &mut r).unwrap();
+        assert!(
+            g.training_config.learning_rate >= 1e-5,
+            "lr 不应低于下界: {}",
+            g.training_config.learning_rate
+        );
+    }
+}
+
+#[test]
+fn test_mutate_lr_boundary_clamp_top() {
+    // lr=1e-1（最大值）只能下移
+    let m = MutateLearningRateMutation;
+    let c = constraints();
+
+    for seed in 0..200u64 {
+        let mut g = NetworkGenome::minimal(2, 1);
+        g.training_config.learning_rate = 1e-1;
+        let mut r = StdRng::seed_from_u64(seed);
+        m.apply(&mut g, &c, &mut r).unwrap();
+        assert!(
+            g.training_config.learning_rate <= 1e-1,
+            "lr 不应超过上界: {}",
+            g.training_config.learning_rate
+        );
+    }
+}
+
+#[test]
+fn test_mutate_lr_step_distribution() {
+    // 统计 1000 次变异：约80% 移动 1 步、20% 移动 2 步
+    let m = MutateLearningRateMutation;
+    let c = constraints();
+    let start_idx = 6; // 1e-3，中间位置避免边界影响
+
+    let mut one_step = 0;
+    let mut two_step = 0;
+
+    for seed in 0..1000u64 {
+        let mut g = NetworkGenome::minimal(2, 1);
+        g.training_config.learning_rate = LR_LADDER[start_idx];
+        let mut r = StdRng::seed_from_u64(seed);
+        m.apply(&mut g, &c, &mut r).unwrap();
+
+        let new_idx = snap_to_nearest_index(g.training_config.learning_rate, LR_LADDER);
+        let diff = (new_idx as i32 - start_idx as i32).unsigned_abs();
+        match diff {
+            1 => one_step += 1,
+            2 => two_step += 1,
+            _ => panic!("意外的步长: {diff}"),
+        }
+    }
+
+    let one_pct = one_step as f64 / 1000.0;
+    let two_pct = two_step as f64 / 1000.0;
+    assert!(
+        (0.75..=0.85).contains(&one_pct),
+        "1-step 比例 {one_pct:.3} 不在 [0.75, 0.85]"
+    );
+    assert!(
+        (0.15..=0.25).contains(&two_pct),
+        "2-step 比例 {two_pct:.3} 不在 [0.15, 0.25]"
+    );
+}
+
+#[test]
+fn test_mutate_lr_snap_non_ladder_value() {
+    // 0.007 不在 ladder 上，应先 snap 到 5e-3（index=8）再移动
+    let m = MutateLearningRateMutation;
+    let c = constraints();
+
+    // 确认 snap 逻辑
+    let idx = snap_to_nearest_index(0.007, LR_LADDER);
+    assert_eq!(idx, 8, "0.007 应 snap 到 5e-3 (index=8)");
+
+    // 变异后结果必须在 ladder 上
+    let mut g = NetworkGenome::minimal(2, 1);
+    g.training_config.learning_rate = 0.007;
+    let mut r = rng();
+    m.apply(&mut g, &c, &mut r).unwrap();
+    assert!(
+        LR_LADDER.iter().any(|&v| (v - g.training_config.learning_rate).abs() < 1e-10),
+        "变异后 lr={} 不在 LR_LADDER 中",
+        g.training_config.learning_rate
+    );
+}
+
+#[test]
+fn test_mutate_lr_is_not_structural() {
+    let m = MutateLearningRateMutation;
+    assert!(!m.is_structural());
+}
+
+// ==================== MutateOptimizerMutation (Phase 10B) ====================
+
+#[test]
+fn test_mutate_optimizer_adam_to_sgd() {
+    let mut g = genome_with_hidden();
+    let mut r = rng();
+    let m = MutateOptimizerMutation;
+    let c = constraints();
+
+    assert_eq!(g.training_config.optimizer_type, OptimizerType::Adam);
+    m.apply(&mut g, &c, &mut r).unwrap();
+    assert_eq!(g.training_config.optimizer_type, OptimizerType::SGD);
+}
+
+#[test]
+fn test_mutate_optimizer_sgd_to_adam() {
+    let mut g = genome_with_hidden();
+    g.training_config.optimizer_type = OptimizerType::SGD;
+    g.training_config.learning_rate = 5e-2;
+    let mut r = rng();
+    let m = MutateOptimizerMutation;
+    let c = constraints();
+
+    m.apply(&mut g, &c, &mut r).unwrap();
+    assert_eq!(g.training_config.optimizer_type, OptimizerType::Adam);
+}
+
+#[test]
+fn test_mutate_optimizer_adam_to_sgd_lr_snap() {
+    // Adam→SGD: lr=1e-4 在 SGD band [5e-3, 1e-1] 外，应 snap 到 5e-3
+    let mut g = genome_with_hidden();
+    g.training_config.learning_rate = 1e-4;
+    let mut r = rng();
+    let m = MutateOptimizerMutation;
+    let c = constraints();
+
+    m.apply(&mut g, &c, &mut r).unwrap();
+    assert_eq!(g.training_config.optimizer_type, OptimizerType::SGD);
+    assert!(
+        (g.training_config.learning_rate - 5e-3).abs() < 1e-10,
+        "lr 应 snap 到 5e-3，实际为 {}",
+        g.training_config.learning_rate
+    );
+}
+
+#[test]
+fn test_mutate_optimizer_sgd_to_adam_lr_snap() {
+    // SGD→Adam: lr=1e-1 在 Adam band [1e-4, 1e-2] 外，应 snap 到 1e-2
+    let mut g = genome_with_hidden();
+    g.training_config.optimizer_type = OptimizerType::SGD;
+    g.training_config.learning_rate = 1e-1;
+    let mut r = rng();
+    let m = MutateOptimizerMutation;
+    let c = constraints();
+
+    m.apply(&mut g, &c, &mut r).unwrap();
+    assert_eq!(g.training_config.optimizer_type, OptimizerType::Adam);
+    assert!(
+        (g.training_config.learning_rate - 1e-2).abs() < 1e-10,
+        "lr 应 snap 到 1e-2，实际为 {}",
+        g.training_config.learning_rate
+    );
+}
+
+#[test]
+fn test_mutate_optimizer_lr_in_band_intersection_unchanged() {
+    // 5e-3 同时在 Adam band [1e-4, 1e-2] 和 SGD band [5e-3, 1e-1] 中
+    // 切换时 lr 保持不变
+    let mut g = genome_with_hidden();
+    g.training_config.learning_rate = 5e-3;
+    let mut r = rng();
+    let m = MutateOptimizerMutation;
+    let c = constraints();
+
+    m.apply(&mut g, &c, &mut r).unwrap();
+    assert!(
+        (g.training_config.learning_rate - 5e-3).abs() < 1e-10,
+        "band 交集内的 lr 应保持不变，实际为 {}",
+        g.training_config.learning_rate
+    );
+}
+
+#[test]
+fn test_mutate_optimizer_not_applicable_minimal() {
+    let g = NetworkGenome::minimal(2, 1);
+    let c = constraints();
+    assert!(!MutateOptimizerMutation.is_applicable(&g, &c));
+}
+
+#[test]
+fn test_mutate_optimizer_applicable_with_hidden() {
+    let g = genome_with_hidden();
+    let c = constraints();
+    assert!(MutateOptimizerMutation.is_applicable(&g, &c));
+}
+
+#[test]
+fn test_mutate_optimizer_is_not_structural() {
+    let m = MutateOptimizerMutation;
+    assert!(!m.is_structural());
 }
