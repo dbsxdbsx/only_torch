@@ -606,6 +606,8 @@ fn test_mutation_names_are_known_operations() {
         "AddSkipEdge",
         "RemoveSkipEdge",
         "MutateAggregateStrategy",
+        "MutateLearningRate",
+        "MutateOptimizer",
     ];
 
     let s = state.borrow();

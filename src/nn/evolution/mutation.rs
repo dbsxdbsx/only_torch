@@ -3,7 +3,11 @@
  * @Date         : 2026-03-06
  * @Description  : 神经架构演化的变异操作
  *
- * Mutation trait + MutationRegistry + 7 种 Phase 7A 变异操作。
+ * Mutation trait + MutationRegistry + 12 种变异操作：
+ * - 7 种结构/参数变异（Phase 7A）
+ * - 3 种 SkipEdge 变异（Phase 8）
+ * - 2 种训练超参数变异（Phase 10A/10B）
+ *
  * 每种变异通过 is_applicable() 自检合法性，apply() 执行变异。
  * MutationRegistry 按权重随机选择可用变异并执行。
  */

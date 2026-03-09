@@ -103,7 +103,7 @@ impl fmt::Display for LayerConfig {
 
 // ==================== 聚合策略 ====================
 
-/// 聚合策略（Phase 7B 引入，与 SkipEdge 绑定）
+/// 聚合策略（Phase 8 引入，与 SkipEdge 绑定）
 #[derive(Clone, Debug, PartialEq)]
 pub enum AggregateStrategy {
     Add,
@@ -123,7 +123,7 @@ pub struct LayerGene {
 
 // ==================== 跳跃边 ====================
 
-/// 跳跃边（携带聚合策略，Phase 7B 引入）
+/// 跳跃边（携带聚合策略，Phase 8 引入）
 ///
 /// 聚合操作不作为独立层存在于 layers 中，
 /// 而是在 build() 时根据 SkipEdge 信息自动在目标层输入处生成。

@@ -20,6 +20,7 @@ pub mod callback;
 pub mod convergence;
 pub mod gene;
 pub mod mutation;
+pub mod error;
 pub mod task;
 
 #[cfg(test)]
@@ -34,6 +35,7 @@ use crate::tensor::Tensor;
 use self::builder::BuildResult;
 use self::callback::{DefaultCallback, EvolutionCallback};
 use self::convergence::ConvergenceConfig;
+use self::error::EvolutionError;
 use self::gene::{NetworkGenome, TaskMetric};
 use self::mutation::{MutationError, MutationRegistry, SizeConstraints};
 use self::task::{EvolutionTask, FitnessScore, SupervisedTask};
@@ -100,6 +102,55 @@ fn is_at_least_as_good(current: &FitnessScore, best: &FitnessScore) -> bool {
     }
 }
 
+// ==================== TaskSpec（延迟实例化）====================
+
+/// 任务配置规范（构造器只存储原始配置，`run()` 时才实例化）
+///
+/// 每种学习范式对应一个变体，未来可扩展 RL / GAN / Transfer 等。
+enum TaskSpec {
+    Supervised {
+        train_data: (Vec<Tensor>, Vec<Tensor>),
+        test_data: (Vec<Tensor>, Vec<Tensor>),
+        metric: TaskMetric,
+    },
+}
+
+/// 实例化后的任务（`run()` 内部使用）
+struct MaterializedTask {
+    task: Box<dyn EvolutionTask>,
+    input_dim: usize,
+    output_dim: usize,
+    metric: TaskMetric,
+}
+
+/// 从 TaskSpec 实例化具体任务，提取维度信息并验证数据
+fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> {
+    match spec {
+        TaskSpec::Supervised {
+            train_data,
+            test_data,
+            metric,
+        } => {
+            // 维度提取前的安全检查（SupervisedTask::new 做完整验证）
+            if train_data.0.is_empty() {
+                return Err(EvolutionError::InvalidData("训练输入不能为空".into()));
+            }
+            if train_data.1.is_empty() {
+                return Err(EvolutionError::InvalidData("训练标签不能为空".into()));
+            }
+            let input_dim = train_data.0[0].size();
+            let output_dim = train_data.1[0].size();
+            let task = SupervisedTask::new(train_data, test_data, metric.clone())?;
+            Ok(MaterializedTask {
+                task: Box::new(task),
+                input_dim,
+                output_dim,
+                metric,
+            })
+        }
+    }
+}
+
 // ==================== Evolution ====================
 
 /// 演化主控结构体
@@ -107,13 +158,12 @@ fn is_at_least_as_good(current: &FitnessScore, best: &FitnessScore) -> bool {
 /// 通过 `supervised()` 便捷构造器或手动组装创建，
 /// `run()` 驱动完整的 genome-centric 演化主循环。
 pub struct Evolution {
-    task: Box<dyn EvolutionTask>,
-    input_dim: usize,
-    output_dim: usize,
+    task_spec: TaskSpec,
     target_metric: f32,
     eval_runs: usize,
     convergence_config: ConvergenceConfig,
-    mutation_registry: MutationRegistry,
+    /// 自定义变异注册表（None = 根据任务指标自动选择默认注册表）
+    mutation_registry: Option<MutationRegistry>,
     constraints: SizeConstraints,
     seed: Option<u64>,
     /// 自定义回调（None 时使用 DefaultCallback）
@@ -134,33 +184,23 @@ impl Evolution {
 
     /// 监督学习便捷构造器
     ///
-    /// 自动从数据形状推断 input_dim / output_dim，
-    /// 使用 `MutationRegistry::default_registry` 注册 Phase 7A 的 7 种变异。
-    ///
-    /// # Panics
-    /// 训练数据为空时 panic。
+    /// 数据验证延迟到 `run()` 执行时进行，构造器本身不会失败。
+    /// 使用 `MutationRegistry::default_registry` 注册 12 种默认变异。
     pub fn supervised(
         train_data: (Vec<Tensor>, Vec<Tensor>),
         test_data: (Vec<Tensor>, Vec<Tensor>),
         metric: TaskMetric,
     ) -> Self {
-        assert!(!train_data.0.is_empty(), "训练输入不能为空");
-        assert!(!train_data.1.is_empty(), "训练标签不能为空");
-
-        let input_dim = train_data.0[0].size();
-        let output_dim = train_data.1[0].size();
-
-        let registry = MutationRegistry::default_registry(&metric);
-        let task = SupervisedTask::new(train_data, test_data, metric);
-
         Self {
-            task: Box::new(task),
-            input_dim,
-            output_dim,
+            task_spec: TaskSpec::Supervised {
+                train_data,
+                test_data,
+                metric,
+            },
             target_metric: 1.0,
             eval_runs: 1,
             convergence_config: ConvergenceConfig::default(),
-            mutation_registry: registry,
+            mutation_registry: None,
             constraints: SizeConstraints::default(),
             seed: None,
             custom_callback: None,
@@ -202,7 +242,7 @@ impl Evolution {
     }
 
     pub fn with_mutation_registry(mut self, registry: MutationRegistry) -> Self {
-        self.mutation_registry = registry;
+        self.mutation_registry = Some(registry);
         self
     }
 
@@ -244,23 +284,45 @@ impl Evolution {
 
     /// 运行演化主循环
     ///
+    /// 首先实例化并验证任务数据，然后执行 genome-centric 演化。
     /// 无论是否达标都返回 `Ok(EvolutionResult)`，
-    /// `status` 字段标识停止原因。`Err` 仅用于系统错误。
-    pub fn run(mut self) -> Result<EvolutionResult, GraphError> {
-        // 传递 batch size 配置到 task
-        self.task.configure_batch_size(self.batch_size);
+    /// `status` 字段标识停止原因。
+    /// `Err` 用于数据验证失败或系统错误。
+    pub fn run(self) -> Result<EvolutionResult, EvolutionError> {
+        // 解构以支持部分移动
+        let Evolution {
+            task_spec,
+            target_metric,
+            eval_runs,
+            convergence_config,
+            mutation_registry,
+            constraints,
+            seed,
+            custom_callback,
+            max_generations,
+            verbose,
+            stagnation_patience,
+            batch_size,
+        } = self;
 
-        let using_default_callback = self.custom_callback.is_none();
-        let mut callback: Box<dyn EvolutionCallback> = self
-            .custom_callback
-            .unwrap_or_else(|| Box::new(DefaultCallback::new(self.max_generations, self.verbose)));
+        // 延迟实例化：验证数据 + 构建任务 + 提取维度
+        let prepared = materialize_task(task_spec)?;
+        let mut task = prepared.task;
+        task.configure_batch_size(batch_size);
 
-        let mut genome = NetworkGenome::minimal(self.input_dim, self.output_dim);
+        let mutation_registry = mutation_registry
+            .unwrap_or_else(|| MutationRegistry::default_registry(&prepared.metric));
+
+        let using_default_callback = custom_callback.is_none();
+        let mut callback: Box<dyn EvolutionCallback> = custom_callback
+            .unwrap_or_else(|| Box::new(DefaultCallback::new(max_generations, verbose)));
+
+        let mut genome = NetworkGenome::minimal(prepared.input_dim, prepared.output_dim);
         let mut best_genome: Option<NetworkGenome> = None;
         let mut best_score: Option<FitnessScore> = None;
         let mut stagnation: usize = 0;
 
-        let mut rng = match self.seed {
+        let mut rng = match seed {
             Some(seed) => StdRng::seed_from_u64(seed),
             None => StdRng::from_entropy(),
         };
@@ -279,7 +341,7 @@ impl Evolution {
                     generation,
                     status,
                     &mut rng,
-                    &*self.task,
+                    &*task,
                 );
             }
 
@@ -290,10 +352,10 @@ impl Evolution {
             genome.restore_weights(&build)?;
 
             // 3. 训练
-            let loss = self.task.train(
+            let loss = task.train(
                 &genome,
                 &build,
-                &self.convergence_config,
+                &convergence_config,
                 &mut rng,
             )?;
 
@@ -302,10 +364,10 @@ impl Evolution {
 
             // 5. 评估（N 次取 primary 最低值作为保守估计）
             let score = evaluate_conservative(
-                &*self.task,
+                &*task,
                 &genome,
                 &build,
-                self.eval_runs,
+                eval_runs,
                 &mut rng,
             )?;
 
@@ -346,10 +408,10 @@ impl Evolution {
             callback.on_generation(generation, &genome, loss, &score);
 
             // 8. 达标检查
-            if score.primary >= self.target_metric {
+            if score.primary >= target_metric {
                 // 自动快照计算图拓扑（Var 还活着时捕获，供后续 visualize_snapshot 渲染）
                 // 优先包含 Loss + TargetInput 以呈现完整管线
-                snapshot_with_loss(&*self.task, &genome, &build);
+                snapshot_with_loss(&*task, &genome, &build);
                 return Ok(EvolutionResult {
                     graph: build.graph,
                     fitness: score,
@@ -361,18 +423,18 @@ impl Evolution {
             }
 
             // 9. 变异（停滞时强制结构探索）
-            let force_structural = stagnation >= self.stagnation_patience;
+            let force_structural = stagnation >= stagnation_patience;
             let mutation_result = if force_structural {
                 stagnation = 0; // 重置，给新拓扑优化时间
-                self.mutation_registry.apply_random_structural(
+                mutation_registry.apply_random_structural(
                     &mut genome,
-                    &self.constraints,
+                    &constraints,
                     &mut rng,
                 )
             } else {
-                self.mutation_registry.apply_random(
+                mutation_registry.apply_random(
                     &mut genome,
-                    &self.constraints,
+                    &constraints,
                     &mut rng,
                 )
             };
@@ -387,17 +449,17 @@ impl Evolution {
                         generation + 1,
                         EvolutionStatus::NoApplicableMutation,
                         &mut rng,
-                        &*self.task,
+                        &*task,
                     );
                 }
                 Err(MutationError::InternalError(msg)) => {
-                    return Err(GraphError::ComputationError(format!(
-                        "变异内部错误: {msg}"
+                    return Err(EvolutionError::Graph(GraphError::ComputationError(
+                        format!("变异内部错误: {msg}"),
                     )));
                 }
                 Err(e) => {
-                    return Err(GraphError::ComputationError(format!(
-                        "变异失败: {e}"
+                    return Err(EvolutionError::Graph(GraphError::ComputationError(
+                        format!("变异失败: {e}"),
                     )));
                 }
             }
@@ -455,7 +517,7 @@ fn build_final_result(
     status: EvolutionStatus,
     rng: &mut StdRng,
     task: &dyn EvolutionTask,
-) -> Result<EvolutionResult, GraphError> {
+) -> Result<EvolutionResult, EvolutionError> {
     let build = genome.build(rng)?;
     genome.restore_weights(&build)?;
     // 自动快照计算图拓扑（供后续 visualize_snapshot 渲染）

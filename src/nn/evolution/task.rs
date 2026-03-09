@@ -21,6 +21,7 @@ use crate::tensor::Tensor;
 
 use super::builder::BuildResult;
 use super::convergence::{ConvergenceConfig, ConvergenceDetector};
+use super::error::EvolutionError;
 use super::gene::{LossType, NetworkGenome, OptimizerType, TaskMetric};
 
 // ==================== auto_batch_size ====================
@@ -129,43 +130,46 @@ pub struct SupervisedTask {
 impl SupervisedTask {
     /// 创建监督学习任务
     ///
-    /// # Panics
-    /// 输入/标签为空或数量不匹配时 panic。
+    /// 输入/标签为空或数量不匹配时返回 `Err(EvolutionError::InvalidData)`。
     pub fn new(
         train_data: (Vec<Tensor>, Vec<Tensor>),
         test_data: (Vec<Tensor>, Vec<Tensor>),
         metric: TaskMetric,
-    ) -> Self {
-        assert!(!train_data.0.is_empty(), "训练输入不能为空");
-        assert_eq!(
-            train_data.0.len(),
-            train_data.1.len(),
-            "训练输入({})和标签({})数量不匹配",
-            train_data.0.len(),
-            train_data.1.len()
-        );
-        assert!(!test_data.0.is_empty(), "测试输入不能为空");
-        assert_eq!(
-            test_data.0.len(),
-            test_data.1.len(),
-            "测试输入({})和标签({})数量不匹配",
-            test_data.0.len(),
-            test_data.1.len()
-        );
+    ) -> Result<Self, EvolutionError> {
+        if train_data.0.is_empty() {
+            return Err(EvolutionError::InvalidData("训练输入不能为空".into()));
+        }
+        if train_data.0.len() != train_data.1.len() {
+            return Err(EvolutionError::InvalidData(format!(
+                "训练输入({})和标签({})数量不匹配",
+                train_data.0.len(),
+                train_data.1.len()
+            )));
+        }
+        if test_data.0.is_empty() {
+            return Err(EvolutionError::InvalidData("测试输入不能为空".into()));
+        }
+        if test_data.0.len() != test_data.1.len() {
+            return Err(EvolutionError::InvalidData(format!(
+                "测试输入({})和标签({})数量不匹配",
+                test_data.0.len(),
+                test_data.1.len()
+            )));
+        }
 
         let train_x_refs: Vec<&Tensor> = train_data.0.iter().collect();
         let train_y_refs: Vec<&Tensor> = train_data.1.iter().collect();
         let test_x_refs: Vec<&Tensor> = test_data.0.iter().collect();
         let test_y_refs: Vec<&Tensor> = test_data.1.iter().collect();
 
-        Self {
+        Ok(Self {
             train_x: Tensor::stack(&train_x_refs, 0),
             train_y: Tensor::stack(&train_y_refs, 0),
             test_x: Tensor::stack(&test_x_refs, 0),
             test_y: Tensor::stack(&test_y_refs, 0),
             metric,
             batch_size: None,
-        }
+        })
     }
 
     /// 获取任务指标类型

@@ -27,7 +27,7 @@ fn xor_data() -> (Vec<Tensor>, Vec<Tensor>) {
 
 fn xor_task() -> SupervisedTask {
     let data = xor_data();
-    SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy)
+    SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap()
 }
 
 fn genome_with_hidden(input_dim: usize, output_dim: usize) -> NetworkGenome {
@@ -93,17 +93,23 @@ fn test_supervised_task_metric_accessor() {
 }
 
 #[test]
-#[should_panic(expected = "训练输入不能为空")]
-fn test_empty_train_data_panics() {
-    SupervisedTask::new((vec![], vec![]), xor_data(), TaskMetric::Accuracy);
+fn test_empty_train_data_returns_err() {
+    let result = SupervisedTask::new((vec![], vec![]), xor_data(), TaskMetric::Accuracy);
+    match result {
+        Err(e) => assert!(e.to_string().contains("训练输入不能为空"), "unexpected error: {e}"),
+        Ok(_) => panic!("应返回 Err"),
+    }
 }
 
 #[test]
-#[should_panic(expected = "训练输入(4)和标签(2)数量不匹配")]
-fn test_train_data_count_mismatch_panics() {
+fn test_train_data_count_mismatch_returns_err() {
     let (inputs, mut labels) = xor_data();
     labels.truncate(2);
-    SupervisedTask::new((inputs, labels), xor_data(), TaskMetric::Accuracy);
+    let result = SupervisedTask::new((inputs, labels), xor_data(), TaskMetric::Accuracy);
+    match result {
+        Err(e) => assert!(e.to_string().contains("数量不匹配"), "unexpected error: {e}"),
+        Ok(_) => panic!("应返回 Err"),
+    }
 }
 
 // ==================== 基本训练 ====================
@@ -262,7 +268,7 @@ fn test_tiebreak_absent_for_r2() {
         ],
     );
     let test = train.clone();
-    let task = SupervisedTask::new(train, test, TaskMetric::R2);
+    let task = SupervisedTask::new(train, test, TaskMetric::R2).unwrap();
 
     let genome = NetworkGenome::minimal(1, 1);
     let mut rng = StdRng::seed_from_u64(42);
@@ -289,7 +295,7 @@ fn test_tiebreak_present_for_multilabel_accuracy() {
         ],
     );
     let test = train.clone();
-    let task = SupervisedTask::new(train, test, TaskMetric::MultiLabelAccuracy);
+    let task = SupervisedTask::new(train, test, TaskMetric::MultiLabelAccuracy).unwrap();
 
     let genome = NetworkGenome::minimal(2, 2);
     let mut rng = StdRng::seed_from_u64(42);
@@ -668,7 +674,7 @@ fn medium_data(n: usize) -> (Vec<Tensor>, Vec<Tensor>) {
 fn test_mini_batch_training_medium_dataset() {
     // 200 样本 → auto_batch_size = 64，触发 mini-batch 路径
     let data = medium_data(200);
-    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap();
     let genome = genome_with_hidden(2, 1);
     let mut rng = StdRng::seed_from_u64(42);
     let build = build_and_restore(&genome, &mut rng);
@@ -683,7 +689,7 @@ fn test_mini_batch_training_medium_dataset() {
 #[test]
 fn test_mini_batch_parameters_change() {
     let data = medium_data(200);
-    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap();
     let genome = genome_with_hidden(2, 1);
     let mut rng = StdRng::seed_from_u64(42);
     let build = build_and_restore(&genome, &mut rng);
@@ -713,7 +719,7 @@ fn test_mini_batch_parameters_change() {
 #[test]
 fn test_explicit_batch_size_via_configure() {
     let data = xor_data();
-    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap();
     task.configure_batch_size(Some(2)); // 强制 batch_size=2（4 样本分成 2 个 batch）
 
     let genome = genome_with_hidden(2, 1);
@@ -730,7 +736,7 @@ fn test_explicit_batch_size_via_configure() {
 #[test]
 fn test_genome_batch_size_overrides_task_setting() {
     let data = xor_data();
-    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap();
     task.configure_batch_size(Some(3)); // task-level: 3
 
     let mut genome = genome_with_hidden(2, 1);
@@ -751,7 +757,7 @@ fn test_genome_batch_size_overrides_task_setting() {
 fn test_mini_batch_evaluate_still_full_batch() {
     // evaluate() 始终使用全量测试集，不受 batch_size 影响
     let data = medium_data(200);
-    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy);
+    let mut task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap();
     task.configure_batch_size(Some(32));
 
     let genome = genome_with_hidden(2, 1);

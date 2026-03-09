@@ -4,6 +4,8 @@
  * @Description  : Graph 模块的错误类型和可视化相关类型
  */
 
+use std::fmt;
+
 use crate::nn::NodeId;
 
 /// Graph 操作错误类型
@@ -47,6 +49,27 @@ pub enum GraphError {
     /// 计算过程中的错误
     ComputationError(String),
 }
+
+impl fmt::Display for GraphError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GraphError::GraphNotFound(msg) => write!(f, "图未找到: {msg}"),
+            GraphError::NodeNotFound(id) => write!(f, "节点未找到: {id:?}"),
+            GraphError::ShapeMismatch { message, .. } => write!(f, "形状不匹配: {message}"),
+            GraphError::DimensionMismatch { message, .. } => write!(f, "维度不匹配: {message}"),
+            GraphError::ValueNotComputed(id) => write!(f, "节点值未计算: {id:?}"),
+            GraphError::GradientNotComputed(id) => write!(f, "梯度未计算: {id:?}"),
+            GraphError::GraphMismatch(msg) => write!(f, "图不匹配: {msg}"),
+            GraphError::NodeDetached(id) => write!(f, "节点已 detach: {id:?}"),
+            GraphError::DuplicateName(msg) => write!(f, "重复名称: {msg}"),
+            GraphError::DuplicateNodeName(msg) => write!(f, "重复节点名称: {msg}"),
+            GraphError::InvalidOperation(msg) => write!(f, "无效操作: {msg}"),
+            GraphError::ComputationError(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for GraphError {}
 
 // ========== 可视化相关类型 ==========
 
