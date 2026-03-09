@@ -64,7 +64,7 @@ pub enum EvolutionStatus {
 /// 演化结果（搜索结果报告）
 ///
 /// 不直接暴露 Genome 内部表示。
-/// `graph` 是 Phase 6 MVP 逃生口，后续 `EvolvedModel` 会包装它。
+/// `graph` 是当前逃生口，后续 `EvolvedModel` 会包装它。
 pub struct EvolutionResult {
     /// 最终 best 的计算图
     pub graph: Graph,
@@ -76,7 +76,7 @@ pub struct EvolutionResult {
     pub architecture_summary: String,
     /// 停止原因
     pub status: EvolutionStatus,
-    /// 内部基因组（不暴露给用户，Phase 7B+ 用于继续演化）
+    /// 内部基因组（不暴露给用户，用于继续演化）
     #[allow(dead_code)]
     pub(crate) genome: NetworkGenome,
 }

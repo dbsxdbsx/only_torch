@@ -112,6 +112,26 @@ fn test_train_data_count_mismatch_returns_err() {
     }
 }
 
+#[test]
+fn test_empty_test_data_returns_err() {
+    let result = SupervisedTask::new(xor_data(), (vec![], vec![]), TaskMetric::Accuracy);
+    match result {
+        Err(e) => assert!(e.to_string().contains("测试输入不能为空"), "unexpected error: {e}"),
+        Ok(_) => panic!("应返回 Err"),
+    }
+}
+
+#[test]
+fn test_test_data_count_mismatch_returns_err() {
+    let (inputs, mut labels) = xor_data();
+    labels.truncate(2);
+    let result = SupervisedTask::new(xor_data(), (inputs, labels), TaskMetric::Accuracy);
+    match result {
+        Err(e) => assert!(e.to_string().contains("数量不匹配"), "unexpected error: {e}"),
+        Ok(_) => panic!("应返回 Err"),
+    }
+}
+
 // ==================== 基本训练 ====================
 
 #[test]
@@ -343,11 +363,11 @@ fn test_loss_explicit_override() {
     assert_eq!(loss, LossType::MSE);
 }
 
-// ==================== Phase 7D 约束 ====================
+// ==================== Batch size 与训练配置约束 ====================
 
 #[test]
 fn test_genome_batch_size_used_when_set() {
-    // Phase 7D: genome.training_config.batch_size 不再 panic，
+    // genome.training_config.batch_size 不再 panic，
     // 而是作为最高优先级的 batch_size 使用
     let task = xor_task();
     let mut genome = genome_with_hidden(2, 1);
@@ -364,7 +384,7 @@ fn test_genome_batch_size_used_when_set() {
 
 #[test]
 #[should_panic(expected = "weight_decay")]
-fn test_phase7d_weight_decay_panics() {
+fn test_weight_decay_panics() {
     let task = xor_task();
     let mut genome = NetworkGenome::minimal(2, 1);
     genome.training_config.weight_decay = 0.01;
@@ -638,7 +658,7 @@ fn test_binary_classification_all_negative_logits() {
     );
 }
 
-// ==================== Batch size（Phase 7D）====================
+// ==================== Batch size ====================
 
 #[test]
 fn test_auto_batch_size_thresholds() {

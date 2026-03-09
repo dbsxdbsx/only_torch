@@ -22,7 +22,7 @@ use crate::tensor::Tensor;
 use super::builder::BuildResult;
 use super::convergence::{ConvergenceConfig, ConvergenceDetector};
 use super::error::EvolutionError;
-use super::gene::{LossType, NetworkGenome, OptimizerType, TaskMetric};
+use super::gene::{compatible_losses, LossType, NetworkGenome, OptimizerType, TaskMetric};
 
 // ==================== auto_batch_size ====================
 
@@ -52,7 +52,7 @@ pub fn auto_batch_size(n_samples: usize) -> usize {
 ///
 /// `tiebreak_loss` 用于离散指标（如 Accuracy）的同分比较：
 /// 同 accuracy 时，test loss 更低的结构更优。
-/// Phase 6 的接受/回滚逻辑通过字典序比较实现。
+/// 接受/回滚逻辑通过字典序比较实现。
 #[derive(Clone, Debug)]
 pub struct FitnessScore {
     /// 主目标（越高越好），如 Accuracy / R² / Reward
@@ -186,7 +186,7 @@ impl SupervisedTask {
 
     /// 解析实际使用的 batch size
     ///
-    /// 优先级：genome 显式值（Phase 9）> 用户设置 > 自动策略
+    /// 优先级：genome 显式值 > 用户设置 > 自动策略
     fn effective_batch_size(&self, genome: &NetworkGenome, n_samples: usize) -> usize {
         genome
             .training_config
@@ -207,6 +207,18 @@ impl EvolutionTask for SupervisedTask {
         assert!(
             genome.training_config.weight_decay == 0.0,
             "weight_decay 尚未支持，必须为 0.0"
+        );
+
+        // debug 模式下验证 loss_override 兼容性（正常演化路径由 MutateLossFunctionMutation 保障）
+        debug_assert!(
+            genome.training_config.loss_override.as_ref().map_or(true, |loss| {
+                compatible_losses(&self.metric, genome.output_dim).contains(loss)
+            }),
+            "loss_override {:?} 与当前任务不兼容（metric={:?}, output_dim={}，兼容列表={:?}）",
+            genome.training_config.loss_override,
+            self.metric,
+            genome.output_dim,
+            compatible_losses(&self.metric, genome.output_dim)
         );
 
         build.graph.train();
@@ -230,7 +242,7 @@ impl EvolutionTask for SupervisedTask {
         let mut final_loss = f32::NAN;
 
         if bs >= n_samples {
-            // ====== Full-batch 路径（与 Phase 7A 行为完全一致）======
+            // ====== Full-batch 路径 ======
             build.input.set_value(&self.train_x)?;
             target.set_value(&self.train_y)?;
 

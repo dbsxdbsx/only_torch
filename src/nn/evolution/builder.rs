@@ -222,7 +222,7 @@ impl NetworkGenome {
     /// 每层的参数张量列表保存为 Vec<Tensor>（如 Linear 保存 [W, b]）。
     ///
     /// 注意：此方法是全量替换（非 merge），不在当前 build 中的层（如 disabled）
-    /// 的旧快照会被丢弃。Phase 7B 引入 disable/enable 语义时需评估是否改为 merge。
+    /// 的旧快照会被丢弃。引入 disable/enable 语义时需评估是否改为 merge。
     pub fn capture_weights(&mut self, build: &BuildResult) -> Result<(), GraphError> {
         let mut snapshots: HashMap<u64, Vec<Tensor>> = HashMap::new();
         for (&inn, params) in &build.layer_params {

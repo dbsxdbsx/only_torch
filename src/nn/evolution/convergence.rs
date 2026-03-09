@@ -7,7 +7,7 @@
  * NaN/Inf → FixedEpochs → max_epochs → loss 稳定 → 梯度消失。
  *
  * 调研依据：BOHB/Successive Halving 论文证实 budget-based 训练
- * 可以加速搜索 2-5 倍。Phase 7A 用 UntilConverged，后续可切换。
+ * 可以加速搜索 2-5 倍。当前默认 UntilConverged，后续可切换。
  */
 
 use std::collections::VecDeque;
@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 /// 训练预算模式
 #[derive(Clone, Debug)]
 pub enum TrainingBudget {
-    /// 训练到收敛（Phase 7A 默认）
+    /// 训练到收敛（默认）
     UntilConverged,
     /// 固定 epoch 数（用于快速筛选候选架构）
     FixedEpochs(usize),
@@ -27,7 +27,7 @@ pub enum TrainingBudget {
 
 /// 训练停止原因（`should_stop` 的返回值语义）
 ///
-/// Phase 6 的 DefaultCallback 可据此输出可读的停止原因日志。
+/// DefaultCallback 可据此输出可读的停止原因日志。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StopReason {
     /// loss 为 NaN 或 Infinity（训练已爆炸）

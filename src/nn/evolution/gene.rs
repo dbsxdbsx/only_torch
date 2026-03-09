@@ -103,7 +103,7 @@ impl fmt::Display for LayerConfig {
 
 // ==================== 聚合策略 ====================
 
-/// 聚合策略（Phase 8 引入，与 SkipEdge 绑定）
+/// 聚合策略（与 SkipEdge 绑定）
 #[derive(Clone, Debug, PartialEq)]
 pub enum AggregateStrategy {
     Add,
@@ -123,7 +123,7 @@ pub struct LayerGene {
 
 // ==================== 跳跃边 ====================
 
-/// 跳跃边（携带聚合策略，Phase 8 引入）
+/// 跳跃边（携带聚合策略）
 ///
 /// 聚合操作不作为独立层存在于 layers 中，
 /// 而是在 build() 时根据 SkipEdge 信息自动在目标层输入处生成。
@@ -144,7 +144,7 @@ pub enum OptimizerType {
     Adam,
 }
 
-/// 损失函数类型（Phase 7A 由 TaskMetric 自动推断）
+/// 损失函数类型（由 TaskMetric 自动推断）
 #[derive(Clone, Debug, PartialEq)]
 pub enum LossType {
     BCE,
@@ -188,14 +188,14 @@ pub fn compatible_losses(metric: &TaskMetric, output_dim: usize) -> Vec<LossType
 
 /// 训练配置（与 Genome 绑定，未来可参与演化）
 ///
-/// Phase 7A 使用 Default，后续版本可加入超参数变异操作。
+/// 当前使用 Default，后续版本可加入超参数变异操作。
 #[derive(Clone, Debug)]
 pub struct TrainingConfig {
     pub optimizer_type: OptimizerType,
     pub learning_rate: f32,
     pub batch_size: Option<usize>,
     pub weight_decay: f32,
-    /// None = 自动推断（Phase 7A 默认），Some = 显式指定
+    /// None = 自动推断（默认），Some = 显式指定
     pub loss_override: Option<LossType>,
 }
 

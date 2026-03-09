@@ -4,9 +4,9 @@
  * @Description  : 神经架构演化的变异操作
  *
  * Mutation trait + MutationRegistry + 12 种变异操作：
- * - 7 种结构/参数变异（Phase 7A）
- * - 3 种 SkipEdge 变异（Phase 8）
- * - 2 种训练超参数变异（Phase 10A/10B）
+ * - 7 种结构/参数变异
+ * - 3 种 SkipEdge 变异
+ * - 2 种训练超参数变异
  *
  * 每种变异通过 is_applicable() 自检合法性，apply() 执行变异。
  * MutationRegistry 按权重随机选择可用变异并执行。
@@ -171,7 +171,7 @@ impl MutationRegistry {
         ))
     }
 
-    /// 默认注册表（12 种变异：7 种 Phase 7A + 3 种 Phase 8 SkipEdge + 2 种 Phase 10 超参数）
+    /// 默认注册表（12 种变异：7 种结构/参数 + 3 种 SkipEdge + 2 种训练超参数）
     pub fn default_registry(metric: &TaskMetric) -> Self {
         let mut reg = Self::new();
         reg.register(0.15, InsertLayerMutation::default());
@@ -186,11 +186,11 @@ impl MutationRegistry {
                 task_metric: metric.clone(),
             },
         );
-        // Phase 8: SkipEdge 变异
+        // SkipEdge 变异
         reg.register(0.08, AddSkipEdgeMutation);
         reg.register(0.05, RemoveSkipEdgeMutation);
         reg.register(0.03, MutateAggregateStrategyMutation);
-        // Phase 10: 训练超参数变异
+        // 训练超参数变异
         reg.register(0.05, MutateLearningRateMutation);
         reg.register(0.02, MutateOptimizerMutation);
         reg
@@ -279,7 +279,7 @@ fn hidden_layer_indices(genome: &NetworkGenome) -> Vec<usize> {
         .collect()
 }
 
-/// 所有 Phase 7A 默认激活函数类型
+/// 所有默认激活函数类型
 fn default_activations() -> Vec<ActivationType> {
     vec![
         ActivationType::ReLU,
@@ -855,7 +855,7 @@ impl Mutation for MutateLossFunctionMutation {
     }
 }
 
-// ==================== MutateLearningRateMutation (Phase 10A) ====================
+// ==================== MutateLearningRateMutation ====================
 
 /// 学习率离散台阶（覆盖 5 个数量级，共 13 个台阶）
 ///
@@ -944,7 +944,7 @@ impl Mutation for MutateLearningRateMutation {
     }
 }
 
-// ==================== MutateOptimizerMutation (Phase 10B) ====================
+// ==================== MutateOptimizerMutation ====================
 
 pub struct MutateOptimizerMutation;
 

@@ -515,7 +515,7 @@ fn test_minimal_only_insert_and_add_skip_applicable() {
     assert!(AddSkipEdgeMutation.is_applicable(&g, &c));
     assert!(!RemoveSkipEdgeMutation.is_applicable(&g, &c));
     assert!(!MutateAggregateStrategyMutation.is_applicable(&g, &c));
-    // Phase 10: MutateLearningRate 始终可用，MutateOptimizer 仅输出头时不可用
+    // MutateLearningRate 始终可用，MutateOptimizer 仅输出头时不可用
     assert!(MutateLearningRateMutation.is_applicable(&g, &c));
     assert!(!MutateOptimizerMutation.is_applicable(&g, &c));
 }
@@ -838,7 +838,7 @@ fn test_seed_reproducibility() {
     assert_eq!(run(999), run(999));
 }
 
-// ==================== MutateLearningRateMutation (Phase 10A) ====================
+// ==================== MutateLearningRateMutation ====================
 
 #[test]
 fn test_mutate_lr_result_is_valid_ladder_value() {
@@ -960,7 +960,7 @@ fn test_mutate_lr_is_not_structural() {
     assert!(!m.is_structural());
 }
 
-// ==================== MutateOptimizerMutation (Phase 10B) ====================
+// ==================== MutateOptimizerMutation ====================
 
 #[test]
 fn test_mutate_optimizer_adam_to_sgd() {
