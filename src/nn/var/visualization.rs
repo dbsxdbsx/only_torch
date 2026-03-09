@@ -481,7 +481,9 @@ impl Var {
                 // 多输入合并节点：梯形（倒三角感），浅青色，突出数据流汇聚点
                 "Stack" | "Concat" => ("invtrapezium", "filled", "#E0F2F1"),
                 "Sigmoid" | "Tanh" | "ReLU" | "LeakyReLU" | "Sign" | "SoftPlus" | "Step"
-                | "Softmax" | "LogSoftmax" | "Abs" | "Ln" => ("diamond", "filled", "#FFF3E0"),
+                | "Softmax" | "LogSoftmax" | "Abs" | "Ln"
+                | "Gelu" | "Swish" | "Elu" | "Selu" | "Mish"
+                | "HardSwish" | "HardSigmoid" | "ReLU6" | "HardTanh" => ("diamond", "filled", "#FFF3E0"),
                 "Dropout" | "BatchNorm" => ("diamond", "filled", "#E1BEE7"),
                 _ => ("box", "\"filled,rounded\"", "#FFFDE7"),
             };
@@ -605,6 +607,7 @@ impl Var {
                         continue;
                     }
 
+                    // 策略 1：所有 parent 都在同一模型 → 归入（向下传播）
                     if !snode.parent_ids.is_empty() {
                         let parent_models: Vec<Option<&str>> = snode
                             .parent_ids
@@ -619,23 +622,25 @@ impl Var {
                                 let model = unique.into_iter().next().unwrap().to_string();
                                 node_to_model.insert(nid, model);
                                 changed = true;
+                                continue;
                             }
                         }
-                    } else {
-                        // 叶子节点：所有子节点归同一模型 → 也归入
-                        if let Some(children) = node_children.get(&nid) {
-                            let child_models: Vec<Option<&str>> = children
-                                .iter()
-                                .map(|c| node_to_model.get(c).map(|s| s.as_str()))
-                                .collect();
-                            if child_models.iter().all(|m| m.is_some()) {
-                                let unique: HashSet<&str> =
-                                    child_models.iter().filter_map(|m| *m).collect();
-                                if unique.len() == 1 {
-                                    let model = unique.into_iter().next().unwrap().to_string();
-                                    node_to_model.insert(nid, model);
-                                    changed = true;
-                                }
+                    }
+
+                    // 策略 2：所有 children 都在同一模型 → 归入（向上传播）
+                    // 对所有节点生效（不仅是 leaf），解决 Input → Activation → Linear 链式推断
+                    if let Some(children) = node_children.get(&nid) {
+                        let child_models: Vec<Option<&str>> = children
+                            .iter()
+                            .map(|c| node_to_model.get(c).map(|s| s.as_str()))
+                            .collect();
+                        if child_models.iter().all(|m| m.is_some()) {
+                            let unique: HashSet<&str> =
+                                child_models.iter().filter_map(|m| *m).collect();
+                            if unique.len() == 1 {
+                                let model = unique.into_iter().next().unwrap().to_string();
+                                node_to_model.insert(nid, model);
+                                changed = true;
                             }
                         }
                     }

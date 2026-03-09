@@ -148,7 +148,7 @@ impl NetworkGenome {
             .map_err(|e| GraphError::ComputationError(e.to_string()))?;
 
         let graph_seed: u64 = rng.r#gen();
-        let graph = Graph::new_with_seed(graph_seed);
+        let graph = Graph::new_with_seed(graph_seed).with_model_name("EvolutionNet");
 
         let input = graph.input_shape(&[1, self.input_dim], Some("evo_input"))?;
         let mut current = input.clone();

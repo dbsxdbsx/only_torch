@@ -279,6 +279,7 @@ impl Evolution {
                     generation,
                     status,
                     &mut rng,
+                    &*self.task,
                 );
             }
 
@@ -346,6 +347,9 @@ impl Evolution {
 
             // 8. 达标检查
             if score.primary >= self.target_metric {
+                // 自动快照计算图拓扑（Var 还活着时捕获，供后续 visualize_snapshot 渲染）
+                // 优先包含 Loss + TargetInput 以呈现完整管线
+                snapshot_with_loss(&*self.task, &genome, &build);
                 return Ok(EvolutionResult {
                     graph: build.graph,
                     fitness: score,
@@ -383,6 +387,7 @@ impl Evolution {
                         generation + 1,
                         EvolutionStatus::NoApplicableMutation,
                         &mut rng,
+                        &*self.task,
                     );
                 }
                 Err(MutationError::InternalError(msg)) => {
@@ -429,6 +434,19 @@ fn evaluate_conservative(
     Ok(best.unwrap())
 }
 
+/// 自动快照：优先包含 Loss + TargetInput，fallback 到仅 output
+fn snapshot_with_loss(
+    task: &dyn EvolutionTask,
+    genome: &NetworkGenome,
+    build: &BuildResult,
+) {
+    if let Some(vis_loss) = task.create_visualization_loss(genome, build) {
+        build.graph.snapshot_once_from(&[&vis_loss]);
+    } else {
+        build.graph.snapshot_once_from(&[&build.output]);
+    }
+}
+
 /// 从 best genome 重新构建最终结果
 fn build_final_result(
     genome: &NetworkGenome,
@@ -436,9 +454,12 @@ fn build_final_result(
     generations: usize,
     status: EvolutionStatus,
     rng: &mut StdRng,
+    task: &dyn EvolutionTask,
 ) -> Result<EvolutionResult, GraphError> {
     let build = genome.build(rng)?;
     genome.restore_weights(&build)?;
+    // 自动快照计算图拓扑（供后续 visualize_snapshot 渲染）
+    snapshot_with_loss(task, genome, &build);
 
     let fitness = best_score.unwrap_or(FitnessScore {
         primary: f32::NEG_INFINITY,

@@ -96,6 +96,19 @@ pub trait EvolutionTask {
     /// `SupervisedTask` 使用此值覆盖自动策略；
     /// 自定义 Task（如 RL/半监督）忽略此方法，使用自身的采样策略。
     fn configure_batch_size(&mut self, _batch_size: Option<usize>) {}
+
+    /// 创建仅用于可视化的 Loss 节点（默认返回 None，子类可覆盖）
+    ///
+    /// 返回的 Var 包含 TargetInput + Loss 节点，用于 snapshot 时
+    /// 呈现完整的 "输入 → 网络 → Loss" 计算图（八角形 Loss + 橙色 Target）。
+    /// 不需要设置实际数据——仅用于拓扑快照。
+    fn create_visualization_loss(
+        &self,
+        _genome: &NetworkGenome,
+        _build: &BuildResult,
+    ) -> Option<Var> {
+        None
+    }
 }
 
 // ==================== SupervisedTask ====================
@@ -262,6 +275,18 @@ impl EvolutionTask for SupervisedTask {
 
     fn configure_batch_size(&mut self, batch_size: Option<usize>) {
         self.batch_size = batch_size;
+    }
+
+    fn create_visualization_loss(
+        &self,
+        genome: &NetworkGenome,
+        build: &BuildResult,
+    ) -> Option<Var> {
+        let loss_type = genome.effective_loss(&self.metric);
+        // 用 output 的预期形状创建 target（仅拓扑，无需实际数据）
+        let output_shape = build.output.value_expected_shape();
+        let target = build.graph.target(&output_shape).ok()?;
+        create_loss_var(&build.output, &target, &loss_type).ok()
     }
 
     fn evaluate(

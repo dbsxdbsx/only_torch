@@ -875,7 +875,8 @@ impl ConvergenceDetector {
 | **7A** | XOR 演化 MVP（Linear + Activation） | 集成测试：XOR 100% | ✅ |
 | **7B** | 停滞检测 + 训练超参数变异 + Fitness tiebreak | MutateLR/LossFunction/LayerParam | ✅ |
 | **8** | SkipEdge 跳跃连接演化（DAG 拓扑） | 4 种聚合策略 + 3 种变异 + 集成测试 | ✅ |
-| **9** | 记忆任务验证（RNN/LSTM） | 集成测试：Parity 任务 | 💤 |
+| **9** | Evolution 可视化完备性 | 自动快照 + Loss/Target 节点 + 模型聚类 + 激活菱形 | ✅ |
+| **10** | 记忆任务验证（RNN/LSTM） | 集成测试：Parity 任务 | 💤 |
 
 ---
 
