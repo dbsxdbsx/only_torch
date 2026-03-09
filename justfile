@@ -84,8 +84,8 @@ bench-tensor:
 
 # ==================== Examples ====================
 
-# 运行所有 examples（含 RL）
-examples: example-xor example-iris example-sine example-mnist example-mnist-cnn example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-cartpole-sac example-pendulum-sac example-moving-sac
+# 运行所有 examples（含 RL + 演化）
+examples: example-xor example-iris example-sine example-mnist example-mnist-cnn example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess example-evolution-xor example-cartpole-sac example-pendulum-sac example-moving-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -154,6 +154,14 @@ example-multi-io:
 example-multi-label:
     @echo "=== Running Multi Label Point (BCE Loss) [{{_blas_name}}] ==="
     cargo run --example multi_label_point {{_blas_flag}}
+
+example-chinese-chess:
+    @echo "=== Running Chinese Chess [{{_blas_name}}] ==="
+    cargo run --example chinese_chess {{_blas_flag}}
+
+example-evolution-xor:
+    @echo "=== Running Evolution XOR (NEAT MVP) [{{_blas_name}}] ==="
+    cargo run --example evolution_xor {{_blas_flag}}
 
 example-cartpole-sac:
     @echo "=== Running CartPole SAC [{{_blas_name}}] (requires Python + gymnasium) ==="

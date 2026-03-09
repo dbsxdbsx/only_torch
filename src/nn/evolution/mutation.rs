@@ -86,6 +86,14 @@ pub trait Mutation: Send + Sync {
         rng: &mut StdRng,
     ) -> Result<(), MutationError>;
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool;
+    /// 是否为结构变异（改变网络拓扑）
+    ///
+    /// 结构变异（InsertLayer、RemoveLayer）改变层的数量或类型，
+    /// 参数变异（Grow/Shrink/MutateParam 等）只调整现有结构的参数。
+    /// 停滞检测使用此标记强制结构探索。
+    fn is_structural(&self) -> bool {
+        false
+    }
 }
 
 // ==================== MutationRegistry ====================
@@ -174,6 +182,61 @@ impl MutationRegistry {
             },
         );
         reg
+    }
+
+    /// 只从结构变异中随机选择并执行（停滞检测触发时使用）
+    ///
+    /// 逻辑与 `apply_random` 相同，但候选池限定为 `is_structural() == true` 的变异。
+    /// 如果没有可用的结构变异，回退到完整 registry（`apply_random`）。
+    pub fn apply_random_structural(
+        &self,
+        genome: &mut NetworkGenome,
+        constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<String, MutationError> {
+        let mut candidates: Vec<(f32, &dyn Mutation)> = self
+            .entries
+            .iter()
+            .filter(|(_, m)| m.is_structural() && m.is_applicable(genome, constraints))
+            .map(|(w, m)| (*w, m.as_ref()))
+            .collect();
+
+        // 没有可用的结构变异时回退到完整 registry
+        if candidates.is_empty() {
+            return self.apply_random(genome, constraints, rng);
+        }
+
+        while !candidates.is_empty() {
+            let total_weight: f32 = candidates.iter().map(|(w, _)| w).sum();
+            let mut pick = rng.gen_range(0.0..total_weight);
+            let mut selected_idx = candidates.len() - 1;
+            for (i, (w, _)) in candidates.iter().enumerate() {
+                pick -= w;
+                if pick <= 0.0 {
+                    selected_idx = i;
+                    break;
+                }
+            }
+
+            let (_, selected) = candidates[selected_idx];
+            let name = selected.name().to_string();
+
+            match selected.apply(genome, constraints, rng) {
+                Ok(()) => {
+                    genome.generated_by = name.clone();
+                    return Ok(name);
+                }
+                Err(MutationError::InternalError(msg)) => {
+                    return Err(MutationError::InternalError(msg));
+                }
+                Err(_) => {
+                    candidates.remove(selected_idx);
+                }
+            }
+        }
+
+        // 所有结构变异都失败了，回退
+        self.apply_random(genome, constraints, rng)
     }
 
     /// 已注册的变异数量
@@ -297,6 +360,10 @@ impl Mutation for InsertLayerMutation {
         "InsertLayer"
     }
 
+    fn is_structural(&self) -> bool {
+        true
+    }
+
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
         genome.layer_count() < constraints.max_layers
     }
@@ -312,7 +379,7 @@ impl Mutation for InsertLayerMutation {
             return Err(MutationError::ConstraintViolation("已达 max_layers".into()));
         }
 
-        // 插入位置：在 enabled 层序列的 [0, enabled_count-1) 之间（输出头之前）
+        // 插入位置：在 enabled 层序列的 [0, output_head] 之间（含输出头正前方）
         // 但操作的是 layers vec 的实际索引
         let enabled_indices: Vec<usize> = genome
             .layers
@@ -325,12 +392,9 @@ impl Mutation for InsertLayerMutation {
         // 输出头在 enabled 序列中的最后一个
         let output_head_vec_idx = *enabled_indices.last().unwrap();
 
-        // 插入到 layers vec 中输出头之前的某个位置
-        let insert_vec_idx = if output_head_vec_idx == 0 {
-            0
-        } else {
-            rng.gen_range(0..=output_head_vec_idx - 1)
-        };
+        // 插入到 layers vec 中 [0, output_head_vec_idx] 的某个位置
+        // insert(output_head_vec_idx) 会把新层插在输出头正前方，输出头后移
+        let insert_vec_idx = rng.gen_range(0..=output_head_vec_idx);
 
         // 判断在 enabled 序列中此位置的逻辑索引
         let logical_pos = enabled_indices
@@ -375,6 +439,10 @@ pub struct RemoveLayerMutation;
 impl Mutation for RemoveLayerMutation {
     fn name(&self) -> &str {
         "RemoveLayer"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {

@@ -74,7 +74,8 @@ pub struct EvolutionResult {
     pub architecture_summary: String,
     /// 停止原因
     pub status: EvolutionStatus,
-    /// 内部基因组（不暴露给用户）
+    /// 内部基因组（不暴露给用户，Phase 7B+ 用于继续演化）
+    #[allow(dead_code)]
     pub(crate) genome: NetworkGenome,
 }
 
@@ -121,6 +122,9 @@ pub struct Evolution {
     max_generations: usize,
     /// DefaultCallback 的日志开关（仅 custom_callback=None 时生效）
     verbose: bool,
+    /// 停滞耐心值：primary fitness 连续多少代未严格提升后，
+    /// 强制选择结构变异（InsertLayer / RemoveLayer）以探索新拓扑
+    stagnation_patience: usize,
 }
 
 impl Evolution {
@@ -160,6 +164,7 @@ impl Evolution {
             custom_callback: None,
             max_generations: 100,
             verbose: true,
+            stagnation_patience: 20,
         }
     }
 
@@ -216,6 +221,12 @@ impl Evolution {
         self
     }
 
+    /// 设置停滞耐心值（primary fitness 连续多少代未提升后强制结构探索）
+    pub fn with_stagnation_patience(mut self, patience: usize) -> Self {
+        self.stagnation_patience = patience;
+        self
+    }
+
     // ==================== 主循环 ====================
 
     /// 运行演化主循环
@@ -231,6 +242,7 @@ impl Evolution {
         let mut genome = NetworkGenome::minimal(self.input_dim, self.output_dim);
         let mut best_genome: Option<NetworkGenome> = None;
         let mut best_score: Option<FitnessScore> = None;
+        let mut stagnation: usize = 0;
 
         let mut rng = match self.seed {
             Some(seed) => StdRng::seed_from_u64(seed),
@@ -287,16 +299,29 @@ impl Evolution {
             };
 
             if accept {
-                if let Some(best) = &best_score {
+                let primary_improved = if let Some(best) = &best_score {
                     if score.primary > best.primary {
                         callback.on_new_best(generation, &genome, &score);
+                        true
+                    } else {
+                        false
                     }
                 } else {
                     callback.on_new_best(generation, &genome, &score);
+                    true
+                };
+
+                // 停滞检测：仅 primary 严格提升时重置计数器
+                if primary_improved {
+                    stagnation = 0;
+                } else {
+                    stagnation += 1;
                 }
+
                 best_score = Some(score.clone());
                 best_genome = Some(genome.clone());
             } else {
+                stagnation += 1;
                 genome = best_genome.as_ref().unwrap().clone();
             }
 
@@ -315,12 +340,23 @@ impl Evolution {
                 });
             }
 
-            // 9. 变异
-            match self.mutation_registry.apply_random(
-                &mut genome,
-                &self.constraints,
-                &mut rng,
-            ) {
+            // 9. 变异（停滞时强制结构探索）
+            let force_structural = stagnation >= self.stagnation_patience;
+            let mutation_result = if force_structural {
+                stagnation = 0; // 重置，给新拓扑优化时间
+                self.mutation_registry.apply_random_structural(
+                    &mut genome,
+                    &self.constraints,
+                    &mut rng,
+                )
+            } else {
+                self.mutation_registry.apply_random(
+                    &mut genome,
+                    &self.constraints,
+                    &mut rng,
+                )
+            };
+            match mutation_result {
                 Ok(mutation_name) => {
                     callback.on_mutation(generation, &mutation_name, &genome);
                 }

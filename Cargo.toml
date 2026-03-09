@@ -196,3 +196,7 @@ path = "examples/sac/pendulum/main.rs"
 [[example]]
 name = "moving_sac"
 path = "examples/sac/moving/main.rs"
+
+[[example]]
+name = "evolution_xor"
+path = "examples/evolution_xor/main.rs"
