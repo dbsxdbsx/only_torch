@@ -12,12 +12,13 @@ use std::collections::HashMap;
 use rand::rngs::StdRng;
 use rand::Rng;
 
-use crate::nn::layer::{Gru, Lstm, Rnn};
-use crate::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
+use crate::nn::layer::{AvgPool2d, Conv2d, Gru, Lstm, MaxPool2d, Rnn};
+use crate::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps, VarShapeOps};
 use crate::tensor::Tensor;
 
 use super::gene::{
-    ActivationType, AggregateStrategy, LayerConfig, NetworkGenome, SkipEdge, INPUT_INNOVATION,
+    ActivationType, AggregateStrategy, LayerConfig, NetworkGenome, PoolType, SkipEdge,
+    INPUT_INNOVATION,
 };
 
 // ==================== BuildResult ====================
@@ -162,6 +163,8 @@ impl NetworkGenome {
             // 因此在 build 时设置占位零值（训练时会被覆盖）
             var.set_value(&Tensor::zeros(&[1, seq_len, self.input_dim]))?;
             var
+        } else if let Some((h, w)) = self.input_spatial {
+            graph.input_shape(&[1, self.input_dim, h, w], Some("evo_input"))?
         } else {
             graph.input_shape(&[1, self.input_dim], Some("evo_input"))?
         };
@@ -248,6 +251,50 @@ impl NetworkGenome {
                         gru.forward(&current)?
                     };
                     layer_params.insert(layer.innovation_number, gru.parameters());
+                }
+                LayerConfig::Conv2d {
+                    out_channels,
+                    kernel_size,
+                } => {
+                    let name = format!("evo_conv{}", layer.innovation_number);
+                    let k = *kernel_size;
+                    let padding = k / 2; // same padding
+                    let conv = Conv2d::new(
+                        &graph,
+                        dim.in_dim,
+                        *out_channels,
+                        (k, k),
+                        (1, 1),
+                        (padding, padding),
+                        true,
+                        &name,
+                    )?;
+                    current = conv.forward(&current);
+                    layer_params.insert(layer.innovation_number, conv.parameters());
+                }
+                LayerConfig::Pool2d {
+                    pool_type,
+                    kernel_size,
+                    stride,
+                } => {
+                    let name = format!("evo_pool{}", layer.innovation_number);
+                    let k = *kernel_size;
+                    let s = *stride;
+                    current = match pool_type {
+                        PoolType::Max => {
+                            MaxPool2d::new(&graph, (k, k), Some((s, s)), &name)
+                                .forward(&current)
+                        }
+                        PoolType::Avg => {
+                            AvgPool2d::new(&graph, (k, k), Some((s, s)), &name)
+                                .forward(&current)
+                        }
+                    };
+                    // Pool2d 无可学习参数
+                }
+                LayerConfig::Flatten => {
+                    current = current.flatten()?;
+                    // Flatten 无可学习参数
                 }
                 LayerConfig::Dropout { .. } => {
                     return Err(GraphError::ComputationError(format!(

@@ -429,13 +429,13 @@ fn test_mutate_loss_not_applicable_r2() {
 
 #[test]
 fn test_default_registry_has_12_mutations() {
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
     assert_eq!(reg.len(), 12);
 }
 
 #[test]
 fn test_default_registry_sequential_has_13_mutations() {
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true, false);
     assert_eq!(reg.len(), 13);
 }
 
@@ -476,7 +476,7 @@ fn test_registry_retries_on_apply_failure() {
 fn test_registry_apply_random_returns_name() {
     let mut g = genome_with_hidden();
     let mut r = rng();
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
     let name = reg.apply_random(&mut g, &constraints(), &mut r).unwrap();
     assert!(!name.is_empty());
     assert_eq!(g.generated_by, name);
@@ -808,7 +808,7 @@ fn test_skip_edge_dimension_check() {
 fn test_random_mutations_keep_genome_valid() {
     let mut g = NetworkGenome::minimal(2, 1);
     let mut r = rng();
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
     let c = constraints();
 
     for _ in 0..50 {
@@ -841,7 +841,7 @@ fn test_seed_reproducibility() {
     let run = |seed: u64| -> String {
         let mut g = NetworkGenome::minimal(2, 1);
         let mut r = StdRng::seed_from_u64(seed);
-        let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
+        let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
         let c = constraints();
 
         for _ in 0..20 {
@@ -964,7 +964,9 @@ fn test_mutate_lr_snap_non_ladder_value() {
     let mut r = rng();
     m.apply(&mut g, &c, &mut r).unwrap();
     assert!(
-        LR_LADDER.iter().any(|&v| (v - g.training_config.learning_rate).abs() < 1e-10),
+        LR_LADDER
+            .iter()
+            .any(|&v| (v - g.training_config.learning_rate).abs() < 1e-10),
         "变异后 lr={} 不在 LR_LADDER 中",
         g.training_config.learning_rate
     );
@@ -1223,9 +1225,10 @@ fn test_insert_layer_flat_domain_no_rnn() {
         let mut g = genome_with_hidden();
         let mut r = StdRng::seed_from_u64(seed);
         let _ = m.apply(&mut g, &c, &mut r);
-        let has_rnn = g.layers.iter().any(|l| {
-            l.enabled && NetworkGenome::is_recurrent(&l.layer_config)
-        });
+        let has_rnn = g
+            .layers
+            .iter()
+            .any(|l| l.enabled && NetworkGenome::is_recurrent(&l.layer_config));
         assert!(!has_rnn, "平坦 genome 不应插入 RNN: {g}");
     }
 }
@@ -1384,8 +1387,10 @@ fn test_add_skip_edge_sequential_minimal_no_candidates() {
         if AddSkipEdgeMutation.apply(&mut g2, &c, &mut r).is_ok() {
             // 如果成功，必须是 Flat 域内的 skip
             for edge in &g2.skip_edges {
-                assert_ne!(edge.from_innovation, INPUT_INNOVATION,
-                    "序列模式不应允许从 Input(Sequence 域) 出发的 skip");
+                assert_ne!(
+                    edge.from_innovation, INPUT_INNOVATION,
+                    "序列模式不应允许从 Input(Sequence 域) 出发的 skip"
+                );
             }
         }
     }
@@ -1397,7 +1402,7 @@ fn test_add_skip_edge_sequential_minimal_no_candidates() {
 fn test_random_mutations_keep_sequential_genome_valid() {
     let mut g = genome_sequential();
     let mut r = rng();
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true, false);
     let c = constraints();
 
     for _ in 0..50 {
@@ -1424,7 +1429,7 @@ fn test_random_mutations_keep_sequential_genome_valid() {
 fn test_random_mutations_sequential_build_always_succeeds() {
     // 多轮随机变异后，build() 应始终成功（不会因 skip edge 域失效而 panic）
     let g = genome_sequential();
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true, false);
     let c = constraints();
 
     for seed in 0..10u64 {
@@ -1615,9 +1620,5 @@ fn test_is_domain_valid_matches_compute_domain_map() {
     );
 
     // is_domain_valid 应拒绝（LSTM 在 Flat 域中非法）
-    assert!(
-        !g.is_domain_valid(),
-        "Flat 域中出现 LSTM 应导致域链非法"
-    );
+    assert!(!g.is_domain_valid(), "Flat 域中出现 LSTM 应导致域链非法");
 }
-

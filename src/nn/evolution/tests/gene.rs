@@ -739,10 +739,7 @@ fn test_display_disabled_skip_edge_not_shown() {
     });
 
     // disabled skip edge 不出现 → 单行输出
-    assert_eq!(
-        format!("{genome}"),
-        "Input(2) → Linear(4) → [Linear(1)]"
-    );
+    assert_eq!(format!("{genome}"), "Input(2) → Linear(4) → [Linear(1)]");
 }
 
 #[test]
@@ -907,10 +904,7 @@ fn test_display_same_config_hidden_vs_output_no_suffix() {
         },
     );
 
-    assert_eq!(
-        format!("{genome}"),
-        "Input(2) → Linear(4) → [Linear(4)]"
-    );
+    assert_eq!(format!("{genome}"), "Input(2) → Linear(4) → [Linear(4)]");
 }
 
 #[test]
@@ -1437,10 +1431,18 @@ fn test_domain_valid_flat_genome_always_true() {
 
 #[test]
 fn test_is_recurrent_helper() {
-    assert!(NetworkGenome::is_recurrent(&LayerConfig::Rnn { hidden_size: 4 }));
-    assert!(NetworkGenome::is_recurrent(&LayerConfig::Lstm { hidden_size: 4 }));
-    assert!(NetworkGenome::is_recurrent(&LayerConfig::Gru { hidden_size: 4 }));
-    assert!(!NetworkGenome::is_recurrent(&LayerConfig::Linear { out_features: 4 }));
+    assert!(NetworkGenome::is_recurrent(&LayerConfig::Rnn {
+        hidden_size: 4
+    }));
+    assert!(NetworkGenome::is_recurrent(&LayerConfig::Lstm {
+        hidden_size: 4
+    }));
+    assert!(NetworkGenome::is_recurrent(&LayerConfig::Gru {
+        hidden_size: 4
+    }));
+    assert!(!NetworkGenome::is_recurrent(&LayerConfig::Linear {
+        out_features: 4
+    }));
     assert!(!NetworkGenome::is_recurrent(&LayerConfig::Activation {
         activation_type: ActivationType::ReLU,
     }));
@@ -1450,7 +1452,10 @@ fn test_is_recurrent_helper() {
 fn test_sequential_main_path_summary() {
     let genome = NetworkGenome::minimal_sequential(3, 1);
     let summary = genome.main_path_summary();
-    assert!(summary.contains("Input(seq×3)"), "序列模式应显示 seq×: {summary}");
+    assert!(
+        summary.contains("Input(seq×3)"),
+        "序列模式应显示 seq×: {summary}"
+    );
     assert!(summary.contains("RNN"), "应包含 RNN: {summary}");
 }
 
@@ -1511,7 +1516,7 @@ fn test_domain_map_stacked_rnn() {
     let map = genome.compute_domain_map();
     assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Sequence);
     assert_eq!(map[&rnn_inn], ShapeDomain::Sequence); // 下一个实质层是 LSTM → Seq
-    assert_eq!(map[&lstm_inn], ShapeDomain::Flat);     // 下一个实质层是 Linear → Flat
+    assert_eq!(map[&lstm_inn], ShapeDomain::Flat); // 下一个实质层是 Linear → Flat
     assert_eq!(map[&out_inn], ShapeDomain::Flat);
 }
 
@@ -1575,5 +1580,340 @@ fn test_domain_map_activation_between_rnns() {
     let map = genome.compute_domain_map();
     assert_eq!(map[&rnn_inn], ShapeDomain::Sequence); // 跳过 Tanh 后见 Gru
     assert_eq!(map[&act_inn], ShapeDomain::Sequence); // 透传 Sequence
-    assert_eq!(map[&gru_inn], ShapeDomain::Flat);     // 最后一个 RNN
+    assert_eq!(map[&gru_inn], ShapeDomain::Flat); // 最后一个 RNN
+}
+
+// ==================== Spatial 模式测试 ====================
+
+#[test]
+fn test_minimal_spatial_creates_correct_genome() {
+    let genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
+
+    assert_eq!(genome.input_dim, 3); // in_channels
+    assert_eq!(genome.output_dim, 10);
+    assert_eq!(genome.input_spatial, Some((28, 28)));
+    assert!(genome.is_spatial());
+    assert_eq!(genome.layers.len(), 4); // Conv2d, Pool2d, Flatten, Linear
+
+    assert!(matches!(
+        genome.layers[0].layer_config,
+        LayerConfig::Conv2d {
+            out_channels: 10,
+            kernel_size: 3
+        }
+    ));
+    assert!(matches!(
+        genome.layers[1].layer_config,
+        LayerConfig::Pool2d {
+            pool_type: PoolType::Max,
+            kernel_size: 2,
+            stride: 2
+        }
+    ));
+    assert!(matches!(
+        genome.layers[2].layer_config,
+        LayerConfig::Flatten
+    ));
+    assert!(matches!(
+        genome.layers[3].layer_config,
+        LayerConfig::Linear { out_features: 10 }
+    ));
+}
+
+#[test]
+#[should_panic(expected = "input_channels 不能为零")]
+fn test_minimal_spatial_zero_channels_panics() {
+    NetworkGenome::minimal_spatial(0, 10, (28, 28));
+}
+
+#[test]
+#[should_panic(expected = "spatial (H, W) 不能为零")]
+fn test_minimal_spatial_zero_hw_panics() {
+    NetworkGenome::minimal_spatial(3, 10, (0, 28));
+}
+
+#[test]
+fn test_resolve_dimensions_spatial_minimal() {
+    // Conv2d(out=10, k=3) → Pool2d(k=2, s=2) → Flatten → Linear(10)
+    // 输入: 3 channels, 28×28
+    let genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
+    let resolved = genome.resolve_dimensions().unwrap();
+
+    assert_eq!(resolved.len(), 4);
+    // Conv2d: in=3(channels), out=10(out_channels), spatial 28×28 (same padding)
+    assert_eq!(resolved[0].in_dim, 3);
+    assert_eq!(resolved[0].out_dim, 10);
+    // Pool2d: channels 不变=10, spatial 28→14
+    assert_eq!(resolved[1].in_dim, 10);
+    assert_eq!(resolved[1].out_dim, 10);
+    // Flatten: in=10, out=10*14*14=1960
+    assert_eq!(resolved[2].in_dim, 10);
+    assert_eq!(resolved[2].out_dim, 10 * 14 * 14);
+    // Linear: in=1960, out=10
+    assert_eq!(resolved[3].in_dim, 1960);
+    assert_eq!(resolved[3].out_dim, 10);
+}
+
+#[test]
+fn test_resolve_dimensions_spatial_with_extra_pool() {
+    // Conv2d(out=8, k=3) → Pool2d(k=2,s=2) [extra] → Pool2d(k=2,s=2) [built-in] → Flatten → Linear(10)
+    // 输入: 1 channel, 8×8
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    genome.layers[0].layer_config = LayerConfig::Conv2d {
+        out_channels: 8,
+        kernel_size: 3,
+    };
+
+    // 在已有 Pool2d 前再插入一个 Pool2d
+    let pool_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: pool_inn,
+            layer_config: LayerConfig::Pool2d {
+                pool_type: PoolType::Max,
+                kernel_size: 2,
+                stride: 2,
+            },
+            enabled: true,
+        },
+    );
+
+    let resolved = genome.resolve_dimensions().unwrap();
+    assert_eq!(resolved.len(), 5);
+    // Conv2d: in=1, out=8, spatial=8×8
+    assert_eq!(resolved[0].in_dim, 1);
+    assert_eq!(resolved[0].out_dim, 8);
+    // Pool2d (extra): 8→4, channels=8
+    assert_eq!(resolved[1].in_dim, 8);
+    assert_eq!(resolved[1].out_dim, 8);
+    // Pool2d (built-in): 4→2, channels=8
+    assert_eq!(resolved[2].in_dim, 8);
+    assert_eq!(resolved[2].out_dim, 8);
+    // Flatten: in=8, out=8*2*2=32
+    assert_eq!(resolved[3].in_dim, 8);
+    assert_eq!(resolved[3].out_dim, 8 * 2 * 2);
+    // Linear: in=32, out=10
+    assert_eq!(resolved[4].in_dim, 32);
+    assert_eq!(resolved[4].out_dim, 10);
+}
+
+#[test]
+fn test_compute_layer_params_conv2d() {
+    // Conv2d: out_ch * in_ch * k * k + out_ch (bias)
+    let config = LayerConfig::Conv2d {
+        out_channels: 16,
+        kernel_size: 3,
+    };
+    // 由于 compute_layer_params 是私有的，通过 total_params 间接测试
+    // 构建一个已知结构并验证总参数量
+    let mut test_genome = NetworkGenome::minimal_spatial(3, 10, (8, 8));
+    test_genome.layers[0].layer_config = config;
+    let total = test_genome.total_params().unwrap();
+    // Conv2d(16,k=3): 16*3*9 + 16 = 448
+    // Pool2d(k=2,s=2): 0，spatial 8→4
+    // Flatten: 0，out=16*4*4=256
+    // Linear(10): 256*10 + 10 = 2570
+    assert_eq!(total, 448 + 0 + 0 + 2570);
+}
+
+#[test]
+fn test_compute_layer_params_pool2d_and_flatten_zero() {
+    // Pool2d 和 Flatten 均无可学习参数
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (4, 4));
+    genome.layers[0].layer_config = LayerConfig::Conv2d {
+        out_channels: 1,
+        kernel_size: 1,
+    };
+
+    let total = genome.total_params().unwrap();
+    // Conv2d(1→1, k=1): 1*1*1 + 1 = 2
+    // Pool2d(built-in, k=2,s=2): 0，spatial 4→2
+    // Flatten: 0，out=1*2*2=4
+    // Linear(4→2): 4*2 + 2 = 10
+    assert_eq!(total, 2 + 0 + 0 + 10);
+}
+
+#[test]
+fn test_is_domain_valid_spatial_minimal() {
+    // Conv2d → Flatten → Linear：合法
+    let genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
+    assert!(genome.is_domain_valid());
+}
+
+#[test]
+fn test_is_domain_valid_spatial_conv_pool_flatten_linear() {
+    // Conv2d → Pool2d → Flatten → Linear：合法
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
+    let pool_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: pool_inn,
+            layer_config: LayerConfig::Pool2d {
+                pool_type: PoolType::Max,
+                kernel_size: 2,
+                stride: 2,
+            },
+            enabled: true,
+        },
+    );
+    assert!(genome.is_domain_valid());
+}
+
+#[test]
+fn test_is_domain_valid_spatial_missing_flatten() {
+    // Conv2d → Pool2d → Linear：非法（缺少 Flatten，空间域直连 Flat 层）
+    let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
+    // 移除 Flatten 层（index 2）
+    genome.layers.remove(2);
+    assert!(!genome.is_domain_valid());
+}
+
+#[test]
+fn test_is_domain_valid_spatial_linear_before_flatten() {
+    // Linear → Flatten → Linear：非法（Spatial 域下不能有 Linear）
+    let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
+    genome.layers[0].layer_config = LayerConfig::Linear { out_features: 8 };
+    assert!(!genome.is_domain_valid());
+}
+
+#[test]
+fn test_is_domain_valid_spatial_activation_in_spatial_domain() {
+    // Conv2d → ReLU → Flatten → Linear：合法（Activation 在 Spatial 域透传）
+    let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
+    let act_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: act_inn,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    assert!(genome.is_domain_valid());
+}
+
+#[test]
+fn test_is_domain_valid_spatial_rnn_illegal() {
+    // Conv2d → Rnn → Flatten → Linear：非法（Spatial 域下不能有 RNN）
+    let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
+    let rnn_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: rnn_inn,
+            layer_config: LayerConfig::Rnn { hidden_size: 8 },
+            enabled: true,
+        },
+    );
+    assert!(!genome.is_domain_valid());
+}
+
+#[test]
+fn test_domain_map_spatial_genome() {
+    // Input(Spatial) → Conv2d(Spatial) → Pool2d(Spatial) → Flatten(Flat) → Linear(Flat)
+    let genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
+    let map = genome.compute_domain_map();
+
+    assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Spatial);
+    assert_eq!(
+        map[&genome.layers[0].innovation_number],
+        ShapeDomain::Spatial
+    ); // Conv2d
+    assert_eq!(
+        map[&genome.layers[1].innovation_number],
+        ShapeDomain::Spatial
+    ); // Pool2d
+    assert_eq!(map[&genome.layers[2].innovation_number], ShapeDomain::Flat); // Flatten
+    assert_eq!(map[&genome.layers[3].innovation_number], ShapeDomain::Flat); // Linear
+}
+
+#[test]
+fn test_spatial_map_minimal() {
+    // Input(8×8) → Conv2d(8×8) → Pool2d(4×4) → Flatten(None) → Linear(None)
+    let genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
+
+    let smap = genome.compute_spatial_map();
+    assert_eq!(smap[&INPUT_INNOVATION], Some((8, 8)));
+    assert_eq!(smap[&genome.layers[0].innovation_number], Some((8, 8))); // Conv2d: same padding
+    assert_eq!(smap[&genome.layers[1].innovation_number], Some((4, 4))); // Pool2d: 8/2=4
+    assert_eq!(smap[&genome.layers[2].innovation_number], None); // Flatten
+    assert_eq!(smap[&genome.layers[3].innovation_number], None); // Linear
+}
+
+#[test]
+fn test_validate_skip_edge_spatial_same_hw() {
+    // Conv2d(#1) → Conv2d(#2) → Flatten → Linear
+    // Skip: #1 → #2（同 H/W）→ 合法
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
+    let conv2_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: conv2_inn,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: 1,
+                kernel_size: 3,
+            },
+            enabled: true,
+        },
+    );
+    let conv1_inn = genome.layers[0].innovation_number;
+    let skip_inn = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: skip_inn,
+        from_innovation: conv1_inn,
+        to_innovation: conv2_inn,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    assert!(genome.validate_skip_edge_domains());
+}
+
+#[test]
+fn test_validate_skip_edge_spatial_different_hw() {
+    // Conv2d(#1, 8×8) → Pool2d(4×4) → Conv2d(#2, 4×4) → Flatten → Linear
+    // Skip: #1(8×8) → #2(4×4)（H/W 不同）→ 非法
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
+    let pool_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: pool_inn,
+            layer_config: LayerConfig::Pool2d {
+                pool_type: PoolType::Max,
+                kernel_size: 2,
+                stride: 2,
+            },
+            enabled: true,
+        },
+    );
+    let conv2_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: conv2_inn,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: 1,
+                kernel_size: 3,
+            },
+            enabled: true,
+        },
+    );
+
+    let conv1_inn = genome.layers[0].innovation_number;
+    let skip_inn = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: skip_inn,
+        from_innovation: conv1_inn,
+        to_innovation: conv2_inn,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    assert!(!genome.validate_skip_edge_domains());
 }

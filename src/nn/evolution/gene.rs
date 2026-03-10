@@ -29,6 +29,8 @@ pub enum ShapeDomain {
     Flat,
     /// 3D 序列数据 `[batch, seq_len, features]`
     Sequence,
+    /// 4D 空间数据 `[batch, channels, H, W]`
+    Spatial,
 }
 
 // ==================== 错误类型 ====================
@@ -98,6 +100,24 @@ impl fmt::Display for ActivationType {
     }
 }
 
+// ==================== 池化类型 ====================
+
+/// 池化类型（Max / Avg）
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PoolType {
+    Max,
+    Avg,
+}
+
+impl fmt::Display for PoolType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PoolType::Max => write!(f, "Max"),
+            PoolType::Avg => write!(f, "Avg"),
+        }
+    }
+}
+
 // ==================== 层配置 ====================
 
 /// 层配置（纯计算层，不含聚合节点）
@@ -112,6 +132,12 @@ pub enum LayerConfig {
     Lstm { hidden_size: usize },
     Gru { hidden_size: usize },
     Dropout { p: f32 },
+    /// 2D 卷积：stride=1, padding=kernel_size/2（same padding，不改变 H/W）
+    Conv2d { out_channels: usize, kernel_size: usize },
+    /// 2D 池化（空间降维，不改变 channels）
+    Pool2d { pool_type: PoolType, kernel_size: usize, stride: usize },
+    /// 展平：Spatial(C,H,W) → Flat(C*H*W)
+    Flatten,
 }
 
 impl fmt::Display for LayerConfig {
@@ -123,6 +149,13 @@ impl fmt::Display for LayerConfig {
             LayerConfig::Lstm { hidden_size } => write!(f, "LSTM({hidden_size})"),
             LayerConfig::Gru { hidden_size } => write!(f, "GRU({hidden_size})"),
             LayerConfig::Dropout { p } => write!(f, "Dropout({p})"),
+            LayerConfig::Conv2d { out_channels, kernel_size } => {
+                write!(f, "Conv2d({out_channels}, k={kernel_size})")
+            }
+            LayerConfig::Pool2d { pool_type, kernel_size, stride } => {
+                write!(f, "{pool_type}Pool({kernel_size}, s={stride})")
+            }
+            LayerConfig::Flatten => write!(f, "Flatten"),
         }
     }
 }
@@ -263,6 +296,8 @@ pub struct NetworkGenome {
     pub output_dim: usize,
     /// 序列长度（None = 平坦输入，Some(n) = 序列输入，每个时间步 input_dim 维特征）
     pub seq_len: Option<usize>,
+    /// 空间输入尺寸 (H, W)（None = 非空间输入，Some = 空间输入，input_dim 表示 in_channels）
+    pub input_spatial: Option<(usize, usize)>,
     pub training_config: TrainingConfig,
     pub generated_by: String,
     pub(crate) next_innovation: u64,
@@ -277,6 +312,7 @@ impl Clone for NetworkGenome {
             input_dim: self.input_dim,
             output_dim: self.output_dim,
             seq_len: self.seq_len,
+            input_spatial: self.input_spatial,
             training_config: self.training_config.clone(),
             generated_by: self.generated_by.clone(),
             next_innovation: self.next_innovation,
@@ -293,6 +329,7 @@ impl fmt::Debug for NetworkGenome {
             .field("input_dim", &self.input_dim)
             .field("output_dim", &self.output_dim)
             .field("seq_len", &self.seq_len)
+            .field("input_spatial", &self.input_spatial)
             .field("training_config", &self.training_config)
             .field("generated_by", &self.generated_by)
             .field("next_innovation", &self.next_innovation)
@@ -314,6 +351,7 @@ impl NetworkGenome {
         input_dim: usize,
         output_dim: usize,
         seq_len: Option<usize>,
+        input_spatial: Option<(usize, usize)>,
         training_config: TrainingConfig,
         generated_by: String,
         next_innovation: u64,
@@ -325,6 +363,7 @@ impl NetworkGenome {
             input_dim,
             output_dim,
             seq_len,
+            input_spatial,
             training_config,
             generated_by,
             next_innovation,
@@ -354,6 +393,7 @@ impl NetworkGenome {
             input_dim,
             output_dim,
             seq_len: None,
+            input_spatial: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal".to_string(),
             next_innovation: 2, // 0 = INPUT, 1 = 输出头
@@ -394,9 +434,77 @@ impl NetworkGenome {
             input_dim,
             output_dim,
             seq_len: Some(0), // 占位，materialize_task 会设置实际值
+            input_spatial: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal_sequential".to_string(),
             next_innovation: 3, // 0 = INPUT, 1 = Rnn, 2 = 输出头
+            weight_snapshots: HashMap::new(),
+        }
+    }
+
+    /// 最小空间网络：layers = [Conv2d(out=output_dim, k=3), Pool2d(Max, k=2, s=2), Flatten, Linear(output_dim)]
+    ///
+    /// Pool2d 是空间模式的结构必需品，类比 `minimal_sequential` 必须包含 Rnn。
+    /// 没有空间缩减的 CNN 会导致 Flatten 维度爆炸（如 28×28 图像 Flatten 后
+    /// 达 7840+ 特征），使得训练极慢且参数量巨大。
+    ///
+    /// # Panics
+    /// `input_channels` 或 `output_dim` 为零，或 `spatial` 的 H/W 为零时 panic。
+    pub fn minimal_spatial(
+        input_channels: usize,
+        output_dim: usize,
+        spatial: (usize, usize),
+    ) -> Self {
+        assert!(input_channels > 0, "input_channels 不能为零");
+        assert!(output_dim > 0, "output_dim 不能为零");
+        assert!(
+            spatial.0 > 0 && spatial.1 > 0,
+            "spatial (H, W) 不能为零"
+        );
+
+        let conv_layer = LayerGene {
+            innovation_number: 1,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: output_dim,
+                kernel_size: 3,
+            },
+            enabled: true,
+        };
+
+        let pool_layer = LayerGene {
+            innovation_number: 2,
+            layer_config: LayerConfig::Pool2d {
+                pool_type: PoolType::Max,
+                kernel_size: 2,
+                stride: 2,
+            },
+            enabled: true,
+        };
+
+        let flatten_layer = LayerGene {
+            innovation_number: 3,
+            layer_config: LayerConfig::Flatten,
+            enabled: true,
+        };
+
+        let output_head = LayerGene {
+            innovation_number: 4,
+            layer_config: LayerConfig::Linear {
+                out_features: output_dim,
+            },
+            enabled: true,
+        };
+
+        Self {
+            layers: vec![conv_layer, pool_layer, flatten_layer, output_head],
+            skip_edges: Vec::new(),
+            input_dim: input_channels,
+            output_dim,
+            seq_len: None,
+            input_spatial: Some(spatial),
+            training_config: TrainingConfig::default(),
+            generated_by: "minimal_spatial".to_string(),
+            next_innovation: 5, // 0=INPUT, 1=Conv2d, 2=Pool2d, 3=Flatten, 4=输出头
             weight_snapshots: HashMap::new(),
         }
     }
@@ -417,12 +525,12 @@ impl NetworkGenome {
     ///
     /// 维度不兼容（如 Add 的输入维度不同）时返回 Err。
     pub fn resolve_dimensions(&self) -> Result<Vec<ResolvedDim>, GenomeError> {
-        // 已计算的每层输出维度：innovation_number → out_dim
         let mut dim_map: HashMap<u64, usize> = HashMap::new();
         dim_map.insert(INPUT_INNOVATION, self.input_dim);
 
         let mut results = Vec::new();
         let mut current_dim = self.input_dim;
+        let mut current_spatial = self.input_spatial;
 
         for layer in self.layers.iter().filter(|l| l.enabled) {
             let effective_in_dim = self.compute_effective_input(
@@ -431,7 +539,8 @@ impl NetworkGenome {
                 &dim_map,
             )?;
 
-            let out_dim = Self::compute_output_dim(&layer.layer_config, effective_in_dim);
+            let out_dim =
+                Self::compute_output_dim(&layer.layer_config, effective_in_dim, current_spatial);
 
             results.push(ResolvedDim {
                 innovation_number: layer.innovation_number,
@@ -441,6 +550,7 @@ impl NetworkGenome {
 
             dim_map.insert(layer.innovation_number, out_dim);
             current_dim = out_dim;
+            current_spatial = Self::compute_next_spatial(&layer.layer_config, current_spatial);
         }
 
         if results.is_empty() {
@@ -507,20 +617,58 @@ impl NetworkGenome {
         }
     }
 
-    /// 验证域链合法性（序列模式专用）
+    /// 验证域链合法性
     ///
     /// 遍历启用层，追踪 `current_domain`：
-    /// - 合法转换：Seq→Seq（RNN return_seq）、Seq→Flat（RNN last hidden）、
-    ///   Flat→Flat（Linear）、任意域→同域（Activation/Dropout）
-    /// - 非法转换：Flat→Sequence（不允许回溯）、Sequence 直接到 Linear（跳过 RNN）
-    /// - 终态必须为 Flat（输出头需要 2D 输入）
+    /// - 空间模式：Spatial→Spatial（Conv2d/Pool2d）、Spatial→Flat（Flatten）、
+    ///   Flat→Flat（Linear）；RNN 非法
+    /// - 序列模式：Seq→Seq/Flat（RNN）、Flat→Flat（Linear）；空间层非法
+    /// - 终态必须为 Flat
     ///
-    /// 平坦模式（seq_len=None）直接返回 true。
+    /// 纯平坦模式直接返回 true。
     pub fn is_domain_valid(&self) -> bool {
+        // 空间模式
+        if self.input_spatial.is_some() {
+            let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+            if enabled.is_empty() {
+                return false;
+            }
+            let mut current_domain = ShapeDomain::Spatial;
+            for layer in &enabled {
+                match &layer.layer_config {
+                    LayerConfig::Conv2d { .. } | LayerConfig::Pool2d { .. } => {
+                        if current_domain != ShapeDomain::Spatial {
+                            return false;
+                        }
+                    }
+                    LayerConfig::Flatten => {
+                        if current_domain != ShapeDomain::Spatial {
+                            return false;
+                        }
+                        current_domain = ShapeDomain::Flat;
+                    }
+                    LayerConfig::Linear { .. } => {
+                        if current_domain != ShapeDomain::Flat {
+                            return false;
+                        }
+                    }
+                    LayerConfig::Rnn { .. }
+                    | LayerConfig::Lstm { .. }
+                    | LayerConfig::Gru { .. } => {
+                        return false; // RNN 在空间模式下非法
+                    }
+                    LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {}
+                }
+            }
+            return current_domain == ShapeDomain::Flat;
+        }
+
+        // 纯平坦模式
         if self.seq_len.is_none() {
             return true;
         }
 
+        // 序列模式
         let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
         if enabled.is_empty() {
             return false;
@@ -534,9 +682,8 @@ impl NetworkGenome {
                 | LayerConfig::Lstm { .. }
                 | LayerConfig::Gru { .. } => {
                     if current_domain != ShapeDomain::Sequence {
-                        return false; // Flat→Sequence 非法
+                        return false;
                     }
-                    // 判断输出域：看下一个实质层（跳过 Activation/Dropout）
                     let mut next_is_recurrent = false;
                     for next_layer in &enabled[i + 1..] {
                         match &next_layer.layer_config {
@@ -557,13 +704,15 @@ impl NetworkGenome {
                 }
                 LayerConfig::Linear { .. } => {
                     if current_domain != ShapeDomain::Flat {
-                        return false; // Sequence 直接到 Linear 非法
+                        return false;
                     }
-                    // Linear 保持 Flat
                 }
-                LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {
-                    // 透传，保持当前域
+                LayerConfig::Conv2d { .. }
+                | LayerConfig::Pool2d { .. }
+                | LayerConfig::Flatten => {
+                    return false; // 空间层在序列模式下非法
                 }
+                LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {}
             }
         }
 
@@ -572,14 +721,12 @@ impl NetworkGenome {
 
     /// 验证所有启用的 skip edge 在当前域映射下仍然合法
     ///
-    /// 结构变异（InsertLayer/RemoveLayer/MutateCellType）可能改变某些层的输出域
-    /// （例如在 skip edge 源层后面插入 RNN 族层，使源层从 Flat 变为 Sequence），
-    /// 导致已有 skip edge 跨域（Sequence↔Flat）。
-    /// 此方法检查所有 skip edge 的源和目标是否仍在 Flat 域内。
+    /// 源和目标必须在同一域内；序列模式只允许 Flat 域 skip edge；
+    /// 空间模式的 Spatial 域 skip edge 还需要 H/W 匹配。
     ///
-    /// 平坦模式（seq_len=None）直接返回 true（所有域均为 Flat）。
+    /// 纯平坦模式直接返回 true。
     pub fn validate_skip_edge_domains(&self) -> bool {
-        if self.seq_len.is_none() {
+        if self.seq_len.is_none() && self.input_spatial.is_none() {
             return true;
         }
 
@@ -589,17 +736,20 @@ impl NetworkGenome {
         }
 
         let domain_map = self.compute_domain_map();
+        let spatial_map = if self.input_spatial.is_some() {
+            Some(self.compute_spatial_map())
+        } else {
+            None
+        };
+
+        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
 
         for edge in &active_edges {
-            // 源层输出域必须为 Flat
-            let from_domain = domain_map.get(&edge.from_innovation).copied();
-            if from_domain != Some(ShapeDomain::Flat) {
-                return false;
-            }
+            let from_domain = domain_map
+                .get(&edge.from_innovation)
+                .copied()
+                .unwrap_or(ShapeDomain::Flat);
 
-            // 目标层的输入域（= 主路径前驱的输出域）必须为 Flat
-            // 对于 INPUT 作为前驱的特殊情况，其域由 seq_len 决定
-            let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
             let to_idx = enabled
                 .iter()
                 .position(|l| l.innovation_number == edge.to_innovation);
@@ -609,10 +759,35 @@ impl NetworkGenome {
                     let pred_inn = enabled[idx - 1].innovation_number;
                     domain_map.get(&pred_inn).copied().unwrap_or(ShapeDomain::Flat)
                 }
-                None => continue, // 目标层不在启用列表中，skip
+                None => continue,
             };
-            if to_input_domain != ShapeDomain::Flat {
+
+            // 源和目标必须在同一域
+            if from_domain != to_input_domain {
                 return false;
+            }
+
+            // 序列模式：skip edge 只能在 Flat 域
+            if self.seq_len.is_some() && from_domain != ShapeDomain::Flat {
+                return false;
+            }
+
+            // 空间模式：Spatial 域内 skip edge 需要 H/W 匹配
+            if from_domain == ShapeDomain::Spatial {
+                if let Some(ref smap) = spatial_map {
+                    let from_sp = smap.get(&edge.from_innovation).copied().flatten();
+                    let to_sp = match to_idx {
+                        Some(0) => smap.get(&INPUT_INNOVATION).copied().flatten(),
+                        Some(idx) => {
+                            let pred_inn = enabled[idx - 1].innovation_number;
+                            smap.get(&pred_inn).copied().flatten()
+                        }
+                        None => continue,
+                    };
+                    if from_sp != to_sp {
+                        return false;
+                    }
+                }
             }
         }
 
@@ -629,12 +804,30 @@ impl NetworkGenome {
 
     /// 计算每个节点的输出形状域映射
     ///
-    /// 返回 `innovation_number → ShapeDomain`，描述每个节点输出张量的域。
-    /// 平坦模式（`seq_len=None`）下所有节点为 `Flat`。
-    /// 用于 skip edge 域兼容性检查：跨域（Sequence↔Flat）的 skip edge 无法聚合。
+    /// 返回 `innovation_number → ShapeDomain`。
+    /// 用于 skip edge 域兼容性检查。
     pub fn compute_domain_map(&self) -> HashMap<u64, ShapeDomain> {
         let mut map = HashMap::new();
 
+        // 空间模式
+        if self.input_spatial.is_some() {
+            map.insert(INPUT_INNOVATION, ShapeDomain::Spatial);
+            let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+            let mut current_domain = ShapeDomain::Spatial;
+            for layer in &enabled {
+                match &layer.layer_config {
+                    LayerConfig::Conv2d { .. } | LayerConfig::Pool2d { .. } => {}
+                    LayerConfig::Flatten => {
+                        current_domain = ShapeDomain::Flat;
+                    }
+                    _ => {}
+                }
+                map.insert(layer.innovation_number, current_domain);
+            }
+            return map;
+        }
+
+        // 平坦模式
         if self.seq_len.is_none() {
             map.insert(INPUT_INNOVATION, ShapeDomain::Flat);
             for layer in self.layers.iter().filter(|l| l.enabled) {
@@ -643,6 +836,7 @@ impl NetworkGenome {
             return map;
         }
 
+        // 序列模式
         map.insert(INPUT_INNOVATION, ShapeDomain::Sequence);
         let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
         let mut current_domain = ShapeDomain::Sequence;
@@ -652,7 +846,6 @@ impl NetworkGenome {
                 LayerConfig::Rnn { .. }
                 | LayerConfig::Lstm { .. }
                 | LayerConfig::Gru { .. } => {
-                    // 找下一个实质层（跳过 Activation/Dropout）
                     let mut next_is_recurrent = false;
                     for next_layer in &enabled[i + 1..] {
                         match &next_layer.layer_config {
@@ -671,7 +864,7 @@ impl NetworkGenome {
                         ShapeDomain::Flat
                     };
                 }
-                _ => { /* Linear/Activation/Dropout 保持当前域 */ }
+                _ => {}
             }
             map.insert(layer.innovation_number, current_domain);
         }
@@ -724,13 +917,23 @@ impl NetworkGenome {
     }
 
     /// 根据层类型和输入维度计算输出维度
-    fn compute_output_dim(config: &LayerConfig, in_dim: usize) -> usize {
+    fn compute_output_dim(
+        config: &LayerConfig,
+        in_dim: usize,
+        spatial: Option<(usize, usize)>,
+    ) -> usize {
         match config {
             LayerConfig::Linear { out_features } => *out_features,
             LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => in_dim,
             LayerConfig::Rnn { hidden_size }
             | LayerConfig::Lstm { hidden_size }
             | LayerConfig::Gru { hidden_size } => *hidden_size,
+            LayerConfig::Conv2d { out_channels, .. } => *out_channels,
+            LayerConfig::Pool2d { .. } => in_dim, // channels 不变
+            LayerConfig::Flatten => match spatial {
+                Some((h, w)) => in_dim * h * w,
+                None => in_dim,
+            },
         }
     }
 
@@ -738,23 +941,67 @@ impl NetworkGenome {
     fn compute_layer_params(config: &LayerConfig, in_dim: usize, _out_dim: usize) -> usize {
         match config {
             LayerConfig::Linear { out_features } => {
-                // W: [in_dim, out_features] + b: [out_features]
                 in_dim * out_features + out_features
             }
-            LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => 0,
+            LayerConfig::Activation { .. }
+            | LayerConfig::Dropout { .. }
+            | LayerConfig::Pool2d { .. }
+            | LayerConfig::Flatten => 0,
             LayerConfig::Rnn { hidden_size } => {
-                // W_ih + W_hh + b_h（实际 Rnn 层只有 1 个偏置）
                 in_dim * hidden_size + hidden_size * hidden_size + hidden_size
             }
             LayerConfig::Lstm { hidden_size } => {
-                // 4 gates × (W_ih + W_hh + bias)
                 4 * (in_dim * hidden_size + hidden_size * hidden_size + hidden_size)
             }
             LayerConfig::Gru { hidden_size } => {
-                // 3 gates × (W_ih + W_hh + bias)
                 3 * (in_dim * hidden_size + hidden_size * hidden_size + hidden_size)
             }
+            LayerConfig::Conv2d {
+                out_channels,
+                kernel_size,
+            } => {
+                // W: [out_ch, in_ch, k, k] + b: [out_ch]
+                out_channels * in_dim * kernel_size * kernel_size + out_channels
+            }
         }
+    }
+
+    /// 计算经过一个层后的空间尺寸变化
+    fn compute_next_spatial(
+        config: &LayerConfig,
+        spatial: Option<(usize, usize)>,
+    ) -> Option<(usize, usize)> {
+        match config {
+            LayerConfig::Conv2d { .. } => spatial, // same padding, H/W 不变
+            LayerConfig::Pool2d {
+                kernel_size,
+                stride,
+                ..
+            } => spatial.map(|(h, w)| {
+                let new_h = (h - kernel_size) / stride + 1;
+                let new_w = (w - kernel_size) / stride + 1;
+                (new_h, new_w)
+            }),
+            LayerConfig::Flatten => None,
+            _ => spatial,
+        }
+    }
+
+    /// 计算每个节点的输出空间尺寸映射
+    pub(crate) fn compute_spatial_map(&self) -> HashMap<u64, Option<(usize, usize)>> {
+        let mut map = HashMap::new();
+        let mut current = self.input_spatial;
+        map.insert(INPUT_INNOVATION, current);
+        for layer in self.layers.iter().filter(|l| l.enabled) {
+            current = Self::compute_next_spatial(&layer.layer_config, current);
+            map.insert(layer.innovation_number, current);
+        }
+        map
+    }
+
+    /// 是否为空间模式
+    pub fn is_spatial(&self) -> bool {
+        self.input_spatial.is_some()
     }
 }
 
@@ -787,6 +1034,8 @@ impl NetworkGenome {
         let mut entries: Vec<(u64, String)> = Vec::with_capacity(enabled.len() + 1);
         let input_label = if self.seq_len.is_some() {
             format!("Input(seq×{})", self.input_dim)
+        } else if let Some((h, w)) = self.input_spatial {
+            format!("Input({}@{}×{})", self.input_dim, h, w)
         } else {
             format!("Input({})", self.input_dim)
         };

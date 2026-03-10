@@ -68,6 +68,8 @@ struct GenomeSerialized {
     output_dim: usize,
     #[serde(default)]
     seq_len: Option<usize>,
+    #[serde(default)]
+    input_spatial: Option<(usize, usize)>,
     training_config: super::gene::TrainingConfig,
     generated_by: String,
     next_innovation: u64,
@@ -81,6 +83,7 @@ impl From<&NetworkGenome> for GenomeSerialized {
             input_dim: genome.input_dim,
             output_dim: genome.output_dim,
             seq_len: genome.seq_len,
+            input_spatial: genome.input_spatial,
             training_config: genome.training_config.clone(),
             generated_by: genome.generated_by.clone(),
             next_innovation: genome.next_innovation,
@@ -100,6 +103,7 @@ impl GenomeSerialized {
             self.input_dim,
             self.output_dim,
             self.seq_len,
+            self.input_spatial,
             self.training_config,
             self.generated_by,
             self.next_innovation,

@@ -35,6 +35,45 @@ let predictions = result.predict(&new_data)?;
 result.visualize("output/my_model")?;
 ```
 
+### 1.1.1 序列 / 记忆单元
+
+当每个样本是 2D 张量 `[seq_len, input_dim]` 时，系统自动检测为序列模式，从最小 RNN 结构出发演化：
+
+```rust
+use only_torch::nn::evolution::{Evolution, gene::TaskMetric};
+use only_torch::tensor::Tensor;
+
+// 每个样本 [seq_len, 1] 的二进制序列
+let train_data = generate_parity_data(200, 8, 42);
+let test_data = generate_parity_data(50, 8, 99);
+
+let result = Evolution::supervised(train_data, test_data, TaskMetric::Accuracy)
+    .with_target_metric(0.90)
+    .with_seed(42)
+    .run()?;
+```
+
+无需手动指定序列模式——数据形状决定一切。系统自动选择记忆单元（RNN/LSTM/GRU）并演化网络拓扑。支持变长序列（自动零填充至最大长度）。
+
+### 1.1.2 CNN / 图像分类
+
+当每个样本是 3D 张量 `[C, H, W]` 时，系统自动检测为空间模式，从最小 CNN 结构出发演化：
+
+```rust
+use only_torch::data::MnistDataset;
+use only_torch::nn::evolution::{Evolution, gene::TaskMetric};
+
+let train_data = collect_samples(&train_set, 1000); // 每个样本 [1, 28, 28]
+let test_data = collect_samples(&test_set, 500);
+
+let result = Evolution::supervised(train_data, test_data, TaskMetric::Accuracy)
+    .with_target_metric(0.95)
+    .with_seed(42)
+    .run()?;
+```
+
+无需手动指定 CNN 模式——数据形状决定一切。
+
 ### 1.2 可调参数
 
 ```rust
@@ -176,15 +215,21 @@ pub struct NetworkGenome {
     pub skip_edges: Vec<SkipEdge>,       // 跳跃连接列表
     pub input_dim: usize,
     pub output_dim: usize,
+    pub seq_len: Option<usize>,              // None=平坦, Some(n)=序列（每时间步 input_dim 维）
+    pub input_spatial: Option<(usize, usize)>, // None=非空间, Some((H,W))=空间
     pub training_config: TrainingConfig, // lr / optimizer / loss 等
     pub generated_by: String,            // 变异来源（调试用）
     weight_snapshots: HashMap<u64, Vec<Tensor>>,  // Lamarckian 继承
 }
 ```
+**最小初始网络**（按数据形状自动选择）：
+- 平坦数据 `[D]`：`Input(D) → [Linear(output_dim)]`
+- 序列数据 `[T, D]`：`Input(seq×D) → Rnn(output_dim) → [Linear(output_dim)]`
+- 空间数据 `[C, H, W]`：`Input(C@H×W) → Conv2d(out_dim, k=3) → MaxPool2d(k=2, s=2) → Flatten → [Linear(out_dim)]`
 
-**最小初始网络**：`Input(input_dim) → [Linear(output_dim)]`（仅输出头，无隐藏层）。
+序列初始网络以最简单的 Rnn 为起点（而非 LSTM/GRU），后续 `MutateCellType` 可升级记忆单元类型，`InsertLayer` 可在序列域插入更多循环层。
 
-**输出头保护**：`layers` 的最后一个启用层始终是 `Linear(out_features=output_dim)`，所有变异操作不会删除、修改或在其之后插入。
+**输出头保护**：
 
 **权重快照自包含**：`clone()` 时权重一并复制，回滚到 `best_genome` 自带权重，无需保留旧 Graph。
 
@@ -194,16 +239,42 @@ pub struct NetworkGenome {
 pub enum LayerConfig {
     Linear { out_features: usize },
     Activation { activation_type: ActivationType },
-    Rnn { hidden_size: usize },       // 预留
-    Lstm { hidden_size: usize },      // 预留
-    Gru { hidden_size: usize },       // 预留
-    Dropout { p: f32 },               // 预留
+    Rnn { hidden_size: usize },
+    Lstm { hidden_size: usize },
+    Gru { hidden_size: usize },
+    Dropout { p: f32 },
+    Conv2d { out_channels: usize, kernel_size: usize }, // stride=1, same padding
+    Pool2d { pool_type: PoolType, kernel_size: usize, stride: usize },
+    Flatten, // Spatial(C,H,W) → Flat(C*H*W)
 }
 ```
 
-只存输出侧参数，输入维度由 `resolve_dimensions()` 自动推导。
+只存输出侧参数，输入维度由 `resolve_dimensions()` 自动推导。循环层（Rnn / Lstm / Gru）仅在 `seq_len` 非 None 时使用，空间层（Conv2d / Pool2d / Flatten）仅在 `input_spatial` 非 None 时使用。
 
-### 4.3 SkipEdge 与聚合
+### 4.3 ShapeDomain 域系统
+
+`ShapeDomain` 描述张量在网络中的维度语义，用于验证层链合法性和约束 skip edge 范围：
+
+```rust
+pub enum ShapeDomain {
+    Flat,      // 2D [batch, features]
+    Sequence,  // 3D [batch, seq_len, features]
+    Spatial,   // 4D [batch, channels, H, W]
+}
+```
+
+**序列模式域链规则**（`is_domain_valid()`）：
+- `Sequence → Sequence`：循环层输出 `return_sequences=true`（下一个实质层也是循环层时自动启用）
+- `Sequence → Flat`：循环层输出 `return_sequences=false`（仅返回最后一个时间步的隐藏状态）
+- `Flat → Flat`：Linear、Activation 等平坦层
+- `Flat → Sequence`：**非法**（不允许回溯至序列域）
+- 终态必须为 `Flat`（输出头需要 2D 输入）
+
+**空间模式域链规则**：`Spatial* → Flatten → Flat*`（详见 11.5 节）。
+
+`compute_domain_map()` 为每个层节点映射到其输出形状域，供 skip edge 约束和变异操作的域感知逻辑使用。
+
+### 4.4 SkipEdge 与聚合
 
 跳跃连接不作为独立层存在于 `layers` 中。`SkipEdge` 携带聚合策略，`build()` 时自动在目标层输入处生成聚合操作：
 
@@ -256,6 +327,13 @@ pub struct TrainingConfig {
 
 `resolve_dimensions()` 从 `input_dim` 出发沿 `layers` 顺序遍历，为每层计算 `(in_dim, out_dim)`。遇到 skip edge 目标层时，按聚合策略计算有效输入维度（Add/Mean/Max 要求维度相同，Concat 求和）。
 
+空间模式下，维度推导同时维护 `current_spatial: Option<(H, W)>`：
+- Conv2d (same padding, stride=1)：`(H, W)` 不变，`out_dim = out_channels`
+- Pool2d (kernel_size=k, stride=s)：`(H/s, W/s)`，channels 不变
+- Flatten：`out_dim = channels × H × W`，空间维度归 None
+`compute_spatial_map()` 为每个层节点（含 INPUT）映射到其输出空间尺寸，Flatten 之后为 None。
+
+`total_params()`
 `total_params()` 和 `build()` 共享同一套维度推导逻辑，避免重复实现。变异操作的 `is_applicable()` 通过试探式调用 `resolve_dimensions()` 统一检测维度合法性。
 
 ---
@@ -276,19 +354,23 @@ pub trait Mutation: Send + Sync {
 
 `MutationRegistry` 按权重随机选择可用变异并执行。`apply` 失败时自动排除并重试，直到成功或所有候选耗尽。
 
-### 5.2 默认注册表（12 种变异）
+### 5.2 默认注册表（12 + 条件变异）
 
-**结构/参数变异（7 种）**：
+基础 12 种变异始终注册，`MutateCellType`（序列模式）和 `MutateKernelSize`（空间模式）按数据形状条件注册。
+
+**结构/参数变异（7 + 条件）**：
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
-| `InsertLayer` | 0.15 | ✅ | 50/50 选 Linear 或 Activation，在输出头前随机位置插入 |
-| `RemoveLayer` | 0.15 | ✅ | 随机移除非输出头的隐藏层 |
-| `ReplaceLayerType` | 0.10 | | Activation 内部互换（ReLU↔Tanh↔Sigmoid…） |
-| `GrowHiddenSize` | 0.24 | | 按 SizeStrategy 增大 Linear 层（+1 或 ×2） |
-| `ShrinkHiddenSize` | 0.29 | | 按 SizeStrategy 缩小 Linear 层（-1 或 /2） |
-| `MutateLayerParam` | 0.05 | | LeakyReLU alpha ∈ [0.001, 0.5]，Dropout p ∈ [0.05, 0.8] |
+| `InsertLayer` | 0.15 | ✅ | 域感知：Flat 域选 Linear/Activation，Sequence 域选 RNN/LSTM/GRU，Spatial 域选 Conv2d(80%)/Pool2d(20%) |
+| `RemoveLayer` | 0.15 | ✅ | 随机移除非输出头的隐藏层（验证域链合法性） |
+| `ReplaceLayerType` | 0.10 | | Activation 内部互换（ReLU↔Tanh↔Sigmoid…共 13 种） |
+| `GrowHiddenSize` | 0.24 | | 增大 Linear/RNN/LSTM/GRU/Conv2d 的尺寸（+1 或 ×2） |
+| `ShrinkHiddenSize` | 0.29 | | 缩小 Linear/RNN/LSTM/GRU/Conv2d 的尺寸（-1 或 /2） |
+| `MutateLayerParam` | 0.05 | | LeakyReLU/ELU alpha，Dropout p |
 | `MutateLossFunction` | 0.02 | | 切换兼容 loss（如 BCE↔MSE） |
+| `MutateCellType` | 0.10 | | Rnn↔Lstm↔Gru 循环层类型切换（仅序列模式注册） |
+| `MutateKernelSize` | 0.10 | | Conv2d kernel_size 在 {1,3,5,7} 中切换（仅空间模式注册） |
 
 > Shrink 权重 > Grow，鼓励演化出更紧凑的网络（奥卡姆剃刀）。
 
@@ -316,6 +398,10 @@ pub trait Mutation: Send + Sync {
 - **规模约束**：`max_layers` / `max_hidden_size` / `max_total_params`
 - **连续 Activation 禁止**：不允许两个 Activation 相邻
 - **DAG 约束**：skip edge 只能前向（from 在 to 之前）
+- **域链合法性**：`is_domain_valid()` 确保合法的域转换序列
+  - 序列模型：`Sequence* → Flat*`（不允许 Flat→Sequence 回溯）
+  - 空间模型：`Spatial* → Flatten → Flat*`
+- **记忆单元原子性**：序列模式下 skip edge 仅允许在 Flat 域内，不穿透循环层
 - **最小保护**：至少保留输出头一层
 
 ### 5.4 自定义变异
@@ -415,7 +501,9 @@ let vis = result.visualize("output/evolution")?;
 `EvolutionResult` 提供 `predict()` 方法，封装了 Graph / Var 等内部细节：
 
 ```rust
-// 单样本 [input_dim] 或批量 [batch, input_dim]
+// 平坦：单样本 [input_dim] 或批量 [batch, input_dim]
+// 序列：单样本 [seq_len, input_dim] 或批量 [batch, seq_len, input_dim]
+// 空间：单样本 [C, H, W] 或批量 [batch, C, H, W]
 let predictions = result.predict(&input)?;  // 返回 [batch, output_dim]
 ```
 
@@ -430,18 +518,19 @@ src/nn/evolution/
 ├── mod.rs              Evolution + run() + TaskSpec + EvolutionResult + EvolutionStatus
 ├── error.rs            EvolutionError（InvalidData / InvalidConfig / Graph）
 ├── gene.rs             NetworkGenome, LayerGene, LayerConfig, SkipEdge, TrainingConfig, TaskMetric
-├── mutation.rs         Mutation trait + MutationRegistry + 12 种变异操作
+├── mutation.rs         Mutation trait + MutationRegistry + 12+条件变异操作
 ├── builder.rs          Genome → Graph 转换 + BuildResult + Lamarckian 权重管理
+├── model_io.rs         模型序列化/反序列化（save/load .otm 文件）
 ├── convergence.rs      ConvergenceDetector + ConvergenceConfig + TrainingBudget
 ├── task.rs             EvolutionTask trait + SupervisedTask + FitnessScore
 ├── callback.rs         EvolutionCallback trait + DefaultCallback
 └── tests/
-    ├── gene.rs         基因数据结构单元测试
-    ├── mutation.rs     变异操作单元测试
-    ├── builder.rs      构建与权重继承单元测试
+    ├── gene.rs         基因数据结构单元测试（含序列域/空间层维度测试）
+    ├── mutation.rs     变异操作单元测试（含 MutateCellType）
+    ├── builder.rs      构建与权重继承单元测试（含 RNN/LSTM/GRU/Conv2d 前向测试）
     ├── convergence.rs  收敛检测单元测试
     ├── task.rs         训练与评估单元测试
-    └── evolution.rs    主循环集成测试
+    └── evolution.rs    主循环集成测试（含序列演化/空间演化端到端测试）
 ```
 
 ---
@@ -498,12 +587,60 @@ pub trait EvolutionTask {
 内部扩展时，还需在 `mod.rs` 的 `TaskSpec` 枚举添加新变体（如 `RL { env, metric }`），
 并在 `materialize_task()` 添加对应分支 + 公开构造器（如 `Evolution::reinforcement()`）。
 
-### 11.4 未来方向
+### 11.4 序列 / 记忆单元演化
+
+**已完成**。序列模式自动启用——当输入样本为 2D 张量 `[seq_len, input_dim]` 时，系统检测到序列结构并切换到记忆单元演化策略。
+
+**记忆单元类型**：
+- **Rnn** `{ hidden_size }`：最简单的循环层，`h_t = tanh(x_t @ W_ih + h_{t-1} @ W_hh + b_h)`
+- **Lstm** `{ hidden_size }`：长短期记忆，输入门/遗忘门/候选细胞/输出门四路门控
+- **Gru** `{ hidden_size }`：门控循环单元，更新门/重置门两路门控
+
+**最小序列架构** (minimal_sequential)：
+
+```
+Input(seq×D) → Rnn(output_dim) → [Linear(output_dim)]
+```
+
+初始使用最简单的 Rnn，`MutateCellType` 可升级为 LSTM/GRU，`InsertLayer` 可在序列域再插入更多循环层。
+
+**build() 中的 `needs_return_sequences` 逻辑**：builder 在构建循环层时自动判断是否需要返回完整序列——向后扫描 resolved 层列表（跳过 Activation/Dropout），若下一个实质层也是循环层则调用 `forward_seq()`（返回 `[batch, seq_len, hidden]`），否则调用 `forward()`（仅返回最后一步 `[batch, hidden]`）。
+
+**域约束**：序列模式下 skip edge 仅允许在 Flat 域内。记忆单元（RNN/LSTM/GRU）作为原子单元，不允许 skip edge 跨越或穿透 Sequence 域——避免 3D/2D 形状不兼容和 concat dim 语义混乱（dim=1 对 3D 是 seq_len 而非 features）。
+
+**变长序列支持**：`SupervisedTask` 在构造时自动检测变长输入（各样本 seq_len 不同），零填充至全局最大长度。用户无需手动处理 padding。
+
+**变异支持**：`InsertLayer` 在序列域随机选择 RNN/LSTM/GRU（各 1/3 概率），`MutateCellType` 切换循环层类型（保持 hidden_size 不变，旧权重快照失效后重新初始化），`Grow/ShrinkHiddenSize` 调整循环层 hidden_size。
+
+**使用示例**：参见 `examples/evolution_parity_seq/main.rs`（固定长度）和 `examples/evolution_parity_seq_var_len/main.rs`（变长序列）。
+
+### 11.5 卷积神经网络（CNN）演化
+
+**已完成**。空间模式自动启用——当输入样本为 3D 张量 `[C, H, W]` 时，系统检测到空间结构并切换到 CNN 演化策略。
+
+**空间层类型**：
+- **Conv2d** `{ out_channels, kernel_size }`：2D 卷积，stride=1，same padding（padding=kernel_size/2，不改变 H/W）
+- **Pool2d** `{ pool_type: Max|Avg, kernel_size, stride }`：2D 池化，空间降维（H/stride, W/stride），channels 不变
+- **Flatten**：空间域到平坦域的过渡层，将 `(C, H, W)` 展平为 `C*H*W`
+
+**最小空间架构** (minimal_spatial)：
+
+```
+Input(C@H×W) → Conv2d(out_dim, k=3) → MaxPool2d(k=2, s=2) → Flatten → [Linear(out_dim)]
+```
+
+Pool2d 是空间模式的结构必需品——没有空间缩减的 CNN 会导致 Flatten 维度爆炸（如 28×28、10ch → Flatten 后 7840 特征 vs 加 Pool2d 后仅 1960）。
+
+**域系统**：层序列被划分为 Spatial 域（Conv2d、Pool2d，4D 张量）和 Flat 域（Linear、Activation，2D 张量）。Flatten 是唯一的域过渡层。`is_domain_valid()` 确保 `Spatial* → Flatten → Flat*` 结构。
+
+**变异支持**：`InsertLayer` 域感知插入（Spatial 域 Conv2d 80% / Pool2d 20%），`MutateKernelSize` 切换 Conv2d kernel，`Grow/ShrinkHiddenSize` 调整 Conv2d out_channels。
+
+**使用示例**：参见 `examples/evolution_mnist_cnn/main.rs`。
+
+### 11.6 未来方向
 
 | 方向 | 难度 | 说明 |
 |---|---|---|
-| RNN/LSTM/GRU 演化 | 中 | LayerConfig 已预留，需实现 build + 状态管理 |
-| Conv2d 演化 | 中 | 需扩展 LayerConfig + 维度推导（2D→4D） |
 | 种群演化 + 交叉 | 高 | 当前为单网络迭代，需引入种群管理和基因组对齐 |
 | Budget-based 训练（Successive Halving） | 低 | TrainingBudget::FixedEpochs 已预留 |
 
@@ -533,6 +670,32 @@ pub trait EvolutionTask {
          → 1 代即达标（线性可分数据集，最小结构已足够）。
 ```
 
+### 奇偶性序列检测 (input=seq×1, output_dim=1, 200 train / 50 test)
+
+```
+[Gen  0] Input(seq×1) → RNN(1) → [Linear(1)]                    | fitness=0.520 | minimal_sequential *
+         ↓ GrowHiddenSize
+[Gen  3] Input(seq×1) → RNN(2) → [Linear(1)]                    | fitness=0.540 | GrowHiddenSize
+         ↓ MutateCellType
+[Gen  8] Input(seq×1) → GRU(2) → [Linear(1)]                    | fitness=0.680 | MutateCellType *
+         ↓ GrowHiddenSize
+[Gen 12] Input(seq×1) → GRU(4) → [Linear(1)]                    | fitness=0.900 | GrowHiddenSize *
+         → 系统自动发现 GRU 比初始 RNN 更适合此任务。
+```
+
+记忆单元类型由 `MutateCellType` 自动探索，`GrowHiddenSize` 扩展容量——联合搜索结构与参数。
+
+### MNIST CNN (input=1@28×28, output_dim=10, 1000 train / 500 test)
+
+```
+[Gen  0] Input(1@28×28) → Conv2d(10,k=3) → MaxPool(2,s=2) → Flatten → [Linear(10)]  | fitness=0.876 | minimal_spatial *
+         ↓ InsertLayer（Spatial 域插入 Activation）
+[Gen  6] ... → Conv2d(10,k=3) → MaxPool(2,s=2) → Mish → Flatten → [Linear(10)]       | fitness=0.912 | InsertLayer *
+         → 系统在空间域引入激活函数提升非线性表达能力。
+```
+
+空间模式的初始架构（含 Pool2d）参数量仅约 2K（vs 不含 Pool2d 时的 ~78K），显著加速每代训练。
+
 ---
 
 ## 附录 B：参考文献
@@ -546,4 +709,4 @@ pub trait EvolutionTask {
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-09*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-10*

@@ -18,17 +18,17 @@
 pub mod builder;
 pub mod callback;
 pub mod convergence;
-pub mod gene;
-pub mod mutation;
 pub mod error;
+pub mod gene;
 pub mod model_io;
+pub mod mutation;
 pub mod task;
 
 #[cfg(test)]
 mod tests;
 
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 use crate::nn::{GraphError, VisualizationOutput};
 use crate::tensor::Tensor;
@@ -85,7 +85,12 @@ pub struct EvolutionResult {
 impl EvolutionResult {
     /// 推理：输入数据，返回模型预测
     ///
-    /// 接受 `[batch, input_dim]` 或 `[input_dim]`（自动添加 batch 维度）。
+    /// 支持以下输入形状（自动添加 batch 维度）：
+    /// - 平坦：`[input_dim]` → `[1, input_dim]`
+    /// - 序列：`[seq_len, input_dim]` → `[1, seq_len, input_dim]`
+    /// - 空间：`[C, H, W]` → `[1, C, H, W]`
+    /// - 已含 batch 维度则直接使用
+    ///
     /// 返回 `[batch, output_dim]`。
     ///
     /// # 示例
@@ -99,26 +104,26 @@ impl EvolutionResult {
         self.build.graph.eval();
 
         let shaped = match input.dimension() {
-            1 => input.reshape(&[1, input.size()]),       // [feat] → [1, feat]
+            1 => input.reshape(&[1, input.size()]), // [feat] → [1, feat]
             2 if self.genome.seq_len.is_some() => {
                 // [seq, feat] → [1, seq, feat]
                 let s = input.shape();
                 input.reshape(&[1, s[0], s[1]])
             }
-            _ => input.clone(),                            // 已是 batch
+            3 if self.genome.is_spatial() => {
+                // [C, H, W] → [1, C, H, W]
+                let s = input.shape();
+                input.reshape(&[1, s[0], s[1], s[2]])
+            }
+            _ => input.clone(), // 已是 batch
         };
 
         self.build.input.set_value(&shaped)?;
         self.build.graph.forward(&self.build.output)?;
 
-        self.build
-            .output
-            .value()?
-            .ok_or_else(|| {
-                EvolutionError::Graph(GraphError::ComputationError(
-                    "推理时输出节点无值".into(),
-                ))
-            })
+        self.build.output.value()?.ok_or_else(|| {
+            EvolutionError::Graph(GraphError::ComputationError("推理时输出节点无值".into()))
+        })
     }
 
     /// 可视化演化后的计算图（生成 .dot + .png）
@@ -187,6 +192,8 @@ struct MaterializedTask {
     output_dim: usize,
     /// 序列长度（None = 平坦输入，Some(n) = 序列输入）
     seq_len: Option<usize>,
+    /// 空间输入尺寸 (H, W)（None = 非空间，input_dim 表示 in_channels）
+    input_spatial: Option<(usize, usize)>,
     metric: TaskMetric,
 }
 
@@ -205,20 +212,25 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
             if train_data.1.is_empty() {
                 return Err(EvolutionError::InvalidData("训练标签不能为空".into()));
             }
-            // 检测输入数据维度：1D = 平坦，2D = 序列
+            // 检测输入数据维度：1D = 平坦，2D = 序列，3D = 空间
             let sample_ndim = train_data.0[0].dimension();
-            let (input_dim, seq_len) = if sample_ndim == 2 {
+            let (input_dim, seq_len, input_spatial) = if sample_ndim == 3 {
+                // 空间数据：每个样本 [C, H, W]
+                let shape = train_data.0[0].shape();
+                (shape[0], None, Some((shape[1], shape[2])))
+            } else if sample_ndim == 2 {
                 // 序列数据：每个样本 [seq_len_i, input_dim]
                 let feat_dim = train_data.0[0].shape()[1];
-                // 找最大 seq_len（支持变长序列）
-                let max_seq = train_data.0.iter()
+                let max_seq = train_data
+                    .0
+                    .iter()
                     .chain(test_data.0.iter())
                     .map(|t| t.shape()[0])
                     .max()
                     .unwrap();
-                (feat_dim, Some(max_seq))
+                (feat_dim, Some(max_seq), None)
             } else {
-                (train_data.0[0].size(), None)
+                (train_data.0[0].size(), None, None)
             };
             let output_dim = train_data.1[0].size();
             let task = SupervisedTask::new(train_data, test_data, metric.clone())?;
@@ -227,6 +239,7 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
                 input_dim,
                 output_dim,
                 seq_len,
+                input_spatial,
                 metric,
             })
         }
@@ -393,8 +406,10 @@ impl Evolution {
         task.configure_batch_size(batch_size);
 
         let is_sequential = prepared.seq_len.is_some();
-        let mutation_registry = mutation_registry
-            .unwrap_or_else(|| MutationRegistry::default_registry(&prepared.metric, is_sequential));
+        let is_spatial = prepared.input_spatial.is_some();
+        let mutation_registry = mutation_registry.unwrap_or_else(|| {
+            MutationRegistry::default_registry(&prepared.metric, is_sequential, is_spatial)
+        });
 
         let using_default_callback = custom_callback.is_none();
         let mut callback: Box<dyn EvolutionCallback> = custom_callback
@@ -404,6 +419,8 @@ impl Evolution {
             let mut g = NetworkGenome::minimal_sequential(prepared.input_dim, prepared.output_dim);
             g.seq_len = prepared.seq_len;
             g
+        } else if let Some(spatial) = prepared.input_spatial {
+            NetworkGenome::minimal_spatial(prepared.input_dim, prepared.output_dim, spatial)
         } else {
             NetworkGenome::minimal(prepared.input_dim, prepared.output_dim)
         };
@@ -441,24 +458,13 @@ impl Evolution {
             genome.restore_weights(&build)?;
 
             // 3. 训练
-            let loss = task.train(
-                &genome,
-                &build,
-                &convergence_config,
-                &mut rng,
-            )?;
+            let loss = task.train(&genome, &build, &convergence_config, &mut rng)?;
 
             // 4. 捕获权重
             genome.capture_weights(&build)?;
 
             // 5. 评估（N 次取 primary 最低值作为保守估计）
-            let score = evaluate_conservative(
-                &*task,
-                &genome,
-                &build,
-                eval_runs,
-                &mut rng,
-            )?;
+            let score = evaluate_conservative(&*task, &genome, &build, eval_runs, &mut rng)?;
 
             // 6. 接受/回滚（在 on_generation 之前，确保 on_new_best 星标时序正确）
             let accept = match &best_score {
@@ -515,17 +521,9 @@ impl Evolution {
             let force_structural = stagnation >= stagnation_patience;
             let mutation_result = if force_structural {
                 stagnation = 0; // 重置，给新拓扑优化时间
-                mutation_registry.apply_random_structural(
-                    &mut genome,
-                    &constraints,
-                    &mut rng,
-                )
+                mutation_registry.apply_random_structural(&mut genome, &constraints, &mut rng)
             } else {
-                mutation_registry.apply_random(
-                    &mut genome,
-                    &constraints,
-                    &mut rng,
-                )
+                mutation_registry.apply_random(&mut genome, &constraints, &mut rng)
             };
             match mutation_result {
                 Ok(mutation_name) => {
@@ -586,11 +584,7 @@ fn evaluate_conservative(
 }
 
 /// 自动快照：优先包含 Loss + TargetInput，fallback 到仅 output
-fn snapshot_with_loss(
-    task: &dyn EvolutionTask,
-    genome: &NetworkGenome,
-    build: &BuildResult,
-) {
+fn snapshot_with_loss(task: &dyn EvolutionTask, genome: &NetworkGenome, build: &BuildResult) {
     if let Some(vis_loss) = task.create_visualization_loss(genome, build) {
         build.graph.snapshot_once_from(&[&vis_loss]);
     } else {

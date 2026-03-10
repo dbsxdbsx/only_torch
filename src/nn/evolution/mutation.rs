@@ -14,7 +14,7 @@
 
 use super::gene::{
     compatible_losses, ActivationType, AggregateStrategy, LayerConfig, LayerGene, LossType,
-    NetworkGenome, OptimizerType, ShapeDomain, SkipEdge, TaskMetric, INPUT_INNOVATION,
+    NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric, INPUT_INNOVATION,
 };
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
@@ -174,7 +174,8 @@ impl MutationRegistry {
     /// 默认注册表
     ///
     /// `is_sequential`: 序列模式时额外注册 MutateCellType。
-    pub fn default_registry(metric: &TaskMetric, is_sequential: bool) -> Self {
+    /// `is_spatial`: 空间模式时额外注册 MutateKernelSize。
+    pub fn default_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
         reg.register(0.15, InsertLayerMutation::default());
         reg.register(0.15, RemoveLayerMutation);
@@ -198,6 +199,10 @@ impl MutationRegistry {
         // 序列模式专属
         if is_sequential {
             reg.register(0.10, MutateCellTypeMutation);
+        }
+        // 空间模式专属
+        if is_spatial {
+            reg.register(0.10, MutateKernelSizeMutation);
         }
         reg
     }
@@ -321,6 +326,7 @@ fn get_resizable_size(config: &LayerConfig) -> Option<usize> {
         LayerConfig::Rnn { hidden_size }
         | LayerConfig::Lstm { hidden_size }
         | LayerConfig::Gru { hidden_size } => Some(*hidden_size),
+        LayerConfig::Conv2d { out_channels, .. } => Some(*out_channels),
         _ => None,
     }
 }
@@ -332,6 +338,7 @@ fn set_resizable_size(config: &mut LayerConfig, new_size: usize) {
         LayerConfig::Rnn { hidden_size }
         | LayerConfig::Lstm { hidden_size }
         | LayerConfig::Gru { hidden_size } => *hidden_size = new_size,
+        LayerConfig::Conv2d { out_channels, .. } => *out_channels = new_size,
         _ => {}
     }
 }
@@ -461,16 +468,60 @@ impl Mutation for InsertLayerMutation {
         let adjacent_act = has_adjacent_activation(genome, logical_pos);
         let can_insert_activation = !adjacent_act && !self.available_activations.is_empty();
         let is_sequential = genome.seq_len.is_some();
+        let is_spatial = genome.input_spatial.is_some();
+
+        // 空间模式：判断插入点所在域
+        let insert_domain = if is_spatial {
+            let domain_map = genome.compute_domain_map();
+            let enabled_layers: Vec<&LayerGene> =
+                genome.layers.iter().filter(|l| l.enabled).collect();
+            if logical_pos == 0 {
+                *domain_map
+                    .get(&INPUT_INNOVATION)
+                    .unwrap_or(&ShapeDomain::Flat)
+            } else {
+                let pred_inn = enabled_layers[logical_pos - 1].innovation_number;
+                *domain_map.get(&pred_inn).unwrap_or(&ShapeDomain::Flat)
+            }
+        } else {
+            ShapeDomain::Flat
+        };
 
         let new_config = if can_insert_activation && rng.gen_bool(0.3) {
-            // Activation（序列/平坦模式均可）
             let act = self.available_activations.choose(rng).unwrap();
             LayerConfig::Activation {
                 activation_type: *act,
             }
+        } else if insert_domain == ShapeDomain::Spatial {
+            // 空间域：Conv2d 或 Pool2d
+            if rng.gen_bool(0.2) {
+                let pool_type = if rng.gen_bool(0.5) {
+                    PoolType::Max
+                } else {
+                    PoolType::Avg
+                };
+                LayerConfig::Pool2d {
+                    pool_type,
+                    kernel_size: 2,
+                    stride: 2,
+                }
+            } else {
+                let small_cap = genome
+                    .input_dim
+                    .min(constraints.max_hidden_size)
+                    .max(constraints.min_hidden_size);
+                let out_ch = rng.gen_range(constraints.min_hidden_size..=small_cap);
+                let k = *[1usize, 3, 5, 7].choose(rng).unwrap();
+                LayerConfig::Conv2d {
+                    out_channels: out_ch,
+                    kernel_size: k,
+                }
+            }
         } else if is_sequential && rng.gen_bool(0.5) {
-            // 序列模式：插入 RNN 族层
-            let small_cap = genome.input_dim.min(constraints.max_hidden_size).max(constraints.min_hidden_size);
+            let small_cap = genome
+                .input_dim
+                .min(constraints.max_hidden_size)
+                .max(constraints.min_hidden_size);
             let size = rng.gen_range(constraints.min_hidden_size..=small_cap);
             match rng.gen_range(0..3) {
                 0 => LayerConfig::Rnn { hidden_size: size },
@@ -478,8 +529,10 @@ impl Mutation for InsertLayerMutation {
                 _ => LayerConfig::Gru { hidden_size: size },
             }
         } else {
-            // 平坦层：Linear
-            let small_cap = genome.input_dim.min(constraints.max_hidden_size).max(constraints.min_hidden_size);
+            let small_cap = genome
+                .input_dim
+                .min(constraints.max_hidden_size)
+                .max(constraints.min_hidden_size);
             let size = rng.gen_range(constraints.min_hidden_size..=small_cap);
             LayerConfig::Linear {
                 out_features: size,
@@ -1091,6 +1144,68 @@ impl Mutation for MutateCellTypeMutation {
     }
 }
 
+// ==================== MutateKernelSizeMutation ====================
+
+/// Conv2d kernel_size 变异（在 {1, 3, 5, 7} 中切换）
+pub struct MutateKernelSizeMutation;
+
+const KERNEL_SIZES: &[usize] = &[1, 3, 5, 7];
+
+impl Mutation for MutateKernelSizeMutation {
+    fn name(&self) -> &str {
+        "MutateKernelSize"
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        let hidden = hidden_layer_indices(genome);
+        hidden
+            .iter()
+            .any(|&i| matches!(genome.layers[i].layer_config, LayerConfig::Conv2d { .. }))
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let hidden = hidden_layer_indices(genome);
+        let candidates: Vec<usize> = hidden
+            .into_iter()
+            .filter(|&i| matches!(genome.layers[i].layer_config, LayerConfig::Conv2d { .. }))
+            .collect();
+
+        if candidates.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有 Conv2d 层可变异 kernel_size".into(),
+            ));
+        }
+
+        let &idx = candidates.choose(rng).unwrap();
+        if let LayerConfig::Conv2d {
+            kernel_size: ref current_k,
+            ..
+        } = genome.layers[idx].layer_config
+        {
+            let alternatives: Vec<usize> = KERNEL_SIZES
+                .iter()
+                .copied()
+                .filter(|&k| k != *current_k)
+                .collect();
+            if let Some(&new_k) = alternatives.choose(rng) {
+                if let LayerConfig::Conv2d {
+                    ref mut kernel_size,
+                    ..
+                } = genome.layers[idx].layer_config
+                {
+                    *kernel_size = new_k;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 // ==================== AddSkipEdgeMutation ====================
 
 /// 随机可选的聚合策略列表
@@ -1152,10 +1267,17 @@ impl AddSkipEdgeMutation {
 
         let mut candidates = Vec::new();
 
+        // 空间模式需要 spatial_map 做 H/W 兼容检查
+        let spatial_map = if genome.is_spatial() {
+            Some(genome.compute_spatial_map())
+        } else {
+            None
+        };
+
         for (to_idx, &to_inn) in enabled.iter().enumerate() {
-            // 聚合点的域：必须为 Flat 才允许 skip edge
             let to_domain = input_domain_at.get(&to_inn).copied().unwrap();
-            if to_domain != ShapeDomain::Flat {
+            // Sequence 域不允许 skip edge
+            if to_domain == ShapeDomain::Sequence {
                 continue;
             }
 
@@ -1179,24 +1301,59 @@ impl AddSkipEdgeMutation {
                 None // to 是第一层，直接前驱为 INPUT
             };
 
-            // 收集所有前向 from，只允许 Flat 域源，排除直接前驱
+            // 空间域 skip edge 目标的输入 spatial（用于 H/W 兼容检查）
+            let to_input_spatial = if to_domain == ShapeDomain::Spatial {
+                if to_idx == 0 {
+                    spatial_map
+                        .as_ref()
+                        .and_then(|m| m.get(&INPUT_INNOVATION).copied().flatten())
+                } else {
+                    spatial_map
+                        .as_ref()
+                        .and_then(|m| m.get(&enabled[to_idx - 1]).copied().flatten())
+                }
+            } else {
+                None
+            };
+
+            // 收集所有前向 from，要求同域 + 空间域 H/W 匹配
             let mut froms = Vec::new();
             if !existing.contains(&(INPUT_INNOVATION, to_inn))
-                && immediate_pred.is_some() // 如果 to 是第一层，INPUT 就是直接前驱，跳过
+                && immediate_pred.is_some()
             {
                 let from_domain = *domain_map.get(&INPUT_INNOVATION).unwrap();
-                if from_domain == ShapeDomain::Flat {
-                    froms.push(INPUT_INNOVATION);
+                if from_domain == to_domain {
+                    let sp_ok = if to_domain == ShapeDomain::Spatial {
+                        spatial_map
+                            .as_ref()
+                            .and_then(|m| m.get(&INPUT_INNOVATION).copied().flatten())
+                            == to_input_spatial
+                    } else {
+                        true
+                    };
+                    if sp_ok {
+                        froms.push(INPUT_INNOVATION);
+                    }
                 }
             }
             for &from_inn in &enabled[..to_idx] {
                 if Some(from_inn) == immediate_pred {
-                    continue; // 排除直接前驱
+                    continue;
                 }
                 if !existing.contains(&(from_inn, to_inn)) {
                     let from_domain = *domain_map.get(&from_inn).unwrap();
-                    if from_domain == ShapeDomain::Flat {
-                        froms.push(from_inn);
+                    if from_domain == to_domain {
+                        let sp_ok = if to_domain == ShapeDomain::Spatial {
+                            spatial_map
+                                .as_ref()
+                                .and_then(|m| m.get(&from_inn).copied().flatten())
+                                == to_input_spatial
+                        } else {
+                            true
+                        };
+                        if sp_ok {
+                            froms.push(from_inn);
+                        }
                     }
                 }
             }

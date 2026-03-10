@@ -1,4 +1,3 @@
-
 // ==================== SkipEdge 聚合 ====================
 
 /// 辅助：构建含一个 skip edge 的基因组
@@ -263,8 +262,8 @@ fn test_build_skip_edge_disabled() {
 
 use crate::nn::evolution::gene::*;
 use crate::tensor::Tensor;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 // ==================== 基本构建 ====================
 
@@ -412,7 +411,7 @@ fn test_build_after_mutation() {
     let mut rng = StdRng::seed_from_u64(42);
 
     // 执行若干变异
-    let registry = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
+    let registry = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
     for _ in 0..5 {
         let _ = registry.apply_random(&mut genome, &constraints, &mut rng);
     }
@@ -812,10 +811,7 @@ fn test_build_forward_batch() {
     let build = genome.build(&mut rng).unwrap();
 
     // 4 个样本的 batch（模拟 XOR 全量输入）
-    let batch_input = Tensor::new(
-        &[0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0],
-        &[4, 2],
-    );
+    let batch_input = Tensor::new(&[0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0], &[4, 2]);
     build.input.set_value(&batch_input).unwrap();
     build.graph.forward(&build.output).unwrap();
 
@@ -834,7 +830,10 @@ fn test_build_rnn_layer() {
 
     // 输入 [1, 5, 3]
     let data: Vec<f32> = (0..15).map(|i| i as f32 * 0.1).collect();
-    build.input.set_value(&Tensor::new(&data, &[1, 5, 3])).unwrap();
+    build
+        .input
+        .set_value(&Tensor::new(&data, &[1, 5, 3]))
+        .unwrap();
     build.graph.forward(&build.output).unwrap();
 
     let out = build.output.value().unwrap().unwrap();
@@ -854,7 +853,10 @@ fn test_build_lstm_layer() {
     let build = genome.build(&mut rng).unwrap();
 
     let data: Vec<f32> = (0..12).map(|i| i as f32 * 0.1).collect();
-    build.input.set_value(&Tensor::new(&data, &[1, 4, 3])).unwrap();
+    build
+        .input
+        .set_value(&Tensor::new(&data, &[1, 4, 3]))
+        .unwrap();
     build.graph.forward(&build.output).unwrap();
 
     let out = build.output.value().unwrap().unwrap();
@@ -874,7 +876,10 @@ fn test_build_gru_layer() {
     let build = genome.build(&mut rng).unwrap();
 
     let data: Vec<f32> = (0..12).map(|i| i as f32 * 0.1).collect();
-    build.input.set_value(&Tensor::new(&data, &[1, 4, 3])).unwrap();
+    build
+        .input
+        .set_value(&Tensor::new(&data, &[1, 4, 3]))
+        .unwrap();
     build.graph.forward(&build.output).unwrap();
 
     let out = build.output.value().unwrap().unwrap();
@@ -909,7 +914,10 @@ fn test_build_stacked_rnn() {
     let build = genome.build(&mut rng).unwrap();
 
     let data: Vec<f32> = (0..6).map(|i| i as f32 * 0.1).collect();
-    build.input.set_value(&Tensor::new(&data, &[1, 3, 2])).unwrap();
+    build
+        .input
+        .set_value(&Tensor::new(&data, &[1, 3, 2]))
+        .unwrap();
     build.graph.forward(&build.output).unwrap();
 
     let out = build.output.value().unwrap().unwrap();
@@ -939,7 +947,10 @@ fn test_build_sequential_with_activation() {
     let build = genome.build(&mut rng).unwrap();
 
     let data: Vec<f32> = (0..6).map(|i| i as f32 * 0.1).collect();
-    build.input.set_value(&Tensor::new(&data, &[1, 3, 2])).unwrap();
+    build
+        .input
+        .set_value(&Tensor::new(&data, &[1, 3, 2]))
+        .unwrap();
     build.graph.forward(&build.output).unwrap();
 
     let out = build.output.value().unwrap().unwrap();
@@ -1071,14 +1082,20 @@ fn test_build_sequential_with_flat_skip_edge() {
 
     // 第一次 forward
     let data: Vec<f32> = (0..10).map(|i| i as f32 * 0.1).collect();
-    build.input.set_value(&Tensor::new(&data, &[1, 5, 2])).unwrap();
+    build
+        .input
+        .set_value(&Tensor::new(&data, &[1, 5, 2]))
+        .unwrap();
     build.graph.forward(&build.output).unwrap();
     let out = build.output.value().unwrap().unwrap();
     assert_eq!(out.shape(), &[1, 1]);
 
     // 第二次 forward（模拟 predict 场景——用新数据重新前向）
     let data2: Vec<f32> = (0..10).map(|i| (i as f32 + 5.0) * 0.1).collect();
-    build.input.set_value(&Tensor::new(&data2, &[1, 5, 2])).unwrap();
+    build
+        .input
+        .set_value(&Tensor::new(&data2, &[1, 5, 2]))
+        .unwrap();
     build.graph.forward(&build.output).unwrap();
     let out2 = build.output.value().unwrap().unwrap();
     assert_eq!(out2.shape(), &[1, 1]);
@@ -1123,8 +1140,175 @@ fn test_build_sequential_with_flat_skip_edge_add() {
     let build = genome.build(&mut rng).unwrap();
 
     let data: Vec<f32> = (0..6).map(|i| i as f32 * 0.1).collect();
-    build.input.set_value(&Tensor::new(&data, &[1, 3, 2])).unwrap();
+    build
+        .input
+        .set_value(&Tensor::new(&data, &[1, 3, 2]))
+        .unwrap();
     build.graph.forward(&build.output).unwrap();
     let out = build.output.value().unwrap().unwrap();
     assert_eq!(out.shape(), &[1, 1]);
+}
+
+// ==================== Spatial 模式构建测试 ====================
+
+#[test]
+fn test_build_spatial_minimal_forward() {
+    // Conv2d(out=10, k=3) → Flatten → Linear(2)
+    // 输入: [1, 3, 8, 8]（3 channels, 8×8）
+    let genome = NetworkGenome::minimal_spatial(3, 2, (8, 8));
+    let mut r = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut r).unwrap();
+
+    // 设置输入并前向
+    let input = Tensor::ones(&[1, 3, 8, 8]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 2]); // batch=1, output_dim=2
+}
+
+#[test]
+fn test_build_spatial_with_pool_forward() {
+    // Conv2d(out=4, k=3) → Pool2d(Max, k=2, s=2) → Flatten → Linear(2)
+    // 输入: [1, 1, 8, 8]（1 channel, 8×8）
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
+    genome.layers[0].layer_config = LayerConfig::Conv2d {
+        out_channels: 4,
+        kernel_size: 3,
+    };
+    let pool_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: pool_inn,
+            layer_config: LayerConfig::Pool2d {
+                pool_type: PoolType::Max,
+                kernel_size: 2,
+                stride: 2,
+            },
+            enabled: true,
+        },
+    );
+
+    let mut r = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut r).unwrap();
+
+    let input = Tensor::ones(&[1, 1, 8, 8]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 2]);
+}
+
+#[test]
+fn test_build_spatial_avgpool_forward() {
+    // Conv2d(out=2, k=1) → Pool2d(Avg, k=2, s=2) → Flatten → Linear(3)
+    let mut genome = NetworkGenome::minimal_spatial(1, 3, (4, 4));
+    genome.layers[0].layer_config = LayerConfig::Conv2d {
+        out_channels: 2,
+        kernel_size: 1,
+    };
+    let pool_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: pool_inn,
+            layer_config: LayerConfig::Pool2d {
+                pool_type: PoolType::Avg,
+                kernel_size: 2,
+                stride: 2,
+            },
+            enabled: true,
+        },
+    );
+
+    let mut r = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut r).unwrap();
+
+    let input = Tensor::ones(&[1, 1, 4, 4]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 3]);
+}
+
+#[test]
+fn test_build_spatial_batch_forward() {
+    // batch_size=4
+    let genome = NetworkGenome::minimal_spatial(1, 2, (4, 4));
+    let mut r = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut r).unwrap();
+
+    let input = Tensor::ones(&[4, 1, 4, 4]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[4, 2]);
+}
+
+#[test]
+fn test_build_spatial_weight_capture_restore() {
+    // 构建 → capture → 再构建 → restore → 验证权重一致
+    let genome = NetworkGenome::minimal_spatial(1, 2, (4, 4));
+    let mut r = StdRng::seed_from_u64(42);
+    let build1 = genome.build(&mut r).unwrap();
+
+    // 设置输入获得第一次输出
+    let input = Tensor::ones(&[1, 1, 4, 4]);
+    build1.input.set_value(&input).unwrap();
+    build1.graph.forward(&build1.output).unwrap();
+    let out1 = build1.output.value().unwrap().unwrap();
+
+    // capture 权重
+    let mut genome2 = genome.clone();
+    genome2.capture_weights(&build1).unwrap();
+
+    // 用新 rng 构建（随机初始化不同），但 restore 权重后应输出一致
+    let mut r2 = StdRng::seed_from_u64(999);
+    let build2 = genome2.build(&mut r2).unwrap();
+    genome2.restore_weights(&build2).unwrap();
+    build2.input.set_value(&input).unwrap();
+    build2.graph.forward(&build2.output).unwrap();
+    let out2 = build2.output.value().unwrap().unwrap();
+
+    // capture 后 restore 的权重应与原来相同
+    assert_eq!(out1.shape(), out2.shape());
+    let diff = (out1 - out2).abs().sum().to_vec()[0];
+    assert!(diff < 1e-6, "权重 restore 后输出不一致: diff={diff}");
+}
+
+#[test]
+fn test_build_spatial_multi_conv_forward() {
+    // Conv2d(out=4, k=3) → Conv2d(out=8, k=3) → Flatten → Linear(2)
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
+    genome.layers[0].layer_config = LayerConfig::Conv2d {
+        out_channels: 4,
+        kernel_size: 3,
+    };
+    let conv2_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: conv2_inn,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: 8,
+                kernel_size: 3,
+            },
+            enabled: true,
+        },
+    );
+
+    let mut r = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut r).unwrap();
+
+    let input = Tensor::ones(&[1, 1, 8, 8]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 2]);
 }

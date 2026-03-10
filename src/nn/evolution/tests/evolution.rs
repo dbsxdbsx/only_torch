@@ -817,3 +817,161 @@ fn test_on_new_best_precedes_on_generation() {
         "首代 on_new_best 应在 on_generation 之前被调用"
     );
 }
+
+// ==================== 空间（CNN）演化集成 ====================
+
+/// 合成空间二分类数据："亮"图像（像素均值 > 0.5）→ [1,0]，"暗"图像 → [0,1]
+///
+/// 每个样本为 `[C, H, W]` 的张量，标签为 one-hot `[2]`。
+fn spatial_brightness_data(
+    n: usize,
+    channels: usize,
+    h: usize,
+    w: usize,
+) -> (Vec<Tensor>, Vec<Tensor>) {
+    let size = channels * h * w;
+    let mut inputs = Vec::with_capacity(n);
+    let mut labels = Vec::with_capacity(n);
+    for i in 0..n {
+        // 偶数索引 = "亮"，奇数索引 = "暗"
+        let bright = i % 2 == 0;
+        let base: f32 = if bright { 0.7 } else { 0.2 };
+        let pixels: Vec<f32> = (0..size)
+            .map(|j| base + (j as f32 * 0.001) % 0.1)
+            .collect();
+        inputs.push(Tensor::new(&pixels, &[channels, h, w]));
+        if bright {
+            labels.push(Tensor::new(&[1.0, 0.0], &[2]));
+        } else {
+            labels.push(Tensor::new(&[0.0, 1.0], &[2]));
+        }
+    }
+    (inputs, labels)
+}
+
+#[test]
+fn test_evolution_spatial_runs() {
+    // 小型空间数据：1 通道, 4×4，模拟 mnist_cnn 的缩小版
+    let data = spatial_brightness_data(16, 1, 4, 4);
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_seed(42)
+        .with_max_generations(3)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert!(result.fitness.primary >= 0.0);
+    assert!(result.generations <= 3);
+    // 架构摘要应包含空间标记 "@" 和 Conv2d
+    assert!(
+        result.architecture_summary.contains('@'),
+        "空间架构应显示 C@H×W 格式: {}",
+        result.architecture_summary
+    );
+    assert!(
+        result.architecture_summary.contains("Conv2d"),
+        "空间架构应包含 Conv2d: {}",
+        result.architecture_summary
+    );
+}
+
+#[test]
+fn test_evolution_spatial_predict() {
+    let data = spatial_brightness_data(16, 1, 4, 4);
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_seed(42)
+        .with_max_generations(3)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    // 单样本推理：[C, H, W] → [1, output_dim]
+    let sample = Tensor::ones(&[1, 4, 4]);
+    let pred = result.predict(&sample).unwrap();
+    assert_eq!(pred.shape(), &[1, 2]); // [1, output_dim=2]
+    assert!(pred.to_vec().iter().all(|v| v.is_finite()));
+
+    // batch 推理：[N, C, H, W]
+    let batch = Tensor::ones(&[3, 1, 4, 4]);
+    let pred_batch = result.predict(&batch).unwrap();
+    assert_eq!(pred_batch.shape(), &[3, 2]);
+}
+
+#[test]
+fn test_evolution_spatial_seed_reproducibility() {
+    let run = |seed: u64| {
+        let data = spatial_brightness_data(16, 1, 4, 4);
+        let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+            .with_seed(seed)
+            .with_max_generations(5)
+            .with_verbose(false)
+            .run()
+            .unwrap();
+        (result.architecture_summary.clone(), result.fitness.primary)
+    };
+
+    let (arch1, fit1) = run(123);
+    let (arch2, fit2) = run(123);
+
+    assert_eq!(arch1, arch2, "相同 seed 应产生相同空间架构");
+    assert!(
+        (fit1 - fit2).abs() < 1e-6,
+        "相同 seed 应产生相同 fitness: {fit1} vs {fit2}"
+    );
+}
+
+#[test]
+fn test_evolution_spatial_multichannel() {
+    // 3 通道（类似 RGB），8×8
+    let data = spatial_brightness_data(12, 3, 8, 8);
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_seed(42)
+        .with_max_generations(3)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert!(result.fitness.primary >= 0.0);
+    assert!(
+        result.architecture_summary.contains("3@8×8"),
+        "应显示 3@8×8: {}",
+        result.architecture_summary
+    );
+}
+
+#[test]
+fn test_evolution_spatial_mutation_names_valid() {
+    let (mock, state) = MockCallback::new(Some(8));
+
+    let data = spatial_brightness_data(16, 1, 4, 4);
+    let _result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_seed(42)
+        .with_target_metric(2.0) // 不可达
+        .with_callback(mock)
+        .run()
+        .unwrap();
+
+    let known = [
+        "InsertLayer",
+        "RemoveLayer",
+        "ReplaceLayerType",
+        "GrowHiddenSize",
+        "ShrinkHiddenSize",
+        "MutateLayerParam",
+        "MutateLossFunction",
+        "AddSkipEdge",
+        "RemoveSkipEdge",
+        "MutateAggregateStrategy",
+        "MutateLearningRate",
+        "MutateOptimizer",
+        "MutateKernelSize", // 空间模式专属
+    ];
+
+    let s = state.borrow();
+    for name in &s.mutation_names {
+        assert!(
+            known.contains(&name.as_str()),
+            "未知的空间变异名称: {name}，已知: {known:?}"
+        );
+    }
+}

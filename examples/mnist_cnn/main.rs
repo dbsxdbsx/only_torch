@@ -55,12 +55,12 @@ fn main() -> Result<(), GraphError> {
     );
 
     // 2. 配置（为速度优化：精简网络 + 较大 batch + 适当学习率）
-    let batch_size = 512;
-    let train_samples = 2048;
-    let test_samples = 512;
-    let max_epochs = 10;
-    let learning_rate = 0.01;
-    let target_accuracy = 85.0;
+    let batch_size = 128;
+    let train_samples = 5000;
+    let test_samples = 1000;
+    let max_epochs = 30;
+    let learning_rate = 0.003;
+    let target_accuracy = 95.0;
 
     println!("\n[2/4] 配置：");
     println!("  - Batch: {batch_size}");
