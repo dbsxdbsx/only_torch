@@ -153,6 +153,9 @@ digraph ComputeGraph {
         "49" [label=<relu_3<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "87" [label=<relu_7<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "90" [label=<relu_8<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "93" [label=<concat_2<BR/><B>Concat</B><BR/>[?, 4]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
+        "94" [label=<obs_2<BR/><B>Input</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "95" [label=<action_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 
     subgraph cluster_model_Critic2 {
@@ -212,6 +215,9 @@ digraph ComputeGraph {
         "51" [label=<relu_4<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "100" [label=<relu_9<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "103" [label=<relu_10<BR/><B>ReLU</B><BR/>[?, 32]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "106" [label=<concat_3<BR/><B>Concat</B><BR/>[?, 4]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
+        "107" [label=<obs_3<BR/><B>Input</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "108" [label=<action_2<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     }
 
     "1" [label=<mean_1<BR/><B>Mean</B><BR/>[?, 1]<BR/><FONT COLOR="#1976D2" POINT-SIZE="9">▸ Actor Loss</FONT>> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 penwidth=2.5 color="#1976D2"];
@@ -234,14 +240,8 @@ digraph ComputeGraph {
     "74" [label=<obs_1<BR/><B>Input</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "83" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]<BR/><FONT COLOR="#D32F2F" POINT-SIZE="9">▸ Critic1 Loss</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#D32F2F"];
     "85" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "93" [label=<concat_2<BR/><B>Concat</B><BR/>[?, 4]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
-    "94" [label=<obs_2<BR/><B>Input</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "95" [label=<action_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
     "96" [label=<mse_2<BR/><B>MSE</B><BR/>[?, 1]<BR/><FONT COLOR="#388E3C" POINT-SIZE="9">▸ Critic2 Loss</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#388E3C"];
     "98" [label=<target_2<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "106" [label=<concat_3<BR/><B>Concat</B><BR/>[?, 4]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
-    "107" [label=<obs_3<BR/><B>Input</B><BR/>[?, 3]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "108" [label=<action_2<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
     "2" -> "1" [color="#1976D2"];
     "3" -> "2" [color="#1976D2"];

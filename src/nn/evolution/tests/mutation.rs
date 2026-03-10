@@ -1405,6 +1405,7 @@ fn test_random_mutations_keep_sequential_genome_valid() {
 
         assert!(g.resolve_dimensions().is_ok(), "维度链断裂: {g}");
         assert!(g.is_domain_valid(), "域链非法: {g}");
+        assert!(g.validate_skip_edge_domains(), "skip edge 域失效: {g}");
         assert!(g.layer_count() >= 1, "层数为零: {g}");
 
         // 输出头完整
@@ -1417,5 +1418,206 @@ fn test_random_mutations_keep_sequential_genome_valid() {
             "输出头被破坏: {g}"
         );
     }
+}
+
+#[test]
+fn test_random_mutations_sequential_build_always_succeeds() {
+    // 多轮随机变异后，build() 应始终成功（不会因 skip edge 域失效而 panic）
+    let g = genome_sequential();
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true);
+    let c = constraints();
+
+    for seed in 0..10u64 {
+        let mut r = StdRng::seed_from_u64(seed);
+        let mut g2 = g.clone();
+
+        for _ in 0..30 {
+            let _ = reg.apply_random(&mut g2, &c, &mut r);
+        }
+
+        // build 不应 panic 或返回 Err
+        let mut build_rng = StdRng::seed_from_u64(seed + 1000);
+        assert!(
+            g2.build(&mut build_rng).is_ok(),
+            "30 轮变异后 build 失败 (seed={seed}): {g2}"
+        );
+    }
+}
+
+// ==================== skip edge 域重新验证 ====================
+
+#[test]
+fn test_insert_rnn_after_skip_source_blocked() {
+    // 构造: Input(seq) → GRU(4) → Tanh → Linear(4) → [Linear(1)]
+    // GRU(4) 域 = Flat（下一个实质层是 Linear，非循环）
+    // 添加 skip edge: GRU(4) → [Linear(1)]（跳过 Tanh 和 Linear(4)）
+    // 然后在 Tanh 和 Linear(4) 之间插入一个新 LSTM 层，
+    // 这会让 GRU(4) 的 needs_return_sequences 变为 true（因为 LSTM 是循环层），
+    // GRU(4) 域从 Flat 变为 Sequence，skip edge 源域失效。
+    let mut g = genome_sequential(); // Rnn(4) → [Linear(1)]
+    // 把 Rnn(4) 换成 GRU(4)，方便区分
+    g.layers[0].layer_config = LayerConfig::Gru { hidden_size: 4 };
+    let gru_inn = g.layers[0].innovation_number;
+
+    // 插入 Tanh
+    let act_inn = g.next_innovation_number();
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: act_inn,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+    // 插入 Linear(4)
+    let lin_inn = g.next_innovation_number();
+    g.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: lin_inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    // 添加 skip edge: GRU(4) → 输出头（跳过 Tanh 和 Linear(4)）
+    let output_inn = g.layers.last().unwrap().innovation_number;
+    let skip_inn = g.next_innovation_number();
+    g.skip_edges.push(SkipEdge {
+        innovation_number: skip_inn,
+        from_innovation: gru_inn,
+        to_innovation: output_inn,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    // 确认当前状态: GRU(4) 域 = Flat，skip edge 合法
+    assert!(g.is_domain_valid());
+    assert!(g.validate_skip_edge_domains());
+    assert!(g.resolve_dimensions().is_ok());
+
+    // 在 Tanh 和 Linear(4) 之间插入 LSTM，这会让 GRU(4) 的 return_sequences 变为 true
+    // 因为 GRU(4) 的下一个实质层现在是 LSTM（跳过 Tanh），是循环层
+    // GRU(4) 域从 Flat → Sequence，skip edge 源域失效
+    let lstm_inn = g.next_innovation_number();
+    g.layers.insert(
+        2, // Tanh 和 Linear(4) 之间
+        LayerGene {
+            innovation_number: lstm_inn,
+            layer_config: LayerConfig::Lstm { hidden_size: 2 },
+            enabled: true,
+        },
+    );
+
+    // GRU(4) 域现在应为 Sequence，skip edge 失效
+    let domain_map = g.compute_domain_map();
+    assert_eq!(
+        domain_map[&gru_inn],
+        ShapeDomain::Sequence,
+        "LSTM 插入后 GRU 应返回序列，域为 Sequence"
+    );
+    assert!(
+        !g.validate_skip_edge_domains(),
+        "skip edge 源 GRU 从 Flat 变为 Sequence 后，validate_skip_edge_domains 应返回 false"
+    );
+}
+
+#[test]
+fn test_insert_layer_mutation_rejects_skip_edge_domain_violation() {
+    // 通过 InsertLayerMutation 的 apply() 流程验证：
+    // 当插入 RNN 族层会导致已有 skip edge 域失效时，应自动回滚
+    let mut g = genome_sequential(); // Rnn(4) → [Linear(1)]
+    let act_inn = g.next_innovation_number();
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: act_inn,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+    let lin_inn = g.next_innovation_number();
+    g.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: lin_inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    let output_inn = g.layers.last().unwrap().innovation_number;
+    let skip_inn = g.next_innovation_number();
+    g.skip_edges.push(SkipEdge {
+        innovation_number: skip_inn,
+        from_innovation: lin_inn,
+        to_innovation: output_inn,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    let c = constraints();
+    let m = InsertLayerMutation::default();
+
+    // 多次尝试 InsertLayer，无论插入什么，skip edge 域都应保持合法
+    for seed in 0..50u64 {
+        let mut g2 = g.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        let _ = m.apply(&mut g2, &c, &mut r);
+
+        // 无论变异成功与否，当前 genome 的 skip edge 域必须合法
+        assert!(
+            g2.validate_skip_edge_domains(),
+            "InsertLayer 后 skip edge 域不唹合法 (seed={seed}): {g2}"
+        );
+    }
+}
+
+#[test]
+fn test_is_domain_valid_matches_compute_domain_map() {
+    // 确保 is_domain_valid() 和 compute_domain_map() 对循环层的域判定一致
+    // 构造: Input(seq) → Rnn(4) → Linear(4) → Lstm(2) → [Linear(1)]
+    // is_domain_valid 应判定 Rnn 域为 Sequence（因下一个实质层是 Linear，非循环）
+    // 而非因为后面还有 LSTM 就认为是 Sequence
+    let mut g = genome_sequential(); // Rnn(4) → [Linear(1)]
+    let lin_inn = g.next_innovation_number();
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: lin_inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    let lstm_inn = g.next_innovation_number();
+    g.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: lstm_inn,
+            layer_config: LayerConfig::Lstm { hidden_size: 2 },
+            enabled: true,
+        },
+    );
+
+    // Rnn(4) 的下一个实质层是 Linear(4)，非循环 → Rnn 域应为 Flat
+    // 但 Linear 在 Flat 域后面紧接 LSTM 在 Flat 域，而 LSTM 需要 Sequence 域输入
+    // 所以这个结构本身就是非法的（Flat→LSTM 非法）
+    // is_domain_valid 和 compute_domain_map 都应认为 Rnn 域 = Flat
+    let domain_map = g.compute_domain_map();
+    let rnn_inn = g.layers[0].innovation_number;
+    assert_eq!(
+        domain_map[&rnn_inn],
+        ShapeDomain::Flat,
+        "compute_domain_map 应判定 Rnn 域为 Flat（下一个实质层是 Linear）"
+    );
+
+    // is_domain_valid 应拒绝（LSTM 在 Flat 域中非法）
+    assert!(
+        !g.is_domain_valid(),
+        "Flat 域中出现 LSTM 应导致域链非法"
+    );
 }
 

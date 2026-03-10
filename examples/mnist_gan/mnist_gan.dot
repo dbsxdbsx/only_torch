@@ -52,9 +52,10 @@ digraph ComputeGraph {
         "12" [label=<input_1<BR/><B>Input</B><BR/>[?, 784]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
         "15" [label=<sigmoid_2<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "19" [label=<leaky_relu_2<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "22" [label=<detach_1<BR/><B>Detach</B><BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E1BEE7" fontsize=10];
         "35" [label=<sigmoid_4<BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "39" [label=<leaky_relu_4<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-        "virt_22_Discriminator" [label=<Input<BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
+        "virt_23_Discriminator" [label=<Input<BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
         "virt_42_Discriminator" [label=<Input<BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E0E0E0" fontsize=10];
     }
 
@@ -96,7 +97,6 @@ digraph ComputeGraph {
                 "47" [label=<matmul_10<BR/><B>MatMul</B><BR/>[?, 128]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
         }
 
-        "22" [label=<detach_1<BR/><B>Detach</B><BR/>[?, 784]> shape=ellipse style="filled,dashed" fillcolor="#E1BEE7" fontsize=10];
         "23" [label=<sigmoid_3<BR/><B>Sigmoid</B><BR/>[?, 784]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "27" [label=<leaky_relu_3<BR/><B>LeakyReLU</B><BR/>[?, 128]<BR/>(α=0.2)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
         "32" [label=<input_2<BR/><B>Input</B><BR/>[?, 64]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
@@ -134,10 +134,10 @@ digraph ComputeGraph {
     "20" -> "19" [color="#D32F2F"];
     "21" -> "20" [color="#D32F2F"];
     "11" -> "20" [color="#D32F2F"];
-    "22" -> "virt_22_Discriminator" [style=dashed color="#999999"];
-    "virt_22_Discriminator" -> "21" [color="#D32F2F"];
+    "22" -> "21" [color="#D32F2F"];
     "13" -> "21" [color="#D32F2F"];
-    "23" -> "22" [color="#D32F2F"];
+    "23" -> "virt_23_Discriminator" [style=dashed color="#999999"];
+    "virt_23_Discriminator" -> "22" [color="#D32F2F"];
     "24" -> "23" [color="#D32F2F"];
     "25" -> "24" [color="#D32F2F"];
     "26" -> "24" [color="#D32F2F"];

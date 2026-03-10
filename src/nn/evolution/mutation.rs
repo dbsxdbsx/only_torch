@@ -496,11 +496,14 @@ impl Mutation for InsertLayerMutation {
             },
         );
 
-        // 插入新层后验证维度兼容性 + 域链合法性
-        if genome.resolve_dimensions().is_err() || !genome.is_domain_valid() {
+        // 插入新层后验证维度兼容性 + 域链合法性 + 已有 skip edge 域兼容性
+        if genome.resolve_dimensions().is_err()
+            || !genome.is_domain_valid()
+            || !genome.validate_skip_edge_domains()
+        {
             genome.layers.remove(insert_vec_idx);
             return Err(MutationError::ConstraintViolation(
-                "插入层后维度或域链不兼容".into(),
+                "插入层后维度、域链或 skip edge 域不兼容".into(),
             ));
         }
 
@@ -552,12 +555,15 @@ impl Mutation for RemoveLayerMutation {
             e.from_innovation != removed_inn && e.to_innovation != removed_inn
         });
 
-        // 验证删除后维度兼容性 + 域链合法性
-        if genome.resolve_dimensions().is_err() || !genome.is_domain_valid() {
+        // 验证删除后维度兼容性 + 域链合法性 + 已有 skip edge 域兼容性
+        if genome.resolve_dimensions().is_err()
+            || !genome.is_domain_valid()
+            || !genome.validate_skip_edge_domains()
+        {
             genome.layers.insert(idx, removed_gene);
             genome.skip_edges.extend(removed_edges);
             return Err(MutationError::ConstraintViolation(
-                "删除层后维度或域链不兼容".into(),
+                "删除层后维度、域链或 skip edge 域不兼容".into(),
             ));
         }
 
@@ -1070,7 +1076,17 @@ impl Mutation for MutateCellTypeMutation {
         let inn = genome.layers[idx].innovation_number;
         genome.weight_snapshots.remove(&inn);
 
+        let old_config = genome.layers[idx].layer_config.clone();
         genome.layers[idx].layer_config = new_config;
+
+        // 切换 cell 类型不会改变域链（仍然是循环层），但保险起见仍检查 skip edge 域兼容性
+        if !genome.validate_skip_edge_domains() {
+            genome.layers[idx].layer_config = old_config;
+            return Err(MutationError::ConstraintViolation(
+                "切换 cell 类型后 skip edge 域不兼容".into(),
+            ));
+        }
+
         Ok(())
     }
 }

@@ -537,17 +537,18 @@ impl NetworkGenome {
                         return false; // Flat→Sequence 非法
                     }
                     // 判断输出域：看下一个实质层（跳过 Activation/Dropout）
-                    let next_is_recurrent = enabled[i + 1..].iter().any(|l| {
-                        match &l.layer_config {
-                            LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {
-                                return false; // 继续查找
+                    let mut next_is_recurrent = false;
+                    for next_layer in &enabled[i + 1..] {
+                        match &next_layer.layer_config {
+                            LayerConfig::Activation { .. }
+                            | LayerConfig::Dropout { .. } => continue,
+                            _ => {
+                                next_is_recurrent =
+                                    Self::is_recurrent(&next_layer.layer_config);
+                                break;
                             }
-                            LayerConfig::Rnn { .. }
-                            | LayerConfig::Lstm { .. }
-                            | LayerConfig::Gru { .. } => true,
-                            _ => false,
                         }
-                    });
+                    }
                     current_domain = if next_is_recurrent {
                         ShapeDomain::Sequence
                     } else {
@@ -567,6 +568,55 @@ impl NetworkGenome {
         }
 
         current_domain == ShapeDomain::Flat
+    }
+
+    /// 验证所有启用的 skip edge 在当前域映射下仍然合法
+    ///
+    /// 结构变异（InsertLayer/RemoveLayer/MutateCellType）可能改变某些层的输出域
+    /// （例如在 skip edge 源层后面插入 RNN 族层，使源层从 Flat 变为 Sequence），
+    /// 导致已有 skip edge 跨域（Sequence↔Flat）。
+    /// 此方法检查所有 skip edge 的源和目标是否仍在 Flat 域内。
+    ///
+    /// 平坦模式（seq_len=None）直接返回 true（所有域均为 Flat）。
+    pub fn validate_skip_edge_domains(&self) -> bool {
+        if self.seq_len.is_none() {
+            return true;
+        }
+
+        let active_edges: Vec<_> = self.skip_edges.iter().filter(|e| e.enabled).collect();
+        if active_edges.is_empty() {
+            return true;
+        }
+
+        let domain_map = self.compute_domain_map();
+
+        for edge in &active_edges {
+            // 源层输出域必须为 Flat
+            let from_domain = domain_map.get(&edge.from_innovation).copied();
+            if from_domain != Some(ShapeDomain::Flat) {
+                return false;
+            }
+
+            // 目标层的输入域（= 主路径前驱的输出域）必须为 Flat
+            // 对于 INPUT 作为前驱的特殊情况，其域由 seq_len 决定
+            let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+            let to_idx = enabled
+                .iter()
+                .position(|l| l.innovation_number == edge.to_innovation);
+            let to_input_domain = match to_idx {
+                Some(0) => *domain_map.get(&INPUT_INNOVATION).unwrap_or(&ShapeDomain::Flat),
+                Some(idx) => {
+                    let pred_inn = enabled[idx - 1].innovation_number;
+                    domain_map.get(&pred_inn).copied().unwrap_or(ShapeDomain::Flat)
+                }
+                None => continue, // 目标层不在启用列表中，skip
+            };
+            if to_input_domain != ShapeDomain::Flat {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// 判断给定层配置是否为循环层（Rnn/Lstm/Gru）
