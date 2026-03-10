@@ -98,14 +98,17 @@ impl EvolutionResult {
     pub fn predict(&self, input: &Tensor) -> Result<Tensor, EvolutionError> {
         self.build.graph.eval();
 
-        // 1D [input_dim] → 2D [1, input_dim]
-        let input_2d = if input.dimension() == 1 {
-            input.reshape(&[1, input.size()])
-        } else {
-            input.clone()
+        let shaped = match input.dimension() {
+            1 => input.reshape(&[1, input.size()]),       // [feat] → [1, feat]
+            2 if self.genome.seq_len.is_some() => {
+                // [seq, feat] → [1, seq, feat]
+                let s = input.shape();
+                input.reshape(&[1, s[0], s[1]])
+            }
+            _ => input.clone(),                            // 已是 batch
         };
 
-        self.build.input.set_value(&input_2d)?;
+        self.build.input.set_value(&shaped)?;
         self.build.graph.forward(&self.build.output)?;
 
         self.build
@@ -182,6 +185,8 @@ struct MaterializedTask {
     task: Box<dyn EvolutionTask>,
     input_dim: usize,
     output_dim: usize,
+    /// 序列长度（None = 平坦输入，Some(n) = 序列输入）
+    seq_len: Option<usize>,
     metric: TaskMetric,
 }
 
@@ -200,13 +205,28 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
             if train_data.1.is_empty() {
                 return Err(EvolutionError::InvalidData("训练标签不能为空".into()));
             }
-            let input_dim = train_data.0[0].size();
+            // 检测输入数据维度：1D = 平坦，2D = 序列
+            let sample_ndim = train_data.0[0].dimension();
+            let (input_dim, seq_len) = if sample_ndim == 2 {
+                // 序列数据：每个样本 [seq_len_i, input_dim]
+                let feat_dim = train_data.0[0].shape()[1];
+                // 找最大 seq_len（支持变长序列）
+                let max_seq = train_data.0.iter()
+                    .chain(test_data.0.iter())
+                    .map(|t| t.shape()[0])
+                    .max()
+                    .unwrap();
+                (feat_dim, Some(max_seq))
+            } else {
+                (train_data.0[0].size(), None)
+            };
             let output_dim = train_data.1[0].size();
             let task = SupervisedTask::new(train_data, test_data, metric.clone())?;
             Ok(MaterializedTask {
                 task: Box::new(task),
                 input_dim,
                 output_dim,
+                seq_len,
                 metric,
             })
         }
@@ -372,14 +392,21 @@ impl Evolution {
         let mut task = prepared.task;
         task.configure_batch_size(batch_size);
 
+        let is_sequential = prepared.seq_len.is_some();
         let mutation_registry = mutation_registry
-            .unwrap_or_else(|| MutationRegistry::default_registry(&prepared.metric));
+            .unwrap_or_else(|| MutationRegistry::default_registry(&prepared.metric, is_sequential));
 
         let using_default_callback = custom_callback.is_none();
         let mut callback: Box<dyn EvolutionCallback> = custom_callback
             .unwrap_or_else(|| Box::new(DefaultCallback::new(max_generations, verbose)));
 
-        let mut genome = NetworkGenome::minimal(prepared.input_dim, prepared.output_dim);
+        let mut genome = if prepared.seq_len.is_some() {
+            let mut g = NetworkGenome::minimal_sequential(prepared.input_dim, prepared.output_dim);
+            g.seq_len = prepared.seq_len;
+            g
+        } else {
+            NetworkGenome::minimal(prepared.input_dim, prepared.output_dim)
+        };
         let mut best_genome: Option<NetworkGenome> = None;
         let mut best_score: Option<FitnessScore> = None;
         let mut stagnation: usize = 0;

@@ -85,7 +85,7 @@ bench-tensor:
 # ==================== Examples ====================
 
 # 运行所有 examples（含 RL + 演化）
-examples: example-xor example-iris example-sine example-mnist example-mnist-cnn example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess example-evolution-xor example-evolution-iris example-cartpole-sac example-pendulum-sac example-moving-sac
+examples: example-xor example-iris example-sine example-mnist example-mnist-cnn example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess example-evolution-xor example-evolution-iris example-evolution-parity-seq example-evolution-parity-seq-var-len example-cartpole-sac example-pendulum-sac example-moving-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -166,6 +166,14 @@ example-evolution-xor:
 example-evolution-iris:
     @echo "=== Running Evolution Iris (mini-batch) [{{_blas_name}}] ==="
     cargo run --example evolution_iris {{_blas_flag}}
+
+example-evolution-parity-seq:
+    @echo "=== Running Evolution Parity Seq (fixed length) [{{_blas_name}}] ==="
+    cargo run --example evolution_parity_seq {{_blas_flag}}
+
+example-evolution-parity-seq-var-len:
+    @echo "=== Running Evolution Parity Seq (variable length) [{{_blas_name}}] ==="
+    cargo run --example evolution_parity_seq_var_len {{_blas_flag}}
 
 example-cartpole-sac:
     @echo "=== Running CartPole SAC [{{_blas_name}}] (requires Python + gymnasium) ==="

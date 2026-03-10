@@ -167,10 +167,26 @@ impl Gru {
     /// # 返回
     /// 最后一个时间步的隐藏状态 Var，形状 [`batch_size`, `hidden_size`]
     pub fn forward(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let (x, seq_len) = self.validate_input(x)?;
+        self.unroll(&x, seq_len, false)
+    }
+
+    /// 前向传播（返回所有时间步）
+    ///
+    /// 与 `forward` 相同，但返回所有时间步的隐藏状态而非仅最后一步。
+    ///
+    /// # 返回
+    /// 所有时间步的隐藏状态 Var，形状 [`batch_size`, `seq_len`, `hidden_size`]
+    pub fn forward_seq(&self, x: impl IntoVar) -> Result<Var, GraphError> {
+        let (x, seq_len) = self.validate_input(x)?;
+        self.unroll(&x, seq_len, true)
+    }
+
+    /// 验证输入并返回 (x_var, seq_len)
+    fn validate_input(&self, x: impl IntoVar) -> Result<(Var, usize), GraphError> {
         let x = x
             .into_var(&self.w_ir.get_graph())
             .expect("Gru 输入转换失败");
-        // 使用实际值的形状（支持动态 batch）
         let value = x
             .value()?
             .ok_or_else(|| GraphError::ComputationError("Gru.forward 需要输入有值".to_string()))?;
@@ -184,7 +200,6 @@ impl Gru {
 
         let (_batch_size, seq_len, input_size) = (shape[0], shape[1], shape[2]);
 
-        // 验证输入维度
         if input_size != self.input_size {
             return Err(GraphError::InvalidOperation(format!(
                 "input_size 不匹配: 期望 {}, 实际 {}",
@@ -192,8 +207,7 @@ impl Gru {
             )));
         }
 
-        // 每次都重新展开（无缓存设计）
-        self.unroll(&x, seq_len)
+        Ok((x, seq_len))
     }
 
     /// 展开 GRU 时间步
@@ -201,7 +215,7 @@ impl Gru {
     /// 计算逻辑与可视化信息收集完全分离：
     /// - 此方法只做计算 + 记录最少的必要信息（4 个节点 ID + 1 个数值）
     /// - 完整的分组信息在 `save_visualization` 时惰性推断
-    fn unroll(&self, x: &Var, seq_len: usize) -> Result<Var, GraphError> {
+    fn unroll(&self, x: &Var, seq_len: usize, return_sequences: bool) -> Result<Var, GraphError> {
         // 分组上下文：自动标记 unroll 期间创建的节点
         let desc = format!(
             "GRU: [?, {}] → [?, {}] (×{} steps)",
@@ -234,6 +248,13 @@ impl Gru {
         // 记录第一个时间步的信息（用于折叠渲染）
         let mut first_step_start_id = None;
         let mut repr_output_node_ids = Vec::new();
+
+        // return_sequences 模式下收集所有时间步
+        let mut all_h: Vec<Var> = if return_sequences {
+            Vec::with_capacity(seq_len)
+        } else {
+            Vec::new()
+        };
 
         // 展开所有时间步
         for t in 0..seq_len {
@@ -272,6 +293,10 @@ impl Gru {
             let z_diff = &z_gate * &h_minus_n;
             h = &n_gate + &z_diff;
 
+            if return_sequences {
+                all_h.push(h.clone());
+            }
+
             // 记录第一个时间步的输出节点 ID（GRU 只有 h）
             if t == 0 {
                 repr_output_node_ids.push(h.node_id());
@@ -292,7 +317,12 @@ impl Gru {
             },
         );
 
-        Ok(h)
+        if return_sequences {
+            let refs: Vec<&Var> = all_h.iter().collect();
+            Var::stack(&refs, 1)
+        } else {
+            Ok(h)
+        }
     }
 
     // === Getter 方法 ===

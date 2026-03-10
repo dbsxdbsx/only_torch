@@ -204,3 +204,11 @@ path = "examples/evolution_xor/main.rs"
 [[example]]
 name = "evolution_iris"
 path = "examples/evolution_iris/main.rs"
+
+[[example]]
+name = "evolution_parity_seq"
+path = "examples/evolution_parity_seq/main.rs"
+
+[[example]]
+name = "evolution_parity_seq_var_len"
+path = "examples/evolution_parity_seq_var_len/main.rs"

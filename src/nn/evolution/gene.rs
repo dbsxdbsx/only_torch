@@ -17,6 +17,20 @@ use std::fmt;
 /// Input 节点的虚拟创新号（skip edge 可引用此值作为源）
 pub const INPUT_INNOVATION: u64 = 0;
 
+// ==================== 形状域 ====================
+
+/// 形状域：描述张量在网络中的维度语义
+///
+/// 用于验证相邻层的域链合法性（如不允许 `Flat → Sequence` 回溯）。
+/// 未来扩展 Conv2d 时只需添加 `Spatial` 变体。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShapeDomain {
+    /// 2D 平坦数据 `[batch, features]`
+    Flat,
+    /// 3D 序列数据 `[batch, seq_len, features]`
+    Sequence,
+}
+
 // ==================== 错误类型 ====================
 
 /// 基因组操作错误
@@ -247,6 +261,8 @@ pub struct NetworkGenome {
     pub skip_edges: Vec<SkipEdge>,
     pub input_dim: usize,
     pub output_dim: usize,
+    /// 序列长度（None = 平坦输入，Some(n) = 序列输入，每个时间步 input_dim 维特征）
+    pub seq_len: Option<usize>,
     pub training_config: TrainingConfig,
     pub generated_by: String,
     pub(crate) next_innovation: u64,
@@ -260,6 +276,7 @@ impl Clone for NetworkGenome {
             skip_edges: self.skip_edges.clone(),
             input_dim: self.input_dim,
             output_dim: self.output_dim,
+            seq_len: self.seq_len,
             training_config: self.training_config.clone(),
             generated_by: self.generated_by.clone(),
             next_innovation: self.next_innovation,
@@ -275,6 +292,7 @@ impl fmt::Debug for NetworkGenome {
             .field("skip_edges", &self.skip_edges)
             .field("input_dim", &self.input_dim)
             .field("output_dim", &self.output_dim)
+            .field("seq_len", &self.seq_len)
             .field("training_config", &self.training_config)
             .field("generated_by", &self.generated_by)
             .field("next_innovation", &self.next_innovation)
@@ -295,6 +313,7 @@ impl NetworkGenome {
         skip_edges: Vec<SkipEdge>,
         input_dim: usize,
         output_dim: usize,
+        seq_len: Option<usize>,
         training_config: TrainingConfig,
         generated_by: String,
         next_innovation: u64,
@@ -305,6 +324,7 @@ impl NetworkGenome {
             skip_edges,
             input_dim,
             output_dim,
+            seq_len,
             training_config,
             generated_by,
             next_innovation,
@@ -333,9 +353,50 @@ impl NetworkGenome {
             skip_edges: Vec::new(),
             input_dim,
             output_dim,
+            seq_len: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal".to_string(),
             next_innovation: 2, // 0 = INPUT, 1 = 输出头
+            weight_snapshots: HashMap::new(),
+        }
+    }
+
+    /// 最小序列网络：layers = [Rnn(hidden_size=output_dim), Linear(output_dim)]
+    ///
+    /// 初始 cell 类型为最简单的 Rnn，后续 MutateCellType 可升级为 LSTM/GRU，
+    /// InsertLayer 可在序列域再插入更多 RNN 层。
+    ///
+    /// # Panics
+    /// `input_dim` 或 `output_dim` 为零时 panic。
+    pub fn minimal_sequential(input_dim: usize, output_dim: usize) -> Self {
+        assert!(input_dim > 0, "input_dim 不能为零");
+        assert!(output_dim > 0, "output_dim 不能为零");
+
+        let rnn_layer = LayerGene {
+            innovation_number: 1,
+            layer_config: LayerConfig::Rnn {
+                hidden_size: output_dim,
+            },
+            enabled: true,
+        };
+
+        let output_head = LayerGene {
+            innovation_number: 2,
+            layer_config: LayerConfig::Linear {
+                out_features: output_dim,
+            },
+            enabled: true,
+        };
+
+        Self {
+            layers: vec![rnn_layer, output_head],
+            skip_edges: Vec::new(),
+            input_dim,
+            output_dim,
+            seq_len: Some(0), // 占位，materialize_task 会设置实际值
+            training_config: TrainingConfig::default(),
+            generated_by: "minimal_sequential".to_string(),
+            next_innovation: 3, // 0 = INPUT, 1 = Rnn, 2 = 输出头
             weight_snapshots: HashMap::new(),
         }
     }
@@ -446,6 +507,128 @@ impl NetworkGenome {
         }
     }
 
+    /// 验证域链合法性（序列模式专用）
+    ///
+    /// 遍历启用层，追踪 `current_domain`：
+    /// - 合法转换：Seq→Seq（RNN return_seq）、Seq→Flat（RNN last hidden）、
+    ///   Flat→Flat（Linear）、任意域→同域（Activation/Dropout）
+    /// - 非法转换：Flat→Sequence（不允许回溯）、Sequence 直接到 Linear（跳过 RNN）
+    /// - 终态必须为 Flat（输出头需要 2D 输入）
+    ///
+    /// 平坦模式（seq_len=None）直接返回 true。
+    pub fn is_domain_valid(&self) -> bool {
+        if self.seq_len.is_none() {
+            return true;
+        }
+
+        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+        if enabled.is_empty() {
+            return false;
+        }
+
+        let mut current_domain = ShapeDomain::Sequence;
+
+        for (i, layer) in enabled.iter().enumerate() {
+            match &layer.layer_config {
+                LayerConfig::Rnn { .. }
+                | LayerConfig::Lstm { .. }
+                | LayerConfig::Gru { .. } => {
+                    if current_domain != ShapeDomain::Sequence {
+                        return false; // Flat→Sequence 非法
+                    }
+                    // 判断输出域：看下一个实质层（跳过 Activation/Dropout）
+                    let next_is_recurrent = enabled[i + 1..].iter().any(|l| {
+                        match &l.layer_config {
+                            LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {
+                                return false; // 继续查找
+                            }
+                            LayerConfig::Rnn { .. }
+                            | LayerConfig::Lstm { .. }
+                            | LayerConfig::Gru { .. } => true,
+                            _ => false,
+                        }
+                    });
+                    current_domain = if next_is_recurrent {
+                        ShapeDomain::Sequence
+                    } else {
+                        ShapeDomain::Flat
+                    };
+                }
+                LayerConfig::Linear { .. } => {
+                    if current_domain != ShapeDomain::Flat {
+                        return false; // Sequence 直接到 Linear 非法
+                    }
+                    // Linear 保持 Flat
+                }
+                LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {
+                    // 透传，保持当前域
+                }
+            }
+        }
+
+        current_domain == ShapeDomain::Flat
+    }
+
+    /// 判断给定层配置是否为循环层（Rnn/Lstm/Gru）
+    pub fn is_recurrent(config: &LayerConfig) -> bool {
+        matches!(
+            config,
+            LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. }
+        )
+    }
+
+    /// 计算每个节点的输出形状域映射
+    ///
+    /// 返回 `innovation_number → ShapeDomain`，描述每个节点输出张量的域。
+    /// 平坦模式（`seq_len=None`）下所有节点为 `Flat`。
+    /// 用于 skip edge 域兼容性检查：跨域（Sequence↔Flat）的 skip edge 无法聚合。
+    pub fn compute_domain_map(&self) -> HashMap<u64, ShapeDomain> {
+        let mut map = HashMap::new();
+
+        if self.seq_len.is_none() {
+            map.insert(INPUT_INNOVATION, ShapeDomain::Flat);
+            for layer in self.layers.iter().filter(|l| l.enabled) {
+                map.insert(layer.innovation_number, ShapeDomain::Flat);
+            }
+            return map;
+        }
+
+        map.insert(INPUT_INNOVATION, ShapeDomain::Sequence);
+        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+        let mut current_domain = ShapeDomain::Sequence;
+
+        for (i, layer) in enabled.iter().enumerate() {
+            match &layer.layer_config {
+                LayerConfig::Rnn { .. }
+                | LayerConfig::Lstm { .. }
+                | LayerConfig::Gru { .. } => {
+                    // 找下一个实质层（跳过 Activation/Dropout）
+                    let mut next_is_recurrent = false;
+                    for next_layer in &enabled[i + 1..] {
+                        match &next_layer.layer_config {
+                            LayerConfig::Activation { .. }
+                            | LayerConfig::Dropout { .. } => continue,
+                            _ => {
+                                next_is_recurrent =
+                                    Self::is_recurrent(&next_layer.layer_config);
+                                break;
+                            }
+                        }
+                    }
+                    current_domain = if next_is_recurrent {
+                        ShapeDomain::Sequence
+                    } else {
+                        ShapeDomain::Flat
+                    };
+                }
+                _ => { /* Linear/Activation/Dropout 保持当前域 */ }
+            }
+            map.insert(layer.innovation_number, current_domain);
+        }
+
+        map
+    }
+
     // ==================== 内部方法 ====================
 
     /// 计算某层的有效输入维度（考虑 skip edge 聚合）
@@ -552,7 +735,12 @@ impl NetworkGenome {
 
         // 第一遍：收集 (innovation, raw_name)
         let mut entries: Vec<(u64, String)> = Vec::with_capacity(enabled.len() + 1);
-        entries.push((INPUT_INNOVATION, format!("Input({})", self.input_dim)));
+        let input_label = if self.seq_len.is_some() {
+            format!("Input(seq×{})", self.input_dim)
+        } else {
+            format!("Input({})", self.input_dim)
+        };
+        entries.push((INPUT_INNOVATION, input_label));
         for (i, layer) in enabled.iter().enumerate() {
             let is_last = i == enabled.len() - 1;
             let name = if is_last {

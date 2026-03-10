@@ -68,13 +68,14 @@ impl Tensor {
     pub fn stack(tensors: &[&Self], axis: usize) -> Self {
         assert!(!tensors.is_empty(), "{}", TensorError::EmptyList);
 
-        let all_scalars = tensors.iter().all(|t| t.is_scalar());
         let first = tensors[0];
         let first_shape = first.shape();
         let ndim = first_shape.len();
 
-        // 标量特殊处理
-        if all_scalars {
+        // 0 维标量特殊处理（ndarray 不支持 0 维 stack）
+        // 注意：[1] 或 [1,1] 等有明确 shape 的张量不走此路径，
+        // 因为它们需要保留维度信息（如 stack([1,1]*8, axis=1) → [1,8,1]）。
+        if first_shape.is_empty() {
             let data: Vec<f32> = tensors
                 .iter()
                 .flat_map(|t| t.data.as_slice().unwrap())
@@ -124,13 +125,14 @@ impl Tensor {
     pub fn concat(tensors: &[&Self], axis: usize) -> Self {
         assert!(!tensors.is_empty(), "{}", TensorError::EmptyList);
 
-        let all_scalars = tensors.iter().all(|t| t.is_scalar());
         let first = tensors[0];
         let first_shape = first.shape();
         let ndim = first_shape.len();
 
-        // 标量特殊处理
-        if all_scalars {
+        // 0 维标量特殊处理（ndarray 不支持 0 维 concat）
+        // 注意：[1] 或 [1,1] 等有明确 shape 的张量不走此路径，
+        // 因为它们需要保留维度信息（如 concat([1,1]*2, axis=1) → [1,2]）。
+        if first_shape.is_empty() {
             let data: Vec<f32> = tensors
                 .iter()
                 .flat_map(|t| t.data.as_slice().unwrap())

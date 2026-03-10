@@ -14,7 +14,7 @@
 
 use super::gene::{
     compatible_losses, ActivationType, AggregateStrategy, LayerConfig, LayerGene, LossType,
-    NetworkGenome, OptimizerType, SkipEdge, TaskMetric, INPUT_INNOVATION,
+    NetworkGenome, OptimizerType, ShapeDomain, SkipEdge, TaskMetric, INPUT_INNOVATION,
 };
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
@@ -171,8 +171,10 @@ impl MutationRegistry {
         ))
     }
 
-    /// 默认注册表（12 种变异：7 种结构/参数 + 3 种 SkipEdge + 2 种训练超参数）
-    pub fn default_registry(metric: &TaskMetric) -> Self {
+    /// 默认注册表
+    ///
+    /// `is_sequential`: 序列模式时额外注册 MutateCellType。
+    pub fn default_registry(metric: &TaskMetric, is_sequential: bool) -> Self {
         let mut reg = Self::new();
         reg.register(0.15, InsertLayerMutation::default());
         reg.register(0.15, RemoveLayerMutation);
@@ -193,6 +195,10 @@ impl MutationRegistry {
         // 训练超参数变异
         reg.register(0.05, MutateLearningRateMutation);
         reg.register(0.02, MutateOptimizerMutation);
+        // 序列模式专属
+        if is_sequential {
+            reg.register(0.10, MutateCellTypeMutation);
+        }
         reg
     }
 
@@ -306,6 +312,28 @@ fn is_parameterized_layer(config: &LayerConfig) -> bool {
             activation_type: ActivationType::LeakyReLU { .. } | ActivationType::ELU { .. }
         } | LayerConfig::Dropout { .. }
     )
+}
+
+/// 获取可调整尺寸的层的当前大小（Linear out_features 或 RNN hidden_size）
+fn get_resizable_size(config: &LayerConfig) -> Option<usize> {
+    match config {
+        LayerConfig::Linear { out_features } => Some(*out_features),
+        LayerConfig::Rnn { hidden_size }
+        | LayerConfig::Lstm { hidden_size }
+        | LayerConfig::Gru { hidden_size } => Some(*hidden_size),
+        _ => None,
+    }
+}
+
+/// 设置可调整尺寸层的新大小
+fn set_resizable_size(config: &mut LayerConfig, new_size: usize) {
+    match config {
+        LayerConfig::Linear { out_features } => *out_features = new_size,
+        LayerConfig::Rnn { hidden_size }
+        | LayerConfig::Lstm { hidden_size }
+        | LayerConfig::Gru { hidden_size } => *hidden_size = new_size,
+        _ => {}
+    }
 }
 
 /// 检查指定位置（在 enabled 层序列中）的相邻层是否有 Activation
@@ -429,17 +457,28 @@ impl Mutation for InsertLayerMutation {
             .position(|&i| i >= insert_vec_idx)
             .unwrap_or(enabled_indices.len() - 1);
 
-        // 决定插入层类型：如果相邻有 Activation 则只能插 Linear
+        // 决定插入层类型
         let adjacent_act = has_adjacent_activation(genome, logical_pos);
         let can_insert_activation = !adjacent_act && !self.available_activations.is_empty();
+        let is_sequential = genome.seq_len.is_some();
 
-        let new_config = if can_insert_activation && rng.gen_bool(0.5) {
+        let new_config = if can_insert_activation && rng.gen_bool(0.3) {
+            // Activation（序列/平坦模式均可）
             let act = self.available_activations.choose(rng).unwrap();
             LayerConfig::Activation {
                 activation_type: *act,
             }
+        } else if is_sequential && rng.gen_bool(0.5) {
+            // 序列模式：插入 RNN 族层
+            let small_cap = genome.input_dim.min(constraints.max_hidden_size).max(constraints.min_hidden_size);
+            let size = rng.gen_range(constraints.min_hidden_size..=small_cap);
+            match rng.gen_range(0..3) {
+                0 => LayerConfig::Rnn { hidden_size: size },
+                1 => LayerConfig::Lstm { hidden_size: size },
+                _ => LayerConfig::Gru { hidden_size: size },
+            }
         } else {
-            // 最小复杂度优先：新插入层从小尺寸开始，让 GrowHiddenSizeMutation 按需扩展
+            // 平坦层：Linear
             let small_cap = genome.input_dim.min(constraints.max_hidden_size).max(constraints.min_hidden_size);
             let size = rng.gen_range(constraints.min_hidden_size..=small_cap);
             LayerConfig::Linear {
@@ -457,11 +496,11 @@ impl Mutation for InsertLayerMutation {
             },
         );
 
-        // 插入新层可能改变主干维度流，导致已有 skip edge 维度不兼容
-        if genome.resolve_dimensions().is_err() {
+        // 插入新层后验证维度兼容性 + 域链合法性
+        if genome.resolve_dimensions().is_err() || !genome.is_domain_valid() {
             genome.layers.remove(insert_vec_idx);
             return Err(MutationError::ConstraintViolation(
-                "插入层后 skip edge 维度不兼容".into(),
+                "插入层后维度或域链不兼容".into(),
             ));
         }
 
@@ -513,12 +552,12 @@ impl Mutation for RemoveLayerMutation {
             e.from_innovation != removed_inn && e.to_innovation != removed_inn
         });
 
-        // 验证删除后维度兼容性（剩余 skip edge 可能因主干维度变化而不兼容）
-        if genome.resolve_dimensions().is_err() {
+        // 验证删除后维度兼容性 + 域链合法性
+        if genome.resolve_dimensions().is_err() || !genome.is_domain_valid() {
             genome.layers.insert(idx, removed_gene);
             genome.skip_edges.extend(removed_edges);
             return Err(MutationError::ConstraintViolation(
-                "删除层后 skip edge 维度不兼容".into(),
+                "删除层后维度或域链不兼容".into(),
             ));
         }
 
@@ -621,11 +660,9 @@ impl Mutation for GrowHiddenSizeMutation {
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
-            if let LayerConfig::Linear { out_features } = genome.layers[i].layer_config {
-                out_features < constraints.max_hidden_size
-            } else {
-                false
-            }
+            get_resizable_size(&genome.layers[i].layer_config)
+                .map(|s| s < constraints.max_hidden_size)
+                .unwrap_or(false)
         })
     }
 
@@ -639,25 +676,21 @@ impl Mutation for GrowHiddenSizeMutation {
         let candidates: Vec<usize> = hidden
             .into_iter()
             .filter(|&i| {
-                if let LayerConfig::Linear { out_features } = genome.layers[i].layer_config {
-                    out_features < constraints.max_hidden_size
-                } else {
-                    false
-                }
+                get_resizable_size(&genome.layers[i].layer_config)
+                    .map(|s| s < constraints.max_hidden_size)
+                    .unwrap_or(false)
             })
             .collect();
 
         if candidates.is_empty() {
             return Err(MutationError::NotApplicable(
-                "没有可增长的 Linear 层".into(),
+                "没有可增长的层".into(),
             ));
         }
 
         let &idx = candidates.choose(rng).unwrap();
-        let old_size = match genome.layers[idx].layer_config {
-            LayerConfig::Linear { out_features } => out_features,
-            _ => unreachable!(),
-        };
+        let old_config = genome.layers[idx].layer_config.clone();
+        let old_size = get_resizable_size(&old_config).unwrap();
 
         let new_size = grow_size(
             old_size,
@@ -666,29 +699,19 @@ impl Mutation for GrowHiddenSizeMutation {
             rng,
         );
 
-        // new_size > old_size 由前置条件保证：
-        // candidates 筛选确保 old_size < max_hidden_size，
-        // grow_size 的两条路径（+1 / x2）对正整数输入必然增长。
         debug_assert!(new_size > old_size);
 
-        // 设置新值，检查约束，不满足则回滚
-        genome.layers[idx].layer_config = LayerConfig::Linear {
-            out_features: new_size,
-        };
+        set_resizable_size(&mut genome.layers[idx].layer_config, new_size);
         match genome.total_params() {
             Ok(params) if params > constraints.max_total_params => {
-                genome.layers[idx].layer_config = LayerConfig::Linear {
-                    out_features: old_size,
-                };
+                genome.layers[idx].layer_config = old_config;
                 Err(MutationError::ConstraintViolation(format!(
                     "增长后 total_params={params} 超过上限 {}",
                     constraints.max_total_params
                 )))
             }
             Err(_) => {
-                genome.layers[idx].layer_config = LayerConfig::Linear {
-                    out_features: old_size,
-                };
+                genome.layers[idx].layer_config = old_config;
                 Err(MutationError::ConstraintViolation(
                     "增长后维度不兼容（skip edge 约束）".into(),
                 ))
@@ -710,11 +733,9 @@ impl Mutation for ShrinkHiddenSizeMutation {
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
-            if let LayerConfig::Linear { out_features } = genome.layers[i].layer_config {
-                out_features > constraints.min_hidden_size
-            } else {
-                false
-            }
+            get_resizable_size(&genome.layers[i].layer_config)
+                .map(|s| s > constraints.min_hidden_size)
+                .unwrap_or(false)
         })
     }
 
@@ -728,25 +749,21 @@ impl Mutation for ShrinkHiddenSizeMutation {
         let candidates: Vec<usize> = hidden
             .into_iter()
             .filter(|&i| {
-                if let LayerConfig::Linear { out_features } = genome.layers[i].layer_config {
-                    out_features > constraints.min_hidden_size
-                } else {
-                    false
-                }
+                get_resizable_size(&genome.layers[i].layer_config)
+                    .map(|s| s > constraints.min_hidden_size)
+                    .unwrap_or(false)
             })
             .collect();
 
         if candidates.is_empty() {
             return Err(MutationError::NotApplicable(
-                "没有可缩小的 Linear 层".into(),
+                "没有可缩小的层".into(),
             ));
         }
 
         let &idx = candidates.choose(rng).unwrap();
-        let old_size = match genome.layers[idx].layer_config {
-            LayerConfig::Linear { out_features } => out_features,
-            _ => unreachable!(),
-        };
+        let old_config = genome.layers[idx].layer_config.clone();
+        let old_size = get_resizable_size(&old_config).unwrap();
         let new_size = shrink_size(
             old_size,
             constraints.min_hidden_size,
@@ -754,15 +771,10 @@ impl Mutation for ShrinkHiddenSizeMutation {
             rng,
         );
 
-        genome.layers[idx].layer_config = LayerConfig::Linear {
-            out_features: new_size,
-        };
+        set_resizable_size(&mut genome.layers[idx].layer_config, new_size);
 
-        // 缩小后验证维度兼容性（skip edge 可能依赖该层尺寸）
         if genome.resolve_dimensions().is_err() {
-            genome.layers[idx].layer_config = LayerConfig::Linear {
-                out_features: old_size,
-            };
+            genome.layers[idx].layer_config = old_config;
             return Err(MutationError::ConstraintViolation(
                 "缩小后维度不兼容（skip edge 约束）".into(),
             ));
@@ -987,6 +999,82 @@ impl Mutation for MutateOptimizerMutation {
     }
 }
 
+// ==================== MutateCellTypeMutation ====================
+
+/// 循环层类型切换（Rnn ↔ Lstm ↔ Gru）
+///
+/// 保持 hidden_size 不变，仅切换 cell 类型。
+/// 权重快照失效后由 builder 重新初始化。
+pub struct MutateCellTypeMutation;
+
+impl Mutation for MutateCellTypeMutation {
+    fn name(&self) -> &str {
+        "MutateCellType"
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        let hidden = hidden_layer_indices(genome);
+        hidden.iter().any(|&i| {
+            NetworkGenome::is_recurrent(&genome.layers[i].layer_config)
+        })
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let hidden = hidden_layer_indices(genome);
+        let candidates: Vec<usize> = hidden
+            .into_iter()
+            .filter(|&i| NetworkGenome::is_recurrent(&genome.layers[i].layer_config))
+            .collect();
+
+        if candidates.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有可切换的循环层".into(),
+            ));
+        }
+
+        let &idx = candidates.choose(rng).unwrap();
+        let hidden_size = get_resizable_size(&genome.layers[idx].layer_config).unwrap();
+
+        // 排除当前类型，从剩余两种中随机选择
+        let new_config = match &genome.layers[idx].layer_config {
+            LayerConfig::Rnn { .. } => {
+                if rng.gen_bool(0.5) {
+                    LayerConfig::Lstm { hidden_size }
+                } else {
+                    LayerConfig::Gru { hidden_size }
+                }
+            }
+            LayerConfig::Lstm { .. } => {
+                if rng.gen_bool(0.5) {
+                    LayerConfig::Rnn { hidden_size }
+                } else {
+                    LayerConfig::Gru { hidden_size }
+                }
+            }
+            LayerConfig::Gru { .. } => {
+                if rng.gen_bool(0.5) {
+                    LayerConfig::Rnn { hidden_size }
+                } else {
+                    LayerConfig::Lstm { hidden_size }
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        // 切换后旧权重快照失效（参数数量不同），移除该层快照
+        let inn = genome.layers[idx].innovation_number;
+        genome.weight_snapshots.remove(&inn);
+
+        genome.layers[idx].layer_config = new_config;
+        Ok(())
+    }
+}
+
 // ==================== AddSkipEdgeMutation ====================
 
 /// 随机可选的聚合策略列表
@@ -1008,7 +1096,10 @@ impl AddSkipEdgeMutation {
     /// 1. DAG 前向约束：from 在层序列中的位置 < to
     /// 2. 不重复：已存在的 (from, to) 对被排除
     /// 3. 目标层 group 约束：已有 skip edge 的目标层只许沿用已有策略
-    /// 4. 维度兼容性：trial resolve_dimensions 验证
+    /// 4. 域约束：序列模型中只允许 Flat 域内的 skip edge
+    ///    记忆单元（RNN/LSTM/GRU）作为原子单元，不允许 skip edge
+    ///    跨越或穿透 Sequence 域（避免 3D/2D 形状不兼容和 concat dim 语义混乱）
+    /// 5. 维度兼容性：trial resolve_dimensions 验证
     fn feasible_candidates(
         genome: &NetworkGenome,
     ) -> Vec<(u64, u64, AggregateStrategy)> {
@@ -1026,9 +1117,32 @@ impl AddSkipEdgeMutation {
             .map(|e| (e.from_innovation, e.to_innovation))
             .collect();
 
+        // 域映射：序列模型中只允许 Flat 域内的 skip edge。
+        // Sequence 域内的 skip edge 有 concat dim 语义问题（dim=1 对 3D 是 seq_len
+        // 而非 features），且记忆单元应作为原子单元不被 skip 穿透。
+        let domain_map = genome.compute_domain_map();
+        // 每层的“输入域”：即主路径在聚合点处的域
+        //   = 前一层的输出域（或 Input 域）
+        let input_domain_at: std::collections::HashMap<u64, ShapeDomain> = {
+            let mut map = std::collections::HashMap::new();
+            let input_domain = *domain_map.get(&INPUT_INNOVATION).unwrap();
+            let mut prev_domain = input_domain;
+            for &inn in &enabled {
+                map.insert(inn, prev_domain);
+                prev_domain = *domain_map.get(&inn).unwrap();
+            }
+            map
+        };
+
         let mut candidates = Vec::new();
 
         for (to_idx, &to_inn) in enabled.iter().enumerate() {
+            // 聚合点的域：必须为 Flat 才允许 skip edge
+            let to_domain = input_domain_at.get(&to_inn).copied().unwrap();
+            if to_domain != ShapeDomain::Flat {
+                continue;
+            }
+
             // 确定该目标层允许的策略
             let group_strategy = genome
                 .skip_edges
@@ -1040,14 +1154,34 @@ impl AddSkipEdgeMutation {
                 None => all_aggregate_strategies(),
             };
 
-            // 收集所有前向 from
+            // 直接前驱的创新号：主路径已经将该层的输出送到 to，
+            // skip edge 会携带完全相同的张量，对所有聚合策略都是退化的
+            // （Add=×2 缩放、Mean/Max=恒等、Concat=冗余翻倍）
+            let immediate_pred = if to_idx > 0 {
+                Some(enabled[to_idx - 1])
+            } else {
+                None // to 是第一层，直接前驱为 INPUT
+            };
+
+            // 收集所有前向 from，只允许 Flat 域源，排除直接前驱
             let mut froms = Vec::new();
-            if !existing.contains(&(INPUT_INNOVATION, to_inn)) {
-                froms.push(INPUT_INNOVATION);
+            if !existing.contains(&(INPUT_INNOVATION, to_inn))
+                && immediate_pred.is_some() // 如果 to 是第一层，INPUT 就是直接前驱，跳过
+            {
+                let from_domain = *domain_map.get(&INPUT_INNOVATION).unwrap();
+                if from_domain == ShapeDomain::Flat {
+                    froms.push(INPUT_INNOVATION);
+                }
             }
             for &from_inn in &enabled[..to_idx] {
+                if Some(from_inn) == immediate_pred {
+                    continue; // 排除直接前驱
+                }
                 if !existing.contains(&(from_inn, to_inn)) {
-                    froms.push(from_inn);
+                    let from_domain = *domain_map.get(&from_inn).unwrap();
+                    if from_domain == ShapeDomain::Flat {
+                        froms.push(from_inn);
+                    }
                 }
             }
 

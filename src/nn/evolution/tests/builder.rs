@@ -412,7 +412,7 @@ fn test_build_after_mutation() {
     let mut rng = StdRng::seed_from_u64(42);
 
     // 执行若干变异
-    let registry = MutationRegistry::default_registry(&TaskMetric::Accuracy);
+    let registry = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
     for _ in 0..5 {
         let _ = registry.apply_random(&mut genome, &constraints, &mut rng);
     }
@@ -821,4 +821,310 @@ fn test_build_forward_batch() {
 
     let output_val = build.output.value().unwrap().unwrap();
     assert_eq!(output_val.shape(), &[4, 1]);
+}
+
+// ==================== 序列网络构建 ====================
+
+#[test]
+fn test_build_rnn_layer() {
+    let mut genome = NetworkGenome::minimal_sequential(3, 2);
+    genome.seq_len = Some(5);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 输入 [1, 5, 3]
+    let data: Vec<f32> = (0..15).map(|i| i as f32 * 0.1).collect();
+    build.input.set_value(&Tensor::new(&data, &[1, 5, 3])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 2]); // [batch, output_dim]
+
+    // Rnn 层有 3 个参数 (w_ih, w_hh, b_h)
+    let rnn_inn = genome.layers[0].innovation_number;
+    assert_eq!(build.layer_params[&rnn_inn].len(), 3);
+}
+
+#[test]
+fn test_build_lstm_layer() {
+    let mut genome = NetworkGenome::minimal_sequential(3, 2);
+    genome.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 2 };
+    genome.seq_len = Some(4);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let data: Vec<f32> = (0..12).map(|i| i as f32 * 0.1).collect();
+    build.input.set_value(&Tensor::new(&data, &[1, 4, 3])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 2]);
+
+    // Lstm 有 12 个参数
+    let lstm_inn = genome.layers[0].innovation_number;
+    assert_eq!(build.layer_params[&lstm_inn].len(), 12);
+}
+
+#[test]
+fn test_build_gru_layer() {
+    let mut genome = NetworkGenome::minimal_sequential(3, 2);
+    genome.layers[0].layer_config = LayerConfig::Gru { hidden_size: 2 };
+    genome.seq_len = Some(4);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let data: Vec<f32> = (0..12).map(|i| i as f32 * 0.1).collect();
+    build.input.set_value(&Tensor::new(&data, &[1, 4, 3])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 2]);
+
+    // Gru 有 9 个参数
+    let gru_inn = genome.layers[0].innovation_number;
+    assert_eq!(build.layer_params[&gru_inn].len(), 9);
+}
+
+#[test]
+fn test_build_stacked_rnn() {
+    // Rnn(4, return_seq) → Lstm(4, last_hidden) → [Linear(1)]
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
+    genome.seq_len = Some(3);
+
+    let lstm_inn = genome.next_innovation_number();
+    // 在 Rnn 之后、输出头之前插入 Lstm
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: lstm_inn,
+            layer_config: LayerConfig::Lstm { hidden_size: 4 },
+            enabled: true,
+        },
+    );
+
+    assert!(genome.is_domain_valid());
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let data: Vec<f32> = (0..6).map(|i| i as f32 * 0.1).collect();
+    build.input.set_value(&Tensor::new(&data, &[1, 3, 2])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+}
+
+#[test]
+fn test_build_sequential_with_activation() {
+    // Rnn(4) → Tanh → [Linear(1)]
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
+    genome.seq_len = Some(3);
+
+    let act_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: act_inn,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let data: Vec<f32> = (0..6).map(|i| i as f32 * 0.1).collect();
+    build.input.set_value(&Tensor::new(&data, &[1, 3, 2])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+}
+
+#[test]
+fn test_capture_restore_rnn_weights() {
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(3);
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let build1 = genome.build(&mut rng).unwrap();
+    let rnn_inn = genome.layers[0].innovation_number;
+    let original_params: Vec<_> = build1.layer_params[&rnn_inn]
+        .iter()
+        .map(|p| p.value().unwrap().unwrap())
+        .collect();
+    genome.capture_weights(&build1).unwrap();
+
+    // 重建并恢复
+    let build2 = genome.build(&mut rng).unwrap();
+    let report = genome.restore_weights(&build2).unwrap();
+
+    // Rnn 3 params + Linear 2 params = 5
+    assert_eq!(report.inherited + report.reinitialized, 5);
+    assert!(report.inherited >= 3, "Rnn 参数应被继承");
+
+    let restored_params: Vec<_> = build2.layer_params[&rnn_inn]
+        .iter()
+        .map(|p| p.value().unwrap().unwrap())
+        .collect();
+    for (orig, rest) in original_params.iter().zip(restored_params.iter()) {
+        assert_eq!(orig, rest);
+    }
+}
+
+#[test]
+fn test_capture_restore_lstm_weights() {
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 1 };
+    genome.seq_len = Some(3);
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let build1 = genome.build(&mut rng).unwrap();
+    genome.capture_weights(&build1).unwrap();
+
+    let build2 = genome.build(&mut rng).unwrap();
+    let report = genome.restore_weights(&build2).unwrap();
+
+    // Lstm 12 params + Linear 2 params = 14
+    assert_eq!(report.inherited + report.reinitialized, 14);
+    assert!(report.inherited >= 12, "Lstm 参数应被继承");
+}
+
+#[test]
+fn test_restore_weights_cell_type_change() {
+    // Rnn → Lstm 切换后，旧权重形状不匹配，应重初始化
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(3);
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let build1 = genome.build(&mut rng).unwrap();
+    genome.capture_weights(&build1).unwrap();
+
+    // 切换为 Lstm（参数数量从 3 变成 12）
+    genome.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 1 };
+    // 清除旧快照（模拟 MutateCellType 的行为）
+    let inn = genome.layers[0].innovation_number;
+    genome.weight_snapshots.remove(&inn);
+
+    let build2 = genome.build(&mut rng).unwrap();
+    let report = genome.restore_weights(&build2).unwrap();
+
+    // Lstm 的 12 个参数无快照 → reinitialized
+    assert!(report.reinitialized >= 12);
+}
+
+// ==================== 序列模型 + Flat 域 skip edge ====================
+
+#[test]
+fn test_build_sequential_with_flat_skip_edge() {
+    // Input(seq×2) → Rnn(1) → Tanh → Linear(4) → [Linear(1)]
+    // skip: Rnn(1) → [Linear(1)] (Concat)
+    // 序列模型中 skip edge 仅在 Flat 域内，验证 build + 多次 forward 成功
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(5);
+    let rnn_inn = genome.layers[0].innovation_number;
+    let out_inn = genome.layers[1].innovation_number;
+
+    // 插入 Tanh + Linear(4)
+    let act_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: act_inn,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+    let lin_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: lin_inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    // skip: Rnn(1) → 输出头 (Concat)。
+    // Rnn out_dim=1，main path at 输出头=4，Concat 后 in_dim=5
+    let se_inn = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: se_inn,
+        from_innovation: rnn_inn,
+        to_innovation: out_inn,
+        strategy: AggregateStrategy::Concat { dim: 1 },
+        enabled: true,
+    });
+
+    assert!(genome.resolve_dimensions().is_ok());
+    assert!(genome.is_domain_valid());
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 第一次 forward
+    let data: Vec<f32> = (0..10).map(|i| i as f32 * 0.1).collect();
+    build.input.set_value(&Tensor::new(&data, &[1, 5, 2])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
+
+    // 第二次 forward（模拟 predict 场景——用新数据重新前向）
+    let data2: Vec<f32> = (0..10).map(|i| (i as f32 + 5.0) * 0.1).collect();
+    build.input.set_value(&Tensor::new(&data2, &[1, 5, 2])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+    let out2 = build.output.value().unwrap().unwrap();
+    assert_eq!(out2.shape(), &[1, 1]);
+}
+
+#[test]
+fn test_build_sequential_with_flat_skip_edge_add() {
+    // Input(seq×2) → Rnn(4) → Linear(4) → [Linear(1)]
+    // skip: Rnn(4) → Linear(4) (Add，维度匹配)
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(3);
+    // minimal_sequential 的 Rnn hidden_size = output_dim = 1，这里需要 4 才能与 Linear(4) 做 Add
+    genome.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
+    let rnn_inn = genome.layers[0].innovation_number;
+
+    let lin_inn = genome.next_innovation_number();
+    let out_inn = genome.layers[1].innovation_number;
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: lin_inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    // skip: Rnn(4) → 输出头(main=4)，Add(4,4) 兼容
+    let se_inn = genome.next_innovation_number();
+    genome.skip_edges.push(SkipEdge {
+        innovation_number: se_inn,
+        from_innovation: rnn_inn,
+        to_innovation: out_inn,
+        strategy: AggregateStrategy::Add,
+        enabled: true,
+    });
+
+    // 注意：输出头 out_features=1，但 Add 后 in_dim=4，所以需调整
+    // resolve_dimensions 会计算 Add(4, 4)=4 → 输出头 in=4, out=1
+    assert!(genome.resolve_dimensions().is_ok());
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let data: Vec<f32> = (0..6).map(|i| i as f32 * 0.1).collect();
+    build.input.set_value(&Tensor::new(&data, &[1, 3, 2])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1]);
 }

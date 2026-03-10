@@ -1274,3 +1274,306 @@ fn test_task_metric_is_discrete() {
     assert!(TaskMetric::MultiLabelAccuracy.is_discrete());
     assert!(!TaskMetric::R2.is_discrete());
 }
+
+// ==================== 序列 Genome / 域验证 ====================
+
+#[test]
+fn test_minimal_sequential_genome() {
+    let genome = NetworkGenome::minimal_sequential(3, 2);
+
+    assert_eq!(genome.input_dim, 3);
+    assert_eq!(genome.output_dim, 2);
+    assert_eq!(genome.seq_len, Some(0)); // 占位值
+    assert_eq!(genome.layers.len(), 2);
+    assert_eq!(genome.generated_by, "minimal_sequential");
+
+    // 第一层是 Rnn
+    assert_eq!(
+        genome.layers[0].layer_config,
+        LayerConfig::Rnn { hidden_size: 2 }
+    );
+    // 第二层（输出头）是 Linear
+    assert_eq!(
+        genome.layers[1].layer_config,
+        LayerConfig::Linear { out_features: 2 }
+    );
+}
+
+#[test]
+#[should_panic(expected = "input_dim 不能为零")]
+fn test_minimal_sequential_zero_input_panics() {
+    NetworkGenome::minimal_sequential(0, 1);
+}
+
+#[test]
+#[should_panic(expected = "output_dim 不能为零")]
+fn test_minimal_sequential_zero_output_panics() {
+    NetworkGenome::minimal_sequential(1, 0);
+}
+
+#[test]
+fn test_resolve_dimensions_with_rnn() {
+    // 构造序列 genome: Rnn(4) → [Linear(1)]
+    let mut genome = NetworkGenome::minimal_sequential(3, 1);
+    genome.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
+    genome.seq_len = Some(5);
+
+    let resolved = genome.resolve_dimensions().unwrap();
+    assert_eq!(resolved.len(), 2);
+    // Rnn: in=3, out=4
+    assert_eq!(resolved[0].in_dim, 3);
+    assert_eq!(resolved[0].out_dim, 4);
+    // Linear(输出头): in=4, out=1
+    assert_eq!(resolved[1].in_dim, 4);
+    assert_eq!(resolved[1].out_dim, 1);
+}
+
+#[test]
+fn test_resolve_dimensions_with_lstm() {
+    let mut genome = NetworkGenome::minimal_sequential(5, 2);
+    genome.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 8 };
+    genome.seq_len = Some(10);
+
+    let resolved = genome.resolve_dimensions().unwrap();
+    assert_eq!(resolved[0].in_dim, 5);
+    assert_eq!(resolved[0].out_dim, 8);
+    assert_eq!(resolved[1].in_dim, 8);
+    assert_eq!(resolved[1].out_dim, 2);
+}
+
+#[test]
+fn test_total_params_rnn_genome() {
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 3 };
+    genome.seq_len = Some(4);
+
+    // Rnn(in=2, hidden=3): W_ih(2*3) + W_hh(3*3) + b_h(3) = 6+9+3 = 18
+    // Linear(in=3, out=1): W(3*1) + b(1) = 4
+    // Total: 22
+    assert_eq!(genome.total_params().unwrap(), 22);
+
+    // 换成 Lstm
+    genome.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 3 };
+    // Lstm: 4 * (2*3 + 3*3 + 3) = 4 * 18 = 72
+    // Linear: 4
+    assert_eq!(genome.total_params().unwrap(), 76);
+
+    // 换成 Gru
+    genome.layers[0].layer_config = LayerConfig::Gru { hidden_size: 3 };
+    // Gru: 3 * (2*3 + 3*3 + 3) = 3 * 18 = 54
+    // Linear: 4
+    assert_eq!(genome.total_params().unwrap(), 58);
+}
+
+#[test]
+fn test_domain_valid_single_rnn() {
+    let mut genome = NetworkGenome::minimal_sequential(3, 1);
+    genome.seq_len = Some(5);
+    // Rnn → Linear：Sequence→Flat→Flat，合法
+    assert!(genome.is_domain_valid());
+}
+
+#[test]
+fn test_domain_valid_stacked_rnn() {
+    // Rnn → Lstm → Gru → [Linear(1)]
+    let mut genome = NetworkGenome::minimal_sequential(3, 1);
+    genome.seq_len = Some(5);
+
+    let i1 = genome.next_innovation_number();
+    let i2 = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Lstm { hidden_size: 4 },
+            enabled: true,
+        },
+    );
+    genome.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Gru { hidden_size: 4 },
+            enabled: true,
+        },
+    );
+
+    assert!(genome.is_domain_valid());
+}
+
+#[test]
+fn test_domain_invalid_linear_in_seq() {
+    // seq genome: Linear(4) → Rnn(3) → [Linear(1)]
+    // Linear 在 Sequence 域中，非法
+    let mut genome = NetworkGenome::minimal_sequential(3, 1);
+    genome.seq_len = Some(5);
+    let inn = genome.next_innovation_number();
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    assert!(!genome.is_domain_valid());
+}
+
+#[test]
+fn test_domain_invalid_no_rnn() {
+    // seq genome 无 RNN 层：Linear → [Linear]
+    let mut genome = NetworkGenome::minimal(3, 1);
+    genome.seq_len = Some(5); // 强制序列模式但无 RNN
+    // 域初始为 Sequence，但 Linear 要求 Flat → 非法
+    assert!(!genome.is_domain_valid());
+}
+
+#[test]
+fn test_domain_valid_flat_genome_always_true() {
+    // 平坦模式（seq_len=None）直接返回 true
+    let genome = NetworkGenome::minimal(3, 1);
+    assert!(genome.is_domain_valid());
+}
+
+#[test]
+fn test_is_recurrent_helper() {
+    assert!(NetworkGenome::is_recurrent(&LayerConfig::Rnn { hidden_size: 4 }));
+    assert!(NetworkGenome::is_recurrent(&LayerConfig::Lstm { hidden_size: 4 }));
+    assert!(NetworkGenome::is_recurrent(&LayerConfig::Gru { hidden_size: 4 }));
+    assert!(!NetworkGenome::is_recurrent(&LayerConfig::Linear { out_features: 4 }));
+    assert!(!NetworkGenome::is_recurrent(&LayerConfig::Activation {
+        activation_type: ActivationType::ReLU,
+    }));
+}
+
+#[test]
+fn test_sequential_main_path_summary() {
+    let genome = NetworkGenome::minimal_sequential(3, 1);
+    let summary = genome.main_path_summary();
+    assert!(summary.contains("Input(seq×3)"), "序列模式应显示 seq×: {summary}");
+    assert!(summary.contains("RNN"), "应包含 RNN: {summary}");
+}
+
+// ==================== compute_domain_map ====================
+
+#[test]
+fn test_domain_map_flat_genome() {
+    // 平坦模式：所有节点均为 Flat
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let inn = genome.next_innovation_number();
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    let map = genome.compute_domain_map();
+    assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Flat);
+    assert_eq!(map[&inn], ShapeDomain::Flat);
+    assert_eq!(map[&1], ShapeDomain::Flat); // 输出头
+}
+
+#[test]
+fn test_domain_map_single_rnn() {
+    // Input(Seq) → Rnn(Flat) → Linear(Flat)
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(5);
+    let rnn_inn = genome.layers[0].innovation_number;
+    let out_inn = genome.layers[1].innovation_number;
+
+    let map = genome.compute_domain_map();
+    assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Sequence);
+    assert_eq!(map[&rnn_inn], ShapeDomain::Flat); // RNN 后无循环层 → Flat
+    assert_eq!(map[&out_inn], ShapeDomain::Flat);
+}
+
+#[test]
+fn test_domain_map_stacked_rnn() {
+    // Input(Seq) → Rnn(Seq) → Lstm(Flat) → Linear(Flat)
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(5);
+    let rnn_inn = genome.layers[0].innovation_number;
+
+    let lstm_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: lstm_inn,
+            layer_config: LayerConfig::Lstm { hidden_size: 4 },
+            enabled: true,
+        },
+    );
+    let out_inn = genome.layers[2].innovation_number;
+
+    let map = genome.compute_domain_map();
+    assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Sequence);
+    assert_eq!(map[&rnn_inn], ShapeDomain::Sequence); // 下一个实质层是 LSTM → Seq
+    assert_eq!(map[&lstm_inn], ShapeDomain::Flat);     // 下一个实质层是 Linear → Flat
+    assert_eq!(map[&out_inn], ShapeDomain::Flat);
+}
+
+#[test]
+fn test_domain_map_rnn_with_activation() {
+    // Input(Seq) → Rnn(Flat) → Tanh(Flat) → Linear(Flat)
+    // Activation 保持 RNN 输出后的 Flat 域
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(5);
+    let rnn_inn = genome.layers[0].innovation_number;
+
+    let act_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: act_inn,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+    let out_inn = genome.layers[2].innovation_number;
+
+    let map = genome.compute_domain_map();
+    assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Sequence);
+    assert_eq!(map[&rnn_inn], ShapeDomain::Flat);
+    assert_eq!(map[&act_inn], ShapeDomain::Flat); // Activation 透传 Flat
+    assert_eq!(map[&out_inn], ShapeDomain::Flat);
+}
+
+#[test]
+fn test_domain_map_activation_between_rnns() {
+    // Input(Seq) → Rnn(Seq) → Tanh(Seq) → Gru(Flat) → Linear(Flat)
+    // Activation 在两个 RNN 之间应保持 Sequence 域
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(5);
+    let rnn_inn = genome.layers[0].innovation_number;
+
+    let act_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: act_inn,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+    let gru_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: gru_inn,
+            layer_config: LayerConfig::Gru { hidden_size: 4 },
+            enabled: true,
+        },
+    );
+
+    let map = genome.compute_domain_map();
+    assert_eq!(map[&rnn_inn], ShapeDomain::Sequence); // 跳过 Tanh 后见 Gru
+    assert_eq!(map[&act_inn], ShapeDomain::Sequence); // 透传 Sequence
+    assert_eq!(map[&gru_inn], ShapeDomain::Flat);     // 最后一个 RNN
+}

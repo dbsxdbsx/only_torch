@@ -791,6 +791,69 @@ fn test_mini_batch_evaluate_still_full_batch() {
     assert!(score.primary >= 0.0 && score.primary <= 1.0);
 }
 
+// ==================== 序列数据检测 ====================
+
+fn seq_data_fixed(n: usize, seq_len: usize, input_dim: usize) -> (Vec<Tensor>, Vec<Tensor>) {
+    let inputs: Vec<Tensor> = (0..n)
+        .map(|i| {
+            let data: Vec<f32> = (0..seq_len * input_dim)
+                .map(|j| (i * seq_len * input_dim + j) as f32 * 0.01)
+                .collect();
+            Tensor::new(&data, &[seq_len, input_dim])
+        })
+        .collect();
+    let labels: Vec<Tensor> = (0..n)
+        .map(|i| Tensor::new(&[if i % 2 == 0 { 1.0 } else { 0.0 }], &[1]))
+        .collect();
+    (inputs, labels)
+}
+
+#[test]
+fn test_supervised_task_detects_sequential() {
+    // 2D 样本 [seq_len, input_dim] → SupervisedTask 自动检测为序列
+    let data = seq_data_fixed(4, 5, 2);
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap();
+
+    // 通过构建序列 genome 并 evaluate 来间接验证
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(5);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+    let score = task.evaluate(&genome, &build, &mut rng).unwrap();
+    assert!(score.primary >= 0.0 && score.primary <= 1.0);
+}
+
+#[test]
+fn test_supervised_task_var_len_auto_pad() {
+    // 变长序列：长度 3, 5, 4 → 自动 pad 到 5
+    let inputs = vec![
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]),
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0], &[5, 2]),
+        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]),
+    ];
+    let labels = vec![
+        Tensor::new(&[1.0], &[1]),
+        Tensor::new(&[0.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+    ];
+
+    // 构造应成功（自动 pad）
+    let task = SupervisedTask::new(
+        (inputs.clone(), labels.clone()),
+        (inputs, labels),
+        TaskMetric::Accuracy,
+    )
+    .unwrap();
+
+    // 验证可以正常用于训练/评估
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.seq_len = Some(5);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+    let score = task.evaluate(&genome, &build, &mut rng).unwrap();
+    assert!(score.primary >= 0.0 && score.primary <= 1.0);
+}
+
 // ==================== 训练后 loss 下降 ====================
 
 #[test]

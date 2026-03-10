@@ -147,4 +147,23 @@ fn test_concat_with_axis() {
         Tensor::concat(&[&t1, &t2], 1),
         "concat: 张量 1 在维度 0 的大小 2 与第一个张量的 1 不一致"
     );
+
+    // 6. [1,1] 形状张量沿 dim=1 拼接应保留 2D 维度
+    //    回归测试：确保不被误判为标量而产生错误的 1D 结果
+    let u1 = Tensor::new(&[1.0], &[1, 1]);
+    let u2 = Tensor::new(&[2.0], &[1, 1]);
+    let result = Tensor::concat(&[&u1, &u2], 1);
+    assert_eq!(result.shape(), &[1, 2]);
+    assert_eq!(result, Tensor::new(&[1.0, 2.0], &[1, 2]));
+
+    // 7. 三个 [1,1] 张量沿 dim=1 拼接
+    let u3 = Tensor::new(&[3.0], &[1, 1]);
+    let result = Tensor::concat(&[&u1, &u2, &u3], 1);
+    assert_eq!(result.shape(), &[1, 3]);
+    assert_eq!(result, Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]));
+
+    // 8. [1,1] 沿 dim=0 拼接也应保留 2D
+    let result = Tensor::concat(&[&u1, &u2], 0);
+    assert_eq!(result.shape(), &[2, 1]);
+    assert_eq!(result, Tensor::new(&[1.0, 2.0], &[2, 1]));
 }

@@ -118,10 +118,13 @@ pub trait EvolutionTask {
 ///
 /// 构造器接受 per-sample 的 `Vec<Tensor>`，内部立即 stack 成 batched Tensor。
 /// 自动根据数据量选择 full-batch 或 mini-batch 训练策略。
+///
+/// 序列数据支持：当输入为 2D 张量 `[seq_len, input_dim]` 时，
+/// 自动检测并处理变长序列（零填充至最大长度）。
 pub struct SupervisedTask {
-    train_x: Tensor, // [n_train, input_dim]
+    train_x: Tensor, // [n_train, input_dim] 或 [n_train, seq_len, input_dim]
     train_y: Tensor, // [n_train, output_dim]
-    test_x: Tensor,  // [n_test, input_dim]
+    test_x: Tensor,  // [n_test, input_dim] 或 [n_test, seq_len, input_dim]
     test_y: Tensor,  // [n_test, output_dim]
     metric: TaskMetric,
     batch_size: Option<usize>, // None = 自动策略，Some = 显式指定
@@ -157,15 +160,44 @@ impl SupervisedTask {
             )));
         }
 
-        let train_x_refs: Vec<&Tensor> = train_data.0.iter().collect();
+        // 检测序列数据并处理变长序列
+        let is_sequential = train_data.0[0].dimension() == 2;
+        let (train_x_stacked, test_x_stacked) = if is_sequential {
+            // 找最大 seq_len
+            let max_seq = train_data.0.iter()
+                .chain(test_data.0.iter())
+                .map(|t| t.shape()[0])
+                .max()
+                .unwrap();
+            // 零填充至 max_seq_len
+            let pad_to_max = |tensors: &[Tensor]| -> Vec<Tensor> {
+                tensors.iter().map(|t| {
+                    let s = t.shape()[0];
+                    if s < max_seq {
+                        t.pad(&[(0, max_seq - s), (0, 0)], 0.0)
+                    } else {
+                        t.clone()
+                    }
+                }).collect()
+            };
+            let padded_train = pad_to_max(&train_data.0);
+            let padded_test = pad_to_max(&test_data.0);
+            let tr_refs: Vec<&Tensor> = padded_train.iter().collect();
+            let te_refs: Vec<&Tensor> = padded_test.iter().collect();
+            (Tensor::stack(&tr_refs, 0), Tensor::stack(&te_refs, 0))
+        } else {
+            let tr_refs: Vec<&Tensor> = train_data.0.iter().collect();
+            let te_refs: Vec<&Tensor> = test_data.0.iter().collect();
+            (Tensor::stack(&tr_refs, 0), Tensor::stack(&te_refs, 0))
+        };
+
         let train_y_refs: Vec<&Tensor> = train_data.1.iter().collect();
-        let test_x_refs: Vec<&Tensor> = test_data.0.iter().collect();
         let test_y_refs: Vec<&Tensor> = test_data.1.iter().collect();
 
         Ok(Self {
-            train_x: Tensor::stack(&train_x_refs, 0),
+            train_x: train_x_stacked,
             train_y: Tensor::stack(&train_y_refs, 0),
-            test_x: Tensor::stack(&test_x_refs, 0),
+            test_x: test_x_stacked,
             test_y: Tensor::stack(&test_y_refs, 0),
             metric,
             batch_size: None,

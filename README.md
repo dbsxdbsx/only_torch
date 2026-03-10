@@ -67,6 +67,8 @@ let dot = graph.to_dot();
 | [chinese_chess](examples/chinese_chess/) | 图像分类 | **CNN**、数据增强、15 类分类 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess` |
 | [evolution_xor](examples/evolution_xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
 | [evolution_iris](examples/evolution_iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
+| [evolution_parity_seq](examples/evolution_parity_seq/) | **神经架构演化** | **Evolution API**、序列数据、记忆单元自动选择 | 自动演化 | `cargo run --example evolution_parity_seq` |
+| [evolution_parity_seq_var_len](examples/evolution_parity_seq_var_len/) | **神经架构演化** | **Evolution API**、变长序列、zero-pad | 自动演化 | `cargo run --example evolution_parity_seq_var_len` |
 
 #### 详细说明
 
@@ -364,38 +366,58 @@ cargo run --example evolution_iris
 # 自动演化到 ≥95% 准确率
 ```
 
+**Evolution Parity Seq（固定长度序列）** ⭐⭐⭐
+
+序列数据上的零模型代码演化。系统从 `Input(seq×1) → MemoryCell(1) → [Linear(1)]` 出发，自动决定使用何种记忆单元（RNN/LSTM/GRU）及网络拓扑。
+
+```bash
+cargo run --example evolution_parity_seq
+# 自动演化到 ≥90% 准确率
+```
+
+**Evolution Parity Seq Var Len（变长序列）** ⭐⭐⭐
+
+与固定长度版本写法完全相同，唯一区别是数据 seq_len 不一致，SupervisedTask 自动 zero-pad 到 max_len。
+
+```bash
+cargo run --example evolution_parity_seq_var_len
+# 自动演化到 ≥85% 准确率
+```
+
 </details>
 
 #### 特性覆盖矩阵
 
-| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | chinese_chess | cartpole_sac | pendulum_sac | moving_sac | evo_xor | evo_iris |
-|------|:---:|:----:|:----:|:----------:|:-----:|:---------:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:-------------:|:------------:|:------------:|:----------:|:-------:|:--------:|
-| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `Conv2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | |
-| `MaxPool2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | |
-| `RNN/LSTM/GRU` 层 | | | | | | | | ✅ | | | | | | | | | | | |
-| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | ✅ | | | ✅ | ✅ | | ✅ | | | | ✅ | ✅ |
-| `MseLoss` | | | ✅ | ✅ | | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | ✅ | ✅ | ✅ | | |
-| **`BceLoss`** | | | | | | | | | | | | | ✅ | | | | | ✅ | |
-| `MaeLoss` | | | 📌 | 📌 | | | | | 📌 | | 📌 | 📌 | | | | | | | |
-| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | | | | | ✅ | | | | | |
-| `BucketedDataLoader` | | | | | | | | ✅ | | | | | | | | | | | |
-| 变长序列 | | | | | | | | ✅ | | | | | | | | | | | |
-| **多输入** | | | | | | | | | ✅ | ✅ | | ✅ | | | | | | | |
-| **多输出** (元组返回) | | | | | | | | | | | ✅ | ✅ | | | | | | | |
-| 共享编码器 | | | | | | | | | | ✅ | | | | | | | | | |
-| 多 Loss 训练 | | | | | ✅ | | | | | ✅ | ✅ | | | | ✅ | ✅ | ✅ | | |
-| **多标签分类** | | | | | | | | | | | | | ✅ | | | | | | |
-| **GAN / detach** | | | | | | | ✅ | | | | | | | | | | | | |
-| **数据增强** | | | | | | | | | | | | | | ✅ | | | | | |
-| **GymEnv (RL)** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | |
-| **经验回放** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | |
-| **TanhNormal 分布** | | | | | | | | | | | | | | | | ✅ | ✅ | | |
-| **Categorical 分布** | | | | | | | | | | | | | | | ✅ | | ✅ | | |
-| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | | | ✅ | | |
-| **Evolution API** | | | | | | | | | | | | | | | | | | ✅ | ✅ |
-| **自动架构搜索** | | | | | | | | | | | | | | | | | | ✅ | ✅ |
-| **Lamarckian 权重继承** | | | | | | | | | | | | | | | | | | ✅ | ✅ |
+| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | chinese_chess | cartpole_sac | pendulum_sac | moving_sac | evo_xor | evo_iris | evo_seq | evo_seq_var |
+|------|:---:|:----:|:----:|:----------:|:-----:|:---------:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:-------------:|:------------:|:------------:|:----------:|:-------:|:--------:|:-------:|:-----------:|
+| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Conv2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | | | |
+| `MaxPool2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | | | |
+| `RNN/LSTM/GRU` 层 | | | | | | | | ✅ | | | | | | | | | | | | ✅ | ✅ |
+| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | ✅ | | | ✅ | ✅ | | ✅ | | | | ✅ | ✅ | | |
+| `MseLoss` | | | ✅ | ✅ | | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | ✅ | ✅ | ✅ | | | | |
+| **`BceLoss`** | | | | | | | | | | | | | ✅ | | | | | ✅ | | ✅ | ✅ |
+| `MaeLoss` | | | 📌 | 📌 | | | | | 📌 | | 📌 | 📌 | | | | | | | | | |
+| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | | | | | ✅ | | | | | | | |
+| `BucketedDataLoader` | | | | | | | | ✅ | | | | | | | | | | | | | |
+| 变长序列 | | | | | | | | ✅ | | | | | | | | | | | | | ✅ |
+| **多输入** | | | | | | | | | ✅ | ✅ | | ✅ | | | | | | | | | |
+| **多输出** (元组返回) | | | | | | | | | | | ✅ | ✅ | | | | | | | | | |
+| 共享编码器 | | | | | | | | | | ✅ | | | | | | | | | | | |
+| 多 Loss 训练 | | | | | ✅ | | | | | ✅ | ✅ | | | | ✅ | ✅ | ✅ | | | | |
+| **多标签分类** | | | | | | | | | | | | | ✅ | | | | | | | | |
+| **GAN / detach** | | | | | | | ✅ | | | | | | | | | | | | | | |
+| **数据增强** | | | | | | | | | | | | | | ✅ | | | | | | | |
+| **GymEnv (RL)** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | | | |
+| **经验回放** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | | | |
+| **TanhNormal 分布** | | | | | | | | | | | | | | | | ✅ | ✅ | | | | |
+| **Categorical 分布** | | | | | | | | | | | | | | | ✅ | | ✅ | | | | |
+| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | | | ✅ | | | | |
+| **Evolution API** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ |
+| **自动架构搜索** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ |
+| **Lamarckian 权重继承** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ |
+| **序列演化（记忆单元）** | | | | | | | | | | | | | | | | | | | | ✅ | ✅ |
+| **模型保存/加载** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ |
 
 > 📌 = 可替换使用。`MaeLoss`（平均绝对误差）与 `MseLoss`（均方误差）的区别：
 > - `MseLoss`：对大误差敏感，适合干净数据
@@ -443,10 +465,10 @@ cargo build --features blas-openblas
 
 - 演化模块完善（详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)）
   - ✅ MVP 已完成：层级变异 + 收敛检测 + Lamarckian 权重继承 + skip connection + 超参数演化
-  - `build()` 补全 RNN/LSTM/GRU/Dropout 层类型支持
+  - ✅ 模型序列化 / 反序列化（save/load .otm 格式）
+  - ✅ 序列数据支持：RNN/LSTM/GRU 记忆单元自动演化（固定长度 + 变长序列）
   - 种群级演化（speciation + crossover）
   - 演化与 DataLoader / metrics 模块深度集成
-  - 模型序列化 / 反序列化（save/load）
   - RL 任务对接
 
 ### ⚫ 实战验证

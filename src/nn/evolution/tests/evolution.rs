@@ -614,6 +614,52 @@ fn test_eval_runs_zero_panics() {
     let _ = xor_evolution().with_eval_runs(0);
 }
 
+// ==================== 序列演化集成 ====================
+
+fn seq_parity_data(n: usize, seq_len: usize) -> (Vec<Tensor>, Vec<Tensor>) {
+    let mut inputs = Vec::with_capacity(n);
+    let mut labels = Vec::with_capacity(n);
+    for i in 0..n {
+        let data: Vec<f32> = (0..seq_len).map(|j| ((i + j) % 2) as f32).collect();
+        let parity = data.iter().sum::<f32>() as usize % 2;
+        inputs.push(Tensor::new(&data, &[seq_len, 1]));
+        labels.push(Tensor::new(&[parity as f32], &[1]));
+    }
+    (inputs, labels)
+}
+
+#[test]
+fn test_evolution_sequential_runs() {
+    let data = seq_parity_data(16, 4);
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_seed(42)
+        .with_max_generations(3)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert!(result.fitness.primary >= 0.0);
+    assert!(result.generations <= 3);
+    assert!(result.architecture_summary.contains("seq×"), "序列架构应显示 seq×");
+}
+
+#[test]
+fn test_evolution_sequential_predict() {
+    let data = seq_parity_data(16, 4);
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_seed(42)
+        .with_max_generations(3)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    // 单样本推理：[seq_len, input_dim] → [1, output_dim]
+    let sample = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[4, 1]);
+    let pred = result.predict(&sample).unwrap();
+    assert_eq!(pred.shape(), &[1, 1]);
+    assert!(pred.to_vec()[0].is_finite());
+}
+
 // ==================== 变异名称有效性 ====================
 
 #[test]

@@ -1,0 +1,149 @@
+digraph ComputeGraph {
+    rankdir=TB;
+    newrank=true;
+    splines=polyline;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    subgraph cluster_model_EvolutionNet {
+        label=<<B>EvolutionNet</B><BR/><FONT POINT-SIZE="9">(101 params)</FONT>>;
+        style="filled,bold";
+        fillcolor="#FFEBEE40";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=13;
+        margin=16;
+
+        subgraph cluster_EvolutionNet_evo_L2 {
+            label=<<B>evo_L2</B><BR/><FONT POINT-SIZE="9">Linear: [?, 4] → [?, 1]</FONT>>;
+            style=filled;
+            fillcolor="#E3F2FD80";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=11;
+            margin=12;
+                "2" [label=<add_1<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "4" [label=<matmul_1<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+                "5" [label=<evo_L2_b<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "7" [label=<evo_L2_W<BR/><B>Parameter</B><BR/>[4, 1]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+        }
+
+        subgraph cluster_EvolutionNet_evo_lstm1 {
+            label=<<B>evo_lstm1</B><BR/><FONT POINT-SIZE="9">LSTM: [?, 1] → [?, 4] (×12 steps)</FONT>>;
+            style="filled,bold";
+            peripheries=3;
+            penwidth=2;
+            fillcolor="#E8F5E980";
+            fontname="Microsoft YaHei,SimHei,Arial";
+            fontsize=11;
+            margin=12;
+                "11" [label=<evo_lstm1_b_o<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "12" [label=<evo_lstm1_W_io<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "13" [label=<evo_lstm1_W_ho<BR/><B>Parameter</B><BR/>[4, 4]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "15" [label=<evo_lstm1_b_f<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "16" [label=<evo_lstm1_b_i<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "17" [label=<evo_lstm1_b_g<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "18" [label=<evo_lstm1_W_if<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "19" [label=<evo_lstm1_W_hf<BR/><B>Parameter</B><BR/>[4, 4]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "20" [label=<evo_lstm1_W_ii<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "21" [label=<evo_lstm1_W_hi<BR/><B>Parameter</B><BR/>[4, 4]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "22" [label=<evo_lstm1_W_ig<BR/><B>Parameter</B><BR/>[1, 4]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "23" [label=<evo_lstm1_W_hg<BR/><B>Parameter</B><BR/>[4, 4]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+                "24" [label=<add_3 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "25" [label=<multiply_2 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Multiply</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "26" [label=<multiply_3 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Multiply</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "27" [label=<sigmoid_1 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Sigmoid</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
+                "28" [label=<zeros_like_1 <FONT COLOR="#E67E22">×1</FONT><BR/><B>ZerosLike</B><BR/>[?, 4]> shape=box style="filled,rounded,dashed" fillcolor="#FFFDE7" fontsize=10];
+                "29" [label=<sigmoid_2 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Sigmoid</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
+                "30" [label=<tanh_1 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Tanh</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
+                "31" [label=<add_4 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "32" [label=<add_5 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "33" [label=<add_6 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "34" [label=<multiply_4 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Multiply</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "35" [label=<add_7 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "36" [label=<add_8 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "37" [label=<add_9 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "38" [label=<sigmoid_3 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Sigmoid</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
+                "39" [label=<tanh_2 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Tanh</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
+                "40" [label=<matmul_2 <FONT COLOR="#E67E22">×12</FONT><BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "41" [label=<matmul_3 <FONT COLOR="#E67E22">×12</FONT><BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "42" [label=<matmul_4 <FONT COLOR="#E67E22">×12</FONT><BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "43" [label=<matmul_5 <FONT COLOR="#E67E22">×12</FONT><BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "44" [label=<matmul_6 <FONT COLOR="#E67E22">×12</FONT><BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "45" [label=<matmul_7 <FONT COLOR="#E67E22">×12</FONT><BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "46" [label=<add_10 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "47" [label=<select_1 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Select</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "48" [label=<add_11 <FONT COLOR="#E67E22">×12</FONT><BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "49" [label=<matmul_8 <FONT COLOR="#E67E22">×12</FONT><BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+                "50" [label=<matmul_9 <FONT COLOR="#E67E22">×12</FONT><BR/><B>MatMul</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+        }
+
+        "6" [label=<multiply_1<BR/><B>Multiply</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "8" [label=<add_2<BR/><B>Add</B><BR/>[?, 4]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+        "9" [label=<input_1<BR/><B>Input</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+        "10" [label=<relu_1<BR/><B>ReLU</B><BR/>[?, 4]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+        "14" [label=<evo_input_1<BR/><B>Input</B><BR/>[?, 12, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    }
+
+    "1" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]<BR/><FONT COLOR="#C62828" POINT-SIZE="9">▸ Output</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#C62828"];
+    "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+
+    "2" -> "1";
+    "3" -> "1";
+    "4" -> "2";
+    "5" -> "2";
+    "6" -> "4";
+    "7" -> "4";
+    "8" -> "6";
+    "9" -> "6";
+    "10" -> "8";
+    "34" -> "8" [ color="#E67E22" label=<t=11> fontcolor="#E67E22" fontsize=9];
+    "34" -> "10" [ color="#E67E22" label=<t=11> fontcolor="#E67E22" fontsize=9];
+    "25" -> "24";
+    "26" -> "24";
+    "27" -> "25";
+    "28" -> "25";
+    "29" -> "26";
+    "30" -> "26";
+    "31" -> "27";
+    "14" -> "28" [ style=dashed color="#E67E22" label=<t=0> fontcolor="#E67E22" fontsize=9];
+    "32" -> "29";
+    "33" -> "30";
+    "35" -> "31";
+    "15" -> "31";
+    "36" -> "32";
+    "16" -> "32";
+    "37" -> "33";
+    "17" -> "33";
+    "38" -> "34";
+    "39" -> "34";
+    "40" -> "35";
+    "41" -> "35";
+    "42" -> "36";
+    "43" -> "36";
+    "44" -> "37";
+    "45" -> "37";
+    "46" -> "38";
+    "24" -> "39";
+    "47" -> "40";
+    "18" -> "40";
+    "28" -> "41";
+    "19" -> "41";
+    "47" -> "42";
+    "20" -> "42";
+    "28" -> "43";
+    "21" -> "43";
+    "47" -> "44";
+    "22" -> "44";
+    "28" -> "45";
+    "23" -> "45";
+    "48" -> "46";
+    "11" -> "46";
+    "14" -> "47";
+    "49" -> "48";
+    "50" -> "48";
+    "47" -> "49";
+    "12" -> "49";
+    "28" -> "50";
+    "13" -> "50";
+    "34" -> "28" [style=dashed color="#E67E22" label=<t=0~10> fontcolor="#E67E22" fontsize=9 constraint=false];
+    "24" -> "28" [style=dashed color="#E67E22" label=<t=0~10> fontcolor="#E67E22" fontsize=9 constraint=false];
+}

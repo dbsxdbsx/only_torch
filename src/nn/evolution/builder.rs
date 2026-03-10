@@ -12,7 +12,8 @@ use std::collections::HashMap;
 use rand::rngs::StdRng;
 use rand::Rng;
 
-use crate::nn::{Graph, GraphError, Linear, Var, VarActivationOps};
+use crate::nn::layer::{Gru, Lstm, Rnn};
+use crate::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps};
 use crate::tensor::Tensor;
 
 use super::gene::{
@@ -155,7 +156,15 @@ impl NetworkGenome {
         let graph_seed: u64 = rng.r#gen();
         let graph = Graph::new_with_seed(graph_seed).with_model_name("EvolutionNet");
 
-        let input = graph.input_shape(&[1, self.input_dim], Some("evo_input"))?;
+        let input = if let Some(seq_len) = self.seq_len {
+            let var = graph.input_shape(&[1, seq_len, self.input_dim], Some("evo_input"))?;
+            // RNN 层的 validate_input 需要读取输入值来确定 seq_len，
+            // 因此在 build 时设置占位零值（训练时会被覆盖）
+            var.set_value(&Tensor::zeros(&[1, seq_len, self.input_dim]))?;
+            var
+        } else {
+            graph.input_shape(&[1, self.input_dim], Some("evo_input"))?
+        };
         let mut current = input.clone();
         let mut layer_params: HashMap<u64, Vec<Var>> = HashMap::new();
 
@@ -198,10 +207,49 @@ impl NetworkGenome {
                 LayerConfig::Activation { activation_type } => {
                     current = apply_activation(&current, activation_type);
                 }
-                LayerConfig::Dropout { .. }
-                | LayerConfig::Rnn { .. }
-                | LayerConfig::Lstm { .. }
-                | LayerConfig::Gru { .. } => {
+                LayerConfig::Rnn { hidden_size } => {
+                    let name = format!("evo_rnn{}", layer.innovation_number);
+                    let return_seq = self.needs_return_sequences(
+                        layer.innovation_number,
+                        &resolved,
+                    );
+                    let rnn = Rnn::new(&graph, dim.in_dim, *hidden_size, &name)?;
+                    current = if return_seq {
+                        rnn.forward_seq(&current)?
+                    } else {
+                        rnn.forward(&current)?
+                    };
+                    layer_params.insert(layer.innovation_number, rnn.parameters());
+                }
+                LayerConfig::Lstm { hidden_size } => {
+                    let name = format!("evo_lstm{}", layer.innovation_number);
+                    let return_seq = self.needs_return_sequences(
+                        layer.innovation_number,
+                        &resolved,
+                    );
+                    let lstm = Lstm::new(&graph, dim.in_dim, *hidden_size, &name)?;
+                    current = if return_seq {
+                        lstm.forward_seq(&current)?
+                    } else {
+                        lstm.forward(&current)?
+                    };
+                    layer_params.insert(layer.innovation_number, lstm.parameters());
+                }
+                LayerConfig::Gru { hidden_size } => {
+                    let name = format!("evo_gru{}", layer.innovation_number);
+                    let return_seq = self.needs_return_sequences(
+                        layer.innovation_number,
+                        &resolved,
+                    );
+                    let gru = Gru::new(&graph, dim.in_dim, *hidden_size, &name)?;
+                    current = if return_seq {
+                        gru.forward_seq(&current)?
+                    } else {
+                        gru.forward(&current)?
+                    };
+                    layer_params.insert(layer.innovation_number, gru.parameters());
+                }
+                LayerConfig::Dropout { .. } => {
                     return Err(GraphError::ComputationError(format!(
                         "build() 尚未支持 {} 层类型（层 innovation={}）",
                         layer.layer_config, layer.innovation_number
@@ -242,6 +290,40 @@ impl NetworkGenome {
         }
         self.set_weight_snapshots(snapshots);
         Ok(())
+    }
+
+    /// 判断指定 RNN 层是否需要 return_sequences
+    ///
+    /// 在 resolved 中找到当前层后，跳过 Activation/Dropout，
+    /// 若下一个实质层也是循环层则返回 true。
+    fn needs_return_sequences(
+        &self,
+        current_innovation: u64,
+        resolved: &[super::gene::ResolvedDim],
+    ) -> bool {
+        // 找到 current_innovation 在 resolved 中的位置
+        let pos = resolved
+            .iter()
+            .position(|d| d.innovation_number == current_innovation);
+        let pos = match pos {
+            Some(p) => p,
+            None => return false,
+        };
+
+        // 向后扫描，跳过 Activation/Dropout
+        for dim in &resolved[pos + 1..] {
+            let layer = self
+                .layers
+                .iter()
+                .find(|l| l.innovation_number == dim.innovation_number && l.enabled);
+            if let Some(layer) = layer {
+                match &layer.layer_config {
+                    LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => continue,
+                    _ => return NetworkGenome::is_recurrent(&layer.layer_config),
+                }
+            }
+        }
+        false
     }
 
     /// 从 weight_snapshots 恢复权重到当前计算图

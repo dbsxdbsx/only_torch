@@ -111,4 +111,23 @@ fn test_stack_with_axis() {
         stacked,
         Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2])
     );
+
+    // 4. [1,1] 形状张量沿 axis=1 堆叠应保留 3D 维度
+    //    回归测试：确保不被误判为标量而产生错误的 2D 结果
+    let u1 = Tensor::new(&[1.0], &[1, 1]);
+    let u2 = Tensor::new(&[2.0], &[1, 1]);
+    let u3 = Tensor::new(&[3.0], &[1, 1]);
+    let stacked = Tensor::stack(&[&u1, &u2, &u3], 1);
+    assert_eq!(stacked.shape(), &[1, 3, 1]);
+    assert_eq!(stacked, Tensor::new(&[1.0, 2.0, 3.0], &[1, 3, 1]));
+
+    // 5. 8 个 [1,1] 张量沿 axis=1 堆叠（模拟 RNN forward_seq 场景）
+    let tensors: Vec<Tensor> = (0..8).map(|i| Tensor::new(&[i as f32], &[1, 1])).collect();
+    let refs: Vec<&Tensor> = tensors.iter().collect();
+    let stacked = Tensor::stack(&refs, 1);
+    assert_eq!(stacked.shape(), &[1, 8, 1]);
+
+    // 6. [1,1] 沿 axis=0 堆叠
+    let stacked = Tensor::stack(&[&u1, &u2], 0);
+    assert_eq!(stacked.shape(), &[2, 1, 1]);
 }

@@ -429,8 +429,14 @@ fn test_mutate_loss_not_applicable_r2() {
 
 #[test]
 fn test_default_registry_has_12_mutations() {
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
     assert_eq!(reg.len(), 12);
+}
+
+#[test]
+fn test_default_registry_sequential_has_13_mutations() {
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true);
+    assert_eq!(reg.len(), 13);
 }
 
 #[test]
@@ -470,7 +476,7 @@ fn test_registry_retries_on_apply_failure() {
 fn test_registry_apply_random_returns_name() {
     let mut g = genome_with_hidden();
     let mut r = rng();
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
     let name = reg.apply_random(&mut g, &constraints(), &mut r).unwrap();
     assert!(!name.is_empty());
     assert_eq!(g.generated_by, name);
@@ -511,7 +517,8 @@ fn test_minimal_only_insert_and_add_skip_applicable() {
     assert!(!GrowHiddenSizeMutation.is_applicable(&g, &c));
     assert!(!ShrinkHiddenSizeMutation.is_applicable(&g, &c));
     assert!(!MutateLayerParamMutation.is_applicable(&g, &c));
-    // minimal 有 INPUT(0) → 输出头(1) 候选对，所以 AddSkipEdge 可用
+    // minimal 仅有输出头，INPUT 是其直接前驱，排除后无候选。
+    // is_applicable 只做快速预筛（有 enabled 层即 true），不等于有候选对。
     assert!(AddSkipEdgeMutation.is_applicable(&g, &c));
     assert!(!RemoveSkipEdgeMutation.is_applicable(&g, &c));
     assert!(!MutateAggregateStrategyMutation.is_applicable(&g, &c));
@@ -587,16 +594,25 @@ fn test_add_skip_edge_dag_validity() {
 
 #[test]
 fn test_add_skip_edge_forward_direction_only() {
-    // 手动构造 genome，确认只有前向连接被添加
+    // Input(4) → Linear(4) → [Linear(1)]
+    // 直接前驱被排除后，唯一候选: INPUT(0) → 输出头(1)
     let mut g = NetworkGenome::minimal(4, 1);
-    // 仅有输出头 (inn=1)，所以唯一候选对是 INPUT(0)→inn=1
+    let hidden_inn = g.next_innovation_number();
+    g.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: hidden_inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
     let mut r = rng();
     let m = AddSkipEdgeMutation;
     let c = constraints();
 
     m.apply(&mut g, &c, &mut r).unwrap();
     assert_eq!(g.skip_edges[0].from_innovation, INPUT_INNOVATION);
-    assert_eq!(g.skip_edges[0].to_innovation, 1);
+    assert_eq!(g.skip_edges[0].to_innovation, 1); // 输出头
 }
 
 // ==================== RemoveSkipEdgeMutation ====================
@@ -792,7 +808,7 @@ fn test_skip_edge_dimension_check() {
 fn test_random_mutations_keep_genome_valid() {
     let mut g = NetworkGenome::minimal(2, 1);
     let mut r = rng();
-    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy);
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
     let c = constraints();
 
     for _ in 0..50 {
@@ -825,7 +841,7 @@ fn test_seed_reproducibility() {
     let run = |seed: u64| -> String {
         let mut g = NetworkGenome::minimal(2, 1);
         let mut r = StdRng::seed_from_u64(seed);
-        let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy);
+        let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false);
         let c = constraints();
 
         for _ in 0..20 {
@@ -1061,3 +1077,345 @@ fn test_mutate_optimizer_is_not_structural() {
     let m = MutateOptimizerMutation;
     assert!(!m.is_structural());
 }
+
+// ==================== MutateCellTypeMutation ====================
+
+/// 构造含 RNN 的序列基因组：Input(2) → Rnn(4) → [Linear(1)]
+fn genome_sequential() -> NetworkGenome {
+    let mut g = NetworkGenome::minimal_sequential(2, 1);
+    g.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
+    g.seq_len = Some(5);
+    g
+}
+
+/// 构造含两层 RNN 的序列基因组：Input(2) → Rnn(4) → Lstm(4) → [Linear(1)]
+fn genome_stacked_rnn() -> NetworkGenome {
+    let mut g = genome_sequential();
+    let inn = g.next_innovation_number();
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: inn,
+            layer_config: LayerConfig::Lstm { hidden_size: 4 },
+            enabled: true,
+        },
+    );
+    g
+}
+
+#[test]
+fn test_mutate_cell_type_applicable() {
+    let g = genome_sequential();
+    let c = constraints();
+    assert!(MutateCellTypeMutation.is_applicable(&g, &c));
+
+    // 平坦 genome 无 RNN → 不可用
+    let g_flat = NetworkGenome::minimal(2, 1);
+    assert!(!MutateCellTypeMutation.is_applicable(&g_flat, &c));
+}
+
+#[test]
+fn test_mutate_cell_type_switches() {
+    let g = genome_sequential();
+    let mut r = rng();
+    let c = constraints();
+
+    let original = g.layers[0].layer_config.clone();
+    // 多次尝试确保切换
+    for _ in 0..20 {
+        let mut g2 = g.clone();
+        MutateCellTypeMutation.apply(&mut g2, &c, &mut r).unwrap();
+        if g2.layers[0].layer_config != original {
+            // 成功切换
+            assert!(NetworkGenome::is_recurrent(&g2.layers[0].layer_config));
+            return;
+        }
+    }
+    panic!("20 次尝试后仍未切换 cell 类型");
+}
+
+#[test]
+fn test_mutate_cell_type_preserves_hidden_size() {
+    let g = genome_sequential();
+    let c = constraints();
+
+    for seed in 0..20u64 {
+        let mut g2 = g.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        MutateCellTypeMutation.apply(&mut g2, &c, &mut r).unwrap();
+
+        // hidden_size 应保持为 4
+        match &g2.layers[0].layer_config {
+            LayerConfig::Rnn { hidden_size }
+            | LayerConfig::Lstm { hidden_size }
+            | LayerConfig::Gru { hidden_size } => {
+                assert_eq!(*hidden_size, 4);
+            }
+            _ => panic!("应为 RNN 族层"),
+        }
+    }
+}
+
+#[test]
+fn test_mutate_cell_type_multi_rnn() {
+    let g = genome_stacked_rnn();
+    let c = constraints();
+    let mut changed_first = false;
+    let mut changed_second = false;
+
+    for seed in 0..50u64 {
+        let mut g2 = g.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        MutateCellTypeMutation.apply(&mut g2, &c, &mut r).unwrap();
+
+        if g2.layers[0].layer_config != g.layers[0].layer_config {
+            changed_first = true;
+        }
+        if g2.layers[1].layer_config != g.layers[1].layer_config {
+            changed_second = true;
+        }
+        if changed_first && changed_second {
+            break;
+        }
+    }
+    assert!(
+        changed_first && changed_second,
+        "多 RNN 时应能随机选择任意一个切换"
+    );
+}
+
+// ==================== 域感知 InsertLayer / RemoveLayer ====================
+
+#[test]
+fn test_insert_layer_sequence_domain_accepts_rnn() {
+    // 在序列 genome 上多次 InsertLayer，应能插入 RNN 族层
+    let c = constraints();
+    let m = InsertLayerMutation::default();
+    let mut found_rnn = false;
+
+    for seed in 0..100u64 {
+        let mut g = genome_sequential();
+        let mut r = StdRng::seed_from_u64(seed);
+        if m.is_applicable(&g, &c) {
+            let _ = m.apply(&mut g, &c, &mut r);
+        }
+        let has_extra_rnn = g.layers.iter().filter(|l| l.enabled).any(|l| {
+            NetworkGenome::is_recurrent(&l.layer_config)
+                && l.innovation_number != g.layers[0].innovation_number
+        });
+        if has_extra_rnn {
+            found_rnn = true;
+            // 域链应合法
+            assert!(g.is_domain_valid(), "插入 RNN 后域应合法: {g}");
+            break;
+        }
+    }
+    assert!(found_rnn, "序列 genome 应能插入额外 RNN 层");
+}
+
+#[test]
+fn test_insert_layer_flat_domain_no_rnn() {
+    // 平坦 genome 上 InsertLayer 不应插入 RNN
+    let c = constraints();
+    let m = InsertLayerMutation::default();
+
+    for seed in 0..100u64 {
+        let mut g = genome_with_hidden();
+        let mut r = StdRng::seed_from_u64(seed);
+        let _ = m.apply(&mut g, &c, &mut r);
+        let has_rnn = g.layers.iter().any(|l| {
+            l.enabled && NetworkGenome::is_recurrent(&l.layer_config)
+        });
+        assert!(!has_rnn, "平坦 genome 不应插入 RNN: {g}");
+    }
+}
+
+#[test]
+fn test_remove_layer_last_rnn_blocked() {
+    // 只有一个 RNN 的序列 genome，删除它会导致域非法 → 应被阻止
+    let g = genome_sequential();
+    let c = constraints();
+
+    // 反复尝试删除，应始终失败（只有 RNN + 输出头，删 RNN 后 Sequence→Linear 非法）
+    for seed in 0..20u64 {
+        let mut g2 = g.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        let result = RemoveLayerMutation.apply(&mut g2, &c, &mut r);
+        // 要么 NotApplicable（只有输出头不可删），要么 ConstraintViolation（域非法）
+        assert!(result.is_err(), "仅剩一个 RNN 时不应被删除");
+    }
+}
+
+#[test]
+fn test_remove_layer_stacked_rnn_ok() {
+    // 有两层 RNN 时可以删除其中一个
+    let g = genome_stacked_rnn();
+    let c = constraints();
+    let mut removed = false;
+
+    for seed in 0..50u64 {
+        let mut g2 = g.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        if RemoveLayerMutation.apply(&mut g2, &c, &mut r).is_ok() {
+            assert!(g2.is_domain_valid(), "删除后域应合法");
+            removed = true;
+            break;
+        }
+    }
+    assert!(removed, "有多 RNN 时应能成功删除一个");
+}
+
+// ==================== Grow/Shrink 对 RNN 的支持 ====================
+
+#[test]
+fn test_grow_hidden_size_rnn() {
+    let mut g = genome_sequential();
+    let c = constraints();
+    let m = GrowHiddenSizeMutation;
+
+    assert!(m.is_applicable(&g, &c));
+
+    let original_size = 4; // Rnn { hidden_size: 4 }
+    let mut r = rng();
+    m.apply(&mut g, &c, &mut r).unwrap();
+
+    match &g.layers[0].layer_config {
+        LayerConfig::Rnn { hidden_size } => {
+            assert!(*hidden_size > original_size, "hidden_size 应增长");
+        }
+        _ => {
+            // 可能增长了输出头的 Linear，也可以
+        }
+    }
+}
+
+#[test]
+fn test_shrink_hidden_size_lstm() {
+    let mut g = genome_sequential();
+    g.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 8 };
+    let c = constraints();
+    let m = ShrinkHiddenSizeMutation;
+
+    assert!(m.is_applicable(&g, &c));
+
+    let mut r = rng();
+    m.apply(&mut g, &c, &mut r).unwrap();
+
+    // ShrinkHiddenSize 随机选择层，可能选了输出头也可能选了 LSTM
+    // 维度链应仍然合法
+    assert!(g.resolve_dimensions().is_ok());
+}
+
+// ==================== AddSkipEdge 域约束（序列模式） ====================
+
+#[test]
+fn test_add_skip_edge_sequential_flat_only() {
+    // 序列 genome 上的 AddSkipEdge 只应产生 Flat 域内的 skip edge
+    // Input(Seq) → Rnn(4) → Tanh → Linear(4) → [Linear(1)]
+    // Flat 域: Tanh, Linear(4), [Linear(1)] —— 只有这几个能参与 skip
+    let mut g = genome_sequential();
+    // 插入 Tanh + Linear(4) 在 Rnn 和 输出头之间
+    let act_inn = g.next_innovation_number();
+    g.layers.insert(
+        1,
+        LayerGene {
+            innovation_number: act_inn,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+    let lin_inn = g.next_innovation_number();
+    g.layers.insert(
+        2,
+        LayerGene {
+            innovation_number: lin_inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+
+    let domain_map = g.compute_domain_map();
+    let c = constraints();
+
+    for seed in 0..50u64 {
+        let mut g2 = g.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        if AddSkipEdgeMutation.apply(&mut g2, &c, &mut r).is_ok() {
+            for edge in &g2.skip_edges {
+                if !edge.enabled {
+                    continue;
+                }
+                let from_domain = domain_map[&edge.from_innovation];
+                assert_eq!(
+                    from_domain,
+                    ShapeDomain::Flat,
+                    "skip 源应在 Flat 域，from={}",
+                    edge.from_innovation
+                );
+            }
+            // 构建应成功
+            let mut rng = StdRng::seed_from_u64(seed);
+            assert!(g2.build(&mut rng).is_ok(), "带 skip edge 的 build 应成功");
+        }
+    }
+}
+
+#[test]
+fn test_add_skip_edge_sequential_minimal_no_candidates() {
+    // 最小序列 genome: Input(Seq) → Rnn → [Linear]
+    // Input 在 Sequence 域，Rnn 在 Flat 域，输出头在 Flat 域
+    // 唯一的 Flat 域对是 Rnn → 输出头，但 Rnn 在输出头之前只有一个层——
+    // resolve_dimensions 中 Rnn out_dim=4 ≠ Linear in=4，可能允许 Concat
+    // 但 INPUT 在 Seq 域，不允许作为 skip 源
+    let g = genome_sequential();
+    let c = constraints();
+
+    // INPUT 在 Sequence 域 → 不允许作为 skip 源
+    let domain_map = g.compute_domain_map();
+    assert_eq!(domain_map[&INPUT_INNOVATION], ShapeDomain::Sequence);
+
+    // 仅有 Rnn(inn=1) → 输出头(inn=2?) 可能的 skip 对
+    // 但只有一个源候选（Rnn）和一个目标（输出头）在 Flat 域
+    for seed in 0..20u64 {
+        let mut g2 = g.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        if AddSkipEdgeMutation.apply(&mut g2, &c, &mut r).is_ok() {
+            // 如果成功，必须是 Flat 域内的 skip
+            for edge in &g2.skip_edges {
+                assert_ne!(edge.from_innovation, INPUT_INNOVATION,
+                    "序列模式不应允许从 Input(Sequence 域) 出发的 skip");
+            }
+        }
+    }
+}
+
+// ==================== 序列模式组合鲁棒性 ====================
+
+#[test]
+fn test_random_mutations_keep_sequential_genome_valid() {
+    let mut g = genome_sequential();
+    let mut r = rng();
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true);
+    let c = constraints();
+
+    for _ in 0..50 {
+        let _ = reg.apply_random(&mut g, &c, &mut r);
+
+        assert!(g.resolve_dimensions().is_ok(), "维度链断裂: {g}");
+        assert!(g.is_domain_valid(), "域链非法: {g}");
+        assert!(g.layer_count() >= 1, "层数为零: {g}");
+
+        // 输出头完整
+        let last = g.layers.iter().rev().find(|l| l.enabled).unwrap();
+        assert_eq!(
+            last.layer_config,
+            LayerConfig::Linear {
+                out_features: g.output_dim
+            },
+            "输出头被破坏: {g}"
+        );
+    }
+}
+
