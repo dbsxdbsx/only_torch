@@ -1,22 +1,25 @@
 /*
  * @Author       : 老董
- * @Date         : 2026-03-10
- * @Description  : MNIST CNN 神经架构演化示例（零模型代码）
+ * @Date         : 2026-03-11
+ * @Description  : MNIST 神经架构演化示例（零模型代码）
  *
- * 与 `examples/mnist_cnn`（手动定义 LeNet + 训练循环）不同，
+ * 与 `examples/mnist`（手动定义 MLP）和 `examples/mnist_cnn`（手动定义 LeNet）不同，
  * 本示例展示 **Evolution API**——只提供图像数据和目标，
- * 系统从最小结构 `Input(1@28×28) → Conv2d(10,k=3) → MaxPool2d(k=2,s=2) → Flatten → [Linear(10)]` 出发，
- * 通过层级变异自动发现能识别手写数字的 CNN 架构。
+ * 系统从最小结构 `Input(1@28×28) → Flatten → [Linear(10)]` 出发，
+ * 通过层级变异自动发现能识别手写数字的架构。
+ *
+ * 演化可能发现纯 FC 架构、Conv+FC 混合架构，或其他任何合法结构——
+ * 最终由 fitness（准确率）驱动选择。
  *
  * 关键特性：
- * - 空间输入 [1, 28, 28]（灰度图）→ 自动推断 CNN 模式
+ * - 空间输入 [1, 28, 28]（灰度图）→ 自动推断空间模式
  * - 十分类 → 自动推断 CrossEntropy loss + argmax accuracy
  * - Lamarckian 权重继承：每代在上一代权重基础上继续训练
- * - 变异：InsertLayer（Conv2d/Pool2d）、GrowHiddenSize、MutateKernelSize 等
+ * - 变异：InsertLayer（Conv2d/Pool2d/Linear/Activation）、GrowHiddenSize 等
  *
  * ## 运行
  * ```bash
- * cargo run --example evolution_mnist_cnn
+ * cargo run --example evolution_mnist
  * ```
  *
  * ## 数据集
@@ -50,7 +53,7 @@ fn collect_samples(dataset: &MnistDataset, n: usize) -> (Vec<Tensor>, Vec<Tensor
 
 fn main() {
     let total_start = Instant::now();
-    println!("=== MNIST CNN 神经架构演化示例 ===\n");
+    println!("=== MNIST 神经架构演化示例 ===\n");
 
     // 1. 加载 MNIST 数据集
     println!("[1/3] 加载 MNIST 数据集...");
@@ -76,7 +79,7 @@ fn main() {
     println!("  - 测试样本: {test_samples}");
     println!("  - 输入: [1, 28, 28]（灰度图）");
     println!("  - 输出: 10 类（数字 0-9）");
-    println!("  - 起始结构: Input(1@28×28) → Conv2d(10,k=3) → MaxPool2d(k=2,s=2) → Flatten → [Linear(10)]");
+    println!("  - 起始结构: Input(1@28×28) → Flatten → [Linear(10)]");
     println!("  - 目标准确率: ≥95%\n");
 
     // 3. Evolution API：只需提供数据、指标、目标——零模型代码
@@ -114,7 +117,7 @@ fn main() {
 
     // 6. 可视化
     let vis = result
-        .visualize("examples/evolution_mnist_cnn/evolution_mnist_cnn")
+        .visualize("examples/evolution_mnist/evolution_mnist")
         .expect("可视化失败");
     println!("计算图已保存: {}", vis.dot_path.display());
     if let Some(img) = &vis.image_path {
@@ -122,7 +125,7 @@ fn main() {
     }
 
     // 7. 模型保存/加载
-    let model_path = "examples/evolution_mnist_cnn/mnist_cnn_model";
+    let model_path = "examples/evolution_mnist/mnist_model";
     result.save(model_path).expect("保存模型失败");
     println!("\n模型已保存: {model_path}.otm");
 
@@ -141,7 +144,7 @@ fn main() {
     let _ = std::fs::remove_file(Path::new(model_path).with_extension("otm"));
 
     println!(
-        "\n✅ 系统自动发现了 MNIST 手写数字识别的 CNN 架构！总耗时: {:.1}s",
+        "\n✅ 系统自动发现了 MNIST 手写数字识别架构！总耗时: {:.1}s",
         total_start.elapsed().as_secs_f32()
     );
 }

@@ -210,8 +210,8 @@ name = "evolution_parity_seq"
 path = "examples/evolution_parity_seq/main.rs"
 
 [[example]]
-name = "evolution_mnist_cnn"
-path = "examples/evolution_mnist_cnn/main.rs"
+name = "evolution_mnist"
+path = "examples/evolution_mnist/main.rs"
 
 [[example]]
 name = "evolution_parity_seq_var_len"

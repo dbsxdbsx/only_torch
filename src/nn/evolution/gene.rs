@@ -442,11 +442,11 @@ impl NetworkGenome {
         }
     }
 
-    /// 最小空间网络：layers = [Conv2d(out=output_dim, k=3), Pool2d(Max, k=2, s=2), Flatten, Linear(output_dim)]
+    /// 最小空间网络：layers = [Flatten, Linear(output_dim)]
     ///
-    /// Pool2d 是空间模式的结构必需品，类比 `minimal_sequential` 必须包含 Rnn。
-    /// 没有空间缩减的 CNN 会导致 Flatten 维度爆炸（如 28×28 图像 Flatten 后
-    /// 达 7840+ 特征），使得训练极慢且参数量巨大。
+    /// 从最简单的 Flatten+FC 结构出发，Conv2d/Pool2d 由演化自主发现。
+    /// 对于小图像（如 MNIST 28×28），纯 FC 方案参数量更少、训练更快；
+    /// 对于大图像，演化会通过 InsertLayer 在 Flatten 前插入 Conv2d/Pool2d 来降维。
     ///
     /// # Panics
     /// `input_channels` 或 `output_dim` 为零，或 `spatial` 的 H/W 为零时 panic。
@@ -462,33 +462,14 @@ impl NetworkGenome {
             "spatial (H, W) 不能为零"
         );
 
-        let conv_layer = LayerGene {
-            innovation_number: 1,
-            layer_config: LayerConfig::Conv2d {
-                out_channels: output_dim,
-                kernel_size: 3,
-            },
-            enabled: true,
-        };
-
-        let pool_layer = LayerGene {
-            innovation_number: 2,
-            layer_config: LayerConfig::Pool2d {
-                pool_type: PoolType::Max,
-                kernel_size: 2,
-                stride: 2,
-            },
-            enabled: true,
-        };
-
         let flatten_layer = LayerGene {
-            innovation_number: 3,
+            innovation_number: 1,
             layer_config: LayerConfig::Flatten,
             enabled: true,
         };
 
         let output_head = LayerGene {
-            innovation_number: 4,
+            innovation_number: 2,
             layer_config: LayerConfig::Linear {
                 out_features: output_dim,
             },
@@ -496,7 +477,7 @@ impl NetworkGenome {
         };
 
         Self {
-            layers: vec![conv_layer, pool_layer, flatten_layer, output_head],
+            layers: vec![flatten_layer, output_head],
             skip_edges: Vec::new(),
             input_dim: input_channels,
             output_dim,
@@ -504,7 +485,7 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "minimal_spatial".to_string(),
-            next_innovation: 5, // 0=INPUT, 1=Conv2d, 2=Pool2d, 3=Flatten, 4=输出头
+            next_innovation: 3, // 0=INPUT, 1=Flatten, 2=输出头
             weight_snapshots: HashMap::new(),
         }
     }

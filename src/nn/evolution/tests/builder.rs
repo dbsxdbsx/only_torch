@@ -1153,8 +1153,8 @@ fn test_build_sequential_with_flat_skip_edge_add() {
 
 #[test]
 fn test_build_spatial_minimal_forward() {
-    // Conv2d(out=10, k=3) → Flatten → Linear(2)
-    // 输入: [1, 3, 8, 8]（3 channels, 8×8）
+    // Flatten → Linear(2)
+    // 输入: [1, 3, 8, 8]（3 channels, 8×8）→ Flatten(192) → Linear(2)
     let genome = NetworkGenome::minimal_spatial(3, 2, (8, 8));
     let mut r = StdRng::seed_from_u64(42);
     let build = genome.build(&mut r).unwrap();
@@ -1173,10 +1173,18 @@ fn test_build_spatial_with_pool_forward() {
     // Conv2d(out=4, k=3) → Pool2d(Max, k=2, s=2) → Flatten → Linear(2)
     // 输入: [1, 1, 8, 8]（1 channel, 8×8）
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
-    genome.layers[0].layer_config = LayerConfig::Conv2d {
-        out_channels: 4,
-        kernel_size: 3,
-    };
+    let conv_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: conv_inn,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: 4,
+                kernel_size: 3,
+            },
+            enabled: true,
+        },
+    );
     let pool_inn = genome.next_innovation_number();
     genome.layers.insert(
         1,
@@ -1206,10 +1214,18 @@ fn test_build_spatial_with_pool_forward() {
 fn test_build_spatial_avgpool_forward() {
     // Conv2d(out=2, k=1) → Pool2d(Avg, k=2, s=2) → Flatten → Linear(3)
     let mut genome = NetworkGenome::minimal_spatial(1, 3, (4, 4));
-    genome.layers[0].layer_config = LayerConfig::Conv2d {
-        out_channels: 2,
-        kernel_size: 1,
-    };
+    let conv_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: conv_inn,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: 2,
+                kernel_size: 1,
+            },
+            enabled: true,
+        },
+    );
     let pool_inn = genome.next_innovation_number();
     genome.layers.insert(
         1,
@@ -1285,10 +1301,18 @@ fn test_build_spatial_weight_capture_restore() {
 fn test_build_spatial_multi_conv_forward() {
     // Conv2d(out=4, k=3) → Conv2d(out=8, k=3) → Flatten → Linear(2)
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
-    genome.layers[0].layer_config = LayerConfig::Conv2d {
-        out_channels: 4,
-        kernel_size: 3,
-    };
+    let conv1_inn = genome.next_innovation_number();
+    genome.layers.insert(
+        0,
+        LayerGene {
+            innovation_number: conv1_inn,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: 4,
+                kernel_size: 3,
+            },
+            enabled: true,
+        },
+    );
     let conv2_inn = genome.next_innovation_number();
     genome.layers.insert(
         1,

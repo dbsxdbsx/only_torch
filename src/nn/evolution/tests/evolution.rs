@@ -862,15 +862,10 @@ fn test_evolution_spatial_runs() {
 
     assert!(result.fitness.primary >= 0.0);
     assert!(result.generations <= 3);
-    // 架构摘要应包含空间标记 "@" 和 Conv2d
+    // 架构摘要应包含空间标记 "@"（初始架构为 Flatten+FC，Conv2d 可能由演化插入）
     assert!(
         result.architecture_summary.contains('@'),
         "空间架构应显示 C@H×W 格式: {}",
-        result.architecture_summary
-    );
-    assert!(
-        result.architecture_summary.contains("Conv2d"),
-        "空间架构应包含 Conv2d: {}",
         result.architecture_summary
     );
 }
