@@ -4,6 +4,7 @@ mod california_housing;
 mod dataloader;
 mod dataloader_transforms;
 mod mnist;
+mod transform_affine;
 mod transform_center_crop;
 mod transform_color_jitter;
 mod transform_compose;
