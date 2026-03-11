@@ -959,8 +959,8 @@ impl NetworkGenome {
                 stride,
                 ..
             } => spatial.map(|(h, w)| {
-                let new_h = (h - kernel_size) / stride + 1;
-                let new_w = (w - kernel_size) / stride + 1;
+                let new_h = if h >= *kernel_size { (h - kernel_size) / stride + 1 } else { 1 };
+                let new_w = if w >= *kernel_size { (w - kernel_size) / stride + 1 } else { 1 };
                 (new_h, new_w)
             }),
             LayerConfig::Flatten => None,

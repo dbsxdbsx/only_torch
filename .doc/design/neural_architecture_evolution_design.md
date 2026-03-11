@@ -81,7 +81,11 @@ Evolution::supervised(train, test, TaskMetric::Accuracy)
     .with_target_metric(0.95)         // 目标指标值（默认 1.0）
     .with_seed(42)                    // 随机种子（可复现）
     .with_max_generations(200)        // 最大代数（默认 100）
-    .with_offspring_count(6)          // (1+λ) 中的 λ（默认 4）
+    .with_population_size(16)         // NSGA-II 种群大小（默认 auto = rayon threads clamped 12..32）
+    .with_offspring_batch_size(12)    // 每代新候选数（默认 auto = max(12, rayon threads)）
+    .with_parallelism(8)              // 并行评估线程数（默认 auto = rayon threads）
+    .with_pareto_patience(40)         // Pareto archive 收敛耐心值（默认 auto = max(20, pop*2)）
+    .with_complexity_metric(ComplexityMetric::ParamCount) // inference_cost 计算方式
     .with_batch_size(64)              // 显式 batch size（默认自动策略）
     .with_verbose(false)              // 关闭日志（默认 true）
     .with_convergence(config)         // 收敛检测配置（Phase 2 使用）
@@ -117,35 +121,37 @@ Evolution::supervised(train, test, TaskMetric::Accuracy)
 
 ## 2. 演化主循环
 
-### 2.1 Genome-Centric 架构
+### 2.1 Genome-Centric 架构 + Pareto 种群搜索
 
 系统采用 **Genome-Centric** 路线：每代从基因组（`NetworkGenome`）重建计算图，而非直接修改图。
 
-采用 **(1+λ) 搜索策略**：每代从 best genome 生成 λ 个变体（默认 λ=4），全部训练评估后选最佳。相比传统 (1+1) hill-climbing，每代评估多个候选，跳出局部最优概率显著提升。
+采用 **Pareto 种群搜索 + NSGA-II 选择**策略：维护一个种群（默认 12–32 个体，auto = rayon 线程数 clamped 到 [12,32]），每代通过二元锦标赛从种群中采样父代、变异生成 offspring，然后用 NSGA-II 环境选择从 parents ∪ offspring 中保留最优 `population_size` 个。相比旧版 (1+λ) 单谱系搜索，种群策略维护多样性、天然支持多目标优化（primary ↑ + inference_cost ↓），跳出局部最优概率大幅提升。
+
+**全局 Pareto Archive**：独立于种群维护所有非支配解。Archive 中的成员在目标空间互不支配（不存在 A 在所有目标上 ≥ B 的情况）。达标检查从 archive 而非种群中查找，确保不遗漏高质量解。
+
+**并行评估**：offspring 的 build→train→evaluate 流水线通过 rayon 并行化。每个 rayon 工作线程通过 `map_init` 独立 materialize 一个 task 副本，避免训练数据的冗余复制。`Graph` 使用 `Rc<RefCell<>>` (!Send)，但并行安全因为每个 worker 通过 `genome.build()` 创建独立的本地 Graph。
 
 ```
 自适应约束：用户未指定 with_constraints() 时，自动从数据维度推导 SizeConstraints
-随机爆发初始化：Generation 0 对 minimal genome 施加 K 次随机变异（K = max(2, min(8, max_layers/2))）
+随机爆发初始化：对 minimal genome 施加 K 次随机变异（K = max(2, min(8, max_layers/2))）生成初始种群
 两阶段训练预算：Phase 1（前 70% 代数）用 FixedEpochs 快速筛选；Phase 2（后 30%）用 UntilConverged 精炼
 两阶段变异权重：Phase 1 偏向结构探索（InsertLayer↑, Grow↑）；Phase 2 偏向超参调优（MutateLR↑, MutateOptimizer↑）
 
-每一代 (generation), 生成 λ 个候选:
+初始化:
+  for i in 0..population_size:
+    genome_i = minimal_genome + K 次随机变异
+  evaluate_batch(初始种群)  // rayon 并行
+  初始化 archive = 非支配解集合
 
-  Generation 0（爆发初始化）:
-    for each of λ candidates:
-      1. clone(minimal_genome)
-      2. 连续 K 次 apply_random() 变异
-      3. build → train → capture_weights → evaluate
-    选最佳作为 best_genome
-
-  Generation 1+（(1+λ) 搜索）:
-    for each of λ candidates:
-      1. clone(best_genome)
-      2. 单次变异（停滞时强制结构变异）
-      3. build → restore_weights → train → capture_weights → evaluate
-    best_child = λ 个候选中 fitness 最高者
-    if best_child >= best_score: accept(best_child)
-    else: rollback
+每一代 (generation):
+  1. 二元锦标赛采样 + 变异 → offspring_batch_size 个候选
+     (按 pareto_rank 和 crowding_distance 选亲本)
+  2. evaluate_batch(offspring)  // rayon 并行
+  3. pool = parents ∪ offspring
+  4. update_archive(pool)  // 合并新非支配解
+  5. parents = nsga2_select(pool, population_size)  // 保留最优种群
+  6. 检查 archive 中是否有达标成员
+  7. 检查 archive 是否收敛（连续 pareto_patience 代未变化）
 ```
 
 ### 2.2 信号职责分离
@@ -176,48 +182,57 @@ Evolution.seed → StdRng
 
 | EvolutionStatus | 含义 |
 |---|---|
-| `TargetReached` | primary ≥ target_metric，达标 |
+| `TargetReached` | archive 中存在 primary ≥ target_metric 的成员（选 inference_cost 最小的达标成员） |
 | `MaxGenerations` | 到达最大代数限制 |
 | `CallbackStopped` | 自定义回调请求停止 |
 | `NoApplicableMutation` | 所有变异均不可用（搜索空间耗尽） |
+| `ParetoConverged` | 全局 Pareto archive 连续 `pareto_patience` 代未发生实质变化 |
 
 `Err(EvolutionError)` 用于数据验证失败（`InvalidData`）或系统错误（`Graph`）。数据验证延迟到 `run()` 执行时，`supervised()` 构造器本身不会失败。
 
 ---
 
-## 3. 接受策略与回滚
+## 3. 选择策略
 
-### 3.1 非严格接受（允许中性漂移）
+### 3.1 NSGA-II 多目标选择
 
-```
-fitness >= best → 接受（含中性漂移）
-fitness <  best → 回滚到 best_genome
-```
+种群搜索采用 NSGA-II 环境选择，双目标优化：
+- **Objective 1**：`primary`（越高越好）——任务指标（Accuracy / R² 等）
+- **Objective 2**：`inference_cost`（越低越好）——模型复杂度（当前为参数量 ParamCount）
 
-**为什么用 `>=` 而非 `>`？** 许多有价值的结构变化需要多步积累才能提升 fitness（"stepping stone" 问题）。以 XOR 为例，从 `Linear(1)` 到能解 XOR 至少需要两步变异（GrowHidden + InsertActivation），但每步单独都不涨分。`>=` 允许 fitness 不变的变异留下来，为后续突破性变异创造条件。
+选择排序规则（优先级从高到低）：
+1. Pareto rank 越小越好（非支配前沿优先）
+2. 同 rank 时 crowding distance 越大越好（保持多样性）
+3. 同 rank 同 distance 时用 `tiebreak_loss` 决胜
 
-### 3.2 离散指标的 Tiebreaker
+每代从 `parents ∪ offspring` 合并池中选出 `population_size` 个幸存者。Pareto 前沿（rank=0）的个体自动进入全局 archive。
 
-`FitnessScore` 采用字典序比较，`primary` 保持纯粹的指标值，不融合任何 tiebreak 信息：
+### 3.2 FitnessScore 与多目标
 
 ```rust
 pub struct FitnessScore {
-    pub primary: f32,             // 主目标（越高越好）
-    pub inference_cost: Option<f32>, // 预留：推理成本
-    pub tiebreak_loss: Option<f32>,  // 离散指标：test loss（越低越好）
+    pub primary: f32,                // 主目标（越高越好）
+    pub inference_cost: Option<f32>, // 推理成本（越低越好，用于 Pareto 第二目标）
+    pub tiebreak_loss: Option<f32>,  // 离散指标：test loss（NSGA-II 同 rank 同 distance 时的决胜条件）
 }
 ```
 
-比较规则：
-1. `primary` 更高 → 接受
-2. `primary` 更低 → 拒绝
-3. `primary` 相等 → 比 `tiebreak_loss`（都有则越低越好，否则直接接受）
-
-连续指标（R²）的 `tiebreak_loss` 为 `None`，天然进入规则 3 的"直接接受"分支。
+`inference_cost` 由 `compute_inference_cost()` 根据 `ComplexityMetric` 计算（当前实现 ParamCount，预留 FLOPs / latency）。`inference_cost` 为 `None` 时退化为单目标排序。
 
 ### 3.3 停滞检测
 
-连续 `stagnation_patience`（默认 20）代 primary 未严格提升后，强制从结构性变异（`InsertLayer` / `RemoveLayer` / `AddSkipEdge` / `RemoveSkipEdge`）中选择，打破参数变异空转。
+连续 `stagnation_patience`（默认 20）代 best primary 未严格提升后，强制从结构性变异（`InsertLayer` / `RemoveLayer` / `AddSkipEdge` / `RemoveSkipEdge`）中选择，打破参数变异空转。
+
+### 3.4 Pareto 收敛检测
+
+全局 archive 连续 `pareto_patience`（默认 `max(20, population_size * 2)`）代未发生实质变化时，判定 Pareto 前沿收敛，返回 `ParetoConverged` 状态。"实质变化"定义：archive 成员的目标向量集合在 tolerance=1e-6 内不同。
+
+### 3.5 EvolutionResult 中的 Pareto 信息
+
+`EvolutionResult` 包含完整的 Pareto 前沿信息：
+- `pareto_front: Vec<ParetoSummary>`：轻量摘要（fitness + 架构描述）
+- `rebuild_pareto_member(index)`：按索引 lazy rebuild 完整 EvolutionResult（含权重）
+- `smallest_meeting_target_index(target)`：找到满足 target 且 inference_cost 最小的成员
 
 ---
 
@@ -500,23 +515,25 @@ pub trait EvolutionCallback {
     fn on_generation(&mut self, gen: usize, genome: &NetworkGenome, loss: f32, score: &FitnessScore) {}
     fn on_new_best(&mut self, gen: usize, genome: &NetworkGenome, score: &FitnessScore) {}
     fn on_mutation(&mut self, gen: usize, mutation_name: &str, genome: &NetworkGenome) {}
+    fn on_population_evaluated(&mut self, gen: usize, pop_size: usize, offspring_evaluated: usize,
+                               archive_size: usize, front_size: usize, best_primary: f32, best_cost: f32) {}
     fn should_stop(&self, gen: usize) -> bool { false }
 }
 ```
 
-`on_new_best` 仅在 primary **严格提升**时触发（tiebreak 改善和中性漂移均不触发）。
+- `on_new_best` 仅在 archive 中 best primary **严格提升**时触发。
+- `on_population_evaluated` 每代在 NSGA-II 选择后调用，报告种群/archive/前沿统计。
 
 ### 8.2 DefaultCallback 日志
 
-`verbose=true` 时每代输出一行：
+`verbose=true` 时每代输出种群级别统计：
 
 ```
-[Gen  0] Input(2) → [Linear(1)]                         | fitness=0.501 | minimal *
-[Gen  1] Input(2) → Linear(1) → [Linear(1)]             | fitness=0.502 | InsertLayer
-[Gen  5] Input(2) → Linear(4) → ReLU → [Linear(1)]      | fitness=1.000 | GrowHiddenSize *
+[Gen  0] pop=12 | off=10 | archive=8 | best=0.501 | cost=784
+[Gen  5] pop=12 | off=11 | archive=5 | best=1.000 | cost=396 *
 ```
 
-`*` 表示 primary 严格提升。`verbose=false` 时完全静默。
+`*` 表示 best primary 严格提升。`verbose=false` 时完全静默。
 
 ### 8.3 计算图可视化
 
@@ -548,22 +565,24 @@ let predictions = result.predict(&input)?;  // 返回 [batch, output_dim]
 
 ```
 src/nn/evolution/
-├── mod.rs              Evolution + run() + TaskSpec + EvolutionResult + EvolutionStatus
+├── mod.rs              Evolution + run() + TaskSpec + EvolutionResult + EvolutionStatus + ParetoSummary + ComplexityMetric
 ├── error.rs            EvolutionError（InvalidData / InvalidConfig / Graph）
 ├── gene.rs             NetworkGenome, LayerGene, LayerConfig, SkipEdge, TrainingConfig, TaskMetric
 ├── mutation.rs         Mutation trait + MutationRegistry + 12+条件变异操作
+├── selection.rs        NSGA-II 多目标选择 + Pareto Archive 管理（pareto_rank, crowding_distance, nsga2_select, update_archive）
 ├── builder.rs          Genome → Graph 转换 + BuildResult + Lamarckian 权重管理
 ├── model_io.rs         模型序列化/反序列化（save/load .otm 文件）
 ├── convergence.rs      ConvergenceDetector + ConvergenceConfig + TrainingBudget
 ├── task.rs             EvolutionTask trait + SupervisedTask + FitnessScore
-├── callback.rs         EvolutionCallback trait + DefaultCallback
+├── callback.rs         EvolutionCallback trait + DefaultCallback（含 on_population_evaluated）
 └── tests/
     ├── gene.rs         基因数据结构单元测试（含序列域/空间层维度测试）
     ├── mutation.rs     变异操作单元测试（含 MutateCellType）
     ├── builder.rs      构建与权重继承单元测试（含 RNN/LSTM/GRU/Conv2d 前向测试）
     ├── convergence.rs  收敛检测单元测试
     ├── task.rs         训练与评估单元测试
-    └── evolution.rs    主循环集成测试（含序列演化/空间演化端到端测试）
+    ├── selection.rs    NSGA-II 选择 + Archive 管理单元测试（23 个测试）
+    └── evolution.rs    主循环集成测试（含 Pareto 种群/并行评估/序列/空间端到端测试）
 ```
 
 ---
@@ -573,7 +592,8 @@ src/nn/evolution/
 ||---|---|
 | Genome-Centric（每代重建图） | 基因组自包含，clone 即回滚，避免 Graph 内部状态纠缠 |
 || Mutation trait + 注册表 | 可插拔设计，添加新变异不修改 Evolution（EXAMM/LayerNAS 标准做法） |
-|| (1+λ) 搜索策略 | 每代评估 λ 个候选，保持单 genome 维护简洁性，跳出局部最优概率显著提升 |
+|| Pareto 种群 + NSGA-II | 多目标（primary↑ + cost↓）种群搜索，维护全局 Pareto archive，天然支持多样性和 complexity-accuracy 权衡 |
+|| rayon 并行评估 | offspring 的 build→train→evaluate 通过 map_init 并行化，每个 worker 独立 materialize task 避免数据冗余复制 |
 || 数据驱动 auto_constraints | 用户无需配置约束，系统根据任务维度自动推导合理搜索空间 |
 || 两阶段训练+变异切换 | 解决搜索效率 vs 评估精度矛盾；Phase1 快速探索拓扑，Phase2 精炼超参 |
 || 随机爆发初始化 | 复用现有变异基础设施，零新增代码产生多样化初始候选 |
@@ -678,8 +698,9 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 | 方向 | 难度 | 说明 |
 |---|---|---|
-| 种群演化 + 交叉 | 高 | 当前为单网络迭代，需引入种群管理和基因组对齐 |
-| 并行化 λ 候选评估（rayon） | 中 | 算法逻辑不变，从串行切并发；需 EvolutionTask: Send+Sync |
+| 交叉操作（Crossover） | 高 | 种群已就绪，需基因组对齐算法（NEAT 式 innovation matching） |
+| FLOPs / latency 作为 complexity metric | 中 | ComplexityMetric 枚举已预留扩展点，需实现 per-layer FLOPs 估算 |
+| 岛屿模型 / 分布式种群 | 高 | 多岛并行搜索 + 迁移策略，需跨进程 genome 序列化 |
 
 ---
 
@@ -751,4 +772,4 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-11*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-11（v2: Pareto 种群 + NSGA-II + 并行评估）*

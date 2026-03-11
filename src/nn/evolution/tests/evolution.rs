@@ -974,3 +974,234 @@ fn test_evolution_spatial_mutation_names_valid() {
         );
     }
 }
+
+// ==================== Pareto 种群模式测试 ====================
+
+#[test]
+fn test_pareto_front_populated_on_target_reached() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(0.0) // 首代即达标
+        .with_max_generations(100)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert_eq!(result.status, EvolutionStatus::TargetReached);
+    assert!(
+        !result.pareto_front.is_empty(),
+        "达标时 pareto_front 不应为空"
+    );
+    // 每个 pareto summary 的 fitness 应有效
+    for ps in &result.pareto_front {
+        assert!(ps.fitness.primary.is_finite());
+        assert!(!ps.architecture_summary.is_empty());
+    }
+}
+
+#[test]
+fn test_pareto_front_populated_on_max_generations() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(2.0) // 不可达
+        .with_max_generations(5)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert_eq!(result.status, EvolutionStatus::MaxGenerations);
+    assert!(
+        !result.pareto_front.is_empty(),
+        "MaxGenerations 时 pareto_front 不应为空"
+    );
+}
+
+#[test]
+fn test_population_size_builder() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_population_size(4)
+        .with_offspring_batch_size(4)
+        .with_max_generations(3)
+        .with_target_metric(2.0) // 不可达
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert_eq!(result.status, EvolutionStatus::MaxGenerations);
+    assert!(result.fitness.primary.is_finite());
+}
+
+#[test]
+fn test_rebuild_pareto_member() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(0.0) // 首代达标
+        .with_max_generations(100)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    if result.pareto_front.is_empty() {
+        return; // 极端情况，跳过
+    }
+
+    // 重建第一个 Pareto 成员
+    let rebuilt = result.rebuild_pareto_member(0).unwrap();
+    assert!(rebuilt.fitness.primary.is_finite());
+    assert!(!rebuilt.architecture_summary.is_empty());
+
+    // 越界检查
+    let oob = result.rebuild_pareto_member(result.pareto_front.len() + 100);
+    assert!(oob.is_err(), "越界索引应返回错误");
+}
+
+#[test]
+fn test_smallest_meeting_target_index() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(0.0)
+        .with_max_generations(100)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    // target=0.0 → 所有 pareto 成员都满足
+    if !result.pareto_front.is_empty() {
+        let idx = result.smallest_meeting_target_index(0.0);
+        assert!(idx.is_some(), "target=0.0 时应找到满足条件的成员");
+        assert!(idx.unwrap() < result.pareto_front.len());
+    }
+
+    // target=2.0 → 无法满足
+    let idx_impossible = result.smallest_meeting_target_index(2.0);
+    assert!(idx_impossible.is_none(), "target=2.0 时不应找到满足条件的成员");
+}
+
+#[test]
+fn test_pareto_converged_with_small_patience() {
+    // 设置极小的 pareto_patience 以触发 ParetoConverged
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(2.0) // 不可达
+        .with_max_generations(200)
+        .with_pareto_patience(3) // 极小耐心值
+        .with_population_size(4)
+        .with_offspring_batch_size(4)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    // 应该在远少于 200 代时因 ParetoConverged 或 MaxGenerations 停止
+    assert!(
+        result.status == EvolutionStatus::ParetoConverged
+            || result.status == EvolutionStatus::MaxGenerations,
+        "期望 ParetoConverged 或 MaxGenerations，实际: {:?}",
+        result.status
+    );
+    assert!(!result.pareto_front.is_empty());
+}
+
+#[test]
+fn test_on_population_evaluated_callback() {
+    /// Mock callback 记录 on_population_evaluated 调用
+    struct PopEvalCallback {
+        pop_eval_count: usize,
+        last_pop_size: usize,
+        last_archive_size: usize,
+        stop_at: usize,
+    }
+
+    impl EvolutionCallback for PopEvalCallback {
+        fn on_population_evaluated(
+            &mut self,
+            _generation: usize,
+            pop_size: usize,
+            _offspring_evaluated: usize,
+            archive_size: usize,
+            _front_size: usize,
+            _best_primary: f32,
+            _best_cost: f32,
+        ) {
+            self.pop_eval_count += 1;
+            self.last_pop_size = pop_size;
+            self.last_archive_size = archive_size;
+        }
+
+        fn should_stop(&self, generation: usize) -> bool {
+            generation >= self.stop_at
+        }
+    }
+
+    let cb = PopEvalCallback {
+        pop_eval_count: 0,
+        last_pop_size: 0,
+        last_archive_size: 0,
+        stop_at: 5,
+    };
+
+    // 用 Rc<RefCell> 包装
+    let cb = std::rc::Rc::new(std::cell::RefCell::new(cb));
+    let cb_clone = std::rc::Rc::clone(&cb);
+
+    struct Wrapper {
+        inner: std::rc::Rc<std::cell::RefCell<PopEvalCallback>>,
+    }
+    impl EvolutionCallback for Wrapper {
+        fn on_population_evaluated(
+            &mut self,
+            g: usize,
+            pop: usize,
+            off: usize,
+            arch: usize,
+            front: usize,
+            bp: f32,
+            bc: f32,
+        ) {
+            self.inner
+                .borrow_mut()
+                .on_population_evaluated(g, pop, off, arch, front, bp, bc);
+        }
+        fn should_stop(&self, g: usize) -> bool {
+            self.inner.borrow().should_stop(g)
+        }
+    }
+
+    let _result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(2.0) // 不可达
+        .with_population_size(4)
+        .with_offspring_batch_size(4)
+        .with_callback(Wrapper { inner: cb_clone })
+        .run()
+        .unwrap();
+
+    let s = cb.borrow();
+    assert_eq!(
+        s.pop_eval_count, 5,
+        "on_population_evaluated 应每代调用一次"
+    );
+    assert!(s.last_pop_size > 0, "pop_size 应 > 0");
+    assert!(s.last_archive_size > 0, "archive_size 应 > 0");
+}
+
+#[test]
+fn test_inference_cost_in_fitness() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(0.0)
+        .with_max_generations(100)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    // 达标成员的 fitness 应有 inference_cost（由 compute_inference_cost 填充）
+    assert!(
+        result.fitness.inference_cost.is_some(),
+        "fitness 应包含 inference_cost"
+    );
+    assert!(
+        result.fitness.inference_cost.unwrap() > 0.0,
+        "inference_cost 应 > 0（至少有几个参数）"
+    );
+}

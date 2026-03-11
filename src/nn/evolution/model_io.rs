@@ -267,6 +267,8 @@ impl EvolutionResult {
             architecture_summary: metadata.architecture_summary,
             status: metadata.status,
             genome,
+            pareto_front: Vec::new(),
+            pareto_genomes: Vec::new(),
         })
     }
 }

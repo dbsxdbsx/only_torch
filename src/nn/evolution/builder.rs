@@ -153,6 +153,7 @@ impl NetworkGenome {
         let resolved = self
             .resolve_dimensions()
             .map_err(|e| GraphError::ComputationError(e.to_string()))?;
+        let spatial_map = self.compute_spatial_map();
 
         let graph_seed: u64 = rng.r#gen();
         let graph = Graph::new_with_seed(graph_seed).with_model_name("EvolutionNet");
@@ -277,20 +278,35 @@ impl NetworkGenome {
                     kernel_size,
                     stride,
                 } => {
-                    let name = format!("evo_pool{}", layer.innovation_number);
-                    let k = *kernel_size;
-                    let s = *stride;
-                    current = match pool_type {
-                        PoolType::Max => {
-                            MaxPool2d::new(&graph, (k, k), Some((s, s)), &name)
-                                .forward(&current)
-                        }
-                        PoolType::Avg => {
-                            AvgPool2d::new(&graph, (k, k), Some((s, s)), &name)
-                                .forward(&current)
+                    // 找前驱层的输出空间作为本层输入空间；若 kernel 超出则跳过池化（identity pass-through）
+                    let input_spatial = {
+                        let pos = resolved.iter().position(|d| d.innovation_number == layer.innovation_number);
+                        match pos {
+                            Some(0) => self.input_spatial,
+                            Some(p) => spatial_map.get(&resolved[p - 1].innovation_number).copied().flatten(),
+                            None => None,
                         }
                     };
-                    // Pool2d 无可学习参数
+                    let can_pool = input_spatial
+                        .map(|(h, w)| h >= *kernel_size && w >= *kernel_size)
+                        .unwrap_or(false);
+
+                    if can_pool {
+                        let name = format!("evo_pool{}", layer.innovation_number);
+                        let k = *kernel_size;
+                        let s = *stride;
+                        current = match pool_type {
+                            PoolType::Max => {
+                                MaxPool2d::new(&graph, (k, k), Some((s, s)), &name)
+                                    .forward(&current)
+                            }
+                            PoolType::Avg => {
+                                AvgPool2d::new(&graph, (k, k), Some((s, s)), &name)
+                                    .forward(&current)
+                            }
+                        };
+                    }
+                    // else: identity pass-through（Pool2d 无可学习参数，跳过不影响梯度）
                 }
                 LayerConfig::Flatten => {
                     current = current.flatten()?;

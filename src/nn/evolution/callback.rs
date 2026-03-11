@@ -49,6 +49,21 @@ pub trait EvolutionCallback {
     ) {
     }
 
+    /// 种群评估完成后调用（每代一次，种群模式专用）
+    ///
+    /// 默认空操作，DefaultCallback 实现种群级日志输出。
+    fn on_population_evaluated(
+        &mut self,
+        _generation: usize,
+        _population_size: usize,
+        _offspring_evaluated: usize,
+        _archive_size: usize,
+        _pareto_front_size: usize,
+        _best_primary: f32,
+        _best_cost: f32,
+    ) {
+    }
+
     /// 每代开始前检查，返回 true 则终止演化
     fn should_stop(&self, _generation: usize) -> bool {
         false
@@ -91,26 +106,12 @@ impl Default for DefaultCallback {
 impl EvolutionCallback for DefaultCallback {
     fn on_generation(
         &mut self,
-        generation: usize,
-        genome: &NetworkGenome,
+        _generation: usize,
+        _genome: &NetworkGenome,
         _loss: f32,
-        score: &FitnessScore,
+        _score: &FitnessScore,
     ) {
-        if !self.verbose {
-            return;
-        }
-
-        let star = if self.is_new_best { " *" } else { "" };
-        self.is_new_best = false;
-
-        println!(
-            "[Gen {:>3}] {:<45} | fitness={:.3} | {}{}",
-            generation,
-            genome.main_path_summary(),
-            score.primary,
-            genome.generated_by,
-            star
-        );
+        // 种群模式下日志输出移至 on_population_evaluated
     }
 
     fn on_new_best(
@@ -128,6 +129,28 @@ impl EvolutionCallback for DefaultCallback {
         _mutation_name: &str,
         _genome: &NetworkGenome,
     ) {
+    }
+
+    fn on_population_evaluated(
+        &mut self,
+        generation: usize,
+        population_size: usize,
+        offspring_evaluated: usize,
+        archive_size: usize,
+        _pareto_front_size: usize,
+        best_primary: f32,
+        best_cost: f32,
+    ) {
+        if !self.verbose {
+            return;
+        }
+        let star = if self.is_new_best { " *" } else { "" };
+        self.is_new_best = false;
+        println!(
+            "[Gen {:>3}] pop={} | off={} | archive={} | best={:.3} | cost={:.0}{}",
+            generation, population_size, offspring_evaluated, archive_size,
+            best_primary, best_cost, star
+        );
     }
 
     fn should_stop(&self, generation: usize) -> bool {
