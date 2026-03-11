@@ -67,6 +67,10 @@ fn test_insert_layer_max_layers_reached() {
     assert!(!m.is_applicable(&g, &c));
 }
 
+
+fn spatial_genome(spatial: (usize, usize)) -> NetworkGenome {
+    NetworkGenome::minimal_spatial(1, 10, spatial)
+}
 #[test]
 fn test_insert_layer_no_consecutive_activation() {
     // 从 minimal 出发插入多次，不应出现连续 Activation
@@ -91,6 +95,54 @@ fn test_insert_layer_no_consecutive_activation() {
         let both_act = matches!(w[0], LayerConfig::Activation { .. })
             && matches!(w[1], LayerConfig::Activation { .. });
         assert!(!both_act, "发现连续 Activation: {:?} {:?}", w[0], w[1]);
+    }
+}
+
+#[test]
+fn test_insert_layer_spatial_width_not_locked_to_input_channels() {
+    let m = InsertLayerMutation::new(vec![]);
+    let c = SizeConstraints {
+        min_hidden_size: 24,
+        max_hidden_size: 64,
+        size_strategy: SizeStrategy::AlignTo(8),
+        ..constraints()
+    };
+
+    let mut observed_width_above_min = false;
+    for seed in 0..32u64 {
+        let mut g = spatial_genome((28, 28));
+        let mut r = StdRng::seed_from_u64(seed);
+        m.apply(&mut g, &c, &mut r).unwrap();
+        for layer in g.layers.iter().filter(|l| l.enabled) {
+            if let LayerConfig::Conv2d { out_channels, .. } = layer.layer_config {
+                if out_channels > 24 {
+                    observed_width_above_min = true;
+                }
+            }
+        }
+    }
+
+    assert!(
+        observed_width_above_min,
+        "空间模式下新插入 Conv2d 的 out_channels 不应被 input_channels=1 锁死到最小值"
+    );
+}
+
+#[test]
+fn test_insert_layer_spatial_does_not_create_pool_when_spatial_too_small() {
+    let m = InsertLayerMutation::new(vec![]);
+    let c = constraints();
+
+    for seed in 0..32u64 {
+        let mut g = spatial_genome((1, 1));
+        let mut r = StdRng::seed_from_u64(seed);
+        m.apply(&mut g, &c, &mut r).unwrap();
+        assert!(
+            !g.layers.iter().any(|l| {
+                l.enabled && matches!(l.layer_config, LayerConfig::Pool2d { .. })
+            }),
+            "1x1 空间输入上不应再生成 Pool2d 候选"
+        );
     }
 }
 

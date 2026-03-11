@@ -460,6 +460,61 @@ fn has_adjacent_activation(genome: &NetworkGenome, insert_pos: usize) -> bool {
     before || after
 }
 
+/// 将采样尺寸约束到当前 SizeStrategy
+fn sample_size_in_range(
+    min: usize,
+    max: usize,
+    strategy: &SizeStrategy,
+    rng: &mut StdRng,
+) -> usize {
+    assert!(min <= max, "sample_size_in_range: min({min}) 不能大于 max({max})");
+    match strategy {
+        SizeStrategy::Free => rng.gen_range(min..=max),
+        SizeStrategy::AlignTo(align) => {
+            let start = min.div_ceil(*align) * align;
+            if start > max {
+                max
+            } else {
+                let end = max / align * align;
+                let candidates: Vec<usize> = (start..=end).step_by(*align).collect();
+                candidates.choose(rng).copied().unwrap_or(max)
+            }
+        }
+    }
+}
+
+/// 获取插入位置的主路径输入维度
+fn insert_input_dim(genome: &NetworkGenome, insert_pos: usize) -> usize {
+    if insert_pos == 0 {
+        return genome.input_dim;
+    }
+    let enabled: Vec<&LayerGene> = genome.layers.iter().filter(|l| l.enabled).collect();
+    let pred_inn = enabled[insert_pos - 1].innovation_number;
+    genome
+        .resolve_dimensions()
+        .ok()
+        .and_then(|dims| {
+            dims.into_iter()
+                .find(|d| d.innovation_number == pred_inn)
+                .map(|d| d.out_dim)
+        })
+        .unwrap_or(genome.input_dim)
+}
+
+/// 获取插入位置的主路径输入空间尺寸（空间模式专用）
+fn insert_input_spatial(
+    genome: &NetworkGenome,
+    insert_pos: usize,
+) -> Option<(usize, usize)> {
+    let spatial_map = genome.compute_spatial_map();
+    if insert_pos == 0 {
+        return spatial_map.get(&INPUT_INNOVATION).copied().flatten();
+    }
+    let enabled: Vec<&LayerGene> = genome.layers.iter().filter(|l| l.enabled).collect();
+    let pred_inn = enabled[insert_pos - 1].innovation_number;
+    spatial_map.get(&pred_inn).copied().flatten()
+}
+
 /// 根据 SizeStrategy 计算增长后的值
 ///
 /// Free 模式：40% +step（至少 25%）、40% ×1.5、20% ×2
@@ -606,6 +661,16 @@ impl Mutation for InsertLayerMutation {
             ShapeDomain::Flat
         };
 
+        let insert_input_dim = insert_input_dim(genome, logical_pos);
+        let insert_input_spatial = if insert_domain == ShapeDomain::Spatial {
+            insert_input_spatial(genome, logical_pos)
+        } else {
+            None
+        };
+        let can_insert_pool = insert_input_spatial
+            .map(|(h, w)| h >= 2 && w >= 2)
+            .unwrap_or(false);
+
         let new_config = if can_insert_activation && rng.gen_bool(0.3) {
             let act = self.available_activations.choose(rng).unwrap();
             LayerConfig::Activation {
@@ -613,7 +678,7 @@ impl Mutation for InsertLayerMutation {
             }
         } else if insert_domain == ShapeDomain::Spatial {
             // 空间域：Conv2d 或 Pool2d
-            if rng.gen_bool(0.2) {
+            if can_insert_pool && rng.gen_bool(0.15) {
                 let pool_type = if rng.gen_bool(0.5) {
                     PoolType::Max
                 } else {
@@ -626,11 +691,17 @@ impl Mutation for InsertLayerMutation {
                 }
             } else {
                 let effective_min = constraints.min_hidden_size.max(8);
-                let small_cap = genome
-                    .input_dim
+                let out_ch_cap = insert_input_dim
+                    .saturating_mul(16)
+                    .max(64)
                     .min(constraints.max_hidden_size)
                     .max(effective_min);
-                let out_ch = rng.gen_range(effective_min..=small_cap);
+                let out_ch = sample_size_in_range(
+                    effective_min,
+                    out_ch_cap,
+                    &constraints.size_strategy,
+                    rng,
+                );
                 let k = *[1usize, 3, 5, 7].choose(rng).unwrap();
                 LayerConfig::Conv2d {
                     out_channels: out_ch,
@@ -639,11 +710,16 @@ impl Mutation for InsertLayerMutation {
             }
         } else if is_sequential && rng.gen_bool(0.5) {
             let effective_min = constraints.min_hidden_size.max(8);
-            let small_cap = genome
-                .input_dim
+            let size_cap = insert_input_dim
+                .max(effective_min * 2)
                 .min(constraints.max_hidden_size)
                 .max(effective_min);
-            let size = rng.gen_range(effective_min..=small_cap);
+            let size = sample_size_in_range(
+                effective_min,
+                size_cap,
+                &constraints.size_strategy,
+                rng,
+            );
             match rng.gen_range(0..3) {
                 0 => LayerConfig::Rnn { hidden_size: size },
                 1 => LayerConfig::Lstm { hidden_size: size },
@@ -651,11 +727,17 @@ impl Mutation for InsertLayerMutation {
             }
         } else {
             let effective_min = constraints.min_hidden_size.max(8);
-            let small_cap = genome
-                .input_dim
+            let size_cap = insert_input_dim
+                .min(256)
+                .max(effective_min * 2)
                 .min(constraints.max_hidden_size)
                 .max(effective_min);
-            let size = rng.gen_range(effective_min..=small_cap);
+            let size = sample_size_in_range(
+                effective_min,
+                size_cap,
+                &constraints.size_strategy,
+                rng,
+            );
             LayerConfig::Linear {
                 out_features: size,
             }

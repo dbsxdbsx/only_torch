@@ -129,13 +129,14 @@ Evolution::supervised(train, test, TaskMetric::Accuracy)
 
 **全局 Pareto Archive**：独立于种群维护所有非支配解。Archive 中的成员在目标空间互不支配（不存在 A 在所有目标上 ≥ B 的情况）。达标检查从 archive 而非种群中查找，确保不遗漏高质量解。
 
-**并行评估**：offspring 的 build→train→evaluate 流水线通过 rayon 并行化。每个 rayon 工作线程通过 `map_init` 独立 materialize 一个 task 副本，避免训练数据的冗余复制。`Graph` 使用 `Rc<RefCell<>>` (!Send)，但并行安全因为每个 worker 通过 `genome.build()` 创建独立的本地 Graph。
+**并行评估**：offspring 的 build→train→evaluate 流水线通过 rayon 并行化。`with_parallelism(n)` 创建独立的 `rayon::ThreadPool`（`ThreadPoolBuilder::num_threads(n)`），真正控制评估并发度。训练/测试数据在 `SupervisedTask` 构造时一次性 stack 为 `Arc<Tensor>`，`TaskRuntime::clone()` 只复制 Arc 指针（O(1)），每个 rayon 工作线程通过 `map_init` 克隆轻量 task 副本，避免每代每 worker 重复堆叠数据。`Graph` 使用 `Rc<RefCell<>>` (!Send)，但并行安全因为每个 worker 通过 `genome.build()` 创建独立的本地 Graph。
 
 ```
 自适应约束：用户未指定 with_constraints() 时，自动从数据维度推导 SizeConstraints
 随机爆发初始化：对 minimal genome 施加 K 次随机变异（K = max(2, min(8, max_layers/2))）生成初始种群
-两阶段训练预算：Phase 1（前 70% 代数）用 FixedEpochs 快速筛选；Phase 2（后 30%）用 UntilConverged 精炼
+两阶段训练预算：Phase 1（前 40% 代数）用 FixedEpochs 快速筛选；Phase 2（后 60%）用 UntilConverged 精炼
 两阶段变异权重：Phase 1 偏向结构探索（InsertLayer↑, Grow↑）；Phase 2 偏向超参调优（MutateLR↑, MutateOptimizer↑）
+Primary plateau 提前切换：若 primary fitness 连续 stagnation_patience 代未提升，即使未到 Phase 2 代数也立即切换
 
 初始化:
   for i in 0..population_size:
@@ -205,6 +206,8 @@ Evolution.seed → StdRng
 2. 同 rank 时 crowding distance 越大越好（保持多样性）
 3. 同 rank 同 distance 时用 `tiebreak_loss` 决胜
 
+**Crowding distance 按 Pareto front 分层计算**：每一层非支配前沿（rank=0, rank=1, ...）内部独立计算拥挤度距离，确保各 front 的边界解获得正确的 ∞ 距离，不被跨 front 排序污染。
+
 每代从 `parents ∪ offspring` 合并池中选出 `population_size` 个幸存者。Pareto 前沿（rank=0）的个体自动进入全局 archive。
 
 ### 3.2 FitnessScore 与多目标
@@ -223,9 +226,11 @@ pub struct FitnessScore {
 
 连续 `stagnation_patience`（默认 20）代 best primary 未严格提升后，强制从结构性变异（`InsertLayer` / `RemoveLayer` / `AddSkipEdge` / `RemoveSkipEdge`）中选择，打破参数变异空转。
 
-### 3.4 Pareto 收敛检测
+### 3.4 Pareto 收敛与主目标平台期检测
 
-全局 archive 连续 `pareto_patience`（默认 `max(20, population_size * 2)`）代未发生实质变化时，判定 Pareto 前沿收敛，返回 `ParetoConverged` 状态。"实质变化"定义：archive 成员的目标向量集合在 tolerance=1e-6 内不同。
+**Archive 收敛**：全局 archive 的代表成员（primary 最高或满足 target 的最小 cost 成员）连续 `pareto_patience`（默认 `max(20, population_size * 2)`）代的 FitnessScore 未发生实质变化时（primary / inference_cost / tiebreak_loss 三个字段均在 tolerance=1e-6 内），判定 Pareto 前沿收敛，返回 `ParetoConverged` 状态。
+
+**Primary 平台期提前切换**：即使 archive 仍有细微 trade-off 变化（如新成员 inference_cost 更低但 primary 相同），primary fitness 连续 `stagnation_patience` 代未严格提升时也会触发 Phase 2 切换和结构变异强制——避免"archive 在变但主指标不涨"的隐性停滞。
 
 ### 3.5 EvolutionResult 中的 Pareto 信息
 
@@ -483,10 +488,12 @@ Evolution::supervised(train, test, metric)
 | `FixedEpochs(n)` | 快速筛选候选架构（Phase 1 使用，`n = max(3, min(10, n_train/(batch_size*5)))`） |
 
 演化主循环自动分配两阶段训练预算：
-- **Phase 1（前 70% 代数）**：`FixedEpochs(fast_epochs)` — 低成本快速评估大量结构候选
-- **Phase 2（后 30% 代数）**：`UntilConverged`（用户 `ConvergenceConfig`）— 对有潜力拓扑做充分训练
+- **Phase 1（前 40% 代数）**：`FixedEpochs(fast_epochs)` — 低成本快速评估大量结构候选
+- **Phase 2（后 60% 代数）**：`UntilConverged`（用户 `ConvergenceConfig`）— 对有潜力拓扑做充分训练
 
-分界点：`phase1_gens = (max_generations * 0.7).round()`。阶段切换时不丢弃权重快照，Phase 2 直接在 Phase 1 最佳基因组上继续。
+分界点：`phase1_gens = (max_generations * 0.4).ceil()`。阶段切换时不丢弃权重快照，Phase 2 直接在 Phase 1 最佳基因组上继续。另外，primary fitness 连续 `stagnation_patience` 代停滞也会提前触发 Phase 2 切换，即使尚未到达 40% 代数分界点。
+
+**Mini-batch Shuffle**：mini-batch 训练路径在每个 epoch 开始时对训练数据进行 seeded shuffle（`shuffle_mut_seeded`），确保 mini-batch 组成每 epoch 不同，改善梯度估计质量。Shuffle seed 由演化主 rng 分配，保持可复现性。
 
 ---
 
@@ -580,9 +587,9 @@ src/nn/evolution/
     ├── mutation.rs     变异操作单元测试（含 MutateCellType）
     ├── builder.rs      构建与权重继承单元测试（含 RNN/LSTM/GRU/Conv2d 前向测试）
     ├── convergence.rs  收敛检测单元测试
-    ├── task.rs         训练与评估单元测试
-    ├── selection.rs    NSGA-II 选择 + Archive 管理单元测试（23 个测试）
-    └── evolution.rs    主循环集成测试（含 Pareto 种群/并行评估/序列/空间端到端测试）
+    ├── task.rs         训练与评估单元测试（含 mini-batch shuffle 可复现性验证）
+    ├── selection.rs    NSGA-II 选择 + Archive 管理单元测试（含 per-front crowding distance 验证）
+    └── evolution.rs    主循环集成测试（含 Pareto 种群/并行评估/fitness_changed/stagnation/序列/空间端到端测试）
 ```
 
 ---
@@ -772,4 +779,4 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-11（v2: Pareto 种群 + NSGA-II + 并行评估）*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-11（v3: Pareto 种群 + NSGA-II + 并行评估 + 正确性与收敛效率修复）*

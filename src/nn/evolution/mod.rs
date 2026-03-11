@@ -32,6 +32,7 @@ mod tests;
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use crate::nn::{GraphError, VisualizationOutput};
 use crate::tensor::Tensor;
@@ -202,6 +203,53 @@ impl EvolutionResult {
     }
 }
 
+/// 运行时任务模板（可克隆，供串行/并行评估复用）
+#[derive(Clone)]
+enum TaskRuntime {
+    Supervised(SupervisedTask),
+}
+
+impl EvolutionTask for TaskRuntime {
+    fn train(
+        &self,
+        genome: &NetworkGenome,
+        build: &BuildResult,
+        convergence: &ConvergenceConfig,
+        rng: &mut StdRng,
+    ) -> Result<f32, GraphError> {
+        match self {
+            TaskRuntime::Supervised(task) => task.train(genome, build, convergence, rng),
+        }
+    }
+
+    fn evaluate(
+        &self,
+        genome: &NetworkGenome,
+        build: &BuildResult,
+        rng: &mut StdRng,
+    ) -> Result<FitnessScore, GraphError> {
+        match self {
+            TaskRuntime::Supervised(task) => task.evaluate(genome, build, rng),
+        }
+    }
+
+    fn configure_batch_size(&mut self, batch_size: Option<usize>) {
+        match self {
+            TaskRuntime::Supervised(task) => task.configure_batch_size(batch_size),
+        }
+    }
+
+    fn create_visualization_loss(
+        &self,
+        genome: &NetworkGenome,
+        build: &BuildResult,
+    ) -> Option<crate::nn::Var> {
+        match self {
+            TaskRuntime::Supervised(task) => task.create_visualization_loss(genome, build),
+        }
+    }
+}
+
 // ==================== ParetoSummary ====================
 
 /// Pareto 前沿成员摘要（公开的轻量描述，不含权重）
@@ -289,7 +337,7 @@ impl TaskSpec {
 
 /// 实例化后的任务（`run()` 内部使用）
 struct MaterializedTask {
-    task: Box<dyn EvolutionTask>,
+    task: TaskRuntime,
     input_dim: usize,
     output_dim: usize,
     /// 序列长度（None = 平坦输入，Some(n) = 序列输入）
@@ -340,7 +388,7 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
             let n_train = train_data.0.len();
             let task = SupervisedTask::new(train_data, test_data, metric.clone())?;
             Ok(MaterializedTask {
-                task: Box::new(task),
+                task: TaskRuntime::Supervised(task),
                 input_dim,
                 output_dim,
                 seq_len,
@@ -570,8 +618,9 @@ impl Evolution {
 
         // 延迟实例化：验证数据 + 构建任务 + 提取维度
         let prepared = materialize_task(task_spec.clone())?;
-        let mut serial_task = prepared.task;
-        serial_task.configure_batch_size(batch_size);
+        let mut task_template = prepared.task.clone();
+        task_template.configure_batch_size(batch_size);
+        let serial_task = task_template.clone();
 
         let is_sequential = prepared.seq_len.is_some();
         let is_spatial = prepared.input_spatial.is_some();
@@ -591,14 +640,26 @@ impl Evolution {
 
         // 并行执行设置
         let auto_parallelism = rayon::current_num_threads();
-        let _effective_parallelism = parallelism.unwrap_or(auto_parallelism);
+        let effective_parallelism = parallelism.unwrap_or(auto_parallelism).max(1);
         let effective_pareto_patience = pareto_patience
             .unwrap_or_else(|| (population_size * 2).max(20));
         let can_parallel =
-            task_spec.supports_parallel_evaluation() && auto_parallelism > 1;
+            task_spec.supports_parallel_evaluation() && effective_parallelism > 1;
+        let parallel_pool = if can_parallel {
+            Some(
+                ThreadPoolBuilder::new()
+                    .num_threads(effective_parallelism)
+                    .build()
+                    .map_err(|e| {
+                        EvolutionError::InvalidConfig(format!("创建评估线程池失败: {e}"))
+                    })?,
+            )
+        } else {
+            None
+        };
 
         // 两阶段训练预算
-        let phase1_gens = (max_generations as f64 * 0.7).round() as usize;
+        let phase1_gens = ((max_generations as f64) * 0.4).ceil() as usize;
         let user_convergence = convergence_config;
 
         // Phase 1 快速训练预算
@@ -671,13 +732,12 @@ impl Evolution {
             .map(|_| rng.r#gen::<u64>())
             .collect();
         let init_results = evaluate_batch(
-            &task_spec,
+            &task_template,
             init_genomes,
             &phase1_convergence,
             eval_runs,
-            batch_size,
             &complexity_metric,
-            can_parallel,
+            parallel_pool.as_ref(),
             seeds,
         );
 
@@ -690,13 +750,12 @@ impl Evolution {
         if parents.is_empty() {
             let fallback_seed = rng.r#gen::<u64>();
             let fallback_results = evaluate_batch(
-                &task_spec,
+                &task_template,
                 vec![minimal_genome.clone()],
                 &phase1_convergence,
                 eval_runs,
-                batch_size,
                 &complexity_metric,
-                false,
+                None,
                 vec![fallback_seed],
             );
             if let Some(r) = fallback_results.into_iter().next() {
@@ -717,11 +776,12 @@ impl Evolution {
                 .map(|(g, s)| (g.clone(), s.clone()))
                 .collect(),
         );
-        let mut archive_scores_snapshot: Vec<FitnessScore> =
-            archive.iter().map(|(_, s)| s.clone()).collect();
+        let (_, repr_score) = select_representative(&archive, target_metric);
+        let mut representative_score_snapshot = repr_score.clone();
         let mut archive_stagnation: usize = 0;
         let mut best_primary: f32 = f32::NEG_INFINITY;
         let mut primary_stagnation: usize = 0;
+        let mut phase2_unlocked = false;
 
         // ====== 主循环 ======
         for generation in 0.. {
@@ -734,12 +794,15 @@ impl Evolution {
                 };
                 let (repr_g, repr_s) = select_representative(&archive, target_metric);
                 return build_population_result(
-                    repr_g, repr_s, &archive, generation, status, &mut rng, &*serial_task,
+                    repr_g, repr_s, &archive, generation, status, &mut rng, &serial_task,
                 );
             }
 
             // 选择当前阶段的 mutation registry 和 convergence config
-            let is_phase1 = generation < phase1_gens;
+            if primary_stagnation >= stagnation_patience {
+                phase2_unlocked = true;
+            }
+            let is_phase1 = generation < phase1_gens && !phase2_unlocked;
             let current_registry = if let Some(ref user_reg) = user_reg_val {
                 user_reg
             } else if is_phase1 {
@@ -812,7 +875,7 @@ impl Evolution {
                         generation,
                         EvolutionStatus::NoApplicableMutation,
                         &mut rng,
-                        &*serial_task,
+                        &serial_task,
                     );
                 }
                 continue;
@@ -823,13 +886,12 @@ impl Evolution {
                 .map(|_| rng.r#gen::<u64>())
                 .collect();
             let eval_results = evaluate_batch(
-                &task_spec,
+                &task_template,
                 offspring_genomes,
                 current_convergence,
                 eval_runs,
-                batch_size,
                 &complexity_metric,
-                can_parallel,
+                parallel_pool.as_ref(),
                 eval_seeds,
             );
 
@@ -840,19 +902,13 @@ impl Evolution {
                 .collect();
 
             if offspring.is_empty() {
-                let archive_best = archive
-                    .iter()
-                    .max_by(|a, b| {
-                        a.1.primary
-                            .partial_cmp(&b.1.primary)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .unwrap();
+                let (archive_best_g, archive_best_s) =
+                    select_representative(&archive, target_metric);
                 callback.on_generation(
                     generation,
-                    &archive_best.0,
+                    archive_best_g,
                     f32::NAN,
-                    &archive_best.1,
+                    archive_best_s,
                 );
                 continue;
             }
@@ -871,16 +927,15 @@ impl Evolution {
 
             parents = selection::nsga2_select(pool, population_size);
 
-            // 4. Archive 收敛跟踪
-            let new_archive_scores: Vec<FitnessScore> =
-                archive.iter().map(|(_, s)| s.clone()).collect();
-            if selection::archive_changed(
-                &archive_scores_snapshot,
-                &new_archive_scores,
+            // 4. 代表成员收敛跟踪：避免 archive 细碎 trade-off 变化掩盖主目标平台期
+            let (_, representative_score) = select_representative(&archive, target_metric);
+            if fitness_changed(
+                &representative_score_snapshot,
+                representative_score,
                 1e-6,
             ) {
                 archive_stagnation = 0;
-                archive_scores_snapshot = new_archive_scores;
+                representative_score_snapshot = representative_score.clone();
             } else {
                 archive_stagnation += 1;
             }
@@ -906,30 +961,15 @@ impl Evolution {
                 primary_stagnation += 1;
             }
 
-            if force_structural {
-                primary_stagnation = 0;
-            }
 
             // 6. 回调
-            let archive_best = archive
-                .iter()
-                .max_by(|a, b| {
-                    a.1.primary
-                        .partial_cmp(&b.1.primary)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .unwrap();
+            let (archive_best_g, archive_best_s) = select_representative(&archive, target_metric);
             callback.on_generation(
                 generation,
-                &archive_best.0,
+                archive_best_g,
                 f32::NAN,
-                &archive_best.1,
+                archive_best_s,
             );
-
-            let best_cost = archive
-                .iter()
-                .map(|(_, s)| s.inference_cost.unwrap_or(f32::INFINITY))
-                .fold(f32::INFINITY, f32::min);
             let front_scores: Vec<FitnessScore> =
                 archive.iter().map(|(_, s)| s.clone()).collect();
             let front_size = selection::pareto_front_indices(&front_scores).len();
@@ -939,8 +979,8 @@ impl Evolution {
                 offspring_evaluated,
                 archive.len(),
                 front_size,
-                best_primary,
-                best_cost,
+                archive_best_s.primary,
+                archive_best_s.inference_cost.unwrap_or(f32::INFINITY),
             );
 
             // 7. 达标检查：archive 中是否存在 primary >= target 的成员
@@ -957,7 +997,7 @@ impl Evolution {
             if let Some((target_genome, target_score)) = target_member {
                 let build = target_genome.build(&mut rng)?;
                 target_genome.restore_weights(&build)?;
-                snapshot_with_loss(&*serial_task, target_genome, &build);
+                snapshot_with_loss(&serial_task, target_genome, &build);
                 return Ok(EvolutionResult {
                     build,
                     fitness: target_score.clone(),
@@ -980,7 +1020,7 @@ impl Evolution {
                     generation,
                     EvolutionStatus::ParetoConverged,
                     &mut rng,
-                    &*serial_task,
+                    &serial_task,
                 );
             }
         }
@@ -1021,56 +1061,44 @@ fn eval_candidate(
 
 /// 批量评估候选个体（支持 rayon 并行）
 ///
-/// 并行路径使用 `map_init` 确保每个 rayon 工作线程只 materialize 一次 task，
-/// 避免对训练数据的冗余复制。
+/// 任务模板在 `run()` 开始时只 materialize 一次；这里的并行路径只克隆轻量级的
+/// `TaskRuntime`（监督学习任务内部用 Arc 共享已 stack 的 Tensor），避免每代每个
+/// worker 重新堆叠训练/测试数据。
 fn evaluate_batch(
-    task_spec: &TaskSpec,
+    task_template: &TaskRuntime,
     offspring: Vec<NetworkGenome>,
     convergence: &ConvergenceConfig,
     eval_runs: usize,
-    batch_size: Option<usize>,
     complexity_metric: &ComplexityMetric,
-    parallel: bool,
+    parallel_pool: Option<&ThreadPool>,
     seeds: Vec<u64>,
 ) -> Vec<EvalResult> {
     assert_eq!(offspring.len(), seeds.len());
-
-    if parallel && offspring.len() > 1 {
+    if let Some(pool) = parallel_pool.filter(|_| offspring.len() > 1) {
         use rayon::prelude::*;
-
-        offspring
-            .into_par_iter()
-            .zip(seeds.into_par_iter())
-            .map_init(
-                || {
-                    let spec = task_spec.clone();
-                    let mut mat =
-                        materialize_task(spec).expect("并行 task 实例化失败");
-                    mat.task.configure_batch_size(batch_size);
-                    mat
-                },
-                |local_task, (genome, seed)| {
-                    let mut rng = StdRng::seed_from_u64(seed);
-                    eval_candidate(
-                        &*local_task.task,
-                        genome,
-                        convergence,
-                        eval_runs,
-                        complexity_metric,
-                        &mut rng,
-                    )
-                },
-            )
-            .flatten()
-            .collect()
+        pool.install(|| {
+            offspring
+                .into_par_iter()
+                .zip(seeds.into_par_iter())
+                .map_init(
+                    || task_template.clone(),
+                    |local_task, (genome, seed)| {
+                        let mut rng = StdRng::seed_from_u64(seed);
+                        eval_candidate(
+                            local_task,
+                            genome,
+                            convergence,
+                            eval_runs,
+                            complexity_metric,
+                            &mut rng,
+                        )
+                    },
+                )
+                .flatten()
+                .collect()
+        })
     } else {
         // 串行路径
-        let spec = task_spec.clone();
-        let mut mat = match materialize_task(spec) {
-            Ok(m) => m,
-            Err(_) => return Vec::new(),
-        };
-        mat.task.configure_batch_size(batch_size);
 
         offspring
             .into_iter()
@@ -1078,7 +1106,7 @@ fn evaluate_batch(
             .filter_map(|(genome, seed)| {
                 let mut rng = StdRng::seed_from_u64(seed);
                 eval_candidate(
-                    &*mat.task,
+                    task_template,
                     genome,
                     convergence,
                     eval_runs,
@@ -1153,6 +1181,23 @@ fn select_representative<'a>(
         })
         .unwrap();
     (g, s)
+}
+
+/// 代表成员的 FitnessScore 是否发生了实质变化
+fn fitness_changed(prev: &FitnessScore, next: &FitnessScore, tolerance: f32) -> bool {
+    if (prev.primary - next.primary).abs() > tolerance {
+        return true;
+    }
+    match (prev.inference_cost, next.inference_cost) {
+        (Some(a), Some(b)) if (a - b).abs() > tolerance => return true,
+        (Some(_), None) | (None, Some(_)) => return true,
+        _ => {}
+    }
+    match (prev.tiebreak_loss, next.tiebreak_loss) {
+        (Some(a), Some(b)) if (a - b).abs() > tolerance => true,
+        (Some(_), None) | (None, Some(_)) => true,
+        _ => false,
+    }
 }
 
 /// 构建 Pareto 前沿摘要列表

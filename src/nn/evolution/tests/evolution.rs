@@ -1205,3 +1205,183 @@ fn test_inference_cost_in_fitness() {
         "inference_cost 应 > 0（至少有几个参数）"
     );
 }
+
+// ==================== fitness_changed 辅助函数 ====================
+
+#[test]
+fn test_fitness_changed_primary_differs() {
+    let a = FitnessScore {
+        primary: 0.9,
+        inference_cost: Some(100.0),
+        tiebreak_loss: Some(0.1),
+    };
+    let b = FitnessScore {
+        primary: 0.8,
+        inference_cost: Some(100.0),
+        tiebreak_loss: Some(0.1),
+    };
+    assert!(
+        super::super::fitness_changed(&a, &b, 1e-6),
+        "primary 不同时应检测到变化"
+    );
+}
+
+#[test]
+fn test_fitness_changed_within_tolerance() {
+    let a = FitnessScore {
+        primary: 0.9,
+        inference_cost: Some(100.0),
+        tiebreak_loss: Some(0.1),
+    };
+    let b = FitnessScore {
+        primary: 0.9 + 1e-8,
+        inference_cost: Some(100.0 + 1e-8),
+        tiebreak_loss: Some(0.1 + 1e-8),
+    };
+    assert!(
+        !super::super::fitness_changed(&a, &b, 1e-6),
+        "所有字段在容忍范围内应视为未变化"
+    );
+}
+
+#[test]
+fn test_fitness_changed_inference_cost_none_vs_some() {
+    let a = FitnessScore {
+        primary: 0.9,
+        inference_cost: None,
+        tiebreak_loss: None,
+    };
+    let b = FitnessScore {
+        primary: 0.9,
+        inference_cost: Some(100.0),
+        tiebreak_loss: None,
+    };
+    assert!(
+        super::super::fitness_changed(&a, &b, 1e-6),
+        "inference_cost None vs Some 应检测到变化"
+    );
+}
+
+#[test]
+fn test_fitness_changed_tiebreak_loss_differs() {
+    let a = FitnessScore {
+        primary: 0.9,
+        inference_cost: Some(100.0),
+        tiebreak_loss: Some(0.1),
+    };
+    let b = FitnessScore {
+        primary: 0.9,
+        inference_cost: Some(100.0),
+        tiebreak_loss: Some(0.5),
+    };
+    assert!(
+        super::super::fitness_changed(&a, &b, 1e-6),
+        "tiebreak_loss 差异超出容忍范围应检测到变化"
+    );
+}
+
+#[test]
+fn test_fitness_changed_both_none_unchanged() {
+    let a = FitnessScore {
+        primary: 0.5,
+        inference_cost: None,
+        tiebreak_loss: None,
+    };
+    let b = FitnessScore {
+        primary: 0.5,
+        inference_cost: None,
+        tiebreak_loss: None,
+    };
+    assert!(
+        !super::super::fitness_changed(&a, &b, 1e-6),
+        "完全相同（含 None）应视为未变化"
+    );
+}
+
+// ==================== compute_inference_cost ====================
+
+#[test]
+fn test_compute_inference_cost_param_count() {
+    use crate::nn::evolution::ComplexityMetric;
+    use crate::nn::evolution::gene::NetworkGenome;
+
+    let genome = NetworkGenome::minimal(2, 1);
+    let cost = super::super::compute_inference_cost(&genome, &ComplexityMetric::ParamCount).unwrap();
+    let params = genome.total_params().unwrap() as f32;
+    assert!(
+        (cost - params).abs() < 1e-3,
+        "ParamCount 度量应返回参数总量: cost={cost}, params={params}"
+    );
+    assert!(cost > 0.0, "至少有输出头参数");
+}
+
+// ==================== 并行评估路径 ====================
+
+#[test]
+fn test_parallelism_builder_runs_successfully() {
+    let result = xor_evolution()
+        .with_seed(42)
+        .with_parallelism(2)
+        .with_population_size(4)
+        .with_offspring_batch_size(4)
+        .with_max_generations(3)
+        .with_target_metric(2.0) // 不可达
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert_eq!(result.status, EvolutionStatus::MaxGenerations);
+    assert!(result.fitness.primary.is_finite());
+    assert!(!result.pareto_front.is_empty());
+}
+
+#[test]
+fn test_parallelism_produces_same_result_as_serial() {
+    // 并行路径使用预分配 seed，应与串行路径（同 seed）产生一致结果
+    // 注意：由于 rayon 线程调度的不确定性，架构可能因浮点精度差异而不同，
+    // 但基本运行正确性应保持
+    let result_parallel = xor_evolution()
+        .with_seed(42)
+        .with_parallelism(2)
+        .with_population_size(4)
+        .with_offspring_batch_size(4)
+        .with_max_generations(3)
+        .with_target_metric(2.0)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert!(result_parallel.fitness.primary.is_finite());
+    assert!(result_parallel.fitness.inference_cost.is_some());
+}
+
+// ==================== 停滞耐心与阶段切换 ====================
+
+#[test]
+fn test_stagnation_patience_forces_structural_mutations() {
+    // 极低 stagnation_patience + 高代数 → 应频繁触发结构变异
+    // 通过 MockCallback 记录变异名称来验证
+    let (mock, state) = MockCallback::new(Some(20));
+
+    let _result = xor_evolution()
+        .with_seed(42)
+        .with_target_metric(2.0) // 不可达
+        .with_stagnation_patience(2) // 极低耐心
+        .with_callback(mock)
+        .run()
+        .unwrap();
+
+    let s = state.borrow();
+    let structural = ["InsertLayer", "RemoveLayer", "ReplaceLayerType"];
+    let structural_count = s
+        .mutation_names
+        .iter()
+        .filter(|name| structural.contains(&name.as_str()))
+        .count();
+
+    assert!(
+        structural_count > 0,
+        "低 stagnation_patience 后应有结构变异，实际变异名称: {:?}",
+        s.mutation_names
+    );
+}

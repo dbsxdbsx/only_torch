@@ -35,15 +35,22 @@ use only_torch::data::MnistDataset;
 use only_torch::nn::evolution::gene::TaskMetric;
 use only_torch::nn::evolution::{Evolution, EvolutionResult};
 use only_torch::tensor::Tensor;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use std::path::Path;
 use std::time::Instant;
 
 /// 从 MnistDataset 中取前 n 个样本，转为 per-sample Vec<Tensor>
-fn collect_samples(dataset: &MnistDataset, n: usize) -> (Vec<Tensor>, Vec<Tensor>) {
+fn collect_samples(dataset: &MnistDataset, n: usize, seed: u64) -> (Vec<Tensor>, Vec<Tensor>) {
     let n = n.min(dataset.len());
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut indices: Vec<usize> = (0..dataset.len()).collect();
+    indices.shuffle(&mut rng);
+    indices.truncate(n);
     let mut inputs = Vec::with_capacity(n);
     let mut labels = Vec::with_capacity(n);
-    for i in 0..n {
+    for i in indices {
         let (image, label) = dataset.get(i).expect("MNIST 样本读取失败");
         inputs.push(image); // [1, 28, 28]
         labels.push(label); // [10]
@@ -71,8 +78,13 @@ fn main() {
     // 2. 准备数据子集
     let train_samples = 1000;
     let test_samples = 500;
-    let train_data = collect_samples(&train_dataset, train_samples);
-    let test_data = collect_samples(&test_dataset, test_samples);
+    let parallelism = std::thread::available_parallelism()
+        .map(|n| n.get().clamp(1, 8))
+        .unwrap_or(4);
+    let population_size = 12;
+    let offspring_batch_size = 16;
+    let train_data = collect_samples(&train_dataset, train_samples, 42);
+    let test_data = collect_samples(&test_dataset, test_samples, 43);
 
     println!("\n[2/3] 配置：");
     println!("  - 训练样本: {train_samples}（mini-batch, auto batch_size=64）");
@@ -80,6 +92,9 @@ fn main() {
     println!("  - 输入: [1, 28, 28]（灰度图）");
     println!("  - 输出: 10 类（数字 0-9）");
     println!("  - 起始结构: Input(1@28×28) → Flatten → [Linear(10)]");
+    println!("  - population_size: {population_size}");
+    println!("  - offspring_batch_size: {offspring_batch_size}");
+    println!("  - parallelism: {parallelism}");
     println!("  - 目标准确率: ≥95%\n");
 
     // 3. Evolution API：只需提供数据、指标、目标——零模型代码
@@ -88,7 +103,13 @@ fn main() {
 
     let result = Evolution::supervised(train_data, test_data, TaskMetric::Accuracy)
         .with_target_metric(0.95)
-        .with_max_generations(100)
+        .with_max_generations(60)
+        .with_population_size(population_size)
+        .with_offspring_batch_size(offspring_batch_size)
+        .with_parallelism(parallelism)
+        .with_stagnation_patience(8)
+        .with_pareto_patience(16)
+        .with_batch_size(64)
         .with_seed(42)
         .run()
         .expect("演化过程出错");

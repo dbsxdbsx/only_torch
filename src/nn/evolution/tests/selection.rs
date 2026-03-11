@@ -145,6 +145,31 @@ fn test_crowding_distance_empty() {
     assert!(distances.is_empty());
 }
 
+#[test]
+fn test_crowding_distance_is_computed_per_front() {
+    let scores = vec![
+        score(0.9, Some(500.0)), // front 0
+        score(0.8, Some(300.0)), // front 0
+        score(0.7, Some(100.0)), // front 0
+        score(0.6, Some(450.0)), // front 1
+        score(0.5, Some(250.0)), // front 1
+        score(0.4, Some(150.0)), // front 1
+    ];
+    let ranks = pareto_rank(&scores);
+    assert_eq!(ranks, vec![0, 0, 0, 1, 1, 1]);
+
+    let distances = crowding_distance(&scores);
+    assert!(
+        distances[3].is_infinite(),
+        "第二前沿的边界点应在其 front 内获得无穷距离"
+    );
+    assert!(
+        distances[5].is_infinite(),
+        "第二前沿的另一端边界点应在其 front 内获得无穷距离"
+    );
+    assert!(distances[4].is_finite());
+}
+
 // ==================== nsga2_select ====================
 
 #[test]

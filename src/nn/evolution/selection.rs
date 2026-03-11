@@ -142,43 +142,62 @@ pub(crate) fn crowding_distance(scores: &[FitnessScore]) -> Vec<f32> {
     if n == 0 {
         return Vec::new();
     }
-    if n <= 2 {
-        return vec![f32::INFINITY; n];
-    }
 
     let points: Vec<ObjectivePoint> = scores.iter().map(objective_point).collect();
     let m = points[0].dim();
     if m == 0 {
         return vec![0.0; n];
     }
+    let ranks = pareto_rank(scores);
 
     let mut distances = vec![0.0f32; n];
-    let mut indices: Vec<usize> = (0..n).collect();
+    let max_rank = ranks.iter().copied().max().unwrap_or(0);
 
-    for dim in 0..m {
-        indices.sort_unstable_by(|&a, &b| {
-            points[a].values[dim]
-                .partial_cmp(&points[b].values[dim])
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+    for rank in 0..=max_rank {
+        let mut indices: Vec<usize> = ranks
+            .iter()
+            .enumerate()
+            .filter(|&(_, r)| *r == rank)
+            .map(|(i, _)| i)
+            .collect();
 
-        let min_val = points[indices[0]].values[dim];
-        let max_val = points[indices[n - 1]].values[dim];
-        let range = max_val - min_val;
-
-        if !range.is_finite() || range == 0.0 {
+        if indices.is_empty() {
+            continue;
+        }
+        if indices.len() <= 2 {
+            for &idx in &indices {
+                distances[idx] = f32::INFINITY;
+            }
             continue;
         }
 
-        // 边界点获得无穷距离
-        distances[indices[0]] = f32::INFINITY;
-        distances[indices[n - 1]] = f32::INFINITY;
+        for dim in 0..m {
+            indices.sort_unstable_by(|&a, &b| {
+                points[a].values[dim]
+                    .partial_cmp(&points[b].values[dim])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
-        // 内部点：归一化距离
-        for k in 1..(n - 1) {
-            let prev = points[indices[k - 1]].values[dim];
-            let next = points[indices[k + 1]].values[dim];
-            distances[indices[k]] += (next - prev).abs() / range;
+            let min_val = points[indices[0]].values[dim];
+            let max_val = points[*indices.last().unwrap()].values[dim];
+            let range = max_val - min_val;
+
+            if !range.is_finite() || range == 0.0 {
+                continue;
+            }
+
+            // 边界点获得无穷距离
+            distances[indices[0]] = f32::INFINITY;
+            distances[*indices.last().unwrap()] = f32::INFINITY;
+
+            // 内部点：归一化距离
+            for k in 1..(indices.len() - 1) {
+                let prev = points[indices[k - 1]].values[dim];
+                let next = points[indices[k + 1]].values[dim];
+                if distances[indices[k]].is_finite() {
+                    distances[indices[k]] += (next - prev).abs() / range;
+                }
+            }
         }
     }
 
@@ -310,6 +329,7 @@ pub(crate) fn update_archive<T: Clone>(
 /// 判断 archive 是否发生了实质变化（收敛检测用）
 ///
 /// 比较两个 archive 快照的 objective 值集合是否一致（容忍浮点误差）。
+#[allow(dead_code)]
 pub(crate) fn archive_changed(
     prev_scores: &[FitnessScore],
     next_scores: &[FitnessScore],

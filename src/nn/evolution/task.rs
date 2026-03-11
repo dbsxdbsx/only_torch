@@ -13,7 +13,9 @@
  * - 正确性层：二值解码、阈值绑定（分类场景必需）
  */
 
+use rand::Rng;
 use rand::rngs::StdRng;
+use std::sync::Arc;
 
 use crate::metrics;
 use crate::nn::{Adam, GraphError, Optimizer, SGD, Var, VarLossOps};
@@ -123,11 +125,12 @@ pub trait EvolutionTask {
 /// - 平坦数据：每个样本 `[input_dim]` → stack 为 `[n, input_dim]`
 /// - 序列数据：每个样本 `[seq_len, input_dim]` → 变长零填充后 stack 为 `[n, max_seq, input_dim]`
 /// - 空间数据：每个样本 `[C, H, W]` → stack 为 `[n, C, H, W]`
+#[derive(Clone)]
 pub struct SupervisedTask {
-    train_x: Tensor, // [n, input_dim] / [n, seq_len, input_dim] / [n, C, H, W]
-    train_y: Tensor, // [n, output_dim]
-    test_x: Tensor,  // 同 train_x
-    test_y: Tensor,  // 同 train_y
+    train_x: Arc<Tensor>, // [n, input_dim] / [n, seq_len, input_dim] / [n, C, H, W]
+    train_y: Arc<Tensor>, // [n, output_dim]
+    test_x: Arc<Tensor>,  // 同 train_x
+    test_y: Arc<Tensor>,  // 同 train_y
     metric: TaskMetric,
     batch_size: Option<usize>, // None = 自动策略，Some = 显式指定
 }
@@ -205,10 +208,10 @@ impl SupervisedTask {
         let test_y_refs: Vec<&Tensor> = test_data.1.iter().collect();
 
         Ok(Self {
-            train_x: train_x_stacked,
-            train_y: Tensor::stack(&train_y_refs, 0),
-            test_x: test_x_stacked,
-            test_y: Tensor::stack(&test_y_refs, 0),
+            train_x: Arc::new(train_x_stacked),
+            train_y: Arc::new(Tensor::stack(&train_y_refs, 0)),
+            test_x: Arc::new(test_x_stacked),
+            test_y: Arc::new(Tensor::stack(&test_y_refs, 0)),
             metric,
             batch_size: None,
         })
@@ -244,7 +247,7 @@ impl EvolutionTask for SupervisedTask {
         genome: &NetworkGenome,
         build: &BuildResult,
         convergence: &ConvergenceConfig,
-        _rng: &mut StdRng,
+        rng: &mut StdRng,
     ) -> Result<f32, GraphError> {
         assert!(
             genome.training_config.weight_decay == 0.0,
@@ -307,11 +310,16 @@ impl EvolutionTask for SupervisedTask {
                 let mut epoch_loss_sum = 0.0;
                 let mut n_batches = 0;
                 let mut offset = 0;
+                let shuffle_seed: u64 = rng.r#gen();
+                let mut shuffled_x = self.train_x.as_ref().clone();
+                let mut shuffled_y = self.train_y.as_ref().clone();
+                shuffled_x.shuffle_mut_seeded(Some(0), shuffle_seed);
+                shuffled_y.shuffle_mut_seeded(Some(0), shuffle_seed);
 
                 while offset < n_samples {
                     let end = (offset + bs).min(n_samples);
-                    let batch_x = self.train_x.narrow(0, offset, end - offset);
-                    let batch_y = self.train_y.narrow(0, offset, end - offset);
+                    let batch_x = shuffled_x.narrow(0, offset, end - offset);
+                    let batch_y = shuffled_y.narrow(0, offset, end - offset);
 
                     build.input.set_value(&batch_x)?;
                     target.set_value(&batch_y)?;

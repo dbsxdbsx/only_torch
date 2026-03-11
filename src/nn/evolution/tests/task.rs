@@ -791,6 +791,66 @@ fn test_mini_batch_evaluate_still_full_batch() {
     assert!(score.primary >= 0.0 && score.primary <= 1.0);
 }
 
+// ==================== mini-batch shuffle ====================
+
+#[test]
+fn test_mini_batch_shuffle_produces_different_trajectories() {
+    // 验证 mini-batch 训练的 shuffle 产生不同的训练轨迹
+    // 策略：用不同的 rng seed 训练同一模型，若 shuffle 生效，
+    // 不同 seed 应导致不同的最终 loss
+    let data = medium_data(200); // 200 样本，触发 mini-batch 路径
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap();
+
+    let convergence = ConvergenceConfig {
+        budget: TrainingBudget::FixedEpochs(5),
+        ..Default::default()
+    };
+
+    let get_loss = |seed: u64| -> f32 {
+        let genome = genome_with_hidden(2, 1);
+        let mut rng = StdRng::seed_from_u64(seed);
+        let build = build_and_restore(&genome, &mut rng);
+        task.train(&genome, &build, &convergence, &mut rng).unwrap()
+    };
+
+    let loss_a = get_loss(100);
+    let loss_b = get_loss(200);
+    let loss_c = get_loss(300);
+
+    // 三个不同 seed 中，至少应有两个产生不同的 loss
+    let all_same = (loss_a - loss_b).abs() < 1e-8 && (loss_b - loss_c).abs() < 1e-8;
+    assert!(
+        !all_same,
+        "mini-batch shuffle 应导致不同 seed 产生不同 loss: a={loss_a}, b={loss_b}, c={loss_c}"
+    );
+}
+
+#[test]
+fn test_mini_batch_same_seed_reproducible() {
+    // 同一 seed 下 mini-batch shuffle 应可复现
+    let data = medium_data(200);
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap();
+
+    let convergence = ConvergenceConfig {
+        budget: TrainingBudget::FixedEpochs(3),
+        ..Default::default()
+    };
+
+    let get_loss = |seed: u64| -> f32 {
+        let genome = genome_with_hidden(2, 1);
+        let mut rng = StdRng::seed_from_u64(seed);
+        let build = build_and_restore(&genome, &mut rng);
+        task.train(&genome, &build, &convergence, &mut rng).unwrap()
+    };
+
+    let loss_1 = get_loss(42);
+    let loss_2 = get_loss(42);
+    assert!(
+        (loss_1 - loss_2).abs() < 1e-6,
+        "同 seed mini-batch 训练应可复现: {loss_1} vs {loss_2}"
+    );
+}
+
 // ==================== 序列数据检测 ====================
 
 fn seq_data_fixed(n: usize, seq_len: usize, input_dim: usize) -> (Vec<Tensor>, Vec<Tensor>) {
