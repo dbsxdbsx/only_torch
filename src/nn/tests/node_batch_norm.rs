@@ -20,6 +20,16 @@
 use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// 创建默认的共享 running stats（running_mean=0, running_var=1）
+fn default_running_stats(num_features: usize) -> (Rc<RefCell<Tensor>>, Rc<RefCell<Tensor>>) {
+    (
+        Rc::new(RefCell::new(Tensor::zeros(&[num_features]))),
+        Rc::new(RefCell::new(Tensor::ones(&[num_features]))),
+    )
+}
 
 // ==================== 前向传播测试（训练模式）====================
 
@@ -44,9 +54,10 @@ fn test_batch_norm_op_forward_2d() {
         .borrow_mut()
         .create_basic_input_node(&[4, 3], Some("x"))
         .unwrap();
+    let (rm, rv) = default_running_stats(3);
     let bn = inner
         .borrow_mut()
-        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, Some("bn"))
+        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, rm, rv, Some("bn"))
         .unwrap();
 
     #[rustfmt::skip]
@@ -82,9 +93,10 @@ fn test_batch_norm_op_forward_4d() {
         .borrow_mut()
         .create_basic_input_node(&[2, 2, 2, 2], Some("x"))
         .unwrap();
+    let (rm, rv) = default_running_stats(2);
     let bn = inner
         .borrow_mut()
-        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, Some("bn"))
+        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, rm, rv, Some("bn"))
         .unwrap();
 
     let data: Vec<f32> = (1..=16).map(|x| x as f32).collect();
@@ -116,9 +128,10 @@ fn test_batch_norm_op_eval_mode() {
         .borrow_mut()
         .create_basic_input_node(&[4, 3], Some("x"))
         .unwrap();
+    let (rm, rv) = default_running_stats(3);
     let bn = inner
         .borrow_mut()
-        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, Some("bn"))
+        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, rm, rv, Some("bn"))
         .unwrap();
 
     #[rustfmt::skip]
@@ -162,9 +175,10 @@ fn test_batch_norm_op_vjp_sum_grad() -> Result<(), GraphError> {
         .borrow_mut()
         .create_basic_input_node(&[4, 3], Some("x"))
         .unwrap();
+    let (rm, rv) = default_running_stats(3);
     let bn = inner
         .borrow_mut()
-        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, Some("bn"))
+        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, rm, rv, Some("bn"))
         .unwrap();
 
     #[rustfmt::skip]
@@ -209,11 +223,14 @@ fn test_batch_norm_op_backward_e2e() -> Result<(), GraphError> {
     ], &[4, 3]))?;
 
     // 通过 graph inner 创建 BatchNormOp 节点
+    let (rm, rv) = default_running_stats(3);
     let bn = {
         let node = graph.inner_mut().create_batch_norm_op_node(
             std::rc::Rc::clone(x.node()),
             1e-5,
             0.1,
+            rm,
+            rv,
             Some("bn"),
         )?;
         crate::nn::Var::new_with_rc_graph(node, &graph.inner_rc())
@@ -244,9 +261,10 @@ fn test_create_batch_norm_op_node() {
         .create_basic_input_node(&[4, 3], Some("input"))
         .unwrap();
 
+    let (rm, rv) = default_running_stats(3);
     let bn = inner
         .borrow_mut()
-        .create_batch_norm_op_node(input.clone(), 1e-5, 0.1, Some("bn"))
+        .create_batch_norm_op_node(input.clone(), 1e-5, 0.1, rm, rv, Some("bn"))
         .unwrap();
 
     assert_eq!(bn.shape(), vec![4, 3]);
@@ -263,9 +281,10 @@ fn test_create_batch_norm_op_node_4d() {
         .create_basic_input_node(&[2, 16, 8, 8], None)
         .unwrap();
 
+    let (rm, rv) = default_running_stats(16);
     let bn = inner
         .borrow_mut()
-        .create_batch_norm_op_node(input.clone(), 1e-5, 0.1, None)
+        .create_batch_norm_op_node(input.clone(), 1e-5, 0.1, rm, rv, None)
         .unwrap();
 
     assert_eq!(bn.shape(), vec![2, 16, 8, 8]);
@@ -280,6 +299,93 @@ fn test_batch_norm_op_rejects_1d_input() {
     use crate::nn::nodes::raw_node::BatchNormOp;
     use crate::nn::shape::DynamicShape;
 
-    let result = BatchNormOp::new(&[10], &DynamicShape::new(&[Some(10)]), 1e-5, 0.1);
+    let (rm, rv) = default_running_stats(10);
+    let result = BatchNormOp::new(&[10], &DynamicShape::new(&[Some(10)]), 1e-5, 0.1, rm, rv);
     assert!(result.is_err(), "1D 输入应被拒绝");
+}
+
+// ==================== 跨 forward 调用 running stats 持久化测试 ====================
+
+/// 测试 running stats 通过 Rc<RefCell> 在多个 BatchNormOp 节点间共享
+///
+/// 模拟实际训练场景：多次 forward 创建新节点，running stats 应持续累积。
+/// 最后在 eval 模式下用新节点验证 running stats 已被正确积累。
+#[test]
+fn test_batch_norm_op_running_stats_persist_across_forwards() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 共享 running stats
+    let (rm, rv) = default_running_stats(3);
+
+    // 模拟多次 forward（每次创建新的 BatchNormOp 节点，共享同一 running stats）
+    for step in 0..5 {
+        let x = inner
+            .borrow_mut()
+            .create_basic_input_node(&[4, 3], None)
+            .unwrap();
+        let bn = inner
+            .borrow_mut()
+            .create_batch_norm_op_node(
+                x.clone(), 1e-5, 0.1,
+                Rc::clone(&rm), Rc::clone(&rv), None,
+            )
+            .unwrap();
+
+        #[rustfmt::skip]
+        x.set_value(Some(&Tensor::new(&[
+            1., 2., 3.,
+            4., 5., 6.,
+            7., 8., 9.,
+            10., 11., 12.,
+        ], &[4, 3]))).unwrap();
+
+        bn.forward_recursive((step + 1) as u64, true).unwrap();
+    }
+
+    // 验证 running stats 已从默认值改变
+    let rm_val = rm.borrow();
+    let rv_val = rv.borrow();
+
+    // running_mean 应不再是全 0（初始值）
+    let rm_sum: f32 = rm_val.data_as_slice().iter().map(|v| v.abs()).sum();
+    assert!(rm_sum > 0.1, "running_mean 应已从 0 更新: {rm_sum}");
+
+    // running_var 应不再是全 1（初始值）
+    // 经过多次 EMA 更新，var 会偏离 1.0
+    let rv_data = rv_val.data_as_slice();
+    let all_one = rv_data.iter().all(|&v| (v - 1.0).abs() < 1e-6);
+    assert!(!all_one, "running_var 应已从 1.0 更新");
+
+    // 用新节点在 eval 模式验证 running stats 正确使用
+    let x_eval = inner
+        .borrow_mut()
+        .create_basic_input_node(&[4, 3], None)
+        .unwrap();
+    drop(rm_val);
+    drop(rv_val);
+    let bn_eval = inner
+        .borrow_mut()
+        .create_batch_norm_op_node(
+            x_eval.clone(), 1e-5, 0.1,
+            Rc::clone(&rm), Rc::clone(&rv), None,
+        )
+        .unwrap();
+
+    #[rustfmt::skip]
+    x_eval.set_value(Some(&Tensor::new(&[
+        1., 2., 3.,
+        4., 5., 6.,
+        7., 8., 9.,
+        10., 11., 12.,
+    ], &[4, 3]))).unwrap();
+
+    bn_eval.forward_recursive(100, false).unwrap();
+
+    let eval_output = bn_eval.value().unwrap();
+    assert_eq!(eval_output.shape(), &[4, 3]);
+
+    // eval 模式应产生非零输出（使用积累的 running stats）
+    let sum: f32 = eval_output.data_as_slice().iter().map(|v| v.abs()).sum();
+    assert!(sum > 0.1, "eval 模式应使用积累的 running stats 产生非零输出");
 }

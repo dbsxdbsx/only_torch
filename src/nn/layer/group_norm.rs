@@ -11,7 +11,7 @@
  */
 
 use crate::nn::graph::NodeGroupContext;
-use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
+use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var, VarShapeOps};
 use crate::tensor::Tensor;
 
 /// 分组归一化层
@@ -157,22 +157,18 @@ impl GroupNorm {
         let x_hat = graph_rc.input(&x_hat_tensor).expect("GroupNorm: 创建 x_hat 节点失败");
 
         // gamma/beta 形状 [1, C]，需要 reshape 以匹配输入维度
-        // [1, C] → [1, C, 1, 1, ...] 用于广播
-        if ndim > 2 {
+        // [1, C] → [1, C, 1, 1, ...] 用于广播（使用 Var.reshape 保持梯度链）
+        let (gamma, beta) = if ndim > 2 {
             let mut param_shape = vec![1usize; ndim];
             param_shape[1] = c;
-            let gamma_data = self.gamma.value().expect("gamma").unwrap();
-            let beta_data = self.beta.value().expect("beta").unwrap();
-            let gamma_reshaped = graph_rc
-                .input(&gamma_data.reshape(&param_shape))
-                .expect("gamma reshape 失败");
-            let beta_reshaped = graph_rc
-                .input(&beta_data.reshape(&param_shape))
-                .expect("beta reshape 失败");
-            &(&x_hat * &gamma_reshaped) + &beta_reshaped
+            (
+                self.gamma.reshape(&param_shape).expect("GroupNorm gamma reshape 失败"),
+                self.beta.reshape(&param_shape).expect("GroupNorm beta reshape 失败"),
+            )
         } else {
-            &(&x_hat * &self.gamma) + &self.beta
-        }
+            (self.gamma.clone(), self.beta.clone())
+        };
+        &(&x_hat * &gamma) + &beta
     }
 }
 

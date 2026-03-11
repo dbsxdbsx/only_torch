@@ -1420,11 +1420,17 @@ impl GraphInner {
     /// 创建 BatchNormOp 节点
     ///
     /// 批归一化核心计算（不含 gamma/beta）
+    ///
+    /// # 参数
+    /// - `running_mean`/`running_var`: 共享的 running stats，由 BatchNorm 层持有，
+    ///   跨 forward 调用持久化 EMA 统计量。
     pub fn create_batch_norm_op_node(
         &mut self,
         input: Rc<NodeInner>,
         eps: f32,
         momentum: f32,
+        running_mean: std::rc::Rc<std::cell::RefCell<crate::tensor::Tensor>>,
+        running_var: std::rc::Rc<std::cell::RefCell<crate::tensor::Tensor>>,
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
         use crate::nn::nodes::raw_node::BatchNormOp;
@@ -1432,7 +1438,10 @@ impl GraphInner {
         let input_shape = input.shape();
         let input_dynamic_shape = input.dynamic_shape();
 
-        let bn = BatchNormOp::new(&input_shape, &input_dynamic_shape, eps, momentum)?;
+        let bn = BatchNormOp::new(
+            &input_shape, &input_dynamic_shape, eps, momentum,
+            running_mean, running_var,
+        )?;
         let raw_node: NodeType = bn.into();
 
         self.create_node_inner(raw_node, name, "batch_norm", vec![input])

@@ -23,6 +23,8 @@ use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// 批归一化运算节点（不含 gamma/beta）
 ///
@@ -52,12 +54,10 @@ pub(crate) struct BatchNormOp {
     momentum: f32,
     /// 训练/评估模式
     is_training: bool,
-    /// 运行均值 [C]（不参与梯度计算）
-    running_mean: Tensor,
-    /// 运行方差 [C]（不参与梯度计算）
-    running_var: Tensor,
-    /// 是否已初始化 running stats
-    initialized: bool,
+    /// 运行均值 [C]（共享引用，跨 forward 调用持久化）
+    running_mean: Rc<RefCell<Tensor>>,
+    /// 运行方差 [C]（共享引用，跨 forward 调用持久化）
+    running_var: Rc<RefCell<Tensor>>,
     // ---- 缓存（反向传播用）----
     /// 归一化后的值 x_hat
     x_hat_cache: Option<Tensor>,
@@ -80,6 +80,8 @@ impl BatchNormOp {
         parent_dynamic_shape: &DynamicShape,
         eps: f32,
         momentum: f32,
+        running_mean: Rc<RefCell<Tensor>>,
+        running_var: Rc<RefCell<Tensor>>,
     ) -> Result<Self, GraphError> {
         if parent_shape.len() < 2 {
             return Err(GraphError::InvalidOperation(
@@ -89,10 +91,6 @@ impl BatchNormOp {
 
         let num_features = parent_shape[1];
         let supports_dynamic = parent_dynamic_shape.dims().first() == Some(&None);
-
-        // 初始化 running stats
-        let running_mean = Tensor::zeros(&[num_features]);
-        let running_var = Tensor::ones(&[num_features]);
 
         Ok(Self {
             id: None,
@@ -108,7 +106,6 @@ impl BatchNormOp {
             is_training: true,
             running_mean,
             running_var,
-            initialized: false,
             x_hat_cache: None,
             std_cache: None,
             n_reduce: 0,
@@ -234,11 +231,14 @@ impl TraitNode for BatchNormOp {
             let n = self.n_reduce as f32;
             let unbiased_var = &var_1d * (n / (n - 1.0));
 
-            self.running_mean = &(&self.running_mean * (1.0 - self.momentum))
-                + &(&mean_1d * self.momentum);
-            self.running_var = &(&self.running_var * (1.0 - self.momentum))
-                + &(&unbiased_var * self.momentum);
-            self.initialized = true;
+            {
+                let mut rm = self.running_mean.borrow_mut();
+                *rm = &(&*rm * (1.0 - self.momentum)) + &(&mean_1d * self.momentum);
+            }
+            {
+                let mut rv = self.running_var.borrow_mut();
+                *rv = &(&*rv * (1.0 - self.momentum)) + &(&unbiased_var * self.momentum);
+            }
 
             self.x_hat_cache = Some(x_hat.clone());
             self.std_cache = Some(std);
@@ -249,8 +249,8 @@ impl TraitNode for BatchNormOp {
             let mut bcast_shape = vec![1usize; ndim];
             bcast_shape[1] = self.num_features;
 
-            let mean = self.running_mean.reshape(&bcast_shape);
-            let var = self.running_var.reshape(&bcast_shape);
+            let mean = self.running_mean.borrow().reshape(&bcast_shape);
+            let var = self.running_var.borrow().reshape(&bcast_shape);
             let std = (&var + self.eps).powf(0.5);
 
             let x_hat = &(x - &mean) / &std;

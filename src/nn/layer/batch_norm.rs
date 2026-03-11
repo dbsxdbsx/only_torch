@@ -17,7 +17,10 @@
  */
 
 use crate::nn::graph::NodeGroupContext;
-use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
+use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var, VarShapeOps};
+use crate::tensor::Tensor;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// 批归一化层
 ///
@@ -48,6 +51,10 @@ pub struct BatchNorm {
     eps: f32,
     /// momentum
     momentum: f32,
+    /// 运行均值 [C]（跨 forward 调用持久化，与 BatchNormOp 节点共享）
+    running_mean: Rc<RefCell<Tensor>>,
+    /// 运行方差 [C]（跨 forward 调用持久化，与 BatchNormOp 节点共享）
+    running_var: Rc<RefCell<Tensor>>,
 }
 
 impl BatchNorm {
@@ -74,6 +81,10 @@ impl BatchNorm {
 
         let instance_id = graph.inner_mut().next_node_group_instance_id();
 
+        // 初始化共享 running stats
+        let running_mean = Rc::new(RefCell::new(Tensor::zeros(&[num_features])));
+        let running_var = Rc::new(RefCell::new(Tensor::ones(&[num_features])));
+
         Ok(Self {
             gamma,
             beta,
@@ -82,6 +93,8 @@ impl BatchNorm {
             instance_id,
             eps,
             momentum,
+            running_mean,
+            running_var,
         })
     }
 
@@ -92,7 +105,7 @@ impl BatchNorm {
     /// # 参数
     /// - `x`: 输入 Var，形状 [N, C, ...] 其中 C = `num_features`
     pub fn forward(&self, x: impl IntoVar) -> Var {
-        use std::rc::Rc;
+        use std::rc::Rc as StdRc;
         let x = x
             .into_var(&self.gamma.get_graph())
             .expect("BatchNorm 输入转换失败");
@@ -106,24 +119,40 @@ impl BatchNorm {
         _guard.tag_existing(&self.beta);
 
         // 1. BatchNormOp: x → x_hat（归一化）
+        //    传入共享的 running stats，确保跨 forward 调用持久化
         let x_hat = {
             let bn_node = graph
                 .inner_mut()
                 .create_batch_norm_op_node(
-                    Rc::clone(x.node()),
+                    StdRc::clone(x.node()),
                     self.eps,
                     self.momentum,
+                    Rc::clone(&self.running_mean),
+                    Rc::clone(&self.running_var),
                     Some(&format!("{}_norm", self.name)),
                 )
                 .expect("BatchNorm 归一化失败");
             Var::new_with_rc_graph(bn_node, &graph.inner_rc())
         };
 
-        // 2. gamma * x_hat（广播乘法：gamma [1, C] 会自动广播到 [N, C, ...]）
-        let scaled = &x_hat * &self.gamma;
+        // 2. 对 4D+ 输入，reshape gamma/beta 从 [1, C] 到 [1, C, 1, 1, ...]
+        //    使通道维正确对齐（NumPy 广播从右对齐，[1, C] 会对齐到最后一维而非通道维）
+        let x_hat_node = x_hat.node();
+        let ndim = x_hat_node.value_expected_shape().len();
 
-        // 3. + beta
-        &scaled + &self.beta
+        let (gamma, beta) = if ndim > 2 {
+            let mut param_shape = vec![1usize; ndim];
+            param_shape[1] = self.num_features;
+            (
+                self.gamma.reshape(&param_shape).expect("BatchNorm gamma reshape 失败"),
+                self.beta.reshape(&param_shape).expect("BatchNorm beta reshape 失败"),
+            )
+        } else {
+            (self.gamma.clone(), self.beta.clone())
+        };
+
+        // 3. gamma * x_hat + beta
+        &(&x_hat * &gamma) + &beta
     }
 
     /// 获取通道数

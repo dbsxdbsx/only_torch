@@ -16,13 +16,13 @@
 //! cargo run --example chinese_chess
 //! ```
 //!
-//! ## 网络架构
+//! ## 网络架构 (与 PyTorch 验证版一致)
 //! ```text
 //! Input [batch, 3, 28, 28]
-//!   → Conv1 (3→16, 3x3, pad=1) → ReLU → MaxPool(2x2)   [batch, 16, 14, 14]
-//!   → Conv2 (16→32, 3x3, pad=1) → ReLU → MaxPool(2x2)  [batch, 32, 7, 7]
-//!   → Flatten                                              [batch, 1568]
-//!   → FC1 (1568→128) → ReLU → Dropout(0.2)
+//!   → Conv1 (3→16, 3x3, pad=1) → BN → ReLU → MaxPool(2x2)   [batch, 16, 14, 14]
+//!   → Conv2 (16→32, 3x3, pad=1) → BN → ReLU → MaxPool(2x2)  [batch, 32, 7, 7]
+//!   → Flatten                                                   [batch, 1568]
+//!   → FC1 (1568→128) → ReLU → Dropout(0.3)
 //!   → FC2 (128→15)
 //! ```
 //!
@@ -108,7 +108,7 @@ fn main() -> Result<(), GraphError> {
         })
         .sum();
 
-    println!("\n  网络: Conv(3→16) → Pool → Conv(16→32) → Pool → FC(1568→128) → FC(128→15)");
+    println!("\n  网络: Conv(3→16) → BN → Pool → Conv(16→32) → BN → Pool → FC(1568→128) → FC(128→15)");
     println!("  参数量: {param_count}");
     println!("  数据增强: ColorJitter(b=0.15, c=0.15, s=0.1)");
 

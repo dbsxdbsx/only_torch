@@ -144,6 +144,68 @@ fn test_batch_norm_layer_backward_e2e() -> Result<(), GraphError> {
     Ok(())
 }
 
+// ==================== 4D 非对称维度测试 ====================
+
+/// 测试 BatchNorm 4D 非对称维度前向传播 [N=2, C=3, H=4, W=5]
+///
+/// 这个测试确保 gamma/beta 的 [1,C] reshape 到 [1,C,1,1] 后能正确广播。
+/// 之前的 [2,2,2,2] 测试因为所有维度相同，无法捕捉广播对齐错误。
+#[test]
+fn test_batch_norm_layer_forward_4d_nonsquare() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let bn = BatchNorm::new(&graph, 3, 1e-5, 0.1, "bn_ns")?;
+
+    // [2, 3, 4, 5] = 120 个元素
+    let data: Vec<f32> = (1..=120).map(|x| x as f32).collect();
+    let x = graph.input(&Tensor::new(&data, &[2, 3, 4, 5]))?;
+
+    let y = bn.forward(&x);
+    y.forward()?;
+
+    let output = y.value()?.unwrap();
+    assert_eq!(output.shape(), &[2, 3, 4, 5]);
+
+    // 均值不为 0（确认确实计算了）
+    let first = output[[0, 0, 0, 0]];
+    assert!(first.abs() > 0.1, "4D 非对称输出不应该为 0: {first}");
+
+    Ok(())
+}
+
+/// 测试 BatchNorm 4D 非对称维度反向传播，确认 gamma/beta 梯度正确
+#[test]
+fn test_batch_norm_layer_backward_4d_nonsquare() -> Result<(), GraphError> {
+    let graph = Graph::new();
+
+    let bn = BatchNorm::new(&graph, 3, 1e-5, 0.1, "bn_ns")?;
+
+    let data: Vec<f32> = (1..=120).map(|x| x as f32).collect();
+    let x = graph.input(&Tensor::new(&data, &[2, 3, 4, 5]))?;
+
+    let y = bn.forward(&x);
+    let target = graph.input(&Tensor::ones(&[2, 3, 4, 5]))?;
+    let loss = y.mse_loss(&target)?;
+
+    graph.zero_grad()?;
+    let loss_val = loss.backward()?;
+    assert!(loss_val > 0.0, "loss 应为正数");
+
+    // gamma 和 beta 都应有梯度，形状为 [1, 3]
+    let gamma_grad = bn.gamma().grad()?.expect("gamma 应有 grad");
+    assert_eq!(gamma_grad.shape(), &[1, 3]);
+    // gamma_grad 不应全为 0
+    let gamma_grad_sum: f32 = gamma_grad.data_as_slice().iter().map(|v| v.abs()).sum();
+    assert!(gamma_grad_sum > 1e-6, "gamma_grad 不应全为 0");
+
+    let beta_grad = bn.beta().grad()?.expect("beta 应有 grad");
+    assert_eq!(beta_grad.shape(), &[1, 3]);
+    let beta_grad_sum: f32 = beta_grad.data_as_slice().iter().map(|v| v.abs()).sum();
+    assert!(beta_grad_sum > 1e-6, "beta_grad 不应全为 0");
+
+    Ok(())
+}
+
 // ==================== Train/Eval 切换测试 ====================
 
 /// 测试 train/eval 模式切换
@@ -183,6 +245,56 @@ fn test_batch_norm_layer_train_eval_switch() -> Result<(), GraphError> {
         .map(|(a, b)| (a - b).abs())
         .sum();
     assert!(diff > 0.1, "训练模式和评估模式的输出应不同");
+
+    Ok(())
+}
+
+/// 测试 running stats 跨多次 forward 调用持久化（layer 级别）
+///
+/// 模拟实际训练场景：多次调用 bn.forward() 后切换 eval 模式，
+/// eval 应使用训练期间累积的 running stats，而不是默认值。
+///
+/// 这个测试能捕捉到之前的 bug：每次 forward 创建新 BatchNormOp 节点，
+/// running stats 丢失导致 eval 用默认值。
+#[test]
+fn test_batch_norm_layer_running_stats_across_forwards() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let bn = BatchNorm::new(&graph, 3, 1e-5, 0.1, "bn")?;
+
+    // 训练模式：多次 forward（模拟训练循环中每个 batch 创建新图）
+    graph.train();
+    for _ in 0..10 {
+        let x = graph.input(&Tensor::new(
+            &(1..=12).map(|v| v as f32).collect::<Vec<_>>(),
+            &[4, 3],
+        ))?;
+        let y = bn.forward(&x);
+        y.forward()?;
+    }
+
+    // eval 模式：用新输入 forward
+    graph.eval();
+    let x_eval = graph.input(&Tensor::new(
+        &(1..=12).map(|v| v as f32).collect::<Vec<_>>(),
+        &[4, 3],
+    ))?;
+    let y_eval = bn.forward(&x_eval);
+    y_eval.forward()?;
+    let eval_output = y_eval.value()?.unwrap();
+
+    // 如果 running stats 正确累积，eval 输出应与 train 输出有差异
+    // （running_mean 不是全 0，running_var 不是全 1）
+    //
+    // 如果 running stats 丢失（用默认 mean=0, var=1），
+    // 则 eval 输出≈ gamma * x + beta = x（因为 gamma=1, beta=0）
+    // 第一个元素是原始值 1.0。
+    //
+    // 如果 running stats 正确，eval 输出应是归一化后的值，和 1.0 有显著差异。
+    let first_val = eval_output[[0, 0]];
+    assert!(
+        (first_val - 1.0).abs() > 0.1,
+        "eval 输出不应接近原始值 1.0（说明 running stats 丢失），实际值: {first_val}"
+    );
 
     Ok(())
 }
