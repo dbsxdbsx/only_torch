@@ -81,13 +81,14 @@ Evolution::supervised(train, test, TaskMetric::Accuracy)
     .with_target_metric(0.95)         // 目标指标值（默认 1.0）
     .with_seed(42)                    // 随机种子（可复现）
     .with_max_generations(200)        // 最大代数（默认 100）
+    .with_offspring_count(6)          // (1+λ) 中的 λ（默认 4）
     .with_batch_size(64)              // 显式 batch size（默认自动策略）
     .with_verbose(false)              // 关闭日志（默认 true）
-    .with_convergence(config)         // 收敛检测配置
-    .with_constraints(constraints)    // 网络规模约束
+    .with_convergence(config)         // 收敛检测配置（Phase 2 使用）
+    .with_constraints(constraints)    // 网络规模约束（默认 auto 推导）
     .with_stagnation_patience(30)     // 停滞检测耐心值（默认 20）
     .with_eval_runs(3)                // 多次评估取保守值（默认 1）
-    .with_mutation_registry(registry) // 自定义变异注册表
+    .with_mutation_registry(registry) // 自定义变异注册表（覆盖两阶段）
     .with_callback(my_callback)       // 自定义回调
     .run()
 ```
@@ -120,16 +121,31 @@ Evolution::supervised(train, test, TaskMetric::Accuracy)
 
 系统采用 **Genome-Centric** 路线：每代从基因组（`NetworkGenome`）重建计算图，而非直接修改图。
 
-```
-每一代 (generation):
+采用 **(1+λ) 搜索策略**：每代从 best genome 生成 λ 个变体（默认 λ=4），全部训练评估后选最佳。相比传统 (1+1) hill-climbing，每代评估多个候选，跳出局部最优概率显著提升。
 
-  1. build()            从 Genome 构建计算图 → BuildResult
-  2. restore_weights()  从 weight_snapshots 恢复权重（Lamarckian 继承）
-  3. train()            梯度训练直到收敛 → loss
-  4. capture_weights()  将训练后的权重保存回 Genome
-  5. evaluate()         计算 fitness（如 Accuracy）
-  6. 接受 / 回滚        fitness >= best → 接受；否则回滚到 best_genome
-  7. 变异               修改 Genome 拓扑或参数 → 下一代
+```
+自适应约束：用户未指定 with_constraints() 时，自动从数据维度推导 SizeConstraints
+随机爆发初始化：Generation 0 对 minimal genome 施加 K 次随机变异（K = max(2, min(8, max_layers/2))）
+两阶段训练预算：Phase 1（前 70% 代数）用 FixedEpochs 快速筛选；Phase 2（后 30%）用 UntilConverged 精炼
+两阶段变异权重：Phase 1 偏向结构探索（InsertLayer↑, Grow↑）；Phase 2 偏向超参调优（MutateLR↑, MutateOptimizer↑）
+
+每一代 (generation), 生成 λ 个候选:
+
+  Generation 0（爆发初始化）:
+    for each of λ candidates:
+      1. clone(minimal_genome)
+      2. 连续 K 次 apply_random() 变异
+      3. build → train → capture_weights → evaluate
+    选最佳作为 best_genome
+
+  Generation 1+（(1+λ) 搜索）:
+    for each of λ candidates:
+      1. clone(best_genome)
+      2. 单次变异（停滞时强制结构变异）
+      3. build → restore_weights → train → capture_weights → evaluate
+    best_child = λ 个候选中 fitness 最高者
+    if best_child >= best_score: accept(best_child)
+    else: rollback
 ```
 
 ### 2.2 信号职责分离
@@ -354,40 +370,51 @@ pub trait Mutation: Send + Sync {
 
 `MutationRegistry` 按权重随机选择可用变异并执行。`apply` 失败时自动排除并重试，直到成功或所有候选耗尽。
 
-### 5.2 默认注册表（12 + 条件变异）
+### 5.2 两阶段变异注册表
 
-基础 12 种变异始终注册，`MutateCellType`（序列模式）和 `MutateKernelSize`（空间模式）按数据形状条件注册。
+演化主循环自动切换两套变异注册表：Phase 1（前 70% 代数）偏向结构探索，Phase 2（后 30%）偏向超参调优。用户通过 `with_mutation_registry()` 传入自定义注册表时，两阶段均使用该单一注册表。
 
-**结构/参数变异（7 + 条件）**：
+`MutateCellType`（序列模式）和 `MutateKernelSize`（空间模式）按数据形状条件注册，两阶段权重相同（0.10）。
+
+**Phase 1：拓扑搜索（`phase1_registry`）**
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
-| `InsertLayer` | 0.15 | ✅ | 域感知：Flat 域选 Linear/Activation，Sequence 域选 RNN/LSTM/GRU，Spatial 域选 Conv2d(80%)/Pool2d(20%) |
-| `RemoveLayer` | 0.15 | ✅ | 随机移除非输出头的隐藏层（验证域链合法性） |
-| `ReplaceLayerType` | 0.10 | | Activation 内部互换（ReLU↔Tanh↔Sigmoid…共 13 种） |
-| `GrowHiddenSize` | 0.24 | | 增大 Linear/RNN/LSTM/GRU/Conv2d 的尺寸（+1 或 ×2） |
-| `ShrinkHiddenSize` | 0.29 | | 缩小 Linear/RNN/LSTM/GRU/Conv2d 的尺寸（-1 或 /2） |
+| `InsertLayer` | **0.25** | ✅ | 域感知：Flat 域选 Linear/Activation，Sequence 域选 RNN/LSTM/GRU，Spatial 域选 Conv2d(80%)/Pool2d(20%) |
+| `RemoveLayer` | 0.08 | ✅ | 随机移除非输出头的隐藏层（早期偏向增长） |
+| `ReplaceLayerType` | 0.04 | | Activation 内部互换（ReLU↔Tanh↔Sigmoid…共 13 种） |
+| `GrowHiddenSize` | **0.25** | | 增大尺寸（40% +step, 40% ×1.5, 20% ×2，step = max(1, current/4)） |
+| `ShrinkHiddenSize` | 0.08 | | 缩小尺寸（40% -step, 40% ×0.67, 20% ÷2） |
 | `MutateLayerParam` | 0.05 | | LeakyReLU/ELU alpha，Dropout p |
 | `MutateLossFunction` | 0.02 | | 切换兼容 loss（如 BCE↔MSE） |
-| `MutateCellType` | 0.10 | | Rnn↔Lstm↔Gru 循环层类型切换（仅序列模式注册） |
-| `MutateKernelSize` | 0.10 | | Conv2d kernel_size 在 {1,3,5,7} 中切换（仅空间模式注册） |
+| `MutateLearningRate` | 0.05 | | Log ladder 13 级 [1e-5, 1e-1] |
+| `MutateOptimizer` | 0.02 | | Adam↔SGD 切换 + lr band snap |
 
-> Shrink 权重 > Grow，鼓励演化出更紧凑的网络（奥卡姆剃刀）。
+> Phase 1 特点：InsertLayer 和 Grow 权重大幅提升，鼓励快速探索网络拓扑；Remove 和 Shrink 权重压低，避免早期裁剪。
 
-**SkipEdge 变异（3 种）**：
+**Phase 2：精炼（`phase2_registry`）**
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
-| `AddSkipEdge` | 0.08 | ✅ | DAG 前向约束 + 策略继承 + 试探式维度验证 |
-| `RemoveSkipEdge` | 0.05 | ✅ | 从 skip_edges 移除 |
-| `MutateAggregateStrategy` | 0.03 | | 目标层组级原子操作，同一目标所有边统一切换 |
+| `InsertLayer` | 0.08 | ✅ | 同上 |
+| `RemoveLayer` | 0.08 | ✅ | 同上 |
+| `ReplaceLayerType` | 0.08 | | 同上 |
+| `GrowHiddenSize` | 0.15 | | 同上 |
+| `ShrinkHiddenSize` | 0.15 | | 同上 |
+| `MutateLayerParam` | 0.05 | | 同上 |
+| `MutateLossFunction` | 0.02 | | 同上 |
+| `MutateLearningRate` | **0.15** | | 同上 |
+| `MutateOptimizer` | **0.08** | | 同上 |
 
-**训练超参数变异（2 种）**：
+> Phase 2 特点：结构变异权重降低，超参数调优权重大幅提升（MutateLR 0.05→0.15，MutateOptimizer 0.02→0.08）。Grow/Shrink 对称化（各 0.15）以微调尺寸。
 
-| 变异 | 权重 | 核心逻辑 |
-|---|---|---|
-| `MutateLearningRate` | 0.05 | Log ladder 13 级 [1e-5, 1e-1]，80% 移 1 步 / 20% 移 2 步 |
-| `MutateOptimizer` | 0.02 | Adam↔SGD 切换 + lr band snap（避免裸切换必回滚） |
+**SkipEdge 变异（3 种，两阶段权重略有差异）**：
+
+| 变异 | Phase 1 | Phase 2 | 结构性 | 核心逻辑 |
+|---|---|---|---|---|
+| `AddSkipEdge` | 0.08 | 0.06 | ✅ | DAG 前向约束 + 策略继承 + 试探式维度验证 |
+| `RemoveSkipEdge` | 0.05 | 0.05 | ✅ | 从 skip_edges 移除 |
+| `MutateAggregateStrategy` | 0.03 | 0.03 | | 目标层组级原子操作，同一目标所有边统一切换 |
 
 ### 5.3 合法性保障
 
@@ -409,11 +436,11 @@ pub trait Mutation: Send + Sync {
 通过 `MutationRegistry` 注册自定义变异：
 
 ```rust
-let mut registry = MutationRegistry::default_registry(&metric);
+let mut registry = MutationRegistry::phase1_registry(&metric, false, false);
 registry.register(0.10, MyCustomMutation);
 
 Evolution::supervised(train, test, metric)
-    .with_mutation_registry(registry)
+    .with_mutation_registry(registry) // 覆盖两阶段，统一使用此注册表
     .run()
 ```
 
@@ -437,8 +464,14 @@ Evolution::supervised(train, test, metric)
 
 | 模式 | 用途 |
 |---|---|
-| `UntilConverged` | 默认，训练到收敛或 max_epochs |
-| `FixedEpochs(n)` | 预留：快速筛选候选架构（BOHB/Successive Halving 策略） |
+| `UntilConverged` | 训练到收敛或 max_epochs（Phase 2 使用） |
+| `FixedEpochs(n)` | 快速筛选候选架构（Phase 1 使用，`n = max(3, min(10, n_train/(batch_size*5)))`） |
+
+演化主循环自动分配两阶段训练预算：
+- **Phase 1（前 70% 代数）**：`FixedEpochs(fast_epochs)` — 低成本快速评估大量结构候选
+- **Phase 2（后 30% 代数）**：`UntilConverged`（用户 `ConvergenceConfig`）— 对有潜力拓扑做充分训练
+
+分界点：`phase1_gens = (max_generations * 0.7).round()`。阶段切换时不丢弃权重快照，Phase 2 直接在 Phase 1 最佳基因组上继续。
 
 ---
 
@@ -539,7 +572,11 @@ src/nn/evolution/
 | 决策 | 理由 |
 ||---|---|
 | Genome-Centric（每代重建图） | 基因组自包含，clone 即回滚，避免 Graph 内部状态纠缠 |
-| Mutation trait + 注册表 | 可插拔设计，添加新变异不修改 Evolution（EXAMM/LayerNAS 标准做法） |
+|| Mutation trait + 注册表 | 可插拔设计，添加新变异不修改 Evolution（EXAMM/LayerNAS 标准做法） |
+|| (1+λ) 搜索策略 | 每代评估 λ 个候选，保持单 genome 维护简洁性，跳出局部最优概率显著提升 |
+|| 数据驱动 auto_constraints | 用户无需配置约束，系统根据任务维度自动推导合理搜索空间 |
+|| 两阶段训练+变异切换 | 解决搜索效率 vs 评估精度矛盾；Phase1 快速探索拓扑，Phase2 精炼超参 |
+|| 随机爆发初始化 | 复用现有变异基础设施，零新增代码产生多样化初始候选 |
 | `>=` 非严格接受 | 解决 stepping stone 问题（XOR 等任务需多步结构变化才能突破） |
 | Fitness 驱动（非 loss） | 通用性：fitness 在所有范式中有意义；loss 不可跨架构比较 |
 | Tiebreak 分离（独立字段） | primary 保持纯指标值，避免 epsilon 融合污染日志和 target_metric 比较 |
@@ -567,7 +604,7 @@ src/nn/evolution/
 ### 11.2 添加新变异操作
 
 1. 实现 `Mutation` trait
-2. 在 `default_registry()` 中注册（或由用户通过 `with_mutation_registry()` 注册）
+2. 在 `phase1_registry()`/`phase2_registry()` 中注册（或由用户通过 `with_mutation_registry()` 注册）
 
 ### 11.3 支持新学习范式
 
@@ -642,7 +679,7 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 | 方向 | 难度 | 说明 |
 |---|---|---|
 | 种群演化 + 交叉 | 高 | 当前为单网络迭代，需引入种群管理和基因组对齐 |
-| Budget-based 训练（Successive Halving） | 低 | TrainingBudget::FixedEpochs 已预留 |
+| 并行化 λ 候选评估（rayon） | 中 | 算法逻辑不变，从串行切并发；需 EvolutionTask: Send+Sync |
 
 ---
 
@@ -685,15 +722,21 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 记忆单元类型由 `MutateCellType` 自动探索，`GrowHiddenSize` 扩展容量——联合搜索结构与参数。
 
-### MNIST CNN (input=1@28×28, output_dim=10, 1000 train / 500 test)
+### MNIST (input=1@28×28, output_dim=10, 1000 train / 500 test)
 
 ```
-[Gen  0] Input(1@28×28) → Flatten → [Linear(10)]                                     | fitness=0.xxx | minimal_spatial *
-         ↓ InsertLayer / GrowHiddenSize / ...
-         → 系统从纯 FC 出发，自主决定是否插入 Conv2d/Pool2d 或增加 FC 层。
+[Gen  0] 爆发初始化：λ=4 个候选，每个对 minimal_spatial 施加 K=5 次随机变异
+         候选可能产生：
+         - Flatten → Linear(48) → GELU → [Linear(10)]
+         - Conv2d(1→8,k=3) → Flatten → Linear(32) → [Linear(10)]
+         - Flatten → Linear(16) → Tanh → Linear(24) → [Linear(10)]
+         → 选 fitness 最高者作为 best_genome
+
+  Phase 1（Gen 1~70）：(1+λ) 搜索 + FixedEpochs 快速训练 + 结构探索变异权重
+  Phase 2（Gen 71~100）：(1+λ) 搜索 + UntilConverged 充分训练 + 超参调优变异权重
 ```
 
-初始架构 Flatten → [Linear(10)] 参数量约 7.9K（784×10 + 10），在 `max_total_params` 默认值 10K 下仍有增长空间。演化可自由探索纯 FC 或 Conv+FC 混合架构。
+自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params=101,632`、`max_hidden_size=196`、`min_hidden_size=16`，足以容纳 784→128→10 等效 MLP。演化可自由探索纯 FC 或 Conv+FC 混合架构。
 
 ---
 
@@ -708,4 +751,4 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-10*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-11*

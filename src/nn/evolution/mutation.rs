@@ -79,6 +79,65 @@ impl Default for SizeConstraints {
     }
 }
 
+impl SizeConstraints {
+    /// 数据驱动的自适应约束（用户未显式传入 `with_constraints()` 时自动使用）
+    ///
+    /// 根据任务的输入/输出维度、训练样本数、是否空间数据，自动推导合理的搜索空间约束。
+    /// 确保搜索空间足够容纳有效网络（如 MNIST 的 784→128→10 MLP）。
+    pub fn auto(
+        input_dim: usize,
+        output_dim: usize,
+        n_train: usize,
+        is_spatial: bool,
+        spatial_hw: Option<(usize, usize)>,
+    ) -> Self {
+        // flatten_dim：空间 = C*H*W，非空间 = input_dim
+        let flatten_dim = if let Some((h, w)) = spatial_hw {
+            input_dim * h * w
+        } else {
+            input_dim
+        };
+
+        // max_total_params
+        let base_params = if is_spatial {
+            // 以"两层卷积 + FC 头"为参考
+            let mlp_base = flatten_dim * 128 + 128 * output_dim;
+            mlp_base.max(50_000)
+        } else {
+            // 以"一层有效隐藏层"为参考
+            flatten_dim * 128 + 128 * output_dim
+        };
+        let data_factor = (n_train as f64 / 1000.0).sqrt().clamp(1.0, 10.0);
+        let max_total_params = ((base_params as f64 * data_factor) as usize).max(50_000);
+
+        // max_hidden_size
+        let max_hidden_size = if is_spatial {
+            (flatten_dim / 4).max(128)
+        } else {
+            (input_dim / 2).max(128)
+        }
+        .min(512);
+
+        // min_hidden_size
+        let min_hidden_size = if flatten_dim > 100 { 16 } else { 1 };
+
+        // size_strategy
+        let size_strategy = if flatten_dim > 100 {
+            SizeStrategy::AlignTo(8)
+        } else {
+            SizeStrategy::Free
+        };
+
+        Self {
+            max_layers: 10,
+            max_hidden_size,
+            max_total_params,
+            min_hidden_size,
+            size_strategy,
+        }
+    }
+}
+
 // ==================== Mutation trait ====================
 
 /// 变异操作 trait
@@ -171,17 +230,23 @@ impl MutationRegistry {
         ))
     }
 
-    /// 默认注册表
+    /// 默认注册表（向后兼容，等价于 `phase1_registry`）
     ///
     /// `is_sequential`: 序列模式时额外注册 MutateCellType。
     /// `is_spatial`: 空间模式时额外注册 MutateKernelSize。
     pub fn default_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
+        Self::phase1_registry(metric, is_sequential, is_spatial)
+    }
+
+    /// 阶段一注册表：拓扑搜索（偏向结构探索）
+    pub fn phase1_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
-        reg.register(0.15, InsertLayerMutation::default());
-        reg.register(0.15, RemoveLayerMutation);
-        reg.register(0.10, ReplaceLayerTypeMutation::default());
-        reg.register(0.24, GrowHiddenSizeMutation);
-        reg.register(0.29, ShrinkHiddenSizeMutation);
+        // 结构变异权重上调
+        reg.register(0.25, InsertLayerMutation::default());
+        reg.register(0.08, RemoveLayerMutation);
+        reg.register(0.04, ReplaceLayerTypeMutation::default());
+        reg.register(0.25, GrowHiddenSizeMutation);
+        reg.register(0.08, ShrinkHiddenSizeMutation);
         reg.register(0.05, MutateLayerParamMutation);
         reg.register(
             0.02,
@@ -193,9 +258,43 @@ impl MutationRegistry {
         reg.register(0.08, AddSkipEdgeMutation);
         reg.register(0.05, RemoveSkipEdgeMutation);
         reg.register(0.03, MutateAggregateStrategyMutation);
-        // 训练超参数变异
+        // 训练超参数变异（Phase 1 低权重）
         reg.register(0.05, MutateLearningRateMutation);
         reg.register(0.02, MutateOptimizerMutation);
+        // 序列模式专属
+        if is_sequential {
+            reg.register(0.10, MutateCellTypeMutation);
+        }
+        // 空间模式专属
+        if is_spatial {
+            reg.register(0.10, MutateKernelSizeMutation);
+        }
+        reg
+    }
+
+    /// 阶段二注册表：精炼（偏向超参数调优）
+    pub fn phase2_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
+        let mut reg = Self::new();
+        // 结构变异权重下调
+        reg.register(0.08, InsertLayerMutation::default());
+        reg.register(0.08, RemoveLayerMutation);
+        reg.register(0.08, ReplaceLayerTypeMutation::default());
+        reg.register(0.15, GrowHiddenSizeMutation);
+        reg.register(0.15, ShrinkHiddenSizeMutation);
+        reg.register(0.05, MutateLayerParamMutation);
+        reg.register(
+            0.02,
+            MutateLossFunctionMutation {
+                task_metric: metric.clone(),
+            },
+        );
+        // SkipEdge 变异
+        reg.register(0.06, AddSkipEdgeMutation);
+        reg.register(0.05, RemoveSkipEdgeMutation);
+        reg.register(0.03, MutateAggregateStrategyMutation);
+        // 训练超参数变异（Phase 2 权重上调）
+        reg.register(0.15, MutateLearningRateMutation);
+        reg.register(0.08, MutateOptimizerMutation);
         // 序列模式专属
         if is_sequential {
             reg.register(0.10, MutateCellTypeMutation);
@@ -362,12 +461,22 @@ fn has_adjacent_activation(genome: &NetworkGenome, insert_pos: usize) -> bool {
 }
 
 /// 根据 SizeStrategy 计算增长后的值
+///
+/// Free 模式：40% +step（至少 25%）、40% ×1.5、20% ×2
+/// AlignTo 模式：跳到下一个对齐值
 fn grow_size(current: usize, max: usize, strategy: &SizeStrategy, rng: &mut StdRng) -> usize {
     let new_size = match strategy {
         SizeStrategy::Free => {
-            if rng.gen_bool(0.5) {
-                current + 1
+            let roll: f32 = rng.r#gen();
+            if roll < 0.4 {
+                // +step（增长至少 25%）
+                let step = (current / 4).max(1);
+                current + step
+            } else if roll < 0.8 {
+                // ×1.5
+                (current as f64 * 1.5).ceil() as usize
             } else {
+                // ×2
                 current.saturating_mul(2)
             }
         }
@@ -380,12 +489,22 @@ fn grow_size(current: usize, max: usize, strategy: &SizeStrategy, rng: &mut StdR
 }
 
 /// 根据 SizeStrategy 计算缩小后的值
+///
+/// Free 模式：40% -step（缩小至少 20%）、40% ×0.67、20% ÷2
+/// AlignTo 模式：退到上一个对齐值
 fn shrink_size(current: usize, min: usize, strategy: &SizeStrategy, rng: &mut StdRng) -> usize {
     let new_size = match strategy {
         SizeStrategy::Free => {
-            if rng.gen_bool(0.5) {
-                current.saturating_sub(1)
+            let roll: f32 = rng.r#gen();
+            if roll < 0.4 {
+                // -step（缩小至少 20%）
+                let step = (current / 5).max(1);
+                current.saturating_sub(step)
+            } else if roll < 0.8 {
+                // ×0.67
+                (current as f64 * 0.67).floor() as usize
             } else {
+                // ÷2
                 current / 2
             }
         }
@@ -506,11 +625,12 @@ impl Mutation for InsertLayerMutation {
                     stride: 2,
                 }
             } else {
+                let effective_min = constraints.min_hidden_size.max(8);
                 let small_cap = genome
                     .input_dim
                     .min(constraints.max_hidden_size)
-                    .max(constraints.min_hidden_size);
-                let out_ch = rng.gen_range(constraints.min_hidden_size..=small_cap);
+                    .max(effective_min);
+                let out_ch = rng.gen_range(effective_min..=small_cap);
                 let k = *[1usize, 3, 5, 7].choose(rng).unwrap();
                 LayerConfig::Conv2d {
                     out_channels: out_ch,
@@ -518,22 +638,24 @@ impl Mutation for InsertLayerMutation {
                 }
             }
         } else if is_sequential && rng.gen_bool(0.5) {
+            let effective_min = constraints.min_hidden_size.max(8);
             let small_cap = genome
                 .input_dim
                 .min(constraints.max_hidden_size)
-                .max(constraints.min_hidden_size);
-            let size = rng.gen_range(constraints.min_hidden_size..=small_cap);
+                .max(effective_min);
+            let size = rng.gen_range(effective_min..=small_cap);
             match rng.gen_range(0..3) {
                 0 => LayerConfig::Rnn { hidden_size: size },
                 1 => LayerConfig::Lstm { hidden_size: size },
                 _ => LayerConfig::Gru { hidden_size: size },
             }
         } else {
+            let effective_min = constraints.min_hidden_size.max(8);
             let small_cap = genome
                 .input_dim
                 .min(constraints.max_hidden_size)
-                .max(constraints.min_hidden_size);
-            let size = rng.gen_range(constraints.min_hidden_size..=small_cap);
+                .max(effective_min);
+            let size = rng.gen_range(effective_min..=small_cap);
             LayerConfig::Linear {
                 out_features: size,
             }

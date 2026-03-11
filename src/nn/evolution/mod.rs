@@ -35,11 +35,11 @@ use crate::tensor::Tensor;
 
 use self::builder::BuildResult;
 use self::callback::{DefaultCallback, EvolutionCallback};
-use self::convergence::ConvergenceConfig;
+use self::convergence::{ConvergenceConfig, TrainingBudget};
 use self::error::EvolutionError;
 use self::gene::{NetworkGenome, TaskMetric};
 use self::mutation::{MutationError, MutationRegistry, SizeConstraints};
-use self::task::{EvolutionTask, FitnessScore, SupervisedTask};
+use self::task::{EvolutionTask, FitnessScore, SupervisedTask, auto_batch_size};
 
 // ==================== EvolutionStatus ====================
 
@@ -195,6 +195,8 @@ struct MaterializedTask {
     /// 空间输入尺寸 (H, W)（None = 非空间，input_dim 表示 in_channels）
     input_spatial: Option<(usize, usize)>,
     metric: TaskMetric,
+    /// 训练样本数（用于 auto_constraints 和训练预算计算）
+    n_train: usize,
 }
 
 /// 从 TaskSpec 实例化具体任务，提取维度信息并验证数据
@@ -233,6 +235,7 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
                 (train_data.0[0].size(), None, None)
             };
             let output_dim = train_data.1[0].size();
+            let n_train = train_data.0.len();
             let task = SupervisedTask::new(train_data, test_data, metric.clone())?;
             Ok(MaterializedTask {
                 task: Box::new(task),
@@ -241,6 +244,7 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
                 seq_len,
                 input_spatial,
                 metric,
+                n_train,
             })
         }
     }
@@ -259,7 +263,8 @@ pub struct Evolution {
     convergence_config: ConvergenceConfig,
     /// 自定义变异注册表（None = 根据任务指标自动选择默认注册表）
     mutation_registry: Option<MutationRegistry>,
-    constraints: SizeConstraints,
+    /// 用户显式指定的约束（None = 根据任务数据自动推导）
+    constraints: Option<SizeConstraints>,
     seed: Option<u64>,
     /// 自定义回调（None 时使用 DefaultCallback）
     custom_callback: Option<Box<dyn EvolutionCallback>>,
@@ -272,6 +277,8 @@ pub struct Evolution {
     stagnation_patience: usize,
     /// 训练 batch size（None = Task 自动策略，Some = 显式指定）
     batch_size: Option<usize>,
+    /// 每代生成的子代数量（(1+λ) 策略中的 λ）
+    offspring_count: usize,
 }
 
 impl Evolution {
@@ -296,13 +303,14 @@ impl Evolution {
             eval_runs: 1,
             convergence_config: ConvergenceConfig::default(),
             mutation_registry: None,
-            constraints: SizeConstraints::default(),
+            constraints: None,
             seed: None,
             custom_callback: None,
             max_generations: 100,
             verbose: true,
             stagnation_patience: 20,
             batch_size: None,
+            offspring_count: 4,
         }
     }
 
@@ -324,7 +332,14 @@ impl Evolution {
     }
 
     pub fn with_constraints(mut self, constraints: SizeConstraints) -> Self {
-        self.constraints = constraints;
+        self.constraints = Some(constraints);
+        self
+    }
+
+    /// 设置每代子代数量（(1+λ) 中的 λ，默认 4）
+    pub fn with_offspring_count(mut self, n: usize) -> Self {
+        assert!(n >= 1, "offspring_count 必须 >= 1，当前值: {n}");
+        self.offspring_count = n;
         self
     }
 
@@ -398,6 +413,7 @@ impl Evolution {
             verbose,
             stagnation_patience,
             batch_size,
+            offspring_count,
         } = self;
 
         // 延迟实例化：验证数据 + 构建任务 + 提取维度
@@ -407,15 +423,48 @@ impl Evolution {
 
         let is_sequential = prepared.seq_len.is_some();
         let is_spatial = prepared.input_spatial.is_some();
-        let mutation_registry = mutation_registry.unwrap_or_else(|| {
-            MutationRegistry::default_registry(&prepared.metric, is_sequential, is_spatial)
+        let user_registry = mutation_registry;
+
+        // 自适应约束：用户未显式指定时自动推导
+        let n_train = prepared.n_train;
+        let constraints = constraints.unwrap_or_else(|| {
+            SizeConstraints::auto(
+                prepared.input_dim,
+                prepared.output_dim,
+                n_train,
+                is_spatial,
+                prepared.input_spatial,
+            )
         });
+
+        // 两阶段训练预算
+        let phase1_gens = (max_generations as f64 * 0.7).round() as usize;
+        let user_convergence = convergence_config;
+
+        // Phase 1 快速训练预算
+        let effective_bs = batch_size.unwrap_or_else(|| auto_batch_size(n_train));
+        let fast_epochs = (n_train / (effective_bs * 5)).max(3).min(10);
+        let phase1_convergence = ConvergenceConfig {
+            budget: TrainingBudget::FixedEpochs(fast_epochs),
+            ..user_convergence.clone()
+        };
+
+        // 构建两阶段 mutation registry
+        let (phase1_reg, phase2_reg) = if user_registry.is_some() {
+            (None, None)
+        } else {
+            (
+                Some(MutationRegistry::phase1_registry(&prepared.metric, is_sequential, is_spatial)),
+                Some(MutationRegistry::phase2_registry(&prepared.metric, is_sequential, is_spatial)),
+            )
+        };
+        let user_reg_val = user_registry;
 
         let using_default_callback = custom_callback.is_none();
         let mut callback: Box<dyn EvolutionCallback> = custom_callback
             .unwrap_or_else(|| Box::new(DefaultCallback::new(max_generations, verbose)));
 
-        let mut genome = if prepared.seq_len.is_some() {
+        let minimal_genome = if prepared.seq_len.is_some() {
             let mut g = NetworkGenome::minimal_sequential(prepared.input_dim, prepared.output_dim);
             g.seq_len = prepared.seq_len;
             g
@@ -424,6 +473,7 @@ impl Evolution {
         } else {
             NetworkGenome::minimal(prepared.input_dim, prepared.output_dim)
         };
+
         let mut best_genome: Option<NetworkGenome> = None;
         let mut best_score: Option<FitnessScore> = None;
         let mut stagnation: usize = 0;
@@ -432,6 +482,9 @@ impl Evolution {
             Some(seed) => StdRng::seed_from_u64(seed),
             None => StdRng::from_entropy(),
         };
+
+        // 随机爆发初始化参数
+        let burst_k = (constraints.max_layers / 2).max(2).min(8);
 
         for generation in 0.. {
             // 0. 回调检查是否终止
@@ -442,7 +495,7 @@ impl Evolution {
                     EvolutionStatus::CallbackStopped
                 };
                 return build_final_result(
-                    best_genome.as_ref().unwrap_or(&genome),
+                    best_genome.as_ref().unwrap_or(&minimal_genome),
                     best_score,
                     generation,
                     status,
@@ -451,104 +504,164 @@ impl Evolution {
                 );
             }
 
-            // 1. 从基因组构建图
-            let build = genome.build(&mut rng)?;
+            // 选择当前阶段的 mutation registry 和 convergence config
+            let is_phase1 = generation < phase1_gens;
+            let current_registry = if let Some(ref user_reg) = user_reg_val {
+                user_reg
+            } else if is_phase1 {
+                phase1_reg.as_ref().unwrap()
+            } else {
+                phase2_reg.as_ref().unwrap()
+            };
+            let current_convergence = if is_phase1 {
+                &phase1_convergence
+            } else {
+                &user_convergence
+            };
 
-            // 2. Lamarckian 权重继承
-            genome.restore_weights(&build)?;
+            // (1+λ) 搜索：生成 λ 个候选，评估后选最佳
+            let λ = offspring_count;
+            let mut gen_best_genome: Option<NetworkGenome> = None;
+            let mut gen_best_score: Option<FitnessScore> = None;
+            let mut gen_best_loss: f32 = f32::NAN;
+            let mut gen_best_build: Option<BuildResult> = None;
+            let mut any_mutation_succeeded = false;
 
-            // 3. 训练
-            let loss = task.train(&genome, &build, &convergence_config, &mut rng)?;
+            for _child_idx in 0..λ {
+                // 生成候选基因组
+                let mut child = if generation == 0 {
+                    // Generation 0：随机爆发初始化——从 minimal genome K 次随机变异
+                    let mut c = minimal_genome.clone();
+                    for _ in 0..burst_k {
+                        let _ = current_registry.apply_random(&mut c, &constraints, &mut rng);
+                    }
+                    c
+                } else {
+                    // Generation 1+：从 best genome 变异
+                    let mut c = best_genome.as_ref().unwrap_or(&minimal_genome).clone();
+                    let force_structural = stagnation >= stagnation_patience;
+                    let mutation_result = if force_structural {
+                        current_registry.apply_random_structural(&mut c, &constraints, &mut rng)
+                    } else {
+                        current_registry.apply_random(&mut c, &constraints, &mut rng)
+                    };
+                    match mutation_result {
+                        Ok(mutation_name) => {
+                            any_mutation_succeeded = true;
+                            callback.on_mutation(generation, &mutation_name, &c);
+                        }
+                        Err(MutationError::InternalError(msg)) => {
+                            return Err(EvolutionError::Graph(GraphError::ComputationError(
+                                format!("变异内部错误: {msg}"),
+                            )));
+                        }
+                        Err(_) => continue, // 该候选变异失败，尝试下一个
+                    }
+                    c
+                };
 
-            // 4. 捕获权重
-            genome.capture_weights(&build)?;
+                // build → restore_weights → train → capture_weights → evaluate
+                let build = match child.build(&mut rng) {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+                let _ = child.restore_weights(&build);
+                let loss = match task.train(&child, &build, current_convergence, &mut rng) {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+                child.capture_weights(&build)?;
+                let score = match evaluate_conservative(&*task, &child, &build, eval_runs, &mut rng) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
 
-            // 5. 评估（N 次取 primary 最低值作为保守估计）
-            let score = evaluate_conservative(&*task, &genome, &build, eval_runs, &mut rng)?;
+                // 跟踪本代最佳候选
+                let is_better = match &gen_best_score {
+                    None => true,
+                    Some(prev) => is_at_least_as_good(&score, prev),
+                };
+                if is_better {
+                    gen_best_genome = Some(child);
+                    gen_best_score = Some(score);
+                    gen_best_loss = loss;
+                    gen_best_build = Some(build);
+                }
 
-            // 6. 接受/回滚（在 on_generation 之前，确保 on_new_best 星标时序正确）
+                if generation == 0 {
+                    any_mutation_succeeded = true;
+                }
+            }
+
+            // 所有候选都失败
+            if gen_best_genome.is_none() {
+                if !any_mutation_succeeded && generation > 0 {
+                    return build_final_result(
+                        best_genome.as_ref().unwrap_or(&minimal_genome),
+                        best_score,
+                        generation,
+                        EvolutionStatus::NoApplicableMutation,
+                        &mut rng,
+                        &*task,
+                    );
+                }
+                continue;
+            }
+
+            let gen_genome = gen_best_genome.unwrap();
+            let gen_score = gen_best_score.unwrap();
+            let gen_build = gen_best_build.unwrap();
+
+            // 接受/回滚
             let accept = match &best_score {
                 None => true,
-                Some(best) => is_at_least_as_good(&score, best),
+                Some(best) => is_at_least_as_good(&gen_score, best),
             };
 
             if accept {
                 let primary_improved = if let Some(best) = &best_score {
-                    if score.primary > best.primary {
-                        callback.on_new_best(generation, &genome, &score);
+                    if gen_score.primary > best.primary {
+                        callback.on_new_best(generation, &gen_genome, &gen_score);
                         true
                     } else {
                         false
                     }
                 } else {
-                    callback.on_new_best(generation, &genome, &score);
+                    callback.on_new_best(generation, &gen_genome, &gen_score);
                     true
                 };
 
-                // 停滞检测：仅 primary 严格提升时重置计数器
                 if primary_improved {
                     stagnation = 0;
                 } else {
                     stagnation += 1;
                 }
 
-                best_score = Some(score.clone());
-                best_genome = Some(genome.clone());
+                best_score = Some(gen_score.clone());
+                best_genome = Some(gen_genome.clone());
             } else {
                 stagnation += 1;
-                genome = best_genome.as_ref().unwrap().clone();
             }
 
-            // 7. 回调 on_generation（在 on_new_best 之后，星标已就绪）
-            callback.on_generation(generation, &genome, loss, &score);
+            // 停滞计数器重置（在强制结构探索后）
+            if generation > 0 && stagnation >= stagnation_patience {
+                stagnation = 0;
+            }
 
-            // 8. 达标检查
-            if score.primary >= target_metric {
-                // 自动快照计算图拓扑（Var 还活着时捕获，供后续 visualize_snapshot 渲染）
-                // 优先包含 Loss + TargetInput 以呈现完整管线
-                snapshot_with_loss(&*task, &genome, &build);
+            // 回调 on_generation
+            callback.on_generation(generation, best_genome.as_ref().unwrap_or(&gen_genome), gen_best_loss, &gen_score);
+
+            // 达标检查
+            if gen_score.primary >= target_metric {
+                snapshot_with_loss(&*task, &gen_genome, &gen_build);
                 return Ok(EvolutionResult {
-                    build,
-                    fitness: score,
+                    build: gen_build,
+                    fitness: gen_score,
                     generations: generation,
-                    architecture_summary: format!("{genome}"),
+                    architecture_summary: format!("{gen_genome}"),
                     status: EvolutionStatus::TargetReached,
-                    genome,
+                    genome: gen_genome,
                 });
-            }
-
-            // 9. 变异（停滞时强制结构探索）
-            let force_structural = stagnation >= stagnation_patience;
-            let mutation_result = if force_structural {
-                stagnation = 0; // 重置，给新拓扑优化时间
-                mutation_registry.apply_random_structural(&mut genome, &constraints, &mut rng)
-            } else {
-                mutation_registry.apply_random(&mut genome, &constraints, &mut rng)
-            };
-            match mutation_result {
-                Ok(mutation_name) => {
-                    callback.on_mutation(generation, &mutation_name, &genome);
-                }
-                Err(MutationError::NotApplicable(_)) => {
-                    return build_final_result(
-                        best_genome.as_ref().unwrap_or(&genome),
-                        best_score,
-                        generation + 1,
-                        EvolutionStatus::NoApplicableMutation,
-                        &mut rng,
-                        &*task,
-                    );
-                }
-                Err(MutationError::InternalError(msg)) => {
-                    return Err(EvolutionError::Graph(GraphError::ComputationError(
-                        format!("变异内部错误: {msg}"),
-                    )));
-                }
-                Err(e) => {
-                    return Err(EvolutionError::Graph(GraphError::ComputationError(
-                        format!("变异失败: {e}"),
-                    )));
-                }
             }
         }
 

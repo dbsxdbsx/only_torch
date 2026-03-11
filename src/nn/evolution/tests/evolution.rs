@@ -234,9 +234,12 @@ fn test_callback_on_mutation_called_each_gen() {
         .unwrap();
 
     let s = state.borrow();
-    assert_eq!(
-        s.mutation_count, s.generation_count,
-        "on_mutation 应与 on_generation 次数一致"
+    // (1+λ) 策略下每代可能有多次成功变异（λ 个子代各自变异）
+    assert!(
+        s.mutation_count >= s.generation_count,
+        "on_mutation 次数({}) 应 >= on_generation 次数({})",
+        s.mutation_count,
+        s.generation_count
     );
     assert!(
         !s.last_mutation_name.is_empty(),
@@ -580,7 +583,8 @@ fn test_rollback_then_mutate_succeeds() {
         "15 代中应有回滚（new_best_count={} < 15）",
         s.new_best_count
     );
-    assert_eq!(s.mutation_count, s.generation_count);
+    // (1+λ) 策略下每代有多次变异
+    assert!(s.mutation_count >= s.generation_count);
     assert!(result.fitness.primary.is_finite());
 }
 
