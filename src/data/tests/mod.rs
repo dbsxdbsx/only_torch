@@ -10,6 +10,7 @@ mod transform_compose;
 mod transform_erasing;
 mod transform_flip;
 mod transform_crop;
+mod transform_resized_crop;
 mod transform_noise;
 mod transform_normalize;
 mod transform_rotation;

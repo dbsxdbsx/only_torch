@@ -38,6 +38,7 @@ mod one_hot;
 mod pixel_normalize;
 mod random_crop;
 mod random_erasing;
+mod random_resized_crop;
 pub(crate) mod random_flip;
 pub(crate) mod random_rotation;
 
@@ -56,6 +57,7 @@ pub use normalize::Normalize;
 pub use random_crop::RandomCrop;
 pub use random_erasing::RandomErasing;
 pub use random_flip::RandomHorizontalFlip;
+pub use random_resized_crop::RandomResizedCrop;
 pub use random_rotation::RandomRotation;
 
 // ═══════════════════════════════════════════════════════════════
