@@ -38,7 +38,7 @@ mod model;
 
 use data::{load_chess_data, CLASS_NAMES};
 use model::ChessPieceCNN;
-use only_torch::data::{ColorJitter, DataLoader, TensorDataset, Transform};
+use only_torch::data::{ColorJitter, Compose, DataLoader, RandomErasing, TensorDataset, Transform};
 use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, CosineAnnealingLR, Graph, GraphError, LrScheduler, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
@@ -79,8 +79,11 @@ fn main() -> Result<(), GraphError> {
     println!("  - 目标准确率: {target_accuracy}%");
 
     // 3. 运行时数据增强（仅训练集）
-    // 仅用温和的色彩扰动 — 28x28 小图上叠加裁切/旋转/遮挡太激进会阻碍学习
-    let train_transform = ColorJitter::new(0.15, 0.15, 0.1);
+    // ColorJitter + RandomErasing（与 PyTorch 版对齐，参数保守以适应 28x28 小图）
+    let train_transform = Compose::new(vec![
+        Box::new(ColorJitter::new(0.15, 0.15, 0.1)),
+        Box::new(RandomErasing::new(0.2).scale(0.02, 0.15)),
+    ]);
 
     // 为推理基准测试和每类准确率保留副本
     let test_x_for_eval = test_x.clone();
@@ -110,7 +113,7 @@ fn main() -> Result<(), GraphError> {
 
     println!("\n  网络: Conv(3→16) → BN → Pool → Conv(16→32) → BN → Pool → FC(1568→128) → FC(128→15)");
     println!("  参数量: {param_count}");
-    println!("  数据增强: ColorJitter(b=0.15, c=0.15, s=0.1)");
+    println!("  数据增强: ColorJitter(b=0.15, c=0.15, s=0.1) + RandomErasing(p=0.2, scale=0.02~0.15)");
 
     // 5. 训练
     println!("\n[3/4] 开始训练...\n");
