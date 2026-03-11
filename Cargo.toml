@@ -119,100 +119,100 @@ harness = false
 
 [[example]]
 name = "xor"
-path = "examples/xor/main.rs"
+path = "examples/traditional/xor/main.rs"
 
 [[example]]
 name = "sine_regression"
-path = "examples/sine_regression/main.rs"
+path = "examples/traditional/sine_regression/main.rs"
 
 [[example]]
 name = "iris"
-path = "examples/iris/main.rs"
+path = "examples/traditional/iris/main.rs"
 
 [[example]]
 name = "mnist"
-path = "examples/mnist/main.rs"
+path = "examples/traditional/mnist/main.rs"
 
 [[example]]
 name = "california_housing"
-path = "examples/california_housing/main.rs"
+path = "examples/traditional/california_housing/main.rs"
 
 [[example]]
 name = "parity_rnn_fixed_len"
-path = "examples/parity_rnn_fixed_len/main.rs"
+path = "examples/traditional/parity_rnn_fixed_len/main.rs"
 
 [[example]]
 name = "parity_rnn_var_len"
-path = "examples/parity_rnn_var_len/main.rs"
+path = "examples/traditional/parity_rnn_var_len/main.rs"
 
 [[example]]
 name = "parity_lstm_var_len"
-path = "examples/parity_lstm_var_len/main.rs"
+path = "examples/traditional/parity_lstm_var_len/main.rs"
 
 [[example]]
 name = "parity_gru_var_len"
-path = "examples/parity_gru_var_len/main.rs"
+path = "examples/traditional/parity_gru_var_len/main.rs"
 
 [[example]]
 name = "mnist_cnn"
-path = "examples/mnist_cnn/main.rs"
+path = "examples/traditional/mnist_cnn/main.rs"
 
 [[example]]
 name = "mnist_gan"
-path = "examples/mnist_gan/main.rs"
+path = "examples/traditional/mnist_gan/main.rs"
 
 [[example]]
 name = "dual_input_add"
-path = "examples/dual_input_add/main.rs"
+path = "examples/traditional/dual_input_add/main.rs"
 
 [[example]]
 name = "siamese_similarity"
-path = "examples/siamese_similarity/main.rs"
+path = "examples/traditional/siamese_similarity/main.rs"
 
 [[example]]
 name = "dual_output_classify"
-path = "examples/dual_output_classify/main.rs"
+path = "examples/traditional/dual_output_classify/main.rs"
 
 [[example]]
 name = "multi_io_fusion"
-path = "examples/multi_io_fusion/main.rs"
+path = "examples/traditional/multi_io_fusion/main.rs"
 
 [[example]]
 name = "multi_label_point"
-path = "examples/multi_label_point/main.rs"
+path = "examples/traditional/multi_label_point/main.rs"
 
 [[example]]
 name = "chinese_chess"
-path = "examples/chinese_chess/main.rs"
+path = "examples/traditional/chinese_chess/main.rs"
 
 [[example]]
 name = "cartpole_sac"
-path = "examples/sac/cartpole/main.rs"
+path = "examples/traditional/sac/cartpole/main.rs"
 
 [[example]]
 name = "pendulum_sac"
-path = "examples/sac/pendulum/main.rs"
+path = "examples/traditional/sac/pendulum/main.rs"
 
 [[example]]
 name = "moving_sac"
-path = "examples/sac/moving/main.rs"
+path = "examples/traditional/sac/moving/main.rs"
 
 [[example]]
 name = "evolution_xor"
-path = "examples/evolution_xor/main.rs"
+path = "examples/evolution/xor/main.rs"
 
 [[example]]
 name = "evolution_iris"
-path = "examples/evolution_iris/main.rs"
+path = "examples/evolution/iris/main.rs"
 
 [[example]]
 name = "evolution_parity_seq"
-path = "examples/evolution_parity_seq/main.rs"
+path = "examples/evolution/parity_seq/main.rs"
 
 [[example]]
 name = "evolution_mnist"
-path = "examples/evolution_mnist/main.rs"
+path = "examples/evolution/mnist/main.rs"
 
 [[example]]
 name = "evolution_parity_seq_var_len"
-path = "examples/evolution_parity_seq_var_len/main.rs"
+path = "examples/evolution/parity_seq_var_len/main.rs"

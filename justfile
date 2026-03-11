@@ -84,13 +84,17 @@ bench-tensor:
 
 # ==================== Examples ====================
 
-# 运行所有 examples（含 RL + 演化）
-examples: example-xor example-iris example-sine example-mnist example-mnist-cnn example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess example-evolution-xor example-evolution-iris example-evolution-parity-seq example-evolution-parity-seq-var-len example-cartpole-sac example-pendulum-sac example-moving-sac
+# 运行所有 examples
+examples: examples-traditional examples-evolution
+
+# ---------- Traditional（手动定义网络）----------
+
+# 运行所有 traditional examples
+examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess example-cartpole-sac example-pendulum-sac example-moving-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
 
-# 单个 examples
 example-xor:
     @echo "=== Running XOR [{{_blas_name}}] ==="
     cargo run --example xor {{_blas_flag}}
@@ -159,8 +163,25 @@ example-chinese-chess:
     @echo "=== Running Chinese Chess [{{_blas_name}}] ==="
     cargo run --example chinese_chess {{_blas_flag}}
 
+example-cartpole-sac:
+    @echo "=== Running CartPole SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example cartpole_sac {{_blas_flag}}
+
+example-pendulum-sac:
+    @echo "=== Running Pendulum SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example pendulum_sac {{_blas_flag}}
+
+example-moving-sac:
+    @echo "=== Running Moving Hybrid SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
+    cargo run --example moving_sac {{_blas_flag}}
+
+# ---------- Evolution（神经架构自动演化）----------
+
+# 运行所有 evolution examples
+examples-evolution: example-evolution-xor example-evolution-iris example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-mnist
+
 example-evolution-xor:
-    @echo "=== Running Evolution XOR (NEAT MVP) [{{_blas_name}}] ==="
+    @echo "=== Running Evolution XOR [{{_blas_name}}] ==="
     cargo run --example evolution_xor {{_blas_flag}}
 
 example-evolution-iris:
@@ -175,17 +196,9 @@ example-evolution-parity-seq-var-len:
     @echo "=== Running Evolution Parity Seq (variable length) [{{_blas_name}}] ==="
     cargo run --example evolution_parity_seq_var_len {{_blas_flag}}
 
-example-cartpole-sac:
-    @echo "=== Running CartPole SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example cartpole_sac {{_blas_flag}}
-
-example-pendulum-sac:
-    @echo "=== Running Pendulum SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example pendulum_sac {{_blas_flag}}
-
-example-moving-sac:
-    @echo "=== Running Moving Hybrid SAC [{{_blas_name}}] (requires Python + gymnasium) ==="
-    cargo run --example moving_sac {{_blas_flag}}
+example-evolution-mnist:
+    @echo "=== Running Evolution MNIST [{{_blas_name}}] ==="
+    cargo run --example evolution_mnist {{_blas_flag}}
 
 # ==================== 代码质量 ====================
 
