@@ -63,9 +63,9 @@ fn main() -> Result<(), GraphError> {
         load_start.elapsed().as_secs_f32()
     );
 
-    // 2. 配置
-    let batch_size = 256;
-    let max_epochs = 100;
+    // 2. 配置（与 PyTorch 版一致）
+    let batch_size = 128;
+    let max_epochs = 50;
     let learning_rate = 0.001;
     let target_accuracy = 95.0;
     let early_stop_patience = 10;
@@ -86,10 +86,10 @@ fn main() -> Result<(), GraphError> {
     let test_x_for_eval = test_x.clone();
     let test_y_for_eval = test_y.clone();
 
-    let train_loader =
-        DataLoader::new(TensorDataset::new(train_x, train_y), batch_size).drop_last(true);
-    let test_loader =
-        DataLoader::new(TensorDataset::new(test_x, test_y), batch_size).drop_last(true);
+    let train_loader = DataLoader::new(TensorDataset::new(train_x, train_y), batch_size)
+        .shuffle(true)
+        .drop_last(true);
+    let test_loader = DataLoader::new(TensorDataset::new(test_x, test_y), batch_size);
 
     // 4. 构建 CNN
     let graph = Graph::new_with_seed(42);
@@ -122,6 +122,11 @@ fn main() -> Result<(), GraphError> {
         let epoch_start = Instant::now();
         let mut epoch_loss = 0.0;
         let mut num_batches = 0;
+
+        // CosineAnnealingLR: lr = lr_min + 0.5*(lr_max - lr_min)*(1 + cos(pi * epoch / T_max))
+        let cosine_lr =
+            0.5 * learning_rate * (1.0 + (std::f32::consts::PI * epoch as f32 / max_epochs as f32).cos());
+        optimizer.set_learning_rate(cosine_lr);
 
         graph.train();
         for (batch_x, batch_y) in train_loader.iter() {
@@ -160,12 +165,13 @@ fn main() -> Result<(), GraphError> {
         };
 
         println!(
-            "Epoch {:3}: loss = {:.4}, 准确率 = {:.1}% ({}/{}), {:.1}s",
+            "Epoch {:3}: loss = {:.4}, 准确率 = {:.1}% ({}/{}), lr={:.6}, {:.1}s",
             epoch + 1,
             epoch_loss / num_batches as f32,
             acc,
             total_correct as usize,
             total,
+            cosine_lr,
             epoch_start.elapsed().as_secs_f32()
         );
 
