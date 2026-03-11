@@ -37,7 +37,7 @@ pub use module::Module;
 pub use nodes::NodeId;
 pub use nodes::node_inner::NodeInner; // 供内部模块使用
 pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
-pub use optimizer::{Adam, Optimizer, SGD};
+pub use optimizer::{Adam, CosineAnnealingLR, LambdaLR, LrScheduler, Optimizer, SGD, StepLR};
 pub use shape::{Dim, DynamicShape};
 pub use var::{Init, IntoVar, Var};
 pub use var::ops::{

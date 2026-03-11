@@ -98,6 +98,7 @@ mod distribution_tanh_normal; // TanhNormal 分布（Squashed Gaussian，SAC-Con
 // ===== 其他单元测试 =====
 mod shape; // DynamicShape 动态维度形状系统测试
 mod var_init; // Init 参数初始化策略测试
+mod scheduler; // LR 调度器测试（CosineAnnealingLR, StepLR, LambdaLR）
 
 // ===== 复杂测试 =====
 mod batch_mechanism;

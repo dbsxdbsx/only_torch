@@ -7,5 +7,7 @@
  */
 
 mod core;
+pub mod scheduler;
 
 pub use core::{Adam, Optimizer, SGD};
+pub use scheduler::{CosineAnnealingLR, LambdaLR, LrScheduler, StepLR};

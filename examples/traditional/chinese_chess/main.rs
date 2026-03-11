@@ -40,7 +40,7 @@ use data::{load_chess_data, CLASS_NAMES};
 use model::ChessPieceCNN;
 use only_torch::data::{ColorJitter, DataLoader, TensorDataset, Transform};
 use only_torch::metrics::accuracy;
-use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
+use only_torch::nn::{Adam, CosineAnnealingLR, Graph, GraphError, LrScheduler, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 use only_torch::tensor_slice;
 use std::time::Instant;
@@ -117,16 +117,14 @@ fn main() -> Result<(), GraphError> {
     let train_start = Instant::now();
     let mut best_acc = 0.0f32;
     let mut no_improve_count = 0;
+    let mut scheduler = CosineAnnealingLR::new(learning_rate, max_epochs, 0.0);
 
     for epoch in 0..max_epochs {
         let epoch_start = Instant::now();
         let mut epoch_loss = 0.0;
         let mut num_batches = 0;
 
-        // CosineAnnealingLR: lr = lr_min + 0.5*(lr_max - lr_min)*(1 + cos(pi * epoch / T_max))
-        let cosine_lr =
-            0.5 * learning_rate * (1.0 + (std::f32::consts::PI * epoch as f32 / max_epochs as f32).cos());
-        optimizer.set_learning_rate(cosine_lr);
+        let cosine_lr = scheduler.step_with(&mut optimizer);
 
         graph.train();
         for (batch_x, batch_y) in train_loader.iter() {
