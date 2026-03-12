@@ -30,6 +30,9 @@ pub(crate) struct HardTanh {
 }
 
 impl HardTanh {
+    pub(crate) const fn min_val(&self) -> f32 { self.min_val }
+    pub(crate) const fn max_val(&self) -> f32 { self.max_val }
+
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,

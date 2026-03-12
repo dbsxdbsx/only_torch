@@ -33,6 +33,10 @@ pub(crate) struct Narrow {
 }
 
 impl Narrow {
+    pub(crate) const fn axis(&self) -> usize { self.axis }
+    pub(crate) const fn start(&self) -> usize { self.start }
+    pub(crate) const fn length(&self) -> usize { self.length }
+
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,

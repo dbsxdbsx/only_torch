@@ -32,6 +32,8 @@ pub(crate) struct Repeat {
 }
 
 impl Repeat {
+    pub(crate) fn repeats(&self) -> &[usize] { &self.repeats }
+
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
         _parent_dynamic_shape: &DynamicShape,

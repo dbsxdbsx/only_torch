@@ -38,6 +38,10 @@ pub(crate) struct TopK {
 }
 
 impl TopK {
+    pub(crate) const fn k(&self) -> usize { self.k }
+    pub(crate) const fn axis(&self) -> usize { self.axis }
+    pub(crate) const fn sorted(&self) -> bool { self.sorted }
+
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,

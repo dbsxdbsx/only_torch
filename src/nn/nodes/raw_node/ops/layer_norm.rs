@@ -54,6 +54,9 @@ pub(crate) struct LayerNormOp {
 }
 
 impl LayerNormOp {
+    pub(crate) const fn normalized_dims(&self) -> usize { self.normalized_dims }
+    pub(crate) const fn eps(&self) -> f32 { self.eps }
+
     /// 创建 LayerNormOp 节点
     ///
     /// # 参数

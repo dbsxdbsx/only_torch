@@ -51,6 +51,9 @@ pub(crate) struct Clip {
 }
 
 impl Clip {
+    pub(crate) const fn min(&self) -> f32 { self.min }
+    pub(crate) const fn max(&self) -> f32 { self.max }
+
     /// 从父节点形状信息创建 Clip 节点
     pub(in crate::nn) fn new(
         parent_shape: &[usize],

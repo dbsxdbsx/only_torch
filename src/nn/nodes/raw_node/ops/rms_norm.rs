@@ -42,6 +42,9 @@ pub(crate) struct RMSNormOp {
 }
 
 impl RMSNormOp {
+    pub(crate) const fn normalized_dims(&self) -> usize { self.normalized_dims }
+    pub(crate) const fn eps(&self) -> f32 { self.eps }
+
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,

@@ -25,8 +25,8 @@ mod var;
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{
-    Graph, GraphError, GraphInner, ImageFormat, SnapshotNode, VisualizationOutput,
-    VisualizationSnapshot,
+    Graph, GraphError, GraphInner, ImageFormat, RebuildResult, SnapshotNode,
+    VisualizationOutput, VisualizationSnapshot,
 };
 pub use layer::{
     AvgPool2d, BatchNorm, Conv2d, Embedding, GroupNorm, Gru, InstanceNorm, LayerNorm, Linear, Lstm,

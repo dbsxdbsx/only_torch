@@ -32,6 +32,9 @@ pub(crate) struct WhereCond {
 }
 
 impl WhereCond {
+    /// 获取条件掩码
+    pub(crate) fn condition(&self) -> &crate::tensor::Tensor { &self.condition }
+
     /// 从父节点形状和 condition 张量创建 WhereCond 节点
     ///
     /// # 参数

@@ -68,6 +68,12 @@ pub(crate) struct BatchNormOp {
 }
 
 impl BatchNormOp {
+    pub(crate) const fn eps(&self) -> f32 { self.eps }
+    pub(crate) const fn momentum(&self) -> f32 { self.momentum }
+    pub(crate) const fn num_features(&self) -> usize { self.num_features }
+    pub(crate) fn running_mean(&self) -> &std::rc::Rc<std::cell::RefCell<crate::tensor::Tensor>> { &self.running_mean }
+    pub(crate) fn running_var(&self) -> &std::rc::Rc<std::cell::RefCell<crate::tensor::Tensor>> { &self.running_var }
+
     /// 创建 BatchNormOp 节点
     ///
     /// # 参数

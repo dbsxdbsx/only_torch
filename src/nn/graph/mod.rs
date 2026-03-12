@@ -9,11 +9,14 @@
  * - `GraphError`: 错误类型
  */
 
+mod descriptor_rebuild;
 mod error;
 mod handle;
 mod inner;
+pub(crate) mod model_save;
 mod types;
 
+pub use descriptor_rebuild::RebuildResult;
 pub use error::{GraphError, ImageFormat, VisualizationOutput};
 pub use handle::Graph;
 pub use inner::GraphInner;

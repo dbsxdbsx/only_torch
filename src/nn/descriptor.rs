@@ -5,6 +5,7 @@
  *                 统一的中间表示（IR），用于序列化、可视化和调试输出
  */
 
+use crate::nn::nodes::raw_node::Reduction;
 use serde::{Deserialize, Serialize};
 
 /// 图的可序列化描述
@@ -88,7 +89,9 @@ pub enum NodeTypeDescriptor {
     Reshape {
         target_shape: Vec<usize>,
     },
-    Flatten,
+    Flatten {
+        keep_first_dim: bool,
+    },
     Conv2d {
         stride: (usize, usize),
         padding: (usize, usize),
@@ -130,15 +133,105 @@ pub enum NodeTypeDescriptor {
     Concat {
         axis: usize,
     },
-    BCE,
+    BCE {
+        reduction: Reduction,
+    },
     Huber {
         delta: f32,
+        reduction: Reduction,
     },
-    MAE,
-    MSE,
+    MAE {
+        reduction: Reduction,
+    },
+    MSE {
+        reduction: Reduction,
+    },
     SoftmaxCrossEntropy,
     /// 动态零张量（RNN 初始隐藏状态）
     ZerosLike,
+
+    // ──────────────────── 激活函数 ────────────────────
+    /// 取反 y = -x
+    Negate,
+    /// ReLU: max(0, x)
+    ReLU,
+    /// GELU (tanh 近似)
+    Gelu,
+    /// Swish/SiLU: x * sigmoid(x)
+    Swish,
+    /// ELU: x if x>0, else alpha*(exp(x)-1)
+    Elu { alpha: f32 },
+    /// SELU（固定常数 λ/α）
+    Selu,
+    /// Mish: x * tanh(softplus(x))
+    Mish,
+    /// HardSwish（分段线性近似 Swish）
+    HardSwish,
+    /// HardSigmoid（分段线性近似 Sigmoid）
+    HardSigmoid,
+    /// ReLU6: min(max(0,x), 6)
+    ReLU6,
+    /// HardTanh: min(max(min_val, x), max_val)
+    HardTanh { min_val: f32, max_val: f32 },
+
+    // ──────────────────── 逐元素数学运算 ────────────────────
+    /// 指数 y = e^x
+    Exp,
+    /// 平方根 y = √x
+    Sqrt,
+    /// 以 10 为底对数
+    Log10,
+    /// 以 2 为底对数
+    Log2,
+    /// 幂运算 y = x^exponent
+    Pow { exponent: f32 },
+    /// 平方 y = x²
+    Square,
+    /// 倒数 y = 1/x
+    Reciprocal,
+
+    // ──────────────────── 张量变换 ────────────────────
+    /// 沿轴取连续范围 narrow(axis, start, length)
+    Narrow { axis: usize, start: usize, length: usize },
+    /// 维度重排 permute(dims)
+    Permute { dims: Vec<usize> },
+    /// 常量填充 pad(paddings, value)
+    Pad { paddings: Vec<(usize, usize)>, pad_value: f32 },
+    /// 沿各维度重复 repeat(repeats)
+    Repeat { repeats: Vec<usize> },
+    /// 沿轴取前 k 大元素
+    TopK { k: usize, axis: usize, sorted: bool },
+    /// 沿轴排序
+    SortNode { axis: usize, descending: bool },
+    /// 值域裁剪 clip(min, max)
+    Clip { min: f32, max: f32 },
+    /// 条件选择 where(condition, x, y)
+    WhereCond {
+        /// 条件掩码（已归一化为 0/1 的 f32 数据，展平存储）
+        condition_data: Vec<f32>,
+        /// 条件掩码的形状
+        condition_shape: Vec<usize>,
+    },
+    /// 梯度屏障（前向透传，反向阻断）
+    Detach,
+
+    // ──────────────────── 归一化运算 ────────────────────
+    /// 批归一化（不含 gamma/beta）
+    BatchNormOp {
+        eps: f32,
+        momentum: f32,
+        num_features: usize,
+    },
+    /// 层归一化（不含 gamma/beta）
+    LayerNormOp {
+        normalized_dims: usize,
+        eps: f32,
+    },
+    /// RMS 归一化（不含 gamma）
+    RMSNormOp {
+        normalized_dims: usize,
+        eps: f32,
+    },
 }
 
 impl GraphDescriptor {

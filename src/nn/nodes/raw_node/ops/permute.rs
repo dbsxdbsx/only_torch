@@ -32,6 +32,8 @@ pub(crate) struct Permute {
 }
 
 impl Permute {
+    pub(crate) fn dims(&self) -> &[usize] { &self.dims }
+
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,

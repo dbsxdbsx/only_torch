@@ -67,6 +67,12 @@ pub(crate) struct Huber {
 pub const DEFAULT_HUBER_DELTA: f32 = 1.0;
 
 impl Huber {
+    /// 获取 reduction 模式
+    #[allow(dead_code)]
+    pub(crate) fn reduction(&self) -> Reduction {
+        self.reduction
+    }
+
     /// 从父节点形状信息创建 Huber 节点（核心实现）
     pub(in crate::nn) fn new(
         input_shape: &[usize],

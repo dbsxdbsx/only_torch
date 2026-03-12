@@ -45,6 +45,8 @@ pub(crate) struct Pow {
 }
 
 impl Pow {
+    pub(crate) const fn exponent(&self) -> f32 { self.exponent }
+
     /// 从父节点形状信息创建 Pow 节点
     pub(in crate::nn) fn new(
         parent_shape: &[usize],

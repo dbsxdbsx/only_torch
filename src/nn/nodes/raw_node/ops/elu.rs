@@ -23,6 +23,8 @@ pub(crate) struct Elu {
 }
 
 impl Elu {
+    pub(crate) const fn alpha(&self) -> f32 { self.alpha }
+
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
         parent_dynamic_shape: &DynamicShape,

@@ -41,6 +41,9 @@ pub(crate) struct SortNode {
 }
 
 impl SortNode {
+    pub(crate) const fn axis(&self) -> usize { self.axis }
+    pub(crate) const fn descending(&self) -> bool { self.descending }
+
     /// 创建 SortNode
     ///
     /// # 参数

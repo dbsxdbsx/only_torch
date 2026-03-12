@@ -8,6 +8,7 @@
 
 pub mod ops;
 mod arithmetic;
+mod descriptor;
 mod init;
 mod into;
 mod visualization;

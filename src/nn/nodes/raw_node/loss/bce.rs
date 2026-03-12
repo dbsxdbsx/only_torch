@@ -62,6 +62,12 @@ pub(crate) struct BCE {
 }
 
 impl BCE {
+    /// 获取 reduction 模式
+    #[allow(dead_code)]
+    pub(crate) fn reduction(&self) -> Reduction {
+        self.reduction
+    }
+
     /// 从父节点形状信息创建 BCE 节点（核心实现）
     pub(in crate::nn) fn new(
         logits_shape: &[usize],

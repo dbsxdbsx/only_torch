@@ -1,0 +1,712 @@
+/*
+ * @Author       : 老董
+ * @Description  : GraphDescriptor → Graph 重建
+ *
+ * 核心功能：
+ * - `Graph::from_descriptor()`: 从 GraphDescriptor 重建计算图
+ * - 按拓扑序逐节点调用 create_*_node，维护 old_id → new_Var 映射
+ *
+ * 用于统一的 .otm 模型加载（通用路径）。
+ */
+
+use super::error::GraphError;
+use super::handle::Graph;
+use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
+use crate::nn::var::Var;
+use crate::tensor::Tensor;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+
+/// 从 GraphDescriptor 重建图的结果
+pub struct RebuildResult {
+    /// 重建后的图
+    pub graph: Graph,
+    /// 数据输入节点（名称, Var）—— 按 descriptor 中出现顺序
+    pub inputs: Vec<(String, Var)>,
+    /// 目标输入节点（名称, Var）—— 按 descriptor 中出现顺序
+    pub targets: Vec<(String, Var)>,
+    /// 输出节点（descriptor 中没有被其他节点引用为 parent 的节点）
+    pub outputs: Vec<Var>,
+    /// 旧 ID → 新 Var 的完整映射
+    pub node_map: HashMap<u64, Var>,
+}
+
+impl Graph {
+    /// 从 GraphDescriptor 重建计算图
+    ///
+    /// descriptor 中节点必须按拓扑序排列（叶子在前，输出在后），
+    /// 即 `Var::vars_to_graph_descriptor()` 生成的顺序。
+    ///
+    /// # 返回
+    /// `RebuildResult` 包含新图、输入/输出 Var 和完整的节点映射。
+    ///
+    /// # 注意
+    /// - Parameter 节点使用默认初始化，权重由后续 load 步骤填充
+    /// - Dropout 使用固定 seed=42，加载后建议设为 eval 模式
+    /// - BatchNormOp 的 running_mean/running_var 初始化为零
+    pub fn from_descriptor(desc: &GraphDescriptor) -> Result<RebuildResult, GraphError> {
+        let graph = Graph::new();
+        let mut node_map: HashMap<u64, Var> = HashMap::new();
+        let mut inputs: Vec<(String, Var)> = Vec::new();
+        let mut targets: Vec<(String, Var)> = Vec::new();
+
+        // 收集所有被引用为 parent 的 ID，用于确定输出节点
+        let all_parent_ids: HashSet<u64> = desc
+            .nodes
+            .iter()
+            .flat_map(|n| n.parents.iter().copied())
+            .collect();
+
+        for node_desc in &desc.nodes {
+            let var = rebuild_node(&graph, node_desc, &node_map)?;
+
+            // 归类输入/目标节点
+            match &node_desc.node_type {
+                NodeTypeDescriptor::BasicInput => {
+                    inputs.push((node_desc.name.clone(), var.clone()));
+                }
+                NodeTypeDescriptor::TargetInput => {
+                    targets.push((node_desc.name.clone(), var.clone()));
+                }
+                _ => {}
+            }
+
+            node_map.insert(node_desc.id, var);
+        }
+
+        // 输出节点：ID 不被任何其他节点引用为 parent
+        let outputs: Vec<Var> = desc
+            .nodes
+            .iter()
+            .filter(|n| !all_parent_ids.contains(&n.id))
+            .filter_map(|n| node_map.get(&n.id))
+            .cloned()
+            .collect();
+
+        Ok(RebuildResult {
+            graph,
+            inputs,
+            targets,
+            outputs,
+            node_map,
+        })
+    }
+}
+
+// ==================== 内部实现 ====================
+
+/// 获取单个父节点的 Rc<NodeInner>
+fn get_parent(
+    node_desc: &NodeDescriptor,
+    node_map: &HashMap<u64, Var>,
+    index: usize,
+) -> Result<Rc<crate::nn::nodes::NodeInner>, GraphError> {
+    let parent_id = node_desc.parents.get(index).ok_or_else(|| {
+        GraphError::InvalidOperation(format!(
+            "节点 '{}' (id={}) 缺少第 {} 个父节点",
+            node_desc.name, node_desc.id, index
+        ))
+    })?;
+    let parent_var = node_map.get(parent_id).ok_or_else(|| {
+        GraphError::InvalidOperation(format!(
+            "节点 '{}' (id={}) 的父节点 id={} 未找到（可能 descriptor 未按拓扑序排列）",
+            node_desc.name, node_desc.id, parent_id
+        ))
+    })?;
+    Ok(Rc::clone(parent_var.node()))
+}
+
+/// 获取所有父节点的 Rc<NodeInner>
+fn get_all_parents(
+    node_desc: &NodeDescriptor,
+    node_map: &HashMap<u64, Var>,
+) -> Result<Vec<Rc<crate::nn::nodes::NodeInner>>, GraphError> {
+    node_desc
+        .parents
+        .iter()
+        .map(|pid| {
+            let parent_var = node_map.get(pid).ok_or_else(|| {
+                GraphError::InvalidOperation(format!(
+                    "节点 '{}' (id={}) 的父节点 id={} 未找到",
+                    node_desc.name, node_desc.id, pid
+                ))
+            })?;
+            Ok(Rc::clone(parent_var.node()))
+        })
+        .collect()
+}
+
+/// 根据节点描述重建单个节点
+fn rebuild_node(
+    graph: &Graph,
+    node_desc: &NodeDescriptor,
+    node_map: &HashMap<u64, Var>,
+) -> Result<Var, GraphError> {
+    let name = Some(node_desc.name.as_str());
+    let inner_rc = graph.inner_rc();
+
+    match &node_desc.node_type {
+        // ==================== 输入/参数/状态 ====================
+        NodeTypeDescriptor::BasicInput => {
+            let node = graph
+                .inner_mut()
+                .create_basic_input_node(&node_desc.output_shape, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::TargetInput => {
+            let node = graph
+                .inner_mut()
+                .create_target_input_node(&node_desc.output_shape, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Parameter => {
+            let node = graph
+                .inner_mut()
+                .create_parameter_node(&node_desc.output_shape, name)?;
+            // 注册参数（使权重 save/load 正常工作）
+            graph.inner_mut().register_parameter(
+                node_desc.name.clone(),
+                Rc::downgrade(&node),
+            )?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::State => {
+            let node = graph
+                .inner_mut()
+                .create_state_node(&node_desc.output_shape, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 算术 ====================
+        NodeTypeDescriptor::Add => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph.inner_mut().create_add_node(parents, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Subtract => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph.inner_mut().create_subtract_node(parents, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Multiply => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph.inner_mut().create_multiply_node(parents, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Divide => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph.inner_mut().create_divide_node(parents, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Negate => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_negate_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::MatMul => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph.inner_mut().create_mat_mul_node(parents, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 卷积/池化 ====================
+        NodeTypeDescriptor::Conv2d { stride, padding } => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph
+                .inner_mut()
+                .create_conv2d_node(parents, *stride, *padding, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::MaxPool2d {
+            kernel_size,
+            stride,
+        } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_max_pool2d_node(parent, *kernel_size, Some(*stride), name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::AvgPool2d {
+            kernel_size,
+            stride,
+        } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_avg_pool2d_node(parent, *kernel_size, Some(*stride), name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 形状变换 ====================
+        NodeTypeDescriptor::Flatten { keep_first_dim } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_flatten_node(parent, *keep_first_dim, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Reshape { target_shape } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_reshape_node(parent, target_shape, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Select { axis, index } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_select_node(parent, *axis, *index, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Gather { dim } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let index = get_parent(node_desc, node_map, 1)?;
+            let node = graph
+                .inner_mut()
+                .create_gather_node(input, index, *dim, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Narrow {
+            axis,
+            start,
+            length,
+        } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_narrow_node(parent, *axis, *start, *length, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Permute { dims } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_permute_node(parent, dims, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Stack { axis } => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph
+                .inner_mut()
+                .create_stack_node(parents, *axis, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Concat { axis } => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph
+                .inner_mut()
+                .create_concat_node(parents, *axis, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Pad { paddings, pad_value } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_pad_node(parent, paddings.clone(), *pad_value, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Repeat { repeats } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_repeat_node(parent, repeats.clone(), name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 选择 ====================
+        NodeTypeDescriptor::TopK { k, axis, sorted } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_topk_node(parent, *k, *axis, *sorted, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::SortNode { axis, descending } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_sort_node(parent, *axis, *descending, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 归约 ====================
+        NodeTypeDescriptor::Maximum => {
+            let a = get_parent(node_desc, node_map, 0)?;
+            let b = get_parent(node_desc, node_map, 1)?;
+            let node = graph.inner_mut().create_maximum_node(a, b, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Minimum => {
+            let a = get_parent(node_desc, node_map, 0)?;
+            let b = get_parent(node_desc, node_map, 1)?;
+            let node = graph.inner_mut().create_minimum_node(a, b, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Amax { axis } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_amax_node(input, *axis, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Amin { axis } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_amin_node(input, *axis, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Sum { axis } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_sum_node(input, *axis, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Mean { axis } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_mean_node(input, *axis, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 激活函数 ====================
+        NodeTypeDescriptor::Sigmoid => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_sigmoid_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Tanh => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_tanh_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::ReLU => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_relu_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::LeakyReLU { alpha } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_leaky_relu_node(parent, *alpha, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Softmax => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_softmax_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::LogSoftmax => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_log_softmax_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::SoftPlus => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_softplus_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Gelu => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_gelu_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Swish => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_swish_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Elu { alpha } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_elu_node(parent, *alpha, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Selu => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_selu_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Mish => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_mish_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::HardSwish => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_hard_swish_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::HardSigmoid => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_hard_sigmoid_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::ReLU6 => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_relu6_node(parent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::HardTanh { min_val, max_val } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_hard_tanh_node(parent, *min_val, *max_val, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 逐元素数学运算 ====================
+        NodeTypeDescriptor::Exp => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_exp_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Sqrt => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_sqrt_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Ln => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_ln_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Log10 => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_log10_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Log2 => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_log2_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Pow { exponent } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_pow_node(input, *exponent, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Square => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_square_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Reciprocal => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_reciprocal_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Abs => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_abs_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Sign => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_sign_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Step => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_step_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 裁剪/条件 ====================
+        NodeTypeDescriptor::Clip { min, max } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_clip_node(input, *min, *max, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::WhereCond {
+            condition_data,
+            condition_shape,
+        } => {
+            let x = get_parent(node_desc, node_map, 0)?;
+            let y = get_parent(node_desc, node_map, 1)?;
+            let condition = Tensor::new(condition_data, condition_shape);
+            let node = graph
+                .inner_mut()
+                .create_where_cond_node(x, y, condition, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 辅助 ====================
+        NodeTypeDescriptor::Identity => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_identity_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Detach => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph.inner_mut().create_detach_node(input, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Dropout { p } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            // 使用固定 seed，加载后通常设为 eval 模式（Dropout 不起作用）
+            let node = graph
+                .inner_mut()
+                .create_dropout_node(input, *p, 42, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::ZerosLike => {
+            let reference = get_parent(node_desc, node_map, 0)?;
+            // feature_shape = output_shape[1..] （output_shape 是 [1, feature_dims...]）
+            let feature_shape = if node_desc.output_shape.len() > 1 {
+                &node_desc.output_shape[1..]
+            } else {
+                &node_desc.output_shape[..]
+            };
+            let node = graph
+                .inner_mut()
+                .create_zeros_like_node(reference, feature_shape, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 归一化 ====================
+        NodeTypeDescriptor::BatchNormOp {
+            eps,
+            momentum,
+            num_features,
+        } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            // 初始化 running stats 为零（后续由 load 恢复）
+            let running_mean = Rc::new(std::cell::RefCell::new(Tensor::zeros(&[1, *num_features])));
+            let running_var = Rc::new(std::cell::RefCell::new(Tensor::ones(&[1, *num_features])));
+            let node = graph.inner_mut().create_batch_norm_op_node(
+                input,
+                *eps,
+                *momentum,
+                running_mean,
+                running_var,
+                name,
+            )?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::LayerNormOp {
+            normalized_dims,
+            eps,
+        } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_layer_norm_op_node(input, *normalized_dims, *eps, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::RMSNormOp {
+            normalized_dims,
+            eps,
+        } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_rms_norm_op_node(input, *normalized_dims, *eps, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 损失函数 ====================
+        NodeTypeDescriptor::MSE { reduction } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let target = get_parent(node_desc, node_map, 1)?;
+            let node = graph
+                .inner_mut()
+                .create_mse_node(input, target, *reduction, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::MAE { reduction } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let target = get_parent(node_desc, node_map, 1)?;
+            let node = graph
+                .inner_mut()
+                .create_mae_node(input, target, *reduction, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::BCE { reduction } => {
+            let logits = get_parent(node_desc, node_map, 0)?;
+            let target = get_parent(node_desc, node_map, 1)?;
+            let node = graph
+                .inner_mut()
+                .create_bce_node(logits, target, *reduction, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::Huber { delta, reduction } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let target = get_parent(node_desc, node_map, 1)?;
+            let node = graph
+                .inner_mut()
+                .create_huber_node(input, target, *reduction, *delta, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::SoftmaxCrossEntropy => {
+            let logits = get_parent(node_desc, node_map, 0)?;
+            let labels = get_parent(node_desc, node_map, 1)?;
+            let node = graph
+                .inner_mut()
+                .create_softmax_cross_entropy_node(logits, labels, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+    }
+}

@@ -122,6 +122,7 @@ mod layer_lstm;
 mod layer_max_pool2d;
 mod layer_rnn;
 mod save_load;
+mod model_save;
 
 // ===== 已移除/归档 =====
 // mod var_transition; // 已删除（过渡期测试，迁移完成后不再需要）
