@@ -41,12 +41,14 @@
     # BLAS 后端（可选，通过 feature 启用）
     # lp64 = 32 位整型索引（与 ndarray/cblas-sys 兼容）
     # seq = 单线程（避免与 rayon 线程池冲突）
-    intel-mkl-src ={version="0.8", optional=true, default-features=false, features=["mkl-static-lp64-seq"]}
-    openblas-src  ={version="0.10", optional=true, features=["static"]}
+    intel-mkl-src={version="0.8", optional=true, default-features=false, features=[
+        "mkl-static-lp64-seq",
+    ]}
+    openblas-src={version="0.10", optional=true, features=["static"]}
 
     # 代码重构
     enum_dispatch="0.3"
-    strum       = { version = "0.26", features = ["derive"] }  # 枚举遍历和元数据
+    strum        ={version="0.26", features=["derive"]} # 枚举遍历和元数据
 
     # 数值相关
     approx     ="*"
@@ -82,137 +84,137 @@
     trait_variable="*"
 
     # 数据加载
-    flate2="1.0" # gzip 解压
-    dirs  ="5.0" # 跨平台目录
-    ureq  ="2.9" # HTTP 下载（blocking）
+    flate2="1.0"  # gzip 解压
+    dirs  ="5.0"  # 跨平台目录
+    ureq  ="2.9"  # HTTP 下载（blocking）
     md-5  ="0.10" # MD5 校验（RustCrypto）
 
     # 并行计算
     rayon="1.10" # 数据并行
 
     # Python 交互（强化学习 Gym 环境）
-    pyo3  ={version="0.27", features=["auto-initialize"]}
-    numpy ="0.27"
+    pyo3 ={version="0.27", features=["auto-initialize"]}
+    numpy="0.27"
 
 [dev-dependencies]
     # statrs="^0.16.0"
-    serial_test = "3"  # pyo3 测试需要串行执行，避免 Python 模块导入竞争
-    criterion  = { version = "0.5", features = ["html_reports"] }
+    serial_test="3"                                        # pyo3 测试需要串行执行，避免 Python 模块导入竞争
+    criterion  ={version="0.5", features=["html_reports"]}
 
 [[bench]]
-name    = "conv2d"
-harness = false
+    name   ="conv2d"
+    harness=false
 
 [[bench]]
-name    = "backward"
-harness = false
+    name   ="backward"
+    harness=false
 
 [[bench]]
-name    = "end_to_end"
-harness = false
+    name   ="end_to_end"
+    harness=false
 
 [[bench]]
-name    = "tensor_ops"
-harness = false
+    name   ="tensor_ops"
+    harness=false
 
-# ==================== 示例 ====================
-
-[[example]]
-name = "xor"
-path = "examples/traditional/xor/main.rs"
+    # ==================== 示例 ====================
 
 [[example]]
-name = "sine_regression"
-path = "examples/traditional/sine_regression/main.rs"
+    name="xor"
+    path="examples/traditional/xor/main.rs"
 
 [[example]]
-name = "iris"
-path = "examples/traditional/iris/main.rs"
+    name="sine_regression"
+    path="examples/traditional/sine_regression/main.rs"
 
 [[example]]
-name = "mnist"
-path = "examples/traditional/mnist/main.rs"
+    name="iris"
+    path="examples/traditional/iris/main.rs"
 
 [[example]]
-name = "california_housing"
-path = "examples/traditional/california_housing/main.rs"
+    name="mnist"
+    path="examples/traditional/mnist/main.rs"
 
 [[example]]
-name = "parity_rnn_fixed_len"
-path = "examples/traditional/parity_rnn_fixed_len/main.rs"
+    name="california_housing"
+    path="examples/traditional/california_housing/main.rs"
 
 [[example]]
-name = "parity_rnn_var_len"
-path = "examples/traditional/parity_rnn_var_len/main.rs"
+    name="parity_rnn_fixed_len"
+    path="examples/traditional/parity_rnn_fixed_len/main.rs"
 
 [[example]]
-name = "parity_lstm_var_len"
-path = "examples/traditional/parity_lstm_var_len/main.rs"
+    name="parity_rnn_var_len"
+    path="examples/traditional/parity_rnn_var_len/main.rs"
 
 [[example]]
-name = "parity_gru_var_len"
-path = "examples/traditional/parity_gru_var_len/main.rs"
+    name="parity_lstm_var_len"
+    path="examples/traditional/parity_lstm_var_len/main.rs"
 
 [[example]]
-name = "mnist_cnn"
-path = "examples/traditional/mnist_cnn/main.rs"
+    name="parity_gru_var_len"
+    path="examples/traditional/parity_gru_var_len/main.rs"
 
 [[example]]
-name = "mnist_gan"
-path = "examples/traditional/mnist_gan/main.rs"
+    name="mnist_cnn"
+    path="examples/traditional/mnist_cnn/main.rs"
 
 [[example]]
-name = "dual_input_add"
-path = "examples/traditional/dual_input_add/main.rs"
+    name="mnist_gan"
+    path="examples/traditional/mnist_gan/main.rs"
 
 [[example]]
-name = "siamese_similarity"
-path = "examples/traditional/siamese_similarity/main.rs"
+    name="dual_input_add"
+    path="examples/traditional/dual_input_add/main.rs"
 
 [[example]]
-name = "dual_output_classify"
-path = "examples/traditional/dual_output_classify/main.rs"
+    name="siamese_similarity"
+    path="examples/traditional/siamese_similarity/main.rs"
 
 [[example]]
-name = "multi_io_fusion"
-path = "examples/traditional/multi_io_fusion/main.rs"
+    name="dual_output_classify"
+    path="examples/traditional/dual_output_classify/main.rs"
 
 [[example]]
-name = "multi_label_point"
-path = "examples/traditional/multi_label_point/main.rs"
+    name="multi_io_fusion"
+    path="examples/traditional/multi_io_fusion/main.rs"
 
 [[example]]
-name = "chinese_chess"
-path = "examples/traditional/chinese_chess/main.rs"
+    name="multi_label_point"
+    path="examples/traditional/multi_label_point/main.rs"
 
 [[example]]
-name = "cartpole_sac"
-path = "examples/traditional/sac/cartpole/main.rs"
+    name="chinese_chess"
+    path="examples/traditional/chinese_chess/main.rs"
 
 [[example]]
-name = "pendulum_sac"
-path = "examples/traditional/sac/pendulum/main.rs"
+    name="cartpole_sac"
+    path="examples/traditional/sac/cartpole/main.rs"
 
 [[example]]
-name = "moving_sac"
-path = "examples/traditional/sac/moving/main.rs"
+    name="pendulum_sac"
+    path="examples/traditional/sac/pendulum/main.rs"
 
 [[example]]
-name = "evolution_xor"
-path = "examples/evolution/xor/main.rs"
+    name="moving_sac"
+    path="examples/traditional/sac/moving/main.rs"
 
 [[example]]
-name = "evolution_iris"
-path = "examples/evolution/iris/main.rs"
+    name="evolution_xor"
+    path="examples/evolution/xor/main.rs"
 
 [[example]]
-name = "evolution_parity_seq"
-path = "examples/evolution/parity_seq/main.rs"
+    name="evolution_iris"
+    path="examples/evolution/iris/main.rs"
 
 [[example]]
-name = "evolution_mnist"
-path = "examples/evolution/mnist/main.rs"
+    name="evolution_parity_seq"
+    path="examples/evolution/parity_seq/main.rs"
 
 [[example]]
-name = "evolution_parity_seq_var_len"
-path = "examples/evolution/parity_seq_var_len/main.rs"
+    name="evolution_mnist"
+    path="examples/evolution/mnist/main.rs"
+
+[[example]]
+    name="evolution_parity_seq_var_len"
+    path="examples/evolution/parity_seq_var_len/main.rs"
