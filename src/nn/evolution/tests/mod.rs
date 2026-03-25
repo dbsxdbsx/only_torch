@@ -3,6 +3,8 @@ mod convergence;
 mod evolution;
 mod gene;
 mod model_io;
+mod migration;
 mod mutation;
+mod node_gene;
 mod selection;
 mod task;

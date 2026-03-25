@@ -22,7 +22,9 @@ pub mod convergence;
 pub mod error;
 pub mod gene;
 pub mod model_io;
+pub mod migration;
 pub mod mutation;
+pub mod node_gene;
 pub mod selection;
 pub mod task;
 

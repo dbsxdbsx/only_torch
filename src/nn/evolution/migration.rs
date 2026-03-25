@@ -1,0 +1,491 @@
+/*
+ * @Author       : 老董
+ * @Date         : 2026-03-25
+ * @Description  : 阶段 2：旧层级基因组 → 节点级基因组迁移器
+ *
+ * 核心功能：
+ * - InnovationCounter : 统一创新号分配入口（单调递增）
+ * - expand_*         : 各 LayerConfig 变体的节点展开函数
+ * - migrate_network_genome : 将完整 NetworkGenome 展开为 Vec<NodeGene>
+ *
+ * 设计原则：
+ * - 只读取现有 NetworkGenome（LayerGene + SkipEdge），不修改它
+ * - 展开结果可直接传入 GenomeAnalysis::compute() 验证合法性
+ * - Rnn/Lstm/Gru 不在此版本展开（标记为 deferred，原因见注释）
+ * - SkipEdge 转换为显式的 Add/Concat/Maximum 聚合节点
+ */
+
+use std::collections::HashMap;
+
+use crate::nn::descriptor::NodeTypeDescriptor;
+
+use super::gene::{
+    ActivationType, AggregateStrategy, LayerConfig, NetworkGenome, PoolType, INPUT_INNOVATION,
+};
+use super::node_gene::NodeGene;
+
+// ==================== InnovationCounter ====================
+
+/// 统一创新号分配器
+///
+/// 顺手引入于阶段 2，阶段 1 的 NodeGene 已有 `innovation_number` 字段，
+/// 本结构提供统一的分配入口，避免各处手工维护计数器。
+/// 后续阶段（mutation、builder）使用同一结构，保证全局单调递增。
+#[derive(Debug, Clone)]
+pub struct InnovationCounter(u64);
+
+impl InnovationCounter {
+    /// 从指定起始值创建计数器
+    pub fn new(start: u64) -> Self {
+        Self(start)
+    }
+
+    /// 分配下一个创新号（单调递增）
+    pub fn next(&mut self) -> u64 {
+        let id = self.0;
+        self.0 += 1;
+        id
+    }
+
+    /// 当前下一个将分配的值（不消耗）
+    pub fn peek(&self) -> u64 {
+        self.0
+    }
+}
+
+// ==================== 错误类型 ====================
+
+/// 迁移错误
+#[derive(Debug)]
+pub enum MigrationError {
+    /// 维度推导失败（旧 genome 本身不合法）
+    DimensionError(String),
+}
+
+impl std::fmt::Display for MigrationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DimensionError(msg) => write!(f, "维度推导失败：{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for MigrationError {}
+
+// ==================== 迁移输出 ====================
+
+/// 迁移结果
+pub struct MigrationOutput {
+    /// 展开后的节点列表（拓扑序，叶节点在前）
+    pub nodes: Vec<NodeGene>,
+    /// 最终输出节点的创新号（用于构图时标识输出）
+    pub output_innovation: u64,
+    /// 未展开的层描述（Rnn/Lstm/Gru 等暂不支持的变体）
+    pub deferred: Vec<String>,
+    /// 下一个可用创新号（用于继续分配）
+    pub next_innovation: u64,
+}
+
+// ==================== ActivationType → NodeTypeDescriptor 映射 ====================
+
+/// 将演化系统的 ActivationType 映射到 NodeTypeDescriptor
+pub fn activation_to_node_type(act: &ActivationType) -> NodeTypeDescriptor {
+    match act {
+        ActivationType::ReLU => NodeTypeDescriptor::ReLU,
+        ActivationType::LeakyReLU { alpha } => NodeTypeDescriptor::LeakyReLU { alpha: *alpha },
+        ActivationType::Tanh => NodeTypeDescriptor::Tanh,
+        ActivationType::Sigmoid => NodeTypeDescriptor::Sigmoid,
+        ActivationType::GELU => NodeTypeDescriptor::Gelu,
+        ActivationType::SiLU => NodeTypeDescriptor::Swish,
+        ActivationType::Softplus => NodeTypeDescriptor::SoftPlus,
+        ActivationType::ReLU6 => NodeTypeDescriptor::ReLU6,
+        ActivationType::ELU { alpha } => NodeTypeDescriptor::Elu { alpha: *alpha },
+        ActivationType::SELU => NodeTypeDescriptor::Selu,
+        ActivationType::Mish => NodeTypeDescriptor::Mish,
+        ActivationType::HardSwish => NodeTypeDescriptor::HardSwish,
+        ActivationType::HardSigmoid => NodeTypeDescriptor::HardSigmoid,
+    }
+}
+
+// ==================== 单层展开函数 ====================
+
+/// 展开 Linear 层 → Parameter(W) + MatMul + Parameter(b) + Add
+///
+/// 形状约定（batch=1）：
+/// - W: [in_dim, out_features]
+/// - MatMul: [1, out_features]
+/// - b:  [1, out_features]
+/// - Add: [1, out_features]
+///
+/// 所有节点共享同一个 block_id。
+pub fn expand_linear(
+    input_id: u64,
+    in_dim: usize,
+    out_features: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let w_id = counter.next();
+    let mm_id = counter.next();
+    let b_id = counter.next();
+    let add_id = counter.next();
+
+    let bid = Some(block_id);
+    vec![
+        // W: [in_dim, out_features]
+        NodeGene::new(w_id, NodeTypeDescriptor::Parameter, vec![in_dim, out_features], vec![], bid),
+        // MatMul: input[1,in_dim] × W[in_dim,out_features] → [1,out_features]
+        NodeGene::new(mm_id, NodeTypeDescriptor::MatMul, vec![1, out_features], vec![input_id, w_id], bid),
+        // b: [1, out_features]
+        NodeGene::new(b_id, NodeTypeDescriptor::Parameter, vec![1, out_features], vec![], bid),
+        // Add: [1, out_features]
+        NodeGene::new(add_id, NodeTypeDescriptor::Add, vec![1, out_features], vec![mm_id, b_id], bid),
+    ]
+}
+
+/// 展开 Activation 层 → 单个激活节点
+///
+/// 激活节点没有参数，`block_id = None`（细粒度独立节点语义）。
+pub fn expand_activation(
+    input_id: u64,
+    input_shape: Vec<usize>,
+    activation_type: &ActivationType,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let id = counter.next();
+    let nt = activation_to_node_type(activation_type);
+    vec![NodeGene::new(id, nt, input_shape, vec![input_id], None)]
+}
+
+/// 展开 Conv2d 层 → Parameter(kernel) + Conv2d 节点
+///
+/// 注意：本版本不包含 bias（bias 的 broadcast 形状处理在阶段 4 的模板变异中完善）。
+/// 形状约定：
+/// - kernel: [out_channels, in_channels, k, k]
+/// - conv_out: [1, out_channels, H_out, W_out]（same padding，stride=1）
+///
+/// 所有节点共享同一个 block_id。
+pub fn expand_conv2d(
+    input_id: u64,
+    in_channels: usize,
+    out_channels: usize,
+    kernel_size: usize,
+    input_spatial: (usize, usize),
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let k = kernel_size;
+    let padding = k / 2; // same padding
+    let (h, w) = input_spatial;
+    let h_out = (h + 2 * padding - k) / 1 + 1;
+    let w_out = (w + 2 * padding - k) / 1 + 1;
+
+    let kernel_id = counter.next();
+    let conv_id = counter.next();
+
+    let bid = Some(block_id);
+    vec![
+        // kernel: [out_channels, in_channels, k, k]
+        NodeGene::new(
+            kernel_id,
+            NodeTypeDescriptor::Parameter,
+            vec![out_channels, in_channels, k, k],
+            vec![],
+            bid,
+        ),
+        // Conv2d: parents=[input, kernel]
+        NodeGene::new(
+            conv_id,
+            NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (padding, padding) },
+            vec![1, out_channels, h_out, w_out],
+            vec![input_id, kernel_id],
+            bid,
+        ),
+    ]
+}
+
+/// 展开 Pool2d 层 → 单个池化节点（无参数，block_id = None）
+pub fn expand_pool2d(
+    input_id: u64,
+    pool_type: PoolType,
+    kernel_size: usize,
+    stride: usize,
+    input_spatial: (usize, usize),
+    in_channels: usize,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let (h, w) = input_spatial;
+    let h_out = if h >= kernel_size { (h - kernel_size) / stride + 1 } else { 1 };
+    let w_out = if w >= kernel_size { (w - kernel_size) / stride + 1 } else { 1 };
+    let output_shape = vec![1, in_channels, h_out, w_out];
+
+    let id = counter.next();
+    let nt = match pool_type {
+        PoolType::Max => NodeTypeDescriptor::MaxPool2d {
+            kernel_size: (kernel_size, kernel_size),
+            stride: (stride, stride),
+        },
+        PoolType::Avg => NodeTypeDescriptor::AvgPool2d {
+            kernel_size: (kernel_size, kernel_size),
+            stride: (stride, stride),
+        },
+    };
+    vec![NodeGene::new(id, nt, output_shape, vec![input_id], None)]
+}
+
+/// 展开 Flatten 层 → 单个 Flatten 节点
+///
+/// 使用 `keep_first_dim = true`（保留 batch 维）。
+pub fn expand_flatten(
+    input_id: u64,
+    in_channels: usize,
+    input_spatial: Option<(usize, usize)>,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let id = counter.next();
+    let output_shape = match input_spatial {
+        Some((h, w)) => vec![1, in_channels * h * w],
+        None => vec![1, in_channels], // already flat, identity-like
+    };
+    vec![NodeGene::new(
+        id,
+        NodeTypeDescriptor::Flatten { keep_first_dim: true },
+        output_shape,
+        vec![input_id],
+        None,
+    )]
+}
+
+/// 展开 Dropout 层 → 单个 Dropout 节点
+pub fn expand_dropout(
+    input_id: u64,
+    input_shape: Vec<usize>,
+    p: f32,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let id = counter.next();
+    vec![NodeGene::new(id, NodeTypeDescriptor::Dropout { p }, input_shape, vec![input_id], None)]
+}
+
+// ==================== 主迁移函数 ====================
+
+/// 将旧层级 `NetworkGenome` 展开为节点级 `Vec<NodeGene>`
+///
+/// # 展开规则
+/// - Linear → `expand_linear` (4 节点：W/MatMul/b/Add)
+/// - Activation → `expand_activation` (1 节点)
+/// - Conv2d → `expand_conv2d` (2 节点：kernel/Conv2d；bias 暂缓)
+/// - Pool2d → `expand_pool2d` (1 节点)
+/// - Flatten → `expand_flatten` (1 节点)
+/// - Dropout → `expand_dropout` (1 节点)
+/// - Rnn/Lstm/Gru → **deferred**（不展开，记入 output.deferred）
+///
+/// # SkipEdge 处理
+/// - Add → 插入 `NodeTypeDescriptor::Add` 聚合节点
+/// - Concat → 插入 `NodeTypeDescriptor::Concat` 聚合节点
+/// - Max → 插入 `NodeTypeDescriptor::Maximum` 聚合节点
+/// - Mean → 近似为 Add（注：丢弃 1/n 缩放，语义不完全准确，见 deferred）
+///
+/// # 创新号
+/// 新 NodeGene 的创新号从 1 开始（0 保留给虚拟输入 INPUT_INNOVATION）。
+pub fn migrate_network_genome(
+    genome: &NetworkGenome,
+) -> Result<MigrationOutput, MigrationError> {
+    let resolved = genome
+        .resolve_dimensions()
+        .map_err(|e| MigrationError::DimensionError(e.to_string()))?;
+
+    let spatial_map = genome.compute_spatial_map();
+
+    let mut counter = InnovationCounter::new(1); // 0 是 INPUT_INNOVATION
+    let mut block_counter: u64 = 0;
+    let mut nodes: Vec<NodeGene> = Vec::new();
+    let mut deferred: Vec<String> = Vec::new();
+
+    // 旧 innovation → 展开后最后一个 NodeGene 的 innovation（用于 skip edge 查找源节点）
+    let mut innov_map: HashMap<u64, u64> = HashMap::new();
+    innov_map.insert(INPUT_INNOVATION, INPUT_INNOVATION);
+
+    // 当前主路径输出节点的 innovation
+    let mut current_output_id: u64 = INPUT_INNOVATION;
+
+    for (i, dim) in resolved.iter().enumerate() {
+        let layer = genome
+            .layers
+            .iter()
+            .find(|l| l.innovation_number == dim.innovation_number && l.enabled)
+            .expect("resolve_dimensions 返回的创新号必须对应启用层");
+
+        // 求本层输入的空间尺寸
+        let input_spatial: Option<(usize, usize)> = if i == 0 {
+            genome.input_spatial
+        } else {
+            let prev_innov = resolved[i - 1].innovation_number;
+            spatial_map.get(&prev_innov).copied().flatten()
+        };
+
+        // 检查是否有到本层的 skip edges
+        let incoming: Vec<_> = genome
+            .skip_edges
+            .iter()
+            .filter(|e| e.enabled && e.to_innovation == layer.innovation_number)
+            .collect();
+
+        // 若有 skip edges，先插入聚合节点
+        let effective_input_id = if incoming.is_empty() {
+            current_output_id
+        } else {
+            let strategy = &incoming[0].strategy;
+            let mut agg_parents = vec![current_output_id];
+
+            for skip in &incoming {
+                if let Some(&src_id) = innov_map.get(&skip.from_innovation) {
+                    if !agg_parents.contains(&src_id) {
+                        agg_parents.push(src_id);
+                    }
+                }
+            }
+
+            let agg_id = counter.next();
+            let (agg_nt, agg_shape, warn) = match strategy {
+                AggregateStrategy::Add | AggregateStrategy::Mean => {
+                    let warn = matches!(strategy, AggregateStrategy::Mean)
+                        .then(|| format!("skip edge Mean 被近似为 Add（丢弃 1/n 缩放）"));
+                    (NodeTypeDescriptor::Add, vec![1, dim.in_dim], warn)
+                }
+                AggregateStrategy::Max => {
+                    (NodeTypeDescriptor::Maximum, vec![1, dim.in_dim], None)
+                }
+                AggregateStrategy::Concat { dim: concat_dim } => {
+                    // 近似：使用 dim.in_dim 作为 concat 输出（GenomeAnalysis 会验证实际维度）
+                    let concat_out = dim.in_dim;
+                    let axis = if *concat_dim < 0 { 1usize } else { *concat_dim as usize };
+                    (NodeTypeDescriptor::Concat { axis }, vec![1, concat_out], None)
+                }
+            };
+
+            if let Some(w) = warn {
+                deferred.push(w);
+            }
+
+            nodes.push(NodeGene::new(agg_id, agg_nt, agg_shape, agg_parents, None));
+            agg_id
+        };
+
+        // 分配 block_id（每个模板展开一个 block）
+        let bid = block_counter;
+        block_counter += 1;
+
+        // 展开层配置
+        let result = expand_layer_config(
+            &layer.layer_config,
+            effective_input_id,
+            dim.in_dim,
+            dim.out_dim,
+            input_spatial,
+            bid,
+            &mut counter,
+        );
+
+        match result {
+            Ok(new_nodes) => {
+                let last_id = new_nodes
+                    .last()
+                    .map(|n| n.innovation_number)
+                    .unwrap_or(effective_input_id);
+                innov_map.insert(layer.innovation_number, last_id);
+                current_output_id = last_id;
+                nodes.extend(new_nodes);
+            }
+            Err(reason) => {
+                // 不可展开的层（Rnn/Lstm/Gru 等）：标记 deferred，透传输出
+                deferred.push(format!(
+                    "层 {} ({}) 未展开：{}",
+                    layer.innovation_number, layer.layer_config, reason
+                ));
+                innov_map.insert(layer.innovation_number, current_output_id);
+            }
+        }
+    }
+
+    Ok(MigrationOutput {
+        output_innovation: current_output_id,
+        next_innovation: counter.peek(),
+        nodes,
+        deferred,
+    })
+}
+
+/// 将单个 LayerConfig 展开为 NodeGene 列表
+///
+/// 返回 `Err(reason)` 表示该变体暂不支持展开（标记为 deferred）。
+fn expand_layer_config(
+    config: &LayerConfig,
+    input_id: u64,
+    in_dim: usize,
+    _out_dim: usize,
+    input_spatial: Option<(usize, usize)>,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Result<Vec<NodeGene>, String> {
+    match config {
+        LayerConfig::Linear { out_features } => {
+            Ok(expand_linear(input_id, in_dim, *out_features, block_id, counter))
+        }
+
+        LayerConfig::Activation { activation_type } => {
+            // 激活函数透传维度，输入形状 = [1, in_dim]
+            Ok(expand_activation(
+                input_id,
+                vec![1, in_dim],
+                activation_type,
+                counter,
+            ))
+        }
+
+        LayerConfig::Dropout { p } => {
+            Ok(expand_dropout(input_id, vec![1, in_dim], *p, counter))
+        }
+
+        LayerConfig::Flatten => {
+            Ok(expand_flatten(input_id, in_dim, input_spatial, counter))
+        }
+
+        LayerConfig::Conv2d { out_channels, kernel_size } => {
+            let spatial = input_spatial.ok_or_else(|| {
+                "Conv2d 需要空间输入（input_spatial 不能为 None）".to_string()
+            })?;
+            Ok(expand_conv2d(
+                input_id,
+                in_dim,         // in_dim 在空间模式下是 in_channels
+                *out_channels,
+                *kernel_size,
+                spatial,
+                block_id,
+                counter,
+            ))
+        }
+
+        LayerConfig::Pool2d { pool_type, kernel_size, stride } => {
+            let spatial = input_spatial.ok_or_else(|| {
+                "Pool2d 需要空间输入（input_spatial 不能为 None）".to_string()
+            })?;
+            Ok(expand_pool2d(
+                input_id,
+                *pool_type,
+                *kernel_size,
+                *stride,
+                spatial,
+                in_dim, // channels
+                counter,
+            ))
+        }
+
+        // Rnn/Lstm/Gru: 先作为 deferred，阶段 4 引入模板系统时再处理
+        LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
+            Err(format!(
+                "{config} 为循环层，暂不展开（阶段 2 不展开 recurrence 图，留待阶段 4 模板机制处理）"
+            ))
+        }
+    }
+}
