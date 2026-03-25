@@ -36,8 +36,8 @@ fn test_genome_serde_roundtrip_minimal() {
 
     assert_eq!(restored.input_dim, 4);
     assert_eq!(restored.output_dim, 3);
-    assert_eq!(restored.layers.len(), genome.layers.len());
-    assert_eq!(restored.skip_edges.len(), 0);
+    assert_eq!(restored.layers().len(), genome.layers().len());
+    assert_eq!(restored.skip_edges().len(), 0);
 }
 
 #[test]

@@ -311,7 +311,7 @@ pub fn migrate_network_genome(
 
     for (i, dim) in resolved.iter().enumerate() {
         let layer = genome
-            .layers
+            .layers()
             .iter()
             .find(|l| l.innovation_number == dim.innovation_number && l.enabled)
             .expect("resolve_dimensions 返回的创新号必须对应启用层");
@@ -326,7 +326,7 @@ pub fn migrate_network_genome(
 
         // 检查是否有到本层的 skip edges
         let incoming: Vec<_> = genome
-            .skip_edges
+            .skip_edges()
             .iter()
             .filter(|e| e.enabled && e.to_innovation == layer.innovation_number)
             .collect();

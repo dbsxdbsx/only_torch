@@ -33,7 +33,7 @@ fn xor_task() -> SupervisedTask {
 fn genome_with_hidden(input_dim: usize, output_dim: usize) -> NetworkGenome {
     let mut genome = NetworkGenome::minimal(input_dim, output_dim);
     let inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn,
@@ -42,7 +42,7 @@ fn genome_with_hidden(input_dim: usize, output_dim: usize) -> NetworkGenome {
         },
     );
     let inn_act = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: inn_act,

@@ -16,7 +16,7 @@ fn genome_with_hidden() -> NetworkGenome {
     let mut g = NetworkGenome::minimal(2, 1);
     let i1 = g.next_innovation_number();
     let i2 = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -24,7 +24,7 @@ fn genome_with_hidden() -> NetworkGenome {
             enabled: true,
         },
     );
-    g.layers.insert(
+    g.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -52,7 +52,7 @@ fn test_insert_layer_happy_path() {
     assert!(g.layer_count() >= 2);
     assert!(g.resolve_dimensions().is_ok());
     // 输出头仍是最后一个 enabled 层
-    let last = g.layers.iter().rev().find(|l| l.enabled).unwrap();
+    let last = g.layers().iter().rev().find(|l| l.enabled).unwrap();
     assert_eq!(last.layer_config, LayerConfig::Linear { out_features: 1 });
 }
 
@@ -86,7 +86,7 @@ fn test_insert_layer_no_consecutive_activation() {
     }
 
     let enabled: Vec<&LayerConfig> = g
-        .layers
+        .layers()
         .iter()
         .filter(|l| l.enabled)
         .map(|l| &l.layer_config)
@@ -113,7 +113,7 @@ fn test_insert_layer_spatial_width_not_locked_to_input_channels() {
         let mut g = spatial_genome((28, 28));
         let mut r = StdRng::seed_from_u64(seed);
         m.apply(&mut g, &c, &mut r).unwrap();
-        for layer in g.layers.iter().filter(|l| l.enabled) {
+        for layer in g.layers().iter().filter(|l| l.enabled) {
             if let LayerConfig::Conv2d { out_channels, .. } = layer.layer_config {
                 if out_channels > 24 {
                     observed_width_above_min = true;
@@ -138,7 +138,7 @@ fn test_insert_layer_spatial_does_not_create_pool_when_spatial_too_small() {
         let mut r = StdRng::seed_from_u64(seed);
         m.apply(&mut g, &c, &mut r).unwrap();
         assert!(
-            !g.layers.iter().any(|l| {
+            !g.layers().iter().any(|l| {
                 l.enabled && matches!(l.layer_config, LayerConfig::Pool2d { .. })
             }),
             "1x1 空间输入上不应再生成 Pool2d 候选"
@@ -181,7 +181,7 @@ fn test_remove_layer_preserves_output_head() {
     }
 
     assert_eq!(g.layer_count(), 1);
-    let last = g.layers.iter().find(|l| l.enabled).unwrap();
+    let last = g.layers().iter().find(|l| l.enabled).unwrap();
     assert_eq!(
         last.layer_config,
         LayerConfig::Linear {
@@ -205,7 +205,7 @@ fn test_replace_layer_type_happy_path() {
 
     // 确认 Activation 层被替换为不同的类型
     let act_layer = g
-        .layers
+        .layers()
         .iter()
         .find(|l| matches!(l.layer_config, LayerConfig::Activation { .. }))
         .unwrap();
@@ -224,7 +224,7 @@ fn test_replace_layer_type_no_activation_not_applicable() {
     // 只有 Linear 层（无 Activation），不可替换
     let mut g = NetworkGenome::minimal(2, 1);
     let inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn,
@@ -262,7 +262,7 @@ fn test_replace_does_not_touch_output_head() {
         }
     }
 
-    let last = g.layers.iter().rev().find(|l| l.enabled).unwrap();
+    let last = g.layers().iter().rev().find(|l| l.enabled).unwrap();
     assert_eq!(last.layer_config, LayerConfig::Linear { out_features: 1 });
 }
 
@@ -279,7 +279,7 @@ fn test_grow_hidden_happy_path() {
     m.apply(&mut g, &c, &mut r).unwrap();
 
     let linear = g
-        .layers
+        .layers()
         .iter()
         .find(|l| {
             l.enabled
@@ -296,7 +296,7 @@ fn test_grow_hidden_happy_path() {
 fn test_grow_hidden_max_reached_not_applicable() {
     let mut g = genome_with_hidden();
     // 设置隐藏层已达上限
-    g.layers[0].layer_config = LayerConfig::Linear { out_features: 64 };
+    g.layers_mut()[0].layer_config = LayerConfig::Linear { out_features: 64 };
     let c = SizeConstraints {
         max_hidden_size: 64,
         ..constraints()
@@ -334,7 +334,7 @@ fn test_grow_does_not_touch_output_head() {
         }
     }
 
-    let last = g.layers.iter().rev().find(|l| l.enabled).unwrap();
+    let last = g.layers().iter().rev().find(|l| l.enabled).unwrap();
     assert_eq!(last.layer_config, LayerConfig::Linear { out_features: 1 });
 }
 
@@ -351,7 +351,7 @@ fn test_shrink_hidden_happy_path() {
     m.apply(&mut g, &c, &mut r).unwrap();
 
     let linear = g
-        .layers
+        .layers()
         .iter()
         .find(|l| {
             l.enabled
@@ -367,7 +367,7 @@ fn test_shrink_hidden_happy_path() {
 #[test]
 fn test_shrink_hidden_min_reached_not_applicable() {
     let mut g = genome_with_hidden();
-    g.layers[0].layer_config = LayerConfig::Linear { out_features: 1 };
+    g.layers_mut()[0].layer_config = LayerConfig::Linear { out_features: 1 };
     let c = SizeConstraints {
         min_hidden_size: 1,
         ..constraints()
@@ -389,7 +389,7 @@ fn test_shrink_does_not_touch_output_head() {
         }
     }
 
-    let last = g.layers.iter().rev().find(|l| l.enabled).unwrap();
+    let last = g.layers().iter().rev().find(|l| l.enabled).unwrap();
     assert_eq!(last.layer_config, LayerConfig::Linear { out_features: 1 });
 }
 
@@ -399,7 +399,7 @@ fn test_shrink_does_not_touch_output_head() {
 fn test_mutate_layer_param_leaky_relu() {
     let mut g = NetworkGenome::minimal(2, 1);
     let inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn,
@@ -419,7 +419,7 @@ fn test_mutate_layer_param_leaky_relu() {
 
     if let LayerConfig::Activation {
         activation_type: ActivationType::LeakyReLU { alpha },
-    } = g.layers[0].layer_config
+    } = g.layers()[0].layer_config
     {
         assert!((0.001..=0.5).contains(&alpha));
     } else {
@@ -549,7 +549,7 @@ fn test_insert_never_after_output_head() {
         }
     }
 
-    let last = g.layers.iter().rev().find(|l| l.enabled).unwrap();
+    let last = g.layers().iter().rev().find(|l| l.enabled).unwrap();
     assert_eq!(
         last.layer_config,
         LayerConfig::Linear {
@@ -591,8 +591,8 @@ fn test_add_skip_edge_happy_path() {
     assert!(m.is_applicable(&g, &c));
     m.apply(&mut g, &c, &mut r).unwrap();
 
-    assert_eq!(g.skip_edges.len(), 1);
-    assert!(g.skip_edges[0].enabled);
+    assert_eq!(g.skip_edges().len(), 1);
+    assert!(g.skip_edges()[0].enabled);
     assert!(g.resolve_dimensions().is_ok());
 }
 
@@ -611,13 +611,13 @@ fn test_add_skip_edge_dag_validity() {
     }
 
     let enabled: Vec<u64> = g
-        .layers
+        .layers()
         .iter()
         .filter(|l| l.enabled)
         .map(|l| l.innovation_number)
         .collect();
 
-    for edge in &g.skip_edges {
+    for edge in g.skip_edges() {
         if !edge.enabled {
             continue;
         }
@@ -650,7 +650,7 @@ fn test_add_skip_edge_forward_direction_only() {
     // 直接前驱被排除后，唯一候选: INPUT(0) → 输出头(1)
     let mut g = NetworkGenome::minimal(4, 1);
     let hidden_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: hidden_inn,
@@ -663,8 +663,8 @@ fn test_add_skip_edge_forward_direction_only() {
     let c = constraints();
 
     m.apply(&mut g, &c, &mut r).unwrap();
-    assert_eq!(g.skip_edges[0].from_innovation, INPUT_INNOVATION);
-    assert_eq!(g.skip_edges[0].to_innovation, 1); // 输出头
+    assert_eq!(g.skip_edges()[0].from_innovation, INPUT_INNOVATION);
+    assert_eq!(g.skip_edges()[0].to_innovation, 1); // 输出头
 }
 
 // ==================== RemoveSkipEdgeMutation ====================
@@ -677,11 +677,11 @@ fn test_remove_skip_edge_happy_path() {
 
     // 先添加一条
     AddSkipEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
-    assert_eq!(g.skip_edges.len(), 1);
+    assert_eq!(g.skip_edges().len(), 1);
 
     // 移除
     RemoveSkipEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
-    assert_eq!(g.skip_edges.len(), 0);
+    assert_eq!(g.skip_edges().len(), 0);
     assert!(g.resolve_dimensions().is_ok());
 }
 
@@ -719,7 +719,7 @@ fn test_mutate_aggregate_strategy_same_target_unified() {
     // 同一目标层的所有 skip edge 应统一切换策略
     let mut g = NetworkGenome::minimal(4, 1);
     let inn_h = g.next_innovation_number(); // 2
-    g.layers.insert(
+    g.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn_h,
@@ -728,7 +728,7 @@ fn test_mutate_aggregate_strategy_same_target_unified() {
         },
     );
     let inn_act = g.next_innovation_number(); // 3
-    g.layers.insert(
+    g.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: inn_act,
@@ -741,7 +741,7 @@ fn test_mutate_aggregate_strategy_same_target_unified() {
 
     // 两条 skip edge 都指向输出头(1)
     let se1 = g.next_innovation_number();
-    g.skip_edges.push(SkipEdge {
+    g.skip_edges_mut().push(SkipEdge {
         innovation_number: se1,
         from_innovation: INPUT_INNOVATION,
         to_innovation: 1,
@@ -749,7 +749,7 @@ fn test_mutate_aggregate_strategy_same_target_unified() {
         enabled: true,
     });
     let se2 = g.next_innovation_number();
-    g.skip_edges.push(SkipEdge {
+    g.skip_edges_mut().push(SkipEdge {
         innovation_number: se2,
         from_innovation: inn_h,
         to_innovation: 1,
@@ -767,7 +767,7 @@ fn test_mutate_aggregate_strategy_same_target_unified() {
 
     // 核心断言：同目标层的所有 skip edge 必须使用相同策略
     let to_1_edges: Vec<_> = g
-        .skip_edges
+        .skip_edges()
         .iter()
         .filter(|e| e.enabled && e.to_innovation == 1)
         .collect();
@@ -799,13 +799,13 @@ fn test_skip_edge_is_not_cycle() {
     // 所有 skip edge 的 from 必须在 to 之前（或为 INPUT）
     // 这意味着没有环路
     let enabled_order: Vec<u64> = g
-        .layers
+        .layers()
         .iter()
         .filter(|l| l.enabled)
         .map(|l| l.innovation_number)
         .collect();
 
-    for edge in &g.skip_edges {
+    for edge in g.skip_edges() {
         if !edge.enabled || edge.from_innovation == INPUT_INNOVATION {
             continue;
         }
@@ -832,7 +832,7 @@ fn test_skip_edge_dimension_check() {
     // 手动构造维度不兼容的 skip edge（Add 要求同维度）→ resolve_dimensions 报错
     let mut g = NetworkGenome::minimal(2, 1);
     let inn_h = g.next_innovation_number(); // 2
-    g.layers.insert(
+    g.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn_h,
@@ -843,7 +843,7 @@ fn test_skip_edge_dimension_check() {
 
     // INPUT dim=2, main path at 输出头 dim=4 → Add 不兼容
     let se_inn = g.next_innovation_number();
-    g.skip_edges.push(SkipEdge {
+    g.skip_edges_mut().push(SkipEdge {
         innovation_number: se_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: 1, // 输出头
@@ -872,7 +872,7 @@ fn test_random_mutations_keep_genome_valid() {
         assert!(g.layer_count() >= 1, "层数为零: {g}");
 
         // 输出头完整
-        let last = g.layers.iter().rev().find(|l| l.enabled).unwrap();
+        let last = g.layers().iter().rev().find(|l| l.enabled).unwrap();
         assert_eq!(
             last.layer_config,
             LayerConfig::Linear {
@@ -882,7 +882,7 @@ fn test_random_mutations_keep_genome_valid() {
         );
 
         // 创新号唯一
-        let inns: Vec<u64> = g.layers.iter().map(|l| l.innovation_number).collect();
+        let inns: Vec<u64> = g.layers().iter().map(|l| l.innovation_number).collect();
         let unique: std::collections::HashSet<u64> = inns.iter().copied().collect();
         assert_eq!(inns.len(), unique.len(), "创新号重复: {g}");
     }
@@ -1137,7 +1137,7 @@ fn test_mutate_optimizer_is_not_structural() {
 /// 构造含 RNN 的序列基因组：Input(2) → Rnn(4) → [Linear(1)]
 fn genome_sequential() -> NetworkGenome {
     let mut g = NetworkGenome::minimal_sequential(2, 1);
-    g.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
+    g.layers_mut()[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
     g.seq_len = Some(5);
     g
 }
@@ -1146,7 +1146,7 @@ fn genome_sequential() -> NetworkGenome {
 fn genome_stacked_rnn() -> NetworkGenome {
     let mut g = genome_sequential();
     let inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: inn,
@@ -1174,14 +1174,14 @@ fn test_mutate_cell_type_switches() {
     let mut r = rng();
     let c = constraints();
 
-    let original = g.layers[0].layer_config.clone();
+    let original = g.layers()[0].layer_config.clone();
     // 多次尝试确保切换
     for _ in 0..20 {
         let mut g2 = g.clone();
         MutateCellTypeMutation.apply(&mut g2, &c, &mut r).unwrap();
-        if g2.layers[0].layer_config != original {
+        if g2.layers()[0].layer_config != original {
             // 成功切换
-            assert!(NetworkGenome::is_recurrent(&g2.layers[0].layer_config));
+            assert!(NetworkGenome::is_recurrent(&g2.layers()[0].layer_config));
             return;
         }
     }
@@ -1199,7 +1199,7 @@ fn test_mutate_cell_type_preserves_hidden_size() {
         MutateCellTypeMutation.apply(&mut g2, &c, &mut r).unwrap();
 
         // hidden_size 应保持为 4
-        match &g2.layers[0].layer_config {
+        match &g2.layers()[0].layer_config {
             LayerConfig::Rnn { hidden_size }
             | LayerConfig::Lstm { hidden_size }
             | LayerConfig::Gru { hidden_size } => {
@@ -1222,10 +1222,10 @@ fn test_mutate_cell_type_multi_rnn() {
         let mut r = StdRng::seed_from_u64(seed);
         MutateCellTypeMutation.apply(&mut g2, &c, &mut r).unwrap();
 
-        if g2.layers[0].layer_config != g.layers[0].layer_config {
+        if g2.layers()[0].layer_config != g.layers()[0].layer_config {
             changed_first = true;
         }
-        if g2.layers[1].layer_config != g.layers[1].layer_config {
+        if g2.layers()[1].layer_config != g.layers()[1].layer_config {
             changed_second = true;
         }
         if changed_first && changed_second {
@@ -1253,9 +1253,9 @@ fn test_insert_layer_sequence_domain_accepts_rnn() {
         if m.is_applicable(&g, &c) {
             let _ = m.apply(&mut g, &c, &mut r);
         }
-        let has_extra_rnn = g.layers.iter().filter(|l| l.enabled).any(|l| {
+        let has_extra_rnn = g.layers().iter().filter(|l| l.enabled).any(|l| {
             NetworkGenome::is_recurrent(&l.layer_config)
-                && l.innovation_number != g.layers[0].innovation_number
+                && l.innovation_number != g.layers()[0].innovation_number
         });
         if has_extra_rnn {
             found_rnn = true;
@@ -1278,7 +1278,7 @@ fn test_insert_layer_flat_domain_no_rnn() {
         let mut r = StdRng::seed_from_u64(seed);
         let _ = m.apply(&mut g, &c, &mut r);
         let has_rnn = g
-            .layers
+            .layers()
             .iter()
             .any(|l| l.enabled && NetworkGenome::is_recurrent(&l.layer_config));
         assert!(!has_rnn, "平坦 genome 不应插入 RNN: {g}");
@@ -1334,7 +1334,7 @@ fn test_grow_hidden_size_rnn() {
     let mut r = rng();
     m.apply(&mut g, &c, &mut r).unwrap();
 
-    match &g.layers[0].layer_config {
+    match &g.layers()[0].layer_config {
         LayerConfig::Rnn { hidden_size } => {
             assert!(*hidden_size > original_size, "hidden_size 应增长");
         }
@@ -1347,7 +1347,7 @@ fn test_grow_hidden_size_rnn() {
 #[test]
 fn test_shrink_hidden_size_lstm() {
     let mut g = genome_sequential();
-    g.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 8 };
+    g.layers_mut()[0].layer_config = LayerConfig::Lstm { hidden_size: 8 };
     let c = constraints();
     let m = ShrinkHiddenSizeMutation;
 
@@ -1371,7 +1371,7 @@ fn test_add_skip_edge_sequential_flat_only() {
     let mut g = genome_sequential();
     // 插入 Tanh + Linear(4) 在 Rnn 和 输出头之间
     let act_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: act_inn,
@@ -1382,7 +1382,7 @@ fn test_add_skip_edge_sequential_flat_only() {
         },
     );
     let lin_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: lin_inn,
@@ -1398,7 +1398,7 @@ fn test_add_skip_edge_sequential_flat_only() {
         let mut g2 = g.clone();
         let mut r = StdRng::seed_from_u64(seed);
         if AddSkipEdgeMutation.apply(&mut g2, &c, &mut r).is_ok() {
-            for edge in &g2.skip_edges {
+            for edge in g2.skip_edges() {
                 if !edge.enabled {
                     continue;
                 }
@@ -1438,7 +1438,7 @@ fn test_add_skip_edge_sequential_minimal_no_candidates() {
         let mut r = StdRng::seed_from_u64(seed);
         if AddSkipEdgeMutation.apply(&mut g2, &c, &mut r).is_ok() {
             // 如果成功，必须是 Flat 域内的 skip
-            for edge in &g2.skip_edges {
+            for edge in g2.skip_edges() {
                 assert_ne!(
                     edge.from_innovation, INPUT_INNOVATION,
                     "序列模式不应允许从 Input(Sequence 域) 出发的 skip"
@@ -1466,7 +1466,7 @@ fn test_random_mutations_keep_sequential_genome_valid() {
         assert!(g.layer_count() >= 1, "层数为零: {g}");
 
         // 输出头完整
-        let last = g.layers.iter().rev().find(|l| l.enabled).unwrap();
+        let last = g.layers().iter().rev().find(|l| l.enabled).unwrap();
         assert_eq!(
             last.layer_config,
             LayerConfig::Linear {
@@ -1513,12 +1513,12 @@ fn test_insert_rnn_after_skip_source_blocked() {
     // GRU(4) 域从 Flat 变为 Sequence，skip edge 源域失效。
     let mut g = genome_sequential(); // Rnn(4) → [Linear(1)]
     // 把 Rnn(4) 换成 GRU(4)，方便区分
-    g.layers[0].layer_config = LayerConfig::Gru { hidden_size: 4 };
-    let gru_inn = g.layers[0].innovation_number;
+    g.layers_mut()[0].layer_config = LayerConfig::Gru { hidden_size: 4 };
+    let gru_inn = g.layers()[0].innovation_number;
 
     // 插入 Tanh
     let act_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: act_inn,
@@ -1530,7 +1530,7 @@ fn test_insert_rnn_after_skip_source_blocked() {
     );
     // 插入 Linear(4)
     let lin_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: lin_inn,
@@ -1540,9 +1540,9 @@ fn test_insert_rnn_after_skip_source_blocked() {
     );
 
     // 添加 skip edge: GRU(4) → 输出头（跳过 Tanh 和 Linear(4)）
-    let output_inn = g.layers.last().unwrap().innovation_number;
+    let output_inn = g.layers().last().unwrap().innovation_number;
     let skip_inn = g.next_innovation_number();
-    g.skip_edges.push(SkipEdge {
+    g.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: gru_inn,
         to_innovation: output_inn,
@@ -1559,7 +1559,7 @@ fn test_insert_rnn_after_skip_source_blocked() {
     // 因为 GRU(4) 的下一个实质层现在是 LSTM（跳过 Tanh），是循环层
     // GRU(4) 域从 Flat → Sequence，skip edge 源域失效
     let lstm_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         2, // Tanh 和 Linear(4) 之间
         LayerGene {
             innovation_number: lstm_inn,
@@ -1587,7 +1587,7 @@ fn test_insert_layer_mutation_rejects_skip_edge_domain_violation() {
     // 当插入 RNN 族层会导致已有 skip edge 域失效时，应自动回滚
     let mut g = genome_sequential(); // Rnn(4) → [Linear(1)]
     let act_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: act_inn,
@@ -1598,7 +1598,7 @@ fn test_insert_layer_mutation_rejects_skip_edge_domain_violation() {
         },
     );
     let lin_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: lin_inn,
@@ -1606,9 +1606,9 @@ fn test_insert_layer_mutation_rejects_skip_edge_domain_violation() {
             enabled: true,
         },
     );
-    let output_inn = g.layers.last().unwrap().innovation_number;
+    let output_inn = g.layers().last().unwrap().innovation_number;
     let skip_inn = g.next_innovation_number();
-    g.skip_edges.push(SkipEdge {
+    g.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: lin_inn,
         to_innovation: output_inn,
@@ -1641,7 +1641,7 @@ fn test_is_domain_valid_matches_compute_domain_map() {
     // 而非因为后面还有 LSTM 就认为是 Sequence
     let mut g = genome_sequential(); // Rnn(4) → [Linear(1)]
     let lin_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: lin_inn,
@@ -1650,7 +1650,7 @@ fn test_is_domain_valid_matches_compute_domain_map() {
         },
     );
     let lstm_inn = g.next_innovation_number();
-    g.layers.insert(
+    g.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: lstm_inn,
@@ -1664,7 +1664,7 @@ fn test_is_domain_valid_matches_compute_domain_map() {
     // 所以这个结构本身就是非法的（Flat→LSTM 非法）
     // is_domain_valid 和 compute_domain_map 都应认为 Rnn 域 = Flat
     let domain_map = g.compute_domain_map();
-    let rnn_inn = g.layers[0].innovation_number;
+    let rnn_inn = g.layers()[0].innovation_number;
     assert_eq!(
         domain_map[&rnn_inn],
         ShapeDomain::Flat,

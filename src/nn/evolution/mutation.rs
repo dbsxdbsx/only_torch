@@ -377,11 +377,11 @@ impl MutationRegistry {
 /// 筛选非输出头的 enabled 层索引（输出头 = layers 中最后一个 enabled 层）
 fn hidden_layer_indices(genome: &NetworkGenome) -> Vec<usize> {
     let last_enabled_idx = genome
-        .layers
+        .layers()
         .iter()
         .rposition(|l| l.enabled);
     genome
-        .layers
+        .layers()
         .iter()
         .enumerate()
         .filter(|(i, l)| l.enabled && Some(*i) != last_enabled_idx)
@@ -444,7 +444,7 @@ fn set_resizable_size(config: &mut LayerConfig, new_size: usize) {
 
 /// 检查指定位置（在 enabled 层序列中）的相邻层是否有 Activation
 fn has_adjacent_activation(genome: &NetworkGenome, insert_pos: usize) -> bool {
-    let enabled: Vec<&LayerGene> = genome.layers.iter().filter(|l| l.enabled).collect();
+    let enabled: Vec<&LayerGene> = genome.layers().iter().filter(|l| l.enabled).collect();
     let before = if insert_pos > 0 {
         matches!(
             enabled.get(insert_pos - 1).map(|l| &l.layer_config),
@@ -488,7 +488,7 @@ fn insert_input_dim(genome: &NetworkGenome, insert_pos: usize) -> usize {
     if insert_pos == 0 {
         return genome.input_dim;
     }
-    let enabled: Vec<&LayerGene> = genome.layers.iter().filter(|l| l.enabled).collect();
+    let enabled: Vec<&LayerGene> = genome.layers().iter().filter(|l| l.enabled).collect();
     let pred_inn = enabled[insert_pos - 1].innovation_number;
     genome
         .resolve_dimensions()
@@ -510,7 +510,7 @@ fn insert_input_spatial(
     if insert_pos == 0 {
         return spatial_map.get(&INPUT_INNOVATION).copied().flatten();
     }
-    let enabled: Vec<&LayerGene> = genome.layers.iter().filter(|l| l.enabled).collect();
+    let enabled: Vec<&LayerGene> = genome.layers().iter().filter(|l| l.enabled).collect();
     let pred_inn = enabled[insert_pos - 1].innovation_number;
     spatial_map.get(&pred_inn).copied().flatten()
 }
@@ -618,7 +618,7 @@ impl Mutation for InsertLayerMutation {
         // 插入位置：在 enabled 层序列的 [0, output_head] 之间（含输出头正前方）
         // 但操作的是 layers vec 的实际索引
         let enabled_indices: Vec<usize> = genome
-            .layers
+            .layers()
             .iter()
             .enumerate()
             .filter(|(_, l)| l.enabled)
@@ -648,7 +648,7 @@ impl Mutation for InsertLayerMutation {
         let insert_domain = if is_spatial {
             let domain_map = genome.compute_domain_map();
             let enabled_layers: Vec<&LayerGene> =
-                genome.layers.iter().filter(|l| l.enabled).collect();
+                genome.layers().iter().filter(|l| l.enabled).collect();
             if logical_pos == 0 {
                 *domain_map
                     .get(&INPUT_INNOVATION)
@@ -744,7 +744,7 @@ impl Mutation for InsertLayerMutation {
         };
 
         let inn = genome.next_innovation_number();
-        genome.layers.insert(
+        genome.layers_mut().insert(
             insert_vec_idx,
             LayerGene {
                 innovation_number: inn,
@@ -758,7 +758,7 @@ impl Mutation for InsertLayerMutation {
             || !genome.is_domain_valid()
             || !genome.validate_skip_edge_domains()
         {
-            genome.layers.remove(insert_vec_idx);
+            genome.layers_mut().remove(insert_vec_idx);
             return Err(MutationError::ConstraintViolation(
                 "插入层后维度、域链或 skip edge 域不兼容".into(),
             ));
@@ -798,17 +798,17 @@ impl Mutation for RemoveLayerMutation {
             ));
         }
         let &idx = candidates.choose(rng).unwrap();
-        let removed_gene = genome.layers.remove(idx);
+        let removed_gene = genome.layers_mut().remove(idx);
         let removed_inn = removed_gene.innovation_number;
 
         // 清理引用已删除层的 skip edges（保留副本用于回滚）
         let removed_edges: Vec<_> = genome
-            .skip_edges
+            .skip_edges()
             .iter()
             .filter(|e| e.from_innovation == removed_inn || e.to_innovation == removed_inn)
             .cloned()
             .collect();
-        genome.skip_edges.retain(|e| {
+        genome.skip_edges_mut().retain(|e| {
             e.from_innovation != removed_inn && e.to_innovation != removed_inn
         });
 
@@ -817,8 +817,8 @@ impl Mutation for RemoveLayerMutation {
             || !genome.is_domain_valid()
             || !genome.validate_skip_edge_domains()
         {
-            genome.layers.insert(idx, removed_gene);
-            genome.skip_edges.extend(removed_edges);
+            genome.layers_mut().insert(idx, removed_gene);
+            genome.skip_edges_mut().extend(removed_edges);
             return Err(MutationError::ConstraintViolation(
                 "删除层后维度、域链或 skip edge 域不兼容".into(),
             ));
@@ -857,7 +857,7 @@ impl Mutation for ReplaceLayerTypeMutation {
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
             matches!(
-                genome.layers[i].layer_config,
+                genome.layers()[i].layer_config,
                 LayerConfig::Activation { .. }
             )
         })
@@ -874,7 +874,7 @@ impl Mutation for ReplaceLayerTypeMutation {
             .into_iter()
             .filter(|&i| {
                 matches!(
-                    genome.layers[i].layer_config,
+                    genome.layers()[i].layer_config,
                     LayerConfig::Activation { .. }
                 )
             })
@@ -887,7 +887,7 @@ impl Mutation for ReplaceLayerTypeMutation {
         }
 
         let &idx = act_indices.choose(rng).unwrap();
-        let current = &genome.layers[idx].layer_config;
+        let current = &genome.layers()[idx].layer_config;
 
         let alternatives: Vec<&ActivationType> = self
             .available_activations
@@ -903,7 +903,7 @@ impl Mutation for ReplaceLayerTypeMutation {
             MutationError::NotApplicable("没有可选的替代激活函数".into())
         })?;
 
-        genome.layers[idx].layer_config = LayerConfig::Activation {
+        genome.layers_mut()[idx].layer_config = LayerConfig::Activation {
             activation_type: new_act,
         };
 
@@ -923,7 +923,7 @@ impl Mutation for GrowHiddenSizeMutation {
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
-            get_resizable_size(&genome.layers[i].layer_config)
+            get_resizable_size(&genome.layers()[i].layer_config)
                 .map(|s| s < constraints.max_hidden_size)
                 .unwrap_or(false)
         })
@@ -939,7 +939,7 @@ impl Mutation for GrowHiddenSizeMutation {
         let candidates: Vec<usize> = hidden
             .into_iter()
             .filter(|&i| {
-                get_resizable_size(&genome.layers[i].layer_config)
+                get_resizable_size(&genome.layers()[i].layer_config)
                     .map(|s| s < constraints.max_hidden_size)
                     .unwrap_or(false)
             })
@@ -952,7 +952,7 @@ impl Mutation for GrowHiddenSizeMutation {
         }
 
         let &idx = candidates.choose(rng).unwrap();
-        let old_config = genome.layers[idx].layer_config.clone();
+        let old_config = genome.layers()[idx].layer_config.clone();
         let old_size = get_resizable_size(&old_config).unwrap();
 
         let new_size = grow_size(
@@ -964,17 +964,17 @@ impl Mutation for GrowHiddenSizeMutation {
 
         debug_assert!(new_size > old_size);
 
-        set_resizable_size(&mut genome.layers[idx].layer_config, new_size);
+        set_resizable_size(&mut genome.layers_mut()[idx].layer_config, new_size);
         match genome.total_params() {
             Ok(params) if params > constraints.max_total_params => {
-                genome.layers[idx].layer_config = old_config;
+                genome.layers_mut()[idx].layer_config = old_config;
                 Err(MutationError::ConstraintViolation(format!(
                     "增长后 total_params={params} 超过上限 {}",
                     constraints.max_total_params
                 )))
             }
             Err(_) => {
-                genome.layers[idx].layer_config = old_config;
+                genome.layers_mut()[idx].layer_config = old_config;
                 Err(MutationError::ConstraintViolation(
                     "增长后维度不兼容（skip edge 约束）".into(),
                 ))
@@ -996,7 +996,7 @@ impl Mutation for ShrinkHiddenSizeMutation {
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
-            get_resizable_size(&genome.layers[i].layer_config)
+            get_resizable_size(&genome.layers()[i].layer_config)
                 .map(|s| s > constraints.min_hidden_size)
                 .unwrap_or(false)
         })
@@ -1012,7 +1012,7 @@ impl Mutation for ShrinkHiddenSizeMutation {
         let candidates: Vec<usize> = hidden
             .into_iter()
             .filter(|&i| {
-                get_resizable_size(&genome.layers[i].layer_config)
+                get_resizable_size(&genome.layers()[i].layer_config)
                     .map(|s| s > constraints.min_hidden_size)
                     .unwrap_or(false)
             })
@@ -1025,7 +1025,7 @@ impl Mutation for ShrinkHiddenSizeMutation {
         }
 
         let &idx = candidates.choose(rng).unwrap();
-        let old_config = genome.layers[idx].layer_config.clone();
+        let old_config = genome.layers()[idx].layer_config.clone();
         let old_size = get_resizable_size(&old_config).unwrap();
         let new_size = shrink_size(
             old_size,
@@ -1034,10 +1034,10 @@ impl Mutation for ShrinkHiddenSizeMutation {
             rng,
         );
 
-        set_resizable_size(&mut genome.layers[idx].layer_config, new_size);
+        set_resizable_size(&mut genome.layers_mut()[idx].layer_config, new_size);
 
         if genome.resolve_dimensions().is_err() {
-            genome.layers[idx].layer_config = old_config;
+            genome.layers_mut()[idx].layer_config = old_config;
             return Err(MutationError::ConstraintViolation(
                 "缩小后维度不兼容（skip edge 约束）".into(),
             ));
@@ -1058,7 +1058,7 @@ impl Mutation for MutateLayerParamMutation {
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
         let hidden = hidden_layer_indices(genome);
-        hidden.iter().any(|&i| is_parameterized_layer(&genome.layers[i].layer_config))
+        hidden.iter().any(|&i| is_parameterized_layer(&genome.layers()[i].layer_config))
     }
 
     fn apply(
@@ -1070,7 +1070,7 @@ impl Mutation for MutateLayerParamMutation {
         let hidden = hidden_layer_indices(genome);
         let candidates: Vec<usize> = hidden
             .into_iter()
-            .filter(|&i| is_parameterized_layer(&genome.layers[i].layer_config))
+            .filter(|&i| is_parameterized_layer(&genome.layers()[i].layer_config))
             .collect();
 
         if candidates.is_empty() {
@@ -1080,7 +1080,7 @@ impl Mutation for MutateLayerParamMutation {
         }
 
         let &idx = candidates.choose(rng).unwrap();
-        match &mut genome.layers[idx].layer_config {
+        match &mut genome.layers_mut()[idx].layer_config {
             LayerConfig::Activation {
                 activation_type: ActivationType::LeakyReLU { alpha },
             } => {
@@ -1278,7 +1278,7 @@ impl Mutation for MutateCellTypeMutation {
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
-            NetworkGenome::is_recurrent(&genome.layers[i].layer_config)
+            NetworkGenome::is_recurrent(&genome.layers()[i].layer_config)
         })
     }
 
@@ -1291,7 +1291,7 @@ impl Mutation for MutateCellTypeMutation {
         let hidden = hidden_layer_indices(genome);
         let candidates: Vec<usize> = hidden
             .into_iter()
-            .filter(|&i| NetworkGenome::is_recurrent(&genome.layers[i].layer_config))
+            .filter(|&i| NetworkGenome::is_recurrent(&genome.layers()[i].layer_config))
             .collect();
 
         if candidates.is_empty() {
@@ -1301,10 +1301,10 @@ impl Mutation for MutateCellTypeMutation {
         }
 
         let &idx = candidates.choose(rng).unwrap();
-        let hidden_size = get_resizable_size(&genome.layers[idx].layer_config).unwrap();
+        let hidden_size = get_resizable_size(&genome.layers()[idx].layer_config).unwrap();
 
         // 排除当前类型，从剩余两种中随机选择
-        let new_config = match &genome.layers[idx].layer_config {
+        let new_config = match &genome.layers()[idx].layer_config {
             LayerConfig::Rnn { .. } => {
                 if rng.gen_bool(0.5) {
                     LayerConfig::Lstm { hidden_size }
@@ -1330,15 +1330,15 @@ impl Mutation for MutateCellTypeMutation {
         };
 
         // 切换后旧权重快照失效（参数数量不同），移除该层快照
-        let inn = genome.layers[idx].innovation_number;
-        genome.weight_snapshots.remove(&inn);
+        let inn = genome.layers()[idx].innovation_number;
+        genome.remove_layer_weight_snapshot(inn);
 
-        let old_config = genome.layers[idx].layer_config.clone();
-        genome.layers[idx].layer_config = new_config;
+        let old_config = genome.layers()[idx].layer_config.clone();
+        genome.layers_mut()[idx].layer_config = new_config;
 
         // 切换 cell 类型不会改变域链（仍然是循环层），但保险起见仍检查 skip edge 域兼容性
         if !genome.validate_skip_edge_domains() {
-            genome.layers[idx].layer_config = old_config;
+            genome.layers_mut()[idx].layer_config = old_config;
             return Err(MutationError::ConstraintViolation(
                 "切换 cell 类型后 skip edge 域不兼容".into(),
             ));
@@ -1364,7 +1364,7 @@ impl Mutation for MutateKernelSizeMutation {
         let hidden = hidden_layer_indices(genome);
         hidden
             .iter()
-            .any(|&i| matches!(genome.layers[i].layer_config, LayerConfig::Conv2d { .. }))
+            .any(|&i| matches!(genome.layers()[i].layer_config, LayerConfig::Conv2d { .. }))
     }
 
     fn apply(
@@ -1376,7 +1376,7 @@ impl Mutation for MutateKernelSizeMutation {
         let hidden = hidden_layer_indices(genome);
         let candidates: Vec<usize> = hidden
             .into_iter()
-            .filter(|&i| matches!(genome.layers[i].layer_config, LayerConfig::Conv2d { .. }))
+            .filter(|&i| matches!(genome.layers()[i].layer_config, LayerConfig::Conv2d { .. }))
             .collect();
 
         if candidates.is_empty() {
@@ -1389,7 +1389,7 @@ impl Mutation for MutateKernelSizeMutation {
         if let LayerConfig::Conv2d {
             kernel_size: ref current_k,
             ..
-        } = genome.layers[idx].layer_config
+        } = genome.layers()[idx].layer_config
         {
             let alternatives: Vec<usize> = KERNEL_SIZES
                 .iter()
@@ -1400,7 +1400,7 @@ impl Mutation for MutateKernelSizeMutation {
                 if let LayerConfig::Conv2d {
                     ref mut kernel_size,
                     ..
-                } = genome.layers[idx].layer_config
+                } = genome.layers_mut()[idx].layer_config
                 {
                     *kernel_size = new_k;
                 }
@@ -1439,14 +1439,14 @@ impl AddSkipEdgeMutation {
         genome: &NetworkGenome,
     ) -> Vec<(u64, u64, AggregateStrategy)> {
         let enabled: Vec<u64> = genome
-            .layers
+            .layers()
             .iter()
             .filter(|l| l.enabled)
             .map(|l| l.innovation_number)
             .collect();
 
         let existing: std::collections::HashSet<(u64, u64)> = genome
-            .skip_edges
+            .skip_edges()
             .iter()
             .filter(|e| e.enabled)
             .map(|e| (e.from_innovation, e.to_innovation))
@@ -1487,7 +1487,7 @@ impl AddSkipEdgeMutation {
 
             // 确定该目标层允许的策略
             let group_strategy = genome
-                .skip_edges
+                .skip_edges()
                 .iter()
                 .find(|e| e.enabled && e.to_innovation == to_inn)
                 .map(|e| e.strategy.clone());
@@ -1566,7 +1566,7 @@ impl AddSkipEdgeMutation {
             for &from in &froms {
                 for strategy in &strategies {
                     let mut trial = genome.clone();
-                    trial.skip_edges.push(SkipEdge {
+                    trial.skip_edges_mut().push(SkipEdge {
                         innovation_number: u64::MAX, // placeholder
                         from_innovation: from,
                         to_innovation: to_inn,
@@ -1595,7 +1595,7 @@ impl Mutation for AddSkipEdgeMutation {
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
         // 快速预筛：至少有 1 个 enabled 层才可能有候选对
-        genome.layers.iter().any(|l| l.enabled)
+        genome.layers().iter().any(|l| l.enabled)
     }
 
     fn apply(
@@ -1613,7 +1613,7 @@ impl Mutation for AddSkipEdgeMutation {
 
         let &(from, to, ref strategy) = candidates.choose(rng).unwrap();
         let inn = genome.next_innovation_number();
-        genome.skip_edges.push(SkipEdge {
+        genome.skip_edges_mut().push(SkipEdge {
             innovation_number: inn,
             from_innovation: from,
             to_innovation: to,
@@ -1638,7 +1638,7 @@ impl Mutation for RemoveSkipEdgeMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
-        genome.skip_edges.iter().any(|e| e.enabled)
+        genome.skip_edges().iter().any(|e| e.enabled)
     }
 
     fn apply(
@@ -1648,7 +1648,7 @@ impl Mutation for RemoveSkipEdgeMutation {
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
         let enabled_indices: Vec<usize> = genome
-            .skip_edges
+            .skip_edges()
             .iter()
             .enumerate()
             .filter(|(_, e)| e.enabled)
@@ -1662,7 +1662,7 @@ impl Mutation for RemoveSkipEdgeMutation {
         }
 
         let &idx = enabled_indices.choose(rng).unwrap();
-        genome.skip_edges.remove(idx);
+        genome.skip_edges_mut().remove(idx);
         Ok(())
     }
 }
@@ -1677,7 +1677,7 @@ impl Mutation for MutateAggregateStrategyMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
-        genome.skip_edges.iter().any(|e| e.enabled)
+        genome.skip_edges().iter().any(|e| e.enabled)
     }
 
     fn apply(
@@ -1688,7 +1688,7 @@ impl Mutation for MutateAggregateStrategyMutation {
     ) -> Result<(), MutationError> {
         // 收集所有不同的 target group
         let mut target_inns: Vec<u64> = genome
-            .skip_edges
+            .skip_edges()
             .iter()
             .filter(|e| e.enabled)
             .map(|e| e.to_innovation)
@@ -1707,7 +1707,7 @@ impl Mutation for MutateAggregateStrategyMutation {
 
         for target in &target_inns {
             let current_strategy = genome
-                .skip_edges
+                .skip_edges()
                 .iter()
                 .find(|e| e.enabled && e.to_innovation == *target)
                 .map(|e| e.strategy.clone())
@@ -1719,7 +1719,7 @@ impl Mutation for MutateAggregateStrategyMutation {
                 .filter(|s| s != &current_strategy)
                 .filter(|s| {
                     let mut trial = genome.clone();
-                    for edge in &mut trial.skip_edges {
+                    for edge in trial.skip_edges_mut().iter_mut() {
                         if edge.enabled && edge.to_innovation == *target {
                             edge.strategy = s.clone();
                         }
@@ -1730,7 +1730,7 @@ impl Mutation for MutateAggregateStrategyMutation {
 
             if let Some(new_strategy) = feasible.choose(rng) {
                 let new_strategy = new_strategy.clone();
-                for edge in &mut genome.skip_edges {
+                for edge in genome.skip_edges_mut().iter_mut() {
                     if edge.enabled && edge.to_innovation == *target {
                         edge.strategy = new_strategy.clone();
                     }

@@ -13,11 +13,11 @@
 
 use std::path::Path;
 
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 
-use crate::nn::graph::model_save::{self, OtmMetadata, OTM_FORMAT_VERSION};
+use crate::nn::graph::model_save::{self, OTM_FORMAT_VERSION, OtmMetadata};
 use crate::nn::var::Var;
 
 use super::error::EvolutionError;
@@ -56,15 +56,15 @@ struct GenomeSerialized {
 impl From<&NetworkGenome> for GenomeSerialized {
     fn from(genome: &NetworkGenome) -> Self {
         Self {
-            layers: genome.layers.clone(),
-            skip_edges: genome.skip_edges.clone(),
+            layers: genome.layers().to_vec(),
+            skip_edges: genome.skip_edges().to_vec(),
             input_dim: genome.input_dim,
             output_dim: genome.output_dim,
             seq_len: genome.seq_len,
             input_spatial: genome.input_spatial,
             training_config: genome.training_config.clone(),
             generated_by: genome.generated_by.clone(),
-            next_innovation: genome.next_innovation,
+            next_innovation: genome.peek_next_innovation(),
         }
     }
 }
@@ -114,9 +114,8 @@ impl EvolutionResult {
             status: self.status.clone(),
             architecture_summary: self.architecture_summary.clone(),
         };
-        let evolution_json = serde_json::to_value(&evo_meta).map_err(|e| {
-            EvolutionError::IoError(format!("序列化演化元数据失败: {e}"))
-        })?;
+        let evolution_json = serde_json::to_value(&evo_meta)
+            .map_err(|e| EvolutionError::IoError(format!("序列化演化元数据失败: {e}")))?;
 
         let metadata = OtmMetadata {
             format_version: OTM_FORMAT_VERSION,
@@ -144,8 +143,8 @@ impl EvolutionResult {
     /// let vis = model.visualize("output/loaded")?;
     /// ```
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, EvolutionError> {
-        let (metadata, params) = model_save::read_otm_file(path)
-            .map_err(|e| EvolutionError::IoError(e.to_string()))?;
+        let (metadata, params) =
+            model_save::read_otm_file(path).map_err(|e| EvolutionError::IoError(e.to_string()))?;
 
         // 解析演化专属元数据
         let evolution_json = metadata.evolution.ok_or_else(|| {
@@ -155,10 +154,8 @@ impl EvolutionResult {
                     .to_string(),
             )
         })?;
-        let evo_meta: EvolutionMeta =
-            serde_json::from_value(evolution_json).map_err(|e| {
-                EvolutionError::IoError(format!("解析演化元数据失败: {e}"))
-            })?;
+        let evo_meta: EvolutionMeta = serde_json::from_value(evolution_json)
+            .map_err(|e| EvolutionError::IoError(format!("解析演化元数据失败: {e}")))?;
 
         // 从 genome 重建图（genome 不含 weight_snapshots，权重由参数名加载）
         let genome = evo_meta.genome.into_genome();

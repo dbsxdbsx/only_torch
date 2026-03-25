@@ -244,8 +244,8 @@ fn mlp_genome(input_dim: usize, hidden: usize, output_dim: usize) -> NetworkGeno
         enabled: true,
     };
     // 插入到输出头前面
-    g.layers.insert(0, relu_layer);
-    g.layers.insert(0, hidden_layer);
+    g.layers_mut().insert(0, relu_layer);
+    g.layers_mut().insert(0, hidden_layer);
     g
 }
 
@@ -313,7 +313,7 @@ fn migrate_genome_with_conv2d() {
         enabled: true,
     };
     // 插入到 Flatten 前面
-    genome.layers.insert(0, conv_layer);
+    genome.layers_mut().insert(0, conv_layer);
 
     let out = migrate_network_genome(&genome).unwrap();
     // Conv2d: 2 节点，Flatten: 1 节点，Linear(10): 4 节点 = 7 节点
@@ -343,14 +343,14 @@ fn migrate_genome_with_skip_edge_add() {
     // 给最后一层（Linear(1)，输出头）加一条从 INPUT 的 skip edge（Add 策略）
     // INPUT 维度=4，ReLU 输出维度=4，两者相同，Add 合法
     let output_head_innov = genome
-        .layers
+        .layers()
         .iter()
         .rev()
         .find(|l| l.enabled)
         .unwrap()
         .innovation_number;
 
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: 100, // dummy，仅迁移时用 from/to
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_head_innov,
@@ -424,9 +424,9 @@ fn migrate_cnn_pipeline_conv_pool_conv_flatten_linear() {
         enabled: true,
     };
     // 插入到 Flatten 前：[conv1, pool, conv2, Flatten, Linear(10)]
-    genome.layers.insert(0, pool);
-    genome.layers.insert(0, conv2);
-    genome.layers.insert(0, conv1);
+    genome.layers_mut().insert(0, pool);
+    genome.layers_mut().insert(0, conv2);
+    genome.layers_mut().insert(0, conv1);
 
     let out = migrate_network_genome(&genome).unwrap();
     // Conv(1→8): 2, Pool: 1, Conv(8→16): 2, Flatten: 1, Linear(10): 4 = 10 节点
@@ -457,9 +457,9 @@ fn migrate_cnn_pipeline_conv_pool_conv_flatten_linear() {
 fn migrate_genome_with_skip_edge_concat() {
     // Input(2) → Linear(2) → ReLU → [Concat(main=2, skip=INPUT=2) → 得 4] → Linear(1, in=4)
     let mut genome = mlp_genome(2, 2, 1);
-    let output_head_innov = genome.layers.iter().rev().find(|l| l.enabled).unwrap().innovation_number;
+    let output_head_innov = genome.layers().iter().rev().find(|l| l.enabled).unwrap().innovation_number;
 
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: 200,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_head_innov,
@@ -482,11 +482,11 @@ fn migrate_genome_with_skip_edge_concat() {
 #[test]
 fn migrate_skip_edge_from_disabled_layer_no_panic() {
     let mut genome = mlp_genome(2, 4, 1);
-    let first_layer_innov = genome.layers[0].innovation_number;
-    genome.layers[0].enabled = false; // 禁用 Linear(4)
+    let first_layer_innov = genome.layers()[0].innovation_number;
+    genome.layers_mut()[0].enabled = false; // 禁用 Linear(4)
 
-    let output_head_innov = genome.layers.iter().rev().find(|l| l.enabled).unwrap().innovation_number;
-    genome.skip_edges.push(SkipEdge {
+    let output_head_innov = genome.layers().iter().rev().find(|l| l.enabled).unwrap().innovation_number;
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: 300,
         from_innovation: first_layer_innov, // 指向被禁用的层
         to_innovation: output_head_innov,
@@ -525,8 +525,8 @@ fn migrate_spatial_full_domain_chain() {
         layer_config: LayerConfig::Conv2d { out_channels: 8, kernel_size: 3 },
         enabled: true,
     };
-    genome.layers.insert(0, pool);
-    genome.layers.insert(0, conv);
+    genome.layers_mut().insert(0, pool);
+    genome.layers_mut().insert(0, conv);
     // 层序: [Conv(1→8), Pool(2,2), Flatten, Linear(10)]
 
     let out = migrate_network_genome(&genome).unwrap();

@@ -142,14 +142,119 @@ fn apply_aggregation(
 
 // ==================== NetworkGenome 构建与权重管理 ====================
 
+use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor as NTD};
+use super::gene::GenomeRepr;
+
 impl NetworkGenome {
+    /// 将当前基因组转换为 `GraphDescriptor`
+    ///
+    /// - LayerLevel 基因组：自动内部迁移到节点级，再转换（不修改 self）
+    /// - NodeLevel 基因组：直接转换
+    ///
+    /// 返回的 `GraphDescriptor` 可直接传入 `Graph::from_descriptor()` 构建计算图。
+    pub fn to_graph_descriptor(&self) -> Result<GraphDescriptor, super::migration::MigrationError> {
+        let nodes = match &self.repr {
+            GenomeRepr::NodeLevel { nodes, .. } => {
+                std::borrow::Cow::Borrowed(nodes.as_slice())
+            }
+            GenomeRepr::LayerLevel { .. } => {
+                let out = super::migration::migrate_network_genome(self)?;
+                std::borrow::Cow::Owned(out.nodes)
+            }
+        };
+
+        let mut desc = GraphDescriptor::new("EvolutionNet");
+
+        // 添加虚拟输入节点
+        let input_shape: Vec<usize> = if let Some((h, w)) = self.input_spatial {
+            vec![1, self.input_dim, h, w]
+        } else if let Some(seq) = self.seq_len {
+            vec![1, seq, self.input_dim]
+        } else {
+            vec![1, self.input_dim]
+        };
+        let dynamic_input: Vec<Option<usize>> = std::iter::once(None)
+            .chain(input_shape[1..].iter().map(|&d| Some(d)))
+            .collect();
+        desc.add_node(NodeDescriptor::new(
+            INPUT_INNOVATION,
+            "evo_input",
+            NTD::BasicInput,
+            input_shape,
+            Some(dynamic_input),
+            vec![],
+        ));
+
+        // 添加所有启用的 NodeGene
+        for node in nodes.iter().filter(|n| n.enabled) {
+            let dynamic = node.output_shape.first().map(|_| {
+                let mut d: Vec<Option<usize>> = node.output_shape.iter().map(|&x| Some(x)).collect();
+                if !d.is_empty() { d[0] = None; }  // batch 维动态
+                d
+            });
+            desc.add_node(NodeDescriptor::new(
+                node.innovation_number,
+                &format!("evo_{}", node.innovation_number),
+                node.node_type.clone(),
+                node.output_shape.clone(),
+                dynamic,
+                node.parents.clone(),
+            ));
+        }
+
+        Ok(desc)
+    }
+
     /// 从基因组构建计算图
     ///
-    /// 内部调用 resolve_dimensions() 推导维度链，逐层创建 Layer 并收集参数。
-    /// 遇到 skip_edge 的目标层时，自动在其输入处生成聚合操作。
+    /// - LayerLevel 基因组：阈级构图（现有路径，完整保留 Lamarckian 权重继承）
+    /// - NodeLevel 基因组：`to_graph_descriptor()` + `Graph::from_descriptor()`
     ///
     /// rng 用于派生 Graph seed，确保参数初始化受 Evolution seed 控制。
     pub fn build(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
+        if self.is_node_level() {
+            return self.build_from_nodes(rng);
+        }
+        self.build_layer_level(rng)
+    }
+
+    /// NodeLevel 基因组的构图路径
+    fn build_from_nodes(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
+        let desc = self.to_graph_descriptor()
+            .map_err(|e| GraphError::ComputationError(e.to_string()))?;
+
+        let graph_seed: u64 = rng.r#gen();
+        let rebuild = Graph::from_descriptor_seeded(&desc, graph_seed)
+            .map_err(|e| GraphError::from(e))?;
+
+        let input = rebuild.inputs.first()
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| GraphError::ComputationError("NodeLevel 基因组构图后无输入节点".into()))?;
+        let output = rebuild.outputs.first()
+            .cloned()
+            .ok_or_else(|| GraphError::ComputationError("NodeLevel 基因组构图后无输出节点".into()))?;
+
+        // 收集参数节点：param_innovation → [Var]
+        let nodes = self.nodes();
+        let layer_params: HashMap<u64, Vec<Var>> = nodes.iter()
+            .filter(|n| n.enabled && n.is_parameter())
+            .filter_map(|n| {
+                rebuild.node_map.get(&n.innovation_number)
+                    .cloned()
+                    .map(|v| (n.innovation_number, vec![v]))
+            })
+            .collect();
+
+        Ok(BuildResult {
+            input,
+            output,
+            layer_params,
+            graph: rebuild.graph,
+        })
+    }
+
+    /// LayerLevel 基因组的原有构图路径（阶段 3 期间保留，阶段 4 后逐步替换）
+    fn build_layer_level(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
         let resolved = self
             .resolve_dimensions()
             .map_err(|e| GraphError::ComputationError(e.to_string()))?;
@@ -178,14 +283,14 @@ impl NetworkGenome {
 
         for dim in &resolved {
             let layer = self
-                .layers
+                .layers()
                 .iter()
                 .find(|l| l.innovation_number == dim.innovation_number && l.enabled)
                 .expect("resolve_dimensions 返回的创新号必须对应一个启用的层");
 
             // 聚合：检查是否有 incoming skip edges 指向当前层
             let incoming: Vec<_> = self
-                .skip_edges
+                .skip_edges()
                 .iter()
                 .filter(|e| e.enabled && e.to_innovation == layer.innovation_number)
                 .collect();
@@ -334,12 +439,30 @@ impl NetworkGenome {
 
     /// 将当前计算图的权重捕获到 Genome 的 weight_snapshots 中
     ///
-    /// 训练完成后调用。按 innovation_number 索引，
-    /// 每层的参数张量列表保存为 Vec<Tensor>（如 Linear 保存 [W, b]）。
-    ///
-    /// 注意：此方法是全量替换（非 merge），不在当前 build 中的层（如 disabled）
-    /// 的旧快照会被丢弃。引入 disable/enable 语义时需评估是否改为 merge。
+    /// - LayerLevel：按层创新号索引，每层所有参数张量存为 `Vec<Tensor>`
+    /// - NodeLevel：按参数节点创新号索引，每个 Parameter 节点存一个 `Tensor`
     pub fn capture_weights(&mut self, build: &BuildResult) -> Result<(), GraphError> {
+        if self.is_node_level() {
+            // NodeLevel：单参数节点粒度快照
+            let mut node_snaps: HashMap<u64, Tensor> = HashMap::new();
+            for (&inn, params) in &build.layer_params {
+                if let Some(param) = params.first() {
+                    let tensor = param.value()?.ok_or_else(|| {
+                        GraphError::ComputationError(format!("Parameter 节点 {inn} 无值"))
+                    })?;
+                    node_snaps.insert(inn, tensor);
+                }
+            }
+            match &mut self.repr {
+                super::gene::GenomeRepr::NodeLevel { weight_snapshots, .. } => {
+                    *weight_snapshots = node_snaps;
+                }
+                _ => unreachable!()
+            }
+            return Ok(());
+        }
+
+        // LayerLevel：原有层级粒度快照
         let mut snapshots: HashMap<u64, Vec<Tensor>> = HashMap::new();
         for (&inn, params) in &build.layer_params {
             let mut tensors = Vec::new();
@@ -376,7 +499,7 @@ impl NetworkGenome {
         // 向后扫描，跳过 Activation/Dropout
         for dim in &resolved[pos + 1..] {
             let layer = self
-                .layers
+                .layers()
                 .iter()
                 .find(|l| l.innovation_number == dim.innovation_number && l.enabled);
             if let Some(layer) = layer {
@@ -391,13 +514,38 @@ impl NetworkGenome {
 
     /// 从 weight_snapshots 恢复权重到当前计算图
     ///
-    /// build() 之后、训练之前调用。
-    /// 按 innovation_number 匹配：相同创新号且形状相同的参数直接复制，
-    /// 形状不匹配或无快照的参数保留初始化值。
+    /// - LayerLevel：按层创新号 + 张量索引匹配
+    /// - NodeLevel：按参数节点创新号匹配，形状相同则恢复，否则重初始化
     pub fn restore_weights(&self, build: &BuildResult) -> Result<InheritReport, GraphError> {
         let mut inherited = 0usize;
         let mut reinitialized = 0usize;
 
+        if self.is_node_level() {
+            // NodeLevel：单参数节点粒度恢复
+            let node_snaps = self.node_weight_snapshots();
+            for (&inn, params) in &build.layer_params {
+                if let Some(snapshot) = node_snaps.get(&inn) {
+                    if let Some(param) = params.first() {
+                        let current_val = param.value()?;
+                        let shapes_match = current_val
+                            .as_ref()
+                            .map(|t| t.shape() == snapshot.shape())
+                            .unwrap_or(false);
+                        if shapes_match {
+                            param.set_value(snapshot)?;
+                            inherited += 1;
+                        } else {
+                            reinitialized += 1;
+                        }
+                    }
+                } else {
+                    reinitialized += params.len();
+                }
+            }
+            return Ok(InheritReport { inherited, reinitialized });
+        }
+
+        // LayerLevel：原有层级粒度恢复
         for (&inn, params) in &build.layer_params {
             if let Some(snapshots) = self.weight_snapshots().get(&inn) {
                 for (i, param) in params.iter().enumerate() {
@@ -423,9 +571,6 @@ impl NetworkGenome {
             }
         }
 
-        Ok(InheritReport {
-            inherited,
-            reinitialized,
-        })
+        Ok(InheritReport { inherited, reinitialized })
     }
 }

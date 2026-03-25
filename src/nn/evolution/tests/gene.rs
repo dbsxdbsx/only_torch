@@ -10,10 +10,10 @@ fn test_minimal_creates_correct_genome() {
 
     assert_eq!(genome.input_dim, 2);
     assert_eq!(genome.output_dim, 1);
-    assert_eq!(genome.layers.len(), 1);
-    assert_eq!(genome.skip_edges.len(), 0);
+    assert_eq!(genome.layers().len(), 1);
+    assert_eq!(genome.skip_edges().len(), 0);
 
-    let output_head = &genome.layers[0];
+    let output_head = &genome.layers()[0];
     assert_eq!(output_head.innovation_number, 1);
     assert!(output_head.enabled);
     assert_eq!(
@@ -26,7 +26,7 @@ fn test_minimal_creates_correct_genome() {
 fn test_minimal_output_dim_matches() {
     for out in [1, 3, 10] {
         let genome = NetworkGenome::minimal(4, out);
-        if let LayerConfig::Linear { out_features } = &genome.layers.last().unwrap().layer_config {
+        if let LayerConfig::Linear { out_features } = &genome.layers().last().unwrap().layer_config {
             assert_eq!(*out_features, out);
         } else {
             panic!("输出头必须是 Linear");
@@ -84,7 +84,7 @@ fn test_innovation_numbers_unique() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let mut seen = std::collections::HashSet::new();
     // 输出头的创新号
-    seen.insert(genome.layers[0].innovation_number);
+    seen.insert(genome.layers()[0].innovation_number);
     for _ in 0..100 {
         let id = genome.next_innovation_number();
         assert!(seen.insert(id), "创新号 {id} 重复");
@@ -103,7 +103,7 @@ fn test_disabled_layer_not_in_params() {
         layer_config: LayerConfig::Linear { out_features: 4 },
         enabled: false,
     };
-    genome.layers.insert(0, hidden);
+    genome.layers_mut().insert(0, hidden);
 
     // disabled 层不计入参数量（仍然只有输出头的参数）
     assert_eq!(genome.total_params().unwrap(), 3); // 2*1 + 1
@@ -119,7 +119,7 @@ fn test_disabled_layer_enabled_comparison() {
         layer_config: LayerConfig::Linear { out_features: 4 },
         enabled: true,
     };
-    genome.layers.insert(0, hidden);
+    genome.layers_mut().insert(0, hidden);
 
     // enabled: Input(2) → Linear(4) → Linear(1)
     // Linear(4): W(2×4)+b(4)=12, Linear(1): W(4×1)+b(1)=5 → 17
@@ -127,7 +127,7 @@ fn test_disabled_layer_enabled_comparison() {
     assert_eq!(genome.layer_count(), 2);
 
     // disable 隐藏层
-    genome.layers[0].enabled = false;
+    genome.layers_mut()[0].enabled = false;
     // 现在只有输出头 Linear(1): W(2×1)+b(1)=3
     assert_eq!(genome.total_params().unwrap(), 3);
     assert_eq!(genome.layer_count(), 1);
@@ -152,7 +152,7 @@ fn test_resolve_with_hidden_layers() {
     let inn1 = genome.next_innovation_number();
     let inn2 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn1,
@@ -160,7 +160,7 @@ fn test_resolve_with_hidden_layers() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: inn2,
@@ -189,7 +189,7 @@ fn test_resolve_with_hidden_layers() {
 fn test_resolve_skips_disabled() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn,
@@ -212,7 +212,7 @@ fn test_resolve_activation_passthrough() {
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -222,7 +222,7 @@ fn test_resolve_activation_passthrough() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -247,9 +247,9 @@ fn test_resolve_skip_add_same_dim() {
     // Add 要求 main_path(4) == skip_source(4) ✓
     let mut genome = NetworkGenome::minimal(4, 2);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -259,7 +259,7 @@ fn test_resolve_skip_add_same_dim() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -281,9 +281,9 @@ fn test_resolve_skip_add_different_dim_error() {
     // Add 要求 main_path(4) == skip_source(2)，不兼容 → Err
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -293,7 +293,7 @@ fn test_resolve_skip_add_different_dim_error() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -314,9 +314,9 @@ fn test_resolve_skip_concat() {
     // Concat: 输入维度 = 4 + 2 = 6
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -326,7 +326,7 @@ fn test_resolve_skip_concat() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -345,9 +345,9 @@ fn test_resolve_skip_mean_same_dim() {
     // 与 Add 相同规则
     let mut genome = NetworkGenome::minimal(4, 2);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -357,7 +357,7 @@ fn test_resolve_skip_mean_same_dim() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -374,9 +374,9 @@ fn test_resolve_skip_max_different_dim_error() {
     // Max 与 Add 相同约束
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -386,7 +386,7 @@ fn test_resolve_skip_max_different_dim_error() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -402,9 +402,9 @@ fn test_resolve_disabled_skip_edge_ignored() {
     // disabled 的 skip edge 不参与维度计算
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -414,7 +414,7 @@ fn test_resolve_disabled_skip_edge_ignored() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -435,7 +435,7 @@ fn test_total_params_with_hidden_layers() {
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -443,7 +443,7 @@ fn test_total_params_with_hidden_layers() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -465,9 +465,9 @@ fn test_total_params_concat_affects_downstream() {
     // 输出头 in_dim = 4+2 = 6, params = 6*1+1 = 7
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -477,7 +477,7 @@ fn test_total_params_concat_affects_downstream() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -531,7 +531,7 @@ fn test_display_with_hidden_layers() {
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -539,7 +539,7 @@ fn test_display_with_hidden_layers() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -560,7 +560,7 @@ fn test_display_with_hidden_layers() {
 fn test_display_disabled_not_shown() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn,
@@ -580,7 +580,7 @@ fn test_display_various_layer_types() {
     let i2 = genome.next_innovation_number();
     let i3 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -588,7 +588,7 @@ fn test_display_various_layer_types() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -598,7 +598,7 @@ fn test_display_various_layer_types() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: i3,
@@ -621,9 +621,9 @@ fn test_display_single_skip_edge() {
     // skip: Input(2) ──(Add)──→ Linear(4)  (维度兼容：input_dim=2, Linear(4) main_in=2)
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -633,7 +633,7 @@ fn test_display_single_skip_edge() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: i1,
         to_innovation: output_inn,
@@ -657,9 +657,9 @@ fn test_display_multiple_skip_edges() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -667,7 +667,7 @@ fn test_display_multiple_skip_edges() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -679,7 +679,7 @@ fn test_display_multiple_skip_edges() {
     );
 
     let s1 = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: s1,
         from_innovation: INPUT_INNOVATION,
         to_innovation: i2,
@@ -687,7 +687,7 @@ fn test_display_multiple_skip_edges() {
         enabled: true,
     });
     let s2 = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: s2,
         from_innovation: i1,
         to_innovation: output_inn,
@@ -718,9 +718,9 @@ fn test_display_multiple_skip_edges() {
 fn test_display_disabled_skip_edge_not_shown() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -730,7 +730,7 @@ fn test_display_disabled_skip_edge_not_shown() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -746,9 +746,9 @@ fn test_display_disabled_skip_edge_not_shown() {
 fn test_main_path_summary_ignores_skip_edges() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -758,7 +758,7 @@ fn test_main_path_summary_ignores_skip_edges() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: i1,
         to_innovation: output_inn,
@@ -785,7 +785,7 @@ fn test_display_duplicate_hidden_layers_disambiguated() {
     let i2 = genome.next_innovation_number();
     let i3 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -793,7 +793,7 @@ fn test_display_duplicate_hidden_layers_disambiguated() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -803,7 +803,7 @@ fn test_display_duplicate_hidden_layers_disambiguated() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: i3,
@@ -828,7 +828,7 @@ fn test_display_skip_edge_uses_disambiguated_names() {
     let i3 = genome.next_innovation_number();
     let i4 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -836,7 +836,7 @@ fn test_display_skip_edge_uses_disambiguated_names() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -846,7 +846,7 @@ fn test_display_skip_edge_uses_disambiguated_names() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: i3,
@@ -854,7 +854,7 @@ fn test_display_skip_edge_uses_disambiguated_names() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         3,
         LayerGene {
             innovation_number: i4,
@@ -866,7 +866,7 @@ fn test_display_skip_edge_uses_disambiguated_names() {
     );
 
     let s = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: s,
         from_innovation: i1,
         to_innovation: i4,
@@ -895,7 +895,7 @@ fn test_display_same_config_hidden_vs_output_no_suffix() {
     let mut genome = NetworkGenome::minimal(2, 4);
     let i1 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -913,7 +913,7 @@ fn test_main_path_summary_duplicate_names_disambiguated() {
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -921,7 +921,7 @@ fn test_main_path_summary_duplicate_names_disambiguated() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -964,7 +964,7 @@ fn test_minimal_uses_default_training_config() {
 #[test]
 fn test_all_layers_disabled_returns_error() {
     let mut genome = NetworkGenome::minimal(2, 1);
-    genome.layers[0].enabled = false;
+    genome.layers_mut()[0].enabled = false;
 
     let result = genome.resolve_dimensions();
     assert!(result.is_err());
@@ -978,7 +978,7 @@ fn test_large_network_params() {
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -986,7 +986,7 @@ fn test_large_network_params() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -1019,9 +1019,9 @@ fn test_resolve_skip_from_intermediate_layer() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -1029,7 +1029,7 @@ fn test_resolve_skip_from_intermediate_layer() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -1039,7 +1039,7 @@ fn test_resolve_skip_from_intermediate_layer() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: i1,
         to_innovation: output_inn,
@@ -1062,9 +1062,9 @@ fn test_resolve_skip_add_from_intermediate_different_dim_error() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -1072,7 +1072,7 @@ fn test_resolve_skip_add_from_intermediate_different_dim_error() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -1082,7 +1082,7 @@ fn test_resolve_skip_add_from_intermediate_different_dim_error() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: i1,
         to_innovation: output_inn,
@@ -1097,10 +1097,10 @@ fn test_resolve_skip_add_from_intermediate_different_dim_error() {
 fn test_resolve_skip_invalid_from_innovation() {
     // skip edge 的 from_innovation 指向不存在的创新号 → InvalidSkipEdge
     let mut genome = NetworkGenome::minimal(2, 1);
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: 999,
         to_innovation: output_inn,
@@ -1123,9 +1123,9 @@ fn test_resolve_multiple_skip_edges_concat() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -1133,7 +1133,7 @@ fn test_resolve_multiple_skip_edges_concat() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -1143,7 +1143,7 @@ fn test_resolve_multiple_skip_edges_concat() {
     );
 
     let s1 = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: s1,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -1152,7 +1152,7 @@ fn test_resolve_multiple_skip_edges_concat() {
     });
 
     let s2 = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: s2,
         from_innovation: i1,
         to_innovation: output_inn,
@@ -1174,9 +1174,9 @@ fn test_resolve_multiple_skip_edges_add_mixed_dims_error() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
-    let output_inn = genome.layers.last().unwrap().innovation_number;
+    let output_inn = genome.layers().last().unwrap().innovation_number;
 
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: i1,
@@ -1184,7 +1184,7 @@ fn test_resolve_multiple_skip_edges_add_mixed_dims_error() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i2,
@@ -1194,7 +1194,7 @@ fn test_resolve_multiple_skip_edges_add_mixed_dims_error() {
     );
 
     let s1 = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: s1,
         from_innovation: INPUT_INNOVATION,
         to_innovation: output_inn,
@@ -1203,7 +1203,7 @@ fn test_resolve_multiple_skip_edges_add_mixed_dims_error() {
     });
 
     let s2 = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: s2,
         from_innovation: i1,
         to_innovation: output_inn,
@@ -1278,17 +1278,17 @@ fn test_minimal_sequential_genome() {
     assert_eq!(genome.input_dim, 3);
     assert_eq!(genome.output_dim, 2);
     assert_eq!(genome.seq_len, Some(0)); // 占位值
-    assert_eq!(genome.layers.len(), 2);
+    assert_eq!(genome.layers().len(), 2);
     assert_eq!(genome.generated_by, "minimal_sequential");
 
     // 第一层是 Rnn
     assert_eq!(
-        genome.layers[0].layer_config,
+        genome.layers()[0].layer_config,
         LayerConfig::Rnn { hidden_size: 2 }
     );
     // 第二层（输出头）是 Linear
     assert_eq!(
-        genome.layers[1].layer_config,
+        genome.layers()[1].layer_config,
         LayerConfig::Linear { out_features: 2 }
     );
 }
@@ -1309,7 +1309,7 @@ fn test_minimal_sequential_zero_output_panics() {
 fn test_resolve_dimensions_with_rnn() {
     // 构造序列 genome: Rnn(4) → [Linear(1)]
     let mut genome = NetworkGenome::minimal_sequential(3, 1);
-    genome.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
+    genome.layers_mut()[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
     genome.seq_len = Some(5);
 
     let resolved = genome.resolve_dimensions().unwrap();
@@ -1325,7 +1325,7 @@ fn test_resolve_dimensions_with_rnn() {
 #[test]
 fn test_resolve_dimensions_with_lstm() {
     let mut genome = NetworkGenome::minimal_sequential(5, 2);
-    genome.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 8 };
+    genome.layers_mut()[0].layer_config = LayerConfig::Lstm { hidden_size: 8 };
     genome.seq_len = Some(10);
 
     let resolved = genome.resolve_dimensions().unwrap();
@@ -1338,7 +1338,7 @@ fn test_resolve_dimensions_with_lstm() {
 #[test]
 fn test_total_params_rnn_genome() {
     let mut genome = NetworkGenome::minimal_sequential(2, 1);
-    genome.layers[0].layer_config = LayerConfig::Rnn { hidden_size: 3 };
+    genome.layers_mut()[0].layer_config = LayerConfig::Rnn { hidden_size: 3 };
     genome.seq_len = Some(4);
 
     // Rnn(in=2, hidden=3): W_ih(2*3) + W_hh(3*3) + b_h(3) = 6+9+3 = 18
@@ -1347,13 +1347,13 @@ fn test_total_params_rnn_genome() {
     assert_eq!(genome.total_params().unwrap(), 22);
 
     // 换成 Lstm
-    genome.layers[0].layer_config = LayerConfig::Lstm { hidden_size: 3 };
+    genome.layers_mut()[0].layer_config = LayerConfig::Lstm { hidden_size: 3 };
     // Lstm: 4 * (2*3 + 3*3 + 3) = 4 * 18 = 72
     // Linear: 4
     assert_eq!(genome.total_params().unwrap(), 76);
 
     // 换成 Gru
-    genome.layers[0].layer_config = LayerConfig::Gru { hidden_size: 3 };
+    genome.layers_mut()[0].layer_config = LayerConfig::Gru { hidden_size: 3 };
     // Gru: 3 * (2*3 + 3*3 + 3) = 3 * 18 = 54
     // Linear: 4
     assert_eq!(genome.total_params().unwrap(), 58);
@@ -1375,7 +1375,7 @@ fn test_domain_valid_stacked_rnn() {
 
     let i1 = genome.next_innovation_number();
     let i2 = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: i1,
@@ -1383,7 +1383,7 @@ fn test_domain_valid_stacked_rnn() {
             enabled: true,
         },
     );
-    genome.layers.insert(
+    genome.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: i2,
@@ -1402,7 +1402,7 @@ fn test_domain_invalid_linear_in_seq() {
     let mut genome = NetworkGenome::minimal_sequential(3, 1);
     genome.seq_len = Some(5);
     let inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn,
@@ -1466,7 +1466,7 @@ fn test_domain_map_flat_genome() {
     // 平坦模式：所有节点均为 Flat
     let mut genome = NetworkGenome::minimal(2, 1);
     let inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: inn,
@@ -1486,8 +1486,8 @@ fn test_domain_map_single_rnn() {
     // Input(Seq) → Rnn(Flat) → Linear(Flat)
     let mut genome = NetworkGenome::minimal_sequential(2, 1);
     genome.seq_len = Some(5);
-    let rnn_inn = genome.layers[0].innovation_number;
-    let out_inn = genome.layers[1].innovation_number;
+    let rnn_inn = genome.layers()[0].innovation_number;
+    let out_inn = genome.layers()[1].innovation_number;
 
     let map = genome.compute_domain_map();
     assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Sequence);
@@ -1500,10 +1500,10 @@ fn test_domain_map_stacked_rnn() {
     // Input(Seq) → Rnn(Seq) → Lstm(Flat) → Linear(Flat)
     let mut genome = NetworkGenome::minimal_sequential(2, 1);
     genome.seq_len = Some(5);
-    let rnn_inn = genome.layers[0].innovation_number;
+    let rnn_inn = genome.layers()[0].innovation_number;
 
     let lstm_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: lstm_inn,
@@ -1511,7 +1511,7 @@ fn test_domain_map_stacked_rnn() {
             enabled: true,
         },
     );
-    let out_inn = genome.layers[2].innovation_number;
+    let out_inn = genome.layers()[2].innovation_number;
 
     let map = genome.compute_domain_map();
     assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Sequence);
@@ -1526,10 +1526,10 @@ fn test_domain_map_rnn_with_activation() {
     // Activation 保持 RNN 输出后的 Flat 域
     let mut genome = NetworkGenome::minimal_sequential(2, 1);
     genome.seq_len = Some(5);
-    let rnn_inn = genome.layers[0].innovation_number;
+    let rnn_inn = genome.layers()[0].innovation_number;
 
     let act_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: act_inn,
@@ -1539,7 +1539,7 @@ fn test_domain_map_rnn_with_activation() {
             enabled: true,
         },
     );
-    let out_inn = genome.layers[2].innovation_number;
+    let out_inn = genome.layers()[2].innovation_number;
 
     let map = genome.compute_domain_map();
     assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Sequence);
@@ -1554,10 +1554,10 @@ fn test_domain_map_activation_between_rnns() {
     // Activation 在两个 RNN 之间应保持 Sequence 域
     let mut genome = NetworkGenome::minimal_sequential(2, 1);
     genome.seq_len = Some(5);
-    let rnn_inn = genome.layers[0].innovation_number;
+    let rnn_inn = genome.layers()[0].innovation_number;
 
     let act_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: act_inn,
@@ -1568,7 +1568,7 @@ fn test_domain_map_activation_between_rnns() {
         },
     );
     let gru_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: gru_inn,
@@ -1593,14 +1593,14 @@ fn test_minimal_spatial_creates_correct_genome() {
     assert_eq!(genome.output_dim, 10);
     assert_eq!(genome.input_spatial, Some((28, 28)));
     assert!(genome.is_spatial());
-    assert_eq!(genome.layers.len(), 2); // Flatten, Linear
+    assert_eq!(genome.layers().len(), 2); // Flatten, Linear
 
     assert!(matches!(
-        genome.layers[0].layer_config,
+        genome.layers()[0].layer_config,
         LayerConfig::Flatten
     ));
     assert!(matches!(
-        genome.layers[1].layer_config,
+        genome.layers()[1].layer_config,
         LayerConfig::Linear { out_features: 10 }
     ));
 }
@@ -1641,7 +1641,7 @@ fn test_resolve_dimensions_spatial_with_extra_pool() {
 
     // 在 Flatten 前插入 Conv2d + 两个 Pool2d
     let conv_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: conv_inn,
@@ -1653,7 +1653,7 @@ fn test_resolve_dimensions_spatial_with_extra_pool() {
         },
     );
     let pool1_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: pool1_inn,
@@ -1666,7 +1666,7 @@ fn test_resolve_dimensions_spatial_with_extra_pool() {
         },
     );
     let pool2_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: pool2_inn,
@@ -1705,7 +1705,7 @@ fn test_compute_layer_params_conv2d() {
     // 手动构建含 Conv2d 的空间 genome
     let mut test_genome = NetworkGenome::minimal_spatial(3, 10, (8, 8));
     let conv_inn = test_genome.next_innovation_number();
-    test_genome.layers.insert(
+    test_genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: conv_inn,
@@ -1729,7 +1729,7 @@ fn test_compute_layer_params_pool2d_and_flatten_zero() {
     // 手动构建含 Conv2d + Pool2d 的空间 genome
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (4, 4));
     let conv_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: conv_inn,
@@ -1741,7 +1741,7 @@ fn test_compute_layer_params_pool2d_and_flatten_zero() {
         },
     );
     let pool_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: pool_inn,
@@ -1774,7 +1774,7 @@ fn test_is_domain_valid_spatial_flatten_only() {
     // 验证 minimal_spatial 只有 Flatten + Linear 是合法的
     let genome = NetworkGenome::minimal_spatial(1, 10, (28, 28));
     assert!(genome.is_domain_valid());
-    assert_eq!(genome.layers.len(), 2);
+    assert_eq!(genome.layers().len(), 2);
 }
 
 #[test]
@@ -1782,7 +1782,7 @@ fn test_is_domain_valid_spatial_conv_then_flatten() {
     // Conv2d → Flatten → [Linear]：合法（演化插入 Conv2d 后）
     let mut genome = NetworkGenome::minimal_spatial(1, 10, (28, 28));
     let conv_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: conv_inn,
@@ -1801,7 +1801,7 @@ fn test_is_domain_valid_spatial_conv_pool_flatten_linear() {
     // Conv2d → Pool2d → Flatten → Linear：合法
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
     let conv_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: conv_inn,
@@ -1813,7 +1813,7 @@ fn test_is_domain_valid_spatial_conv_pool_flatten_linear() {
         },
     );
     let pool_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: pool_inn,
@@ -1833,7 +1833,7 @@ fn test_is_domain_valid_spatial_missing_flatten() {
     // [Linear]：非法（缺少 Flatten，空间模式终态不是 Flat）
     let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
     // 移除 Flatten 层（index 0）
-    genome.layers.remove(0);
+    genome.layers_mut().remove(0);
     assert!(!genome.is_domain_valid());
 }
 
@@ -1842,7 +1842,7 @@ fn test_is_domain_valid_spatial_linear_before_flatten() {
     // Linear → Flatten → Linear：非法（Spatial 域下不能有 Linear）
     let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
     let lin_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: lin_inn,
@@ -1858,7 +1858,7 @@ fn test_is_domain_valid_spatial_activation_in_spatial_domain() {
     // Conv2d → ReLU → Flatten → Linear：合法（Activation 在 Spatial 域透传）
     let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
     let conv_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: conv_inn,
@@ -1870,7 +1870,7 @@ fn test_is_domain_valid_spatial_activation_in_spatial_domain() {
         },
     );
     let act_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: act_inn,
@@ -1888,7 +1888,7 @@ fn test_is_domain_valid_spatial_rnn_illegal() {
     // Rnn → Flatten → Linear：非法（Spatial 域下不能有 RNN）
     let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
     let rnn_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: rnn_inn,
@@ -1906,8 +1906,8 @@ fn test_domain_map_spatial_genome() {
     let map = genome.compute_domain_map();
 
     assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Spatial);
-    assert_eq!(map[&genome.layers[0].innovation_number], ShapeDomain::Flat); // Flatten
-    assert_eq!(map[&genome.layers[1].innovation_number], ShapeDomain::Flat); // Linear
+    assert_eq!(map[&genome.layers()[0].innovation_number], ShapeDomain::Flat); // Flatten
+    assert_eq!(map[&genome.layers()[1].innovation_number], ShapeDomain::Flat); // Linear
 }
 
 #[test]
@@ -1917,8 +1917,8 @@ fn test_spatial_map_minimal() {
 
     let smap = genome.compute_spatial_map();
     assert_eq!(smap[&INPUT_INNOVATION], Some((8, 8)));
-    assert_eq!(smap[&genome.layers[0].innovation_number], None); // Flatten
-    assert_eq!(smap[&genome.layers[1].innovation_number], None); // Linear
+    assert_eq!(smap[&genome.layers()[0].innovation_number], None); // Flatten
+    assert_eq!(smap[&genome.layers()[1].innovation_number], None); // Linear
 }
 
 #[test]
@@ -1927,7 +1927,7 @@ fn test_validate_skip_edge_spatial_same_hw() {
     // Skip: #1 → #2（同 H/W）→ 合法
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
     let conv1_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: conv1_inn,
@@ -1939,7 +1939,7 @@ fn test_validate_skip_edge_spatial_same_hw() {
         },
     );
     let conv2_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: conv2_inn,
@@ -1951,7 +1951,7 @@ fn test_validate_skip_edge_spatial_same_hw() {
         },
     );
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: conv1_inn,
         to_innovation: conv2_inn,
@@ -1968,7 +1968,7 @@ fn test_validate_skip_edge_spatial_different_hw() {
     // Skip: #1(8×8) → #2(4×4)（H/W 不同）→ 非法
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
     let conv1_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         0,
         LayerGene {
             innovation_number: conv1_inn,
@@ -1980,7 +1980,7 @@ fn test_validate_skip_edge_spatial_different_hw() {
         },
     );
     let pool_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         1,
         LayerGene {
             innovation_number: pool_inn,
@@ -1993,7 +1993,7 @@ fn test_validate_skip_edge_spatial_different_hw() {
         },
     );
     let conv2_inn = genome.next_innovation_number();
-    genome.layers.insert(
+    genome.layers_mut().insert(
         2,
         LayerGene {
             innovation_number: conv2_inn,
@@ -2006,7 +2006,7 @@ fn test_validate_skip_edge_spatial_different_hw() {
     );
 
     let skip_inn = genome.next_innovation_number();
-    genome.skip_edges.push(SkipEdge {
+    genome.skip_edges_mut().push(SkipEdge {
         innovation_number: skip_inn,
         from_innovation: conv1_inn,
         to_innovation: conv2_inn,

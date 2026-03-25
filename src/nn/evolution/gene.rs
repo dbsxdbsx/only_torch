@@ -3,9 +3,15 @@
  * @Date         : 2026-03-06
  * @Description  : 神经架构演化的基因数据结构
  *
- * 核心类型：NetworkGenome（网络基因组）以层为最小演化单位，
- * 通过 resolve_dimensions() 推导维度链，支持 skip edge 聚合。
- * 权重快照实现 Lamarckian 继承。
+ * 核心类型：NetworkGenome（网络基因组）
+ * - GenomeRepr::LayerLevel: 原有层级基因表示（LayerGene + SkipEdge）
+ * - GenomeRepr::NodeLevel:  新节点级基因表示（NodeGene，阶段 2 起引入）
+ *
+ * 阶段 3 设计原则：
+ * - 内部用 GenomeRepr 枚举区分两种表示，外部通过 facade 方法访问
+ * - LayerLevel 保留完整的层级操作路径（mutation 等现有逻辑不变）
+ * - NodeLevel 启用 to_graph_descriptor() + Graph::from_descriptor() 构图路径
+ * - GenomeKind/GenomeRepr 最终清洁终态：只保留 NodeLevel，阶段 6 时移除 LayerLevel
  */
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +19,9 @@ use serde::{Deserialize, Serialize};
 use crate::tensor::Tensor;
 use std::collections::HashMap;
 use std::fmt;
+
+use super::node_gene::{GenomeAnalysis, NodeGene};
+use super::migration::migrate_network_genome;
 
 /// Input 节点的虚拟创新号（skip edge 可引用此值作为源）
 pub const INPUT_INNOVATION: u64 = 0;
@@ -280,18 +289,44 @@ pub struct ResolvedDim {
     pub out_dim: usize,
 }
 
+// ==================== GenomeRepr ====================
+
+/// 基因组内部表示：LayerLevel（旧）或 NodeLevel（新）
+///
+/// 这是阶段 3 的核心变更——将两种互斥的表示封装进枚举，
+/// 消除双套并行字段的歧义。
+/// 终态（阶段 6 完成后）只保留 NodeLevel 变体，LayerLevel 被移除。
+#[derive(Serialize, Deserialize)]
+pub(crate) enum GenomeRepr {
+    /// 旧层级表示（阶段 4 前所有 mutation 操作的对象）
+    LayerLevel {
+        layers: Vec<LayerGene>,
+        skip_edges: Vec<SkipEdge>,
+        next_innovation: u64,
+        /// 层粒度权重快照：layer_innovation → [W_tensor, b_tensor, ...]
+        weight_snapshots: HashMap<u64, Vec<Tensor>>,
+    },
+    /// 新节点级表示（阶段 3 开始启用构图新路径）
+    NodeLevel {
+        nodes: Vec<NodeGene>,
+        next_innovation: u64,
+        /// 参数节点粒度快照：param_node_innovation → Tensor
+        weight_snapshots: HashMap<u64, Tensor>,
+    },
+}
+
 // ==================== 网络基因组 ====================
 
-/// 网络基因组：完整的网络拓扑描述
+/// 网络基因组：完整的网络拓扶描述
 ///
-/// layers 的最后一个启用层始终是输出头：`Linear(out_features=output_dim)`，受保护不可变异。
-/// 最小结构下 layers 只有输出头一层。
+/// 内部表示由 `GenomeRepr` 枚举区分：
+/// - `LayerLevel`：原有层级表示，阶段 4 前所有 mutation 操作的对象
+/// - `NodeLevel`：新节点级表示，阶段 3 起启用构图新路径
 ///
-/// 权重快照实现 Lamarckian 继承——clone 时权重一并复制，回滚无需依赖旧 Graph。
+/// 对外访问通过 facade 方法（`layers()`/`nodes()`等），不直接操作 `repr` 字段。
 #[derive(Serialize, Deserialize)]
 pub struct NetworkGenome {
-    pub layers: Vec<LayerGene>,
-    pub skip_edges: Vec<SkipEdge>,
+    // === 共享元数据（永远在此）===
     pub input_dim: usize,
     pub output_dim: usize,
     /// 序列长度（None = 平坦输入，Some(n) = 序列输入，每个时间步 input_dim 维特征）
@@ -300,43 +335,52 @@ pub struct NetworkGenome {
     pub input_spatial: Option<(usize, usize)>,
     pub training_config: TrainingConfig,
     pub generated_by: String,
-    pub(crate) next_innovation: u64,
-    pub(crate) weight_snapshots: HashMap<u64, Vec<Tensor>>,
+    // === 内部表示层（LayerLevel 或 NodeLevel）===
+    pub(crate) repr: GenomeRepr,
 }
 
 impl Clone for NetworkGenome {
     fn clone(&self) -> Self {
+        let repr = match &self.repr {
+            GenomeRepr::LayerLevel { layers, skip_edges, next_innovation, weight_snapshots } => {
+                GenomeRepr::LayerLevel {
+                    layers: layers.clone(),
+                    skip_edges: skip_edges.clone(),
+                    next_innovation: *next_innovation,
+                    weight_snapshots: weight_snapshots.clone(),
+                }
+            }
+            GenomeRepr::NodeLevel { nodes, next_innovation, weight_snapshots } => {
+                GenomeRepr::NodeLevel {
+                    nodes: nodes.clone(),
+                    next_innovation: *next_innovation,
+                    weight_snapshots: weight_snapshots.clone(),
+                }
+            }
+        };
         Self {
-            layers: self.layers.clone(),
-            skip_edges: self.skip_edges.clone(),
             input_dim: self.input_dim,
             output_dim: self.output_dim,
             seq_len: self.seq_len,
             input_spatial: self.input_spatial,
             training_config: self.training_config.clone(),
             generated_by: self.generated_by.clone(),
-            next_innovation: self.next_innovation,
-            weight_snapshots: self.weight_snapshots.clone(),
+            repr,
         }
     }
 }
 
 impl fmt::Debug for NetworkGenome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let kind = if self.is_node_level() { "NodeLevel" } else { "LayerLevel" };
         f.debug_struct("NetworkGenome")
-            .field("layers", &self.layers)
-            .field("skip_edges", &self.skip_edges)
+            .field("kind", &kind)
             .field("input_dim", &self.input_dim)
             .field("output_dim", &self.output_dim)
             .field("seq_len", &self.seq_len)
             .field("input_spatial", &self.input_spatial)
             .field("training_config", &self.training_config)
             .field("generated_by", &self.generated_by)
-            .field("next_innovation", &self.next_innovation)
-            .field(
-                "weight_snapshots_keys",
-                &self.weight_snapshots.keys().collect::<Vec<_>>(),
-            )
             .finish()
     }
 }
@@ -358,16 +402,18 @@ impl NetworkGenome {
         weight_snapshots: HashMap<u64, Vec<Tensor>>,
     ) -> Self {
         Self {
-            layers,
-            skip_edges,
             input_dim,
             output_dim,
             seq_len,
             input_spatial,
             training_config,
             generated_by,
-            next_innovation,
-            weight_snapshots,
+            repr: GenomeRepr::LayerLevel {
+                layers,
+                skip_edges,
+                next_innovation,
+                weight_snapshots,
+            },
         }
     }
 
@@ -381,23 +427,23 @@ impl NetworkGenome {
 
         let output_head = LayerGene {
             innovation_number: 1,
-            layer_config: LayerConfig::Linear {
-                out_features: output_dim,
-            },
+            layer_config: LayerConfig::Linear { out_features: output_dim },
             enabled: true,
         };
 
         Self {
-            layers: vec![output_head],
-            skip_edges: Vec::new(),
             input_dim,
             output_dim,
             seq_len: None,
             input_spatial: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal".to_string(),
-            next_innovation: 2, // 0 = INPUT, 1 = 输出头
-            weight_snapshots: HashMap::new(),
+            repr: GenomeRepr::LayerLevel {
+                layers: vec![output_head],
+                skip_edges: Vec::new(),
+                next_innovation: 2, // 0 = INPUT, 1 = 输出头
+                weight_snapshots: HashMap::new(),
+            },
         }
     }
 
@@ -414,31 +460,28 @@ impl NetworkGenome {
 
         let rnn_layer = LayerGene {
             innovation_number: 1,
-            layer_config: LayerConfig::Rnn {
-                hidden_size: output_dim,
-            },
+            layer_config: LayerConfig::Rnn { hidden_size: output_dim },
             enabled: true,
         };
-
         let output_head = LayerGene {
             innovation_number: 2,
-            layer_config: LayerConfig::Linear {
-                out_features: output_dim,
-            },
+            layer_config: LayerConfig::Linear { out_features: output_dim },
             enabled: true,
         };
 
         Self {
-            layers: vec![rnn_layer, output_head],
-            skip_edges: Vec::new(),
             input_dim,
             output_dim,
-            seq_len: Some(0), // 占位，materialize_task 会设置实际值
+            seq_len: Some(0),
             input_spatial: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal_sequential".to_string(),
-            next_innovation: 3, // 0 = INPUT, 1 = Rnn, 2 = 输出头
-            weight_snapshots: HashMap::new(),
+            repr: GenomeRepr::LayerLevel {
+                layers: vec![rnn_layer, output_head],
+                skip_edges: Vec::new(),
+                next_innovation: 3,
+                weight_snapshots: HashMap::new(),
+            },
         }
     }
 
@@ -457,55 +500,219 @@ impl NetworkGenome {
     ) -> Self {
         assert!(input_channels > 0, "input_channels 不能为零");
         assert!(output_dim > 0, "output_dim 不能为零");
-        assert!(
-            spatial.0 > 0 && spatial.1 > 0,
-            "spatial (H, W) 不能为零"
-        );
+        assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
 
         let flatten_layer = LayerGene {
             innovation_number: 1,
             layer_config: LayerConfig::Flatten,
             enabled: true,
         };
-
         let output_head = LayerGene {
             innovation_number: 2,
-            layer_config: LayerConfig::Linear {
-                out_features: output_dim,
-            },
+            layer_config: LayerConfig::Linear { out_features: output_dim },
             enabled: true,
         };
 
         Self {
-            layers: vec![flatten_layer, output_head],
-            skip_edges: Vec::new(),
             input_dim: input_channels,
             output_dim,
             seq_len: None,
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "minimal_spatial".to_string(),
-            next_innovation: 3, // 0=INPUT, 1=Flatten, 2=输出头
-            weight_snapshots: HashMap::new(),
+            repr: GenomeRepr::LayerLevel {
+                layers: vec![flatten_layer, output_head],
+                skip_edges: Vec::new(),
+                next_innovation: 3,
+                weight_snapshots: HashMap::new(),
+            },
         }
     }
 
     /// 获取下一个创新号（单调递增，不重复）
     pub fn next_innovation_number(&mut self) -> u64 {
-        let id = self.next_innovation;
-        self.next_innovation += 1;
-        id
+        match &mut self.repr {
+            GenomeRepr::LayerLevel { next_innovation, .. } | GenomeRepr::NodeLevel { next_innovation, .. } => {
+                let id = *next_innovation;
+                *next_innovation += 1;
+                id
+            }
+        }
     }
 
-    /// 推导每层的实际输入/输出维度，同时验证聚合节点的维度兼容性
+    // ==================== Facade 方法（外部访问入口）====================
+
+    /// 返回层级基因列表（LayerLevel 专属）
+    pub fn layers(&self) -> &[LayerGene] {
+        match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers,
+            GenomeRepr::NodeLevel { .. } => &[],
+        }
+    }
+
+    /// 返回层级基因列表可变引用（LayerLevel 专属）
+    pub fn layers_mut(&mut self) -> &mut Vec<LayerGene> {
+        match &mut self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers,
+            GenomeRepr::NodeLevel { .. } => panic!("layers_mut() 只支持 LayerLevel 基因组"),
+        }
+    }
+
+    /// 返回跳跃边列表（LayerLevel 专属）
+    pub fn skip_edges(&self) -> &[SkipEdge] {
+        match &self.repr {
+            GenomeRepr::LayerLevel { skip_edges, .. } => skip_edges,
+            GenomeRepr::NodeLevel { .. } => &[],
+        }
+    }
+
+    /// 返回跳跃边列表可变引用（LayerLevel 专属）
+    pub fn skip_edges_mut(&mut self) -> &mut Vec<SkipEdge> {
+        match &mut self.repr {
+            GenomeRepr::LayerLevel { skip_edges, .. } => skip_edges,
+            GenomeRepr::NodeLevel { .. } => panic!("skip_edges_mut() 只支持 LayerLevel 基因组"),
+        }
+    }
+
+    /// 返回节点级基因列表（NodeLevel 专属）
+    pub fn nodes(&self) -> &[NodeGene] {
+        match &self.repr {
+            GenomeRepr::LayerLevel { .. } => &[],
+            GenomeRepr::NodeLevel { nodes, .. } => nodes,
+        }
+    }
+
+    /// 返回节点级基因列表可变引用（NodeLevel 专属）
+    pub fn nodes_mut(&mut self) -> &mut Vec<NodeGene> {
+        match &mut self.repr {
+            GenomeRepr::LayerLevel { .. } => panic!("nodes_mut() 只支持 NodeLevel 基因组"),
+            GenomeRepr::NodeLevel { nodes, .. } => nodes,
+        }
+    }
+
+    /// 当前是否为节点级表示
+    pub fn is_node_level(&self) -> bool {
+        matches!(self.repr, GenomeRepr::NodeLevel { .. })
+    }
+
+    /// 当前是否为层级表示
+    pub fn is_layer_level(&self) -> bool {
+        matches!(self.repr, GenomeRepr::LayerLevel { .. })
+    }
+
+    /// 返回当前创新号计数器的下一个将分配值（不消耗，供序列化使用）
+    pub(crate) fn peek_next_innovation(&self) -> u64 {
+        match &self.repr {
+            GenomeRepr::LayerLevel { next_innovation, .. } |
+            GenomeRepr::NodeLevel { next_innovation, .. } => *next_innovation,
+        }
+    }
+
+    // ==================== 迁移与分析 ====================
+
+    /// 将当前基因组迁移到节点级表示
     ///
-    /// 从 `input_dim` 出发，沿 layers 顺序遍历，维护 `current_dim`：
-    /// - Linear/Rnn/Lstm/Gru：由 `current_dim` 和配置参数决定
-    /// - Activation/Dropout：维度透传
-    /// - 含 skip edge 目标层：根据聚合策略计算有效输入维度
+    /// 若已是 NodeLevel 则无操作直接返回。
+    /// 迁移后，`layers()` 和 `skip_edges()` 返回空切片，
+    /// `nodes()` 返回展开后的节点列表。
+    pub fn migrate_to_node_level(&mut self) -> Result<(), super::migration::MigrationError> {
+        if self.is_node_level() {
+            return Ok(());
+        }
+        let out = migrate_network_genome(self)?;
+        self.repr = GenomeRepr::NodeLevel {
+            nodes: out.nodes,
+            next_innovation: out.next_innovation,
+            weight_snapshots: HashMap::new(),
+        };
+        Ok(())
+    }
+
+    /// 对当前节点级基因组执行静态分析，返回不可变快照。
     ///
-    /// 维度不兼容（如 Add 的输入维度不同）时返回 Err。
+    /// `GenomeAnalysis` 是 mutation/builder/serializer 三方共同依赖的分析结果。
+    /// 调用方式：`genome.analyze()`
+    ///
+    /// 注意：仅对 NodeLevel 基因组有意义。如需分析 LayerLevel，先调用 `migrate_to_node_level()`。
+    pub fn analyze(&self) -> GenomeAnalysis {
+        match &self.repr {
+            GenomeRepr::NodeLevel { nodes, .. } => {
+                let input_shape = if let Some((h, w)) = self.input_spatial {
+                    vec![1, self.input_dim, h, w]
+                } else if let Some(seq) = self.seq_len {
+                    vec![1, seq, self.input_dim]
+                } else {
+                    vec![1, self.input_dim]
+                };
+                let input_domain = if self.input_spatial.is_some() {
+                    super::gene::ShapeDomain::Spatial
+                } else if self.seq_len.is_some() {
+                    super::gene::ShapeDomain::Sequence
+                } else {
+                    super::gene::ShapeDomain::Flat
+                };
+                GenomeAnalysis::compute(nodes, INPUT_INNOVATION, input_shape, input_domain)
+            }
+            GenomeRepr::LayerLevel { .. } => {
+                // LayerLevel 基因组暂不支持 analyze()，返回空分析
+                GenomeAnalysis::compute(&[], INPUT_INNOVATION, vec![1, self.input_dim], ShapeDomain::Flat)
+            }
+        }
+    }
+
+    // ==================== 权重快照（层级粒度，LayerLevel 专属）====================
+
+    /// 权重快照是否为空
+    pub fn has_weight_snapshots(&self) -> bool {
+        match &self.repr {
+            GenomeRepr::LayerLevel { weight_snapshots, .. } => !weight_snapshots.is_empty(),
+            GenomeRepr::NodeLevel { weight_snapshots, .. } => !weight_snapshots.is_empty(),
+        }
+    }
+
+    /// 获取层级权重快照引用（LayerLevel 专属）
+    pub fn weight_snapshots(&self) -> &HashMap<u64, Vec<Tensor>> {
+        match &self.repr {
+            GenomeRepr::LayerLevel { weight_snapshots, .. } => weight_snapshots,
+            GenomeRepr::NodeLevel { .. } => panic!("weight_snapshots() 只支持 LayerLevel 基因组"),
+        }
+    }
+
+    /// 设置层级权重快照（LayerLevel 专属）
+    pub fn set_weight_snapshots(&mut self, snapshots: HashMap<u64, Vec<Tensor>>) {
+        match &mut self.repr {
+            GenomeRepr::LayerLevel { weight_snapshots, .. } => *weight_snapshots = snapshots,
+            GenomeRepr::NodeLevel { .. } => panic!("set_weight_snapshots() 只支持 LayerLevel 基因组"),
+        }
+    }
+
+    /// 移除指定层的权重快照（MutateCellType 等变异用，LayerLevel 专属）
+    pub(crate) fn remove_layer_weight_snapshot(&mut self, inn: u64) {
+        match &mut self.repr {
+            GenomeRepr::LayerLevel { weight_snapshots, .. } => { weight_snapshots.remove(&inn); }
+            GenomeRepr::NodeLevel { .. } => {} // NodeLevel 无需操作
+        }
+    }
+
+    /// 获取节点级权重快照引用（NodeLevel 专属）
+    pub fn node_weight_snapshots(&self) -> &HashMap<u64, Tensor> {
+        match &self.repr {
+            GenomeRepr::NodeLevel { weight_snapshots, .. } => weight_snapshots,
+            GenomeRepr::LayerLevel { .. } => panic!("node_weight_snapshots() 只支持 NodeLevel 基因组"),
+        }
+    }
+
+    /// 推导每层的实际输入/输出维度，同时验证聚合节点的维度兼容性。
+    /// 仅对 LayerLevel 基因组有效；NodeLevel 基因组应使用 `analyze()`。
     pub fn resolve_dimensions(&self) -> Result<Vec<ResolvedDim>, GenomeError> {
+        let layers = match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers,
+            GenomeRepr::NodeLevel { .. } => {
+                return Err(GenomeError::EmptyGenome(
+                    "resolve_dimensions 不支持 NodeLevel 基因组，请使用 analyze()".into()
+                ));
+            }
+        };
         let mut dim_map: HashMap<u64, usize> = HashMap::new();
         dim_map.insert(INPUT_INNOVATION, self.input_dim);
 
@@ -513,7 +720,7 @@ impl NetworkGenome {
         let mut current_dim = self.input_dim;
         let mut current_spatial = self.input_spatial;
 
-        for layer in self.layers.iter().filter(|l| l.enabled) {
+        for layer in layers.iter().filter(|l| l.enabled) {
             let effective_in_dim = self.compute_effective_input(
                 layer.innovation_number,
                 current_dim,
@@ -543,42 +750,30 @@ impl NetworkGenome {
         Ok(results)
     }
 
-    /// 当前总参数量（基于 `resolve_dimensions()` 推导维度后累加）
+    /// 当前总参数量（仅对 LayerLevel 有效）
     pub fn total_params(&self) -> Result<usize, GenomeError> {
+        let layers = match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers,
+            GenomeRepr::NodeLevel { .. } => return Ok(0),
+        };
         let resolved = self.resolve_dimensions()?;
         let mut total = 0;
-
         for dim in &resolved {
-            let layer = self
-                .layers
+            let layer = layers
                 .iter()
                 .find(|l| l.innovation_number == dim.innovation_number)
                 .expect("resolve_dimensions 返回的创新号必须对应一个层");
-
             total += Self::compute_layer_params(&layer.layer_config, dim.in_dim, dim.out_dim);
         }
-
         Ok(total)
     }
 
-    /// 当前层数（启用的层，含输出头）
+    /// 当前层数（启用的层，含输出头）——仅对 LayerLevel 有意义
     pub fn layer_count(&self) -> usize {
-        self.layers.iter().filter(|l| l.enabled).count()
-    }
-
-    /// 权重快照是否为空
-    pub fn has_weight_snapshots(&self) -> bool {
-        !self.weight_snapshots.is_empty()
-    }
-
-    /// 获取权重快照引用（供 build/restore 使用）
-    pub fn weight_snapshots(&self) -> &HashMap<u64, Vec<Tensor>> {
-        &self.weight_snapshots
-    }
-
-    /// 设置权重快照（供 capture_weights 使用）
-    pub fn set_weight_snapshots(&mut self, snapshots: HashMap<u64, Vec<Tensor>>) {
-        self.weight_snapshots = snapshots;
+        match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers.iter().filter(|l| l.enabled).count(),
+            GenomeRepr::NodeLevel { .. } => 0,
+        }
     }
 
     /// 当前生效的 loss 函数（显式指定 > 自动推断）
@@ -608,9 +803,13 @@ impl NetworkGenome {
     ///
     /// 纯平坦模式直接返回 true。
     pub fn is_domain_valid(&self) -> bool {
+        let layers = match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers,
+            GenomeRepr::NodeLevel { .. } => return true, // NodeLevel 通过 analyze() 验证
+        };
         // 空间模式
         if self.input_spatial.is_some() {
-            let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+            let enabled: Vec<&LayerGene> = layers.iter().filter(|l| l.enabled).collect();
             if enabled.is_empty() {
                 return false;
             }
@@ -650,7 +849,7 @@ impl NetworkGenome {
         }
 
         // 序列模式
-        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+        let enabled: Vec<&LayerGene> = layers.iter().filter(|l| l.enabled).collect();
         if enabled.is_empty() {
             return false;
         }
@@ -707,11 +906,15 @@ impl NetworkGenome {
     ///
     /// 纯平坦模式直接返回 true。
     pub fn validate_skip_edge_domains(&self) -> bool {
+        let (layers, skip_edges) = match &self.repr {
+            GenomeRepr::LayerLevel { layers, skip_edges, .. } => (layers, skip_edges),
+            GenomeRepr::NodeLevel { .. } => return true,
+        };
         if self.seq_len.is_none() && self.input_spatial.is_none() {
             return true;
         }
 
-        let active_edges: Vec<_> = self.skip_edges.iter().filter(|e| e.enabled).collect();
+        let active_edges: Vec<_> = skip_edges.iter().filter(|e| e.enabled).collect();
         if active_edges.is_empty() {
             return true;
         }
@@ -723,7 +926,7 @@ impl NetworkGenome {
             None
         };
 
-        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+        let enabled: Vec<&LayerGene> = layers.iter().filter(|l| l.enabled).collect();
 
         for edge in &active_edges {
             let from_domain = domain_map
@@ -788,12 +991,16 @@ impl NetworkGenome {
     /// 返回 `innovation_number → ShapeDomain`。
     /// 用于 skip edge 域兼容性检查。
     pub fn compute_domain_map(&self) -> HashMap<u64, ShapeDomain> {
+        let layers = match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers,
+            GenomeRepr::NodeLevel { .. } => return HashMap::new(),
+        };
         let mut map = HashMap::new();
 
         // 空间模式
         if self.input_spatial.is_some() {
             map.insert(INPUT_INNOVATION, ShapeDomain::Spatial);
-            let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+            let enabled: Vec<&LayerGene> = layers.iter().filter(|l| l.enabled).collect();
             let mut current_domain = ShapeDomain::Spatial;
             for layer in &enabled {
                 match &layer.layer_config {
@@ -811,7 +1018,7 @@ impl NetworkGenome {
         // 平坦模式
         if self.seq_len.is_none() {
             map.insert(INPUT_INNOVATION, ShapeDomain::Flat);
-            for layer in self.layers.iter().filter(|l| l.enabled) {
+            for layer in layers.iter().filter(|l| l.enabled) {
                 map.insert(layer.innovation_number, ShapeDomain::Flat);
             }
             return map;
@@ -819,7 +1026,7 @@ impl NetworkGenome {
 
         // 序列模式
         map.insert(INPUT_INNOVATION, ShapeDomain::Sequence);
-        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+        let enabled: Vec<&LayerGene> = layers.iter().filter(|l| l.enabled).collect();
         let mut current_domain = ShapeDomain::Sequence;
 
         for (i, layer) in enabled.iter().enumerate() {
@@ -862,8 +1069,11 @@ impl NetworkGenome {
         main_path_dim: usize,
         dim_map: &HashMap<u64, usize>,
     ) -> Result<usize, GenomeError> {
-        let incoming: Vec<&SkipEdge> = self
-            .skip_edges
+        let skip_edges = match &self.repr {
+            GenomeRepr::LayerLevel { skip_edges, .. } => skip_edges,
+            GenomeRepr::NodeLevel { .. } => return Ok(main_path_dim),
+        };
+        let incoming: Vec<&SkipEdge> = skip_edges
             .iter()
             .filter(|e| e.enabled && e.to_innovation == target_innovation)
             .collect();
@@ -970,10 +1180,14 @@ impl NetworkGenome {
 
     /// 计算每个节点的输出空间尺寸映射
     pub(crate) fn compute_spatial_map(&self) -> HashMap<u64, Option<(usize, usize)>> {
+        let layers = match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers,
+            GenomeRepr::NodeLevel { .. } => return HashMap::new(),
+        };
         let mut map = HashMap::new();
         let mut current = self.input_spatial;
         map.insert(INPUT_INNOVATION, current);
-        for layer in self.layers.iter().filter(|l| l.enabled) {
+        for layer in layers.iter().filter(|l| l.enabled) {
             current = Self::compute_next_spatial(&layer.layer_config, current);
             map.insert(layer.innovation_number, current);
         }
@@ -994,14 +1208,24 @@ impl NetworkGenome {
     /// 与 `Display` 的第一行内容相同，不含 skip edge 注解。
     /// 当存在重名层时，自动追加 `#N` 后缀做消歧。
     pub fn main_path_summary(&self) -> String {
-        let names = self.build_display_names();
-        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
-        let mut parts: Vec<&str> = Vec::with_capacity(enabled.len() + 1);
-        parts.push(names[&INPUT_INNOVATION].as_str());
-        for layer in &enabled {
-            parts.push(names[&layer.innovation_number].as_str());
+        match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => {
+                let names = self.build_display_names();
+                let enabled: Vec<&LayerGene> = layers.iter().filter(|l| l.enabled).collect();
+                let mut parts: Vec<&str> = Vec::with_capacity(enabled.len() + 1);
+                parts.push(names[&INPUT_INNOVATION].as_str());
+                for layer in &enabled {
+                    parts.push(names[&layer.innovation_number].as_str());
+                }
+                parts.join(" → ")
+            }
+            GenomeRepr::NodeLevel { nodes, .. } => {
+                // NodeLevel 使用节点计数摘要（预先调用 analyze() 会更准确，此处用简单统计）
+                let enabled = nodes.iter().filter(|n| n.enabled).count();
+                let params = nodes.iter().filter(|n| n.enabled && n.is_parameter()).count();
+                format!("nodes={enabled} params={params}")
+            }
         }
-        parts.join(" → ")
     }
 
     /// 构建 innovation_number → 显示名称 的映射
@@ -1009,7 +1233,11 @@ impl NetworkGenome {
     /// 当同一显示名称出现多次时，自动追加 `#1`, `#2`, … 后缀做消歧。
     /// 用于主路径摘要及 skip edge 注解中引用层的人类可读名称。
     fn build_display_names(&self) -> HashMap<u64, String> {
-        let enabled: Vec<&LayerGene> = self.layers.iter().filter(|l| l.enabled).collect();
+        let layers = match &self.repr {
+            GenomeRepr::LayerLevel { layers, .. } => layers,
+            GenomeRepr::NodeLevel { .. } => return HashMap::new(),
+        };
+        let enabled: Vec<&LayerGene> = layers.iter().filter(|l| l.enabled).collect();
 
         // 第一遍：收集 (innovation, raw_name)
         let mut entries: Vec<(u64, String)> = Vec::with_capacity(enabled.len() + 1);
@@ -1077,12 +1305,11 @@ impl fmt::Display for NetworkGenome {
         // 主路径
         write!(f, "{}", self.main_path_summary())?;
 
-        // Skip edge 注解
-        let active_skips: Vec<&SkipEdge> = self
-            .skip_edges
-            .iter()
-            .filter(|e| e.enabled)
-            .collect();
+        // Skip edge 注解（仅 LayerLevel 有注解）
+        let active_skips: Vec<&SkipEdge> = match &self.repr {
+            GenomeRepr::LayerLevel { skip_edges, .. } => skip_edges.iter().filter(|e| e.enabled).collect(),
+            GenomeRepr::NodeLevel { .. } => Vec::new(),
+        };
 
         if !active_skips.is_empty() {
             let names = self.build_display_names();
