@@ -16,6 +16,14 @@ use super::gene::{
     compatible_losses, ActivationType, AggregateStrategy, LayerConfig, LayerGene, LossType,
     NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric, INPUT_INNOVATION,
 };
+use super::node_ops::{
+    create_insert_nodes, insert_after, is_activation_node,
+    node_main_path, node_param_count, repair_param_input_dims,
+    remove_block, resize_conv2d_out, resize_linear_out, sync_computation_shapes,
+    NodeBlock, NodeBlockKind,
+};
+use super::migration::activation_to_node_type;
+use crate::nn::descriptor::NodeTypeDescriptor;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -601,6 +609,11 @@ impl Mutation for InsertLayerMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
+        if genome.is_node_level() {
+            // NodeLevel: 不支持序列模式（Rnn 未展开）
+            if genome.seq_len.is_some() { return false; }
+            return genome.layer_count() < constraints.max_layers;
+        }
         genome.layer_count() < constraints.max_layers
     }
 
@@ -610,6 +623,11 @@ impl Mutation for InsertLayerMutation {
         constraints: &SizeConstraints,
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
+        // NodeLevel 分派
+        if genome.is_node_level() {
+            return node_level_insert_apply(self, genome, constraints, rng);
+        }
+
         let enabled_count = genome.layer_count();
         if enabled_count >= constraints.max_layers {
             return Err(MutationError::ConstraintViolation("已达 max_layers".into()));
@@ -782,6 +800,12 @@ impl Mutation for RemoveLayerMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if genome.is_node_level() {
+            let blocks = node_main_path(genome);
+            // 需要存在非末尾、且有具体 block_id 的块才可移除
+            return blocks.len() > 1
+                && blocks[..blocks.len() - 1].iter().any(|b| b.block_id.is_some());
+        }
         !hidden_layer_indices(genome).is_empty()
     }
 
@@ -791,6 +815,9 @@ impl Mutation for RemoveLayerMutation {
         _constraints: &SizeConstraints,
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
+        if genome.is_node_level() {
+            return node_level_remove_apply(genome, rng);
+        }
         let candidates = hidden_layer_indices(genome);
         if candidates.is_empty() {
             return Err(MutationError::NotApplicable(
@@ -854,6 +881,10 @@ impl Mutation for ReplaceLayerTypeMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if genome.is_node_level() {
+            return !self.available_activations.is_empty()
+                && node_main_path(genome).iter().any(|b| b.kind.is_activation());
+        }
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
             matches!(
@@ -869,6 +900,9 @@ impl Mutation for ReplaceLayerTypeMutation {
         _constraints: &SizeConstraints,
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
+        if genome.is_node_level() {
+            return node_level_replace_activation_apply(self, genome, rng);
+        }
         let hidden = hidden_layer_indices(genome);
         let act_indices: Vec<usize> = hidden
             .into_iter()
@@ -921,6 +955,12 @@ impl Mutation for GrowHiddenSizeMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
+        if genome.is_node_level() {
+            return node_main_path(genome).iter().any(|b| {
+                b.kind.is_resizable()
+                    && b.kind.current_size().map(|s| s < constraints.max_hidden_size).unwrap_or(false)
+            });
+        }
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
             get_resizable_size(&genome.layers()[i].layer_config)
@@ -935,6 +975,9 @@ impl Mutation for GrowHiddenSizeMutation {
         constraints: &SizeConstraints,
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
+        if genome.is_node_level() {
+            return node_level_grow_apply(genome, constraints, rng, true);
+        }
         let hidden = hidden_layer_indices(genome);
         let candidates: Vec<usize> = hidden
             .into_iter()
@@ -994,6 +1037,12 @@ impl Mutation for ShrinkHiddenSizeMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
+        if genome.is_node_level() {
+            return node_main_path(genome).iter().any(|b| {
+                b.kind.is_resizable()
+                    && b.kind.current_size().map(|s| s > constraints.min_hidden_size).unwrap_or(false)
+            });
+        }
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
             get_resizable_size(&genome.layers()[i].layer_config)
@@ -1008,6 +1057,9 @@ impl Mutation for ShrinkHiddenSizeMutation {
         constraints: &SizeConstraints,
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
+        if genome.is_node_level() {
+            return node_level_grow_apply(genome, constraints, rng, false);
+        }
         let hidden = hidden_layer_indices(genome);
         let candidates: Vec<usize> = hidden
             .into_iter()
@@ -1057,6 +1109,12 @@ impl Mutation for MutateLayerParamMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if genome.is_node_level() {
+            return genome
+                .nodes()
+                .iter()
+                .any(|n| n.enabled && matches!(n.node_type, NodeTypeDescriptor::Dropout { .. }));
+        }
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| is_parameterized_layer(&genome.layers()[i].layer_config))
     }
@@ -1067,6 +1125,9 @@ impl Mutation for MutateLayerParamMutation {
         _constraints: &SizeConstraints,
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
+        if genome.is_node_level() {
+            return node_level_mutate_param_apply(genome, rng);
+        }
         let hidden = hidden_layer_indices(genome);
         let candidates: Vec<usize> = hidden
             .into_iter()
@@ -1276,6 +1337,9 @@ impl Mutation for MutateCellTypeMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if genome.is_node_level() {
+            return false; // NodeLevel 不支持 RNN（尚未展开为节点）
+        }
         let hidden = hidden_layer_indices(genome);
         hidden.iter().any(|&i| {
             NetworkGenome::is_recurrent(&genome.layers()[i].layer_config)
@@ -1361,6 +1425,9 @@ impl Mutation for MutateKernelSizeMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if genome.is_node_level() {
+            return node_main_path(genome).iter().any(|b| b.kind.is_conv2d());
+        }
         let hidden = hidden_layer_indices(genome);
         hidden
             .iter()
@@ -1373,6 +1440,9 @@ impl Mutation for MutateKernelSizeMutation {
         _constraints: &SizeConstraints,
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
+        if genome.is_node_level() {
+            return node_level_mutate_kernel_size_apply(genome, rng);
+        }
         let hidden = hidden_layer_indices(genome);
         let candidates: Vec<usize> = hidden
             .into_iter()
@@ -1743,4 +1813,322 @@ impl Mutation for MutateAggregateStrategyMutation {
             "所有 target group 均无可行替代策略".into(),
         ))
     }
+}
+
+// ==================== NodeLevel 变异分派实现 ====================
+
+/// 内部辅助：将 NodeLevel 基因组的 next_innovation 前进 by 步
+fn advance_node_counter(genome: &mut NetworkGenome, by: u64) {
+    use super::gene::GenomeRepr;
+    if let GenomeRepr::NodeLevel { next_innovation, .. } = &mut genome.repr {
+        *next_innovation += by;
+    }
+}
+
+/// 内部辅助：将 NodeLevel 基因组的 next_innovation 重置为 to
+fn reset_node_counter(genome: &mut NetworkGenome, to: u64) {
+    use super::gene::GenomeRepr;
+    if let GenomeRepr::NodeLevel { next_innovation, .. } = &mut genome.repr {
+        *next_innovation = to;
+    }
+}
+
+/// InsertLayer 的 NodeLevel 实现
+///
+/// 在主路径中某个非末尾块的输出节点之后插入新节点组，并检查参数量约束。
+/// 若参数量超标，回滚插入操作。
+fn node_level_insert_apply(
+    m: &InsertLayerMutation,
+    genome: &mut NetworkGenome,
+    constraints: &SizeConstraints,
+    rng: &mut StdRng,
+) -> Result<(), MutationError> {
+    let blocks = node_main_path(genome);
+    if blocks.is_empty() {
+        return Err(MutationError::NotApplicable("基因组没有可用块".into()));
+    }
+
+    // 只允许在非末尾块的 output_id 之后插入，避免在输出头后面形成悬空节点
+    // 若当前仅剩输出头，则允许在输入后插入
+    let insert_candidates: Vec<u64> = if blocks.len() > 1 {
+        blocks[..blocks.len() - 1]
+            .iter()
+            .map(|b| b.output_id)
+            .collect()
+    } else {
+        vec![INPUT_INNOVATION]
+    };
+    let after_id = *insert_candidates
+        .choose(rng)
+        .ok_or_else(|| MutationError::NotApplicable("没有可用的插入点".into()))?;
+
+    let adjacent_act = is_activation_node(genome, after_id);
+    let start_inn = genome.peek_next_innovation();
+
+    let new_nodes = create_insert_nodes(
+        genome,
+        after_id,
+        constraints,
+        rng,
+        &m.available_activations,
+        adjacent_act,
+    )
+    .ok_or_else(|| MutationError::NotApplicable("无法生成插入节点（序列域不支持）".into()))?;
+
+    let n = new_nodes.len() as u64;
+    insert_after(genome, after_id, new_nodes)
+        .map_err(|e| MutationError::InternalError(e))?;
+    advance_node_counter(genome, n);
+    repair_param_input_dims(genome);
+
+    // 总参数量约束检查（repair 后才能得到准确的维度）
+    let params = node_param_count(genome);
+    if params > constraints.max_total_params {
+        // 回滚：撤销 insert_after 的效果
+        let new_node_ids: std::collections::HashSet<u64> =
+            (start_inn..start_inn + n).collect();
+        let new_output_id = start_inn + n - 1;
+        for node in genome.nodes_mut().iter_mut() {
+            for pid in node.parents.iter_mut() {
+                if *pid == new_output_id {
+                    *pid = after_id;
+                }
+            }
+        }
+        genome.nodes_mut().retain(|nd| !new_node_ids.contains(&nd.innovation_number));
+        reset_node_counter(genome, start_inn);
+        // 回滚后再次修复形状（恢复上游 W 的原始输入维度）
+        repair_param_input_dims(genome);
+        return Err(MutationError::ConstraintViolation(format!(
+            "插入后 total_params={params} 超过上限 {}",
+            constraints.max_total_params
+        )));
+    }
+
+    Ok(())
+}
+
+/// RemoveLayer 的 NodeLevel 实现
+///
+/// 移除主路径中一个非末尾的、有具体 block_id 的块，并重新连线。
+fn node_level_remove_apply(
+    genome: &mut NetworkGenome,
+    rng: &mut StdRng,
+) -> Result<(), MutationError> {
+    let blocks = node_main_path(genome);
+    if blocks.len() <= 1 {
+        return Err(MutationError::NotApplicable("只剩输出头，无法移除".into()));
+    }
+
+    // 只移除非末尾、有具体 block_id 的块（排除 None = 独立激活节点组）
+    let removable: Vec<&NodeBlock> = blocks[..blocks.len() - 1]
+        .iter()
+        .filter(|b| b.block_id.is_some())
+        .collect();
+
+    if removable.is_empty() {
+        return Err(MutationError::NotApplicable("没有可移除的中间块".into()));
+    }
+
+    let block = (*removable.choose(rng).unwrap()).clone();
+    remove_block(genome, &block);
+    repair_param_input_dims(genome);
+    Ok(())
+}
+
+/// GrowHiddenSize / ShrinkHiddenSize 的 NodeLevel 共用实现
+///
+/// `is_grow=true` → 增大，`is_grow=false` → 缩小。
+/// 增大时检查 max_total_params 并可回滚。
+fn node_level_grow_apply(
+    genome: &mut NetworkGenome,
+    constraints: &SizeConstraints,
+    rng: &mut StdRng,
+    is_grow: bool,
+) -> Result<(), MutationError> {
+    let blocks = node_main_path(genome);
+    let candidates: Vec<&NodeBlock> = blocks
+        .iter()
+        .filter(|b| {
+            if is_grow {
+                b.kind.is_resizable()
+                    && b.kind
+                        .current_size()
+                        .map(|s| s < constraints.max_hidden_size)
+                        .unwrap_or(false)
+            } else {
+                b.kind.is_resizable()
+                    && b.kind
+                        .current_size()
+                        .map(|s| s > constraints.min_hidden_size)
+                        .unwrap_or(false)
+            }
+        })
+        .collect();
+
+    if candidates.is_empty() {
+        return Err(MutationError::NotApplicable(
+            if is_grow { "没有可增长的块" } else { "没有可缩小的块" }.into(),
+        ));
+    }
+
+    let block = (*candidates.choose(rng).unwrap()).clone();
+    let current_size = block.kind.current_size().unwrap();
+
+    let new_size = if is_grow {
+        grow_size(current_size, constraints.max_hidden_size, &constraints.size_strategy, rng)
+    } else {
+        shrink_size(current_size, constraints.min_hidden_size, &constraints.size_strategy, rng)
+    };
+
+    // 执行 resize
+    match &block.kind {
+        NodeBlockKind::Linear { .. } => resize_linear_out(genome, &block, new_size)
+            .map_err(|e| MutationError::InternalError(e))?,
+        NodeBlockKind::Conv2d { .. } => resize_conv2d_out(genome, &block, new_size)
+            .map_err(|e| MutationError::InternalError(e))?,
+        _ => return Err(MutationError::NotApplicable("不可调整大小的块类型".into())),
+    }
+
+    // 增大时检查参数量约束，超标则回滚
+    if is_grow {
+        let params = node_param_count(genome);
+        if params > constraints.max_total_params {
+            // 回滚：resize 回原始大小
+            let blocks_after = node_main_path(genome);
+            if let Some(updated) = blocks_after.iter().find(|b| b.block_id == block.block_id) {
+                let _ = match &block.kind {
+                    NodeBlockKind::Linear { .. } => resize_linear_out(genome, updated, current_size),
+                    NodeBlockKind::Conv2d { .. } => resize_conv2d_out(genome, updated, current_size),
+                    _ => Ok(()),
+                };
+            }
+            return Err(MutationError::ConstraintViolation(format!(
+                "增长后 total_params={params} 超过上限 {}",
+                constraints.max_total_params
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// MutateLayerParam 的 NodeLevel 实现
+///
+/// 变异 Dropout 节点的丢弃率 `p`。
+fn node_level_mutate_param_apply(
+    genome: &mut NetworkGenome,
+    rng: &mut StdRng,
+) -> Result<(), MutationError> {
+    let dropout_ids: Vec<u64> = genome
+        .nodes()
+        .iter()
+        .filter(|n| n.enabled && matches!(n.node_type, NodeTypeDescriptor::Dropout { .. }))
+        .map(|n| n.innovation_number)
+        .collect();
+
+    if dropout_ids.is_empty() {
+        return Err(MutationError::NotApplicable("没有 Dropout 节点可变异".into()));
+    }
+
+    let &target_id = dropout_ids.choose(rng).unwrap();
+    for node in genome.nodes_mut().iter_mut() {
+        if node.innovation_number == target_id {
+            if let NodeTypeDescriptor::Dropout { ref mut p } = node.node_type {
+                *p = rng.gen_range(0.05..=0.8);
+            }
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// ReplaceLayerType 的 NodeLevel 实现
+///
+/// 随机选择一个激活节点，将其替换为另一种激活函数。
+fn node_level_replace_activation_apply(
+    m: &ReplaceLayerTypeMutation,
+    genome: &mut NetworkGenome,
+    rng: &mut StdRng,
+) -> Result<(), MutationError> {
+    let blocks = node_main_path(genome);
+    let act_node_ids: Vec<u64> = blocks
+        .iter()
+        .filter(|b| b.kind.is_activation() && !b.node_ids.is_empty())
+        .map(|b| b.node_ids[0])
+        .collect();
+
+    if act_node_ids.is_empty() || m.available_activations.is_empty() {
+        return Err(MutationError::NotApplicable(
+            "没有激活节点可替换或无替代激活函数".into(),
+        ));
+    }
+
+    let &node_id = act_node_ids.choose(rng).unwrap();
+    let new_act = m.available_activations.choose(rng).unwrap();
+    let new_nt = activation_to_node_type(new_act);
+
+    for node in genome.nodes_mut().iter_mut() {
+        if node.innovation_number == node_id {
+            node.node_type = new_nt;
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// MutateKernelSize 的 NodeLevel 实现
+///
+/// 在主路径 Conv2d 块中随机切换 kernel_size，同步更新 padding 和空间形状。
+fn node_level_mutate_kernel_size_apply(
+    genome: &mut NetworkGenome,
+    rng: &mut StdRng,
+) -> Result<(), MutationError> {
+    let blocks = node_main_path(genome);
+    let conv_blocks: Vec<NodeBlock> =
+        blocks.into_iter().filter(|b| b.kind.is_conv2d()).collect();
+
+    if conv_blocks.is_empty() {
+        return Err(MutationError::NotApplicable(
+            "没有 Conv2d 块可变异 kernel_size".into(),
+        ));
+    }
+
+    let block = conv_blocks.choose(rng).unwrap().clone();
+    let bid_set: std::collections::HashSet<u64> = block.node_ids.iter().copied().collect();
+
+    // 从 kernel 参数节点（4D 形状）读取当前 kernel_size
+    let current_k = genome
+        .nodes()
+        .iter()
+        .find(|n| bid_set.contains(&n.innovation_number) && n.output_shape.len() == 4)
+        .map(|n| n.output_shape[2])
+        .unwrap_or(3);
+
+    let alternatives: Vec<usize> = KERNEL_SIZES.iter().copied().filter(|&k| k != current_k).collect();
+    let new_k = *alternatives.choose(rng).ok_or_else(|| {
+        MutationError::NotApplicable("没有替代的 kernel_size".into())
+    })?;
+    let new_padding = new_k / 2;
+
+    // 更新 kernel 参数节点形状 [out_ch, in_ch, k, k]
+    for node in genome.nodes_mut().iter_mut() {
+        if bid_set.contains(&node.innovation_number) && node.output_shape.len() == 4 {
+            node.output_shape[2] = new_k;
+            node.output_shape[3] = new_k;
+        }
+    }
+
+    // 更新 Conv2d op 节点的 padding
+    for node in genome.nodes_mut().iter_mut() {
+        if bid_set.contains(&node.innovation_number) {
+            if let NodeTypeDescriptor::Conv2d { ref mut padding, .. } = node.node_type {
+                *padding = (new_padding, new_padding);
+            }
+        }
+    }
+
+    // 重新推导计算节点形状
+    sync_computation_shapes(genome);
+    Ok(())
 }

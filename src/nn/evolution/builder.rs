@@ -143,7 +143,8 @@ fn apply_aggregation(
 // ==================== NetworkGenome 构建与权重管理 ====================
 
 use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor as NTD};
-use super::gene::GenomeRepr;
+use super::gene::{GenomeRepr, ShapeDomain};
+use super::node_gene::GenomeAnalysis;
 
 impl NetworkGenome {
     /// 将当前基因组转换为 `GraphDescriptor`
@@ -163,9 +164,7 @@ impl NetworkGenome {
             }
         };
 
-        let mut desc = GraphDescriptor::new("EvolutionNet");
-
-        // 添加虚拟输入节点
+        // 计算输入形状和域
         let input_shape: Vec<usize> = if let Some((h, w)) = self.input_spatial {
             vec![1, self.input_dim, h, w]
         } else if let Some(seq) = self.seq_len {
@@ -173,6 +172,25 @@ impl NetworkGenome {
         } else {
             vec![1, self.input_dim]
         };
+        let input_domain = if self.input_spatial.is_some() {
+            ShapeDomain::Spatial
+        } else if self.seq_len.is_some() {
+            ShapeDomain::Sequence
+        } else {
+            ShapeDomain::Flat
+        };
+
+        // 用 GenomeAnalysis 获取拓扑序（Graph::from_descriptor_seeded 要求父节点先于子节点）
+        let analysis = GenomeAnalysis::compute(&nodes, INPUT_INNOVATION, input_shape.clone(), input_domain);
+        let node_lookup: std::collections::HashMap<u64, &super::node_gene::NodeGene> = nodes
+            .iter()
+            .filter(|n| n.enabled)
+            .map(|n| (n.innovation_number, n))
+            .collect();
+
+        let mut desc = GraphDescriptor::new("EvolutionNet");
+
+        // 先添加虚拟输入节点
         let dynamic_input: Vec<Option<usize>> = std::iter::once(None)
             .chain(input_shape[1..].iter().map(|&d| Some(d)))
             .collect();
@@ -185,21 +203,24 @@ impl NetworkGenome {
             vec![],
         ));
 
-        // 添加所有启用的 NodeGene
-        for node in nodes.iter().filter(|n| n.enabled) {
-            let dynamic = node.output_shape.first().map(|_| {
-                let mut d: Vec<Option<usize>> = node.output_shape.iter().map(|&x| Some(x)).collect();
-                if !d.is_empty() { d[0] = None; }  // batch 维动态
-                d
-            });
-            desc.add_node(NodeDescriptor::new(
-                node.innovation_number,
-                &format!("evo_{}", node.innovation_number),
-                node.node_type.clone(),
-                node.output_shape.clone(),
-                dynamic,
-                node.parents.clone(),
-            ));
+        // 按拓扑序添加所有启用的 NodeGene（父节点必须在子节点之前）
+        for &id in &analysis.topo_order {
+            if let Some(node) = node_lookup.get(&id) {
+                let dynamic = node.output_shape.first().map(|_| {
+                    let mut d: Vec<Option<usize>> =
+                        node.output_shape.iter().map(|&x| Some(x)).collect();
+                    if !d.is_empty() { d[0] = None; } // batch 维动态
+                    d
+                });
+                desc.add_node(NodeDescriptor::new(
+                    node.innovation_number,
+                    &format!("evo_{}", node.innovation_number),
+                    node.node_type.clone(),
+                    node.output_shape.clone(),
+                    dynamic,
+                    node.parents.clone(),
+                ));
+            }
         }
 
         Ok(desc)

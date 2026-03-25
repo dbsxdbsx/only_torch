@@ -750,11 +750,14 @@ impl NetworkGenome {
         Ok(results)
     }
 
-    /// 当前总参数量（仅对 LayerLevel 有效）
+    /// 当前总参数量——支持 LayerLevel 和 NodeLevel
     pub fn total_params(&self) -> Result<usize, GenomeError> {
         let layers = match &self.repr {
             GenomeRepr::LayerLevel { layers, .. } => layers,
-            GenomeRepr::NodeLevel { .. } => return Ok(0),
+            GenomeRepr::NodeLevel { .. } => {
+                // NodeLevel 通过 GenomeAnalysis 获取参数量
+                return Ok(super::node_ops::node_param_count(self));
+            }
         };
         let resolved = self.resolve_dimensions()?;
         let mut total = 0;
@@ -768,11 +771,11 @@ impl NetworkGenome {
         Ok(total)
     }
 
-    /// 当前层数（启用的层，含输出头）——仅对 LayerLevel 有意义
+    /// 当前"layer"数—— LayerLevel: 启用层数； NodeLevel: 主路块数
     pub fn layer_count(&self) -> usize {
         match &self.repr {
             GenomeRepr::LayerLevel { layers, .. } => layers.iter().filter(|l| l.enabled).count(),
-            GenomeRepr::NodeLevel { .. } => 0,
+            GenomeRepr::NodeLevel { .. } => super::node_ops::node_main_path(self).len(),
         }
     }
 

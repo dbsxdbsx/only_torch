@@ -38,9 +38,15 @@ struct EvolutionMeta {
 }
 
 /// NetworkGenome 的序列化表示（不含 weight_snapshots，权重在二进制段按参数名保存）
+///
+/// 阶段 4 起支持 NodeLevel genome：
+/// - `nodes` 有内容，且 `is_node_level=true` → NodeLevel
+/// - 否则为 LayerLevel（向后兼容旧格式）
 #[derive(Serialize, Deserialize)]
 struct GenomeSerialized {
+    #[serde(default)]
     layers: Vec<super::gene::LayerGene>,
+    #[serde(default)]
     skip_edges: Vec<super::gene::SkipEdge>,
     input_dim: usize,
     output_dim: usize,
@@ -51,20 +57,44 @@ struct GenomeSerialized {
     training_config: super::gene::TrainingConfig,
     generated_by: String,
     next_innovation: u64,
+    /// NodeLevel 节点列表（NodeLevel 专属，履历文件可贪心为空）
+    #[serde(default)]
+    nodes: Vec<super::node_gene::NodeGene>,
+    /// 是否为 NodeLevel 表示
+    #[serde(default)]
+    is_node_level: bool,
 }
 
 impl From<&NetworkGenome> for GenomeSerialized {
     fn from(genome: &NetworkGenome) -> Self {
-        Self {
-            layers: genome.layers().to_vec(),
-            skip_edges: genome.skip_edges().to_vec(),
-            input_dim: genome.input_dim,
-            output_dim: genome.output_dim,
-            seq_len: genome.seq_len,
-            input_spatial: genome.input_spatial,
-            training_config: genome.training_config.clone(),
-            generated_by: genome.generated_by.clone(),
-            next_innovation: genome.peek_next_innovation(),
+        if genome.is_node_level() {
+            Self {
+                layers: Vec::new(),
+                skip_edges: Vec::new(),
+                input_dim: genome.input_dim,
+                output_dim: genome.output_dim,
+                seq_len: genome.seq_len,
+                input_spatial: genome.input_spatial,
+                training_config: genome.training_config.clone(),
+                generated_by: genome.generated_by.clone(),
+                next_innovation: genome.peek_next_innovation(),
+                nodes: genome.nodes().to_vec(),
+                is_node_level: true,
+            }
+        } else {
+            Self {
+                layers: genome.layers().to_vec(),
+                skip_edges: genome.skip_edges().to_vec(),
+                input_dim: genome.input_dim,
+                output_dim: genome.output_dim,
+                seq_len: genome.seq_len,
+                input_spatial: genome.input_spatial,
+                training_config: genome.training_config.clone(),
+                generated_by: genome.generated_by.clone(),
+                next_innovation: genome.peek_next_innovation(),
+                nodes: Vec::new(),
+                is_node_level: false,
+            }
         }
     }
 }
@@ -72,18 +102,42 @@ impl From<&NetworkGenome> for GenomeSerialized {
 impl GenomeSerialized {
     /// 从序列化表示重建 NetworkGenome（weight_snapshots 为空，权重由参数名加载）
     fn into_genome(self) -> NetworkGenome {
-        NetworkGenome::from_parts(
-            self.layers,
-            self.skip_edges,
-            self.input_dim,
-            self.output_dim,
-            self.seq_len,
-            self.input_spatial,
-            self.training_config,
-            self.generated_by,
-            self.next_innovation,
-            std::collections::HashMap::new(), // 权重从二进制段按参数名加载
-        )
+        use super::gene::GenomeRepr;
+        if self.is_node_level {
+            // NodeLevel: 直接构建 NodeLevel 表示
+            let mut genome = NetworkGenome::from_parts(
+                Vec::new(),
+                Vec::new(),
+                self.input_dim,
+                self.output_dim,
+                self.seq_len,
+                self.input_spatial,
+                self.training_config,
+                self.generated_by,
+                self.next_innovation,
+                std::collections::HashMap::new(),
+            );
+            // 覆盖为 NodeLevel repr
+            genome.repr = GenomeRepr::NodeLevel {
+                nodes: self.nodes,
+                next_innovation: self.next_innovation,
+                weight_snapshots: std::collections::HashMap::new(),
+            };
+            genome
+        } else {
+            NetworkGenome::from_parts(
+                self.layers,
+                self.skip_edges,
+                self.input_dim,
+                self.output_dim,
+                self.seq_len,
+                self.input_spatial,
+                self.training_config,
+                self.generated_by,
+                self.next_innovation,
+                std::collections::HashMap::new(),
+            )
+        }
     }
 }
 

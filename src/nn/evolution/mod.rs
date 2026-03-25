@@ -21,10 +21,11 @@ pub mod callback;
 pub mod convergence;
 pub mod error;
 pub mod gene;
-pub mod model_io;
 pub mod migration;
+pub mod model_io;
 pub mod mutation;
 pub mod node_gene;
+pub mod node_ops;
 pub mod selection;
 pub mod task;
 
@@ -278,14 +279,9 @@ pub(crate) fn compute_inference_cost(
     metric: &ComplexityMetric,
 ) -> Result<f32, EvolutionError> {
     match metric {
-        ComplexityMetric::ParamCount => genome
-            .total_params()
-            .map(|p| p as f32)
-            .map_err(|e| {
-                EvolutionError::Graph(GraphError::ComputationError(
-                    format!("计算参数量失败: {e}"),
-                ))
-            }),
+        ComplexityMetric::ParamCount => genome.total_params().map(|p| p as f32).map_err(|e| {
+            EvolutionError::Graph(GraphError::ComputationError(format!("计算参数量失败: {e}")))
+        }),
     }
 }
 
@@ -643,10 +639,9 @@ impl Evolution {
         // 并行执行设置
         let auto_parallelism = rayon::current_num_threads();
         let effective_parallelism = parallelism.unwrap_or(auto_parallelism).max(1);
-        let effective_pareto_patience = pareto_patience
-            .unwrap_or_else(|| (population_size * 2).max(20));
-        let can_parallel =
-            task_spec.supports_parallel_evaluation() && effective_parallelism > 1;
+        let effective_pareto_patience =
+            pareto_patience.unwrap_or_else(|| (population_size * 2).max(20));
+        let can_parallel = task_spec.supports_parallel_evaluation() && effective_parallelism > 1;
         let parallel_pool = if can_parallel {
             Some(
                 ThreadPoolBuilder::new()
@@ -696,14 +691,21 @@ impl Evolution {
             .unwrap_or_else(|| Box::new(DefaultCallback::new(max_generations, verbose)));
 
         let minimal_genome = if prepared.seq_len.is_some() {
-            let mut g =
-                NetworkGenome::minimal_sequential(prepared.input_dim, prepared.output_dim);
+            // 序列模式：RNN 尚未展开为节点，保持 LayerLevel
+            let mut g = NetworkGenome::minimal_sequential(prepared.input_dim, prepared.output_dim);
             g.seq_len = prepared.seq_len;
             g
         } else if let Some(spatial) = prepared.input_spatial {
-            NetworkGenome::minimal_spatial(prepared.input_dim, prepared.output_dim, spatial)
+            let mut g =
+                NetworkGenome::minimal_spatial(prepared.input_dim, prepared.output_dim, spatial);
+            // 阶段 4：空间模式迁移到 NodeLevel
+            let _ = g.migrate_to_node_level();
+            g
         } else {
-            NetworkGenome::minimal(prepared.input_dim, prepared.output_dim)
+            let mut g = NetworkGenome::minimal(prepared.input_dim, prepared.output_dim);
+            // 阶段 4：平坦模式迁移到 NodeLevel
+            let _ = g.migrate_to_node_level();
+            g
         };
 
         let mut rng = match seed {
@@ -763,9 +765,7 @@ impl Evolution {
             if let Some(r) = fallback_results.into_iter().next() {
                 parents.push((r.genome, r.score));
             } else {
-                return Err(EvolutionError::InvalidConfig(
-                    "无法评估任何初始个体".into(),
-                ));
+                return Err(EvolutionError::InvalidConfig("无法评估任何初始个体".into()));
             }
         }
 
@@ -796,7 +796,13 @@ impl Evolution {
                 };
                 let (repr_g, repr_s) = select_representative(&archive, target_metric);
                 return build_population_result(
-                    repr_g, repr_s, &archive, generation, status, &mut rng, &serial_task,
+                    repr_g,
+                    repr_s,
+                    &archive,
+                    generation,
+                    status,
+                    &mut rng,
+                    &serial_task,
                 );
             }
 
@@ -823,8 +829,7 @@ impl Evolution {
             let mut offspring_genomes = Vec::with_capacity(offspring_batch_size);
             let mut any_mutation_succeeded = false;
 
-            let parent_scores: Vec<FitnessScore> =
-                parents.iter().map(|(_, s)| s.clone()).collect();
+            let parent_scores: Vec<FitnessScore> = parents.iter().map(|(_, s)| s.clone()).collect();
             let parent_ranks = selection::pareto_rank(&parent_scores);
             let parent_distances = selection::crowding_distance(&parent_scores);
 
@@ -846,8 +851,7 @@ impl Evolution {
 
                 let mut child = parents[parent_idx].0.clone();
                 let mutation_result = if force_structural {
-                    current_registry
-                        .apply_random_structural(&mut child, &constraints, &mut rng)
+                    current_registry.apply_random_structural(&mut child, &constraints, &mut rng)
                 } else {
                     current_registry.apply_random(&mut child, &constraints, &mut rng)
                 };
@@ -906,12 +910,7 @@ impl Evolution {
             if offspring.is_empty() {
                 let (archive_best_g, archive_best_s) =
                     select_representative(&archive, target_metric);
-                callback.on_generation(
-                    generation,
-                    archive_best_g,
-                    f32::NAN,
-                    archive_best_s,
-                );
+                callback.on_generation(generation, archive_best_g, f32::NAN, archive_best_s);
                 continue;
             }
 
@@ -922,20 +921,14 @@ impl Evolution {
             // 更新 archive（用完整 pool，确保不丢失非支配解）
             selection::update_archive(
                 &mut archive,
-                pool.iter()
-                    .map(|(g, s)| (g.clone(), s.clone()))
-                    .collect(),
+                pool.iter().map(|(g, s)| (g.clone(), s.clone())).collect(),
             );
 
             parents = selection::nsga2_select(pool, population_size);
 
             // 4. 代表成员收敛跟踪：避免 archive 细碎 trade-off 变化掩盖主目标平台期
             let (_, representative_score) = select_representative(&archive, target_metric);
-            if fitness_changed(
-                &representative_score_snapshot,
-                representative_score,
-                1e-6,
-            ) {
+            if fitness_changed(&representative_score_snapshot, representative_score, 1e-6) {
                 archive_stagnation = 0;
                 representative_score_snapshot = representative_score.clone();
             } else {
@@ -963,17 +956,10 @@ impl Evolution {
                 primary_stagnation += 1;
             }
 
-
             // 6. 回调
             let (archive_best_g, archive_best_s) = select_representative(&archive, target_metric);
-            callback.on_generation(
-                generation,
-                archive_best_g,
-                f32::NAN,
-                archive_best_s,
-            );
-            let front_scores: Vec<FitnessScore> =
-                archive.iter().map(|(_, s)| s.clone()).collect();
+            callback.on_generation(generation, archive_best_g, f32::NAN, archive_best_s);
+            let front_scores: Vec<FitnessScore> = archive.iter().map(|(_, s)| s.clone()).collect();
             let front_size = selection::pareto_front_indices(&front_scores).len();
             callback.on_population_evaluated(
                 generation,
@@ -1058,7 +1044,11 @@ fn eval_candidate(
     if let Ok(cost) = compute_inference_cost(&genome, complexity_metric) {
         score.inference_cost = Some(cost);
     }
-    Some(EvalResult { genome, score, loss })
+    Some(EvalResult {
+        genome,
+        score,
+        loss,
+    })
 }
 
 /// 批量评估候选个体（支持 rayon 并行）
@@ -1096,6 +1086,9 @@ fn evaluate_batch(
                         )
                     },
                 )
+                // 先保序收集 Option，再串行 flatten，确保相同 seed 下结果顺序一致
+                .collect::<Vec<_>>()
+                .into_iter()
                 .flatten()
                 .collect()
         })

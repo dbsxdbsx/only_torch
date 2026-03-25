@@ -30,7 +30,16 @@ fn xor_data() -> (Vec<Tensor>, Vec<Tensor>) {
 
 fn xor_evolution() -> Evolution {
     let data = xor_data();
+    // 测试中固定所有与线程数相关的默认值，确保 seed 完全确定性：
+    // - with_parallelism(1)：串行评估，避免多测试并发时超额订阅
+    // - with_population_size / with_offspring_batch_size：避免
+    //   rayon::current_num_threads() 在全局池懒初始化前后返回不同值
+    //   导致 rng 消耗次数不同，破坏跨调用的 seed 可重现性。
+    // 专门测试并行路径的用例自行覆盖这些参数。
     Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_parallelism(1)
+        .with_population_size(4)
+        .with_offspring_batch_size(4)
 }
 
 // ==================== Mock Callback ====================
@@ -503,7 +512,13 @@ fn test_evolution_result_fields() {
 
     assert!(result.fitness.primary.is_finite());
     assert!(!result.architecture_summary.is_empty());
-    assert!(result.architecture_summary.starts_with("Input("));
+    // 接受 LayerLevel ("Input(") 和 NodeLevel ("nodes=") 两种格式
+    assert!(
+        result.architecture_summary.starts_with("Input(")
+            || result.architecture_summary.starts_with("nodes="),
+        "架构描述应以 Input( 或 nodes= 开头: {}",
+        result.architecture_summary
+    );
     assert!(result.architecture() == result.architecture_summary);
 }
 
@@ -866,10 +881,11 @@ fn test_evolution_spatial_runs() {
 
     assert!(result.fitness.primary >= 0.0);
     assert!(result.generations <= 3);
-    // 架构摘要应包含空间标记 "@"（初始架构为 Flatten+FC，Conv2d 可能由演化插入）
+    // 接受 LayerLevel（包含 '@'）和 NodeLevel（以 'nodes=' 开头）两种格式
     assert!(
-        result.architecture_summary.contains('@'),
-        "空间架构应显示 C@H×W 格式: {}",
+        result.architecture_summary.contains('@')
+            || result.architecture_summary.starts_with("nodes="),
+        "空间架构应显示 C@H×W 格式或 nodes= 格式: {}",
         result.architecture_summary
     );
 }
@@ -931,9 +947,11 @@ fn test_evolution_spatial_multichannel() {
         .unwrap();
 
     assert!(result.fitness.primary >= 0.0);
+    // 接受 LayerLevel（包含 '3@8×8'）和 NodeLevel（以 'nodes=' 开头）两种格式
     assert!(
-        result.architecture_summary.contains("3@8×8"),
-        "应显示 3@8×8: {}",
+        result.architecture_summary.contains("3@8×8")
+            || result.architecture_summary.starts_with("nodes="),
+        "应显示 3@8×8 或 nodes= 格式: {}",
         result.architecture_summary
     );
 }

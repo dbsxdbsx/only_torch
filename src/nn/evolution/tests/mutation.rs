@@ -67,7 +67,6 @@ fn test_insert_layer_max_layers_reached() {
     assert!(!m.is_applicable(&g, &c));
 }
 
-
 fn spatial_genome(spatial: (usize, usize)) -> NetworkGenome {
     NetworkGenome::minimal_spatial(1, 10, spatial)
 }
@@ -138,9 +137,9 @@ fn test_insert_layer_spatial_does_not_create_pool_when_spatial_too_small() {
         let mut r = StdRng::seed_from_u64(seed);
         m.apply(&mut g, &c, &mut r).unwrap();
         assert!(
-            !g.layers().iter().any(|l| {
-                l.enabled && matches!(l.layer_config, LayerConfig::Pool2d { .. })
-            }),
+            !g.layers()
+                .iter()
+                .any(|l| { l.enabled && matches!(l.layer_config, LayerConfig::Pool2d { .. }) }),
             "1x1 空间输入上不应再生成 Pool2d 候选"
         );
     }
@@ -1673,4 +1672,260 @@ fn test_is_domain_valid_matches_compute_domain_map() {
 
     // is_domain_valid 应拒绝（LSTM 在 Flat 域中非法）
     assert!(!g.is_domain_valid(), "Flat 域中出现 LSTM 应导致域链非法");
+}
+
+// ==================== NodeLevel 变异测试 ====================
+
+/// 创建 NodeLevel 基因组：Input(2) → Linear(4) → ReLU → [Linear(1)]
+fn node_level_genome_with_hidden() -> NetworkGenome {
+    let mut g = genome_with_hidden();
+    g.migrate_to_node_level().expect("迁移到 NodeLevel 应成功");
+    g
+}
+
+/// 创建含 Dropout 的 NodeLevel 基因组：Input(2) → Linear(4) → Dropout(0.3) → ReLU → [Linear(1)]
+fn node_level_genome_with_dropout() -> NetworkGenome {
+    let mut g = NetworkGenome::minimal(2, 1);
+    let i1 = g.next_innovation_number();
+    let i2 = g.next_innovation_number();
+    let i3 = g.next_innovation_number();
+    g.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    g.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Dropout { p: 0.3 },
+            enabled: true,
+        },
+    );
+    g.layers_mut().insert(
+        2,
+        LayerGene {
+            innovation_number: i3,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    g.migrate_to_node_level().expect("含 Dropout 的迁移应成功");
+    g
+}
+
+#[test]
+fn test_node_level_insert_layer() {
+    let mut g = node_level_genome_with_hidden();
+    let mut r = rng();
+    let m = InsertLayerMutation::default();
+    let c = constraints();
+
+    assert!(g.is_node_level(), "应为 NodeLevel");
+    assert!(m.is_applicable(&g, &c), "含块时应可适用");
+
+    let before = g.layer_count();
+    m.apply(&mut g, &c, &mut r).expect("InsertLayer 应成功");
+    // 插入后块数 >= 插入前（激活函数不新增块数，但线性层会）
+    assert!(g.is_node_level(), "变异后仍应为 NodeLevel");
+    assert!(
+        g.layer_count() >= before,
+        "InsertLayer 后 layer_count 不应减少: before={before}, after={}",
+        g.layer_count()
+    );
+
+    let mut build_rng = rng();
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "InsertLayer 后 build 应成功"
+    );
+}
+
+#[test]
+fn test_node_level_remove_layer() {
+    let mut g = node_level_genome_with_hidden();
+    let mut r = rng();
+    let m = RemoveLayerMutation;
+    let c = constraints();
+
+    assert!(g.is_node_level(), "应为 NodeLevel");
+    assert!(m.is_applicable(&g, &c), "含隐藏块时应可适用");
+
+    let before = g.layer_count();
+    m.apply(&mut g, &c, &mut r).expect("RemoveLayer 应成功");
+    assert!(
+        g.layer_count() < before,
+        "RemoveLayer 后 layer_count 应减少: before={before}, after={}",
+        g.layer_count()
+    );
+
+    let mut build_rng = rng();
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "RemoveLayer 后 build 应成功"
+    );
+}
+
+#[test]
+fn test_node_level_remove_layer_output_head_preserved() {
+    // 连续移除直到不可适用，输出头必须始终保留
+    let mut g = node_level_genome_with_hidden();
+    let mut r = rng();
+    let m = RemoveLayerMutation;
+    let c = constraints();
+
+    while m.is_applicable(&g, &c) {
+        m.apply(&mut g, &c, &mut r).unwrap();
+    }
+
+    assert!(g.layer_count() >= 1, "至少保留输出头块");
+    let mut build_rng = rng();
+    assert!(g.build(&mut build_rng).is_ok(), "移除到底后 build 应成功");
+}
+
+#[test]
+fn test_node_level_minimal_not_removable() {
+    // 最小 NodeLevel genome（只有输出头块）不可移除
+    let mut g = NetworkGenome::minimal(2, 1);
+    g.migrate_to_node_level().unwrap();
+    let m = RemoveLayerMutation;
+    assert!(
+        !m.is_applicable(&g, &constraints()),
+        "最小 NodeLevel 不应可移除"
+    );
+}
+
+#[test]
+fn test_node_level_grow() {
+    let mut g = node_level_genome_with_hidden();
+    let mut r = rng();
+    let m = GrowHiddenSizeMutation;
+    let c = constraints();
+
+    assert!(g.is_node_level(), "应为 NodeLevel");
+    assert!(m.is_applicable(&g, &c), "含 Linear 块时应可适用");
+
+    m.apply(&mut g, &c, &mut r).expect("GrowHiddenSize 应成功");
+
+    let mut build_rng = rng();
+    assert!(g.build(&mut build_rng).is_ok(), "Grow 后 build 应成功");
+}
+
+#[test]
+fn test_node_level_shrink() {
+    // 先 Grow，再 Shrink，确保可缩小空间存在
+    let mut g = node_level_genome_with_hidden();
+    let c = SizeConstraints {
+        min_hidden_size: 1,
+        max_hidden_size: 256,
+        ..constraints()
+    };
+
+    // Grow 一次给缩小创造空间
+    GrowHiddenSizeMutation
+        .apply(&mut g, &c, &mut StdRng::seed_from_u64(1))
+        .ok();
+
+    let mut r = StdRng::seed_from_u64(2);
+    let m = ShrinkHiddenSizeMutation;
+    assert!(m.is_applicable(&g, &c), "Grow 后 Shrink 应可适用");
+    m.apply(&mut g, &c, &mut r)
+        .expect("ShrinkHiddenSize 应成功");
+
+    let mut build_rng = rng();
+    assert!(g.build(&mut build_rng).is_ok(), "Shrink 后 build 应成功");
+}
+
+#[test]
+fn test_node_level_replace_activation() {
+    let mut g = node_level_genome_with_hidden();
+    let mut r = rng();
+    let m = ReplaceLayerTypeMutation::default();
+    let c = constraints();
+
+    assert!(g.is_node_level(), "应为 NodeLevel");
+    assert!(m.is_applicable(&g, &c), "含 Activation 块时应可适用");
+
+    m.apply(&mut g, &c, &mut r)
+        .expect("ReplaceLayerType 应成功");
+
+    let mut build_rng = rng();
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "ReplaceActivation 后 build 应成功"
+    );
+}
+
+#[test]
+fn test_node_level_replace_activation_not_applicable_without_activation() {
+    // 无激活块时 ReplaceLayerType 不可适用
+    let mut g = NetworkGenome::minimal(2, 1); // 只有输出头 Linear
+    g.migrate_to_node_level().unwrap();
+    let m = ReplaceLayerTypeMutation::default();
+    assert!(!m.is_applicable(&g, &constraints()));
+}
+
+#[test]
+fn test_node_level_mutate_param_dropout() {
+    let mut g = node_level_genome_with_dropout();
+    let mut r = rng();
+    let m = MutateLayerParamMutation;
+    let c = constraints();
+
+    assert!(g.is_node_level(), "应为 NodeLevel");
+    assert!(m.is_applicable(&g, &c), "含 Dropout 节点时应可适用");
+
+    m.apply(&mut g, &c, &mut r)
+        .expect("MutateLayerParam 应成功");
+
+    let mut build_rng = rng();
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "Dropout 参数变异后 build 应成功"
+    );
+}
+
+#[test]
+fn test_node_level_multiple_mutations_build_succeeds() {
+    // 多轮随机变异后 build 应始终成功
+    let g = node_level_genome_with_hidden();
+    let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
+    let c = constraints();
+
+    for seed in 0..15u64 {
+        let mut r = StdRng::seed_from_u64(seed);
+        let mut g2 = g.clone();
+
+        // 逐轮跟踪，找出哪一轮变异导致 build 失败
+        for round in 0..20usize {
+            let prev = g2.clone();
+            let mutation_result = reg.apply_random(&mut g2, &c, &mut r);
+            let mut check_rng = StdRng::seed_from_u64(seed + 2000 + round as u64);
+            if g2.build(&mut check_rng).is_err() {
+                let mut build_rng = StdRng::seed_from_u64(seed + 1000);
+                match g2.build(&mut build_rng) {
+                    Ok(_) => {}
+                    Err(e) => panic!(
+                        "第 {round} 轮变异后 build 失败 (seed={seed})\n变异结果: {mutation_result:?}\n变异前节点:\n{:#?}\n变异后节点:\n{:#?}",
+                        prev.nodes(),
+                        g2.nodes()
+                    ),
+                }
+            }
+        }
+
+        let mut build_rng = StdRng::seed_from_u64(seed + 1000);
+        match g2.build(&mut build_rng) {
+            Ok(_) => {}
+            Err(e) => panic!(
+                "20 轮随机变异后 build 失败 (seed={seed}): {e:?}\n基因组节点: {:#?}",
+                g2.nodes()
+            ),
+        }
+    }
 }

@@ -818,12 +818,15 @@ fn topological_sort(
         children.entry(id).or_default();
     }
 
-    // 从入度为 0 的节点开始
-    let mut queue: VecDeque<u64> = in_degree
+    // 从入度为 0 的节点开始，按 innovation_number 排序确保确定性
+    // （HashMap::iter() 顺序依赖内部哈希 seed，在同一进程的不同调用间不一致）
+    let mut zero_indegree: Vec<u64> = in_degree
         .iter()
         .filter(|&(_, &d)| d == 0)
         .map(|(&id, _)| id)
         .collect();
+    zero_indegree.sort_unstable();
+    let mut queue: VecDeque<u64> = zero_indegree.into_iter().collect();
 
     let mut order = Vec::new();
 
