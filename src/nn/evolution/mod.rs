@@ -40,7 +40,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use crate::nn::{GraphError, VisualizationOutput};
 use crate::tensor::Tensor;
 
-use self::builder::BuildResult;
+use self::builder::{BuildResult, InheritReport};
 use self::callback::{DefaultCallback, EvolutionCallback};
 use self::convergence::{ConvergenceConfig, TrainingBudget};
 use self::error::EvolutionError;
@@ -902,6 +902,22 @@ impl Evolution {
             );
 
             let offspring_evaluated = eval_results.len();
+            // 汇总权重继承统计（仅 NodeLevel genome 有意义）
+            let total_inherited: usize = eval_results
+                .iter()
+                .filter_map(|r| r.inherit_report.as_ref())
+                .map(|rep| rep.inherited + rep.partially_inherited)
+                .sum();
+            let total_reinitialized: usize = eval_results
+                .iter()
+                .filter_map(|r| r.inherit_report.as_ref())
+                .map(|rep| rep.reinitialized)
+                .sum();
+            let total_params_seen: usize = total_inherited + total_reinitialized;
+            if total_params_seen > 0 {
+                callback.on_inherit_stats(generation, total_inherited, total_reinitialized);
+            }
+
             let offspring: Vec<(NetworkGenome, FitnessScore)> = eval_results
                 .into_iter()
                 .map(|r| (r.genome, r.score))
@@ -1025,6 +1041,7 @@ struct EvalResult {
     score: FitnessScore,
     #[allow(dead_code)]
     loss: f32,
+    inherit_report: Option<InheritReport>,
 }
 
 /// 评估单个候选个体
@@ -1037,7 +1054,7 @@ fn eval_candidate(
     rng: &mut StdRng,
 ) -> Option<EvalResult> {
     let build = genome.build(rng).ok()?;
-    let _ = genome.restore_weights(&build);
+    let inherit_report = genome.restore_weights(&build).ok();
     let loss = task.train(&genome, &build, convergence, rng).ok()?;
     genome.capture_weights(&build).ok()?;
     let mut score = evaluate_conservative(task, &genome, &build, eval_runs, rng).ok()?;
@@ -1048,6 +1065,7 @@ fn eval_candidate(
         genome,
         score,
         loss,
+        inherit_report,
     })
 }
 

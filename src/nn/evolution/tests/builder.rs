@@ -1491,3 +1491,385 @@ fn test_phase3_nodelevel_build_closed_loop_cnn() {
     let out = build.output.value().unwrap().unwrap();
     assert_eq!(out.shape(), &[1, 10]);
 }
+
+// ==================== 阶段 5：Parameter 节点粒度权重继承 ====================
+
+/// 阶段 5 测试：Grow 后部分继承（partially_inherited > 0）
+///
+/// 流程：
+/// 1. NodeLevel genome + 捕获权重
+/// 2. GrowHiddenSize 变异 → W 的 out 维度增大，形状改变
+/// 3. 重新构图 + restore_weights
+/// 4. 期望 partially_inherited > 0（W形状变了，走部分继承），inherited >= 0, reinitialized >= 0
+#[test]
+fn test_phase5_node_level_partial_inherit_after_grow() {
+    use crate::nn::evolution::mutation::{GrowHiddenSizeMutation, Mutation, SizeConstraints};
+
+    // 构建 NodeLevel：Input(4) → Linear(8) → ReLU → [Linear(3)]
+    let mut genome = NetworkGenome::minimal(4, 3);
+    let inn_h = genome.next_innovation_number();
+    genome.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: inn_h,
+            layer_config: LayerConfig::Linear { out_features: 8 },
+            enabled: true,
+        },
+    );
+    let inn_act = genome.next_innovation_number();
+    genome.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: inn_act,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    genome.migrate_to_node_level().expect("迁移 NodeLevel 应成功");
+    assert!(genome.is_node_level());
+
+    // 捕获初始权重
+    let mut rng = StdRng::seed_from_u64(42);
+    let build1 = genome.build(&mut rng).expect("初始 build 应成功");
+    genome.capture_weights(&build1).expect("capture_weights 应成功");
+    assert!(genome.has_weight_snapshots(), "应有权重快照");
+
+    // Grow 变异（扩大 hidden Linear 的输出维度）
+    let constraints = SizeConstraints {
+        min_hidden_size: 1,
+        max_hidden_size: 256,
+        max_total_params: 100_000,
+        max_layers: 10,
+        ..Default::default()
+    };
+    let grow = GrowHiddenSizeMutation;
+    // 用固定 seed 确保 Grow 确实改变了某个 Linear 尺寸
+    for seed in 0..20u64 {
+        let mut test_genome = genome.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        if grow.apply(&mut test_genome, &constraints, &mut r).is_ok() {
+            // Grow 成功，rebuild + restore
+            let mut build_rng = StdRng::seed_from_u64(seed + 100);
+            let build2 = test_genome.build(&mut build_rng).expect("Grow 后 build 应成功");
+            let report = test_genome
+                .restore_weights(&build2)
+                .expect("restore_weights 应成功");
+
+            // 总继承数之和必须等于新图参数节点数
+            let total = report.inherited + report.partially_inherited + report.reinitialized;
+            assert_eq!(
+                total,
+                build2.layer_params.len(),
+                "继承统计之和应等于参数节点数"
+            );
+
+            // Grow 后必有参数形状改变 → partially_inherited 或 reinitialized > 0
+            assert!(
+                report.partially_inherited + report.reinitialized > 0,
+                "Grow 后应有部分继承或重新初始化的参数（快照形状已变），seed={seed}"
+            );
+
+            return; // 找到一个成功的 Grow 就够了
+        }
+    }
+    panic!("20次尝试内 GrowHiddenSize 均未成功，测试无效");
+}
+
+/// 阶段 5 测试：插入新层后新节点无快照 → reinitialized > 0
+///
+/// 流程：
+/// 1. NodeLevel genome + 捕获权重
+/// 2. InsertLayer 插入全新 Linear 块（新增 Parameter 节点）
+/// 3. 重新构图 + restore_weights
+/// 4. 期望 reinitialized > 0（新增 Parameter 节点无快照）
+///    且 inherited > 0（原有 Parameter 节点形状不变，全量继承）
+#[test]
+fn test_phase5_node_level_reinit_after_insert() {
+    use crate::nn::evolution::mutation::{InsertLayerMutation, Mutation, SizeConstraints};
+
+    // 最小 NodeLevel：Input(4) → [Linear(3)]
+    let mut genome = NetworkGenome::minimal(4, 3);
+    genome.migrate_to_node_level().expect("迁移 NodeLevel 应成功");
+    assert!(genome.is_node_level());
+
+    // 捕获初始权重
+    let mut rng = StdRng::seed_from_u64(99);
+    let build1 = genome.build(&mut rng).expect("初始 build 应成功");
+    genome.capture_weights(&build1).expect("capture_weights 应成功");
+
+    // 记录原参数节点创新号
+    let original_param_ids: std::collections::HashSet<u64> = genome
+        .nodes()
+        .iter()
+        .filter(|n| n.enabled && n.is_parameter())
+        .map(|n| n.innovation_number)
+        .collect();
+    assert!(!original_param_ids.is_empty(), "应有原始参数节点");
+
+    // InsertLayer：插入新 Linear 块（含全新 Parameter 节点）
+    let constraints = SizeConstraints {
+        max_layers: 10,
+        min_hidden_size: 1,
+        max_hidden_size: 64,
+        max_total_params: 100_000,
+        ..Default::default()
+    };
+    let insert = InsertLayerMutation::default();
+    let mut inserted = false;
+    for seed in 0..20u64 {
+        let mut test_genome = genome.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        if insert.apply(&mut test_genome, &constraints, &mut r).is_ok() {
+            // 验证确实增加了新的参数节点
+            let new_param_ids: std::collections::HashSet<u64> = test_genome
+                .nodes()
+                .iter()
+                .filter(|n| n.enabled && n.is_parameter())
+                .map(|n| n.innovation_number)
+                .collect();
+            let added_params: usize = new_param_ids.difference(&original_param_ids).count();
+
+            if added_params == 0 {
+                continue; // 插入的是激活节点（无参数），继续尝试
+            }
+
+            // rebuild + restore
+            let mut build_rng = StdRng::seed_from_u64(seed + 200);
+            let build2 = test_genome.build(&mut build_rng).expect("InsertLayer 后 build 应成功");
+            let report = test_genome
+                .restore_weights(&build2)
+                .expect("restore_weights 应成功");
+
+            // 新增的 Parameter 节点应被 reinitialized（无快照）
+            assert!(
+                report.reinitialized > 0,
+                "InsertLayer 新增参数节点应被 reinitialized，seed={seed}"
+            );
+            // 原有参数节点形状不变，应有 inherited
+            assert!(
+                report.inherited > 0,
+                "原有参数节点形状不变，应有 inherited，seed={seed}"
+            );
+            // 统计正确
+            let total = report.inherited + report.partially_inherited + report.reinitialized;
+            assert_eq!(
+                total,
+                build2.layer_params.len(),
+                "继承统计之和应等于参数节点数"
+            );
+
+            inserted = true;
+            break;
+        }
+    }
+    assert!(inserted, "20次尝试内 InsertLayer（含参数）均未成功，测试无效");
+}
+
+/// 阶段 5 测试：Shrink 后部分继承（`narrow` 截取路径）
+///
+/// 与 Grow 测试互补：Grow 走 `concat` 拼接路径，Shrink 走 `narrow` 截取路径，
+/// 两者是 `try_partial_inherit` 中互斥的两条代码分支，必须分别验证。
+///
+/// 流程：
+/// 1. NodeLevel genome + Linear(16) + 捕获权重（快照 W 形状 = [in, 16]）
+/// 2. ShrinkHiddenSize → Linear 输出维度缩小为 N（N < 16）
+/// 3. 重新构图 + restore_weights
+/// 4. W 形状变为 [in, N]：旧 [in, 16] → narrow(axis=1, 0, N)  → `partially_inherited`
+#[test]
+fn test_phase5_node_level_partial_inherit_after_shrink() {
+    use crate::nn::evolution::mutation::{Mutation, ShrinkHiddenSizeMutation, SizeConstraints};
+
+    // 构建 NodeLevel：Input(4) → Linear(16) → ReLU → [Linear(3)]
+    // out=16 足够大，确保 Shrink 有空间
+    let mut genome = NetworkGenome::minimal(4, 3);
+    let inn_h = genome.next_innovation_number();
+    genome.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: inn_h,
+            layer_config: LayerConfig::Linear { out_features: 16 },
+            enabled: true,
+        },
+    );
+    let inn_act = genome.next_innovation_number();
+    genome.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: inn_act,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    genome.migrate_to_node_level().expect("迁移 NodeLevel 应成功");
+    assert!(genome.is_node_level());
+
+    // 构建并捕获权重（快照 W 形状固化为 [4, 16]）
+    let mut rng = StdRng::seed_from_u64(77);
+    let build1 = genome.build(&mut rng).expect("初始 build 应成功");
+    genome
+        .capture_weights(&build1)
+        .expect("capture_weights 应成功");
+    assert!(genome.has_weight_snapshots(), "应有权重快照");
+
+    // 验证快照形状：隐藏层 W = [4, 16]
+    let snaps_before = genome.node_weight_snapshots();
+    let hidden_w_snap = snaps_before
+        .values()
+        .find(|t| t.shape() == &[4usize, 16])
+        .expect("应找到 W 形状 [4, 16] 的快照");
+    assert_eq!(hidden_w_snap.shape(), &[4, 16]);
+
+    // ShrinkHiddenSize 变异（缩小 Linear 输出维度 16 → N，N < 16）
+    let constraints = SizeConstraints {
+        min_hidden_size: 1,
+        max_hidden_size: 256,
+        max_total_params: 100_000,
+        max_layers: 10,
+        ..Default::default()
+    };
+    let shrink = ShrinkHiddenSizeMutation;
+    for seed in 0..20u64 {
+        let mut test_genome = genome.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        if shrink.apply(&mut test_genome, &constraints, &mut r).is_ok() {
+            // 验证 W 形状确实缩小了
+            let blocks = crate::nn::evolution::node_ops::node_main_path(&test_genome);
+            let shrank = blocks
+                .iter()
+                .any(|b| matches!(b.kind, crate::nn::evolution::node_ops::NodeBlockKind::Linear { out_features } if out_features < 16));
+            if !shrank {
+                continue;
+            }
+
+            // 重新构建并恢复权重
+            let mut build_rng = StdRng::seed_from_u64(seed + 300);
+            let build2 = test_genome
+                .build(&mut build_rng)
+                .expect("Shrink 后 build 应成功");
+            let report = test_genome
+                .restore_weights(&build2)
+                .expect("restore_weights 应成功");
+
+            // 统计总量必须等于新图参数节点数
+            let total = report.inherited + report.partially_inherited + report.reinitialized;
+            assert_eq!(
+                total,
+                build2.layer_params.len(),
+                "继承统计之和应等于参数节点数"
+            );
+
+            // Shrink 使 W 列数缩小：旧快照 [4, 16] → narrow → [4, N]
+            // → try_partial_inherit 命中 (row_same=true, col_same=false) → narrow 路径
+            // → partially_inherited > 0
+            assert!(
+                report.partially_inherited > 0,
+                "Shrink 后 W 形状列数缩小，应走 narrow 路径得到 partially_inherited > 0，\
+                 实际 report={:?}，seed={seed}",
+                report
+            );
+
+            return;
+        }
+    }
+    panic!("20 次尝试内 ShrinkHiddenSize 均未成功缩减尺寸，测试无效");
+}
+
+/// 阶段 5 测试：Conv2d 参数节点权重继承的当前行为（明确 4D kernel 走 `reinitialized`）
+///
+/// 记录并固化以下已知行为：
+/// - Conv2d kernel 是 4D 张量 `[out_ch, in_ch, kH, kW]`
+/// - `try_partial_inherit` 不支持 4D（`old_shape.len() > 2` 时直接返回 None）
+/// - 因此 Conv2d resize 后 kernel 必然走 `reinitialized`，而非 `partially_inherited`
+///
+/// 这是阶段 5 的有意设计选择（4D partial inherit 作为阶段 6 增强能力预留）。
+/// 此测试作为回归基准，防止阶段 6 重构时意外改变此行为而不被发现。
+///
+/// 注意：Flatten 后的 Linear W 因 in_dim 单轴变化（256 → 512）会走 `partially_inherited`，
+/// 这是 2D 参数的正常行为，与 4D kernel 的 `reinitialized` 行为独立，不互相干扰。
+#[test]
+fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
+    use crate::nn::evolution::node_ops::{node_main_path, repair_param_input_dims, resize_conv2d_out};
+
+    // 构建 NodeLevel CNN：Input([1,1,8,8]) → Conv2d(out=4, k=3) → Flatten → Linear(2)
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
+    let conv_inn = genome.next_innovation_number();
+    genome.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: conv_inn,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: 4,
+                kernel_size: 3,
+            },
+            enabled: true,
+        },
+    );
+    genome
+        .migrate_to_node_level()
+        .expect("CNN 迁移 NodeLevel 应成功");
+    assert!(genome.is_node_level());
+
+    // 构建并捕获权重（快照中含 Conv2d kernel：4D 张量 [4, 1, 3, 3]）
+    let mut rng = StdRng::seed_from_u64(42);
+    let build1 = genome.build(&mut rng).expect("初始 build 应成功");
+    genome
+        .capture_weights(&build1)
+        .expect("capture_weights 应成功");
+
+    // 确认快照中存在 4D kernel
+    let snaps = genome.node_weight_snapshots();
+    let has_4d_kernel = snaps.values().any(|t| t.shape().len() == 4);
+    assert!(has_4d_kernel, "快照中应存在 Conv2d kernel（4D 张量）");
+    // 确认 4D kernel 快照形状为 [4, 1, 3, 3]（out_ch=4, in_ch=1, kH=3, kW=3）
+    let kernel_snap = snaps
+        .values()
+        .find(|t| t.shape().len() == 4)
+        .unwrap()
+        .clone();
+    assert_eq!(kernel_snap.shape(), &[4usize, 1, 3, 3]);
+
+    // 将输出通道从 4 扩大到 8（kernel 形状：[4,1,3,3] → [8,1,3,3]）
+    // resize_conv2d_out 在 Flatten 处停止级联，Flatten 后的 Linear W 需要单独修复
+    let blocks = node_main_path(&genome);
+    let conv_block = blocks
+        .iter()
+        .find(|b| b.kind.is_conv2d())
+        .cloned()
+        .expect("应能找到 Conv2d 块");
+    resize_conv2d_out(&mut genome, &conv_block, 8).expect("resize_conv2d_out 应成功");
+    // 修复 Flatten 后 Linear W 的输入维度：4ch×8×8=256 → 8ch×8×8=512
+    repair_param_input_dims(&mut genome);
+
+    // 重新构建（Linear W 现在应为 [512, 2]）
+    let mut rng2 = StdRng::seed_from_u64(99);
+    let build2 = genome.build(&mut rng2).expect("resize + repair 后 build 应成功");
+    let report = genome
+        .restore_weights(&build2)
+        .expect("restore_weights 应成功");
+
+    // 继承统计总量必须一致
+    let total = report.inherited + report.partially_inherited + report.reinitialized;
+    assert_eq!(
+        total,
+        build2.layer_params.len(),
+        "继承统计之和应等于参数节点数"
+    );
+
+    // 核心断言：Conv2d kernel（4D 张量）必走 `reinitialized`
+    // 原因：try_partial_inherit 在 old_shape.len() > 2 时直接返回 None
+    assert!(
+        report.reinitialized > 0,
+        "Conv2d resize 后 kernel（4D 张量）应走 reinitialized 路径，\
+         实际 report={:?}",
+        report
+    );
+
+    // 补充说明：Flatten 后的 Linear W（[256,2] → [512,2]，仅行数变化）
+    // 属于 2D 单轴扩展，会走 `partially_inherited`（这是正确行为，不是 bug）
+    // 此处不断言 partially_inherited == 0，避免错误约束 2D 参数的正常行为
+    let _ = report.partially_inherited; // 可能 > 0，属正常
+}

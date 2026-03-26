@@ -624,6 +624,18 @@ pub fn remove_block(genome: &mut NetworkGenome, block: &NodeBlock) {
     genome
         .nodes_mut()
         .retain(|n| !bid_set.contains(&n.innovation_number));
+
+    // 清理被删参数节点的陈旧快照，防止 weight_snapshots 随演化代数无限膨胀。
+    // 孤立快照不影响正确性（restore_weights 按 build.layer_params 匹配），
+    // 但会导致序列化体积随代数增大，且阶段 6 格式迁移时需一并清理，趁早修复成本最低。
+    if let GenomeRepr::NodeLevel {
+        weight_snapshots, ..
+    } = &mut genome.repr
+    {
+        for &id in &bid_set {
+            weight_snapshots.remove(&id);
+        }
+    }
 }
 
 // ==================== 调整尺寸操作 ====================

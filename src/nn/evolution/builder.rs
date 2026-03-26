@@ -9,16 +9,16 @@
 
 use std::collections::HashMap;
 
-use rand::rngs::StdRng;
 use rand::Rng;
+use rand::rngs::StdRng;
 
 use crate::nn::layer::{AvgPool2d, Conv2d, Gru, Lstm, MaxPool2d, Rnn};
 use crate::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps, VarShapeOps};
 use crate::tensor::Tensor;
 
 use super::gene::{
-    ActivationType, AggregateStrategy, LayerConfig, NetworkGenome, PoolType, SkipEdge,
-    INPUT_INNOVATION,
+    ActivationType, AggregateStrategy, INPUT_INNOVATION, LayerConfig, NetworkGenome, PoolType,
+    SkipEdge,
 };
 
 // ==================== BuildResult ====================
@@ -58,11 +58,67 @@ impl BuildResult {
 // ==================== InheritReport ====================
 
 /// 权重继承报告
+#[derive(Debug)]
 pub struct InheritReport {
-    /// 成功继承的参数张量数
+    /// 完整形状匹配，直接复用旧权重的参数张量数
     pub inherited: usize,
-    /// 保留初始化值的参数张量数（新层或形状变化）
+    /// 形状兼容（仅一轴扩缩），保留重叠区域的参数张量数
+    pub partially_inherited: usize,
+    /// 保留初始化值的参数张量数（新层或两轴均变化）
     pub reinitialized: usize,
+}
+
+// ==================== 权重部分继承辅助 ====================
+
+/// 沿单轴进行部分权重合并
+///
+/// - Grow（new_size > old_size）：拼接旧值 + current 的随机新列
+/// - Shrink（new_size < old_size）：截取旧值前 new_size 个
+fn partial_along_axis(snapshot: &Tensor, current: &Tensor, axis: usize) -> Option<Tensor> {
+    let old_size = snapshot.shape()[axis];
+    let new_size = current.shape()[axis];
+    if new_size > old_size {
+        let inherited_part = snapshot.narrow(axis, 0, old_size);
+        let new_part = current.narrow(axis, old_size, new_size - old_size);
+        Some(Tensor::concat(&[&inherited_part, &new_part], axis))
+    } else if new_size < old_size {
+        Some(snapshot.narrow(axis, 0, new_size))
+    } else {
+        None
+    }
+}
+
+/// 尝试对形状不完全匹配的参数节点进行部分权重继承
+///
+/// 适用场景：Grow/Shrink 操作后，某一维度扩大或缩小，另一维度不变。
+/// 重叠区域保留旧权重，新增区域保持 `current`（随机初始化）的值。
+///
+/// 返回 `Some(merged)` 若部分继承可行，`None` 若形状完全不兼容。
+fn try_partial_inherit(snapshot: &Tensor, current: &Tensor) -> Option<Tensor> {
+    let old_shape = snapshot.shape();
+    let new_shape = current.shape();
+
+    if old_shape.len() != new_shape.len() || old_shape.is_empty() || old_shape.len() > 2 {
+        return None;
+    }
+
+    if old_shape.len() == 1 {
+        let old_size = old_shape[0];
+        let new_size = new_shape[0];
+        if old_size == new_size {
+            return None; // 完全一致，不该走这里
+        }
+        return partial_along_axis(snapshot, current, 0);
+    }
+
+    // 2D：恰好一轴变化
+    let row_same = old_shape[0] == new_shape[0];
+    let col_same = old_shape[1] == new_shape[1];
+    match (row_same, col_same) {
+        (true, false) => partial_along_axis(snapshot, current, 1),
+        (false, true) => partial_along_axis(snapshot, current, 0),
+        _ => None, // 两轴都变或都未变（后者不应走到这里）
+    }
 }
 
 // ==================== 内部辅助 ====================
@@ -142,9 +198,9 @@ fn apply_aggregation(
 
 // ==================== NetworkGenome 构建与权重管理 ====================
 
-use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor as NTD};
 use super::gene::{GenomeRepr, ShapeDomain};
 use super::node_gene::GenomeAnalysis;
+use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor as NTD};
 
 impl NetworkGenome {
     /// 将当前基因组转换为 `GraphDescriptor`
@@ -155,9 +211,7 @@ impl NetworkGenome {
     /// 返回的 `GraphDescriptor` 可直接传入 `Graph::from_descriptor()` 构建计算图。
     pub fn to_graph_descriptor(&self) -> Result<GraphDescriptor, super::migration::MigrationError> {
         let nodes = match &self.repr {
-            GenomeRepr::NodeLevel { nodes, .. } => {
-                std::borrow::Cow::Borrowed(nodes.as_slice())
-            }
+            GenomeRepr::NodeLevel { nodes, .. } => std::borrow::Cow::Borrowed(nodes.as_slice()),
             GenomeRepr::LayerLevel { .. } => {
                 let out = super::migration::migrate_network_genome(self)?;
                 std::borrow::Cow::Owned(out.nodes)
@@ -181,7 +235,8 @@ impl NetworkGenome {
         };
 
         // 用 GenomeAnalysis 获取拓扑序（Graph::from_descriptor_seeded 要求父节点先于子节点）
-        let analysis = GenomeAnalysis::compute(&nodes, INPUT_INNOVATION, input_shape.clone(), input_domain);
+        let analysis =
+            GenomeAnalysis::compute(&nodes, INPUT_INNOVATION, input_shape.clone(), input_domain);
         let node_lookup: std::collections::HashMap<u64, &super::node_gene::NodeGene> = nodes
             .iter()
             .filter(|n| n.enabled)
@@ -209,7 +264,9 @@ impl NetworkGenome {
                 let dynamic = node.output_shape.first().map(|_| {
                     let mut d: Vec<Option<usize>> =
                         node.output_shape.iter().map(|&x| Some(x)).collect();
-                    if !d.is_empty() { d[0] = None; } // batch 维动态
+                    if !d.is_empty() {
+                        d[0] = None;
+                    } // batch 维动态
                     d
                 });
                 desc.add_node(NodeDescriptor::new(
@@ -241,26 +298,34 @@ impl NetworkGenome {
 
     /// NodeLevel 基因组的构图路径
     fn build_from_nodes(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
-        let desc = self.to_graph_descriptor()
+        let desc = self
+            .to_graph_descriptor()
             .map_err(|e| GraphError::ComputationError(e.to_string()))?;
 
         let graph_seed: u64 = rng.r#gen();
-        let rebuild = Graph::from_descriptor_seeded(&desc, graph_seed)
-            .map_err(|e| GraphError::from(e))?;
+        let rebuild =
+            Graph::from_descriptor_seeded(&desc, graph_seed).map_err(|e| GraphError::from(e))?;
 
-        let input = rebuild.inputs.first()
+        let input = rebuild
+            .inputs
+            .first()
             .map(|(_, v)| v.clone())
-            .ok_or_else(|| GraphError::ComputationError("NodeLevel 基因组构图后无输入节点".into()))?;
-        let output = rebuild.outputs.first()
-            .cloned()
-            .ok_or_else(|| GraphError::ComputationError("NodeLevel 基因组构图后无输出节点".into()))?;
+            .ok_or_else(|| {
+                GraphError::ComputationError("NodeLevel 基因组构图后无输入节点".into())
+            })?;
+        let output = rebuild.outputs.first().cloned().ok_or_else(|| {
+            GraphError::ComputationError("NodeLevel 基因组构图后无输出节点".into())
+        })?;
 
         // 收集参数节点：param_innovation → [Var]
         let nodes = self.nodes();
-        let layer_params: HashMap<u64, Vec<Var>> = nodes.iter()
+        let layer_params: HashMap<u64, Vec<Var>> = nodes
+            .iter()
             .filter(|n| n.enabled && n.is_parameter())
             .filter_map(|n| {
-                rebuild.node_map.get(&n.innovation_number)
+                rebuild
+                    .node_map
+                    .get(&n.innovation_number)
                     .cloned()
                     .map(|v| (n.innovation_number, vec![v]))
             })
@@ -317,15 +382,13 @@ impl NetworkGenome {
                 .collect();
 
             if !incoming.is_empty() {
-                current =
-                    apply_aggregation(&current, &incoming, &var_map)?;
+                current = apply_aggregation(&current, &incoming, &var_map)?;
             }
 
             match &layer.layer_config {
                 LayerConfig::Linear { out_features } => {
                     let name = format!("evo_L{}", layer.innovation_number);
-                    let linear =
-                        Linear::new(&graph, dim.in_dim, *out_features, true, &name)?;
+                    let linear = Linear::new(&graph, dim.in_dim, *out_features, true, &name)?;
                     current = linear.forward(&current);
 
                     let mut params = vec![linear.weights().clone()];
@@ -339,10 +402,8 @@ impl NetworkGenome {
                 }
                 LayerConfig::Rnn { hidden_size } => {
                     let name = format!("evo_rnn{}", layer.innovation_number);
-                    let return_seq = self.needs_return_sequences(
-                        layer.innovation_number,
-                        &resolved,
-                    );
+                    let return_seq =
+                        self.needs_return_sequences(layer.innovation_number, &resolved);
                     let rnn = Rnn::new(&graph, dim.in_dim, *hidden_size, &name)?;
                     current = if return_seq {
                         rnn.forward_seq(&current)?
@@ -353,10 +414,8 @@ impl NetworkGenome {
                 }
                 LayerConfig::Lstm { hidden_size } => {
                     let name = format!("evo_lstm{}", layer.innovation_number);
-                    let return_seq = self.needs_return_sequences(
-                        layer.innovation_number,
-                        &resolved,
-                    );
+                    let return_seq =
+                        self.needs_return_sequences(layer.innovation_number, &resolved);
                     let lstm = Lstm::new(&graph, dim.in_dim, *hidden_size, &name)?;
                     current = if return_seq {
                         lstm.forward_seq(&current)?
@@ -367,10 +426,8 @@ impl NetworkGenome {
                 }
                 LayerConfig::Gru { hidden_size } => {
                     let name = format!("evo_gru{}", layer.innovation_number);
-                    let return_seq = self.needs_return_sequences(
-                        layer.innovation_number,
-                        &resolved,
-                    );
+                    let return_seq =
+                        self.needs_return_sequences(layer.innovation_number, &resolved);
                     let gru = Gru::new(&graph, dim.in_dim, *hidden_size, &name)?;
                     current = if return_seq {
                         gru.forward_seq(&current)?
@@ -406,10 +463,15 @@ impl NetworkGenome {
                 } => {
                     // 找前驱层的输出空间作为本层输入空间；若 kernel 超出则跳过池化（identity pass-through）
                     let input_spatial = {
-                        let pos = resolved.iter().position(|d| d.innovation_number == layer.innovation_number);
+                        let pos = resolved
+                            .iter()
+                            .position(|d| d.innovation_number == layer.innovation_number);
                         match pos {
                             Some(0) => self.input_spatial,
-                            Some(p) => spatial_map.get(&resolved[p - 1].innovation_number).copied().flatten(),
+                            Some(p) => spatial_map
+                                .get(&resolved[p - 1].innovation_number)
+                                .copied()
+                                .flatten(),
                             None => None,
                         }
                     };
@@ -422,14 +484,10 @@ impl NetworkGenome {
                         let k = *kernel_size;
                         let s = *stride;
                         current = match pool_type {
-                            PoolType::Max => {
-                                MaxPool2d::new(&graph, (k, k), Some((s, s)), &name)
-                                    .forward(&current)
-                            }
-                            PoolType::Avg => {
-                                AvgPool2d::new(&graph, (k, k), Some((s, s)), &name)
-                                    .forward(&current)
-                            }
+                            PoolType::Max => MaxPool2d::new(&graph, (k, k), Some((s, s)), &name)
+                                .forward(&current),
+                            PoolType::Avg => AvgPool2d::new(&graph, (k, k), Some((s, s)), &name)
+                                .forward(&current),
                         };
                     }
                     // else: identity pass-through（Pool2d 无可学习参数，跳过不影响梯度）
@@ -475,10 +533,12 @@ impl NetworkGenome {
                 }
             }
             match &mut self.repr {
-                super::gene::GenomeRepr::NodeLevel { weight_snapshots, .. } => {
+                super::gene::GenomeRepr::NodeLevel {
+                    weight_snapshots, ..
+                } => {
                     *weight_snapshots = node_snaps;
                 }
-                _ => unreachable!()
+                _ => unreachable!(),
             }
             return Ok(());
         }
@@ -488,9 +548,9 @@ impl NetworkGenome {
         for (&inn, params) in &build.layer_params {
             let mut tensors = Vec::new();
             for param in params {
-                let tensor = param.value()?.ok_or_else(|| {
-                    GraphError::ComputationError(format!("层 {inn} 的参数无值"))
-                })?;
+                let tensor = param
+                    .value()?
+                    .ok_or_else(|| GraphError::ComputationError(format!("层 {inn} 的参数无值")))?;
                 tensors.push(tensor);
             }
             snapshots.insert(inn, tensors);
@@ -536,9 +596,13 @@ impl NetworkGenome {
     /// 从 weight_snapshots 恢复权重到当前计算图
     ///
     /// - LayerLevel：按层创新号 + 张量索引匹配
-    /// - NodeLevel：按参数节点创新号匹配，形状相同则恢复，否则重初始化
+    /// - NodeLevel：按参数节点创新号匹配；
+    ///   - 形状完全相同 → 全量继承（`inherited`）
+    ///   - 仅一轴扩缩 → 部分继承，重叠区域保留旧值（`partially_inherited`）
+    ///   - 两轴均变化或无快照 → 保留随机初始化（`reinitialized`）
     pub fn restore_weights(&self, build: &BuildResult) -> Result<InheritReport, GraphError> {
         let mut inherited = 0usize;
+        let mut partially_inherited = 0usize;
         let mut reinitialized = 0usize;
 
         if self.is_node_level() {
@@ -555,6 +619,14 @@ impl NetworkGenome {
                         if shapes_match {
                             param.set_value(snapshot)?;
                             inherited += 1;
+                        } else if let Some(ref current_tensor) = current_val {
+                            // 尝试部分继承：保留重叠区域，新增区域保持随机初始化
+                            if let Some(merged) = try_partial_inherit(snapshot, current_tensor) {
+                                param.set_value(&merged)?;
+                                partially_inherited += 1;
+                            } else {
+                                reinitialized += 1;
+                            }
                         } else {
                             reinitialized += 1;
                         }
@@ -563,7 +635,11 @@ impl NetworkGenome {
                     reinitialized += params.len();
                 }
             }
-            return Ok(InheritReport { inherited, reinitialized });
+            return Ok(InheritReport {
+                inherited,
+                partially_inherited,
+                reinitialized,
+            });
         }
 
         // LayerLevel：原有层级粒度恢复
@@ -592,6 +668,10 @@ impl NetworkGenome {
             }
         }
 
-        Ok(InheritReport { inherited, reinitialized })
+        Ok(InheritReport {
+            inherited,
+            partially_inherited,
+            reinitialized,
+        })
     }
 }

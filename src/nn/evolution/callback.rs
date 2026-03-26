@@ -32,22 +32,10 @@ pub trait EvolutionCallback {
     /// 发现新的全局最优（仅 primary **严格提升**时触发）
     ///
     /// tiebreak_loss 改善或中性漂移均不触发。
-    fn on_new_best(
-        &mut self,
-        _generation: usize,
-        _genome: &NetworkGenome,
-        _score: &FitnessScore,
-    ) {
-    }
+    fn on_new_best(&mut self, _generation: usize, _genome: &NetworkGenome, _score: &FitnessScore) {}
 
     /// 变异执行后、下一代训练前调用
-    fn on_mutation(
-        &mut self,
-        _generation: usize,
-        _mutation_name: &str,
-        _genome: &NetworkGenome,
-    ) {
-    }
+    fn on_mutation(&mut self, _generation: usize, _mutation_name: &str, _genome: &NetworkGenome) {}
 
     /// 种群评估完成后调用（每代一次，种群模式专用）
     ///
@@ -63,6 +51,14 @@ pub trait EvolutionCallback {
         _best_cost: f32,
     ) {
     }
+
+    /// 每代权重继承统计（仅 NodeLevel genome 有意义）
+    ///
+    /// `inherited`：本代 offspring 中权重继承（全量或部分）的参数节点数之和。
+    /// `reinitialized`：无法继承、保留随机初始化的参数节点数之和。
+    ///
+    /// 在 verbose 调试时可借此监控 Grow/Shrink 变异后权重复用率是否符合预期。
+    fn on_inherit_stats(&mut self, _generation: usize, _inherited: usize, _reinitialized: usize) {}
 
     /// 每代开始前检查，返回 true 则终止演化
     fn should_stop(&self, _generation: usize) -> bool {
@@ -114,22 +110,11 @@ impl EvolutionCallback for DefaultCallback {
         // 种群模式下日志输出移至 on_population_evaluated
     }
 
-    fn on_new_best(
-        &mut self,
-        _generation: usize,
-        _genome: &NetworkGenome,
-        _score: &FitnessScore,
-    ) {
+    fn on_new_best(&mut self, _generation: usize, _genome: &NetworkGenome, _score: &FitnessScore) {
         self.is_new_best = true;
     }
 
-    fn on_mutation(
-        &mut self,
-        _generation: usize,
-        _mutation_name: &str,
-        _genome: &NetworkGenome,
-    ) {
-    }
+    fn on_mutation(&mut self, _generation: usize, _mutation_name: &str, _genome: &NetworkGenome) {}
 
     fn on_population_evaluated(
         &mut self,
@@ -148,9 +133,31 @@ impl EvolutionCallback for DefaultCallback {
         self.is_new_best = false;
         println!(
             "[Gen {:>3}] pop={} | off={} | archive={} | best={:.3} | cost={:.0}{}",
-            generation, population_size, offspring_evaluated, archive_size,
-            best_primary, best_cost, star
+            generation,
+            population_size,
+            offspring_evaluated,
+            archive_size,
+            best_primary,
+            best_cost,
+            star
         );
+    }
+
+    fn on_inherit_stats(&mut self, generation: usize, inherited: usize, reinitialized: usize) {
+        if !self.verbose {
+            return;
+        }
+        let total = inherited + reinitialized;
+        let pct = if total > 0 {
+            inherited * 100 / total
+        } else {
+            0
+        };
+        println!(
+            "         inherit={}/{} ({}%) reinit={}",
+            inherited, total, pct, reinitialized
+        );
+        let _ = generation; // 仅在 verbose 模式打印，generation 暂不使用
     }
 
     fn should_stop(&self, generation: usize) -> bool {
