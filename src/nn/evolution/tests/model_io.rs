@@ -228,6 +228,418 @@ fn test_save_creates_parent_directories() {
     std::fs::remove_dir_all("test_otm_nested_dir").ok();
 }
 
+// ==================== 阶段 6：NodeLevel 持久化格式验收测试 ====================
+
+/// 简单空间数据（4 个 1-通道 4x4 假图像，二分类标签）
+fn spatial_data() -> (Vec<Tensor>, Vec<Tensor>) {
+    let pos: Vec<f32> = (0..16).map(|i| i as f32 / 16.0).collect();
+    let neg: Vec<f32> = (0..16).map(|i| -(i as f32) / 16.0).collect();
+    (
+        vec![
+            Tensor::new(&pos, &[1, 4, 4]),
+            Tensor::new(&neg, &[1, 4, 4]),
+            Tensor::new(&pos, &[1, 4, 4]),
+            Tensor::new(&neg, &[1, 4, 4]),
+        ],
+        vec![
+            Tensor::new(&[1.0], &[1]),
+            Tensor::new(&[0.0], &[1]),
+            Tensor::new(&[1.0], &[1]),
+            Tensor::new(&[0.0], &[1]),
+        ],
+    )
+}
+
+/// 简单序列数据（4 条长度 2、特征维 1 的序列，对应 XOR）
+fn seq_data() -> (Vec<Tensor>, Vec<Tensor>) {
+    (
+        vec![
+            Tensor::new(&[0.0, 0.0], &[2, 1]),
+            Tensor::new(&[1.0, 0.0], &[2, 1]),
+            Tensor::new(&[0.0, 1.0], &[2, 1]),
+            Tensor::new(&[1.0, 1.0], &[2, 1]),
+        ],
+        vec![
+            Tensor::new(&[0.0], &[1]),
+            Tensor::new(&[1.0], &[1]),
+            Tensor::new(&[1.0], &[1]),
+            Tensor::new(&[0.0], &[1]),
+        ],
+    )
+}
+
+/// 阶段 6 测试 1：Flat（XOR）演化产出 NodeLevel genome，保存/加载往返一致
+///
+/// 验证：
+/// - 演化后 genome.is_node_level() == true
+/// - 保存的 .otm 再次加载后 genome 也是 NodeLevel
+/// - 加载后推理结果与保存前一致
+#[test]
+fn test_phase6_flat_evolution_produces_nodelevel_genome() {
+    let temp_path = "test_phase6_flat_nodelevel";
+
+    let data = xor_data();
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_target_metric(0.75)
+        .with_seed(42)
+        .with_verbose(false)
+        .run()
+        .expect("演化失败");
+
+    // 演化结果的 genome 必须是 NodeLevel
+    assert!(
+        result.genome.is_node_level(),
+        "Flat 模式演化产出的 genome 应为 NodeLevel（演化主循环已在 run() 中迁移）"
+    );
+
+    // 保存
+    result.save(temp_path).expect("保存失败");
+
+    // 加载并验证 NodeLevel
+    let loaded = EvolutionResult::load(temp_path).expect("加载失败");
+    assert!(
+        loaded.genome.is_node_level(),
+        "加载后的 genome 应为 NodeLevel"
+    );
+
+    // 推理结果一致性
+    let test_input = Tensor::new(&[1.0, 0.0], &[2]);
+    let pred_before = result.predict(&test_input).expect("保存前推理失败");
+    let pred_after = loaded.predict(&test_input).expect("加载后推理失败");
+    for (a, b) in pred_before.to_vec().iter().zip(pred_after.to_vec().iter()) {
+        assert!((a - b).abs() < 1e-5, "加载前后推理结果不一致: {a} vs {b}");
+    }
+
+    std::fs::remove_file(format!("{temp_path}.otm")).ok();
+}
+
+/// 阶段 6 测试 2：Spatial 演化产出 NodeLevel genome，保存/加载往返一致
+///
+/// 验证：
+/// - Spatial 模式演化后 genome.is_node_level() == true
+/// - save/load 往返，加载后 genome 也是 NodeLevel
+/// - 加载后推理正常（输入形状 [1, 4, 4]）
+#[test]
+fn test_phase6_spatial_nodelevel_save_load_roundtrip() {
+    let temp_path = "test_phase6_spatial_nodelevel";
+
+    let data = spatial_data();
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_max_generations(2) // 只跑 2 代，快速验证格式
+        .with_seed(42)
+        .with_verbose(false)
+        .run()
+        .expect("Spatial 演化失败");
+
+    // Spatial 演化后 genome 必须是 NodeLevel
+    assert!(
+        result.genome.is_node_level(),
+        "Spatial 模式演化产出的 genome 应为 NodeLevel"
+    );
+
+    // 保存
+    result.save(temp_path).expect("Spatial 保存失败");
+
+    // 加载并验证 NodeLevel
+    let loaded = EvolutionResult::load(temp_path).expect("Spatial 加载失败");
+    assert!(
+        loaded.genome.is_node_level(),
+        "加载后的 Spatial genome 应为 NodeLevel"
+    );
+
+    // 加载后推理成功（不要求结果一致，只验证前向传播不崩溃）
+    let test_img = Tensor::new(
+        &(0..16).map(|i| i as f32 / 16.0).collect::<Vec<_>>(),
+        &[1, 4, 4],
+    );
+    let pred = loaded.predict(&test_img).expect("Spatial 加载后推理失败");
+    assert_eq!(pred.shape()[1], 1, "输出维度应为 1");
+
+    std::fs::remove_file(format!("{temp_path}.otm")).ok();
+}
+
+/// 阶段 6 测试 3：手写 GraphDescriptor → NetworkGenome → 变异 → 构建闭环
+///
+/// 模拟"手写训练模型作为演化种子"的全链路：
+/// 1. 手写建立 MLP（Input(2) → FC(4) → ReLU → FC(1)）
+/// 2. 提取 GraphDescriptor
+/// 3. NetworkGenome::from_graph_descriptor() 创建 NodeLevel genome
+/// 4. 验证 genome 维度、分析结果、可构图
+/// 5. 执行变异后仍可构图且输出维度不变
+/// 6. to_graph_descriptor() → from_graph_descriptor() 往返节点数一致
+#[test]
+fn test_phase6_from_graph_descriptor_handwritten_seed() {
+    use crate::nn::evolution::mutation::{MutationRegistry, SizeConstraints};
+    use crate::nn::{Graph, Linear, VarActivationOps};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    // 1. 手写 MLP: Input(2) → FC(4) → ReLU → FC(1)
+    let graph = Graph::new_with_seed(42);
+    let input = graph.input_shape(&[1, 2], Some("input")).unwrap();
+    let fc1 = Linear::new(&graph, 2, 4, true, "fc1").unwrap();
+    let h = fc1.forward(&input).relu();
+    let fc2 = Linear::new(&graph, 4, 1, true, "fc2").unwrap();
+    let output = fc2.forward(&h);
+
+    // 2. 提取 GraphDescriptor（trace from output var）
+    let desc = crate::nn::var::Var::vars_to_graph_descriptor(&[&output], "handwritten_mlp");
+
+    // 3. 转换为 NodeLevel NetworkGenome
+    let genome =
+        NetworkGenome::from_graph_descriptor(&desc).expect("from_graph_descriptor 不应失败");
+
+    // 4a. 验证 genome 是 NodeLevel
+    assert!(
+        genome.is_node_level(),
+        "从 GraphDescriptor 创建的 genome 应为 NodeLevel"
+    );
+    assert_eq!(genome.input_dim, 2, "input_dim 应为 2");
+    assert_eq!(genome.output_dim, 1, "output_dim 应为 1");
+    assert!(genome.seq_len.is_none(), "应为 Flat 模式（非序列）");
+    assert!(genome.input_spatial.is_none(), "应为 Flat 模式（非空间）");
+
+    // 4b. 验证 GenomeAnalysis 通过
+    let analysis = genome.analyze();
+    assert!(
+        analysis.is_valid,
+        "GenomeAnalysis 应通过：{:?}",
+        analysis.errors
+    );
+    assert!(analysis.param_count > 0, "应有可训练参数");
+
+    // 5a. 构建并前向传播
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).expect("genome.build 不应失败");
+    let test_input = Tensor::new(&[0.5, -0.3], &[1, 2]);
+    build.input.set_value(&test_input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[1, 1], "输出形状应为 [1, 1]");
+
+    // 5b. 执行变异后仍可构建
+    let constraints = SizeConstraints::default();
+    let registry = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
+    let mut mutated = genome.clone();
+    let mut mut_rng = StdRng::seed_from_u64(99);
+    let mut ok = false;
+    for _ in 0..20 {
+        if registry
+            .apply_random(&mut mutated, &constraints, &mut mut_rng)
+            .is_ok()
+        {
+            ok = true;
+            break;
+        }
+    }
+    assert!(ok, "至少应有一次变异成功");
+
+    let mut build_rng = StdRng::seed_from_u64(123);
+    let build2 = mutated
+        .build(&mut build_rng)
+        .expect("变异后 build 不应失败");
+    build2.input.set_value(&test_input).unwrap();
+    build2.graph.forward(&build2.output).unwrap();
+    let out2 = build2.output.value().unwrap().unwrap();
+    assert_eq!(out2.shape()[1], 1, "变异后输出维度仍应为 1");
+
+    // 6. to_graph_descriptor() → from_graph_descriptor() 往返节点数一致
+    let desc2 = genome
+        .to_graph_descriptor()
+        .expect("to_graph_descriptor 不应失败");
+    let genome2 = NetworkGenome::from_graph_descriptor(&desc2).expect("descriptor 往返不应失败");
+    assert_eq!(
+        genome.nodes().len(),
+        genome2.nodes().len(),
+        "descriptor 往返后节点数量应一致"
+    );
+}
+
+/// 阶段 6 测试 3b：手写 .otm → 演化种子 → 变异 → 重新保存 → Graph::load_model 后继续手写训练
+#[test]
+fn test_phase6_triangle_interop_handwritten_to_evolution_to_manual_train() {
+    use crate::nn::graph::model_save;
+    use crate::nn::optimizer::{Optimizer, SGD};
+    use crate::nn::{Graph, Linear, Var, VarActivationOps, VarLossOps};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    let hand_path = "test_phase6_triangle_handwritten";
+    let evolved_path = "test_phase6_triangle_evolved";
+
+    // 1. 手写模型并保存为 .otm
+    let graph = Graph::new_with_seed(7);
+    let input = graph.input_shape(&[1, 2], Some("input")).unwrap();
+    let fc1 = Linear::new(&graph, 2, 4, true, "fc1").unwrap();
+    let h = fc1.forward(&input).relu();
+    let fc2 = Linear::new(&graph, 4, 1, true, "fc2").unwrap();
+    let output = fc2.forward(&h);
+    graph.save_model(hand_path, &[&output]).unwrap();
+
+    // 2. 从手写 .otm 读取 GraphDescriptor，导入为演化种子
+    let (metadata, _) = model_save::read_otm_file(hand_path).unwrap();
+    let genome = NetworkGenome::from_graph_descriptor(&metadata.graph).unwrap();
+    assert!(
+        genome.is_node_level(),
+        "手写 .otm 导入后应为 NodeLevel genome"
+    );
+
+    // 3. 执行一次变异并重建图
+    use crate::nn::evolution::mutation::{MutationRegistry, SizeConstraints};
+    let registry = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
+    let constraints = SizeConstraints::default();
+    let mut mutated = genome.clone();
+    let mut mut_rng = StdRng::seed_from_u64(99);
+    for _ in 0..20 {
+        if registry
+            .apply_random(&mut mutated, &constraints, &mut mut_rng)
+            .is_ok()
+        {
+            break;
+        }
+    }
+
+    let mut build_rng = StdRng::seed_from_u64(123);
+    let build = mutated.build(&mut build_rng).unwrap();
+    build
+        .graph
+        .save_model(evolved_path, &[&build.output])
+        .unwrap();
+
+    // 4. 作为普通 Graph 模型加载，并继续手写训练
+    let loaded = Graph::load_model(evolved_path).unwrap();
+    loaded.graph.train();
+    let graph_rc = loaded.graph.inner_rc();
+    let param_vars: Vec<Var> = loaded
+        .graph
+        .inner()
+        .get_all_parameters()
+        .into_iter()
+        .map(|(_, node)| Var::new_with_rc_graph(node, &graph_rc))
+        .collect();
+    assert!(!param_vars.is_empty(), "演化后模型应仍可提取参数并继续训练");
+
+    let params_before: Vec<Vec<f32>> = param_vars
+        .iter()
+        .map(|p| p.node().value().unwrap().to_vec())
+        .collect();
+
+    let target_var = loaded.graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
+    let mut optimizer = SGD::new(&loaded.graph, &param_vars, 0.01);
+    let loss = loaded.outputs[0].mse_loss(&target_var).unwrap();
+    for _ in 0..3 {
+        loaded.inputs[0]
+            .1
+            .set_value(&Tensor::new(&[1.0, 0.0], &[1, 2]))
+            .unwrap();
+        target_var.set_value(&Tensor::new(&[1.0], &[1, 1])).unwrap();
+        let loss_val = optimizer.minimize(&loss).unwrap();
+        assert!(loss_val.is_finite(), "继续训练时 loss 应为有限值");
+    }
+
+    let params_after: Vec<Vec<f32>> = param_vars
+        .iter()
+        .map(|p| p.node().value().unwrap().to_vec())
+        .collect();
+    assert!(
+        params_before
+            .iter()
+            .zip(params_after.iter())
+            .any(|(before, after)| {
+                before
+                    .iter()
+                    .zip(after.iter())
+                    .any(|(a, b)| (a - b).abs() > 1e-10)
+            }),
+        "继续训练后至少一个参数应发生变化"
+    );
+
+    std::fs::remove_file(format!("{hand_path}.otm")).ok();
+    std::fs::remove_file(format!("{evolved_path}.otm")).ok();
+}
+
+/// 阶段 6 测试 4：Sequential 演化路径不被误伤
+///
+/// - Sequential 演化仍然保存/加载正常（LayerLevel 格式仍合法）
+/// - 加载后推理成功
+#[test]
+fn test_phase6_sequential_save_load_unaffected() {
+    let temp_path = "test_phase6_sequential_unaffected";
+
+    let data = seq_data();
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
+        .with_max_generations(1) // 极短，只验证格式
+        .with_seed(99)
+        .with_verbose(false)
+        .run()
+        .expect("Sequential 演化失败");
+
+    // Sequential genome 仍是 LayerLevel（RNN 尚未节点级化）
+    assert!(
+        result.genome.is_layer_level(),
+        "Sequential 演化产出的 genome 应仍为 LayerLevel"
+    );
+
+    // 保存/加载应成功（Sequential LayerLevel 格式在阶段 6 仍然合法）
+    result.save(temp_path).expect("Sequential 保存失败");
+    let loaded = EvolutionResult::load(temp_path).expect("Sequential 加载失败");
+
+    // 加载后推理不崩溃
+    let test_input = Tensor::new(&[0.5, 0.3], &[2, 1]);
+    let pred = loaded.predict(&test_input).expect("Sequential 推理失败");
+    assert_eq!(pred.shape()[1], 1, "Sequential 输出维度应为 1");
+
+    std::fs::remove_file(format!("{temp_path}.otm")).ok();
+}
+
+/// 阶段 6 测试 5：旧格式 Flat/Spatial LayerLevel genome 加载时返回明确错误
+///
+/// 模拟加载一个在阶段 6 之前生成的旧格式 .otm：
+/// - is_node_level = false（LayerLevel）
+/// - seq_len = null（Flat 或 Spatial）
+/// - 此组合应被 into_genome() 拒绝，返回包含说明的错误信息
+#[test]
+fn test_phase6_old_layerlevel_flat_genome_load_rejected() {
+    use crate::nn::evolution::model_io::GenomeSerialized;
+
+    // 通过 JSON 反序列化构造一个旧格式 GenomeSerialized（is_node_level=false, seq_len=null）
+    // 这模拟从旧版 .otm 文件中解析到的 genome 元数据
+    let json = serde_json::json!({
+        "layers": [{"innovation_number": 1, "layer_config": {"Linear": {"out_features": 1}}, "enabled": true}],
+        "skip_edges": [],
+        "input_dim": 2,
+        "output_dim": 1,
+        "seq_len": null,
+        "input_spatial": null,
+        "training_config": {
+            "optimizer_type": "Adam",
+            "learning_rate": 0.01,
+            "batch_size": null,
+            "weight_decay": 0.0,
+            "loss_override": null
+        },
+        "generated_by": "legacy_evolution",
+        "next_innovation": 2,
+        "nodes": [],
+        "is_node_level": false
+    });
+
+    let old_genome: GenomeSerialized =
+        serde_json::from_value(json).expect("构造旧格式 GenomeSerialized 失败");
+
+    // into_genome() 应拒绝旧格式 Flat genome 并返回明确错误
+    let result = old_genome.into_genome();
+    assert!(
+        result.is_err(),
+        "旧格式 Flat LayerLevel genome 应被拒绝加载"
+    );
+    let err_msg = result.unwrap_err();
+    assert!(
+        err_msg.contains("旧格式") || err_msg.contains("LayerLevel") || err_msg.contains("阶段 6"),
+        "错误信息应明确指出是旧格式问题，实际：{err_msg}"
+    );
+}
+
 // ==================== Graph.save_weights/load_weights 测试 ====================
 
 #[test]
@@ -260,12 +672,7 @@ fn test_graph_save_load_weights() {
     let w2 = fc2.weights().value().unwrap().unwrap();
 
     for (a, b) in w1.to_vec().iter().zip(w2.to_vec().iter()) {
-        assert!(
-            (a - b).abs() < 1e-6,
-            "权重应一致: {} vs {}",
-            a,
-            b
-        );
+        assert!((a - b).abs() < 1e-6, "权重应一致: {} vs {}", a, b);
     }
 
     // 清理

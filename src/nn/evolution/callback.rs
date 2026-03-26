@@ -70,10 +70,10 @@ pub trait EvolutionCallback {
 
 /// 默认回调：日志输出 + 最大代数限制
 ///
-/// `verbose=true` 时 `on_generation` 输出格式：
+/// `verbose=true` 时输出两行：
 /// ```text
-/// [Gen  0] Input(2) -> [Linear(1)]                 | fitness=0.501 | 初始
-/// [Gen  5] Input(2) -> Linear(4) -> ReLU -> [Linear(1)] | fitness=1.000 | GrowHidden *
+/// [Gen   5] arch=nodes=9 active=9 params=4
+/// [Gen   5] pop=8 | off=8 | archive=6 | best=1.000 | cost=42 *
 /// ```
 /// `*` 标记表示 `on_new_best` 在本代触发（primary 严格提升）。
 pub struct DefaultCallback {
@@ -81,6 +81,7 @@ pub struct DefaultCallback {
     pub verbose: bool,
     /// 内部 flag：on_new_best 设置，on_generation 消费后清除
     is_new_best: bool,
+    last_arch_summary: Option<String>,
 }
 
 impl DefaultCallback {
@@ -89,6 +90,7 @@ impl DefaultCallback {
             max_generations,
             verbose,
             is_new_best: false,
+            last_arch_summary: None,
         }
     }
 }
@@ -102,12 +104,17 @@ impl Default for DefaultCallback {
 impl EvolutionCallback for DefaultCallback {
     fn on_generation(
         &mut self,
-        _generation: usize,
-        _genome: &NetworkGenome,
+        generation: usize,
+        genome: &NetworkGenome,
         _loss: f32,
         _score: &FitnessScore,
     ) {
-        // 种群模式下日志输出移至 on_population_evaluated
+        if !self.verbose {
+            return;
+        }
+        let summary = genome.main_path_summary();
+        self.last_arch_summary = Some(summary.clone());
+        println!("[Gen {:>3}] arch={summary}", generation);
     }
 
     fn on_new_best(&mut self, _generation: usize, _genome: &NetworkGenome, _score: &FitnessScore) {
@@ -131,14 +138,19 @@ impl EvolutionCallback for DefaultCallback {
         }
         let star = if self.is_new_best { " *" } else { "" };
         self.is_new_best = false;
+        let arch = self
+            .last_arch_summary
+            .take()
+            .unwrap_or_else(|| "<unknown>".to_string());
         println!(
-            "[Gen {:>3}] pop={} | off={} | archive={} | best={:.3} | cost={:.0}{}",
+            "[Gen {:>3}] pop={} | off={} | archive={} | best={:.3} | cost={:.0} | arch={}{}",
             generation,
             population_size,
             offspring_evaluated,
             archive_size,
             best_primary,
             best_cost,
+            arch,
             star
         );
     }

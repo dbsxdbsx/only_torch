@@ -559,6 +559,129 @@ impl NetworkGenome {
         Ok(())
     }
 
+    /// 从 `GraphDescriptor` 创建 NodeLevel `NetworkGenome`
+    ///
+    /// 支持两种来源：
+    /// - 手写训练后通过 `Var::vars_to_graph_descriptor()` 得到的描述符
+    /// - `NetworkGenome::to_graph_descriptor()` 的逆向链路（用于序列化往返验证）
+    ///
+    /// # 设计
+    /// - `BasicInput` 节点被视为虚拟输入（不进入 `nodes` 列表），其 id 重映射为 `INPUT_INNOVATION=0`
+    /// - `TargetInput` 节点被跳过（不参与演化）
+    /// - 所有其他节点（含 `Parameter`）转换为 `NodeGene`（`block_id=None`，`enabled=true`）
+    /// - 输出维度从无子节点的末端节点形状推导
+    ///
+    /// # 错误
+    /// 若描述符没有 `BasicInput` 节点、没有可用节点、或输入形状无法识别，返回 `Err`。
+    pub fn from_graph_descriptor(
+        desc: &GraphDescriptor,
+    ) -> Result<Self, super::migration::MigrationError> {
+        use super::migration::MigrationError;
+
+        // 找 BasicInput 节点（虚拟输入）
+        let input_nd = desc
+            .nodes
+            .iter()
+            .find(|n| matches!(n.node_type, NTD::BasicInput))
+            .ok_or_else(|| {
+                MigrationError::DimensionError("GraphDescriptor 中没有 BasicInput 节点".into())
+            })?;
+
+        let original_input_id = input_nd.id;
+        let input_shape = &input_nd.output_shape;
+
+        // 从输入形状推导模式：[batch, features] / [batch,seq,feat] / [batch,C,H,W]
+        let (input_dim, seq_len, input_spatial) = match input_shape.len() {
+            2 => (input_shape[1], None, None),
+            3 => (input_shape[2], Some(input_shape[1]), None),
+            4 => (input_shape[1], None, Some((input_shape[2], input_shape[3]))),
+            _ => {
+                return Err(MigrationError::DimensionError(format!(
+                    "不支持的输入形状 {:?}（期望 2D/3D/4D）",
+                    input_shape
+                )))
+            }
+        };
+
+        // 将原始 input_id 重映射为 INPUT_INNOVATION=0，使 genome.analyze() 能正常工作
+        let remap_id = |id: u64| -> u64 {
+            if id == original_input_id {
+                INPUT_INNOVATION
+            } else {
+                id
+            }
+        };
+
+        // 转换所有非输入节点为 NodeGene
+        let mut nodes: Vec<super::node_gene::NodeGene> = Vec::new();
+        let mut max_id: u64 = 0;
+
+        for nd in &desc.nodes {
+            // 跳过虚拟输入节点（BasicInput 是外部数据源，不入节点列表）
+            if matches!(nd.node_type, NTD::BasicInput | NTD::TargetInput) {
+                continue;
+            }
+            let remapped_id = remap_id(nd.id);
+            let remapped_parents: Vec<u64> =
+                nd.parents.iter().map(|&p| remap_id(p)).collect();
+
+            nodes.push(super::node_gene::NodeGene::new(
+                remapped_id,
+                nd.node_type.clone(),
+                nd.output_shape.clone(),
+                remapped_parents,
+                None, // 手写模型没有 block_id 语义，统一设为 None
+            ));
+            if remapped_id > max_id {
+                max_id = remapped_id;
+            }
+        }
+
+        if nodes.is_empty() {
+            return Err(MigrationError::DimensionError(
+                "GraphDescriptor 中没有可转换的计算节点".into(),
+            ));
+        }
+
+        // 从无子节点的末端节点推导 output_dim
+        let child_ids: std::collections::HashSet<u64> = nodes
+            .iter()
+            .flat_map(|n| n.parents.iter().copied())
+            .collect();
+        let output_shape = nodes
+            .iter()
+            .filter(|n| !child_ids.contains(&n.innovation_number))
+            .last()
+            .or_else(|| nodes.last())
+            .map(|n| &n.output_shape)
+            .ok_or_else(|| {
+                MigrationError::DimensionError("无法确定输出节点".into())
+            })?;
+        let output_dim = match output_shape.len() {
+            n if n >= 2 => output_shape[output_shape.len() - 1],
+            1 => output_shape[0],
+            _ => {
+                return Err(MigrationError::DimensionError(
+                    "输出节点形状为空".into(),
+                ))
+            }
+        };
+
+        Ok(Self {
+            input_dim,
+            output_dim,
+            seq_len,
+            input_spatial,
+            training_config: super::gene::TrainingConfig::default(),
+            generated_by: "from_graph_descriptor".to_string(),
+            repr: super::gene::GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: max_id + 1,
+                weight_snapshots: std::collections::HashMap::new(),
+            },
+        })
+    }
+
     /// 判断指定 RNN 层是否需要 return_sequences
     ///
     /// 在 resolved 中找到当前层后，跳过 Activation/Dropout，

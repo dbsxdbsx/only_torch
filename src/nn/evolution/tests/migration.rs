@@ -12,16 +12,16 @@
  */
 
 use crate::nn::descriptor::NodeTypeDescriptor;
+use crate::nn::evolution::gene::ShapeDomain;
 use crate::nn::evolution::gene::{
-    ActivationType, AggregateStrategy, LayerConfig, LayerGene, NetworkGenome,
-    PoolType, SkipEdge, INPUT_INNOVATION,
+    ActivationType, AggregateStrategy, INPUT_INNOVATION, LayerConfig, LayerGene, NetworkGenome,
+    PoolType, SkipEdge,
 };
 use crate::nn::evolution::migration::{
-    expand_activation, expand_conv2d, expand_dropout, expand_flatten,
-    expand_linear, expand_pool2d, migrate_network_genome, InnovationCounter,
+    InnovationCounter, expand_activation, expand_conv2d, expand_dropout, expand_flatten,
+    expand_linear, expand_pool2d, migrate_network_genome,
 };
 use crate::nn::evolution::node_gene::GenomeAnalysis;
-use crate::nn::evolution::gene::ShapeDomain;
 
 // ==================== InnovationCounter ====================
 
@@ -50,9 +50,15 @@ fn expand_linear_produces_4_nodes() {
     assert_eq!(nodes.len(), 4);
     // 节点顺序：W, MatMul, b, Add
     assert!(nodes[0].is_parameter(), "节点 0 应为参数节点 W");
-    assert!(matches!(nodes[1].node_type, NodeTypeDescriptor::MatMul), "节点 1 应为 MatMul");
+    assert!(
+        matches!(nodes[1].node_type, NodeTypeDescriptor::MatMul),
+        "节点 1 应为 MatMul"
+    );
     assert!(nodes[2].is_parameter(), "节点 2 应为参数节点 b");
-    assert!(matches!(nodes[3].node_type, NodeTypeDescriptor::Add), "节点 3 应为 Add");
+    assert!(
+        matches!(nodes[3].node_type, NodeTypeDescriptor::Add),
+        "节点 3 应为 Add"
+    );
 }
 
 #[test]
@@ -80,7 +86,11 @@ fn expand_linear_parent_connections_correct() {
     // MatMul: [input, W]
     assert_eq!(nodes[1].parents, vec![0, w_id], "MatMul 父节点：[input, W]");
     // Add: [MatMul, b]
-    assert_eq!(nodes[3].parents, vec![mm_id, b_id], "Add 父节点：[MatMul, b]");
+    assert_eq!(
+        nodes[3].parents,
+        vec![mm_id, b_id],
+        "Add 父节点：[MatMul, b]"
+    );
 }
 
 #[test]
@@ -97,7 +107,11 @@ fn expand_linear_analysis_valid() {
     let mut c = InnovationCounter::new(1);
     let nodes = expand_linear(0, 4, 8, 0, &mut c);
     let analysis = GenomeAnalysis::compute(&nodes, 0, vec![1, 4], ShapeDomain::Flat);
-    assert!(analysis.is_valid, "Linear 展开应通过合法性校验：{:?}", analysis.errors);
+    assert!(
+        analysis.is_valid,
+        "Linear 展开应通过合法性校验：{:?}",
+        analysis.errors
+    );
     assert_eq!(analysis.param_count, 4 * 8 + 1 * 8, "参数量 = W + b = 40");
 }
 
@@ -135,26 +149,46 @@ fn expand_activation_all_types() {
         let mut c = InnovationCounter::new(1);
         let nodes = expand_activation(0, input_shape.clone(), &act, &mut c);
         assert_eq!(nodes.len(), 1, "每种激活应展开为 1 个节点：{act:?}");
-        assert_eq!(nodes[0].output_shape, input_shape, "激活不改变形状：{act:?}");
+        assert_eq!(
+            nodes[0].output_shape, input_shape,
+            "激活不改变形状：{act:?}"
+        );
     }
 }
 
 // ==================== expand_conv2d ====================
 
 #[test]
-fn expand_conv2d_two_nodes() {
+fn expand_conv2d_four_nodes_with_bias() {
     let mut c = InnovationCounter::new(1);
     let nodes = expand_conv2d(0, 1, 8, 3, (28, 28), 0, &mut c);
-    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes.len(), 4);
     assert!(nodes[0].is_parameter(), "节点 0 应为 kernel Parameter");
-    assert!(matches!(nodes[1].node_type, NodeTypeDescriptor::Conv2d { .. }), "节点 1 应为 Conv2d");
+    assert!(
+        matches!(nodes[1].node_type, NodeTypeDescriptor::Conv2d { .. }),
+        "节点 1 应为 Conv2d"
+    );
+    assert!(nodes[2].is_parameter(), "节点 2 应为 bias Parameter");
+    assert!(
+        matches!(nodes[3].node_type, NodeTypeDescriptor::Add),
+        "节点 3 应为 bias Add"
+    );
 }
 
 #[test]
 fn expand_conv2d_kernel_shape() {
     let mut c = InnovationCounter::new(1);
     let nodes = expand_conv2d(0, 1, 8, 3, (28, 28), 0, &mut c);
-    assert_eq!(nodes[0].output_shape, vec![8, 1, 3, 3], "kernel 形状 [out_ch,in_ch,k,k]");
+    assert_eq!(
+        nodes[0].output_shape,
+        vec![8, 1, 3, 3],
+        "kernel 形状 [out_ch,in_ch,k,k]"
+    );
+    assert_eq!(
+        nodes[2].output_shape,
+        vec![1, 8, 1, 1],
+        "bias 形状 [1,out_ch,1,1]"
+    );
 }
 
 #[test]
@@ -162,7 +196,16 @@ fn expand_conv2d_same_padding_preserves_spatial() {
     let mut c = InnovationCounter::new(1);
     // k=3, padding=1, stride=1 → H/W 不变
     let nodes = expand_conv2d(0, 1, 8, 3, (28, 28), 0, &mut c);
-    assert_eq!(nodes[1].output_shape, vec![1, 8, 28, 28], "same padding 应保持 H/W");
+    assert_eq!(
+        nodes[1].output_shape,
+        vec![1, 8, 28, 28],
+        "conv 输出应保持 H/W"
+    );
+    assert_eq!(
+        nodes[3].output_shape,
+        vec![1, 8, 28, 28],
+        "bias add 输出应保持 H/W"
+    );
 }
 
 #[test]
@@ -181,8 +224,15 @@ fn expand_maxpool_single_node() {
     let mut c = InnovationCounter::new(1);
     let nodes = expand_pool2d(0, PoolType::Max, 2, 2, (28, 28), 8, &mut c);
     assert_eq!(nodes.len(), 1);
-    assert!(matches!(nodes[0].node_type, NodeTypeDescriptor::MaxPool2d { .. }));
-    assert_eq!(nodes[0].output_shape, vec![1, 8, 14, 14], "MaxPool 2x2/s2 输出");
+    assert!(matches!(
+        nodes[0].node_type,
+        NodeTypeDescriptor::MaxPool2d { .. }
+    ));
+    assert_eq!(
+        nodes[0].output_shape,
+        vec![1, 8, 14, 14],
+        "MaxPool 2x2/s2 输出"
+    );
 }
 
 #[test]
@@ -190,7 +240,10 @@ fn expand_avgpool_single_node() {
     let mut c = InnovationCounter::new(1);
     let nodes = expand_pool2d(0, PoolType::Avg, 2, 2, (28, 28), 4, &mut c);
     assert_eq!(nodes.len(), 1);
-    assert!(matches!(nodes[0].node_type, NodeTypeDescriptor::AvgPool2d { .. }));
+    assert!(matches!(
+        nodes[0].node_type,
+        NodeTypeDescriptor::AvgPool2d { .. }
+    ));
 }
 
 // ==================== expand_flatten ====================
@@ -200,7 +253,10 @@ fn expand_flatten_spatial_to_flat() {
     let mut c = InnovationCounter::new(1);
     let nodes = expand_flatten(0, 8, Some((14, 14)), &mut c);
     assert_eq!(nodes.len(), 1);
-    assert!(matches!(nodes[0].node_type, NodeTypeDescriptor::Flatten { .. }));
+    assert!(matches!(
+        nodes[0].node_type,
+        NodeTypeDescriptor::Flatten { .. }
+    ));
     assert_eq!(nodes[0].output_shape, vec![1, 8 * 14 * 14]);
 }
 
@@ -218,7 +274,9 @@ fn expand_dropout_single_node() {
     let mut c = InnovationCounter::new(1);
     let nodes = expand_dropout(0, vec![1, 16], 0.5, &mut c);
     assert_eq!(nodes.len(), 1);
-    assert!(matches!(nodes[0].node_type, NodeTypeDescriptor::Dropout { p } if (p - 0.5).abs() < 1e-6));
+    assert!(
+        matches!(nodes[0].node_type, NodeTypeDescriptor::Dropout { p } if (p - 0.5).abs() < 1e-6)
+    );
     assert_eq!(nodes[0].output_shape, vec![1, 16]);
 }
 
@@ -235,12 +293,16 @@ fn mlp_genome(input_dim: usize, hidden: usize, output_dim: usize) -> NetworkGeno
     // 在输出头前插入 Linear(hidden) + ReLU
     let hidden_layer = LayerGene {
         innovation_number: g.next_innovation_number(),
-        layer_config: LayerConfig::Linear { out_features: hidden },
+        layer_config: LayerConfig::Linear {
+            out_features: hidden,
+        },
         enabled: true,
     };
     let relu_layer = LayerGene {
         innovation_number: g.next_innovation_number(),
-        layer_config: LayerConfig::Activation { activation_type: ActivationType::ReLU },
+        layer_config: LayerConfig::Activation {
+            activation_type: ActivationType::ReLU,
+        },
         enabled: true,
     };
     // 插入到输出头前面
@@ -258,7 +320,10 @@ fn migrate_minimal_genome_xor() {
     // Linear(1) 展开为 4 个节点
     assert_eq!(out.nodes.len(), 4, "1 个 Linear → 4 节点");
     assert!(out.deferred.is_empty(), "不应有 deferred 层");
-    assert_eq!(out.output_innovation, out.nodes.last().unwrap().innovation_number);
+    assert_eq!(
+        out.output_innovation,
+        out.nodes.last().unwrap().innovation_number
+    );
 }
 
 #[test]
@@ -266,8 +331,16 @@ fn migrate_minimal_genome_analysis_valid() {
     let genome = minimal_genome(4, 3); // Iris
     let out = migrate_network_genome(&genome).unwrap();
     let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 4], ShapeDomain::Flat);
-    assert!(analysis.is_valid, "Iris 最小 genome 迁移应合法：{:?}", analysis.errors);
-    assert_eq!(analysis.param_count, 4 * 3 + 1 * 3, "参数量 = W[4,3] + b[1,3] = 15");
+    assert!(
+        analysis.is_valid,
+        "Iris 最小 genome 迁移应合法：{:?}",
+        analysis.errors
+    );
+    assert_eq!(
+        analysis.param_count,
+        4 * 3 + 1 * 3,
+        "参数量 = W[4,3] + b[1,3] = 15"
+    );
 }
 
 #[test]
@@ -287,7 +360,11 @@ fn migrate_mlp_genome_analysis_valid() {
     let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 2], ShapeDomain::Flat);
     assert!(analysis.is_valid, "MLP 迁移应合法：{:?}", analysis.errors);
     // W1[2,4]+b1[1,4]+W2[4,1]+b2[1,1] = 8+4+4+1 = 17
-    assert_eq!(analysis.param_count, 2*4 + 1*4 + 4*1 + 1*1, "参数量应为 17");
+    assert_eq!(
+        analysis.param_count,
+        2 * 4 + 1 * 4 + 4 * 1 + 1 * 1,
+        "参数量应为 17"
+    );
 }
 
 #[test]
@@ -300,7 +377,11 @@ fn migrate_spatial_genome_flatten_linear() {
     assert!(out.deferred.is_empty());
 
     let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 1, 28, 28], ShapeDomain::Spatial);
-    assert!(analysis.is_valid, "空间 genome 迁移应合法：{:?}", analysis.errors);
+    assert!(
+        analysis.is_valid,
+        "空间 genome 迁移应合法：{:?}",
+        analysis.errors
+    );
 }
 
 #[test]
@@ -309,15 +390,18 @@ fn migrate_genome_with_conv2d() {
     let mut genome = NetworkGenome::minimal_spatial(1, 10, (28, 28));
     let conv_layer = LayerGene {
         innovation_number: genome.next_innovation_number(),
-        layer_config: LayerConfig::Conv2d { out_channels: 8, kernel_size: 3 },
+        layer_config: LayerConfig::Conv2d {
+            out_channels: 8,
+            kernel_size: 3,
+        },
         enabled: true,
     };
     // 插入到 Flatten 前面
     genome.layers_mut().insert(0, conv_layer);
 
     let out = migrate_network_genome(&genome).unwrap();
-    // Conv2d: 2 节点，Flatten: 1 节点，Linear(10): 4 节点 = 7 节点
-    assert_eq!(out.nodes.len(), 7, "Conv+Flatten+Linear = 7 节点");
+    // Conv2d: 4 节点（kernel/conv/bias/add），Flatten: 1 节点，Linear(10): 4 节点 = 9 节点
+    assert_eq!(out.nodes.len(), 9, "Conv+Flatten+Linear = 9 节点");
     assert!(out.deferred.is_empty());
 }
 
@@ -410,17 +494,27 @@ fn migrate_cnn_pipeline_conv_pool_conv_flatten_linear() {
     // 目标层序: [Conv(1→8,k=3), Pool(2,2), Conv(8→16,k=3), Flatten, Linear(10)]
     let pool = LayerGene {
         innovation_number: genome.next_innovation_number(),
-        layer_config: LayerConfig::Pool2d { pool_type: PoolType::Max, kernel_size: 2, stride: 2 },
+        layer_config: LayerConfig::Pool2d {
+            pool_type: PoolType::Max,
+            kernel_size: 2,
+            stride: 2,
+        },
         enabled: true,
     };
     let conv2 = LayerGene {
         innovation_number: genome.next_innovation_number(),
-        layer_config: LayerConfig::Conv2d { out_channels: 16, kernel_size: 3 },
+        layer_config: LayerConfig::Conv2d {
+            out_channels: 16,
+            kernel_size: 3,
+        },
         enabled: true,
     };
     let conv1 = LayerGene {
         innovation_number: genome.next_innovation_number(),
-        layer_config: LayerConfig::Conv2d { out_channels: 8, kernel_size: 3 },
+        layer_config: LayerConfig::Conv2d {
+            out_channels: 8,
+            kernel_size: 3,
+        },
         enabled: true,
     };
     // 插入到 Flatten 前：[conv1, pool, conv2, Flatten, Linear(10)]
@@ -429,13 +523,11 @@ fn migrate_cnn_pipeline_conv_pool_conv_flatten_linear() {
     genome.layers_mut().insert(0, conv1);
 
     let out = migrate_network_genome(&genome).unwrap();
-    // Conv(1→8): 2, Pool: 1, Conv(8→16): 2, Flatten: 1, Linear(10): 4 = 10 节点
-    assert_eq!(out.nodes.len(), 10, "CNN 管道应展开为 10 节点");
+    // Conv(1→8): 4, Pool: 1, Conv(8→16): 4, Flatten: 1, Linear(10): 4 = 14 节点
+    assert_eq!(out.nodes.len(), 14, "CNN 管道应展开为 14 节点");
     assert!(out.deferred.is_empty());
 
-    let analysis = GenomeAnalysis::compute(
-        &out.nodes, 0, vec![1, 1, 28, 28], ShapeDomain::Spatial,
-    );
+    let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 1, 28, 28], ShapeDomain::Spatial);
     assert!(analysis.is_valid, "CNN 迁移应合法：{:?}", analysis.errors);
 
     // 验证空间维度逐层缩减的形状一致性
@@ -450,6 +542,48 @@ fn migrate_cnn_pipeline_conv_pool_conv_flatten_linear() {
     }
 }
 
+#[test]
+fn migrate_genome_with_skip_edge_mean_preserves_mean_semantics() {
+    let mut genome = mlp_genome(4, 4, 1);
+    let output_head_innov = genome
+        .layers()
+        .iter()
+        .rev()
+        .find(|l| l.enabled)
+        .unwrap()
+        .innovation_number;
+
+    genome.skip_edges_mut().push(SkipEdge {
+        innovation_number: 201,
+        from_innovation: INPUT_INNOVATION,
+        to_innovation: output_head_innov,
+        strategy: AggregateStrategy::Mean,
+        enabled: true,
+    });
+
+    let out = migrate_network_genome(&genome).unwrap();
+    assert!(out.deferred.is_empty(), "Mean 迁移不应留下 deferred 警告");
+    assert!(
+        out.nodes
+            .iter()
+            .any(|n| matches!(n.node_type, NodeTypeDescriptor::Stack { axis: 0 })),
+        "Mean 迁移应插入 Stack(axis=0)"
+    );
+    assert!(
+        out.nodes
+            .iter()
+            .any(|n| matches!(n.node_type, NodeTypeDescriptor::Mean { axis: Some(0) })),
+        "Mean 迁移应插入 Mean(axis=0)"
+    );
+
+    let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 4], ShapeDomain::Flat);
+    assert!(
+        analysis.is_valid,
+        "Mean skip edge 迁移应合法：{:?}",
+        analysis.errors
+    );
+}
+
 // ==================== P1: Concat SkipEdge ====================
 
 /// Concat 策略的 skip edge 迁移验证
@@ -457,7 +591,13 @@ fn migrate_cnn_pipeline_conv_pool_conv_flatten_linear() {
 fn migrate_genome_with_skip_edge_concat() {
     // Input(2) → Linear(2) → ReLU → [Concat(main=2, skip=INPUT=2) → 得 4] → Linear(1, in=4)
     let mut genome = mlp_genome(2, 2, 1);
-    let output_head_innov = genome.layers().iter().rev().find(|l| l.enabled).unwrap().innovation_number;
+    let output_head_innov = genome
+        .layers()
+        .iter()
+        .rev()
+        .find(|l| l.enabled)
+        .unwrap()
+        .innovation_number;
 
     genome.skip_edges_mut().push(SkipEdge {
         innovation_number: 200,
@@ -473,7 +613,11 @@ fn migrate_genome_with_skip_edge_concat() {
     assert!(out.deferred.is_empty());
 
     let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 2], ShapeDomain::Flat);
-    assert!(analysis.is_valid, "Concat skip edge 迁移应合法：{:?}", analysis.errors);
+    assert!(
+        analysis.is_valid,
+        "Concat skip edge 迁移应合法：{:?}",
+        analysis.errors
+    );
 }
 
 // ==================== P1: Disabled 层 + SkipEdge ====================
@@ -485,7 +629,13 @@ fn migrate_skip_edge_from_disabled_layer_no_panic() {
     let first_layer_innov = genome.layers()[0].innovation_number;
     genome.layers_mut()[0].enabled = false; // 禁用 Linear(4)
 
-    let output_head_innov = genome.layers().iter().rev().find(|l| l.enabled).unwrap().innovation_number;
+    let output_head_innov = genome
+        .layers()
+        .iter()
+        .rev()
+        .find(|l| l.enabled)
+        .unwrap()
+        .innovation_number;
     genome.skip_edges_mut().push(SkipEdge {
         innovation_number: 300,
         from_innovation: first_layer_innov, // 指向被禁用的层
@@ -498,7 +648,10 @@ fn migrate_skip_edge_from_disabled_layer_no_panic() {
     // 迁移层将其包装为 DimensionError 返回——这是正确行为（genome 本身不合法）。
     // 测试目标：不应 panic，应返回包含原因的 Err。
     let result = migrate_network_genome(&genome);
-    assert!(result.is_err(), "含指向禁用层的 skip edge 的 genome 不合法，应返回 Err");
+    assert!(
+        result.is_err(),
+        "含指向禁用层的 skip edge 的 genome 不合法，应返回 Err"
+    );
     if let Err(e) = result {
         let msg = e.to_string();
         assert!(
@@ -517,12 +670,19 @@ fn migrate_spatial_full_domain_chain() {
     let mut genome = NetworkGenome::minimal_spatial(1, 10, (28, 28));
     let pool = LayerGene {
         innovation_number: genome.next_innovation_number(),
-        layer_config: LayerConfig::Pool2d { pool_type: PoolType::Max, kernel_size: 2, stride: 2 },
+        layer_config: LayerConfig::Pool2d {
+            pool_type: PoolType::Max,
+            kernel_size: 2,
+            stride: 2,
+        },
         enabled: true,
     };
     let conv = LayerGene {
         innovation_number: genome.next_innovation_number(),
-        layer_config: LayerConfig::Conv2d { out_channels: 8, kernel_size: 3 },
+        layer_config: LayerConfig::Conv2d {
+            out_channels: 8,
+            kernel_size: 3,
+        },
         enabled: true,
     };
     genome.layers_mut().insert(0, pool);
@@ -530,9 +690,7 @@ fn migrate_spatial_full_domain_chain() {
     // 层序: [Conv(1→8), Pool(2,2), Flatten, Linear(10)]
 
     let out = migrate_network_genome(&genome).unwrap();
-    let analysis = GenomeAnalysis::compute(
-        &out.nodes, 0, vec![1, 1, 28, 28], ShapeDomain::Spatial,
-    );
+    let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 1, 28, 28], ShapeDomain::Spatial);
     assert!(analysis.is_valid, "{:?}", analysis.errors);
 
     for node in &out.nodes {
@@ -541,21 +699,43 @@ fn migrate_spatial_full_domain_chain() {
         match nt {
             // Conv2d 和 MaxPool2d 节点应为 Spatial 域
             NodeTypeDescriptor::Conv2d { .. } | NodeTypeDescriptor::MaxPool2d { .. } => {
-                assert_eq!(domain, ShapeDomain::Spatial,
+                assert_eq!(
+                    domain,
+                    ShapeDomain::Spatial,
                     "节点 {} ({nt:?}) 应为 Spatial 域",
-                    node.innovation_number);
+                    node.innovation_number
+                );
             }
             // Flatten 节点应切换到 Flat 域
             NodeTypeDescriptor::Flatten { .. } => {
-                assert_eq!(domain, ShapeDomain::Flat,
+                assert_eq!(
+                    domain,
+                    ShapeDomain::Flat,
                     "节点 {} ({nt:?}) 应为 Flat 域",
-                    node.innovation_number);
+                    node.innovation_number
+                );
             }
-            // MatMul/Add 等（Flatten 后）应为 Flat 域
-            NodeTypeDescriptor::MatMul | NodeTypeDescriptor::Add => {
-                assert_eq!(domain, ShapeDomain::Flat,
+            // MatMul 始终位于 Flatten 后，应为 Flat 域
+            NodeTypeDescriptor::MatMul => {
+                assert_eq!(
+                    domain,
+                    ShapeDomain::Flat,
                     "节点 {} ({nt:?}) 应为 Flat 域",
-                    node.innovation_number);
+                    node.innovation_number
+                );
+            }
+            // Add 既可能是 Conv2d bias add（Spatial），也可能是 Linear bias add（Flat）
+            NodeTypeDescriptor::Add => {
+                let expected = if node.output_shape.len() == 4 {
+                    ShapeDomain::Spatial
+                } else {
+                    ShapeDomain::Flat
+                };
+                assert_eq!(
+                    domain, expected,
+                    "节点 {} ({nt:?}) 域不符合其输出形状 {:?}",
+                    node.innovation_number, node.output_shape
+                );
             }
             // Parameter 节点始终为 Flat
             NodeTypeDescriptor::Parameter => {

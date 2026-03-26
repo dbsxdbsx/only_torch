@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use crate::nn::descriptor::NodeTypeDescriptor;
 
 use super::gene::{
-    ActivationType, AggregateStrategy, LayerConfig, NetworkGenome, PoolType, INPUT_INNOVATION,
+    ActivationType, AggregateStrategy, INPUT_INNOVATION, LayerConfig, NetworkGenome, PoolType,
 };
 use super::node_gene::NodeGene;
 
@@ -133,13 +133,37 @@ pub fn expand_linear(
     let bid = Some(block_id);
     vec![
         // W: [in_dim, out_features]
-        NodeGene::new(w_id, NodeTypeDescriptor::Parameter, vec![in_dim, out_features], vec![], bid),
+        NodeGene::new(
+            w_id,
+            NodeTypeDescriptor::Parameter,
+            vec![in_dim, out_features],
+            vec![],
+            bid,
+        ),
         // MatMul: input[1,in_dim] × W[in_dim,out_features] → [1,out_features]
-        NodeGene::new(mm_id, NodeTypeDescriptor::MatMul, vec![1, out_features], vec![input_id, w_id], bid),
+        NodeGene::new(
+            mm_id,
+            NodeTypeDescriptor::MatMul,
+            vec![1, out_features],
+            vec![input_id, w_id],
+            bid,
+        ),
         // b: [1, out_features]
-        NodeGene::new(b_id, NodeTypeDescriptor::Parameter, vec![1, out_features], vec![], bid),
+        NodeGene::new(
+            b_id,
+            NodeTypeDescriptor::Parameter,
+            vec![1, out_features],
+            vec![],
+            bid,
+        ),
         // Add: [1, out_features]
-        NodeGene::new(add_id, NodeTypeDescriptor::Add, vec![1, out_features], vec![mm_id, b_id], bid),
+        NodeGene::new(
+            add_id,
+            NodeTypeDescriptor::Add,
+            vec![1, out_features],
+            vec![mm_id, b_id],
+            bid,
+        ),
     ]
 }
 
@@ -157,12 +181,12 @@ pub fn expand_activation(
     vec![NodeGene::new(id, nt, input_shape, vec![input_id], None)]
 }
 
-/// 展开 Conv2d 层 → Parameter(kernel) + Conv2d 节点
-///
-/// 注意：本版本不包含 bias（bias 的 broadcast 形状处理在阶段 4 的模板变异中完善）。
+/// 展开 Conv2d 层 → Parameter(kernel) + Conv2d + Parameter(bias) + Add
 /// 形状约定：
 /// - kernel: [out_channels, in_channels, k, k]
 /// - conv_out: [1, out_channels, H_out, W_out]（same padding，stride=1）
+/// - bias: [1, out_channels, 1, 1]
+/// - add_out: [1, out_channels, H_out, W_out]
 ///
 /// 所有节点共享同一个 block_id。
 pub fn expand_conv2d(
@@ -182,6 +206,8 @@ pub fn expand_conv2d(
 
     let kernel_id = counter.next();
     let conv_id = counter.next();
+    let bias_id = counter.next();
+    let add_id = counter.next();
 
     let bid = Some(block_id);
     vec![
@@ -196,9 +222,26 @@ pub fn expand_conv2d(
         // Conv2d: parents=[input, kernel]
         NodeGene::new(
             conv_id,
-            NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (padding, padding) },
+            NodeTypeDescriptor::Conv2d {
+                stride: (1, 1),
+                padding: (padding, padding),
+            },
             vec![1, out_channels, h_out, w_out],
             vec![input_id, kernel_id],
+            bid,
+        ),
+        NodeGene::new(
+            bias_id,
+            NodeTypeDescriptor::Parameter,
+            vec![1, out_channels, 1, 1],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            add_id,
+            NodeTypeDescriptor::Add,
+            vec![1, out_channels, h_out, w_out],
+            vec![conv_id, bias_id],
             bid,
         ),
     ]
@@ -215,8 +258,16 @@ pub fn expand_pool2d(
     counter: &mut InnovationCounter,
 ) -> Vec<NodeGene> {
     let (h, w) = input_spatial;
-    let h_out = if h >= kernel_size { (h - kernel_size) / stride + 1 } else { 1 };
-    let w_out = if w >= kernel_size { (w - kernel_size) / stride + 1 } else { 1 };
+    let h_out = if h >= kernel_size {
+        (h - kernel_size) / stride + 1
+    } else {
+        1
+    };
+    let w_out = if w >= kernel_size {
+        (w - kernel_size) / stride + 1
+    } else {
+        1
+    };
     let output_shape = vec![1, in_channels, h_out, w_out];
 
     let id = counter.next();
@@ -249,7 +300,9 @@ pub fn expand_flatten(
     };
     vec![NodeGene::new(
         id,
-        NodeTypeDescriptor::Flatten { keep_first_dim: true },
+        NodeTypeDescriptor::Flatten {
+            keep_first_dim: true,
+        },
         output_shape,
         vec![input_id],
         None,
@@ -264,7 +317,13 @@ pub fn expand_dropout(
     counter: &mut InnovationCounter,
 ) -> Vec<NodeGene> {
     let id = counter.next();
-    vec![NodeGene::new(id, NodeTypeDescriptor::Dropout { p }, input_shape, vec![input_id], None)]
+    vec![NodeGene::new(
+        id,
+        NodeTypeDescriptor::Dropout { p },
+        input_shape,
+        vec![input_id],
+        None,
+    )]
 }
 
 // ==================== 主迁移函数 ====================
@@ -274,7 +333,7 @@ pub fn expand_dropout(
 /// # 展开规则
 /// - Linear → `expand_linear` (4 节点：W/MatMul/b/Add)
 /// - Activation → `expand_activation` (1 节点)
-/// - Conv2d → `expand_conv2d` (2 节点：kernel/Conv2d；bias 暂缓)
+/// - Conv2d → `expand_conv2d` (4 节点：kernel/Conv2d/bias/Add)
 /// - Pool2d → `expand_pool2d` (1 节点)
 /// - Flatten → `expand_flatten` (1 节点)
 /// - Dropout → `expand_dropout` (1 节点)
@@ -284,13 +343,11 @@ pub fn expand_dropout(
 /// - Add → 插入 `NodeTypeDescriptor::Add` 聚合节点
 /// - Concat → 插入 `NodeTypeDescriptor::Concat` 聚合节点
 /// - Max → 插入 `NodeTypeDescriptor::Maximum` 聚合节点
-/// - Mean → 近似为 Add（注：丢弃 1/n 缩放，语义不完全准确，见 deferred）
+/// - Mean → 插入 `Stack(axis=0)` + `Mean(axis=0)` 保留真实平均语义
 ///
 /// # 创新号
 /// 新 NodeGene 的创新号从 1 开始（0 保留给虚拟输入 INPUT_INNOVATION）。
-pub fn migrate_network_genome(
-    genome: &NetworkGenome,
-) -> Result<MigrationOutput, MigrationError> {
+pub fn migrate_network_genome(genome: &NetworkGenome) -> Result<MigrationOutput, MigrationError> {
     let resolved = genome
         .resolve_dimensions()
         .map_err(|e| MigrationError::DimensionError(e.to_string()))?;
@@ -346,30 +403,68 @@ pub fn migrate_network_genome(
                 }
             }
 
-            let agg_id = counter.next();
-            let (agg_nt, agg_shape, warn) = match strategy {
-                AggregateStrategy::Add | AggregateStrategy::Mean => {
-                    let warn = matches!(strategy, AggregateStrategy::Mean)
-                        .then(|| format!("skip edge Mean 被近似为 Add（丢弃 1/n 缩放）"));
-                    (NodeTypeDescriptor::Add, vec![1, dim.in_dim], warn)
+            match strategy {
+                AggregateStrategy::Add => {
+                    let agg_id = counter.next();
+                    nodes.push(NodeGene::new(
+                        agg_id,
+                        NodeTypeDescriptor::Add,
+                        vec![1, dim.in_dim],
+                        agg_parents,
+                        None,
+                    ));
+                    agg_id
+                }
+                AggregateStrategy::Mean => {
+                    let stack_id = counter.next();
+                    let mean_id = counter.next();
+                    let parent_count = agg_parents.len();
+                    nodes.push(NodeGene::new(
+                        stack_id,
+                        NodeTypeDescriptor::Stack { axis: 0 },
+                        vec![parent_count, 1, dim.in_dim],
+                        agg_parents,
+                        None,
+                    ));
+                    nodes.push(NodeGene::new(
+                        mean_id,
+                        NodeTypeDescriptor::Mean { axis: Some(0) },
+                        vec![1, dim.in_dim],
+                        vec![stack_id],
+                        None,
+                    ));
+                    mean_id
                 }
                 AggregateStrategy::Max => {
-                    (NodeTypeDescriptor::Maximum, vec![1, dim.in_dim], None)
+                    let agg_id = counter.next();
+                    nodes.push(NodeGene::new(
+                        agg_id,
+                        NodeTypeDescriptor::Maximum,
+                        vec![1, dim.in_dim],
+                        agg_parents,
+                        None,
+                    ));
+                    agg_id
                 }
                 AggregateStrategy::Concat { dim: concat_dim } => {
+                    let agg_id = counter.next();
                     // 近似：使用 dim.in_dim 作为 concat 输出（GenomeAnalysis 会验证实际维度）
                     let concat_out = dim.in_dim;
-                    let axis = if *concat_dim < 0 { 1usize } else { *concat_dim as usize };
-                    (NodeTypeDescriptor::Concat { axis }, vec![1, concat_out], None)
+                    let axis = if *concat_dim < 0 {
+                        1usize
+                    } else {
+                        *concat_dim as usize
+                    };
+                    nodes.push(NodeGene::new(
+                        agg_id,
+                        NodeTypeDescriptor::Concat { axis },
+                        vec![1, concat_out],
+                        agg_parents,
+                        None,
+                    ));
+                    agg_id
                 }
-            };
-
-            if let Some(w) = warn {
-                deferred.push(w);
             }
-
-            nodes.push(NodeGene::new(agg_id, agg_nt, agg_shape, agg_parents, None));
-            agg_id
         };
 
         // 分配 block_id（每个模板展开一个 block）
@@ -429,9 +524,13 @@ fn expand_layer_config(
     counter: &mut InnovationCounter,
 ) -> Result<Vec<NodeGene>, String> {
     match config {
-        LayerConfig::Linear { out_features } => {
-            Ok(expand_linear(input_id, in_dim, *out_features, block_id, counter))
-        }
+        LayerConfig::Linear { out_features } => Ok(expand_linear(
+            input_id,
+            in_dim,
+            *out_features,
+            block_id,
+            counter,
+        )),
 
         LayerConfig::Activation { activation_type } => {
             // 激活函数透传维度，输入形状 = [1, in_dim]
@@ -443,21 +542,19 @@ fn expand_layer_config(
             ))
         }
 
-        LayerConfig::Dropout { p } => {
-            Ok(expand_dropout(input_id, vec![1, in_dim], *p, counter))
-        }
+        LayerConfig::Dropout { p } => Ok(expand_dropout(input_id, vec![1, in_dim], *p, counter)),
 
-        LayerConfig::Flatten => {
-            Ok(expand_flatten(input_id, in_dim, input_spatial, counter))
-        }
+        LayerConfig::Flatten => Ok(expand_flatten(input_id, in_dim, input_spatial, counter)),
 
-        LayerConfig::Conv2d { out_channels, kernel_size } => {
-            let spatial = input_spatial.ok_or_else(|| {
-                "Conv2d 需要空间输入（input_spatial 不能为 None）".to_string()
-            })?;
+        LayerConfig::Conv2d {
+            out_channels,
+            kernel_size,
+        } => {
+            let spatial = input_spatial
+                .ok_or_else(|| "Conv2d 需要空间输入（input_spatial 不能为 None）".to_string())?;
             Ok(expand_conv2d(
                 input_id,
-                in_dim,         // in_dim 在空间模式下是 in_channels
+                in_dim, // in_dim 在空间模式下是 in_channels
                 *out_channels,
                 *kernel_size,
                 spatial,
@@ -466,10 +563,13 @@ fn expand_layer_config(
             ))
         }
 
-        LayerConfig::Pool2d { pool_type, kernel_size, stride } => {
-            let spatial = input_spatial.ok_or_else(|| {
-                "Pool2d 需要空间输入（input_spatial 不能为 None）".to_string()
-            })?;
+        LayerConfig::Pool2d {
+            pool_type,
+            kernel_size,
+            stride,
+        } => {
+            let spatial = input_spatial
+                .ok_or_else(|| "Pool2d 需要空间输入（input_spatial 不能为 None）".to_string())?;
             Ok(expand_pool2d(
                 input_id,
                 *pool_type,

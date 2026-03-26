@@ -231,7 +231,7 @@ pub fn infer_output_shape(
             Ok(parent_shapes[0].clone())
         }
 
-        // ── 二元逐元素操作（要求所有输入形状相同）──
+        // ── 二元逐元素操作（遵循广播规则）──
         NT::Add | NT::Subtract | NT::Divide | NT::Multiply | NT::Maximum | NT::Minimum => {
             if parent_shapes.len() < 2 {
                 return Err(format!(
@@ -239,15 +239,16 @@ pub fn infer_output_shape(
                     parent_shapes.len()
                 ));
             }
-            let expected = parent_shapes[0];
+            let mut out = parent_shapes[0].clone();
             for (i, ps) in parent_shapes.iter().enumerate().skip(1) {
-                if *ps != expected {
-                    return Err(format!(
-                        "父节点 0 形状 {expected:?} 与父节点 {i} 形状 {ps:?} 不一致"
-                    ));
-                }
+                out = broadcast_shape(&out, ps).map_err(|msg| {
+                    format!(
+                        "父节点 0..{} 无法广播到父节点 {i} 形状 {ps:?}: {msg}",
+                        i - 1
+                    )
+                })?;
             }
-            Ok(expected.clone())
+            Ok(out)
         }
 
         // ── WhereCond（输出与第一个输入同形）──
@@ -559,6 +560,25 @@ fn require_n(n: usize, parents: &[&Vec<usize>]) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+/// 计算两个张量形状的广播结果。
+fn broadcast_shape(a: &[usize], b: &[usize]) -> Result<Vec<usize>, String> {
+    let max_rank = a.len().max(b.len());
+    let mut out_rev = Vec::with_capacity(max_rank);
+
+    for idx in 0..max_rank {
+        let da = a.iter().rev().nth(idx).copied().unwrap_or(1);
+        let db = b.iter().rev().nth(idx).copied().unwrap_or(1);
+        if da == db || da == 1 || db == 1 {
+            out_rev.push(da.max(db));
+        } else {
+            return Err(format!("形状 {a:?} 与 {b:?} 在倒数第 {} 维不兼容", idx + 1));
+        }
+    }
+
+    out_rev.reverse();
+    Ok(out_rev)
 }
 
 // ==================== 域推导 ====================

@@ -39,11 +39,13 @@ struct EvolutionMeta {
 
 /// NetworkGenome 的序列化表示（不含 weight_snapshots，权重在二进制段按参数名保存）
 ///
-/// 阶段 4 起支持 NodeLevel genome：
-/// - `nodes` 有内容，且 `is_node_level=true` → NodeLevel
-/// - 否则为 LayerLevel（向后兼容旧格式）
+/// 阶段 6 起：
+/// - Flat/Spatial genome 必须且只有 NodeLevel 格式（`is_node_level=true`）
+/// - Sequential genome 保留 LayerLevel 格式（`is_node_level=false`，等 RNN 节点级化后再收口）
+/// - 加载旧格式 Flat/Spatial（`is_node_level=false, seq_len=None`）会返回明确错误
 #[derive(Serialize, Deserialize)]
-struct GenomeSerialized {
+#[cfg_attr(test, derive(Debug))]
+pub(crate) struct GenomeSerialized {
     #[serde(default)]
     layers: Vec<super::gene::LayerGene>,
     #[serde(default)]
@@ -67,6 +69,16 @@ struct GenomeSerialized {
 
 impl From<&NetworkGenome> for GenomeSerialized {
     fn from(genome: &NetworkGenome) -> Self {
+        // Flat/Spatial genome 在阶段 4 后必须是 NodeLevel（演化主循环保证）。
+        // 若此处触发 panic，说明调用方绕过了迁移步骤，属于编程错误。
+        if genome.seq_len.is_none() && genome.is_layer_level() {
+            panic!(
+                "尝试以 LayerLevel 格式保存 Flat/Spatial genome（input_dim={}, output_dim={}），\
+                 这是编程错误：演化主循环应已在 run() 中将其迁移到 NodeLevel",
+                genome.input_dim, genome.output_dim
+            );
+        }
+
         if genome.is_node_level() {
             Self {
                 layers: Vec::new(),
@@ -101,10 +113,25 @@ impl From<&NetworkGenome> for GenomeSerialized {
 
 impl GenomeSerialized {
     /// 从序列化表示重建 NetworkGenome（weight_snapshots 为空，权重由参数名加载）
-    fn into_genome(self) -> NetworkGenome {
+    ///
+    /// # 错误
+    /// 若文件中包含旧格式（LayerLevel）的 Flat/Spatial genome，返回错误消息。
+    /// Sequential genome 的 LayerLevel 格式仍然合法（RNN 尚未节点级化）。
+    pub(crate) fn into_genome(self) -> Result<NetworkGenome, String> {
         use super::gene::GenomeRepr;
-        if self.is_node_level {
-            // NodeLevel: 直接构建 NodeLevel 表示
+
+        // 阶段 6：拒绝加载旧格式 Flat/Spatial genome
+        // seq_len=None 表示 Flat 或 Spatial（两者都应已节点级化）
+        if self.seq_len.is_none() && !self.is_node_level {
+            return Err(
+                "该 .otm 文件中包含旧格式（LayerLevel）的 Flat/Spatial 演化基因组，\
+                 阶段 6 起已停止支持此格式。请使用当前版本重新运行演化以生成新格式文件。"
+                    .to_string(),
+            );
+        }
+
+        let genome = if self.is_node_level {
+            // NodeLevel：直接构建 NodeLevel 表示
             let mut genome = NetworkGenome::from_parts(
                 Vec::new(),
                 Vec::new(),
@@ -125,6 +152,7 @@ impl GenomeSerialized {
             };
             genome
         } else {
+            // LayerLevel（Sequential 路径）
             NetworkGenome::from_parts(
                 self.layers,
                 self.skip_edges,
@@ -137,7 +165,9 @@ impl GenomeSerialized {
                 self.next_innovation,
                 std::collections::HashMap::new(),
             )
-        }
+        };
+
+        Ok(genome)
     }
 }
 
@@ -212,7 +242,10 @@ impl EvolutionResult {
             .map_err(|e| EvolutionError::IoError(format!("解析演化元数据失败: {e}")))?;
 
         // 从 genome 重建图（genome 不含 weight_snapshots，权重由参数名加载）
-        let genome = evo_meta.genome.into_genome();
+        let genome = evo_meta
+            .genome
+            .into_genome()
+            .map_err(|e| EvolutionError::IoError(e))?;
         let mut rng = StdRng::seed_from_u64(0);
         let build = genome.build(&mut rng)?;
 

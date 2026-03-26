@@ -247,6 +247,14 @@ fn infer_add_shape_mismatch_returns_err() {
     assert!(infer(NodeTypeDescriptor::Add, vec![shape![2, 3], shape![2, 4]]).is_err());
 }
 
+#[test]
+fn infer_add_broadcast_shape() {
+    assert_eq!(
+        infer(NodeTypeDescriptor::Add, vec![shape![1, 8, 28, 28], shape![1, 8, 1, 1]]).unwrap(),
+        shape![1, 8, 28, 28]
+    );
+}
+
 // ==================== WhereCond ====================
 
 #[test]
@@ -768,7 +776,45 @@ fn genome_analysis_summary_format() {
     let analysis = GenomeAnalysis::compute(&nodes, 0, shape![1, 4], ShapeDomain::Flat);
     let s = analysis.summary();
     assert!(s.starts_with("nodes="), "summary 应以 nodes= 开头");
+    assert!(s.contains("active="), "summary 应包含 active=");
     assert!(s.contains("params="), "summary 应包含 params=");
+}
+
+#[test]
+fn genome_analysis_snapshot_remains_immutable_after_genome_mutation() {
+    use crate::nn::evolution::gene::NetworkGenome;
+
+    let mut genome = NetworkGenome::minimal(4, 3);
+    genome.migrate_to_node_level().expect("迁移到 NodeLevel 不应失败");
+
+    let before = genome.analyze();
+    assert!(before.is_valid, "初始分析应合法：{:?}", before.errors);
+
+    let disabled_id = genome
+        .nodes()
+        .iter()
+        .find(|n| !n.is_parameter())
+        .map(|n| n.innovation_number)
+        .expect("最小 NodeLevel genome 应存在非参数节点");
+    let old_enabled = before.enabled_node_count;
+    let old_param_count = before.param_count;
+
+    genome
+        .nodes_mut()
+        .iter_mut()
+        .find(|n| n.innovation_number == disabled_id)
+        .unwrap()
+        .enabled = false;
+
+    let after = genome.analyze();
+    assert!(after.enabled_node_count < old_enabled, "重新分析后启用节点数应减少");
+
+    assert_eq!(before.enabled_node_count, old_enabled, "旧快照不应被污染");
+    assert_eq!(before.param_count, old_param_count, "旧快照参数量不应被污染");
+    assert!(
+        before.shape_of(disabled_id).is_some(),
+        "旧快照仍应保留被禁用前节点的形状"
+    );
 }
 
 #[test]

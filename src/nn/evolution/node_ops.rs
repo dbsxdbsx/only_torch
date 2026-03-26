@@ -711,11 +711,17 @@ pub fn resize_conv2d_out(
     };
     let bid_set: HashSet<u64> = block.node_ids.iter().copied().collect();
 
-    // 更新 kernel 参数形状 [old_ch, in_ch, kH, kW] → [new_ch, in_ch, kH, kW]
+    // 更新 kernel/bias 参数形状
     for node in genome.nodes_mut().iter_mut() {
         if bid_set.contains(&node.innovation_number) && node.is_parameter() {
             if node.output_shape.len() == 4 && node.output_shape[0] == old_ch {
-                node.output_shape[0] = new_ch;
+                if node.output_shape[2] == 1 && node.output_shape[3] == 1 {
+                    // bias: [1, old_ch, 1, 1] → [1, new_ch, 1, 1]
+                    node.output_shape[1] = new_ch;
+                } else {
+                    // kernel: [old_ch, in_ch, kH, kW] → [new_ch, in_ch, kH, kW]
+                    node.output_shape[0] = new_ch;
+                }
             }
         }
     }

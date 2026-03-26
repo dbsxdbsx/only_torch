@@ -1352,11 +1352,14 @@ fn test_phase3_nodelevel_capture_restore_weights() {
     // 且权重恢复后前向传播结果与原来一致。
     let mut genome = NetworkGenome::minimal(4, 3);
     let inn = genome.next_innovation_number();
-    genome.layers_mut().insert(0, LayerGene {
-        innovation_number: inn,
-        layer_config: LayerConfig::Linear { out_features: 8 },
-        enabled: true,
-    });
+    genome.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: inn,
+            layer_config: LayerConfig::Linear { out_features: 8 },
+            enabled: true,
+        },
+    );
     genome.migrate_to_node_level().unwrap();
     assert!(genome.is_node_level());
 
@@ -1371,13 +1374,19 @@ fn test_phase3_nodelevel_capture_restore_weights() {
 
     // capture_weights 不应 panic
     genome.capture_weights(&build1).unwrap();
-    assert!(genome.has_weight_snapshots(), "NodeLevel capture 后应有快照");
+    assert!(
+        genome.has_weight_snapshots(),
+        "NodeLevel capture 后应有快照"
+    );
 
     // 用不同种子构图（不同随机初始化）再 restore
     let mut rng2 = StdRng::seed_from_u64(999);
     let build2 = genome.build(&mut rng2).unwrap();
     let report = genome.restore_weights(&build2).unwrap();
-    assert!(report.inherited > 0, "NodeLevel restore 应成功继承至少一个参数");
+    assert!(
+        report.inherited > 0,
+        "NodeLevel restore 应成功继承至少一个参数"
+    );
 
     // restore 后前向传播结果应与原来一致
     build2.input.set_value(&input).unwrap();
@@ -1527,13 +1536,17 @@ fn test_phase5_node_level_partial_inherit_after_grow() {
             enabled: true,
         },
     );
-    genome.migrate_to_node_level().expect("迁移 NodeLevel 应成功");
+    genome
+        .migrate_to_node_level()
+        .expect("迁移 NodeLevel 应成功");
     assert!(genome.is_node_level());
 
     // 捕获初始权重
     let mut rng = StdRng::seed_from_u64(42);
     let build1 = genome.build(&mut rng).expect("初始 build 应成功");
-    genome.capture_weights(&build1).expect("capture_weights 应成功");
+    genome
+        .capture_weights(&build1)
+        .expect("capture_weights 应成功");
     assert!(genome.has_weight_snapshots(), "应有权重快照");
 
     // Grow 变异（扩大 hidden Linear 的输出维度）
@@ -1552,7 +1565,9 @@ fn test_phase5_node_level_partial_inherit_after_grow() {
         if grow.apply(&mut test_genome, &constraints, &mut r).is_ok() {
             // Grow 成功，rebuild + restore
             let mut build_rng = StdRng::seed_from_u64(seed + 100);
-            let build2 = test_genome.build(&mut build_rng).expect("Grow 后 build 应成功");
+            let build2 = test_genome
+                .build(&mut build_rng)
+                .expect("Grow 后 build 应成功");
             let report = test_genome
                 .restore_weights(&build2)
                 .expect("restore_weights 应成功");
@@ -1591,13 +1606,17 @@ fn test_phase5_node_level_reinit_after_insert() {
 
     // 最小 NodeLevel：Input(4) → [Linear(3)]
     let mut genome = NetworkGenome::minimal(4, 3);
-    genome.migrate_to_node_level().expect("迁移 NodeLevel 应成功");
+    genome
+        .migrate_to_node_level()
+        .expect("迁移 NodeLevel 应成功");
     assert!(genome.is_node_level());
 
     // 捕获初始权重
     let mut rng = StdRng::seed_from_u64(99);
     let build1 = genome.build(&mut rng).expect("初始 build 应成功");
-    genome.capture_weights(&build1).expect("capture_weights 应成功");
+    genome
+        .capture_weights(&build1)
+        .expect("capture_weights 应成功");
 
     // 记录原参数节点创新号
     let original_param_ids: std::collections::HashSet<u64> = genome
@@ -1637,7 +1656,9 @@ fn test_phase5_node_level_reinit_after_insert() {
 
             // rebuild + restore
             let mut build_rng = StdRng::seed_from_u64(seed + 200);
-            let build2 = test_genome.build(&mut build_rng).expect("InsertLayer 后 build 应成功");
+            let build2 = test_genome
+                .build(&mut build_rng)
+                .expect("InsertLayer 后 build 应成功");
             let report = test_genome
                 .restore_weights(&build2)
                 .expect("restore_weights 应成功");
@@ -1664,7 +1685,10 @@ fn test_phase5_node_level_reinit_after_insert() {
             break;
         }
     }
-    assert!(inserted, "20次尝试内 InsertLayer（含参数）均未成功，测试无效");
+    assert!(
+        inserted,
+        "20次尝试内 InsertLayer（含参数）均未成功，测试无效"
+    );
 }
 
 /// 阶段 5 测试：Shrink 后部分继承（`narrow` 截取路径）
@@ -1704,7 +1728,9 @@ fn test_phase5_node_level_partial_inherit_after_shrink() {
             enabled: true,
         },
     );
-    genome.migrate_to_node_level().expect("迁移 NodeLevel 应成功");
+    genome
+        .migrate_to_node_level()
+        .expect("迁移 NodeLevel 应成功");
     assert!(genome.is_node_level());
 
     // 构建并捕获权重（快照 W 形状固化为 [4, 16]）
@@ -1792,7 +1818,9 @@ fn test_phase5_node_level_partial_inherit_after_shrink() {
 /// 这是 2D 参数的正常行为，与 4D kernel 的 `reinitialized` 行为独立，不互相干扰。
 #[test]
 fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
-    use crate::nn::evolution::node_ops::{node_main_path, repair_param_input_dims, resize_conv2d_out};
+    use crate::nn::evolution::node_ops::{
+        node_main_path, repair_param_input_dims, resize_conv2d_out,
+    };
 
     // 构建 NodeLevel CNN：Input([1,1,8,8]) → Conv2d(out=4, k=3) → Flatten → Linear(2)
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
@@ -1822,12 +1850,14 @@ fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
 
     // 确认快照中存在 4D kernel
     let snaps = genome.node_weight_snapshots();
-    let has_4d_kernel = snaps.values().any(|t| t.shape().len() == 4);
+    let has_4d_kernel = snaps
+        .values()
+        .any(|t| t.shape().len() == 4 && t.shape()[2] > 1 && t.shape()[3] > 1);
     assert!(has_4d_kernel, "快照中应存在 Conv2d kernel（4D 张量）");
     // 确认 4D kernel 快照形状为 [4, 1, 3, 3]（out_ch=4, in_ch=1, kH=3, kW=3）
     let kernel_snap = snaps
         .values()
-        .find(|t| t.shape().len() == 4)
+        .find(|t| t.shape().len() == 4 && t.shape()[2] > 1 && t.shape()[3] > 1)
         .unwrap()
         .clone();
     assert_eq!(kernel_snap.shape(), &[4usize, 1, 3, 3]);
@@ -1846,7 +1876,9 @@ fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
 
     // 重新构建（Linear W 现在应为 [512, 2]）
     let mut rng2 = StdRng::seed_from_u64(99);
-    let build2 = genome.build(&mut rng2).expect("resize + repair 后 build 应成功");
+    let build2 = genome
+        .build(&mut rng2)
+        .expect("resize + repair 后 build 应成功");
     let report = genome
         .restore_weights(&build2)
         .expect("restore_weights 应成功");

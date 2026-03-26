@@ -20,8 +20,8 @@ use crate::tensor::Tensor;
 use std::collections::HashMap;
 use std::fmt;
 
-use super::node_gene::{GenomeAnalysis, NodeGene};
 use super::migration::migrate_network_genome;
+use super::node_gene::{GenomeAnalysis, NodeGene};
 
 /// Input 节点的虚拟创新号（skip edge 可引用此值作为源）
 pub const INPUT_INNOVATION: u64 = 0;
@@ -135,16 +135,35 @@ impl fmt::Display for PoolType {
 /// 只存输出侧参数，输入维度由 `resolve_dimensions()` 推导。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LayerConfig {
-    Linear { out_features: usize },
-    Activation { activation_type: ActivationType },
-    Rnn { hidden_size: usize },
-    Lstm { hidden_size: usize },
-    Gru { hidden_size: usize },
-    Dropout { p: f32 },
+    Linear {
+        out_features: usize,
+    },
+    Activation {
+        activation_type: ActivationType,
+    },
+    Rnn {
+        hidden_size: usize,
+    },
+    Lstm {
+        hidden_size: usize,
+    },
+    Gru {
+        hidden_size: usize,
+    },
+    Dropout {
+        p: f32,
+    },
     /// 2D 卷积：stride=1, padding=kernel_size/2（same padding，不改变 H/W）
-    Conv2d { out_channels: usize, kernel_size: usize },
+    Conv2d {
+        out_channels: usize,
+        kernel_size: usize,
+    },
     /// 2D 池化（空间降维，不改变 channels）
-    Pool2d { pool_type: PoolType, kernel_size: usize, stride: usize },
+    Pool2d {
+        pool_type: PoolType,
+        kernel_size: usize,
+        stride: usize,
+    },
     /// 展平：Spatial(C,H,W) → Flat(C*H*W)
     Flatten,
 }
@@ -158,10 +177,17 @@ impl fmt::Display for LayerConfig {
             LayerConfig::Lstm { hidden_size } => write!(f, "LSTM({hidden_size})"),
             LayerConfig::Gru { hidden_size } => write!(f, "GRU({hidden_size})"),
             LayerConfig::Dropout { p } => write!(f, "Dropout({p})"),
-            LayerConfig::Conv2d { out_channels, kernel_size } => {
+            LayerConfig::Conv2d {
+                out_channels,
+                kernel_size,
+            } => {
                 write!(f, "Conv2d({out_channels}, k={kernel_size})")
             }
-            LayerConfig::Pool2d { pool_type, kernel_size, stride } => {
+            LayerConfig::Pool2d {
+                pool_type,
+                kernel_size,
+                stride,
+            } => {
                 write!(f, "{pool_type}Pool({kernel_size}, s={stride})")
             }
             LayerConfig::Flatten => write!(f, "Flatten"),
@@ -342,21 +368,26 @@ pub struct NetworkGenome {
 impl Clone for NetworkGenome {
     fn clone(&self) -> Self {
         let repr = match &self.repr {
-            GenomeRepr::LayerLevel { layers, skip_edges, next_innovation, weight_snapshots } => {
-                GenomeRepr::LayerLevel {
-                    layers: layers.clone(),
-                    skip_edges: skip_edges.clone(),
-                    next_innovation: *next_innovation,
-                    weight_snapshots: weight_snapshots.clone(),
-                }
-            }
-            GenomeRepr::NodeLevel { nodes, next_innovation, weight_snapshots } => {
-                GenomeRepr::NodeLevel {
-                    nodes: nodes.clone(),
-                    next_innovation: *next_innovation,
-                    weight_snapshots: weight_snapshots.clone(),
-                }
-            }
+            GenomeRepr::LayerLevel {
+                layers,
+                skip_edges,
+                next_innovation,
+                weight_snapshots,
+            } => GenomeRepr::LayerLevel {
+                layers: layers.clone(),
+                skip_edges: skip_edges.clone(),
+                next_innovation: *next_innovation,
+                weight_snapshots: weight_snapshots.clone(),
+            },
+            GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation,
+                weight_snapshots,
+            } => GenomeRepr::NodeLevel {
+                nodes: nodes.clone(),
+                next_innovation: *next_innovation,
+                weight_snapshots: weight_snapshots.clone(),
+            },
         };
         Self {
             input_dim: self.input_dim,
@@ -372,7 +403,11 @@ impl Clone for NetworkGenome {
 
 impl fmt::Debug for NetworkGenome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let kind = if self.is_node_level() { "NodeLevel" } else { "LayerLevel" };
+        let kind = if self.is_node_level() {
+            "NodeLevel"
+        } else {
+            "LayerLevel"
+        };
         f.debug_struct("NetworkGenome")
             .field("kind", &kind)
             .field("input_dim", &self.input_dim)
@@ -427,7 +462,9 @@ impl NetworkGenome {
 
         let output_head = LayerGene {
             innovation_number: 1,
-            layer_config: LayerConfig::Linear { out_features: output_dim },
+            layer_config: LayerConfig::Linear {
+                out_features: output_dim,
+            },
             enabled: true,
         };
 
@@ -460,12 +497,16 @@ impl NetworkGenome {
 
         let rnn_layer = LayerGene {
             innovation_number: 1,
-            layer_config: LayerConfig::Rnn { hidden_size: output_dim },
+            layer_config: LayerConfig::Rnn {
+                hidden_size: output_dim,
+            },
             enabled: true,
         };
         let output_head = LayerGene {
             innovation_number: 2,
-            layer_config: LayerConfig::Linear { out_features: output_dim },
+            layer_config: LayerConfig::Linear {
+                out_features: output_dim,
+            },
             enabled: true,
         };
 
@@ -509,7 +550,9 @@ impl NetworkGenome {
         };
         let output_head = LayerGene {
             innovation_number: 2,
-            layer_config: LayerConfig::Linear { out_features: output_dim },
+            layer_config: LayerConfig::Linear {
+                out_features: output_dim,
+            },
             enabled: true,
         };
 
@@ -532,7 +575,12 @@ impl NetworkGenome {
     /// 获取下一个创新号（单调递增，不重复）
     pub fn next_innovation_number(&mut self) -> u64 {
         match &mut self.repr {
-            GenomeRepr::LayerLevel { next_innovation, .. } | GenomeRepr::NodeLevel { next_innovation, .. } => {
+            GenomeRepr::LayerLevel {
+                next_innovation, ..
+            }
+            | GenomeRepr::NodeLevel {
+                next_innovation, ..
+            } => {
                 let id = *next_innovation;
                 *next_innovation += 1;
                 id
@@ -603,8 +651,12 @@ impl NetworkGenome {
     /// 返回当前创新号计数器的下一个将分配值（不消耗，供序列化使用）
     pub(crate) fn peek_next_innovation(&self) -> u64 {
         match &self.repr {
-            GenomeRepr::LayerLevel { next_innovation, .. } |
-            GenomeRepr::NodeLevel { next_innovation, .. } => *next_innovation,
+            GenomeRepr::LayerLevel {
+                next_innovation, ..
+            }
+            | GenomeRepr::NodeLevel {
+                next_innovation, ..
+            } => *next_innovation,
         }
     }
 
@@ -655,7 +707,12 @@ impl NetworkGenome {
             }
             GenomeRepr::LayerLevel { .. } => {
                 // LayerLevel 基因组暂不支持 analyze()，返回空分析
-                GenomeAnalysis::compute(&[], INPUT_INNOVATION, vec![1, self.input_dim], ShapeDomain::Flat)
+                GenomeAnalysis::compute(
+                    &[],
+                    INPUT_INNOVATION,
+                    vec![1, self.input_dim],
+                    ShapeDomain::Flat,
+                )
             }
         }
     }
@@ -665,15 +722,21 @@ impl NetworkGenome {
     /// 权重快照是否为空
     pub fn has_weight_snapshots(&self) -> bool {
         match &self.repr {
-            GenomeRepr::LayerLevel { weight_snapshots, .. } => !weight_snapshots.is_empty(),
-            GenomeRepr::NodeLevel { weight_snapshots, .. } => !weight_snapshots.is_empty(),
+            GenomeRepr::LayerLevel {
+                weight_snapshots, ..
+            } => !weight_snapshots.is_empty(),
+            GenomeRepr::NodeLevel {
+                weight_snapshots, ..
+            } => !weight_snapshots.is_empty(),
         }
     }
 
     /// 获取层级权重快照引用（LayerLevel 专属）
     pub fn weight_snapshots(&self) -> &HashMap<u64, Vec<Tensor>> {
         match &self.repr {
-            GenomeRepr::LayerLevel { weight_snapshots, .. } => weight_snapshots,
+            GenomeRepr::LayerLevel {
+                weight_snapshots, ..
+            } => weight_snapshots,
             GenomeRepr::NodeLevel { .. } => panic!("weight_snapshots() 只支持 LayerLevel 基因组"),
         }
     }
@@ -681,15 +744,23 @@ impl NetworkGenome {
     /// 设置层级权重快照（LayerLevel 专属）
     pub fn set_weight_snapshots(&mut self, snapshots: HashMap<u64, Vec<Tensor>>) {
         match &mut self.repr {
-            GenomeRepr::LayerLevel { weight_snapshots, .. } => *weight_snapshots = snapshots,
-            GenomeRepr::NodeLevel { .. } => panic!("set_weight_snapshots() 只支持 LayerLevel 基因组"),
+            GenomeRepr::LayerLevel {
+                weight_snapshots, ..
+            } => *weight_snapshots = snapshots,
+            GenomeRepr::NodeLevel { .. } => {
+                panic!("set_weight_snapshots() 只支持 LayerLevel 基因组")
+            }
         }
     }
 
     /// 移除指定层的权重快照（MutateCellType 等变异用，LayerLevel 专属）
     pub(crate) fn remove_layer_weight_snapshot(&mut self, inn: u64) {
         match &mut self.repr {
-            GenomeRepr::LayerLevel { weight_snapshots, .. } => { weight_snapshots.remove(&inn); }
+            GenomeRepr::LayerLevel {
+                weight_snapshots, ..
+            } => {
+                weight_snapshots.remove(&inn);
+            }
             GenomeRepr::NodeLevel { .. } => {} // NodeLevel 无需操作
         }
     }
@@ -697,8 +768,12 @@ impl NetworkGenome {
     /// 获取节点级权重快照引用（NodeLevel 专属）
     pub fn node_weight_snapshots(&self) -> &HashMap<u64, Tensor> {
         match &self.repr {
-            GenomeRepr::NodeLevel { weight_snapshots, .. } => weight_snapshots,
-            GenomeRepr::LayerLevel { .. } => panic!("node_weight_snapshots() 只支持 NodeLevel 基因组"),
+            GenomeRepr::NodeLevel {
+                weight_snapshots, ..
+            } => weight_snapshots,
+            GenomeRepr::LayerLevel { .. } => {
+                panic!("node_weight_snapshots() 只支持 NodeLevel 基因组")
+            }
         }
     }
 
@@ -709,7 +784,7 @@ impl NetworkGenome {
             GenomeRepr::LayerLevel { layers, .. } => layers,
             GenomeRepr::NodeLevel { .. } => {
                 return Err(GenomeError::EmptyGenome(
-                    "resolve_dimensions 不支持 NodeLevel 基因组，请使用 analyze()".into()
+                    "resolve_dimensions 不支持 NodeLevel 基因组，请使用 analyze()".into(),
                 ));
             }
         };
@@ -721,11 +796,8 @@ impl NetworkGenome {
         let mut current_spatial = self.input_spatial;
 
         for layer in layers.iter().filter(|l| l.enabled) {
-            let effective_in_dim = self.compute_effective_input(
-                layer.innovation_number,
-                current_dim,
-                &dim_map,
-            )?;
+            let effective_in_dim =
+                self.compute_effective_input(layer.innovation_number, current_dim, &dim_map)?;
 
             let out_dim =
                 Self::compute_output_dim(&layer.layer_config, effective_in_dim, current_spatial);
@@ -861,20 +933,18 @@ impl NetworkGenome {
 
         for (i, layer) in enabled.iter().enumerate() {
             match &layer.layer_config {
-                LayerConfig::Rnn { .. }
-                | LayerConfig::Lstm { .. }
-                | LayerConfig::Gru { .. } => {
+                LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
                     if current_domain != ShapeDomain::Sequence {
                         return false;
                     }
                     let mut next_is_recurrent = false;
                     for next_layer in &enabled[i + 1..] {
                         match &next_layer.layer_config {
-                            LayerConfig::Activation { .. }
-                            | LayerConfig::Dropout { .. } => continue,
+                            LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {
+                                continue;
+                            }
                             _ => {
-                                next_is_recurrent =
-                                    Self::is_recurrent(&next_layer.layer_config);
+                                next_is_recurrent = Self::is_recurrent(&next_layer.layer_config);
                                 break;
                             }
                         }
@@ -890,9 +960,7 @@ impl NetworkGenome {
                         return false;
                     }
                 }
-                LayerConfig::Conv2d { .. }
-                | LayerConfig::Pool2d { .. }
-                | LayerConfig::Flatten => {
+                LayerConfig::Conv2d { .. } | LayerConfig::Pool2d { .. } | LayerConfig::Flatten => {
                     return false; // 空间层在序列模式下非法
                 }
                 LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {}
@@ -910,7 +978,9 @@ impl NetworkGenome {
     /// 纯平坦模式直接返回 true。
     pub fn validate_skip_edge_domains(&self) -> bool {
         let (layers, skip_edges) = match &self.repr {
-            GenomeRepr::LayerLevel { layers, skip_edges, .. } => (layers, skip_edges),
+            GenomeRepr::LayerLevel {
+                layers, skip_edges, ..
+            } => (layers, skip_edges),
             GenomeRepr::NodeLevel { .. } => return true,
         };
         if self.seq_len.is_none() && self.input_spatial.is_none() {
@@ -941,10 +1011,15 @@ impl NetworkGenome {
                 .iter()
                 .position(|l| l.innovation_number == edge.to_innovation);
             let to_input_domain = match to_idx {
-                Some(0) => *domain_map.get(&INPUT_INNOVATION).unwrap_or(&ShapeDomain::Flat),
+                Some(0) => *domain_map
+                    .get(&INPUT_INNOVATION)
+                    .unwrap_or(&ShapeDomain::Flat),
                 Some(idx) => {
                     let pred_inn = enabled[idx - 1].innovation_number;
-                    domain_map.get(&pred_inn).copied().unwrap_or(ShapeDomain::Flat)
+                    domain_map
+                        .get(&pred_inn)
+                        .copied()
+                        .unwrap_or(ShapeDomain::Flat)
                 }
                 None => continue,
             };
@@ -1034,17 +1109,15 @@ impl NetworkGenome {
 
         for (i, layer) in enabled.iter().enumerate() {
             match &layer.layer_config {
-                LayerConfig::Rnn { .. }
-                | LayerConfig::Lstm { .. }
-                | LayerConfig::Gru { .. } => {
+                LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
                     let mut next_is_recurrent = false;
                     for next_layer in &enabled[i + 1..] {
                         match &next_layer.layer_config {
-                            LayerConfig::Activation { .. }
-                            | LayerConfig::Dropout { .. } => continue,
+                            LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {
+                                continue;
+                            }
                             _ => {
-                                next_is_recurrent =
-                                    Self::is_recurrent(&next_layer.layer_config);
+                                next_is_recurrent = Self::is_recurrent(&next_layer.layer_config);
                                 break;
                             }
                         }
@@ -1134,9 +1207,7 @@ impl NetworkGenome {
     /// 计算单层参数量
     fn compute_layer_params(config: &LayerConfig, in_dim: usize, _out_dim: usize) -> usize {
         match config {
-            LayerConfig::Linear { out_features } => {
-                in_dim * out_features + out_features
-            }
+            LayerConfig::Linear { out_features } => in_dim * out_features + out_features,
             LayerConfig::Activation { .. }
             | LayerConfig::Dropout { .. }
             | LayerConfig::Pool2d { .. }
@@ -1172,8 +1243,16 @@ impl NetworkGenome {
                 stride,
                 ..
             } => spatial.map(|(h, w)| {
-                let new_h = if h >= *kernel_size { (h - kernel_size) / stride + 1 } else { 1 };
-                let new_w = if w >= *kernel_size { (w - kernel_size) / stride + 1 } else { 1 };
+                let new_h = if h >= *kernel_size {
+                    (h - kernel_size) / stride + 1
+                } else {
+                    1
+                };
+                let new_w = if w >= *kernel_size {
+                    (w - kernel_size) / stride + 1
+                } else {
+                    1
+                };
                 (new_h, new_w)
             }),
             LayerConfig::Flatten => None,
@@ -1223,10 +1302,10 @@ impl NetworkGenome {
                 parts.join(" → ")
             }
             GenomeRepr::NodeLevel { nodes, .. } => {
-                // NodeLevel 使用节点计数摘要（预先调用 analyze() 会更准确，此处用简单统计）
-                let enabled = nodes.iter().filter(|n| n.enabled).count();
-                let params = nodes.iter().filter(|n| n.enabled && n.is_parameter()).count();
-                format!("nodes={enabled} params={params}")
+                if nodes.is_empty() {
+                    return "nodes=0 active=0 params=0".to_string();
+                }
+                self.analyze().summary()
             }
         }
     }
@@ -1310,17 +1389,23 @@ impl fmt::Display for NetworkGenome {
 
         // Skip edge 注解（仅 LayerLevel 有注解）
         let active_skips: Vec<&SkipEdge> = match &self.repr {
-            GenomeRepr::LayerLevel { skip_edges, .. } => skip_edges.iter().filter(|e| e.enabled).collect(),
+            GenomeRepr::LayerLevel { skip_edges, .. } => {
+                skip_edges.iter().filter(|e| e.enabled).collect()
+            }
             GenomeRepr::NodeLevel { .. } => Vec::new(),
         };
 
         if !active_skips.is_empty() {
             let names = self.build_display_names();
             for (i, skip) in active_skips.iter().enumerate() {
-                let from = names.get(&skip.from_innovation)
-                    .map(|s| s.as_str()).unwrap_or("?");
-                let to = names.get(&skip.to_innovation)
-                    .map(|s| s.as_str()).unwrap_or("?");
+                let from = names
+                    .get(&skip.from_innovation)
+                    .map(|s| s.as_str())
+                    .unwrap_or("?");
+                let to = names
+                    .get(&skip.to_innovation)
+                    .map(|s| s.as_str())
+                    .unwrap_or("?");
                 let strategy = match &skip.strategy {
                     AggregateStrategy::Add => "Add",
                     AggregateStrategy::Concat { .. } => "Concat",
