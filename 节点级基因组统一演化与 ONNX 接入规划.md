@@ -20,6 +20,7 @@
 * `block_id` 设计：把模板组信息直接内联到 `NodeGene` 上，而不是维护独立的 `TemplateGroup` 列表。模板展开的一组节点共享同一个 `block_id`，细粒度单节点变异插入的节点 `block_id = None`。这不仅便于 Grow/Shrink/Remove 以组为单位操作，也为将来实现 NEAT 交叉（crossover）打基础：交叉时以 block 为单位对齐，模板展开的节点组要么整体来自父本 A，要么整体来自父本 B，不会被拆散
 * `GenomeKind` 或等价内部状态：用于区分当前基因组是否仍处于旧层级表示，还是已经迁移到节点级表示
 第一阶段的目标不是立刻切换主流程，而是先把“节点级基因组的静态数据结构”和“统一静态分析层”做出来，具体包括：拓扶排序、形状推导、域校验、参数统计、创新号分配策略。关键设计决策：将现有分散在 `gene.rs`、`builder.rs`、`mutation.rs` 中的形状推导、域推导、skip 合法性、参数量估算等逻辑统一收口到一个命名结果结构（例如 `GenomeAnalysis`），让 mutation、builder、serializer 三个下游模块全部依赖这一个分析结果，而不是各自重复实现分析逻辑。这个命名结构就是整个重构的 IR 层界面定义，它不存数据，只表达对当前基因组的分析结论。
+这里要再补一条硬约束：`GenomeAnalysis` 必须是不可变快照、按需重算，接口形态应是 `genome.analyze() -> GenomeAnalysis`，而不是挂在 `NetworkGenome` 内部、会随时间漂移的共享可变状态。只要基因组被 mutation、migration 或 builder 前置修正修改过，调用方重新执行一次 `.analyze()` 就应该拿到完整且最新的分析结果，不允许出现“基因组已变化但 analysis 仍然复用旧值”的隐式状态错误。换句话说，`GenomeAnalysis` 是纯分析产物，不是缓存本体；即使未来为了性能引入缓存，也必须保证外部语义仍然是“重新分析得到新快照”，而不是让调用方承担失效管理责任。
 ### 阶段 2：建立旧层级基因组到节点级基因组的单向迁移器
 在 `src/nn/evolution/gene.rs` 或新建 `src/nn/evolution/migration.rs` 中实现 `LayerConfig/SkipEdge -> NodeGene` 的展开器。这个迁移器是整个重构的枢纽，因为它既服务于旧模型兼容，也服务于重构期间的灰度切换。建议先只支持当前演化系统已稳定支持的高层单元：
 * `Linear` 展开为参数节点 + `MatMul` + 偏置加法节点
@@ -35,6 +36,7 @@
 * 演化构图与通用模型加载共用同一条图恢复链路，减少偏差
 * 后续 ONNX 导入只要产出合法 `NetworkGenome`，就天然可训练、可保存、可可视化
 完成这一步后，`src/nn/evolution/builder.rs` 的复杂度会显著下降，维护重点从“怎么构图”转向“怎么生成合法节点基因组”。这是整个重构最重要的可维护性收益。
+这里还必须补上一个实现约束：`to_graph_descriptor()` 不能只是“把当前节点抄写出来”，而必须把今天 `builder.rs` 里所有影响行为的隐式决策也显式固化到 descriptor 可表达的字段中。例如序列模块里的 `return_sequences` 语义、空间模块里 Pool2d 在 kernel 超过当前空间尺寸时退化为 identity pass-through 的行为，都不能继续留在 builder 私有逻辑里。目标是让 `Graph::from_descriptor()` 成为纯粹的“按蓝图施工”，它不应该再额外重新推导这些行为决策。如果一部分逻辑在 `to_graph_descriptor()`，另一部分逻辑仍然残留在 `builder.rs` 或 rebuild 路径中，二者迟早会发生漂移，最终出现“同一个 genome 通过不同入口构图结果不一致”的问题。
 **阶段 3 的强验收项**：完成 `to_graph_descriptor()` 后，必须验证以下闭环稳定成立：手写建立的 `.otm` 模型 → 读取为 `GraphDescriptor` → 转换为 `NetworkGenome` → 执行一次 mutation → 再生成 `GraphDescriptor` → 再重建 `Graph`。这个闭环最简洁，也是内部 IR 统一是否真正成功的最直接证明。如果这个闭环不通，后续 ONNX 导入也只是把复杂度导入进来。
 ### 阶段 4：把层级变异改写为模板化节点变异，同时简化架构摘要
 在 `src/nn/evolution/mutation.rs (1-500)` 现有框架基础上，保留 `Mutation trait` 与 `MutationRegistry`，但将具体变异的作用对象改成节点级基因组。重构方式建议是：
@@ -49,12 +51,13 @@
 * 快照结构改为 `HashMap<u64, Tensor>` 或保留 `Vec<Tensor>` 但语义严格限定为参数节点集合
 * 高层模板的 Lamarckian 继承不再依赖“某层有几个参数”这种隐式约定，而依赖模板组中哪些 Parameter 节点被保留、哪些形状变化
 这一步做完后，Grow/Shrink/Replace 的权重继承将更精确，也更适合后续 ONNX 导入模型继续演化。
-### 阶段 6：升级持久化格式，提供旧格式迁移
-`src/nn/evolution/model_io.rs` 当前保存的是 v2 风格演化元数据，其中 `GenomeSerialized` 仍然基于 `layers + skip_edges`。这一层需要升级，但必须兼容旧文件。建议：
-* 定义新的 genome serialized 结构，字段改为 `nodes + template_groups + training_config + meta`
-* 加载时根据 metadata 或 JSON 字段判断是旧格式还是新格式
-* 若是旧格式，则先按旧结构读取，再调用阶段 2 的迁移器转成新节点级基因组
-这样可以保证已保存的 `.otm` 演化模型不失效，也避免用户因为内部重构丢掉历史结果。
+### 阶段 6：升级持久化格式，先完成 Flat/Spatial 的 NodeLevel 统一
+`src/nn/evolution/model_io.rs` 当前保存的是 v2 风格演化元数据，其中 `GenomeSerialized` 仍然混合承载 `layers + skip_edges` 与 `nodes` 两套表示。对于当前这个仍处于快速开发阶段的项目，我不建议为了“理论上的旧文件兼容”继续维护旧格式迁移逻辑。阶段 6 的目标应改为：
+* 明确把 Flat/Spatial 两类演化模型的持久化主格式收敛为 NodeLevel，即 `nodes + training_config + meta`
+* 保存路径不再以“兼容旧 LayerLevel genome 文件”为目标；开发期允许放弃旧演化文件的历史兼容，减少维护负担
+* 序列模式（RNN/LSTM/GRU）由于当前仍未完成稳定的 NodeLevel 展开，阶段 6 先不强推统一序列持久化格式；序列演化路径暂时保留现状，等循环结构真正节点级化后再收口
+* `model_io.rs` 的职责改成：为已经节点级化的 Flat/Spatial genome 提供稳定、单一、可验证的保存/加载语义，而不是继续充当 LayerLevel/NodeLevel 双格式兼容层
+这里的关键不是“保留所有历史文件都还能读”，而是先把新的内部主干和新的主存储格式收敛稳定。等序列模式也节点级化之后，再决定是否值得补一个一次性的旧文件迁移脚本；它不应该继续占用当前主干设计。
 ### 阶段 7（延后）：增加 ONNX 导入模块
 等前 6 个阶段完成、框架内部三角形互通验证后，再引入 ONNX。模块应放在图模块下，例如 `src/nn/graph/onnx_import.rs`，而非演化模块下——因为 ONNX 导入的第一个产物是 `GraphDescriptor`，再由 `NetworkGenome::from_graph_descriptor()` 转一步进入演化系统。并通过 Cargo feature 隔离依赖，避免影响默认编译体验。ONNX 导入流程建议拆成四层：
 1. protobuf 解析层：读 `ModelProto/GraphProto`
@@ -65,11 +68,13 @@
 ## 测试策略
 **`src/nn/tests/`（节点和图层计算测试）完全不动**。这些测试测的是节点前向/反向计算正确性，和演化模块重构无关。`tests/convergence.rs`、`tests/selection.rs`、`tests/task.rs`、`tests/evolution.rs`（集成测试）几乎不动，因为它们测的是公开 API 行为和每代演化结果的合理性，与内部基因组表示无关。需要更新的测试按阶段分布如下：
 阶段 1 对应测试：新增 `NodeGene` 数据结构单元测试 + 60+ 种 `NodeTypeDescriptor` 的 shape inference 覆盖测试（逐类型验证输入形状 → 输出形状规则）。这是整个重构唯一需要大批量新增的测试，但每条很简单，且层级节点已在 `src/nn/tests/node_*.rs` 中隐式验证过计算正确性。
+阶段 1 还应补一个语义测试：同一个基因组在修改前后分别调用 `analyze()`，必须返回两个独立且自洽的分析快照，旧快照不因后续 mutation 被隐式污染。这条测试不是性能测试，而是为了把 `GenomeAnalysis` 的不可变性约束写死。
 阶段 2 对应测试：新增迁移器测试，验证每种 `LayerConfig` 变体展开后的节点组结构正确性。
 阶段 3 对应测试：更新 `tests/builder.rs`，将原有构图测试改为验证 `to_graph_descriptor()` + `Graph::from_descriptor()` 的等价性（即展开后再重建的图和原图等价）。
+阶段 3 还应补 descriptor 行为一致性测试：至少覆盖 `return_sequences` 和 Pool2d 退化语义，要求同一个 genome 走旧 builder 路径与走 `to_graph_descriptor() -> Graph::from_descriptor()` 路径时，行为和输出形状完全一致，而不是仅仅“都能 build 成功”。
 阶段 4 对应测试：更新 `tests/mutation.rs`，将原有变异测试改为验证模板展开后节点组的合法性；`tests/gene.rs` 根据新 `NodeGene` 结构大部分重写。
 阶段 5 对应测试：更新 `tests/builder.rs` 中的权重继承测试，验证 Parameter 节点粒度的 snapshot/restore 正确性。
-阶段 6 对应测试：更新 `tests/model_io.rs`，验证新格式保存/加载 + 旧格式自动迁移。
+阶段 6 对应测试：更新 `tests/model_io.rs`，重点验证 Flat/Spatial NodeLevel genome 的保存/加载往返一致性、手写固定模型 `.otm` 导入为演化种子的闭环，以及序列模式路径在“暂不统一持久化”的前提下不会被误伤。阶段 6 不再要求旧格式自动迁移测试。
 ## 推荐的具体落地顺序
 建议按下面顺序推进，而不是并行大拆：
 1. 为节点级基因组建立最小数据结构、shape inference、合法性校验
@@ -77,7 +82,7 @@
 3. 用迁移后的节点级表示生成 `GraphDescriptor`
 4. 将 `builder.rs` 改为通过 `Graph::from_descriptor()` 构图
 5. 把默认层级变异改为模板化节点插入
-6. 迁移权重继承与 `.otm` 序列化
+6. 迁移权重继承，并将 Flat/Spatial 的 `.otm` 序列化收敛到 NodeLevel 单格式
 7. 最后做 ONNX 导入
 这样安排的好处是，每一步都能单独验收，而且第 4 步完成时系统已经拿到最大收益：内部表示统一，后续 ONNX 和 fine-grained evolution 都只是“新增能力”，不再是“推翻主干”。
 ## 风险点与规避策略
@@ -94,8 +99,10 @@
 * 可通过额外配置开启或关闭细粒度节点变异
 * 训练日志不再依赖层级字符串摘要，而统一输出节点数量、启用节点数量和参数节点数量
 * 现有演化 examples 继续可运行
-* 旧 `.otm` 演化文件可加载（旧格式自动迁移）
 * 节点级基因组可以直接生成 `GraphDescriptor` 并构图
+* Flat/Spatial 演化结果保存后的 `.otm` 使用 NodeLevel 作为唯一主格式，不再长期维护 LayerLevel 持久化作为正式主路径
+* Flat/Spatial 演化 `.otm` 可加载并继续演化
+* 序列模式在阶段 6 完成时允许仍保留当前持久化现状，但不能阻塞 Flat/Spatial 主路径收敛
 * 手写固定模型保存的 `.otm` 文件可作为演化种子导入，并继续演化
 * 演化结果可保存后继续作为手写训练的起点，打通“手写训练 ↔ 演化 ↔ 继续训练”三角形互通
 ## 我对这个项目的建议决策
