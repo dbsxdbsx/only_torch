@@ -15,7 +15,7 @@
  * - sync_computation_shapes(): 基于参数节点形状重新推导所有计算节点形状
  */
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -306,13 +306,23 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
     });
 
     if has_matmul {
+        // 通过 MatMul 节点的父节点关系精确定位 W 参数
+        // （不能用 shape[0] > 1 启发式——当 in_features=1 时 W 和 bias 形状相同）
+        let bid_set: HashSet<u64> = node_ids.iter().copied().collect();
         for &id in node_ids {
             if let Some(n) = node_map.get(&id) {
-                // W 参数：2D，第一维 > 1（= in_dim，区别于 b 的第一维 = 1）
-                if n.is_parameter() && n.output_shape.len() == 2 && n.output_shape[0] > 1 {
-                    return NodeBlockKind::Linear {
-                        out_features: n.output_shape[1],
-                    };
+                if matches!(n.node_type, NT::MatMul) {
+                    for &pid in &n.parents {
+                        if bid_set.contains(&pid) {
+                            if let Some(p) = node_map.get(&pid) {
+                                if p.is_parameter() && p.output_shape.len() == 2 {
+                                    return NodeBlockKind::Linear {
+                                        out_features: p.output_shape[1],
+                                    };
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -479,32 +489,71 @@ pub fn sync_computation_shapes(genome: &mut NetworkGenome) {
     }
 }
 
-/// 修复所有参数节点的输入维度（插入/删除块后调用）
+/// 修复参数维度的核心逻辑（不触发跳跃连接修复，避免循环调用）
 ///
-/// 沿主路径正向推导，将每个 Linear/Conv2d 块的参数节点输入维度
-/// 更新为前驱块的实际输出维度，最后调用 `sync_computation_shapes`。
-pub fn repair_param_input_dims(genome: &mut NetworkGenome) {
+/// 沿拓扑序遍历所有块，将每个 Linear/Conv2d 块的参数节点输入维度
+/// 更新为其实际前驱节点（`block.input_id`）的输出维度。
+///
+/// **关键设计**：使用 `dim_map: HashMap<u64, usize>` 记录每个节点的输出特征维度，
+/// 而非单一 `prev_out` 线性传递——在含跳跃连接的 DAG 中，旁路块的输入来自更早的
+/// 节点（如 INPUT），不是拓扑序中前一个块的输出，单一 prev_out 会导致错误级联。
+fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
     let blocks = node_main_path(genome);
-    let mut prev_out = if genome.input_spatial.is_some() {
-        genome.input_dim // in_channels
-    } else {
-        genome.input_dim // flat features
-    };
+
+    // 维护每个节点输出的特征维度（node_id → feature_dim）
+    let mut dim_map: HashMap<u64, usize> = HashMap::new();
+    dim_map.insert(INPUT_INNOVATION, genome.input_dim);
 
     for block in &blocks {
-        let bid_set: std::collections::HashSet<u64> = block.node_ids.iter().copied().collect();
+        // 跳过 skip 投影块——投影块由 repair_skip_connections 自动维护
+        if is_skip_projection_block(genome, block) {
+            continue;
+        }
+
+        // 从 dim_map 查找该块实际输入节点的输出维度
+        let prev_out = dim_map.get(&block.input_id).copied().unwrap_or_else(|| {
+            // 回退：从节点自身的 output_shape 推断
+            genome
+                .nodes()
+                .iter()
+                .find(|n| n.innovation_number == block.input_id)
+                .and_then(|n| n.output_shape.get(1).copied())
+                .unwrap_or(genome.input_dim)
+        });
+
+        let bid_set: HashSet<u64> = block.node_ids.iter().copied().collect();
         match &block.kind {
             NodeBlockKind::Linear { out_features } => {
                 let out = *out_features;
-                for node in genome.nodes_mut().iter_mut() {
-                    if bid_set.contains(&node.innovation_number) && node.is_parameter() {
-                        if node.output_shape.len() == 2 && node.output_shape[0] > 1 {
+                // 通过 MatMul 的父节点关系精确定位 W（避免 in_features=1 时 W/bias 混淆）
+                let w_id: Option<u64> = {
+                    let nodes = genome.nodes();
+                    nodes
+                        .iter()
+                        .find(|n| {
+                            bid_set.contains(&n.innovation_number)
+                                && matches!(n.node_type, NodeTypeDescriptor::MatMul)
+                        })
+                        .and_then(|mm| {
+                            mm.parents.iter().find(|&&pid| {
+                                bid_set.contains(&pid)
+                                    && nodes
+                                        .iter()
+                                        .any(|n| n.innovation_number == pid && n.is_parameter())
+                            })
+                        })
+                        .copied()
+                };
+                if let Some(wid) = w_id {
+                    for node in genome.nodes_mut().iter_mut() {
+                        if node.innovation_number == wid && node.output_shape.len() == 2 {
                             // W: [old_in, out] → [prev_out, out]
                             node.output_shape[0] = prev_out;
+                            break;
                         }
                     }
                 }
-                prev_out = out;
+                dim_map.insert(block.output_id, out);
             }
             NodeBlockKind::Conv2d { out_channels, .. } => {
                 let out = *out_channels;
@@ -516,7 +565,7 @@ pub fn repair_param_input_dims(genome: &mut NetworkGenome) {
                         }
                     }
                 }
-                prev_out = out;
+                dim_map.insert(block.output_id, out);
             }
             NodeBlockKind::Flatten => {
                 // Flatten 后刷新形状，重新获取平坦维度
@@ -533,15 +582,25 @@ pub fn repair_param_input_dims(genome: &mut NetworkGenome) {
                     .and_then(|&id| analysis.shape_of(id))
                     .and_then(|s| s.get(1).copied())
                 {
-                    prev_out = flat_dim;
+                    dim_map.insert(block.output_id, flat_dim);
                 }
             }
-            // Pool2d、Activation、Dropout 不改变通道/特征维度
-            _ => {}
+            // Pool2d、Activation、Dropout、SkipAgg 不改变通道/特征维度，透传 prev_out
+            _ => {
+                dim_map.insert(block.output_id, prev_out);
+            }
         }
     }
 
     sync_computation_shapes(genome);
+}
+
+/// 修复所有参数节点的输入维度（插入/删除块后调用）
+///
+/// 先修复主路径参数维度，再修复跳跃连接形状一致性。
+pub fn repair_param_input_dims(genome: &mut NetworkGenome) {
+    repair_param_input_dims_inner(genome);
+    repair_skip_connections(genome);
 }
 
 /// 获取 NodeLevel genome 的总参数量
@@ -646,56 +705,28 @@ pub fn resize_linear_out(
     block: &NodeBlock,
     new_out: usize,
 ) -> Result<(), String> {
-    let old_out = match &block.kind {
+    let _old_out = match &block.kind {
         NodeBlockKind::Linear { out_features } => *out_features,
         _ => return Err("不是 Linear 块".into()),
     };
     let bid_set: HashSet<u64> = block.node_ids.iter().copied().collect();
 
-    // 更新本块的 W 和 b 参数形状
+    // 更新本块的所有 2D 参数形状（W 和 b 都需要更新 dim[1] = new_out）
     for node in genome.nodes_mut().iter_mut() {
         if bid_set.contains(&node.innovation_number) && node.is_parameter() {
-            match node.output_shape.len() {
-                2 if node.output_shape[0] > 1 => {
-                    // W: [in, old_out] → [in, new_out]
-                    node.output_shape[1] = new_out;
-                }
-                2 if node.output_shape[0] == 1 => {
-                    // b: [1, old_out] → [1, new_out]
-                    node.output_shape[1] = new_out;
-                }
-                _ => {}
+            if node.output_shape.len() == 2 {
+                // W: [in, old_out] → [in, new_out]
+                // b: [1, old_out] → [1, new_out]
+                node.output_shape[1] = new_out;
             }
         }
     }
 
-    // 级联：更新下一个 Linear 块的 W 的第一维
-    let blocks = node_main_path(genome);
-    if let Some(idx) = blocks.iter().position(|b| b.block_id == block.block_id) {
-        for next in blocks[idx + 1..].iter() {
-            match &next.kind {
-                NodeBlockKind::Linear { .. } => {
-                    let next_bid_set: HashSet<u64> = next.node_ids.iter().copied().collect();
-                    for node in genome.nodes_mut().iter_mut() {
-                        if next_bid_set.contains(&node.innovation_number) && node.is_parameter() {
-                            if node.output_shape.len() == 2 && node.output_shape[0] == old_out {
-                                // W: [old_out, next_out] → [new_out, next_out]
-                                node.output_shape[0] = new_out;
-                                break;
-                            }
-                        }
-                    }
-                    break; // 只级联到紧邻的下一个 Linear
-                }
-                NodeBlockKind::Activation { .. } | NodeBlockKind::Dropout { .. } => continue,
-                // Flatten 后尺寸计算方式不同，停止级联
-                _ => break,
-            }
-        }
-    }
-
-    // 重新推导计算节点形状
-    sync_computation_shapes(genome);
+    // 用 repair_param_input_dims 替代手动级联——它会：
+    // 1. 沿完整主路径修复所有 Linear/Conv2d 块的 W 输入维度（正确穿越 SkipAgg 节点）
+    // 2. 调用 sync_computation_shapes 重新推导计算节点形状
+    // 3. 调用 repair_skip_connections 修复跳跃连接形状一致性
+    repair_param_input_dims(genome);
     Ok(())
 }
 
@@ -726,31 +757,8 @@ pub fn resize_conv2d_out(
         }
     }
 
-    // 级联：找下一个接受通道维度的块（跳过 Pool2d，在 Flatten 后停止）
-    let blocks = node_main_path(genome);
-    if let Some(idx) = blocks.iter().position(|b| b.block_id == block.block_id) {
-        for next in blocks[idx + 1..].iter() {
-            match &next.kind {
-                NodeBlockKind::Conv2d { .. } => {
-                    // 下一个 Conv2d 的 kernel 第二维 = in_ch
-                    let next_bid_set: HashSet<u64> = next.node_ids.iter().copied().collect();
-                    for node in genome.nodes_mut().iter_mut() {
-                        if next_bid_set.contains(&node.innovation_number) && node.is_parameter() {
-                            if node.output_shape.len() == 4 && node.output_shape[1] == old_ch {
-                                node.output_shape[1] = new_ch;
-                                break;
-                            }
-                        }
-                    }
-                    break;
-                }
-                NodeBlockKind::Pool2d { .. } | NodeBlockKind::Activation { .. } => continue,
-                _ => break,
-            }
-        }
-    }
-
-    sync_computation_shapes(genome);
+    // 用 repair_param_input_dims 替代手动级联——正确穿越 SkipAgg 等中间节点
+    repair_param_input_dims(genome);
     Ok(())
 }
 
@@ -874,4 +882,734 @@ fn sample_size_in_range_simple(
             candidates.choose(rng).copied().unwrap_or(max)
         }
     }
+}
+
+// ==================== 阶段 7：跨层连接变异辅助 ====================
+
+/// 一个可合法添加跳跃连接的候选对
+#[derive(Debug, Clone)]
+pub struct ConnectablePair {
+    /// 源节点输出创新号
+    pub from_id: u64,
+    /// 目标块入口节点创新号（其主路径父节点将被替换为新 Add 聚合节点）
+    pub target_entry_id: u64,
+    /// 源节点输出形状
+    pub from_shape: Vec<usize>,
+    /// 目标块主路径输入形状（投影目标形状）
+    pub to_shape: Vec<usize>,
+    /// 连接所在的形状域
+    pub domain: ShapeDomain,
+}
+
+/// 找目标块的入口节点：块内第一个非叶节点，且其父节点列表中包含 `block.input_id`
+fn find_entry_node(block: &NodeBlock, genome: &NetworkGenome) -> Option<u64> {
+    for &nid in &block.node_ids {
+        if let Some(node) = genome.nodes().iter().find(|n| n.innovation_number == nid) {
+            if !node.is_leaf() && node.parents.contains(&block.input_id) {
+                return Some(nid);
+            }
+        }
+    }
+    None
+}
+
+/// 判断一个块是否是跳跃投影块（其输出节点仅被 SkipAgg 节点引用）
+///
+/// 跳跃投影块由 `add_skip_connection` 插入，用于在形状不兼容时将跳跃源投影到目标形状。
+/// 这类块不应参与 Grow/Shrink/Remove 变异，以避免投影与聚合节点形状失配。
+pub fn is_skip_projection_block(genome: &NetworkGenome, block: &NodeBlock) -> bool {
+    let output_id = block.output_id;
+    let param_ids: HashSet<u64> = genome
+        .nodes()
+        .iter()
+        .filter(|n| n.is_parameter())
+        .map(|n| n.innovation_number)
+        .collect();
+    // 找所有以 output_id 为父节点的下游节点
+    let downstream: Vec<&NodeGene> = genome
+        .nodes()
+        .iter()
+        .filter(|n| n.parents.contains(&output_id))
+        .collect();
+    // 必须有下游，且所有下游都是 block_id=None 的 Add/Maximum（SkipAgg）
+    if downstream.is_empty() {
+        return false;
+    }
+    if !downstream.iter().all(|n| {
+        n.block_id.is_none()
+            && matches!(
+                n.node_type,
+                NodeTypeDescriptor::Add | NodeTypeDescriptor::Maximum
+            )
+    }) {
+        return false;
+    }
+    // 关键区分：投影块的输出必须是 SkipAgg 的跳跃分支（第二个非参数父节点），
+    // 而不是主分支（第一个非参数父节点）。主路径块的输出是 SkipAgg 的第一个非参数父节点。
+    downstream.iter().all(|agg| {
+        let non_param_parents: Vec<u64> = agg
+            .parents
+            .iter()
+            .filter(|&&p| !param_ids.contains(&p))
+            .copied()
+            .collect();
+        // output_id 不能是第一个非参数父节点（那是主路径输入）
+        non_param_parents.len() >= 2 && non_param_parents[0] != output_id
+    })
+}
+
+/// 查找所有可合法添加跳跃连接的候选对
+///
+/// 仅适用于 NodeLevel 且非序列模式的基因组。
+/// 候选对满足以下所有条件：
+/// 1. `from_id` 在拓扑序上严格早于目标块（保证 DAG 有效性）
+/// 2. `from_id` 不是目标块的直接前驱（避免冗余主路径连接）
+/// 3. `from_id` 不已是目标入口节点的直接非参数父节点（避免重复连边）
+/// 4. 两者所在域相同（Flat 或 Spatial，不跨域连接）
+/// 5. 形状相同（可直接 Add）或可投影（Flat: Linear；Spatial: 同 H/W 不同 channels 的 1×1 Conv2d）
+pub fn find_connectable_pairs(genome: &NetworkGenome) -> Vec<ConnectablePair> {
+    if !genome.is_node_level() || genome.seq_len.is_some() {
+        return vec![];
+    }
+
+    let nodes = genome.nodes();
+    if nodes.is_empty() {
+        return vec![];
+    }
+
+    let input_shape = genome_input_shape(genome);
+    let input_domain = genome_input_domain(genome);
+    let analysis = GenomeAnalysis::compute(nodes, INPUT_INNOVATION, input_shape, input_domain);
+
+    if !analysis.is_valid {
+        return vec![];
+    }
+
+    let param_ids: HashSet<u64> = nodes
+        .iter()
+        .filter(|n| n.is_parameter())
+        .map(|n| n.innovation_number)
+        .collect();
+
+    let blocks = node_main_path(genome);
+    if blocks.len() < 2 {
+        return vec![];
+    }
+
+    let mut pairs = Vec::new();
+
+    for tgt_idx in 1..blocks.len() {
+        let tgt = &blocks[tgt_idx];
+
+        // 找目标块的入口节点
+        let entry_id = match find_entry_node(tgt, genome) {
+            Some(id) => id,
+            None => continue,
+        };
+
+        // 目标块主路径输入形状（即 tgt.input_id 的输出形状）
+        let to_shape = match analysis.shape_of(tgt.input_id) {
+            Some(s) => s.clone(),
+            None => continue,
+        };
+        let to_domain = match analysis.domain_of(tgt.input_id) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        // 序列域不支持阶段 7 跳跃连接（等 RNN 节点级化后再开放）
+        if to_domain == ShapeDomain::Sequence {
+            continue;
+        }
+
+        // 入口节点当前的直接非参数父节点集合（用于避免重复添加同一来源）
+        let entry_non_param_parents: HashSet<u64> = nodes
+            .iter()
+            .find(|n| n.innovation_number == entry_id)
+            .map(|n| {
+                n.parents
+                    .iter()
+                    .filter(|&&p| !param_ids.contains(&p))
+                    .copied()
+                    .collect::<HashSet<u64>>()
+            })
+            .unwrap_or_default();
+
+        // 直接前驱块的输出（= tgt.input_id，是主路径的直接前驱）
+        let immediate_pred_id = blocks[tgt_idx - 1].output_id;
+
+        // 候选源：INPUT_INNOVATION + 所有位置在直接前驱之前的块输出
+        let mut sources: Vec<u64> = Vec::new();
+
+        // INPUT_INNOVATION（当直接前驱不是 INPUT 时才加入）
+        if immediate_pred_id != INPUT_INNOVATION {
+            sources.push(INPUT_INNOVATION);
+        }
+
+        // 索引 0..tgt_idx-1 的块输出（全部非直接前驱）
+        for src_idx in 0..tgt_idx.saturating_sub(1) {
+            let src_out = blocks[src_idx].output_id;
+            if src_out != immediate_pred_id {
+                sources.push(src_out);
+            }
+        }
+
+        for from_id in sources {
+            // 已是入口节点的直接非参数父节点 → 跳过（避免重复连接）
+            if entry_non_param_parents.contains(&from_id) {
+                continue;
+            }
+
+            let from_shape = match analysis.shape_of(from_id) {
+                Some(s) => s.clone(),
+                None => continue,
+            };
+            let from_domain = match analysis.domain_of(from_id) {
+                Some(d) => d,
+                None => continue,
+            };
+
+            // 域必须相同
+            if from_domain != to_domain {
+                continue;
+            }
+
+            let shapes_match = from_shape == to_shape;
+            let can_project = !shapes_match
+                && match to_domain {
+                    ShapeDomain::Flat => {
+                        // Flat: [1, F] → [1, T]，任意维度均可 Linear 投影
+                        from_shape.len() == 2 && to_shape.len() == 2
+                    }
+                    ShapeDomain::Spatial => {
+                        // Spatial: H/W 相同但 channels 不同，可用 1×1 Conv2d 投影
+                        from_shape.len() == 4
+                            && to_shape.len() == 4
+                            && from_shape[2] == to_shape[2]
+                            && from_shape[3] == to_shape[3]
+                    }
+                    ShapeDomain::Sequence => false,
+                };
+
+            if shapes_match || can_project {
+                pairs.push(ConnectablePair {
+                    from_id,
+                    target_entry_id: entry_id,
+                    from_shape,
+                    to_shape: to_shape.clone(),
+                    domain: to_domain,
+                });
+            }
+        }
+    }
+
+    pairs
+}
+
+/// 在基因组中插入一条跳跃连接：`pair.from_id` → 目标块入口节点的主路径输入
+///
+/// 若形状不兼容，先插入投影块（Flat 域: Linear；Spatial 域: 1×1 Conv2d），
+/// 再插入 Add 聚合节点。返回新 Add 聚合节点的创新号。
+///
+/// **调用方须在返回后调用 `commit_counter(genome, &counter)` 以同步计数器。**
+pub fn add_skip_connection(
+    genome: &mut NetworkGenome,
+    pair: &ConnectablePair,
+    counter: &mut InnovationCounter,
+) -> Result<u64, String> {
+    // ── 可选：投影块（形状不兼容时）──────────────────────────────
+    let proj_output_id = if pair.from_shape == pair.to_shape {
+        pair.from_id
+    } else {
+        let block_id = next_block_id(genome);
+        let proj_nodes = match pair.domain {
+            ShapeDomain::Flat => {
+                let in_dim = *pair.from_shape.get(1).ok_or("from_shape 维度不足")?;
+                let out_dim = *pair.to_shape.get(1).ok_or("to_shape 维度不足")?;
+                expand_linear(pair.from_id, in_dim, out_dim, block_id, counter)
+            }
+            ShapeDomain::Spatial => {
+                let in_ch = *pair.from_shape.get(1).ok_or("from_shape 维度不足")?;
+                let out_ch = *pair.to_shape.get(1).ok_or("to_shape 维度不足")?;
+                let h = *pair.from_shape.get(2).ok_or("from_shape 维度不足")?;
+                let w = *pair.from_shape.get(3).ok_or("from_shape 维度不足")?;
+                // kernel_size=1 的 Conv2d：仅改变通道数，不改变 H/W
+                expand_conv2d(pair.from_id, in_ch, out_ch, 1, (h, w), block_id, counter)
+            }
+            ShapeDomain::Sequence => {
+                return Err("序列域不支持跳跃连接".into());
+            }
+        };
+        let proj_out = proj_nodes
+            .last()
+            .ok_or("投影块展开结果为空")?
+            .innovation_number;
+        genome.nodes_mut().extend(proj_nodes);
+        proj_out
+    };
+
+    // ── 找入口节点的主路径父节点（将被 Add 聚合节点替代）────────────
+    let param_ids: HashSet<u64> = genome
+        .nodes()
+        .iter()
+        .filter(|n| n.is_parameter())
+        .map(|n| n.innovation_number)
+        .collect();
+
+    let entry_main_parent = genome
+        .nodes()
+        .iter()
+        .find(|n| n.innovation_number == pair.target_entry_id)
+        .and_then(|n| {
+            n.parents
+                .iter()
+                .find(|&&p| !param_ids.contains(&p))
+                .copied()
+        })
+        .ok_or_else(|| {
+            format!(
+                "目标入口节点 {} 没有非参数父节点",
+                pair.target_entry_id
+            )
+        })?;
+
+    // ── 插入 Add 聚合节点 ─────────────────────────────────────────
+    let agg_id = counter.next();
+    genome.nodes_mut().push(NodeGene::new(
+        agg_id,
+        NodeTypeDescriptor::Add,
+        pair.to_shape.clone(),
+        vec![entry_main_parent, proj_output_id],
+        None, // 独立跳跃聚合节点，不属于任何模板组
+    ));
+
+    // ── 更新入口节点：用 agg_id 替换主路径父节点 ─────────────────
+    for node in genome.nodes_mut().iter_mut() {
+        if node.innovation_number == pair.target_entry_id {
+            for p in node.parents.iter_mut() {
+                if *p == entry_main_parent {
+                    *p = agg_id;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+
+    sync_computation_shapes(genome);
+    Ok(agg_id)
+}
+
+/// 查找所有可移除的跳跃聚合节点（由 `add_skip_connection` 插入的独立 Add 节点）
+///
+/// 满足以下条件的节点视为可移除的跳跃聚合节点：
+/// - 类型为 `Add` 或 `Maximum`
+/// - `block_id = None`（非模板组节点）
+/// - 具有 ≥2 个非参数父节点
+pub fn find_removable_skip_connections(genome: &NetworkGenome) -> Vec<u64> {
+    if !genome.is_node_level() {
+        return vec![];
+    }
+
+    let param_ids: HashSet<u64> = genome
+        .nodes()
+        .iter()
+        .filter(|n| n.is_parameter())
+        .map(|n| n.innovation_number)
+        .collect();
+
+    genome
+        .nodes()
+        .iter()
+        .filter(|n| {
+            n.enabled
+                && n.block_id.is_none()
+                && matches!(
+                    n.node_type,
+                    NodeTypeDescriptor::Add | NodeTypeDescriptor::Maximum
+                )
+                && n.parents
+                    .iter()
+                    .filter(|&&p| !param_ids.contains(&p))
+                    .count()
+                    >= 2
+        })
+        .map(|n| n.innovation_number)
+        .collect()
+}
+
+/// 移除一个跳跃聚合节点，将下游重新连线到主路径输入（第一个非参数父节点）
+///
+/// 移除后调用 `cleanup_orphan_nodes` 清理孤立的投影节点（若有）。
+pub fn remove_skip_connection(genome: &mut NetworkGenome, agg_id: u64) -> Result<(), String> {
+    let param_ids: HashSet<u64> = genome
+        .nodes()
+        .iter()
+        .filter(|n| n.is_parameter())
+        .map(|n| n.innovation_number)
+        .collect();
+
+    let agg_node = genome
+        .nodes()
+        .iter()
+        .find(|n| n.innovation_number == agg_id)
+        .ok_or_else(|| format!("聚合节点 {} 不存在", agg_id))?
+        .clone();
+
+    if !matches!(
+        agg_node.node_type,
+        NodeTypeDescriptor::Add | NodeTypeDescriptor::Maximum
+    ) {
+        return Err(format!(
+            "节点 {} 类型不是 Add/Maximum，无法作为跳跃聚合节点移除",
+            agg_id
+        ));
+    }
+
+    let non_param_parents: Vec<u64> = agg_node
+        .parents
+        .iter()
+        .filter(|&&p| !param_ids.contains(&p))
+        .copied()
+        .collect();
+
+    if non_param_parents.len() < 2 {
+        return Err(format!(
+            "聚合节点 {} 的非参数父节点不足 2 个，无法移除跳跃连接",
+            agg_id
+        ));
+    }
+
+    // 保留第一个非参数父节点（视为主路径输入）
+    let main_input = non_param_parents[0];
+
+    // 将所有引用 agg_id 的节点改为引用 main_input
+    for node in genome.nodes_mut().iter_mut() {
+        for p in node.parents.iter_mut() {
+            if *p == agg_id {
+                *p = main_input;
+            }
+        }
+    }
+
+    // 删除聚合节点
+    genome
+        .nodes_mut()
+        .retain(|n| n.innovation_number != agg_id);
+
+    // 清理孤立节点（投影块等），同步形状
+    cleanup_orphan_nodes(genome);
+    sync_computation_shapes(genome);
+    Ok(())
+}
+
+/// 清理孤立节点（不在主路径输出到 INPUT_INNOVATION 的可达路径上的节点）
+///
+/// 从主路径最后一个块的输出节点出发，向上 BFS 收集全部可达节点集合，
+/// 删除不可达的孤立节点及其权重快照。
+///
+/// **设计要点**：不能用"所有无下游节点"作为末端种子——当跳跃连接被移除后，
+/// 投影块尾节点也变成无下游，会被误判为合法末端导致无法清理。
+/// 因此固定用主路径真正的输出节点作为唯一末端种子。
+pub fn cleanup_orphan_nodes(genome: &mut NetworkGenome) {
+    let nodes = genome.nodes();
+    if nodes.is_empty() {
+        return;
+    }
+
+    // 用主路径最后一个块的输出节点作为唯一合法末端
+    let blocks = node_main_path(genome);
+    let terminal_ids: Vec<u64> = if let Some(last_block) = blocks.last() {
+        vec![last_block.output_id]
+    } else {
+        // 无主路径块时退化为旧逻辑（保底）
+        let all_parent_ids: HashSet<u64> = nodes
+            .iter()
+            .flat_map(|n| n.parents.iter().copied())
+            .collect();
+        nodes
+            .iter()
+            .filter(|n| n.enabled && !all_parent_ids.contains(&n.innovation_number))
+            .map(|n| n.innovation_number)
+            .collect()
+    };
+
+    if terminal_ids.is_empty() {
+        return;
+    }
+
+    // 从末端节点向上 BFS，收集所有可达节点（含虚拟输入 INPUT_INNOVATION）
+    let nodes = genome.nodes(); // 重新借用（上面 node_main_path 可能触发不可变访问）
+    let mut reachable: HashSet<u64> = HashSet::new();
+    reachable.insert(INPUT_INNOVATION);
+    let mut queue: VecDeque<u64> = terminal_ids.into_iter().collect();
+
+    while let Some(id) = queue.pop_front() {
+        if reachable.insert(id) {
+            if let Some(node) = nodes.iter().find(|n| n.innovation_number == id) {
+                for &pid in &node.parents {
+                    queue.push_back(pid);
+                }
+            }
+        }
+    }
+
+    // 删除不可达节点
+    genome
+        .nodes_mut()
+        .retain(|n| reachable.contains(&n.innovation_number));
+
+    // 同步清理不可达节点的权重快照
+    if let GenomeRepr::NodeLevel {
+        weight_snapshots, ..
+    } = &mut genome.repr
+    {
+        weight_snapshots.retain(|k, _| reachable.contains(k));
+    }
+}
+
+/// 修复所有跳跃连接的形状一致性（后置修复器）
+///
+/// 当 Grow/Shrink/Insert/Remove 等变异改变了主路径块的输出维度后，
+/// 跳跃连接处的 Add 聚合节点的两个输入形状可能不一致。
+///
+/// 本函数遍历所有 `block_id=None` 的 Add/Maximum 聚合节点，检查其非参数父节点
+/// 的形状是否一致。对于不一致的情况：
+/// - 如果跳跃分支经过投影块，更新投影块的参数形状以匹配主路径输入形状
+/// - 如果跳跃分支是直连且形状不兼容，删除该跳跃连接
+///
+/// **必须在 `sync_computation_shapes` 之后调用。**
+pub fn repair_skip_connections(genome: &mut NetworkGenome) {
+    if !genome.is_node_level() {
+        return;
+    }
+
+    let mut agg_ids = find_removable_skip_connections(genome);
+    if agg_ids.is_empty() {
+        return;
+    }
+
+    let input_shape = genome_input_shape(genome);
+    let input_domain = genome_input_domain(genome);
+
+    // 按拓扑序排序 agg_ids（上游 SkipAgg 先修复），避免嵌套 SkipAgg 依赖时
+    // 下游节点因上游尚未修复而无法推导 main_shape 导致被跳过（Bug M）。
+    {
+        let analysis =
+            GenomeAnalysis::compute(genome.nodes(), INPUT_INNOVATION, input_shape.clone(), input_domain);
+        let topo_pos: HashMap<u64, usize> = analysis
+            .topo_order
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| (id, i))
+            .collect();
+        agg_ids.sort_by_key(|&id| topo_pos.get(&id).copied().unwrap_or(usize::MAX));
+    }
+
+    // 收集需要删除的聚合节点（形状不兼容且无法修复的）
+    let mut to_remove: Vec<u64> = Vec::new();
+
+    for &agg_id in &agg_ids {
+        // 重新分析（每轮修复后形状可能变）
+        let analysis =
+            GenomeAnalysis::compute(genome.nodes(), INPUT_INNOVATION, input_shape.clone(), input_domain);
+
+        let agg_node = match genome.nodes().iter().find(|n| n.innovation_number == agg_id) {
+            Some(n) => n.clone(),
+            None => continue,
+        };
+
+        let param_ids: HashSet<u64> = genome
+            .nodes()
+            .iter()
+            .filter(|n| n.is_parameter())
+            .map(|n| n.innovation_number)
+            .collect();
+
+        let non_param_parents: Vec<u64> = agg_node
+            .parents
+            .iter()
+            .filter(|&&p| !param_ids.contains(&p))
+            .copied()
+            .collect();
+
+        if non_param_parents.len() < 2 {
+            continue;
+        }
+
+        // 主路径输入 = 第一个非参数父节点，跳跃分支 = 第二个
+        let main_parent = non_param_parents[0];
+        let skip_parent = non_param_parents[1];
+
+        let main_shape = match analysis.shape_of(main_parent) {
+            Some(s) => s.clone(),
+            None => continue,
+        };
+        // skip_shape 可能为 None（投影块参数过时导致 analysis 推导失败）
+        let skip_shape = analysis.shape_of(skip_parent).cloned();
+
+        // 尝试找跳跃分支的投影块（用原始节点信息，不依赖 analysis）
+        let skip_node = genome.nodes().iter().find(|n| n.innovation_number == skip_parent).cloned();
+        // 判断跳跃分支是否经过投影块。投影块的两个必要条件：
+        // 1. block 内包含 MatMul 或 Conv2d 计算节点（是 Linear/Conv2d 块）
+        // 2. skip_parent（block 输出节点）的所有下游都是 SkipAgg 节点
+        //    （排除主路径上普通的 Linear/Conv2d 块被误判为投影块）
+        let is_projection = skip_node.as_ref().map_or(false, |n| {
+            if let Some(bid) = n.block_id {
+                let has_computation = genome.nodes().iter().any(|sibling| {
+                    sibling.block_id == Some(bid)
+                        && matches!(
+                            sibling.node_type,
+                            NodeTypeDescriptor::MatMul | NodeTypeDescriptor::Conv2d { .. }
+                        )
+                });
+                if !has_computation {
+                    return false;
+                }
+                // skip_parent 的所有下游必须都是 SkipAgg（block_id=None 的 Add/Maximum）
+                let sp_id = n.innovation_number;
+                let downstream: Vec<&NodeGene> = genome
+                    .nodes()
+                    .iter()
+                    .filter(|dn| dn.parents.contains(&sp_id))
+                    .collect();
+                !downstream.is_empty()
+                    && downstream.iter().all(|dn| {
+                        dn.block_id.is_none()
+                            && matches!(
+                                dn.node_type,
+                                NodeTypeDescriptor::Add | NodeTypeDescriptor::Maximum
+                            )
+                    })
+            } else {
+                false
+            }
+        });
+
+        if is_projection {
+            // 始终修复投影块参数（不依赖 skip_shape，因其可能因参数过时而推导失败）
+            // 找到投影块，更新其参数形状（同时修复输入维和输出维）
+            let proj_bid = skip_node.as_ref().unwrap().block_id;
+            let target_shape = &main_shape;
+
+            // 找投影块的外部输入节点（= 跳跃源），以获取其真实输出形状
+            let proj_block_ids: HashSet<u64> = genome
+                .nodes()
+                .iter()
+                .filter(|n| n.block_id == proj_bid)
+                .map(|n| n.innovation_number)
+                .collect();
+
+            let source_shape: Option<Vec<usize>> = genome
+                .nodes()
+                .iter()
+                .filter(|n| proj_block_ids.contains(&n.innovation_number) && !n.is_leaf())
+                .flat_map(|n| n.parents.iter())
+                .find(|&&pid| !proj_block_ids.contains(&pid))
+                .and_then(|&src_id| analysis.shape_of(src_id).cloned());
+
+            // 更新投影块中所有参数节点的形状
+            for node in genome.nodes_mut().iter_mut() {
+                if node.block_id == proj_bid && node.is_parameter() {
+                    match (node.output_shape.len(), target_shape.len()) {
+                        (2, 2) => {
+                            if node.output_shape[0] == 1 {
+                                // bias: [1, old_out] → [1, new_out]
+                                node.output_shape[1] = target_shape[1];
+                            } else {
+                                // weight W: [old_in, old_out] → [src_dim, target_dim]
+                                if let Some(ref src) = source_shape {
+                                    node.output_shape[0] = src[1]; // 输入维 = 跳跃源特征维
+                                }
+                                node.output_shape[1] = target_shape[1]; // 输出维 = 主路径特征维
+                            }
+                        }
+                        (4, 4) => {
+                            // Conv2d 1x1 projection kernel: [out_ch, in_ch, 1, 1]
+                            if node.output_shape[2] == 1 && node.output_shape[3] == 1 {
+                                node.output_shape[0] = target_shape[1]; // out_ch = 目标通道
+                                if let Some(ref src) = source_shape {
+                                    node.output_shape[1] = src[1]; // in_ch = 源通道
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // 更新聚合节点的输出形状
+            for node in genome.nodes_mut().iter_mut() {
+                if node.innovation_number == agg_id {
+                    node.output_shape = main_shape.clone();
+                    break;
+                }
+            }
+        } else if skip_shape.as_ref() != Some(&main_shape) {
+            // 直连跳跃，形状不兼容（或推导失败）且无投影块 → 标记删除
+            to_remove.push(agg_id);
+        } else {
+            // 直连跳跃，形状一致 → 更新聚合节点输出形状
+            for node in genome.nodes_mut().iter_mut() {
+                if node.innovation_number == agg_id {
+                    node.output_shape = main_shape.clone();
+                    break;
+                }
+            }
+        }
+    }
+
+    // 删除无法修复的跳跃连接
+    let mut removed_any = !to_remove.is_empty();
+    for agg_id in to_remove {
+        let _ = remove_skip_connection(genome, agg_id);
+    }
+
+    // 最终验证：修复一个投影可能破坏共享同一投影块的另一个 SkipAgg（Bug N），
+    // 因此做一轮终态检查，删除仍然形状不匹配的 SkipAgg。
+    {
+        sync_computation_shapes(genome);
+        let analysis = GenomeAnalysis::compute(
+            genome.nodes(),
+            INPUT_INNOVATION,
+            input_shape,
+            input_domain,
+        );
+        let param_ids: HashSet<u64> = genome
+            .nodes()
+            .iter()
+            .filter(|n| n.is_parameter())
+            .map(|n| n.innovation_number)
+            .collect();
+        let remaining_aggs = find_removable_skip_connections(genome);
+        for agg_id in remaining_aggs {
+            let agg = match genome.nodes().iter().find(|n| n.innovation_number == agg_id) {
+                Some(n) => n.clone(),
+                None => continue,
+            };
+            let npp: Vec<u64> = agg
+                .parents
+                .iter()
+                .filter(|&&p| !param_ids.contains(&p))
+                .copied()
+                .collect();
+            if npp.len() < 2 {
+                continue;
+            }
+            let s0 = analysis.shape_of(npp[0]);
+            let s1 = analysis.shape_of(npp[1]);
+            if s0 != s1 {
+                let _ = remove_skip_connection(genome, agg_id);
+                removed_any = true;
+            }
+        }
+    }
+
+    // 移除跳跃连接后主路径拓扑可能改变，需重新修复参数维度链
+    if removed_any {
+        repair_param_input_dims_inner(genome);
+    }
+
+    // 最终同步形状
+    sync_computation_shapes(genome);
 }

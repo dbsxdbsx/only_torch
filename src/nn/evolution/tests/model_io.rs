@@ -4,9 +4,14 @@
  * @Description  : 演化模型 save/load (.otm) 测试
  */
 
-use crate::nn::evolution::gene::{NetworkGenome, TaskMetric};
+use crate::nn::descriptor::NodeTypeDescriptor;
+use crate::nn::evolution::gene::{ActivationType, LayerConfig, LayerGene, NetworkGenome, TaskMetric};
+use crate::nn::evolution::mutation::{AddConnectionMutation, Mutation};
+use crate::nn::evolution::node_ops::find_removable_skip_connections;
 use crate::nn::evolution::{Evolution, EvolutionResult};
 use crate::tensor::Tensor;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 /// XOR 数据集（复用 evolution_xor 示例的数据）
 fn xor_data() -> (Vec<Tensor>, Vec<Tensor>) {
@@ -65,6 +70,65 @@ fn test_genome_serde_roundtrip_with_weights() {
     assert!((ws[&1][0].to_vec()[0] - 0.1).abs() < 1e-6);
     assert!((ws[&1][0].to_vec()[1] - 0.2).abs() < 1e-6);
     assert!((ws[&1][1].to_vec()[0] - 0.3).abs() < 1e-6);
+}
+
+#[test]
+fn test_nodelevel_genome_serde_roundtrip_with_skip_connection() {
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let i1 = genome.next_innovation_number();
+    let i2 = genome.next_innovation_number();
+    let i3 = genome.next_innovation_number();
+    genome.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    genome.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    genome.layers_mut().insert(
+        2,
+        LayerGene {
+            innovation_number: i3,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    genome.migrate_to_node_level().expect("迁移到 NodeLevel 应成功");
+
+    let mut rng = StdRng::seed_from_u64(42);
+    AddConnectionMutation
+        .apply(&mut genome, &Default::default(), &mut rng)
+        .expect("应能添加 NodeLevel 跳跃连接");
+
+    let json = serde_json::to_string(&genome).expect("序列化失败");
+    let restored: NetworkGenome = serde_json::from_str(&json).expect("反序列化失败");
+
+    assert!(restored.is_node_level(), "恢复后应保持 NodeLevel 表示");
+    assert!(
+        !find_removable_skip_connections(&restored).is_empty(),
+        "恢复后应仍包含可识别的跳跃聚合节点"
+    );
+    assert!(
+        restored.nodes().iter().any(|n| n.block_id.is_none() && matches!(n.node_type, NodeTypeDescriptor::Add)),
+        "恢复后应仍存在跳跃聚合 Add 节点"
+    );
+
+    let analysis = restored.analyze();
+    assert!(analysis.is_valid, "恢复后图应合法: {:?}", analysis.errors);
+
+    let mut build_rng = StdRng::seed_from_u64(7);
+    assert!(restored.build(&mut build_rng).is_ok(), "恢复后的 NodeLevel 跳跃连接图应可构建");
 }
 
 // ==================== EvolutionResult save/load 测试 ====================

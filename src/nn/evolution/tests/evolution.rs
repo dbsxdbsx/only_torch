@@ -705,6 +705,8 @@ fn test_mutation_names_are_known_operations() {
         "MutateAggregateStrategy",
         "MutateLearningRate",
         "MutateOptimizer",
+        "AddConnection",
+        "RemoveConnection",
     ];
 
     let s = state.borrow();
@@ -982,6 +984,8 @@ fn test_evolution_spatial_mutation_names_valid() {
         "MutateLearningRate",
         "MutateOptimizer",
         "MutateKernelSize", // 空间模式专属
+        "AddConnection",
+        "RemoveConnection",
     ];
 
     let s = state.borrow();

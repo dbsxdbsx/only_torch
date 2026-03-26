@@ -17,9 +17,10 @@ use super::gene::{
     NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric, INPUT_INNOVATION,
 };
 use super::node_ops::{
-    create_insert_nodes, insert_after, is_activation_node,
-    node_main_path, node_param_count, repair_param_input_dims,
-    remove_block, resize_conv2d_out, resize_linear_out, sync_computation_shapes,
+    add_skip_connection, commit_counter, create_insert_nodes, find_connectable_pairs,
+    find_removable_skip_connections, insert_after, is_activation_node, is_skip_projection_block,
+    make_counter, node_main_path, node_param_count, remove_block, remove_skip_connection,
+    repair_param_input_dims, resize_conv2d_out, resize_linear_out, sync_computation_shapes,
     NodeBlock, NodeBlockKind,
 };
 use super::migration::activation_to_node_type;
@@ -262,13 +263,16 @@ impl MutationRegistry {
                 task_metric: metric.clone(),
             },
         );
-        // SkipEdge 变异
+        // SkipEdge 变异（当前仅 LayerLevel 可用；NodeLevel 会因 layers()/skip_edges() 为空而自动失效）
         reg.register(0.08, AddSkipEdgeMutation);
         reg.register(0.05, RemoveSkipEdgeMutation);
         reg.register(0.03, MutateAggregateStrategyMutation);
         // 训练超参数变异（Phase 1 低权重）
         reg.register(0.05, MutateLearningRateMutation);
         reg.register(0.02, MutateOptimizerMutation);
+        // 阶段 7：NodeLevel 跨层连接变异（非序列 NodeLevel 时自动生效；LayerLevel 因 is_applicable=false 静默跳过）
+        reg.register(0.06, AddConnectionMutation);
+        reg.register(0.04, RemoveConnectionMutation);
         // 序列模式专属
         if is_sequential {
             reg.register(0.10, MutateCellTypeMutation);
@@ -296,13 +300,16 @@ impl MutationRegistry {
                 task_metric: metric.clone(),
             },
         );
-        // SkipEdge 变异
+        // SkipEdge 变异（当前仅 LayerLevel 可用；NodeLevel 会因 layers()/skip_edges() 为空而自动失效）
         reg.register(0.06, AddSkipEdgeMutation);
         reg.register(0.05, RemoveSkipEdgeMutation);
         reg.register(0.03, MutateAggregateStrategyMutation);
         // 训练超参数变异（Phase 2 权重上调）
         reg.register(0.15, MutateLearningRateMutation);
         reg.register(0.08, MutateOptimizerMutation);
+        // 阶段 7：NodeLevel 跨层连接变异（Phase 2 权重略低，专注精炼阶段）
+        reg.register(0.04, AddConnectionMutation);
+        reg.register(0.04, RemoveConnectionMutation);
         // 序列模式专属
         if is_sequential {
             reg.register(0.10, MutateCellTypeMutation);
@@ -1950,6 +1957,10 @@ fn node_level_grow_apply(
     let candidates: Vec<&NodeBlock> = blocks
         .iter()
         .filter(|b| {
+            // 跳跃投影块不参与 Grow/Shrink（由 repair_skip_connections 自动维护）
+            if is_skip_projection_block(genome, b) {
+                return false;
+            }
             if is_grow {
                 b.kind.is_resizable()
                     && b.kind
@@ -2131,4 +2142,90 @@ fn node_level_mutate_kernel_size_apply(
     // 重新推导计算节点形状
     sync_computation_shapes(genome);
     Ok(())
+}
+
+// ==================== 阶段 7：AddConnectionMutation / RemoveConnectionMutation ====================
+
+/// 为 NodeLevel 基因组添加一条跨层跳跃连接（Add 聚合，可选投影）
+///
+/// 在主路径的任意两个非直接相邻节点之间加入前向 Add 连接。
+/// 形状不兼容时自动插入投影块（Flat: Linear；Spatial: 1×1 Conv2d）。
+/// 仅适用于 NodeLevel 且非序列模式的基因组。
+pub struct AddConnectionMutation;
+
+impl Mutation for AddConnectionMutation {
+    fn name(&self) -> &str {
+        "AddConnection"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        genome.is_node_level()
+            && genome.seq_len.is_none()
+            && !find_connectable_pairs(genome).is_empty()
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let pairs = find_connectable_pairs(genome);
+        if pairs.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有可添加的跳跃连接候选对".into(),
+            ));
+        }
+
+        let pair = pairs.choose(rng).unwrap().clone();
+        let mut counter = make_counter(genome);
+
+        add_skip_connection(genome, &pair, &mut counter)
+            .map_err(|e| MutationError::InternalError(e))?;
+
+        commit_counter(genome, &counter);
+        Ok(())
+    }
+}
+
+/// 移除 NodeLevel 基因组中一条已有的跳跃连接
+///
+/// 删除由 `AddConnectionMutation` 添加的 Add 聚合节点，
+/// 并通过 `cleanup_orphan_nodes` 自动清理孤立的投影块（若有）。
+pub struct RemoveConnectionMutation;
+
+impl Mutation for RemoveConnectionMutation {
+    fn name(&self) -> &str {
+        "RemoveConnection"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        genome.is_node_level() && !find_removable_skip_connections(genome).is_empty()
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let candidates = find_removable_skip_connections(genome);
+        if candidates.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有可移除的跳跃聚合节点".into(),
+            ));
+        }
+
+        let &agg_id = candidates.choose(rng).unwrap();
+        remove_skip_connection(genome, agg_id)
+            .map_err(|e| MutationError::InternalError(e))
+    }
 }
