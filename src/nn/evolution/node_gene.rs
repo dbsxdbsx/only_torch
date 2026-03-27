@@ -550,6 +550,40 @@ pub fn infer_output_shape(
             require_n(1, parent_shapes)?;
             Ok(parent_shapes[0].clone())
         }
+
+        // ── Cell* 复合循环节点（RNN / LSTM / GRU）──
+        //
+        // parents[0] 是输入张量，其余是参数节点（叶节点，不通过此函数推导形状）。
+        // 输出形状：
+        //   - !return_sequences → [1, hidden_size]
+        //   - return_sequences  → [1, seq_len.max(1), hidden_size]
+        NT::CellRnn {
+            hidden_size,
+            return_sequences,
+            seq_len,
+            ..
+        }
+        | NT::CellLstm {
+            hidden_size,
+            return_sequences,
+            seq_len,
+            ..
+        }
+        | NT::CellGru {
+            hidden_size,
+            return_sequences,
+            seq_len,
+            ..
+        } => {
+            if parent_shapes.is_empty() {
+                return Err("CellRnn/CellLstm/CellGru 至少需要 1 个父节点（输入张量）".to_string());
+            }
+            if *return_sequences {
+                Ok(vec![1, (*seq_len).max(1), *hidden_size])
+            } else {
+                Ok(vec![1, *hidden_size])
+            }
+        }
     }
 }
 
@@ -598,6 +632,12 @@ pub fn infer_domain(
         NT::Flatten { .. } => Flat,
         // 输入节点默认平坦（调用方会根据 genome 的输入模式修正）
         NT::BasicInput | NT::TargetInput => Flat,
+        // 循环单元：return_sequences → Sequence，否则 → Flat
+        NT::CellRnn { return_sequences, .. }
+        | NT::CellLstm { return_sequences, .. }
+        | NT::CellGru { return_sequences, .. } => {
+            if *return_sequences { Sequence } else { Flat }
+        }
         // 其他：透传第一个父节点的域
         _ => parent_domains.first().copied().unwrap_or(Flat),
     }

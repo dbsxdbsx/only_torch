@@ -1,3 +1,4 @@
+use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::gene::*;
 use crate::nn::evolution::mutation::*;
 use rand::SeedableRng;
@@ -1321,6 +1322,66 @@ fn test_remove_layer_stacked_rnn_ok() {
     assert!(removed, "有多 RNN 时应能成功删除一个");
 }
 
+#[test]
+fn test_insert_layer_sequence_node_level_accepts_rnn_family() {
+    let c = constraints();
+    let m = InsertLayerMutation::default();
+    let mut inserted = false;
+
+    for seed in 0..50u64 {
+        let mut g = genome_sequential();
+        g.migrate_to_node_level().unwrap();
+        let before_cells = g
+            .nodes()
+            .iter()
+            .filter(|n| {
+                matches!(
+                    n.node_type,
+                    NodeTypeDescriptor::CellRnn { .. }
+                        | NodeTypeDescriptor::CellLstm { .. }
+                        | NodeTypeDescriptor::CellGru { .. }
+                )
+            })
+            .count();
+        let mut r = StdRng::seed_from_u64(seed);
+        if m.apply(&mut g, &c, &mut r).is_ok() {
+            let after_cells = g
+                .nodes()
+                .iter()
+                .filter(|n| {
+                    matches!(
+                        n.node_type,
+                        NodeTypeDescriptor::CellRnn { .. }
+                            | NodeTypeDescriptor::CellLstm { .. }
+                            | NodeTypeDescriptor::CellGru { .. }
+                    )
+                })
+                .count();
+            assert!(
+                after_cells > before_cells,
+                "序列 NodeLevel 插层应新增一个循环块"
+            );
+            assert!(g.analyze().is_valid, "插入后图应合法");
+            inserted = true;
+            break;
+        }
+    }
+
+    assert!(inserted, "序列 NodeLevel 应能插入循环块");
+}
+
+#[test]
+fn test_remove_layer_sequence_node_level_blocks_last_recurrent() {
+    let c = constraints();
+    for seed in 0..20u64 {
+        let mut g = genome_sequential();
+        g.migrate_to_node_level().unwrap();
+        let mut r = StdRng::seed_from_u64(seed);
+        let result = RemoveLayerMutation.apply(&mut g, &c, &mut r);
+        assert!(result.is_err(), "序列 NodeLevel 不应删除唯一循环块");
+    }
+}
+
 // ==================== Grow/Shrink 对 RNN 的支持 ====================
 
 #[test]
@@ -1360,6 +1421,120 @@ fn test_shrink_hidden_size_lstm() {
     // ShrinkHiddenSize 随机选择层，可能选了输出头也可能选了 LSTM
     // 维度链应仍然合法
     assert!(g.resolve_dimensions().is_ok());
+}
+
+#[test]
+fn test_grow_hidden_size_node_level_recurrent_updates_shapes() {
+    let c = constraints();
+    let m = GrowHiddenSizeMutation;
+    let mut changed = false;
+
+    for seed in 0..50u64 {
+        let mut g = genome_sequential();
+        g.migrate_to_node_level().unwrap();
+        let before_hidden = g
+            .nodes()
+            .iter()
+            .find_map(|n| match n.node_type {
+                NodeTypeDescriptor::CellRnn { hidden_size, .. }
+                | NodeTypeDescriptor::CellLstm { hidden_size, .. }
+                | NodeTypeDescriptor::CellGru { hidden_size, .. } => Some(hidden_size),
+                _ => None,
+            })
+            .unwrap();
+
+        let mut r = StdRng::seed_from_u64(seed);
+        m.apply(&mut g, &c, &mut r).unwrap();
+
+        let after_cell = g.nodes().iter().find(|n| {
+            matches!(
+                n.node_type,
+                NodeTypeDescriptor::CellRnn { .. }
+                    | NodeTypeDescriptor::CellLstm { .. }
+                    | NodeTypeDescriptor::CellGru { .. }
+            )
+        });
+
+        if let Some(cell) = after_cell {
+            let after_hidden = match cell.node_type {
+                NodeTypeDescriptor::CellRnn { hidden_size, .. }
+                | NodeTypeDescriptor::CellLstm { hidden_size, .. }
+                | NodeTypeDescriptor::CellGru { hidden_size, .. } => hidden_size,
+                _ => unreachable!(),
+            };
+            if after_hidden > before_hidden {
+                let param_ids = cell.parents[1..].to_vec();
+                for (idx, pid) in param_ids.iter().enumerate() {
+                    let p = g
+                        .nodes()
+                        .iter()
+                        .find(|n| n.innovation_number == *pid)
+                        .unwrap();
+                    match idx % 3 {
+                        0 => assert_eq!(p.output_shape[1], after_hidden),
+                        1 => {
+                            assert_eq!(p.output_shape[0], after_hidden);
+                            assert_eq!(p.output_shape[1], after_hidden);
+                        }
+                        _ => {
+                            assert_eq!(p.output_shape[0], 1);
+                            assert_eq!(p.output_shape[1], after_hidden);
+                        }
+                    }
+                }
+                assert!(g.analyze().is_valid, "grow 后图应合法");
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    assert!(changed, "NodeLevel grow 应能命中并放大循环块");
+}
+
+#[test]
+fn test_shrink_hidden_size_node_level_recurrent_updates_shapes() {
+    let mut changed = false;
+
+    for seed in 0..50u64 {
+        let mut g = genome_sequential();
+        g.layers_mut()[0].layer_config = LayerConfig::Lstm { hidden_size: 8 };
+        g.migrate_to_node_level().unwrap();
+        let before_hidden = g
+            .nodes()
+            .iter()
+            .find_map(|n| match n.node_type {
+                NodeTypeDescriptor::CellRnn { hidden_size, .. }
+                | NodeTypeDescriptor::CellLstm { hidden_size, .. }
+                | NodeTypeDescriptor::CellGru { hidden_size, .. } => Some(hidden_size),
+                _ => None,
+            })
+            .unwrap();
+
+        let mut r = StdRng::seed_from_u64(seed);
+        ShrinkHiddenSizeMutation
+            .apply(&mut g, &constraints(), &mut r)
+            .unwrap();
+
+        let after_hidden = g
+            .nodes()
+            .iter()
+            .find_map(|n| match n.node_type {
+                NodeTypeDescriptor::CellRnn { hidden_size, .. }
+                | NodeTypeDescriptor::CellLstm { hidden_size, .. }
+                | NodeTypeDescriptor::CellGru { hidden_size, .. } => Some(hidden_size),
+                _ => None,
+            })
+            .unwrap();
+
+        if after_hidden < before_hidden {
+            assert!(g.analyze().is_valid, "shrink 后图应合法");
+            changed = true;
+            break;
+        }
+    }
+
+    assert!(changed, "NodeLevel shrink 应能命中并缩小循环块");
 }
 
 // ==================== AddSkipEdge 域约束（序列模式） ====================
@@ -1983,11 +2158,9 @@ fn test_node_level_default_registry_never_returns_skip_edge_mutation_names() {
 
 use crate::nn::evolution::gene::ShapeDomain;
 use crate::nn::evolution::node_ops::{
-    add_skip_connection, commit_counter, find_connectable_pairs,
-    find_removable_skip_connections, make_counter, repair_skip_connections,
-    sync_computation_shapes,
+    add_skip_connection, commit_counter, find_connectable_pairs, find_removable_skip_connections,
+    make_counter, repair_skip_connections, sync_computation_shapes,
 };
-use crate::nn::descriptor::NodeTypeDescriptor;
 
 /// Input(2) → Linear(4) → ReLU → Linear(4) → [Linear(1)]（含 3 个中间块，便于测试 skip）
 fn node_level_3block_genome() -> NetworkGenome {
@@ -1995,9 +2168,32 @@ fn node_level_3block_genome() -> NetworkGenome {
     let i1 = g.next_innovation_number();
     let i2 = g.next_innovation_number();
     let i3 = g.next_innovation_number();
-    g.layers_mut().insert(0, LayerGene { innovation_number: i1, layer_config: LayerConfig::Linear { out_features: 4 }, enabled: true });
-    g.layers_mut().insert(1, LayerGene { innovation_number: i2, layer_config: LayerConfig::Activation { activation_type: ActivationType::ReLU }, enabled: true });
-    g.layers_mut().insert(2, LayerGene { innovation_number: i3, layer_config: LayerConfig::Linear { out_features: 4 }, enabled: true });
+    g.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    g.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    g.layers_mut().insert(
+        2,
+        LayerGene {
+            innovation_number: i3,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
     g.migrate_to_node_level().expect("迁移应成功");
     g
 }
@@ -2067,21 +2263,30 @@ fn test_add_connection_is_applicable_for_multiblock() {
 fn test_add_connection_not_applicable_for_layer_level() {
     let g = genome_with_hidden(); // LayerLevel
     let c = constraints();
-    assert!(!AddConnectionMutation.is_applicable(&g, &c), "LayerLevel 不应适用");
+    assert!(
+        !AddConnectionMutation.is_applicable(&g, &c),
+        "LayerLevel 不应适用"
+    );
 }
 
 #[test]
 fn test_add_connection_creates_agg_node() {
     let mut g = node_level_3block_genome();
     let before_node_count = g.nodes().len();
-    AddConnectionMutation.apply(&mut g, &constraints(), &mut rng()).unwrap();
+    AddConnectionMutation
+        .apply(&mut g, &constraints(), &mut rng())
+        .unwrap();
     let after_node_count = g.nodes().len();
     // 插入了至少一个新节点（Add 聚合节点，可能还有投影节点）
-    assert!(after_node_count > before_node_count, "AddConnection 应增加节点数");
+    assert!(
+        after_node_count > before_node_count,
+        "AddConnection 应增加节点数"
+    );
     // 应存在至少一个 block_id=None 且类型为 Add 的节点
-    let has_agg = g.nodes().iter().any(|n| {
-        n.block_id.is_none() && matches!(n.node_type, NodeTypeDescriptor::Add)
-    });
+    let has_agg = g
+        .nodes()
+        .iter()
+        .any(|n| n.block_id.is_none() && matches!(n.node_type, NodeTypeDescriptor::Add));
     assert!(has_agg, "应存在跳跃聚合 Add 节点");
 }
 
@@ -2090,20 +2295,31 @@ fn test_add_connection_dag_remains_valid() {
     let mut g = node_level_3block_genome();
     for _ in 0..5 {
         if AddConnectionMutation.is_applicable(&g, &constraints()) {
-            AddConnectionMutation.apply(&mut g, &constraints(), &mut rng()).unwrap();
+            AddConnectionMutation
+                .apply(&mut g, &constraints(), &mut rng())
+                .unwrap();
         }
     }
     // GenomeAnalysis 应合法（无环、形状一致）
     let analysis = g.analyze();
-    assert!(analysis.is_valid, "多次 AddConnection 后图应合法: {:?}", analysis.errors);
+    assert!(
+        analysis.is_valid,
+        "多次 AddConnection 后图应合法: {:?}",
+        analysis.errors
+    );
 }
 
 #[test]
 fn test_add_connection_build_succeeds() {
     let mut g = node_level_3block_genome();
-    AddConnectionMutation.apply(&mut g, &constraints(), &mut rng()).unwrap();
+    AddConnectionMutation
+        .apply(&mut g, &constraints(), &mut rng())
+        .unwrap();
     let mut build_rng = rng();
-    assert!(g.build(&mut build_rng).is_ok(), "AddConnection 后 build 应成功");
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "AddConnection 后 build 应成功"
+    );
 }
 
 #[test]
@@ -2112,7 +2328,14 @@ fn test_add_connection_with_shape_mismatch_inserts_projection() {
     // Input(3) → Linear(8) → [Linear(2)]  → 从 INPUT(3) 跳到 [Linear(2)] 入口（需要 3→8 投影）
     let mut g = NetworkGenome::minimal(3, 2);
     let i1 = g.next_innovation_number();
-    g.layers_mut().insert(0, LayerGene { innovation_number: i1, layer_config: LayerConfig::Linear { out_features: 8 }, enabled: true });
+    g.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 8 },
+            enabled: true,
+        },
+    );
     g.migrate_to_node_level().unwrap();
 
     let pairs = find_connectable_pairs(&g);
@@ -2120,12 +2343,17 @@ fn test_add_connection_with_shape_mismatch_inserts_projection() {
     // 或者维度相同也可以直接 Add
     if !pairs.is_empty() {
         let before_param_count = g.analyze().param_count;
-        AddConnectionMutation.apply(&mut g, &constraints(), &mut rng()).unwrap();
+        AddConnectionMutation
+            .apply(&mut g, &constraints(), &mut rng())
+            .unwrap();
         let after_param_count = g.analyze().param_count;
         // 如果插了投影块，参数量会增加
         let _ = after_param_count; // 不管是否增加，build 应成功
         let mut build_rng = rng();
-        assert!(g.build(&mut build_rng).is_ok(), "带投影的 AddConnection 后 build 应成功");
+        assert!(
+            g.build(&mut build_rng).is_ok(),
+            "带投影的 AddConnection 后 build 应成功"
+        );
         let _ = before_param_count;
     }
 }
@@ -2180,11 +2408,20 @@ fn test_add_connection_spatial_shape_mismatch_inserts_conv1x1_projection() {
                 && n.output_shape[3] == 1
         })
         .expect("应存在 1x1 Conv2d kernel 参数");
-    assert_eq!(kernel.output_shape[1], pair.from_shape[1], "投影输入通道应匹配源通道数");
-    assert_eq!(kernel.output_shape[0], pair.to_shape[1], "投影输出通道应匹配目标通道数");
+    assert_eq!(
+        kernel.output_shape[1], pair.from_shape[1],
+        "投影输入通道应匹配源通道数"
+    );
+    assert_eq!(
+        kernel.output_shape[0], pair.to_shape[1],
+        "投影输出通道应匹配目标通道数"
+    );
 
     let mut build_rng = rng();
-    assert!(g.build(&mut build_rng).is_ok(), "带 Spatial 1x1 投影的 AddConnection 后 build 应成功");
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "带 Spatial 1x1 投影的 AddConnection 后 build 应成功"
+    );
 }
 
 #[test]
@@ -2223,7 +2460,11 @@ fn test_repair_skip_connections_repairs_projection_after_manual_corruption() {
     repair_skip_connections(&mut g);
 
     let analysis = g.analyze();
-    assert!(analysis.is_valid, "修复后图应恢复合法: {:?}", analysis.errors);
+    assert!(
+        analysis.is_valid,
+        "修复后图应恢复合法: {:?}",
+        analysis.errors
+    );
 
     let main_shape = analysis
         .shape_of(agg_node.parents[0])
@@ -2235,16 +2476,23 @@ fn test_repair_skip_connections_repairs_projection_after_manual_corruption() {
         .filter(|n| n.block_id == Some(proj_bid) && n.is_parameter() && n.output_shape.len() == 2)
         .collect();
     assert!(
-        repaired_params.iter().any(|n| n.output_shape[0] != 1 && n.output_shape[1] == main_shape[1]),
+        repaired_params
+            .iter()
+            .any(|n| n.output_shape[0] != 1 && n.output_shape[1] == main_shape[1]),
         "修复后投影权重输出维应与主路径形状一致"
     );
     assert!(
-        repaired_params.iter().any(|n| n.output_shape[0] == 1 && n.output_shape[1] == main_shape[1]),
+        repaired_params
+            .iter()
+            .any(|n| n.output_shape[0] == 1 && n.output_shape[1] == main_shape[1]),
         "修复后投影 bias 输出维应与主路径形状一致"
     );
 
     let mut build_rng = rng();
-    assert!(g.build(&mut build_rng).is_ok(), "repair_skip_connections 修复后 build 应成功");
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "repair_skip_connections 修复后 build 应成功"
+    );
 }
 
 // ── RemoveConnectionMutation ──────────────────────────────
@@ -2254,7 +2502,10 @@ fn test_remove_connection_not_applicable_before_add() {
     let g = node_level_3block_genome();
     let c = constraints();
     // 没有 AddConnection 之前，应不存在可移除的聚合节点
-    assert!(!RemoveConnectionMutation.is_applicable(&g, &c), "无跳跃连接时不应适用");
+    assert!(
+        !RemoveConnectionMutation.is_applicable(&g, &c),
+        "无跳跃连接时不应适用"
+    );
 }
 
 #[test]
@@ -2262,7 +2513,10 @@ fn test_remove_connection_applicable_after_add() {
     let mut g = node_level_3block_genome();
     let c = constraints();
     AddConnectionMutation.apply(&mut g, &c, &mut rng()).unwrap();
-    assert!(RemoveConnectionMutation.is_applicable(&g, &c), "AddConnection 后应可移除");
+    assert!(
+        RemoveConnectionMutation.is_applicable(&g, &c),
+        "AddConnection 后应可移除"
+    );
 }
 
 #[test]
@@ -2271,14 +2525,19 @@ fn test_remove_connection_restores_valid_graph() {
     let c = constraints();
     let before_node_count = g.nodes().len();
     AddConnectionMutation.apply(&mut g, &c, &mut rng()).unwrap();
-    RemoveConnectionMutation.apply(&mut g, &c, &mut rng()).unwrap();
+    RemoveConnectionMutation
+        .apply(&mut g, &c, &mut rng())
+        .unwrap();
 
     let analysis = g.analyze();
     assert!(analysis.is_valid, "移除后图应合法: {:?}", analysis.errors);
     // 节点数应恢复（聚合节点和可能的投影节点被清理）
-    assert!(g.nodes().len() <= before_node_count + 1,
+    assert!(
+        g.nodes().len() <= before_node_count + 1,
         "移除后节点数应基本恢复（允许 orphan 清理差异），before={}, after={}",
-        before_node_count, g.nodes().len());
+        before_node_count,
+        g.nodes().len()
+    );
     let mut build_rng = rng();
     assert!(g.build(&mut build_rng).is_ok(), "移除后 build 应成功");
 }
@@ -2288,7 +2547,9 @@ fn test_remove_connection_no_removable_after_remove() {
     let mut g = node_level_3block_genome();
     let c = constraints();
     AddConnectionMutation.apply(&mut g, &c, &mut rng()).unwrap();
-    RemoveConnectionMutation.apply(&mut g, &c, &mut rng()).unwrap();
+    RemoveConnectionMutation
+        .apply(&mut g, &c, &mut rng())
+        .unwrap();
     let remaining = find_removable_skip_connections(&g);
     assert!(remaining.is_empty(), "移除后不应再有可移除的聚合节点");
 }
@@ -2305,7 +2566,11 @@ fn test_resnet_style_single_skip_build_and_forward() {
 
     let mut build_rng = rng();
     let build_result = g.build(&mut build_rng);
-    assert!(build_result.is_ok(), "ResNet 式 build 应成功: {:?}", build_result.err());
+    assert!(
+        build_result.is_ok(),
+        "ResNet 式 build 应成功: {:?}",
+        build_result.err()
+    );
 }
 
 #[test]
@@ -2323,10 +2588,18 @@ fn test_densenet_style_multiple_skips() {
     }
 
     let analysis = g.analyze();
-    assert!(analysis.is_valid, "多条跳跃连接后图应合法: {:?}", analysis.errors);
+    assert!(
+        analysis.is_valid,
+        "多条跳跃连接后图应合法: {:?}",
+        analysis.errors
+    );
 
     let mut build_rng = rng();
-    assert!(g.build(&mut build_rng).is_ok(), "DenseNet 式 build 应成功（添加了{}条连接）", added);
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "DenseNet 式 build 应成功（添加了{}条连接）",
+        added
+    );
 }
 
 // ── 与现有变异组合的鲁棒性 ───────────────────────────────
@@ -2363,6 +2636,91 @@ fn test_node_level_with_connections_multi_mutations_build_succeeds() {
 
 #[test]
 fn test_add_connection_is_structural() {
-    assert!(AddConnectionMutation.is_structural(), "AddConnection 应为结构变异");
-    assert!(RemoveConnectionMutation.is_structural(), "RemoveConnection 应为结构变异");
+    assert!(
+        AddConnectionMutation.is_structural(),
+        "AddConnection 应为结构变异"
+    );
+    assert!(
+        RemoveConnectionMutation.is_structural(),
+        "RemoveConnection 应为结构变异"
+    );
+}
+
+// ==================== Phase 8: NodeLevel CellType Mutation ====================
+
+#[test]
+fn test_mutate_cell_type_node_level_applicable() {
+    let mut g = genome_sequential();
+    g.migrate_to_node_level().unwrap();
+    assert!(MutateCellTypeMutation.is_applicable(&g, &constraints()));
+}
+
+#[test]
+fn test_mutate_cell_type_node_level_switches_cell_kind() {
+    let mut g = genome_sequential();
+    g.migrate_to_node_level().unwrap();
+    let before_is_rnn = g
+        .nodes()
+        .iter()
+        .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. }));
+    let before_is_lstm = g
+        .nodes()
+        .iter()
+        .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellLstm { .. }));
+    let before_is_gru = g
+        .nodes()
+        .iter()
+        .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellGru { .. }));
+
+    let mut r = StdRng::seed_from_u64(7);
+    MutateCellTypeMutation
+        .apply(&mut g, &constraints(), &mut r)
+        .unwrap();
+
+    let after_is_rnn = g
+        .nodes()
+        .iter()
+        .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. }));
+    let after_is_lstm = g
+        .nodes()
+        .iter()
+        .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellLstm { .. }));
+    let after_is_gru = g
+        .nodes()
+        .iter()
+        .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellGru { .. }));
+
+    assert!(
+        before_is_rnn != after_is_rnn
+            || before_is_lstm != after_is_lstm
+            || before_is_gru != after_is_gru,
+        "NodeLevel cell 类型应发生切换"
+    );
+}
+
+#[test]
+fn test_mutate_cell_type_node_level_preserves_buildability() {
+    let mut g = genome_sequential();
+    g.migrate_to_node_level().unwrap();
+
+    for seed in 0..10u64 {
+        let mut g2 = g.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+        MutateCellTypeMutation
+            .apply(&mut g2, &constraints(), &mut r)
+            .unwrap();
+
+        let analysis = g2.analyze();
+        assert!(
+            analysis.is_valid,
+            "NodeLevel cell 切换后图应合法: {:?}",
+            analysis.errors
+        );
+
+        let mut build_rng = StdRng::seed_from_u64(seed + 1000);
+        assert!(
+            g2.build(&mut build_rng).is_ok(),
+            "NodeLevel cell 切换后 build 应成功"
+        );
+    }
 }

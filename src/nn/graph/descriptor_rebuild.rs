@@ -12,6 +12,7 @@
 use super::error::GraphError;
 use super::handle::Graph;
 use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
+use crate::nn::layer::{Gru, Lstm, Rnn};
 use crate::nn::var::Var;
 use crate::tensor::Tensor;
 use std::collections::{HashMap, HashSet};
@@ -45,7 +46,10 @@ impl Graph {
     /// - Dropout 使用固定 seed=42，加载后建议设为 eval 模式
     /// - BatchNormOp 的 running_mean/running_var 初始化为零
     /// 从 GraphDescriptor 重建计算图（使用指定种子，每代 build 可复现）
-    pub fn from_descriptor_seeded(desc: &GraphDescriptor, seed: u64) -> Result<RebuildResult, GraphError> {
+    pub fn from_descriptor_seeded(
+        desc: &GraphDescriptor,
+        seed: u64,
+    ) -> Result<RebuildResult, GraphError> {
         let graph = Graph::new_with_seed(seed).with_model_name("EvolutionNet");
         Self::rebuild_into(graph, desc)
     }
@@ -146,6 +150,27 @@ fn get_all_parents(
         .collect()
 }
 
+/// 获取指定父节点的 Var（用于循环单元重建）
+fn get_parent_var(
+    node_desc: &NodeDescriptor,
+    node_map: &HashMap<u64, Var>,
+    index: usize,
+    param_name: &str,
+) -> Result<Var, GraphError> {
+    let parent_id = node_desc.parents.get(index).ok_or_else(|| {
+        GraphError::InvalidOperation(format!(
+            "节点 '{}' (id={}) 缺少第 {} 个父节点 ({})",
+            node_desc.name, node_desc.id, index, param_name
+        ))
+    })?;
+    node_map.get(parent_id).cloned().ok_or_else(|| {
+        GraphError::InvalidOperation(format!(
+            "节点 '{}' (id={}) 的父节点 {} (id={}) 未在 node_map 中找到",
+            node_desc.name, node_desc.id, param_name, parent_id
+        ))
+    })
+}
+
 /// 根据节点描述重建单个节点
 fn rebuild_node(
     graph: &Graph,
@@ -176,10 +201,9 @@ fn rebuild_node(
                 .inner_mut()
                 .create_parameter_node(&node_desc.output_shape, name)?;
             // 注册参数（使权重 save/load 正常工作）
-            graph.inner_mut().register_parameter(
-                node_desc.name.clone(),
-                Rc::downgrade(&node),
-            )?;
+            graph
+                .inner_mut()
+                .register_parameter(node_desc.name.clone(), Rc::downgrade(&node))?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -241,9 +265,12 @@ fn rebuild_node(
             stride,
         } => {
             let parent = get_parent(node_desc, node_map, 0)?;
-            let node = graph
-                .inner_mut()
-                .create_max_pool2d_node(parent, *kernel_size, Some(*stride), name)?;
+            let node = graph.inner_mut().create_max_pool2d_node(
+                parent,
+                *kernel_size,
+                Some(*stride),
+                name,
+            )?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -252,9 +279,12 @@ fn rebuild_node(
             stride,
         } => {
             let parent = get_parent(node_desc, node_map, 0)?;
-            let node = graph
-                .inner_mut()
-                .create_avg_pool2d_node(parent, *kernel_size, Some(*stride), name)?;
+            let node = graph.inner_mut().create_avg_pool2d_node(
+                parent,
+                *kernel_size,
+                Some(*stride),
+                name,
+            )?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -306,33 +336,31 @@ fn rebuild_node(
 
         NodeTypeDescriptor::Permute { dims } => {
             let parent = get_parent(node_desc, node_map, 0)?;
-            let node = graph
-                .inner_mut()
-                .create_permute_node(parent, dims, name)?;
+            let node = graph.inner_mut().create_permute_node(parent, dims, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
         NodeTypeDescriptor::Stack { axis } => {
             let parents = get_all_parents(node_desc, node_map)?;
-            let node = graph
-                .inner_mut()
-                .create_stack_node(parents, *axis, name)?;
+            let node = graph.inner_mut().create_stack_node(parents, *axis, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
         NodeTypeDescriptor::Concat { axis } => {
             let parents = get_all_parents(node_desc, node_map)?;
-            let node = graph
-                .inner_mut()
-                .create_concat_node(parents, *axis, name)?;
+            let node = graph.inner_mut().create_concat_node(parents, *axis, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
-        NodeTypeDescriptor::Pad { paddings, pad_value } => {
+        NodeTypeDescriptor::Pad {
+            paddings,
+            pad_value,
+        } => {
             let parent = get_parent(node_desc, node_map, 0)?;
-            let node = graph
-                .inner_mut()
-                .create_pad_node(parent, paddings.clone(), *pad_value, name)?;
+            let node =
+                graph
+                    .inner_mut()
+                    .create_pad_node(parent, paddings.clone(), *pad_value, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -459,9 +487,7 @@ fn rebuild_node(
 
         NodeTypeDescriptor::Elu { alpha } => {
             let parent = get_parent(node_desc, node_map, 0)?;
-            let node = graph
-                .inner_mut()
-                .create_elu_node(parent, *alpha, name)?;
+            let node = graph.inner_mut().create_elu_node(parent, *alpha, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -536,9 +562,7 @@ fn rebuild_node(
 
         NodeTypeDescriptor::Pow { exponent } => {
             let input = get_parent(node_desc, node_map, 0)?;
-            let node = graph
-                .inner_mut()
-                .create_pow_node(input, *exponent, name)?;
+            let node = graph.inner_mut().create_pow_node(input, *exponent, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -610,9 +634,7 @@ fn rebuild_node(
         NodeTypeDescriptor::Dropout { p } => {
             let input = get_parent(node_desc, node_map, 0)?;
             // 使用固定 seed，加载后通常设为 eval 模式（Dropout 不起作用）
-            let node = graph
-                .inner_mut()
-                .create_dropout_node(input, *p, 42, name)?;
+            let node = graph.inner_mut().create_dropout_node(input, *p, 42, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -656,9 +678,10 @@ fn rebuild_node(
             eps,
         } => {
             let input = get_parent(node_desc, node_map, 0)?;
-            let node = graph
-                .inner_mut()
-                .create_layer_norm_op_node(input, *normalized_dims, *eps, name)?;
+            let node =
+                graph
+                    .inner_mut()
+                    .create_layer_norm_op_node(input, *normalized_dims, *eps, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -667,9 +690,10 @@ fn rebuild_node(
             eps,
         } => {
             let input = get_parent(node_desc, node_map, 0)?;
-            let node = graph
-                .inner_mut()
-                .create_rms_norm_op_node(input, *normalized_dims, *eps, name)?;
+            let node =
+                graph
+                    .inner_mut()
+                    .create_rms_norm_op_node(input, *normalized_dims, *eps, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -717,6 +741,110 @@ fn rebuild_node(
                 .inner_mut()
                 .create_softmax_cross_entropy_node(logits, labels, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        // ==================== 循环单元（复合模板节点）====================
+        NodeTypeDescriptor::CellRnn {
+            input_size,
+            hidden_size,
+            return_sequences,
+            seq_len,
+        } => {
+            let effective_seq = (*seq_len).max(1);
+            let input_var = get_parent_var(node_desc, node_map, 0, "input")?;
+            // validate_input 需要读取值来确定 seq_len，设置构图占位零值
+            input_var.set_value(&Tensor::zeros(&[1, effective_seq, *input_size]))?;
+            let w_ih = get_parent_var(node_desc, node_map, 1, "w_ih")?;
+            let w_hh = get_parent_var(node_desc, node_map, 2, "w_hh")?;
+            let b_h = get_parent_var(node_desc, node_map, 3, "b_h")?;
+            let rnn = Rnn::from_vars(w_ih, w_hh, b_h, *input_size, *hidden_size);
+            if *return_sequences {
+                rnn.forward_seq(input_var)
+            } else {
+                rnn.forward(input_var)
+            }
+        }
+
+        NodeTypeDescriptor::CellLstm {
+            input_size,
+            hidden_size,
+            return_sequences,
+            seq_len,
+        } => {
+            let effective_seq = (*seq_len).max(1);
+            let input_var = get_parent_var(node_desc, node_map, 0, "input")?;
+            input_var.set_value(&Tensor::zeros(&[1, effective_seq, *input_size]))?;
+            let w_ii = get_parent_var(node_desc, node_map, 1, "w_ii")?;
+            let w_hi = get_parent_var(node_desc, node_map, 2, "w_hi")?;
+            let b_i = get_parent_var(node_desc, node_map, 3, "b_i")?;
+            let w_if = get_parent_var(node_desc, node_map, 4, "w_if")?;
+            let w_hf = get_parent_var(node_desc, node_map, 5, "w_hf")?;
+            let b_f = get_parent_var(node_desc, node_map, 6, "b_f")?;
+            let w_ig = get_parent_var(node_desc, node_map, 7, "w_ig")?;
+            let w_hg = get_parent_var(node_desc, node_map, 8, "w_hg")?;
+            let b_g = get_parent_var(node_desc, node_map, 9, "b_g")?;
+            let w_io = get_parent_var(node_desc, node_map, 10, "w_io")?;
+            let w_ho = get_parent_var(node_desc, node_map, 11, "w_ho")?;
+            let b_o = get_parent_var(node_desc, node_map, 12, "b_o")?;
+            let lstm = Lstm::from_vars(
+                w_ii,
+                w_hi,
+                b_i,
+                w_if,
+                w_hf,
+                b_f,
+                w_ig,
+                w_hg,
+                b_g,
+                w_io,
+                w_ho,
+                b_o,
+                *input_size,
+                *hidden_size,
+            );
+            if *return_sequences {
+                lstm.forward_seq(input_var)
+            } else {
+                lstm.forward(input_var)
+            }
+        }
+
+        NodeTypeDescriptor::CellGru {
+            input_size,
+            hidden_size,
+            return_sequences,
+            seq_len,
+        } => {
+            let effective_seq = (*seq_len).max(1);
+            let input_var = get_parent_var(node_desc, node_map, 0, "input")?;
+            input_var.set_value(&Tensor::zeros(&[1, effective_seq, *input_size]))?;
+            let w_ir = get_parent_var(node_desc, node_map, 1, "w_ir")?;
+            let w_hr = get_parent_var(node_desc, node_map, 2, "w_hr")?;
+            let b_r = get_parent_var(node_desc, node_map, 3, "b_r")?;
+            let w_iz = get_parent_var(node_desc, node_map, 4, "w_iz")?;
+            let w_hz = get_parent_var(node_desc, node_map, 5, "w_hz")?;
+            let b_z = get_parent_var(node_desc, node_map, 6, "b_z")?;
+            let w_in = get_parent_var(node_desc, node_map, 7, "w_in")?;
+            let w_hn = get_parent_var(node_desc, node_map, 8, "w_hn")?;
+            let b_n = get_parent_var(node_desc, node_map, 9, "b_n")?;
+            let gru = Gru::from_vars(
+                w_ir,
+                w_hr,
+                b_r,
+                w_iz,
+                w_hz,
+                b_z,
+                w_in,
+                w_hn,
+                b_n,
+                *input_size,
+                *hidden_size,
+            );
+            if *return_sequences {
+                gru.forward_seq(input_var)
+            } else {
+                gru.forward(input_var)
+            }
         }
     }
 }

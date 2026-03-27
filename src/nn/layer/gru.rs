@@ -380,6 +380,35 @@ impl Gru {
     pub const fn graph(&self) -> &Graph {
         &self.graph
     }
+
+    /// 从已有参数 Var 创建 Gru 层（基因组 NodeLevel 重建路径专用）
+    ///
+    /// parents 顺序：[w_ir, w_hr, b_r, w_iz, w_hz, b_z, w_in, w_hn, b_n]
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_vars(
+        w_ir: Var, w_hr: Var, b_r: Var,
+        w_iz: Var, w_hz: Var, b_z: Var,
+        w_in: Var, w_hn: Var, b_n: Var,
+        input_size: usize,
+        hidden_size: usize,
+    ) -> Self {
+        let graph = w_ir.get_graph();
+        let name = "gru_rebuilt".to_string();
+        graph
+            .inner_mut()
+            .register_recurrent_folding_meta(&name, 20);
+        let instance_id = graph.inner_mut().next_node_group_instance_id();
+        Self {
+            w_ir, w_hr, b_r,
+            w_iz, w_hz, b_z,
+            w_in, w_hn, b_n,
+            graph,
+            input_size,
+            hidden_size,
+            name,
+            instance_id,
+        }
+    }
 }
 
 impl Module for Gru {

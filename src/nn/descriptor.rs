@@ -150,6 +150,37 @@ pub enum NodeTypeDescriptor {
     /// 动态零张量（RNN 初始隐藏状态）
     ZerosLike,
 
+    // ──────────────────── 循环单元（复合模板节点）────────────────────
+    /// RNN 循环单元（整个 RNN 计算作为单一模板节点，不展开为原子子节点）
+    ///
+    /// parents 顺序：[input, w_ih, w_hh, b_h]
+    /// output_shape: return_sequences=false → [1, hidden_size]；true → [1, seq_len, hidden_size]
+    CellRnn {
+        input_size: usize,
+        hidden_size: usize,
+        return_sequences: bool,
+        /// 构图占位序列长度（0 = 动态，rebuild 时取 max(1, seq_len)）
+        seq_len: usize,
+    },
+    /// LSTM 循环单元
+    ///
+    /// parents 顺序：[input, w_ii, w_hi, b_i, w_if, w_hf, b_f, w_ig, w_hg, b_g, w_io, w_ho, b_o]
+    CellLstm {
+        input_size: usize,
+        hidden_size: usize,
+        return_sequences: bool,
+        seq_len: usize,
+    },
+    /// GRU 循环单元
+    ///
+    /// parents 顺序：[input, w_ir, w_hr, b_r, w_iz, w_hz, b_z, w_in, w_hn, b_n]
+    CellGru {
+        input_size: usize,
+        hidden_size: usize,
+        return_sequences: bool,
+        seq_len: usize,
+    },
+
     // ──────────────────── 激活函数 ────────────────────
     /// 取反 y = -x
     Negate,
@@ -160,7 +191,9 @@ pub enum NodeTypeDescriptor {
     /// Swish/SiLU: x * sigmoid(x)
     Swish,
     /// ELU: x if x>0, else alpha*(exp(x)-1)
-    Elu { alpha: f32 },
+    Elu {
+        alpha: f32,
+    },
     /// SELU（固定常数 λ/α）
     Selu,
     /// Mish: x * tanh(softplus(x))
@@ -172,7 +205,10 @@ pub enum NodeTypeDescriptor {
     /// ReLU6: min(max(0,x), 6)
     ReLU6,
     /// HardTanh: min(max(min_val, x), max_val)
-    HardTanh { min_val: f32, max_val: f32 },
+    HardTanh {
+        min_val: f32,
+        max_val: f32,
+    },
 
     // ──────────────────── 逐元素数学运算 ────────────────────
     /// 指数 y = e^x
@@ -184,7 +220,9 @@ pub enum NodeTypeDescriptor {
     /// 以 2 为底对数
     Log2,
     /// 幂运算 y = x^exponent
-    Pow { exponent: f32 },
+    Pow {
+        exponent: f32,
+    },
     /// 平方 y = x²
     Square,
     /// 倒数 y = 1/x
@@ -192,19 +230,40 @@ pub enum NodeTypeDescriptor {
 
     // ──────────────────── 张量变换 ────────────────────
     /// 沿轴取连续范围 narrow(axis, start, length)
-    Narrow { axis: usize, start: usize, length: usize },
+    Narrow {
+        axis: usize,
+        start: usize,
+        length: usize,
+    },
     /// 维度重排 permute(dims)
-    Permute { dims: Vec<usize> },
+    Permute {
+        dims: Vec<usize>,
+    },
     /// 常量填充 pad(paddings, value)
-    Pad { paddings: Vec<(usize, usize)>, pad_value: f32 },
+    Pad {
+        paddings: Vec<(usize, usize)>,
+        pad_value: f32,
+    },
     /// 沿各维度重复 repeat(repeats)
-    Repeat { repeats: Vec<usize> },
+    Repeat {
+        repeats: Vec<usize>,
+    },
     /// 沿轴取前 k 大元素
-    TopK { k: usize, axis: usize, sorted: bool },
+    TopK {
+        k: usize,
+        axis: usize,
+        sorted: bool,
+    },
     /// 沿轴排序
-    SortNode { axis: usize, descending: bool },
+    SortNode {
+        axis: usize,
+        descending: bool,
+    },
     /// 值域裁剪 clip(min, max)
-    Clip { min: f32, max: f32 },
+    Clip {
+        min: f32,
+        max: f32,
+    },
     /// 条件选择 where(condition, x, y)
     WhereCond {
         /// 条件掩码（已归一化为 0/1 的 f32 数据，展平存储）

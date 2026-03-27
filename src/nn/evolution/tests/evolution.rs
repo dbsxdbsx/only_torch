@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::callback::EvolutionCallback;
 use crate::nn::evolution::convergence::ConvergenceConfig;
 use crate::nn::evolution::gene::*;
@@ -102,24 +103,14 @@ impl EvolutionCallback for MockCallback {
         s.generation_primaries.push(score.primary);
     }
 
-    fn on_new_best(
-        &mut self,
-        generation: usize,
-        _genome: &NetworkGenome,
-        score: &FitnessScore,
-    ) {
+    fn on_new_best(&mut self, generation: usize, _genome: &NetworkGenome, score: &FitnessScore) {
         let mut s = self.state.borrow_mut();
         s.new_best_count += 1;
         s.new_best_generations.push(generation);
         s.new_best_primaries.push(score.primary);
     }
 
-    fn on_mutation(
-        &mut self,
-        _generation: usize,
-        mutation_name: &str,
-        _genome: &NetworkGenome,
-    ) {
+    fn on_mutation(&mut self, _generation: usize, mutation_name: &str, _genome: &NetworkGenome) {
         let mut s = self.state.borrow_mut();
         s.mutation_count += 1;
         s.last_mutation_name = mutation_name.to_string();
@@ -250,10 +241,7 @@ fn test_callback_on_mutation_called_each_gen() {
         s.mutation_count,
         s.generation_count
     );
-    assert!(
-        !s.last_mutation_name.is_empty(),
-        "变异名称不应为空"
-    );
+    assert!(!s.last_mutation_name.is_empty(), "变异名称不应为空");
 }
 
 #[test]
@@ -618,10 +606,7 @@ fn test_first_generation_always_triggers_new_best() {
 
     let s = state.borrow();
     assert_eq!(s.generation_count, 1);
-    assert_eq!(
-        s.new_best_count, 1,
-        "首代应触发 on_new_best（从无到有）"
-    );
+    assert_eq!(s.new_best_count, 1, "首代应触发 on_new_best（从无到有）");
     assert_eq!(s.new_best_generations[0], 0);
 }
 
@@ -659,7 +644,24 @@ fn test_evolution_sequential_runs() {
 
     assert!(result.fitness.primary >= 0.0);
     assert!(result.generations <= 3);
-    assert!(result.architecture_summary.contains("seq×"), "序列架构应显示 seq×");
+    assert!(
+        result.architecture_summary.contains("seq×")
+            || result.architecture_summary.starts_with("nodes="),
+        "序列架构应显示序列或 NodeLevel 结构信息，实际={}",
+        result.architecture_summary
+    );
+    assert!(
+        result.genome.is_node_level(),
+        "阶段 8 后序列主入口应初始化为 NodeLevel"
+    );
+    assert!(
+        result
+            .genome
+            .nodes()
+            .iter()
+            .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. })),
+        "序列初始基因组应包含 CellRnn 节点"
+    );
 }
 
 #[test]
@@ -760,12 +762,7 @@ impl TimingCheckCallback {
 }
 
 impl EvolutionCallback for TimingCheckCallback {
-    fn on_new_best(
-        &mut self,
-        _generation: usize,
-        _genome: &NetworkGenome,
-        _score: &FitnessScore,
-    ) {
+    fn on_new_best(&mut self, _generation: usize, _genome: &NetworkGenome, _score: &FitnessScore) {
         self.pending_new_best = true;
     }
 
@@ -798,12 +795,7 @@ fn test_on_new_best_precedes_on_generation() {
         inner: std::rc::Rc<std::cell::RefCell<TimingCheckCallback>>,
     }
     impl EvolutionCallback for TimingWrapper {
-        fn on_new_best(
-            &mut self,
-            g: usize,
-            genome: &NetworkGenome,
-            score: &FitnessScore,
-        ) {
+        fn on_new_best(&mut self, g: usize, genome: &NetworkGenome, score: &FitnessScore) {
             self.inner.borrow_mut().on_new_best(g, genome, score);
         }
         fn on_generation(
@@ -857,9 +849,7 @@ fn spatial_brightness_data(
         // 偶数索引 = "亮"，奇数索引 = "暗"
         let bright = i % 2 == 0;
         let base: f32 = if bright { 0.7 } else { 0.2 };
-        let pixels: Vec<f32> = (0..size)
-            .map(|j| base + (j as f32 * 0.001) % 0.1)
-            .collect();
+        let pixels: Vec<f32> = (0..size).map(|j| base + (j as f32 * 0.001) % 0.1).collect();
         inputs.push(Tensor::new(&pixels, &[channels, h, w]));
         if bright {
             labels.push(Tensor::new(&[1.0, 0.0], &[2]));
@@ -1097,7 +1087,10 @@ fn test_smallest_meeting_target_index() {
 
     // target=2.0 → 无法满足
     let idx_impossible = result.smallest_meeting_target_index(2.0);
-    assert!(idx_impossible.is_none(), "target=2.0 时不应找到满足条件的成员");
+    assert!(
+        idx_impossible.is_none(),
+        "target=2.0 时不应找到满足条件的成员"
+    );
 }
 
 #[test]
@@ -1328,7 +1321,8 @@ fn test_compute_inference_cost_param_count() {
     use crate::nn::evolution::gene::NetworkGenome;
 
     let genome = NetworkGenome::minimal(2, 1);
-    let cost = super::super::compute_inference_cost(&genome, &ComplexityMetric::ParamCount).unwrap();
+    let cost =
+        super::super::compute_inference_cost(&genome, &ComplexityMetric::ParamCount).unwrap();
     let params = genome.total_params().unwrap() as f32;
     assert!(
         (cost - params).abs() < 1e-3,

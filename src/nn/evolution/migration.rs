@@ -21,6 +21,7 @@ use crate::nn::descriptor::NodeTypeDescriptor;
 
 use super::gene::{
     ActivationType, AggregateStrategy, INPUT_INNOVATION, LayerConfig, NetworkGenome, PoolType,
+    ResolvedDim,
 };
 use super::node_gene::NodeGene;
 
@@ -326,7 +327,374 @@ pub fn expand_dropout(
     )]
 }
 
+/// 展开 RNN 层 → 3 个权重参数节点 + 1 个 CellRnn 复合节点（共 4 个节点）
+///
+/// 父节点顺序：`[input_id, w_ih_id, w_hh_id, b_h_id]`
+///
+/// 形状约定（batch=1）：
+/// - w_ih: `[in_dim, hidden_size]`
+/// - w_hh: `[hidden_size, hidden_size]`
+/// - b_h:  `[1, hidden_size]`
+/// - CellRnn 输出: `[1, hidden_size]`（!return_sequences）或 `[1, seq_len, hidden_size]`
+pub fn expand_rnn(
+    input_id: u64,
+    in_dim: usize,
+    hidden_size: usize,
+    return_sequences: bool,
+    seq_len: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let bid = Some(block_id);
+
+    let w_ih_id = counter.next();
+    let w_hh_id = counter.next();
+    let b_h_id = counter.next();
+    let cell_id = counter.next();
+
+    let cell_shape = if return_sequences {
+        vec![1, seq_len.max(1), hidden_size]
+    } else {
+        vec![1, hidden_size]
+    };
+
+    vec![
+        NodeGene::new(
+            w_ih_id,
+            NodeTypeDescriptor::Parameter,
+            vec![in_dim, hidden_size],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_hh_id,
+            NodeTypeDescriptor::Parameter,
+            vec![hidden_size, hidden_size],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_h_id,
+            NodeTypeDescriptor::Parameter,
+            vec![1, hidden_size],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            cell_id,
+            NodeTypeDescriptor::CellRnn {
+                input_size: in_dim,
+                hidden_size,
+                return_sequences,
+                seq_len,
+            },
+            cell_shape,
+            vec![input_id, w_ih_id, w_hh_id, b_h_id],
+            bid,
+        ),
+    ]
+}
+
+/// 展开 LSTM 层 → 12 个权重参数节点 + 1 个 CellLstm 复合节点（共 13 个节点）
+///
+/// 父节点顺序：`[input_id, w_ii, w_hi, b_i, w_if, w_hf, b_f, w_ig, w_hg, b_g, w_io, w_ho, b_o]`
+///
+/// 形状约定（4 门：i/f/g/o，各自 w_ih+w_hh+b）：
+/// - w_i*: `[in_dim, hidden_size]`, w_h*: `[hidden_size, hidden_size]`, b_*: `[1, hidden_size]`
+#[allow(clippy::too_many_arguments)]
+pub fn expand_lstm(
+    input_id: u64,
+    in_dim: usize,
+    hidden_size: usize,
+    return_sequences: bool,
+    seq_len: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let bid = Some(block_id);
+
+    // 输入门 (i)
+    let w_ii_id = counter.next();
+    let w_hi_id = counter.next();
+    let b_i_id = counter.next();
+    // 遗忘门 (f)
+    let w_if_id = counter.next();
+    let w_hf_id = counter.next();
+    let b_f_id = counter.next();
+    // 细胞门 (g)
+    let w_ig_id = counter.next();
+    let w_hg_id = counter.next();
+    let b_g_id = counter.next();
+    // 输出门 (o)
+    let w_io_id = counter.next();
+    let w_ho_id = counter.next();
+    let b_o_id = counter.next();
+    let cell_id = counter.next();
+
+    let cell_shape = if return_sequences {
+        vec![1, seq_len.max(1), hidden_size]
+    } else {
+        vec![1, hidden_size]
+    };
+
+    let wih = vec![in_dim, hidden_size];
+    let whh = vec![hidden_size, hidden_size];
+    let wb = vec![1, hidden_size];
+
+    vec![
+        NodeGene::new(
+            w_ii_id,
+            NodeTypeDescriptor::Parameter,
+            wih.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_hi_id,
+            NodeTypeDescriptor::Parameter,
+            whh.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_i_id,
+            NodeTypeDescriptor::Parameter,
+            wb.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_if_id,
+            NodeTypeDescriptor::Parameter,
+            wih.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_hf_id,
+            NodeTypeDescriptor::Parameter,
+            whh.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_f_id,
+            NodeTypeDescriptor::Parameter,
+            wb.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_ig_id,
+            NodeTypeDescriptor::Parameter,
+            wih.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_hg_id,
+            NodeTypeDescriptor::Parameter,
+            whh.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_g_id,
+            NodeTypeDescriptor::Parameter,
+            wb.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_io_id,
+            NodeTypeDescriptor::Parameter,
+            wih.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_ho_id,
+            NodeTypeDescriptor::Parameter,
+            whh.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_o_id,
+            NodeTypeDescriptor::Parameter,
+            wb.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            cell_id,
+            NodeTypeDescriptor::CellLstm {
+                input_size: in_dim,
+                hidden_size,
+                return_sequences,
+                seq_len,
+            },
+            cell_shape,
+            vec![
+                input_id, w_ii_id, w_hi_id, b_i_id, w_if_id, w_hf_id, b_f_id, w_ig_id, w_hg_id,
+                b_g_id, w_io_id, w_ho_id, b_o_id,
+            ],
+            bid,
+        ),
+    ]
+}
+
+/// 展开 GRU 层 → 9 个权重参数节点 + 1 个 CellGru 复合节点（共 10 个节点）
+///
+/// 父节点顺序：`[input_id, w_ir, w_hr, b_r, w_iz, w_hz, b_z, w_in, w_hn, b_n]`
+///
+/// 形状约定（3 门：r/z/n，各自 w_ih+w_hh+b）：
+/// - w_i*: `[in_dim, hidden_size]`, w_h*: `[hidden_size, hidden_size]`, b_*: `[1, hidden_size]`
+#[allow(clippy::too_many_arguments)]
+pub fn expand_gru(
+    input_id: u64,
+    in_dim: usize,
+    hidden_size: usize,
+    return_sequences: bool,
+    seq_len: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let bid = Some(block_id);
+
+    // 重置门 (r)
+    let w_ir_id = counter.next();
+    let w_hr_id = counter.next();
+    let b_r_id = counter.next();
+    // 更新门 (z)
+    let w_iz_id = counter.next();
+    let w_hz_id = counter.next();
+    let b_z_id = counter.next();
+    // 候选隐状态门 (n)
+    let w_in_id = counter.next();
+    let w_hn_id = counter.next();
+    let b_n_id = counter.next();
+    let cell_id = counter.next();
+
+    let cell_shape = if return_sequences {
+        vec![1, seq_len.max(1), hidden_size]
+    } else {
+        vec![1, hidden_size]
+    };
+
+    let wih = vec![in_dim, hidden_size];
+    let whh = vec![hidden_size, hidden_size];
+    let wb = vec![1, hidden_size];
+
+    vec![
+        NodeGene::new(
+            w_ir_id,
+            NodeTypeDescriptor::Parameter,
+            wih.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_hr_id,
+            NodeTypeDescriptor::Parameter,
+            whh.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_r_id,
+            NodeTypeDescriptor::Parameter,
+            wb.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_iz_id,
+            NodeTypeDescriptor::Parameter,
+            wih.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_hz_id,
+            NodeTypeDescriptor::Parameter,
+            whh.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_z_id,
+            NodeTypeDescriptor::Parameter,
+            wb.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_in_id,
+            NodeTypeDescriptor::Parameter,
+            wih.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_hn_id,
+            NodeTypeDescriptor::Parameter,
+            whh.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_n_id,
+            NodeTypeDescriptor::Parameter,
+            wb.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            cell_id,
+            NodeTypeDescriptor::CellGru {
+                input_size: in_dim,
+                hidden_size,
+                return_sequences,
+                seq_len,
+            },
+            cell_shape,
+            vec![
+                input_id, w_ir_id, w_hr_id, b_r_id, w_iz_id, w_hz_id, b_z_id, w_in_id, w_hn_id,
+                b_n_id,
+            ],
+            bid,
+        ),
+    ]
+}
+
 // ==================== 主迁移函数 ====================
+
+/// 计算指定位置的循环层是否需要 `return_sequences = true`
+///
+/// 逻辑：向后扫描 `resolved`，跳过 Activation/Dropout，若下一个实质性层也是循环层则返回 `true`。
+fn compute_needs_return_seq(idx: usize, resolved: &[ResolvedDim], genome: &NetworkGenome) -> bool {
+    for dim in &resolved[idx + 1..] {
+        let layer = genome
+            .layers()
+            .iter()
+            .find(|l| l.innovation_number == dim.innovation_number && l.enabled);
+        if let Some(layer) = layer {
+            match &layer.layer_config {
+                LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => continue,
+                cfg => {
+                    return matches!(
+                        cfg,
+                        LayerConfig::Rnn { .. }
+                            | LayerConfig::Lstm { .. }
+                            | LayerConfig::Gru { .. }
+                    );
+                }
+            }
+        }
+    }
+    false
+}
 
 /// 将旧层级 `NetworkGenome` 展开为节点级 `Vec<NodeGene>`
 ///
@@ -471,6 +839,15 @@ pub fn migrate_network_genome(genome: &NetworkGenome) -> Result<MigrationOutput,
         let bid = block_counter;
         block_counter += 1;
 
+        // 循环层需要额外计算 return_sequences 和 seq_len
+        let (return_sequences, eff_seq_len) = match &layer.layer_config {
+            LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
+                let rs = compute_needs_return_seq(i, &resolved, genome);
+                (rs, genome.seq_len.unwrap_or(0))
+            }
+            _ => (false, 0),
+        };
+
         // 展开层配置
         let result = expand_layer_config(
             &layer.layer_config,
@@ -480,6 +857,8 @@ pub fn migrate_network_genome(genome: &NetworkGenome) -> Result<MigrationOutput,
             input_spatial,
             bid,
             &mut counter,
+            return_sequences,
+            eff_seq_len,
         );
 
         match result {
@@ -522,6 +901,8 @@ fn expand_layer_config(
     input_spatial: Option<(usize, usize)>,
     block_id: u64,
     counter: &mut InnovationCounter,
+    return_sequences: bool,
+    seq_len: usize,
 ) -> Result<Vec<NodeGene>, String> {
     match config {
         LayerConfig::Linear { out_features } => Ok(expand_linear(
@@ -581,11 +962,34 @@ fn expand_layer_config(
             ))
         }
 
-        // Rnn/Lstm/Gru: 先作为 deferred，阶段 4 引入模板系统时再处理
-        LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
-            Err(format!(
-                "{config} 为循环层，暂不展开（阶段 2 不展开 recurrence 图，留待阶段 4 模板机制处理）"
-            ))
-        }
+        LayerConfig::Rnn { hidden_size } => Ok(expand_rnn(
+            input_id,
+            in_dim,
+            *hidden_size,
+            return_sequences,
+            seq_len,
+            block_id,
+            counter,
+        )),
+
+        LayerConfig::Lstm { hidden_size } => Ok(expand_lstm(
+            input_id,
+            in_dim,
+            *hidden_size,
+            return_sequences,
+            seq_len,
+            block_id,
+            counter,
+        )),
+
+        LayerConfig::Gru { hidden_size } => Ok(expand_gru(
+            input_id,
+            in_dim,
+            *hidden_size,
+            return_sequences,
+            seq_len,
+            block_id,
+            counter,
+        )),
     }
 }

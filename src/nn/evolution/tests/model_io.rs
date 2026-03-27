@@ -5,7 +5,9 @@
  */
 
 use crate::nn::descriptor::NodeTypeDescriptor;
-use crate::nn::evolution::gene::{ActivationType, LayerConfig, LayerGene, NetworkGenome, TaskMetric};
+use crate::nn::evolution::gene::{
+    ActivationType, LayerConfig, LayerGene, NetworkGenome, TaskMetric,
+};
 use crate::nn::evolution::mutation::{AddConnectionMutation, Mutation};
 use crate::nn::evolution::node_ops::find_removable_skip_connections;
 use crate::nn::evolution::{Evolution, EvolutionResult};
@@ -104,7 +106,9 @@ fn test_nodelevel_genome_serde_roundtrip_with_skip_connection() {
             enabled: true,
         },
     );
-    genome.migrate_to_node_level().expect("迁移到 NodeLevel 应成功");
+    genome
+        .migrate_to_node_level()
+        .expect("迁移到 NodeLevel 应成功");
 
     let mut rng = StdRng::seed_from_u64(42);
     AddConnectionMutation
@@ -120,7 +124,10 @@ fn test_nodelevel_genome_serde_roundtrip_with_skip_connection() {
         "恢复后应仍包含可识别的跳跃聚合节点"
     );
     assert!(
-        restored.nodes().iter().any(|n| n.block_id.is_none() && matches!(n.node_type, NodeTypeDescriptor::Add)),
+        restored
+            .nodes()
+            .iter()
+            .any(|n| n.block_id.is_none() && matches!(n.node_type, NodeTypeDescriptor::Add)),
         "恢复后应仍存在跳跃聚合 Add 节点"
     );
 
@@ -128,7 +135,58 @@ fn test_nodelevel_genome_serde_roundtrip_with_skip_connection() {
     assert!(analysis.is_valid, "恢复后图应合法: {:?}", analysis.errors);
 
     let mut build_rng = StdRng::seed_from_u64(7);
-    assert!(restored.build(&mut build_rng).is_ok(), "恢复后的 NodeLevel 跳跃连接图应可构建");
+    assert!(
+        restored.build(&mut build_rng).is_ok(),
+        "恢复后的 NodeLevel 跳跃连接图应可构建"
+    );
+}
+
+#[test]
+fn test_nodelevel_sequential_genome_serde_roundtrip() {
+    let mut genome = NetworkGenome::minimal_sequential(3, 2);
+    genome.seq_len = Some(5);
+    genome
+        .migrate_to_node_level()
+        .expect("迁移到 NodeLevel 应成功");
+
+    let json = serde_json::to_string(&genome).expect("序列化失败");
+    let restored: NetworkGenome = serde_json::from_str(&json).expect("反序列化失败");
+
+    assert!(restored.is_node_level(), "恢复后应保持 NodeLevel 表示");
+    assert_eq!(restored.seq_len, genome.seq_len, "seq_len 应保持一致");
+    assert_eq!(
+        restored.nodes().len(),
+        genome.nodes().len(),
+        "节点数应保持一致"
+    );
+
+    for (lhs, rhs) in genome.nodes().iter().zip(restored.nodes().iter()) {
+        assert_eq!(lhs.innovation_number, rhs.innovation_number);
+        assert_eq!(lhs.output_shape, rhs.output_shape);
+        assert_eq!(lhs.parents, rhs.parents);
+        assert_eq!(lhs.block_id, rhs.block_id);
+    }
+
+    assert!(
+        restored
+            .nodes()
+            .iter()
+            .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. })),
+        "恢复后应仍存在 CellRnn 节点"
+    );
+
+    let analysis = restored.analyze();
+    assert!(
+        analysis.is_valid,
+        "恢复后的序列 NodeLevel 图应合法: {:?}",
+        analysis.errors
+    );
+
+    let mut build_rng = StdRng::seed_from_u64(11);
+    assert!(
+        restored.build(&mut build_rng).is_ok(),
+        "恢复后的序列 NodeLevel 图应可构建"
+    );
 }
 
 // ==================== EvolutionResult save/load 测试 ====================
@@ -624,7 +682,7 @@ fn test_phase6_triangle_interop_handwritten_to_evolution_to_manual_train() {
 
 /// 阶段 6 测试 4：Sequential 演化路径不被误伤
 ///
-/// - Sequential 演化仍然保存/加载正常（LayerLevel 格式仍合法）
+/// - Sequential 演化仍然保存/加载正常（阶段 8 后为 NodeLevel 格式）
 /// - 加载后推理成功
 #[test]
 fn test_phase6_sequential_save_load_unaffected() {
@@ -638,10 +696,10 @@ fn test_phase6_sequential_save_load_unaffected() {
         .run()
         .expect("Sequential 演化失败");
 
-    // Sequential genome 仍是 LayerLevel（RNN 尚未节点级化）
+    // 阶段 8：Sequential genome 已迁移为 NodeLevel
     assert!(
-        result.genome.is_layer_level(),
-        "Sequential 演化产出的 genome 应仍为 LayerLevel"
+        result.genome.is_node_level(),
+        "Sequential 演化产出的 genome 应为 NodeLevel"
     );
 
     // 保存/加载应成功（Sequential LayerLevel 格式在阶段 6 仍然合法）

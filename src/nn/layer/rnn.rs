@@ -296,6 +296,34 @@ impl Rnn {
     pub const fn graph(&self) -> &Graph {
         &self.graph
     }
+
+    /// 从已有参数 Var 创建 Rnn 层（基因组 NodeLevel 重建路径专用）
+    ///
+    /// 不创建新参数节点，直接复用传入的 Var（来自 descriptor_rebuild 的 node_map）。
+    pub fn from_vars(
+        w_ih: Var,
+        w_hh: Var,
+        b_h: Var,
+        input_size: usize,
+        hidden_size: usize,
+    ) -> Self {
+        let graph = w_ih.get_graph();
+        let name = "rnn_rebuilt".to_string();
+        graph
+            .inner_mut()
+            .register_recurrent_folding_meta(&name, 6);
+        let instance_id = graph.inner_mut().next_node_group_instance_id();
+        Self {
+            w_ih,
+            w_hh,
+            b_h,
+            graph,
+            input_size,
+            hidden_size,
+            name,
+            instance_id,
+        }
+    }
 }
 
 impl Module for Rnn {

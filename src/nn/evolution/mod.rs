@@ -691,9 +691,10 @@ impl Evolution {
             .unwrap_or_else(|| Box::new(DefaultCallback::new(max_generations, verbose)));
 
         let minimal_genome = if prepared.seq_len.is_some() {
-            // 序列模式：RNN 尚未展开为节点，保持 LayerLevel
+            // 阶段 8：序列模式也迁移到 NodeLevel，统一走节点级演化路径
             let mut g = NetworkGenome::minimal_sequential(prepared.input_dim, prepared.output_dim);
             g.seq_len = prepared.seq_len;
+            let _ = g.migrate_to_node_level();
             g
         } else if let Some(spatial) = prepared.input_spatial {
             let mut g =

@@ -19,7 +19,7 @@ use crate::nn::evolution::gene::{
 };
 use crate::nn::evolution::migration::{
     InnovationCounter, expand_activation, expand_conv2d, expand_dropout, expand_flatten,
-    expand_linear, expand_pool2d, migrate_network_genome,
+    expand_gru, expand_linear, expand_lstm, expand_pool2d, expand_rnn, migrate_network_genome,
 };
 use crate::nn::evolution::node_gene::GenomeAnalysis;
 
@@ -100,6 +100,123 @@ fn expand_linear_all_same_block_id() {
     for node in &nodes {
         assert_eq!(node.block_id, Some(42), "所有节点应共享 block_id");
     }
+}
+
+// ==================== Phase 8: RNN/LSTM/GRU NodeLevel 迁移 ====================
+
+#[test]
+fn expand_rnn_produces_parameter_nodes_and_cell() {
+    let mut c = InnovationCounter::new(1);
+    let nodes = expand_rnn(0, 4, 6, false, 5, 7, &mut c);
+    assert_eq!(nodes.len(), 4);
+    assert!(nodes[0].is_parameter());
+    assert!(nodes[1].is_parameter());
+    assert!(nodes[2].is_parameter());
+    assert!(matches!(
+        nodes[3].node_type,
+        NodeTypeDescriptor::CellRnn {
+            input_size: 4,
+            hidden_size: 6,
+            return_sequences: false,
+            seq_len: 5
+        }
+    ));
+    assert_eq!(nodes[3].output_shape, vec![1, 6]);
+    assert!(nodes.iter().all(|n| n.block_id == Some(7)));
+}
+
+#[test]
+fn expand_lstm_and_gru_return_sequence_shape() {
+    let mut c1 = InnovationCounter::new(1);
+    let lstm_nodes = expand_lstm(0, 3, 8, true, 9, 11, &mut c1);
+    assert_eq!(lstm_nodes.len(), 13);
+    assert!(matches!(
+        lstm_nodes.last().unwrap().node_type,
+        NodeTypeDescriptor::CellLstm {
+            input_size: 3,
+            hidden_size: 8,
+            return_sequences: true,
+            seq_len: 9
+        }
+    ));
+    assert_eq!(lstm_nodes.last().unwrap().output_shape, vec![1, 9, 8]);
+
+    let mut c2 = InnovationCounter::new(1);
+    let gru_nodes = expand_gru(0, 3, 8, true, 9, 12, &mut c2);
+    assert_eq!(gru_nodes.len(), 10);
+    assert!(matches!(
+        gru_nodes.last().unwrap().node_type,
+        NodeTypeDescriptor::CellGru {
+            input_size: 3,
+            hidden_size: 8,
+            return_sequences: true,
+            seq_len: 9
+        }
+    ));
+    assert_eq!(gru_nodes.last().unwrap().output_shape, vec![1, 9, 8]);
+}
+
+#[test]
+fn migrate_sequential_genome_no_longer_deferred() {
+    let genome = NetworkGenome::minimal_sequential(4, 2);
+    let out = migrate_network_genome(&genome).unwrap();
+    assert!(out.deferred.is_empty(), "Phase 8 后循环层不应再 deferred");
+    assert!(
+        out.nodes
+            .iter()
+            .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. }))
+    );
+
+    let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 0, 4], ShapeDomain::Sequence);
+    assert!(
+        analysis.is_valid,
+        "序列 genome 迁移后应静态合法: {:?}",
+        analysis.errors
+    );
+}
+
+#[test]
+fn migrate_stacked_recurrent_genome_marks_return_sequences_correctly() {
+    let mut genome = NetworkGenome::minimal_sequential(4, 2);
+    let inn = genome.next_innovation_number();
+    genome.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: inn,
+            layer_config: LayerConfig::Lstm { hidden_size: 4 },
+            enabled: true,
+        },
+    );
+
+    let out = migrate_network_genome(&genome).unwrap();
+    let cell_nodes: Vec<_> = out
+        .nodes
+        .iter()
+        .filter(|n| {
+            matches!(
+                n.node_type,
+                NodeTypeDescriptor::CellRnn { .. }
+                    | NodeTypeDescriptor::CellLstm { .. }
+                    | NodeTypeDescriptor::CellGru { .. }
+            )
+        })
+        .collect();
+    assert_eq!(cell_nodes.len(), 2);
+
+    assert!(matches!(
+        cell_nodes[0].node_type,
+        NodeTypeDescriptor::CellRnn {
+            return_sequences: true,
+            ..
+        }
+    ));
+    assert!(matches!(
+        cell_nodes[1].node_type,
+        NodeTypeDescriptor::CellLstm {
+            return_sequences: false,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -407,14 +524,15 @@ fn migrate_genome_with_conv2d() {
 
 #[test]
 fn migrate_rnn_genome_deferred() {
-    // 序列 genome（含 Rnn 层）应进入 deferred 路径
+    // 阶段 8 后：序列 genome（含 Rnn 层）应直接展开为 CellRnn，不再 deferred
     let genome = NetworkGenome::minimal_sequential(4, 2);
     let out = migrate_network_genome(&genome).unwrap();
-    // Rnn deferred，Linear(2) 展开为 4 节点
-    assert!(!out.deferred.is_empty(), "Rnn 应被 deferred");
+    assert!(out.deferred.is_empty(), "阶段 8 后 Rnn 不应再 deferred");
     assert!(
-        out.deferred.iter().any(|d| d.contains("循环层")),
-        "deferred 消息应说明是循环层"
+        out.nodes
+            .iter()
+            .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. })),
+        "迁移结果应包含 CellRnn 节点"
     );
 }
 

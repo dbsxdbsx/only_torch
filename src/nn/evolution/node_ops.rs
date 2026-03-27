@@ -26,7 +26,8 @@ use crate::nn::evolution::gene::{
     ActivationType, GenomeRepr, INPUT_INNOVATION, NetworkGenome, PoolType, ShapeDomain,
 };
 use crate::nn::evolution::migration::{
-    InnovationCounter, expand_activation, expand_conv2d, expand_linear, expand_pool2d,
+    InnovationCounter, expand_activation, expand_conv2d, expand_gru, expand_linear,
+    expand_lstm, expand_pool2d, expand_rnn,
 };
 use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
@@ -75,6 +76,18 @@ pub enum NodeBlockKind {
     },
     /// 跳跃连接聚合节点（Add/Concat/Maximum）
     SkipAgg,
+    Rnn {
+        hidden_size: usize,
+        return_sequences: bool,
+    },
+    Lstm {
+        hidden_size: usize,
+        return_sequences: bool,
+    },
+    Gru {
+        hidden_size: usize,
+        return_sequences: bool,
+    },
     Unknown,
 }
 
@@ -88,13 +101,19 @@ impl NodeBlockKind {
     pub fn is_conv2d(&self) -> bool {
         matches!(self, NodeBlockKind::Conv2d { .. })
     }
+    pub fn is_recurrent(&self) -> bool {
+        matches!(self, NodeBlockKind::Rnn { .. } | NodeBlockKind::Lstm { .. } | NodeBlockKind::Gru { .. })
+    }
     pub fn is_resizable(&self) -> bool {
-        self.is_linear() || self.is_conv2d()
+        self.is_linear() || self.is_conv2d() || self.is_recurrent()
     }
     pub fn current_size(&self) -> Option<usize> {
         match self {
             NodeBlockKind::Linear { out_features } => Some(*out_features),
             NodeBlockKind::Conv2d { out_channels, .. } => Some(*out_channels),
+            NodeBlockKind::Rnn { hidden_size, .. }
+            | NodeBlockKind::Lstm { hidden_size, .. }
+            | NodeBlockKind::Gru { hidden_size, .. } => Some(*hidden_size),
             _ => None,
         }
     }
@@ -341,6 +360,45 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
         }
     }
 
+    // 循环单元块：通过 Cell* 节点直接读取元数据
+    for &id in node_ids {
+        if let Some(n) = node_map.get(&id) {
+            match &n.node_type {
+                NT::CellRnn {
+                    hidden_size,
+                    return_sequences,
+                    ..
+                } => {
+                    return NodeBlockKind::Rnn {
+                        hidden_size: *hidden_size,
+                        return_sequences: *return_sequences,
+                    }
+                }
+                NT::CellLstm {
+                    hidden_size,
+                    return_sequences,
+                    ..
+                } => {
+                    return NodeBlockKind::Lstm {
+                        hidden_size: *hidden_size,
+                        return_sequences: *return_sequences,
+                    }
+                }
+                NT::CellGru {
+                    hidden_size,
+                    return_sequences,
+                    ..
+                } => {
+                    return NodeBlockKind::Gru {
+                        hidden_size: *hidden_size,
+                        return_sequences: *return_sequences,
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     NodeBlockKind::Unknown
 }
 
@@ -567,6 +625,91 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 }
                 dim_map.insert(block.output_id, out);
             }
+            NodeBlockKind::Rnn {
+                hidden_size,
+                return_sequences: _,
+            }
+            | NodeBlockKind::Lstm {
+                hidden_size,
+                return_sequences: _,
+            }
+            | NodeBlockKind::Gru {
+                hidden_size,
+                return_sequences: _,
+            } => {
+                let out = *hidden_size;
+                let cell_node = genome
+                    .nodes()
+                    .iter()
+                    .find(|n| {
+                        bid_set.contains(&n.innovation_number)
+                            && matches!(
+                                n.node_type,
+                                NodeTypeDescriptor::CellRnn { .. }
+                                    | NodeTypeDescriptor::CellLstm { .. }
+                                    | NodeTypeDescriptor::CellGru { .. }
+                            )
+                    })
+                    .cloned();
+
+                if let Some(cell) = cell_node {
+                    for node in genome.nodes_mut().iter_mut() {
+                        if node.innovation_number == cell.innovation_number {
+                            match &mut node.node_type {
+                                NodeTypeDescriptor::CellRnn {
+                                    input_size,
+                                    hidden_size,
+                                    ..
+                                }
+                                | NodeTypeDescriptor::CellLstm {
+                                    input_size,
+                                    hidden_size,
+                                    ..
+                                }
+                                | NodeTypeDescriptor::CellGru {
+                                    input_size,
+                                    hidden_size,
+                                    ..
+                                } => {
+                                    *input_size = prev_out;
+                                    *hidden_size = out;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    for (idx, pid) in cell.parents.iter().skip(1).copied().enumerate() {
+                        for node in genome.nodes_mut().iter_mut() {
+                            if node.innovation_number != pid || !node.is_parameter() {
+                                continue;
+                            }
+                            match idx % 3 {
+                                0 => {
+                                    if node.output_shape.len() == 2 {
+                                        node.output_shape[0] = prev_out;
+                                        node.output_shape[1] = out;
+                                    }
+                                }
+                                1 => {
+                                    if node.output_shape.len() == 2 {
+                                        node.output_shape[0] = out;
+                                        node.output_shape[1] = out;
+                                    }
+                                }
+                                _ => {
+                                    if node.output_shape.len() == 2 {
+                                        node.output_shape[0] = 1;
+                                        node.output_shape[1] = out;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                dim_map.insert(block.output_id, out);
+            }
             NodeBlockKind::Flatten => {
                 // Flatten 后刷新形状，重新获取平坦维度
                 sync_computation_shapes(genome);
@@ -762,6 +905,97 @@ pub fn resize_conv2d_out(
     Ok(())
 }
 
+/// 将循环块的隐藏维度调整为 `new_hidden`。
+///
+/// 输入特征维度由 `repair_param_input_dims` 统一修复；这里负责：
+/// 1. 更新 Cell* 元数据中的 `hidden_size`
+/// 2. 更新 recurrent weight / bias 的隐藏维度
+pub fn resize_recurrent_out(
+    genome: &mut NetworkGenome,
+    block: &NodeBlock,
+    new_hidden: usize,
+) -> Result<(), String> {
+    let bid_set: HashSet<u64> = block.node_ids.iter().copied().collect();
+    let cell_node = genome
+        .nodes()
+        .iter()
+        .find(|n| {
+            bid_set.contains(&n.innovation_number)
+                && matches!(
+                    n.node_type,
+                    NodeTypeDescriptor::CellRnn { .. }
+                        | NodeTypeDescriptor::CellLstm { .. }
+                        | NodeTypeDescriptor::CellGru { .. }
+                )
+        })
+        .cloned()
+        .ok_or_else(|| "循环块中缺少 Cell* 节点".to_string())?;
+
+    let param_ids: Vec<u64> = cell_node.parents.iter().skip(1).copied().collect();
+
+    for node in genome.nodes_mut().iter_mut() {
+        if node.innovation_number == cell_node.innovation_number {
+            match &mut node.node_type {
+                NodeTypeDescriptor::CellRnn { hidden_size, .. }
+                | NodeTypeDescriptor::CellLstm { hidden_size, .. }
+                | NodeTypeDescriptor::CellGru { hidden_size, .. } => {
+                    *hidden_size = new_hidden;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    for (idx, pid) in param_ids.iter().enumerate() {
+        for node in genome.nodes_mut().iter_mut() {
+            if node.innovation_number != *pid || !node.is_parameter() {
+                continue;
+            }
+            match idx % 3 {
+                0 => {
+                    if node.output_shape.len() == 2 {
+                        node.output_shape[1] = new_hidden;
+                    }
+                }
+                1 => {
+                    if node.output_shape.len() == 2 {
+                        node.output_shape[0] = new_hidden;
+                        node.output_shape[1] = new_hidden;
+                    }
+                }
+                _ => {
+                    if node.output_shape.len() == 2 {
+                        node.output_shape[0] = 1;
+                        node.output_shape[1] = new_hidden;
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+    repair_param_input_dims(genome);
+    Ok(())
+}
+
+fn needs_return_sequences_after(genome: &NetworkGenome, after_id: u64) -> bool {
+    let blocks = node_main_path(genome);
+    let current_idx = match blocks.iter().position(|b| b.output_id == after_id) {
+        Some(idx) => idx,
+        None => return false,
+    };
+
+    for block in blocks.iter().skip(current_idx + 1) {
+        match &block.kind {
+            NodeBlockKind::Activation { .. } | NodeBlockKind::Dropout { .. } | NodeBlockKind::SkipAgg => {
+                continue;
+            }
+            kind => return kind.is_recurrent(),
+        }
+    }
+    false
+}
+
 // ==================== 变异决策辅助 ====================
 
 /// 在 `after_id` 处创建新层节点（类型由域和约束决定），返回节点列表和使用的计数器
@@ -839,8 +1073,46 @@ pub fn create_insert_nodes(
     }
 
     if is_sequential {
-        // 序列域：这里简化，返回 None（让 is_applicable 处过滤掉）
-        return None;
+        let effective_min = constraints.min_hidden_size.max(4);
+        let size_cap = in_dim
+            .min(256)
+            .max(effective_min * 2)
+            .min(constraints.max_hidden_size)
+            .max(effective_min);
+        let hidden_size =
+            sample_size_in_range_simple(effective_min, size_cap, &constraints.size_strategy, rng);
+        let return_sequences = needs_return_sequences_after(genome, after_id);
+        let seq_len = genome.seq_len.unwrap_or(0);
+        let choice = rng.gen_range(0..3);
+        return Some(match choice {
+            0 => expand_rnn(
+                after_id,
+                in_dim,
+                hidden_size,
+                return_sequences,
+                seq_len,
+                block_id,
+                &mut counter,
+            ),
+            1 => expand_lstm(
+                after_id,
+                in_dim,
+                hidden_size,
+                return_sequences,
+                seq_len,
+                block_id,
+                &mut counter,
+            ),
+            _ => expand_gru(
+                after_id,
+                in_dim,
+                hidden_size,
+                return_sequences,
+                seq_len,
+                block_id,
+                &mut counter,
+            ),
+        });
     }
 
     // 默认：插入 Linear
