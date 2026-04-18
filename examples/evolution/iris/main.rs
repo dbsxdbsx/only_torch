@@ -6,7 +6,7 @@
  * 与 `examples/iris`（手动定义 MLP + 训练循环）不同，
  * 本示例展示 **Evolution API**——只提供数据和目标，
  * 系统从最小结构 `Input(4) → [Linear(3)]` 出发，
- * 通过层级变异自动发现能分类 Iris 数据集的最优架构。
+ * 通过自动变异发现能分类 Iris 数据集的最优架构。
  *
  * 关键特性：
  * - 150 样本 → 自动选择 mini-batch 训练（batch_size=64）
@@ -31,7 +31,7 @@ fn main() {
     println!("数据: 150 样本，4 特征，3 类别 ({:?})", CLASS_NAMES);
     println!("起始结构: Input(4) → [Linear(3)]（仅输出头，无隐藏层）");
     println!("训练模式: mini-batch（150 样本 → auto batch_size=64）");
-    println!("目标: 通过层级变异自动演化到 ≥95% 准确率\n");
+    println!("目标: 通过自动变异演化到 ≥95% 准确率\n");
 
     let data = load_iris();
 

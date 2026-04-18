@@ -6,7 +6,7 @@
  * 与 `examples/mnist`（手动定义 MLP）和 `examples/mnist_cnn`（手动定义 LeNet）不同，
  * 本示例展示 **Evolution API**——只提供图像数据和目标，
  * 系统从最小结构 `Input(1@28×28) → Flatten → [Linear(10)]` 出发，
- * 通过层级变异自动发现能识别手写数字的架构。
+ * 通过自动变异发现能识别手写数字的架构。
  *
  * 演化可能发现纯 FC 架构、Conv+FC 混合架构，或其他任何合法结构——
  * 最终由 fitness（准确率）驱动选择。

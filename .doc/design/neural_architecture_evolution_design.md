@@ -1,6 +1,6 @@
 # 神经架构演化（Neural Architecture Evolution）
 
-> **设计理念**：用户只提供数据和目标，系统从最小网络出发，通过层级变异 + 梯度训练的混合策略自动发现最优架构。
+> **设计理念**：用户只提供数据和目标，系统从最小网络出发，通过自动变异 + 梯度训练的混合策略自动发现最优架构。
 >
 > **核心原则**：进化负责结构搜索，梯度负责权重优化——各取所长（EXAMM 策略）。
 
@@ -247,17 +247,34 @@ pub struct FitnessScore {
 
 ```rust
 pub struct NetworkGenome {
-    pub layers: Vec<LayerGene>,          // 层列表（最后一层 = 输出头，受保护）
-    pub skip_edges: Vec<SkipEdge>,       // 跳跃连接列表
     pub input_dim: usize,
     pub output_dim: usize,
-    pub seq_len: Option<usize>,              // None=平坦, Some(n)=序列（每时间步 input_dim 维）
-    pub input_spatial: Option<(usize, usize)>, // None=非空间, Some((H,W))=空间
-    pub training_config: TrainingConfig, // lr / optimizer / loss 等
-    pub generated_by: String,            // 变异来源（调试用）
-    weight_snapshots: HashMap<u64, Vec<Tensor>>,  // Lamarckian 继承
+    pub seq_len: Option<usize>,                // None=平坦, Some(n)=序列
+    pub input_spatial: Option<(usize, usize)>,  // None=非空间, Some((H,W))=空间
+    pub training_config: TrainingConfig,        // lr / optimizer / loss 等
+    pub generated_by: String,                   // 变异来源（调试用）
+    pub(crate) repr: GenomeRepr,                // 内部表示（NodeLevel / LayerLevel）
+}
+
+pub(crate) enum GenomeRepr {
+    /// 节点级表示（唯一正式内核表示）
+    NodeLevel {
+        nodes: Vec<NodeGene>,
+        next_innovation: u64,
+        weight_snapshots: HashMap<u64, Tensor>,  // param_innovation → Tensor
+    },
+    /// 层级表示（仅作为用户 DSL 入口保留，运行前自动迁移到 NodeLevel）
+    LayerLevel {
+        layers: Vec<LayerGene>,
+        skip_edges: Vec<SkipEdge>,
+        next_innovation: u64,
+        weight_snapshots: HashMap<u64, Vec<Tensor>>,
+    },
 }
 ```
+
+**内核统一**：演化主循环 `run()` 在启动时对所有类型（Flat/Spatial/Sequential）调用 `migrate_to_node_level()`，确保内部始终以 NodeLevel 运行。LayerLevel 仅在用户通过 `from_flat`/`from_spatial`/`from_sequential` 等 DSL 入口传入初始配置时暂存，随即被迁移。
+
 **最小初始网络**（按数据形状自动选择）：
 - 平坦数据 `[D]`：`Input(D) → [Linear(output_dim)]`
 - 序列数据 `[T, D]`：`Input(seq×D) → Rnn(output_dim) → [Linear(output_dim)]`
@@ -265,11 +282,43 @@ pub struct NetworkGenome {
 
 序列初始网络以最简单的 Rnn 为起点（而非 LSTM/GRU），后续 `MutateCellType` 可升级记忆单元类型，`InsertLayer` 可在序列域插入更多循环层。
 
-**输出头保护**：
+**输出头保护**：最后一个主路径块（输出头）不可删除、不可替换。
 
-**权重快照自包含**：`clone()` 时权重一并复制，回滚到 `best_genome` 自带权重，无需保留旧 Graph。
+**权重快照自包含**：`clone()` 时权重一并复制，回滚到 `best_genome` 自带权重，无需保留旧 Graph。权重按 Parameter 节点 innovation number 索引（`HashMap<u64, Tensor>`），Grow/Shrink/Replace 时按节点是否保留、形状是否兼容判断继承。
 
-### 4.2 LayerConfig
+### 4.2 NodeGene
+
+```rust
+pub struct NodeGene {
+    pub innovation_number: u64,            // NEAT 风格创新号
+    pub node_type: NodeTypeDescriptor,     // 直接对齐图 IR 层
+    pub output_shape: Vec<usize>,          // 输出形状
+    pub parents: Vec<u64>,                 // 父节点创新号列表
+    pub enabled: bool,                     // NEAT 风格禁用机制
+    pub block_id: Option<u64>,             // 模板组标识
+}
+```
+
+`NodeGene` 是演化系统的最小可操作单元。`node_type` 直接使用 `NodeTypeDescriptor`（定义在 `src/nn/descriptor.rs`），实现演化层和图 IR 层的 1:1 对齐。
+
+**block_id** 用于模板组操作：同一个高层模板（如 Linear = MatMul + Parameter + Add + Parameter）展开后的节点共享相同 `block_id`。Grow/Shrink/Remove 以模板组为单位操作，未来 Crossover 也以 block 为单位对齐。`block_id = None` 表示独立节点（如单独的激活函数）。
+
+### 4.3 GenomeAnalysis
+
+```rust
+pub struct GenomeAnalysis {
+    pub topo_order: Vec<u64>,              // 拓扑排序后的节点 ID 序列
+    pub shape_map: HashMap<u64, Vec<usize>>, // 每个节点的推导形状
+    pub domain_map: HashMap<u64, ShapeDomain>, // 每个节点的域
+    pub param_count: usize,                // 总参数量
+    pub reachable: HashSet<u64>,           // 从输出可达的节点集
+    // ...
+}
+```
+
+`GenomeAnalysis` 是不可变快照，通过 `genome.analyze()` 生成。任何 mutation、migration、builder 修正之后都必须重新分析，不允许共享可变 analysis 状态。统一承担拓扑排序、环检测、形状推导、域推导、参数统计、输出可达性检查、连接合法性检查。
+
+### 4.4 LayerConfig（用户入口 DSL）
 
 ```rust
 pub enum LayerConfig {
@@ -279,15 +328,27 @@ pub enum LayerConfig {
     Lstm { hidden_size: usize },
     Gru { hidden_size: usize },
     Dropout { p: f32 },
-    Conv2d { out_channels: usize, kernel_size: usize }, // stride=1, same padding
+    Conv2d { out_channels: usize, kernel_size: usize },
     Pool2d { pool_type: PoolType, kernel_size: usize, stride: usize },
-    Flatten, // Spatial(C,H,W) → Flat(C*H*W)
+    Flatten,
 }
 ```
 
-只存输出侧参数，输入维度由 `resolve_dimensions()` 自动推导。循环层（Rnn / Lstm / Gru）仅在 `seq_len` 非 None 时使用，空间层（Conv2d / Pool2d / Flatten）仅在 `input_spatial` 非 None 时使用。
+LayerConfig 不再是内核表示，仅作为用户入口 DSL 保留。`migrate_to_node_level()` 通过 `TemplateExpander` 将每个 `LayerConfig` 展开为对应的 `NodeGene` 模板组（如 `Linear` → MatMul + Parameter + Add + Parameter）。
 
-### 4.3 ShapeDomain 域系统
+### 4.5 NodeLevel 跨层连接
+
+NodeLevel 中不再维护独立的 `SkipEdge` 概念。任何跨层连接（残差、绕连等）都是 DAG 中的普通前向父边，由 `AddConnection`/`RemoveConnection` 变异直接操作。
+
+新增连接时的自动保障：
+- 新增连接必须满足拓扑序，不能成环
+- 如果目标已有主输入，自动插入聚合节点（`Add`/`Concat`/`Maximum`）
+- 如果形状不兼容，自动插入投影节点（Flat 域 `Linear`、Spatial 域 `1×1 Conv2d`）
+- 所有连接合法性统一由 `GenomeAnalysis` 校验
+
+旧版 `SkipEdge` 仅在 LayerLevel DSL 入口中保留兼容。
+
+### 4.6 ShapeDomain 域系统
 
 `ShapeDomain` 描述张量在网络中的维度语义，用于验证层链合法性和约束 skip edge 范围：
 
@@ -308,44 +369,9 @@ pub enum ShapeDomain {
 
 **空间模式域链规则**：`Spatial* → Flatten → Flat*`（详见 11.5 节）。
 
-`compute_domain_map()` 为每个层节点映射到其输出形状域，供 skip edge 约束和变异操作的域感知逻辑使用。
+`GenomeAnalysis` 对 NodeLevel 基因组统一执行域推导（`domain_map`），为连接合法性检查和变异约束提供基础。
 
-### 4.4 SkipEdge 与聚合
-
-跳跃连接不作为独立层存在于 `layers` 中。`SkipEdge` 携带聚合策略，`build()` 时自动在目标层输入处生成聚合操作：
-
-```rust
-pub struct SkipEdge {
-    pub innovation_number: u64,
-    pub from_innovation: u64,   // 源层
-    pub to_innovation: u64,     // 目标层（聚合发生在此层输入处）
-    pub strategy: AggregateStrategy,
-    pub enabled: bool,
-}
-
-pub enum AggregateStrategy {
-    Add,                  // ResNet 风格，要求维度相同
-    Concat { dim: i32 },  // DenseNet 风格，允许不同维度
-    Mean,                 // 要求维度相同
-    Max,                  // 要求维度相同
-}
-```
-
-示例：
-
-```
-变异前：  Input → Linear(4) → ReLU → [Linear(1)]
-
-AddSkipEdge(Input → 输出头, strategy=Add) 后：
-
-          Input ─────────────────────────┐
-            │                            │
-            └─> Linear(4) → ReLU ──(+)─> [Linear(1)]
-                                    ↑
-                          build 时自动生成 Add 聚合
-```
-
-### 4.4 TrainingConfig
+### 4.7 TrainingConfig
 
 ```rust
 pub struct TrainingConfig {
@@ -359,18 +385,15 @@ pub struct TrainingConfig {
 
 `effective_loss()` 优先使用 `loss_override`，否则按 TaskMetric + output_dim 自动推断。
 
-### 4.5 维度推导
+### 4.8 维度推导与形状分析
 
-`resolve_dimensions()` 从 `input_dim` 出发沿 `layers` 顺序遍历，为每层计算 `(in_dim, out_dim)`。遇到 skip edge 目标层时，按聚合策略计算有效输入维度（Add/Mean/Max 要求维度相同，Concat 求和）。
+NodeLevel 基因组的形状推导统一由 `GenomeAnalysis` 完成：
+- 按拓扑序遍历 `NodeGene` 列表，从 `BasicInput` 出发逐节点推导输出形状
+- Parameter / State 节点的 `output_shape` 为权威值，计算节点的 `output_shape` 为声明值（Analysis 验证一致性）
+- 空间域维护 `(H, W)` 信息：Conv2d 保持尺寸（same padding, stride=1），Pool2d 缩减，Flatten 归零
+- `total_params()` 从 Analysis 的 `param_count` 获取，与 `build()` 共享同一套推导逻辑
 
-空间模式下，维度推导同时维护 `current_spatial: Option<(H, W)>`：
-- Conv2d (same padding, stride=1)：`(H, W)` 不变，`out_dim = out_channels`
-- Pool2d (kernel_size=k, stride=s)：`(H/s, W/s)`，channels 不变
-- Flatten：`out_dim = channels × H × W`，空间维度归 None
-`compute_spatial_map()` 为每个层节点（含 INPUT）映射到其输出空间尺寸，Flatten 之后为 None。
-
-`total_params()`
-`total_params()` 和 `build()` 共享同一套维度推导逻辑，避免重复实现。变异操作的 `is_applicable()` 通过试探式调用 `resolve_dimensions()` 统一检测维度合法性。
+变异操作的 `is_applicable()` 通过试探式 `analyze()` 统一检测形状合法性。
 
 ---
 
@@ -428,28 +451,26 @@ pub trait Mutation: Send + Sync {
 
 > Phase 2 特点：结构变异权重降低，超参数调优权重大幅提升（MutateLR 0.05→0.15，MutateOptimizer 0.02→0.08）。Grow/Shrink 对称化（各 0.15）以微调尺寸。
 
-**SkipEdge 变异（3 种，两阶段权重略有差异）**：
+**连接变异（NodeLevel 上操作 DAG 父边）**：
 
 | 变异 | Phase 1 | Phase 2 | 结构性 | 核心逻辑 |
 |---|---|---|---|---|
-| `AddSkipEdge` | 0.08 | 0.06 | ✅ | DAG 前向约束 + 策略继承 + 试探式维度验证 |
-| `RemoveSkipEdge` | 0.05 | 0.05 | ✅ | 从 skip_edges 移除 |
-| `MutateAggregateStrategy` | 0.03 | 0.03 | | 目标层组级原子操作，同一目标所有边统一切换 |
+| `AddConnection` | 0.08 | 0.06 | ✅ | 选择两个满足拓扑序的节点，添加父边；形状不兼容时自动插入投影/聚合节点 |
+| `RemoveConnection` | 0.05 | 0.05 | ✅ | 移除非关键前向父边（保持图连通性） |
+
+所有变异在 NodeLevel 上以模板组（`block_id`）为操作单位：InsertLayer 展开完整模板组，RemoveLayer 删除整个模板组，Grow/Shrink 修改模板组内的 Parameter 形状。
 
 ### 5.3 合法性保障
 
 所有变异在 `is_applicable()` 和 `apply()` 中确保：
 
 - **输出头保护**：不删除、不修改、不替换、不在其之后插入
-- **维度兼容**：通过试探式 `resolve_dimensions()` 统一检测
+- **形状兼容**：通过试探式 `analyze()` 统一检测（替代旧 `resolve_dimensions()`）
 - **规模约束**：`max_layers` / `max_hidden_size` / `max_total_params`
 - **连续 Activation 禁止**：不允许两个 Activation 相邻
-- **DAG 约束**：skip edge 只能前向（from 在 to 之前）
-- **域链合法性**：`is_domain_valid()` 确保合法的域转换序列
-  - 序列模型：`Sequence* → Flat*`（不允许 Flat→Sequence 回溯）
-  - 空间模型：`Spatial* → Flatten → Flat*`
-- **记忆单元原子性**：序列模式下 skip edge 仅允许在 Flat 域内，不穿透循环层
-- **最小保护**：至少保留输出头一层
+- **拓扑约束**：新增连接必须满足 DAG 拓扑序（不成环），由 `GenomeAnalysis` 环检测保障
+- **域链合法性**：序列模型 `Sequence* → Flat*`（不允许回溯），空间模型 `Spatial* → Flatten → Flat*`
+- **最小保护**：至少保留输出头一个模板组
 
 ### 5.4 自定义变异
 
@@ -499,13 +520,15 @@ Evolution::supervised(train, test, metric)
 
 ## 7. Lamarckian 权重继承
 
-训练后的权重保存在 `NetworkGenome.weight_snapshots` 中，按 `innovation_number` 索引。下一代 `build()` 后、训练前调用 `restore_weights()`：
+训练后的权重保存在 `NetworkGenome.weight_snapshots` 中。NodeLevel 基因组按 Parameter 节点的 innovation number 索引（`HashMap<u64, Tensor>`，每个 Parameter 节点独立一个 Tensor）。
+
+下一代 `build()` 后、训练前调用 `restore_weights()`：
 
 | 情况 | 行为 |
 |---|---|
-| 同 innovation_number 且形状相同 | 直接复制（继承） |
+| 同 Parameter innovation_number 且形状相同 | 直接复制（继承） |
 | 形状不匹配（如 GrowHiddenSize 后） | 保留新初始化值 |
-| 无快照（新插入的层） | 保留新初始化值 |
+| 无快照（新插入的模板组带来的新 Parameter） | 保留新初始化值 |
 
 `InheritReport` 返回 `inherited` / `reinitialized` 计数。
 
@@ -574,18 +597,22 @@ let predictions = result.predict(&input)?;  // 返回 [batch, output_dim]
 src/nn/evolution/
 ├── mod.rs              Evolution + run() + TaskSpec + EvolutionResult + EvolutionStatus + ParetoSummary + ComplexityMetric
 ├── error.rs            EvolutionError（InvalidData / InvalidConfig / Graph）
-├── gene.rs             NetworkGenome, LayerGene, LayerConfig, SkipEdge, TrainingConfig, TaskMetric
-├── mutation.rs         Mutation trait + MutationRegistry + 12+条件变异操作
+├── gene.rs             NetworkGenome, GenomeRepr, LayerGene, LayerConfig, SkipEdge, TrainingConfig, TaskMetric
+├── node_gene.rs        NodeGene 数据结构（innovation_number, node_type, output_shape, parents, block_id）
+├── node_ops.rs         NodeBlock / NodeBlockKind / node_main_path()：节点级基因组的模板组分析
+├── mutation.rs         Mutation trait + MutationRegistry + 12+条件变异操作（NodeLevel 上以模板组为单位）
+├── migration.rs        LayerLevel → NodeLevel 迁移（migrate_to_node_level + TemplateExpander）
 ├── selection.rs        NSGA-II 多目标选择 + Pareto Archive 管理（pareto_rank, crowding_distance, nsga2_select, update_archive）
-├── builder.rs          Genome → Graph 转换 + BuildResult + Lamarckian 权重管理
-├── model_io.rs         模型序列化/反序列化（save/load .otm 文件）
+├── builder.rs          Genome → GraphDescriptor → Graph 转换 + to/from_graph_descriptor + backfill_node_group_tags + Lamarckian 权重管理
+├── model_io.rs         模型序列化/反序列化（save/load .otm 文件，仅 NodeLevel）
 ├── convergence.rs      ConvergenceDetector + ConvergenceConfig + TrainingBudget
 ├── task.rs             EvolutionTask trait + SupervisedTask + FitnessScore
 ├── callback.rs         EvolutionCallback trait + DefaultCallback（含 on_population_evaluated）
 └── tests/
     ├── gene.rs         基因数据结构单元测试（含序列域/空间层维度测试）
-    ├── mutation.rs     变异操作单元测试（含 MutateCellType）
-    ├── builder.rs      构建与权重继承单元测试（含 RNN/LSTM/GRU/Conv2d 前向测试）
+    ├── mutation.rs     变异操作单元测试（含 MutateCellType / NodeLevel 变异）
+    ├── builder.rs      构建与权重继承单元测试（含 RNN/LSTM/GRU/Conv2d 前向 + NodeGroupTag 回填验证）
+    ├── model_io.rs     模型序列化测试（含 Phase 6 手写⇄演化互通三角测试）
     ├── convergence.rs  收敛检测单元测试
     ├── task.rs         训练与评估单元测试（含 mini-batch shuffle 可复现性验证）
     ├── selection.rs    NSGA-II 选择 + Archive 管理单元测试（含 per-front crowding distance 验证）
@@ -596,18 +623,21 @@ src/nn/evolution/
 
 ## 10. 关键设计决策
 | 决策 | 理由 |
-||---|---|
+|---|---|
+| **NodeLevel 为唯一内核表示** | 消除演化层与图 IR 层的抽象断层，`NodeGene.node_type` 直接对齐 `NodeTypeDescriptor`，1:1 映射 |
+| **LayerLevel 降级为用户入口 DSL** | 保持用户 API 不变（`from_flat(layers)`），内部立即迁移到 NodeLevel |
+| **构图统一走 GraphDescriptor** | `NetworkGenome → GraphDescriptor → Graph::from_descriptor()`，演化和手写模型共用同一条构图管线 |
+| **模型互通（.otm）** | 统一存储 NodeLevel 表示，手写模型可通过 `from_graph_descriptor()` 转为 NetworkGenome，再演化或加载 |
 | Genome-Centric（每代重建图） | 基因组自包含，clone 即回滚，避免 Graph 内部状态纠缠 |
-|| Mutation trait + 注册表 | 可插拔设计，添加新变异不修改 Evolution（EXAMM/LayerNAS 标准做法） |
-|| Pareto 种群 + NSGA-II | 多目标（primary↑ + cost↓）种群搜索，维护全局 Pareto archive，天然支持多样性和 complexity-accuracy 权衡 |
-|| rayon 并行评估 | offspring 的 build→train→evaluate 通过 map_init 并行化，每个 worker 独立 materialize task 避免数据冗余复制 |
-|| 数据驱动 auto_constraints | 用户无需配置约束，系统根据任务维度自动推导合理搜索空间 |
-|| 两阶段训练+变异切换 | 解决搜索效率 vs 评估精度矛盾；Phase1 快速探索拓扑，Phase2 精炼超参 |
-|| 随机爆发初始化 | 复用现有变异基础设施，零新增代码产生多样化初始候选 |
+| Mutation trait + 注册表 | 可插拔设计，添加新变异不修改 Evolution（EXAMM/LayerNAS 标准做法） |
+| Pareto 种群 + NSGA-II | 多目标（primary↑ + cost↓）种群搜索，维护全局 Pareto archive，天然支持多样性和 complexity-accuracy 权衡 |
+| rayon 并行评估 | offspring 的 build→train→evaluate 通过 map_init 并行化，每个 worker 独立 materialize task 避免数据冗余复制 |
+| 数据驱动 auto_constraints | 用户无需配置约束，系统根据任务维度自动推导合理搜索空间 |
+| 两阶段训练+变异切换 | 解决搜索效率 vs 评估精度矛盾；Phase1 快速探索拓扑，Phase2 精炼超参 |
+| 随机爆发初始化 | 复用现有变异基础设施，零新增代码产生多样化初始候选 |
 | `>=` 非严格接受 | 解决 stepping stone 问题（XOR 等任务需多步结构变化才能突破） |
 | Fitness 驱动（非 loss） | 通用性：fitness 在所有范式中有意义；loss 不可跨架构比较 |
 | Tiebreak 分离（独立字段） | primary 保持纯指标值，避免 epsilon 融合污染日志和 target_metric 比较 |
-| 聚合操作 build 时派生 | layers 纯粹包含计算层，变异操作不需要处理 Aggregate 特殊情况 |
 | TrainingConfig 绑定 Genome | 架构与训练超参数耦合（NAS-HPO-Bench-II 证实），联合搜索优于分离 |
 | Batch size 是 Task 层职责 | EvolutionTask::train() 不感知 batch；监督/RL 各自管理喂数据策略 |
 | 延迟实例化（TaskSpec） | `supervised()` 无错构造，数据验证和 Task 创建延迟到 `run()`，保持 builder 链零 boilerplate |
@@ -623,10 +653,11 @@ src/nn/evolution/
 
 ### 11.1 添加新层类型
 
-1. 在 `LayerConfig` 枚举添加新变体
-2. 在 `gene.rs` 的 `compute_output_dim()` 和 `compute_layer_params()` 添加分支
-3. 在 `builder.rs` 的 `build()` 添加构建逻辑
-4. 在 `InsertLayerMutation` 中纳入新类型（或创建专用 Mutation）
+1. 在 `NodeTypeDescriptor` 中添加新变体（如 `BatchNorm`、`LayerNorm` 等）
+2. 在 `TemplateExpander` 中定义该层的模板组展开规则（哪些原子节点组成一个"层"）
+3. 在 `NodeBlockKind` 中添加对应变体，使 `node_main_path()` 能识别新块类型
+4. 在 `InsertLayerMutation` 中纳入新类型的随机生成逻辑
+5. （可选）在 `LayerConfig` 中添加用户 DSL 入口，并在 `migrate_to_node_level()` 中处理迁移
 
 ### 11.2 添加新变异操作
 
@@ -705,9 +736,11 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 | 方向 | 难度 | 说明 |
 |---|---|---|
-| 交叉操作（Crossover） | 高 | 种群已就绪，需基因组对齐算法（NEAT 式 innovation matching） |
-| FLOPs / latency 作为 complexity metric | 中 | ComplexityMetric 枚举已预留扩展点，需实现 per-layer FLOPs 估算 |
+| 交叉操作（Crossover） | 高 | 种群已就绪，block_id 为对齐单位，需基因组对齐算法（NEAT 式 innovation matching） |
+| FLOPs / latency 作为 complexity metric | 中 | ComplexityMetric 枚举已预留扩展点，需实现 per-node FLOPs 估算 |
 | 岛屿模型 / 分布式种群 | 高 | 多岛并行搜索 + 迁移策略，需跨进程 genome 序列化 |
+| 节点级循环连接（InsertAtomicNode） | 中 | NodeLevel DAG 上的细粒度节点插入变异，打通 NEAT 风格的单节点增长 |
+| State 节点时序语义扩展 | 中 | 丰富 State 节点的时序行为定义，支持更复杂的记忆/注意力机制 |
 
 ---
 
@@ -779,4 +812,13 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-03-11（v3: Pareto 种群 + NSGA-II + 并行评估 + 正确性与收敛效率修复）*
+## 已知问题
+
+| 问题 | 状态 | 说明 |
+|---|---|---|
+| MNIST 演化在 debug 模式下耗时较长 | 待优化 | 达标率不稳定，release 模式下表现尚可。受限于 debug 编译的计算图性能 |
+| NodeLevel Cluster 可视化端到端效果 | 待验证 | `backfill_node_group_tags` 逻辑已实现并通过单元测试，但实际渲染输出的 Cluster 边界有待人工验证 |
+
+---
+
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-18（v4: NodeLevel 内核统一，LayerLevel 降级为 DSL，GraphDescriptor 构图管线，模型互通）*

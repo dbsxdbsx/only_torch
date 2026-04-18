@@ -6,7 +6,7 @@
  * 与 `examples/xor`（手动定义网络 + 训练循环）不同，
  * 本示例展示 **Evolution API**——只提供数据和目标，
  * 系统从最小结构 `Input(2) → [Linear(1)]` 出发，
- * 通过层级变异自动发现能解决 XOR 问题的最优架构。
+ * 通过自动变异发现能解决 XOR 问题的最优架构。
  *
  * ## 运行
  * ```bash
@@ -40,7 +40,7 @@ fn xor_data() -> (Vec<Tensor>, Vec<Tensor>) {
 fn main() {
     println!("=== XOR 神经架构演化示例 ===\n");
     println!("起始结构: Input(2) → [Linear(1)]（仅输出头，无隐藏层）");
-    println!("目标: 通过层级变异自动演化到 100% XOR 准确率\n");
+    println!("目标: 通过自动变异演化到 100% XOR 准确率\n");
 
     let data = xor_data();
 

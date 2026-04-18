@@ -299,30 +299,222 @@ NodeLevel 重构后，Lamarckian 继承与快照应下沉到 Parameter 节点粒
 * 散节点（单独激活等，`block_id = None`）→ 不展示 cluster，符合预期 ✅
 这一阶段完成后，LayerLevel 只剩“输入语言”意义，不再是“内部世界模型”。
 
-### 阶段 10（延后）：增加 ONNX 导入模块
-等前 1-9 阶段完成、内核真正统一后，再做 ONNX。模块应放在图模块下，例如 `src/nn/graph/onnx_import.rs`，而不是演化模块下。
+### 阶段 10：ONNX 双向桥接（导入 + 导出）
 
-推荐流程拆成四层：
+#### 目标
 
-1. protobuf 解析层：读取 `ModelProto/GraphProto`
-2. 符号表层：建立 tensor name 到 node/gene 的映射
-3. 算子映射层：把 ONNX `op_type` 映射到 `NodeTypeDescriptor`
-4. Genome 装配层：构造合法的 `NetworkGenome` 并填充参数快照
+在内核统一（阶段 1–9）完成的基础上，为 `only_torch` 增加 ONNX 双向互操作能力：
 
-第一版只支持与框架现有能力重叠最大的核心子集：
+- **导入**：从 `.onnx` 文件（PyTorch/TensorFlow/其他框架导出）构建 `GraphDescriptor`，进而用于手动训练或作为演化种子
+- **导出**：将 `only_torch` 的模型（不论是手动训练还是演化产出）导出为标准 `.onnx` 文件，供外部工具（ONNX Runtime、TensorRT 等）使用
 
-* `MatMul/Gemm`
-* `Add`
-* `Relu`
-* `Sigmoid`
-* `Tanh`
-* `Conv`
-* `Flatten`
-* `Concat`
-* `BatchNormalization`
-* `Softmax`
+完成后整个模型互通全景图：
 
-对不支持算子必须明确报错，不允许静默忽略。
+```
+PyTorch / TensorFlow / 其他框架
+        ↓ 导出 .onnx
+  ┌─────────────────────────────────────────────────┐
+  │              only_torch 统一 IR 层               │
+  │                                                 │
+  │   .onnx ──→ GraphDescriptor ←── .otm（原生格式） │
+  │                   ↕                              │
+  │     ┌─────────────┴─────────────┐                │
+  │     ↓                           ↓                │
+  │  Graph（手动训练/推理）    NetworkGenome（演化）    │
+  │     ↓                           ↓                │
+  │  GraphDescriptor ──→ .onnx / .otm 导出           │
+  └─────────────────────────────────────────────────┘
+        ↓ 导出 .onnx
+  ONNX Runtime / TensorRT / 其他部署环境
+```
+
+#### 架构原则
+
+1. **ONNX 模块放在图层（`src/nn/graph/`），不放在演化模块下**。ONNX 是通用模型格式，不专属演化。
+2. **所有转换都经过 `GraphDescriptor`**。ONNX 不直接与 `NetworkGenome` 或 `Graph` 交互。
+3. **不支持的算子必须明确报错，不允许静默忽略或降级替换**。
+4. **第一版只覆盖与框架现有算子重叠最大的核心子集**，不追求 ONNX 全量支持。
+
+#### 依赖选择
+
+推荐使用 `onnx-rs` crate（零外部依赖，直接将 `.onnx` 二进制解析为类型化 Rust 结构体）。符合项目"纯 Rust、无 C++ 绑定"的设计理念。备选方案是 `prost` + 官方 ONNX `.proto` 文件。
+
+#### 文件结构
+
+```
+src/nn/graph/
+├── onnx_import.rs      # ONNX → GraphDescriptor
+├── onnx_export.rs      # GraphDescriptor → ONNX
+├── onnx_ops.rs         # 算子映射表（双向共用）
+└── onnx_error.rs       # OnnxError 错误类型
+```
+
+---
+
+#### 子阶段 10A：ONNX 导入
+
+**四层流水线**
+
+| 层次 | 职责 | 输入 → 输出 |
+|------|------|-------------|
+| **1. 解析层** | 读取 `.onnx` 二进制，得到 `ModelProto` | 文件路径 → `ModelProto` |
+| **2. 符号表层** | 遍历 `GraphProto`，为每个 tensor name 分配唯一 `u64` ID，建立 name→id 映射 | `GraphProto` → `SymbolTable` |
+| **3. 算子映射层** | 将 ONNX `NodeProto.op_type` 映射为 `NodeTypeDescriptor`，处理属性提取 | `NodeProto` → `NodeTypeDescriptor` |
+| **4. 装配层** | 按拓扑序组装 `GraphDescriptor`，嵌入权重（initializers → Parameter 节点） | 全部 → `GraphDescriptor` + 权重 `HashMap` |
+
+**第一版支持的 ONNX 算子 → NodeTypeDescriptor 映射**
+
+| ONNX op_type | NodeTypeDescriptor | 备注 |
+|---|---|---|
+| `MatMul` | `MatMul` | 直接映射 |
+| `Gemm` | `MatMul` + `Add` | Gemm = α·A·B + β·C，α=1/β=1 时展开为 MatMul+Add；非标准系数报错 |
+| `Add` | `Add` | 直接映射 |
+| `Sub` | `Subtract` | 直接映射 |
+| `Mul` | `Multiply` | 直接映射 |
+| `Div` | `Divide` | 直接映射 |
+| `Relu` | `ReLU` | 直接映射 |
+| `LeakyRelu` | `LeakyReLU { alpha }` | 提取 `alpha` 属性 |
+| `Sigmoid` | `Sigmoid` | 直接映射 |
+| `Tanh` | `Tanh` | 直接映射 |
+| `Softmax` | `Softmax` | 直接映射 |
+| `Conv` | `Conv2d { stride, padding }` + Parameter 节点 | 仅支持 2D，group=1，dilation=1 |
+| `MaxPool` | `MaxPool2d { kernel_size, stride }` | 仅支持 2D |
+| `AveragePool` | `AvgPool2d { kernel_size, stride }` | 仅支持 2D |
+| `BatchNormalization` | `BatchNormOp { eps, momentum, num_features }` | 提取 eps，momentum 取默认 |
+| `Flatten` | `Flatten { keep_first_dim: true }` | axis=1 时直接映射，其他 axis 报错 |
+| `Concat` | `Concat { axis }` | 直接映射 |
+| `Reshape` | `Reshape { target_shape }` | shape 从 initializer 中读取常量 |
+| `Dropout` | `Dropout { p }` | 推理模式直接透传也可接受 |
+| `Clip` | `Clip { min, max }` 或 `ReLU6` | Clip(0,6) 识别为 ReLU6 |
+| `Exp` | `Exp` | 直接映射 |
+| `Sqrt` | `Sqrt` | 直接映射 |
+| `Abs` | `Abs` | 直接映射 |
+| `Neg` | `Negate` | 直接映射 |
+| `Pow` | `Pow { exponent }` | exponent 为常量标量时支持 |
+
+**公开 API**
+
+```rust
+// 导入为 GraphDescriptor（最底层，通用）
+let (desc, weights) = onnx_import::load_onnx("model.onnx")?;
+
+// 导入为可推理的 Graph（手动模式用户）
+let rebuild = Graph::from_onnx("model.onnx")?;
+rebuild.inputs[0].1.set_value(&input)?;
+rebuild.graph.forward(&rebuild.outputs[0])?;
+
+// 导入为 NetworkGenome（演化用户）
+let genome = NetworkGenome::from_onnx("model.onnx")?;
+// 接下来可以直接用这个 genome 作为演化种子
+```
+
+**权重处理**
+
+ONNX initializers（`TensorProto`）按 name 映射到对应 Parameter 节点。导入时：
+
+1. 每个 initializer 创建一个 `Parameter` 类型的 `NodeDescriptor`
+2. 权重数据从 `TensorProto.float_data` 或 `raw_data` 提取，转为 `Tensor`
+3. 在 `Graph::from_descriptor()` 之后，通过参数注册名注入权重
+
+**不支持的情况（明确报错）**
+
+- 非 float32 数据类型（int8、float16 等量化模型）
+- 动态 control flow（`If`、`Loop`、`Scan`）
+- 非标准 `Gemm` 系数（α≠1 或 β≠1）
+- Conv/Pool 的 3D、1D 变体
+- group > 1 的分组卷积
+- dilation > 1 的空洞卷积
+- 未在映射表中的任何 op_type
+
+---
+
+#### 子阶段 10B：ONNX 导出
+
+**流水线**
+
+| 层次 | 职责 |
+|------|------|
+| **1. IR 提取** | 从 `Graph` 或 `EvolutionResult` 提取 `GraphDescriptor` + 权重 |
+| **2. 算子反映射** | `NodeTypeDescriptor` → ONNX `NodeProto`（复用 `onnx_ops.rs` 的反向表） |
+| **3. 权重序列化** | Parameter 节点 → ONNX `TensorProto`（initializer） |
+| **4. 组装输出** | 构建 `ModelProto`，写入 `.onnx` 文件 |
+
+**NodeTypeDescriptor → ONNX 映射（导出方向）**
+
+| NodeTypeDescriptor | ONNX op_type | 备注 |
+|---|---|---|
+| `BasicInput` | graph input | ONNX 图输入 |
+| `Parameter` | initializer | 权重张量 |
+| `MatMul` | `MatMul` | |
+| `Add` | `Add` | |
+| `ReLU` | `Relu` | |
+| `Sigmoid` | `Sigmoid` | |
+| `Tanh` | `Tanh` | |
+| `Softmax` | `Softmax` | |
+| `Conv2d` | `Conv` | 填充 `kernel_shape`/`strides`/`pads` 属性 |
+| `MaxPool2d` | `MaxPool` | |
+| `AvgPool2d` | `AveragePool` | |
+| `BatchNormOp` | `BatchNormalization` | |
+| `Flatten` | `Flatten` | axis=1 |
+| `Concat` | `Concat` | |
+| `Dropout` | `Dropout` | |
+| `LeakyReLU` | `LeakyRelu` | |
+| `Gelu` | `Gelu`（opset 20+）或子图展开 | |
+| `CellRnn/CellLstm/CellGru` | `RNN/LSTM/GRU` | 需要权重重排列匹配 ONNX 布局 |
+
+不可导出的节点类型（训练专用）：`SoftmaxCrossEntropy`、`BCE`、`MSE`、`MAE`、`Huber`、`TargetInput`。导出时遇到这些节点：
+- 如果在输出路径上：报错（不应该导出包含 loss 的图）
+- 如果不在输出路径上：忽略
+
+**公开 API**
+
+```rust
+// 从手动训练的 Graph 导出
+graph.export_onnx("my_model.onnx", &[&output])?;
+
+// 从演化结果导出
+result.export_onnx("evolved_model.onnx")?;
+```
+
+---
+
+#### 实施顺序
+
+| 步骤 | 内容 | 产出 |
+|------|------|------|
+| **10.1** | 引入 `onnx-rs` 依赖，建立 `onnx_error.rs` 错误类型 | 编译通过 |
+| **10.2** | 实现 `onnx_ops.rs` 算子映射表（双向） | 单元测试覆盖所有映射条目 |
+| **10.3** | 实现 `onnx_import.rs` 四层流水线 | 可从 `.onnx` 文件构建 `GraphDescriptor` |
+| **10.4** | 实现 `Graph::from_onnx()` 和 `NetworkGenome::from_onnx()` 便捷接口 | 端到端导入闭环 |
+| **10.5** | 实现 `onnx_export.rs` 导出流水线 | 可从 `GraphDescriptor` 生成 `.onnx` 文件 |
+| **10.6** | 实现 `graph.export_onnx()` 和 `result.export_onnx()` 便捷接口 | 端到端导出闭环 |
+| **10.7** | 往返测试：only_torch → ONNX → only_torch 推理一致性 | 数值验证 |
+| **10.8** | PyTorch 交叉验证：PyTorch 导出 ONNX → only_torch 导入 → 推理对比 | Python 参考测试 |
+
+---
+
+#### 风险点与规避
+
+| 风险 | 规避策略 |
+|------|----------|
+| **ONNX opset 版本碎片化** | 第一版锚定 opset 13–21（覆盖 PyTorch 1.x–2.x 的主流导出范围），低于 13 的返回错误 |
+| **Gemm 语义复杂** | 只支持 α=1, β=1, transB=1 的标准形式（PyTorch `nn.Linear` 默认导出形式） |
+| **RNN/LSTM/GRU 权重布局差异** | ONNX 的循环层权重布局与我们的实现不同（ONNX 将 W_ih/W_hh/bias 拼接为大矩阵），导入导出都需要拆分/重组 |
+| **BatchNorm 的 running stats** | ONNX 将 running_mean/running_var 作为 input（非 attribute），需要映射为 `BatchNormOp` 内部的 running stats |
+| **图中包含训练节点** | 导出时需要检测并剔除 loss/target 相关节点，只导出推理子图 |
+
+#### 验收标准
+
+完成阶段 10 后，应至少满足：
+
+- PyTorch 导出的 MLP（`Linear → ReLU → Linear`）ONNX 可导入 only_torch 并推理，结果与 PyTorch 对齐
+- PyTorch 导出的 CNN（`Conv2d → BN → ReLU → Pool → Flatten → Linear`）ONNX 可导入并推理
+- 导入的 ONNX 模型可转为 `NetworkGenome`，变异后重新构图，推理正常
+- 导入的 ONNX 模型可转为 `Graph`，用 `optimizer.minimize()` 继续训练
+- only_torch 手动训练的模型可导出为 ONNX，被 ONNX checker 验证通过
+- only_torch 演化产出的模型可导出为 ONNX
+- 不支持的 ONNX 算子返回明确错误（含 op_type 名称和位置信息）
+- 往返一致性：`only_torch model → .onnx → only_torch reload → 推理结果一致`
 
 ## 测试策略
 `src/nn/tests/` 中关于节点前向/反向正确性的测试原则上不动，因为它们测试的是算子本身，不是演化内核重构。
@@ -382,9 +574,14 @@ NodeLevel 重构后，Lamarckian 继承与快照应下沉到 Parameter 节点粒
 * `build_from_nodes()` 后 RNN/LSTM/GRU 块参数节点含 `GroupStyle::Recurrent` NodeGroupTag 的测试
 
 ### 阶段 10
-* ONNX 最小模型导入测试
-* ONNX -> `GraphDescriptor` -> `NetworkGenome` -> build 闭环测试
-* unsupported op 明确报错测试
+* 算子映射：每个支持的 ONNX op_type → NodeTypeDescriptor 的正确映射（双向）
+* 最小模型导入：手工构造的最小 ONNX 文件（单 Linear、单 Conv2d）解析+推理
+* 权重导入：initializer 数据正确注入 Parameter 节点，数值一致
+* 不支持算子报错：包含未知 op 的 ONNX 文件返回明确错误消息
+* 往返一致性：手动模型 → 导出 ONNX → 导入 → 推理结果 bit-exact
+* 演化种子：ONNX 导入 → `NetworkGenome` → mutation → build → 推理通过
+* PyTorch 交叉：PyTorch 导出的 MLP/CNN ONNX → 导入 → 与 PyTorch 推理结果对齐（tolerance 1e-5）
+* 导出合规：导出的 `.onnx` 文件可被 `onnxruntime` 或 `onnx.checker` 验证通过
 
 ## 推荐的具体落地顺序
 建议按下面顺序推进，而不是并行大拆：
