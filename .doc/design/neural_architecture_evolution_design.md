@@ -897,7 +897,6 @@ result.export_onnx("evolved_model.onnx")?;
 | 问题 | 状态 | 说明 |
 |---|---|---|
 | MNIST 演化在 debug 模式下耗时较长 | 待优化 | 达标率不稳定，release 模式下表现尚可。受限于 debug 编译的计算图性能 |
-| NodeLevel Cluster 可视化端到端效果 | 待验证 | `backfill_node_group_tags` 逻辑已实现并通过单元测试，但实际渲染输出的 Cluster 边界有待人工验证 |
 
 ---
 

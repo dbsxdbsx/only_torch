@@ -6,7 +6,7 @@ digraph ComputeGraph {
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
     subgraph cluster_group_linear_0 {
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 1]</FONT>>;
+        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 15] → [?, 1]</FONT>>;
         style=filled;
         fillcolor="#E3F2FD80";
         fontname="Microsoft YaHei,SimHei,Arial";
@@ -19,7 +19,7 @@ digraph ComputeGraph {
     }
 
     subgraph cluster_group_linear_3 {
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 15]</FONT>>;
+        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 15] → [?, 15]</FONT>>;
         style=filled;
         fillcolor="#E8F5E980";
         fontname="Microsoft YaHei,SimHei,Arial";
@@ -32,7 +32,7 @@ digraph ComputeGraph {
     }
 
     subgraph cluster_group_linear_2 {
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 15]</FONT>>;
+        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 10] → [?, 15]</FONT>>;
         style=filled;
         fillcolor="#FFF3E080";
         fontname="Microsoft YaHei,SimHei,Arial";
@@ -45,7 +45,7 @@ digraph ComputeGraph {
     }
 
     subgraph cluster_group_linear_1 {
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 10]</FONT>>;
+        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 2] → [?, 10]</FONT>>;
         style=filled;
         fillcolor="#F3E5F580";
         fontname="Microsoft YaHei,SimHei,Arial";

@@ -6,7 +6,7 @@ digraph ComputeGraph {
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
     subgraph cluster_group_linear_1 {
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 1]</FONT>>;
+        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 2] → [?, 1]</FONT>>;
         style=filled;
         fillcolor="#E3F2FD80";
         fontname="Microsoft YaHei,SimHei,Arial";
@@ -19,7 +19,7 @@ digraph ComputeGraph {
     }
 
     subgraph cluster_group_rnn_0 {
-        label=<<B>RNN</B><BR/><FONT POINT-SIZE="9">[?, 2]</FONT>>;
+        label=<<B>RNN</B><BR/><FONT POINT-SIZE="9">[?, 12, 1] → [?, 2]</FONT>>;
         style="filled,bold";
         peripheries=3;
         penwidth=2;

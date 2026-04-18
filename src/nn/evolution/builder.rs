@@ -856,26 +856,35 @@ fn backfill_node_group_tags(genome: &NetworkGenome, node_map: &HashMap<u64, Var>
             NodeBlockKind::SkipAgg | NodeBlockKind::Unknown => continue,
         };
 
-        // 描述：取输出节点的 output_shape → "[?, a, b]"
-        let description = genome
+        let fmt_shape = |s: &[usize]| -> String {
+            let parts: Vec<String> = s
+                .iter()
+                .enumerate()
+                .map(|(i, &d)| if i == 0 { "?".to_string() } else { d.to_string() })
+                .collect();
+            format!("[{}]", parts.join(", "))
+        };
+
+        let input_shape = if block.input_id == INPUT_INNOVATION {
+            Some(super::node_ops::genome_input_shape(genome))
+        } else {
+            genome
+                .nodes()
+                .iter()
+                .find(|n| n.innovation_number == block.input_id)
+                .map(|n| n.output_shape.clone())
+        };
+        let output_shape = genome
             .nodes()
             .iter()
             .find(|n| n.innovation_number == block.output_id)
-            .map(|n| {
-                let shape: Vec<String> = n
-                    .output_shape
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &d)| {
-                        if i == 0 {
-                            "?".to_string()
-                        } else {
-                            d.to_string()
-                        }
-                    })
-                    .collect();
-                format!("[{}]", shape.join(", "))
-            });
+            .map(|n| n.output_shape.clone());
+
+        let description = match (input_shape, output_shape) {
+            (Some(inp), Some(out)) => Some(format!("{} → {}", fmt_shape(&inp), fmt_shape(&out))),
+            (None, Some(out)) => Some(fmt_shape(&out)),
+            _ => None,
+        };
 
         let tag = NodeGroupTag {
             group_type: group_type.to_string(),
