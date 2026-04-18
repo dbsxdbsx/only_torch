@@ -1,7 +1,7 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-03-25
- * @Description  : 阶段 2：旧层级基因组 → 节点级基因组迁移器
+ * @Description  : 旧层级基因组 → 节点级基因组迁移器
  *
  * 核心功能：
  * - InnovationCounter : 统一创新号分配入口（单调递增）
@@ -29,9 +29,8 @@ use super::node_gene::NodeGene;
 
 /// 统一创新号分配器
 ///
-/// 顺手引入于阶段 2，阶段 1 的 NodeGene 已有 `innovation_number` 字段，
-/// 本结构提供统一的分配入口，避免各处手工维护计数器。
-/// 后续阶段（mutation、builder）使用同一结构，保证全局单调递增。
+/// `NodeGene` 携带 `innovation_number` 字段；本结构提供统一的分配入口，避免各处手工维护计数器。
+/// mutation、builder 等模块共用同一计数器语义，保证全局单调递增。
 #[derive(Debug, Clone)]
 pub struct InnovationCounter(u64);
 

@@ -4,14 +4,14 @@
  * @Description  : 神经架构演化的基因数据结构
  *
  * 核心类型：NetworkGenome（网络基因组）
- * - GenomeRepr::LayerLevel: 层级基因表示（LayerGene + SkipEdge），阶段 9 起降级为用户 DSL 入口层
- * - GenomeRepr::NodeLevel:  节点级基因表示（NodeGene），阶段 2 起引入，阶段 8 起为全局唯一内核表示
+ * - GenomeRepr::LayerLevel: 层级基因表示（LayerGene + SkipEdge），主要作为用户 DSL 入口
+ * - GenomeRepr::NodeLevel:  节点级基因表示（NodeGene），演化内核、持久化与构图的主表示
  *
- * 当前阶段（阶段 8/9 过渡期）设计原则：
+ * 设计原则：
  * - 演化主循环 run() 对 Flat/Spatial/Sequential 三类任务均调用 migrate_to_node_level()
  * - NodeLevel 是唯一受支持的持久化、构图和 mutation 内核表示
- * - LayerLevel 仍保留在枚举中，作为阶段 9 前的用户入口 DSL 兼容层
- * - GenomeRepr::LayerLevel 将在阶段 9 正式完成后移除或降格为 DSL 转换器
+ * - LayerLevel 仍保留在枚举中，兼容仍从 DSL 构造的层级基因组
+ * - 长期方向是将 LayerLevel 收窄为纯 DSL 转换入口，或完全由节点级路径替代
  */
 
 use serde::{Deserialize, Serialize};
@@ -319,12 +319,11 @@ pub struct ResolvedDim {
 
 /// 基因组内部表示：LayerLevel（旧）或 NodeLevel（新）
 ///
-/// 这是阶段 3 的核心变更——将两种互斥的表示封装进枚举，
-/// 消除双套并行字段的歧义。
-/// 终态（阶段 6 完成后）只保留 NodeLevel 变体，LayerLevel 被移除。
+/// 两种互斥表示封装在同一枚举中，避免双套并行字段的歧义。
+/// 演化与持久化以 NodeLevel 为主路径；LayerLevel 仍服务于遗留变异与 DSL。
 #[derive(Serialize, Deserialize)]
 pub(crate) enum GenomeRepr {
-    /// 旧层级表示（阶段 4 前所有 mutation 操作的对象）
+    /// 旧层级表示（LayerLevel mutation 仍针对此变体）
     LayerLevel {
         layers: Vec<LayerGene>,
         skip_edges: Vec<SkipEdge>,
@@ -332,7 +331,7 @@ pub(crate) enum GenomeRepr {
         /// 层粒度权重快照：layer_innovation → [W_tensor, b_tensor, ...]
         weight_snapshots: HashMap<u64, Vec<Tensor>>,
     },
-    /// 新节点级表示（阶段 3 开始启用构图新路径）
+    /// 节点级表示（构图与 NodeLevel mutation 的主路径）
     NodeLevel {
         nodes: Vec<NodeGene>,
         next_innovation: u64,
@@ -346,8 +345,8 @@ pub(crate) enum GenomeRepr {
 /// 网络基因组：完整的网络拓扶描述
 ///
 /// 内部表示由 `GenomeRepr` 枚举区分：
-/// - `LayerLevel`：原有层级表示，阶段 4 前所有 mutation 操作的对象
-/// - `NodeLevel`：新节点级表示，阶段 3 起启用构图新路径
+/// - `LayerLevel`：层级表示，LayerLevel mutation 与部分遗留路径仍针对此变体
+/// - `NodeLevel`：节点级表示，构图与 NodeLevel mutation 的主路径
 ///
 /// 对外访问通过 facade 方法（`layers()`/`nodes()`等），不直接操作 `repr` 字段。
 #[derive(Serialize, Deserialize)]

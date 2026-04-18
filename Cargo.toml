@@ -89,6 +89,9 @@
     ureq  ="2.9"  # HTTP 下载（blocking）
     md-5  ="0.10" # MD5 校验（RustCrypto）
 
+    # ONNX 模型互操作（零依赖 protobuf 解析/编码）
+    onnx-rs="0.1"
+
     # 并行计算
     rayon="1.10" # 数据并行
 

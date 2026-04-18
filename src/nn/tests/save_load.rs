@@ -3,11 +3,11 @@
  * @Date         : 2025-12-27
  * @Description  : Graph 参数保存/加载测试 + 可视化测试
  *
- * Phase 3 适配说明：
+ * 覆盖参数保存/加载与可视化；与当前 API 的对应关系：
  * - describe() / summary_string() / summary_markdown() / save_summary() 已移除，相关测试已删除
- * - save_weights() 仅保存 .bin（不再生成 JSON 描述文件）
- * - 可视化功能移至 Var（to_dot / save_visualization），不再支持自定义图片格式
- * - 使用 Graph + inner_rc() 底层 API 重写
+ * - save_weights() 仅保存 .bin（不生成 JSON 描述文件）
+ * - 可视化在 Var 上（to_dot / save_visualization），不再支持自定义图片格式
+ * - 测试使用 Graph 与 inner_rc() 等底层接口
  */
 
 use crate::nn::nodes::NodeInner;
@@ -346,7 +346,6 @@ fn test_to_dot_basic() {
         .create_mse_mean_node(Rc::clone(&z), Rc::clone(&target), Some("loss"))
         .unwrap();
 
-    // Phase 3: to_dot 移至 Var
     let loss_var = Var::new_with_rc_graph(loss, &gi);
     let dot = loss_var.to_dot();
 
@@ -387,7 +386,6 @@ fn test_save_visualization_basic() {
         .create_sigmoid_node(Rc::clone(&x), Some("y"))
         .unwrap();
 
-    // Phase 3: save_visualization 移至 Var
     let y_var = Var::new_with_rc_graph(y, &gi);
     let result = y_var
         .save_visualization(base_path)
@@ -435,7 +433,6 @@ fn test_save_visualization_rejects_extension() {
         .create_sigmoid_node(Rc::clone(&x), Some("y"))
         .unwrap();
 
-    // Phase 3: save_visualization 移至 Var
     let y_var = Var::new_with_rc_graph(y, &gi);
 
     // 测试 .dot 后缀
@@ -514,7 +511,6 @@ fn test_to_dot_node_styles() {
         .create_mse_mean_node(Rc::clone(&sigmoid), Rc::clone(&target), Some("loss"))
         .unwrap();
 
-    // Phase 3: to_dot 移至 Var
     let loss_var = Var::new_with_rc_graph(loss, &gi);
     let dot = loss_var.to_dot();
 
@@ -548,7 +544,6 @@ fn test_dynamic_shape_in_visualization() {
         .create_mat_mul_node(vec![Rc::clone(&x), Rc::clone(&w)], Some("y"))
         .unwrap();
 
-    // Phase 3: to_dot 移至 Var
     let y_var = Var::new_with_rc_graph(y, &gi);
     let dot = y_var.to_dot();
 

@@ -14,12 +14,17 @@ mod error;
 mod handle;
 mod inner;
 pub(crate) mod model_save;
+pub(crate) mod onnx_error;
+pub(crate) mod onnx_export;
+pub(crate) mod onnx_import;
+pub(crate) mod onnx_ops;
 mod types;
 
 pub use descriptor_rebuild::RebuildResult;
 pub use error::{GraphError, ImageFormat, VisualizationOutput};
 pub use handle::Graph;
 pub use inner::GraphInner;
+pub use onnx_error::OnnxError;
 // 可视化分组类型导出
 pub use types::{
     GroupStyle, NodeGroupTag, RecurrentFoldingMeta, RecurrentUnrollInfo, SnapshotNode,

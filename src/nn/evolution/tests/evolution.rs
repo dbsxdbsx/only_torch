@@ -652,7 +652,7 @@ fn test_evolution_sequential_runs() {
     );
     assert!(
         result.genome.is_node_level(),
-        "阶段 8 后序列主入口应初始化为 NodeLevel"
+        "序列演化主入口迁移后 genome 应为 NodeLevel"
     );
     assert!(
         result

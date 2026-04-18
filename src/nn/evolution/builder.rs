@@ -286,7 +286,7 @@ impl NetworkGenome {
     /// 从基因组构建计算图
     ///
     /// - NodeLevel 基因组（当前唯一支持格式）：`to_graph_descriptor()` + `Graph::from_descriptor()`
-    /// - LayerLevel 基因组（遗留兼容路径，阶段 9 正式移除前暂保留）：逐层构图
+    /// - LayerLevel 基因组（遗留兼容路径，仅用于尚未节点化的入口）：逐层构图
     ///
     /// rng 用于派生 Graph seed，确保参数初始化受 Evolution seed 控制。
     pub fn build(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
@@ -344,9 +344,8 @@ impl NetworkGenome {
 
     /// LayerLevel 基因组的遗留构图路径
     ///
-    /// 阶段 9 正式启动后此方法将被移除。
-    /// 当前仅作为用户 DSL（`from_flat`/`from_spatial`/`from_sequential`）传入
-    /// LayerLevel 基因组时的临时兼容路径，不应在新代码中直接调用。
+    /// 遗留逐层构图路径；仅应在用户 DSL（`from_flat`/`from_spatial`/`from_sequential`）
+    /// 仍产生 LayerLevel 基因组时使用。新代码应优先使用 NodeLevel 与 `build_from_nodes`。
     fn build_layer_level(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
         let resolved = self
             .resolve_dimensions()
@@ -680,6 +679,34 @@ impl NetworkGenome {
                 weight_snapshots: std::collections::HashMap::new(),
             },
         })
+    }
+
+    /// 从 .onnx 文件构建 NetworkGenome（用于后续演化或推理）
+    ///
+    /// 权重不会保留在 genome 中（ONNX 无 weight_snapshots 语义），
+    /// 如需带权重推理，请使用 `Graph::from_onnx()`。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let genome = NetworkGenome::from_onnx("model.onnx")?;
+    /// println!("输入维度: {}, 输出维度: {}", genome.input_dim, genome.output_dim);
+    /// ```
+    pub fn from_onnx<P: AsRef<std::path::Path>>(
+        path: P,
+    ) -> Result<Self, super::migration::MigrationError> {
+        let import_result = crate::nn::graph::onnx_import::load_onnx(path).map_err(|e| {
+            super::migration::MigrationError::DimensionError(format!("ONNX 导入失败: {e}"))
+        })?;
+        Self::from_graph_descriptor(&import_result.descriptor)
+    }
+
+    /// 从内存中的 .onnx 字节流构建 NetworkGenome
+    pub fn from_onnx_bytes(bytes: &[u8]) -> Result<Self, super::migration::MigrationError> {
+        let import_result =
+            crate::nn::graph::onnx_import::load_onnx_from_bytes(bytes).map_err(|e| {
+                super::migration::MigrationError::DimensionError(format!("ONNX 导入失败: {e}"))
+            })?;
+        Self::from_graph_descriptor(&import_result.descriptor)
     }
 
     /// 判断指定 RNN 层是否需要 return_sequences

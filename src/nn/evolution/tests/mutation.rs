@@ -481,7 +481,7 @@ fn test_mutate_loss_not_applicable_r2() {
 
 #[test]
 fn test_default_registry_has_14_mutations() {
-    // 12 原有 + 2 阶段7（AddConnection / RemoveConnection）= 14
+    // 12 原有 + 2 个跨层连接变异（AddConnection / RemoveConnection）= 14
     let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
     assert_eq!(reg.len(), 14);
 }
@@ -2154,7 +2154,7 @@ fn test_node_level_default_registry_never_returns_skip_edge_mutation_names() {
     }
 }
 
-// ==================== 阶段 7：AddConnectionMutation / RemoveConnectionMutation ====================
+// ==================== AddConnectionMutation / RemoveConnectionMutation（跨层连接） ====================
 
 use crate::nn::evolution::gene::ShapeDomain;
 use crate::nn::evolution::node_ops::{
@@ -2646,7 +2646,7 @@ fn test_add_connection_is_structural() {
     );
 }
 
-// ==================== Phase 8: NodeLevel CellType Mutation ====================
+// ==================== NodeLevel CellType 变异 ====================
 
 #[test]
 fn test_mutate_cell_type_node_level_applicable() {

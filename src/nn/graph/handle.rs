@@ -107,7 +107,7 @@ impl Graph {
     /// 获取注册的参数数量
     ///
     /// 返回通过 `register_parameter()` 注册且仍存活的参数数量。
-    /// Phase 3 后不再跟踪所有节点，只跟踪参数。
+    /// 图不维护全局节点列表，仅通过注册表跟踪参数。
     pub fn parameter_count(&self) -> usize {
         self.inner.borrow().get_all_parameters().len()
     }

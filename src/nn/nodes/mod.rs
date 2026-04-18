@@ -1,5 +1,4 @@
-// Phase 3: node_handle 模块已移除
-// NodeHandle 结构体已被弃用，新代码应使用 NodeInner
+// 新代码使用 NodeInner；旧的 NodeHandle / node_handle 已移除。
 pub mod node_inner;
 pub mod raw_node;
 

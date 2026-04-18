@@ -350,7 +350,7 @@ fn test_save_creates_parent_directories() {
     std::fs::remove_dir_all("test_otm_nested_dir").ok();
 }
 
-// ==================== 阶段 6：NodeLevel 持久化格式验收测试 ====================
+// ==================== NodeLevel 持久化格式验收测试 ====================
 
 /// 简单空间数据（4 个 1-通道 4x4 假图像，二分类标签）
 fn spatial_data() -> (Vec<Tensor>, Vec<Tensor>) {
@@ -390,7 +390,7 @@ fn seq_data() -> (Vec<Tensor>, Vec<Tensor>) {
     )
 }
 
-/// 阶段 6 测试 1：Flat（XOR）演化产出 NodeLevel genome，保存/加载往返一致
+/// Flat（XOR）演化产出 NodeLevel genome，保存/加载往返一致
 ///
 /// 验证：
 /// - 演化后 genome.is_node_level() == true
@@ -435,7 +435,7 @@ fn test_phase6_flat_evolution_produces_nodelevel_genome() {
     std::fs::remove_file(format!("{temp_path}.otm")).ok();
 }
 
-/// 阶段 6 测试 2：Spatial 演化产出 NodeLevel genome，保存/加载往返一致
+/// Spatial 演化产出 NodeLevel genome，保存/加载往返一致
 ///
 /// 验证：
 /// - Spatial 模式演化后 genome.is_node_level() == true
@@ -480,7 +480,7 @@ fn test_phase6_spatial_nodelevel_save_load_roundtrip() {
     std::fs::remove_file(format!("{temp_path}.otm")).ok();
 }
 
-/// 阶段 6 测试 3：手写 GraphDescriptor → NetworkGenome → 变异 → 构建闭环
+/// 手写 GraphDescriptor → NetworkGenome → 变异 → 构建闭环
 ///
 /// 模拟"手写训练模型作为演化种子"的全链路：
 /// 1. 手写建立 MLP（Input(2) → FC(4) → ReLU → FC(1)）
@@ -577,7 +577,7 @@ fn test_phase6_from_graph_descriptor_handwritten_seed() {
     );
 }
 
-/// 阶段 6 测试 3b：手写 .otm → 演化种子 → 变异 → 重新保存 → Graph::load_model 后继续手写训练
+/// 手写 .otm → 演化种子 → 变异 → 重新保存 → Graph::load_model 后继续手写训练
 #[test]
 fn test_phase6_triangle_interop_handwritten_to_evolution_to_manual_train() {
     use crate::nn::graph::model_save;
@@ -680,9 +680,9 @@ fn test_phase6_triangle_interop_handwritten_to_evolution_to_manual_train() {
     std::fs::remove_file(format!("{evolved_path}.otm")).ok();
 }
 
-/// 阶段 6 测试 4：Sequential 演化路径不被误伤
+/// Sequential 演化路径不被误伤
 ///
-/// - Sequential 演化仍然保存/加载正常（阶段 8 后为 NodeLevel 格式）
+/// - Sequential 演化仍然保存/加载正常（genome 为 NodeLevel 格式）
 /// - 加载后推理成功
 #[test]
 fn test_phase6_sequential_save_load_unaffected() {
@@ -696,13 +696,13 @@ fn test_phase6_sequential_save_load_unaffected() {
         .run()
         .expect("Sequential 演化失败");
 
-    // 阶段 8：Sequential genome 已迁移为 NodeLevel
+    // Sequential genome 已由主循环迁移为 NodeLevel
     assert!(
         result.genome.is_node_level(),
         "Sequential 演化产出的 genome 应为 NodeLevel"
     );
 
-    // 保存/加载应成功（Sequential LayerLevel 格式在阶段 6 仍然合法）
+    // 保存/加载应成功（Sequential 与 Flat 一样写入 NodeLevel .otm）
     result.save(temp_path).expect("Sequential 保存失败");
     let loaded = EvolutionResult::load(temp_path).expect("Sequential 加载失败");
 
@@ -714,9 +714,9 @@ fn test_phase6_sequential_save_load_unaffected() {
     std::fs::remove_file(format!("{temp_path}.otm")).ok();
 }
 
-/// 阶段 6 测试 5：旧格式 Flat/Spatial LayerLevel genome 加载时返回明确错误
+/// 旧格式 Flat/Spatial LayerLevel genome 加载时返回明确错误
 ///
-/// 模拟加载一个在阶段 6 之前生成的旧格式 .otm：
+/// 模拟加载一个在 NodeLevel 成为唯一支持的序列化格式之前生成的旧格式 .otm：
 /// - is_node_level = false（LayerLevel）
 /// - seq_len = null（Flat 或 Spatial）
 /// - 此组合应被 into_genome() 拒绝，返回包含说明的错误信息
@@ -757,7 +757,7 @@ fn test_phase6_old_layerlevel_flat_genome_load_rejected() {
     );
     let err_msg = result.unwrap_err();
     assert!(
-        err_msg.contains("旧格式") || err_msg.contains("LayerLevel") || err_msg.contains("阶段 6"),
+        err_msg.contains("旧格式") || err_msg.contains("LayerLevel") || err_msg.contains("已停止支持"),
         "错误信息应明确指出是旧格式问题，实际：{err_msg}"
     );
 }

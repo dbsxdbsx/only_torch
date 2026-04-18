@@ -1,7 +1,7 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-03-25
- * @Description  : 阶段 4：NodeLevel 基因组的分析与变异辅助
+ * @Description  : NodeLevel 基因组的分析与变异辅助
  *
  * 核心类型：
  * - NodeBlock     : 描述 NodeLevel 基因组中一个"模板块"的结构信息
@@ -829,7 +829,7 @@ pub fn remove_block(genome: &mut NetworkGenome, block: &NodeBlock) {
 
     // 清理被删参数节点的陈旧快照，防止 weight_snapshots 随演化代数无限膨胀。
     // 孤立快照不影响正确性（restore_weights 按 build.layer_params 匹配），
-    // 但会导致序列化体积随代数增大，且阶段 6 格式迁移时需一并清理，趁早修复成本最低。
+    // 但会导致序列化体积随代数增大；若以后做快照格式整理，也需同步处理陈旧条目，趁早修复成本最低。
     if let GenomeRepr::NodeLevel {
         weight_snapshots, ..
     } = &mut genome.repr
@@ -1156,7 +1156,7 @@ fn sample_size_in_range_simple(
     }
 }
 
-// ==================== 阶段 7：跨层连接变异辅助 ====================
+// ==================== 跨层连接变异辅助 ====================
 
 /// 一个可合法添加跳跃连接的候选对
 #[derive(Debug, Clone)]
@@ -1289,7 +1289,7 @@ pub fn find_connectable_pairs(genome: &NetworkGenome) -> Vec<ConnectablePair> {
             None => continue,
         };
 
-        // 序列域不支持阶段 7 跳跃连接（等 RNN 节点级化后再开放）
+        // 序列域不支持跨层跳跃连接（等 RNN 节点级化后再开放）
         if to_domain == ShapeDomain::Sequence {
             continue;
         }

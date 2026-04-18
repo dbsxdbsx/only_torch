@@ -245,7 +245,7 @@ impl MutationRegistry {
         Self::phase1_registry(metric, is_sequential, is_spatial)
     }
 
-    /// 阶段一注册表：拓扑搜索（偏向结构探索）
+    /// Phase 1 注册表：拓扑搜索（偏向结构探索）
     pub fn phase1_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
         // 结构变异权重上调
@@ -268,7 +268,7 @@ impl MutationRegistry {
         // 训练超参数变异（Phase 1 低权重）
         reg.register(0.05, MutateLearningRateMutation);
         reg.register(0.02, MutateOptimizerMutation);
-        // 阶段 7：NodeLevel 跨层连接变异（非序列 NodeLevel 时自动生效；LayerLevel 因 is_applicable=false 静默跳过）
+        // NodeLevel 跨层连接变异（非序列 NodeLevel 时自动生效；LayerLevel 因 is_applicable=false 静默跳过）
         reg.register(0.06, AddConnectionMutation);
         reg.register(0.04, RemoveConnectionMutation);
         // 序列模式专属
@@ -282,7 +282,7 @@ impl MutationRegistry {
         reg
     }
 
-    /// 阶段二注册表：精炼（偏向超参数调优）
+    /// Phase 2 注册表：精炼（偏向超参数调优）
     pub fn phase2_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
         // 结构变异权重下调
@@ -305,7 +305,7 @@ impl MutationRegistry {
         // 训练超参数变异（Phase 2 权重上调）
         reg.register(0.15, MutateLearningRateMutation);
         reg.register(0.08, MutateOptimizerMutation);
-        // 阶段 7：NodeLevel 跨层连接变异（Phase 2 权重略低，专注精炼阶段）
+        // NodeLevel 跨层连接变异（Phase 2 权重略低，专注精炼阶段）
         reg.register(0.04, AddConnectionMutation);
         reg.register(0.04, RemoveConnectionMutation);
         // 序列模式专属
@@ -2366,7 +2366,7 @@ fn node_level_mutate_kernel_size_apply(
     Ok(())
 }
 
-// ==================== 阶段 7：AddConnectionMutation / RemoveConnectionMutation ====================
+// ==================== AddConnectionMutation / RemoveConnectionMutation ====================
 
 /// 为 NodeLevel 基因组添加一条跨层跳跃连接（Add 聚合，可选投影）
 ///

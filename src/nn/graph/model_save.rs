@@ -332,6 +332,104 @@ impl Graph {
         result.graph.eval();
         Ok(result)
     }
+
+    /// 从 .onnx 文件导入模型（重建拓扑 + 恢复权重）
+    ///
+    /// 返回 `RebuildResult`，包含重建后的图、输入/输出 Var。
+    /// 加载后自动设为 eval 模式。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let result = Graph::from_onnx("models/resnet18.onnx")?;
+    /// result.inputs[0].1.set_value(&image_tensor)?;
+    /// result.graph.forward(&result.outputs[0])?;
+    /// let prediction = result.outputs[0].value()?;
+    /// ```
+    pub fn from_onnx<P: AsRef<Path>>(path: P) -> Result<RebuildResult, GraphError> {
+        let import_result = super::onnx_import::load_onnx(path)
+            .map_err(|e| GraphError::ComputationError(format!("ONNX 导入失败: {e}")))?;
+
+        Self::from_onnx_result(import_result)
+    }
+
+    /// 从内存中的 .onnx 字节流导入模型
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let bytes = std::fs::read("model.onnx")?;
+    /// let result = Graph::from_onnx_bytes(&bytes)?;
+    /// ```
+    pub fn from_onnx_bytes(bytes: &[u8]) -> Result<RebuildResult, GraphError> {
+        let import_result = super::onnx_import::load_onnx_from_bytes(bytes)
+            .map_err(|e| GraphError::ComputationError(format!("ONNX 导入失败: {e}")))?;
+
+        Self::from_onnx_result(import_result)
+    }
+
+    fn from_onnx_result(
+        import_result: super::onnx_import::OnnxImportResult,
+    ) -> Result<RebuildResult, GraphError> {
+        let result = Graph::from_descriptor(&import_result.descriptor)?;
+
+        // ONNX 权重按 descriptor node ID 索引 → 转换为按名称索引
+        let name_params: HashMap<String, Tensor> = import_result
+            .descriptor
+            .nodes
+            .iter()
+            .filter_map(|n| {
+                import_result
+                    .weights
+                    .get(&n.id)
+                    .map(|t| (n.name.clone(), t.clone()))
+            })
+            .collect();
+        apply_params_to_graph(&result.graph, &name_params)?;
+
+        result.graph.eval();
+        Ok(result)
+    }
+
+    /// 导出模型为 .onnx 文件
+    ///
+    /// `path` 需包含 `.onnx` 后缀。
+    /// `outputs` 是模型的输出 Var，用于提取计算图拓扑。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let output = model.forward(&input)?;
+    /// graph.export_onnx("models/my_model.onnx", &[&output])?;
+    /// ```
+    pub fn export_onnx<P: AsRef<Path>>(
+        &self,
+        path: P,
+        outputs: &[&Var],
+    ) -> Result<(), GraphError> {
+        let desc = Var::vars_to_graph_descriptor(outputs, "model");
+        let weights = self.collect_weight_map();
+        super::onnx_export::save_onnx(path, &desc, &weights)
+            .map_err(|e| GraphError::ComputationError(format!("ONNX 导出失败: {e}")))
+    }
+
+    /// 导出模型为 ONNX 字节流（内存中，不写文件）
+    pub fn export_onnx_bytes(&self, outputs: &[&Var]) -> Result<Vec<u8>, GraphError> {
+        let desc = Var::vars_to_graph_descriptor(outputs, "model");
+        let weights = self.collect_weight_map();
+        super::onnx_export::export_to_bytes(&desc, &weights)
+            .map_err(|e| GraphError::ComputationError(format!("ONNX 导出失败: {e}")))
+    }
+
+    /// 从注册参数表中收集权重 → HashMap<String, Tensor>
+    fn collect_weight_map(&self) -> HashMap<String, Tensor> {
+        let inner = self.inner();
+        let params = inner.get_all_parameters();
+        let mut weight_map = HashMap::new();
+        for (name, node) in params {
+            if let Some(tensor) = node.value() {
+                weight_map.insert(name, tensor);
+            }
+        }
+        weight_map
+    }
 }
 
 // ==================== 辅助函数 ====================

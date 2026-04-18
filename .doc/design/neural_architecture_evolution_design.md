@@ -604,7 +604,7 @@ src/nn/evolution/
 ├── migration.rs        LayerLevel → NodeLevel 迁移（migrate_to_node_level + TemplateExpander）
 ├── selection.rs        NSGA-II 多目标选择 + Pareto Archive 管理（pareto_rank, crowding_distance, nsga2_select, update_archive）
 ├── builder.rs          Genome → GraphDescriptor → Graph 转换 + to/from_graph_descriptor + backfill_node_group_tags + Lamarckian 权重管理
-├── model_io.rs         模型序列化/反序列化（save/load .otm 文件，仅 NodeLevel）
+├── model_io.rs         模型序列化/反序列化（save/load .otm 文件，仅 NodeLevel）+ ONNX 导出（export_onnx）
 ├── convergence.rs      ConvergenceDetector + ConvergenceConfig + TrainingBudget
 ├── task.rs             EvolutionTask trait + SupervisedTask + FitnessScore
 ├── callback.rs         EvolutionCallback trait + DefaultCallback（含 on_population_evaluated）
@@ -612,11 +612,25 @@ src/nn/evolution/
     ├── gene.rs         基因数据结构单元测试（含序列域/空间层维度测试）
     ├── mutation.rs     变异操作单元测试（含 MutateCellType / NodeLevel 变异）
     ├── builder.rs      构建与权重继承单元测试（含 RNN/LSTM/GRU/Conv2d 前向 + NodeGroupTag 回填验证）
-    ├── model_io.rs     模型序列化测试（含 Phase 6 手写⇄演化互通三角测试）
+    ├── model_io.rs     模型序列化测试（含手写⇄演化互通三角测试）
     ├── convergence.rs  收敛检测单元测试
     ├── task.rs         训练与评估单元测试（含 mini-batch shuffle 可复现性验证）
     ├── selection.rs    NSGA-II 选择 + Archive 管理单元测试（含 per-front crowding distance 验证）
     └── evolution.rs    主循环集成测试（含 Pareto 种群/并行评估/fitness_changed/stagnation/序列/空间端到端测试）
+
+src/nn/graph/
+├── onnx_import.rs      ONNX → GraphDescriptor 四层导入流水线
+├── onnx_export.rs      GraphDescriptor → ONNX 三层导出流水线
+├── onnx_ops.rs         ONNX OpType ↔ NodeTypeDescriptor 双向算子映射表
+├── onnx_error.rs       OnnxError 错误类型（算子/数据类型/图结构/权重等分类报错）
+└── model_save.rs       Graph 的 .otm / ONNX 保存与加载便捷接口
+
+src/nn/tests/onnx/
+├── mod.rs              ONNX 测试子模块入口
+├── error.rs            OnnxError 错误类型覆盖测试（11 个）
+├── ops.rs              双向算子映射测试 + 往返一致性测试（56 个）
+├── import.rs           ONNX 导入流水线测试（20 个，含端到端 Graph/NetworkGenome 测试）
+└── export.rs           ONNX 导出流水线测试（16 个，含数值往返 + PyTorch 交叉验证）
 ```
 
 ---
@@ -646,6 +660,11 @@ src/nn/evolution/
 | Log ladder 学习率变异 | 单 genome + rollback 下，离散台阶避免冗余值、便于回访、日志可读 |
 | Optimizer 切换 + lr band snap | Adam/SGD 有效 lr 范围不同，裸切换几乎必被回滚 |
 | Graph 不暴露给用户 | 抽象一致性：演化是 AutoML 层 API，Graph 是计算图层；封装后内部可自由重构 |
+| **ONNX 转换经过 GraphDescriptor 中心 IR** | ONNX 不直接与 NetworkGenome 或 Graph 交互，所有转换统一经过 GraphDescriptor，保持单一转换枢纽 |
+| **ONNX 模块位于 graph 层而非 evolution 层** | ONNX 是通用模型格式，不专属演化；手动训练模型同样可以导入导出 |
+| **`onnx-rs` 零依赖解析** | 纯 Rust protobuf 解析，不引入 C++ ONNX Runtime 或 prost 代码生成，符合项目"无 C++ 绑定"原则 |
+| **不支持的 ONNX 算子必须明确报错** | 不允许静默忽略或降级替换，返回包含 op_type 和位置信息的 `OnnxError` |
+| **训练节点导出时自动剔除** | 导出推理图时自动过滤 loss/target 节点，无需用户手动构建推理子图 |
 
 ---
 
@@ -732,7 +751,68 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 **使用示例**：参见 `examples/evolution_mnist/main.rs`。
 
-### 11.6 未来方向
+### 11.6 ONNX 双向桥接（导入 + 导出）
+
+`only_torch` 支持 ONNX（Open Neural Network Exchange）双向互操作，使得模型可在不同框架之间无缝流转。
+
+**完整的模型互通全景图**：
+
+```
+PyTorch / TensorFlow / 其他框架
+        ↓ 导出 .onnx
+  ┌─────────────────────────────────────────────────┐
+  │              only_torch 统一 IR 层               │
+  │                                                 │
+  │   .onnx ──→ GraphDescriptor ←── .otm（原生格式） │
+  │                   ↕                              │
+  │     ┌─────────────┴─────────────┐                │
+  │     ↓                           ↓                │
+  │  Graph（手动训练/推理）    NetworkGenome（演化）    │
+  │     ↓                           ↓                │
+  │  GraphDescriptor ──→ .onnx / .otm 导出           │
+  └─────────────────────────────────────────────────┘
+        ↓ 导出 .onnx
+  ONNX Runtime / TensorRT / 其他部署环境
+```
+
+**导入 API**（从外部框架导入）：
+
+```rust
+// 导入为可推理的 Graph（手动模式用户）
+let rebuild = Graph::from_onnx("model.onnx")?;
+rebuild.inputs[0].1.set_value(&input)?;
+rebuild.graph.forward(&rebuild.outputs[0])?;
+
+// 导入为 NetworkGenome（演化种子）
+let genome = NetworkGenome::from_onnx("model.onnx")?;
+```
+
+**导出 API**（导出供外部部署）：
+
+```rust
+// 从手动训练的 Graph 导出
+graph.export_onnx("my_model.onnx", &[&output])?;
+
+// 从演化结果导出
+result.export_onnx("evolved_model.onnx")?;
+```
+
+**架构**：所有 ONNX 转换都经过 `GraphDescriptor` 中心 IR。ONNX 模块位于 `src/nn/graph/`（通用模型格式，不专属演化），包含四个文件：
+
+| 文件 | 职责 |
+|------|------|
+| `onnx_import.rs` | 四层流水线：解析 → 符号表 → 算子映射 → 装配 |
+| `onnx_export.rs` | 三层流水线：分类过滤 → AST 构建 → 编码输出 |
+| `onnx_ops.rs` | 双向算子映射表（ONNX OpType ↔ NodeTypeDescriptor） |
+| `onnx_error.rs` | `OnnxError` 错误类型（不支持的算子、数据类型等明确报错） |
+
+**依赖**：使用 `onnx-rs`（零外部依赖，纯 Rust ONNX protobuf 解析/编码），符合项目"纯 Rust、无 C++ 绑定"设计理念。
+
+**支持范围**：覆盖 opset 13–21（PyTorch 1.x–2.x 主流导出范围），支持 30+ 种算子的双向映射，包括所有主要激活函数、算术运算、卷积/池化、归一化、循环单元等。训练专用节点（loss/target）在导出时自动剔除，仅导出推理子图。不支持的算子返回包含 op_type 名称和位置信息的明确错误。
+
+**互操作验证**：往返一致性测试（`only_torch → ONNX → only_torch` 推理数值一致）和 PyTorch 交叉验证测试（PyTorch 导出 ONNX → `only_torch` 导入 → 推理结果对齐）均已通过。
+
+### 11.7 未来方向
 
 | 方向 | 难度 | 说明 |
 |---|---|---|
@@ -821,4 +901,4 @@ Input(C@H×W) → Flatten → [Linear(out_dim)]
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-18（v4: NodeLevel 内核统一，LayerLevel 降级为 DSL，GraphDescriptor 构图管线，模型互通）*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-18（v5: NodeLevel 内核统一，LayerLevel 降级为 DSL，GraphDescriptor 构图管线，模型互通，ONNX 双向桥接）*

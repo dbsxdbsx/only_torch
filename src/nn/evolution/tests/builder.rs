@@ -1337,9 +1337,9 @@ fn test_build_spatial_multi_conv_forward() {
     assert_eq!(out.shape(), &[1, 2]);
 }
 
-// ==================== 阶段 3 强验收项：闭环验证 ====================
+// ==================== NodeLevel 闭环验证（迁移、描述符、构图） ====================
 
-/// 阶段 3 关键验收：LayerLevel genome → NodeLevel → to_graph_descriptor() → build 闭环
+/// LayerLevel genome → NodeLevel → to_graph_descriptor() → build 闭环关键验收
 ///
 /// 验证：
 /// 1. `migrate_to_node_level()` 成功将 LayerLevel 转为 NodeLevel
@@ -1501,9 +1501,9 @@ fn test_phase3_nodelevel_build_closed_loop_cnn() {
     assert_eq!(out.shape(), &[1, 10]);
 }
 
-// ==================== 阶段 5：Parameter 节点粒度权重继承 ====================
+// ==================== Parameter 节点粒度权重继承 ====================
 
-/// 阶段 5 测试：Grow 后部分继承（partially_inherited > 0）
+/// Grow 后部分继承（partially_inherited > 0）
 ///
 /// 流程：
 /// 1. NodeLevel genome + 捕获权重
@@ -1592,7 +1592,7 @@ fn test_phase5_node_level_partial_inherit_after_grow() {
     panic!("20次尝试内 GrowHiddenSize 均未成功，测试无效");
 }
 
-/// 阶段 5 测试：插入新层后新节点无快照 → reinitialized > 0
+/// 插入新层后新节点无快照 → reinitialized > 0
 ///
 /// 流程：
 /// 1. NodeLevel genome + 捕获权重
@@ -1691,7 +1691,7 @@ fn test_phase5_node_level_reinit_after_insert() {
     );
 }
 
-/// 阶段 5 测试：Shrink 后部分继承（`narrow` 截取路径）
+/// Shrink 后部分继承（`narrow` 截取路径）
 ///
 /// 与 Grow 测试互补：Grow 走 `concat` 拼接路径，Shrink 走 `narrow` 截取路径，
 /// 两者是 `try_partial_inherit` 中互斥的两条代码分支，必须分别验证。
@@ -1804,15 +1804,15 @@ fn test_phase5_node_level_partial_inherit_after_shrink() {
     panic!("20 次尝试内 ShrinkHiddenSize 均未成功缩减尺寸，测试无效");
 }
 
-/// 阶段 5 测试：Conv2d 参数节点权重继承的当前行为（明确 4D kernel 走 `reinitialized`）
+/// Conv2d 参数节点权重继承的当前行为（明确 4D kernel 走 `reinitialized`）
 ///
 /// 记录并固化以下已知行为：
 /// - Conv2d kernel 是 4D 张量 `[out_ch, in_ch, kH, kW]`
 /// - `try_partial_inherit` 不支持 4D（`old_shape.len() > 2` 时直接返回 None）
 /// - 因此 Conv2d resize 后 kernel 必然走 `reinitialized`，而非 `partially_inherited`
 ///
-/// 这是阶段 5 的有意设计选择（4D partial inherit 作为阶段 6 增强能力预留）。
-/// 此测试作为回归基准，防止阶段 6 重构时意外改变此行为而不被发现。
+/// 这是 Parameter 粒度权重继承路径上的有意设计（4D partial inherit 可作为后续增强预留）。
+/// 此测试作为回归基准，防止未来重构 4D kernel 继承逻辑时意外改变行为而不被发现。
 ///
 /// 注意：Flatten 后的 Linear W 因 in_dim 单轴变化（256 → 512）会走 `partially_inherited`，
 /// 这是 2D 参数的正常行为，与 4D kernel 的 `reinitialized` 行为独立，不互相干扰。
@@ -1906,7 +1906,7 @@ fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
     let _ = report.partially_inherited; // 可能 > 0，属正常
 }
 
-// ==================== 阶段 9：NodeGroupTag 回填 ====================
+// ==================== NodeGroupTag 回填 ====================
 
 #[test]
 fn test_build_from_nodes_linear_gets_node_group_tag() {

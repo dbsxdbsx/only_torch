@@ -102,7 +102,7 @@ fn expand_linear_all_same_block_id() {
     }
 }
 
-// ==================== Phase 8: RNN/LSTM/GRU NodeLevel 迁移 ====================
+// ==================== RNN/LSTM/GRU 的 NodeLevel 迁移 ====================
 
 #[test]
 fn expand_rnn_produces_parameter_nodes_and_cell() {
@@ -160,7 +160,7 @@ fn expand_lstm_and_gru_return_sequence_shape() {
 fn migrate_sequential_genome_no_longer_deferred() {
     let genome = NetworkGenome::minimal_sequential(4, 2);
     let out = migrate_network_genome(&genome).unwrap();
-    assert!(out.deferred.is_empty(), "Phase 8 后循环层不应再 deferred");
+    assert!(out.deferred.is_empty(), "循环层展开为 NodeLevel 后不应再 deferred");
     assert!(
         out.nodes
             .iter()
@@ -524,10 +524,10 @@ fn migrate_genome_with_conv2d() {
 
 #[test]
 fn migrate_rnn_genome_deferred() {
-    // 阶段 8 后：序列 genome（含 Rnn 层）应直接展开为 CellRnn，不再 deferred
+    // 序列 genome（含 Rnn 层）应直接展开为 CellRnn，不再 deferred
     let genome = NetworkGenome::minimal_sequential(4, 2);
     let out = migrate_network_genome(&genome).unwrap();
-    assert!(out.deferred.is_empty(), "阶段 8 后 Rnn 不应再 deferred");
+    assert!(out.deferred.is_empty(), "Rnn 展开为 CellRnn 后不应再 deferred");
     assert!(
         out.nodes
             .iter()

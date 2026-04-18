@@ -39,8 +39,8 @@ struct EvolutionMeta {
 
 /// NetworkGenome 的序列化表示（不含 weight_snapshots，权重在二进制段按参数名保存）
 ///
-/// 阶段 8 起：
-/// - Flat/Spatial/Sequential 三类 genome 均必须且只有 NodeLevel 格式（`is_node_level=true`）
+/// 演化保存路径要求：
+/// - Flat/Spatial/Sequential 三类 genome 均须为 NodeLevel 格式（`is_node_level=true`）
 /// - 加载旧格式（`is_node_level=false`）会返回明确错误
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(Debug))]
@@ -68,7 +68,7 @@ pub(crate) struct GenomeSerialized {
 
 impl From<&NetworkGenome> for GenomeSerialized {
     fn from(genome: &NetworkGenome) -> Self {
-        // 所有类型的 genome 在阶段 8 后均由演化主循环迁移到 NodeLevel。
+        // 所有类型的 genome 均由演化主循环在 run() 中迁移到 NodeLevel。
         // 若此处触发 panic，说明调用方绕过了迁移步骤，属于编程错误。
         if genome.is_layer_level() {
             panic!(
@@ -118,11 +118,11 @@ impl GenomeSerialized {
     pub(crate) fn into_genome(self) -> Result<NetworkGenome, String> {
         use super::gene::GenomeRepr;
 
-        // 阶段 8 起：所有类型（Flat/Spatial/Sequential）的 genome 均必须是 NodeLevel 格式
+        // 所有类型（Flat/Spatial/Sequential）的演化 genome 均须为 NodeLevel 格式
         if !self.is_node_level {
             return Err(format!(
                 "该 .otm 文件中包含旧格式（LayerLevel）的演化基因组（seq_len={:?}），\
-                 阶段 8 起已停止支持此格式。请使用当前版本重新运行演化以生成新格式文件。",
+                 当前版本已停止支持此格式。请使用当前版本重新运行演化以生成新格式文件。",
                 self.seq_len
             ));
         }
@@ -193,6 +193,23 @@ impl EvolutionResult {
         let params = self.build.graph.inner().get_all_parameters();
         model_save::write_otm_file(path, &metadata, &params)
             .map_err(|e| EvolutionError::IoError(e.to_string()))
+    }
+
+    /// 导出演化结果为 .onnx 文件（推理用，不含训练节点）
+    ///
+    /// `path` 需包含 `.onnx` 后缀。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let result = Evolution::supervised(train, test, TaskMetric::Accuracy)
+    ///     .run()?;
+    /// result.export_onnx("models/evolved_model.onnx")?;
+    /// ```
+    pub fn export_onnx<P: AsRef<Path>>(&self, path: P) -> Result<(), EvolutionError> {
+        self.build
+            .graph
+            .export_onnx(path, &[&self.build.output])
+            .map_err(|e| EvolutionError::IoError(format!("ONNX 导出失败: {e}")))
     }
 
     /// 从 .otm 文件加载演化结果

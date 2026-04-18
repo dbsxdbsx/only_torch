@@ -1,7 +1,7 @@
 /*
  * @Author       : 老董
  * @Date         : 2026-03-25
- * @Description  : 节点级基因组数据结构（阶段 1）
+ * @Description  : 节点级基因组数据结构
  *
  * 核心类型：
  * - NodeGene     : 单个节点级基因，对应计算图的一个节点
@@ -11,7 +11,7 @@
  * - GenomeKind   : 区分基因组当前使用旧层级表示还是新节点级表示
  *
  * 设计原则：
- * - 本文件只新增类型，不修改现有 LayerGene / NetworkGenome / SkipEdge（那是阶段 2 的事）
+ * - 本文件只定义节点级类型，不修改现有 LayerGene / NetworkGenome / SkipEdge
  * - GenomeAnalysis 是只读快照，每次需要分析时重新计算，避免"改了基因组但忘刷新 analysis"的隐式 bug
  * - block_id 内联到 NodeGene，而不是单独维护 TemplateGroup 列表
  */
@@ -26,15 +26,12 @@ use super::gene::ShapeDomain;
 
 // ==================== GenomeKind ====================
 
-/// 基因组当前使用的表示方式
-///
-/// 阶段 2 起会加入 `NetworkGenome`，用于区分是否已迁移到节点级表示。
-/// 阶段 1 仅定义此枚举，尚未在 NetworkGenome 中使用。
+/// 基因组当前使用的表示方式（`NetworkGenome` 内用于区分 LayerLevel / NodeLevel）
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GenomeKind {
     /// 旧层级表示（LayerGene + SkipEdge，当前版本默认）
     LayerLevel,
-    /// 新节点级表示（NodeGene，阶段 2 起逐步接管）
+    /// 节点级表示（NodeGene）
     NodeLevel,
 }
 

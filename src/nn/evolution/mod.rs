@@ -691,7 +691,7 @@ impl Evolution {
             .unwrap_or_else(|| Box::new(DefaultCallback::new(max_generations, verbose)));
 
         let minimal_genome = if prepared.seq_len.is_some() {
-            // 阶段 8：序列模式也迁移到 NodeLevel，统一走节点级演化路径
+            // 序列模式同样迁移到 NodeLevel，统一走节点级演化路径
             let mut g = NetworkGenome::minimal_sequential(prepared.input_dim, prepared.output_dim);
             g.seq_len = prepared.seq_len;
             let _ = g.migrate_to_node_level();
@@ -699,12 +699,12 @@ impl Evolution {
         } else if let Some(spatial) = prepared.input_spatial {
             let mut g =
                 NetworkGenome::minimal_spatial(prepared.input_dim, prepared.output_dim, spatial);
-            // 阶段 4：空间模式迁移到 NodeLevel
+            // 空间模式迁移到 NodeLevel
             let _ = g.migrate_to_node_level();
             g
         } else {
             let mut g = NetworkGenome::minimal(prepared.input_dim, prepared.output_dim);
-            // 阶段 4：平坦模式迁移到 NodeLevel
+            // 平坦模式迁移到 NodeLevel
             let _ = g.migrate_to_node_level();
             g
         };
