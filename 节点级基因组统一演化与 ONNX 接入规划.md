@@ -280,7 +280,23 @@ NodeLevel 重构后，Lamarckian 继承与快照应下沉到 Parameter 节点粒
 * LayerLevel builder 主路径
 * LayerLevel 持久化主路径
 * LayerLevel 默认 mutation 主路径
+**阶段 9 附加任务：NodeLevel 构图的可视化 Cluster 保障**
 
+问题背景：
+* `build_layer_level()` 通过 RAII `NodeGroupContext` 自动为节点打 `NodeGroupTag`（Layer / Recurrent cluster）
+* `build_from_nodes()` 经 `to_graph_descriptor()` → `rebuild_into()` 逐节点重建，无上下文，cluster 标签丢失
+* `NodeDescriptor` 中无 `block_id` 字段，信息未被传递给重建图
+
+解决方案：
+* 在 `build_from_nodes()` 构图完成后，调用 `backfill_node_group_tags(genome, &rebuild.node_map)`
+* 利用 `node_main_path()` 返回的 `NodeBlock::block_id`，对同块所有节点（含 `Parameter`）补填 `NodeGroupTag`
+* `NodeBlockKind` → `GroupStyle` 映射：`Linear/Conv2d/Pool2d/Flatten/Dropout` → `Layer`；`Rnn/Lstm/Gru` → `Recurrent`；`SkipAgg/Unknown` → 跳过（不打 cluster 标签）
+
+效果：
+* 演化变异（InsertLayerMutation 等）插入的层有 `block_id` → 展示 Cluster ✅
+* 从 LayerLevel 迁移来的初始基因组节点有 `block_id` → 展示 Cluster ✅
+* `build_layer_level()` 遗留路径本来就有 `NodeGroupContext` → 展示 Cluster ✅
+* 散节点（单独激活等，`block_id = None`）→ 不展示 cluster，符合预期 ✅
 这一阶段完成后，LayerLevel 只剩“输入语言”意义，不再是“内部世界模型”。
 
 ### 阶段 10（延后）：增加 ONNX 导入模块
@@ -362,6 +378,8 @@ NodeLevel 重构后，Lamarckian 继承与快照应下沉到 Parameter 节点粒
 * 用户 DSL / 模板入口降级到 NodeLevel 的测试
 * LayerLevel 内核路径删除后的兼容入口测试
 * 不再允许直接依赖 LayerLevel 正式持久化/构图主路径的回归测试
+* `build_from_nodes()` 后 Linear 块参数节点含 `GroupStyle::Layer` NodeGroupTag 的测试
+* `build_from_nodes()` 后 RNN/LSTM/GRU 块参数节点含 `GroupStyle::Recurrent` NodeGroupTag 的测试
 
 ### 阶段 10
 * ONNX 最小模型导入测试

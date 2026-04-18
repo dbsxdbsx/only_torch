@@ -612,10 +612,7 @@ impl Mutation for InsertLayerMutation {
 
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
         if genome.is_node_level() {
-            // NodeLevel: 不支持序列模式（Rnn 未展开）
-            if genome.seq_len.is_some() {
-                return false;
-            }
+            // NodeLevel（含序列模式）：create_insert_nodes 支持 Rnn/Lstm/Gru 块
             return genome.layer_count() < constraints.max_layers;
         }
         genome.layer_count() < constraints.max_layers

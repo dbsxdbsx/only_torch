@@ -285,8 +285,8 @@ impl NetworkGenome {
 
     /// 从基因组构建计算图
     ///
-    /// - LayerLevel 基因组：阈级构图（现有路径，完整保留 Lamarckian 权重继承）
-    /// - NodeLevel 基因组：`to_graph_descriptor()` + `Graph::from_descriptor()`
+    /// - NodeLevel 基因组（当前唯一支持格式）：`to_graph_descriptor()` + `Graph::from_descriptor()`
+    /// - LayerLevel 基因组（遗留兼容路径，阶段 9 正式移除前暂保留）：逐层构图
     ///
     /// rng 用于派生 Graph seed，确保参数初始化受 Evolution seed 控制。
     pub fn build(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
@@ -331,6 +331,9 @@ impl NetworkGenome {
             })
             .collect();
 
+        // 回填 NodeGroupTag：将 NodeGene 的 block_id 映射为可视化 Cluster 标签
+        backfill_node_group_tags(self, &rebuild.node_map);
+
         Ok(BuildResult {
             input,
             output,
@@ -339,7 +342,11 @@ impl NetworkGenome {
         })
     }
 
-    /// LayerLevel 基因组的原有构图路径（阶段 3 期间保留，阶段 4 后逐步替换）
+    /// LayerLevel 基因组的遗留构图路径
+    ///
+    /// 阶段 9 正式启动后此方法将被移除。
+    /// 当前仅作为用户 DSL（`from_flat`/`from_spatial`/`from_sequential`）传入
+    /// LayerLevel 基因组时的临时兼容路径，不应在新代码中直接调用。
     fn build_layer_level(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
         let resolved = self
             .resolve_dimensions()
@@ -599,7 +606,7 @@ impl NetworkGenome {
                 return Err(MigrationError::DimensionError(format!(
                     "不支持的输入形状 {:?}（期望 2D/3D/4D）",
                     input_shape
-                )))
+                )));
             }
         };
 
@@ -622,8 +629,7 @@ impl NetworkGenome {
                 continue;
             }
             let remapped_id = remap_id(nd.id);
-            let remapped_parents: Vec<u64> =
-                nd.parents.iter().map(|&p| remap_id(p)).collect();
+            let remapped_parents: Vec<u64> = nd.parents.iter().map(|&p| remap_id(p)).collect();
 
             nodes.push(super::node_gene::NodeGene::new(
                 remapped_id,
@@ -654,17 +660,11 @@ impl NetworkGenome {
             .last()
             .or_else(|| nodes.last())
             .map(|n| &n.output_shape)
-            .ok_or_else(|| {
-                MigrationError::DimensionError("无法确定输出节点".into())
-            })?;
+            .ok_or_else(|| MigrationError::DimensionError("无法确定输出节点".into()))?;
         let output_dim = match output_shape.len() {
             n if n >= 2 => output_shape[output_shape.len() - 1],
             1 => output_shape[0],
-            _ => {
-                return Err(MigrationError::DimensionError(
-                    "输出节点形状为空".into(),
-                ))
-            }
+            _ => return Err(MigrationError::DimensionError("输出节点形状为空".into())),
         };
 
         Ok(Self {
@@ -796,5 +796,73 @@ impl NetworkGenome {
             partially_inherited,
             reinitialized,
         })
+    }
+}
+
+// ==================== NodeGroupTag 回填 ====================
+
+/// NodeLevel 构图后回填 NodeGroupTag，确保可视化能完整显示层级 Cluster
+///
+/// 背景：`build_layer_level()` 路径通过 RAII `NodeGroupContext` 自动为节点打标签；
+/// `build_from_nodes()` 路径经 descriptor rebuild 无上下文，节点标签为空。
+/// 此函数利用 `NodeGene::block_id` 在构图完成后补填。
+///
+/// 对每个 `block_id != None`、类型有意义的块，将同块所有节点（含 Parameter）
+/// 打上相同的 `NodeGroupTag`，确保可视化渲染时归入同一 Cluster。
+fn backfill_node_group_tags(genome: &NetworkGenome, node_map: &HashMap<u64, Var>) {
+    use super::node_ops::{NodeBlockKind, node_main_path};
+    use crate::nn::graph::{GroupStyle, NodeGroupTag};
+
+    for block in node_main_path(genome) {
+        let Some(bid) = block.block_id else { continue };
+
+        let (group_type, style): (&str, GroupStyle) = match &block.kind {
+            NodeBlockKind::Linear { .. } => ("Linear", GroupStyle::Layer),
+            NodeBlockKind::Conv2d { .. } => ("Conv2d", GroupStyle::Layer),
+            NodeBlockKind::Pool2d { .. } => ("Pool2d", GroupStyle::Layer),
+            NodeBlockKind::Flatten => ("Flatten", GroupStyle::Layer),
+            NodeBlockKind::Dropout { .. } => ("Dropout", GroupStyle::Layer),
+            NodeBlockKind::Activation { .. } => ("Activation", GroupStyle::Layer),
+            NodeBlockKind::Rnn { .. } => ("RNN", GroupStyle::Recurrent),
+            NodeBlockKind::Lstm { .. } => ("LSTM", GroupStyle::Recurrent),
+            NodeBlockKind::Gru { .. } => ("GRU", GroupStyle::Recurrent),
+            NodeBlockKind::SkipAgg | NodeBlockKind::Unknown => continue,
+        };
+
+        // 描述：取输出节点的 output_shape → "[?, a, b]"
+        let description = genome
+            .nodes()
+            .iter()
+            .find(|n| n.innovation_number == block.output_id)
+            .map(|n| {
+                let shape: Vec<String> = n
+                    .output_shape
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &d)| {
+                        if i == 0 {
+                            "?".to_string()
+                        } else {
+                            d.to_string()
+                        }
+                    })
+                    .collect();
+                format!("[{}]", shape.join(", "))
+            });
+
+        let tag = NodeGroupTag {
+            group_type: group_type.to_string(),
+            instance_id: bid as usize,
+            display_name: Some(group_type.to_string()),
+            description,
+            style,
+            hidden: false,
+        };
+
+        for &nid in &block.node_ids {
+            if let Some(var) = node_map.get(&nid) {
+                var.node().set_node_group_tag(Some(tag.clone()));
+            }
+        }
     }
 }

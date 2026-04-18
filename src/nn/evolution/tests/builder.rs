@@ -1905,3 +1905,67 @@ fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
     // 此处不断言 partially_inherited == 0，避免错误约束 2D 参数的正常行为
     let _ = report.partially_inherited; // 可能 > 0，属正常
 }
+
+// ==================== 阶段 9：NodeGroupTag 回填 ====================
+
+#[test]
+fn test_build_from_nodes_linear_gets_node_group_tag() {
+    // 验证 build_from_nodes() 路径构图后，Linear 块的参数节点已被赋予 NodeGroupTag
+    let mut genome = NetworkGenome::minimal(2, 1);
+    let inn = genome.next_innovation_number();
+    genome.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: inn,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    genome.migrate_to_node_level().unwrap();
+    assert!(genome.is_node_level());
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 每个参数节点都应有 NodeGroupTag，且 group_type 为 "Linear"
+    let all_params: Vec<_> = build.layer_params.values().flatten().collect();
+    assert!(!all_params.is_empty(), "应有参数节点");
+    for param_var in &all_params {
+        let tag = param_var.node().node_group_tag();
+        assert!(
+            tag.is_some(),
+            "NodeLevel 构图后 Parameter 节点应有 NodeGroupTag"
+        );
+        assert_eq!(
+            tag.unwrap().group_type,
+            "Linear",
+            "Linear 块参数节点的 group_type 应为 Linear"
+        );
+    }
+}
+
+#[test]
+fn test_build_from_nodes_rnn_gets_recurrent_node_group_tag() {
+    use crate::nn::graph::GroupStyle;
+
+    // 验证序列 NodeLevel 基因组构图后，RNN 块参数节点具有 Recurrent style NodeGroupTag
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.layers_mut()[0].layer_config = LayerConfig::Rnn { hidden_size: 4 };
+    genome.seq_len = Some(5);
+    genome.migrate_to_node_level().unwrap();
+    assert!(genome.is_node_level());
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let has_recurrent = build.layer_params.values().flatten().any(|v| {
+        v.node()
+            .node_group_tag()
+            .map(|t| matches!(t.style, GroupStyle::Recurrent))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_recurrent,
+        "序列 NodeLevel 构图后应有 Recurrent style 的 NodeGroupTag"
+    );
+}

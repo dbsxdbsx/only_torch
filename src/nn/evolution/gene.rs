@@ -4,14 +4,14 @@
  * @Description  : 神经架构演化的基因数据结构
  *
  * 核心类型：NetworkGenome（网络基因组）
- * - GenomeRepr::LayerLevel: 原有层级基因表示（LayerGene + SkipEdge）
- * - GenomeRepr::NodeLevel:  新节点级基因表示（NodeGene，阶段 2 起引入）
+ * - GenomeRepr::LayerLevel: 层级基因表示（LayerGene + SkipEdge），阶段 9 起降级为用户 DSL 入口层
+ * - GenomeRepr::NodeLevel:  节点级基因表示（NodeGene），阶段 2 起引入，阶段 8 起为全局唯一内核表示
  *
- * 阶段 3 设计原则：
- * - 内部用 GenomeRepr 枚举区分两种表示，外部通过 facade 方法访问
- * - LayerLevel 保留完整的层级操作路径（mutation 等现有逻辑不变）
- * - NodeLevel 启用 to_graph_descriptor() + Graph::from_descriptor() 构图路径
- * - GenomeKind/GenomeRepr 最终清洁终态：只保留 NodeLevel，阶段 6 时移除 LayerLevel
+ * 当前阶段（阶段 8/9 过渡期）设计原则：
+ * - 演化主循环 run() 对 Flat/Spatial/Sequential 三类任务均调用 migrate_to_node_level()
+ * - NodeLevel 是唯一受支持的持久化、构图和 mutation 内核表示
+ * - LayerLevel 仍保留在枚举中，作为阶段 9 前的用户入口 DSL 兼容层
+ * - GenomeRepr::LayerLevel 将在阶段 9 正式完成后移除或降格为 DSL 转换器
  */
 
 use serde::{Deserialize, Serialize};

@@ -39,10 +39,9 @@ struct EvolutionMeta {
 
 /// NetworkGenome 的序列化表示（不含 weight_snapshots，权重在二进制段按参数名保存）
 ///
-/// 阶段 6 起：
-/// - Flat/Spatial genome 必须且只有 NodeLevel 格式（`is_node_level=true`）
-/// - Sequential genome 保留 LayerLevel 格式（`is_node_level=false`，等 RNN 节点级化后再收口）
-/// - 加载旧格式 Flat/Spatial（`is_node_level=false, seq_len=None`）会返回明确错误
+/// 阶段 8 起：
+/// - Flat/Spatial/Sequential 三类 genome 均必须且只有 NodeLevel 格式（`is_node_level=true`）
+/// - 加载旧格式（`is_node_level=false`）会返回明确错误
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(Debug))]
 pub(crate) struct GenomeSerialized {
@@ -69,13 +68,13 @@ pub(crate) struct GenomeSerialized {
 
 impl From<&NetworkGenome> for GenomeSerialized {
     fn from(genome: &NetworkGenome) -> Self {
-        // Flat/Spatial genome 在阶段 4 后必须是 NodeLevel（演化主循环保证）。
+        // 所有类型的 genome 在阶段 8 后均由演化主循环迁移到 NodeLevel。
         // 若此处触发 panic，说明调用方绕过了迁移步骤，属于编程错误。
-        if genome.seq_len.is_none() && genome.is_layer_level() {
+        if genome.is_layer_level() {
             panic!(
-                "尝试以 LayerLevel 格式保存 Flat/Spatial genome（input_dim={}, output_dim={}），\
+                "尝试以 LayerLevel 格式保存 genome（input_dim={}, output_dim={}, seq_len={:?}），\
                  这是编程错误：演化主循环应已在 run() 中将其迁移到 NodeLevel",
-                genome.input_dim, genome.output_dim
+                genome.input_dim, genome.output_dim, genome.seq_len
             );
         }
 
@@ -115,56 +114,37 @@ impl GenomeSerialized {
     /// 从序列化表示重建 NetworkGenome（weight_snapshots 为空，权重由参数名加载）
     ///
     /// # 错误
-    /// 若文件中包含旧格式（LayerLevel）的 Flat/Spatial genome，返回错误消息。
-    /// Sequential genome 的 LayerLevel 格式仍然合法（RNN 尚未节点级化）。
+    /// 若文件中包含旧格式（LayerLevel）的任意 genome，返回错误消息。
     pub(crate) fn into_genome(self) -> Result<NetworkGenome, String> {
         use super::gene::GenomeRepr;
 
-        // 阶段 6：拒绝加载旧格式 Flat/Spatial genome
-        // seq_len=None 表示 Flat 或 Spatial（两者都应已节点级化）
-        if self.seq_len.is_none() && !self.is_node_level {
-            return Err(
-                "该 .otm 文件中包含旧格式（LayerLevel）的 Flat/Spatial 演化基因组，\
-                 阶段 6 起已停止支持此格式。请使用当前版本重新运行演化以生成新格式文件。"
-                    .to_string(),
-            );
+        // 阶段 8 起：所有类型（Flat/Spatial/Sequential）的 genome 均必须是 NodeLevel 格式
+        if !self.is_node_level {
+            return Err(format!(
+                "该 .otm 文件中包含旧格式（LayerLevel）的演化基因组（seq_len={:?}），\
+                 阶段 8 起已停止支持此格式。请使用当前版本重新运行演化以生成新格式文件。",
+                self.seq_len
+            ));
         }
 
-        let genome = if self.is_node_level {
-            // NodeLevel：直接构建 NodeLevel 表示
-            let mut genome = NetworkGenome::from_parts(
-                Vec::new(),
-                Vec::new(),
-                self.input_dim,
-                self.output_dim,
-                self.seq_len,
-                self.input_spatial,
-                self.training_config,
-                self.generated_by,
-                self.next_innovation,
-                std::collections::HashMap::new(),
-            );
-            // 覆盖为 NodeLevel repr
-            genome.repr = GenomeRepr::NodeLevel {
-                nodes: self.nodes,
-                next_innovation: self.next_innovation,
-                weight_snapshots: std::collections::HashMap::new(),
-            };
-            genome
-        } else {
-            // LayerLevel（Sequential 路径）
-            NetworkGenome::from_parts(
-                self.layers,
-                self.skip_edges,
-                self.input_dim,
-                self.output_dim,
-                self.seq_len,
-                self.input_spatial,
-                self.training_config,
-                self.generated_by,
-                self.next_innovation,
-                std::collections::HashMap::new(),
-            )
+        // NodeLevel：直接构建 NodeLevel 表示
+        let mut genome = NetworkGenome::from_parts(
+            Vec::new(),
+            Vec::new(),
+            self.input_dim,
+            self.output_dim,
+            self.seq_len,
+            self.input_spatial,
+            self.training_config,
+            self.generated_by,
+            self.next_innovation,
+            std::collections::HashMap::new(),
+        );
+        // 覆盖为 NodeLevel repr
+        genome.repr = GenomeRepr::NodeLevel {
+            nodes: self.nodes,
+            next_innovation: self.next_innovation,
+            weight_snapshots: std::collections::HashMap::new(),
         };
 
         Ok(genome)
