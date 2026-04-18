@@ -915,16 +915,16 @@ result.export_onnx("evolved_model.onnx")?;
 [Gen  0] 爆发初始化：λ=4 个候选，每个对 minimal_spatial 施加 K=5 次随机变异
          初始种子：Conv2d(1→8,k=3) → Pool2d(Max,2,2) → Flatten → [Linear(10)]
          候选可能产生：
-         - Conv2d(1→8,k=3) → Pool2d → Conv-BN-ReLU(8→16,k=3) → Flatten → [Linear(10)]
+         - Conv2d(1→8,k=3) → Pool2d → Conv2d(8→16,k=3) → Flatten → [Linear(10)]
          - Conv2d(1→16,k=5) → Pool2d → Flatten → Linear(32) → [Linear(10)]
          - Conv2d(1→8,k=3) → Pool2d → Conv2d(8→8,k=3,s=2) → Flatten → [Linear(10)]
          → 选 fitness 最高者作为 best_genome
 
-  Phase 1（Gen 1~70）：(1+λ) 搜索 + FixedEpochs 快速训练 + 结构探索变异权重
-  Phase 2（Gen 71~100）：(1+λ) 搜索 + UntilConverged 充分训练 + 超参调优变异权重
+  Phase 1（Gen 1~70）：Pareto 种群搜索 + FixedEpochs 快速训练 + 结构探索变异权重
+  Phase 2（Gen 71~100）：Pareto 种群搜索 + UntilConverged 充分训练 + 超参调优变异权重
 ```
 
-自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params` ≈ 200K+、`max_hidden_size=256`（channels 上限）、`max_layers=20`、`min_hidden_size=16`。Conv-BN-ReLU 组合块（10 节点共享 block_id）+ stride 变异 + kernel size 变异联合搜索高效 CNN 架构。
+自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params` ≈ 200K+、`max_hidden_size=256`（channels 上限）、`max_layers=20`、`min_hidden_size=16`。独立的 Conv2d + 激活函数 + Pool2d 插入 + stride 变异 + kernel size 变异联合搜索高效 CNN 架构。
 
 ---
 

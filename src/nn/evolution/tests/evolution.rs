@@ -974,7 +974,7 @@ fn test_evolution_spatial_mutation_names_valid() {
         "MutateLearningRate",
         "MutateOptimizer",
         "MutateKernelSize", // 空间模式专属
-        "MutateStride",     // 空间模式：MaxPool2d 步长/核
+        "MutateStride",     // 空间模式：Conv2d stride (1,1)↔(2,2)
         "AddConnection",
         "RemoveConnection",
     ];
