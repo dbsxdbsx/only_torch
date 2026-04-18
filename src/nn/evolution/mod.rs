@@ -265,12 +265,12 @@ pub struct ParetoSummary {
 // ==================== ComplexityMetric ====================
 
 /// 复杂度度量方式（用于 inference_cost 计算）
-///
-/// 当前仅实现 ParamCount，预留未来扩展点：FLOPs、activation memory、真实 latency。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ComplexityMetric {
     /// 参数总量
     ParamCount,
+    /// 前向推理 FLOPs（对 Spatial 域尤其重要——同参数量的 Conv 和 FC 层 FLOPs 差异巨大）
+    FLOPs,
 }
 
 /// 根据复杂度度量计算 inference_cost
@@ -281,6 +281,9 @@ pub(crate) fn compute_inference_cost(
     match metric {
         ComplexityMetric::ParamCount => genome.total_params().map(|p| p as f32).map_err(|e| {
             EvolutionError::Graph(GraphError::ComputationError(format!("计算参数量失败: {e}")))
+        }),
+        ComplexityMetric::FLOPs => genome.total_flops().map(|f| f as f32).map_err(|e| {
+            EvolutionError::Graph(GraphError::ComputationError(format!("计算 FLOPs 失败: {e}")))
         }),
     }
 }

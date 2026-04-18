@@ -26,8 +26,8 @@ use crate::nn::evolution::gene::{
     ActivationType, GenomeRepr, INPUT_INNOVATION, NetworkGenome, PoolType, ShapeDomain,
 };
 use crate::nn::evolution::migration::{
-    InnovationCounter, expand_activation, expand_conv2d, expand_gru, expand_linear,
-    expand_lstm, expand_pool2d, expand_rnn,
+    InnovationCounter, expand_activation, expand_conv2d, expand_gru, expand_linear, expand_lstm,
+    expand_pool2d, expand_rnn,
 };
 use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
@@ -348,13 +348,23 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
     }
 
     if has_conv {
+        // 通过 Conv2d 节点的父节点关系精确定位 kernel 参数
+        let bid_set_conv: HashSet<u64> = node_ids.iter().copied().collect();
         for &id in node_ids {
             if let Some(n) = node_map.get(&id) {
-                if n.is_parameter() && n.output_shape.len() == 4 {
-                    return NodeBlockKind::Conv2d {
-                        out_channels: n.output_shape[0],
-                        kernel_size: n.output_shape[2],
-                    };
+                if matches!(n.node_type, NT::Conv2d { .. }) {
+                    for &pid in &n.parents {
+                        if bid_set_conv.contains(&pid) {
+                            if let Some(p) = node_map.get(&pid) {
+                                if p.is_parameter() && p.output_shape.len() == 4 {
+                                    return NodeBlockKind::Conv2d {
+                                        out_channels: p.output_shape[0],
+                                        kernel_size: p.output_shape[2],
+                                    };
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -615,11 +625,31 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
             }
             NodeBlockKind::Conv2d { out_channels, .. } => {
                 let out = *out_channels;
-                for node in genome.nodes_mut().iter_mut() {
-                    if bid_set.contains(&node.innovation_number) && node.is_parameter() {
-                        if node.output_shape.len() == 4 {
+                // 通过 Conv2d 节点的父节点关系精确定位 kernel，只更新 kernel 的 in_channels
+                let kernel_id: Option<u64> = {
+                    let nodes = genome.nodes();
+                    nodes
+                        .iter()
+                        .find(|n| {
+                            bid_set.contains(&n.innovation_number)
+                                && matches!(n.node_type, NodeTypeDescriptor::Conv2d { .. })
+                        })
+                        .and_then(|conv| {
+                            conv.parents.iter().find(|&&pid| {
+                                bid_set.contains(&pid)
+                                    && nodes
+                                        .iter()
+                                        .any(|n| n.innovation_number == pid && n.is_parameter())
+                            })
+                        })
+                        .copied()
+                };
+                if let Some(kid) = kernel_id {
+                    for node in genome.nodes_mut().iter_mut() {
+                        if node.innovation_number == kid && node.output_shape.len() == 4 {
                             // kernel: [out_ch, old_in_ch, k, k] → [out_ch, prev_out, k, k]
                             node.output_shape[1] = prev_out;
+                            break;
                         }
                     }
                 }
@@ -885,22 +915,49 @@ pub fn resize_conv2d_out(
     };
     let bid_set: HashSet<u64> = block.node_ids.iter().copied().collect();
 
-    // 更新 kernel/bias 参数形状
+    // 通过 Conv2d 节点的父节点关系精确定位 kernel 参数
+    let kernel_id: Option<u64> = {
+        let nodes = genome.nodes();
+        nodes
+            .iter()
+            .find(|n| {
+                bid_set.contains(&n.innovation_number)
+                    && matches!(n.node_type, NodeTypeDescriptor::Conv2d { .. })
+            })
+            .and_then(|conv| {
+                conv.parents.iter().find(|&&pid| {
+                    bid_set.contains(&pid)
+                        && nodes
+                            .iter()
+                            .any(|n| n.innovation_number == pid && n.is_parameter())
+                })
+            })
+            .copied()
+    };
+
     for node in genome.nodes_mut().iter_mut() {
         if bid_set.contains(&node.innovation_number) && node.is_parameter() {
-            if node.output_shape.len() == 4 && node.output_shape[0] == old_ch {
-                if node.output_shape[2] == 1 && node.output_shape[3] == 1 {
-                    // bias: [1, old_ch, 1, 1] → [1, new_ch, 1, 1]
-                    node.output_shape[1] = new_ch;
-                } else {
+            if node.output_shape.len() == 4 {
+                if Some(node.innovation_number) == kernel_id {
                     // kernel: [old_ch, in_ch, kH, kW] → [new_ch, in_ch, kH, kW]
                     node.output_shape[0] = new_ch;
+                } else if node.output_shape[1] == old_ch {
+                    // bias/gamma/beta: [1, old_ch, 1, 1] → [1, new_ch, 1, 1]
+                    node.output_shape[1] = new_ch;
                 }
             }
         }
     }
 
-    // 用 repair_param_input_dims 替代手动级联——正确穿越 SkipAgg 等中间节点
+    // 更新同块内的 BatchNormOp.num_features
+    for node in genome.nodes_mut().iter_mut() {
+        if bid_set.contains(&node.innovation_number) {
+            if let NodeTypeDescriptor::BatchNormOp { num_features, .. } = &mut node.node_type {
+                *num_features = new_ch;
+            }
+        }
+    }
+
     repair_param_input_dims(genome);
     Ok(())
 }
@@ -1047,7 +1104,6 @@ pub fn create_insert_nodes(
                     &mut counter,
                 ));
             }
-            // 插入 Conv2d
             let effective_min = constraints.min_hidden_size.max(8);
             let out_ch_cap = (in_dim * 16)
                 .max(64)

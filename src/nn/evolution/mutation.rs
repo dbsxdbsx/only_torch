@@ -20,9 +20,9 @@ use super::migration::{activation_to_node_type, expand_gru, expand_lstm, expand_
 use super::node_ops::{
     NodeBlock, NodeBlockKind, add_skip_connection, commit_counter, create_insert_nodes,
     find_connectable_pairs, find_removable_skip_connections, insert_after, is_activation_node,
-    is_skip_projection_block, make_counter, node_main_path, node_param_count, remove_block,
-    remove_skip_connection, repair_param_input_dims, resize_conv2d_out, resize_linear_out,
-    resize_recurrent_out, sync_computation_shapes,
+    is_skip_projection_block, make_counter, node_main_path, node_param_count, node_spatial_at,
+    remove_block, remove_skip_connection, repair_param_input_dims, resize_conv2d_out,
+    resize_linear_out, resize_recurrent_out, sync_computation_shapes,
 };
 use crate::nn::descriptor::NodeTypeDescriptor;
 use rand::Rng;
@@ -109,36 +109,43 @@ impl SizeConstraints {
 
         // max_total_params
         let base_params = if is_spatial {
-            // 以"两层卷积 + FC 头"为参考
-            let mlp_base = flatten_dim * 128 + 128 * output_dim;
-            mlp_base.max(50_000)
+            // 空间模型以"Conv(ch→32,k=3) + Conv(32→64,k=3) + Pool + FC(pooled→128) + FC(128→out)"
+            // 为参考基线，给予充足参数预算
+            let conv_base = 32 * input_dim * 9 + 64 * 32 * 9; // ~20K conv params
+            let spatial_after_pool = spatial_hw
+                .map(|(h, w)| (h / 2) * (w / 2))
+                .unwrap_or(49);
+            let fc_base = 64 * spatial_after_pool * 128 + 128 * output_dim;
+            (conv_base + fc_base).max(200_000)
         } else {
-            // 以"一层有效隐藏层"为参考
             flatten_dim * 128 + 128 * output_dim
         };
         let data_factor = (n_train as f64 / 1000.0).sqrt().clamp(1.0, 10.0);
         let max_total_params = ((base_params as f64 * data_factor) as usize).max(50_000);
 
-        // max_hidden_size
+        // max_hidden_size（空间模型中是 channels 上限）
         let max_hidden_size = if is_spatial {
-            (flatten_dim / 4).max(128)
+            // CNN channels 通常 8..256，给予更大范围
+            256
         } else {
-            (input_dim / 2).max(128)
-        }
-        .min(512);
+            (input_dim / 2).max(128).min(512)
+        };
+
+        // max_layers（空间模型需要更多层：Conv+BN+Pool+Flatten+FC...）
+        let max_layers = if is_spatial { 20 } else { 10 };
 
         // min_hidden_size
         let min_hidden_size = if flatten_dim > 100 { 16 } else { 1 };
 
         // size_strategy
-        let size_strategy = if flatten_dim > 100 {
+        let size_strategy = if is_spatial || flatten_dim > 100 {
             SizeStrategy::AlignTo(8)
         } else {
             SizeStrategy::Free
         };
 
         Self {
-            max_layers: 10,
+            max_layers,
             max_hidden_size,
             max_total_params,
             min_hidden_size,
@@ -278,6 +285,7 @@ impl MutationRegistry {
         // 空间模式专属
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
+            reg.register(0.06, MutateStrideMutation);
         }
         reg
     }
@@ -315,6 +323,7 @@ impl MutationRegistry {
         // 空间模式专属
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
+            reg.register(0.06, MutateStrideMutation);
         }
         reg
     }
@@ -2323,12 +2332,33 @@ fn node_level_mutate_kernel_size_apply(
     let block = conv_blocks.choose(rng).unwrap().clone();
     let bid_set: std::collections::HashSet<u64> = block.node_ids.iter().copied().collect();
 
-    // 从 kernel 参数节点（4D 形状）读取当前 kernel_size
-    let current_k = genome
+    // 通过 Conv2d 节点的父节点关系精确定位 kernel 参数
+    let kernel_id: Option<u64> = genome
         .nodes()
         .iter()
-        .find(|n| bid_set.contains(&n.innovation_number) && n.output_shape.len() == 4)
-        .map(|n| n.output_shape[2])
+        .find(|n| {
+            bid_set.contains(&n.innovation_number)
+                && matches!(n.node_type, NodeTypeDescriptor::Conv2d { .. })
+        })
+        .and_then(|conv| {
+            conv.parents.iter().find(|&&pid| {
+                bid_set.contains(&pid)
+                    && genome
+                        .nodes()
+                        .iter()
+                        .any(|n| n.innovation_number == pid && n.is_parameter())
+            })
+        })
+        .copied();
+
+    let current_k = kernel_id
+        .and_then(|kid| {
+            genome
+                .nodes()
+                .iter()
+                .find(|n| n.innovation_number == kid)
+                .map(|n| n.output_shape[2])
+        })
         .unwrap_or(3);
 
     let alternatives: Vec<usize> = KERNEL_SIZES
@@ -2341,11 +2371,14 @@ fn node_level_mutate_kernel_size_apply(
         .ok_or_else(|| MutationError::NotApplicable("没有替代的 kernel_size".into()))?;
     let new_padding = new_k / 2;
 
-    // 更新 kernel 参数节点形状 [out_ch, in_ch, k, k]
-    for node in genome.nodes_mut().iter_mut() {
-        if bid_set.contains(&node.innovation_number) && node.output_shape.len() == 4 {
-            node.output_shape[2] = new_k;
-            node.output_shape[3] = new_k;
+    // 只更新 kernel 参数节点形状 [out_ch, in_ch, k, k]
+    if let Some(kid) = kernel_id {
+        for node in genome.nodes_mut().iter_mut() {
+            if node.innovation_number == kid && node.output_shape.len() == 4 {
+                node.output_shape[2] = new_k;
+                node.output_shape[3] = new_k;
+                break;
+            }
         }
     }
 
@@ -2361,9 +2394,92 @@ fn node_level_mutate_kernel_size_apply(
         }
     }
 
-    // 重新推导计算节点形状
     sync_computation_shapes(genome);
     Ok(())
+}
+
+// ==================== MutateStrideMutation ====================
+
+/// 变异 Conv2d 的 stride（在 (1,1) 和 (2,2) 之间切换）
+///
+/// stride=2 允许卷积层自身进行空间降维，不完全依赖 Pool2d。
+pub struct MutateStrideMutation;
+
+impl Mutation for MutateStrideMutation {
+    fn name(&self) -> &str {
+        "MutateStride"
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if !genome.is_node_level() {
+            return false;
+        }
+        node_main_path(genome).iter().any(|b| b.kind.is_conv2d())
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let blocks = node_main_path(genome);
+        let conv_blocks: Vec<NodeBlock> =
+            blocks.into_iter().filter(|b| b.kind.is_conv2d()).collect();
+
+        if conv_blocks.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有 Conv2d 块可变异 stride".into(),
+            ));
+        }
+
+        let block = conv_blocks.choose(rng).unwrap().clone();
+        let bid_set: std::collections::HashSet<u64> = block.node_ids.iter().copied().collect();
+
+        // 读取当前 stride 并切换
+        let current_stride = genome
+            .nodes()
+            .iter()
+            .find_map(|n| {
+                if bid_set.contains(&n.innovation_number) {
+                    if let NodeTypeDescriptor::Conv2d { stride, .. } = &n.node_type {
+                        return Some(*stride);
+                    }
+                }
+                None
+            })
+            .unwrap_or((1, 1));
+
+        let new_stride = if current_stride == (1, 1) {
+            // stride=1 → stride=2：需要空间尺寸 >= 2
+            let spatial = node_spatial_at(genome, block.input_id);
+            if spatial.map(|(h, w)| h >= 2 && w >= 2).unwrap_or(false) {
+                (2, 2)
+            } else {
+                return Err(MutationError::NotApplicable(
+                    "空间尺寸过小，无法使用 stride=2".into(),
+                ));
+            }
+        } else {
+            (1, 1) // 恢复为 stride=1
+        };
+
+        // 更新 Conv2d op 节点的 stride
+        for node in genome.nodes_mut().iter_mut() {
+            if bid_set.contains(&node.innovation_number) {
+                if let NodeTypeDescriptor::Conv2d {
+                    ref mut stride, ..
+                } = node.node_type
+                {
+                    *stride = new_stride;
+                }
+            }
+        }
+
+        sync_computation_shapes(genome);
+        repair_param_input_dims(genome);
+        Ok(())
+    }
 }
 
 // ==================== AddConnectionMutation / RemoveConnectionMutation ====================

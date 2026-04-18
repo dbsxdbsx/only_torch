@@ -5,17 +5,18 @@
  *
  * 与 `examples/mnist`（手动定义 MLP）和 `examples/mnist_cnn`（手动定义 LeNet）不同，
  * 本示例展示 **Evolution API**——只提供图像数据和目标，
- * 系统从最小结构 `Input(1@28×28) → Flatten → [Linear(10)]` 出发，
+ * 系统从 `Input(1@28×28) → Conv2d(1→8,k=3) → Pool2d(Max,2,2) → Flatten → [Linear(10)]` 出发，
  * 通过自动变异发现能识别手写数字的架构。
  *
- * 演化可能发现纯 FC 架构、Conv+FC 混合架构，或其他任何合法结构——
+ * 演化可探索 Conv-BN-ReLU 组合、多层卷积、stride 降维等 CNN 架构——
  * 最终由 fitness（准确率）驱动选择。
  *
  * 关键特性：
  * - 空间输入 [1, 28, 28]（灰度图）→ 自动推断空间模式
  * - 十分类 → 自动推断 CrossEntropy loss + argmax accuracy
+ * - Conv-BN-ReLU 模板：60% 概率插入带 BatchNorm 的卷积块
  * - Lamarckian 权重继承：每代在上一代权重基础上继续训练
- * - 变异：InsertLayer（Conv2d/Pool2d/Linear/Activation）、GrowHiddenSize 等
+ * - 变异：InsertLayer（Conv2d/Conv-BN-ReLU/Pool2d/Linear/Activation）、MutateStride 等
  *
  * ## 运行
  * ```bash
@@ -91,7 +92,7 @@ fn main() {
     println!("  - 测试样本: {test_samples}");
     println!("  - 输入: [1, 28, 28]（灰度图）");
     println!("  - 输出: 10 类（数字 0-9）");
-    println!("  - 起始结构: Input(1@28×28) → Flatten → [Linear(10)]");
+    println!("  - 起始结构: Input(1@28×28) → Conv2d(1→8,k=3) → Pool2d → Flatten → [Linear(10)]");
     println!("  - population_size: {population_size}");
     println!("  - offspring_batch_size: {offspring_batch_size}");
     println!("  - parallelism: {parallelism}");

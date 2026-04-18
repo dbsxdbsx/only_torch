@@ -1593,14 +1593,22 @@ fn test_minimal_spatial_creates_correct_genome() {
     assert_eq!(genome.output_dim, 10);
     assert_eq!(genome.input_spatial, Some((28, 28)));
     assert!(genome.is_spatial());
-    assert_eq!(genome.layers().len(), 2); // Flatten, Linear
+    assert_eq!(genome.layers().len(), 4); // Conv2d, Pool2d, Flatten, Linear
 
     assert!(matches!(
         genome.layers()[0].layer_config,
-        LayerConfig::Flatten
+        LayerConfig::Conv2d { out_channels: 8, kernel_size: 3 }
     ));
     assert!(matches!(
         genome.layers()[1].layer_config,
+        LayerConfig::Pool2d { pool_type: PoolType::Max, kernel_size: 2, stride: 2 }
+    ));
+    assert!(matches!(
+        genome.layers()[2].layer_config,
+        LayerConfig::Flatten
+    ));
+    assert!(matches!(
+        genome.layers()[3].layer_config,
         LayerConfig::Linear { out_features: 10 }
     ));
 }
@@ -1619,57 +1627,39 @@ fn test_minimal_spatial_zero_hw_panics() {
 
 #[test]
 fn test_resolve_dimensions_spatial_minimal() {
-    // Flatten → Linear(10)
+    // Conv2d(3→8,k=3) → Pool2d(Max,2,2) → Flatten → Linear(10)
     // 输入: 3 channels, 28×28
     let genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
     let resolved = genome.resolve_dimensions().unwrap();
 
-    assert_eq!(resolved.len(), 2);
-    // Flatten: in=3(channels), out=3*28*28=2352
+    assert_eq!(resolved.len(), 4);
+    // Conv2d: in=3(channels), out=8(out_channels)
     assert_eq!(resolved[0].in_dim, 3);
-    assert_eq!(resolved[0].out_dim, 3 * 28 * 28);
-    // Linear: in=2352, out=10
-    assert_eq!(resolved[1].in_dim, 2352);
-    assert_eq!(resolved[1].out_dim, 10);
+    assert_eq!(resolved[0].out_dim, 8);
+    // Pool2d: in=8, out=8 (channels 不变)
+    assert_eq!(resolved[1].in_dim, 8);
+    assert_eq!(resolved[1].out_dim, 8);
+    // Flatten: in=8(channels), out=8*14*14=1568 (28/2=14 after pool)
+    assert_eq!(resolved[2].in_dim, 8);
+    assert_eq!(resolved[2].out_dim, 8 * 14 * 14);
+    // Linear: in=1568, out=10
+    assert_eq!(resolved[3].in_dim, 1568);
+    assert_eq!(resolved[3].out_dim, 10);
 }
 
 #[test]
 fn test_resolve_dimensions_spatial_with_extra_pool() {
-    // Conv2d(out=8, k=3) → Pool2d(k=2,s=2) → Pool2d(k=2,s=2) → Flatten → Linear(10)
+    // 基线 minimal: Conv2d(1→8,k=3) → Pool2d → Flatten → Linear(10)
+    // 在首层 Pool2d 后再插入一层 MaxPool，使 8×8 经两次池化降到 2×2 后接 Flatten
     // 输入: 1 channel, 8×8
     let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
 
-    // 在 Flatten 前插入 Conv2d + 两个 Pool2d
-    let conv_inn = genome.next_innovation_number();
-    genome.layers_mut().insert(
-        0,
-        LayerGene {
-            innovation_number: conv_inn,
-            layer_config: LayerConfig::Conv2d {
-                out_channels: 8,
-                kernel_size: 3,
-            },
-            enabled: true,
-        },
-    );
-    let pool1_inn = genome.next_innovation_number();
-    genome.layers_mut().insert(
-        1,
-        LayerGene {
-            innovation_number: pool1_inn,
-            layer_config: LayerConfig::Pool2d {
-                pool_type: PoolType::Max,
-                kernel_size: 2,
-                stride: 2,
-            },
-            enabled: true,
-        },
-    );
-    let pool2_inn = genome.next_innovation_number();
+    let p_extra_inn = genome.next_innovation_number();
+    // index 2 = 第一个 Pool2d 之后、Flatten 之前
     genome.layers_mut().insert(
         2,
         LayerGene {
-            innovation_number: pool2_inn,
+            innovation_number: p_extra_inn,
             layer_config: LayerConfig::Pool2d {
                 pool_type: PoolType::Max,
                 kernel_size: 2,
@@ -1684,10 +1674,10 @@ fn test_resolve_dimensions_spatial_with_extra_pool() {
     // Conv2d: in=1, out=8, spatial=8×8
     assert_eq!(resolved[0].in_dim, 1);
     assert_eq!(resolved[0].out_dim, 8);
-    // Pool2d #1: 8→4, channels=8
+    // Pool2d #1: 8×8 → 4×4, channels=8
     assert_eq!(resolved[1].in_dim, 8);
     assert_eq!(resolved[1].out_dim, 8);
-    // Pool2d #2: 4→2, channels=8
+    // Pool2d #2: 4×4 → 2×2, channels=8
     assert_eq!(resolved[2].in_dim, 8);
     assert_eq!(resolved[2].out_dim, 8);
     // Flatten: in=8, out=8*2*2=32
@@ -1717,10 +1707,9 @@ fn test_compute_layer_params_conv2d() {
         },
     );
     let total = test_genome.total_params().unwrap();
-    // Conv2d(16,k=3): 16*3*9 + 16 = 448
-    // Flatten: 0，out=16*8*8=1024（Conv2d same padding 不改变 H/W）
-    // Linear(10): 1024*10 + 10 = 10250
-    assert_eq!(total, 448 + 0 + 10250);
+    // 层序: Conv#1(3→16) → Conv#2(16→8) → Pool(8×8→4×4) → Flatten(8*4*4) → Linear(10)
+    // 448 + 1160 + 0 + (128*10+10) = 2898
+    assert_eq!(total, 2898);
 }
 
 #[test]
@@ -1755,26 +1744,25 @@ fn test_compute_layer_params_pool2d_and_flatten_zero() {
     );
 
     let total = genome.total_params().unwrap();
-    // Conv2d(1→1, k=1): 1*1*1 + 1 = 2
-    // Pool2d(k=2,s=2): 0，spatial 4→2
-    // Flatten: 0，out=1*2*2=4
-    // Linear(4→2): 4*2 + 2 = 10
-    assert_eq!(total, 2 + 0 + 0 + 10);
+    // 在 minimal 前插入: Conv2d(1, k=1) 与 MaxPool(2) 后:
+    // Conv#1(1, k1 in=1): 2; Conv#2(8, k3 in=1)（种子）: 8*1*9+8=80; Pool/Flatten/Linear(2)
+    // Flatten 后: 8 ch, 1×1 → 8 维; Linear(2): 8*2+2=18
+    assert_eq!(total, 2 + 0 + 80 + 0 + 0 + 18);
 }
 
 #[test]
 fn test_is_domain_valid_spatial_minimal() {
-    // Flatten → Linear：合法（纯 FC 方案，无空间层也是合法的空间最小网络）
+    // minimal_spatial：Conv → Pool → Flatten → Linear，域链合法
     let genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
     assert!(genome.is_domain_valid());
 }
 
 #[test]
 fn test_is_domain_valid_spatial_flatten_only() {
-    // 验证 minimal_spatial 只有 Flatten + Linear 是合法的
+    // 验证「Conv+Pool+Flatten+Linear」最小 CNN 主路径的域是合法的
     let genome = NetworkGenome::minimal_spatial(1, 10, (28, 28));
     assert!(genome.is_domain_valid());
-    assert_eq!(genome.layers().len(), 2);
+    assert_eq!(genome.layers().len(), 4);
 }
 
 #[test]
@@ -1830,10 +1818,10 @@ fn test_is_domain_valid_spatial_conv_pool_flatten_linear() {
 
 #[test]
 fn test_is_domain_valid_spatial_missing_flatten() {
-    // [Linear]：非法（缺少 Flatten，空间模式终态不是 Flat）
+    // 去掉 Flatten 后 [Conv, Pool, …, Linear]：非法（空间模式未回到 Flat 域前出现 Linear/末态不合法）
     let mut genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
-    // 移除 Flatten 层（index 0）
-    genome.layers_mut().remove(0);
+    // Flatten 在 minimal_spatial 中为第 3 层（0-based 索引 2）
+    genome.layers_mut().remove(2);
     assert!(!genome.is_domain_valid());
 }
 
@@ -1901,24 +1889,28 @@ fn test_is_domain_valid_spatial_rnn_illegal() {
 
 #[test]
 fn test_domain_map_spatial_genome() {
-    // Input(Spatial) → Flatten(Flat) → Linear(Flat)
+    // Input(Spatial) → Conv/Pool(Spatial) → Flatten(Flat) → Linear(Flat)
     let genome = NetworkGenome::minimal_spatial(3, 10, (28, 28));
     let map = genome.compute_domain_map();
 
     assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Spatial);
-    assert_eq!(map[&genome.layers()[0].innovation_number], ShapeDomain::Flat); // Flatten
-    assert_eq!(map[&genome.layers()[1].innovation_number], ShapeDomain::Flat); // Linear
+    assert_eq!(map[&genome.layers()[0].innovation_number], ShapeDomain::Spatial);
+    assert_eq!(map[&genome.layers()[1].innovation_number], ShapeDomain::Spatial);
+    assert_eq!(map[&genome.layers()[2].innovation_number], ShapeDomain::Flat); // Flatten
+    assert_eq!(map[&genome.layers()[3].innovation_number], ShapeDomain::Flat); // Linear
 }
 
 #[test]
 fn test_spatial_map_minimal() {
-    // Input(8×8) → Flatten(None) → Linear(None)
+    // Input(8×8) → Conv(8×8) → Pool(4×4) → Flatten(None) → Linear(None)
     let genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
 
     let smap = genome.compute_spatial_map();
     assert_eq!(smap[&INPUT_INNOVATION], Some((8, 8)));
-    assert_eq!(smap[&genome.layers()[0].innovation_number], None); // Flatten
-    assert_eq!(smap[&genome.layers()[1].innovation_number], None); // Linear
+    assert_eq!(smap[&genome.layers()[0].innovation_number], Some((8, 8)));
+    assert_eq!(smap[&genome.layers()[1].innovation_number], Some((4, 4)));
+    assert_eq!(smap[&genome.layers()[2].innovation_number], None); // Flatten
+    assert_eq!(smap[&genome.layers()[3].innovation_number], None); // Linear
 }
 
 #[test]

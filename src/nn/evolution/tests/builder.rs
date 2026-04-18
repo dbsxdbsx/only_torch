@@ -1819,10 +1819,10 @@ fn test_phase5_node_level_partial_inherit_after_shrink() {
 #[test]
 fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
     use crate::nn::evolution::node_ops::{
-        node_main_path, repair_param_input_dims, resize_conv2d_out,
+        node_main_path, repair_param_input_dims, resize_conv2d_out, NodeBlockKind,
     };
 
-    // 构建 NodeLevel CNN：Input([1,1,8,8]) → Conv2d(out=4, k=3) → Flatten → Linear(2)
+    // 在 minimal 种子 [Conv(1→8) → Pool → Flatten → Linear] 前插入首层 Conv2d(1→4) 作为「首层可 resize」目标
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (8, 8));
     let conv_inn = genome.next_innovation_number();
     genome.layers_mut().insert(
@@ -1841,40 +1841,48 @@ fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
         .expect("CNN 迁移 NodeLevel 应成功");
     assert!(genome.is_node_level());
 
-    // 构建并捕获权重（快照中含 Conv2d kernel：4D 张量 [4, 1, 3, 3]）
+    // 构建并捕获权重（取插入的首层 Conv：kernel [4, 1, 3, 3]，种子 Conv 为 [8,4,3,3] 不可混用）
     let mut rng = StdRng::seed_from_u64(42);
     let build1 = genome.build(&mut rng).expect("初始 build 应成功");
     genome
         .capture_weights(&build1)
         .expect("capture_weights 应成功");
 
-    // 确认快照中存在 4D kernel
     let snaps = genome.node_weight_snapshots();
     let has_4d_kernel = snaps
         .values()
         .any(|t| t.shape().len() == 4 && t.shape()[2] > 1 && t.shape()[3] > 1);
     assert!(has_4d_kernel, "快照中应存在 Conv2d kernel（4D 张量）");
-    // 确认 4D kernel 快照形状为 [4, 1, 3, 3]（out_ch=4, in_ch=1, kH=3, kW=3）
+    // 4D kernel 中明确选取 out_ch=4, in_ch=1 的插入层（与种子层的 [8,4,3,3] 区分）
     let kernel_snap = snaps
         .values()
-        .find(|t| t.shape().len() == 4 && t.shape()[2] > 1 && t.shape()[3] > 1)
+        .find(|t| t.shape() == &[4, 1, 3, 3])
         .unwrap()
         .clone();
     assert_eq!(kernel_snap.shape(), &[4usize, 1, 3, 3]);
 
-    // 将输出通道从 4 扩大到 8（kernel 形状：[4,1,3,3] → [8,1,3,3]）
+    // 将插入层输出通道从 4 扩大到 8（[4,1,3,3] → [8,1,3,3]）
     // resize_conv2d_out 在 Flatten 处停止级联，Flatten 后的 Linear W 需要单独修复
     let blocks = node_main_path(&genome);
+    // 与种子 Conv(8) 区分：选 out_channels=4 的插入首层
     let conv_block = blocks
         .iter()
-        .find(|b| b.kind.is_conv2d())
+        .find(|b| {
+            matches!(
+                &b.kind,
+                NodeBlockKind::Conv2d {
+                    out_channels: 4,
+                    kernel_size: 3
+                }
+            )
+        })
         .cloned()
-        .expect("应能找到 Conv2d 块");
+        .expect("应能找到插入的 Conv2d(4) 块");
     resize_conv2d_out(&mut genome, &conv_block, 8).expect("resize_conv2d_out 应成功");
-    // 修复 Flatten 后 Linear W 的输入维度：4ch×8×8=256 → 8ch×8×8=512
+    // Flatten 后 Linear in：经 Pool4×4 后为 8ch*4*4=128
     repair_param_input_dims(&mut genome);
 
-    // 重新构建（Linear W 现在应为 [512, 2]）
+    // 重新构建（Linear W 的 in_features 经 repair 已与 Flatten 对齐）
     let mut rng2 = StdRng::seed_from_u64(99);
     let build2 = genome
         .build(&mut rng2)

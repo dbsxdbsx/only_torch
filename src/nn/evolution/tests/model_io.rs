@@ -8,7 +8,7 @@ use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::gene::{
     ActivationType, LayerConfig, LayerGene, NetworkGenome, TaskMetric,
 };
-use crate::nn::evolution::mutation::{AddConnectionMutation, Mutation};
+use crate::nn::evolution::mutation::{AddConnectionMutation, Mutation, SizeConstraints};
 use crate::nn::evolution::node_ops::find_removable_skip_connections;
 use crate::nn::evolution::{Evolution, EvolutionResult};
 use crate::tensor::Tensor;
@@ -352,16 +352,18 @@ fn test_save_creates_parent_directories() {
 
 // ==================== NodeLevel 持久化格式验收测试 ====================
 
-/// 简单空间数据（4 个 1-通道 4x4 假图像，二分类标签）
+/// 简单空间数据（4 个 1-通道 8×8 假图像，二分类标签）
+/// 4×4 在 Conv+Pool+变异链路过短时易出现非法空间下采样；8×8 为 CNN 起种子留出余量
 fn spatial_data() -> (Vec<Tensor>, Vec<Tensor>) {
-    let pos: Vec<f32> = (0..16).map(|i| i as f32 / 16.0).collect();
-    let neg: Vec<f32> = (0..16).map(|i| -(i as f32) / 16.0).collect();
+    let n = 8 * 8;
+    let pos: Vec<f32> = (0..n).map(|i| i as f32 / n as f32).collect();
+    let neg: Vec<f32> = (0..n).map(|i| -(i as f32) / n as f32).collect();
     (
         vec![
-            Tensor::new(&pos, &[1, 4, 4]),
-            Tensor::new(&neg, &[1, 4, 4]),
-            Tensor::new(&pos, &[1, 4, 4]),
-            Tensor::new(&neg, &[1, 4, 4]),
+            Tensor::new(&pos, &[1, 8, 8]),
+            Tensor::new(&neg, &[1, 8, 8]),
+            Tensor::new(&pos, &[1, 8, 8]),
+            Tensor::new(&neg, &[1, 8, 8]),
         ],
         vec![
             Tensor::new(&[1.0], &[1]),
@@ -440,7 +442,7 @@ fn test_phase6_flat_evolution_produces_nodelevel_genome() {
 /// 验证：
 /// - Spatial 模式演化后 genome.is_node_level() == true
 /// - save/load 往返，加载后 genome 也是 NodeLevel
-/// - 加载后推理正常（输入形状 [1, 4, 4]）
+/// - 加载后推理正常（输入张量 [C, H, W] = [1, 8, 8]）
 #[test]
 fn test_phase6_spatial_nodelevel_save_load_roundtrip() {
     let temp_path = "test_phase6_spatial_nodelevel";
@@ -449,6 +451,9 @@ fn test_phase6_spatial_nodelevel_save_load_roundtrip() {
     let result = Evolution::supervised(data.clone(), data, TaskMetric::Accuracy)
         .with_max_generations(2) // 只跑 2 代，快速验证格式
         .with_seed(42)
+        // 不依赖 SizeConstraints::auto 的大参数量级；用默认紧凑上界降低非法结构出现概率
+        .with_constraints(SizeConstraints::default())
+        .with_parallelism(1)
         .with_verbose(false)
         .run()
         .expect("Spatial 演化失败");
@@ -470,9 +475,10 @@ fn test_phase6_spatial_nodelevel_save_load_roundtrip() {
     );
 
     // 加载后推理成功（不要求结果一致，只验证前向传播不崩溃）
+    let n = 8 * 8;
     let test_img = Tensor::new(
-        &(0..16).map(|i| i as f32 / 16.0).collect::<Vec<_>>(),
-        &[1, 4, 4],
+        &(0..n).map(|i| i as f32 / n as f32).collect::<Vec<_>>(),
+        &[1, 8, 8],
     );
     let pred = loaded.predict(&test_img).expect("Spatial 加载后推理失败");
     assert_eq!(pred.shape()[1], 1, "输出维度应为 1");

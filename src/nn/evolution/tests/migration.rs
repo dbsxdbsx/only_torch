@@ -486,11 +486,11 @@ fn migrate_mlp_genome_analysis_valid() {
 
 #[test]
 fn migrate_spatial_genome_flatten_linear() {
-    // 空间输入 → Flatten → Linear(10)（MNIST 最小结构）
+    // minimal_spatial: Conv(1→8) → MaxPool2d → Flatten → Linear(10)（小 CNN 起点）
     let genome = NetworkGenome::minimal_spatial(1, 10, (28, 28));
     let out = migrate_network_genome(&genome).unwrap();
-    // Flatten: 1 节点，Linear(10): 4 节点 = 5 节点
-    assert_eq!(out.nodes.len(), 5, "Flatten + Linear = 5 节点");
+    // Conv2d(4) + MaxPool(1) + Flatten(1) + Linear(4) = 10 节点
+    assert_eq!(out.nodes.len(), 10, "Conv+Pool+Flatten+Linear = 10 节点");
     assert!(out.deferred.is_empty());
 
     let analysis = GenomeAnalysis::compute(&out.nodes, 0, vec![1, 1, 28, 28], ShapeDomain::Spatial);
@@ -503,7 +503,7 @@ fn migrate_spatial_genome_flatten_linear() {
 
 #[test]
 fn migrate_genome_with_conv2d() {
-    // Conv2d → Flatten → Linear（简单 CNN）
+    // 在 minimal_spatial 主链前再叠一层 Conv2d(8)（[Conv(新), Conv(种), Pool, F, L]）
     let mut genome = NetworkGenome::minimal_spatial(1, 10, (28, 28));
     let conv_layer = LayerGene {
         innovation_number: genome.next_innovation_number(),
@@ -513,12 +513,11 @@ fn migrate_genome_with_conv2d() {
         },
         enabled: true,
     };
-    // 插入到 Flatten 前面
     genome.layers_mut().insert(0, conv_layer);
 
     let out = migrate_network_genome(&genome).unwrap();
-    // Conv2d: 4 节点（kernel/conv/bias/add），Flatten: 1 节点，Linear(10): 4 节点 = 9 节点
-    assert_eq!(out.nodes.len(), 9, "Conv+Flatten+Linear = 9 节点");
+    // 双 Conv2d(各 4) + MaxPool(1) + Flatten(1) + Linear(4) = 14 节点
+    assert_eq!(out.nodes.len(), 14, "双 Conv+Pool+Flatten+Linear = 14 节点");
     assert!(out.deferred.is_empty());
 }
 
@@ -607,18 +606,9 @@ fn migrate_mlp_shapes_consistent_with_analysis() {
 /// Conv2d → Pool2d → Conv2d → Flatten → Linear，空间维度逐层缩减验证
 #[test]
 fn migrate_cnn_pipeline_conv_pool_conv_flatten_linear() {
+    // 目标: [Conv(1→8,k=3), MaxPool(2,2), Conv(8→16,k=3), Flatten, Linear(10)]
+    // 在 minimal 的 [Conv(1→8), MaxPool(2,2), ...] 上，仅在 Pool 后、Flatten 前插入第二段 Conv(8→16)
     let mut genome = NetworkGenome::minimal_spatial(1, 10, (28, 28));
-    // 初始: [Flatten, Linear(10)]
-    // 目标层序: [Conv(1→8,k=3), Pool(2,2), Conv(8→16,k=3), Flatten, Linear(10)]
-    let pool = LayerGene {
-        innovation_number: genome.next_innovation_number(),
-        layer_config: LayerConfig::Pool2d {
-            pool_type: PoolType::Max,
-            kernel_size: 2,
-            stride: 2,
-        },
-        enabled: true,
-    };
     let conv2 = LayerGene {
         innovation_number: genome.next_innovation_number(),
         layer_config: LayerConfig::Conv2d {
@@ -627,21 +617,10 @@ fn migrate_cnn_pipeline_conv_pool_conv_flatten_linear() {
         },
         enabled: true,
     };
-    let conv1 = LayerGene {
-        innovation_number: genome.next_innovation_number(),
-        layer_config: LayerConfig::Conv2d {
-            out_channels: 8,
-            kernel_size: 3,
-        },
-        enabled: true,
-    };
-    // 插入到 Flatten 前：[conv1, pool, conv2, Flatten, Linear(10)]
-    genome.layers_mut().insert(0, pool);
-    genome.layers_mut().insert(0, conv2);
-    genome.layers_mut().insert(0, conv1);
+    genome.layers_mut().insert(2, conv2);
 
     let out = migrate_network_genome(&genome).unwrap();
-    // Conv(1→8): 4, Pool: 1, Conv(8→16): 4, Flatten: 1, Linear(10): 4 = 14 节点
+    // 双 Conv2d(各 4) + MaxPool(1) + Flatten(1) + Linear(4) = 14 节点
     assert_eq!(out.nodes.len(), 14, "CNN 管道应展开为 14 节点");
     assert!(out.deferred.is_empty());
 

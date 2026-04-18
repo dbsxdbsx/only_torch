@@ -525,11 +525,10 @@ impl NetworkGenome {
         }
     }
 
-    /// 最小空间网络：layers = [Flatten, Linear(output_dim)]
+    /// 最小空间网络：layers = [Conv2d(→8,k=3), Pool2d(Max,2,2), Flatten, Linear(output_dim)]
     ///
-    /// 从最简单的 Flatten+FC 结构出发，Conv2d/Pool2d 由演化自主发现。
-    /// 对于小图像（如 MNIST 28×28），纯 FC 方案参数量更少、训练更快；
-    /// 对于大图像，演化会通过 InsertLayer 在 Flatten 前插入 Conv2d/Pool2d 来降维。
+    /// 从一个已知有效的 CNN 起点出发（Conv→Pool→FC），避免演化从纯 Flatten+FC
+    /// 结构被迫"发现"卷积的价值。Pool2d 将空间尺寸减半，控制 Flatten 后的特征维度。
     ///
     /// # Panics
     /// `input_channels` 或 `output_dim` 为零，或 `spatial` 的 H/W 为零时 panic。
@@ -542,13 +541,31 @@ impl NetworkGenome {
         assert!(output_dim > 0, "output_dim 不能为零");
         assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
 
-        let flatten_layer = LayerGene {
+        let init_channels = 8usize;
+        let conv_layer = LayerGene {
             innovation_number: 1,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: init_channels,
+                kernel_size: 3,
+            },
+            enabled: true,
+        };
+        let pool_layer = LayerGene {
+            innovation_number: 2,
+            layer_config: LayerConfig::Pool2d {
+                pool_type: PoolType::Max,
+                kernel_size: 2,
+                stride: 2,
+            },
+            enabled: true,
+        };
+        let flatten_layer = LayerGene {
+            innovation_number: 3,
             layer_config: LayerConfig::Flatten,
             enabled: true,
         };
         let output_head = LayerGene {
-            innovation_number: 2,
+            innovation_number: 4,
             layer_config: LayerConfig::Linear {
                 out_features: output_dim,
             },
@@ -563,9 +580,9 @@ impl NetworkGenome {
             training_config: TrainingConfig::default(),
             generated_by: "minimal_spatial".to_string(),
             repr: GenomeRepr::LayerLevel {
-                layers: vec![flatten_layer, output_head],
+                layers: vec![conv_layer, pool_layer, flatten_layer, output_head],
                 skip_edges: Vec::new(),
-                next_innovation: 3,
+                next_innovation: 5,
                 weight_snapshots: HashMap::new(),
             },
         }
@@ -839,6 +856,100 @@ impl NetworkGenome {
                 .expect("resolve_dimensions 返回的创新号必须对应一个层");
             total += Self::compute_layer_params(&layer.layer_config, dim.in_dim, dim.out_dim);
         }
+        Ok(total)
+    }
+
+    /// 估算前向推理 FLOPs（乘加各算一次）
+    ///
+    /// 遍历 NodeLevel 基因组中每个节点，根据操作类型和形状估算计算量。
+    pub fn total_flops(&self) -> Result<usize, GenomeError> {
+        let nodes = match &self.repr {
+            GenomeRepr::NodeLevel { nodes, .. } => nodes,
+            GenomeRepr::LayerLevel { .. } => {
+                return Err(GenomeError::InvalidDimension(
+                    "FLOPs 估算仅支持 NodeLevel".into(),
+                ));
+            }
+        };
+
+        let analysis = self.analyze();
+        let mut total: usize = 0;
+
+        for node in nodes.iter().filter(|n| n.enabled) {
+            let out_shape = analysis
+                .shape_of(node.innovation_number)
+                .unwrap_or(&node.output_shape);
+            let out_elements: usize = out_shape.iter().product();
+
+            use crate::nn::descriptor::NodeTypeDescriptor as NT;
+            match &node.node_type {
+                // MatMul: [batch, in] × [in, out] → 2 * batch * in * out
+                NT::MatMul => {
+                    let parent_shapes: Vec<&Vec<usize>> = node
+                        .parents
+                        .iter()
+                        .filter_map(|&pid| {
+                            nodes
+                                .iter()
+                                .find(|n| n.innovation_number == pid)
+                                .map(|n| {
+                                    analysis.shape_of(n.innovation_number).unwrap_or(&n.output_shape)
+                                })
+                        })
+                        .collect();
+                    if parent_shapes.len() == 2 {
+                        let in_features = parent_shapes[1].first().copied().unwrap_or(1);
+                        // 2 * out_elements * in_features (multiply + accumulate)
+                        total += 2 * out_elements * in_features;
+                    }
+                }
+                // Conv2d: 2 * N * Cout * Hout * Wout * Cin * kH * kW
+                NT::Conv2d { .. } => {
+                    let kernel_shape: Option<&Vec<usize>> = node
+                        .parents
+                        .iter()
+                        .filter_map(|&pid| {
+                            nodes.iter().find(|n| {
+                                n.innovation_number == pid
+                                    && n.is_parameter()
+                                    && n.output_shape.len() == 4
+                            })
+                        })
+                        .map(|n| {
+                            analysis.shape_of(n.innovation_number).unwrap_or(&n.output_shape)
+                        })
+                        .next();
+                    if let Some(ks) = kernel_shape {
+                        // ks = [Cout, Cin, kH, kW]
+                        let cin = ks.get(1).copied().unwrap_or(1);
+                        let kh = ks.get(2).copied().unwrap_or(1);
+                        let kw = ks.get(3).copied().unwrap_or(1);
+                        total += 2 * out_elements * cin * kh * kw;
+                    }
+                }
+                // 元素级操作：~1 FLOPs per element
+                NT::Add | NT::Subtract | NT::Multiply | NT::ReLU | NT::Sigmoid
+                | NT::Tanh | NT::Gelu | NT::Selu | NT::Mish | NT::HardSwish
+                | NT::HardSigmoid | NT::Softmax | NT::LeakyReLU { .. }
+                | NT::Elu { .. } => {
+                    total += out_elements;
+                }
+                // BatchNorm: ~4 ops/element (mean, var, normalize, scale)
+                NT::BatchNormOp { .. } => {
+                    total += 4 * out_elements;
+                }
+                // Pool: kernel_size^2 comparisons/additions per output element
+                NT::MaxPool2d { kernel_size, .. } | NT::AvgPool2d { kernel_size, .. } => {
+                    total += out_elements * kernel_size.0 * kernel_size.1;
+                }
+                // 无计算量的操作
+                NT::Parameter | NT::BasicInput | NT::TargetInput | NT::State { .. }
+                | NT::Flatten { .. } | NT::Reshape { .. } | NT::Concat { .. }
+                | NT::Dropout { .. } | NT::Maximum => {}
+                _ => {}
+            }
+        }
+
         Ok(total)
     }
 

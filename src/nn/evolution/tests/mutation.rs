@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::gene::*;
 use crate::nn::evolution::mutation::*;
@@ -71,6 +73,35 @@ fn test_insert_layer_max_layers_reached() {
 fn spatial_genome(spatial: (usize, usize)) -> NetworkGenome {
     NetworkGenome::minimal_spatial(1, 10, spatial)
 }
+
+/// 1×1 空间、仅 Flatten+Linear 的起始基因组（不经过 minimal_spatial 的 Conv+Pool 种子，便于测试极端空间）
+fn spatial_1x1_flatten_only_genome() -> NetworkGenome {
+    NetworkGenome {
+        input_dim: 1,
+        output_dim: 10,
+        seq_len: None,
+        input_spatial: Some((1, 1)),
+        training_config: TrainingConfig::default(),
+        generated_by: "spatial_1x1_flat_only".to_string(),
+        repr: GenomeRepr::LayerLevel {
+            layers: vec![
+                LayerGene {
+                    innovation_number: 1,
+                    layer_config: LayerConfig::Flatten,
+                    enabled: true,
+                },
+                LayerGene {
+                    innovation_number: 2,
+                    layer_config: LayerConfig::Linear { out_features: 10 },
+                    enabled: true,
+                },
+            ],
+            skip_edges: vec![],
+            next_innovation: 3,
+            weight_snapshots: HashMap::new(),
+        },
+    }
+}
 #[test]
 fn test_insert_layer_no_consecutive_activation() {
     // 从 minimal 出发插入多次，不应出现连续 Activation
@@ -130,18 +161,19 @@ fn test_insert_layer_spatial_width_not_locked_to_input_channels() {
 
 #[test]
 fn test_insert_layer_spatial_does_not_create_pool_when_spatial_too_small() {
+    // 1×1 上手工构造的 Flatten+FC 种子（不经过带 Conv+Pool 的 minimal_spatial）
     let m = InsertLayerMutation::new(vec![]);
     let c = constraints();
 
     for seed in 0..32u64 {
-        let mut g = spatial_genome((1, 1));
+        let mut g = spatial_1x1_flatten_only_genome();
         let mut r = StdRng::seed_from_u64(seed);
         m.apply(&mut g, &c, &mut r).unwrap();
         assert!(
             !g.layers()
                 .iter()
-                .any(|l| { l.enabled && matches!(l.layer_config, LayerConfig::Pool2d { .. }) }),
-            "1x1 空间输入上不应再生成 Pool2d 候选"
+                .any(|l| l.enabled && matches!(l.layer_config, LayerConfig::Pool2d { .. })),
+            "1×1 小空间上不应再生成 Pool2d 层"
         );
     }
 }

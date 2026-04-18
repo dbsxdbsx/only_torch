@@ -301,7 +301,7 @@ pub struct NodeGene {
 
 `NodeGene` 是演化系统的最小可操作单元。`node_type` 直接使用 `NodeTypeDescriptor`（定义在 `src/nn/descriptor.rs`），实现演化层和图 IR 层的 1:1 对齐。
 
-**block_id** 用于模板组操作：同一个高层模板（如 Linear = MatMul + Parameter + Add + Parameter）展开后的节点共享相同 `block_id`。Grow/Shrink/Remove 以模板组为单位操作，未来 Crossover 也以 block 为单位对齐。`block_id = None` 表示独立节点（如单独的激活函数）。
+**block_id** 用于模板组操作：同一个高层模板（如 Linear = MatMul + Parameter + Add + Parameter）展开后的节点共享相同 `block_id`。Grow/Shrink/Remove 以模板组为单位操作。`block_id = None` 表示独立节点（如单独的激活函数）。
 
 ### 4.3 GenomeAnalysis
 
@@ -814,13 +814,59 @@ result.export_onnx("evolved_model.onnx")?;
 
 ### 11.7 未来方向
 
+#### 变异粒度说明与演化模式
+
+当前系统在存储层统一使用节点粒度表示（`Vec<NodeGene>`），但所有变异操作的实际粒度仍为 **模板块（Block）级别**——`InsertLayer` 调用 `expand_linear()` / `expand_conv2d()` / `expand_rnn()` 等函数，一次性插入整个多节点模板（如 Linear = MatMul + Add + 2×Parameter）。这相当于在"器官"级别做移植，而非在"细胞"级别做增减。
+
+**唯一内核表示**：系统只有 NodeLevel 一种运行时表示。所谓"层级变异"和"节点级变异"并非两套独立系统，而是同一个 NodeLevel DAG 上不同粒度的操作——模板块变异（InsertLayer 等）一次操作多个节点的模板组，原子节点变异（InsertAtomicNode，待实现）一次操作单个节点。两者在同一个 `Vec<NodeGene>` 上共存，通过 `MutationRegistry` 的权重配比控制使用比例。无需维护"层级模式"与"节点模式"的切换——粒度是变异操作的属性，不是基因组的属性。
+
+下述路线图旨在：（1）增强 Spatial 域能力解决当前 CNN 演化瓶颈；（2）将变异粒度逐步扩展到真正的单节点级别。
+
+#### 阶段 A：Spatial 域增强 + 通用度量 ✅ 已完成
+
+| 方向 | 状态 | 实现说明 |
+|---|---|---|
+| Conv-BN-ReLU 复合模板 | ❌ 已移除 | 实测表明演化更倾向于独立发现最优激活组合（如 LeakyReLU + Swish），硬编码 Conv+BN+ReLU 限制了搜索多样性。改为依赖现有的独立插入机制：30% 概率插入任意激活函数 + 100% Conv2d 作为 Spatial 域默认插入。BatchNorm 的独立插入可在后续按需加入 |
+| Spatial 域初始种子增强 | ✅ | `minimal_spatial` 从 `[Flatten, Linear]` 改为 `[Conv2d(in_ch→8,k=3), Pool2d(Max,2,2), Flatten, Linear]`——从已知有效的 CNN 起点出发，Pool2d 将空间尺寸减半控制 Flatten 后特征维度 |
+| Conv 超参变异扩展（stride） | ✅ | `MutateStrideMutation`：在 stride (1,1) 和 (2,2) 之间切换，允许卷积层自身进行空间降维。已在 Phase 1/2 注册表中注册（权重 0.06）。Dilation 暂缓——底层 Conv2d 节点尚未实现 dilation 前向 |
+| SizeConstraints 空间域调优 | ✅ | `auto()` 空间模型改用"双层 Conv + FC 头"参考基线：`max_total_params` ≈ 200K+、`max_hidden_size` = 256（channels 上限）、`max_layers` = 20（适应 Conv+BN+Pool+Flatten+FC 深层结构） |
+| FLOPs 作为 complexity metric | ✅ | `ComplexityMetric::FLOPs` + `NetworkGenome::total_flops()`：per-node FLOPs 估算覆盖 MatMul（2×out×in）、Conv2d（2×out×Cin×kH×kW）、BatchNorm（4×elements）、Pool、激活等 |
+| Conv2d resize 修复（额外发现） | ✅ | 修复 `resize_conv2d_out` 和 `repair_param_input_dims_inner` 中 Conv2d bias/gamma/beta 参数形状更新错误——通过 Conv2d 节点的父边关系精确定位 kernel 参数，避免误修改同 block 内的 BN 参数 |
+
+#### 阶段 B：NEAT/EXAMM 级别——Flat & Sequence 域的单节点演化
+
+覆盖非空间世界（Flat + Sequence），目标是达到与 NEAT（2002）/ EXAMM（2019）同等的变异粒度。模板块变异（InsertLayer 等）继续保留，作为"大步跳跃"的探索手段；原子节点变异作为"精细雕刻"的新增能力，两者通过注册表权重共存。
+
 | 方向 | 难度 | 说明 |
 |---|---|---|
-| 交叉操作（Crossover） | 高 | 种群已就绪，block_id 为对齐单位，需基因组对齐算法（NEAT 式 innovation matching） |
-| FLOPs / latency 作为 complexity metric | 中 | ComplexityMetric 枚举已预留扩展点，需实现 per-node FLOPs 估算 |
-| 岛屿模型 / 分布式种群 | 高 | 多岛并行搜索 + 迁移策略，需跨进程 genome 序列化 |
-| 节点级循环连接（InsertAtomicNode） | 中 | NodeLevel DAG 上的细粒度节点插入变异，打通 NEAT 风格的单节点增长 |
-| State 节点时序语义扩展 | 中 | 丰富 State 节点的时序行为定义，支持更复杂的记忆/注意力机制 |
+| InsertAtomicNode | 中 | 在 DAG 的任意一条边上插入**单个**新节点（如一个 MatMul 或 Tanh），并重新连线。打通 NEAT 风格的单节点增长，与现有模板块 InsertLayer 共存——前者精细雕刻，后者大步跳跃 |
+| State 节点时序语义扩展 | 中 | 丰富 State 节点的时序行为定义（可学习门控、多步延迟等），支持更复杂的记忆机制。与 InsertAtomicNode 组合后，系统可在循环图上自由增减单个门控节点和循环边，实现 EXAMM 论文中"从简单神经元演化出类 LSTM 结构"的能力 |
+
+#### 阶段 C：EXACT 级别——Spatial 域的 Feature Map 粒度演化
+
+覆盖空间世界（Spatial），目标是达到与 EXACT（2017）同等的变异粒度。与阶段 B 平行，解决不同的域。阶段 A 的模板块 CNN 演化是实用基线，阶段 C 是长期的搜索能力上限提升。
+
+| 方向 | 难度 | 说明 |
+|---|---|---|
+| Feature Map 粒度表示 | 高 | 将 Spatial 域的演化粒度从"整个 Conv2d 层"降低到"单个 feature map（节点）+ 单个卷积核（边）"。卷积层天然依赖权重共享（一个 kernel 在所有空间位置复用），因此最低自然粒度是 feature map 级，不能进一步降到单神经元级 |
+| 稀疏卷积连接 | 高 | 允许任意两个 feature map 之间选择性地添加卷积核连接，不要求全连接。需扩展 NodeGene 的连接语义和形状传播逻辑 |
+
+#### 两个世界的粒度差异
+
+```
+非空间世界（Flat / Sequence）            空间世界（Spatial）
+┌──────────────────────────┐      ┌──────────────────────────┐
+│  可统一到单神经元粒度        │      │  最低只能到 feature map 粒度 │
+│                          │      │  （因卷积的权重共享约束）     │
+│  • 权重 = 独立的标量边      │      │                          │
+│  • 节点 = 单个激活/计算单元  │      │  • 卷积核 = 边（含权重共享） │
+│  • 循环边 = 时序反馈        │      │  • Feature map = 节点     │
+│                          │      │  • 池化 = 节点属性         │
+│  参考：NEAT, EXAMM        │      │  参考：EXACT              │
+│  阶段 B 目标              │      │  阶段 C 目标              │
+└──────────────────────────┘      └──────────────────────────┘
+         通过 Flatten 连接：Spatial 输出展平后进入 Flat 域
+```
 
 ---
 
@@ -867,28 +913,33 @@ result.export_onnx("evolved_model.onnx")?;
 
 ```
 [Gen  0] 爆发初始化：λ=4 个候选，每个对 minimal_spatial 施加 K=5 次随机变异
+         初始种子：Conv2d(1→8,k=3) → Pool2d(Max,2,2) → Flatten → [Linear(10)]
          候选可能产生：
-         - Flatten → Linear(48) → GELU → [Linear(10)]
-         - Conv2d(1→8,k=3) → Flatten → Linear(32) → [Linear(10)]
-         - Flatten → Linear(16) → Tanh → Linear(24) → [Linear(10)]
+         - Conv2d(1→8,k=3) → Pool2d → Conv-BN-ReLU(8→16,k=3) → Flatten → [Linear(10)]
+         - Conv2d(1→16,k=5) → Pool2d → Flatten → Linear(32) → [Linear(10)]
+         - Conv2d(1→8,k=3) → Pool2d → Conv2d(8→8,k=3,s=2) → Flatten → [Linear(10)]
          → 选 fitness 最高者作为 best_genome
 
   Phase 1（Gen 1~70）：(1+λ) 搜索 + FixedEpochs 快速训练 + 结构探索变异权重
   Phase 2（Gen 71~100）：(1+λ) 搜索 + UntilConverged 充分训练 + 超参调优变异权重
 ```
 
-自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params=101,632`、`max_hidden_size=196`、`min_hidden_size=16`，足以容纳 784→128→10 等效 MLP。演化可自由探索纯 FC 或 Conv+FC 混合架构。
+自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params` ≈ 200K+、`max_hidden_size=256`（channels 上限）、`max_layers=20`、`min_hidden_size=16`。Conv-BN-ReLU 组合块（10 节点共享 block_id）+ stride 变异 + kernel size 变异联合搜索高效 CNN 架构。
 
 ---
 
 ## 附录 B：参考文献
 
 1. **NEAT**（2002）：Evolving Neural Networks through Augmenting Topologies
-2. **EXAMM**（2019）：Investigating Recurrent Neural Network Memory Structures using Neuro-Evolution
-3. **LayerNAS**（2023）：Neural Architecture Search in Polynomial Complexity
-4. **NAS-HPO-Bench-II**：联合架构-超参数搜索基准
-5. **BOHB**：Robust and Efficient Hyperparameter Optimization at Scale
-6. **Stitching for Neuroevolution**（2024）：权重复用加速演化训练
+2. **EXACT**（2017）：Large Scale Evolution of Convolutional Neural Networks Using Volunteer Computing — Feature map 粒度的 CNN 拓扑演化（节点=feature map，边=卷积核）
+3. **EXALT**（2019）：Evolving Recurrent Neural Networks for Time Series Data Prediction — LSTM 拓扑演化，EXAMM 的前身
+4. **EXAMM**（2019）：Investigating Recurrent Neural Network Memory Structures using Neuro-Evolution — 6 种记忆单元的 RNN 拓扑演化，EXALT 的扩展
+5. **LayerNAS**（2023）：Neural Architecture Search in Polynomial Complexity
+6. **NAS-HPO-Bench-II**：联合架构-超参数搜索基准
+7. **BOHB**：Robust and Efficient Hyperparameter Optimization at Scale
+8. **Stitching for Neuroevolution**（2024）：权重复用加速演化训练
+
+> 注：EXACT / EXALT / EXAMM 三者出自同一研究组（Travis Desell），代码均在 [travisdesell/exact](https://github.com/travisdesell/exact) 仓库中。EXACT 针对空间域（CNN），EXALT/EXAMM 针对序列域（RNN）。
 
 ---
 
@@ -896,8 +947,9 @@ result.export_onnx("evolved_model.onnx")?;
 
 | 问题 | 状态 | 说明 |
 |---|---|---|
-| MNIST 演化在 debug 模式下耗时较长 | 待优化 | 达标率不稳定，release 模式下表现尚可。受限于 debug 编译的计算图性能 |
+| MNIST 准确率上限 ~91.5% | ✅ 已修复 | 阶段 A 已完成全部修复：Conv-BN-ReLU 模板、Conv2d+Pool2d 种子、stride 变异、SizeConstraints 空间域调优、Conv2d resize 修复 |
+| MNIST 演化运行缓慢 | 待优化 | debug 模式下尤为明显。主要瓶颈：(1) 每次变异合法性检查需调用 `GenomeAnalysis::compute` + `node_main_path`；(2) Conv2d 前向/反向在纯 Rust CPU 上无 BLAS 加速；(3) 当前 example 使用 1000 训练样本，每代每个 offspring 都需完整 train+evaluate |
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-18（v5: NodeLevel 内核统一，LayerLevel 降级为 DSL，GraphDescriptor 构图管线，模型互通，ONNX 双向桥接）*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-18（v8: 阶段 A 完成——Conv2d+Pool2d 种子、MutateStride 变异、SizeConstraints 空间域调优、FLOPs ComplexityMetric、Conv2d resize/kernel 修复；Conv-BN-ReLU 复合模板实测无用已移除；MNIST 7 代达 95%，542 个测试通过）*
