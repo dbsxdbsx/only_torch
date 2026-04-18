@@ -1,6 +1,7 @@
 # AGENTS.md
 
-This file provides guidance to WARP (warp.dev) when working with code in this repository.
+尽量用中文说话。当然，相关的术语你可以用英文或者一些原文字。
+本项目相关注释也尽量用中文
 
 ## Project Overview
 
