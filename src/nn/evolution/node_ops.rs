@@ -26,8 +26,8 @@ use crate::nn::evolution::gene::{
     ActivationType, GenomeRepr, INPUT_INNOVATION, NetworkGenome, PoolType, ShapeDomain,
 };
 use crate::nn::evolution::migration::{
-    InnovationCounter, expand_activation, expand_conv2d, expand_gru, expand_linear, expand_lstm,
-    expand_pool2d, expand_rnn,
+    InnovationCounter, expand_activation, expand_batch_norm, expand_conv2d, expand_gru,
+    expand_layer_norm, expand_linear, expand_lstm, expand_pool2d, expand_rms_norm, expand_rnn,
 };
 use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
@@ -74,6 +74,15 @@ pub enum NodeBlockKind {
     Dropout {
         p: f32,
     },
+    BatchNorm {
+        num_features: usize,
+    },
+    LayerNorm {
+        normalized_dims: usize,
+    },
+    RMSNorm {
+        normalized_dims: usize,
+    },
     /// 跳跃连接聚合节点（Add/Concat/Maximum）
     SkipAgg,
     Rnn {
@@ -100,6 +109,14 @@ impl NodeBlockKind {
     }
     pub fn is_conv2d(&self) -> bool {
         matches!(self, NodeBlockKind::Conv2d { .. })
+    }
+    pub fn is_normalization(&self) -> bool {
+        matches!(
+            self,
+            NodeBlockKind::BatchNorm { .. }
+                | NodeBlockKind::LayerNorm { .. }
+                | NodeBlockKind::RMSNorm { .. }
+        )
     }
     pub fn is_recurrent(&self) -> bool {
         matches!(self, NodeBlockKind::Rnn { .. } | NodeBlockKind::Lstm { .. } | NodeBlockKind::Gru { .. })
@@ -370,6 +387,34 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
         }
     }
 
+    // 归一化块：通过 BatchNormOp / LayerNormOp / RMSNormOp 节点识别
+    for &id in node_ids {
+        if let Some(n) = node_map.get(&id) {
+            match &n.node_type {
+                NT::BatchNormOp { num_features, .. } => {
+                    return NodeBlockKind::BatchNorm {
+                        num_features: *num_features,
+                    };
+                }
+                NT::LayerNormOp {
+                    normalized_dims, ..
+                } => {
+                    return NodeBlockKind::LayerNorm {
+                        normalized_dims: *normalized_dims,
+                    };
+                }
+                NT::RMSNormOp {
+                    normalized_dims, ..
+                } => {
+                    return NodeBlockKind::RMSNorm {
+                        normalized_dims: *normalized_dims,
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+
     // 循环单元块：通过 Cell* 节点直接读取元数据
     for &id in node_ids {
         if let Some(n) = node_map.get(&id) {
@@ -560,6 +605,34 @@ pub fn is_activation_node(genome: &NetworkGenome, node_id: u64) -> bool {
                     | NodeTypeDescriptor::HardTanh { .. }
             )
         })
+        .unwrap_or(false)
+}
+
+/// 指定节点或其所在块是否为归一化块（避免连续插入归一化层）
+fn is_adjacent_normalization(genome: &NetworkGenome, after_id: u64) -> bool {
+    let blocks = node_main_path(genome);
+
+    if let Some(idx) = blocks.iter().position(|b| b.output_id == after_id) {
+        if blocks[idx].kind.is_normalization() {
+            return true;
+        }
+        if let Some(next) = blocks.get(idx + 1) {
+            if next.kind.is_normalization() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// 指定节点是否为 Dropout 节点
+pub fn is_dropout_node(genome: &NetworkGenome, node_id: u64) -> bool {
+    genome
+        .nodes()
+        .iter()
+        .find(|n| n.innovation_number == node_id)
+        .map(|n| matches!(n.node_type, NodeTypeDescriptor::Dropout { .. }))
         .unwrap_or(false)
 }
 
@@ -778,6 +851,40 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 {
                     dim_map.insert(block.output_id, flat_dim);
                 }
+            }
+            // 归一化块：更新 gamma/beta 参数形状 + BatchNormOp 的 num_features
+            NodeBlockKind::BatchNorm { .. } => {
+                for node in genome.nodes_mut().iter_mut() {
+                    if !bid_set.contains(&node.innovation_number) {
+                        continue;
+                    }
+                    if node.is_parameter() {
+                        if node.output_shape.len() == 4 {
+                            // Spatial: [1, C, 1, 1]
+                            node.output_shape[1] = prev_out;
+                        } else if node.output_shape.len() == 2 {
+                            // Flat: [1, features]
+                            node.output_shape[1] = prev_out;
+                        }
+                    }
+                    if let NodeTypeDescriptor::BatchNormOp { num_features, .. } =
+                        &mut node.node_type
+                    {
+                        *num_features = prev_out;
+                    }
+                }
+                dim_map.insert(block.output_id, prev_out);
+            }
+            NodeBlockKind::LayerNorm { .. } | NodeBlockKind::RMSNorm { .. } => {
+                for node in genome.nodes_mut().iter_mut() {
+                    if !bid_set.contains(&node.innovation_number) {
+                        continue;
+                    }
+                    if node.is_parameter() && node.output_shape.len() == 2 {
+                        node.output_shape[1] = prev_out;
+                    }
+                }
+                dim_map.insert(block.output_id, prev_out);
             }
             // Pool2d、Activation、Dropout、SkipAgg 不改变通道/特征维度，透传 prev_out
             _ => {
@@ -1085,7 +1192,12 @@ fn needs_return_sequences_after(genome: &NetworkGenome, after_id: u64) -> bool {
 
     for block in blocks.iter().skip(current_idx + 1) {
         match &block.kind {
-            NodeBlockKind::Activation { .. } | NodeBlockKind::Dropout { .. } | NodeBlockKind::SkipAgg => {
+            NodeBlockKind::Activation { .. }
+            | NodeBlockKind::Dropout { .. }
+            | NodeBlockKind::BatchNorm { .. }
+            | NodeBlockKind::LayerNorm { .. }
+            | NodeBlockKind::RMSNorm { .. }
+            | NodeBlockKind::SkipAgg => {
                 continue;
             }
             kind => return kind.is_recurrent(),
@@ -1123,6 +1235,33 @@ pub fn create_insert_nodes(
             act,
             &mut counter,
         ));
+    }
+
+    // 10% 概率插入归一化层（避免连续归一化）
+    if !is_adjacent_normalization(genome, after_id) && rng.gen_bool(0.10) {
+        let input_shape = node_output_shape_at(genome, after_id);
+        if is_spatial {
+            return Some(expand_batch_norm(
+                after_id,
+                input_shape,
+                in_dim,
+                block_id,
+                &mut counter,
+            ));
+        } else if is_sequential && domain == ShapeDomain::Flat {
+            return if rng.gen_bool(0.5) {
+                Some(expand_layer_norm(after_id, input_shape, in_dim, block_id, &mut counter))
+            } else {
+                Some(expand_rms_norm(after_id, input_shape, in_dim, block_id, &mut counter))
+            };
+        } else if !is_sequential {
+            let choice = rng.gen_range(0..3);
+            return Some(match choice {
+                0 => expand_batch_norm(after_id, input_shape, in_dim, block_id, &mut counter),
+                1 => expand_layer_norm(after_id, input_shape, in_dim, block_id, &mut counter),
+                _ => expand_rms_norm(after_id, input_shape, in_dim, block_id, &mut counter),
+            });
+        }
     }
 
     if is_spatial {

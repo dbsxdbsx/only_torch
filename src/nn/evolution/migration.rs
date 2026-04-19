@@ -326,6 +326,126 @@ pub fn expand_dropout(
     )]
 }
 
+/// 展开 BatchNorm → gamma(Parameter) + BatchNormOp + Multiply + beta(Parameter) + Add（5 节点）
+///
+/// 形状约定：
+/// - Flat 域 `[1, features]`：gamma/beta = `[1, features]`
+/// - Spatial 域 `[1, C, H, W]`：gamma/beta = `[1, C, 1, 1]`（通道维广播）
+///
+/// 所有节点共享同一个 block_id。输出形状 = 输入形状（shape passthrough）。
+pub fn expand_batch_norm(
+    input_id: u64,
+    input_shape: Vec<usize>,
+    num_features: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let gamma_id = counter.next();
+    let bn_id = counter.next();
+    let mul_id = counter.next();
+    let beta_id = counter.next();
+    let add_id = counter.next();
+
+    let bid = Some(block_id);
+
+    // gamma/beta 形状：Flat [1, C]，Spatial [1, C, 1, 1]
+    let param_shape = if input_shape.len() == 4 {
+        vec![1, num_features, 1, 1]
+    } else {
+        vec![1, num_features]
+    };
+
+    vec![
+        NodeGene::new(gamma_id, NodeTypeDescriptor::Parameter, param_shape.clone(), vec![], bid),
+        NodeGene::new(
+            bn_id,
+            NodeTypeDescriptor::BatchNormOp {
+                eps: 1e-5,
+                momentum: 0.1,
+                num_features,
+            },
+            input_shape.clone(),
+            vec![input_id],
+            bid,
+        ),
+        NodeGene::new(mul_id, NodeTypeDescriptor::Multiply, input_shape.clone(), vec![bn_id, gamma_id], bid),
+        NodeGene::new(beta_id, NodeTypeDescriptor::Parameter, param_shape, vec![], bid),
+        NodeGene::new(add_id, NodeTypeDescriptor::Add, input_shape, vec![mul_id, beta_id], bid),
+    ]
+}
+
+/// 展开 LayerNorm → gamma(Parameter) + LayerNormOp + Multiply + beta(Parameter) + Add（5 节点）
+///
+/// 对最后 1 个维度归一化（normalized_dims=1）。gamma/beta 形状 = `[1, features]`。
+/// 所有节点共享同一个 block_id。输出形状 = 输入形状。
+pub fn expand_layer_norm(
+    input_id: u64,
+    input_shape: Vec<usize>,
+    num_features: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let gamma_id = counter.next();
+    let ln_id = counter.next();
+    let mul_id = counter.next();
+    let beta_id = counter.next();
+    let add_id = counter.next();
+
+    let bid = Some(block_id);
+    let param_shape = vec![1, num_features];
+
+    vec![
+        NodeGene::new(gamma_id, NodeTypeDescriptor::Parameter, param_shape.clone(), vec![], bid),
+        NodeGene::new(
+            ln_id,
+            NodeTypeDescriptor::LayerNormOp {
+                normalized_dims: 1,
+                eps: 1e-5,
+            },
+            input_shape.clone(),
+            vec![input_id],
+            bid,
+        ),
+        NodeGene::new(mul_id, NodeTypeDescriptor::Multiply, input_shape.clone(), vec![ln_id, gamma_id], bid),
+        NodeGene::new(beta_id, NodeTypeDescriptor::Parameter, param_shape, vec![], bid),
+        NodeGene::new(add_id, NodeTypeDescriptor::Add, input_shape, vec![mul_id, beta_id], bid),
+    ]
+}
+
+/// 展开 RMSNorm → gamma(Parameter) + RMSNormOp + Multiply（3 节点）
+///
+/// RMSNorm 无 beta 参数（无偏移），比 LayerNorm 更简洁。
+/// gamma 形状 = `[1, features]`。所有节点共享同一个 block_id。
+pub fn expand_rms_norm(
+    input_id: u64,
+    input_shape: Vec<usize>,
+    num_features: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let gamma_id = counter.next();
+    let rn_id = counter.next();
+    let mul_id = counter.next();
+
+    let bid = Some(block_id);
+    let param_shape = vec![1, num_features];
+
+    vec![
+        NodeGene::new(gamma_id, NodeTypeDescriptor::Parameter, param_shape, vec![], bid),
+        NodeGene::new(
+            rn_id,
+            NodeTypeDescriptor::RMSNormOp {
+                normalized_dims: 1,
+                eps: 1e-5,
+            },
+            input_shape.clone(),
+            vec![input_id],
+            bid,
+        ),
+        NodeGene::new(mul_id, NodeTypeDescriptor::Multiply, input_shape, vec![rn_id, gamma_id], bid),
+    ]
+}
+
 /// 展开 RNN 层 → 3 个权重参数节点 + 1 个 CellRnn 复合节点（共 4 个节点）
 ///
 /// 父节点顺序：`[input_id, w_ih_id, w_hh_id, b_h_id]`

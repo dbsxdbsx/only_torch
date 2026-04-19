@@ -655,12 +655,13 @@ fn test_evolution_sequential_runs() {
         "序列演化主入口迁移后 genome 应为 NodeLevel"
     );
     assert!(
-        result
-            .genome
-            .nodes()
-            .iter()
-            .any(|n| matches!(n.node_type, NodeTypeDescriptor::CellRnn { .. })),
-        "序列初始基因组应包含 CellRnn 节点"
+        result.genome.nodes().iter().any(|n| matches!(
+            n.node_type,
+            NodeTypeDescriptor::CellRnn { .. }
+                | NodeTypeDescriptor::CellLstm { .. }
+                | NodeTypeDescriptor::CellGru { .. }
+        )),
+        "序列演化结果应包含循环单元节点（CellRnn/CellLstm/CellGru）"
     );
 }
 

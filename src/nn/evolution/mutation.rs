@@ -17,12 +17,13 @@ use super::gene::{
     NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric, compatible_losses,
 };
 use super::migration::{
-    activation_to_node_type, expand_activation, expand_gru, expand_lstm, expand_rnn,
+    activation_to_node_type, expand_activation, expand_dropout, expand_gru, expand_lstm,
+    expand_rnn,
 };
 use super::node_ops::{
     NodeBlock, NodeBlockKind, add_skip_connection, commit_counter, create_insert_nodes,
     find_connectable_pairs, find_removable_skip_connections, insert_after, is_activation_node,
-    is_skip_projection_block, make_counter, node_main_path, node_out_dim_at,
+    is_dropout_node, is_skip_projection_block, make_counter, node_main_path,
     node_output_shape_at, node_param_count, node_spatial_at, remove_block,
     remove_skip_connection, repair_param_input_dims, resize_conv2d_out, resize_linear_out,
     resize_recurrent_out, sync_computation_shapes,
@@ -2641,20 +2642,24 @@ impl Mutation for InsertAtomicNodeMutation {
             .choose(rng)
             .ok_or_else(|| MutationError::NotApplicable("没有可用的插入点".into()))?;
 
-        let act = self
-            .available_activations
-            .choose(rng)
-            .ok_or_else(|| MutationError::NotApplicable("没有可用的激活函数".into()))?;
-
         let output_shape = node_output_shape_at(genome, after_id);
         let start_inn = genome.peek_next_innovation();
 
-        let new_nodes = expand_activation(
-            after_id,
-            output_shape,
-            act,
-            &mut make_counter(genome),
-        );
+        // 15% 概率插入 Dropout（需确认前后不是 Dropout）
+        let insert_dropout = rng.gen_bool(0.15)
+            && !is_dropout_node(genome, after_id)
+            && !is_next_dropout(genome, after_id);
+
+        let new_nodes = if insert_dropout {
+            let p = *[0.1f32, 0.2, 0.3, 0.5].choose(rng).unwrap();
+            expand_dropout(after_id, output_shape, p, &mut make_counter(genome))
+        } else {
+            let act = self
+                .available_activations
+                .choose(rng)
+                .ok_or_else(|| MutationError::NotApplicable("没有可用的激活函数".into()))?;
+            expand_activation(after_id, output_shape, act, &mut make_counter(genome))
+        };
 
         let n = new_nodes.len() as u64; // 始终为 1
         insert_after(genome, after_id, new_nodes)
@@ -2734,6 +2739,24 @@ fn atomic_insert_candidates(blocks: &[NodeBlock], genome: &NetworkGenome) -> Vec
     }
 
     candidates
+}
+
+/// 检查 after_id 后面的下一个块是否为 Dropout
+fn is_next_dropout(genome: &NetworkGenome, after_id: u64) -> bool {
+    let blocks = node_main_path(genome);
+    if let Some(idx) = blocks.iter().position(|b| b.output_id == after_id) {
+        if let Some(next) = blocks.get(idx + 1) {
+            return matches!(next.kind, NodeBlockKind::Dropout { .. });
+        }
+    }
+    // INPUT 后的第一个块
+    if after_id == INPUT_INNOVATION {
+        return blocks
+            .first()
+            .map(|b| matches!(b.kind, NodeBlockKind::Dropout { .. }))
+            .unwrap_or(false);
+    }
+    false
 }
 
 // ==================== AddRecurrentEdgeMutation ====================

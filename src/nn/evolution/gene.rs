@@ -938,6 +938,14 @@ impl NetworkGenome {
                 NT::BatchNormOp { .. } => {
                     total += 4 * out_elements;
                 }
+                // LayerNorm: ~5 ops/element (mean, var, normalize, scale, shift)
+                NT::LayerNormOp { .. } => {
+                    total += 5 * out_elements;
+                }
+                // RMSNorm: ~3 ops/element (square, mean, normalize)
+                NT::RMSNormOp { .. } => {
+                    total += 3 * out_elements;
+                }
                 // Pool: kernel_size^2 comparisons/additions per output element
                 NT::MaxPool2d { kernel_size, .. } | NT::AvgPool2d { kernel_size, .. } => {
                     total += out_elements * kernel_size.0 * kernel_size.1;

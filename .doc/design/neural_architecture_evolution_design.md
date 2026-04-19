@@ -423,8 +423,8 @@ pub trait Mutation: Send + Sync {
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
-| `InsertLayer` | **0.20** | ✅ | 域感知：Flat 域选 Linear/Activation，Sequence 域选 RNN/LSTM/GRU，Spatial 域选 Conv2d(80%)/Pool2d(20%) |
-| `InsertAtomicNode` | 0.10 | ✅ | NEAT "Add Node"：在主路径两块之间插入单个激活节点（15 种激活函数随机选择）。保护输出头、避免连续激活 |
+| `InsertLayer` | **0.20** | ✅ | 域感知：Flat 域选 Linear/Activation/BatchNorm/LayerNorm/RMSNorm，Sequence 域选 RNN/LSTM/GRU/LayerNorm/RMSNorm，Spatial 域选 Conv2d(80%)/Pool2d(15%)/BatchNorm(5%)。归一化层以 10% 概率独立触发，不与同类连续 |
+| `InsertAtomicNode` | 0.10 | ✅ | NEAT "Add Node"：在主路径两块之间插入单个激活节点（15 种激活函数随机选择，85%）或 Dropout（15%，p∈{0.1,0.2,0.3,0.5}）。保护输出头、避免连续激活/连续 Dropout |
 | `RemoveLayer` | 0.08 | ✅ | 随机移除非输出头的隐藏层（早期偏向增长） |
 | `ReplaceLayerType` | 0.04 | | Activation 内部互换（ReLU↔Tanh↔Sigmoid…共 13 种） |
 | `GrowHiddenSize` | **0.25** | | 增大尺寸（40% +step, 40% ×1.5, 20% ×2，step = max(1, current/4)） |
@@ -440,8 +440,8 @@ pub trait Mutation: Send + Sync {
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
-| `InsertLayer` | 0.08 | ✅ | 同上 |
-| `InsertAtomicNode` | 0.10 | ✅ | 同上 |
+| `InsertLayer` | 0.08 | ✅ | 同上（含归一化层插入） |
+| `InsertAtomicNode` | 0.10 | ✅ | 同上（含 Dropout 插入） |
 | `RemoveLayer` | 0.08 | ✅ | 同上 |
 | `ReplaceLayerType` | 0.08 | | 同上 |
 | `GrowHiddenSize` | 0.15 | | 同上 |
@@ -690,10 +690,12 @@ src/nn/tests/onnx/
 
 ### 11.1 添加新层类型
 
-1. 在 `NodeTypeDescriptor` 中添加新变体（如 `BatchNorm`、`LayerNorm` 等）
-2. 在 `TemplateExpander` 中定义该层的模板组展开规则（哪些原子节点组成一个"层"）
-3. 在 `NodeBlockKind` 中添加对应变体，使 `node_main_path()` 能识别新块类型
-4. 在 `InsertLayerMutation` 中纳入新类型的随机生成逻辑
+1. 在 `NodeTypeDescriptor` 中添加新变体（已有：BatchNormOp、LayerNormOp、RMSNormOp、Dropout 等）
+2. 在 `migration.rs` 中定义 `expand_xxx()` 模板展开函数（如 `expand_batch_norm` = gamma + BN_op + Mul + beta + Add）
+3. 在 `NodeBlockKind` 中添加对应变体，并在 `infer_block_kind()` 中添加识别规则
+4. 在 `create_insert_nodes()` 中纳入新类型的随机生成逻辑（或在 `InsertAtomicNodeMutation` 中添加原子级插入）
+5. 在 `backfill_node_group_tags()` 中添加可视化标签
+6. 在 `repair_param_input_dims_inner()` 中处理级联形状修复（若新层含可学习参数）
 5. （可选）在 `LayerConfig` 中添加用户 DSL 入口，并在 `migrate_to_node_level()` 中处理迁移
 
 ### 11.2 添加新变异操作
@@ -848,7 +850,7 @@ result.export_onnx("evolved_model.onnx")?;
 | Spatial 域初始种子增强 | ✅ | `minimal_spatial` 从 `[Flatten, Linear]` 改为 `[Conv2d(in_ch→8,k=3), Pool2d(Max,2,2), Flatten, Linear]`——从已知有效的 CNN 起点出发，Pool2d 将空间尺寸减半控制 Flatten 后特征维度 |
 | Conv 超参变异扩展（stride） | ✅ | `MutateStrideMutation`：在 stride (1,1) 和 (2,2) 之间切换，允许卷积层自身进行空间降维。已在 Phase 1/2 注册表中注册（权重 0.06）。Dilation 暂缓——底层 Conv2d 节点尚未实现 dilation 前向 |
 | SizeConstraints 空间域调优 | ✅ | `auto()` 空间模型改用"双层 Conv + FC 头"参考基线：`max_total_params` ≈ 200K+、`max_hidden_size` = 256（channels 上限）、`max_layers` = 20（适应 Conv+BN+Pool+Flatten+FC 深层结构） |
-| FLOPs 作为 complexity metric | ✅ | `ComplexityMetric::FLOPs` + `NetworkGenome::total_flops()`：per-node FLOPs 估算覆盖 MatMul（2×out×in）、Conv2d（2×out×Cin×kH×kW）、BatchNorm（4×elements）、Pool、激活等 |
+| FLOPs 作为 complexity metric | ✅ | `ComplexityMetric::FLOPs` + `NetworkGenome::total_flops()`：per-node FLOPs 估算覆盖 MatMul（2×out×in）、Conv2d（2×out×Cin×kH×kW）、BatchNorm（4×elements）、LayerNorm（5×elements）、RMSNorm（3×elements）、Pool、激活等 |
 | Conv2d resize 修复（额外发现） | ✅ | 修复 `resize_conv2d_out` 和 `repair_param_input_dims_inner` 中 Conv2d bias/gamma/beta 参数形状更新错误——通过 Conv2d 节点的父边关系精确定位 kernel 参数，避免误修改同 block 内的 BN 参数 |
 
 #### 阶段 B：NEAT/EXAMM 级别——Flat & Sequence 域的单节点演化 ✅
@@ -857,7 +859,8 @@ result.export_onnx("evolved_model.onnx")?;
 
 | 方向 | 状态 | 说明 |
 |---|---|---|
-| InsertAtomicNode | ✅ | 在主路径两块之间插入**单个**激活函数节点（ReLU/Tanh/Sigmoid 等 15 种）。NEAT "Add Node" 的等价操作。保护输出头、避免连续激活、形状自动推导。Phase 1 权重 0.10，Phase 2 权重 0.10 |
+| InsertAtomicNode | ✅ | 在主路径两块之间插入**单个**激活函数节点（ReLU/Tanh/Sigmoid 等 15 种，85%）或 **Dropout 节点**（15%，p∈{0.1,0.2,0.3,0.5}）。NEAT "Add Node" 的等价操作。保护输出头、避免连续激活/连续 Dropout、形状自动推导。Phase 1/2 权重均为 0.10 |
+| 归一化层插入（B 补强） | ✅ | InsertLayer 新增 10% 概率插入归一化模板块：**BatchNorm**（Flat/Spatial 域，5 节点：gamma + BN_op + Mul + beta + Add）、**LayerNorm**（Flat/Sequence 域，5 节点：gamma + LN_op + Mul + beta + Add）、**RMSNorm**（Flat/Sequence 域，3 节点：gamma + RMSNorm_op + Mul）。归一化块为 shape passthrough（不改变维度），不可 resize（Grow/Shrink 自动跳过），参数形状随上游维度自动级联修复。避免连续归一化块 |
 | 通用循环边（RecurrentEdge） | ✅ | EXAMM 风格 edge-based 循环连接——`NodeGene::recurrent_parents` 列表记录 `(source_id, weight_param_id)` 对。运行时语义：`target_input += W @ prev_activation[source]`。支持自回路和跨节点循环。与 cell-based 循环（CellRnn/LSTM/GRU）互斥（范式排他） |
 | AddRecurrentEdge / RemoveRecurrentEdge | ✅ | 序列模式专属变异：添加/删除循环边及其权重参数节点。Phase 1 权重 0.08/0.04，Phase 2 权重 0.08/0.04。非序列基因组自动跳过。删除时级联清理孤立权重参数 |
 | GenomeAnalysis 循环边验证 | ✅ | 8 条合法性不变量：悬空源引用、无效权重参数、形状兼容性（`[target_dim, source_dim]`）、序列模式要求、范式互斥（edge-based vs cell-based）。所有变异的 `apply()` 均通过 post-analysis 检查 |
@@ -976,4 +979,4 @@ result.export_onnx("evolved_model.onnx")?;
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-19（v9: 阶段 B 完成——InsertAtomicNode 变异（NEAT Add Node）、RecurrentEdge 循环边（EXAMM 风格 edge-based 循环）、AddRecurrentEdge/RemoveRecurrentEdge 变异、build_recurrent_from_nodes 时间步展开构图、GenomeAnalysis 8 条循环边合法性不变量、FLOPs 估算扩展、ONNX 导出屏蔽、级联清理；571 个测试通过）*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-19（v10: 阶段 B 补强——归一化层（BatchNorm/LayerNorm/RMSNorm）作为模板块级变异纳入 InsertLayer（10% 概率，域感知选择），Dropout 作为原子节点级变异纳入 InsertAtomicNode（15% 概率），NodeBlockKind 新增 3 个归一化变体，FLOPs 估算覆盖 LayerNormOp/RMSNormOp，repair_param_input_dims 支持归一化块参数级联修复，10 个新单元测试 + 5 个集成测试全部通过）*
