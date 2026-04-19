@@ -633,8 +633,8 @@ fn rebuild_node(
 
         NodeTypeDescriptor::Dropout { p } => {
             let input = get_parent(node_desc, node_map, 0)?;
-            // 使用固定 seed，加载后通常设为 eval 模式（Dropout 不起作用）
-            let node = graph.inner_mut().create_dropout_node(input, *p, 42, name)?;
+            let seed = graph.inner_mut().next_seed();
+            let node = graph.inner_mut().create_dropout_node(input, *p, seed, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 

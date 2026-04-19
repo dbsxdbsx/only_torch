@@ -120,8 +120,7 @@ impl GraphInner {
     /// 生成下一个随机种子（用于 Dropout 等需要独立 rng 的节点）
     ///
     /// 如果 graph 有 rng，则从 rng 生成；否则使用 `thread_rng`
-    #[allow(dead_code)]
-    pub(in crate::nn::graph) fn next_seed(&mut self) -> u64 {
+    pub(in crate::nn) fn next_seed(&mut self) -> u64 {
         use rand::Rng;
         if let Some(ref mut rng) = self.rng {
             rng.r#gen()

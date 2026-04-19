@@ -62,7 +62,7 @@ pub struct GraphInner {
     pub(in crate::nn::graph) parameters: HashMap<String, Weak<NodeInner>>,
     /// 图级别的随机数生成器（用于参数初始化等）
     /// None 表示使用默认的 `thread_rng（非确定性`）
-    pub(in crate::nn::graph) rng: Option<StdRng>,
+    pub(in crate::nn) rng: Option<StdRng>,
     /// 循环层折叠渲染元信息（仅保留折叠所需的最小信息）
     pub(in crate::nn::graph) recurrent_folding_metas: Vec<RecurrentFoldingMeta>,
 

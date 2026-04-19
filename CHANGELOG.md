@@ -1,5 +1,29 @@
 # 更新日志
 
+## [0.14.1] - 2026-04-19
+
+### 修复
+
+- **fix(nn): 种子确定性严格保证 — 指定 seed 后所有随机操作 100% 可复现**
+  - `Var::dropout()` 改用 `GraphInner::next_seed()` 替代 `SystemTime`，seeded Graph 下 Dropout mask 完全确定
+  - `Graph::randn()` 改用 `Tensor::normal_with_rng()` 替代 `Tensor::normal()`（thread_rng），seeded Graph 下随机张量完全确定
+  - `Var::rand_like()` / `Var::randn_like()` 有 Graph seed 时使用 Graph RNG
+  - `Normal::rsample()` 有 Graph seed 时使用 Graph RNG（影响 SAC 等连续策略梯度算法）
+  - `Categorical::sample()` 有 Graph seed 时使用 `multinomial_with_rng`（影响离散动作采样）
+  - `descriptor_rebuild` 中 Dropout 重建改用 `next_seed()` 替代固定 seed 42
+  - 演化系统 `rebuild_pareto_member()` 使用保存的 `evolution_seed` 替代 `from_entropy()`
+  - 演化系统指定 seed 时自动固定 `population_size`（20）和 `offspring_batch_size`（12），消除跨机器线程数差异
+
+### 新增
+
+- `Graph::set_seed(seed)` / `Graph::has_seed()` 代理方法（之前仅在 `GraphInner` 上可用）
+- `EvolutionResult` 新增 `evolution_seed` 字段，支持 Pareto 成员确定性重建
+
+### 文档
+
+- 更新种子设计文档（`api_layering_and_seed_design.md`）：标记阶段 2.5 完成，更新影响范围和决策表
+- 更新演化设计文档（`neural_architecture_evolution_design.md`）：补充 seed 传播的确定性保证说明
+
 ## [0.14.0] - 2026-03-09
 
 ### 新增

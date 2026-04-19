@@ -96,7 +96,12 @@ impl Normal {
     pub fn rsample(&self) -> Var {
         let _guard = NodeGroupContext::new(&self.mean, "Normal", self.instance_id);
         let shape = self.mean.value_expected_shape();
-        let eps = Tensor::normal(0.0, 1.0, &shape);
+        let graph = self.mean.graph();
+        let eps = if let Some(ref mut rng) = graph.borrow_mut().rng {
+            Tensor::normal_with_rng(0.0, 1.0, &shape, rng)
+        } else {
+            Tensor::normal(0.0, 1.0, &shape)
+        };
         &self.mean + &self.std * eps
     }
 

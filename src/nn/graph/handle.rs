@@ -47,6 +47,18 @@ impl Graph {
         }
     }
 
+    /// 设置/重置图的随机种子
+    ///
+    /// 设置后，所有随机操作（参数初始化、Dropout、randn 等）将使用确定性 RNG。
+    pub fn set_seed(&self, seed: u64) {
+        self.inner.borrow_mut().set_seed(seed);
+    }
+
+    /// 检查图是否已设置固定种子
+    pub fn has_seed(&self) -> bool {
+        self.inner.borrow().has_seed()
+    }
+
     /// 从现有 `GraphInner` 创建句柄
     pub fn from_inner(inner: GraphInner) -> Self {
         Self {
@@ -190,12 +202,17 @@ impl Graph {
     }
 
     /// 创建随机张量
+    ///
+    /// 当 Graph 有 seed 时使用 Graph RNG（确保确定性），否则使用 thread_rng。
     pub fn randn(&self, shape: &[usize]) -> Result<Var, GraphError> {
-        let node = self
-            .inner
-            .borrow_mut()
-            .create_basic_input_node(shape, None)?;
-        let data = Tensor::normal(0.0, 1.0, shape);
+        let mut g = self.inner.borrow_mut();
+        let node = g.create_basic_input_node(shape, None)?;
+        let data = if let Some(ref mut rng) = g.rng {
+            Tensor::normal_with_rng(0.0, 1.0, shape, rng)
+        } else {
+            Tensor::normal(0.0, 1.0, shape)
+        };
+        drop(g);
         node.set_value(Some(&data))?;
         Ok(Var::new_with_rc_graph(node, &self.inner))
     }

@@ -395,16 +395,27 @@ impl Var {
     pub fn rand_like(&self) -> Result<Self, GraphError> {
         let shape = self.node().shape();
         let graph = self.graph();
-        let node = graph
-            .borrow_mut()
-            .create_basic_input_node(&shape, None)?;
-        node.set_value(Some(&Tensor::random(-1.0, 1.0, &shape)))?;
+        let mut g = graph.borrow_mut();
+        let node = g.create_basic_input_node(&shape, None)?;
+        let data = if let Some(ref mut rng) = g.rng {
+            use rand::distributions::{Distribution, Uniform};
+            let dist = Uniform::from(-1.0f32..=1.0f32);
+            let values: Vec<f32> = (0..shape.iter().product::<usize>())
+                .map(|_| dist.sample(rng))
+                .collect();
+            Tensor::new(&values, &shape)
+        } else {
+            Tensor::random(-1.0, 1.0, &shape)
+        };
+        drop(g);
+        node.set_value(Some(&data))?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     /// 创建与当前 Var 相同形状的正态分布随机 Var
     ///
     /// 返回一个新的输入节点，值为 N(0, 1) 标准正态分布。
+    /// 当 Graph 有 seed 时使用 Graph RNG（确保确定性）。
     ///
     /// # 示例
     /// ```ignore
@@ -413,10 +424,15 @@ impl Var {
     pub fn randn_like(&self) -> Result<Self, GraphError> {
         let shape = self.node().shape();
         let graph = self.graph();
-        let node = graph
-            .borrow_mut()
-            .create_basic_input_node(&shape, None)?;
-        node.set_value(Some(&Tensor::normal(0.0, 1.0, &shape)))?;
+        let mut g = graph.borrow_mut();
+        let node = g.create_basic_input_node(&shape, None)?;
+        let data = if let Some(ref mut rng) = g.rng {
+            Tensor::normal_with_rng(0.0, 1.0, &shape, rng)
+        } else {
+            Tensor::normal(0.0, 1.0, &shape)
+        };
+        drop(g);
+        node.set_value(Some(&data))?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 

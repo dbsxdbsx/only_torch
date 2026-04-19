@@ -114,7 +114,14 @@ impl Categorical {
             .value()
             .expect("Categorical sample: forward 失败")
             .expect("Categorical sample: probs 无值");
-        probs_val.multinomial(1)
+        let graph = self.probs.graph();
+        let mut g = graph.borrow_mut();
+        if let Some(ref mut rng) = g.rng {
+            probs_val.multinomial_with_rng(1, rng)
+        } else {
+            drop(g);
+            probs_val.multinomial(1)
+        }
     }
 
     /// 指定动作的对数概率（Var 级，可反向传播）

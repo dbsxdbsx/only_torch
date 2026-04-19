@@ -93,6 +93,8 @@ pub struct EvolutionResult {
     pub pareto_front: Vec<ParetoSummary>,
     /// Pareto 前沿的完整基因组（含权重快照，支持 lazy rebuild）
     pareto_genomes: Vec<NetworkGenome>,
+    /// 演化时使用的 seed（用于 rebuild_pareto_member 的确定性重建）
+    evolution_seed: Option<u64>,
 }
 
 impl EvolutionResult {
@@ -189,7 +191,10 @@ impl EvolutionResult {
             )));
         }
         let genome = &self.pareto_genomes[index];
-        let mut rng = StdRng::from_entropy();
+        let mut rng = match self.evolution_seed {
+            Some(seed) => StdRng::seed_from_u64(seed ^ (index as u64)),
+            None => StdRng::from_entropy(),
+        };
         let build = genome.build(&mut rng)?;
         genome.restore_weights(&build)?;
         build.graph.snapshot_once_from(&[&build.output]);
@@ -202,6 +207,7 @@ impl EvolutionResult {
             genome: genome.clone(),
             pareto_front: self.pareto_front.clone(),
             pareto_genomes: self.pareto_genomes.clone(),
+            evolution_seed: self.evolution_seed,
         })
     }
 }
@@ -430,8 +436,12 @@ pub struct Evolution {
     batch_size: Option<usize>,
     /// 每代保留的种群大小（NSGA-II 环境选择后的幸存者数量）
     population_size: usize,
+    /// 用户是否显式设置了 population_size
+    population_size_explicit: bool,
     /// 每代实际评估的新候选数量
     offspring_batch_size: usize,
+    /// 用户是否显式设置了 offspring_batch_size
+    offspring_batch_size_explicit: bool,
     /// 并行评估线程数（None = auto = rayon::current_num_threads()）
     parallelism: Option<usize>,
     /// Pareto archive 连续未改进多少代后判定收敛（None = auto）
@@ -470,7 +480,9 @@ impl Evolution {
             stagnation_patience: 20,
             batch_size: None,
             population_size: rayon::current_num_threads().clamp(12, 32),
+            population_size_explicit: false,
             offspring_batch_size: rayon::current_num_threads().max(12),
+            offspring_batch_size_explicit: false,
             parallelism: None,
             pareto_patience: None,
             complexity_metric: ComplexityMetric::ParamCount,
@@ -504,6 +516,7 @@ impl Evolution {
     pub fn with_offspring_count(mut self, n: usize) -> Self {
         assert!(n >= 1, "offspring_batch_size 必须 >= 1，当前值: {n}");
         self.offspring_batch_size = n;
+        self.offspring_batch_size_explicit = true;
         self
     }
 
@@ -511,6 +524,7 @@ impl Evolution {
     pub fn with_population_size(mut self, n: usize) -> Self {
         assert!(n >= 1, "population_size 必须 >= 1，当前值: {n}");
         self.population_size = n;
+        self.population_size_explicit = true;
         self
     }
 
@@ -518,6 +532,7 @@ impl Evolution {
     pub fn with_offspring_batch_size(mut self, n: usize) -> Self {
         assert!(n >= 1, "offspring_batch_size 必须 >= 1，当前值: {n}");
         self.offspring_batch_size = n;
+        self.offspring_batch_size_explicit = true;
         self
     }
 
@@ -610,12 +625,25 @@ impl Evolution {
             verbose,
             stagnation_patience,
             batch_size,
-            population_size,
-            offspring_batch_size,
+            mut population_size,
+            population_size_explicit,
+            mut offspring_batch_size,
+            offspring_batch_size_explicit,
             parallelism,
             pareto_patience,
             complexity_metric,
         } = self;
+
+        // 当指定 seed 时，自动固定 population_size/offspring_batch_size
+        // 避免因不同机器线程数导致 RNG 消耗序列不同
+        if seed.is_some() {
+            if !population_size_explicit {
+                population_size = 20;
+            }
+            if !offspring_batch_size_explicit {
+                offspring_batch_size = 12;
+            }
+        }
 
         // 延迟实例化：验证数据 + 构建任务 + 提取维度
         let prepared = materialize_task(task_spec.clone())?;
@@ -807,6 +835,7 @@ impl Evolution {
                     status,
                     &mut rng,
                     &serial_task,
+                    seed,
                 );
             }
 
@@ -886,6 +915,7 @@ impl Evolution {
                         EvolutionStatus::NoApplicableMutation,
                         &mut rng,
                         &serial_task,
+                        seed,
                     );
                 }
                 continue;
@@ -1015,6 +1045,7 @@ impl Evolution {
                     genome: target_genome.clone(),
                     pareto_front: build_pareto_summaries(&archive),
                     pareto_genomes: archive.into_iter().map(|(g, _)| g).collect(),
+                    evolution_seed: seed,
                 });
             }
 
@@ -1029,6 +1060,7 @@ impl Evolution {
                     EvolutionStatus::ParetoConverged,
                     &mut rng,
                     &serial_task,
+                    seed,
                 );
             }
         }
@@ -1237,6 +1269,7 @@ fn build_population_result(
     status: EvolutionStatus,
     rng: &mut StdRng,
     task: &dyn EvolutionTask,
+    evolution_seed: Option<u64>,
 ) -> Result<EvolutionResult, EvolutionError> {
     let build = genome.build(rng)?;
     genome.restore_weights(&build)?;
@@ -1251,6 +1284,7 @@ fn build_population_result(
         genome: genome.clone(),
         pareto_front: build_pareto_summaries(archive),
         pareto_genomes: archive.iter().map(|(g, _)| g.clone()).collect(),
+        evolution_seed,
     })
 }
 
@@ -1263,6 +1297,7 @@ fn build_final_result(
     status: EvolutionStatus,
     rng: &mut StdRng,
     task: &dyn EvolutionTask,
+    evolution_seed: Option<u64>,
 ) -> Result<EvolutionResult, EvolutionError> {
     let build = genome.build(rng)?;
     genome.restore_weights(&build)?;
@@ -1283,5 +1318,6 @@ fn build_final_result(
         genome: genome.clone(),
         pareto_front: Vec::new(),
         pareto_genomes: Vec::new(),
+        evolution_seed,
     })
 }

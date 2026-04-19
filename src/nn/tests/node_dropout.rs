@@ -10,7 +10,7 @@
  * 6. 动态 batch + Create API（KEEP AS-IS）
  *
  * Inverted Dropout: 训练时保留元素按 1/(1-p) 缩放，保证期望不变。
- * 高层 .dropout(p) 使用系统时间 seed（不确定），确定性测试用底层 API 指定 seed。
+ * 高层 .dropout(p) 使用 Graph RNG seed（有 seed 时确定，无 seed 时随机）。
  */
 
 use crate::nn::{Graph, GraphError, Init, Var, VarLossOps, VarRegularizationOps};
@@ -529,4 +529,72 @@ fn test_create_dropout_node_drop_releases() {
     }
     assert!(weak_dropout.upgrade().is_none());
     assert!(weak_input.upgrade().is_none());
+}
+
+// ==================== 7. Graph seed 确定性测试 ====================
+
+/// 高层 .dropout(p) 在 seeded Graph 下两次构建产生完全相同的结果
+#[test]
+fn test_seeded_graph_dropout_deterministic() -> Result<(), GraphError> {
+    for seed in [42, 0, 999] {
+        let out1 = {
+            let g = Graph::new_with_seed(seed);
+            let x = g.input(&Tensor::ones(&[1, 200]))?;
+            let d = x.dropout(0.5)?;
+            g.forward(&d)?;
+            d.value()?.unwrap()
+        };
+        let out2 = {
+            let g = Graph::new_with_seed(seed);
+            let x = g.input(&Tensor::ones(&[1, 200]))?;
+            let d = x.dropout(0.5)?;
+            g.forward(&d)?;
+            d.value()?.unwrap()
+        };
+        assert_eq!(
+            out1.data_as_slice(),
+            out2.data_as_slice(),
+            "seed={seed}: seeded Graph 下 .dropout() 应完全确定"
+        );
+    }
+    Ok(())
+}
+
+/// 不同 Graph seed 产生不同 dropout mask
+#[test]
+fn test_different_graph_seed_dropout_differs() -> Result<(), GraphError> {
+    let run = |seed: u64| -> Result<Vec<f32>, GraphError> {
+        let g = Graph::new_with_seed(seed);
+        let x = g.input(&Tensor::ones(&[1, 200]))?;
+        let d = x.dropout(0.5)?;
+        g.forward(&d)?;
+        Ok(d.value()?.unwrap().data_as_slice().to_vec())
+    };
+    let a = run(42)?;
+    let b = run(123)?;
+    assert_ne!(a, b, "不同 Graph seed 应产生不同 dropout mask");
+    Ok(())
+}
+
+/// 多个 Dropout 节点在同一 seeded Graph 中互不干扰，且整体可复现
+#[test]
+fn test_seeded_graph_multiple_dropouts_deterministic() -> Result<(), GraphError> {
+    let run = |seed: u64| -> Result<(Vec<f32>, Vec<f32>), GraphError> {
+        let g = Graph::new_with_seed(seed);
+        let x = g.input(&Tensor::ones(&[1, 100]))?;
+        let d1 = x.dropout(0.3)?;
+        let d2 = x.dropout(0.5)?;
+        g.forward(&d1)?;
+        g.forward(&d2)?;
+        Ok((
+            d1.value()?.unwrap().data_as_slice().to_vec(),
+            d2.value()?.unwrap().data_as_slice().to_vec(),
+        ))
+    };
+    let (a1, a2) = run(42)?;
+    let (b1, b2) = run(42)?;
+    assert_eq!(a1, b1, "第一个 Dropout 应确定");
+    assert_eq!(a2, b2, "第二个 Dropout 应确定");
+    assert_ne!(a1, a2, "两个不同 Dropout 应有不同 mask");
+    Ok(())
 }

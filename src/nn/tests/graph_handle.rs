@@ -475,3 +475,78 @@ fn test_graph_handle_no_grad_scope_with_computation() {
 
     assert_eq!(result, vec![5.0, 7.0, 9.0]);
 }
+
+// ==================== seed 确定性测试 ====================
+
+/// seeded Graph 下 randn 完全确定
+#[test]
+fn test_seeded_graph_randn_deterministic() {
+    for seed in [0, 42, 12345] {
+        let v1 = {
+            let g = Graph::new_with_seed(seed);
+            let r = g.randn(&[50, 50]).unwrap();
+            r.value().unwrap().unwrap().data_as_slice().to_vec()
+        };
+        let v2 = {
+            let g = Graph::new_with_seed(seed);
+            let r = g.randn(&[50, 50]).unwrap();
+            r.value().unwrap().unwrap().data_as_slice().to_vec()
+        };
+        assert_eq!(v1, v2, "seed={seed}: seeded Graph 下 randn 应完全确定");
+    }
+}
+
+/// 不同 seed 产生不同 randn 值
+#[test]
+fn test_different_seed_randn_differs() {
+    let v1 = {
+        let g = Graph::new_with_seed(42);
+        g.randn(&[10, 10]).unwrap().value().unwrap().unwrap().data_as_slice().to_vec()
+    };
+    let v2 = {
+        let g = Graph::new_with_seed(999);
+        g.randn(&[10, 10]).unwrap().value().unwrap().unwrap().data_as_slice().to_vec()
+    };
+    assert_ne!(v1, v2, "不同 seed 应产生不同 randn 值");
+}
+
+/// set_seed() 方法可用且等价于 new_with_seed
+#[test]
+fn test_set_seed_proxy() {
+    let g1 = Graph::new_with_seed(42);
+    let g2 = Graph::new();
+    g2.set_seed(42);
+
+    assert!(g1.has_seed());
+    assert!(g2.has_seed());
+
+    let v1 = g1.randn(&[10, 10]).unwrap().value().unwrap().unwrap().data_as_slice().to_vec();
+    let v2 = g2.randn(&[10, 10]).unwrap().value().unwrap().unwrap().data_as_slice().to_vec();
+    assert_eq!(v1, v2, "set_seed(42) 应与 new_with_seed(42) 等价");
+}
+
+/// seeded Graph 下 randn + parameter + dropout 的完整确定性
+#[test]
+fn test_seeded_graph_full_pipeline_deterministic() {
+    use crate::nn::{GraphError, VarRegularizationOps};
+
+    let run = |seed: u64| -> Result<(Vec<f32>, Vec<f32>, Vec<f32>), GraphError> {
+        let g = Graph::new_with_seed(seed);
+        let w = g.parameter(&[3, 5], Init::Xavier, "w")?;
+        let r = g.randn(&[1, 3])?;
+        let x = g.input(&Tensor::ones(&[1, 3]))?;
+        let d = x.dropout(0.3)?;
+        g.forward(&d)?;
+        Ok((
+            w.value()?.unwrap().data_as_slice().to_vec(),
+            r.value()?.unwrap().data_as_slice().to_vec(),
+            d.value()?.unwrap().data_as_slice().to_vec(),
+        ))
+    };
+
+    let (w1, r1, d1) = run(42).unwrap();
+    let (w2, r2, d2) = run(42).unwrap();
+    assert_eq!(w1, w2, "参数应确定");
+    assert_eq!(r1, r2, "randn 应确定");
+    assert_eq!(d1, d2, "dropout 应确定");
+}

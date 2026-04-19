@@ -274,6 +274,7 @@ impl EvolutionResult {
             genome,
             pareto_front: Vec::new(),
             pareto_genomes: Vec::new(),
+            evolution_seed: None,
         })
     }
 }
