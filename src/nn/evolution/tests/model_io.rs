@@ -806,3 +806,116 @@ fn test_graph_save_load_weights() {
     // 清理
     std::fs::remove_file("test_graph_save_load_weights.bin").ok();
 }
+
+// ==================== 循环边 model_io 测试 ====================
+
+#[test]
+fn test_recurrent_genome_save_load_roundtrip() {
+    use crate::nn::evolution::mutation::{AddRecurrentEdgeMutation, SizeConstraints};
+    use crate::nn::evolution::node_gene::RecurrentEdge;
+
+    // 创建不含 cell-based 循环的序列 NodeLevel 基因组
+    let mut g = NetworkGenome::minimal(2, 1);
+    let i1 = g.next_innovation_number();
+    let i2 = g.next_innovation_number();
+    g.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    g.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    g.seq_len = Some(5);
+    g.migrate_to_node_level().unwrap();
+
+    // 添加循环边
+    let c = SizeConstraints::default();
+    let mut rng = StdRng::seed_from_u64(42);
+    AddRecurrentEdgeMutation.apply(&mut g, &c, &mut rng).unwrap();
+
+    // 序列化 → 反序列化
+    let json = serde_json::to_string(&g).unwrap();
+    let g2: NetworkGenome = serde_json::from_str(&json).unwrap();
+
+    // 验证循环边保留
+    let has_rec_1 = g.nodes().iter().any(|n| !n.recurrent_parents.is_empty());
+    let has_rec_2 = g2.nodes().iter().any(|n| !n.recurrent_parents.is_empty());
+    assert!(has_rec_1, "原始基因组应有循环边");
+    assert!(has_rec_2, "反序列化后应保留循环边");
+
+    // 验证循环边内容一致
+    for (n1, n2) in g.nodes().iter().zip(g2.nodes().iter()) {
+        assert_eq!(
+            n1.recurrent_parents.len(),
+            n2.recurrent_parents.len(),
+            "节点 {} 的循环边数量应一致",
+            n1.innovation_number
+        );
+        for (e1, e2) in n1.recurrent_parents.iter().zip(n2.recurrent_parents.iter()) {
+            assert_eq!(e1.source_id, e2.source_id, "循环边 source_id 应一致");
+            assert_eq!(
+                e1.weight_param_id, e2.weight_param_id,
+                "循环边 weight_param_id 应一致"
+            );
+        }
+    }
+
+    // 验证两者都能 build
+    let mut r1 = StdRng::seed_from_u64(100);
+    let mut r2 = StdRng::seed_from_u64(100);
+    assert!(g.build(&mut r1).is_ok(), "原始基因组 build 应成功");
+    assert!(g2.build(&mut r2).is_ok(), "反序列化基因组 build 应成功");
+}
+
+#[test]
+fn test_recurrent_genome_has_recurrent_flag() {
+    use crate::nn::evolution::mutation::AddRecurrentEdgeMutation;
+
+    let mut g = NetworkGenome::minimal(2, 1);
+    let i1 = g.next_innovation_number();
+    g.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    g.seq_len = Some(5);
+    g.migrate_to_node_level().unwrap();
+
+    let c = crate::nn::evolution::mutation::SizeConstraints::default();
+    let mut rng = StdRng::seed_from_u64(42);
+    AddRecurrentEdgeMutation
+        .apply(&mut g, &c, &mut rng)
+        .unwrap();
+
+    let analysis = g.analyze();
+    assert!(analysis.is_valid, "应合法: {:?}", analysis.errors);
+    assert!(
+        analysis.has_recurrent_edges,
+        "应标记 has_recurrent_edges"
+    );
+
+    // 确认含循环边的节点存在
+    let recurrent_count: usize = g
+        .nodes()
+        .iter()
+        .filter(|n| !n.recurrent_parents.is_empty())
+        .count();
+    assert!(
+        recurrent_count > 0,
+        "应有含循环边的节点，实际 0"
+    );
+}

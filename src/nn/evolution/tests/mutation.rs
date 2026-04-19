@@ -512,17 +512,17 @@ fn test_mutate_loss_not_applicable_r2() {
 // ==================== MutationRegistry ====================
 
 #[test]
-fn test_default_registry_has_14_mutations() {
-    // 12 原有 + 2 个跨层连接变异（AddConnection / RemoveConnection）= 14
+fn test_default_registry_has_15_mutations() {
+    // 12 原有 + 2 跨层连接变异 + 1 InsertAtomicNode = 15
     let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, false, false);
-    assert_eq!(reg.len(), 14);
+    assert_eq!(reg.len(), 15);
 }
 
 #[test]
-fn test_default_registry_sequential_has_15_mutations() {
-    // 14 基础 + 1 MutateCellType = 15
+fn test_default_registry_sequential_has_18_mutations() {
+    // 15 基础 + 1 MutateCellType + 2 循环边变异 = 18
     let reg = MutationRegistry::default_registry(&TaskMetric::Accuracy, true, false);
-    assert_eq!(reg.len(), 15);
+    assert_eq!(reg.len(), 18);
 }
 
 #[test]
@@ -2753,6 +2753,430 @@ fn test_mutate_cell_type_node_level_preserves_buildability() {
         assert!(
             g2.build(&mut build_rng).is_ok(),
             "NodeLevel cell 切换后 build 应成功"
+        );
+    }
+}
+
+// ==================== InsertAtomicNode 变异测试 ====================
+
+#[test]
+fn test_insert_atomic_node_happy_path() {
+    // Input(2) → Linear(4) → ReLU → [Linear(1)]
+    let mut g = node_level_genome_with_hidden();
+    let mut r = rng();
+    let m = InsertAtomicNodeMutation::default();
+    let c = constraints();
+
+    assert!(m.is_applicable(&g, &c), "NodeLevel 应可插入原子节点");
+    let before = g.nodes().len();
+
+    m.apply(&mut g, &c, &mut r).unwrap();
+
+    assert_eq!(g.nodes().len(), before + 1, "应新增恰好 1 个节点");
+    let analysis = g.analyze();
+    assert!(analysis.is_valid, "插入后图应合法: {:?}", analysis.errors);
+
+    let mut build_rng = StdRng::seed_from_u64(100);
+    assert!(g.build(&mut build_rng).is_ok(), "插入后应能 build");
+}
+
+#[test]
+fn test_insert_atomic_node_not_applicable_on_layer_level() {
+    let g = genome_with_hidden();
+    let m = InsertAtomicNodeMutation::default();
+    assert!(!m.is_applicable(&g, &constraints()), "LayerLevel 不适用");
+}
+
+#[test]
+fn test_insert_atomic_node_output_head_protected() {
+    // 最小 NodeLevel（只有输出头）
+    let mut g = NetworkGenome::minimal(2, 1);
+    g.migrate_to_node_level().unwrap();
+    let m = InsertAtomicNodeMutation::default();
+    let c = constraints();
+
+    // 只有一个块（输出头），但应允许在 INPUT 之后插入
+    // 即使只有输出头，INPUT 是合法插入点（从 atomic_insert_candidates 可知）
+    if m.is_applicable(&g, &c) {
+        let mut r = rng();
+        m.apply(&mut g, &c, &mut r).unwrap();
+        let analysis = g.analyze();
+        assert!(
+            analysis.is_valid,
+            "最小基因组插入原子节点后应合法: {:?}",
+            analysis.errors
+        );
+    }
+}
+
+#[test]
+fn test_insert_atomic_node_consecutive_activation_avoidance() {
+    // 构造 Input → Activation → [Linear(1)]，前后都是激活函数的场景
+    // 先有 hidden genome，然后在 ReLU 后再插一个激活，应限制连续激活
+    let mut g = node_level_genome_with_hidden();
+    let m = InsertAtomicNodeMutation::default();
+    let c = constraints();
+    let mut r = rng();
+
+    // 多次插入，验证图始终合法
+    for _ in 0..5 {
+        if !m.is_applicable(&g, &c) {
+            break;
+        }
+        m.apply(&mut g, &c, &mut r).unwrap();
+        let analysis = g.analyze();
+        assert!(
+            analysis.is_valid,
+            "连续插入后图应合法: {:?}",
+            analysis.errors
+        );
+    }
+}
+
+#[test]
+fn test_insert_atomic_node_spatial_genome() {
+    let mut g = node_level_spatial_2conv_genome();
+    let m = InsertAtomicNodeMutation::default();
+    let c = constraints();
+    let mut r = StdRng::seed_from_u64(77);
+
+    assert!(m.is_applicable(&g, &c), "空间基因组应可插入原子节点");
+
+    m.apply(&mut g, &c, &mut r).unwrap();
+    let analysis = g.analyze();
+    assert!(
+        analysis.is_valid,
+        "空间基因组插入后应合法: {:?}",
+        analysis.errors
+    );
+
+    let mut build_rng = StdRng::seed_from_u64(200);
+    assert!(g.build(&mut build_rng).is_ok(), "空间基因组插入后应能 build");
+}
+
+#[test]
+fn test_insert_atomic_node_multiblock_genome() {
+    // 3块基因组：Input(2) → Linear(4) → ReLU → Linear(4) → [Linear(1)]
+    let mut g = node_level_3block_genome();
+    let m = InsertAtomicNodeMutation::default();
+    let c = constraints();
+    let mut r = StdRng::seed_from_u64(88);
+
+    let before = g.nodes().len();
+    m.apply(&mut g, &c, &mut r).unwrap();
+    assert_eq!(g.nodes().len(), before + 1);
+
+    let analysis = g.analyze();
+    assert!(
+        analysis.is_valid,
+        "3块基因组插入原子节点后应合法: {:?}",
+        analysis.errors
+    );
+
+    let mut build_rng = StdRng::seed_from_u64(300);
+    assert!(g.build(&mut build_rng).is_ok(), "3块基因组插入后 build 应成功");
+}
+
+// ==================== AddRecurrentEdge / RemoveRecurrentEdge 变异测试 ====================
+
+/// 创建不含 cell-based 循环的序列 NodeLevel 基因组
+///
+/// Linear(4) → ReLU → [Linear(1)]，手动设置 seq_len=5
+fn seq_node_level_genome() -> NetworkGenome {
+    let mut g = NetworkGenome::minimal(2, 1);
+    let i1 = g.next_innovation_number();
+    let i2 = g.next_innovation_number();
+    g.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    g.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    g.seq_len = Some(5);
+    g.migrate_to_node_level().unwrap();
+    g
+}
+
+#[test]
+fn test_add_recurrent_edge_applicable_on_sequential() {
+    let g = seq_node_level_genome();
+    let m = AddRecurrentEdgeMutation;
+    assert!(
+        m.is_applicable(&g, &constraints()),
+        "序列 NodeLevel 应可添加循环边"
+    );
+}
+
+#[test]
+fn test_add_recurrent_edge_not_applicable_on_flat() {
+    let g = node_level_genome_with_hidden();
+    let m = AddRecurrentEdgeMutation;
+    assert!(
+        !m.is_applicable(&g, &constraints()),
+        "非序列基因组不应可添加循环边"
+    );
+}
+
+#[test]
+fn test_add_recurrent_edge_happy_path() {
+    let mut g = seq_node_level_genome();
+    let m = AddRecurrentEdgeMutation;
+    let c = constraints();
+    let mut r = rng();
+
+    let before_nodes = g.nodes().len();
+    m.apply(&mut g, &c, &mut r).unwrap();
+
+    // 应新增 1 个 Parameter 节点（循环权重）
+    assert_eq!(g.nodes().len(), before_nodes + 1, "应新增权重参数节点");
+
+    // 应有至少一个节点含 recurrent_parents
+    let has_recurrent = g.nodes().iter().any(|n| !n.recurrent_parents.is_empty());
+    assert!(has_recurrent, "应有节点含循环边");
+
+    let analysis = g.analyze();
+    assert!(
+        analysis.is_valid,
+        "添加循环边后应合法: {:?}",
+        analysis.errors
+    );
+    assert!(analysis.has_recurrent_edges, "分析应标记 has_recurrent_edges");
+}
+
+#[test]
+fn test_remove_recurrent_edge_happy_path() {
+    let mut g = seq_node_level_genome();
+    let mut r = rng();
+    let c = constraints();
+
+    // 先添加一条循环边
+    AddRecurrentEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
+    assert!(
+        g.nodes().iter().any(|n| !n.recurrent_parents.is_empty()),
+        "应先添加循环边"
+    );
+    let before_nodes = g.nodes().len();
+
+    // 再删除
+    RemoveRecurrentEdgeMutation
+        .apply(&mut g, &c, &mut r)
+        .unwrap();
+
+    // 循环边应被清除
+    let has_recurrent = g.nodes().iter().any(|n| !n.recurrent_parents.is_empty());
+    assert!(!has_recurrent, "循环边应被移除");
+
+    // 孤立权重参数应被清理
+    assert!(
+        g.nodes().len() < before_nodes,
+        "孤立权重参数节点应被移除"
+    );
+}
+
+#[test]
+fn test_remove_recurrent_edge_not_applicable_without_edges() {
+    let g = seq_node_level_genome();
+    let m = RemoveRecurrentEdgeMutation;
+    assert!(
+        !m.is_applicable(&g, &constraints()),
+        "无循环边时不应可移除"
+    );
+}
+
+#[test]
+fn test_add_recurrent_edge_build_and_forward() {
+    let mut g = seq_node_level_genome();
+    let mut r = rng();
+    let c = constraints();
+
+    AddRecurrentEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
+
+    let mut build_rng = StdRng::seed_from_u64(100);
+    let build = g.build(&mut build_rng).expect("含循环边 build 应成功");
+
+    let seq_len = g.seq_len.unwrap();
+    let input = crate::tensor::Tensor::ones(&[1, seq_len, 2]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let output = build.output.value().unwrap().unwrap();
+    assert_eq!(output.shape()[0], 1);
+    assert_eq!(output.shape()[1], seq_len);
+    assert!(
+        output.to_vec().iter().all(|v| v.is_finite()),
+        "循环展开后输出应有限"
+    );
+}
+
+#[test]
+fn test_insert_atomic_node_preserves_buildability_after_many_rounds() {
+    let g_base = node_level_3block_genome();
+    let m = InsertAtomicNodeMutation::default();
+    let c = constraints();
+
+    for seed in 0..10u64 {
+        let mut g = g_base.clone();
+        let mut r = StdRng::seed_from_u64(seed);
+
+        // 每轮尝试 3 次原子插入
+        for _ in 0..3 {
+            if !m.is_applicable(&g, &c) {
+                break;
+            }
+            let _ = m.apply(&mut g, &c, &mut r);
+        }
+
+        let analysis = g.analyze();
+        if analysis.is_valid {
+            let mut build_rng = StdRng::seed_from_u64(seed + 1000);
+            assert!(
+                g.build(&mut build_rng).is_ok(),
+                "seed={seed} 多轮原子插入后 build 应成功"
+            );
+        }
+    }
+}
+
+// ==================== 合法性压力测试 ====================
+
+#[test]
+fn test_recurrent_paradigm_exclusivity() {
+    // 含 CellRnn 的序列基因组不应允许 edge-based 循环
+    let mut g = NetworkGenome::minimal_sequential(2, 1);
+    g.migrate_to_node_level().unwrap();
+    let m = AddRecurrentEdgeMutation;
+    assert!(
+        !m.is_applicable(&g, &constraints()),
+        "含 cell-based 循环的基因组不应可添加 edge-based 循环边"
+    );
+}
+
+#[test]
+fn test_recurrent_edge_cascading_cleanup_on_block_remove() {
+    // 添加循环边 → 删除源节点所在块 → 循环边和权重参数应被级联清理
+    let mut g = seq_node_level_genome();
+    let mut r = rng();
+    let c = constraints();
+
+    AddRecurrentEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
+    assert!(
+        g.nodes().iter().any(|n| !n.recurrent_parents.is_empty()),
+        "前置：应有循环边"
+    );
+
+    // 获取循环源节点的 block
+    let source_id = g
+        .nodes()
+        .iter()
+        .find(|n| !n.recurrent_parents.is_empty())
+        .unwrap()
+        .recurrent_parents[0]
+        .source_id;
+
+    use crate::nn::evolution::node_ops::node_main_path;
+    let blocks = node_main_path(&g);
+    let source_block = blocks.iter().find(|b| b.node_ids.contains(&source_id));
+
+    if let Some(block) = source_block {
+        use crate::nn::evolution::node_ops::remove_block;
+        let block_clone = block.clone();
+        remove_block(&mut g, &block_clone);
+
+        // 级联清理后不应有引用已删节点的循环边
+        for node in g.nodes() {
+            for edge in &node.recurrent_parents {
+                assert!(
+                    g.nodes()
+                        .iter()
+                        .any(|n| n.innovation_number == edge.source_id),
+                    "级联清理后不应有悬空循环源引用"
+                );
+                assert!(
+                    g.nodes()
+                        .iter()
+                        .any(|n| n.innovation_number == edge.weight_param_id),
+                    "级联清理后不应有悬空权重参数引用"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_multi_recurrent_edges_analysis_valid() {
+    // 添加多条循环边后分析应合法
+    let mut g = seq_node_level_genome();
+    let c = constraints();
+
+    let mut applied = 0;
+    for seed in 0..20u64 {
+        let mut r = StdRng::seed_from_u64(seed);
+        if AddRecurrentEdgeMutation.apply(&mut g, &c, &mut r).is_ok() {
+            applied += 1;
+        }
+        if applied >= 2 {
+            break;
+        }
+    }
+
+    assert!(applied >= 1, "应至少成功添加 1 条循环边");
+
+    let analysis = g.analyze();
+    assert!(
+        analysis.is_valid,
+        "多条循环边图应合法: {:?}",
+        analysis.errors
+    );
+    assert!(analysis.has_recurrent_edges, "应标记有循环边");
+
+    // 验证 build 也成功
+    let mut build_rng = StdRng::seed_from_u64(42);
+    let result = g.build(&mut build_rng);
+    assert!(
+        result.is_ok(),
+        "多条循环边 build 应成功: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_random_mutations_keep_recurrent_genome_valid() {
+    // 含循环边的基因组经过多轮随机变异后图应始终合法
+    let mut g = seq_node_level_genome();
+    let c = constraints();
+    let mut r = StdRng::seed_from_u64(77);
+
+    AddRecurrentEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
+
+    let reg = MutationRegistry::default_registry(&TaskMetric::R2, true, false);
+
+    for _ in 0..20 {
+        let _ = reg.apply_random(&mut g, &c, &mut r);
+    }
+
+    let analysis = g.analyze();
+    // 注意：多轮变异后分析可能变为无效（例如删除了关键节点），
+    // 但如果有效则 build 必须成功
+    if analysis.is_valid {
+        let mut build_rng = StdRng::seed_from_u64(999);
+        // 只要图合法，build 应成功（可能没有循环边了）
+        let build_result = g.build(&mut build_rng);
+        assert!(
+            build_result.is_ok(),
+            "多轮变异后合法图 build 应成功: {:?}",
+            build_result.err()
         );
     }
 }

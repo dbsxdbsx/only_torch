@@ -206,6 +206,18 @@ impl EvolutionResult {
     /// result.export_onnx("models/evolved_model.onnx")?;
     /// ```
     pub fn export_onnx<P: AsRef<Path>>(&self, path: P) -> Result<(), EvolutionError> {
+        // edge-based 循环基因组不支持 ONNX 导出（展开图含动态时间步共享权重）
+        let has_recurrent = self
+            .genome
+            .nodes()
+            .iter()
+            .any(|n| n.enabled && !n.recurrent_parents.is_empty());
+        if has_recurrent {
+            return Err(EvolutionError::IoError(
+                "含 edge-based 循环边的基因组暂不支持 ONNX 导出（请使用 .otm 格式保存）"
+                    .into(),
+            ));
+        }
         self.build
             .graph
             .export_onnx(path, &[&self.build.output])

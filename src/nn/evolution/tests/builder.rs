@@ -1977,3 +1977,99 @@ fn test_build_from_nodes_rnn_gets_recurrent_node_group_tag() {
         "序列 NodeLevel 构图后应有 Recurrent style 的 NodeGroupTag"
     );
 }
+
+#[test]
+fn test_backfill_no_orphan_rnn() {
+    use crate::nn::var::Var;
+
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.layers_mut()[0].layer_config = LayerConfig::Rnn { hidden_size: 3 };
+    genome.seq_len = Some(4);
+    genome.migrate_to_node_level().unwrap();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+    let snapshot = Var::build_snapshot(&[("Output", &build.output)]);
+
+    let visible: Vec<_> = snapshot
+        .nodes
+        .iter()
+        .filter(|n| !n.node_group_tag.as_ref().map_or(false, |t| t.hidden))
+        .collect();
+    let visible_ids: std::collections::HashSet<u64> = visible.iter().map(|n| n.id.0).collect();
+
+    for vn in &visible {
+        let has_edge = vn.parent_ids.iter().any(|pid| visible_ids.contains(&pid.0))
+            || visible.iter().any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
+        let is_leaf = vn.type_name == "Input" || vn.type_name == "Parameter";
+        assert!(
+            has_edge || is_leaf,
+            "可见节点 gid={} ({}, {}) 应有可见边或是叶节点",
+            vn.id.0, vn.type_name, vn.name.as_deref().unwrap_or("?"),
+        );
+    }
+}
+
+#[test]
+fn test_backfill_no_orphan_gru() {
+    use crate::nn::var::Var;
+
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.layers_mut()[0].layer_config = LayerConfig::Gru { hidden_size: 3 };
+    genome.seq_len = Some(4);
+    genome.migrate_to_node_level().unwrap();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+    let snapshot = Var::build_snapshot(&[("Output", &build.output)]);
+
+    let visible: Vec<_> = snapshot
+        .nodes
+        .iter()
+        .filter(|n| !n.node_group_tag.as_ref().map_or(false, |t| t.hidden))
+        .collect();
+    let visible_ids: std::collections::HashSet<u64> = visible.iter().map(|n| n.id.0).collect();
+
+    for vn in &visible {
+        let has_edge = vn.parent_ids.iter().any(|pid| visible_ids.contains(&pid.0))
+            || visible.iter().any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
+        let is_leaf = vn.type_name == "Input" || vn.type_name == "Parameter";
+        assert!(
+            has_edge || is_leaf,
+            "GRU 可见节点 gid={} ({}, {}) 应有可见边或是叶节点",
+            vn.id.0, vn.type_name, vn.name.as_deref().unwrap_or("?"),
+        );
+    }
+}
+
+#[test]
+fn test_backfill_no_orphan_lstm() {
+    use crate::nn::var::Var;
+
+    let mut genome = NetworkGenome::minimal_sequential(2, 1);
+    genome.layers_mut()[0].layer_config = LayerConfig::Lstm { hidden_size: 3 };
+    genome.seq_len = Some(4);
+    genome.migrate_to_node_level().unwrap();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+    let snapshot = Var::build_snapshot(&[("Output", &build.output)]);
+
+    let visible: Vec<_> = snapshot
+        .nodes
+        .iter()
+        .filter(|n| !n.node_group_tag.as_ref().map_or(false, |t| t.hidden))
+        .collect();
+    let visible_ids: std::collections::HashSet<u64> = visible.iter().map(|n| n.id.0).collect();
+
+    for vn in &visible {
+        let has_edge = vn.parent_ids.iter().any(|pid| visible_ids.contains(&pid.0))
+            || visible.iter().any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
+        let is_leaf = vn.type_name == "Input" || vn.type_name == "Parameter";
+        assert!(
+            has_edge || is_leaf,
+            "LSTM 可见节点 gid={} ({}, {}) 应有可见边或是叶节点",
+            vn.id.0, vn.type_name, vn.name.as_deref().unwrap_or("?"),
+        );
+    }
+}

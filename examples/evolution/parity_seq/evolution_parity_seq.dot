@@ -19,7 +19,7 @@ digraph ComputeGraph {
     }
 
     subgraph cluster_group_gru_0 {
-        label=<<B>GRU</B><BR/><FONT POINT-SIZE="9">[?, 8, 1] → [?, 1]</FONT>>;
+        label=<<B>gru_rebuilt</B><BR/><FONT POINT-SIZE="9">GRU: [?, 1] → [?, 1] (×8 steps)</FONT>>;
         style="filled,bold";
         peripheries=3;
         penwidth=2;
@@ -27,42 +27,42 @@ digraph ComputeGraph {
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "8" [label=<add_1<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "9" [label=<evo_48<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "10" [label=<evo_45<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "11" [label=<evo_46<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "13" [label=<evo_47<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "14" [label=<evo_43<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "15" [label=<evo_44<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "16" [label=<evo_42<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "17" [label=<evo_40<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "18" [label=<evo_41<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "19" [label=<add_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+            "9" [label=<evo_50<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "10" [label=<evo_47<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "11" [label=<evo_48<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "13" [label=<evo_49<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "14" [label=<evo_45<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "15" [label=<evo_46<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "16" [label=<evo_44<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "17" [label=<evo_42<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "18" [label=<evo_43<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "19" [label=<add_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "20" [label=<tanh_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Tanh</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
             "21" [label=<multiply_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Multiply</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "22" [label=<add_3 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+            "22" [label=<add_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "23" [label=<sigmoid_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
             "24" [label=<subtract_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Subtract</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "25" [label=<add_4 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "26" [label=<add_5 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+            "25" [label=<add_3 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+            "26" [label=<add_4 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "27" [label=<zeros_like_1 <FONT COLOR="#E67E22">×1</FONT><BR/><B>ZerosLike</B><BR/>[?, 1]> shape=box style="filled,rounded,dashed" fillcolor="#FFFDE7" fontsize=10];
             "28" [label=<matmul_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "29" [label=<multiply_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Multiply</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "30" [label=<add_6 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+            "30" [label=<add_5 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "31" [label=<select_1 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Select</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "32" [label=<sigmoid_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Sigmoid</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10 peripheries=2];
             "33" [label=<matmul_2 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "34" [label=<matmul_3 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "35" [label=<matmul_4 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "36" [label=<add_7 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
-            "37" [label=<add_8 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+            "36" [label=<add_6 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
+            "37" [label=<add_7 <FONT COLOR="#E67E22">×8</FONT><BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "38" [label=<matmul_5 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
             "39" [label=<matmul_6 <FONT COLOR="#E67E22">×8</FONT><BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10 peripheries=2];
     }
 
     "1" [label=<mse_1<BR/><B>MSE</B><BR/>[?, 1]<BR/><FONT COLOR="#C62828" POINT-SIZE="9">▸ Output</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#C62828"];
     "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "6" [label=<evo_3<BR/><B>Mish</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "6" [label=<evo_3<BR/><B>HardSwish</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "8" [label=<evo_4<BR/><B>Mish</B><BR/>[?, 1]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
     "12" [label=<evo_input_1<BR/><B>Input</B><BR/>[?, 8, 1]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
     "2" -> "1";
@@ -71,7 +71,8 @@ digraph ComputeGraph {
     "5" -> "2";
     "6" -> "4";
     "7" -> "4";
-    "19" -> "6" [ color="#E67E22" label=<t=7> fontcolor="#E67E22" fontsize=9];
+    "8" -> "6";
+    "19" -> "8" [ color="#E67E22" label=<t=7> fontcolor="#E67E22" fontsize=9];
     "20" -> "19";
     "21" -> "19";
     "22" -> "20";

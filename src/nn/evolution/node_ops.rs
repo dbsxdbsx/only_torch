@@ -480,6 +480,27 @@ pub fn node_out_dim_at(genome: &NetworkGenome, node_id: u64) -> usize {
         .unwrap_or(genome.input_dim)
 }
 
+/// 获取指定节点的完整输出形状（2D/3D/4D）
+///
+/// 与 `node_out_dim_at` 不同，本函数返回完整形状（如 `[1, 64]` 或 `[1, 16, 14, 14]`），
+/// 用于 InsertAtomicNode 等需要精确形状的场景。
+pub fn node_output_shape_at(genome: &NetworkGenome, node_id: u64) -> Vec<usize> {
+    if node_id == INPUT_INNOVATION {
+        return genome_input_shape(genome);
+    }
+    let analysis = GenomeAnalysis::compute(
+        genome.nodes(),
+        INPUT_INNOVATION,
+        genome_input_shape(genome),
+        genome_input_domain(genome),
+    );
+    analysis
+        .output_shapes
+        .get(&node_id)
+        .cloned()
+        .unwrap_or_else(|| genome_input_shape(genome))
+}
+
 /// 获取指定节点处的空间尺寸（4D 张量才有）
 pub fn node_spatial_at(genome: &NetworkGenome, node_id: u64) -> Option<(usize, usize)> {
     if node_id == INPUT_INNOVATION {
@@ -852,19 +873,39 @@ pub fn remove_block(genome: &mut NetworkGenome, block: &NodeBlock) {
         }
     }
 
-    // 删除块节点
+    // 级联清理循环边：删除引用了被移除节点的 recurrent_parents 条目，
+    // 同时收集需要一并移除的孤立权重参数节点
+    let mut orphan_weight_ids: Vec<u64> = Vec::new();
+    for node in genome.nodes_mut().iter_mut() {
+        let before_len = node.recurrent_parents.len();
+        node.recurrent_parents.retain(|edge| {
+            if bid_set.contains(&edge.source_id) {
+                orphan_weight_ids.push(edge.weight_param_id);
+                false
+            } else {
+                true
+            }
+        });
+        if node.recurrent_parents.len() != before_len {
+            // 循环边被清理
+        }
+    }
+
+    // 合并孤立权重参数到删除集合
+    let orphan_set: HashSet<u64> = orphan_weight_ids.into_iter().collect();
+    let full_remove_set: HashSet<u64> = bid_set.union(&orphan_set).copied().collect();
+
+    // 删除块节点 + 孤立权重参数
     genome
         .nodes_mut()
-        .retain(|n| !bid_set.contains(&n.innovation_number));
+        .retain(|n| !full_remove_set.contains(&n.innovation_number));
 
-    // 清理被删参数节点的陈旧快照，防止 weight_snapshots 随演化代数无限膨胀。
-    // 孤立快照不影响正确性（restore_weights 按 build.layer_params 匹配），
-    // 但会导致序列化体积随代数增大；若以后做快照格式整理，也需同步处理陈旧条目，趁早修复成本最低。
+    // 清理被删参数节点的陈旧快照
     if let GenomeRepr::NodeLevel {
         weight_snapshots, ..
     } = &mut genome.repr
     {
-        for &id in &bid_set {
+        for &id in &full_remove_set {
             weight_snapshots.remove(&id);
         }
     }

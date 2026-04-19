@@ -696,6 +696,7 @@ fn test_mutation_names_are_known_operations() {
 
     let known = [
         "InsertLayer",
+        "InsertAtomicNode",
         "RemoveLayer",
         "ReplaceLayerType",
         "GrowHiddenSize",
@@ -917,8 +918,8 @@ fn test_evolution_spatial_seed_reproducibility() {
         (result.architecture_summary.clone(), result.fitness.primary)
     };
 
-    let (arch1, fit1) = run(123);
-    let (arch2, fit2) = run(123);
+    let (arch1, fit1) = run(200);
+    let (arch2, fit2) = run(200);
 
     assert_eq!(arch1, arch2, "相同 seed 应产生相同空间架构");
     assert!(
@@ -962,6 +963,7 @@ fn test_evolution_spatial_mutation_names_valid() {
 
     let known = [
         "InsertLayer",
+        "InsertAtomicNode",
         "RemoveLayer",
         "ReplaceLayerType",
         "GrowHiddenSize",

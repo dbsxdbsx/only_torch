@@ -948,6 +948,21 @@ impl NetworkGenome {
                 | NT::Dropout { .. } | NT::Maximum => {}
                 _ => {}
             }
+
+            // 循环边 FLOPs：每条边 = 2 * target_dim * source_dim（MatMul）+ target_dim（Add）
+            // 如有 seq_len，乘以时间步数（每步都要计算）
+            if !node.recurrent_parents.is_empty() {
+                let t_dim = out_shape.last().copied().unwrap_or(1);
+                let steps = self.seq_len.unwrap_or(1);
+                for edge in &node.recurrent_parents {
+                    let s_dim = nodes
+                        .iter()
+                        .find(|n| n.innovation_number == edge.weight_param_id && n.is_parameter())
+                        .map(|n| n.output_shape.get(1).copied().unwrap_or(1))
+                        .unwrap_or(1);
+                    total += steps * (2 * t_dim * s_dim + t_dim);
+                }
+            }
         }
 
         Ok(total)

@@ -16,14 +16,18 @@ use super::gene::{
     ActivationType, AggregateStrategy, INPUT_INNOVATION, LayerConfig, LayerGene, LossType,
     NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric, compatible_losses,
 };
-use super::migration::{activation_to_node_type, expand_gru, expand_lstm, expand_rnn};
+use super::migration::{
+    activation_to_node_type, expand_activation, expand_gru, expand_lstm, expand_rnn,
+};
 use super::node_ops::{
     NodeBlock, NodeBlockKind, add_skip_connection, commit_counter, create_insert_nodes,
     find_connectable_pairs, find_removable_skip_connections, insert_after, is_activation_node,
-    is_skip_projection_block, make_counter, node_main_path, node_param_count, node_spatial_at,
-    remove_block, remove_skip_connection, repair_param_input_dims, resize_conv2d_out,
-    resize_linear_out, resize_recurrent_out, sync_computation_shapes,
+    is_skip_projection_block, make_counter, node_main_path, node_out_dim_at,
+    node_output_shape_at, node_param_count, node_spatial_at, remove_block,
+    remove_skip_connection, repair_param_input_dims, resize_conv2d_out, resize_linear_out,
+    resize_recurrent_out, sync_computation_shapes,
 };
+use super::node_gene::{NodeGene, RecurrentEdge};
 use crate::nn::descriptor::NodeTypeDescriptor;
 use rand::Rng;
 use rand::prelude::SliceRandom;
@@ -255,8 +259,9 @@ impl MutationRegistry {
     /// Phase 1 注册表：拓扑搜索（偏向结构探索）
     pub fn phase1_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
-        // 结构变异权重上调
-        reg.register(0.25, InsertLayerMutation::default());
+        // 结构变异：模板块插入 + 原子节点插入
+        reg.register(0.20, InsertLayerMutation::default());
+        reg.register(0.10, InsertAtomicNodeMutation::default());
         reg.register(0.08, RemoveLayerMutation);
         reg.register(0.04, ReplaceLayerTypeMutation::default());
         reg.register(0.25, GrowHiddenSizeMutation);
@@ -281,6 +286,8 @@ impl MutationRegistry {
         // 序列模式专属
         if is_sequential {
             reg.register(0.10, MutateCellTypeMutation);
+            reg.register(0.08, AddRecurrentEdgeMutation);
+            reg.register(0.04, RemoveRecurrentEdgeMutation);
         }
         // 空间模式专属
         if is_spatial {
@@ -293,8 +300,9 @@ impl MutationRegistry {
     /// Phase 2 注册表：精炼（偏向超参数调优）
     pub fn phase2_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
-        // 结构变异权重下调
-        reg.register(0.08, InsertLayerMutation::default());
+        // 结构变异：精炼阶段原子节点插入权重提升
+        reg.register(0.06, InsertLayerMutation::default());
+        reg.register(0.08, InsertAtomicNodeMutation::default());
         reg.register(0.08, RemoveLayerMutation);
         reg.register(0.08, ReplaceLayerTypeMutation::default());
         reg.register(0.15, GrowHiddenSizeMutation);
@@ -319,6 +327,8 @@ impl MutationRegistry {
         // 序列模式专属
         if is_sequential {
             reg.register(0.10, MutateCellTypeMutation);
+            reg.register(0.06, AddRecurrentEdgeMutation);
+            reg.register(0.04, RemoveRecurrentEdgeMutation);
         }
         // 空间模式专属
         if is_spatial {
@@ -2564,5 +2574,415 @@ impl Mutation for RemoveConnectionMutation {
 
         let &agg_id = candidates.choose(rng).unwrap();
         remove_skip_connection(genome, agg_id).map_err(|e| MutationError::InternalError(e))
+    }
+}
+
+// ==================== InsertAtomicNodeMutation ====================
+
+/// 在主路径的两个块之间插入**单个**激活函数节点（NEAT "Add Node" 的等价操作）
+///
+/// 与 InsertLayerMutation 的区别：
+/// - InsertLayer 插入完整模板块（多节点，共享 block_id）
+/// - InsertAtomicNode 只插入一个激活函数节点（block_id = None，零参数）
+///
+/// 合法性保障：
+/// - 不在两个相邻的激活函数之间插入（避免连续激活）
+/// - 不在输出头之后插入
+/// - 通过 analyze() 验证形状合法性，失败则回滚
+pub struct InsertAtomicNodeMutation {
+    available_activations: Vec<ActivationType>,
+}
+
+impl Default for InsertAtomicNodeMutation {
+    fn default() -> Self {
+        Self {
+            available_activations: default_activations(),
+        }
+    }
+}
+
+impl Mutation for InsertAtomicNodeMutation {
+    fn name(&self) -> &str {
+        "InsertAtomicNode"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if !genome.is_node_level() || self.available_activations.is_empty() {
+            return false;
+        }
+        let blocks = node_main_path(genome);
+        if blocks.is_empty() {
+            return false;
+        }
+        // 至少存在一个插入点：非末尾块的 output_id（或 INPUT），且该点不在两个激活之间
+        let candidates = atomic_insert_candidates(&blocks, genome);
+        !candidates.is_empty()
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let blocks = node_main_path(genome);
+        let candidates = atomic_insert_candidates(&blocks, genome);
+        if candidates.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "没有合法的原子节点插入点".into(),
+            ));
+        }
+
+        let &after_id = candidates
+            .choose(rng)
+            .ok_or_else(|| MutationError::NotApplicable("没有可用的插入点".into()))?;
+
+        let act = self
+            .available_activations
+            .choose(rng)
+            .ok_or_else(|| MutationError::NotApplicable("没有可用的激活函数".into()))?;
+
+        let output_shape = node_output_shape_at(genome, after_id);
+        let start_inn = genome.peek_next_innovation();
+
+        let new_nodes = expand_activation(
+            after_id,
+            output_shape,
+            act,
+            &mut make_counter(genome),
+        );
+
+        let n = new_nodes.len() as u64; // 始终为 1
+        insert_after(genome, after_id, new_nodes)
+            .map_err(|e| MutationError::InternalError(e))?;
+        advance_node_counter(genome, n);
+
+        let analysis = genome.analyze();
+        if !analysis.is_valid {
+            // 回滚
+            let new_output_id = start_inn;
+            for node in genome.nodes_mut().iter_mut() {
+                for pid in node.parents.iter_mut() {
+                    if *pid == new_output_id {
+                        *pid = after_id;
+                    }
+                }
+            }
+            genome
+                .nodes_mut()
+                .retain(|nd| nd.innovation_number != start_inn);
+            reset_node_counter(genome, start_inn);
+            return Err(MutationError::ConstraintViolation(
+                "原子节点插入后图不合法".into(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+/// 收集原子节点的合法插入点
+///
+/// 返回可在其后插入激活函数的节点 ID 列表。
+/// 排除规则：
+/// - 不在输出头之后插入（取 blocks[..len-1]）
+/// - 不在两个激活函数之间插入（避免连续激活）
+fn atomic_insert_candidates(blocks: &[NodeBlock], genome: &NetworkGenome) -> Vec<u64> {
+    if blocks.is_empty() {
+        return Vec::new();
+    }
+
+    let mut candidates = Vec::new();
+
+    // 只在非末尾块的 output_id 之后插入（与 InsertLayer 相同的输出头保护）
+    // 若仅剩输出头，允许在 INPUT 之后插入
+    let insert_points: Vec<(u64, usize)> = if blocks.len() > 1 {
+        blocks[..blocks.len() - 1]
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (b.output_id, i))
+            .collect()
+    } else {
+        vec![(INPUT_INNOVATION, usize::MAX)]
+    };
+
+    for (after_id, block_idx) in insert_points {
+        let before_is_act = is_activation_node(genome, after_id);
+        // 查看下一个块是否也是激活函数
+        let next_is_act = if block_idx < blocks.len().saturating_sub(1) {
+            blocks
+                .get(block_idx + 1)
+                .map(|b| b.kind.is_activation())
+                .unwrap_or(false)
+        } else if block_idx == usize::MAX {
+            // INPUT 后面第一个块
+            blocks.first().map(|b| b.kind.is_activation()).unwrap_or(false)
+        } else {
+            false
+        };
+
+        // 如果前后都是激活函数，跳过（避免三连激活）
+        if before_is_act && next_is_act {
+            continue;
+        }
+
+        candidates.push(after_id);
+    }
+
+    candidates
+}
+
+// ==================== AddRecurrentEdgeMutation ====================
+
+/// 在序列基因组中添加一条循环边（EXAMM 风格 recurrent connection）
+///
+/// 操作步骤：
+/// 1. 随机选取源节点 `source` 和目标节点 `target`（均为主路径上的非叶节点）
+/// 2. 创建一个 `Parameter` 节点，持有权重矩阵 `[target_dim, source_dim]`
+/// 3. 在 `target.recurrent_parents` 中添加 `(source_id, weight_param_id)`
+///
+/// 合法性保障：
+/// - 仅序列模式（`seq_len.is_some()`）可用
+/// - 不在已有 cell-based 循环节点的基因组中使用（范式互斥）
+/// - 不允许重复的 `(source, target)` 循环边
+/// - 目标不能是叶节点（Parameter/Input/State）
+pub struct AddRecurrentEdgeMutation;
+
+impl Mutation for AddRecurrentEdgeMutation {
+    fn name(&self) -> &str {
+        "AddRecurrentEdge"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if !genome.is_node_level() || genome.seq_len.is_none() {
+            return false;
+        }
+        // 范式互斥：不能已有 cell-based 循环节点
+        let has_cell = genome.nodes().iter().any(|n| {
+            n.enabled
+                && matches!(
+                    n.node_type,
+                    NodeTypeDescriptor::CellRnn { .. }
+                        | NodeTypeDescriptor::CellLstm { .. }
+                        | NodeTypeDescriptor::CellGru { .. }
+                )
+        });
+        if has_cell {
+            return false;
+        }
+        // 至少需要 2 个非叶节点（作为源和目标）
+        let computation_nodes: Vec<_> = genome
+            .nodes()
+            .iter()
+            .filter(|n| n.enabled && !n.is_leaf())
+            .collect();
+        computation_nodes.len() >= 2
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let computation_ids: Vec<u64> = genome
+            .nodes()
+            .iter()
+            .filter(|n| n.enabled && !n.is_leaf())
+            .map(|n| n.innovation_number)
+            .collect();
+
+        if computation_ids.len() < 2 {
+            return Err(MutationError::NotApplicable(
+                "计算节点不足，无法添加循环边".into(),
+            ));
+        }
+
+        // 随机选择源和目标（允许不同或相同节点用于自环）
+        let &source_id = computation_ids
+            .choose(rng)
+            .ok_or_else(|| MutationError::NotApplicable("无可用源节点".into()))?;
+
+        // 目标排除已有同一 source 的循环边
+        let target_candidates: Vec<u64> = computation_ids
+            .iter()
+            .filter(|&&tid| {
+                let node = genome
+                    .nodes()
+                    .iter()
+                    .find(|n| n.innovation_number == tid)
+                    .unwrap();
+                !node
+                    .recurrent_parents
+                    .iter()
+                    .any(|e| e.source_id == source_id)
+            })
+            .copied()
+            .collect();
+
+        if target_candidates.is_empty() {
+            return Err(MutationError::NotApplicable(
+                "所有候选目标已与该源存在循环边".into(),
+            ));
+        }
+
+        let &target_id = target_candidates
+            .choose(rng)
+            .ok_or_else(|| MutationError::NotApplicable("无可用目标节点".into()))?;
+
+        // 获取源和目标的特征维度（取输出形状最后一维）
+        let source_shape = node_output_shape_at(genome, source_id);
+        let target_shape = node_output_shape_at(genome, target_id);
+        let source_dim = *source_shape.last().unwrap_or(&1);
+        let target_dim = *target_shape.last().unwrap_or(&1);
+
+        // 创建权重参数节点 [target_dim, source_dim]
+        let start_inn = genome.peek_next_innovation();
+        let weight_param = NodeGene::new(
+            start_inn,
+            NodeTypeDescriptor::Parameter,
+            vec![target_dim, source_dim],
+            vec![],
+            None,
+        );
+        let weight_param_id = weight_param.innovation_number;
+
+        genome.nodes_mut().push(weight_param);
+        advance_node_counter(genome, 1);
+
+        // 在目标节点添加循环边引用
+        let target_node = genome
+            .nodes_mut()
+            .iter_mut()
+            .find(|n| n.innovation_number == target_id)
+            .ok_or_else(|| MutationError::InternalError("目标节点不存在".into()))?;
+
+        target_node.recurrent_parents.push(RecurrentEdge {
+            source_id,
+            weight_param_id,
+        });
+
+        // 验证合法性
+        let analysis = genome.analyze();
+        if !analysis.is_valid {
+            // 回滚：移除权重参数和循环边
+            let target_node = genome
+                .nodes_mut()
+                .iter_mut()
+                .find(|n| n.innovation_number == target_id)
+                .unwrap();
+            target_node
+                .recurrent_parents
+                .retain(|e| e.weight_param_id != weight_param_id);
+            genome
+                .nodes_mut()
+                .retain(|n| n.innovation_number != weight_param_id);
+            reset_node_counter(genome, start_inn);
+
+            return Err(MutationError::ConstraintViolation(
+                "添加循环边后图不合法".into(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+// ==================== RemoveRecurrentEdgeMutation ====================
+
+/// 从序列基因组中移除一条循环边及其关联的权重参数节点
+pub struct RemoveRecurrentEdgeMutation;
+
+impl Mutation for RemoveRecurrentEdgeMutation {
+    fn name(&self) -> &str {
+        "RemoveRecurrentEdge"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if !genome.is_node_level() {
+            return false;
+        }
+        genome
+            .nodes()
+            .iter()
+            .any(|n| n.enabled && !n.recurrent_parents.is_empty())
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        _constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        // 收集所有 (target_id, edge_index) 对
+        let mut candidates: Vec<(u64, usize)> = Vec::new();
+        for node in genome.nodes().iter() {
+            if node.enabled && !node.recurrent_parents.is_empty() {
+                for (i, _) in node.recurrent_parents.iter().enumerate() {
+                    candidates.push((node.innovation_number, i));
+                }
+            }
+        }
+
+        if candidates.is_empty() {
+            return Err(MutationError::NotApplicable("没有可移除的循环边".into()));
+        }
+
+        let &(target_id, edge_idx) = candidates
+            .choose(rng)
+            .ok_or_else(|| MutationError::NotApplicable("无法选择循环边".into()))?;
+
+        // 获取要删除的权重参数 ID
+        let weight_param_id = genome
+            .nodes()
+            .iter()
+            .find(|n| n.innovation_number == target_id)
+            .and_then(|n| n.recurrent_parents.get(edge_idx))
+            .map(|e| e.weight_param_id)
+            .ok_or_else(|| MutationError::InternalError("循环边索引越界".into()))?;
+
+        // 删除循环边
+        let target_node = genome
+            .nodes_mut()
+            .iter_mut()
+            .find(|n| n.innovation_number == target_id)
+            .ok_or_else(|| MutationError::InternalError("目标节点不存在".into()))?;
+        target_node.recurrent_parents.remove(edge_idx);
+
+        // 检查权重参数是否被其他循环边引用
+        let still_referenced = genome.nodes().iter().any(|n| {
+            n.recurrent_parents
+                .iter()
+                .any(|e| e.weight_param_id == weight_param_id)
+        });
+
+        if !still_referenced {
+            // 删除孤立权重参数节点
+            genome
+                .nodes_mut()
+                .retain(|n| n.innovation_number != weight_param_id);
+
+            // 清理权重快照
+            if let super::gene::GenomeRepr::NodeLevel {
+                weight_snapshots, ..
+            } = &mut genome.repr
+            {
+                weight_snapshots.remove(&weight_param_id);
+            }
+        }
+
+        Ok(())
     }
 }

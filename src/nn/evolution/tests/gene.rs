@@ -1,5 +1,6 @@
 use crate::nn::evolution::gene::*;
 use crate::tensor::Tensor;
+use rand::SeedableRng;
 use std::collections::HashMap;
 
 // ==================== 基本构造 ====================
@@ -2007,4 +2008,207 @@ fn test_validate_skip_edge_spatial_different_hw() {
     });
 
     assert!(!genome.validate_skip_edge_domains());
+}
+
+// ==================== 循环边 (recurrent_parents) 测试 ====================
+
+use crate::nn::evolution::node_gene::RecurrentEdge;
+
+/// 创建不含 cell-based 循环的序列 NodeLevel 基因组
+///
+/// 先创建 Flat genome → Linear(4) → ReLU → [Linear(1)]，
+/// 然后手动设置 seq_len 使其成为序列模式，再 migrate 到 NodeLevel。
+/// 这样基因组没有 CellRnn/CellLstm/CellGru 节点，不会触发范式冲突。
+fn seq_flat_node_level_genome() -> NetworkGenome {
+    let mut g = NetworkGenome::minimal(2, 1);
+    let i1 = g.next_innovation_number();
+    let i2 = g.next_innovation_number();
+    g.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: i1,
+            layer_config: LayerConfig::Linear { out_features: 4 },
+            enabled: true,
+        },
+    );
+    g.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: i2,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::ReLU,
+            },
+            enabled: true,
+        },
+    );
+    g.seq_len = Some(5);
+    g.migrate_to_node_level().unwrap();
+    g
+}
+
+/// 创建带循环边的序列基因组（无 cell-based 循环）
+fn seq_genome_with_recurrent_edge() -> NetworkGenome {
+    let mut g = seq_flat_node_level_genome();
+
+    let computation_ids: Vec<u64> = g
+        .nodes()
+        .iter()
+        .filter(|n| n.enabled && !n.is_leaf())
+        .map(|n| n.innovation_number)
+        .collect();
+
+    assert!(computation_ids.len() >= 2, "需要至少 2 个计算节点");
+
+    let source_id = computation_ids[0];
+    let target_id = computation_ids[1];
+
+    // 获取源/目标维度
+    let analysis = g.analyze();
+    let source_dim = analysis
+        .shape_of(source_id)
+        .and_then(|s| s.last().copied())
+        .unwrap_or(2);
+    let target_dim = analysis
+        .shape_of(target_id)
+        .and_then(|s| s.last().copied())
+        .unwrap_or(2);
+
+    // 创建权重参数节点
+    let weight_inn = g.peek_next_innovation();
+    let weight_node = crate::nn::evolution::node_gene::NodeGene::new(
+        weight_inn,
+        crate::nn::descriptor::NodeTypeDescriptor::Parameter,
+        vec![target_dim, source_dim],
+        vec![],
+        None,
+    );
+    g.nodes_mut().push(weight_node);
+
+    // 在 NodeLevel repr 中推进 innovation 计数器
+    if let crate::nn::evolution::gene::GenomeRepr::NodeLevel {
+        next_innovation, ..
+    } = &mut g.repr
+    {
+        *next_innovation = weight_inn + 1;
+    }
+
+    // 添加循环边
+    let target_node = g
+        .nodes_mut()
+        .iter_mut()
+        .find(|n| n.innovation_number == target_id)
+        .unwrap();
+    target_node.recurrent_parents.push(RecurrentEdge {
+        source_id,
+        weight_param_id: weight_inn,
+    });
+
+    g
+}
+
+#[test]
+fn test_recurrent_edge_analysis_valid() {
+    let g = seq_genome_with_recurrent_edge();
+    let analysis = g.analyze();
+    assert!(
+        analysis.is_valid,
+        "合法循环边应通过分析: {:?}",
+        analysis.errors
+    );
+    assert!(analysis.has_recurrent_edges, "应检测到循环边");
+}
+
+#[test]
+fn test_recurrent_edge_analysis_missing_source() {
+    let mut g = seq_genome_with_recurrent_edge();
+    // 将源 ID 改为不存在的值
+    let target_node = g
+        .nodes_mut()
+        .iter_mut()
+        .find(|n| !n.recurrent_parents.is_empty())
+        .unwrap();
+    target_node.recurrent_parents[0].source_id = 9999;
+
+    let analysis = g.analyze();
+    assert!(!analysis.is_valid, "悬空循环源应导致分析失败");
+    assert!(
+        analysis.errors.iter().any(|e| matches!(
+            e,
+            crate::nn::evolution::node_gene::AnalysisError::RecurrentMissingSource { .. }
+        )),
+        "应包含 RecurrentMissingSource 错误"
+    );
+}
+
+#[test]
+fn test_recurrent_edge_analysis_invalid_weight() {
+    let mut g = seq_genome_with_recurrent_edge();
+    // 将权重 param_id 改为不存在的值
+    let target_node = g
+        .nodes_mut()
+        .iter_mut()
+        .find(|n| !n.recurrent_parents.is_empty())
+        .unwrap();
+    target_node.recurrent_parents[0].weight_param_id = 8888;
+
+    let analysis = g.analyze();
+    assert!(!analysis.is_valid, "无效权重参数应导致分析失败");
+    assert!(
+        analysis.errors.iter().any(|e| matches!(
+            e,
+            crate::nn::evolution::node_gene::AnalysisError::RecurrentInvalidWeight { .. }
+        )),
+        "应包含 RecurrentInvalidWeight 错误"
+    );
+}
+
+#[test]
+fn test_recurrent_edge_flops_included() {
+    let g = seq_genome_with_recurrent_edge();
+    let flops_with = g.total_flops().unwrap();
+
+    // 创建相同结构但无循环边的基因组
+    let mut g_no_rec = NetworkGenome::minimal_sequential(2, 1);
+    g_no_rec.migrate_to_node_level().unwrap();
+    let flops_without = g_no_rec.total_flops().unwrap();
+
+    assert!(
+        flops_with > flops_without,
+        "含循环边的 FLOPs ({}) 应大于无循环边 ({})",
+        flops_with,
+        flops_without
+    );
+}
+
+#[test]
+fn test_recurrent_edge_build_and_forward() {
+    let g = seq_genome_with_recurrent_edge();
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let build = g.build(&mut rng).expect("含循环边基因组 build 应成功");
+
+    // 输入 [batch=1, seq_len, features=2]
+    let seq_len = g.seq_len.unwrap();
+    let input = Tensor::ones(&[1, seq_len, 2]);
+    build.input.set_value(&input).unwrap();
+
+    build.graph.forward(&build.output).unwrap();
+    let output = build.output.value().unwrap().unwrap();
+    let shape = output.shape();
+
+    assert_eq!(shape[0], 1, "batch 维度应为 1");
+    assert_eq!(shape[1], seq_len, "seq_len 维度应匹配");
+    assert!(
+        output.to_vec().iter().all(|v| v.is_finite()),
+        "所有输出值应有限"
+    );
+}
+
+#[test]
+fn test_no_recurrent_edges_analysis() {
+    let mut g = NetworkGenome::minimal_sequential(2, 1);
+    g.migrate_to_node_level().unwrap();
+    let analysis = g.analyze();
+    assert!(analysis.is_valid);
+    assert!(!analysis.has_recurrent_edges, "无循环边基因组应标记为 false");
 }

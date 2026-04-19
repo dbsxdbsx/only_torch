@@ -423,7 +423,8 @@ pub trait Mutation: Send + Sync {
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
-| `InsertLayer` | **0.25** | ✅ | 域感知：Flat 域选 Linear/Activation，Sequence 域选 RNN/LSTM/GRU，Spatial 域选 Conv2d(80%)/Pool2d(20%) |
+| `InsertLayer` | **0.20** | ✅ | 域感知：Flat 域选 Linear/Activation，Sequence 域选 RNN/LSTM/GRU，Spatial 域选 Conv2d(80%)/Pool2d(20%) |
+| `InsertAtomicNode` | 0.10 | ✅ | NEAT "Add Node"：在主路径两块之间插入单个激活节点（15 种激活函数随机选择）。保护输出头、避免连续激活 |
 | `RemoveLayer` | 0.08 | ✅ | 随机移除非输出头的隐藏层（早期偏向增长） |
 | `ReplaceLayerType` | 0.04 | | Activation 内部互换（ReLU↔Tanh↔Sigmoid…共 13 种） |
 | `GrowHiddenSize` | **0.25** | | 增大尺寸（40% +step, 40% ×1.5, 20% ×2，step = max(1, current/4)） |
@@ -433,13 +434,14 @@ pub trait Mutation: Send + Sync {
 | `MutateLearningRate` | 0.05 | | Log ladder 13 级 [1e-5, 1e-1] |
 | `MutateOptimizer` | 0.02 | | Adam↔SGD 切换 + lr band snap |
 
-> Phase 1 特点：InsertLayer 和 Grow 权重大幅提升，鼓励快速探索网络拓扑；Remove 和 Shrink 权重压低，避免早期裁剪。
+> Phase 1 特点：InsertLayer 和 Grow 权重大幅提升，鼓励快速探索网络拓扑；Remove 和 Shrink 权重压低，避免早期裁剪。InsertAtomicNode 以 0.10 权重提供 NEAT 级精细探索。
 
 **Phase 2：精炼（`phase2_registry`）**
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
 | `InsertLayer` | 0.08 | ✅ | 同上 |
+| `InsertAtomicNode` | 0.10 | ✅ | 同上 |
 | `RemoveLayer` | 0.08 | ✅ | 同上 |
 | `ReplaceLayerType` | 0.08 | | 同上 |
 | `GrowHiddenSize` | 0.15 | | 同上 |
@@ -458,6 +460,13 @@ pub trait Mutation: Send + Sync {
 | `AddConnection` | 0.08 | 0.06 | ✅ | 选择两个满足拓扑序的节点，添加父边；形状不兼容时自动插入投影/聚合节点 |
 | `RemoveConnection` | 0.05 | 0.05 | ✅ | 移除非关键前向父边（保持图连通性） |
 
+**循环边变异（序列模式专属）**：
+
+| 变异 | Phase 1 | Phase 2 | 结构性 | 核心逻辑 |
+|---|---|---|---|---|
+| `AddRecurrentEdge` | 0.08 | 0.08 | ✅ | EXAMM 风格：在两个非叶计算节点间添加循环连接 + 权重参数节点。与 cell-based 循环互斥 |
+| `RemoveRecurrentEdge` | 0.04 | 0.04 | ✅ | 移除循环边及其孤立权重参数节点 |
+
 所有变异在 NodeLevel 上以模板组（`block_id`）为操作单位：InsertLayer 展开完整模板组，RemoveLayer 删除整个模板组，Grow/Shrink 修改模板组内的 Parameter 形状。
 
 ### 5.3 合法性保障
@@ -467,6 +476,15 @@ pub trait Mutation: Send + Sync {
 - **输出头保护**：不删除、不修改、不替换、不在其之后插入
 - **形状兼容**：通过试探式 `analyze()` 统一检测（替代旧 `resolve_dimensions()`）
 - **规模约束**：`max_layers` / `max_hidden_size` / `max_total_params`
+- **循环边不变量**（8 条）：
+  1. 悬空源引用检测（`RecurrentMissingSource`）
+  2. 权重参数节点存在性检查（`RecurrentInvalidWeight`）
+  3. 权重参数必须为 `Parameter` 类型
+  4. 权重形状 `[target_dim, source_dim]` 兼容性（`RecurrentShapeMismatch`）
+  5. 仅 Flat/Sequence 域允许循环边（不支持 Spatial）
+  6. 范式互斥：edge-based 与 cell-based（CellRnn/LSTM/GRU）不共存（`RecurrentParadigmConflict`）
+  7. 删除节点后级联清理引用已删节点的循环边
+  8. 孤立权重参数节点随循环边删除同步回收
 - **连续 Activation 禁止**：不允许两个 Activation 相邻
 - **拓扑约束**：新增连接必须满足 DAG 拓扑序（不成环），由 `GenomeAnalysis` 环检测保障
 - **域链合法性**：序列模型 `Sequence* → Flat*`（不允许回溯），空间模型 `Spatial* → Flatten → Flat*`
@@ -600,7 +618,7 @@ src/nn/evolution/
 ├── gene.rs             NetworkGenome, GenomeRepr, LayerGene, LayerConfig, SkipEdge, TrainingConfig, TaskMetric
 ├── node_gene.rs        NodeGene 数据结构（innovation_number, node_type, output_shape, parents, block_id）
 ├── node_ops.rs         NodeBlock / NodeBlockKind / node_main_path()：节点级基因组的模板组分析
-├── mutation.rs         Mutation trait + MutationRegistry + 12+条件变异操作（NodeLevel 上以模板组为单位）
+├── mutation.rs         Mutation trait + MutationRegistry + 15+条件变异操作（NodeLevel 上以模板组/原子节点/循环边为单位）
 ├── migration.rs        LayerLevel → NodeLevel 迁移（migrate_to_node_level + TemplateExpander）
 ├── selection.rs        NSGA-II 多目标选择 + Pareto Archive 管理（pareto_rank, crowding_distance, nsga2_select, update_archive）
 ├── builder.rs          Genome → GraphDescriptor → Graph 转换 + to/from_graph_descriptor + backfill_node_group_tags + Lamarckian 权重管理
@@ -818,7 +836,7 @@ result.export_onnx("evolved_model.onnx")?;
 
 当前系统在存储层统一使用节点粒度表示（`Vec<NodeGene>`），但所有变异操作的实际粒度仍为 **模板块（Block）级别**——`InsertLayer` 调用 `expand_linear()` / `expand_conv2d()` / `expand_rnn()` 等函数，一次性插入整个多节点模板（如 Linear = MatMul + Add + 2×Parameter）。这相当于在"器官"级别做移植，而非在"细胞"级别做增减。
 
-**唯一内核表示**：系统只有 NodeLevel 一种运行时表示。所谓"层级变异"和"节点级变异"并非两套独立系统，而是同一个 NodeLevel DAG 上不同粒度的操作——模板块变异（InsertLayer 等）一次操作多个节点的模板组，原子节点变异（InsertAtomicNode，待实现）一次操作单个节点。两者在同一个 `Vec<NodeGene>` 上共存，通过 `MutationRegistry` 的权重配比控制使用比例。无需维护"层级模式"与"节点模式"的切换——粒度是变异操作的属性，不是基因组的属性。
+**唯一内核表示**：系统只有 NodeLevel 一种运行时表示。所谓"层级变异"和"节点级变异"并非两套独立系统，而是同一个 NodeLevel DAG 上不同粒度的操作——模板块变异（InsertLayer 等）一次操作多个节点的模板组，原子节点变异（InsertAtomicNode）一次操作单个节点，循环边变异（AddRecurrentEdge / RemoveRecurrentEdge）操作节点间的时延连接。三者在同一个 `Vec<NodeGene>` 上共存，通过 `MutationRegistry` 的权重配比控制使用比例。无需维护"层级模式"与"节点模式"的切换——粒度是变异操作的属性，不是基因组的属性。
 
 下述路线图旨在：（1）增强 Spatial 域能力解决当前 CNN 演化瓶颈；（2）将变异粒度逐步扩展到真正的单节点级别。
 
@@ -833,14 +851,20 @@ result.export_onnx("evolved_model.onnx")?;
 | FLOPs 作为 complexity metric | ✅ | `ComplexityMetric::FLOPs` + `NetworkGenome::total_flops()`：per-node FLOPs 估算覆盖 MatMul（2×out×in）、Conv2d（2×out×Cin×kH×kW）、BatchNorm（4×elements）、Pool、激活等 |
 | Conv2d resize 修复（额外发现） | ✅ | 修复 `resize_conv2d_out` 和 `repair_param_input_dims_inner` 中 Conv2d bias/gamma/beta 参数形状更新错误——通过 Conv2d 节点的父边关系精确定位 kernel 参数，避免误修改同 block 内的 BN 参数 |
 
-#### 阶段 B：NEAT/EXAMM 级别——Flat & Sequence 域的单节点演化
+#### 阶段 B：NEAT/EXAMM 级别——Flat & Sequence 域的单节点演化 ✅
 
 覆盖非空间世界（Flat + Sequence），目标是达到与 NEAT（2002）/ EXAMM（2019）同等的变异粒度。模板块变异（InsertLayer 等）继续保留，作为"大步跳跃"的探索手段；原子节点变异作为"精细雕刻"的新增能力，两者通过注册表权重共存。
 
-| 方向 | 难度 | 说明 |
+| 方向 | 状态 | 说明 |
 |---|---|---|
-| InsertAtomicNode | 中 | 在 DAG 的任意一条边上插入**单个**新节点（如一个 MatMul 或 Tanh），并重新连线。打通 NEAT 风格的单节点增长，与现有模板块 InsertLayer 共存——前者精细雕刻，后者大步跳跃 |
-| State 节点时序语义扩展 | 中 | 丰富 State 节点的时序行为定义（可学习门控、多步延迟等），支持更复杂的记忆机制。与 InsertAtomicNode 组合后，系统可在循环图上自由增减单个门控节点和循环边，实现 EXAMM 论文中"从简单神经元演化出类 LSTM 结构"的能力 |
+| InsertAtomicNode | ✅ | 在主路径两块之间插入**单个**激活函数节点（ReLU/Tanh/Sigmoid 等 15 种）。NEAT "Add Node" 的等价操作。保护输出头、避免连续激活、形状自动推导。Phase 1 权重 0.10，Phase 2 权重 0.10 |
+| 通用循环边（RecurrentEdge） | ✅ | EXAMM 风格 edge-based 循环连接——`NodeGene::recurrent_parents` 列表记录 `(source_id, weight_param_id)` 对。运行时语义：`target_input += W @ prev_activation[source]`。支持自回路和跨节点循环。与 cell-based 循环（CellRnn/LSTM/GRU）互斥（范式排他） |
+| AddRecurrentEdge / RemoveRecurrentEdge | ✅ | 序列模式专属变异：添加/删除循环边及其权重参数节点。Phase 1 权重 0.08/0.04，Phase 2 权重 0.08/0.04。非序列基因组自动跳过。删除时级联清理孤立权重参数 |
+| GenomeAnalysis 循环边验证 | ✅ | 8 条合法性不变量：悬空源引用、无效权重参数、形状兼容性（`[target_dim, source_dim]`）、序列模式要求、范式互斥（edge-based vs cell-based）。所有变异的 `apply()` 均通过 post-analysis 检查 |
+| build_recurrent_from_nodes | ✅ | 时间步展开构图路径：创建 `[batch, seq_len, features]` 输入 → 共享 Parameter Var → 逐时间步按拓扑序计算 + 注入循环贡献 → 堆叠输出。支持 BPTT 梯度传播 |
+| 循环边 FLOPs 估算 | ✅ | 每条循环边：`steps × (2 × target_dim × source_dim + target_dim)` FLOPs。已集成到 `total_flops()` |
+| ONNX 导出屏蔽 | ✅ | 含 edge-based 循环边的基因组不支持 ONNX 导出（展开图含动态时间步共享权重），返回明确错误提示使用 .otm 格式 |
+| 级联清理 | ✅ | `remove_block()` 删除引用已删节点的循环边，同时回收孤立权重参数节点及其快照 |
 
 #### 阶段 C：EXACT 级别——Spatial 域的 Feature Map 粒度演化
 
@@ -952,4 +976,4 @@ result.export_onnx("evolved_model.onnx")?;
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-18（v8: 阶段 A 完成——Conv2d+Pool2d 种子、MutateStride 变异、SizeConstraints 空间域调优、FLOPs ComplexityMetric、Conv2d resize/kernel 修复；Conv-BN-ReLU 复合模板实测无用已移除；MNIST 7 代达 95%，542 个测试通过）*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-19（v9: 阶段 B 完成——InsertAtomicNode 变异（NEAT Add Node）、RecurrentEdge 循环边（EXAMM 风格 edge-based 循环）、AddRecurrentEdge/RemoveRecurrentEdge 变异、build_recurrent_from_nodes 时间步展开构图、GenomeAnalysis 8 条循环边合法性不变量、FLOPs 估算扩展、ONNX 导出屏蔽、级联清理；571 个测试通过）*

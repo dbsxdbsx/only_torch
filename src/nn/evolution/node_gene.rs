@@ -48,6 +48,14 @@ pub enum AnalysisError {
     IncompatibleShapes { node_id: u64, message: String },
     /// 没有任何启用的节点
     Empty,
+    /// 循环边引用了不存在的源节点
+    RecurrentMissingSource { node_id: u64, source_id: u64 },
+    /// 循环边的权重参数节点无效（不存在或非 Parameter 类型）
+    RecurrentInvalidWeight { node_id: u64, weight_param_id: u64, reason: String },
+    /// 循环边的形状不兼容（权重矩阵维度与源/目标不匹配）
+    RecurrentShapeMismatch { node_id: u64, source_id: u64, message: String },
+    /// 循环边与 cell-based 循环范式冲突
+    RecurrentParadigmConflict { node_id: u64, message: String },
 }
 
 impl std::fmt::Display for AnalysisError {
@@ -61,11 +69,37 @@ impl std::fmt::Display for AnalysisError {
                 write!(f, "节点 {node_id} 形状不兼容：{message}")
             }
             Self::Empty => write!(f, "基因组中没有启用的节点"),
+            Self::RecurrentMissingSource { node_id, source_id } => {
+                write!(f, "节点 {node_id} 的循环边引用了不存在的源节点 {source_id}")
+            }
+            Self::RecurrentInvalidWeight { node_id, weight_param_id, reason } => {
+                write!(f, "节点 {node_id} 的循环边权重参数 {weight_param_id} 无效：{reason}")
+            }
+            Self::RecurrentShapeMismatch { node_id, source_id, message } => {
+                write!(f, "节点 {node_id} ← 源 {source_id} 循环边形状不兼容：{message}")
+            }
+            Self::RecurrentParadigmConflict { node_id, message } => {
+                write!(f, "节点 {node_id} 循环范式冲突：{message}")
+            }
         }
     }
 }
 
 impl std::error::Error for AnalysisError {}
+
+// ==================== RecurrentEdge ====================
+
+/// 单条循环边：描述从 `source_id` 到目标节点的时延连接
+///
+/// 运行时语义：`target_input += weight @ prev_activation[source_id]`
+/// 其中 `weight` 由 `weight_param_id` 指向的 Parameter 节点持有。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RecurrentEdge {
+    /// 提供上一时间步输出的源节点创新号
+    pub source_id: u64,
+    /// 持有循环权重矩阵 `[target_dim, source_dim]` 的 Parameter 节点创新号
+    pub weight_param_id: u64,
+}
 
 // ==================== NodeGene ====================
 
@@ -83,6 +117,14 @@ impl std::error::Error for AnalysisError {}
 /// 模板展开的节点组共享同一个 `block_id`，细粒度单节点变异产生的节点 `block_id = None`。
 /// 这既允许 Grow/Shrink/Remove 以"组"为单位操作，也为将来的 NEAT crossover 打基础
 /// （交叉时以 block 为单位对齐，不会把模板组的节点拆散到不同父本）。
+///
+/// # recurrent_parents（循环边）
+/// 存储指向本节点的时延循环连接 `(source_id, weight_param_id)`：
+/// - `source_id`: 提供上一时间步输出的源节点创新号
+/// - `weight_param_id`: 持有循环权重矩阵的 Parameter 节点创新号
+/// 循环边不参与前向 DAG 拓扑排序，仅在时序展开时注入上一时间步的激活值。
+/// 此字段仅在序列模式（`seq_len.is_some()`）的 edge-based 循环范式中有效，
+/// 与 cell-based 循环（CellRnn/CellLstm/CellGru）互斥。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeGene {
     /// NEAT 风格创新号：单调递增，跨代唯一
@@ -97,10 +139,17 @@ pub struct NodeGene {
     pub enabled: bool,
     /// 模板组标识：`Some(id)` 属于某个高层模板，`None` 为独立节点
     pub block_id: Option<u64>,
+    /// 循环边列表：`(source_id, weight_param_id)` 对
+    ///
+    /// - `source_id`: 上一时间步提供激活的源节点
+    /// - `weight_param_id`: 对应的 Parameter 节点，持有循环权重 `[target_dim, source_dim]`
+    /// - 仅序列模式有效，与 cell-based 循环互斥
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recurrent_parents: Vec<RecurrentEdge>,
 }
 
 impl NodeGene {
-    /// 创建启用状态的节点基因
+    /// 创建启用状态的节点基因（无循环边）
     pub fn new(
         innovation_number: u64,
         node_type: NodeTypeDescriptor,
@@ -115,6 +164,7 @@ impl NodeGene {
             parents,
             enabled: true,
             block_id,
+            recurrent_parents: Vec::new(),
         }
     }
 
@@ -667,6 +717,8 @@ pub struct GenomeAnalysis {
     pub is_valid: bool,
     /// 硬错误列表（任何一条存在则 is_valid = false）
     pub errors: Vec<AnalysisError>,
+    /// 基因组是否包含 edge-based 循环边
+    pub has_recurrent_edges: bool,
 }
 
 impl GenomeAnalysis {
@@ -784,6 +836,119 @@ impl GenomeAnalysis {
             domains.insert(id, infer_domain(&node.node_type, &parent_doms));
         }
 
+        // ── 循环边验证 ──
+        let has_recurrent_edges = enabled.iter().any(|n| !n.recurrent_parents.is_empty());
+
+        if has_recurrent_edges {
+            // 检测是否存在 cell-based 循环节点（范式互斥检查）
+            let has_cell_recurrent = enabled.iter().any(|n| {
+                matches!(
+                    n.node_type,
+                    NodeTypeDescriptor::CellRnn { .. }
+                        | NodeTypeDescriptor::CellLstm { .. }
+                        | NodeTypeDescriptor::CellGru { .. }
+                )
+            });
+
+            for node in &enabled {
+                if node.recurrent_parents.is_empty() {
+                    continue;
+                }
+
+                let target_id = node.innovation_number;
+
+                // 范式互斥：edge-based 循环与 cell-based 循环不共存
+                if has_cell_recurrent {
+                    errors.push(AnalysisError::RecurrentParadigmConflict {
+                        node_id: target_id,
+                        message: "edge-based 循环边与 cell-based 循环节点不可共存".into(),
+                    });
+                }
+
+                for edge in &node.recurrent_parents {
+                    // 源节点必须存在
+                    let source_node = enabled
+                        .iter()
+                        .find(|n| n.innovation_number == edge.source_id);
+                    if source_node.is_none() && edge.source_id != input_id {
+                        errors.push(AnalysisError::RecurrentMissingSource {
+                            node_id: target_id,
+                            source_id: edge.source_id,
+                        });
+                        continue;
+                    }
+
+                    // 权重参数节点必须存在且为 Parameter 类型
+                    let weight_node = enabled
+                        .iter()
+                        .find(|n| n.innovation_number == edge.weight_param_id);
+                    match weight_node {
+                        None => {
+                            errors.push(AnalysisError::RecurrentInvalidWeight {
+                                node_id: target_id,
+                                weight_param_id: edge.weight_param_id,
+                                reason: "权重参数节点不存在".into(),
+                            });
+                            continue;
+                        }
+                        Some(w) if !w.is_parameter() => {
+                            errors.push(AnalysisError::RecurrentInvalidWeight {
+                                node_id: target_id,
+                                weight_param_id: edge.weight_param_id,
+                                reason: format!(
+                                    "期望 Parameter 类型，实际为 {:?}",
+                                    w.node_type
+                                ),
+                            });
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    let weight_node = weight_node.unwrap();
+
+                    // 形状兼容性：权重应为 [target_dim, source_dim]
+                    let target_shape = output_shapes.get(&target_id);
+                    let source_shape = if edge.source_id == input_id {
+                        output_shapes.get(&input_id)
+                    } else {
+                        output_shapes.get(&edge.source_id)
+                    };
+
+                    if let (Some(t_shape), Some(s_shape)) = (target_shape, source_shape) {
+                        // Flat 域：target_dim = t_shape[1], source_dim = s_shape[1]
+                        // Sequence 域：target_dim = t_shape[2], source_dim = s_shape[2]
+                        let (t_dim, s_dim) = if t_shape.len() == 3 && s_shape.len() == 3 {
+                            (t_shape[2], s_shape[2])
+                        } else if t_shape.len() == 2 && s_shape.len() == 2 {
+                            (t_shape[1], s_shape[1])
+                        } else {
+                            errors.push(AnalysisError::RecurrentShapeMismatch {
+                                node_id: target_id,
+                                source_id: edge.source_id,
+                                message: format!(
+                                    "循环边仅支持 Flat/Sequence 域，目标形状={:?}, 源形状={:?}",
+                                    t_shape, s_shape
+                                ),
+                            });
+                            continue;
+                        };
+
+                        let expected_weight = vec![t_dim, s_dim];
+                        if weight_node.output_shape != expected_weight {
+                            errors.push(AnalysisError::RecurrentShapeMismatch {
+                                node_id: target_id,
+                                source_id: edge.source_id,
+                                message: format!(
+                                    "权重形状应为 {:?}，实际为 {:?}",
+                                    expected_weight, weight_node.output_shape
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         let is_valid = errors.is_empty();
         Self {
             topo_order,
@@ -794,6 +959,7 @@ impl GenomeAnalysis {
             param_node_count,
             is_valid,
             errors,
+            has_recurrent_edges,
         }
     }
 
@@ -815,6 +981,7 @@ impl GenomeAnalysis {
             param_node_count,
             is_valid: false,
             errors,
+            has_recurrent_edges: false,
         }
     }
 

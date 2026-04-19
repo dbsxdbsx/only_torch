@@ -12,8 +12,11 @@ use std::collections::HashMap;
 use rand::Rng;
 use rand::rngs::StdRng;
 
+use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::layer::{AvgPool2d, Conv2d, Gru, Lstm, MaxPool2d, Rnn};
-use crate::nn::{Graph, GraphError, Linear, Module, Var, VarActivationOps, VarShapeOps};
+use crate::nn::{
+    Graph, GraphError, Init, Linear, Module, Var, VarActivationOps, VarMatrixOps, VarShapeOps,
+};
 use crate::tensor::Tensor;
 
 use super::gene::{
@@ -286,17 +289,26 @@ impl NetworkGenome {
     /// 从基因组构建计算图
     ///
     /// - NodeLevel 基因组（当前唯一支持格式）：`to_graph_descriptor()` + `Graph::from_descriptor()`
+    /// - 含 edge-based 循环边的 NodeLevel 基因组：时间步展开构图路径
     /// - LayerLevel 基因组（遗留兼容路径，仅用于尚未节点化的入口）：逐层构图
     ///
     /// rng 用于派生 Graph seed，确保参数初始化受 Evolution seed 控制。
     pub fn build(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
         if self.is_node_level() {
+            // 检测是否含 edge-based 循环边
+            let has_recurrent = self
+                .nodes()
+                .iter()
+                .any(|n| n.enabled && !n.recurrent_parents.is_empty());
+            if has_recurrent {
+                return self.build_recurrent_from_nodes(rng);
+            }
             return self.build_from_nodes(rng);
         }
         self.build_layer_level(rng)
     }
 
-    /// NodeLevel 基因组的构图路径
+    /// NodeLevel 基因组的构图路径（无循环边）
     fn build_from_nodes(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
         let desc = self
             .to_graph_descriptor()
@@ -339,6 +351,180 @@ impl NetworkGenome {
             output,
             layer_params,
             graph: rebuild.graph,
+        })
+    }
+
+    /// 含 edge-based 循环边的 NodeLevel 基因组构图路径
+    ///
+    /// 按时间步展开（类似 RNN `forward_seq`），每步重用共享参数：
+    /// 1. 创建输入 `[batch, seq_len, features]`
+    /// 2. 创建共享 Parameter Var（跨时间步共享权重）
+    /// 3. 每个时间步按拓扑序逐节点计算，注入循环贡献
+    /// 4. 堆叠所有时间步输出 → `[batch, seq_len, output_dim]`
+    fn build_recurrent_from_nodes(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
+        use super::node_gene::GenomeAnalysis;
+        use super::node_ops::{genome_input_domain, genome_input_shape};
+
+        let seq_len = self.seq_len.ok_or_else(|| {
+            GraphError::ComputationError("edge-based 循环基因组需要 seq_len".into())
+        })?;
+
+        let graph_seed: u64 = rng.r#gen();
+        let graph = Graph::new_with_seed(graph_seed).with_model_name("EvolutionNet");
+
+        // 序列输入 [batch, seq_len, features]
+        let input = graph.input_shape(&[1, seq_len, self.input_dim], Some("evo_input"))?;
+        input.set_value(&Tensor::zeros(&[1, seq_len, self.input_dim]))?;
+
+        // 分析获取拓扑序
+        let analysis = GenomeAnalysis::compute(
+            self.nodes(),
+            INPUT_INNOVATION,
+            genome_input_shape(self),
+            genome_input_domain(self),
+        );
+        if !analysis.is_valid {
+            return Err(GraphError::ComputationError(format!(
+                "循环基因组分析失败: {:?}",
+                analysis.errors
+            )));
+        }
+
+        let node_lookup: HashMap<u64, &super::node_gene::NodeGene> = self
+            .nodes()
+            .iter()
+            .filter(|n| n.enabled)
+            .map(|n| (n.innovation_number, n))
+            .collect();
+
+        // 创建共享 Parameter Vars（跨时间步复用）
+        let mut param_vars: HashMap<u64, Var> = HashMap::new();
+        for node in self.nodes().iter().filter(|n| n.enabled && n.is_parameter()) {
+            let var = graph.parameter(
+                &node.output_shape,
+                Init::Xavier,
+                &format!("evo_{}", node.innovation_number),
+            )?;
+            param_vars.insert(node.innovation_number, var);
+        }
+
+        // 收集所有循环边的源节点 ID
+        let recurrent_source_ids: std::collections::HashSet<u64> = self
+            .nodes()
+            .iter()
+            .filter(|n| n.enabled)
+            .flat_map(|n| n.recurrent_parents.iter().map(|e| e.source_id))
+            .collect();
+
+        // 初始化循环状态为零
+        let mut prev_activations: HashMap<u64, Var> = HashMap::new();
+        for &sid in &recurrent_source_ids {
+            let dim = if let Some(shape) = analysis.output_shapes.get(&sid) {
+                *shape.last().unwrap_or(&self.input_dim)
+            } else {
+                self.input_dim
+            };
+            let zeros = graph.zeros_like(&input, &[dim], None)?;
+            prev_activations.insert(sid, zeros);
+        }
+
+        let mut all_outputs: Vec<Var> = Vec::with_capacity(seq_len);
+
+        for t in 0..seq_len {
+            // x_t = input[:, t, :] → [batch, features]
+            let x_t = input.narrow(1, t, 1)?.squeeze(Some(1))?;
+
+            // 当前时间步的 node_id → Var 映射
+            let mut activations: HashMap<u64, Var> = HashMap::new();
+            activations.insert(INPUT_INNOVATION, x_t);
+
+            // 参数共享引用
+            for (&id, var) in &param_vars {
+                activations.insert(id, var.clone());
+            }
+
+            // 按拓扑序逐节点计算
+            for &id in &analysis.topo_order {
+                let node = match node_lookup.get(&id) {
+                    Some(n) => *n,
+                    None => continue,
+                };
+
+                if node.is_leaf() {
+                    continue;
+                }
+
+                let parent_vars: Vec<Var> = node
+                    .parents
+                    .iter()
+                    .filter_map(|pid| activations.get(pid).cloned())
+                    .collect();
+
+                if parent_vars.len() != node.parents.len() {
+                    return Err(GraphError::ComputationError(format!(
+                        "时间步 {t}：节点 {id} 缺少父节点 Var"
+                    )));
+                }
+
+                let mut result = evaluate_step_node(
+                    &graph,
+                    &node.node_type,
+                    &parent_vars,
+                    &node.output_shape,
+                )
+                .map_err(|e| {
+                    GraphError::ComputationError(format!(
+                        "时间步 {t}：节点 {id} ({:?}) 计算失败: {e}",
+                        node.node_type
+                    ))
+                })?;
+
+                // 注入循环贡献：result += prev_h @ W^T
+                for edge in &node.recurrent_parents {
+                    if let Some(prev_h) = prev_activations.get(&edge.source_id) {
+                        if let Some(w) = param_vars.get(&edge.weight_param_id) {
+                            // prev_h: [batch, source_dim], w: [target_dim, source_dim]
+                            let w_t = w.transpose(0, 1)?;
+                            let contribution = prev_h.matmul(&w_t)?;
+                            result = &result + &contribution;
+                        }
+                    }
+                }
+
+                activations.insert(id, result);
+            }
+
+            // 更新循环状态
+            for &sid in &recurrent_source_ids {
+                if let Some(act) = activations.get(&sid) {
+                    prev_activations.insert(sid, act.clone());
+                }
+            }
+
+            // 收集本时间步的输出（拓扑序最后一个节点）
+            let output_id = analysis.topo_order.last().copied().ok_or_else(|| {
+                GraphError::ComputationError("拓扑序为空".into())
+            })?;
+            let step_output = activations.get(&output_id).cloned().ok_or_else(|| {
+                GraphError::ComputationError(format!("时间步 {t}：输出节点 {output_id} 无值"))
+            })?;
+            all_outputs.push(step_output);
+        }
+
+        // 堆叠所有时间步输出 → [batch, seq_len, output_dim]
+        let output_refs: Vec<&Var> = all_outputs.iter().collect();
+        let final_output = Var::stack(&output_refs, 1)?;
+
+        let layer_params: HashMap<u64, Vec<Var>> = param_vars
+            .into_iter()
+            .map(|(id, v)| (id, vec![v]))
+            .collect();
+
+        Ok(BuildResult {
+            input,
+            output: final_output,
+            layer_params,
+            graph,
         })
     }
 
@@ -897,8 +1083,140 @@ fn backfill_node_group_tags(genome: &NetworkGenome, node_map: &HashMap<u64, Var>
 
         for &nid in &block.node_ids {
             if let Some(var) = node_map.get(&nid) {
+                let existing = var.node().node_group_tag();
+                if existing.as_ref().map_or(false, |t| t.hidden) {
+                    continue;
+                }
                 var.node().set_node_group_tag(Some(tag.clone()));
             }
         }
     }
+}
+
+/// 循环展开构图中的单节点计算
+///
+/// 根据 `NodeTypeDescriptor` 和父节点 Var 计算当前节点的输出 Var。
+/// 仅覆盖 Flat/Sequence 域中可能出现的节点类型。
+fn evaluate_step_node(
+    _graph: &Graph,
+    node_type: &NodeTypeDescriptor,
+    parents: &[Var],
+    output_shape: &[usize],
+) -> Result<Var, GraphError> {
+    use NodeTypeDescriptor as NT;
+    match node_type {
+        // ── 算术 ──
+        NT::MatMul => {
+            require_parents(2, parents, "MatMul")?;
+            parents[0].matmul(&parents[1])
+        }
+        NT::Add => {
+            require_parents(2, parents, "Add")?;
+            Ok(&parents[0] + &parents[1])
+        }
+        NT::Subtract => {
+            require_parents(2, parents, "Subtract")?;
+            Ok(&parents[0] - &parents[1])
+        }
+        NT::Multiply => {
+            require_parents(2, parents, "Multiply")?;
+            Ok(&parents[0] * &parents[1])
+        }
+        NT::Negate => {
+            require_parents(1, parents, "Negate")?;
+            Ok(-&parents[0])
+        }
+
+        // ── 激活函数 ──
+        NT::ReLU => {
+            require_parents(1, parents, "ReLU")?;
+            Ok(parents[0].relu())
+        }
+        NT::Tanh => {
+            require_parents(1, parents, "Tanh")?;
+            Ok(parents[0].tanh())
+        }
+        NT::Sigmoid => {
+            require_parents(1, parents, "Sigmoid")?;
+            Ok(parents[0].sigmoid())
+        }
+        NT::LeakyReLU { alpha } => {
+            require_parents(1, parents, "LeakyReLU")?;
+            Ok(parents[0].leaky_relu(*alpha))
+        }
+        NT::Gelu => {
+            require_parents(1, parents, "Gelu")?;
+            Ok(parents[0].gelu())
+        }
+        NT::Swish => {
+            require_parents(1, parents, "Swish")?;
+            Ok(parents[0].silu())
+        }
+        NT::Elu { alpha } => {
+            require_parents(1, parents, "Elu")?;
+            Ok(parents[0].elu(*alpha))
+        }
+        NT::Selu => {
+            require_parents(1, parents, "Selu")?;
+            Ok(parents[0].selu())
+        }
+        NT::Mish => {
+            require_parents(1, parents, "Mish")?;
+            Ok(parents[0].mish())
+        }
+        NT::HardSwish => {
+            require_parents(1, parents, "HardSwish")?;
+            Ok(parents[0].hard_swish())
+        }
+        NT::HardSigmoid => {
+            require_parents(1, parents, "HardSigmoid")?;
+            Ok(parents[0].hard_sigmoid())
+        }
+        NT::SoftPlus => {
+            require_parents(1, parents, "SoftPlus")?;
+            Ok(parents[0].softplus())
+        }
+        NT::ReLU6 => {
+            require_parents(1, parents, "ReLU6")?;
+            Ok(parents[0].relu6())
+        }
+
+        // ── 形状变换 ──
+        NT::Identity | NT::Detach => {
+            require_parents(1, parents, "Identity")?;
+            Ok(parents[0].clone())
+        }
+        NT::Flatten { .. } => {
+            require_parents(1, parents, "Flatten")?;
+            let flat_dim: usize = output_shape[1..].iter().product::<usize>().max(1);
+            parents[0].reshape(&[output_shape[0].max(1), flat_dim])
+        }
+
+        // ── 聚合 ──
+        NT::Maximum => {
+            require_parents(2, parents, "Maximum")?;
+            parents[0].maximum(&parents[1])
+        }
+        NT::Concat { axis } => {
+            let refs: Vec<&Var> = parents.iter().collect();
+            Var::concat(&refs, *axis)
+        }
+
+        // ── 不支持 ──
+        other => Err(GraphError::ComputationError(format!(
+            "循环展开构图不支持的节点类型: {:?}",
+            other
+        ))),
+    }
+}
+
+/// 辅助：检查父节点数量
+fn require_parents(expected: usize, parents: &[Var], op_name: &str) -> Result<(), GraphError> {
+    if parents.len() < expected {
+        return Err(GraphError::ComputationError(format!(
+            "{op_name} 需要至少 {expected} 个父节点，实际 {}",
+            parents.len()
+        )));
+    }
+    Ok(())
 }
