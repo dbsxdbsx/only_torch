@@ -8,6 +8,16 @@
 use crate::nn::nodes::raw_node::Reduction;
 use serde::{Deserialize, Serialize};
 
+/// serde 反序列化默认值：dilation = (1, 1)，兼容无 dilation 字段的旧模型
+fn default_dilation() -> (usize, usize) {
+    (1, 1)
+}
+
+/// serde 反序列化默认值：output_padding = (0, 0)
+fn default_output_padding() -> (usize, usize) {
+    (0, 0)
+}
+
 /// 图的可序列化描述
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphDescriptor {
@@ -47,7 +57,7 @@ pub struct NodeDescriptor {
 }
 
 /// 节点类型描述（包含类型特定参数）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum NodeTypeDescriptor {
     BasicInput,  // 普通数据输入（Data 变体）
@@ -95,6 +105,15 @@ pub enum NodeTypeDescriptor {
     Conv2d {
         stride: (usize, usize),
         padding: (usize, usize),
+        #[serde(default = "default_dilation")]
+        dilation: (usize, usize),
+    },
+    /// 2D 转置卷积（反卷积），用于上采样
+    ConvTranspose2d {
+        stride: (usize, usize),
+        padding: (usize, usize),
+        #[serde(default = "default_output_padding")]
+        output_padding: (usize, usize),
     },
     MaxPool2d {
         kernel_size: (usize, usize),

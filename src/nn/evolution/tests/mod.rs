@@ -1,6 +1,7 @@
 mod builder;
 mod convergence;
 mod evolution;
+mod fm_mutation;
 mod gene;
 mod model_io;
 mod migration;

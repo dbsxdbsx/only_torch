@@ -101,7 +101,7 @@ const PYTORCH_CHAIN_GRAD_CONV_BIAS: &[f32] = &[0.12196727, 0.1219673];
 #[test]
 fn test_conv2d_creation() -> Result<(), GraphError> {
     let graph = Graph::new();
-    let conv = Conv2d::new(&graph, 1, 32, (3, 3), (1, 1), (1, 1), true, "conv1")?;
+    let conv = Conv2d::new(&graph, 1, 32, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv1")?;
 
     // 验证属性
     assert_eq!(conv.in_channels(), 1);
@@ -119,7 +119,7 @@ fn test_conv2d_shapes() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
     // 3->16 通道，5x5 核
-    let conv = Conv2d::new(&graph, 3, 16, (5, 5), (1, 1), (2, 2), true, "conv1")?;
+    let conv = Conv2d::new(&graph, 3, 16, (5, 5), (1, 1), (2, 2), (1, 1), true, "conv1")?;
 
     // 检查卷积核形状：[out_channels, in_channels, kH, kW]
     let k = conv.kernel().value()?.unwrap();
@@ -135,7 +135,7 @@ fn test_conv2d_forward() -> Result<(), GraphError> {
 
     // 输入: [batch=1, C_in=1, H=4, W=4]
     let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
-    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (1, 1), true, "10")?;
 
     // 设置卷积核全 1
     conv.kernel().set_value(&Tensor::ones(&[2, 1, 2, 2]))?;
@@ -168,7 +168,7 @@ fn test_conv2d_output_size() -> Result<(), GraphError> {
 
     // padding=1, kernel=3x3, stride=1 → same padding (保持尺寸)
     let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
-    let conv = Conv2d::new(&graph, 1, 1, (3, 3), (1, 1), (1, 1), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 1, (3, 3), (1, 1), (1, 1), (1, 1), true, "10")?;
 
     // 设置卷积核全 1
     conv.kernel().set_value(&Tensor::ones(&[1, 1, 3, 3]))?;
@@ -193,9 +193,9 @@ fn test_conv2d_chain() -> Result<(), GraphError> {
 
     // 典型 CNN 结构: conv1 -> relu -> conv2 -> relu
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]))?;
-    let conv1 = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "10")?;
+    let conv1 = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), (1, 1), true, "10")?;
     let h1 = conv1.forward(&x).relu();
-    let conv2 = Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), true, "40")?;
+    let conv2 = Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), (1, 1), true, "40")?;
     let output = conv2.forward(&h1).relu();
 
     // 前向传播
@@ -215,7 +215,7 @@ fn test_conv2d_with_flatten() -> Result<(), GraphError> {
 
     // conv -> flatten
     let x = graph.input(&Tensor::ones(&[2, 1, 4, 4]))?;
-    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (1, 1), true, "10")?;
     let flat = conv.forward(&x).flatten()?;
 
     // 前向传播
@@ -238,7 +238,7 @@ fn test_conv2d_batch_backward() -> Result<(), GraphError> {
 
     // 构建网络: conv -> flatten -> fc -> softmax_ce
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 4, 4]))?;
-    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (1, 1), true, "10")?;
     let flat = conv.forward(&x).flatten()?;
     // flat 输出: [2, 18]
 
@@ -271,11 +271,11 @@ fn test_conv2d_chain_batch_training() -> Result<(), GraphError> {
 
     // 构建网络: conv1 -> relu -> conv2 -> flatten -> fc -> loss
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 6, 6]))?;
-    let conv1 = Conv2d::new(&graph, 1, 2, (3, 3), (1, 1), (0, 0), true, "10")?;
+    let conv1 = Conv2d::new(&graph, 1, 2, (3, 3), (1, 1), (0, 0), (1, 1), true, "10")?;
     let h1 = conv1.forward(&x).relu();
     // conv1 输出: [2, 2, 4, 4]
 
-    let conv2 = Conv2d::new(&graph, 2, 4, (2, 2), (1, 1), (0, 0), true, "20")?;
+    let conv2 = Conv2d::new(&graph, 2, 4, (2, 2), (1, 1), (0, 0), (1, 1), true, "20")?;
     let h2 = conv2.forward(&h1);
     // conv2 输出: [2, 4, 3, 3]
 
@@ -310,7 +310,7 @@ fn test_conv2d_single_channel() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[2, 1, 4, 4]))?;
 
-    let conv = Conv2d::new(&graph, 1, 1, (2, 2), (1, 1), (0, 0), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 1, (2, 2), (1, 1), (0, 0), (1, 1), true, "10")?;
     let output = conv.forward(&x);
     output.forward()?;
 
@@ -325,7 +325,7 @@ fn test_conv2d_single_channel() -> Result<(), GraphError> {
 fn test_conv2d_large_channels() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
-    let conv = Conv2d::new(&graph, 64, 128, (3, 3), (1, 1), (1, 1), true, "conv")?;
+    let conv = Conv2d::new(&graph, 64, 128, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv")?;
 
     // 验证参数形状
     let k = conv.kernel().value()?.unwrap();
@@ -341,7 +341,7 @@ fn test_conv2d_with_stride() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::ones(&[2, 1, 8, 8]))?;
 
     // stride=2 会使输出尺寸减半
-    let conv = Conv2d::new(&graph, 1, 4, (3, 3), (2, 2), (1, 1), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 4, (3, 3), (2, 2), (1, 1), (1, 1), true, "10")?;
     let output = conv.forward(&x);
     output.forward()?;
 
@@ -359,7 +359,7 @@ fn test_conv2d_nonsquare_kernel() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::ones(&[2, 1, 8, 8]))?;
 
     // 使用 3x5 的非方形卷积核
-    let conv = Conv2d::new(&graph, 1, 4, (3, 5), (1, 1), (1, 2), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 4, (3, 5), (1, 1), (1, 2), (1, 1), true, "10")?;
 
     // 验证卷积核形状
     let k = conv.kernel().value()?.unwrap();
@@ -382,7 +382,7 @@ fn test_conv2d_nonsquare_kernel() -> Result<(), GraphError> {
 fn test_conv2d_access_internal_params() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
-    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (1, 1), true, "10")?;
 
     // 应该能访问并修改卷积核
     let custom_kernel = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 1, 2, 2]);
@@ -401,7 +401,7 @@ fn test_conv2d_mnist_like() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
     // 典型 MNIST CNN 第一层
-    let conv = Conv2d::new(&graph, 1, 32, (5, 5), (1, 1), (2, 2), true, "conv1")?;
+    let conv = Conv2d::new(&graph, 1, 32, (5, 5), (1, 1), (2, 2), (1, 1), true, "conv1")?;
 
     // 验证参数形状
     let k = conv.kernel().value()?.unwrap();
@@ -417,7 +417,7 @@ fn test_conv2d_mnist_like() -> Result<(), GraphError> {
 fn test_conv2d_has_bias() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
-    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "conv")?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (1, 1), true, "conv")?;
 
     // 验证 bias 存在且形状正确（4D 形状用于广播）
     let bias = conv.bias().unwrap().value()?.unwrap();
@@ -436,7 +436,7 @@ fn test_conv2d_bias_applied() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[1, 1, 3, 3]))?;
 
-    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (1, 1), true, "10")?;
 
     // 设置卷积核全 1
     conv.kernel().set_value(&Tensor::ones(&[2, 1, 2, 2]))?;
@@ -482,7 +482,7 @@ fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
     let batch_size = 2;
 
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[batch_size, 1, 4, 4]))?;
-    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), true, "10")?;
+    let conv = Conv2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (1, 1), true, "10")?;
     let flat = conv.forward(&x).flatten()?;
 
     // 简单分类器
@@ -513,7 +513,7 @@ fn test_conv2d_bias_gradient() -> Result<(), GraphError> {
 #[test]
 fn test_conv2d_no_bias() -> Result<(), GraphError> {
     let graph = Graph::new();
-    let conv = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (0, 0), false, "conv")?;
+    let conv = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (0, 0), (1, 1), false, "conv")?;
 
     // 验证无 bias
     assert!(conv.bias().is_none());
@@ -548,6 +548,7 @@ fn test_conv2d_forward_pytorch_comparison() -> Result<(), GraphError> {
         (2, 2),
         (1, 1),
         (0, 0),
+        (1, 1),
         true,
         "conv",
     )?;
@@ -608,6 +609,7 @@ fn test_conv2d_backward_pytorch_comparison() -> Result<(), GraphError> {
         (2, 2),
         (1, 1),
         (0, 0),
+        (1, 1),
         true,
         "conv",
     )?;
@@ -717,6 +719,7 @@ fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
         (2, 2),
         (1, 1),
         (0, 0),
+        (1, 1),
         true,
         "conv",
     )?;
@@ -811,7 +814,7 @@ fn test_conv2d_chain_backward_pytorch_comparison() -> Result<(), GraphError> {
 #[test]
 fn test_conv2d_module_trait() -> Result<(), GraphError> {
     let graph = Graph::new();
-    let conv = Conv2d::new(&graph, 1, 32, (3, 3), (1, 1), (1, 1), true, "conv1")?;
+    let conv = Conv2d::new(&graph, 1, 32, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv1")?;
 
     // 验证 Module trait
     let params = conv.parameters();
@@ -825,11 +828,11 @@ fn test_conv2d_module_trait() -> Result<(), GraphError> {
 fn test_conv2d_seeded_reproducibility() -> Result<(), GraphError> {
     // 使用相同种子的 Graph 应产生相同权重
     let graph1 = Graph::new_with_seed(42);
-    let conv1 = Conv2d::new(&graph1, 1, 4, (3, 3), (1, 1), (0, 0), true, "conv")?;
+    let conv1 = Conv2d::new(&graph1, 1, 4, (3, 3), (1, 1), (0, 0), (1, 1), true, "conv")?;
     let k1 = conv1.kernel().value()?.unwrap();
 
     let graph2 = Graph::new_with_seed(42);
-    let conv2 = Conv2d::new(&graph2, 1, 4, (3, 3), (1, 1), (0, 0), true, "conv")?;
+    let conv2 = Conv2d::new(&graph2, 1, 4, (3, 3), (1, 1), (0, 0), (1, 1), true, "conv")?;
     let k2 = conv2.kernel().value()?.unwrap();
 
     // 相同种子应产生相同权重
@@ -845,9 +848,9 @@ fn test_conv2d_chain_api() -> Result<(), GraphError> {
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 8, 8]))?;
 
     // conv -> relu -> conv -> relu
-    let conv1 = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "10")?;
+    let conv1 = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), (1, 1), true, "10")?;
     let a1 = conv1.forward(&x).relu();
-    let conv2 = Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), true, "40")?;
+    let conv2 = Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), (1, 1), true, "40")?;
     let output = conv2.forward(&a1).relu();
 
     // 前向传播

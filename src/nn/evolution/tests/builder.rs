@@ -2073,3 +2073,61 @@ fn test_backfill_no_orphan_lstm() {
         );
     }
 }
+
+// ==================== FM-aware Builder ====================
+
+#[test]
+fn test_build_fm_spatial_1ch_to_8ch_forward() {
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let input = Tensor::zeros(&[1, 1, 8, 8]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape().len(), 2, "FM 空间网络输出应为 2D (batch, classes)");
+    assert_eq!(out.shape()[1], 10, "输出维度应为 10");
+}
+
+#[test]
+fn test_build_fm_spatial_3ch_forward() {
+    let mut genome = NetworkGenome::minimal_spatial(3, 5, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    let input = Tensor::ones(&[2, 3, 8, 8]); // batch=2
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape(), &[2, 5]);
+}
+
+#[test]
+fn test_build_fm_spatial_backward() {
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (4, 4));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    use crate::nn::VarReduceOps;
+
+    let input = Tensor::ones(&[1, 1, 4, 4]);
+    build.input.set_value(&input).unwrap();
+    let loss = build.output.sum();
+    build.graph.forward(&loss).unwrap();
+    build.graph.backward(&loss).unwrap();
+
+    let params = build.all_parameters();
+    assert!(!params.is_empty(), "应有可训练参数");
+}

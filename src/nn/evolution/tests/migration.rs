@@ -19,9 +19,10 @@ use crate::nn::evolution::gene::{
 };
 use crate::nn::evolution::migration::{
     InnovationCounter, expand_activation, expand_conv2d, expand_dropout, expand_flatten,
-    expand_gru, expand_linear, expand_lstm, expand_pool2d, expand_rnn, migrate_network_genome,
+    expand_gru, expand_linear, expand_lstm, expand_pool2d, expand_rnn, migrate_conv2d_to_feature_maps,
+    migrate_network_genome,
 };
-use crate::nn::evolution::node_gene::GenomeAnalysis;
+use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
 
 // ==================== InnovationCounter ====================
 
@@ -841,4 +842,316 @@ fn migrate_spatial_full_domain_chain() {
             _ => {} // 其他节点不检查
         }
     }
+}
+
+// ==================== C.2: Conv2d → FM 分解迁移 ====================
+
+/// 辅助函数：创建一个最小的 Conv2d 模板块 (kernel+conv+bias+add)，返回节点列表
+fn make_conv2d_block(
+    input_id: u64,
+    in_ch: usize,
+    out_ch: usize,
+    kernel_size: usize,
+    spatial: (usize, usize),
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    expand_conv2d(input_id, in_ch, out_ch, kernel_size, spatial, block_id, counter)
+}
+
+/// 辅助函数：创建一个带输入节点的完整 NodeLevel 节点列表（spatial input + conv block + output）
+fn make_simple_spatial_nodes(
+    in_ch: usize,
+    out_ch: usize,
+    spatial: (usize, usize),
+) -> (Vec<NodeGene>, InnovationCounter) {
+    let mut counter = InnovationCounter::new(1);
+
+    let input_id = INPUT_INNOVATION; // 0 — 隐式输入，不创建节点
+
+    let block_id = counter.next();
+    let block_nodes = make_conv2d_block(
+        input_id,
+        in_ch,
+        out_ch,
+        3,
+        spatial,
+        block_id,
+        &mut counter,
+    );
+
+    let last_id = block_nodes.last().unwrap().innovation_number;
+
+    let output_id = counter.next();
+    let output_node = NodeGene::new(
+        output_id,
+        NodeTypeDescriptor::Identity,
+        vec![1, out_ch, spatial.0, spatial.1],
+        vec![last_id],
+        None,
+    );
+
+    let mut nodes = block_nodes;
+    nodes.push(output_node);
+
+    (nodes, counter)
+}
+
+#[test]
+fn fm_migration_empty_genome_is_noop() {
+    let mut counter = InnovationCounter::new(100);
+    let mut nodes: Vec<NodeGene> = vec![];
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+    assert!(nodes.is_empty());
+}
+
+#[test]
+fn fm_migration_no_conv_block_is_noop() {
+    let mut counter = InnovationCounter::new(100);
+    let mut nodes = vec![
+        NodeGene::new(1, NodeTypeDescriptor::Identity, vec![1, 1, 8, 8], vec![INPUT_INNOVATION], None),
+        NodeGene::new(2, NodeTypeDescriptor::Identity, vec![1, 1, 8, 8], vec![1], None),
+    ];
+    let original_len = nodes.len();
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+    assert_eq!(nodes.len(), original_len);
+}
+
+#[test]
+fn fm_migration_basic_1ch_to_1ch() {
+    let (mut nodes, mut counter) = make_simple_spatial_nodes(1, 1, (8, 8));
+    let original_len = nodes.len();
+
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+
+    // 原模板块节点应被移除（kernel, conv, bias, add）
+    // 新增：1 input FM (Identity) + 1 kernel + 1 conv + 1 concat + 输出重定向
+    // 没有 Add（只有 1 条输入边），所以 agg_id = conv_id 本身
+    assert!(
+        nodes.len() > original_len - 4, // 移除了旧块，加入了新节点
+        "迁移后节点数应变化: {} -> {}",
+        original_len,
+        nodes.len()
+    );
+
+    // 验证没有残留的旧模板块节点（所有 enabled 节点的 block_id 如果有值，则应该有 fm_id 或者是新 edge 块）
+    let fm_nodes: Vec<&NodeGene> = nodes.iter().filter(|n| n.fm_id.is_some()).collect();
+    assert!(
+        !fm_nodes.is_empty(),
+        "迁移后应有 fm_id 标记的节点"
+    );
+
+    // 验证 Concat 节点存在
+    let concat_nodes: Vec<&NodeGene> = nodes
+        .iter()
+        .filter(|n| matches!(n.node_type, NodeTypeDescriptor::Concat { .. }))
+        .collect();
+    assert_eq!(concat_nodes.len(), 1, "应有 1 个 Concat 节点");
+
+    // Concat 的输出 shape 应为 [1, 1, H, W]
+    let concat = concat_nodes[0];
+    assert_eq!(concat.output_shape[1], 1, "Concat 输出通道应为 1");
+}
+
+#[test]
+fn fm_migration_2ch_to_3ch() {
+    let (mut nodes, mut counter) = make_simple_spatial_nodes(2, 3, (8, 8));
+
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+
+    // 验证 FM 节点数：2 输入 FM + 聚合相关
+    let fm_nodes: Vec<&NodeGene> = nodes.iter().filter(|n| n.fm_id.is_some()).collect();
+    assert!(
+        fm_nodes.len() >= 2,
+        "至少应有 2 个输入 FM 节点, got {}",
+        fm_nodes.len()
+    );
+
+    // 唯一的 fm_id 集合大小
+    let fm_ids: std::collections::HashSet<u64> = fm_nodes.iter().map(|n| n.fm_id.unwrap()).collect();
+    // 至少 2（输入）+ 3（输出）= 5 个不同的 FM
+    assert!(
+        fm_ids.len() >= 5,
+        "应有至少 5 个不同 fm_id（2 输入 + 3 输出）, got {}",
+        fm_ids.len()
+    );
+
+    // 验证 Concat 节点
+    let concat_nodes: Vec<&NodeGene> = nodes
+        .iter()
+        .filter(|n| matches!(n.node_type, NodeTypeDescriptor::Concat { .. }))
+        .collect();
+    assert_eq!(concat_nodes.len(), 1, "应有 1 个 Concat 节点");
+    assert_eq!(
+        concat_nodes[0].output_shape[1], 3,
+        "Concat 输出通道应为 3"
+    );
+
+    // 验证 FM 边数量：2 × 3 = 6 条 Conv2d 边
+    let conv_edge_nodes: Vec<&NodeGene> = nodes
+        .iter()
+        .filter(|n| {
+            matches!(n.node_type, NodeTypeDescriptor::Conv2d { .. })
+                && n.output_shape == vec![1, 1, 8, 8]
+        })
+        .collect();
+    assert_eq!(
+        conv_edge_nodes.len(),
+        6,
+        "2 输入 × 3 输出 = 6 条 FM 边 (Conv2d), got {}",
+        conv_edge_nodes.len()
+    );
+
+    // 每条 FM 边的 kernel 应为 [1, 1, 3, 3]
+    for edge in &conv_edge_nodes {
+        assert_eq!(edge.parents.len(), 2, "Conv2d 边应有 2 个 parent");
+        let kernel_id = edge.parents[1];
+        let kernel = nodes.iter().find(|n| n.innovation_number == kernel_id).unwrap();
+        assert_eq!(
+            kernel.output_shape,
+            vec![1, 1, 3, 3],
+            "FM 边 kernel 应为 [1, 1, 3, 3]"
+        );
+    }
+}
+
+#[test]
+fn fm_migration_preserves_downstream_connectivity() {
+    let (mut nodes, mut counter) = make_simple_spatial_nodes(1, 2, (8, 8));
+
+    // 找到迁移前输出节点的 parent（应该是 Add/conv 块的输出）
+    let output_node_id = nodes.last().unwrap().innovation_number;
+    let old_parent = nodes.last().unwrap().parents[0];
+
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+
+    // 迁移后输出节点的 parent 应指向 Concat（而非旧的 block 输出）
+    let output_node = nodes
+        .iter()
+        .find(|n| n.innovation_number == output_node_id)
+        .unwrap();
+    let new_parent = output_node.parents[0];
+    assert_ne!(
+        new_parent, old_parent,
+        "输出节点 parent 应从旧 block 输出重定向到 Concat"
+    );
+
+    // 新 parent 应该是 Concat 节点
+    let parent_node = nodes
+        .iter()
+        .find(|n| n.innovation_number == new_parent)
+        .unwrap();
+    assert!(
+        matches!(parent_node.node_type, NodeTypeDescriptor::Concat { .. }),
+        "输出节点的新 parent 应为 Concat 节点"
+    );
+}
+
+#[test]
+fn fm_migration_old_template_nodes_removed() {
+    let (mut nodes, mut counter) = make_simple_spatial_nodes(1, 2, (8, 8));
+
+    // 记录原始 block_id
+    let old_block_ids: Vec<Option<u64>> = nodes.iter().map(|n| n.block_id).collect();
+    let original_block_id = old_block_ids.iter().find(|b| b.is_some()).unwrap().unwrap();
+
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+
+    // 旧模板块的 kernel/conv/bias/add 应全部被移除（enabled=false → retain 后消失）
+    let old_block_nodes: Vec<&NodeGene> = nodes
+        .iter()
+        .filter(|n| n.block_id == Some(original_block_id) && n.fm_id.is_none())
+        .collect();
+    assert!(
+        old_block_nodes.is_empty(),
+        "旧模板块节点应全部被移除，残留 {} 个",
+        old_block_nodes.len()
+    );
+}
+
+#[test]
+fn fm_migration_idempotent() {
+    let (mut nodes, mut counter) = make_simple_spatial_nodes(1, 2, (8, 8));
+
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+    let nodes_after_first = nodes.clone();
+    let counter_after_first = counter.peek();
+
+    // 再次迁移应为 no-op（没有新的 Conv2d 模板块）
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+
+    assert_eq!(
+        nodes.len(),
+        nodes_after_first.len(),
+        "第二次迁移应为 no-op"
+    );
+    assert_eq!(counter.peek(), counter_after_first, "计数器不应变化");
+}
+
+#[test]
+fn fm_migration_add_aggregation_tree() {
+    // 测试多输入通道时的 Add 聚合树
+    let (mut nodes, mut counter) = make_simple_spatial_nodes(4, 1, (8, 8));
+
+    migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
+
+    // 1 个输出 FM 有 4 条输入边，需要 Add 聚合树
+    // 4 → 2 pairs → 2 Adds → 1 pair → 1 Add = 3 Adds
+    let add_nodes: Vec<&NodeGene> = nodes
+        .iter()
+        .filter(|n| {
+            matches!(n.node_type, NodeTypeDescriptor::Add)
+                && n.fm_id.is_some()
+        })
+        .collect();
+    assert_eq!(
+        add_nodes.len(),
+        3,
+        "4 条输入边需要 3 个 Add 节点聚合, got {}",
+        add_nodes.len()
+    );
+}
+
+#[test]
+fn fm_migration_genome_level_spatial() {
+    // 通过 NetworkGenome 层面调用 migrate_to_fm_level
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    let _ = genome.migrate_to_node_level();
+    genome.migrate_to_fm_level();
+
+    let nodes = genome.nodes();
+
+    // 验证有 FM 节点
+    let fm_count = nodes.iter().filter(|n| n.fm_id.is_some()).count();
+    assert!(fm_count > 0, "FM 级别迁移后应有 fm_id 节点");
+
+    // 验证有 Concat 节点
+    let concat_count = nodes
+        .iter()
+        .filter(|n| matches!(n.node_type, NodeTypeDescriptor::Concat { .. }))
+        .count();
+    assert!(concat_count > 0, "FM 级别迁移后应有 Concat 节点");
+
+    // 验证 migrate_to_fm_level 是幂等的
+    let count_before = nodes.len();
+    genome.migrate_to_fm_level();
+    assert_eq!(
+        genome.nodes().len(),
+        count_before,
+        "重复调用 migrate_to_fm_level 应为 no-op"
+    );
+}
+
+#[test]
+fn fm_migration_non_spatial_is_noop() {
+    // Flat 模式不应触发 FM 迁移
+    let mut genome = NetworkGenome::minimal(10, 5);
+    let _ = genome.migrate_to_node_level();
+    let count_before = genome.nodes().len();
+    genome.migrate_to_fm_level();
+    assert_eq!(
+        genome.nodes().len(),
+        count_before,
+        "Flat 模式 migrate_to_fm_level 应为 no-op"
+    );
 }

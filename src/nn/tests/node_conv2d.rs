@@ -46,6 +46,7 @@ fn test_conv2d_forward_simple() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -81,6 +82,7 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
 
     let conv = inner.borrow_mut().create_conv2d_node(
         vec![input.clone(), kernel.clone()],
+        (1, 1),
         (1, 1),
         (1, 1),
         Some("conv"),
@@ -121,6 +123,7 @@ fn test_conv2d_forward_batch() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -164,6 +167,7 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -207,6 +211,7 @@ fn test_conv2d_forward_with_stride() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (2, 2),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -245,7 +250,7 @@ fn test_conv2d_channel_mismatch() {
     let result =
         inner
             .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), Some("conv"));
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), Some("conv"));
     assert_err!(result, GraphError::ShapeMismatch { message, .. } if message.contains("通道数"));
 }
 
@@ -268,7 +273,7 @@ fn test_conv2d_invalid_input_dims() {
     let result =
         inner
             .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), Some("conv"));
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), Some("conv"));
     assert_err!(result, GraphError::ShapeMismatch { message, .. }
         if message.contains("4D"));
 }
@@ -292,7 +297,7 @@ fn test_conv2d_invalid_kernel_dims() {
     let result =
         inner
             .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), Some("conv"));
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), Some("conv"));
     assert_err!(result, GraphError::ShapeMismatch { message, .. }
         if message.contains("4D") || message.contains("C_out"));
 }
@@ -319,6 +324,7 @@ fn test_conv2d_vjp_to_input() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -364,6 +370,7 @@ fn test_conv2d_vjp_to_kernel() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -407,6 +414,7 @@ fn test_conv2d_vjp_to_kernel_batch() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -457,6 +465,7 @@ fn test_conv2d_vjp_to_input_multi_output() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -505,6 +514,7 @@ fn test_conv2d_backward_kernel_grad() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -570,6 +580,7 @@ fn test_conv2d_backward_batch_network() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -648,6 +659,7 @@ fn test_conv2d_gradient_accumulation() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -726,7 +738,7 @@ fn test_conv2d_dynamic_shape_propagation() -> Result<(), GraphError> {
     let conv =
         inner
             .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), Some("conv"))?;
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), Some("conv"))?;
 
     let dyn_shape = conv.dynamic_expected_shape();
     assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
@@ -753,6 +765,7 @@ fn test_conv2d_dynamic_batch_forward() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -792,6 +805,7 @@ fn test_conv2d_dynamic_batch_backward() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (0, 0),
+        (1, 1),
         Some("conv"),
     )?;
 
@@ -860,6 +874,7 @@ fn test_create_conv2d_node() {
             vec![input.clone(), kernel.clone()],
             (1, 1),
             (0, 0),
+            (1, 1),
             Some("conv"),
         )
         .unwrap();
@@ -888,7 +903,7 @@ fn test_create_conv2d_with_padding() {
 
     let conv = inner
         .borrow_mut()
-        .create_conv2d_node(vec![input, kernel], (1, 1), (1, 1), None)
+        .create_conv2d_node(vec![input, kernel], (1, 1), (1, 1), (1, 1), None)
         .unwrap();
 
     assert_eq!(conv.shape(), vec![1, 2, 5, 5]);
@@ -912,7 +927,7 @@ fn test_create_conv2d_with_stride() {
 
     let conv = inner
         .borrow_mut()
-        .create_conv2d_node(vec![input, kernel], (2, 2), (0, 0), None)
+        .create_conv2d_node(vec![input, kernel], (2, 2), (0, 0), (1, 1), None)
         .unwrap();
 
     assert_eq!(conv.shape(), vec![1, 4, 3, 3]);
@@ -935,7 +950,7 @@ fn test_create_conv2d_channel_mismatch() {
 
     let result = inner
         .borrow_mut()
-        .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), None);
+        .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), None);
     assert!(result.is_err());
 }
 
@@ -959,7 +974,7 @@ fn test_create_conv2d_drop_releases() {
 
         let conv = inner
             .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), None)
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), None)
             .unwrap();
         weak_conv = Rc::downgrade(&conv);
 
@@ -968,4 +983,213 @@ fn test_create_conv2d_drop_releases() {
     }
     assert!(weak_conv.upgrade().is_none());
     assert!(weak_input.upgrade().is_none());
+}
+
+// ==================== 7. Dilation（空洞卷积）测试 ====================
+
+/// 测试 dilation=2 前向传播：全 1 输入 × 全 1 核
+///
+/// dilation=2, kernel=3×3 → effective_kernel=5×5
+/// 输入 [1,1,5,5] 全 1 → 仅 1 个输出位置，采样 9 个格点 → output = 9.0
+#[test]
+fn test_conv2d_dilation2_forward_all_ones() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 5, 5], Some("input"))?;
+    let kernel = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 3, 3], Some("kernel"))?;
+
+    let conv = inner.borrow_mut().create_conv2d_node(
+        vec![input.clone(), kernel.clone()],
+        (1, 1),
+        (0, 0),
+        (2, 2), // dilation=2
+        Some("conv"),
+    )?;
+
+    input.set_value(Some(&Tensor::ones(&[1, 1, 5, 5])))?;
+    kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
+
+    conv.forward_recursive(1, false)?;
+
+    // effective_k = 2*(3-1)+1 = 5, output_h = (5-5)/1+1 = 1
+    let output = conv.value().unwrap();
+    assert_eq!(output.shape(), &[1, 1, 1, 1]);
+    // 9 个采样点全为 1 → sum = 9.0
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 9.0, epsilon = 1e-6);
+
+    Ok(())
+}
+
+/// 测试 dilation=2 前向传播：顺序输入值
+///
+/// 输入 [1,1,5,5] = 1..25, kernel [1,1,3,3] = 全 1, dilation=2
+/// 采样位置: (0,0)=1, (0,2)=3, (0,4)=5, (2,0)=11, (2,2)=13, (2,4)=15,
+///           (4,0)=21, (4,2)=23, (4,4)=25
+/// sum = 1+3+5+11+13+15+21+23+25 = 117
+#[test]
+fn test_conv2d_dilation2_forward_sequential() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 5, 5], Some("input"))?;
+    let kernel = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 3, 3], Some("kernel"))?;
+
+    let conv = inner.borrow_mut().create_conv2d_node(
+        vec![input.clone(), kernel.clone()],
+        (1, 1),
+        (0, 0),
+        (2, 2),
+        Some("conv"),
+    )?;
+
+    let input_data: Vec<f32> = (1..=25).map(|x| x as f32).collect();
+    input.set_value(Some(&Tensor::new(&input_data, &[1, 1, 5, 5])))?;
+    kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
+
+    conv.forward_recursive(1, false)?;
+
+    let output = conv.value().unwrap();
+    assert_eq!(output.shape(), &[1, 1, 1, 1]);
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 117.0, epsilon = 1e-5);
+
+    Ok(())
+}
+
+/// 测试 dilation=2 多输出位置
+///
+/// 输入 [1,1,7,7] 全 1, kernel [1,1,3,3] 全 1, dilation=2
+/// effective_k=5, output_h = (7-5)/1+1 = 3 → [1,1,3,3]
+/// 每个输出位置采样 9 个格点 → 全为 9.0
+#[test]
+fn test_conv2d_dilation2_larger_input() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 7, 7], Some("input"))?;
+    let kernel = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 3, 3], Some("kernel"))?;
+
+    let conv = inner.borrow_mut().create_conv2d_node(
+        vec![input.clone(), kernel.clone()],
+        (1, 1),
+        (0, 0),
+        (2, 2),
+        Some("conv"),
+    )?;
+
+    input.set_value(Some(&Tensor::ones(&[1, 1, 7, 7])))?;
+    kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
+
+    conv.forward_recursive(1, false)?;
+
+    let output = conv.value().unwrap();
+    assert_eq!(output.shape(), &[1, 1, 3, 3]);
+
+    for h in 0..3 {
+        for w in 0..3 {
+            assert_abs_diff_eq!(output[[0, 0, h, w]], 9.0, epsilon = 1e-6);
+        }
+    }
+
+    Ok(())
+}
+
+/// 测试 dilation=2 带 padding
+///
+/// 输入 [1,1,5,5] 全 1, kernel [1,1,3,3] 全 1, dilation=2, padding=2
+/// effective_k=5, output_h = (5+2*2-5)/1+1 = 5 → [1,1,5,5]
+#[test]
+fn test_conv2d_dilation2_with_padding() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 5, 5], Some("input"))?;
+    let kernel = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 3, 3], Some("kernel"))?;
+
+    let conv = inner.borrow_mut().create_conv2d_node(
+        vec![input.clone(), kernel.clone()],
+        (1, 1),
+        (2, 2),
+        (2, 2),
+        Some("conv"),
+    )?;
+
+    input.set_value(Some(&Tensor::ones(&[1, 1, 5, 5])))?;
+    kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
+
+    conv.forward_recursive(1, false)?;
+
+    let output = conv.value().unwrap();
+    assert_eq!(output.shape(), &[1, 1, 5, 5]);
+
+    // 中心位置: 所有 9 个采样点都在边界内 → 9.0
+    assert_abs_diff_eq!(output[[0, 0, 2, 2]], 9.0, epsilon = 1e-6);
+    // 角落 (0,0): 采样位置 (-2,-2) (-2,0) (-2,2) (0,-2) (0,0) (0,2) (2,-2) (2,0) (2,2)
+    // 有效位置: (0,0) (0,2) (2,0) (2,2) → 4 个
+    assert_abs_diff_eq!(output[[0, 0, 0, 0]], 4.0, epsilon = 1e-6);
+
+    Ok(())
+}
+
+/// 测试 dilation=2 反向传播（梯度存在且有意义）
+#[test]
+fn test_conv2d_dilation2_backward() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 5, 5], Some("input"))?;
+    let kernel = inner
+        .borrow_mut()
+        .create_parameter_node(&[1, 1, 3, 3], Some("kernel"))?;
+
+    let conv = inner.borrow_mut().create_conv2d_node(
+        vec![input.clone(), kernel.clone()],
+        (1, 1),
+        (0, 0),
+        (2, 2),
+        Some("conv"),
+    )?;
+
+    let target = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 1, 1], Some("target"))?;
+
+    let mse = inner.borrow_mut().create_mse_node(
+        Rc::clone(&conv),
+        Rc::clone(&target),
+        crate::nn::nodes::raw_node::Reduction::Mean,
+        Some("mse"),
+    )?;
+
+    input.set_value(Some(&Tensor::ones(&[1, 1, 5, 5])))?;
+    kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
+    target.set_value(Some(&Tensor::zeros(&[1, 1, 1, 1])))?;
+
+    inner.borrow_mut().forward_via_node_inner(&mse)?;
+    inner.borrow_mut().backward_via_node_inner(&mse)?;
+
+    let k_grad = kernel.grad().expect("kernel 应有 grad");
+    assert_eq!(k_grad.shape(), &[1, 1, 3, 3]);
+    let grad_sum: f32 = k_grad.data_as_slice().iter().map(|v| v.abs()).sum();
+    assert!(grad_sum > 0.0, "dilation conv kernel 梯度不应全零");
+
+    Ok(())
 }

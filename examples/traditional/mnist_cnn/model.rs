@@ -38,10 +38,10 @@ impl MnistCNN {
         let graph = graph.with_model_name("MnistCNN");
         Ok(Self {
             // 卷积层 1: 1→4 通道, 3x3 核, padding=1 (same padding)
-            conv1: Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), true, "conv1")?,
+            conv1: Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv1")?,
             pool1: MaxPool2d::new(&graph, (2, 2), None, "pool1"),
             // 卷积层 2: 4→8 通道, 3x3 核, padding=1
-            conv2: Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), true, "conv2")?,
+            conv2: Conv2d::new(&graph, 4, 8, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv2")?,
             pool2: MaxPool2d::new(&graph, (2, 2), None, "pool2"),
             // 全连接层: 8*7*7=392 → 32 → 10
             fc1: Linear::new(&graph, 392, 32, true, "fc1")?,

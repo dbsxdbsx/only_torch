@@ -198,7 +198,7 @@ fn test_export_conv2d_with_attributes() {
     ));
     desc.add_node(NodeDescriptor::new(
         3, "conv_out",
-        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (1, 1) },
+        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (1, 1), dilation: (1, 1) },
         vec![1, 8, 28, 28], None, vec![1, 2],
     ));
 

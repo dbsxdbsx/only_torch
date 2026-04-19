@@ -976,10 +976,21 @@ fn test_evolution_spatial_mutation_names_valid() {
         "MutateAggregateStrategy",
         "MutateLearningRate",
         "MutateOptimizer",
-        "MutateKernelSize", // 空间模式专属
-        "MutateStride",     // 空间模式：Conv2d stride (1,1)↔(2,2)
+        "MutateKernelSize",
+        "MutateStride",
         "AddConnection",
         "RemoveConnection",
+        // FM 级别变异
+        "AddFeatureMap",
+        "RemoveFeatureMap",
+        "AddFMEdge",
+        "RemoveFMEdge",
+        "SplitFMEdge",
+        "ChangeFMEdgeType",
+        "MutateFMEdgeKernelSize",
+        "MutateFMEdgeStride",
+        "MutateFMEdgeDilation",
+        "ChangeFeatureMapSize",
     ];
 
     let s = state.borrow();

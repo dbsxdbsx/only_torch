@@ -87,9 +87,9 @@ struct SimpleCNN {
 impl SimpleCNN {
     fn new(graph: &Graph, in_c: usize) -> Self {
         Self {
-            conv1: Conv2d::new(graph, in_c, 8, (3, 3), (1, 1), (1, 1), true, "conv1").unwrap(),
+            conv1: Conv2d::new(graph, in_c, 8, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv1").unwrap(),
             pool1: MaxPool2d::new(graph, (2, 2), None, "pool1"),
-            conv2: Conv2d::new(graph, 8, 16, (3, 3), (1, 1), (1, 1), true, "conv2").unwrap(),
+            conv2: Conv2d::new(graph, 8, 16, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv2").unwrap(),
             pool2: MaxPool2d::new(graph, (2, 2), None, "pool2"),
             // 28x28 → 14x14 → 7x7，展平后 16*7*7 = 784
             fc: Linear::new(graph, 16 * 7 * 7, 10, true, "fc").unwrap(),

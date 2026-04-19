@@ -89,7 +89,7 @@ fn test_save_load_cnn_bn_roundtrip() {
     let x = graph
         .input(&Tensor::normal(0.0, 1.0, &[1, 1, 6, 6]))
         .unwrap();
-    let conv = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (0, 0), true, "conv1").unwrap();
+    let conv = Conv2d::new(&graph, 1, 4, (3, 3), (1, 1), (0, 0), (1, 1), true, "conv1").unwrap();
     let bn = BatchNorm::new(&graph, 4, 1e-5, 0.1, "bn1").unwrap();
 
     let h = conv.forward(&x);

@@ -20,6 +20,8 @@ pub mod builder;
 pub mod callback;
 pub mod convergence;
 pub mod error;
+pub mod fm_mutation;
+pub mod fm_ops;
 pub mod gene;
 pub mod migration;
 pub mod model_io;
@@ -730,8 +732,9 @@ impl Evolution {
         } else if let Some(spatial) = prepared.input_spatial {
             let mut g =
                 NetworkGenome::minimal_spatial(prepared.input_dim, prepared.output_dim, spatial);
-            // 空间模式迁移到 NodeLevel
+            // 空间模式迁移到 NodeLevel → FM Level
             let _ = g.migrate_to_node_level();
+            g.migrate_to_fm_level();
             g
         } else {
             let mut g = NetworkGenome::minimal(prepared.input_dim, prepared.output_dim);
@@ -892,6 +895,8 @@ impl Evolution {
                 match mutation_result {
                     Ok(mutation_name) => {
                         any_mutation_succeeded = true;
+                        // 若变异引入新 Conv2d 模板块，自动 FM 分解
+                        child.migrate_to_fm_level();
                         callback.on_mutation(generation, &mutation_name, &child);
                         offspring_genomes.push(child);
                     }

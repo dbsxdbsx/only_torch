@@ -445,6 +445,7 @@ fn test_max_pool2d_e2e_conv_pool_cascade() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (1, 1),
+        (1, 1),
         Some("conv"),
     )?;
 

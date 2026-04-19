@@ -37,10 +37,10 @@ impl ChessPieceCNN {
     pub fn new(graph: &Graph) -> Result<Self, GraphError> {
         let graph = graph.with_model_name("ChessPieceCNN");
         Ok(Self {
-            conv1: Conv2d::new(&graph, 3, 16, (3, 3), (1, 1), (1, 1), true, "conv1")?,
+            conv1: Conv2d::new(&graph, 3, 16, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv1")?,
             bn1: BatchNorm::new(&graph, 16, 1e-5, 0.1, "bn1")?,
             pool1: MaxPool2d::new(&graph, (2, 2), None, "pool1"),
-            conv2: Conv2d::new(&graph, 16, 32, (3, 3), (1, 1), (1, 1), true, "conv2")?,
+            conv2: Conv2d::new(&graph, 16, 32, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv2")?,
             bn2: BatchNorm::new(&graph, 32, 1e-5, 0.1, "bn2")?,
             pool2: MaxPool2d::new(&graph, (2, 2), None, "pool2"),
             // 32 * 7 * 7 = 1568

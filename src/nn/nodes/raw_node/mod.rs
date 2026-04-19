@@ -116,6 +116,11 @@ define_node_types! {
         description: "2D 卷积",
         var_method: None,
     },
+    ConvTranspose2d(ConvTranspose2d) {
+        category: "矩阵/卷积",
+        description: "2D 转置卷积（反卷积）",
+        var_method: None,
+    },
     MaxPool2d(MaxPool2d) {
         category: "矩阵/卷积",
         description: "2D 最大池化",

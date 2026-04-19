@@ -146,6 +146,12 @@ pub struct NodeGene {
     /// - 仅序列模式有效，与 cell-based 循环互斥
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recurrent_parents: Vec<RecurrentEdge>,
+    /// Feature Map 标识（仅 Spatial 域 FM 粒度演化使用）
+    ///
+    /// - `Some(id)`: 此节点属于 FM 子图中的某个 Feature Map
+    /// - `None`: 非 FM 节点（传统节点 / FM 边的 op 和 kernel）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fm_id: Option<u64>,
 }
 
 impl NodeGene {
@@ -165,6 +171,28 @@ impl NodeGene {
             enabled: true,
             block_id,
             recurrent_parents: Vec::new(),
+            fm_id: None,
+        }
+    }
+
+    /// 创建带 fm_id 的 FM 节点基因
+    pub fn new_fm(
+        innovation_number: u64,
+        node_type: NodeTypeDescriptor,
+        output_shape: Vec<usize>,
+        parents: Vec<u64>,
+        block_id: Option<u64>,
+        fm_id: u64,
+    ) -> Self {
+        Self {
+            innovation_number,
+            node_type,
+            output_shape,
+            parents,
+            enabled: true,
+            block_id,
+            recurrent_parents: Vec::new(),
+            fm_id: Some(fm_id),
         }
     }
 
@@ -399,7 +427,7 @@ pub fn infer_output_shape(
         }
 
         // ── Conv2d: [N,C_in,H,W] × [C_out,C_in,kH,kW] → [N,C_out,H_out,W_out] ──
-        NT::Conv2d { stride, padding } => {
+        NT::Conv2d { stride, padding, dilation } => {
             require_n(2, parent_shapes)?;
             let inp = parent_shapes[0];
             let ker = parent_shapes[1];
@@ -410,8 +438,29 @@ pub fn infer_output_shape(
                 return Err(format!("Conv2d 权重需要 4D，得到 {ker:?}"));
             }
             let (n, c_out) = (inp[0], ker[0]);
-            let h_out = (inp[2] + 2 * padding.0 - ker[2]) / stride.0 + 1;
-            let w_out = (inp[3] + 2 * padding.1 - ker[3]) / stride.1 + 1;
+            let eff_kh = dilation.0 * (ker[2] - 1) + 1;
+            let eff_kw = dilation.1 * (ker[3] - 1) + 1;
+            let h_out = (inp[2] + 2 * padding.0 - eff_kh) / stride.0 + 1;
+            let w_out = (inp[3] + 2 * padding.1 - eff_kw) / stride.1 + 1;
+            Ok(vec![n, c_out, h_out, w_out])
+        }
+
+        // ── ConvTranspose2d: [N,C_in,H,W] × [C_in,C_out,kH,kW] → [N,C_out,H_out,W_out] ──
+        NT::ConvTranspose2d { stride, padding, output_padding } => {
+            require_n(2, parent_shapes)?;
+            let inp = parent_shapes[0];
+            let ker = parent_shapes[1];
+            if inp.len() < 4 {
+                return Err(format!("ConvTranspose2d 输入需要 4D，得到 {inp:?}"));
+            }
+            if ker.len() < 4 {
+                return Err(format!("ConvTranspose2d 权重需要 4D，得到 {ker:?}"));
+            }
+            let (n, c_out) = (inp[0], ker[1]);
+            let h_sum = (inp[2] - 1) * stride.0 + ker[2] + output_padding.0;
+            let w_sum = (inp[3] - 1) * stride.1 + ker[3] + output_padding.1;
+            let h_out = h_sum.saturating_sub(2 * padding.0).max(1);
+            let w_out = w_sum.saturating_sub(2 * padding.1).max(1);
             Ok(vec![n, c_out, h_out, w_out])
         }
 
@@ -674,7 +723,7 @@ pub fn infer_domain(
 
     match node_type {
         // 空间 → 空间
-        NT::Conv2d { .. } | NT::MaxPool2d { .. } | NT::AvgPool2d { .. } => Spatial,
+        NT::Conv2d { .. } | NT::ConvTranspose2d { .. } | NT::MaxPool2d { .. } | NT::AvgPool2d { .. } => Spatial,
         // 空间 → 平坦
         NT::Flatten { .. } => Flat,
         // 输入节点默认平坦（调用方会根据 genome 的输入模式修正）

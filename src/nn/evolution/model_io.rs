@@ -251,10 +251,13 @@ impl EvolutionResult {
             .map_err(|e| EvolutionError::IoError(format!("解析演化元数据失败: {e}")))?;
 
         // 从 genome 重建图（genome 不含 weight_snapshots，权重由参数名加载）
-        let genome = evo_meta
+        let mut genome = evo_meta
             .genome
             .into_genome()
             .map_err(|e| EvolutionError::IoError(e))?;
+
+        // 兼容旧 spatial 模型：如果没有 FM 节点，自动迁移
+        genome.migrate_to_fm_level();
         let mut rng = StdRng::seed_from_u64(0);
         let build = genome.build(&mut rng)?;
 

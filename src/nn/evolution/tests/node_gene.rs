@@ -431,7 +431,8 @@ fn infer_conv2d_same_padding() {
         infer(
             NodeTypeDescriptor::Conv2d {
                 stride: (1, 1),
-                padding: (1, 1)
+                padding: (1, 1),
+                dilation: (1, 1),
             },
             vec![shape![1, 1, 4, 4], shape![8, 1, 3, 3]]
         )
@@ -447,12 +448,30 @@ fn infer_conv2d_strided() {
         infer(
             NodeTypeDescriptor::Conv2d {
                 stride: (2, 2),
-                padding: (0, 0)
+                padding: (0, 0),
+                dilation: (1, 1),
             },
             vec![shape![1, 3, 6, 6], shape![16, 3, 3, 3]]
         )
         .unwrap(),
         shape![1, 16, 2, 2]
+    );
+}
+
+#[test]
+fn infer_conv2d_dilated() {
+    // 输入 [1,1,7,7]，核 [4,1,3,3]，dilation=2 → eff_k=5 → H=(7+0-5)/1+1=3
+    assert_eq!(
+        infer(
+            NodeTypeDescriptor::Conv2d {
+                stride: (1, 1),
+                padding: (0, 0),
+                dilation: (2, 2),
+            },
+            vec![shape![1, 1, 7, 7], shape![4, 1, 3, 3]]
+        )
+        .unwrap(),
+        shape![1, 4, 3, 3]
     );
 }
 
@@ -908,6 +927,7 @@ fn genome_analysis_domain_spatial_propagation() {
         NodeTypeDescriptor::Conv2d {
             stride: (1, 1),
             padding: (1, 1),
+            dilation: (1, 1),
         },
         shape![1, 8, 4, 4],
         vec![0, 1], // input(0), kernel(1)
@@ -973,12 +993,12 @@ fn infer_amax_amin_axis_oob_err() {
 fn infer_conv2d_insufficient_dims_err() {
     // 输入少于 4D → Err
     assert!(infer(
-        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0) },
+        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0), dilation: (1, 1) },
         vec![shape![3, 4], shape![8, 3, 3, 3]]
     ).is_err());
     // 权重少于 4D → Err
     assert!(infer(
-        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0) },
+        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0), dilation: (1, 1) },
         vec![shape![1, 3, 4, 4], shape![8, 3, 3]]
     ).is_err());
 }
@@ -1102,7 +1122,7 @@ fn infer_topk_axis_oob_err() {
 #[test]
 fn infer_domain_conv2d_to_spatial() {
     let d = infer_domain(
-        &NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0) },
+        &NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0), dilation: (1, 1) },
         &[ShapeDomain::Flat],
     );
     assert_eq!(d, ShapeDomain::Spatial, "Conv2d 应输出 Spatial域");

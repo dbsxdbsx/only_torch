@@ -167,6 +167,7 @@ pub fn onnx_op_to_descriptors(
             validate_conv_config(attrs, node_name)?;
             let strides = find_attr_ints(attrs, "strides");
             let pads = find_attr_ints(attrs, "pads");
+            let dilations = find_attr_ints(attrs, "dilations");
             let stride = if strides.len() >= 2 {
                 (strides[0] as usize, strides[1] as usize)
             } else {
@@ -177,7 +178,36 @@ pub fn onnx_op_to_descriptors(
             } else {
                 (0, 0)
             };
-            Ok(vec![NodeTypeDescriptor::Conv2d { stride, padding }])
+            let dilation = if dilations.len() >= 2 {
+                (dilations[0] as usize, dilations[1] as usize)
+            } else {
+                (1, 1)
+            };
+            Ok(vec![NodeTypeDescriptor::Conv2d { stride, padding, dilation }])
+        }
+
+        // ─── 转置卷积 ───
+        OpType::ConvTranspose => {
+            validate_conv_config(attrs, node_name)?;
+            let strides = find_attr_ints(attrs, "strides");
+            let pads = find_attr_ints(attrs, "pads");
+            let output_padding_vals = find_attr_ints(attrs, "output_padding");
+            let stride = if strides.len() >= 2 {
+                (strides[0] as usize, strides[1] as usize)
+            } else {
+                (1, 1)
+            };
+            let padding = if pads.len() >= 4 {
+                (pads[0] as usize, pads[2] as usize)
+            } else {
+                (0, 0)
+            };
+            let output_padding = if output_padding_vals.len() >= 2 {
+                (output_padding_vals[0] as usize, output_padding_vals[1] as usize)
+            } else {
+                (0, 0)
+            };
+            Ok(vec![NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding }])
         }
 
         // ─── 池化 ───
@@ -452,11 +482,8 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         }),
 
         // ─── 卷积 / 池化 ───
-        NodeTypeDescriptor::Conv2d { stride, padding } => ExportCategory::Operator(OnnxExportOp {
-            op_type: "Conv",
-            float_attrs: vec![],
-            int_attrs: vec![],
-            int_list_attrs: vec![
+        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
+            let mut attrs = vec![
                 ("strides", vec![stride.0 as i64, stride.1 as i64]),
                 (
                     "pads",
@@ -467,8 +494,40 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                         padding.1 as i64,
                     ],
                 ),
-            ],
-        }),
+            ];
+            if *dilation != (1, 1) {
+                attrs.push(("dilations", vec![dilation.0 as i64, dilation.1 as i64]));
+            }
+            ExportCategory::Operator(OnnxExportOp {
+                op_type: "Conv",
+                float_attrs: vec![],
+                int_attrs: vec![],
+                int_list_attrs: attrs,
+            })
+        }
+        NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
+            let mut attrs = vec![
+                ("strides", vec![stride.0 as i64, stride.1 as i64]),
+                (
+                    "pads",
+                    vec![
+                        padding.0 as i64,
+                        padding.1 as i64,
+                        padding.0 as i64,
+                        padding.1 as i64,
+                    ],
+                ),
+            ];
+            if *output_padding != (0, 0) {
+                attrs.push(("output_padding", vec![output_padding.0 as i64, output_padding.1 as i64]));
+            }
+            ExportCategory::Operator(OnnxExportOp {
+                op_type: "ConvTranspose",
+                float_attrs: vec![],
+                int_attrs: vec![],
+                int_list_attrs: attrs,
+            })
+        }
         NodeTypeDescriptor::MaxPool2d { kernel_size, stride } => {
             ExportCategory::Operator(OnnxExportOp {
                 op_type: "MaxPool",
@@ -585,11 +644,12 @@ fn validate_conv_config(attrs: &[Attribute], node_name: &str) -> Result<(), Onnx
         });
     }
     let dilations = find_attr_ints(attrs, "dilations");
-    if !dilations.is_empty() && dilations.iter().any(|&d| d != 1) {
+    if !dilations.is_empty() && dilations.len() != 2 {
         return Err(OnnxError::UnsupportedConvConfig {
             op_type: "Conv".to_string(),
             reason: format!(
-                "不支持空洞卷积 dilations={dilations:?} (节点: \"{node_name}\")"
+                "仅支持 2D 空洞卷积，dilations 维度={} (节点: \"{node_name}\")",
+                dilations.len()
             ),
         });
     }

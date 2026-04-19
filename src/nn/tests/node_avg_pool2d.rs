@@ -476,6 +476,7 @@ fn test_avg_pool2d_e2e_conv_pool_chain() -> Result<(), GraphError> {
         vec![input.clone(), kernel.clone()],
         (1, 1),
         (1, 1),
+        (1, 1),
         Some("conv"),
     )?;
     assert_eq!(conv.shape(), vec![2, 4, 8, 8]);

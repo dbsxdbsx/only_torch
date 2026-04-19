@@ -294,6 +294,18 @@ impl MutationRegistry {
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
             reg.register(0.06, MutateStrideMutation);
+            // FM 级别变异
+            use super::fm_mutation::*;
+            reg.register(0.08, AddFeatureMapMutation);
+            reg.register(0.04, RemoveFeatureMapMutation);
+            reg.register(0.06, AddFMEdgeMutation);
+            reg.register(0.04, RemoveFMEdgeMutation);
+            reg.register(0.06, SplitFMEdgeMutation);
+            reg.register(0.04, ChangeFMEdgeTypeMutation);
+            reg.register(0.04, MutateFMEdgeKernelSizeMutation);
+            reg.register(0.04, MutateFMEdgeStrideMutation);
+            reg.register(0.02, MutateFMEdgeDilationMutation);
+            reg.register(0.04, ChangeFeatureMapSizeMutation);
         }
         reg
     }
@@ -335,6 +347,18 @@ impl MutationRegistry {
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
             reg.register(0.06, MutateStrideMutation);
+            // FM 级别变异（Phase 2 偏向参数调整）
+            use super::fm_mutation::*;
+            reg.register(0.04, AddFeatureMapMutation);
+            reg.register(0.04, RemoveFeatureMapMutation);
+            reg.register(0.06, AddFMEdgeMutation);
+            reg.register(0.04, RemoveFMEdgeMutation);
+            reg.register(0.04, SplitFMEdgeMutation);
+            reg.register(0.04, ChangeFMEdgeTypeMutation);
+            reg.register(0.06, MutateFMEdgeKernelSizeMutation);
+            reg.register(0.04, MutateFMEdgeStrideMutation);
+            reg.register(0.04, MutateFMEdgeDilationMutation);
+            reg.register(0.02, ChangeFeatureMapSizeMutation);
         }
         reg
     }
@@ -2153,6 +2177,23 @@ fn node_level_remove_apply(
 ///
 /// `is_grow=true` → 增大，`is_grow=false` → 缩小。
 /// 增大时检查 max_total_params 并可回滚。
+fn is_fm_edge_block(genome: &NetworkGenome, block: &NodeBlock) -> bool {
+    let nodes = genome.nodes();
+    block.node_ids.iter().any(|&nid| {
+        nodes
+            .iter()
+            .any(|n| n.innovation_number == nid && n.fm_id.is_some())
+    }) || block.node_ids.iter().any(|&nid| {
+        nodes.iter().any(|n| {
+            n.innovation_number == nid
+                && n.is_parameter()
+                && n.output_shape.len() == 4
+                && n.output_shape[0] == 1
+                && n.output_shape[1] == 1
+        })
+    })
+}
+
 fn node_level_grow_apply(
     genome: &mut NetworkGenome,
     constraints: &SizeConstraints,
@@ -2165,6 +2206,10 @@ fn node_level_grow_apply(
         .filter(|b| {
             // 跳跃投影块不参与 Grow/Shrink（由 repair_skip_connections 自动维护）
             if is_skip_projection_block(genome, b) {
+                return false;
+            }
+            // FM edge 块不参与 Grow/Shrink（由 FM 级别变异处理）
+            if is_fm_edge_block(genome, b) {
                 return false;
             }
             if is_grow {

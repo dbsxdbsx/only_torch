@@ -252,11 +252,19 @@ fn rebuild_node(
         }
 
         // ==================== 卷积/池化 ====================
-        NodeTypeDescriptor::Conv2d { stride, padding } => {
+        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
             let parents = get_all_parents(node_desc, node_map)?;
             let node = graph
                 .inner_mut()
-                .create_conv2d_node(parents, *stride, *padding, name)?;
+                .create_conv2d_node(parents, *stride, *padding, *dilation, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
+        NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph
+                .inner_mut()
+                .create_conv_transpose2d_node(parents, *stride, *padding, *output_padding, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 

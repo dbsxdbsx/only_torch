@@ -1,68 +1,51 @@
 /*
  * @Author       : 老董
- * @Date         : 2025-12-22
- * @Description  : Conv2d (2D 卷积) 层 - PyTorch 风格 API
+ * @Date         : 2026-04-19
+ * @Description  : ConvTranspose2d (2D 转置卷积) 层 - PyTorch 风格 API
  *
  * 输入/输出形状：
  * - 输入：[batch_size, in_channels, H, W]
  * - 输出：[batch_size, out_channels, H', W']
  *
  * 输出尺寸计算：
- * H' = (H + 2*padding_h - kernel_h) / stride_h + 1
- * W' = (W + 2*padding_w - kernel_w) / stride_w + 1
+ * H' = (H - 1) * stride_h - 2 * padding_h + kernel_h + output_padding_h
+ * W' = (W - 1) * stride_w - 2 * padding_w + kernel_w + output_padding_w
  *
- * 计算：output = conv2d(x, K) + b
+ * 卷积核布局：[in_channels, out_channels, kH, kW]
+ * 计算：output = conv_transpose2d(x, K) + b
  */
 
 use crate::nn::graph::NodeGroupContext;
 use crate::nn::{Graph, GraphError, Init, IntoVar, Module, Var};
 
-// ==================== 新版 Conv2d 结构体（推荐）====================
-
-/// Conv2d (2D 卷积) 层
+/// ConvTranspose2d (2D 转置卷积 / 反卷积) 层
 ///
-/// `PyTorch` 风格的卷积层：`output = conv2d(x, K) + b`
+/// `PyTorch` 风格：`output = conv_transpose2d(x, K) + b`
 ///
 /// # 输入/输出形状
 /// - 输入：[`batch_size`, `in_channels`, H, W]
 /// - 输出：[`batch_size`, `out_channels`, H', W']
 ///
-/// # 输出尺寸计算
-/// ```text
-/// H' = (H + 2*padding_h - kernel_h) / stride_h + 1
-/// W' = (W + 2*padding_w - kernel_w) / stride_w + 1
-/// ```
-///
 /// # 使用示例
 /// ```ignore
-/// let conv = Conv2d::new(&graph, 1, 32, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv1")?;
-/// let h = conv.forward(&x).relu();  // 链式调用
+/// let deconv = ConvTranspose2d::new(&graph, 32, 16, (3, 3), (2, 2), (1, 1), (1, 1), true, "deconv1")?;
+/// let h = deconv.forward(&x).relu();
 /// ```
-pub struct Conv2d {
-    /// 卷积核参数 [`out_channels`, `in_channels`, `kernel_h`, `kernel_w`]
+pub struct ConvTranspose2d {
     kernel: Var,
-    /// 偏置参数 [1, `out_channels`, 1, 1]（可选，用于广播加法）
     bias: Option<Var>,
-    /// 输入通道数
     in_channels: usize,
-    /// 输出通道数
     out_channels: usize,
-    /// 卷积核大小 (`kernel_h`, `kernel_w`)
     kernel_size: (usize, usize),
-    /// 步长 (`stride_h`, `stride_w`)
     stride: (usize, usize),
-    /// 填充 (`padding_h`, `padding_w`)
     padding: (usize, usize),
-    /// 空洞卷积间隔 (`dilation_h`, `dilation_w`)
-    dilation: (usize, usize),
-    /// 层名称（用于可视化分组）
+    output_padding: (usize, usize),
     name: String,
-    /// 分组实例 ID（用于可视化 cluster）
     instance_id: usize,
 }
 
-impl Conv2d {
-    /// 创建新的 Conv2d 层
+impl ConvTranspose2d {
+    /// 创建新的 ConvTranspose2d 层
     ///
     /// # 参数
     /// - `graph`: 计算图句柄
@@ -71,12 +54,9 @@ impl Conv2d {
     /// - `kernel_size`: 卷积核大小 (kH, kW)
     /// - `stride`: 步长 (sH, sW)
     /// - `padding`: 填充 (pH, pW)
-    /// - `dilation`: 空洞卷积间隔 (dH, dW)，(1,1) 为标准卷积
+    /// - `output_padding`: 输出侧额外尺寸 (opH, opW)
     /// - `use_bias`: 是否使用偏置
     /// - `name`: 层名称前缀
-    ///
-    /// # 返回
-    /// Conv2d 层实例
     pub fn new(
         graph: &Graph,
         in_channels: usize,
@@ -84,21 +64,19 @@ impl Conv2d {
         kernel_size: (usize, usize),
         stride: (usize, usize),
         padding: (usize, usize),
-        dilation: (usize, usize),
+        output_padding: (usize, usize),
         use_bias: bool,
         name: &str,
     ) -> Result<Self, GraphError> {
         let (k_h, k_w) = kernel_size;
 
-        // 创建卷积核参数：Kaiming 初始化
+        // 转置卷积核: [C_in, C_out, kH, kW]
         let kernel = graph.parameter(
-            &[out_channels, in_channels, k_h, k_w],
+            &[in_channels, out_channels, k_h, k_w],
             Init::Kaiming,
             &format!("{name}_K"),
         )?;
 
-        // 创建偏置参数（可选）：零初始化
-        // 形状 [1, C, 1, 1] 以便与 [batch, C, H, W] 广播
         let bias = if use_bias {
             Some(graph.parameter(&[1, out_channels, 1, 1], Init::Zeros, &format!("{name}_b"))?)
         } else {
@@ -115,29 +93,20 @@ impl Conv2d {
             kernel_size,
             stride,
             padding,
-            dilation,
+            output_padding,
             name: name.to_string(),
             instance_id,
         })
     }
 
     /// 前向传播
-    ///
-    /// 计算 `conv2d(x, K) + b`
-    ///
-    /// # 参数
-    /// - `x`: 输入 Var，形状 [`batch_size`, `in_channels`, H, W]
-    ///
-    /// # 返回
-    /// 输出 Var，形状 [`batch_size`, `out_channels`, H', W']
     pub fn forward(&self, x: impl IntoVar) -> Var {
         use std::rc::Rc;
         let x = x
             .into_var(&self.kernel.get_graph())
-            .expect("Conv2d 输入转换失败");
+            .expect("ConvTranspose2d 输入转换失败");
         let graph = x.get_graph();
 
-        // 分组上下文：自动标记 forward 期间创建的节点 + Parameter 节点
         let desc = if self.bias.is_some() {
             format!(
                 "[?, {}, ?, ?] → [?, {}, ?, ?], kernel {}×{}",
@@ -149,29 +118,32 @@ impl Conv2d {
                 self.in_channels, self.out_channels, self.kernel_size.0, self.kernel_size.1
             )
         };
-        let _guard =
-            NodeGroupContext::for_layer(&x, "Conv2d", self.instance_id, &self.name, &desc);
+        let _guard = NodeGroupContext::for_layer(
+            &x,
+            "ConvTranspose2d",
+            self.instance_id,
+            &self.name,
+            &desc,
+        );
         _guard.tag_existing(&self.kernel);
         if let Some(ref bias) = self.bias {
             _guard.tag_existing(bias);
         }
 
-        // Conv2d: [batch, C_in, H, W] * [C_out, C_in, kH, kW] -> [batch, C_out, H', W']
         let conv_out = {
             let conv_node = graph
                 .inner_mut()
-                .create_conv2d_node(
+                .create_conv_transpose2d_node(
                     vec![Rc::clone(x.node()), Rc::clone(self.kernel.node())],
                     self.stride,
                     self.padding,
-                    self.dilation,
-                    Some(&format!("{}_conv", self.name)),
+                    self.output_padding,
+                    Some(&format!("{}_deconv", self.name)),
                 )
-                .expect("Conv2d conv 失败");
+                .expect("ConvTranspose2d 前向计算失败");
             Var::new_with_rc_graph(conv_node, &graph.inner_rc())
         };
 
-        // 如果有 bias，直接加法（Add 支持广播：[batch, C, H, W] + [1, C, 1, 1]）
         if let Some(ref bias) = self.bias {
             let out_node = graph
                 .inner_mut()
@@ -179,41 +151,35 @@ impl Conv2d {
                     vec![Rc::clone(conv_out.node()), Rc::clone(bias.node())],
                     Some(&format!("{}_out", self.name)),
                 )
-                .expect("Conv2d bias add 失败");
+                .expect("ConvTranspose2d bias add 失败");
             Var::new_with_rc_graph(out_node, &graph.inner_rc())
         } else {
             conv_out
         }
     }
 
-    /// 获取输入通道数
     pub const fn in_channels(&self) -> usize {
         self.in_channels
     }
 
-    /// 获取输出通道数
     pub const fn out_channels(&self) -> usize {
         self.out_channels
     }
 
-    /// 获取卷积核大小
     pub const fn kernel_size(&self) -> (usize, usize) {
         self.kernel_size
     }
 
-    /// 获取步长
     pub const fn stride(&self) -> (usize, usize) {
         self.stride
     }
 
-    /// 获取填充
     pub const fn padding(&self) -> (usize, usize) {
         self.padding
     }
 
-    /// 获取空洞卷积间隔
-    pub const fn dilation(&self) -> (usize, usize) {
-        self.dilation
+    pub const fn output_padding(&self) -> (usize, usize) {
+        self.output_padding
     }
 
     /// 获取卷积核 Var
@@ -227,7 +193,7 @@ impl Conv2d {
     }
 }
 
-impl Module for Conv2d {
+impl Module for ConvTranspose2d {
     fn parameters(&self) -> Vec<Var> {
         let mut params = vec![self.kernel.clone()];
         if let Some(ref bias) = self.bias {

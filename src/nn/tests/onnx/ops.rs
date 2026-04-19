@@ -281,9 +281,10 @@ fn test_import_conv2d() {
     ];
     let result = onnx_op_to_descriptors(&OpType::Conv, &attrs, "conv0").unwrap();
     match &result[0] {
-        NodeTypeDescriptor::Conv2d { stride, padding } => {
+        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
             assert_eq!(*stride, (1, 1));
             assert_eq!(*padding, (1, 1));
+            assert_eq!(*dilation, (1, 1));
         }
         _ => panic!("expected Conv2d"),
     }
@@ -300,13 +301,22 @@ fn test_import_conv_group_rejected() {
 }
 
 #[test]
-fn test_import_conv_dilation_rejected() {
+fn test_import_conv_dilation_accepted() {
     let attrs = vec![
         make_ints_attr("kernel_shape", vec![3, 3]),
         make_ints_attr("dilations", vec![2, 2]),
+        make_ints_attr("strides", vec![1, 1]),
+        make_ints_attr("pads", vec![2, 2, 2, 2]),
     ];
-    let result = onnx_op_to_descriptors(&OpType::Conv, &attrs, "conv0");
-    assert!(result.is_err());
+    let result = onnx_op_to_descriptors(&OpType::Conv, &attrs, "conv0").unwrap();
+    match &result[0] {
+        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
+            assert_eq!(*stride, (1, 1));
+            assert_eq!(*padding, (2, 2));
+            assert_eq!(*dilation, (2, 2));
+        }
+        _ => panic!("expected Conv2d"),
+    }
 }
 
 #[test]
@@ -505,11 +515,27 @@ fn test_export_conv2d() {
     let desc = NodeTypeDescriptor::Conv2d {
         stride: (2, 2),
         padding: (1, 1),
+        dilation: (1, 1),
     };
     match descriptor_to_export_category(&desc) {
         ExportCategory::Operator(op) => {
             assert_eq!(op.op_type, "Conv");
+            // dilation=(1,1) 不输出 → 仅 strides + pads
             assert_eq!(op.int_list_attrs.len(), 2);
+        }
+        _ => panic!("expected Operator Conv"),
+    }
+
+    // 非 (1,1) dilation 应导出 dilations 属性
+    let desc_dil = NodeTypeDescriptor::Conv2d {
+        stride: (1, 1),
+        padding: (2, 2),
+        dilation: (2, 2),
+    };
+    match descriptor_to_export_category(&desc_dil) {
+        ExportCategory::Operator(op) => {
+            assert_eq!(op.op_type, "Conv");
+            assert_eq!(op.int_list_attrs.len(), 3, "应包含 strides + pads + dilations");
         }
         _ => panic!("expected Operator Conv"),
     }
@@ -712,9 +738,10 @@ fn test_roundtrip_conv2d() {
     ];
     let imported = onnx_op_to_descriptors(&OpType::Conv, &attrs, "test").unwrap();
     match &imported[0] {
-        NodeTypeDescriptor::Conv2d { stride, padding } => {
+        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
             assert_eq!(*stride, (2, 2));
             assert_eq!(*padding, (1, 1));
+            assert_eq!(*dilation, (1, 1));
         }
         _ => panic!("expected Conv2d"),
     }
@@ -737,5 +764,105 @@ fn test_roundtrip_batchnorm() {
             assert_eq!(exp.op_type, "BatchNormalization");
         }
         _ => panic!("roundtrip failed for BatchNormalization"),
+    }
+}
+
+// ==================== ConvTranspose2d 导入测试 ====================
+
+#[test]
+fn test_import_conv_transpose_default() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![3, 3]),
+    ];
+    let result = onnx_op_to_descriptors(&OpType::ConvTranspose, &attrs, "deconv0").unwrap();
+    match &result[0] {
+        NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
+            assert_eq!(*stride, (1, 1));
+            assert_eq!(*padding, (0, 0));
+            assert_eq!(*output_padding, (0, 0));
+        }
+        _ => panic!("expected ConvTranspose2d"),
+    }
+}
+
+#[test]
+fn test_import_conv_transpose_with_params() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![3, 3]),
+        make_ints_attr("strides", vec![2, 2]),
+        make_ints_attr("pads", vec![1, 1, 1, 1]),
+        make_ints_attr("output_padding", vec![1, 1]),
+    ];
+    let result = onnx_op_to_descriptors(&OpType::ConvTranspose, &attrs, "deconv0").unwrap();
+    match &result[0] {
+        NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
+            assert_eq!(*stride, (2, 2));
+            assert_eq!(*padding, (1, 1));
+            assert_eq!(*output_padding, (1, 1));
+        }
+        _ => panic!("expected ConvTranspose2d"),
+    }
+}
+
+#[test]
+fn test_import_conv_transpose_group_rejected() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![3, 3]),
+        make_int_attr("group", 4),
+    ];
+    let result = onnx_op_to_descriptors(&OpType::ConvTranspose, &attrs, "deconv0");
+    assert!(result.is_err());
+}
+
+// ==================== ConvTranspose2d 导出测试 ====================
+
+#[test]
+fn test_export_conv_transpose2d() {
+    let desc = NodeTypeDescriptor::ConvTranspose2d {
+        stride: (2, 2),
+        padding: (1, 1),
+        output_padding: (0, 0),
+    };
+    match descriptor_to_export_category(&desc) {
+        ExportCategory::Operator(op) => {
+            assert_eq!(op.op_type, "ConvTranspose");
+            // output_padding=(0,0) 不输出 → 仅 strides + pads
+            assert_eq!(op.int_list_attrs.len(), 2);
+        }
+        _ => panic!("expected Operator ConvTranspose"),
+    }
+
+    // 非 (0,0) output_padding 应导出
+    let desc_op = NodeTypeDescriptor::ConvTranspose2d {
+        stride: (2, 2),
+        padding: (1, 1),
+        output_padding: (1, 1),
+    };
+    match descriptor_to_export_category(&desc_op) {
+        ExportCategory::Operator(op) => {
+            assert_eq!(op.op_type, "ConvTranspose");
+            assert_eq!(op.int_list_attrs.len(), 3, "应包含 strides + pads + output_padding");
+        }
+        _ => panic!("expected Operator ConvTranspose"),
+    }
+}
+
+// ==================== ConvTranspose2d 导入→导出 往返测试 ====================
+
+#[test]
+fn test_roundtrip_conv_transpose2d() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![3, 3]),
+        make_ints_attr("strides", vec![2, 2]),
+        make_ints_attr("pads", vec![1, 1, 1, 1]),
+        make_ints_attr("output_padding", vec![1, 1]),
+    ];
+    let imported =
+        onnx_op_to_descriptors(&OpType::ConvTranspose, &attrs, "test").unwrap();
+    match descriptor_to_export_category(&imported[0]) {
+        ExportCategory::Operator(exp) => {
+            assert_eq!(exp.op_type, "ConvTranspose");
+        }
+        _ => panic!("roundtrip failed for ConvTranspose"),
     }
 }

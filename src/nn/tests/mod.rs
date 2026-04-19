@@ -116,6 +116,8 @@ mod layer_embedding;
 mod layer_layer_norm;
 mod layer_rms_norm;
 mod layer_conv2d;
+mod layer_conv_transpose2d;
+mod node_conv_transpose2d;
 mod layer_gru;
 mod layer_linear;
 mod layer_lstm;

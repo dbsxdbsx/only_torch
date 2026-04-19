@@ -225,6 +225,7 @@ pub fn expand_conv2d(
             NodeTypeDescriptor::Conv2d {
                 stride: (1, 1),
                 padding: (padding, padding),
+                dilation: (1, 1),
             },
             vec![1, out_channels, h_out, w_out],
             vec![input_id, kernel_id],
@@ -1110,5 +1111,316 @@ fn expand_layer_config(
             block_id,
             counter,
         )),
+    }
+}
+
+// ==================== FM 分解迁移 ====================
+
+use crate::nn::evolution::fm_ops::next_fm_id;
+
+/// 将 NodeLevel 基因组中的 Conv2d 模板块分解为 FM 节点和边
+///
+/// 每个 Conv2d 模板块 (kernel[out_ch,in_ch,k,k], Conv2d_op, bias, Add) 被替换为：
+/// - in_ch 个输入 FM 节点（如果上游不是 FM 则新建）
+/// - out_ch 个输出 FM 节点（各含 Add 聚合 + bias）
+/// - out_ch × in_ch 条 FM 边（kernel[1,1,k,k] + Conv2d op）
+///
+/// 不修改权重快照（结构性迁移，权重在训练时重新初始化）。
+pub fn migrate_conv2d_to_feature_maps(
+    nodes: &mut Vec<NodeGene>,
+    counter: &mut InnovationCounter,
+) {
+    use std::collections::HashMap;
+
+    // 1. 找到所有 Conv2d 模板块
+    let conv_blocks = find_conv2d_blocks(nodes);
+    if conv_blocks.is_empty() {
+        return;
+    }
+
+    let mut fm_counter = next_fm_id(nodes);
+    let mut node_map: HashMap<u64, usize> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.innovation_number, i))
+        .collect();
+
+    for block in &conv_blocks {
+        decompose_conv2d_block(
+            nodes,
+            block,
+            counter,
+            &mut fm_counter,
+            &mut node_map,
+        );
+    }
+
+    // 清理已禁用的旧模板块节点
+    nodes.retain(|n| n.enabled);
+}
+
+/// Conv2d 模板块信息
+struct Conv2dBlock {
+    kernel_id: u64,
+    conv_op_id: u64,
+    bias_id: Option<u64>,
+    add_id: Option<u64>,
+    /// 原 block_id
+    block_id: u64,
+    /// Conv2d 参数
+    stride: (usize, usize),
+    padding: (usize, usize),
+    dilation: (usize, usize),
+    /// 输入通道数
+    in_channels: usize,
+    /// 输出通道数
+    out_channels: usize,
+    /// 核大小
+    kernel_h: usize,
+    kernel_w: usize,
+    /// 输入节点 innovation
+    input_id: u64,
+    /// 输出空间尺寸
+    output_h: usize,
+    output_w: usize,
+    /// 输入空间尺寸
+    input_h: usize,
+    input_w: usize,
+}
+
+/// 查找基因组中所有 Conv2d 模板块
+fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
+    use std::collections::HashMap;
+
+    let node_map: HashMap<u64, &NodeGene> = nodes
+        .iter()
+        .filter(|n| n.enabled)
+        .map(|n| (n.innovation_number, n))
+        .collect();
+
+    let mut blocks = Vec::new();
+
+    // 找所有 Conv2d op 节点
+    for n in nodes.iter().filter(|n| n.enabled) {
+        let (stride, padding, dilation) = match &n.node_type {
+            NodeTypeDescriptor::Conv2d { stride, padding, dilation } => (*stride, *padding, *dilation),
+            _ => continue,
+        };
+
+        let block_id = match n.block_id {
+            Some(bid) => bid,
+            None => continue, // 非模板块
+        };
+
+        // 已经是 FM 边（fm_id = None 但上游是 FM 节点）的跳过
+        if n.parents.iter().any(|&pid| {
+            node_map.get(&pid).map_or(false, |p| p.fm_id.is_some())
+        }) {
+            continue;
+        }
+
+        if n.parents.len() < 2 {
+            continue;
+        }
+
+        let input_id = n.parents[0];
+        let kernel_id = n.parents[1];
+
+        // 验证 kernel 是 Parameter
+        let kernel_node = match node_map.get(&kernel_id) {
+            Some(kn) if kn.is_parameter() => kn,
+            _ => continue,
+        };
+
+        let kernel_shape = &kernel_node.output_shape;
+        if kernel_shape.len() != 4 {
+            continue;
+        }
+
+        let (out_channels, in_channels, kernel_h, kernel_w) =
+            (kernel_shape[0], kernel_shape[1], kernel_shape[2], kernel_shape[3]);
+
+        let conv_output_shape = &n.output_shape;
+        if conv_output_shape.len() < 4 {
+            continue;
+        }
+        let (output_h, output_w) = (conv_output_shape[2], conv_output_shape[3]);
+
+        // 推导输入空间尺寸
+        let eff_kh = dilation.0 * (kernel_h - 1) + 1;
+        let eff_kw = dilation.1 * (kernel_w - 1) + 1;
+        let input_h = (output_h - 1) * stride.0 + eff_kh - 2 * padding.0;
+        let input_w = (output_w - 1) * stride.1 + eff_kw - 2 * padding.1;
+
+        // 查找同 block_id 的 bias 和 add 节点
+        let mut bias_id = None;
+        let mut add_id = None;
+        for m in nodes.iter().filter(|m| m.enabled && m.block_id == Some(block_id)) {
+            if m.is_parameter() && m.innovation_number != kernel_id {
+                bias_id = Some(m.innovation_number);
+            }
+            if matches!(m.node_type, NodeTypeDescriptor::Add)
+                && m.innovation_number != n.innovation_number
+            {
+                add_id = Some(m.innovation_number);
+            }
+        }
+
+        blocks.push(Conv2dBlock {
+            kernel_id,
+            conv_op_id: n.innovation_number,
+            bias_id,
+            add_id,
+            block_id,
+            stride,
+            padding,
+            dilation,
+            in_channels,
+            out_channels,
+            kernel_h,
+            kernel_w,
+            input_id,
+            output_h,
+            output_w,
+            input_h,
+            input_w,
+        });
+    }
+
+    blocks
+}
+
+/// 将单个 Conv2d 模板块分解为 FM 节点和边
+fn decompose_conv2d_block(
+    nodes: &mut Vec<NodeGene>,
+    block: &Conv2dBlock,
+    counter: &mut InnovationCounter,
+    fm_counter: &mut u64,
+    _node_map: &mut std::collections::HashMap<u64, usize>,
+) {
+    // 1. 创建输入 FM 节点（每个输入通道一个）
+    let mut input_fm_ids = Vec::new();
+    for _ic in 0..block.in_channels {
+        let fm_id = *fm_counter;
+        *fm_counter += 1;
+        let node_id = counter.next();
+
+        // 输入 FM 仅是一个标识节点（Select 从原始输入中取出单通道）
+        // fm_id 标记，shape = [1, 1, H_in, W_in]
+        let mut fm_node = NodeGene::new(
+            node_id,
+            NodeTypeDescriptor::Identity,
+            vec![1, 1, block.input_h, block.input_w],
+            vec![block.input_id],
+            None,
+        );
+        fm_node.fm_id = Some(fm_id);
+        nodes.push(fm_node);
+        input_fm_ids.push((fm_id, node_id));
+    }
+
+    // 2. 创建输出 FM 节点和 FM 边
+    let mut output_fm_output_ids = Vec::new();
+    for _oc in 0..block.out_channels {
+        let fm_id = *fm_counter;
+        *fm_counter += 1;
+
+        // 为每条输入边创建 kernel + Conv2d op
+        let mut edge_output_ids = Vec::new();
+        for &(_in_fm_id, in_fm_node_id) in &input_fm_ids {
+            let edge_block_id = counter.next();
+
+            // kernel [1, 1, kH, kW]
+            let kernel_id = counter.next();
+            nodes.push(NodeGene::new(
+                kernel_id,
+                NodeTypeDescriptor::Parameter,
+                vec![1, 1, block.kernel_h, block.kernel_w],
+                vec![],
+                Some(edge_block_id),
+            ));
+
+            // Conv2d op
+            let conv_id = counter.next();
+            nodes.push(NodeGene::new(
+                conv_id,
+                NodeTypeDescriptor::Conv2d {
+                    stride: block.stride,
+                    padding: block.padding,
+                    dilation: block.dilation,
+                },
+                vec![1, 1, block.output_h, block.output_w],
+                vec![in_fm_node_id, kernel_id],
+                Some(edge_block_id),
+            ));
+
+            edge_output_ids.push(conv_id);
+        }
+
+        // 聚合所有输入边的输出
+        let agg_id = if edge_output_ids.len() == 1 {
+            edge_output_ids[0]
+        } else {
+            // 二叉 Add 树聚合
+            let mut current_ids = edge_output_ids;
+            while current_ids.len() > 1 {
+                let mut next_level = Vec::new();
+                for pair in current_ids.chunks(2) {
+                    if pair.len() == 2 {
+                        let add_id = counter.next();
+                        let mut add_node = NodeGene::new(
+                            add_id,
+                            NodeTypeDescriptor::Add,
+                            vec![1, 1, block.output_h, block.output_w],
+                            vec![pair[0], pair[1]],
+                            None,
+                        );
+                        add_node.fm_id = Some(fm_id);
+                        nodes.push(add_node);
+                        next_level.push(add_id);
+                    } else {
+                        next_level.push(pair[0]);
+                    }
+                }
+                current_ids = next_level;
+            }
+            current_ids[0]
+        };
+
+        // FM 输出节点标记
+        if let Some(node) = nodes.iter_mut().find(|n| n.innovation_number == agg_id) {
+            node.fm_id = Some(fm_id);
+        }
+
+        output_fm_output_ids.push(agg_id);
+    }
+
+    // 3. 创建最终的 Concat 节点将所有输出 FM 拼接回 [N, out_ch, H', W']
+    let concat_id = counter.next();
+    nodes.push(NodeGene::new(
+        concat_id,
+        NodeTypeDescriptor::Concat { axis: 1 },
+        vec![1, block.out_channels, block.output_h, block.output_w],
+        output_fm_output_ids.clone(),
+        None,
+    ));
+
+    // 4. 将下游节点的 parents 从原 Conv2d 块输出重定向到 concat 输出
+    let original_output_id = block.add_id.unwrap_or(block.conv_op_id);
+    for n in nodes.iter_mut() {
+        if n.enabled {
+            for pid in n.parents.iter_mut() {
+                if *pid == original_output_id {
+                    *pid = concat_id;
+                }
+            }
+        }
+    }
+
+    // 5. 禁用原模板块节点
+    for n in nodes.iter_mut() {
+        if n.block_id == Some(block.block_id) && n.fm_id.is_none() {
+            n.enabled = false;
+        }
     }
 }

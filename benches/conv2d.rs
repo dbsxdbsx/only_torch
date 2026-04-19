@@ -25,7 +25,7 @@ impl SingleConvNet {
     ) -> Self {
         Self {
             conv: Conv2d::new(
-                graph, in_c, out_c, (kernel, kernel), (1, 1), (pad, pad), false, "conv",
+                graph, in_c, out_c, (kernel, kernel), (1, 1), (pad, pad), (1, 1), false, "conv",
             )
             .unwrap(),
         }
@@ -49,9 +49,9 @@ struct TwoLayerCNN {
 impl TwoLayerCNN {
     fn new(graph: &Graph, in_c: usize) -> Self {
         Self {
-            conv1: Conv2d::new(graph, in_c, 8, (3, 3), (1, 1), (1, 1), true, "conv1").unwrap(),
+            conv1: Conv2d::new(graph, in_c, 8, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv1").unwrap(),
             pool1: MaxPool2d::new(graph, (2, 2), None, "pool1"),
-            conv2: Conv2d::new(graph, 8, 16, (3, 3), (1, 1), (1, 1), true, "conv2").unwrap(),
+            conv2: Conv2d::new(graph, 8, 16, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv2").unwrap(),
             pool2: MaxPool2d::new(graph, (2, 2), None, "pool2"),
         }
     }
@@ -113,7 +113,7 @@ fn bench_conv_full_step(c: &mut Criterion) {
     for &(name, batch, in_c, h, w, out_c, k, pad) in configs {
         let graph = Graph::new();
         let conv =
-            Conv2d::new(&graph, in_c, out_c, (k, k), (1, 1), (pad, pad), false, "conv").unwrap();
+            Conv2d::new(&graph, in_c, out_c, (k, k), (1, 1), (pad, pad), (1, 1), false, "conv").unwrap();
         let input = Tensor::random(0.0, 1.0, &[batch, in_c, h, w]);
         // 构造 target 用于 mse_loss
         let out_h = (h + 2 * pad - k) / 1 + 1;

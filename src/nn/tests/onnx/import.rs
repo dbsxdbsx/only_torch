@@ -553,9 +553,10 @@ fn test_conv2d_import() {
     assert_eq!(conv_nodes.len(), 1);
 
     match &conv_nodes[0].node_type {
-        NodeTypeDescriptor::Conv2d { stride, padding } => {
+        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
             assert_eq!(*stride, (1, 1));
             assert_eq!(*padding, (1, 1));
+            assert_eq!(*dilation, (1, 1));
         }
         _ => panic!("expected Conv2d"),
     }

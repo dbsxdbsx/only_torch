@@ -204,6 +204,290 @@ fn apply_aggregation(
 use super::gene::{GenomeRepr, ShapeDomain};
 use super::node_gene::GenomeAnalysis;
 use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor as NTD};
+use super::node_gene::NodeGene;
+
+// ==================== FM Builder 分析 ====================
+
+/// 全连接优化合并后的合成节点
+struct SyntheticNode {
+    id: u64,
+    name: String,
+    node_type: NTD,
+    shape: Vec<usize>,
+    parents: Vec<u64>,
+}
+
+/// 全连接合并组信息
+struct MergedFMGroup {
+    /// 被合并替换的节点 ID 集合（FM Identity 输入、FM edge kernel/conv、FM Add 聚合）
+    replaced_ids: std::collections::HashSet<u64>,
+    /// 替换后的合成节点列表（kernel + Conv2d + 可选 bias + Add）
+    synthetic_nodes: Vec<SyntheticNode>,
+    /// Concat 节点的替代父节点（合并后 Concat 的唯一输出源）
+    concat_replacement: Option<(u64, u64)>, // (concat_id, replacement_parent_id)
+}
+
+/// FM 相关的构图分析
+struct FMBuilderAnalysis {
+    /// FM 输入 Identity 节点 → Narrow 通道索引
+    fm_narrow_map: HashMap<u64, usize>,
+    /// 全连接优化合并组
+    merged_groups: Vec<MergedFMGroup>,
+}
+
+impl FMBuilderAnalysis {
+    fn analyze(nodes: &[NodeGene]) -> Self {
+        let mut fm_narrow_map = HashMap::new();
+        let mut merged_groups = Vec::new();
+
+        let node_map: HashMap<u64, &NodeGene> = nodes
+            .iter()
+            .filter(|n| n.enabled)
+            .map(|n| (n.innovation_number, n))
+            .collect();
+
+        // 识别 FM 输入 Identity 节点
+        // 按相同 parent 分组，分配通道索引
+        let mut parent_groups: HashMap<u64, Vec<(u64, u64)>> = HashMap::new(); // parent_id → [(node_id, fm_id)]
+        for n in nodes.iter().filter(|n| n.enabled) {
+            if n.fm_id.is_some()
+                && matches!(n.node_type, NTD::Identity)
+                && !n.parents.is_empty()
+            {
+                parent_groups
+                    .entry(n.parents[0])
+                    .or_default()
+                    .push((n.innovation_number, n.fm_id.unwrap()));
+            }
+        }
+
+        for (_parent_id, group) in parent_groups.iter_mut() {
+            group.sort_by_key(|&(_, fm_id)| fm_id);
+            for (channel_idx, &(node_id, _)) in group.iter().enumerate() {
+                fm_narrow_map.insert(node_id, channel_idx);
+            }
+        }
+
+        // 全连接 FM 组检测
+        // 对每组 FM 输入节点，检查它们是否与下游 FM 输出全连接
+        for (&source_id, input_group) in &parent_groups {
+            let input_node_ids: Vec<u64> = input_group.iter().map(|&(id, _)| id).collect();
+            let in_ch = input_node_ids.len();
+
+            if let Some(merge_result) =
+                Self::try_detect_fully_connected(source_id, &input_node_ids, in_ch, nodes, &node_map)
+            {
+                // 从 fm_narrow_map 中移除这些已被优化的输入节点
+                for &id in &input_node_ids {
+                    fm_narrow_map.remove(&id);
+                }
+                merged_groups.push(merge_result);
+            }
+        }
+
+        Self {
+            fm_narrow_map,
+            merged_groups,
+        }
+    }
+
+    /// 尝试检测全连接 FM 组并生成合并替换
+    fn try_detect_fully_connected(
+        source_id: u64,
+        input_node_ids: &[u64],
+        in_ch: usize,
+        nodes: &[NodeGene],
+        node_map: &HashMap<u64, &NodeGene>,
+    ) -> Option<MergedFMGroup> {
+        let input_set: std::collections::HashSet<u64> = input_node_ids.iter().copied().collect();
+
+        // 找到所有 FM edge Conv2d，其第一个 parent 是 input FM 节点之一
+        let mut edge_convs: Vec<&NodeGene> = Vec::new();
+        for n in nodes.iter().filter(|n| n.enabled) {
+            if let NTD::Conv2d { .. } = &n.node_type {
+                if n.parents.len() >= 2 && input_set.contains(&n.parents[0]) {
+                    // kernel 应为 [1,1,k,k]
+                    if let Some(kn) = node_map.get(&n.parents[1]) {
+                        if kn.is_parameter() && kn.output_shape.len() == 4
+                            && kn.output_shape[0] == 1 && kn.output_shape[1] == 1
+                        {
+                            edge_convs.push(n);
+                        }
+                    }
+                }
+            }
+        }
+
+        if edge_convs.is_empty() {
+            return None;
+        }
+
+        // 检查所有边的 Conv2d 参数是否一致
+        let first_type = &edge_convs[0].node_type;
+        if !edge_convs.iter().all(|e| &e.node_type == first_type) {
+            return None;
+        }
+
+        // 检查 kernel_size 一致
+        let first_kernel = node_map.get(&edge_convs[0].parents[1]).unwrap();
+        let (kh, kw) = (first_kernel.output_shape[2], first_kernel.output_shape[3]);
+        for e in &edge_convs {
+            let k = node_map.get(&e.parents[1]).unwrap();
+            if k.output_shape[2] != kh || k.output_shape[3] != kw {
+                return None;
+            }
+        }
+
+        // 确定输出 FM 节点：找到 Concat 节点
+        // Concat 的 parents 是各输出 FM 的最终输出节点
+        let concat_node = nodes.iter().find(|n| {
+            n.enabled
+                && matches!(n.node_type, NTD::Concat { axis: 1 })
+                && n.output_shape.len() == 4
+        });
+        let concat_node = match concat_node {
+            Some(c) => c,
+            None => return None,
+        };
+
+        let out_ch = concat_node.parents.len();
+
+        // 验证全连接：应有 in_ch × out_ch 条边
+        if edge_convs.len() != in_ch * out_ch {
+            return None;
+        }
+
+        let (stride, padding, dilation) = match first_type {
+            NTD::Conv2d { stride, padding, dilation } => (*stride, *padding, *dilation),
+            _ => return None,
+        };
+
+        // 收集所有被替换的节点 ID
+        let mut replaced_ids = std::collections::HashSet::new();
+        // FM 输入 Identity 节点
+        for &id in input_node_ids {
+            replaced_ids.insert(id);
+        }
+        // FM edge kernel + conv 节点
+        for e in &edge_convs {
+            replaced_ids.insert(e.innovation_number);
+            replaced_ids.insert(e.parents[1]); // kernel
+        }
+        // FM 聚合 Add 节点（在 Concat parents 中且有 fm_id）
+        for &parent_id in &concat_node.parents {
+            if let Some(pn) = node_map.get(&parent_id) {
+                if matches!(pn.node_type, NTD::Add) && pn.fm_id.is_some() {
+                    replaced_ids.insert(parent_id);
+                    // 也需要递归找到 Add 树中的所有 Add 节点
+                    Self::collect_fm_add_tree(parent_id, node_map, &mut replaced_ids);
+                }
+            }
+        }
+
+        let conv_output_shape = &edge_convs[0].output_shape;
+        let (oh, ow) = (conv_output_shape[2], conv_output_shape[3]);
+
+        // 生成合成节点（merged kernel + merged conv2d）
+        // 使用 Concat 节点的 innovation_number 作为 base，加上偏移作为合成 ID
+        // 实际上让合成节点使用 Concat 节点之前的 ID 空间
+        // 但更安全的做法是使用足够大的 ID 避免冲突
+        let max_id = nodes.iter().map(|n| n.innovation_number).max().unwrap_or(0);
+        let merged_kernel_id = max_id + 1000;
+        let merged_conv_id = max_id + 1001;
+
+        let synthetic_nodes = vec![
+            SyntheticNode {
+                id: merged_kernel_id,
+                name: format!("evo_merged_kernel_{}", merged_kernel_id),
+                node_type: NTD::Parameter,
+                shape: vec![out_ch, in_ch, kh, kw],
+                parents: vec![],
+            },
+            SyntheticNode {
+                id: merged_conv_id,
+                name: format!("evo_merged_conv_{}", merged_conv_id),
+                node_type: NTD::Conv2d { stride, padding, dilation },
+                shape: vec![1, out_ch, oh, ow],
+                parents: vec![source_id, merged_kernel_id],
+            },
+        ];
+
+        Some(MergedFMGroup {
+            replaced_ids,
+            synthetic_nodes,
+            concat_replacement: Some((concat_node.innovation_number, merged_conv_id)),
+        })
+    }
+
+    /// 递归收集 FM Add 聚合树中的所有节点 ID
+    fn collect_fm_add_tree(
+        node_id: u64,
+        node_map: &HashMap<u64, &NodeGene>,
+        collected: &mut std::collections::HashSet<u64>,
+    ) {
+        if let Some(node) = node_map.get(&node_id) {
+            for &parent_id in &node.parents {
+                if let Some(parent) = node_map.get(&parent_id) {
+                    if matches!(parent.node_type, NTD::Add) && parent.fm_id.is_some() {
+                        collected.insert(parent_id);
+                        Self::collect_fm_add_tree(parent_id, node_map, collected);
+                    }
+                }
+            }
+        }
+    }
+
+    /// 检查节点是否被全连接优化合并替换
+    fn is_merged_away(&self, node_id: u64) -> bool {
+        self.merged_groups
+            .iter()
+            .any(|g| g.replaced_ids.contains(&node_id))
+    }
+
+    /// 对单个节点进行 FM 感知的类型转换
+    ///
+    /// 返回 (node_type, output_shape, parents)
+    fn transform_node(
+        &self,
+        node: &NodeGene,
+        _all_nodes: &[NodeGene],
+    ) -> (NTD, Vec<usize>, Vec<u64>) {
+        let id = node.innovation_number;
+
+        // FM 输入 Identity → Narrow
+        if let Some(&channel_idx) = self.fm_narrow_map.get(&id) {
+            return (
+                NTD::Narrow {
+                    axis: 1,
+                    start: channel_idx,
+                    length: 1,
+                },
+                node.output_shape.clone(), // [1, 1, H, W]
+                node.parents.clone(),
+            );
+        }
+
+        // Concat 替换检查（全连接优化时 Concat 变为 Identity）
+        for merged in &self.merged_groups {
+            if let Some(&(concat_id, replacement_id)) = merged.concat_replacement.as_ref() {
+                if id == concat_id {
+                    return (
+                        NTD::Identity,
+                        node.output_shape.clone(),
+                        vec![replacement_id],
+                    );
+                }
+            }
+        }
+
+        // 默认：不变
+        (
+            node.node_type.clone(),
+            node.output_shape.clone(),
+            node.parents.clone(),
+        )
+    }
+}
 
 impl NetworkGenome {
     /// 将当前基因组转换为 `GraphDescriptor`
@@ -246,6 +530,11 @@ impl NetworkGenome {
             .map(|n| (n.innovation_number, n))
             .collect();
 
+        // FM 感知分析：
+        // 1. 识别 FM 输入 Identity 节点并映射到 Narrow 通道索引
+        // 2. 检测全连接 FM 组用于合并优化
+        let fm_analysis = FMBuilderAnalysis::analyze(&nodes);
+
         let mut desc = GraphDescriptor::new("EvolutionNet");
 
         // 先添加虚拟输入节点
@@ -261,12 +550,53 @@ impl NetworkGenome {
             vec![],
         ));
 
+        // 收集需要在特定节点之前插入的合成节点
+        let mut inject_before: HashMap<u64, Vec<usize>> = HashMap::new(); // node_id → [merged_group_index]
+        for (gi, merged) in fm_analysis.merged_groups.iter().enumerate() {
+            if let Some(&(concat_id, _)) = merged.concat_replacement.as_ref() {
+                inject_before.entry(concat_id).or_default().push(gi);
+            }
+        }
+
         // 按拓扑序添加所有启用的 NodeGene（父节点必须在子节点之前）
         for &id in &analysis.topo_order {
             if let Some(node) = node_lookup.get(&id) {
-                let dynamic = node.output_shape.first().map(|_| {
+                // 全连接优化：跳过已被合并替换的节点
+                if fm_analysis.is_merged_away(id) {
+                    continue;
+                }
+
+                // 在 Concat 节点之前注入合成节点
+                if let Some(group_indices) = inject_before.get(&id) {
+                    for &gi in group_indices {
+                        for synth_node in &fm_analysis.merged_groups[gi].synthetic_nodes {
+                            let dynamic = synth_node.shape.first().map(|_| {
+                                let mut d: Vec<Option<usize>> =
+                                    synth_node.shape.iter().map(|&x| Some(x)).collect();
+                                if !d.is_empty() {
+                                    d[0] = None;
+                                }
+                                d
+                            });
+                            desc.add_node(NodeDescriptor::new(
+                                synth_node.id,
+                                &synth_node.name,
+                                synth_node.node_type.clone(),
+                                synth_node.shape.clone(),
+                                dynamic,
+                                synth_node.parents.clone(),
+                            ));
+                        }
+                    }
+                }
+
+                // 确定最终的 node_type 和 output_shape
+                let (final_type, final_shape, final_parents) =
+                    fm_analysis.transform_node(node, &nodes);
+
+                let dynamic = final_shape.first().map(|_| {
                     let mut d: Vec<Option<usize>> =
-                        node.output_shape.iter().map(|&x| Some(x)).collect();
+                        final_shape.iter().map(|&x| Some(x)).collect();
                     if !d.is_empty() {
                         d[0] = None;
                     } // batch 维动态
@@ -275,10 +605,10 @@ impl NetworkGenome {
                 desc.add_node(NodeDescriptor::new(
                     node.innovation_number,
                     &format!("evo_{}", node.innovation_number),
-                    node.node_type.clone(),
-                    node.output_shape.clone(),
+                    final_type,
+                    final_shape,
                     dynamic,
-                    node.parents.clone(),
+                    final_parents,
                 ));
             }
         }
@@ -642,6 +972,7 @@ impl NetworkGenome {
                         (k, k),
                         (1, 1),
                         (padding, padding),
+                        (1, 1),
                         true,
                         &name,
                     )?;

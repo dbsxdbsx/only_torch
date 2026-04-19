@@ -43,6 +43,12 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
         NodeType::Conv2d(c) => NodeTypeDescriptor::Conv2d {
             stride: c.stride(),
             padding: c.padding(),
+            dilation: c.dilation(),
+        },
+        NodeType::ConvTranspose2d(c) => NodeTypeDescriptor::ConvTranspose2d {
+            stride: c.stride(),
+            padding: c.padding(),
+            output_padding: c.output_padding(),
         },
         NodeType::MaxPool2d(p) => NodeTypeDescriptor::MaxPool2d {
             kernel_size: p.kernel_size(),

@@ -696,6 +696,32 @@ impl NetworkGenome {
         Ok(())
     }
 
+    /// 将 NodeLevel 基因组中的 Conv2d 模板块分解为 FM 粒度表示
+    ///
+    /// 仅在空间模式下有效（input_spatial.is_some()）。
+    /// 可重复调用：已 FM 化的模板块会被自动跳过，仅处理新增的模板块。
+    pub fn migrate_to_fm_level(&mut self) {
+        use super::migration::{InnovationCounter, migrate_conv2d_to_feature_maps};
+
+        if self.input_spatial.is_none() || !self.is_node_level() {
+            return;
+        }
+
+        let next_inn = match &self.repr {
+            GenomeRepr::NodeLevel { next_innovation, .. } => *next_innovation,
+            _ => return,
+        };
+
+        let mut counter = InnovationCounter::new(next_inn);
+        let nodes = self.nodes_mut();
+        migrate_conv2d_to_feature_maps(nodes, &mut counter);
+
+        // 更新 next_innovation
+        if let GenomeRepr::NodeLevel { next_innovation, .. } = &mut self.repr {
+            *next_innovation = counter.peek();
+        }
+    }
+
     /// 对当前节点级基因组执行静态分析，返回不可变快照。
     ///
     /// `GenomeAnalysis` 是 mutation/builder/serializer 三方共同依赖的分析结果。

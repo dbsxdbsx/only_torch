@@ -46,9 +46,10 @@ pub(crate) struct Conv2d {
     in_channels: usize,
     #[allow(dead_code)]
     out_channels: usize,
-    kernel_size: (usize, usize), // (kH, kW)
-    stride: (usize, usize),      // (sH, sW)
-    padding: (usize, usize),     // (pH, pW)
+    kernel_size: (usize, usize),  // (kH, kW)
+    stride: (usize, usize),       // (sH, sW)
+    padding: (usize, usize),      // (pH, pW)
+    dilation: (usize, usize),     // (dH, dW) 空洞卷积间隔
 
     // 缓存（用于反向传播）
     padded_input: Option<Tensor>, // 填充后的输入
@@ -68,6 +69,12 @@ impl Conv2d {
         self.padding
     }
 
+    /// 获取空洞卷积间隔
+    #[allow(dead_code)]
+    pub(in crate::nn) const fn dilation(&self) -> (usize, usize) {
+        self.dilation
+    }
+
     /// 从父节点形状信息创建 Conv2d 节点（核心实现）
     ///
     /// # 参数
@@ -76,12 +83,14 @@ impl Conv2d {
     /// - `parent_ids`: 父节点 ID
     /// - `stride`: 步长 (sH, sW)
     /// - `padding`: 填充 (pH, pW)
+    /// - `dilation`: 空洞卷积间隔 (dH, dW)，默认 (1,1) 为标准卷积
     pub(in crate::nn) fn new(
         parent_shapes: &[&[usize]],
         parent_dynamic_shapes: &[DynamicShape],
         parent_ids: Vec<NodeId>,
         stride: (usize, usize),
         padding: (usize, usize),
+        dilation: (usize, usize),
     ) -> Result<Self, GraphError> {
         // 1. 验证父节点数量
         if parent_shapes.len() != 2 {
@@ -133,16 +142,21 @@ impl Conv2d {
             });
         }
 
-        // 5. 计算输出尺寸
+        // 5. 计算输出尺寸（考虑 dilation）
         let (stride_h, stride_w) = stride;
         let (pad_h, pad_w) = padding;
+        let (dil_h, dil_w) = dilation;
 
-        let output_h = (input_h + 2 * pad_h - kernel_h) / stride_h + 1;
-        let output_w = (input_w + 2 * pad_w - kernel_w) / stride_w + 1;
+        // 空洞卷积的等效核尺寸
+        let effective_kh = dil_h * (kernel_h - 1) + 1;
+        let effective_kw = dil_w * (kernel_w - 1) + 1;
+
+        let output_h = (input_h + 2 * pad_h - effective_kh) / stride_h + 1;
+        let output_w = (input_w + 2 * pad_w - effective_kw) / stride_w + 1;
 
         if output_h == 0 || output_w == 0 {
             return Err(GraphError::InvalidOperation(format!(
-                "卷积输出尺寸无效：输入 {input_h}x{input_w}，核 {kernel_h}x{kernel_w}，步长 {stride:?}，填充 {padding:?}"
+                "卷积输出尺寸无效：输入 {input_h}x{input_w}，核 {kernel_h}x{kernel_w}，步长 {stride:?}，填充 {padding:?}，空洞 {dilation:?}"
             )));
         }
 
@@ -175,6 +189,7 @@ impl Conv2d {
             kernel_size: (kernel_h, kernel_w),
             stride,
             padding,
+            dilation,
             padded_input: None,
             input_shape: input_shape.to_vec(),
         })
@@ -225,9 +240,11 @@ impl Conv2d {
     ///
     /// 每个输出位置对应的感受野窗口被展开为一行，使卷积变为矩阵乘法：
     /// output = kernel_mat [out_c, C_in*k_h*k_w] × col^T [C_in*k_h*k_w, out_h*out_w]
+    ///
+    /// 支持空洞卷积：采样间隔由 dilation 控制
     fn im2col(
-        input: &Tensor,       // 单样本 [C_in, H, W]（已填充）
-        b: usize,             // batch 索引（input 实际是 4D 但只取第 b 个）
+        input: &Tensor,
+        b: usize,
         in_c: usize,
         k_h: usize,
         k_w: usize,
@@ -235,6 +252,8 @@ impl Conv2d {
         out_w: usize,
         stride_h: usize,
         stride_w: usize,
+        dil_h: usize,
+        dil_w: usize,
     ) -> Array2<f32> {
         let col_h = out_h * out_w;
         let col_w = in_c * k_h * k_w;
@@ -249,7 +268,8 @@ impl Conv2d {
                 for ic in 0..in_c {
                     for kh in 0..k_h {
                         for kw in 0..k_w {
-                            col[[row, col_idx]] = input[[b, ic, h_start + kh, w_start + kw]];
+                            col[[row, col_idx]] =
+                                input[[b, ic, h_start + kh * dil_h, w_start + kw * dil_w]];
                             col_idx += 1;
                         }
                     }
@@ -262,8 +282,9 @@ impl Conv2d {
     /// col2im：im2col 的逆操作，将列矩阵累加回 [C_in, H, W] 形状
     ///
     /// 注意：有重叠区域时需要累加（而非覆盖），用于反向传播 dL/dX
+    /// 支持空洞卷积：采样间隔由 dilation 控制
     fn col2im(
-        col: &Array2<f32>,    // [out_h*out_w, C_in*k_h*k_w]
+        col: &Array2<f32>,
         in_c: usize,
         in_h: usize,
         in_w: usize,
@@ -273,6 +294,8 @@ impl Conv2d {
         out_w: usize,
         stride_h: usize,
         stride_w: usize,
+        dil_h: usize,
+        dil_w: usize,
     ) -> Vec<f32> {
         let mut result = vec![0.0f32; in_c * in_h * in_w];
 
@@ -285,7 +308,9 @@ impl Conv2d {
                 for ic in 0..in_c {
                     for kh in 0..k_h {
                         for kw in 0..k_w {
-                            let idx = ic * in_h * in_w + (h_start + kh) * in_w + (w_start + kw);
+                            let idx = ic * in_h * in_w
+                                + (h_start + kh * dil_h) * in_w
+                                + (w_start + kw * dil_w);
                             result[idx] += col[[row, col_idx]];
                             col_idx += 1;
                         }
@@ -317,8 +342,11 @@ impl Conv2d {
         );
 
         let (stride_h, stride_w) = self.stride;
-        let out_h = (in_h - k_h) / stride_h + 1;
-        let out_w = (in_w - k_w) / stride_w + 1;
+        let (dil_h, dil_w) = self.dilation;
+        let effective_kh = dil_h * (k_h - 1) + 1;
+        let effective_kw = dil_w * (k_w - 1) + 1;
+        let out_h = (in_h - effective_kh) / stride_h + 1;
+        let out_w = (in_w - effective_kw) / stride_w + 1;
 
         let output_shape = vec![batch_size, out_c, out_h, out_w];
 
@@ -334,11 +362,11 @@ impl Conv2d {
         let batch_results: Vec<Vec<f32>> = (0..batch_size)
             .into_par_iter()
             .map(|b| {
-                // im2col: [out_h*out_w, col_w]
-                let col = Self::im2col(input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w);
-                // GEMM: kernel_mat [out_c, col_w] × col^T [col_w, out_h*out_w] → [out_c, out_h*out_w]
+                let col = Self::im2col(
+                    input, b, in_c, k_h, k_w, out_h, out_w,
+                    stride_h, stride_w, dil_h, dil_w,
+                );
                 let result = kernel_mat.dot(&col.t());
-                // result 是 [out_c, out_h*out_w]，展平为行优先顺序（与 NCHW 一致）
                 result.iter().copied().collect()
             })
             .collect();
@@ -388,6 +416,8 @@ impl TraitNode for Conv2d {
             self.stride.1 as u64,
             self.padding.0 as u64,
             self.padding.1 as u64,
+            self.dilation.0 as u64,
+            self.dilation.1 as u64,
         ]))
     }
 
@@ -439,6 +469,7 @@ impl TraitNode for Conv2d {
         let (k_h, k_w) = self.kernel_size;
         let (stride_h, stride_w) = self.stride;
         let (pad_h, pad_w) = self.padding;
+        let (dil_h, dil_w) = self.dilation;
 
         let padded_shape = padded_input.shape();
         let in_c = padded_shape[1];
@@ -452,16 +483,14 @@ impl TraitNode for Conv2d {
             let padded_h = orig_in_h + 2 * pad_h;
             let padded_w = orig_in_w + 2 * pad_w;
 
-            // kernel 展平为 [out_c, col_w]（两种策略均需要）
             let k_flat = kernel.flatten_view();
             let kernel_mat =
                 Array2::from_shape_vec((out_c, col_w), k_flat.to_vec()).unwrap();
 
-            // col2im + 裁剪 padding（两种策略共用）
             let col2im_crop = |dx_col: &Array2<f32>| -> Vec<f32> {
                 let padded_grad = Self::col2im(
                     dx_col, in_c, padded_h, padded_w, k_h, k_w,
-                    out_h, out_w, stride_h, stride_w,
+                    out_h, out_w, stride_h, stride_w, dil_h, dil_w,
                 );
                 if pad_h == 0 && pad_w == 0 {
                     padded_grad
@@ -481,8 +510,6 @@ impl TraitNode for Conv2d {
                 }
             };
 
-            // per-sample Rayon 并行，每个样本独立 GEMM
-            // 注：启用 BLAS 时 dot() 自动使用 MKL/OpenBLAS 加速，无需改变并行策略
             let batch_results: Vec<Vec<f32>> = {
                 let grad_flat = upstream_grad.flatten_view();
                 let grad_flat_slice = grad_flat.as_slice().unwrap();
@@ -491,14 +518,12 @@ impl TraitNode for Conv2d {
                 (0..batch_size)
                     .into_par_iter()
                     .map(|b| {
-                        // 提取当前样本的梯度 [out_c, spatial]
                         let gs = b * sample_grad_size;
                         let grad_b = Array2::from_shape_vec(
                             (out_c, spatial),
                             grad_flat_slice[gs..gs + sample_grad_size].to_vec(),
                         )
                         .unwrap();
-                        // 小 GEMM: grad_b^T [spatial, out_c] × kernel [out_c, col_w]
                         let dx_col = grad_b.t().dot(&kernel_mat);
                         col2im_crop(&dx_col)
                     })
@@ -511,7 +536,6 @@ impl TraitNode for Conv2d {
             // ========== dL/dK（对卷积核的梯度）==========
             let kernel_shape = kernel.shape();
 
-            // per-sample 并行 GEMM + 树形归约求和
             let kernel_grad_data: Vec<f32> = {
                 let grad_flat = upstream_grad.flatten_view();
                 let grad_flat_slice = grad_flat.as_slice().unwrap();
@@ -522,7 +546,7 @@ impl TraitNode for Conv2d {
                     .map(|b| {
                         let col = Self::im2col(
                             padded_input, b, in_c, k_h, k_w,
-                            out_h, out_w, stride_h, stride_w,
+                            out_h, out_w, stride_h, stride_w, dil_h, dil_w,
                         );
                         let gs = b * sample_grad_size;
                         let grad_b = Array2::from_shape_vec(

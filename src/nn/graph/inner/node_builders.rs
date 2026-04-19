@@ -365,31 +365,60 @@ impl GraphInner {
         parents: Vec<Rc<NodeInner>>,
         stride: (usize, usize),
         padding: (usize, usize),
+        dilation: (usize, usize),
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
         use crate::nn::nodes::raw_node::Conv2d;
 
-        // 1. 从父节点提取形状信息
         let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
         let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        // 2. 使用 new 创建 Conv2d 节点
         let conv2d = Conv2d::new(
             &parent_shapes_ref,
             &parent_dynamic_shapes,
             parent_ids,
             stride,
             padding,
+            dilation,
         )?;
         let raw_node: NodeType = conv2d.into();
 
-        // 3. 创建 NodeInner 并注册
         self.create_node_inner(raw_node, name, "conv2d", parents)
     }
 
-    /// 创建 MaxPool2d 节点    ///
+    /// 创建 ConvTranspose2d（转置卷积）节点
+    pub fn create_conv_transpose2d_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        stride: (usize, usize),
+        padding: (usize, usize),
+        output_padding: (usize, usize),
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::ConvTranspose2d;
+
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        let node = ConvTranspose2d::new(
+            &parent_shapes_ref,
+            &parent_dynamic_shapes,
+            parent_ids,
+            stride,
+            padding,
+            output_padding,
+        )?;
+        let raw_node: NodeType = node.into();
+
+        self.create_node_inner(raw_node, name, "conv_transpose2d", parents)
+    }
+
+    /// 创建 MaxPool2d 节点
+    ///
     /// 2D 最大池化操作，输入必须是 4D [batch, C, H, W]。
     /// 返回 `Rc<NodeInner>`，父节点引用由 `parents` 参数传入。
     ///

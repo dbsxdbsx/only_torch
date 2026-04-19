@@ -623,7 +623,9 @@ src/nn/evolution/
 ├── node_gene.rs        NodeGene 数据结构（innovation_number, node_type, output_shape, parents, block_id）
 ├── node_ops.rs         NodeBlock / NodeBlockKind / node_main_path()：节点级基因组的模板组分析
 ├── mutation.rs         Mutation trait + MutationRegistry + 15+条件变异操作（NodeLevel 上以模板组/原子节点/循环边为单位）
-├── migration.rs        LayerLevel → NodeLevel 迁移（migrate_to_node_level + TemplateExpander）
+├── fm_mutation.rs      FM 级别变异操作（10 种：AddFeatureMap/RemoveFeatureMap/AddFMEdge/RemoveFMEdge/SplitFMEdge + 5 种参数变异）
+├── fm_ops.rs           FM 辅助数据结构和查询函数（FMNodeInfo/FMEdgeInfo/FMSubgraphAnalysis/全连接检测/可连接对查询）
+├── migration.rs        LayerLevel → NodeLevel 迁移（migrate_to_node_level + TemplateExpander）+ Conv2d → FM 分解（migrate_conv2d_to_feature_maps）
 ├── selection.rs        NSGA-II 多目标选择 + Pareto Archive 管理（pareto_rank, crowding_distance, nsga2_select, update_archive）
 ├── builder.rs          Genome → GraphDescriptor → Graph 转换 + to/from_graph_descriptor + backfill_node_group_tags + Lamarckian 权重管理
 ├── model_io.rs         模型序列化/反序列化（save/load .otm 文件，仅 NodeLevel）+ ONNX 导出（export_onnx）
@@ -633,6 +635,7 @@ src/nn/evolution/
 └── tests/
     ├── gene.rs         基因数据结构单元测试（含序列域/空间层维度测试）
     ├── mutation.rs     变异操作单元测试（含 MutateCellType / NodeLevel 变异）
+    ├── fm_mutation.rs  FM 级别变异单元测试（10 种变异的 is_applicable + apply + 稳定性测试，27 个）
     ├── builder.rs      构建与权重继承单元测试（含 RNN/LSTM/GRU/Conv2d 前向 + NodeGroupTag 回填验证）
     ├── model_io.rs     模型序列化测试（含手写⇄演化互通三角测试）
     ├── convergence.rs  收敛检测单元测试
@@ -650,7 +653,7 @@ src/nn/graph/
 src/nn/tests/onnx/
 ├── mod.rs              ONNX 测试子模块入口
 ├── error.rs            OnnxError 错误类型覆盖测试（11 个）
-├── ops.rs              双向算子映射测试 + 往返一致性测试（56 个）
+├── ops.rs              双向算子映射测试 + 往返一致性测试（含 ConvTranspose2d，62 个）
 ├── import.rs           ONNX 导入流水线测试（20 个，含端到端 Graph/NetworkGenome 测试）
 └── export.rs           ONNX 导出流水线测试（16 个，含数值往返 + PyTorch 交叉验证）
 ```
@@ -757,7 +760,8 @@ Input(seq×D) → Rnn(output_dim) → [Linear(output_dim)]
 **已完成**。空间模式自动启用——当输入样本为 3D 张量 `[C, H, W]` 时，系统检测到空间结构并切换到 CNN 演化策略。
 
 **空间层类型**：
-- **Conv2d** `{ out_channels, kernel_size }`：2D 卷积，stride=1，same padding（padding=kernel_size/2，不改变 H/W）
+- **Conv2d** `{ out_channels, kernel_size, stride, dilation }`：2D 卷积，支持 stride（空间降维）和 dilation（空洞卷积，扩大感受野而不增加参数）。same padding 策略，padding 自动推导
+- **ConvTranspose2d** `{ out_channels, kernel_size, stride, output_padding }`：2D 转置卷积（上采样），将特征图空间尺寸放大。支持 ONNX 双向映射和 descriptor rebuild
 - **Pool2d** `{ pool_type: Max|Avg, kernel_size, stride }`：2D 池化，空间降维（H/stride, W/stride），channels 不变
 - **Flatten**：空间域到平坦域的过渡层，将 `(C, H, W)` 展平为 `C*H*W`
 
@@ -873,14 +877,34 @@ result.export_onnx("evolved_model.onnx")?;
 | ONNX 导出屏蔽 | ✅ | 含 edge-based 循环边的基因组不支持 ONNX 导出（展开图含动态时间步共享权重），返回明确错误提示使用 .otm 格式 |
 | 级联清理 | ✅ | `remove_block()` 删除引用已删节点的循环边，同时回收孤立权重参数节点及其快照 |
 
-#### 阶段 C：EXACT 级别——Spatial 域的 Feature Map 粒度演化
+#### 阶段 C：EXACT 级别——Spatial 域的 Feature Map 粒度演化 ✅
 
-覆盖空间世界（Spatial），目标是达到与 EXACT（2017）同等的变异粒度。与阶段 B 平行，解决不同的域。阶段 A 的模板块 CNN 演化是实用基线，阶段 C 是长期的搜索能力上限提升。
+覆盖空间世界（Spatial），达到与 EXACT（2017）同等的变异粒度。
 
-| 方向 | 难度 | 说明 |
+| 方向 | 状态 | 说明 |
 |---|---|---|
-| Feature Map 粒度表示 | 高 | 将 Spatial 域的演化粒度从"整个 Conv2d 层"降低到"单个 feature map（节点）+ 单个卷积核（边）"。卷积层天然依赖权重共享（一个 kernel 在所有空间位置复用），因此最低自然粒度是 feature map 级，不能进一步降到单神经元级 |
-| 稀疏卷积连接 | 高 | 允许任意两个 feature map 之间选择性地添加卷积核连接，不要求全连接。需扩展 NodeGene 的连接语义和形状传播逻辑 |
+| ConvTranspose2d（转置卷积） | ✅ | 新 RawNode + Layer + ONNX 映射，支持上采样结构演化 |
+| Conv2d Dilation（空洞卷积） | ✅ | 扩展 Conv2d 参数，im2col 支持 dilation 采样间隔 |
+| Feature Map 粒度表示 | ✅ | `NodeGene.fm_id` 字段 + FM 辅助函数（`fm_ops.rs`） |
+| Conv2d → FM 分解迁移 | ✅ | `migrate_conv2d_to_feature_maps` + `migrate_to_fm_level` 增量迁移 |
+| FM-aware Builder | ✅ | 稀疏 FM 子图构图 + 全连接优化（合并为单个 Conv2d）+ Concat→Flatten 过渡 |
+| 10 种 FM 级别变异 | ✅ | 结构变异 5 种 + 参数变异 5 种，已注册到 Phase 1/2 注册表 |
+| 集成 | ✅ | InsertLayer FM 迁移、Grow/Shrink FM 边过滤、旧模型自动兼容 |
+
+**FM 级别变异表**：
+
+| # | 变异 | 类型 | Phase 1 权重 | Phase 2 权重 |
+|---|------|------|------------|------------|
+| 1 | AddFeatureMap | 结构 | 0.08 | 0.04 |
+| 2 | RemoveFeatureMap | 结构 | 0.04 | 0.04 |
+| 3 | AddFMEdge | 结构 | 0.06 | 0.06 |
+| 4 | RemoveFMEdge | 结构 | 0.04 | 0.04 |
+| 5 | SplitFMEdge | 结构 | 0.06 | 0.04 |
+| 6 | ChangeFMEdgeType | 参数 | 0.04 | 0.04 |
+| 7 | MutateFMEdgeKernelSize | 参数 | 0.04 | 0.06 |
+| 8 | MutateFMEdgeStride | 参数 | 0.04 | 0.04 |
+| 9 | MutateFMEdgeDilation | 参数 | 0.02 | 0.04 |
+| 10 | ChangeFeatureMapSize | 参数 | 0.04 | 0.02 |
 
 #### 两个世界的粒度差异
 
@@ -898,6 +922,59 @@ result.export_onnx("evolved_model.onnx")?;
 └──────────────────────────┘      └──────────────────────────┘
          通过 Flatten 连接：Spatial 输出展平后进入 Flat 域
 ```
+
+#### 阶段 D（候选）：新算子扩展——丰富可演化算子集
+
+阶段 D 与阶段 C **完全正交**——它不修改 FM 表示或变异框架，只是向系统注入新的"零件"类型。阶段 C 完成后的 `MutationRegistry` + `NodeTypeDescriptor` 可插拔设计天然支持新算子接入。按实际需求选择性实施。
+
+| 方向 | 难度 | 与 Phase C 关系 | 说明 |
+|------|------|----------------|------|
+| **Deformable Conv2d** | 中 | 正交，新 NodeTypeDescriptor 变体 | 采样位置可学习的卷积。需要一个"偏移预测子网络"为每个采样点生成 (dx, dy) 偏移。实现为新 RawNode + FM 边类型扩展（`ChangeFMEdgeType` 变异自动覆盖）。应用：目标检测、语义分割中的几何变形建模 |
+| **Dynamic Conv2d** | 中 | 正交，新节点类型 | kernel 权重由输入动态生成（通过一个小型 attention 或线性层），而非静态参数。实现为新 RawNode + 专属模板扩展。应用：轻量级模型中用少量参数表达更丰富的卷积行为 |
+| **Attention / Transformer 算子集** | 高 | 正交，新算子集 | MultiHeadAttention（已有 Layer 实现，但未纳入演化算子集）、Positional Encoding、LayerNorm（已有）。需要定义新的域链规则或扩展 Flat 域的语义，使 Transformer block 可被演化拓扑搜索发现。应用：NLP、Vision Transformer |
+| **Segmentation 任务支持** | 中 | 部分交集，需新 loss 类型 | 语义分割是任务类型扩展，不是架构搜索能力扩展。Phase C 的 ConvTranspose2d + FM 跨层连接已提供 U-Net/FPN 所需的架构搜索能力。额外需要：Dice Loss / Focal Loss 等像素级 loss、TaskMetric::IoU / mIoU、输出格式从 `[batch, classes]` 扩展到 `[batch, classes, H, W]` |
+
+**接入模式**（以 Deformable Conv2d 为例）：
+
+```rust
+// 1. 新增 NodeTypeDescriptor 变体
+DeformableConv2d { stride: (usize, usize), padding: (usize, usize), deformable_groups: usize }
+
+// 2. 实现 RawNode 前向/反向（可变采样位置的 im2col）
+
+// 3. 在 AddFMEdge 变异中作为可选边类型自动可用
+//    ChangeFMEdgeType 变异可在 conv ↔ deformable_conv ↔ pool ↔ deconv 间切换
+
+// Phase C 的 FM 表示、builder、其他变异完全不变
+```
+
+#### 阶段 E（候选）：搜索效率优化——加速演化评估
+
+阶段 E 关注"搜索速度"而非"搜索能力"。与阶段 A–D 的功能扩展正交，是性能优化方向。
+
+| 方向 | 难度 | 与 Phase C 关系 | 说明 |
+|------|------|----------------|------|
+| **ENAS 式权重共享** | 高 | 解耦，效率优化 | 不同基因组共享部分权重（当重叠子图结构相同时复用已训练权重），减少每代 offspring 的训练成本。当前每个 offspring 独立 build→train→evaluate，权重共享可将训练开销降低一个数量级。需要维护一个"超网络权重库"，按子图结构哈希索引 |
+| **Surrogate 模型** | 中 | 解耦，效率优化 | 用一个轻量级模型（如 GBM / 小型 NN）预测基因组的 fitness，跳过昂贵的 train+evaluate。仅对预测 fitness 有潜力的候选执行完整评估。需要积累足够的 (genome_features → fitness) 训练数据 |
+| **分布式并行演化** | 中 | 解耦，工程优化 | 当前 rayon 并行限于单机多核。扩展到多机：每台机器运行一个子种群（island model），定期交换精英个体。需要序列化/反序列化 genome + fitness 的网络通信层 |
+| **DARTS 混合搜索** | 高 | 完全不同的搜索范式 | 可微分架构搜索：用连续松弛 + 梯度下降搜索架构（不经过 mutation/selection）。与演化路线完全不同的技术方向。可作为互补方案——DARTS 快速收敛到局部最优，演化跳出局部最优。实现需要全新的搜索引擎模块 |
+
+**优先级建议**：
+
+```
+阶段 C（已完成）   →  阶段 D（按需）     →  阶段 E（长期）
+EXACT 级 FM 演化       新算子多样性扩展         搜索效率优化
+├─ ConvTranspose2d     ├─ Deformable Conv     ├─ 权重共享加速
+├─ Dilation            ├─ Attention 算子集     ├─ Surrogate 模型
+├─ FM 分解             ├─ Segmentation 任务    ├─ 分布式演化
+├─ 10 种变异           └─ Dynamic Conv        └─ DARTS 混合搜索
+└─ Builder 优化
+
+必须先做              按需添加                长期方向
+（完成空间域基础设施）    （扩展算子多样性）        （扩展搜索效率）
+```
+
+> **说明**：阶段 C 是基础设施——建立 FM 级别表示和变异框架。阶段 D 的所有新算子都是"插件"，通过 `MutationRegistry` 和 `NodeTypeDescriptor` 自然接入。没有 Phase C 的 FM 框架，即使添加了 Deformable Conv 节点也无法在 feature map 粒度演化。阶段 E 的效率优化不影响搜索能力，可在任何时间点独立引入。
 
 ---
 
@@ -979,8 +1056,8 @@ result.export_onnx("evolved_model.onnx")?;
 | 问题 | 状态 | 说明 |
 |---|---|---|
 | MNIST 准确率上限 ~91.5% | ✅ 已修复 | 阶段 A 已完成全部修复：Conv-BN-ReLU 模板、Conv2d+Pool2d 种子、stride 变异、SizeConstraints 空间域调优、Conv2d resize 修复 |
-| MNIST 演化运行缓慢 | 待优化 | debug 模式下尤为明显。主要瓶颈：(1) 每次变异合法性检查需调用 `GenomeAnalysis::compute` + `node_main_path`；(2) Conv2d 前向/反向在纯 Rust CPU 上无 BLAS 加速；(3) 当前 example 使用 1000 训练样本，每代每个 offspring 都需完整 train+evaluate |
+| Spatial 域演化运行缓慢 | 待优化 | 空间域（尤其是 FM 级别变异涉及的子图操作）在演化过程中性能较差，原因仍在排查中。初步分析可能的瓶颈：(1) 每次变异合法性检查需调用 `GenomeAnalysis::compute` + `node_main_path`，FM 级别变异每次 apply 后还需额外 `analyze()` 验证；(2) Conv2d / ConvTranspose2d 前向/反向在纯 Rust CPU 上无 BLAS 加速（im2col + GEMM 路径已优化但仍远低于 cuDNN）；(3) FM 子图分析（`FMSubgraphAnalysis`）涉及多次遍历节点列表查找 FM 结构；(4) 当前 MNIST example 使用 1000 训练样本，每代每个 offspring 都需完整 train+evaluate。此问题影响 Spatial 域端到端演化实用性，属于阶段 E（搜索效率优化）的范畴 |
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-19（v10: 阶段 B 补强——归一化层（BatchNorm/LayerNorm/RMSNorm）作为模板块级变异纳入 InsertLayer（10% 概率，域感知选择），Dropout 作为原子节点级变异纳入 InsertAtomicNode（15% 概率），NodeBlockKind 新增 3 个归一化变体，FLOPs 估算覆盖 LayerNormOp/RMSNormOp，repair_param_input_dims 支持归一化块参数级联修复，10 个新单元测试 + 5 个集成测试全部通过）*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-19（v12: 补充模块结构（fm_ops / fm_mutation / tests），更新空间层类型描述（ConvTranspose2d + Dilation），扩展已知问题中 Spatial 域性能分析）*
