@@ -487,7 +487,7 @@ impl Evolution {
             offspring_batch_size_explicit: false,
             parallelism: None,
             pareto_patience: None,
-            complexity_metric: ComplexityMetric::ParamCount,
+            complexity_metric: ComplexityMetric::FLOPs,
         }
     }
 
@@ -672,6 +672,18 @@ impl Evolution {
         // 并行执行设置
         let auto_parallelism = rayon::current_num_threads();
         let effective_parallelism = parallelism.unwrap_or(auto_parallelism).max(1);
+
+        // BLAS 线程守卫：避免 rayon 线程池内每个线程再开 BLAS 子线程导致超订阅
+        // MKL 已配置 seq 模式不受影响；纯 Rust 无 BLAS 时环境变量无人读取也不受影响
+        if effective_parallelism > 1 {
+            for var in ["OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"] {
+                if std::env::var(var).is_err() {
+                    // SAFETY: 在线程池创建前调用，此时只有主线程在运行
+                    unsafe { std::env::set_var(var, "1") };
+                }
+            }
+        }
+
         let effective_pareto_patience =
             pareto_patience.unwrap_or_else(|| (population_size * 2).max(20));
         let can_parallel = task_spec.supports_parallel_evaluation() && effective_parallelism > 1;

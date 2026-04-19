@@ -60,12 +60,15 @@ impl InnovationCounter {
 pub enum MigrationError {
     /// 维度推导失败（旧 genome 本身不合法）
     DimensionError(String),
+    /// 基因组包含无效的节点配置（如 Conv2d 输出尺寸为零）
+    InvalidGenome(String),
 }
 
 impl std::fmt::Display for MigrationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::DimensionError(msg) => write!(f, "维度推导失败：{msg}"),
+            Self::InvalidGenome(msg) => write!(f, "无效基因组：{msg}"),
         }
     }
 }

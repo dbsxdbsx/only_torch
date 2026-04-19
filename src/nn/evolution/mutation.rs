@@ -114,14 +114,14 @@ impl SizeConstraints {
 
         // max_total_params
         let base_params = if is_spatial {
-            // 空间模型以"Conv(ch→32,k=3) + Conv(32→64,k=3) + Pool + FC(pooled→128) + FC(128→out)"
-            // 为参考基线，给予充足参数预算
+            // 参考基线："Conv(ch→32,k=3) + Conv(32→64,k=3) + 2×Pool + FC(pooled→64) + FC(64→out)"
+            // 假设至少 2 次 stride-2 pool 降低空间分辨率，FC 隐藏层 64 即可
             let conv_base = 32 * input_dim * 9 + 64 * 32 * 9; // ~20K conv params
             let spatial_after_pool = spatial_hw
-                .map(|(h, w)| (h / 2) * (w / 2))
+                .map(|(h, w)| (h / 4) * (w / 4))
                 .unwrap_or(49);
-            let fc_base = 64 * spatial_after_pool * 128 + 128 * output_dim;
-            (conv_base + fc_base).max(200_000)
+            let fc_base = 64 * spatial_after_pool * 64 + 64 * output_dim;
+            (conv_base + fc_base).max(50_000)
         } else {
             flatten_dim * 128 + 128 * output_dim
         };
@@ -265,7 +265,7 @@ impl MutationRegistry {
         reg.register(0.10, InsertAtomicNodeMutation::default());
         reg.register(0.08, RemoveLayerMutation);
         reg.register(0.04, ReplaceLayerTypeMutation::default());
-        reg.register(0.25, GrowHiddenSizeMutation);
+        reg.register(0.12, GrowHiddenSizeMutation);
         reg.register(0.08, ShrinkHiddenSizeMutation);
         reg.register(0.05, MutateLayerParamMutation);
         reg.register(
@@ -294,18 +294,18 @@ impl MutationRegistry {
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
             reg.register(0.06, MutateStrideMutation);
-            // FM 级别变异
+            // FM 级别变异：结构探索偏重拓扑（Add/Split），参数调整适度降权
             use super::fm_mutation::*;
-            reg.register(0.08, AddFeatureMapMutation);
+            reg.register(0.12, AddFeatureMapMutation);
             reg.register(0.04, RemoveFeatureMapMutation);
-            reg.register(0.06, AddFMEdgeMutation);
+            reg.register(0.10, AddFMEdgeMutation);
             reg.register(0.04, RemoveFMEdgeMutation);
             reg.register(0.06, SplitFMEdgeMutation);
-            reg.register(0.04, ChangeFMEdgeTypeMutation);
-            reg.register(0.04, MutateFMEdgeKernelSizeMutation);
-            reg.register(0.04, MutateFMEdgeStrideMutation);
+            reg.register(0.02, ChangeFMEdgeTypeMutation);
+            reg.register(0.02, MutateFMEdgeKernelSizeMutation);
+            reg.register(0.02, MutateFMEdgeStrideMutation);
             reg.register(0.02, MutateFMEdgeDilationMutation);
-            reg.register(0.04, ChangeFeatureMapSizeMutation);
+            reg.register(0.02, ChangeFeatureMapSizeMutation);
         }
         reg
     }
@@ -318,8 +318,8 @@ impl MutationRegistry {
         reg.register(0.08, InsertAtomicNodeMutation::default());
         reg.register(0.08, RemoveLayerMutation);
         reg.register(0.08, ReplaceLayerTypeMutation::default());
-        reg.register(0.15, GrowHiddenSizeMutation);
-        reg.register(0.15, ShrinkHiddenSizeMutation);
+        reg.register(0.10, GrowHiddenSizeMutation);
+        reg.register(0.10, ShrinkHiddenSizeMutation);
         reg.register(0.05, MutateLayerParamMutation);
         reg.register(
             0.02,
@@ -347,17 +347,17 @@ impl MutationRegistry {
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
             reg.register(0.06, MutateStrideMutation);
-            // FM 级别变异（Phase 2 偏向参数调整）
+            // FM 级别变异（Phase 2 偏向参数调整，结构探索适度保留）
             use super::fm_mutation::*;
-            reg.register(0.04, AddFeatureMapMutation);
+            reg.register(0.06, AddFeatureMapMutation);
             reg.register(0.04, RemoveFeatureMapMutation);
             reg.register(0.06, AddFMEdgeMutation);
             reg.register(0.04, RemoveFMEdgeMutation);
             reg.register(0.04, SplitFMEdgeMutation);
-            reg.register(0.04, ChangeFMEdgeTypeMutation);
-            reg.register(0.06, MutateFMEdgeKernelSizeMutation);
-            reg.register(0.04, MutateFMEdgeStrideMutation);
-            reg.register(0.04, MutateFMEdgeDilationMutation);
+            reg.register(0.02, ChangeFMEdgeTypeMutation);
+            reg.register(0.04, MutateFMEdgeKernelSizeMutation);
+            reg.register(0.02, MutateFMEdgeStrideMutation);
+            reg.register(0.02, MutateFMEdgeDilationMutation);
             reg.register(0.02, ChangeFeatureMapSizeMutation);
         }
         reg

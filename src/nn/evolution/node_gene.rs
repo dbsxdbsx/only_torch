@@ -440,9 +440,9 @@ pub fn infer_output_shape(
             let (n, c_out) = (inp[0], ker[0]);
             let eff_kh = dilation.0 * (ker[2] - 1) + 1;
             let eff_kw = dilation.1 * (ker[3] - 1) + 1;
-            let h_out = (inp[2] + 2 * padding.0 - eff_kh) / stride.0 + 1;
-            let w_out = (inp[3] + 2 * padding.1 - eff_kw) / stride.1 + 1;
-            Ok(vec![n, c_out, h_out, w_out])
+            let h_out = (inp[2] + 2 * padding.0).saturating_sub(eff_kh) / stride.0 + 1;
+            let w_out = (inp[3] + 2 * padding.1).saturating_sub(eff_kw) / stride.1 + 1;
+            Ok(vec![n, c_out, h_out.max(1), w_out.max(1)])
         }
 
         // ── ConvTranspose2d: [N,C_in,H,W] × [C_in,C_out,kH,kW] → [N,C_out,H_out,W_out] ──

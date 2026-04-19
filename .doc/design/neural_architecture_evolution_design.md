@@ -85,7 +85,7 @@ Evolution::supervised(train, test, TaskMetric::Accuracy)
     .with_offspring_batch_size(12)    // 每代新候选数（默认 auto = max(12, rayon threads)）
     .with_parallelism(8)              // 并行评估线程数（默认 auto = rayon threads）
     .with_pareto_patience(40)         // Pareto archive 收敛耐心值（默认 auto = max(20, pop*2)）
-    .with_complexity_metric(ComplexityMetric::ParamCount) // inference_cost 计算方式
+    .with_complexity_metric(ComplexityMetric::FLOPs) // inference_cost 计算方式（默认 FLOPs）
     .with_batch_size(64)              // 显式 batch size（默认自动策略）
     .with_verbose(false)              // 关闭日志（默认 true）
     .with_convergence(config)         // 收敛检测配置（Phase 2 使用）
@@ -203,7 +203,7 @@ Evolution.seed → StdRng
 
 种群搜索采用 NSGA-II 环境选择，双目标优化：
 - **Objective 1**：`primary`（越高越好）——任务指标（Accuracy / R² 等）
-- **Objective 2**：`inference_cost`（越低越好）——模型复杂度（当前为参数量 ParamCount）
+- **Objective 2**：`inference_cost`（越低越好）——模型复杂度（默认 FLOPs，可通过 `with_complexity_metric()` 切换为 ParamCount）
 
 选择排序规则（优先级从高到低）：
 1. Pareto rank 越小越好（非支配前沿优先）
@@ -224,7 +224,7 @@ pub struct FitnessScore {
 }
 ```
 
-`inference_cost` 由 `compute_inference_cost()` 根据 `ComplexityMetric` 计算（当前实现 ParamCount，预留 FLOPs / latency）。`inference_cost` 为 `None` 时退化为单目标排序。
+`inference_cost` 由 `compute_inference_cost()` 根据 `ComplexityMetric` 计算（默认 FLOPs——直接反映训练/推理耗时；对非空间任务 FLOPs 与 ParamCount 成比例，行为等价）。`inference_cost` 为 `None` 时退化为单目标排序。
 
 ### 3.3 停滞检测
 
@@ -431,7 +431,7 @@ pub trait Mutation: Send + Sync {
 | `InsertAtomicNode` | 0.10 | ✅ | NEAT "Add Node"：在主路径两块之间插入单个激活节点（15 种激活函数随机选择，85%）或 Dropout（15%，p∈{0.1,0.2,0.3,0.5}）。保护输出头、避免连续激活/连续 Dropout |
 | `RemoveLayer` | 0.08 | ✅ | 随机移除非输出头的隐藏层（早期偏向增长） |
 | `ReplaceLayerType` | 0.04 | | Activation 内部互换（ReLU↔Tanh↔Sigmoid…共 13 种） |
-| `GrowHiddenSize` | **0.25** | | 增大尺寸（40% +step, 40% ×1.5, 20% ×2，step = max(1, current/4)） |
+| `GrowHiddenSize` | **0.12** | | 增大尺寸（40% +step, 40% ×1.5, 20% ×2，step = max(1, current/4)）。权重从 0.25 降至 0.12，将探索预算让渡给 FM 级别细粒度变异 |
 | `ShrinkHiddenSize` | 0.08 | | 缩小尺寸（40% -step, 40% ×0.67, 20% ÷2） |
 | `MutateLayerParam` | 0.05 | | LeakyReLU/ELU alpha，Dropout p |
 | `MutateLossFunction` | 0.02 | | 切换兼容 loss（如 BCE↔MSE） |
@@ -857,7 +857,7 @@ result.export_onnx("evolved_model.onnx")?;
 | Conv-BN-ReLU 复合模板 | ❌ 已移除 | 实测表明演化更倾向于独立发现最优激活组合（如 LeakyReLU + Swish），硬编码 Conv+BN+ReLU 限制了搜索多样性。改为依赖现有的独立插入机制：30% 概率插入任意激活函数 + 100% Conv2d 作为 Spatial 域默认插入。BatchNorm 的独立插入可在后续按需加入 |
 | Spatial 域初始种子增强 | ✅ | `minimal_spatial` 从 `[Flatten, Linear]` 改为 `[Conv2d(in_ch→8,k=3), Pool2d(Max,2,2), Flatten, Linear]`——从已知有效的 CNN 起点出发，Pool2d 将空间尺寸减半控制 Flatten 后特征维度 |
 | Conv 超参变异扩展（stride） | ✅ | `MutateStrideMutation`：在 stride (1,1) 和 (2,2) 之间切换，允许卷积层自身进行空间降维。已在 Phase 1/2 注册表中注册（权重 0.06）。Dilation 暂缓——底层 Conv2d 节点尚未实现 dilation 前向 |
-| SizeConstraints 空间域调优 | ✅ | `auto()` 空间模型改用"双层 Conv + FC 头"参考基线：`max_total_params` ≈ 200K+、`max_hidden_size` = 256（channels 上限）、`max_layers` = 20（适应 Conv+BN+Pool+Flatten+FC 深层结构） |
+| SizeConstraints 空间域调优 | ✅ | `auto()` 空间模型改用"双层 Conv + 2×Pool + FC(64) 头"参考基线：MNIST `max_total_params` ≈ 220K、`max_hidden_size` = 256（channels 上限）、`max_layers` = 20。`fc_base` 假设至少 2 次 stride-2 pool 降低 Flatten 维度，避免 Linear 参数爆炸 |
 | FLOPs 作为 complexity metric | ✅ | `ComplexityMetric::FLOPs` + `NetworkGenome::total_flops()`：per-node FLOPs 估算覆盖 MatMul（2×out×in）、Conv2d（2×out×Cin×kH×kW）、BatchNorm（4×elements）、LayerNorm（5×elements）、RMSNorm（3×elements）、Pool、激活等 |
 | Conv2d resize 修复（额外发现） | ✅ | 修复 `resize_conv2d_out` 和 `repair_param_input_dims_inner` 中 Conv2d bias/gamma/beta 参数形状更新错误——通过 Conv2d 节点的父边关系精确定位 kernel 参数，避免误修改同 block 内的 BN 参数 |
 
@@ -1032,7 +1032,7 @@ EXACT 级 FM 演化       新算子多样性扩展         搜索效率优化
   Phase 2（Gen 71~100）：Pareto 种群搜索 + UntilConverged 充分训练 + 超参调优变异权重
 ```
 
-自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params` ≈ 200K+、`max_hidden_size=256`（channels 上限）、`max_layers=20`、`min_hidden_size=16`。独立的 Conv2d + 激活函数 + Pool2d 插入 + stride 变异 + kernel size 变异联合搜索高效 CNN 架构。
+自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params` ≈ 220K、`max_hidden_size=256`（channels 上限）、`max_layers=20`、`min_hidden_size=16`。`fc_base` 假设至少 2 次 stride-2 pool（空间尺寸 /4），FC 隐藏层宽度 64，防止 Flatten 后 Linear 参数爆炸。独立的 Conv2d + 激活函数 + Pool2d 插入 + stride 变异 + kernel size 变异联合搜索高效 CNN 架构。
 
 ---
 
@@ -1056,8 +1056,8 @@ EXACT 级 FM 演化       新算子多样性扩展         搜索效率优化
 | 问题 | 状态 | 说明 |
 |---|---|---|
 | MNIST 准确率上限 ~91.5% | ✅ 已修复 | 阶段 A 已完成全部修复：Conv-BN-ReLU 模板、Conv2d+Pool2d 种子、stride 变异、SizeConstraints 空间域调优、Conv2d resize 修复 |
-| Spatial 域演化运行缓慢 | 待优化 | 空间域（尤其是 FM 级别变异涉及的子图操作）在演化过程中性能较差，原因仍在排查中。初步分析可能的瓶颈：(1) 每次变异合法性检查需调用 `GenomeAnalysis::compute` + `node_main_path`，FM 级别变异每次 apply 后还需额外 `analyze()` 验证；(2) Conv2d / ConvTranspose2d 前向/反向在纯 Rust CPU 上无 BLAS 加速（im2col + GEMM 路径已优化但仍远低于 cuDNN）；(3) FM 子图分析（`FMSubgraphAnalysis`）涉及多次遍历节点列表查找 FM 结构；(4) 当前 MNIST example 使用 1000 训练样本，每代每个 offspring 都需完整 train+evaluate。此问题影响 Spatial 域端到端演化实用性，属于阶段 E（搜索效率优化）的范畴 |
+| Spatial 域演化运行缓慢 | 部分改善 | 已完成多项优化：(1) FM 掩码融合——构图时检测同构 FM 边并合并为单个 Conv2d 操作（`fm_ops.rs`），大幅减少 FM 级别拓扑的计算图节点数；(2) 收紧 `SizeConstraints::auto()` 的 `fc_base`（2×Pool 降维 + FC 隐藏层 64），防止 Flatten→Linear 参数爆炸；(3) `ComplexityMetric` 默认切为 FLOPs，NSGA-II 选择压力直接对准计算耗时；(4) GrowHiddenSize 权重从 0.25 降到 0.12，将探索预算让渡给 FM 级别细粒度变异；(5) BLAS 线程守卫防止多线程超订阅。当前 MNIST Debug 模式下仍偏慢（每代约 10-15 秒），进一步提速方向见阶段 E |
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-19（v12: 补充模块结构（fm_ops / fm_mutation / tests），更新空间层类型描述（ConvTranspose2d + Dilation），扩展已知问题中 Spatial 域性能分析）*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-19（v13: 更新 ComplexityMetric 默认值为 FLOPs、SizeConstraints 空间域参数上限、已知问题中 Spatial 域性能优化进展、FM 掩码融合 + 变异权重调整记录）*

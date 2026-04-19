@@ -6,7 +6,7 @@ digraph ComputeGraph {
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
     subgraph cluster_group_linear_3 {
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 1176] → [?, 10]</FONT>>;
+        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 13916] → [?, 10]</FONT>>;
         style=filled;
         fillcolor="#E3F2FD80";
         fontname="Microsoft YaHei,SimHei,Arial";
@@ -15,30 +15,121 @@ digraph ComputeGraph {
             "2" [label=<evo_1<BR/><B>Add</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "4" [label=<evo_2<BR/><B>MatMul</B><BR/>[?, 10]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "5" [label=<evo_9<BR/><B>Parameter</B><BR/>[1, 10]<BR/>(10 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "7" [label=<evo_7<BR/><B>Parameter</B><BR/>[1176, 10]<BR/>(11,760 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "7" [label=<evo_7<BR/><B>Parameter</B><BR/>[13916, 10]<BR/>(139,160 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
-    subgraph cluster_group_conv2d_4 {
-        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 24, 14, 14]</FONT>>;
+    subgraph cluster_group_conv2d_34 {
+        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 64, 28, 28]</FONT>>;
         style=filled;
         fillcolor="#E8F5E980";
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "9" [label=<evo_5<BR/><B>Add</B><BR/>[?, 24, 14, 14]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "10" [label=<evo_6<BR/><B>Conv2d</B><BR/>[?, 24, 14, 14]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "11" [label=<evo_13<BR/><B>Parameter</B><BR/>[1, 24, 1, 1]<BR/>(24 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "13" [label=<evo_11<BR/><B>Parameter</B><BR/>[24, 1, 5, 5]<BR/>(600 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "12" [label=<evo_8<BR/><B>Add</B><BR/>[?, 64, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "20" [label=<evo_15<BR/><B>Conv2d</B><BR/>[?, 64, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "21" [label=<evo_39<BR/><B>Parameter</B><BR/>[1, 64, 1, 1]<BR/>(64 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "30" [label=<evo_37<BR/><B>Parameter</B><BR/>[64, 1, 7, 7]<BR/>(3,136 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_18 {
+        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 1, 28, 28]</FONT>>;
+        style=filled;
+        fillcolor="#FFF3E080";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "13" [label=<evo_9<BR/><B>Conv2d</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "22" [label=<evo_19<BR/><B>Parameter</B><BR/>[1, 1, 3, 3]<BR/>(9 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_batchnorm_35 {
+        label=<<B>BatchNorm</B><BR/><FONT POINT-SIZE="9">BatchNorm: [?, 1, 28, 28] → [?, 1, 28, 28]</FONT>>;
+        style=filled;
+        fillcolor="#F3E5F580";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "14" [label=<evo_10<BR/><B>Add</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "23" [label=<evo_16<BR/><B>Multiply</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "24" [label=<evo_44<BR/><B>Parameter</B><BR/>[1, 1, 1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "31" [label=<evo_18<BR/><B>BatchNormOp</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "32" [label=<evo_41<BR/><B>Parameter</B><BR/>[1, 1, 1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_24 {
+        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 1, 28, 28]</FONT>>;
+        style=filled;
+        fillcolor="#E3F2FD80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "15" [label=<evo_11<BR/><B>Conv2d</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "25" [label=<evo_25<BR/><B>Parameter</B><BR/>[1, 1, 5, 5]<BR/>(25 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_27 {
+        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 1, 28, 28]</FONT>>;
+        style=filled;
+        fillcolor="#E8F5E980";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "16" [label=<evo_12<BR/><B>Conv2d</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "26" [label=<evo_28<BR/><B>Parameter</B><BR/>[1, 1, 3, 3]<BR/>(9 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_30 {
+        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 1, 28, 28]</FONT>>;
+        style=filled;
+        fillcolor="#FFF3E080";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "17" [label=<evo_13<BR/><B>Conv2d</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "27" [label=<evo_31<BR/><B>Parameter</B><BR/>[1, 1, 7, 7]<BR/>(49 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_33 {
+        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 1, 28, 28]</FONT>>;
+        style=filled;
+        fillcolor="#F3E5F580";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "18" [label=<evo_14<BR/><B>Conv2d</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "28" [label=<evo_34<BR/><B>Parameter</B><BR/>[1, 1, 7, 7]<BR/>(49 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_15 {
+        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 1, 28, 28]</FONT>>;
+        style=filled;
+        fillcolor="#E3F2FD80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "29" [label=<evo_17<BR/><B>Conv2d</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "33" [label=<evo_16<BR/><B>Parameter</B><BR/>[1, 1, 3, 3]<BR/>(9 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_21 {
+        label=<<B>Conv2d</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, 28, 28] → [?, 1, 28, 28]</FONT>>;
+        style=filled;
+        fillcolor="#E8F5E980";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "34" [label=<evo_19<BR/><B>Conv2d</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "35" [label=<evo_22<BR/><B>Parameter</B><BR/>[1, 1, 3, 3]<BR/>(9 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
     "1" [label=<softmax_ce_1<BR/><B>SoftmaxCrossEntropy</B><BR/>[?, 1]<BR/><FONT COLOR="#C62828" POINT-SIZE="9">▸ Output</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#C62828"];
     "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 10]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "6" [label=<evo_3<BR/><B>Flatten</B><BR/>[?, 1176]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "8" [label=<evo_4<BR/><B>MaxPool2d</B><BR/>[?, 24, 7, 7]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "12" [label=<evo_7<BR/><B>Add</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-    "14" [label=<evo_8<BR/><B>HardSigmoid</B><BR/>[?, 1, 28, 28]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "15" [label=<evo_input_1<BR/><B>Input</B><BR/>[?, 1, 28, 28]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
-    "16" [label=<evo_9<BR/><B>Swish</B><BR/>[?, 1, 28, 28]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "6" [label=<evo_3<BR/><B>Flatten</B><BR/>[?, 13916]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "8" [label=<evo_4<BR/><B>MaxPool2d</B><BR/>[?, 71, 14, 14]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "9" [label=<evo_5<BR/><B>Swish</B><BR/>[?, 71, 28, 28]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "10" [label=<evo_6<BR/><B>Concat</B><BR/>[?, 71, 28, 28]> shape=invtrapezium style=filled fillcolor="#E0F2F1" fontsize=10];
+    "11" [label=<evo_7<BR/><B>Narrow</B><BR/>[?, 1, 28, 28]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+    "19" [label=<evo_input_1<BR/><B>Input</B><BR/>[?, 1, 28, 28]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
     "2" -> "1";
     "3" -> "1";
@@ -49,11 +140,36 @@ digraph ComputeGraph {
     "8" -> "6";
     "9" -> "8";
     "10" -> "9";
-    "11" -> "9";
+    "11" -> "10";
     "12" -> "10";
     "13" -> "10";
-    "14" -> "12";
-    "15" -> "12";
-    "16" -> "14";
-    "15" -> "16";
+    "14" -> "10";
+    "15" -> "10";
+    "16" -> "10";
+    "17" -> "10";
+    "18" -> "10";
+    "19" -> "11";
+    "20" -> "12";
+    "21" -> "12";
+    "11" -> "13";
+    "22" -> "13";
+    "23" -> "14";
+    "24" -> "14";
+    "11" -> "15";
+    "25" -> "15";
+    "11" -> "16";
+    "26" -> "16";
+    "11" -> "17";
+    "27" -> "17";
+    "11" -> "18";
+    "28" -> "18";
+    "29" -> "20";
+    "30" -> "20";
+    "31" -> "23";
+    "32" -> "23";
+    "11" -> "29";
+    "33" -> "29";
+    "34" -> "31";
+    "11" -> "34";
+    "35" -> "34";
 }

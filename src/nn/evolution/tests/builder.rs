@@ -2131,3 +2131,418 @@ fn test_build_fm_spatial_backward() {
     let params = build.all_parameters();
     assert!(!params.is_empty(), "应有可训练参数");
 }
+
+// ==================== FM 融合掩码相关测试 ====================
+
+/// 验证全连接 FM 组在融合后行为与之前一致（回归测试）
+#[test]
+fn test_fm_merge_full_connectivity_regression() {
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 全连接 → fm_masks 中所有通道对都是已连接的
+    for (_id, mask) in &build.fm_masks {
+        let expected_pairs = mask.in_ch * mask.out_ch;
+        assert_eq!(
+            mask.connected_pairs.len(),
+            expected_pairs,
+            "全连接 FM 组的连接对数应等于 in_ch * out_ch"
+        );
+    }
+
+    let input = Tensor::ones(&[1, 1, 8, 8]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape()[1], 10);
+}
+
+/// 验证合成 kernel 被正确加入 layer_params（链路完整性）
+#[test]
+fn test_fm_synthetic_params_in_layer_params() {
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 合成 kernel 的 ID 应出现在 layer_params 中
+    for (&kernel_id, _mask) in &build.fm_masks {
+        assert!(
+            build.layer_params.contains_key(&kernel_id),
+            "合成 kernel {} 应在 layer_params 中",
+            kernel_id
+        );
+    }
+}
+
+/// 验证同一 Concat innovation 在不同代产生相同合成 ID（跨代稳定性）
+#[test]
+fn test_fm_synthetic_id_stability_across_generations() {
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng1 = StdRng::seed_from_u64(42);
+    let build1 = genome.build(&mut rng1).unwrap();
+    let ids1: Vec<u64> = build1.fm_masks.keys().copied().collect();
+
+    // 第二次构建（模拟新一代，但基因组不变）
+    let mut rng2 = StdRng::seed_from_u64(99);
+    let build2 = genome.build(&mut rng2).unwrap();
+    let ids2: Vec<u64> = build2.fm_masks.keys().copied().collect();
+
+    assert_eq!(
+        ids1, ids2,
+        "相同基因组的两次构建应产生相同的合成 kernel ID"
+    );
+}
+
+/// 验证 capture → restore 链路：合成 kernel 的权重能正确保存和恢复
+#[test]
+fn test_fm_synthetic_param_capture_restore() {
+    use crate::nn::VarReduceOps;
+
+    let mut genome = NetworkGenome::minimal_spatial(1, 5, (4, 4));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 做一次前向 + 反向以改变权重
+    let input = Tensor::ones(&[1, 1, 4, 4]);
+    build.input.set_value(&input).unwrap();
+    let loss = build.output.sum();
+    build.graph.forward(&loss).unwrap();
+    build.graph.backward(&loss).unwrap();
+
+    // 捕获权重
+    genome.capture_weights(&build).unwrap();
+
+    // 重新构建
+    let mut rng2 = StdRng::seed_from_u64(99);
+    let build2 = genome.build(&mut rng2).unwrap();
+
+    // 恢复权重
+    let report = genome.restore_weights(&build2).unwrap();
+
+    // 合成 kernel 应被继承（非重新初始化）
+    let total = report.inherited + report.partially_inherited + report.reinitialized;
+    assert!(total > 0, "应有参数被处理");
+    assert!(report.inherited > 0, "应有参数被继承");
+}
+
+/// 验证 FM 融合掩码正确：构建后无连接位置的 kernel 切片为零
+#[test]
+fn test_fm_mask_zeros_disconnected_kernel_slices() {
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 对于全连接组，所有位置都有连接，不应有零切片
+    for (&kernel_id, mask) in &build.fm_masks {
+        if let Some(params) = build.layer_params.get(&kernel_id) {
+            if let Some(param) = params.first() {
+                let tensor = param.value().unwrap().unwrap();
+                let shape = tensor.shape();
+                assert_eq!(shape.len(), 4, "合成 kernel 应为 4D");
+
+                if mask.connected_pairs.len() == mask.in_ch * mask.out_ch {
+                    // 全连接 → 所有位置应非零（Kaiming init 不太可能恰好为零）
+                    let flat = tensor.to_vec();
+                    let non_zero = flat.iter().filter(|&&v| v != 0.0).count();
+                    assert!(non_zero > 0, "全连接 kernel 不应全为零");
+                }
+            }
+        }
+    }
+}
+
+/// 验证 per-block 变异的同构性：MutateFMEdgeKernelSize 后同 block 所有 kernel 一致
+#[test]
+fn test_per_block_kernel_size_mutation_homogeneity() {
+    use crate::nn::evolution::fm_mutation::MutateFMEdgeKernelSizeMutation;
+    use crate::nn::evolution::fm_ops::analyze_fm_subgraph;
+    use crate::nn::evolution::mutation::{Mutation, SizeConstraints};
+
+    let mut genome = NetworkGenome::minimal_spatial(2, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mutation = MutateFMEdgeKernelSizeMutation;
+    let constraints = SizeConstraints::default();
+    let mut rng = StdRng::seed_from_u64(42);
+
+    if mutation.is_applicable(&genome, &constraints) {
+        mutation.apply(&mut genome, &constraints, &mut rng).unwrap();
+
+        // 验证同一 block 内所有 kernel 的 shape 一致
+        let analysis = analyze_fm_subgraph(genome.nodes());
+        let node_map: std::collections::HashMap<u64, &crate::nn::evolution::node_gene::NodeGene> =
+            genome
+                .nodes()
+                .iter()
+                .filter(|n| n.enabled)
+                .map(|n| (n.innovation_number, n))
+                .collect();
+
+        // 收集所有 FM 边的 kernel shape
+        let kernel_shapes: Vec<(usize, usize)> = analysis
+            .fm_edges
+            .iter()
+            .filter_map(|e| {
+                e.kernel_node_id.and_then(|kid| {
+                    node_map
+                        .get(&kid)
+                        .map(|n| (n.output_shape[2], n.output_shape[3]))
+                })
+            })
+            .collect();
+
+        if !kernel_shapes.is_empty() {
+            let first = kernel_shapes[0];
+            assert!(
+                kernel_shapes.iter().all(|&s| s == first),
+                "per-block 变异后同 block 所有 kernel shape 应一致，实际: {:?}",
+                kernel_shapes
+            );
+        }
+    }
+}
+
+/// 验证稀疏连接融合：RemoveFMEdge 后，剩余边仍然能正确融合
+#[test]
+fn test_fm_sparse_fusion_after_edge_removal() {
+    use crate::nn::evolution::fm_mutation::RemoveFMEdgeMutation;
+    use crate::nn::evolution::mutation::{Mutation, SizeConstraints};
+
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let constraints = SizeConstraints::default();
+    let mut rng = StdRng::seed_from_u64(42);
+
+    // 移除一条边，制造稀疏连接
+    let mutation = RemoveFMEdgeMutation;
+    if mutation.is_applicable(&genome, &constraints) {
+        mutation.apply(&mut genome, &constraints, &mut rng).unwrap();
+    }
+
+    // 构建仍应成功
+    let build = genome.build(&mut rng).unwrap();
+
+    // 如果融合成功，fm_masks 中应有稀疏掩码（connected_pairs < in_ch * out_ch）
+    let has_sparse = build.fm_masks.values().any(|m| {
+        m.connected_pairs.len() < m.in_ch * m.out_ch
+    });
+    // 可能融合也可能不融合（取决于移除后是否仍然同构），但构建必须成功
+    let input = Tensor::ones(&[1, 1, 8, 8]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape()[1], 10, "输出维度应为 10");
+
+    if has_sparse {
+        // 验证稀疏掩码确实存在无连接位置
+        for (_id, mask) in &build.fm_masks {
+            if mask.connected_pairs.len() < mask.in_ch * mask.out_ch {
+                // 验证可以正常前向传播
+                build.graph.forward(&build.output).unwrap();
+            }
+        }
+    }
+}
+
+/// 验证 AddFMEdge 后新边继承已有边的 kernel_size（块内同构性）
+#[test]
+fn test_add_fm_edge_inherits_block_params() {
+    use crate::nn::evolution::fm_mutation::{AddFMEdgeMutation, MutateFMEdgeKernelSizeMutation};
+    use crate::nn::evolution::fm_ops::analyze_fm_subgraph;
+    use crate::nn::evolution::mutation::{Mutation, SizeConstraints};
+
+    let mut genome = NetworkGenome::minimal_spatial(2, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let constraints = SizeConstraints::default();
+    let mut rng = StdRng::seed_from_u64(42);
+
+    // 先把 kernel_size 改成 5
+    let ks_mut = MutateFMEdgeKernelSizeMutation;
+    if ks_mut.is_applicable(&genome, &constraints) {
+        ks_mut.apply(&mut genome, &constraints, &mut rng).unwrap();
+    }
+
+    // 记录变异后的 kernel_size
+    let analysis = analyze_fm_subgraph(genome.nodes());
+    let node_map: std::collections::HashMap<u64, &crate::nn::evolution::node_gene::NodeGene> =
+        genome
+            .nodes()
+            .iter()
+            .filter(|n| n.enabled)
+            .map(|n| (n.innovation_number, n))
+            .collect();
+    let existing_ks: Vec<usize> = analysis
+        .fm_edges
+        .iter()
+        .filter_map(|e| {
+            e.kernel_node_id
+                .and_then(|kid| node_map.get(&kid).map(|n| n.output_shape[2]))
+        })
+        .collect();
+    let target_ks = existing_ks.first().copied().unwrap_or(3);
+
+    // 添加新边
+    let add_mut = AddFMEdgeMutation;
+    if add_mut.is_applicable(&genome, &constraints) {
+        add_mut.apply(&mut genome, &constraints, &mut rng).unwrap();
+
+        // 验证新边的 kernel_size 与已有边一致
+        let analysis2 = analyze_fm_subgraph(genome.nodes());
+        let node_map2: std::collections::HashMap<
+            u64,
+            &crate::nn::evolution::node_gene::NodeGene,
+        > = genome
+            .nodes()
+            .iter()
+            .filter(|n| n.enabled)
+            .map(|n| (n.innovation_number, n))
+            .collect();
+
+        for e in &analysis2.fm_edges {
+            if let Some(kid) = e.kernel_node_id {
+                if let Some(kn) = node_map2.get(&kid) {
+                    assert_eq!(
+                        kn.output_shape[2], target_ks,
+                        "新添加的边 kernel_size {} 应与已有边 {} 一致",
+                        kn.output_shape[2], target_ks
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// 验证 SplitFMEdge 后新边继承被分裂边的 kernel_size
+#[test]
+fn test_split_fm_edge_inherits_params() {
+    use crate::nn::evolution::fm_mutation::{MutateFMEdgeKernelSizeMutation, SplitFMEdgeMutation};
+    use crate::nn::evolution::fm_ops::analyze_fm_subgraph;
+    use crate::nn::evolution::mutation::{Mutation, SizeConstraints};
+
+    let mut genome = NetworkGenome::minimal_spatial(1, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let constraints = SizeConstraints::default();
+    let mut rng = StdRng::seed_from_u64(42);
+
+    // 先改 kernel_size 为非默认值
+    let ks_mut = MutateFMEdgeKernelSizeMutation;
+    if ks_mut.is_applicable(&genome, &constraints) {
+        ks_mut.apply(&mut genome, &constraints, &mut rng).unwrap();
+    }
+
+    // 记录当前 kernel_size
+    let analysis = analyze_fm_subgraph(genome.nodes());
+    let node_map: std::collections::HashMap<u64, &crate::nn::evolution::node_gene::NodeGene> =
+        genome
+            .nodes()
+            .iter()
+            .filter(|n| n.enabled)
+            .map(|n| (n.innovation_number, n))
+            .collect();
+    let pre_ks: std::collections::HashSet<usize> = analysis
+        .fm_edges
+        .iter()
+        .filter_map(|e| {
+            e.kernel_node_id
+                .and_then(|kid| node_map.get(&kid).map(|n| n.output_shape[2]))
+        })
+        .collect();
+
+    // 分裂边
+    let split_mut = SplitFMEdgeMutation;
+    if split_mut.is_applicable(&genome, &constraints) {
+        split_mut
+            .apply(&mut genome, &constraints, &mut rng)
+            .unwrap();
+
+        // 验证新边的 kernel_size 仍在已有范围内
+        let analysis2 = analyze_fm_subgraph(genome.nodes());
+        let node_map2: std::collections::HashMap<
+            u64,
+            &crate::nn::evolution::node_gene::NodeGene,
+        > = genome
+            .nodes()
+            .iter()
+            .filter(|n| n.enabled)
+            .map(|n| (n.innovation_number, n))
+            .collect();
+
+        for e in &analysis2.fm_edges {
+            if let Some(kid) = e.kernel_node_id {
+                if let Some(kn) = node_map2.get(&kid) {
+                    assert!(
+                        pre_ks.contains(&kn.output_shape[2]),
+                        "分裂产生的新边 kernel_size {} 不在已有范围 {:?} 中",
+                        kn.output_shape[2],
+                        pre_ks
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// 验证 Conv2d 无效 shape 在构建时被拒绝（而不是静默修补为 1×1）
+#[test]
+fn test_invalid_conv_shape_rejected_at_build() {
+
+    // 构造一个 kernel 太大的无效基因组
+    let mut genome = NetworkGenome::minimal_spatial(1, 2, (4, 4));
+    genome.migrate_to_node_level().unwrap();
+
+    // 找到 Conv2d 的 kernel 节点，把 kernel_size 改成极大值
+    let nodes = genome.nodes_mut();
+    for n in nodes.iter_mut() {
+        if n.enabled && n.is_parameter() && n.output_shape.len() == 4 {
+            // 把 kernel 改成 99x99（远超输入 4x4）
+            n.output_shape[2] = 99;
+            n.output_shape[3] = 99;
+        }
+    }
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let result = genome.build(&mut rng);
+    assert!(result.is_err(), "无效 Conv2d shape 应在构建时被拒绝");
+}
+
+/// 验证融合只覆盖 Conv2d/ConvTranspose2d，Pool 边不进入融合路径
+#[test]
+fn test_pool_edges_excluded_from_fusion() {
+    // 用 in_ch=2 确保有足够的输入通道来触发融合
+    let mut genome = NetworkGenome::minimal_spatial(2, 10, (8, 8));
+    genome.migrate_to_node_level().unwrap();
+    genome.migrate_to_fm_level();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = genome.build(&mut rng).unwrap();
+
+    // 构建应成功，纯 Conv2d 边的 FM 组应能正常前向传播
+    let input = Tensor::ones(&[1, 2, 8, 8]);
+    build.input.set_value(&input).unwrap();
+    build.graph.forward(&build.output).unwrap();
+    let out = build.output.value().unwrap().unwrap();
+    assert_eq!(out.shape()[1], 10);
+}

@@ -26,6 +26,17 @@ use super::gene::{
 
 // ==================== BuildResult ====================
 
+/// FM 融合掩码信息（描述某个合成 kernel 中哪些通道对有边）
+#[derive(Debug, Clone)]
+pub struct FMMaskInfo {
+    /// 有边的 (src_channel_idx, dst_channel_idx) 对
+    pub connected_pairs: std::collections::HashSet<(usize, usize)>,
+    /// 输入通道数
+    pub in_ch: usize,
+    /// 输出通道数
+    pub out_ch: usize,
+}
+
 /// build() 的完整返回值
 ///
 /// 将构建过程中产生的所有信息一次性交付给调用者，
@@ -42,6 +53,8 @@ pub struct BuildResult {
     pub layer_params: HashMap<u64, Vec<Var>>,
     /// 内部引用的 Graph（保持 Graph 存活，防止 Var 中的 Weak 失效）
     pub graph: Graph,
+    /// FM 融合掩码：merged_kernel_id → 连接掩码信息（用于权重归零）
+    pub fm_masks: HashMap<u64, FMMaskInfo>,
 }
 
 impl BuildResult {
@@ -55,6 +68,43 @@ impl BuildResult {
         keys.iter()
             .flat_map(|k| self.layer_params[k].iter().cloned())
             .collect()
+    }
+
+    /// 对所有 FM 融合 kernel 施加连接掩码：将无边通道对的 kernel 切片置零
+    ///
+    /// kernel shape: [out_ch, in_ch, kH, kW]
+    /// 对每个 (src_idx, dst_idx) 不在 connected_pairs 中的位置，
+    /// 将 kernel[dst_idx, src_idx, :, :] 置零。
+    pub fn apply_fm_masks(&self) -> Result<(), GraphError> {
+        for (&kernel_id, mask_info) in &self.fm_masks {
+            if let Some(params) = self.layer_params.get(&kernel_id) {
+                if let Some(param) = params.first() {
+                    if let Some(tensor) = param.value()? {
+                        let shape = tensor.shape();
+                        if shape.len() != 4 {
+                            continue;
+                        }
+                        let flat = tensor.to_vec();
+                        let (out_ch, in_ch, kh, kw) = (shape[0], shape[1], shape[2], shape[3]);
+                        let mut new_data = flat;
+                        let slice_size = kh * kw;
+                        for dst in 0..out_ch.min(mask_info.out_ch) {
+                            for src in 0..in_ch.min(mask_info.in_ch) {
+                                if !mask_info.connected_pairs.contains(&(src, dst)) {
+                                    let offset = ((dst * in_ch + src) * kh + 0) * kw;
+                                    for i in 0..slice_size {
+                                        new_data[offset + i] = 0.0;
+                                    }
+                                }
+                            }
+                        }
+                        let masked = Tensor::new(&new_data, shape);
+                        param.set_value(&masked)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -208,7 +258,7 @@ use super::node_gene::NodeGene;
 
 // ==================== FM Builder 分析 ====================
 
-/// 全连接优化合并后的合成节点
+/// FM 融合合并后的合成节点
 struct SyntheticNode {
     id: u64,
     name: String,
@@ -217,21 +267,33 @@ struct SyntheticNode {
     parents: Vec<u64>,
 }
 
-/// 全连接合并组信息
+/// 合成 ID 乘数和偏移常量，用于从 Concat innovation 生成稳定的合成参数 ID
+const SYNTH_ID_MULTIPLIER: u64 = 100_000;
+const KERNEL_OFFSET: u64 = 1;
+const CONV_OFFSET: u64 = 2;
+
+/// FM 融合合并组信息（支持全连接和稀疏连接）
 struct MergedFMGroup {
     /// 被合并替换的节点 ID 集合（FM Identity 输入、FM edge kernel/conv、FM Add 聚合）
     replaced_ids: std::collections::HashSet<u64>,
-    /// 替换后的合成节点列表（kernel + Conv2d + 可选 bias + Add）
+    /// 替换后的合成节点列表（kernel + Conv2d/ConvTranspose2d）
     synthetic_nodes: Vec<SyntheticNode>,
     /// Concat 节点的替代父节点（合并后 Concat 的唯一输出源）
     concat_replacement: Option<(u64, u64)>, // (concat_id, replacement_parent_id)
+    /// 连接掩码：有边的 (src_channel_idx, dst_channel_idx) 对集合
+    connected_pairs: std::collections::HashSet<(usize, usize)>,
+    /// in_ch 和 out_ch
+    in_ch: usize,
+    out_ch: usize,
+    /// 合成 kernel 的稳定 ID（基于 Concat innovation number）
+    merged_kernel_id: u64,
 }
 
 /// FM 相关的构图分析
 struct FMBuilderAnalysis {
     /// FM 输入 Identity 节点 → Narrow 通道索引
     fm_narrow_map: HashMap<u64, usize>,
-    /// 全连接优化合并组
+    /// FM 融合合并组（支持全连接和稀疏连接）
     merged_groups: Vec<MergedFMGroup>,
 }
 
@@ -247,37 +309,65 @@ impl FMBuilderAnalysis {
             .collect();
 
         // 识别 FM 输入 Identity 节点
-        // 按相同 parent 分组，分配通道索引
-        let mut parent_groups: HashMap<u64, Vec<(u64, u64)>> = HashMap::new(); // parent_id → [(node_id, fm_id)]
+        // 先按 parent 粗分组，再按下游 Concat 细分（处理并行分支共享上游的情况）
+        let mut raw_parent_groups: HashMap<u64, Vec<(u64, u64)>> = HashMap::new(); // parent_id → [(node_id, fm_id)]
         for n in nodes.iter().filter(|n| n.enabled) {
             if n.fm_id.is_some()
                 && matches!(n.node_type, NTD::Identity)
                 && !n.parents.is_empty()
             {
-                parent_groups
+                raw_parent_groups
                     .entry(n.parents[0])
                     .or_default()
                     .push((n.innovation_number, n.fm_id.unwrap()));
             }
         }
 
-        for (_parent_id, group) in parent_groups.iter_mut() {
+        // 按下游 Concat 细分：每个 Identity 节点追踪其 conv 边的 dst FM 到达的 Concat
+        let mut final_groups: Vec<(u64, Vec<(u64, u64)>)> = Vec::new(); // (source_id, [(node_id, fm_id)])
+        for (&parent_id, group) in &raw_parent_groups {
+            // 对每个 Identity 节点，找到其 conv 边到达的下游 Concat
+            let mut concat_sub: HashMap<Option<u64>, Vec<(u64, u64)>> = HashMap::new();
+            for &(node_id, fm_id) in group {
+                // 找该 Identity 直接连接的 conv 边的 dst FM
+                let dst_concat = nodes
+                    .iter()
+                    .filter(|n| {
+                        n.enabled
+                            && matches!(
+                                &n.node_type,
+                                NTD::Conv2d { .. } | NTD::ConvTranspose2d { .. }
+                            )
+                            && n.parents.first() == Some(&node_id)
+                    })
+                    .find_map(|conv_node| {
+                        // 从 conv 输出追踪到 dst FM → 追踪到 Concat
+                        Self::trace_to_concat(conv_node.innovation_number, nodes)
+                    });
+                concat_sub.entry(dst_concat).or_default().push((node_id, fm_id));
+            }
+            for (_concat_id, sub_group) in concat_sub {
+                final_groups.push((parent_id, sub_group));
+            }
+        }
+
+        for (_parent_id, group) in final_groups.iter_mut() {
             group.sort_by_key(|&(_, fm_id)| fm_id);
             for (channel_idx, &(node_id, _)) in group.iter().enumerate() {
                 fm_narrow_map.insert(node_id, channel_idx);
             }
         }
 
-        // 全连接 FM 组检测
-        // 对每组 FM 输入节点，检查它们是否与下游 FM 输出全连接
-        for (&source_id, input_group) in &parent_groups {
+        // FM 组融合检测：支持全连接和稀疏连接
+        // 对每组 FM 输入节点，尝试将同构 Conv/Deconv 边融合为单个操作
+        for (source_id, input_group) in &final_groups {
             let input_node_ids: Vec<u64> = input_group.iter().map(|&(id, _)| id).collect();
+            let input_fm_ids: Vec<u64> = input_group.iter().map(|&(_, fid)| fid).collect();
             let in_ch = input_node_ids.len();
 
             if let Some(merge_result) =
-                Self::try_detect_fully_connected(source_id, &input_node_ids, in_ch, nodes, &node_map)
+                Self::try_merge_fm_group(*source_id, &input_node_ids, &input_fm_ids, in_ch, nodes, &node_map)
             {
-                // 从 fm_narrow_map 中移除这些已被优化的输入节点
                 for &id in &input_node_ids {
                     fm_narrow_map.remove(&id);
                 }
@@ -291,28 +381,41 @@ impl FMBuilderAnalysis {
         }
     }
 
-    /// 尝试检测全连接 FM 组并生成合并替换
-    fn try_detect_fully_connected(
+    /// 尝试将 FM 组融合为单个 Conv2d/ConvTranspose2d 操作
+    ///
+    /// 支持全连接和稀疏连接模式。稀疏连接时，无边的通道对在 kernel 中为零。
+    /// 仅融合 Conv2d 和 ConvTranspose2d 边，Pool 边排除。
+    fn try_merge_fm_group(
         source_id: u64,
         input_node_ids: &[u64],
+        input_fm_ids: &[u64],
         in_ch: usize,
         nodes: &[NodeGene],
         node_map: &HashMap<u64, &NodeGene>,
     ) -> Option<MergedFMGroup> {
         let input_set: std::collections::HashSet<u64> = input_node_ids.iter().copied().collect();
+        // input fm_id → 通道索引
+        let fm_to_src_idx: HashMap<u64, usize> = input_fm_ids
+            .iter()
+            .enumerate()
+            .map(|(i, &fid)| (fid, i))
+            .collect();
 
-        // 找到所有 FM edge Conv2d，其第一个 parent 是 input FM 节点之一
+        // 找到所有 FM edge Conv2d/ConvTranspose2d，其第一个 parent 是 input FM 节点之一
         let mut edge_convs: Vec<&NodeGene> = Vec::new();
         for n in nodes.iter().filter(|n| n.enabled) {
-            if let NTD::Conv2d { .. } = &n.node_type {
-                if n.parents.len() >= 2 && input_set.contains(&n.parents[0]) {
-                    // kernel 应为 [1,1,k,k]
-                    if let Some(kn) = node_map.get(&n.parents[1]) {
-                        if kn.is_parameter() && kn.output_shape.len() == 4
-                            && kn.output_shape[0] == 1 && kn.output_shape[1] == 1
-                        {
-                            edge_convs.push(n);
-                        }
+            let is_conv_like = matches!(
+                &n.node_type,
+                NTD::Conv2d { .. } | NTD::ConvTranspose2d { .. }
+            );
+            if is_conv_like && n.parents.len() >= 2 && input_set.contains(&n.parents[0]) {
+                if let Some(kn) = node_map.get(&n.parents[1]) {
+                    if kn.is_parameter()
+                        && kn.output_shape.len() == 4
+                        && kn.output_shape[0] == 1
+                        && kn.output_shape[1] == 1
+                    {
+                        edge_convs.push(n);
                     }
                 }
             }
@@ -322,7 +425,7 @@ impl FMBuilderAnalysis {
             return None;
         }
 
-        // 检查所有边的 Conv2d 参数是否一致
+        // 检查所有边的 op 类型和参数是否一致（块内同构）
         let first_type = &edge_convs[0].node_type;
         if !edge_convs.iter().all(|e| &e.node_type == first_type) {
             return None;
@@ -338,48 +441,118 @@ impl FMBuilderAnalysis {
             }
         }
 
-        // 确定输出 FM 节点：找到 Concat 节点
-        // Concat 的 parents 是各输出 FM 的最终输出节点
-        let concat_node = nodes.iter().find(|n| {
-            n.enabled
-                && matches!(n.node_type, NTD::Concat { axis: 1 })
-                && n.output_shape.len() == 4
-        });
-        let concat_node = match concat_node {
+        // 沿拓扑向下追踪，找到当前 FM 组的 Concat 节点
+        let edge_conv_ids: std::collections::HashSet<u64> =
+            edge_convs.iter().map(|e| e.innovation_number).collect();
+        let mut frontier: std::collections::HashSet<u64> = edge_conv_ids.clone();
+        let mut visited: std::collections::HashSet<u64> = frontier.clone();
+        let mut found_concat: Option<&NodeGene> = None;
+
+        for _ in 0..10 {
+            let mut next_frontier = std::collections::HashSet::new();
+            for n in nodes.iter().filter(|n| n.enabled) {
+                if !visited.contains(&n.innovation_number)
+                    && n.parents.iter().any(|p| frontier.contains(p))
+                {
+                    if matches!(n.node_type, NTD::Concat { axis: 1 })
+                        && n.output_shape.len() == 4
+                    {
+                        found_concat = Some(n);
+                        break;
+                    }
+                    next_frontier.insert(n.innovation_number);
+                    visited.insert(n.innovation_number);
+                }
+            }
+            if found_concat.is_some() || next_frontier.is_empty() {
+                break;
+            }
+            frontier = next_frontier;
+        }
+
+        let concat_node = match found_concat {
             Some(c) => c,
             None => return None,
         };
 
         let out_ch = concat_node.parents.len();
 
-        // 验证全连接：应有 in_ch × out_ch 条边
-        if edge_convs.len() != in_ch * out_ch {
+        // 建立 output FM 通道索引映射
+        // Concat 的 parents 是各输出 FM 的聚合节点，按顺序对应 out_ch 通道
+        let mut dst_fm_to_idx: HashMap<u64, usize> = HashMap::new();
+        for (idx, &parent_id) in concat_node.parents.iter().enumerate() {
+            // 从 Concat parent 追溯到 FM 的 fm_id
+            if let Some(pn) = node_map.get(&parent_id) {
+                if let Some(fid) = pn.fm_id {
+                    dst_fm_to_idx.insert(fid, idx);
+                }
+            }
+        }
+
+        // 建立连接掩码：(src_channel_idx, dst_channel_idx)
+        let mut connected_pairs = std::collections::HashSet::new();
+        for e in &edge_convs {
+            let src_node_id = e.parents[0];
+            // 找 src Identity 节点的 fm_id
+            let src_fm_id = node_map
+                .get(&src_node_id)
+                .and_then(|n| n.fm_id);
+            // 找 dst fm_id：追踪 edge conv 的下游消费者到 FM 节点
+            let dst_fm_id = Self::find_edge_dst_fm(e.innovation_number, nodes, node_map);
+
+            if let (Some(src_fid), Some(dst_fid)) = (src_fm_id, dst_fm_id) {
+                if let (Some(&src_idx), Some(&dst_idx)) =
+                    (fm_to_src_idx.get(&src_fid), dst_fm_to_idx.get(&dst_fid))
+                {
+                    connected_pairs.insert((src_idx, dst_idx));
+                }
+            }
+        }
+
+        // 至少需要一条连接才值得融合
+        if connected_pairs.is_empty() {
             return None;
         }
 
-        let (stride, padding, dilation) = match first_type {
-            NTD::Conv2d { stride, padding, dilation } => (*stride, *padding, *dilation),
+        // 提取 op 参数
+        let merged_op_type = match first_type {
+            NTD::Conv2d {
+                stride,
+                padding,
+                dilation,
+            } => NTD::Conv2d {
+                stride: *stride,
+                padding: *padding,
+                dilation: *dilation,
+            },
+            NTD::ConvTranspose2d {
+                stride,
+                padding,
+                output_padding,
+            } => NTD::ConvTranspose2d {
+                stride: *stride,
+                padding: *padding,
+                output_padding: *output_padding,
+            },
             _ => return None,
         };
 
         // 收集所有被替换的节点 ID
         let mut replaced_ids = std::collections::HashSet::new();
-        // FM 输入 Identity 节点
         for &id in input_node_ids {
             replaced_ids.insert(id);
         }
-        // FM edge kernel + conv 节点
         for e in &edge_convs {
             replaced_ids.insert(e.innovation_number);
             replaced_ids.insert(e.parents[1]); // kernel
         }
-        // FM 聚合 Add 节点（在 Concat parents 中且有 fm_id）
         for &parent_id in &concat_node.parents {
             if let Some(pn) = node_map.get(&parent_id) {
-                if matches!(pn.node_type, NTD::Add) && pn.fm_id.is_some() {
+                if pn.fm_id.is_some() {
                     replaced_ids.insert(parent_id);
-                    // 也需要递归找到 Add 树中的所有 Add 节点
-                    Self::collect_fm_add_tree(parent_id, node_map, &mut replaced_ids);
+                    if matches!(pn.node_type, NTD::Add) {
+                        Self::collect_fm_add_tree(parent_id, node_map, &mut replaced_ids);
+                    }
                 }
             }
         }
@@ -387,26 +560,23 @@ impl FMBuilderAnalysis {
         let conv_output_shape = &edge_convs[0].output_shape;
         let (oh, ow) = (conv_output_shape[2], conv_output_shape[3]);
 
-        // 生成合成节点（merged kernel + merged conv2d）
-        // 使用 Concat 节点的 innovation_number 作为 base，加上偏移作为合成 ID
-        // 实际上让合成节点使用 Concat 节点之前的 ID 空间
-        // 但更安全的做法是使用足够大的 ID 避免冲突
-        let max_id = nodes.iter().map(|n| n.innovation_number).max().unwrap_or(0);
-        let merged_kernel_id = max_id + 1000;
-        let merged_conv_id = max_id + 1001;
+        // 稳定合成 ID：基于 Concat 节点的 innovation number
+        let concat_inn = concat_node.innovation_number;
+        let merged_kernel_id = concat_inn * SYNTH_ID_MULTIPLIER + KERNEL_OFFSET;
+        let merged_conv_id = concat_inn * SYNTH_ID_MULTIPLIER + CONV_OFFSET;
 
         let synthetic_nodes = vec![
             SyntheticNode {
                 id: merged_kernel_id,
-                name: format!("evo_merged_kernel_{}", merged_kernel_id),
+                name: format!("evo_merged_kernel_{}", concat_inn),
                 node_type: NTD::Parameter,
                 shape: vec![out_ch, in_ch, kh, kw],
                 parents: vec![],
             },
             SyntheticNode {
                 id: merged_conv_id,
-                name: format!("evo_merged_conv_{}", merged_conv_id),
-                node_type: NTD::Conv2d { stride, padding, dilation },
+                name: format!("evo_merged_conv_{}", concat_inn),
+                node_type: merged_op_type,
                 shape: vec![1, out_ch, oh, ow],
                 parents: vec![source_id, merged_kernel_id],
             },
@@ -416,7 +586,61 @@ impl FMBuilderAnalysis {
             replaced_ids,
             synthetic_nodes,
             concat_replacement: Some((concat_node.innovation_number, merged_conv_id)),
+            connected_pairs,
+            in_ch,
+            out_ch,
+            merged_kernel_id,
         })
+    }
+
+    /// 从某个节点向下追踪，找到其输出最终汇入的 Concat 节点 ID
+    fn trace_to_concat(start_id: u64, nodes: &[NodeGene]) -> Option<u64> {
+        let mut frontier = std::collections::HashSet::new();
+        frontier.insert(start_id);
+        let mut visited = frontier.clone();
+
+        for _ in 0..10 {
+            let mut next = std::collections::HashSet::new();
+            for n in nodes.iter().filter(|n| n.enabled) {
+                if !visited.contains(&n.innovation_number)
+                    && n.parents.iter().any(|p| frontier.contains(p))
+                {
+                    if matches!(n.node_type, NTD::Concat { axis: 1 }) {
+                        return Some(n.innovation_number);
+                    }
+                    next.insert(n.innovation_number);
+                    visited.insert(n.innovation_number);
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            frontier = next;
+        }
+        None
+    }
+
+    /// 追踪 edge conv 输出流向哪个 FM（返回 fm_id）
+    fn find_edge_dst_fm(
+        edge_conv_id: u64,
+        nodes: &[NodeGene],
+        _node_map: &HashMap<u64, &NodeGene>,
+    ) -> Option<u64> {
+        // 找到直接消费此 edge_conv 输出的节点
+        for n in nodes.iter().filter(|n| n.enabled) {
+            if n.parents.contains(&edge_conv_id) {
+                if let Some(fid) = n.fm_id {
+                    return Some(fid);
+                }
+                // 如果是 Add 聚合节点（无 fm_id），递归向下找
+                if matches!(n.node_type, NTD::Add) {
+                    if let Some(fid) = Self::find_edge_dst_fm(n.innovation_number, nodes, _node_map) {
+                        return Some(fid);
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// 递归收集 FM Add 聚合树中的所有节点 ID
@@ -529,6 +753,70 @@ impl NetworkGenome {
             .filter(|n| n.enabled)
             .map(|n| (n.innovation_number, n))
             .collect();
+
+        // Conv2d/ConvTranspose2d 形状合法性检查：
+        // saturating_sub + max(1) 在 infer_output_shape 中防止 panic，
+        // 但此处需要拒绝实际会产生退化输出的无效配置。
+        for &id in &analysis.topo_order {
+            if let Some(node) = node_lookup.get(&id) {
+                if let Some(inp_shape) = analysis.output_shapes.get(&node.parents.first().copied().unwrap_or(0)) {
+                    if inp_shape.len() >= 4 {
+                        match &node.node_type {
+                            NTD::Conv2d { stride, padding, dilation } => {
+                                if node.parents.len() >= 2 {
+                                    if let Some(ker_shape) = analysis.output_shapes.get(&node.parents[1]) {
+                                        if ker_shape.len() >= 4 {
+                                            let eff_kh = dilation.0 * (ker_shape[2] - 1) + 1;
+                                            let eff_kw = dilation.1 * (ker_shape[3] - 1) + 1;
+                                            let h_raw = inp_shape[2] + 2 * padding.0;
+                                            let w_raw = inp_shape[3] + 2 * padding.1;
+                                            if h_raw < eff_kh || w_raw < eff_kw {
+                                                return Err(super::migration::MigrationError::InvalidGenome(
+                                                    format!(
+                                                        "Conv2d 节点 {} 的输入 {}x{} 对 kernel {}x{}（dilation {:?}）太小",
+                                                        id, inp_shape[2], inp_shape[3],
+                                                        ker_shape[2], ker_shape[3], dilation
+                                                    ),
+                                                ));
+                                            }
+                                            let h_out = (h_raw - eff_kh) / stride.0 + 1;
+                                            let w_out = (w_raw - eff_kw) / stride.1 + 1;
+                                            if h_out == 0 || w_out == 0 {
+                                                return Err(super::migration::MigrationError::InvalidGenome(
+                                                    format!(
+                                                        "Conv2d 节点 {} 输出尺寸为 0 ({}x{})",
+                                                        id, h_out, w_out
+                                                    ),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            NTD::ConvTranspose2d { stride, padding, .. } => {
+                                if node.parents.len() >= 2 {
+                                    if let Some(ker_shape) = analysis.output_shapes.get(&node.parents[1]) {
+                                        if ker_shape.len() >= 4 {
+                                            let h_sum = (inp_shape[2].max(1) - 1) * stride.0 + ker_shape[2];
+                                            let w_sum = (inp_shape[3].max(1) - 1) * stride.1 + ker_shape[3];
+                                            if h_sum < 2 * padding.0 || w_sum < 2 * padding.1 {
+                                                return Err(super::migration::MigrationError::InvalidGenome(
+                                                    format!(
+                                                        "ConvTranspose2d 节点 {} 的参数导致输出尺寸为负（padding {:?} 过大）",
+                                                        id, padding
+                                                    ),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
 
         // FM 感知分析：
         // 1. 识别 FM 输入 Identity 节点并映射到 Narrow 通道索引
@@ -661,7 +949,7 @@ impl NetworkGenome {
 
         // 收集参数节点：param_innovation → [Var]
         let nodes = self.nodes();
-        let layer_params: HashMap<u64, Vec<Var>> = nodes
+        let mut layer_params: HashMap<u64, Vec<Var>> = nodes
             .iter()
             .filter(|n| n.enabled && n.is_parameter())
             .filter_map(|n| {
@@ -673,15 +961,42 @@ impl NetworkGenome {
             })
             .collect();
 
+        // 补充合成参数节点（FM 融合产生的 merged kernel）并收集掩码信息
+        let fm_analysis = FMBuilderAnalysis::analyze(nodes);
+        let mut fm_masks: HashMap<u64, FMMaskInfo> = HashMap::new();
+        for merged in &fm_analysis.merged_groups {
+            for synth in &merged.synthetic_nodes {
+                if matches!(synth.node_type, NTD::Parameter) {
+                    if let Some(var) = rebuild.node_map.get(&synth.id) {
+                        layer_params.insert(synth.id, vec![var.clone()]);
+                    }
+                }
+            }
+            fm_masks.insert(
+                merged.merged_kernel_id,
+                FMMaskInfo {
+                    connected_pairs: merged.connected_pairs.clone(),
+                    in_ch: merged.in_ch,
+                    out_ch: merged.out_ch,
+                },
+            );
+        }
+
         // 回填 NodeGroupTag：将 NodeGene 的 block_id 映射为可视化 Cluster 标签
         backfill_node_group_tags(self, &rebuild.node_map);
 
-        Ok(BuildResult {
+        let result = BuildResult {
             input,
             output,
             layer_params,
             graph: rebuild.graph,
-        })
+            fm_masks,
+        };
+
+        // 构建后立即对合成 kernel 施加掩码（首次构建时零化无连接位置）
+        result.apply_fm_masks()?;
+
+        Ok(result)
     }
 
     /// 含 edge-based 循环边的 NodeLevel 基因组构图路径
@@ -855,6 +1170,7 @@ impl NetworkGenome {
             output: final_output,
             layer_params,
             graph,
+            fm_masks: HashMap::new(),
         })
     }
 
@@ -1036,6 +1352,7 @@ impl NetworkGenome {
             output: current,
             layer_params,
             graph,
+            fm_masks: HashMap::new(),
         })
     }
 
@@ -1044,6 +1361,9 @@ impl NetworkGenome {
     /// - LayerLevel：按层创新号索引，每层所有参数张量存为 `Vec<Tensor>`
     /// - NodeLevel：按参数节点创新号索引，每个 Parameter 节点存一个 `Tensor`
     pub fn capture_weights(&mut self, build: &BuildResult) -> Result<(), GraphError> {
+        // 保存前对 FM 融合 kernel 施加掩码，确保断开位置权重归零
+        build.apply_fm_masks()?;
+
         if self.is_node_level() {
             // NodeLevel：单参数节点粒度快照
             let mut node_snaps: HashMap<u64, Tensor> = HashMap::new();
@@ -1302,6 +1622,10 @@ impl NetworkGenome {
                     reinitialized += params.len();
                 }
             }
+
+            // 恢复后对 FM 融合 kernel 施加掩码，确保断开位置归零
+            build.apply_fm_masks()?;
+
             return Ok(InheritReport {
                 inherited,
                 partially_inherited,

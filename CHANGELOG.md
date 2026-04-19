@@ -1,5 +1,31 @@
 # 更新日志
 
+## [0.14.2] - 2026-04-19
+
+### 新增
+
+- **feat(evolution): FM 掩码融合（FM Mask Fusion）——构图时自动合并同构 FM 边**
+  - 检测同一 Conv 块内所有 FM 边是否具有相同超参数（kernel size、stride、dilation、类型），若同构则合并为单个 dense Conv2d 操作，大幅减少计算图节点数
+  - `fm_ops.rs` 新增 `FMFusionAnalysis`：per-block 同构性检测 + 融合矩阵构建
+  - `builder.rs` 重构 FM 子图构图路径：融合模式下直接生成 dense Conv2d，非融合模式保持稀疏 FM 子图
+  - 10 种 FM 级别变异（`fm_mutation.rs`）全面适配融合后的权重映射
+
+### 优化
+
+- **perf(evolution): Spatial 域演化速度多项优化**
+  - 收紧 `SizeConstraints::auto()` 的 `fc_base` 计算：假设至少 2 次 stride-2 pool 降低 Flatten 维度，FC 隐藏层从 128 缩至 64，`base_params` 下限从 200K 降至 50K，防止 Flatten→Linear 参数爆炸
+  - `ComplexityMetric` 默认值从 `ParamCount` 切换为 `FLOPs`——NSGA-II 选择压力直接对准训练/推理耗时
+  - `GrowHiddenSize` 变异权重从 0.25 降至 0.12，将探索预算让渡给 FM 级别细粒度变异
+  - 新增 BLAS 线程守卫：`parallelism > 1` 时自动设置 `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `OMP_NUM_THREADS = 1`，防止多线程超订阅
+
+### 修复
+
+- **fix(nn): ConvTranspose2d output_padding 参数在 ONNX 导出/导入时丢失**
+
+### 文档
+
+- 更新演化设计文档：ComplexityMetric 默认值、SizeConstraints 空间域参数、已知问题中性能优化进展、FM 掩码融合说明、变异权重调整
+
 ## [0.14.1] - 2026-04-19
 
 ### 修复

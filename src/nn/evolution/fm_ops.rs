@@ -369,6 +369,207 @@ pub fn find_connectable_pairs(
     pairs
 }
 
+/// 找到某个 FM 的输出节点下游直接消费它的 Concat 节点
+///
+/// 从 FM 的输出节点开始，向下追踪最多 3 跳，找到 axis=1 的 Concat。
+/// 用于区分共享同一上游 parent 但汇聚到不同 Concat 的并行 FM block。
+pub fn find_downstream_concat(
+    fm_id: u64,
+    analysis: &FMSubgraphAnalysis,
+    nodes: &[NodeGene],
+) -> Option<u64> {
+    let fm_info = analysis.fm_nodes.get(&fm_id)?;
+    let start_id = fm_info.output_node_id;
+    let mut frontier: HashSet<u64> = HashSet::new();
+    frontier.insert(start_id);
+    let mut visited: HashSet<u64> = frontier.clone();
+
+    for _ in 0..5 {
+        let mut next = HashSet::new();
+        for n in nodes.iter().filter(|n| n.enabled) {
+            if !visited.contains(&n.innovation_number)
+                && n.parents.iter().any(|p| frontier.contains(p))
+            {
+                if matches!(n.node_type, NodeTypeDescriptor::Concat { axis: 1 }) {
+                    return Some(n.innovation_number);
+                }
+                next.insert(n.innovation_number);
+                visited.insert(n.innovation_number);
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    None
+}
+
+/// 找到与给定 FM 边同属一个 FM block 的所有 src FM ID 集合
+///
+/// FM block 定义：(1) 所有 src FM 的 Identity 节点共享同一个 parent，
+/// 且 (2) 它们的边汇聚到同一个下游 Concat 节点。
+/// 条件 (2) 用于区分并行分支共用同一上游张量的情况。
+fn find_block_fm_ids(
+    target_edge: &FMEdgeInfo,
+    analysis: &FMSubgraphAnalysis,
+    nodes: &[NodeGene],
+) -> HashSet<u64> {
+    let identity_parent = nodes
+        .iter()
+        .filter(|n| {
+            n.enabled
+                && n.fm_id == Some(target_edge.src_fm_id)
+                && matches!(n.node_type, NodeTypeDescriptor::Identity)
+        })
+        .find_map(|n| n.parents.first().copied());
+
+    let parent_id = match identity_parent {
+        Some(pid) => pid,
+        None => {
+            let mut s = HashSet::new();
+            s.insert(target_edge.src_fm_id);
+            return s;
+        }
+    };
+
+    // 所有共享同一 parent 的 Identity FM
+    let candidate_fm_ids: Vec<u64> = nodes
+        .iter()
+        .filter(|n| {
+            n.enabled
+                && n.fm_id.is_some()
+                && matches!(n.node_type, NodeTypeDescriptor::Identity)
+                && n.parents.first() == Some(&parent_id)
+        })
+        .filter_map(|n| n.fm_id)
+        .collect();
+
+    // 找到 target edge 的 dst FM 对应的下游 Concat
+    let target_concat = find_downstream_concat(target_edge.dst_fm_id, analysis, nodes);
+
+    match target_concat {
+        Some(concat_id) => {
+            // 只保留边最终汇聚到同一个 Concat 的 FM
+            candidate_fm_ids
+                .into_iter()
+                .filter(|&fid| {
+                    // 检查从 fid 出发的任意一条边的 dst FM 是否最终到达同一 Concat
+                    analysis.fm_edges.iter().any(|e| {
+                        e.src_fm_id == fid
+                            && find_downstream_concat(e.dst_fm_id, analysis, nodes)
+                                == Some(concat_id)
+                    })
+                })
+                .collect()
+        }
+        None => candidate_fm_ids.into_iter().collect(),
+    }
+}
+
+/// 找到与给定 FM 边同属一个 FM block 的所有边的 op_node_id 列表
+///
+/// FM block 定义：所有 src FM 的 Identity 节点共享同一个 parent，
+/// 且它们的边汇聚到同一个下游 Concat 节点。
+pub fn find_block_edge_op_ids(
+    target_edge: &FMEdgeInfo,
+    analysis: &FMSubgraphAnalysis,
+    nodes: &[NodeGene],
+) -> Vec<u64> {
+    let block_fm_ids = find_block_fm_ids(target_edge, analysis, nodes);
+
+    analysis
+        .fm_edges
+        .iter()
+        .filter(|e| block_fm_ids.contains(&e.src_fm_id))
+        .map(|e| e.op_node_id)
+        .collect()
+}
+
+/// 找到与给定 FM 边同属一个 FM block 的所有 kernel Parameter 节点 ID
+pub fn find_block_kernel_ids(
+    target_edge: &FMEdgeInfo,
+    analysis: &FMSubgraphAnalysis,
+    nodes: &[NodeGene],
+) -> Vec<u64> {
+    let block_fm_ids = find_block_fm_ids(target_edge, analysis, nodes);
+
+    analysis
+        .fm_edges
+        .iter()
+        .filter(|e| block_fm_ids.contains(&e.src_fm_id))
+        .filter_map(|e| e.kernel_node_id)
+        .collect()
+}
+
+/// 查询目标 FM 所在 block 中已有边的结构参数（kernel_size, stride, padding, dilation）
+///
+/// 用于结构变异（AddFMEdge, AddFeatureMap, SplitFMEdge）创建新边时
+/// 继承已有边的参数，维护"块内同构"不变式。
+/// 返回 (kernel_size, stride, padding, dilation, is_conv_transpose)，
+/// 如果找不到已有的 Conv/Deconv 边则返回 None。
+pub fn query_block_conv_params(
+    dst_fm_id: u64,
+    analysis: &FMSubgraphAnalysis,
+    nodes: &[NodeGene],
+) -> Option<(usize, (usize, usize), (usize, usize), (usize, usize), bool)> {
+    // 找到任意一条指向 dst_fm 的 Conv2d/ConvTranspose2d 边
+    let existing_edge = analysis.fm_edges.iter().find(|e| {
+        e.dst_fm_id == dst_fm_id && e.edge_type.has_learnable_params()
+    });
+
+    if let Some(edge) = existing_edge {
+        let node_map: HashMap<u64, &NodeGene> = nodes
+            .iter()
+            .filter(|n| n.enabled)
+            .map(|n| (n.innovation_number, n))
+            .collect();
+
+        // 获取 kernel_size
+        let kernel_size = edge.kernel_node_id.and_then(|kid| {
+            node_map.get(&kid).map(|k| k.output_shape[2])
+        }).unwrap_or(3);
+
+        match &edge.edge_type {
+            FMEdgeType::Conv2d { stride, padding, dilation } => {
+                Some((kernel_size, *stride, *padding, *dilation, false))
+            }
+            FMEdgeType::ConvTranspose2d { stride, padding, .. } => {
+                Some((kernel_size, *stride, *padding, (1, 1), true))
+            }
+            _ => None,
+        }
+    } else {
+        // 尝试从 src 方向查找
+        let src_edge = analysis.fm_edges.iter().find(|e| {
+            e.src_fm_id == dst_fm_id && e.edge_type.has_learnable_params()
+        });
+        if let Some(edge) = src_edge {
+            let node_map: HashMap<u64, &NodeGene> = nodes
+                .iter()
+                .filter(|n| n.enabled)
+                .map(|n| (n.innovation_number, n))
+                .collect();
+
+            let kernel_size = edge.kernel_node_id.and_then(|kid| {
+                node_map.get(&kid).map(|k| k.output_shape[2])
+            }).unwrap_or(3);
+
+            match &edge.edge_type {
+                FMEdgeType::Conv2d { stride, padding, dilation } => {
+                    Some((kernel_size, *stride, *padding, *dilation, false))
+                }
+                FMEdgeType::ConvTranspose2d { stride, padding, .. } => {
+                    Some((kernel_size, *stride, *padding, (1, 1), true))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
 /// 查找可以安全删除的 FM 边（删除后每个 FM 仍保留至少一条输入边）
 pub fn find_removable_edges(analysis: &FMSubgraphAnalysis) -> Vec<&FMEdgeInfo> {
     // 统计每个 dst FM 的输入边数

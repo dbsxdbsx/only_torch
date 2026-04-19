@@ -146,8 +146,10 @@ impl ConvTranspose2d {
         }
 
         // H_out = (H_in - 1) * s - 2p + k + output_padding（与 PyTorch dilation=1 一致）
-        let output_h = (input_h - 1) * stride_h - 2 * pad_h + kernel_h + op_h;
-        let output_w = (input_w - 1) * stride_w - 2 * pad_w + kernel_w + op_w;
+        let h_sum = (input_h - 1) * stride_h + kernel_h + op_h;
+        let w_sum = (input_w - 1) * stride_w + kernel_w + op_w;
+        let output_h = h_sum.saturating_sub(2 * pad_h);
+        let output_w = w_sum.saturating_sub(2 * pad_w);
 
         if output_h == 0 || output_w == 0 {
             return Err(GraphError::InvalidOperation(format!(
