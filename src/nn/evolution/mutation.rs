@@ -29,6 +29,8 @@ use super::node_ops::{
     resize_recurrent_out, sync_computation_shapes,
 };
 use super::net2net::apply_widen_to_snapshots;
+use super::cell_migration::{migrate_cell_weights, CellKind};
+use crate::tensor::Tensor;
 use super::node_gene::{NodeGene, RecurrentEdge};
 use crate::nn::descriptor::NodeTypeDescriptor;
 use rand::Rng;
@@ -1557,10 +1559,37 @@ fn node_level_mutate_cell_type_apply(
     let old_output_id = block.output_id;
     let bid_set: std::collections::HashSet<u64> = block.node_ids.iter().copied().collect();
 
+    // ===== F2: 迁移前保存旧 cell 的参数快照（按 expand_* 的参数顺序）=====
+    //
+    // cell_node.parents 布局为 [input_id, param_id_0, param_id_1, ...]，
+    // 跳过首元素后剩余 id 顺序与 expand_* 返回参数节点的顺序一致。
+    let old_cell_kind = match &cell_node.node_type {
+        NT::CellRnn { .. } => Some(CellKind::Rnn),
+        NT::CellLstm { .. } => Some(CellKind::Lstm),
+        NT::CellGru { .. } => Some(CellKind::Gru),
+        _ => None,
+    };
+    let old_param_snapshots: Vec<Option<Tensor>> = if genome.is_node_level() {
+        cell_node
+            .parents
+            .iter()
+            .skip(1)
+            .map(|pid| genome.node_weight_snapshots().get(pid).cloned())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     // 删除旧 block 中的全部节点
     genome
         .nodes_mut()
         .retain(|n| !bid_set.contains(&n.innovation_number));
+
+    // 同步移除旧快照中属于被删节点的条目，避免孤儿快照
+    if genome.is_node_level() {
+        let snaps = genome.node_weight_snapshots_mut();
+        snaps.retain(|k, _| !bid_set.contains(k));
+    }
 
     // 生成新 block
     let mut counter = make_counter(genome);
@@ -1595,6 +1624,22 @@ fn node_level_mutate_cell_type_apply(
     };
 
     let new_output_id = new_nodes.last().map(|n| n.innovation_number).unwrap();
+
+    // ===== F2: 为新参数节点构造迁移快照 =====
+    let new_cell_kind = match new_type_idx {
+        0 => CellKind::Rnn,
+        1 => CellKind::Lstm,
+        _ => CellKind::Gru,
+    };
+    // new_nodes 除了最后一个是 Cell* 之外，前 N 个都是 Parameter 节点，
+    // 顺序与 expand_* 的参数顺序一致。
+    let new_param_ids: Vec<u64> = new_nodes
+        .iter()
+        .take(new_nodes.len().saturating_sub(1))
+        .filter(|n| n.is_parameter())
+        .map(|n| n.innovation_number)
+        .collect();
+
     genome.nodes_mut().extend(new_nodes);
     commit_counter(genome, &counter);
 
@@ -1603,6 +1648,22 @@ fn node_level_mutate_cell_type_apply(
         for pid in node.parents.iter_mut() {
             if *pid == old_output_id {
                 *pid = new_output_id;
+            }
+        }
+    }
+
+    // 写入迁移快照（仅 NodeLevel + 新旧快照都齐全时才生效）
+    if let (true, Some(old_kind)) = (genome.is_node_level(), old_cell_kind) {
+        if let Some(migrated) = migrate_cell_weights(
+            old_kind,
+            &old_param_snapshots,
+            new_cell_kind,
+            &new_param_ids,
+            hidden_size,
+        ) {
+            let snaps = genome.node_weight_snapshots_mut();
+            for (id, t) in migrated {
+                snaps.insert(id, t);
             }
         }
     }

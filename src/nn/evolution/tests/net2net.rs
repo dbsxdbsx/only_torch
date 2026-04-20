@@ -1,13 +1,256 @@
-//! Net2Net 集成测试：验证在真实 Genome 上 resize + Net2Net + build + restore 后
-//! 前向输出与扩宽前函数等价。
+//! Net2Net 单元 + 集成测试。
+//!
+//! - 前半部分验证原语：`widening_mapping`、`counts_of`、`gather_along_axis`
+//!   （含 scaled 变体与 Flatten 跨域）以及 Linear / RNN / Conv2d→Flatten→Linear
+//!   的手工搭建前向函数保持性（不走 genome build）。
+//! - 后半部分验证端到端：构造真实 NodeLevel genome，走
+//!   `resize → apply_widen_to_snapshots → restore_weights → forward`，
+//!   断言扩宽前后输出函数等价。
 
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
 use crate::nn::evolution::gene::*;
-use crate::nn::evolution::net2net::apply_widen_to_snapshots;
+use crate::nn::evolution::net2net::{
+    apply_widen_to_snapshots, counts_of, gather_along_axis, gather_along_axis_scaled,
+    gather_linear_in_with_flatten, widening_mapping,
+};
 use crate::nn::evolution::node_ops::{node_main_path, resize_linear_out, NodeBlockKind};
 use crate::tensor::Tensor;
+
+fn seeded_rng() -> StdRng {
+    StdRng::seed_from_u64(12345)
+}
+
+fn max_abs_diff(a: &Tensor, b: &Tensor) -> f32 {
+    a.to_vec()
+        .iter()
+        .zip(b.to_vec().iter())
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0_f32, f32::max)
+}
+
+// ==================== 原语单元测试 ====================
+
+#[test]
+fn test_widening_mapping_identity_prefix() {
+    let mut r = seeded_rng();
+    let m = widening_mapping(4, 7, &mut r);
+    assert_eq!(m.len(), 7);
+    for i in 0..4 {
+        assert_eq!(m[i], i, "prefix should be identity");
+    }
+    for j in 4..7 {
+        assert!(m[j] < 4, "suffix indices must be in [0, 4)");
+    }
+}
+
+#[test]
+fn test_widening_mapping_no_growth() {
+    let mut r = seeded_rng();
+    let m = widening_mapping(5, 5, &mut r);
+    assert_eq!(m, vec![0, 1, 2, 3, 4]);
+}
+
+#[test]
+fn test_counts_of_basic() {
+    let m = vec![0, 1, 2, 0, 1, 0];
+    let c = counts_of(&m, 3);
+    assert_eq!(c, vec![3, 2, 1]);
+}
+
+#[test]
+fn test_gather_along_axis_identity() {
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let g = gather_along_axis(&t, 1, &[0, 1, 2]);
+    assert_eq!(g.shape(), &[2, 3]);
+    assert_eq!(g.to_vec(), t.to_vec());
+}
+
+#[test]
+fn test_gather_along_axis_duplicate() {
+    let t = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let g = gather_along_axis(&t, 1, &[0, 1, 2, 0]);
+    assert_eq!(g.shape(), &[2, 4]);
+    assert_eq!(g.to_vec(), vec![1.0, 2.0, 3.0, 1.0, 4.0, 5.0, 6.0, 4.0]);
+}
+
+#[test]
+fn test_gather_scaled_preserves_row_sum() {
+    let v = Tensor::new(&[2.0, 4.0, 6.0], &[1, 3]);
+    let mapping = vec![0, 1, 2, 0, 1];
+    let counts = counts_of(&mapping, 3);
+    assert_eq!(counts, vec![2, 2, 1]);
+    let g = gather_along_axis_scaled(&v, 1, &mapping, &counts);
+    let data = g.to_vec();
+    for (x, y) in data.iter().zip(&[1.0, 2.0, 6.0, 1.0, 2.0]) {
+        assert!((x - y).abs() < 1e-6, "got {x}, expected {y}");
+    }
+    let mut sums = vec![0.0_f32; 3];
+    for (i, v) in data.iter().enumerate() {
+        sums[mapping[i]] += *v;
+    }
+    assert!((sums[0] - 2.0).abs() < 1e-6);
+    assert!((sums[1] - 4.0).abs() < 1e-6);
+    assert!((sums[2] - 6.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_flatten_stride_expand() {
+    let w = Tensor::new(
+        &[
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+        ],
+        &[6, 2],
+    );
+    let mapping = vec![0, 1, 0];
+    let counts = counts_of(&mapping, 2);
+    let g = gather_linear_in_with_flatten(&w, &mapping, &counts, 3);
+    assert_eq!(g.shape(), &[9, 2]);
+    let expected = vec![
+        0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0,
+    ];
+    for (x, y) in g.to_vec().iter().zip(&expected) {
+        assert!((x - y).abs() < 1e-6, "got {x}, expected {y}");
+    }
+}
+
+// ==================== 函数保持性（手工搭建前向）====================
+
+#[test]
+fn test_linear_widen_preserves_function_no_activation() {
+    let (h_old, h_new, d_in, d_out) = (3usize, 5usize, 2usize, 1usize);
+    let mut r = seeded_rng();
+    let mapping = widening_mapping(h_old, h_new, &mut r);
+    let counts = counts_of(&mapping, h_old);
+
+    let w1 = Tensor::new(&[0.1, 0.2, 0.3, -0.4, 0.5, -0.6], &[d_in, h_old]);
+    let b1 = Tensor::new(&[0.01, 0.02, 0.03], &[1, h_old]);
+    let w2 = Tensor::new(&[1.0, -0.5, 0.25], &[h_old, d_out]);
+    let b2 = Tensor::new(&[0.5], &[1, d_out]);
+
+    let w1_new = gather_along_axis(&w1, 1, &mapping);
+    let b1_new = gather_along_axis(&b1, 1, &mapping);
+    let w2_new = gather_along_axis_scaled(&w2, 0, &mapping, &counts);
+
+    let x = Tensor::new(&[0.7, -0.3], &[1, d_in]);
+    let h_old_vec = x.mat_mul(&w1) + b1.clone();
+    let y_old = h_old_vec.mat_mul(&w2) + b2.clone();
+
+    let h_new_vec = x.mat_mul(&w1_new) + b1_new;
+    let y_new = h_new_vec.mat_mul(&w2_new) + b2;
+
+    assert_eq!(y_new.shape(), y_old.shape());
+    let diff = max_abs_diff(&y_new, &y_old);
+    assert!(diff < 1e-5, "Linear widen 非函数保持: max diff = {diff}");
+}
+
+#[test]
+fn test_linear_bn_linear_widen_preserves_function() {
+    let (h_old, h_new, d_in, d_out) = (3usize, 6usize, 2usize, 1usize);
+    let mut r = seeded_rng();
+    let mapping = widening_mapping(h_old, h_new, &mut r);
+    let counts = counts_of(&mapping, h_old);
+
+    let w1 = Tensor::new(&[0.1, 0.2, 0.3, -0.4, 0.5, -0.6], &[d_in, h_old]);
+    let b1 = Tensor::new(&[0.01, 0.02, 0.03], &[1, h_old]);
+    let gamma = Tensor::new(&[1.1, 0.9, 1.2], &[1, h_old]);
+    let beta = Tensor::new(&[0.05, -0.1, 0.0], &[1, h_old]);
+    let w2 = Tensor::new(&[1.0, -0.5, 0.25], &[h_old, d_out]);
+    let b2 = Tensor::new(&[0.5], &[1, d_out]);
+
+    let w1_new = gather_along_axis(&w1, 1, &mapping);
+    let b1_new = gather_along_axis(&b1, 1, &mapping);
+    let gamma_new = gather_along_axis(&gamma, 1, &mapping);
+    let beta_new = gather_along_axis(&beta, 1, &mapping);
+    let w2_new = gather_along_axis_scaled(&w2, 0, &mapping, &counts);
+
+    let x = Tensor::new(&[0.7, -0.3], &[1, d_in]);
+
+    let h_old_vec = x.mat_mul(&w1) + b1.clone();
+    let h_old_bn = &h_old_vec * &gamma + beta.clone();
+    let y_old = h_old_bn.mat_mul(&w2) + b2.clone();
+
+    let h_new_vec = x.mat_mul(&w1_new) + b1_new;
+    let h_new_bn = &h_new_vec * &gamma_new + beta_new;
+    let y_new = h_new_bn.mat_mul(&w2_new) + b2;
+
+    let diff = max_abs_diff(&y_new, &y_old);
+    assert!(
+        diff < 1e-5,
+        "Linear->BN->Linear widen 非函数保持: max diff = {diff}"
+    );
+}
+
+#[test]
+fn test_rnn_hidden_widen_preserves_function_single_step() {
+    let (h_old, h_new, d_in) = (3usize, 5usize, 2usize);
+    let mut r = seeded_rng();
+    let mapping = widening_mapping(h_old, h_new, &mut r);
+    let counts = counts_of(&mapping, h_old);
+
+    let w_ix = Tensor::new(&[0.1, 0.2, 0.3, -0.4, 0.5, -0.6], &[d_in, h_old]);
+    let w_hx = Tensor::new(
+        &[0.01, 0.02, 0.03, 0.04, -0.05, 0.06, -0.07, 0.08, 0.09],
+        &[h_old, h_old],
+    );
+    let b_x = Tensor::new(&[0.1, -0.1, 0.0], &[1, h_old]);
+
+    let w_ix_new = gather_along_axis(&w_ix, 1, &mapping);
+    let w_hx_tmp = gather_along_axis_scaled(&w_hx, 0, &mapping, &counts);
+    let w_hx_new = gather_along_axis(&w_hx_tmp, 1, &mapping);
+    let b_x_new = gather_along_axis(&b_x, 1, &mapping);
+
+    let x = Tensor::new(&[0.7, -0.3], &[1, d_in]);
+    let h_prev = Tensor::new(&[0.2, -0.1, 0.4], &[1, h_old]);
+    let h_prev_new = gather_along_axis(&h_prev, 1, &mapping);
+
+    let pre_old = x.mat_mul(&w_ix) + h_prev.mat_mul(&w_hx) + b_x.clone();
+    let pre_new = x.mat_mul(&w_ix_new) + h_prev_new.mat_mul(&w_hx_new) + b_x_new;
+
+    let old_slice = pre_old.to_vec();
+    let new_slice = pre_new.to_vec();
+    for (i_new, &i_old) in mapping.iter().enumerate() {
+        let a = new_slice[i_new];
+        let b = old_slice[i_old];
+        assert!(
+            (a - b).abs() < 1e-5,
+            "RNN hidden widen mismatch at new idx {i_new} (src {i_old}): got {a}, expected {b}"
+        );
+    }
+}
+
+#[test]
+fn test_conv2d_flatten_linear_widen_preserves_function() {
+    let (c_old, c_new, h, w, d_out) = (2usize, 4usize, 2usize, 2usize, 1usize);
+    let mut r = seeded_rng();
+    let mapping = widening_mapping(c_old, c_new, &mut r);
+    let counts = counts_of(&mapping, c_old);
+
+    let feat = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[1, c_old, h, w]);
+    let feat_new = gather_along_axis(&feat, 1, &mapping);
+    assert_eq!(feat_new.shape(), &[1, c_new, h, w]);
+
+    let feat_old_flat = feat.reshape(&[1, c_old * h * w]);
+    let feat_new_flat = feat_new.reshape(&[1, c_new * h * w]);
+
+    let w_down = Tensor::new(
+        &[0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8],
+        &[c_old * h * w, d_out],
+    );
+    let w_down_new = gather_linear_in_with_flatten(&w_down, &mapping, &counts, h * w);
+    assert_eq!(w_down_new.shape(), &[c_new * h * w, d_out]);
+
+    let y_old = feat_old_flat.mat_mul(&w_down);
+    let y_new = feat_new_flat.mat_mul(&w_down_new);
+    let diff = max_abs_diff(&y_new, &y_old);
+    assert!(
+        diff < 1e-5,
+        "Conv2d->Flatten->Linear widen 非函数保持: max diff = {diff}"
+    );
+}
+
+// ==================== 端到端集成测试 ====================
 
 /// 构造 NodeLevel 基因组：Input(d_in) → Linear(h) → Linear(d_out)（无激活，便于函数等价验证）
 fn linear_mlp_nodegenome(d_in: usize, h: usize, d_out: usize) -> NetworkGenome {
