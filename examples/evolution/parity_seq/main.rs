@@ -63,8 +63,8 @@ fn main() {
     println!("目标: 自动演化到 ≥90% 准确率\n");
 
     let seq_len = 8;
-    let n_train = 200;
-    let n_test = 50;
+    let n_train = 500;
+    let n_test = 100;
 
     let train = generate_parity_data(n_train, seq_len, 42);
     let test = generate_parity_data(n_test, seq_len, 99);

@@ -65,8 +65,8 @@ fn main() {
     println!("序列长度: 4~12（自动 zero-pad）");
     println!("目标: 自动演化到 ≥85% 准确率\n");
 
-    let train = generate_var_len_parity_data(200, 4, 12, 42);
-    let test = generate_var_len_parity_data(50, 4, 12, 99);
+    let train = generate_var_len_parity_data(500, 4, 12, 42);
+    let test = generate_var_len_parity_data(100, 4, 12, 99);
 
     let result = Evolution::supervised(train, test, TaskMetric::Accuracy)
         .with_target_metric(0.85)

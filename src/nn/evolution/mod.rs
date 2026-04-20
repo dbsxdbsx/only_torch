@@ -18,6 +18,7 @@
 
 pub mod builder;
 pub mod callback;
+pub mod cell_migration;
 pub mod convergence;
 pub mod error;
 pub mod fm_mutation;
@@ -26,7 +27,6 @@ pub mod gene;
 pub mod migration;
 pub mod model_io;
 pub mod mutation;
-pub mod cell_migration;
 pub mod net2net;
 pub mod node_gene;
 pub mod node_ops;
@@ -50,7 +50,9 @@ use self::convergence::{ConvergenceConfig, TrainingBudget};
 use self::error::EvolutionError;
 use self::gene::{NetworkGenome, TaskMetric};
 use self::mutation::{MutationError, MutationRegistry, SizeConstraints};
-use self::task::{EvolutionTask, FitnessScore, ProxyKind, SupervisedTask, TrainOutcome, auto_batch_size};
+use self::task::{
+    EvolutionTask, FitnessScore, ProxyKind, SupervisedTask, TrainOutcome, auto_batch_size,
+};
 
 // ==================== EvolutionStatus ====================
 
@@ -512,8 +514,12 @@ impl Evolution {
             parallelism: None,
             pareto_patience: None,
             complexity_metric: ComplexityMetric::FLOPs,
-            primary_proxy: None,
-            asha: None,
+            // F3/F4 默认开启：在所有演化任务（序列 / 图像 / 全连接）上稳定有益
+            // - LossSlope：plateau 上给 NSGA-II 提供 tiebreak 信号；primary 有差异时零开销
+            // - ASHA：阶梯式 Successive Halving 把 Phase 1 预算集中到有潜力的候选
+            // 要关闭可调用 `.with_primary_proxy(None)` / `.with_asha(None)`
+            primary_proxy: Some(ProxyKind::LossSlope),
+            asha: Some(AshaConfig::default()),
         }
     }
 
@@ -583,21 +589,25 @@ impl Evolution {
         self
     }
 
-    /// 启用学习速度代理（F3）：在 plateau 上用 loss 下降速率打破 NSGA-II 平局。
+    /// 设置学习速度代理（F3）：在 plateau 上用 loss 下降速率打破 NSGA-II 平局。
+    ///
+    /// 默认启用 `ProxyKind::LossSlope`。传入 `None` 可关闭。
     ///
     /// 仅对支持 proxy 的 Task 生效（目前 `SupervisedTask`）。开启后会在
     /// 每次训练时额外记录 loss 轨迹并计算一次 proxy，开销可忽略。
-    pub fn with_primary_proxy(mut self, kind: ProxyKind) -> Self {
-        self.primary_proxy = Some(kind);
+    pub fn with_primary_proxy(mut self, kind: impl Into<Option<ProxyKind>>) -> Self {
+        self.primary_proxy = kind.into();
         self
     }
 
-    /// 启用 ASHA 多保真评估（F4）：Phase 1 从"均匀 FixedEpochs"改为阶梯式
+    /// 设置 ASHA 多保真评估（F4）：Phase 1 从"均匀 FixedEpochs"改为阶梯式
     /// Successive Halving，将训练预算集中在有潜力的候选上。
     ///
+    /// 默认启用 `AshaConfig::default()`（rung_epochs=[1,2,4], eta=3）。传入 `None` 可关闭。
+    ///
     /// 只在 Phase 1 生效（Phase 2 仍用 user_convergence 完成最终训练）。
-    pub fn with_asha(mut self, config: AshaConfig) -> Self {
-        self.asha = Some(config);
+    pub fn with_asha(mut self, config: impl Into<Option<AshaConfig>>) -> Self {
+        self.asha = config.into();
         self
     }
 
@@ -749,7 +759,15 @@ impl Evolution {
 
         // 两阶段训练预算
         let phase1_gens = ((max_generations as f64) * 0.4).ceil() as usize;
-        let user_convergence = convergence_config;
+        let user_convergence = {
+            let mut c = convergence_config;
+            // 序列任务 loss 曲线常有短 plateau → 更长的 patience，避免 UntilConverged 过早停止
+            if is_sequential && matches!(c.budget, TrainingBudget::UntilConverged) {
+                c.patience = c.patience.max(10);
+                c.max_epochs = c.max_epochs.max(200);
+            }
+            c
+        };
 
         // Phase 1 快速训练预算
         //
@@ -995,8 +1013,11 @@ impl Evolution {
             let eval_seeds: Vec<u64> = (0..offspring_genomes.len())
                 .map(|_| rng.r#gen::<u64>())
                 .collect();
-            // F4: Phase 1 启用 ASHA 多保真评估；Phase 2 仍走单轮完整训练
-            let eval_results = if is_phase1 && asha.is_some() {
+            // F4: Phase 1 对非序列任务启用 ASHA 多保真评估；序列任务跳过 ASHA。
+            // 原因：parity/RNN 等序列任务的 loss 在早期呈"悬崖型"下降，
+            // 极短的 rung-0（1 epoch）无法区分好坏架构，导致结构变异全部被淘汰。
+            // 用户可通过 `.with_asha(None)` 完全关闭 / 通过自定义 rung_epochs 手动启用。
+            let eval_results = if is_phase1 && asha.is_some() && !is_sequential {
                 evaluate_batch_asha(
                     &task_template,
                     offspring_genomes,
@@ -1328,8 +1349,7 @@ fn evaluate_batch_asha(
         return Vec::new();
     }
 
-    let mut survivors: Vec<(NetworkGenome, u64)> =
-        candidates.into_iter().zip(seeds).collect();
+    let mut survivors: Vec<(NetworkGenome, u64)> = candidates.into_iter().zip(seeds).collect();
 
     let total_rungs = asha.rung_epochs.len();
     for (rung_idx, &epochs) in asha.rung_epochs.iter().enumerate() {
@@ -1342,7 +1362,7 @@ fn evaluate_batch_asha(
         let (genomes, orig_seeds): (Vec<_>, Vec<_>) = survivors.into_iter().unzip();
         let rung_seeds: Vec<u64> = orig_seeds
             .iter()
-            .map(|s| s.wrapping_add(rung_idx as u64 * 0x9E37_79B9_7F4A_7C15))
+            .map(|s| s.wrapping_add((rung_idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)))
             .collect();
 
         let rung_results = evaluate_batch(
@@ -1362,8 +1382,7 @@ fn evaluate_batch_asha(
 
         // 中间 rung：按 primary 降序保留 top 1/eta
         let keep = asha_keep_count(rung_results.len(), asha.eta);
-        let mut indexed: Vec<(usize, EvalResult)> =
-            rung_results.into_iter().enumerate().collect();
+        let mut indexed: Vec<(usize, EvalResult)> = rung_results.into_iter().enumerate().collect();
         indexed.sort_by(|a, b| {
             b.1.score
                 .primary
@@ -1523,7 +1542,7 @@ fn build_final_result(
         primary: f32::NEG_INFINITY,
         inference_cost: None,
         tiebreak_loss: None,
-    primary_proxy: None,
+        primary_proxy: None,
     });
 
     Ok(EvolutionResult {

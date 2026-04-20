@@ -13,8 +13,9 @@
  */
 
 use super::gene::{
-    ActivationType, AggregateStrategy, INPUT_INNOVATION, LayerConfig, LayerGene, LossType,
-    NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric, compatible_losses,
+    ActivationType, AggregateStrategy, GenomeRepr, INPUT_INNOVATION, LayerConfig, LayerGene,
+    LossType, NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric,
+    compatible_losses,
 };
 use super::migration::{
     activation_to_node_type, expand_activation, expand_dropout, expand_gru, expand_lstm,
@@ -1063,7 +1064,11 @@ impl Mutation for GrowHiddenSizeMutation {
                     "增长后维度不兼容（skip edge 约束）".into(),
                 ))
             }
-            _ => Ok(()),
+            _ => {
+                // 成功：尝试 Net2Net 扩宽快照，失败时 builder 会随机初始化
+                widen_layer_snapshots(genome, idx, old_size, new_size, rng);
+                Ok(())
+            }
         }
     }
 }
@@ -1429,9 +1434,26 @@ impl Mutation for MutateCellTypeMutation {
             _ => unreachable!(),
         };
 
-        // 切换后旧权重快照失效（参数数量不同），移除该层快照
+        // 尝试 informed initialization：将旧 cell 权重迁移到新类型，失败则清空快照走随机初始化
         let inn = genome.layers()[idx].innovation_number;
-        genome.remove_layer_weight_snapshot(inn);
+        let old_kind = layer_cell_kind(&genome.layers()[idx].layer_config);
+        let new_kind_opt = layer_cell_kind(&new_config);
+        let hidden = get_resizable_size(&genome.layers()[idx].layer_config).unwrap_or(0);
+        if let (Some(ok), Some(nk)) = (old_kind, new_kind_opt) {
+            let migrated = genome
+                .weight_snapshots()
+                .get(&inn)
+                .cloned()
+                .and_then(|snap| migrate_layer_cell_weights_vec(&snap, ok, nk, hidden));
+            genome.remove_layer_weight_snapshot(inn);
+            if let Some(new_snap) = migrated {
+                if let GenomeRepr::LayerLevel { weight_snapshots, .. } = &mut genome.repr {
+                    weight_snapshots.insert(inn, new_snap);
+                }
+            }
+        } else {
+            genome.remove_layer_weight_snapshot(inn);
+        }
 
         let old_config = genome.layers()[idx].layer_config.clone();
         genome.layers_mut()[idx].layer_config = new_config;
@@ -3120,5 +3142,195 @@ impl Mutation for RemoveRecurrentEdgeMutation {
         }
 
         Ok(())
+    }
+}
+
+// ==================== LayerLevel Net2Net 扩宽辅助 ====================
+
+/// LayerLevel 路径的 Net2Net 扩宽：对层级快照就地更新，使权重与新 hidden_size 兼容。
+///
+/// 对 `target_idx` 所指向层的快照做 owner 扩宽（输出维度），
+/// 并对下一个有参数的层做 consumer 缩放（输入维度）。
+/// 若快照不存在或形状不匹配，直接跳过（builder 会随机初始化）。
+fn widen_layer_snapshots(
+    genome: &mut NetworkGenome,
+    target_idx: usize,
+    old_size: usize,
+    new_size: usize,
+    rng: &mut StdRng,
+) {
+    use super::net2net::{counts_of, widening_mapping};
+    let mapping = widening_mapping(old_size, new_size, rng);
+    let counts = counts_of(&mapping, old_size);
+
+    let owner_inn = genome.layers()[target_idx].innovation_number;
+    let owner_config = genome.layers()[target_idx].layer_config.clone();
+
+    // 找下游第一个有输入参数的层
+    let layers_len = genome.layers().len();
+    let consumer: Option<(u64, LayerConfig)> = {
+        let mut found = None;
+        for i in (target_idx + 1)..layers_len {
+            let l = &genome.layers()[i];
+            if l.enabled && layer_has_input_params(&l.layer_config) {
+                found = Some((l.innovation_number, l.layer_config.clone()));
+                break;
+            }
+        }
+        found
+    };
+
+    // 提前克隆快照（避免借用冲突）
+    let owner_snap_opt: Option<Vec<Tensor>> =
+        genome.weight_snapshots().get(&owner_inn).cloned();
+    let consumer_snap_opt: Option<(u64, Vec<Tensor>)> = consumer.as_ref().and_then(|(inn, _)| {
+        genome.weight_snapshots().get(inn).map(|s| (*inn, s.clone()))
+    });
+
+    // 扩宽 owner 快照
+    if let Some(mut snap) = owner_snap_opt {
+        if layer_widen_owner_snap(&mut snap, &owner_config, &mapping, &counts) {
+            if let GenomeRepr::LayerLevel {
+                weight_snapshots, ..
+            } = &mut genome.repr
+            {
+                weight_snapshots.insert(owner_inn, snap);
+            }
+        }
+    }
+
+    // 扩宽 consumer 快照（输入维度）
+    if let Some((consumer_inn, consumer_config)) = consumer {
+        if let Some((_, mut csnap)) = consumer_snap_opt {
+            if layer_widen_consumer_snap(&mut csnap, &consumer_config, &mapping, &counts) {
+                if let GenomeRepr::LayerLevel {
+                    weight_snapshots, ..
+                } = &mut genome.repr
+                {
+                    weight_snapshots.insert(consumer_inn, csnap);
+                }
+            }
+        }
+    }
+}
+
+/// owner 快照就地扩宽：输出维度从 old_size 扩展到 new_size（faithful copy）。
+/// 失败时返回 false，快照保持不变。
+fn layer_widen_owner_snap(
+    snap: &mut Vec<Tensor>,
+    config: &LayerConfig,
+    mapping: &[usize],
+    counts: &[usize],
+) -> bool {
+    use super::net2net::{gather_along_axis, gather_along_axis_scaled};
+    match config {
+        LayerConfig::Linear { .. } => {
+            // [W[in, old], b[1, old]]
+            if snap.len() < 2 {
+                return false;
+            }
+            snap[0] = gather_along_axis(&snap[0], 1, mapping); // W axis=1（输出列）
+            snap[1] = gather_along_axis(&snap[1], 1, mapping); // b axis=1
+            true
+        }
+        LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
+            // 每门 3 个参数: (W_ih[in,old], W_hh[old,old], b[1,old])
+            let n = snap.len();
+            if n % 3 != 0 {
+                return false;
+            }
+            let mut new_snap = Vec::with_capacity(n);
+            for i in (0..n).step_by(3) {
+                // W_ih: 输出列扩展
+                let w_ih = gather_along_axis(&snap[i], 1, mapping);
+                // W_hh: 先按行缩放（输入侧来自旧输出），再按列扩展（输出侧）
+                let whh_mid = gather_along_axis_scaled(&snap[i + 1], 0, mapping, counts);
+                let w_hh = gather_along_axis(&whh_mid, 1, mapping);
+                // b: 输出列扩展
+                let b = gather_along_axis(&snap[i + 2], 1, mapping);
+                new_snap.push(w_ih);
+                new_snap.push(w_hh);
+                new_snap.push(b);
+            }
+            *snap = new_snap;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// consumer 快照就地更新：输入维度从 old_size 扩展（按 counts 缩放）。
+/// 失败时返回 false，快照保持不变。
+fn layer_widen_consumer_snap(
+    snap: &mut Vec<Tensor>,
+    config: &LayerConfig,
+    mapping: &[usize],
+    counts: &[usize],
+) -> bool {
+    use super::net2net::gather_along_axis_scaled;
+    match config {
+        LayerConfig::Linear { .. } => {
+            // [W[old, out], b[...]] — 只扩 W axis=0（输入行）
+            if snap.is_empty() {
+                return false;
+            }
+            snap[0] = gather_along_axis_scaled(&snap[0], 0, mapping, counts);
+            true
+        }
+        LayerConfig::Rnn { .. } | LayerConfig::Lstm { .. } | LayerConfig::Gru { .. } => {
+            // 每门 3 参数: W_ih[old,h] axis=0 缩放，W_hh 和 b 不变
+            let n = snap.len();
+            if n % 3 != 0 {
+                return false;
+            }
+            for i in (0..n).step_by(3) {
+                snap[i] = gather_along_axis_scaled(&snap[i], 0, mapping, counts);
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
+/// 判断层是否有输入侧参数（需要处理 consumer 扩宽）
+fn layer_has_input_params(cfg: &LayerConfig) -> bool {
+    matches!(
+        cfg,
+        LayerConfig::Linear { .. }
+            | LayerConfig::Rnn { .. }
+            | LayerConfig::Lstm { .. }
+            | LayerConfig::Gru { .. }
+    )
+}
+
+// ==================== LayerLevel cell 迁移辅助 ====================
+
+/// 将 LayerLevel 层级快照（Vec<Tensor>）从旧 cell 类型迁移到新类型。
+/// 失败返回 None（调用方应清空快照，让 builder 走随机初始化）。
+fn migrate_layer_cell_weights_vec(
+    old_snap: &[Tensor],
+    old_kind: CellKind,
+    new_kind: CellKind,
+    hidden: usize,
+) -> Option<Vec<Tensor>> {
+    if old_snap.len() != old_kind.param_count() {
+        return None;
+    }
+    // 用连续整数作为虚拟 id
+    let dummy_ids: Vec<u64> = (0..new_kind.param_count() as u64).collect();
+    let old_snaps_opt: Vec<Option<Tensor>> =
+        old_snap.iter().map(|t| Some(t.clone())).collect();
+    let migrated = migrate_cell_weights(old_kind, &old_snaps_opt, new_kind, &dummy_ids, hidden)?;
+    // 按 id 顺序重组为 Vec<Tensor>
+    dummy_ids.iter().map(|k| migrated.get(k).cloned()).collect()
+}
+
+/// 从 LayerConfig 提取 CellKind（非循环层返回 None）
+fn layer_cell_kind(config: &LayerConfig) -> Option<CellKind> {
+    match config {
+        LayerConfig::Rnn { .. } => Some(CellKind::Rnn),
+        LayerConfig::Lstm { .. } => Some(CellKind::Lstm),
+        LayerConfig::Gru { .. } => Some(CellKind::Gru),
+        _ => None,
     }
 }

@@ -5,8 +5,8 @@
 // - `asha_keep_count` 保留比例计算正确
 // - 端到端：`Evolution::with_asha(...).run()` 不 panic 且能产出 Pareto archive
 
-use crate::nn::evolution::{AshaConfig, Evolution, asha_keep_count};
 use crate::nn::evolution::gene::TaskMetric;
+use crate::nn::evolution::{AshaConfig, Evolution, asha_keep_count};
 use crate::tensor::Tensor;
 
 #[test]
@@ -91,10 +91,13 @@ fn evolution_with_asha_runs_to_completion() {
 
 #[test]
 fn evolution_without_asha_still_works() {
-    // 不启用 ASHA 时行为应与 F3 前完全一致（回归保护）
+    // 显式关闭 ASHA（ASHA 自 F 阶段收尾后默认开启）
+    // 用于保护"非 ASHA 路径"的兼容性
     let result = Evolution::supervised(xor_data(), xor_data(), TaskMetric::Accuracy)
         .with_seed(7)
         .with_max_generations(2)
+        .with_asha(None)
+        .with_primary_proxy(None)
         .with_verbose(false)
         .run();
     assert!(result.is_ok(), "baseline Evolution::run 失败");
