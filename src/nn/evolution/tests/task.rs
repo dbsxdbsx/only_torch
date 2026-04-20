@@ -96,7 +96,10 @@ fn test_supervised_task_metric_accessor() {
 fn test_empty_train_data_returns_err() {
     let result = SupervisedTask::new((vec![], vec![]), xor_data(), TaskMetric::Accuracy);
     match result {
-        Err(e) => assert!(e.to_string().contains("训练输入不能为空"), "unexpected error: {e}"),
+        Err(e) => assert!(
+            e.to_string().contains("训练输入不能为空"),
+            "unexpected error: {e}"
+        ),
         Ok(_) => panic!("应返回 Err"),
     }
 }
@@ -107,7 +110,10 @@ fn test_train_data_count_mismatch_returns_err() {
     labels.truncate(2);
     let result = SupervisedTask::new((inputs, labels), xor_data(), TaskMetric::Accuracy);
     match result {
-        Err(e) => assert!(e.to_string().contains("数量不匹配"), "unexpected error: {e}"),
+        Err(e) => assert!(
+            e.to_string().contains("数量不匹配"),
+            "unexpected error: {e}"
+        ),
         Ok(_) => panic!("应返回 Err"),
     }
 }
@@ -116,7 +122,10 @@ fn test_train_data_count_mismatch_returns_err() {
 fn test_empty_test_data_returns_err() {
     let result = SupervisedTask::new(xor_data(), (vec![], vec![]), TaskMetric::Accuracy);
     match result {
-        Err(e) => assert!(e.to_string().contains("测试输入不能为空"), "unexpected error: {e}"),
+        Err(e) => assert!(
+            e.to_string().contains("测试输入不能为空"),
+            "unexpected error: {e}"
+        ),
         Ok(_) => panic!("应返回 Err"),
     }
 }
@@ -127,7 +136,10 @@ fn test_test_data_count_mismatch_returns_err() {
     labels.truncate(2);
     let result = SupervisedTask::new(xor_data(), (inputs, labels), TaskMetric::Accuracy);
     match result {
-        Err(e) => assert!(e.to_string().contains("数量不匹配"), "unexpected error: {e}"),
+        Err(e) => assert!(
+            e.to_string().contains("数量不匹配"),
+            "unexpected error: {e}"
+        ),
         Ok(_) => panic!("应返回 Err"),
     }
 }
@@ -507,8 +519,13 @@ fn test_multilabel_accuracy_bce_logit_threshold() {
     );
 
     // BCE 路径：阈值 0.0，所有 logit 判定正确 → accuracy = 1.0
-    let primary_bce =
-        compute_primary_metric(&TaskMetric::MultiLabelAccuracy, &predictions, &labels, 2, &LossType::BCE);
+    let primary_bce = compute_primary_metric(
+        &TaskMetric::MultiLabelAccuracy,
+        &predictions,
+        &labels,
+        2,
+        &LossType::BCE,
+    );
     assert!(
         (primary_bce - 1.0).abs() < 1e-6,
         "BCE logit 阈值 0.0 下应全部正确，实际 accuracy = {primary_bce}"
@@ -810,7 +827,9 @@ fn test_mini_batch_shuffle_produces_different_trajectories() {
         let genome = genome_with_hidden(2, 1);
         let mut rng = StdRng::seed_from_u64(seed);
         let build = build_and_restore(&genome, &mut rng);
-        task.train(&genome, &build, &convergence, &mut rng).unwrap()
+        task.train(&genome, &build, &convergence, &mut rng)
+            .unwrap()
+            .final_loss
     };
 
     let loss_a = get_loss(100);
@@ -840,7 +859,9 @@ fn test_mini_batch_same_seed_reproducible() {
         let genome = genome_with_hidden(2, 1);
         let mut rng = StdRng::seed_from_u64(seed);
         let build = build_and_restore(&genome, &mut rng);
-        task.train(&genome, &build, &convergence, &mut rng).unwrap()
+        task.train(&genome, &build, &convergence, &mut rng)
+            .unwrap()
+            .final_loss
     };
 
     let loss_1 = get_loss(42);
@@ -888,7 +909,10 @@ fn test_supervised_task_var_len_auto_pad() {
     // 变长序列：长度 3, 5, 4 → 自动 pad 到 5
     let inputs = vec![
         Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]),
-        Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0], &[5, 2]),
+        Tensor::new(
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+            &[5, 2],
+        ),
         Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]),
     ];
     let labels = vec![
@@ -942,7 +966,9 @@ fn test_training_loss_actually_decreases() {
         .unwrap();
 
     assert!(
-        loss_after_50 < loss_after_1,
-        "训练 50 epoch 后的 loss ({loss_after_50:.6}) 应低于 1 epoch 后 ({loss_after_1:.6})"
+        loss_after_50.final_loss < loss_after_1.final_loss,
+        "训练 50 epoch 后的 loss ({:.6}) 应低于 1 epoch 后 ({:.6})",
+        loss_after_50.final_loss,
+        loss_after_1.final_loss
     );
 }

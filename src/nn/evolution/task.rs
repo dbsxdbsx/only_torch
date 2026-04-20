@@ -55,6 +55,11 @@ pub fn auto_batch_size(n_samples: usize) -> usize {
 /// `tiebreak_loss` 用于离散指标（如 Accuracy）的同分比较：
 /// 同 accuracy 时，test loss 更低的结构更优。
 /// 接受/回滚逻辑通过字典序比较实现。
+///
+/// `primary_proxy` 是 F3 引入的"学习速度"代理（越高越好）：
+/// 仅当用户显式启用（`Evolution::with_primary_proxy`）才会有值；
+/// 当 primary 处于 plateau（同 rank 同 crowding distance）时，
+/// NSGA-II 的 tiebreak 会优先比较 proxy，再回退到 tiebreak_loss。
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FitnessScore {
     /// 主目标（越高越好），如 Accuracy / R² / Reward
@@ -65,6 +70,86 @@ pub struct FitnessScore {
     /// 仅在 primary 相等时用于区分同指标的不同结构。
     /// 连续指标（R² 等）不需要 tiebreak，此字段为 None。
     pub tiebreak_loss: Option<f32>,
+    /// F3 学习速度代理（越高越好）：在 plateau 上用于打破 NSGA-II 平局。
+    /// 仅在启用 `ProxyKind` 时有值，默认为 `None` 以保持向后兼容。
+    #[serde(default)]
+    pub primary_proxy: Option<f32>,
+}
+
+// ==================== ProxyKind & TrainOutcome（F3）====================
+
+/// 学习速度代理的类型
+///
+/// 当前只支持 `LossSlope`（训练 loss 的下降速率），未来可扩展
+/// `GradVar` / `EarlyAccuracy` 等。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProxyKind {
+    /// Loss 斜率：`(l_start - l_end) / epochs`，越高越好（下降越快）。
+    LossSlope,
+}
+
+/// 训练产出：最终 loss + 可选的学习速度 proxy
+///
+/// `evaluate()` 不感知训练动态；proxy 由 `train()` 在其内部记录 loss
+/// 轨迹并计算好，然后通过 `TrainOutcome` 回传给主循环合并到
+/// `FitnessScore::primary_proxy`。
+#[derive(Clone, Debug)]
+pub struct TrainOutcome {
+    pub final_loss: f32,
+    pub proxy: Option<f32>,
+}
+
+impl TrainOutcome {
+    pub fn new(final_loss: f32) -> Self {
+        Self {
+            final_loss,
+            proxy: None,
+        }
+    }
+
+    /// `final_loss.is_finite()` 的便捷投影，方便测试与调用点直接使用。
+    pub fn is_finite(&self) -> bool {
+        self.final_loss.is_finite()
+    }
+}
+
+impl std::fmt::Display for TrainOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Display 直接输出 final_loss 数值，便于测试里 `{loss}` 格式化。
+        write!(f, "{}", self.final_loss)
+    }
+}
+
+impl PartialEq<f32> for TrainOutcome {
+    fn eq(&self, other: &f32) -> bool {
+        self.final_loss == *other
+    }
+}
+
+impl PartialOrd<f32> for TrainOutcome {
+    fn partial_cmp(&self, other: &f32) -> Option<std::cmp::Ordering> {
+        self.final_loss.partial_cmp(other)
+    }
+}
+
+/// 从 loss 轨迹计算 `LossSlope` 代理：`(l_first_window - l_last_window) / epochs`。
+///
+/// - 轨迹长度 < 3 返回 None（信号不足）
+/// - 窗口取 `max(1, n / 4)`：首尾各取一段均值，降低单点噪声影响
+/// - 含 NaN/Inf 时返回 None
+pub(crate) fn compute_loss_slope_proxy(curve: &[f32]) -> Option<f32> {
+    if curve.len() < 3 {
+        return None;
+    }
+    if curve.iter().any(|v| !v.is_finite()) {
+        return None;
+    }
+    let n = curve.len();
+    let w = (n / 4).max(1);
+    let head: f32 = curve[..w].iter().sum::<f32>() / w as f32;
+    let tail: f32 = curve[n - w..].iter().sum::<f32>() / w as f32;
+    // 以 epoch 数归一化，避免不同候选的训练长度差造成不公平比较
+    Some((head - tail) / n as f32)
 }
 
 // ==================== EvolutionTask trait ====================
@@ -77,14 +162,14 @@ pub struct FitnessScore {
 /// rng 由 Evolution 主循环传入，用于训练/评估中的随机性（Dropout mask、
 /// mini-batch 顺序等），确保 Evolution seed 能完整控制所有随机行为。
 pub trait EvolutionTask {
-    /// 训练网络，返回最终 loss
+    /// 训练网络，返回训练产出（最终 loss + 可选 proxy）
     fn train(
         &self,
         genome: &NetworkGenome,
         build: &BuildResult,
         convergence: &ConvergenceConfig,
         rng: &mut StdRng,
-    ) -> Result<f32, GraphError>;
+    ) -> Result<TrainOutcome, GraphError>;
 
     /// 评估任务指标
     fn evaluate(
@@ -99,6 +184,11 @@ pub trait EvolutionTask {
     /// `SupervisedTask` 使用此值覆盖自动策略；
     /// 自定义 Task（如 RL/半监督）忽略此方法，使用自身的采样策略。
     fn configure_batch_size(&mut self, _batch_size: Option<usize>) {}
+
+    /// 配置学习速度代理（默认空操作）。
+    ///
+    /// `SupervisedTask` 启用后会在 `train()` 内记录 loss 轨迹并计算 proxy。
+    fn configure_proxy(&mut self, _kind: Option<ProxyKind>) {}
 
     /// 创建仅用于可视化的 Loss 节点（默认返回 None，子类可覆盖）
     ///
@@ -133,6 +223,8 @@ pub struct SupervisedTask {
     test_y: Arc<Tensor>,  // 同 train_y
     metric: TaskMetric,
     batch_size: Option<usize>, // None = 自动策略，Some = 显式指定
+    /// F3: 学习速度代理类型（None = 关闭，不记录 loss 轨迹）
+    proxy_kind: Option<ProxyKind>,
 }
 
 impl SupervisedTask {
@@ -214,6 +306,7 @@ impl SupervisedTask {
             test_y: Arc::new(Tensor::stack(&test_y_refs, 0)),
             metric,
             batch_size: None,
+            proxy_kind: None,
         })
     }
 
@@ -226,6 +319,12 @@ impl SupervisedTask {
     pub fn with_batch_size(mut self, batch_size: usize) -> Self {
         assert!(batch_size > 0, "batch_size 必须 > 0");
         self.batch_size = Some(batch_size);
+        self
+    }
+
+    /// 启用学习速度代理（F3）：训练时记录 loss 轨迹并计算 proxy。
+    pub fn with_primary_proxy(mut self, kind: ProxyKind) -> Self {
+        self.proxy_kind = Some(kind);
         self
     }
 
@@ -248,7 +347,7 @@ impl EvolutionTask for SupervisedTask {
         build: &BuildResult,
         convergence: &ConvergenceConfig,
         rng: &mut StdRng,
-    ) -> Result<f32, GraphError> {
+    ) -> Result<TrainOutcome, GraphError> {
         assert!(
             genome.training_config.weight_decay == 0.0,
             "weight_decay 尚未支持，必须为 0.0"
@@ -289,6 +388,8 @@ impl EvolutionTask for SupervisedTask {
 
         let mut detector = ConvergenceDetector::new(convergence.clone());
         let mut final_loss = f32::NAN;
+        // F3: 仅在启用 proxy 时才记录 loss 轨迹，避免不必要开销
+        let mut loss_curve: Option<Vec<f32>> = self.proxy_kind.map(|_| Vec::new());
 
         if bs >= n_samples {
             // ====== Full-batch 路径 ======
@@ -299,6 +400,9 @@ impl EvolutionTask for SupervisedTask {
                 let loss_val = optimizer.minimize(&loss_var)?;
                 let grad_norm = compute_grad_norm(&params)?;
                 final_loss = loss_val;
+                if let Some(curve) = loss_curve.as_mut() {
+                    curve.push(loss_val);
+                }
 
                 if detector.should_stop(epoch, loss_val, grad_norm).is_some() {
                     break;
@@ -333,6 +437,9 @@ impl EvolutionTask for SupervisedTask {
                 let avg_loss = epoch_loss_sum / n_batches as f32;
                 let grad_norm = compute_grad_norm(&params)?;
                 final_loss = avg_loss;
+                if let Some(curve) = loss_curve.as_mut() {
+                    curve.push(avg_loss);
+                }
 
                 if detector.should_stop(epoch, avg_loss, grad_norm).is_some() {
                     break;
@@ -340,11 +447,22 @@ impl EvolutionTask for SupervisedTask {
             }
         }
 
-        Ok(final_loss)
+        let proxy = match (self.proxy_kind, loss_curve.as_ref()) {
+            (Some(ProxyKind::LossSlope), Some(curve)) => compute_loss_slope_proxy(curve),
+            _ => None,
+        };
+        Ok(TrainOutcome {
+            final_loss,
+            proxy,
+        })
     }
 
     fn configure_batch_size(&mut self, batch_size: Option<usize>) {
         self.batch_size = batch_size;
+    }
+
+    fn configure_proxy(&mut self, kind: Option<ProxyKind>) {
+        self.proxy_kind = kind;
     }
 
     fn create_visualization_loss(
@@ -406,6 +524,7 @@ impl EvolutionTask for SupervisedTask {
             primary,
             inference_cost: None,
             tiebreak_loss,
+            primary_proxy: None,
         })
     }
 }

@@ -108,9 +108,7 @@ pub(crate) fn pareto_rank(scores: &[FitnessScore]) -> Vec<usize> {
     }
 
     // 逐层剥离前沿
-    let mut current_front: Vec<usize> = (0..n)
-        .filter(|&i| dominated_count[i] == 0)
-        .collect();
+    let mut current_front: Vec<usize> = (0..n).filter(|&i| dominated_count[i] == 0).collect();
     let mut front_idx = 0;
 
     while !current_front.is_empty() {
@@ -208,13 +206,32 @@ pub(crate) fn crowding_distance(scores: &[FitnessScore]) -> Vec<f32> {
 
 /// 同 rank 同 crowding distance 时的确定性 tie-breaker
 ///
-/// 使用 tiebreak_loss（越低越好）；都为 None 时视为相等。
+/// 比较顺序：
+/// 1. F3 `primary_proxy`（越高越好）—— plateau 上打破平局
+/// 2. `tiebreak_loss`（越低越好）—— 离散指标 test loss
+///    任一方为 None 时：有值的一方优先；都为 None 视为相等
 fn tiebreak_cmp(a: &FitnessScore, b: &FitnessScore) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    // 1. primary_proxy: 越高越好（Less 表示 a 更优）
+    match (a.primary_proxy, b.primary_proxy) {
+        (Some(pa), Some(pb)) => {
+            let ord = pb.partial_cmp(&pa).unwrap_or(Ordering::Equal);
+            if ord != Ordering::Equal {
+                return ord;
+            }
+        }
+        (Some(_), None) => return Ordering::Less,
+        (None, Some(_)) => return Ordering::Greater,
+        (None, None) => {}
+    }
+
+    // 2. tiebreak_loss: 越低越好
     match (a.tiebreak_loss, b.tiebreak_loss) {
-        (Some(la), Some(lb)) => la.partial_cmp(&lb).unwrap_or(std::cmp::Ordering::Equal),
-        (Some(_), None) => std::cmp::Ordering::Less, // 有 tiebreak 的更精确，优先
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => std::cmp::Ordering::Equal,
+        (Some(la), Some(lb)) => la.partial_cmp(&lb).unwrap_or(Ordering::Equal),
+        (Some(_), None) => Ordering::Less, // 有 tiebreak 的更精确，优先
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
     }
 }
 
@@ -346,9 +363,8 @@ pub(crate) fn archive_changed(
     let mut prev: Vec<ObjectivePoint> = prev_scores.iter().map(objective_point).collect();
     let mut next: Vec<ObjectivePoint> = next_scores.iter().map(objective_point).collect();
 
-    let sort_key = |p: &ObjectivePoint| -> Vec<i64> {
-        p.values.iter().map(|v| (v * 1e6) as i64).collect()
-    };
+    let sort_key =
+        |p: &ObjectivePoint| -> Vec<i64> { p.values.iter().map(|v| (v * 1e6) as i64).collect() };
     prev.sort_by_key(sort_key);
     next.sort_by_key(sort_key);
 

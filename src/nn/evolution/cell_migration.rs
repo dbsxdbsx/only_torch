@@ -106,7 +106,7 @@ fn build_new_gates(
             Some(vec![
                 saturated_gate(shape_ref, hidden, SIG_HI), // i ≈ 1
                 saturated_gate(shape_ref, hidden, SIG_LO), // f ≈ 0
-                rnn,                                        // g ← RNN
+                rnn,                                       // g ← RNN
                 saturated_gate(shape_ref, hidden, SIG_HI), // o ≈ 1
             ])
         }
@@ -116,7 +116,7 @@ fn build_new_gates(
             Some(vec![
                 saturated_gate(shape_ref, hidden, SIG_HI), // r ≈ 1
                 saturated_gate(shape_ref, hidden, SIG_LO), // z ≈ 0
-                rnn,                                        // n ← RNN
+                rnn,                                       // n ← RNN
             ])
         }
         // --------- LSTM → RNN: 取 g 门 ---------
@@ -130,8 +130,8 @@ fn build_new_gates(
             let g = gate_at(old_snaps, 2)?;
             Some(vec![
                 saturated_gate(shape_ref, hidden, SIG_HI), // r ≈ 1
-                f,                                          // z ← f
-                g,                                          // n ← g
+                f,                                         // z ← f
+                g,                                         // n ← g
             ])
         }
         // --------- GRU → RNN: 取 n 门 ---------
@@ -145,8 +145,8 @@ fn build_new_gates(
             let n = gate_at(old_snaps, 2)?;
             Some(vec![
                 saturated_gate(shape_ref, hidden, SIG_HI), // i ≈ 1
-                z,                                          // f ← z
-                n,                                          // g ← n
+                z,                                         // f ← z
+                n,                                         // g ← n
                 saturated_gate(shape_ref, hidden, SIG_HI), // o ≈ 1
             ])
         }

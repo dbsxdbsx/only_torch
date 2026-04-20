@@ -8,6 +8,7 @@ fn score(primary: f32, cost: Option<f32>) -> FitnessScore {
         primary,
         inference_cost: cost,
         tiebreak_loss: None,
+    primary_proxy: None,
     }
 }
 
@@ -16,6 +17,7 @@ fn score_with_tiebreak(primary: f32, cost: Option<f32>, tiebreak: Option<f32>) -
         primary,
         inference_cost: cost,
         tiebreak_loss: tiebreak,
+    primary_proxy: None,
     }
 }
 

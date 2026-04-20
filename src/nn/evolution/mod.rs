@@ -50,7 +50,7 @@ use self::convergence::{ConvergenceConfig, TrainingBudget};
 use self::error::EvolutionError;
 use self::gene::{NetworkGenome, TaskMetric};
 use self::mutation::{MutationError, MutationRegistry, SizeConstraints};
-use self::task::{EvolutionTask, FitnessScore, SupervisedTask, auto_batch_size};
+use self::task::{EvolutionTask, FitnessScore, ProxyKind, SupervisedTask, TrainOutcome, auto_batch_size};
 
 // ==================== EvolutionStatus ====================
 
@@ -229,7 +229,7 @@ impl EvolutionTask for TaskRuntime {
         build: &BuildResult,
         convergence: &ConvergenceConfig,
         rng: &mut StdRng,
-    ) -> Result<f32, GraphError> {
+    ) -> Result<TrainOutcome, GraphError> {
         match self {
             TaskRuntime::Supervised(task) => task.train(genome, build, convergence, rng),
         }
@@ -249,6 +249,12 @@ impl EvolutionTask for TaskRuntime {
     fn configure_batch_size(&mut self, batch_size: Option<usize>) {
         match self {
             TaskRuntime::Supervised(task) => task.configure_batch_size(batch_size),
+        }
+    }
+
+    fn configure_proxy(&mut self, kind: Option<ProxyKind>) {
+        match self {
+            TaskRuntime::Supervised(task) => task.configure_proxy(kind),
         }
     }
 
@@ -307,7 +313,8 @@ pub(crate) fn compute_inference_cost(
 /// 比较规则由 FitnessScore 自身的 tiebreak_loss 驱动，不依赖 TaskMetric：
 /// 1. primary 更高 → 接受
 /// 2. primary 更低 → 拒绝
-/// 3. primary 相等 → 看 tiebreak_loss（都有则越低越好，否则直接接受/中性漂移）
+/// 3. primary 相等 → 看 primary_proxy（都有则越高越好，F3 学习速度 tiebreak）
+/// 4. 仍相等 → 看 tiebreak_loss（都有则越低越好，否则直接接受/中性漂移）
 #[allow(dead_code)]
 fn is_at_least_as_good(current: &FitnessScore, best: &FitnessScore) -> bool {
     if current.primary > best.primary {
@@ -315,6 +322,15 @@ fn is_at_least_as_good(current: &FitnessScore, best: &FitnessScore) -> bool {
     }
     if current.primary < best.primary {
         return false;
+    }
+    // F3: primary 相等时，先比 proxy（越高越好）
+    if let (Some(c), Some(b)) = (current.primary_proxy, best.primary_proxy) {
+        if c > b {
+            return true;
+        }
+        if c < b {
+            return false;
+        }
     }
     match (current.tiebreak_loss, best.tiebreak_loss) {
         (Some(c), Some(b)) => c <= b,
@@ -454,6 +470,8 @@ pub struct Evolution {
     pareto_patience: Option<usize>,
     /// 复杂度度量方式（用于 inference_cost 计算）
     complexity_metric: ComplexityMetric,
+    /// F3 学习速度代理（None = 关闭，Some = 启用对应 proxy）
+    primary_proxy: Option<ProxyKind>,
 }
 
 impl Evolution {
@@ -492,6 +510,7 @@ impl Evolution {
             parallelism: None,
             pareto_patience: None,
             complexity_metric: ComplexityMetric::FLOPs,
+            primary_proxy: None,
         }
     }
 
@@ -558,6 +577,15 @@ impl Evolution {
     /// 设置复杂度度量方式（用于 inference_cost 计算）
     pub fn with_complexity_metric(mut self, metric: ComplexityMetric) -> Self {
         self.complexity_metric = metric;
+        self
+    }
+
+    /// 启用学习速度代理（F3）：在 plateau 上用 loss 下降速率打破 NSGA-II 平局。
+    ///
+    /// 仅对支持 proxy 的 Task 生效（目前 `SupervisedTask`）。开启后会在
+    /// 每次训练时额外记录 loss 轨迹并计算一次 proxy，开销可忽略。
+    pub fn with_primary_proxy(mut self, kind: ProxyKind) -> Self {
+        self.primary_proxy = Some(kind);
         self
     }
 
@@ -638,6 +666,7 @@ impl Evolution {
             parallelism,
             pareto_patience,
             complexity_metric,
+            primary_proxy,
         } = self;
 
         // 当指定 seed 时，自动固定 population_size/offspring_batch_size
@@ -655,6 +684,7 @@ impl Evolution {
         let prepared = materialize_task(task_spec.clone())?;
         let mut task_template = prepared.task.clone();
         task_template.configure_batch_size(batch_size);
+        task_template.configure_proxy(primary_proxy);
         let serial_task = task_template.clone();
 
         let is_sequential = prepared.seq_len.is_some();
@@ -1118,16 +1148,20 @@ fn eval_candidate(
 ) -> Option<EvalResult> {
     let build = genome.build(rng).ok()?;
     let inherit_report = genome.restore_weights(&build).ok();
-    let loss = task.train(&genome, &build, convergence, rng).ok()?;
+    let outcome = task.train(&genome, &build, convergence, rng).ok()?;
     genome.capture_weights(&build).ok()?;
     let mut score = evaluate_conservative(task, &genome, &build, eval_runs, rng).ok()?;
     if let Ok(cost) = compute_inference_cost(&genome, complexity_metric) {
         score.inference_cost = Some(cost);
     }
+    // F3: 合并训练阶段算出的 learning-speed proxy
+    if outcome.proxy.is_some() {
+        score.primary_proxy = outcome.proxy;
+    }
     Some(EvalResult {
         genome,
         score,
-        loss,
+        loss: outcome.final_loss,
         inherit_report,
     })
 }
@@ -1334,6 +1368,7 @@ fn build_final_result(
         primary: f32::NEG_INFINITY,
         inference_cost: None,
         tiebreak_loss: None,
+    primary_proxy: None,
     });
 
     Ok(EvolutionResult {

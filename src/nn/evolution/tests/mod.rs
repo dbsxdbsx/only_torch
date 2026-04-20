@@ -9,5 +9,6 @@ mod model_io;
 mod mutation;
 mod net2net;
 mod node_gene;
+mod proxy;
 mod selection;
 mod task;
