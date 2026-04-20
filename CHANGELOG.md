@@ -1,5 +1,27 @@
 # 更新日志
 
+## [Unreleased]
+
+### 新增
+
+- **feat(evolution): F4 ASHA 多保真评估（Successive Halving）—— Phase 1 集中训练预算到有潜力的候选**
+  - 新增 `AshaConfig { rung_epochs, eta }`（默认 `[1, 2, 4]` / `eta=3`，总预算 7 epoch 与原单轮 FixedEpochs 相当）
+  - `Evolution::with_asha(cfg)` 构建器：启用后 Phase 1 每代评估走阶梯式 Successive Halving；Phase 2 保持完整训练
+  - `evaluate_batch_asha` 逐 rung 调用 `evaluate_batch`：中间 rung 按 primary 降序保留 top `1/eta`（`asha_keep_count(n, eta) = ceil(n/eta).max(1)`），末 rung 返回全部幸存者进入 NSGA-II
+  - 幸存者权重通过 `capture_weights` / `restore_weights` 在 rung 之间 Lamarckian 延续（`eval_candidate` 已在 train 前 restore、train 后 capture），无需额外管道
+  - 每 rung seed 派生：`base_seed.wrapping_add(rung_idx * 0x9E37_79B9_7F4A_7C15)`
+  - `AshaConfig::validated()` 兜底：空 `rung_epochs`→`[1]`，`eta<2`→`2`
+  - 新增 `tests/asha.rs`：6 个测试覆盖 default / keep_count 边界 / 端到端（XOR + 启用 ASHA）/ 禁用 ASHA 的回归保护
+
+- **feat(evolution): F3 学习速度代理（LossSlope）—— plateau 上打破 NSGA-II 平局**
+  - `FitnessScore` 新增 `primary_proxy: Option<f32>` 字段（`#[serde(default)]` 保持向后兼容）
+  - 新增 `ProxyKind` 枚举（当前仅 `LossSlope`）与 `TrainOutcome { final_loss, proxy }` 作为 `EvolutionTask::train()` 的新返回类型；`TrainOutcome` 附带 `Display` / `is_finite` / `PartialOrd<f32>` 便利实现以降低调用端迁移成本
+  - `compute_loss_slope_proxy`：首/尾 window = `max(1, n/4)`，按 epoch 数归一化的 `(l_head_avg - l_tail_avg) / n`；轨迹 < 3 或含 NaN/Inf 返回 `None`
+  - `SupervisedTask::configure_proxy()`：启用后在 full-batch / mini-batch 两条路径按 epoch 记录 loss 轨迹；未启用零开销
+  - `Evolution::with_primary_proxy(kind)`：在 `run()` 中把 proxy 配置下发到 task_template
+  - NSGA-II `tiebreak_cmp` 重写为两级：`primary_proxy`（越高越好）→ `tiebreak_loss`（越低越好）；`is_at_least_as_good` 同步；Pareto 支配判定不变
+  - 新增 `tests/proxy.rs`：12 个测试覆盖 slope 数值正确性、serde 向后兼容、plateau 优先级、SupervisedTask 启用/未启用端到端
+
 ## [0.14.2] - 2026-04-19
 
 ### 新增

@@ -472,6 +472,8 @@ pub struct Evolution {
     complexity_metric: ComplexityMetric,
     /// F3 学习速度代理（None = 关闭，Some = 启用对应 proxy）
     primary_proxy: Option<ProxyKind>,
+    /// F4 ASHA 多保真评估配置（None = 关闭）
+    asha: Option<AshaConfig>,
 }
 
 impl Evolution {
@@ -511,6 +513,7 @@ impl Evolution {
             pareto_patience: None,
             complexity_metric: ComplexityMetric::FLOPs,
             primary_proxy: None,
+            asha: None,
         }
     }
 
@@ -586,6 +589,15 @@ impl Evolution {
     /// 每次训练时额外记录 loss 轨迹并计算一次 proxy，开销可忽略。
     pub fn with_primary_proxy(mut self, kind: ProxyKind) -> Self {
         self.primary_proxy = Some(kind);
+        self
+    }
+
+    /// 启用 ASHA 多保真评估（F4）：Phase 1 从"均匀 FixedEpochs"改为阶梯式
+    /// Successive Halving，将训练预算集中在有潜力的候选上。
+    ///
+    /// 只在 Phase 1 生效（Phase 2 仍用 user_convergence 完成最终训练）。
+    pub fn with_asha(mut self, config: AshaConfig) -> Self {
+        self.asha = Some(config);
         self
     }
 
@@ -667,6 +679,7 @@ impl Evolution {
             pareto_patience,
             complexity_metric,
             primary_proxy,
+            asha,
         } = self;
 
         // 当指定 seed 时，自动固定 population_size/offspring_batch_size
@@ -982,15 +995,29 @@ impl Evolution {
             let eval_seeds: Vec<u64> = (0..offspring_genomes.len())
                 .map(|_| rng.r#gen::<u64>())
                 .collect();
-            let eval_results = evaluate_batch(
-                &task_template,
-                offspring_genomes,
-                current_convergence,
-                eval_runs,
-                &complexity_metric,
-                parallel_pool.as_ref(),
-                eval_seeds,
-            );
+            // F4: Phase 1 启用 ASHA 多保真评估；Phase 2 仍走单轮完整训练
+            let eval_results = if is_phase1 && asha.is_some() {
+                evaluate_batch_asha(
+                    &task_template,
+                    offspring_genomes,
+                    asha.as_ref().unwrap(),
+                    current_convergence,
+                    eval_runs,
+                    &complexity_metric,
+                    parallel_pool.as_ref(),
+                    eval_seeds,
+                )
+            } else {
+                evaluate_batch(
+                    &task_template,
+                    offspring_genomes,
+                    current_convergence,
+                    eval_runs,
+                    &complexity_metric,
+                    parallel_pool.as_ref(),
+                    eval_seeds,
+                )
+            };
 
             let offspring_evaluated = eval_results.len();
             // 汇总权重继承统计（仅 NodeLevel genome 有意义）
@@ -1226,6 +1253,134 @@ fn evaluate_batch(
             })
             .collect()
     }
+}
+
+// ==================== F4: ASHA 多保真评估 ====================
+
+/// ASHA（Asynchronous Successive Halving Algorithm）配置
+///
+/// 参考 Li et al. 2020。Phase 1 从"均匀 FixedEpochs"改为阶梯式评估：
+/// - rung 0：所有候选训练 `rung_epochs[0]` 个 epoch，按 primary 排序
+/// - rung k (k>=1)：保留上一 rung 的 top `1/eta`（至少 1 个），继续训练
+///   `rung_epochs[k]` 个 epoch（Lamarckian 权重延续）；末轮所有幸存者返回
+///
+/// `rung_epochs` 是每轮**增量** epoch 数，不是累积值。
+/// 总训练 cost ≈ Σ (survivors_at_rung[k] * rung_epochs[k])，可调参控制预算。
+#[derive(Clone, Debug)]
+pub struct AshaConfig {
+    /// 每 rung 训练的 epoch 数（增量）
+    pub rung_epochs: Vec<usize>,
+    /// 每 rung 的淘汰比例：保留 top 1/eta
+    pub eta: usize,
+}
+
+impl Default for AshaConfig {
+    fn default() -> Self {
+        // 与原单轮 FixedEpochs(~3-10) 相当的总预算：1 + 2 + 4 = 7
+        Self {
+            rung_epochs: vec![1, 2, 4],
+            eta: 3,
+        }
+    }
+}
+
+impl AshaConfig {
+    /// 校验：`rung_epochs` 非空、eta >= 2
+    fn validated(&self) -> Self {
+        let mut cfg = self.clone();
+        if cfg.rung_epochs.is_empty() {
+            cfg.rung_epochs = vec![1];
+        }
+        if cfg.eta < 2 {
+            cfg.eta = 2;
+        }
+        cfg
+    }
+}
+
+/// 计算 rung `k` 存活下来的候选数：`ceil(prev / eta)`，至少保留 1 个。
+pub(crate) fn asha_keep_count(prev: usize, eta: usize) -> usize {
+    if prev == 0 {
+        return 0;
+    }
+    let eta = eta.max(2);
+    prev.div_ceil(eta).max(1)
+}
+
+/// 按 rung 对候选进行 Successive Halving 评估
+///
+/// 每一轮内部复用 `evaluate_batch`（保留并行 / 串行路径与 seed 语义）。
+/// rung-to-rung 之间，幸存者通过 `capture_weights` / `restore_weights` 自动
+/// 延续训练权重——`eval_candidate` 在 train 前会 restore、train 后会 capture。
+fn evaluate_batch_asha(
+    task_template: &TaskRuntime,
+    candidates: Vec<NetworkGenome>,
+    asha: &AshaConfig,
+    base_convergence: &ConvergenceConfig,
+    eval_runs: usize,
+    complexity_metric: &ComplexityMetric,
+    parallel_pool: Option<&ThreadPool>,
+    seeds: Vec<u64>,
+) -> Vec<EvalResult> {
+    assert_eq!(candidates.len(), seeds.len());
+    let asha = asha.validated();
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let mut survivors: Vec<(NetworkGenome, u64)> =
+        candidates.into_iter().zip(seeds).collect();
+
+    let total_rungs = asha.rung_epochs.len();
+    for (rung_idx, &epochs) in asha.rung_epochs.iter().enumerate() {
+        let rung_conv = ConvergenceConfig {
+            budget: TrainingBudget::FixedEpochs(epochs.max(1)),
+            ..base_convergence.clone()
+        };
+
+        // 每 rung 用独立的 seed 派生（加上 rung_idx），避免多轮评估随机性完全重复
+        let (genomes, orig_seeds): (Vec<_>, Vec<_>) = survivors.into_iter().unzip();
+        let rung_seeds: Vec<u64> = orig_seeds
+            .iter()
+            .map(|s| s.wrapping_add(rung_idx as u64 * 0x9E37_79B9_7F4A_7C15))
+            .collect();
+
+        let rung_results = evaluate_batch(
+            task_template,
+            genomes,
+            &rung_conv,
+            eval_runs,
+            complexity_metric,
+            parallel_pool,
+            rung_seeds,
+        );
+
+        // 最后一轮：全部幸存者进入 NSGA-II
+        if rung_idx + 1 == total_rungs {
+            return rung_results;
+        }
+
+        // 中间 rung：按 primary 降序保留 top 1/eta
+        let keep = asha_keep_count(rung_results.len(), asha.eta);
+        let mut indexed: Vec<(usize, EvalResult)> =
+            rung_results.into_iter().enumerate().collect();
+        indexed.sort_by(|a, b| {
+            b.1.score
+                .primary
+                .partial_cmp(&a.1.score.primary)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        indexed.truncate(keep);
+
+        // 下一轮：继续使用原 seed（rung 内部已派生过）
+        survivors = indexed
+            .into_iter()
+            .map(|(i, r)| (r.genome, orig_seeds[i]))
+            .collect();
+    }
+
+    // 理论上不会到达：total_rungs >= 1 已确保循环内 return
+    Vec::new()
 }
 
 /// 多次评估取 primary 最低值（保守估计）
