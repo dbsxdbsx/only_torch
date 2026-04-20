@@ -829,6 +829,18 @@ impl NetworkGenome {
         }
     }
 
+    /// 获取节点级权重快照可变引用（NodeLevel 专属；Net2Net 等就地更新用）
+    pub(crate) fn node_weight_snapshots_mut(&mut self) -> &mut HashMap<u64, Tensor> {
+        match &mut self.repr {
+            GenomeRepr::NodeLevel {
+                weight_snapshots, ..
+            } => weight_snapshots,
+            GenomeRepr::LayerLevel { .. } => {
+                panic!("node_weight_snapshots_mut() 只支持 NodeLevel 基因组")
+            }
+        }
+    }
+
     /// 推导每层的实际输入/输出维度，同时验证聚合节点的维度兼容性。
     /// 仅对 LayerLevel 基因组有效；NodeLevel 基因组应使用 `analyze()`。
     pub fn resolve_dimensions(&self) -> Result<Vec<ResolvedDim>, GenomeError> {

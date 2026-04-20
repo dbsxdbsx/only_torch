@@ -26,6 +26,7 @@ pub mod gene;
 pub mod migration;
 pub mod model_io;
 pub mod mutation;
+pub mod net2net;
 pub mod node_gene;
 pub mod node_ops;
 pub mod selection;

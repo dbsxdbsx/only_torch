@@ -6,6 +6,7 @@ mod gene;
 mod model_io;
 mod migration;
 mod mutation;
+mod net2net;
 mod node_gene;
 mod selection;
 mod task;

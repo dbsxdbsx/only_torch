@@ -28,6 +28,7 @@ use super::node_ops::{
     remove_skip_connection, repair_param_input_dims, resize_conv2d_out, resize_linear_out,
     resize_recurrent_out, sync_computation_shapes,
 };
+use super::net2net::apply_widen_to_snapshots;
 use super::node_gene::{NodeGene, RecurrentEdge};
 use crate::nn::descriptor::NodeTypeDescriptor;
 use rand::Rng;
@@ -2297,6 +2298,12 @@ fn node_level_grow_apply(
                 "增长后 total_params={params} 超过上限 {}",
                 constraints.max_total_params
             )));
+        }
+
+        // 参数预算检查通过后，对快照应用 Net2Net 函数保持扩宽
+        // （仅 NodeLevel 基因组有效；失败时让后续 try_partial_inherit 走朴素回退）
+        if genome.is_node_level() {
+            let _ = apply_widen_to_snapshots(genome, &block, current_size, new_size, rng);
         }
     }
 

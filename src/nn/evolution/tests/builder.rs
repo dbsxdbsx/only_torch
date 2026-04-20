@@ -1580,10 +1580,12 @@ fn test_phase5_node_level_partial_inherit_after_grow() {
                 "继承统计之和应等于参数节点数"
             );
 
-            // Grow 后必有参数形状改变 → partially_inherited 或 reinitialized > 0
+            // Net2Net 生效后应保证函数保持：所有参数通过快照复原（全部 inherited）。
+            // 若 Net2Net 未能覆盖（例如含 SkipAgg / 其他不支持的块），则退化为
+            // partially_inherited / reinitialized。这里要求至少有继承发生。
             assert!(
-                report.partially_inherited + report.reinitialized > 0,
-                "Grow 后应有部分继承或重新初始化的参数（快照形状已变），seed={seed}"
+                report.inherited + report.partially_inherited > 0,
+                "Grow 后应有参数被继承或部分继承，seed={seed}"
             );
 
             return; // 找到一个成功的 Grow 就够了
