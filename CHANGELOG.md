@@ -1,76 +1,123 @@
 # 更新日志
 
-## [Unreleased]
+## [0.15.0] - 2026-04-20
 
 ### 新增
 
-- **feat(evolution): F4 ASHA 多保真评估（Successive Halving）—— Phase 1 集中训练预算到有潜力的候选**
-  - 新增 `AshaConfig { rung_epochs, eta }`（默认 `[1, 2, 4]` / `eta=3`，总预算 7 epoch 与原单轮 FixedEpochs 相当）
-  - `Evolution::with_asha(cfg)` 构建器：启用后 Phase 1 每代评估走阶梯式 Successive Halving；Phase 2 保持完整训练
-  - `evaluate_batch_asha` 逐 rung 调用 `evaluate_batch`：中间 rung 按 primary 降序保留 top `1/eta`（`asha_keep_count(n, eta) = ceil(n/eta).max(1)`），末 rung 返回全部幸存者进入 NSGA-II
-  - 幸存者权重通过 `capture_weights` / `restore_weights` 在 rung 之间 Lamarckian 延续（`eval_candidate` 已在 train 前 restore、train 后 capture），无需额外管道
-  - 每 rung seed 派生：`base_seed.wrapping_add(rung_idx * 0x9E37_79B9_7F4A_7C15)`
-  - `AshaConfig::validated()` 兜底：空 `rung_epochs`→`[1]`，`eta<2`→`2`
-  - 新增 `tests/asha.rs`：6 个测试覆盖 default / keep_count 边界 / 端到端（XOR + 启用 ASHA）/ 禁用 ASHA 的回归保护
+- **feat(evolution): NodeLevel 统一内核重构（Phase 1-10）——演化系统架构级大改**
+  - Phase 1+2：`NodeGene` 统一中间表示（IR）+ `LayerConfig` 迁移层，所有 Layer 配置统一收敛到 `NodeGene` 粒度
+  - Phase 3：NodeLevel `capture_weights` / `restore_weights` 权重快照，参数级精确保存与恢复
+  - Phase 4：NodeLevel 变异算子（`InsertNode` / `RemoveNode` / `GrowHiddenSize` / `ShrinkHiddenSize` / `ChangeActivation` 等）+ 确定性修复
+  - Phase 5：Parameter 节点粒度权重继承——Lamarckian 继承从层级下沉到参数级
+  - Phase 6：节点级演化收口与持久化验收——序列化 / 反序列化完整性验证
+  - Phase 7：NodeLevel 通用跨层连接变异（`AddConnection` / `RemoveConnection`），替代旧 `SkipEdge` 层级操作
+  - Phase 8：NodeLevel 循环网络支持——RNN / LSTM / GRU 均通过节点级基因表达
+  - Phase 9：LayerLevel 从演化内核降级为用户入口 DSL——用户仍用 `LayerGene` 描述初始网络，内部自动转为 NodeLevel 运行
+  - Phase 10：ONNX 双向桥接——`NodeGene` ↔ ONNX 导出/导入，支持与外部工具链互通
 
-- **feat(evolution): F3 学习速度代理（LossSlope）—— plateau 上打破 NSGA-II 平局**
-  - `FitnessScore` 新增 `primary_proxy: Option<f32>` 字段（`#[serde(default)]` 保持向后兼容）
-  - 新增 `ProxyKind` 枚举（当前仅 `LossSlope`）与 `TrainOutcome { final_loss, proxy }` 作为 `EvolutionTask::train()` 的新返回类型；`TrainOutcome` 附带 `Display` / `is_finite` / `PartialOrd<f32>` 便利实现以降低调用端迁移成本
-  - `compute_loss_slope_proxy`：首/尾 window = `max(1, n/4)`，按 epoch 数归一化的 `(l_head_avg - l_tail_avg) / n`；轨迹 < 3 或含 NaN/Inf 返回 `None`
-  - `SupervisedTask::configure_proxy()`：启用后在 full-batch / mini-batch 两条路径按 epoch 记录 loss 轨迹；未启用零开销
-  - `Evolution::with_primary_proxy(kind)`：在 `run()` 中把 proxy 配置下发到 task_template
-  - NSGA-II `tiebreak_cmp` 重写为两级：`primary_proxy`（越高越好）→ `tiebreak_loss`（越低越好）；`is_at_least_as_good` 同步；Pareto 支配判定不变
-  - 新增 `tests/proxy.rs`：12 个测试覆盖 slope 数值正确性、serde 向后兼容、plateau 优先级、SupervisedTask 启用/未启用端到端
+- **feat(evolution): Pareto 种群搜索 + NSGA-II 选择**
+  - 多目标搜索（primary fitness + complexity）替代单目标 greedy
+  - NSGA-II 非支配排序 + 拥挤度距离选择
+  - 并行评估（`rayon` 多线程 `evaluate_batch`），显著加速大种群演化
+  - `EvolutionResult` 返回 Pareto 前沿全部成员，用户可按偏好选择
 
-## [0.14.2] - 2026-04-19
+- **feat(evolution): 阶段 A — Spatial 域增强**
+  - 解决 MNIST 演化瓶颈：自动推断 Spatial 输入形状、Flatten 维度计算、Conv2d padding/stride 合法性校验
+  - Conv2d / Pool2d 从空间模式必需层降级为可演化层——演化可自由插入/删除 CNN 组件
 
-### 新增
+- **feat(evolution): 阶段 B — InsertAtomicNode 变异 + 归一化层/Dropout 纳入演化**
+  - `InsertAtomicNode`：在任意两个已有节点间插入单个激活/归一化节点，细粒度拓扑探索
+  - 通用循环边支持：演化可在任意层间创建 recurrent connection
+  - BatchNorm / LayerNorm / GroupNorm / RMSNorm / Dropout 全部纳入可演化变异空间
 
-- **feat(evolution): FM 掩码融合（FM Mask Fusion）——构图时自动合并同构 FM 边**
-  - 检测同一 Conv 块内所有 FM 边是否具有相同超参数（kernel size、stride、dilation、类型），若同构则合并为单个 dense Conv2d 操作，大幅减少计算图节点数
-  - `fm_ops.rs` 新增 `FMFusionAnalysis`：per-block 同构性检测 + 融合矩阵构建
-  - `builder.rs` 重构 FM 子图构图路径：融合模式下直接生成 dense Conv2d，非融合模式保持稀疏 FM 子图
-  - 10 种 FM 级别变异（`fm_mutation.rs`）全面适配融合后的权重映射
+- **feat(evolution): 阶段 C — EXACT 级别 Spatial 域 Feature Map 粒度演化**
+  - FM（Feature Map）级别基因表示：每个 Conv 块内独立管理 per-channel 连接
+  - 10 种 FM 级别变异：`AddFMEdge` / `RemoveFMEdge` / `SplitFM` / `MergeFM` / `ChangeFMKernel` 等
+  - FM 掩码融合（FM Mask Fusion）：构图时自动检测同构 FM 边，合并为单个 dense Conv2d，减少计算图节点数
+  - `FMFusionAnalysis`：per-block 同构性检测 + 融合矩阵构建
 
-### 优化
+- **feat(evolution): 阶段 F — 流程修复（F1-F4）**
+  - **F1 Net2Net 函数保持性扩容**：`GrowHiddenSize` 扩容时新增维度复制已有列 + 小扰动，下游消费者行按复制次数缩放；覆盖 Linear / Conv2d / RNN / LSTM / GRU + 下游 + BN/LN/RMS pass-through
+  - **F2 Cell 类型切换权重迁移**：`migrate_cell_weights()` 覆盖 6 种迁移（RNN↔LSTM / RNN↔GRU / LSTM↔GRU），特征门保留权重，饱和门用 `W=0 + bias=±6` 使 σ 饱和
+  - **F3 学习速度代理（LossSlope）**：`FitnessScore` 新增 `primary_proxy: Option<f32>`，`ProxyKind::LossSlope` 计算 loss 下降斜率；NSGA-II plateau 时用 proxy 打破平局（默认启用）
+  - **F4 ASHA 多保真评估**：`AshaConfig { rung_epochs, eta }` 默认 `[1,2,4]/eta=3`，阶梯式 Successive Halving 将训练预算集中到头部候选（默认启用）
+  - F3/F4 默认启用 + LayerLevel Lamarckian 继承修复
+
+- **feat(evolution): 序列域演化支持**
+  - 自动推断序列输入维度、支持 `minimal_sequential` 初始基因组
+  - 演化激活函数池扩展至 13 种（新增 GELU / Swish / ELU / SELU / Mish / HardSwish / HardSigmoid / Softplus）
+
+- **feat(evolution): CNN 空间演化 + 记忆单元演化**
+  - Conv2d / Pool2d 可被演化自由插入/删除/参数化
+  - 记忆单元（RNN/LSTM/GRU）可被 `MutateCellType` 在运行中切换
+
+- **feat: 统一 .otm 模型格式**
+  - 手动构建的模型和演化生成的模型均可保存拓扑 + 权重到 `.otm` 文件
+  - `Graph` 权重 API：`save_weights()` / `load_weights()`
+
+- **feat(nn): LR Scheduler 模块**
+  - `CosineAnnealingLR`：余弦退火学习率调度
+  - `StepLR`：阶梯式衰减
+  - `LambdaLR`：自定义函数调度
+
+- **feat(vision): 新增 3 种数据增强变换**
+  - `RandomErasing`：随机擦除
+  - `RandomResizedCrop`：随机缩放裁剪（双线性插值）
+  - `RandomAffine`：随机仿射变换（旋转 + 平移 + 缩放 + 剪切）
+
+- **feat(nn): 新增 API**
+  - `Graph::set_seed(seed)` / `Graph::has_seed()` 代理方法
+  - `EvolutionResult` 新增 `evolution_seed` 字段，支持 Pareto 成员确定性重建
+  - `EvolutionTask::train()` 返回类型变更为 `TrainOutcome { final_loss, proxy }`
+
+- **feat(examples): 新增演化示例**
+  - `evolution_parity_seq`：序列数据演化，记忆单元自动选择
+  - `evolution_parity_seq_var_len`：变长序列演化，zero-pad 自动处理
+
+### 性能优化
 
 - **perf(evolution): Spatial 域演化速度多项优化**
-  - 收紧 `SizeConstraints::auto()` 的 `fc_base` 计算：假设至少 2 次 stride-2 pool 降低 Flatten 维度，FC 隐藏层从 128 缩至 64，`base_params` 下限从 200K 降至 50K，防止 Flatten→Linear 参数爆炸
-  - `ComplexityMetric` 默认值从 `ParamCount` 切换为 `FLOPs`——NSGA-II 选择压力直接对准训练/推理耗时
-  - `GrowHiddenSize` 变异权重从 0.25 降至 0.12，将探索预算让渡给 FM 级别细粒度变异
-  - 新增 BLAS 线程守卫：`parallelism > 1` 时自动设置 `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `OMP_NUM_THREADS = 1`，防止多线程超订阅
-
-### 修复
-
-- **fix(nn): ConvTranspose2d output_padding 参数在 ONNX 导出/导入时丢失**
-
-### 文档
-
-- 更新演化设计文档：ComplexityMetric 默认值、SizeConstraints 空间域参数、已知问题中性能优化进展、FM 掩码融合说明、变异权重调整
-
-## [0.14.1] - 2026-04-19
+  - 收紧 `SizeConstraints::auto()` 的 `fc_base` 计算，防止 Flatten→Linear 参数爆炸
+  - `ComplexityMetric` 默认值从 `ParamCount` 切换为 `FLOPs`
+  - `GrowHiddenSize` 变异权重从 0.25 降至 0.12
+  - 新增 BLAS 线程守卫：`parallelism > 1` 时自动设置 `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `OMP_NUM_THREADS = 1`
 
 ### 修复
 
 - **fix(nn): 种子确定性严格保证 — 指定 seed 后所有随机操作 100% 可复现**
-  - `Var::dropout()` 改用 `GraphInner::next_seed()` 替代 `SystemTime`，seeded Graph 下 Dropout mask 完全确定
-  - `Graph::randn()` 改用 `Tensor::normal_with_rng()` 替代 `Tensor::normal()`（thread_rng），seeded Graph 下随机张量完全确定
-  - `Var::rand_like()` / `Var::randn_like()` 有 Graph seed 时使用 Graph RNG
-  - `Normal::rsample()` 有 Graph seed 时使用 Graph RNG（影响 SAC 等连续策略梯度算法）
-  - `Categorical::sample()` 有 Graph seed 时使用 `multinomial_with_rng`（影响离散动作采样）
+  - `Var::dropout()` / `Graph::randn()` / `Var::rand_like()` / `Var::randn_like()` / `Normal::rsample()` / `Categorical::sample()` 全部改用 Graph RNG
   - `descriptor_rebuild` 中 Dropout 重建改用 `next_seed()` 替代固定 seed 42
   - 演化系统 `rebuild_pareto_member()` 使用保存的 `evolution_seed` 替代 `from_entropy()`
   - 演化系统指定 seed 时自动固定 `population_size`（20）和 `offspring_batch_size`（12），消除跨机器线程数差异
+- **fix(nn): BatchNorm 4D 广播 bug + running stats 跨 forward 丢失 bug**
+- **fix(nn): GroupNorm gamma/beta 梯度链修复**
+- **fix(nn): Kaiming/Xavier init fan_in 计算修复**
+- **fix(nn): ConvTranspose2d output_padding 参数在 ONNX 导出/导入时丢失**
+- **fix(evolution): Pareto 演化系统正确性与收敛效率修复 + 测试补全**
+- **fix(evolution): skip edge 域重新验证 + `is_domain_valid` 语义修正**
+- **fix(evolution): NodeLevel Cluster 可视化缺少输入形状描述**
+- **fix(evolution): RNN 重建路径 `NodeGroupTag` 被 backfill 覆盖的可视化 bug**
+- **fix(net2net): 堆叠循环层 + Conv2d→Flatten→Linear 扩宽路径修复**
 
-### 新增
+### 重构
 
-- `Graph::set_seed(seed)` / `Graph::has_seed()` 代理方法（之前仅在 `GraphInner` 上可用）
-- `EvolutionResult` 新增 `evolution_seed` 字段，支持 Pareto 成员确定性重建
+- **refactor: examples 目录重构为 `traditional/` 和 `evolution/` 两组**
+- **refactor: `save_model()` / `load_model()` → `save_weights()` / `load_weights()` 重命名**
+- **refactor(evolution): Conv2d / Pool2d 从空间模式必需层降级为可演化层**
+- **refactor(evolution): 演化系统内部自适应改造（6 项）**——变异概率动态调整、停滞检测参数优化等
+- **refactor(evolution): 移除所有 Phase N 工程阶段注释**
 
 ### 文档
 
-- 更新种子设计文档（`api_layering_and_seed_design.md`）：标记阶段 2.5 完成，更新影响范围和决策表
-- 更新演化设计文档（`neural_architecture_evolution_design.md`）：补充 seed 传播的确定性保证说明
+- 演化设计文档全面更新：Phase 1-10、A-C、F 阶段完成状态、优先级图更新
+- 更新种子设计文档：标记阶段 2.5 完成
+- 新增演化、强化学习和测试指令文档
+- 更新 ONNX 双向桥接规划与完成记录
+- 中国象棋示例增强：合并真实数据、增加 RandomAffine、batch=256
+
+### 已知问题
+
+- MNIST 演化示例运行较慢（阶段 D/E 优化项待后续版本跟进）
 
 ## [0.14.0] - 2026-03-09
 

@@ -1,6 +1,6 @@
 ﻿## 这是啥？
 
-一个用纯 Rust（不用 C++）打造的仿 Pytorch 的玩具型 AI 框架（目前尚不成熟，请勿使用）。该项目不打算支持 GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非 CPU 设备。已实现 NEAT 风格的神经架构演化 MVP，可从最小网络自动搜索最优架构。
+一个用纯 Rust（不用 C++）打造的仿 Pytorch 的玩具型 AI 框架（目前尚不成熟，请勿使用）。该项目不打算支持 GPU--因后期可能要支持安卓等平台，不想受制于某（几）种非 CPU 设备。已实现 NEAT 风格的神经架构演化系统，具备 NodeLevel 统一内核、Pareto/NSGA-II 多目标搜索、ONNX 互通、Feature Map 粒度演化、Net2Net 函数保持性变异、ASHA 多保真评估等能力，可从最小网络自动搜索最优架构。
 
 ### 名字由来
 
@@ -19,7 +19,7 @@
 <details>
 <summary>📊 MNIST GAN 计算图示例（点击展开）</summary>
 
-![MNIST GAN 计算图](examples/mnist_gan/mnist_gan.png)
+![MNIST GAN 计算图](examples/traditional/mnist_gan/mnist_gan.png)
 
 > Generator + Discriminator 共 210,065 参数，展示 `detach` 梯度控制与多 Loss 训练
 
@@ -45,30 +45,31 @@ let dot = graph.to_dot();
 
 | 示例 | 任务类型 | 核心特性 | 网络结构 | 运行命令 |
 |------|---------|---------|---------|---------|
-| [xor](examples/xor/) | 二分类 | Linear 层、Tanh 激活 | `2 → 4 → 1` | `cargo run --example xor` |
-| [iris](examples/iris/) | 多分类 | CrossEntropyLoss、真实数据集 | `4 → 8 → 3` | `cargo run --example iris` |
-| [sine_regression](examples/sine_regression/) | 回归 | MseLoss、函数拟合 | `1 → 32 → 1` | `cargo run --example sine_regression` |
-| [california_housing](examples/california_housing/) | 回归 | MseLoss、真实数据集、DataLoader | `8 → 128 → 64 → 32 → 1` | `cargo run --example california_housing` |
-| [mnist](examples/mnist/) | 图像分类 | MLP、Dropout、大规模数据 | `784 → 128 → 10` | `cargo run --example mnist` |
-| [mnist_cnn](examples/mnist_cnn/) | 图像分类 | **CNN**、Conv2d、MaxPool2d | LeNet 风格 `Conv(1→4→8)` | `cargo run --example mnist_cnn` |
-| [mnist_gan](examples/mnist_gan/) | **图像生成** | **GAN**、detach 梯度控制、多 Loss | `G(64→256→784) D(784→256→1)` | `cargo run --example mnist_gan` |
-| [parity_rnn_fixed_len](examples/parity_rnn_fixed_len/) | 序列分类 | **RNN 层**、固定长度序列 | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_fixed_len` |
-| [parity_rnn_var_len](examples/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
-| [parity_lstm_var_len](examples/parity_lstm_var_len/) | 序列分类 | **LSTM 层**、变长序列 | `LSTM(1→16) → FC(2)` | `cargo run --example parity_lstm_var_len` |
-| [parity_gru_var_len](examples/parity_gru_var_len/) | 序列分类 | **GRU 层**、变长序列 | `GRU(1→16) → FC(2)` | `cargo run --example parity_gru_var_len` |
-| [dual_input_add](examples/dual_input_add/) | 回归 | **多输入**、特征融合 | `2×Linear → Concat → 1` | `cargo run --example dual_input_add` |
-| [siamese_similarity](examples/siamese_similarity/) | 二分类 | **多输入**、共享编码器 | `共享Encoder → Concat → 1` | `cargo run --example siamese_similarity` |
-| [dual_output_classify](examples/dual_output_classify/) | 多任务 | **多输出**、多 Loss 训练 | `Shared → (Cls, Reg)` | `cargo run --example dual_output_classify` |
-| [multi_io_fusion](examples/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
-| [multi_label_point](examples/multi_label_point/) | **多标签分类** | **BceLoss**、multi_label_accuracy | `2 → 16 → 16 → 4` | `cargo run --example multi_label_point` |
-| [cartpole_sac](examples/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
-| [pendulum_sac](examples/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、动作缩放 | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
-| [moving_sac](examples/sac/moving/) | **强化学习** | **Hybrid SAC**、独立连续分支、双温度 | `Actor(10→256→离散+连续) Critic(12→256→3)` | `cargo run --example moving_sac` |
-| [chinese_chess](examples/chinese_chess/) | 图像分类 | **CNN**、数据增强、15 类分类 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess` |
-| [evolution_xor](examples/evolution_xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
-| [evolution_iris](examples/evolution_iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
-| [evolution_parity_seq](examples/evolution_parity_seq/) | **神经架构演化** | **Evolution API**、序列数据、记忆单元自动选择 | 自动演化 | `cargo run --example evolution_parity_seq` |
-| [evolution_parity_seq_var_len](examples/evolution_parity_seq_var_len/) | **神经架构演化** | **Evolution API**、变长序列、zero-pad | 自动演化 | `cargo run --example evolution_parity_seq_var_len` |
+| [xor](examples/traditional/xor/) | 二分类 | Linear 层、Tanh 激活 | `2 → 4 → 1` | `cargo run --example xor` |
+| [iris](examples/traditional/iris/) | 多分类 | CrossEntropyLoss、真实数据集 | `4 → 8 → 3` | `cargo run --example iris` |
+| [sine_regression](examples/traditional/sine_regression/) | 回归 | MseLoss、函数拟合 | `1 → 32 → 1` | `cargo run --example sine_regression` |
+| [california_housing](examples/traditional/california_housing/) | 回归 | MseLoss、真实数据集、DataLoader | `8 → 128 → 64 → 32 → 1` | `cargo run --example california_housing` |
+| [mnist](examples/traditional/mnist/) | 图像分类 | MLP、Dropout、大规模数据 | `784 → 128 → 10` | `cargo run --example mnist` |
+| [mnist_cnn](examples/traditional/mnist_cnn/) | 图像分类 | **CNN**、Conv2d、MaxPool2d | LeNet 风格 `Conv(1→4→8)` | `cargo run --example mnist_cnn` |
+| [mnist_gan](examples/traditional/mnist_gan/) | **图像生成** | **GAN**、detach 梯度控制、多 Loss | `G(64→256→784) D(784→256→1)` | `cargo run --example mnist_gan` |
+| [parity_rnn_fixed_len](examples/traditional/parity_rnn_fixed_len/) | 序列分类 | **RNN 层**、固定长度序列 | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_fixed_len` |
+| [parity_rnn_var_len](examples/traditional/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
+| [parity_lstm_var_len](examples/traditional/parity_lstm_var_len/) | 序列分类 | **LSTM 层**、变长序列 | `LSTM(1→16) → FC(2)` | `cargo run --example parity_lstm_var_len` |
+| [parity_gru_var_len](examples/traditional/parity_gru_var_len/) | 序列分类 | **GRU 层**、变长序列 | `GRU(1→16) → FC(2)` | `cargo run --example parity_gru_var_len` |
+| [dual_input_add](examples/traditional/dual_input_add/) | 回归 | **多输入**、特征融合 | `2×Linear → Concat → 1` | `cargo run --example dual_input_add` |
+| [siamese_similarity](examples/traditional/siamese_similarity/) | 二分类 | **多输入**、共享编码器 | `共享Encoder → Concat → 1` | `cargo run --example siamese_similarity` |
+| [dual_output_classify](examples/traditional/dual_output_classify/) | 多任务 | **多输出**、多 Loss 训练 | `Shared → (Cls, Reg)` | `cargo run --example dual_output_classify` |
+| [multi_io_fusion](examples/traditional/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
+| [multi_label_point](examples/traditional/multi_label_point/) | **多标签分类** | **BceLoss**、multi_label_accuracy | `2 → 16 → 16 → 4` | `cargo run --example multi_label_point` |
+| [cartpole_sac](examples/traditional/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
+| [pendulum_sac](examples/traditional/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、动作缩放 | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
+| [moving_sac](examples/traditional/sac/moving/) | **强化学习** | **Hybrid SAC**、独立连续分支、双温度 | `Actor(10→256→离散+连续) Critic(12→256→3)` | `cargo run --example moving_sac` |
+| [chinese_chess](examples/traditional/chinese_chess/) | 图像分类 | **CNN**、数据增强、15 类分类 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess` |
+| [evolution_xor](examples/evolution/xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
+| [evolution_iris](examples/evolution/iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
+| [evolution_mnist](examples/evolution/mnist/) | **神经架构演化** | **Evolution API**、Spatial 域 CNN 自动搜索 | 自动演化 | `cargo run --example evolution_mnist` |
+| [evolution_parity_seq](examples/evolution/parity_seq/) | **神经架构演化** | **Evolution API**、序列数据、记忆单元自动选择 | 自动演化 | `cargo run --example evolution_parity_seq` |
+| [evolution_parity_seq_var_len](examples/evolution/parity_seq_var_len/) | **神经架构演化** | **Evolution API**、变长序列、zero-pad | 自动演化 | `cargo run --example evolution_parity_seq_var_len` |
 
 #### 详细说明
 
@@ -366,6 +367,15 @@ cargo run --example evolution_iris
 # 自动演化到 ≥95% 准确率
 ```
 
+**Evolution MNIST（图像分类 CNN 自动搜索）** ⭐⭐⭐
+
+与 `examples/mnist`（手动 MLP）和 `examples/mnist_cnn`（手动 LeNet）不同，本示例只提供图像数据和目标，系统从 `Input(1@28×28) → Conv2d(1→8,k=3) → Pool2d → Flatten → [Linear(10)]` 出发，通过 Spatial 域变异自动发现 CNN 架构。
+
+```bash
+cargo run --example evolution_mnist
+# 目标 ≥95% 准确率，自动演化 Conv-BN-ReLU 组合
+```
+
 **Evolution Parity Seq（固定长度序列）** ⭐⭐⭐
 
 序列数据上的零模型代码演化。系统从 `Input(seq×1) → MemoryCell(1) → [Linear(1)]` 出发，自动决定使用何种记忆单元（RNN/LSTM/GRU）及网络拓扑。
@@ -388,36 +398,36 @@ cargo run --example evolution_parity_seq_var_len
 
 #### 特性覆盖矩阵
 
-| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | chinese_chess | cartpole_sac | pendulum_sac | moving_sac | evo_xor | evo_iris | evo_seq | evo_seq_var |
-|------|:---:|:----:|:----:|:----------:|:-----:|:---------:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:-------------:|:------------:|:------------:|:----------:|:-------:|:--------:|:-------:|:-----------:|
-| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `Conv2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | | | |
-| `MaxPool2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | | | |
-| `RNN/LSTM/GRU` 层 | | | | | | | | ✅ | | | | | | | | | | | | ✅ | ✅ |
-| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | ✅ | | | ✅ | ✅ | | ✅ | | | | ✅ | ✅ | | |
-| `MseLoss` | | | ✅ | ✅ | | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | ✅ | ✅ | ✅ | | | | |
-| **`BceLoss`** | | | | | | | | | | | | | ✅ | | | | | ✅ | | ✅ | ✅ |
-| `MaeLoss` | | | 📌 | 📌 | | | | | 📌 | | 📌 | 📌 | | | | | | | | | |
-| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | | | | | ✅ | | | | | | | |
-| `BucketedDataLoader` | | | | | | | | ✅ | | | | | | | | | | | | | |
-| 变长序列 | | | | | | | | ✅ | | | | | | | | | | | | | ✅ |
-| **多输入** | | | | | | | | | ✅ | ✅ | | ✅ | | | | | | | | | |
-| **多输出** (元组返回) | | | | | | | | | | | ✅ | ✅ | | | | | | | | | |
-| 共享编码器 | | | | | | | | | | ✅ | | | | | | | | | | | |
-| 多 Loss 训练 | | | | | ✅ | | | | | ✅ | ✅ | | | | ✅ | ✅ | ✅ | | | | |
-| **多标签分类** | | | | | | | | | | | | | ✅ | | | | | | | | |
-| **GAN / detach** | | | | | | | ✅ | | | | | | | | | | | | | | |
-| **数据增强** | | | | | | | | | | | | | | ✅ | | | | | | | |
-| **GymEnv (RL)** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | | | |
-| **经验回放** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | | | |
-| **TanhNormal 分布** | | | | | | | | | | | | | | | | ✅ | ✅ | | | | |
-| **Categorical 分布** | | | | | | | | | | | | | | | ✅ | | ✅ | | | | |
-| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | | | ✅ | | | | |
-| **Evolution API** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ |
-| **自动架构搜索** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ |
-| **Lamarckian 权重继承** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ |
-| **序列演化（记忆单元）** | | | | | | | | | | | | | | | | | | | | ✅ | ✅ |
-| **模型保存/加载** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ |
+| 特性 | xor | iris | sine | california | mnist | mnist_cnn | mnist_gan | parity* | dual_input | siamese | dual_output | multi_io | multi_label | chinese_chess | cartpole_sac | pendulum_sac | moving_sac | evo_xor | evo_iris | evo_mnist | evo_seq | evo_seq_var |
+|------|:---:|:----:|:----:|:----------:|:-----:|:---------:|:--------:|:-------:|:----------:|:-------:|:-----------:|:--------:|:-----------:|:-------------:|:------------:|:------------:|:----------:|:-------:|:--------:|:---------:|:-------:|:-----------:|
+| `Linear` 层 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Conv2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | | ✅ | | |
+| `MaxPool2d` 层 | | | | | | ✅ | | | | | | | | ✅ | | | | | | ✅ | | |
+| `RNN/LSTM/GRU` 层 | | | | | | | | ✅ | | | | | | | | | | | | | ✅ | ✅ |
+| `CrossEntropyLoss` | ✅ | ✅ | | | ✅ | ✅ | | ✅ | | | ✅ | ✅ | | ✅ | | | | ✅ | ✅ | ✅ | | |
+| `MseLoss` | | | ✅ | ✅ | | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | ✅ | ✅ | ✅ | | | | | |
+| **`BceLoss`** | | | | | | | | | | | | | ✅ | | | | | ✅ | | | ✅ | ✅ |
+| `MaeLoss` | | | 📌 | 📌 | | | | | 📌 | | 📌 | 📌 | | | | | | | | | | |
+| `DataLoader` | | ✅ | | ✅ | ✅ | ✅ | ✅ | | | | | | | ✅ | | | | | | | | |
+| `BucketedDataLoader` | | | | | | | | ✅ | | | | | | | | | | | | | | |
+| 变长序列 | | | | | | | | ✅ | | | | | | | | | | | | | | ✅ |
+| **多输入** | | | | | | | | | ✅ | ✅ | | ✅ | | | | | | | | | | |
+| **多输出** (元组返回) | | | | | | | | | | | ✅ | ✅ | | | | | | | | | | |
+| 共享编码器 | | | | | | | | | | ✅ | | | | | | | | | | | | |
+| 多 Loss 训练 | | | | | ✅ | | | | | ✅ | ✅ | | | | ✅ | ✅ | ✅ | | | | | |
+| **多标签分类** | | | | | | | | | | | | | ✅ | | | | | | | | | |
+| **GAN / detach** | | | | | | | ✅ | | | | | | | | | | | | | | | |
+| **数据增强** | | | | | | | | | | | | | | ✅ | | | | | | | | |
+| **GymEnv (RL)** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | | | | |
+| **经验回放** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | | | | |
+| **TanhNormal 分布** | | | | | | | | | | | | | | | | ✅ | ✅ | | | | | |
+| **Categorical 分布** | | | | | | | | | | | | | | | ✅ | | ✅ | | | | | |
+| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | | | ✅ | | | | | |
+| **Evolution API** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **自动架构搜索** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Lamarckian 权重继承** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **序列演化（记忆单元）** | | | | | | | | | | | | | | | | | | | | | ✅ | ✅ |
+| **模型保存/加载** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 > 📌 = 可替换使用。`MaeLoss`（平均绝对误差）与 `MseLoss`（均方误差）的区别：
 > - `MseLoss`：对大误差敏感，适合干净数据
@@ -459,17 +469,16 @@ cargo build --features blas-openblas
 
 ## TODO
 
-> 按优先级排序（最重要的在最前面）
+> 按优先级排序
 
-### 🔴 核心功能
+### 🔴 演化模块持续完善
 
-- 演化模块完善（详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)）
-  - ✅ MVP 已完成：层级变异 + 收敛检测 + Lamarckian 权重继承 + skip connection + 超参数演化
-  - ✅ 模型序列化 / 反序列化（save/load .otm 格式）
-  - ✅ 序列数据支持：RNN/LSTM/GRU 记忆单元自动演化（固定长度 + 变长序列）
-  - 种群级演化（speciation + crossover）
-  - 演化与 DataLoader / metrics 模块深度集成
-  - RL 任务对接
+> 已完成：MVP → NodeLevel 统一内核（Phase 1-10）→ Pareto/NSGA-II 多目标搜索 → ONNX 桥接 → Spatial / Sequential / Flat 三域演化 → FM 粒度 EXACT 级演化 → Net2Net 函数保持性变异 → ASHA 多保真评估。详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)。
+
+- 阶段 D：新算子多样性扩展（Deformable Conv、Attention 算子集等）
+- 阶段 E：搜索效率优化（权重共享、Surrogate 模型、分布式演化等）
+- MNIST 演化示例性能优化（当前运行较慢）
+- RL 任务对接（演化 + 强化学习联合搜索）
 
 ### ⚫ 实战验证
 
@@ -506,10 +515,13 @@ cargo build --features blas-openblas
 - [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md) - 统一的图描述层（IR）设计，支持模型保存/加载（JSON+bin）、Graphviz 可视化、Keras 风格 summary 输出
 - [计算图可视化指南](.doc/design/visualization_guide.md) - 可视化 API 使用指南、节点/边样式说明、循环层时间步标注、最佳实践
 - [记忆/循环机制设计](.doc/design/memory_mechanism_design.md) - NEAT 风格循环与传统 RNN 循环的关系、Hybrid 设计方案、BPTT/TBPTT 训练策略、实现路径及相关论文
-- [神经架构演化设计](.doc/design/neural_architecture_evolution_design.md) - **核心特色**：NEAT 风格拓扑变异 + 梯度训练的混合策略，包括变异操作、收敛判定、Lamarckian 权重继承
+- [神经架构演化设计](.doc/design/neural_architecture_evolution_design.md) - **核心特色**：NEAT 风格拓扑变异 + 梯度训练的混合策略，NodeLevel 统一内核、Pareto/NSGA-II、FM 粒度演化、Net2Net、ASHA
+- [节点与层边界设计](.doc/design/node_vs_layer_design.md) - Node 和 Layer 的职责划分、新增算子的分层决策
+- [Input 节点语义设计](.doc/design/input_node_semantics_design.md) - Input 节点的三种变体（Data / Target / Smart）及其语义
+- [API 分层与种子管理设计](.doc/design/api_layering_and_seed_design.md) - Graph seed 传播机制、Layer seed 确定性保证、演化系统 seed 管理
+- [优化器架构设计](.doc/design/optimizer_architecture_design.md) - SGD / Adam 优化器的内部实现和 API 设计
 - [概率分布模块设计](.doc/design/distributions_design.md) - Categorical / Normal / TanhNormal 三种分布的 API 设计原则（Var vs Tensor、构造时缓存、梯度追踪策略）
-- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 模块当前状态、设计决策、已知差距（Step 死代码、示例重复等）、SAC 统一公式技巧、未来方向
-- [未来功能规划](.doc/design/future_enhancements.md) - 多输入/多输出扩展、过程宏简化等未来功能的设计规划
+- [强化学习路线图](.doc/design/rl_roadmap.md) - RL 模块当前状态、设计决策、SAC 统一公式技巧、未来方向
 - [MatrixSlow 项目识别文档](.doc/reference/python_MatrixSlow_pid.md) - 基于 MatrixSlow 的 Python 深度学习框架分析，包含计算图、自动求导、静态图执行等核心概念的详细说明
 
 ## 参考资料
