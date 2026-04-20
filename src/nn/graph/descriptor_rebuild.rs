@@ -171,6 +171,24 @@ fn get_parent_var(
     })
 }
 
+/// 确保循环单元输入 Var 有占位值，供 `validate_input` 推断 seq_len。
+///
+/// 处理三种情况：
+/// 1. 若输入 Var 已有值（如前一层已 set_value），直接返回。
+/// 2. 否则尝试调用 `forward()`，让前驱节点链（如 Stack）计算出值。
+/// 3. 若 forward 失败（典型为纯 Input 节点），回退到 `set_value(zeros)`。
+fn ensure_recurrent_input_value(input_var: &Var, shape: &[usize]) -> Result<(), GraphError> {
+    if let Ok(Some(_)) = input_var.value() {
+        return Ok(());
+    }
+    if input_var.forward().is_ok() {
+        if let Ok(Some(_)) = input_var.value() {
+            return Ok(());
+        }
+    }
+    input_var.set_value(&Tensor::zeros(shape))
+}
+
 /// 根据节点描述重建单个节点
 fn rebuild_node(
     graph: &Graph,
@@ -252,7 +270,11 @@ fn rebuild_node(
         }
 
         // ==================== 卷积/池化 ====================
-        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
+        NodeTypeDescriptor::Conv2d {
+            stride,
+            padding,
+            dilation,
+        } => {
             let parents = get_all_parents(node_desc, node_map)?;
             let node = graph
                 .inner_mut()
@@ -260,11 +282,19 @@ fn rebuild_node(
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
-        NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
+        NodeTypeDescriptor::ConvTranspose2d {
+            stride,
+            padding,
+            output_padding,
+        } => {
             let parents = get_all_parents(node_desc, node_map)?;
-            let node = graph
-                .inner_mut()
-                .create_conv_transpose2d_node(parents, *stride, *padding, *output_padding, name)?;
+            let node = graph.inner_mut().create_conv_transpose2d_node(
+                parents,
+                *stride,
+                *padding,
+                *output_padding,
+                name,
+            )?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -642,7 +672,9 @@ fn rebuild_node(
         NodeTypeDescriptor::Dropout { p } => {
             let input = get_parent(node_desc, node_map, 0)?;
             let seed = graph.inner_mut().next_seed();
-            let node = graph.inner_mut().create_dropout_node(input, *p, seed, name)?;
+            let node = graph
+                .inner_mut()
+                .create_dropout_node(input, *p, seed, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
@@ -760,8 +792,9 @@ fn rebuild_node(
         } => {
             let effective_seq = (*seq_len).max(1);
             let input_var = get_parent_var(node_desc, node_map, 0, "input")?;
-            // validate_input 需要读取值来确定 seq_len，设置构图占位零值
-            input_var.set_value(&Tensor::zeros(&[1, effective_seq, *input_size]))?;
+            // validate_input 需要读取值来确定 seq_len；对 Input 节点直接 set_value 零值占位，
+            // 对派生节点（如前一层 RNN 的 Stack 输出）走 forward 以得到真实形状。
+            ensure_recurrent_input_value(&input_var, &[1, effective_seq, *input_size])?;
             let w_ih = get_parent_var(node_desc, node_map, 1, "w_ih")?;
             let w_hh = get_parent_var(node_desc, node_map, 2, "w_hh")?;
             let b_h = get_parent_var(node_desc, node_map, 3, "b_h")?;
@@ -781,7 +814,7 @@ fn rebuild_node(
         } => {
             let effective_seq = (*seq_len).max(1);
             let input_var = get_parent_var(node_desc, node_map, 0, "input")?;
-            input_var.set_value(&Tensor::zeros(&[1, effective_seq, *input_size]))?;
+            ensure_recurrent_input_value(&input_var, &[1, effective_seq, *input_size])?;
             let w_ii = get_parent_var(node_desc, node_map, 1, "w_ii")?;
             let w_hi = get_parent_var(node_desc, node_map, 2, "w_hi")?;
             let b_i = get_parent_var(node_desc, node_map, 3, "b_i")?;
@@ -825,7 +858,7 @@ fn rebuild_node(
         } => {
             let effective_seq = (*seq_len).max(1);
             let input_var = get_parent_var(node_desc, node_map, 0, "input")?;
-            input_var.set_value(&Tensor::zeros(&[1, effective_seq, *input_size]))?;
+            ensure_recurrent_input_value(&input_var, &[1, effective_seq, *input_size])?;
             let w_ir = get_parent_var(node_desc, node_map, 1, "w_ir")?;
             let w_hr = get_parent_var(node_desc, node_map, 2, "w_hr")?;
             let b_r = get_parent_var(node_desc, node_map, 3, "b_r")?;

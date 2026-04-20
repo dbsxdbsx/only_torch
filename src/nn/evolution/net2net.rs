@@ -256,14 +256,17 @@ pub(crate) fn apply_widen_to_snapshots(
                 if !matches!(&block.kind, NodeBlockKind::Conv2d { .. }) {
                     return Ok(false);
                 }
+                // 注意：`resize_*_out` 已调用 `repair_param_input_dims`，Flatten
+                // 节点的 output_shape 已按 **new_size** 更新，因此 stride = c_h_w / new_size。
+                // 同时 Linear W 快照仍是旧 shape，expected_rows = old_size * stride。
                 let flat = genome
                     .nodes()
                     .iter()
                     .find(|n| n.innovation_number == down.output_id)
                     .and_then(|n| n.output_shape.get(1).copied());
                 match flat {
-                    Some(c_h_w) if c_h_w % old_size == 0 => {
-                        flatten_stride = Some(c_h_w / old_size);
+                    Some(c_h_w) if c_h_w % new_size == 0 => {
+                        flatten_stride = Some(c_h_w / new_size);
                     }
                     _ => return Ok(false),
                 }

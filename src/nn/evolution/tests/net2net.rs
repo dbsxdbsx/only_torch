@@ -10,12 +10,15 @@
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
+use crate::nn::evolution::builder::InheritReport;
 use crate::nn::evolution::gene::*;
 use crate::nn::evolution::net2net::{
     apply_widen_to_snapshots, counts_of, gather_along_axis, gather_along_axis_scaled,
     gather_linear_in_with_flatten, widening_mapping,
 };
-use crate::nn::evolution::node_ops::{node_main_path, resize_linear_out, NodeBlockKind};
+use crate::nn::evolution::node_ops::{
+    NodeBlockKind, node_main_path, resize_conv2d_out, resize_linear_out, resize_recurrent_out,
+};
 use crate::tensor::Tensor;
 
 fn seeded_rng() -> StdRng {
@@ -343,9 +346,7 @@ fn test_net2net_rnn_widen_end_to_end_function_preserving() {
     let build1 = genome.build(&mut rng).expect("build1 失败");
 
     let x = Tensor::new(
-        &[
-            0.1, -0.2, 0.3, -0.4, 0.5, -0.1, 0.2, -0.3, 0.4, -0.5,
-        ],
+        &[0.1, -0.2, 0.3, -0.4, 0.5, -0.1, 0.2, -0.3, 0.4, -0.5],
         &[1, 5, 2],
     );
     let y_old = forward_value(&build1, &x);
@@ -374,7 +375,11 @@ fn test_net2net_rnn_widen_end_to_end_function_preserving() {
     // 重建 + 恢复
     let build2 = genome.build(&mut rng).expect("build2 失败");
     let report = genome.restore_weights(&build2).expect("restore 失败");
-    assert_eq!(report.reinitialized, 0, "不应有参数被重新初始化，实际 {:?}", report);
+    assert_eq!(
+        report.reinitialized, 0,
+        "不应有参数被重新初始化，实际 {:?}",
+        report
+    );
     assert_eq!(
         report.partially_inherited, 0,
         "不应走部分继承路径，实际 {:?}",
@@ -389,10 +394,7 @@ fn test_net2net_rnn_widen_end_to_end_function_preserving() {
         .zip(y_new.to_vec().iter())
         .map(|(a, b)| (a - b).abs())
         .fold(0.0, f32::max);
-    assert!(
-        diff < 1e-4,
-        "RNN widen 端到端非函数保持: max |Δ| = {diff}"
-    );
+    assert!(diff < 1e-4, "RNN widen 端到端非函数保持: max |Δ| = {diff}");
 }
 
 #[test]
@@ -423,5 +425,339 @@ fn test_net2net_widen_mapping_identity_when_new_eq_old() {
         let a = snap_after.get(k).expect("应存在");
         assert_eq!(a.shape(), v.shape());
         assert_eq!(a.to_vec(), v.to_vec());
+    }
+}
+
+// ==================== 通用端到端工具 ====================
+
+fn max_abs_diff_vec(a: &Tensor, b: &Tensor) -> f32 {
+    a.to_vec()
+        .iter()
+        .zip(b.to_vec().iter())
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0_f32, f32::max)
+}
+
+fn assert_function_preserving(y_old: &Tensor, y_new: &Tensor, ctx: &str) {
+    assert_eq!(y_new.shape(), y_old.shape(), "{ctx}: 输出形状应保持一致");
+    let diff = max_abs_diff_vec(y_old, y_new);
+    assert!(diff < 1e-4, "{ctx}: Net2Net 非函数保持, max |Δ| = {diff}");
+}
+
+fn assert_no_reinit(report: &InheritReport, ctx: &str) {
+    assert_eq!(
+        report.reinitialized, 0,
+        "{ctx}: 不应有参数被重新初始化，实际 {:?}",
+        report
+    );
+    assert_eq!(
+        report.partially_inherited, 0,
+        "{ctx}: 不应走部分继承路径，实际 {:?}",
+        report
+    );
+}
+
+// ==================== LSTM / GRU / RNN 端到端端到端测试 ====================
+
+/// 把 minimal_sequential 基础上的 Rnn 切成指定 cell kind，并设定 seq_len
+fn sequential_nodegenome_with_cell(cell: LayerConfig, seq_len: usize) -> NetworkGenome {
+    let mut g = NetworkGenome::minimal_sequential(2, 1);
+    g.layers_mut()[0].layer_config = cell;
+    g.seq_len = Some(seq_len);
+    g.migrate_to_node_level().expect("迁移 NodeLevel 失败");
+    g
+}
+
+fn run_recurrent_widen_preserving(cell: LayerConfig, ctx: &str) {
+    let mut genome = sequential_nodegenome_with_cell(cell, 4);
+    let mut rng = StdRng::seed_from_u64(11);
+    let build1 = genome.build(&mut rng).expect("build1 失败");
+
+    // batch=1, seq=4, d_in=2
+    let x = Tensor::new(
+        &[0.10, -0.20, 0.30, -0.40, 0.05, 0.15, -0.25, 0.35],
+        &[1, 4, 2],
+    );
+    let y_old = forward_value(&build1, &x);
+    genome.capture_weights(&build1).expect("capture 失败");
+
+    let blocks = node_main_path(&genome);
+    let cell_block = blocks
+        .iter()
+        .find(|b| b.kind.is_recurrent())
+        .cloned()
+        .expect("应有循环块");
+    let old_h = cell_block.kind.current_size().unwrap();
+    let new_h = old_h + 3;
+
+    resize_recurrent_out(&mut genome, &cell_block, new_h).expect("resize 失败");
+
+    let applied = apply_widen_to_snapshots(&mut genome, &cell_block, old_h, new_h, &mut rng)
+        .expect("net2net 内部错误");
+    assert!(applied, "{ctx}: Net2Net 应成功应用");
+
+    let build2 = genome.build(&mut rng).expect("build2 失败");
+    let report = genome.restore_weights(&build2).expect("restore 失败");
+    assert_no_reinit(&report, ctx);
+
+    let y_new = forward_value(&build2, &x);
+    assert_function_preserving(&y_old, &y_new, ctx);
+}
+
+#[test]
+fn test_net2net_lstm_widen_end_to_end_function_preserving() {
+    run_recurrent_widen_preserving(LayerConfig::Lstm { hidden_size: 4 }, "LSTM hidden widen");
+}
+
+#[test]
+fn test_net2net_gru_widen_end_to_end_function_preserving() {
+    run_recurrent_widen_preserving(LayerConfig::Gru { hidden_size: 4 }, "GRU hidden widen");
+}
+
+// ==================== Conv2d owner 端到端 ====================
+
+#[test]
+fn test_net2net_conv2d_widen_end_to_end_function_preserving() {
+    // Input(1ch, 4x4) → Conv2d(8, k=3) → Pool2d(Max,2,2) → Flatten → Linear(1)
+    let mut genome = NetworkGenome::minimal_spatial(1, 1, (4, 4));
+    genome.migrate_to_node_level().expect("迁移失败");
+    let mut rng = StdRng::seed_from_u64(17);
+    let build1 = genome.build(&mut rng).expect("build1 失败");
+
+    // 输入形状 [1, 1, 4, 4]
+    let data: Vec<f32> = (0..16).map(|i| (i as f32) * 0.13 - 1.0).collect();
+    let x = Tensor::new(&data, &[1, 1, 4, 4]);
+    let y_old = forward_value(&build1, &x);
+
+    genome.capture_weights(&build1).expect("capture 失败");
+
+    let blocks_before = node_main_path(&genome);
+    let conv_block = blocks_before
+        .iter()
+        .find(|b| matches!(&b.kind, NodeBlockKind::Conv2d { .. }))
+        .cloned()
+        .expect("应有 Conv2d 块");
+    let old_ch = conv_block.kind.current_size().unwrap();
+    let new_ch = old_ch + 4;
+
+    resize_conv2d_out(&mut genome, &conv_block, new_ch).expect("resize 失败");
+
+    let applied = apply_widen_to_snapshots(&mut genome, &conv_block, old_ch, new_ch, &mut rng)
+        .expect("net2net 内部错误");
+    assert!(applied, "Conv2d widen Net2Net 应成功应用");
+
+    let build2 = genome.build(&mut rng).expect("build2 失败");
+    let report = genome.restore_weights(&build2).expect("restore 失败");
+    assert_no_reinit(&report, "Conv2d widen");
+
+    let y_new = forward_value(&build2, &x);
+    assert_function_preserving(&y_old, &y_new, "Conv2d widen");
+}
+
+// ==================== 堆叠循环层（return_sequences=true）====================
+
+/// 构造 NodeLevel 基因组：Input(d_in, seq) → A(hidden=h1, return_seq=true)
+/// → B(hidden=h2, return_seq=false) → Linear(d_out)
+fn stacked_recurrent_genome(
+    first_cell: LayerConfig,
+    second_cell: LayerConfig,
+    seq_len: usize,
+) -> NetworkGenome {
+    let mut g = NetworkGenome::minimal_sequential(2, 1);
+    g.layers_mut()[0].layer_config = first_cell;
+    g.seq_len = Some(seq_len);
+
+    let inn = g.next_innovation_number();
+    g.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: inn,
+            layer_config: second_cell,
+            enabled: true,
+        },
+    );
+    g.migrate_to_node_level().expect("迁移 NodeLevel 失败");
+    g
+}
+
+fn run_stacked_widen_preserving(first_cell: LayerConfig, second_cell: LayerConfig, ctx: &str) {
+    let mut genome = stacked_recurrent_genome(first_cell, second_cell, 3);
+    let mut rng = StdRng::seed_from_u64(23);
+    let build1 = genome.build(&mut rng).expect("build1 失败");
+
+    // [1, 3, 2]
+    let x = Tensor::new(&[0.1, 0.2, -0.3, 0.4, 0.5, -0.6], &[1, 3, 2]);
+    let y_old = forward_value(&build1, &x);
+    genome.capture_weights(&build1).expect("capture 失败");
+
+    // 找**第一个**循环块（owner，被扩宽的那个，其输出会喂给下一个循环块）
+    let blocks = node_main_path(&genome);
+    let recurrent_blocks: Vec<_> = blocks
+        .iter()
+        .filter(|b| b.kind.is_recurrent())
+        .cloned()
+        .collect();
+    assert!(recurrent_blocks.len() >= 2, "{ctx}: 应至少包含两个循环块");
+    let owner_block = recurrent_blocks.into_iter().next().unwrap();
+    let old_h = owner_block.kind.current_size().unwrap();
+    let new_h = old_h + 3;
+
+    resize_recurrent_out(&mut genome, &owner_block, new_h).expect("resize 失败");
+
+    let applied = apply_widen_to_snapshots(&mut genome, &owner_block, old_h, new_h, &mut rng)
+        .expect("net2net 内部错误");
+    assert!(
+        applied,
+        "{ctx}: Net2Net 应成功应用于堆叠循环 owner（消费者是下一个循环块）"
+    );
+
+    let build2 = genome.build(&mut rng).expect("build2 失败");
+    let report = genome.restore_weights(&build2).expect("restore 失败");
+    assert_no_reinit(&report, ctx);
+
+    let y_new = forward_value(&build2, &x);
+    assert_function_preserving(&y_old, &y_new, ctx);
+}
+
+#[test]
+fn test_net2net_stacked_rnn_to_rnn_widen_preserving() {
+    run_stacked_widen_preserving(
+        LayerConfig::Rnn { hidden_size: 4 },
+        LayerConfig::Rnn { hidden_size: 3 },
+        "Rnn→Rnn widen",
+    );
+}
+
+#[test]
+fn test_net2net_stacked_rnn_to_lstm_widen_preserving() {
+    run_stacked_widen_preserving(
+        LayerConfig::Rnn { hidden_size: 4 },
+        LayerConfig::Lstm { hidden_size: 3 },
+        "Rnn→Lstm widen",
+    );
+}
+
+#[test]
+fn test_net2net_stacked_lstm_to_lstm_widen_preserving() {
+    run_stacked_widen_preserving(
+        LayerConfig::Lstm { hidden_size: 4 },
+        LayerConfig::Lstm { hidden_size: 3 },
+        "Lstm→Lstm widen",
+    );
+}
+
+#[test]
+fn test_net2net_stacked_gru_to_gru_widen_preserving() {
+    run_stacked_widen_preserving(
+        LayerConfig::Gru { hidden_size: 4 },
+        LayerConfig::Gru { hidden_size: 3 },
+        "Gru→Gru widen",
+    );
+}
+
+#[test]
+fn test_net2net_stacked_lstm_to_gru_widen_preserving() {
+    run_stacked_widen_preserving(
+        LayerConfig::Lstm { hidden_size: 4 },
+        LayerConfig::Gru { hidden_size: 3 },
+        "Lstm→Gru widen",
+    );
+}
+
+// ==================== SkipAgg 降级路径 ====================
+
+/// 构造含 Flat 域 skip edge（Concat 聚合）的 NodeLevel 基因组
+/// Input(2) → Linear(h) → Activation(Tanh) → Linear(1)；skip Linear(h) → Linear(1)
+///
+/// 我们对中间 Linear(h) 块做 widen；由于其下游路径包含 SkipAgg，Net2Net 应拒绝
+/// 并返回 false（不污染快照），restore 走朴素回退（可能 partial_inherit）。
+fn skip_linear_genome(hidden: usize) -> NetworkGenome {
+    let mut g = NetworkGenome::minimal(2, 1);
+
+    let inn_hidden = g.next_innovation_number();
+    g.layers_mut().insert(
+        0,
+        LayerGene {
+            innovation_number: inn_hidden,
+            layer_config: LayerConfig::Linear {
+                out_features: hidden,
+            },
+            enabled: true,
+        },
+    );
+
+    let inn_act = g.next_innovation_number();
+    g.layers_mut().insert(
+        1,
+        LayerGene {
+            innovation_number: inn_act,
+            layer_config: LayerConfig::Activation {
+                activation_type: ActivationType::Tanh,
+            },
+            enabled: true,
+        },
+    );
+
+    // Input(dim=2) → 输出头(1) Concat skip；main path 在输出头前 dim=hidden，
+    // skip 接入目标为输出头 layer，Concat 会在其前聚合（需要 dim 一致性才能 Add/Mean/Max，
+    // 这里用 Concat 不要求 dim 相等）。
+    let head_inn = g.layers().last().unwrap().innovation_number;
+    let se_inn = g.next_innovation_number();
+    g.skip_edges_mut().push(SkipEdge {
+        innovation_number: se_inn,
+        from_innovation: INPUT_INNOVATION,
+        to_innovation: head_inn,
+        strategy: AggregateStrategy::Concat { dim: 1 },
+        enabled: true,
+    });
+
+    g.migrate_to_node_level().expect("迁移 NodeLevel 失败");
+    g
+}
+
+#[test]
+fn test_net2net_skip_agg_graceful_fallback() {
+    let mut genome = skip_linear_genome(4);
+    let mut rng = StdRng::seed_from_u64(91);
+    let build1 = genome.build(&mut rng).expect("build1 失败");
+    genome.capture_weights(&build1).expect("capture 失败");
+
+    // 快照备份
+    let snap_before = genome.node_weight_snapshots().clone();
+
+    let blocks = node_main_path(&genome);
+    let hidden_block = blocks
+        .iter()
+        .find(|b| matches!(&b.kind, NodeBlockKind::Linear { out_features: 4 }))
+        .cloned()
+        .expect("应找到 Linear(4) 块");
+
+    // resize 先行（模拟 mutation 流程）
+    resize_linear_out(&mut genome, &hidden_block, 7).expect("resize 失败");
+
+    // Net2Net 应拒绝应用（返回 false），因为下游路径含 SkipAgg
+    let applied = apply_widen_to_snapshots(&mut genome, &hidden_block, 4, 7, &mut rng)
+        .expect("net2net 内部错误");
+    assert!(!applied, "含 SkipAgg 的下游路径应放弃 Net2Net，返回 false");
+
+    // 关键：快照不应被污染（之前备份的 snap 键值全部保持一致）
+    let snap_after = genome.node_weight_snapshots();
+    for (k, v) in &snap_before {
+        let a = snap_after.get(k).unwrap_or_else(|| {
+            panic!(
+                "key {k} 应在 fallback 后仍存在，当前 snap keys: {:?}",
+                snap_after.keys().collect::<Vec<_>>()
+            )
+        });
+        assert_eq!(a.shape(), v.shape(), "快照 shape 被污染: key={k}");
+        assert_eq!(a.to_vec(), v.to_vec(), "快照值被污染: key={k}");
+    }
+
+    // 重建 + 朴素回退恢复权重：build 能否成功取决于 repair_param_input_dims
+    // 在 SkipAgg(Concat) 下游的修复能力，这与 Net2Net 无关。本测试的核心契约是：
+    // applied=false 且 快照未被污染。build 本身的成败不在 F1 Net2Net 的验证范围内，
+    // 仅做 best-effort 调用；失败也不视为 Net2Net 的回归。
+    if let Ok(build2) = genome.build(&mut rng) {
+        let _ = genome.restore_weights(&build2);
     }
 }
