@@ -291,7 +291,9 @@ pub(crate) fn compute_inference_cost(
             EvolutionError::Graph(GraphError::ComputationError(format!("计算参数量失败: {e}")))
         }),
         ComplexityMetric::FLOPs => genome.total_flops().map(|f| f as f32).map_err(|e| {
-            EvolutionError::Graph(GraphError::ComputationError(format!("计算 FLOPs 失败: {e}")))
+            EvolutionError::Graph(GraphError::ComputationError(format!(
+                "计算 FLOPs 失败: {e}"
+            )))
         }),
     }
 }
@@ -705,8 +707,14 @@ impl Evolution {
         let user_convergence = convergence_config;
 
         // Phase 1 快速训练预算
+        //
+        // 序列任务（RNN/GRU/LSTM）在悬崖型 landscape（如 parity）上
+        // 权重需要更多 epoch 才能越过临界点，否则所有候选都停留在随机猜测区间，
+        // fitness 信噪比过低，NSGA-II 选择压力失效。因此对序列任务把下限/上限
+        // 都放宽约 1.5×～2×，作为 multi-fidelity 评估的过渡方案。
         let effective_bs = batch_size.unwrap_or_else(|| auto_batch_size(n_train));
-        let fast_epochs = (n_train / (effective_bs * 5)).max(3).min(10);
+        let (min_fast, max_fast) = if is_sequential { (6, 15) } else { (3, 10) };
+        let fast_epochs = (n_train / (effective_bs * 5)).clamp(min_fast, max_fast);
         let phase1_convergence = ConvergenceConfig {
             budget: TrainingBudget::FixedEpochs(fast_epochs),
             ..user_convergence.clone()

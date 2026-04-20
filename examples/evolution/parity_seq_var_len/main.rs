@@ -23,7 +23,8 @@ use std::hash::{Hash, Hasher};
 
 /// 生成变长奇偶性检测数据
 ///
-/// 每个样本 seq_len ∈ [min_len, max_len]，形状 [seq_len_i, 1]
+/// 每个样本 seq_len ∈ [min_len, max_len]，形状 [seq_len_i, 1]。
+/// 标签: [2] one-hot（偶数=[1,0]，奇数=[0,1]），与固定长度版本保持一致。
 fn generate_var_len_parity_data(
     n: usize,
     min_len: usize,
@@ -48,10 +49,12 @@ fn generate_var_len_parity_data(
             .map(|j| ((hash2 >> (j % 64)) & 1) as f32)
             .collect();
         let ones_count: f32 = data.iter().sum();
-        let parity = (ones_count as usize % 2) as f32;
+        let parity = ones_count as usize % 2;
+
+        let one_hot = if parity == 0 { [1.0, 0.0] } else { [0.0, 1.0] };
 
         inputs.push(Tensor::new(&data, &[seq_len, 1]));
-        labels.push(Tensor::new(&[parity], &[1]));
+        labels.push(Tensor::new(&one_hot, &[2]));
     }
 
     (inputs, labels)
@@ -78,7 +81,8 @@ fn main() {
     println!("最终架构: {}", result.architecture());
 
     // 可视化演化后的计算图
-    let vis = result.visualize("examples/evolution/parity_seq_var_len/evolution_parity_seq_var_len")
+    let vis = result
+        .visualize("examples/evolution/parity_seq_var_len/evolution_parity_seq_var_len")
         .expect("可视化失败");
     println!("\n计算图已保存: {}", vis.dot_path.display());
     if let Some(img) = &vis.image_path {

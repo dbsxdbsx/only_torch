@@ -962,19 +962,52 @@ DeformableConv2d { stride: (usize, usize), padding: (usize, usize), deformable_g
 **优先级建议**：
 
 ```
-阶段 C（已完成）   →  阶段 D（按需）     →  阶段 E（长期）
-EXACT 级 FM 演化       新算子多样性扩展         搜索效率优化
-├─ ConvTranspose2d     ├─ Deformable Conv     ├─ 权重共享加速
-├─ Dilation            ├─ Attention 算子集     ├─ Surrogate 模型
-├─ FM 分解             ├─ Segmentation 任务    ├─ 分布式演化
-├─ 10 种变异           └─ Dynamic Conv        └─ DARTS 混合搜索
+阶段 C（已完成）   →  阶段 F（中期·推荐）→  阶段 D（按需）     →  阶段 E（长期）
+EXACT 级 FM 演化       信号与预算修复           新算子多样性扩展         搜索效率优化
+├─ ConvTranspose2d     ├─ Net2Net 变异         ├─ Deformable Conv     ├─ 权重共享加速
+├─ Dilation            ├─ Learning-speed       ├─ Attention 算子集     ├─ Surrogate 模型
+├─ FM 分解             │  fitness proxy        ├─ Segmentation 任务    ├─ 分布式演化
+├─ 10 种变异           └─ ASHA / 多保真评估    └─ Dynamic Conv        └─ DARTS 混合搜索
 └─ Builder 优化
 
-必须先做              按需添加                长期方向
-（完成空间域基础设施）    （扩展算子多样性）        （扩展搜索效率）
+必须先做              优先做                   按需添加                长期方向
+（完成空间域基础设施）    （解决内在流程缺陷）      （扩展算子多样性）        （扩展搜索效率）
 ```
 
-> **说明**：阶段 C 是基础设施——建立 FM 级别表示和变异框架。阶段 D 的所有新算子都是"插件"，通过 `MutationRegistry` 和 `NodeTypeDescriptor` 自然接入。没有 Phase C 的 FM 框架，即使添加了 Deformable Conv 节点也无法在 feature map 粒度演化。阶段 E 的效率优化不影响搜索能力，可在任何时间点独立引入。
+> **说明**：阶段 C 是基础设施——建立 FM 级别表示和变异框架。阶段 F（下文详述）修复当前演化流程的**内在缺陷**（破坏性变异 + 弱选择信号），是优先级最高的中期工作。阶段 D 的所有新算子都是"插件"，通过 `MutationRegistry` 和 `NodeTypeDescriptor` 自然接入。阶段 E 的效率优化不影响搜索能力，可在任何时间点独立引入。
+
+#### 阶段 F（中期·推荐）：流程修复——function-preserving 变异 + 多保真评估
+
+阶段 F 不引入新算子、不改变搜索空间，而是修复演化**评估与继承**两条链路的内在缺陷。动机来自 parity-8 序列演化实验：传统 `Rnn(16)+150 epoch` 可以稳定到达 95%+，但演化版本卡在 50–60% 随机猜测区间。根因不是算力不足，而是：
+
+1. **破坏性变异**：`GrowHiddenSize` 把新增维度初始化为随机值，父代已学到的权重被部分重置，Lamarckian 继承失效。
+2. **悬崖型 fitness landscape**：parity 类任务在越过临界点前 accuracy ≈ 随机猜，Phase 1 的 3–10 epoch 快速评估看到的全是噪声，NSGA-II 选择压力失效。
+3. **均匀低预算评估**：所有候选获得同等小预算，头部候选没机会拿到"越过悬崖"所需的训练量。
+
+| 方向 | 难度 | 适用域 | 说明 |
+|------|------|--------|------|
+| **Net2Net function-preserving 变异** | 中 | Flat / Sequential / Spatial 三域通用 | 参考 Chen et al. 2016 (ICLR)。`GrowHiddenSize` 用 Net2WiderNet（新增维度复制已有列 + 小扰动），`InsertLayer` 用 Net2DeeperNet（identity init），`AddFMEdge` 用 0-init。变异前后前向输出保持一致，反向开始才分化，使 Lamarckian 继承真正生效。Spatial 域受益最大（Conv 通道重初始化成本远高于 Linear） |
+| **Learning-speed fitness proxy** | 低 | 悬崖型任务（序列 / RL）优先 | 在 `FitnessScore` 增加可选 `primary_proxy` 选项，任务可声明"请用前 N 步的 loss 下降斜率作为主指标"，而非终点 accuracy。可选代理：`loss_slope`、`-final_loss`、梯度信号范数。解决悬崖 plateau 上 accuracy 无差别的问题 |
+| **ASHA / 多保真评估** | 中 | 三域通用，对长训练任务收益最大 | 参考 Li et al. 2020。把 Phase 1 从"均匀 FixedEpochs"改为阶梯式 successive halving：level 0 所有候选 1 epoch，淘汰 50%；level 1 存活者 2 epoch，再淘汰 50%；……头部候选累积获得 ≥10× 当前训练量，总预算不变但选择压力集中在有潜力的候选 |
+| **Task-aware minimal genome** | 低 | 序列域优先 | `minimal_sequential` 当前 hidden = output_dim，对 parity 类问题状态容量不足。提升为 `max(4, output_dim)` 或按 seq_len 缩放。本条已作为短期改动先行落地 |
+
+**接入模式**（以 Net2Net `GrowHiddenSize` 为例）：
+
+```rust
+// 1. 在 GrowHiddenSize 应用时传递 Lamarckian 权重快照
+// 2. 新增维度 k：W_new[:, k] = W_existing[:, rand_col] + eps * noise
+// 3. 下游消费者（下一层 W_ih[k, :]）做对应列分裂以保持前向 identity
+// 4. 对 RNN/GRU/LSTM 的 W_hh 做 block-wise identity extension
+```
+
+**优先级排序**（按 ROI）：
+
+1. Net2Net `GrowHiddenSize`（为所有带维度扩展的变异解锁 Lamarckian 继承）
+2. Learning-speed proxy（让悬崖型任务立即拿到可用选择信号）
+3. ASHA 多保真评估（系统性提升头部候选的训练预算）
+4. 其余 Net2Net 变体按需补齐
+
+阶段 F 完成后，再评估是否需要阶段 E 的权重共享/surrogate——届时 fitness 信号已足够可靠，surrogate 才有可训练数据。
 
 ---
 

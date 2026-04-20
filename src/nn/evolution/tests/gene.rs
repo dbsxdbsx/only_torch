@@ -27,7 +27,8 @@ fn test_minimal_creates_correct_genome() {
 fn test_minimal_output_dim_matches() {
     for out in [1, 3, 10] {
         let genome = NetworkGenome::minimal(4, out);
-        if let LayerConfig::Linear { out_features } = &genome.layers().last().unwrap().layer_config {
+        if let LayerConfig::Linear { out_features } = &genome.layers().last().unwrap().layer_config
+        {
             assert_eq!(*out_features, out);
         } else {
             panic!("输出头必须是 Linear");
@@ -1282,10 +1283,10 @@ fn test_minimal_sequential_genome() {
     assert_eq!(genome.layers().len(), 2);
     assert_eq!(genome.generated_by, "minimal_sequential");
 
-    // 第一层是 Rnn
+    // 第一层是 Rnn，hidden_size = max(4, output_dim)
     assert_eq!(
         genome.layers()[0].layer_config,
-        LayerConfig::Rnn { hidden_size: 2 }
+        LayerConfig::Rnn { hidden_size: 4 }
     );
     // 第二层（输出头）是 Linear
     assert_eq!(
@@ -1598,11 +1599,18 @@ fn test_minimal_spatial_creates_correct_genome() {
 
     assert!(matches!(
         genome.layers()[0].layer_config,
-        LayerConfig::Conv2d { out_channels: 8, kernel_size: 3 }
+        LayerConfig::Conv2d {
+            out_channels: 8,
+            kernel_size: 3
+        }
     ));
     assert!(matches!(
         genome.layers()[1].layer_config,
-        LayerConfig::Pool2d { pool_type: PoolType::Max, kernel_size: 2, stride: 2 }
+        LayerConfig::Pool2d {
+            pool_type: PoolType::Max,
+            kernel_size: 2,
+            stride: 2
+        }
     ));
     assert!(matches!(
         genome.layers()[2].layer_config,
@@ -1895,10 +1903,22 @@ fn test_domain_map_spatial_genome() {
     let map = genome.compute_domain_map();
 
     assert_eq!(map[&INPUT_INNOVATION], ShapeDomain::Spatial);
-    assert_eq!(map[&genome.layers()[0].innovation_number], ShapeDomain::Spatial);
-    assert_eq!(map[&genome.layers()[1].innovation_number], ShapeDomain::Spatial);
-    assert_eq!(map[&genome.layers()[2].innovation_number], ShapeDomain::Flat); // Flatten
-    assert_eq!(map[&genome.layers()[3].innovation_number], ShapeDomain::Flat); // Linear
+    assert_eq!(
+        map[&genome.layers()[0].innovation_number],
+        ShapeDomain::Spatial
+    );
+    assert_eq!(
+        map[&genome.layers()[1].innovation_number],
+        ShapeDomain::Spatial
+    );
+    assert_eq!(
+        map[&genome.layers()[2].innovation_number],
+        ShapeDomain::Flat
+    ); // Flatten
+    assert_eq!(
+        map[&genome.layers()[3].innovation_number],
+        ShapeDomain::Flat
+    ); // Linear
 }
 
 #[test]
@@ -2210,5 +2230,8 @@ fn test_no_recurrent_edges_analysis() {
     g.migrate_to_node_level().unwrap();
     let analysis = g.analyze();
     assert!(analysis.is_valid);
-    assert!(!analysis.has_recurrent_edges, "无循环边基因组应标记为 false");
+    assert!(
+        !analysis.has_recurrent_edges,
+        "无循环边基因组应标记为 false"
+    );
 }

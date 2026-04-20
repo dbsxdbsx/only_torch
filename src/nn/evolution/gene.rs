@@ -483,10 +483,16 @@ impl NetworkGenome {
         }
     }
 
-    /// 最小序列网络：layers = [Rnn(hidden_size=output_dim), Linear(output_dim)]
+    /// 最小序列网络：layers = [Rnn(hidden_size=max(4, output_dim)), Linear(output_dim)]
     ///
     /// 初始 cell 类型为最简单的 Rnn，后续 MutateCellType 可升级为 LSTM/GRU，
     /// InsertLayer 可在序列域再插入更多 RNN 层。
+    ///
+    /// 隐藏维度默认取 `max(4, output_dim)`：
+    /// - 纯跟随 output_dim（常为 1/2）会让 RNN 状态容量过小，
+    ///   在悬崖型时序任务（如 parity）上长期困在随机区间，使 fitness
+    ///   信号几乎无法区分架构，NSGA-II 选择压力失效；
+    /// - 4 是基于信息论下界的经验值：覆盖大多数任务需要的累积状态。
     ///
     /// # Panics
     /// `input_dim` 或 `output_dim` 为零时 panic。
@@ -494,11 +500,10 @@ impl NetworkGenome {
         assert!(input_dim > 0, "input_dim 不能为零");
         assert!(output_dim > 0, "output_dim 不能为零");
 
+        let hidden_size = output_dim.max(4);
         let rnn_layer = LayerGene {
             innovation_number: 1,
-            layer_config: LayerConfig::Rnn {
-                hidden_size: output_dim,
-            },
+            layer_config: LayerConfig::Rnn { hidden_size },
             enabled: true,
         };
         let output_head = LayerGene {
@@ -708,7 +713,9 @@ impl NetworkGenome {
         }
 
         let next_inn = match &self.repr {
-            GenomeRepr::NodeLevel { next_innovation, .. } => *next_innovation,
+            GenomeRepr::NodeLevel {
+                next_innovation, ..
+            } => *next_innovation,
             _ => return,
         };
 
@@ -717,7 +724,10 @@ impl NetworkGenome {
         migrate_conv2d_to_feature_maps(nodes, &mut counter);
 
         // 更新 next_innovation
-        if let GenomeRepr::NodeLevel { next_innovation, .. } = &mut self.repr {
+        if let GenomeRepr::NodeLevel {
+            next_innovation, ..
+        } = &mut self.repr
+        {
             *next_innovation = counter.peek();
         }
     }
@@ -915,12 +925,11 @@ impl NetworkGenome {
                         .parents
                         .iter()
                         .filter_map(|&pid| {
-                            nodes
-                                .iter()
-                                .find(|n| n.innovation_number == pid)
-                                .map(|n| {
-                                    analysis.shape_of(n.innovation_number).unwrap_or(&n.output_shape)
-                                })
+                            nodes.iter().find(|n| n.innovation_number == pid).map(|n| {
+                                analysis
+                                    .shape_of(n.innovation_number)
+                                    .unwrap_or(&n.output_shape)
+                            })
                         })
                         .collect();
                     if parent_shapes.len() == 2 {
@@ -942,7 +951,9 @@ impl NetworkGenome {
                             })
                         })
                         .map(|n| {
-                            analysis.shape_of(n.innovation_number).unwrap_or(&n.output_shape)
+                            analysis
+                                .shape_of(n.innovation_number)
+                                .unwrap_or(&n.output_shape)
                         })
                         .next();
                     if let Some(ks) = kernel_shape {
@@ -954,9 +965,19 @@ impl NetworkGenome {
                     }
                 }
                 // 元素级操作：~1 FLOPs per element
-                NT::Add | NT::Subtract | NT::Multiply | NT::ReLU | NT::Sigmoid
-                | NT::Tanh | NT::Gelu | NT::Selu | NT::Mish | NT::HardSwish
-                | NT::HardSigmoid | NT::Softmax | NT::LeakyReLU { .. }
+                NT::Add
+                | NT::Subtract
+                | NT::Multiply
+                | NT::ReLU
+                | NT::Sigmoid
+                | NT::Tanh
+                | NT::Gelu
+                | NT::Selu
+                | NT::Mish
+                | NT::HardSwish
+                | NT::HardSigmoid
+                | NT::Softmax
+                | NT::LeakyReLU { .. }
                 | NT::Elu { .. } => {
                     total += out_elements;
                 }
@@ -977,9 +998,15 @@ impl NetworkGenome {
                     total += out_elements * kernel_size.0 * kernel_size.1;
                 }
                 // 无计算量的操作
-                NT::Parameter | NT::BasicInput | NT::TargetInput | NT::State { .. }
-                | NT::Flatten { .. } | NT::Reshape { .. } | NT::Concat { .. }
-                | NT::Dropout { .. } | NT::Maximum => {}
+                NT::Parameter
+                | NT::BasicInput
+                | NT::TargetInput
+                | NT::State { .. }
+                | NT::Flatten { .. }
+                | NT::Reshape { .. }
+                | NT::Concat { .. }
+                | NT::Dropout { .. }
+                | NT::Maximum => {}
                 _ => {}
             }
 
