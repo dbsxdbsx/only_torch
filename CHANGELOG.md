@@ -1,5 +1,27 @@
 # 更新日志
 
+## [0.15.1] - 2026-04-20
+
+### 新增
+
+- **feat(example): 中国象棋示例改造为 ONNX 互通端到端流程**
+  - PyTorch 训练 → ONNX 导出 → only_torch 加载 → 继续训练 → `.otm` 保存/加载/验证
+  - 文件迁移：`scripts/{generate_chess_data,train_chess_cnn,prepare_real_pieces,requirements}.py` → `examples/traditional/chinese_chess/`
+  - `train_pytorch.py` 新增 ONNX 导出步骤
+  - 实测：基线 97.1% → 微调 5 epoch 后 97.8% → `.otm` 重载差异 0.00%
+
+- **feat(graph): `RebuildResult` 新增 `parameters` 字段**
+  - 与 `inputs` / `outputs` 对称，加载完模型直接拿到可训练参数 `Var` 列表
+  - 适用于 `Graph::from_onnx` / `Graph::load_model` 后接优化器的场景
+
+### 修复
+
+- **fix(onnx): 支持 PyTorch eval-mode 导出的 Conv with bias**
+  - 自动拆分 3 输入 Conv 为 `Conv2d + Add`
+  - bias 形状自动从 `[1, C]` reshape 到 `[1, C, 1, 1]` 以正确广播
+
+- **fix(flatten): 修复动态 batch 维度（`dim=0`）下的除零 panic**
+
 ## [0.15.0] - 2026-04-20
 
 ### 新增
