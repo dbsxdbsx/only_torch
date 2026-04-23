@@ -6,7 +6,7 @@
 //! 支持可选的真实棋子数据混合（`data/chinese_chess_real/`），
 //! 与 PyTorch 版 `--real-data` 功能对齐。
 //!
-//! 数据格式（由 `scripts/generate_chess_data.py` 生成）：
+//! 数据格式（由 `examples/traditional/chinese_chess/generate_data.py` 生成）：
 //! - `images.bin`: header [u32 N, C, H, W] + N*C*H*W f32 values
 //! - `labels.bin`: header [u32 N] + N u8 values (类别 0-14)
 
@@ -93,7 +93,7 @@ fn load_split(split_dir: &Path) -> Result<(Tensor, Tensor), String> {
 
     if !images_path.exists() {
         return Err(format!(
-            "数据文件不存在: {}\n请先运行: python scripts/generate_chess_data.py",
+            "数据文件不存在: {}\n请先运行: python examples/traditional/chinese_chess/generate_data.py",
             images_path.display()
         ));
     }

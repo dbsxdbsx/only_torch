@@ -372,12 +372,8 @@ fn test_load_then_continue_training() {
     // 3. 准备训练
     loaded.graph.train();
 
-    // 从参数注册表获取 Var 列表（供 optimizer 使用）
-    let graph_rc = loaded.graph.inner_rc();
-    let param_vars: Vec<Var> = loaded.graph.inner().get_all_parameters()
-        .into_iter()
-        .map(|(_, node)| Var::new_with_rc_graph(node, &graph_rc))
-        .collect();
+    // 从 RebuildResult 直接拿可训练参数
+    let param_vars = &loaded.parameters;
     assert!(!param_vars.is_empty(), "应有可训练参数");
 
     // 记录训练前的参数值
@@ -387,7 +383,7 @@ fn test_load_then_continue_training() {
 
     // 创建 target 和 optimizer
     let target_var = loaded.graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
-    let mut optimizer = SGD::new(&loaded.graph, &param_vars, 0.1);
+    let mut optimizer = SGD::new(&loaded.graph, param_vars, 0.1);
 
     // 4. 跑 3 步训练
     let loss = loaded.outputs[0].mse_loss(&target_var).unwrap();
@@ -456,11 +452,7 @@ fn test_evolution_model_load_and_manual_train() {
     loaded.graph.train();
 
     // 3. 获取参数 Var，创建 optimizer
-    let graph_rc = loaded.graph.inner_rc();
-    let param_vars: Vec<Var> = loaded.graph.inner().get_all_parameters()
-        .into_iter()
-        .map(|(_, node)| Var::new_with_rc_graph(node, &graph_rc))
-        .collect();
+    let param_vars = &loaded.parameters;
     assert!(!param_vars.is_empty(), "演化模型应有可训练参数");
 
     let params_before: Vec<Vec<f32>> = param_vars.iter()
@@ -469,7 +461,7 @@ fn test_evolution_model_load_and_manual_train() {
 
     // 演化模型的输入需要 batch 维度 [batch, input_dim]
     let target_var = loaded.graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
-    let mut optimizer = SGD::new(&loaded.graph, &param_vars, 0.01);
+    let mut optimizer = SGD::new(&loaded.graph, param_vars, 0.01);
 
     // 4. 跑几步训练，验证全链路不报错
     let loss = loaded.outputs[0].mse_loss(&target_var).unwrap();

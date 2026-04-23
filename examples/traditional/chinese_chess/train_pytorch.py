@@ -149,7 +149,7 @@ class ChessPieceCNN(nn.Module):
     def forward(self, x):
         x = self.pool(F.relu(self.bn1(self.conv1(x))))
         x = self.pool(F.relu(self.bn2(self.conv2(x))))
-        x = x.view(x.size(0), -1)
+        x = torch.flatten(x, 1)
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)
@@ -422,7 +422,7 @@ def main():
     print(f"\n每类准确率:")
     for cid in range(15):
         acc = per_class_acc.get(cid, 0)
-        mark = "  ✓" if acc >= 95 else " ✗" if acc < 80 else ""
+        mark = " OK" if acc >= 95 else " !!" if acc < 80 else ""
         print(f"  [{cid:2d}] {CLASS_NAMES[cid]}: {acc:.1f}%{mark}")
 
     print(f"\n混淆矩阵:")
@@ -431,7 +431,6 @@ def main():
     # 如果有真实数据，单独统计真实数据的每类准确率
     if test_real_mask.any():
         print(f"\n--- 真实棋子测试集详细 ---")
-        # 重新单独跑真实子集
         real_indices = np.where(test_real_mask)[0]
         real_x = test_x[real_indices]
         real_y = test_y[real_indices]
@@ -440,15 +439,31 @@ def main():
 
         _, real_per_class, real_confusion, _ = evaluate(model, real_loader, device)
 
-        for cid in range(1, 15):  # 跳过空位
+        for cid in range(1, 15):
             acc = real_per_class.get(cid, 0)
-            mark = "  ✓" if acc >= 95 else " ✗" if acc < 80 else ""
+            mark = " OK" if acc >= 95 else " !!" if acc < 80 else ""
             print(f"  [{cid:2d}] {CLASS_NAMES[cid]}: {acc:.1f}%{mark}")
 
     print(f"\n模型已保存: {args.save}")
     print(f"最佳总体准确率: {best_acc:.1f}%")
     if best_real_acc > 0:
         print(f"最佳真实棋子准确率: {best_real_acc:.1f}%")
+
+    # 5. 导出 ONNX
+    onnx_path = args.save.replace(".pth", ".onnx")
+    model.eval()
+    model.cpu()
+    dummy_input = torch.randn(1, 3, 28, 28)
+    torch.onnx.export(
+        model,
+        dummy_input,
+        onnx_path,
+        opset_version=13,
+        input_names=["input"],
+        output_names=["output"],
+        dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
+    )
+    print(f"ONNX 模型已导出: {onnx_path}")
 
 
 if __name__ == "__main__":

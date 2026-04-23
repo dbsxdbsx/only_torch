@@ -15,6 +15,9 @@ Cargo.lock
 # 演化模型文件
 **/*.otm
 
+# 模型权重产物（PyTorch ckpt / ONNX / 等，由示例脚本生成，不入仓）
+/models/
+
 # 生成的训练数据
 /data/
 

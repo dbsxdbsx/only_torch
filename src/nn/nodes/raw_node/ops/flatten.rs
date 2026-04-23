@@ -66,8 +66,14 @@ impl Flatten {
                 parent_shape.to_vec()
             } else {
                 let first_dim = parent_shape[0];
-                let rest_dim = total_elements / first_dim;
-                vec![first_dim, rest_dim]
+                if first_dim == 0 {
+                    // Dynamic batch: compute rest from non-batch dims
+                    let rest_dim: usize = parent_shape[1..].iter().product();
+                    vec![0, rest_dim]
+                } else {
+                    let rest_dim = total_elements / first_dim;
+                    vec![first_dim, rest_dim]
+                }
             }
         } else {
             vec![1, total_elements]

@@ -28,6 +28,10 @@ pub struct RebuildResult {
     pub targets: Vec<(String, Var)>,
     /// 输出节点（descriptor 中没有被其他节点引用为 parent 的节点）
     pub outputs: Vec<Var>,
+    /// 可训练参数 Var 列表 —— 直接用于优化器
+    ///
+    /// 与 `inputs` / `outputs` 对称：加载完模型即可拿到全套训练所需的 Var。
+    pub parameters: Vec<Var>,
     /// 旧 ID → 新 Var 的完整映射
     pub node_map: HashMap<u64, Var>,
 }
@@ -97,11 +101,21 @@ impl Graph {
             .cloned()
             .collect();
 
+        // 参数 Var 列表：从图的参数注册表收集
+        let inner_rc = graph.inner_rc();
+        let parameters: Vec<Var> = graph
+            .inner()
+            .get_all_parameters()
+            .into_iter()
+            .map(|(_, node)| Var::new_with_rc_graph(node, &inner_rc))
+            .collect();
+
         Ok(RebuildResult {
             graph,
             inputs,
             targets,
             outputs,
+            parameters,
             node_map,
         })
     }

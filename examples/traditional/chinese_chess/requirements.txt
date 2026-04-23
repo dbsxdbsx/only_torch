@@ -1,0 +1,7 @@
+# 中国象棋示例 Python 依赖
+# 数据生成
+numpy
+Pillow
+# PyTorch 训练 + ONNX 导出
+torch
+torchvision

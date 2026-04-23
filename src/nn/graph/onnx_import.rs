@@ -201,24 +201,82 @@ fn assemble(
             onnx_ops::onnx_op_to_descriptors(&node.op_type, &node.attribute, node.name)?;
 
         if mapped_descriptors.len() == 1 {
-            // 大多数算子：单节点映射
             let parent_ids = resolve_parents(node, symbols)?;
-            let output_name = node.output.first().copied().unwrap_or(node.name);
-            let out_id = symbols.get_or_assign(output_name);
-            let output_shape = infer_output_shape_placeholder(
-                &mapped_descriptors[0],
-                &parent_ids,
-                &descriptor,
-            );
 
-            descriptor.add_node(NodeDescriptor::new(
-                out_id,
-                output_name,
-                mapped_descriptors[0].clone(),
-                output_shape,
-                None,
-                parent_ids,
-            ));
+            // Conv/ConvTranspose with bias (3 inputs) → Conv2d + Add
+            let is_conv_with_bias = matches!(
+                mapped_descriptors[0],
+                NodeTypeDescriptor::Conv2d { .. } | NodeTypeDescriptor::ConvTranspose2d { .. }
+            ) && parent_ids.len() == 3;
+
+            if is_conv_with_bias {
+                let input_id = parent_ids[0];
+                let weight_id = parent_ids[1];
+                let bias_id = parent_ids[2];
+
+                // Reshape bias from [1, C] to [1, C, 1, 1] for 4D broadcasting
+                if let Some(b_node) = descriptor.nodes.iter_mut().find(|n| n.id == bias_id) {
+                    if b_node.output_shape.len() == 2 {
+                        let c = b_node.output_shape[1];
+                        b_node.output_shape = vec![1, c, 1, 1];
+                    }
+                }
+                if let Some(b_tensor) = weights.get_mut(&bias_id) {
+                    if b_tensor.shape().len() == 2 {
+                        let c = b_tensor.shape()[1];
+                        *b_tensor = b_tensor.reshape(&[1, c, 1, 1]);
+                    }
+                }
+
+                let conv_name = format!("{}/conv", node.name);
+                let conv_id = symbols.get_or_assign(&conv_name);
+                let conv_shape = infer_output_shape_placeholder(
+                    &mapped_descriptors[0],
+                    &[input_id, weight_id],
+                    &descriptor,
+                );
+                descriptor.add_node(NodeDescriptor::new(
+                    conv_id,
+                    &conv_name,
+                    mapped_descriptors[0].clone(),
+                    conv_shape,
+                    None,
+                    vec![input_id, weight_id],
+                ));
+
+                let output_name = node.output.first().copied().unwrap_or(node.name);
+                let add_id = symbols.get_or_assign(output_name);
+                let add_shape = infer_output_shape_placeholder(
+                    &NodeTypeDescriptor::Add,
+                    &[conv_id, bias_id],
+                    &descriptor,
+                );
+                descriptor.add_node(NodeDescriptor::new(
+                    add_id,
+                    output_name,
+                    NodeTypeDescriptor::Add,
+                    add_shape,
+                    None,
+                    vec![conv_id, bias_id],
+                ));
+            } else {
+                let output_name = node.output.first().copied().unwrap_or(node.name);
+                let out_id = symbols.get_or_assign(output_name);
+                let output_shape = infer_output_shape_placeholder(
+                    &mapped_descriptors[0],
+                    &parent_ids,
+                    &descriptor,
+                );
+
+                descriptor.add_node(NodeDescriptor::new(
+                    out_id,
+                    output_name,
+                    mapped_descriptors[0].clone(),
+                    output_shape,
+                    None,
+                    parent_ids,
+                ));
+            }
         } else if mapped_descriptors.len() == 2 {
             // Gemm → MatMul + Add
             // ONNX Gemm: Y = alpha * A @ B^T + beta * C (when transB=1)

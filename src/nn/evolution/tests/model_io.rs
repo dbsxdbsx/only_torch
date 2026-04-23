@@ -637,14 +637,7 @@ fn test_phase6_triangle_interop_handwritten_to_evolution_to_manual_train() {
     // 4. 作为普通 Graph 模型加载，并继续手写训练
     let loaded = Graph::load_model(evolved_path).unwrap();
     loaded.graph.train();
-    let graph_rc = loaded.graph.inner_rc();
-    let param_vars: Vec<Var> = loaded
-        .graph
-        .inner()
-        .get_all_parameters()
-        .into_iter()
-        .map(|(_, node)| Var::new_with_rc_graph(node, &graph_rc))
-        .collect();
+    let param_vars = &loaded.parameters;
     assert!(!param_vars.is_empty(), "演化后模型应仍可提取参数并继续训练");
 
     let params_before: Vec<Vec<f32>> = param_vars
@@ -653,7 +646,7 @@ fn test_phase6_triangle_interop_handwritten_to_evolution_to_manual_train() {
         .collect();
 
     let target_var = loaded.graph.input(&Tensor::new(&[1.0], &[1, 1])).unwrap();
-    let mut optimizer = SGD::new(&loaded.graph, &param_vars, 0.01);
+    let mut optimizer = SGD::new(&loaded.graph, param_vars, 0.01);
     let loss = loaded.outputs[0].mse_loss(&target_var).unwrap();
     for _ in 0..3 {
         loaded.inputs[0]

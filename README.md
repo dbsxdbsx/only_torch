@@ -64,7 +64,7 @@ let dot = graph.to_dot();
 | [cartpole_sac](examples/traditional/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
 | [pendulum_sac](examples/traditional/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、动作缩放 | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
 | [moving_sac](examples/traditional/sac/moving/) | **强化学习** | **Hybrid SAC**、独立连续分支、双温度 | `Actor(10→256→离散+连续) Critic(12→256→3)` | `cargo run --example moving_sac` |
-| [chinese_chess](examples/traditional/chinese_chess/) | 图像分类 | **CNN**、数据增强、15 类分类 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess` |
+| [chinese_chess](examples/traditional/chinese_chess/) | 图像分类 | **ONNX 互通**、CNN、.otm 保存/加载 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess` |
 | [evolution_xor](examples/evolution/xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
 | [evolution_iris](examples/evolution/iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
 | [evolution_mnist](examples/evolution/mnist/) | **神经架构演化** | **Evolution API**、Spatial 域 CNN 自动搜索 | 自动演化 | `cargo run --example evolution_mnist` |
@@ -273,19 +273,21 @@ cargo run --example multi_label_point
 <details>
 <summary><b>中国象棋示例</b>（点击展开）</summary>
 
-**中国象棋棋子 CNN 分类器** ⭐⭐⭐
+**中国象棋棋子 CNN 分类器（ONNX 互通）** ⭐⭐⭐
 
-使用 CNN 对合成的中国象棋棋子 patch 进行 15 类分类（空位 + 红方 7 子 + 黑方 7 子），展示：
-- 多层 `Conv2d` + `MaxPool2d` 特征提取
-- 运行时数据增强（`ColorJitter`）
-- Early stopping + per-class 准确率报告
-- 推理速度基准测试
+中国象棋棋子 15 类分类（空位 + 红方 7 子 + 黑方 7 子），展示 ONNX 互通和模型持久化：
+- PyTorch 训练 → ONNX 导出 → only_torch 导入
+- 导入后继续训练，验证准确率不低于基线
+- 保存为 `.otm` 格式 → 重新加载 → 验证一致性
+- per-class 准确率报告
 
 ```bash
-# 先生成训练数据
-python scripts/generate_chess_data.py
+# 1. 生成合成训练数据
+python examples/traditional/chinese_chess/generate_data.py
+# 2. 用 PyTorch 训练并导出 ONNX
+python examples/traditional/chinese_chess/train_pytorch.py
+# 3. 运行 Rust 示例（载入 ONNX → 训练 → 保存 .otm）
 cargo run --example chinese_chess
-# 目标准确率 ≥95%
 ```
 
 </details>
