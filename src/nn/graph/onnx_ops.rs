@@ -156,6 +156,26 @@ pub fn onnx_op_to_descriptors(
             }])
         }
 
+        // ─── 维度重排 ───
+        // ONNX Transpose 默认 perm = reverse(range(rank))，但在算子映射阶段
+        // 我们没有 input shape 信息（rank 不可知）。因此要求 perm 必须显式提供，
+        // 缺失时直接拒绝并提示用户用 onnxsim 预处理或在导出端固化 perm。
+        // YOLOv5 / VinXiangQi 等真实模型都会显式带上 perm，不会触发此错误。
+        OpType::Transpose => {
+            let perm = find_attr_ints(attrs, "perm");
+            if perm.is_empty() {
+                return Err(OnnxError::UnsupportedAttribute {
+                    op_type: "Transpose".to_string(),
+                    attribute: "perm".to_string(),
+                    reason: "缺少 perm 属性（only_torch 不支持默认反转所有维度）。\
+                        请用 onnxsim 预处理，或在导出端显式指定 perm。"
+                        .to_string(),
+                });
+            }
+            let dims: Vec<usize> = perm.iter().map(|&v| v as usize).collect();
+            Ok(vec![NodeTypeDescriptor::Permute { dims }])
+        }
+
         // ─── 正则化 ───
         OpType::Dropout => {
             let ratio = find_attr_float(attrs, "ratio").unwrap_or(0.5);
@@ -632,6 +652,14 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         // ─── 梯度屏障 ───
         NodeTypeDescriptor::Detach => ExportCategory::Operator(OnnxExportOp::simple("Identity")),
 
+        // ─── 维度重排 → ONNX Transpose ───
+        NodeTypeDescriptor::Permute { dims } => ExportCategory::Operator(OnnxExportOp {
+            op_type: "Transpose",
+            float_attrs: vec![],
+            int_attrs: vec![],
+            int_list_attrs: vec![("perm", dims.iter().map(|&d| d as i64).collect())],
+        }),
+
         // ─── 其他不支持导出的节点 ───
         NodeTypeDescriptor::Step
         | NodeTypeDescriptor::Select { .. }
@@ -639,7 +667,6 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         | NodeTypeDescriptor::Stack { .. }
         | NodeTypeDescriptor::WhereCond { .. }
         | NodeTypeDescriptor::Narrow { .. }
-        | NodeTypeDescriptor::Permute { .. }
         | NodeTypeDescriptor::Pad { .. }
         | NodeTypeDescriptor::Repeat { .. }
         | NodeTypeDescriptor::TopK { .. }

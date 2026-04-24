@@ -767,6 +767,80 @@ fn test_roundtrip_batchnorm() {
     }
 }
 
+// ==================== Transpose（维度重排）测试 ====================
+
+#[test]
+fn test_import_transpose_with_perm() {
+    // 典型 4D NCHW → NHWC：perm=[0, 2, 3, 1]
+    let attrs = vec![make_ints_attr("perm", vec![0, 2, 3, 1])];
+    let result = onnx_op_to_descriptors(&OpType::Transpose, &attrs, "transpose0").unwrap();
+    assert_eq!(result.len(), 1);
+    match &result[0] {
+        NodeTypeDescriptor::Permute { dims } => {
+            assert_eq!(dims, &vec![0usize, 2, 3, 1]);
+        }
+        _ => panic!("expected Permute"),
+    }
+}
+
+#[test]
+fn test_import_transpose_2d_perm() {
+    // 2D 转置：perm=[1, 0]
+    let attrs = vec![make_ints_attr("perm", vec![1, 0])];
+    let result = onnx_op_to_descriptors(&OpType::Transpose, &attrs, "transpose0").unwrap();
+    match &result[0] {
+        NodeTypeDescriptor::Permute { dims } => assert_eq!(dims, &vec![1usize, 0]),
+        _ => panic!("expected Permute"),
+    }
+}
+
+#[test]
+fn test_import_transpose_missing_perm_rejected() {
+    // 缺 perm 必须报错（only_torch 不支持默认反转所有维度）
+    let result = onnx_op_to_descriptors(&OpType::Transpose, &[], "transpose0");
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        OnnxError::UnsupportedAttribute {
+            op_type, attribute, ..
+        } => {
+            assert_eq!(op_type, "Transpose");
+            assert_eq!(attribute, "perm");
+        }
+        _ => panic!("expected UnsupportedAttribute"),
+    }
+}
+
+#[test]
+fn test_export_permute_as_transpose() {
+    let desc = NodeTypeDescriptor::Permute {
+        dims: vec![0, 2, 3, 1],
+    };
+    match descriptor_to_export_category(&desc) {
+        ExportCategory::Operator(op) => {
+            assert_eq!(op.op_type, "Transpose");
+            assert_eq!(op.int_list_attrs.len(), 1);
+            assert_eq!(op.int_list_attrs[0].0, "perm");
+            assert_eq!(op.int_list_attrs[0].1, vec![0i64, 2, 3, 1]);
+        }
+        _ => panic!("expected Operator Transpose"),
+    }
+}
+
+#[test]
+fn test_roundtrip_transpose() {
+    // 完整 round-trip：Transpose perm=[0,3,1,2] → Permute → Transpose perm=[0,3,1,2]
+    let original_perm = vec![0i64, 3, 1, 2];
+    let attrs = vec![make_ints_attr("perm", original_perm.clone())];
+    let imported = onnx_op_to_descriptors(&OpType::Transpose, &attrs, "test").unwrap();
+    match descriptor_to_export_category(&imported[0]) {
+        ExportCategory::Operator(exp) => {
+            assert_eq!(exp.op_type, "Transpose");
+            assert_eq!(exp.int_list_attrs[0].1, original_perm);
+        }
+        _ => panic!("roundtrip failed for Transpose"),
+    }
+}
+
 // ==================== ConvTranspose2d 导入测试 ====================
 
 #[test]
