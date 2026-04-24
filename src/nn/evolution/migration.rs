@@ -279,7 +279,7 @@ pub fn expand_pool2d(
         PoolType::Max => NodeTypeDescriptor::MaxPool2d {
             kernel_size: (kernel_size, kernel_size),
             stride: (stride, stride),
-            padding: (0, 0, 0, 0),
+            padding: (0, 0),
             ceil_mode: false,
         },
         PoolType::Avg => NodeTypeDescriptor::AvgPool2d {

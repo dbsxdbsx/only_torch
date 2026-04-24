@@ -485,7 +485,7 @@ fn infer_maxpool2d() {
             NodeTypeDescriptor::MaxPool2d {
                 kernel_size: (2, 2),
                 stride: (2, 2),
-                padding: (0, 0, 0, 0),
+                padding: (0, 0),
                 ceil_mode: false,
             },
             vec![shape![1, 8, 4, 4]]
@@ -1008,7 +1008,7 @@ fn infer_conv2d_insufficient_dims_err() {
 #[test]
 fn infer_pool2d_insufficient_dims_err() {
     assert!(infer(
-        NodeTypeDescriptor::MaxPool2d { kernel_size: (2, 2), stride: (2, 2), padding: (0, 0, 0, 0), ceil_mode: false },
+        NodeTypeDescriptor::MaxPool2d { kernel_size: (2, 2), stride: (2, 2), padding: (0, 0), ceil_mode: false },
         vec![shape![3, 4]]
     ).is_err());
     assert!(infer(
@@ -1021,7 +1021,7 @@ fn infer_pool2d_insufficient_dims_err() {
 fn infer_pool2d_kernel_exceeds_spatial_soft_fail() {
     // kernel=5 > H/W=3 → h_out/w_out 软降级到 1（不返回错误）
     let r = infer(
-        NodeTypeDescriptor::MaxPool2d { kernel_size: (5, 5), stride: (1, 1), padding: (0, 0, 0, 0), ceil_mode: false },
+        NodeTypeDescriptor::MaxPool2d { kernel_size: (5, 5), stride: (1, 1), padding: (0, 0), ceil_mode: false },
         vec![shape![1, 4, 3, 3]]
     ).unwrap();
     assert_eq!(r, shape![1, 4, 1, 1], "kernel 超出应软降级到 1");
@@ -1133,7 +1133,7 @@ fn infer_domain_conv2d_to_spatial() {
 #[test]
 fn infer_domain_pool2d_to_spatial() {
     assert_eq!(
-        infer_domain(&NodeTypeDescriptor::MaxPool2d { kernel_size: (2, 2), stride: (2, 2), padding: (0, 0, 0, 0), ceil_mode: false }, &[ShapeDomain::Spatial]),
+        infer_domain(&NodeTypeDescriptor::MaxPool2d { kernel_size: (2, 2), stride: (2, 2), padding: (0, 0), ceil_mode: false }, &[ShapeDomain::Spatial]),
         ShapeDomain::Spatial
     );
     assert_eq!(

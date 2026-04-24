@@ -245,19 +245,10 @@ pub fn onnx_op_to_descriptors(
             } else {
                 kernel_size
             };
-            // MaxPool 的 padding 不能用对称简化（YOLOv5 SPPF 等场景实际就是对称四角，
-            // 但 ONNX 规范允许任意非对称四角）。MaxPool2d 内置完整 4 维 padding。
-            // ONNX pads 布局：[H_begin, W_begin, H_end, W_end] → (top, bottom, left, right)
-            let padding: (usize, usize, usize, usize) = if pads.len() >= 4 {
-                (
-                    pads[0] as usize, // H_begin = top
-                    pads[2] as usize, // H_end   = bottom
-                    pads[1] as usize, // W_begin = left
-                    pads[3] as usize, // W_end   = right
-                )
-            } else {
-                (0, 0, 0, 0)
-            };
+            // 与 Conv 一致只支持对称 padding；ONNX 规范允许的非对称四角属罕见,
+            // 真实模型(YOLOv5 SPPF 等)和 PyTorch 默认导出都是对称形式,
+            // 非对称时报 actionable error 提示用 ZeroPad2d 拆开或 onnxsim 预处理。
+            let padding = parse_symmetric_2d_pads(&pads, "MaxPool", node_name)?;
             let ceil_mode = ceil_mode_attr != 0;
             Ok(vec![NodeTypeDescriptor::MaxPool2d {
                 kernel_size,
@@ -611,8 +602,8 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
             padding,
             ceil_mode,
         } => {
-            // ONNX pads 布局：[H_begin, W_begin, H_end, W_end]
-            // only_torch padding 布局：(top, bottom, left, right)
+            // IR 是对称 (pad_h, pad_w),展开为 ONNX pads=[H_b, W_b, H_e, W_e]
+            // = [pad_h, pad_w, pad_h, pad_w]
             let mut int_list_attrs: Vec<(&'static str, Vec<i64>)> = vec![
                 (
                     "kernel_shape",
@@ -620,16 +611,9 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                 ),
                 ("strides", vec![stride.0 as i64, stride.1 as i64]),
             ];
-            if *padding != (0, 0, 0, 0) {
-                int_list_attrs.push((
-                    "pads",
-                    vec![
-                        padding.0 as i64, // top    = H_begin
-                        padding.2 as i64, // left   = W_begin
-                        padding.1 as i64, // bottom = H_end
-                        padding.3 as i64, // right  = W_end
-                    ],
-                ));
+            if *padding != (0, 0) {
+                let (p_h, p_w) = (padding.0 as i64, padding.1 as i64);
+                int_list_attrs.push(("pads", vec![p_h, p_w, p_h, p_w]));
             }
             let int_attrs = if *ceil_mode { vec![("ceil_mode", 1i64)] } else { vec![] };
             ExportCategory::Operator(OnnxExportOp {

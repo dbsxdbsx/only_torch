@@ -50,12 +50,25 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
             padding: c.padding(),
             output_padding: c.output_padding(),
         },
-        NodeType::MaxPool2d(p) => NodeTypeDescriptor::MaxPool2d {
-            kernel_size: p.kernel_size(),
-            stride: p.stride(),
-            padding: p.padding(),
-            ceil_mode: p.ceil_mode(),
-        },
+        NodeType::MaxPool2d(p) => {
+            // raw_node 内部用 4 维 (top, bottom, left, right),IR 只承诺对称语义。
+            // 全部入口都通过 create_max_pool2d_node 走对称展开,这里读到的应当
+            // 满足 top == bottom && left == right。debug 模式下断言,release 时取
+            // (top, left) 作为对称代表(若真出现非对称即数据丢失)。
+            let (top, bottom, left, right) = p.padding();
+            debug_assert_eq!(
+                (top, left),
+                (bottom, right),
+                "MaxPool2d 内部 padding 应保持对称(top==bottom && left==right),\
+                 IR 层只暴露对称形式;实际得到 (t,b,l,r)=({top},{bottom},{left},{right})"
+            );
+            NodeTypeDescriptor::MaxPool2d {
+                kernel_size: p.kernel_size(),
+                stride: p.stride(),
+                padding: (top, left),
+                ceil_mode: p.ceil_mode(),
+            }
+        }
         NodeType::AvgPool2d(p) => NodeTypeDescriptor::AvgPool2d {
             kernel_size: p.kernel_size(),
             stride: p.stride(),

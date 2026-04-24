@@ -8,26 +8,13 @@
 use crate::nn::nodes::raw_node::Reduction;
 use serde::{Deserialize, Serialize};
 
-/// serde 反序列化默认值：dilation = (1, 1)，兼容无 dilation 字段的旧模型
-fn default_dilation() -> (usize, usize) {
-    (1, 1)
-}
-
-/// serde 反序列化默认值：output_padding = (0, 0)
-fn default_output_padding() -> (usize, usize) {
-    (0, 0)
-}
-
-/// serde 反序列化默认值：MaxPool2d.padding = (0, 0, 0, 0)
-/// 兼容无 padding 字段的旧 .otm 模型
-fn default_max_pool_padding() -> (usize, usize, usize, usize) {
-    (0, 0, 0, 0)
-}
-
 /// 图的可序列化描述
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphDescriptor {
-    /// 格式版本（用于向后兼容）
+    /// 保存时的 only_torch 版本号(用于 `from_json` 失败时的 actionable 提示)
+    ///
+    /// MVP 阶段不维护 `.otm` 跨版本兼容,版本号只用于报错时告诉用户
+    /// "当前 vX.Y.Z,该 .otm 由 vA.B.C 保存,请用对应版本重新加载或在新版本下重新 train/save"。
     pub version: String,
     /// 图名称
     pub name: String,
@@ -71,8 +58,9 @@ pub struct NodeDescriptor {
     ///
     /// 演化、单元测试等非 ONNX 来源的节点保持空 `Vec`。
     ///
-    /// `#[serde(default)]` 兼容旧 .otm 文件（无字段时反序列化为空）；
-    /// `skip_serializing_if = "Vec::is_empty"` 让无 origin 的节点不写入 JSON 体积。
+    /// `default + skip_serializing_if` 是配对惯用法:无 origin 时不写 JSON 节省体积,
+    /// 反序列化回来时缺字段视为空 `Vec`。语义上等价于"所有节点都有这个字段,
+    /// 只是为压缩输出而省略了空值",不是版本兼容兜底。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub origin_onnx_nodes: Vec<String>,
 }
@@ -126,31 +114,31 @@ pub enum NodeTypeDescriptor {
     Conv2d {
         stride: (usize, usize),
         padding: (usize, usize),
-        #[serde(default = "default_dilation")]
         dilation: (usize, usize),
     },
     /// 2D 转置卷积（反卷积），用于上采样
     ConvTranspose2d {
         stride: (usize, usize),
         padding: (usize, usize),
-        #[serde(default = "default_output_padding")]
         output_padding: (usize, usize),
     },
     MaxPool2d {
         kernel_size: (usize, usize),
         stride: (usize, usize),
-        /// 填充 (top, bottom, left, right)，对称 padding 用 (p, p, p, p)
+        /// 对称填充 (pad_h, pad_w),实际等价于四角各填 (pad_h, pad_h, pad_w, pad_w)
         ///
-        /// MaxPool 的 padding 用 `f32::NEG_INFINITY` 填充（避免污染 max 结果），
-        /// 因此不能用通用 Pad 节点替代，必须在 MaxPool 内部支持。
+        /// 与 [`Self::Conv2d`] 保持一致的对称语义:ONNX 规范允许任意非对称四角,
+        /// 但 PyTorch 默认导出和绝大多数真实模型(YOLOv5 SPPF 等)都是对称形式。
+        /// ONNX importer 遇到非对称四角会报 actionable 错误,提示用户用
+        /// `nn.ZeroPad2d` 显式拆开或用 onnxsim 预处理。
         ///
-        /// `#[serde(default)]` 兼容旧 .otm 模型（默认 (0,0,0,0) 等价无 padding）。
-        #[serde(default = "default_max_pool_padding")]
-        padding: (usize, usize, usize, usize),
-        /// ONNX 风格 ceil_mode：true 用 ceil 计算输出尺寸，false 用 floor
+        /// 注意:底层 `raw_node::MaxPool2d` 仍用 4 维 padding 表示(算法实现需要,
+        /// 用 `f32::NEG_INFINITY` 虚拟填充避免污染 max 结果)。IR 层只承诺对称语义,
+        /// rebuild / Layer 层会展开为 (p_h, p_h, p_w, p_w) 传给 raw_node。
+        padding: (usize, usize),
+        /// ONNX 风格 ceil_mode:true 用 ceil 计算输出尺寸,false 用 floor
         ///
-        /// 默认 false（PyTorch / 旧 .otm 行为）；YOLOv5 等真实模型部分情况会显式置 true
-        #[serde(default)]
+        /// PyTorch 默认 false;YOLOv5 等真实模型部分情况会显式置 true
         ceil_mode: bool,
     },
     /// 逐元素取最大值（PPO/TD3 等需要可微分 max）
@@ -380,8 +368,36 @@ impl GraphDescriptor {
     }
 
     /// 从 JSON 字符串解析
+    ///
+    /// MVP 阶段不维护 `.otm` 跨版本兼容:节点描述符 schema 变更时旧文件直接 fail-fast。
+    /// 错误信息会包含本地版本号 + 文件中记录的版本号,提示用户用对应版本重新 train/save。
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(json)
+        match serde_json::from_str::<Self>(json) {
+            Ok(desc) => Ok(desc),
+            Err(e) => {
+                // 尝试只解析 version 字段,给用户一个 actionable 提示
+                let local_version = env!("CARGO_PKG_VERSION");
+                let saved_version: Option<String> = serde_json::from_str::<serde_json::Value>(json)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("version")
+                            .and_then(|x| x.as_str().map(str::to_string))
+                    });
+                let hint = match saved_version {
+                    Some(v) if v != local_version => format!(
+                        " (本地 only_torch v{local_version},该 .otm 由 v{v} 保存;\
+                         MVP 阶段不维护 .otm 跨版本兼容,请用 v{v} 重新加载或在新版本下重新 train/save)"
+                    ),
+                    _ => format!(
+                        " (本地 only_torch v{local_version},节点描述符 schema 可能已变更;\
+                         MVP 阶段不维护 .otm 跨版本兼容,请用对应版本重新 train/save)"
+                    ),
+                };
+                // serde_json::Error 没有公开构造器,只能透传原错误,但用 to_string 时拼上提示
+                // → 这里用 Display 拼装的方式重新构造一个 IO 风格的 serde_json Error
+                Err(serde::de::Error::custom(format!("{e}{hint}")))
+            }
+        }
     }
 }
 

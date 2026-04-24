@@ -1565,32 +1565,6 @@ fn test_provenance_otm_round_trip() {
 }
 
 #[test]
-fn test_provenance_legacy_otm_compatible() {
-    // 模拟旧 .otm（无 origin_onnx_nodes 字段）反序列化兼容性
-    // 手工构造一个不含 origin_onnx_nodes 的 JSON 节点
-    let legacy_json = r#"{
-        "version": "0.15.1",
-        "name": "legacy",
-        "nodes": [
-            {
-                "id": 1,
-                "name": "input",
-                "node_type": { "type": "BasicInput" },
-                "output_shape": [1, 4],
-                "parents": []
-            }
-        ]
-    }"#;
-    let restored = crate::nn::descriptor::GraphDescriptor::from_json(legacy_json)
-        .expect("旧 .otm 无 origin_onnx_nodes 字段应通过 #[serde(default)] 兼容");
-    assert_eq!(restored.nodes.len(), 1);
-    assert!(
-        restored.nodes[0].origin_onnx_nodes.is_empty(),
-        "缺失字段应反序列化为空 Vec"
-    );
-}
-
-#[test]
 fn test_provenance_evolution_path_empty() {
     // 演化 / Layer 等非 ONNX 路径下的 NodeDescriptor 默认 origin 为空 Vec
     let nd = crate::nn::descriptor::NodeDescriptor::new(
@@ -1607,5 +1581,72 @@ fn test_provenance_evolution_path_empty() {
     assert!(
         !json.contains("origin_onnx_nodes"),
         "空 origin 不应写入 JSON, 实际 JSON: {json}"
+    );
+}
+
+// ==================== `.otm` schema 不兼容时 fail-fast(MVP 策略) ====================
+
+/// MVP 策略:旧 `.otm` 缺字段直接 fail-fast,错误信息含本地版本 + 文件版本号
+#[test]
+fn test_from_json_schema_mismatch_fail_fast_with_actionable_error() {
+    // 模拟旧 .otm 用旧 schema:MaxPool2d 节点没有 padding 和 ceil_mode 字段
+    // (改造前 NodeTypeDescriptor::MaxPool2d 只有 kernel_size + stride)
+    let legacy_json = r#"{
+        "version": "0.14.0",
+        "name": "legacy_maxpool",
+        "nodes": [
+            {
+                "id": 1,
+                "name": "input",
+                "node_type": { "type": "BasicInput" },
+                "output_shape": [1, 4, 8, 8],
+                "parents": []
+            },
+            {
+                "id": 2,
+                "name": "pool",
+                "node_type": {
+                    "type": "MaxPool2d",
+                    "kernel_size": [2, 2],
+                    "stride": [2, 2]
+                },
+                "output_shape": [1, 4, 4, 4],
+                "parents": [1]
+            }
+        ]
+    }"#;
+    let result = crate::nn::descriptor::GraphDescriptor::from_json(legacy_json);
+    let err = result.expect_err("缺 padding/ceil_mode 字段的旧 schema 应直接 fail-fast");
+    let msg = format!("{err}");
+    let local_version = env!("CARGO_PKG_VERSION");
+    assert!(
+        msg.contains(local_version),
+        "错误信息应包含本地版本 v{local_version},实际: {msg}"
+    );
+    assert!(
+        msg.contains("0.14.0"),
+        "错误信息应包含文件中记录的版本 v0.14.0,实际: {msg}"
+    );
+    assert!(
+        msg.contains("train/save"),
+        "错误信息应给出 actionable 提示(重新 train/save),实际: {msg}"
+    );
+}
+
+/// 完全损坏的 JSON(连 version 字段都没有)也应给 actionable 提示
+#[test]
+fn test_from_json_no_version_still_gives_actionable_hint() {
+    let bad_json = r#"{ "garbage": true }"#;
+    let result = crate::nn::descriptor::GraphDescriptor::from_json(bad_json);
+    let err = result.expect_err("无效 JSON 应失败");
+    let msg = format!("{err}");
+    let local_version = env!("CARGO_PKG_VERSION");
+    assert!(
+        msg.contains(local_version),
+        "错误信息应至少包含本地版本号,实际: {msg}"
+    );
+    assert!(
+        msg.contains("schema") || msg.contains("train/save"),
+        "错误信息应给出 actionable 提示,实际: {msg}"
     );
 }

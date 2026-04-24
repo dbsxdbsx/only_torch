@@ -426,12 +426,16 @@ impl GraphInner {
     /// - `parent`: 输入节点
     /// - `kernel_size`: 池化窗口大小 (kH, kW)
     /// - `stride`: 步长，None 则默认等于 kernel_size
+    /// - `padding`: 对称填充 `(pad_h, pad_w)`,内部展开为 `(pad_h, pad_h, pad_w, pad_w)`
+    ///   传给 raw_node。raw_node 内部仍保留 4 维表示是因为前向用 NEG_INFINITY 虚拟填充
+    ///   避免污染 max,反向需按边 unpad 还原坐标。
+    /// - `ceil_mode`: ONNX 风格 ceil_mode
     pub fn create_max_pool2d_node(
         &mut self,
         parent: Rc<NodeInner>,
         kernel_size: (usize, usize),
         stride: Option<(usize, usize)>,
-        padding: (usize, usize, usize, usize),
+        padding: (usize, usize),
         ceil_mode: bool,
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
@@ -440,12 +444,13 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
+        let (p_h, p_w) = padding;
         let max_pool = MaxPool2d::new(
             &parent_shape,
             &parent_dynamic_shape,
             kernel_size,
             stride,
-            padding,
+            (p_h, p_h, p_w, p_w),
             ceil_mode,
         )?;
         let raw_node: NodeType = max_pool.into();

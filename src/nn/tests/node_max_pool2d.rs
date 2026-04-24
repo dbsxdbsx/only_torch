@@ -33,7 +33,7 @@ fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -70,7 +70,7 @@ fn test_max_pool2d_forward_batch() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
 
     // 第一个 batch 全 1，第二个 batch 递增
     let mut data = vec![1.0f32; 16];
@@ -110,7 +110,7 @@ fn test_max_pool2d_forward_multi_channel() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
 
     let mut data = vec![1.0f32; 16];
     data.extend(vec![2.0f32; 16]);
@@ -144,7 +144,7 @@ fn test_max_pool2d_forward_with_stride() -> Result<(), GraphError> {
         input.clone(),
         (3, 3),
         Some((2, 2)),
-        (0, 0, 0, 0),
+        (0, 0),
         false,
         Some("pool"),
     )?;
@@ -192,7 +192,7 @@ fn test_max_pool2d_invalid_input_dims() {
 
     let result = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (2, 2), None, (0, 0, 0, 0), false, Some("pool"));
+        .create_max_pool2d_node(input, (2, 2), None, (0, 0), false, Some("pool"));
     assert!(result.is_err());
 }
 
@@ -209,7 +209,7 @@ fn test_max_pool2d_kernel_too_large() {
 
     let result = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (5, 5), None, (0, 0, 0, 0), false, Some("pool"));
+        .create_max_pool2d_node(input, (5, 5), None, (0, 0), false, Some("pool"));
     assert!(result.is_err());
 }
 
@@ -233,7 +233,7 @@ fn test_max_pool2d_vjp_sparse_basic() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -280,7 +280,7 @@ fn test_max_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -323,7 +323,7 @@ fn test_max_pool2d_vjp_batch() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
 
     // batch 0: 全 3.0（所有位置都是最大值，梯度均匀分配）
     // batch 1: 递增 1..16
@@ -366,7 +366,7 @@ fn test_max_pool2d_e2e_backward_sparse() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(param.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(param.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
     let flat = inner
         .borrow_mut()
         .create_reshape_node(pool.clone(), &[1, 4], Some("flat"))?;
@@ -455,7 +455,7 @@ fn test_max_pool2d_e2e_conv_pool_cascade() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(conv.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(conv.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
 
     // flatten → [1, 4]
     let flat = inner
@@ -518,7 +518,7 @@ fn test_max_pool2d_dynamic_batch_forward() -> Result<(), GraphError> {
         input.clone(),
         (2, 2),
         Some((2, 2)),
-        (0, 0, 0, 0),
+        (0, 0),
         false,
         Some("pool"),
     )?;
@@ -554,7 +554,7 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
         param.clone(),
         (2, 2),
         Some((2, 2)),
-        (0, 0, 0, 0),
+        (0, 0),
         false,
         Some("pool"),
     )?;
@@ -618,7 +618,7 @@ fn test_create_max_pool2d_node() {
 
     let pool = inner
         .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), Some((2, 2)), (0, 0, 0, 0), false, Some("pool"))
+        .create_max_pool2d_node(input.clone(), (2, 2), Some((2, 2)), (0, 0), false, Some("pool"))
         .unwrap();
 
     assert_eq!(pool.shape(), vec![2, 3, 4, 4]);
@@ -640,7 +640,7 @@ fn test_create_max_pool2d_default_stride() {
 
     let pool = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (3, 3), None, (0, 0, 0, 0), false, None)
+        .create_max_pool2d_node(input, (3, 3), None, (0, 0), false, None)
         .unwrap();
 
     // (6 - 3) / 3 + 1 = 2
@@ -660,7 +660,7 @@ fn test_create_max_pool2d_overlapping() {
 
     let pool = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (3, 3), Some((1, 1)), (0, 0, 0, 0), false, None)
+        .create_max_pool2d_node(input, (3, 3), Some((1, 1)), (0, 0), false, None)
         .unwrap();
 
     // (5 - 3) / 1 + 1 = 3
@@ -680,7 +680,7 @@ fn test_create_max_pool2d_kernel_too_large() {
     // kernel 5x5 > 输入 4x4 -> 应失败
     let result = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (5, 5), None, (0, 0, 0, 0), false, None);
+        .create_max_pool2d_node(input, (5, 5), None, (0, 0), false, None);
     assert!(result.is_err());
 }
 
@@ -700,7 +700,7 @@ fn test_create_max_pool2d_drop_releases() {
 
         let pool = inner
             .borrow_mut()
-            .create_max_pool2d_node(input, (2, 2), None, (0, 0, 0, 0), false, None)
+            .create_max_pool2d_node(input, (2, 2), None, (0, 0), false, None)
             .unwrap();
         weak_pool = Rc::downgrade(&pool);
 
@@ -736,7 +736,7 @@ fn test_max_pool2d_sppf_style_padding() -> Result<(), GraphError> {
         input.clone(),
         (5, 5),
         Some((1, 1)),
-        (2, 2, 2, 2), // 对称 padding 2 圈
+        (2, 2), // 对称 padding 2 圈
         false,
         Some("pool"),
     )?;
@@ -781,7 +781,7 @@ fn test_max_pool2d_ceil_mode() -> Result<(), GraphError> {
         input_f.clone(),
         (3, 3),
         Some((2, 2)),
-        (0, 0, 0, 0),
+        (0, 0),
         false, // floor
         Some("pool_floor"),
     )?;
@@ -802,7 +802,7 @@ fn test_max_pool2d_ceil_mode() -> Result<(), GraphError> {
         input_c.clone(),
         (3, 3),
         Some((2, 2)),
-        (0, 0, 0, 0),
+        (0, 0),
         true, // ceil
         Some("pool_ceil"),
     )?;
@@ -827,7 +827,7 @@ fn test_max_pool2d_backward_with_padding() -> Result<(), GraphError> {
         input.clone(),
         (3, 3),
         Some((1, 1)),
-        (1, 1, 1, 1),
+        (1, 1),
         false,
         Some("pool"),
     )?;

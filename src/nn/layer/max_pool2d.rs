@@ -43,8 +43,8 @@ pub struct MaxPool2d {
     kernel_size: (usize, usize),
     /// 步长 (`stride_h`, `stride_w)，None` 时等于 `kernel_size`
     stride: Option<(usize, usize)>,
-    /// 填充 (top, bottom, left, right)，对称 padding 用 (p, p, p, p)
-    padding: (usize, usize, usize, usize),
+    /// 对称填充 (`pad_h`, `pad_w`)，等价于四角各填 (`pad_h`, `pad_h`, `pad_w`, `pad_w`)
+    padding: (usize, usize),
     /// ONNX 风格 ceil_mode：true 用 ceil 计算输出尺寸
     ceil_mode: bool,
     /// 层名称（用于节点命名）
@@ -71,21 +71,23 @@ impl MaxPool2d {
             graph: graph.clone(),
             kernel_size,
             stride,
-            padding: (0, 0, 0, 0),
+            padding: (0, 0),
             ceil_mode: false,
             name: name.to_string(),
         }
     }
 
-    /// 创建带 padding / ceil_mode 的 `MaxPool2d` 层
+    /// 创建带对称 padding / ceil_mode 的 `MaxPool2d` 层
     ///
     /// 主要用于 ONNX 导入路径（如 YOLOv5 SPPF 模块的 `MaxPool(k=5, pads=2, stride=1)`，
     /// 输出与输入同尺寸）。
+    ///
+    /// `padding` 是对称的 `(pad_h, pad_w)`,与 [`Conv2d`](super::Conv2d) 一致。
     pub fn with_padding(
         graph: &Graph,
         kernel_size: (usize, usize),
         stride: Option<(usize, usize)>,
-        padding: (usize, usize, usize, usize),
+        padding: (usize, usize),
         ceil_mode: bool,
         name: &str,
     ) -> Self {
@@ -133,8 +135,8 @@ impl MaxPool2d {
         self.stride
     }
 
-    /// 获取 padding (top, bottom, left, right)
-    pub const fn padding(&self) -> (usize, usize, usize, usize) {
+    /// 获取对称 padding (`pad_h`, `pad_w`)
+    pub const fn padding(&self) -> (usize, usize) {
         self.padding
     }
 

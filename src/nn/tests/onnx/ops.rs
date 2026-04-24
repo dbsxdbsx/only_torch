@@ -330,7 +330,7 @@ fn test_import_maxpool() {
         NodeTypeDescriptor::MaxPool2d { kernel_size, stride, padding, ceil_mode } => {
             assert_eq!(*kernel_size, (2, 2));
             assert_eq!(*stride, (2, 2));
-            assert_eq!(*padding, (0, 0, 0, 0));
+            assert_eq!(*padding, (0, 0));
             assert!(!*ceil_mode);
         }
         _ => panic!("expected MaxPool2d"),
@@ -360,7 +360,7 @@ fn test_import_pool_1d_rejected() {
     assert!(result.is_err());
 }
 
-/// 测试 MaxPool 解析 ONNX pads + ceil_mode（YOLOv5 SPPF 风格）
+/// 测试 MaxPool 解析对称 pads + ceil_mode（YOLOv5 SPPF 风格）
 ///
 /// VinXiangQi YOLOv5 SPPF 模块的 MaxPool 配置：
 /// kernel=5x5, stride=1, pads=[2,2,2,2], ceil_mode=0
@@ -383,8 +383,8 @@ fn test_import_maxpool_with_pads_and_ceil_mode() {
         } => {
             assert_eq!(*kernel_size, (5, 5));
             assert_eq!(*stride, (1, 1));
-            // ONNX pads=[H_b,W_b,H_e,W_e]=[2,2,2,2] → only_torch=(top,bottom,left,right)=(2,2,2,2)
-            assert_eq!(*padding, (2, 2, 2, 2));
+            // ONNX pads=[H_b,W_b,H_e,W_e]=[2,2,2,2] → only_torch 对称 (pad_h, pad_w)=(2, 2)
+            assert_eq!(*padding, (2, 2));
             assert!(!*ceil_mode);
         }
         _ => panic!("expected MaxPool2d"),
@@ -402,21 +402,40 @@ fn test_import_maxpool_with_pads_and_ceil_mode() {
     }
 }
 
-/// 测试 MaxPool 解析非对称 pads（如 H 和 W 不同）
+/// 测试 MaxPool 拒绝非对称 pads（与 Conv 行为一致,actionable error）
 ///
-/// `[H_b, W_b, H_e, W_e] = [1, 0, 1, 0]` 表示 H 维各加 1、W 维不 pad
-/// → only_torch (top, bottom, left, right) = (1, 1, 0, 0)
+/// `[H_b, W_b, H_e, W_e] = [1, 0, 1, 0]` 满足 H_b==H_e=1, W_b==W_e=0,实际是对称的,
+/// 应该被接受为 `(pad_h, pad_w) = (1, 0)`。
+/// 真正非对称的 `[1, 0, 0, 1]`(H_b!=H_e || W_b!=W_e)才会报错。
 #[test]
-fn test_import_maxpool_asymmetric_h_only_padding() {
+fn test_import_maxpool_symmetric_h_only_padding() {
     let attrs = vec![
         make_ints_attr("kernel_shape", vec![3, 3]),
         make_ints_attr("strides", vec![1, 1]),
-        make_ints_attr("pads", vec![1, 0, 1, 0]),
+        make_ints_attr("pads", vec![1, 0, 1, 0]), // H 对称 1, W 对称 0
     ];
-    let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp_asym").unwrap();
+    let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp_h_only").unwrap();
     if let NodeTypeDescriptor::MaxPool2d { padding, .. } = &result[0] {
-        assert_eq!(*padding, (1, 1, 0, 0));
+        assert_eq!(*padding, (1, 0));
     }
+}
+
+/// 测试 MaxPool 真正非对称 pads（H_b != H_e）应报 actionable error
+#[test]
+fn test_import_maxpool_truly_asymmetric_pads_rejected() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![3, 3]),
+        make_ints_attr("strides", vec![1, 1]),
+        make_ints_attr("pads", vec![1, 0, 0, 1]), // 非对称:H_b=1!=H_e=0
+    ];
+    let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp_asym");
+    let err = result.expect_err("非对称 MaxPool pads 应该被拒绝");
+    let msg = format!("{err}");
+    assert!(msg.contains("MaxPool"), "错误信息应该包含 op_type 'MaxPool',实际: {msg}");
+    assert!(
+        msg.contains("ZeroPad2d") || msg.contains("onnxsim"),
+        "错误信息应该提示用户用 ZeroPad2d 或 onnxsim 预处理,实际: {msg}"
+    );
 }
 
 /// 测试 Conv 解析对称 pads（YOLOv5 stem 风格）
@@ -643,12 +662,32 @@ fn test_export_maxpool2d() {
     let desc = NodeTypeDescriptor::MaxPool2d {
         kernel_size: (2, 2),
         stride: (2, 2),
-        padding: (0, 0, 0, 0),
+        padding: (0, 0),
         ceil_mode: false,
     };
     match descriptor_to_export_category(&desc) {
         ExportCategory::Operator(op) => {
             assert_eq!(op.op_type, "MaxPool");
+            // padding=(0,0) 不输出 → 仅 kernel_shape + strides
+            assert_eq!(op.int_list_attrs.len(), 2);
+        }
+        _ => panic!("expected Operator MaxPool"),
+    }
+
+    // 非零 padding 应导出 4 维 pads = [p_h, p_w, p_h, p_w]
+    let desc_pad = NodeTypeDescriptor::MaxPool2d {
+        kernel_size: (5, 5),
+        stride: (1, 1),
+        padding: (2, 2),
+        ceil_mode: false,
+    };
+    match descriptor_to_export_category(&desc_pad) {
+        ExportCategory::Operator(op) => {
+            assert_eq!(op.op_type, "MaxPool");
+            assert_eq!(op.int_list_attrs.len(), 3, "应包含 kernel_shape + strides + pads");
+            let pads = op.int_list_attrs.iter().find(|(k, _)| *k == "pads")
+                .expect("pads 属性缺失");
+            assert_eq!(pads.1, vec![2, 2, 2, 2], "对称 (2,2) 应展开为 4 维 [2,2,2,2]");
         }
         _ => panic!("expected Operator MaxPool"),
     }

@@ -482,7 +482,7 @@ fn test_upsample2d_e2e_pool_upsample_cascade() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(param.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
+            .create_max_pool2d_node(param.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
     let up = inner
         .borrow_mut()
         .create_upsample2d_node(pool.clone(), 2, 2, Some("up"))?;
