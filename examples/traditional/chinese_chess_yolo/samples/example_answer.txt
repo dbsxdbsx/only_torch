@@ -1,0 +1,2 @@
+sample_red_bottom.png: rnbakab1r/9/1c4P2/p1p6/c7P/2P1p4/P3P4/1C4C1N/9/RNBAKAB1R
+sample_red_top.png: rnbakabnr/9/1c5c1/p3p1p1p/2p6/6P2/P1P1P3P/1C5C1/9/RNBAKABNR

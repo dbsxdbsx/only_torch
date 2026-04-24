@@ -1,40 +1,55 @@
 //! # Chinese Chess YOLO Example（VinXiangQi YOLOv5 模型 → 9×10 FEN）
 //!
-//! 端到端演示 only_torch 接收第三方真实 YOLOv5 模型（VinXiangQi）做象棋识别：
+//! 端到端演示 only_torch 接收第三方真实 YOLOv5 模型(VinXiangQi)做象棋识别。
+//! 内置两张测试 sample(分别是"红方在下"和"红方在上"两种视觉朝向),实测 FEN 位级
+//! 匹配人类标注答案。
+//!
+//! ## 流水线
 //!
 //! ```
-//!  截图(.png) → letterbox(640×640) → ONNX forward → YOLO 解码
-//!     → NMS → 9×10 棋盘对齐 → FEN 字符串
+//!  截图(.png) → letterbox(640×640) → ONNX forward(only_torch) → YOLO 解码
+//!     → NMS → ROI 自动锁定 → 视觉朝向自动检测 → 9×10 棋盘对齐 → 标准 FEN
 //! ```
 //!
 //! ## 前置准备
 //!
 //! ```bash
-//! # 1. 拉取 VinXiangQi 预训练模型（首次运行需要约 93 MB 下载）
+//! # 拉取 VinXiangQi 预训练模型(首次运行需要约 93 MB 下载)
 //! uv run --with onnx python examples/traditional/chinese_chess_yolo/download_model.py
-//!
-//! # 2. 准备一张棋盘截图，命名 test_board.png 放到 example 目录下
-//! #    （用户自备；建议从 QQ象棋/JJ象棋等软件直接截图）
 //! ```
 //!
 //! ## 运行
 //!
 //! ```bash
+//! # 默认跑 sample 1(中盘残局,红方在下)
 //! cargo run --example chinese_chess_yolo
+//!
+//! # 跑 sample 2(初始局面,红方在上 → 自动旋转回标准方向)
+//! cargo run --example chinese_chess_yolo -- \
+//!   examples/traditional/chinese_chess_yolo/samples/sample_red_top.png
+//!
+//! # 跑用户自备截图
+//! cargo run --example chinese_chess_yolo -- <路径>.png
 //! ```
 //!
-//! ## 注意
+//! 跑 samples/ 下的图时会自动从 `samples/example_answer.txt` 找对应答案做位级对比。
 //!
-//! - 棋盘 ROI（`BOARD_ROI`）目前是硬编码占位，需根据实际截图调整；
-//!   meng_ru_ling_shi 集成阶段会改为 CLI 参数 / GUI 标定
-//! - 类别字典在 `board_align::BoardConfig::default_class_to_fen()`，
-//!   若 VinXiangQi 后续版本调整类别顺序，按 README 提示修改
+//! ## 关键概念:视觉朝向 vs 标准 FEN
+//!
+//! - **标准 FEN**:逻辑棋局表示,约定红方永远在 row 9 底部,跟原图视觉无关
+//! - **视觉朝向**:原图里红方在上 / 在下,FEN 字符串本身**无法表达**这个信息,
+//!   作为单独的元信息输出
+//! - 实现:`detect_red_on_top` 看红帅(r_jiang)在棋盘上半还是下半;在上时
+//!   `rotate_grid_180` 把整盘转回标准方向再序列化为 FEN
 
 mod board_align;
 mod letterbox;
 mod yolo_decode;
 
-use board_align::{BoardConfig, BOARD_COLS, BOARD_ROWS, NUM_CLASSES};
+use board_align::{
+    auto_detect_board_roi, detect_red_on_top, rotate_grid_180, BoardConfig, BOARD_COLS, BOARD_ROWS,
+    NUM_CLASSES,
+};
 use letterbox::{image_to_nchw_normalized, letterbox};
 use only_torch::nn::{load_onnx, Graph, GraphError, ImportReport};
 use only_torch::tensor::Tensor;
@@ -43,19 +58,24 @@ use std::time::Instant;
 use yolo_decode::{decode, nms};
 
 const MODEL_PATH: &str = "models/vinxiangqi.onnx";
-const TEST_IMAGE_PATH: &str = "examples/traditional/chinese_chess_yolo/test_board.png";
+const SAMPLES_DIR: &str = "examples/traditional/chinese_chess_yolo/samples";
+const DEFAULT_TEST_IMAGE_PATH: &str =
+    "examples/traditional/chinese_chess_yolo/samples/sample_red_bottom.png";
 
 const TARGET_SIZE: u32 = 640;
 const CONF_THRESHOLD: f32 = 0.25;
 const IOU_THRESHOLD: f32 = 0.45;
 
-/// 棋盘 ROI 占位值（x0, y0, x1, y1）—— 默认按整张截图当 ROI
-/// 真实使用时按测试截图标注调整，或在 README 里给出标定指引
-const BOARD_ROI_PLACEHOLDER: Option<(u32, u32, u32, u32)> = None;
-
 fn main() -> Result<(), GraphError> {
     println!("=== Chinese Chess YOLO Example（VinXiangQi）===\n");
     let total_start = Instant::now();
+
+    // 命令行参数:第 1 个参数是测试图路径(可选,默认 test_board.png)
+    let args: Vec<String> = std::env::args().collect();
+    let test_image_path = args
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| DEFAULT_TEST_IMAGE_PATH.to_string());
 
     // ────────────────────────────────────────────
     // 1. 前置文件校验
@@ -70,13 +90,24 @@ fn main() -> Result<(), GraphError> {
         );
         return Ok(()); // 优雅退出（不算 example 失败）
     }
-    if !Path::new(TEST_IMAGE_PATH).exists() {
-        eprintln!("[预检失败] 测试棋盘截图不存在: {TEST_IMAGE_PATH}");
+    if !Path::new(&test_image_path).exists() {
+        eprintln!("[预检失败] 测试棋盘截图不存在: {test_image_path}");
         eprintln!();
-        eprintln!("  请准备一张中国象棋棋盘截图（QQ象棋/JJ象棋/天天象棋等都行），");
-        eprintln!("  命名为 test_board.png 放到上述路径下。");
+        eprintln!("  用法:");
+        eprintln!(
+            "    cargo run --example chinese_chess_yolo                  \
+             # 默认跑 sample 1 (红方在下)"
+        );
+        eprintln!(
+            "    cargo run --example chinese_chess_yolo -- {SAMPLES_DIR}/sample_red_top.png"
+        );
+        eprintln!(
+            "    cargo run --example chinese_chess_yolo -- <路径>.png    \
+             # 用户自备截图"
+        );
         return Ok(());
     }
+    println!("使用测试图: {test_image_path}\n");
 
     // ────────────────────────────────────────────
     // 2. 加载 ONNX 模型（分两步，便于在 rebuild 失败时仍能展示 ImportReport）
@@ -114,20 +145,11 @@ fn main() -> Result<(), GraphError> {
         Err(e) => {
             let rebuild_ms = rebuild_start.elapsed().as_secs_f64() * 1000.0;
             eprintln!();
-            eprintln!("  [已知问题] rebuild 失败 ({rebuild_ms:.1} ms): {e:?}");
-            eprintln!();
-            eprintln!("  ONNX import 阶段完整跑通且 ImportReport 已正确填充，但 only_torch");
-            eprintln!("  的 from_descriptor 在 YOLOv5 PAN/FPN 复杂结构下出现 spatial shape");
-            eprintln!("  传播差异（实测某 Concat 节点 16×16 vs 期望 20×20）。这是框架层 bug，");
-            eprintln!("  下游 todo `regression-fixture` 会针对性诊断/修复。");
-            eprintln!();
-            eprintln!("  本次 example 的 e2e 路径在 import 阶段已验证完毕：");
-            eprintln!("    ✅ Transpose 导入");
-            eprintln!("    ✅ Constant 折叠 → Reshape/Resize/Split 三种模式");
-            eprintln!("    ✅ Split → N×Narrow 重写");
-            eprintln!("    ✅ ImportReport 透明化");
+            eprintln!("  [意外失败] rebuild 失败 ({rebuild_ms:.1} ms): {e:?}");
+            eprintln!("  ONNX import 阶段已跑通,但 from_descriptor 重建出错。");
+            eprintln!("  本路径在 VinXiangQi 模型上已验证可工作,若失败请保留 ImportReport 上报。");
             let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
-            println!("\n=== 完成（rebuild 因框架限制跳过 forward + FEN 阶段）===");
+            println!("\n=== 完成(rebuild 失败,跳过 forward + FEN 阶段)===");
             println!("  总耗时: {total_ms:.1} ms");
             return Ok(());
         }
@@ -148,8 +170,8 @@ fn main() -> Result<(), GraphError> {
     // ────────────────────────────────────────────
     println!("\n[3/5] 读图 + letterbox 到 {TARGET_SIZE}×{TARGET_SIZE}");
     let pre_start = Instant::now();
-    let raw_img = image::open(TEST_IMAGE_PATH).map_err(|e| {
-        GraphError::ComputationError(format!("读图失败 {TEST_IMAGE_PATH}: {e}"))
+    let raw_img = image::open(&test_image_path).map_err(|e| {
+        GraphError::ComputationError(format!("读图失败 {test_image_path}: {e}"))
     })?;
     println!(
         "  原图尺寸: {}×{}",
@@ -185,14 +207,12 @@ fn main() -> Result<(), GraphError> {
 
     if let Err(e) = forward_res {
         eprintln!();
-        eprintln!("  [已知问题] forward 在 YOLOv5 PAN/FPN 结构下出现 shape mismatch：");
-        eprintln!("    {e:?}");
-        eprintln!("  这是 only_torch 框架内部 limitation（与本 plan 的 ONNX import 路径无关），");
-        eprintln!("  下游 todo `regression-fixture` 会针对性诊断/修复。本 example 在 forward");
-        eprintln!("  失败时只展示 import 阶段成果（参数量 + ImportReport 摘要），FEN 跳过。");
+        eprintln!("  [意外失败] forward 报错: {e:?}");
+        eprintln!("  本路径在 VinXiangQi 模型 + 内置两张 sample 截图上已验证可工作,");
+        eprintln!("  若你的截图触发新失败请保留 ImportReport 上报。");
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
-        println!("\n=== 完成（forward 因框架限制跳过 FEN 阶段）===");
-        println!("  总耗时: {total_ms:.1} ms（其中 forward 失败前 {infer_ms:.1} ms）");
+        println!("\n=== 完成(forward 失败,跳过 FEN 阶段)===");
+        println!("  总耗时: {total_ms:.1} ms(其中 forward 失败前 {infer_ms:.1} ms)");
         return Ok(());
     }
 
@@ -224,39 +244,57 @@ fn main() -> Result<(), GraphError> {
     println!("\n[5/5] decode + NMS + 9×10 对齐 + FEN（conf≥{CONF_THRESHOLD}, IoU>{IOU_THRESHOLD}）");
     let post_start = Instant::now();
     let raw_dets = decode(&out_data, num_classes, CONF_THRESHOLD);
+    let raw_count = raw_dets.len();
     let nms_dets = nms(raw_dets, IOU_THRESHOLD);
     let post_ms = post_start.elapsed().as_secs_f64() * 1000.0;
     println!(
-        "  原始检出: ?, NMS 后: {} 个 (耗时 {:.1} ms)",
-        nms_dets.len(),
-        post_ms
+        "  原始检出: {raw_count}, NMS 后: {} 个 (耗时 {post_ms:.1} ms)",
+        nms_dets.len()
     );
 
+    // ── ROI 自动检测 ──
     let (orig_w, orig_h) = image::GenericImageView::dimensions(&raw_img);
-    let roi = BOARD_ROI_PLACEHOLDER.unwrap_or((0, 0, orig_w, orig_h));
-    println!("  使用 ROI: {roi:?}（占位值，按需调整）");
+    let roi = match auto_detect_board_roi(&nms_dets, &lb) {
+        Some(r) => {
+            println!("  ROI 自动锁定: {r:?}(优先棋子包络,fallback 到 board 类)");
+            r
+        }
+        None => {
+            let r = (0, 0, orig_w, orig_h);
+            println!("  ROI 退化为整图: {r:?}(无棋子且无 board 类检出)");
+            r
+        }
+    };
 
     let cfg = BoardConfig {
         roi,
-        class_to_fen: if num_classes >= NUM_CLASSES {
-            BoardConfig::default_class_to_fen()
-        } else {
-            // 若实际 nc 不足 14（如调试模型），用问号填充
-            let mut arr = ['?'; NUM_CLASSES];
-            for (i, c) in BoardConfig::default_class_to_fen().iter().enumerate() {
-                if i < num_classes {
-                    arr[i] = *c;
-                }
-            }
-            arr
-        },
+        class_to_fen: BoardConfig::default_class_to_fen(),
     };
-    let grid = board_align::align_to_grid(&nms_dets, &lb, &cfg);
+    let raw_grid = board_align::align_to_grid(&nms_dets, &lb, &cfg);
+
+    // ── 视觉朝向自动检测(独立元信息,FEN 字符串本身无法表达) ──
+    let red_on_top = detect_red_on_top(&nms_dets, &lb, roi);
+    let grid = if red_on_top {
+        rotate_grid_180(&raw_grid)
+    } else {
+        raw_grid
+    };
+
     let piece_count = board_align::count_pieces(&grid);
     let fen = board_align::to_fen(&grid, &cfg);
 
     println!("  网格非空格数: {piece_count} / {}", BOARD_COLS * BOARD_ROWS);
-    println!("\n  FEN（行从上到下、列从左到右）：");
+
+    // ── 输出 1:视觉朝向(原图视觉信息,跟 FEN 解耦) ──
+    println!("\n  视觉朝向（原图里红方在哪一侧）：");
+    if red_on_top {
+        println!("    红方在棋盘上方(黑方在下)→ 已旋转 180° 让 grid 回到标准方向");
+    } else {
+        println!("    红方在棋盘下方(标准方向)→ 不旋转");
+    }
+
+    // ── 输出 2:标准 FEN(逻辑棋局,永远红方在 row 9 底) ──
+    println!("\n  标准 FEN(红方永远在 row 9 底,与视觉朝向解耦)：");
     println!("    {fen}");
 
     // 简单可视化 9×10 grid
@@ -265,7 +303,7 @@ fn main() -> Result<(), GraphError> {
         print!("    ");
         for cell in row.iter() {
             match cell {
-                Some(class_id) if *class_id < num_classes && *class_id < NUM_CLASSES => {
+                Some(class_id) if *class_id < NUM_CLASSES => {
                     print!("{} ", cfg.class_to_fen[*class_id]);
                 }
                 Some(_) => print!("? "),
@@ -273,6 +311,18 @@ fn main() -> Result<(), GraphError> {
             }
         }
         println!();
+    }
+
+    // ── 输出 3:跑 samples/ 下的图时,跟 example_answer.txt 自动对比 ──
+    if let Some(expected) = lookup_expected_fen(&test_image_path) {
+        println!("\n  [自动对比] samples/example_answer.txt 期望值校验:");
+        if expected == fen {
+            println!("    ✓ 匹配 (FEN 位级一致)");
+        } else {
+            println!("    ✗ 不匹配!");
+            println!("    期望: {expected}");
+            println!("    实际: {fen}");
+        }
     }
 
     // ────────────────────────────────────────────
@@ -287,6 +337,34 @@ fn main() -> Result<(), GraphError> {
     );
 
     Ok(())
+}
+
+/// 跑 samples/ 下的图时,从 `samples/example_answer.txt` 找对应期望 FEN
+///
+/// `example_answer.txt` 一行一个图,格式 `<basename>.png: <fen>`(`:` 后允许空格)。
+/// 不在 samples/ 下、或文件不存在、或没找到对应图名,统一返回 None(静默跳过对比)。
+fn lookup_expected_fen(image_path: &str) -> Option<String> {
+    let path = Path::new(image_path);
+    let basename = path.file_name().and_then(|s| s.to_str())?;
+    // 仅在 samples/ 下时才查表(避免误匹配用户自备图)
+    let parent = path.parent().and_then(|p| p.to_str()).unwrap_or("");
+    if !parent.replace('\\', "/").ends_with("samples") {
+        return None;
+    }
+    let answer_path = format!("{SAMPLES_DIR}/example_answer.txt");
+    let content = std::fs::read_to_string(&answer_path).ok()?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((name, fen)) = line.split_once(':') {
+            if name.trim() == basename {
+                return Some(fen.trim().to_string());
+            }
+        }
+    }
+    None
 }
 
 /// 打印 ImportReport 摘要
