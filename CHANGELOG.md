@@ -69,6 +69,12 @@
 
 ### 修改
 
+- **refactor(nn): 删 `.otm` 跨版本兼容兜底 + MaxPool2d IR 层 padding 4→2 元组** [`e6686b4`]
+  - **动作 A:删 .otm 跨版本兼容兜底**:删 `default_dilation` / `default_output_padding` / `default_max_pool_padding` 三个辅助函数 + Conv2d.dilation / ConvTranspose2d.output_padding / MaxPool2d.{padding, ceil_mode} 上的 `#[serde(default)]` 标注;`origin_onnx_nodes` 保留 `default + skip_serializing_if`(配对惯用法,空 Vec 不写入 JSON 体积,不属于版本兜底);`GraphDescriptor::from_json` 加 actionable error 包装(失败时报本地版本号 + 文件版本号 + "请用对应版本重新加载或在新版本下重新 train/save");删 `test_provenance_legacy_otm_compatible` + 新增 2 个 fail-fast 测试覆盖版本不匹配/完全损坏 JSON 场景
+  - **动作 B:MaxPool2d.padding IR 层 4 元组 → 2 元组(对称语义,与 Conv2d 对齐)**:`NodeTypeDescriptor::MaxPool2d.padding` 从 `(usize×4)` 改 `(usize×2)` 对称 `(pad_h, pad_w)`;Layer `with_padding` API + `create_max_pool2d_node` 形参同步改 2 元组,内部展开为 `(p_h, p_h, p_w, p_w)` 传给 raw_node(raw_node 仍保留 4 维表示——算法实现需要,前向用 `NEG_INFINITY` 虚拟填充避免污染 max,反向需按边 unpad);`var/descriptor.rs` 转换处加 `debug_assert` 对称性检查,只取 `(top, left)` 进 IR;ONNX 导入复用 `parse_symmetric_2d_pads`(与 Conv 一致,非对称报 actionable error 提示用 `ZeroPad2d` / `onnxsim`);导出从 `(p_h, p_w)` 展开为 4 维 ONNX `pads = [p_h, p_w, p_h, p_w]`;evolution + tests 共 30 处字面量 `(0,0,0,0) → (0,0)`,原"非对称 H 维 padding"测试改为"非对称应被拒绝"
+  - **顺手刷新过时快照**:`examples/evolution/parity_seq_var_len/{.dot,.png}` 的 committed 版本来自 commit 712e619(演化阶段 F),之后多个 commit(b115ff2 / f88e0a7 等)间接影响演化轨迹但没人重生成快照,本次跑 example 顺手刷新(FEN 准确率 87%→96%,seed=42 确定性可复现)
+  - **验收**:`cargo check + tests + examples + benches` 全部通过零新 lint;`cargo test --lib` 3105/3105 全过;16 traditional + 4 evolution examples(不含 RL/中国象棋/MNIST 演化)端到端跑通
+
 - **refactor(nn/graph): `onnx_import.rs` 拆分为子目录,启用 `ImportReport.warnings` 字段** [`722e9e0`]
   - 把单文件 `src/nn/graph/onnx_import.rs` (~1080 行) 拆分到 `src/nn/graph/onnx_import/` 子目录的 7 个文件:`mod.rs` / `assemble.rs` / `const_table.rs` / `fold_reshape.rs` / `fold_resize.rs` / `split_narrow.rs` / `util.rs`
   - 不抽 `PatternRewrite` trait(设计文档 §7.2 提议)——实测 5 种 rewrite 全在 ONNX 节点装配阶段做(不是 GraphDescriptor 后处理),强抽 trait 会引入"胖 Context struct + 大量泛型"的反向复杂度
