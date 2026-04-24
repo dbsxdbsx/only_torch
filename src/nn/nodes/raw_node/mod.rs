@@ -131,6 +131,11 @@ define_node_types! {
         description: "2D 平均池化",
         var_method: None,
     },
+    Upsample2d(Upsample2d) {
+        category: "矩阵/卷积",
+        description: "2D 最近邻上采样（YOLO PAN/FPN 颈部用）",
+        var_method: None,
+    },
 
     // ==================== 形状变换 ====================
     Reshape(Reshape) {

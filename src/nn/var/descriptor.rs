@@ -58,6 +58,10 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
             kernel_size: p.kernel_size(),
             stride: p.stride(),
         },
+        NodeType::Upsample2d(u) => NodeTypeDescriptor::Upsample2d {
+            scale_h: u.scale_h(),
+            scale_w: u.scale_w(),
+        },
 
         // === 形状变换 ===
         NodeType::Reshape(r) => NodeTypeDescriptor::Reshape {

@@ -83,6 +83,7 @@ mod node_swish;
 mod node_tanh;
 mod node_topk;
 mod node_unsqueeze;
+mod node_upsample2d;
 mod node_where_cond;
 
 // ===== 图基础设施测试 =====

@@ -470,6 +470,36 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "avgpool2d", vec![parent])
     }
 
+    /// 创建 Upsample2d 节点（最近邻上采样）
+    ///
+    /// 2D 最近邻上采样，输入必须是 4D [batch, C, H, W]，
+    /// 输出形状为 [batch, C, H*scale_h, W*scale_w]。
+    ///
+    /// 用途：YOLOv5 等目标检测网络的 PAN/FPN 颈部，
+    /// 把深层小特征图上采样后跟浅层特征图拼接做多尺度融合。
+    ///
+    /// # 参数
+    /// - `parent`: 输入节点
+    /// - `scale_h`: H 方向放大倍数（必须 ≥ 1）
+    /// - `scale_w`: W 方向放大倍数（必须 ≥ 1）
+    pub fn create_upsample2d_node(
+        &mut self,
+        parent: Rc<NodeInner>,
+        scale_h: usize,
+        scale_w: usize,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::Upsample2d;
+
+        let parent_shape = parent.shape();
+        let parent_dynamic_shape = parent.dynamic_shape();
+
+        let upsample = Upsample2d::new(&parent_shape, &parent_dynamic_shape, scale_h, scale_w)?;
+        let raw_node: NodeType = upsample.into();
+
+        self.create_node_inner(raw_node, name, "upsample2d", vec![parent])
+    }
+
     /// 创建 Flatten 节点    ///
     /// 将输入展平为 2D 张量。
     /// - `keep_first_dim = true`: [d0, d1, d2, ...] → [d0, d1*d2*...]

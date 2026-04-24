@@ -135,6 +135,13 @@ pub enum NodeTypeDescriptor {
         kernel_size: (usize, usize),
         stride: (usize, usize),
     },
+    /// 2D 最近邻上采样（YOLO PAN/FPN 颈部用）
+    ///
+    /// 仅支持整数倍 nearest 模式：输出 [N, C, H*scale_h, W*scale_w]
+    Upsample2d {
+        scale_h: usize,
+        scale_w: usize,
+    },
     /// 张量索引选择（RNN 展开式设计用，固定索引）
     Select {
         axis: usize,

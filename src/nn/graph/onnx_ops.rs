@@ -246,6 +246,45 @@ pub fn onnx_op_to_descriptors(
             Ok(vec![NodeTypeDescriptor::AvgPool2d { kernel_size, stride }])
         }
 
+        // ─── 上采样（YOLO PAN/FPN 颈部用）───
+        // Resize（opset 13+）和 Upsample（opset 9-10，已废弃但 YOLOv5 老版可能用）
+        // 都映射到内部 Upsample2d 节点。
+        //
+        // 注意：scales 在 ONNX opset 10+ 是从 input initializer 读取的（不在属性里），
+        // 这里只能返回占位 scale=0，由装配层（onnx_import.rs）从 initializer
+        // 读取实际值后替换（套路与 BatchNormalization::num_features 一致）。
+        //
+        // 仅支持 mode="nearest"（YOLOv5 用的默认模式）。
+        // mode 校验同样推迟到装配层（这里读 attrs.s 后做字符串比较）。
+        // TODO[upsample-scales]: 装配层（onnx_import.rs）尚未实现 scales 读取，
+        //   完整 ONNX 导入需要等装配层支持后才能端到端跑通。
+        OpType::Resize | OpType::Upsample => {
+            // 校验 mode 必须是 nearest（属性 mode 是 string 类型，存在 attr.s 里）
+            let mode_attr = attrs.iter().find(|a| a.name == "mode");
+            if let Some(attr) = mode_attr {
+                let mode_str = std::str::from_utf8(attr.s).map_err(|_| OnnxError::UnsupportedAttribute {
+                    op_type: "Resize".to_string(),
+                    attribute: "mode".to_string(),
+                    reason: "mode 属性不是有效 UTF-8".to_string(),
+                })?;
+                if mode_str != "nearest" {
+                    return Err(OnnxError::UnsupportedAttribute {
+                        op_type: format!("{op_type:?}"),
+                        attribute: "mode".to_string(),
+                        reason: format!(
+                            "目前仅支持 mode=\"nearest\"，得到 mode=\"{mode_str}\"。\
+                            建议用 onnxsim 预处理，或在 PyTorch 端导出时强制 nearest 模式。"
+                        ),
+                    });
+                }
+            }
+            // 占位 scale=0，装配层负责从 initializer 读取真实值替换
+            Ok(vec![NodeTypeDescriptor::Upsample2d {
+                scale_h: 0,
+                scale_w: 0,
+            }])
+        }
+
         // ─── 归一化 ───
         OpType::BatchNormalization => {
             let eps = find_attr_float(attrs, "epsilon").unwrap_or(1e-5);
@@ -555,6 +594,17 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                     ("strides", vec![stride.0 as i64, stride.1 as i64]),
                 ],
             })
+        }
+
+        // 上采样：导出为 ONNX Resize（opset 13 nearest）
+        // 注意：完整 Resize 算子需要 string 属性 mode="nearest" 和 input "scales"，
+        // 当前 OnnxExportOp 仅支持 float/int/int_list 三种属性类型，
+        // 因此这里返回 simple("Resize") 占位（不带任何属性），
+        // 与策略文档 §4.4 一致——only_torch 不承诺 ONNX 导出 round-trip。
+        // TODO[upsample-export]: 后续若需要完整导出，需扩展 OnnxExportOp 支持
+        //   string_attrs 和 float_list_attrs，并由调用方写入 scales initializer。
+        NodeTypeDescriptor::Upsample2d { .. } => {
+            ExportCategory::Operator(OnnxExportOp::simple("Resize"))
         }
 
         // ─── 归一化 ───

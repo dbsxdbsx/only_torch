@@ -68,6 +68,7 @@ mod sum;
 mod swish;
 mod tanh;
 mod topk;
+mod upsample2d;
 mod where_cond;
 mod zeros_like;
 
@@ -134,5 +135,6 @@ pub(crate) use sum::Sum;
 pub(crate) use swish::Swish;
 pub(crate) use tanh::Tanh;
 pub(crate) use topk::TopK;
+pub(crate) use upsample2d::Upsample2d;
 pub(crate) use where_cond::WhereCond;
 pub(crate) use zeros_like::ZerosLike;

@@ -484,6 +484,16 @@ pub fn infer_output_shape(
             Ok(vec![s[0], s[1], h_out, w_out])
         }
 
+        // ── Upsample2d: [N, C, H, W] → [N, C, H*scale_h, W*scale_w] ──
+        NT::Upsample2d { scale_h, scale_w } => {
+            require_n(1, parent_shapes)?;
+            let s = parent_shapes[0];
+            if s.len() < 4 {
+                return Err(format!("Upsample2d 输入需要 4D，得到 {s:?}"));
+            }
+            Ok(vec![s[0], s[1], s[2] * *scale_h, s[3] * *scale_w])
+        }
+
         // ── Select: 沿 axis 取固定索引，移除该维度 ──
         NT::Select { axis, .. } => {
             require_n(1, parent_shapes)?;

@@ -340,6 +340,14 @@ fn rebuild_node(
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
+        NodeTypeDescriptor::Upsample2d { scale_h, scale_w } => {
+            let parent = get_parent(node_desc, node_map, 0)?;
+            let node = graph
+                .inner_mut()
+                .create_upsample2d_node(parent, *scale_h, *scale_w, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
         // ==================== 形状变换 ====================
         NodeTypeDescriptor::Flatten { keep_first_dim } => {
             let parent = get_parent(node_desc, node_map, 0)?;
