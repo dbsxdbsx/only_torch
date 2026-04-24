@@ -11,6 +11,7 @@
 
 use super::error::GraphError;
 use super::handle::Graph;
+use super::onnx_import::ImportReport;
 use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 use crate::nn::layer::{Gru, Lstm, Rnn};
 use crate::nn::var::Var;
@@ -34,6 +35,8 @@ pub struct RebuildResult {
     pub parameters: Vec<Var>,
     /// 旧 ID → 新 Var 的完整映射
     pub node_map: HashMap<u64, Var>,
+    /// ONNX 导入路径的可观测报告（仅 `from_onnx*` 路径填充，其他重建路径为 `None`）
+    pub import_report: Option<ImportReport>,
 }
 
 impl Graph {
@@ -117,6 +120,7 @@ impl Graph {
             outputs,
             parameters,
             node_map,
+            import_report: None,
         })
     }
 }

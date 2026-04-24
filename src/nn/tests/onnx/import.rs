@@ -821,3 +821,98 @@ fn test_genome_from_onnx_bytes() {
     assert!(genome.seq_len.is_none());
     assert!(genome.input_spatial.is_none());
 }
+
+// ==================== ImportReport 骨架测试 ====================
+
+#[test]
+fn test_import_report_default_empty() {
+    // 纯 MLP（无 Conv+bias、无 Gemm）：只有 MatMul + Add 直接映射，无 rewrite
+    let bytes = build_minimal_mlp_bytes();
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    assert!(
+        result.import_report.rewritten.is_empty(),
+        "纯 MatMul+Add 图不应触发任何 rewrite"
+    );
+    assert!(result.import_report.warnings.is_empty());
+}
+
+#[test]
+fn test_import_report_records_conv_bias_split() {
+    // Conv with bias 模型（来自 test_conv2d_import 的同款图）
+    let w = TensorProto::from_f32("conv_w", vec![8, 1, 3, 3], vec![0.1; 72]);
+    let b = TensorProto::from_f32("conv_b", vec![8], vec![0.0; 8]);
+    let input_vi = ValueInfo {
+        name: "img",
+        r#type: Some(TypeProto {
+            value: Some(TypeValue::Tensor(TensorTypeProto {
+                elem_type: DataType::Float,
+                shape: Some(TensorShape {
+                    dim: vec![
+                        TensorShapeDimension { value: Dimension::Value(1), denotation: "" },
+                        TensorShapeDimension { value: Dimension::Value(1), denotation: "" },
+                        TensorShapeDimension { value: Dimension::Value(28), denotation: "" },
+                        TensorShapeDimension { value: Dimension::Value(28), denotation: "" },
+                    ],
+                }),
+            })),
+            denotation: "",
+        }),
+        doc_string: "",
+        metadata_props: vec![],
+    };
+    let conv_node = Node {
+        input: vec!["img", "conv_w", "conv_b"],
+        output: vec!["conv_out"],
+        name: "conv0",
+        op_type: OpType::Conv,
+        attribute: vec![
+            Attribute { name: "kernel_shape", ints: vec![3, 3], ..Default::default() },
+            Attribute { name: "strides", ints: vec![1, 1], ..Default::default() },
+            Attribute { name: "pads", ints: vec![1, 1, 1, 1], ..Default::default() },
+            Attribute { name: "group", i: 1, ..Default::default() },
+        ],
+        ..Default::default()
+    };
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![conv_node],
+            name: "conv_test",
+            initializer: vec![w, b],
+            input: vec![input_vi],
+            output: vec![],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    // 必须含 1 条 conv_with_bias_to_conv_plus_add 记录
+    assert_eq!(result.import_report.rewritten.len(), 1);
+    let record = &result.import_report.rewritten[0];
+    assert_eq!(record.pattern, "conv_with_bias_to_conv_plus_add");
+    assert_eq!(record.consumed_onnx_nodes, vec!["conv0".to_string()]);
+    assert_eq!(record.produced_descriptor_nodes.len(), 2, "应产出 Conv2d + Add 两个节点");
+
+    // 反向验证：produced ID 真实存在于 descriptor 中
+    let id_set: HashSet<u64> = result.descriptor.nodes.iter().map(|n| n.id).collect();
+    for &id in &record.produced_descriptor_nodes {
+        assert!(id_set.contains(&id), "produced_descriptor_nodes 中的 ID {id} 应存在于 descriptor");
+    }
+}
+
+#[test]
+fn test_import_report_records_gemm_split() {
+    // Gemm 模型（已有 build_gemm_model_bytes 复用）
+    let bytes = build_gemm_model_bytes();
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    assert_eq!(result.import_report.rewritten.len(), 1);
+    let record = &result.import_report.rewritten[0];
+    assert_eq!(record.pattern, "gemm_to_matmul_plus_add");
+    assert_eq!(record.consumed_onnx_nodes, vec!["gemm0".to_string()]);
+    assert_eq!(record.produced_descriptor_nodes.len(), 2);
+}

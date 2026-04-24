@@ -30,6 +30,40 @@ pub struct OnnxImportResult {
     pub descriptor: GraphDescriptor,
     /// 权重映射：节点 ID → Tensor
     pub weights: HashMap<u64, Tensor>,
+    /// 导入过程的可观测报告：模式重写记录 + 非致命警告
+    pub import_report: ImportReport,
+}
+
+/// ONNX 导入过程的可观测报告（最小骨架版）
+///
+/// 当前仅含：
+/// - `rewritten`：所有命中的模式重写记录（如 Conv+bias 拆分、Split→Narrow 等）
+/// - `warnings`：非致命警告（如属性默认值兜底、未使用的 initializer 等）
+///
+/// **范围控制**（参见 `chinese_chess_yolo_example_b4f3a201.plan.md` §3.4）：
+/// 不含 `folded`/`shape_inference`/`provenance`/`origin_onnx_nodes` 等扩展字段，
+/// 等真正撞到对应需求时再补，避免范围蔓延。
+#[derive(Debug, Default, Clone)]
+pub struct ImportReport {
+    /// 已应用的模式重写记录（按命中顺序排列）
+    pub rewritten: Vec<RewriteRecord>,
+    /// 非致命警告
+    pub warnings: Vec<String>,
+}
+
+/// 单条 pattern rewrite 记录
+///
+/// 描述一次 ONNX → only_torch 节点重写的输入/输出对应关系，
+/// 便于上层调试"为什么 ONNX 节点数和 only_torch 节点数不一致"。
+#[derive(Debug, Clone)]
+pub struct RewriteRecord {
+    /// 模式名（如 `"conv_with_bias_to_conv_plus_add"`、`"split_to_narrows"`、
+    /// `"constant_fold_into_reshape"`）
+    pub pattern: &'static str,
+    /// 该重写"消化"了哪些 ONNX 原始节点（按 ONNX `node.name` 收集）
+    pub consumed_onnx_nodes: Vec<String>,
+    /// 该重写在 only_torch 内"产出"了哪些 descriptor 节点 ID
+    pub produced_descriptor_nodes: Vec<u64>,
 }
 
 /// 从 .onnx 文件加载为 GraphDescriptor + 权重
@@ -136,6 +170,7 @@ fn assemble(
 ) -> Result<OnnxImportResult, OnnxError> {
     let mut descriptor = GraphDescriptor::new(graph.name);
     let mut weights: HashMap<u64, Tensor> = HashMap::new();
+    let mut import_report = ImportReport::default();
 
     // initializer 名称集合（这些同时出现在 input 中时不创建 BasicInput）
     let initializer_names: std::collections::HashSet<&str> =
@@ -259,6 +294,12 @@ fn assemble(
                     None,
                     vec![conv_id, bias_id],
                 ));
+
+                import_report.rewritten.push(RewriteRecord {
+                    pattern: "conv_with_bias_to_conv_plus_add",
+                    consumed_onnx_nodes: vec![node.name.to_string()],
+                    produced_descriptor_nodes: vec![conv_id, add_id],
+                });
             } else {
                 let output_name = node.output.first().copied().unwrap_or(node.name);
                 let out_id = symbols.get_or_assign(output_name);
@@ -334,12 +375,19 @@ fn assemble(
                 None,
                 vec![matmul_id, c_id],
             ));
+
+            import_report.rewritten.push(RewriteRecord {
+                pattern: "gemm_to_matmul_plus_add",
+                consumed_onnx_nodes: vec![node.name.to_string()],
+                produced_descriptor_nodes: vec![matmul_id, add_id],
+            });
         }
     }
 
     Ok(OnnxImportResult {
         descriptor,
         weights,
+        import_report,
     })
 }
 

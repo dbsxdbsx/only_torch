@@ -369,7 +369,7 @@ impl Graph {
     fn from_onnx_result(
         import_result: super::onnx_import::OnnxImportResult,
     ) -> Result<RebuildResult, GraphError> {
-        let result = Graph::from_descriptor(&import_result.descriptor)?;
+        let mut result = Graph::from_descriptor(&import_result.descriptor)?;
 
         // ONNX 权重按 descriptor node ID 索引 → 转换为按名称索引
         let name_params: HashMap<String, Tensor> = import_result
@@ -386,6 +386,8 @@ impl Graph {
         apply_params_to_graph(&result.graph, &name_params)?;
 
         result.graph.eval();
+        // 透传 ONNX 导入报告供上层观测（rewrite 记录 + 警告）
+        result.import_report = Some(import_result.import_report);
         Ok(result)
     }
 
