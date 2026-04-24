@@ -10,14 +10,14 @@
  * 4. 装配层：组装 GraphDescriptor + 权重 HashMap
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 use crate::nn::graph::onnx_error::OnnxError;
 use crate::nn::graph::onnx_ops;
 use crate::tensor::Tensor;
-use onnx_rs::ast::{DataType, Dimension, TypeValue};
+use onnx_rs::ast::{DataType, Dimension, OpType, TensorProto, TypeValue};
 
 /// 支持的 ONNX opset 版本范围
 const MIN_OPSET_VERSION: i64 = 13;
@@ -164,8 +164,8 @@ impl SymbolTable {
 
 // ==================== 第 3 & 4 层：装配 ====================
 
-fn assemble(
-    graph: &onnx_rs::ast::Graph,
+fn assemble<'a>(
+    graph: &'a onnx_rs::ast::Graph<'a>,
     symbols: &mut SymbolTable,
 ) -> Result<OnnxImportResult, OnnxError> {
     let mut descriptor = GraphDescriptor::new(graph.name);
@@ -173,8 +173,54 @@ fn assemble(
     let mut import_report = ImportReport::default();
 
     // initializer 名称集合（这些同时出现在 input 中时不创建 BasicInput）
-    let initializer_names: std::collections::HashSet<&str> =
+    let initializer_names: HashSet<&str> =
         graph.initializer.iter().map(|t| t.name()).collect();
+
+    // ── 第 0 步：常量折叠预处理 ──
+    // 收集所有可作为元信息源的常量：
+    //   1. ONNX `Constant` 节点的 value 属性（输出名 → TensorProto）
+    //   2. graph.initializer（initializer 既可能是真权重，也可能是 shape/scales 等元信息）
+    let mut const_table: HashMap<&str, &TensorProto> = HashMap::new();
+    for node in &graph.node {
+        if node.op_type == OpType::Constant {
+            // ONNX Constant 通过 attribute "value": TensorProto 携带常量值
+            if let Some(attr) = node.attribute.iter().find(|a| a.name == "value") {
+                if let Some(tensor) = &attr.t {
+                    if let Some(&out_name) = node.output.first() {
+                        const_table.insert(out_name, tensor);
+                    }
+                }
+            }
+        }
+    }
+    for init in &graph.initializer {
+        const_table.entry(init.name()).or_insert(init);
+    }
+
+    // 标记哪些 const_table 中的常量是被算子用作"元信息"消费的
+    // （这些常量来自 initializer 时，不应再被创建为 Parameter 节点暴露给运行时）
+    let mut consumed_meta_names: HashSet<&str> = HashSet::new();
+    for node in &graph.node {
+        match node.op_type {
+            OpType::Reshape if node.input.len() >= 2 && !node.input[1].is_empty() => {
+                consumed_meta_names.insert(node.input[1]);
+            }
+            OpType::Resize | OpType::Upsample => {
+                // ONNX Resize 输入布局：[X, roi, scales, sizes]
+                // YOLOv5 通常 roi 为空、scales 或 sizes 二选一
+                if node.input.len() >= 3 && !node.input[2].is_empty() {
+                    consumed_meta_names.insert(node.input[2]);
+                }
+                if node.input.len() >= 4 && !node.input[3].is_empty() {
+                    consumed_meta_names.insert(node.input[3]);
+                }
+            }
+            OpType::Split if node.input.len() >= 2 && !node.input[1].is_empty() => {
+                consumed_meta_names.insert(node.input[1]);
+            }
+            _ => {}
+        }
+    }
 
     // ── 图输入节点（排除 initializer） ──
     for input_info in &graph.input {
@@ -195,6 +241,11 @@ fn assemble(
 
     // ── Initializer → Parameter 节点 + 权重 ──
     for init in &graph.initializer {
+        // 被算子用作元信息（如 Reshape 的 shape、Resize 的 scales）的 initializer
+        // 已经折叠到下游算子属性里，跳过 Parameter 节点创建
+        if consumed_meta_names.contains(init.name()) {
+            continue;
+        }
         if init.data_type() != DataType::Float {
             return Err(OnnxError::UnsupportedDataType {
                 data_type: init.data_type() as i32,
@@ -232,6 +283,50 @@ fn assemble(
 
     // ── 计算节点 ──
     for node in &graph.node {
+        // ── 折叠/展开 special path ──
+
+        // Constant 节点本身在 only_torch 内消失（值已折叠到下游算子属性）
+        if node.op_type == OpType::Constant {
+            continue;
+        }
+
+        // Reshape：从常量表读 shape input → 填到 Reshape::target_shape
+        if node.op_type == OpType::Reshape && node.input.len() >= 2 {
+            assemble_reshape_with_const_fold(
+                node,
+                &const_table,
+                symbols,
+                &mut descriptor,
+                &mut import_report,
+            )?;
+            continue;
+        }
+
+        // Resize / Upsample：从常量表读 scales → 填到 Upsample2d::scale_h/scale_w
+        if matches!(node.op_type, OpType::Resize | OpType::Upsample) {
+            assemble_resize_with_const_fold(
+                node,
+                &const_table,
+                symbols,
+                &mut descriptor,
+                &mut import_report,
+            )?;
+            continue;
+        }
+
+        // Split：展开为 N 个 Narrow 节点（split_sizes 来自 attribute 或常量表）
+        if node.op_type == OpType::Split {
+            assemble_split_to_narrows(
+                node,
+                &const_table,
+                symbols,
+                &mut descriptor,
+                &mut import_report,
+            )?;
+            continue;
+        }
+
+        // ── 默认路径 ──
         let mapped_descriptors =
             onnx_ops::onnx_op_to_descriptors(&node.op_type, &node.attribute, node.name)?;
 
@@ -441,5 +536,364 @@ fn infer_output_shape_placeholder(
         }
     }
     vec![]
+}
+
+// ==================== 常量折叠 / Split 重写 special path ====================
+
+/// 从常量表中提取 i64 向量（用于 shape / split_sizes 等）
+fn extract_const_i64<'a>(
+    const_table: &HashMap<&'a str, &'a TensorProto<'a>>,
+    name: &str,
+    op_context: &str,
+) -> Result<Vec<i64>, OnnxError> {
+    let tensor = const_table.get(name).ok_or_else(|| OnnxError::InvalidGraph(
+        format!(
+            "{op_context}: 输入 \"{name}\" 既不是 Constant 节点输出也不是 initializer，\
+            无法折叠为静态属性。建议用 onnxsim 预处理把动态形状固化"
+        ),
+    ))?;
+    if tensor.data_type() != DataType::Int64 {
+        return Err(OnnxError::UnsupportedDataType {
+            data_type: tensor.data_type() as i32,
+            context: format!(
+                "{op_context}: 期望 int64 元信息常量 \"{name}\"，但得到 {:?}",
+                tensor.data_type()
+            ),
+        });
+    }
+    Ok(tensor
+        .as_i64()
+        .ok_or_else(|| OnnxError::WeightError {
+            tensor_name: name.to_string(),
+            reason: format!("{op_context}: 无法从常量提取 int64 数据"),
+        })?
+        .into_owned())
+}
+
+/// 从常量表中提取 f32 向量（用于 Resize 的 scales）
+fn extract_const_f32<'a>(
+    const_table: &HashMap<&'a str, &'a TensorProto<'a>>,
+    name: &str,
+    op_context: &str,
+) -> Result<Vec<f32>, OnnxError> {
+    let tensor = const_table.get(name).ok_or_else(|| OnnxError::InvalidGraph(
+        format!(
+            "{op_context}: 输入 \"{name}\" 既不是 Constant 节点输出也不是 initializer，\
+            无法折叠为静态属性。建议用 onnxsim 预处理"
+        ),
+    ))?;
+    if tensor.data_type() != DataType::Float {
+        return Err(OnnxError::UnsupportedDataType {
+            data_type: tensor.data_type() as i32,
+            context: format!(
+                "{op_context}: 期望 float32 元信息常量 \"{name}\"，但得到 {:?}",
+                tensor.data_type()
+            ),
+        });
+    }
+    Ok(tensor
+        .as_f32()
+        .ok_or_else(|| OnnxError::WeightError {
+            tensor_name: name.to_string(),
+            reason: format!("{op_context}: 无法从常量提取 float32 数据"),
+        })?
+        .into_owned())
+}
+
+/// 把 ONNX 风格的 i64 shape 转为 only_torch 的 `Vec<usize>`
+///
+/// ONNX shape 允许特殊值：`-1`（推导）、`0`（保留对应输入维度）。
+/// only_torch 的 `Reshape::target_shape: Vec<usize>` 不支持这些占位，
+/// 因此遇到时直接 actionable 报错（提示用 onnxsim 把形状固化为正整数）。
+fn convert_onnx_shape_to_usize(
+    raw: &[i64],
+    op_context: &str,
+) -> Result<Vec<usize>, OnnxError> {
+    let mut out = Vec::with_capacity(raw.len());
+    for &d in raw {
+        if d <= 0 {
+            return Err(OnnxError::UnsupportedAttribute {
+                op_type: op_context.to_string(),
+                attribute: "shape".to_string(),
+                reason: format!(
+                    "ONNX shape 含特殊值 {d}（-1=推导/0=保留），only_torch 仅支持正整数。\
+                    请用 onnxsim 预处理固化形状"
+                ),
+            });
+        }
+        out.push(d as usize);
+    }
+    Ok(out)
+}
+
+/// 装配 Reshape 节点：从常量表读取 shape 输入，折叠到 `Reshape::target_shape`
+fn assemble_reshape_with_const_fold<'a>(
+    node: &onnx_rs::ast::Node<'a>,
+    const_table: &HashMap<&'a str, &'a TensorProto<'a>>,
+    symbols: &mut SymbolTable,
+    descriptor: &mut GraphDescriptor,
+    import_report: &mut ImportReport,
+) -> Result<(), OnnxError> {
+    let data_name = node.input[0];
+    let shape_name = node.input[1];
+
+    let shape_i64 = extract_const_i64(
+        const_table,
+        shape_name,
+        &format!("Reshape 节点 \"{}\"", node.name),
+    )?;
+    let target_shape = convert_onnx_shape_to_usize(
+        &shape_i64,
+        &format!("Reshape 节点 \"{}\"", node.name),
+    )?;
+
+    let parent_id = symbols.get_or_assign(data_name);
+    let output_name = node.output.first().copied().unwrap_or(node.name);
+    let out_id = symbols.get_or_assign(output_name);
+
+    descriptor.add_node(NodeDescriptor::new(
+        out_id,
+        output_name,
+        NodeTypeDescriptor::Reshape { target_shape: target_shape.clone() },
+        target_shape,
+        None,
+        vec![parent_id],
+    ));
+
+    import_report.rewritten.push(RewriteRecord {
+        pattern: "constant_fold_into_reshape",
+        consumed_onnx_nodes: vec![
+            node.name.to_string(),
+            format!("<const:{shape_name}>"),
+        ],
+        produced_descriptor_nodes: vec![out_id],
+    });
+    Ok(())
+}
+
+/// 装配 Resize/Upsample 节点：从常量表读取 scales/sizes，折叠到 `Upsample2d::scale_h/scale_w`
+///
+/// 仅支持 NCHW 4 维 + 整数倍 nearest 模式（YOLOv5 默认模式）。
+fn assemble_resize_with_const_fold<'a>(
+    node: &onnx_rs::ast::Node<'a>,
+    const_table: &HashMap<&'a str, &'a TensorProto<'a>>,
+    symbols: &mut SymbolTable,
+    descriptor: &mut GraphDescriptor,
+    import_report: &mut ImportReport,
+) -> Result<(), OnnxError> {
+    // mode 校验委托给 onnx_op_to_descriptors（已检查 mode="nearest"）
+    let _ = onnx_ops::onnx_op_to_descriptors(&node.op_type, &node.attribute, node.name)?;
+
+    let data_name = node.input[0];
+    let op_ctx = format!("Resize 节点 \"{}\"", node.name);
+
+    // 优先用 scales（input[2]，f32），不存在则用 sizes（input[3]，i64）反推
+    let (scale_h, scale_w, source_const) = if node.input.len() >= 3 && !node.input[2].is_empty() {
+        let scales_name = node.input[2];
+        let scales = extract_const_f32(const_table, scales_name, &op_ctx)?;
+        if scales.len() != 4 {
+            return Err(OnnxError::UnsupportedAttribute {
+                op_type: "Resize".to_string(),
+                attribute: "scales".to_string(),
+                reason: format!(
+                    "{op_ctx}: 仅支持 4 维 NCHW（scales.len=4），实际 {}",
+                    scales.len()
+                ),
+            });
+        }
+        // 通常 N、C 维 scale=1.0，H/W 维是上采样倍数
+        for (i, &s) in scales.iter().enumerate().take(2) {
+            if (s - 1.0).abs() > 1e-6 {
+                return Err(OnnxError::UnsupportedAttribute {
+                    op_type: "Resize".to_string(),
+                    attribute: format!("scales[{i}]"),
+                    reason: format!("{op_ctx}: N/C 维 scale 必须=1.0，得到 {s}"),
+                });
+            }
+        }
+        let sh = scales[2];
+        let sw = scales[3];
+        if sh.fract().abs() > 1e-6 || sw.fract().abs() > 1e-6 || sh < 1.0 || sw < 1.0 {
+            return Err(OnnxError::UnsupportedAttribute {
+                op_type: "Resize".to_string(),
+                attribute: "scales".to_string(),
+                reason: format!(
+                    "{op_ctx}: 仅支持整数倍上采样（scale≥1，nearest），得到 H={sh} W={sw}"
+                ),
+            });
+        }
+        (sh as usize, sw as usize, scales_name.to_string())
+    } else if node.input.len() >= 4 && !node.input[3].is_empty() {
+        // sizes 路径：从输出/输入 shape 反推 scale。本轮最小骨架不支持，
+        // 用户可改用 scales 形式或用 onnxsim 转换
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "Resize".to_string(),
+            attribute: "sizes".to_string(),
+            reason: format!(
+                "{op_ctx}: 仅支持 scales 形式，sizes 形式请用 onnxsim 转换"
+            ),
+        });
+    } else {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "Resize".to_string(),
+            attribute: "scales/sizes".to_string(),
+            reason: format!("{op_ctx}: 必须提供 scales 或 sizes 输入"),
+        });
+    };
+
+    let parent_id = symbols.get_or_assign(data_name);
+    let output_name = node.output.first().copied().unwrap_or(node.name);
+    let out_id = symbols.get_or_assign(output_name);
+    let output_shape = infer_output_shape_placeholder(
+        &NodeTypeDescriptor::Upsample2d { scale_h, scale_w },
+        &[parent_id],
+        descriptor,
+    );
+
+    descriptor.add_node(NodeDescriptor::new(
+        out_id,
+        output_name,
+        NodeTypeDescriptor::Upsample2d { scale_h, scale_w },
+        output_shape,
+        None,
+        vec![parent_id],
+    ));
+
+    import_report.rewritten.push(RewriteRecord {
+        pattern: "constant_fold_into_resize",
+        consumed_onnx_nodes: vec![
+            node.name.to_string(),
+            format!("<const:{source_const}>"),
+        ],
+        produced_descriptor_nodes: vec![out_id],
+    });
+    Ok(())
+}
+
+/// 装配 Split 节点：展开为 N 个 Narrow 节点
+///
+/// `split_sizes` 来源优先级：
+/// 1. opset 12 及以下：attribute "split"（Vec<i64>）
+/// 2. opset 13 及以上：input[1] 为常量 i64 张量
+/// 3. 都没有：要求 axis 维度均匀 N 等分（暂不支持，需要 input shape 信息，本轮报错）
+fn assemble_split_to_narrows<'a>(
+    node: &onnx_rs::ast::Node<'a>,
+    const_table: &HashMap<&'a str, &'a TensorProto<'a>>,
+    symbols: &mut SymbolTable,
+    descriptor: &mut GraphDescriptor,
+    import_report: &mut ImportReport,
+) -> Result<(), OnnxError> {
+    if node.input.is_empty() {
+        return Err(OnnxError::InvalidGraph(format!(
+            "Split 节点 \"{}\" 缺少输入",
+            node.name
+        )));
+    }
+    let data_name = node.input[0];
+    let axis = onnx_ops::find_attr_int(&node.attribute, "axis").unwrap_or(0);
+    if axis < 0 {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "Split".to_string(),
+            attribute: "axis".to_string(),
+            reason: format!(
+                "Split 节点 \"{}\": 仅支持非负 axis，得到 {axis}（请用 onnxsim 规范化）",
+                node.name
+            ),
+        });
+    }
+    let axis = axis as usize;
+
+    // split_sizes 提取
+    let split_sizes_i64: Vec<i64> = if node.input.len() >= 2 && !node.input[1].is_empty() {
+        // opset 13+：来自 input[1] 常量
+        extract_const_i64(
+            const_table,
+            node.input[1],
+            &format!("Split 节点 \"{}\"", node.name),
+        )?
+    } else {
+        // opset ≤ 12：来自 attribute "split"
+        let split_attr = onnx_ops::find_attr_ints(&node.attribute, "split");
+        if split_attr.is_empty() {
+            return Err(OnnxError::UnsupportedAttribute {
+                op_type: "Split".to_string(),
+                attribute: "split".to_string(),
+                reason: format!(
+                    "Split 节点 \"{}\": split 既无 input 也无 attribute，等分模式需 input shape 信息，\
+                    本版本暂不支持。请用 onnxsim 显式指定 split_sizes",
+                    node.name
+                ),
+            });
+        }
+        split_attr
+    };
+
+    if split_sizes_i64.is_empty() {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "Split".to_string(),
+            attribute: "split".to_string(),
+            reason: format!("Split 节点 \"{}\": split_sizes 为空", node.name),
+        });
+    }
+    if split_sizes_i64.iter().any(|&s| s <= 0) {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "Split".to_string(),
+            attribute: "split".to_string(),
+            reason: format!(
+                "Split 节点 \"{}\": split_sizes 含非正值 {:?}",
+                node.name, split_sizes_i64
+            ),
+        });
+    }
+    let split_sizes: Vec<usize> = split_sizes_i64.iter().map(|&s| s as usize).collect();
+
+    if split_sizes.len() != node.output.len() {
+        return Err(OnnxError::InvalidGraph(format!(
+            "Split 节点 \"{}\": split_sizes 长度 {} 与输出数 {} 不一致",
+            node.name,
+            split_sizes.len(),
+            node.output.len()
+        )));
+    }
+
+    let parent_id = symbols.get_or_assign(data_name);
+    let mut produced_ids = Vec::with_capacity(split_sizes.len());
+    let mut start = 0usize;
+    for (i, &length) in split_sizes.iter().enumerate() {
+        let out_name = node.output[i];
+        let out_id = symbols.get_or_assign(out_name);
+        let parent_shape = descriptor
+            .nodes
+            .iter()
+            .find(|n| n.id == parent_id)
+            .map(|n| n.output_shape.clone())
+            .unwrap_or_default();
+        // 占位输出形状：把 axis 维度替换为 length
+        let mut out_shape = parent_shape;
+        if axis < out_shape.len() {
+            out_shape[axis] = length;
+        }
+        descriptor.add_node(NodeDescriptor::new(
+            out_id,
+            out_name,
+            NodeTypeDescriptor::Narrow {
+                axis,
+                start,
+                length,
+            },
+            out_shape,
+            None,
+            vec![parent_id],
+        ));
+        produced_ids.push(out_id);
+        start += length;
+    }
+
+    import_report.rewritten.push(RewriteRecord {
+        pattern: "split_to_narrows",
+        consumed_onnx_nodes: vec![node.name.to_string()],
+        produced_descriptor_nodes: produced_ids,
+    });
+    Ok(())
 }
 

@@ -916,3 +916,405 @@ fn test_import_report_records_gemm_split() {
     assert_eq!(record.consumed_onnx_nodes, vec!["gemm0".to_string()]);
     assert_eq!(record.produced_descriptor_nodes.len(), 2);
 }
+
+// ==================== Constant 折叠 + Split 重写测试 ====================
+
+/// 创建 i64 类型 TensorProto（用于 shape / split_sizes）
+fn make_i64_tensor(name: &'static str, vals: Vec<i64>) -> TensorProto<'static> {
+    let dims = vec![vals.len() as i64];
+    TensorProto::from_i64(name, dims, vals)
+}
+
+/// 创建 f32 类型 TensorProto（用于 Resize scales）
+fn make_f32_tensor(name: &'static str, vals: Vec<f32>) -> TensorProto<'static> {
+    let dims = vec![vals.len() as i64];
+    TensorProto::from_f32(name, dims, vals)
+}
+
+/// 通用 ValueInfo 构造
+fn make_value_info<'a>(name: &'a str, dims: Vec<i64>) -> ValueInfo<'a> {
+    ValueInfo {
+        name,
+        r#type: Some(TypeProto {
+            value: Some(TypeValue::Tensor(TensorTypeProto {
+                elem_type: DataType::Float,
+                shape: Some(TensorShape {
+                    dim: dims
+                        .into_iter()
+                        .map(|d| TensorShapeDimension {
+                            value: Dimension::Value(d),
+                            denotation: "",
+                        })
+                        .collect(),
+                }),
+            })),
+            denotation: "",
+        }),
+        doc_string: "",
+        metadata_props: vec![],
+    }
+}
+
+#[test]
+fn test_constant_fold_reshape_via_initializer() {
+    // 构造 X(1×6) → Reshape(shape=initializer [2,3]) → Y
+    let shape_init = make_i64_tensor("shape_init", vec![2, 3]);
+    let input_vi = make_value_info("X", vec![1, 6]);
+    let output_vi = ValueInfo {
+        name: "Y",
+        r#type: Some(TypeProto {
+            value: Some(TypeValue::Tensor(TensorTypeProto {
+                elem_type: DataType::Float,
+                shape: None,
+            })),
+            denotation: "",
+        }),
+        doc_string: "",
+        metadata_props: vec![],
+    };
+    let reshape_node = Node {
+        input: vec!["X", "shape_init"],
+        output: vec!["Y"],
+        name: "reshape0",
+        op_type: OpType::Reshape,
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![reshape_node],
+            name: "reshape_const_fold",
+            initializer: vec![shape_init],
+            input: vec![input_vi],
+            output: vec![output_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    // Reshape descriptor 应已折叠 target_shape=[2,3]
+    let reshape = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "Y")
+        .unwrap();
+    match &reshape.node_type {
+        NodeTypeDescriptor::Reshape { target_shape } => {
+            assert_eq!(target_shape, &vec![2usize, 3]);
+        }
+        _ => panic!("expected Reshape"),
+    }
+
+    // shape_init 不应作为 Parameter 节点出现
+    let shape_node = result.descriptor.nodes.iter().find(|n| n.name == "shape_init");
+    assert!(shape_node.is_none(), "元信息 initializer 应被跳过");
+
+    // ImportReport 记录
+    assert!(result
+        .import_report
+        .rewritten
+        .iter()
+        .any(|r| r.pattern == "constant_fold_into_reshape"));
+}
+
+#[test]
+fn test_constant_fold_reshape_via_constant_node() {
+    // 与上一个相同，但 shape 来自 ONNX Constant 节点（不是 initializer）
+    let const_value = TensorProto::from_i64("", vec![3], vec![1, 2, 3]);
+    let shape_constant = Node {
+        input: vec![],
+        output: vec!["shape_out"],
+        name: "shape_const",
+        op_type: OpType::Constant,
+        attribute: vec![Attribute {
+            name: "value",
+            t: Some(const_value),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let input_vi = make_value_info("X", vec![1, 6]);
+    let output_vi = make_value_info("Y", vec![1, 2, 3]);
+    let reshape_node = Node {
+        input: vec!["X", "shape_out"],
+        output: vec!["Y"],
+        name: "reshape0",
+        op_type: OpType::Reshape,
+        ..Default::default()
+    };
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![shape_constant, reshape_node],
+            name: "reshape_constant_node",
+            input: vec![input_vi],
+            output: vec![output_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    // Constant 节点本身不应出现在 descriptor 中
+    let const_node = result.descriptor.nodes.iter().find(|n| n.name == "shape_const");
+    assert!(const_node.is_none(), "Constant 节点应被折叠消失");
+
+    // Reshape 应已填好 target_shape
+    let reshape = result.descriptor.nodes.iter().find(|n| n.name == "Y").unwrap();
+    match &reshape.node_type {
+        NodeTypeDescriptor::Reshape { target_shape } => {
+            assert_eq!(target_shape, &vec![1usize, 2, 3]);
+        }
+        _ => panic!("expected Reshape"),
+    }
+}
+
+#[test]
+fn test_constant_fold_reshape_rejects_negative_dim() {
+    // shape 含 -1 应明确报错（only_torch 不支持 ONNX 推导占位）
+    let shape_init = make_i64_tensor("shape_init", vec![-1, 3]);
+    let input_vi = make_value_info("X", vec![1, 6]);
+    let reshape_node = Node {
+        input: vec!["X", "shape_init"],
+        output: vec!["Y"],
+        name: "reshape_neg",
+        op_type: OpType::Reshape,
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![reshape_node],
+            name: "reshape_negative",
+            initializer: vec![shape_init],
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let err = load_onnx_from_bytes(&bytes).unwrap_err();
+    match err {
+        OnnxError::UnsupportedAttribute { reason, .. } => {
+            assert!(
+                reason.contains("-1") || reason.contains("特殊"),
+                "错误信息应提示特殊值: {reason}"
+            );
+        }
+        e => panic!("expected UnsupportedAttribute, got: {e}"),
+    }
+}
+
+#[test]
+fn test_constant_fold_resize_scales() {
+    // X(1×3×4×4) → Resize(scales=[1,1,2,2], nearest) → Y(1×3×8×8)
+    // 用空字符串 "" 占位 roi（ONNX 标准做法：可选输入未提供）
+    let scales_init = make_f32_tensor("scales", vec![1.0, 1.0, 2.0, 2.0]);
+    let input_vi = make_value_info("X", vec![1, 3, 4, 4]);
+    let resize_node = Node {
+        input: vec!["X", "", "scales"],
+        output: vec!["Y"],
+        name: "resize0",
+        op_type: OpType::Resize,
+        attribute: vec![Attribute {
+            name: "mode",
+            s: b"nearest",
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![resize_node],
+            name: "resize_scales",
+            initializer: vec![scales_init],
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    let resize = result.descriptor.nodes.iter().find(|n| n.name == "Y").unwrap();
+    match &resize.node_type {
+        NodeTypeDescriptor::Upsample2d { scale_h, scale_w } => {
+            assert_eq!(*scale_h, 2);
+            assert_eq!(*scale_w, 2);
+        }
+        _ => panic!("expected Upsample2d"),
+    }
+
+    assert!(result
+        .import_report
+        .rewritten
+        .iter()
+        .any(|r| r.pattern == "constant_fold_into_resize"));
+}
+
+#[test]
+fn test_constant_fold_resize_rejects_non_integer_scale() {
+    // scale=1.5 应被拒绝（only_torch 仅支持整数倍 nearest）
+    let scales_init = make_f32_tensor("scales", vec![1.0, 1.0, 1.5, 1.5]);
+    let input_vi = make_value_info("X", vec![1, 3, 4, 4]);
+    let resize_node = Node {
+        input: vec!["X", "", "scales"],
+        output: vec!["Y"],
+        name: "resize_bad",
+        op_type: OpType::Resize,
+        attribute: vec![Attribute {
+            name: "mode",
+            s: b"nearest",
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![resize_node],
+            name: "resize_bad_scale",
+            initializer: vec![scales_init],
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let err = load_onnx_from_bytes(&bytes).unwrap_err();
+    assert!(matches!(err, OnnxError::UnsupportedAttribute { .. }));
+}
+
+#[test]
+fn test_split_to_narrows_via_constant_input() {
+    // X(1×6) → Split(axis=1, split=Constant[2,4]) → Y1(1×2), Y2(1×4)
+    let split_init = make_i64_tensor("split_sizes", vec![2, 4]);
+    let input_vi = make_value_info("X", vec![1, 6]);
+    let split_node = Node {
+        input: vec!["X", "split_sizes"],
+        output: vec!["Y1", "Y2"],
+        name: "split0",
+        op_type: OpType::Split,
+        attribute: vec![Attribute {
+            name: "axis",
+            i: 1,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![split_node],
+            name: "split_test",
+            initializer: vec![split_init],
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    let y1 = result.descriptor.nodes.iter().find(|n| n.name == "Y1").unwrap();
+    match &y1.node_type {
+        NodeTypeDescriptor::Narrow { axis, start, length } => {
+            assert_eq!(*axis, 1);
+            assert_eq!(*start, 0);
+            assert_eq!(*length, 2);
+        }
+        _ => panic!("expected Narrow for Y1"),
+    }
+
+    let y2 = result.descriptor.nodes.iter().find(|n| n.name == "Y2").unwrap();
+    match &y2.node_type {
+        NodeTypeDescriptor::Narrow { axis, start, length } => {
+            assert_eq!(*axis, 1);
+            assert_eq!(*start, 2);
+            assert_eq!(*length, 4);
+        }
+        _ => panic!("expected Narrow for Y2"),
+    }
+
+    let record = result
+        .import_report
+        .rewritten
+        .iter()
+        .find(|r| r.pattern == "split_to_narrows")
+        .expect("应有 split_to_narrows 记录");
+    assert_eq!(record.produced_descriptor_nodes.len(), 2);
+}
+
+#[test]
+fn test_split_to_narrows_via_attribute() {
+    // 测试 opset ≤12 风格：split 来自 attribute
+    let input_vi = make_value_info("X", vec![1, 9]);
+    let split_node = Node {
+        input: vec!["X"],
+        output: vec!["Y1", "Y2", "Y3"],
+        name: "split0",
+        op_type: OpType::Split,
+        attribute: vec![
+            Attribute { name: "axis", i: 1, ..Default::default() },
+            Attribute {
+                name: "split",
+                ints: vec![3, 3, 3],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![split_node],
+            name: "split_attr_test",
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    let outputs: Vec<_> = ["Y1", "Y2", "Y3"]
+        .iter()
+        .map(|n| result.descriptor.nodes.iter().find(|nd| nd.name == *n).unwrap())
+        .collect();
+    let expected_starts = [0usize, 3, 6];
+    for (i, out) in outputs.iter().enumerate() {
+        match &out.node_type {
+            NodeTypeDescriptor::Narrow { axis, start, length } => {
+                assert_eq!(*axis, 1);
+                assert_eq!(*start, expected_starts[i]);
+                assert_eq!(*length, 3);
+            }
+            _ => panic!("expected Narrow for Y{}", i + 1),
+        }
+    }
+}
