@@ -105,6 +105,22 @@
   - `.doc/design/onnx_import_strategy.md` §9.1 里 3 处个人项目名("梦入零式")改为通用"下游连线器应用"
   - **已知遗留**(本次不动):`examples/traditional/chinese_chess/prepare_real_pieces.py` 还有 4 处硬编码 `D:\SOFTWARE\<象棋软件>\...`,属另一个 chess CNN example 的脚本,留作独立 backlog 任务
 
+- **chore: 删 `prepare_real_pieces.py` + 清理 `--real-data` 真实数据混合路径** [`1ed9acb`]
+  - 处理 `4f698e7` 留下的"已知遗留":`prepare_real_pieces.py` 本质是为开发者本地从 4 个商业象棋软件(象棋奇兵/名手/兵河五四/鲨鱼象棋)安装目录提取真实棋子贴图作 fine-tune mixin 的私货脚本,公开仓库不需要,且含 4 处硬编码 `D:\SOFTWARE\<象棋软件>\...` 私有路径
+  - 整文件删除(-526 行)+ `data.rs` 移除 `has_real` 真实数据混合分支(-34 行,含 `concat_tensors` 辅助函数 + doc-comment 同步)+ `train_pytorch.py` 移除 `--real-data` CLI 参数及全部相关路径(-113 行,含 `load_and_merge_data` 简化为 `load_data` / `evaluate(real_mask_all)` 简化 / `best_real_acc` 跟踪删 / 真实数据子集统计段删)
+  - 影响:对应示例仍能完整演示「PyTorch → ONNX → only_torch continue-train → .otm 保存/加载」全流程,合成数据 baseline 实测 97.1%(0.15.1 实测数据);改动局限在 example 内部,README / 设计文档 / Cargo.toml 都不需要改
+
+- **refactor(example): chess 系列重命名突出框架能力** [`0a9d1fd`]
+  - 旧名 `chinese_chess` / `chinese_chess_yolo` 看不出在演示 only_torch 的什么能力,对外(公开仓库)体验不友好。改为"领域 + 模型 + 核心能力"三段式:
+    - `chinese_chess` → `chess_cnn_onnx_finetune`(CNN + ONNX 互通 + 继续训练)
+    - `chinese_chess_yolo` → `chess_yolo_onnx_detect`(YOLO + ONNX 互通 + 检测推理)
+  - 两个示例形成"训练侧 vs 推理侧"的互补对比,一眼看清各自定位
+  - 主 README chess 折叠章节从「中国象棋示例」改为「ONNX 互通示例(Chess 系列)」,内部重写为对比表格 + 两个示例分别详细描述;`chess_yolo_onnx_detect` 首次进入主 README 概览表(此前只在子 README + CHANGELOG 出现)
+  - 设计文档 `.doc/design/onnx_import_strategy.md` §8.3 supported models matrix 顺手新增 VinXiangQi YOLOv5 ✅ 行(本来就该加,example 早已端到端跑通且 FEN 位级匹配,只是上次 commit 没顺手补)
+  - 25 个文件改动:Cargo.toml + justfile 注册同步 + 主 README 三处(概览表 / 折叠节 / 特性矩阵列名 `chess_cnn` 缩写) + `tests/yolov5_xiangqi_import.rs` + `tests/onnx_models/yolov5_xiangqi/{README.md, export.py}` + `src/nn/` 2 处注释 + 各示例内部 35 处路径引用(含 `OTM_PATH` / `DATA_DIR` / `SAMPLES_DIR` 等常量,运行时 .otm / 数据 / sample 路径全部跟着改名)
+  - **故意保留 chinese_chess 引用**:CHANGELOG.md 历史条目(时光胶囊属性) + `src/nn/graph/onnx_import/mod.rs:43` 注释里的 plan 文件名引用(历史工作代号,plan 文件已不在仓库)
+  - 验收:`cargo check` 两个新 example 通过 + `cargo test --lib` 3105/3105 全过 + ReadLints 全清
+
 ### 文档
 
 - **docs(design): 扩充 onnx_import 设计文档 §9 为权威 backlog** [`d410c87`]
