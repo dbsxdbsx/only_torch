@@ -16,7 +16,7 @@ mod inner;
 pub(crate) mod model_save;
 pub(crate) mod onnx_error;
 pub(crate) mod onnx_export;
-pub(crate) mod onnx_import;
+pub mod onnx_import;
 pub(crate) mod onnx_ops;
 mod types;
 

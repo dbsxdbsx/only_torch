@@ -1079,14 +1079,14 @@ fn test_constant_fold_reshape_via_constant_node() {
 }
 
 #[test]
-fn test_constant_fold_reshape_rejects_negative_dim() {
-    // shape 含 -1 应明确报错（only_torch 不支持 ONNX 推导占位）
+fn test_constant_fold_reshape_infers_negative_dim() {
+    // shape 含一个 -1 应被静态推导：input(1×6) + shape=[-1, 3] → target_shape=[2, 3]
     let shape_init = make_i64_tensor("shape_init", vec![-1, 3]);
     let input_vi = make_value_info("X", vec![1, 6]);
     let reshape_node = Node {
         input: vec!["X", "shape_init"],
         output: vec!["Y"],
-        name: "reshape_neg",
+        name: "reshape_infer",
         op_type: OpType::Reshape,
         ..Default::default()
     };
@@ -1096,7 +1096,44 @@ fn test_constant_fold_reshape_rejects_negative_dim() {
         opset_import: vec![OperatorSetId { domain: "", version: 17 }],
         graph: Some(Graph {
             node: vec![reshape_node],
-            name: "reshape_negative",
+            name: "reshape_infer_neg_one",
+            initializer: vec![shape_init],
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+    let reshape = result.descriptor.nodes.iter().find(|n| n.name == "Y").unwrap();
+    match &reshape.node_type {
+        NodeTypeDescriptor::Reshape { target_shape } => {
+            assert_eq!(target_shape, &vec![2usize, 3], "应静态推导 -1 → 2");
+        }
+        _ => panic!("expected Reshape"),
+    }
+}
+
+#[test]
+fn test_constant_fold_reshape_rejects_multiple_neg_one() {
+    // 多个 -1 违反 ONNX 规范，应明确报错
+    let shape_init = make_i64_tensor("shape_init", vec![-1, -1, 3]);
+    let input_vi = make_value_info("X", vec![1, 6]);
+    let reshape_node = Node {
+        input: vec!["X", "shape_init"],
+        output: vec!["Y"],
+        name: "reshape_double_neg",
+        op_type: OpType::Reshape,
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![reshape_node],
+            name: "reshape_multi_neg",
             initializer: vec![shape_init],
             input: vec![input_vi],
             ..Default::default()
@@ -1106,14 +1143,43 @@ fn test_constant_fold_reshape_rejects_negative_dim() {
 
     let bytes = onnx_rs::encode(&model);
     let err = load_onnx_from_bytes(&bytes).unwrap_err();
-    match err {
-        OnnxError::UnsupportedAttribute { reason, .. } => {
-            assert!(
-                reason.contains("-1") || reason.contains("特殊"),
-                "错误信息应提示特殊值: {reason}"
-            );
+    assert!(matches!(err, OnnxError::UnsupportedAttribute { .. }));
+}
+
+#[test]
+fn test_constant_fold_reshape_keeps_zero_dim() {
+    // shape 含 0 应保留 parent 对应位置维度：input(2×3) + shape=[0, -1] → [2, 3]
+    let shape_init = make_i64_tensor("shape_init", vec![0, -1]);
+    let input_vi = make_value_info("X", vec![2, 3]);
+    let reshape_node = Node {
+        input: vec!["X", "shape_init"],
+        output: vec!["Y"],
+        name: "reshape_zero",
+        op_type: OpType::Reshape,
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![reshape_node],
+            name: "reshape_zero_dim",
+            initializer: vec![shape_init],
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+    let reshape = result.descriptor.nodes.iter().find(|n| n.name == "Y").unwrap();
+    match &reshape.node_type {
+        NodeTypeDescriptor::Reshape { target_shape } => {
+            assert_eq!(target_shape, &vec![2usize, 3], "shape[0]=0 应保留 parent[0]=2");
         }
-        e => panic!("expected UnsupportedAttribute, got: {e}"),
+        _ => panic!("expected Reshape"),
     }
 }
 

@@ -191,6 +191,10 @@
     path="examples/traditional/chinese_chess/main.rs"
 
 [[example]]
+    name="chinese_chess_yolo"
+    path="examples/traditional/chinese_chess_yolo/main.rs"
+
+[[example]]
     name="cartpole_sac"
     path="examples/traditional/sac/cartpole/main.rs"
 

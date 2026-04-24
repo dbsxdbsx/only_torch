@@ -28,6 +28,10 @@ pub use graph::{
     Graph, GraphError, GraphInner, ImageFormat, RebuildResult, SnapshotNode,
     VisualizationOutput, VisualizationSnapshot,
 };
+// ONNX 导入路径的可观测性入口（让用户在 from_onnx rebuild 失败时仍能拿 ImportReport）
+pub use graph::onnx_import::{
+    load_onnx, load_onnx_from_bytes, ImportReport, OnnxImportResult, RewriteRecord,
+};
 pub use layer::{
     AvgPool2d, BatchNorm, Conv2d, Embedding, GroupNorm, Gru, InstanceNorm, LayerNorm, Linear, Lstm,
     MaxPool2d, MultiHeadAttention, RMSNorm, Rnn,
