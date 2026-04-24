@@ -18,6 +18,12 @@ fn default_output_padding() -> (usize, usize) {
     (0, 0)
 }
 
+/// serde 反序列化默认值：MaxPool2d.padding = (0, 0, 0, 0)
+/// 兼容无 padding 字段的旧 .otm 模型
+fn default_max_pool_padding() -> (usize, usize, usize, usize) {
+    (0, 0, 0, 0)
+}
+
 /// 图的可序列化描述
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphDescriptor {
@@ -118,6 +124,19 @@ pub enum NodeTypeDescriptor {
     MaxPool2d {
         kernel_size: (usize, usize),
         stride: (usize, usize),
+        /// 填充 (top, bottom, left, right)，对称 padding 用 (p, p, p, p)
+        ///
+        /// MaxPool 的 padding 用 `f32::NEG_INFINITY` 填充（避免污染 max 结果），
+        /// 因此不能用通用 Pad 节点替代，必须在 MaxPool 内部支持。
+        ///
+        /// `#[serde(default)]` 兼容旧 .otm 模型（默认 (0,0,0,0) 等价无 padding）。
+        #[serde(default = "default_max_pool_padding")]
+        padding: (usize, usize, usize, usize),
+        /// ONNX 风格 ceil_mode：true 用 ceil 计算输出尺寸，false 用 floor
+        ///
+        /// 默认 false（PyTorch / 旧 .otm 行为）；YOLOv5 等真实模型部分情况会显式置 true
+        #[serde(default)]
+        ceil_mode: bool,
     },
     /// 逐元素取最大值（PPO/TD3 等需要可微分 max）
     Maximum,

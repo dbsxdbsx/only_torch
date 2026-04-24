@@ -53,6 +53,8 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
         NodeType::MaxPool2d(p) => NodeTypeDescriptor::MaxPool2d {
             kernel_size: p.kernel_size(),
             stride: p.stride(),
+            padding: p.padding(),
+            ceil_mode: p.ceil_mode(),
         },
         NodeType::AvgPool2d(p) => NodeTypeDescriptor::AvgPool2d {
             kernel_size: p.kernel_size(),

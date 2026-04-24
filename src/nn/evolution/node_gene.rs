@@ -465,7 +465,7 @@ pub fn infer_output_shape(
         }
 
         // ── MaxPool2d / AvgPool2d ──
-        NT::MaxPool2d { kernel_size, stride } | NT::AvgPool2d { kernel_size, stride } => {
+        NT::MaxPool2d { kernel_size, stride, .. } | NT::AvgPool2d { kernel_size, stride } => {
             require_n(1, parent_shapes)?;
             let s = parent_shapes[0];
             if s.len() < 4 {

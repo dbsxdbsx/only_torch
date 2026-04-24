@@ -431,6 +431,8 @@ impl GraphInner {
         parent: Rc<NodeInner>,
         kernel_size: (usize, usize),
         stride: Option<(usize, usize)>,
+        padding: (usize, usize, usize, usize),
+        ceil_mode: bool,
         name: Option<&str>,
     ) -> Result<Rc<NodeInner>, GraphError> {
         use crate::nn::nodes::raw_node::MaxPool2d;
@@ -438,7 +440,14 @@ impl GraphInner {
         let parent_shape = parent.shape();
         let parent_dynamic_shape = parent.dynamic_shape();
 
-        let max_pool = MaxPool2d::new(&parent_shape, &parent_dynamic_shape, kernel_size, stride)?;
+        let max_pool = MaxPool2d::new(
+            &parent_shape,
+            &parent_dynamic_shape,
+            kernel_size,
+            stride,
+            padding,
+            ceil_mode,
+        )?;
         let raw_node: NodeType = max_pool.into();
 
         self.create_node_inner(raw_node, name, "maxpool2d", vec![parent])

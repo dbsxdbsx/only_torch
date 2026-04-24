@@ -319,12 +319,16 @@ fn rebuild_node(
         NodeTypeDescriptor::MaxPool2d {
             kernel_size,
             stride,
+            padding,
+            ceil_mode,
         } => {
             let parent = get_parent(node_desc, node_map, 0)?;
             let node = graph.inner_mut().create_max_pool2d_node(
                 parent,
                 *kernel_size,
                 Some(*stride),
+                *padding,
+                *ceil_mode,
                 name,
             )?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))

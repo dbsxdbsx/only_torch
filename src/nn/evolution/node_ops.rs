@@ -308,6 +308,7 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
             NT::MaxPool2d {
                 kernel_size,
                 stride,
+                ..
             } => NodeBlockKind::Pool2d {
                 pool_type: PoolType::Max,
                 kernel_size: kernel_size.0,

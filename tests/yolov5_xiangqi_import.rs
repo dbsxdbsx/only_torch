@@ -140,6 +140,43 @@ fn import_report_covers_four_rewrite_patterns() {
     );
 }
 
+/// rebuild 应成功完成 spatial shape 传播
+///
+/// 历史背景：本 plan 修复前 rebuild 卡在 PAN 处 `Concat: 父节点 1 在维度 2 大小不一致`
+/// （16×16 vs 期望 20×20），根因：
+/// - MaxPool2d 不读 ONNX `pads` 属性，导致 SPPF 模块 (k=5, pads=2, s=1) 输出错算
+/// - Constant 节点（非元信息消费场景如 Mul 常数因子）被无条件跳过，导致下游算子
+///   `resolve_parents` 找不到 parent id
+/// - `infer_output_shape_placeholder` 对 Concat / Permute 只取第一个父，导致
+///   下游 Reshape 的 -1 推导拿到错的 input total
+///
+/// 修复后本测试应 PASS，作为后续 spatial 传播路径的回归门。
+#[test]
+#[ignore = "需要本地拉取 vinxiangqi.onnx，CI 跳过"]
+fn yolov5_xiangqi_rebuild_succeeds() {
+    if skip_if_no_model() {
+        return;
+    }
+    use only_torch::nn::Graph;
+    let result = load_onnx(MODEL_PATH).expect("ONNX 导入失败");
+    println!(
+        "import OK，descriptor 节点数 = {}",
+        result.descriptor.nodes.len()
+    );
+    let rebuilt = Graph::from_descriptor(&result.descriptor)
+        .expect("rebuild 失败：spatial shape 传播 / Constant→Parameter / Concat placeholder 任一可能回退");
+    println!(
+        "rebuild OK，参数量 = {}, 输入 = {}, 输出 = {}",
+        rebuilt.graph.parameter_count(),
+        rebuilt.inputs.len(),
+        rebuilt.outputs.len()
+    );
+    assert!(
+        rebuilt.graph.parameter_count() > 0,
+        "参数量应大于 0（含 Conv 权重 + BN 参数 + Constant 数值常量）"
+    );
+}
+
 // TODO[forward-numeric-check]: 当 only_torch 修复 YOLOv5 PAN/FPN shape 传播 bug
 // 后，在此处加 forward_numerical_match_with_onnxruntime 测试：
 //   1. 加载 fixture_input.npy 作为输入

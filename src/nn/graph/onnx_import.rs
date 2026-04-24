@@ -288,8 +288,47 @@ fn assemble<'a>(
     for node in &graph.node {
         // ── 折叠/展开 special path ──
 
-        // Constant 节点本身在 only_torch 内消失（值已折叠到下游算子属性）
+        // Constant 节点处理：
+        // - 输出被算子用作元信息（Reshape.shape / Resize.scales / Split.split）→ 已折叠到属性，跳过
+        // - 输出被普通数值算子（Mul / Add / Sub 等）当作输入 → 必须保留为 Parameter 节点
+        //   持有常量值，否则下游 resolve_parents 找不到父节点 id（典型 YOLOv5 头部 Mul_204 用例）
         if node.op_type == OpType::Constant {
+            let output_name = node.output.first().copied().unwrap_or("");
+            if consumed_meta_names.contains(output_name) {
+                continue;
+            }
+            // 否则保留为 Parameter 节点
+            let attr = node.attribute.iter().find(|a| a.name == "value");
+            let tensor_proto = match attr.and_then(|a| a.t.as_ref()) {
+                Some(t) => t,
+                None => continue, // 没有 value 属性的 Constant 跳过
+            };
+            if tensor_proto.data_type() != DataType::Float {
+                // 非 float 常量目前不支持作为 Parameter（int 常量罕见）
+                continue;
+            }
+            let id = symbols.get_or_assign(output_name);
+            let raw_shape: Vec<usize> = tensor_proto.dims().iter().map(|&d| d as usize).collect();
+            // Parameter 节点要求 2-4 维：标量 → [1,1]，1D → [1, N]
+            let shape = if raw_shape.is_empty() {
+                vec![1, 1]
+            } else if raw_shape.len() == 1 {
+                vec![1, raw_shape[0]]
+            } else {
+                raw_shape.clone()
+            };
+            descriptor.add_node(NodeDescriptor::new(
+                id,
+                output_name,
+                NodeTypeDescriptor::Parameter,
+                shape.clone(),
+                None,
+                vec![],
+            ));
+            if let Some(float_data) = tensor_proto.as_f32() {
+                let tensor = Tensor::new(&float_data, &shape);
+                weights.insert(id, tensor);
+            }
             continue;
         }
 
@@ -527,16 +566,74 @@ fn extract_shape_from_value_info(vi: &onnx_rs::ast::ValueInfo) -> Vec<usize> {
 }
 
 /// 占位形状推导（最终精确推导由 Graph::from_descriptor 负责）
+///
+/// 对大多数算子继承第一个父节点的形状（最简启发式）。但对 **Concat / Permute**
+/// 这两个高频形状变换算子做精确推导，因为下游 Reshape 的 -1 推导依赖父形状的
+/// 元素总数，placeholder 不准会让 -1 算成错值（如 YOLOv5 head 的
+/// `Concat(axis=4) → Reshape([1,-1,20])` 链路）。
+///
+/// **不在此处处理**的算子（Conv/MaxPool 等几何变换）：
+/// - 它们的输出 shape 跟 stride/padding/kernel 强相关，复杂度高
+/// - rebuild 时会精确算
+/// - 通常不直接喂给 Reshape，影响面有限
 fn infer_output_shape_placeholder(
-    _node_type: &NodeTypeDescriptor,
+    node_type: &NodeTypeDescriptor,
     parent_ids: &[u64],
     descriptor: &GraphDescriptor,
 ) -> Vec<usize> {
-    // 简单策略：继承第一个父节点的形状
-    if let Some(&first_parent) = parent_ids.first() {
-        if let Some(parent_node) = descriptor.nodes.iter().find(|n| n.id == first_parent) {
-            return parent_node.output_shape.clone();
+    let lookup = |id: u64| -> Vec<usize> {
+        descriptor
+            .nodes
+            .iter()
+            .find(|n| n.id == id)
+            .map(|n| n.output_shape.clone())
+            .unwrap_or_default()
+    };
+
+    // 高频形状变换算子：精确推导
+    match node_type {
+        NodeTypeDescriptor::Concat { axis } => {
+            // 沿 axis 累加所有父节点的对应维度
+            let parent_shapes: Vec<Vec<usize>> =
+                parent_ids.iter().map(|&id| lookup(id)).collect();
+            if parent_shapes.is_empty() || parent_shapes[0].is_empty() {
+                return vec![];
+            }
+            let mut out = parent_shapes[0].clone();
+            if *axis >= out.len() {
+                // axis 越界，退化为第一个父
+                return out;
+            }
+            let mut sum = 0usize;
+            for ps in &parent_shapes {
+                if ps.len() != out.len() {
+                    // shape rank 不一致，退化
+                    return out;
+                }
+                sum += ps.get(*axis).copied().unwrap_or(0);
+            }
+            out[*axis] = sum;
+            return out;
         }
+        NodeTypeDescriptor::Permute { dims } => {
+            let parent_shape = parent_ids
+                .first()
+                .map(|&id| lookup(id))
+                .unwrap_or_default();
+            if parent_shape.is_empty() || dims.len() != parent_shape.len() {
+                return parent_shape;
+            }
+            return dims
+                .iter()
+                .map(|&d| parent_shape.get(d).copied().unwrap_or(0))
+                .collect();
+        }
+        _ => {}
+    }
+
+    // 默认：继承第一个父节点的形状
+    if let Some(&first_parent) = parent_ids.first() {
+        return lookup(first_parent);
     }
     vec![]
 }

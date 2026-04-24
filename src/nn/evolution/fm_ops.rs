@@ -87,7 +87,7 @@ impl FMEdgeType {
                     output_padding: *output_padding,
                 })
             }
-            NodeTypeDescriptor::MaxPool2d { kernel_size, stride } => {
+            NodeTypeDescriptor::MaxPool2d { kernel_size, stride, .. } => {
                 Some(FMEdgeType::MaxPool2d {
                     kernel_size: *kernel_size,
                     stride: *stride,

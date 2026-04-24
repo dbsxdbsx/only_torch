@@ -14,15 +14,14 @@ pub(crate) struct Parameter {
 
 impl Parameter {
     pub(crate) fn new(shape: &[usize]) -> Result<Self, GraphError> {
-        // 1. 必要的验证：支持 2D-4D 张量
-        // - 2D: FC 权重 [in, out]
-        // - 4D: CNN 卷积核 [C_out, C_in, kH, kW]
-        if shape.len() < 2 || shape.len() > 4 {
+        // 1. 必要的验证：≥ 2 维（避免标量 / 1D 直接当 Parameter；1D 应在导入端升维到 [1,N]）
+        // 上限放宽到任意维度，以支持 ONNX 模型里 5D 常量（如 YOLOv5 anchor 表 [1,na,1,1,2]）
+        if shape.len() < 2 {
             return Err(GraphError::DimensionMismatch {
-                expected: 2, // 表示 2-4 维
+                expected: 2, // 表示至少 2 维
                 got: shape.len(),
                 message: format!(
-                    "参数张量必须是 2-4 维（支持 FC 权重和 CNN 卷积核），但收到的维度是 {} 维。",
+                    "参数张量至少需要 2 维（1D 请在导入端升维到 [1, N]），但收到的维度是 {} 维。",
                     shape.len(),
                 ),
             });
@@ -42,13 +41,13 @@ impl Parameter {
     ///
     /// 使用 Kaiming/He 初始化：std = sqrt(2 / `fan_in`)
     pub(crate) fn new_seeded(shape: &[usize], seed: u64) -> Result<Self, GraphError> {
-        // 1. 必要的验证：支持 2D-4D 张量
-        if shape.len() < 2 || shape.len() > 4 {
+        // 1. 必要的验证：≥ 2 维（同 new）
+        if shape.len() < 2 {
             return Err(GraphError::DimensionMismatch {
-                expected: 2, // 表示 2-4 维
+                expected: 2,
                 got: shape.len(),
                 message: format!(
-                    "参数张量必须是 2-4 维（支持 FC 权重和 CNN 卷积核），但收到的维度是 {} 维。",
+                    "参数张量至少需要 2 维（1D 请在导入端升维到 [1, N]），但收到的维度是 {} 维。",
                     shape.len(),
                 ),
             });

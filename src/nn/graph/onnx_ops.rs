@@ -193,11 +193,12 @@ pub fn onnx_op_to_descriptors(
             } else {
                 (1, 1)
             };
-            let padding = if pads.len() >= 4 {
-                (pads[0] as usize, pads[2] as usize)
-            } else {
-                (0, 0)
-            };
+            // ONNX Conv 的 pads 布局：[H_begin, W_begin, H_end, W_end]
+            // only_torch Conv2d 当前只支持对称 padding (pad_h, pad_w)，
+            // 即四角必须满足 H_begin == H_end && W_begin == W_end。
+            // 非对称 padding（如 pads=[1,2,3,4]）属罕见情形，需要在导入端
+            // 用 Pad 节点 + Conv(p=0) 组合表达；本轮暂不实现，遇到时报 actionable 错误。
+            let padding = parse_symmetric_2d_pads(&pads, "Conv", node_name)?;
             let dilation = if dilations.len() >= 2 {
                 (dilations[0] as usize, dilations[1] as usize)
             } else {
@@ -217,11 +218,7 @@ pub fn onnx_op_to_descriptors(
             } else {
                 (1, 1)
             };
-            let padding = if pads.len() >= 4 {
-                (pads[0] as usize, pads[2] as usize)
-            } else {
-                (0, 0)
-            };
+            let padding = parse_symmetric_2d_pads(&pads, "ConvTranspose", node_name)?;
             let output_padding = if output_padding_vals.len() >= 2 {
                 (output_padding_vals[0] as usize, output_padding_vals[1] as usize)
             } else {
@@ -234,6 +231,8 @@ pub fn onnx_op_to_descriptors(
         OpType::MaxPool => {
             let kernel = find_attr_ints(attrs, "kernel_shape");
             let strides = find_attr_ints(attrs, "strides");
+            let pads = find_attr_ints(attrs, "pads");
+            let ceil_mode_attr = find_attr_int(attrs, "ceil_mode").unwrap_or(0);
             if kernel.len() != 2 {
                 return Err(OnnxError::UnsupportedConvConfig {
                     op_type: "MaxPool".to_string(),
@@ -246,7 +245,26 @@ pub fn onnx_op_to_descriptors(
             } else {
                 kernel_size
             };
-            Ok(vec![NodeTypeDescriptor::MaxPool2d { kernel_size, stride }])
+            // MaxPool 的 padding 不能用对称简化（YOLOv5 SPPF 等场景实际就是对称四角，
+            // 但 ONNX 规范允许任意非对称四角）。MaxPool2d 内置完整 4 维 padding。
+            // ONNX pads 布局：[H_begin, W_begin, H_end, W_end] → (top, bottom, left, right)
+            let padding: (usize, usize, usize, usize) = if pads.len() >= 4 {
+                (
+                    pads[0] as usize, // H_begin = top
+                    pads[2] as usize, // H_end   = bottom
+                    pads[1] as usize, // W_begin = left
+                    pads[3] as usize, // W_end   = right
+                )
+            } else {
+                (0, 0, 0, 0)
+            };
+            let ceil_mode = ceil_mode_attr != 0;
+            Ok(vec![NodeTypeDescriptor::MaxPool2d {
+                kernel_size,
+                stride,
+                padding,
+                ceil_mode,
+            }])
         }
         OpType::AveragePool => {
             let kernel = find_attr_ints(attrs, "kernel_shape");
@@ -587,18 +605,38 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                 int_list_attrs: attrs,
             })
         }
-        NodeTypeDescriptor::MaxPool2d { kernel_size, stride } => {
+        NodeTypeDescriptor::MaxPool2d {
+            kernel_size,
+            stride,
+            padding,
+            ceil_mode,
+        } => {
+            // ONNX pads 布局：[H_begin, W_begin, H_end, W_end]
+            // only_torch padding 布局：(top, bottom, left, right)
+            let mut int_list_attrs: Vec<(&'static str, Vec<i64>)> = vec![
+                (
+                    "kernel_shape",
+                    vec![kernel_size.0 as i64, kernel_size.1 as i64],
+                ),
+                ("strides", vec![stride.0 as i64, stride.1 as i64]),
+            ];
+            if *padding != (0, 0, 0, 0) {
+                int_list_attrs.push((
+                    "pads",
+                    vec![
+                        padding.0 as i64, // top    = H_begin
+                        padding.2 as i64, // left   = W_begin
+                        padding.1 as i64, // bottom = H_end
+                        padding.3 as i64, // right  = W_end
+                    ],
+                ));
+            }
+            let int_attrs = if *ceil_mode { vec![("ceil_mode", 1i64)] } else { vec![] };
             ExportCategory::Operator(OnnxExportOp {
                 op_type: "MaxPool",
                 float_attrs: vec![],
-                int_attrs: vec![],
-                int_list_attrs: vec![
-                    (
-                        "kernel_shape",
-                        vec![kernel_size.0 as i64, kernel_size.1 as i64],
-                    ),
-                    ("strides", vec![stride.0 as i64, stride.1 as i64]),
-                ],
+                int_attrs,
+                int_list_attrs,
             })
         }
         NodeTypeDescriptor::AvgPool2d { kernel_size, stride } => {
@@ -697,6 +735,58 @@ pub(crate) fn find_attr_ints(attrs: &[Attribute], name: &str) -> Vec<i64> {
         .find(|a| a.name == name)
         .map(|a| a.ints.clone())
         .unwrap_or_default()
+}
+
+/// 解析 ONNX 2D `pads` 属性为对称 (pad_h, pad_w)
+///
+/// ONNX pads 布局：`[H_begin, W_begin, H_end, W_end]`
+///
+/// 当前 only_torch Conv2d / ConvTranspose2d 只支持对称四角 padding
+/// （即 H_begin == H_end && W_begin == W_end）。
+/// 非对称四角（如 `pads=[1,2,3,4]`）属罕见情形（PyTorch 默认对称导出，
+/// HuggingFace 等第三方模型偶有），需要在导入端用 Pad 节点 + Conv(p=0) 组合
+/// 表达——本轮暂未实现，遇到时返回 actionable 错误，提示用户用 onnxsim 预处理
+/// 或在 PyTorch 端用 `nn.ZeroPad2d` 显式拆开。
+///
+/// 返回值：
+/// - `pads.len() == 0`：默认 `(0, 0)`
+/// - `pads.len() == 4` 且四角对称：`(H_begin, W_begin)`
+/// - `pads.len() == 4` 但非对称：`UnsupportedConvConfig` 错误
+/// - 其他长度：`UnsupportedConvConfig` 错误
+fn parse_symmetric_2d_pads(
+    pads: &[i64],
+    op_type: &str,
+    node_name: &str,
+) -> Result<(usize, usize), OnnxError> {
+    match pads.len() {
+        0 => Ok((0, 0)),
+        4 => {
+            let h_begin = pads[0];
+            let w_begin = pads[1];
+            let h_end = pads[2];
+            let w_end = pads[3];
+            if h_begin == h_end && w_begin == w_end {
+                Ok((h_begin as usize, w_begin as usize))
+            } else {
+                Err(OnnxError::UnsupportedConvConfig {
+                    op_type: op_type.to_string(),
+                    reason: format!(
+                        "{op_type} 节点 \"{node_name}\" 的 pads={pads:?} 是非对称四角 \
+                         (H_begin/end={h_begin}/{h_end}, W_begin/end={w_begin}/{w_end})。\
+                         only_torch 当前只支持对称 padding。\
+                         临时变通：在 PyTorch 端用 `nn.ZeroPad2d` 显式拆开 + Conv(padding=0)，\
+                         或先用 onnxsim 预处理 ONNX 模型"
+                    ),
+                })
+            }
+        }
+        n => Err(OnnxError::UnsupportedConvConfig {
+            op_type: op_type.to_string(),
+            reason: format!(
+                "{op_type} 节点 \"{node_name}\" 的 pads 维度={n}（仅支持 0 或 4）"
+            ),
+        }),
+    }
 }
 
 /// 验证 Conv 配置（仅支持 2D、group=1、dilation=1）

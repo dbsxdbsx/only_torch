@@ -327,9 +327,11 @@ fn test_import_maxpool() {
     ];
     let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp0").unwrap();
     match &result[0] {
-        NodeTypeDescriptor::MaxPool2d { kernel_size, stride } => {
+        NodeTypeDescriptor::MaxPool2d { kernel_size, stride, padding, ceil_mode } => {
             assert_eq!(*kernel_size, (2, 2));
             assert_eq!(*stride, (2, 2));
+            assert_eq!(*padding, (0, 0, 0, 0));
+            assert!(!*ceil_mode);
         }
         _ => panic!("expected MaxPool2d"),
     }
@@ -356,6 +358,101 @@ fn test_import_pool_1d_rejected() {
     let attrs = vec![make_ints_attr("kernel_shape", vec![3])];
     let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp0");
     assert!(result.is_err());
+}
+
+/// 测试 MaxPool 解析 ONNX pads + ceil_mode（YOLOv5 SPPF 风格）
+///
+/// VinXiangQi YOLOv5 SPPF 模块的 MaxPool 配置：
+/// kernel=5x5, stride=1, pads=[2,2,2,2], ceil_mode=0
+/// → 输入 20x20 → 输出 20x20（保形）
+#[test]
+fn test_import_maxpool_with_pads_and_ceil_mode() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![5, 5]),
+        make_ints_attr("strides", vec![1, 1]),
+        make_ints_attr("pads", vec![2, 2, 2, 2]),
+        make_int_attr("ceil_mode", 0),
+    ];
+    let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp_sppf").unwrap();
+    match &result[0] {
+        NodeTypeDescriptor::MaxPool2d {
+            kernel_size,
+            stride,
+            padding,
+            ceil_mode,
+        } => {
+            assert_eq!(*kernel_size, (5, 5));
+            assert_eq!(*stride, (1, 1));
+            // ONNX pads=[H_b,W_b,H_e,W_e]=[2,2,2,2] → only_torch=(top,bottom,left,right)=(2,2,2,2)
+            assert_eq!(*padding, (2, 2, 2, 2));
+            assert!(!*ceil_mode);
+        }
+        _ => panic!("expected MaxPool2d"),
+    }
+
+    // ceil_mode=1
+    let attrs_ceil = vec![
+        make_ints_attr("kernel_shape", vec![3, 3]),
+        make_ints_attr("strides", vec![2, 2]),
+        make_int_attr("ceil_mode", 1),
+    ];
+    let result_ceil = onnx_op_to_descriptors(&OpType::MaxPool, &attrs_ceil, "mp_ceil").unwrap();
+    if let NodeTypeDescriptor::MaxPool2d { ceil_mode, .. } = &result_ceil[0] {
+        assert!(*ceil_mode, "ceil_mode=1 应被解析为 true");
+    }
+}
+
+/// 测试 MaxPool 解析非对称 pads（如 H 和 W 不同）
+///
+/// `[H_b, W_b, H_e, W_e] = [1, 0, 1, 0]` 表示 H 维各加 1、W 维不 pad
+/// → only_torch (top, bottom, left, right) = (1, 1, 0, 0)
+#[test]
+fn test_import_maxpool_asymmetric_h_only_padding() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![3, 3]),
+        make_ints_attr("strides", vec![1, 1]),
+        make_ints_attr("pads", vec![1, 0, 1, 0]),
+    ];
+    let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp_asym").unwrap();
+    if let NodeTypeDescriptor::MaxPool2d { padding, .. } = &result[0] {
+        assert_eq!(*padding, (1, 1, 0, 0));
+    }
+}
+
+/// 测试 Conv 解析对称 pads（YOLOv5 stem 风格）
+///
+/// `[H_b, W_b, H_e, W_e] = [2, 2, 2, 2]` → only_torch (pad_h, pad_w) = (2, 2)
+#[test]
+fn test_import_conv_symmetric_pads() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![6, 6]),
+        make_ints_attr("strides", vec![2, 2]),
+        make_ints_attr("pads", vec![2, 2, 2, 2]),
+    ];
+    let result = onnx_op_to_descriptors(&OpType::Conv, &attrs, "conv_stem").unwrap();
+    if let NodeTypeDescriptor::Conv2d { padding, .. } = &result[0] {
+        assert_eq!(*padding, (2, 2), "对称 pads 应解析为 (pad_h, pad_w)");
+    }
+}
+
+/// 测试 Conv 解析非对称 pads → 应报 actionable 错误
+///
+/// `[H_b, W_b, H_e, W_e] = [1, 2, 3, 4]`（非对称四角）
+/// only_torch 当前只支持对称 padding，应报错并提示用户用 ZeroPad2d 拆开
+#[test]
+fn test_import_conv_asymmetric_pads_rejected() {
+    let attrs = vec![
+        make_ints_attr("kernel_shape", vec![3, 3]),
+        make_ints_attr("strides", vec![1, 1]),
+        make_ints_attr("pads", vec![1, 2, 3, 4]),
+    ];
+    let result = onnx_op_to_descriptors(&OpType::Conv, &attrs, "conv_asym");
+    assert!(result.is_err(), "Conv 非对称四角 padding 应报错");
+    let err_str = format!("{:?}", result.unwrap_err());
+    assert!(
+        err_str.contains("非对称") || err_str.contains("ZeroPad2d") || err_str.contains("onnxsim"),
+        "错误信息应给出 actionable 建议，实际：{err_str}"
+    );
 }
 
 #[test]
@@ -546,6 +643,8 @@ fn test_export_maxpool2d() {
     let desc = NodeTypeDescriptor::MaxPool2d {
         kernel_size: (2, 2),
         stride: (2, 2),
+        padding: (0, 0, 0, 0),
+        ceil_mode: false,
     };
     match descriptor_to_export_category(&desc) {
         ExportCategory::Operator(op) => {

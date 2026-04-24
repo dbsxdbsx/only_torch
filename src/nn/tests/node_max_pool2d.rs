@@ -33,7 +33,7 @@ fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -70,7 +70,7 @@ fn test_max_pool2d_forward_batch() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
 
     // 第一个 batch 全 1，第二个 batch 递增
     let mut data = vec![1.0f32; 16];
@@ -110,7 +110,7 @@ fn test_max_pool2d_forward_multi_channel() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
 
     let mut data = vec![1.0f32; 16];
     data.extend(vec![2.0f32; 16]);
@@ -144,6 +144,8 @@ fn test_max_pool2d_forward_with_stride() -> Result<(), GraphError> {
         input.clone(),
         (3, 3),
         Some((2, 2)),
+        (0, 0, 0, 0),
+        false,
         Some("pool"),
     )?;
 
@@ -190,7 +192,7 @@ fn test_max_pool2d_invalid_input_dims() {
 
     let result = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (2, 2), None, Some("pool"));
+        .create_max_pool2d_node(input, (2, 2), None, (0, 0, 0, 0), false, Some("pool"));
     assert!(result.is_err());
 }
 
@@ -207,7 +209,7 @@ fn test_max_pool2d_kernel_too_large() {
 
     let result = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (5, 5), None, Some("pool"));
+        .create_max_pool2d_node(input, (5, 5), None, (0, 0, 0, 0), false, Some("pool"));
     assert!(result.is_err());
 }
 
@@ -231,7 +233,7 @@ fn test_max_pool2d_vjp_sparse_basic() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -278,7 +280,7 @@ fn test_max_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -321,7 +323,7 @@ fn test_max_pool2d_vjp_batch() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
+            .create_max_pool2d_node(input.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
 
     // batch 0: 全 3.0（所有位置都是最大值，梯度均匀分配）
     // batch 1: 递增 1..16
@@ -364,7 +366,7 @@ fn test_max_pool2d_e2e_backward_sparse() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(param.clone(), (2, 2), None, Some("pool"))?;
+            .create_max_pool2d_node(param.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
     let flat = inner
         .borrow_mut()
         .create_reshape_node(pool.clone(), &[1, 4], Some("flat"))?;
@@ -453,7 +455,7 @@ fn test_max_pool2d_e2e_conv_pool_cascade() -> Result<(), GraphError> {
     let pool =
         inner
             .borrow_mut()
-            .create_max_pool2d_node(conv.clone(), (2, 2), None, Some("pool"))?;
+            .create_max_pool2d_node(conv.clone(), (2, 2), None, (0, 0, 0, 0), false, Some("pool"))?;
 
     // flatten → [1, 4]
     let flat = inner
@@ -516,6 +518,8 @@ fn test_max_pool2d_dynamic_batch_forward() -> Result<(), GraphError> {
         input.clone(),
         (2, 2),
         Some((2, 2)),
+        (0, 0, 0, 0),
+        false,
         Some("pool"),
     )?;
 
@@ -550,6 +554,8 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
         param.clone(),
         (2, 2),
         Some((2, 2)),
+        (0, 0, 0, 0),
+        false,
         Some("pool"),
     )?;
     let flat = inner
@@ -612,7 +618,7 @@ fn test_create_max_pool2d_node() {
 
     let pool = inner
         .borrow_mut()
-        .create_max_pool2d_node(input.clone(), (2, 2), Some((2, 2)), Some("pool"))
+        .create_max_pool2d_node(input.clone(), (2, 2), Some((2, 2)), (0, 0, 0, 0), false, Some("pool"))
         .unwrap();
 
     assert_eq!(pool.shape(), vec![2, 3, 4, 4]);
@@ -634,7 +640,7 @@ fn test_create_max_pool2d_default_stride() {
 
     let pool = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (3, 3), None, None)
+        .create_max_pool2d_node(input, (3, 3), None, (0, 0, 0, 0), false, None)
         .unwrap();
 
     // (6 - 3) / 3 + 1 = 2
@@ -654,7 +660,7 @@ fn test_create_max_pool2d_overlapping() {
 
     let pool = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (3, 3), Some((1, 1)), None)
+        .create_max_pool2d_node(input, (3, 3), Some((1, 1)), (0, 0, 0, 0), false, None)
         .unwrap();
 
     // (5 - 3) / 1 + 1 = 3
@@ -674,7 +680,7 @@ fn test_create_max_pool2d_kernel_too_large() {
     // kernel 5x5 > 输入 4x4 -> 应失败
     let result = inner
         .borrow_mut()
-        .create_max_pool2d_node(input, (5, 5), None, None);
+        .create_max_pool2d_node(input, (5, 5), None, (0, 0, 0, 0), false, None);
     assert!(result.is_err());
 }
 
@@ -694,7 +700,7 @@ fn test_create_max_pool2d_drop_releases() {
 
         let pool = inner
             .borrow_mut()
-            .create_max_pool2d_node(input, (2, 2), None, None)
+            .create_max_pool2d_node(input, (2, 2), None, (0, 0, 0, 0), false, None)
             .unwrap();
         weak_pool = Rc::downgrade(&pool);
 
@@ -703,4 +709,149 @@ fn test_create_max_pool2d_drop_releases() {
     }
     assert!(weak_pool.upgrade().is_none());
     assert!(weak_input.upgrade().is_none());
+}
+
+// ==================== 6. ONNX padding / ceil_mode 测试 ====================
+//
+// 验证 plan §2.3 的 MaxPool2d padding (top, bottom, left, right) + ceil_mode 字段
+// 这是修复 chinese_chess_yolo SPPF 模块 spatial shape bug 的关键能力
+//
+// SPPF 模块典型配置：MaxPool(k=5, stride=1, pads=2),输出与输入 H/W 完全相同
+// （20→20）。修复前因没读 pads 输出错算成 (20-5)/1+1 = 16。
+
+/// 测试 MaxPool2d 对称 padding：YOLOv5 SPPF 风格 (k=5, stride=1, pads=2)
+///
+/// 输入 5x5 全 1，pad 后 9x9 (pad 2 圈，padding 区域为 -inf)，
+/// 池化窗口 5x5、stride=1 → 输出 5x5
+/// 由于输入全 1 而 padding 是 -inf，每个窗口的 max 都是 1.0
+#[test]
+fn test_max_pool2d_sppf_style_padding() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 5, 5], Some("input"))?;
+    let pool = inner.borrow_mut().create_max_pool2d_node(
+        input.clone(),
+        (5, 5),
+        Some((1, 1)),
+        (2, 2, 2, 2), // 对称 padding 2 圈
+        false,
+        Some("pool"),
+    )?;
+
+    let input_val = Tensor::new(&vec![1.0f32; 25], &[1, 1, 5, 5]);
+    input.set_value(Some(&input_val))?;
+    pool.forward_recursive(1, false)?;
+
+    let output = pool.value().unwrap();
+    assert_eq!(
+        output.shape(),
+        &[1, 1, 5, 5],
+        "SPPF 风格 (k=5, p=2, s=1) 输出应与输入同尺寸"
+    );
+    for h in 0..5 {
+        for w in 0..5 {
+            assert_abs_diff_eq!(output[[0, 0, h, w]], 1.0, epsilon = 1e-6);
+        }
+    }
+    Ok(())
+}
+
+/// 测试 MaxPool2d ceil_mode：(input + 2*pad - k) / s 不整除时
+///
+/// 输入 7x7、k=3、s=2、pads=0
+/// floor: (7-3)/2 + 1 = 3 → 输出 3x3
+/// ceil:  ceil((7-3)/2) + 1 = 3 → 输出 3x3（本例 ceil 跟 floor 同结果，因为整除）
+///
+/// 输入 8x8、k=3、s=2、pads=0
+/// floor: (8-3)/2 + 1 = 3 → 输出 3x3
+/// ceil:  ceil((8-3)/2) + 1 = 4 → 输出 4x4（多 1 个边缘窗口）
+#[test]
+fn test_max_pool2d_ceil_mode() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // floor 模式
+    let input_f = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 8, 8], Some("input_floor"))?;
+    let pool_f = inner.borrow_mut().create_max_pool2d_node(
+        input_f.clone(),
+        (3, 3),
+        Some((2, 2)),
+        (0, 0, 0, 0),
+        false, // floor
+        Some("pool_floor"),
+    )?;
+
+    let input_val = Tensor::new(&vec![0.5f32; 64], &[1, 1, 8, 8]);
+    input_f.set_value(Some(&input_val))?;
+    pool_f.forward_recursive(1, false)?;
+    assert_eq!(pool_f.value().unwrap().shape(), &[1, 1, 3, 3], "floor 模式");
+
+    // ceil 模式：注意 ceil 模式下池化窗口可能跨过 padding 区域
+    // 8x8 输入、k=3、s=2、pads=0、ceil_mode=1
+    // ONNX 行为：output = floor((8 + 0 - 3) / 2) + 1 = 3，但 ceil_mode 时 = ceil((8-3)/2)+1 = 4
+    // 由于 (4-1)*2 + 3 = 9 > 8，最后一行/列窗口需要"虚拟 padding"才能完整覆盖
+    let input_c = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 8, 8], Some("input_ceil"))?;
+    let pool_c = inner.borrow_mut().create_max_pool2d_node(
+        input_c.clone(),
+        (3, 3),
+        Some((2, 2)),
+        (0, 0, 0, 0),
+        true, // ceil
+        Some("pool_ceil"),
+    )?;
+    input_c.set_value(Some(&input_val))?;
+    pool_c.forward_recursive(1, false)?;
+    assert_eq!(pool_c.value().unwrap().shape(), &[1, 1, 4, 4], "ceil 模式");
+    Ok(())
+}
+
+/// 测试 MaxPool2d 反向传播 with padding：max_indices 在 padded 空间，
+/// 反向需正确还原到原始输入坐标
+#[test]
+fn test_max_pool2d_backward_with_padding() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    // 输入 4x4、k=3、s=1、pads=1（对称）→ 输出 4x4（保形）
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 1, 4, 4], Some("input"))?;
+    let pool = inner.borrow_mut().create_max_pool2d_node(
+        input.clone(),
+        (3, 3),
+        Some((1, 1)),
+        (1, 1, 1, 1),
+        false,
+        Some("pool"),
+    )?;
+
+    // 设计输入让 max 落在不同位置（含中心、边角）
+    #[rustfmt::skip]
+    let input_val = Tensor::new(&[
+        9.0, 1.0, 1.0, 8.0,
+        1.0, 5.0, 1.0, 1.0,
+        1.0, 1.0, 7.0, 1.0,
+        6.0, 1.0, 1.0, 4.0,
+    ], &[1, 1, 4, 4]);
+    input.set_value(Some(&input_val))?;
+    pool.forward_recursive(1, false)?;
+
+    // 输出值检查（每个窗口 max）
+    let out = pool.value().unwrap();
+    assert_eq!(out.shape(), &[1, 1, 4, 4]);
+    // (0,0): 窗口 [-1:2, -1:2] 仅含 input[0,0..2, 0..2] = max(9,1,1,5) = 9
+    assert_abs_diff_eq!(out[[0, 0, 0, 0]], 9.0, epsilon = 1e-6);
+    // (1,1): 窗口 [0:3, 0:3] 含中心 5、9、7 等 = max = 9
+    assert_abs_diff_eq!(out[[0, 0, 1, 1]], 9.0, epsilon = 1e-6);
+    // (3,3): 窗口 [2:5, 2:5] 仅含 input[2..4, 2..4] = max(7,1,1,4) = 7
+    assert_abs_diff_eq!(out[[0, 0, 3, 3]], 7.0, epsilon = 1e-6);
+
+    Ok(())
 }

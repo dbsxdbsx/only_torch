@@ -66,7 +66,7 @@ fn test_node_parameter_creation_with_invalid_shape() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    // 0D / 1D / 5D 均应失败
+    // 0D / 1D 均应失败（标量没意义；1D 应在导入端升维到 [1, N]）
     assert!(
         inner.borrow_mut().create_parameter_node(&[], None).is_err(),
         "0D 形状应失败"
@@ -78,12 +78,14 @@ fn test_node_parameter_creation_with_invalid_shape() {
             .is_err(),
         "1D 形状应失败"
     );
+
+    // ≥ 2 维都应成功；5D 用于 ONNX 模型如 YOLOv5 anchor 表 [1, na, 1, 1, 2]
     assert!(
         inner
             .borrow_mut()
             .create_parameter_node(&[2, 2, 2, 2, 2], None)
-            .is_err(),
-        "5D 形状应失败"
+            .is_ok(),
+        "5D 形状应成功（YOLOv5 anchor 表场景）"
     );
 
     // 2D 应成功（FC 权重 [in, out]）
@@ -505,13 +507,13 @@ fn test_create_parameter_invalid_shape() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    // 1D 形状应该失败
+    // 1D 形状应该失败（导入端应升维到 [1, N]）
     let result = inner.borrow_mut().create_parameter_node(&[10], None);
     assert!(result.is_err());
 
-    // 5D 形状也应该失败
+    // 5D 形状现在应成功（YOLOv5 anchor 表等 5D 常量场景）
     let result = inner
         .borrow_mut()
         .create_parameter_node(&[1, 2, 3, 4, 5], None);
-    assert!(result.is_err());
+    assert!(result.is_ok(), "5D Parameter 应成功创建");
 }
