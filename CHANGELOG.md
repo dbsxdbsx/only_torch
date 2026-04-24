@@ -4,6 +4,12 @@
 
 ### 修复
 
+- **fix(nn): GraphDescriptor 加 `explicit_output_ids`,精确还原 ONNX `graph.output`** [`761e4e8`]
+  - **真根因**:`from_descriptor` 用"无后继 = 输出"拓扑推断,复杂模型(YOLOv5)经过常量折叠 + Split 重写后会留下若干无后继的中间节点(常量 Parameter / 拆出的 Narrow 副本等),它们都被误当成输出节点 → main.rs 拿到 3 个输出且选错(VinXiangQi 实际只有 1 个 `output` shape `[1, 25200, 20]`)
+  - **修复**:`GraphDescriptor` 加 `explicit_output_ids: Option<Vec<u64>>` 字段;ONNX import 从 `graph.output` 名称取 ID 列表填到 `descriptor.explicit_output_ids`;`descriptor_rebuild` 优先用此列表,fallback 到原拓扑推断(演化/手写 Layer 等内部路径不变)
+  - **回归门**:`tests/yolov5_xiangqi_import.rs::yolov5_xiangqi_rebuild_succeeds` 加 `outputs.len() == 1` + `inputs.len() == 1` 断言;原冗余的 `forward_outputs_correct_shape` 测试删除(由 example 的 FEN 自动对比兼任,更强)
+  - 验收:`cargo test --lib` 3105/3105;example chinese_chess_yolo 端到端跑通(下条)
+
 - **fix(nn): 修复 chinese_chess_yolo spatial shape 传播,补齐 ONNX MaxPool padding/ceil_mode 语义** [`f88e0a7`]
   - **真根因**:`MaxPool2d` 不读 ONNX `pads` 属性,YOLOv5 SPPF 模块 (k=5, pads=2, s=1) 输出错算成 (20-5)/1+1=16,期望 20
   - 同时修复 Conv/ConvTranspose 解析的潜在 bug:`(pads[0], pads[2])` 把 H_end 当 W_begin,改为对称语义 `(pads[0], pads[1])`,非对称四角报 actionable 错(提示 ZeroPad2d / onnxsim)
@@ -53,13 +59,21 @@
   - 新增 `nn::load_onnx` / `nn::load_onnx_from_bytes` / `nn::ImportReport` / `nn::OnnxImportResult` / `nn::RewriteRecord` 类型导出
   - 让用户在 `Graph::from_onnx` 的 rebuild 阶段失败时，仍能拿到 ImportReport 做诊断
 
-- **feat(example): `chinese_chess_yolo` 端到端 example（VinXiangQi YOLOv5 模型）** [`a5529a1`, `bfd6afc`]
-  - `download_model.py`：拉取 VinXiangQi v1.4.0 release（93 MB）+ 解压 `.onnx` + 用 `onnx` 库审计算子缺口；中间产物放跨平台 cache 目录（默认 `~/.cache/only_torch_yolo_cache/`，可用 `XIANGQI_CACHE_DIR` 环境变量覆盖），模型落 `models/vinxiangqi.onnx`（已被 `.gitignore` 排除）
-  - `letterbox.rs`（~80 行）：等比缩放 + 灰色填充到 640×640 + NCHW 归一化
-  - `yolo_decode.rs`（~120 行）：YOLOv5 输出解码 + 纯 Rust per-class O(N²) NMS
-  - `board_align.rs`（~120 行）：bbox → 9×10 网格对齐 + FEN 序列化（含 14 类红/黑棋子字典）
-  - `main.rs`（~250 行）：分两步 import + rebuild，rebuild 失败时优雅降级 + actionable 提示，仍展示 ImportReport
-  - `README.md`：用法 + 调优指引 + 已知 limitation
+- **feat(example): `chinese_chess_yolo` 端到端打通 + 内置 sample 截图** [`9b1ac85`]
+  - 之前 example 卡在 forward + FEN(README 写为"已知 limitation"),实际是框架 `explicit_output_ids` bug + 业务侧多个 bug 叠加。框架 bug 已在前一个 commit 修复,本 commit 修业务侧并补内置 sample 让 example 开箱即跑
+  - **修业务 bug**:类别字典之前 14 类瞎猜,改为按 VinXiangQi v1.4.0 官方源码 `YoloXiangQiModel.cs` 对齐 15 类 `[n,b,a,k,r,c,p,R,N,A,K,B,C,P,board]`(class 14 整盘 bbox 不进 FEN);ROI 之前写死整图,改为 `auto_detect_board_roi` 优先用棋子检测中心包络 + fallback board 类 bbox 内缩 5%;新增 `detect_red_on_top` + `rotate_grid_180` 视觉朝向自动检测,支持反向截图(红方在原图上方时整盘转回标准方向)
+  - **视觉朝向作为独立输出项**:FEN 是逻辑棋局表示(标准约定永远红方在 row 9 底,字符串本身无法表达原图视觉朝向),所以拆成两份输出——视觉朝向报告"红方在棋盘上方/下方",标准 FEN 永远红方在底与视觉朝向解耦
+  - **内置 sample + 自动对比**:`samples/{sample_red_bottom.png, sample_red_top.png, example_answer.txt}`,跑 samples/ 下的图自动从 answer.txt 找答案做位级对比,输出 `✓ 匹配` 或 `✗ 不匹配 期望=... 实际=...`,把 example 同时升级为真正的端到端回归测试
+  - **CLI 参数 + 默认开箱即跑**:默认 `cargo run --example chinese_chess_yolo` 跑 sample 1;sample 2 用 `-- <路径>.png` 指定;删掉之前合成截图脚本的废话提示
+  - **验收**:两个 sample FEN 位级匹配人类标注(中盘残局 29/90 + 初始局面 32/90),朝向输出对两种朝向都正确
+
+- **feat(example): `chinese_chess_yolo` 端到端 example 框架(VinXiangQi YOLOv5 模型)** [`a5529a1`, `bfd6afc`]
+  - `download_model.py`:拉取 VinXiangQi v1.4.0 release(93 MB)+ 解压 `.onnx` + 用 `onnx` 库审计算子缺口;中间产物放跨平台 cache 目录(默认 `~/.cache/only_torch_yolo_cache/`,可用 `XIANGQI_CACHE_DIR` 环境变量覆盖),模型落 `models/vinxiangqi.onnx`(已被 `.gitignore` 排除)
+  - `letterbox.rs`(~80 行):等比缩放 + 灰色填充到 640×640 + NCHW 归一化
+  - `yolo_decode.rs`(~120 行):YOLOv5 输出解码 + 纯 Rust per-class O(N²) NMS
+  - `board_align.rs`(~120 行):bbox → 9×10 网格对齐 + FEN 序列化(含类别字典 / ROI 自动锁定 / 视觉朝向检测)
+  - `main.rs`(~250 行):分两步 import + rebuild,rebuild 失败时优雅降级 + actionable 提示,仍展示 ImportReport
+  - `README.md`:用法 + 调优指引 + 已知 limitation
   - `Cargo.toml` 注册 `[[example]] chinese_chess_yolo`
 
 - **test(onnx_models): `yolov5_xiangqi` 回归 fixture** [`1cec9f9`]
@@ -84,6 +98,12 @@
 
 - **chore(nn/graph): ONNX `MIN_OPSET_VERSION` 从 13 降到 12** [`fdc61e7`]
   - 兼容 VinXiangQi 等 YOLOv5 老版本导出（opset 12 引入了 Constant/Split/Pow 的稳定形式，本 import 已覆盖）
+
+- **chore: 历史遗留私有/隐私信息脱敏** [`4f698e7`]
+  - `download_model.py` 之前硬编码私有路径 `D:/DATA/BaiduSyncdisk/...` 不适合作为公开 example 的默认行为,改为跨平台 cache 标准做法:默认 `~/.cache/only_torch_yolo_cache/`(Windows 落到 `%USERPROFILE%/.cache/...`),允许 `XIANGQI_CACHE_DIR` 环境变量覆盖
+  - CHANGELOG.md 老条目里残留的私有路径 + 个人项目名同步脱敏(下游集成应用相关描述泛化)
+  - `.doc/design/onnx_import_strategy.md` §9.1 里 3 处个人项目名("梦入零式")改为通用"下游连线器应用"
+  - **已知遗留**(本次不动):`examples/traditional/chinese_chess/prepare_real_pieces.py` 还有 4 处硬编码 `D:\SOFTWARE\<象棋软件>\...`,属另一个 chess CNN example 的脚本,留作独立 backlog 任务
 
 ### 文档
 
