@@ -313,17 +313,55 @@ tests/onnx_models/
 
 这个表同时是**能力声明**和**优先级路线图**。
 
-## 9. 下一步行动（按优先级）
+## 9. Backlog（按需求驱动，本表为权威入口）
 
-| # | 行动 | 触发条件 | 预期产出 |
-|---|------|--------|---------|
-| 1 | 当前象棋示例"标准"善后 | 立即 | README + CHANGELOG + commit |
-| 2 | 本文档归档 | 立即 | `.doc/design/onnx_import_strategy.md`（本文件） |
-| 3 | 加 ImportReport 骨架 | 有下一个模型卡住时 | `OnnxImportResult` 增字段；现有 import 填充基础信息 |
-| 4 | 首个真实第三方模型验证 | 决定扩展后（建议 ResNet-18 或 MobileNetV2） | `tests/onnx_models/<model>/` + 缺口清单 |
-| 5 | Constant folding pass | 缺口中出现可折叠子图 | `onnx_import/folding.rs` |
-| 6 | Pattern rewrite pass | 缺口中出现 tracer 副产物子图 | `onnx_import/patterns.rs` + 相关内置算子 |
-| 7 | 动态 shape op runtime | 出现必须动态的场景（如 transformer） | 路线 A 的实际实施 |
+> 任何新 plan 立项前先看本表；立项时把 plan 文件名加进对应行的 "立项 plan" 列；
+> plan 完成后把对应行**从表中移除**，改动记录到 [`CHANGELOG.md`](../../CHANGELOG.md)
+> （避免 backlog 表与 CHANGELOG 重复维护）。
+> "永远不做"的项保留在表中并标 ❌，作为决策依据存档。
+
+> 本表上一次大修订：2026-04-24（YOLO followup three commits 完成后整合，
+> 来源于旧 plan §9、新 plan §6、设计文档原 §9 三处散落的 backlog 项）。
+
+### 9.1 业务层（4 项）—— 跟 ImportReport / R4 无关，按业务需求驱动
+
+| 项 | 触发条件 | 预期产出 | 来源 | 立项 plan | 风险 |
+|---|---|---|---|---|---|
+| 迁移到 meng_ru_ling_shi 连线器 | yolo example 业务跑通后立即 | `meng_ru_ling_shi/` Rust 后端集成 + FRB 桥接 | 旧 plan §9.1 | 待立 | FRB 类型边界需小心，ImportReport 跨语言传输需序列化 |
+| fine-tune 通道（R3 兜底） | VinXiangQi 在 QQ 象棋等其他软件精度 < 30/32 | README 写 fine-tune 指引：Roboflow/LabelImg 标 ~30 张 + 训 10-30 epoch | 旧 plan §9.3 | - | 文档级，无代码风险 |
+| ROI CLI 参数化 / GUI 标定 | meng_ru_ling_shi 集成阶段 | example main.rs 加 CLI 参数 + meng_ru_ling_shi 端 GUI 标定工具 | 旧 plan §9.7 | - | 低 |
+| 多输入图片批处理 | 用户提批量推理需求 | example 加 batch 模式 + Conv2d 等算子 batch>1 路径验证 | 旧 plan §9.8 | - | 中（动态 batch 路径已有但未充分覆盖） |
+
+### 9.2 算子层（3 项）—— 按模型驱动
+
+| 项 | 触发条件 | 预期产出 | 来源 | 立项 plan | 风险 |
+|---|---|---|---|---|---|
+| Upsample2d 非 nearest 模式（bilinear/bicubic） | 出现用 bilinear/bicubic 上采样的模型 | `Upsample2d::mode` 字段 + 前向/反向数学推导 + PyTorch 数值对照单测 | 旧 plan §9.2 | - | 中（反向梯度公式不平凡） |
+| 首个非 YOLO 第三方模型验证（ResNet-18 / MobileNetV2） | 决定扩展模型支持范围时 | `tests/onnx_models/<model>/` + supported models matrix 登记 | 设计文档原 §9.4 | - | 中（可能撞到新算子缺口） |
+| Conv 非对称四角 padding 支持 | 实际遇到 `pads=[1,2,3,4]` 这种非对称模型（YOLOv5 全对称，未触发） | 在 ONNX 导入端用 Pad + Conv(p=0) 组合表达；或 NodeTypeDescriptor::Conv2d 字段升 4 维 | YOLO followup Commit 1 留 backlog | - | 中（涉及 evolution 模块 ~14 处 Conv padding 字面量） |
+
+### 9.3 ImportReport 扩充（3 项）—— R4 风险显式守住，YAGNI
+
+> R4 立项原则：每个字段的入场券是"现在就有人填、现在就有人读"。
+> 缺一项就不做。下面这 3 项被 R4 明确"暂缓"，等真实需求出现再开 plan。
+
+| 项 | 触发条件 | 预期产出 | 来源 | 立项 plan | 风险 |
+|---|---|---|---|---|---|
+| `folded` 字段 + 独立 folding pass `onnx_import/folding.rs` | 缺口中出现 Shape→Gather→…→Reshape 这种 tracer 副产物子图 | `ImportReport.folded: Vec<FoldedRecord>` + 折叠 pass 实现 + ImportReport 联动 | 旧 plan §9.5 + 设计文档原 §9.5 | - | 中（设计折叠 pass 与 const_table 路径协调） |
+| `ImportOptions { fold_constants, strict, ... }` | 用户提"想关掉某个 lowering 调试" 或 strict 模式 | 新 struct + load_onnx 重载入参 + 调用链每层透传 | 旧 plan §9.5 | - | 中（调用链透传影响面广） |
+| `ImportWarning` 从 String 升级为结构化 enum | warnings 数量 ≥ 5 种且看出共性时（当前 4 种） | `ImportWarning { kind, location, ... }` + 现有 push 点全改 | 新 plan §6 | - | 低 |
+
+### 9.4 架构层（1 项）
+
+| 项 | 触发条件 | 预期产出 | 来源 | 立项 plan | 风险 |
+|---|---|---|---|---|---|
+| 真动态 shape op runtime | 接 transformer / RNN 必须动态 seq_len 场景 | 路线 A 的实际实施（详见本文档 §3） | 设计文档原 §9.7 | - | 高（架构性变更） |
+
+### 9.5 永远不做（决策存档）
+
+| 项 | 理由 | 来源 | 状态 |
+|---|---|---|---|
+| `to_onnx` 反向导出 round-trip | only_torch 定位是"小型推理框架/编译器"（TVM/TensorRT 一侧），不是"严格协议保真"工具（onnxruntime 一侧）。维护双向算子映射成本太高，且用户要部署直接用 `.otm` + Rust 原生推理更合适 | 设计文档 §1 / §4.4 | ❌ |
 
 ## 10. 关键参考
 
