@@ -1,0 +1,5 @@
+# 模型与本地产物不入 git
+*.onnx
+*.npy
+*.npz
+__pycache__/
