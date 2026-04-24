@@ -46,14 +46,20 @@ pub(super) fn assemble_reshape_with_const_fold<'a>(
     let output_name = node.output.first().copied().unwrap_or(node.name);
     let out_id = symbols.get_or_assign(output_name);
 
-    descriptor.add_node(NodeDescriptor::new(
-        out_id,
-        output_name,
-        NodeTypeDescriptor::Reshape { target_shape: target_shape.clone() },
-        target_shape,
-        None,
-        vec![parent_id],
-    ));
+    descriptor.add_node(
+        NodeDescriptor::new(
+            out_id,
+            output_name,
+            NodeTypeDescriptor::Reshape { target_shape: target_shape.clone() },
+            target_shape,
+            None,
+            vec![parent_id],
+        )
+        .with_origin_onnx_nodes(vec![
+            node.name.to_string(),
+            format!("<const:{shape_name}>"),
+        ]),
+    );
 
     import_report.rewritten.push(RewriteRecord {
         pattern: "constant_fold_into_reshape",

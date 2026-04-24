@@ -1409,3 +1409,203 @@ fn test_split_to_narrows_via_attribute() {
         }
     }
 }
+
+// ==================== ONNX provenance(origin_onnx_nodes)测试 ====================
+
+#[test]
+fn test_provenance_one_to_one_mapping() {
+    // 简单 MLP（MatMul + Add + ReLU），所有节点 1:1 映射，origin = [自身名]
+    let bytes = build_minimal_mlp_bytes();
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    let relu = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| matches!(n.node_type, NodeTypeDescriptor::ReLU))
+        .expect("应有 ReLU 节点");
+    assert_eq!(
+        relu.origin_onnx_nodes.len(),
+        1,
+        "1:1 映射节点的 origin 应为 1 项"
+    );
+    assert_eq!(
+        relu.origin_onnx_nodes[0], "relu1",
+        "ReLU 节点 origin 应是原 ONNX 节点名 (build_minimal_mlp_bytes 里命名为 \"relu1\")"
+    );
+
+    // initializer Parameter 节点 origin 应是 "<initializer:NAME>" 风格
+    let w1 = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "W1")
+        .unwrap();
+    assert_eq!(w1.origin_onnx_nodes, vec!["<initializer:W1>".to_string()]);
+}
+
+#[test]
+fn test_provenance_conv_with_bias_split() {
+    // 复用 test_import_report_records_conv_bias_split 的 Conv with bias 模型
+    let w = TensorProto::from_f32("conv_w", vec![8, 1, 3, 3], vec![0.1; 72]);
+    let b = TensorProto::from_f32("conv_b", vec![8], vec![0.0; 8]);
+    let input_vi = make_value_info("img", vec![1, 1, 28, 28]);
+    let conv_node = Node {
+        input: vec!["img", "conv_w", "conv_b"],
+        output: vec!["conv_out"],
+        name: "conv0",
+        op_type: OpType::Conv,
+        attribute: vec![
+            Attribute { name: "kernel_shape", ints: vec![3, 3], ..Default::default() },
+            Attribute { name: "strides", ints: vec![1, 1], ..Default::default() },
+            Attribute { name: "pads", ints: vec![1, 1, 1, 1], ..Default::default() },
+            Attribute { name: "group", i: 1, ..Default::default() },
+        ],
+        ..Default::default()
+    };
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        graph: Some(Graph {
+            node: vec![conv_node],
+            name: "conv_test",
+            initializer: vec![w, b],
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    // Conv 节点（"conv0/conv"）+ Add 节点（"conv_out"）的 origin 都应是原 Conv 节点名
+    let conv_part = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "conv0/conv")
+        .expect("Conv+bias 拆分应产出 conv0/conv 节点");
+    let add_part = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "conv_out")
+        .expect("Conv+bias 拆分应产出 conv_out 作为 Add 节点");
+    assert_eq!(conv_part.origin_onnx_nodes, vec!["conv0".to_string()]);
+    assert_eq!(add_part.origin_onnx_nodes, vec!["conv0".to_string()]);
+}
+
+#[test]
+fn test_provenance_split_to_narrows() {
+    // 复用 test_split_via_attribute_opset12 的 Split → 3 Narrow 模型
+    let input_vi = make_value_info("X", vec![1, 9]);
+    let split_node = Node {
+        input: vec!["X"],
+        output: vec!["Y1", "Y2", "Y3"],
+        name: "split0",
+        op_type: OpType::Split,
+        attribute: vec![
+            Attribute { name: "axis", i: 1, ..Default::default() },
+            Attribute { name: "split", ints: vec![3, 3, 3], ..Default::default() },
+        ],
+        ..Default::default()
+    };
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId { domain: "", version: 12 }],
+        graph: Some(Graph {
+            node: vec![split_node],
+            name: "split_test",
+            input: vec![input_vi],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    for name in ["Y1", "Y2", "Y3"] {
+        let n = result
+            .descriptor
+            .nodes
+            .iter()
+            .find(|nd| nd.name == name)
+            .unwrap();
+        assert_eq!(
+            n.origin_onnx_nodes,
+            vec!["split0".to_string()],
+            "Split→Narrow 重写后每个分片的 origin 都应指向原 Split 节点名"
+        );
+    }
+}
+
+#[test]
+fn test_provenance_otm_round_trip() {
+    // 验证 NodeDescriptor.origin_onnx_nodes 通过 .otm JSON 序列化往返保持一致
+    let bytes = build_minimal_mlp_bytes();
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+    let json = result.descriptor.to_json().unwrap();
+    // 反序列化回来
+    let restored = crate::nn::descriptor::GraphDescriptor::from_json(&json).unwrap();
+
+    // 找 ReLU 节点对照
+    let orig = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| matches!(n.node_type, NodeTypeDescriptor::ReLU))
+        .unwrap();
+    let restored_relu = restored
+        .nodes
+        .iter()
+        .find(|n| matches!(n.node_type, NodeTypeDescriptor::ReLU))
+        .unwrap();
+    assert_eq!(orig.origin_onnx_nodes, restored_relu.origin_onnx_nodes);
+    assert!(!restored_relu.origin_onnx_nodes.is_empty());
+}
+
+#[test]
+fn test_provenance_legacy_otm_compatible() {
+    // 模拟旧 .otm（无 origin_onnx_nodes 字段）反序列化兼容性
+    // 手工构造一个不含 origin_onnx_nodes 的 JSON 节点
+    let legacy_json = r#"{
+        "version": "0.15.1",
+        "name": "legacy",
+        "nodes": [
+            {
+                "id": 1,
+                "name": "input",
+                "node_type": { "type": "BasicInput" },
+                "output_shape": [1, 4],
+                "parents": []
+            }
+        ]
+    }"#;
+    let restored = crate::nn::descriptor::GraphDescriptor::from_json(legacy_json)
+        .expect("旧 .otm 无 origin_onnx_nodes 字段应通过 #[serde(default)] 兼容");
+    assert_eq!(restored.nodes.len(), 1);
+    assert!(
+        restored.nodes[0].origin_onnx_nodes.is_empty(),
+        "缺失字段应反序列化为空 Vec"
+    );
+}
+
+#[test]
+fn test_provenance_evolution_path_empty() {
+    // 演化 / Layer 等非 ONNX 路径下的 NodeDescriptor 默认 origin 为空 Vec
+    let nd = crate::nn::descriptor::NodeDescriptor::new(
+        1,
+        "layer_param",
+        NodeTypeDescriptor::Parameter,
+        vec![4, 8],
+        None,
+        vec![],
+    );
+    assert!(nd.origin_onnx_nodes.is_empty());
+    // skip_serializing_if 让空 Vec 不写入 JSON 体积
+    let json = serde_json::to_string(&nd).unwrap();
+    assert!(
+        !json.contains("origin_onnx_nodes"),
+        "空 origin 不应写入 JSON, 实际 JSON: {json}"
+    );
+}

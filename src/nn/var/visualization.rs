@@ -102,6 +102,7 @@ impl Var {
                 hyperparam_html,
                 node_group_tag: node.node_group_tag(),
                 data_source_id,
+                origin_onnx_nodes: node.origin_onnx_nodes(),
             }
         };
 
@@ -530,8 +531,34 @@ impl Var {
                 String::new()
             };
 
+            // ONNX provenance 渲染：≤3 项列出，>3 项显示 "+N more"
+            // tooltip 始终显示完整列表（HTML <FONT> 不能直接挂 graphviz tooltip,
+            // 用 graphviz 节点级 tooltip 属性即可）
+            let (origin_label_str, origin_tooltip) = if snode.origin_onnx_nodes.is_empty() {
+                (String::new(), String::new())
+            } else {
+                let n = snode.origin_onnx_nodes.len();
+                let label = if n <= 3 {
+                    snode.origin_onnx_nodes.join(", ")
+                } else {
+                    format!("{}, +{} more", snode.origin_onnx_nodes[..3].join(", "), n - 3)
+                };
+                // 内联简单 HTML 转义（ONNX 节点名极少含 <>&" 等字符，但保险起见仍处理）
+                let label_safe = label
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                let label_html = format!(
+                    "<BR/><FONT COLOR=\"#90A4AE\" POINT-SIZE=\"9\">origin: {label_safe}</FONT>"
+                );
+                // tooltip 是 graphviz 双引号属性，转义双引号
+                let tooltip_full = snode.origin_onnx_nodes.join(", ").replace('"', "\\\"");
+                let tooltip_attr = format!(" tooltip=\"origin: {tooltip_full}\"");
+                (label_html, tooltip_attr)
+            };
+
             format!(
-                "\"{}\" [label=<{}{}<BR/><B>{}</B><BR/>{}{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10{}];\n",
+                "\"{}\" [label=<{}{}<BR/><B>{}</B><BR/>{}{}{}{}{}> shape={} style={} fillcolor=\"{}\" fontsize=10{}{}];\n",
                 stable_id,
                 name,
                 rnn_step_str,
@@ -540,10 +567,12 @@ impl Var {
                 param_count_str,
                 hyperparam_str,
                 output_suffix,
+                origin_label_str,
                 node_shape,
                 style,
                 fill_color,
-                output_border_str
+                output_border_str,
+                origin_tooltip,
             )
         };
 

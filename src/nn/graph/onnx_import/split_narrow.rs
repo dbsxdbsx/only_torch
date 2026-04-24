@@ -117,18 +117,21 @@ pub(super) fn assemble_split_to_narrows<'a>(
         if axis < out_shape.len() {
             out_shape[axis] = length;
         }
-        descriptor.add_node(NodeDescriptor::new(
-            out_id,
-            out_name,
-            NodeTypeDescriptor::Narrow {
-                axis,
-                start,
-                length,
-            },
-            out_shape,
-            None,
-            vec![parent_id],
-        ));
+        descriptor.add_node(
+            NodeDescriptor::new(
+                out_id,
+                out_name,
+                NodeTypeDescriptor::Narrow {
+                    axis,
+                    start,
+                    length,
+                },
+                out_shape,
+                None,
+                vec![parent_id],
+            )
+            .with_origin_onnx_nodes(vec![node.name.to_string()]),
+        );
         produced_ids.push(out_id);
         start += length;
     }

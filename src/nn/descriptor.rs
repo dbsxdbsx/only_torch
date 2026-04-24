@@ -60,6 +60,21 @@ pub struct NodeDescriptor {
     /// 参数数量（仅 Parameter 类型有意义）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub param_count: Option<usize>,
+    /// 节点的 ONNX 来源追溯（provenance）
+    ///
+    /// 由 `onnx_import` 在装配时填充，记录该节点是从原 ONNX 模型的哪些节点
+    /// 合并/重写而来。例如：
+    /// - 普通 1:1 映射：`["Conv_5"]`
+    /// - Conv+bias 拆分：拆出的两个节点 origin 都是 `["Conv_42"]`
+    /// - Split→Narrow 重写：每个 Narrow 都是 `["Split_100"]`
+    /// - Reshape 折叠：`["Reshape_88", "<const:shape_input>"]`
+    ///
+    /// 演化、单元测试等非 ONNX 来源的节点保持空 `Vec`。
+    ///
+    /// `#[serde(default)]` 兼容旧 .otm 文件（无字段时反序列化为空）；
+    /// `skip_serializing_if = "Vec::is_empty"` 让无 origin 的节点不写入 JSON 体积。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub origin_onnx_nodes: Vec<String>,
 }
 
 /// 节点类型描述（包含类型特定参数）
@@ -402,7 +417,16 @@ impl NodeDescriptor {
             dynamic_shape,
             parents,
             param_count,
+            origin_onnx_nodes: Vec::new(),
         }
+    }
+
+    /// 链式 builder：注入 ONNX 来源追溯
+    ///
+    /// 由 `onnx_import` 在装配时调用,演化和测试路径无需调用(默认空 Vec)。
+    pub fn with_origin_onnx_nodes(mut self, names: Vec<String>) -> Self {
+        self.origin_onnx_nodes = names;
+        self
     }
 
     /// 获取用于显示的形状字符串

@@ -109,6 +109,13 @@ pub struct SnapshotNode {
     pub node_group_tag: Option<NodeGroupTag>,
     /// 数据源 ID（仅 Input/TargetInput 节点，用于检测同源数据节点）
     pub data_source_id: Option<u64>,
+    /// ONNX 来源追溯（provenance）—— 该节点由原 ONNX 哪些节点合并/重写而来
+    ///
+    /// 可视化时按以下规则呈现：
+    /// - 空 `Vec`（演化/Layer 等非 ONNX 路径）→ 不显示
+    /// - 1-3 项 → DOT label 末尾加小字 `origin: A, B, C`
+    /// - >3 项 → 显示 `origin: A, +N more`，tooltip 仍显示完整列表
+    pub origin_onnx_nodes: Vec<String>,
 }
 
 /// 可视化拓扑快照——计算图的轻量级结构副本

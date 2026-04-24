@@ -92,14 +92,20 @@ pub(super) fn assemble_resize_with_const_fold<'a>(
         descriptor,
     );
 
-    descriptor.add_node(NodeDescriptor::new(
-        out_id,
-        output_name,
-        NodeTypeDescriptor::Upsample2d { scale_h, scale_w },
-        output_shape,
-        None,
-        vec![parent_id],
-    ));
+    descriptor.add_node(
+        NodeDescriptor::new(
+            out_id,
+            output_name,
+            NodeTypeDescriptor::Upsample2d { scale_h, scale_w },
+            output_shape,
+            None,
+            vec![parent_id],
+        )
+        .with_origin_onnx_nodes(vec![
+            node.name.to_string(),
+            format!("<const:{source_const}>"),
+        ]),
+    );
 
     import_report.rewritten.push(RewriteRecord {
         pattern: "constant_fold_into_resize",

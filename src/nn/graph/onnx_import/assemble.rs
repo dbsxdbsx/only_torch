@@ -59,14 +59,17 @@ pub(super) fn assemble<'a>(
         }
         let id = symbols.get_or_assign(input_info.name);
         let shape = extract_shape_from_value_info(input_info);
-        descriptor.add_node(NodeDescriptor::new(
-            id,
-            input_info.name,
-            NodeTypeDescriptor::BasicInput,
-            shape.clone(),
-            Some(shape.iter().map(|&d| if d == 0 { None } else { Some(d) }).collect()),
-            vec![],
-        ));
+        descriptor.add_node(
+            NodeDescriptor::new(
+                id,
+                input_info.name,
+                NodeTypeDescriptor::BasicInput,
+                shape.clone(),
+                Some(shape.iter().map(|&d| if d == 0 { None } else { Some(d) }).collect()),
+                vec![],
+            )
+            .with_origin_onnx_nodes(vec![format!("<input:{}>", input_info.name)]),
+        );
     }
 
     // ── Initializer → Parameter 节点 + 权重 ──
@@ -92,14 +95,17 @@ pub(super) fn assemble<'a>(
             raw_shape.clone()
         };
 
-        descriptor.add_node(NodeDescriptor::new(
-            id,
-            init.name(),
-            NodeTypeDescriptor::Parameter,
-            shape.clone(),
-            None,
-            vec![],
-        ));
+        descriptor.add_node(
+            NodeDescriptor::new(
+                id,
+                init.name(),
+                NodeTypeDescriptor::Parameter,
+                shape.clone(),
+                None,
+                vec![],
+            )
+            .with_origin_onnx_nodes(vec![format!("<initializer:{}>", init.name())]),
+        );
 
         let float_data = init
             .as_f32()
@@ -143,14 +149,17 @@ pub(super) fn assemble<'a>(
             } else {
                 raw_shape.clone()
             };
-            descriptor.add_node(NodeDescriptor::new(
-                id,
-                output_name,
-                NodeTypeDescriptor::Parameter,
-                shape.clone(),
-                None,
-                vec![],
-            ));
+            descriptor.add_node(
+                NodeDescriptor::new(
+                    id,
+                    output_name,
+                    NodeTypeDescriptor::Parameter,
+                    shape.clone(),
+                    None,
+                    vec![],
+                )
+                .with_origin_onnx_nodes(vec![node.name.to_string()]),
+            );
             if let Some(float_data) = tensor_proto.as_f32() {
                 let tensor = Tensor::new(&float_data, &shape);
                 weights.insert(id, tensor);
@@ -226,14 +235,17 @@ pub(super) fn assemble<'a>(
                     &descriptor,
                 );
 
-                descriptor.add_node(NodeDescriptor::new(
-                    out_id,
-                    output_name,
-                    mapped_descriptors[0].clone(),
-                    output_shape,
-                    None,
-                    parent_ids,
-                ));
+                descriptor.add_node(
+                    NodeDescriptor::new(
+                        out_id,
+                        output_name,
+                        mapped_descriptors[0].clone(),
+                        output_shape,
+                        None,
+                        parent_ids,
+                    )
+                    .with_origin_onnx_nodes(vec![node.name.to_string()]),
+                );
             }
         } else if mapped_descriptors.len() == 2 {
             // Gemm → MatMul + Add
@@ -299,14 +311,17 @@ fn emit_conv_with_bias(
         &[input_id, weight_id],
         descriptor,
     );
-    descriptor.add_node(NodeDescriptor::new(
-        conv_id,
-        &conv_name,
-        mapped_descriptors[0].clone(),
-        conv_shape,
-        None,
-        vec![input_id, weight_id],
-    ));
+    descriptor.add_node(
+        NodeDescriptor::new(
+            conv_id,
+            &conv_name,
+            mapped_descriptors[0].clone(),
+            conv_shape,
+            None,
+            vec![input_id, weight_id],
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
 
     let output_name = node.output.first().copied().unwrap_or(node.name);
     let add_id = symbols.get_or_assign(output_name);
@@ -315,14 +330,17 @@ fn emit_conv_with_bias(
         &[conv_id, bias_id],
         descriptor,
     );
-    descriptor.add_node(NodeDescriptor::new(
-        add_id,
-        output_name,
-        NodeTypeDescriptor::Add,
-        add_shape,
-        None,
-        vec![conv_id, bias_id],
-    ));
+    descriptor.add_node(
+        NodeDescriptor::new(
+            add_id,
+            output_name,
+            NodeTypeDescriptor::Add,
+            add_shape,
+            None,
+            vec![conv_id, bias_id],
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
 
     import_report.rewritten.push(RewriteRecord {
         pattern: "conv_with_bias_to_conv_plus_add",
@@ -377,28 +395,34 @@ fn emit_gemm(
     let matmul_id = symbols.get_or_assign(&matmul_name);
     let matmul_shape =
         infer_output_shape_placeholder(&mapped_descriptors[0], &[a_id, b_id], descriptor);
-    descriptor.add_node(NodeDescriptor::new(
-        matmul_id,
-        &matmul_name,
-        mapped_descriptors[0].clone(),
-        matmul_shape,
-        None,
-        vec![a_id, b_id],
-    ));
+    descriptor.add_node(
+        NodeDescriptor::new(
+            matmul_id,
+            &matmul_name,
+            mapped_descriptors[0].clone(),
+            matmul_shape,
+            None,
+            vec![a_id, b_id],
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
 
     // 最终节点：Add(matmul_out, C)
     let output_name = node.output.first().copied().unwrap_or(node.name);
     let add_id = symbols.get_or_assign(output_name);
     let add_shape =
         infer_output_shape_placeholder(&mapped_descriptors[1], &[matmul_id, c_id], descriptor);
-    descriptor.add_node(NodeDescriptor::new(
-        add_id,
-        output_name,
-        mapped_descriptors[1].clone(),
-        add_shape,
-        None,
-        vec![matmul_id, c_id],
-    ));
+    descriptor.add_node(
+        NodeDescriptor::new(
+            add_id,
+            output_name,
+            mapped_descriptors[1].clone(),
+            add_shape,
+            None,
+            vec![matmul_id, c_id],
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
 
     import_report.rewritten.push(RewriteRecord {
         pattern: "gemm_to_matmul_plus_add",

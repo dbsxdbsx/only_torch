@@ -50,6 +50,13 @@ pub struct NodeInner {
     /// 如果该节点是在某个分组上下文中创建的，则记录所属分组。
     /// 使用 RefCell 支持后补标签（如 Layer 的 Parameter 节点在 guard 之前创建）。
     node_group_tag: RefCell<Option<NodeGroupTag>>,
+
+    // === ONNX 来源追溯（provenance）===
+    /// 如果节点由 ONNX 导入而来，记录原 ONNX 模型的节点名链路
+    /// （详见 `NodeDescriptor::origin_onnx_nodes`）。
+    /// 演化、单元测试、Layer API 等非 ONNX 路径下默认空 `Vec`。
+    /// 使用 `RefCell` 支持后补（rebuild_node 创建完 NodeInner 后再注入）。
+    origin_onnx_nodes: RefCell<Vec<String>>,
 }
 
 impl NodeInner {
@@ -76,6 +83,7 @@ impl NodeInner {
             is_detached: Cell::new(false),
             parents,
             node_group_tag: RefCell::new(None),
+            origin_onnx_nodes: RefCell::new(Vec::new()),
         }
     }
 
@@ -151,6 +159,21 @@ impl NodeInner {
     /// 设置节点分组标签（支持通过 &self 后补标签，如 Layer 的 Parameter 节点）
     pub fn set_node_group_tag(&self, tag: Option<NodeGroupTag>) {
         *self.node_group_tag.borrow_mut() = tag;
+    }
+
+    // ==================== ONNX 来源追溯（provenance）====================
+
+    /// 获取 ONNX 来源节点名列表的克隆
+    ///
+    /// 演化、Layer 等非 ONNX 路径下返回空 `Vec`。
+    pub fn origin_onnx_nodes(&self) -> Vec<String> {
+        self.origin_onnx_nodes.borrow().clone()
+    }
+
+    /// 设置 ONNX 来源节点名（由 `descriptor_rebuild::rebuild_node` 在创建完
+    /// NodeInner 后从 NodeDescriptor 注入）。
+    pub fn set_origin_onnx_nodes(&self, names: Vec<String>) {
+        *self.origin_onnx_nodes.borrow_mut() = names;
     }
 
     // ==================== 值和梯度访问 ====================
