@@ -917,6 +917,31 @@ fn test_import_report_records_gemm_split() {
     assert_eq!(record.produced_descriptor_nodes.len(), 2);
 }
 
+#[test]
+fn test_import_report_warnings_populated() {
+    // 验证 warnings 字段在 onnx_import 子模块拆分后真的"活"起来
+    // (此前定义为 Vec<String> 但无人 push)
+    //
+    // 触发场景：build_gemm_model_bytes 产生 Gemm with transB=1，
+    // 拆分时应 push "Gemm ... 因 transB=1 对权重 B 做了转置" warning
+    let bytes = build_gemm_model_bytes();
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+    assert!(
+        !result.import_report.warnings.is_empty(),
+        "Gemm with transB=1 应至少 push 1 条 warning"
+    );
+    let has_transb_warning = result
+        .import_report
+        .warnings
+        .iter()
+        .any(|w| w.contains("transB=1") && w.contains("gemm0"));
+    assert!(
+        has_transb_warning,
+        "应含 'gemm0 ... transB=1 ...' 风格的 warning，实际：{:?}",
+        result.import_report.warnings
+    );
+}
+
 // ==================== Constant 折叠 + Split 重写测试 ====================
 
 /// 创建 i64 类型 TensorProto（用于 shape / split_sizes）
