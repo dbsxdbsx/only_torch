@@ -1,0 +1,11 @@
+# Chinese Chess YOLO Example —— Python 端依赖
+#
+# 本脚本不需要 ultralytics / torch（VinXiangQi release 直接提供 .onnx），
+# 只用一个轻量的 onnx 库读模型元信息。
+#
+# 推荐用法（无需 venv，uv 自动隔离）：
+#   uv run --with onnx python examples/traditional/chinese_chess_yolo/download_model.py
+#
+# 若希望显式安装：
+#   uv pip install -r examples/traditional/chinese_chess_yolo/requirements.txt
+onnx>=1.16
