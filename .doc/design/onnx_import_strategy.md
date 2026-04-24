@@ -327,9 +327,9 @@ tests/onnx_models/
 
 | 项 | 触发条件 | 预期产出 | 来源 | 立项 plan | 风险 |
 |---|---|---|---|---|---|
-| 迁移到 meng_ru_ling_shi 连线器 | yolo example 业务跑通后立即 | `meng_ru_ling_shi/` Rust 后端集成 + FRB 桥接 | 旧 plan §9.1 | 待立 | FRB 类型边界需小心，ImportReport 跨语言传输需序列化 |
-| fine-tune 通道（R3 兜底） | VinXiangQi 在 QQ 象棋等其他软件精度 < 30/32 | README 写 fine-tune 指引：Roboflow/LabelImg 标 ~30 张 + 训 10-30 epoch | 旧 plan §9.3 | - | 文档级，无代码风险 |
-| ROI CLI 参数化 / GUI 标定 | meng_ru_ling_shi 集成阶段 | example main.rs 加 CLI 参数 + meng_ru_ling_shi 端 GUI 标定工具 | 旧 plan §9.7 | - | 低 |
+| 迁移到下游连线器应用 | yolo example 业务跑通后立即 | 下游 Rust 后端集成 + FRB 桥接(若用 Flutter) | 旧 plan §9.1 | 待立 | FRB 类型边界需小心，ImportReport 跨语言传输需序列化 |
+| fine-tune 通道（R3 兜底） | VinXiangQi 在其他象棋软件上精度 < 30/32 | README 写 fine-tune 指引：Roboflow/LabelImg 标 ~30 张 + 训 10-30 epoch | 旧 plan §9.3 | - | 文档级，无代码风险 |
+| ROI CLI 参数化 / GUI 标定 | 下游连线器集成阶段 | example main.rs 加 CLI 参数 + 下游 GUI 标定工具 | 旧 plan §9.7 | - | 低 |
 | 多输入图片批处理 | 用户提批量推理需求 | example 加 batch 模式 + Conv2d 等算子 batch>1 路径验证 | 旧 plan §9.8 | - | 中（动态 batch 路径已有但未充分覆盖） |
 
 ### 9.2 算子层（3 项）—— 按模型驱动

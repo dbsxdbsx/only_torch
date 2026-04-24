@@ -54,7 +54,7 @@
   - 让用户在 `Graph::from_onnx` 的 rebuild 阶段失败时，仍能拿到 ImportReport 做诊断
 
 - **feat(example): `chinese_chess_yolo` 端到端 example（VinXiangQi YOLOv5 模型）** [`a5529a1`, `bfd6afc`]
-  - `download_model.py`：拉取 VinXiangQi v1.4.0 release（93 MB）+ 解压 `.onnx` + 用 `onnx` 库审计算子缺口；中间产物放 `D:/.../test_repo/`，模型落 `models/vinxiangqi.onnx`（已被 `.gitignore` 排除）
+  - `download_model.py`：拉取 VinXiangQi v1.4.0 release（93 MB）+ 解压 `.onnx` + 用 `onnx` 库审计算子缺口；中间产物放跨平台 cache 目录（默认 `~/.cache/only_torch_yolo_cache/`，可用 `XIANGQI_CACHE_DIR` 环境变量覆盖），模型落 `models/vinxiangqi.onnx`（已被 `.gitignore` 排除）
   - `letterbox.rs`（~80 行）：等比缩放 + 灰色填充到 640×640 + NCHW 归一化
   - `yolo_decode.rs`（~120 行）：YOLOv5 输出解码 + 纯 Rust per-class O(N²) NMS
   - `board_align.rs`（~120 行）：bbox → 9×10 网格对齐 + FEN 序列化（含 14 类红/黑棋子字典）
@@ -101,7 +101,7 @@
   - ImportReport 71 条 rewrite + 62 条 warning,4 种 rewrite 模式齐全:`conv_with_bias_to_conv_plus_add`(60)/ `constant_fold_into_reshape`(6)/ `constant_fold_into_resize`(2)/ `split_to_narrows`(3)
   - 集成回归 `tests/yolov5_xiangqi_import.rs::yolov5_xiangqi_rebuild_succeeds` 持续通过
 
-- **chinese_chess_yolo example 业务遗留**:forward 输出空(`[1, 0]`)是 5D tensor 在 only_torch 算子下的支持问题(Permute/Concat/Mul 等对 5D 的 forward 路径未充分覆盖)+ outputs 选择(导出 3 个 head 输出节点的 raw 形式而非真正的最终 detect output),不在本 plan 范围,作为 backlog 9.1 "迁移到 meng_ru_ling_shi" 的前置条件单独处理
+- **chinese_chess_yolo example 业务遗留**:forward 输出空(`[1, 0]`)是 5D tensor 在 only_torch 算子下的支持问题(Permute/Concat/Mul 等对 5D 的 forward 路径未充分覆盖)+ outputs 选择(导出 3 个 head 输出节点的 raw 形式而非真正的最终 detect output),不在本 plan 范围,作为下游集成应用的前置条件单独处理
 
 ## [0.15.1] - 2026-04-20
 
