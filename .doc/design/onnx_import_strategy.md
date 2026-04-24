@@ -307,7 +307,8 @@ tests/onnx_models/
 
 | 模型 | 来源 | 核心算子 | forward 数值误差 | 状态 |
 |------|------|----------|----------------|------|
-| chess CNN | `examples/traditional/chinese_chess/` | Conv / Gemm / Flatten / ReLU / Softmax | 1e-6 | ✅ |
+| chess CNN | `examples/traditional/chess_cnn_onnx_finetune/` | Conv / Gemm / Flatten / ReLU / Softmax | 1e-6 | ✅ |
+| VinXiangQi YOLOv5 | `examples/traditional/chess_yolo_onnx_detect/` | Conv / MaxPool / Concat / Resize / Split / Sigmoid / Mul | (FEN 位级匹配人类标注) | ✅ |
 | ResNet-18 | torchvision | Conv / BatchNorm / ReLU / GlobalAvgPool / Gemm | ? | ⏳ |
 | MobileNetV2 | torchvision | DepthwiseConv / BatchNorm / ReLU6 / Gemm | ? | ⏳ |
 
@@ -373,4 +374,5 @@ tests/onnx_models/
   - `src/nn/graph/onnx_ops.rs`：ONNX ↔ NodeTypeDescriptor 双向映射
   - `src/nn/nodes/raw_node/ops/flatten.rs:68`：动态 batch 处理（`parent_shape[0] == 0` 分支）
   - `src/nn/graph/descriptor_rebuild.rs`：`RebuildResult.parameters` 字段
-  - `examples/traditional/chinese_chess/`：端到端验证的第一个模型（PyTorch→ONNX→continue-train→`.otm`）
+  - `examples/traditional/chess_cnn_onnx_finetune/`：端到端验证的第一个模型（PyTorch→ONNX→continue-train→`.otm`）
+  - `examples/traditional/chess_yolo_onnx_detect/`：第三方真实模型(VinXiangQi YOLOv5) → 整盘检测 → FEN 端到端 example

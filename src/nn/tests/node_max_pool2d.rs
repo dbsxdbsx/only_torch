@@ -714,7 +714,7 @@ fn test_create_max_pool2d_drop_releases() {
 // ==================== 6. ONNX padding / ceil_mode 测试 ====================
 //
 // 验证 plan §2.3 的 MaxPool2d padding (top, bottom, left, right) + ceil_mode 字段
-// 这是修复 chinese_chess_yolo SPPF 模块 spatial shape bug 的关键能力
+// 这是修复 chess_yolo_onnx_detect SPPF 模块 spatial shape bug 的关键能力
 //
 // SPPF 模块典型配置：MaxPool(k=5, stride=1, pads=2),输出与输入 H/W 完全相同
 // （20→20）。修复前因没读 pads 输出错算成 (20-5)/1+1 = 16。

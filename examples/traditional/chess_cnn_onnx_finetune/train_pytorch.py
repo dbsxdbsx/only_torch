@@ -7,10 +7,10 @@
 
 用法:
     # 默认参数
-    python examples/traditional/chinese_chess/train_pytorch.py
+    python examples/traditional/chess_cnn_onnx_finetune/train_pytorch.py
 
     # 自定义参数
-    python examples/traditional/chinese_chess/train_pytorch.py --epochs 80 --lr 0.001 --batch-size 128
+    python examples/traditional/chess_cnn_onnx_finetune/train_pytorch.py --epochs 80 --lr 0.001 --batch-size 128
 """
 
 import argparse
@@ -69,7 +69,7 @@ def load_data(synthetic_dir, split="train"):
     """加载合成数据集
 
     Args:
-        synthetic_dir: 合成数据根目录 (data/chinese_chess/)
+        synthetic_dir: 合成数据根目录 (data/chess_cnn_onnx_finetune/)
         split: "train" or "test"
 
     Returns: (images_np, labels_np)
@@ -207,7 +207,7 @@ def print_confusion_matrix(confusion, class_names):
 
 def main():
     parser = argparse.ArgumentParser(description="中国象棋 CNN 训练 (PyTorch)")
-    parser.add_argument("--data", type=str, default="data/chinese_chess",
+    parser.add_argument("--data", type=str, default="data/chess_cnn_onnx_finetune",
                         help="合成数据根目录")
     parser.add_argument("--epochs", type=int, default=50, help="训练轮数")
     parser.add_argument("--batch-size", type=int, default=128, help="Batch 大小")

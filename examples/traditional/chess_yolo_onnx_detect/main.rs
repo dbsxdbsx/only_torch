@@ -15,21 +15,21 @@
 //!
 //! ```bash
 //! # 拉取 VinXiangQi 预训练模型(首次运行需要约 93 MB 下载)
-//! uv run --with onnx python examples/traditional/chinese_chess_yolo/download_model.py
+//! uv run --with onnx python examples/traditional/chess_yolo_onnx_detect/download_model.py
 //! ```
 //!
 //! ## 运行
 //!
 //! ```bash
 //! # 默认跑 sample 1(中盘残局,红方在下)
-//! cargo run --example chinese_chess_yolo
+//! cargo run --example chess_yolo_onnx_detect
 //!
 //! # 跑 sample 2(初始局面,红方在上 → 自动旋转回标准方向)
-//! cargo run --example chinese_chess_yolo -- \
-//!   examples/traditional/chinese_chess_yolo/samples/sample_red_top.png
+//! cargo run --example chess_yolo_onnx_detect -- \
+//!   examples/traditional/chess_yolo_onnx_detect/samples/sample_red_top.png
 //!
 //! # 跑用户自备截图
-//! cargo run --example chinese_chess_yolo -- <路径>.png
+//! cargo run --example chess_yolo_onnx_detect -- <路径>.png
 //! ```
 //!
 //! 跑 samples/ 下的图时会自动从 `samples/example_answer.txt` 找对应答案做位级对比。
@@ -58,9 +58,9 @@ use std::time::Instant;
 use yolo_decode::{decode, nms};
 
 const MODEL_PATH: &str = "models/vinxiangqi.onnx";
-const SAMPLES_DIR: &str = "examples/traditional/chinese_chess_yolo/samples";
+const SAMPLES_DIR: &str = "examples/traditional/chess_yolo_onnx_detect/samples";
 const DEFAULT_TEST_IMAGE_PATH: &str =
-    "examples/traditional/chinese_chess_yolo/samples/sample_red_bottom.png";
+    "examples/traditional/chess_yolo_onnx_detect/samples/sample_red_bottom.png";
 
 const TARGET_SIZE: u32 = 640;
 const CONF_THRESHOLD: f32 = 0.25;
@@ -86,7 +86,7 @@ fn main() -> Result<(), GraphError> {
         eprintln!("  请先拉取 VinXiangQi 预训练模型：");
         eprintln!(
             "    uv run --with onnx python \
-            examples/traditional/chinese_chess_yolo/download_model.py"
+            examples/traditional/chess_yolo_onnx_detect/download_model.py"
         );
         return Ok(()); // 优雅退出（不算 example 失败）
     }
@@ -95,14 +95,14 @@ fn main() -> Result<(), GraphError> {
         eprintln!();
         eprintln!("  用法:");
         eprintln!(
-            "    cargo run --example chinese_chess_yolo                  \
+            "    cargo run --example chess_yolo_onnx_detect                  \
              # 默认跑 sample 1 (红方在下)"
         );
         eprintln!(
-            "    cargo run --example chinese_chess_yolo -- {SAMPLES_DIR}/sample_red_top.png"
+            "    cargo run --example chess_yolo_onnx_detect -- {SAMPLES_DIR}/sample_red_top.png"
         );
         eprintln!(
-            "    cargo run --example chinese_chess_yolo -- <路径>.png    \
+            "    cargo run --example chess_yolo_onnx_detect -- <路径>.png    \
              # 用户自备截图"
         );
         return Ok(());

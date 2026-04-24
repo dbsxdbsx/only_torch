@@ -27,7 +27,7 @@ tests/onnx_models/yolov5_xiangqi/
 
 ```bash
 # 1. 拉取模型（与 example 共用同一个脚本和落地路径）
-uv run --with onnx python examples/traditional/chinese_chess_yolo/download_model.py
+uv run --with onnx python examples/traditional/chess_yolo_onnx_detect/download_model.py
 
 # 2. （可选）生成 onnxruntime 参考输出供 Rust 数值对照
 uv run --with onnxruntime --with numpy python tests/onnx_models/yolov5_xiangqi/numeric_check.py
@@ -40,7 +40,7 @@ cargo test --test yolov5_xiangqi_import -- --ignored --nocapture
 
 | 文件 | 用途 | 范围 |
 |------|------|------|
-| `examples/traditional/chinese_chess_yolo/download_model.py` | 拉取 + 算子审计 | 唯一权威下载脚本 |
+| `examples/traditional/chess_yolo_onnx_detect/download_model.py` | 拉取 + 算子审计 | 唯一权威下载脚本 |
 | 本目录 `export.py` | 转发到 example 脚本 | 满足 §8.1 目录约定 |
-| `examples/traditional/chinese_chess_yolo/main.rs` | 端到端 demo（截图 → FEN） | 演示用途 |
+| `examples/traditional/chess_yolo_onnx_detect/main.rs` | 端到端 demo（截图 → FEN） | 演示用途 |
 | `tests/yolov5_xiangqi_import.rs` | 自动化回归（CI 跳过、本地按需） | 防止 import 路径退化 |

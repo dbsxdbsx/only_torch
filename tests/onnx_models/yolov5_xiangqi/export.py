@@ -17,7 +17,7 @@ EXAMPLE_SCRIPT = (
     Path(__file__).resolve().parents[3]
     / "examples"
     / "traditional"
-    / "chinese_chess_yolo"
+    / "chess_yolo_onnx_detect"
     / "download_model.py"
 )
 

@@ -197,7 +197,7 @@ fn yolov5_xiangqi_rebuild_succeeds() {
     );
 }
 
-// Note: 显式 forward + 输出 shape 断言由 example `chinese_chess_yolo` 兼任
+// Note: 显式 forward + 输出 shape 断言由 example `chess_yolo_onnx_detect` 兼任
 // (跑两个 sample 后会自动对比 FEN,FEN 不匹配立即报错,比 shape 断言更强)。
 // 本文件保留 import + rebuild 的纯框架层断言,作 ImportReport / explicit_output_ids
 // 等回归门;forward 数值对照仍是 backlog,见下方 TODO。

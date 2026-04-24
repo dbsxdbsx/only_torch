@@ -187,12 +187,12 @@
     path="examples/traditional/multi_label_point/main.rs"
 
 [[example]]
-    name="chinese_chess"
-    path="examples/traditional/chinese_chess/main.rs"
+    name="chess_cnn_onnx_finetune"
+    path="examples/traditional/chess_cnn_onnx_finetune/main.rs"
 
 [[example]]
-    name="chinese_chess_yolo"
-    path="examples/traditional/chinese_chess_yolo/main.rs"
+    name="chess_yolo_onnx_detect"
+    path="examples/traditional/chess_yolo_onnx_detect/main.rs"
 
 [[example]]
     name="cartpole_sac"

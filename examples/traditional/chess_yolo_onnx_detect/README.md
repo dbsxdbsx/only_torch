@@ -33,7 +33,7 @@
 ## 目录布局
 
 ```
-chinese_chess_yolo/
+chess_yolo_onnx_detect/
 ├── main.rs                  # 入口:加载 → pipeline → 打印耗时 + ImportReport + FEN 对比
 ├── letterbox.rs             # 等比缩放 + 灰色填充到 640×640 + NCHW 归一化
 ├── yolo_decode.rs           # YOLOv5 输出解码 + 纯 Rust per-class NMS
@@ -52,7 +52,7 @@ chinese_chess_yolo/
 ### 1. 拉取 VinXiangQi 预训练模型
 
 ```bash
-uv run --with onnx python examples/traditional/chinese_chess_yolo/download_model.py
+uv run --with onnx python examples/traditional/chess_yolo_onnx_detect/download_model.py
 ```
 
 脚本会:
@@ -76,17 +76,17 @@ uv run --with onnx python examples/traditional/chinese_chess_yolo/download_model
 
 ```bash
 # 默认:跑 sample 1(中盘残局,红方在下)
-cargo run --example chinese_chess_yolo
+cargo run --example chess_yolo_onnx_detect
 
 # 跑 sample 2(初始局面,红方在上 → 自动旋转回标准方向)
-cargo run --example chinese_chess_yolo -- \
-  examples/traditional/chinese_chess_yolo/samples/sample_red_top.png
+cargo run --example chess_yolo_onnx_detect -- \
+  examples/traditional/chess_yolo_onnx_detect/samples/sample_red_top.png
 
 # 跑用户自备截图
-cargo run --example chinese_chess_yolo -- <路径>.png
+cargo run --example chess_yolo_onnx_detect -- <路径>.png
 
 # release 模式(推理快 3-5 倍)
-cargo run --release --example chinese_chess_yolo
+cargo run --release --example chess_yolo_onnx_detect
 ```
 
 跑 `samples/` 下的图时,会自动从 `samples/example_answer.txt` 找对应答案做位级对比,

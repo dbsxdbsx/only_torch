@@ -3,7 +3,7 @@
 //! 分别加载 `train/` 和 `test/` 子目录的二进制数据，
 //! 确保训练集和测试集使用不同的视觉风格（字体、配色）。
 //!
-//! 数据格式（由 `examples/traditional/chinese_chess/generate_data.py` 生成）：
+//! 数据格式（由 `examples/traditional/chess_cnn_onnx_finetune/generate_data.py` 生成）：
 //! - `images.bin`: header [u32 N, C, H, W] + N*C*H*W f32 values
 //! - `labels.bin`: header [u32 N] + N u8 values (类别 0-14)
 
@@ -49,7 +49,7 @@ fn load_split(split_dir: &Path) -> Result<(Tensor, Tensor), String> {
 
     if !images_path.exists() {
         return Err(format!(
-            "数据文件不存在: {}\n请先运行: python examples/traditional/chinese_chess/generate_data.py",
+            "数据文件不存在: {}\n请先运行: python examples/traditional/chess_cnn_onnx_finetune/generate_data.py",
             images_path.display()
         ));
     }

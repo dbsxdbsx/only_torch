@@ -703,7 +703,7 @@ def main():
     parser.add_argument("--train-samples", type=int, default=12000, help="训练集样本数")
     parser.add_argument("--test-samples", type=int, default=3000, help="测试集样本数")
     parser.add_argument("--size", type=int, default=28, help="输出 patch 尺寸")
-    parser.add_argument("--output", type=str, default="data/chinese_chess", help="输出根目录")
+    parser.add_argument("--output", type=str, default="data/chess_cnn_onnx_finetune", help="输出根目录")
     parser.add_argument("--train-seed", type=int, default=42, help="训练集随机种子")
     parser.add_argument("--test-seed", type=int, default=12345, help="测试集随机种子")
     parser.add_argument("--preview", action="store_true", help="仅生成预览（不保存二进制）")

@@ -12,14 +12,14 @@
 //! ## 数据准备
 //! ```bash
 //! # 1. 生成合成训练数据
-//! python examples/traditional/chinese_chess/generate_data.py
+//! python examples/traditional/chess_cnn_onnx_finetune/generate_data.py
 //! # 2. 用 PyTorch 训练并导出 ONNX
-//! python examples/traditional/chinese_chess/train_pytorch.py
+//! python examples/traditional/chess_cnn_onnx_finetune/train_pytorch.py
 //! ```
 //!
 //! ## 运行
 //! ```bash
-//! cargo run --example chinese_chess
+//! cargo run --example chess_cnn_onnx_finetune
 //! ```
 
 mod data;
@@ -34,8 +34,8 @@ use std::path::Path;
 use std::time::Instant;
 
 const ONNX_PATH: &str = "models/chess_cnn.onnx";
-const OTM_PATH: &str = "models/chinese_chess";
-const DATA_DIR: &str = "data/chinese_chess";
+const OTM_PATH: &str = "models/chess_cnn_onnx_finetune";
+const DATA_DIR: &str = "data/chess_cnn_onnx_finetune";
 const FINETUNE_EPOCHS: usize = 5;
 const BATCH_SIZE: usize = 256;
 const LEARNING_RATE: f32 = 0.0005;
@@ -50,8 +50,8 @@ fn main() -> Result<(), GraphError> {
     println!("[1/5] 加载 ONNX 模型: {ONNX_PATH}");
     if !Path::new(ONNX_PATH).exists() {
         eprintln!("  ONNX 文件不存在！请先运行:");
-        eprintln!("    python examples/traditional/chinese_chess/generate_data.py");
-        eprintln!("    python examples/traditional/chinese_chess/train_pytorch.py");
+        eprintln!("    python examples/traditional/chess_cnn_onnx_finetune/generate_data.py");
+        eprintln!("    python examples/traditional/chess_cnn_onnx_finetune/train_pytorch.py");
         return Err(GraphError::ComputationError(
             "ONNX 模型文件不存在".to_string(),
         ));
