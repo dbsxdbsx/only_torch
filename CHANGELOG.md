@@ -2,7 +2,27 @@
 
 ## [Unreleased] - 待提交
 
+### 修复
+
+- **fix(nn): 修复 chinese_chess_yolo spatial shape 传播,补齐 ONNX MaxPool padding/ceil_mode 语义** [`f88e0a7`]
+  - **真根因**:`MaxPool2d` 不读 ONNX `pads` 属性,YOLOv5 SPPF 模块 (k=5, pads=2, s=1) 输出错算成 (20-5)/1+1=16,期望 20
+  - 同时修复 Conv/ConvTranspose 解析的潜在 bug:`(pads[0], pads[2])` 把 H_end 当 W_begin,改为对称语义 `(pads[0], pads[1])`,非对称四角报 actionable 错(提示 ZeroPad2d / onnxsim)
+  - **MaxPool2d 加 padding (4 维) + ceil_mode 字段**:`#[serde(default)]` 兼容旧 .otm,前向用虚拟 padding 避免污染 max,反向 unpad 还原原始坐标
+  - **Constant 节点未被消费时建成 Parameter 节点**:保留数值常量(如 YOLOv5 头部 Mul 常数因子),修复下游 `resolve_parents` 找不到父节点 id
+  - `infer_output_shape_placeholder` 给 Concat 沿 axis 累加、给 Permute 按 dims 重排:修复下游 Reshape `-1` 推导拿到错的 input total
+  - `Parameter` 节点放宽维度上限,允许 5D+ 张量(YOLOv5 anchor 表 `[1, na, 1, 1, 2]` 等场景)
+  - 11 个新单测(MaxPool SPPF padding / ceil_mode / backward + ONNX MaxPool with pads/ceil_mode + Conv 对称/非对称 pads + yolov5_xiangqi_rebuild_succeeds 集成回归)
+  - **验收**:rebuild OK,参数量 140,3 个输出节点;evolution 模块 4 处 MaxPool 字面量同步适配
+
 ### 新增
+
+- **feat(nn): 全链路新增节点 ONNX provenance(`origin_onnx_nodes`)** [`b115ff2`]
+  - `NodeDescriptor.origin_onnx_nodes: Vec<String>`:`#[serde(default)]` 兼容旧 .otm,`skip_serializing_if = "Vec::is_empty"` 让无 origin 的节点不写入 JSON 体积;`NodeDescriptor::new` 签名不变 + 链式 builder `with_origin_onnx_nodes` 让 18 处历史调用零修改
+  - `NodeInner` 加 `RefCell<Vec<String>>` 字段 + getter / setter(后置注入风格):零侵入到所有 Layer / Var / 算子构造路径
+  - `descriptor_rebuild::rebuild_node` 创建 Var 后从 NodeDescriptor 注入 origin 到 NodeInner
+  - `SnapshotNode` 加 origin 字段;`build_snapshot` 透传;`snapshot_to_dot` 渲染规则:空 Vec 不显示(演化路径零影响)/ ≤3 项列出 / >3 项显示 `+N more`,tooltip 始终含完整列表
+  - import 期 ~10 个填充点(BasicInput / Initializer / Constant→Param / 1:1 默认 / Conv+bias / Gemm / Reshape 折叠 / Resize 折叠 / Split 重写)
+  - 9 个新单测:6 个 provenance + 3 个 DOT 渲染(覆盖 1:1 / Conv+bias / Split / `.otm` round-trip / legacy 兼容 / 演化空 Vec / DOT 空守卫 / DOT 渲染 / DOT +N more 摘要)
 
 - **feat(nn): Upsample2d 算子（2D 最近邻上采样）+ ONNX 双向桥接** [`899c3d5`]
   - 完整新增 `NodeTypeDescriptor::Upsample2d { scale_h, scale_w }`：raw_node 前向（nearest 像素复制）+ 完整反向（sum_pool，等价 avg_pool × scale_h × scale_w）+ builder + descriptor_rebuild + onnx_ops 双向映射
@@ -49,15 +69,33 @@
 
 ### 修改
 
+- **refactor(nn/graph): `onnx_import.rs` 拆分为子目录,启用 `ImportReport.warnings` 字段** [`722e9e0`]
+  - 把单文件 `src/nn/graph/onnx_import.rs` (~1080 行) 拆分到 `src/nn/graph/onnx_import/` 子目录的 7 个文件:`mod.rs` / `assemble.rs` / `const_table.rs` / `fold_reshape.rs` / `fold_resize.rs` / `split_narrow.rs` / `util.rs`
+  - 不抽 `PatternRewrite` trait(设计文档 §7.2 提议)——实测 5 种 rewrite 全在 ONNX 节点装配阶段做(不是 GraphDescriptor 后处理),强抽 trait 会引入"胖 Context struct + 大量泛型"的反向复杂度
+  - **启用 `ImportReport.warnings`**(此前定义为 `Vec<String>` 但全程无人 push,死字段):Conv+bias 拆分时 bias 升维 → warning;Gemm 转置 B → warning;Resize 折叠为 Upsample2d → warning(提示 coordinate_transformation_mode 子模式差异在整数倍场景可忽略)
+  - 实测 VinXiangQi 导入产出 71 条 rewrite + **62 条 warning**(60 Conv bias 升维 + 2 Resize 折叠)
+  - 1 个新单测 `test_import_report_warnings_populated`:验证 Gemm with transB=1 触发 "transB=1 ... gemm0" 风格 warning
+
 - **chore(nn/graph): ONNX `MIN_OPSET_VERSION` 从 13 降到 12** [`fdc61e7`]
   - 兼容 VinXiangQi 等 YOLOv5 老版本导出（opset 12 引入了 Constant/Split/Pow 的稳定形式，本 import 已覆盖）
 
+### 文档
+
+- **docs(design): 扩充 onnx_import 设计文档 §9 为权威 backlog** [`d410c87`]
+  - 把散落在旧 plan §9 / 新 plan §6 / 设计文档原 §9 / R4 风险注释的 11 项 backlog 整合到 `.doc/design/onnx_import_strategy.md` §9 作为权威入口
+  - 5 类组织:业务层(4)/ 算子层(3)/ ImportReport 扩充(3,R4 显式守住)/ 架构层(1)/ 永远不做(1)
+  - 每项带:触发条件、预期产出、来源 plan/章节、立项 plan、风险评估
+  - 机制约定:任何新 plan 立项前先看本表;立项时填 plan 文件名;完成后从表中移除并落 CHANGELOG(避免 backlog 与 CHANGELOG 重复维护)
+
 ### 实测里程碑
 
-- **VinXiangQi YOLOv5 模型 ONNX 导入完整跑通**（plan `chinese_chess_yolo_example_b4f3a201` 全部 9 个有效 todo 完成）
-  - import 阶段 release 12.9 ms / 423 个 descriptor 节点
-  - ImportReport 71 条 rewrite 覆盖 4 模式：`conv_with_bias_to_conv_plus_add`（60 次）/ `constant_fold_into_reshape`（6 次）/ `constant_fold_into_resize`（2 次）/ `split_to_narrows`（3 次）
-  - 已知遗留：only_torch `from_descriptor` 在 YOLOv5 PAN/FPN 处出现 spatial shape 传播 bug（实测某 Concat 节点 16×16 vs 期望 20×20），不在本 plan 范围，留待下游 plan 修复
+- **VinXiangQi YOLOv5 模型 ONNX 导入 + rebuild 端到端跑通**(`yolo_followup_three_commits` plan 5 个 commit 完成)
+  - import 阶段 release 12.9 ms / 423 个 descriptor 节点(Constant→Parameter 后增到 443)
+  - rebuild 阶段:**spatial shape 传播 bug 已修复**(MaxPool padding/ceil_mode 补全 + Conv 对称 padding 修对 + Constant→Parameter 保留 + Concat/Permute placeholder 精化)
+  - ImportReport 71 条 rewrite + 62 条 warning,4 种 rewrite 模式齐全:`conv_with_bias_to_conv_plus_add`(60)/ `constant_fold_into_reshape`(6)/ `constant_fold_into_resize`(2)/ `split_to_narrows`(3)
+  - 集成回归 `tests/yolov5_xiangqi_import.rs::yolov5_xiangqi_rebuild_succeeds` 持续通过
+
+- **chinese_chess_yolo example 业务遗留**:forward 输出空(`[1, 0]`)是 5D tensor 在 only_torch 算子下的支持问题(Permute/Concat/Mul 等对 5D 的 forward 路径未充分覆盖)+ outputs 选择(导出 3 个 head 输出节点的 raw 形式而非真正的最终 detect output),不在本 plan 范围,作为 backlog 9.1 "迁移到 meng_ru_ling_shi" 的前置条件单独处理
 
 ## [0.15.1] - 2026-04-20
 
