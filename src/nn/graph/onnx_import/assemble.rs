@@ -260,6 +260,21 @@ pub(super) fn assemble<'a>(
         }
     }
 
+    // ── 显式输出节点:从 ONNX `graph.output` 显式取 tensor 名 → ID 列表 ──
+    // 解决"无后继 = 输出"拓扑推断在 ONNX 场景的误判:
+    // - YOLOv5 `output` 是单个最终检测张量,但常量折叠/Split 重写后会留下若干
+    //   无后继的中间节点(常量 Parameter / 拆出的 Narrow 等),拓扑推断会把它们
+    //   也当作输出,导致用户拿到 N 个节点而不是 ONNX 声明的 1 个。
+    // - 这里直接按 ONNX `graph.output` 名称从符号表取 ID,精确还原作者原意。
+    let explicit_output_ids: Vec<u64> = graph
+        .output
+        .iter()
+        .map(|info| symbols.get_or_assign(info.name))
+        .collect();
+    if !explicit_output_ids.is_empty() {
+        descriptor.explicit_output_ids = Some(explicit_output_ids);
+    }
+
     Ok(OnnxImportResult {
         descriptor,
         weights,

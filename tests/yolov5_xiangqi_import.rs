@@ -8,12 +8,17 @@
 //!    - descriptor 节点数 ≈ 423
 //!    - ImportReport 包含 4 种预期 rewrite 模式（Conv+bias / Constant 折叠 ×2 / Split 重写）
 //!
-//! 2. **rebuild 阶段**：当前因 only_torch framework limitation 跳过，
-//!    `Graph::from_descriptor` 会在 PAN/FPN spatial shape 传播报错
-//!    （known issue，下游 plan 修复后启用）
+//! 2. **rebuild 阶段**：`Graph::from_descriptor` 全过 spatial shape 传播,
+//!    且通过 `explicit_output_ids` 精确还原 ONNX `graph.output` 声明的单个 `output` 节点
+//!    (历史背景:修复前会被"无后继 = 输出"的拓扑推断误判为多个输出)
 //!
-//! 3. **forward 数值对照**：依赖 rebuild 通过，当前一并跳过；
-//!    参考输出由 `numeric_check.py` 用 onnxruntime 生成到本目录的 .npy
+//! 3. **forward shape 断言**:输入 `[1, 3, 640, 640]` 全零张量,output 应为
+//!    `[1, 25200, 20]`(VinXiangQi YOLOv5 单一最终检测头)
+//!
+//! 4. **forward 数值对照**(backlog):numeric_check.py 用 onnxruntime 生成参考 `.npy`,
+//!    断言 only_torch 输出与之 element-wise 相对误差 < 1e-3。当前 only_torch 推理路径
+//!    NMS 后约 76-77 个检出 vs ORT 约 30 个,提示存在数值漂移(可能在 BatchNorm/Sigmoid),
+//!    待诊断后启用此测试
 //!
 //! ## 运行方式
 //!
@@ -140,17 +145,16 @@ fn import_report_covers_four_rewrite_patterns() {
     );
 }
 
-/// rebuild 应成功完成 spatial shape 传播
+/// rebuild 应成功完成 spatial shape 传播 + 通过 `explicit_output_ids` 精确选出单个输出
 ///
-/// 历史背景：本 plan 修复前 rebuild 卡在 PAN 处 `Concat: 父节点 1 在维度 2 大小不一致`
-/// （16×16 vs 期望 20×20），根因：
-/// - MaxPool2d 不读 ONNX `pads` 属性，导致 SPPF 模块 (k=5, pads=2, s=1) 输出错算
-/// - Constant 节点（非元信息消费场景如 Mul 常数因子）被无条件跳过，导致下游算子
-///   `resolve_parents` 找不到 parent id
-/// - `infer_output_shape_placeholder` 对 Concat / Permute 只取第一个父，导致
-///   下游 Reshape 的 -1 推导拿到错的 input total
+/// 历史背景:
+/// - 早期 rebuild 卡在 PAN 处 `Concat: 父节点 1 在维度 2 大小不一致`(16×16 vs 期望 20×20),
+///   根因 MaxPool2d 不读 ONNX `pads` / Constant 跳过 / placeholder 取第一个父——已修复
+/// - 后续发现 `from_descriptor` 用"无后继 = 输出"拓扑推断,把常量折叠 + Split 重写后留下
+///   的若干无后继中间节点都误当成输出节点,导致拿到 3 个输出而不是 ONNX 声明的 1 个
+///   `output [1, 25200, 20]`——已通过 `explicit_output_ids` 修复
 ///
-/// 修复后本测试应 PASS，作为后续 spatial 传播路径的回归门。
+/// 修复后本测试应 PASS,作为 spatial 传播 + 输出节点精确还原的双重回归门。
 #[test]
 #[ignore = "需要本地拉取 vinxiangqi.onnx，CI 跳过"]
 fn yolov5_xiangqi_rebuild_succeeds() {
@@ -175,12 +179,35 @@ fn yolov5_xiangqi_rebuild_succeeds() {
         rebuilt.graph.parameter_count() > 0,
         "参数量应大于 0（含 Conv 权重 + BN 参数 + Constant 数值常量）"
     );
+
+    // explicit_output_ids 修复回归:VinXiangQi 的 ONNX `graph.output` 只声明 1 个 `output`,
+    // 拓扑推断会误判出 3 个(常量 Parameter + Split 拆出的中间 Narrow 等都是无后继的)。
+    assert_eq!(
+        rebuilt.inputs.len(),
+        1,
+        "VinXiangQi 模型 image 输入有且仅 1 个,实际 {}",
+        rebuilt.inputs.len()
+    );
+    assert_eq!(
+        rebuilt.outputs.len(),
+        1,
+        "VinXiangQi 模型 graph.output 显式声明 1 个 `output` 节点,\
+         若拿到 >1 说明 explicit_output_ids 退化,实际 {}",
+        rebuilt.outputs.len()
+    );
 }
 
-// TODO[forward-numeric-check]: 当 only_torch 修复 YOLOv5 PAN/FPN shape 传播 bug
-// 后，在此处加 forward_numerical_match_with_onnxruntime 测试：
+// Note: 显式 forward + 输出 shape 断言由 example `chinese_chess_yolo` 兼任
+// (跑两个 sample 后会自动对比 FEN,FEN 不匹配立即报错,比 shape 断言更强)。
+// 本文件保留 import + rebuild 的纯框架层断言,作 ImportReport / explicit_output_ids
+// 等回归门;forward 数值对照仍是 backlog,见下方 TODO。
+//
+// TODO[forward-numeric-check]: 在 numeric_check.py 用 onnxruntime 生成
+// fixture_input.npy + fixture_output.npy 后,加 forward_numerical_match_with_onnxruntime:
 //   1. 加载 fixture_input.npy 作为输入
 //   2. only_torch graph.from_descriptor + forward
-//   3. 加载 fixture_output.npy 作为参考（onnxruntime 跑出的 ground truth）
+//   3. 加载 fixture_output.npy 作为参考(onnxruntime 跑出的 ground truth)
 //   4. element-wise 相对误差 < 1e-3
-// 数据生成由 tests/onnx_models/yolov5_xiangqi/numeric_check.py 负责。
+//
+// 当前 only_torch 推理路径在 VinXiangQi 上 NMS 后约 76-77 个检出 vs ORT 约 30 个,
+// 提示存在数值漂移(可能在 BatchNorm/Sigmoid),numeric_check 可帮助定位漂移源。

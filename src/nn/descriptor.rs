@@ -23,6 +23,20 @@ pub struct GraphDescriptor {
     /// 参数文件路径（相对于 JSON 文件），仅在保存完整模型时使用
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params_file: Option<String>,
+    /// 显式输出节点 ID 列表(可选)
+    ///
+    /// 由 ONNX 导入路径填充——`graph.output` 显式声明哪些 tensor 是模型输出,
+    /// 这些信息在拓扑层"无后继 = 输出"的启发式中会丢失(典型例子:YOLOv5 的
+    /// 单个 `output` 节点,因常量折叠/Split 重写产出多个无后继的中间节点,
+    /// 如果走拓扑推断会把它们都误当作输出)。
+    ///
+    /// 演化、手写 Layer 等内部路径不填(为 None),`Graph::from_descriptor`
+    /// 退回到 "无后继 = 输出" 的拓扑推断,语义不变。
+    ///
+    /// `Option<Vec<u64>>` 缺省序列化为 None,无需 `default` 标注(serde 对
+    /// `Option` 缺失字段自动设为 None)。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explicit_output_ids: Option<Vec<u64>>,
 }
 
 /// 节点描述
@@ -349,6 +363,7 @@ impl GraphDescriptor {
             name: name.to_string(),
             nodes: Vec::new(),
             params_file: None,
+            explicit_output_ids: None,
         }
     }
 

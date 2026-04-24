@@ -71,13 +71,6 @@ impl Graph {
         let mut inputs: Vec<(String, Var)> = Vec::new();
         let mut targets: Vec<(String, Var)> = Vec::new();
 
-        // 收集所有被引用为 parent 的 ID，用于确定输出节点
-        let all_parent_ids: HashSet<u64> = desc
-            .nodes
-            .iter()
-            .flat_map(|n| n.parents.iter().copied())
-            .collect();
-
         for node_desc in &desc.nodes {
             let var = rebuild_node(&graph, node_desc, &node_map)?;
 
@@ -101,14 +94,27 @@ impl Graph {
             node_map.insert(node_desc.id, var);
         }
 
-        // 输出节点：ID 不被任何其他节点引用为 parent
-        let outputs: Vec<Var> = desc
-            .nodes
-            .iter()
-            .filter(|n| !all_parent_ids.contains(&n.id))
-            .filter_map(|n| node_map.get(&n.id))
-            .cloned()
-            .collect();
+        // 输出节点选择:
+        // - 优先用 descriptor.explicit_output_ids(ONNX 导入路径填充,精确)
+        // - 否则退回 "ID 不被任何节点引用为 parent" 的拓扑推断(演化/手写路径用)
+        let outputs: Vec<Var> = if let Some(ids) = &desc.explicit_output_ids {
+            ids.iter()
+                .filter_map(|id| node_map.get(id))
+                .cloned()
+                .collect()
+        } else {
+            let all_parent_ids: HashSet<u64> = desc
+                .nodes
+                .iter()
+                .flat_map(|n| n.parents.iter().copied())
+                .collect();
+            desc.nodes
+                .iter()
+                .filter(|n| !all_parent_ids.contains(&n.id))
+                .filter_map(|n| node_map.get(&n.id))
+                .cloned()
+                .collect()
+        };
 
         // 参数 Var 列表：从图的参数注册表收集
         let inner_rc = graph.inner_rc();
