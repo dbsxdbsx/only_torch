@@ -2,18 +2,15 @@
 """
 中国象棋棋子 CNN 分类器 — PyTorch 训练脚本
 
-支持从多个数据源（合成 + 真实棋子）加载训练/测试数据，
-使用 GPU 训练 CNN，输出每类准确率和混淆矩阵。
+加载合成训练/测试数据，使用 GPU 训练 CNN，输出每类准确率和混淆矩阵，
+最后导出 ONNX 给 only_torch Rust 端继续训练。
 
 用法:
-    # 仅合成数据
-    python scripts/train_chess_cnn.py
-
-    # 合成 + 真实棋子混合训练
-    python scripts/train_chess_cnn.py --real-data data/chinese_chess_real
+    # 默认参数
+    python examples/traditional/chinese_chess/train_pytorch.py
 
     # 自定义参数
-    python scripts/train_chess_cnn.py --epochs 80 --lr 0.001 --batch-size 128
+    python examples/traditional/chinese_chess/train_pytorch.py --epochs 80 --lr 0.001 --batch-size 128
 """
 
 import argparse
@@ -68,58 +65,27 @@ def load_bin_data(data_dir):
     return images, labels
 
 
-def load_and_merge_data(synthetic_dir, real_dir=None, split="train"):
-    """加载并合并多个数据源
+def load_data(synthetic_dir, split="train"):
+    """加载合成数据集
 
     Args:
-        synthetic_dir: 合成数据目录 (data/chinese_chess/{split}/)
-        real_dir: 真实棋子数据目录 (data/chinese_chess_real/{split}/)，可选
+        synthetic_dir: 合成数据根目录 (data/chinese_chess/)
         split: "train" or "test"
 
-    Returns: (images_np, labels_np, real_mask_np)
-        real_mask_np: bool array, True = 来自真实数据 (用于分开统计)
+    Returns: (images_np, labels_np)
     """
-    all_images = []
-    all_labels = []
-    all_real_mask = []
-
-    # 合成数据
     syn_path = os.path.join(synthetic_dir, split)
-    if os.path.exists(os.path.join(syn_path, "images.bin")):
-        images, labels = load_bin_data(syn_path)
-        print(f"  合成数据 [{split}]: {len(labels)} 样本")
-        all_images.append(images)
-        all_labels.append(labels)
-        all_real_mask.append(np.zeros(len(labels), dtype=bool))
-    else:
-        print(f"  合成数据 [{split}]: 未找到 ({syn_path})")
+    if not os.path.exists(os.path.join(syn_path, "images.bin")):
+        raise RuntimeError(f"未找到 {split} 数据：{syn_path}\n请先运行 generate_data.py")
 
-    # 真实棋子数据
-    if real_dir:
-        real_path = os.path.join(real_dir, split)
-        if os.path.exists(os.path.join(real_path, "images.bin")):
-            images, labels = load_bin_data(real_path)
-            print(f"  真实数据 [{split}]: {len(labels)} 样本")
-            all_images.append(images)
-            all_labels.append(labels)
-            all_real_mask.append(np.ones(len(labels), dtype=bool))
-        else:
-            print(f"  真实数据 [{split}]: 未找到 ({real_path})")
+    images, labels = load_bin_data(syn_path)
+    print(f"  合成数据 [{split}]: {len(labels)} 样本")
 
-    if not all_images:
-        raise RuntimeError(f"没有找到任何 {split} 数据！")
-
-    images = np.concatenate(all_images, axis=0)
-    labels = np.concatenate(all_labels, axis=0)
-    real_mask = np.concatenate(all_real_mask, axis=0)
-
-    # 打乱
     indices = np.random.permutation(len(labels))
     images = images[indices]
     labels = labels[indices]
-    real_mask = real_mask[indices]
 
-    return images, labels, real_mask
+    return images, labels
 
 
 # ==================== 模型 ====================
@@ -175,10 +141,10 @@ class TrainTransform:
 
 # ==================== 评估 ====================
 
-def evaluate(model, dataloader, device, real_mask_all=None):
+def evaluate(model, dataloader, device):
     """评估模型
 
-    Returns: (total_acc, per_class_acc, confusion_matrix, real_acc)
+    Returns: (total_acc, per_class_acc, confusion_matrix)
     """
     model.eval()
     all_preds = []
@@ -196,10 +162,8 @@ def evaluate(model, dataloader, device, real_mask_all=None):
     all_labels = np.array(all_labels)
     num_classes = 15
 
-    # 总体准确率
     total_acc = (all_preds == all_labels).mean() * 100
 
-    # 每类准确率
     per_class_acc = {}
     for cid in range(num_classes):
         mask = all_labels == cid
@@ -208,20 +172,11 @@ def evaluate(model, dataloader, device, real_mask_all=None):
         else:
             per_class_acc[cid] = 0.0
 
-    # 混淆矩阵
     confusion = np.zeros((num_classes, num_classes), dtype=int)
     for pred, true in zip(all_preds, all_labels):
         confusion[true][pred] += 1
 
-    # 真实数据子集准确率
-    real_acc = None
-    if real_mask_all is not None and real_mask_all.any():
-        real_preds = all_preds[real_mask_all]
-        real_labels = all_labels[real_mask_all]
-        if len(real_labels) > 0:
-            real_acc = (real_preds == real_labels).mean() * 100
-
-    return total_acc, per_class_acc, confusion, real_acc
+    return total_acc, per_class_acc, confusion
 
 
 def print_confusion_matrix(confusion, class_names):
@@ -254,8 +209,6 @@ def main():
     parser = argparse.ArgumentParser(description="中国象棋 CNN 训练 (PyTorch)")
     parser.add_argument("--data", type=str, default="data/chinese_chess",
                         help="合成数据根目录")
-    parser.add_argument("--real-data", type=str, default=None,
-                        help="真实棋子数据根目录 (可选)")
     parser.add_argument("--epochs", type=int, default=50, help="训练轮数")
     parser.add_argument("--batch-size", type=int, default=128, help="Batch 大小")
     parser.add_argument("--lr", type=float, default=0.001, help="学习率")
@@ -266,32 +219,23 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
     args = parser.parse_args()
 
-    # 设备
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"=== 中国象棋 CNN 分类器 (PyTorch) ===")
     print(f"设备: {device}")
     if device.type == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    # 随机种子
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
     # 1. 加载数据
     print(f"\n[1/4] 加载数据...")
-    train_images, train_labels, train_real_mask = load_and_merge_data(
-        args.data, args.real_data, "train"
-    )
-    test_images, test_labels, test_real_mask = load_and_merge_data(
-        args.data, args.real_data, "test"
-    )
+    train_images, train_labels = load_data(args.data, "train")
+    test_images, test_labels = load_data(args.data, "test")
 
     print(f"  训练集总计: {len(train_labels)} 样本")
     print(f"  测试集总计: {len(test_labels)} 样本")
-    if test_real_mask.any():
-        print(f"  测试集中真实棋子: {test_real_mask.sum()} 样本")
 
-    # 转为 PyTorch tensor
     train_x = torch.from_numpy(train_images)
     train_y = torch.from_numpy(train_labels.astype(np.int64))
     test_x = torch.from_numpy(test_images)
@@ -316,7 +260,6 @@ def main():
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     criterion = nn.CrossEntropyLoss()
 
-    # 数据增强
     train_augment = TrainTransform() if not args.no_augment else None
     if train_augment:
         print(f"  训练增强: RandomAffine(±3°) + ColorJitter + RandomErasing(20%)")
@@ -324,7 +267,6 @@ def main():
     # 3. 训练
     print(f"\n[3/4] 开始训练 (epochs={args.epochs}, lr={args.lr}, batch={args.batch_size})...\n")
     best_acc = 0.0
-    best_real_acc = 0.0
     no_improve = 0
     train_start = time.time()
 
@@ -338,7 +280,6 @@ def main():
             images = images.to(device)
             labels = labels.to(device)
 
-            # 在线数据增强
             if train_augment:
                 images = train_augment(images)
 
@@ -353,50 +294,34 @@ def main():
 
         scheduler.step()
 
-        # 评估
-        total_acc, per_class_acc, confusion, real_acc = evaluate(
-            model, test_loader, device, test_real_mask
-        )
+        total_acc, per_class_acc, confusion = evaluate(model, test_loader, device)
 
         avg_loss = running_loss / num_batches
         elapsed = time.time() - epoch_start
         lr_now = scheduler.get_last_lr()[0]
 
-        real_str = f", 真实={real_acc:.1f}%" if real_acc is not None else ""
-        print(f"Epoch {epoch+1:3d}: loss={avg_loss:.4f}, acc={total_acc:.1f}%{real_str}, "
+        print(f"Epoch {epoch+1:3d}: loss={avg_loss:.4f}, acc={total_acc:.1f}%, "
               f"lr={lr_now:.6f}, {elapsed:.1f}s")
 
-        # Best model tracking
-        improved = False
-        if real_acc is not None and real_acc > best_real_acc:
-            best_real_acc = real_acc
-            improved = True
         if total_acc > best_acc:
             best_acc = total_acc
-            improved = True
-
-        if improved:
             no_improve = 0
-            # 保存最佳模型
             os.makedirs(os.path.dirname(args.save) or ".", exist_ok=True)
             torch.save({
                 "epoch": epoch + 1,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "total_acc": total_acc,
-                "real_acc": real_acc,
                 "per_class_acc": per_class_acc,
             }, args.save)
         else:
             no_improve += 1
 
-        # Early stopping
         if no_improve >= args.patience:
             print(f"\n连续 {args.patience} 轮无提升，提前停止")
             break
 
-        # 高准确率提前停止
-        if total_acc >= 99.0 and (real_acc is None or real_acc >= 98.0):
+        if total_acc >= 99.0:
             print(f"\n准确率已达 {total_acc:.1f}%，提前停止")
             break
 
@@ -406,18 +331,13 @@ def main():
     # 4. 最终评估
     print(f"\n[4/4] 最终评估...")
 
-    # 加载最佳模型
     checkpoint = torch.load(args.save, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     print(f"  加载最佳模型 (epoch {checkpoint['epoch']})")
 
-    total_acc, per_class_acc, confusion, real_acc = evaluate(
-        model, test_loader, device, test_real_mask
-    )
+    total_acc, per_class_acc, confusion = evaluate(model, test_loader, device)
 
     print(f"\n总体准确率: {total_acc:.1f}%")
-    if real_acc is not None:
-        print(f"真实棋子准确率: {real_acc:.1f}% ({int(test_real_mask.sum())} 样本)")
 
     print(f"\n每类准确率:")
     for cid in range(15):
@@ -428,26 +348,8 @@ def main():
     print(f"\n混淆矩阵:")
     print_confusion_matrix(confusion, CLASS_NAMES)
 
-    # 如果有真实数据，单独统计真实数据的每类准确率
-    if test_real_mask.any():
-        print(f"\n--- 真实棋子测试集详细 ---")
-        real_indices = np.where(test_real_mask)[0]
-        real_x = test_x[real_indices]
-        real_y = test_y[real_indices]
-        real_dataset = TensorDataset(real_x, real_y)
-        real_loader = DataLoader(real_dataset, batch_size=args.batch_size, shuffle=False)
-
-        _, real_per_class, real_confusion, _ = evaluate(model, real_loader, device)
-
-        for cid in range(1, 15):
-            acc = real_per_class.get(cid, 0)
-            mark = " OK" if acc >= 95 else " !!" if acc < 80 else ""
-            print(f"  [{cid:2d}] {CLASS_NAMES[cid]}: {acc:.1f}%{mark}")
-
     print(f"\n模型已保存: {args.save}")
     print(f"最佳总体准确率: {best_acc:.1f}%")
-    if best_real_acc > 0:
-        print(f"最佳真实棋子准确率: {best_real_acc:.1f}%")
 
     # 5. 导出 ONNX
     onnx_path = args.save.replace(".pth", ".onnx")
