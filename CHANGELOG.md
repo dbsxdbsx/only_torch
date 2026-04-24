@@ -1,5 +1,64 @@
 # 更新日志
 
+## [Unreleased] - 待提交
+
+### 新增
+
+- **feat(nn): Upsample2d 算子（2D 最近邻上采样）+ ONNX 双向桥接** [`899c3d5`]
+  - 完整新增 `NodeTypeDescriptor::Upsample2d { scale_h, scale_w }`：raw_node 前向（nearest 像素复制）+ 完整反向（sum_pool，等价 avg_pool × scale_h × scale_w）+ builder + descriptor_rebuild + onnx_ops 双向映射
+  - ONNX 导入：`Resize` / `Upsample` 自动桥接到 `Upsample2d`（mode="nearest"，scale 由常量折叠填）
+  - ONNX 导出：`Upsample2d → Resize` opset 13 nearest（按策略文档 §4.4 不承诺 round-trip）
+  - 18 个单测：tensor 级 + 节点级，对照 PyTorch `nn.Upsample(mode='nearest')` 数值一致
+
+- **feat(nn/graph): ONNX Constant 折叠 + Split 重写（路线 B 模式重写）** [`fdc61e7`]
+  - 在 `assemble` 加预处理 pass：扫描 `OpType::Constant` 节点 + initializer 建立常量表
+  - `Reshape`：从常量表读 shape 输入折叠到 `Reshape::target_shape`，支持 ONNX `-1`（按 parent 形状静态推导）和 `0`（保留对应 parent 维度）
+  - `Resize`：scales 折叠到 `Upsample2d::scale_h/scale_w`（仅 4D NCHW + 整数倍 nearest）
+  - `Split`：展开为 N 个 `Narrow` 节点，`split_sizes` 来自 attribute（opset≤12）或 input 常量（opset 13+）
+  - 9 个新单测覆盖 Reshape via initializer/Constant、Reshape -1 推导、Reshape 0 维保留、Reshape 拒绝多个 -1、Resize scales 整数倍、Resize 拒绝非整数倍、Split via attribute / Constant input
+
+- **feat(nn/graph): ONNX `Transpose` 导入支持** [`602466c`]
+  - `OpType::Transpose` 读 `perm` 属性映射到 `NodeTypeDescriptor::Permute`（缺 perm 报 actionable 错，提示 onnxsim 预处理）
+  - `Permute` 从 Unsupported 列表挪到独立导出分支，导出为 `Transpose` 含 perm 属性
+  - 5 个单测覆盖 4D NCHW→NHWC、2D 转置、缺 perm 报错、导出验证、完整 round-trip
+
+- **feat(nn/graph): `ImportReport` 最小骨架 + `RebuildResult.import_report` 透传** [`4e8c913`]
+  - 新增 `ImportReport { rewritten, warnings }` + `RewriteRecord { pattern, consumed_onnx_nodes, produced_descriptor_nodes }`
+  - `OnnxImportResult` 挂 `import_report` 字段；`RebuildResult` 加 `import_report: Option<ImportReport>` 让 ONNX 路径全程透传
+  - 把现有 `Conv+bias` 拆分（pattern=`conv_with_bias_to_conv_plus_add`）和 `Gemm→MatMul+Add` 拆分（pattern=`gemm_to_matmul_plus_add`）作为已知 rewrite 填进去
+  - 3 个单测验证字段被正确填充
+  - 范围严控：不含 `folded` / `shape_inference` / `provenance` / `ImportOptions` 等扩展字段，等真正撞到对应需求时再补
+
+- **feat(nn): ONNX 导入路径可观测性 API 公开** [`bfd6afc`]
+  - 新增 `nn::load_onnx` / `nn::load_onnx_from_bytes` / `nn::ImportReport` / `nn::OnnxImportResult` / `nn::RewriteRecord` 类型导出
+  - 让用户在 `Graph::from_onnx` 的 rebuild 阶段失败时，仍能拿到 ImportReport 做诊断
+
+- **feat(example): `chinese_chess_yolo` 端到端 example（VinXiangQi YOLOv5 模型）** [`a5529a1`, `bfd6afc`]
+  - `download_model.py`：拉取 VinXiangQi v1.4.0 release（93 MB）+ 解压 `.onnx` + 用 `onnx` 库审计算子缺口；中间产物放 `D:/.../test_repo/`，模型落 `models/vinxiangqi.onnx`（已被 `.gitignore` 排除）
+  - `letterbox.rs`（~80 行）：等比缩放 + 灰色填充到 640×640 + NCHW 归一化
+  - `yolo_decode.rs`（~120 行）：YOLOv5 输出解码 + 纯 Rust per-class O(N²) NMS
+  - `board_align.rs`（~120 行）：bbox → 9×10 网格对齐 + FEN 序列化（含 14 类红/黑棋子字典）
+  - `main.rs`（~250 行）：分两步 import + rebuild，rebuild 失败时优雅降级 + actionable 提示，仍展示 ImportReport
+  - `README.md`：用法 + 调优指引 + 已知 limitation
+  - `Cargo.toml` 注册 `[[example]] chinese_chess_yolo`
+
+- **test(onnx_models): `yolov5_xiangqi` 回归 fixture** [`1cec9f9`]
+  - 按 `.doc/design/onnx_import_strategy.md` §8.1 目录约定布局：`README.md` + `.gitignore` + `export.py`（转发 example download_model.py）+ `numeric_check.py`（用 onnxruntime 跑参考输出）
+  - `tests/yolov5_xiangqi_import.rs`：1 个 CI 默认跑（fixture 元信息）+ 2 个 `#[ignore]`（descriptor 拓扑 + ImportReport 4 模式覆盖）
+  - 防止 `chinese_chess_yolo` import 路径被未来改动悄悄回退
+
+### 修改
+
+- **chore(nn/graph): ONNX `MIN_OPSET_VERSION` 从 13 降到 12** [`fdc61e7`]
+  - 兼容 VinXiangQi 等 YOLOv5 老版本导出（opset 12 引入了 Constant/Split/Pow 的稳定形式，本 import 已覆盖）
+
+### 实测里程碑
+
+- **VinXiangQi YOLOv5 模型 ONNX 导入完整跑通**（plan `chinese_chess_yolo_example_b4f3a201` 全部 9 个有效 todo 完成）
+  - import 阶段 release 12.9 ms / 423 个 descriptor 节点
+  - ImportReport 71 条 rewrite 覆盖 4 模式：`conv_with_bias_to_conv_plus_add`（60 次）/ `constant_fold_into_reshape`（6 次）/ `constant_fold_into_resize`（2 次）/ `split_to_narrows`（3 次）
+  - 已知遗留：only_torch `from_descriptor` 在 YOLOv5 PAN/FPN 处出现 spatial shape 传播 bug（实测某 Concat 节点 16×16 vs 期望 20×20），不在本 plan 范围，留待下游 plan 修复
+
 ## [0.15.1] - 2026-04-20
 
 ### 新增
