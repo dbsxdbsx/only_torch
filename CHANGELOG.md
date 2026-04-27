@@ -22,6 +22,12 @@
 
 ### 新增
 
+- **feat(metrics/evolution): 通用指标补齐并接入演化评估报告**
+  - `metrics` 新增回归误差指标：`mean_squared_error` / `mean_absolute_error` / `root_mean_squared_error`，与现有 `r2_score` 共用 `RegressionMetric` 接口
+  - 演化侧新增 `ReportMetric` / `MetricValue` / `MetricReport`，`FitnessScore::report` 默认按任务类型报告 Accuracy/Precision/Recall/F1、R²/MSE/MAE/RMSE 或多标签 loose/strict accuracy
+  - `Evolution::with_report_metrics(...)` 支持追加报告指标；报告只用于日志、回调与结果展示，不进入 primary fitness、target 判断、NSGA-II objective 或 archive 收敛
+  - 默认 `DefaultCallback` 日志显示 `metrics=...`，补充单测覆盖指标计算、去重/兼容性、多标签 BCE logit 阈值和“报告不影响选择”边界
+
 - **feat(nn): 全链路新增节点 ONNX provenance(`origin_onnx_nodes`)** [`b115ff2`]
   - `NodeDescriptor.origin_onnx_nodes: Vec<String>`:`#[serde(default)]` 兼容旧 .otm,`skip_serializing_if = "Vec::is_empty"` 让无 origin 的节点不写入 JSON 体积;`NodeDescriptor::new` 签名不变 + 链式 builder `with_origin_onnx_nodes` 让 18 处历史调用零修改
   - `NodeInner` 加 `RefCell<Vec<String>>` 字段 + getter / setter(后置注入风格):零侵入到所有 Layer / Var / 算子构造路径

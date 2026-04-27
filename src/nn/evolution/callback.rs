@@ -72,7 +72,7 @@ pub trait EvolutionCallback {
 ///
 /// `verbose=true` 时输出两行：
 /// ```text
-/// [Gen   5] arch=nodes=9 active=9 params=4
+/// [Gen   5] arch=nodes=9 active=9 params=4 | metrics=accuracy=0.875 f1=0.867
 /// [Gen   5] pop=8 | off=8 | archive=6 | best=1.000 | cost=42 *
 /// ```
 /// `*` 标记表示 `on_new_best` 在本代触发（primary 严格提升）。
@@ -114,7 +114,12 @@ impl EvolutionCallback for DefaultCallback {
         }
         let summary = genome.main_path_summary();
         self.last_arch_summary = Some(summary.clone());
-        println!("[Gen {:>3}] arch={summary}", generation);
+        let report = _score.report.format_compact();
+        if report.is_empty() {
+            println!("[Gen {:>3}] arch={summary}", generation);
+        } else {
+            println!("[Gen {:>3}] arch={summary} | metrics={report}", generation);
+        }
     }
 
     fn on_new_best(&mut self, _generation: usize, _genome: &NetworkGenome, _score: &FitnessScore) {

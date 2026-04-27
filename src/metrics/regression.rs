@@ -113,3 +113,74 @@ pub fn r2_score(
 
     RegressionMetric::new(value, n)
 }
+
+/// 计算均方误差（Mean Squared Error）
+///
+/// MSE 越低表示预测越接近真实值，常用作回归任务的损失或报告指标。
+///
+/// ## 边界情况
+///
+/// - 空输入 → 返回 value=0.0, `n_samples=0`
+/// - 长度不一致 → 取较短者计算
+pub fn mean_squared_error(
+    predictions: &(impl IntoFloatValues + ?Sized),
+    actuals: &(impl IntoFloatValues + ?Sized),
+) -> RegressionMetric {
+    let pred_vals = predictions.to_float_values();
+    let true_vals = actuals.to_float_values();
+
+    if pred_vals.is_empty() || true_vals.is_empty() {
+        return RegressionMetric::new(0.0, 0);
+    }
+
+    let n = pred_vals.len().min(true_vals.len());
+    let mse = pred_vals[..n]
+        .iter()
+        .zip(true_vals[..n].iter())
+        .map(|(pred, actual)| (pred - actual).powi(2))
+        .sum::<f32>()
+        / n as f32;
+
+    RegressionMetric::new(mse, n)
+}
+
+/// 计算平均绝对误差（Mean Absolute Error）
+///
+/// MAE 越低表示预测越接近真实值，相比 MSE 对离群点更不敏感。
+///
+/// ## 边界情况
+///
+/// - 空输入 → 返回 value=0.0, `n_samples=0`
+/// - 长度不一致 → 取较短者计算
+pub fn mean_absolute_error(
+    predictions: &(impl IntoFloatValues + ?Sized),
+    actuals: &(impl IntoFloatValues + ?Sized),
+) -> RegressionMetric {
+    let pred_vals = predictions.to_float_values();
+    let true_vals = actuals.to_float_values();
+
+    if pred_vals.is_empty() || true_vals.is_empty() {
+        return RegressionMetric::new(0.0, 0);
+    }
+
+    let n = pred_vals.len().min(true_vals.len());
+    let mae = pred_vals[..n]
+        .iter()
+        .zip(true_vals[..n].iter())
+        .map(|(pred, actual)| (pred - actual).abs())
+        .sum::<f32>()
+        / n as f32;
+
+    RegressionMetric::new(mae, n)
+}
+
+/// 计算均方根误差（Root Mean Squared Error）
+///
+/// RMSE 与目标值单位一致，越低表示预测越接近真实值。
+pub fn root_mean_squared_error(
+    predictions: &(impl IntoFloatValues + ?Sized),
+    actuals: &(impl IntoFloatValues + ?Sized),
+) -> RegressionMetric {
+    let mse = mean_squared_error(predictions, actuals);
+    RegressionMetric::new(mse.value().sqrt(), mse.n_samples())
+}

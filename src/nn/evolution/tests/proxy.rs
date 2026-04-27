@@ -88,6 +88,7 @@ fn nsga2_tiebreak_prefers_higher_proxy_on_plateau() {
                 inference_cost: Some(1.0),
                 tiebreak_loss: Some(0.2),
                 primary_proxy: Some(0.01),
+                report: Default::default(),
             },
         ),
         (
@@ -97,6 +98,7 @@ fn nsga2_tiebreak_prefers_higher_proxy_on_plateau() {
                 inference_cost: Some(1.0),
                 tiebreak_loss: Some(0.2),
                 primary_proxy: Some(0.05),
+                report: Default::default(),
             },
         ),
         (
@@ -106,6 +108,7 @@ fn nsga2_tiebreak_prefers_higher_proxy_on_plateau() {
                 inference_cost: Some(1.0),
                 tiebreak_loss: Some(0.2),
                 primary_proxy: None,
+                report: Default::default(),
             },
         ),
     ];
@@ -128,6 +131,7 @@ fn nsga2_proxy_takes_precedence_over_tiebreak_loss() {
                 inference_cost: Some(1.0),
                 tiebreak_loss: Some(0.5),  // 更差
                 primary_proxy: Some(0.10), // 更好
+                report: Default::default(),
             },
         ),
         (
@@ -137,6 +141,7 @@ fn nsga2_proxy_takes_precedence_over_tiebreak_loss() {
                 inference_cost: Some(1.0),
                 tiebreak_loss: Some(0.1),  // 更好
                 primary_proxy: Some(0.01), // 更差
+                report: Default::default(),
             },
         ),
     ];

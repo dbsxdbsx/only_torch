@@ -675,6 +675,156 @@ fn test_binary_classification_all_negative_logits() {
     );
 }
 
+// ==================== MetricReport ====================
+
+#[test]
+fn test_default_report_metrics_for_accuracy_task() {
+    let task = xor_task();
+    assert_eq!(
+        task.report_metrics(),
+        &[
+            ReportMetric::Accuracy,
+            ReportMetric::Precision,
+            ReportMetric::Recall,
+            ReportMetric::F1,
+        ]
+    );
+}
+
+#[test]
+fn test_report_metric_config_dedup_and_ignore_incompatible() {
+    let data = xor_data();
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy)
+        .unwrap()
+        .with_report_metrics([ReportMetric::F1, ReportMetric::R2, ReportMetric::Accuracy]);
+
+    assert_eq!(
+        task.report_metrics(),
+        &[
+            ReportMetric::Accuracy,
+            ReportMetric::Precision,
+            ReportMetric::Recall,
+            ReportMetric::F1,
+        ],
+        "重复指标应去重，不兼容当前任务的 R2 应被忽略"
+    );
+}
+
+#[test]
+fn test_compute_metric_report_binary_classification() {
+    let predictions = Tensor::new(&[0.5, -0.5, 0.5, -0.5], &[4, 1]);
+    let labels = Tensor::new(&[0.0, 1.0, 1.0, 0.0], &[4, 1]);
+    let report = compute_metric_report(
+        &TaskMetric::Accuracy,
+        &[
+            ReportMetric::Accuracy,
+            ReportMetric::Precision,
+            ReportMetric::Recall,
+            ReportMetric::F1,
+        ],
+        &predictions,
+        &labels,
+        1,
+        &LossType::BCE,
+    );
+
+    assert!((report.value(ReportMetric::Accuracy).unwrap() - 0.5).abs() < 1e-6);
+    assert!((report.value(ReportMetric::Precision).unwrap() - 0.5).abs() < 1e-6);
+    assert!((report.value(ReportMetric::Recall).unwrap() - 0.5).abs() < 1e-6);
+    assert!((report.value(ReportMetric::F1).unwrap() - 0.5).abs() < 1e-6);
+    assert_eq!(report.get(ReportMetric::Accuracy).unwrap().n_samples, 4);
+}
+
+#[test]
+fn test_compute_metric_report_regression() {
+    let predictions = Tensor::new(&[2.0, 4.0, 6.0], &[3, 1]);
+    let labels = Tensor::new(&[1.0, 4.0, 9.0], &[3, 1]);
+    let report = compute_metric_report(
+        &TaskMetric::R2,
+        &[
+            ReportMetric::R2,
+            ReportMetric::MeanSquaredError,
+            ReportMetric::MeanAbsoluteError,
+            ReportMetric::RootMeanSquaredError,
+        ],
+        &predictions,
+        &labels,
+        1,
+        &LossType::MSE,
+    );
+
+    assert!((report.value(ReportMetric::R2).unwrap() - 0.6938776).abs() < 1e-5);
+    assert!((report.value(ReportMetric::MeanSquaredError).unwrap() - 10.0 / 3.0).abs() < 1e-6);
+    assert!((report.value(ReportMetric::MeanAbsoluteError).unwrap() - 4.0 / 3.0).abs() < 1e-6);
+    assert!(
+        (report.value(ReportMetric::RootMeanSquaredError).unwrap() - (10.0f32 / 3.0).sqrt()).abs()
+            < 1e-6
+    );
+}
+
+#[test]
+fn test_compute_metric_report_multilabel_bce_logits() {
+    let predictions = Tensor::new(
+        &[
+            0.2, -0.1, // [1, 0]
+            -0.1, 0.2, // [0, 1]
+        ],
+        &[2, 2],
+    );
+    let labels = Tensor::new(
+        &[
+            1.0, 0.0, // [1, 0]
+            0.0, 1.0, // [0, 1]
+        ],
+        &[2, 2],
+    );
+    let report = compute_metric_report(
+        &TaskMetric::MultiLabelAccuracy,
+        &[
+            ReportMetric::MultiLabelLooseAccuracy,
+            ReportMetric::MultiLabelStrictAccuracy,
+        ],
+        &predictions,
+        &labels,
+        2,
+        &LossType::BCE,
+    );
+
+    assert!((report.value(ReportMetric::MultiLabelLooseAccuracy).unwrap() - 1.0).abs() < 1e-6);
+    assert!(
+        (report
+            .value(ReportMetric::MultiLabelStrictAccuracy)
+            .unwrap()
+            - 1.0)
+            .abs()
+            < 1e-6
+    );
+    assert_eq!(
+        report
+            .get(ReportMetric::MultiLabelStrictAccuracy)
+            .unwrap()
+            .n_samples,
+        2
+    );
+}
+
+#[test]
+fn test_evaluate_report_does_not_change_primary() {
+    let task = xor_task();
+    let genome = NetworkGenome::minimal(2, 1);
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+
+    let score = task.evaluate(&genome, &build, &mut rng).unwrap();
+
+    assert!(!score.report.is_empty());
+    assert!(
+        (score.primary - score.report.value(ReportMetric::Accuracy).unwrap()).abs() < 1e-6,
+        "报告中的 accuracy 应与 primary 保持一致，但不额外参与选择"
+    );
+    assert!(score.report.get(ReportMetric::F1).is_some());
+}
+
 // ==================== Batch size ====================
 
 #[test]

@@ -467,6 +467,6 @@ pub use classification::{
     accuracy, confusion_matrix, f1_score, multilabel_loose_accuracy, multilabel_strict_accuracy,
     precision, recall,
 };
-pub use regression::r2_score;
+pub use regression::{mean_absolute_error, mean_squared_error, r2_score, root_mean_squared_error};
 
 // 注：MultiLabelMetric 已在本模块定义并自动导出

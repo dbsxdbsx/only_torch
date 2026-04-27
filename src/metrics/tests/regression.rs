@@ -1,6 +1,6 @@
 //! 回归指标测试
 
-use crate::metrics::r2_score;
+use crate::metrics::{mean_absolute_error, mean_squared_error, r2_score, root_mean_squared_error};
 
 /// 基本功能测试（与 sklearn 对照）
 #[test]
@@ -179,4 +179,37 @@ fn test_r2_score_tensor_mixed() {
         "Tensor 与 slice 混合应正确计算 R²，实际 = {}",
         result.value()
     );
+}
+
+#[test]
+fn test_regression_error_metrics_basic() {
+    let predictions = [2.0, 4.0, 6.0];
+    let actuals = [1.0, 4.0, 9.0];
+
+    let mse = mean_squared_error(&predictions, &actuals);
+    let mae = mean_absolute_error(&predictions, &actuals);
+    let rmse = root_mean_squared_error(&predictions, &actuals);
+
+    assert!((mse.value() - 10.0 / 3.0).abs() < 1e-6);
+    assert!((mae.value() - 4.0 / 3.0).abs() < 1e-6);
+    assert!((rmse.value() - (10.0f32 / 3.0).sqrt()).abs() < 1e-6);
+    assert_eq!(mse.n_samples(), 3);
+    assert_eq!(mae.n_samples(), 3);
+    assert_eq!(rmse.n_samples(), 3);
+}
+
+#[test]
+fn test_regression_error_metrics_empty_and_mismatch() {
+    let empty: &[f32] = &[];
+    let predictions = [1.0, 2.0, 3.0];
+    let actuals = [1.0, 4.0];
+
+    assert_eq!(mean_squared_error(empty, &actuals).n_samples(), 0);
+    assert_eq!(mean_absolute_error(&predictions, empty).value(), 0.0);
+
+    let mse = mean_squared_error(&predictions, &actuals);
+    let mae = mean_absolute_error(&predictions, &actuals);
+    assert_eq!(mse.n_samples(), 2);
+    assert!((mse.value() - 2.0).abs() < 1e-6);
+    assert!((mae.value() - 1.0).abs() < 1e-6);
 }

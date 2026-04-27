@@ -53,6 +53,7 @@ use self::mutation::{MutationError, MutationRegistry, SizeConstraints};
 use self::task::{
     EvolutionTask, FitnessScore, ProxyKind, SupervisedTask, TrainOutcome, auto_batch_size,
 };
+pub use self::task::{MetricReport, MetricValue, ReportMetric};
 
 // ==================== EvolutionStatus ====================
 
@@ -257,6 +258,12 @@ impl EvolutionTask for TaskRuntime {
     fn configure_proxy(&mut self, kind: Option<ProxyKind>) {
         match self {
             TaskRuntime::Supervised(task) => task.configure_proxy(kind),
+        }
+    }
+
+    fn configure_report_metrics(&mut self, metrics: &[ReportMetric]) {
+        match self {
+            TaskRuntime::Supervised(task) => task.configure_report_metrics(metrics),
         }
     }
 
@@ -474,6 +481,8 @@ pub struct Evolution {
     complexity_metric: ComplexityMetric,
     /// F3 学习速度代理（None = 关闭，Some = 启用对应 proxy）
     primary_proxy: Option<ProxyKind>,
+    /// 附加报告指标（只影响日志和结果报告，不参与演化选择）
+    report_metrics: Vec<ReportMetric>,
     /// F4 ASHA 多保真评估配置（None = 关闭）
     asha: Option<AshaConfig>,
 }
@@ -519,6 +528,7 @@ impl Evolution {
             // - ASHA：阶梯式 Successive Halving 把 Phase 1 预算集中到有潜力的候选
             // 要关闭可调用 `.with_primary_proxy(None)` / `.with_asha(None)`
             primary_proxy: Some(ProxyKind::LossSlope),
+            report_metrics: Vec::new(),
             asha: Some(AshaConfig::default()),
         }
     }
@@ -527,6 +537,19 @@ impl Evolution {
 
     pub fn with_target_metric(mut self, target: f32) -> Self {
         self.target_metric = target;
+        self
+    }
+
+    /// 在默认报告指标基础上追加附加评估指标。
+    ///
+    /// 报告指标只影响日志和 `FitnessScore::report`，不参与 primary fitness、
+    /// target 判断或 NSGA-II 选择。
+    pub fn with_report_metrics(mut self, metrics: impl IntoIterator<Item = ReportMetric>) -> Self {
+        for metric in metrics {
+            if !self.report_metrics.contains(&metric) {
+                self.report_metrics.push(metric);
+            }
+        }
         self
     }
 
@@ -689,6 +712,7 @@ impl Evolution {
             pareto_patience,
             complexity_metric,
             primary_proxy,
+            report_metrics,
             asha,
         } = self;
 
@@ -708,6 +732,7 @@ impl Evolution {
         let mut task_template = prepared.task.clone();
         task_template.configure_batch_size(batch_size);
         task_template.configure_proxy(primary_proxy);
+        task_template.configure_report_metrics(&report_metrics);
         let serial_task = task_template.clone();
 
         let is_sequential = prepared.seq_len.is_some();
@@ -1543,6 +1568,7 @@ fn build_final_result(
         inference_cost: None,
         tiebreak_loss: None,
         primary_proxy: None,
+        report: MetricReport::empty(),
     });
 
     Ok(EvolutionResult {

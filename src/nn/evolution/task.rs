@@ -15,9 +15,11 @@
 
 use rand::Rng;
 use rand::rngs::StdRng;
+use std::fmt;
 use std::sync::Arc;
 
 use crate::metrics;
+use crate::metrics::traits::IntoClassLabels;
 use crate::nn::{Adam, GraphError, Optimizer, SGD, Var, VarLossOps};
 use crate::tensor::Tensor;
 
@@ -25,6 +27,168 @@ use super::builder::BuildResult;
 use super::convergence::{ConvergenceConfig, ConvergenceDetector};
 use super::error::EvolutionError;
 use super::gene::{LossType, NetworkGenome, OptimizerType, TaskMetric, compatible_losses};
+
+// ==================== ReportMetric & MetricReport ====================
+
+/// 演化评估报告中的附加指标。
+///
+/// `ReportMetric` 只影响日志与结果报告，不参与 primary fitness、target 判断或 NSGA-II 选择。
+/// 手写模型仍可直接调用 `crate::metrics` 中的同名函数。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ReportMetric {
+    Accuracy,
+    Precision,
+    Recall,
+    F1,
+    R2,
+    MeanSquaredError,
+    MeanAbsoluteError,
+    RootMeanSquaredError,
+    MultiLabelLooseAccuracy,
+    MultiLabelStrictAccuracy,
+}
+
+impl ReportMetric {
+    /// 稳定的机器可读名称，用于日志、序列化后的展示与用户查询。
+    pub const fn name(&self) -> &'static str {
+        match self {
+            ReportMetric::Accuracy => "accuracy",
+            ReportMetric::Precision => "precision",
+            ReportMetric::Recall => "recall",
+            ReportMetric::F1 => "f1",
+            ReportMetric::R2 => "r2",
+            ReportMetric::MeanSquaredError => "mse",
+            ReportMetric::MeanAbsoluteError => "mae",
+            ReportMetric::RootMeanSquaredError => "rmse",
+            ReportMetric::MultiLabelLooseAccuracy => "multilabel_loose_accuracy",
+            ReportMetric::MultiLabelStrictAccuracy => "multilabel_strict_accuracy",
+        }
+    }
+
+    /// 该报告指标是否适用于当前任务主指标。
+    pub fn is_compatible_with(&self, task_metric: &TaskMetric) -> bool {
+        match task_metric {
+            TaskMetric::Accuracy => matches!(
+                self,
+                ReportMetric::Accuracy
+                    | ReportMetric::Precision
+                    | ReportMetric::Recall
+                    | ReportMetric::F1
+            ),
+            TaskMetric::R2 => matches!(
+                self,
+                ReportMetric::R2
+                    | ReportMetric::MeanSquaredError
+                    | ReportMetric::MeanAbsoluteError
+                    | ReportMetric::RootMeanSquaredError
+            ),
+            TaskMetric::MultiLabelAccuracy => matches!(
+                self,
+                ReportMetric::MultiLabelLooseAccuracy | ReportMetric::MultiLabelStrictAccuracy
+            ),
+        }
+    }
+
+    pub(crate) fn defaults_for_task(task_metric: &TaskMetric) -> Vec<Self> {
+        match task_metric {
+            TaskMetric::Accuracy => vec![
+                ReportMetric::Accuracy,
+                ReportMetric::Precision,
+                ReportMetric::Recall,
+                ReportMetric::F1,
+            ],
+            TaskMetric::R2 => vec![
+                ReportMetric::R2,
+                ReportMetric::MeanSquaredError,
+                ReportMetric::MeanAbsoluteError,
+                ReportMetric::RootMeanSquaredError,
+            ],
+            TaskMetric::MultiLabelAccuracy => vec![
+                ReportMetric::MultiLabelLooseAccuracy,
+                ReportMetric::MultiLabelStrictAccuracy,
+            ],
+        }
+    }
+}
+
+impl fmt::Display for ReportMetric {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// 单个报告指标值。
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MetricValue {
+    pub metric: ReportMetric,
+    pub value: f32,
+    pub n_samples: usize,
+}
+
+impl MetricValue {
+    pub const fn new(metric: ReportMetric, value: f32, n_samples: usize) -> Self {
+        Self {
+            metric,
+            value,
+            n_samples,
+        }
+    }
+
+    pub const fn name(&self) -> &'static str {
+        self.metric.name()
+    }
+}
+
+/// 一次评估产生的附加指标报告。
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MetricReport {
+    entries: Vec<MetricValue>,
+}
+
+impl MetricReport {
+    pub fn new(entries: Vec<MetricValue>) -> Self {
+        Self { entries }
+    }
+
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn entries(&self) -> &[MetricValue] {
+        &self.entries
+    }
+
+    pub fn get(&self, metric: ReportMetric) -> Option<&MetricValue> {
+        self.entries.iter().find(|entry| entry.metric == metric)
+    }
+
+    pub fn value(&self, metric: ReportMetric) -> Option<f32> {
+        self.get(metric).map(|entry| entry.value)
+    }
+
+    /// 紧凑展示格式：`accuracy=0.750 f1=0.733`。
+    pub fn format_compact(&self) -> String {
+        self.entries
+            .iter()
+            .map(|entry| format!("{}={:.3}", entry.name(), entry.value))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+fn push_report_metric(
+    metrics: &mut Vec<ReportMetric>,
+    task_metric: &TaskMetric,
+    metric: ReportMetric,
+) {
+    if metric.is_compatible_with(task_metric) && !metrics.contains(&metric) {
+        metrics.push(metric);
+    }
+}
 
 // ==================== auto_batch_size ====================
 
@@ -74,6 +238,9 @@ pub struct FitnessScore {
     /// 仅在启用 `ProxyKind` 时有值，默认为 `None` 以保持向后兼容。
     #[serde(default)]
     pub primary_proxy: Option<f32>,
+    /// 附加评估指标报告。仅用于可观测性，不参与选择或收敛判断。
+    #[serde(default)]
+    pub report: MetricReport,
 }
 
 // ==================== ProxyKind & TrainOutcome（F3）====================
@@ -190,6 +357,11 @@ pub trait EvolutionTask {
     /// `SupervisedTask` 启用后会在 `train()` 内记录 loss 轨迹并计算 proxy。
     fn configure_proxy(&mut self, _kind: Option<ProxyKind>) {}
 
+    /// 追加报告指标（默认空操作）。
+    ///
+    /// 报告指标只用于日志和结果展示，不影响演化选择。
+    fn configure_report_metrics(&mut self, _metrics: &[ReportMetric]) {}
+
     /// 创建仅用于可视化的 Loss 节点（默认返回 None，子类可覆盖）
     ///
     /// 返回的 Var 包含 TargetInput + Loss 节点，用于 snapshot 时
@@ -222,6 +394,7 @@ pub struct SupervisedTask {
     test_x: Arc<Tensor>,  // 同 train_x
     test_y: Arc<Tensor>,  // 同 train_y
     metric: TaskMetric,
+    report_metrics: Vec<ReportMetric>,
     batch_size: Option<usize>, // None = 自动策略，Some = 显式指定
     /// F3: 学习速度代理类型（None = 关闭，不记录 loss 轨迹）
     proxy_kind: Option<ProxyKind>,
@@ -299,12 +472,15 @@ impl SupervisedTask {
         let train_y_refs: Vec<&Tensor> = train_data.1.iter().collect();
         let test_y_refs: Vec<&Tensor> = test_data.1.iter().collect();
 
+        let report_metrics = ReportMetric::defaults_for_task(&metric);
+
         Ok(Self {
             train_x: Arc::new(train_x_stacked),
             train_y: Arc::new(Tensor::stack(&train_y_refs, 0)),
             test_x: Arc::new(test_x_stacked),
             test_y: Arc::new(Tensor::stack(&test_y_refs, 0)),
             metric,
+            report_metrics,
             batch_size: None,
             proxy_kind: None,
         })
@@ -326,6 +502,19 @@ impl SupervisedTask {
     pub fn with_primary_proxy(mut self, kind: ProxyKind) -> Self {
         self.proxy_kind = Some(kind);
         self
+    }
+
+    /// 在默认报告指标基础上追加用户指定的报告指标。
+    ///
+    /// 不兼容当前任务类型的指标会被忽略，重复指标会自动去重。
+    pub fn with_report_metrics(mut self, metrics: impl IntoIterator<Item = ReportMetric>) -> Self {
+        self.configure_report_metrics(&metrics.into_iter().collect::<Vec<_>>());
+        self
+    }
+
+    /// 获取当前报告指标配置。
+    pub fn report_metrics(&self) -> &[ReportMetric] {
+        &self.report_metrics
     }
 
     /// 解析实际使用的 batch size
@@ -462,6 +651,12 @@ impl EvolutionTask for SupervisedTask {
         self.proxy_kind = kind;
     }
 
+    fn configure_report_metrics(&mut self, metrics: &[ReportMetric]) {
+        for &metric in metrics {
+            push_report_metric(&mut self.report_metrics, &self.metric, metric);
+        }
+    }
+
     fn create_visualization_loss(
         &self,
         genome: &NetworkGenome,
@@ -508,6 +703,14 @@ impl EvolutionTask for SupervisedTask {
             genome.output_dim,
             &loss_type,
         );
+        let report = compute_metric_report(
+            &self.metric,
+            &self.report_metrics,
+            &predictions,
+            &self.test_y,
+            genome.output_dim,
+            &loss_type,
+        );
 
         let tiebreak_loss = if self.metric.is_discrete() {
             Some(test_loss_scalar)
@@ -522,6 +725,7 @@ impl EvolutionTask for SupervisedTask {
             inference_cost: None,
             tiebreak_loss,
             primary_proxy: None,
+            report,
         })
     }
 }
@@ -570,6 +774,109 @@ pub(crate) fn compute_primary_metric(
             }
             _ => metrics::multilabel_loose_accuracy(predictions, labels, 0.5).value(),
         },
+    }
+}
+
+/// 计算附加报告指标。
+///
+/// 报告指标不参与演化选择；这里复用 `metrics` 通用函数，确保手写模型和演化系统
+/// 对同一指标的计算语义一致。
+pub(crate) fn compute_metric_report(
+    task_metric: &TaskMetric,
+    report_metrics: &[ReportMetric],
+    predictions: &Tensor,
+    labels: &Tensor,
+    output_dim: usize,
+    loss_type: &LossType,
+) -> MetricReport {
+    let entries = report_metrics
+        .iter()
+        .filter(|metric| metric.is_compatible_with(task_metric))
+        .filter_map(|&metric| {
+            compute_report_metric(metric, predictions, labels, output_dim, loss_type)
+        })
+        .collect();
+    MetricReport::new(entries)
+}
+
+fn compute_report_metric(
+    metric: ReportMetric,
+    predictions: &Tensor,
+    labels: &Tensor,
+    output_dim: usize,
+    loss_type: &LossType,
+) -> Option<MetricValue> {
+    match metric {
+        ReportMetric::Accuracy
+        | ReportMetric::Precision
+        | ReportMetric::Recall
+        | ReportMetric::F1 => {
+            let (pred_labels, true_labels) =
+                classification_labels(predictions, labels, output_dim, loss_type);
+            let value = match metric {
+                ReportMetric::Accuracy => metrics::accuracy(&pred_labels, &true_labels),
+                ReportMetric::Precision => metrics::precision(&pred_labels, &true_labels),
+                ReportMetric::Recall => metrics::recall(&pred_labels, &true_labels),
+                ReportMetric::F1 => metrics::f1_score(&pred_labels, &true_labels),
+                _ => unreachable!(),
+            };
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::R2 => {
+            let value = metrics::r2_score(predictions, labels);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::MeanSquaredError => {
+            let value = metrics::mean_squared_error(predictions, labels);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::MeanAbsoluteError => {
+            let value = metrics::mean_absolute_error(predictions, labels);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::RootMeanSquaredError => {
+            let value = metrics::root_mean_squared_error(predictions, labels);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::MultiLabelLooseAccuracy => {
+            let decoded = multilabel_predictions(predictions, loss_type);
+            let value = metrics::multilabel_loose_accuracy(&decoded, labels, 0.5);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::MultiLabelStrictAccuracy => {
+            let decoded = multilabel_predictions(predictions, loss_type);
+            let value = metrics::multilabel_strict_accuracy(&decoded, labels, 0.5);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+    }
+}
+
+fn classification_labels(
+    predictions: &Tensor,
+    labels: &Tensor,
+    output_dim: usize,
+    loss_type: &LossType,
+) -> (Vec<usize>, Vec<usize>) {
+    if output_dim == 1 {
+        (
+            binary_decode(predictions, loss_type),
+            binary_decode(labels, &LossType::MSE),
+        )
+    } else {
+        (predictions.to_class_labels(), labels.to_class_labels())
+    }
+}
+
+fn multilabel_predictions(predictions: &Tensor, loss_type: &LossType) -> Tensor {
+    if matches!(loss_type, LossType::BCE) {
+        let decoded_data: Vec<f32> = predictions
+            .to_vec()
+            .iter()
+            .map(|&v| if v >= 0.0 { 1.0 } else { 0.0 })
+            .collect();
+        Tensor::new(&decoded_data, predictions.shape())
+    } else {
+        predictions.clone()
     }
 }
 

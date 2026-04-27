@@ -322,12 +322,14 @@ fn test_is_at_least_as_good_primary_improvement() {
         inference_cost: None,
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
+        report: Default::default(),
     };
     let best = FitnessScore {
         primary: 0.7,
         inference_cost: None,
         tiebreak_loss: Some(0.3),
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -339,12 +341,14 @@ fn test_is_at_least_as_good_primary_regression() {
         inference_cost: None,
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
+        report: Default::default(),
     };
     let best = FitnessScore {
         primary: 0.7,
         inference_cost: None,
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(!super::super::is_at_least_as_good(&current, &best));
 }
@@ -356,12 +360,14 @@ fn test_is_at_least_as_good_same_primary_better_tiebreak() {
         inference_cost: None,
         tiebreak_loss: Some(0.3),
         primary_proxy: None,
+        report: Default::default(),
     };
     let best = FitnessScore {
         primary: 0.5,
         inference_cost: None,
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -373,12 +379,14 @@ fn test_is_at_least_as_good_same_primary_worse_tiebreak() {
         inference_cost: None,
         tiebreak_loss: Some(0.8),
         primary_proxy: None,
+        report: Default::default(),
     };
     let best = FitnessScore {
         primary: 0.5,
         inference_cost: None,
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(!super::super::is_at_least_as_good(&current, &best));
 }
@@ -390,12 +398,14 @@ fn test_is_at_least_as_good_same_primary_equal_tiebreak() {
         inference_cost: None,
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
+        report: Default::default(),
     };
     let best = FitnessScore {
         primary: 0.5,
         inference_cost: None,
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -407,12 +417,14 @@ fn test_is_at_least_as_good_no_tiebreak_neutral_drift() {
         inference_cost: None,
         tiebreak_loss: None,
         primary_proxy: None,
+        report: Default::default(),
     };
     let best = FitnessScore {
         primary: 0.5,
         inference_cost: None,
         tiebreak_loss: None,
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -425,12 +437,14 @@ fn test_is_at_least_as_good_mixed_tiebreak_none() {
         inference_cost: None,
         tiebreak_loss: Some(0.3),
         primary_proxy: None,
+        report: Default::default(),
     };
     let best = FitnessScore {
         primary: 0.5,
         inference_cost: None,
         tiebreak_loss: None,
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -1259,12 +1273,14 @@ fn test_fitness_changed_primary_differs() {
         inference_cost: Some(100.0),
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
+        report: Default::default(),
     };
     let b = FitnessScore {
         primary: 0.8,
         inference_cost: Some(100.0),
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(
         super::super::fitness_changed(&a, &b, 1e-6),
@@ -1279,12 +1295,14 @@ fn test_fitness_changed_within_tolerance() {
         inference_cost: Some(100.0),
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
+        report: Default::default(),
     };
     let b = FitnessScore {
         primary: 0.9 + 1e-8,
         inference_cost: Some(100.0 + 1e-8),
         tiebreak_loss: Some(0.1 + 1e-8),
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(
         !super::super::fitness_changed(&a, &b, 1e-6),
@@ -1299,12 +1317,14 @@ fn test_fitness_changed_inference_cost_none_vs_some() {
         inference_cost: None,
         tiebreak_loss: None,
         primary_proxy: None,
+        report: Default::default(),
     };
     let b = FitnessScore {
         primary: 0.9,
         inference_cost: Some(100.0),
         tiebreak_loss: None,
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(
         super::super::fitness_changed(&a, &b, 1e-6),
@@ -1319,12 +1339,14 @@ fn test_fitness_changed_tiebreak_loss_differs() {
         inference_cost: Some(100.0),
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
+        report: Default::default(),
     };
     let b = FitnessScore {
         primary: 0.9,
         inference_cost: Some(100.0),
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(
         super::super::fitness_changed(&a, &b, 1e-6),
@@ -1339,12 +1361,14 @@ fn test_fitness_changed_both_none_unchanged() {
         inference_cost: None,
         tiebreak_loss: None,
         primary_proxy: None,
+        report: Default::default(),
     };
     let b = FitnessScore {
         primary: 0.5,
         inference_cost: None,
         tiebreak_loss: None,
         primary_proxy: None,
+        report: Default::default(),
     };
     assert!(
         !super::super::fitness_changed(&a, &b, 1e-6),

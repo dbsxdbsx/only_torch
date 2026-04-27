@@ -1,5 +1,5 @@
 use crate::nn::evolution::selection::*;
-use crate::nn::evolution::task::FitnessScore;
+use crate::nn::evolution::task::{FitnessScore, MetricReport, MetricValue, ReportMetric};
 
 // ==================== 辅助构造 ====================
 
@@ -9,6 +9,7 @@ fn score(primary: f32, cost: Option<f32>) -> FitnessScore {
         inference_cost: cost,
         tiebreak_loss: None,
         primary_proxy: None,
+        report: Default::default(),
     }
 }
 
@@ -18,6 +19,7 @@ fn score_with_tiebreak(primary: f32, cost: Option<f32>, tiebreak: Option<f32>) -
         inference_cost: cost,
         tiebreak_loss: tiebreak,
         primary_proxy: None,
+        report: Default::default(),
     }
 }
 
@@ -30,6 +32,20 @@ fn test_dominates_basic() {
     let b = score(0.8, Some(200.0));
     assert!(dominates(&a, &b));
     assert!(!dominates(&b, &a));
+}
+
+#[test]
+fn test_report_metrics_do_not_affect_objectives() {
+    let mut a = score(0.9, Some(100.0));
+    let mut b = score(0.8, Some(200.0));
+    a.report = MetricReport::new(vec![MetricValue::new(ReportMetric::F1, 0.1, 10)]);
+    b.report = MetricReport::new(vec![MetricValue::new(ReportMetric::F1, 1.0, 10)]);
+
+    assert!(
+        dominates(&a, &b),
+        "报告指标不应进入 NSGA-II objective，支配关系仍只看 primary 和 cost"
+    );
+    assert_eq!(objective_point(&a).dim(), 2);
 }
 
 #[test]
