@@ -22,6 +22,11 @@
 
 ### 新增
 
+- **feat(metrics/example): 新增 Toy Semantic Segmentation 传统示例**
+  - `metrics` 新增 `pixel_accuracy` / `binary_iou` 二值分割指标，并补充空 mask、shape mismatch 等单元测试
+  - 新增 `examples/traditional/toy_segmentation`：内置 16x16 合成矩形 / 圆形 mask 数据，小型 CNN 直接输出 `[N, 1, H, W]` logits，用 4D `BCEWithLogits` 快速训练
+  - 示例注册到 `Cargo.toml` / `just example-toy-segmentation` / README，并输出 `test_in.png`、`test_out.png` 便于直观看原图与预测 mask overlay
+
 - **feat(evolution): 收敛用户 API 到 NodeLevel-only 路线**
   - `evolution` 不再公开 `gene` / `builder` / `migration` / `mutation` 等内部模块，用户侧从顶层导入 `TaskMetric`、`ReportMetric`、`EvolutionCallback`、`ConvergenceConfig` 等任务级类型
   - 删除 `build_layer_level()` 逐层构图后端，`NetworkGenome::build()` 统一通过 NodeLevel → `GraphDescriptor` → `Graph` 构图

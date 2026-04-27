@@ -2,3 +2,4 @@
 
 mod classification;
 mod regression;
+mod segmentation;

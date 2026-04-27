@@ -163,6 +163,10 @@
     path="examples/traditional/mnist_cnn/main.rs"
 
 [[example]]
+    name="toy_segmentation"
+    path="examples/traditional/toy_segmentation/main.rs"
+
+[[example]]
     name="mnist_gan"
     path="examples/traditional/mnist_gan/main.rs"
 

@@ -92,7 +92,7 @@ examples: examples-traditional examples-evolution
 # 运行所有 traditional examples
 # 注:example-chess-yolo-onnx-detect 不在此聚合内,因为它依赖 ~93MB 的 VinXiangQi
 # .onnx 模型(已被 .gitignore),需用户先跑 download_model.py 才能跑通
-examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
+examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-toy-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -116,6 +116,10 @@ example-mnist:
 example-mnist-cnn:
     @echo "=== Running MNIST CNN [{{_blas_name}}] ==="
     cargo run --example mnist_cnn {{_blas_flag}}
+
+example-toy-segmentation:
+    @echo "=== Running Toy Segmentation [{{_blas_name}}] ==="
+    cargo run --example toy_segmentation {{_blas_flag}}
 
 example-mnist-gan:
     @echo "=== Running MNIST GAN [{{_blas_name}}] ==="

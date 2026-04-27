@@ -6,6 +6,7 @@
 //!
 //! - [`classification`] - 分类指标（Accuracy, Precision, Recall 等）
 //! - [`regression`] - 回归指标（R², MSE, MAE 等）
+//! - [`segmentation`] - 分割指标（Pixel Accuracy, IoU 等）
 //! - [`traits`] - 输入类型转换 Trait
 //!
 //! ## 设计理念
@@ -67,6 +68,7 @@
 
 pub mod classification;
 pub mod regression;
+pub mod segmentation;
 pub mod traits;
 
 #[cfg(test)]
@@ -468,5 +470,6 @@ pub use classification::{
     precision, recall,
 };
 pub use regression::{mean_absolute_error, mean_squared_error, r2_score, root_mean_squared_error};
+pub use segmentation::{binary_iou, pixel_accuracy};
 
 // 注：MultiLabelMetric 已在本模块定义并自动导出
