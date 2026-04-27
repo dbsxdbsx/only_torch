@@ -22,10 +22,15 @@
 
 ### 新增
 
-- **feat(metrics/example): 新增 Toy Semantic Segmentation 传统示例**
+- **feat(metrics/example): 新增 Single Object Segmentation 传统示例**
   - `metrics` 新增 `pixel_accuracy` / `binary_iou` 二值分割指标，并补充空 mask、shape mismatch 等单元测试
-  - 新增 `examples/traditional/toy_segmentation`：内置 16x16 合成矩形 / 圆形 mask 数据，小型 CNN 直接输出 `[N, 1, H, W]` logits，用 4D `BCEWithLogits` 快速训练
-  - 示例注册到 `Cargo.toml` / `just example-toy-segmentation` / README，并输出 `test_in.png`、`test_out.png` 便于直观看原图与预测 mask overlay
+  - 新增 `examples/traditional/single_object_segmentation`：内置固定 seed 的 16x16 合成矩形 / 圆形 mask 数据，小型 CNN 直接输出 `[N, 1, H, W]` logits，用 4D `BCEWithLogits` 快速训练
+  - 示例注册到 `Cargo.toml` / `just example-single-object-segmentation` / README，并输出 `test_in.png`、`test_out.png` 便于直观看原图与预测 mask overlay
+
+- **feat(metrics/example): 新增 Single Object Detection 传统示例**
+  - `metrics` 新增 `mean_box_iou_cxcywh` 单目标 bbox IoU 指标，并补充完全重叠、部分重叠、不重叠、空 Tensor、shape mismatch 等单元测试
+  - 新增 `examples/traditional/single_object_detection`：内置固定 seed 的 16x16 合成单矩形数据，小型 CNN 输出归一化 `[cx, cy, w, h]` bbox，用 Huber loss 快速训练
+  - 示例注册到 `Cargo.toml` / `just example-single-object-detection` / README，并输出 `test_in.png`、`test_out.png` 展示原图与预测 bbox overlay
 
 - **feat(evolution): 收敛用户 API 到 NodeLevel-only 路线**
   - `evolution` 不再公开 `gene` / `builder` / `migration` / `mutation` 等内部模块，用户侧从顶层导入 `TaskMetric`、`ReportMetric`、`EvolutionCallback`、`ConvergenceConfig` 等任务级类型

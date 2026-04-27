@@ -51,7 +51,8 @@ let dot = graph.to_dot();
 | [california_housing](examples/traditional/california_housing/) | 回归 | MseLoss、真实数据集、DataLoader | `8 → 128 → 64 → 32 → 1` | `cargo run --example california_housing` |
 | [mnist](examples/traditional/mnist/) | 图像分类 | MLP、Dropout、大规模数据 | `784 → 128 → 10` | `cargo run --example mnist` |
 | [mnist_cnn](examples/traditional/mnist_cnn/) | 图像分类 | **CNN**、Conv2d、MaxPool2d | LeNet 风格 `Conv(1→4→8)` | `cargo run --example mnist_cnn` |
-| [toy_segmentation](examples/traditional/toy_segmentation/) | 语义分割 | **Pixel-wise BCE**、IoU、空间输出 | `Conv(1→4→4→1)` | `cargo run --example toy_segmentation` |
+| [single_object_segmentation](examples/traditional/single_object_segmentation/) | 单目标语义分割 | **Pixel-wise BCE**、IoU、空间输出 | `Conv(1→4→4→1)` | `cargo run --example single_object_segmentation` |
+| [single_object_detection](examples/traditional/single_object_detection/) | 单目标检测 | **bbox 回归**、Mean Box IoU、预测框可视化 | `Conv → Pool → FC(4)` | `cargo run --example single_object_detection` |
 | [mnist_gan](examples/traditional/mnist_gan/) | **图像生成** | **GAN**、detach 梯度控制、多 Loss | `G(64→256→784) D(784→256→1)` | `cargo run --example mnist_gan` |
 | [parity_rnn_fixed_len](examples/traditional/parity_rnn_fixed_len/) | 序列分类 | **RNN 层**、固定长度序列 | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_fixed_len` |
 | [parity_rnn_var_len](examples/traditional/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
@@ -151,15 +152,15 @@ cargo run --example mnist_cnn
 # 达到 85%+ 准确率，训练 ~16s
 ```
 
-**Toy Semantic Segmentation** ⭐⭐
+**Single Object Segmentation** ⭐⭐
 
-使用 16x16 合成形状图像做二值语义分割，展示：
+使用固定 seed 的 16x16 合成形状图像做单目标二值语义分割，展示：
 - `Conv2d` 保持空间维度输出 `[N, 1, H, W]`
 - 4D `BCEWithLogits` 逐像素训练
 - Pixel Accuracy 与 Binary IoU 分割指标
 
 ```bash
-cargo run --example toy_segmentation
+cargo run --example single_object_segmentation
 # CPU 上快速收敛到高 IoU
 ```
 

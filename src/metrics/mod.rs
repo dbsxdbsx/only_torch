@@ -5,6 +5,7 @@
 //! ## 模块结构
 //!
 //! - [`classification`] - 分类指标（Accuracy, Precision, Recall 等）
+//! - [`detection`] - 目标检测指标（bbox IoU 等）
 //! - [`regression`] - 回归指标（R², MSE, MAE 等）
 //! - [`segmentation`] - 分割指标（Pixel Accuracy, IoU 等）
 //! - [`traits`] - 输入类型转换 Trait
@@ -67,6 +68,7 @@
 //! ```
 
 pub mod classification;
+pub mod detection;
 pub mod regression;
 pub mod segmentation;
 pub mod traits;
@@ -469,6 +471,7 @@ pub use classification::{
     accuracy, confusion_matrix, f1_score, multilabel_loose_accuracy, multilabel_strict_accuracy,
     precision, recall,
 };
+pub use detection::mean_box_iou_cxcywh;
 pub use regression::{mean_absolute_error, mean_squared_error, r2_score, root_mean_squared_error};
 pub use segmentation::{binary_iou, pixel_accuracy};
 

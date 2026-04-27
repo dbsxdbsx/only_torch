@@ -1,4 +1,4 @@
-//! # Toy Semantic Segmentation 示例
+//! # Single Object Segmentation 示例
 //!
 //! 用极小的合成图像演示二值语义分割完整闭环：
 //! - 内置生成 16x16 矩形 / 圆形 mask，不依赖下载数据
@@ -7,12 +7,12 @@
 //!
 //! ## 运行
 //! ```bash
-//! cargo run --example toy_segmentation
+//! cargo run --example single_object_segmentation
 //! ```
 
 mod model;
 
-use model::ToySegmentationNet;
+use model::SingleObjectSegmentationNet;
 use only_torch::data::{DataLoader, TensorDataset};
 use only_torch::metrics::{binary_iou, pixel_accuracy};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
@@ -30,7 +30,7 @@ const TARGET_IOU: f32 = 0.90;
 
 fn main() -> Result<(), GraphError> {
     let total_start = Instant::now();
-    println!("=== Toy Semantic Segmentation 示例 ===\n");
+    println!("=== Single Object Segmentation 示例 ===\n");
 
     let (train_x, train_y) = generate_dataset(TRAIN_SAMPLES, 42);
     let (test_x, test_y) = generate_dataset(TEST_SAMPLES, 2026);
@@ -39,7 +39,7 @@ fn main() -> Result<(), GraphError> {
         .seed(7);
 
     let graph = Graph::new_with_seed(42);
-    let model = ToySegmentationNet::new(&graph)?;
+    let model = SingleObjectSegmentationNet::new(&graph)?;
     let mut optimizer = Adam::new(&graph, &model.parameters(), LEARNING_RATE);
 
     let param_count: usize = model
@@ -49,7 +49,7 @@ fn main() -> Result<(), GraphError> {
         .map(|t| t.shape().iter().product::<usize>())
         .sum();
 
-    println!("任务: 16x16 合成图像二值语义分割（矩形 / 圆形）");
+    println!("任务: 16x16 合成图像单目标二值语义分割（固定 seed 的矩形 / 圆形样本）");
     println!("网络: Conv(1→4) → ReLU → Conv(4→4) → ReLU → Conv(4→1)");
     println!("损失: BCEWithLogitsLoss，指标: Pixel Accuracy + Binary IoU");
     println!("训练样本: {TRAIN_SAMPLES}, 测试样本: {TEST_SAMPLES}, 参数量: {param_count}\n");
@@ -100,11 +100,12 @@ fn main() -> Result<(), GraphError> {
     println!("\n=== 预测示例（# = 前景，. = 背景）===");
     print_sample_prediction(&model, &test_x, &test_y, 0)?;
     save_sample_visualizations(&model, &test_x, &test_y, 0)?;
-    println!("测试输入图: examples/traditional/toy_segmentation/test_in.png");
-    println!("测试输出图: examples/traditional/toy_segmentation/test_out.png");
+    println!("测试输入图: examples/traditional/single_object_segmentation/test_in.png");
+    println!("测试输出图: examples/traditional/single_object_segmentation/test_out.png");
 
-    let vis_result =
-        graph.visualize_snapshot("examples/traditional/toy_segmentation/toy_segmentation")?;
+    let vis_result = graph.visualize_snapshot(
+        "examples/traditional/single_object_segmentation/single_object_segmentation",
+    )?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());
@@ -118,11 +119,11 @@ fn main() -> Result<(), GraphError> {
     );
 
     if best_iou >= TARGET_IOU {
-        println!("Toy segmentation 训练成功。");
+        println!("Single object segmentation 训练成功。");
         Ok(())
     } else {
         Err(GraphError::ComputationError(format!(
-            "Toy segmentation 未达到目标 IoU {:.1}%，最佳 {:.1}%",
+            "Single object segmentation 未达到目标 IoU {:.1}%，最佳 {:.1}%",
             TARGET_IOU * 100.0,
             best_iou * 100.0
         )))
@@ -130,7 +131,7 @@ fn main() -> Result<(), GraphError> {
 }
 
 fn evaluate(
-    model: &ToySegmentationNet,
+    model: &SingleObjectSegmentationNet,
     inputs: &Tensor,
     targets: &Tensor,
 ) -> Result<(f32, f32), GraphError> {
@@ -142,7 +143,7 @@ fn evaluate(
 }
 
 fn print_sample_prediction(
-    model: &ToySegmentationNet,
+    model: &SingleObjectSegmentationNet,
     inputs: &Tensor,
     targets: &Tensor,
     sample_idx: usize,
@@ -173,7 +174,7 @@ fn mask_row(tensor: &Tensor, sample_idx: usize, y: usize, threshold: f32) -> Str
 }
 
 fn save_sample_visualizations(
-    model: &ToySegmentationNet,
+    model: &SingleObjectSegmentationNet,
     inputs: &Tensor,
     _targets: &Tensor,
     sample_idx: usize,
@@ -207,11 +208,11 @@ fn save_sample_visualizations(
 
     save_rgb_image(
         &input_img,
-        "examples/traditional/toy_segmentation/test_in.png",
+        "examples/traditional/single_object_segmentation/test_in.png",
     )?;
     save_rgb_image(
         &overlay_img,
-        "examples/traditional/toy_segmentation/test_out.png",
+        "examples/traditional/single_object_segmentation/test_out.png",
     )?;
 
     Ok(())

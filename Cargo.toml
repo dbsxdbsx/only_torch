@@ -163,8 +163,12 @@
     path="examples/traditional/mnist_cnn/main.rs"
 
 [[example]]
-    name="toy_segmentation"
-    path="examples/traditional/toy_segmentation/main.rs"
+    name="single_object_segmentation"
+    path="examples/traditional/single_object_segmentation/main.rs"
+
+[[example]]
+    name="single_object_detection"
+    path="examples/traditional/single_object_detection/main.rs"
 
 [[example]]
     name="mnist_gan"
