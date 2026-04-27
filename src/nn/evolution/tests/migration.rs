@@ -852,7 +852,7 @@ fn migrate_spatial_full_domain_chain() {
 
 // ==================== C.2: Conv2d → FM 分解迁移 ====================
 
-/// 辅助函数：创建一个最小的 Conv2d 模板块 (kernel+conv+bias+add)，返回节点列表
+/// 辅助函数：创建一个最小的 Conv2d 层块 (kernel+conv+bias+add)，返回节点列表
 fn make_conv2d_block(
     input_id: u64,
     in_ch: usize,
@@ -943,7 +943,7 @@ fn fm_migration_basic_1ch_to_1ch() {
 
     migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
 
-    // 原模板块节点应被移除（kernel, conv, bias, add）
+    // 原层块节点应被移除（kernel, conv, bias, add）
     // 新增：1 input FM (Identity) + 1 kernel + 1 conv + 1 concat + 输出重定向
     // 没有 Add（只有 1 条输入边），所以 agg_id = conv_id 本身
     assert!(
@@ -953,7 +953,7 @@ fn fm_migration_basic_1ch_to_1ch() {
         nodes.len()
     );
 
-    // 验证没有残留的旧模板块节点（所有 enabled 节点的 block_id 如果有值，则应该有 fm_id 或者是新 edge 块）
+    // 验证没有残留的旧层块节点（所有 enabled 节点的 block_id 如果有值，则应该有 fm_id 或者是新 edge 块）
     let fm_nodes: Vec<&NodeGene> = nodes.iter().filter(|n| n.fm_id.is_some()).collect();
     assert!(!fm_nodes.is_empty(), "迁移后应有 fm_id 标记的节点");
 
@@ -1031,7 +1031,7 @@ fn fm_migration_2ch_to_3ch() {
         );
     }
 
-    // 原 Conv2d 模板块带 bias，FM 分解后应为每个输出 FM 保留一个单通道 bias。
+    // 原 Conv2d 层块带 bias，FM 分解后应为每个输出 FM 保留一个单通道 bias。
     let bias_nodes: Vec<&NodeGene> = nodes
         .iter()
         .filter(|n| n.is_parameter() && n.output_shape == vec![1, 1, 1, 1])
@@ -1084,7 +1084,7 @@ fn fm_migration_preserves_downstream_connectivity() {
 }
 
 #[test]
-fn fm_migration_old_template_nodes_removed() {
+fn fm_migration_old_layer_block_nodes_removed() {
     let (mut nodes, mut counter) = make_simple_spatial_nodes(1, 2, (8, 8));
 
     // 记录原始 block_id
@@ -1093,14 +1093,14 @@ fn fm_migration_old_template_nodes_removed() {
 
     migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
 
-    // 旧模板块的 kernel/conv/bias/add 应全部被移除（enabled=false → retain 后消失）
+    // 旧层块的 kernel/conv/bias/add 应全部被移除（enabled=false → retain 后消失）
     let old_block_nodes: Vec<&NodeGene> = nodes
         .iter()
         .filter(|n| n.block_id == Some(original_block_id) && n.fm_id.is_none())
         .collect();
     assert!(
         old_block_nodes.is_empty(),
-        "旧模板块节点应全部被移除，残留 {} 个",
+        "旧层块节点应全部被移除，残留 {} 个",
         old_block_nodes.len()
     );
 }
@@ -1113,7 +1113,7 @@ fn fm_migration_idempotent() {
     let nodes_after_first = nodes.clone();
     let counter_after_first = counter.peek();
 
-    // 再次迁移应为 no-op（没有新的 Conv2d 模板块）
+    // 再次迁移应为 no-op（没有新的 Conv2d 层块）
     migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
 
     assert_eq!(nodes.len(), nodes_after_first.len(), "第二次迁移应为 no-op");

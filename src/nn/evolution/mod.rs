@@ -3,8 +3,8 @@
  * @Date         : 2026-03-06
  * @Description  : 神经架构演化模块
  *
- * Genome-centric 层级进化：
- * - gene.rs: 基因数据结构（LayerGene, NetworkGenome, LayerConfig 等）
+ * Genome-centric 节点级演化：
+ * - gene.rs: 基因数据结构（NetworkGenome / NodeLevel 内部表示）
  * - mutation.rs: 变异操作（Mutation trait + MutationRegistry）
  * - builder.rs: Genome → Graph 转换 + Lamarckian 权重继承
  * - convergence.rs: 训练收敛检测（ConvergenceDetector）
@@ -16,22 +16,22 @@
  * build → restore_weights → train → capture_weights → evaluate → accept/rollback → mutate
  */
 
-pub mod builder;
-pub mod callback;
-pub mod cell_migration;
-pub mod convergence;
-pub mod error;
-pub mod fm_mutation;
-pub mod fm_ops;
-pub mod gene;
-pub mod migration;
-pub mod model_io;
-pub mod mutation;
-pub mod net2net;
-pub mod node_gene;
-pub mod node_ops;
-pub mod selection;
-pub mod task;
+mod builder;
+mod callback;
+mod cell_migration;
+mod convergence;
+mod error;
+mod fm_mutation;
+mod fm_ops;
+mod gene;
+mod migration;
+mod model_io;
+mod mutation;
+mod net2net;
+mod node_gene;
+mod node_ops;
+mod selection;
+mod task;
 
 #[cfg(test)]
 mod tests;
@@ -45,14 +45,14 @@ use crate::nn::{GraphError, VisualizationOutput};
 use crate::tensor::Tensor;
 
 use self::builder::{BuildResult, InheritReport};
-use self::callback::{DefaultCallback, EvolutionCallback};
-use self::convergence::{ConvergenceConfig, TrainingBudget};
-use self::error::EvolutionError;
-use self::gene::{NetworkGenome, TaskMetric};
-use self::mutation::{MutationError, MutationRegistry, SizeConstraints};
-use self::task::{
-    EvolutionTask, FitnessScore, ProxyKind, SupervisedTask, TrainOutcome, auto_batch_size,
-};
+pub use self::callback::{DefaultCallback, EvolutionCallback};
+pub use self::convergence::{ConvergenceConfig, TrainingBudget};
+pub use self::error::EvolutionError;
+pub(crate) use self::gene::NetworkGenome;
+pub use self::gene::TaskMetric;
+pub use self::mutation::{MutationError, MutationRegistry, SizeConstraints, SizeStrategy};
+pub use self::task::ProxyKind;
+use self::task::{EvolutionTask, FitnessScore, SupervisedTask, TrainOutcome, auto_batch_size};
 pub use self::task::{MetricReport, MetricValue, ReportMetric};
 
 // ==================== EvolutionStatus ====================
@@ -219,7 +219,7 @@ impl EvolutionResult {
     }
 }
 
-/// 运行时任务模板（可克隆，供串行/并行评估复用）
+/// 运行时任务副本（可克隆，供串行/并行评估复用）
 #[derive(Clone)]
 enum TaskRuntime {
     Supervised(SupervisedTask),
@@ -729,11 +729,11 @@ impl Evolution {
 
         // 延迟实例化：验证数据 + 构建任务 + 提取维度
         let prepared = materialize_task(task_spec.clone())?;
-        let mut task_template = prepared.task.clone();
-        task_template.configure_batch_size(batch_size);
-        task_template.configure_proxy(primary_proxy);
-        task_template.configure_report_metrics(&report_metrics);
-        let serial_task = task_template.clone();
+        let mut base_task = prepared.task.clone();
+        base_task.configure_batch_size(batch_size);
+        base_task.configure_proxy(primary_proxy);
+        base_task.configure_report_metrics(&report_metrics);
+        let serial_task = base_task.clone();
 
         let is_sequential = prepared.seq_len.is_some();
         let is_spatial = prepared.input_spatial.is_some();
@@ -879,7 +879,7 @@ impl Evolution {
             .map(|_| rng.r#gen::<u64>())
             .collect();
         let init_results = evaluate_batch(
-            &task_template,
+            &base_task,
             init_genomes,
             &phase1_convergence,
             eval_runs,
@@ -897,7 +897,7 @@ impl Evolution {
         if parents.is_empty() {
             let fallback_seed = rng.r#gen::<u64>();
             let fallback_results = evaluate_batch(
-                &task_template,
+                &base_task,
                 vec![minimal_genome.clone()],
                 &phase1_convergence,
                 eval_runs,
@@ -1003,7 +1003,7 @@ impl Evolution {
                 match mutation_result {
                     Ok(mutation_name) => {
                         any_mutation_succeeded = true;
-                        // 若变异引入新 Conv2d 模板块，自动 FM 分解
+                        // 若变异引入新 Conv2d 层块，自动 FM 分解
                         child.migrate_to_fm_level();
                         callback.on_mutation(generation, &mutation_name, &child);
                         offspring_genomes.push(child);
@@ -1044,7 +1044,7 @@ impl Evolution {
             // 用户可通过 `.with_asha(None)` 完全关闭 / 通过自定义 rung_epochs 手动启用。
             let eval_results = if is_phase1 && asha.is_some() && !is_sequential {
                 evaluate_batch_asha(
-                    &task_template,
+                    &base_task,
                     offspring_genomes,
                     asha.as_ref().unwrap(),
                     current_convergence,
@@ -1055,7 +1055,7 @@ impl Evolution {
                 )
             } else {
                 evaluate_batch(
-                    &task_template,
+                    &base_task,
                     offspring_genomes,
                     current_convergence,
                     eval_runs,
@@ -1241,11 +1241,11 @@ fn eval_candidate(
 
 /// 批量评估候选个体（支持 rayon 并行）
 ///
-/// 任务模板在 `run()` 开始时只 materialize 一次；这里的并行路径只克隆轻量级的
+/// 任务运行时在 `run()` 开始时只 materialize 一次；这里的并行路径只克隆轻量级的
 /// `TaskRuntime`（监督学习任务内部用 Arc 共享已 stack 的 Tensor），避免每代每个
 /// worker 重新堆叠训练/测试数据。
 fn evaluate_batch(
-    task_template: &TaskRuntime,
+    base_task: &TaskRuntime,
     offspring: Vec<NetworkGenome>,
     convergence: &ConvergenceConfig,
     eval_runs: usize,
@@ -1261,7 +1261,7 @@ fn evaluate_batch(
                 .into_par_iter()
                 .zip(seeds.into_par_iter())
                 .map_init(
-                    || task_template.clone(),
+                    || base_task.clone(),
                     |local_task, (genome, seed)| {
                         let mut rng = StdRng::seed_from_u64(seed);
                         eval_candidate(
@@ -1289,7 +1289,7 @@ fn evaluate_batch(
             .filter_map(|(genome, seed)| {
                 let mut rng = StdRng::seed_from_u64(seed);
                 eval_candidate(
-                    task_template,
+                    base_task,
                     genome,
                     convergence,
                     eval_runs,
@@ -1359,7 +1359,7 @@ pub(crate) fn asha_keep_count(prev: usize, eta: usize) -> usize {
 /// rung-to-rung 之间，幸存者通过 `capture_weights` / `restore_weights` 自动
 /// 延续训练权重——`eval_candidate` 在 train 前会 restore、train 后会 capture。
 fn evaluate_batch_asha(
-    task_template: &TaskRuntime,
+    base_task: &TaskRuntime,
     candidates: Vec<NetworkGenome>,
     asha: &AshaConfig,
     base_convergence: &ConvergenceConfig,
@@ -1391,7 +1391,7 @@ fn evaluate_batch_asha(
             .collect();
 
         let rung_results = evaluate_batch(
-            task_template,
+            base_task,
             genomes,
             &rung_conv,
             eval_runs,

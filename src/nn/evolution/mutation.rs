@@ -15,8 +15,7 @@
 use super::cell_migration::{CellKind, migrate_cell_weights};
 use super::gene::{
     ActivationType, AggregateStrategy, GenomeRepr, INPUT_INNOVATION, LayerConfig, LayerGene,
-    LossType, NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric,
-    compatible_losses,
+    LossType, NetworkGenome, OptimizerType, ShapeDomain, SkipEdge, TaskMetric, compatible_losses,
 };
 use super::migration::{
     activation_to_node_type, expand_activation, expand_dropout, expand_gru, expand_lstm, expand_rnn,
@@ -174,7 +173,7 @@ pub trait Mutation: Send + Sync {
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool;
     /// 是否为结构变异（改变网络拓扑）
     ///
-    /// 结构变异（InsertLayer、RemoveLayer）改变层的数量或类型，
+    /// 结构变异（InsertLayer、RemoveLayer）改变网络拓扑或层块，
     /// 参数变异（Grow/Shrink/MutateParam 等）只调整现有结构的参数。
     /// 停滞检测使用此标记强制结构探索。
     fn is_structural(&self) -> bool {
@@ -261,7 +260,7 @@ impl MutationRegistry {
     /// Phase 1 注册表：拓扑搜索（偏向结构探索）
     pub fn phase1_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
-        // 结构变异：模板块插入 + 原子节点插入
+        // 结构变异：层块插入 + 原子节点插入
         reg.register(0.20, InsertLayerMutation::default());
         reg.register(0.10, InsertAtomicNodeMutation::default());
         reg.register(0.08, RemoveLayerMutation);
@@ -275,14 +274,10 @@ impl MutationRegistry {
                 task_metric: metric.clone(),
             },
         );
-        // SkipEdge 变异（当前仅 LayerLevel 可用；NodeLevel 会因 layers()/skip_edges() 为空而自动失效）
-        reg.register(0.08, AddSkipEdgeMutation);
-        reg.register(0.05, RemoveSkipEdgeMutation);
-        reg.register(0.03, MutateAggregateStrategyMutation);
         // 训练超参数变异（Phase 1 低权重）
         reg.register(0.05, MutateLearningRateMutation);
         reg.register(0.02, MutateOptimizerMutation);
-        // NodeLevel 跨层连接变异（非序列 NodeLevel 时自动生效；LayerLevel 因 is_applicable=false 静默跳过）
+        // NodeLevel 跨层连接变异
         reg.register(0.06, AddConnectionMutation);
         reg.register(0.04, RemoveConnectionMutation);
         // 序列模式专属
@@ -328,10 +323,6 @@ impl MutationRegistry {
                 task_metric: metric.clone(),
             },
         );
-        // SkipEdge 变异（当前仅 LayerLevel 可用；NodeLevel 会因 layers()/skip_edges() 为空而自动失效）
-        reg.register(0.06, AddSkipEdgeMutation);
-        reg.register(0.05, RemoveSkipEdgeMutation);
-        reg.register(0.03, MutateAggregateStrategyMutation);
         // 训练超参数变异（Phase 2 权重上调）
         reg.register(0.15, MutateLearningRateMutation);
         reg.register(0.08, MutateOptimizerMutation);
@@ -656,11 +647,7 @@ impl Mutation for InsertLayerMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
-        if genome.is_node_level() {
-            // NodeLevel（含序列模式）：create_insert_nodes 支持 Rnn/Lstm/Gru 块
-            return genome.layer_count() < constraints.max_layers;
-        }
-        genome.layer_count() < constraints.max_layers
+        genome.is_node_level() && genome.layer_count() < constraints.max_layers
     }
 
     fn apply(
@@ -669,156 +656,13 @@ impl Mutation for InsertLayerMutation {
         constraints: &SizeConstraints,
         rng: &mut StdRng,
     ) -> Result<(), MutationError> {
-        // NodeLevel 分派
         if genome.is_node_level() {
             return node_level_insert_apply(self, genome, constraints, rng);
         }
 
-        let enabled_count = genome.layer_count();
-        if enabled_count >= constraints.max_layers {
-            return Err(MutationError::ConstraintViolation("已达 max_layers".into()));
-        }
-
-        // 插入位置：在 enabled 层序列的 [0, output_head] 之间（含输出头正前方）
-        // 但操作的是 layers vec 的实际索引
-        let enabled_indices: Vec<usize> = genome
-            .layers()
-            .iter()
-            .enumerate()
-            .filter(|(_, l)| l.enabled)
-            .map(|(i, _)| i)
-            .collect();
-
-        // 输出头在 enabled 序列中的最后一个
-        let output_head_vec_idx = *enabled_indices.last().unwrap();
-
-        // 插入到 layers vec 中 [0, output_head_vec_idx] 的某个位置
-        // insert(output_head_vec_idx) 会把新层插在输出头正前方，输出头后移
-        let insert_vec_idx = rng.gen_range(0..=output_head_vec_idx);
-
-        // 判断在 enabled 序列中此位置的逻辑索引
-        let logical_pos = enabled_indices
-            .iter()
-            .position(|&i| i >= insert_vec_idx)
-            .unwrap_or(enabled_indices.len() - 1);
-
-        // 决定插入层类型
-        let adjacent_act = has_adjacent_activation(genome, logical_pos);
-        let can_insert_activation = !adjacent_act && !self.available_activations.is_empty();
-        let is_sequential = genome.seq_len.is_some();
-        let is_spatial = genome.input_spatial.is_some();
-
-        // 空间模式：判断插入点所在域
-        let insert_domain = if is_spatial {
-            let domain_map = genome.compute_domain_map();
-            let enabled_layers: Vec<&LayerGene> =
-                genome.layers().iter().filter(|l| l.enabled).collect();
-            if logical_pos == 0 {
-                *domain_map
-                    .get(&INPUT_INNOVATION)
-                    .unwrap_or(&ShapeDomain::Flat)
-            } else {
-                let pred_inn = enabled_layers[logical_pos - 1].innovation_number;
-                *domain_map.get(&pred_inn).unwrap_or(&ShapeDomain::Flat)
-            }
-        } else {
-            ShapeDomain::Flat
-        };
-
-        let insert_input_dim = insert_input_dim(genome, logical_pos);
-        let insert_input_spatial = if insert_domain == ShapeDomain::Spatial {
-            insert_input_spatial(genome, logical_pos)
-        } else {
-            None
-        };
-        let can_insert_pool = insert_input_spatial
-            .map(|(h, w)| h >= 2 && w >= 2)
-            .unwrap_or(false);
-
-        let new_config = if can_insert_activation && rng.gen_bool(0.3) {
-            let act = self.available_activations.choose(rng).unwrap();
-            LayerConfig::Activation {
-                activation_type: *act,
-            }
-        } else if insert_domain == ShapeDomain::Spatial {
-            // 空间域：Conv2d 或 Pool2d
-            if can_insert_pool && rng.gen_bool(0.15) {
-                let pool_type = if rng.gen_bool(0.5) {
-                    PoolType::Max
-                } else {
-                    PoolType::Avg
-                };
-                LayerConfig::Pool2d {
-                    pool_type,
-                    kernel_size: 2,
-                    stride: 2,
-                }
-            } else {
-                let effective_min = constraints.min_hidden_size.max(8);
-                let out_ch_cap = insert_input_dim
-                    .saturating_mul(16)
-                    .max(64)
-                    .min(constraints.max_hidden_size)
-                    .max(effective_min);
-                let out_ch = sample_size_in_range(
-                    effective_min,
-                    out_ch_cap,
-                    &constraints.size_strategy,
-                    rng,
-                );
-                let k = *[1usize, 3, 5, 7].choose(rng).unwrap();
-                LayerConfig::Conv2d {
-                    out_channels: out_ch,
-                    kernel_size: k,
-                }
-            }
-        } else if is_sequential && rng.gen_bool(0.5) {
-            let effective_min = constraints.min_hidden_size.max(8);
-            let size_cap = insert_input_dim
-                .max(effective_min * 2)
-                .min(constraints.max_hidden_size)
-                .max(effective_min);
-            let size =
-                sample_size_in_range(effective_min, size_cap, &constraints.size_strategy, rng);
-            match rng.gen_range(0..3) {
-                0 => LayerConfig::Rnn { hidden_size: size },
-                1 => LayerConfig::Lstm { hidden_size: size },
-                _ => LayerConfig::Gru { hidden_size: size },
-            }
-        } else {
-            let effective_min = constraints.min_hidden_size.max(8);
-            let size_cap = insert_input_dim
-                .min(256)
-                .max(effective_min * 2)
-                .min(constraints.max_hidden_size)
-                .max(effective_min);
-            let size =
-                sample_size_in_range(effective_min, size_cap, &constraints.size_strategy, rng);
-            LayerConfig::Linear { out_features: size }
-        };
-
-        let inn = genome.next_innovation_number();
-        genome.layers_mut().insert(
-            insert_vec_idx,
-            LayerGene {
-                innovation_number: inn,
-                layer_config: new_config,
-                enabled: true,
-            },
-        );
-
-        // 插入新层后验证维度兼容性 + 域链合法性 + 已有 skip edge 域兼容性
-        if genome.resolve_dimensions().is_err()
-            || !genome.is_domain_valid()
-            || !genome.validate_skip_edge_domains()
-        {
-            genome.layers_mut().remove(insert_vec_idx);
-            return Err(MutationError::ConstraintViolation(
-                "插入层后维度、域链或 skip edge 域不兼容".into(),
-            ));
-        }
-
-        Ok(())
+        Err(MutationError::NotApplicable(
+            "InsertLayer 仅支持 NodeLevel 基因组".into(),
+        ))
     }
 }
 
@@ -2715,7 +2559,7 @@ impl Mutation for RemoveConnectionMutation {
 /// 在主路径的两个块之间插入**单个**激活函数节点（NEAT "Add Node" 的等价操作）
 ///
 /// 与 InsertLayerMutation 的区别：
-/// - InsertLayer 插入完整模板块（多节点，共享 block_id）
+/// - InsertLayer 插入完整层块（多节点，共享 block_id）
 /// - InsertAtomicNode 只插入一个激活函数节点（block_id = None，零参数）
 ///
 /// 合法性保障：

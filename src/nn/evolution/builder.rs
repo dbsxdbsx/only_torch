@@ -3,8 +3,8 @@
  * @Date         : 2026-03-06
  * @Description  : Genome → Graph 转换 + Lamarckian 权重继承
  *
- * build() 按 resolve_dimensions() 顺序逐层创建计算图，
- * capture_weights() / restore_weights() 实现跨代权重复用。
+ * build() 统一走 NodeLevel → GraphDescriptor → Graph，
+ * capture_weights() / restore_weights() 实现参数节点粒度的跨代权重复用。
  */
 
 use std::collections::HashMap;
@@ -13,16 +13,10 @@ use rand::Rng;
 use rand::rngs::StdRng;
 
 use crate::nn::descriptor::NodeTypeDescriptor;
-use crate::nn::layer::{AvgPool2d, Conv2d, Gru, Lstm, MaxPool2d, Rnn};
-use crate::nn::{
-    Graph, GraphError, Init, Linear, Module, Var, VarActivationOps, VarMatrixOps, VarShapeOps,
-};
+use crate::nn::{Graph, GraphError, Init, Var, VarActivationOps, VarMatrixOps, VarShapeOps};
 use crate::tensor::Tensor;
 
-use super::gene::{
-    ActivationType, AggregateStrategy, INPUT_INNOVATION, LayerConfig, NetworkGenome, PoolType,
-    SkipEdge,
-};
+use super::gene::{INPUT_INNOVATION, NetworkGenome};
 
 // ==================== BuildResult ====================
 
@@ -171,81 +165,6 @@ fn try_partial_inherit(snapshot: &Tensor, current: &Tensor) -> Option<Tensor> {
         (true, false) => partial_along_axis(snapshot, current, 1),
         (false, true) => partial_along_axis(snapshot, current, 0),
         _ => None, // 两轴都变或都未变（后者不应走到这里）
-    }
-}
-
-// ==================== 内部辅助 ====================
-
-fn apply_activation(var: &Var, act_type: &ActivationType) -> Var {
-    match act_type {
-        ActivationType::ReLU => var.relu(),
-        ActivationType::LeakyReLU { alpha } => var.leaky_relu(*alpha),
-        ActivationType::Tanh => var.tanh(),
-        ActivationType::Sigmoid => var.sigmoid(),
-        ActivationType::GELU => var.gelu(),
-        ActivationType::SiLU => var.silu(),
-        ActivationType::Softplus => var.softplus(),
-        ActivationType::ReLU6 => var.relu6(),
-        ActivationType::ELU { alpha } => var.elu(*alpha),
-        ActivationType::SELU => var.selu(),
-        ActivationType::Mish => var.mish(),
-        ActivationType::HardSwish => var.hard_swish(),
-        ActivationType::HardSigmoid => var.hard_sigmoid(),
-    }
-}
-
-/// 将 main path 输出与 incoming skip edges 聚合
-///
-/// 约束：同一目标层的所有 skip edges 必须使用相同的 AggregateStrategy。
-/// 聚合语义：将 main + 所有 skip 源按策略合并，作为目标层的输入。
-fn apply_aggregation(
-    main: &Var,
-    incoming: &[&SkipEdge],
-    var_map: &HashMap<u64, Var>,
-) -> Result<Var, GraphError> {
-    // 收集所有 skip 源 Var
-    let skip_vars: Vec<&Var> = incoming
-        .iter()
-        .map(|e| {
-            var_map.get(&e.from_innovation).unwrap_or_else(|| {
-                panic!(
-                    "skip edge 源 innovation={} 未在 var_map 中找到",
-                    e.from_innovation
-                )
-            })
-        })
-        .collect();
-
-    let strategy = &incoming[0].strategy;
-
-    match strategy {
-        AggregateStrategy::Add => {
-            let mut result = main.clone();
-            for sv in &skip_vars {
-                result = result.try_add(sv)?;
-            }
-            Ok(result)
-        }
-        AggregateStrategy::Concat { dim } => {
-            let mut all_vars: Vec<&Var> = vec![main];
-            all_vars.extend(skip_vars);
-            Var::concat(&all_vars, *dim as usize)
-        }
-        AggregateStrategy::Mean => {
-            let mut result = main.clone();
-            for sv in &skip_vars {
-                result = result.try_add(sv)?;
-            }
-            let n = (1 + skip_vars.len()) as f32;
-            Ok(result / n)
-        }
-        AggregateStrategy::Max => {
-            let mut result = main.clone();
-            for sv in &skip_vars {
-                result = result.maximum(sv)?;
-            }
-            Ok(result)
-        }
     }
 }
 
@@ -718,16 +637,16 @@ impl FMBuilderAnalysis {
 impl NetworkGenome {
     /// 将当前基因组转换为 `GraphDescriptor`
     ///
-    /// - LayerLevel 基因组：自动内部迁移到节点级，再转换（不修改 self）
-    /// - NodeLevel 基因组：直接转换
+    /// 仅支持 NodeLevel 基因组。
     ///
     /// 返回的 `GraphDescriptor` 可直接传入 `Graph::from_descriptor()` 构建计算图。
     pub fn to_graph_descriptor(&self) -> Result<GraphDescriptor, super::migration::MigrationError> {
         let nodes = match &self.repr {
-            GenomeRepr::NodeLevel { nodes, .. } => std::borrow::Cow::Borrowed(nodes.as_slice()),
+            GenomeRepr::NodeLevel { nodes, .. } => nodes.as_slice(),
             GenomeRepr::LayerLevel { .. } => {
-                let out = super::migration::migrate_network_genome(self)?;
-                std::borrow::Cow::Owned(out.nodes)
+                return Err(super::migration::MigrationError::InvalidGenome(
+                    "to_graph_descriptor 仅支持 NodeLevel 基因组".into(),
+                ));
             }
         };
 
@@ -927,14 +846,27 @@ impl NetworkGenome {
             }
         }
 
+        // 演化 genome 是单输出网络。FM 分解/融合会产生额外的无后继中间端点，
+        // 不能再依赖 GraphDescriptor 的“无后继 = 输出”启发式。
+        desc.explicit_output_ids = analysis
+            .topo_order
+            .iter()
+            .rev()
+            .find(|&&id| {
+                node_lookup
+                    .get(&id)
+                    .map(|node| !node.is_parameter())
+                    .unwrap_or(false)
+            })
+            .map(|&id| vec![id]);
+
         Ok(desc)
     }
 
     /// 从基因组构建计算图
     ///
-    /// - NodeLevel 基因组（当前唯一支持格式）：`to_graph_descriptor()` + `Graph::from_descriptor()`
+    /// - NodeLevel 基因组：`to_graph_descriptor()` + `Graph::from_descriptor()`
     /// - 含 edge-based 循环边的 NodeLevel 基因组：时间步展开构图路径
-    /// - LayerLevel 基因组（遗留兼容路径，仅用于尚未节点化的入口）：逐层构图
     ///
     /// rng 用于派生 Graph seed，确保参数初始化受 Evolution seed 控制。
     pub fn build(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
@@ -949,7 +881,11 @@ impl NetworkGenome {
             }
             return self.build_from_nodes(rng);
         }
-        self.build_layer_level(rng)
+        let mut migrated = self.clone();
+        migrated
+            .migrate_to_node_level()
+            .map_err(|e| GraphError::ComputationError(e.to_string()))?;
+        migrated.build(rng)
     }
 
     /// NodeLevel 基因组的构图路径（无循环边）
@@ -1202,231 +1138,32 @@ impl NetworkGenome {
         })
     }
 
-    /// LayerLevel 基因组的遗留构图路径
-    ///
-    /// 遗留逐层构图路径；仅应在用户 DSL（`from_flat`/`from_spatial`/`from_sequential`）
-    /// 仍产生 LayerLevel 基因组时使用。新代码应优先使用 NodeLevel 与 `build_from_nodes`。
-    fn build_layer_level(&self, rng: &mut StdRng) -> Result<BuildResult, GraphError> {
-        let resolved = self
-            .resolve_dimensions()
-            .map_err(|e| GraphError::ComputationError(e.to_string()))?;
-        let spatial_map = self.compute_spatial_map();
-
-        let graph_seed: u64 = rng.r#gen();
-        let graph = Graph::new_with_seed(graph_seed).with_model_name("EvolutionNet");
-
-        let input = if let Some(seq_len) = self.seq_len {
-            let var = graph.input_shape(&[1, seq_len, self.input_dim], Some("evo_input"))?;
-            // RNN 层的 validate_input 需要读取输入值来确定 seq_len，
-            // 因此在 build 时设置占位零值（训练时会被覆盖）
-            var.set_value(&Tensor::zeros(&[1, seq_len, self.input_dim]))?;
-            var
-        } else if let Some((h, w)) = self.input_spatial {
-            graph.input_shape(&[1, self.input_dim, h, w], Some("evo_input"))?
-        } else {
-            graph.input_shape(&[1, self.input_dim], Some("evo_input"))?
-        };
-        let mut current = input.clone();
-        let mut layer_params: HashMap<u64, Vec<Var>> = HashMap::new();
-
-        // innovation_number → Var 映射，供 skip edge 查找源层输出
-        let mut var_map: HashMap<u64, Var> = HashMap::new();
-        var_map.insert(INPUT_INNOVATION, input.clone());
-
-        for dim in &resolved {
-            let layer = self
-                .layers()
-                .iter()
-                .find(|l| l.innovation_number == dim.innovation_number && l.enabled)
-                .expect("resolve_dimensions 返回的创新号必须对应一个启用的层");
-
-            // 聚合：检查是否有 incoming skip edges 指向当前层
-            let incoming: Vec<_> = self
-                .skip_edges()
-                .iter()
-                .filter(|e| e.enabled && e.to_innovation == layer.innovation_number)
-                .collect();
-
-            if !incoming.is_empty() {
-                current = apply_aggregation(&current, &incoming, &var_map)?;
-            }
-
-            match &layer.layer_config {
-                LayerConfig::Linear { out_features } => {
-                    let name = format!("evo_L{}", layer.innovation_number);
-                    let linear = Linear::new(&graph, dim.in_dim, *out_features, true, &name)?;
-                    current = linear.forward(&current);
-
-                    let mut params = vec![linear.weights().clone()];
-                    if let Some(bias) = linear.bias() {
-                        params.push(bias.clone());
-                    }
-                    layer_params.insert(layer.innovation_number, params);
-                }
-                LayerConfig::Activation { activation_type } => {
-                    current = apply_activation(&current, activation_type);
-                }
-                LayerConfig::Rnn { hidden_size } => {
-                    let name = format!("evo_rnn{}", layer.innovation_number);
-                    let return_seq =
-                        self.needs_return_sequences(layer.innovation_number, &resolved);
-                    let rnn = Rnn::new(&graph, dim.in_dim, *hidden_size, &name)?;
-                    current = if return_seq {
-                        rnn.forward_seq(&current)?
-                    } else {
-                        rnn.forward(&current)?
-                    };
-                    layer_params.insert(layer.innovation_number, rnn.parameters());
-                }
-                LayerConfig::Lstm { hidden_size } => {
-                    let name = format!("evo_lstm{}", layer.innovation_number);
-                    let return_seq =
-                        self.needs_return_sequences(layer.innovation_number, &resolved);
-                    let lstm = Lstm::new(&graph, dim.in_dim, *hidden_size, &name)?;
-                    current = if return_seq {
-                        lstm.forward_seq(&current)?
-                    } else {
-                        lstm.forward(&current)?
-                    };
-                    layer_params.insert(layer.innovation_number, lstm.parameters());
-                }
-                LayerConfig::Gru { hidden_size } => {
-                    let name = format!("evo_gru{}", layer.innovation_number);
-                    let return_seq =
-                        self.needs_return_sequences(layer.innovation_number, &resolved);
-                    let gru = Gru::new(&graph, dim.in_dim, *hidden_size, &name)?;
-                    current = if return_seq {
-                        gru.forward_seq(&current)?
-                    } else {
-                        gru.forward(&current)?
-                    };
-                    layer_params.insert(layer.innovation_number, gru.parameters());
-                }
-                LayerConfig::Conv2d {
-                    out_channels,
-                    kernel_size,
-                } => {
-                    let name = format!("evo_conv{}", layer.innovation_number);
-                    let k = *kernel_size;
-                    let padding = k / 2; // same padding
-                    let conv = Conv2d::new(
-                        &graph,
-                        dim.in_dim,
-                        *out_channels,
-                        (k, k),
-                        (1, 1),
-                        (padding, padding),
-                        (1, 1),
-                        true,
-                        &name,
-                    )?;
-                    current = conv.forward(&current);
-                    layer_params.insert(layer.innovation_number, conv.parameters());
-                }
-                LayerConfig::Pool2d {
-                    pool_type,
-                    kernel_size,
-                    stride,
-                } => {
-                    // 找前驱层的输出空间作为本层输入空间；若 kernel 超出则跳过池化（identity pass-through）
-                    let input_spatial = {
-                        let pos = resolved
-                            .iter()
-                            .position(|d| d.innovation_number == layer.innovation_number);
-                        match pos {
-                            Some(0) => self.input_spatial,
-                            Some(p) => spatial_map
-                                .get(&resolved[p - 1].innovation_number)
-                                .copied()
-                                .flatten(),
-                            None => None,
-                        }
-                    };
-                    let can_pool = input_spatial
-                        .map(|(h, w)| h >= *kernel_size && w >= *kernel_size)
-                        .unwrap_or(false);
-
-                    if can_pool {
-                        let name = format!("evo_pool{}", layer.innovation_number);
-                        let k = *kernel_size;
-                        let s = *stride;
-                        current = match pool_type {
-                            PoolType::Max => MaxPool2d::new(&graph, (k, k), Some((s, s)), &name)
-                                .forward(&current),
-                            PoolType::Avg => AvgPool2d::new(&graph, (k, k), Some((s, s)), &name)
-                                .forward(&current),
-                        };
-                    }
-                    // else: identity pass-through（Pool2d 无可学习参数，跳过不影响梯度）
-                }
-                LayerConfig::Flatten => {
-                    current = current.flatten()?;
-                    // Flatten 无可学习参数
-                }
-                LayerConfig::Dropout { .. } => {
-                    return Err(GraphError::ComputationError(format!(
-                        "build() 尚未支持 {} 层类型（层 innovation={}）",
-                        layer.layer_config, layer.innovation_number
-                    )));
-                }
-            }
-
-            // 记录当前层的输出，供后续 skip edge 作为源
-            var_map.insert(layer.innovation_number, current.clone());
-        }
-
-        Ok(BuildResult {
-            input,
-            output: current,
-            layer_params,
-            graph,
-            fm_masks: HashMap::new(),
-        })
-    }
-
-    /// 将当前计算图的权重捕获到 Genome 的 weight_snapshots 中
-    ///
-    /// - LayerLevel：按层创新号索引，每层所有参数张量存为 `Vec<Tensor>`
-    /// - NodeLevel：按参数节点创新号索引，每个 Parameter 节点存一个 `Tensor`
+    /// 将当前计算图的权重捕获到 Genome 的参数节点快照中。
     pub fn capture_weights(&mut self, build: &BuildResult) -> Result<(), GraphError> {
         // 保存前对 FM 融合 kernel 施加掩码，确保断开位置权重归零
         build.apply_fm_masks()?;
-
-        if self.is_node_level() {
-            // NodeLevel：单参数节点粒度快照
-            let mut node_snaps: HashMap<u64, Tensor> = HashMap::new();
-            for (&inn, params) in &build.layer_params {
-                if let Some(param) = params.first() {
-                    let tensor = param.value()?.ok_or_else(|| {
-                        GraphError::ComputationError(format!("Parameter 节点 {inn} 无值"))
-                    })?;
-                    node_snaps.insert(inn, tensor);
-                }
-            }
-            match &mut self.repr {
-                super::gene::GenomeRepr::NodeLevel {
-                    weight_snapshots, ..
-                } => {
-                    *weight_snapshots = node_snaps;
-                }
-                _ => unreachable!(),
-            }
-            return Ok(());
+        if !self.is_node_level() {
+            self.migrate_to_node_level()
+                .map_err(|e| GraphError::ComputationError(e.to_string()))?;
         }
 
-        // LayerLevel：原有层级粒度快照
-        let mut snapshots: HashMap<u64, Vec<Tensor>> = HashMap::new();
+        let mut node_snaps: HashMap<u64, Tensor> = HashMap::new();
         for (&inn, params) in &build.layer_params {
-            let mut tensors = Vec::new();
-            for param in params {
-                let tensor = param
-                    .value()?
-                    .ok_or_else(|| GraphError::ComputationError(format!("层 {inn} 的参数无值")))?;
-                tensors.push(tensor);
+            if let Some(param) = params.first() {
+                let tensor = param.value()?.ok_or_else(|| {
+                    GraphError::ComputationError(format!("Parameter 节点 {inn} 无值"))
+                })?;
+                node_snaps.insert(inn, tensor);
             }
-            snapshots.insert(inn, tensors);
         }
-        self.set_weight_snapshots(snapshots);
+        match &mut self.repr {
+            super::gene::GenomeRepr::NodeLevel {
+                weight_snapshots, ..
+            } => {
+                *weight_snapshots = node_snaps;
+            }
+            _ => unreachable!(),
+        }
         Ok(())
     }
 
@@ -1574,107 +1311,38 @@ impl NetworkGenome {
         Self::from_graph_descriptor(&import_result.descriptor)
     }
 
-    /// 判断指定 RNN 层是否需要 return_sequences
+    /// 从参数节点快照恢复权重到当前计算图。
     ///
-    /// 在 resolved 中找到当前层后，跳过 Activation/Dropout，
-    /// 若下一个实质层也是循环层则返回 true。
-    fn needs_return_sequences(
-        &self,
-        current_innovation: u64,
-        resolved: &[super::gene::ResolvedDim],
-    ) -> bool {
-        // 找到 current_innovation 在 resolved 中的位置
-        let pos = resolved
-            .iter()
-            .position(|d| d.innovation_number == current_innovation);
-        let pos = match pos {
-            Some(p) => p,
-            None => return false,
-        };
-
-        // 向后扫描，跳过 Activation/Dropout
-        for dim in &resolved[pos + 1..] {
-            let layer = self
-                .layers()
-                .iter()
-                .find(|l| l.innovation_number == dim.innovation_number && l.enabled);
-            if let Some(layer) = layer {
-                match &layer.layer_config {
-                    LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => continue,
-                    _ => return NetworkGenome::is_recurrent(&layer.layer_config),
-                }
-            }
-        }
-        false
-    }
-
-    /// 从 weight_snapshots 恢复权重到当前计算图
-    ///
-    /// - LayerLevel：按层创新号 + 张量索引匹配
-    /// - NodeLevel：按参数节点创新号匹配；
-    ///   - 形状完全相同 → 全量继承（`inherited`）
-    ///   - 仅一轴扩缩 → 部分继承，重叠区域保留旧值（`partially_inherited`）
-    ///   - 两轴均变化或无快照 → 保留随机初始化（`reinitialized`）
+    /// - 形状完全相同 → 全量继承（`inherited`）
+    /// - 仅一轴扩缩 → 部分继承，重叠区域保留旧值（`partially_inherited`）
+    /// - 两轴均变化或无快照 → 保留随机初始化（`reinitialized`）
     pub fn restore_weights(&self, build: &BuildResult) -> Result<InheritReport, GraphError> {
         let mut inherited = 0usize;
         let mut partially_inherited = 0usize;
         let mut reinitialized = 0usize;
 
-        if self.is_node_level() {
-            // NodeLevel：单参数节点粒度恢复
-            let node_snaps = self.node_weight_snapshots();
-            for (&inn, params) in &build.layer_params {
-                if let Some(snapshot) = node_snaps.get(&inn) {
-                    if let Some(param) = params.first() {
-                        let current_val = param.value()?;
-                        let shapes_match = current_val
-                            .as_ref()
-                            .map(|t| t.shape() == snapshot.shape())
-                            .unwrap_or(false);
-                        if shapes_match {
-                            param.set_value(snapshot)?;
-                            inherited += 1;
-                        } else if let Some(ref current_tensor) = current_val {
-                            // 尝试部分继承：保留重叠区域，新增区域保持随机初始化
-                            if let Some(merged) = try_partial_inherit(snapshot, current_tensor) {
-                                param.set_value(&merged)?;
-                                partially_inherited += 1;
-                            } else {
-                                reinitialized += 1;
-                            }
-                        } else {
-                            reinitialized += 1;
-                        }
-                    }
-                } else {
-                    reinitialized += params.len();
-                }
-            }
-
-            // 恢复后对 FM 融合 kernel 施加掩码，确保断开位置归零
-            build.apply_fm_masks()?;
-
-            return Ok(InheritReport {
-                inherited,
-                partially_inherited,
-                reinitialized,
-            });
+        if !self.is_node_level() {
+            return Err(GraphError::ComputationError(
+                "restore_weights 仅支持 NodeLevel 基因组".into(),
+            ));
         }
 
-        // LayerLevel：原有层级粒度恢复
+        let node_snaps = self.node_weight_snapshots();
         for (&inn, params) in &build.layer_params {
-            if let Some(snapshots) = self.weight_snapshots().get(&inn) {
-                for (i, param) in params.iter().enumerate() {
-                    if let Some(snapshot) = snapshots.get(i) {
-                        let current_val = param.value()?;
-                        let shapes_match = current_val
-                            .as_ref()
-                            .map(|t| t.shape() == snapshot.shape())
-                            .unwrap_or(false);
-
-                        if shapes_match {
-                            param.set_value(snapshot)?;
-                            inherited += 1;
+            if let Some(snapshot) = node_snaps.get(&inn) {
+                if let Some(param) = params.first() {
+                    let current_val = param.value()?;
+                    let shapes_match = current_val
+                        .as_ref()
+                        .map(|t| t.shape() == snapshot.shape())
+                        .unwrap_or(false);
+                    if shapes_match {
+                        param.set_value(snapshot)?;
+                        inherited += 1;
+                    } else if let Some(ref current_tensor) = current_val {
+                        if let Some(merged) = try_partial_inherit(snapshot, current_tensor) {
+                            param.set_value(&merged)?;
+                            partially_inherited += 1;
                         } else {
                             reinitialized += 1;
                         }
@@ -1686,6 +1354,9 @@ impl NetworkGenome {
                 reinitialized += params.len();
             }
         }
+
+        // 恢复后对 FM 融合 kernel 施加掩码，确保断开位置归零
+        build.apply_fm_masks()?;
 
         Ok(InheritReport {
             inherited,
@@ -1699,9 +1370,8 @@ impl NetworkGenome {
 
 /// NodeLevel 构图后回填 NodeGroupTag，确保可视化能完整显示层级 Cluster
 ///
-/// 背景：`build_layer_level()` 路径通过 RAII `NodeGroupContext` 自动为节点打标签；
-/// `build_from_nodes()` 路径经 descriptor rebuild 无上下文，节点标签为空。
-/// 此函数利用 `NodeGene::block_id` 在构图完成后补填。
+/// NodeLevel 经 descriptor rebuild 后无上下文标签；此函数利用
+/// `NodeGene::block_id` 在构图完成后补填。
 ///
 /// 对每个 `block_id != None`、类型有意义的块，将同块所有节点（含 Parameter）
 /// 打上相同的 `NodeGroupTag`，确保可视化渲染时归入同一 Cluster。

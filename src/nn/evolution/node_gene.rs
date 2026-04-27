@@ -11,9 +11,9 @@
  * - GenomeKind   : 区分基因组当前使用旧层级表示还是新节点级表示
  *
  * 设计原则：
- * - 本文件只定义节点级类型，不修改现有 LayerGene / NetworkGenome / SkipEdge
+ * - 本文件只定义节点级类型，作为 evolution 的唯一运行时 IR
  * - GenomeAnalysis 是只读快照，每次需要分析时重新计算，避免"改了基因组但忘刷新 analysis"的隐式 bug
- * - block_id 内联到 NodeGene，而不是单独维护 TemplateGroup 列表
+ * - block_id 内联到 NodeGene，而不是单独维护额外的层块列表
  */
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -26,10 +26,10 @@ use super::gene::ShapeDomain;
 
 // ==================== GenomeKind ====================
 
-/// 基因组当前使用的表示方式（`NetworkGenome` 内用于区分 LayerLevel / NodeLevel）
+/// 基因组当前使用的表示方式（历史序列化标签保留）
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GenomeKind {
-    /// 旧层级表示（LayerGene + SkipEdge，当前版本默认）
+    /// 旧层级表示（仅用于识别历史格式）
     LayerLevel,
     /// 节点级表示（NodeGene）
     NodeLevel,
@@ -132,13 +132,13 @@ pub struct RecurrentEdge {
 ///
 /// # 形状规则
 /// - `Parameter`、`BasicInput`、`TargetInput`、`State` 节点：`output_shape` 是权威值，
-///   由创建该节点的模板或外部调用方显式指定
+///   由创建该节点的层规格或外部调用方显式指定
 /// - 其他计算节点：`output_shape` 是声明值，`GenomeAnalysis` 会验证其与父节点形状的一致性
 ///
 /// # block_id
-/// 模板展开的节点组共享同一个 `block_id`，细粒度单节点变异产生的节点 `block_id = None`。
+/// 层规格展开的节点组共享同一个 `block_id`，细粒度单节点变异产生的节点 `block_id = None`。
 /// 这既允许 Grow/Shrink/Remove 以"组"为单位操作，也为将来的 NEAT crossover 打基础
-/// （交叉时以 block 为单位对齐，不会把模板组的节点拆散到不同父本）。
+/// （交叉时以 block 为单位对齐，不会把层块的节点拆散到不同父本）。
 ///
 /// # recurrent_parents（循环边）
 /// 存储指向本节点的时延循环连接 `(source_id, weight_param_id)`：
@@ -159,7 +159,7 @@ pub struct NodeGene {
     pub parents: Vec<u64>,
     /// 是否启用（NEAT 风格禁用机制，禁用节点不参与构图）
     pub enabled: bool,
-    /// 模板组标识：`Some(id)` 属于某个高层模板，`None` 为独立节点
+    /// 层块标识：`Some(id)` 属于某个高层层规格，`None` 为独立节点
     pub block_id: Option<u64>,
     /// 循环边列表：`(source_id, weight_param_id)` 对
     ///

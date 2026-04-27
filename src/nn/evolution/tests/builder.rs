@@ -1598,7 +1598,7 @@ fn test_phase5_node_level_partial_inherit_after_grow() {
 ///
 /// 流程：
 /// 1. NodeLevel genome + 捕获权重
-/// 2. InsertLayer 插入全新 Linear 块（新增 Parameter 节点）
+/// 2. InsertLayer 插入全新 Linear 层块（新增 Parameter 节点）
 /// 3. 重新构图 + restore_weights
 /// 4. 期望 reinitialized > 0（新增 Parameter 节点无快照）
 ///    且 inherited > 0（原有 Parameter 节点形状不变，全量继承）
@@ -1629,7 +1629,7 @@ fn test_phase5_node_level_reinit_after_insert() {
         .collect();
     assert!(!original_param_ids.is_empty(), "应有原始参数节点");
 
-    // InsertLayer：插入新 Linear 块（含全新 Parameter 节点）
+    // InsertLayer：插入新 Linear 层块（含全新 Parameter 节点）
     let constraints = SizeConstraints {
         max_layers: 10,
         min_hidden_size: 1,

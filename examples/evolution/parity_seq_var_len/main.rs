@@ -13,8 +13,7 @@
  * ```
  */
 
-use only_torch::nn::evolution::gene::TaskMetric;
-use only_torch::nn::evolution::{Evolution, EvolutionResult};
+use only_torch::nn::evolution::{Evolution, EvolutionResult, TaskMetric};
 use only_torch::tensor::Tensor;
 use std::path::Path;
 

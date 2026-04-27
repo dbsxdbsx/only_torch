@@ -22,8 +22,7 @@
 mod data;
 
 use data::{CLASS_NAMES, load_iris};
-use only_torch::nn::evolution::gene::TaskMetric;
-use only_torch::nn::evolution::{Evolution, EvolutionResult};
+use only_torch::nn::evolution::{Evolution, EvolutionResult, TaskMetric};
 use std::path::Path;
 
 fn main() {

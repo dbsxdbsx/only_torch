@@ -1276,7 +1276,7 @@ fn test_mutate_cell_type_multi_rnn() {
 
 #[test]
 fn test_insert_layer_sequence_domain_accepts_rnn() {
-    // 在序列 genome 上多次 InsertLayer，应能插入 RNN 族层
+    // 在序列 genome 上多次 InsertLayer，应能插入 RNN 族层块
     let c = constraints();
     let m = InsertLayerMutation::default();
     let mut found_rnn = false;
@@ -1836,7 +1836,7 @@ fn test_insert_layer_mutation_rejects_skip_edge_domain_violation() {
         // 无论变异成功与否，当前 genome 的 skip edge 域必须合法
         assert!(
             g2.validate_skip_edge_domains(),
-            "InsertLayer 后 skip edge 域不唹合法 (seed={seed}): {g2}"
+            "InsertLayer 后 skip edge 域不应非法 (seed={seed}): {g2}"
         );
     }
 }
@@ -3191,7 +3191,7 @@ fn test_random_mutations_keep_recurrent_genome_valid() {
 
 // ==================== 归一化层 + Dropout 辅助层插入测试 ====================
 
-/// 构造 NodeLevel Flat 基因组，通过多轮 InsertLayer 测试归一化块插入
+/// 构造 NodeLevel Flat 基因组，通过多轮 InsertLayer 测试归一化层块插入
 #[test]
 fn test_insert_layer_can_insert_normalization_flat() {
     use crate::nn::evolution::node_ops::{NodeBlockKind, node_main_path};

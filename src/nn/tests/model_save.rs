@@ -251,8 +251,7 @@ fn test_save_load_multi_output() {
 /// 演化模型 save/load 往返（v2 格式）
 #[test]
 fn test_evolution_save_load_v2_roundtrip() {
-    use crate::nn::evolution::gene::TaskMetric;
-    use crate::nn::evolution::{Evolution, EvolutionResult};
+    use crate::nn::evolution::{Evolution, EvolutionResult, TaskMetric};
 
     let path = "test_otm_evo_v2_roundtrip";
 
@@ -299,8 +298,7 @@ fn test_evolution_save_load_v2_roundtrip() {
 /// 演化模型 .otm → Graph::load_model 加载（提取纯推理网络）
 #[test]
 fn test_evolution_otm_loaded_as_manual() {
-    use crate::nn::evolution::Evolution;
-    use crate::nn::evolution::gene::TaskMetric;
+    use crate::nn::evolution::{Evolution, TaskMetric};
 
     let path = "test_otm_evo_to_manual";
 
@@ -456,8 +454,7 @@ fn test_load_then_continue_training() {
 /// 验证 forward → backward → optimizer.step 全链路跨模型类型可用。
 #[test]
 fn test_evolution_model_load_and_manual_train() {
-    use crate::nn::evolution::Evolution;
-    use crate::nn::evolution::gene::TaskMetric;
+    use crate::nn::evolution::{Evolution, TaskMetric};
 
     let path = "test_otm_evo_manual_train";
 

@@ -14,9 +14,9 @@
  * 关键特性：
  * - 空间输入 [1, 28, 28]（灰度图）→ 自动推断空间模式
  * - 十分类 → 自动推断 CrossEntropy loss + argmax accuracy
- * - Conv-BN-ReLU 模板：60% 概率插入带 BatchNorm 的卷积块
+ * - Conv / BatchNorm / Activation 层块可由演化自主插入
  * - Lamarckian 权重继承：每代在上一代权重基础上继续训练
- * - 变异：InsertLayer（Conv2d/Conv-BN-ReLU/Pool2d/Linear/Activation）、MutateStride 等
+ * - 变异：InsertLayer（Conv2d/Pool2d/Linear/Activation/Normalization）、MutateStride 等
  *
  * ## 运行
  * ```bash
@@ -33,8 +33,7 @@
  */
 
 use only_torch::data::MnistDataset;
-use only_torch::nn::evolution::gene::TaskMetric;
-use only_torch::nn::evolution::{Evolution, EvolutionResult};
+use only_torch::nn::evolution::{Evolution, EvolutionResult, TaskMetric};
 use only_torch::tensor::Tensor;
 use rand::SeedableRng;
 use rand::rngs::StdRng;

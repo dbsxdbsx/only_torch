@@ -1020,7 +1020,7 @@ pub fn migrate_network_genome(genome: &NetworkGenome) -> Result<MigrationOutput,
             }
         };
 
-        // 分配 block_id（每个模板展开一个 block）
+        // 分配 block_id（每个层规格展开一个 block）
         let bid = block_counter;
         block_counter += 1;
 
@@ -1183,9 +1183,9 @@ fn expand_layer_config(
 
 use crate::nn::evolution::fm_ops::next_fm_id;
 
-/// 将 NodeLevel 基因组中的 Conv2d 模板块分解为 FM 节点和边
+/// 将 NodeLevel 基因组中的 Conv2d 层块分解为 FM 节点和边
 ///
-/// 每个 Conv2d 模板块 (kernel[out_ch,in_ch,k,k], Conv2d_op, bias, Add) 被替换为：
+/// 每个 Conv2d 层块 (kernel[out_ch,in_ch,k,k], Conv2d_op, bias, Add) 被替换为：
 /// - in_ch 个输入 FM 节点（如果上游不是 FM 则新建）
 /// - out_ch 个输出 FM 节点（各含 Add 聚合 + bias）
 /// - out_ch × in_ch 条 FM 边（kernel[1,1,k,k] + Conv2d op）
@@ -1194,7 +1194,7 @@ use crate::nn::evolution::fm_ops::next_fm_id;
 pub fn migrate_conv2d_to_feature_maps(nodes: &mut Vec<NodeGene>, counter: &mut InnovationCounter) {
     use std::collections::HashMap;
 
-    // 1. 找到所有 Conv2d 模板块
+    // 1. 找到所有 Conv2d 层块
     let conv_blocks = find_conv2d_blocks(nodes);
     if conv_blocks.is_empty() {
         return;
@@ -1211,11 +1211,11 @@ pub fn migrate_conv2d_to_feature_maps(nodes: &mut Vec<NodeGene>, counter: &mut I
         decompose_conv2d_block(nodes, block, counter, &mut fm_counter, &mut node_map);
     }
 
-    // 清理已禁用的旧模板块节点
+    // 清理已禁用的旧层块节点
     nodes.retain(|n| n.enabled);
 }
 
-/// Conv2d 模板块信息
+/// Conv2d 层块信息
 struct Conv2dBlock {
     conv_op_id: u64,
     bias_id: Option<u64>,
@@ -1243,7 +1243,7 @@ struct Conv2dBlock {
     input_w: usize,
 }
 
-/// 查找基因组中所有 Conv2d 模板块
+/// 查找基因组中所有 Conv2d 层块
 fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
     use std::collections::HashMap;
 
@@ -1268,7 +1268,7 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
 
         let block_id = match n.block_id {
             Some(bid) => bid,
-            None => continue, // 非模板块
+            None => continue, // 非层块
         };
 
         // 已经是 FM 边（fm_id = None 但上游是 FM 节点）的跳过
@@ -1356,7 +1356,7 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
     blocks
 }
 
-/// 将单个 Conv2d 模板块分解为 FM 节点和边
+/// 将单个 Conv2d 层块分解为 FM 节点和边
 fn decompose_conv2d_block(
     nodes: &mut Vec<NodeGene>,
     block: &Conv2dBlock,
@@ -1509,7 +1509,7 @@ fn decompose_conv2d_block(
         }
     }
 
-    // 5. 禁用原模板块节点
+    // 5. 禁用原层块节点
     for n in nodes.iter_mut() {
         if n.block_id == Some(block.block_id) && n.fm_id.is_none() {
             n.enabled = false;

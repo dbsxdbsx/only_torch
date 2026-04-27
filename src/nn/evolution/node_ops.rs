@@ -4,13 +4,13 @@
  * @Description  : NodeLevel 基因组的分析与变异辅助
  *
  * 核心类型：
- * - NodeBlock     : 描述 NodeLevel 基因组中一个"模板块"的结构信息
- * - NodeBlockKind : 模板块的语义类型（对应原 LayerConfig 的角色）
+ * - NodeBlock     : 描述 NodeLevel 基因组中一个"层块"的结构信息
+ * - NodeBlockKind : 层块的语义类型（对应原 LayerConfig 的角色）
  *
  * 核心函数：
- * - node_main_path()        : 返回拓扑有序的模板块列表
+ * - node_main_path()        : 返回拓扑有序的层块列表
  * - insert_after()          : 在指定节点后插入新节点并修复父连接
- * - remove_block()          : 删除一个模板块并重新连线
+ * - remove_block()          : 删除一个层块并重新连线
  * - grow_linear_out()       : 增大 Linear 块的输出维度（含级联）
  * - sync_computation_shapes(): 基于参数节点形状重新推导所有计算节点形状
  */
@@ -34,13 +34,13 @@ use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
 
 // ==================== 数据类型 ====================
 
-/// NodeLevel 基因组中一个有序"模板块"的描述
+/// NodeLevel 基因组中一个有序"层块"的描述
 ///
 /// 对应原 LayerLevel 中一个 LayerGene + 可能的聚合操作。
 /// 单个节点（激活函数等）也作为独立块。
 #[derive(Debug, Clone)]
 pub struct NodeBlock {
-    /// 模板组标识（None 表示独立单节点，如激活函数）
+    /// 层块标识（None 表示独立单节点，如激活函数）
     pub block_id: Option<u64>,
     /// 该块内所有节点的创新号（按拓扑序）
     pub node_ids: Vec<u64>,
@@ -52,7 +52,7 @@ pub struct NodeBlock {
     pub kind: NodeBlockKind,
 }
 
-/// 模板块的语义类型
+/// 层块的语义类型
 #[derive(Debug, Clone)]
 pub enum NodeBlockKind {
     Linear {
@@ -144,7 +144,7 @@ impl NodeBlockKind {
 /// 返回 NodeLevel 基因组的主路径块列表（按拓扑序）
 ///
 /// 每个"块"对应原来的一个 LayerConfig 展开结果。
-/// 单节点（激活、池化等）block_id = None，多节点模板有具体 block_id。
+/// 单节点（激活、池化等）block_id = None，多节点层块有具体 block_id。
 pub fn node_main_path(genome: &NetworkGenome) -> Vec<NodeBlock> {
     let nodes = genome.nodes();
     if nodes.is_empty() {
@@ -175,18 +175,18 @@ pub fn node_main_path(genome: &NetworkGenome) -> Vec<NodeBlock> {
     }
 
     // 按拓扑序构建有序块列表：
-    // - block_id=Some(bid) 的节点：同 bid 的全部节点合并为一个模板块（首次遇到时创建）
+    // - block_id=Some(bid) 的节点：同 bid 的全部节点合并为一个层块（首次遇到时创建）
     // - block_id=None 的节点：每个计算节点单独成一个独立块（避免多个激活节点合并成 Unknown）
     //
     // 重要：只用计算节点（非参数节点）确定块顺序，参数节点（W/b）在拓扑序中可能提前出现
     let mut ordered_node_groups: Vec<(Option<u64>, Vec<u64>)> = Vec::new(); // (block_id, node_ids)
     let mut seen_bids: HashSet<u64> = HashSet::new();
-    // 预先收集各 template block 的全部节点（按拓扑序）
-    let mut template_nodes: HashMap<u64, Vec<u64>> = HashMap::new();
+    // 预先收集各 layer block 的全部节点（按拓扑序）
+    let mut layer_block_nodes: HashMap<u64, Vec<u64>> = HashMap::new();
     for &id in topo_order {
         if let Some(node) = node_map.get(&id) {
             if let Some(bid) = node.block_id {
-                template_nodes.entry(bid).or_default().push(id);
+                layer_block_nodes.entry(bid).or_default().push(id);
             }
         }
     }
@@ -202,7 +202,7 @@ pub fn node_main_path(genome: &NetworkGenome) -> Vec<NodeBlock> {
                 }
                 Some(bid) => {
                     if seen_bids.insert(bid) {
-                        let ids = template_nodes.get(&bid).cloned().unwrap_or_default();
+                        let ids = layer_block_nodes.get(&bid).cloned().unwrap_or_default();
                         ordered_node_groups.push((Some(bid), ids));
                     }
                 }
@@ -1699,7 +1699,7 @@ pub fn add_skip_connection(
         NodeTypeDescriptor::Add,
         pair.to_shape.clone(),
         vec![entry_main_parent, proj_output_id],
-        None, // 独立跳跃聚合节点，不属于任何模板组
+        None, // 独立跳跃聚合节点，不属于任何层块
     ));
 
     // ── 更新入口节点：用 agg_id 替换主路径父节点 ─────────────────
@@ -1723,7 +1723,7 @@ pub fn add_skip_connection(
 ///
 /// 满足以下条件的节点视为可移除的跳跃聚合节点：
 /// - 类型为 `Add` 或 `Maximum`
-/// - `block_id = None`（非模板组节点）
+/// - `block_id = None`（非层块节点）
 /// - 具有 ≥2 个非参数父节点
 pub fn find_removable_skip_connections(genome: &NetworkGenome) -> Vec<u64> {
     if !genome.is_node_level() {

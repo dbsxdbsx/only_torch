@@ -22,6 +22,12 @@
 
 ### 新增
 
+- **feat(evolution): 收敛用户 API 到 NodeLevel-only 路线**
+  - `evolution` 不再公开 `gene` / `builder` / `migration` / `mutation` 等内部模块，用户侧从顶层导入 `TaskMetric`、`ReportMetric`、`EvolutionCallback`、`ConvergenceConfig` 等任务级类型
+  - 删除 `build_layer_level()` 逐层构图后端，`NetworkGenome::build()` 统一通过 NodeLevel → `GraphDescriptor` → `Graph` 构图
+  - 层块插入变异统一命名为 `InsertLayerMutation` / `InsertLayer`，Linear / Conv / RNN / Dropout 等仍作为内部层规格搜索空间保留
+  - examples 与演化设计文档同步改为任务 API + NodeLevel-only 表述，不再推荐用户理解或使用 LayerLevel 概念
+
 - **feat(metrics/evolution): 通用指标补齐并接入演化评估报告**
   - `metrics` 新增回归误差指标：`mean_squared_error` / `mean_absolute_error` / `root_mean_squared_error`，与现有 `r2_score` 共用 `RegressionMetric` 接口
   - 演化侧新增 `ReportMetric` / `MetricValue` / `MetricReport`，`FitnessScore::report` 默认按任务类型报告 Accuracy/Precision/Recall/F1、R²/MSE/MAE/RMSE 或多标签 loose/strict accuracy

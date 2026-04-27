@@ -30,8 +30,9 @@ pub struct GraphDescriptor {
     /// 单个 `output` 节点,因常量折叠/Split 重写产出多个无后继的中间节点,
     /// 如果走拓扑推断会把它们都误当作输出)。
     ///
-    /// 演化、手写 Layer 等内部路径不填(为 None),`Graph::from_descriptor`
-    /// 退回到 "无后继 = 输出" 的拓扑推断,语义不变。
+    /// 演化和 ONNX 导入路径会填充该字段以避免额外无后继中间节点被误判为输出；
+    /// 手写 Layer 等内部路径不填(为 None),`Graph::from_descriptor` 退回到
+    /// "无后继 = 输出" 的拓扑推断,语义不变。
     ///
     /// `Option<Vec<u64>>` 缺省序列化为 None,无需 `default` 标注(serde 对
     /// `Option` 缺失字段自动设为 None)。

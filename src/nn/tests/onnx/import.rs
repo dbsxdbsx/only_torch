@@ -906,7 +906,7 @@ fn test_graph_from_onnx_bytes_e2e() {
 
 #[test]
 fn test_genome_from_onnx_bytes() {
-    use crate::nn::evolution::gene::NetworkGenome;
+    use crate::nn::evolution::NetworkGenome;
 
     let bytes = build_gemm_model_bytes();
     let genome = NetworkGenome::from_onnx_bytes(&bytes).unwrap();

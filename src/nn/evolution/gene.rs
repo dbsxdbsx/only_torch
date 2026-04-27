@@ -4,14 +4,12 @@
  * @Description  : 神经架构演化的基因数据结构
  *
  * 核心类型：NetworkGenome（网络基因组）
- * - GenomeRepr::LayerLevel: 层级基因表示（LayerGene + SkipEdge），主要作为用户 DSL 入口
- * - GenomeRepr::NodeLevel:  节点级基因表示（NodeGene），演化内核、持久化与构图的主表示
+ * - GenomeRepr::NodeLevel: 节点级基因表示（NodeGene），演化内核、持久化与构图的唯一主表示
  *
  * 设计原则：
- * - 演化主循环 run() 对 Flat/Spatial/Sequential 三类任务均调用 migrate_to_node_level()
+ * - Flat/Spatial/Sequential 三类任务均直接生成 NodeLevel genome
  * - NodeLevel 是唯一受支持的持久化、构图和 mutation 内核表示
- * - LayerLevel 仍保留在枚举中，兼容仍从 DSL 构造的层级基因组
- * - 长期方向是将 LayerLevel 收窄为纯 DSL 转换入口，或完全由节点级路径替代
+ * - 层级演化通过带 block_id 的 NodeGene 子图表达，不再暴露独立层级 genome 概念
  */
 
 use serde::{Deserialize, Serialize};
@@ -455,7 +453,7 @@ impl NetworkGenome {
     ///
     /// # Panics
     /// `input_dim` 或 `output_dim` 为零时 panic。
-    pub fn minimal(input_dim: usize, output_dim: usize) -> Self {
+    pub(crate) fn minimal(input_dim: usize, output_dim: usize) -> Self {
         assert!(input_dim > 0, "input_dim 不能为零");
         assert!(output_dim > 0, "output_dim 不能为零");
 
@@ -496,7 +494,7 @@ impl NetworkGenome {
     ///
     /// # Panics
     /// `input_dim` 或 `output_dim` 为零时 panic。
-    pub fn minimal_sequential(input_dim: usize, output_dim: usize) -> Self {
+    pub(crate) fn minimal_sequential(input_dim: usize, output_dim: usize) -> Self {
         assert!(input_dim > 0, "input_dim 不能为零");
         assert!(output_dim > 0, "output_dim 不能为零");
 
@@ -537,7 +535,7 @@ impl NetworkGenome {
     ///
     /// # Panics
     /// `input_channels` 或 `output_dim` 为零，或 `spatial` 的 H/W 为零时 panic。
-    pub fn minimal_spatial(
+    pub(crate) fn minimal_spatial(
         input_channels: usize,
         output_dim: usize,
         spatial: (usize, usize),
@@ -701,10 +699,10 @@ impl NetworkGenome {
         Ok(())
     }
 
-    /// 将 NodeLevel 基因组中的 Conv2d 模板块分解为 FM 粒度表示
+    /// 将 NodeLevel 基因组中的 Conv2d 层块分解为 FM 粒度表示
     ///
     /// 仅在空间模式下有效（input_spatial.is_some()）。
-    /// 可重复调用：已 FM 化的模板块会被自动跳过，仅处理新增的模板块。
+    /// 可重复调用：已 FM 化的层块会被自动跳过，仅处理新增的层块。
     pub fn migrate_to_fm_level(&mut self) {
         use super::migration::{InnovationCounter, migrate_conv2d_to_feature_maps};
 
