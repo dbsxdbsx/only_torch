@@ -18,7 +18,9 @@ use crate::tensor::Tensor;
 use std::collections::HashMap;
 use std::fmt;
 
-use super::migration::migrate_network_genome;
+use super::node_expansion::{
+    InnovationCounter, expand_conv2d, expand_flatten, expand_linear, expand_pool2d, expand_rnn,
+};
 use super::node_gene::{GenomeAnalysis, NodeGene};
 
 /// Input 节点的虚拟创新号（skip edge 可引用此值作为源）
@@ -435,12 +437,10 @@ impl fmt::Debug for NetworkGenome {
 }
 
 impl NetworkGenome {
-    /// 从完整字段重建 NetworkGenome（反序列化用）
+    /// 从 NodeLevel 字段重建 NetworkGenome（反序列化用）。
     ///
     /// 仅供 `model_io` 模块在加载 .otm 文件时调用。
-    pub(crate) fn from_parts(
-        layers: Vec<LayerGene>,
-        skip_edges: Vec<SkipEdge>,
+    pub(crate) fn from_node_parts(
         input_dim: usize,
         output_dim: usize,
         seq_len: Option<usize>,
@@ -448,7 +448,7 @@ impl NetworkGenome {
         training_config: TrainingConfig,
         generated_by: String,
         next_innovation: u64,
-        weight_snapshots: HashMap<u64, Vec<Tensor>>,
+        nodes: Vec<NodeGene>,
     ) -> Self {
         Self {
             input_dim,
@@ -457,11 +457,10 @@ impl NetworkGenome {
             input_spatial,
             training_config,
             generated_by,
-            repr: GenomeRepr::LayerLevel {
-                layers,
-                skip_edges,
+            repr: GenomeRepr::NodeLevel {
+                nodes,
                 next_innovation,
-                weight_snapshots,
+                weight_snapshots: HashMap::new(),
             },
         }
     }
@@ -474,13 +473,8 @@ impl NetworkGenome {
         assert!(input_dim > 0, "input_dim 不能为零");
         assert!(output_dim > 0, "output_dim 不能为零");
 
-        let output_head = LayerGene {
-            innovation_number: 1,
-            layer_config: LayerConfig::Linear {
-                out_features: output_dim,
-            },
-            enabled: true,
-        };
+        let mut counter = InnovationCounter::new(1);
+        let nodes = expand_linear(INPUT_INNOVATION, input_dim, output_dim, 0, &mut counter);
 
         Self {
             input_dim,
@@ -489,10 +483,9 @@ impl NetworkGenome {
             input_spatial: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal".to_string(),
-            repr: GenomeRepr::LayerLevel {
-                layers: vec![output_head],
-                skip_edges: Vec::new(),
-                next_innovation: 2, // 0 = INPUT, 1 = 输出头
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
                 weight_snapshots: HashMap::new(),
             },
         }
@@ -516,18 +509,27 @@ impl NetworkGenome {
         assert!(output_dim > 0, "output_dim 不能为零");
 
         let hidden_size = output_dim.max(4);
-        let rnn_layer = LayerGene {
-            innovation_number: 1,
-            layer_config: LayerConfig::Rnn { hidden_size },
-            enabled: true,
-        };
-        let output_head = LayerGene {
-            innovation_number: 2,
-            layer_config: LayerConfig::Linear {
-                out_features: output_dim,
-            },
-            enabled: true,
-        };
+        let mut counter = InnovationCounter::new(1);
+        let mut nodes = expand_rnn(
+            INPUT_INNOVATION,
+            input_dim,
+            hidden_size,
+            false,
+            0,
+            0,
+            &mut counter,
+        );
+        let rnn_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("RNN 展开应至少产生一个节点");
+        nodes.extend(expand_linear(
+            rnn_output_id,
+            hidden_size,
+            output_dim,
+            1,
+            &mut counter,
+        ));
 
         Self {
             input_dim,
@@ -536,10 +538,9 @@ impl NetworkGenome {
             input_spatial: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal_sequential".to_string(),
-            repr: GenomeRepr::LayerLevel {
-                layers: vec![rnn_layer, output_head],
-                skip_edges: Vec::new(),
-                next_innovation: 3,
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
                 weight_snapshots: HashMap::new(),
             },
         }
@@ -562,35 +563,51 @@ impl NetworkGenome {
         assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
 
         let init_channels = 8usize;
-        let conv_layer = LayerGene {
-            innovation_number: 1,
-            layer_config: LayerConfig::Conv2d {
-                out_channels: init_channels,
-                kernel_size: 3,
-            },
-            enabled: true,
-        };
-        let pool_layer = LayerGene {
-            innovation_number: 2,
-            layer_config: LayerConfig::Pool2d {
-                pool_type: PoolType::Max,
-                kernel_size: 2,
-                stride: 2,
-            },
-            enabled: true,
-        };
-        let flatten_layer = LayerGene {
-            innovation_number: 3,
-            layer_config: LayerConfig::Flatten,
-            enabled: true,
-        };
-        let output_head = LayerGene {
-            innovation_number: 4,
-            layer_config: LayerConfig::Linear {
-                out_features: output_dim,
-            },
-            enabled: true,
-        };
+        let mut counter = InnovationCounter::new(1);
+        let mut nodes = expand_conv2d(
+            INPUT_INNOVATION,
+            input_channels,
+            init_channels,
+            3,
+            spatial,
+            0,
+            &mut counter,
+        );
+        let conv_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_pool2d(
+            conv_output_id,
+            PoolType::Max,
+            2,
+            2,
+            spatial,
+            init_channels,
+            &mut counter,
+        ));
+        let pool_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Pool2d 展开应至少产生一个节点");
+        let pooled_spatial = ((spatial.0 - 2) / 2 + 1, (spatial.1 - 2) / 2 + 1);
+        nodes.extend(expand_flatten(
+            pool_output_id,
+            init_channels,
+            Some(pooled_spatial),
+            &mut counter,
+        ));
+        let flatten_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Flatten 展开应至少产生一个节点");
+        nodes.extend(expand_linear(
+            flatten_output_id,
+            init_channels * pooled_spatial.0 * pooled_spatial.1,
+            output_dim,
+            3,
+            &mut counter,
+        ));
 
         Self {
             input_dim: input_channels,
@@ -599,10 +616,9 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "minimal_spatial".to_string(),
-            repr: GenomeRepr::LayerLevel {
-                layers: vec![conv_layer, pool_layer, flatten_layer, output_head],
-                skip_edges: Vec::new(),
-                next_innovation: 5,
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
                 weight_snapshots: HashMap::new(),
             },
         }
@@ -625,22 +641,29 @@ impl NetworkGenome {
         assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
 
         let hidden_channels = 8usize;
-        let conv_layer = LayerGene {
-            innovation_number: 1,
-            layer_config: LayerConfig::Conv2d {
-                out_channels: hidden_channels,
-                kernel_size: 3,
-            },
-            enabled: true,
-        };
-        let output_head = LayerGene {
-            innovation_number: 2,
-            layer_config: LayerConfig::Conv2d {
-                out_channels: output_channels,
-                kernel_size: 1,
-            },
-            enabled: true,
-        };
+        let mut counter = InnovationCounter::new(1);
+        let mut nodes = expand_conv2d(
+            INPUT_INNOVATION,
+            input_channels,
+            hidden_channels,
+            3,
+            spatial,
+            0,
+            &mut counter,
+        );
+        let hidden_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_conv2d(
+            hidden_output_id,
+            hidden_channels,
+            output_channels,
+            1,
+            spatial,
+            1,
+            &mut counter,
+        ));
 
         Self {
             input_dim: input_channels,
@@ -649,10 +672,9 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "minimal_spatial_segmentation".to_string(),
-            repr: GenomeRepr::LayerLevel {
-                layers: vec![conv_layer, output_head],
-                skip_edges: Vec::new(),
-                next_innovation: 3,
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
                 weight_snapshots: HashMap::new(),
             },
         }
@@ -753,17 +775,15 @@ impl NetworkGenome {
     /// 若已是 NodeLevel 则无操作直接返回。
     /// 迁移后，`layers()` 和 `skip_edges()` 返回空切片，
     /// `nodes()` 返回展开后的节点列表。
-    pub fn migrate_to_node_level(&mut self) -> Result<(), super::migration::MigrationError> {
+    pub fn migrate_to_node_level(
+        &mut self,
+    ) -> Result<(), super::node_expansion::NodeExpansionError> {
         if self.is_node_level() {
             return Ok(());
         }
-        let out = migrate_network_genome(self)?;
-        self.repr = GenomeRepr::NodeLevel {
-            nodes: out.nodes,
-            next_innovation: out.next_innovation,
-            weight_snapshots: HashMap::new(),
-        };
-        Ok(())
+        Err(super::node_expansion::NodeExpansionError::InvalidGenome(
+            "LayerLevel 已不再作为有效输入；请直接构造 NodeLevel genome".into(),
+        ))
     }
 
     /// 将 NodeLevel 基因组中的 Conv2d 层块分解为 FM 粒度表示
@@ -771,7 +791,7 @@ impl NetworkGenome {
     /// 仅在空间模式下有效（input_spatial.is_some()）。
     /// 可重复调用：已 FM 化的层块会被自动跳过，仅处理新增的层块。
     pub fn migrate_to_fm_level(&mut self) {
-        use super::migration::{InnovationCounter, migrate_conv2d_to_feature_maps};
+        use super::node_expansion::{InnovationCounter, decompose_conv2d_to_feature_maps};
 
         if self.input_spatial.is_none() || !self.is_node_level() {
             return;
@@ -786,7 +806,7 @@ impl NetworkGenome {
 
         let mut counter = InnovationCounter::new(next_inn);
         let nodes = self.nodes_mut();
-        migrate_conv2d_to_feature_maps(nodes, &mut counter);
+        decompose_conv2d_to_feature_maps(nodes, &mut counter);
 
         // 更新 next_innovation
         if let GenomeRepr::NodeLevel {

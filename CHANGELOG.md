@@ -22,6 +22,12 @@
 
 ### 新增
 
+- **feat(evolution): 彻底收口 NodeLevel-only genome 主路径**
+  - `NetworkGenome::minimal*` 构造器直接生成 NodeLevel genome，不再依赖 LayerLevel → NodeLevel 迁移层
+  - 删除 `migration.rs` 生产模块与旧迁移测试，保留的节点展开算法改名搬迁到 `node_expansion`
+  - builder / mutation / gene / model_io / net2net 测试改为围绕 NodeLevel block、参数节点快照、跨层 connection 与可视化分组语义验证
+  - 封装 evolution 内部 ASHA rung seed 派生，并修复 vision 并发测试覆盖共享 fixture、RandomAffine 测试精确浮点断言导致的完整测试偶发失败
+
 - **feat(data/examples): 新增 `SyntheticRng` 统一合成数据可复现随机生成**
   - `data` 模块新增 public `SyntheticRng`，用于 examples / tests / synthetic dataset 的确定性伪随机数生成；模型参数初始化仍使用 `Graph::new_with_seed`，演化流程仍使用 `Evolution::with_seed`
   - 将传统与演化 examples 中手写的 `mix()` / `wrapping_mul` / `DefaultHasher` 数据生成逻辑统一迁移到 `SyntheticRng`，避免示例主路径暴露 hash mixing 常量与 debug 溢出风险

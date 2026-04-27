@@ -1,6 +1,10 @@
 use crate::nn::evolution::builder::BuildResult;
 use crate::nn::evolution::convergence::*;
 use crate::nn::evolution::gene::*;
+use crate::nn::evolution::node_expansion::{expand_activation, expand_linear};
+use crate::nn::evolution::node_ops::{
+    commit_counter, insert_after, make_counter, next_block_id, repair_param_input_dims,
+};
 use crate::nn::evolution::task::*;
 use crate::tensor::Tensor;
 use rand::SeedableRng;
@@ -57,26 +61,19 @@ fn tiny_segmentation_data() -> (Vec<Tensor>, Vec<Tensor>) {
 
 fn genome_with_hidden(input_dim: usize, output_dim: usize) -> NetworkGenome {
     let mut genome = NetworkGenome::minimal(input_dim, output_dim);
-    let inn = genome.next_innovation_number();
-    genome.layers_mut().insert(
-        0,
-        LayerGene {
-            innovation_number: inn,
-            layer_config: LayerConfig::Linear { out_features: 8 },
-            enabled: true,
-        },
+    let mut counter = make_counter(&genome);
+    let hidden = expand_linear(
+        INPUT_INNOVATION,
+        input_dim,
+        8,
+        next_block_id(&genome),
+        &mut counter,
     );
-    let inn_act = genome.next_innovation_number();
-    genome.layers_mut().insert(
-        1,
-        LayerGene {
-            innovation_number: inn_act,
-            layer_config: LayerConfig::Activation {
-                activation_type: ActivationType::ReLU,
-            },
-            enabled: true,
-        },
-    );
+    let hidden_out = insert_after(&mut genome, INPUT_INNOVATION, hidden).unwrap();
+    let activation = expand_activation(hidden_out, vec![1, 8], &ActivationType::ReLU, &mut counter);
+    insert_after(&mut genome, hidden_out, activation).unwrap();
+    commit_counter(&mut genome, &counter);
+    repair_param_input_dims(&mut genome);
     genome
 }
 

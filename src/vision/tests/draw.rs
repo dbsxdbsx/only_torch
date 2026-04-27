@@ -1,5 +1,14 @@
 use crate::vision::Vision;
 
+fn save_temp_image(tensor: &crate::tensor::Tensor, name: &str) {
+    let path = std::env::temp_dir()
+        .join(format!("only_torch_{}_{}", std::process::id(), name))
+        .to_string_lossy()
+        .into_owned();
+    Vision::save_image(tensor, &path).unwrap();
+    let _ = std::fs::remove_file(path);
+}
+
 #[test]
 fn test_draw_circle() {
     // 1.测试彩色图片
@@ -11,7 +20,7 @@ fn test_draw_circle() {
     let thickness = [0, 1, 3, radius / 3, radius / 2, radius, radius + 1];
     for t in thickness.iter() {
         let new_tensor = Vision::draw_circle(&tensor, (x, y), radius, [255, 100, 255], *t).unwrap();
-        Vision::save_image(&new_tensor, &format!("./assets/lenna_circle_{}.png", t)).unwrap();
+        save_temp_image(&new_tensor, &format!("lenna_circle_{}.png", t));
     }
     // 2.测试灰度图片
     let tensor = Vision::load_image("./assets/lenna_luma.png").unwrap();
@@ -22,11 +31,7 @@ fn test_draw_circle() {
     let thickness = [0, 1, 3, radius / 3, radius / 2, radius, radius + 1];
     for t in thickness.iter() {
         let new_tensor = Vision::draw_circle(&tensor, (x, y), radius, [250, 0, 0], *t).unwrap();
-        Vision::save_image(
-            &new_tensor,
-            &format!("./assets/lenna_luma_circle_{}.png", t),
-        )
-        .unwrap();
+        save_temp_image(&new_tensor, &format!("lenna_luma_circle_{}.png", t));
     }
 }
 
@@ -44,7 +49,7 @@ fn test_draw_rectangle() {
     for t in thickness.iter() {
         let new_tensor =
             Vision::draw_rectangle(&tensor, (x, y), height, width, [255, 100, 255], *t).unwrap();
-        Vision::save_image(&new_tensor, &format!("./assets/lenna_rectangle_{}.png", t)).unwrap();
+        save_temp_image(&new_tensor, &format!("lenna_rectangle_{}.png", t));
     }
     // 2.测试灰度图片
     let tensor = Vision::load_image("./assets/lenna_luma.png").unwrap();
@@ -57,10 +62,6 @@ fn test_draw_rectangle() {
     for t in thickness.iter() {
         let new_tensor =
             Vision::draw_rectangle(&tensor, (x, y), height, width, [250, 0, 0], *t).unwrap();
-        Vision::save_image(
-            &new_tensor,
-            &format!("./assets/lenna_luma_rectangle_{}.png", t),
-        )
-        .unwrap();
+        save_temp_image(&new_tensor, &format!("lenna_luma_rectangle_{}.png", t));
     }
 }

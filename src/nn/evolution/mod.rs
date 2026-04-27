@@ -24,10 +24,10 @@ mod error;
 mod fm_mutation;
 mod fm_ops;
 mod gene;
-mod migration;
 mod model_io;
 mod mutation;
 mod net2net;
+mod node_expansion;
 mod node_gene;
 mod node_ops;
 mod selection;
@@ -1414,7 +1414,7 @@ fn evaluate_batch_asha(
         let (genomes, orig_seeds): (Vec<_>, Vec<_>) = survivors.into_iter().unzip();
         let rung_seeds: Vec<u64> = orig_seeds
             .iter()
-            .map(|s| s.wrapping_add((rung_idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)))
+            .map(|&seed| derive_asha_rung_seed(seed, rung_idx))
             .collect();
 
         let rung_results = evaluate_batch(
@@ -1452,6 +1452,11 @@ fn evaluate_batch_asha(
 
     // 理论上不会到达：total_rungs >= 1 已确保循环内 return
     Vec::new()
+}
+
+fn derive_asha_rung_seed(seed: u64, rung_idx: usize) -> u64 {
+    const ASHA_RUNG_SEED_STEP: u64 = 0x9E37_79B9_7F4A_7C15;
+    seed.wrapping_add((rung_idx as u64).wrapping_mul(ASHA_RUNG_SEED_STEP))
 }
 
 /// 多次评估取 primary 最低值（保守估计）

@@ -17,10 +17,10 @@ use super::gene::{
     ActivationType, AggregateStrategy, GenomeRepr, INPUT_INNOVATION, LayerConfig, LayerGene,
     LossType, NetworkGenome, OptimizerType, ShapeDomain, SkipEdge, TaskMetric, compatible_losses,
 };
-use super::migration::{
+use super::net2net::apply_widen_to_snapshots;
+use super::node_expansion::{
     activation_to_node_type, expand_activation, expand_dropout, expand_gru, expand_lstm, expand_rnn,
 };
-use super::net2net::apply_widen_to_snapshots;
 use super::node_gene::{NodeGene, RecurrentEdge};
 use super::node_ops::{
     NodeBlock, NodeBlockKind, add_skip_connection, commit_counter, create_insert_nodes,
@@ -197,6 +197,11 @@ impl MutationRegistry {
 
     pub fn register(&mut self, weight: f32, mutation: impl Mutation + 'static) {
         self.entries.push((weight, Box::new(mutation)));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mutation_names(&self) -> Vec<&str> {
+        self.entries.iter().map(|(_, m)| m.name()).collect()
     }
 
     /// 按权重随机选择一个可用变异并执行，返回变异名称

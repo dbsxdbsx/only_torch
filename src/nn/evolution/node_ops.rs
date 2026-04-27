@@ -25,11 +25,11 @@ use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::gene::{
     ActivationType, GenomeRepr, INPUT_INNOVATION, NetworkGenome, PoolType, ShapeDomain,
 };
-use crate::nn::evolution::migration::{
+use crate::nn::evolution::mutation::SizeConstraints;
+use crate::nn::evolution::node_expansion::{
     InnovationCounter, expand_activation, expand_batch_norm, expand_conv2d, expand_gru,
     expand_layer_norm, expand_linear, expand_lstm, expand_pool2d, expand_rms_norm, expand_rnn,
 };
-use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
 
 // ==================== 数据类型 ====================

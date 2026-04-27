@@ -3,6 +3,15 @@ use image::ColorType;
 use crate::assert_panic;
 use crate::vision::Vision;
 
+fn save_temp_image(tensor: &crate::tensor::Tensor, name: &str) {
+    let path = std::env::temp_dir()
+        .join(format!("only_torch_{}_{}", std::process::id(), name))
+        .to_string_lossy()
+        .into_owned();
+    Vision::save_image(tensor, &path).unwrap();
+    let _ = std::fs::remove_file(path);
+}
+
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓改变图像尺寸↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_resize_color_image() {
@@ -13,7 +22,7 @@ fn test_resize_color_image() {
     let resized_image = Vision::resize_image(&image, height, width, true).unwrap();
     assert_eq!(resized_image.shape(), &[height, width, 3]);
     assert_eq!(resized_image.is_image().unwrap(), ColorType::Rgb8);
-    Vision::save_image(&resized_image, "./assets/lenna_resized_crop.png").unwrap();
+    save_temp_image(&resized_image, "lenna_resized_crop.png");
     // 1.2测试不保留宽高比的图像尺寸调整（高大于原始尺寸，而宽小于原始尺寸）
     let height = 600;
     let width = 256;
@@ -27,7 +36,7 @@ fn test_resize_color_image() {
     let resized_image = Vision::resize_image(&image, height, width, false).unwrap();
     assert_eq!(resized_image.shape(), &[height, width, 3]);
     assert_eq!(resized_image.is_image().unwrap(), ColorType::Rgb8);
-    Vision::save_image(&resized_image, "./assets/lenna_resized_shrink.png").unwrap();
+    save_temp_image(&resized_image, "lenna_resized_shrink.png");
     // 2.2测试保留宽高比的图像尺寸调整：扩大
     let (mut height, mut width) = image.get_image_size().unwrap();
     height *= 1.5 as usize;
@@ -35,7 +44,7 @@ fn test_resize_color_image() {
     let resized_image = Vision::resize_image(&image, height, width, false).unwrap();
     assert_eq!(resized_image.shape(), &[height, width, 3]);
     assert_eq!(resized_image.is_image().unwrap(), ColorType::Rgb8);
-    Vision::save_image(&resized_image, "./assets/lenna_resized_expand.png").unwrap();
+    save_temp_image(&resized_image, "lenna_resized_expand.png");
 }
 
 #[test]
@@ -47,7 +56,7 @@ fn test_resize_luma_image() {
     let resized_image = Vision::resize_image(&luma_image, height, width, true).unwrap();
     let _shape = resized_image.shape();
     assert_eq!(resized_image.is_image().unwrap(), ColorType::L8);
-    Vision::save_image(&resized_image, "./assets/lenna_luma_resized_crop.png").unwrap();
+    save_temp_image(&resized_image, "lenna_luma_resized_crop.png");
     // 1.2测试不保留宽高比的图像尺寸调整（高大于原始尺寸，而宽小于原始尺寸）
     let height = 600;
     let width = 256;
@@ -60,7 +69,7 @@ fn test_resize_luma_image() {
     // 2.1测试保留宽高比的图像尺寸调整：缩小
     let resized_image = Vision::resize_image(&luma_image, height, width, false).unwrap();
     assert_eq!(resized_image.is_image().unwrap(), ColorType::L8);
-    Vision::save_image(&resized_image, "./assets/lenna_luma_resized_shrink.png").unwrap();
+    save_temp_image(&resized_image, "lenna_luma_resized_shrink.png");
     // 2.2测试保留宽高比的图像尺寸调整：扩大
     let (mut height, mut width) = luma_image.get_image_size().unwrap();
     height *= 1.5 as usize;
@@ -68,6 +77,6 @@ fn test_resize_luma_image() {
     let resized_image = Vision::resize_image(&luma_image, height, width, false).unwrap();
     assert_eq!(resized_image.shape(), &[height, width]);
     assert_eq!(resized_image.is_image().unwrap(), ColorType::L8);
-    Vision::save_image(&resized_image, "./assets/lenna_luma_resized_expand.png").unwrap();
+    save_temp_image(&resized_image, "lenna_luma_resized_expand.png");
 }
 /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑改变图像尺寸↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

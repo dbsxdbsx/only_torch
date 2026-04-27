@@ -640,11 +640,13 @@ impl NetworkGenome {
     /// 仅支持 NodeLevel 基因组。
     ///
     /// 返回的 `GraphDescriptor` 可直接传入 `Graph::from_descriptor()` 构建计算图。
-    pub fn to_graph_descriptor(&self) -> Result<GraphDescriptor, super::migration::MigrationError> {
+    pub fn to_graph_descriptor(
+        &self,
+    ) -> Result<GraphDescriptor, super::node_expansion::NodeExpansionError> {
         let nodes = match &self.repr {
             GenomeRepr::NodeLevel { nodes, .. } => nodes.as_slice(),
             GenomeRepr::LayerLevel { .. } => {
-                return Err(super::migration::MigrationError::InvalidGenome(
+                return Err(super::node_expansion::NodeExpansionError::InvalidGenome(
                     "to_graph_descriptor 仅支持 NodeLevel 基因组".into(),
                 ));
             }
@@ -702,7 +704,7 @@ impl NetworkGenome {
                                             let w_raw = inp_shape[3] + 2 * padding.1;
                                             if h_raw < eff_kh || w_raw < eff_kw {
                                                 return Err(
-                                                    super::migration::MigrationError::InvalidGenome(
+                                                    super::node_expansion::NodeExpansionError::InvalidGenome(
                                                         format!(
                                                             "Conv2d 节点 {} 的输入 {}x{} 对 kernel {}x{}（dilation {:?}）太小",
                                                             id,
@@ -719,7 +721,7 @@ impl NetworkGenome {
                                             let w_out = (w_raw - eff_kw) / stride.1 + 1;
                                             if h_out == 0 || w_out == 0 {
                                                 return Err(
-                                                    super::migration::MigrationError::InvalidGenome(
+                                                    super::node_expansion::NodeExpansionError::InvalidGenome(
                                                         format!(
                                                             "Conv2d 节点 {} 输出尺寸为 0 ({}x{})",
                                                             id, h_out, w_out
@@ -745,7 +747,7 @@ impl NetworkGenome {
                                                 (inp_shape[3].max(1) - 1) * stride.1 + ker_shape[3];
                                             if h_sum < 2 * padding.0 || w_sum < 2 * padding.1 {
                                                 return Err(
-                                                    super::migration::MigrationError::InvalidGenome(
+                                                    super::node_expansion::NodeExpansionError::InvalidGenome(
                                                         format!(
                                                             "ConvTranspose2d 节点 {} 的参数导致输出尺寸为负（padding {:?} 过大）",
                                                             id, padding
@@ -1183,8 +1185,8 @@ impl NetworkGenome {
     /// 若描述符没有 `BasicInput` 节点、没有可用节点、或输入形状无法识别，返回 `Err`。
     pub fn from_graph_descriptor(
         desc: &GraphDescriptor,
-    ) -> Result<Self, super::migration::MigrationError> {
-        use super::migration::MigrationError;
+    ) -> Result<Self, super::node_expansion::NodeExpansionError> {
+        use super::node_expansion::NodeExpansionError;
 
         // 找 BasicInput 节点（虚拟输入）
         let input_nd = desc
@@ -1192,7 +1194,7 @@ impl NetworkGenome {
             .iter()
             .find(|n| matches!(n.node_type, NTD::BasicInput))
             .ok_or_else(|| {
-                MigrationError::DimensionError("GraphDescriptor 中没有 BasicInput 节点".into())
+                NodeExpansionError::DimensionError("GraphDescriptor 中没有 BasicInput 节点".into())
             })?;
 
         let original_input_id = input_nd.id;
@@ -1204,7 +1206,7 @@ impl NetworkGenome {
             3 => (input_shape[2], Some(input_shape[1]), None),
             4 => (input_shape[1], None, Some((input_shape[2], input_shape[3]))),
             _ => {
-                return Err(MigrationError::DimensionError(format!(
+                return Err(NodeExpansionError::DimensionError(format!(
                     "不支持的输入形状 {:?}（期望 2D/3D/4D）",
                     input_shape
                 )));
@@ -1245,7 +1247,7 @@ impl NetworkGenome {
         }
 
         if nodes.is_empty() {
-            return Err(MigrationError::DimensionError(
+            return Err(NodeExpansionError::DimensionError(
                 "GraphDescriptor 中没有可转换的计算节点".into(),
             ));
         }
@@ -1261,11 +1263,15 @@ impl NetworkGenome {
             .last()
             .or_else(|| nodes.last())
             .map(|n| &n.output_shape)
-            .ok_or_else(|| MigrationError::DimensionError("无法确定输出节点".into()))?;
+            .ok_or_else(|| NodeExpansionError::DimensionError("无法确定输出节点".into()))?;
         let output_dim = match output_shape.len() {
             n if n >= 2 => output_shape[output_shape.len() - 1],
             1 => output_shape[0],
-            _ => return Err(MigrationError::DimensionError("输出节点形状为空".into())),
+            _ => {
+                return Err(NodeExpansionError::DimensionError(
+                    "输出节点形状为空".into(),
+                ));
+            }
         };
 
         Ok(Self {
@@ -1295,18 +1301,22 @@ impl NetworkGenome {
     /// ```
     pub fn from_onnx<P: AsRef<std::path::Path>>(
         path: P,
-    ) -> Result<Self, super::migration::MigrationError> {
+    ) -> Result<Self, super::node_expansion::NodeExpansionError> {
         let import_result = crate::nn::graph::onnx_import::load_onnx(path).map_err(|e| {
-            super::migration::MigrationError::DimensionError(format!("ONNX 导入失败: {e}"))
+            super::node_expansion::NodeExpansionError::DimensionError(format!("ONNX 导入失败: {e}"))
         })?;
         Self::from_graph_descriptor(&import_result.descriptor)
     }
 
     /// 从内存中的 .onnx 字节流构建 NetworkGenome
-    pub fn from_onnx_bytes(bytes: &[u8]) -> Result<Self, super::migration::MigrationError> {
+    pub fn from_onnx_bytes(
+        bytes: &[u8],
+    ) -> Result<Self, super::node_expansion::NodeExpansionError> {
         let import_result =
             crate::nn::graph::onnx_import::load_onnx_from_bytes(bytes).map_err(|e| {
-                super::migration::MigrationError::DimensionError(format!("ONNX 导入失败: {e}"))
+                super::node_expansion::NodeExpansionError::DimensionError(format!(
+                    "ONNX 导入失败: {e}"
+                ))
             })?;
         Self::from_graph_descriptor(&import_result.descriptor)
     }

@@ -5,7 +5,6 @@ mod convergence;
 mod evolution;
 mod fm_mutation;
 mod gene;
-mod migration;
 mod model_io;
 mod mutation;
 mod net2net;

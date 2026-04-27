@@ -95,11 +95,11 @@ fn translate_only_shifts_content() {
     for _ in 0..50 {
         let output = t.apply(&input);
         let flat = output.flatten_view();
-        if flat.iter().any(|&v| v == -1.0) {
+        if flat.iter().any(|&v| (v + 1.0).abs() < 1e-6) {
             found_fill = true;
             // 也应该有原始值
             assert!(
-                flat.iter().any(|&v| v == 1.0),
+                flat.iter().any(|&v| (v - 1.0).abs() < 1e-4),
                 "should have original pixels too"
             );
             break;

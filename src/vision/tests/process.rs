@@ -1,6 +1,13 @@
 use crate::utils::macro_for_unit_test::get_file_size_in_byte;
 use crate::vision::Vision;
 
+fn temp_image_path(name: &str) -> String {
+    std::env::temp_dir()
+        .join(format!("only_torch_{}_{}", std::process::id(), name))
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[test]
 fn test_median_blur() {
     // 测试彩色图像
@@ -10,9 +17,10 @@ fn test_median_blur() {
     let mut former_size = get_file_size_in_byte("./assets/lenna.png");
     for ksize in &kernel_sizes {
         let blurred_image = Vision::median_blur(&image, *ksize);
-        let filename = format!("./assets/lenna_blurred_{}.png", ksize);
+        let filename = temp_image_path(&format!("lenna_blurred_{}.png", ksize));
         Vision::save_image(&blurred_image, &filename).unwrap();
-        let new_size = get_file_size_in_byte(filename);
+        let new_size = get_file_size_in_byte(&filename);
+        let _ = std::fs::remove_file(&filename);
         assert!(new_size <= former_size);
         former_size = new_size;
         // print in mb
@@ -24,9 +32,10 @@ fn test_median_blur() {
     let mut former_size = get_file_size_in_byte("./assets/lenna.png");
     for ksize in &kernel_sizes {
         let blurred_image = Vision::median_blur(&image, *ksize);
-        let filename = format!("./assets/lenna_blurred_{}.png", ksize);
+        let filename = temp_image_path(&format!("lenna_luma_blurred_{}.png", ksize));
         Vision::save_image(&blurred_image, &filename).unwrap();
-        let new_size = get_file_size_in_byte(filename);
+        let new_size = get_file_size_in_byte(&filename);
+        let _ = std::fs::remove_file(&filename);
         assert!(new_size <= former_size);
         former_size = new_size;
         // print in mb

@@ -116,8 +116,6 @@ impl GenomeSerialized {
     /// # 错误
     /// 若文件中包含旧格式（LayerLevel）的任意 genome，返回错误消息。
     pub(crate) fn into_genome(self) -> Result<NetworkGenome, String> {
-        use super::gene::GenomeRepr;
-
         // 所有类型（Flat/Spatial/Sequential）的演化 genome 均须为 NodeLevel 格式
         if !self.is_node_level {
             return Err(format!(
@@ -128,9 +126,7 @@ impl GenomeSerialized {
         }
 
         // NodeLevel：直接构建 NodeLevel 表示
-        let mut genome = NetworkGenome::from_parts(
-            Vec::new(),
-            Vec::new(),
+        let genome = NetworkGenome::from_node_parts(
             self.input_dim,
             self.output_dim,
             self.seq_len,
@@ -138,14 +134,8 @@ impl GenomeSerialized {
             self.training_config,
             self.generated_by,
             self.next_innovation,
-            std::collections::HashMap::new(),
+            self.nodes,
         );
-        // 覆盖为 NodeLevel repr
-        genome.repr = GenomeRepr::NodeLevel {
-            nodes: self.nodes,
-            next_innovation: self.next_innovation,
-            weight_snapshots: std::collections::HashMap::new(),
-        };
 
         Ok(genome)
     }
