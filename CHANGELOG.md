@@ -2,6 +2,8 @@
 
 ## [Unreleased] - 待提交
 
+## [0.16.0] - 2026-04-28
+
 ### 修复
 
 - **fix(nn): GraphDescriptor 加 `explicit_output_ids`,精确还原 ONNX `graph.output`** [`761e4e8`]
@@ -20,7 +22,23 @@
   - 11 个新单测(MaxPool SPPF padding / ceil_mode / backward + ONNX MaxPool with pads/ceil_mode + Conv 对称/非对称 pads + yolov5_xiangqi_rebuild_succeeds 集成回归)
   - **验收**:rebuild OK,参数量 140,3 个输出节点;evolution 模块 4 处 MaxPool 字面量同步适配
 
+- **fix(onnx): 支持 PyTorch eval-mode 导出的 Conv with bias** [`40dc67d`]
+  - 自动拆分 3 输入 Conv 为 `Conv2d + Add`
+  - bias 形状自动从 `[1, C]` reshape 到 `[1, C, 1, 1]` 以正确广播
+
+- **fix(flatten): 修复动态 batch 维度（`dim=0`）下的除零 panic** [`40dc67d`]
+
 ### 新增
+
+- **feat(example): 中国象棋 CNN 示例改造为 ONNX 互通端到端流程** [`40dc67d`]
+  - PyTorch 训练 → ONNX 导出 → only_torch 加载 → 继续训练 → `.otm` 保存/加载/验证
+  - 文件迁移到 `examples/traditional/chess_cnn_onnx_finetune/`，后续示例重命名突出 ONNX 互通与继续训练能力
+  - `train_pytorch.py` 新增 ONNX 导出步骤
+  - 实测：基线 97.1% → 微调 5 epoch 后 97.8% → `.otm` 重载差异 0.00%
+
+- **feat(graph): `RebuildResult` 新增 `parameters` 字段** [`40dc67d`]
+  - 与 `inputs` / `outputs` 对称，加载完模型直接拿到可训练参数 `Var` 列表
+  - 适用于 `Graph::from_onnx` / `Graph::load_model` 后接优化器的场景
 
 - **feat(evolution): 彻底收口 NodeLevel-only genome 主路径**
   - `NetworkGenome::minimal*` 构造器直接生成 NodeLevel genome，不再依赖 LayerLevel → NodeLevel 迁移层
@@ -145,15 +163,15 @@
   - 兼容 VinXiangQi 等 YOLOv5 老版本导出（opset 12 引入了 Constant/Split/Pow 的稳定形式，本 import 已覆盖）
 
 - **chore: 历史遗留私有/隐私信息脱敏** [`4f698e7`]
-  - `download_model.py` 之前硬编码私有路径 `D:/DATA/BaiduSyncdisk/...` 不适合作为公开 example 的默认行为,改为跨平台 cache 标准做法:默认 `~/.cache/only_torch_yolo_cache/`(Windows 落到 `%USERPROFILE%/.cache/...`),允许 `XIANGQI_CACHE_DIR` 环境变量覆盖
-  - CHANGELOG.md 老条目里残留的私有路径 + 个人项目名同步脱敏(下游集成应用相关描述泛化)
-  - `.doc/design/onnx_import_strategy.md` §9.1 里 3 处个人项目名("梦入零式")改为通用"下游连线器应用"
-  - **已知遗留**(本次不动):`examples/traditional/chinese_chess/prepare_real_pieces.py` 还有 4 处硬编码 `D:\SOFTWARE\<象棋软件>\...`,属另一个 chess CNN example 的脚本,留作独立 backlog 任务
+  - `download_model.py` 之前硬编码本机绝对路径，不适合作为公开 example 的默认行为，改为跨平台 cache 标准做法：默认 `~/.cache/only_torch_yolo_cache/`（Windows 落到 `%USERPROFILE%/.cache/...`），允许 `XIANGQI_CACHE_DIR` 环境变量覆盖
+  - CHANGELOG.md 老条目里残留的本机路径 + 个人项目名同步脱敏，下游集成应用相关描述泛化
+  - `.doc/design/onnx_import_strategy.md` §9.1 中的个人项目名改为通用“下游连线器应用”
+  - **已知遗留**（本次不动）：`examples/traditional/chinese_chess/prepare_real_pieces.py` 还有硬编码第三方软件安装目录，属另一个 chess CNN example 的脚本，留作独立 backlog 任务
 
 - **chore: 删 `prepare_real_pieces.py` + 清理 `--real-data` 真实数据混合路径** [`1ed9acb`]
-  - 处理 `4f698e7` 留下的"已知遗留":`prepare_real_pieces.py` 本质是为开发者本地从 4 个商业象棋软件(象棋奇兵/名手/兵河五四/鲨鱼象棋)安装目录提取真实棋子贴图作 fine-tune mixin 的私货脚本,公开仓库不需要,且含 4 处硬编码 `D:\SOFTWARE\<象棋软件>\...` 私有路径
+  - 处理 `4f698e7` 留下的“已知遗留”：`prepare_real_pieces.py` 本质是为开发者本地从第三方象棋软件安装目录提取真实棋子贴图作 fine-tune mixin 的私货脚本，公开仓库不需要，且含硬编码本机安装路径
   - 整文件删除(-526 行)+ `data.rs` 移除 `has_real` 真实数据混合分支(-34 行,含 `concat_tensors` 辅助函数 + doc-comment 同步)+ `train_pytorch.py` 移除 `--real-data` CLI 参数及全部相关路径(-113 行,含 `load_and_merge_data` 简化为 `load_data` / `evaluate(real_mask_all)` 简化 / `best_real_acc` 跟踪删 / 真实数据子集统计段删)
-  - 影响:对应示例仍能完整演示「PyTorch → ONNX → only_torch continue-train → .otm 保存/加载」全流程,合成数据 baseline 实测 97.1%(0.15.1 实测数据);改动局限在 example 内部,README / 设计文档 / Cargo.toml 都不需要改
+  - 影响:对应示例仍能完整演示「PyTorch → ONNX → only_torch continue-train → .otm 保存/加载」全流程,合成数据 baseline 实测 97.1%(本次发版前实测数据);改动局限在 example 内部,README / 设计文档 / Cargo.toml 都不需要改
 
 - **refactor(example): chess 系列重命名突出框架能力** [`0a9d1fd`]
   - 旧名 `chinese_chess` / `chinese_chess_yolo` 看不出在演示 only_torch 的什么能力,对外(公开仓库)体验不友好。改为"领域 + 模型 + 核心能力"三段式:
@@ -168,6 +186,10 @@
 
 ### 文档
 
+- **docs: 添加 ONNX 导入/互通策略设计文档** [`6fcc013`]
+  - 新增 `.doc/design/onnx_import_strategy.md`，沉淀 ONNX import/export 的支持边界、路线选择与后续 backlog
+  - 为后续 Upsample2d、Transpose、Constant folding、Split rewrite 与真实 YOLOv5 模型导入提供设计依据
+
 - **docs(design): 扩充 onnx_import 设计文档 §9 为权威 backlog** [`d410c87`]
   - 把散落在旧 plan §9 / 新 plan §6 / 设计文档原 §9 / R4 风险注释的 11 项 backlog 整合到 `.doc/design/onnx_import_strategy.md` §9 作为权威入口
   - 5 类组织:业务层(4)/ 算子层(3)/ ImportReport 扩充(3,R4 显式守住)/ 架构层(1)/ 永远不做(1)
@@ -181,30 +203,6 @@
   - rebuild 阶段:**spatial shape 传播 bug 已修复**(MaxPool padding/ceil_mode 补全 + Conv 对称 padding 修对 + Constant→Parameter 保留 + Concat/Permute placeholder 精化)
   - ImportReport 71 条 rewrite + 62 条 warning,4 种 rewrite 模式齐全:`conv_with_bias_to_conv_plus_add`(60)/ `constant_fold_into_reshape`(6)/ `constant_fold_into_resize`(2)/ `split_to_narrows`(3)
   - 集成回归 `tests/yolov5_xiangqi_import.rs::yolov5_xiangqi_rebuild_succeeds` 持续通过
-
-- **chinese_chess_yolo example 业务遗留**:forward 输出空(`[1, 0]`)是 5D tensor 在 only_torch 算子下的支持问题(Permute/Concat/Mul 等对 5D 的 forward 路径未充分覆盖)+ outputs 选择(导出 3 个 head 输出节点的 raw 形式而非真正的最终 detect output),不在本 plan 范围,作为下游集成应用的前置条件单独处理
-
-## [0.15.1] - 2026-04-20
-
-### 新增
-
-- **feat(example): 中国象棋示例改造为 ONNX 互通端到端流程**
-  - PyTorch 训练 → ONNX 导出 → only_torch 加载 → 继续训练 → `.otm` 保存/加载/验证
-  - 文件迁移：`scripts/{generate_chess_data,train_chess_cnn,prepare_real_pieces,requirements}.py` → `examples/traditional/chinese_chess/`
-  - `train_pytorch.py` 新增 ONNX 导出步骤
-  - 实测：基线 97.1% → 微调 5 epoch 后 97.8% → `.otm` 重载差异 0.00%
-
-- **feat(graph): `RebuildResult` 新增 `parameters` 字段**
-  - 与 `inputs` / `outputs` 对称，加载完模型直接拿到可训练参数 `Var` 列表
-  - 适用于 `Graph::from_onnx` / `Graph::load_model` 后接优化器的场景
-
-### 修复
-
-- **fix(onnx): 支持 PyTorch eval-mode 导出的 Conv with bias**
-  - 自动拆分 3 输入 Conv 为 `Conv2d + Add`
-  - bias 形状自动从 `[1, C]` reshape 到 `[1, C, 1, 1]` 以正确广播
-
-- **fix(flatten): 修复动态 batch 维度（`dim=0`）下的除零 panic**
 
 ## [0.15.0] - 2026-04-20
 

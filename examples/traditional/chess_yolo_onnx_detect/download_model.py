@@ -49,7 +49,7 @@ DOWNLOAD_URL = (
 
 # 中间下载/解压区:跨平台 cache 目录(第三方资料不放项目内)
 # - 默认 ~/.cache/only_torch_yolo_cache/(Windows 落到 %USERPROFILE%/.cache/...)
-# - 可用环境变量 XIANGQI_CACHE_DIR 覆盖,例如 D:/某个固定目录/(适合多项目共享下载)
+# - 可用环境变量 XIANGQI_CACHE_DIR 覆盖到任意共享缓存目录
 CACHE_DIR = Path(
     os.environ.get(
         "XIANGQI_CACHE_DIR",
