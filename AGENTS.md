@@ -52,6 +52,7 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 - 梯度清零与累积：[梯度清零与累积设计](.doc/design/gradient_clear_and_accumulation_design.md)
 - Node 与 Layer 的边界：[节点与层边界设计](.doc/design/node_vs_layer_design.md)
 - 演化系统：[神经架构演化设计](.doc/design/neural_architecture_evolution_design.md)
+- 空间视觉任务路线：[空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md)
 - DataLoader / 变长序列：[数据加载设计](.doc/design/data_loader_design.md)
 - 开发环境 / rust-analyzer：[开发环境配置](.doc/dev_environment_setup.md)
 - 术语规范：[术语约定](.doc/terminology_convention.md)

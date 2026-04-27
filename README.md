@@ -586,6 +586,7 @@ cargo build --features blas-openblas
 - [ONNX 导入/互通策略设计](.doc/design/onnx_import_strategy.md) - 与第三方（PyTorch / Netron 等）通过 ONNX 协作的定位、算子扩展决策树、UX 契约、可视化与语义漂移对策
 - [记忆/循环机制设计](.doc/design/memory_mechanism_design.md) - NEAT 风格循环与传统 RNN 循环的关系、Hybrid 设计方案、BPTT/TBPTT 训练策略、实现路径及相关论文
 - [神经架构演化设计](.doc/design/neural_architecture_evolution_design.md) - **核心特色**：NEAT 风格拓扑变异 + 梯度训练的混合策略，NodeLevel 统一内核、Pareto/NSGA-II、FM 粒度演化、Net2Net、ASHA
+- [空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md) - 梳理 Classification / Detection / Segmentation / Tracking 等空间域任务关系、当前能力矩阵与后续 Roadmap
 - [节点与层边界设计](.doc/design/node_vs_layer_design.md) - Node 和 Layer 的职责划分、新增算子的分层决策
 - [Input 节点语义设计](.doc/design/input_node_semantics_design.md) - Input 节点的三种变体（Data / Target / Smart）及其语义
 - [API 分层与种子管理设计](.doc/design/api_layering_and_seed_design.md) - Graph seed 传播机制、Layer seed 确定性保证、演化系统 seed 管理
