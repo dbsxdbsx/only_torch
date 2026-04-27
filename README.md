@@ -53,6 +53,7 @@ let dot = graph.to_dot();
 | [mnist_cnn](examples/traditional/mnist_cnn/) | 图像分类 | **CNN**、Conv2d、MaxPool2d | LeNet 风格 `Conv(1→4→8)` | `cargo run --example mnist_cnn` |
 | [single_object_segmentation](examples/traditional/single_object_segmentation/) | 单目标语义分割 | **Pixel-wise BCE**、IoU、空间输出 | `Conv(1→4→4→1)` | `cargo run --example single_object_segmentation` |
 | [single_object_detection](examples/traditional/single_object_detection/) | 单目标检测 | **bbox 回归**、Mean Box IoU、预测框可视化 | `Conv → Pool → FC(4)` | `cargo run --example single_object_detection` |
+| [multi_instance_segmentation](examples/traditional/multi_instance_segmentation/) | 固定两实例分割 | **固定 slot mask**、Mean Instance IoU、预测 mask 可视化 | `Conv(1→8→8→2)` | `cargo run --example multi_instance_segmentation` |
 | [mnist_gan](examples/traditional/mnist_gan/) | **图像生成** | **GAN**、detach 梯度控制、多 Loss | `G(64→256→784) D(784→256→1)` | `cargo run --example mnist_gan` |
 | [parity_rnn_fixed_len](examples/traditional/parity_rnn_fixed_len/) | 序列分类 | **RNN 层**、固定长度序列 | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_fixed_len` |
 | [parity_rnn_var_len](examples/traditional/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
@@ -162,6 +163,30 @@ cargo run --example mnist_cnn
 ```bash
 cargo run --example single_object_segmentation
 # CPU 上快速收敛到高 IoU
+```
+
+**Single Object Detection** ⭐⭐
+
+使用固定 seed 的 16x16 合成矩形图像做单目标 bbox 回归，展示：
+- 小型 CNN 输出归一化 `[cx, cy, w, h]`
+- `HuberLoss` 训练 bbox，Mean Box IoU 评估预测框
+- 输出原图与带预测框的可视化图像
+
+```bash
+cargo run --example single_object_detection
+# CPU 上快速收敛到稳定 mean IoU
+```
+
+**Multi Instance Segmentation** ⭐⭐
+
+使用固定 seed 的 16x16 合成图像做 toy 级固定两实例分割，展示：
+- 每张图恰好 2 个非重叠实例，不处理“最多 K 个”或空 slot
+- 输出 `[N, 2, H, W]` 固定 slot mask，不包含类别、confidence 或 matching
+- 使用 Mean Instance IoU 评估两个实例 mask 的平均质量
+
+```bash
+cargo run --example multi_instance_segmentation
+# CPU 上快速收敛到稳定 Mean Instance IoU
 ```
 
 </details>

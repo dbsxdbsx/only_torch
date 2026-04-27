@@ -32,6 +32,11 @@
   - 新增 `examples/traditional/single_object_detection`：内置固定 seed 的 16x16 合成单矩形数据，小型 CNN 输出归一化 `[cx, cy, w, h]` bbox，用 Huber loss 快速训练
   - 示例注册到 `Cargo.toml` / `just example-single-object-detection` / README，并输出 `test_in.png`、`test_out.png` 展示原图与预测 bbox overlay
 
+- **feat(example): 新增 Multi Instance Segmentation 传统示例**
+  - 新增 `examples/traditional/multi_instance_segmentation`：内置固定 seed 的 16x16 合成图像，每张图恰好 2 个非重叠矩形实例，输出 `[N, 2, H, W]` 固定 slot mask
+  - 小型全卷积网络 `Conv(1→8→8→2)` 用 4D `BCEWithLogits` 训练，示例内报告 Slot Pixel Accuracy 与 Mean Instance IoU
+  - 示例注册到 `Cargo.toml` / `just example-multi-instance-segmentation` / README，并明确它是教学用固定两实例 toy 示例，不覆盖通用 Mask R-CNN / YOLO-seg 系统
+
 - **feat(evolution): 收敛用户 API 到 NodeLevel-only 路线**
   - `evolution` 不再公开 `gene` / `builder` / `migration` / `mutation` 等内部模块，用户侧从顶层导入 `TaskMetric`、`ReportMetric`、`EvolutionCallback`、`ConvergenceConfig` 等任务级类型
   - 删除 `build_layer_level()` 逐层构图后端，`NetworkGenome::build()` 统一通过 NodeLevel → `GraphDescriptor` → `Graph` 构图
