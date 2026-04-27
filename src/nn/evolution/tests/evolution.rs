@@ -890,6 +890,35 @@ fn spatial_brightness_data(
     (inputs, labels)
 }
 
+fn spatial_segmentation_data(n: usize, h: usize, w: usize) -> (Vec<Tensor>, Vec<Tensor>) {
+    let mut inputs = Vec::with_capacity(n);
+    let mut labels = Vec::with_capacity(n);
+    for i in 0..n {
+        let vertical = i % 2 == 0;
+        let mut image = Vec::with_capacity(h * w);
+        let mut mask = Vec::with_capacity(2 * h * w);
+        let mut class_map = vec![0usize; h * w];
+
+        for y in 0..h {
+            for x in 0..w {
+                let foreground = if vertical { x >= w / 2 } else { y >= h / 2 };
+                class_map[y * w + x] = if foreground { 1 } else { 0 };
+                image.push(if foreground { 0.8 } else { 0.1 });
+            }
+        }
+
+        for class_idx in 0..2 {
+            for &pixel_class in &class_map {
+                mask.push(if pixel_class == class_idx { 1.0 } else { 0.0 });
+            }
+        }
+
+        inputs.push(Tensor::new(&image, &[1, h, w]));
+        labels.push(Tensor::new(&mask, &[2, h, w]));
+    }
+    (inputs, labels)
+}
+
 #[test]
 fn test_evolution_spatial_runs() {
     // 小型空间数据：1 通道, 4×4，模拟 mnist_cnn 的缩小版
@@ -932,6 +961,51 @@ fn test_evolution_spatial_predict() {
     let batch = Tensor::ones(&[3, 1, 4, 4]);
     let pred_batch = result.predict(&batch).unwrap();
     assert_eq!(pred_batch.shape(), &[3, 2]);
+}
+
+#[test]
+fn test_evolution_spatial_segmentation_runs() {
+    let data = spatial_segmentation_data(8, 4, 4);
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::MeanIoU)
+        .with_seed(42)
+        .with_max_generations(2)
+        .with_population_size(2)
+        .with_offspring_batch_size(2)
+        .with_parallelism(1)
+        .with_batch_size(4)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert!(result.fitness.primary >= 0.0 && result.fitness.primary <= 1.0);
+    assert!(
+        result
+            .architecture_summary
+            .contains("minimal_spatial_segmentation")
+            || result.architecture_summary.starts_with("nodes="),
+        "分割演化应从 spatial-to-spatial 种子或 NodeLevel 架构出发: {}",
+        result.architecture_summary
+    );
+}
+
+#[test]
+fn test_evolution_spatial_segmentation_predict_shape() {
+    let data = spatial_segmentation_data(8, 4, 4);
+    let result = Evolution::supervised(data.clone(), data, TaskMetric::MeanIoU)
+        .with_seed(7)
+        .with_max_generations(1)
+        .with_population_size(2)
+        .with_offspring_batch_size(2)
+        .with_parallelism(1)
+        .with_batch_size(4)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    let sample = Tensor::ones(&[1, 4, 4]);
+    let pred = result.predict(&sample).unwrap();
+    assert_eq!(pred.shape(), &[1, 2, 4, 4]);
+    assert!(pred.to_vec().iter().all(|v| v.is_finite()));
 }
 
 #[test]

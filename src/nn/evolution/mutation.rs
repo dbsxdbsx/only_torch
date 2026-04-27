@@ -261,7 +261,12 @@ impl MutationRegistry {
     pub fn phase1_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
         // 结构变异：层块插入 + 原子节点插入
-        reg.register(0.20, InsertLayerMutation::default());
+        let insert_layer = if metric.is_segmentation() {
+            InsertLayerMutation::spatial_preserving(default_activations())
+        } else {
+            InsertLayerMutation::default()
+        };
+        reg.register(0.20, insert_layer);
         reg.register(0.10, InsertAtomicNodeMutation::default());
         reg.register(0.08, RemoveLayerMutation);
         reg.register(0.04, ReplaceLayerTypeMutation::default());
@@ -289,19 +294,21 @@ impl MutationRegistry {
         // 空间模式专属
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
-            reg.register(0.06, MutateStrideMutation);
-            // FM 级别变异：结构探索偏重拓扑（Add/Split），参数调整适度降权
-            use super::fm_mutation::*;
-            reg.register(0.12, AddFeatureMapMutation);
-            reg.register(0.04, RemoveFeatureMapMutation);
-            reg.register(0.10, AddFMEdgeMutation);
-            reg.register(0.04, RemoveFMEdgeMutation);
-            reg.register(0.06, SplitFMEdgeMutation);
-            reg.register(0.02, ChangeFMEdgeTypeMutation);
-            reg.register(0.02, MutateFMEdgeKernelSizeMutation);
-            reg.register(0.02, MutateFMEdgeStrideMutation);
-            reg.register(0.02, MutateFMEdgeDilationMutation);
-            reg.register(0.02, ChangeFeatureMapSizeMutation);
+            if !metric.is_segmentation() {
+                reg.register(0.06, MutateStrideMutation);
+                // FM 级别变异：结构探索偏重拓扑（Add/Split），参数调整适度降权
+                use super::fm_mutation::*;
+                reg.register(0.12, AddFeatureMapMutation);
+                reg.register(0.04, RemoveFeatureMapMutation);
+                reg.register(0.10, AddFMEdgeMutation);
+                reg.register(0.04, RemoveFMEdgeMutation);
+                reg.register(0.06, SplitFMEdgeMutation);
+                reg.register(0.02, ChangeFMEdgeTypeMutation);
+                reg.register(0.02, MutateFMEdgeKernelSizeMutation);
+                reg.register(0.02, MutateFMEdgeStrideMutation);
+                reg.register(0.02, MutateFMEdgeDilationMutation);
+                reg.register(0.02, ChangeFeatureMapSizeMutation);
+            }
         }
         reg
     }
@@ -310,7 +317,12 @@ impl MutationRegistry {
     pub fn phase2_registry(metric: &TaskMetric, is_sequential: bool, is_spatial: bool) -> Self {
         let mut reg = Self::new();
         // 结构变异：精炼阶段原子节点插入权重提升
-        reg.register(0.06, InsertLayerMutation::default());
+        let insert_layer = if metric.is_segmentation() {
+            InsertLayerMutation::spatial_preserving(default_activations())
+        } else {
+            InsertLayerMutation::default()
+        };
+        reg.register(0.06, insert_layer);
         reg.register(0.08, InsertAtomicNodeMutation::default());
         reg.register(0.08, RemoveLayerMutation);
         reg.register(0.08, ReplaceLayerTypeMutation::default());
@@ -338,19 +350,21 @@ impl MutationRegistry {
         // 空间模式专属
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
-            reg.register(0.06, MutateStrideMutation);
-            // FM 级别变异（Phase 2 偏向参数调整，结构探索适度保留）
-            use super::fm_mutation::*;
-            reg.register(0.06, AddFeatureMapMutation);
-            reg.register(0.04, RemoveFeatureMapMutation);
-            reg.register(0.06, AddFMEdgeMutation);
-            reg.register(0.04, RemoveFMEdgeMutation);
-            reg.register(0.04, SplitFMEdgeMutation);
-            reg.register(0.02, ChangeFMEdgeTypeMutation);
-            reg.register(0.04, MutateFMEdgeKernelSizeMutation);
-            reg.register(0.02, MutateFMEdgeStrideMutation);
-            reg.register(0.02, MutateFMEdgeDilationMutation);
-            reg.register(0.02, ChangeFeatureMapSizeMutation);
+            if !metric.is_segmentation() {
+                reg.register(0.06, MutateStrideMutation);
+                // FM 级别变异（Phase 2 偏向参数调整，结构探索适度保留）
+                use super::fm_mutation::*;
+                reg.register(0.06, AddFeatureMapMutation);
+                reg.register(0.04, RemoveFeatureMapMutation);
+                reg.register(0.06, AddFMEdgeMutation);
+                reg.register(0.04, RemoveFMEdgeMutation);
+                reg.register(0.04, SplitFMEdgeMutation);
+                reg.register(0.02, ChangeFMEdgeTypeMutation);
+                reg.register(0.04, MutateFMEdgeKernelSizeMutation);
+                reg.register(0.02, MutateFMEdgeStrideMutation);
+                reg.register(0.02, MutateFMEdgeDilationMutation);
+                reg.register(0.02, ChangeFeatureMapSizeMutation);
+            }
         }
         reg
     }
@@ -621,12 +635,21 @@ fn shrink_size(current: usize, min: usize, strategy: &SizeStrategy, rng: &mut St
 
 pub struct InsertLayerMutation {
     available_activations: Vec<ActivationType>,
+    allow_spatial_pooling: bool,
 }
 
 impl InsertLayerMutation {
     pub fn new(available_activations: Vec<ActivationType>) -> Self {
         Self {
             available_activations,
+            allow_spatial_pooling: true,
+        }
+    }
+
+    pub fn spatial_preserving(available_activations: Vec<ActivationType>) -> Self {
+        Self {
+            available_activations,
+            allow_spatial_pooling: false,
         }
     }
 }
@@ -1999,6 +2022,7 @@ fn node_level_insert_apply(
         rng,
         &m.available_activations,
         adjacent_act,
+        m.allow_spatial_pooling,
     )
     .ok_or_else(|| MutationError::NotApplicable("无法生成插入节点".into()))?;
 

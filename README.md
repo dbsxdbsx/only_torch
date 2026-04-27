@@ -54,6 +54,8 @@ let dot = graph.to_dot();
 | [single_object_segmentation](examples/traditional/single_object_segmentation/) | 单目标语义分割 | **Pixel-wise BCE**、IoU、空间输出 | `Conv(1→4→4→1)` | `cargo run --example single_object_segmentation` |
 | [single_object_detection](examples/traditional/single_object_detection/) | 单目标检测 | **bbox 回归**、Mean Box IoU、预测框可视化 | `Conv → Pool → FC(4)` | `cargo run --example single_object_detection` |
 | [multi_instance_segmentation](examples/traditional/multi_instance_segmentation/) | 固定两实例分割 | **固定 slot mask**、Mean Instance IoU、预测 mask 可视化 | `Conv(1→8→8→2)` | `cargo run --example multi_instance_segmentation` |
+| [overlapping_shapes_semantic_segmentation](examples/traditional/overlapping_shapes_semantic_segmentation/) | 重叠形状语义分割 | **64x64 多形状 benchmark**、Dice、Mean IoU | `Conv(1→12→16→4)` | `cargo run --example overlapping_shapes_semantic_segmentation` |
+| [overlapping_fixed_slot_instance_segmentation](examples/traditional/overlapping_fixed_slot_instance_segmentation/) | 重叠固定 slot 实例分割 | **1..3 实例**、visible mask、空 slot | `Conv(1→12→16→3)` | `cargo run --example overlapping_fixed_slot_instance_segmentation` |
 | [mnist_gan](examples/traditional/mnist_gan/) | **图像生成** | **GAN**、detach 梯度控制、多 Loss | `G(64→256→784) D(784→256→1)` | `cargo run --example mnist_gan` |
 | [parity_rnn_fixed_len](examples/traditional/parity_rnn_fixed_len/) | 序列分类 | **RNN 层**、固定长度序列 | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_fixed_len` |
 | [parity_rnn_var_len](examples/traditional/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
@@ -72,6 +74,7 @@ let dot = graph.to_dot();
 | [evolution_xor](examples/evolution/xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
 | [evolution_iris](examples/evolution/iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
 | [evolution_mnist](examples/evolution/mnist/) | **神经架构演化** | **Evolution API**、Spatial 域 CNN 自动搜索 | 自动演化 | `cargo run --example evolution_mnist` |
+| [evolution_overlapping_shapes_semantic_segmentation](examples/evolution/overlapping_shapes_semantic_segmentation/) | **分割架构演化** | **Spatial-to-spatial**、Mean IoU、无 Flatten 输出头 | 自动演化 | `cargo run --example evolution_overlapping_shapes_semantic_segmentation` |
 | [evolution_parity_seq](examples/evolution/parity_seq/) | **神经架构演化** | **Evolution API**、序列数据、记忆单元自动选择 | 自动演化 | `cargo run --example evolution_parity_seq` |
 | [evolution_parity_seq_var_len](examples/evolution/parity_seq_var_len/) | **神经架构演化** | **Evolution API**、变长序列、zero-pad | 自动演化 | `cargo run --example evolution_parity_seq_var_len` |
 

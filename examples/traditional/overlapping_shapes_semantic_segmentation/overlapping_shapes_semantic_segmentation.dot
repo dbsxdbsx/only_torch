@@ -1,0 +1,69 @@
+digraph ComputeGraph {
+    rankdir=TB;
+    newrank=true;
+    splines=polyline;
+    node [fontname="Microsoft YaHei,SimHei,Arial"];
+    edge [fontname="Microsoft YaHei,SimHei,Arial"];
+
+    subgraph cluster_group_conv2d_2 {
+        label=<<B>head</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 16, ?, ?] → [?, 4, ?, ?], kernel 1×1</FONT>>;
+        style=filled;
+        fillcolor="#E3F2FD80";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "2" [label=<head_out_1<BR/><B>Add</B><BR/>[?, 4, 64, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "4" [label=<head_conv_1<BR/><B>Conv2d</B><BR/>[?, 4, 64, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "5" [label=<head_b<BR/><B>Parameter</B><BR/>[1, 4, 1, 1]<BR/>(4 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "7" [label=<head_K<BR/><B>Parameter</B><BR/>[4, 16, 1, 1]<BR/>(64 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_1 {
+        label=<<B>conv2</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 12, ?, ?] → [?, 16, ?, ?], kernel 3×3</FONT>>;
+        style=filled;
+        fillcolor="#E8F5E980";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "8" [label=<conv2_out_1<BR/><B>Add</B><BR/>[?, 16, 64, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "9" [label=<conv2_conv_1<BR/><B>Conv2d</B><BR/>[?, 16, 64, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "10" [label=<conv2_b<BR/><B>Parameter</B><BR/>[1, 16, 1, 1]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "12" [label=<conv2_K<BR/><B>Parameter</B><BR/>[16, 12, 3, 3]<BR/>(1,728 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    subgraph cluster_group_conv2d_0 {
+        label=<<B>conv1</B><BR/><FONT POINT-SIZE="9">Conv2d: [?, 1, ?, ?] → [?, 12, ?, ?], kernel 3×3</FONT>>;
+        style=filled;
+        fillcolor="#FFF3E080";
+        fontname="Microsoft YaHei,SimHei,Arial";
+        fontsize=11;
+        margin=12;
+            "13" [label=<conv1_out_1<BR/><B>Add</B><BR/>[?, 12, 64, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "14" [label=<conv1_conv_1<BR/><B>Conv2d</B><BR/>[?, 12, 64, 64]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "15" [label=<conv1_b<BR/><B>Parameter</B><BR/>[1, 12, 1, 1]<BR/>(12 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "17" [label=<conv1_K<BR/><B>Parameter</B><BR/>[12, 1, 3, 3]<BR/>(108 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+    }
+
+    "1" [label=<bce_1<BR/><B>BCE</B><BR/>[?, 1]<BR/><FONT COLOR="#C62828" POINT-SIZE="9">▸ Output</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#C62828"];
+    "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 4, 64, 64]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
+    "6" [label=<relu_1<BR/><B>ReLU</B><BR/>[?, 16, 64, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "11" [label=<relu_2<BR/><B>ReLU</B><BR/>[?, 12, 64, 64]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "16" [label=<input_1<BR/><B>Input</B><BR/>[?, 1, 64, 64]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+
+    "2" -> "1";
+    "3" -> "1";
+    "4" -> "2";
+    "5" -> "2";
+    "6" -> "4";
+    "7" -> "4";
+    "8" -> "6";
+    "9" -> "8";
+    "10" -> "8";
+    "11" -> "9";
+    "12" -> "9";
+    "13" -> "11";
+    "14" -> "13";
+    "15" -> "13";
+    "16" -> "14";
+    "17" -> "14";
+}

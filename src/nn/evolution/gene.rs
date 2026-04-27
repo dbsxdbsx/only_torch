@@ -259,12 +259,27 @@ pub enum TaskMetric {
     R2,
     /// 多标签准确率 → 自动推断 BCE
     MultiLabelAccuracy,
+    /// 二值语义分割 IoU → 自动推断 BCE
+    BinaryIoU,
+    /// 多类别语义分割 Mean IoU → 自动推断 BCE(one-hot mask)
+    MeanIoU,
 }
 
 impl TaskMetric {
     /// 是否为离散指标（需要 loss tiebreaker 辅助比较）
     pub fn is_discrete(&self) -> bool {
-        matches!(self, TaskMetric::Accuracy | TaskMetric::MultiLabelAccuracy)
+        matches!(
+            self,
+            TaskMetric::Accuracy
+                | TaskMetric::MultiLabelAccuracy
+                | TaskMetric::BinaryIoU
+                | TaskMetric::MeanIoU
+        )
+    }
+
+    /// 是否为 dense spatial segmentation 指标。
+    pub fn is_segmentation(&self) -> bool {
+        matches!(self, TaskMetric::BinaryIoU | TaskMetric::MeanIoU)
     }
 }
 
@@ -274,7 +289,9 @@ pub fn compatible_losses(metric: &TaskMetric, output_dim: usize) -> Vec<LossType
         TaskMetric::Accuracy if output_dim == 1 => vec![LossType::BCE, LossType::MSE],
         TaskMetric::Accuracy => vec![LossType::CrossEntropy],
         TaskMetric::R2 => vec![LossType::MSE],
-        TaskMetric::MultiLabelAccuracy => vec![LossType::BCE],
+        TaskMetric::MultiLabelAccuracy | TaskMetric::BinaryIoU | TaskMetric::MeanIoU => {
+            vec![LossType::BCE]
+        }
     }
 }
 
@@ -586,6 +603,56 @@ impl NetworkGenome {
                 layers: vec![conv_layer, pool_layer, flatten_layer, output_head],
                 skip_edges: Vec::new(),
                 next_innovation: 5,
+                weight_snapshots: HashMap::new(),
+            },
+        }
+    }
+
+    /// 最小空间分割网络：layers = [Conv2d(→8,k=3), Conv2d(→classes,k=1)]
+    ///
+    /// 该种子保持 `[N, C, H, W]` dense 输出，不经过 `Flatten`，用于语义分割等
+    /// spatial-to-spatial 任务。`output_channels` 表示 mask/logits 通道数。
+    ///
+    /// # Panics
+    /// `input_channels` 或 `output_channels` 为零，或 `spatial` 的 H/W 为零时 panic。
+    pub(crate) fn minimal_spatial_segmentation(
+        input_channels: usize,
+        output_channels: usize,
+        spatial: (usize, usize),
+    ) -> Self {
+        assert!(input_channels > 0, "input_channels 不能为零");
+        assert!(output_channels > 0, "output_channels 不能为零");
+        assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
+
+        let hidden_channels = 8usize;
+        let conv_layer = LayerGene {
+            innovation_number: 1,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: hidden_channels,
+                kernel_size: 3,
+            },
+            enabled: true,
+        };
+        let output_head = LayerGene {
+            innovation_number: 2,
+            layer_config: LayerConfig::Conv2d {
+                out_channels: output_channels,
+                kernel_size: 1,
+            },
+            enabled: true,
+        };
+
+        Self {
+            input_dim: input_channels,
+            output_dim: output_channels,
+            seq_len: None,
+            input_spatial: Some(spatial),
+            training_config: TrainingConfig::default(),
+            generated_by: "minimal_spatial_segmentation".to_string(),
+            repr: GenomeRepr::LayerLevel {
+                layers: vec![conv_layer, output_head],
+                skip_edges: Vec::new(),
+                next_innovation: 3,
                 weight_snapshots: HashMap::new(),
             },
         }
@@ -1060,7 +1127,9 @@ impl NetworkGenome {
             TaskMetric::Accuracy if output_dim > 1 => LossType::CrossEntropy,
             TaskMetric::Accuracy => LossType::BCE,
             TaskMetric::R2 => LossType::MSE,
-            TaskMetric::MultiLabelAccuracy => LossType::BCE,
+            TaskMetric::MultiLabelAccuracy | TaskMetric::BinaryIoU | TaskMetric::MeanIoU => {
+                LossType::BCE
+            }
         }
     }
 
@@ -1070,7 +1139,7 @@ impl NetworkGenome {
     /// - 空间模式：Spatial→Spatial（Conv2d/Pool2d）、Spatial→Flat（Flatten）、
     ///   Flat→Flat（Linear）；RNN 非法
     /// - 序列模式：Seq→Seq/Flat（RNN）、Flat→Flat（Linear）；空间层非法
-    /// - 终态必须为 Flat
+    /// - 图像分类终态为 Flat；dense 分割可保持 Spatial 终态
     ///
     /// 纯平坦模式直接返回 true。
     pub fn is_domain_valid(&self) -> bool {
@@ -1111,7 +1180,7 @@ impl NetworkGenome {
                     LayerConfig::Activation { .. } | LayerConfig::Dropout { .. } => {}
                 }
             }
-            return current_domain == ShapeDomain::Flat;
+            return matches!(current_domain, ShapeDomain::Flat | ShapeDomain::Spatial);
         }
 
         // 纯平坦模式

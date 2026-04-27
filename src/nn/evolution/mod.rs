@@ -422,7 +422,24 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
             } else {
                 (train_data.0[0].size(), None, None)
             };
-            let output_dim = train_data.1[0].size();
+            let output_dim = if metric.is_segmentation() {
+                let label_shape = train_data.1[0].shape();
+                if input_spatial.is_none() || train_data.1[0].dimension() != 3 {
+                    return Err(EvolutionError::InvalidData(
+                        "分割任务要求输入为 [C,H,W]，标签为 [classes,H,W]".into(),
+                    ));
+                }
+                let spatial = input_spatial.unwrap();
+                if label_shape[1] != spatial.0 || label_shape[2] != spatial.1 {
+                    return Err(EvolutionError::InvalidData(format!(
+                        "分割标签空间尺寸必须与输入一致：input={:?}, label={:?}",
+                        spatial, label_shape
+                    )));
+                }
+                label_shape[0]
+            } else {
+                train_data.1[0].size()
+            };
             let n_train = train_data.0.len();
             let task = SupervisedTask::new(train_data, test_data, metric.clone())?;
             Ok(MaterializedTask {
@@ -838,11 +855,21 @@ impl Evolution {
             let _ = g.migrate_to_node_level();
             g
         } else if let Some(spatial) = prepared.input_spatial {
-            let mut g =
-                NetworkGenome::minimal_spatial(prepared.input_dim, prepared.output_dim, spatial);
-            // 空间模式迁移到 NodeLevel → FM Level
+            let mut g = if prepared.metric.is_segmentation() {
+                NetworkGenome::minimal_spatial_segmentation(
+                    prepared.input_dim,
+                    prepared.output_dim,
+                    spatial,
+                )
+            } else {
+                NetworkGenome::minimal_spatial(prepared.input_dim, prepared.output_dim, spatial)
+            };
+            // 分割任务需要保持 dense H/W 输出，先停在 NodeLevel，避免当前 FM
+            // 分解对连续 Conv2d 的重连假设影响输出形状协议。
             let _ = g.migrate_to_node_level();
-            g.migrate_to_fm_level();
+            if !prepared.metric.is_segmentation() {
+                g.migrate_to_fm_level();
+            }
             g
         } else {
             let mut g = NetworkGenome::minimal(prepared.input_dim, prepared.output_dim);

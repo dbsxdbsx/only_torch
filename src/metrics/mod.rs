@@ -473,6 +473,8 @@ pub use classification::{
 };
 pub use detection::mean_box_iou_cxcywh;
 pub use regression::{mean_absolute_error, mean_squared_error, r2_score, root_mean_squared_error};
-pub use segmentation::{binary_iou, pixel_accuracy};
+pub use segmentation::{
+    binary_iou, dice_score, mean_iou, per_class_iou, pixel_accuracy, semantic_pixel_accuracy,
+};
 
 // 注：MultiLabelMetric 已在本模块定义并自动导出

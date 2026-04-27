@@ -1220,6 +1220,7 @@ pub fn create_insert_nodes(
     rng: &mut StdRng,
     available_activations: &[ActivationType],
     adjacent_is_activation: bool,
+    allow_spatial_pooling: bool,
 ) -> Option<Vec<NodeGene>> {
     let domain = node_domain_at(genome, after_id);
     let in_dim = node_out_dim_at(genome, after_id);
@@ -1284,7 +1285,7 @@ pub fn create_insert_nodes(
         let input_spatial = node_spatial_at(genome, after_id);
         if let Some(spatial) = input_spatial {
             let can_pool = spatial.0 >= 2 && spatial.1 >= 2;
-            if can_pool && rng.gen_bool(0.15) {
+            if allow_spatial_pooling && can_pool && rng.gen_bool(0.15) {
                 let pool_type = if rng.gen_bool(0.5) {
                     PoolType::Max
                 } else {

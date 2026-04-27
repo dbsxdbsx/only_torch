@@ -46,6 +46,10 @@ pub enum ReportMetric {
     RootMeanSquaredError,
     MultiLabelLooseAccuracy,
     MultiLabelStrictAccuracy,
+    PixelAccuracy,
+    BinaryIoU,
+    Dice,
+    MeanIoU,
 }
 
 impl ReportMetric {
@@ -62,6 +66,10 @@ impl ReportMetric {
             ReportMetric::RootMeanSquaredError => "rmse",
             ReportMetric::MultiLabelLooseAccuracy => "multilabel_loose_accuracy",
             ReportMetric::MultiLabelStrictAccuracy => "multilabel_strict_accuracy",
+            ReportMetric::PixelAccuracy => "pixel_accuracy",
+            ReportMetric::BinaryIoU => "binary_iou",
+            ReportMetric::Dice => "dice",
+            ReportMetric::MeanIoU => "mean_iou",
         }
     }
 
@@ -86,6 +94,13 @@ impl ReportMetric {
                 self,
                 ReportMetric::MultiLabelLooseAccuracy | ReportMetric::MultiLabelStrictAccuracy
             ),
+            TaskMetric::BinaryIoU => matches!(
+                self,
+                ReportMetric::PixelAccuracy | ReportMetric::BinaryIoU | ReportMetric::Dice
+            ),
+            TaskMetric::MeanIoU => {
+                matches!(self, ReportMetric::PixelAccuracy | ReportMetric::MeanIoU)
+            }
         }
     }
 
@@ -107,6 +122,12 @@ impl ReportMetric {
                 ReportMetric::MultiLabelLooseAccuracy,
                 ReportMetric::MultiLabelStrictAccuracy,
             ],
+            TaskMetric::BinaryIoU => vec![
+                ReportMetric::PixelAccuracy,
+                ReportMetric::BinaryIoU,
+                ReportMetric::Dice,
+            ],
+            TaskMetric::MeanIoU => vec![ReportMetric::PixelAccuracy, ReportMetric::MeanIoU],
         }
     }
 }
@@ -774,6 +795,15 @@ pub(crate) fn compute_primary_metric(
             }
             _ => metrics::multilabel_loose_accuracy(predictions, labels, 0.5).value(),
         },
+        TaskMetric::BinaryIoU => {
+            let threshold = if matches!(loss_type, LossType::BCE) {
+                0.0
+            } else {
+                0.5
+            };
+            metrics::binary_iou(predictions, labels, threshold).value()
+        }
+        TaskMetric::MeanIoU => metrics::mean_iou(predictions, labels).value(),
     }
 }
 
@@ -846,6 +876,41 @@ fn compute_report_metric(
         ReportMetric::MultiLabelStrictAccuracy => {
             let decoded = multilabel_predictions(predictions, loss_type);
             let value = metrics::multilabel_strict_accuracy(&decoded, labels, 0.5);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::PixelAccuracy => {
+            let value = if predictions.shape().len() == 4 && predictions.shape()[1] > 1 {
+                metrics::semantic_pixel_accuracy(predictions, labels)
+            } else {
+                let threshold = if matches!(loss_type, LossType::BCE) {
+                    0.0
+                } else {
+                    0.5
+                };
+                metrics::pixel_accuracy(predictions, labels, threshold)
+            };
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::BinaryIoU => {
+            let threshold = if matches!(loss_type, LossType::BCE) {
+                0.0
+            } else {
+                0.5
+            };
+            let value = metrics::binary_iou(predictions, labels, threshold);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::Dice => {
+            let threshold = if matches!(loss_type, LossType::BCE) {
+                0.0
+            } else {
+                0.5
+            };
+            let value = metrics::dice_score(predictions, labels, threshold);
+            Some(MetricValue::new(metric, value.value(), value.n_samples()))
+        }
+        ReportMetric::MeanIoU => {
+            let value = metrics::mean_iou(predictions, labels);
             Some(MetricValue::new(metric, value.value(), value.n_samples()))
         }
     }

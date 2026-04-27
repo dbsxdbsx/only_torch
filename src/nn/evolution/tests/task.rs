@@ -30,6 +30,31 @@ fn xor_task() -> SupervisedTask {
     SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap()
 }
 
+fn tiny_segmentation_data() -> (Vec<Tensor>, Vec<Tensor>) {
+    (
+        vec![
+            Tensor::new(&[0.0, 0.2, 0.8, 1.0], &[1, 2, 2]),
+            Tensor::new(&[1.0, 0.8, 0.2, 0.0], &[1, 2, 2]),
+        ],
+        vec![
+            Tensor::new(
+                &[
+                    1.0, 1.0, 0.0, 0.0, // class 0
+                    0.0, 0.0, 1.0, 1.0, // class 1
+                ],
+                &[2, 2, 2],
+            ),
+            Tensor::new(
+                &[
+                    0.0, 0.0, 1.0, 1.0, // class 0
+                    1.0, 1.0, 0.0, 0.0, // class 1
+                ],
+                &[2, 2, 2],
+            ),
+        ],
+    )
+}
+
 fn genome_with_hidden(input_dim: usize, output_dim: usize) -> NetworkGenome {
     let mut genome = NetworkGenome::minimal(input_dim, output_dim);
     let inn = genome.next_innovation_number();
@@ -367,6 +392,14 @@ fn test_loss_auto_infer_mse_for_r2() {
 }
 
 #[test]
+fn test_loss_auto_infer_bce_for_segmentation_metrics() {
+    let genome = NetworkGenome::minimal_spatial_segmentation(1, 2, (2, 2));
+
+    assert_eq!(genome.effective_loss(&TaskMetric::BinaryIoU), LossType::BCE);
+    assert_eq!(genome.effective_loss(&TaskMetric::MeanIoU), LossType::BCE);
+}
+
+#[test]
 fn test_loss_explicit_override() {
     let mut genome = NetworkGenome::minimal(2, 1);
     genome.training_config.loss_override = Some(LossType::MSE);
@@ -675,6 +708,61 @@ fn test_binary_classification_all_negative_logits() {
     );
 }
 
+#[test]
+fn test_segmentation_primary_metrics() {
+    let binary_predictions = Tensor::new(&[0.9, 0.8, 0.2, 0.1], &[1, 1, 2, 2]);
+    let binary_labels = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[1, 1, 2, 2]);
+    let semantic_predictions = Tensor::new(
+        &[
+            0.9, 0.2, 0.8, 0.4, // class 0
+            0.1, 0.8, 0.2, 0.6, // class 1
+        ],
+        &[1, 2, 2, 2],
+    );
+    let semantic_labels = Tensor::new(
+        &[
+            1.0, 0.0, 1.0, 1.0, // class 0
+            0.0, 1.0, 0.0, 0.0, // class 1
+        ],
+        &[1, 2, 2, 2],
+    );
+
+    let binary_iou = compute_primary_metric(
+        &TaskMetric::BinaryIoU,
+        &binary_predictions,
+        &binary_labels,
+        1,
+        &LossType::MSE,
+    );
+    let mean_iou = compute_primary_metric(
+        &TaskMetric::MeanIoU,
+        &semantic_predictions,
+        &semantic_labels,
+        2,
+        &LossType::BCE,
+    );
+
+    assert!((binary_iou - 1.0 / 3.0).abs() < 1e-6);
+    assert!((mean_iou - (2.0 / 3.0 + 0.5) / 2.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_supervised_segmentation_task_evaluates_dense_output() {
+    let data = tiny_segmentation_data();
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::MeanIoU).unwrap();
+    let mut genome = NetworkGenome::minimal_spatial_segmentation(1, 2, (2, 2));
+    genome.migrate_to_node_level().unwrap();
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+
+    let score = task.evaluate(&genome, &build, &mut rng).unwrap();
+
+    assert!(score.primary >= 0.0 && score.primary <= 1.0);
+    assert!(score.tiebreak_loss.is_some());
+    assert!(score.report.get(ReportMetric::MeanIoU).is_some());
+    assert!(score.report.get(ReportMetric::PixelAccuracy).is_some());
+}
+
 // ==================== MetricReport ====================
 
 #[test]
@@ -688,6 +776,27 @@ fn test_default_report_metrics_for_accuracy_task() {
             ReportMetric::Recall,
             ReportMetric::F1,
         ]
+    );
+}
+
+#[test]
+fn test_default_report_metrics_for_segmentation_tasks() {
+    let data = tiny_segmentation_data();
+    let binary_task =
+        SupervisedTask::new(data.clone(), data.clone(), TaskMetric::BinaryIoU).unwrap();
+    let mean_iou_task = SupervisedTask::new(data.clone(), data, TaskMetric::MeanIoU).unwrap();
+
+    assert_eq!(
+        binary_task.report_metrics(),
+        &[
+            ReportMetric::PixelAccuracy,
+            ReportMetric::BinaryIoU,
+            ReportMetric::Dice,
+        ]
+    );
+    assert_eq!(
+        mean_iou_task.report_metrics(),
+        &[ReportMetric::PixelAccuracy, ReportMetric::MeanIoU]
     );
 }
 

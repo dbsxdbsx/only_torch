@@ -92,7 +92,7 @@ examples: examples-traditional examples-evolution
 # 运行所有 traditional examples
 # 注:example-chess-yolo-onnx-detect 不在此聚合内,因为它依赖 ~93MB 的 VinXiangQi
 # .onnx 模型(已被 .gitignore),需用户先跑 download_model.py 才能跑通
-examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
+examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -128,6 +128,14 @@ example-single-object-detection:
 example-multi-instance-segmentation:
     @echo "=== Running Multi Instance Segmentation [{{_blas_name}}] ==="
     cargo run --example multi_instance_segmentation {{_blas_flag}}
+
+example-overlapping-shapes-semantic-segmentation:
+    @echo "=== Running Overlapping Shapes Semantic Segmentation [{{_blas_name}}] ==="
+    cargo run --example overlapping_shapes_semantic_segmentation {{_blas_flag}}
+
+example-overlapping-fixed-slot-instance-segmentation:
+    @echo "=== Running Overlapping Fixed Slot Instance Segmentation [{{_blas_name}}] ==="
+    cargo run --example overlapping_fixed_slot_instance_segmentation {{_blas_flag}}
 
 example-mnist-gan:
     @echo "=== Running MNIST GAN [{{_blas_name}}] ==="
@@ -196,7 +204,7 @@ example-moving-sac:
 # ---------- Evolution（神经架构自动演化）----------
 
 # 运行所有 evolution examples
-examples-evolution: example-evolution-xor example-evolution-iris example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-mnist
+examples-evolution: example-evolution-xor example-evolution-iris example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-mnist example-evolution-overlapping-shapes-semantic-segmentation
 
 example-evolution-xor:
     @echo "=== Running Evolution XOR [{{_blas_name}}] ==="
@@ -217,6 +225,10 @@ example-evolution-parity-seq-var-len:
 example-evolution-mnist:
     @echo "=== Running Evolution MNIST [{{_blas_name}}] ==="
     cargo run --example evolution_mnist {{_blas_flag}}
+
+example-evolution-overlapping-shapes-semantic-segmentation:
+    @echo "=== Running Evolution Overlapping Shapes Semantic Segmentation [{{_blas_name}}] ==="
+    cargo run --example evolution_overlapping_shapes_semantic_segmentation {{_blas_flag}}
 
 # ==================== 代码质量 ====================
 

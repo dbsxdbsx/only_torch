@@ -22,6 +22,13 @@
 
 ### 新增
 
+- **feat(vision/evolution): 补齐 Segmentation P1 benchmark 与单输出分割演化接入**
+  - 新增 `overlapping_shapes_semantic_segmentation`：64x64 多形状、多对象、允许重叠的 visible semantic mask benchmark，报告 Pixel Accuracy、Dice、per-class IoU、Mean IoU
+  - 新增 `overlapping_fixed_slot_instance_segmentation`：1..3 个可重叠实例、固定 slot、空 slot 与 visible mask 规则的 instance segmentation lite benchmark
+  - `metrics` 补充 Dice、semantic pixel accuracy、per-class IoU、Mean IoU，并加入分割指标测试
+  - Evolution 新增 `BinaryIoU` / `MeanIoU` primary metric、分割报告指标、`[C,H,W] -> [classes,H,W]` shape 协议与不经过 `Flatten` 的 spatial-to-spatial minimal genome
+  - 新增 `evolution_overlapping_shapes_semantic_segmentation` smoke 示例和对应测试；空间域 Evolution 运行偏慢的问题已记录到 `.issue/items/2026-04-28_spatial_evolution_slow.md`
+
 - **feat(metrics/example): 新增 Single Object Segmentation 传统示例**
   - `metrics` 新增 `pixel_accuracy` / `binary_iou` 二值分割指标，并补充空 mask、shape mismatch 等单元测试
   - 新增 `examples/traditional/single_object_segmentation`：内置固定 seed 的 16x16 合成矩形 / 圆形 mask 数据，小型 CNN 直接输出 `[N, 1, H, W]` logits，用 4D `BCEWithLogits` 快速训练

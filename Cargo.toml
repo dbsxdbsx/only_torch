@@ -175,6 +175,14 @@
     path="examples/traditional/multi_instance_segmentation/main.rs"
 
 [[example]]
+    name="overlapping_shapes_semantic_segmentation"
+    path="examples/traditional/overlapping_shapes_semantic_segmentation/main.rs"
+
+[[example]]
+    name="overlapping_fixed_slot_instance_segmentation"
+    path="examples/traditional/overlapping_fixed_slot_instance_segmentation/main.rs"
+
+[[example]]
     name="mnist_gan"
     path="examples/traditional/mnist_gan/main.rs"
 
@@ -237,3 +245,7 @@
 [[example]]
     name="evolution_parity_seq_var_len"
     path="examples/evolution/parity_seq_var_len/main.rs"
+
+[[example]]
+    name="evolution_overlapping_shapes_semantic_segmentation"
+    path="examples/evolution/overlapping_shapes_semantic_segmentation/main.rs"

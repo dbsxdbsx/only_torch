@@ -37,6 +37,42 @@ fn test_minimal_output_dim_matches() {
 }
 
 #[test]
+fn test_minimal_spatial_segmentation_keeps_dense_output() {
+    let genome = NetworkGenome::minimal_spatial_segmentation(1, 3, (32, 32));
+
+    assert_eq!(genome.input_dim, 1);
+    assert_eq!(genome.output_dim, 3);
+    assert_eq!(genome.input_spatial, Some((32, 32)));
+    assert_eq!(genome.layers().len(), 2);
+    assert!(genome.is_domain_valid());
+
+    assert!(matches!(
+        genome.layers()[0].layer_config,
+        LayerConfig::Conv2d {
+            out_channels: 8,
+            kernel_size: 3
+        }
+    ));
+    assert!(matches!(
+        genome.layers()[1].layer_config,
+        LayerConfig::Conv2d {
+            out_channels: 3,
+            kernel_size: 1
+        }
+    ));
+
+    let spatial_map = genome.compute_spatial_map();
+    assert_eq!(
+        spatial_map[&genome.layers()[0].innovation_number],
+        Some((32, 32))
+    );
+    assert_eq!(
+        spatial_map[&genome.layers()[1].innovation_number],
+        Some((32, 32))
+    );
+}
+
+#[test]
 fn test_minimal_total_params() {
     // minimal(2, 1): Linear in=2, out=1 → W(2×1) + b(1) = 3
     let genome = NetworkGenome::minimal(2, 1);
