@@ -54,8 +54,12 @@ pub(crate) struct LayerNormOp {
 }
 
 impl LayerNormOp {
-    pub(crate) const fn normalized_dims(&self) -> usize { self.normalized_dims }
-    pub(crate) const fn eps(&self) -> f32 { self.eps }
+    pub(crate) const fn normalized_dims(&self) -> usize {
+        self.normalized_dims
+    }
+    pub(crate) const fn eps(&self) -> f32 {
+        self.eps
+    }
 
     /// 创建 LayerNormOp 节点
     ///
@@ -203,14 +207,10 @@ impl TraitNode for LayerNormOp {
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         let std_t = self.std_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError(
-                "LayerNormOp std 缓存为空，需先执行前向传播".to_string(),
-            )
+            GraphError::ComputationError("LayerNormOp std 缓存为空，需先执行前向传播".to_string())
         })?;
         let x_hat = self.x_hat_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError(
-                "LayerNormOp x_hat 缓存为空".to_string(),
-            )
+            GraphError::ComputationError("LayerNormOp x_hat 缓存为空".to_string())
         })?;
 
         let shape = upstream_grad.shape();
@@ -243,9 +243,8 @@ impl TraitNode for LayerNormOp {
             // dx = (1/d) * (1/std) * (d * upstream - sum_up - x_hat * sum_up_xh)
             for i in 0..d {
                 let idx = offset + i;
-                dx_data[idx] = inv_d
-                    * inv_std
-                    * (d as f32 * up_flat[idx] - sum_up - xh_flat[idx] * sum_up_xh);
+                dx_data[idx] =
+                    inv_d * inv_std * (d as f32 * up_flat[idx] - sum_up - xh_flat[idx] * sum_up_xh);
             }
         }
 

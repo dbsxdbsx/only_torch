@@ -226,20 +226,14 @@ fn test_split_fm_edge_apply() {
         return;
     }
 
-    let original_fm_ids: std::collections::HashSet<u64> = genome
-        .nodes()
-        .iter()
-        .filter_map(|n| n.fm_id)
-        .collect();
+    let original_fm_ids: std::collections::HashSet<u64> =
+        genome.nodes().iter().filter_map(|n| n.fm_id).collect();
 
     let result = mutation.apply(&mut genome, &constraints, &mut rng);
 
     if result.is_ok() {
-        let new_fm_ids: std::collections::HashSet<u64> = genome
-            .nodes()
-            .iter()
-            .filter_map(|n| n.fm_id)
-            .collect();
+        let new_fm_ids: std::collections::HashSet<u64> =
+            genome.nodes().iter().filter_map(|n| n.fm_id).collect();
         // 分裂应产生新 FM
         assert!(
             new_fm_ids.len() > original_fm_ids.len(),

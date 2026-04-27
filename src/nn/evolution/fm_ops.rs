@@ -75,37 +75,49 @@ impl FMEdgeType {
     /// 从 NodeTypeDescriptor 推导 FM 边类型
     pub fn from_descriptor(desc: &NodeTypeDescriptor) -> Option<Self> {
         match desc {
-            NodeTypeDescriptor::Conv2d { stride, padding, dilation } => Some(FMEdgeType::Conv2d {
+            NodeTypeDescriptor::Conv2d {
+                stride,
+                padding,
+                dilation,
+            } => Some(FMEdgeType::Conv2d {
                 stride: *stride,
                 padding: *padding,
                 dilation: *dilation,
             }),
-            NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
-                Some(FMEdgeType::ConvTranspose2d {
-                    stride: *stride,
-                    padding: *padding,
-                    output_padding: *output_padding,
-                })
-            }
-            NodeTypeDescriptor::MaxPool2d { kernel_size, stride, .. } => {
-                Some(FMEdgeType::MaxPool2d {
-                    kernel_size: *kernel_size,
-                    stride: *stride,
-                })
-            }
-            NodeTypeDescriptor::AvgPool2d { kernel_size, stride } => {
-                Some(FMEdgeType::AvgPool2d {
-                    kernel_size: *kernel_size,
-                    stride: *stride,
-                })
-            }
+            NodeTypeDescriptor::ConvTranspose2d {
+                stride,
+                padding,
+                output_padding,
+            } => Some(FMEdgeType::ConvTranspose2d {
+                stride: *stride,
+                padding: *padding,
+                output_padding: *output_padding,
+            }),
+            NodeTypeDescriptor::MaxPool2d {
+                kernel_size,
+                stride,
+                ..
+            } => Some(FMEdgeType::MaxPool2d {
+                kernel_size: *kernel_size,
+                stride: *stride,
+            }),
+            NodeTypeDescriptor::AvgPool2d {
+                kernel_size,
+                stride,
+            } => Some(FMEdgeType::AvgPool2d {
+                kernel_size: *kernel_size,
+                stride: *stride,
+            }),
             _ => None,
         }
     }
 
     /// 是否有可学习参数（Pool2d 无参数）
     pub fn has_learnable_params(&self) -> bool {
-        matches!(self, FMEdgeType::Conv2d { .. } | FMEdgeType::ConvTranspose2d { .. })
+        matches!(
+            self,
+            FMEdgeType::Conv2d { .. } | FMEdgeType::ConvTranspose2d { .. }
+        )
     }
 }
 
@@ -139,7 +151,10 @@ pub fn analyze_fm_subgraph(nodes: &[NodeGene]) -> FMSubgraphAnalysis {
     let mut fm_nodes_map: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
     for n in nodes.iter().filter(|n| n.enabled) {
         if let Some(fid) = n.fm_id {
-            fm_nodes_map.entry(fid).or_default().push(n.innovation_number);
+            fm_nodes_map
+                .entry(fid)
+                .or_default()
+                .push(n.innovation_number);
         }
     }
 
@@ -149,12 +164,15 @@ pub fn analyze_fm_subgraph(nodes: &[NodeGene]) -> FMSubgraphAnalysis {
         let output_node_id = find_fm_output_node(ids, &node_map);
         let spatial_size = infer_fm_spatial_size(output_node_id, &node_map);
 
-        fm_nodes.insert(fid, FMNodeInfo {
-            fm_id: fid,
-            node_ids: ids.clone(),
-            spatial_size,
-            output_node_id,
-        });
+        fm_nodes.insert(
+            fid,
+            FMNodeInfo {
+                fm_id: fid,
+                node_ids: ids.clone(),
+                spatial_size,
+                output_node_id,
+            },
+        );
     }
 
     // 3. 收集所有 FM 边（识别连接两个 FM 的 conv/pool/deconv 操作）
@@ -198,7 +216,10 @@ fn find_fm_output_node(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> 
 }
 
 /// 从 FM 的输出节点推导空间尺寸
-fn infer_fm_spatial_size(output_node_id: u64, node_map: &HashMap<u64, &NodeGene>) -> (usize, usize) {
+fn infer_fm_spatial_size(
+    output_node_id: u64,
+    node_map: &HashMap<u64, &NodeGene>,
+) -> (usize, usize) {
     if let Some(n) = node_map.get(&output_node_id) {
         let shape = &n.output_shape;
         if shape.len() >= 4 {
@@ -346,9 +367,7 @@ pub fn detect_fully_connected(
 /// 查找可以添加新边的 FM 对（src_fm, dst_fm）
 ///
 /// 条件：src 和 dst 都是有效 FM，且当前没有直接连接
-pub fn find_connectable_pairs(
-    analysis: &FMSubgraphAnalysis,
-) -> Vec<(u64, u64)> {
+pub fn find_connectable_pairs(analysis: &FMSubgraphAnalysis) -> Vec<(u64, u64)> {
     let existing_pairs: HashSet<(u64, u64)> = analysis
         .fm_edges
         .iter()
@@ -514,9 +533,10 @@ pub fn query_block_conv_params(
     nodes: &[NodeGene],
 ) -> Option<(usize, (usize, usize), (usize, usize), (usize, usize), bool)> {
     // 找到任意一条指向 dst_fm 的 Conv2d/ConvTranspose2d 边
-    let existing_edge = analysis.fm_edges.iter().find(|e| {
-        e.dst_fm_id == dst_fm_id && e.edge_type.has_learnable_params()
-    });
+    let existing_edge = analysis
+        .fm_edges
+        .iter()
+        .find(|e| e.dst_fm_id == dst_fm_id && e.edge_type.has_learnable_params());
 
     if let Some(edge) = existing_edge {
         let node_map: HashMap<u64, &NodeGene> = nodes
@@ -526,24 +546,28 @@ pub fn query_block_conv_params(
             .collect();
 
         // 获取 kernel_size
-        let kernel_size = edge.kernel_node_id.and_then(|kid| {
-            node_map.get(&kid).map(|k| k.output_shape[2])
-        }).unwrap_or(3);
+        let kernel_size = edge
+            .kernel_node_id
+            .and_then(|kid| node_map.get(&kid).map(|k| k.output_shape[2]))
+            .unwrap_or(3);
 
         match &edge.edge_type {
-            FMEdgeType::Conv2d { stride, padding, dilation } => {
-                Some((kernel_size, *stride, *padding, *dilation, false))
-            }
-            FMEdgeType::ConvTranspose2d { stride, padding, .. } => {
-                Some((kernel_size, *stride, *padding, (1, 1), true))
-            }
+            FMEdgeType::Conv2d {
+                stride,
+                padding,
+                dilation,
+            } => Some((kernel_size, *stride, *padding, *dilation, false)),
+            FMEdgeType::ConvTranspose2d {
+                stride, padding, ..
+            } => Some((kernel_size, *stride, *padding, (1, 1), true)),
             _ => None,
         }
     } else {
         // 尝试从 src 方向查找
-        let src_edge = analysis.fm_edges.iter().find(|e| {
-            e.src_fm_id == dst_fm_id && e.edge_type.has_learnable_params()
-        });
+        let src_edge = analysis
+            .fm_edges
+            .iter()
+            .find(|e| e.src_fm_id == dst_fm_id && e.edge_type.has_learnable_params());
         if let Some(edge) = src_edge {
             let node_map: HashMap<u64, &NodeGene> = nodes
                 .iter()
@@ -551,17 +575,20 @@ pub fn query_block_conv_params(
                 .map(|n| (n.innovation_number, n))
                 .collect();
 
-            let kernel_size = edge.kernel_node_id.and_then(|kid| {
-                node_map.get(&kid).map(|k| k.output_shape[2])
-            }).unwrap_or(3);
+            let kernel_size = edge
+                .kernel_node_id
+                .and_then(|kid| node_map.get(&kid).map(|k| k.output_shape[2]))
+                .unwrap_or(3);
 
             match &edge.edge_type {
-                FMEdgeType::Conv2d { stride, padding, dilation } => {
-                    Some((kernel_size, *stride, *padding, *dilation, false))
-                }
-                FMEdgeType::ConvTranspose2d { stride, padding, .. } => {
-                    Some((kernel_size, *stride, *padding, (1, 1), true))
-                }
+                FMEdgeType::Conv2d {
+                    stride,
+                    padding,
+                    dilation,
+                } => Some((kernel_size, *stride, *padding, *dilation, false)),
+                FMEdgeType::ConvTranspose2d {
+                    stride, padding, ..
+                } => Some((kernel_size, *stride, *padding, (1, 1), true)),
                 _ => None,
             }
         } else {

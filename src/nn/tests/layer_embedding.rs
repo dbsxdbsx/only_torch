@@ -66,10 +66,7 @@ fn test_embedding_forward_2d() -> Result<(), GraphError> {
         .set_value(&Tensor::new(&weight_data, &[10, 4]))?;
 
     // [N=2, T=3] 索引
-    let indices = graph.input(&Tensor::new(
-        &[0.0, 3.0, 7.0, 1.0, 5.0, 9.0],
-        &[2, 3],
-    ))?;
+    let indices = graph.input(&Tensor::new(&[0.0, 3.0, 7.0, 1.0, 5.0, 9.0], &[2, 3]))?;
     let y = emb.forward(&indices);
     y.forward()?;
 

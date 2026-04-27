@@ -118,8 +118,7 @@ impl GraphInner {
 
         // ===== CSE：写入缓存 =====
         if let Some(key) = dedup_key {
-            self.cse_cache
-                .insert(key, Rc::downgrade(&node_inner));
+            self.cse_cache.insert(key, Rc::downgrade(&node_inner));
         }
 
         Ok(node_inner)
@@ -571,12 +570,7 @@ impl GraphInner {
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        let stack = Stack::new(
-            &parent_shapes_ref,
-            &parent_dynamic_shapes,
-            parent_ids,
-            axis,
-        )?;
+        let stack = Stack::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids, axis)?;
         let raw_node: NodeType = stack.into();
 
         self.create_node_inner(raw_node, name, "stack", parents)
@@ -599,12 +593,7 @@ impl GraphInner {
         let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
         let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
 
-        let concat = Concat::new(
-            &parent_shapes_ref,
-            &parent_dynamic_shapes,
-            parent_ids,
-            axis,
-        )?;
+        let concat = Concat::new(&parent_shapes_ref, &parent_dynamic_shapes, parent_ids, axis)?;
         let raw_node: NodeType = concat.into();
 
         self.create_node_inner(raw_node, name, "concat", parents)
@@ -1512,8 +1501,12 @@ impl GraphInner {
         let input_dynamic_shape = input.dynamic_shape();
 
         let bn = BatchNormOp::new(
-            &input_shape, &input_dynamic_shape, eps, momentum,
-            running_mean, running_var,
+            &input_shape,
+            &input_dynamic_shape,
+            eps,
+            momentum,
+            running_mean,
+            running_var,
         )?;
         let raw_node: NodeType = bn.into();
 

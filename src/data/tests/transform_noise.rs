@@ -46,10 +46,7 @@ fn test_noise_statistics() {
     let std = var.sqrt();
 
     // 宽松的统计检验
-    assert!(
-        mean.abs() < 0.05,
-        "噪声均值 {mean:.4} 应接近 0"
-    );
+    assert!(mean.abs() < 0.05, "噪声均值 {mean:.4} 应接近 0");
     assert!(
         (std - target_std as f32).abs() < 0.1,
         "噪声标准差 {std:.4} 应接近 {target_std}"
@@ -66,10 +63,7 @@ fn test_noise_with_nonzero_mean() {
     let mean: f32 = flat.iter().sum::<f32>() / flat.len() as f32;
 
     // 均值应接近 5.0
-    assert!(
-        (mean - 5.0).abs() < 0.1,
-        "噪声均值 {mean:.4} 应接近 5.0"
-    );
+    assert!((mean - 5.0).abs() < 0.1, "噪声均值 {mean:.4} 应接近 5.0");
 }
 
 #[test]

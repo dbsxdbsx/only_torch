@@ -362,7 +362,13 @@ pub fn expand_batch_norm(
     };
 
     vec![
-        NodeGene::new(gamma_id, NodeTypeDescriptor::Parameter, param_shape.clone(), vec![], bid),
+        NodeGene::new(
+            gamma_id,
+            NodeTypeDescriptor::Parameter,
+            param_shape.clone(),
+            vec![],
+            bid,
+        ),
         NodeGene::new(
             bn_id,
             NodeTypeDescriptor::BatchNormOp {
@@ -374,9 +380,27 @@ pub fn expand_batch_norm(
             vec![input_id],
             bid,
         ),
-        NodeGene::new(mul_id, NodeTypeDescriptor::Multiply, input_shape.clone(), vec![bn_id, gamma_id], bid),
-        NodeGene::new(beta_id, NodeTypeDescriptor::Parameter, param_shape, vec![], bid),
-        NodeGene::new(add_id, NodeTypeDescriptor::Add, input_shape, vec![mul_id, beta_id], bid),
+        NodeGene::new(
+            mul_id,
+            NodeTypeDescriptor::Multiply,
+            input_shape.clone(),
+            vec![bn_id, gamma_id],
+            bid,
+        ),
+        NodeGene::new(
+            beta_id,
+            NodeTypeDescriptor::Parameter,
+            param_shape,
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            add_id,
+            NodeTypeDescriptor::Add,
+            input_shape,
+            vec![mul_id, beta_id],
+            bid,
+        ),
     ]
 }
 
@@ -401,7 +425,13 @@ pub fn expand_layer_norm(
     let param_shape = vec![1, num_features];
 
     vec![
-        NodeGene::new(gamma_id, NodeTypeDescriptor::Parameter, param_shape.clone(), vec![], bid),
+        NodeGene::new(
+            gamma_id,
+            NodeTypeDescriptor::Parameter,
+            param_shape.clone(),
+            vec![],
+            bid,
+        ),
         NodeGene::new(
             ln_id,
             NodeTypeDescriptor::LayerNormOp {
@@ -412,9 +442,27 @@ pub fn expand_layer_norm(
             vec![input_id],
             bid,
         ),
-        NodeGene::new(mul_id, NodeTypeDescriptor::Multiply, input_shape.clone(), vec![ln_id, gamma_id], bid),
-        NodeGene::new(beta_id, NodeTypeDescriptor::Parameter, param_shape, vec![], bid),
-        NodeGene::new(add_id, NodeTypeDescriptor::Add, input_shape, vec![mul_id, beta_id], bid),
+        NodeGene::new(
+            mul_id,
+            NodeTypeDescriptor::Multiply,
+            input_shape.clone(),
+            vec![ln_id, gamma_id],
+            bid,
+        ),
+        NodeGene::new(
+            beta_id,
+            NodeTypeDescriptor::Parameter,
+            param_shape,
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            add_id,
+            NodeTypeDescriptor::Add,
+            input_shape,
+            vec![mul_id, beta_id],
+            bid,
+        ),
     ]
 }
 
@@ -437,7 +485,13 @@ pub fn expand_rms_norm(
     let param_shape = vec![1, num_features];
 
     vec![
-        NodeGene::new(gamma_id, NodeTypeDescriptor::Parameter, param_shape, vec![], bid),
+        NodeGene::new(
+            gamma_id,
+            NodeTypeDescriptor::Parameter,
+            param_shape,
+            vec![],
+            bid,
+        ),
         NodeGene::new(
             rn_id,
             NodeTypeDescriptor::RMSNormOp {
@@ -448,7 +502,13 @@ pub fn expand_rms_norm(
             vec![input_id],
             bid,
         ),
-        NodeGene::new(mul_id, NodeTypeDescriptor::Multiply, input_shape, vec![rn_id, gamma_id], bid),
+        NodeGene::new(
+            mul_id,
+            NodeTypeDescriptor::Multiply,
+            input_shape,
+            vec![rn_id, gamma_id],
+            bid,
+        ),
     ]
 }
 
@@ -1131,10 +1191,7 @@ use crate::nn::evolution::fm_ops::next_fm_id;
 /// - out_ch × in_ch 条 FM 边（kernel[1,1,k,k] + Conv2d op）
 ///
 /// 不修改权重快照（结构性迁移，权重在训练时重新初始化）。
-pub fn migrate_conv2d_to_feature_maps(
-    nodes: &mut Vec<NodeGene>,
-    counter: &mut InnovationCounter,
-) {
+pub fn migrate_conv2d_to_feature_maps(nodes: &mut Vec<NodeGene>, counter: &mut InnovationCounter) {
     use std::collections::HashMap;
 
     // 1. 找到所有 Conv2d 模板块
@@ -1151,13 +1208,7 @@ pub fn migrate_conv2d_to_feature_maps(
         .collect();
 
     for block in &conv_blocks {
-        decompose_conv2d_block(
-            nodes,
-            block,
-            counter,
-            &mut fm_counter,
-            &mut node_map,
-        );
+        decompose_conv2d_block(nodes, block, counter, &mut fm_counter, &mut node_map);
     }
 
     // 清理已禁用的旧模板块节点
@@ -1166,7 +1217,6 @@ pub fn migrate_conv2d_to_feature_maps(
 
 /// Conv2d 模板块信息
 struct Conv2dBlock {
-    kernel_id: u64,
     conv_op_id: u64,
     bias_id: Option<u64>,
     add_id: Option<u64>,
@@ -1208,7 +1258,11 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
     // 找所有 Conv2d op 节点
     for n in nodes.iter().filter(|n| n.enabled) {
         let (stride, padding, dilation) = match &n.node_type {
-            NodeTypeDescriptor::Conv2d { stride, padding, dilation } => (*stride, *padding, *dilation),
+            NodeTypeDescriptor::Conv2d {
+                stride,
+                padding,
+                dilation,
+            } => (*stride, *padding, *dilation),
             _ => continue,
         };
 
@@ -1218,9 +1272,10 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
         };
 
         // 已经是 FM 边（fm_id = None 但上游是 FM 节点）的跳过
-        if n.parents.iter().any(|&pid| {
-            node_map.get(&pid).map_or(false, |p| p.fm_id.is_some())
-        }) {
+        if n.parents
+            .iter()
+            .any(|&pid| node_map.get(&pid).map_or(false, |p| p.fm_id.is_some()))
+        {
             continue;
         }
 
@@ -1242,8 +1297,12 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
             continue;
         }
 
-        let (out_channels, in_channels, kernel_h, kernel_w) =
-            (kernel_shape[0], kernel_shape[1], kernel_shape[2], kernel_shape[3]);
+        let (out_channels, in_channels, kernel_h, kernel_w) = (
+            kernel_shape[0],
+            kernel_shape[1],
+            kernel_shape[2],
+            kernel_shape[3],
+        );
 
         let conv_output_shape = &n.output_shape;
         if conv_output_shape.len() < 4 {
@@ -1260,7 +1319,10 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
         // 查找同 block_id 的 bias 和 add 节点
         let mut bias_id = None;
         let mut add_id = None;
-        for m in nodes.iter().filter(|m| m.enabled && m.block_id == Some(block_id)) {
+        for m in nodes
+            .iter()
+            .filter(|m| m.enabled && m.block_id == Some(block_id))
+        {
             if m.is_parameter() && m.innovation_number != kernel_id {
                 bias_id = Some(m.innovation_number);
             }
@@ -1272,7 +1334,6 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
         }
 
         blocks.push(Conv2dBlock {
-            kernel_id,
             conv_op_id: n.innovation_number,
             bias_id,
             add_id,
@@ -1392,12 +1453,38 @@ fn decompose_conv2d_block(
             current_ids[0]
         };
 
+        let output_id = if block.bias_id.is_some() {
+            let bias_block_id = counter.next();
+            let bias_id = counter.next();
+            nodes.push(NodeGene::new(
+                bias_id,
+                NodeTypeDescriptor::Parameter,
+                vec![1, 1, 1, 1],
+                vec![],
+                Some(bias_block_id),
+            ));
+
+            let add_id = counter.next();
+            let mut bias_add = NodeGene::new(
+                add_id,
+                NodeTypeDescriptor::Add,
+                vec![1, 1, block.output_h, block.output_w],
+                vec![agg_id, bias_id],
+                Some(bias_block_id),
+            );
+            bias_add.fm_id = Some(fm_id);
+            nodes.push(bias_add);
+            add_id
+        } else {
+            agg_id
+        };
+
         // FM 输出节点标记
-        if let Some(node) = nodes.iter_mut().find(|n| n.innovation_number == agg_id) {
+        if let Some(node) = nodes.iter_mut().find(|n| n.innovation_number == output_id) {
             node.fm_id = Some(fm_id);
         }
 
-        output_fm_output_ids.push(agg_id);
+        output_fm_output_ids.push(output_id);
     }
 
     // 3. 创建最终的 Concat 节点将所有输出 FM 拼接回 [N, out_ch, H', W']

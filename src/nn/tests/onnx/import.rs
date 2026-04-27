@@ -500,10 +500,22 @@ fn test_conv2d_import() {
                 elem_type: DataType::Float,
                 shape: Some(TensorShape {
                     dim: vec![
-                        TensorShapeDimension { value: Dimension::Value(1), denotation: "" },
-                        TensorShapeDimension { value: Dimension::Value(1), denotation: "" },
-                        TensorShapeDimension { value: Dimension::Value(28), denotation: "" },
-                        TensorShapeDimension { value: Dimension::Value(28), denotation: "" },
+                        TensorShapeDimension {
+                            value: Dimension::Value(1),
+                            denotation: "",
+                        },
+                        TensorShapeDimension {
+                            value: Dimension::Value(1),
+                            denotation: "",
+                        },
+                        TensorShapeDimension {
+                            value: Dimension::Value(28),
+                            denotation: "",
+                        },
+                        TensorShapeDimension {
+                            value: Dimension::Value(28),
+                            denotation: "",
+                        },
                     ],
                 }),
             })),
@@ -519,17 +531,36 @@ fn test_conv2d_import() {
         name: "conv0",
         op_type: OpType::Conv,
         attribute: vec![
-            Attribute { name: "kernel_shape", ints: vec![3, 3], ..Default::default() },
-            Attribute { name: "strides", ints: vec![1, 1], ..Default::default() },
-            Attribute { name: "pads", ints: vec![1, 1, 1, 1], ..Default::default() },
-            Attribute { name: "group", i: 1, ..Default::default() },
+            Attribute {
+                name: "kernel_shape",
+                ints: vec![3, 3],
+                ..Default::default()
+            },
+            Attribute {
+                name: "strides",
+                ints: vec![1, 1],
+                ..Default::default()
+            },
+            Attribute {
+                name: "pads",
+                ints: vec![1, 1, 1, 1],
+                ..Default::default()
+            },
+            Attribute {
+                name: "group",
+                i: 1,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![conv_node],
             name: "conv_test",
@@ -553,7 +584,11 @@ fn test_conv2d_import() {
     assert_eq!(conv_nodes.len(), 1);
 
     match &conv_nodes[0].node_type {
-        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
+        NodeTypeDescriptor::Conv2d {
+            stride,
+            padding,
+            dilation,
+        } => {
             assert_eq!(*stride, (1, 1));
             assert_eq!(*padding, (1, 1));
             assert_eq!(*dilation, (1, 1));
@@ -562,7 +597,12 @@ fn test_conv2d_import() {
     }
 
     assert_eq!(result.weights.len(), 2);
-    let conv_w_node = result.descriptor.nodes.iter().find(|n| n.name == "conv_w").unwrap();
+    let conv_w_node = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "conv_w")
+        .unwrap();
     let conv_w = result.weights.get(&conv_w_node.id).unwrap();
     assert_eq!(conv_w.shape(), &[8, 1, 3, 3]);
 }
@@ -590,7 +630,10 @@ fn test_empty_optional_input() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![dropout_node],
             input: vec![input_vi],
@@ -630,7 +673,10 @@ fn test_initializer_in_input_list_not_duplicated() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![Node {
                 input: vec!["X", "W"],
@@ -657,7 +703,10 @@ fn test_initializer_in_input_list_not_duplicated() {
         .filter(|n| n.name == "W")
         .collect();
     assert_eq!(w_nodes.len(), 1);
-    assert!(matches!(w_nodes[0].node_type, NodeTypeDescriptor::Parameter));
+    assert!(matches!(
+        w_nodes[0].node_type,
+        NodeTypeDescriptor::Parameter
+    ));
 
     let x_nodes: Vec<_> = result
         .descriptor
@@ -666,7 +715,10 @@ fn test_initializer_in_input_list_not_duplicated() {
         .filter(|n| n.name == "X")
         .collect();
     assert_eq!(x_nodes.len(), 1);
-    assert!(matches!(x_nodes[0].node_type, NodeTypeDescriptor::BasicInput));
+    assert!(matches!(
+        x_nodes[0].node_type,
+        NodeTypeDescriptor::BasicInput
+    ));
 }
 
 #[test]
@@ -678,8 +730,14 @@ fn test_activation_chain() {
                 elem_type: DataType::Float,
                 shape: Some(TensorShape {
                     dim: vec![
-                        TensorShapeDimension { value: Dimension::Value(1), denotation: "" },
-                        TensorShapeDimension { value: Dimension::Value(10), denotation: "" },
+                        TensorShapeDimension {
+                            value: Dimension::Value(1),
+                            denotation: "",
+                        },
+                        TensorShapeDimension {
+                            value: Dimension::Value(10),
+                            denotation: "",
+                        },
                     ],
                 }),
             })),
@@ -713,7 +771,10 @@ fn test_activation_chain() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![relu_node, sigmoid_node, tanh_node],
             name: "activation_chain",
@@ -728,16 +789,37 @@ fn test_activation_chain() {
 
     assert_eq!(result.descriptor.nodes.len(), 4);
 
-    let x_id = result.descriptor.nodes.iter().find(|n| n.name == "X").unwrap().id;
-    let relu = result.descriptor.nodes.iter().find(|n| n.name == "r").unwrap();
+    let x_id = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "X")
+        .unwrap()
+        .id;
+    let relu = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "r")
+        .unwrap();
     assert_eq!(relu.parents, vec![x_id]);
     assert!(matches!(relu.node_type, NodeTypeDescriptor::ReLU));
 
-    let sig = result.descriptor.nodes.iter().find(|n| n.name == "s").unwrap();
+    let sig = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "s")
+        .unwrap();
     assert_eq!(sig.parents, vec![relu.id]);
     assert!(matches!(sig.node_type, NodeTypeDescriptor::Sigmoid));
 
-    let tanh = result.descriptor.nodes.iter().find(|n| n.name == "t").unwrap();
+    let tanh = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "t")
+        .unwrap();
     assert_eq!(tanh.parents, vec![sig.id]);
     assert!(matches!(tanh.node_type, NodeTypeDescriptor::Tanh));
 }
@@ -755,7 +837,12 @@ fn test_symbol_table_consistency() {
     let id_set: HashSet<u64> = result.descriptor.nodes.iter().map(|n| n.id).collect();
     for node in &result.descriptor.nodes {
         for &p in &node.parents {
-            assert!(id_set.contains(&p), "节点 {} 引用了不存在的父节点 {}", node.name, p);
+            assert!(
+                id_set.contains(&p),
+                "节点 {} 引用了不存在的父节点 {}",
+                node.name,
+                p
+            );
         }
     }
 }
@@ -772,7 +859,12 @@ fn test_zero_weights() {
     let bytes = build_minimal_mlp_bytes();
     let result = load_onnx_from_bytes(&bytes).unwrap();
 
-    let b1_node = result.descriptor.nodes.iter().find(|n| n.name == "b1").unwrap();
+    let b1_node = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "b1")
+        .unwrap();
     let b1_tensor = result.weights.get(&b1_node.id).unwrap();
     assert_eq!(b1_tensor.shape(), &[1, 4]);
     for &val in b1_tensor.flatten_view().iter() {
@@ -784,7 +876,12 @@ fn test_zero_weights() {
 fn test_dynamic_input_shape() {
     let bytes = build_minimal_mlp_bytes();
     let result = load_onnx_from_bytes(&bytes).unwrap();
-    let input_node = result.descriptor.nodes.iter().find(|n| n.name == "input").unwrap();
+    let input_node = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "input")
+        .unwrap();
 
     assert!(input_node.dynamic_shape.is_some());
     let dyn_shape = input_node.dynamic_shape.as_ref().unwrap();
@@ -803,10 +900,7 @@ fn test_graph_from_onnx_bytes_e2e() {
     assert_eq!(result.inputs[0].0, "input");
     assert!(!result.outputs.is_empty());
 
-    let w1_param = result
-        .graph
-        .inner()
-        .get_parameter("W1");
+    let w1_param = result.graph.inner().get_parameter("W1");
     assert!(w1_param.is_some(), "W1 参数应在图中注册");
 }
 
@@ -849,10 +943,22 @@ fn test_import_report_records_conv_bias_split() {
                 elem_type: DataType::Float,
                 shape: Some(TensorShape {
                     dim: vec![
-                        TensorShapeDimension { value: Dimension::Value(1), denotation: "" },
-                        TensorShapeDimension { value: Dimension::Value(1), denotation: "" },
-                        TensorShapeDimension { value: Dimension::Value(28), denotation: "" },
-                        TensorShapeDimension { value: Dimension::Value(28), denotation: "" },
+                        TensorShapeDimension {
+                            value: Dimension::Value(1),
+                            denotation: "",
+                        },
+                        TensorShapeDimension {
+                            value: Dimension::Value(1),
+                            denotation: "",
+                        },
+                        TensorShapeDimension {
+                            value: Dimension::Value(28),
+                            denotation: "",
+                        },
+                        TensorShapeDimension {
+                            value: Dimension::Value(28),
+                            denotation: "",
+                        },
                     ],
                 }),
             })),
@@ -867,16 +973,35 @@ fn test_import_report_records_conv_bias_split() {
         name: "conv0",
         op_type: OpType::Conv,
         attribute: vec![
-            Attribute { name: "kernel_shape", ints: vec![3, 3], ..Default::default() },
-            Attribute { name: "strides", ints: vec![1, 1], ..Default::default() },
-            Attribute { name: "pads", ints: vec![1, 1, 1, 1], ..Default::default() },
-            Attribute { name: "group", i: 1, ..Default::default() },
+            Attribute {
+                name: "kernel_shape",
+                ints: vec![3, 3],
+                ..Default::default()
+            },
+            Attribute {
+                name: "strides",
+                ints: vec![1, 1],
+                ..Default::default()
+            },
+            Attribute {
+                name: "pads",
+                ints: vec![1, 1, 1, 1],
+                ..Default::default()
+            },
+            Attribute {
+                name: "group",
+                i: 1,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![conv_node],
             name: "conv_test",
@@ -895,12 +1020,19 @@ fn test_import_report_records_conv_bias_split() {
     let record = &result.import_report.rewritten[0];
     assert_eq!(record.pattern, "conv_with_bias_to_conv_plus_add");
     assert_eq!(record.consumed_onnx_nodes, vec!["conv0".to_string()]);
-    assert_eq!(record.produced_descriptor_nodes.len(), 2, "应产出 Conv2d + Add 两个节点");
+    assert_eq!(
+        record.produced_descriptor_nodes.len(),
+        2,
+        "应产出 Conv2d + Add 两个节点"
+    );
 
     // 反向验证：produced ID 真实存在于 descriptor 中
     let id_set: HashSet<u64> = result.descriptor.nodes.iter().map(|n| n.id).collect();
     for &id in &record.produced_descriptor_nodes {
-        assert!(id_set.contains(&id), "produced_descriptor_nodes 中的 ID {id} 应存在于 descriptor");
+        assert!(
+            id_set.contains(&id),
+            "produced_descriptor_nodes 中的 ID {id} 应存在于 descriptor"
+        );
     }
 }
 
@@ -1007,7 +1139,10 @@ fn test_constant_fold_reshape_via_initializer() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![reshape_node],
             name: "reshape_const_fold",
@@ -1037,15 +1172,21 @@ fn test_constant_fold_reshape_via_initializer() {
     }
 
     // shape_init 不应作为 Parameter 节点出现
-    let shape_node = result.descriptor.nodes.iter().find(|n| n.name == "shape_init");
+    let shape_node = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "shape_init");
     assert!(shape_node.is_none(), "元信息 initializer 应被跳过");
 
     // ImportReport 记录
-    assert!(result
-        .import_report
-        .rewritten
-        .iter()
-        .any(|r| r.pattern == "constant_fold_into_reshape"));
+    assert!(
+        result
+            .import_report
+            .rewritten
+            .iter()
+            .any(|r| r.pattern == "constant_fold_into_reshape")
+    );
 }
 
 #[test]
@@ -1075,7 +1216,10 @@ fn test_constant_fold_reshape_via_constant_node() {
     };
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![shape_constant, reshape_node],
             name: "reshape_constant_node",
@@ -1090,11 +1234,20 @@ fn test_constant_fold_reshape_via_constant_node() {
     let result = load_onnx_from_bytes(&bytes).unwrap();
 
     // Constant 节点本身不应出现在 descriptor 中
-    let const_node = result.descriptor.nodes.iter().find(|n| n.name == "shape_const");
+    let const_node = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "shape_const");
     assert!(const_node.is_none(), "Constant 节点应被折叠消失");
 
     // Reshape 应已填好 target_shape
-    let reshape = result.descriptor.nodes.iter().find(|n| n.name == "Y").unwrap();
+    let reshape = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "Y")
+        .unwrap();
     match &reshape.node_type {
         NodeTypeDescriptor::Reshape { target_shape } => {
             assert_eq!(target_shape, &vec![1usize, 2, 3]);
@@ -1118,7 +1271,10 @@ fn test_constant_fold_reshape_infers_negative_dim() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![reshape_node],
             name: "reshape_infer_neg_one",
@@ -1131,7 +1287,12 @@ fn test_constant_fold_reshape_infers_negative_dim() {
 
     let bytes = onnx_rs::encode(&model);
     let result = load_onnx_from_bytes(&bytes).unwrap();
-    let reshape = result.descriptor.nodes.iter().find(|n| n.name == "Y").unwrap();
+    let reshape = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "Y")
+        .unwrap();
     match &reshape.node_type {
         NodeTypeDescriptor::Reshape { target_shape } => {
             assert_eq!(target_shape, &vec![2usize, 3], "应静态推导 -1 → 2");
@@ -1155,7 +1316,10 @@ fn test_constant_fold_reshape_rejects_multiple_neg_one() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![reshape_node],
             name: "reshape_multi_neg",
@@ -1186,7 +1350,10 @@ fn test_constant_fold_reshape_keeps_zero_dim() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![reshape_node],
             name: "reshape_zero_dim",
@@ -1199,10 +1366,19 @@ fn test_constant_fold_reshape_keeps_zero_dim() {
 
     let bytes = onnx_rs::encode(&model);
     let result = load_onnx_from_bytes(&bytes).unwrap();
-    let reshape = result.descriptor.nodes.iter().find(|n| n.name == "Y").unwrap();
+    let reshape = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "Y")
+        .unwrap();
     match &reshape.node_type {
         NodeTypeDescriptor::Reshape { target_shape } => {
-            assert_eq!(target_shape, &vec![2usize, 3], "shape[0]=0 应保留 parent[0]=2");
+            assert_eq!(
+                target_shape,
+                &vec![2usize, 3],
+                "shape[0]=0 应保留 parent[0]=2"
+            );
         }
         _ => panic!("expected Reshape"),
     }
@@ -1229,7 +1405,10 @@ fn test_constant_fold_resize_scales() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![resize_node],
             name: "resize_scales",
@@ -1243,7 +1422,12 @@ fn test_constant_fold_resize_scales() {
     let bytes = onnx_rs::encode(&model);
     let result = load_onnx_from_bytes(&bytes).unwrap();
 
-    let resize = result.descriptor.nodes.iter().find(|n| n.name == "Y").unwrap();
+    let resize = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "Y")
+        .unwrap();
     match &resize.node_type {
         NodeTypeDescriptor::Upsample2d { scale_h, scale_w } => {
             assert_eq!(*scale_h, 2);
@@ -1252,11 +1436,13 @@ fn test_constant_fold_resize_scales() {
         _ => panic!("expected Upsample2d"),
     }
 
-    assert!(result
-        .import_report
-        .rewritten
-        .iter()
-        .any(|r| r.pattern == "constant_fold_into_resize"));
+    assert!(
+        result
+            .import_report
+            .rewritten
+            .iter()
+            .any(|r| r.pattern == "constant_fold_into_resize")
+    );
 }
 
 #[test]
@@ -1279,7 +1465,10 @@ fn test_constant_fold_resize_rejects_non_integer_scale() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![resize_node],
             name: "resize_bad_scale",
@@ -1315,7 +1504,10 @@ fn test_split_to_narrows_via_constant_input() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![split_node],
             name: "split_test",
@@ -1329,9 +1521,18 @@ fn test_split_to_narrows_via_constant_input() {
     let bytes = onnx_rs::encode(&model);
     let result = load_onnx_from_bytes(&bytes).unwrap();
 
-    let y1 = result.descriptor.nodes.iter().find(|n| n.name == "Y1").unwrap();
+    let y1 = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "Y1")
+        .unwrap();
     match &y1.node_type {
-        NodeTypeDescriptor::Narrow { axis, start, length } => {
+        NodeTypeDescriptor::Narrow {
+            axis,
+            start,
+            length,
+        } => {
             assert_eq!(*axis, 1);
             assert_eq!(*start, 0);
             assert_eq!(*length, 2);
@@ -1339,9 +1540,18 @@ fn test_split_to_narrows_via_constant_input() {
         _ => panic!("expected Narrow for Y1"),
     }
 
-    let y2 = result.descriptor.nodes.iter().find(|n| n.name == "Y2").unwrap();
+    let y2 = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "Y2")
+        .unwrap();
     match &y2.node_type {
-        NodeTypeDescriptor::Narrow { axis, start, length } => {
+        NodeTypeDescriptor::Narrow {
+            axis,
+            start,
+            length,
+        } => {
             assert_eq!(*axis, 1);
             assert_eq!(*start, 2);
             assert_eq!(*length, 4);
@@ -1368,7 +1578,11 @@ fn test_split_to_narrows_via_attribute() {
         name: "split0",
         op_type: OpType::Split,
         attribute: vec![
-            Attribute { name: "axis", i: 1, ..Default::default() },
+            Attribute {
+                name: "axis",
+                i: 1,
+                ..Default::default()
+            },
             Attribute {
                 name: "split",
                 ints: vec![3, 3, 3],
@@ -1380,7 +1594,10 @@ fn test_split_to_narrows_via_attribute() {
 
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![split_node],
             name: "split_attr_test",
@@ -1395,12 +1612,23 @@ fn test_split_to_narrows_via_attribute() {
 
     let outputs: Vec<_> = ["Y1", "Y2", "Y3"]
         .iter()
-        .map(|n| result.descriptor.nodes.iter().find(|nd| nd.name == *n).unwrap())
+        .map(|n| {
+            result
+                .descriptor
+                .nodes
+                .iter()
+                .find(|nd| nd.name == *n)
+                .unwrap()
+        })
         .collect();
     let expected_starts = [0usize, 3, 6];
     for (i, out) in outputs.iter().enumerate() {
         match &out.node_type {
-            NodeTypeDescriptor::Narrow { axis, start, length } => {
+            NodeTypeDescriptor::Narrow {
+                axis,
+                start,
+                length,
+            } => {
                 assert_eq!(*axis, 1);
                 assert_eq!(*start, expected_starts[i]);
                 assert_eq!(*length, 3);
@@ -1456,16 +1684,35 @@ fn test_provenance_conv_with_bias_split() {
         name: "conv0",
         op_type: OpType::Conv,
         attribute: vec![
-            Attribute { name: "kernel_shape", ints: vec![3, 3], ..Default::default() },
-            Attribute { name: "strides", ints: vec![1, 1], ..Default::default() },
-            Attribute { name: "pads", ints: vec![1, 1, 1, 1], ..Default::default() },
-            Attribute { name: "group", i: 1, ..Default::default() },
+            Attribute {
+                name: "kernel_shape",
+                ints: vec![3, 3],
+                ..Default::default()
+            },
+            Attribute {
+                name: "strides",
+                ints: vec![1, 1],
+                ..Default::default()
+            },
+            Attribute {
+                name: "pads",
+                ints: vec![1, 1, 1, 1],
+                ..Default::default()
+            },
+            Attribute {
+                name: "group",
+                i: 1,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 17 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
         graph: Some(Graph {
             node: vec![conv_node],
             name: "conv_test",
@@ -1505,14 +1752,25 @@ fn test_provenance_split_to_narrows() {
         name: "split0",
         op_type: OpType::Split,
         attribute: vec![
-            Attribute { name: "axis", i: 1, ..Default::default() },
-            Attribute { name: "split", ints: vec![3, 3, 3], ..Default::default() },
+            Attribute {
+                name: "axis",
+                i: 1,
+                ..Default::default()
+            },
+            Attribute {
+                name: "split",
+                ints: vec![3, 3, 3],
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
     let model = Model {
         ir_version: 8,
-        opset_import: vec![OperatorSetId { domain: "", version: 12 }],
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 12,
+        }],
         graph: Some(Graph {
             node: vec![split_node],
             name: "split_test",

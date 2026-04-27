@@ -42,7 +42,10 @@ impl Tensor {
         let mut sorted_data = flat_data.as_slice().unwrap().to_owned();
         sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let ordered_data = Array::from_shape_vec(self.data.shape(), sorted_data).unwrap();
-        Self { data: ordered_data, source_id: next_source_id() }
+        Self {
+            data: ordered_data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 不改变形状情况下，将张量的元素按从小到大的顺序排列（影响原张量）
@@ -317,9 +320,8 @@ impl Tensor {
 
                 // 按值降序部分排序取 top-k
                 if sorted {
-                    pairs.sort_by(|a, b| {
-                        b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    pairs
+                        .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
                 } else if k < axis_len {
                     pairs.select_nth_unstable_by(k - 1, |a, b| {
                         b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
@@ -417,11 +419,7 @@ impl Tensor {
     /// 带 RNG 的多项分布采样（可复现）
     ///
     /// 与 `multinomial()` 功能相同，但使用指定的 RNG 以确保可复现性。
-    pub fn multinomial_with_rng(
-        &self,
-        num_samples: usize,
-        rng: &mut impl rand::Rng,
-    ) -> Self {
+    pub fn multinomial_with_rng(&self, num_samples: usize, rng: &mut impl rand::Rng) -> Self {
         let shape = self.shape();
         assert_eq!(
             shape.len(),
@@ -429,10 +427,7 @@ impl Tensor {
             "multinomial: 输入须为 2D [batch, num_classes]，实际维度: {}",
             shape.len()
         );
-        assert!(
-            num_samples >= 1,
-            "multinomial: num_samples 至少为 1"
-        );
+        assert!(num_samples >= 1, "multinomial: num_samples 至少为 1");
 
         let batch = shape[0];
         let num_classes = shape[1];
@@ -514,13 +509,11 @@ impl Tensor {
                     .map(|(i, v)| (v, i))
                     .collect();
                 if descending {
-                    pairs.sort_by(|a, b| {
-                        b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    pairs
+                        .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
                 } else {
-                    pairs.sort_by(|a, b| {
-                        a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    pairs
+                        .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
                 }
                 pairs
             })

@@ -62,10 +62,7 @@ fn uniform_input_stays_uniform() {
         let output = crop.apply(&input);
         let flat = output.flatten_view();
         for (i, &v) in flat.iter().enumerate() {
-            assert!(
-                (v - val).abs() < 1e-5,
-                "pixel {i}: expected {val}, got {v}"
-            );
+            assert!((v - val).abs() < 1e-5, "pixel {i}: expected {val}, got {v}");
         }
     }
 }
@@ -75,7 +72,7 @@ fn values_in_range() {
     // 输入值在 [0, 1] → 双线性插值后输出也应在 [0, 1]
     let crop = RandomResizedCrop::new(8, 8);
     let data: Vec<f32> = (0..3 * 16 * 16)
-        .map(|i| (i as f32 / (3.0 * 16.0 * 16.0)))
+        .map(|i| i as f32 / (3.0 * 16.0 * 16.0))
         .collect();
     let input = Tensor::new(&data, &[3, 16, 16]);
 
@@ -90,9 +87,7 @@ fn values_in_range() {
 
 #[test]
 fn custom_scale_and_ratio() {
-    let crop = RandomResizedCrop::new(6, 6)
-        .scale(0.5, 0.8)
-        .ratio(0.8, 1.2);
+    let crop = RandomResizedCrop::new(6, 6).scale(0.5, 0.8).ratio(0.8, 1.2);
     let input = Tensor::new(&vec![1.0; 3 * 12 * 12], &[3, 12, 12]);
     let output = crop.apply(&input);
     assert_eq!(output.shape(), &[3, 6, 6]);

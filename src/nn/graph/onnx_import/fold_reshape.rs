@@ -10,7 +10,7 @@ use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor}
 use crate::nn::graph::onnx_error::OnnxError;
 use onnx_rs::ast::TensorProto;
 
-use super::util::{extract_const_i64, SymbolTable};
+use super::util::{SymbolTable, extract_const_i64};
 use super::{ImportReport, RewriteRecord};
 
 /// 装配 Reshape 节点：从常量表读取 shape 输入,折叠到 `Reshape::target_shape`
@@ -50,23 +50,19 @@ pub(super) fn assemble_reshape_with_const_fold<'a>(
         NodeDescriptor::new(
             out_id,
             output_name,
-            NodeTypeDescriptor::Reshape { target_shape: target_shape.clone() },
+            NodeTypeDescriptor::Reshape {
+                target_shape: target_shape.clone(),
+            },
             target_shape,
             None,
             vec![parent_id],
         )
-        .with_origin_onnx_nodes(vec![
-            node.name.to_string(),
-            format!("<const:{shape_name}>"),
-        ]),
+        .with_origin_onnx_nodes(vec![node.name.to_string(), format!("<const:{shape_name}>")]),
     );
 
     import_report.rewritten.push(RewriteRecord {
         pattern: "constant_fold_into_reshape",
-        consumed_onnx_nodes: vec![
-            node.name.to_string(),
-            format!("<const:{shape_name}>"),
-        ],
+        consumed_onnx_nodes: vec![node.name.to_string(), format!("<const:{shape_name}>")],
         produced_descriptor_nodes: vec![out_id],
     });
     Ok(())
@@ -96,9 +92,7 @@ pub(super) fn convert_onnx_shape_to_usize(
                     return Err(OnnxError::UnsupportedAttribute {
                         op_type: op_context.to_string(),
                         attribute: "shape".to_string(),
-                        reason: format!(
-                            "ONNX shape {raw:?} 含多个 -1,违反 ONNX 规范"
-                        ),
+                        reason: format!("ONNX shape {raw:?} 含多个 -1,违反 ONNX 规范"),
                     });
                 }
                 neg_one_idx = Some(i);

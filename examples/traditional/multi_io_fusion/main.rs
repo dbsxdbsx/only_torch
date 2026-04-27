@@ -166,7 +166,8 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 保存可视化（从训练时拍的快照渲染）
-    let vis_result = graph.visualize_snapshot("examples/traditional/multi_io_fusion/multi_io_fusion")?;
+    let vis_result =
+        graph.visualize_snapshot("examples/traditional/multi_io_fusion/multi_io_fusion")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

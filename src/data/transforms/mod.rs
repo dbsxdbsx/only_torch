@@ -32,15 +32,15 @@
 mod center_crop;
 mod color_jitter;
 mod flatten;
-mod random_affine;
 mod gaussian_noise;
 mod normalize;
 mod one_hot;
 mod pixel_normalize;
+mod random_affine;
 mod random_crop;
 mod random_erasing;
-mod random_resized_crop;
 pub(crate) mod random_flip;
+mod random_resized_crop;
 pub(crate) mod random_rotation;
 
 use crate::tensor::Tensor;
@@ -53,9 +53,9 @@ pub use pixel_normalize::normalize_pixels;
 // 图像变换
 pub use center_crop::CenterCrop;
 pub use color_jitter::ColorJitter;
-pub use random_affine::RandomAffine;
 pub use gaussian_noise::GaussianNoise;
 pub use normalize::Normalize;
+pub use random_affine::RandomAffine;
 pub use random_crop::RandomCrop;
 pub use random_erasing::RandomErasing;
 pub use random_flip::RandomHorizontalFlip;

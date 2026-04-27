@@ -63,8 +63,7 @@ impl RMSNorm {
             normalized_shape.to_vec()
         };
 
-        let gamma =
-            graph.parameter(&param_shape, Init::Ones, &format!("{name}_gamma"))?;
+        let gamma = graph.parameter(&param_shape, Init::Ones, &format!("{name}_gamma"))?;
 
         let instance_id = graph.inner_mut().next_node_group_instance_id();
 

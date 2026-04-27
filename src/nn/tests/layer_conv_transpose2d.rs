@@ -22,7 +22,15 @@ use approx::assert_abs_diff_eq;
 fn test_conv_transpose2d_creation() -> Result<(), GraphError> {
     let graph = Graph::new();
     let deconv = ConvTranspose2d::new(
-        &graph, 1, 32, (3, 3), (1, 1), (0, 0), (0, 0), true, "deconv1",
+        &graph,
+        1,
+        32,
+        (3, 3),
+        (1, 1),
+        (0, 0),
+        (0, 0),
+        true,
+        "deconv1",
     )?;
 
     assert_eq!(deconv.in_channels(), 1);
@@ -42,7 +50,15 @@ fn test_conv_transpose2d_shapes() -> Result<(), GraphError> {
 
     // 3→16 通道，5×5 核
     let deconv = ConvTranspose2d::new(
-        &graph, 3, 16, (5, 5), (1, 1), (0, 0), (0, 0), true, "deconv1",
+        &graph,
+        3,
+        16,
+        (5, 5),
+        (1, 1),
+        (0, 0),
+        (0, 0),
+        true,
+        "deconv1",
     )?;
 
     // 卷积核形状: [in_channels, out_channels, kH, kW]
@@ -60,7 +76,15 @@ fn test_conv_transpose2d_forward() -> Result<(), GraphError> {
     // 输入: [1, 1, 2, 2]，转置卷积核: [1, 1, 2, 2]
     let x = graph.input(&Tensor::ones(&[1, 1, 2, 2]))?;
     let deconv = ConvTranspose2d::new(
-        &graph, 1, 1, (2, 2), (1, 1), (0, 0), (0, 0), false, "deconv",
+        &graph,
+        1,
+        1,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        (0, 0),
+        false,
+        "deconv",
     )?;
 
     // 设置卷积核全 1
@@ -82,7 +106,7 @@ fn test_conv_transpose2d_forward() -> Result<(), GraphError> {
     ];
     let flat = out_val.data_as_slice();
     for (i, (&actual, &expected)) in flat.iter().zip(expected.iter()).enumerate() {
-        assert_abs_diff_eq!(actual, expected, epsilon = 1e-5, );
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-5,);
         let _ = i;
     }
 
@@ -97,7 +121,15 @@ fn test_conv_transpose2d_stride2_upsample() -> Result<(), GraphError> {
     // stride=2: 上采样 2 倍
     let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
     let deconv = ConvTranspose2d::new(
-        &graph, 1, 1, (3, 3), (2, 2), (1, 1), (0, 0), false, "deconv",
+        &graph,
+        1,
+        1,
+        (3, 3),
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        false,
+        "deconv",
     )?;
 
     deconv.kernel().set_value(&Tensor::ones(&[1, 1, 3, 3]))?;
@@ -119,9 +151,8 @@ fn test_conv_transpose2d_multi_channel() -> Result<(), GraphError> {
 
     // in_ch=4, out_ch=2
     let x = graph.input(&Tensor::ones(&[2, 4, 3, 3]))?;
-    let deconv = ConvTranspose2d::new(
-        &graph, 4, 2, (3, 3), (1, 1), (0, 0), (0, 0), true, "deconv",
-    )?;
+    let deconv =
+        ConvTranspose2d::new(&graph, 4, 2, (3, 3), (1, 1), (0, 0), (0, 0), true, "deconv")?;
 
     let output = deconv.forward(&x);
     output.forward()?;
@@ -140,9 +171,8 @@ fn test_conv_transpose2d_multi_channel() -> Result<(), GraphError> {
 fn test_conv_transpose2d_has_bias() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
-    let deconv = ConvTranspose2d::new(
-        &graph, 1, 2, (2, 2), (1, 1), (0, 0), (0, 0), true, "deconv",
-    )?;
+    let deconv =
+        ConvTranspose2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (0, 0), true, "deconv")?;
 
     let bias = deconv.bias().unwrap().value()?.unwrap();
     assert_eq!(bias.shape(), &[1, 2, 1, 1]);
@@ -158,12 +188,14 @@ fn test_conv_transpose2d_bias_applied() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
     let x = graph.input(&Tensor::ones(&[1, 1, 2, 2]))?;
 
-    let deconv = ConvTranspose2d::new(
-        &graph, 1, 1, (2, 2), (1, 1), (0, 0), (0, 0), true, "deconv",
-    )?;
+    let deconv =
+        ConvTranspose2d::new(&graph, 1, 1, (2, 2), (1, 1), (0, 0), (0, 0), true, "deconv")?;
 
     deconv.kernel().set_value(&Tensor::ones(&[1, 1, 2, 2]))?;
-    deconv.bias().unwrap().set_value(&Tensor::new(&[0.5], &[1, 1, 1, 1]))?;
+    deconv
+        .bias()
+        .unwrap()
+        .set_value(&Tensor::new(&[0.5], &[1, 1, 1, 1]))?;
 
     let output = deconv.forward(&x);
     output.forward()?;
@@ -182,7 +214,15 @@ fn test_conv_transpose2d_bias_applied() -> Result<(), GraphError> {
 fn test_conv_transpose2d_no_bias() -> Result<(), GraphError> {
     let graph = Graph::new();
     let deconv = ConvTranspose2d::new(
-        &graph, 1, 4, (3, 3), (1, 1), (0, 0), (0, 0), false, "deconv",
+        &graph,
+        1,
+        4,
+        (3, 3),
+        (1, 1),
+        (0, 0),
+        (0, 0),
+        false,
+        "deconv",
     )?;
 
     assert!(deconv.bias().is_none());
@@ -199,19 +239,15 @@ fn test_conv_transpose2d_backward_has_grad() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
     let x = graph.input(&Tensor::normal(0.0, 1.0, &[2, 1, 4, 4]))?;
-    let deconv = ConvTranspose2d::new(
-        &graph, 1, 2, (2, 2), (1, 1), (0, 0), (0, 0), true, "deconv",
-    )?;
+    let deconv =
+        ConvTranspose2d::new(&graph, 1, 2, (2, 2), (1, 1), (0, 0), (0, 0), true, "deconv")?;
     // 输出: [2, 2, 5, 5] → flatten: [2, 50]
     let flat = deconv.forward(&x).flatten()?;
 
     let fc = Linear::new(&graph, 50, 3, true, "fc")?;
     let logits = fc.forward(&flat);
 
-    let labels = graph.input(&Tensor::new(
-        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-        &[2, 3],
-    ))?;
+    let labels = graph.input(&Tensor::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 3]))?;
     let loss = logits.cross_entropy(&labels)?;
 
     loss.backward()?;
@@ -232,7 +268,15 @@ fn test_conv_transpose2d_backward_numerical() -> Result<(), GraphError> {
 
     let x = graph.input(&Tensor::ones(&[1, 1, 2, 2]))?;
     let deconv = ConvTranspose2d::new(
-        &graph, 1, 1, (2, 2), (1, 1), (0, 0), (0, 0), false, "deconv",
+        &graph,
+        1,
+        1,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        (0, 0),
+        false,
+        "deconv",
     )?;
     deconv.kernel().set_value(&Tensor::ones(&[1, 1, 2, 2]))?;
 
@@ -267,9 +311,7 @@ fn test_conv_then_deconv_chain() -> Result<(), GraphError> {
     let enc_out = encoder.forward(&x).relu();
 
     // 解码器: ConvTranspose2d(4→1, k=3, stride=2) [3,3] → [7,7]
-    let decoder = ConvTranspose2d::new(
-        &graph, 4, 1, (3, 3), (2, 2), (0, 0), (0, 0), true, "dec",
-    )?;
+    let decoder = ConvTranspose2d::new(&graph, 4, 1, (3, 3), (2, 2), (0, 0), (0, 0), true, "dec")?;
     let dec_out = decoder.forward(&enc_out);
 
     dec_out.forward()?;
@@ -288,7 +330,15 @@ fn test_conv_then_deconv_chain() -> Result<(), GraphError> {
 fn test_conv_transpose2d_module_trait() -> Result<(), GraphError> {
     let graph = Graph::new();
     let deconv = ConvTranspose2d::new(
-        &graph, 1, 32, (3, 3), (1, 1), (0, 0), (0, 0), true, "deconv",
+        &graph,
+        1,
+        32,
+        (3, 3),
+        (1, 1),
+        (0, 0),
+        (0, 0),
+        true,
+        "deconv",
     )?;
 
     let params = deconv.parameters();
@@ -302,13 +352,29 @@ fn test_conv_transpose2d_module_trait() -> Result<(), GraphError> {
 fn test_conv_transpose2d_seeded_reproducibility() -> Result<(), GraphError> {
     let graph1 = Graph::new_with_seed(42);
     let d1 = ConvTranspose2d::new(
-        &graph1, 1, 4, (3, 3), (1, 1), (0, 0), (0, 0), true, "deconv",
+        &graph1,
+        1,
+        4,
+        (3, 3),
+        (1, 1),
+        (0, 0),
+        (0, 0),
+        true,
+        "deconv",
     )?;
     let k1 = d1.kernel().value()?.unwrap();
 
     let graph2 = Graph::new_with_seed(42);
     let d2 = ConvTranspose2d::new(
-        &graph2, 1, 4, (3, 3), (1, 1), (0, 0), (0, 0), true, "deconv",
+        &graph2,
+        1,
+        4,
+        (3, 3),
+        (1, 1),
+        (0, 0),
+        (0, 0),
+        true,
+        "deconv",
     )?;
     let k2 = d2.kernel().value()?.unwrap();
 
@@ -325,7 +391,15 @@ fn test_conv_transpose2d_output_padding() -> Result<(), GraphError> {
     // stride=2, output_padding=1: 补偿 stride 歧义
     let x = graph.input(&Tensor::ones(&[1, 1, 4, 4]))?;
     let deconv = ConvTranspose2d::new(
-        &graph, 1, 1, (3, 3), (2, 2), (1, 1), (1, 1), false, "deconv",
+        &graph,
+        1,
+        1,
+        (3, 3),
+        (2, 2),
+        (1, 1),
+        (1, 1),
+        false,
+        "deconv",
     )?;
     deconv.kernel().set_value(&Tensor::ones(&[1, 1, 3, 3]))?;
 

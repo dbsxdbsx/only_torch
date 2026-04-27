@@ -155,8 +155,7 @@ pub(super) fn infer_output_shape_placeholder(
     match node_type {
         NodeTypeDescriptor::Concat { axis } => {
             // 沿 axis 累加所有父节点的对应维度
-            let parent_shapes: Vec<Vec<usize>> =
-                parent_ids.iter().map(|&id| lookup(id)).collect();
+            let parent_shapes: Vec<Vec<usize>> = parent_ids.iter().map(|&id| lookup(id)).collect();
             if parent_shapes.is_empty() || parent_shapes[0].is_empty() {
                 return vec![];
             }
@@ -177,10 +176,7 @@ pub(super) fn infer_output_shape_placeholder(
             return out;
         }
         NodeTypeDescriptor::Permute { dims } => {
-            let parent_shape = parent_ids
-                .first()
-                .map(|&id| lookup(id))
-                .unwrap_or_default();
+            let parent_shape = parent_ids.first().map(|&id| lookup(id)).unwrap_or_default();
             if parent_shape.is_empty() || dims.len() != parent_shape.len() {
                 return parent_shape;
             }
@@ -207,12 +203,12 @@ pub(super) fn extract_const_i64<'a>(
     name: &str,
     op_context: &str,
 ) -> Result<Vec<i64>, OnnxError> {
-    let tensor = const_table.get(name).ok_or_else(|| OnnxError::InvalidGraph(
-        format!(
+    let tensor = const_table.get(name).ok_or_else(|| {
+        OnnxError::InvalidGraph(format!(
             "{op_context}: 输入 \"{name}\" 既不是 Constant 节点输出也不是 initializer，\
             无法折叠为静态属性。建议用 onnxsim 预处理把动态形状固化"
-        ),
-    ))?;
+        ))
+    })?;
     if tensor.data_type() != DataType::Int64 {
         return Err(OnnxError::UnsupportedDataType {
             data_type: tensor.data_type() as i32,
@@ -237,12 +233,12 @@ pub(super) fn extract_const_f32<'a>(
     name: &str,
     op_context: &str,
 ) -> Result<Vec<f32>, OnnxError> {
-    let tensor = const_table.get(name).ok_or_else(|| OnnxError::InvalidGraph(
-        format!(
+    let tensor = const_table.get(name).ok_or_else(|| {
+        OnnxError::InvalidGraph(format!(
             "{op_context}: 输入 \"{name}\" 既不是 Constant 节点输出也不是 initializer，\
             无法折叠为静态属性。建议用 onnxsim 预处理"
-        ),
-    ))?;
+        ))
+    })?;
     if tensor.data_type() != DataType::Float {
         return Err(OnnxError::UnsupportedDataType {
             data_type: tensor.data_type() as i32,

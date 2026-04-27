@@ -6,7 +6,7 @@
  * @LastEditTime : 2024-10-25 05:39:09
  */
 
-use super::{next_source_id, Tensor};
+use super::{Tensor, next_source_id};
 use ndarray::{ArrayViewD, ArrayViewMutD};
 
 /// 计算两个形状广播后的输出形状（NumPy 风格）

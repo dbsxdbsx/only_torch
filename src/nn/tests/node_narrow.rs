@@ -36,10 +36,7 @@ use approx::assert_abs_diff_eq;
 fn test_narrow_forward_basic() {
     let graph = Graph::new();
 
-    let input_data = Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-        &[2, 4],
-    );
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
     let x = graph.input(&input_data).unwrap();
     let result = x.narrow(1, 1, 2).unwrap();
 
@@ -69,9 +66,9 @@ fn test_narrow_forward_axis0() {
 
     let input_data = Tensor::new(
         &[
-            1.0, 2.0, 3.0,   // row 0
-            4.0, 5.0, 6.0,   // row 1
-            7.0, 8.0, 9.0,   // row 2
+            1.0, 2.0, 3.0, // row 0
+            4.0, 5.0, 6.0, // row 1
+            7.0, 8.0, 9.0, // row 2
             10.0, 11.0, 12.0, // row 3
         ],
         &[4, 3],
@@ -103,10 +100,7 @@ fn test_narrow_forward_axis0() {
 fn test_narrow_forward_start_zero() {
     let graph = Graph::new();
 
-    let input_data = Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-        &[2, 4],
-    );
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
     let x = graph.input(&input_data).unwrap();
     let result = x.narrow(1, 0, 2).unwrap();
 
@@ -132,10 +126,7 @@ fn test_narrow_forward_start_zero() {
 fn test_narrow_forward_length_one() {
     let graph = Graph::new();
 
-    let input_data = Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-        &[2, 4],
-    );
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
     let x = graph.input(&input_data).unwrap();
     let result = x.narrow(1, 2, 1).unwrap();
 
@@ -193,7 +184,9 @@ fn test_narrow_vjp_unit_upstream() -> Result<(), GraphError> {
     narrowed.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[2, 2]);
-    let grad = narrowed.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = narrowed
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 4]);
 
@@ -228,21 +221,18 @@ fn test_narrow_vjp_non_unit_upstream() -> Result<(), GraphError> {
         .create_narrow_node(input.clone(), 1, 1, 2, Some("narrow"))
         .unwrap();
 
-    input
-        .set_value(Some(&Tensor::zeros(&[2, 4])))
-        .unwrap();
+    input.set_value(Some(&Tensor::zeros(&[2, 4]))).unwrap();
     narrowed.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = narrowed.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = narrowed
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 4]);
 
     // 期望: [[0, 2, 3, 0], [0, 4, 5, 0]]
-    let expected = [
-        [0.0, 2.0, 3.0, 0.0],
-        [0.0, 4.0, 5.0, 0.0],
-    ];
+    let expected = [[0.0, 2.0, 3.0, 0.0], [0.0, 4.0, 5.0, 0.0]];
     for i in 0..2 {
         for j in 0..4 {
             assert_abs_diff_eq!(grad[[i, j]], expected[i][j], epsilon = 1e-6);
@@ -448,9 +438,7 @@ fn test_create_narrow_node_invalid_axis() {
         .create_basic_input_node(&[2, 4], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_narrow_node(input, 2, 0, 1, None);
+    let result = inner.borrow_mut().create_narrow_node(input, 2, 0, 1, None);
     assert!(result.is_err());
 }
 
@@ -467,9 +455,7 @@ fn test_create_narrow_node_out_of_bounds() {
         .create_basic_input_node(&[2, 4], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_narrow_node(input, 1, 3, 2, None);
+    let result = inner.borrow_mut().create_narrow_node(input, 1, 3, 2, None);
     assert!(result.is_err());
 }
 

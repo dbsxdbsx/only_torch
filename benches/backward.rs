@@ -25,7 +25,16 @@ fn bench_add_chain_backward(c: &mut Criterion) {
 
     for &(name, shape, chain_len) in configs {
         let graph = Graph::new();
-        let p = graph.parameter(shape, Init::Normal { mean: 0.0, std: 0.1 }, "p").unwrap();
+        let p = graph
+            .parameter(
+                shape,
+                Init::Normal {
+                    mean: 0.0,
+                    std: 0.1,
+                },
+                "p",
+            )
+            .unwrap();
         let target = graph.input(&Tensor::zeros(shape)).unwrap();
 
         // 构建 Add 链：p + p + p + ...
@@ -68,7 +77,16 @@ fn bench_negate_chain_backward(c: &mut Criterion) {
 
     for &(name, shape, chain_len) in configs {
         let graph = Graph::new();
-        let p = graph.parameter(shape, Init::Normal { mean: 0.0, std: 0.1 }, "p").unwrap();
+        let p = graph
+            .parameter(
+                shape,
+                Init::Normal {
+                    mean: 0.0,
+                    std: 0.1,
+                },
+                "p",
+            )
+            .unwrap();
         let target = graph.input(&Tensor::zeros(shape)).unwrap();
 
         // 构建 Negate 链：-(-(-p))
@@ -102,17 +120,22 @@ fn bench_subtract_chain_backward(c: &mut Criterion) {
     let mut group = c.benchmark_group("subtract_chain_backward");
     group.sample_size(20);
 
-    let configs: &[(&str, &[usize], usize)] = &[
-        ("small_4sub", &[8, 32], 4),
-        ("medium_8sub", &[32, 128], 8),
-    ];
+    let configs: &[(&str, &[usize], usize)] =
+        &[("small_4sub", &[8, 32], 4), ("medium_8sub", &[32, 128], 8)];
 
     for &(name, shape, chain_len) in configs {
         let graph = Graph::new();
         let params: Vec<_> = (0..chain_len)
             .map(|i| {
                 graph
-                    .parameter(shape, Init::Normal { mean: 0.0, std: 0.1 }, &format!("p{i}"))
+                    .parameter(
+                        shape,
+                        Init::Normal {
+                            mean: 0.0,
+                            std: 0.1,
+                        },
+                        &format!("p{i}"),
+                    )
                     .unwrap()
             })
             .collect();
@@ -127,7 +150,11 @@ fn bench_subtract_chain_backward(c: &mut Criterion) {
         graph.snapshot_once_from(&[&loss]);
 
         let param_refs: Vec<_> = params.iter().collect();
-        let mut opt = SGD::new(&graph, &param_refs.iter().map(|p| (*p).clone()).collect::<Vec<_>>(), 0.001);
+        let mut opt = SGD::new(
+            &graph,
+            &param_refs.iter().map(|p| (*p).clone()).collect::<Vec<_>>(),
+            0.001,
+        );
 
         group.bench_with_input(BenchmarkId::from_parameter(name), &name, |b, _| {
             b.iter(|| {

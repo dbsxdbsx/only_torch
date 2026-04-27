@@ -297,7 +297,12 @@ fn test_create_pad_node_4d() {
 
     let pad = inner
         .borrow_mut()
-        .create_pad_node(input.clone(), vec![(0, 0), (0, 0), (1, 1), (1, 1)], 0.0, None)
+        .create_pad_node(
+            input.clone(),
+            vec![(0, 0), (0, 0), (1, 1), (1, 1)],
+            0.0,
+            None,
+        )
         .unwrap();
 
     assert_eq!(pad.shape(), vec![1, 3, 10, 10]);

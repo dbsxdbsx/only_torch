@@ -188,7 +188,9 @@ fn test_select_vjp_scatter_unit() -> Result<(), GraphError> {
     selected.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[2, 4]);
-    let grad = selected.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = selected
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 3, 4]);
 
@@ -235,7 +237,9 @@ fn test_select_vjp_scatter_non_unit() -> Result<(), GraphError> {
         }
     }
 
-    let grad = selected.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = selected
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 3, 4]);
 

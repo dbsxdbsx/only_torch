@@ -33,10 +33,7 @@ use approx::assert_abs_diff_eq;
 fn test_topk_forward_basic() {
     let graph = Graph::new();
 
-    let input_data = Tensor::new(
-        &[1.0, 4.0, 2.0, 3.0, 8.0, 5.0, 7.0, 6.0],
-        &[2, 4],
-    );
+    let input_data = Tensor::new(&[1.0, 4.0, 2.0, 3.0, 8.0, 5.0, 7.0, 6.0], &[2, 4]);
     let x = graph.input(&input_data).unwrap();
     let result = x.topk(2, 1, true).unwrap();
 
@@ -62,10 +59,7 @@ fn test_topk_forward_basic() {
 fn test_topk_forward_k1_max() {
     let graph = Graph::new();
 
-    let input_data = Tensor::new(
-        &[1.0, 4.0, 2.0, 3.0, 8.0, 5.0, 7.0, 6.0],
-        &[2, 4],
-    );
+    let input_data = Tensor::new(&[1.0, 4.0, 2.0, 3.0, 8.0, 5.0, 7.0, 6.0], &[2, 4]);
     let x = graph.input(&input_data).unwrap();
     let result = x.topk(1, 1, true).unwrap();
 
@@ -91,10 +85,7 @@ fn test_topk_forward_k1_max() {
 fn test_topk_forward_axis0() {
     let graph = Graph::new();
 
-    let input_data = Tensor::new(
-        &[1.0, 2.0, 5.0, 6.0, 3.0, 4.0, 7.0, 8.0],
-        &[4, 2],
-    );
+    let input_data = Tensor::new(&[1.0, 2.0, 5.0, 6.0, 3.0, 4.0, 7.0, 8.0], &[4, 2]);
     let x = graph.input(&input_data).unwrap();
     let result = x.topk(2, 0, true).unwrap();
 
@@ -157,7 +148,9 @@ fn test_topk_vjp_unit_upstream() -> Result<(), GraphError> {
     topk.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[2, 2]);
-    let grad = topk.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = topk
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 4]);
 
@@ -207,7 +200,9 @@ fn test_topk_vjp_non_unit_upstream() -> Result<(), GraphError> {
     topk.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = topk.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = topk
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 4]);
 
@@ -350,9 +345,7 @@ fn test_create_topk_node_invalid_axis() {
         .create_basic_input_node(&[2, 4], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_topk_node(input, 2, 2, true, None);
+    let result = inner.borrow_mut().create_topk_node(input, 2, 2, true, None);
     assert!(result.is_err());
 }
 
@@ -367,9 +360,7 @@ fn test_create_topk_node_k_zero() {
         .create_basic_input_node(&[2, 4], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_topk_node(input, 0, 1, true, None);
+    let result = inner.borrow_mut().create_topk_node(input, 0, 1, true, None);
     assert!(result.is_err());
 }
 
@@ -386,9 +377,7 @@ fn test_create_topk_node_k_exceeds() {
         .create_basic_input_node(&[2, 4], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_topk_node(input, 5, 1, true, None);
+    let result = inner.borrow_mut().create_topk_node(input, 5, 1, true, None);
     assert!(result.is_err());
 }
 

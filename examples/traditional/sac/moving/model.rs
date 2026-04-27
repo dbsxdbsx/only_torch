@@ -47,11 +47,7 @@ pub struct SacActor {
 }
 
 impl SacActor {
-    pub fn new(
-        graph: &Graph,
-        obs_dim: usize,
-        hidden_dim: usize,
-    ) -> Result<Self, GraphError> {
+    pub fn new(graph: &Graph, obs_dim: usize, hidden_dim: usize) -> Result<Self, GraphError> {
         let graph = graph.with_model_name("Actor");
         Ok(Self {
             fc1: Linear::new(&graph, obs_dim, hidden_dim, true, "fc1")?,
@@ -118,10 +114,7 @@ impl SacActor {
     /// 训练时全部分支前向（保留计算图用于梯度反向传播）
     ///
     /// 返回 `ActorTrainOutput` 供 Actor Loss 计算使用
-    pub fn forward_all_branches(
-        &self,
-        obs: impl IntoVar,
-    ) -> Result<ActorTrainOutput, GraphError> {
+    pub fn forward_all_branches(&self, obs: impl IntoVar) -> Result<ActorTrainOutput, GraphError> {
         let features = self.shared_features(obs);
 
         // 离散头
@@ -153,7 +146,7 @@ impl SacActor {
             probs,
             log_probs,
             // 各分支的连续动作（用于 Critic 评估）
-            acc_env_action,     // [batch, 1]，范围 [0, 1]
+            acc_env_action,                    // [batch, 1]，范围 [0, 1]
             turn_env_action: turn_tanh_action, // [batch, 1]，范围 [-1, 1]
             // 各分支的 log_prob_c
             acc_log_prob,  // [batch, 1]
@@ -218,13 +211,7 @@ impl SacCritic {
         let model_graph = graph.with_model_name(name);
         Ok(Self {
             graph: model_graph.clone(),
-            fc1: Linear::new(
-                &model_graph,
-                obs_dim + CONT_DIM,
-                hidden_dim,
-                true,
-                "fc1",
-            )?,
+            fc1: Linear::new(&model_graph, obs_dim + CONT_DIM, hidden_dim, true, "fc1")?,
             fc2: Linear::new(&model_graph, hidden_dim, hidden_dim, true, "fc2")?,
             fc3: Linear::new(&model_graph, hidden_dim, NUM_DISCRETE, true, "fc3")?,
         })
@@ -239,11 +226,7 @@ impl SacCritic {
     }
 
     /// 获取 Q 值张量（不保留计算图，用于 target Q 计算）
-    pub fn get_q_values(
-        &self,
-        obs: &Tensor,
-        cont_action: &Tensor,
-    ) -> Result<Tensor, GraphError> {
+    pub fn get_q_values(&self, obs: &Tensor, cont_action: &Tensor) -> Result<Tensor, GraphError> {
         let obs_var = obs.into_var(&self.graph)?;
         let act_var = cont_action.into_var(&self.graph)?;
         let q = self.forward_q(&obs_var, &act_var)?;
@@ -288,11 +271,7 @@ pub struct SacAgent {
 }
 
 impl SacAgent {
-    pub fn new(
-        graph: &Graph,
-        obs_dim: usize,
-        hidden_dim: usize,
-    ) -> Result<Self, GraphError> {
+    pub fn new(graph: &Graph, obs_dim: usize, hidden_dim: usize) -> Result<Self, GraphError> {
         // 离散 target entropy: 0.5 * ln(K)
         let target_entropy_d = 0.5 * (NUM_DISCRETE as f32).ln();
         // 连续 target entropy: -1.0（每个分支 1 维）

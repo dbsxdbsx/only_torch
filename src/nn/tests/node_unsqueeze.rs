@@ -151,7 +151,11 @@ fn test_squeeze_unsqueeze_inverse() {
     restored.forward().unwrap();
 
     let output = restored.value().unwrap().unwrap();
-    assert_eq!(output.shape(), &[1, 3, 4], "unsqueeze(squeeze) 应恢复原形状");
+    assert_eq!(
+        output.shape(),
+        &[1, 3, 4],
+        "unsqueeze(squeeze) 应恢复原形状"
+    );
 
     assert_abs_diff_eq!(output[[0, 0, 0]], 1.0, epsilon = 1e-6);
     assert_abs_diff_eq!(output[[0, 2, 3]], 12.0, epsilon = 1e-6);

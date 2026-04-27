@@ -35,19 +35,10 @@ fn test_dot_contains_distribution_cluster() {
     let dot = build_dot_from_named_outputs(&[("Loss", &entropy)]);
 
     // DOT 应包含分布 cluster
-    assert!(
-        dot.contains("subgraph cluster_"),
-        "DOT 应包含 cluster 子图"
-    );
-    assert!(
-        dot.contains("Categorical"),
-        "DOT 应包含 Categorical 标签"
-    );
+    assert!(dot.contains("subgraph cluster_"), "DOT 应包含 cluster 子图");
+    assert!(dot.contains("Categorical"), "DOT 应包含 Categorical 标签");
     // 应使用虚线边框
-    assert!(
-        dot.contains("dashed"),
-        "分布 cluster 应使用虚线边框"
-    );
+    assert!(dot.contains("dashed"), "分布 cluster 应使用虚线边框");
 }
 
 /// 分布 cluster 内应包含 softmax 和 log_softmax 节点
@@ -207,8 +198,15 @@ fn test_dot_origin_summarizes_when_many() {
         "Cast_5".to_string(),
     ];
     desc.add_node(
-        NodeDescriptor::new(2, "out", NodeTypeDescriptor::Sigmoid, vec![1, 3], None, vec![1])
-            .with_origin_onnx_nodes(many.clone()),
+        NodeDescriptor::new(
+            2,
+            "out",
+            NodeTypeDescriptor::Sigmoid,
+            vec![1, 3],
+            None,
+            vec![1],
+        )
+        .with_origin_onnx_nodes(many.clone()),
     );
 
     let result = Graph::from_descriptor(&desc).expect("rebuild");

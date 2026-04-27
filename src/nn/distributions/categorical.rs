@@ -65,10 +65,7 @@ impl Categorical {
     /// # 参数
     /// - `logits` — 未归一化的对数概率，形状 `[batch, num_classes]`
     pub fn new(logits: Var) -> Self {
-        let instance_id = logits
-            .graph()
-            .borrow_mut()
-            .next_node_group_instance_id();
+        let instance_id = logits.graph().borrow_mut().next_node_group_instance_id();
         let _guard = NodeGroupContext::new(&logits, "Categorical", instance_id);
         let probs = logits.softmax();
         let log_probs = logits.log_softmax();

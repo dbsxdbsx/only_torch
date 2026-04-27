@@ -19,8 +19,8 @@ use crate::nn::evolution::gene::{
 };
 use crate::nn::evolution::migration::{
     InnovationCounter, expand_activation, expand_conv2d, expand_dropout, expand_flatten,
-    expand_gru, expand_linear, expand_lstm, expand_pool2d, expand_rnn, migrate_conv2d_to_feature_maps,
-    migrate_network_genome,
+    expand_gru, expand_linear, expand_lstm, expand_pool2d, expand_rnn,
+    migrate_conv2d_to_feature_maps, migrate_network_genome,
 };
 use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
 
@@ -161,7 +161,10 @@ fn expand_lstm_and_gru_return_sequence_shape() {
 fn migrate_sequential_genome_no_longer_deferred() {
     let genome = NetworkGenome::minimal_sequential(4, 2);
     let out = migrate_network_genome(&genome).unwrap();
-    assert!(out.deferred.is_empty(), "循环层展开为 NodeLevel 后不应再 deferred");
+    assert!(
+        out.deferred.is_empty(),
+        "循环层展开为 NodeLevel 后不应再 deferred"
+    );
     assert!(
         out.nodes
             .iter()
@@ -527,7 +530,10 @@ fn migrate_rnn_genome_deferred() {
     // 序列 genome（含 Rnn 层）应直接展开为 CellRnn，不再 deferred
     let genome = NetworkGenome::minimal_sequential(4, 2);
     let out = migrate_network_genome(&genome).unwrap();
-    assert!(out.deferred.is_empty(), "Rnn 展开为 CellRnn 后不应再 deferred");
+    assert!(
+        out.deferred.is_empty(),
+        "Rnn 展开为 CellRnn 后不应再 deferred"
+    );
     assert!(
         out.nodes
             .iter()
@@ -856,7 +862,15 @@ fn make_conv2d_block(
     block_id: u64,
     counter: &mut InnovationCounter,
 ) -> Vec<NodeGene> {
-    expand_conv2d(input_id, in_ch, out_ch, kernel_size, spatial, block_id, counter)
+    expand_conv2d(
+        input_id,
+        in_ch,
+        out_ch,
+        kernel_size,
+        spatial,
+        block_id,
+        counter,
+    )
 }
 
 /// 辅助函数：创建一个带输入节点的完整 NodeLevel 节点列表（spatial input + conv block + output）
@@ -870,15 +884,8 @@ fn make_simple_spatial_nodes(
     let input_id = INPUT_INNOVATION; // 0 — 隐式输入，不创建节点
 
     let block_id = counter.next();
-    let block_nodes = make_conv2d_block(
-        input_id,
-        in_ch,
-        out_ch,
-        3,
-        spatial,
-        block_id,
-        &mut counter,
-    );
+    let block_nodes =
+        make_conv2d_block(input_id, in_ch, out_ch, 3, spatial, block_id, &mut counter);
 
     let last_id = block_nodes.last().unwrap().innovation_number;
 
@@ -909,8 +916,20 @@ fn fm_migration_empty_genome_is_noop() {
 fn fm_migration_no_conv_block_is_noop() {
     let mut counter = InnovationCounter::new(100);
     let mut nodes = vec![
-        NodeGene::new(1, NodeTypeDescriptor::Identity, vec![1, 1, 8, 8], vec![INPUT_INNOVATION], None),
-        NodeGene::new(2, NodeTypeDescriptor::Identity, vec![1, 1, 8, 8], vec![1], None),
+        NodeGene::new(
+            1,
+            NodeTypeDescriptor::Identity,
+            vec![1, 1, 8, 8],
+            vec![INPUT_INNOVATION],
+            None,
+        ),
+        NodeGene::new(
+            2,
+            NodeTypeDescriptor::Identity,
+            vec![1, 1, 8, 8],
+            vec![1],
+            None,
+        ),
     ];
     let original_len = nodes.len();
     migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
@@ -936,10 +955,7 @@ fn fm_migration_basic_1ch_to_1ch() {
 
     // 验证没有残留的旧模板块节点（所有 enabled 节点的 block_id 如果有值，则应该有 fm_id 或者是新 edge 块）
     let fm_nodes: Vec<&NodeGene> = nodes.iter().filter(|n| n.fm_id.is_some()).collect();
-    assert!(
-        !fm_nodes.is_empty(),
-        "迁移后应有 fm_id 标记的节点"
-    );
+    assert!(!fm_nodes.is_empty(), "迁移后应有 fm_id 标记的节点");
 
     // 验证 Concat 节点存在
     let concat_nodes: Vec<&NodeGene> = nodes
@@ -968,7 +984,8 @@ fn fm_migration_2ch_to_3ch() {
     );
 
     // 唯一的 fm_id 集合大小
-    let fm_ids: std::collections::HashSet<u64> = fm_nodes.iter().map(|n| n.fm_id.unwrap()).collect();
+    let fm_ids: std::collections::HashSet<u64> =
+        fm_nodes.iter().map(|n| n.fm_id.unwrap()).collect();
     // 至少 2（输入）+ 3（输出）= 5 个不同的 FM
     assert!(
         fm_ids.len() >= 5,
@@ -982,10 +999,7 @@ fn fm_migration_2ch_to_3ch() {
         .filter(|n| matches!(n.node_type, NodeTypeDescriptor::Concat { .. }))
         .collect();
     assert_eq!(concat_nodes.len(), 1, "应有 1 个 Concat 节点");
-    assert_eq!(
-        concat_nodes[0].output_shape[1], 3,
-        "Concat 输出通道应为 3"
-    );
+    assert_eq!(concat_nodes[0].output_shape[1], 3, "Concat 输出通道应为 3");
 
     // 验证 FM 边数量：2 × 3 = 6 条 Conv2d 边
     let conv_edge_nodes: Vec<&NodeGene> = nodes
@@ -1006,13 +1020,35 @@ fn fm_migration_2ch_to_3ch() {
     for edge in &conv_edge_nodes {
         assert_eq!(edge.parents.len(), 2, "Conv2d 边应有 2 个 parent");
         let kernel_id = edge.parents[1];
-        let kernel = nodes.iter().find(|n| n.innovation_number == kernel_id).unwrap();
+        let kernel = nodes
+            .iter()
+            .find(|n| n.innovation_number == kernel_id)
+            .unwrap();
         assert_eq!(
             kernel.output_shape,
             vec![1, 1, 3, 3],
             "FM 边 kernel 应为 [1, 1, 3, 3]"
         );
     }
+
+    // 原 Conv2d 模板块带 bias，FM 分解后应为每个输出 FM 保留一个单通道 bias。
+    let bias_nodes: Vec<&NodeGene> = nodes
+        .iter()
+        .filter(|n| n.is_parameter() && n.output_shape == vec![1, 1, 1, 1])
+        .collect();
+    assert_eq!(bias_nodes.len(), 3, "3 个输出 FM 应各有 1 个 bias");
+
+    let bias_ids: std::collections::HashSet<u64> =
+        bias_nodes.iter().map(|n| n.innovation_number).collect();
+    let bias_add_nodes: Vec<&NodeGene> = nodes
+        .iter()
+        .filter(|n| {
+            matches!(n.node_type, NodeTypeDescriptor::Add)
+                && n.fm_id.is_some()
+                && n.parents.iter().any(|pid| bias_ids.contains(pid))
+        })
+        .collect();
+    assert_eq!(bias_add_nodes.len(), 3, "3 个输出 FM 应各有 1 个 bias Add");
 }
 
 #[test]
@@ -1080,11 +1116,7 @@ fn fm_migration_idempotent() {
     // 再次迁移应为 no-op（没有新的 Conv2d 模板块）
     migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
 
-    assert_eq!(
-        nodes.len(),
-        nodes_after_first.len(),
-        "第二次迁移应为 no-op"
-    );
+    assert_eq!(nodes.len(), nodes_after_first.len(), "第二次迁移应为 no-op");
     assert_eq!(counter.peek(), counter_after_first, "计数器不应变化");
 }
 
@@ -1095,13 +1127,19 @@ fn fm_migration_add_aggregation_tree() {
 
     migrate_conv2d_to_feature_maps(&mut nodes, &mut counter);
 
-    // 1 个输出 FM 有 4 条输入边，需要 Add 聚合树
-    // 4 → 2 pairs → 2 Adds → 1 pair → 1 Add = 3 Adds
+    // 1 个输出 FM 有 4 条输入边，需要 Add 聚合树；bias Add 单独统计。
+    // 4 → 2 pairs → 2 Adds → 1 pair → 1 Add = 3 个聚合 Add
+    let bias_ids: std::collections::HashSet<u64> = nodes
+        .iter()
+        .filter(|n| n.is_parameter() && n.output_shape == vec![1, 1, 1, 1])
+        .map(|n| n.innovation_number)
+        .collect();
     let add_nodes: Vec<&NodeGene> = nodes
         .iter()
         .filter(|n| {
             matches!(n.node_type, NodeTypeDescriptor::Add)
                 && n.fm_id.is_some()
+                && !n.parents.iter().any(|pid| bias_ids.contains(pid))
         })
         .collect();
     assert_eq!(
@@ -1110,6 +1148,16 @@ fn fm_migration_add_aggregation_tree() {
         "4 条输入边需要 3 个 Add 节点聚合, got {}",
         add_nodes.len()
     );
+
+    let bias_add_nodes: Vec<&NodeGene> = nodes
+        .iter()
+        .filter(|n| {
+            matches!(n.node_type, NodeTypeDescriptor::Add)
+                && n.fm_id.is_some()
+                && n.parents.iter().any(|pid| bias_ids.contains(pid))
+        })
+        .collect();
+    assert_eq!(bias_add_nodes.len(), 1, "1 个输出 FM 应有 1 个 bias Add");
 }
 
 #[test]

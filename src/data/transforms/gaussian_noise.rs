@@ -28,10 +28,7 @@ impl GaussianNoise {
     /// - `mean`: 噪声均值
     /// - `std`: 噪声标准差（必须 > 0）
     pub fn new(mean: f64, std: f64) -> Self {
-        assert!(
-            std > 0.0,
-            "GaussianNoise: std 必须大于 0，得到 {std}"
-        );
+        assert!(std > 0.0, "GaussianNoise: std 必须大于 0，得到 {std}");
         Self { mean, std }
     }
 }

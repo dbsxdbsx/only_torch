@@ -60,24 +60,19 @@ pub trait VarSelectionOps {
 impl VarSelectionOps for Var {
     fn topk(&self, k: usize, axis: usize, sorted: bool) -> Result<Var, GraphError> {
         let graph = self.graph();
-        let node = graph.borrow_mut().create_topk_node(
-            Rc::clone(self.node()),
-            k,
-            axis,
-            sorted,
-            None,
-        )?;
+        let node =
+            graph
+                .borrow_mut()
+                .create_topk_node(Rc::clone(self.node()), k, axis, sorted, None)?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 
     fn sort_values(&self, axis: usize, descending: bool) -> Result<Var, GraphError> {
         let graph = self.graph();
-        let node = graph.borrow_mut().create_sort_node(
-            Rc::clone(self.node()),
-            axis,
-            descending,
-            None,
-        )?;
+        let node =
+            graph
+                .borrow_mut()
+                .create_sort_node(Rc::clone(self.node()), axis, descending, None)?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 }

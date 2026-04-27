@@ -1,7 +1,7 @@
 use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::graph::onnx_error::OnnxError;
 use crate::nn::graph::onnx_ops::{
-    descriptor_to_export_category, onnx_op_to_descriptors, ExportCategory,
+    ExportCategory, descriptor_to_export_category, onnx_op_to_descriptors,
 };
 use onnx_rs::ast::{Attribute, OpType};
 
@@ -183,10 +183,7 @@ fn test_import_math_ops() {
 
 #[test]
 fn test_import_gemm_standard() {
-    let attrs = vec![
-        make_float_attr("alpha", 1.0),
-        make_float_attr("beta", 1.0),
-    ];
+    let attrs = vec![make_float_attr("alpha", 1.0), make_float_attr("beta", 1.0)];
     let result = onnx_op_to_descriptors(&OpType::Gemm, &attrs, "gemm0").unwrap();
     assert_eq!(result.len(), 2);
     assert!(matches!(result[0], NodeTypeDescriptor::MatMul));
@@ -210,20 +207,14 @@ fn test_import_gemm_non_standard_rejected() {
 
 #[test]
 fn test_import_clip_relu6() {
-    let attrs = vec![
-        make_float_attr("min", 0.0),
-        make_float_attr("max", 6.0),
-    ];
+    let attrs = vec![make_float_attr("min", 0.0), make_float_attr("max", 6.0)];
     let result = onnx_op_to_descriptors(&OpType::Clip, &attrs, "clip0").unwrap();
     assert!(matches!(result[0], NodeTypeDescriptor::ReLU6));
 }
 
 #[test]
 fn test_import_clip_generic() {
-    let attrs = vec![
-        make_float_attr("min", -1.0),
-        make_float_attr("max", 1.0),
-    ];
+    let attrs = vec![make_float_attr("min", -1.0), make_float_attr("max", 1.0)];
     let result = onnx_op_to_descriptors(&OpType::Clip, &attrs, "clip0").unwrap();
     match &result[0] {
         NodeTypeDescriptor::Clip { min, max } => {
@@ -240,7 +231,9 @@ fn test_import_flatten_axis1() {
     let result = onnx_op_to_descriptors(&OpType::Flatten, &attrs, "flat0").unwrap();
     assert!(matches!(
         result[0],
-        NodeTypeDescriptor::Flatten { keep_first_dim: true }
+        NodeTypeDescriptor::Flatten {
+            keep_first_dim: true
+        }
     ));
 }
 
@@ -281,7 +274,11 @@ fn test_import_conv2d() {
     ];
     let result = onnx_op_to_descriptors(&OpType::Conv, &attrs, "conv0").unwrap();
     match &result[0] {
-        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
+        NodeTypeDescriptor::Conv2d {
+            stride,
+            padding,
+            dilation,
+        } => {
             assert_eq!(*stride, (1, 1));
             assert_eq!(*padding, (1, 1));
             assert_eq!(*dilation, (1, 1));
@@ -310,7 +307,11 @@ fn test_import_conv_dilation_accepted() {
     ];
     let result = onnx_op_to_descriptors(&OpType::Conv, &attrs, "conv0").unwrap();
     match &result[0] {
-        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
+        NodeTypeDescriptor::Conv2d {
+            stride,
+            padding,
+            dilation,
+        } => {
             assert_eq!(*stride, (1, 1));
             assert_eq!(*padding, (2, 2));
             assert_eq!(*dilation, (2, 2));
@@ -327,7 +328,12 @@ fn test_import_maxpool() {
     ];
     let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp0").unwrap();
     match &result[0] {
-        NodeTypeDescriptor::MaxPool2d { kernel_size, stride, padding, ceil_mode } => {
+        NodeTypeDescriptor::MaxPool2d {
+            kernel_size,
+            stride,
+            padding,
+            ceil_mode,
+        } => {
             assert_eq!(*kernel_size, (2, 2));
             assert_eq!(*stride, (2, 2));
             assert_eq!(*padding, (0, 0));
@@ -345,7 +351,10 @@ fn test_import_avgpool() {
     ];
     let result = onnx_op_to_descriptors(&OpType::AveragePool, &attrs, "ap0").unwrap();
     match &result[0] {
-        NodeTypeDescriptor::AvgPool2d { kernel_size, stride } => {
+        NodeTypeDescriptor::AvgPool2d {
+            kernel_size,
+            stride,
+        } => {
             assert_eq!(*kernel_size, (3, 3));
             assert_eq!(*stride, (1, 1));
         }
@@ -431,7 +440,10 @@ fn test_import_maxpool_truly_asymmetric_pads_rejected() {
     let result = onnx_op_to_descriptors(&OpType::MaxPool, &attrs, "mp_asym");
     let err = result.expect_err("非对称 MaxPool pads 应该被拒绝");
     let msg = format!("{err}");
-    assert!(msg.contains("MaxPool"), "错误信息应该包含 op_type 'MaxPool',实际: {msg}");
+    assert!(
+        msg.contains("MaxPool"),
+        "错误信息应该包含 op_type 'MaxPool',实际: {msg}"
+    );
     assert!(
         msg.contains("ZeroPad2d") || msg.contains("onnxsim"),
         "错误信息应该提示用户用 ZeroPad2d 或 onnxsim 预处理,实际: {msg}"
@@ -651,7 +663,11 @@ fn test_export_conv2d() {
     match descriptor_to_export_category(&desc_dil) {
         ExportCategory::Operator(op) => {
             assert_eq!(op.op_type, "Conv");
-            assert_eq!(op.int_list_attrs.len(), 3, "应包含 strides + pads + dilations");
+            assert_eq!(
+                op.int_list_attrs.len(),
+                3,
+                "应包含 strides + pads + dilations"
+            );
         }
         _ => panic!("expected Operator Conv"),
     }
@@ -684,10 +700,21 @@ fn test_export_maxpool2d() {
     match descriptor_to_export_category(&desc_pad) {
         ExportCategory::Operator(op) => {
             assert_eq!(op.op_type, "MaxPool");
-            assert_eq!(op.int_list_attrs.len(), 3, "应包含 kernel_shape + strides + pads");
-            let pads = op.int_list_attrs.iter().find(|(k, _)| *k == "pads")
+            assert_eq!(
+                op.int_list_attrs.len(),
+                3,
+                "应包含 kernel_shape + strides + pads"
+            );
+            let pads = op
+                .int_list_attrs
+                .iter()
+                .find(|(k, _)| *k == "pads")
                 .expect("pads 属性缺失");
-            assert_eq!(pads.1, vec![2, 2, 2, 2], "对称 (2,2) 应展开为 4 维 [2,2,2,2]");
+            assert_eq!(
+                pads.1,
+                vec![2, 2, 2, 2],
+                "对称 (2,2) 应展开为 4 维 [2,2,2,2]"
+            );
         }
         _ => panic!("expected Operator MaxPool"),
     }
@@ -876,7 +903,11 @@ fn test_roundtrip_conv2d() {
     ];
     let imported = onnx_op_to_descriptors(&OpType::Conv, &attrs, "test").unwrap();
     match &imported[0] {
-        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
+        NodeTypeDescriptor::Conv2d {
+            stride,
+            padding,
+            dilation,
+        } => {
             assert_eq!(*stride, (2, 2));
             assert_eq!(*padding, (1, 1));
             assert_eq!(*dilation, (1, 1));
@@ -895,8 +926,7 @@ fn test_roundtrip_batchnorm() {
         make_float_attr("epsilon", 1e-5),
         make_float_attr("momentum", 0.1),
     ];
-    let imported =
-        onnx_op_to_descriptors(&OpType::BatchNormalization, &attrs, "test").unwrap();
+    let imported = onnx_op_to_descriptors(&OpType::BatchNormalization, &attrs, "test").unwrap();
     match descriptor_to_export_category(&imported[0]) {
         ExportCategory::Operator(exp) => {
             assert_eq!(exp.op_type, "BatchNormalization");
@@ -983,12 +1013,14 @@ fn test_roundtrip_transpose() {
 
 #[test]
 fn test_import_conv_transpose_default() {
-    let attrs = vec![
-        make_ints_attr("kernel_shape", vec![3, 3]),
-    ];
+    let attrs = vec![make_ints_attr("kernel_shape", vec![3, 3])];
     let result = onnx_op_to_descriptors(&OpType::ConvTranspose, &attrs, "deconv0").unwrap();
     match &result[0] {
-        NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
+        NodeTypeDescriptor::ConvTranspose2d {
+            stride,
+            padding,
+            output_padding,
+        } => {
             assert_eq!(*stride, (1, 1));
             assert_eq!(*padding, (0, 0));
             assert_eq!(*output_padding, (0, 0));
@@ -1007,7 +1039,11 @@ fn test_import_conv_transpose_with_params() {
     ];
     let result = onnx_op_to_descriptors(&OpType::ConvTranspose, &attrs, "deconv0").unwrap();
     match &result[0] {
-        NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
+        NodeTypeDescriptor::ConvTranspose2d {
+            stride,
+            padding,
+            output_padding,
+        } => {
             assert_eq!(*stride, (2, 2));
             assert_eq!(*padding, (1, 1));
             assert_eq!(*output_padding, (1, 1));
@@ -1053,7 +1089,11 @@ fn test_export_conv_transpose2d() {
     match descriptor_to_export_category(&desc_op) {
         ExportCategory::Operator(op) => {
             assert_eq!(op.op_type, "ConvTranspose");
-            assert_eq!(op.int_list_attrs.len(), 3, "应包含 strides + pads + output_padding");
+            assert_eq!(
+                op.int_list_attrs.len(),
+                3,
+                "应包含 strides + pads + output_padding"
+            );
         }
         _ => panic!("expected Operator ConvTranspose"),
     }
@@ -1069,8 +1109,7 @@ fn test_roundtrip_conv_transpose2d() {
         make_ints_attr("pads", vec![1, 1, 1, 1]),
         make_ints_attr("output_padding", vec![1, 1]),
     ];
-    let imported =
-        onnx_op_to_descriptors(&OpType::ConvTranspose, &attrs, "test").unwrap();
+    let imported = onnx_op_to_descriptors(&OpType::ConvTranspose, &attrs, "test").unwrap();
     match descriptor_to_export_category(&imported[0]) {
         ExportCategory::Operator(exp) => {
             assert_eq!(exp.op_type, "ConvTranspose");

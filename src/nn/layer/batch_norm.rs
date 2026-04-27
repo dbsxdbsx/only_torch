@@ -144,8 +144,12 @@ impl BatchNorm {
             let mut param_shape = vec![1usize; ndim];
             param_shape[1] = self.num_features;
             (
-                self.gamma.reshape(&param_shape).expect("BatchNorm gamma reshape 失败"),
-                self.beta.reshape(&param_shape).expect("BatchNorm beta reshape 失败"),
+                self.gamma
+                    .reshape(&param_shape)
+                    .expect("BatchNorm gamma reshape 失败"),
+                self.beta
+                    .reshape(&param_shape)
+                    .expect("BatchNorm beta reshape 失败"),
             )
         } else {
             (self.gamma.clone(), self.beta.clone())

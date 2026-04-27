@@ -103,7 +103,8 @@ fn main() -> Result<(), GraphError> {
     println!("R² 分数: {:.4} ({:.1}%)", r2.value(), r2.percent());
 
     // 保存可视化
-    let vis_result = loss.save_visualization("examples/traditional/sine_regression/sine_regression")?;
+    let vis_result =
+        loss.save_visualization("examples/traditional/sine_regression/sine_regression")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

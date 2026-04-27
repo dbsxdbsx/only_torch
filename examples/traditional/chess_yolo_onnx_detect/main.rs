@@ -47,11 +47,11 @@ mod letterbox;
 mod yolo_decode;
 
 use board_align::{
-    auto_detect_board_roi, detect_red_on_top, rotate_grid_180, BoardConfig, BOARD_COLS, BOARD_ROWS,
-    NUM_CLASSES,
+    BOARD_COLS, BOARD_ROWS, BoardConfig, NUM_CLASSES, auto_detect_board_roi, detect_red_on_top,
+    rotate_grid_180,
 };
 use letterbox::{image_to_nchw_normalized, letterbox};
-use only_torch::nn::{load_onnx, Graph, GraphError, ImportReport};
+use only_torch::nn::{Graph, GraphError, ImportReport, load_onnx};
 use only_torch::tensor::Tensor;
 use std::path::Path;
 use std::time::Instant;
@@ -116,12 +116,14 @@ fn main() -> Result<(), GraphError> {
     let load_start = Instant::now();
 
     // Step 2a: 仅 import（解析 + 折叠/重写）
-    let import_result = load_onnx(MODEL_PATH).map_err(|e| {
-        GraphError::ComputationError(format!("ONNX import 失败: {e}"))
-    })?;
+    let import_result = load_onnx(MODEL_PATH)
+        .map_err(|e| GraphError::ComputationError(format!("ONNX import 失败: {e}")))?;
     let import_ms = load_start.elapsed().as_secs_f64() * 1000.0;
     println!("  import 耗时: {import_ms:.1} ms");
-    println!("  descriptor 节点数: {}", import_result.descriptor.nodes.len());
+    println!(
+        "  descriptor 节点数: {}",
+        import_result.descriptor.nodes.len()
+    );
     print_import_report(&import_result.import_report);
 
     // Step 2b: rebuild（构图 + 形状传播校验）—— 失败时优雅降级
@@ -170,9 +172,8 @@ fn main() -> Result<(), GraphError> {
     // ────────────────────────────────────────────
     println!("\n[3/5] 读图 + letterbox 到 {TARGET_SIZE}×{TARGET_SIZE}");
     let pre_start = Instant::now();
-    let raw_img = image::open(&test_image_path).map_err(|e| {
-        GraphError::ComputationError(format!("读图失败 {test_image_path}: {e}"))
-    })?;
+    let raw_img = image::open(&test_image_path)
+        .map_err(|e| GraphError::ComputationError(format!("读图失败 {test_image_path}: {e}")))?;
     println!(
         "  原图尺寸: {}×{}",
         image::GenericImageView::dimensions(&raw_img).0,
@@ -241,7 +242,9 @@ fn main() -> Result<(), GraphError> {
     // ────────────────────────────────────────────
     // 5. 解码 + NMS + 9×10 对齐
     // ────────────────────────────────────────────
-    println!("\n[5/5] decode + NMS + 9×10 对齐 + FEN（conf≥{CONF_THRESHOLD}, IoU>{IOU_THRESHOLD}）");
+    println!(
+        "\n[5/5] decode + NMS + 9×10 对齐 + FEN（conf≥{CONF_THRESHOLD}, IoU>{IOU_THRESHOLD}）"
+    );
     let post_start = Instant::now();
     let raw_dets = decode(&out_data, num_classes, CONF_THRESHOLD);
     let raw_count = raw_dets.len();
@@ -283,7 +286,10 @@ fn main() -> Result<(), GraphError> {
     let piece_count = board_align::count_pieces(&grid);
     let fen = board_align::to_fen(&grid, &cfg);
 
-    println!("  网格非空格数: {piece_count} / {}", BOARD_COLS * BOARD_ROWS);
+    println!(
+        "  网格非空格数: {piece_count} / {}",
+        BOARD_COLS * BOARD_ROWS
+    );
 
     // ── 输出 1:视觉朝向(原图视觉信息,跟 FEN 解耦) ──
     println!("\n  视觉朝向（原图里红方在哪一侧）：");
@@ -376,8 +382,7 @@ fn print_import_report(report: &ImportReport) {
         report.rewritten.len(),
         report.warnings.len()
     );
-    let mut counter: std::collections::BTreeMap<&str, usize> =
-        std::collections::BTreeMap::new();
+    let mut counter: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
     for r in &report.rewritten {
         *counter.entry(r.pattern).or_insert(0) += 1;
     }

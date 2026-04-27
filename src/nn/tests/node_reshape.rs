@@ -246,7 +246,9 @@ fn test_reshape_vjp_unit_upstream() -> Result<(), GraphError> {
     reshaped.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[3, 2]);
-    let grad = reshaped.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = reshaped
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // 梯度只改变形状，数值直接透传
     assert_eq!(grad.shape(), &[2, 3]);
@@ -276,7 +278,9 @@ fn test_reshape_vjp_non_unit_upstream() -> Result<(), GraphError> {
     reshaped.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
-    let grad = reshaped.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = reshaped
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // 梯度被 reshape 回输入形状，数值保持不变
     assert_eq!(grad.shape(), &[2, 3]);

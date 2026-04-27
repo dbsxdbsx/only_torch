@@ -102,11 +102,11 @@ impl Transform for RandomResizedCrop {
             for out_y in 0..self.target_h {
                 for out_x in 0..self.target_w {
                     // 将输出坐标映射回裁切区域内的坐标（浮点）
-                    let src_y = top as f64 + (out_y as f64 + 0.5) * crop_h as f64
-                        / self.target_h as f64
+                    let src_y = top as f64
+                        + (out_y as f64 + 0.5) * crop_h as f64 / self.target_h as f64
                         - 0.5;
-                    let src_x = left as f64 + (out_x as f64 + 0.5) * crop_w as f64
-                        / self.target_w as f64
+                    let src_x = left as f64
+                        + (out_x as f64 + 0.5) * crop_w as f64 / self.target_w as f64
                         - 0.5;
 
                     out[out_ch_offset + out_y * self.target_w + out_x] =
@@ -175,14 +175,7 @@ fn get_crop_params(
 /// 双线性插值采样
 ///
 /// 边界外像素用 clamp 处理（重复边缘像素）。
-fn bilinear_sample(
-    flat: &[f32],
-    ch_offset: usize,
-    h: usize,
-    w: usize,
-    y: f64,
-    x: f64,
-) -> f32 {
+fn bilinear_sample(flat: &[f32], ch_offset: usize, h: usize, w: usize, y: f64, x: f64) -> f32 {
     let x = x.clamp(0.0, (w - 1) as f64);
     let y = y.clamp(0.0, (h - 1) as f64);
 

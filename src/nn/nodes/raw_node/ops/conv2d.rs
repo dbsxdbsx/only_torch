@@ -17,8 +17,8 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use ndarray::Array2;
@@ -46,10 +46,10 @@ pub(crate) struct Conv2d {
     in_channels: usize,
     #[allow(dead_code)]
     out_channels: usize,
-    kernel_size: (usize, usize),  // (kH, kW)
-    stride: (usize, usize),       // (sH, sW)
-    padding: (usize, usize),      // (pH, pW)
-    dilation: (usize, usize),     // (dH, dW) 空洞卷积间隔
+    kernel_size: (usize, usize), // (kH, kW)
+    stride: (usize, usize),      // (sH, sW)
+    padding: (usize, usize),     // (pH, pW)
+    dilation: (usize, usize),    // (dH, dW) 空洞卷积间隔
 
     // 缓存（用于反向传播）
     padded_input: Option<Tensor>, // 填充后的输入
@@ -353,18 +353,14 @@ impl Conv2d {
         // 将 kernel [out_c, in_c, k_h, k_w] reshape 为 [out_c, in_c*k_h*k_w]
         let k_flat = kernel.flatten_view();
         let col_w = in_c * k_h * k_w;
-        let kernel_mat = Array2::from_shape_vec(
-            (out_c, col_w),
-            k_flat.to_vec(),
-        ).unwrap();
+        let kernel_mat = Array2::from_shape_vec((out_c, col_w), k_flat.to_vec()).unwrap();
 
         // Rayon 并行计算每个 batch 样本
         let batch_results: Vec<Vec<f32>> = (0..batch_size)
             .into_par_iter()
             .map(|b| {
                 let col = Self::im2col(
-                    input, b, in_c, k_h, k_w, out_h, out_w,
-                    stride_h, stride_w, dil_h, dil_w,
+                    input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w, dil_h, dil_w,
                 );
                 let result = kernel_mat.dot(&col.t());
                 result.iter().copied().collect()
@@ -484,13 +480,12 @@ impl TraitNode for Conv2d {
             let padded_w = orig_in_w + 2 * pad_w;
 
             let k_flat = kernel.flatten_view();
-            let kernel_mat =
-                Array2::from_shape_vec((out_c, col_w), k_flat.to_vec()).unwrap();
+            let kernel_mat = Array2::from_shape_vec((out_c, col_w), k_flat.to_vec()).unwrap();
 
             let col2im_crop = |dx_col: &Array2<f32>| -> Vec<f32> {
                 let padded_grad = Self::col2im(
-                    dx_col, in_c, padded_h, padded_w, k_h, k_w,
-                    out_h, out_w, stride_h, stride_w, dil_h, dil_w,
+                    dx_col, in_c, padded_h, padded_w, k_h, k_w, out_h, out_w, stride_h, stride_w,
+                    dil_h, dil_w,
                 );
                 if pad_h == 0 && pad_w == 0 {
                     padded_grad
@@ -531,7 +526,10 @@ impl TraitNode for Conv2d {
             };
 
             let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-            Ok(GradResult::Computed(Tensor::new(&all_data, orig_input_shape)))
+            Ok(GradResult::Computed(Tensor::new(
+                &all_data,
+                orig_input_shape,
+            )))
         } else {
             // ========== dL/dK（对卷积核的梯度）==========
             let kernel_shape = kernel.shape();
@@ -545,8 +543,17 @@ impl TraitNode for Conv2d {
                     .into_par_iter()
                     .map(|b| {
                         let col = Self::im2col(
-                            padded_input, b, in_c, k_h, k_w,
-                            out_h, out_w, stride_h, stride_w, dil_h, dil_w,
+                            padded_input,
+                            b,
+                            in_c,
+                            k_h,
+                            k_w,
+                            out_h,
+                            out_w,
+                            stride_h,
+                            stride_w,
+                            dil_h,
+                            dil_w,
                         );
                         let gs = b * sample_grad_size;
                         let grad_b = Array2::from_shape_vec(
@@ -559,13 +566,19 @@ impl TraitNode for Conv2d {
                     })
                     .reduce(
                         || Array2::<f32>::zeros((out_c, col_w)),
-                        |mut acc, g| { acc += &g; acc },
+                        |mut acc, g| {
+                            acc += &g;
+                            acc
+                        },
                     );
 
                 kernel_grad.as_slice().unwrap().to_vec()
             };
 
-            Ok(GradResult::Computed(Tensor::new(&kernel_grad_data, kernel_shape)))
+            Ok(GradResult::Computed(Tensor::new(
+                &kernel_grad_data,
+                kernel_shape,
+            )))
         }
     }
 

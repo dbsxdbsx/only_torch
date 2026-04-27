@@ -321,11 +321,8 @@ fn main() -> Result<(), GraphError> {
                     let probs_val = probs.value()?.unwrap();
                     let log_probs_val = log_probs.value()?.unwrap();
                     let batch_size = probs_val.shape()[0] as f32;
-                    let avg_entropy = -(probs_val * log_probs_val)
-                        .sum()
-                        .get_data_number()
-                        .unwrap()
-                        / batch_size;
+                    let avg_entropy =
+                        -(probs_val * log_probs_val).sum().get_data_number().unwrap() / batch_size;
 
                     // 反向传播和优化
                     actor_optimizer.zero_grad()?;
@@ -425,7 +422,8 @@ fn main() -> Result<(), GraphError> {
 
         // 7. 保存计算图可视化（从训练时拍的快照渲染，无需重建前向传播）
         println!("\n[5/6] 保存计算图可视化...");
-        let vis_result = graph.visualize_snapshot("examples/traditional/sac/cartpole/cartpole_sac")?;
+        let vis_result =
+            graph.visualize_snapshot("examples/traditional/sac/cartpole/cartpole_sac")?;
         println!("  计算图已保存: {}", vis_result.dot_path.display());
         if let Some(img_path) = &vis_result.image_path {
             println!("  可视化图像: {}", img_path.display());

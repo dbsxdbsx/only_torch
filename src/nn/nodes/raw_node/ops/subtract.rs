@@ -8,8 +8,8 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -150,7 +150,9 @@ impl TraitNode for Subtract {
                 // 形状匹配，直接传递（零拷贝）
                 Ok(GradResult::PassThrough)
             } else {
-                Ok(GradResult::Computed(upstream_grad.sum_to_shape(target_shape)))
+                Ok(GradResult::Computed(
+                    upstream_grad.sum_to_shape(target_shape),
+                ))
             }
         } else if target_parent_index == 1 {
             // target 是 right (B)：∂L/∂B = -upstream_grad

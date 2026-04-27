@@ -10,10 +10,10 @@
  */
 
 use super::Var;
-use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
-use crate::nn::nodes::raw_node::NodeType;
-use crate::nn::nodes::NodeInner;
 use crate::nn::NodeId;
+use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
+use crate::nn::nodes::NodeInner;
+use crate::nn::nodes::raw_node::NodeType;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 

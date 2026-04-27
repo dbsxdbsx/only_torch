@@ -14,7 +14,10 @@ impl Tensor {
     /// `relu(x) = max(0, x)`
     pub fn relu(&self) -> Self {
         let data = self.data.mapv(|x| if x > 0.0 { x } else { 0.0 });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑relu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -29,7 +32,10 @@ impl Tensor {
     /// - `alpha`: 负半轴斜率（非负数）
     pub fn leaky_relu(&self, alpha: f32) -> Self {
         let data = self.data.mapv(|x| if x > 0.0 { x } else { alpha * x });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑leaky_relu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -53,7 +59,10 @@ impl Tensor {
                 val.exp().ln_1p()
             }
         });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑softplus↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -65,7 +74,10 @@ impl Tensor {
     /// Step 函数不可微，梯度恒为 0（在 Node 层处理）。
     pub fn step_fn(&self) -> Self {
         let data = self.data.mapv(|x| if x >= 0.0 { 1.0 } else { 0.0 });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑step_fn↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -80,7 +92,10 @@ impl Tensor {
             let z = SQRT_2_OVER_PI * (x + COEFF * x * x * x);
             0.5 * x * (1.0 + z.tanh())
         });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑gelu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -93,7 +108,10 @@ impl Tensor {
             let sig = 1.0 / (1.0 + (-x).exp());
             x * sig
         });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑swish↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -102,10 +120,13 @@ impl Tensor {
     ///
     /// `elu(x, alpha) = x if x > 0, else alpha * (exp(x) - 1)`
     pub fn elu(&self, alpha: f32) -> Self {
-        let data = self.data.mapv(|x| {
-            if x > 0.0 { x } else { alpha * (x.exp() - 1.0) }
-        });
-        Self { data, source_id: next_source_id() }
+        let data = self
+            .data
+            .mapv(|x| if x > 0.0 { x } else { alpha * (x.exp() - 1.0) });
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑elu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -117,9 +138,16 @@ impl Tensor {
         const LAMBDA: f32 = 1.0507009873554805;
         const ALPHA: f32 = 1.6732632423543772;
         let data = self.data.mapv(|x| {
-            if x > 0.0 { LAMBDA * x } else { LAMBDA * ALPHA * (x.exp() - 1.0) }
+            if x > 0.0 {
+                LAMBDA * x
+            } else {
+                LAMBDA * ALPHA * (x.exp() - 1.0)
+            }
         });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑selu↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -142,7 +170,10 @@ impl Tensor {
             };
             x * sp.tanh()
         });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑mish↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -152,9 +183,18 @@ impl Tensor {
     /// 分段定义：`0 if x <= -3, x if x >= 3, x*(x+3)/6 otherwise`
     pub fn hard_swish(&self) -> Self {
         let data = self.data.mapv(|x| {
-            if x <= -3.0 { 0.0 } else if x >= 3.0 { x } else { x * (x + 3.0) / 6.0 }
+            if x <= -3.0 {
+                0.0
+            } else if x >= 3.0 {
+                x
+            } else {
+                x * (x + 3.0) / 6.0
+            }
         });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑hard_swish↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -164,16 +204,28 @@ impl Tensor {
     /// 分段定义：`0 if x <= -3, 1 if x >= 3, (x+3)/6 otherwise`
     pub fn hard_sigmoid(&self) -> Self {
         let data = self.data.mapv(|x| {
-            if x <= -3.0 { 0.0 } else if x >= 3.0 { 1.0 } else { (x + 3.0) / 6.0 }
+            if x <= -3.0 {
+                0.0
+            } else if x >= 3.0 {
+                1.0
+            } else {
+                (x + 3.0) / 6.0
+            }
         });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑hard_sigmoid↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
     /// 计算张量每个元素的平方根
     pub fn sqrt(&self) -> Self {
         let sqrt_data = self.data.mapv(f32::sqrt);
-        Self { data: sqrt_data, source_id: next_source_id() }
+        Self {
+            data: sqrt_data,
+            source_id: next_source_id(),
+        }
     }
 
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓tanh↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
@@ -191,7 +243,10 @@ impl Tensor {
     /// ```
     pub fn tanh(&self) -> Self {
         let data = self.data.mapv(f32::tanh);
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 就地对张量的每个元素应用双曲正切函数(tanh)
@@ -215,7 +270,10 @@ impl Tensor {
     /// ```
     pub fn sigmoid(&self) -> Self {
         let data = self.data.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 就地对张量的每个元素应用 Sigmoid 函数
@@ -237,7 +295,10 @@ impl Tensor {
     /// ```
     pub fn exp(&self) -> Self {
         let data = self.data.mapv(f32::exp);
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 就地对张量的每个元素计算指数函数
@@ -262,7 +323,10 @@ impl Tensor {
     /// ```
     pub fn ln(&self) -> Self {
         let data = self.data.mapv(f32::ln);
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 就地对张量的每个元素计算自然对数
@@ -448,7 +512,12 @@ impl Tensor {
         let mut data = vec![0.0f32; n * num_classes];
         for i in 0..n {
             let idx = flat[i] as usize;
-            assert!(idx < num_classes, "one_hot: 索引 {} 超出类别数 {}", idx, num_classes);
+            assert!(
+                idx < num_classes,
+                "one_hot: 索引 {} 超出类别数 {}",
+                idx,
+                num_classes
+            );
             data[i * num_classes + idx] = 1.0;
         }
         // 输出形状：原形状 + [num_classes]

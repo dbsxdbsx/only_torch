@@ -59,7 +59,10 @@ impl Embedding {
         // 权重初始化为标准正态分布
         let weight = graph.parameter(
             &[vocab_size, embed_dim],
-            Init::Normal { mean: 0.0, std: 1.0 },
+            Init::Normal {
+                mean: 0.0,
+                std: 1.0,
+            },
             &format!("{name}_weight"),
         )?;
 
@@ -86,13 +89,8 @@ impl Embedding {
 
         // 分组上下文
         let desc = format!("V={}, D={}", self.vocab_size, self.embed_dim);
-        let _guard = NodeGroupContext::for_layer(
-            indices,
-            "Embedding",
-            self.instance_id,
-            &self.name,
-            &desc,
-        );
+        let _guard =
+            NodeGroupContext::for_layer(indices, "Embedding", self.instance_id, &self.name, &desc);
         _guard.tag_existing(&self.weight);
 
         // 获取索引数据（整数值）

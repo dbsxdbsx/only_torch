@@ -258,9 +258,7 @@ fn test_pow_dynamic_shape_propagation() {
 fn test_pow_dynamic_batch_forward() {
     let graph = Graph::new();
 
-    let x = graph
-        .input(&Tensor::new(&[2.0; 16], &[2, 8]))
-        .unwrap();
+    let x = graph.input(&Tensor::new(&[2.0; 16], &[2, 8])).unwrap();
     let result = x.pow(2.0);
 
     // 第一次 forward：batch=2

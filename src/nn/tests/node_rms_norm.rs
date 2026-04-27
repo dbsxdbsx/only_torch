@@ -129,9 +129,10 @@ fn test_rms_norm_op_backward_e2e() -> Result<(), GraphError> {
 
     let rn_out = {
         use std::rc::Rc;
-        let rn_node = graph
-            .inner_mut()
-            .create_rms_norm_op_node(Rc::clone(x.node()), 1, 1e-5, Some("rn"))?;
+        let rn_node =
+            graph
+                .inner_mut()
+                .create_rms_norm_op_node(Rc::clone(x.node()), 1, 1e-5, Some("rn"))?;
         crate::nn::Var::new_with_rc_graph(rn_node, &graph.inner_rc())
     };
 

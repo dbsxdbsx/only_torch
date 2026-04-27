@@ -20,8 +20,8 @@ use crate::nn::shape::DynamicShape;
 use crate::nn::{GraphError, NodeId};
 use crate::tensor::Tensor;
 
-use super::TraitNode;
 use super::GradResult;
+use super::TraitNode;
 
 #[derive(Clone)]
 pub(crate) struct State {

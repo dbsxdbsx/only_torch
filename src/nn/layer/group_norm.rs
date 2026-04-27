@@ -52,16 +52,8 @@ impl GroupNorm {
             "GroupNorm: num_channels={num_channels} 必须能被 num_groups={num_groups} 整除"
         );
 
-        let gamma = graph.parameter(
-            &[1, num_channels],
-            Init::Ones,
-            &format!("{name}_gamma"),
-        )?;
-        let beta = graph.parameter(
-            &[1, num_channels],
-            Init::Zeros,
-            &format!("{name}_beta"),
-        )?;
+        let gamma = graph.parameter(&[1, num_channels], Init::Ones, &format!("{name}_gamma"))?;
+        let beta = graph.parameter(&[1, num_channels], Init::Zeros, &format!("{name}_beta"))?;
 
         let instance_id = graph.inner_mut().next_node_group_instance_id();
 
@@ -85,13 +77,8 @@ impl GroupNorm {
             .expect("GroupNorm 输入转换失败");
 
         let desc = format!("G={}, C={}", self.num_groups, self.num_channels);
-        let _guard = NodeGroupContext::for_layer(
-            &x,
-            "GroupNorm",
-            self.instance_id,
-            &self.name,
-            &desc,
-        );
+        let _guard =
+            NodeGroupContext::for_layer(&x, "GroupNorm", self.instance_id, &self.name, &desc);
         _guard.tag_existing(&self.gamma);
         _guard.tag_existing(&self.beta);
 
@@ -154,7 +141,9 @@ impl GroupNorm {
 
         let x_hat_tensor = Tensor::new(&x_hat_data, shape);
         let graph_rc = self.gamma.get_graph();
-        let x_hat = graph_rc.input(&x_hat_tensor).expect("GroupNorm: 创建 x_hat 节点失败");
+        let x_hat = graph_rc
+            .input(&x_hat_tensor)
+            .expect("GroupNorm: 创建 x_hat 节点失败");
 
         // gamma/beta 形状 [1, C]，需要 reshape 以匹配输入维度
         // [1, C] → [1, C, 1, 1, ...] 用于广播（使用 Var.reshape 保持梯度链）
@@ -162,8 +151,12 @@ impl GroupNorm {
             let mut param_shape = vec![1usize; ndim];
             param_shape[1] = c;
             (
-                self.gamma.reshape(&param_shape).expect("GroupNorm gamma reshape 失败"),
-                self.beta.reshape(&param_shape).expect("GroupNorm beta reshape 失败"),
+                self.gamma
+                    .reshape(&param_shape)
+                    .expect("GroupNorm gamma reshape 失败"),
+                self.beta
+                    .reshape(&param_shape)
+                    .expect("GroupNorm beta reshape 失败"),
             )
         } else {
             (self.gamma.clone(), self.beta.clone())

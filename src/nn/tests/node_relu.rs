@@ -81,7 +81,9 @@ fn test_relu_vjp_unit_upstream() -> Result<(), GraphError> {
     relu.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = relu.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = relu
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 1.0, epsilon = 1e-6);
@@ -113,7 +115,9 @@ fn test_relu_vjp_non_unit_upstream() -> Result<(), GraphError> {
     relu.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = relu.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = relu
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     // grad = upstream * (1 if x > 0 else 0) = [2*1, 3*0, 4*0, 5*1] = [2, 0, 0, 5]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -145,7 +149,9 @@ fn test_relu_vjp_all_positive() -> Result<(), GraphError> {
     relu.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = relu.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = relu
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(&grad, &Tensor::ones(&[2, 2]));
 
@@ -172,7 +178,9 @@ fn test_relu_vjp_all_negative() -> Result<(), GraphError> {
     relu.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = relu.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = relu
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(&grad, &Tensor::zeros(&[2, 2]));
 
@@ -282,20 +290,14 @@ fn test_create_relu_node_preserves_shape() {
         .borrow_mut()
         .create_basic_input_node(&[3, 10], None)
         .unwrap();
-    let relu_2d = inner
-        .borrow_mut()
-        .create_relu_node(input_2d, None)
-        .unwrap();
+    let relu_2d = inner.borrow_mut().create_relu_node(input_2d, None).unwrap();
     assert_eq!(relu_2d.shape(), vec![3, 10]);
 
     let input_4d = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 3, 4, 5], None)
         .unwrap();
-    let relu_4d = inner
-        .borrow_mut()
-        .create_relu_node(input_4d, None)
-        .unwrap();
+    let relu_4d = inner.borrow_mut().create_relu_node(input_4d, None).unwrap();
     assert_eq!(relu_4d.shape(), vec![2, 3, 4, 5]);
 }
 
@@ -313,10 +315,7 @@ fn test_create_relu_node_drop_releases() {
             .unwrap();
         weak_input = Rc::downgrade(&input);
 
-        let relu = inner
-            .borrow_mut()
-            .create_relu_node(input, None)
-            .unwrap();
+        let relu = inner.borrow_mut().create_relu_node(input, None).unwrap();
         weak_relu = Rc::downgrade(&relu);
 
         assert!(weak_relu.upgrade().is_some());

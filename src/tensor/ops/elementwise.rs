@@ -148,7 +148,10 @@ impl Tensor {
         // 注：Rust 的 f32::signum() 对 0.0 返回 1.0，这与 PyTorch 行为不同
         // 这里显式处理零值，使其返回 0.0
         let data = self.data.mapv(|x| if x == 0.0 { 0.0 } else { x.signum() });
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 就地计算张量每个元素的符号
@@ -177,7 +180,10 @@ impl Tensor {
     /// ```
     pub fn abs(&self) -> Self {
         let data = self.data.mapv(f32::abs);
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 就地计算张量每个元素的绝对值
@@ -206,7 +212,10 @@ impl Tensor {
     /// ```
     pub fn clip(&self, min: f32, max: f32) -> Self {
         let data = self.data.mapv(|x| x.clamp(min, max));
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 
     /// 就地对张量的每个元素进行值域裁剪

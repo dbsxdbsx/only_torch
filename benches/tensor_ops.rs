@@ -132,8 +132,8 @@ fn bench_tensor_matmul(c: &mut Criterion) {
 
     // (名称, M, K, N) → A[M,K] * B[K,N]
     let configs: &[(&str, usize, usize, usize)] = &[
-        ("8x4_4x8", 8, 4, 8),         // NEAT 小网络
-        ("32x32_32x32", 32, 32, 32),   // 小型 Linear
+        ("8x4_4x8", 8, 4, 8),             // NEAT 小网络
+        ("32x32_32x32", 32, 32, 32),      // 小型 Linear
         ("64x784_784x128", 64, 784, 128), // MNIST Linear
         ("32x128_128x10", 32, 128, 10),   // 分类输出层
     ];

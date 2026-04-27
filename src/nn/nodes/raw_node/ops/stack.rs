@@ -1,7 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -158,7 +158,9 @@ impl TraitNode for Stack {
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         // stack 反向：沿 axis 维度 select 第 idx 个切片
-        Ok(GradResult::Computed(upstream_grad.select(self.axis, target_parent_index)))
+        Ok(GradResult::Computed(
+            upstream_grad.select(self.axis, target_parent_index),
+        ))
     }
 
     fn grad(&self) -> Option<&Tensor> {

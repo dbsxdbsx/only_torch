@@ -54,10 +54,7 @@ fn uniform_input_stays_uniform() {
         let output = t.apply(&input);
         let flat = output.flatten_view();
         for (i, &v) in flat.iter().enumerate() {
-            assert!(
-                (v - val).abs() < 1e-4,
-                "pixel {i}: expected {val}, got {v}"
-            );
+            assert!((v - val).abs() < 1e-4, "pixel {i}: expected {val}, got {v}");
         }
     }
 }
@@ -101,11 +98,17 @@ fn translate_only_shifts_content() {
         if flat.iter().any(|&v| v == -1.0) {
             found_fill = true;
             // 也应该有原始值
-            assert!(flat.iter().any(|&v| v == 1.0), "should have original pixels too");
+            assert!(
+                flat.iter().any(|&v| v == 1.0),
+                "should have original pixels too"
+            );
             break;
         }
     }
-    assert!(found_fill, "translate should introduce fill pixels in at least one trial");
+    assert!(
+        found_fill,
+        "translate should introduce fill pixels in at least one trial"
+    );
 }
 
 #[test]

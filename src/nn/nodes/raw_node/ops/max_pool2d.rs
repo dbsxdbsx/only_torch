@@ -16,8 +16,8 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use rayon::prelude::*;
@@ -291,8 +291,10 @@ impl TraitNode for MaxPool2d {
                                     let ih_padded = h_start + kh;
                                     let iw_padded = w_start + kw;
                                     // 检查是否在原始输入 (非 padding) 区域
-                                    if ih_padded < pad_t || ih_padded >= pad_t + in_h
-                                        || iw_padded < pad_l || iw_padded >= pad_l + in_w
+                                    if ih_padded < pad_t
+                                        || ih_padded >= pad_t + in_h
+                                        || iw_padded < pad_l
+                                        || iw_padded >= pad_l + in_w
                                     {
                                         // padding 区域 = -inf，不更新 max
                                         continue;

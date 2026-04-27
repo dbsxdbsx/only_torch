@@ -106,10 +106,8 @@ fn adjust_contrast(tensor: &Tensor, factor: f32) -> Tensor {
     for ch in 0..c {
         let offset = ch * spatial_size;
         // 计算通道均值
-        let mean: f32 = (0..spatial_size)
-            .map(|i| flat[offset + i])
-            .sum::<f32>()
-            / spatial_size as f32;
+        let mean: f32 =
+            (0..spatial_size).map(|i| flat[offset + i]).sum::<f32>() / spatial_size as f32;
 
         for i in 0..spatial_size {
             data[offset + i] = factor * flat[offset + i] + (1.0 - factor) * mean;

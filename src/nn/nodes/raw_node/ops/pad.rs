@@ -49,8 +49,12 @@ pub(crate) struct Pad {
 }
 
 impl Pad {
-    pub(crate) fn paddings(&self) -> &[(usize, usize)] { &self.paddings }
-    pub(crate) const fn pad_value(&self) -> f32 { self.pad_value }
+    pub(crate) fn paddings(&self) -> &[(usize, usize)] {
+        &self.paddings
+    }
+    pub(crate) const fn pad_value(&self) -> f32 {
+        self.pad_value
+    }
 
     /// 从父节点形状信息创建 Pad 节点
     pub(in crate::nn) fn new(

@@ -12,7 +12,7 @@ use crate::nn::graph::onnx_error::OnnxError;
 use crate::nn::graph::onnx_ops;
 use onnx_rs::ast::TensorProto;
 
-use super::util::{extract_const_f32, infer_output_shape_placeholder, SymbolTable};
+use super::util::{SymbolTable, extract_const_f32, infer_output_shape_placeholder};
 use super::{ImportReport, RewriteRecord};
 
 /// 装配 Resize/Upsample 节点：从常量表读取 scales/sizes,折叠到 `Upsample2d::scale_h/scale_w`
@@ -59,9 +59,7 @@ pub(super) fn assemble_resize_with_const_fold<'a>(
             return Err(OnnxError::UnsupportedAttribute {
                 op_type: "Resize".to_string(),
                 attribute: "scales".to_string(),
-                reason: format!(
-                    "{op_ctx}: 仅支持整数倍上采样(scale≥1,nearest),得到 H={sh} W={sw}"
-                ),
+                reason: format!("{op_ctx}: 仅支持整数倍上采样(scale≥1,nearest),得到 H={sh} W={sw}"),
             });
         }
         (sh as usize, sw as usize, scales_name.to_string())
@@ -71,9 +69,7 @@ pub(super) fn assemble_resize_with_const_fold<'a>(
         return Err(OnnxError::UnsupportedAttribute {
             op_type: "Resize".to_string(),
             attribute: "sizes".to_string(),
-            reason: format!(
-                "{op_ctx}: 仅支持 scales 形式,sizes 形式请用 onnxsim 转换"
-            ),
+            reason: format!("{op_ctx}: 仅支持 scales 形式,sizes 形式请用 onnxsim 转换"),
         });
     } else {
         return Err(OnnxError::UnsupportedAttribute {
@@ -109,10 +105,7 @@ pub(super) fn assemble_resize_with_const_fold<'a>(
 
     import_report.rewritten.push(RewriteRecord {
         pattern: "constant_fold_into_resize",
-        consumed_onnx_nodes: vec![
-            node.name.to_string(),
-            format!("<const:{source_const}>"),
-        ],
+        consumed_onnx_nodes: vec![node.name.to_string(), format!("<const:{source_const}>")],
         produced_descriptor_nodes: vec![out_id],
     });
     // warning: 标记折叠成 nearest Upsample2d,提示语义可能与原 ONNX 不完全一致

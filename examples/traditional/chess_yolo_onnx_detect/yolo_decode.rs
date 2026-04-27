@@ -38,16 +38,12 @@ impl Detection {
         let inter_h = (y2 - y1).max(0.0);
         let inter = inter_w * inter_h;
 
-        let area_a = (self.bbox[2] - self.bbox[0]).max(0.0)
-            * (self.bbox[3] - self.bbox[1]).max(0.0);
-        let area_b = (other.bbox[2] - other.bbox[0]).max(0.0)
-            * (other.bbox[3] - other.bbox[1]).max(0.0);
+        let area_a =
+            (self.bbox[2] - self.bbox[0]).max(0.0) * (self.bbox[3] - self.bbox[1]).max(0.0);
+        let area_b =
+            (other.bbox[2] - other.bbox[0]).max(0.0) * (other.bbox[3] - other.bbox[1]).max(0.0);
         let union = area_a + area_b - inter;
-        if union <= 0.0 {
-            0.0
-        } else {
-            inter / union
-        }
+        if union <= 0.0 { 0.0 } else { inter / union }
     }
 }
 
@@ -60,11 +56,7 @@ impl Detection {
 ///
 /// # 返回
 /// 通过阈值的所有检测，每行一个 `Detection`
-pub fn decode(
-    output: &[f32],
-    num_classes: usize,
-    conf_thresh: f32,
-) -> Vec<Detection> {
+pub fn decode(output: &[f32], num_classes: usize, conf_thresh: f32) -> Vec<Detection> {
     let stride = 5 + num_classes;
     if output.len() % stride != 0 {
         return Vec::new();
@@ -116,7 +108,11 @@ pub fn nms(mut dets: Vec<Detection>, iou_thresh: f32) -> Vec<Detection> {
         return dets;
     }
     // 按 conf 降序排序
-    dets.sort_by(|a, b| b.conf.partial_cmp(&a.conf).unwrap_or(std::cmp::Ordering::Equal));
+    dets.sort_by(|a, b| {
+        b.conf
+            .partial_cmp(&a.conf)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut keep: Vec<Detection> = Vec::with_capacity(dets.len());
     let mut suppressed = vec![false; dets.len()];
@@ -131,9 +127,7 @@ pub fn nms(mut dets: Vec<Detection>, iou_thresh: f32) -> Vec<Detection> {
                 continue;
             }
             // 仅同类之间互相抑制
-            if dets[i].class_id == dets[j].class_id
-                && dets[i].iou(&dets[j]) > iou_thresh
-            {
+            if dets[i].class_id == dets[j].class_id && dets[i].iou(&dets[j]) > iou_thresh {
                 suppressed[j] = true;
             }
         }

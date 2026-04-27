@@ -161,7 +161,8 @@ fn main() -> Result<(), GraphError> {
     }
 
     // 7. 保存计算图可视化（从训练时拍的快照渲染）
-    let vis_result = graph.visualize_snapshot("examples/traditional/siamese_similarity/siamese_similarity")?;
+    let vis_result =
+        graph.visualize_snapshot("examples/traditional/siamese_similarity/siamese_similarity")?;
     println!("\n计算图已保存: {}", vis_result.dot_path.display());
     if let Some(img_path) = &vis_result.image_path {
         println!("可视化图像: {}", img_path.display());

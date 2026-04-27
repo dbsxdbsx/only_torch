@@ -49,9 +49,7 @@ impl InputVariant {
     /// 获取存储的 Tensor 的数据源 ID（用于同源数据追踪）
     pub(crate) fn value_source_id(&self) -> Option<u64> {
         match self {
-            Self::Data(inner) | Self::Target(inner) => {
-                inner.value().map(|t| t.source_id())
-            }
+            Self::Data(inner) | Self::Target(inner) => inner.value().map(|t| t.source_id()),
         }
     }
 }

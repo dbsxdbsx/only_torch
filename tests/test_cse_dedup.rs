@@ -7,8 +7,8 @@
  * 验证去重后计算图正确性（forward + backward 全流程）。
  */
 
-use only_torch::nn::{Graph, GraphError, Module, Var, VarActivationOps, VarLossOps};
 use only_torch::nn::layer::Linear;
+use only_torch::nn::{Graph, GraphError, Module, Var, VarActivationOps, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// 模拟双 Critic 共享 obs+action 拼接输入的场景
@@ -36,10 +36,7 @@ fn test_cse_dual_critic_shared_concat() -> Result<(), GraphError> {
         &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
         &[batch, obs_dim],
     ))?;
-    let action = graph.input(&Tensor::new(
-        &[0.9, 1.0, 1.1, 1.2],
-        &[batch, act_dim],
-    ))?;
+    let action = graph.input(&Tensor::new(&[0.9, 1.0, 1.1, 1.2], &[batch, act_dim]))?;
 
     // 两个 Critic 各自调 Var::concat，但输入完全相同
     // CSE 应让它们共享同一个 Concat 节点
@@ -83,8 +80,12 @@ fn test_cse_dual_critic_shared_concat() -> Result<(), GraphError> {
     total_loss.backward()?;
 
     // 验证所有参数都收到了梯度
-    for param in c1_fc1.parameters().iter().chain(c1_fc2.parameters().iter())
-        .chain(c2_fc1.parameters().iter()).chain(c2_fc2.parameters().iter())
+    for param in c1_fc1
+        .parameters()
+        .iter()
+        .chain(c1_fc2.parameters().iter())
+        .chain(c2_fc1.parameters().iter())
+        .chain(c2_fc2.parameters().iter())
     {
         let grad = param.grad()?.expect("所有 Critic 参数应有梯度");
         assert!(

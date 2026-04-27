@@ -10,8 +10,8 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -51,8 +51,12 @@ pub(crate) struct Clip {
 }
 
 impl Clip {
-    pub(crate) const fn min(&self) -> f32 { self.min }
-    pub(crate) const fn max(&self) -> f32 { self.max }
+    pub(crate) const fn min(&self) -> f32 {
+        self.min
+    }
+    pub(crate) const fn max(&self) -> f32 {
+        self.max
+    }
 
     /// 从父节点形状信息创建 Clip 节点
     pub(in crate::nn) fn new(

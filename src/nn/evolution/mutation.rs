@@ -12,28 +12,27 @@
  * MutationRegistry 按权重随机选择可用变异并执行。
  */
 
+use super::cell_migration::{CellKind, migrate_cell_weights};
 use super::gene::{
     ActivationType, AggregateStrategy, GenomeRepr, INPUT_INNOVATION, LayerConfig, LayerGene,
     LossType, NetworkGenome, OptimizerType, PoolType, ShapeDomain, SkipEdge, TaskMetric,
     compatible_losses,
 };
 use super::migration::{
-    activation_to_node_type, expand_activation, expand_dropout, expand_gru, expand_lstm,
-    expand_rnn,
+    activation_to_node_type, expand_activation, expand_dropout, expand_gru, expand_lstm, expand_rnn,
 };
+use super::net2net::apply_widen_to_snapshots;
+use super::node_gene::{NodeGene, RecurrentEdge};
 use super::node_ops::{
     NodeBlock, NodeBlockKind, add_skip_connection, commit_counter, create_insert_nodes,
     find_connectable_pairs, find_removable_skip_connections, insert_after, is_activation_node,
-    is_dropout_node, is_skip_projection_block, make_counter, node_main_path,
-    node_output_shape_at, node_param_count, node_spatial_at, remove_block,
-    remove_skip_connection, repair_param_input_dims, resize_conv2d_out, resize_linear_out,
-    resize_recurrent_out, sync_computation_shapes,
+    is_dropout_node, is_skip_projection_block, make_counter, node_main_path, node_output_shape_at,
+    node_param_count, node_spatial_at, remove_block, remove_skip_connection,
+    repair_param_input_dims, resize_conv2d_out, resize_linear_out, resize_recurrent_out,
+    sync_computation_shapes,
 };
-use super::net2net::apply_widen_to_snapshots;
-use super::cell_migration::{migrate_cell_weights, CellKind};
-use crate::tensor::Tensor;
-use super::node_gene::{NodeGene, RecurrentEdge};
 use crate::nn::descriptor::NodeTypeDescriptor;
+use crate::tensor::Tensor;
 use rand::Rng;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
@@ -121,9 +120,7 @@ impl SizeConstraints {
             // 参考基线："Conv(ch→32,k=3) + Conv(32→64,k=3) + 2×Pool + FC(pooled→64) + FC(64→out)"
             // 假设至少 2 次 stride-2 pool 降低空间分辨率，FC 隐藏层 64 即可
             let conv_base = 32 * input_dim * 9 + 64 * 32 * 9; // ~20K conv params
-            let spatial_after_pool = spatial_hw
-                .map(|(h, w)| (h / 4) * (w / 4))
-                .unwrap_or(49);
+            let spatial_after_pool = spatial_hw.map(|(h, w)| (h / 4) * (w / 4)).unwrap_or(49);
             let fc_base = 64 * spatial_after_pool * 64 + 64 * output_dim;
             (conv_base + fc_base).max(50_000)
         } else {
@@ -1447,7 +1444,10 @@ impl Mutation for MutateCellTypeMutation {
                 .and_then(|snap| migrate_layer_cell_weights_vec(&snap, ok, nk, hidden));
             genome.remove_layer_weight_snapshot(inn);
             if let Some(new_snap) = migrated {
-                if let GenomeRepr::LayerLevel { weight_snapshots, .. } = &mut genome.repr {
+                if let GenomeRepr::LayerLevel {
+                    weight_snapshots, ..
+                } = &mut genome.repr
+                {
                     weight_snapshots.insert(inn, new_snap);
                 }
             }
@@ -2613,10 +2613,7 @@ impl Mutation for MutateStrideMutation {
         // 更新 Conv2d op 节点的 stride
         for node in genome.nodes_mut().iter_mut() {
             if bid_set.contains(&node.innovation_number) {
-                if let NodeTypeDescriptor::Conv2d {
-                    ref mut stride, ..
-                } = node.node_type
-                {
+                if let NodeTypeDescriptor::Conv2d { ref mut stride, .. } = node.node_type {
                     *stride = new_stride;
                 }
             }
@@ -2797,8 +2794,7 @@ impl Mutation for InsertAtomicNodeMutation {
         };
 
         let n = new_nodes.len() as u64; // 始终为 1
-        insert_after(genome, after_id, new_nodes)
-            .map_err(|e| MutationError::InternalError(e))?;
+        insert_after(genome, after_id, new_nodes).map_err(|e| MutationError::InternalError(e))?;
         advance_node_counter(genome, n);
 
         let analysis = genome.analyze();
@@ -2860,7 +2856,10 @@ fn atomic_insert_candidates(blocks: &[NodeBlock], genome: &NetworkGenome) -> Vec
                 .unwrap_or(false)
         } else if block_idx == usize::MAX {
             // INPUT 后面第一个块
-            blocks.first().map(|b| b.kind.is_activation()).unwrap_or(false)
+            blocks
+                .first()
+                .map(|b| b.kind.is_activation())
+                .unwrap_or(false)
         } else {
             false
         };
@@ -3181,10 +3180,12 @@ fn widen_layer_snapshots(
     };
 
     // 提前克隆快照（避免借用冲突）
-    let owner_snap_opt: Option<Vec<Tensor>> =
-        genome.weight_snapshots().get(&owner_inn).cloned();
+    let owner_snap_opt: Option<Vec<Tensor>> = genome.weight_snapshots().get(&owner_inn).cloned();
     let consumer_snap_opt: Option<(u64, Vec<Tensor>)> = consumer.as_ref().and_then(|(inn, _)| {
-        genome.weight_snapshots().get(inn).map(|s| (*inn, s.clone()))
+        genome
+            .weight_snapshots()
+            .get(inn)
+            .map(|s| (*inn, s.clone()))
     });
 
     // 扩宽 owner 快照
@@ -3318,8 +3319,7 @@ fn migrate_layer_cell_weights_vec(
     }
     // 用连续整数作为虚拟 id
     let dummy_ids: Vec<u64> = (0..new_kind.param_count() as u64).collect();
-    let old_snaps_opt: Vec<Option<Tensor>> =
-        old_snap.iter().map(|t| Some(t.clone())).collect();
+    let old_snaps_opt: Vec<Option<Tensor>> = old_snap.iter().map(|t| Some(t.clone())).collect();
     let migrated = migrate_cell_weights(old_kind, &old_snaps_opt, new_kind, &dummy_ids, hidden)?;
     // 按 id 顺序重组为 Vec<Tensor>
     dummy_ids.iter().map(|k| migrated.get(k).cloned()).collect()

@@ -194,7 +194,12 @@ impl Tensor {
     pub fn variance(&self) -> Self {
         let mean_val = self.data.mean().unwrap();
         let n = self.data.len() as f32;
-        let var = self.data.iter().map(|&x| (x - mean_val).powi(2)).sum::<f32>() / n;
+        let var = self
+            .data
+            .iter()
+            .map(|&x| (x - mean_val).powi(2))
+            .sum::<f32>()
+            / n;
         Self::new(&[var], &[1, 1])
     }
 

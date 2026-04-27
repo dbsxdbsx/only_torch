@@ -121,7 +121,9 @@ fn test_log_softmax_vjp_unit_upstream() -> Result<(), GraphError> {
     ls.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 3]);
-    let grad = ls.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = ls
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 3]);
 
@@ -157,7 +159,9 @@ fn test_log_softmax_vjp_non_unit_upstream() -> Result<(), GraphError> {
     ls.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[0.0, 0.0, 1.0], &[1, 3]);
-    let grad = ls.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = ls
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[1, 3]);
     assert!(grad.data_as_slice().iter().any(|&g| g.abs() > 1e-6));

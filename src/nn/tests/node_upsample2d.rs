@@ -433,9 +433,10 @@ fn test_upsample2d_e2e_backward() -> Result<(), GraphError> {
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 16], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     param.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2])))?;
     target.set_value(Some(&Tensor::zeros(&[1, 16])))?;
@@ -479,10 +480,14 @@ fn test_upsample2d_e2e_pool_upsample_cascade() -> Result<(), GraphError> {
     let param = inner
         .borrow_mut()
         .create_parameter_node(&[1, 1, 4, 4], Some("param"))?;
-    let pool =
-        inner
-            .borrow_mut()
-            .create_max_pool2d_node(param.clone(), (2, 2), None, (0, 0), false, Some("pool"))?;
+    let pool = inner.borrow_mut().create_max_pool2d_node(
+        param.clone(),
+        (2, 2),
+        None,
+        (0, 0),
+        false,
+        Some("pool"),
+    )?;
     let up = inner
         .borrow_mut()
         .create_upsample2d_node(pool.clone(), 2, 2, Some("up"))?;
@@ -492,9 +497,10 @@ fn test_upsample2d_e2e_pool_upsample_cascade() -> Result<(), GraphError> {
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[1, 16], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     #[rustfmt::skip]
     let input_val = Tensor::new(&[
@@ -581,9 +587,10 @@ fn test_upsample2d_dynamic_batch_backward() -> Result<(), GraphError> {
     let target = inner
         .borrow_mut()
         .create_basic_input_node(&[2, 16], Some("target"))?;
-    let loss = inner
-        .borrow_mut()
-        .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
+    let loss =
+        inner
+            .borrow_mut()
+            .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
     inner.borrow_mut().set_train_mode();
 
@@ -644,9 +651,7 @@ fn test_create_upsample2d_invalid_scale() {
         .unwrap();
 
     // scale_w=0 → 应失败
-    let result = inner
-        .borrow_mut()
-        .create_upsample2d_node(input, 2, 0, None);
+    let result = inner.borrow_mut().create_upsample2d_node(input, 2, 0, None);
     assert!(result.is_err());
 }
 

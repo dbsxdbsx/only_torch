@@ -21,7 +21,7 @@
 
 mod data;
 
-use data::{load_iris, CLASS_NAMES};
+use data::{CLASS_NAMES, load_iris};
 use only_torch::nn::evolution::gene::TaskMetric;
 use only_torch::nn::evolution::{Evolution, EvolutionResult};
 use std::path::Path;
@@ -50,7 +50,8 @@ fn main() {
     println!("最终架构: {}", result.architecture());
 
     // 可视化演化后的计算图
-    let vis = result.visualize("examples/evolution/iris/evolution_iris")
+    let vis = result
+        .visualize("examples/evolution/iris/evolution_iris")
         .expect("可视化失败");
     println!("\n计算图已保存: {}", vis.dot_path.display());
     if let Some(img) = &vis.image_path {

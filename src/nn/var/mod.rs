@@ -6,11 +6,11 @@
  * 这是架构的核心组件，提供 PyTorch 级用户体验。
  */
 
-pub mod ops;
 mod arithmetic;
 mod descriptor;
 mod init;
 mod into;
+pub mod ops;
 mod visualization;
 
 pub use init::Init;
@@ -377,9 +377,7 @@ impl Var {
     pub fn zeros_like(&self) -> Result<Self, GraphError> {
         let shape = self.node().shape();
         let graph = self.graph();
-        let node = graph
-            .borrow_mut()
-            .create_basic_input_node(&shape, None)?;
+        let node = graph.borrow_mut().create_basic_input_node(&shape, None)?;
         node.set_value(Some(&Tensor::zeros(&shape)))?;
         Ok(Self::new_with_rc_graph(node, &graph))
     }

@@ -16,7 +16,7 @@ use crate::nn::graph::onnx_error::OnnxError;
 use crate::nn::graph::onnx_ops;
 use onnx_rs::ast::TensorProto;
 
-use super::util::{extract_const_i64, SymbolTable};
+use super::util::{SymbolTable, extract_const_i64};
 use super::{ImportReport, RewriteRecord};
 
 /// 装配 Split 节点：展开为 N 个 Narrow 节点

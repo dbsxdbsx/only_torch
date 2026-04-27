@@ -15,6 +15,9 @@ impl Tensor {
         let mut serialized_data = Vec::new();
         file.read_to_end(&mut serialized_data).unwrap();
         let data = bincode::deserialize(&serialized_data).unwrap();
-        Self { data, source_id: next_source_id() }
+        Self {
+            data,
+            source_id: next_source_id(),
+        }
     }
 }

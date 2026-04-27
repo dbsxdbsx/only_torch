@@ -311,7 +311,7 @@ fn test_mish_basic() {
     let x = Tensor::new(&[-2.0, 0.0, 1.0, 5.0], &[4]);
     let y = x.mish();
     assert!((y[[1]] - 0.0).abs() < 1e-6); // mish(0) = 0
-    assert!(y[[2] ] > 0.0); // mish(1) > 0
+    assert!(y[[2]] > 0.0); // mish(1) > 0
     assert!((y[[3]] - 5.0).abs() < 0.01); // mish(5) ≈ 5
     assert!(y[[0]] < 0.0); // mish(-2) < 0（slight negative）
 }

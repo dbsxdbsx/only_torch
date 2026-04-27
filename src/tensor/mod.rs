@@ -26,11 +26,11 @@ mod ops {
     pub mod eq;
     pub mod mat_mul;
     pub mod mul;
-    pub mod neg;
     pub mod mul_assign;
+    pub mod neg;
     pub mod others;
-    pub mod shape;
     pub mod reduce;
+    pub mod shape;
     pub mod sub;
     pub mod sub_assign;
 }

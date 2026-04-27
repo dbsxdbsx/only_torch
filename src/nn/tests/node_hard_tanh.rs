@@ -53,14 +53,20 @@ fn test_hard_tanh_vjp() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let x = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("x"))?;
-    let ht = inner.borrow_mut().create_hard_tanh_node(x.clone(), -1.0, 1.0, Some("ht"))?;
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("x"))?;
+    let ht = inner
+        .borrow_mut()
+        .create_hard_tanh_node(x.clone(), -1.0, 1.0, Some("ht"))?;
 
     x.set_value(Some(&Tensor::new(&[-2.0, -0.5, 0.5, 2.0], &[2, 2])))?;
     ht.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 2]);
-    let grad = ht.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = ht
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // x=-2 → clipped → 0, x=-0.5 → 1, x=0.5 → 1, x=2 → clipped → 0
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-6);

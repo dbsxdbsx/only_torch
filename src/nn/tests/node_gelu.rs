@@ -99,7 +99,9 @@ fn test_gelu_vjp_unit_upstream() -> Result<(), GraphError> {
     gelu.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = gelu.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = gelu
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.8674, epsilon = 1e-3);
@@ -130,7 +132,9 @@ fn test_gelu_vjp_non_unit_upstream() -> Result<(), GraphError> {
     gelu.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = gelu.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = gelu
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 2.0 * 0.8674, epsilon = 1e-2);
@@ -293,11 +297,17 @@ fn test_create_gelu_node_preserves_shape() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let input_2d = inner.borrow_mut().create_basic_input_node(&[3, 10], None).unwrap();
+    let input_2d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 10], None)
+        .unwrap();
     let gelu_2d = inner.borrow_mut().create_gelu_node(input_2d, None).unwrap();
     assert_eq!(gelu_2d.shape(), vec![3, 10]);
 
-    let input_3d = inner.borrow_mut().create_basic_input_node(&[2, 3, 4], None).unwrap();
+    let input_3d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], None)
+        .unwrap();
     let gelu_3d = inner.borrow_mut().create_gelu_node(input_3d, None).unwrap();
     assert_eq!(gelu_3d.shape(), vec![2, 3, 4]);
 }
@@ -310,7 +320,10 @@ fn test_create_gelu_node_drop_releases() {
     let weak_gelu;
     let weak_input;
     {
-        let input = inner.borrow_mut().create_basic_input_node(&[2, 3], None).unwrap();
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
         weak_input = Rc::downgrade(&input);
         let gelu = inner.borrow_mut().create_gelu_node(input, None).unwrap();
         weak_gelu = Rc::downgrade(&gelu);

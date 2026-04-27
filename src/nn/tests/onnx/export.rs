@@ -1,35 +1,59 @@
 use std::collections::HashMap;
 
 use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
-use crate::nn::graph::onnx_export::{export_to_bytes, save_onnx, EXPORT_OPSET_VERSION};
+use crate::nn::graph::onnx_export::{EXPORT_OPSET_VERSION, export_to_bytes, save_onnx};
 use crate::tensor::Tensor;
 
 fn build_simple_mlp() -> (GraphDescriptor, HashMap<String, Tensor>) {
     let mut desc = GraphDescriptor::new("test_mlp");
 
     desc.add_node(NodeDescriptor::new(
-        1, "input", NodeTypeDescriptor::BasicInput,
-        vec![0, 2], Some(vec![None, Some(2)]), vec![],
+        1,
+        "input",
+        NodeTypeDescriptor::BasicInput,
+        vec![0, 2],
+        Some(vec![None, Some(2)]),
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        2, "W1", NodeTypeDescriptor::Parameter,
-        vec![2, 4], None, vec![],
+        2,
+        "W1",
+        NodeTypeDescriptor::Parameter,
+        vec![2, 4],
+        None,
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        3, "b1", NodeTypeDescriptor::Parameter,
-        vec![1, 4], None, vec![],
+        3,
+        "b1",
+        NodeTypeDescriptor::Parameter,
+        vec![1, 4],
+        None,
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        4, "matmul_out", NodeTypeDescriptor::MatMul,
-        vec![0, 4], None, vec![1, 2],
+        4,
+        "matmul_out",
+        NodeTypeDescriptor::MatMul,
+        vec![0, 4],
+        None,
+        vec![1, 2],
     ));
     desc.add_node(NodeDescriptor::new(
-        5, "add_out", NodeTypeDescriptor::Add,
-        vec![0, 4], None, vec![4, 3],
+        5,
+        "add_out",
+        NodeTypeDescriptor::Add,
+        vec![0, 4],
+        None,
+        vec![4, 3],
     ));
     desc.add_node(NodeDescriptor::new(
-        6, "relu_out", NodeTypeDescriptor::ReLU,
-        vec![0, 4], None, vec![5],
+        6,
+        "relu_out",
+        NodeTypeDescriptor::ReLU,
+        vec![0, 4],
+        None,
+        vec![5],
     ));
 
     let mut weights = HashMap::new();
@@ -103,8 +127,11 @@ fn test_export_has_correct_nodes() {
 
     assert_eq!(graph.node.len(), 3);
 
-    let op_types: Vec<_> =
-        graph.node.iter().map(|n| format!("{:?}", n.op_type)).collect();
+    let op_types: Vec<_> = graph
+        .node
+        .iter()
+        .map(|n| format!("{:?}", n.op_type))
+        .collect();
     assert!(op_types.iter().any(|o| o.contains("MatMul")));
     assert!(op_types.iter().any(|o| o.contains("Add")));
     assert!(op_types.iter().any(|o| o.contains("Relu")));
@@ -145,20 +172,36 @@ fn test_export_node_connectivity() {
 fn test_export_training_nodes_filtered() {
     let mut desc = GraphDescriptor::new("train_model");
     desc.add_node(NodeDescriptor::new(
-        1, "input", NodeTypeDescriptor::BasicInput,
-        vec![0, 2], None, vec![],
+        1,
+        "input",
+        NodeTypeDescriptor::BasicInput,
+        vec![0, 2],
+        None,
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        2, "target", NodeTypeDescriptor::TargetInput,
-        vec![0, 1], None, vec![],
+        2,
+        "target",
+        NodeTypeDescriptor::TargetInput,
+        vec![0, 1],
+        None,
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        3, "relu", NodeTypeDescriptor::ReLU,
-        vec![0, 2], None, vec![1],
+        3,
+        "relu",
+        NodeTypeDescriptor::ReLU,
+        vec![0, 2],
+        None,
+        vec![1],
     ));
     desc.add_node(NodeDescriptor::new(
-        4, "loss", NodeTypeDescriptor::SoftmaxCrossEntropy,
-        vec![1], None, vec![3, 2],
+        4,
+        "loss",
+        NodeTypeDescriptor::SoftmaxCrossEntropy,
+        vec![1],
+        None,
+        vec![3, 2],
     ));
 
     let bytes = export_to_bytes(&desc, &HashMap::new()).unwrap();
@@ -173,12 +216,20 @@ fn test_export_training_nodes_filtered() {
 fn test_export_unsupported_node_error() {
     let mut desc = GraphDescriptor::new("bad_model");
     desc.add_node(NodeDescriptor::new(
-        1, "input", NodeTypeDescriptor::BasicInput,
-        vec![0, 2], None, vec![],
+        1,
+        "input",
+        NodeTypeDescriptor::BasicInput,
+        vec![0, 2],
+        None,
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        2, "swish", NodeTypeDescriptor::Swish,
-        vec![0, 2], None, vec![1],
+        2,
+        "swish",
+        NodeTypeDescriptor::Swish,
+        vec![0, 2],
+        None,
+        vec![1],
     ));
 
     let result = export_to_bytes(&desc, &HashMap::new());
@@ -189,17 +240,32 @@ fn test_export_unsupported_node_error() {
 fn test_export_conv2d_with_attributes() {
     let mut desc = GraphDescriptor::new("conv_model");
     desc.add_node(NodeDescriptor::new(
-        1, "img", NodeTypeDescriptor::BasicInput,
-        vec![1, 1, 28, 28], None, vec![],
+        1,
+        "img",
+        NodeTypeDescriptor::BasicInput,
+        vec![1, 1, 28, 28],
+        None,
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        2, "conv_w", NodeTypeDescriptor::Parameter,
-        vec![8, 1, 3, 3], None, vec![],
+        2,
+        "conv_w",
+        NodeTypeDescriptor::Parameter,
+        vec![8, 1, 3, 3],
+        None,
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        3, "conv_out",
-        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (1, 1), dilation: (1, 1) },
-        vec![1, 8, 28, 28], None, vec![1, 2],
+        3,
+        "conv_out",
+        NodeTypeDescriptor::Conv2d {
+            stride: (1, 1),
+            padding: (1, 1),
+            dilation: (1, 1),
+        },
+        vec![1, 8, 28, 28],
+        None,
+        vec![1, 2],
     ));
 
     let mut weights = HashMap::new();
@@ -226,12 +292,20 @@ fn test_export_conv2d_with_attributes() {
 fn test_export_leaky_relu_alpha() {
     let mut desc = GraphDescriptor::new("lrelu_model");
     desc.add_node(NodeDescriptor::new(
-        1, "x", NodeTypeDescriptor::BasicInput,
-        vec![0, 10], None, vec![],
+        1,
+        "x",
+        NodeTypeDescriptor::BasicInput,
+        vec![0, 10],
+        None,
+        vec![],
     ));
     desc.add_node(NodeDescriptor::new(
-        2, "lrelu", NodeTypeDescriptor::LeakyReLU { alpha: 0.2 },
-        vec![0, 10], None, vec![1],
+        2,
+        "lrelu",
+        NodeTypeDescriptor::LeakyReLU { alpha: 0.2 },
+        vec![0, 10],
+        None,
+        vec![1],
     ));
 
     let bytes = export_to_bytes(&desc, &HashMap::new()).unwrap();
@@ -249,7 +323,11 @@ fn test_export_opset_version() {
     let bytes = export_to_bytes(&desc, &weights).unwrap();
     let model = onnx_rs::parse(&bytes).unwrap();
 
-    let opset = model.opset_import.iter().find(|o| o.domain.is_empty()).unwrap();
+    let opset = model
+        .opset_import
+        .iter()
+        .find(|o| o.domain.is_empty())
+        .unwrap();
     assert_eq!(opset.version, EXPORT_OPSET_VERSION);
 }
 
@@ -257,8 +335,12 @@ fn test_export_opset_version() {
 fn test_export_empty_graph() {
     let mut desc = GraphDescriptor::new("empty");
     desc.add_node(NodeDescriptor::new(
-        1, "input", NodeTypeDescriptor::BasicInput,
-        vec![0, 2], None, vec![],
+        1,
+        "input",
+        NodeTypeDescriptor::BasicInput,
+        vec![0, 2],
+        None,
+        vec![],
     ));
 
     let bytes = export_to_bytes(&desc, &HashMap::new()).unwrap();
@@ -274,8 +356,7 @@ fn test_export_import_roundtrip_structure() {
     let (desc, weights) = build_simple_mlp();
     let bytes = export_to_bytes(&desc, &weights).unwrap();
 
-    let import_result =
-        crate::nn::graph::onnx_import::load_onnx_from_bytes(&bytes).unwrap();
+    let import_result = crate::nn::graph::onnx_import::load_onnx_from_bytes(&bytes).unwrap();
     let reimported = &import_result.descriptor;
 
     let orig_inputs = desc
@@ -319,10 +400,10 @@ fn test_export_import_roundtrip_structure() {
 
 #[test]
 fn test_roundtrip_numerical_consistency() {
-    use crate::nn::graph::Graph;
     use crate::nn::Init;
     use crate::nn::VarActivationOps;
     use crate::nn::VarMatrixOps;
+    use crate::nn::graph::Graph;
     use crate::tensor::Tensor;
 
     let graph = Graph::new();
@@ -335,7 +416,9 @@ fn test_roundtrip_numerical_consistency() {
     let add1 = &matmul1 + &b1;
     let relu = add1.relu();
 
-    let w2 = graph.parameter(&[8, 2], Init::Constant(0.05), "w2").unwrap();
+    let w2 = graph
+        .parameter(&[8, 2], Init::Constant(0.05), "w2")
+        .unwrap();
     let b2 = graph.parameter(&[1, 2], Init::Zeros, "b2").unwrap();
     let matmul2 = relu.matmul(&w2).unwrap();
     let output = &matmul2 + &b2;
@@ -361,7 +444,9 @@ fn test_roundtrip_numerical_consistency() {
         assert!(
             (a - b).abs() < 1e-5,
             "输出元素 [{}] 不一致: 原始={}, 重导入={}",
-            i, a, b
+            i,
+            a,
+            b
         );
     }
 }
@@ -395,7 +480,9 @@ fn test_pytorch_cross_validation() {
         assert!(
             (got - want).abs() < 1e-4,
             "PyTorch 交叉验证失败：元素 [{}] got={}, want={}",
-            i, got, want
+            i,
+            got,
+            want
         );
     }
 }

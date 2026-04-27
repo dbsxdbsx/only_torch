@@ -21,7 +21,7 @@ use super::fold_reshape::assemble_reshape_with_const_fold;
 use super::fold_resize::assemble_resize_with_const_fold;
 use super::split_narrow::assemble_split_to_narrows;
 use super::util::{
-    extract_shape_from_value_info, infer_output_shape_placeholder, resolve_parents, SymbolTable,
+    SymbolTable, extract_shape_from_value_info, infer_output_shape_placeholder, resolve_parents,
 };
 use super::{ImportReport, RewriteRecord};
 
@@ -45,8 +45,7 @@ pub(super) fn assemble<'a>(
     let mut import_report = ImportReport::default();
 
     // initializer 名称集合(这些同时出现在 input 中时不创建 BasicInput)
-    let initializer_names: HashSet<&str> =
-        graph.initializer.iter().map(|t| t.name()).collect();
+    let initializer_names: HashSet<&str> = graph.initializer.iter().map(|t| t.name()).collect();
 
     // ── 第 0 步：常量收集 + 元信息消费标记 ──
     let const_table = build_const_table(graph);
@@ -65,7 +64,12 @@ pub(super) fn assemble<'a>(
                 input_info.name,
                 NodeTypeDescriptor::BasicInput,
                 shape.clone(),
-                Some(shape.iter().map(|&d| if d == 0 { None } else { Some(d) }).collect()),
+                Some(
+                    shape
+                        .iter()
+                        .map(|&d| if d == 0 { None } else { Some(d) })
+                        .collect(),
+                ),
                 vec![],
             )
             .with_origin_onnx_nodes(vec![format!("<input:{}>", input_info.name)]),
@@ -107,12 +111,10 @@ pub(super) fn assemble<'a>(
             .with_origin_onnx_nodes(vec![format!("<initializer:{}>", init.name())]),
         );
 
-        let float_data = init
-            .as_f32()
-            .ok_or_else(|| OnnxError::WeightError {
-                tensor_name: init.name().to_string(),
-                reason: "无法提取 float32 数据".to_string(),
-            })?;
+        let float_data = init.as_f32().ok_or_else(|| OnnxError::WeightError {
+            tensor_name: init.name().to_string(),
+            reason: "无法提取 float32 数据".to_string(),
+        })?;
         let tensor = Tensor::new(&float_data, &shape);
         weights.insert(id, tensor);
     }
@@ -321,11 +323,8 @@ fn emit_conv_with_bias(
 
     let conv_name = format!("{}/conv", node.name);
     let conv_id = symbols.get_or_assign(&conv_name);
-    let conv_shape = infer_output_shape_placeholder(
-        &mapped_descriptors[0],
-        &[input_id, weight_id],
-        descriptor,
-    );
+    let conv_shape =
+        infer_output_shape_placeholder(&mapped_descriptors[0], &[input_id, weight_id], descriptor);
     descriptor.add_node(
         NodeDescriptor::new(
             conv_id,
@@ -340,11 +339,8 @@ fn emit_conv_with_bias(
 
     let output_name = node.output.first().copied().unwrap_or(node.name);
     let add_id = symbols.get_or_assign(output_name);
-    let add_shape = infer_output_shape_placeholder(
-        &NodeTypeDescriptor::Add,
-        &[conv_id, bias_id],
-        descriptor,
-    );
+    let add_shape =
+        infer_output_shape_placeholder(&NodeTypeDescriptor::Add, &[conv_id, bias_id], descriptor);
     descriptor.add_node(
         NodeDescriptor::new(
             add_id,

@@ -588,7 +588,7 @@ fn test_phase6_from_graph_descriptor_handwritten_seed() {
 fn test_phase6_triangle_interop_handwritten_to_evolution_to_manual_train() {
     use crate::nn::graph::model_save;
     use crate::nn::optimizer::{Optimizer, SGD};
-    use crate::nn::{Graph, Linear, Var, VarActivationOps, VarLossOps};
+    use crate::nn::{Graph, Linear, VarActivationOps, VarLossOps};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
@@ -756,7 +756,9 @@ fn test_phase6_old_layerlevel_flat_genome_load_rejected() {
     );
     let err_msg = result.unwrap_err();
     assert!(
-        err_msg.contains("旧格式") || err_msg.contains("LayerLevel") || err_msg.contains("已停止支持"),
+        err_msg.contains("旧格式")
+            || err_msg.contains("LayerLevel")
+            || err_msg.contains("已停止支持"),
         "错误信息应明确指出是旧格式问题，实际：{err_msg}"
     );
 }
@@ -805,7 +807,6 @@ fn test_graph_save_load_weights() {
 #[test]
 fn test_recurrent_genome_save_load_roundtrip() {
     use crate::nn::evolution::mutation::{AddRecurrentEdgeMutation, SizeConstraints};
-    use crate::nn::evolution::node_gene::RecurrentEdge;
 
     // 创建不含 cell-based 循环的序列 NodeLevel 基因组
     let mut g = NetworkGenome::minimal(2, 1);
@@ -835,7 +836,9 @@ fn test_recurrent_genome_save_load_roundtrip() {
     // 添加循环边
     let c = SizeConstraints::default();
     let mut rng = StdRng::seed_from_u64(42);
-    AddRecurrentEdgeMutation.apply(&mut g, &c, &mut rng).unwrap();
+    AddRecurrentEdgeMutation
+        .apply(&mut g, &c, &mut rng)
+        .unwrap();
 
     // 序列化 → 反序列化
     let json = serde_json::to_string(&g).unwrap();
@@ -896,10 +899,7 @@ fn test_recurrent_genome_has_recurrent_flag() {
 
     let analysis = g.analyze();
     assert!(analysis.is_valid, "应合法: {:?}", analysis.errors);
-    assert!(
-        analysis.has_recurrent_edges,
-        "应标记 has_recurrent_edges"
-    );
+    assert!(analysis.has_recurrent_edges, "应标记 has_recurrent_edges");
 
     // 确认含循环边的节点存在
     let recurrent_count: usize = g
@@ -907,8 +907,5 @@ fn test_recurrent_genome_has_recurrent_flag() {
         .iter()
         .filter(|n| !n.recurrent_parents.is_empty())
         .count();
-    assert!(
-        recurrent_count > 0,
-        "应有含循环边的节点，实际 0"
-    );
+    assert!(recurrent_count > 0, "应有含循环边的节点，实际 0");
 }

@@ -66,8 +66,7 @@ fn main() {
     // 1. 加载 MNIST 数据集
     println!("[1/3] 加载 MNIST 数据集...");
     let load_start = Instant::now();
-    let train_dataset =
-        MnistDataset::train().expect("加载 MNIST 训练集失败（首次运行会自动下载）");
+    let train_dataset = MnistDataset::train().expect("加载 MNIST 训练集失败（首次运行会自动下载）");
     let test_dataset = MnistDataset::test().expect("加载 MNIST 测试集失败");
     println!(
         "  ✓ 训练集: {} 样本，测试集: {} 样本 ({:.1}s)",

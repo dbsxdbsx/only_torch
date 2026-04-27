@@ -126,7 +126,7 @@ fn nsga2_proxy_takes_precedence_over_tiebreak_loss() {
             FitnessScore {
                 primary: 0.9,
                 inference_cost: Some(1.0),
-                tiebreak_loss: Some(0.5), // 更差
+                tiebreak_loss: Some(0.5),  // 更差
                 primary_proxy: Some(0.10), // 更好
             },
         ),
@@ -135,13 +135,16 @@ fn nsga2_proxy_takes_precedence_over_tiebreak_loss() {
             FitnessScore {
                 primary: 0.9,
                 inference_cost: Some(1.0),
-                tiebreak_loss: Some(0.1), // 更好
+                tiebreak_loss: Some(0.1),  // 更好
                 primary_proxy: Some(0.01), // 更差
             },
         ),
     ];
     let selected = nsga2_select(pool, 1);
-    assert_eq!(selected[0].0, "hi_proxy_hi_loss", "proxy 优先级应高于 tiebreak_loss");
+    assert_eq!(
+        selected[0].0, "hi_proxy_hi_loss",
+        "proxy 优先级应高于 tiebreak_loss"
+    );
 }
 
 // ---------- ProxyKind 基本属性 ----------

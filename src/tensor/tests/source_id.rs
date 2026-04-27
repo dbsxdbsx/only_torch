@@ -14,18 +14,18 @@ use crate::tensor::Tensor;
 fn test_new_tensors_have_unique_ids() {
     let a = Tensor::new(&[1.0, 2.0], &[1, 2]);
     let b = Tensor::new(&[3.0, 4.0], &[1, 2]);
-    assert_ne!(a.source_id(), b.source_id(), "不同 Tensor 应有不同 source_id");
+    assert_ne!(
+        a.source_id(),
+        b.source_id(),
+        "不同 Tensor 应有不同 source_id"
+    );
 }
 
 #[test]
 fn test_clone_preserves_source_id() {
     let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     let b = a.clone();
-    assert_eq!(
-        a.source_id(),
-        b.source_id(),
-        "clone 应保持相同 source_id"
-    );
+    assert_eq!(a.source_id(), b.source_id(), "clone 应保持相同 source_id");
 }
 
 #[test]

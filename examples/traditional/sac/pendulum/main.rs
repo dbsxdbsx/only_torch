@@ -98,10 +98,10 @@ impl Default for SacConfig {
         Self {
             buffer_size: 100_000,
             batch_size: 256,
-            actor_lr: 3e-4,   // Actor 学习率（CleanRL 默认）
-            critic_lr: 1e-3,   // Critic 学习率（高于 Actor，让 Q 网络更快适应）
+            actor_lr: 3e-4,  // Actor 学习率（CleanRL 默认）
+            critic_lr: 1e-3, // Critic 学习率（高于 Actor，让 Q 网络更快适应）
             gamma: 0.99,
-            hidden_dim: 32,    // Pendulum 是简单任务，32 足够展示
+            hidden_dim: 32, // Pendulum 是简单任务，32 足够展示
             start_training_after: 500,
             update_every: 1,
             max_episodes: 300,
@@ -149,8 +149,14 @@ fn main() -> Result<(), GraphError> {
         agent.target_critic1.hard_update_from(&agent.critic1);
         agent.target_critic2.hard_update_from(&agent.critic2);
 
-        println!("  Actor:  {obs_dim} → {} → {} → (mean, log_std)", config.hidden_dim, config.hidden_dim);
-        println!("  Critic: ({obs_dim}+{action_dim}) → {} → {} → 1", config.hidden_dim, config.hidden_dim);
+        println!(
+            "  Actor:  {obs_dim} → {} → {} → (mean, log_std)",
+            config.hidden_dim, config.hidden_dim
+        );
+        println!(
+            "  Critic: ({obs_dim}+{action_dim}) → {} → {} → 1",
+            config.hidden_dim, config.hidden_dim
+        );
         println!("  Target Entropy: {:.3}", agent.target_entropy);
         println!(
             "  Action Scale: {:.1}, Bias: {:.1}",
@@ -158,8 +164,7 @@ fn main() -> Result<(), GraphError> {
         );
 
         // 3. 优化器（Critic 学习率高于 Actor，参考 CleanRL）
-        let mut actor_optimizer =
-            Adam::new(&graph, &agent.actor.parameters(), config.actor_lr);
+        let mut actor_optimizer = Adam::new(&graph, &agent.actor.parameters(), config.actor_lr);
         let mut critic1_optimizer =
             Adam::new(&graph, &agent.critic1.parameters(), config.critic_lr);
         let mut critic2_optimizer =
@@ -170,10 +175,7 @@ fn main() -> Result<(), GraphError> {
 
         // 5. 训练循环
         println!("\n[3/6] 开始训练...");
-        println!(
-            "  目标: 近 100 回合平均奖励 >= {}\n",
-            config.target_reward
-        );
+        println!("  目标: 近 100 回合平均奖励 >= {}\n", config.target_reward);
 
         let mut rng = rand::thread_rng();
         let mut episode_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
@@ -195,9 +197,8 @@ fn main() -> Result<(), GraphError> {
 
                 // 缩放到环境范围
                 let env_action = agent.scale_action(&tanh_action);
-                let env_action_vec: Vec<f32> = (0..action_dim)
-                    .map(|i| env_action[[0, i]])
-                    .collect();
+                let env_action_vec: Vec<f32> =
+                    (0..action_dim).map(|i| env_action[[0, i]]).collect();
 
                 // 执行动作
                 let (next_obs_vec, reward, done) = env.step(&env_action_vec);
@@ -228,8 +229,10 @@ fn main() -> Result<(), GraphError> {
                         batch.iter().flat_map(|e| e.obs.iter().copied()).collect();
                     let obs_batch = Tensor::new(&obs_data, &[bs, obs_dim]);
 
-                    let action_data: Vec<f32> =
-                        batch.iter().flat_map(|e| e.action.iter().copied()).collect();
+                    let action_data: Vec<f32> = batch
+                        .iter()
+                        .flat_map(|e| e.action.iter().copied())
+                        .collect();
                     let action_batch = Tensor::new(&action_data, &[bs, action_dim]);
                     // 归一化 action 到 [-1,1]（Critic 输入标准化）
                     let action_batch_norm = agent.unscale_action(&action_batch);
@@ -316,8 +319,7 @@ fn main() -> Result<(), GraphError> {
                     actor_loss.forward()?;
                     let lp_val = log_prob_sum.value()?.unwrap();
                     let batch_f = bs as f32;
-                    let avg_entropy =
-                        -(lp_val.sum().get_data_number().unwrap()) / batch_f;
+                    let avg_entropy = -(lp_val.sum().get_data_number().unwrap()) / batch_f;
 
                     actor_optimizer.zero_grad()?;
                     actor_loss.backward()?;
@@ -390,9 +392,8 @@ fn main() -> Result<(), GraphError> {
                 let obs_tensor = Tensor::new(&obs, &[1, obs_dim]);
                 let (tanh_action, _) = agent.actor.sample_action(&obs_tensor)?;
                 let env_action = agent.scale_action(&tanh_action);
-                let env_action_vec: Vec<f32> = (0..action_dim)
-                    .map(|i| env_action[[0, i]])
-                    .collect();
+                let env_action_vec: Vec<f32> =
+                    (0..action_dim).map(|i| env_action[[0, i]]).collect();
 
                 let (next_obs_vec, reward, done) = env.step(&env_action_vec);
                 episode_reward += reward;
@@ -414,7 +415,8 @@ fn main() -> Result<(), GraphError> {
 
         // 7. 保存计算图可视化
         println!("\n[5/6] 保存计算图可视化...");
-        let vis_result = graph.visualize_snapshot("examples/traditional/sac/pendulum/pendulum_sac")?;
+        let vis_result =
+            graph.visualize_snapshot("examples/traditional/sac/pendulum/pendulum_sac")?;
         println!("  计算图已保存: {}", vis_result.dot_path.display());
         if let Some(img_path) = &vis_result.image_path {
             println!("  可视化图像: {}", img_path.display());

@@ -11,18 +11,24 @@
  * E. 边界情况：嵌套目录、仅输入无参数、加载后继续训练
  */
 
-use crate::nn::{
-    BatchNorm, Conv2d, Graph, Linear, RebuildResult, Var,
-    VarActivationOps, VarLossOps, VarRegularizationOps, VarShapeOps,
-};
 use crate::nn::optimizer::{Optimizer, SGD};
+use crate::nn::{
+    BatchNorm, Conv2d, Graph, Linear, RebuildResult, VarActivationOps, VarLossOps,
+    VarRegularizationOps, VarShapeOps,
+};
 use crate::tensor::Tensor;
 
 // ==================== 辅助函数 ====================
 
 /// 比较两个 f32 切片，允许一定误差
 fn assert_vec_close(a: &[f32], b: &[f32], eps: f32, msg: &str) {
-    assert_eq!(a.len(), b.len(), "{msg}: 长度不匹配 {} vs {}", a.len(), b.len());
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "{msg}: 长度不匹配 {} vs {}",
+        a.len(),
+        b.len()
+    );
     for (i, (x, y)) in a.iter().zip(b.iter()).enumerate() {
         assert!(
             (x - y).abs() < eps,
@@ -34,8 +40,15 @@ fn assert_vec_close(a: &[f32], b: &[f32], eps: f32, msg: &str) {
 /// 喂入数据并前向传播，返回第一个输出的 f32 数据
 fn predict(result: &RebuildResult, data: &Tensor) -> Vec<f32> {
     result.inputs[0].1.set_value(data).expect("set_value 失败");
-    result.graph.forward(&result.outputs[0]).expect("forward 失败");
-    result.outputs[0].value().expect("value 失败").unwrap().to_vec()
+    result
+        .graph
+        .forward(&result.outputs[0])
+        .expect("forward 失败");
+    result.outputs[0]
+        .value()
+        .expect("value 失败")
+        .unwrap()
+        .to_vec()
 }
 
 // ==================== A. 基本往返测试 ====================
@@ -47,7 +60,9 @@ fn test_save_load_mlp_roundtrip() {
 
     // 1. 构建模型并前向传播
     let graph = Graph::new_with_seed(42);
-    let x = graph.input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4])).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]))
+        .unwrap();
     let fc1 = Linear::new(&graph, 4, 8, true, "fc1").unwrap();
     let fc2 = Linear::new(&graph, 8, 2, true, "fc2").unwrap();
     let h = fc1.forward(&x).relu();
@@ -155,7 +170,9 @@ fn test_save_load_skip_connection() {
     let path = "test_otm_skip_conn";
 
     let graph = Graph::new_with_seed(42);
-    let x = graph.input(&Tensor::new(&[0.5, -0.3, 0.8, 0.1], &[1, 4])).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[0.5, -0.3, 0.8, 0.1], &[1, 4]))
+        .unwrap();
 
     let fc1 = Linear::new(&graph, 4, 4, true, "fc1").unwrap();
     let h = fc1.forward(&x).relu();
@@ -183,7 +200,9 @@ fn test_save_load_multi_output() {
     let path = "test_otm_multi_output";
 
     let graph = Graph::new_with_seed(42);
-    let x = graph.input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
 
     let fc_shared = Linear::new(&graph, 3, 8, true, "shared").unwrap();
     let h = fc_shared.forward(&x).relu();
@@ -209,7 +228,10 @@ fn test_save_load_multi_output() {
     assert_eq!(loaded.outputs.len(), 2, "应有 2 个输出");
 
     // 喂入数据，分别 forward 两个输出
-    loaded.inputs[0].1.set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])).unwrap();
+    loaded.inputs[0]
+        .1
+        .set_value(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]))
+        .unwrap();
 
     loaded.graph.forward(&loaded.outputs[0]).unwrap();
     let loaded_cls = loaded.outputs[0].value().unwrap().unwrap().to_vec();
@@ -277,8 +299,8 @@ fn test_evolution_save_load_v2_roundtrip() {
 /// 演化模型 .otm → Graph::load_model 加载（提取纯推理网络）
 #[test]
 fn test_evolution_otm_loaded_as_manual() {
-    use crate::nn::evolution::gene::TaskMetric;
     use crate::nn::evolution::Evolution;
+    use crate::nn::evolution::gene::TaskMetric;
 
     let path = "test_otm_evo_to_manual";
 
@@ -377,7 +399,8 @@ fn test_load_then_continue_training() {
     assert!(!param_vars.is_empty(), "应有可训练参数");
 
     // 记录训练前的参数值
-    let params_before: Vec<Vec<f32>> = param_vars.iter()
+    let params_before: Vec<Vec<f32>> = param_vars
+        .iter()
         .map(|p| p.node().value().unwrap().to_vec())
         .collect();
 
@@ -388,23 +411,37 @@ fn test_load_then_continue_training() {
     // 4. 跑 3 步训练
     let loss = loaded.outputs[0].mse_loss(&target_var).unwrap();
     for _ in 0..3 {
-        loaded.inputs[0].1.set_value(&Tensor::new(&[1.0, 0.0], &[1, 2])).unwrap();
+        loaded.inputs[0]
+            .1
+            .set_value(&Tensor::new(&[1.0, 0.0], &[1, 2]))
+            .unwrap();
         target_var.set_value(&Tensor::new(&[1.0], &[1, 1])).unwrap();
         let loss_val = optimizer.minimize(&loss).unwrap();
         assert!(loss_val.is_finite(), "loss 应为有限值");
     }
 
     // 5. 验证参数确实被更新（至少有一个参数变化了）
-    let params_after: Vec<Vec<f32>> = param_vars.iter()
+    let params_after: Vec<Vec<f32>> = param_vars
+        .iter()
         .map(|p| p.node().value().unwrap().to_vec())
         .collect();
-    let any_changed = params_before.iter().zip(params_after.iter())
-        .any(|(before, after)| before.iter().zip(after.iter()).any(|(a, b)| (a - b).abs() > 1e-10));
+    let any_changed = params_before
+        .iter()
+        .zip(params_after.iter())
+        .any(|(before, after)| {
+            before
+                .iter()
+                .zip(after.iter())
+                .any(|(a, b)| (a - b).abs() > 1e-10)
+        });
     assert!(any_changed, "训练后至少一个参数应被更新");
 
     // 6. 训练后仍可正常推理
     loaded.graph.eval();
-    loaded.inputs[0].1.set_value(&Tensor::new(&[0.0, 1.0], &[1, 2])).unwrap();
+    loaded.inputs[0]
+        .1
+        .set_value(&Tensor::new(&[0.0, 1.0], &[1, 2]))
+        .unwrap();
     loaded.graph.forward(&loaded.outputs[0]).unwrap();
     let pred = loaded.outputs[0].value().unwrap().unwrap();
     assert_eq!(pred.shape(), &[1, 1], "训练后推理输出形状应正确");
@@ -419,8 +456,8 @@ fn test_load_then_continue_training() {
 /// 验证 forward → backward → optimizer.step 全链路跨模型类型可用。
 #[test]
 fn test_evolution_model_load_and_manual_train() {
-    use crate::nn::evolution::gene::TaskMetric;
     use crate::nn::evolution::Evolution;
+    use crate::nn::evolution::gene::TaskMetric;
 
     let path = "test_otm_evo_manual_train";
 
@@ -455,7 +492,8 @@ fn test_evolution_model_load_and_manual_train() {
     let param_vars = &loaded.parameters;
     assert!(!param_vars.is_empty(), "演化模型应有可训练参数");
 
-    let params_before: Vec<Vec<f32>> = param_vars.iter()
+    let params_before: Vec<Vec<f32>> = param_vars
+        .iter()
         .map(|p| p.node().value().unwrap().to_vec())
         .collect();
 
@@ -466,23 +504,37 @@ fn test_evolution_model_load_and_manual_train() {
     // 4. 跑几步训练，验证全链路不报错
     let loss = loaded.outputs[0].mse_loss(&target_var).unwrap();
     for _ in 0..3 {
-        loaded.inputs[0].1.set_value(&Tensor::new(&[1.0, 0.0], &[1, 2])).unwrap();
+        loaded.inputs[0]
+            .1
+            .set_value(&Tensor::new(&[1.0, 0.0], &[1, 2]))
+            .unwrap();
         target_var.set_value(&Tensor::new(&[1.0], &[1, 1])).unwrap();
         let loss_val = optimizer.minimize(&loss).unwrap();
         assert!(loss_val.is_finite(), "loss 应为有限值");
     }
 
     // 5. 验证参数确实被更新
-    let params_after: Vec<Vec<f32>> = param_vars.iter()
+    let params_after: Vec<Vec<f32>> = param_vars
+        .iter()
         .map(|p| p.node().value().unwrap().to_vec())
         .collect();
-    let any_changed = params_before.iter().zip(params_after.iter())
-        .any(|(before, after)| before.iter().zip(after.iter()).any(|(a, b)| (a - b).abs() > 1e-10));
+    let any_changed = params_before
+        .iter()
+        .zip(params_after.iter())
+        .any(|(before, after)| {
+            before
+                .iter()
+                .zip(after.iter())
+                .any(|(a, b)| (a - b).abs() > 1e-10)
+        });
     assert!(any_changed, "训练后至少一个参数应被更新");
 
     // 6. 训练后仍可推理
     loaded.graph.eval();
-    loaded.inputs[0].1.set_value(&Tensor::new(&[0.0, 1.0], &[1, 2])).unwrap();
+    loaded.inputs[0]
+        .1
+        .set_value(&Tensor::new(&[0.0, 1.0], &[1, 2]))
+        .unwrap();
     loaded.graph.forward(&loaded.outputs[0]).unwrap();
     let pred = loaded.outputs[0].value().unwrap().unwrap();
     assert!(!pred.to_vec().is_empty(), "训练后应能正常推理");
@@ -617,10 +669,7 @@ fn test_save_load_different_batch() {
     assert_vec_close(&pred_b1, &loaded_pred, 1e-5, "batch=1 预测");
 
     // 用 batch=3 预测（应正常工作）
-    let batch_data = Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[3, 2],
-    );
+    let batch_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
     loaded.inputs[0].1.set_value(&batch_data).unwrap();
     loaded.graph.forward(&loaded.outputs[0]).unwrap();
     let batch_result = loaded.outputs[0].value().unwrap().unwrap();
@@ -692,7 +741,9 @@ fn test_save_load_various_activations() {
     let path = "test_otm_activations";
 
     let graph = Graph::new_with_seed(42);
-    let x = graph.input(&Tensor::new(&[0.5, -0.3, 0.8, -0.1], &[1, 4])).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[0.5, -0.3, 0.8, -0.1], &[1, 4]))
+        .unwrap();
 
     let fc1 = Linear::new(&graph, 4, 4, true, "fc1").unwrap();
     let h = fc1.forward(&x).tanh(); // Tanh 激活

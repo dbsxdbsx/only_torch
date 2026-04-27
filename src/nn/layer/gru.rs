@@ -221,13 +221,7 @@ impl Gru {
             "GRU: [?, {}] → [?, {}] (×{} steps)",
             self.input_size, self.hidden_size, seq_len
         );
-        let _guard = NodeGroupContext::for_recurrent(
-            x,
-            "GRU",
-            self.instance_id,
-            &self.name,
-            &desc,
-        );
+        let _guard = NodeGroupContext::for_recurrent(x, "GRU", self.instance_id, &self.name, &desc);
         // 后补标签给参数节点
         _guard.tag_existing(&self.w_ir);
         _guard.tag_existing(&self.w_hr);
@@ -386,22 +380,32 @@ impl Gru {
     /// parents 顺序：[w_ir, w_hr, b_r, w_iz, w_hz, b_z, w_in, w_hn, b_n]
     #[allow(clippy::too_many_arguments)]
     pub fn from_vars(
-        w_ir: Var, w_hr: Var, b_r: Var,
-        w_iz: Var, w_hz: Var, b_z: Var,
-        w_in: Var, w_hn: Var, b_n: Var,
+        w_ir: Var,
+        w_hr: Var,
+        b_r: Var,
+        w_iz: Var,
+        w_hz: Var,
+        b_z: Var,
+        w_in: Var,
+        w_hn: Var,
+        b_n: Var,
         input_size: usize,
         hidden_size: usize,
     ) -> Self {
         let graph = w_ir.get_graph();
         let name = "gru_rebuilt".to_string();
-        graph
-            .inner_mut()
-            .register_recurrent_folding_meta(&name, 20);
+        graph.inner_mut().register_recurrent_folding_meta(&name, 20);
         let instance_id = graph.inner_mut().next_node_group_instance_id();
         Self {
-            w_ir, w_hr, b_r,
-            w_iz, w_hz, b_z,
-            w_in, w_hn, b_n,
+            w_ir,
+            w_hr,
+            b_r,
+            w_iz,
+            w_hz,
+            b_z,
+            w_in,
+            w_hn,
+            b_n,
             graph,
             input_size,
             hidden_size,

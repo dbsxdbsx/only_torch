@@ -121,8 +121,7 @@ impl Linear {
                 self.in_features, self.out_features
             )
         };
-        let _guard =
-            NodeGroupContext::for_layer(&x, "Linear", self.instance_id, &self.name, &desc);
+        let _guard = NodeGroupContext::for_layer(&x, "Linear", self.instance_id, &self.name, &desc);
         _guard.tag_existing(&self.weights);
         if let Some(ref bias) = self.bias {
             _guard.tag_existing(bias);

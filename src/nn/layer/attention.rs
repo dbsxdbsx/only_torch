@@ -15,8 +15,7 @@
 
 use crate::nn::graph::NodeGroupContext;
 use crate::nn::{
-    Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarMatrixOps,
-    VarShapeOps,
+    Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarMatrixOps, VarShapeOps,
 };
 use crate::tensor::Tensor;
 
@@ -106,20 +105,11 @@ impl MultiHeadAttention {
     /// # 说明
     /// self-attention: `forward(&x, &x, &x)`
     /// cross-attention: `forward(&q, &kv, &kv)`
-    pub fn forward(
-        &self,
-        query: impl IntoVar,
-        key: impl IntoVar,
-        value: impl IntoVar,
-    ) -> Var {
+    pub fn forward(&self, query: impl IntoVar, key: impl IntoVar, value: impl IntoVar) -> Var {
         let graph_rc = self.w_q.parameters()[0].get_graph();
-        let query = query
-            .into_var(&graph_rc)
-            .expect("Attention query 转换失败");
+        let query = query.into_var(&graph_rc).expect("Attention query 转换失败");
         let key = key.into_var(&graph_rc).expect("Attention key 转换失败");
-        let value = value
-            .into_var(&graph_rc)
-            .expect("Attention value 转换失败");
+        let value = value.into_var(&graph_rc).expect("Attention value 转换失败");
 
         // 分组上下文
         let desc = format!("D={}, H={}", self.embed_dim, self.num_heads);
@@ -200,12 +190,21 @@ impl MultiHeadAttention {
         let head_outputs: Vec<Var> = (0..nh)
             .map(|h| {
                 // Q_h: [T_q, d_k], K_h: [T_k, d_k], V_h: [T_k, d_k]
-                let q_h = q.narrow(0, h, 1).expect("Q narrow 失败")
-                    .reshape(&[t_q, self.head_dim]).expect("Q_h reshape 失败");
-                let k_h = k.narrow(0, h, 1).expect("K narrow 失败")
-                    .reshape(&[t_k, self.head_dim]).expect("K_h reshape 失败");
-                let v_h = v.narrow(0, h, 1).expect("V narrow 失败")
-                    .reshape(&[t_k, self.head_dim]).expect("V_h reshape 失败");
+                let q_h = q
+                    .narrow(0, h, 1)
+                    .expect("Q narrow 失败")
+                    .reshape(&[t_q, self.head_dim])
+                    .expect("Q_h reshape 失败");
+                let k_h = k
+                    .narrow(0, h, 1)
+                    .expect("K narrow 失败")
+                    .reshape(&[t_k, self.head_dim])
+                    .expect("K_h reshape 失败");
+                let v_h = v
+                    .narrow(0, h, 1)
+                    .expect("V narrow 失败")
+                    .reshape(&[t_k, self.head_dim])
+                    .expect("V_h reshape 失败");
 
                 // Q_h @ K_h^T: [T_q, d_k] @ [d_k, T_k] = [T_q, T_k]
                 let k_t = k_h.transpose(0, 1).expect("K transpose 失败");

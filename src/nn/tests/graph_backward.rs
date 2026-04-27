@@ -576,11 +576,7 @@ fn test_intermediate_node_multi_children_gradient() -> Result<(), GraphError> {
     let shape = grad_combined.shape().to_vec();
     for i in 0..shape[0] {
         for j in 0..shape[1] {
-            assert_abs_diff_eq!(
-                grad_combined[[i, j]],
-                grad_split[[i, j]],
-                epsilon = 1e-5
-            );
+            assert_abs_diff_eq!(grad_combined[[i, j]], grad_split[[i, j]], epsilon = 1e-5);
         }
     }
     Ok(())
@@ -637,11 +633,7 @@ fn test_deep_diamond_gradient_propagation() -> Result<(), GraphError> {
     let shape = grad_combined.shape().to_vec();
     for i in 0..shape[0] {
         for j in 0..shape[1] {
-            assert_abs_diff_eq!(
-                grad_combined[[i, j]],
-                grad_split[[i, j]],
-                epsilon = 1e-5
-            );
+            assert_abs_diff_eq!(grad_combined[[i, j]], grad_split[[i, j]], epsilon = 1e-5);
         }
     }
     Ok(())

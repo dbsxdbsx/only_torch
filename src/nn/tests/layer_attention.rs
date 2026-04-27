@@ -61,10 +61,7 @@ fn test_attention_backward() -> Result<(), GraphError> {
     // 所有参数应有梯度
     for (i, p) in attn.parameters().iter().enumerate() {
         let grad = p.grad()?;
-        assert!(
-            grad.is_some(),
-            "参数 {i} 应有梯度"
-        );
+        assert!(grad.is_some(), "参数 {i} 应有梯度");
     }
 
     Ok(())

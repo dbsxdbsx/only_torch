@@ -18,12 +18,8 @@ use crate::tensor::Tensor;
 #[test]
 fn test_cse_concat_same_inputs() {
     let graph = Graph::new();
-    let a = graph
-        .input(&Tensor::new(&[1.0, 2.0], &[1, 2]))
-        .unwrap();
-    let b = graph
-        .input(&Tensor::new(&[3.0, 4.0], &[1, 2]))
-        .unwrap();
+    let a = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
+    let b = graph.input(&Tensor::new(&[3.0, 4.0], &[1, 2])).unwrap();
 
     let c1 = Var::concat(&[&a, &b], 0).unwrap();
     let c2 = Var::concat(&[&a, &b], 0).unwrap();
@@ -268,11 +264,7 @@ fn test_cse_cache_reset_across_forward() -> Result<(), GraphError> {
     // forward 后创建的同操作应该是新节点（缓存已重置）
     let s2 = &a + &b;
 
-    assert_ne!(
-        s1.node_id(),
-        s2.node_id(),
-        "跨 forward pass 后应创建新节点"
-    );
+    assert_ne!(s1.node_id(), s2.node_id(), "跨 forward pass 后应创建新节点");
 
     Ok(())
 }
@@ -297,9 +289,5 @@ fn test_cse_weak_ref_expired() {
     // 重新创建同操作
     let s2 = &a + &b;
 
-    assert_ne!(
-        id1,
-        s2.node_id(),
-        "Weak 过期后应创建新节点"
-    );
+    assert_ne!(id1, s2.node_id(), "Weak 过期后应创建新节点");
 }

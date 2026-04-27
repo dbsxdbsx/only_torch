@@ -212,7 +212,9 @@ fn test_huber_vjp_small_error() -> Result<(), GraphError> {
     huber.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = huber.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = huber
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // diff = [-0.05, -0.05, -0.05], N = 3
     // grad = diff / N = [-0.0167, -0.0167, -0.0167]
@@ -259,7 +261,9 @@ fn test_huber_vjp_large_error() -> Result<(), GraphError> {
     huber.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = huber.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = huber
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // diff = [-2, -3, -4], sign = [-1, -1, -1]
     // grad = δ * sign(diff) / N = 1 * [-1, -1, -1] / 3
@@ -302,7 +306,9 @@ fn test_huber_vjp_mixed_error() -> Result<(), GraphError> {
     huber.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = huber.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = huber
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     let expected = Tensor::new(&[-0.125, -0.25, -0.25, -0.25], &[1, 4]);
     assert_abs_diff_eq!(&grad, &expected, epsilon = 1e-5);
@@ -361,7 +367,9 @@ fn test_huber_vjp_sum_reduction() -> Result<(), GraphError> {
 
     // VJP
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = huber.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = huber
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // Sum reduction: 不除以 N
     // grad = δ * sign(diff) = [-1, -1, -1]
@@ -423,7 +431,9 @@ fn test_huber_vjp_custom_delta() -> Result<(), GraphError> {
 
     // VJP
     let upstream = Tensor::ones(&[1, 1]);
-    let grad = huber.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = huber
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // |0.3| <= 0.5: grad_elem = diff = -0.3    → / N=2 → -0.15
     // |1.0| > 0.5:  grad_elem = δ*sign = -0.5  → / N=2 → -0.25

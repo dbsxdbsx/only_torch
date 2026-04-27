@@ -501,11 +501,23 @@ fn test_seeded_graph_randn_deterministic() {
 fn test_different_seed_randn_differs() {
     let v1 = {
         let g = Graph::new_with_seed(42);
-        g.randn(&[10, 10]).unwrap().value().unwrap().unwrap().data_as_slice().to_vec()
+        g.randn(&[10, 10])
+            .unwrap()
+            .value()
+            .unwrap()
+            .unwrap()
+            .data_as_slice()
+            .to_vec()
     };
     let v2 = {
         let g = Graph::new_with_seed(999);
-        g.randn(&[10, 10]).unwrap().value().unwrap().unwrap().data_as_slice().to_vec()
+        g.randn(&[10, 10])
+            .unwrap()
+            .value()
+            .unwrap()
+            .unwrap()
+            .data_as_slice()
+            .to_vec()
     };
     assert_ne!(v1, v2, "不同 seed 应产生不同 randn 值");
 }
@@ -520,8 +532,22 @@ fn test_set_seed_proxy() {
     assert!(g1.has_seed());
     assert!(g2.has_seed());
 
-    let v1 = g1.randn(&[10, 10]).unwrap().value().unwrap().unwrap().data_as_slice().to_vec();
-    let v2 = g2.randn(&[10, 10]).unwrap().value().unwrap().unwrap().data_as_slice().to_vec();
+    let v1 = g1
+        .randn(&[10, 10])
+        .unwrap()
+        .value()
+        .unwrap()
+        .unwrap()
+        .data_as_slice()
+        .to_vec();
+    let v2 = g2
+        .randn(&[10, 10])
+        .unwrap()
+        .value()
+        .unwrap()
+        .unwrap()
+        .data_as_slice()
+        .to_vec();
     assert_eq!(v1, v2, "set_seed(42) 应与 new_with_seed(42) 等价");
 }
 

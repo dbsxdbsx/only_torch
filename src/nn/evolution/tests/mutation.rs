@@ -2851,7 +2851,10 @@ fn test_insert_atomic_node_spatial_genome() {
     );
 
     let mut build_rng = StdRng::seed_from_u64(200);
-    assert!(g.build(&mut build_rng).is_ok(), "空间基因组插入后应能 build");
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "空间基因组插入后应能 build"
+    );
 }
 
 #[test]
@@ -2874,7 +2877,10 @@ fn test_insert_atomic_node_multiblock_genome() {
     );
 
     let mut build_rng = StdRng::seed_from_u64(300);
-    assert!(g.build(&mut build_rng).is_ok(), "3块基因组插入后 build 应成功");
+    assert!(
+        g.build(&mut build_rng).is_ok(),
+        "3块基因组插入后 build 应成功"
+    );
 }
 
 // ==================== AddRecurrentEdge / RemoveRecurrentEdge 变异测试 ====================
@@ -2952,7 +2958,10 @@ fn test_add_recurrent_edge_happy_path() {
         "添加循环边后应合法: {:?}",
         analysis.errors
     );
-    assert!(analysis.has_recurrent_edges, "分析应标记 has_recurrent_edges");
+    assert!(
+        analysis.has_recurrent_edges,
+        "分析应标记 has_recurrent_edges"
+    );
 }
 
 #[test]
@@ -2979,20 +2988,14 @@ fn test_remove_recurrent_edge_happy_path() {
     assert!(!has_recurrent, "循环边应被移除");
 
     // 孤立权重参数应被清理
-    assert!(
-        g.nodes().len() < before_nodes,
-        "孤立权重参数节点应被移除"
-    );
+    assert!(g.nodes().len() < before_nodes, "孤立权重参数节点应被移除");
 }
 
 #[test]
 fn test_remove_recurrent_edge_not_applicable_without_edges() {
     let g = seq_node_level_genome();
     let m = RemoveRecurrentEdgeMutation;
-    assert!(
-        !m.is_applicable(&g, &constraints()),
-        "无循环边时不应可移除"
-    );
+    assert!(!m.is_applicable(&g, &constraints()), "无循环边时不应可移除");
 }
 
 #[test]
@@ -3160,9 +3163,7 @@ fn test_random_mutations_keep_recurrent_genome_valid() {
     let c = constraints();
     let mut r = StdRng::seed_from_u64(77);
 
-    AddRecurrentEdgeMutation
-        .apply(&mut g, &c, &mut r)
-        .unwrap();
+    AddRecurrentEdgeMutation.apply(&mut g, &c, &mut r).unwrap();
 
     let reg = MutationRegistry::default_registry(&TaskMetric::R2, true, false);
 
@@ -3315,7 +3316,11 @@ fn test_normalization_block_buildable() {
         let input = Tensor::ones(&[1, 2]);
         build.input.set_value(&input).unwrap();
         let result = build.graph.forward(&build.output);
-        assert!(result.is_ok(), "{norm_type} forward 应成功: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "{norm_type} forward 应成功: {:?}",
+            result.err()
+        );
     }
 }
 
@@ -3339,7 +3344,7 @@ fn test_normalization_blocks_not_resizable() {
 /// 不应连续插入两个归一化块
 #[test]
 fn test_no_consecutive_normalization_blocks() {
-    use crate::nn::evolution::node_ops::{NodeBlockKind, node_main_path};
+    use crate::nn::evolution::node_ops::node_main_path;
 
     let c = SizeConstraints {
         max_layers: 30,
@@ -3398,7 +3403,10 @@ fn test_insert_atomic_node_can_insert_dropout() {
         }
     }
 
-    assert!(found_dropout, "200 轮内 InsertAtomicNode 应至少插入一次 Dropout");
+    assert!(
+        found_dropout,
+        "200 轮内 InsertAtomicNode 应至少插入一次 Dropout"
+    );
 }
 
 /// Dropout 插入后 build + forward 应成功
@@ -3419,18 +3427,27 @@ fn test_dropout_insert_buildable() {
         }
 
         let blocks = node_main_path(&g);
-        let has_dropout = blocks
-            .iter()
-            .any(|b| matches!(b.kind, crate::nn::evolution::node_ops::NodeBlockKind::Dropout { .. }));
+        let has_dropout = blocks.iter().any(|b| {
+            matches!(
+                b.kind,
+                crate::nn::evolution::node_ops::NodeBlockKind::Dropout { .. }
+            )
+        });
 
         if has_dropout {
             let mut build_rng = StdRng::seed_from_u64(99);
-            let build = g.build(&mut build_rng).expect("含 Dropout 的基因组 build 应成功");
+            let build = g
+                .build(&mut build_rng)
+                .expect("含 Dropout 的基因组 build 应成功");
 
             let input = Tensor::ones(&[1, 2]);
             build.input.set_value(&input).unwrap();
             let result = build.graph.forward(&build.output);
-            assert!(result.is_ok(), "含 Dropout 的 forward 应成功: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "含 Dropout 的 forward 应成功: {:?}",
+                result.err()
+            );
             return;
         }
     }
@@ -3441,7 +3458,9 @@ fn test_dropout_insert_buildable() {
 #[test]
 fn test_normalization_params_repaired_after_grow() {
     use crate::nn::evolution::migration::expand_batch_norm;
-    use crate::nn::evolution::node_ops::{insert_after, make_counter, node_main_path, repair_param_input_dims};
+    use crate::nn::evolution::node_ops::{
+        insert_after, make_counter, node_main_path, repair_param_input_dims,
+    };
 
     let mut g = node_level_genome_with_hidden();
     let blocks = node_main_path(&g);

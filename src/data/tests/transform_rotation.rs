@@ -21,10 +21,7 @@ fn test_rotate_zero_degrees() {
 #[test]
 fn test_rotate_180_degrees() {
     // 180° 旋转（近似，因为 bilinear interpolation 在整数像素位置上是精确的）
-    let input = Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
-        &[1, 3, 3],
-    );
+    let input = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[1, 3, 3]);
     let output = rotate(&input, 180.0, 0.0);
 
     assert_eq!(output.shape(), &[1, 3, 3]);

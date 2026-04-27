@@ -35,8 +35,8 @@
 //! 例:初始局面(仅含子方):
 //!     `rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR`
 
-use crate::yolo_decode::Detection;
 use crate::letterbox::LetterboxResult;
+use crate::yolo_decode::Detection;
 
 pub const BOARD_COLS: usize = 9;
 pub const BOARD_ROWS: usize = 10;
@@ -59,7 +59,9 @@ impl BoardConfig {
     ///
     /// 索引 0..6 是黑方(小写),7..13 是红方(大写)
     pub fn default_class_to_fen() -> [char; NUM_CLASSES] {
-        ['n', 'b', 'a', 'k', 'r', 'c', 'p', 'R', 'N', 'A', 'K', 'B', 'C', 'P']
+        [
+            'n', 'b', 'a', 'k', 'r', 'c', 'p', 'R', 'N', 'A', 'K', 'B', 'C', 'P',
+        ]
     }
 }
 
@@ -112,7 +114,11 @@ pub fn auto_detect_board_roi(
     let board_det = dets
         .iter()
         .filter(|d| d.class_id == BOARD_CLASS_ID)
-        .max_by(|a, b| a.conf.partial_cmp(&b.conf).unwrap_or(std::cmp::Ordering::Equal));
+        .max_by(|a, b| {
+            a.conf
+                .partial_cmp(&b.conf)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     if let Some(d) = board_det {
         let (x0_lb, y0_lb, x1_lb, y1_lb) = (d.bbox[0], d.bbox[1], d.bbox[2], d.bbox[3]);
         let (x0, y0) = letterbox.to_origin(x0_lb, y0_lb);
@@ -149,7 +155,11 @@ pub fn detect_red_on_top(
     let red_jiang = dets
         .iter()
         .filter(|d| d.class_id == 10) // r_jiang
-        .max_by(|a, b| a.conf.partial_cmp(&b.conf).unwrap_or(std::cmp::Ordering::Equal));
+        .max_by(|a, b| {
+            a.conf
+                .partial_cmp(&b.conf)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     if let Some(d) = red_jiang {
         let (_, cy_lb) = d.center();
         let (_, cy) = letterbox.to_origin(0.0, cy_lb);
@@ -176,11 +186,7 @@ pub type Grid = [[Option<usize>; BOARD_COLS]; BOARD_ROWS];
 /// # 注意
 /// - 落在棋盘外的 detection 被丢弃
 /// - 行/列约束在 [0, 10) / [0, 9) 之间
-pub fn align_to_grid(
-    dets: &[Detection],
-    letterbox: &LetterboxResult,
-    cfg: &BoardConfig,
-) -> Grid {
+pub fn align_to_grid(dets: &[Detection], letterbox: &LetterboxResult, cfg: &BoardConfig) -> Grid {
     let (x0, y0, x1, y1) = cfg.roi;
     // 注意:9 列对应 8 个间隔,10 行对应 9 个间隔(格点 vs 格子的区别)
     let cell_w = (x1 - x0) as f32 / (BOARD_COLS - 1) as f32;

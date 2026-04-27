@@ -7,8 +7,8 @@
  * 不依赖具体分布实现。
  */
 
-use crate::nn::graph::{Graph, NodeGroupContext};
 use crate::nn::VarActivationOps;
+use crate::nn::graph::{Graph, NodeGroupContext};
 use crate::tensor::Tensor;
 
 // ==================== 上下文 push/pop ====================
@@ -144,10 +144,7 @@ fn test_outer_drop_then_inner_clear() {
         (n1, n2)
     };
 
-    assert_eq!(
-        node_in_nested.node_group_tag().unwrap().group_type,
-        "Outer"
-    );
+    assert_eq!(node_in_nested.node_group_tag().unwrap().group_type, "Outer");
     assert!(node_after_outer_drop.node_group_tag().is_none());
 }
 

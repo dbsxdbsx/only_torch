@@ -451,10 +451,7 @@ impl EvolutionTask for SupervisedTask {
             (Some(ProxyKind::LossSlope), Some(curve)) => compute_loss_slope_proxy(curve),
             _ => None,
         };
-        Ok(TrainOutcome {
-            final_loss,
-            proxy,
-        })
+        Ok(TrainOutcome { final_loss, proxy })
     }
 
     fn configure_batch_size(&mut self, batch_size: Option<usize>) {

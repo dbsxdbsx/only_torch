@@ -8,7 +8,7 @@ fn score(primary: f32, cost: Option<f32>) -> FitnessScore {
         primary,
         inference_cost: cost,
         tiebreak_loss: None,
-    primary_proxy: None,
+        primary_proxy: None,
     }
 }
 
@@ -17,7 +17,7 @@ fn score_with_tiebreak(primary: f32, cost: Option<f32>, tiebreak: Option<f32>) -
         primary,
         inference_cost: cost,
         tiebreak_loss: tiebreak,
-    primary_proxy: None,
+        primary_proxy: None,
     }
 }
 
@@ -194,10 +194,8 @@ fn test_nsga2_select_preserves_front() {
 
 #[test]
 fn test_nsga2_select_count_exceeds_pool() {
-    let pool: Vec<(usize, FitnessScore)> = vec![
-        (0, score(0.9, Some(100.0))),
-        (1, score(0.8, Some(200.0))),
-    ];
+    let pool: Vec<(usize, FitnessScore)> =
+        vec![(0, score(0.9, Some(100.0))), (1, score(0.8, Some(200.0)))];
     let selected = nsga2_select(pool, 5);
     assert_eq!(selected.len(), 2); // 不能超过 pool 大小
 }
@@ -223,31 +221,19 @@ fn test_update_archive_keeps_non_dominated_history() {
     let mut archive: Vec<(String, FitnessScore)> = Vec::new();
 
     // 第一批：加入 A（高 primary, 高 cost）
-    update_archive(
-        &mut archive,
-        vec![("A".into(), score(0.9, Some(300.0)))],
-    );
+    update_archive(&mut archive, vec![("A".into(), score(0.9, Some(300.0)))]);
     assert_eq!(archive.len(), 1);
 
     // 第二批：加入 B（低 primary, 低 cost）→ 互不支配，都保留
-    update_archive(
-        &mut archive,
-        vec![("B".into(), score(0.7, Some(100.0)))],
-    );
+    update_archive(&mut archive, vec![("B".into(), score(0.7, Some(100.0)))]);
     assert_eq!(archive.len(), 2);
 
     // 第三批：加入 C，被 A 支配 → 不加入
-    update_archive(
-        &mut archive,
-        vec![("C".into(), score(0.8, Some(350.0)))],
-    );
+    update_archive(&mut archive, vec![("C".into(), score(0.8, Some(350.0)))]);
     assert_eq!(archive.len(), 2);
 
     // 第四批：加入 D，支配 A → 替换 A
-    update_archive(
-        &mut archive,
-        vec![("D".into(), score(0.95, Some(250.0)))],
-    );
+    update_archive(&mut archive, vec![("D".into(), score(0.95, Some(250.0)))]);
     assert_eq!(archive.len(), 2);
     let names: Vec<&str> = archive.iter().map(|(n, _)| n.as_str()).collect();
     assert!(names.contains(&"B"));
@@ -283,10 +269,7 @@ fn test_archive_changed_same_within_tolerance() {
 #[test]
 fn test_archive_changed_different_sizes() {
     let prev = vec![score(0.9, Some(100.0))];
-    let next = vec![
-        score(0.9, Some(100.0)),
-        score(0.7, Some(50.0)),
-    ];
+    let next = vec![score(0.9, Some(100.0)), score(0.7, Some(50.0))];
     assert!(archive_changed(&prev, &next, 1e-4));
 }
 
@@ -295,11 +278,7 @@ fn test_archive_changed_different_sizes() {
 #[test]
 fn test_single_objective_fallback() {
     // inference_cost 全为 None → 退化为单目标
-    let scores = vec![
-        score(0.9, None),
-        score(0.8, None),
-        score(0.7, None),
-    ];
+    let scores = vec![score(0.9, None), score(0.8, None), score(0.7, None)];
     let ranks = pareto_rank(&scores);
     // 单目标下 0.9 支配 0.8 支配 0.7
     assert_eq!(ranks[0], 0);

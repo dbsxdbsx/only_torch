@@ -68,11 +68,15 @@ pub(crate) struct BatchNormOp {
 }
 
 impl BatchNormOp {
-    pub(crate) const fn eps(&self) -> f32 { self.eps }
-    pub(crate) const fn momentum(&self) -> f32 { self.momentum }
-    pub(crate) const fn num_features(&self) -> usize { self.num_features }
-    pub(crate) fn running_mean(&self) -> &std::rc::Rc<std::cell::RefCell<crate::tensor::Tensor>> { &self.running_mean }
-    pub(crate) fn running_var(&self) -> &std::rc::Rc<std::cell::RefCell<crate::tensor::Tensor>> { &self.running_var }
+    pub(crate) const fn eps(&self) -> f32 {
+        self.eps
+    }
+    pub(crate) const fn momentum(&self) -> f32 {
+        self.momentum
+    }
+    pub(crate) const fn num_features(&self) -> usize {
+        self.num_features
+    }
 
     /// 创建 BatchNormOp 节点
     ///
@@ -287,16 +291,12 @@ impl TraitNode for BatchNormOp {
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
         let std = self.std_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError(
-                "BatchNormOp std 缓存为空，需先执行前向传播".to_string(),
-            )
+            GraphError::ComputationError("BatchNormOp std 缓存为空，需先执行前向传播".to_string())
         })?;
 
         if self.is_training {
             let x_hat = self.x_hat_cache.as_ref().ok_or_else(|| {
-                GraphError::ComputationError(
-                    "BatchNormOp x_hat 缓存为空".to_string(),
-                )
+                GraphError::ComputationError("BatchNormOp x_hat 缓存为空".to_string())
             })?;
 
             let n = self.n_reduce as f32;
@@ -330,8 +330,7 @@ impl TraitNode for BatchNormOp {
             let sum_up_xh_t = Tensor::new(&sum_up_xh, &bcast_shape);
 
             // dx = (1/N) * (1/std) * (N * upstream - sum_up - x_hat * sum_up_xh)
-            let dx = &(&(upstream_grad * n) - &sum_up_t - &(x_hat * &sum_up_xh_t))
-                / &(std * n);
+            let dx = &(&(upstream_grad * n) - &sum_up_t - &(x_hat * &sum_up_xh_t)) / &(std * n);
 
             Ok(GradResult::Computed(dx))
         } else {

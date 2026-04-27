@@ -42,8 +42,7 @@ fn main() -> Result<(), GraphError> {
     println!("[1/4] 加载 MNIST 数据集...");
     let load_start = Instant::now();
 
-    let train_data =
-        MnistDataset::train().expect("加载 MNIST 训练集失败（首次运行会自动下载）");
+    let train_data = MnistDataset::train().expect("加载 MNIST 训练集失败（首次运行会自动下载）");
     let test_data = MnistDataset::test().expect("加载 MNIST 测试集失败");
     // 注意: 不调用 .flatten()，CNN 需要 [N, 1, 28, 28] 格式
 

@@ -35,14 +35,20 @@ fn test_log10_vjp() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let x = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("x"))?;
-    let log = inner.borrow_mut().create_log10_node(x.clone(), Some("log10"))?;
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("x"))?;
+    let log = inner
+        .borrow_mut()
+        .create_log10_node(x.clone(), Some("log10"))?;
 
     x.set_value(Some(&Tensor::new(&[1.0, 10.0, 100.0, 1000.0], &[2, 2])))?;
     log.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 2]);
-    let grad = log.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = log
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     let ln10 = 10.0_f32.ln();
     assert_abs_diff_eq!(grad[[0, 0]], 1.0 / (1.0 * ln10), epsilon = 1e-5);

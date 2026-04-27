@@ -50,10 +50,7 @@ fn test_group_norm_single_group() -> Result<(), GraphError> {
     // num_groups=1 → 所有通道一起归一化
     let gn = GroupNorm::new(&graph, 1, 4, 1e-5, "gn")?;
 
-    let x = graph.input(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0],
-        &[1, 4],
-    ))?;
+    let x = graph.input(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]))?;
     let y = gn.forward(&x);
     y.forward()?;
 

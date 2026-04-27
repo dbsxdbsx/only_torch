@@ -35,11 +35,8 @@ fn test_layer_norm_op_forward_2d() {
         .create_layer_norm_op_node(x.clone(), 1, 1e-5, Some("ln"))
         .unwrap();
 
-    x.set_value(Some(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    )))
-    .unwrap();
+    x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
+        .unwrap();
 
     ln.forward_recursive(1, true).unwrap();
     let val = ln.value().unwrap();
@@ -102,11 +99,8 @@ fn test_layer_norm_op_vjp_sum() -> Result<(), GraphError> {
         .create_layer_norm_op_node(x.clone(), 1, 1e-5, Some("ln"))
         .unwrap();
 
-    x.set_value(Some(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    )))
-    .unwrap();
+    x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
+        .unwrap();
 
     ln.forward_recursive(1, true).unwrap();
 
@@ -142,9 +136,12 @@ fn test_layer_norm_op_backward_e2e() -> Result<(), GraphError> {
     // LayerNormOp + mse_loss
     let ln_out = {
         use std::rc::Rc;
-        let ln_node = graph
-            .inner_mut()
-            .create_layer_norm_op_node(Rc::clone(x.node()), 1, 1e-5, Some("ln"))?;
+        let ln_node = graph.inner_mut().create_layer_norm_op_node(
+            Rc::clone(x.node()),
+            1,
+            1e-5,
+            Some("ln"),
+        )?;
         crate::nn::Var::new_with_rc_graph(ln_node, &graph.inner_rc())
     };
 
@@ -163,4 +160,3 @@ fn test_layer_norm_op_backward_e2e() -> Result<(), GraphError> {
 
     Ok(())
 }
-

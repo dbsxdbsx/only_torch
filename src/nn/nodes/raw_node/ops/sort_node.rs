@@ -9,8 +9,8 @@
 
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -41,8 +41,12 @@ pub(crate) struct SortNode {
 }
 
 impl SortNode {
-    pub(crate) const fn axis(&self) -> usize { self.axis }
-    pub(crate) const fn descending(&self) -> bool { self.descending }
+    pub(crate) const fn axis(&self) -> usize {
+        self.axis
+    }
+    pub(crate) const fn descending(&self) -> bool {
+        self.descending
+    }
 
     /// 创建 SortNode
     ///
@@ -154,7 +158,11 @@ impl TraitNode for SortNode {
         })?;
 
         let parent_shape = parent_values[0].shape();
-        Ok(GradResult::Computed(upstream_grad.scatter_by_sort_indices(self.axis, indices, parent_shape)))
+        Ok(GradResult::Computed(upstream_grad.scatter_by_sort_indices(
+            self.axis,
+            indices,
+            parent_shape,
+        )))
     }
 
     fn grad(&self) -> Option<&Tensor> {

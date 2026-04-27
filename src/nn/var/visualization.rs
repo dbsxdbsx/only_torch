@@ -482,9 +482,10 @@ impl Var {
                 // 多输入合并节点：梯形（倒三角感），浅青色，突出数据流汇聚点
                 "Stack" | "Concat" => ("invtrapezium", "filled", "#E0F2F1"),
                 "Sigmoid" | "Tanh" | "ReLU" | "LeakyReLU" | "Sign" | "SoftPlus" | "Step"
-                | "Softmax" | "LogSoftmax" | "Abs" | "Ln"
-                | "Gelu" | "Swish" | "Elu" | "Selu" | "Mish"
-                | "HardSwish" | "HardSigmoid" | "ReLU6" | "HardTanh" => ("diamond", "filled", "#FFF3E0"),
+                | "Softmax" | "LogSoftmax" | "Abs" | "Ln" | "Gelu" | "Swish" | "Elu" | "Selu"
+                | "Mish" | "HardSwish" | "HardSigmoid" | "ReLU6" | "HardTanh" => {
+                    ("diamond", "filled", "#FFF3E0")
+                }
                 "Dropout" | "BatchNorm" => ("diamond", "filled", "#E1BEE7"),
                 _ => ("box", "\"filled,rounded\"", "#FFFDE7"),
             };
@@ -541,7 +542,11 @@ impl Var {
                 let label = if n <= 3 {
                     snode.origin_onnx_nodes.join(", ")
                 } else {
-                    format!("{}, +{} more", snode.origin_onnx_nodes[..3].join(", "), n - 3)
+                    format!(
+                        "{}, +{} more",
+                        snode.origin_onnx_nodes[..3].join(", "),
+                        n - 3
+                    )
                 };
                 // 内联简单 HTML 转义（ONNX 节点名极少含 <>&" 等字符，但保险起见仍处理）
                 let label_safe = label

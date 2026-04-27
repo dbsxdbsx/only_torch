@@ -119,7 +119,10 @@ impl NodeBlockKind {
         )
     }
     pub fn is_recurrent(&self) -> bool {
-        matches!(self, NodeBlockKind::Rnn { .. } | NodeBlockKind::Lstm { .. } | NodeBlockKind::Gru { .. })
+        matches!(
+            self,
+            NodeBlockKind::Rnn { .. } | NodeBlockKind::Lstm { .. } | NodeBlockKind::Gru { .. }
+        )
     }
     pub fn is_resizable(&self) -> bool {
         self.is_linear() || self.is_conv2d() || self.is_recurrent()
@@ -428,7 +431,7 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
                     return NodeBlockKind::Rnn {
                         hidden_size: *hidden_size,
                         return_sequences: *return_sequences,
-                    }
+                    };
                 }
                 NT::CellLstm {
                     hidden_size,
@@ -438,7 +441,7 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
                     return NodeBlockKind::Lstm {
                         hidden_size: *hidden_size,
                         return_sequences: *return_sequences,
-                    }
+                    };
                 }
                 NT::CellGru {
                     hidden_size,
@@ -448,7 +451,7 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
                     return NodeBlockKind::Gru {
                         hidden_size: *hidden_size,
                         return_sequences: *return_sequences,
-                    }
+                    };
                 }
                 _ => {}
             }
@@ -1251,9 +1254,21 @@ pub fn create_insert_nodes(
             ));
         } else if is_sequential && domain == ShapeDomain::Flat {
             return if rng.gen_bool(0.5) {
-                Some(expand_layer_norm(after_id, input_shape, in_dim, block_id, &mut counter))
+                Some(expand_layer_norm(
+                    after_id,
+                    input_shape,
+                    in_dim,
+                    block_id,
+                    &mut counter,
+                ))
             } else {
-                Some(expand_rms_norm(after_id, input_shape, in_dim, block_id, &mut counter))
+                Some(expand_rms_norm(
+                    after_id,
+                    input_shape,
+                    in_dim,
+                    block_id,
+                    &mut counter,
+                ))
             };
         } else if !is_sequential {
             let choice = rng.gen_range(0..3);
@@ -1675,12 +1690,7 @@ pub fn add_skip_connection(
                 .find(|&&p| !param_ids.contains(&p))
                 .copied()
         })
-        .ok_or_else(|| {
-            format!(
-                "目标入口节点 {} 没有非参数父节点",
-                pair.target_entry_id
-            )
-        })?;
+        .ok_or_else(|| format!("目标入口节点 {} 没有非参数父节点", pair.target_entry_id))?;
 
     // ── 插入 Add 聚合节点 ─────────────────────────────────────────
     let agg_id = counter.next();
@@ -1802,9 +1812,7 @@ pub fn remove_skip_connection(genome: &mut NetworkGenome, agg_id: u64) -> Result
     }
 
     // 删除聚合节点
-    genome
-        .nodes_mut()
-        .retain(|n| n.innovation_number != agg_id);
+    genome.nodes_mut().retain(|n| n.innovation_number != agg_id);
 
     // 清理孤立节点（投影块等），同步形状
     cleanup_orphan_nodes(genome);
@@ -1904,8 +1912,12 @@ pub fn repair_skip_connections(genome: &mut NetworkGenome) {
     // 按拓扑序排序 agg_ids（上游 SkipAgg 先修复），避免嵌套 SkipAgg 依赖时
     // 下游节点因上游尚未修复而无法推导 main_shape 导致被跳过（Bug M）。
     {
-        let analysis =
-            GenomeAnalysis::compute(genome.nodes(), INPUT_INNOVATION, input_shape.clone(), input_domain);
+        let analysis = GenomeAnalysis::compute(
+            genome.nodes(),
+            INPUT_INNOVATION,
+            input_shape.clone(),
+            input_domain,
+        );
         let topo_pos: HashMap<u64, usize> = analysis
             .topo_order
             .iter()
@@ -1920,10 +1932,18 @@ pub fn repair_skip_connections(genome: &mut NetworkGenome) {
 
     for &agg_id in &agg_ids {
         // 重新分析（每轮修复后形状可能变）
-        let analysis =
-            GenomeAnalysis::compute(genome.nodes(), INPUT_INNOVATION, input_shape.clone(), input_domain);
+        let analysis = GenomeAnalysis::compute(
+            genome.nodes(),
+            INPUT_INNOVATION,
+            input_shape.clone(),
+            input_domain,
+        );
 
-        let agg_node = match genome.nodes().iter().find(|n| n.innovation_number == agg_id) {
+        let agg_node = match genome
+            .nodes()
+            .iter()
+            .find(|n| n.innovation_number == agg_id)
+        {
             Some(n) => n.clone(),
             None => continue,
         };
@@ -1958,7 +1978,11 @@ pub fn repair_skip_connections(genome: &mut NetworkGenome) {
         let skip_shape = analysis.shape_of(skip_parent).cloned();
 
         // 尝试找跳跃分支的投影块（用原始节点信息，不依赖 analysis）
-        let skip_node = genome.nodes().iter().find(|n| n.innovation_number == skip_parent).cloned();
+        let skip_node = genome
+            .nodes()
+            .iter()
+            .find(|n| n.innovation_number == skip_parent)
+            .cloned();
         // 判断跳跃分支是否经过投影块。投影块的两个必要条件：
         // 1. block 内包含 MatMul 或 Conv2d 计算节点（是 Linear/Conv2d 块）
         // 2. skip_parent（block 输出节点）的所有下游都是 SkipAgg 节点
@@ -2078,12 +2102,8 @@ pub fn repair_skip_connections(genome: &mut NetworkGenome) {
     // 因此做一轮终态检查，删除仍然形状不匹配的 SkipAgg。
     {
         sync_computation_shapes(genome);
-        let analysis = GenomeAnalysis::compute(
-            genome.nodes(),
-            INPUT_INNOVATION,
-            input_shape,
-            input_domain,
-        );
+        let analysis =
+            GenomeAnalysis::compute(genome.nodes(), INPUT_INNOVATION, input_shape, input_domain);
         let param_ids: HashSet<u64> = genome
             .nodes()
             .iter()
@@ -2092,7 +2112,11 @@ pub fn repair_skip_connections(genome: &mut NetworkGenome) {
             .collect();
         let remaining_aggs = find_removable_skip_connections(genome);
         for agg_id in remaining_aggs {
-            let agg = match genome.nodes().iter().find(|n| n.innovation_number == agg_id) {
+            let agg = match genome
+                .nodes()
+                .iter()
+                .find(|n| n.innovation_number == agg_id)
+            {
                 Some(n) => n.clone(),
                 None => continue,
             };

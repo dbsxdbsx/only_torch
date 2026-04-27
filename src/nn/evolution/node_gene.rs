@@ -51,9 +51,17 @@ pub enum AnalysisError {
     /// 循环边引用了不存在的源节点
     RecurrentMissingSource { node_id: u64, source_id: u64 },
     /// 循环边的权重参数节点无效（不存在或非 Parameter 类型）
-    RecurrentInvalidWeight { node_id: u64, weight_param_id: u64, reason: String },
+    RecurrentInvalidWeight {
+        node_id: u64,
+        weight_param_id: u64,
+        reason: String,
+    },
     /// 循环边的形状不兼容（权重矩阵维度与源/目标不匹配）
-    RecurrentShapeMismatch { node_id: u64, source_id: u64, message: String },
+    RecurrentShapeMismatch {
+        node_id: u64,
+        source_id: u64,
+        message: String,
+    },
     /// 循环边与 cell-based 循环范式冲突
     RecurrentParadigmConflict { node_id: u64, message: String },
 }
@@ -72,11 +80,25 @@ impl std::fmt::Display for AnalysisError {
             Self::RecurrentMissingSource { node_id, source_id } => {
                 write!(f, "节点 {node_id} 的循环边引用了不存在的源节点 {source_id}")
             }
-            Self::RecurrentInvalidWeight { node_id, weight_param_id, reason } => {
-                write!(f, "节点 {node_id} 的循环边权重参数 {weight_param_id} 无效：{reason}")
+            Self::RecurrentInvalidWeight {
+                node_id,
+                weight_param_id,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "节点 {node_id} 的循环边权重参数 {weight_param_id} 无效：{reason}"
+                )
             }
-            Self::RecurrentShapeMismatch { node_id, source_id, message } => {
-                write!(f, "节点 {node_id} ← 源 {source_id} 循环边形状不兼容：{message}")
+            Self::RecurrentShapeMismatch {
+                node_id,
+                source_id,
+                message,
+            } => {
+                write!(
+                    f,
+                    "节点 {node_id} ← 源 {source_id} 循环边形状不兼容：{message}"
+                )
             }
             Self::RecurrentParadigmConflict { node_id, message } => {
                 write!(f, "节点 {node_id} 循环范式冲突：{message}")
@@ -309,10 +331,7 @@ pub fn infer_output_shape(
         // ── 二元逐元素操作（遵循广播规则）──
         NT::Add | NT::Subtract | NT::Divide | NT::Multiply | NT::Maximum | NT::Minimum => {
             if parent_shapes.len() < 2 {
-                return Err(format!(
-                    "需要至少 2 个父节点，实际 {}",
-                    parent_shapes.len()
-                ));
+                return Err(format!("需要至少 2 个父节点，实际 {}", parent_shapes.len()));
             }
             let mut out = parent_shapes[0].clone();
             for (i, ps) in parent_shapes.iter().enumerate().skip(1) {
@@ -427,7 +446,11 @@ pub fn infer_output_shape(
         }
 
         // ── Conv2d: [N,C_in,H,W] × [C_out,C_in,kH,kW] → [N,C_out,H_out,W_out] ──
-        NT::Conv2d { stride, padding, dilation } => {
+        NT::Conv2d {
+            stride,
+            padding,
+            dilation,
+        } => {
             require_n(2, parent_shapes)?;
             let inp = parent_shapes[0];
             let ker = parent_shapes[1];
@@ -446,7 +469,11 @@ pub fn infer_output_shape(
         }
 
         // ── ConvTranspose2d: [N,C_in,H,W] × [C_in,C_out,kH,kW] → [N,C_out,H_out,W_out] ──
-        NT::ConvTranspose2d { stride, padding, output_padding } => {
+        NT::ConvTranspose2d {
+            stride,
+            padding,
+            output_padding,
+        } => {
             require_n(2, parent_shapes)?;
             let inp = parent_shapes[0];
             let ker = parent_shapes[1];
@@ -465,7 +492,15 @@ pub fn infer_output_shape(
         }
 
         // ── MaxPool2d / AvgPool2d ──
-        NT::MaxPool2d { kernel_size, stride, .. } | NT::AvgPool2d { kernel_size, stride } => {
+        NT::MaxPool2d {
+            kernel_size,
+            stride,
+            ..
+        }
+        | NT::AvgPool2d {
+            kernel_size,
+            stride,
+        } => {
             require_n(1, parent_shapes)?;
             let s = parent_shapes[0];
             if s.len() < 4 {
@@ -540,10 +575,7 @@ pub fn infer_output_shape(
             }
             let ax = *axis;
             if ax > base.len() {
-                return Err(format!(
-                    "Stack axis {ax} 超出合法范围 0..={}",
-                    base.len()
-                ));
+                return Err(format!("Stack axis {ax} 超出合法范围 0..={}", base.len()));
             }
             let mut out = base[..ax].to_vec();
             out.push(parent_shapes.len());
@@ -570,9 +602,7 @@ pub fn infer_output_shape(
                 }
                 for (j, (&b, &p)) in base.iter().zip(ps.iter()).enumerate() {
                     if j != ax && b != p {
-                        return Err(format!(
-                            "Concat 非拼接维度 {j} 形状不一致：{b} vs {p}"
-                        ));
+                        return Err(format!("Concat 非拼接维度 {j} 形状不一致：{b} vs {p}"));
                     }
                 }
                 concat_dim += ps[ax];
@@ -583,7 +613,10 @@ pub fn infer_output_shape(
         }
 
         // ── 损失函数（输出标量）──
-        NT::BCE { .. } | NT::Huber { .. } | NT::MAE { .. } | NT::MSE { .. }
+        NT::BCE { .. }
+        | NT::Huber { .. }
+        | NT::MAE { .. }
+        | NT::MSE { .. }
         | NT::SoftmaxCrossEntropy => Ok(vec![1]),
 
         // ── Narrow: 沿 axis 取 [start, start+length) ──
@@ -604,9 +637,7 @@ pub fn infer_output_shape(
             require_n(1, parent_shapes)?;
             let s = parent_shapes[0];
             if dims.len() != s.len() {
-                return Err(format!(
-                    "Permute dims {dims:?} 长度与形状 {s:?} 不一致"
-                ));
+                return Err(format!("Permute dims {dims:?} 长度与形状 {s:?} 不一致"));
             }
             Ok(dims.iter().map(|&d| s[d]).collect())
         }
@@ -616,9 +647,7 @@ pub fn infer_output_shape(
             require_n(1, parent_shapes)?;
             let s = parent_shapes[0];
             if paddings.len() != s.len() {
-                return Err(format!(
-                    "Pad paddings {paddings:?} 长度与形状 {s:?} 不一致"
-                ));
+                return Err(format!("Pad paddings {paddings:?} 长度与形状 {s:?} 不一致"));
             }
             Ok(s.iter()
                 .zip(paddings.iter())
@@ -724,25 +753,35 @@ fn broadcast_shape(a: &[usize], b: &[usize]) -> Result<Vec<usize>, String> {
 // ==================== 域推导 ====================
 
 /// 从节点类型和父节点域推导当前节点的输出域
-pub fn infer_domain(
-    node_type: &NodeTypeDescriptor,
-    parent_domains: &[ShapeDomain],
-) -> ShapeDomain {
+pub fn infer_domain(node_type: &NodeTypeDescriptor, parent_domains: &[ShapeDomain]) -> ShapeDomain {
     use NodeTypeDescriptor as NT;
     use ShapeDomain::*;
 
     match node_type {
         // 空间 → 空间
-        NT::Conv2d { .. } | NT::ConvTranspose2d { .. } | NT::MaxPool2d { .. } | NT::AvgPool2d { .. } => Spatial,
+        NT::Conv2d { .. }
+        | NT::ConvTranspose2d { .. }
+        | NT::MaxPool2d { .. }
+        | NT::AvgPool2d { .. } => Spatial,
         // 空间 → 平坦
         NT::Flatten { .. } => Flat,
         // 输入节点默认平坦（调用方会根据 genome 的输入模式修正）
         NT::BasicInput | NT::TargetInput => Flat,
         // 循环单元：return_sequences → Sequence，否则 → Flat
-        NT::CellRnn { return_sequences, .. }
-        | NT::CellLstm { return_sequences, .. }
-        | NT::CellGru { return_sequences, .. } => {
-            if *return_sequences { Sequence } else { Flat }
+        NT::CellRnn {
+            return_sequences, ..
+        }
+        | NT::CellLstm {
+            return_sequences, ..
+        }
+        | NT::CellGru {
+            return_sequences, ..
+        } => {
+            if *return_sequences {
+                Sequence
+            } else {
+                Flat
+            }
         }
         // 其他：透传第一个父节点的域
         _ => parent_domains.first().copied().unwrap_or(Flat),
@@ -814,14 +853,7 @@ impl GenomeAnalysis {
             Ok(order) => order,
             Err(e) => {
                 errors.push(e);
-                return Self::failed(
-                    errors,
-                    enabled.len(),
-                    0,
-                    0,
-                    output_shapes,
-                    domains,
-                );
+                return Self::failed(errors, enabled.len(), 0, 0, output_shapes, domains);
             }
         };
 
@@ -954,10 +986,7 @@ impl GenomeAnalysis {
                             errors.push(AnalysisError::RecurrentInvalidWeight {
                                 node_id: target_id,
                                 weight_param_id: edge.weight_param_id,
-                                reason: format!(
-                                    "期望 Parameter 类型，实际为 {:?}",
-                                    w.node_type
-                                ),
+                                reason: format!("期望 Parameter 类型，实际为 {:?}", w.node_type),
                             });
                             continue;
                         }
@@ -1061,7 +1090,9 @@ impl GenomeAnalysis {
     pub fn summary(&self) -> String {
         format!(
             "nodes={} active={} params={}",
-            self.enabled_node_count, self.topo_order.len(), self.param_node_count
+            self.enabled_node_count,
+            self.topo_order.len(),
+            self.param_node_count
         )
     }
 }
@@ -1069,10 +1100,7 @@ impl GenomeAnalysis {
 // ==================== 拓扑排序 ====================
 
 /// Kahn 算法拓扑排序，检测环（State 节点作为叶节点处理，不产生实际回边）
-fn topological_sort(
-    nodes: &[&NodeGene],
-    input_id: u64,
-) -> Result<Vec<u64>, AnalysisError> {
+fn topological_sort(nodes: &[&NodeGene], input_id: u64) -> Result<Vec<u64>, AnalysisError> {
     let id_set: HashSet<u64> = nodes.iter().map(|n| n.innovation_number).collect();
 
     // 计算入度，建立 parent → children 邻接表

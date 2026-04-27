@@ -96,10 +96,7 @@ fn test_rms_norm_vs_layer_norm() -> Result<(), GraphError> {
         .zip(out_ln.data_as_slice().iter())
         .map(|(a, b)| (a - b).abs())
         .sum();
-    assert!(
-        diff > 0.01,
-        "均值非零时 RMSNorm 和 LayerNorm 应有差异"
-    );
+    assert!(diff > 0.01, "均值非零时 RMSNorm 和 LayerNorm 应有差异");
 
     Ok(())
 }

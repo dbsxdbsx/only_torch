@@ -32,7 +32,7 @@ mod util;
 
 pub use assemble::OnnxImportResult;
 
-use util::{validate_opset, SymbolTable};
+use util::{SymbolTable, validate_opset};
 
 /// ONNX 导入过程的可观测报告（最小骨架版）
 ///
@@ -75,8 +75,7 @@ pub fn load_onnx<P: AsRef<Path>>(path: P) -> Result<OnnxImportResult, OnnxError>
 /// 从内存中的 .onnx 字节流加载
 pub fn load_onnx_from_bytes(bytes: &[u8]) -> Result<OnnxImportResult, OnnxError> {
     // ── 第 1 层：解析 ──
-    let model =
-        onnx_rs::parse(bytes).map_err(|e| OnnxError::ParseError(format!("{e}")))?;
+    let model = onnx_rs::parse(bytes).map_err(|e| OnnxError::ParseError(format!("{e}")))?;
 
     // 验证 opset 版本
     validate_opset(&model)?;

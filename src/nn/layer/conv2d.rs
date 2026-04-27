@@ -149,8 +149,7 @@ impl Conv2d {
                 self.in_channels, self.out_channels, self.kernel_size.0, self.kernel_size.1
             )
         };
-        let _guard =
-            NodeGroupContext::for_layer(&x, "Conv2d", self.instance_id, &self.name, &desc);
+        let _guard = NodeGroupContext::for_layer(&x, "Conv2d", self.instance_id, &self.name, &desc);
         _guard.tag_existing(&self.kernel);
         if let Some(ref bias) = self.bias {
             _guard.tag_existing(bias);

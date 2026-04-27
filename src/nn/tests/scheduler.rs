@@ -32,12 +32,16 @@ fn cosine_annealing_default_eta_min() {
     assert_eq!(s.get_last_epoch(), 1);
 
     // Advance to epoch 5
-    for _ in 2..=4 { s.step(); }
+    for _ in 2..=4 {
+        s.step();
+    }
     let lr5 = s.step();
     assert_lr_close(lr5, 0.050000, "epoch 5");
 
     // Advance to epoch 10
-    for _ in 6..=9 { s.step(); }
+    for _ in 6..=9 {
+        s.step();
+    }
     let lr10 = s.step();
     assert_lr_close(lr10, 0.0, "epoch 10");
     assert_eq!(s.get_last_epoch(), 10);
@@ -51,11 +55,15 @@ fn cosine_annealing_with_eta_min() {
     let lr1 = s.step();
     assert_lr_close(lr1, 0.097798, "epoch 1");
 
-    for _ in 2..=4 { s.step(); }
+    for _ in 2..=4 {
+        s.step();
+    }
     let lr5 = s.step();
     assert_lr_close(lr5, 0.055000, "epoch 5");
 
-    for _ in 6..=9 { s.step(); }
+    for _ in 6..=9 {
+        s.step();
+    }
     let lr10 = s.step();
     assert_lr_close(lr10, 0.010000, "epoch 10");
 }
@@ -113,11 +121,15 @@ fn step_lr_basic() {
 fn step_lr_gamma_01() {
     // gamma=0.1, step_size=5
     let mut s = StepLR::new(1.0, 5, 0.1);
-    for _ in 0..4 { s.step(); }
+    for _ in 0..4 {
+        s.step();
+    }
     assert_lr_close(s.get_lr(), 1.0, "epoch 4");
     let lr5 = s.step();
     assert_lr_close(lr5, 0.1, "epoch 5");
-    for _ in 6..=9 { s.step(); }
+    for _ in 6..=9 {
+        s.step();
+    }
     let lr10 = s.step();
     assert_lr_close(lr10, 0.01, "epoch 10");
 }
@@ -134,11 +146,15 @@ fn lambda_lr_exponential_decay() {
     let lr1 = s.step();
     assert_lr_close(lr1, 0.095000, "epoch 1");
 
-    for _ in 2..=4 { s.step(); }
+    for _ in 2..=4 {
+        s.step();
+    }
     let lr5 = s.step();
     assert_lr_close(lr5, 0.077378, "epoch 5");
 
-    for _ in 6..=9 { s.step(); }
+    for _ in 6..=9 {
+        s.step();
+    }
     let lr10 = s.step();
     assert_lr_close(lr10, 0.059874, "epoch 10");
     assert_eq!(s.get_last_epoch(), 10);
@@ -148,9 +164,7 @@ fn lambda_lr_exponential_decay() {
 fn lambda_lr_linear_warmup() {
     // 线性 warmup: lr = lr_init * min(1, epoch / warmup_steps)
     let warmup = 5;
-    let mut s = LambdaLR::new(0.01, move |epoch| {
-        (epoch as f32 / warmup as f32).min(1.0)
-    });
+    let mut s = LambdaLR::new(0.01, move |epoch| (epoch as f32 / warmup as f32).min(1.0));
 
     let lr1 = s.step(); // epoch 1: 0.01 * (1/5) = 0.002
     assert_lr_close(lr1, 0.002, "warmup epoch 1");

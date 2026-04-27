@@ -10,10 +10,7 @@ use approx::assert_abs_diff_eq;
 /// 基本 topk：[2, 4] axis=1, k=2, sorted=true
 #[test]
 fn test_topk_basic() {
-    let t = Tensor::new(
-        &[1.0, 4.0, 2.0, 3.0, 8.0, 5.0, 7.0, 6.0],
-        &[2, 4],
-    );
+    let t = Tensor::new(&[1.0, 4.0, 2.0, 3.0, 8.0, 5.0, 7.0, 6.0], &[2, 4]);
     let (values, indices) = t.topk(2, 1, true);
 
     assert_eq!(values.shape(), &[2, 2]);
@@ -63,10 +60,7 @@ fn test_topk_k_full() {
 /// axis=0 topk
 #[test]
 fn test_topk_axis0() {
-    let t = Tensor::new(
-        &[1.0, 2.0, 5.0, 6.0, 3.0, 4.0, 7.0, 8.0],
-        &[4, 2],
-    );
+    let t = Tensor::new(&[1.0, 2.0, 5.0, 6.0, 3.0, 4.0, 7.0, 8.0], &[4, 2]);
     let (values, indices) = t.topk(2, 0, true);
 
     assert_eq!(values.shape(), &[2, 2]);

@@ -10,10 +10,10 @@
  */
 
 use crate::nn::descriptor::NodeTypeDescriptor;
-use crate::nn::evolution::node_gene::{
-    infer_domain, infer_output_shape, AnalysisError, GenomeAnalysis, GenomeKind, NodeGene,
-};
 use crate::nn::evolution::gene::ShapeDomain;
+use crate::nn::evolution::node_gene::{
+    AnalysisError, GenomeAnalysis, GenomeKind, NodeGene, infer_domain, infer_output_shape,
+};
 use crate::nn::nodes::raw_node::Reduction;
 
 // ==================== 辅助宏 ====================
@@ -250,7 +250,11 @@ fn infer_add_shape_mismatch_returns_err() {
 #[test]
 fn infer_add_broadcast_shape() {
     assert_eq!(
-        infer(NodeTypeDescriptor::Add, vec![shape![1, 8, 28, 28], shape![1, 8, 1, 1]]).unwrap(),
+        infer(
+            NodeTypeDescriptor::Add,
+            vec![shape![1, 8, 28, 28], shape![1, 8, 1, 1]]
+        )
+        .unwrap(),
         shape![1, 8, 28, 28]
     );
 }
@@ -806,7 +810,9 @@ fn genome_analysis_snapshot_remains_immutable_after_genome_mutation() {
     use crate::nn::evolution::gene::NetworkGenome;
 
     let mut genome = NetworkGenome::minimal(4, 3);
-    genome.migrate_to_node_level().expect("迁移到 NodeLevel 不应失败");
+    genome
+        .migrate_to_node_level()
+        .expect("迁移到 NodeLevel 不应失败");
 
     let before = genome.analyze();
     assert!(before.is_valid, "初始分析应合法：{:?}", before.errors);
@@ -828,10 +834,16 @@ fn genome_analysis_snapshot_remains_immutable_after_genome_mutation() {
         .enabled = false;
 
     let after = genome.analyze();
-    assert!(after.enabled_node_count < old_enabled, "重新分析后启用节点数应减少");
+    assert!(
+        after.enabled_node_count < old_enabled,
+        "重新分析后启用节点数应减少"
+    );
 
     assert_eq!(before.enabled_node_count, old_enabled, "旧快照不应被污染");
-    assert_eq!(before.param_count, old_param_count, "旧快照参数量不应被污染");
+    assert_eq!(
+        before.param_count, old_param_count,
+        "旧快照参数量不应被污染"
+    );
     assert!(
         before.shape_of(disabled_id).is_some(),
         "旧快照仍应保留被禁用前节点的形状"
@@ -954,7 +966,17 @@ fn infer_unary_insufficient_parents_err() {
     assert!(infer(NodeTypeDescriptor::Tanh, vec![]).is_err());
     assert!(infer(NodeTypeDescriptor::Identity, vec![]).is_err());
     assert!(infer(NodeTypeDescriptor::Detach, vec![]).is_err());
-    assert!(infer(NodeTypeDescriptor::BatchNormOp { eps: 1e-5, momentum: 0.1, num_features: 4 }, vec![]).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::BatchNormOp {
+                eps: 1e-5,
+                momentum: 0.1,
+                num_features: 4
+            },
+            vec![]
+        )
+        .is_err()
+    );
     assert!(infer(NodeTypeDescriptor::ZerosLike, vec![]).is_err());
 }
 
@@ -968,7 +990,10 @@ fn infer_binary_insufficient_parents_err() {
         NodeTypeDescriptor::Maximum,
         NodeTypeDescriptor::Minimum,
     ] {
-        assert!(infer(nt, vec![shape![2, 3]]).is_err(), "少于 2 个父节点应返回 Err");
+        assert!(
+            infer(nt, vec![shape![2, 3]]).is_err(),
+            "少于 2 个父节点应返回 Err"
+        );
     }
 }
 
@@ -981,8 +1006,20 @@ fn infer_matmul_1d_operand_err() {
 
 #[test]
 fn infer_sum_axis_out_of_bounds_err() {
-    assert!(infer(NodeTypeDescriptor::Sum { axis: Some(3) }, vec![shape![2, 3]]).is_err());
-    assert!(infer(NodeTypeDescriptor::Mean { axis: Some(2) }, vec![shape![2, 3]]).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Sum { axis: Some(3) },
+            vec![shape![2, 3]]
+        )
+        .is_err()
+    );
+    assert!(
+        infer(
+            NodeTypeDescriptor::Mean { axis: Some(2) },
+            vec![shape![2, 3]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -994,129 +1031,201 @@ fn infer_amax_amin_axis_oob_err() {
 #[test]
 fn infer_conv2d_insufficient_dims_err() {
     // 输入少于 4D → Err
-    assert!(infer(
-        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0), dilation: (1, 1) },
-        vec![shape![3, 4], shape![8, 3, 3, 3]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Conv2d {
+                stride: (1, 1),
+                padding: (0, 0),
+                dilation: (1, 1)
+            },
+            vec![shape![3, 4], shape![8, 3, 3, 3]]
+        )
+        .is_err()
+    );
     // 权重少于 4D → Err
-    assert!(infer(
-        NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0), dilation: (1, 1) },
-        vec![shape![1, 3, 4, 4], shape![8, 3, 3]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Conv2d {
+                stride: (1, 1),
+                padding: (0, 0),
+                dilation: (1, 1)
+            },
+            vec![shape![1, 3, 4, 4], shape![8, 3, 3]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_pool2d_insufficient_dims_err() {
-    assert!(infer(
-        NodeTypeDescriptor::MaxPool2d { kernel_size: (2, 2), stride: (2, 2), padding: (0, 0), ceil_mode: false },
-        vec![shape![3, 4]]
-    ).is_err());
-    assert!(infer(
-        NodeTypeDescriptor::AvgPool2d { kernel_size: (2, 2), stride: (2, 2) },
-        vec![shape![1, 4, 4]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::MaxPool2d {
+                kernel_size: (2, 2),
+                stride: (2, 2),
+                padding: (0, 0),
+                ceil_mode: false
+            },
+            vec![shape![3, 4]]
+        )
+        .is_err()
+    );
+    assert!(
+        infer(
+            NodeTypeDescriptor::AvgPool2d {
+                kernel_size: (2, 2),
+                stride: (2, 2)
+            },
+            vec![shape![1, 4, 4]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_pool2d_kernel_exceeds_spatial_soft_fail() {
     // kernel=5 > H/W=3 → h_out/w_out 软降级到 1（不返回错误）
     let r = infer(
-        NodeTypeDescriptor::MaxPool2d { kernel_size: (5, 5), stride: (1, 1), padding: (0, 0), ceil_mode: false },
-        vec![shape![1, 4, 3, 3]]
-    ).unwrap();
+        NodeTypeDescriptor::MaxPool2d {
+            kernel_size: (5, 5),
+            stride: (1, 1),
+            padding: (0, 0),
+            ceil_mode: false,
+        },
+        vec![shape![1, 4, 3, 3]],
+    )
+    .unwrap();
     assert_eq!(r, shape![1, 4, 1, 1], "kernel 超出应软降级到 1");
 }
 
 #[test]
 fn infer_select_axis_oob_err() {
-    assert!(infer(
-        NodeTypeDescriptor::Select { axis: 5, index: 0 },
-        vec![shape![3, 4, 5]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Select { axis: 5, index: 0 },
+            vec![shape![3, 4, 5]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_gather_dim_oob_err() {
-    assert!(infer(
-        NodeTypeDescriptor::Gather { dim: 5 },
-        vec![shape![3, 4], shape![2]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Gather { dim: 5 },
+            vec![shape![3, 4], shape![2]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_stack_inconsistent_shapes_err() {
-    assert!(infer(
-        NodeTypeDescriptor::Stack { axis: 0 },
-        vec![shape![2, 3], shape![2, 4]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Stack { axis: 0 },
+            vec![shape![2, 3], shape![2, 4]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_stack_axis_oob_err() {
     // axis 允许最大为 ndim（在末尾插入），超出则错误
-    assert!(infer(
-        NodeTypeDescriptor::Stack { axis: 5 },
-        vec![shape![2, 3]]
-    ).is_err());
+    assert!(infer(NodeTypeDescriptor::Stack { axis: 5 }, vec![shape![2, 3]]).is_err());
 }
 
 #[test]
 fn infer_concat_dim_count_mismatch_err() {
     // 两输入维度数不一致
-    assert!(infer(
-        NodeTypeDescriptor::Concat { axis: 0 },
-        vec![shape![2, 3], shape![2, 3, 4]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Concat { axis: 0 },
+            vec![shape![2, 3], shape![2, 3, 4]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_concat_non_concat_dim_mismatch_err() {
     // axis=0，非拼接维度 1 不一致：[2,3] vs [2,4]
-    assert!(infer(
-        NodeTypeDescriptor::Concat { axis: 0 },
-        vec![shape![2, 3], shape![2, 4]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Concat { axis: 0 },
+            vec![shape![2, 3], shape![2, 4]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_narrow_axis_oob_err() {
-    assert!(infer(
-        NodeTypeDescriptor::Narrow { axis: 3, start: 0, length: 2 },
-        vec![shape![3, 4]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Narrow {
+                axis: 3,
+                start: 0,
+                length: 2
+            },
+            vec![shape![3, 4]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_permute_dims_mismatch_err() {
     // dims 长度与输入维度数不一致
-    assert!(infer(
-        NodeTypeDescriptor::Permute { dims: vec![0, 1] },
-        vec![shape![3, 4, 5]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Permute { dims: vec![0, 1] },
+            vec![shape![3, 4, 5]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_pad_paddings_mismatch_err() {
-    assert!(infer(
-        NodeTypeDescriptor::Pad { paddings: vec![(1, 1)], pad_value: 0.0 },
-        vec![shape![3, 4]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Pad {
+                paddings: vec![(1, 1)],
+                pad_value: 0.0
+            },
+            vec![shape![3, 4]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_repeat_repeats_mismatch_err() {
-    assert!(infer(
-        NodeTypeDescriptor::Repeat { repeats: vec![2] },
-        vec![shape![3, 4]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::Repeat { repeats: vec![2] },
+            vec![shape![3, 4]]
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn infer_topk_axis_oob_err() {
-    assert!(infer(
-        NodeTypeDescriptor::TopK { k: 3, axis: 5, sorted: true },
-        vec![shape![2, 4]]
-    ).is_err());
+    assert!(
+        infer(
+            NodeTypeDescriptor::TopK {
+                k: 3,
+                axis: 5,
+                sorted: true
+            },
+            vec![shape![2, 4]]
+        )
+        .is_err()
+    );
 }
 
 // ==================== infer_domain 直接测试 ====================
@@ -1124,7 +1233,11 @@ fn infer_topk_axis_oob_err() {
 #[test]
 fn infer_domain_conv2d_to_spatial() {
     let d = infer_domain(
-        &NodeTypeDescriptor::Conv2d { stride: (1, 1), padding: (0, 0), dilation: (1, 1) },
+        &NodeTypeDescriptor::Conv2d {
+            stride: (1, 1),
+            padding: (0, 0),
+            dilation: (1, 1),
+        },
         &[ShapeDomain::Flat],
     );
     assert_eq!(d, ShapeDomain::Spatial, "Conv2d 应输出 Spatial域");
@@ -1133,11 +1246,25 @@ fn infer_domain_conv2d_to_spatial() {
 #[test]
 fn infer_domain_pool2d_to_spatial() {
     assert_eq!(
-        infer_domain(&NodeTypeDescriptor::MaxPool2d { kernel_size: (2, 2), stride: (2, 2), padding: (0, 0), ceil_mode: false }, &[ShapeDomain::Spatial]),
+        infer_domain(
+            &NodeTypeDescriptor::MaxPool2d {
+                kernel_size: (2, 2),
+                stride: (2, 2),
+                padding: (0, 0),
+                ceil_mode: false
+            },
+            &[ShapeDomain::Spatial]
+        ),
         ShapeDomain::Spatial
     );
     assert_eq!(
-        infer_domain(&NodeTypeDescriptor::AvgPool2d { kernel_size: (2, 2), stride: (2, 2) }, &[ShapeDomain::Spatial]),
+        infer_domain(
+            &NodeTypeDescriptor::AvgPool2d {
+                kernel_size: (2, 2),
+                stride: (2, 2)
+            },
+            &[ShapeDomain::Spatial]
+        ),
         ShapeDomain::Spatial
     );
 }
@@ -1146,7 +1273,9 @@ fn infer_domain_pool2d_to_spatial() {
 fn infer_domain_flatten_to_flat() {
     // Flatten 无论父节点域是什么，输出始终是 Flat
     let d = infer_domain(
-        &NodeTypeDescriptor::Flatten { keep_first_dim: true },
+        &NodeTypeDescriptor::Flatten {
+            keep_first_dim: true,
+        },
         &[ShapeDomain::Spatial],
     );
     assert_eq!(d, ShapeDomain::Flat, "Flatten 应从 Spatial 切换到 Flat");

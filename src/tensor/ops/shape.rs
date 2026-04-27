@@ -103,7 +103,11 @@ impl Tensor {
         // 使用 ndarray::stack
         let views: Vec<_> = tensors.iter().map(|t| t.data.view()).collect();
         let stacked = ndarray::stack(Axis(axis), &views).expect("stack: ndarray stack 失败");
-        Self { data: stacked, source_id: next_source_id() }.into_contiguous()
+        Self {
+            data: stacked,
+            source_id: next_source_id(),
+        }
+        .into_contiguous()
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑stack↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -172,7 +176,11 @@ impl Tensor {
         let views: Vec<_> = tensors.iter().map(|t| t.data.view()).collect();
         let concatenated =
             ndarray::concatenate(Axis(axis), &views).expect("concat: ndarray concatenate 失败");
-        Self { data: concatenated, source_id: next_source_id() }.into_contiguous()
+        Self {
+            data: concatenated,
+            source_id: next_source_id(),
+        }
+        .into_contiguous()
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑concat↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
@@ -537,7 +545,10 @@ impl Tensor {
         );
         let diag_data = self.data.diag().to_owned();
         let diag_vector = Array::from_shape_vec(IxDyn(&[shape[0]]), diag_data.to_vec()).unwrap();
-        Self { data: diag_vector, source_id: next_source_id() }
+        Self {
+            data: diag_vector,
+            source_id: next_source_id(),
+        }
     }
 
     /// 就地修改当前张量。输入张量必须是1维或2维，否则会 panic。根据输入类型：
@@ -729,7 +740,9 @@ impl Tensor {
                 assert!(
                     start <= end && end <= dim,
                     "slice_ranges: 无效范围 [{}, {}) 对于维度大小 {}",
-                    start, end, dim
+                    start,
+                    end,
+                    dim
                 );
                 end - start
             })

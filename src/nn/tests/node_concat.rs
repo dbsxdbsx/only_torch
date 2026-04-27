@@ -83,11 +83,7 @@ fn test_concat_error_shape_mismatch() {
         .create_concat_node(vec![input1, input2], 0, None);
     assert_err!(
         result,
-        GraphError::ShapeMismatch(
-            [2, 3],
-            [2, 4],
-            "Concat: 父节点 1 在维度 1 大小不一致"
-        )
+        GraphError::ShapeMismatch([2, 3], [2, 4], "Concat: 父节点 1 在维度 1 大小不一致")
     );
 }
 
@@ -165,12 +161,16 @@ fn test_concat_vjp_axis0() -> Result<(), GraphError> {
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
 
     // p1 → upstream[0:2, :] = [[1,2],[3,4]]
-    let grad_p1 = concat.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad_p1 = concat
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
     assert_eq!(grad_p1.shape(), &[2, 2]);
     assert_eq!(&grad_p1, &Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
 
     // p2 → upstream[2:3, :] = [[5,6]]
-    let grad_p2 = concat.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
+    let grad_p2 = concat
+        .calc_grad_to_parent_index(1, &upstream)?
+        .resolve(&upstream);
     assert_eq!(grad_p2.shape(), &[1, 2]);
     assert_eq!(&grad_p2, &Tensor::new(&[5.0, 6.0], &[1, 2]));
 
@@ -212,12 +212,16 @@ fn test_concat_vjp_axis1() -> Result<(), GraphError> {
     );
 
     // p1 → upstream[:, 0:2] = [[1,2],[6,7]]
-    let grad_p1 = concat.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad_p1 = concat
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
     assert_eq!(grad_p1.shape(), &[2, 2]);
     assert_eq!(&grad_p1, &Tensor::new(&[1.0, 2.0, 6.0, 7.0], &[2, 2]));
 
     // p2 → upstream[:, 2:5] = [[3,4,5],[8,9,10]]
-    let grad_p2 = concat.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
+    let grad_p2 = concat
+        .calc_grad_to_parent_index(1, &upstream)?
+        .resolve(&upstream);
     assert_eq!(grad_p2.shape(), &[2, 3]);
     assert_eq!(
         &grad_p2,

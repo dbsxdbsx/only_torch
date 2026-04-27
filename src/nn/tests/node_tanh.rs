@@ -102,7 +102,9 @@ fn test_tanh_vjp_unit_upstream() -> Result<(), GraphError> {
     tanh_node.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = tanh_node.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = tanh_node
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.78644770, epsilon = 1e-6);
@@ -133,7 +135,9 @@ fn test_tanh_vjp_non_unit_upstream() -> Result<(), GraphError> {
     tanh_node.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = tanh_node.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = tanh_node
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     // grad = upstream_grad * (1 - tanh²)
     assert_eq!(grad.shape(), &[2, 2]);
@@ -165,7 +169,9 @@ fn test_tanh_vjp_saturation() -> Result<(), GraphError> {
     tanh_node.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[1, 2]);
-    let grad = tanh_node.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = tanh_node
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-3);
     assert_abs_diff_eq!(grad[[0, 1]], 0.0, epsilon = 1e-3);

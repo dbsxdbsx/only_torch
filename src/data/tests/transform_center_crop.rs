@@ -73,7 +73,7 @@ fn test_center_crop_multi_channel() {
     let output = crop.apply(&input);
 
     assert_eq!(output.shape(), &[2, 1, 1]);
-    assert_abs_diff_eq!(output[[0, 0, 0]], 5.0, epsilon = 1e-6);  // 通道 0 中心
+    assert_abs_diff_eq!(output[[0, 0, 0]], 5.0, epsilon = 1e-6); // 通道 0 中心
     assert_abs_diff_eq!(output[[1, 0, 0]], 14.0, epsilon = 1e-6); // 通道 1 中心
 }
 

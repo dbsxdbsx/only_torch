@@ -63,7 +63,9 @@ fn test_square_vjp() -> Result<(), GraphError> {
     sq.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 2]);
-    let grad = sq.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = sq
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_abs_diff_eq!(grad[[0, 0]], 2.0, epsilon = 1e-6);
     assert_abs_diff_eq!(grad[[0, 1]], 4.0, epsilon = 1e-6);
@@ -101,7 +103,13 @@ fn test_square_cannot_set_value() {
 fn test_create_square_node() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
-    let input = inner.borrow_mut().create_basic_input_node(&[3, 4], Some("input")).unwrap();
-    let sq = inner.borrow_mut().create_square_node(input, Some("sq")).unwrap();
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 4], Some("input"))
+        .unwrap();
+    let sq = inner
+        .borrow_mut()
+        .create_square_node(input, Some("sq"))
+        .unwrap();
     assert_eq!(sq.shape(), vec![3, 4]);
 }

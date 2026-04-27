@@ -58,11 +58,14 @@ fn main() {
     println!("最终架构: {}", result.architecture());
 
     // 推理验证
-    let pred = result.predict(&Tensor::new(&[1.0, 0.0], &[2])).expect("推理失败");
+    let pred = result
+        .predict(&Tensor::new(&[1.0, 0.0], &[2]))
+        .expect("推理失败");
     println!("\nXOR(1,0) 预测: {:?}", pred.to_vec());
 
     // 可视化演化后的计算图
-    let vis = result.visualize("examples/evolution/xor/evolution_xor")
+    let vis = result
+        .visualize("examples/evolution/xor/evolution_xor")
         .expect("可视化失败");
     println!("计算图已保存: {}", vis.dot_path.display());
     if let Some(img) = &vis.image_path {
@@ -75,7 +78,9 @@ fn main() {
     println!("\n模型已保存: {model_path}.otm");
 
     let loaded = EvolutionResult::load(model_path).expect("加载模型失败");
-    let pred_loaded = loaded.predict(&Tensor::new(&[1.0, 0.0], &[2])).expect("推理失败");
+    let pred_loaded = loaded
+        .predict(&Tensor::new(&[1.0, 0.0], &[2]))
+        .expect("推理失败");
     println!("从磁盘加载后 XOR(1,0) 预测: {:?}", pred_loaded.to_vec());
 
     // 清理临时模型文件

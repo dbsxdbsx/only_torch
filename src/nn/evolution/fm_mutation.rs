@@ -37,7 +37,10 @@ use crate::nn::evolution::node_gene::NodeGene;
 fn has_fm_nodes(genome: &NetworkGenome) -> bool {
     genome.is_node_level()
         && genome.input_spatial.is_some()
-        && genome.nodes().iter().any(|n| n.enabled && n.fm_id.is_some())
+        && genome
+            .nodes()
+            .iter()
+            .any(|n| n.enabled && n.fm_id.is_some())
 }
 
 fn get_fm_analysis(genome: &NetworkGenome) -> FMSubgraphAnalysis {
@@ -111,9 +114,12 @@ impl Mutation for AddFeatureMapMutation {
         fm_node.fm_id = Some(new_fm_id);
 
         // 继承 src 侧已有边的结构参数（块内同构），找不到则用默认 3×3
-        let (ks1, stride1, _pad1, dil1, is_deconv1) =
-            query_block_conv_params(src_fm, &analysis, genome.nodes())
-                .unwrap_or((3, (1, 1), (1, 1), (1, 1), false));
+        let (ks1, stride1, _pad1, dil1, is_deconv1) = query_block_conv_params(
+            src_fm,
+            &analysis,
+            genome.nodes(),
+        )
+        .unwrap_or((3, (1, 1), (1, 1), (1, 1), false));
         let pad1 = (ks1 / 2, ks1 / 2);
 
         let edge_block_1 = genome_next_innovation(genome);
@@ -152,9 +158,12 @@ impl Mutation for AddFeatureMapMutation {
         fm_node.parents = vec![conv_1_id];
 
         // 继承 dst 侧已有边的结构参数
-        let (ks2, stride2, _pad2, dil2, is_deconv2) =
-            query_block_conv_params(dst_fm, &analysis, genome.nodes())
-                .unwrap_or((3, (1, 1), (1, 1), (1, 1), false));
+        let (ks2, stride2, _pad2, dil2, is_deconv2) = query_block_conv_params(
+            dst_fm,
+            &analysis,
+            genome.nodes(),
+        )
+        .unwrap_or((3, (1, 1), (1, 1), (1, 1), false));
         let pad2 = (ks2 / 2, ks2 / 2);
 
         let edge_block_2 = genome_next_innovation(genome);
@@ -192,7 +201,10 @@ impl Mutation for AddFeatureMapMutation {
         // 在 dst FM 的聚合中添加 conv_2 作为额外输入
         let nodes = genome.nodes_mut();
         let dst_output_id = dst_info.output_node_id;
-        if let Some(dst_node) = nodes.iter_mut().find(|n| n.innovation_number == dst_output_id) {
+        if let Some(dst_node) = nodes
+            .iter_mut()
+            .find(|n| n.innovation_number == dst_output_id)
+        {
             if matches!(dst_node.node_type, NodeTypeDescriptor::Add) {
                 // 需要创建新的 Add 来包含 conv_2 和原 dst 输出
                 // 简单做法：让 conv_2 作为额外 parent 添加到 dst 的 parents
@@ -299,9 +311,7 @@ impl Mutation for RemoveFeatureMapMutation {
             .collect();
 
         if removable.is_empty() {
-            return Err(MutationError::NotApplicable(
-                "没有可移除的隐藏 FM".into(),
-            ));
+            return Err(MutationError::NotApplicable("没有可移除的隐藏 FM".into()));
         }
 
         let target_fm = removable[rng.gen_range(0..removable.len())];
@@ -322,9 +332,7 @@ impl Mutation for RemoveFeatureMapMutation {
         let edge_node_ids: Vec<u64> = nodes
             .iter()
             .filter(|n| {
-                n.enabled
-                    && n.fm_id.is_none()
-                    && n.parents.iter().any(|p| target_set.contains(p))
+                n.enabled && n.fm_id.is_none() && n.parents.iter().any(|p| target_set.contains(p))
             })
             .map(|n| n.innovation_number)
             .collect();
@@ -400,9 +408,7 @@ impl Mutation for AddFMEdgeMutation {
         let analysis = get_fm_analysis(genome);
         let pairs = find_connectable_pairs(&analysis);
         if pairs.is_empty() {
-            return Err(MutationError::NotApplicable(
-                "没有可添加边的 FM 对".into(),
-            ));
+            return Err(MutationError::NotApplicable("没有可添加边的 FM 对".into()));
         }
 
         let &(src_fm, dst_fm) = &pairs[rng.gen_range(0..pairs.len())];
@@ -410,9 +416,12 @@ impl Mutation for AddFMEdgeMutation {
         let dst_info = &analysis.fm_nodes[&dst_fm];
 
         // 继承目标 FM 所在 block 已有边的结构参数（块内同构）
-        let (ks, stride, _pad, dil, is_deconv) =
-            query_block_conv_params(dst_fm, &analysis, genome.nodes())
-                .unwrap_or((3, (1, 1), (1, 1), (1, 1), false));
+        let (ks, stride, _pad, dil, is_deconv) = query_block_conv_params(
+            dst_fm,
+            &analysis,
+            genome.nodes(),
+        )
+        .unwrap_or((3, (1, 1), (1, 1), (1, 1), false));
         let pad = (ks / 2, ks / 2);
 
         let edge_block = genome_next_innovation(genome);
@@ -479,7 +488,6 @@ impl Mutation for AddFMEdgeMutation {
         Ok(())
     }
 }
-
 
 // ==================== 4. RemoveFMEdge ====================
 
@@ -610,18 +618,20 @@ impl Mutation for SplitFMEdgeMutation {
 
         // 继承被分裂边的结构参数（块内同构）
         let (orig_ks, orig_stride, _orig_pad, orig_dil, orig_is_deconv) = {
-            let node_map: std::collections::HashMap<u64, &NodeGene> = genome.nodes()
+            let node_map: std::collections::HashMap<u64, &NodeGene> = genome
+                .nodes()
                 .iter()
                 .filter(|n| n.enabled)
                 .map(|n| (n.innovation_number, n))
                 .collect();
-            let ks = edge.kernel_node_id
+            let ks = edge
+                .kernel_node_id
                 .and_then(|kid| node_map.get(&kid).map(|k| k.output_shape[2]))
                 .unwrap_or(3);
             match &edge.edge_type {
-                crate::nn::evolution::fm_ops::FMEdgeType::Conv2d { stride, dilation, .. } => {
-                    (ks, *stride, (ks / 2, ks / 2), *dilation, false)
-                }
+                crate::nn::evolution::fm_ops::FMEdgeType::Conv2d {
+                    stride, dilation, ..
+                } => (ks, *stride, (ks / 2, ks / 2), *dilation, false),
                 crate::nn::evolution::fm_ops::FMEdgeType::ConvTranspose2d { stride, .. } => {
                     (ks, *stride, (ks / 2, ks / 2), (1, 1), true)
                 }
@@ -665,9 +675,12 @@ impl Mutation for SplitFMEdgeMutation {
         fm_node.parents = vec![c_a];
 
         // 边 B: new FM → dst（继承 dst 侧的参数以保持块内同构）
-        let (ks_b, stride_b, _pad_b, dil_b, is_deconv_b) =
-            query_block_conv_params(edge.dst_fm_id, &analysis, genome.nodes())
-                .unwrap_or((orig_ks, orig_stride, p, orig_dil, orig_is_deconv));
+        let (ks_b, stride_b, _pad_b, dil_b, is_deconv_b) = query_block_conv_params(
+            edge.dst_fm_id,
+            &analysis,
+            genome.nodes(),
+        )
+        .unwrap_or((orig_ks, orig_stride, p, orig_dil, orig_is_deconv));
         let p_b = (ks_b / 2, ks_b / 2);
 
         let block_b = genome_next_innovation(genome);
@@ -766,8 +779,7 @@ impl Mutation for ChangeFMEdgeTypeMutation {
         let edge = conv_edges[rng.gen_range(0..conv_edges.len())];
         // per-block：找到同一 FM block 的所有边
         let block_op_ids = find_block_edge_op_ids(edge, &analysis, genome.nodes());
-        let block_op_set: std::collections::HashSet<u64> =
-            block_op_ids.iter().copied().collect();
+        let block_op_set: std::collections::HashSet<u64> = block_op_ids.iter().copied().collect();
 
         let nodes = genome.nodes_mut();
         for conv_node in nodes
@@ -776,9 +788,7 @@ impl Mutation for ChangeFMEdgeTypeMutation {
         {
             match &conv_node.node_type {
                 NodeTypeDescriptor::Conv2d {
-                    stride,
-                    padding,
-                    ..
+                    stride, padding, ..
                 } => {
                     let s = *stride;
                     let p = *padding;
@@ -789,9 +799,7 @@ impl Mutation for ChangeFMEdgeTypeMutation {
                     };
                 }
                 NodeTypeDescriptor::ConvTranspose2d {
-                    stride,
-                    padding,
-                    ..
+                    stride, padding, ..
                 } => {
                     let s = *stride;
                     let p = *padding;
@@ -840,9 +848,7 @@ impl Mutation for MutateFMEdgeKernelSizeMutation {
             .collect();
 
         if conv_edges.is_empty() {
-            return Err(MutationError::NotApplicable(
-                "没有可变的 kernel 边".into(),
-            ));
+            return Err(MutationError::NotApplicable("没有可变的 kernel 边".into()));
         }
 
         let edge = conv_edges[rng.gen_range(0..conv_edges.len())];
@@ -852,8 +858,7 @@ impl Mutation for MutateFMEdgeKernelSizeMutation {
         // per-block：找到同一 FM block 的所有 kernel 和 op 节点
         let block_kernel_ids = find_block_kernel_ids(edge, &analysis, genome.nodes());
         let block_op_ids = find_block_edge_op_ids(edge, &analysis, genome.nodes());
-        let kernel_set: std::collections::HashSet<u64> =
-            block_kernel_ids.iter().copied().collect();
+        let kernel_set: std::collections::HashSet<u64> = block_kernel_ids.iter().copied().collect();
         let op_set: std::collections::HashSet<u64> = block_op_ids.iter().copied().collect();
 
         let nodes = genome.nodes_mut();
@@ -920,23 +925,20 @@ impl Mutation for MutateFMEdgeStrideMutation {
         let op_set: std::collections::HashSet<u64> = block_op_ids.iter().copied().collect();
 
         // 根据目标边的当前 stride 决定新 stride
-        let new_stride = {
-            let target_node = genome
-                .nodes()
-                .iter()
-                .find(|n| n.innovation_number == edge.op_node_id);
-            match target_node.map(|n| &n.node_type) {
-                Some(NodeTypeDescriptor::Conv2d { stride, .. })
-                | Some(NodeTypeDescriptor::ConvTranspose2d { stride, .. }) => {
-                    if *stride == (1, 1) {
-                        (2, 2)
-                    } else {
-                        (1, 1)
+        let new_stride =
+            {
+                let target_node = genome
+                    .nodes()
+                    .iter()
+                    .find(|n| n.innovation_number == edge.op_node_id);
+                match target_node.map(|n| &n.node_type) {
+                    Some(NodeTypeDescriptor::Conv2d { stride, .. })
+                    | Some(NodeTypeDescriptor::ConvTranspose2d { stride, .. }) => {
+                        if *stride == (1, 1) { (2, 2) } else { (1, 1) }
                     }
+                    _ => (1, 1),
                 }
-                _ => (1, 1),
-            }
-        };
+            };
 
         let nodes = genome.nodes_mut();
         for conv_node in nodes
@@ -999,9 +1001,7 @@ impl Mutation for MutateFMEdgeDilationMutation {
             .collect();
 
         if conv_edges.is_empty() {
-            return Err(MutationError::NotApplicable(
-                "没有 Conv2d FM 边".into(),
-            ));
+            return Err(MutationError::NotApplicable("没有 Conv2d FM 边".into()));
         }
 
         let edge = conv_edges[rng.gen_range(0..conv_edges.len())];
@@ -1066,9 +1066,7 @@ impl Mutation for ChangeFeatureMapSizeMutation {
         let new_w = (info.spatial_size.1 as i32 + delta_w).max(1) as usize;
 
         if new_h == info.spatial_size.0 && new_w == info.spatial_size.1 {
-            return Err(MutationError::NotApplicable(
-                "尺寸未变化".into(),
-            ));
+            return Err(MutationError::NotApplicable("尺寸未变化".into()));
         }
 
         // 更新该 FM 的所有节点的 output_shape

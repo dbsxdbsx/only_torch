@@ -326,10 +326,7 @@ fn test_batch_norm_op_running_stats_persist_across_forwards() {
             .unwrap();
         let bn = inner
             .borrow_mut()
-            .create_batch_norm_op_node(
-                x.clone(), 1e-5, 0.1,
-                Rc::clone(&rm), Rc::clone(&rv), None,
-            )
+            .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, Rc::clone(&rm), Rc::clone(&rv), None)
             .unwrap();
 
         #[rustfmt::skip]
@@ -367,8 +364,12 @@ fn test_batch_norm_op_running_stats_persist_across_forwards() {
     let bn_eval = inner
         .borrow_mut()
         .create_batch_norm_op_node(
-            x_eval.clone(), 1e-5, 0.1,
-            Rc::clone(&rm), Rc::clone(&rv), None,
+            x_eval.clone(),
+            1e-5,
+            0.1,
+            Rc::clone(&rm),
+            Rc::clone(&rv),
+            None,
         )
         .unwrap();
 
@@ -387,5 +388,8 @@ fn test_batch_norm_op_running_stats_persist_across_forwards() {
 
     // eval 模式应产生非零输出（使用积累的 running stats）
     let sum: f32 = eval_output.data_as_slice().iter().map(|v| v.abs()).sum();
-    assert!(sum > 0.1, "eval 模式应使用积累的 running stats 产生非零输出");
+    assert!(
+        sum > 0.1,
+        "eval 模式应使用积累的 running stats 产生非零输出"
+    );
 }

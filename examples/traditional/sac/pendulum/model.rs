@@ -75,7 +75,6 @@ impl SacActor {
         let dist = TanhNormal::new(mean, std);
         Ok(dist.rsample_and_log_prob())
     }
-
 }
 
 impl Module for SacActor {
@@ -197,10 +196,18 @@ impl SacAgent {
             critic1: SacCritic::new(graph, obs_dim, action_dim, hidden_dim, "Critic1")?,
             critic2: SacCritic::new(graph, obs_dim, action_dim, hidden_dim, "Critic2")?,
             target_critic1: SacCritic::new(
-                graph, obs_dim, action_dim, hidden_dim, "TargetCritic1",
+                graph,
+                obs_dim,
+                action_dim,
+                hidden_dim,
+                "TargetCritic1",
             )?,
             target_critic2: SacCritic::new(
-                graph, obs_dim, action_dim, hidden_dim, "TargetCritic2",
+                graph,
+                obs_dim,
+                action_dim,
+                hidden_dim,
+                "TargetCritic2",
             )?,
 
             log_alpha: 0.0,

@@ -133,8 +133,8 @@ fn main() -> Result<(), GraphError> {
 
     // 保存可视化（从 Var 遍历计算图）
     if let Some(loss) = &last_loss {
-        let vis_result =
-            loss.save_visualization("examples/traditional/parity_rnn_fixed_len/parity_rnn_fixed_len")?;
+        let vis_result = loss
+            .save_visualization("examples/traditional/parity_rnn_fixed_len/parity_rnn_fixed_len")?;
         println!("\n计算图已保存: {}", vis_result.dot_path.display());
         if let Some(img_path) = &vis_result.image_path {
             println!("可视化图像: {}", img_path.display());

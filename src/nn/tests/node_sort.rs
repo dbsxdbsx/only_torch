@@ -13,9 +13,7 @@
  * Python 对照脚本: tests/python/calc_jacobi_by_pytorch/node_sort.py
  */
 
-use crate::nn::{
-    Graph, GraphError, Init, VarLossOps, VarReduceOps, VarSelectionOps, VarShapeOps,
-};
+use crate::nn::{Graph, GraphError, Init, VarLossOps, VarReduceOps, VarSelectionOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
 
@@ -138,7 +136,9 @@ fn test_sort_error_axis_out_of_bounds() {
 fn test_sort_cannot_set_value() {
     let graph = Graph::new();
 
-    let x = graph.input(&Tensor::new(&[3.0, 1.0, 2.0], &[1, 3])).unwrap();
+    let x = graph
+        .input(&Tensor::new(&[3.0, 1.0, 2.0], &[1, 3]))
+        .unwrap();
     let sorted = x.sort_values(1, false).unwrap();
 
     let err = sorted.set_value(&Tensor::zeros(&[1, 3]));
@@ -174,7 +174,9 @@ fn test_sort_vjp_inverse_permutation() -> Result<(), GraphError> {
 
     // upstream = [10, 20, 30]
     let upstream = Tensor::new(&[10.0, 20.0, 30.0], &[1, 3]);
-    let grad = sorted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = sorted
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 3]);
 
@@ -218,15 +220,14 @@ fn test_sort_vjp_2d_non_unit() -> Result<(), GraphError> {
         .unwrap();
 
     input
-        .set_value(Some(&Tensor::new(
-            &[5.0, 3.0, 4.0, 2.0, 6.0, 1.0],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[5.0, 3.0, 4.0, 2.0, 6.0, 1.0], &[2, 3])))
         .unwrap();
     sorted.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
-    let grad = sorted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = sorted
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 3]);
 
@@ -320,11 +321,7 @@ fn test_sort_gradient_accumulation() {
     // 由于升序和降序排序后的 sum 结果相同（元素总和不变），
     // 但梯度逆置换不同，最终的累积梯度每个位置应都有值
     for i in 0..3 {
-        assert!(
-            input_grad[[0, i]].abs() > 1e-10,
-            "位置 {} 的梯度应非零",
-            i
-        );
+        assert!(input_grad[[0, i]].abs() > 1e-10, "位置 {} 的梯度应非零", i);
     }
 }
 

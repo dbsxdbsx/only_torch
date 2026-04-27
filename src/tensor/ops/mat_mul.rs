@@ -1,4 +1,4 @@
-use crate::tensor::{next_source_id, Tensor};
+use crate::tensor::{Tensor, next_source_id};
 
 impl Tensor {
     /// 实现矩阵乘法(`mat_mul`这个名称参考了python的`numpy`库)。

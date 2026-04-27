@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-use super::{next_source_id, Tensor};
+use super::{Tensor, next_source_id};
 use ndarray::{Array, AxisDescription, IxDyn, Slice};
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓index特性↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/

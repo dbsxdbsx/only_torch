@@ -1,7 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -33,9 +33,15 @@ pub(crate) struct Narrow {
 }
 
 impl Narrow {
-    pub(crate) const fn axis(&self) -> usize { self.axis }
-    pub(crate) const fn start(&self) -> usize { self.start }
-    pub(crate) const fn length(&self) -> usize { self.length }
+    pub(crate) const fn axis(&self) -> usize {
+        self.axis
+    }
+    pub(crate) const fn start(&self) -> usize {
+        self.start
+    }
+    pub(crate) const fn length(&self) -> usize {
+        self.length
+    }
 
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
@@ -92,13 +98,27 @@ impl Narrow {
 }
 
 impl TraitNode for Narrow {
-    fn id(&self) -> NodeId { self.id.unwrap() }
-    fn set_id(&mut self, id: NodeId) { self.id = Some(id); }
-    fn name(&self) -> &str { self.name.as_ref().unwrap() }
-    fn set_name(&mut self, name: &str) { self.name = Some(name.to_string()); }
-    fn value_expected_shape(&self) -> &[usize] { &self.fixed_shape }
-    fn dynamic_expected_shape(&self) -> DynamicShape { self.dynamic_shape.clone() }
-    fn supports_dynamic_batch(&self) -> bool { self.supports_dynamic }
+    fn id(&self) -> NodeId {
+        self.id.unwrap()
+    }
+    fn set_id(&mut self, id: NodeId) {
+        self.id = Some(id);
+    }
+    fn name(&self) -> &str {
+        self.name.as_ref().unwrap()
+    }
+    fn set_name(&mut self, name: &str) {
+        self.name = Some(name.to_string());
+    }
+    fn value_expected_shape(&self) -> &[usize] {
+        &self.fixed_shape
+    }
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
+    }
 
     fn dedup_fingerprint(&self) -> Option<u64> {
         // 用 axis + start + length 组合生成指纹
@@ -110,7 +130,9 @@ impl TraitNode for Narrow {
         Ok(())
     }
 
-    fn value(&self) -> Option<&Tensor> { self.value.as_ref() }
+    fn value(&self) -> Option<&Tensor> {
+        self.value.as_ref()
+    }
 
     fn calc_grad_to_parent(
         &self,
@@ -125,7 +147,9 @@ impl TraitNode for Narrow {
         Ok(GradResult::Computed(grad))
     }
 
-    fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
     fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
         self.grad = grad.cloned();
         Ok(())
@@ -134,6 +158,11 @@ impl TraitNode for Narrow {
     fn grad_mut(&mut self) -> Option<&mut Tensor> {
         self.grad.as_mut()
     }
-    fn clear_value(&mut self) -> Result<(), GraphError> { self.value = None; Ok(()) }
-    fn set_value_unchecked(&mut self, value: Option<&Tensor>) { self.value = value.cloned(); }
+    fn clear_value(&mut self) -> Result<(), GraphError> {
+        self.value = None;
+        Ok(())
+    }
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
+    }
 }

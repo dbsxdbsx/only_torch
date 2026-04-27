@@ -238,11 +238,7 @@ impl GraphInner {
 
     /// 注册循环层折叠渲染元信息（仅保留折叠所需的最小信息）
     pub fn register_recurrent_folding_meta(&mut self, name: &str, nodes_per_step: usize) {
-        if self
-            .recurrent_folding_metas
-            .iter()
-            .any(|m| m.name == name)
-        {
+        if self.recurrent_folding_metas.iter().any(|m| m.name == name) {
             return;
         }
         self.recurrent_folding_metas.push(RecurrentFoldingMeta {
@@ -253,11 +249,7 @@ impl GraphInner {
     }
 
     /// 追加循环层折叠渲染的展开信息
-    pub fn update_recurrent_folding_info(
-        &mut self,
-        name: &str,
-        unroll_info: RecurrentUnrollInfo,
-    ) {
+    pub fn update_recurrent_folding_info(&mut self, name: &str, unroll_info: RecurrentUnrollInfo) {
         if let Some(meta) = self
             .recurrent_folding_metas
             .iter_mut()

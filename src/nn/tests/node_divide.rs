@@ -113,7 +113,9 @@ fn test_divide_vjp_to_left() -> Result<(), GraphError> {
     result.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = result.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = result
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     // grad_to_left = upstream / right = ones / [2,3,4,5] = [0.5, 0.333, 0.25, 0.2]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -153,7 +155,9 @@ fn test_divide_vjp_to_right() -> Result<(), GraphError> {
     result.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = result.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = result
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     // grad_to_right = -upstream * left / right²
     //               = -1 * [4,6,8,10] / [4,9,16,25]
@@ -194,7 +198,9 @@ fn test_divide_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
     let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
     // grad_to_left = upstream / right = [1,2,3,4] / [2,3,4,5] = [0.5, 0.667, 0.75, 0.8]
-    let grad_to_left = result.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_left = result
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
     let expected_left = Tensor::new(&[0.5, 2.0 / 3.0, 0.75, 0.8], &[2, 2]);
     assert_abs_diff_eq!(grad_to_left, expected_left, epsilon = 1e-6);
 
@@ -202,7 +208,9 @@ fn test_divide_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
     //               = -[1,2,3,4] * [4,6,8,10] / [4,9,16,25]
     //               = -[4,12,24,40] / [4,9,16,25]
     //               = [-1, -4/3, -3/2, -8/5]
-    let grad_to_right = result.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_right = result
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     let expected_right = Tensor::new(&[-1.0, -4.0 / 3.0, -1.5, -1.6], &[2, 2]);
     assert_abs_diff_eq!(grad_to_right, expected_right, epsilon = 1e-6);
 
@@ -243,7 +251,9 @@ fn test_divide_vjp_with_negative_values() -> Result<(), GraphError> {
 
     // grad_to_left = upstream / right = [1,-1,2,-2] / [2,-3,4,-5]
     //             = [0.5, 1/3, 0.5, 0.4]
-    let grad_to_left = result.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_left = result
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
     let expected_left = Tensor::new(&[0.5, 1.0 / 3.0, 0.5, 0.4], &[2, 2]);
     assert_abs_diff_eq!(grad_to_left, expected_left, epsilon = 1e-6);
 
@@ -252,7 +262,9 @@ fn test_divide_vjp_with_negative_values() -> Result<(), GraphError> {
     //               = -[-4,-6,-16,-20] / [4,9,16,25]
     //               = [4,6,16,20] / [4,9,16,25]
     //               = [1, 2/3, 1, 4/5]
-    let grad_to_right = result.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_right = result
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     let expected_right = Tensor::new(&[1.0, 2.0 / 3.0, 1.0, 4.0 / 5.0], &[2, 2]);
     assert_abs_diff_eq!(grad_to_right, expected_right, epsilon = 1e-6);
 
@@ -329,7 +341,9 @@ fn test_divide_broadcast_vjp() -> Result<(), GraphError> {
 
     // 对 matrix [2,3] 的梯度：upstream / scale（广播后）
     // upstream / [[2,3,4],[2,3,4]] = [[0.5,0.333,0.25],[0.5,0.333,0.25]]
-    let grad_to_matrix = result.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_matrix = result
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
     let expected_matrix_grad = Tensor::new(&[0.5, 1.0 / 3.0, 0.25, 0.5, 1.0 / 3.0, 0.25], &[2, 3]);
     assert_abs_diff_eq!(grad_to_matrix, expected_matrix_grad, epsilon = 1e-6);
@@ -338,7 +352,9 @@ fn test_divide_broadcast_vjp() -> Result<(), GraphError> {
     // -[[1,1,1],[1,1,1]] * [[2,6,12],[4,9,16]] / [[4,9,16],[4,9,16]]
     // = [[-0.5,-0.667,-0.75],[-1,-1,-1]]
     // sum(axis=0) = [[-1.5,-1.667,-1.75]]
-    let grad_to_scale = result.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_scale = result
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(grad_to_scale.shape(), &[1, 3]);
     let expected_scale_grad = Tensor::new(&[-1.5, -5.0 / 3.0, -1.75], &[1, 3]);
     assert_abs_diff_eq!(grad_to_scale, expected_scale_grad, epsilon = 1e-6);
@@ -386,7 +402,9 @@ fn test_divide_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     // = -[[1,4,9],[16,25,36]] / [[1,4,9],[1,4,9]]
     // = [[-1,-1,-1],[-16,-6.25,-4]]
     // sum = [[-17,-7.25,-5]]
-    let grad_to_scale = result.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_scale = result
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(grad_to_scale.shape(), &[1, 3]);
     let expected = Tensor::new(&[-17., -7.25, -5.], &[1, 3]);
     assert_abs_diff_eq!(grad_to_scale, expected, epsilon = 1e-6);

@@ -95,8 +95,8 @@ pub fn onnx_op_to_descriptors(
             Ok(vec![NodeTypeDescriptor::Mean { axis }])
         }
         OpType::ReduceMax => {
-            let axis = find_attr_int(attrs, "axes")
-                .ok_or_else(|| OnnxError::UnsupportedAttribute {
+            let axis =
+                find_attr_int(attrs, "axes").ok_or_else(|| OnnxError::UnsupportedAttribute {
                     op_type: "ReduceMax".to_string(),
                     attribute: "axes".to_string(),
                     reason: "需要指定 axis".to_string(),
@@ -106,8 +106,8 @@ pub fn onnx_op_to_descriptors(
             }])
         }
         OpType::ReduceMin => {
-            let axis = find_attr_int(attrs, "axes")
-                .ok_or_else(|| OnnxError::UnsupportedAttribute {
+            let axis =
+                find_attr_int(attrs, "axes").ok_or_else(|| OnnxError::UnsupportedAttribute {
                     op_type: "ReduceMin".to_string(),
                     attribute: "axes".to_string(),
                     reason: "需要指定 axis".to_string(),
@@ -204,7 +204,11 @@ pub fn onnx_op_to_descriptors(
             } else {
                 (1, 1)
             };
-            Ok(vec![NodeTypeDescriptor::Conv2d { stride, padding, dilation }])
+            Ok(vec![NodeTypeDescriptor::Conv2d {
+                stride,
+                padding,
+                dilation,
+            }])
         }
 
         // ─── 转置卷积 ───
@@ -220,11 +224,18 @@ pub fn onnx_op_to_descriptors(
             };
             let padding = parse_symmetric_2d_pads(&pads, "ConvTranspose", node_name)?;
             let output_padding = if output_padding_vals.len() >= 2 {
-                (output_padding_vals[0] as usize, output_padding_vals[1] as usize)
+                (
+                    output_padding_vals[0] as usize,
+                    output_padding_vals[1] as usize,
+                )
             } else {
                 (0, 0)
             };
-            Ok(vec![NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding }])
+            Ok(vec![NodeTypeDescriptor::ConvTranspose2d {
+                stride,
+                padding,
+                output_padding,
+            }])
         }
 
         // ─── 池化 ───
@@ -272,7 +283,10 @@ pub fn onnx_op_to_descriptors(
             } else {
                 kernel_size
             };
-            Ok(vec![NodeTypeDescriptor::AvgPool2d { kernel_size, stride }])
+            Ok(vec![NodeTypeDescriptor::AvgPool2d {
+                kernel_size,
+                stride,
+            }])
         }
 
         // ─── 上采样（YOLO PAN/FPN 颈部用）───
@@ -291,11 +305,12 @@ pub fn onnx_op_to_descriptors(
             // 校验 mode 必须是 nearest（属性 mode 是 string 类型，存在 attr.s 里）
             let mode_attr = attrs.iter().find(|a| a.name == "mode");
             if let Some(attr) = mode_attr {
-                let mode_str = std::str::from_utf8(attr.s).map_err(|_| OnnxError::UnsupportedAttribute {
-                    op_type: "Resize".to_string(),
-                    attribute: "mode".to_string(),
-                    reason: "mode 属性不是有效 UTF-8".to_string(),
-                })?;
+                let mode_str =
+                    std::str::from_utf8(attr.s).map_err(|_| OnnxError::UnsupportedAttribute {
+                        op_type: "Resize".to_string(),
+                        attribute: "mode".to_string(),
+                        reason: "mode 属性不是有效 UTF-8".to_string(),
+                    })?;
                 if mode_str != "nearest" {
                     return Err(OnnxError::UnsupportedAttribute {
                         op_type: format!("{op_type:?}"),
@@ -550,7 +565,11 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         }),
 
         // ─── 卷积 / 池化 ───
-        NodeTypeDescriptor::Conv2d { stride, padding, dilation } => {
+        NodeTypeDescriptor::Conv2d {
+            stride,
+            padding,
+            dilation,
+        } => {
             let mut attrs = vec![
                 ("strides", vec![stride.0 as i64, stride.1 as i64]),
                 (
@@ -573,7 +592,11 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                 int_list_attrs: attrs,
             })
         }
-        NodeTypeDescriptor::ConvTranspose2d { stride, padding, output_padding } => {
+        NodeTypeDescriptor::ConvTranspose2d {
+            stride,
+            padding,
+            output_padding,
+        } => {
             let mut attrs = vec![
                 ("strides", vec![stride.0 as i64, stride.1 as i64]),
                 (
@@ -587,7 +610,10 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                 ),
             ];
             if *output_padding != (0, 0) {
-                attrs.push(("output_padding", vec![output_padding.0 as i64, output_padding.1 as i64]));
+                attrs.push((
+                    "output_padding",
+                    vec![output_padding.0 as i64, output_padding.1 as i64],
+                ));
             }
             ExportCategory::Operator(OnnxExportOp {
                 op_type: "ConvTranspose",
@@ -615,7 +641,11 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                 let (p_h, p_w) = (padding.0 as i64, padding.1 as i64);
                 int_list_attrs.push(("pads", vec![p_h, p_w, p_h, p_w]));
             }
-            let int_attrs = if *ceil_mode { vec![("ceil_mode", 1i64)] } else { vec![] };
+            let int_attrs = if *ceil_mode {
+                vec![("ceil_mode", 1i64)]
+            } else {
+                vec![]
+            };
             ExportCategory::Operator(OnnxExportOp {
                 op_type: "MaxPool",
                 float_attrs: vec![],
@@ -623,20 +653,21 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                 int_list_attrs,
             })
         }
-        NodeTypeDescriptor::AvgPool2d { kernel_size, stride } => {
-            ExportCategory::Operator(OnnxExportOp {
-                op_type: "AveragePool",
-                float_attrs: vec![],
-                int_attrs: vec![],
-                int_list_attrs: vec![
-                    (
-                        "kernel_shape",
-                        vec![kernel_size.0 as i64, kernel_size.1 as i64],
-                    ),
-                    ("strides", vec![stride.0 as i64, stride.1 as i64]),
-                ],
-            })
-        }
+        NodeTypeDescriptor::AvgPool2d {
+            kernel_size,
+            stride,
+        } => ExportCategory::Operator(OnnxExportOp {
+            op_type: "AveragePool",
+            float_attrs: vec![],
+            int_attrs: vec![],
+            int_list_attrs: vec![
+                (
+                    "kernel_shape",
+                    vec![kernel_size.0 as i64, kernel_size.1 as i64],
+                ),
+                ("strides", vec![stride.0 as i64, stride.1 as i64]),
+            ],
+        }),
 
         // 上采样：导出为 ONNX Resize（opset 13 nearest）
         // 注意：完整 Resize 算子需要 string 属性 mode="nearest" 和 input "scales"，
@@ -694,9 +725,7 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         | NodeTypeDescriptor::TopK { .. }
         | NodeTypeDescriptor::SortNode { .. }
         | NodeTypeDescriptor::LayerNormOp { .. }
-        | NodeTypeDescriptor::RMSNormOp { .. } => {
-            ExportCategory::Unsupported(format!("{desc:?}"))
-        }
+        | NodeTypeDescriptor::RMSNormOp { .. } => ExportCategory::Unsupported(format!("{desc:?}")),
     }
 }
 
@@ -766,9 +795,7 @@ fn parse_symmetric_2d_pads(
         }
         n => Err(OnnxError::UnsupportedConvConfig {
             op_type: op_type.to_string(),
-            reason: format!(
-                "{op_type} 节点 \"{node_name}\" 的 pads 维度={n}（仅支持 0 或 4）"
-            ),
+            reason: format!("{op_type} 节点 \"{node_name}\" 的 pads 维度={n}（仅支持 0 或 4）"),
         }),
     }
 }
@@ -789,9 +816,7 @@ fn validate_conv_config(attrs: &[Attribute], node_name: &str) -> Result<(), Onnx
     if group != 1 {
         return Err(OnnxError::UnsupportedConvConfig {
             op_type: "Conv".to_string(),
-            reason: format!(
-                "不支持分组卷积 group={group} (节点: \"{node_name}\")"
-            ),
+            reason: format!("不支持分组卷积 group={group} (节点: \"{node_name}\")"),
         });
     }
     let dilations = find_attr_ints(attrs, "dilations");

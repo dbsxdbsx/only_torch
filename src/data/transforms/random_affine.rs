@@ -191,8 +191,10 @@ impl Transform for RandomAffine {
                     let in_y = inv10 * dx + inv11 * dy + cy;
 
                     // 边界检查 + 双线性插值
-                    if in_x >= -0.5 && in_x <= w as f64 - 0.5
-                        && in_y >= -0.5 && in_y <= h as f64 - 0.5
+                    if in_x >= -0.5
+                        && in_x <= w as f64 - 0.5
+                        && in_y >= -0.5
+                        && in_y <= h as f64 - 0.5
                     {
                         out[ch_offset + out_y * w + out_x] =
                             bilinear_sample(&flat, ch_offset, h, w, in_y, in_x);
@@ -223,8 +225,5 @@ fn bilinear_sample(flat: &[f32], ch_offset: usize, h: usize, w: usize, y: f64, x
     let v10 = flat[ch_offset + y1 * w + x0];
     let v11 = flat[ch_offset + y1 * w + x1];
 
-    v00 * (1.0 - dx) * (1.0 - dy)
-        + v01 * dx * (1.0 - dy)
-        + v10 * (1.0 - dx) * dy
-        + v11 * dx * dy
+    v00 * (1.0 - dx) * (1.0 - dy) + v01 * dx * (1.0 - dy) + v10 * (1.0 - dx) * dy + v11 * dx * dy
 }

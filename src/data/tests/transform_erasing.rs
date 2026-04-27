@@ -72,9 +72,7 @@ fn test_erasing_rectangular() {
         let flat = output.flatten_view();
 
         // 检查通道 0 中被擦除的位置
-        let erased_positions: Vec<usize> = (0..25)
-            .filter(|&i| flat[i] == -1.0)
-            .collect();
+        let erased_positions: Vec<usize> = (0..25).filter(|&i| flat[i] == -1.0).collect();
 
         if erased_positions.is_empty() {
             continue;
@@ -82,14 +80,8 @@ fn test_erasing_rectangular() {
 
         // 同样位置在其他通道也应被擦除
         for &pos in &erased_positions {
-            assert_eq!(
-                flat[25 + pos], -1.0,
-                "通道 1 相同位置应被擦除"
-            );
-            assert_eq!(
-                flat[50 + pos], -1.0,
-                "通道 2 相同位置应被擦除"
-            );
+            assert_eq!(flat[25 + pos], -1.0, "通道 1 相同位置应被擦除");
+            assert_eq!(flat[50 + pos], -1.0, "通道 2 相同位置应被擦除");
         }
         return; // 成功验证一次即可
     }

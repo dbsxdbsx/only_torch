@@ -242,13 +242,8 @@ impl Lstm {
             "LSTM: [?, {}] → [?, {}] (×{} steps)",
             self.input_size, self.hidden_size, seq_len
         );
-        let _guard = NodeGroupContext::for_recurrent(
-            x,
-            "LSTM",
-            self.instance_id,
-            &self.name,
-            &desc,
-        );
+        let _guard =
+            NodeGroupContext::for_recurrent(x, "LSTM", self.instance_id, &self.name, &desc);
         // 后补标签给所有参数节点
         _guard.tag_existing(&self.w_ii);
         _guard.tag_existing(&self.w_hi);
@@ -431,24 +426,38 @@ impl Lstm {
     /// parents 顺序：[w_ii, w_hi, b_i, w_if, w_hf, b_f, w_ig, w_hg, b_g, w_io, w_ho, b_o]
     #[allow(clippy::too_many_arguments)]
     pub fn from_vars(
-        w_ii: Var, w_hi: Var, b_i: Var,
-        w_if: Var, w_hf: Var, b_f: Var,
-        w_ig: Var, w_hg: Var, b_g: Var,
-        w_io: Var, w_ho: Var, b_o: Var,
+        w_ii: Var,
+        w_hi: Var,
+        b_i: Var,
+        w_if: Var,
+        w_hf: Var,
+        b_f: Var,
+        w_ig: Var,
+        w_hg: Var,
+        b_g: Var,
+        w_io: Var,
+        w_ho: Var,
+        b_o: Var,
         input_size: usize,
         hidden_size: usize,
     ) -> Self {
         let graph = w_ii.get_graph();
         let name = "lstm_rebuilt".to_string();
-        graph
-            .inner_mut()
-            .register_recurrent_folding_meta(&name, 26);
+        graph.inner_mut().register_recurrent_folding_meta(&name, 26);
         let instance_id = graph.inner_mut().next_node_group_instance_id();
         Self {
-            w_ii, w_hi, b_i,
-            w_if, w_hf, b_f,
-            w_ig, w_hg, b_g,
-            w_io, w_ho, b_o,
+            w_ii,
+            w_hi,
+            b_i,
+            w_if,
+            w_hf,
+            b_f,
+            w_ig,
+            w_hg,
+            b_g,
+            w_io,
+            w_ho,
+            b_o,
             graph,
             input_size,
             hidden_size,

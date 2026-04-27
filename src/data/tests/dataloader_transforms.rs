@@ -53,16 +53,12 @@ fn test_dataloader_with_transform() {
 #[test]
 fn test_dataloader_with_normalize() {
     // [N=4, C=1, H=1, W=2]
-    let features = Tensor::new(
-        &[0.0, 1.0, 0.5, 0.5, 1.0, 0.0, 0.25, 0.75],
-        &[4, 1, 1, 2],
-    );
+    let features = Tensor::new(&[0.0, 1.0, 0.5, 0.5, 1.0, 0.0, 0.25, 0.75], &[4, 1, 1, 2]);
     let labels = Tensor::new(&[0.0, 1.0, 2.0, 3.0], &[4, 1]);
     let dataset = TensorDataset::new(features, labels);
 
     // mean=0.5, std=0.5 → (x-0.5)/0.5
-    let loader = DataLoader::new(dataset, 2)
-        .with_transform(Normalize::new(vec![0.5], vec![0.5]));
+    let loader = DataLoader::new(dataset, 2).with_transform(Normalize::new(vec![0.5], vec![0.5]));
 
     let mut iter = loader.iter();
 

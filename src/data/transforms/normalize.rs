@@ -41,10 +41,7 @@ impl Normalize {
             std.len()
         );
         for (i, &s) in std.iter().enumerate() {
-            assert!(
-                s > 0.0,
-                "Normalize: std[{i}] 必须大于 0，得到 {s}"
-            );
+            assert!(s > 0.0, "Normalize: std[{i}] 必须大于 0，得到 {s}");
         }
         Self { mean, std }
     }

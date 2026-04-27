@@ -73,10 +73,8 @@ impl LayerNorm {
         };
 
         // gamma 初始化为 1，beta 初始化为 0
-        let gamma =
-            graph.parameter(&param_shape, Init::Ones, &format!("{name}_gamma"))?;
-        let beta =
-            graph.parameter(&param_shape, Init::Zeros, &format!("{name}_beta"))?;
+        let gamma = graph.parameter(&param_shape, Init::Ones, &format!("{name}_gamma"))?;
+        let beta = graph.parameter(&param_shape, Init::Zeros, &format!("{name}_beta"))?;
 
         let instance_id = graph.inner_mut().next_node_group_instance_id();
 

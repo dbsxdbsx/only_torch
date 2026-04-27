@@ -1,3 +1,4 @@
+mod asha;
 mod builder;
 mod cell_migration;
 mod convergence;
@@ -12,4 +13,3 @@ mod node_gene;
 mod proxy;
 mod selection;
 mod task;
-mod asha;

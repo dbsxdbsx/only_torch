@@ -4,8 +4,8 @@
  * @Description  : 张量的取反（Negate），对每个元素取反并返回新张量。
  */
 
-use crate::tensor::next_source_id;
 use crate::tensor::Tensor;
+use crate::tensor::next_source_id;
 use std::ops::Neg;
 
 /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓（不）带引用的张量取反↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/

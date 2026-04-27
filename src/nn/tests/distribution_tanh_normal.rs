@@ -49,17 +49,11 @@ fn test_tanh_normal_log_prob_standard() {
 fn test_tanh_normal_log_prob_general() {
     let graph = Graph::new();
 
-    let mean = graph
-        .input(&Tensor::new(&[0.0, 1.0], &[1, 2]))
-        .unwrap();
-    let std = graph
-        .input(&Tensor::new(&[1.0, 0.5], &[1, 2]))
-        .unwrap();
+    let mean = graph.input(&Tensor::new(&[0.0, 1.0], &[1, 2])).unwrap();
+    let std = graph.input(&Tensor::new(&[1.0, 0.5], &[1, 2])).unwrap();
     let dist = TanhNormal::new(mean, std);
 
-    let raw_action = graph
-        .input(&Tensor::new(&[0.5, -0.3], &[1, 2]))
-        .unwrap();
+    let raw_action = graph.input(&Tensor::new(&[0.5, -0.3], &[1, 2])).unwrap();
     let lp = dist.log_prob(&raw_action);
 
     lp.forward().unwrap();
@@ -146,12 +140,8 @@ fn test_tanh_normal_rsample_shape_and_range() {
 fn test_tanh_normal_rsample_and_log_prob() {
     let graph = Graph::new();
 
-    let mean = graph
-        .input(&Tensor::new(&[0.0, 1.0], &[1, 2]))
-        .unwrap();
-    let std = graph
-        .input(&Tensor::new(&[1.0, 0.5], &[1, 2]))
-        .unwrap();
+    let mean = graph.input(&Tensor::new(&[0.0, 1.0], &[1, 2])).unwrap();
+    let std = graph.input(&Tensor::new(&[1.0, 0.5], &[1, 2])).unwrap();
     let dist = TanhNormal::new(mean, std);
 
     let (action, log_prob) = dist.rsample_and_log_prob();
@@ -263,21 +253,14 @@ fn test_tanh_normal_sac_e2e() -> Result<(), GraphError> {
 #[test]
 fn test_tanh_normal_node_group_tagging() {
     let graph = Graph::new();
-    let mean = graph
-        .input(&Tensor::new(&[0.0, 1.0], &[1, 2]))
-        .unwrap();
-    let std = graph
-        .input(&Tensor::new(&[1.0, 0.5], &[1, 2]))
-        .unwrap();
+    let mean = graph.input(&Tensor::new(&[0.0, 1.0], &[1, 2])).unwrap();
+    let std = graph.input(&Tensor::new(&[1.0, 0.5], &[1, 2])).unwrap();
 
     let dist = TanhNormal::new(mean.clone(), std.clone());
 
     // rsample() 产生的节点应标记为 "TanhNormal"
     let (squashed, raw) = dist.rsample();
-    assert_eq!(
-        squashed.node_group_tag().unwrap().group_type,
-        "TanhNormal"
-    );
+    assert_eq!(squashed.node_group_tag().unwrap().group_type, "TanhNormal");
     assert_eq!(raw.node_group_tag().unwrap().group_type, "TanhNormal");
 
     // log_prob() 产生的节点应标记为 "TanhNormal"

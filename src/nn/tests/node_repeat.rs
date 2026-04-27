@@ -22,11 +22,8 @@ fn test_repeat_forward() {
         .create_repeat_node(x.clone(), vec![2, 3], Some("rep"))
         .unwrap();
 
-    x.set_value(Some(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    )))
-    .unwrap();
+    x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
+        .unwrap();
 
     rep.forward_recursive(1, true).unwrap();
     let val = rep.value().unwrap();

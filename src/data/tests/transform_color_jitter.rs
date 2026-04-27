@@ -14,10 +14,7 @@ fn test_color_jitter_no_change() {
         assert_eq!(output.shape(), &[3, 2, 2]);
         let flat = output.flatten_view();
         for &v in flat.iter() {
-            assert!(
-                (v - 0.5).abs() < 1e-5,
-                "参数为 0 时不应改变值，得到 {v}"
-            );
+            assert!((v - 0.5).abs() < 1e-5, "参数为 0 时不应改变值，得到 {v}");
         }
     }
 }
@@ -67,10 +64,7 @@ fn test_color_jitter_saturation_grayscale_input() {
         let output = jitter.apply(&input);
         let flat = output.flatten_view();
         for &v in flat.iter() {
-            assert!(
-                (v - 0.5).abs() < 1e-5,
-                "单通道饱和度不应改变值"
-            );
+            assert!((v - 0.5).abs() < 1e-5, "单通道饱和度不应改变值");
         }
     }
 }
@@ -86,10 +80,7 @@ fn test_color_jitter_output_clamped() {
         let output = jitter.apply(&input);
         let flat = output.flatten_view();
         for &v in flat.iter() {
-            assert!(
-                v >= 0.0 && v <= 1.0,
-                "输出应在 [0, 1] 范围内，得到 {v}"
-            );
+            assert!(v >= 0.0 && v <= 1.0, "输出应在 [0, 1] 范围内，得到 {v}");
         }
     }
 

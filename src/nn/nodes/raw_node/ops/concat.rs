@@ -1,7 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -78,9 +78,7 @@ impl Concat {
                     return Err(GraphError::ShapeMismatch {
                         expected: first_shape.to_vec(),
                         got: shape.to_vec(),
-                        message: format!(
-                            "Concat: 父节点 {i} 在维度 {d} 大小不一致"
-                        ),
+                        message: format!("Concat: 父节点 {i} 在维度 {d} 大小不一致"),
                     });
                 }
             }
@@ -118,7 +116,6 @@ impl Concat {
             supports_dynamic,
         })
     }
-
 }
 
 impl TraitNode for Concat {
@@ -176,7 +173,11 @@ impl TraitNode for Concat {
         let size = self.parent_sizes[idx];
 
         // concat 反向：按偏移分段提取梯度（使用 Tensor::narrow）
-        Ok(GradResult::Computed(upstream_grad.narrow(self.axis, start_offset, size)))
+        Ok(GradResult::Computed(upstream_grad.narrow(
+            self.axis,
+            start_offset,
+            size,
+        )))
     }
 
     fn grad(&self) -> Option<&Tensor> {

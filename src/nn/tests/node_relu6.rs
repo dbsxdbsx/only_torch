@@ -38,14 +38,23 @@ fn test_relu6_vjp() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let x = inner.borrow_mut().create_basic_input_node(&[2, 3], Some("x"))?;
-    let r6 = inner.borrow_mut().create_relu6_node(x.clone(), Some("relu6"))?;
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3], Some("x"))?;
+    let r6 = inner
+        .borrow_mut()
+        .create_relu6_node(x.clone(), Some("relu6"))?;
 
-    x.set_value(Some(&Tensor::new(&[-2.0, -1.0, 0.0, 3.0, 6.0, 7.0], &[2, 3])))?;
+    x.set_value(Some(&Tensor::new(
+        &[-2.0, -1.0, 0.0, 3.0, 6.0, 7.0],
+        &[2, 3],
+    )))?;
     r6.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 3]);
-    let grad = r6.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = r6
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // x=-2 → 0, x=-1 → 0, x=0 → 0, x=3 → 1, x=6 → 0, x=7 → 0
     assert_abs_diff_eq!(grad[[0, 0]], 0.0, epsilon = 1e-6);

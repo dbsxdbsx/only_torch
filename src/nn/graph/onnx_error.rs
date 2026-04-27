@@ -26,16 +26,10 @@ pub enum OnnxError {
     },
 
     /// 不支持的 ONNX 算子（未在映射表中）
-    UnsupportedOperator {
-        op_type: String,
-        node_name: String,
-    },
+    UnsupportedOperator { op_type: String, node_name: String },
 
     /// 不支持的数据类型（仅支持 float32）
-    UnsupportedDataType {
-        data_type: i32,
-        context: String,
-    },
+    UnsupportedDataType { data_type: i32, context: String },
 
     /// 不支持的属性值（如 Gemm 的 alpha ≠ 1）
     UnsupportedAttribute {
@@ -45,19 +39,13 @@ pub enum OnnxError {
     },
 
     /// 不支持的卷积/池化配置（如 group>1、dilation>1、3D 等）
-    UnsupportedConvConfig {
-        op_type: String,
-        reason: String,
-    },
+    UnsupportedConvConfig { op_type: String, reason: String },
 
     /// 图结构错误（缺少输入、环路等）
     InvalidGraph(String),
 
     /// 权重数据缺失或形状不匹配
-    WeightError {
-        tensor_name: String,
-        reason: String,
-    },
+    WeightError { tensor_name: String, reason: String },
 
     /// 导出时遇到训练专用节点（loss/target 在输出路径上）
     TrainingNodeInExportPath {
@@ -82,10 +70,7 @@ impl fmt::Display for OnnxError {
                 f,
                 "不支持的 ONNX opset 版本: {version}（支持范围: {min_supported}–{max_supported}）"
             ),
-            OnnxError::UnsupportedOperator {
-                op_type,
-                node_name,
-            } => write!(
+            OnnxError::UnsupportedOperator { op_type, node_name } => write!(
                 f,
                 "不支持的 ONNX 算子: op_type=\"{op_type}\"（节点: \"{node_name}\"）"
             ),
@@ -97,10 +82,7 @@ impl fmt::Display for OnnxError {
                 op_type,
                 attribute,
                 reason,
-            } => write!(
-                f,
-                "不支持的属性: {op_type}.{attribute} — {reason}"
-            ),
+            } => write!(f, "不支持的属性: {op_type}.{attribute} — {reason}"),
             OnnxError::UnsupportedConvConfig { op_type, reason } => {
                 write!(f, "不支持的卷积/池化配置: {op_type} — {reason}")
             }

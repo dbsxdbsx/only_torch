@@ -9,11 +9,11 @@
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-use crate::nn::evolution::cell_migration::{migrate_cell_weights, CellKind};
-use crate::nn::evolution::gene::*;
-use crate::nn::evolution::mutation::{Mutation, MutateCellTypeMutation, SizeConstraints};
 use crate::nn::descriptor::NodeTypeDescriptor as NT;
-use crate::nn::evolution::node_ops::{node_main_path, NodeBlockKind};
+use crate::nn::evolution::cell_migration::{CellKind, migrate_cell_weights};
+use crate::nn::evolution::gene::*;
+use crate::nn::evolution::mutation::{MutateCellTypeMutation, Mutation, SizeConstraints};
+use crate::nn::evolution::node_ops::{NodeBlockKind, node_main_path};
 use crate::tensor::Tensor;
 
 fn is_cell_node(n: &crate::nn::evolution::node_gene::NodeGene) -> bool {
@@ -117,8 +117,18 @@ fn test_rnn_to_gru_copies_rnn_into_n_and_saturates_r_z() {
         .expect("迁移应成功");
 
     // 门序 [r(0..3), z(3..6), n(6..9)]
-    assert!(out[&new_ids[2]].to_vec().iter().all(|&v| (v - 6.0).abs() < 1e-3)); // b_r ≈ +6
-    assert!(out[&new_ids[5]].to_vec().iter().all(|&v| (v + 6.0).abs() < 1e-3)); // b_z ≈ -6
+    assert!(
+        out[&new_ids[2]]
+            .to_vec()
+            .iter()
+            .all(|&v| (v - 6.0).abs() < 1e-3)
+    ); // b_r ≈ +6
+    assert!(
+        out[&new_ids[5]]
+            .to_vec()
+            .iter()
+            .all(|&v| (v + 6.0).abs() < 1e-3)
+    ); // b_z ≈ -6
 
     // n 门继承 RNN
     assert!((out[&new_ids[6]].to_vec()[0] - 0.9).abs() < 1e-6);
@@ -140,7 +150,12 @@ fn test_lstm_to_gru_remaps_f_to_z_and_g_to_n() {
         .expect("迁移应成功");
 
     // r 门应饱和为 1
-    assert!(out[&new_ids[2]].to_vec().iter().all(|&v| (v - 6.0).abs() < 1e-3));
+    assert!(
+        out[&new_ids[2]]
+            .to_vec()
+            .iter()
+            .all(|&v| (v - 6.0).abs() < 1e-3)
+    );
     // z 门 ← f 门 (2.0)
     assert!((out[&new_ids[3]].to_vec()[0] - 2.0).abs() < 1e-6);
     // n 门 ← g 门 (3.0)
@@ -160,13 +175,23 @@ fn test_gru_to_lstm_remaps_z_to_f_and_n_to_g() {
         .expect("迁移应成功");
 
     // i 门饱和为 1
-    assert!(out[&new_ids[2]].to_vec().iter().all(|&v| (v - 6.0).abs() < 1e-3));
+    assert!(
+        out[&new_ids[2]]
+            .to_vec()
+            .iter()
+            .all(|&v| (v - 6.0).abs() < 1e-3)
+    );
     // f 门 ← z 门 (2.0)
     assert!((out[&new_ids[3]].to_vec()[0] - 2.0).abs() < 1e-6);
     // g 门 ← n 门 (3.0)
     assert!((out[&new_ids[6]].to_vec()[0] - 3.0).abs() < 1e-6);
     // o 门饱和为 1
-    assert!(out[&new_ids[11]].to_vec().iter().all(|&v| (v - 6.0).abs() < 1e-3));
+    assert!(
+        out[&new_ids[11]]
+            .to_vec()
+            .iter()
+            .all(|&v| (v - 6.0).abs() < 1e-3)
+    );
 }
 
 #[test]
@@ -237,7 +262,9 @@ fn test_mutate_cell_type_rnn_to_lstm_migrates_weights_to_g_gate() {
         assert!(attempts < 64, "64 次尝试仍未切到 LSTM");
         let mut trial = genome.clone();
         let mut r = StdRng::seed_from_u64(attempts);
-        MutateCellTypeMutation.apply(&mut trial, &constraints, &mut r).unwrap();
+        MutateCellTypeMutation
+            .apply(&mut trial, &constraints, &mut r)
+            .unwrap();
         // 检查是否变成了 LSTM
         let new_blocks = node_main_path(&trial);
         if let Some(lstm_block) = new_blocks
@@ -255,7 +282,9 @@ fn test_mutate_cell_type_rnn_to_lstm_migrates_weights_to_g_gate() {
         let cell = genome
             .nodes()
             .iter()
-            .find(|n| target_lstm_cell_id.node_ids.contains(&n.innovation_number) && is_cell_node(n))
+            .find(|n| {
+                target_lstm_cell_id.node_ids.contains(&n.innovation_number) && is_cell_node(n)
+            })
             .unwrap();
         cell.parents.iter().skip(1).copied().collect()
     };
@@ -329,5 +358,4 @@ fn test_mutate_cell_type_preserves_shapes_after_rebuild() {
             assert_eq!(total, rebuilt.layer_params.len());
         }
     }
-
 }

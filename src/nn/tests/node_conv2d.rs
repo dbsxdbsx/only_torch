@@ -247,10 +247,13 @@ fn test_conv2d_channel_mismatch() {
         .create_parameter_node(&[2, 1, 3, 3], Some("kernel"))
         .unwrap();
 
-    let result =
-        inner
-            .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), Some("conv"));
+    let result = inner.borrow_mut().create_conv2d_node(
+        vec![input, kernel],
+        (1, 1),
+        (0, 0),
+        (1, 1),
+        Some("conv"),
+    );
     assert_err!(result, GraphError::ShapeMismatch { message, .. } if message.contains("通道数"));
 }
 
@@ -270,10 +273,13 @@ fn test_conv2d_invalid_input_dims() {
         .create_parameter_node(&[2, 1, 3, 3], Some("kernel"))
         .unwrap();
 
-    let result =
-        inner
-            .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), Some("conv"));
+    let result = inner.borrow_mut().create_conv2d_node(
+        vec![input, kernel],
+        (1, 1),
+        (0, 0),
+        (1, 1),
+        Some("conv"),
+    );
     assert_err!(result, GraphError::ShapeMismatch { message, .. }
         if message.contains("4D"));
 }
@@ -294,10 +300,13 @@ fn test_conv2d_invalid_kernel_dims() {
         .create_parameter_node(&[3, 3], Some("kernel"))
         .unwrap();
 
-    let result =
-        inner
-            .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), Some("conv"));
+    let result = inner.borrow_mut().create_conv2d_node(
+        vec![input, kernel],
+        (1, 1),
+        (0, 0),
+        (1, 1),
+        Some("conv"),
+    );
     assert_err!(result, GraphError::ShapeMismatch { message, .. }
         if message.contains("4D") || message.contains("C_out"));
 }
@@ -336,7 +345,9 @@ fn test_conv2d_vjp_to_input() -> Result<(), GraphError> {
 
     // upstream 形状 = conv 输出: [1, 1, 1, 1]
     let upstream = Tensor::ones(&[1, 1, 1, 1]);
-    let grad = conv.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = conv
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // grad 形状 = input 形状
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
@@ -381,7 +392,9 @@ fn test_conv2d_vjp_to_kernel() -> Result<(), GraphError> {
     conv.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[1, 1, 1, 1]);
-    let grad = conv.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
+    let grad = conv
+        .calc_grad_to_parent_index(1, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
 
@@ -430,7 +443,9 @@ fn test_conv2d_vjp_to_kernel_batch() -> Result<(), GraphError> {
 
     // upstream 全 1，形状 [2, 1, 2, 2]
     let upstream = Tensor::ones(&[2, 1, 2, 2]);
-    let grad = conv.calc_grad_to_parent_index(1, &upstream)?.resolve(&upstream);
+    let grad = conv
+        .calc_grad_to_parent_index(1, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 2, 2]);
 
@@ -474,7 +489,9 @@ fn test_conv2d_vjp_to_input_multi_output() -> Result<(), GraphError> {
     conv.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
-    let grad = conv.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = conv
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[1, 1, 3, 3]);
 
@@ -735,10 +752,13 @@ fn test_conv2d_dynamic_shape_propagation() -> Result<(), GraphError> {
         .borrow_mut()
         .create_parameter_node(&[2, 1, 3, 3], Some("kernel"))?;
 
-    let conv =
-        inner
-            .borrow_mut()
-            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), Some("conv"))?;
+    let conv = inner.borrow_mut().create_conv2d_node(
+        vec![input, kernel],
+        (1, 1),
+        (0, 0),
+        (1, 1),
+        Some("conv"),
+    )?;
 
     let dyn_shape = conv.dynamic_expected_shape();
     assert!(dyn_shape.is_dynamic(0), "batch 维度应该是动态的");
@@ -948,9 +968,10 @@ fn test_create_conv2d_channel_mismatch() {
         .create_parameter_node(&[16, 4, 3, 3], None) // 4 != 3
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), None);
+    let result =
+        inner
+            .borrow_mut()
+            .create_conv2d_node(vec![input, kernel], (1, 1), (0, 0), (1, 1), None);
     assert!(result.is_err());
 }
 

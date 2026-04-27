@@ -1,7 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::{Tensor, broadcast_shape};
 
@@ -146,7 +146,9 @@ impl TraitNode for Add {
             Ok(GradResult::PassThrough)
         } else {
             // 被广播过，需要对广播维度求和
-            Ok(GradResult::Computed(upstream_grad.sum_to_shape(target_shape)))
+            Ok(GradResult::Computed(
+                upstream_grad.sum_to_shape(target_shape),
+            ))
         }
     }
 

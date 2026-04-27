@@ -35,14 +35,20 @@ fn test_reciprocal_vjp() -> Result<(), GraphError> {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let x = inner.borrow_mut().create_basic_input_node(&[2, 2], Some("x"))?;
-    let rec = inner.borrow_mut().create_reciprocal_node(x.clone(), Some("rec"))?;
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 2], Some("x"))?;
+    let rec = inner
+        .borrow_mut()
+        .create_reciprocal_node(x.clone(), Some("rec"))?;
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 4.0, 5.0], &[2, 2])))?;
     rec.forward_recursive(1, false)?;
 
     let upstream = Tensor::ones(&[2, 2]);
-    let grad = rec.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = rec
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // -1/x² → [-1, -0.25, -0.0625, -0.04]
     assert_abs_diff_eq!(grad[[0, 0]], -1.0, epsilon = 1e-5);

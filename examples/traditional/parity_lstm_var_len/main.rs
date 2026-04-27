@@ -122,8 +122,8 @@ fn main() -> Result<(), GraphError> {
 
     // 保存可视化（从训练循环的最后一个 loss 回溯）
     if let Some(loss) = &last_loss {
-        let vis_result =
-            loss.save_visualization("examples/traditional/parity_lstm_var_len/parity_lstm_var_len")?;
+        let vis_result = loss
+            .save_visualization("examples/traditional/parity_lstm_var_len/parity_lstm_var_len")?;
         println!("\n计算图已保存: {}", vis_result.dot_path.display());
         if let Some(img_path) = &vis_result.image_path {
             println!("可视化图像: {}", img_path.display());

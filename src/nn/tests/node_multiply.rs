@@ -90,7 +90,9 @@ fn test_multiply_vjp_to_left() -> Result<(), GraphError> {
     mul.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = mul.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = mul
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     // grad_to_left = upstream ⊙ right = ones ⊙ [5,6,7,8] = [5,6,7,8]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -127,7 +129,9 @@ fn test_multiply_vjp_to_right() -> Result<(), GraphError> {
     mul.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = mul.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = mul
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     // grad_to_right = upstream ⊙ left = ones ⊙ [1,2,3,4] = [1,2,3,4]
     assert_eq!(grad.shape(), &[2, 2]);
@@ -166,14 +170,18 @@ fn test_multiply_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
     let upstream_grad = Tensor::new(&[2.0, 2.0, 2.0, 2.0], &[2, 2]);
 
     // grad_to_left = upstream ⊙ right = [2,2,2,2] ⊙ [5,6,7,8] = [10,12,14,16]
-    let grad_to_p1 = mul.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_p1 = mul
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(
         &grad_to_p1,
         &Tensor::new(&[10.0, 12.0, 14.0, 16.0], &[2, 2])
     );
 
     // grad_to_right = upstream ⊙ left = [2,2,2,2] ⊙ [1,2,3,4] = [2,4,6,8]
-    let grad_to_p2 = mul.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_p2 = mul
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(&grad_to_p2, &Tensor::new(&[2.0, 4.0, 6.0, 8.0], &[2, 2]));
 
     Ok(())
@@ -212,11 +220,15 @@ fn test_multiply_vjp_with_negative_values() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[2, 2]);
 
     // grad_to_left = upstream ⊙ right = [[5,-6],[7,-8]]
-    let grad_to_p1 = mul.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_p1 = mul
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(&grad_to_p1, &right_value);
 
     // grad_to_right = upstream ⊙ left = [[-1,2],[-3,4]]
-    let grad_to_p2 = mul.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_p2 = mul
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(&grad_to_p2, &left_value);
 
     Ok(())
@@ -258,11 +270,15 @@ fn test_multiply_backward_with_zero_value() -> Result<(), GraphError> {
 
     // 即使输出全为 0，梯度仍应正确计算
     // grad_to_left = upstream ⊙ right = [[5,0],[0,8]]
-    let grad_to_p1 = mul.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_p1 = mul
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(&grad_to_p1, &right_value);
 
     // grad_to_right = upstream ⊙ left = [[0,2],[3,0]]
-    let grad_to_p2 = mul.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_p2 = mul
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(&grad_to_p2, &left_value);
 
     Ok(())
@@ -335,7 +351,9 @@ fn test_multiply_broadcast_vjp() -> Result<(), GraphError> {
     let upstream_grad = Tensor::ones(&[2, 3]);
 
     // 对 matrix [2,3] 的梯度：upstream ⊙ scale（广播后）= [[2,3,4],[2,3,4]]
-    let grad_to_matrix = mul.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_matrix = mul
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(grad_to_matrix.shape(), &[2, 3]);
     assert_eq!(
         &grad_to_matrix,
@@ -343,7 +361,9 @@ fn test_multiply_broadcast_vjp() -> Result<(), GraphError> {
     );
 
     // 对 scale [1,3] 的梯度：sum(upstream ⊙ matrix, axis=0) = sum([[1,2,3],[4,5,6]], axis=0) = [[5,7,9]]
-    let grad_to_scale = mul.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_scale = mul
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(grad_to_scale.shape(), &[1, 3]);
     assert_eq!(&grad_to_scale, &Tensor::new(&[5., 7., 9.], &[1, 3]));
 
@@ -387,7 +407,9 @@ fn test_multiply_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     // 对 scale [1,3] 的梯度：sum(upstream ⊙ matrix, axis=0)
     // [[1*1,2*2,3*3],[4*4,5*5,6*6]] = [[1,4,9],[16,25,36]]
     // sum(axis=0) = [[17,29,45]]
-    let grad_to_scale = mul.calc_grad_to_parent_index(1, &upstream_grad)?.resolve(&upstream_grad);
+    let grad_to_scale = mul
+        .calc_grad_to_parent_index(1, &upstream_grad)?
+        .resolve(&upstream_grad);
     assert_eq!(grad_to_scale.shape(), &[1, 3]);
     assert_eq!(&grad_to_scale, &Tensor::new(&[17., 29., 45.], &[1, 3]));
 

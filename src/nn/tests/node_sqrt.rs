@@ -105,7 +105,9 @@ fn test_sqrt_vjp_unit_upstream() -> Result<(), GraphError> {
     sqrt.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = sqrt.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = sqrt
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.5, epsilon = 1e-6); // 0.5/√1 = 0.5
@@ -138,7 +140,9 @@ fn test_sqrt_vjp_non_unit_upstream() -> Result<(), GraphError> {
     sqrt.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 6.0], &[1, 2]);
-    let grad = sqrt.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = sqrt
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[1, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 1.0, epsilon = 1e-6); // 2 * 0.5/√1
@@ -222,9 +226,7 @@ fn test_sqrt_dynamic_shape_propagation() {
 fn test_sqrt_dynamic_batch_forward() {
     let graph = Graph::new();
 
-    let x = graph
-        .input(&Tensor::new(&[4.0; 16], &[2, 8]))
-        .unwrap();
+    let x = graph.input(&Tensor::new(&[4.0; 16], &[2, 8])).unwrap();
     let result = x.sqrt();
 
     // 第一次 forward：batch=2
@@ -296,10 +298,7 @@ fn test_create_sqrt_node_drop_releases() {
             .unwrap();
         weak_input = Rc::downgrade(&input);
 
-        let sqrt = inner
-            .borrow_mut()
-            .create_sqrt_node(input, None)
-            .unwrap();
+        let sqrt = inner.borrow_mut().create_sqrt_node(input, None).unwrap();
         weak_sqrt = Rc::downgrade(&sqrt);
 
         assert!(weak_sqrt.upgrade().is_some());

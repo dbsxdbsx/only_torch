@@ -190,7 +190,13 @@ impl ConvTranspose2d {
     }
 
     /// 将单样本输入 [C_in, H, W] 展平为矩阵 [C_in, H*W]（列主序：列 = 空间展平）
-    fn input_batch_matrix(input: &Tensor, b: usize, in_c: usize, h_in: usize, w_in: usize) -> Array2<f32> {
+    fn input_batch_matrix(
+        input: &Tensor,
+        b: usize,
+        in_c: usize,
+        h_in: usize,
+        w_in: usize,
+    ) -> Array2<f32> {
         let hw = h_in * w_in;
         let mut mat = Array2::<f32>::zeros((in_c, hw));
         for ic in 0..in_c {
@@ -229,14 +235,8 @@ impl ConvTranspose2d {
                         for kw in 0..k_w {
                             let oh = ih as isize * stride_h as isize - pad_h as isize + kh as isize;
                             let ow = iw as isize * stride_w as isize - pad_w as isize + kw as isize;
-                            if oh >= 0
-                                && ow >= 0
-                                && oh < h_out as isize
-                                && ow < w_out as isize
-                            {
-                                let idx = oc * h_out * w_out
-                                    + oh as usize * w_out
-                                    + ow as usize;
+                            if oh >= 0 && ow >= 0 && oh < h_out as isize && ow < w_out as isize {
+                                let idx = oc * h_out * w_out + oh as usize * w_out + ow as usize;
                                 out[idx] += col_t[[row, col_idx]];
                             }
                             col_idx += 1;
@@ -272,15 +272,9 @@ impl ConvTranspose2d {
                 for oc in 0..c_out {
                     for kh in 0..k_h {
                         for kw in 0..k_w {
-                            let oh =
-                                ih as isize * stride_h as isize - pad_h as isize + kh as isize;
-                            let ow =
-                                iw as isize * stride_w as isize - pad_w as isize + kw as isize;
-                            if oh >= 0
-                                && ow >= 0
-                                && oh < h_out as isize
-                                && ow < w_out as isize
-                            {
+                            let oh = ih as isize * stride_h as isize - pad_h as isize + kh as isize;
+                            let ow = iw as isize * stride_w as isize - pad_w as isize + kw as isize;
+                            if oh >= 0 && ow >= 0 && oh < h_out as isize && ow < w_out as isize {
                                 d_col[[row, col_idx]] += d_y[[b, oc, oh as usize, ow as usize]];
                             }
                             col_idx += 1;
@@ -326,17 +320,7 @@ impl ConvTranspose2d {
                 let col = kernel_mat.t().dot(&input_b);
                 let col_t = col.t().to_owned();
                 Self::col2im_transpose_forward(
-                    &col_t,
-                    out_c,
-                    h_out,
-                    w_out,
-                    k_h,
-                    k_w,
-                    h_in,
-                    w_in,
-                    stride_h,
-                    stride_w,
-                    pad_h,
+                    &col_t, out_c, h_out, w_out, k_h, k_w, h_in, w_in, stride_h, stride_w, pad_h,
                     pad_w,
                 )
             })
@@ -420,9 +404,9 @@ impl TraitNode for ConvTranspose2d {
         let input = parent_values
             .first()
             .ok_or_else(|| GraphError::ComputationError("转置卷积梯度计算需要输入".to_string()))?;
-        let kernel = parent_values
-            .get(1)
-            .ok_or_else(|| GraphError::ComputationError("转置卷积梯度计算需要卷积核".to_string()))?;
+        let kernel = parent_values.get(1).ok_or_else(|| {
+            GraphError::ComputationError("转置卷积梯度计算需要卷积核".to_string())
+        })?;
 
         let orig_input_shape = &self.cached_input_shape;
         let (batch_size, in_c, h_in, w_in) = (
@@ -476,7 +460,10 @@ impl TraitNode for ConvTranspose2d {
                 .collect();
 
             let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-            Ok(GradResult::Computed(Tensor::new(&all_data, orig_input_shape)))
+            Ok(GradResult::Computed(Tensor::new(
+                &all_data,
+                orig_input_shape,
+            )))
         } else {
             let kernel_shape = kernel.shape();
 
@@ -546,10 +533,10 @@ impl TraitNode for ConvTranspose2d {
 #[cfg(test)]
 mod tests {
     use super::ConvTranspose2d;
-    use crate::nn::nodes::raw_node::TraitNode;
-    use crate::nn::shape::DynamicShape;
     use crate::nn::nodes::NodeId;
     use crate::nn::nodes::raw_node::GradResult;
+    use crate::nn::nodes::raw_node::TraitNode;
+    use crate::nn::shape::DynamicShape;
     use crate::tensor::Tensor;
 
     /// 与 PyTorch 对照：全 1 输入、全 1 核、stride=1、无 padding
@@ -558,10 +545,7 @@ mod tests {
         let in_sh = [1usize, 1, 2, 2];
         let ker_sh = [1usize, 1, 2, 2];
         let parent_shapes: Vec<&[usize]> = vec![&in_sh, &ker_sh];
-        let parent_ds = vec![
-            DynamicShape::fixed(&in_sh),
-            DynamicShape::fixed(&ker_sh),
-        ];
+        let parent_ds = vec![DynamicShape::fixed(&in_sh), DynamicShape::fixed(&ker_sh)];
         let mut op = ConvTranspose2d::new(
             &parent_shapes,
             &parent_ds,
@@ -589,10 +573,7 @@ mod tests {
         let in_sh = [1usize, 1, 2, 2];
         let ker_sh = [1usize, 1, 2, 2];
         let parent_shapes: Vec<&[usize]> = vec![&in_sh, &ker_sh];
-        let parent_ds = vec![
-            DynamicShape::fixed(&in_sh),
-            DynamicShape::fixed(&ker_sh),
-        ];
+        let parent_ds = vec![DynamicShape::fixed(&in_sh), DynamicShape::fixed(&ker_sh)];
         let mut op = ConvTranspose2d::new(
             &parent_shapes,
             &parent_ds,
@@ -606,12 +587,8 @@ mod tests {
         let kernel = Tensor::ones(&[1, 1, 2, 2]);
         op.calc_value_by_parents(&[&input, &kernel]).unwrap();
         let g = Tensor::ones(&[1, 1, 3, 3]);
-        let gi = op
-            .calc_grad_to_parent(0, &[&input, &kernel], &g)
-            .unwrap();
-        let gk = op
-            .calc_grad_to_parent(1, &[&input, &kernel], &g)
-            .unwrap();
+        let gi = op.calc_grad_to_parent(0, &[&input, &kernel], &g).unwrap();
+        let gk = op.calc_grad_to_parent(1, &[&input, &kernel], &g).unwrap();
         let gi = match gi {
             GradResult::Computed(t) => t,
             _ => panic!("expected computed grad"),

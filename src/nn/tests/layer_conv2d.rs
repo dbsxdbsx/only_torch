@@ -325,7 +325,17 @@ fn test_conv2d_single_channel() -> Result<(), GraphError> {
 fn test_conv2d_large_channels() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
 
-    let conv = Conv2d::new(&graph, 64, 128, (3, 3), (1, 1), (1, 1), (1, 1), true, "conv")?;
+    let conv = Conv2d::new(
+        &graph,
+        64,
+        128,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        (1, 1),
+        true,
+        "conv",
+    )?;
 
     // 验证参数形状
     let k = conv.kernel().value()?.unwrap();

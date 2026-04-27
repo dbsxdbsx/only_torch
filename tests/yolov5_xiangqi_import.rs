@@ -56,8 +56,14 @@ fn fixture_directory_exists() {
     assert!(dir.exists(), "fixture 目录应存在");
     assert!(dir.join("README.md").exists(), "README.md 必填");
     assert!(dir.join("export.py").exists(), "export.py 必填");
-    assert!(dir.join("numeric_check.py").exists(), "numeric_check.py 必填");
-    assert!(dir.join(".gitignore").exists(), ".gitignore 必填（防止 .onnx 入 git）");
+    assert!(
+        dir.join("numeric_check.py").exists(),
+        "numeric_check.py 必填"
+    );
+    assert!(
+        dir.join(".gitignore").exists(),
+        ".gitignore 必填（防止 .onnx 入 git）"
+    );
 }
 
 #[test]
@@ -85,7 +91,10 @@ fn import_descriptor_topology() {
         .filter(|n| matches!(n.node_type, NodeTypeDescriptor::BasicInput))
         .collect();
     assert_eq!(inputs.len(), 1, "VinXiangQi 模型有且仅有一个 image 输入");
-    println!("input: {} shape={:?}", inputs[0].name, inputs[0].output_shape);
+    println!(
+        "input: {} shape={:?}",
+        inputs[0].name, inputs[0].output_shape
+    );
 }
 
 #[test]
@@ -167,8 +176,9 @@ fn yolov5_xiangqi_rebuild_succeeds() {
         "import OK，descriptor 节点数 = {}",
         result.descriptor.nodes.len()
     );
-    let rebuilt = Graph::from_descriptor(&result.descriptor)
-        .expect("rebuild 失败：spatial shape 传播 / Constant→Parameter / Concat placeholder 任一可能回退");
+    let rebuilt = Graph::from_descriptor(&result.descriptor).expect(
+        "rebuild 失败：spatial shape 传播 / Constant→Parameter / Concat placeholder 任一可能回退",
+    );
     println!(
         "rebuild OK，参数量 = {}, 输入 = {}, 输出 = {}",
         rebuilt.graph.parameter_count(),

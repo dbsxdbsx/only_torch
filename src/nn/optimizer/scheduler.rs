@@ -107,8 +107,7 @@ impl LrScheduler for CosineAnnealingLR {
         self.current_lr = self.eta_min
             + 0.5
                 * (self.lr_init - self.eta_min)
-                * (1.0
-                    + (std::f32::consts::PI * self.epoch as f32 / self.t_max as f32).cos());
+                * (1.0 + (std::f32::consts::PI * self.epoch as f32 / self.t_max as f32).cos());
         self.current_lr
     }
 

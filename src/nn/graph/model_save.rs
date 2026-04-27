@@ -105,9 +105,7 @@ pub(crate) fn write_params(
 }
 
 /// 从 reader 读取参数（不含 magic/version）
-pub(crate) fn read_params(
-    reader: &mut impl Read,
-) -> Result<HashMap<String, Tensor>, GraphError> {
+pub(crate) fn read_params(reader: &mut impl Read) -> Result<HashMap<String, Tensor>, GraphError> {
     let mut count_bytes = [0u8; 4];
     reader.read_exact(&mut count_bytes).map_err(io_err)?;
     let count = u32::from_le_bytes(count_bytes) as usize;
@@ -164,10 +162,7 @@ pub(crate) fn write_otm_file<P: AsRef<Path>>(
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                GraphError::ComputationError(format!(
-                    "无法创建目录 {}: {e}",
-                    parent.display()
-                ))
+                GraphError::ComputationError(format!("无法创建目录 {}: {e}", parent.display()))
             })?;
         }
     }
@@ -184,9 +179,8 @@ pub(crate) fn write_otm_file<P: AsRef<Path>>(
         .map_err(io_err)?;
 
     // 2. Metadata JSON
-    let json_bytes = serde_json::to_vec_pretty(metadata).map_err(|e| {
-        GraphError::ComputationError(format!("序列化 metadata 失败: {e}"))
-    })?;
+    let json_bytes = serde_json::to_vec_pretty(metadata)
+        .map_err(|e| GraphError::ComputationError(format!("序列化 metadata 失败: {e}")))?;
     writer
         .write_all(&(json_bytes.len() as u32).to_le_bytes())
         .map_err(io_err)?;
@@ -242,9 +236,8 @@ pub(crate) fn read_otm_file<P: AsRef<Path>>(
 
     let mut json_bytes = vec![0u8; json_len];
     reader.read_exact(&mut json_bytes).map_err(io_err)?;
-    let metadata: OtmMetadata = serde_json::from_slice(&json_bytes).map_err(|e| {
-        GraphError::ComputationError(format!("解析 metadata JSON 失败: {e}"))
-    })?;
+    let metadata: OtmMetadata = serde_json::from_slice(&json_bytes)
+        .map_err(|e| GraphError::ComputationError(format!("解析 metadata JSON 失败: {e}")))?;
 
     // 4. 读权重数据
     let mut weight_len_bytes = [0u8; 8];
@@ -287,11 +280,7 @@ impl Graph {
     /// graph.save_model("models/my_model", &[&output])?;
     /// // 生成：models/my_model.otm
     /// ```
-    pub fn save_model<P: AsRef<Path>>(
-        &self,
-        path: P,
-        outputs: &[&Var],
-    ) -> Result<(), GraphError> {
+    pub fn save_model<P: AsRef<Path>>(&self, path: P, outputs: &[&Var]) -> Result<(), GraphError> {
         let desc = Var::vars_to_graph_descriptor(outputs, "model");
         let metadata = OtmMetadata {
             format_version: OTM_FORMAT_VERSION,
@@ -401,11 +390,7 @@ impl Graph {
     /// let output = model.forward(&input)?;
     /// graph.export_onnx("models/my_model.onnx", &[&output])?;
     /// ```
-    pub fn export_onnx<P: AsRef<Path>>(
-        &self,
-        path: P,
-        outputs: &[&Var],
-    ) -> Result<(), GraphError> {
+    pub fn export_onnx<P: AsRef<Path>>(&self, path: P, outputs: &[&Var]) -> Result<(), GraphError> {
         let desc = Var::vars_to_graph_descriptor(outputs, "model");
         let weights = self.collect_weight_map();
         super::onnx_export::save_onnx(path, &desc, &weights)

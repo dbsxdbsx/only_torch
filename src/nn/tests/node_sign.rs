@@ -98,7 +98,9 @@ fn test_sign_vjp_always_zero() -> Result<(), GraphError> {
     sign.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = sign.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = sign
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     // Sign 不可微，梯度恒为 0
     assert_eq!(grad.shape(), &[2, 2]);

@@ -1,7 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -39,20 +39,36 @@ impl HardSigmoid {
 }
 
 impl TraitNode for HardSigmoid {
-    fn id(&self) -> NodeId { self.id.unwrap() }
-    fn set_id(&mut self, id: NodeId) { self.id = Some(id); }
-    fn name(&self) -> &str { self.name.as_ref().unwrap() }
-    fn set_name(&mut self, name: &str) { self.name = Some(name.to_string()); }
-    fn value_expected_shape(&self) -> &[usize] { &self.fixed_shape }
-    fn dynamic_expected_shape(&self) -> DynamicShape { self.dynamic_shape.clone() }
-    fn supports_dynamic_batch(&self) -> bool { self.supports_dynamic }
+    fn id(&self) -> NodeId {
+        self.id.unwrap()
+    }
+    fn set_id(&mut self, id: NodeId) {
+        self.id = Some(id);
+    }
+    fn name(&self) -> &str {
+        self.name.as_ref().unwrap()
+    }
+    fn set_name(&mut self, name: &str) {
+        self.name = Some(name.to_string());
+    }
+    fn value_expected_shape(&self) -> &[usize] {
+        &self.fixed_shape
+    }
+    fn dynamic_expected_shape(&self) -> DynamicShape {
+        self.dynamic_shape.clone()
+    }
+    fn supports_dynamic_batch(&self) -> bool {
+        self.supports_dynamic
+    }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         self.value = Some(parent_values[0].hard_sigmoid());
         Ok(())
     }
 
-    fn value(&self) -> Option<&Tensor> { self.value.as_ref() }
+    fn value(&self) -> Option<&Tensor> {
+        self.value.as_ref()
+    }
 
     fn calc_grad_to_parent(
         &self,
@@ -62,15 +78,14 @@ impl TraitNode for HardSigmoid {
     ) -> Result<GradResult, GraphError> {
         // hard_sigmoid'(x) = 0 if |x| >= 3, 1/6 otherwise
         let x = parent_values[0];
-        let local_grad = x.where_with_f32(
-            |x_val| x_val > -3.0 && x_val < 3.0,
-            |_| 1.0 / 6.0,
-            |_| 0.0,
-        );
+        let local_grad =
+            x.where_with_f32(|x_val| x_val > -3.0 && x_val < 3.0, |_| 1.0 / 6.0, |_| 0.0);
         Ok(GradResult::Computed(upstream_grad * &local_grad))
     }
 
-    fn grad(&self) -> Option<&Tensor> { self.grad.as_ref() }
+    fn grad(&self) -> Option<&Tensor> {
+        self.grad.as_ref()
+    }
     fn set_grad(&mut self, grad: Option<&Tensor>) -> Result<(), GraphError> {
         self.grad = grad.cloned();
         Ok(())
@@ -79,6 +94,11 @@ impl TraitNode for HardSigmoid {
     fn grad_mut(&mut self) -> Option<&mut Tensor> {
         self.grad.as_mut()
     }
-    fn clear_value(&mut self) -> Result<(), GraphError> { self.value = None; Ok(()) }
-    fn set_value_unchecked(&mut self, value: Option<&Tensor>) { self.value = value.cloned(); }
+    fn clear_value(&mut self) -> Result<(), GraphError> {
+        self.value = None;
+        Ok(())
+    }
+    fn set_value_unchecked(&mut self, value: Option<&Tensor>) {
+        self.value = value.cloned();
+    }
 }

@@ -74,7 +74,7 @@ fn test_init_xavier_conv2d() {
     //   fan_in = 16 * 9 = 144, fan_out = 32 * 9 = 288
     let tensor = Init::Xavier.generate(&[32, 16, 3, 3]);
     assert_eq!(tensor.shape(), &[32, 16, 3, 3]);
-    let fan_in = 16 * 3 * 3;  // = 144
+    let fan_in = 16 * 3 * 3; // = 144
     let fan_out = 32 * 3 * 3; // = 288
     let expected_std = (2.0 / (fan_in + fan_out) as f32).sqrt(); // ≈ 0.0681
     let data = tensor.data_as_slice();

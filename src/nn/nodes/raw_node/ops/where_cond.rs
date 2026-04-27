@@ -1,7 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -33,7 +33,9 @@ pub(crate) struct WhereCond {
 
 impl WhereCond {
     /// 获取条件掩码
-    pub(crate) fn condition(&self) -> &crate::tensor::Tensor { &self.condition }
+    pub(crate) fn condition(&self) -> &crate::tensor::Tensor {
+        &self.condition
+    }
 
     /// 从父节点形状和 condition 张量创建 WhereCond 节点
     ///

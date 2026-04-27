@@ -209,7 +209,8 @@ fn main() -> Result<(), GraphError> {
     // 4b. 推理图（只有 Generator：noise → G → image）
     let z_infer = Tensor::normal(0.0, 1.0, &[1, LATENT_DIM]);
     let output_infer = generator.forward(&z_infer)?;
-    let vis_infer = output_infer.save_visualization("examples/traditional/mnist_gan/mnist_gan_inference")?;
+    let vis_infer =
+        output_infer.save_visualization("examples/traditional/mnist_gan/mnist_gan_inference")?;
     println!("  推理图已保存: {}", vis_infer.dot_path.display());
     if let Some(img_path) = &vis_infer.image_path {
         println!("  推理图图像: {}", img_path.display());

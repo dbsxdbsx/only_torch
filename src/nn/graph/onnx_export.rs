@@ -149,10 +149,7 @@ fn encode_model(
     weights: &HashMap<String, Tensor>,
     pool: &StringPool,
 ) -> Vec<u8> {
-    let id_to_name: HashMap<u64, &str> = plan
-        .iter()
-        .map(|n| (n.id, pool.get(&n.name)))
-        .collect();
+    let id_to_name: HashMap<u64, &str> = plan.iter().map(|n| (n.id, pool.get(&n.name))).collect();
 
     let all_parent_ids: std::collections::HashSet<u64> = plan
         .iter()
@@ -346,4 +343,3 @@ fn make_value_info<'a>(
         metadata_props: vec![],
     }
 }
-

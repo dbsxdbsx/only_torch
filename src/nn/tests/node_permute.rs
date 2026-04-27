@@ -33,10 +33,7 @@ use approx::assert_abs_diff_eq;
 fn test_permute_forward_2d_transpose() {
     let graph = Graph::new();
 
-    let input_data = Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    );
+    let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
     let x = graph.input(&input_data).unwrap();
     let result = x.permute(&[1, 0]).unwrap();
 
@@ -132,11 +129,7 @@ fn test_permute_forward_identity() {
     assert_eq!(output.shape(), &[2, 3]);
     for i in 0..2 {
         for j in 0..3 {
-            assert_abs_diff_eq!(
-                output[[i, j]],
-                input_data[[i, j]],
-                epsilon = 1e-6
-            );
+            assert_abs_diff_eq!(output[[i, j]], input_data[[i, j]], epsilon = 1e-6);
         }
     }
 }
@@ -177,16 +170,15 @@ fn test_permute_vjp_2d() -> Result<(), GraphError> {
         .unwrap();
 
     input
-        .set_value(Some(&Tensor::new(
-            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-        )))
+        .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
     permuted.forward_recursive(1, false).unwrap();
 
     // upstream shape = [3, 2]（permuted 的输出形状）
     let upstream = Tensor::new(&[10.0, 40.0, 20.0, 50.0, 30.0, 60.0], &[3, 2]);
-    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = permuted
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     assert_eq!(grad.shape(), &[2, 3]);
     // grad = upstream.permute([1, 0])
@@ -227,7 +219,9 @@ fn test_permute_vjp_3d() -> Result<(), GraphError> {
 
     // upstream 全 1.0，形状 [2, 4, 3]
     let upstream = Tensor::ones(&[2, 4, 3]);
-    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = permuted
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // grad = upstream.permute([0, 2, 1]) → 全 1 排列后仍全 1
     assert_eq!(grad.shape(), &[2, 3, 4]);
@@ -269,7 +263,9 @@ fn test_permute_vjp_3d_non_self_inverse() -> Result<(), GraphError> {
     // 构造非 unit upstream [4, 2, 3]
     let upstream_data: Vec<f32> = (1..=24).map(|i| i as f32 * 0.1).collect();
     let upstream = Tensor::new(&upstream_data, &[4, 2, 3]);
-    let grad = permuted.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = permuted
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // grad = upstream.permute([1, 2, 0])
     // 验证：grad[i, j, k] == upstream[k, i, j]
@@ -277,11 +273,7 @@ fn test_permute_vjp_3d_non_self_inverse() -> Result<(), GraphError> {
     for i in 0..2 {
         for j in 0..3 {
             for k in 0..4 {
-                assert_abs_diff_eq!(
-                    grad[[i, j, k]],
-                    upstream[[k, i, j]],
-                    epsilon = 1e-6
-                );
+                assert_abs_diff_eq!(grad[[i, j, k]], upstream[[k, i, j]], epsilon = 1e-6);
             }
         }
     }
@@ -300,10 +292,7 @@ fn test_permute_backward_e2e() -> Result<(), GraphError> {
     let graph = Graph::new();
 
     let x = graph.parameter(&[2, 3], Init::Zeros, "x")?;
-    x.set_value(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    ))?;
+    x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))?;
 
     let permuted = x.permute(&[1, 0])?;
     let target = graph.input(&Tensor::zeros(&[3, 2]))?;
@@ -391,10 +380,7 @@ fn test_permute_gradient_accumulation() -> Result<(), GraphError> {
     let graph = Graph::new();
 
     let x = graph.parameter(&[2, 3], Init::Zeros, "x")?;
-    x.set_value(&Tensor::new(
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    ))?;
+    x.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]))?;
 
     let permuted = x.permute(&[1, 0])?;
     let target = graph.input(&Tensor::ones(&[3, 2]))?;
@@ -434,8 +420,14 @@ fn test_permute_dynamic_shape_propagation() {
 
     let dyn_shape = result.dynamic_expected_shape();
     // 原始 dim 0 是动态（batch），permute([1,0]) 后 dim 1 变动态
-    assert!(!dyn_shape.is_dynamic(0), "原 dim 1（固定 8）移到 dim 0，应固定");
-    assert!(dyn_shape.is_dynamic(1), "原 dim 0（动态 batch）移到 dim 1，应动态");
+    assert!(
+        !dyn_shape.is_dynamic(0),
+        "原 dim 1（固定 8）移到 dim 0，应固定"
+    );
+    assert!(
+        dyn_shape.is_dynamic(1),
+        "原 dim 0（动态 batch）移到 dim 1，应动态"
+    );
     assert_eq!(dyn_shape.dim(0), Some(8));
     assert_eq!(dyn_shape.dims().len(), 2);
 }
@@ -585,9 +577,7 @@ fn test_create_permute_node_invalid_dim_value() {
         .create_basic_input_node(&[2, 3], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_permute_node(input, &[0, 5], None);
+    let result = inner.borrow_mut().create_permute_node(input, &[0, 5], None);
     assert!(result.is_err());
 }
 
@@ -604,9 +594,7 @@ fn test_create_permute_node_duplicate_dims() {
         .create_basic_input_node(&[2, 3], None)
         .unwrap();
 
-    let result = inner
-        .borrow_mut()
-        .create_permute_node(input, &[0, 0], None);
+    let result = inner.borrow_mut().create_permute_node(input, &[0, 0], None);
     assert!(result.is_err());
 }
 

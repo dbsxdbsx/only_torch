@@ -183,13 +183,7 @@ impl Rnn {
             "RNN: [?, {}] → [?, {}] (×{} steps)",
             self.input_size, self.hidden_size, seq_len
         );
-        let _guard = NodeGroupContext::for_recurrent(
-            x,
-            "RNN",
-            self.instance_id,
-            &self.name,
-            &desc,
-        );
+        let _guard = NodeGroupContext::for_recurrent(x, "RNN", self.instance_id, &self.name, &desc);
         // 后补标签给参数节点
         _guard.tag_existing(&self.w_ih);
         _guard.tag_existing(&self.w_hh);
@@ -309,9 +303,7 @@ impl Rnn {
     ) -> Self {
         let graph = w_ih.get_graph();
         let name = "rnn_rebuilt".to_string();
-        graph
-            .inner_mut()
-            .register_recurrent_folding_meta(&name, 6);
+        graph.inner_mut().register_recurrent_folding_meta(&name, 6);
         let instance_id = graph.inner_mut().next_node_group_instance_id();
         Self {
             w_ih,

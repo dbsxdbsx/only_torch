@@ -47,17 +47,11 @@ fn test_normal_log_prob_standard() {
 fn test_normal_log_prob_general() {
     let graph = Graph::new();
 
-    let mean = graph
-        .input(&Tensor::new(&[1.0, 2.0], &[1, 2]))
-        .unwrap();
-    let std = graph
-        .input(&Tensor::new(&[0.5, 1.0], &[1, 2]))
-        .unwrap();
+    let mean = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
+    let std = graph.input(&Tensor::new(&[0.5, 1.0], &[1, 2])).unwrap();
     let dist = Normal::new(mean, std);
 
-    let value = graph
-        .input(&Tensor::new(&[1.2, 2.5], &[1, 2]))
-        .unwrap();
+    let value = graph.input(&Tensor::new(&[1.2, 2.5], &[1, 2])).unwrap();
     let lp = dist.log_prob(&value);
 
     lp.forward().unwrap();
@@ -79,10 +73,7 @@ fn test_normal_log_prob_batch() {
     let graph = Graph::new();
 
     let mean = graph
-        .input(&Tensor::new(
-            &[0.0, 1.0, 2.0, 3.0, -1.0, 0.5],
-            &[3, 2],
-        ))
+        .input(&Tensor::new(&[0.0, 1.0, 2.0, 3.0, -1.0, 0.5], &[3, 2]))
         .unwrap();
     let std = graph
         .input(&Tensor::new(&[1.0, 0.5, 2.0, 0.1, 0.3, 1.5], &[3, 2]))
@@ -90,10 +81,7 @@ fn test_normal_log_prob_batch() {
     let dist = Normal::new(mean, std);
 
     let value = graph
-        .input(&Tensor::new(
-            &[0.5, 1.2, 1.0, 3.1, -0.5, 0.0],
-            &[3, 2],
-        ))
+        .input(&Tensor::new(&[0.5, 1.2, 1.0, 3.1, -0.5, 0.0], &[3, 2]))
         .unwrap();
     let lp = dist.log_prob(&value);
 
@@ -140,12 +128,8 @@ fn test_normal_entropy_standard() {
 fn test_normal_entropy_general() {
     let graph = Graph::new();
 
-    let mean = graph
-        .input(&Tensor::new(&[1.0, 2.0], &[1, 2]))
-        .unwrap();
-    let std = graph
-        .input(&Tensor::new(&[0.5, 1.0], &[1, 2]))
-        .unwrap();
+    let mean = graph.input(&Tensor::new(&[1.0, 2.0], &[1, 2])).unwrap();
+    let std = graph.input(&Tensor::new(&[0.5, 1.0], &[1, 2])).unwrap();
     let dist = Normal::new(mean, std);
 
     let ent = dist.entropy();
@@ -168,10 +152,7 @@ fn test_normal_entropy_batch() {
     let graph = Graph::new();
 
     let mean = graph
-        .input(&Tensor::new(
-            &[0.0, 1.0, 2.0, 3.0, -1.0, 0.5],
-            &[3, 2],
-        ))
+        .input(&Tensor::new(&[0.0, 1.0, 2.0, 3.0, -1.0, 0.5], &[3, 2]))
         .unwrap();
     let std = graph
         .input(&Tensor::new(&[1.0, 0.5, 2.0, 0.1, 0.3, 1.5], &[3, 2]))
@@ -375,19 +356,13 @@ fn test_normal_sac_style_e2e() -> Result<(), GraphError> {
     let mean_grad = mean_param.grad()?.expect("mean 应有梯度");
     assert_eq!(mean_grad.shape(), &[1, 2]);
     let mean_grad_sum: f32 = mean_grad[[0, 0]].abs() + mean_grad[[0, 1]].abs();
-    assert!(
-        mean_grad_sum > 1e-6,
-        "mean 梯度不应全为零"
-    );
+    assert!(mean_grad_sum > 1e-6, "mean 梯度不应全为零");
 
     // 验证 log_std 梯度存在且非零
     let log_std_grad = log_std_param.grad()?.expect("log_std 应有梯度");
     assert_eq!(log_std_grad.shape(), &[1, 2]);
     let log_std_grad_sum: f32 = log_std_grad[[0, 0]].abs() + log_std_grad[[0, 1]].abs();
-    assert!(
-        log_std_grad_sum > 1e-6,
-        "log_std 梯度不应全为零"
-    );
+    assert!(log_std_grad_sum > 1e-6, "log_std 梯度不应全为零");
 
     Ok(())
 }
@@ -398,12 +373,8 @@ fn test_normal_sac_style_e2e() -> Result<(), GraphError> {
 #[test]
 fn test_normal_node_group_tagging() {
     let graph = Graph::new();
-    let mean = graph
-        .input(&Tensor::new(&[0.0, 1.0], &[1, 2]))
-        .unwrap();
-    let std = graph
-        .input(&Tensor::new(&[1.0, 0.5], &[1, 2]))
-        .unwrap();
+    let mean = graph.input(&Tensor::new(&[0.0, 1.0], &[1, 2])).unwrap();
+    let std = graph.input(&Tensor::new(&[1.0, 0.5], &[1, 2])).unwrap();
 
     let dist = Normal::new(mean.clone(), std.clone());
 
@@ -420,9 +391,7 @@ fn test_normal_node_group_tagging() {
     assert_eq!(entropy.node_group_tag().unwrap().group_type, "Normal");
 
     // log_prob() 产生的节点应带标签
-    let value = graph
-        .input(&Tensor::new(&[0.5, 0.5], &[1, 2]))
-        .unwrap();
+    let value = graph.input(&Tensor::new(&[0.5, 0.5], &[1, 2])).unwrap();
     let lp = dist.log_prob(&value);
     assert_eq!(lp.node_group_tag().unwrap().group_type, "Normal");
 

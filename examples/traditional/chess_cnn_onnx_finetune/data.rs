@@ -14,8 +14,8 @@ use std::path::Path;
 
 /// 15 类类别名称
 pub const CLASS_NAMES: [&str; 15] = [
-    "空位", "红帅", "红仕", "红相", "红車", "红馬", "红炮", "红兵",
-    "黑将", "黑士", "黑象", "黑車", "黑馬", "黑炮", "黑卒",
+    "空位", "红帅", "红仕", "红相", "红車", "红馬", "红炮", "红兵", "黑将", "黑士", "黑象", "黑車",
+    "黑馬", "黑炮", "黑卒",
 ];
 
 /// 加载合成训练集和测试集
@@ -25,9 +25,7 @@ pub const CLASS_NAMES: [&str; 15] = [
 /// 返回 `((train_images, train_labels), (test_images, test_labels))`
 /// - images: [N, C, H, W] float32
 /// - labels: [N, 15] one-hot float32
-pub fn load_chess_data(
-    data_dir: &str,
-) -> Result<((Tensor, Tensor), (Tensor, Tensor)), String> {
+pub fn load_chess_data(data_dir: &str) -> Result<((Tensor, Tensor), (Tensor, Tensor)), String> {
     let train_dir = Path::new(data_dir).join("train");
     let test_dir = Path::new(data_dir).join("test");
 

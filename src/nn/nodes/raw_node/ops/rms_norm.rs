@@ -42,8 +42,12 @@ pub(crate) struct RMSNormOp {
 }
 
 impl RMSNormOp {
-    pub(crate) const fn normalized_dims(&self) -> usize { self.normalized_dims }
-    pub(crate) const fn eps(&self) -> f32 { self.eps }
+    pub(crate) const fn normalized_dims(&self) -> usize {
+        self.normalized_dims
+    }
+    pub(crate) const fn eps(&self) -> f32 {
+        self.eps
+    }
 
     pub(in crate::nn) fn new(
         parent_shape: &[usize],
@@ -167,12 +171,14 @@ impl TraitNode for RMSNormOp {
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
-        let rms_t = self.rms_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("RMSNormOp rms 缓存为空".to_string())
-        })?;
-        let x_hat = self.x_hat_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("RMSNormOp x_hat 缓存为空".to_string())
-        })?;
+        let rms_t = self
+            .rms_cache
+            .as_ref()
+            .ok_or_else(|| GraphError::ComputationError("RMSNormOp rms 缓存为空".to_string()))?;
+        let x_hat = self
+            .x_hat_cache
+            .as_ref()
+            .ok_or_else(|| GraphError::ComputationError("RMSNormOp x_hat 缓存为空".to_string()))?;
 
         let shape = upstream_grad.shape();
         let ndim = shape.len();
@@ -202,9 +208,8 @@ impl TraitNode for RMSNormOp {
             // dx = (1/d) * (1/rms) * (d * upstream - x_hat * sum_up_xh)
             for i in 0..d {
                 let idx = offset + i;
-                dx_data[idx] = inv_d
-                    * inv_rms
-                    * (d as f32 * up_flat[idx] - xh_flat[idx] * sum_up_xh);
+                dx_data[idx] =
+                    inv_d * inv_rms * (d as f32 * up_flat[idx] - xh_flat[idx] * sum_up_xh);
             }
         }
 

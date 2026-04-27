@@ -58,8 +58,8 @@ fn test_gradient_vanishing_converges() {
     let mut detector = ConvergenceDetector::new(config);
 
     // loss 持续下降（不触发 loss 收敛），但梯度消失
-    assert_eq!(detector.should_stop(0, 1.0, 1e-6), None);   // stall=1
-    assert_eq!(detector.should_stop(1, 0.9, 1e-6), None);   // stall=2
+    assert_eq!(detector.should_stop(0, 1.0, 1e-6), None); // stall=1
+    assert_eq!(detector.should_stop(1, 0.9, 1e-6), None); // stall=2
     assert_eq!(
         detector.should_stop(2, 0.8, 1e-6),
         Some(StopReason::GradientVanished) // stall=3 = patience
@@ -76,11 +76,11 @@ fn test_gradient_stall_resets_on_recovery() {
     let mut detector = ConvergenceDetector::new(config);
 
     // 梯度消失 2 次后恢复，计数器重置
-    assert_eq!(detector.should_stop(0, 1.0, 1e-6), None);   // stall=1
-    assert_eq!(detector.should_stop(1, 0.9, 1e-6), None);   // stall=2
-    assert_eq!(detector.should_stop(2, 0.8, 0.1), None);    // stall 重置=0
-    assert_eq!(detector.should_stop(3, 0.7, 1e-6), None);   // stall=1
-    assert_eq!(detector.should_stop(4, 0.6, 1e-6), None);   // stall=2
+    assert_eq!(detector.should_stop(0, 1.0, 1e-6), None); // stall=1
+    assert_eq!(detector.should_stop(1, 0.9, 1e-6), None); // stall=2
+    assert_eq!(detector.should_stop(2, 0.8, 0.1), None); // stall 重置=0
+    assert_eq!(detector.should_stop(3, 0.7, 1e-6), None); // stall=1
+    assert_eq!(detector.should_stop(4, 0.6, 1e-6), None); // stall=2
     assert_eq!(
         detector.should_stop(5, 0.5, 1e-6),
         Some(StopReason::GradientVanished) // stall=3
@@ -323,7 +323,7 @@ fn test_window_slides_correctly() {
     assert_eq!(detector.should_stop(2, 0.1, 1.0), None); // 窗口 [1.0, 0.5, 0.1]
 
     // 继续喂入稳定的 loss → 旧值滑出窗口
-    assert_eq!(detector.should_stop(3, 0.1, 1.0), None);  // 窗口 [0.5, 0.1, 0.1]
+    assert_eq!(detector.should_stop(3, 0.1, 1.0), None); // 窗口 [0.5, 0.1, 0.1]
     assert_eq!(
         detector.should_stop(4, 0.1, 1.0), // 窗口 [0.1, 0.1, 0.1] → range=0
         Some(StopReason::LossConverged)
@@ -531,11 +531,11 @@ fn test_nan_grad_norm_resets_stall_counter() {
     let mut detector = ConvergenceDetector::new(config);
 
     // 2 次梯度消失 → NaN 打断（重置计数器）→ 需要再连续 3 次才触发
-    assert_eq!(detector.should_stop(0, 1.0, 1e-6), None);   // stall=1
-    assert_eq!(detector.should_stop(1, 0.9, 1e-6), None);   // stall=2
+    assert_eq!(detector.should_stop(0, 1.0, 1e-6), None); // stall=1
+    assert_eq!(detector.should_stop(1, 0.9, 1e-6), None); // stall=2
     assert_eq!(detector.should_stop(2, 0.8, f32::NAN), None); // NaN → stall 重置=0
-    assert_eq!(detector.should_stop(3, 0.7, 1e-6), None);   // stall=1
-    assert_eq!(detector.should_stop(4, 0.6, 1e-6), None);   // stall=2
+    assert_eq!(detector.should_stop(3, 0.7, 1e-6), None); // stall=1
+    assert_eq!(detector.should_stop(4, 0.6, 1e-6), None); // stall=2
     assert_eq!(
         detector.should_stop(5, 0.5, 1e-6),
         Some(StopReason::GradientVanished) // stall=3

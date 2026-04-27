@@ -258,7 +258,9 @@ fn test_flatten_vjp_unit_upstream() -> Result<(), GraphError> {
     flat.forward_recursive(1, false).unwrap();
 
     let upstream = Tensor::ones(&[1, 6]);
-    let grad = flat.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = flat
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // 梯度只是形状变化，数值直接透传
     assert_eq!(grad.shape(), &[2, 3]);
@@ -291,7 +293,9 @@ fn test_flatten_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     // 非单位上游梯度
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 6]);
-    let grad = flat.calc_grad_to_parent_index(0, &upstream)?.resolve(&upstream);
+    let grad = flat
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
 
     // 梯度被 reshape 回输入形状，数值保持不变
     assert_eq!(grad.shape(), &[2, 3]);

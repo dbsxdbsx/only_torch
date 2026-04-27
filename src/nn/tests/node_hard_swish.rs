@@ -104,7 +104,9 @@ fn test_hard_swish_vjp_unit_upstream() -> Result<(), GraphError> {
     hard_swish.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
-    let grad = hard_swish.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = hard_swish
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 0.6667, epsilon = 1e-3);
@@ -135,7 +137,9 @@ fn test_hard_swish_vjp_non_unit_upstream() -> Result<(), GraphError> {
     hard_swish.forward_recursive(1, false).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
-    let grad = hard_swish.calc_grad_to_parent_index(0, &upstream_grad)?.resolve(&upstream_grad);
+    let grad = hard_swish
+        .calc_grad_to_parent_index(0, &upstream_grad)?
+        .resolve(&upstream_grad);
 
     assert_eq!(grad.shape(), &[2, 2]);
     assert_abs_diff_eq!(grad[[0, 0]], 2.0 * 0.6667, epsilon = 1e-2);
@@ -298,12 +302,24 @@ fn test_create_hard_swish_node_preserves_shape() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
 
-    let input_2d = inner.borrow_mut().create_basic_input_node(&[3, 10], None).unwrap();
-    let hs_2d = inner.borrow_mut().create_hard_swish_node(input_2d, None).unwrap();
+    let input_2d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 10], None)
+        .unwrap();
+    let hs_2d = inner
+        .borrow_mut()
+        .create_hard_swish_node(input_2d, None)
+        .unwrap();
     assert_eq!(hs_2d.shape(), vec![3, 10]);
 
-    let input_3d = inner.borrow_mut().create_basic_input_node(&[2, 3, 4], None).unwrap();
-    let hs_3d = inner.borrow_mut().create_hard_swish_node(input_3d, None).unwrap();
+    let input_3d = inner
+        .borrow_mut()
+        .create_basic_input_node(&[2, 3, 4], None)
+        .unwrap();
+    let hs_3d = inner
+        .borrow_mut()
+        .create_hard_swish_node(input_3d, None)
+        .unwrap();
     assert_eq!(hs_3d.shape(), vec![2, 3, 4]);
 }
 
@@ -315,9 +331,15 @@ fn test_create_hard_swish_node_drop_releases() {
     let weak_hard_swish;
     let weak_input;
     {
-        let input = inner.borrow_mut().create_basic_input_node(&[2, 3], None).unwrap();
+        let input = inner
+            .borrow_mut()
+            .create_basic_input_node(&[2, 3], None)
+            .unwrap();
         weak_input = Rc::downgrade(&input);
-        let hard_swish = inner.borrow_mut().create_hard_swish_node(input, None).unwrap();
+        let hard_swish = inner
+            .borrow_mut()
+            .create_hard_swish_node(input, None)
+            .unwrap();
         weak_hard_swish = Rc::downgrade(&hard_swish);
         assert!(weak_hard_swish.upgrade().is_some());
         assert!(weak_input.upgrade().is_some());

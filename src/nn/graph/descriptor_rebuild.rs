@@ -77,7 +77,8 @@ impl Graph {
             // 注入 ONNX provenance 到 NodeInner（演化路径下 origin_onnx_nodes 为空 Vec，
             // 等价于不注入；ONNX 路径下注入 ["Conv_5"] 等原 ONNX 节点名）
             if !node_desc.origin_onnx_nodes.is_empty() {
-                var.node().set_origin_onnx_nodes(node_desc.origin_onnx_nodes.clone());
+                var.node()
+                    .set_origin_onnx_nodes(node_desc.origin_onnx_nodes.clone());
             }
 
             // 归类输入/目标节点

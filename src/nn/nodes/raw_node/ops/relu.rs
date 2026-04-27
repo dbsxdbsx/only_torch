@@ -1,7 +1,7 @@
 use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
-use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::nodes::raw_node::GradResult;
+use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 
@@ -99,9 +99,9 @@ impl TraitNode for ReLU {
 
         Ok(GradResult::Computed(upstream_grad.where_with_tensor(
             value,
-            |_, y| y > 0.0,     // 用 value 判断区域
-            |g, _| g,           // y > 0 时保留梯度
-            |_, _| 0.0,         // y <= 0 时梯度为 0
+            |_, y| y > 0.0, // 用 value 判断区域
+            |g, _| g,       // y > 0 时保留梯度
+            |_, _| 0.0,     // y <= 0 时梯度为 0
         )))
     }
 

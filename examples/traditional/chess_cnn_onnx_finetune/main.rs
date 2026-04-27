@@ -24,7 +24,7 @@
 
 mod data;
 
-use data::{load_chess_data, CLASS_NAMES};
+use data::{CLASS_NAMES, load_chess_data};
 use only_torch::data::{DataLoader, TensorDataset};
 use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Optimizer, RebuildResult, VarLossOps};
@@ -157,10 +157,7 @@ fn main() -> Result<(), GraphError> {
     println!("\n各类准确率（最终模型）：");
     print_per_class_accuracy(&onnx_result, &test_x, &test_y)?;
 
-    println!(
-        "\n总耗时: {:.1}s",
-        total_start.elapsed().as_secs_f32()
-    );
+    println!("\n总耗时: {:.1}s", total_start.elapsed().as_secs_f32());
     println!("[OK] 中国象棋 CNN 示例完成！");
     Ok(())
 }

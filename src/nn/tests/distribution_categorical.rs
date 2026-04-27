@@ -329,10 +329,7 @@ fn test_categorical_node_group_tagging() {
     // 缓存节点（softmax, log_softmax）应带 "Categorical" 标签
     let probs = dist.probs();
     let log_probs = dist.log_probs();
-    assert_eq!(
-        probs.node_group_tag().unwrap().group_type,
-        "Categorical"
-    );
+    assert_eq!(probs.node_group_tag().unwrap().group_type, "Categorical");
     assert_eq!(
         log_probs.node_group_tag().unwrap().group_type,
         "Categorical"
@@ -345,10 +342,7 @@ fn test_categorical_node_group_tagging() {
 
     // entropy() 产生的节点也应带标签
     let entropy = dist.entropy();
-    assert_eq!(
-        entropy.node_group_tag().unwrap().group_type,
-        "Categorical"
-    );
+    assert_eq!(entropy.node_group_tag().unwrap().group_type, "Categorical");
 
     // log_prob() 产生的节点也应带标签
     let action = Tensor::new(&[1.0], &[1, 1]);

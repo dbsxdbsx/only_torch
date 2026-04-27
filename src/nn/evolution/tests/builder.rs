@@ -1821,7 +1821,7 @@ fn test_phase5_node_level_partial_inherit_after_shrink() {
 #[test]
 fn test_phase5_node_level_conv2d_weight_inherit_behavior() {
     use crate::nn::evolution::node_ops::{
-        node_main_path, repair_param_input_dims, resize_conv2d_out, NodeBlockKind,
+        NodeBlockKind, node_main_path, repair_param_input_dims, resize_conv2d_out,
     };
 
     // 在 minimal 种子 [Conv(1→8) → Pool → Flatten → Linear] 前插入首层 Conv2d(1→4) 作为「首层可 resize」目标
@@ -2002,12 +2002,16 @@ fn test_backfill_no_orphan_rnn() {
 
     for vn in &visible {
         let has_edge = vn.parent_ids.iter().any(|pid| visible_ids.contains(&pid.0))
-            || visible.iter().any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
+            || visible
+                .iter()
+                .any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
         let is_leaf = vn.type_name == "Input" || vn.type_name == "Parameter";
         assert!(
             has_edge || is_leaf,
             "可见节点 gid={} ({}, {}) 应有可见边或是叶节点",
-            vn.id.0, vn.type_name, vn.name.as_deref().unwrap_or("?"),
+            vn.id.0,
+            vn.type_name,
+            vn.name.as_deref().unwrap_or("?"),
         );
     }
 }
@@ -2034,12 +2038,16 @@ fn test_backfill_no_orphan_gru() {
 
     for vn in &visible {
         let has_edge = vn.parent_ids.iter().any(|pid| visible_ids.contains(&pid.0))
-            || visible.iter().any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
+            || visible
+                .iter()
+                .any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
         let is_leaf = vn.type_name == "Input" || vn.type_name == "Parameter";
         assert!(
             has_edge || is_leaf,
             "GRU 可见节点 gid={} ({}, {}) 应有可见边或是叶节点",
-            vn.id.0, vn.type_name, vn.name.as_deref().unwrap_or("?"),
+            vn.id.0,
+            vn.type_name,
+            vn.name.as_deref().unwrap_or("?"),
         );
     }
 }
@@ -2066,12 +2074,16 @@ fn test_backfill_no_orphan_lstm() {
 
     for vn in &visible {
         let has_edge = vn.parent_ids.iter().any(|pid| visible_ids.contains(&pid.0))
-            || visible.iter().any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
+            || visible
+                .iter()
+                .any(|other| other.parent_ids.iter().any(|p| p.0 == vn.id.0));
         let is_leaf = vn.type_name == "Input" || vn.type_name == "Parameter";
         assert!(
             has_edge || is_leaf,
             "LSTM 可见节点 gid={} ({}, {}) 应有可见边或是叶节点",
-            vn.id.0, vn.type_name, vn.name.as_deref().unwrap_or("?"),
+            vn.id.0,
+            vn.type_name,
+            vn.name.as_deref().unwrap_or("?"),
         );
     }
 }
@@ -2092,7 +2104,11 @@ fn test_build_fm_spatial_1ch_to_8ch_forward() {
     build.graph.forward(&build.output).unwrap();
 
     let out = build.output.value().unwrap().unwrap();
-    assert_eq!(out.shape().len(), 2, "FM 空间网络输出应为 2D (batch, classes)");
+    assert_eq!(
+        out.shape().len(),
+        2,
+        "FM 空间网络输出应为 2D (batch, classes)"
+    );
     assert_eq!(out.shape()[1], 10, "输出维度应为 10");
 }
 
@@ -2199,10 +2215,7 @@ fn test_fm_synthetic_id_stability_across_generations() {
     let build2 = genome.build(&mut rng2).unwrap();
     let ids2: Vec<u64> = build2.fm_masks.keys().copied().collect();
 
-    assert_eq!(
-        ids1, ids2,
-        "相同基因组的两次构建应产生相同的合成 kernel ID"
-    );
+    assert_eq!(ids1, ids2, "相同基因组的两次构建应产生相同的合成 kernel ID");
 }
 
 /// 验证 capture → restore 链路：合成 kernel 的权重能正确保存和恢复
@@ -2344,9 +2357,10 @@ fn test_fm_sparse_fusion_after_edge_removal() {
     let build = genome.build(&mut rng).unwrap();
 
     // 如果融合成功，fm_masks 中应有稀疏掩码（connected_pairs < in_ch * out_ch）
-    let has_sparse = build.fm_masks.values().any(|m| {
-        m.connected_pairs.len() < m.in_ch * m.out_ch
-    });
+    let has_sparse = build
+        .fm_masks
+        .values()
+        .any(|m| m.connected_pairs.len() < m.in_ch * m.out_ch);
     // 可能融合也可能不融合（取决于移除后是否仍然同构），但构建必须成功
     let input = Tensor::ones(&[1, 1, 8, 8]);
     build.input.set_value(&input).unwrap();
@@ -2411,15 +2425,13 @@ fn test_add_fm_edge_inherits_block_params() {
 
         // 验证新边的 kernel_size 与已有边一致
         let analysis2 = analyze_fm_subgraph(genome.nodes());
-        let node_map2: std::collections::HashMap<
-            u64,
-            &crate::nn::evolution::node_gene::NodeGene,
-        > = genome
-            .nodes()
-            .iter()
-            .filter(|n| n.enabled)
-            .map(|n| (n.innovation_number, n))
-            .collect();
+        let node_map2: std::collections::HashMap<u64, &crate::nn::evolution::node_gene::NodeGene> =
+            genome
+                .nodes()
+                .iter()
+                .filter(|n| n.enabled)
+                .map(|n| (n.innovation_number, n))
+                .collect();
 
         for e in &analysis2.fm_edges {
             if let Some(kid) = e.kernel_node_id {
@@ -2482,15 +2494,13 @@ fn test_split_fm_edge_inherits_params() {
 
         // 验证新边的 kernel_size 仍在已有范围内
         let analysis2 = analyze_fm_subgraph(genome.nodes());
-        let node_map2: std::collections::HashMap<
-            u64,
-            &crate::nn::evolution::node_gene::NodeGene,
-        > = genome
-            .nodes()
-            .iter()
-            .filter(|n| n.enabled)
-            .map(|n| (n.innovation_number, n))
-            .collect();
+        let node_map2: std::collections::HashMap<u64, &crate::nn::evolution::node_gene::NodeGene> =
+            genome
+                .nodes()
+                .iter()
+                .filter(|n| n.enabled)
+                .map(|n| (n.innovation_number, n))
+                .collect();
 
         for e in &analysis2.fm_edges {
             if let Some(kid) = e.kernel_node_id {
@@ -2510,7 +2520,6 @@ fn test_split_fm_edge_inherits_params() {
 /// 验证 Conv2d 无效 shape 在构建时被拒绝（而不是静默修补为 1×1）
 #[test]
 fn test_invalid_conv_shape_rejected_at_build() {
-
     // 构造一个 kernel 太大的无效基因组
     let mut genome = NetworkGenome::minimal_spatial(1, 2, (4, 4));
     genome.migrate_to_node_level().unwrap();
