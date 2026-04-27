@@ -17,7 +17,7 @@
 mod model;
 
 use model::MultiInstanceSegmentationNet;
-use only_torch::data::{DataLoader, TensorDataset};
+use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 use std::time::Instant;
@@ -391,18 +391,18 @@ struct InstancePair {
 
 impl InstancePair {
     fn new(sample_idx: usize, seed: u64) -> Self {
-        let h = mix(seed ^ sample_idx as u64);
+        let mut rng = SyntheticRng::from_seed_parts(seed, &[sample_idx as u64]);
         let left = InstanceRect {
-            cx: 3 + (h % 3) as isize,
-            cy: 4 + ((h >> 8) % 8) as isize,
-            half_w: 1 + ((h >> 16) % 2) as isize,
-            half_h: 1 + ((h >> 24) % 3) as isize,
+            cx: rng.isize_range(3..6),
+            cy: rng.isize_range(4..12),
+            half_w: rng.isize_range(1..3),
+            half_h: rng.isize_range(1..4),
         };
         let right = InstanceRect {
-            cx: 10 + ((h >> 32) % 3) as isize,
-            cy: 4 + ((h >> 40) % 8) as isize,
-            half_w: 1 + ((h >> 48) % 2) as isize,
-            half_h: 1 + ((h >> 56) % 3) as isize,
+            cx: rng.isize_range(10..13),
+            cy: rng.isize_range(4..12),
+            half_w: rng.isize_range(1..3),
+            half_h: rng.isize_range(1..4),
         };
 
         Self {
@@ -428,14 +428,6 @@ impl InstanceRect {
 }
 
 fn deterministic_noise(seed: u64, sample_idx: usize, x: usize, y: usize) -> f32 {
-    let h = mix(seed ^ ((sample_idx as u64) << 32) ^ ((x as u64) << 16) ^ y as u64);
-    (h % 1000) as f32 / 1000.0
-}
-
-fn mix(mut x: u64) -> u64 {
-    x ^= x >> 33;
-    x = x.wrapping_mul(0xff51afd7ed558ccd);
-    x ^= x >> 33;
-    x = x.wrapping_mul(0xc4ceb9fe1a85ec53);
-    x ^ (x >> 33)
+    let mut rng = SyntheticRng::from_seed_parts(seed, &[sample_idx as u64, x as u64, y as u64]);
+    rng.next_f32()
 }

@@ -25,25 +25,20 @@
 mod model;
 
 use model::DualOutputClassifier;
+use only_torch::data::SyntheticRng;
 use only_torch::metrics::{accuracy, r2_score};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 
 /// `生成批量数据：(x_batch` [N,1], `cls_batch` [N,2], `reg_batch` [N,1])
 fn generate_batch_data(n: usize, seed: u64) -> (Tensor, Tensor, Tensor) {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
     let mut xs = Vec::with_capacity(n);
     let mut cls = Vec::with_capacity(n * 2);
     let mut reg = Vec::with_capacity(n);
+    let mut rng = SyntheticRng::new(seed);
 
-    for i in 0..n {
-        let mut hasher = DefaultHasher::new();
-        (seed, i).hash(&mut hasher);
-        let h = hasher.finish();
-
-        let x = ((h % 1000) as f32 / 100.0) - 5.0;
+    for _ in 0..n {
+        let x = rng.f32_range(-5.0..5.0);
         let x = if x.abs() < 0.1 { x + 0.5 } else { x };
 
         xs.push(x);

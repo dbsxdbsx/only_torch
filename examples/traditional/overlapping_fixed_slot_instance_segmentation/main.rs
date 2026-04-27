@@ -17,7 +17,7 @@
 mod model;
 
 use model::OverlappingFixedSlotInstanceSegmentationNet;
-use only_torch::data::{DataLoader, TensorDataset};
+use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 use std::time::Instant;
@@ -305,28 +305,23 @@ fn generate_dataset(n: usize, seed: u64) -> (Tensor, Tensor) {
 }
 
 fn generate_instances(sample_idx: usize, seed: u64) -> Vec<InstanceObject> {
-    let h = mix(seed ^ sample_idx as u64);
-    let count = 1 + (h % INSTANCE_SLOTS as u64) as usize;
+    let mut rng = SyntheticRng::from_seed_parts(seed, &[sample_idx as u64]);
+    let count = rng.usize_range(1..INSTANCE_SLOTS + 1);
     let mut instances: Vec<InstanceObject> = (0..count)
         .map(|idx| {
-            let oh = mix(h ^ (idx as u64 + 1).wrapping_mul(0x517c_c1b7_2722_0a95));
-            let half_w = 5 + ((oh >> 8) % 11) as isize;
-            let half_h = 5 + ((oh >> 16) % 11) as isize;
+            let mut obj_rng = rng.fork(idx as u64 + 1);
             let margin = 12isize;
-            let span = IMAGE_SIZE as isize - 2 * margin;
-            let cx = margin + ((oh >> 24) % span as u64) as isize;
-            let cy = margin + ((oh >> 40) % span as u64) as isize;
-            let kind = match oh % 3 {
+            let kind = match obj_rng.usize_range(0..3) {
                 0 => InstanceKind::Rectangle,
                 1 => InstanceKind::Circle,
                 _ => InstanceKind::Triangle,
             };
             InstanceObject {
                 kind,
-                cx,
-                cy,
-                half_w,
-                half_h,
+                cx: obj_rng.isize_range(margin..IMAGE_SIZE as isize - margin),
+                cy: obj_rng.isize_range(margin..IMAGE_SIZE as isize - margin),
+                half_w: obj_rng.isize_range(5..16),
+                half_h: obj_rng.isize_range(5..16),
                 draw_order: idx,
                 slot: 0,
             }
@@ -485,14 +480,6 @@ fn slot_color(slot: usize) -> [u8; 3] {
 }
 
 fn deterministic_noise(seed: u64, sample_idx: usize, x: usize, y: usize) -> f32 {
-    let h = mix(seed ^ ((sample_idx as u64) << 32) ^ ((x as u64) << 16) ^ y as u64);
-    (h % 1000) as f32 / 1000.0
-}
-
-fn mix(mut x: u64) -> u64 {
-    x ^= x >> 33;
-    x = x.wrapping_mul(0xff51afd7ed558ccd);
-    x ^= x >> 33;
-    x = x.wrapping_mul(0xc4ceb9fe1a85ec53);
-    x ^ (x >> 33)
+    let mut rng = SyntheticRng::from_seed_parts(seed, &[sample_idx as u64, x as u64, y as u64]);
+    rng.next_f32()
 }

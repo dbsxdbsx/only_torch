@@ -17,7 +17,7 @@
 mod model;
 
 use model::ParityRNN;
-use only_torch::data::{DataLoader, TensorDataset};
+use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
 use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
@@ -188,30 +188,17 @@ fn evaluate(
 /// - `sequences`: `[num_samples, seq_len, 1]` 的输入序列 Tensor
 /// - `labels`: `[num_samples, 2]` 的 one-hot 标签 Tensor
 fn generate_parity_data(num_samples: usize, seq_len: usize, seed: u64) -> (Tensor, Tensor) {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
     let mut seq_data = Vec::with_capacity(num_samples * seq_len);
     let mut label_data = Vec::with_capacity(num_samples * 2);
 
     for i in 0..num_samples {
-        // 伪随机生成
-        let mut hasher = DefaultHasher::new();
-        (seed, i as u64).hash(&mut hasher);
-        let mut hash = hasher.finish();
-
+        let mut rng = SyntheticRng::from_seed_parts(seed, &[i as u64]);
         let mut count_ones = 0u32;
 
-        for j in 0..seq_len {
-            if hash == 0 {
-                hasher = DefaultHasher::new();
-                (seed, i as u64, j).hash(&mut hasher);
-                hash = hasher.finish();
-            }
-            let bit = (hash & 1) as f32;
+        for _ in 0..seq_len {
+            let bit = if rng.next_bool() { 1.0 } else { 0.0 };
             seq_data.push(bit);
             count_ones += bit as u32;
-            hash >>= 1;
         }
 
         // one-hot 标签: 偶数=[1,0], 奇数=[0,1]

@@ -13,6 +13,7 @@
 mod model;
 
 use model::MultiIOFusion;
+use only_torch::data::SyntheticRng;
 use only_torch::metrics::{accuracy, r2_score};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
@@ -23,24 +24,20 @@ fn generate_batch_data(count: usize, seed: u64) -> (Tensor, Tensor, Tensor, Tens
     let mut b_data = Vec::with_capacity(count * 8);
     let mut cls_data = Vec::with_capacity(count * 2);
     let mut reg_data = Vec::with_capacity(count);
-    let mut h = seed;
+    let mut rng = SyntheticRng::new(seed);
 
     for _ in 0..count {
-        h = h.wrapping_mul(6364136223846793005).wrapping_add(1);
-
         // 输入 A [4]
         let mut a = [0.0f32; 4];
-        for (i, val) in a.iter_mut().enumerate() {
-            h = h.wrapping_mul(6364136223846793005).wrapping_add(i as u64);
-            *val = ((h % 4000) as f32 / 1000.0) - 2.0;
+        for val in &mut a {
+            *val = rng.f32_range(-2.0..2.0);
         }
         a_data.extend_from_slice(&a);
 
         // 输入 B [8]
         let mut b = [0.0f32; 8];
-        for (i, val) in b.iter_mut().enumerate() {
-            h = h.wrapping_mul(6364136223846793005).wrapping_add(i as u64);
-            *val = ((h % 4000) as f32 / 1000.0) - 2.0;
+        for val in &mut b {
+            *val = rng.f32_range(-2.0..2.0);
         }
         b_data.extend_from_slice(&b);
 

@@ -34,6 +34,7 @@ mod dataloader;
 pub mod datasets;
 pub mod download;
 pub mod error;
+mod synthetic_rng;
 pub mod transforms;
 
 #[cfg(test)]
@@ -46,6 +47,7 @@ pub use dataloader::{
 };
 pub use datasets::{CaliforniaHousingDataset, MnistDataset, default_data_dir};
 pub use error::DataError;
+pub use synthetic_rng::SyntheticRng;
 pub use transforms::{
     CenterCrop, ColorJitter, Compose, GaussianNoise, Normalize, RandomAffine, RandomApply,
     RandomCrop, RandomErasing, RandomHorizontalFlip, RandomResizedCrop, RandomRotation, Transform,

@@ -16,12 +16,10 @@
  * ```
  */
 
+use only_torch::data::SyntheticRng;
 use only_torch::nn::evolution::{Evolution, EvolutionResult, TaskMetric};
 use only_torch::tensor::Tensor;
 use std::path::Path;
-
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 /// 生成固定长度奇偶性检测数据
 ///
@@ -36,12 +34,10 @@ fn generate_parity_data(n: usize, seq_len: usize, seed: u64) -> (Vec<Tensor>, Ve
     let mut labels = Vec::with_capacity(n);
 
     for i in 0..n {
-        let mut hasher = DefaultHasher::new();
-        (seed, i as u64).hash(&mut hasher);
-        let hash = hasher.finish();
+        let mut rng = SyntheticRng::from_seed_parts(seed, &[i as u64]);
 
         let data: Vec<f32> = (0..seq_len)
-            .map(|j| ((hash >> (j % 64)) & 1) as f32)
+            .map(|_| if rng.next_bool() { 1.0 } else { 0.0 })
             .collect();
         let ones_count: f32 = data.iter().sum();
         let parity = ones_count as usize % 2;

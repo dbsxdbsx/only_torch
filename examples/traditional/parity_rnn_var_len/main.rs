@@ -15,7 +15,7 @@
 mod model;
 
 use model::ParityRNN;
-use only_torch::data::{DataLoader, VarLenDataset, VarLenSample};
+use only_torch::data::{DataLoader, SyntheticRng, VarLenDataset, VarLenSample};
 use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, Var, VarLossOps};
 
@@ -179,36 +179,19 @@ fn generate_var_len_dataset(
     max_len: usize,
     seed: u64,
 ) -> VarLenDataset {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
     let mut dataset = VarLenDataset::new(1, 2); // feature_size=1, label_size=2
 
     for i in 0..num_samples {
-        // 确定序列长度
-        let mut hasher = DefaultHasher::new();
-        (seed, i as u64, "len").hash(&mut hasher);
-        let len_hash = hasher.finish();
-        let seq_len = min_len + (len_hash as usize % (max_len - min_len + 1));
-
-        // 生成序列
-        hasher = DefaultHasher::new();
-        (seed, i as u64, "seq").hash(&mut hasher);
-        let mut hash = hasher.finish();
+        let mut rng = SyntheticRng::from_seed_parts(seed, &[i as u64]);
+        let seq_len = rng.usize_range(min_len..max_len + 1);
 
         let mut features = Vec::with_capacity(seq_len);
         let mut count_ones = 0u32;
 
-        for j in 0..seq_len {
-            if hash == 0 {
-                hasher = DefaultHasher::new();
-                (seed, i as u64, j, "bit").hash(&mut hasher);
-                hash = hasher.finish();
-            }
-            let bit = (hash & 1) as f32;
+        for _ in 0..seq_len {
+            let bit = if rng.next_bool() { 1.0 } else { 0.0 };
             features.push(bit);
             count_ones += bit as u32;
-            hash >>= 1;
         }
 
         // one-hot 标签

@@ -18,6 +18,7 @@
 mod model;
 
 use model::SiameseSimilarity;
+use only_torch::data::SyntheticRng;
 use only_torch::metrics::accuracy;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
@@ -25,20 +26,14 @@ use only_torch::tensor::Tensor;
 /// `生成批量数据：(x1_batch` [N,1], `x2_batch` [N,1], `label_batch` [N,1])
 /// label = 1 如果 |x1 - x2| < threshold，否则 0
 fn generate_batch_data(n: usize, seed: u64, threshold: f32) -> (Tensor, Tensor, Tensor) {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
     let mut x1s = Vec::with_capacity(n);
     let mut x2s = Vec::with_capacity(n);
     let mut labels = Vec::with_capacity(n);
+    let mut rng = SyntheticRng::new(seed);
 
-    for i in 0..n {
-        let mut hasher = DefaultHasher::new();
-        (seed, i).hash(&mut hasher);
-        let h = hasher.finish();
-
-        let x1 = ((h % 1000) as f32 / 100.0) - 5.0;
-        let x2 = (((h >> 16) % 1000) as f32 / 100.0) - 5.0;
+    for _ in 0..n {
+        let x1 = rng.f32_range(-5.0..5.0);
+        let x2 = rng.f32_range(-5.0..5.0);
 
         x1s.push(x1);
         x2s.push(x2);

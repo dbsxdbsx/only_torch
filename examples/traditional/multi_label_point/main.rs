@@ -25,6 +25,7 @@
 mod model;
 
 use model::MultiLabelPointClassifier;
+use only_torch::data::SyntheticRng;
 use only_torch::metrics::{multilabel_loose_accuracy, multilabel_strict_accuracy};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
@@ -47,19 +48,13 @@ fn compute_labels(x: f32, y: f32) -> [f32; 4] {
 
 /// 生成批量数据（直接返回 batch Tensor）
 fn generate_data(n: usize, seed: u64) -> (Tensor, Tensor) {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
     let mut inputs = Vec::with_capacity(n * 2);
     let mut targets = Vec::with_capacity(n * 4);
+    let mut rng = SyntheticRng::new(seed);
 
-    for i in 0..n {
-        let mut hasher = DefaultHasher::new();
-        (seed, i).hash(&mut hasher);
-        let h = hasher.finish();
-
-        let x = (h % 1000) as f32 / 1000.0;
-        let y = ((h >> 16) % 1000) as f32 / 1000.0;
+    for _ in 0..n {
+        let x = rng.next_f32();
+        let y = rng.next_f32();
 
         inputs.push(x);
         inputs.push(y);

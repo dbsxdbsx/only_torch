@@ -13,7 +13,7 @@
 mod model;
 
 use model::SingleObjectDetectionNet;
-use only_torch::data::{DataLoader, TensorDataset};
+use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
 use only_torch::metrics::mean_box_iou_cxcywh;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
@@ -403,12 +403,12 @@ struct ShapeConfig {
 
 impl ShapeConfig {
     fn new(sample_idx: usize, seed: u64) -> Self {
-        let h = mix(seed ^ sample_idx as u64);
+        let mut rng = SyntheticRng::from_seed_parts(seed, &[sample_idx as u64]);
         Self {
-            cx: 4 + ((h >> 8) % 8) as isize,
-            cy: 4 + ((h >> 16) % 8) as isize,
-            half_w: 2 + ((h >> 32) % 3) as isize,
-            half_h: 2 + ((h >> 40) % 3) as isize,
+            cx: rng.isize_range(4..12),
+            cy: rng.isize_range(4..12),
+            half_w: rng.isize_range(2..5),
+            half_h: rng.isize_range(2..5),
         }
     }
 
@@ -460,14 +460,6 @@ fn single_box_iou(pred: [f32; 4], actual: [f32; 4]) -> f32 {
 }
 
 fn deterministic_noise(seed: u64, sample_idx: usize, x: usize, y: usize) -> f32 {
-    let h = mix(seed ^ ((sample_idx as u64) << 32) ^ ((x as u64) << 16) ^ y as u64);
-    (h % 1000) as f32 / 1000.0
-}
-
-fn mix(mut x: u64) -> u64 {
-    x ^= x >> 33;
-    x = x.wrapping_mul(0xff51afd7ed558ccd);
-    x ^= x >> 33;
-    x = x.wrapping_mul(0xc4ceb9fe1a85ec53);
-    x ^ (x >> 33)
+    let mut rng = SyntheticRng::from_seed_parts(seed, &[sample_idx as u64, x as u64, y as u64]);
+    rng.next_f32()
 }

@@ -22,6 +22,11 @@
 
 ### 新增
 
+- **feat(data/examples): 新增 `SyntheticRng` 统一合成数据可复现随机生成**
+  - `data` 模块新增 public `SyntheticRng`，用于 examples / tests / synthetic dataset 的确定性伪随机数生成；模型参数初始化仍使用 `Graph::new_with_seed`，演化流程仍使用 `Evolution::with_seed`
+  - 将传统与演化 examples 中手写的 `mix()` / `wrapping_mul` / `DefaultHasher` 数据生成逻辑统一迁移到 `SyntheticRng`，避免示例主路径暴露 hash mixing 常量与 debug 溢出风险
+  - 补充 `SyntheticRng` 单元测试，覆盖同 seed 可复现、seed parts 派生、range 边界与 fork 不消耗父流
+
 - **feat(vision/evolution): 补齐 Segmentation P1 benchmark 与单输出分割演化接入**
   - 新增 `overlapping_shapes_semantic_segmentation`：64x64 多形状、多对象、允许重叠的 visible semantic mask benchmark，报告 Pixel Accuracy、Dice、per-class IoU、Mean IoU
   - 新增 `overlapping_fixed_slot_instance_segmentation`：1..3 个可重叠实例、固定 slot、空 slot 与 visible mask 规则的 instance segmentation lite benchmark
