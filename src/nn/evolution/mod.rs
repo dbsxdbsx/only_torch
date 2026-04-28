@@ -42,6 +42,7 @@ use rand::rngs::StdRng;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::time::{Duration, Instant};
 
+use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::{GraphError, VisualizationOutput};
 use crate::tensor::Tensor;
 
@@ -572,6 +573,7 @@ pub struct InitialPortfolioConfig {
     pub include_flat_mlp: bool,
     pub include_tiny_cnn: bool,
     pub include_lenet_tiny: bool,
+    pub include_unet_lite: bool,
     pub flat_mlp_hidden: usize,
 }
 
@@ -585,6 +587,7 @@ impl InitialPortfolioConfig {
             include_flat_mlp: true,
             include_tiny_cnn: false,
             include_lenet_tiny: false,
+            include_unet_lite: false,
             flat_mlp_hidden: hidden.max(1),
         }
     }
@@ -594,19 +597,22 @@ impl InitialPortfolioConfig {
             include_flat_mlp: true,
             include_tiny_cnn: true,
             include_lenet_tiny: true,
+            include_unet_lite: false,
             flat_mlp_hidden: 128,
         }
     }
 
-    /// Dense segmentation 初始候选族。
+    /// Segmentation 初始候选族。
     ///
-    /// 复用现有字段以保持配置结构简单：`include_tiny_cnn` 表示最小 dense
-    /// segmentation head，`include_lenet_tiny` 表示稍深的 dense conv head。
+    /// `include_tiny_cnn` 表示最小 dense segmentation head，`include_lenet_tiny`
+    /// 表示稍深的 dense conv head，`include_unet_lite` 表示 encoder-decoder + skip
+    /// concat 的 U-Net-lite 起点。
     pub fn vision_segmentation() -> Self {
         Self {
             include_flat_mlp: false,
             include_tiny_cnn: true,
             include_lenet_tiny: true,
+            include_unet_lite: true,
             flat_mlp_hidden: 1,
         }
     }
@@ -616,6 +622,7 @@ impl InitialPortfolioConfig {
             include_flat_mlp: self.include_flat_mlp,
             include_tiny_cnn: self.include_tiny_cnn,
             include_lenet_tiny: self.include_lenet_tiny,
+            include_unet_lite: self.include_unet_lite,
             flat_mlp_hidden: self.flat_mlp_hidden.max(1),
         }
     }
@@ -1756,6 +1763,18 @@ fn initial_seed_genomes(
                 spatial,
             ));
         }
+        if config.include_unet_lite
+            && spatial.0 >= 4
+            && spatial.1 >= 4
+            && spatial.0 % 2 == 0
+            && spatial.1 % 2 == 0
+        {
+            seeds.push(NetworkGenome::spatial_segmentation_unet_lite(
+                prepared.input_dim,
+                prepared.output_dim,
+                spatial,
+            ));
+        }
         if seeds.is_empty() {
             seeds.push(minimal_genome.clone());
         }
@@ -1899,9 +1918,11 @@ fn select_prefilter_survivors(
 struct CandidateFeatures {
     depth: usize,
     conv2d_blocks: usize,
+    conv_transpose2d_blocks: usize,
     pool2d_blocks: usize,
     linear_blocks: usize,
     has_flatten: bool,
+    concat_nodes: usize,
     flops: Option<f32>,
 }
 
@@ -1923,11 +1944,26 @@ impl CandidateFeatures {
                 _ => {}
             }
         }
+        for node in genome.nodes().iter().filter(|node| node.enabled) {
+            match &node.node_type {
+                NodeTypeDescriptor::ConvTranspose2d { .. } => features.conv_transpose2d_blocks += 1,
+                NodeTypeDescriptor::Concat { .. } => features.concat_nodes += 1,
+                _ => {}
+            }
+        }
         features
     }
 
     fn family(&self) -> CandidateFamily {
-        if !self.has_flatten && self.linear_blocks == 0 && self.conv2d_blocks >= 3 {
+        if !self.has_flatten
+            && self.linear_blocks == 0
+            && self.conv2d_blocks >= 3
+            && self.pool2d_blocks >= 1
+            && self.conv_transpose2d_blocks >= 1
+            && self.concat_nodes >= 1
+        {
+            CandidateFamily::EncoderDecoderSeg
+        } else if !self.has_flatten && self.linear_blocks == 0 && self.conv2d_blocks >= 3 {
             CandidateFamily::DenseSegDeep
         } else if !self.has_flatten && self.linear_blocks == 0 && self.conv2d_blocks >= 1 {
             CandidateFamily::DenseSegHead
@@ -1962,6 +1998,14 @@ fn score_candidate_features(features: &CandidateFeatures) -> f32 {
     }
     if !features.has_flatten && features.linear_blocks == 0 && features.conv2d_blocks >= 3 {
         score += 0.20;
+    }
+    if !features.has_flatten
+        && features.linear_blocks == 0
+        && features.pool2d_blocks >= 1
+        && features.conv_transpose2d_blocks >= 1
+        && features.concat_nodes >= 1
+    {
+        score += 0.45;
     }
     if features.has_flatten && features.linear_blocks >= 1 {
         score += 0.10;

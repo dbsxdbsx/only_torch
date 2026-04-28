@@ -34,8 +34,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "输入: [1, {IMAGE_SIZE}, {IMAGE_SIZE}]，标签: [{NUM_CLASSES}, {IMAGE_SIZE}, {IMAGE_SIZE}]"
     );
     println!("指标: MeanIoU，传统对照: overlapping_shapes_unet_lite_segmentation");
-    println!("范围: 只对齐同一 benchmark，不要求本轮直接搜索 U-Net encoder-decoder");
-    println!("演化策略: segmentation portfolio + family-diverse P5-lite");
+    println!("范围: 对齐同一 benchmark，并纳入 U-Net-lite encoder-decoder 初始族");
+    println!("演化策略: segmentation portfolio + encoder-decoder family-diverse P5-lite");
     println!("训练样本: {TRAIN_SAMPLES}, 测试样本: {TEST_SAMPLES}, batch: {BATCH_SIZE}\n");
 
     let result = Evolution::supervised(train_data, test_data, TaskMetric::MeanIoU)

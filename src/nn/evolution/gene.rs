@@ -14,13 +14,14 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::tensor::Tensor;
 use std::collections::HashMap;
 use std::fmt;
 
 use super::node_expansion::{
-    InnovationCounter, expand_activation, expand_conv2d, expand_flatten, expand_linear,
-    expand_pool2d, expand_rnn,
+    InnovationCounter, expand_activation, expand_conv_transpose2d, expand_conv2d, expand_flatten,
+    expand_linear, expand_pool2d, expand_rnn,
 };
 use super::node_gene::{GenomeAnalysis, NodeGene};
 
@@ -979,6 +980,179 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "spatial_segmentation_tiny".to_string(),
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
+                weight_snapshots: HashMap::new(),
+            },
+        }
+    }
+
+    /// U-Net-lite 风格 segmentation 种子：Encoder Conv → Pool → Bottleneck →
+    /// ConvTranspose 上采样 → channel concat skip → Fuse Conv → 1×1 head。
+    ///
+    /// 该结构保留单输出 `[N, C, H, W]` 协议，但把 encoder-decoder 和空间 skip
+    /// connection 放入初始搜索空间，作为传统 U-Net-lite 强基线的 evolution 对照起点。
+    pub(crate) fn spatial_segmentation_unet_lite(
+        input_channels: usize,
+        output_channels: usize,
+        spatial: (usize, usize),
+    ) -> Self {
+        assert!(input_channels > 0, "input_channels 不能为零");
+        assert!(output_channels > 0, "output_channels 不能为零");
+        assert!(
+            spatial.0 >= 4 && spatial.1 >= 4,
+            "spatial (H, W) 至少需要 4"
+        );
+        assert!(
+            spatial.0 % 2 == 0 && spatial.1 % 2 == 0,
+            "U-Net-lite segmentation 种子要求偶数空间尺寸"
+        );
+
+        let encoder_channels = 8usize;
+        let bottleneck_channels = 16usize;
+        let pooled_spatial = (spatial.0 / 2, spatial.1 / 2);
+
+        let mut counter = InnovationCounter::new(1);
+        let mut nodes = expand_conv2d(
+            INPUT_INNOVATION,
+            input_channels,
+            encoder_channels,
+            3,
+            spatial,
+            0,
+            &mut counter,
+        );
+        let enc_conv_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Encoder Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            enc_conv_output_id,
+            vec![1, encoder_channels, spatial.0, spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let enc_skip_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Encoder 激活展开应至少产生一个节点");
+
+        nodes.extend(expand_pool2d(
+            enc_skip_id,
+            PoolType::Max,
+            2,
+            2,
+            spatial,
+            encoder_channels,
+            &mut counter,
+        ));
+        let pool_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Pool2d 展开应至少产生一个节点");
+
+        nodes.extend(expand_conv2d(
+            pool_output_id,
+            encoder_channels,
+            bottleneck_channels,
+            3,
+            pooled_spatial,
+            1,
+            &mut counter,
+        ));
+        let bottleneck_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Bottleneck Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            bottleneck_output_id,
+            vec![1, bottleneck_channels, pooled_spatial.0, pooled_spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let bottleneck_act_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Bottleneck 激活展开应至少产生一个节点");
+
+        nodes.extend(expand_conv_transpose2d(
+            bottleneck_act_id,
+            bottleneck_channels,
+            encoder_channels,
+            2,
+            2,
+            0,
+            0,
+            pooled_spatial,
+            2,
+            &mut counter,
+        ));
+        let up_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("ConvTranspose2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            up_output_id,
+            vec![1, encoder_channels, spatial.0, spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let up_act_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Upsample 激活展开应至少产生一个节点");
+
+        let concat_id = counter.next();
+        nodes.push(NodeGene::new(
+            concat_id,
+            NodeTypeDescriptor::Concat { axis: 1 },
+            vec![1, encoder_channels * 2, spatial.0, spatial.1],
+            vec![up_act_id, enc_skip_id],
+            None,
+        ));
+
+        nodes.extend(expand_conv2d(
+            concat_id,
+            encoder_channels * 2,
+            encoder_channels,
+            3,
+            spatial,
+            3,
+            &mut counter,
+        ));
+        let fuse_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Fuse Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            fuse_output_id,
+            vec![1, encoder_channels, spatial.0, spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let fuse_act_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Fuse 激活展开应至少产生一个节点");
+
+        nodes.extend(expand_conv2d(
+            fuse_act_id,
+            encoder_channels,
+            output_channels,
+            1,
+            spatial,
+            4,
+            &mut counter,
+        ));
+
+        Self {
+            input_dim: input_channels,
+            output_dim: output_channels,
+            seq_len: None,
+            input_spatial: Some(spatial),
+            training_config: TrainingConfig::default(),
+            generated_by: "spatial_segmentation_unet_lite".to_string(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),

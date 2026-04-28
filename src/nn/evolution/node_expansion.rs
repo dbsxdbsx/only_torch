@@ -222,6 +222,77 @@ pub fn expand_conv2d(
     ]
 }
 
+/// 展开 ConvTranspose2d 层 → Parameter(kernel) + ConvTranspose2d + Parameter(bias) + Add
+///
+/// 形状约定：
+/// - kernel: [in_channels, out_channels, k, k]
+/// - deconv_out: [1, out_channels, H_out, W_out]
+/// - bias: [1, out_channels, 1, 1]
+///
+/// 所有节点共享同一个 block_id。
+pub fn expand_conv_transpose2d(
+    input_id: u64,
+    in_channels: usize,
+    out_channels: usize,
+    kernel_size: usize,
+    stride: usize,
+    padding: usize,
+    output_padding: usize,
+    input_spatial: (usize, usize),
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let k = kernel_size;
+    let (h, w) = input_spatial;
+    let h_out = ((h.saturating_sub(1)) * stride + k + output_padding)
+        .saturating_sub(2 * padding)
+        .max(1);
+    let w_out = ((w.saturating_sub(1)) * stride + k + output_padding)
+        .saturating_sub(2 * padding)
+        .max(1);
+
+    let kernel_id = counter.next();
+    let deconv_id = counter.next();
+    let bias_id = counter.next();
+    let add_id = counter.next();
+
+    let bid = Some(block_id);
+    vec![
+        NodeGene::new(
+            kernel_id,
+            NodeTypeDescriptor::Parameter,
+            vec![in_channels, out_channels, k, k],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            deconv_id,
+            NodeTypeDescriptor::ConvTranspose2d {
+                stride: (stride, stride),
+                padding: (padding, padding),
+                output_padding: (output_padding, output_padding),
+            },
+            vec![1, out_channels, h_out, w_out],
+            vec![input_id, kernel_id],
+            bid,
+        ),
+        NodeGene::new(
+            bias_id,
+            NodeTypeDescriptor::Parameter,
+            vec![1, out_channels, 1, 1],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            add_id,
+            NodeTypeDescriptor::Add,
+            vec![1, out_channels, h_out, w_out],
+            vec![deconv_id, bias_id],
+            bid,
+        ),
+    ]
+}
+
 /// 展开 Pool2d 层 → 单个池化节点（无参数，block_id = None）
 pub fn expand_pool2d(
     input_id: u64,

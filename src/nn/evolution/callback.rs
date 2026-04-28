@@ -201,7 +201,7 @@ impl CandidateFamilyCounts {
     }
 }
 
-const CANDIDATE_FAMILY_COUNT: usize = 7;
+const CANDIDATE_FAMILY_COUNT: usize = 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CandidateFamily {
@@ -211,16 +211,18 @@ pub(crate) enum CandidateFamily {
     Hybrid,
     DenseSegHead,
     DenseSegDeep,
+    EncoderDecoderSeg,
     Other,
 }
 
 impl CandidateFamily {
-    pub(crate) fn all() -> [Self; 7] {
+    pub(crate) fn all() -> [Self; 8] {
         [
             CandidateFamily::LenetLike,
             CandidateFamily::TinyCnn,
             CandidateFamily::FlatMlp,
             CandidateFamily::Hybrid,
+            CandidateFamily::EncoderDecoderSeg,
             CandidateFamily::DenseSegDeep,
             CandidateFamily::DenseSegHead,
             CandidateFamily::Other,
@@ -235,6 +237,7 @@ impl CandidateFamily {
             CandidateFamily::Hybrid => "hybrid",
             CandidateFamily::DenseSegHead => "dense_seg_head",
             CandidateFamily::DenseSegDeep => "dense_seg_deep",
+            CandidateFamily::EncoderDecoderSeg => "encoder_decoder_seg",
             CandidateFamily::Other => "other",
         }
     }
@@ -245,9 +248,10 @@ impl CandidateFamily {
             CandidateFamily::TinyCnn => 1,
             CandidateFamily::FlatMlp => 2,
             CandidateFamily::Hybrid => 3,
-            CandidateFamily::DenseSegDeep => 4,
-            CandidateFamily::DenseSegHead => 5,
-            CandidateFamily::Other => 6,
+            CandidateFamily::EncoderDecoderSeg => 4,
+            CandidateFamily::DenseSegDeep => 5,
+            CandidateFamily::DenseSegHead => 6,
+            CandidateFamily::Other => 7,
         }
     }
 }

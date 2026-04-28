@@ -76,7 +76,7 @@ graph TD
 | Detection | Oriented Detection | `[ ]` | 暂无 | 需要旋转框表示、角度损失、旋转 IoU |
 | Detection | 3D Detection | `[ ]` | 暂无 | 需要深度 / 点云 / 相机几何等数据表示 |
 | Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练 16x16 合成 mask | 数据过 toy；缺少更可信 benchmark |
-| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`overlapping_shapes_unet_lite_segmentation` 提供 U-Net-lite 强基线；`evolution_overlapping_shapes_semantic_segmentation` 覆盖 32x32 smoke；`evolution_overlapping_shapes_unet_lite_segmentation` 已对齐 64x64 benchmark | Evolution 仍未搜索 U-Net encoder-decoder；下一步需要决定是扩展搜索空间还是优化 dense forward |
+| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`overlapping_shapes_unet_lite_segmentation` 提供 U-Net-lite 强基线；`evolution_overlapping_shapes_semantic_segmentation` 覆盖 32x32 smoke；`evolution_overlapping_shapes_unet_lite_segmentation` 已对齐 64x64 benchmark 并纳入 encoder-decoder 初始族 | Evolution 仍需让 Pool / Deconv / skip concat 进入稳定 mutation 路径，再判断是否优化 dense forward |
 | Segmentation | 固定 slot 实例分割 | `[~]` | `multi_instance_segmentation` 支持固定 2 slot mask | 不支持不定数量实例、类别、confidence、matching |
 | Segmentation | 通用实例分割 | `[ ]` | 暂无 | 需要变长实例列表、mask matching、实例级指标 |
 | Segmentation | 全景分割 | `[ ]` | 暂无 | 依赖语义分割 + 实例分割统一表示 |
@@ -94,7 +94,7 @@ graph TD
 |---|---|---|---|
 | P0 | 建立空间视觉任务路线图 | `[x]` | 统一术语、任务边界和能力矩阵 |
 | P1 | Segmentation v2 数据与指标 | `[~]` | 已有 overlapping shapes benchmark、U-Net-lite 强基线和 Mean IoU / Dice；下一步扩大数据规模与难度 |
-| P2 | Segmentation Evolution | `[~]` | 已有 spatial-to-spatial minimal genome、dense segmentation portfolio 与 P5-lite/timing 审计；`evolution_overlapping_shapes_unet_lite_segmentation` 在 debug + BLAS 下约 24.5s 达到 Mean IoU 54.3% |
+| P2 | Segmentation Evolution | `[~]` | 已有 spatial-to-spatial minimal genome、dense + encoder-decoder segmentation portfolio 与 P5-lite/timing 审计；`evolution_overlapping_shapes_unet_lite_segmentation` 最新 debug + BLAS 复测约 20.0s 达到 Mean IoU 53.3% |
 | P3 | FCN / U-Net 风格传统强基线 | `[x]` | `overlapping_shapes_unet_lite_segmentation` 在 debug + BLAS 下约 27.4s 达到 Mean IoU 75.6%，可作为后续 Segmentation Evolution 对照 |
 | P4 | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
 | P5 | 多输出 / 多头 Evolution | `[ ]` | 支持 detection + mask 等多任务输出与 loss 聚合 |

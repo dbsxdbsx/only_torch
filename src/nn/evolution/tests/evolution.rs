@@ -180,22 +180,60 @@ fn test_p5_lite_prefilter_records_segmentation_families() {
     let candidates = vec![
         NetworkGenome::minimal_spatial_segmentation(1, 3, (8, 8)),
         NetworkGenome::spatial_segmentation_tiny(1, 3, (8, 8)),
+        NetworkGenome::spatial_segmentation_unet_lite(1, 3, (8, 8)),
     ];
     let config = CandidateScoringConfig {
         pool_multiplier: 1,
-        keep_top_k: Some(2),
+        keep_top_k: Some(3),
         min_per_family: 1,
     };
 
-    let (_kept, summary) = crate::nn::evolution::prefilter_candidates(candidates, config, 2);
+    let (_kept, summary) = crate::nn::evolution::prefilter_candidates(candidates, config, 3);
 
-    assert_eq!(summary.generated, 2);
-    assert_eq!(summary.kept, 2);
+    assert_eq!(summary.generated, 3);
+    assert_eq!(summary.kept, 3);
     assert_eq!(summary.generated_families.get("dense_seg_head"), 1);
     assert_eq!(summary.generated_families.get("dense_seg_deep"), 1);
+    assert_eq!(summary.generated_families.get("encoder_decoder_seg"), 1);
     assert_eq!(summary.kept_families.get("dense_seg_head"), 1);
     assert_eq!(summary.kept_families.get("dense_seg_deep"), 1);
+    assert_eq!(summary.kept_families.get("encoder_decoder_seg"), 1);
     assert!(summary.avg_score().is_some());
+}
+
+#[test]
+fn test_spatial_segmentation_unet_lite_builds_to_full_resolution_output() {
+    let genome = NetworkGenome::spatial_segmentation_unet_lite(1, 4, (16, 16));
+    let desc = genome
+        .to_graph_descriptor()
+        .expect("U-Net-lite segmentation genome 应能转换为 GraphDescriptor");
+    let output_id = desc
+        .explicit_output_ids
+        .as_ref()
+        .and_then(|ids| ids.first())
+        .copied()
+        .expect("U-Net-lite segmentation genome 应设置显式输出");
+    let output = desc
+        .nodes
+        .iter()
+        .find(|node| node.id == output_id)
+        .expect("显式输出节点应存在于 GraphDescriptor 中");
+
+    assert_eq!(output.output_shape, vec![1, 4, 16, 16]);
+    assert!(
+        desc.nodes.iter().any(|node| matches!(
+            &node.node_type,
+            crate::nn::descriptor::NodeTypeDescriptor::ConvTranspose2d { .. }
+        )),
+        "U-Net-lite seed 应包含 ConvTranspose2d 上采样"
+    );
+    assert!(
+        desc.nodes.iter().any(|node| matches!(
+            &node.node_type,
+            crate::nn::descriptor::NodeTypeDescriptor::Concat { axis: 1 }
+        )),
+        "U-Net-lite seed 应包含 channel 维 skip concat"
+    );
 }
 
 #[test]
