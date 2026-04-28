@@ -21,7 +21,7 @@ use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
-use ndarray::Array2;
+use ndarray::{Array2, ArrayView2};
 use rayon::prelude::*;
 
 /// 2D 卷积节点
@@ -52,8 +52,9 @@ pub(crate) struct Conv2d {
     dilation: (usize, usize),    // (dH, dW) 空洞卷积间隔
 
     // 缓存（用于反向传播）
-    padded_input: Option<Tensor>, // 填充后的输入
-    input_shape: Vec<usize>,      // 原始输入形状（用于梯度计算）
+    padded_input: Option<Tensor>,           // 填充后的输入
+    im2col_cache: Option<Vec<Array2<f32>>>, // 每个 batch 样本的 im2col 矩阵
+    input_shape: Vec<usize>,                // 原始输入形状（用于梯度计算）
 }
 
 impl Conv2d {
@@ -191,6 +192,7 @@ impl Conv2d {
             padding,
             dilation,
             padded_input: None,
+            im2col_cache: None,
             input_shape: input_shape.to_vec(),
         })
     }
@@ -325,7 +327,7 @@ impl Conv2d {
     ///
     /// 核心优化：将嵌套循环卷积转化为矩阵乘法
     /// kernel_mat [out_c, in_c*k_h*k_w] × col^T [in_c*k_h*k_w, out_h*out_w] → [out_c, out_h*out_w]
-    fn convolve(&self, input: &Tensor, kernel: &Tensor) -> Tensor {
+    fn convolve(&self, input: &Tensor, kernel: &Tensor) -> (Tensor, Vec<Array2<f32>>) {
         let input_shape = input.shape();
         let (batch_size, in_c, in_h, in_w) = (
             input_shape[0],
@@ -351,24 +353,30 @@ impl Conv2d {
         let output_shape = vec![batch_size, out_c, out_h, out_w];
 
         // 将 kernel [out_c, in_c, k_h, k_w] reshape 为 [out_c, in_c*k_h*k_w]
-        let k_flat = kernel.flatten_view();
         let col_w = in_c * k_h * k_w;
-        let kernel_mat = Array2::from_shape_vec((out_c, col_w), k_flat.to_vec()).unwrap();
+        let k_flat = kernel.flatten_view();
+        let kernel_mat = k_flat.into_shape((out_c, col_w)).unwrap();
 
         // Rayon 并行计算每个 batch 样本
-        let batch_results: Vec<Vec<f32>> = (0..batch_size)
+        let batch_results: Vec<(Vec<f32>, Array2<f32>)> = (0..batch_size)
             .into_par_iter()
             .map(|b| {
                 let col = Self::im2col(
                     input, b, in_c, k_h, k_w, out_h, out_w, stride_h, stride_w, dil_h, dil_w,
                 );
                 let result = kernel_mat.dot(&col.t());
-                result.iter().copied().collect()
+                (result.iter().copied().collect(), col)
             })
             .collect();
 
-        let all_data: Vec<f32> = batch_results.into_iter().flatten().collect();
-        Tensor::new(&all_data, &output_shape)
+        let mut all_data = Vec::with_capacity(batch_size * out_c * out_h * out_w);
+        let mut im2col_cache = Vec::with_capacity(batch_size);
+        for (output, col) in batch_results {
+            all_data.extend(output);
+            im2col_cache.push(col);
+        }
+
+        (Tensor::new(&all_data, &output_shape), im2col_cache)
     }
 }
 
@@ -424,7 +432,8 @@ impl TraitNode for Conv2d {
         self.padded_input = Some(self.pad_input(input));
         self.input_shape = input.shape().to_vec();
         // 引用缓存执行卷积
-        let result = self.convolve(self.padded_input.as_ref().unwrap(), kernel);
+        let (result, im2col_cache) = self.convolve(self.padded_input.as_ref().unwrap(), kernel);
+        self.im2col_cache = Some(im2col_cache);
         self.value = Some(result);
         Ok(())
     }
@@ -480,7 +489,7 @@ impl TraitNode for Conv2d {
             let padded_w = orig_in_w + 2 * pad_w;
 
             let k_flat = kernel.flatten_view();
-            let kernel_mat = Array2::from_shape_vec((out_c, col_w), k_flat.to_vec()).unwrap();
+            let kernel_mat = k_flat.into_shape((out_c, col_w)).unwrap();
 
             let col2im_crop = |dx_col: &Array2<f32>| -> Vec<f32> {
                 let padded_grad = Self::col2im(
@@ -514,9 +523,9 @@ impl TraitNode for Conv2d {
                     .into_par_iter()
                     .map(|b| {
                         let gs = b * sample_grad_size;
-                        let grad_b = Array2::from_shape_vec(
+                        let grad_b = ArrayView2::from_shape(
                             (out_c, spatial),
-                            grad_flat_slice[gs..gs + sample_grad_size].to_vec(),
+                            &grad_flat_slice[gs..gs + sample_grad_size],
                         )
                         .unwrap();
                         let dx_col = grad_b.t().dot(&kernel_mat);
@@ -539,30 +548,21 @@ impl TraitNode for Conv2d {
                 let grad_flat_slice = grad_flat.as_slice().unwrap();
                 let sample_grad_size = out_c * spatial;
 
+                let im2col_cache = self
+                    .im2col_cache
+                    .as_ref()
+                    .ok_or_else(|| GraphError::ComputationError("缺少 im2col 缓存".to_string()))?;
                 let kernel_grad = (0..batch_size)
                     .into_par_iter()
                     .map(|b| {
-                        let col = Self::im2col(
-                            padded_input,
-                            b,
-                            in_c,
-                            k_h,
-                            k_w,
-                            out_h,
-                            out_w,
-                            stride_h,
-                            stride_w,
-                            dil_h,
-                            dil_w,
-                        );
                         let gs = b * sample_grad_size;
-                        let grad_b = Array2::from_shape_vec(
+                        let grad_b = ArrayView2::from_shape(
                             (out_c, spatial),
-                            grad_flat_slice[gs..gs + sample_grad_size].to_vec(),
+                            &grad_flat_slice[gs..gs + sample_grad_size],
                         )
                         .unwrap();
                         // 小 GEMM: [out_c, spatial] × [spatial, col_w] → [out_c, col_w]
-                        grad_b.dot(&col)
+                        grad_b.dot(&im2col_cache[b])
                     })
                     .reduce(
                         || Array2::<f32>::zeros((out_c, col_w)),

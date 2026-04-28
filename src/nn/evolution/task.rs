@@ -17,6 +17,7 @@ use rand::Rng;
 use rand::rngs::StdRng;
 use std::fmt;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::metrics;
 use crate::metrics::traits::IntoClassLabels;
@@ -24,7 +25,7 @@ use crate::nn::{Adam, GraphError, Optimizer, SGD, Var, VarLossOps};
 use crate::tensor::Tensor;
 
 use super::builder::BuildResult;
-use super::convergence::{ConvergenceConfig, ConvergenceDetector};
+use super::convergence::{ConvergenceConfig, ConvergenceDetector, TrainingBudget};
 use super::error::EvolutionError;
 use super::gene::{LossType, NetworkGenome, OptimizerType, TaskMetric, compatible_losses};
 
@@ -285,6 +286,7 @@ pub enum ProxyKind {
 pub struct TrainOutcome {
     pub final_loss: f32,
     pub proxy: Option<f32>,
+    pub(crate) timing: TrainTiming,
 }
 
 impl TrainOutcome {
@@ -292,6 +294,7 @@ impl TrainOutcome {
         Self {
             final_loss,
             proxy: None,
+            timing: TrainTiming::default(),
         }
     }
 
@@ -299,6 +302,18 @@ impl TrainOutcome {
     pub fn is_finite(&self) -> bool {
         self.final_loss.is_finite()
     }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TrainTiming {
+    pub setup: Duration,
+    pub shuffle: Duration,
+    pub batch_slice: Duration,
+    pub set_value: Duration,
+    pub zero_grad: Duration,
+    pub backward: Duration,
+    pub optimizer_step: Duration,
+    pub grad_norm: Duration,
 }
 
 impl std::fmt::Display for TrainOutcome {
@@ -579,6 +594,8 @@ impl EvolutionTask for SupervisedTask {
             compatible_losses(&self.metric, genome.output_dim)
         );
 
+        let mut timing = TrainTiming::default();
+        let setup_start = Instant::now();
         build.graph.train();
 
         let n_samples = self.train_x.shape()[0];
@@ -600,15 +617,26 @@ impl EvolutionTask for SupervisedTask {
         let mut final_loss = f32::NAN;
         // F3: 仅在启用 proxy 时才记录 loss 轨迹，避免不必要开销
         let mut loss_curve: Option<Vec<f32>> = self.proxy_kind.map(|_| Vec::new());
+        let needs_grad_norm = !matches!(convergence.budget, TrainingBudget::FixedEpochs(_));
+        timing.setup += setup_start.elapsed();
 
         if bs >= n_samples {
             // ====== Full-batch 路径 ======
+            let set_start = Instant::now();
             build.input.set_value(&self.train_x)?;
             target.set_value(&self.train_y)?;
+            timing.set_value += set_start.elapsed();
 
             for epoch in 0.. {
-                let loss_val = optimizer.minimize(&loss_var)?;
-                let grad_norm = compute_grad_norm(&params)?;
+                let loss_val = train_one_batch(&mut *optimizer, &loss_var, &mut timing)?;
+                let grad_norm = if needs_grad_norm {
+                    let grad_start = Instant::now();
+                    let norm = compute_grad_norm(&params)?;
+                    timing.grad_norm += grad_start.elapsed();
+                    norm
+                } else {
+                    0.0
+                };
                 final_loss = loss_val;
                 if let Some(curve) = loss_curve.as_mut() {
                     curve.push(loss_val);
@@ -625,27 +653,40 @@ impl EvolutionTask for SupervisedTask {
                 let mut n_batches = 0;
                 let mut offset = 0;
                 let shuffle_seed: u64 = rng.r#gen();
+                let shuffle_start = Instant::now();
                 let mut shuffled_x = self.train_x.as_ref().clone();
                 let mut shuffled_y = self.train_y.as_ref().clone();
                 shuffled_x.shuffle_mut_seeded(Some(0), shuffle_seed);
                 shuffled_y.shuffle_mut_seeded(Some(0), shuffle_seed);
+                timing.shuffle += shuffle_start.elapsed();
 
                 while offset < n_samples {
                     let end = (offset + bs).min(n_samples);
+                    let slice_start = Instant::now();
                     let batch_x = shuffled_x.narrow(0, offset, end - offset);
                     let batch_y = shuffled_y.narrow(0, offset, end - offset);
+                    timing.batch_slice += slice_start.elapsed();
 
+                    let set_start = Instant::now();
                     build.input.set_value(&batch_x)?;
                     target.set_value(&batch_y)?;
+                    timing.set_value += set_start.elapsed();
 
-                    let loss_val = optimizer.minimize(&loss_var)?;
+                    let loss_val = train_one_batch(&mut *optimizer, &loss_var, &mut timing)?;
                     epoch_loss_sum += loss_val;
                     n_batches += 1;
                     offset = end;
                 }
 
                 let avg_loss = epoch_loss_sum / n_batches as f32;
-                let grad_norm = compute_grad_norm(&params)?;
+                let grad_norm = if needs_grad_norm {
+                    let grad_start = Instant::now();
+                    let norm = compute_grad_norm(&params)?;
+                    timing.grad_norm += grad_start.elapsed();
+                    norm
+                } else {
+                    0.0
+                };
                 final_loss = avg_loss;
                 if let Some(curve) = loss_curve.as_mut() {
                     curve.push(avg_loss);
@@ -661,7 +702,11 @@ impl EvolutionTask for SupervisedTask {
             (Some(ProxyKind::LossSlope), Some(curve)) => compute_loss_slope_proxy(curve),
             _ => None,
         };
-        Ok(TrainOutcome { final_loss, proxy })
+        Ok(TrainOutcome {
+            final_loss,
+            proxy,
+            timing,
+        })
     }
 
     fn configure_batch_size(&mut self, batch_size: Option<usize>) {
@@ -759,6 +804,26 @@ fn create_loss_var(output: &Var, target: &Var, loss_type: &LossType) -> Result<V
         LossType::CrossEntropy => output.cross_entropy(target),
         LossType::MSE => output.mse_loss(target),
     }
+}
+
+fn train_one_batch(
+    optimizer: &mut dyn Optimizer,
+    loss_var: &Var,
+    timing: &mut TrainTiming,
+) -> Result<f32, GraphError> {
+    let zero_start = Instant::now();
+    optimizer.zero_grad()?;
+    timing.zero_grad += zero_start.elapsed();
+
+    let backward_start = Instant::now();
+    let loss_val = loss_var.backward()?;
+    timing.backward += backward_start.elapsed();
+
+    let step_start = Instant::now();
+    optimizer.step()?;
+    timing.optimizer_step += step_start.elapsed();
+
+    Ok(loss_val)
 }
 
 /// 按 TaskMetric 计算主指标值

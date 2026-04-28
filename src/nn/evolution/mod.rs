@@ -40,17 +40,21 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rayon::{ThreadPool, ThreadPoolBuilder};
+use std::time::{Duration, Instant};
 
 use crate::nn::{GraphError, VisualizationOutput};
 use crate::tensor::Tensor;
 
 use self::builder::{BuildResult, InheritReport};
-pub use self::callback::{DefaultCallback, EvolutionCallback};
+pub use self::callback::{
+    CandidatePrefilterSummary, DefaultCallback, EvaluationTimingSummary, EvolutionCallback,
+};
 pub use self::convergence::{ConvergenceConfig, TrainingBudget};
 pub use self::error::EvolutionError;
 pub(crate) use self::gene::NetworkGenome;
 pub use self::gene::TaskMetric;
 pub use self::mutation::{MutationError, MutationRegistry, SizeConstraints, SizeStrategy};
+use self::node_ops::{NodeBlockKind, node_main_path};
 pub use self::task::ProxyKind;
 use self::task::{EvolutionTask, FitnessScore, SupervisedTask, TrainOutcome, auto_batch_size};
 pub use self::task::{MetricReport, MetricValue, ReportMetric};
@@ -496,12 +500,130 @@ pub struct Evolution {
     pareto_patience: Option<usize>,
     /// 复杂度度量方式（用于 inference_cost 计算）
     complexity_metric: ComplexityMetric,
+    /// 候选评估前的复杂度上限（None = 不限制）。
+    ///
+    /// 使用当前 `complexity_metric` 计算；空间任务默认 metric 为 FLOPs。
+    max_inference_cost: Option<f32>,
     /// F3 学习速度代理（None = 关闭，Some = 启用对应 proxy）
     primary_proxy: Option<ProxyKind>,
     /// 附加报告指标（只影响日志和结果报告，不参与演化选择）
     report_metrics: Vec<ReportMetric>,
     /// F4 ASHA 多保真评估配置（None = 关闭）
     asha: Option<AshaConfig>,
+    /// 初始种群随机爆发变异次数（None = 根据约束自动推导）
+    initial_burst: Option<usize>,
+    /// 初始候选 portfolio（None = 仅 minimal genome 随机爆发）
+    initial_portfolio: Option<InitialPortfolioConfig>,
+    /// P5-lite 候选预筛配置（None = 不预筛）
+    candidate_scoring: Option<CandidateScoringConfig>,
+    /// 接近目标时对 Pareto archive 前若干候选做最终复训/复评。
+    final_refit: Option<FinalRefitConfig>,
+}
+
+/// 接近目标时的最终复训配置。
+///
+/// 典型用途是把搜索阶段找到的 promising architecture 用更足的训练预算收尾，
+/// 避免在 94% -> 95% 这类小差距上继续盲目扩展结构。
+#[derive(Clone, Copy, Debug)]
+pub struct FinalRefitConfig {
+    /// 触发阈值：best primary >= target - trigger_margin 时启动。
+    pub trigger_margin: f32,
+    /// 每次从 archive 选择多少个 top 候选复训。
+    pub top_k: usize,
+    /// 复训的固定 epoch 数（增量训练，保留 Lamarckian 权重）。
+    pub epochs: usize,
+    /// best primary 至少提升多少才允许再次触发 refit。
+    pub retrigger_delta: f32,
+}
+
+impl FinalRefitConfig {
+    pub fn new(trigger_margin: f32, top_k: usize, epochs: usize) -> Self {
+        Self {
+            trigger_margin,
+            top_k,
+            epochs,
+            retrigger_delta: 0.005,
+        }
+    }
+
+    fn validated(&self) -> Self {
+        Self {
+            trigger_margin: self.trigger_margin.max(0.0),
+            top_k: self.top_k.max(1),
+            epochs: self.epochs.max(1),
+            retrigger_delta: self.retrigger_delta.max(0.0),
+        }
+    }
+}
+
+/// 初始搜索空间 portfolio 配置。
+///
+/// 它不固定最终结构，只把若干高质量结构族放进初始种群，让后续演化和真实评估决定赢家。
+#[derive(Clone, Copy, Debug)]
+pub struct InitialPortfolioConfig {
+    pub include_flat_mlp: bool,
+    pub include_tiny_cnn: bool,
+    pub include_lenet_tiny: bool,
+    pub flat_mlp_hidden: usize,
+}
+
+impl InitialPortfolioConfig {
+    /// 低成本平坦 MLP warm-start。
+    ///
+    /// 适合 MNIST 这类图像分类质量档：先验证展平 MLP 是否已足够快且准，
+    /// 不足时再进入更完整的空间结构搜索。
+    pub fn flat_mlp_only(hidden: usize) -> Self {
+        Self {
+            include_flat_mlp: true,
+            include_tiny_cnn: false,
+            include_lenet_tiny: false,
+            flat_mlp_hidden: hidden.max(1),
+        }
+    }
+
+    pub fn vision_classification() -> Self {
+        Self {
+            include_flat_mlp: true,
+            include_tiny_cnn: true,
+            include_lenet_tiny: true,
+            flat_mlp_hidden: 128,
+        }
+    }
+
+    fn validated(&self) -> Self {
+        Self {
+            include_flat_mlp: self.include_flat_mlp,
+            include_tiny_cnn: self.include_tiny_cnn,
+            include_lenet_tiny: self.include_lenet_tiny,
+            flat_mlp_hidden: self.flat_mlp_hidden.max(1),
+        }
+    }
+}
+
+/// P5-lite 候选预筛配置。
+///
+/// 第一版不训练 surrogate 模型，而是用结构特征 + FLOPs 启发式给候选排序；
+/// 真实 fitness 仍然只由完整训练/评估产生。
+#[derive(Clone, Copy, Debug)]
+pub struct CandidateScoringConfig {
+    pub pool_multiplier: usize,
+    pub keep_top_k: Option<usize>,
+}
+
+impl CandidateScoringConfig {
+    pub fn p5_lite() -> Self {
+        Self {
+            pool_multiplier: 3,
+            keep_top_k: None,
+        }
+    }
+
+    fn validated(&self) -> Self {
+        Self {
+            pool_multiplier: self.pool_multiplier.max(1),
+            keep_top_k: self.keep_top_k.map(|n| n.max(1)),
+        }
+    }
 }
 
 impl Evolution {
@@ -540,6 +662,7 @@ impl Evolution {
             parallelism: None,
             pareto_patience: None,
             complexity_metric: ComplexityMetric::FLOPs,
+            max_inference_cost: None,
             // F3/F4 默认开启：在所有演化任务（序列 / 图像 / 全连接）上稳定有益
             // - LossSlope：plateau 上给 NSGA-II 提供 tiebreak 信号；primary 有差异时零开销
             // - ASHA：阶梯式 Successive Halving 把 Phase 1 预算集中到有潜力的候选
@@ -547,6 +670,10 @@ impl Evolution {
             primary_proxy: Some(ProxyKind::LossSlope),
             report_metrics: Vec::new(),
             asha: Some(AshaConfig::default()),
+            initial_burst: None,
+            initial_portfolio: None,
+            candidate_scoring: None,
+            final_refit: None,
         }
     }
 
@@ -629,6 +756,19 @@ impl Evolution {
         self
     }
 
+    /// 设置候选评估前的复杂度上限。
+    ///
+    /// 超过上限的 genome 会在训练前被过滤，避免少数超大候选拖慢整代搜索。
+    /// 上限单位由当前 `complexity_metric` 决定，默认空间任务为 FLOPs。
+    pub fn with_max_inference_cost(mut self, max_cost: f32) -> Self {
+        assert!(
+            max_cost.is_finite() && max_cost > 0.0,
+            "max_cost 必须为正有限值"
+        );
+        self.max_inference_cost = Some(max_cost);
+        self
+    }
+
     /// 设置学习速度代理（F3）：在 plateau 上用 loss 下降速率打破 NSGA-II 平局。
     ///
     /// 默认启用 `ProxyKind::LossSlope`。传入 `None` 可关闭。
@@ -648,6 +788,46 @@ impl Evolution {
     /// 只在 Phase 1 生效（Phase 2 仍用 user_convergence 完成最终训练）。
     pub fn with_asha(mut self, config: impl Into<Option<AshaConfig>>) -> Self {
         self.asha = config.into();
+        self
+    }
+
+    /// 设置初始种群中每个个体基于 minimal genome 额外施加的随机变异次数。
+    ///
+    /// 较小的 smoke/demo 任务可设为 0..2，避免初始候选过重或过多无效；
+    /// 完整搜索保持默认自动策略即可。
+    pub fn with_initial_burst(mut self, n: usize) -> Self {
+        self.initial_burst = Some(n);
+        self
+    }
+
+    /// 设置初始结构 portfolio。
+    ///
+    /// 默认关闭以保持旧行为；图像分类任务可使用
+    /// `InitialPortfolioConfig::vision_classification()` 同时尝试 FlatMLP / TinyCNN / LeNetTiny。
+    pub fn with_initial_portfolio(
+        mut self,
+        config: impl Into<Option<InitialPortfolioConfig>>,
+    ) -> Self {
+        self.initial_portfolio = config.into().map(|c| c.validated());
+        self
+    }
+
+    /// 设置 P5-lite 候选预筛策略。
+    ///
+    /// 该策略只影响候选进入完整训练评估前的排序/截断，不改写最终 fitness。
+    pub fn with_candidate_scoring(
+        mut self,
+        config: impl Into<Option<CandidateScoringConfig>>,
+    ) -> Self {
+        self.candidate_scoring = config.into().map(|c| c.validated());
+        self
+    }
+
+    /// 设置接近目标时的最终复训策略。
+    ///
+    /// 默认关闭；适合 MNIST 这类搜索已接近目标、但候选需要更足训练才能冲线的任务。
+    pub fn with_final_refit(mut self, config: impl Into<Option<FinalRefitConfig>>) -> Self {
+        self.final_refit = config.into().map(|c| c.validated());
         self
     }
 
@@ -728,9 +908,14 @@ impl Evolution {
             parallelism,
             pareto_patience,
             complexity_metric,
+            max_inference_cost,
             primary_proxy,
             report_metrics,
             asha,
+            initial_burst,
+            initial_portfolio,
+            candidate_scoring,
+            final_refit,
         } = self;
 
         // 当指定 seed 时，自动固定 population_size/offspring_batch_size
@@ -884,7 +1069,7 @@ impl Evolution {
         };
 
         // 随机爆发初始化参数
-        let burst_k = (constraints.max_layers / 2).max(2).min(8);
+        let burst_k = initial_burst.unwrap_or_else(|| (constraints.max_layers / 2).max(2).min(8));
 
         // ====== 初始化种群 ======
         let init_reg = if let Some(ref user_reg) = user_reg_val {
@@ -892,20 +1077,24 @@ impl Evolution {
         } else {
             phase1_reg.as_ref().unwrap()
         };
+        let initial_seeds = initial_seed_genomes(&minimal_genome, &prepared, initial_portfolio);
         let mut init_genomes = Vec::with_capacity(population_size);
-        for _ in 0..population_size {
-            let mut genome = minimal_genome.clone();
-            for _ in 0..burst_k {
+        for i in 0..population_size {
+            let mut genome = initial_seeds[i % initial_seeds.len()].clone();
+            let effective_burst = if i < initial_seeds.len() { 0 } else { burst_k };
+            for _ in 0..effective_burst {
                 let _ = init_reg.apply_random(&mut genome, &constraints, &mut rng);
             }
-            init_genomes.push(genome);
+            if within_inference_cost(&genome, &complexity_metric, max_inference_cost) {
+                init_genomes.push(genome);
+            }
         }
 
         // 评估初始种群
         let seeds: Vec<u64> = (0..init_genomes.len())
             .map(|_| rng.r#gen::<u64>())
             .collect();
-        let init_results = evaluate_batch(
+        let init_batch = timed_evaluate_batch(
             &base_task,
             init_genomes,
             &phase1_convergence,
@@ -914,6 +1103,8 @@ impl Evolution {
             parallel_pool.as_ref(),
             seeds,
         );
+        callback.on_evaluation_timing(0, "init", &init_batch.timing);
+        let init_results = init_batch.results;
 
         let mut parents: Vec<(NetworkGenome, FitnessScore)> = init_results
             .into_iter()
@@ -923,7 +1114,7 @@ impl Evolution {
         // 回退：全部失败则用 minimal genome
         if parents.is_empty() {
             let fallback_seed = rng.r#gen::<u64>();
-            let fallback_results = evaluate_batch(
+            let fallback_batch = timed_evaluate_batch(
                 &base_task,
                 vec![minimal_genome.clone()],
                 &phase1_convergence,
@@ -932,6 +1123,8 @@ impl Evolution {
                 None,
                 vec![fallback_seed],
             );
+            callback.on_evaluation_timing(0, "fallback", &fallback_batch.timing);
+            let fallback_results = fallback_batch.results;
             if let Some(r) = fallback_results.into_iter().next() {
                 parents.push((r.genome, r.score));
             } else {
@@ -954,6 +1147,21 @@ impl Evolution {
         let mut best_primary: f32 = f32::NEG_INFINITY;
         let mut primary_stagnation: usize = 0;
         let mut phase2_unlocked = false;
+        let mut last_refit_best: Option<f32> = None;
+
+        if repr_score.primary >= target_metric {
+            let (repr_g, repr_s) = select_representative(&archive, target_metric);
+            return build_population_result(
+                repr_g,
+                repr_s,
+                &archive,
+                0,
+                EvolutionStatus::TargetReached,
+                &mut rng,
+                &serial_task,
+                seed,
+            );
+        }
 
         // ====== 主循环 ======
         for generation in 0.. {
@@ -997,14 +1205,16 @@ impl Evolution {
 
             // 1. 从 parents 中按 rank / crowding 二元锦标赛采样，变异生成 offspring
             let force_structural = primary_stagnation >= stagnation_patience;
-            let mut offspring_genomes = Vec::with_capacity(offspring_batch_size);
+            let candidate_pool_target =
+                candidate_pool_target(offspring_batch_size, candidate_scoring);
+            let mut offspring_genomes = Vec::with_capacity(candidate_pool_target);
             let mut any_mutation_succeeded = false;
 
             let parent_scores: Vec<FitnessScore> = parents.iter().map(|(_, s)| s.clone()).collect();
             let parent_ranks = selection::pareto_rank(&parent_scores);
             let parent_distances = selection::crowding_distance(&parent_scores);
 
-            for _ in 0..offspring_batch_size {
+            for _ in 0..candidate_pool_target {
                 let p1 = rng.gen_range(0..parents.len());
                 let p2 = rng.gen_range(0..parents.len());
                 let parent_idx = {
@@ -1030,8 +1240,14 @@ impl Evolution {
                 match mutation_result {
                     Ok(mutation_name) => {
                         any_mutation_succeeded = true;
-                        // 若变异引入新 Conv2d 层块，自动 FM 分解
-                        child.migrate_to_fm_level();
+                        // 若变异引入新 Conv2d 层块，图像分类自动 FM 分解；
+                        // dense segmentation 当前保留普通 NodeLevel，避免破坏 H/W 输出协议。
+                        if !prepared.metric.is_segmentation() {
+                            child.migrate_to_fm_level();
+                        }
+                        if !within_inference_cost(&child, &complexity_metric, max_inference_cost) {
+                            continue;
+                        }
                         callback.on_mutation(generation, &mutation_name, &child);
                         offspring_genomes.push(child);
                     }
@@ -1042,6 +1258,16 @@ impl Evolution {
                     }
                     Err(_) => continue,
                 }
+            }
+
+            if let Some(scoring) = candidate_scoring {
+                let (filtered, mut prefilter_summary) =
+                    prefilter_candidates(offspring_genomes, scoring, offspring_batch_size);
+                prefilter_summary.kept = filtered.len();
+                callback.on_candidate_prefilter(generation, &prefilter_summary);
+                offspring_genomes = filtered;
+            } else if offspring_genomes.len() > offspring_batch_size {
+                offspring_genomes.truncate(offspring_batch_size);
             }
 
             if offspring_genomes.is_empty() {
@@ -1069,28 +1295,32 @@ impl Evolution {
             // 原因：parity/RNN 等序列任务的 loss 在早期呈"悬崖型"下降，
             // 极短的 rung-0（1 epoch）无法区分好坏架构，导致结构变异全部被淘汰。
             // 用户可通过 `.with_asha(None)` 完全关闭 / 通过自定义 rung_epochs 手动启用。
-            let eval_results = if is_phase1 && asha.is_some() && !is_sequential {
-                evaluate_batch_asha(
-                    &base_task,
-                    offspring_genomes,
-                    asha.as_ref().unwrap(),
-                    current_convergence,
-                    eval_runs,
-                    &complexity_metric,
-                    parallel_pool.as_ref(),
-                    eval_seeds,
-                )
-            } else {
-                evaluate_batch(
-                    &base_task,
-                    offspring_genomes,
-                    current_convergence,
-                    eval_runs,
-                    &complexity_metric,
-                    parallel_pool.as_ref(),
-                    eval_seeds,
-                )
-            };
+            let (eval_results, eval_timing, eval_phase) =
+                if is_phase1 && asha.is_some() && !is_sequential {
+                    let batch = evaluate_batch_asha(
+                        &base_task,
+                        offspring_genomes,
+                        asha.as_ref().unwrap(),
+                        current_convergence,
+                        eval_runs,
+                        &complexity_metric,
+                        parallel_pool.as_ref(),
+                        eval_seeds,
+                    );
+                    (batch.results, batch.timing, "asha")
+                } else {
+                    let batch = timed_evaluate_batch(
+                        &base_task,
+                        offspring_genomes,
+                        current_convergence,
+                        eval_runs,
+                        &complexity_metric,
+                        parallel_pool.as_ref(),
+                        eval_seeds,
+                    );
+                    (batch.results, batch.timing, "offspring")
+                };
+            callback.on_evaluation_timing(generation, eval_phase, &eval_timing);
 
             let offspring_evaluated = eval_results.len();
             // 汇总权重继承统计（仅 NodeLevel genome 有意义）
@@ -1206,7 +1436,83 @@ impl Evolution {
                 });
             }
 
-            // 8. Pareto 收敛检查
+            // 8. 接近目标时，对 archive top-k 做最终复训/复评。
+            //
+            // 这是 P5 surrogate 前的低风险收尾机制：不预测、不跳过评估，只把预算集中到
+            // 已经接近目标的候选，避免继续盲目扩大结构。
+            if let Some(ref refit_cfg) = final_refit {
+                let should_refit = archive_best_s.primary + refit_cfg.trigger_margin
+                    >= target_metric
+                    && last_refit_best
+                        .map(|last| archive_best_s.primary >= last + refit_cfg.retrigger_delta)
+                        .unwrap_or(true);
+                if should_refit {
+                    last_refit_best = Some(archive_best_s.primary);
+                    let refit_seed = rng.r#gen::<u64>();
+                    let refit_batch = final_refit_archive(
+                        &base_task,
+                        &archive,
+                        refit_cfg,
+                        eval_runs,
+                        &complexity_metric,
+                        parallel_pool.as_ref(),
+                        refit_seed,
+                    );
+                    callback.on_evaluation_timing(generation, "final_refit", &refit_batch.timing);
+
+                    let refit_evaluated = refit_batch.results.len();
+                    let refit_offspring: Vec<(NetworkGenome, FitnessScore)> = refit_batch
+                        .results
+                        .into_iter()
+                        .map(|r| (r.genome, r.score))
+                        .collect();
+                    if !refit_offspring.is_empty() {
+                        selection::update_archive(&mut archive, refit_offspring.clone());
+                        let pool: Vec<(NetworkGenome, FitnessScore)> =
+                            parents.into_iter().chain(refit_offspring).collect();
+                        parents = selection::nsga2_select(pool, population_size);
+
+                        let (_, refit_best_s) = select_representative(&archive, target_metric);
+                        callback.on_population_evaluated(
+                            generation,
+                            parents.len(),
+                            refit_evaluated,
+                            archive.len(),
+                            front_size,
+                            refit_best_s.primary,
+                            refit_best_s.inference_cost.unwrap_or(f32::INFINITY),
+                        );
+
+                        let target_member = archive
+                            .iter()
+                            .filter(|(_, s)| s.primary >= target_metric)
+                            .min_by(|a, b| {
+                                a.1.inference_cost
+                                    .unwrap_or(f32::INFINITY)
+                                    .partial_cmp(&b.1.inference_cost.unwrap_or(f32::INFINITY))
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            });
+                        if let Some((target_genome, target_score)) = target_member {
+                            let build = target_genome.build(&mut rng)?;
+                            target_genome.restore_weights(&build)?;
+                            snapshot_with_loss(&serial_task, target_genome, &build);
+                            return Ok(EvolutionResult {
+                                build,
+                                fitness: target_score.clone(),
+                                generations: generation,
+                                architecture_summary: format!("{target_genome}"),
+                                status: EvolutionStatus::TargetReached,
+                                genome: target_genome.clone(),
+                                pareto_front: build_pareto_summaries(&archive),
+                                pareto_genomes: archive.into_iter().map(|(g, _)| g).collect(),
+                                evolution_seed: seed,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 9. Pareto 收敛检查
             if archive_stagnation >= effective_pareto_patience {
                 let (repr_g, repr_s) = select_representative(&archive, target_metric);
                 return build_population_result(
@@ -1228,6 +1534,30 @@ impl Evolution {
 
 // ==================== 独立辅助函数 ====================
 
+#[derive(Clone, Debug, Default)]
+struct EvalTiming {
+    total: Duration,
+    build: Duration,
+    restore: Duration,
+    train: Duration,
+    capture: Duration,
+    evaluate: Duration,
+    cost: Duration,
+    train_setup: Duration,
+    train_shuffle: Duration,
+    train_batch_slice: Duration,
+    train_set_value: Duration,
+    train_zero_grad: Duration,
+    train_backward: Duration,
+    train_step: Duration,
+    train_grad_norm: Duration,
+}
+
+struct TimedEvalBatch {
+    results: Vec<EvalResult>,
+    timing: EvaluationTimingSummary,
+}
+
 /// 评估结果（内部使用，所有字段均为 Send）
 struct EvalResult {
     genome: NetworkGenome,
@@ -1235,6 +1565,197 @@ struct EvalResult {
     #[allow(dead_code)]
     loss: f32,
     inherit_report: Option<InheritReport>,
+    timing: EvalTiming,
+}
+
+fn summarize_eval_timings(results: &[EvalResult], wall: Duration) -> EvaluationTimingSummary {
+    let mut summary = EvaluationTimingSummary {
+        batches: 1,
+        candidates: results.len(),
+        wall_secs: wall.as_secs_f64(),
+        ..Default::default()
+    };
+
+    for result in results {
+        summary.candidate_secs += result.timing.total.as_secs_f64();
+        summary.build_secs += result.timing.build.as_secs_f64();
+        summary.restore_secs += result.timing.restore.as_secs_f64();
+        summary.train_secs += result.timing.train.as_secs_f64();
+        summary.capture_secs += result.timing.capture.as_secs_f64();
+        summary.evaluate_secs += result.timing.evaluate.as_secs_f64();
+        summary.cost_secs += result.timing.cost.as_secs_f64();
+        summary.train_setup_secs += result.timing.train_setup.as_secs_f64();
+        summary.train_shuffle_secs += result.timing.train_shuffle.as_secs_f64();
+        summary.train_batch_slice_secs += result.timing.train_batch_slice.as_secs_f64();
+        summary.train_set_value_secs += result.timing.train_set_value.as_secs_f64();
+        summary.train_zero_grad_secs += result.timing.train_zero_grad.as_secs_f64();
+        summary.train_backward_secs += result.timing.train_backward.as_secs_f64();
+        summary.train_step_secs += result.timing.train_step.as_secs_f64();
+        summary.train_grad_norm_secs += result.timing.train_grad_norm.as_secs_f64();
+
+        summary.primary_min = Some(
+            summary
+                .primary_min
+                .map_or(result.score.primary, |v| v.min(result.score.primary)),
+        );
+        summary.primary_max = Some(
+            summary
+                .primary_max
+                .map_or(result.score.primary, |v| v.max(result.score.primary)),
+        );
+        summary.primary_sum += result.score.primary;
+        summary.primary_count += 1;
+        if let Some(cost) = result.score.inference_cost {
+            summary.cost_min = Some(summary.cost_min.map_or(cost, |v| v.min(cost)));
+            summary.cost_max = Some(summary.cost_max.map_or(cost, |v| v.max(cost)));
+            summary.cost_sum += cost;
+            summary.cost_count += 1;
+        }
+    }
+
+    summary
+}
+
+fn within_inference_cost(
+    genome: &NetworkGenome,
+    metric: &ComplexityMetric,
+    max_cost: Option<f32>,
+) -> bool {
+    let Some(max_cost) = max_cost else {
+        return true;
+    };
+    compute_inference_cost(genome, metric)
+        .map(|cost| cost <= max_cost)
+        // 复杂度估算失败时交给 build/eval 路径报出真实错误，不在这里静默淘汰。
+        .unwrap_or(true)
+}
+
+fn initial_seed_genomes(
+    minimal_genome: &NetworkGenome,
+    prepared: &MaterializedTask,
+    portfolio: Option<InitialPortfolioConfig>,
+) -> Vec<NetworkGenome> {
+    let Some(config) = portfolio else {
+        return vec![minimal_genome.clone()];
+    };
+    let Some(spatial) = prepared.input_spatial else {
+        return vec![minimal_genome.clone()];
+    };
+    if prepared.metric.is_segmentation() || prepared.seq_len.is_some() {
+        return vec![minimal_genome.clone()];
+    }
+
+    let mut seeds = Vec::new();
+    if config.include_flat_mlp {
+        seeds.push(NetworkGenome::spatial_flat_mlp(
+            prepared.input_dim,
+            prepared.output_dim,
+            spatial,
+            config.flat_mlp_hidden,
+        ));
+    }
+    if config.include_tiny_cnn {
+        seeds.push(minimal_genome.clone());
+    }
+    if config.include_lenet_tiny {
+        seeds.push(NetworkGenome::spatial_lenet_tiny(
+            prepared.input_dim,
+            prepared.output_dim,
+            spatial,
+        ));
+    }
+
+    if seeds.is_empty() {
+        seeds.push(minimal_genome.clone());
+    }
+    seeds
+}
+
+fn candidate_pool_target(
+    offspring_batch_size: usize,
+    scoring: Option<CandidateScoringConfig>,
+) -> usize {
+    scoring
+        .map(|cfg| offspring_batch_size.saturating_mul(cfg.pool_multiplier.max(1)))
+        .unwrap_or(offspring_batch_size)
+        .max(offspring_batch_size)
+}
+
+fn prefilter_candidates(
+    candidates: Vec<NetworkGenome>,
+    config: CandidateScoringConfig,
+    fallback_keep: usize,
+) -> (Vec<NetworkGenome>, CandidatePrefilterSummary) {
+    let keep = config.keep_top_k.unwrap_or(fallback_keep).max(1);
+    let mut scored = Vec::with_capacity(candidates.len());
+    let mut summary = CandidatePrefilterSummary::default();
+
+    for genome in candidates {
+        let features = CandidateFeatures::from_genome(&genome);
+        let score = score_candidate_features(&features);
+        summary.observe(score, features.flops);
+        scored.push((score, genome));
+    }
+
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(keep);
+
+    let kept = scored.into_iter().map(|(_, genome)| genome).collect();
+    (kept, summary)
+}
+
+#[derive(Clone, Debug, Default)]
+struct CandidateFeatures {
+    depth: usize,
+    conv2d_blocks: usize,
+    pool2d_blocks: usize,
+    linear_blocks: usize,
+    has_flatten: bool,
+    flops: Option<f32>,
+}
+
+impl CandidateFeatures {
+    fn from_genome(genome: &NetworkGenome) -> Self {
+        let blocks = node_main_path(genome);
+        let mut features = CandidateFeatures {
+            depth: blocks.len(),
+            flops: genome.total_flops().ok().map(|v| v as f32),
+            ..Default::default()
+        };
+
+        for block in blocks {
+            match block.kind {
+                NodeBlockKind::Conv2d { .. } => features.conv2d_blocks += 1,
+                NodeBlockKind::Pool2d { .. } => features.pool2d_blocks += 1,
+                NodeBlockKind::Linear { .. } => features.linear_blocks += 1,
+                NodeBlockKind::Flatten => features.has_flatten = true,
+                _ => {}
+            }
+        }
+        features
+    }
+}
+
+fn score_candidate_features(features: &CandidateFeatures) -> f32 {
+    let mut score = 0.0;
+
+    if features.conv2d_blocks == 0 && features.has_flatten && features.linear_blocks >= 2 {
+        score += 0.45;
+    }
+    if features.conv2d_blocks >= 1 && features.pool2d_blocks >= 1 && features.linear_blocks >= 1 {
+        score += 0.55;
+    }
+    if features.conv2d_blocks >= 2 && features.pool2d_blocks >= 2 && features.linear_blocks >= 2 {
+        score += 0.35;
+    }
+    if features.has_flatten && features.linear_blocks >= 1 {
+        score += 0.10;
+    }
+
+    let flops_m = features.flops.unwrap_or(0.0) / 1_000_000.0;
+    score -= flops_m * 0.04;
+    score -= (features.depth.saturating_sub(10) as f32) * 0.02;
+    score
 }
 
 /// 评估单个候选个体
@@ -1246,23 +1767,61 @@ fn eval_candidate(
     complexity_metric: &ComplexityMetric,
     rng: &mut StdRng,
 ) -> Option<EvalResult> {
+    let total_start = Instant::now();
+
+    let build_start = Instant::now();
     let build = genome.build(rng).ok()?;
+    let build_elapsed = build_start.elapsed();
+
+    let restore_start = Instant::now();
     let inherit_report = genome.restore_weights(&build).ok();
+    let restore_elapsed = restore_start.elapsed();
+
+    let train_start = Instant::now();
     let outcome = task.train(&genome, &build, convergence, rng).ok()?;
+    let train_elapsed = train_start.elapsed();
+
+    let capture_start = Instant::now();
     genome.capture_weights(&build).ok()?;
+    let capture_elapsed = capture_start.elapsed();
+
+    let evaluate_start = Instant::now();
     let mut score = evaluate_conservative(task, &genome, &build, eval_runs, rng).ok()?;
+    let evaluate_elapsed = evaluate_start.elapsed();
+
+    let cost_start = Instant::now();
     if let Ok(cost) = compute_inference_cost(&genome, complexity_metric) {
         score.inference_cost = Some(cost);
     }
+    let cost_elapsed = cost_start.elapsed();
+
     // F3: 合并训练阶段算出的 learning-speed proxy
     if outcome.proxy.is_some() {
         score.primary_proxy = outcome.proxy;
     }
+    let timing = EvalTiming {
+        total: total_start.elapsed(),
+        build: build_elapsed,
+        restore: restore_elapsed,
+        train: train_elapsed,
+        capture: capture_elapsed,
+        evaluate: evaluate_elapsed,
+        cost: cost_elapsed,
+        train_setup: outcome.timing.setup,
+        train_shuffle: outcome.timing.shuffle,
+        train_batch_slice: outcome.timing.batch_slice,
+        train_set_value: outcome.timing.set_value,
+        train_zero_grad: outcome.timing.zero_grad,
+        train_backward: outcome.timing.backward,
+        train_step: outcome.timing.optimizer_step,
+        train_grad_norm: outcome.timing.grad_norm,
+    };
     Some(EvalResult {
         genome,
         score,
         loss: outcome.final_loss,
         inherit_report,
+        timing,
     })
 }
 
@@ -1326,6 +1885,93 @@ fn evaluate_batch(
             })
             .collect()
     }
+}
+
+fn timed_evaluate_batch(
+    base_task: &TaskRuntime,
+    offspring: Vec<NetworkGenome>,
+    convergence: &ConvergenceConfig,
+    eval_runs: usize,
+    complexity_metric: &ComplexityMetric,
+    parallel_pool: Option<&ThreadPool>,
+    seeds: Vec<u64>,
+) -> TimedEvalBatch {
+    let wall_start = Instant::now();
+    let results = evaluate_batch(
+        base_task,
+        offspring,
+        convergence,
+        eval_runs,
+        complexity_metric,
+        parallel_pool,
+        seeds,
+    );
+    let timing = summarize_eval_timings(&results, wall_start.elapsed());
+    TimedEvalBatch { results, timing }
+}
+
+fn final_refit_archive(
+    base_task: &TaskRuntime,
+    archive: &[(NetworkGenome, FitnessScore)],
+    config: &FinalRefitConfig,
+    eval_runs: usize,
+    complexity_metric: &ComplexityMetric,
+    parallel_pool: Option<&ThreadPool>,
+    seed: u64,
+) -> TimedEvalBatch {
+    if archive.is_empty() {
+        return TimedEvalBatch {
+            results: Vec::new(),
+            timing: EvaluationTimingSummary::default(),
+        };
+    }
+
+    let mut ranked: Vec<&(NetworkGenome, FitnessScore)> = archive.iter().collect();
+    ranked.sort_by(|a, b| {
+        b.1.primary
+            .partial_cmp(&a.1.primary)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                a.1.inference_cost
+                    .unwrap_or(f32::INFINITY)
+                    .partial_cmp(&b.1.inference_cost.unwrap_or(f32::INFINITY))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| {
+                a.1.tiebreak_loss
+                    .unwrap_or(f32::INFINITY)
+                    .partial_cmp(&b.1.tiebreak_loss.unwrap_or(f32::INFINITY))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+
+    let candidates: Vec<NetworkGenome> = ranked
+        .into_iter()
+        .take(config.top_k)
+        .map(|(genome, _)| genome.clone())
+        .collect();
+    let seeds = derive_refit_seeds(seed, candidates.len());
+    let convergence = ConvergenceConfig {
+        budget: TrainingBudget::FixedEpochs(config.epochs),
+        ..ConvergenceConfig::default()
+    };
+
+    timed_evaluate_batch(
+        base_task,
+        candidates,
+        &convergence,
+        eval_runs,
+        complexity_metric,
+        parallel_pool,
+        seeds,
+    )
+}
+
+fn derive_refit_seeds(seed: u64, len: usize) -> Vec<u64> {
+    const REFIT_SEED_STEP: u64 = 0xD1B5_4A32_D192_ED03;
+    (0..len)
+        .map(|i| seed.wrapping_add((i as u64).wrapping_mul(REFIT_SEED_STEP)))
+        .collect()
 }
 
 // ==================== F4: ASHA 多保真评估 ====================
@@ -1394,14 +2040,18 @@ fn evaluate_batch_asha(
     complexity_metric: &ComplexityMetric,
     parallel_pool: Option<&ThreadPool>,
     seeds: Vec<u64>,
-) -> Vec<EvalResult> {
+) -> TimedEvalBatch {
     assert_eq!(candidates.len(), seeds.len());
     let asha = asha.validated();
     if candidates.is_empty() {
-        return Vec::new();
+        return TimedEvalBatch {
+            results: Vec::new(),
+            timing: EvaluationTimingSummary::default(),
+        };
     }
 
     let mut survivors: Vec<(NetworkGenome, u64)> = candidates.into_iter().zip(seeds).collect();
+    let mut aggregate_timing = EvaluationTimingSummary::default();
 
     let total_rungs = asha.rung_epochs.len();
     for (rung_idx, &epochs) in asha.rung_epochs.iter().enumerate() {
@@ -1417,7 +2067,7 @@ fn evaluate_batch_asha(
             .map(|&seed| derive_asha_rung_seed(seed, rung_idx))
             .collect();
 
-        let rung_results = evaluate_batch(
+        let rung_batch = timed_evaluate_batch(
             base_task,
             genomes,
             &rung_conv,
@@ -1426,10 +2076,16 @@ fn evaluate_batch_asha(
             parallel_pool,
             rung_seeds,
         );
+        aggregate_timing.merge(&rung_batch.timing);
+        let rung_results = rung_batch.results;
 
         // 最后一轮：全部幸存者进入 NSGA-II
         if rung_idx + 1 == total_rungs {
-            return rung_results;
+            aggregate_timing.replace_quality_with(&rung_batch.timing);
+            return TimedEvalBatch {
+                results: rung_results,
+                timing: aggregate_timing,
+            };
         }
 
         // 中间 rung：按 primary 降序保留 top 1/eta
@@ -1451,7 +2107,10 @@ fn evaluate_batch_asha(
     }
 
     // 理论上不会到达：total_rungs >= 1 已确保循环内 return
-    Vec::new()
+    TimedEvalBatch {
+        results: Vec::new(),
+        timing: aggregate_timing,
+    }
 }
 
 fn derive_asha_rung_seed(seed: u64, rung_idx: usize) -> u64 {

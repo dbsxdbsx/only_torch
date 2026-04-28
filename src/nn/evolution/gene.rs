@@ -19,7 +19,8 @@ use std::collections::HashMap;
 use std::fmt;
 
 use super::node_expansion::{
-    InnovationCounter, expand_conv2d, expand_flatten, expand_linear, expand_pool2d, expand_rnn,
+    InnovationCounter, expand_activation, expand_conv2d, expand_flatten, expand_linear,
+    expand_pool2d, expand_rnn,
 };
 use super::node_gene::{GenomeAnalysis, NodeGene};
 
@@ -616,6 +617,226 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "minimal_spatial".to_string(),
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
+                weight_snapshots: HashMap::new(),
+            },
+        }
+    }
+
+    /// 空间分类的展平 MLP 种子：Flatten → Linear(hidden) → Softplus → Linear(output)。
+    ///
+    /// 这是图像分类 portfolio 中的低成本基线：不假设局部卷积归纳偏置，
+    /// 让演化用真实训练/推理耗时决定它是否优于 CNN 种子。
+    pub(crate) fn spatial_flat_mlp(
+        input_channels: usize,
+        output_dim: usize,
+        spatial: (usize, usize),
+        hidden: usize,
+    ) -> Self {
+        assert!(input_channels > 0, "input_channels 不能为零");
+        assert!(output_dim > 0, "output_dim 不能为零");
+        assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
+        assert!(hidden > 0, "hidden 不能为零");
+
+        let mut counter = InnovationCounter::new(1);
+        let mut nodes = expand_flatten(
+            INPUT_INNOVATION,
+            input_channels,
+            Some(spatial),
+            &mut counter,
+        );
+        let flatten_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Flatten 展开应至少产生一个节点");
+        let flat_dim = input_channels * spatial.0 * spatial.1;
+
+        nodes.extend(expand_linear(
+            flatten_output_id,
+            flat_dim,
+            hidden,
+            0,
+            &mut counter,
+        ));
+        let hidden_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Linear 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            hidden_output_id,
+            vec![1, hidden],
+            &ActivationType::Softplus,
+            &mut counter,
+        ));
+        let activation_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Activation 展开应至少产生一个节点");
+        nodes.extend(expand_linear(
+            activation_output_id,
+            hidden,
+            output_dim,
+            1,
+            &mut counter,
+        ));
+
+        Self {
+            input_dim: input_channels,
+            output_dim,
+            seq_len: None,
+            input_spatial: Some(spatial),
+            training_config: TrainingConfig::default(),
+            generated_by: "spatial_flat_mlp".to_string(),
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
+                weight_snapshots: HashMap::new(),
+            },
+        }
+    }
+
+    /// LeNet 风格空间分类种子：Conv → ReLU → Pool → Conv → ReLU → Pool → FC → ReLU → FC。
+    ///
+    /// 该种子对齐 `examples/traditional/mnist_cnn` 的结构量级，但仍保留后续演化空间。
+    pub(crate) fn spatial_lenet_tiny(
+        input_channels: usize,
+        output_dim: usize,
+        spatial: (usize, usize),
+    ) -> Self {
+        assert!(input_channels > 0, "input_channels 不能为零");
+        assert!(output_dim > 0, "output_dim 不能为零");
+        assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
+
+        let conv1_channels = 4usize;
+        let conv2_channels = 8usize;
+        let hidden = 32usize;
+        let mut counter = InnovationCounter::new(1);
+
+        let mut nodes = expand_conv2d(
+            INPUT_INNOVATION,
+            input_channels,
+            conv1_channels,
+            3,
+            spatial,
+            0,
+            &mut counter,
+        );
+        let conv1_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            conv1_output_id,
+            vec![1, conv1_channels, spatial.0, spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let act1_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Activation 展开应至少产生一个节点");
+        nodes.extend(expand_pool2d(
+            act1_output_id,
+            PoolType::Max,
+            2,
+            2,
+            spatial,
+            conv1_channels,
+            &mut counter,
+        ));
+        let pool1_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Pool2d 展开应至少产生一个节点");
+        let spatial1 = pooled_spatial(spatial, 2, 2);
+
+        nodes.extend(expand_conv2d(
+            pool1_output_id,
+            conv1_channels,
+            conv2_channels,
+            3,
+            spatial1,
+            1,
+            &mut counter,
+        ));
+        let conv2_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            conv2_output_id,
+            vec![1, conv2_channels, spatial1.0, spatial1.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let act2_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Activation 展开应至少产生一个节点");
+        nodes.extend(expand_pool2d(
+            act2_output_id,
+            PoolType::Max,
+            2,
+            2,
+            spatial1,
+            conv2_channels,
+            &mut counter,
+        ));
+        let pool2_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Pool2d 展开应至少产生一个节点");
+        let spatial2 = pooled_spatial(spatial1, 2, 2);
+
+        nodes.extend(expand_flatten(
+            pool2_output_id,
+            conv2_channels,
+            Some(spatial2),
+            &mut counter,
+        ));
+        let flatten_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Flatten 展开应至少产生一个节点");
+        let flat_dim = conv2_channels * spatial2.0 * spatial2.1;
+        nodes.extend(expand_linear(
+            flatten_output_id,
+            flat_dim,
+            hidden,
+            2,
+            &mut counter,
+        ));
+        let hidden_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Linear 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            hidden_output_id,
+            vec![1, hidden],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let activation_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Activation 展开应至少产生一个节点");
+        nodes.extend(expand_linear(
+            activation_output_id,
+            hidden,
+            output_dim,
+            3,
+            &mut counter,
+        ));
+
+        Self {
+            input_dim: input_channels,
+            output_dim,
+            seq_len: None,
+            input_spatial: Some(spatial),
+            training_config: TrainingConfig::default(),
+            generated_by: "spatial_lenet_tiny".to_string(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -1565,6 +1786,20 @@ impl NetworkGenome {
     pub fn is_spatial(&self) -> bool {
         self.input_spatial.is_some()
     }
+}
+
+fn pooled_spatial(spatial: (usize, usize), kernel_size: usize, stride: usize) -> (usize, usize) {
+    let h = if spatial.0 >= kernel_size {
+        (spatial.0 - kernel_size) / stride + 1
+    } else {
+        1
+    };
+    let w = if spatial.1 >= kernel_size {
+        (spatial.1 - kernel_size) / stride + 1
+    } else {
+        1
+    };
+    (h, w)
 }
 
 // ==================== Display ====================

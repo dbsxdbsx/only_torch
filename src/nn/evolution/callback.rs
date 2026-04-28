@@ -15,6 +15,173 @@
 use super::gene::NetworkGenome;
 use super::task::FitnessScore;
 
+// ==================== EvaluationTimingSummary ====================
+
+/// 一批候选评估的阶段耗时汇总。
+///
+/// `wall_secs` 是批次真实墙钟时间；其他字段是所有候选在对应阶段的累计耗时。
+/// 并行评估时，候选累计耗时可能大于墙钟时间，用于定位 build/train/evaluate 等阶段占比。
+#[derive(Clone, Debug, Default)]
+pub struct EvaluationTimingSummary {
+    pub batches: usize,
+    pub candidates: usize,
+    pub wall_secs: f64,
+    pub candidate_secs: f64,
+    pub build_secs: f64,
+    pub restore_secs: f64,
+    pub train_secs: f64,
+    pub capture_secs: f64,
+    pub evaluate_secs: f64,
+    pub cost_secs: f64,
+    pub train_setup_secs: f64,
+    pub train_shuffle_secs: f64,
+    pub train_batch_slice_secs: f64,
+    pub train_set_value_secs: f64,
+    pub train_zero_grad_secs: f64,
+    pub train_backward_secs: f64,
+    pub train_step_secs: f64,
+    pub train_grad_norm_secs: f64,
+    pub primary_min: Option<f32>,
+    pub primary_max: Option<f32>,
+    pub primary_sum: f32,
+    pub primary_count: usize,
+    pub cost_min: Option<f32>,
+    pub cost_max: Option<f32>,
+    pub cost_sum: f32,
+    pub cost_count: usize,
+}
+
+impl EvaluationTimingSummary {
+    pub(crate) fn merge(&mut self, other: &Self) {
+        self.batches += other.batches;
+        self.candidates += other.candidates;
+        self.wall_secs += other.wall_secs;
+        self.candidate_secs += other.candidate_secs;
+        self.build_secs += other.build_secs;
+        self.restore_secs += other.restore_secs;
+        self.train_secs += other.train_secs;
+        self.capture_secs += other.capture_secs;
+        self.evaluate_secs += other.evaluate_secs;
+        self.cost_secs += other.cost_secs;
+        self.train_setup_secs += other.train_setup_secs;
+        self.train_shuffle_secs += other.train_shuffle_secs;
+        self.train_batch_slice_secs += other.train_batch_slice_secs;
+        self.train_set_value_secs += other.train_set_value_secs;
+        self.train_zero_grad_secs += other.train_zero_grad_secs;
+        self.train_backward_secs += other.train_backward_secs;
+        self.train_step_secs += other.train_step_secs;
+        self.train_grad_norm_secs += other.train_grad_norm_secs;
+        self.primary_min = merge_min(self.primary_min, other.primary_min);
+        self.primary_max = merge_max(self.primary_max, other.primary_max);
+        self.primary_sum += other.primary_sum;
+        self.primary_count += other.primary_count;
+        self.cost_min = merge_min(self.cost_min, other.cost_min);
+        self.cost_max = merge_max(self.cost_max, other.cost_max);
+        self.cost_sum += other.cost_sum;
+        self.cost_count += other.cost_count;
+    }
+
+    pub fn avg_candidate_secs(&self) -> f64 {
+        if self.candidates == 0 {
+            0.0
+        } else {
+            self.candidate_secs / self.candidates as f64
+        }
+    }
+
+    pub fn avg_primary(&self) -> Option<f32> {
+        if self.primary_count == 0 {
+            None
+        } else {
+            Some(self.primary_sum / self.primary_count as f32)
+        }
+    }
+
+    pub fn avg_cost(&self) -> Option<f32> {
+        if self.cost_count == 0 {
+            None
+        } else {
+            Some(self.cost_sum / self.cost_count as f32)
+        }
+    }
+
+    pub(crate) fn replace_quality_with(&mut self, other: &Self) {
+        self.primary_min = other.primary_min;
+        self.primary_max = other.primary_max;
+        self.primary_sum = other.primary_sum;
+        self.primary_count = other.primary_count;
+        self.cost_min = other.cost_min;
+        self.cost_max = other.cost_max;
+        self.cost_sum = other.cost_sum;
+        self.cost_count = other.cost_count;
+    }
+}
+
+fn merge_min(a: Option<f32>, b: Option<f32>) -> Option<f32> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (Some(x), None) => Some(x),
+        (None, Some(y)) => Some(y),
+        (None, None) => None,
+    }
+}
+
+fn merge_max(a: Option<f32>, b: Option<f32>) -> Option<f32> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.max(y)),
+        (Some(x), None) => Some(x),
+        (None, Some(y)) => Some(y),
+        (None, None) => None,
+    }
+}
+
+// ==================== CandidatePrefilterSummary ====================
+
+/// P5-lite 候选预筛阶段的轻量统计。
+#[derive(Clone, Debug, Default)]
+pub struct CandidatePrefilterSummary {
+    pub generated: usize,
+    pub kept: usize,
+    pub score_min: Option<f32>,
+    pub score_max: Option<f32>,
+    pub score_sum: f32,
+    pub flops_min: Option<f32>,
+    pub flops_max: Option<f32>,
+    pub flops_sum: f32,
+    pub flops_count: usize,
+}
+
+impl CandidatePrefilterSummary {
+    pub(crate) fn observe(&mut self, score: f32, flops: Option<f32>) {
+        self.generated += 1;
+        self.score_min = Some(self.score_min.map_or(score, |v| v.min(score)));
+        self.score_max = Some(self.score_max.map_or(score, |v| v.max(score)));
+        self.score_sum += score;
+        if let Some(flops) = flops {
+            self.flops_min = Some(self.flops_min.map_or(flops, |v| v.min(flops)));
+            self.flops_max = Some(self.flops_max.map_or(flops, |v| v.max(flops)));
+            self.flops_sum += flops;
+            self.flops_count += 1;
+        }
+    }
+
+    pub fn avg_score(&self) -> Option<f32> {
+        if self.generated == 0 {
+            None
+        } else {
+            Some(self.score_sum / self.generated as f32)
+        }
+    }
+
+    pub fn avg_flops(&self) -> Option<f32> {
+        if self.flops_count == 0 {
+            None
+        } else {
+            Some(self.flops_sum / self.flops_count as f32)
+        }
+    }
+}
+
 // ==================== EvolutionCallback trait ====================
 
 /// 演化过程回调（可观测性 + 外部控制）
@@ -59,6 +226,21 @@ pub trait EvolutionCallback {
     ///
     /// 在 verbose 调试时可借此监控 Grow/Shrink 变异后权重复用率是否符合预期。
     fn on_inherit_stats(&mut self, _generation: usize, _inherited: usize, _reinitialized: usize) {}
+
+    /// 一批候选评估完成后的阶段耗时。
+    ///
+    /// `phase` 当前可能是 `init`、`offspring` 或 `asha`。
+    fn on_evaluation_timing(
+        &mut self,
+        _generation: usize,
+        _phase: &str,
+        _summary: &EvaluationTimingSummary,
+    ) {
+    }
+
+    /// P5-lite 候选预筛完成后调用。
+    fn on_candidate_prefilter(&mut self, _generation: usize, _summary: &CandidatePrefilterSummary) {
+    }
 
     /// 每代开始前检查，返回 true 则终止演化
     fn should_stop(&self, _generation: usize) -> bool {
@@ -175,6 +357,74 @@ impl EvolutionCallback for DefaultCallback {
             inherited, total, pct, reinitialized
         );
         let _ = generation; // 仅在 verbose 模式打印，generation 暂不使用
+    }
+
+    fn on_evaluation_timing(
+        &mut self,
+        _generation: usize,
+        phase: &str,
+        summary: &EvaluationTimingSummary,
+    ) {
+        if !self.verbose || summary.candidates == 0 {
+            return;
+        }
+
+        println!(
+            "         timing({phase}): wall={:.2}s cand={} avg={:.2}s | build={:.2}s restore={:.2}s train={:.2}s capture={:.2}s eval={:.2}s cost={:.2}s",
+            summary.wall_secs,
+            summary.candidates,
+            summary.avg_candidate_secs(),
+            summary.build_secs,
+            summary.restore_secs,
+            summary.train_secs,
+            summary.capture_secs,
+            summary.evaluate_secs,
+            summary.cost_secs,
+        );
+        println!(
+            "         train-detail: setup={:.2}s shuffle={:.2}s slice={:.2}s set={:.2}s zero={:.2}s backward={:.2}s step={:.2}s grad_norm={:.2}s",
+            summary.train_setup_secs,
+            summary.train_shuffle_secs,
+            summary.train_batch_slice_secs,
+            summary.train_set_value_secs,
+            summary.train_zero_grad_secs,
+            summary.train_backward_secs,
+            summary.train_step_secs,
+            summary.train_grad_norm_secs,
+        );
+        if let (Some(p_min), Some(p_avg), Some(p_max)) = (
+            summary.primary_min,
+            summary.avg_primary(),
+            summary.primary_max,
+        ) {
+            println!(
+                "         eval-detail: primary[min/avg/max]={:.3}/{:.3}/{:.3} | cost[min/avg/max]={:.0}/{:.0}/{:.0}",
+                p_min,
+                p_avg,
+                p_max,
+                summary.cost_min.unwrap_or(f32::NAN),
+                summary.avg_cost().unwrap_or(f32::NAN),
+                summary.cost_max.unwrap_or(f32::NAN),
+            );
+        }
+    }
+
+    fn on_candidate_prefilter(&mut self, generation: usize, summary: &CandidatePrefilterSummary) {
+        if !self.verbose || summary.generated == 0 {
+            return;
+        }
+
+        println!(
+            "         p5-lite(gen={generation}): kept={}/{} | score[min/avg/max]={:.3}/{:.3}/{:.3} | flops[min/avg/max]={:.0}/{:.0}/{:.0}",
+            summary.kept,
+            summary.generated,
+            summary.score_min.unwrap_or(f32::NAN),
+            summary.avg_score().unwrap_or(f32::NAN),
+            summary.score_max.unwrap_or(f32::NAN),
+            summary.flops_min.unwrap_or(f32::NAN),
+            summary.avg_flops().unwrap_or(f32::NAN),
+            summary.flops_max.unwrap_or(f32::NAN),
+        );
     }
 
     fn should_stop(&self, generation: usize) -> bool {

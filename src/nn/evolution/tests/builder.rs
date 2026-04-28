@@ -173,6 +173,30 @@ fn test_spatial_minimal_forward() {
 }
 
 #[test]
+fn test_spatial_flat_mlp_seed_forward() {
+    let genome = NetworkGenome::spatial_flat_mlp(1, 3, (8, 8), 16);
+    let build = build(&genome);
+
+    build.input.set_value(&Tensor::ones(&[1, 1, 8, 8])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    assert_eq!(build.output.value().unwrap().unwrap().shape(), &[1, 3]);
+    assert_eq!(build.all_parameters().len(), 4);
+}
+
+#[test]
+fn test_spatial_lenet_tiny_seed_forward() {
+    let genome = NetworkGenome::spatial_lenet_tiny(1, 3, (8, 8));
+    let build = build(&genome);
+
+    build.input.set_value(&Tensor::ones(&[1, 1, 8, 8])).unwrap();
+    build.graph.forward(&build.output).unwrap();
+
+    assert_eq!(build.output.value().unwrap().unwrap().shape(), &[1, 3]);
+    assert_eq!(build.all_parameters().len(), 8);
+}
+
+#[test]
 fn test_spatial_segmentation_forward() {
     let genome = NetworkGenome::minimal_spatial_segmentation(1, 2, (8, 8));
     let build = build(&genome);

@@ -87,6 +87,9 @@ Evolution::supervised(train, test, TaskMetric::Accuracy)
     .with_pareto_patience(40)         // Pareto archive 收敛耐心值（默认 auto = max(20, pop*2)）
     .with_complexity_metric(ComplexityMetric::FLOPs) // inference_cost 计算方式（默认 FLOPs）
     .with_batch_size(64)              // 显式 batch size（默认自动策略）
+    .with_initial_burst(2)            // 初始种群随机爆发变异次数（默认按约束自动推导）
+    .with_initial_portfolio(InitialPortfolioConfig::vision_classification()) // 可选 warm-start 结构族
+    .with_candidate_scoring(CandidateScoringConfig::p5_lite()) // P5-lite 候选预筛（默认关闭）
     .with_verbose(false)              // 关闭日志（默认 true）
     .with_convergence(config)         // 收敛检测配置（Phase 2 使用）
     .with_constraints(constraints)    // 网络规模约束（默认 auto 推导）
@@ -150,16 +153,21 @@ Evolution::supervised(train, test, TaskMetric::Accuracy)
 
 ```
 自适应约束：用户未指定 with_constraints() 时，自动从数据维度推导 SizeConstraints
-随机爆发初始化：对 minimal genome 施加 K 次随机变异（K = max(2, min(8, max_layers/2))）生成初始种群
+初始结构：默认从 minimal genome 出发；若配置 initial_portfolio，则混入多个任务合理结构族（如 FlatMLP / TinyCNN / LeNetTiny）
+随机爆发初始化：对非 portfolio warm-start 个体施加 K 次随机变异（默认 K = max(2, min(8, max_layers/2))，可通过 with_initial_burst 覆盖）生成初始种群
+Warm-start 达标直返：初始 portfolio 评估后若已有 primary ≥ target_metric，直接返回 TargetReached，避免进入随机变异长跑
 两阶段训练预算：Phase 1（前 40% 代数）非序列任务默认用 ASHA 多保真评估，序列任务默认用 FixedEpochs 快速筛选；Phase 2（后 60%）用 UntilConverged 精炼
 两阶段变异权重：Phase 1 偏向结构探索（InsertLayer↑, Grow↑）；Phase 2 偏向超参调优（MutateLR↑, MutateOptimizer↑）
 Primary plateau 提前切换：若 primary fitness 连续 stagnation_patience 代未提升，即使未到 Phase 2 代数也立即切换
 
 初始化:
+  seeds = initial_portfolio.unwrap_or([minimal_genome])
   for i in 0..population_size:
-    genome_i = minimal_genome + K 次随机变异
+    genome_i = seeds[i % seeds.len()]
+    若 i >= seeds.len(): genome_i += K 次随机变异
   evaluate_batch(初始种群)  // rayon 并行
   初始化 archive = 非支配解集合
+  若 archive 中存在达标成员：直接返回最小 cost 的达标成员
 
 每一代 (generation):
   1. 二元锦标赛采样 + 变异 → offspring_batch_size 个候选
@@ -247,11 +255,37 @@ pub struct FitnessScore {
 
 `report` 只承载可观测性信息，例如 `accuracy` / `f1` / `mse` 等，不进入 `objective_point()`，因此不会影响 Pareto rank、crowding distance、达标判断或 archive 收敛。
 
-### 3.3 停滞检测
+### 3.3 Initial Portfolio 与 Warm-start
+
+默认演化仍保持旧行为：从任务类型推导一个 `minimal_genome`，再通过随机爆发变异生成初始种群。对 AutoML 体验要求更高的任务，可以通过 `with_initial_portfolio()` 混入多个合理结构族，让它们进入同一套训练、评估、Pareto 选择流程。
+
+当前图像分类 portfolio 包含：
+
+| Seed | 结构 | 定位 |
+|---|---|---|
+| `spatial_flat_mlp` | `Flatten → Linear(hidden) → Softplus → Linear(output)` | 低成本强 baseline，适合 MNIST / Fashion-MNIST 这类小图像分类 |
+| `minimal_spatial` | `Conv2d → Pool2d → Flatten → Linear` | TinyCNN 起点，保留空间归纳偏置 |
+| `spatial_lenet_tiny` | `Conv → ReLU → Pool → Conv → ReLU → Pool → FC → ReLU → FC` | LeNet 量级强先验，作为空间分类候选族 |
+
+Portfolio 不是写死答案：候选仍然必须经过训练和评估，只有 primary / cost 表现足够好的分支会进入 parents 或 archive。若初始 portfolio 已经存在达标候选，`run()` 会直接返回 `TargetReached`，避免把用户默认路径拖入随机长搜索；若未达标，则继续进入常规 mutation loop。
+
+### 3.4 P5-lite Candidate Scoring
+
+`with_candidate_scoring(CandidateScoringConfig::p5_lite())` 是完整 surrogate 之前的低耦合预筛层。它不会预测最终 fitness，也不会替代训练评估，只基于结构特征和 FLOPs 对候选排序，并将完整训练预算集中到 top-k。
+
+当前启发式特征包括：
+
+- depth、Conv2d / Pool2d / Linear 块数量、是否包含 Flatten；
+- FLOPs；
+- 是否匹配 FlatMLP、TinyCNN、LeNetTiny 这类结构族特征。
+
+这为后续完整 P5 surrogate 积累 `(genome_features → fitness / cost / timing)` 数据，但当前不引入学习型回归器，避免在样本不足时把主循环复杂化。
+
+### 3.5 停滞检测
 
 连续 `stagnation_patience`（默认 20）代 best primary 未严格提升后，强制从结构性变异（`InsertLayer` / `RemoveLayer` / `AddConnection` / `RemoveConnection`）中选择，打破参数变异空转。
 
-### 3.4 Pareto 收敛与主目标平台期检测
+### 3.6 Pareto 收敛与主目标平台期检测
 
 **Archive 收敛**：全局 archive 的代表成员（primary 最高或满足 target 的最小 cost 成员）连续 `pareto_patience`（默认 `max(20, population_size * 2)`）代的 FitnessScore 未发生实质变化时（primary / inference_cost / tiebreak_loss 三个选择相关字段均在 tolerance=1e-6 内），判定 Pareto 前沿收敛，返回 `ParetoConverged` 状态。`MetricReport` 不参与该判断。
 
@@ -692,7 +726,7 @@ src/nn/tests/onnx/
 | rayon 并行评估 | offspring 的 build→train→evaluate 通过 map_init 并行化，每个 worker 独立 materialize task 避免数据冗余复制 |
 | 数据驱动 auto_constraints | 用户无需配置约束，系统根据任务维度自动推导合理搜索空间 |
 | 两阶段训练+变异切换 | 解决搜索效率 vs 评估精度矛盾；Phase1 快速探索拓扑，Phase2 精炼超参 |
-| 随机爆发初始化 | 复用现有变异基础设施，零新增代码产生多样化初始候选 |
+| 初始 portfolio + 随机爆发初始化 | 保留 minimal seed 的开放性，同时允许任务合理结构族 warm-start；未达标时再通过随机爆发生成多样化候选 |
 | `>=` 非严格接受 | 解决 stepping stone 问题（XOR 等任务需多步结构变化才能突破） |
 | Fitness 驱动（非 loss） | 通用性：fitness 在所有范式中有意义；loss 不可跨架构比较 |
 | Tiebreak 分离（独立字段） | primary 保持纯指标值，避免 epsilon 融合污染日志和 target_metric 比较 |
@@ -975,7 +1009,7 @@ DeformableConv2d { stride: (usize, usize), padding: (usize, usize), deformable_g
 | 方向 | 难度 | 与 Phase C 关系 | 说明 |
 |------|------|----------------|------|
 | **ENAS 式权重共享** | 高 | 解耦，效率优化 | 不同基因组共享部分权重（当重叠子图结构相同时复用已训练权重），减少每代 offspring 的训练成本。当前每个 offspring 独立 build→train→evaluate，权重共享可将训练开销降低一个数量级。需要维护一个"超网络权重库"，按子图结构哈希索引 |
-| **Surrogate 模型** | 中 | 解耦，效率优化 | 用一个轻量级模型（如 GBM / 小型 NN）预测基因组的 fitness，跳过昂贵的 train+evaluate。仅对预测 fitness 有潜力的候选执行完整评估。需要积累足够的 (genome_features → fitness) 训练数据 |
+| **P5-lite / Surrogate 模型** | 中 | 解耦，效率优化 | 当前已落地 P5-lite：记录结构特征并用启发式 scorer 预筛 top-k，完整 fitness 仍由真实训练评估产生。完整 surrogate 是后续方向：用轻量模型（如 GBM / 小型 NN）预测基因组 fitness，需先积累足够的 `(genome_features → fitness / cost / timing)` 数据 |
 | **分布式并行演化** | 中 | 解耦，工程优化 | 当前 rayon 并行限于单机多核。扩展到多机：每台机器运行一个子种群（island model），定期交换精英个体。需要序列化/反序列化 genome + fitness 的网络通信层 |
 | **DARTS 混合搜索** | 高 | 完全不同的搜索范式 | 可微分架构搜索：用连续松弛 + 梯度下降搜索架构（不经过 mutation/selection）。与演化路线完全不同的技术方向。可作为互补方案——DARTS 快速收敛到局部最优，演化跳出局部最优。实现需要全新的搜索引擎模块 |
 
@@ -1065,22 +1099,25 @@ ASHA 的实现路径仍然是通用评估调度器；当前差异只在默认策
 
 记忆单元类型由 `MutateCellType` 自动探索，`GrowHiddenSize` 扩展容量——联合搜索结构与参数。
 
-### MNIST (input=1@28×28, output_dim=10, 1000 train / 500 test)
+### MNIST (input=1@28×28, output_dim=10)
 
 ```
-[Gen  0] 爆发初始化：λ=4 个候选，每个对 minimal_spatial 施加 K=5 次随机变异
-         初始种子：Conv2d(1→8,k=3) → Pool2d(Max,2,2) → Flatten → [Linear(10)]
-         候选可能产生：
-         - Conv2d(1→8,k=3) → Pool2d → Conv2d(8→16,k=3) → Flatten → [Linear(10)]
-         - Conv2d(1→16,k=5) → Pool2d → Flatten → Linear(32) → [Linear(10)]
-         - Conv2d(1→8,k=3) → Pool2d → Conv2d(8→8,k=3,s=2) → Flatten → [Linear(10)]
-         → 选 fitness 最高者作为 best_genome
+[profile=quality] 15000 train / 1000 test
+  Initial portfolio: FlatMLP(hidden=128)
+  Gen 0 init: Flatten → Linear(128) → Softplus → Linear(10)
+  → 初始 warm-start 训练评估后 Accuracy 约 95%+，直接 TargetReached
 
-  Phase 1（Gen 1~70）：Pareto 种群搜索 + ASHA 多保真评估 + 结构探索变异权重
-  Phase 2（Gen 71~100）：Pareto 种群搜索 + UntilConverged 充分训练 + 超参调优变异权重
+[profile=search] 5000 train / 1000 test
+  Initial portfolio: FlatMLP + TinyCNN + LeNetTiny
+  P5-lite: 生成候选池后按结构特征 + FLOPs 预筛 top-k
+  若初始 portfolio 未达标，再进入：
+    Phase 1：Pareto 种群搜索 + ASHA 多保真评估 + 结构探索变异权重
+    Phase 2：Pareto 种群搜索 + UntilConverged 充分训练 + 超参调优变异权重
 ```
 
-自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params` ≈ 220K、`max_hidden_size=256`（channels 上限）、`max_layers=20`、`min_hidden_size=16`。`fc_base` 假设至少 2 次 stride-2 pool（空间尺寸 /4），FC 隐藏层宽度 64，防止 Flatten 后 Linear 参数爆炸。独立的 Conv2d + 激活函数 + Pool2d 插入 + stride 变异 + kernel size 变异联合搜索高效 CNN 架构。
+MNIST 的用户默认可用路径应优先走 `quality`：它验证“少写代码、快速得到可用结果”的 AutoML 体验。`search` 保留为诊断 / 研究模式，用于验证 portfolio、P5-lite、ASHA 与 mutation registry 的长期搜索质量，不作为短时用户体验承诺。
+
+自适应约束（`SizeConstraints::auto()`）为 MNIST 推导：`max_total_params` ≈ 220K、`max_hidden_size=256`（channels 上限）、`max_layers=20`、`min_hidden_size=16`。`fc_base` 假设至少 2 次 stride-2 pool（空间尺寸 /4），FC 隐藏层宽度 64，防止 Flatten 后 Linear 参数爆炸。空间分类既允许 `FlatMLP` 低成本 baseline，也允许独立的 Conv2d + 激活函数 + Pool2d 插入 + stride 变异 + kernel size 变异联合搜索高效 CNN 架构。
 
 ---
 
@@ -1103,10 +1140,10 @@ ASHA 的实现路径仍然是通用评估调度器；当前差异只在默认策
 
 | 问题 | 状态 | 说明 |
 |---|---|---|
-| MNIST 准确率上限 ~91.5% | ✅ 已修复 | 阶段 A 已完成关键修复：Conv2d+Pool2d 初始种子、stride 变异、SizeConstraints 空间域调优、Conv2d resize 修复；Conv-BN-ReLU 复合层块已移除，改由独立激活 / 归一化插入机制保持搜索多样性 |
-| Spatial 域演化运行缓慢 | 部分改善 | 已完成多项优化：(1) FM 掩码融合——构图时检测同构 FM 边并合并为单个 Conv2d 操作（`fm_ops.rs`），大幅减少 FM 级别拓扑的计算图节点数；(2) 收紧 `SizeConstraints::auto()` 的 `fc_base`（2×Pool 降维 + FC 隐藏层 64），防止 Flatten→Linear 参数爆炸；(3) `ComplexityMetric` 默认切为 FLOPs，NSGA-II 选择压力直接对准计算耗时；(4) GrowHiddenSize 权重从 0.25 降到 0.12，将探索预算让渡给 FM 级别细粒度变异；(5) BLAS 线程守卫防止多线程超订阅。当前 MNIST Debug 模式下仍偏慢（每代约 10-15 秒），进一步提速方向见阶段 E |
+| MNIST 准确率上限 ~91.5% | ✅ 已修复 | 空间分类已支持 portfolio warm-start；`evolution_mnist --profile=quality` 通过 FlatMLP warm-start 在 30 秒内达到 95%+，不再依赖长时间随机搜索 |
+| Spatial 域演化运行偏慢 | 部分改善 | 已完成多项优化：(1) FM 掩码融合；(2) `SizeConstraints::auto()` 空间域调优；(3) `ComplexityMetric` 默认 FLOPs；(4) BLAS 线程守卫；(5) backward 路径减少无用梯度、SoftmaxCrossEntropy 融合、Conv2d im2col 复用；(6) portfolio warm-start 与 P5-lite 预筛。MNIST `quality` 已可用，完整 `search` 仍偏慢，segmentation evolution 仍需继续纳入同一专项 |
 | Evolution 多输出模型 | Roadmap | 底层 `GraphDescriptor` 可表达多个显式输出，但 evolution 任务 API 当前按单输出监督任务设计。多输出 / 多头任务需要扩展 output head 标记、loss/metric 映射、fitness 聚合和预测返回结构，列入阶段 D 候选方向 |
 
 ---
 
-*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-27（v17: 补充 ASHA 默认跳过序列 / 记忆单元的设计动机，明确这是默认策略而非机制限制）*
+*本文档描述 only_torch 的神经架构演化模块实际实现。最后更新：2026-04-28（v18: 补充 initial portfolio、warm-start 直返、P5-lite 预筛与 MNIST quality profile 的定位）*

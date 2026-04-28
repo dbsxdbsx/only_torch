@@ -444,6 +444,12 @@ impl NodeInner {
         // - 父节点可以收到梯度
         // - 当到达父节点执行 propagate_grad_to_parents 时，它会检查自己的 detach 状态
         for (i, parent) in self.parents.iter().enumerate() {
+            if !parent.has_trainable_ancestor(&mut HashSet::new()) {
+                // 该父分支不会通向任何 Parameter，提前跳过可避免第一层
+                // Conv/MatMul 为普通数据输入计算大块无用梯度。
+                continue;
+            }
+
             // 计算对该父节点的梯度
             let result = match self.calc_grad_to_parent_index(i, upstream_grad) {
                 Ok(r) => r,
@@ -527,6 +533,22 @@ impl NodeInner {
         result
     }
 
+    /// 当前节点及其祖先中是否存在需要接收梯度的参数节点。
+    ///
+    /// 输入数据与 target 输入不保存梯度；若某个父分支最终只通向这些输入，
+    /// 反向传播无需为该分支计算 VJP。
+    fn has_trainable_ancestor(&self, visited: &mut HashSet<NodeId>) -> bool {
+        if !visited.insert(self.id()) || self.is_detached() {
+            return false;
+        }
+        if self.is_parameter() {
+            return true;
+        }
+        self.parents
+            .iter()
+            .any(|parent| parent.has_trainable_ancestor(visited))
+    }
+
     /// 执行完整的反向传播
     ///
     /// 从当前节点（loss）开始，按拓扑逆序遍历所有节点，
@@ -553,14 +575,11 @@ impl NodeInner {
                 continue;
             }
 
-            // 获取当前节点的梯度
-            let grad = match node.grad() {
-                Some(g) => g,
-                None => continue, // 没有梯度的节点跳过
-            };
-
-            // 向父节点传播梯度
-            node.propagate_grad_to_parents(&grad)?;
+            // 借用当前节点梯度直接传播，避免为空间节点克隆整块梯度张量。
+            node.with_grad(|grad| match grad {
+                Some(grad) => node.propagate_grad_to_parents(grad),
+                None => Ok(()), // 没有梯度的节点跳过
+            })?;
 
             // 更新 pass_id
             node.set_last_backward_pass_id(pass_id);
