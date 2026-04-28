@@ -92,7 +92,7 @@ examples: examples-traditional examples-evolution
 # 运行所有 traditional examples
 # 注:example-chess-yolo-onnx-detect 不在此聚合内,因为它依赖 ~93MB 的 VinXiangQi
 # .onnx 模型(已被 .gitignore),需用户先跑 download_model.py 才能跑通
-examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-shapes-unet-lite-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
+examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-shapes-unet-lite-segmentation example-deformable-conv2d-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -136,6 +136,10 @@ example-overlapping-shapes-semantic-segmentation:
 example-overlapping-shapes-unet-lite-segmentation:
     @echo "=== Running Overlapping Shapes U-Net-lite Segmentation [{{_blas_name}}] ==="
     cargo run --example overlapping_shapes_unet_lite_segmentation {{_blas_flag}}
+
+example-deformable-conv2d-segmentation:
+    @echo "=== Running DeformableConv2d Segmentation [{{_blas_name}}] ==="
+    cargo run --example deformable_conv2d_segmentation {{_blas_flag}}
 
 example-overlapping-fixed-slot-instance-segmentation:
     @echo "=== Running Overlapping Fixed Slot Instance Segmentation [{{_blas_name}}] ==="

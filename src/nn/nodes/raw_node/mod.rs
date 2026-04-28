@@ -121,6 +121,11 @@ define_node_types! {
         description: "2D 转置卷积（反卷积）",
         var_method: None,
     },
+    DeformableConv2d(DeformableConv2d) {
+        category: "矩阵/卷积",
+        description: "2D 可变形卷积（offset-only）",
+        var_method: None,
+    },
     MaxPool2d(MaxPool2d) {
         category: "矩阵/卷积",
         description: "2D 最大池化",

@@ -75,8 +75,8 @@ graph TD
 | Detection | 多目标 2D Detection | `[ ]` | `chess_yolo_onnx_detect` 可导入第三方 YOLO ONNX 做推理演示 | only_torch 原生训练 / 演化检测头尚未支持 |
 | Detection | Oriented Detection | `[ ]` | 暂无 | 需要旋转框表示、角度损失、旋转 IoU |
 | Detection | 3D Detection | `[ ]` | 暂无 | 需要深度 / 点云 / 相机几何等数据表示 |
-| Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练 16x16 合成 mask | 数据过 toy；缺少更可信 benchmark |
-| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`overlapping_shapes_unet_lite_segmentation` 提供 U-Net-lite 强基线；`evolution_overlapping_shapes_semantic_segmentation` 覆盖 32x32 smoke；`evolution_overlapping_shapes_unet_lite_segmentation` 已对齐 64x64 benchmark 并纳入 encoder-decoder 初始族 | Evolution 仍需让 Pool / Deconv / skip concat 进入稳定 mutation 路径，再判断是否优化 dense forward |
+| Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练 16x16 合成 mask；`deformable_conv2d_segmentation` 提供 offset-only DeformableConv2d 传统基线 | 数据仍偏 toy；缺少更可信真实 benchmark |
+| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`overlapping_shapes_unet_lite_segmentation` 提供 U-Net-lite 强基线；`evolution_overlapping_shapes_semantic_segmentation` 覆盖 32x32 smoke；`evolution_overlapping_shapes_unet_lite_segmentation` 已对齐 64x64 benchmark 并纳入 encoder-decoder 初始族 | Evolution 已有 dense / encoder-decoder / DeformableConv2d 最小接入；后续再判断是否优化 dense forward 或扩大真实 benchmark |
 | Segmentation | 固定 slot 实例分割 | `[~]` | `multi_instance_segmentation` 支持固定 2 slot mask | 不支持不定数量实例、类别、confidence、matching |
 | Segmentation | 通用实例分割 | `[ ]` | 暂无 | 需要变长实例列表、mask matching、实例级指标 |
 | Segmentation | 全景分割 | `[ ]` | 暂无 | 依赖语义分割 + 实例分割统一表示 |
@@ -96,7 +96,8 @@ graph TD
 | P1 | Segmentation v2 数据与指标 | `[~]` | 已有 overlapping shapes benchmark、U-Net-lite 强基线和 Mean IoU / Dice；下一步扩大数据规模与难度 |
 | P2 | Segmentation Evolution | `[x]` | 已有 spatial-to-spatial minimal genome、dense + encoder-decoder segmentation portfolio、`InsertEncoderDecoderSkip` 结构变异与 P5-lite/timing 审计；`evolution_overlapping_shapes_unet_lite_segmentation` 在 target Mean IoU 0.60 下完成 5-seed 稳定性验证，seed 1..5 全部 `TargetReached` |
 | P3 | FCN / U-Net 风格传统强基线 | `[x]` | `overlapping_shapes_unet_lite_segmentation` 在 debug + BLAS 下约 27.4s 达到 Mean IoU 75.6%，可作为后续 Segmentation Evolution 对照 |
-| P4 | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
+| P4a | Deformable Conv2d 通用算子与传统基线 | `[~]` | 已实现 offset-only `DeformableConv2d` raw node / Layer / descriptor rebuild / ONNX unsupported 标记；新增 `deformable_conv2d_segmentation` 传统手写示例，并让 segmentation InsertLayer 有概率生成 DeformableConv2d block |
+| P4b | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
 | P5 | 多输出 / 多头 Evolution | `[~]` | P3 第一阶段已支持平坦共享输入的固定多头 supervised evolution；后续扩展到 detection + mask 等空间多任务输出与实例级指标 |
 | P6 | Instance Segmentation Lite | `[ ]` | 从固定 slot 过渡到可变实例、matching 和实例级指标 |
 | P7 | Tracking / Panoptic / 3D | `[ ]` | 作为远期路线，等基础视觉任务稳定后再进入 |

@@ -622,6 +622,9 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
                 int_list_attrs: attrs,
             })
         }
+        NodeTypeDescriptor::DeformableConv2d { .. } => ExportCategory::Unsupported(
+            "DeformableConv2d（ONNX 标准算子集中无原生等价算子）".to_string(),
+        ),
         NodeTypeDescriptor::MaxPool2d {
             kernel_size,
             stride,

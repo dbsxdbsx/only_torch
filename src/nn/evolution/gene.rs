@@ -1648,8 +1648,8 @@ impl NetworkGenome {
                         total += 2 * out_elements * in_features;
                     }
                 }
-                // Conv2d: 2 * N * Cout * Hout * Wout * Cin * kH * kW
-                NT::Conv2d { .. } => {
+                // Conv2d / DeformableConv2d: 2 * N * Cout * Hout * Wout * Cin * kH * kW
+                NT::Conv2d { .. } | NT::DeformableConv2d { .. } => {
                     let kernel_shape: Option<&Vec<usize>> = node
                         .parents
                         .iter()

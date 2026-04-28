@@ -491,6 +491,45 @@ pub fn infer_output_shape(
             Ok(vec![n, c_out, h_out, w_out])
         }
 
+        // ── DeformableConv2d: [N,C_in,H,W] × [C_out,C_in,kH,kW] × offset → [N,C_out,H_out,W_out] ──
+        NT::DeformableConv2d {
+            stride,
+            padding,
+            dilation,
+            deformable_groups,
+        } => {
+            require_n(3, parent_shapes)?;
+            let inp = parent_shapes[0];
+            let ker = parent_shapes[1];
+            let offset = parent_shapes[2];
+            if inp.len() < 4 {
+                return Err(format!("DeformableConv2d 输入需要 4D，得到 {inp:?}"));
+            }
+            if ker.len() < 4 {
+                return Err(format!("DeformableConv2d 权重需要 4D，得到 {ker:?}"));
+            }
+            if offset.len() < 4 {
+                return Err(format!("DeformableConv2d offset 需要 4D，得到 {offset:?}"));
+            }
+            let (n, c_out) = (inp[0], ker[0]);
+            let eff_kh = dilation.0 * (ker[2] - 1) + 1;
+            let eff_kw = dilation.1 * (ker[3] - 1) + 1;
+            let h_out = (inp[2] + 2 * padding.0).saturating_sub(eff_kh) / stride.0 + 1;
+            let w_out = (inp[3] + 2 * padding.1).saturating_sub(eff_kw) / stride.1 + 1;
+            let expected_offset = vec![
+                n,
+                2 * deformable_groups * ker[2] * ker[3],
+                h_out.max(1),
+                w_out.max(1),
+            ];
+            if offset != expected_offset.as_slice() {
+                return Err(format!(
+                    "DeformableConv2d offset 形状不匹配：期望 {expected_offset:?}，得到 {offset:?}"
+                ));
+            }
+            Ok(vec![n, c_out, h_out.max(1), w_out.max(1)])
+        }
+
         // ── MaxPool2d / AvgPool2d ──
         NT::MaxPool2d {
             kernel_size,
@@ -761,6 +800,7 @@ pub fn infer_domain(node_type: &NodeTypeDescriptor, parent_domains: &[ShapeDomai
         // 空间 → 空间
         NT::Conv2d { .. }
         | NT::ConvTranspose2d { .. }
+        | NT::DeformableConv2d { .. }
         | NT::MaxPool2d { .. }
         | NT::AvgPool2d { .. } => Spatial,
         // 空间 → 平坦

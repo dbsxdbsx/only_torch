@@ -27,8 +27,9 @@ use crate::nn::evolution::gene::{
 };
 use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::node_expansion::{
-    InnovationCounter, expand_activation, expand_batch_norm, expand_conv2d, expand_gru,
-    expand_layer_norm, expand_linear, expand_lstm, expand_pool2d, expand_rms_norm, expand_rnn,
+    InnovationCounter, expand_activation, expand_batch_norm, expand_conv2d,
+    expand_deformable_conv2d, expand_gru, expand_layer_norm, expand_linear, expand_lstm,
+    expand_pool2d, expand_rms_norm, expand_rnn,
 };
 use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
 
@@ -62,6 +63,10 @@ pub enum NodeBlockKind {
         act_type: ActivationType,
     },
     Conv2d {
+        out_channels: usize,
+        kernel_size: usize,
+    },
+    DeformableConv2d {
         out_channels: usize,
         kernel_size: usize,
     },
@@ -128,12 +133,13 @@ impl NodeBlockKind {
         )
     }
     pub fn is_resizable(&self) -> bool {
-        self.is_linear() || self.is_conv2d() || self.is_recurrent()
+        self.is_linear() || matches!(self, NodeBlockKind::Conv2d { .. }) || self.is_recurrent()
     }
     pub fn current_size(&self) -> Option<usize> {
         match self {
             NodeBlockKind::Linear { out_features } => Some(*out_features),
-            NodeBlockKind::Conv2d { out_channels, .. } => Some(*out_channels),
+            NodeBlockKind::Conv2d { out_channels, .. }
+            | NodeBlockKind::DeformableConv2d { out_channels, .. } => Some(*out_channels),
             NodeBlockKind::Rnn { hidden_size, .. }
             | NodeBlockKind::Lstm { hidden_size, .. }
             | NodeBlockKind::Gru { hidden_size, .. } => Some(*hidden_size),
@@ -347,6 +353,12 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
             .map(|n| matches!(n.node_type, NT::Conv2d { .. }))
             .unwrap_or(false)
     });
+    let has_deform = node_ids.iter().any(|&id| {
+        node_map
+            .get(&id)
+            .map(|n| matches!(n.node_type, NT::DeformableConv2d { .. }))
+            .unwrap_or(false)
+    });
     let has_deconv = node_ids.iter().any(|&id| {
         node_map
             .get(&id)
@@ -367,6 +379,28 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
                                 if p.is_parameter() && p.output_shape.len() == 2 {
                                     return NodeBlockKind::Linear {
                                         out_features: p.output_shape[1],
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if has_deform {
+        let bid_set_deform: HashSet<u64> = node_ids.iter().copied().collect();
+        for &id in node_ids {
+            if let Some(n) = node_map.get(&id) {
+                if matches!(n.node_type, NT::DeformableConv2d { .. }) {
+                    for &pid in &n.parents {
+                        if bid_set_deform.contains(&pid) {
+                            if let Some(p) = node_map.get(&pid) {
+                                if p.is_parameter() && p.output_shape.len() == 4 {
+                                    return NodeBlockKind::DeformableConv2d {
+                                        out_channels: p.output_shape[0],
+                                        kernel_size: p.output_shape[2],
                                     };
                                 }
                             }
@@ -780,6 +814,41 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                             node.output_shape[1] = prev_out;
                             break;
                         }
+                    }
+                }
+                dim_map.insert(block.output_id, out);
+            }
+            NodeBlockKind::DeformableConv2d { out_channels, .. } => {
+                let out = *out_channels;
+                let kernel_ids: Vec<u64> = {
+                    let nodes = genome.nodes();
+                    let mut ids = Vec::new();
+                    for node in nodes
+                        .iter()
+                        .filter(|n| bid_set.contains(&n.innovation_number))
+                    {
+                        match node.node_type {
+                            NodeTypeDescriptor::Conv2d { .. }
+                            | NodeTypeDescriptor::DeformableConv2d { .. } => {
+                                for &pid in &node.parents {
+                                    if bid_set.contains(&pid)
+                                        && nodes
+                                            .iter()
+                                            .any(|n| n.innovation_number == pid && n.is_parameter())
+                                    {
+                                        ids.push(pid);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    ids
+                };
+                for node in genome.nodes_mut().iter_mut() {
+                    if kernel_ids.contains(&node.innovation_number) && node.output_shape.len() == 4
+                    {
+                        node.output_shape[1] = prev_out;
                     }
                 }
                 dim_map.insert(block.output_id, out);
@@ -1390,6 +1459,18 @@ pub fn create_insert_nodes(
                 rng,
             );
             let k = *[1usize, 3, 5, 7].choose(rng)?;
+            if !allow_spatial_pooling && k > 1 && rng.gen_bool(0.20) {
+                return Some(expand_deformable_conv2d(
+                    after_id,
+                    in_dim,
+                    out_ch,
+                    k,
+                    spatial,
+                    1,
+                    block_id,
+                    &mut counter,
+                ));
+            }
             return Some(expand_conv2d(
                 after_id,
                 in_dim,

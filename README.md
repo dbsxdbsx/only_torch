@@ -56,6 +56,7 @@ let dot = graph.to_dot();
 | [multi_instance_segmentation](examples/traditional/multi_instance_segmentation/) | 固定两实例分割 | **固定 slot mask**、Mean Instance IoU、预测 mask 可视化 | `Conv(1→8→8→2)` | `cargo run --example multi_instance_segmentation` |
 | [overlapping_shapes_semantic_segmentation](examples/traditional/overlapping_shapes_semantic_segmentation/) | 重叠形状语义分割 | **64x64 多形状 benchmark**、Dice、Mean IoU | `Conv(1→12→16→4)` | `cargo run --example overlapping_shapes_semantic_segmentation` |
 | [overlapping_shapes_unet_lite_segmentation](examples/traditional/overlapping_shapes_unet_lite_segmentation/) | 重叠形状 U-Net-lite 分割 | **Encoder-decoder**、skip concat、强基线 | `Conv → Pool → Deconv → Concat → Conv` | `cargo run --example overlapping_shapes_unet_lite_segmentation` |
+| [deformable_conv2d_segmentation](examples/traditional/deformable_conv2d_segmentation/) | Deformable Conv2d 分割 | **offset-only DeformableConv2d**、传统手写网络基线 | `Conv → DeformableConv2d → Conv` | `cargo run --example deformable_conv2d_segmentation` |
 | [overlapping_fixed_slot_instance_segmentation](examples/traditional/overlapping_fixed_slot_instance_segmentation/) | 重叠固定 slot 实例分割 | **1..3 实例**、visible mask、空 slot | `Conv(1→12→16→3)` | `cargo run --example overlapping_fixed_slot_instance_segmentation` |
 | [mnist_gan](examples/traditional/mnist_gan/) | **图像生成** | **GAN**、detach 梯度控制、多 Loss | `G(64→256→784) D(784→256→1)` | `cargo run --example mnist_gan` |
 | [parity_rnn_fixed_len](examples/traditional/parity_rnn_fixed_len/) | 序列分类 | **RNN 层**、固定长度序列 | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_fixed_len` |
@@ -205,6 +206,17 @@ cargo run --example multi_instance_segmentation
 ```bash
 cargo run --example overlapping_shapes_unet_lite_segmentation
 # debug + BLAS 下约 27.4s 达到 Mean IoU 75.6%
+```
+
+**DeformableConv2d Semantic Segmentation** ⭐⭐
+
+使用 16x16 多形状二值前景分割数据，展示：
+- `DeformableConv2d` 作为普通 Layer 直接放进手写网络
+- offset predictor 初始为零，初始行为接近普通 `Conv2d`，训练时通过 offset 梯度学习采样位置
+- 输出 `test_in.png` / `test_out.png` 与计算图 `.dot` / `.png`，作为 P4 接入 evolution 前的传统算子基线
+
+```bash
+cargo run --example deformable_conv2d_segmentation
 ```
 
 </details>

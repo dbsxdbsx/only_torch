@@ -222,6 +222,106 @@ pub fn expand_conv2d(
     ]
 }
 
+/// 展开 DeformableConv2d 层 → offset predictor + DeformableConv2d + bias。
+///
+/// v1 采用 offset-only 结构，offset predictor 与主卷积使用同样的 same-padding
+/// kernel，输出 offset 形状为 `[1, 2 * deformable_groups * k * k, H, W]`。
+pub fn expand_deformable_conv2d(
+    input_id: u64,
+    in_channels: usize,
+    out_channels: usize,
+    kernel_size: usize,
+    input_spatial: (usize, usize),
+    deformable_groups: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let k = kernel_size;
+    let padding = k / 2;
+    let (h, w) = input_spatial;
+    let h_out = (h + 2 * padding - k) + 1;
+    let w_out = (w + 2 * padding - k) + 1;
+    let offset_channels = 2 * deformable_groups * k * k;
+
+    let offset_kernel_id = counter.next();
+    let offset_conv_id = counter.next();
+    let offset_bias_id = counter.next();
+    let offset_add_id = counter.next();
+    let kernel_id = counter.next();
+    let deform_id = counter.next();
+    let bias_id = counter.next();
+    let add_id = counter.next();
+    let bid = Some(block_id);
+
+    vec![
+        NodeGene::new(
+            offset_kernel_id,
+            NodeTypeDescriptor::Parameter,
+            vec![offset_channels, in_channels, k, k],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            offset_conv_id,
+            NodeTypeDescriptor::Conv2d {
+                stride: (1, 1),
+                padding: (padding, padding),
+                dilation: (1, 1),
+            },
+            vec![1, offset_channels, h_out, w_out],
+            vec![input_id, offset_kernel_id],
+            bid,
+        ),
+        NodeGene::new(
+            offset_bias_id,
+            NodeTypeDescriptor::Parameter,
+            vec![1, offset_channels, 1, 1],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            offset_add_id,
+            NodeTypeDescriptor::Add,
+            vec![1, offset_channels, h_out, w_out],
+            vec![offset_conv_id, offset_bias_id],
+            bid,
+        ),
+        NodeGene::new(
+            kernel_id,
+            NodeTypeDescriptor::Parameter,
+            vec![out_channels, in_channels, k, k],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            deform_id,
+            NodeTypeDescriptor::DeformableConv2d {
+                stride: (1, 1),
+                padding: (padding, padding),
+                dilation: (1, 1),
+                deformable_groups,
+            },
+            vec![1, out_channels, h_out, w_out],
+            vec![input_id, kernel_id, offset_add_id],
+            bid,
+        ),
+        NodeGene::new(
+            bias_id,
+            NodeTypeDescriptor::Parameter,
+            vec![1, out_channels, 1, 1],
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            add_id,
+            NodeTypeDescriptor::Add,
+            vec![1, out_channels, h_out, w_out],
+            vec![deform_id, bias_id],
+            bid,
+        ),
+    ]
+}
+
 /// 展开 ConvTranspose2d 层 → Parameter(kernel) + ConvTranspose2d + Parameter(bias) + Add
 ///
 /// 形状约定：

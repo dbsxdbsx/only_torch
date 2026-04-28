@@ -329,6 +329,24 @@ fn rebuild_node(
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
+        NodeTypeDescriptor::DeformableConv2d {
+            stride,
+            padding,
+            dilation,
+            deformable_groups,
+        } => {
+            let parents = get_all_parents(node_desc, node_map)?;
+            let node = graph.inner_mut().create_deformable_conv2d_node(
+                parents,
+                *stride,
+                *padding,
+                *dilation,
+                *deformable_groups,
+                name,
+            )?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
         NodeTypeDescriptor::MaxPool2d {
             kernel_size,
             stride,

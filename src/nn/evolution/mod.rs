@@ -1990,6 +1990,7 @@ fn select_prefilter_survivors(
 struct CandidateFeatures {
     depth: usize,
     conv2d_blocks: usize,
+    deformable_conv2d_blocks: usize,
     conv_transpose2d_blocks: usize,
     pool2d_blocks: usize,
     linear_blocks: usize,
@@ -2010,6 +2011,10 @@ impl CandidateFeatures {
         for block in blocks {
             match block.kind {
                 NodeBlockKind::Conv2d { .. } => features.conv2d_blocks += 1,
+                NodeBlockKind::DeformableConv2d { .. } => {
+                    features.conv2d_blocks += 1;
+                    features.deformable_conv2d_blocks += 1;
+                }
                 NodeBlockKind::Pool2d { .. } => features.pool2d_blocks += 1,
                 NodeBlockKind::Linear { .. } => features.linear_blocks += 1,
                 NodeBlockKind::Flatten => features.has_flatten = true,
@@ -2067,6 +2072,12 @@ fn score_candidate_features(features: &CandidateFeatures) -> f32 {
     }
     if !features.has_flatten && features.linear_blocks == 0 && features.conv2d_blocks >= 2 {
         score += 0.50;
+    }
+    if !features.has_flatten
+        && features.linear_blocks == 0
+        && features.deformable_conv2d_blocks >= 1
+    {
+        score += 0.18;
     }
     if !features.has_flatten && features.linear_blocks == 0 && features.conv2d_blocks >= 3 {
         score += 0.20;

@@ -4,11 +4,14 @@ use rand::rngs::StdRng;
 use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::gene::*;
 use crate::nn::evolution::mutation::*;
-use crate::nn::evolution::node_expansion::{expand_activation, expand_dropout, expand_linear};
+use crate::nn::evolution::node_expansion::{
+    expand_activation, expand_deformable_conv2d, expand_dropout, expand_linear,
+};
 use crate::nn::evolution::node_ops::{
     NodeBlockKind, commit_counter, insert_after, make_counter, next_block_id, node_main_path,
     repair_param_input_dims,
 };
+use crate::tensor::Tensor;
 
 fn rng() -> StdRng {
     StdRng::seed_from_u64(42)
@@ -216,6 +219,52 @@ fn test_spatial_insert_layer_keeps_segmentation_shape_domain() {
 
     assert_eq!(genome.input_spatial, Some((8, 8)));
     assert_buildable(&genome);
+}
+
+#[test]
+fn test_deformable_conv2d_block_builds_in_spatial_segmentation_genome() {
+    let mut genome = NetworkGenome::minimal_spatial_segmentation(1, 2, (8, 8));
+    let mut counter = make_counter(&genome);
+    let block_id = next_block_id(&genome);
+    let nodes =
+        expand_deformable_conv2d(INPUT_INNOVATION, 1, 4, 3, (8, 8), 1, block_id, &mut counter);
+    insert_after(&mut genome, INPUT_INNOVATION, nodes).unwrap();
+    commit_counter(&mut genome, &counter);
+    repair_param_input_dims(&mut genome);
+
+    assert!(genome.analyze().is_valid);
+    assert!(genome.nodes().iter().any(|node| {
+        matches!(
+            node.node_type,
+            NodeTypeDescriptor::DeformableConv2d {
+                stride: (1, 1),
+                padding: (1, 1),
+                dilation: (1, 1),
+                deformable_groups: 1,
+            }
+        )
+    }));
+    assert!(node_main_path(&genome).iter().any(|block| {
+        matches!(
+            block.kind,
+            NodeBlockKind::DeformableConv2d {
+                out_channels: 4,
+                kernel_size: 3,
+            }
+        )
+    }));
+
+    let mut rng = rng();
+    let build = genome.build(&mut rng).unwrap();
+    build
+        .input
+        .set_value(&Tensor::zeros(&[1, 1, 8, 8]))
+        .unwrap();
+    build.output.forward().unwrap();
+    assert_eq!(
+        build.output.value().unwrap().unwrap().shape(),
+        &[1, 2, 8, 8]
+    );
 }
 
 #[test]

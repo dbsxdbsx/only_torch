@@ -50,6 +50,12 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
             padding: c.padding(),
             output_padding: c.output_padding(),
         },
+        NodeType::DeformableConv2d(c) => NodeTypeDescriptor::DeformableConv2d {
+            stride: c.stride(),
+            padding: c.padding(),
+            dilation: c.dilation(),
+            deformable_groups: c.deformable_groups(),
+        },
         NodeType::MaxPool2d(p) => {
             // raw_node 内部用 4 维 (top, bottom, left, right),IR 只承诺对称语义。
             // 全部入口都通过 create_max_pool2d_node 走对称展开,这里读到的应当

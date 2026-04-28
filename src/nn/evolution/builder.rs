@@ -1492,6 +1492,7 @@ fn backfill_node_group_tags(genome: &NetworkGenome, node_map: &HashMap<u64, Var>
         let (group_type, style): (&str, GroupStyle) = match &block.kind {
             NodeBlockKind::Linear { .. } => ("Linear", GroupStyle::Layer),
             NodeBlockKind::Conv2d { .. } => ("Conv2d", GroupStyle::Layer),
+            NodeBlockKind::DeformableConv2d { .. } => ("DeformableConv2d", GroupStyle::Layer),
             NodeBlockKind::ConvTranspose2d { .. } => ("ConvTranspose2d", GroupStyle::Layer),
             NodeBlockKind::Pool2d { .. } => ("Pool2d", GroupStyle::Layer),
             NodeBlockKind::Flatten => ("Flatten", GroupStyle::Layer),

@@ -183,6 +183,10 @@
     path="examples/traditional/overlapping_shapes_unet_lite_segmentation/main.rs"
 
 [[example]]
+    name="deformable_conv2d_segmentation"
+    path="examples/traditional/deformable_conv2d_segmentation/main.rs"
+
+[[example]]
     name="overlapping_fixed_slot_instance_segmentation"
     path="examples/traditional/overlapping_fixed_slot_instance_segmentation/main.rs"
 

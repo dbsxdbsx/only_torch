@@ -416,6 +416,39 @@ impl GraphInner {
         self.create_node_inner(raw_node, name, "conv_transpose2d", parents)
     }
 
+    /// 创建 DeformableConv2d 节点（offset-only v1）
+    ///
+    /// 父节点顺序：[输入, 卷积核, offset]。
+    pub fn create_deformable_conv2d_node(
+        &mut self,
+        parents: Vec<Rc<NodeInner>>,
+        stride: (usize, usize),
+        padding: (usize, usize),
+        dilation: (usize, usize),
+        deformable_groups: usize,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::DeformableConv2d;
+
+        let parent_shapes: Vec<Vec<usize>> = parents.iter().map(|p| p.shape()).collect();
+        let parent_shapes_ref: Vec<&[usize]> = parent_shapes.iter().map(|s| s.as_slice()).collect();
+        let parent_dynamic_shapes: Vec<_> = parents.iter().map(|p| p.dynamic_shape()).collect();
+        let parent_ids: Vec<NodeId> = parents.iter().map(|p| p.id()).collect();
+
+        let node = DeformableConv2d::new(
+            &parent_shapes_ref,
+            &parent_dynamic_shapes,
+            parent_ids,
+            stride,
+            padding,
+            dilation,
+            deformable_groups,
+        )?;
+        let raw_node: NodeType = node.into();
+
+        self.create_node_inner(raw_node, name, "deformable_conv2d", parents)
+    }
+
     /// 创建 MaxPool2d 节点
     ///
     /// 2D 最大池化操作，输入必须是 4D [batch, C, H, W]。

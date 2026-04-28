@@ -304,7 +304,7 @@ Portfolio 不是写死答案：候选仍然必须经过训练和评估，只有 
 
 - depth、Conv2d / Pool2d / Linear 块数量、是否包含 Flatten；
 - FLOPs；
-- 是否匹配 FlatMLP、TinyCNN、LeNetTiny、dense segmentation head 这类结构族特征。
+- 是否匹配 FlatMLP、TinyCNN、LeNetTiny、dense segmentation head、DeformableConv2d segmentation block 这类结构族特征。
 
 开发调试日志会同时输出：
 
@@ -365,7 +365,7 @@ pub(crate) enum GenomeRepr {
 }
 ```
 
-**内核统一**：演化系统只以 NodeLevel 作为运行时内核。用户通过任务 API 提供数据、指标与约束；Linear / Conv2d / RNN / Dropout 等高层结构在内部表示为 `LayerSpec`，插入时会展开为带 `block_id` 的 `NodeGene` 子图。
+**内核统一**：演化系统只以 NodeLevel 作为运行时内核。用户通过任务 API 提供数据、指标与约束；Linear / Conv2d / DeformableConv2d / RNN / Dropout 等高层结构在内部展开为带 `block_id` 的 `NodeGene` 子图。
 
 **最小初始网络**（按数据形状自动选择）：
 - 平坦数据 `[D]`：`Input(D) → [Linear(output_dim)]`
@@ -425,6 +425,7 @@ pub enum LayerSpec {
     Gru { hidden_size: usize },
     Dropout { p: f32 },
     Conv2d { out_channels: usize, kernel_size: usize },
+    DeformableConv2d { out_channels: usize, kernel_size: usize },
     Pool2d { pool_type: PoolType, kernel_size: usize, stride: usize },
     Flatten,
 }
@@ -486,7 +487,7 @@ pub struct TrainingConfig {
 NodeLevel 基因组的形状推导统一由 `GenomeAnalysis` 完成：
 - 按拓扑序遍历 `NodeGene` 列表，从 `BasicInput` 出发逐节点推导输出形状
 - Parameter / State 节点的 `output_shape` 为权威值，计算节点的 `output_shape` 为声明值（Analysis 验证一致性）
-- 空间域维护 `(H, W)` 信息：Conv2d 保持尺寸（same padding, stride=1），Pool2d 缩减，Flatten 归零
+- 空间域维护 `(H, W)` 信息：Conv2d / DeformableConv2d 保持尺寸（same padding, stride=1），Pool2d 缩减，Flatten 归零
 - `total_params()` 从 Analysis 的 `param_count` 获取，与 `build()` 共享同一套推导逻辑
 
 变异操作的 `is_applicable()` 通过试探式 `analyze()` 统一检测形状合法性。
@@ -519,7 +520,7 @@ pub trait Mutation: Send + Sync {
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
-| `InsertLayer` | **0.20** | ✅ | 域感知：Flat 域选 Linear/Activation/BatchNorm/LayerNorm/RMSNorm，Sequence 域选 RNN/LSTM/GRU/LayerNorm/RMSNorm，Spatial 域选 Conv2d(80%)/Pool2d(15%)/BatchNorm(5%)。归一化层以 10% 概率独立触发，不与同类连续 |
+| `InsertLayer` | **0.20** | ✅ | 域感知：Flat 域选 Linear/Activation/BatchNorm/LayerNorm/RMSNorm，Sequence 域选 RNN/LSTM/GRU/LayerNorm/RMSNorm，Spatial 域选 Conv2d/Pool2d/BatchNorm；segmentation 的空间保持插入有概率生成 DeformableConv2d block。归一化层以 10% 概率独立触发，不与同类连续 |
 | `InsertEncoderDecoderSkip` | 0.08 | ✅ | Segmentation 专用：一次性插入 `Pool2d -> Conv2d -> ConvTranspose2d -> Concat(skip) -> Conv2d`，保持输出 H/W 与通道数不变，让 U-Net/FPN 风格局部结构能通过 mutation 进入搜索 |
 | `InsertAtomicNode` | 0.10 | ✅ | NEAT "Add Node"：在主路径两块之间插入单个激活节点（15 种激活函数随机选择，85%）或 Dropout（15%，p∈{0.1,0.2,0.3,0.5}）。保护输出头、避免连续激活/连续 Dropout |
 | `RemoveLayer` | 0.08 | ✅ | 随机移除非输出头的隐藏层（早期偏向增长） |
@@ -858,6 +859,7 @@ Input(seq×D) → Rnn(output_dim) → [Linear(output_dim)]
 
 **空间层类型**：
 - **Conv2d** `{ out_channels, kernel_size, stride, dilation }`：2D 卷积，支持 stride（空间降维）和 dilation（空洞卷积，扩大感受野而不增加参数）。same padding 策略，padding 自动推导
+- **DeformableConv2d** `{ out_channels, kernel_size, deformable_groups }`：offset-only 可变形卷积，offset 由同尺寸卷积分支预测；raw node / Layer / descriptor rebuild / evolution NodeLevel block 已接入，ONNX 导出暂标记为 unsupported
 - **ConvTranspose2d** `{ out_channels, kernel_size, stride, output_padding }`：2D 转置卷积（上采样），将特征图空间尺寸放大。支持 ONNX 双向映射和 descriptor rebuild
 - **Pool2d** `{ pool_type: Max|Avg, kernel_size, stride }`：2D 池化，空间降维（H/stride, W/stride），channels 不变
 - **Flatten**：空间域到平坦域的过渡层，将 `(C, H, W)` 展平为 `C*H*W`
@@ -868,7 +870,7 @@ Input(seq×D) → Rnn(output_dim) → [Linear(output_dim)]
 Input(C@H×W) → Conv2d(8,k=3) → Pool2d(Max,2,2) → Flatten → [Linear(out_dim)]
 ```
 
-从一个已知有效的 CNN 起点出发，避免演化从纯 Flatten+FC 结构被迫先“发现”卷积价值。Pool2d 将空间尺寸减半，控制 Flatten 后的特征维度；后续 Conv2d/Pool2d/ConvTranspose2d 与 FM 级别变异继续在 Spatial 域内搜索更合适的拓扑。
+从一个已知有效的 CNN 起点出发，避免演化从纯 Flatten+FC 结构被迫先“发现”卷积价值。Pool2d 将空间尺寸减半，控制 Flatten 后的特征维度；后续 Conv2d/DeformableConv2d/Pool2d/ConvTranspose2d 与 FM 级别变异继续在 Spatial 域内搜索更合适的拓扑。
 
 **域系统**：层序列被划分为 Spatial 域（Conv2d、Pool2d，4D 张量）和 Flat 域（Linear、Activation，2D 张量）。Flatten 是唯一的域过渡层。`is_domain_valid()` 确保 `Spatial* → Flatten → Flat*` 结构（允许 0 个空间层，即 `Flatten → Flat*` 也合法）。
 

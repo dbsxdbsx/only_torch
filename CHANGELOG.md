@@ -21,6 +21,14 @@
   - 新增 `examples/evolution/multi_head_quadrant_radius`，用二维点共享输入同时训练 `quadrant` 四分类 head 与 `radius` 回归 head
   - 示例覆盖 `SupervisedSpec::head_targets(...)`、逐 head metric report、`predict_head` / `predict_heads` 选择性推理和 `.otm` 保存/加载
   - 注册 `cargo run --example evolution_multi_head_quadrant_radius` 与 `just example-evolution-multi-head-quadrant-radius`
+- **feat(nn/evolution): 新增 offset-only DeformableConv2d 通用算子**
+  - 新增 `NodeTypeDescriptor::DeformableConv2d`、raw node 前向 / 反向、descriptor rebuild 与 ONNX unsupported 标记，并补 PyTorch / torchvision 数值对照测试
+  - 新增 `DeformableConv2d` Layer，offset predictor 初始为零，使传统手写网络可直接使用该算子
+  - Evolution NodeLevel 新增 DeformableConv2d block 展开、形状 / FLOPs 推导和 segmentation InsertLayer 最小接入
+- **feat(example): 新增 DeformableConv2d 传统分割示例**
+  - 新增 `examples/traditional/deformable_conv2d_segmentation`，使用 16x16 多形状二值前景分割数据展示 `Conv -> DeformableConv2d -> Conv -> 1x1 head` 手写网络基线
+  - 示例输出 `test_in.png` / `test_out.png` 和计算图 `.dot` / `.png`，`test_out.png` 以绿色热力图展示 foreground 概率
+  - 注册 `cargo run --example deformable_conv2d_segmentation` 与 `just example-deformable-conv2d-segmentation`
 
 ### Changed
 

@@ -137,6 +137,13 @@ pub enum NodeTypeDescriptor {
         padding: (usize, usize),
         output_padding: (usize, usize),
     },
+    /// 2D 可变形卷积（v1 offset-only）
+    DeformableConv2d {
+        stride: (usize, usize),
+        padding: (usize, usize),
+        dilation: (usize, usize),
+        deformable_groups: usize,
+    },
     MaxPool2d {
         kernel_size: (usize, usize),
         stride: (usize, usize),
