@@ -76,6 +76,7 @@ let dot = graph.to_dot();
 | [evolution_iris](examples/evolution/iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
 | [evolution_mnist](examples/evolution/mnist/) | **神经架构演化** | **Evolution API**、Spatial 域 CNN 自动搜索 | 自动演化 | `cargo run --example evolution_mnist` |
 | [evolution_overlapping_shapes_semantic_segmentation](examples/evolution/overlapping_shapes_semantic_segmentation/) | **分割架构演化** | **Spatial-to-spatial**、Mean IoU、无 Flatten 输出头 | 自动演化 | `cargo run --example evolution_overlapping_shapes_semantic_segmentation` |
+| [evolution_overlapping_shapes_unet_lite_segmentation](examples/evolution/overlapping_shapes_unet_lite_segmentation/) | **分割 benchmark 演化** | **64x64 U-Net-lite 对照任务**、多类别 Mean IoU、可视化 target/prediction | 自动演化 | `cargo run --example evolution_overlapping_shapes_unet_lite_segmentation` |
 | [evolution_parity_seq](examples/evolution/parity_seq/) | **神经架构演化** | **Evolution API**、序列数据、记忆单元自动选择 | 自动演化 | `cargo run --example evolution_parity_seq` |
 | [evolution_parity_seq_var_len](examples/evolution/parity_seq_var_len/) | **神经架构演化** | **Evolution API**、变长序列、zero-pad | 自动演化 | `cargo run --example evolution_parity_seq_var_len` |
 

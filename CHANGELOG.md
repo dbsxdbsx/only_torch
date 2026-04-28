@@ -8,6 +8,10 @@
   - 新增 `examples/traditional/overlapping_shapes_unet_lite_segmentation`，复用 64x64 overlapping shapes 语义分割数据与 Mean IoU / Dice / per-class IoU 指标
   - 模型采用 `Conv2d -> MaxPool2d -> ConvTranspose2d -> Var::concat(axis=1)` 的轻量 encoder-decoder + skip connection 结构，作为后续 Segmentation Evolution 扩大 benchmark 的传统对照
   - 注册 `cargo run --example overlapping_shapes_unet_lite_segmentation` 与 `just example-overlapping-shapes-unet-lite-segmentation`；debug + BLAS 下约 27.4 秒达到 Mean IoU 75.6%
+- **feat(evolution): 新增 U-Net-lite benchmark 对齐的分割演化示例**
+  - 新增 `examples/evolution/overlapping_shapes_unet_lite_segmentation`，使用同类 64x64 / 4 类 / 0..3 个可重叠形状数据，作为 U-Net-lite 强基线的 evolution 对照
+  - 示例仍使用现有 dense spatial-to-spatial segmentation evolution，不要求本轮直接搜索 U-Net encoder-decoder；输出 input / target / prediction 可视化，避免把类别颜色误读成实例 ID
+  - 注册 `cargo run --example evolution_overlapping_shapes_unet_lite_segmentation` 与 `just example-evolution-overlapping-shapes-unet-lite-segmentation`；debug + BLAS 下约 24.5 秒达到 Mean IoU 54.3%
 
 ### Changed
 
