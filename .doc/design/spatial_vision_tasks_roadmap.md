@@ -75,8 +75,8 @@ graph TD
 | Detection | 多目标 2D Detection | `[ ]` | `chess_yolo_onnx_detect` 可导入第三方 YOLO ONNX 做推理演示 | only_torch 原生训练 / 演化检测头尚未支持 |
 | Detection | Oriented Detection | `[ ]` | 暂无 | 需要旋转框表示、角度损失、旋转 IoU |
 | Detection | 3D Detection | `[ ]` | 暂无 | 需要深度 / 点云 / 相机几何等数据表示 |
-| Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练 16x16 合成 mask | 数据过 toy；Evolution 尚未接入 spatial-to-spatial 输出 |
-| Segmentation | 多类别语义分割 | `[ ]` | 暂无 | 需要 per-pixel CrossEntropy、Mean IoU、多类别 mask 数据 |
+| Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练 16x16 合成 mask | 数据过 toy；缺少更可信 benchmark |
+| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`evolution_overlapping_shapes_semantic_segmentation` 已支持 32x32 dense spatial-to-spatial 演化与 Mean IoU | Evolution 仍是小样本最小闭环；需要更强 FCN / U-Net 对照和更大规模验证 |
 | Segmentation | 固定 slot 实例分割 | `[~]` | `multi_instance_segmentation` 支持固定 2 slot mask | 不支持不定数量实例、类别、confidence、matching |
 | Segmentation | 通用实例分割 | `[ ]` | 暂无 | 需要变长实例列表、mask matching、实例级指标 |
 | Segmentation | 全景分割 | `[ ]` | 暂无 | 依赖语义分割 + 实例分割统一表示 |
@@ -93,9 +93,9 @@ graph TD
 | 优先级 | 事项 | 状态 | 目标 |
 |---|---|---|---|
 | P0 | 建立空间视觉任务路线图 | `[x]` | 统一术语、任务边界和能力矩阵 |
-| P1 | Segmentation v2 数据与指标 | `[ ]` | 将 16x16 toy 升级到更可信的小 benchmark，补 Dice / Mean IoU 等指标 |
-| P2 | Segmentation Evolution | `[ ]` | 增加 segmentation metric / loss / spatial-to-spatial minimal genome |
-| P3 | FCN / U-Net 风格传统强基线 | `[ ]` | 给 Segmentation Evolution 一个可对照的手写基线 |
+| P1 | Segmentation v2 数据与指标 | `[~]` | 已有 overlapping shapes benchmark 和 Mean IoU / Dice；下一步扩大数据规模与难度 |
+| P2 | Segmentation Evolution | `[~]` | 已有 spatial-to-spatial minimal genome、dense segmentation portfolio 与 P5-lite/timing 审计；下一步扩到更可信 benchmark |
+| P3 | FCN / U-Net 风格传统强基线 | `[ ]` | 给 Segmentation Evolution 一个可对照的手写强基线 |
 | P4 | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
 | P5 | 多输出 / 多头 Evolution | `[ ]` | 支持 detection + mask 等多任务输出与 loss 聚合 |
 | P6 | Instance Segmentation Lite | `[ ]` | 从固定 slot 过渡到可变实例、matching 和实例级指标 |

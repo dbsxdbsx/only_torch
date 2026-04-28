@@ -22,6 +22,7 @@ use super::{GraphError, NodeId};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
+use std::time::{Duration, Instant};
 
 // ==================== Var 结构 ====================
 
@@ -224,6 +225,21 @@ impl Var {
         g.forward_via_node_inner(&self.node)?;
         // 然后执行反向传播
         g.backward_via_node_inner(&self.node)
+    }
+
+    pub(crate) fn backward_timed(&self) -> Result<(f32, Duration, Duration), GraphError> {
+        let graph_rc = self.graph();
+        let mut g = graph_rc.borrow_mut();
+
+        let forward_start = Instant::now();
+        g.forward_via_node_inner(&self.node)?;
+        let forward_elapsed = forward_start.elapsed();
+
+        let propagate_start = Instant::now();
+        let loss = g.backward_via_node_inner(&self.node)?;
+        let propagate_elapsed = propagate_start.elapsed();
+
+        Ok((loss, forward_elapsed, propagate_elapsed))
     }
 
     // ==================== 值访问和设置 ====================

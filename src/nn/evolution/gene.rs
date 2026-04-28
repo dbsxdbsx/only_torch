@@ -901,6 +901,92 @@ impl NetworkGenome {
         }
     }
 
+    /// 稍深的 dense segmentation 种子：Conv → ReLU → Conv → ReLU → 1×1 Conv head。
+    ///
+    /// 该结构保持 `[N, C, H, W]` 输出协议，用于和最小分割头在同一套
+    /// P5-lite / ASHA / timing 观测中比较，不引入 Flatten 或 Pool。
+    pub(crate) fn spatial_segmentation_tiny(
+        input_channels: usize,
+        output_channels: usize,
+        spatial: (usize, usize),
+    ) -> Self {
+        assert!(input_channels > 0, "input_channels 不能为零");
+        assert!(output_channels > 0, "output_channels 不能为零");
+        assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
+
+        let hidden_channels = 8usize;
+        let mut counter = InnovationCounter::new(1);
+        let mut nodes = expand_conv2d(
+            INPUT_INNOVATION,
+            input_channels,
+            hidden_channels,
+            3,
+            spatial,
+            0,
+            &mut counter,
+        );
+        let conv1_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            conv1_output_id,
+            vec![1, hidden_channels, spatial.0, spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let act1_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Activation 展开应至少产生一个节点");
+        nodes.extend(expand_conv2d(
+            act1_output_id,
+            hidden_channels,
+            hidden_channels,
+            3,
+            spatial,
+            1,
+            &mut counter,
+        ));
+        let conv2_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            conv2_output_id,
+            vec![1, hidden_channels, spatial.0, spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let act2_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Activation 展开应至少产生一个节点");
+        nodes.extend(expand_conv2d(
+            act2_output_id,
+            hidden_channels,
+            output_channels,
+            1,
+            spatial,
+            2,
+            &mut counter,
+        ));
+
+        Self {
+            input_dim: input_channels,
+            output_dim: output_channels,
+            seq_len: None,
+            input_spatial: Some(spatial),
+            training_config: TrainingConfig::default(),
+            generated_by: "spatial_segmentation_tiny".to_string(),
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
+                weight_snapshots: HashMap::new(),
+            },
+        }
+    }
+
     /// 获取下一个创新号（单调递增，不重复）
     pub fn next_innovation_number(&mut self) -> u64 {
         match &mut self.repr {

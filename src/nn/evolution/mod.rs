@@ -598,6 +598,19 @@ impl InitialPortfolioConfig {
         }
     }
 
+    /// Dense segmentation 初始候选族。
+    ///
+    /// 复用现有字段以保持配置结构简单：`include_tiny_cnn` 表示最小 dense
+    /// segmentation head，`include_lenet_tiny` 表示稍深的 dense conv head。
+    pub fn vision_segmentation() -> Self {
+        Self {
+            include_flat_mlp: false,
+            include_tiny_cnn: true,
+            include_lenet_tiny: true,
+            flat_mlp_hidden: 1,
+        }
+    }
+
     fn validated(&self) -> Self {
         Self {
             include_flat_mlp: self.include_flat_mlp,
@@ -991,6 +1004,15 @@ impl Evolution {
             }
             if !final_refit_explicit && final_refit.is_none() {
                 final_refit = Some(FinalRefitConfig::new(0.02, 2, 12));
+            }
+        } else if is_spatial && prepared.metric.is_segmentation() {
+            // Dense segmentation 仍处于审计阶段：默认保持保守搜索规模，但接入同源
+            // portfolio / P5-lite 观测，便于和 MNIST 搜索矩阵对齐。
+            if !initial_portfolio_explicit && initial_portfolio.is_none() {
+                initial_portfolio = Some(InitialPortfolioConfig::vision_segmentation());
+            }
+            if !candidate_scoring_explicit && candidate_scoring.is_none() {
+                candidate_scoring = Some(CandidateScoringConfig::p5_lite());
             }
         }
 
@@ -1612,6 +1634,8 @@ struct EvalTiming {
     train_set_value: Duration,
     train_zero_grad: Duration,
     train_backward: Duration,
+    train_backward_forward: Duration,
+    train_backward_propagate: Duration,
     train_step: Duration,
     train_grad_norm: Duration,
 }
@@ -1653,6 +1677,9 @@ fn summarize_eval_timings(results: &[EvalResult], wall: Duration) -> EvaluationT
         summary.train_set_value_secs += result.timing.train_set_value.as_secs_f64();
         summary.train_zero_grad_secs += result.timing.train_zero_grad.as_secs_f64();
         summary.train_backward_secs += result.timing.train_backward.as_secs_f64();
+        summary.train_backward_forward_secs += result.timing.train_backward_forward.as_secs_f64();
+        summary.train_backward_propagate_secs +=
+            result.timing.train_backward_propagate.as_secs_f64();
         summary.train_step_secs += result.timing.train_step.as_secs_f64();
         summary.train_grad_norm_secs += result.timing.train_grad_norm.as_secs_f64();
 
@@ -1713,11 +1740,28 @@ fn initial_seed_genomes(
     let Some(spatial) = prepared.input_spatial else {
         return vec![minimal_genome.clone()];
     };
-    if prepared.metric.is_segmentation() || prepared.seq_len.is_some() {
+    if prepared.seq_len.is_some() {
         return vec![minimal_genome.clone()];
     }
 
     let mut seeds = Vec::new();
+    if prepared.metric.is_segmentation() {
+        if config.include_tiny_cnn {
+            seeds.push(minimal_genome.clone());
+        }
+        if config.include_lenet_tiny {
+            seeds.push(NetworkGenome::spatial_segmentation_tiny(
+                prepared.input_dim,
+                prepared.output_dim,
+                spatial,
+            ));
+        }
+        if seeds.is_empty() {
+            seeds.push(minimal_genome.clone());
+        }
+        return seeds;
+    }
+
     if config.include_flat_mlp {
         seeds.push(NetworkGenome::spatial_flat_mlp(
             prepared.input_dim,
@@ -1883,7 +1927,11 @@ impl CandidateFeatures {
     }
 
     fn family(&self) -> CandidateFamily {
-        if self.conv2d_blocks >= 2 && self.pool2d_blocks >= 2 && self.linear_blocks >= 2 {
+        if !self.has_flatten && self.linear_blocks == 0 && self.conv2d_blocks >= 3 {
+            CandidateFamily::DenseSegDeep
+        } else if !self.has_flatten && self.linear_blocks == 0 && self.conv2d_blocks >= 1 {
+            CandidateFamily::DenseSegHead
+        } else if self.conv2d_blocks >= 2 && self.pool2d_blocks >= 2 && self.linear_blocks >= 2 {
             CandidateFamily::LenetLike
         } else if self.conv2d_blocks >= 1 && self.pool2d_blocks >= 1 && self.linear_blocks >= 1 {
             CandidateFamily::TinyCnn
@@ -1908,6 +1956,12 @@ fn score_candidate_features(features: &CandidateFeatures) -> f32 {
     }
     if features.conv2d_blocks >= 2 && features.pool2d_blocks >= 2 && features.linear_blocks >= 2 {
         score += 0.35;
+    }
+    if !features.has_flatten && features.linear_blocks == 0 && features.conv2d_blocks >= 2 {
+        score += 0.50;
+    }
+    if !features.has_flatten && features.linear_blocks == 0 && features.conv2d_blocks >= 3 {
+        score += 0.20;
     }
     if features.has_flatten && features.linear_blocks >= 1 {
         score += 0.10;
@@ -1974,6 +2028,8 @@ fn eval_candidate(
         train_set_value: outcome.timing.set_value,
         train_zero_grad: outcome.timing.zero_grad,
         train_backward: outcome.timing.backward,
+        train_backward_forward: outcome.timing.backward_forward,
+        train_backward_propagate: outcome.timing.backward_propagate,
         train_step: outcome.timing.optimizer_step,
         train_grad_norm: outcome.timing.grad_norm,
     };
@@ -2360,13 +2416,7 @@ fn take_best_family_remaining(
 }
 
 fn selected_family_count(counts: &CandidateFamilyCounts, family: CandidateFamily) -> usize {
-    match family {
-        CandidateFamily::FlatMlp => counts.flat_mlp,
-        CandidateFamily::TinyCnn => counts.tiny_cnn,
-        CandidateFamily::LenetLike => counts.lenet_like,
-        CandidateFamily::Hybrid => counts.hybrid,
-        CandidateFamily::Other => counts.other,
-    }
+    counts.get_family(family)
 }
 
 fn derive_asha_rung_seed(seed: u64, rung_idx: usize) -> u64 {

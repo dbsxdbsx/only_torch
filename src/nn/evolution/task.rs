@@ -312,6 +312,8 @@ pub(crate) struct TrainTiming {
     pub set_value: Duration,
     pub zero_grad: Duration,
     pub backward: Duration,
+    pub backward_forward: Duration,
+    pub backward_propagate: Duration,
     pub optimizer_step: Duration,
     pub grad_norm: Duration,
 }
@@ -816,8 +818,10 @@ fn train_one_batch(
     timing.zero_grad += zero_start.elapsed();
 
     let backward_start = Instant::now();
-    let loss_val = loss_var.backward()?;
+    let (loss_val, forward_elapsed, propagate_elapsed) = loss_var.backward_timed()?;
     timing.backward += backward_start.elapsed();
+    timing.backward_forward += forward_elapsed;
+    timing.backward_propagate += propagate_elapsed;
 
     let step_start = Instant::now();
     optimizer.step()?;

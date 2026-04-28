@@ -8,6 +8,12 @@
   - 空间分类任务默认启用初始候选族、family-diverse P5-lite、ASHA 多样性保护、final refit、FLOPs 上限和合适的 batch / population 设置，用户侧不再需要手动选择 `smoke / quality / audit / search` profile
   - `examples/evolution/mnist` 删除 profile 分层，示例收敛为 `Evolution::supervised(...).with_target_metric(0.95).run()`，默认仍输出最新可视化图
   - 新增 `ONLY_TORCH_MNIST_SEED` 与 `ONLY_TORCH_MNIST_SAVE_ARTIFACTS=0`，用于多 seed 稳定性复核；默认路径 5 个 seed 全部达到 95% 准确率
+- **feat(evolution): 迁移 P5-lite 审计到 Segmentation evolution**
+  - dense segmentation 默认启用最小分割头 + `spatial_segmentation_tiny` 初始候选族，并接入 family-diverse P5-lite 预筛
+  - 候选族统计改为通用计数容器；`dense_seg_head` / `dense_seg_deep` 作为内部候选族继续服务 `eval-family` 与 `p5-lite-family` 观测
+  - `loss_var.backward()` 计时拆分为 `backward_total`、`backward_forward`、`backward_propagate`，BCEWithLogits 前向改为单次扫描生成 sigmoid 缓存与稳定 loss，并移除 target 缓存 clone
+  - `Conv2d` forward 对 padding 为 0 的 1x1 / valid conv 不再深拷贝输入作为 `padded_input`，减少 dense segmentation head 的无效内存拷贝
+  - `evolution_overlapping_shapes_semantic_segmentation` 示例移除默认强制 verbose 审计日志；本轮 debug + BLAS 最新单次复验约 2.6 秒达到 Mean IoU 63.0%
 
 ## [0.16.0] - 2026-04-28
 
@@ -63,7 +69,7 @@
   - 新增 `overlapping_fixed_slot_instance_segmentation`：1..3 个可重叠实例、固定 slot、空 slot 与 visible mask 规则的 instance segmentation lite benchmark
   - `metrics` 补充 Dice、semantic pixel accuracy、per-class IoU、Mean IoU，并加入分割指标测试
   - Evolution 新增 `BinaryIoU` / `MeanIoU` primary metric、分割报告指标、`[C,H,W] -> [classes,H,W]` shape 协议与不经过 `Flatten` 的 spatial-to-spatial minimal genome
-  - 新增 `evolution_overlapping_shapes_semantic_segmentation` smoke 示例和对应测试；空间域 Evolution 运行偏慢的问题已记录到 `.issue/items/2026-04-28_spatial_evolution_slow.md`
+  - 新增 `evolution_overlapping_shapes_semantic_segmentation` smoke 示例和对应测试；后续已通过 segmentation portfolio、P5-lite 审计与 dense 前向优化闭环空间域 Evolution 慢路径
 
 - **feat(metrics/example): 新增 Single Object Segmentation 传统示例**
   - `metrics` 新增 `pixel_accuracy` / `binary_iou` 二值分割指标，并补充空 mask、shape mismatch 等单元测试

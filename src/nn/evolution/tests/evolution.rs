@@ -159,20 +159,43 @@ fn test_p5_lite_prefilter_records_family_counts() {
     assert_eq!(summary.generated, 3);
     assert_eq!(summary.kept, 2);
     assert_eq!(summary.generated_families.total(), 3);
-    assert_eq!(summary.generated_families.flat_mlp, 1);
-    assert_eq!(summary.generated_families.tiny_cnn, 1);
-    assert_eq!(summary.generated_families.lenet_like, 1);
+    assert_eq!(summary.generated_families.get("flat_mlp"), 1);
+    assert_eq!(summary.generated_families.get("tiny_cnn"), 1);
+    assert_eq!(summary.generated_families.get("lenet_like"), 1);
     assert_eq!(summary.kept_families.total(), 2);
     assert!(
-        summary.kept_families.flat_mlp
-            + summary.kept_families.tiny_cnn
-            + summary.kept_families.lenet_like
+        summary.kept_families.get("flat_mlp")
+            + summary.kept_families.get("tiny_cnn")
+            + summary.kept_families.get("lenet_like")
             >= 2,
         "family-diverse 预筛应保留多个主要视觉结构族"
     );
     assert_eq!(summary.kept_score_count, 2);
     assert!(summary.avg_score().is_some());
     assert!(summary.avg_kept_score().is_some());
+}
+
+#[test]
+fn test_p5_lite_prefilter_records_segmentation_families() {
+    let candidates = vec![
+        NetworkGenome::minimal_spatial_segmentation(1, 3, (8, 8)),
+        NetworkGenome::spatial_segmentation_tiny(1, 3, (8, 8)),
+    ];
+    let config = CandidateScoringConfig {
+        pool_multiplier: 1,
+        keep_top_k: Some(2),
+        min_per_family: 1,
+    };
+
+    let (_kept, summary) = crate::nn::evolution::prefilter_candidates(candidates, config, 2);
+
+    assert_eq!(summary.generated, 2);
+    assert_eq!(summary.kept, 2);
+    assert_eq!(summary.generated_families.get("dense_seg_head"), 1);
+    assert_eq!(summary.generated_families.get("dense_seg_deep"), 1);
+    assert_eq!(summary.kept_families.get("dense_seg_head"), 1);
+    assert_eq!(summary.kept_families.get("dense_seg_deep"), 1);
+    assert!(summary.avg_score().is_some());
 }
 
 #[test]

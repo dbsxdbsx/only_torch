@@ -52,8 +52,6 @@ pub(crate) struct BCE {
     reduction: Reduction,
     /// 缓存 sigmoid(logits)，用于反向传播
     sigmoid_cache: Option<Tensor>,
-    /// 缓存 target，用于反向传播
-    target_cache: Option<Tensor>,
     /// 缓存元素总数，用于 mean reduction
     numel_cache: usize,
     /// 父节点 ID，用于区分 logits 和 target
@@ -96,29 +94,29 @@ impl BCE {
             shape: vec![1, 1],
             reduction,
             sigmoid_cache: None,
-            target_cache: None,
             numel_cache: numel,
             parents_ids: parent_ids,
         })
     }
 
-    /// 计算数值稳定的 BCE 损失总和
+    /// 单次扫描同时计算 sigmoid 缓存与数值稳定的 BCE 损失总和。
     ///
     /// BCE(logit, target) = max(logit, 0) - logit * target + log(1 + exp(-|logit|))
-    fn stable_bce_sum(logits: &Tensor, target: &Tensor) -> f32 {
+    fn sigmoid_and_bce_sum(logits: &Tensor, target: &Tensor) -> (Tensor, f32) {
         let logits_view = logits.flatten_view();
         let target_view = target.flatten_view();
+        let mut sigmoid_data = Vec::with_capacity(logits.size());
+        let mut bce_sum = 0.0f32;
 
-        logits_view
-            .iter()
-            .zip(target_view.iter())
-            .map(|(&l, &t)| {
-                // 数值稳定的 BCE 计算
-                let max_val = l.max(0.0);
-                let abs_logit = l.abs();
-                l.mul_add(-t, max_val) + (-abs_logit).exp().ln_1p()
-            })
-            .sum()
+        for (&logit, &target_value) in logits_view.iter().zip(target_view.iter()) {
+            sigmoid_data.push(1.0 / (1.0 + (-logit).exp()));
+
+            let max_val = logit.max(0.0);
+            let abs_logit = logit.abs();
+            bce_sum += logit.mul_add(-target_value, max_val) + (-abs_logit).exp().ln_1p();
+        }
+
+        (Tensor::new(&sigmoid_data, logits.shape()), bce_sum)
     }
 }
 
@@ -148,12 +146,9 @@ impl TraitNode for BCE {
         let target = parent_values[1];
         // 更新 numel（支持动态 batch size）
         self.numel_cache = logits.size();
-        // 计算 sigmoid(logits) 并缓存，用于反向传播
-        let sigmoid = logits.sigmoid();
+        // 计算 loss 时顺手缓存 sigmoid，避免 dense mask 前向重复扫描 logits。
+        let (sigmoid, bce_sum) = Self::sigmoid_and_bce_sum(logits, target);
         self.sigmoid_cache = Some(sigmoid);
-        self.target_cache = Some(target.clone());
-        // 计算数值稳定的 BCE
-        let bce_sum = Self::stable_bce_sum(logits, target);
         // 根据 reduction 模式计算损失
         let loss_value = match self.reduction {
             Reduction::Mean => bce_sum / (self.numel_cache as f32),
@@ -181,9 +176,7 @@ impl TraitNode for BCE {
         let sigmoid = self.sigmoid_cache.as_ref().ok_or_else(|| {
             GraphError::ComputationError("sigmoid 缓存为空，需先执行前向传播".to_string())
         })?;
-        let target = self.target_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("target 缓存为空，需先执行前向传播".to_string())
-        })?;
+        let target = _parent_values[1];
 
         if target_parent_index == 0 {
             // 对 logits 的梯度: sigmoid - target

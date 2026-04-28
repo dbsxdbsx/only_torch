@@ -39,6 +39,8 @@ pub struct EvaluationTimingSummary {
     pub train_set_value_secs: f64,
     pub train_zero_grad_secs: f64,
     pub train_backward_secs: f64,
+    pub train_backward_forward_secs: f64,
+    pub train_backward_propagate_secs: f64,
     pub train_step_secs: f64,
     pub train_grad_norm_secs: f64,
     pub primary_min: Option<f32>,
@@ -72,6 +74,8 @@ impl EvaluationTimingSummary {
         self.train_set_value_secs += other.train_set_value_secs;
         self.train_zero_grad_secs += other.train_zero_grad_secs;
         self.train_backward_secs += other.train_backward_secs;
+        self.train_backward_forward_secs += other.train_backward_forward_secs;
+        self.train_backward_propagate_secs += other.train_backward_propagate_secs;
         self.train_step_secs += other.train_step_secs;
         self.train_grad_norm_secs += other.train_grad_norm_secs;
         self.primary_min = merge_min(self.primary_min, other.primary_min);
@@ -156,46 +160,48 @@ fn merge_max(a: Option<f32>, b: Option<f32>) -> Option<f32> {
 /// P5-lite 预筛中候选结构族的数量分布。
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CandidateFamilyCounts {
-    pub flat_mlp: usize,
-    pub tiny_cnn: usize,
-    pub lenet_like: usize,
-    pub hybrid: usize,
-    pub other: usize,
+    counts: [usize; CANDIDATE_FAMILY_COUNT],
 }
 
 impl CandidateFamilyCounts {
     pub(crate) fn observe(&mut self, family: CandidateFamily) {
-        match family {
-            CandidateFamily::FlatMlp => self.flat_mlp += 1,
-            CandidateFamily::TinyCnn => self.tiny_cnn += 1,
-            CandidateFamily::LenetLike => self.lenet_like += 1,
-            CandidateFamily::Hybrid => self.hybrid += 1,
-            CandidateFamily::Other => self.other += 1,
-        }
+        self.counts[family.slot()] += 1;
     }
 
     pub fn total(&self) -> usize {
-        self.flat_mlp + self.tiny_cnn + self.lenet_like + self.hybrid + self.other
+        self.counts.iter().sum()
     }
 
     pub(crate) fn merge(&mut self, other: &Self) {
-        self.flat_mlp += other.flat_mlp;
-        self.tiny_cnn += other.tiny_cnn;
-        self.lenet_like += other.lenet_like;
-        self.hybrid += other.hybrid;
-        self.other += other.other;
+        for (count, other_count) in self.counts.iter_mut().zip(other.counts) {
+            *count += other_count;
+        }
+    }
+
+    pub fn get(&self, family_name: &str) -> usize {
+        CandidateFamily::all()
+            .iter()
+            .find(|family| family.as_str() == family_name)
+            .map_or(0, |family| self.get_family(*family))
+    }
+
+    pub(crate) fn get_family(&self, family: CandidateFamily) -> usize {
+        self.counts[family.slot()]
     }
 
     pub fn format_compact(&self) -> String {
         if self.total() == 0 {
             return "none".to_string();
         }
-        format!(
-            "flat={} tiny={} lenet={} hybrid={} other={}",
-            self.flat_mlp, self.tiny_cnn, self.lenet_like, self.hybrid, self.other
-        )
+        CandidateFamily::all()
+            .iter()
+            .map(|family| format!("{}={}", family.as_str(), self.get_family(*family)))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
+
+const CANDIDATE_FAMILY_COUNT: usize = 7;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CandidateFamily {
@@ -203,16 +209,20 @@ pub(crate) enum CandidateFamily {
     TinyCnn,
     LenetLike,
     Hybrid,
+    DenseSegHead,
+    DenseSegDeep,
     Other,
 }
 
 impl CandidateFamily {
-    pub(crate) fn all() -> [Self; 5] {
+    pub(crate) fn all() -> [Self; 7] {
         [
             CandidateFamily::LenetLike,
             CandidateFamily::TinyCnn,
             CandidateFamily::FlatMlp,
             CandidateFamily::Hybrid,
+            CandidateFamily::DenseSegDeep,
+            CandidateFamily::DenseSegHead,
             CandidateFamily::Other,
         ]
     }
@@ -223,7 +233,21 @@ impl CandidateFamily {
             CandidateFamily::TinyCnn => "tiny_cnn",
             CandidateFamily::LenetLike => "lenet_like",
             CandidateFamily::Hybrid => "hybrid",
+            CandidateFamily::DenseSegHead => "dense_seg_head",
+            CandidateFamily::DenseSegDeep => "dense_seg_deep",
             CandidateFamily::Other => "other",
+        }
+    }
+
+    fn slot(self) -> usize {
+        match self {
+            CandidateFamily::LenetLike => 0,
+            CandidateFamily::TinyCnn => 1,
+            CandidateFamily::FlatMlp => 2,
+            CandidateFamily::Hybrid => 3,
+            CandidateFamily::DenseSegDeep => 4,
+            CandidateFamily::DenseSegHead => 5,
+            CandidateFamily::Other => 6,
         }
     }
 }
@@ -502,13 +526,15 @@ impl EvolutionCallback for DefaultCallback {
             summary.cost_secs,
         );
         println!(
-            "         train-detail: setup={:.2}s shuffle={:.2}s slice={:.2}s set={:.2}s zero={:.2}s backward={:.2}s step={:.2}s grad_norm={:.2}s",
+            "         train-detail: setup={:.2}s shuffle={:.2}s slice={:.2}s set={:.2}s zero={:.2}s backward_total={:.2}s backward_forward={:.2}s backward_propagate={:.2}s step={:.2}s grad_norm={:.2}s",
             summary.train_setup_secs,
             summary.train_shuffle_secs,
             summary.train_batch_slice_secs,
             summary.train_set_value_secs,
             summary.train_zero_grad_secs,
             summary.train_backward_secs,
+            summary.train_backward_forward_secs,
+            summary.train_backward_propagate_secs,
             summary.train_step_secs,
             summary.train_grad_norm_secs,
         );

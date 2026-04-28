@@ -201,10 +201,6 @@ impl Conv2d {
     /// 输入必须是 4D [batch, C, H, W]
     fn pad_input(&self, input: &Tensor) -> Tensor {
         let (pad_h, pad_w) = self.padding;
-        if pad_h == 0 && pad_w == 0 {
-            return input.clone();
-        }
-
         let input_shape = input.shape();
         let (batch_size, c, h, w) = (
             input_shape[0],
@@ -428,11 +424,17 @@ impl TraitNode for Conv2d {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         let input = parent_values[0];
         let kernel = parent_values[1];
-        // 填充输入并缓存（move 而非 clone，省去一次完整 Tensor 拷贝）
-        self.padded_input = Some(self.pad_input(input));
         self.input_shape = input.shape().to_vec();
-        // 引用缓存执行卷积
-        let (result, im2col_cache) = self.convolve(self.padded_input.as_ref().unwrap(), kernel);
+
+        let (result, im2col_cache) = if self.padding == (0, 0) {
+            // 无 padding 的 1x1 / valid conv 不需要复制整块输入；反向时可直接使用父输入。
+            self.padded_input = None;
+            self.convolve(input, kernel)
+        } else {
+            // 有 padding 时缓存填充后的输入，供 dX 裁剪和 dK 路径复用几何信息。
+            self.padded_input = Some(self.pad_input(input));
+            self.convolve(self.padded_input.as_ref().unwrap(), kernel)
+        };
         self.im2col_cache = Some(im2col_cache);
         self.value = Some(result);
         Ok(())
@@ -458,10 +460,16 @@ impl TraitNode for Conv2d {
         parent_values: &[&Tensor],
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
-        let padded_input = self
-            .padded_input
-            .as_ref()
-            .ok_or_else(|| GraphError::ComputationError("缺少填充后的输入缓存".to_string()))?;
+        let input = *parent_values
+            .first()
+            .ok_or_else(|| GraphError::ComputationError("Conv2D 梯度计算需要输入".to_string()))?;
+        let padded_input = if self.padding == (0, 0) {
+            input
+        } else {
+            self.padded_input
+                .as_ref()
+                .ok_or_else(|| GraphError::ComputationError("缺少填充后的输入缓存".to_string()))?
+        };
 
         let kernel = parent_values
             .get(1)
