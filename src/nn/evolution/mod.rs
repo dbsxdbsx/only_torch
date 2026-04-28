@@ -46,8 +46,10 @@ use crate::nn::{GraphError, VisualizationOutput};
 use crate::tensor::Tensor;
 
 use self::builder::{BuildResult, InheritReport};
+use self::callback::CandidateFamily;
 pub use self::callback::{
-    CandidatePrefilterSummary, DefaultCallback, EvaluationTimingSummary, EvolutionCallback,
+    CandidateFamilyCounts, CandidatePrefilterSummary, DefaultCallback, EvaluationTimingSummary,
+    EvolutionCallback,
 };
 pub use self::convergence::{ConvergenceConfig, TrainingBudget};
 pub use self::error::EvolutionError;
@@ -514,10 +516,16 @@ pub struct Evolution {
     initial_burst: Option<usize>,
     /// 初始候选 portfolio（None = 仅 minimal genome 随机爆发）
     initial_portfolio: Option<InitialPortfolioConfig>,
+    /// 用户是否显式设置过 initial_portfolio
+    initial_portfolio_explicit: bool,
     /// P5-lite 候选预筛配置（None = 不预筛）
     candidate_scoring: Option<CandidateScoringConfig>,
+    /// 用户是否显式设置过 candidate_scoring
+    candidate_scoring_explicit: bool,
     /// 接近目标时对 Pareto archive 前若干候选做最终复训/复评。
     final_refit: Option<FinalRefitConfig>,
+    /// 用户是否显式设置过 final_refit
+    final_refit_explicit: bool,
 }
 
 /// 接近目标时的最终复训配置。
@@ -568,10 +576,10 @@ pub struct InitialPortfolioConfig {
 }
 
 impl InitialPortfolioConfig {
-    /// 低成本平坦 MLP warm-start。
+    /// 低成本平坦 MLP 初始候选。
     ///
-    /// 适合 MNIST 这类图像分类质量档：先验证展平 MLP 是否已足够快且准，
-    /// 不足时再进入更完整的空间结构搜索。
+    /// 适合 MNIST 这类小图像分类任务：让展平 MLP 与 CNN 候选在同一套
+    /// 训练 / 评估 / Pareto 选择流程中竞争。
     pub fn flat_mlp_only(hidden: usize) -> Self {
         Self {
             include_flat_mlp: true,
@@ -608,6 +616,11 @@ impl InitialPortfolioConfig {
 pub struct CandidateScoringConfig {
     pub pool_multiplier: usize,
     pub keep_top_k: Option<usize>,
+    /// P5-lite 预筛时每个结构族至少保留的候选数。
+    ///
+    /// 设为 0 时退化为纯 score 排序。默认保留 1 个，避免 FlatMLP 这类低 FLOPs
+    /// 候选把 TinyCNN / LeNetLike 全部挤出完整训练评估。
+    pub min_per_family: usize,
 }
 
 impl CandidateScoringConfig {
@@ -615,6 +628,7 @@ impl CandidateScoringConfig {
         Self {
             pool_multiplier: 3,
             keep_top_k: None,
+            min_per_family: 1,
         }
     }
 
@@ -622,6 +636,7 @@ impl CandidateScoringConfig {
         Self {
             pool_multiplier: self.pool_multiplier.max(1),
             keep_top_k: self.keep_top_k.map(|n| n.max(1)),
+            min_per_family: self.min_per_family,
         }
     }
 }
@@ -652,7 +667,7 @@ impl Evolution {
             seed: None,
             custom_callback: None,
             max_generations: 100,
-            verbose: true,
+            verbose: false,
             stagnation_patience: 20,
             batch_size: None,
             population_size: rayon::current_num_threads().clamp(12, 32),
@@ -672,8 +687,11 @@ impl Evolution {
             asha: Some(AshaConfig::default()),
             initial_burst: None,
             initial_portfolio: None,
+            initial_portfolio_explicit: false,
             candidate_scoring: None,
+            candidate_scoring_explicit: false,
             final_refit: None,
+            final_refit_explicit: false,
         }
     }
 
@@ -793,8 +811,8 @@ impl Evolution {
 
     /// 设置初始种群中每个个体基于 minimal genome 额外施加的随机变异次数。
     ///
-    /// 较小的 smoke/demo 任务可设为 0..2，避免初始候选过重或过多无效；
-    /// 完整搜索保持默认自动策略即可。
+    /// 较小的快速回归任务可设为 0..2，避免初始候选过重或过多无效；
+    /// 常规搜索保持默认自动策略即可。
     pub fn with_initial_burst(mut self, n: usize) -> Self {
         self.initial_burst = Some(n);
         self
@@ -802,32 +820,37 @@ impl Evolution {
 
     /// 设置初始结构 portfolio。
     ///
-    /// 默认关闭以保持旧行为；图像分类任务可使用
-    /// `InitialPortfolioConfig::vision_classification()` 同时尝试 FlatMLP / TinyCNN / LeNetTiny。
+    /// 空间分类任务默认启用 `InitialPortfolioConfig::vision_classification()`；
+    /// 显式传入 `None` 可关闭，传入配置可覆盖默认候选族。
     pub fn with_initial_portfolio(
         mut self,
         config: impl Into<Option<InitialPortfolioConfig>>,
     ) -> Self {
         self.initial_portfolio = config.into().map(|c| c.validated());
+        self.initial_portfolio_explicit = true;
         self
     }
 
     /// 设置 P5-lite 候选预筛策略。
     ///
-    /// 该策略只影响候选进入完整训练评估前的排序/截断，不改写最终 fitness。
+    /// 空间分类任务默认启用 P5-lite。该策略只影响候选进入完整训练评估前的
+    /// 排序/截断，不改写最终 fitness；显式传入 `None` 可关闭。
     pub fn with_candidate_scoring(
         mut self,
         config: impl Into<Option<CandidateScoringConfig>>,
     ) -> Self {
         self.candidate_scoring = config.into().map(|c| c.validated());
+        self.candidate_scoring_explicit = true;
         self
     }
 
     /// 设置接近目标时的最终复训策略。
     ///
-    /// 默认关闭；适合 MNIST 这类搜索已接近目标、但候选需要更足训练才能冲线的任务。
+    /// 空间分类任务默认开启；适合 MNIST 这类搜索已接近目标、但候选需要更足训练
+    /// 才能冲线的任务。显式传入 `None` 可关闭。
     pub fn with_final_refit(mut self, config: impl Into<Option<FinalRefitConfig>>) -> Self {
         self.final_refit = config.into().map(|c| c.validated());
+        self.final_refit_explicit = true;
         self
     }
 
@@ -900,7 +923,7 @@ impl Evolution {
             max_generations,
             verbose,
             stagnation_patience,
-            batch_size,
+            mut batch_size,
             mut population_size,
             population_size_explicit,
             mut offspring_batch_size,
@@ -908,14 +931,17 @@ impl Evolution {
             parallelism,
             pareto_patience,
             complexity_metric,
-            max_inference_cost,
+            mut max_inference_cost,
             primary_proxy,
             report_metrics,
             asha,
             initial_burst,
-            initial_portfolio,
-            candidate_scoring,
-            final_refit,
+            mut initial_portfolio,
+            initial_portfolio_explicit,
+            mut candidate_scoring,
+            candidate_scoring_explicit,
+            mut final_refit,
+            final_refit_explicit,
         } = self;
 
         // 当指定 seed 时，自动固定 population_size/offspring_batch_size
@@ -939,7 +965,34 @@ impl Evolution {
 
         let is_sequential = prepared.seq_len.is_some();
         let is_spatial = prepared.input_spatial.is_some();
+        let is_spatial_classification =
+            is_spatial && !is_sequential && !prepared.metric.is_segmentation();
         let user_registry = mutation_registry;
+
+        if is_spatial_classification {
+            // 空间分类默认使用已验证的完整搜索策略；用户仍可通过对应 with_* 方法显式覆盖。
+            if !population_size_explicit {
+                population_size = 8;
+            }
+            if !offspring_batch_size_explicit {
+                offspring_batch_size = 8;
+            }
+            if batch_size.is_none() {
+                batch_size = Some(128);
+            }
+            if max_inference_cost.is_none() {
+                max_inference_cost = Some(3_000_000.0);
+            }
+            if !initial_portfolio_explicit && initial_portfolio.is_none() {
+                initial_portfolio = Some(InitialPortfolioConfig::vision_classification());
+            }
+            if !candidate_scoring_explicit && candidate_scoring.is_none() {
+                candidate_scoring = Some(CandidateScoringConfig::p5_lite());
+            }
+            if !final_refit_explicit && final_refit.is_none() {
+                final_refit = Some(FinalRefitConfig::new(0.02, 2, 12));
+            }
+        }
 
         // 自适应约束：用户未显式指定时自动推导
         let n_train = prepared.n_train;
@@ -1068,8 +1121,16 @@ impl Evolution {
             None => StdRng::from_entropy(),
         };
 
-        // 随机爆发初始化参数
-        let burst_k = initial_burst.unwrap_or_else(|| (constraints.max_layers / 2).max(2).min(8));
+        // 随机爆发初始化参数。
+        // 空间分类已有明确初始候选族，默认不再额外爆发随机重结构，避免初始评估被少数
+        // 大候选拖慢；其他任务仍按约束自动生成多样化初始种群。
+        let burst_k = initial_burst.unwrap_or_else(|| {
+            if is_spatial_classification {
+                0
+            } else {
+                (constraints.max_layers / 2).max(2).min(8)
+            }
+        });
 
         // ====== 初始化种群 ======
         let init_reg = if let Some(ref user_reg) = user_reg_val {
@@ -1080,6 +1141,9 @@ impl Evolution {
         let initial_seeds = initial_seed_genomes(&minimal_genome, &prepared, initial_portfolio);
         let mut init_genomes = Vec::with_capacity(population_size);
         for i in 0..population_size {
+            if i >= initial_seeds.len() && burst_k == 0 {
+                break;
+            }
             let mut genome = initial_seeds[i % initial_seeds.len()].clone();
             let effective_burst = if i < initial_seeds.len() { 0 } else { burst_k };
             for _ in 0..effective_burst {
@@ -1261,9 +1325,8 @@ impl Evolution {
             }
 
             if let Some(scoring) = candidate_scoring {
-                let (filtered, mut prefilter_summary) =
+                let (filtered, prefilter_summary) =
                     prefilter_candidates(offspring_genomes, scoring, offspring_batch_size);
-                prefilter_summary.kept = filtered.len();
                 callback.on_candidate_prefilter(generation, &prefilter_summary);
                 offspring_genomes = filtered;
             } else if offspring_genomes.len() > offspring_batch_size {
@@ -1611,6 +1674,15 @@ fn summarize_eval_timings(results: &[EvalResult], wall: Duration) -> EvaluationT
             summary.cost_sum += cost;
             summary.cost_count += 1;
         }
+        let family = CandidateFeatures::from_genome(&result.genome).family();
+        summary.evaluated_families.observe(family);
+        let replace_best = summary
+            .best_family_primary
+            .map_or(true, |best| result.score.primary > best);
+        if replace_best {
+            summary.best_family = Some(family.as_str());
+            summary.best_family_primary = Some(result.score.primary);
+        }
     }
 
     summary
@@ -1693,15 +1765,90 @@ fn prefilter_candidates(
     for genome in candidates {
         let features = CandidateFeatures::from_genome(&genome);
         let score = score_candidate_features(&features);
-        summary.observe(score, features.flops);
-        scored.push((score, genome));
+        let family = features.family();
+        summary.observe_generated(score, features.flops, family);
+        scored.push((score, family, genome));
     }
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    scored.truncate(keep);
 
-    let kept = scored.into_iter().map(|(_, genome)| genome).collect();
+    let kept_scored = select_prefilter_survivors(scored, keep, config.min_per_family);
+    let kept = kept_scored
+        .into_iter()
+        .map(|candidate| {
+            summary.observe_kept(candidate.score, candidate.family);
+            candidate.genome
+        })
+        .collect();
     (kept, summary)
+}
+
+#[derive(Clone, Debug)]
+struct ScoredCandidate {
+    score: f32,
+    family: CandidateFamily,
+    genome: NetworkGenome,
+}
+
+fn select_prefilter_survivors(
+    scored: Vec<(f32, CandidateFamily, NetworkGenome)>,
+    keep: usize,
+    min_per_family: usize,
+) -> Vec<ScoredCandidate> {
+    let keep = keep.max(1);
+    if min_per_family == 0 || scored.len() <= keep {
+        return scored
+            .into_iter()
+            .take(keep)
+            .map(|(score, family, genome)| ScoredCandidate {
+                score,
+                family,
+                genome,
+            })
+            .collect();
+    }
+
+    let mut selected = Vec::with_capacity(keep);
+    let mut selected_indices = vec![false; scored.len()];
+    for family in CandidateFamily::all() {
+        let mut taken = 0;
+        for (idx, (score, candidate_family, genome)) in scored.iter().enumerate() {
+            if selected.len() >= keep || taken >= min_per_family {
+                break;
+            }
+            if *candidate_family != family || selected_indices[idx] {
+                continue;
+            }
+            selected.push(ScoredCandidate {
+                score: *score,
+                family: *candidate_family,
+                genome: genome.clone(),
+            });
+            selected_indices[idx] = true;
+            taken += 1;
+        }
+    }
+
+    for (idx, (score, family, genome)) in scored.into_iter().enumerate() {
+        if selected.len() >= keep {
+            break;
+        }
+        if selected_indices[idx] {
+            continue;
+        }
+        selected.push(ScoredCandidate {
+            score,
+            family,
+            genome,
+        });
+    }
+
+    selected.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    selected
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1733,6 +1880,20 @@ impl CandidateFeatures {
             }
         }
         features
+    }
+
+    fn family(&self) -> CandidateFamily {
+        if self.conv2d_blocks >= 2 && self.pool2d_blocks >= 2 && self.linear_blocks >= 2 {
+            CandidateFamily::LenetLike
+        } else if self.conv2d_blocks >= 1 && self.pool2d_blocks >= 1 && self.linear_blocks >= 1 {
+            CandidateFamily::TinyCnn
+        } else if self.conv2d_blocks == 0 && self.has_flatten && self.linear_blocks >= 2 {
+            CandidateFamily::FlatMlp
+        } else if self.conv2d_blocks >= 1 && self.has_flatten && self.linear_blocks >= 1 {
+            CandidateFamily::Hybrid
+        } else {
+            CandidateFamily::Other
+        }
     }
 }
 
@@ -1991,6 +2152,15 @@ pub struct AshaConfig {
     pub rung_epochs: Vec<usize>,
     /// 每 rung 的淘汰比例：保留 top 1/eta
     pub eta: usize,
+    /// 每个中间 rung 至少保留的候选数。
+    ///
+    /// 低保真早期指标噪声较大，保留至少 2 个候选可避免最后一轮只剩单一结构族。
+    pub min_survivors: usize,
+    /// 中间 rung 每个结构族尽量保留的候选数。
+    ///
+    /// ASHA 的早期低保真评估可能低估 CNN/LeNet 这类慢热结构。默认保留 1 个
+    /// 非 top elite 的结构族代表，让后续 rung 有机会验证其真实潜力。
+    pub min_per_family: usize,
 }
 
 impl Default for AshaConfig {
@@ -1999,6 +2169,8 @@ impl Default for AshaConfig {
         Self {
             rung_epochs: vec![1, 2, 4],
             eta: 3,
+            min_survivors: 2,
+            min_per_family: 1,
         }
     }
 }
@@ -2013,6 +2185,7 @@ impl AshaConfig {
         if cfg.eta < 2 {
             cfg.eta = 2;
         }
+        cfg.min_survivors = cfg.min_survivors.max(1);
         cfg
     }
 }
@@ -2081,7 +2254,7 @@ fn evaluate_batch_asha(
 
         // 最后一轮：全部幸存者进入 NSGA-II
         if rung_idx + 1 == total_rungs {
-            aggregate_timing.replace_quality_with(&rung_batch.timing);
+            aggregate_timing.replace_distribution_with(&rung_batch.timing);
             return TimedEvalBatch {
                 results: rung_results,
                 timing: aggregate_timing,
@@ -2089,7 +2262,8 @@ fn evaluate_batch_asha(
         }
 
         // 中间 rung：按 primary 降序保留 top 1/eta
-        let keep = asha_keep_count(rung_results.len(), asha.eta);
+        let keep = asha_keep_count(rung_results.len(), asha.eta)
+            .max(asha.min_survivors.min(rung_results.len()));
         let mut indexed: Vec<(usize, EvalResult)> = rung_results.into_iter().enumerate().collect();
         indexed.sort_by(|a, b| {
             b.1.score
@@ -2097,7 +2271,7 @@ fn evaluate_batch_asha(
                 .partial_cmp(&a.1.score.primary)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        indexed.truncate(keep);
+        let indexed = select_asha_survivors(indexed, keep, asha.min_per_family);
 
         // 下一轮：继续使用原 seed（rung 内部已派生过）
         survivors = indexed
@@ -2110,6 +2284,88 @@ fn evaluate_batch_asha(
     TimedEvalBatch {
         results: Vec::new(),
         timing: aggregate_timing,
+    }
+}
+
+fn select_asha_survivors(
+    indexed: Vec<(usize, EvalResult)>,
+    keep: usize,
+    min_per_family: usize,
+) -> Vec<(usize, EvalResult)> {
+    let keep = keep.max(1);
+    if min_per_family == 0 || indexed.len() <= keep {
+        return indexed.into_iter().take(keep).collect();
+    }
+
+    let mut remaining: Vec<Option<(usize, EvalResult)>> = indexed.into_iter().map(Some).collect();
+    let mut selected = Vec::with_capacity(keep);
+    let mut selected_families = CandidateFamilyCounts::default();
+
+    take_best_remaining(&mut remaining, &mut selected, &mut selected_families);
+
+    for family in CandidateFamily::all() {
+        while selected.len() < keep
+            && selected_family_count(&selected_families, family) < min_per_family
+        {
+            if !take_best_family_remaining(
+                &mut remaining,
+                family,
+                &mut selected,
+                &mut selected_families,
+            ) {
+                break;
+            }
+        }
+    }
+
+    while selected.len() < keep {
+        if !take_best_remaining(&mut remaining, &mut selected, &mut selected_families) {
+            break;
+        }
+    }
+
+    selected
+}
+
+fn take_best_remaining(
+    remaining: &mut [Option<(usize, EvalResult)>],
+    selected: &mut Vec<(usize, EvalResult)>,
+    selected_families: &mut CandidateFamilyCounts,
+) -> bool {
+    let Some(idx) = remaining.iter().position(Option::is_some) else {
+        return false;
+    };
+    let (_, result) = remaining[idx].as_ref().expect("position 已确认候选存在");
+    selected_families.observe(CandidateFeatures::from_genome(&result.genome).family());
+    selected.push(remaining[idx].take().expect("position 已确认候选存在"));
+    true
+}
+
+fn take_best_family_remaining(
+    remaining: &mut [Option<(usize, EvalResult)>],
+    family: CandidateFamily,
+    selected: &mut Vec<(usize, EvalResult)>,
+    selected_families: &mut CandidateFamilyCounts,
+) -> bool {
+    let Some(idx) = remaining.iter().position(|entry| {
+        entry.as_ref().is_some_and(|(_, result)| {
+            CandidateFeatures::from_genome(&result.genome).family() == family
+        })
+    }) else {
+        return false;
+    };
+    selected_families.observe(family);
+    selected.push(remaining[idx].take().expect("position 已确认候选存在"));
+    true
+}
+
+fn selected_family_count(counts: &CandidateFamilyCounts, family: CandidateFamily) -> usize {
+    match family {
+        CandidateFamily::FlatMlp => counts.flat_mlp,
+        CandidateFamily::TinyCnn => counts.tiny_cnn,
+        CandidateFamily::LenetLike => counts.lenet_like,
+        CandidateFamily::Hybrid => counts.hybrid,
+        CandidateFamily::Other => counts.other,
     }
 }
 

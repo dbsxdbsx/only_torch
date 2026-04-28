@@ -2,6 +2,13 @@
 
 ## [Unreleased] - 待提交
 
+### Changed
+
+- **feat(evolution): 收敛 MNIST 默认演化搜索路径**
+  - 空间分类任务默认启用初始候选族、family-diverse P5-lite、ASHA 多样性保护、final refit、FLOPs 上限和合适的 batch / population 设置，用户侧不再需要手动选择 `smoke / quality / audit / search` profile
+  - `examples/evolution/mnist` 删除 profile 分层，示例收敛为 `Evolution::supervised(...).with_target_metric(0.95).run()`，默认仍输出最新可视化图
+  - 新增 `ONLY_TORCH_MNIST_SEED` 与 `ONLY_TORCH_MNIST_SAVE_ARTIFACTS=0`，用于多 seed 稳定性复核；默认路径 5 个 seed 全部达到 95% 准确率
+
 ## [0.16.0] - 2026-04-28
 
 ### 修复

@@ -14,6 +14,8 @@ fn asha_config_default_sane() {
     let cfg = AshaConfig::default();
     assert_eq!(cfg.rung_epochs, vec![1, 2, 4]);
     assert_eq!(cfg.eta, 3);
+    assert_eq!(cfg.min_survivors, 2);
+    assert_eq!(cfg.min_per_family, 1);
     // 总预算 = 7
     assert_eq!(cfg.rung_epochs.iter().sum::<usize>(), 7);
 }
@@ -44,6 +46,8 @@ fn asha_config_validated_normalizes_bad_inputs() {
     let bad = AshaConfig {
         rung_epochs: vec![],
         eta: 1,
+        min_survivors: 0,
+        min_per_family: 1,
     };
     // 通过对外的 run()/evaluate 路径间接验证，这里不暴露 validated；
     // 改用 evaluate_batch_asha 的空输入行为做单独覆盖。
@@ -80,6 +84,8 @@ fn evolution_with_asha_runs_to_completion() {
         .with_asha(AshaConfig {
             rung_epochs: vec![1, 1],
             eta: 2,
+            min_survivors: 1,
+            min_per_family: 1,
         })
         .with_verbose(false)
         .run();

@@ -7,7 +7,7 @@ use crate::nn::evolution::convergence::ConvergenceConfig;
 use crate::nn::evolution::gene::*;
 use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::task::FitnessScore;
-use crate::nn::evolution::{Evolution, EvolutionStatus};
+use crate::nn::evolution::{CandidateScoringConfig, Evolution, EvolutionStatus};
 use crate::tensor::Tensor;
 
 // ==================== 辅助构造 ====================
@@ -139,6 +139,40 @@ fn test_evolution_runs_and_returns_result() {
     assert!(result.fitness.primary >= 0.0);
     assert!(result.generations <= 3);
     assert!(!result.architecture_summary.is_empty());
+}
+
+#[test]
+fn test_p5_lite_prefilter_records_family_counts() {
+    let candidates = vec![
+        NetworkGenome::spatial_flat_mlp(1, 10, (28, 28), 128),
+        NetworkGenome::minimal_spatial(1, 10, (28, 28)),
+        NetworkGenome::spatial_lenet_tiny(1, 10, (28, 28)),
+    ];
+    let config = CandidateScoringConfig {
+        pool_multiplier: 1,
+        keep_top_k: Some(2),
+        min_per_family: 1,
+    };
+
+    let (_kept, summary) = crate::nn::evolution::prefilter_candidates(candidates, config, 2);
+
+    assert_eq!(summary.generated, 3);
+    assert_eq!(summary.kept, 2);
+    assert_eq!(summary.generated_families.total(), 3);
+    assert_eq!(summary.generated_families.flat_mlp, 1);
+    assert_eq!(summary.generated_families.tiny_cnn, 1);
+    assert_eq!(summary.generated_families.lenet_like, 1);
+    assert_eq!(summary.kept_families.total(), 2);
+    assert!(
+        summary.kept_families.flat_mlp
+            + summary.kept_families.tiny_cnn
+            + summary.kept_families.lenet_like
+            >= 2,
+        "family-diverse 预筛应保留多个主要视觉结构族"
+    );
+    assert_eq!(summary.kept_score_count, 2);
+    assert!(summary.avg_score().is_some());
+    assert!(summary.avg_kept_score().is_some());
 }
 
 #[test]

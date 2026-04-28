@@ -49,6 +49,9 @@ pub struct EvaluationTimingSummary {
     pub cost_max: Option<f32>,
     pub cost_sum: f32,
     pub cost_count: usize,
+    pub evaluated_families: CandidateFamilyCounts,
+    pub best_family: Option<&'static str>,
+    pub best_family_primary: Option<f32>,
 }
 
 impl EvaluationTimingSummary {
@@ -79,6 +82,16 @@ impl EvaluationTimingSummary {
         self.cost_max = merge_max(self.cost_max, other.cost_max);
         self.cost_sum += other.cost_sum;
         self.cost_count += other.cost_count;
+        self.evaluated_families.merge(&other.evaluated_families);
+        if let Some(other_best) = other.best_family_primary {
+            let replace = self
+                .best_family_primary
+                .map_or(true, |current_best| other_best > current_best);
+            if replace {
+                self.best_family = other.best_family;
+                self.best_family_primary = Some(other_best);
+            }
+        }
     }
 
     pub fn avg_candidate_secs(&self) -> f64 {
@@ -105,7 +118,7 @@ impl EvaluationTimingSummary {
         }
     }
 
-    pub(crate) fn replace_quality_with(&mut self, other: &Self) {
+    pub(crate) fn replace_distribution_with(&mut self, other: &Self) {
         self.primary_min = other.primary_min;
         self.primary_max = other.primary_max;
         self.primary_sum = other.primary_sum;
@@ -114,6 +127,9 @@ impl EvaluationTimingSummary {
         self.cost_max = other.cost_max;
         self.cost_sum = other.cost_sum;
         self.cost_count = other.cost_count;
+        self.evaluated_families = other.evaluated_families;
+        self.best_family = other.best_family;
+        self.best_family_primary = other.best_family_primary;
     }
 }
 
@@ -137,6 +153,81 @@ fn merge_max(a: Option<f32>, b: Option<f32>) -> Option<f32> {
 
 // ==================== CandidatePrefilterSummary ====================
 
+/// P5-lite 预筛中候选结构族的数量分布。
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CandidateFamilyCounts {
+    pub flat_mlp: usize,
+    pub tiny_cnn: usize,
+    pub lenet_like: usize,
+    pub hybrid: usize,
+    pub other: usize,
+}
+
+impl CandidateFamilyCounts {
+    pub(crate) fn observe(&mut self, family: CandidateFamily) {
+        match family {
+            CandidateFamily::FlatMlp => self.flat_mlp += 1,
+            CandidateFamily::TinyCnn => self.tiny_cnn += 1,
+            CandidateFamily::LenetLike => self.lenet_like += 1,
+            CandidateFamily::Hybrid => self.hybrid += 1,
+            CandidateFamily::Other => self.other += 1,
+        }
+    }
+
+    pub fn total(&self) -> usize {
+        self.flat_mlp + self.tiny_cnn + self.lenet_like + self.hybrid + self.other
+    }
+
+    pub(crate) fn merge(&mut self, other: &Self) {
+        self.flat_mlp += other.flat_mlp;
+        self.tiny_cnn += other.tiny_cnn;
+        self.lenet_like += other.lenet_like;
+        self.hybrid += other.hybrid;
+        self.other += other.other;
+    }
+
+    pub fn format_compact(&self) -> String {
+        if self.total() == 0 {
+            return "none".to_string();
+        }
+        format!(
+            "flat={} tiny={} lenet={} hybrid={} other={}",
+            self.flat_mlp, self.tiny_cnn, self.lenet_like, self.hybrid, self.other
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CandidateFamily {
+    FlatMlp,
+    TinyCnn,
+    LenetLike,
+    Hybrid,
+    Other,
+}
+
+impl CandidateFamily {
+    pub(crate) fn all() -> [Self; 5] {
+        [
+            CandidateFamily::LenetLike,
+            CandidateFamily::TinyCnn,
+            CandidateFamily::FlatMlp,
+            CandidateFamily::Hybrid,
+            CandidateFamily::Other,
+        ]
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            CandidateFamily::FlatMlp => "flat_mlp",
+            CandidateFamily::TinyCnn => "tiny_cnn",
+            CandidateFamily::LenetLike => "lenet_like",
+            CandidateFamily::Hybrid => "hybrid",
+            CandidateFamily::Other => "other",
+        }
+    }
+}
+
 /// P5-lite 候选预筛阶段的轻量统计。
 #[derive(Clone, Debug, Default)]
 pub struct CandidatePrefilterSummary {
@@ -149,14 +240,26 @@ pub struct CandidatePrefilterSummary {
     pub flops_max: Option<f32>,
     pub flops_sum: f32,
     pub flops_count: usize,
+    pub kept_score_min: Option<f32>,
+    pub kept_score_max: Option<f32>,
+    pub kept_score_sum: f32,
+    pub kept_score_count: usize,
+    pub generated_families: CandidateFamilyCounts,
+    pub kept_families: CandidateFamilyCounts,
 }
 
 impl CandidatePrefilterSummary {
-    pub(crate) fn observe(&mut self, score: f32, flops: Option<f32>) {
+    pub(crate) fn observe_generated(
+        &mut self,
+        score: f32,
+        flops: Option<f32>,
+        family: CandidateFamily,
+    ) {
         self.generated += 1;
         self.score_min = Some(self.score_min.map_or(score, |v| v.min(score)));
         self.score_max = Some(self.score_max.map_or(score, |v| v.max(score)));
         self.score_sum += score;
+        self.generated_families.observe(family);
         if let Some(flops) = flops {
             self.flops_min = Some(self.flops_min.map_or(flops, |v| v.min(flops)));
             self.flops_max = Some(self.flops_max.map_or(flops, |v| v.max(flops)));
@@ -165,11 +268,28 @@ impl CandidatePrefilterSummary {
         }
     }
 
+    pub(crate) fn observe_kept(&mut self, score: f32, family: CandidateFamily) {
+        self.kept += 1;
+        self.kept_score_min = Some(self.kept_score_min.map_or(score, |v| v.min(score)));
+        self.kept_score_max = Some(self.kept_score_max.map_or(score, |v| v.max(score)));
+        self.kept_score_sum += score;
+        self.kept_score_count += 1;
+        self.kept_families.observe(family);
+    }
+
     pub fn avg_score(&self) -> Option<f32> {
         if self.generated == 0 {
             None
         } else {
             Some(self.score_sum / self.generated as f32)
+        }
+    }
+
+    pub fn avg_kept_score(&self) -> Option<f32> {
+        if self.kept_score_count == 0 {
+            None
+        } else {
+            Some(self.kept_score_sum / self.kept_score_count as f32)
         }
     }
 
@@ -407,6 +527,16 @@ impl EvolutionCallback for DefaultCallback {
                 summary.cost_max.unwrap_or(f32::NAN),
             );
         }
+        if summary.evaluated_families.total() > 0 {
+            let best = match (summary.best_family, summary.best_family_primary) {
+                (Some(family), Some(primary)) => format!("{family}@{primary:.3}"),
+                _ => "none".to_string(),
+            };
+            println!(
+                "         eval-family: evaluated[{}] best={best}",
+                summary.evaluated_families.format_compact()
+            );
+        }
     }
 
     fn on_candidate_prefilter(&mut self, generation: usize, summary: &CandidatePrefilterSummary) {
@@ -415,15 +545,23 @@ impl EvolutionCallback for DefaultCallback {
         }
 
         println!(
-            "         p5-lite(gen={generation}): kept={}/{} | score[min/avg/max]={:.3}/{:.3}/{:.3} | flops[min/avg/max]={:.0}/{:.0}/{:.0}",
+            "         p5-lite(gen={generation}): kept={}/{} | score[min/avg/max]={:.3}/{:.3}/{:.3} | kept_score[min/avg/max]={:.3}/{:.3}/{:.3} | flops[min/avg/max]={:.0}/{:.0}/{:.0}",
             summary.kept,
             summary.generated,
             summary.score_min.unwrap_or(f32::NAN),
             summary.avg_score().unwrap_or(f32::NAN),
             summary.score_max.unwrap_or(f32::NAN),
+            summary.kept_score_min.unwrap_or(f32::NAN),
+            summary.avg_kept_score().unwrap_or(f32::NAN),
+            summary.kept_score_max.unwrap_or(f32::NAN),
             summary.flops_min.unwrap_or(f32::NAN),
             summary.avg_flops().unwrap_or(f32::NAN),
             summary.flops_max.unwrap_or(f32::NAN),
+        );
+        println!(
+            "         p5-lite-family: generated[{}] kept[{}]",
+            summary.generated_families.format_compact(),
+            summary.kept_families.format_compact()
         );
     }
 
