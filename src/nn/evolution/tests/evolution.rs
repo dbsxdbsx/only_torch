@@ -180,7 +180,7 @@ fn test_evolution_runs_and_returns_result() {
 }
 
 #[test]
-fn test_p5_lite_prefilter_records_family_counts() {
+fn test_heuristic_prefilter_records_family_counts() {
     let candidates = vec![
         NetworkGenome::spatial_flat_mlp(1, 10, (28, 28), 128),
         NetworkGenome::minimal_spatial(1, 10, (28, 28)),
@@ -214,7 +214,7 @@ fn test_p5_lite_prefilter_records_family_counts() {
 }
 
 #[test]
-fn test_p5_lite_prefilter_records_segmentation_families() {
+fn test_heuristic_prefilter_records_segmentation_families() {
     let candidates = vec![
         NetworkGenome::minimal_spatial_segmentation(1, 3, (8, 8)),
         NetworkGenome::spatial_segmentation_tiny(1, 3, (8, 8)),

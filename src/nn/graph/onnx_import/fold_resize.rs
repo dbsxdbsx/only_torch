@@ -64,7 +64,7 @@ pub(super) fn assemble_resize_with_const_fold<'a>(
         }
         (sh as usize, sw as usize, scales_name.to_string())
     } else if node.input.len() >= 4 && !node.input[3].is_empty() {
-        // sizes 路径：从输出/输入 shape 反推 scale。本轮最小骨架不支持,
+        // sizes 路径：从输出/输入 shape 反推 scale。当前最小骨架不支持,
         // 用户可改用 scales 形式或用 onnxsim 转换
         return Err(OnnxError::UnsupportedAttribute {
             op_type: "Resize".to_string(),

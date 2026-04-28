@@ -197,7 +197,7 @@ pub fn onnx_op_to_descriptors(
             // only_torch Conv2d 当前只支持对称 padding (pad_h, pad_w)，
             // 即四角必须满足 H_begin == H_end && W_begin == W_end。
             // 非对称 padding（如 pads=[1,2,3,4]）属罕见情形，需要在导入端
-            // 用 Pad 节点 + Conv(p=0) 组合表达；本轮暂不实现，遇到时报 actionable 错误。
+            // 用 Pad 节点 + Conv(p=0) 组合表达；当前不支持，遇到时报 actionable 错误。
             let padding = parse_symmetric_2d_pads(&pads, "Conv", node_name)?;
             let dilation = if dilations.len() >= 2 {
                 (dilations[0] as usize, dilations[1] as usize)
@@ -761,7 +761,7 @@ pub(crate) fn find_attr_ints(attrs: &[Attribute], name: &str) -> Vec<i64> {
 /// （即 H_begin == H_end && W_begin == W_end）。
 /// 非对称四角（如 `pads=[1,2,3,4]`）属罕见情形（PyTorch 默认对称导出，
 /// HuggingFace 等第三方模型偶有），需要在导入端用 Pad 节点 + Conv(p=0) 组合
-/// 表达——本轮暂未实现，遇到时返回 actionable 错误，提示用户用 onnxsim 预处理
+/// 表达——当前不支持，遇到时返回 actionable 错误，提示用户用 onnxsim 预处理
 /// 或在 PyTorch 端用 `nn.ZeroPad2d` 显式拆开。
 ///
 /// 返回值：

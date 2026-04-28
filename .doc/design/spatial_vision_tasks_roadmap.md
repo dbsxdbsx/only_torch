@@ -57,7 +57,7 @@ graph TD
 
 ```text
 分类
-  -> 检测：从“是什么”扩展到“在哪里”
+  -> 检测：从"是什么"扩展到"在哪里"
   -> 语义分割：从图像级标签扩展到像素级标签
   -> 实例分割：在像素级标签上区分不定数量的独立对象
   -> 全景分割：同时处理背景语义区域和前景实例
@@ -75,36 +75,33 @@ graph TD
 | Detection | 多目标 2D Detection | `[ ]` | `chess_yolo_onnx_detect` 可导入第三方 YOLO ONNX 做推理演示 | only_torch 原生训练 / 演化检测头尚未支持 |
 | Detection | Oriented Detection | `[ ]` | 暂无 | 需要旋转框表示、角度损失、旋转 IoU |
 | Detection | 3D Detection | `[ ]` | 暂无 | 需要深度 / 点云 / 相机几何等数据表示 |
-| Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练 16x16 合成 mask；`deformable_conv2d_segmentation` 提供 offset-only DeformableConv2d 传统基线 | 数据仍偏 toy；缺少更可信真实 benchmark |
-| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`overlapping_shapes_unet_lite_segmentation` 提供 U-Net-lite 强基线；`evolution_overlapping_shapes_semantic_segmentation` 覆盖 32x32 smoke；`evolution_overlapping_shapes_unet_lite_segmentation` 已对齐 64x64 benchmark 并纳入 encoder-decoder 初始族 | Evolution 已有 dense / encoder-decoder / DeformableConv2d 最小接入；后续再判断是否优化 dense forward 或扩大真实 benchmark |
+| Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练合成 mask；`deformable_conv2d_segmentation` 提供 offset-only DeformableConv2d 传统基线 | 数据仍偏 toy；缺少更可信真实 benchmark |
+| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`overlapping_shapes_unet_lite_segmentation` 提供 U-Net-lite 强基线；`evolution_overlapping_shapes_semantic_segmentation` 与 `evolution_overlapping_shapes_unet_lite_segmentation` 覆盖 evolution 闭环；`evolution_deformable_conv2d_segmentation` 验证 DeformableConv2d 进入演化主流程 | 仍是合成数据；缺少真实自然图像 benchmark |
 | Segmentation | 固定 slot 实例分割 | `[~]` | `multi_instance_segmentation` 支持固定 2 slot mask | 不支持不定数量实例、类别、confidence、matching |
 | Segmentation | 通用实例分割 | `[ ]` | 暂无 | 需要变长实例列表、mask matching、实例级指标 |
 | Segmentation | 全景分割 | `[ ]` | 暂无 | 依赖语义分割 + 实例分割统一表示 |
 | Tracking | 单 / 多目标跟踪 | `[ ]` | 暂无 | 需要视频数据、track id、跨帧关联指标 |
 | Pose | 关键点检测 | `[ ]` | 暂无 | 需要 heatmap 或关键点回归头与 OKS 类指标 |
 | Depth / 3D | 深度估计 / 3D 感知 | `[ ]` | 暂无 | 需要深度图、相机模型或点云表示 |
-| Unified | 多头视觉模型 | `[~]` | 传统 API 已有多输入 / 多输出示例；Evolution 已支持固定数量命名 head 的平坦 supervised 多头任务、逐 head loss/metric 聚合与选择性推理，并新增 `evolution_multi_head_quadrant_radius` 示例 | 空间 / 序列多头、检测变长实例、matching、NMS 与 mAP 尚未支持 |
+| Unified | 多头视觉模型 | `[~]` | 传统 API 已有多输入 / 多输出示例；Evolution 已支持固定数量命名 head 的平坦 supervised 多头任务、逐 head loss / metric 聚合与选择性推理 | 空间 / 序列多头、检测变长实例、matching、NMS 与 mAP 尚未支持 |
 | Unified | Mask R-CNN / YOLO-seg-lite | `[ ]` | 暂无原生实现 | 依赖检测头、mask 头、多输出 loss 和实例匹配 |
 
-## 近期路线
+## 后续方向
 
-当前最值得推进的是先把分割做扎实，再把它接入 Evolution。原因是分割能直接验证空间输入、空间输出、Conv2d / ConvTranspose2d、FM 粒度演化和 FLOPs 选择等能力；检测和实例分割则需要更多任务协议与多输出基础设施。
+视觉任务的扩展遵循"先把基础任务做扎实，再向上叠加复杂任务"的顺序。下表只列出有明确价值的方向，按依赖关系排列；具体何时启动取决于实际需求和精力分配。
 
-| 优先级 | 事项 | 状态 | 目标 |
-|---|---|---|---|
-| P0 | 建立空间视觉任务路线图 | `[x]` | 统一术语、任务边界和能力矩阵 |
-| P1 | Segmentation v2 数据与指标 | `[~]` | 已有 overlapping shapes benchmark、U-Net-lite 强基线和 Mean IoU / Dice；下一步扩大数据规模与难度 |
-| P2 | Segmentation Evolution | `[x]` | 已有 spatial-to-spatial minimal genome、dense + encoder-decoder segmentation portfolio、`InsertEncoderDecoderSkip` 结构变异与 P5-lite/timing 审计；`evolution_overlapping_shapes_unet_lite_segmentation` 在 target Mean IoU 0.60 下完成 5-seed 稳定性验证，seed 1..5 全部 `TargetReached` |
-| P3 | FCN / U-Net 风格传统强基线 | `[x]` | `overlapping_shapes_unet_lite_segmentation` 在 debug + BLAS 下约 27.4s 达到 Mean IoU 75.6%，可作为后续 Segmentation Evolution 对照 |
-| P4a | Deformable Conv2d 通用算子与演化基线 | `[~]` | 已实现 offset-only `DeformableConv2d` raw node / Layer / descriptor rebuild / ONNX unsupported 标记；新增 `deformable_conv2d_segmentation` 传统手写示例；新增 `evolution_deformable_conv2d_segmentation`，默认 seed=42 在 4 个测试样本上达到 Binary IoU 40.3%，最终基因组包含 DeformableConv2d；segmentation InsertLayer 仍有概率生成 DeformableConv2d block |
-| P4b | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
-| P5 | 多输出 / 多头 Evolution | `[~]` | P3 第一阶段已支持平坦共享输入的固定多头 supervised evolution；后续扩展到 detection + mask 等空间多任务输出与实例级指标 |
-| P6 | Instance Segmentation Lite | `[ ]` | 从固定 slot 过渡到可变实例、matching 和实例级指标 |
-| P7 | Tracking / Panoptic / 3D | `[ ]` | 作为远期路线，等基础视觉任务稳定后再进入 |
+| 方向 | 状态 | 目标 |
+|---|---|---|
+| Segmentation 真实数据 benchmark | `[ ]` | 当前合成数据已覆盖闭环验证，下一步引入更可信的小型自然图像 benchmark（如 Pascal VOC 子集、Cityscapes 子图） |
+| YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP；这是 only_torch 原生进入多目标检测的最小可行路径 |
+| 空间 / 序列多头 Evolution | `[ ]` | 在已有平坦多头基础上扩展到空间多任务输出（如 detection + mask）和实例级指标 |
+| Instance Segmentation Lite | `[ ]` | 从固定 slot 过渡到可变实例、matching 和实例级指标 |
+| Pose / Keypoints | `[ ]` | 需要 heatmap 或关键点回归头与 OKS 类指标 |
+| Tracking / Panoptic / 3D | `[ ]` | 远期方向，等基础视觉任务稳定后再进入 |
 
 ## 与现有文档的关系
 
 - Evolution 主流程、变异、ASHA 与搜索策略详见 [神经架构演化设计](neural_architecture_evolution_design.md)。
 - Node 与 Layer 的职责边界详见 [节点与层边界设计](node_vs_layer_design.md)。
 - DataLoader 与变长数据处理详见 [数据加载设计](data_loader_design.md)。
-- ONNX 导入与第三方视觉模型互通详见 [ONNX 导入/互通策略设计](onnx_import_strategy.md)。
+- ONNX 导入与第三方视觉模型互通详见 [ONNX 导入 / 互通策略设计](onnx_import_strategy.md)。

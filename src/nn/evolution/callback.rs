@@ -157,7 +157,7 @@ fn merge_max(a: Option<f32>, b: Option<f32>) -> Option<f32> {
 
 // ==================== CandidatePrefilterSummary ====================
 
-/// P5-lite 预筛中候选结构族的数量分布。
+/// 启发式预筛中候选结构族的数量分布。
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CandidateFamilyCounts {
     counts: [usize; CANDIDATE_FAMILY_COUNT],
@@ -256,7 +256,7 @@ impl CandidateFamily {
     }
 }
 
-/// P5-lite 候选预筛阶段的轻量统计。
+/// 启发式候选预筛阶段的轻量统计。
 #[derive(Clone, Debug, Default)]
 pub struct CandidatePrefilterSummary {
     pub generated: usize,
@@ -386,7 +386,7 @@ pub trait EvolutionCallback {
     ) {
     }
 
-    /// P5-lite 候选预筛完成后调用。
+    /// 启发式候选预筛完成后调用。
     fn on_candidate_prefilter(&mut self, _generation: usize, _summary: &CandidatePrefilterSummary) {
     }
 

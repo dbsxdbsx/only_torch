@@ -569,7 +569,7 @@ pub struct Evolution {
     initial_portfolio: Option<InitialPortfolioConfig>,
     /// 用户是否显式设置过 initial_portfolio
     initial_portfolio_explicit: bool,
-    /// P5-lite 候选预筛配置（None = 不预筛）
+    /// 启发式候选预筛配置（None = 不预筛）
     candidate_scoring: Option<CandidateScoringConfig>,
     /// 用户是否显式设置过 candidate_scoring
     candidate_scoring_explicit: bool,
@@ -691,15 +691,15 @@ impl InitialPortfolioConfig {
     }
 }
 
-/// P5-lite 候选预筛配置。
+/// 启发式候选预筛配置。
 ///
-/// 第一版不训练 surrogate 模型，而是用结构特征 + FLOPs 启发式给候选排序；
+/// 不训练任何预测模型，而是用结构特征 + FLOPs 启发式给候选排序；
 /// 真实 fitness 仍然只由完整训练/评估产生。
 #[derive(Clone, Copy, Debug)]
 pub struct CandidateScoringConfig {
     pub pool_multiplier: usize,
     pub keep_top_k: Option<usize>,
-    /// P5-lite 预筛时每个结构族至少保留的候选数。
+    /// 启发式预筛时每个结构族至少保留的候选数。
     ///
     /// 设为 0 时退化为纯 score 排序。默认保留 1 个，避免 FlatMLP 这类低 FLOPs
     /// 候选把 TinyCNN / LeNetLike 全部挤出完整训练评估。
@@ -707,7 +707,8 @@ pub struct CandidateScoringConfig {
 }
 
 impl CandidateScoringConfig {
-    pub fn p5_lite() -> Self {
+    /// 默认启发式预筛配置：pool_multiplier=3、不限 top-k、每族至少保留 1 个。
+    pub fn heuristic() -> Self {
         Self {
             pool_multiplier: 3,
             keep_top_k: None,
@@ -921,9 +922,9 @@ impl Evolution {
         self
     }
 
-    /// 设置 P5-lite 候选预筛策略。
+    /// 设置启发式候选预筛策略。
     ///
-    /// 空间分类任务默认启用 P5-lite。该策略只影响候选进入完整训练评估前的
+    /// 空间分类任务默认启用启发式预筛。该策略只影响候选进入完整训练评估前的
     /// 排序/截断，不改写最终 fitness；显式传入 `None` 可关闭。
     pub fn with_candidate_scoring(
         mut self,
@@ -1084,19 +1085,19 @@ impl Evolution {
                 initial_portfolio = Some(InitialPortfolioConfig::vision_classification());
             }
             if !candidate_scoring_explicit && candidate_scoring.is_none() {
-                candidate_scoring = Some(CandidateScoringConfig::p5_lite());
+                candidate_scoring = Some(CandidateScoringConfig::heuristic());
             }
             if !final_refit_explicit && final_refit.is_none() {
                 final_refit = Some(FinalRefitConfig::new(0.02, 2, 12));
             }
         } else if is_spatial && prepared.metric.is_segmentation() {
-            // Dense segmentation 仍处于审计阶段：默认保持保守搜索规模，但接入同源
-            // portfolio / P5-lite 观测，便于和 MNIST 搜索矩阵对齐。
+            // Dense segmentation 默认保持保守搜索规模，并接入同源 portfolio / 启发式
+            // 预筛观测，便于和 MNIST 搜索矩阵对齐。
             if !initial_portfolio_explicit && initial_portfolio.is_none() {
                 initial_portfolio = Some(InitialPortfolioConfig::vision_segmentation());
             }
             if !candidate_scoring_explicit && candidate_scoring.is_none() {
-                candidate_scoring = Some(CandidateScoringConfig::p5_lite());
+                candidate_scoring = Some(CandidateScoringConfig::heuristic());
             }
         }
 
@@ -1622,7 +1623,7 @@ impl Evolution {
 
             // 8. 接近目标时，对 archive top-k 做最终复训/复评。
             //
-            // 这是 P5 surrogate 前的低风险收尾机制：不预测、不跳过评估，只把预算集中到
+            // 与启发式预筛互补：不预测、不跳过评估，只把预算集中到
             // 已经接近目标的候选，避免继续盲目扩大结构。
             if let Some(ref refit_cfg) = final_refit {
                 let should_refit = archive_best_s.primary + refit_cfg.trigger_margin

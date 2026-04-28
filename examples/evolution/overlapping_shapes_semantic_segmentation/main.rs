@@ -28,7 +28,7 @@ fn main() {
         "输入: [1, {IMAGE_SIZE}, {IMAGE_SIZE}]，标签: [{NUM_CLASSES}, {IMAGE_SIZE}, {IMAGE_SIZE}]"
     );
     println!("指标: MeanIoU，起始结构: Conv2d → 1x1 Conv2d head（不经过 Flatten）");
-    println!("演化策略: 自动启用 segmentation portfolio 与 family-diverse P5-lite");
+    println!("演化策略: 自动启用 segmentation portfolio 与 family-diverse 启发式预筛");
     println!("训练样本: {train_samples}, 测试样本: {test_samples}\n");
 
     let result = Evolution::supervised(train_data, test_data.clone(), TaskMetric::MeanIoU)

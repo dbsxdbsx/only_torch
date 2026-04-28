@@ -7,7 +7,7 @@
 //! `split_sizes` 来源优先级：
 //! 1. opset 12 及以下：attribute "split"(Vec<i64>)
 //! 2. opset 13 及以上：input[1] 为常量 i64 张量
-//! 3. 都没有：要求 axis 维度均匀 N 等分(暂不支持,需要 input shape 信息,本轮报错)
+//! 3. 都没有：要求 axis 维度均匀 N 等分(暂不支持,需要 input shape 信息,直接报错)
 
 use std::collections::HashMap;
 

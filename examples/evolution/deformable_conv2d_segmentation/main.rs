@@ -43,7 +43,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("任务: 16x16 合成图像二值前景分割（1..3 个可重叠形状）");
     println!("输入: [1, {IMAGE_SIZE}, {IMAGE_SIZE}]，标签: [1, {IMAGE_SIZE}, {IMAGE_SIZE}]");
     println!("指标: BinaryIoU，候选族: DeformableConv2d dense segmentation seed");
-    println!("演化策略: 关闭 learned surrogate；用 deformable 初始族直接验证 P4+ 搜索闭环");
+    println!(
+        "演化策略: 关闭启发式预筛；用 deformable 初始族直接验证 DeformableConv2d 进入演化主流程"
+    );
     println!("训练样本: {TRAIN_SAMPLES}, 测试样本: {TEST_SAMPLES}, batch: {BATCH_SIZE}");
     println!("演化 seed: {evolution_seed}, target Binary IoU: {target_binary_iou:.2}\n");
 

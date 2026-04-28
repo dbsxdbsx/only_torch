@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     println!("指标: MeanIoU，传统对照: overlapping_shapes_unet_lite_segmentation");
     println!("范围: 对齐同一 benchmark，并纳入 U-Net-lite encoder-decoder 初始族");
-    println!("演化策略: segmentation portfolio + encoder-decoder family-diverse P5-lite");
+    println!("演化策略: segmentation portfolio + encoder-decoder family-diverse 启发式预筛");
     println!("训练样本: {TRAIN_SAMPLES}, 测试样本: {TEST_SAMPLES}, batch: {BATCH_SIZE}");
     println!("演化 seed: {evolution_seed}, target Mean IoU: {target_mean_iou:.2}\n");
 

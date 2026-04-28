@@ -1025,7 +1025,7 @@ impl NetworkGenome {
     /// 稍深的 dense segmentation 种子：Conv → ReLU → Conv → ReLU → 1×1 Conv head。
     ///
     /// 该结构保持 `[N, C, H, W]` 输出协议，用于和最小分割头在同一套
-    /// P5-lite / ASHA / timing 观测中比较，不引入 Flatten 或 Pool。
+    /// 启发式预筛 / ASHA / timing 观测中比较，不引入 Flatten 或 Pool。
     pub(crate) fn spatial_segmentation_tiny(
         input_channels: usize,
         output_channels: usize,
