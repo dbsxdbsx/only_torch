@@ -19,14 +19,15 @@ use super::gene::{
 };
 use super::net2net::apply_widen_to_snapshots;
 use super::node_expansion::{
-    activation_to_node_type, expand_activation, expand_dropout, expand_gru, expand_lstm, expand_rnn,
+    activation_to_node_type, expand_activation, expand_conv_transpose2d, expand_conv2d,
+    expand_dropout, expand_gru, expand_lstm, expand_pool2d, expand_rnn,
 };
 use super::node_gene::{NodeGene, RecurrentEdge};
 use super::node_ops::{
     NodeBlock, NodeBlockKind, add_skip_connection, commit_counter, create_insert_nodes,
     find_connectable_pairs, find_removable_skip_connections, insert_after, is_activation_node,
-    is_dropout_node, is_skip_projection_block, make_counter, node_main_path, node_output_shape_at,
-    node_param_count, node_spatial_at, remove_block, remove_skip_connection,
+    is_dropout_node, is_skip_projection_block, make_counter, next_block_id, node_main_path,
+    node_output_shape_at, node_param_count, node_spatial_at, remove_block, remove_skip_connection,
     repair_param_input_dims, resize_conv2d_out, resize_linear_out, resize_recurrent_out,
     sync_computation_shapes,
 };
@@ -299,7 +300,9 @@ impl MutationRegistry {
         // 空间模式专属
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
-            if !metric.is_segmentation() {
+            if metric.is_segmentation() {
+                reg.register(0.08, InsertEncoderDecoderSkipMutation);
+            } else {
                 reg.register(0.06, MutateStrideMutation);
                 // FM 级别变异：结构探索偏重拓扑（Add/Split），参数调整适度降权
                 use super::fm_mutation::*;
@@ -355,7 +358,9 @@ impl MutationRegistry {
         // 空间模式专属
         if is_spatial {
             reg.register(0.10, MutateKernelSizeMutation);
-            if !metric.is_segmentation() {
+            if metric.is_segmentation() {
+                reg.register(0.04, InsertEncoderDecoderSkipMutation);
+            } else {
                 reg.register(0.06, MutateStrideMutation);
                 // FM 级别变异（Phase 2 偏向参数调整，结构探索适度保留）
                 use super::fm_mutation::*;
@@ -692,6 +697,231 @@ impl Mutation for InsertLayerMutation {
             "InsertLayer 仅支持 NodeLevel 基因组".into(),
         ))
     }
+}
+
+// ==================== InsertEncoderDecoderSkipMutation ====================
+
+/// 在空间分割主路径中插入一个保持分辨率的 encoder-decoder skip block。
+///
+/// 结构为：
+/// `x -> Pool -> Bottleneck Conv -> ReLU -> ConvTranspose -> ReLU -> Concat([up, x]) -> Fuse Conv -> ReLU`
+///
+/// 该变异一次性引入 Pool / Deconv / skip concat，并保持最终输出形状与 `x` 一致，
+/// 避免 segmentation 任务随机插入单独 Pool 后破坏像素级输出分辨率。
+pub struct InsertEncoderDecoderSkipMutation;
+
+#[derive(Debug, Clone)]
+struct EncoderDecoderInsertPoint {
+    after_id: u64,
+    channels: usize,
+    spatial: (usize, usize),
+}
+
+impl Mutation for InsertEncoderDecoderSkipMutation {
+    fn name(&self) -> &str {
+        "InsertEncoderDecoderSkip"
+    }
+
+    fn is_structural(&self) -> bool {
+        true
+    }
+
+    fn is_applicable(&self, genome: &NetworkGenome, constraints: &SizeConstraints) -> bool {
+        genome.is_node_level()
+            && genome.seq_len.is_none()
+            && genome.layer_count() < constraints.max_layers
+            && !encoder_decoder_insert_points(genome).is_empty()
+    }
+
+    fn apply(
+        &self,
+        genome: &mut NetworkGenome,
+        constraints: &SizeConstraints,
+        rng: &mut StdRng,
+    ) -> Result<(), MutationError> {
+        let points = encoder_decoder_insert_points(genome);
+        let point = points.choose(rng).cloned().ok_or_else(|| {
+            MutationError::NotApplicable("没有可插入 encoder-decoder block 的空间节点".into())
+        })?;
+
+        let old_genome = genome.clone();
+        let mut counter = make_counter(genome);
+        let mut block_id = next_block_id(genome);
+        let mut new_nodes = Vec::new();
+
+        let pooled_spatial = (point.spatial.0 / 2, point.spatial.1 / 2);
+        let bottleneck_channels = sample_encoder_decoder_channels(point.channels, constraints, rng);
+
+        new_nodes.extend(expand_pool2d(
+            point.after_id,
+            super::gene::PoolType::Max,
+            2,
+            2,
+            point.spatial,
+            point.channels,
+            &mut counter,
+        ));
+        let pool_out = new_nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .ok_or_else(|| MutationError::InternalError("Pool2d 展开结果为空".into()))?;
+
+        new_nodes.extend(expand_conv2d(
+            pool_out,
+            point.channels,
+            bottleneck_channels,
+            3,
+            pooled_spatial,
+            block_id,
+            &mut counter,
+        ));
+        block_id += 1;
+        let bottleneck_out = new_nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .ok_or_else(|| MutationError::InternalError("Bottleneck Conv2d 展开结果为空".into()))?;
+        new_nodes.extend(expand_activation(
+            bottleneck_out,
+            vec![1, bottleneck_channels, pooled_spatial.0, pooled_spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let bottleneck_act = new_nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .ok_or_else(|| MutationError::InternalError("Bottleneck 激活展开结果为空".into()))?;
+
+        new_nodes.extend(expand_conv_transpose2d(
+            bottleneck_act,
+            bottleneck_channels,
+            point.channels,
+            2,
+            2,
+            0,
+            0,
+            pooled_spatial,
+            block_id,
+            &mut counter,
+        ));
+        block_id += 1;
+        let up_out = new_nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .ok_or_else(|| MutationError::InternalError("ConvTranspose2d 展开结果为空".into()))?;
+        new_nodes.extend(expand_activation(
+            up_out,
+            vec![1, point.channels, point.spatial.0, point.spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let up_act = new_nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .ok_or_else(|| MutationError::InternalError("Upsample 激活展开结果为空".into()))?;
+
+        let concat_id = counter.next();
+        new_nodes.push(NodeGene::new(
+            concat_id,
+            NodeTypeDescriptor::Concat { axis: 1 },
+            vec![1, point.channels * 2, point.spatial.0, point.spatial.1],
+            vec![up_act, point.after_id],
+            None,
+        ));
+
+        new_nodes.extend(expand_conv2d(
+            concat_id,
+            point.channels * 2,
+            point.channels,
+            3,
+            point.spatial,
+            block_id,
+            &mut counter,
+        ));
+        let fuse_out = new_nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .ok_or_else(|| MutationError::InternalError("Fuse Conv2d 展开结果为空".into()))?;
+        new_nodes.extend(expand_activation(
+            fuse_out,
+            vec![1, point.channels, point.spatial.0, point.spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+
+        let inserted_count = new_nodes.len() as u64;
+        insert_after(genome, point.after_id, new_nodes).map_err(MutationError::InternalError)?;
+        advance_node_counter(genome, inserted_count);
+        repair_param_input_dims(genome);
+
+        let params = node_param_count(genome);
+        if !genome.analyze().is_valid || params > constraints.max_total_params {
+            *genome = old_genome;
+            return Err(MutationError::ConstraintViolation(format!(
+                "插入 encoder-decoder block 后图不合法或参数量超限: total_params={params}, max={}",
+                constraints.max_total_params
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+fn encoder_decoder_insert_points(genome: &NetworkGenome) -> Vec<EncoderDecoderInsertPoint> {
+    if !genome.is_node_level() || genome.seq_len.is_some() || genome.input_spatial.is_none() {
+        return vec![];
+    }
+
+    let blocks = node_main_path(genome);
+    let mut candidate_ids: Vec<u64> = if blocks.len() > 1 {
+        blocks[..blocks.len() - 1]
+            .iter()
+            .map(|block| block.output_id)
+            .collect()
+    } else {
+        vec![INPUT_INNOVATION]
+    };
+    candidate_ids.sort_unstable();
+    candidate_ids.dedup();
+
+    candidate_ids
+        .into_iter()
+        .filter_map(|after_id| {
+            let shape = node_output_shape_at(genome, after_id);
+            if shape.len() != 4 {
+                return None;
+            }
+            let channels = shape[1];
+            let spatial = (shape[2], shape[3]);
+            if channels == 0
+                || spatial.0 < 4
+                || spatial.1 < 4
+                || spatial.0 % 2 != 0
+                || spatial.1 % 2 != 0
+            {
+                return None;
+            }
+            Some(EncoderDecoderInsertPoint {
+                after_id,
+                channels,
+                spatial,
+            })
+        })
+        .collect()
+}
+
+fn sample_encoder_decoder_channels(
+    input_channels: usize,
+    constraints: &SizeConstraints,
+    rng: &mut StdRng,
+) -> usize {
+    let max_hidden = constraints.max_hidden_size.max(input_channels.max(1));
+    let min = constraints
+        .min_hidden_size
+        .max(input_channels)
+        .max(4)
+        .min(max_hidden);
+    let max = (input_channels * 4).max(min).min(max_hidden);
+    sample_size_in_range(min, max, &constraints.size_strategy, rng)
 }
 
 // ==================== RemoveLayerMutation ====================

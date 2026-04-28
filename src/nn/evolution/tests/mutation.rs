@@ -1,6 +1,7 @@
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
+use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::gene::*;
 use crate::nn::evolution::mutation::*;
 use crate::nn::evolution::node_expansion::{expand_activation, expand_dropout, expand_linear};
@@ -215,6 +216,64 @@ fn test_spatial_insert_layer_keeps_segmentation_shape_domain() {
 
     assert_eq!(genome.input_spatial, Some((8, 8)));
     assert_buildable(&genome);
+}
+
+#[test]
+fn test_insert_encoder_decoder_skip_adds_unet_style_block() {
+    let mut genome = NetworkGenome::minimal_spatial_segmentation(1, 2, (8, 8));
+    let mut rng = rng();
+    let mutation = InsertEncoderDecoderSkipMutation;
+
+    assert!(mutation.is_applicable(&genome, &constraints()));
+    mutation
+        .apply(&mut genome, &constraints(), &mut rng)
+        .unwrap();
+
+    let desc = genome
+        .to_graph_descriptor()
+        .expect("encoder-decoder skip 变异后应能生成 GraphDescriptor");
+    let output_id = desc
+        .explicit_output_ids
+        .as_ref()
+        .and_then(|ids| ids.first())
+        .copied()
+        .expect("segmentation genome 应有显式输出");
+    let output = desc
+        .nodes
+        .iter()
+        .find(|node| node.id == output_id)
+        .expect("显式输出节点应存在");
+
+    assert_eq!(output.output_shape, vec![1, 2, 8, 8]);
+    assert!(
+        desc.nodes.iter().any(|node| matches!(
+            &node.node_type,
+            NodeTypeDescriptor::MaxPool2d { .. } | NodeTypeDescriptor::AvgPool2d { .. }
+        )),
+        "encoder-decoder skip 变异应包含 Pool2d"
+    );
+    assert!(
+        desc.nodes
+            .iter()
+            .any(|node| matches!(&node.node_type, NodeTypeDescriptor::ConvTranspose2d { .. })),
+        "encoder-decoder skip 变异应包含 ConvTranspose2d"
+    );
+    assert!(
+        desc.nodes
+            .iter()
+            .any(|node| matches!(&node.node_type, NodeTypeDescriptor::Concat { axis: 1 })),
+        "encoder-decoder skip 变异应包含 channel 维 Concat"
+    );
+    assert_buildable(&genome);
+}
+
+#[test]
+fn test_segmentation_registry_contains_encoder_decoder_skip_mutation() {
+    let registry = MutationRegistry::phase1_registry(&TaskMetric::MeanIoU, false, true);
+    let names = registry.mutation_names();
+
+    assert!(names.contains(&"InsertEncoderDecoderSkip"));
+    assert!(!names.contains(&"AddFeatureMap"));
 }
 
 #[test]

@@ -11,7 +11,7 @@
 - **feat(evolution): 新增 U-Net-lite benchmark 对齐的分割演化示例**
   - 新增 `examples/evolution/overlapping_shapes_unet_lite_segmentation`，使用同类 64x64 / 4 类 / 0..3 个可重叠形状数据，作为 U-Net-lite 强基线的 evolution 对照
   - 示例默认 segmentation portfolio 已纳入 U-Net-lite encoder-decoder + skip concat 初始族；输出 input / target / prediction 可视化，避免把类别颜色误读成实例 ID
-  - 注册 `cargo run --example evolution_overlapping_shapes_unet_lite_segmentation` 与 `just example-evolution-overlapping-shapes-unet-lite-segmentation`；debug + BLAS 下最新复测约 20.0 秒达到 Mean IoU 53.3%
+  - 注册 `cargo run --example evolution_overlapping_shapes_unet_lite_segmentation` 与 `just example-evolution-overlapping-shapes-unet-lite-segmentation`；默认 target Mean IoU 提升到 0.60，并新增 `ONLY_TORCH_EVOLUTION_UNET_LITE_SEED`、`ONLY_TORCH_EVOLUTION_UNET_LITE_TARGET`、`ONLY_TORCH_EVOLUTION_UNET_LITE_SAVE_ARTIFACTS=0` 便于稳定性复核
 
 ### Changed
 
@@ -22,6 +22,9 @@
 - **feat(evolution): 迁移 P5-lite 审计到 Segmentation evolution**
   - segmentation 默认启用最小分割头、`spatial_segmentation_tiny` 与 `spatial_segmentation_unet_lite` 初始候选族，并接入 family-diverse P5-lite 预筛
   - 候选族统计改为通用计数容器；`dense_seg_head` / `dense_seg_deep` / `encoder_decoder_seg` 作为内部候选族继续服务 `eval-family` 与 `p5-lite-family` 观测
+  - segmentation Phase 1/2 注册 `InsertEncoderDecoderSkipMutation`，一次性插入 `Pool2d -> Conv2d -> ConvTranspose2d -> Concat(skip) -> Conv2d`，让 U-Net/FPN 风格结构能通过 mutation 进入搜索
+  - `NodeBlockKind` 补齐 `ConvTranspose2d` 识别与参数维度修复，`SkipAgg` 的通道数级联改为读取实际推导形状，避免 concat 后 fuse conv 输入通道被误修回单分支通道
+  - `evolution_overlapping_shapes_unet_lite_segmentation` 在 target Mean IoU 0.60 下完成 5-seed 稳定性验证：seed 1..5 全部 `TargetReached`，Mean IoU 为 93.3% / 98.4% / 90.3% / 77.1% / 63.0%
   - `loss_var.backward()` 计时拆分为 `backward_total`、`backward_forward`、`backward_propagate`，BCEWithLogits 前向改为单次扫描生成 sigmoid 缓存与稳定 loss，并移除 target 缓存 clone
   - `Conv2d` forward 对 padding 为 0 的 1x1 / valid conv 不再深拷贝输入作为 `padded_input`，减少 dense segmentation head 的无效内存拷贝
   - `evolution_overlapping_shapes_semantic_segmentation` 示例移除默认强制 verbose 审计日志；本轮 debug + BLAS 最新单次复验约 2.9 秒达到 Mean IoU 63.0%

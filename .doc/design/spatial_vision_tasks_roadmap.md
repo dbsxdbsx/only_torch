@@ -94,7 +94,7 @@ graph TD
 |---|---|---|---|
 | P0 | 建立空间视觉任务路线图 | `[x]` | 统一术语、任务边界和能力矩阵 |
 | P1 | Segmentation v2 数据与指标 | `[~]` | 已有 overlapping shapes benchmark、U-Net-lite 强基线和 Mean IoU / Dice；下一步扩大数据规模与难度 |
-| P2 | Segmentation Evolution | `[~]` | 已有 spatial-to-spatial minimal genome、dense + encoder-decoder segmentation portfolio 与 P5-lite/timing 审计；`evolution_overlapping_shapes_unet_lite_segmentation` 最新 debug + BLAS 复测约 20.0s 达到 Mean IoU 53.3% |
+| P2 | Segmentation Evolution | `[x]` | 已有 spatial-to-spatial minimal genome、dense + encoder-decoder segmentation portfolio、`InsertEncoderDecoderSkip` 结构变异与 P5-lite/timing 审计；`evolution_overlapping_shapes_unet_lite_segmentation` 在 target Mean IoU 0.60 下完成 5-seed 稳定性验证，seed 1..5 全部 `TargetReached` |
 | P3 | FCN / U-Net 风格传统强基线 | `[x]` | `overlapping_shapes_unet_lite_segmentation` 在 debug + BLAS 下约 27.4s 达到 Mean IoU 75.6%，可作为后续 Segmentation Evolution 对照 |
 | P4 | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
 | P5 | 多输出 / 多头 Evolution | `[ ]` | 支持 detection + mask 等多任务输出与 loss 聚合 |

@@ -65,6 +65,9 @@ pub enum NodeBlockKind {
         out_channels: usize,
         kernel_size: usize,
     },
+    ConvTranspose2d {
+        out_channels: usize,
+    },
     Pool2d {
         pool_type: PoolType,
         kernel_size: usize,
@@ -344,6 +347,12 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
             .map(|n| matches!(n.node_type, NT::Conv2d { .. }))
             .unwrap_or(false)
     });
+    let has_deconv = node_ids.iter().any(|&id| {
+        node_map
+            .get(&id)
+            .map(|n| matches!(n.node_type, NT::ConvTranspose2d { .. }))
+            .unwrap_or(false)
+    });
 
     if has_matmul {
         // 通过 MatMul 节点的父节点关系精确定位 W 参数
@@ -381,6 +390,28 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
                                     return NodeBlockKind::Conv2d {
                                         out_channels: p.output_shape[0],
                                         kernel_size: p.output_shape[2],
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if has_deconv {
+        // ConvTranspose2d kernel 形状为 [in_channels, out_channels, k, k]
+        let bid_set_deconv: HashSet<u64> = node_ids.iter().copied().collect();
+        for &id in node_ids {
+            if let Some(n) = node_map.get(&id) {
+                if matches!(n.node_type, NT::ConvTranspose2d { .. }) {
+                    for &pid in &n.parents {
+                        if bid_set_deconv.contains(&pid) {
+                            if let Some(p) = node_map.get(&pid) {
+                                if p.is_parameter() && p.output_shape.len() == 4 {
+                                    return NodeBlockKind::ConvTranspose2d {
+                                        out_channels: p.output_shape[1],
                                     };
                                 }
                             }
@@ -753,6 +784,38 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 }
                 dim_map.insert(block.output_id, out);
             }
+            NodeBlockKind::ConvTranspose2d { out_channels, .. } => {
+                let out = *out_channels;
+                let kernel_id: Option<u64> = {
+                    let nodes = genome.nodes();
+                    nodes
+                        .iter()
+                        .find(|n| {
+                            bid_set.contains(&n.innovation_number)
+                                && matches!(n.node_type, NodeTypeDescriptor::ConvTranspose2d { .. })
+                        })
+                        .and_then(|deconv| {
+                            deconv.parents.iter().find(|&&pid| {
+                                bid_set.contains(&pid)
+                                    && nodes
+                                        .iter()
+                                        .any(|n| n.innovation_number == pid && n.is_parameter())
+                            })
+                        })
+                        .copied()
+                };
+                if let Some(kid) = kernel_id {
+                    for node in genome.nodes_mut().iter_mut() {
+                        if node.innovation_number == kid && node.output_shape.len() == 4 {
+                            // ConvTranspose2d kernel: [old_in_ch, out_ch, k, k]
+                            node.output_shape[0] = prev_out;
+                            node.output_shape[1] = out;
+                            break;
+                        }
+                    }
+                }
+                dim_map.insert(block.output_id, out);
+            }
             NodeBlockKind::Rnn {
                 hidden_size,
                 return_sequences: _,
@@ -890,7 +953,21 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 }
                 dim_map.insert(block.output_id, prev_out);
             }
-            // Pool2d、Activation、Dropout、SkipAgg 不改变通道/特征维度，透传 prev_out
+            NodeBlockKind::SkipAgg => {
+                sync_computation_shapes(genome);
+                let analysis = GenomeAnalysis::compute(
+                    genome.nodes(),
+                    INPUT_INNOVATION,
+                    genome_input_shape(genome),
+                    genome_input_domain(genome),
+                );
+                let out = analysis
+                    .shape_of(block.output_id)
+                    .and_then(|s| s.get(1).copied())
+                    .unwrap_or(prev_out);
+                dim_map.insert(block.output_id, out);
+            }
+            // Pool2d、Activation、Dropout 不改变通道/特征维度，透传 prev_out
             _ => {
                 dim_map.insert(block.output_id, prev_out);
             }

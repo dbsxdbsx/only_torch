@@ -8,6 +8,7 @@ use only_torch::data::SyntheticRng;
 use only_torch::metrics::{mean_iou, per_class_iou, semantic_pixel_accuracy};
 use only_torch::nn::evolution::{Evolution, ReportMetric, TaskMetric};
 use only_torch::tensor::Tensor;
+use std::env;
 use std::error::Error;
 use std::time::Instant;
 
@@ -18,10 +19,18 @@ const TRAIN_SAMPLES: usize = 32;
 const TEST_SAMPLES: usize = 12;
 const BATCH_SIZE: usize = 8;
 const OVERLAY_SCALE: u32 = 5;
-const TARGET_MEAN_IOU: f32 = 0.50;
+const TARGET_MEAN_IOU: f32 = 0.60;
+const DEFAULT_EVOLUTION_SEED: u64 = 42;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let total_start = Instant::now();
+    let evolution_seed = env_u64(
+        "ONLY_TORCH_EVOLUTION_UNET_LITE_SEED",
+        DEFAULT_EVOLUTION_SEED,
+    );
+    let target_mean_iou = env_f32("ONLY_TORCH_EVOLUTION_UNET_LITE_TARGET", TARGET_MEAN_IOU);
+    let save_artifacts = env_bool("ONLY_TORCH_EVOLUTION_UNET_LITE_SAVE_ARTIFACTS", true);
+
     println!("=== Overlapping Shapes U-Net-lite Benchmark Evolution 示例 ===\n");
 
     let train = generate_dataset(TRAIN_SAMPLES, 42);
@@ -36,12 +45,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("指标: MeanIoU，传统对照: overlapping_shapes_unet_lite_segmentation");
     println!("范围: 对齐同一 benchmark，并纳入 U-Net-lite encoder-decoder 初始族");
     println!("演化策略: segmentation portfolio + encoder-decoder family-diverse P5-lite");
-    println!("训练样本: {TRAIN_SAMPLES}, 测试样本: {TEST_SAMPLES}, batch: {BATCH_SIZE}\n");
+    println!("训练样本: {TRAIN_SAMPLES}, 测试样本: {TEST_SAMPLES}, batch: {BATCH_SIZE}");
+    println!("演化 seed: {evolution_seed}, target Mean IoU: {target_mean_iou:.2}\n");
 
     let result = Evolution::supervised(train_data, test_data, TaskMetric::MeanIoU)
-        .with_target_metric(TARGET_MEAN_IOU)
+        .with_target_metric(target_mean_iou)
         .with_report_metrics([ReportMetric::PixelAccuracy, ReportMetric::MeanIoU])
-        .with_seed(42)
+        .with_seed(evolution_seed)
         .with_max_generations(3)
         .with_population_size(4)
         .with_offspring_batch_size(4)
@@ -75,14 +85,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{}: {:.1}%", class_name(class_idx), value.percent());
     }
 
-    save_sample_visualizations(&test, sample_idx, &pred)?;
+    if save_artifacts {
+        save_sample_visualizations(&test, sample_idx, &pred)?;
 
-    let vis = result.visualize(
-        "examples/evolution/overlapping_shapes_unet_lite_segmentation/evolution_overlapping_shapes_unet_lite_segmentation",
-    )?;
-    println!("\n计算图已保存: {}", vis.dot_path.display());
-    if let Some(img) = &vis.image_path {
-        println!("可视化图像: {}", img.display());
+        let vis = result.visualize(
+            "examples/evolution/overlapping_shapes_unet_lite_segmentation/evolution_overlapping_shapes_unet_lite_segmentation",
+        )?;
+        println!("\n计算图已保存: {}", vis.dot_path.display());
+        if let Some(img) = &vis.image_path {
+            println!("可视化图像: {}", img.display());
+        }
+    } else {
+        println!("\n已跳过图片和 Graphviz 产物保存");
     }
 
     println!(
@@ -91,6 +105,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     Ok(())
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
+fn env_f32(name: &str, default: f32) -> f32 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .unwrap_or(default)
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
+    env::var(name)
+        .ok()
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(default)
 }
 
 struct SegmentationDataset {
