@@ -208,7 +208,7 @@ example-moving-sac:
 # ---------- Evolution（神经架构自动演化）----------
 
 # 运行所有 evolution examples
-examples-evolution: example-evolution-xor example-evolution-iris example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-mnist example-evolution-overlapping-shapes-semantic-segmentation example-evolution-overlapping-shapes-unet-lite-segmentation
+examples-evolution: example-evolution-xor example-evolution-iris example-evolution-multi-head-quadrant-radius example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-mnist example-evolution-overlapping-shapes-semantic-segmentation example-evolution-overlapping-shapes-unet-lite-segmentation
 
 example-evolution-xor:
     @echo "=== Running Evolution XOR [{{_blas_name}}] ==="
@@ -217,6 +217,10 @@ example-evolution-xor:
 example-evolution-iris:
     @echo "=== Running Evolution Iris (mini-batch) [{{_blas_name}}] ==="
     cargo run --example evolution_iris {{_blas_flag}}
+
+example-evolution-multi-head-quadrant-radius:
+    @echo "=== Running Evolution Multi-head Quadrant + Radius [{{_blas_name}}] ==="
+    cargo run --example evolution_multi_head_quadrant_radius {{_blas_flag}}
 
 example-evolution-parity-seq:
     @echo "=== Running Evolution Parity Seq (fixed length) [{{_blas_name}}] ==="

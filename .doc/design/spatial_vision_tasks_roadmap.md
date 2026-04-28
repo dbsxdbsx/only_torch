@@ -83,7 +83,7 @@ graph TD
 | Tracking | 单 / 多目标跟踪 | `[ ]` | 暂无 | 需要视频数据、track id、跨帧关联指标 |
 | Pose | 关键点检测 | `[ ]` | 暂无 | 需要 heatmap 或关键点回归头与 OKS 类指标 |
 | Depth / 3D | 深度估计 / 3D 感知 | `[ ]` | 暂无 | 需要深度图、相机模型或点云表示 |
-| Unified | 多头视觉模型 | `[~]` | 传统 API 已有多输入 / 多输出示例 | Evolution 仍未支持多输出任务聚合 |
+| Unified | 多头视觉模型 | `[~]` | 传统 API 已有多输入 / 多输出示例；Evolution 已支持固定数量命名 head 的平坦 supervised 多头任务、逐 head loss/metric 聚合与选择性推理，并新增 `evolution_multi_head_quadrant_radius` 示例 | 空间 / 序列多头、检测变长实例、matching、NMS 与 mAP 尚未支持 |
 | Unified | Mask R-CNN / YOLO-seg-lite | `[ ]` | 暂无原生实现 | 依赖检测头、mask 头、多输出 loss 和实例匹配 |
 
 ## 近期路线
@@ -97,7 +97,7 @@ graph TD
 | P2 | Segmentation Evolution | `[x]` | 已有 spatial-to-spatial minimal genome、dense + encoder-decoder segmentation portfolio、`InsertEncoderDecoderSkip` 结构变异与 P5-lite/timing 审计；`evolution_overlapping_shapes_unet_lite_segmentation` 在 target Mean IoU 0.60 下完成 5-seed 稳定性验证，seed 1..5 全部 `TargetReached` |
 | P3 | FCN / U-Net 风格传统强基线 | `[x]` | `overlapping_shapes_unet_lite_segmentation` 在 debug + BLAS 下约 27.4s 达到 Mean IoU 75.6%，可作为后续 Segmentation Evolution 对照 |
 | P4 | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
-| P5 | 多输出 / 多头 Evolution | `[ ]` | 支持 detection + mask 等多任务输出与 loss 聚合 |
+| P5 | 多输出 / 多头 Evolution | `[~]` | P3 第一阶段已支持平坦共享输入的固定多头 supervised evolution；后续扩展到 detection + mask 等空间多任务输出与实例级指标 |
 | P6 | Instance Segmentation Lite | `[ ]` | 从固定 slot 过渡到可变实例、matching 和实例级指标 |
 | P7 | Tracking / Panoptic / 3D | `[ ]` | 作为远期路线，等基础视觉任务稳定后再进入 |
 

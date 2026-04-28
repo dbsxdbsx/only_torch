@@ -202,6 +202,15 @@ impl MetricReport {
     }
 }
 
+/// 单个输出 head 的评估报告。
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HeadMetricReport {
+    pub head_name: String,
+    pub primary: f32,
+    pub tiebreak_loss: Option<f32>,
+    pub report: MetricReport,
+}
+
 fn push_report_metric(
     metrics: &mut Vec<ReportMetric>,
     task_metric: &TaskMetric,
@@ -263,6 +272,9 @@ pub struct FitnessScore {
     /// 附加评估指标报告。仅用于可观测性，不参与选择或收敛判断。
     #[serde(default)]
     pub report: MetricReport,
+    /// 多头任务的逐 head 指标报告。单头旧任务默认为空，保持兼容。
+    #[serde(default)]
+    pub head_reports: Vec<HeadMetricReport>,
 }
 
 // ==================== ProxyKind & TrainOutcome（F3）====================
@@ -414,6 +426,127 @@ pub trait EvolutionTask {
     }
 }
 
+// ==================== SupervisedSpec / HeadSpec ====================
+
+/// 监督学习任务配置：共享 inputs，一个或多个命名输出 head。
+///
+/// 第一阶段只支持每个 head 的 targets 与共享 inputs 样本一一对齐；
+/// 不支持不同 head 使用不同 input dataset 或缺标注 masking。
+#[derive(Clone)]
+pub struct SupervisedSpec {
+    pub(crate) train_inputs: Vec<Tensor>,
+    pub(crate) test_inputs: Vec<Tensor>,
+    pub(crate) heads: Vec<HeadSpec>,
+    primary_head: Option<String>,
+}
+
+impl SupervisedSpec {
+    pub fn new(train_inputs: Vec<Tensor>, test_inputs: Vec<Tensor>) -> Self {
+        Self {
+            train_inputs,
+            test_inputs,
+            heads: Vec::new(),
+            primary_head: None,
+        }
+    }
+
+    pub fn head_targets(
+        mut self,
+        name: impl Into<String>,
+        train_targets: Vec<Tensor>,
+        test_targets: Vec<Tensor>,
+        metric: TaskMetric,
+    ) -> Self {
+        let is_first = self.heads.is_empty();
+        self.heads.push(HeadSpec {
+            name: name.into(),
+            train_targets,
+            test_targets,
+            metric,
+            loss_weight: 1.0,
+            metric_weight: 1.0,
+            inference: is_first,
+            primary: is_first,
+            loss_override: None,
+        });
+        self
+    }
+
+    pub fn primary_head(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        for head in &mut self.heads {
+            let is_primary = head.name == name;
+            head.primary = is_primary;
+            if is_primary {
+                head.inference = true;
+            }
+        }
+        self.primary_head = Some(name);
+        self
+    }
+
+    pub fn with_head_loss_weight(mut self, name: &str, weight: f32) -> Self {
+        for head in &mut self.heads {
+            if head.name == name {
+                head.loss_weight = weight;
+            }
+        }
+        self
+    }
+
+    pub fn with_head_metric_weight(mut self, name: &str, weight: f32) -> Self {
+        for head in &mut self.heads {
+            if head.name == name {
+                head.metric_weight = weight;
+            }
+        }
+        self
+    }
+
+    pub fn with_head_inference(mut self, name: &str, inference: bool) -> Self {
+        for head in &mut self.heads {
+            if head.name == name {
+                head.inference = inference;
+            }
+        }
+        self
+    }
+}
+
+/// 单个 supervised 输出 head 的配置。
+#[derive(Clone)]
+pub struct HeadSpec {
+    pub name: String,
+    pub train_targets: Vec<Tensor>,
+    pub test_targets: Vec<Tensor>,
+    pub metric: TaskMetric,
+    pub loss_weight: f32,
+    pub metric_weight: f32,
+    pub inference: bool,
+    pub primary: bool,
+    pub loss_override: Option<LossType>,
+}
+
+#[derive(Clone)]
+pub(crate) struct MaterializedHead {
+    pub name: String,
+    pub metric: TaskMetric,
+    pub output_dim: usize,
+    pub loss_weight: f32,
+    pub metric_weight: f32,
+    pub inference: bool,
+    pub primary: bool,
+    pub loss_override: Option<LossType>,
+}
+
+#[derive(Clone)]
+struct SupervisedHeadRuntime {
+    meta: MaterializedHead,
+    train_y: Arc<Tensor>,
+    test_y: Arc<Tensor>,
+    report_metrics: Vec<ReportMetric>,
+}
+
 // ==================== SupervisedTask ====================
 
 /// 监督学习任务
@@ -428,11 +561,8 @@ pub trait EvolutionTask {
 #[derive(Clone)]
 pub struct SupervisedTask {
     train_x: Arc<Tensor>, // [n, input_dim] / [n, seq_len, input_dim] / [n, C, H, W]
-    train_y: Arc<Tensor>, // [n, output_dim]
     test_x: Arc<Tensor>,  // 同 train_x
-    test_y: Arc<Tensor>,  // 同 train_y
-    metric: TaskMetric,
-    report_metrics: Vec<ReportMetric>,
+    heads: Vec<SupervisedHeadRuntime>,
     batch_size: Option<usize>, // None = 自动策略，Some = 显式指定
     /// F3: 学习速度代理类型（None = 关闭，不记录 loss 轨迹）
     proxy_kind: Option<ProxyKind>,
@@ -447,35 +577,33 @@ impl SupervisedTask {
         test_data: (Vec<Tensor>, Vec<Tensor>),
         metric: TaskMetric,
     ) -> Result<Self, EvolutionError> {
-        if train_data.0.is_empty() {
+        let spec = SupervisedSpec::new(train_data.0, test_data.0)
+            .head_targets("output", train_data.1, test_data.1, metric)
+            .primary_head("output");
+        Self::from_spec(spec)
+    }
+
+    pub fn from_spec(spec: SupervisedSpec) -> Result<Self, EvolutionError> {
+        if spec.train_inputs.is_empty() {
             return Err(EvolutionError::InvalidData("训练输入不能为空".into()));
         }
-        if train_data.0.len() != train_data.1.len() {
-            return Err(EvolutionError::InvalidData(format!(
-                "训练输入({})和标签({})数量不匹配",
-                train_data.0.len(),
-                train_data.1.len()
-            )));
-        }
-        if test_data.0.is_empty() {
+        if spec.test_inputs.is_empty() {
             return Err(EvolutionError::InvalidData("测试输入不能为空".into()));
         }
-        if test_data.0.len() != test_data.1.len() {
-            return Err(EvolutionError::InvalidData(format!(
-                "测试输入({})和标签({})数量不匹配",
-                test_data.0.len(),
-                test_data.1.len()
-            )));
+        if spec.heads.is_empty() {
+            return Err(EvolutionError::InvalidData(
+                "监督任务至少需要一个 head".into(),
+            ));
         }
 
         // 根据样本维度分类处理
-        let sample_ndim = train_data.0[0].dimension();
+        let sample_ndim = spec.train_inputs[0].dimension();
         let (train_x_stacked, test_x_stacked) = if sample_ndim == 2 {
             // 序列数据 [seq_len, input_dim]：变长零填充至最大长度
-            let max_seq = train_data
-                .0
+            let max_seq = spec
+                .train_inputs
                 .iter()
-                .chain(test_data.0.iter())
+                .chain(spec.test_inputs.iter())
                 .map(|t| t.shape()[0])
                 .max()
                 .unwrap();
@@ -493,8 +621,8 @@ impl SupervisedTask {
                     })
                     .collect()
             };
-            let padded_train = pad_to_max(&train_data.0);
-            let padded_test = pad_to_max(&test_data.0);
+            let padded_train = pad_to_max(&spec.train_inputs);
+            let padded_test = pad_to_max(&spec.test_inputs);
             let tr_refs: Vec<&Tensor> = padded_train.iter().collect();
             let te_refs: Vec<&Tensor> = padded_test.iter().collect();
             (Tensor::stack(&tr_refs, 0), Tensor::stack(&te_refs, 0))
@@ -502,23 +630,86 @@ impl SupervisedTask {
             // 平坦数据 [input_dim] → [n, input_dim]
             // 空间数据 [C, H, W] → [n, C, H, W]
             // 两者均可通过 stack(dim=0) 统一处理
-            let tr_refs: Vec<&Tensor> = train_data.0.iter().collect();
-            let te_refs: Vec<&Tensor> = test_data.0.iter().collect();
+            let tr_refs: Vec<&Tensor> = spec.train_inputs.iter().collect();
+            let te_refs: Vec<&Tensor> = spec.test_inputs.iter().collect();
             (Tensor::stack(&tr_refs, 0), Tensor::stack(&te_refs, 0))
         };
 
-        let train_y_refs: Vec<&Tensor> = train_data.1.iter().collect();
-        let test_y_refs: Vec<&Tensor> = test_data.1.iter().collect();
-
-        let report_metrics = ReportMetric::defaults_for_task(&metric);
+        let mut names = std::collections::HashSet::new();
+        let mut heads = Vec::with_capacity(spec.heads.len());
+        for mut head in spec.heads {
+            if head.name.is_empty() {
+                return Err(EvolutionError::InvalidData("head name 不能为空".into()));
+            }
+            if !names.insert(head.name.clone()) {
+                return Err(EvolutionError::InvalidData(format!(
+                    "重复的 head name: {}",
+                    head.name
+                )));
+            }
+            if head.train_targets.len() != spec.train_inputs.len() {
+                return Err(EvolutionError::InvalidData(format!(
+                    "head '{}' 训练 target 和输入数量不匹配：target={}, input={}",
+                    head.name,
+                    head.train_targets.len(),
+                    spec.train_inputs.len()
+                )));
+            }
+            if head.test_targets.len() != spec.test_inputs.len() {
+                return Err(EvolutionError::InvalidData(format!(
+                    "head '{}' 测试 target 和输入数量不匹配：target={}, input={}",
+                    head.name,
+                    head.test_targets.len(),
+                    spec.test_inputs.len()
+                )));
+            }
+            if !head.loss_weight.is_finite() || head.loss_weight < 0.0 {
+                head.loss_weight = 1.0;
+            }
+            if !head.metric_weight.is_finite() || head.metric_weight < 0.0 {
+                head.metric_weight = 1.0;
+            }
+            let output_dim = if head.metric.is_segmentation() {
+                head.train_targets[0].shape()[0]
+            } else {
+                head.train_targets[0].size()
+            };
+            if let Some(loss) = &head.loss_override {
+                if !compatible_losses(&head.metric, output_dim).contains(loss) {
+                    return Err(EvolutionError::InvalidData(format!(
+                        "head '{}' 的 loss_override {:?} 与 metric {:?} / output_dim {} 不兼容",
+                        head.name, loss, head.metric, output_dim
+                    )));
+                }
+            }
+            let train_refs: Vec<&Tensor> = head.train_targets.iter().collect();
+            let test_refs: Vec<&Tensor> = head.test_targets.iter().collect();
+            let report_metrics = ReportMetric::defaults_for_task(&head.metric);
+            heads.push(SupervisedHeadRuntime {
+                meta: MaterializedHead {
+                    name: head.name,
+                    metric: head.metric,
+                    output_dim,
+                    loss_weight: head.loss_weight,
+                    metric_weight: head.metric_weight,
+                    inference: head.inference,
+                    primary: head.primary,
+                    loss_override: head.loss_override,
+                },
+                train_y: Arc::new(Tensor::stack(&train_refs, 0)),
+                test_y: Arc::new(Tensor::stack(&test_refs, 0)),
+                report_metrics,
+            });
+        }
+        if !heads.iter().any(|head| head.meta.primary) {
+            heads[0].meta.primary = true;
+            heads[0].meta.inference = true;
+        }
 
         Ok(Self {
             train_x: Arc::new(train_x_stacked),
-            train_y: Arc::new(Tensor::stack(&train_y_refs, 0)),
             test_x: Arc::new(test_x_stacked),
-            test_y: Arc::new(Tensor::stack(&test_y_refs, 0)),
-            metric,
-            report_metrics,
+            heads,
             batch_size: None,
             proxy_kind: None,
         })
@@ -526,7 +717,7 @@ impl SupervisedTask {
 
     /// 获取任务指标类型
     pub fn metric(&self) -> &TaskMetric {
-        &self.metric
+        &self.primary_head().meta.metric
     }
 
     /// 显式设置 batch size（覆盖自动策略）
@@ -552,7 +743,22 @@ impl SupervisedTask {
 
     /// 获取当前报告指标配置。
     pub fn report_metrics(&self) -> &[ReportMetric] {
-        &self.report_metrics
+        &self.primary_head().report_metrics
+    }
+
+    pub(crate) fn head_metas(&self) -> Vec<MaterializedHead> {
+        self.heads.iter().map(|head| head.meta.clone()).collect()
+    }
+
+    pub(crate) fn train_len(&self) -> usize {
+        self.train_x.shape()[0]
+    }
+
+    fn primary_head(&self) -> &SupervisedHeadRuntime {
+        self.heads
+            .iter()
+            .find(|head| head.meta.primary)
+            .unwrap_or(&self.heads[0])
     }
 
     /// 解析实际使用的 batch size
@@ -581,20 +787,23 @@ impl EvolutionTask for SupervisedTask {
         );
 
         // debug 模式下验证 loss_override 兼容性（正常演化路径由 MutateLossFunctionMutation 保障）
-        debug_assert!(
-            genome
-                .training_config
-                .loss_override
-                .as_ref()
-                .map_or(true, |loss| {
-                    compatible_losses(&self.metric, genome.output_dim).contains(loss)
-                }),
-            "loss_override {:?} 与当前任务不兼容（metric={:?}, output_dim={}，兼容列表={:?}）",
-            genome.training_config.loss_override,
-            self.metric,
-            genome.output_dim,
-            compatible_losses(&self.metric, genome.output_dim)
-        );
+        for head in &self.heads {
+            debug_assert!(
+                genome
+                    .training_config
+                    .loss_override
+                    .as_ref()
+                    .map_or(true, |loss| {
+                        compatible_losses(&head.meta.metric, head.meta.output_dim).contains(loss)
+                    }),
+                "loss_override {:?} 与 head '{}' 不兼容（metric={:?}, output_dim={}，兼容列表={:?}）",
+                genome.training_config.loss_override,
+                head.meta.name,
+                head.meta.metric,
+                head.meta.output_dim,
+                compatible_losses(&head.meta.metric, head.meta.output_dim)
+            );
+        }
 
         let mut timing = TrainTiming::default();
         let setup_start = Instant::now();
@@ -604,9 +813,27 @@ impl EvolutionTask for SupervisedTask {
         let bs = self.effective_batch_size(genome, n_samples);
 
         // target / loss / optimizer 各创建一次，不在 epoch 内重建
-        let target = build.graph.target(self.train_y.shape())?;
-        let loss_type = genome.effective_loss(&self.metric);
-        let loss_var = create_loss_var(&build.output, &target, &loss_type)?;
+        let target_vars: Vec<Var> = self
+            .heads
+            .iter()
+            .map(|head| build.graph.target(head.train_y.shape()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let loss_vars = self
+            .heads
+            .iter()
+            .enumerate()
+            .map(|(idx, head)| {
+                let output = build.outputs.get(idx).ok_or_else(|| {
+                    GraphError::ComputationError(format!(
+                        "缺少 head '{}' 对应的输出节点",
+                        head.meta.name
+                    ))
+                })?;
+                let loss_type = head_loss_type(genome, &head.meta);
+                create_weighted_loss(output, &target_vars[idx], &loss_type, head.meta.loss_weight)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let loss_var = aggregate_loss_vars(loss_vars)?;
 
         let params = build.all_parameters();
         let lr = genome.training_config.learning_rate;
@@ -626,7 +853,9 @@ impl EvolutionTask for SupervisedTask {
             // ====== Full-batch 路径 ======
             let set_start = Instant::now();
             build.input.set_value(&self.train_x)?;
-            target.set_value(&self.train_y)?;
+            for (target, head) in target_vars.iter().zip(&self.heads) {
+                target.set_value(&head.train_y)?;
+            }
             timing.set_value += set_start.elapsed();
 
             for epoch in 0.. {
@@ -657,21 +886,32 @@ impl EvolutionTask for SupervisedTask {
                 let shuffle_seed: u64 = rng.r#gen();
                 let shuffle_start = Instant::now();
                 let mut shuffled_x = self.train_x.as_ref().clone();
-                let mut shuffled_y = self.train_y.as_ref().clone();
+                let mut shuffled_ys: Vec<Tensor> = self
+                    .heads
+                    .iter()
+                    .map(|head| head.train_y.as_ref().clone())
+                    .collect();
                 shuffled_x.shuffle_mut_seeded(Some(0), shuffle_seed);
-                shuffled_y.shuffle_mut_seeded(Some(0), shuffle_seed);
+                for shuffled_y in &mut shuffled_ys {
+                    shuffled_y.shuffle_mut_seeded(Some(0), shuffle_seed);
+                }
                 timing.shuffle += shuffle_start.elapsed();
 
                 while offset < n_samples {
                     let end = (offset + bs).min(n_samples);
                     let slice_start = Instant::now();
                     let batch_x = shuffled_x.narrow(0, offset, end - offset);
-                    let batch_y = shuffled_y.narrow(0, offset, end - offset);
+                    let batch_ys: Vec<Tensor> = shuffled_ys
+                        .iter()
+                        .map(|y| y.narrow(0, offset, end - offset))
+                        .collect();
                     timing.batch_slice += slice_start.elapsed();
 
                     let set_start = Instant::now();
                     build.input.set_value(&batch_x)?;
-                    target.set_value(&batch_y)?;
+                    for (target, batch_y) in target_vars.iter().zip(&batch_ys) {
+                        target.set_value(batch_y)?;
+                    }
                     timing.set_value += set_start.elapsed();
 
                     let loss_val = train_one_batch(&mut *optimizer, &loss_var, &mut timing)?;
@@ -720,8 +960,10 @@ impl EvolutionTask for SupervisedTask {
     }
 
     fn configure_report_metrics(&mut self, metrics: &[ReportMetric]) {
-        for &metric in metrics {
-            push_report_metric(&mut self.report_metrics, &self.metric, metric);
+        for head in &mut self.heads {
+            for &metric in metrics {
+                push_report_metric(&mut head.report_metrics, &head.meta.metric, metric);
+            }
         }
     }
 
@@ -730,11 +972,19 @@ impl EvolutionTask for SupervisedTask {
         genome: &NetworkGenome,
         build: &BuildResult,
     ) -> Option<Var> {
-        let loss_type = genome.effective_loss(&self.metric);
-        // 用 output 的预期形状创建 target（仅拓扑，无需实际数据）
-        let output_shape = build.output.value_expected_shape();
-        let target = build.graph.target(&output_shape).ok()?;
-        create_loss_var(&build.output, &target, &loss_type).ok()
+        let losses = self
+            .heads
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, head)| {
+                let output = build.outputs.get(idx)?;
+                let output_shape = output.value_expected_shape();
+                let target = build.graph.target(&output_shape).ok()?;
+                let loss_type = head_loss_type(genome, &head.meta);
+                create_weighted_loss(output, &target, &loss_type, head.meta.loss_weight).ok()
+            })
+            .collect::<Vec<_>>();
+        aggregate_loss_vars(losses).ok()
     }
 
     fn evaluate(
@@ -748,39 +998,102 @@ impl EvolutionTask for SupervisedTask {
         build.input.set_value(&self.test_x)?;
 
         // 创建 target + loss 用于计算 tiebreak（eval 专用节点）
-        let loss_type = genome.effective_loss(&self.metric);
-        let target = build.graph.target(self.test_y.shape())?;
-        target.set_value(&self.test_y)?;
-        let loss_var = create_loss_var(&build.output, &target, &loss_type)?;
+        let target_vars: Vec<Var> = self
+            .heads
+            .iter()
+            .map(|head| build.graph.target(head.test_y.shape()))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (target, head) in target_vars.iter().zip(&self.heads) {
+            target.set_value(&head.test_y)?;
+        }
+        let loss_vars = self
+            .heads
+            .iter()
+            .enumerate()
+            .map(|(idx, head)| {
+                let output = build.outputs.get(idx).ok_or_else(|| {
+                    GraphError::ComputationError(format!(
+                        "缺少 head '{}' 对应的输出节点",
+                        head.meta.name
+                    ))
+                })?;
+                let loss_type = head_loss_type(genome, &head.meta);
+                create_weighted_loss(output, &target_vars[idx], &loss_type, head.meta.loss_weight)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let loss_var = aggregate_loss_vars(loss_vars)?;
 
         build.graph.forward(&loss_var)?;
 
-        let predictions = build
-            .output
-            .value()?
-            .ok_or_else(|| GraphError::ComputationError("评估时输出节点无值".into()))?;
         let test_loss_tensor = loss_var
             .value()?
             .ok_or_else(|| GraphError::ComputationError("评估时 loss 节点无值".into()))?;
         let test_loss_scalar = test_loss_tensor.to_vec()[0];
 
-        let primary = compute_primary_metric(
-            &self.metric,
-            &predictions,
-            &self.test_y,
-            genome.output_dim,
-            &loss_type,
-        );
-        let report = compute_metric_report(
-            &self.metric,
-            &self.report_metrics,
-            &predictions,
-            &self.test_y,
-            genome.output_dim,
-            &loss_type,
-        );
+        let mut head_reports = Vec::with_capacity(self.heads.len());
+        let mut weighted_sum = 0.0;
+        let mut weight_sum = 0.0;
+        let mut primary_value = None;
+        for (idx, head) in self.heads.iter().enumerate() {
+            let output = build.outputs.get(idx).ok_or_else(|| {
+                GraphError::ComputationError(format!(
+                    "缺少 head '{}' 对应的输出节点",
+                    head.meta.name
+                ))
+            })?;
+            let predictions = output
+                .value()?
+                .ok_or_else(|| GraphError::ComputationError("评估时输出节点无值".into()))?;
+            let loss_type = head_loss_type(genome, &head.meta);
+            let head_primary = compute_primary_metric(
+                &head.meta.metric,
+                &predictions,
+                &head.test_y,
+                head.meta.output_dim,
+                &loss_type,
+            );
+            let report = compute_metric_report(
+                &head.meta.metric,
+                &head.report_metrics,
+                &predictions,
+                &head.test_y,
+                head.meta.output_dim,
+                &loss_type,
+            );
+            if head.meta.primary {
+                primary_value = Some(head_primary);
+            }
+            weighted_sum += head_primary * head.meta.metric_weight;
+            weight_sum += head.meta.metric_weight;
+            head_reports.push(HeadMetricReport {
+                head_name: head.meta.name.clone(),
+                primary: head_primary,
+                tiebreak_loss: if head.meta.metric.is_discrete() {
+                    Some(test_loss_scalar)
+                } else {
+                    None
+                },
+                report,
+            });
+        }
+        let primary = primary_value.unwrap_or_else(|| {
+            if weight_sum > 0.0 {
+                weighted_sum / weight_sum
+            } else {
+                0.0
+            }
+        });
+        let report = head_reports
+            .iter()
+            .find(|entry| {
+                self.heads
+                    .iter()
+                    .any(|head| head.meta.name == entry.head_name && head.meta.primary)
+            })
+            .map(|entry| entry.report.clone())
+            .unwrap_or_default();
 
-        let tiebreak_loss = if self.metric.is_discrete() {
+        let tiebreak_loss = if self.heads.iter().any(|head| head.meta.metric.is_discrete()) {
             Some(test_loss_scalar)
         } else {
             None
@@ -794,6 +1107,7 @@ impl EvolutionTask for SupervisedTask {
             tiebreak_loss,
             primary_proxy: None,
             report,
+            head_reports,
         })
     }
 }
@@ -806,6 +1120,45 @@ fn create_loss_var(output: &Var, target: &Var, loss_type: &LossType) -> Result<V
         LossType::CrossEntropy => output.cross_entropy(target),
         LossType::MSE => output.mse_loss(target),
     }
+}
+
+fn head_loss_type(genome: &NetworkGenome, head: &MaterializedHead) -> LossType {
+    head.loss_override
+        .clone()
+        .or_else(|| genome.training_config.loss_override.clone())
+        .unwrap_or_else(|| {
+            compatible_losses(&head.metric, head.output_dim)
+                .into_iter()
+                .next()
+                .unwrap_or(LossType::MSE)
+        })
+}
+
+fn create_weighted_loss(
+    output: &Var,
+    target: &Var,
+    loss_type: &LossType,
+    weight: f32,
+) -> Result<Var, GraphError> {
+    let loss = create_loss_var(output, target, loss_type)?;
+    if (weight - 1.0).abs() <= f32::EPSILON {
+        Ok(loss)
+    } else {
+        Ok(&loss * weight)
+    }
+}
+
+fn aggregate_loss_vars(losses: Vec<Var>) -> Result<Var, GraphError> {
+    let mut iter = losses.into_iter();
+    let Some(mut total) = iter.next() else {
+        return Err(GraphError::ComputationError(
+            "多头监督任务至少需要一个 loss".into(),
+        ));
+    };
+    for loss in iter {
+        total = &total + &loss;
+    }
+    Ok(total)
 }
 
 fn train_one_batch(

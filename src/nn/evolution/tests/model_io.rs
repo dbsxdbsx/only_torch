@@ -25,6 +25,24 @@ fn test_nodelevel_genome_serde_roundtrip_minimal() {
 }
 
 #[test]
+fn test_multi_head_genome_serde_preserves_output_heads() {
+    let genome = NetworkGenome::minimal_multi_head_flat(
+        2,
+        &[
+            ("class".to_string(), 1, true, true),
+            ("radius".to_string(), 1, false, false),
+        ],
+    );
+    let json = serde_json::to_string(&genome).expect("序列化失败");
+    let restored: NetworkGenome = serde_json::from_str(&json).expect("反序列化失败");
+
+    assert_eq!(restored.output_heads.len(), 2);
+    assert_eq!(restored.output_heads[0].name, "class");
+    assert!(restored.output_heads[0].primary);
+    assert_eq!(restored.output_heads[1].name, "radius");
+}
+
+#[test]
 fn test_nodelevel_genome_serde_roundtrip_with_weights() {
     let mut genome = NetworkGenome::minimal(2, 1);
     let mut rng = rng();
@@ -76,6 +94,7 @@ fn test_layer_level_genome_is_not_a_valid_runtime_input() {
         input_spatial: None,
         training_config: TrainingConfig::default(),
         generated_by: "legacy".to_string(),
+        output_heads: Vec::new(),
         repr: GenomeRepr::LayerLevel {
             layers: Vec::new(),
             skip_edges: Vec::new(),

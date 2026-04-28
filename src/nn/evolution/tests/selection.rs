@@ -10,6 +10,7 @@ fn score(primary: f32, cost: Option<f32>) -> FitnessScore {
         tiebreak_loss: None,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     }
 }
 
@@ -20,6 +21,7 @@ fn score_with_tiebreak(primary: f32, cost: Option<f32>, tiebreak: Option<f32>) -
         tiebreak_loss: tiebreak,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     }
 }
 

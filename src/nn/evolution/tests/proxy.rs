@@ -79,5 +79,6 @@ fn score_with_proxy(primary_proxy: Option<f32>, tiebreak_loss: f32) -> FitnessSc
         tiebreak_loss: Some(tiebreak_loss),
         primary_proxy,
         report: Default::default(),
+        head_reports: Vec::new(),
     }
 }

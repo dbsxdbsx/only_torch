@@ -87,6 +87,7 @@ fn test_migrate_to_node_level_rejects_layer_level() {
         input_spatial: None,
         training_config: TrainingConfig::default(),
         generated_by: "legacy".to_string(),
+        output_heads: Vec::new(),
         repr: GenomeRepr::LayerLevel {
             layers: vec![LayerGene {
                 innovation_number: 1,

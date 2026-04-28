@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::fs;
 use std::rc::Rc;
 
 use crate::nn::descriptor::NodeTypeDescriptor;
@@ -7,7 +8,9 @@ use crate::nn::evolution::convergence::ConvergenceConfig;
 use crate::nn::evolution::gene::*;
 use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::task::FitnessScore;
-use crate::nn::evolution::{CandidateScoringConfig, Evolution, EvolutionStatus};
+use crate::nn::evolution::{
+    CandidateScoringConfig, Evolution, EvolutionResult, EvolutionStatus, SupervisedSpec,
+};
 use crate::tensor::Tensor;
 
 // ==================== 辅助构造 ====================
@@ -41,6 +44,41 @@ fn xor_evolution() -> Evolution {
         .with_parallelism(1)
         .with_population_size(4)
         .with_offspring_batch_size(4)
+}
+
+fn multi_head_spec() -> SupervisedSpec {
+    let inputs = vec![
+        Tensor::new(&[0.0, 0.0], &[2]),
+        Tensor::new(&[0.0, 1.0], &[2]),
+        Tensor::new(&[1.0, 0.0], &[2]),
+        Tensor::new(&[1.0, 1.0], &[2]),
+    ];
+    let class_targets = vec![
+        Tensor::new(&[0.0], &[1]),
+        Tensor::new(&[0.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+    ];
+    let radius_targets = vec![
+        Tensor::new(&[0.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+        Tensor::new(&[2.0], &[1]),
+    ];
+    SupervisedSpec::new(inputs.clone(), inputs)
+        .head_targets(
+            "class",
+            class_targets.clone(),
+            class_targets,
+            TaskMetric::Accuracy,
+        )
+        .head_targets(
+            "radius",
+            radius_targets.clone(),
+            radius_targets,
+            TaskMetric::R2,
+        )
+        .primary_head("class")
 }
 
 // ==================== Mock Callback ====================
@@ -418,6 +456,7 @@ fn test_is_at_least_as_good_primary_improvement() {
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let best = FitnessScore {
         primary: 0.7,
@@ -425,6 +464,7 @@ fn test_is_at_least_as_good_primary_improvement() {
         tiebreak_loss: Some(0.3),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -437,6 +477,7 @@ fn test_is_at_least_as_good_primary_regression() {
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let best = FitnessScore {
         primary: 0.7,
@@ -444,6 +485,7 @@ fn test_is_at_least_as_good_primary_regression() {
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(!super::super::is_at_least_as_good(&current, &best));
 }
@@ -456,6 +498,7 @@ fn test_is_at_least_as_good_same_primary_better_tiebreak() {
         tiebreak_loss: Some(0.3),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let best = FitnessScore {
         primary: 0.5,
@@ -463,6 +506,7 @@ fn test_is_at_least_as_good_same_primary_better_tiebreak() {
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -475,6 +519,7 @@ fn test_is_at_least_as_good_same_primary_worse_tiebreak() {
         tiebreak_loss: Some(0.8),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let best = FitnessScore {
         primary: 0.5,
@@ -482,6 +527,7 @@ fn test_is_at_least_as_good_same_primary_worse_tiebreak() {
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(!super::super::is_at_least_as_good(&current, &best));
 }
@@ -494,6 +540,7 @@ fn test_is_at_least_as_good_same_primary_equal_tiebreak() {
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let best = FitnessScore {
         primary: 0.5,
@@ -501,6 +548,7 @@ fn test_is_at_least_as_good_same_primary_equal_tiebreak() {
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -513,6 +561,7 @@ fn test_is_at_least_as_good_no_tiebreak_neutral_drift() {
         tiebreak_loss: None,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let best = FitnessScore {
         primary: 0.5,
@@ -520,6 +569,7 @@ fn test_is_at_least_as_good_no_tiebreak_neutral_drift() {
         tiebreak_loss: None,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -533,6 +583,7 @@ fn test_is_at_least_as_good_mixed_tiebreak_none() {
         tiebreak_loss: Some(0.3),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let best = FitnessScore {
         primary: 0.5,
@@ -540,6 +591,7 @@ fn test_is_at_least_as_good_mixed_tiebreak_none() {
         tiebreak_loss: None,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(super::super::is_at_least_as_good(&current, &best));
 }
@@ -664,6 +716,77 @@ fn test_predict_batch() {
     let pred = result.predict(&batch_input).unwrap();
     assert_eq!(pred.shape()[0], 4);
     assert_eq!(pred.shape()[1], 1); // output_dim
+}
+
+#[test]
+fn test_multi_head_predict_head_and_predict_heads() {
+    let result = Evolution::supervised_task(multi_head_spec())
+        .with_seed(42)
+        .with_target_metric(-1.0)
+        .with_parallelism(1)
+        .with_population_size(2)
+        .with_offspring_batch_size(2)
+        .with_primary_proxy(None)
+        .with_asha(None)
+        .with_convergence(ConvergenceConfig {
+            max_epochs: 5,
+            ..Default::default()
+        })
+        .with_max_generations(1)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    assert_eq!(result.fitness.head_reports.len(), 2);
+    let input = Tensor::new(&[1.0, 0.0], &[2]);
+    let default_pred = result.predict(&input).unwrap();
+    let class_pred = result.predict_head("class", &input).unwrap();
+    let heads = result.predict_heads(&["radius", "class"], &input).unwrap();
+
+    assert_eq!(default_pred.shape(), &[1, 1]);
+    assert_eq!(class_pred.shape(), &[1, 1]);
+    assert_eq!(heads.len(), 2);
+    assert_eq!(heads[0].0, "radius");
+    assert_eq!(heads[0].1.shape(), &[1, 1]);
+    assert_eq!(heads[1].0, "class");
+    assert_eq!(heads[1].1.shape(), &[1, 1]);
+}
+
+#[test]
+fn test_multi_head_save_load_preserves_named_prediction() {
+    let result = Evolution::supervised_task(multi_head_spec())
+        .with_seed(7)
+        .with_target_metric(-1.0)
+        .with_parallelism(1)
+        .with_population_size(2)
+        .with_offspring_batch_size(2)
+        .with_primary_proxy(None)
+        .with_asha(None)
+        .with_convergence(ConvergenceConfig {
+            max_epochs: 3,
+            ..Default::default()
+        })
+        .with_max_generations(1)
+        .with_verbose(false)
+        .run()
+        .unwrap();
+
+    let base = std::env::temp_dir().join(format!(
+        "only_torch_multi_head_evolution_{}",
+        std::process::id()
+    ));
+    let otm_path = base.with_extension("otm");
+    let _ = fs::remove_file(&otm_path);
+
+    result.save(&base).unwrap();
+    let loaded = EvolutionResult::load(&base).unwrap();
+    let pred = loaded
+        .predict_head("radius", &Tensor::new(&[1.0, 1.0], &[2]))
+        .unwrap();
+
+    assert_eq!(pred.shape(), &[1, 1]);
+    assert!(pred.to_vec()[0].is_finite());
+    let _ = fs::remove_file(&otm_path);
 }
 
 // ==================== Builder methods ====================
@@ -1443,6 +1566,7 @@ fn test_fitness_changed_primary_differs() {
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let b = FitnessScore {
         primary: 0.8,
@@ -1450,6 +1574,7 @@ fn test_fitness_changed_primary_differs() {
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(
         super::super::fitness_changed(&a, &b, 1e-6),
@@ -1465,6 +1590,7 @@ fn test_fitness_changed_within_tolerance() {
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let b = FitnessScore {
         primary: 0.9 + 1e-8,
@@ -1472,6 +1598,7 @@ fn test_fitness_changed_within_tolerance() {
         tiebreak_loss: Some(0.1 + 1e-8),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(
         !super::super::fitness_changed(&a, &b, 1e-6),
@@ -1487,6 +1614,7 @@ fn test_fitness_changed_inference_cost_none_vs_some() {
         tiebreak_loss: None,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let b = FitnessScore {
         primary: 0.9,
@@ -1494,6 +1622,7 @@ fn test_fitness_changed_inference_cost_none_vs_some() {
         tiebreak_loss: None,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(
         super::super::fitness_changed(&a, &b, 1e-6),
@@ -1509,6 +1638,7 @@ fn test_fitness_changed_tiebreak_loss_differs() {
         tiebreak_loss: Some(0.1),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let b = FitnessScore {
         primary: 0.9,
@@ -1516,6 +1646,7 @@ fn test_fitness_changed_tiebreak_loss_differs() {
         tiebreak_loss: Some(0.5),
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(
         super::super::fitness_changed(&a, &b, 1e-6),
@@ -1531,6 +1662,7 @@ fn test_fitness_changed_both_none_unchanged() {
         tiebreak_loss: None,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     let b = FitnessScore {
         primary: 0.5,
@@ -1538,6 +1670,7 @@ fn test_fitness_changed_both_none_unchanged() {
         tiebreak_loss: None,
         primary_proxy: None,
         report: Default::default(),
+        head_reports: Vec::new(),
     };
     assert!(
         !super::super::fitness_changed(&a, &b, 1e-6),

@@ -334,6 +334,41 @@ pub struct ResolvedDim {
     pub out_dim: usize,
 }
 
+// ==================== 输出 head 元数据 ====================
+
+/// 演化网络的命名输出 head。
+///
+/// 单输出旧模型可以不显式记录 head，builder 会回退到最后一个非参数节点；
+/// 多头模型则用该结构绑定每个 head 的输出节点、维度和默认推理策略。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutputHead {
+    pub name: String,
+    pub node_id: u64,
+    pub output_dim: usize,
+    #[serde(default)]
+    pub inference: bool,
+    #[serde(default)]
+    pub primary: bool,
+}
+
+impl OutputHead {
+    pub fn new(
+        name: impl Into<String>,
+        node_id: u64,
+        output_dim: usize,
+        inference: bool,
+        primary: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            node_id,
+            output_dim,
+            inference,
+            primary,
+        }
+    }
+}
+
 // ==================== GenomeRepr ====================
 
 /// 基因组内部表示：LayerLevel（旧）或 NodeLevel（新）
@@ -379,6 +414,9 @@ pub struct NetworkGenome {
     pub input_spatial: Option<(usize, usize)>,
     pub training_config: TrainingConfig,
     pub generated_by: String,
+    /// 命名输出 head。为空时表示旧单输出模型，builder 自动回退到默认 `output`。
+    #[serde(default)]
+    pub output_heads: Vec<OutputHead>,
     // === 内部表示层（LayerLevel 或 NodeLevel）===
     pub(crate) repr: GenomeRepr,
 }
@@ -414,6 +452,7 @@ impl Clone for NetworkGenome {
             input_spatial: self.input_spatial,
             training_config: self.training_config.clone(),
             generated_by: self.generated_by.clone(),
+            output_heads: self.output_heads.clone(),
             repr,
         }
     }
@@ -434,6 +473,7 @@ impl fmt::Debug for NetworkGenome {
             .field("input_spatial", &self.input_spatial)
             .field("training_config", &self.training_config)
             .field("generated_by", &self.generated_by)
+            .field("output_heads", &self.output_heads)
             .finish()
     }
 }
@@ -449,6 +489,7 @@ impl NetworkGenome {
         input_spatial: Option<(usize, usize)>,
         training_config: TrainingConfig,
         generated_by: String,
+        output_heads: Vec<OutputHead>,
         next_innovation: u64,
         nodes: Vec<NodeGene>,
     ) -> Self {
@@ -459,6 +500,7 @@ impl NetworkGenome {
             input_spatial,
             training_config,
             generated_by,
+            output_heads,
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation,
@@ -485,6 +527,79 @@ impl NetworkGenome {
             input_spatial: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal".to_string(),
+            output_heads: Vec::new(),
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
+                weight_snapshots: HashMap::new(),
+            },
+        }
+    }
+
+    /// 最小平坦多头网络：共享 Linear+ReLU trunk，后接多个命名 Linear head。
+    ///
+    /// P3 第一阶段只承诺共享输入、固定数量 head 的监督多任务；空间 / 序列多头
+    /// 后续可以沿同一 `OutputHead` 元数据继续扩展。
+    pub(crate) fn minimal_multi_head_flat(
+        input_dim: usize,
+        heads: &[(String, usize, bool, bool)],
+    ) -> Self {
+        assert!(input_dim > 0, "input_dim 不能为零");
+        assert!(!heads.is_empty(), "heads 不能为空");
+        assert!(
+            heads.iter().all(|(_, dim, _, _)| *dim > 0),
+            "head output_dim 不能为零"
+        );
+
+        let total_output_dim = heads.iter().map(|(_, dim, _, _)| *dim).sum::<usize>();
+        let hidden_size = total_output_dim.max(8);
+        let mut counter = InnovationCounter::new(1);
+        let mut nodes = expand_linear(INPUT_INNOVATION, input_dim, hidden_size, 0, &mut counter);
+        let trunk_linear_out = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("共享 Linear 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            trunk_linear_out,
+            vec![1, hidden_size],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let trunk_out = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("共享激活展开应至少产生一个节点");
+
+        let mut output_heads = Vec::with_capacity(heads.len());
+        for (idx, (name, dim, inference, primary)) in heads.iter().enumerate() {
+            nodes.extend(expand_linear(
+                trunk_out,
+                hidden_size,
+                *dim,
+                idx as u64 + 1,
+                &mut counter,
+            ));
+            let head_out = nodes
+                .last()
+                .map(|node| node.innovation_number)
+                .expect("head Linear 展开应至少产生一个节点");
+            output_heads.push(OutputHead::new(
+                name.clone(),
+                head_out,
+                *dim,
+                *inference,
+                *primary,
+            ));
+        }
+
+        Self {
+            input_dim,
+            output_dim: total_output_dim,
+            seq_len: None,
+            input_spatial: None,
+            training_config: TrainingConfig::default(),
+            generated_by: "minimal_multi_head_flat".to_string(),
+            output_heads,
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -540,6 +655,7 @@ impl NetworkGenome {
             input_spatial: None,
             training_config: TrainingConfig::default(),
             generated_by: "minimal_sequential".to_string(),
+            output_heads: Vec::new(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -618,6 +734,7 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "minimal_spatial".to_string(),
+            output_heads: Vec::new(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -690,6 +807,7 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "spatial_flat_mlp".to_string(),
+            output_heads: Vec::new(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -838,6 +956,7 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "spatial_lenet_tiny".to_string(),
+            output_heads: Vec::new(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -894,6 +1013,7 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "minimal_spatial_segmentation".to_string(),
+            output_heads: Vec::new(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -980,6 +1100,7 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "spatial_segmentation_tiny".to_string(),
+            output_heads: Vec::new(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -1153,6 +1274,7 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "spatial_segmentation_unet_lite".to_string(),
+            output_heads: Vec::new(),
             repr: GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: counter.peek(),
@@ -1225,6 +1347,16 @@ impl NetworkGenome {
             GenomeRepr::LayerLevel { .. } => panic!("nodes_mut() 只支持 NodeLevel 基因组"),
             GenomeRepr::NodeLevel { nodes, .. } => nodes,
         }
+    }
+
+    /// 是否为多头输出 genome。
+    pub fn is_multi_output(&self) -> bool {
+        self.output_heads.len() > 1
+    }
+
+    /// 判断某个节点是否被显式标记为输出 head。
+    pub(crate) fn is_output_head_node(&self, node_id: u64) -> bool {
+        self.output_heads.iter().any(|head| head.node_id == node_id)
     }
 
     /// 当前是否为节点级表示

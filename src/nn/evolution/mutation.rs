@@ -1322,6 +1322,9 @@ impl Mutation for MutateLossFunctionMutation {
     }
 
     fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
+        if genome.is_multi_output() {
+            return false;
+        }
         compatible_losses(&self.task_metric, genome.output_dim).len() >= 2
     }
 
@@ -2331,7 +2334,7 @@ fn node_level_remove_apply(
     // 只移除非末尾、有具体 block_id 的块（排除 None = 独立激活节点组）
     let removable: Vec<&NodeBlock> = blocks[..blocks.len() - 1]
         .iter()
-        .filter(|b| b.block_id.is_some())
+        .filter(|b| b.block_id.is_some() && !genome.is_output_head_node(b.output_id))
         .collect();
 
     if removable.is_empty() {
@@ -2397,6 +2400,10 @@ fn node_level_grow_apply(
             }
             // FM edge 块不参与 Grow/Shrink（由 FM 级别变异处理）
             if is_fm_edge_block(genome, b) {
+                return false;
+            }
+            // 多头输出 head 的维度由 HeadSpec targets 固定，不能被 Grow/Shrink 改写。
+            if genome.is_output_head_node(b.output_id) {
                 return false;
             }
             if is_grow {

@@ -59,8 +59,12 @@ pub use self::gene::TaskMetric;
 pub use self::mutation::{MutationError, MutationRegistry, SizeConstraints, SizeStrategy};
 use self::node_ops::{NodeBlockKind, node_main_path};
 pub use self::task::ProxyKind;
-use self::task::{EvolutionTask, FitnessScore, SupervisedTask, TrainOutcome, auto_batch_size};
-pub use self::task::{MetricReport, MetricValue, ReportMetric};
+use self::task::{
+    EvolutionTask, FitnessScore, MaterializedHead, SupervisedTask, TrainOutcome, auto_batch_size,
+};
+pub use self::task::{
+    HeadMetricReport, HeadSpec, MetricReport, MetricValue, ReportMetric, SupervisedSpec,
+};
 
 // ==================== EvolutionStatus ====================
 
@@ -130,9 +134,64 @@ impl EvolutionResult {
     /// let predictions = result.predict(&new_data)?;
     /// ```
     pub fn predict(&self, input: &Tensor) -> Result<Tensor, EvolutionError> {
-        self.build.graph.eval();
+        let idx = self.build.default_output_index();
+        let output = self.build.outputs.get(idx).ok_or_else(|| {
+            EvolutionError::Graph(GraphError::ComputationError("默认输出 head 不存在".into()))
+        })?;
+        self.predict_var(input, output)
+    }
 
-        let shaped = match input.dimension() {
+    /// 推理指定命名 head。
+    pub fn predict_head(&self, name: &str, input: &Tensor) -> Result<Tensor, EvolutionError> {
+        let output = self
+            .build
+            .output_by_name(name)
+            .ok_or_else(|| EvolutionError::InvalidConfig(format!("找不到输出 head: {name}")))?;
+        self.predict_var(input, output)
+    }
+
+    /// 推理多个命名 head，按传入名称顺序返回。
+    pub fn predict_heads(
+        &self,
+        names: &[&str],
+        input: &Tensor,
+    ) -> Result<Vec<(String, Tensor)>, EvolutionError> {
+        self.build.graph.eval();
+        let shaped = self.shaped_input(input);
+        self.build.input.set_value(&shaped)?;
+
+        let mut outputs = Vec::with_capacity(names.len());
+        for &name in names {
+            let output = self
+                .build
+                .output_by_name(name)
+                .ok_or_else(|| EvolutionError::InvalidConfig(format!("找不到输出 head: {name}")))?;
+            self.build.graph.forward(output)?;
+            let value = output.value()?.ok_or_else(|| {
+                EvolutionError::Graph(GraphError::ComputationError("推理时输出节点无值".into()))
+            })?;
+            outputs.push((name.to_string(), value));
+        }
+        Ok(outputs)
+    }
+
+    fn predict_var(
+        &self,
+        input: &Tensor,
+        output: &crate::nn::Var,
+    ) -> Result<Tensor, EvolutionError> {
+        self.build.graph.eval();
+        let shaped = self.shaped_input(input);
+        self.build.input.set_value(&shaped)?;
+        self.build.graph.forward(output)?;
+
+        output.value()?.ok_or_else(|| {
+            EvolutionError::Graph(GraphError::ComputationError("推理时输出节点无值".into()))
+        })
+    }
+
+    fn shaped_input(&self, input: &Tensor) -> Tensor {
+        match input.dimension() {
             1 => input.reshape(&[1, input.size()]), // [feat] → [1, feat]
             2 if self.genome.seq_len.is_some() => {
                 // [seq, feat] → [1, seq, feat]
@@ -145,14 +204,7 @@ impl EvolutionResult {
                 input.reshape(&[1, s[0], s[1], s[2]])
             }
             _ => input.clone(), // 已是 batch
-        };
-
-        self.build.input.set_value(&shaped)?;
-        self.build.graph.forward(&self.build.output)?;
-
-        self.build.output.value()?.ok_or_else(|| {
-            EvolutionError::Graph(GraphError::ComputationError("推理时输出节点无值".into()))
-        })
+        }
     }
 
     /// 可视化演化后的计算图（生成 .dot + .png）
@@ -211,7 +263,7 @@ impl EvolutionResult {
         };
         let build = genome.build(&mut rng)?;
         genome.restore_weights(&build)?;
-        build.graph.snapshot_once_from(&[&build.output]);
+        build.graph.snapshot_once_from(&build.output_refs());
         Ok(EvolutionResult {
             build,
             fitness: self.pareto_front[index].fitness.clone(),
@@ -361,11 +413,7 @@ fn is_at_least_as_good(current: &FitnessScore, best: &FitnessScore) -> bool {
 /// 每种学习范式对应一个变体，未来可扩展 RL / GAN / Transfer 等。
 #[derive(Clone)]
 enum TaskSpec {
-    Supervised {
-        train_data: (Vec<Tensor>, Vec<Tensor>),
-        test_data: (Vec<Tensor>, Vec<Tensor>),
-        metric: TaskMetric,
-    },
+    Supervised { spec: SupervisedSpec },
 }
 
 impl TaskSpec {
@@ -390,6 +438,7 @@ struct MaterializedTask {
     /// 空间输入尺寸 (H, W)（None = 非空间，input_dim 表示 in_channels）
     input_spatial: Option<(usize, usize)>,
     metric: TaskMetric,
+    heads: Vec<MaterializedHead>,
     /// 训练样本数（用于 auto_constraints 和训练预算计算）
     n_train: usize,
 }
@@ -397,58 +446,48 @@ struct MaterializedTask {
 /// 从 TaskSpec 实例化具体任务，提取维度信息并验证数据
 fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> {
     match spec {
-        TaskSpec::Supervised {
-            train_data,
-            test_data,
-            metric,
-        } => {
+        TaskSpec::Supervised { spec } => {
             // 维度提取前的安全检查（SupervisedTask::new 做完整验证）
-            if train_data.0.is_empty() {
+            if spec.train_inputs.is_empty() {
                 return Err(EvolutionError::InvalidData("训练输入不能为空".into()));
             }
-            if train_data.1.is_empty() {
-                return Err(EvolutionError::InvalidData("训练标签不能为空".into()));
+            if spec.heads.is_empty() {
+                return Err(EvolutionError::InvalidData("训练 head 不能为空".into()));
             }
             // 检测输入数据维度：1D = 平坦，2D = 序列，3D = 空间
-            let sample_ndim = train_data.0[0].dimension();
+            let sample_ndim = spec.train_inputs[0].dimension();
             let (input_dim, seq_len, input_spatial) = if sample_ndim == 3 {
                 // 空间数据：每个样本 [C, H, W]
-                let shape = train_data.0[0].shape();
+                let shape = spec.train_inputs[0].shape();
                 (shape[0], None, Some((shape[1], shape[2])))
             } else if sample_ndim == 2 {
                 // 序列数据：每个样本 [seq_len_i, input_dim]
-                let feat_dim = train_data.0[0].shape()[1];
-                let max_seq = train_data
-                    .0
+                let feat_dim = spec.train_inputs[0].shape()[1];
+                let max_seq = spec
+                    .train_inputs
                     .iter()
-                    .chain(test_data.0.iter())
+                    .chain(spec.test_inputs.iter())
                     .map(|t| t.shape()[0])
                     .max()
                     .unwrap();
                 (feat_dim, Some(max_seq), None)
             } else {
-                (train_data.0[0].size(), None, None)
+                (spec.train_inputs[0].size(), None, None)
             };
-            let output_dim = if metric.is_segmentation() {
-                let label_shape = train_data.1[0].shape();
-                if input_spatial.is_none() || train_data.1[0].dimension() != 3 {
-                    return Err(EvolutionError::InvalidData(
-                        "分割任务要求输入为 [C,H,W]，标签为 [classes,H,W]".into(),
-                    ));
+            let task = SupervisedTask::from_spec(spec)?;
+            let heads = task.head_metas();
+            let metric = task.metric().clone();
+            for head in &heads {
+                if head.metric.is_segmentation() {
+                    if input_spatial.is_none() {
+                        return Err(EvolutionError::InvalidData(
+                            "分割 head 要求输入为 [C,H,W]".into(),
+                        ));
+                    }
                 }
-                let spatial = input_spatial.unwrap();
-                if label_shape[1] != spatial.0 || label_shape[2] != spatial.1 {
-                    return Err(EvolutionError::InvalidData(format!(
-                        "分割标签空间尺寸必须与输入一致：input={:?}, label={:?}",
-                        spatial, label_shape
-                    )));
-                }
-                label_shape[0]
-            } else {
-                train_data.1[0].size()
-            };
-            let n_train = train_data.0.len();
-            let task = SupervisedTask::new(train_data, test_data, metric.clone())?;
+            }
+            let output_dim = heads.iter().map(|head| head.output_dim).sum();
+            let n_train = task.train_len();
             Ok(MaterializedTask {
                 task: TaskRuntime::Supervised(task),
                 input_dim,
@@ -456,6 +495,7 @@ fn materialize_task(spec: TaskSpec) -> Result<MaterializedTask, EvolutionError> 
                 seq_len,
                 input_spatial,
                 metric,
+                heads,
                 n_train,
             })
         }
@@ -673,12 +713,19 @@ impl Evolution {
         test_data: (Vec<Tensor>, Vec<Tensor>),
         metric: TaskMetric,
     ) -> Self {
+        let spec = SupervisedSpec::new(train_data.0, test_data.0)
+            .head_targets("output", train_data.1, test_data.1, metric)
+            .primary_head("output");
+        Self::supervised_task(spec)
+    }
+
+    /// 监督学习显式配置入口。
+    ///
+    /// 单头与多头任务共用同一 supervised 心智模型；旧的 `supervised(...)`
+    /// 是该入口的便捷包装。
+    pub fn supervised_task(spec: SupervisedSpec) -> Self {
         Self {
-            task_spec: TaskSpec::Supervised {
-                train_data,
-                test_data,
-                metric,
-            },
+            task_spec: TaskSpec::Supervised { spec },
             target_metric: 1.0,
             eval_runs: 1,
             convergence_config: ConvergenceConfig::default(),
@@ -985,6 +1032,13 @@ impl Evolution {
 
         let is_sequential = prepared.seq_len.is_some();
         let is_spatial = prepared.input_spatial.is_some();
+        let is_multi_head = prepared.heads.len() > 1;
+        if is_multi_head && (is_sequential || is_spatial) {
+            return Err(EvolutionError::InvalidConfig(
+                "P3 第一阶段多头 supervised evolution 仅支持平坦共享输入；空间 / 序列多头后续扩展"
+                    .into(),
+            ));
+        }
         let is_spatial_classification =
             is_spatial && !is_sequential && !prepared.metric.is_segmentation();
         let user_registry = mutation_registry;
@@ -1138,6 +1192,20 @@ impl Evolution {
                 g.migrate_to_fm_level();
             }
             g
+        } else if is_multi_head {
+            let head_defs: Vec<(String, usize, bool, bool)> = prepared
+                .heads
+                .iter()
+                .map(|head| {
+                    (
+                        head.name.clone(),
+                        head.output_dim,
+                        head.inference,
+                        head.primary,
+                    )
+                })
+                .collect();
+            NetworkGenome::minimal_multi_head_flat(prepared.input_dim, &head_defs)
         } else {
             let mut g = NetworkGenome::minimal(prepared.input_dim, prepared.output_dim);
             // 平坦模式迁移到 NodeLevel
@@ -1244,6 +1312,7 @@ impl Evolution {
 
         if repr_score.primary >= target_metric {
             let (repr_g, repr_s) = select_representative(&archive, target_metric);
+            callback.on_new_best(0, repr_g, repr_s);
             return build_population_result(
                 repr_g,
                 repr_s,
@@ -1748,6 +1817,9 @@ fn initial_seed_genomes(
         return vec![minimal_genome.clone()];
     };
     if prepared.seq_len.is_some() {
+        return vec![minimal_genome.clone()];
+    }
+    if prepared.heads.len() > 1 {
         return vec![minimal_genome.clone()];
     }
 
@@ -2498,7 +2570,7 @@ fn snapshot_with_loss(task: &dyn EvolutionTask, genome: &NetworkGenome, build: &
     if let Some(vis_loss) = task.create_visualization_loss(genome, build) {
         build.graph.snapshot_once_from(&[&vis_loss]);
     } else {
-        build.graph.snapshot_once_from(&[&build.output]);
+        build.graph.snapshot_once_from(&build.output_refs());
     }
 }
 
@@ -2610,6 +2682,7 @@ fn build_final_result(
         tiebreak_loss: None,
         primary_proxy: None,
         report: MetricReport::empty(),
+        head_reports: Vec::new(),
     });
 
     Ok(EvolutionResult {

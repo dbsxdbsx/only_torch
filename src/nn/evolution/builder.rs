@@ -16,7 +16,7 @@ use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::{Graph, GraphError, Init, Var, VarActivationOps, VarMatrixOps, VarShapeOps};
 use crate::tensor::Tensor;
 
-use super::gene::{INPUT_INNOVATION, NetworkGenome};
+use super::gene::{INPUT_INNOVATION, NetworkGenome, OutputHead};
 
 // ==================== BuildResult ====================
 
@@ -38,8 +38,12 @@ pub struct FMMaskInfo {
 pub struct BuildResult {
     /// 输入节点（用于设置训练/测试数据）
     pub input: Var,
-    /// 输出节点（用于获取预测结果）
+    /// 默认输出节点（单输出时即唯一输出；多头时为 primary / inference head）
     pub output: Var,
+    /// 所有输出节点，顺序与 `output_heads` 一致
+    pub outputs: Vec<Var>,
+    /// 输出 head 元数据。旧单输出模型会自动补成 `output`
+    pub output_heads: Vec<OutputHead>,
     /// innovation_number → 该层的参数变量列表（如 Linear 有 [W, b]）
     ///
     /// capture_weights() / restore_weights() 按 innovation_number 匹配参数。
@@ -52,6 +56,27 @@ pub struct BuildResult {
 }
 
 impl BuildResult {
+    /// 查找命名 head 的输出变量。
+    pub fn output_by_name(&self, name: &str) -> Option<&Var> {
+        self.output_heads
+            .iter()
+            .position(|head| head.name == name)
+            .and_then(|idx| self.outputs.get(idx))
+    }
+
+    /// 返回默认推理 head 的索引。
+    pub fn default_output_index(&self) -> usize {
+        self.output_heads
+            .iter()
+            .position(|head| head.inference || head.primary)
+            .unwrap_or(0)
+    }
+
+    /// 以引用形式返回所有输出，便于保存、导出和可视化。
+    pub fn output_refs(&self) -> Vec<&Var> {
+        self.outputs.iter().collect()
+    }
+
     /// 所有可训练参数的扁平列表（用于创建 Optimizer）
     ///
     /// 从 layer_params 派生，确保与 capture/restore 使用同一数据源。
@@ -848,19 +873,44 @@ impl NetworkGenome {
             }
         }
 
-        // 演化 genome 是单输出网络。FM 分解/融合会产生额外的无后继中间端点，
-        // 不能再依赖 GraphDescriptor 的“无后继 = 输出”启发式。
-        desc.explicit_output_ids = analysis
-            .topo_order
-            .iter()
-            .rev()
-            .find(|&&id| {
-                node_lookup
-                    .get(&id)
-                    .map(|node| !node.is_parameter())
-                    .unwrap_or(false)
-            })
-            .map(|&id| vec![id]);
+        // 演化 genome 需要显式输出：多头使用 genome.output_heads，旧单输出模型
+        // 回退到最后一个非参数节点。FM 分解/融合会产生额外无后继中间端点，
+        // 不能依赖 GraphDescriptor 的“无后继 = 输出”启发式。
+        if self.output_heads.is_empty() {
+            desc.explicit_output_ids = analysis
+                .topo_order
+                .iter()
+                .rev()
+                .find(|&&id| {
+                    node_lookup
+                        .get(&id)
+                        .map(|node| !node.is_parameter())
+                        .unwrap_or(false)
+                })
+                .map(|&id| vec![id]);
+        } else {
+            let mut ids = Vec::with_capacity(self.output_heads.len());
+            for head in &self.output_heads {
+                let Some(node) = node_lookup.get(&head.node_id) else {
+                    return Err(super::node_expansion::NodeExpansionError::InvalidGenome(
+                        format!(
+                            "输出 head '{}' 引用不存在的节点 {}",
+                            head.name, head.node_id
+                        ),
+                    ));
+                };
+                if node.is_parameter() {
+                    return Err(super::node_expansion::NodeExpansionError::InvalidGenome(
+                        format!(
+                            "输出 head '{}' 不能引用参数节点 {}",
+                            head.name, head.node_id
+                        ),
+                    ));
+                }
+                ids.push(head.node_id);
+            }
+            desc.explicit_output_ids = Some(ids);
+        }
 
         Ok(desc)
     }
@@ -907,7 +957,18 @@ impl NetworkGenome {
             .ok_or_else(|| {
                 GraphError::ComputationError("NodeLevel 基因组构图后无输入节点".into())
             })?;
-        let output = rebuild.outputs.first().cloned().ok_or_else(|| {
+        let outputs = rebuild.outputs.clone();
+        if outputs.is_empty() {
+            return Err(GraphError::ComputationError(
+                "NodeLevel 基因组构图后无输出节点".into(),
+            ));
+        }
+        let output_heads = self.resolved_output_heads_for_build(&desc, &outputs)?;
+        let default_output_idx = output_heads
+            .iter()
+            .position(|head| head.inference || head.primary)
+            .unwrap_or(0);
+        let output = outputs.get(default_output_idx).cloned().ok_or_else(|| {
             GraphError::ComputationError("NodeLevel 基因组构图后无输出节点".into())
         })?;
 
@@ -952,6 +1013,8 @@ impl NetworkGenome {
         let result = BuildResult {
             input,
             output,
+            outputs,
+            output_heads,
             layer_params,
             graph: rebuild.graph,
             fm_masks,
@@ -961,6 +1024,37 @@ impl NetworkGenome {
         result.apply_fm_masks()?;
 
         Ok(result)
+    }
+
+    fn resolved_output_heads_for_build(
+        &self,
+        desc: &GraphDescriptor,
+        outputs: &[Var],
+    ) -> Result<Vec<OutputHead>, GraphError> {
+        if !self.output_heads.is_empty() {
+            if self.output_heads.len() != outputs.len() {
+                return Err(GraphError::ComputationError(format!(
+                    "输出 head 数量({})与构图输出数量({})不一致",
+                    self.output_heads.len(),
+                    outputs.len()
+                )));
+            }
+            return Ok(self.output_heads.clone());
+        }
+
+        let output_id = desc
+            .explicit_output_ids
+            .as_ref()
+            .and_then(|ids| ids.first())
+            .copied()
+            .unwrap_or(0);
+        let output_dim = outputs
+            .first()
+            .and_then(|output| output.value_expected_shape().last().copied())
+            .unwrap_or(self.output_dim);
+        Ok(vec![OutputHead::new(
+            "output", output_id, output_dim, true, true,
+        )])
     }
 
     /// 含 edge-based 循环边的 NodeLevel 基因组构图路径
@@ -1133,7 +1227,9 @@ impl NetworkGenome {
 
         Ok(BuildResult {
             input,
-            output: final_output,
+            output: final_output.clone(),
+            outputs: vec![final_output.clone()],
+            output_heads: vec![OutputHead::new("output", 0, self.output_dim, true, true)],
             layer_params,
             graph,
             fm_masks: HashMap::new(),
@@ -1281,6 +1377,7 @@ impl NetworkGenome {
             input_spatial,
             training_config: super::gene::TrainingConfig::default(),
             generated_by: "from_graph_descriptor".to_string(),
+            output_heads: Vec::new(),
             repr: super::gene::GenomeRepr::NodeLevel {
                 nodes,
                 next_innovation: max_id + 1,

@@ -80,6 +80,34 @@ fn test_build_minimal_forward_and_params() {
 }
 
 #[test]
+fn test_build_multi_head_flat_exposes_named_outputs() {
+    let genome = NetworkGenome::minimal_multi_head_flat(
+        2,
+        &[
+            ("class".to_string(), 1, true, true),
+            ("radius".to_string(), 1, false, false),
+        ],
+    );
+    let build = build(&genome);
+
+    assert_eq!(build.outputs.len(), 2);
+    assert_eq!(build.output_heads.len(), 2);
+    assert_eq!(build.output_heads[0].name, "class");
+    assert_eq!(build.output_heads[1].name, "radius");
+    assert!(build.output_by_name("class").is_some());
+    assert!(build.output_by_name("radius").is_some());
+
+    build
+        .input
+        .set_value(&Tensor::new(&[0.25, 0.75], &[1, 2]))
+        .unwrap();
+    for output in &build.outputs {
+        build.graph.forward(output).unwrap();
+        assert_eq!(output.value().unwrap().unwrap().shape(), &[1, 1]);
+    }
+}
+
+#[test]
 fn test_build_hidden_mlp_forward_and_block_shapes() {
     let genome = hidden_mlp(3, 8, 2);
     let build = build(&genome);

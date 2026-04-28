@@ -34,6 +34,41 @@ fn xor_task() -> SupervisedTask {
     SupervisedTask::new(data.clone(), data, TaskMetric::Accuracy).unwrap()
 }
 
+fn multi_head_spec() -> SupervisedSpec {
+    let inputs = vec![
+        Tensor::new(&[0.0, 0.0], &[2]),
+        Tensor::new(&[0.0, 1.0], &[2]),
+        Tensor::new(&[1.0, 0.0], &[2]),
+        Tensor::new(&[1.0, 1.0], &[2]),
+    ];
+    let class_targets = vec![
+        Tensor::new(&[0.0], &[1]),
+        Tensor::new(&[0.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+    ];
+    let radius_targets = vec![
+        Tensor::new(&[0.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+        Tensor::new(&[1.0], &[1]),
+        Tensor::new(&[2.0], &[1]),
+    ];
+    SupervisedSpec::new(inputs.clone(), inputs)
+        .head_targets(
+            "class",
+            class_targets.clone(),
+            class_targets,
+            TaskMetric::Accuracy,
+        )
+        .head_targets(
+            "radius",
+            radius_targets.clone(),
+            radius_targets,
+            TaskMetric::R2,
+        )
+        .primary_head("class")
+}
+
 fn tiny_segmentation_data() -> (Vec<Tensor>, Vec<Tensor>) {
     (
         vec![
@@ -112,6 +147,47 @@ fn test_supervised_task_construction_ok() {
 fn test_supervised_task_metric_accessor() {
     let task = xor_task();
     assert_eq!(*task.metric(), TaskMetric::Accuracy);
+}
+
+#[test]
+fn test_multi_head_supervised_task_trains_and_reports_per_head() {
+    let task = SupervisedTask::from_spec(multi_head_spec()).unwrap();
+    assert_eq!(*task.metric(), TaskMetric::Accuracy);
+
+    let mut genome = NetworkGenome::minimal_multi_head_flat(
+        2,
+        &[
+            ("class".to_string(), 1, true, true),
+            ("radius".to_string(), 1, false, false),
+        ],
+    );
+    let mut rng = StdRng::seed_from_u64(7);
+    let build = build_and_restore(&genome, &mut rng);
+    let first_param_id = *build.layer_params.keys().min().unwrap();
+    let before = build.layer_params[&first_param_id][0]
+        .value()
+        .unwrap()
+        .unwrap()
+        .to_vec();
+
+    let outcome = task
+        .train(&genome, &build, &short_convergence(), &mut rng)
+        .unwrap();
+    assert!(outcome.final_loss.is_finite());
+
+    let after = build.layer_params[&first_param_id][0]
+        .value()
+        .unwrap()
+        .unwrap()
+        .to_vec();
+    assert_ne!(before, after, "多头加权 loss 应推动共享参数更新");
+
+    genome.capture_weights(&build).unwrap();
+    let fitness = task.evaluate(&genome, &build, &mut rng).unwrap();
+    assert!(fitness.primary.is_finite());
+    assert_eq!(fitness.head_reports.len(), 2);
+    assert_eq!(fitness.head_reports[0].head_name, "class");
+    assert_eq!(fitness.head_reports[1].head_name, "radius");
 }
 
 #[test]

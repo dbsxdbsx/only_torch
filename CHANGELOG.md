@@ -12,6 +12,15 @@
   - 新增 `examples/evolution/overlapping_shapes_unet_lite_segmentation`，使用同类 64x64 / 4 类 / 0..3 个可重叠形状数据，作为 U-Net-lite 强基线的 evolution 对照
   - 示例默认 segmentation portfolio 已纳入 U-Net-lite encoder-decoder + skip concat 初始族；输出 input / target / prediction 可视化，避免把类别颜色误读成实例 ID
   - 注册 `cargo run --example evolution_overlapping_shapes_unet_lite_segmentation` 与 `just example-evolution-overlapping-shapes-unet-lite-segmentation`；默认 target Mean IoU 提升到 0.60，并新增 `ONLY_TORCH_EVOLUTION_UNET_LITE_SEED`、`ONLY_TORCH_EVOLUTION_UNET_LITE_TARGET`、`ONLY_TORCH_EVOLUTION_UNET_LITE_SAVE_ARTIFACTS=0` 便于稳定性复核
+- **feat(evolution): 支持固定多头 supervised evolution 第一阶段**
+  - 新增 `SupervisedSpec` / `HeadSpec` 显式入口；旧 `Evolution::supervised(...).with_*().run()` 链式写法保持兼容并自动包装为单 head supervised task
+  - `NetworkGenome` 记录命名 `OutputHead` 元数据，`BuildResult` 新增 `outputs: Vec<Var>` 并保留默认 `output: Var`，支持共享 trunk + 多个物理输出 head
+  - 多头训练按 head 创建 target/loss 并用 `loss_weight` 聚合；评估生成逐 head `HeadMetricReport`，`FitnessScore.primary` 默认取 primary head
+  - `EvolutionResult` 新增 `predict_head` / `predict_heads`，`.otm` 保存/加载、可视化和 ONNX 导出路径改为使用所有输出 head；当前阶段限定为平坦共享输入、固定 head 数量，detection matching / NMS / mAP 留待后续
+- **feat(example): 新增多头 supervised evolution 示例**
+  - 新增 `examples/evolution/multi_head_quadrant_radius`，用二维点共享输入同时训练 `quadrant` 四分类 head 与 `radius` 回归 head
+  - 示例覆盖 `SupervisedSpec::head_targets(...)`、逐 head metric report、`predict_head` / `predict_heads` 选择性推理和 `.otm` 保存/加载
+  - 注册 `cargo run --example evolution_multi_head_quadrant_radius` 与 `just example-evolution-multi-head-quadrant-radius`
 
 ### Changed
 

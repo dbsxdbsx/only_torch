@@ -74,6 +74,7 @@ let dot = graph.to_dot();
 | [chess_yolo_onnx_detect](examples/traditional/chess_yolo_onnx_detect/) | 目标检测 → FEN | **第三方真实 YOLOv5 ONNX**、整盘识别 → 标准 FEN | YOLOv5 (~7M 参数) | `cargo run --example chess_yolo_onnx_detect` |
 | [evolution_xor](examples/evolution/xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
 | [evolution_iris](examples/evolution/iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
+| [evolution_multi_head_quadrant_radius](examples/evolution/multi_head_quadrant_radius/) | **多头架构演化** | **SupervisedSpec**、共享输入、分类 + 回归双 head、选择性推理 | 自动演化 | `cargo run --example evolution_multi_head_quadrant_radius` |
 | [evolution_mnist](examples/evolution/mnist/) | **神经架构演化** | **Evolution API**、Spatial 域 CNN 自动搜索 | 自动演化 | `cargo run --example evolution_mnist` |
 | [evolution_overlapping_shapes_semantic_segmentation](examples/evolution/overlapping_shapes_semantic_segmentation/) | **分割架构演化** | **Spatial-to-spatial**、Mean IoU、无 Flatten 输出头 | 自动演化 | `cargo run --example evolution_overlapping_shapes_semantic_segmentation` |
 | [evolution_overlapping_shapes_unet_lite_segmentation](examples/evolution/overlapping_shapes_unet_lite_segmentation/) | **分割 benchmark 演化** | **64x64 U-Net-lite 对照任务**、encoder-decoder 初始族、结构变异、多类别 Mean IoU、可视化 target/prediction | 自动演化 | `cargo run --example evolution_overlapping_shapes_unet_lite_segmentation` |
@@ -451,6 +452,15 @@ cargo run --example evolution_xor
 ```bash
 cargo run --example evolution_iris
 # 自动演化到 ≥95% 准确率
+```
+
+**Evolution Multi-head Quadrant + Radius** ⭐⭐
+
+P3 多输出 / 多头 supervised evolution 示例。输入共享二维点 `[x, y]`，同时训练 `quadrant` 四分类 head 和 `radius` 回归 head；推理时可通过 `predict_head("quadrant", ...)` 或 `predict_heads(...)` 只取需要的输出。
+
+```bash
+cargo run --example evolution_multi_head_quadrant_radius
+# 展示 SupervisedSpec、逐 head report、选择性推理和 .otm 保存/加载
 ```
 
 **Evolution MNIST（图像分类 CNN 自动搜索）** ⭐⭐⭐

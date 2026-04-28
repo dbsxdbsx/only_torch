@@ -239,6 +239,10 @@
     path="examples/evolution/iris/main.rs"
 
 [[example]]
+    name="evolution_multi_head_quadrant_radius"
+    path="examples/evolution/multi_head_quadrant_radius/main.rs"
+
+[[example]]
     name="evolution_parity_seq"
     path="examples/evolution/parity_seq/main.rs"
 

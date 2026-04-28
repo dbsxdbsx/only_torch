@@ -57,6 +57,8 @@ pub(crate) struct GenomeSerialized {
     input_spatial: Option<(usize, usize)>,
     training_config: super::gene::TrainingConfig,
     generated_by: String,
+    #[serde(default)]
+    output_heads: Vec<super::gene::OutputHead>,
     next_innovation: u64,
     /// NodeLevel 节点列表（NodeLevel 专属，履历文件可贪心为空）
     #[serde(default)]
@@ -88,6 +90,7 @@ impl From<&NetworkGenome> for GenomeSerialized {
                 input_spatial: genome.input_spatial,
                 training_config: genome.training_config.clone(),
                 generated_by: genome.generated_by.clone(),
+                output_heads: genome.output_heads.clone(),
                 next_innovation: genome.peek_next_innovation(),
                 nodes: genome.nodes().to_vec(),
                 is_node_level: true,
@@ -102,6 +105,7 @@ impl From<&NetworkGenome> for GenomeSerialized {
                 input_spatial: genome.input_spatial,
                 training_config: genome.training_config.clone(),
                 generated_by: genome.generated_by.clone(),
+                output_heads: genome.output_heads.clone(),
                 next_innovation: genome.peek_next_innovation(),
                 nodes: Vec::new(),
                 is_node_level: false,
@@ -133,6 +137,7 @@ impl GenomeSerialized {
             self.input_spatial,
             self.training_config,
             self.generated_by,
+            self.output_heads,
             self.next_innovation,
             self.nodes,
         );
@@ -158,7 +163,8 @@ impl EvolutionResult {
     /// ```
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), EvolutionError> {
         // 从构建好的图中提取 GraphDescriptor
-        let desc = Var::vars_to_graph_descriptor(&[&self.build.output], "evolution");
+        let output_refs = self.build.output_refs();
+        let desc = Var::vars_to_graph_descriptor(&output_refs, "evolution");
 
         // 序列化演化专属元数据
         let evo_meta = EvolutionMeta {
@@ -209,7 +215,7 @@ impl EvolutionResult {
         }
         self.build
             .graph
-            .export_onnx(path, &[&self.build.output])
+            .export_onnx(path, &self.build.output_refs())
             .map_err(|e| EvolutionError::IoError(format!("ONNX 导出失败: {e}")))
     }
 
@@ -255,7 +261,7 @@ impl EvolutionResult {
             .map_err(|e| EvolutionError::IoError(e.to_string()))?;
 
         // 自动快照（供 visualize 使用）
-        build.graph.snapshot_once_from(&[&build.output]);
+        build.graph.snapshot_once_from(&build.output_refs());
 
         Ok(EvolutionResult {
             build,
