@@ -298,6 +298,34 @@ impl DeformableConv2d {
     fn data_index(shape: &[usize], n: usize, c: usize, h: usize, w: usize) -> usize {
         ((n * shape[1] + c) * shape[2] + h) * shape[3] + w
     }
+
+    fn runtime_output_shape(
+        &self,
+        input: &Tensor,
+        offset: &Tensor,
+    ) -> Result<Vec<usize>, GraphError> {
+        let batch = input.shape()[0];
+        let output_shape = vec![
+            batch,
+            self.out_channels,
+            self.fixed_shape[2],
+            self.fixed_shape[3],
+        ];
+        let expected_offset = vec![
+            batch,
+            2 * self.deformable_groups * self.kernel_size.0 * self.kernel_size.1,
+            self.fixed_shape[2],
+            self.fixed_shape[3],
+        ];
+        if offset.shape() != expected_offset.as_slice() {
+            return Err(GraphError::ShapeMismatch {
+                expected: expected_offset,
+                got: offset.shape().to_vec(),
+                message: "DeformableConv2d runtime offset 形状必须匹配当前 batch".to_string(),
+            });
+        }
+        Ok(output_shape)
+    }
 }
 
 impl TraitNode for DeformableConv2d {
@@ -349,11 +377,12 @@ impl TraitNode for DeformableConv2d {
         let input = parent_values[0];
         let kernel = parent_values[1];
         let offset = parent_values[2];
+        let output_shape = self.runtime_output_shape(input, offset)?;
         let (batch, out_c, out_h, out_w) = (
-            self.fixed_shape[0],
-            self.fixed_shape[1],
-            self.fixed_shape[2],
-            self.fixed_shape[3],
+            output_shape[0],
+            output_shape[1],
+            output_shape[2],
+            output_shape[3],
         );
         let (k_h, k_w) = self.kernel_size;
         let (stride_h, stride_w) = self.stride;
@@ -380,13 +409,13 @@ impl TraitNode for DeformableConv2d {
                                 }
                             }
                         }
-                        let idx = Self::data_index(&self.fixed_shape, n, oc, oh, ow);
+                        let idx = Self::data_index(&output_shape, n, oc, oh, ow);
                         out[idx] = sum;
                     }
                 }
             }
         }
-        self.value = Some(Tensor::new(&out, &self.fixed_shape));
+        self.value = Some(Tensor::new(&out, &output_shape));
         Ok(())
     }
 
@@ -403,11 +432,19 @@ impl TraitNode for DeformableConv2d {
         let input = parent_values[0];
         let kernel = parent_values[1];
         let offset = parent_values[2];
+        let output_shape = self.runtime_output_shape(input, offset)?;
+        if upstream_grad.shape() != output_shape.as_slice() {
+            return Err(GraphError::ShapeMismatch {
+                expected: output_shape.clone(),
+                got: upstream_grad.shape().to_vec(),
+                message: "DeformableConv2d 上游梯度形状与运行时输出不一致".to_string(),
+            });
+        }
         let (batch, out_c, out_h, out_w) = (
-            self.fixed_shape[0],
-            self.fixed_shape[1],
-            self.fixed_shape[2],
-            self.fixed_shape[3],
+            output_shape[0],
+            output_shape[1],
+            output_shape[2],
+            output_shape[3],
         );
         let (k_h, k_w) = self.kernel_size;
         let (stride_h, stride_w) = self.stride;

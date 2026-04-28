@@ -110,6 +110,48 @@ fn test_deformable_conv2d_zero_offset_matches_pytorch_reference() -> Result<(), 
 }
 
 #[test]
+fn test_deformable_conv2d_supports_runtime_dynamic_batch() -> Result<(), GraphError> {
+    let (_graph, input, kernel, offset, deform) = build_reference_node(&[1, 8, 2, 2])?;
+    let mut input_data = reference_input().to_vec();
+    input_data.extend(reference_input().to_vec());
+    input.set_value(Some(&Tensor::new(&input_data, &[2, 1, 3, 3])))?;
+    kernel.set_value(Some(&reference_kernel()))?;
+    offset.set_value(Some(&Tensor::zeros(&[2, 8, 2, 2])))?;
+
+    deform.forward_recursive(1, false)?;
+    let output = deform.value().unwrap();
+    assert_eq!(output.shape(), &[2, 1, 2, 2]);
+    assert_slice_close(
+        output.data_as_slice(),
+        &[11.0, 13.5, 18.5, 21.0, 11.0, 13.5, 18.5, 21.0],
+        1e-5,
+    );
+
+    let upstream = Tensor::ones(&[2, 1, 2, 2]);
+    let input_grad = deform
+        .calc_grad_to_parent_index(0, &upstream)?
+        .resolve(&upstream);
+    assert_eq!(input_grad.shape(), &[2, 1, 3, 3]);
+    assert_slice_close(
+        &input_grad.data_as_slice()[..9],
+        &[1.0, 0.0, -1.0, 1.5, 2.5, 1.0, 0.5, 2.5, 2.0],
+        1e-5,
+    );
+    assert_slice_close(
+        &input_grad.data_as_slice()[9..],
+        &[1.0, 0.0, -1.0, 1.5, 2.5, 1.0, 0.5, 2.5, 2.0],
+        1e-5,
+    );
+
+    let kernel_grad = deform
+        .calc_grad_to_parent_index(1, &upstream)?
+        .resolve(&upstream);
+    assert_slice_close(kernel_grad.data_as_slice(), &[24.0, 32.0, 48.0, 56.0], 1e-5);
+
+    Ok(())
+}
+
+#[test]
 fn test_deformable_conv2d_nonzero_offset_matches_pytorch_reference() -> Result<(), GraphError> {
     let (_graph, input, kernel, offset, deform) = build_reference_node(&[1, 8, 2, 2])?;
     input.set_value(Some(&reference_input()))?;

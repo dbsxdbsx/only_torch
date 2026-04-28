@@ -2,6 +2,13 @@
 
 ## [Unreleased] - 待提交
 
+### Fixed
+
+- **fix(nn): 修复 DeformableConv2d 动态 batch 与 BinaryIoU 评估**
+  - `DeformableConv2d` 前向 / 反向改为读取运行时 batch size，修复构图期 batch=1 时评估 `[N,C,H,W]` 仍输出单样本的问题
+  - Evolution `TaskMetric::BinaryIoU` / `ReportMetric::BinaryIoU` / `Dice` / 二值 `PixelAccuracy` 在 BCE logits 下先按 `>=0.0` 解码预测，再按 0.5 阈值对齐 0/1 标签，避免标签 0.0 被误判为正类
+  - 补充 `BinaryIoU` batch、`DeformableConv2d` runtime dynamic batch、BinaryIoU + Deformable evolution 评估回归测试
+
 ### Added
 
 - **feat(example): 新增 Overlapping Shapes U-Net-lite 分割强基线**
@@ -30,9 +37,9 @@
   - 示例输出 `test_in.png` / `test_out.png` 和计算图 `.dot` / `.png`，`test_out.png` 以绿色热力图展示 foreground 概率
   - 注册 `cargo run --example deformable_conv2d_segmentation` 与 `just example-deformable-conv2d-segmentation`
 - **feat(example): 新增 DeformableConv2d 分割演化示例**
-  - 新增 `examples/evolution/deformable_conv2d_segmentation`，使用 16x16 background / foreground 二类语义分割数据验证 DeformableConv2d seed 进入 evolution 主流程
+  - 新增 `examples/evolution/deformable_conv2d_segmentation`，使用 16x16 二值前景分割数据验证 DeformableConv2d seed 进入 evolution 主流程
   - `InitialPortfolioConfig` 新增 `include_deformable_tiny` 与 `vision_segmentation_with_deformable()`，并新增 `spatial_segmentation_deformable_tiny` 初始基因组
-  - 示例关闭 P5-lite learned / heuristic 预筛路径，默认 seed=42 在第 2 代达到 Mean IoU 58.8%，最终基因组包含 DeformableConv2d
+  - 示例关闭 P5-lite learned / heuristic 预筛路径，默认 seed=42 在 4 个测试样本上达到 Binary IoU 40.3%，最终基因组包含 DeformableConv2d
   - 注册 `cargo run --example evolution_deformable_conv2d_segmentation` 与 `just example-evolution-deformable-conv2d-segmentation`
 
 ### Changed

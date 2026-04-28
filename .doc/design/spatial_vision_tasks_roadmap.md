@@ -96,7 +96,7 @@ graph TD
 | P1 | Segmentation v2 数据与指标 | `[~]` | 已有 overlapping shapes benchmark、U-Net-lite 强基线和 Mean IoU / Dice；下一步扩大数据规模与难度 |
 | P2 | Segmentation Evolution | `[x]` | 已有 spatial-to-spatial minimal genome、dense + encoder-decoder segmentation portfolio、`InsertEncoderDecoderSkip` 结构变异与 P5-lite/timing 审计；`evolution_overlapping_shapes_unet_lite_segmentation` 在 target Mean IoU 0.60 下完成 5-seed 稳定性验证，seed 1..5 全部 `TargetReached` |
 | P3 | FCN / U-Net 风格传统强基线 | `[x]` | `overlapping_shapes_unet_lite_segmentation` 在 debug + BLAS 下约 27.4s 达到 Mean IoU 75.6%，可作为后续 Segmentation Evolution 对照 |
-| P4a | Deformable Conv2d 通用算子与演化基线 | `[~]` | 已实现 offset-only `DeformableConv2d` raw node / Layer / descriptor rebuild / ONNX unsupported 标记；新增 `deformable_conv2d_segmentation` 传统手写示例；新增 `evolution_deformable_conv2d_segmentation`，默认 seed=42 第 2 代达到 Mean IoU 58.8%，最终基因组包含 DeformableConv2d；segmentation InsertLayer 仍有概率生成 DeformableConv2d block |
+| P4a | Deformable Conv2d 通用算子与演化基线 | `[~]` | 已实现 offset-only `DeformableConv2d` raw node / Layer / descriptor rebuild / ONNX unsupported 标记；新增 `deformable_conv2d_segmentation` 传统手写示例；新增 `evolution_deformable_conv2d_segmentation`，默认 seed=42 在 4 个测试样本上达到 Binary IoU 40.3%，最终基因组包含 DeformableConv2d；segmentation InsertLayer 仍有概率生成 DeformableConv2d block |
 | P4b | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
 | P5 | 多输出 / 多头 Evolution | `[~]` | P3 第一阶段已支持平坦共享输入的固定多头 supervised evolution；后续扩展到 detection + mask 等空间多任务输出与实例级指标 |
 | P6 | Instance Segmentation Lite | `[ ]` | 从固定 slot 过渡到可变实例、matching 和实例级指标 |

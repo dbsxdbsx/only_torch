@@ -1218,12 +1218,8 @@ pub(crate) fn compute_primary_metric(
             _ => metrics::multilabel_loose_accuracy(predictions, labels, 0.5).value(),
         },
         TaskMetric::BinaryIoU => {
-            let threshold = if matches!(loss_type, LossType::BCE) {
-                0.0
-            } else {
-                0.5
-            };
-            metrics::binary_iou(predictions, labels, threshold).value()
+            let decoded = binary_segmentation_predictions(predictions, loss_type);
+            metrics::binary_iou(&decoded, labels, 0.5).value()
         }
         TaskMetric::MeanIoU => metrics::mean_iou(predictions, labels).value(),
     }
@@ -1304,31 +1300,19 @@ fn compute_report_metric(
             let value = if predictions.shape().len() == 4 && predictions.shape()[1] > 1 {
                 metrics::semantic_pixel_accuracy(predictions, labels)
             } else {
-                let threshold = if matches!(loss_type, LossType::BCE) {
-                    0.0
-                } else {
-                    0.5
-                };
-                metrics::pixel_accuracy(predictions, labels, threshold)
+                let decoded = binary_segmentation_predictions(predictions, loss_type);
+                metrics::pixel_accuracy(&decoded, labels, 0.5)
             };
             Some(MetricValue::new(metric, value.value(), value.n_samples()))
         }
         ReportMetric::BinaryIoU => {
-            let threshold = if matches!(loss_type, LossType::BCE) {
-                0.0
-            } else {
-                0.5
-            };
-            let value = metrics::binary_iou(predictions, labels, threshold);
+            let decoded = binary_segmentation_predictions(predictions, loss_type);
+            let value = metrics::binary_iou(&decoded, labels, 0.5);
             Some(MetricValue::new(metric, value.value(), value.n_samples()))
         }
         ReportMetric::Dice => {
-            let threshold = if matches!(loss_type, LossType::BCE) {
-                0.0
-            } else {
-                0.5
-            };
-            let value = metrics::dice_score(predictions, labels, threshold);
+            let decoded = binary_segmentation_predictions(predictions, loss_type);
+            let value = metrics::dice_score(&decoded, labels, 0.5);
             Some(MetricValue::new(metric, value.value(), value.n_samples()))
         }
         ReportMetric::MeanIoU => {
@@ -1365,6 +1349,10 @@ fn multilabel_predictions(predictions: &Tensor, loss_type: &LossType) -> Tensor 
     } else {
         predictions.clone()
     }
+}
+
+fn binary_segmentation_predictions(predictions: &Tensor, loss_type: &LossType) -> Tensor {
+    multilabel_predictions(predictions, loss_type)
 }
 
 /// 二分类显式解码：[batch, 1] → Vec<usize>

@@ -5,7 +5,7 @@
  */
 
 use only_torch::data::SyntheticRng;
-use only_torch::metrics::{mean_iou, semantic_pixel_accuracy};
+use only_torch::metrics::{binary_iou, pixel_accuracy};
 use only_torch::nn::evolution::{Evolution, InitialPortfolioConfig, ReportMetric, TaskMetric};
 use only_torch::tensor::Tensor;
 use std::env;
@@ -15,10 +15,10 @@ use std::time::Instant;
 const IMAGE_SIZE: usize = 16;
 const MAX_OBJECTS: usize = 3;
 const TRAIN_SAMPLES: usize = 12;
-const TEST_SAMPLES: usize = 1;
+const TEST_SAMPLES: usize = 4;
 const BATCH_SIZE: usize = 4;
 const OVERLAY_SCALE: u32 = 10;
-const TARGET_MEAN_IOU: f32 = 0.45;
+const TARGET_BINARY_IOU: f32 = 0.35;
 const DEFAULT_EVOLUTION_SEED: u64 = 42;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -27,9 +27,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         "ONLY_TORCH_EVOLUTION_DEFORMABLE_SEG_SEED",
         DEFAULT_EVOLUTION_SEED,
     );
-    let target_mean_iou = env_f32(
+    let target_binary_iou = env_f32(
         "ONLY_TORCH_EVOLUTION_DEFORMABLE_SEG_TARGET",
-        TARGET_MEAN_IOU,
+        TARGET_BINARY_IOU,
     );
     let save_artifacts = env_bool("ONLY_TORCH_EVOLUTION_DEFORMABLE_SEG_SAVE_ARTIFACTS", true);
 
@@ -40,12 +40,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let train_data = (train.inputs.clone(), train.labels.clone());
     let test_data = (test.inputs.clone(), test.labels.clone());
 
-    println!("任务: 16x16 合成图像二类语义分割（background / foreground）");
-    println!("输入: [1, {IMAGE_SIZE}, {IMAGE_SIZE}]，标签: [2, {IMAGE_SIZE}, {IMAGE_SIZE}]");
-    println!("指标: MeanIoU，候选族: DeformableConv2d dense segmentation seed");
+    println!("任务: 16x16 合成图像二值前景分割（1..3 个可重叠形状）");
+    println!("输入: [1, {IMAGE_SIZE}, {IMAGE_SIZE}]，标签: [1, {IMAGE_SIZE}, {IMAGE_SIZE}]");
+    println!("指标: BinaryIoU，候选族: DeformableConv2d dense segmentation seed");
     println!("演化策略: 关闭 learned surrogate；用 deformable 初始族直接验证 P4+ 搜索闭环");
     println!("训练样本: {TRAIN_SAMPLES}, 测试样本: {TEST_SAMPLES}, batch: {BATCH_SIZE}");
-    println!("演化 seed: {evolution_seed}, target Mean IoU: {target_mean_iou:.2}\n");
+    println!("演化 seed: {evolution_seed}, target Binary IoU: {target_binary_iou:.2}\n");
 
     let deformable_only = InitialPortfolioConfig {
         include_flat_mlp: false,
@@ -56,12 +56,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         flat_mlp_hidden: 1,
     };
 
-    let result = Evolution::supervised(train_data, test_data, TaskMetric::MeanIoU)
+    let result = Evolution::supervised(train_data, test_data, TaskMetric::BinaryIoU)
         .with_initial_portfolio(deformable_only)
         .with_initial_burst(0)
         .with_candidate_scoring(None)
-        .with_target_metric(target_mean_iou)
-        .with_report_metrics([ReportMetric::PixelAccuracy, ReportMetric::MeanIoU])
+        .with_target_metric(target_binary_iou)
+        .with_report_metrics([
+            ReportMetric::PixelAccuracy,
+            ReportMetric::BinaryIoU,
+            ReportMetric::Dice,
+        ])
         .with_seed(evolution_seed)
         .with_max_generations(3)
         .with_population_size(3)
@@ -75,7 +79,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("\n=== 演化结果 ===");
     println!("状态: {:?}", result.status);
     println!("代数: {}", result.generations);
-    println!("Mean IoU: {:.1}%", result.fitness.primary * 100.0);
+    println!("Binary IoU: {:.1}%", result.fitness.primary * 100.0);
     if !result.fitness.report.is_empty() {
         println!("报告指标: {}", result.fitness.report.format_compact());
     }
@@ -88,10 +92,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let sample_idx = 0;
     let pred = result.predict(&test.inputs[sample_idx])?;
     let target = Tensor::stack(&[&test.labels[sample_idx]], 0);
+    let pred_mask = threshold_logits(&pred);
     println!(
-        "代表样本 #{sample_idx} Pixel Accuracy: {:.1}%, Mean IoU: {:.1}%",
-        semantic_pixel_accuracy(&pred, &target).percent(),
-        mean_iou(&pred, &target).percent()
+        "代表样本 #{sample_idx} Pixel Accuracy: {:.1}%, Binary IoU: {:.1}%",
+        pixel_accuracy(&pred_mask, &target, 0.5).percent(),
+        binary_iou(&pred_mask, &target, 0.5).percent()
     );
 
     if save_artifacts {
@@ -148,7 +153,7 @@ fn generate_dataset(n: usize, seed: u64) -> SegmentationDataset {
     for sample_idx in 0..n {
         let objects = generate_objects(sample_idx, seed);
         let mut image = Vec::with_capacity(IMAGE_SIZE * IMAGE_SIZE);
-        let mut foreground_mask = Vec::with_capacity(IMAGE_SIZE * IMAGE_SIZE);
+        let mut mask = Vec::with_capacity(IMAGE_SIZE * IMAGE_SIZE);
 
         for y in 0..IMAGE_SIZE {
             for x in 0..IMAGE_SIZE {
@@ -163,17 +168,12 @@ fn generate_dataset(n: usize, seed: u64) -> SegmentationDataset {
                 let gradient = (x as f32 + y as f32) / (2.0 * (IMAGE_SIZE - 1) as f32);
                 let base = if foreground { 0.82 } else { 0.04 };
                 image.push((base + 0.08 * gradient + 0.08 * noise).clamp(0.0, 1.0));
-                foreground_mask.push(if foreground { 1.0 } else { 0.0 });
+                mask.push(if foreground { 1.0 } else { 0.0 });
             }
         }
 
         inputs.push(Tensor::new(&image, &[1, IMAGE_SIZE, IMAGE_SIZE]));
-        let mut mask = Vec::with_capacity(2 * IMAGE_SIZE * IMAGE_SIZE);
-        for &foreground in &foreground_mask {
-            mask.push(1.0 - foreground);
-        }
-        mask.extend(foreground_mask);
-        labels.push(Tensor::new(&mask, &[2, IMAGE_SIZE, IMAGE_SIZE]));
+        labels.push(Tensor::new(&mask, &[1, IMAGE_SIZE, IMAGE_SIZE]));
     }
 
     SegmentationDataset { inputs, labels }
@@ -259,10 +259,10 @@ fn save_sample_visualizations(
             let base = (input[[0, y, x]].clamp(0.0, 1.0) * 255.0) as u8;
             fill_scaled_pixel(&mut input_img, x, y, [base, base, base]);
 
-            let target_on = target[[1, y, x]] >= target[[0, y, x]];
+            let target_on = target[[0, y, x]] >= 0.5;
             fill_scaled_pixel(&mut target_img, x, y, binary_color(target_on));
 
-            let pred_on = prediction[[0, 1, y, x]] >= prediction[[0, 0, y, x]];
+            let pred_on = prediction[[0, 0, y, x]] >= 0.0;
             fill_scaled_pixel(&mut pred_img, x, y, binary_color(pred_on));
         }
     }
@@ -302,6 +302,15 @@ fn fill_scaled_pixel(canvas: &mut image::RgbImage, x: usize, y: usize, color: [u
 
 fn binary_color(on: bool) -> [u8; 3] {
     if on { [80, 220, 120] } else { [32, 32, 32] }
+}
+
+fn threshold_logits(tensor: &Tensor) -> Tensor {
+    let data: Vec<f32> = tensor
+        .to_vec()
+        .into_iter()
+        .map(|value| if value >= 0.0 { 1.0 } else { 0.0 })
+        .collect();
+    Tensor::new(&data, tensor.shape())
 }
 
 fn deterministic_noise(seed: u64, sample_idx: usize, x: usize, y: usize) -> f32 {

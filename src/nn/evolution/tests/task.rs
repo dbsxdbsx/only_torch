@@ -94,6 +94,13 @@ fn tiny_segmentation_data() -> (Vec<Tensor>, Vec<Tensor>) {
     )
 }
 
+fn tiny_binary_segmentation_data() -> (Vec<Tensor>, Vec<Tensor>) {
+    (
+        vec![Tensor::zeros(&[1, 8, 8]), Tensor::ones(&[1, 8, 8])],
+        vec![Tensor::zeros(&[1, 8, 8]), Tensor::ones(&[1, 8, 8])],
+    )
+}
+
 fn genome_with_hidden(input_dim: usize, output_dim: usize) -> NetworkGenome {
     let mut genome = NetworkGenome::minimal(input_dim, output_dim);
     let mut counter = make_counter(&genome);
@@ -785,6 +792,8 @@ fn test_binary_classification_all_negative_logits() {
 fn test_segmentation_primary_metrics() {
     let binary_predictions = Tensor::new(&[0.9, 0.8, 0.2, 0.1], &[1, 1, 2, 2]);
     let binary_labels = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[1, 1, 2, 2]);
+    let bce_binary_logits = Tensor::new(&[-1.0, 1.0, 1.0, -1.0], &[1, 1, 2, 2]);
+    let bce_binary_labels = Tensor::new(&[0.0, 1.0, 0.0, 1.0], &[1, 1, 2, 2]);
     let semantic_predictions = Tensor::new(
         &[
             0.9, 0.2, 0.8, 0.4, // class 0
@@ -807,6 +816,13 @@ fn test_segmentation_primary_metrics() {
         1,
         &LossType::MSE,
     );
+    let bce_binary_iou = compute_primary_metric(
+        &TaskMetric::BinaryIoU,
+        &bce_binary_logits,
+        &bce_binary_labels,
+        1,
+        &LossType::BCE,
+    );
     let mean_iou = compute_primary_metric(
         &TaskMetric::MeanIoU,
         &semantic_predictions,
@@ -816,6 +832,7 @@ fn test_segmentation_primary_metrics() {
     );
 
     assert!((binary_iou - 1.0 / 3.0).abs() < 1e-6);
+    assert!((bce_binary_iou - 1.0 / 3.0).abs() < 1e-6);
     assert!((mean_iou - (2.0 / 3.0 + 0.5) / 2.0).abs() < 1e-6);
 }
 
@@ -833,6 +850,22 @@ fn test_supervised_segmentation_task_evaluates_dense_output() {
     assert!(score.primary >= 0.0 && score.primary <= 1.0);
     assert!(score.tiebreak_loss.is_some());
     assert!(score.report.get(ReportMetric::MeanIoU).is_some());
+    assert!(score.report.get(ReportMetric::PixelAccuracy).is_some());
+}
+
+#[test]
+fn test_supervised_binary_iou_evaluates_deformable_dense_output_batch() {
+    let data = tiny_binary_segmentation_data();
+    let task = SupervisedTask::new(data.clone(), data, TaskMetric::BinaryIoU).unwrap();
+    let genome = NetworkGenome::spatial_segmentation_deformable_tiny(1, 1, (8, 8));
+    let mut rng = StdRng::seed_from_u64(42);
+    let build = build_and_restore(&genome, &mut rng);
+
+    let score = task.evaluate(&genome, &build, &mut rng).unwrap();
+
+    assert!(score.primary >= 0.0 && score.primary <= 1.0);
+    assert!(score.tiebreak_loss.is_some());
+    assert!(score.report.get(ReportMetric::BinaryIoU).is_some());
     assert!(score.report.get(ReportMetric::PixelAccuracy).is_some());
 }
 

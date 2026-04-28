@@ -79,7 +79,7 @@ let dot = graph.to_dot();
 | [evolution_mnist](examples/evolution/mnist/) | **神经架构演化** | **Evolution API**、Spatial 域 CNN 自动搜索 | 自动演化 | `cargo run --example evolution_mnist` |
 | [evolution_overlapping_shapes_semantic_segmentation](examples/evolution/overlapping_shapes_semantic_segmentation/) | **分割架构演化** | **Spatial-to-spatial**、Mean IoU、无 Flatten 输出头 | 自动演化 | `cargo run --example evolution_overlapping_shapes_semantic_segmentation` |
 | [evolution_overlapping_shapes_unet_lite_segmentation](examples/evolution/overlapping_shapes_unet_lite_segmentation/) | **分割 benchmark 演化** | **64x64 U-Net-lite 对照任务**、encoder-decoder 初始族、结构变异、多类别 Mean IoU、可视化 target/prediction | 自动演化 | `cargo run --example evolution_overlapping_shapes_unet_lite_segmentation` |
-| [evolution_deformable_conv2d_segmentation](examples/evolution/deformable_conv2d_segmentation/) | **Deformable 分割演化** | **DeformableConv2d 初始族**、关闭 P5-lite、16x16 二类 Mean IoU 小 benchmark | 自动演化 | `cargo run --example evolution_deformable_conv2d_segmentation` |
+| [evolution_deformable_conv2d_segmentation](examples/evolution/deformable_conv2d_segmentation/) | **Deformable 分割演化** | **DeformableConv2d 初始族**、关闭 P5-lite、16x16 二值 Binary IoU 小 benchmark | 自动演化 | `cargo run --example evolution_deformable_conv2d_segmentation` |
 | [evolution_parity_seq](examples/evolution/parity_seq/) | **神经架构演化** | **Evolution API**、序列数据、记忆单元自动选择 | 自动演化 | `cargo run --example evolution_parity_seq` |
 | [evolution_parity_seq_var_len](examples/evolution/parity_seq_var_len/) | **神经架构演化** | **Evolution API**、变长序列、zero-pad | 自动演化 | `cargo run --example evolution_parity_seq_var_len` |
 
@@ -487,11 +487,11 @@ cargo run --example evolution_mnist
 
 **Evolution DeformableConv2d Segmentation** ⭐⭐
 
-P4+ 小型验证示例。使用 16x16 background / foreground 二类语义分割数据，显式启用 DeformableConv2d dense segmentation 初始候选族，并关闭 P5-lite，验证算子能进入 evolution 主流程。
+P4+ 小型验证示例。使用 16x16 二值前景分割数据，显式启用 DeformableConv2d dense segmentation 初始候选族，并关闭 P5-lite，验证算子能进入 evolution 主流程。
 
 ```bash
 cargo run --example evolution_deformable_conv2d_segmentation
-# 默认 seed=42 第 2 代达到 Mean IoU 58.8%，最终基因组包含 DeformableConv2d
+# 默认 seed=42 在 4 个测试样本上达到 Binary IoU 40.3%，最终基因组包含 DeformableConv2d
 ```
 
 **Evolution Parity Seq（固定长度序列）** ⭐⭐⭐

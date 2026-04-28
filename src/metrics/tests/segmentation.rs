@@ -40,6 +40,30 @@ fn test_binary_iou_basic() {
 }
 
 #[test]
+fn test_binary_iou_batch() {
+    let predictions = Tensor::new(
+        &[
+            0.9, 0.8, 0.2, 0.1, // sample 0: positives {0,1}
+            0.1, 0.9, 0.9, 0.1, // sample 1: positives {1,2}
+        ],
+        &[2, 1, 2, 2],
+    );
+    let actuals = Tensor::new(
+        &[
+            1.0, 0.0, 1.0, 0.0, // sample 0: positives {0,2}
+            0.0, 1.0, 0.0, 1.0, // sample 1: positives {1,3}
+        ],
+        &[2, 1, 2, 2],
+    );
+
+    let result = binary_iou(&predictions, &actuals, 0.5);
+
+    // 整个 batch 上的 micro IoU：intersection=2，union=6。
+    assert!((result.value() - 1.0 / 3.0).abs() < 1e-6);
+    assert_eq!(result.n_samples(), 8);
+}
+
+#[test]
 fn test_binary_iou_empty_masks_are_perfect_match() {
     let predictions = Tensor::new(&[0.1, 0.2, 0.3, 0.4], &[1, 1, 2, 2]);
     let actuals = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 1, 2, 2]);
