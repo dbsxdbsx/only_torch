@@ -76,7 +76,7 @@ graph TD
 | Detection | Oriented Detection | `[ ]` | 暂无 | 需要旋转框表示、角度损失、旋转 IoU |
 | Detection | 3D Detection | `[ ]` | 暂无 | 需要深度 / 点云 / 相机几何等数据表示 |
 | Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练 16x16 合成 mask | 数据过 toy；缺少更可信 benchmark |
-| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`evolution_overlapping_shapes_semantic_segmentation` 已支持 32x32 dense spatial-to-spatial 演化与 Mean IoU | Evolution 仍是小样本最小闭环；需要更强 FCN / U-Net 对照和更大规模验证 |
+| Segmentation | 多类别语义分割 | `[~]` | `overlapping_shapes_semantic_segmentation` 传统 64x64 benchmark；`overlapping_shapes_unet_lite_segmentation` 提供 U-Net-lite 强基线；`evolution_overlapping_shapes_semantic_segmentation` 已支持 32x32 dense spatial-to-spatial 演化与 Mean IoU | Evolution 仍是小样本最小闭环；下一步需要把 evolution benchmark 扩到更可信数据规模 |
 | Segmentation | 固定 slot 实例分割 | `[~]` | `multi_instance_segmentation` 支持固定 2 slot mask | 不支持不定数量实例、类别、confidence、matching |
 | Segmentation | 通用实例分割 | `[ ]` | 暂无 | 需要变长实例列表、mask matching、实例级指标 |
 | Segmentation | 全景分割 | `[ ]` | 暂无 | 依赖语义分割 + 实例分割统一表示 |
@@ -93,9 +93,9 @@ graph TD
 | 优先级 | 事项 | 状态 | 目标 |
 |---|---|---|---|
 | P0 | 建立空间视觉任务路线图 | `[x]` | 统一术语、任务边界和能力矩阵 |
-| P1 | Segmentation v2 数据与指标 | `[~]` | 已有 overlapping shapes benchmark 和 Mean IoU / Dice；下一步扩大数据规模与难度 |
-| P2 | Segmentation Evolution | `[~]` | 已有 spatial-to-spatial minimal genome、dense segmentation portfolio 与 P5-lite/timing 审计；下一步扩到更可信 benchmark |
-| P3 | FCN / U-Net 风格传统强基线 | `[ ]` | 给 Segmentation Evolution 一个可对照的手写强基线 |
+| P1 | Segmentation v2 数据与指标 | `[~]` | 已有 overlapping shapes benchmark、U-Net-lite 强基线和 Mean IoU / Dice；下一步扩大数据规模与难度 |
+| P2 | Segmentation Evolution | `[~]` | 已有 spatial-to-spatial minimal genome、dense segmentation portfolio 与 P5-lite/timing 审计；下一步扩到 U-Net-lite 对照所在的更可信 benchmark |
+| P3 | FCN / U-Net 风格传统强基线 | `[x]` | `overlapping_shapes_unet_lite_segmentation` 在 debug + BLAS 下约 27.4s 达到 Mean IoU 75.6%，可作为后续 Segmentation Evolution 对照 |
 | P4 | YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP |
 | P5 | 多输出 / 多头 Evolution | `[ ]` | 支持 detection + mask 等多任务输出与 loss 聚合 |
 | P6 | Instance Segmentation Lite | `[ ]` | 从固定 slot 过渡到可变实例、matching 和实例级指标 |

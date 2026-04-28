@@ -2,6 +2,13 @@
 
 ## [Unreleased] - 待提交
 
+### Added
+
+- **feat(example): 新增 Overlapping Shapes U-Net-lite 分割强基线**
+  - 新增 `examples/traditional/overlapping_shapes_unet_lite_segmentation`，复用 64x64 overlapping shapes 语义分割数据与 Mean IoU / Dice / per-class IoU 指标
+  - 模型采用 `Conv2d -> MaxPool2d -> ConvTranspose2d -> Var::concat(axis=1)` 的轻量 encoder-decoder + skip connection 结构，作为后续 Segmentation Evolution 扩大 benchmark 的传统对照
+  - 注册 `cargo run --example overlapping_shapes_unet_lite_segmentation` 与 `just example-overlapping-shapes-unet-lite-segmentation`；debug + BLAS 下约 27.4 秒达到 Mean IoU 75.6%
+
 ### Changed
 
 - **feat(evolution): 收敛 MNIST 默认演化搜索路径**
@@ -13,7 +20,7 @@
   - 候选族统计改为通用计数容器；`dense_seg_head` / `dense_seg_deep` 作为内部候选族继续服务 `eval-family` 与 `p5-lite-family` 观测
   - `loss_var.backward()` 计时拆分为 `backward_total`、`backward_forward`、`backward_propagate`，BCEWithLogits 前向改为单次扫描生成 sigmoid 缓存与稳定 loss，并移除 target 缓存 clone
   - `Conv2d` forward 对 padding 为 0 的 1x1 / valid conv 不再深拷贝输入作为 `padded_input`，减少 dense segmentation head 的无效内存拷贝
-  - `evolution_overlapping_shapes_semantic_segmentation` 示例移除默认强制 verbose 审计日志；本轮 debug + BLAS 最新单次复验约 2.6 秒达到 Mean IoU 63.0%
+  - `evolution_overlapping_shapes_semantic_segmentation` 示例移除默认强制 verbose 审计日志；本轮 debug + BLAS 最新单次复验约 2.9 秒达到 Mean IoU 63.0%
 
 ## [0.16.0] - 2026-04-28
 

@@ -179,6 +179,10 @@
     path="examples/traditional/overlapping_shapes_semantic_segmentation/main.rs"
 
 [[example]]
+    name="overlapping_shapes_unet_lite_segmentation"
+    path="examples/traditional/overlapping_shapes_unet_lite_segmentation/main.rs"
+
+[[example]]
     name="overlapping_fixed_slot_instance_segmentation"
     path="examples/traditional/overlapping_fixed_slot_instance_segmentation/main.rs"
 
