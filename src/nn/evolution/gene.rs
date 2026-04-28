@@ -20,8 +20,8 @@ use std::collections::HashMap;
 use std::fmt;
 
 use super::node_expansion::{
-    InnovationCounter, expand_activation, expand_conv_transpose2d, expand_conv2d, expand_flatten,
-    expand_linear, expand_pool2d, expand_rnn,
+    InnovationCounter, expand_activation, expand_conv_transpose2d, expand_conv2d,
+    expand_deformable_conv2d, expand_flatten, expand_linear, expand_pool2d, expand_rnn,
 };
 use super::node_gene::{GenomeAnalysis, NodeGene};
 
@@ -1100,6 +1100,94 @@ impl NetworkGenome {
             input_spatial: Some(spatial),
             training_config: TrainingConfig::default(),
             generated_by: "spatial_segmentation_tiny".to_string(),
+            output_heads: Vec::new(),
+            repr: GenomeRepr::NodeLevel {
+                nodes,
+                next_innovation: counter.peek(),
+                weight_snapshots: HashMap::new(),
+            },
+        }
+    }
+
+    /// DeformableConv2d segmentation 种子：Conv → ReLU → DeformableConv2d → ReLU → 1×1 head。
+    ///
+    /// 该结构用于 P4+ evolution benchmark，确保搜索可以从一个明确包含
+    /// DeformableConv2d 的 dense segmentation 候选出发，而不是只依赖随机插入命中。
+    pub(crate) fn spatial_segmentation_deformable_tiny(
+        input_channels: usize,
+        output_channels: usize,
+        spatial: (usize, usize),
+    ) -> Self {
+        assert!(input_channels > 0, "input_channels 不能为零");
+        assert!(output_channels > 0, "output_channels 不能为零");
+        assert!(spatial.0 > 0 && spatial.1 > 0, "spatial (H, W) 不能为零");
+
+        let hidden_channels = 4usize;
+        let mut counter = InnovationCounter::new(1);
+        let mut nodes = expand_conv2d(
+            INPUT_INNOVATION,
+            input_channels,
+            hidden_channels,
+            3,
+            spatial,
+            0,
+            &mut counter,
+        );
+        let conv_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Conv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            conv_output_id,
+            vec![1, hidden_channels, spatial.0, spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let act_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Activation 展开应至少产生一个节点");
+        nodes.extend(expand_deformable_conv2d(
+            act_output_id,
+            hidden_channels,
+            hidden_channels,
+            3,
+            spatial,
+            1,
+            1,
+            &mut counter,
+        ));
+        let deform_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("DeformableConv2d 展开应至少产生一个节点");
+        nodes.extend(expand_activation(
+            deform_output_id,
+            vec![1, hidden_channels, spatial.0, spatial.1],
+            &ActivationType::ReLU,
+            &mut counter,
+        ));
+        let deform_act_output_id = nodes
+            .last()
+            .map(|node| node.innovation_number)
+            .expect("Activation 展开应至少产生一个节点");
+        nodes.extend(expand_conv2d(
+            deform_act_output_id,
+            hidden_channels,
+            output_channels,
+            1,
+            spatial,
+            2,
+            &mut counter,
+        ));
+
+        Self {
+            input_dim: input_channels,
+            output_dim: output_channels,
+            seq_len: None,
+            input_spatial: Some(spatial),
+            training_config: TrainingConfig::default(),
+            generated_by: "spatial_segmentation_deformable_tiny".to_string(),
             output_heads: Vec::new(),
             repr: GenomeRepr::NodeLevel {
                 nodes,

@@ -265,3 +265,7 @@
 [[example]]
     name="evolution_overlapping_shapes_unet_lite_segmentation"
     path="examples/evolution/overlapping_shapes_unet_lite_segmentation/main.rs"
+
+[[example]]
+    name="evolution_deformable_conv2d_segmentation"
+    path="examples/evolution/deformable_conv2d_segmentation/main.rs"

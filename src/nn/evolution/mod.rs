@@ -231,6 +231,16 @@ impl EvolutionResult {
         &self.architecture_summary
     }
 
+    /// 当前结果的基因组中是否包含 DeformableConv2d 节点。
+    ///
+    /// 主要用于 DeformableConv2d evolution 示例和调试日志，避免依赖
+    /// NodeLevel 摘要字符串推断具体算子类型。
+    pub fn has_deformable_conv2d(&self) -> bool {
+        self.genome.nodes().iter().any(|node| {
+            node.enabled && matches!(node.node_type, NodeTypeDescriptor::DeformableConv2d { .. })
+        })
+    }
+
     /// 在满足 target 的 Pareto 成员中，找到 inference_cost 最小的索引
     pub fn smallest_meeting_target_index(&self, target: f32) -> Option<usize> {
         self.pareto_front
@@ -614,6 +624,7 @@ pub struct InitialPortfolioConfig {
     pub include_tiny_cnn: bool,
     pub include_lenet_tiny: bool,
     pub include_unet_lite: bool,
+    pub include_deformable_tiny: bool,
     pub flat_mlp_hidden: usize,
 }
 
@@ -628,6 +639,7 @@ impl InitialPortfolioConfig {
             include_tiny_cnn: false,
             include_lenet_tiny: false,
             include_unet_lite: false,
+            include_deformable_tiny: false,
             flat_mlp_hidden: hidden.max(1),
         }
     }
@@ -638,6 +650,7 @@ impl InitialPortfolioConfig {
             include_tiny_cnn: true,
             include_lenet_tiny: true,
             include_unet_lite: false,
+            include_deformable_tiny: false,
             flat_mlp_hidden: 128,
         }
     }
@@ -646,14 +659,23 @@ impl InitialPortfolioConfig {
     ///
     /// `include_tiny_cnn` 表示最小 dense segmentation head，`include_lenet_tiny`
     /// 表示稍深的 dense conv head，`include_unet_lite` 表示 encoder-decoder + skip
-    /// concat 的 U-Net-lite 起点。
+    /// concat 的 U-Net-lite 起点，`include_deformable_tiny` 表示 offset-only
+    /// DeformableConv2d dense segmentation 起点。
     pub fn vision_segmentation() -> Self {
         Self {
             include_flat_mlp: false,
             include_tiny_cnn: true,
             include_lenet_tiny: true,
             include_unet_lite: true,
+            include_deformable_tiny: false,
             flat_mlp_hidden: 1,
+        }
+    }
+
+    pub fn vision_segmentation_with_deformable() -> Self {
+        Self {
+            include_deformable_tiny: true,
+            ..Self::vision_segmentation()
         }
     }
 
@@ -663,6 +685,7 @@ impl InitialPortfolioConfig {
             include_tiny_cnn: self.include_tiny_cnn,
             include_lenet_tiny: self.include_lenet_tiny,
             include_unet_lite: self.include_unet_lite,
+            include_deformable_tiny: self.include_deformable_tiny,
             flat_mlp_hidden: self.flat_mlp_hidden.max(1),
         }
     }
@@ -1830,6 +1853,13 @@ fn initial_seed_genomes(
         }
         if config.include_lenet_tiny {
             seeds.push(NetworkGenome::spatial_segmentation_tiny(
+                prepared.input_dim,
+                prepared.output_dim,
+                spatial,
+            ));
+        }
+        if config.include_deformable_tiny {
+            seeds.push(NetworkGenome::spatial_segmentation_deformable_tiny(
                 prepared.input_dim,
                 prepared.output_dim,
                 spatial,

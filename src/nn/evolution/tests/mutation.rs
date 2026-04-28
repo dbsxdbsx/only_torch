@@ -268,6 +268,34 @@ fn test_deformable_conv2d_block_builds_in_spatial_segmentation_genome() {
 }
 
 #[test]
+fn test_deformable_segmentation_seed_builds_dense_output() {
+    let genome = NetworkGenome::spatial_segmentation_deformable_tiny(1, 2, (8, 8));
+
+    assert!(genome.analyze().is_valid);
+    assert!(node_main_path(&genome).iter().any(|block| {
+        matches!(
+            block.kind,
+            NodeBlockKind::DeformableConv2d {
+                out_channels: 4,
+                kernel_size: 3,
+            }
+        )
+    }));
+
+    let mut rng = rng();
+    let build = genome.build(&mut rng).unwrap();
+    build
+        .input
+        .set_value(&Tensor::zeros(&[1, 1, 8, 8]))
+        .unwrap();
+    build.output.forward().unwrap();
+    assert_eq!(
+        build.output.value().unwrap().unwrap().shape(),
+        &[1, 2, 8, 8]
+    );
+}
+
+#[test]
 fn test_insert_encoder_decoder_skip_adds_unet_style_block() {
     let mut genome = NetworkGenome::minimal_spatial_segmentation(1, 2, (8, 8));
     let mut rng = rng();

@@ -29,6 +29,11 @@
   - 新增 `examples/traditional/deformable_conv2d_segmentation`，使用 16x16 多形状二值前景分割数据展示 `Conv -> DeformableConv2d -> Conv -> 1x1 head` 手写网络基线
   - 示例输出 `test_in.png` / `test_out.png` 和计算图 `.dot` / `.png`，`test_out.png` 以绿色热力图展示 foreground 概率
   - 注册 `cargo run --example deformable_conv2d_segmentation` 与 `just example-deformable-conv2d-segmentation`
+- **feat(example): 新增 DeformableConv2d 分割演化示例**
+  - 新增 `examples/evolution/deformable_conv2d_segmentation`，使用 16x16 background / foreground 二类语义分割数据验证 DeformableConv2d seed 进入 evolution 主流程
+  - `InitialPortfolioConfig` 新增 `include_deformable_tiny` 与 `vision_segmentation_with_deformable()`，并新增 `spatial_segmentation_deformable_tiny` 初始基因组
+  - 示例关闭 P5-lite learned / heuristic 预筛路径，默认 seed=42 在第 2 代达到 Mean IoU 58.8%，最终基因组包含 DeformableConv2d
+  - 注册 `cargo run --example evolution_deformable_conv2d_segmentation` 与 `just example-evolution-deformable-conv2d-segmentation`
 
 ### Changed
 

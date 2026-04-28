@@ -212,7 +212,7 @@ example-moving-sac:
 # ---------- Evolution（神经架构自动演化）----------
 
 # 运行所有 evolution examples
-examples-evolution: example-evolution-xor example-evolution-iris example-evolution-multi-head-quadrant-radius example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-mnist example-evolution-overlapping-shapes-semantic-segmentation example-evolution-overlapping-shapes-unet-lite-segmentation
+examples-evolution: example-evolution-xor example-evolution-iris example-evolution-multi-head-quadrant-radius example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-mnist example-evolution-overlapping-shapes-semantic-segmentation example-evolution-overlapping-shapes-unet-lite-segmentation example-evolution-deformable-conv2d-segmentation
 
 example-evolution-xor:
     @echo "=== Running Evolution XOR [{{_blas_name}}] ==="
@@ -245,6 +245,10 @@ example-evolution-overlapping-shapes-semantic-segmentation:
 example-evolution-overlapping-shapes-unet-lite-segmentation:
     @echo "=== Running Evolution Overlapping Shapes U-Net-lite Benchmark Segmentation [{{_blas_name}}] ==="
     cargo run --example evolution_overlapping_shapes_unet_lite_segmentation {{_blas_flag}}
+
+example-evolution-deformable-conv2d-segmentation:
+    @echo "=== Running Evolution DeformableConv2d Segmentation [{{_blas_name}}] ==="
+    cargo run --example evolution_deformable_conv2d_segmentation {{_blas_flag}}
 
 # ==================== 代码质量 ====================
 
