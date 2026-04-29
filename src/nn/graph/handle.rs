@@ -344,9 +344,12 @@ impl Graph {
             inner.inference();
             prev
         };
-        let result = f(self);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self)));
         self.inner.borrow_mut().set_mode(prev);
-        result
+        match result {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
     }
 
     // 注意：checkpoint() 和 prune_nodes_after() 已移除

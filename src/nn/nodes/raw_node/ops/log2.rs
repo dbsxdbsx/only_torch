@@ -99,7 +99,7 @@ impl TraitNode for Log2 {
         let input = self
             .input_cache
             .as_ref()
-            .ok_or_else(|| GraphError::ComputationError("Log2 输入缓存为空".to_string()))?;
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "input"))?;
         let ln2 = 2.0_f32.ln();
         Ok(GradResult::Computed(upstream_grad / &(input * ln2)))
     }

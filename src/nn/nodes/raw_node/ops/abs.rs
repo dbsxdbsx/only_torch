@@ -112,10 +112,7 @@ impl TraitNode for Abs {
     ) -> Result<GradResult, GraphError> {
         // 获取缓存的父节点值
         let parent_value = self.parent_value_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError(format!(
-                "{}的父节点值缓存为空，需先执行前向传播",
-                self.display_node()
-            ))
+            GraphError::backward_cache_missing(self.display_node(), "parent_value")
         })?;
 
         // 计算局部梯度 sign(x)

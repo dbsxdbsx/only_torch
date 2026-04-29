@@ -968,122 +968,131 @@ impl EvolutionTask for SupervisedTask {
         build: &BuildResult,
         _rng: &mut StdRng,
     ) -> Result<FitnessScore, GraphError> {
+        let prev_mode = build.graph.mode();
         build.graph.inference();
 
-        build.input.set_value(&self.test_x)?;
+        let result = (|| {
+            build.input.set_value(&self.test_x)?;
 
-        // 创建 target + loss 用于计算 tiebreak（eval 专用节点）
-        let target_vars: Vec<Var> = self
-            .heads
-            .iter()
-            .map(|head| build.graph.target(head.test_y.shape()))
-            .collect::<Result<Vec<_>, _>>()?;
-        for (target, head) in target_vars.iter().zip(&self.heads) {
-            target.set_value(&head.test_y)?;
-        }
-        let loss_vars = self
-            .heads
-            .iter()
-            .enumerate()
-            .map(|(idx, head)| {
+            // 创建 target + loss 用于计算 tiebreak（inference 专用节点）
+            let target_vars: Vec<Var> = self
+                .heads
+                .iter()
+                .map(|head| build.graph.target(head.test_y.shape()))
+                .collect::<Result<Vec<_>, _>>()?;
+            for (target, head) in target_vars.iter().zip(&self.heads) {
+                target.set_value(&head.test_y)?;
+            }
+            let loss_vars = self
+                .heads
+                .iter()
+                .enumerate()
+                .map(|(idx, head)| {
+                    let output = build.outputs.get(idx).ok_or_else(|| {
+                        GraphError::ComputationError(format!(
+                            "缺少 head '{}' 对应的输出节点",
+                            head.meta.name
+                        ))
+                    })?;
+                    let loss_type = head_loss_type(genome, &head.meta);
+                    create_weighted_loss(
+                        output,
+                        &target_vars[idx],
+                        &loss_type,
+                        head.meta.loss_weight,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let loss_var = aggregate_loss_vars(loss_vars)?;
+
+            build.graph.forward(&loss_var)?;
+
+            let test_loss_tensor = loss_var
+                .value()?
+                .ok_or_else(|| GraphError::ComputationError("评估时 loss 节点无值".into()))?;
+            let test_loss_scalar = test_loss_tensor.to_vec()[0];
+
+            let mut head_reports = Vec::with_capacity(self.heads.len());
+            let mut weighted_sum = 0.0;
+            let mut weight_sum = 0.0;
+            let mut primary_value = None;
+            for (idx, head) in self.heads.iter().enumerate() {
                 let output = build.outputs.get(idx).ok_or_else(|| {
                     GraphError::ComputationError(format!(
                         "缺少 head '{}' 对应的输出节点",
                         head.meta.name
                     ))
                 })?;
+                let predictions = output
+                    .value()?
+                    .ok_or_else(|| GraphError::ComputationError("评估时输出节点无值".into()))?;
                 let loss_type = head_loss_type(genome, &head.meta);
-                create_weighted_loss(output, &target_vars[idx], &loss_type, head.meta.loss_weight)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let loss_var = aggregate_loss_vars(loss_vars)?;
-
-        build.graph.forward(&loss_var)?;
-
-        let test_loss_tensor = loss_var
-            .value()?
-            .ok_or_else(|| GraphError::ComputationError("评估时 loss 节点无值".into()))?;
-        let test_loss_scalar = test_loss_tensor.to_vec()[0];
-
-        let mut head_reports = Vec::with_capacity(self.heads.len());
-        let mut weighted_sum = 0.0;
-        let mut weight_sum = 0.0;
-        let mut primary_value = None;
-        for (idx, head) in self.heads.iter().enumerate() {
-            let output = build.outputs.get(idx).ok_or_else(|| {
-                GraphError::ComputationError(format!(
-                    "缺少 head '{}' 对应的输出节点",
-                    head.meta.name
-                ))
-            })?;
-            let predictions = output
-                .value()?
-                .ok_or_else(|| GraphError::ComputationError("评估时输出节点无值".into()))?;
-            let loss_type = head_loss_type(genome, &head.meta);
-            let head_primary = compute_primary_metric(
-                &head.meta.metric,
-                &predictions,
-                &head.test_y,
-                head.meta.output_dim,
-                &loss_type,
-            );
-            let report = compute_metric_report(
-                &head.meta.metric,
-                &head.report_metrics,
-                &predictions,
-                &head.test_y,
-                head.meta.output_dim,
-                &loss_type,
-            );
-            if head.meta.primary {
-                primary_value = Some(head_primary);
+                let head_primary = compute_primary_metric(
+                    &head.meta.metric,
+                    &predictions,
+                    &head.test_y,
+                    head.meta.output_dim,
+                    &loss_type,
+                );
+                let report = compute_metric_report(
+                    &head.meta.metric,
+                    &head.report_metrics,
+                    &predictions,
+                    &head.test_y,
+                    head.meta.output_dim,
+                    &loss_type,
+                );
+                if head.meta.primary {
+                    primary_value = Some(head_primary);
+                }
+                weighted_sum += head_primary * head.meta.metric_weight;
+                weight_sum += head.meta.metric_weight;
+                head_reports.push(HeadMetricReport {
+                    head_name: head.meta.name.clone(),
+                    primary: head_primary,
+                    tiebreak_loss: if head.meta.metric.is_discrete() {
+                        Some(test_loss_scalar)
+                    } else {
+                        None
+                    },
+                    report,
+                });
             }
-            weighted_sum += head_primary * head.meta.metric_weight;
-            weight_sum += head.meta.metric_weight;
-            head_reports.push(HeadMetricReport {
-                head_name: head.meta.name.clone(),
-                primary: head_primary,
-                tiebreak_loss: if head.meta.metric.is_discrete() {
-                    Some(test_loss_scalar)
+            let primary = primary_value.unwrap_or_else(|| {
+                if weight_sum > 0.0 {
+                    weighted_sum / weight_sum
                 } else {
-                    None
-                },
-                report,
+                    0.0
+                }
             });
-        }
-        let primary = primary_value.unwrap_or_else(|| {
-            if weight_sum > 0.0 {
-                weighted_sum / weight_sum
+            let report = head_reports
+                .iter()
+                .find(|entry| {
+                    self.heads
+                        .iter()
+                        .any(|head| head.meta.name == entry.head_name && head.meta.primary)
+                })
+                .map(|entry| entry.report.clone())
+                .unwrap_or_default();
+
+            let tiebreak_loss = if self.heads.iter().any(|head| head.meta.metric.is_discrete()) {
+                Some(test_loss_scalar)
             } else {
-                0.0
-            }
-        });
-        let report = head_reports
-            .iter()
-            .find(|entry| {
-                self.heads
-                    .iter()
-                    .any(|head| head.meta.name == entry.head_name && head.meta.primary)
+                None
+            };
+
+            Ok(FitnessScore {
+                primary,
+                inference_cost: None,
+                tiebreak_loss,
+                primary_proxy: None,
+                report,
+                head_reports,
             })
-            .map(|entry| entry.report.clone())
-            .unwrap_or_default();
+        })();
 
-        let tiebreak_loss = if self.heads.iter().any(|head| head.meta.metric.is_discrete()) {
-            Some(test_loss_scalar)
-        } else {
-            None
-        };
-
-        build.graph.train();
-
-        Ok(FitnessScore {
-            primary,
-            inference_cost: None,
-            tiebreak_loss,
-            primary_proxy: None,
-            report,
-            head_reports,
-        })
+        build.graph.set_mode(prev_mode);
+        result
     }
 }
 

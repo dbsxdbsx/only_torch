@@ -44,8 +44,11 @@ impl GraphInner {
     {
         let prev = self.mode;
         self.mode = Mode::Inference;
-        let result = f(self);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self)));
         self.mode = prev;
-        result
+        match result {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
     }
 }

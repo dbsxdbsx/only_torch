@@ -145,9 +145,10 @@ impl TraitNode for LogSoftmax {
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
-        let softmax_output = self.softmax_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("LogSoftmax 缓存为空，需先执行前向传播".to_string())
-        })?;
+        let softmax_output = self
+            .softmax_cache
+            .as_ref()
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "softmax"))?;
 
         let shape = softmax_output.shape();
         let batch_size = shape[0];

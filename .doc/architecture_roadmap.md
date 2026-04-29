@@ -16,7 +16,7 @@
 │   ├── batch_mechanism_design.md                   # Batch Forward/Backward 机制
 │   ├── broadcast_mechanism_design.md               # 广播机制设计
 │   ├── gradient_clear_and_accumulation_design.md   # 梯度清零与累积机制
-│   ├── gradient_flow_control_design.md             # ⭐ 梯度流控制（detach/no_grad）
+│   ├── mode_design.md                              # ⭐ Train/Inference 二态执行契约
 │   ├── data_loader_design.md                       # DataLoader 设计
 │   ├── distributions_design.md                     # 概率分布模块设计
 │   ├── graph_serialization_design.md               # 序列化与可视化

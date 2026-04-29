@@ -42,7 +42,7 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 - `src/tensor/`：纯张量层；只管数据，不感知计算图。
 - `src/nn/nodes/`：原子计算节点；新增 op 通常先改这里。
 - `src/nn/var/`：面向用户的 `Var` API；运算符重载和链式调用在这里。
-- `src/nn/graph/`：图执行、`train/eval`、`no_grad`、可视化、序列化。
+- `src/nn/graph/`：图执行、`train/inference`、Mode 契约、可视化、序列化。
 - `src/nn/layer/`：`Linear`、`Conv2d`、`Rnn` 等高层模块。
 - `src/nn/evolution/`：基因、变异、builder、收敛与演化主流程。
 - `src/data/`、`src/metrics/`、`src/rl/`、`src/vision/`：数据、指标、强化学习和图像支持。

@@ -186,11 +186,11 @@ impl TraitNode for RMSNormOp {
         let rms_t = self
             .rms_cache
             .as_ref()
-            .ok_or_else(|| GraphError::ComputationError("RMSNormOp rms 缓存为空".to_string()))?;
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "rms"))?;
         let x_hat = self
             .x_hat_cache
             .as_ref()
-            .ok_or_else(|| GraphError::ComputationError("RMSNormOp x_hat 缓存为空".to_string()))?;
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "x_hat"))?;
 
         let shape = upstream_grad.shape();
         let ndim = shape.len();

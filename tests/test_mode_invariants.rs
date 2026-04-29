@@ -73,6 +73,22 @@ fn inference_scope_restores_even_from_inference_entry() {
 }
 
 #[test]
+fn inference_scope_restores_when_closure_panics() {
+    let graph = Graph::new();
+    assert_eq!(graph.mode(), Mode::Train);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        graph.inference_scope(|g| {
+            assert_eq!(g.mode(), Mode::Inference);
+            panic!("intentional panic inside inference_scope");
+        });
+    }));
+
+    assert!(result.is_err());
+    assert_eq!(graph.mode(), Mode::Train);
+}
+
+#[test]
 fn mode_helpers_describe_caching_and_backward_capability() {
     assert!(Mode::Train.is_training());
     assert!(Mode::Train.caches_for_backward());

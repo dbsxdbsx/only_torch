@@ -99,7 +99,7 @@ impl TraitNode for Reciprocal {
         let input = self
             .input_cache
             .as_ref()
-            .ok_or_else(|| GraphError::ComputationError("Reciprocal 输入缓存为空".to_string()))?;
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "input"))?;
         // -1/x² = -(1/x)²，用 input.square() 更高效
         let neg_inv_sq = &input.square().reciprocal() * (-1.0);
         Ok(GradResult::Computed(upstream_grad * &neg_inv_sq))

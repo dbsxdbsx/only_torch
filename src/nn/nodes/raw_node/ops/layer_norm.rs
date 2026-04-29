@@ -218,12 +218,14 @@ impl TraitNode for LayerNormOp {
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
-        let std_t = self.std_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("LayerNormOp std 缓存为空，需先执行前向传播".to_string())
-        })?;
-        let x_hat = self.x_hat_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("LayerNormOp x_hat 缓存为空".to_string())
-        })?;
+        let std_t = self
+            .std_cache
+            .as_ref()
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "std"))?;
+        let x_hat = self
+            .x_hat_cache
+            .as_ref()
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "x_hat"))?;
 
         let shape = upstream_grad.shape();
         let ndim = shape.len();

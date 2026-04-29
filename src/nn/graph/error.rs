@@ -32,6 +32,11 @@ pub enum GraphError {
     ValueNotComputed(NodeId),
     /// 节点梯度尚未计算（需先 backward）
     GradientNotComputed(NodeId),
+    /// backward 需要的 forward cache 不存在
+    BackwardCacheMissing {
+        node: String,
+        cache: &'static str,
+    },
 
     // ---- 图结构 ----
     /// 操作涉及不同计算图的 Var
@@ -59,12 +64,25 @@ impl fmt::Display for GraphError {
             GraphError::DimensionMismatch { message, .. } => write!(f, "维度不匹配: {message}"),
             GraphError::ValueNotComputed(id) => write!(f, "节点值未计算: {id:?}"),
             GraphError::GradientNotComputed(id) => write!(f, "梯度未计算: {id:?}"),
+            GraphError::BackwardCacheMissing { node, cache } => write!(
+                f,
+                "{node} 缺少 backward 缓存 `{cache}`；通常是该节点在 Inference 模式下 forward，或缓存已被清理"
+            ),
             GraphError::GraphMismatch(msg) => write!(f, "图不匹配: {msg}"),
             GraphError::NodeDetached(id) => write!(f, "节点已 detach: {id:?}"),
             GraphError::DuplicateName(msg) => write!(f, "重复名称: {msg}"),
             GraphError::DuplicateNodeName(msg) => write!(f, "重复节点名称: {msg}"),
             GraphError::InvalidOperation(msg) => write!(f, "无效操作: {msg}"),
             GraphError::ComputationError(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl GraphError {
+    pub(crate) fn backward_cache_missing(node: impl Into<String>, cache: &'static str) -> Self {
+        Self::BackwardCacheMissing {
+            node: node.into(),
+            cache,
         }
     }
 }

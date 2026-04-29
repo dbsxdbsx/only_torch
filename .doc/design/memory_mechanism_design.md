@@ -177,7 +177,7 @@ impl TraitNode for State {
 ├─────────────────────────────────────────────────────────────────┤
 │ 第3层：训练语义层                                                │
 │   职责：forward/backward、BPTT 时间调度、Optimizer              │
-│   梯度流控制：detach / no_grad（动态图架构下天然支持多次 backward，无需 retain_graph）│
+│   梯度流控制：Mode / detach（动态图架构下天然支持多次 backward，无需 retain_graph）│
 │                                                                 │
 │   🔸 记忆机制组件：BPTT 展开/梯度传递、TBPTT 截断                │
 ├─────────────────────────────────────────────────────────────────┤

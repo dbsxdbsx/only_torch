@@ -197,6 +197,6 @@ Phase 1 的名字匹配方案有两个局限：
 ## 6. 相关文档
 
 - [计算图可视化指南](visualization_guide.md) — 节点样式、边类型、模型分组等可视化使用说明
-- [梯度流控制机制](gradient_flow_control_design.md) — `detach`、`no_grad` 等机制
+- [Mode 设计](mode_design.md) — `Train` / `Inference` 二态执行契约与 `detach()` 的关系
 - [Graph 序列化与可视化设计](graph_serialization_design.md) — 可视化基础架构
 - [未来功能规划](future_enhancements.md) — 项目整体功能路线图

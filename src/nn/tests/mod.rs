@@ -125,6 +125,7 @@ mod layer_lstm;
 mod layer_max_pool2d;
 mod layer_rms_norm;
 mod layer_rnn;
+mod mode_cache;
 mod model_save;
 mod node_conv_transpose2d;
 mod save_load;

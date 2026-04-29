@@ -13,7 +13,7 @@ old `ExecutionContext { training, grad_enabled }` 把"层行为切换"和"是否
 
 这套语义带来三个具体问题：
 
-1. **层行为与缓存策略不必同时切换**：实际场景里 BatchNorm、Dropout 的 train/eval 切换永远应该和 backward 缓存同步，没有合理用例需要"eval 行为 + 仍记录 backward"。
+1. **层行为与缓存策略在当前目标场景里不必独立组合**：冻结 BN fine-tune、saliency / adversarial 等研究场景确实可能需要"eval 行为 + 仍记录 backward"，但 only_torch 当前聚焦训练 / 验证 / 推理 / 演化评估，暂按 YAGNI 合并为二态。
 2. **`no_grad_scope` 内 `backward()` 只是 warning**：用户可能拿不到任何梯度还以为在训练；调试期对静态图也没有"动态图缺 grad_fn 自动报错"的兜底。
 3. **节点 `set_execution_ctx(&ExecutionContext)` 接口要 12 个新缓存型节点都各自手写两个字段**，重复代码多。
 
@@ -57,7 +57,8 @@ graph.is_training();                // bool
 graph.mode();                       // Mode
 graph.set_mode(Mode::Inference);    // 显式赋值
 
-// 闭包式临时进入推理模式，闭包退出后回滚到进入前的模式
+// 闭包式临时进入推理模式，闭包退出后回滚到进入前的模式；
+// 即使闭包 panic 后被上层 catch_unwind 捕获，也会先恢复原 mode 再继续传播 panic。
 let pred = graph.inference_scope(|g| {
     x.set_value(&sample)?;
     g.forward(&logits)?;
@@ -102,7 +103,7 @@ impl TraitNode for MyOp {
 }
 ```
 
-`GraphInner::forward_via_node_inner` 在每次进入节点的 `forward_recursive` 时把当前 `Mode` 传下去；`NodeInner::calc_value_from_parents` 会在调用 `calc_value_by_parents` 之前同步一次 `set_mode(mode)`。
+`GraphInner::forward_via_node_inner` 在每次进入节点的 `forward_recursive` 时把当前 `Mode` 传下去；`NodeInner::calc_value_from_parents` 会在调用 `calc_value_by_parents` 之前同步一次 `set_mode(mode)`。公开 `backward()` 入口会在 ensure-forward 之前拒绝 `Mode::Inference`，因此误调 backward 不会先触发一次无缓存 forward。
 
 ## 5. 已接入 mode 的节点清单
 
@@ -147,9 +148,10 @@ impl TraitNode for MyOp {
 
 ## 9. 测试入口
 
-- `tests/test_mode_invariants.rs`：`Mode` 契约（默认值、互转、`inference_scope` 回滚、推理模式 backward 报错、`load_model` 默认 inference）。
+- `tests/test_mode_invariants.rs`：`Mode` 契约（默认值、互转、`inference_scope` 回滚和 panic-safe 恢复、推理模式 backward 报错、`load_model` 默认 inference）。
 - `src/nn/tests/gradient_flow_control.rs`：`detach` + 多次 backward 行为，已删除全部 `no_grad_*` 段。
 - `src/nn/tests/graph_handle.rs::test_graph_handle_inference_scope_*`：handle 层 smoke。
+- `src/nn/tests/mode_cache.rs`：重缓存节点在 `Mode::Inference` forward 后跳过 backward cache，并在直接调用 VJP 时返回明确错误。
 - 各重缓存节点的 `tests/node_*.rs`：默认仍跑 `Mode::Train`，验证缓存路径数值正确。
 
 ## 10. 历史与归档

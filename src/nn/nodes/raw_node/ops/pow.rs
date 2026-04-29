@@ -135,9 +135,10 @@ impl TraitNode for Pow {
         _parent_values: &[&Tensor],
         upstream_grad: &Tensor,
     ) -> Result<GradResult, GraphError> {
-        let input = self.input_cache.as_ref().ok_or_else(|| {
-            GraphError::ComputationError("Pow 输入缓存为空，需先执行前向传播".to_string())
-        })?;
+        let input = self
+            .input_cache
+            .as_ref()
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "input"))?;
 
         // grad = upstream_grad * p * x^(p-1)
         let grad = upstream_grad * &(input.powf(self.exponent - 1.0) * self.exponent);

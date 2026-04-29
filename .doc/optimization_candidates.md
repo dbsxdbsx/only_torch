@@ -23,14 +23,16 @@
 
 | baseline | 日期 | 命令 | 后端 | 用途 |
 |---|---|---|---|---|
-| `pre-execution-context` | 2026-04-29 | `just bench-save pre-execution-context` | `blas-mkl` | Track B 引入 `ExecutionContext` 前的 Criterion 对照基线 |
+| `pre-execution-context` | 2026-04-29 | `just bench-save pre-execution-context` | `blas-mkl` | `Mode` 重构前的 Criterion 对照基线 |
+| `post-mode-refactor` | 2026-04-29 | `just bench-save post-mode-refactor` | `blas-mkl` | `Mode` 重构完成后的新命名完整基线，后续性能回归从这里继续比较 |
 
-说明：baseline 保存在 Criterion 的 `target/criterion` 报告目录中，属于本地构建产物，不入仓。Track B 完成后用 `just bench-compare pre-execution-context` 对比。
+说明：baseline 保存在 Criterion 的 `target/criterion` 报告目录中，属于本地构建产物，不入仓。`pre-execution-context` 仅用于解释 `Mode` 重构前后差异；`smoke_conv2d_eval_1x1_b1` 已随语义改名为 `smoke_conv2d_inference_1x1_b1`，后续不再为重构前 baseline 兼容名称，统一从 `post-mode-refactor` 继续对比。
 
-### Track B 对比结果
+### Mode 重构对比结果
 
-- `just bench-compare pre-execution-context` 已完成；完整输出中存在多项 Criterion regression 标记，但回归主要集中在未触碰的 `tensor_ops`，同时 backward / optimizer / normalization 等路径大面积改善，判定本轮 full compare 受机器状态噪声影响较大。
+- `just bench-compare pre-execution-context` 跑到 `smoke` 时因 benchmark case 改名中断；中断前 `tensor_ops`、`conv2d_forward`、`backward`、`end_to_end` 多个分组相对重构前 baseline 已显示明显改善，但该 baseline 不再作为后续门禁基线。
 - 已复跑 `cargo bench --bench smoke --features blas-mkl -- --baseline pre-execution-context`；6 个 smoke 项全部显著改善，关键链路未复现回归。
+- 已保存 `post-mode-refactor` 完整新基线，并补跑 `smoke` 到 `attention` 后续分组；新命名 benchmark 全部跑通。
 - 行为回归已用 invariants、梯度流、模型加载、BatchNorm / Conv2d 节点测试，以及 MNIST / MNIST GAN / CartPole SAC / chess YOLO ONNX example 验证；CartPole SAC 训练达到单回合 200，但三次测试平均 185.7，低于示例目标 190，仍为随机训练波动范围内。
 
 ---
@@ -178,7 +180,7 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 | LeakyReLU | 缓存完整 `parent_value` | 不再缓存，反向时用 `value`（输出）判断区域，数学等价 |
 | ChannelBiasAdd | `let mut result = input.clone()` | 节点已删除，由通用 Add + 广播替代 |
 
-### I. Conv2d eval 推理快路径（2026-04-29）
+### I. Conv2d Inference 推理快路径（2026-04-29）
 
 **原始问题**：YOLOv5 TinyChess 在 Debug 模式下单图检测约 2.0s，其中 forward 约 1.87s；decode + NMS 仅约 0.4ms，不是瓶颈。`Conv2d` 原本不区分训练 / 推理，`1x1` 卷积也走通用 `im2col + GEMM`，并保存 backward 需要的 `im2col_cache`。
 
@@ -197,7 +199,7 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 | forward | 1871 ms | 596 ms | 约 3.1x |
 | 总耗时 | 2030 ms | 745 ms | 约 2.7x |
 
-**设计结论**：卷积的数学前向在 train/eval 下相同，但执行引擎需要区分“是否要为 backward 保存缓存”。后续新增重算代价高、缓存占用大的节点时，应同时设计训练路径和推理路径，避免推理承担训练负担。
+**设计结论**：卷积的数学前向在 Train / Inference 下相同，但执行引擎需要区分“是否要为 backward 保存缓存”。后续新增重算代价高、缓存占用大的节点时，应同时设计训练路径和推理路径，避免推理承担训练负担。
 
 ---
 
@@ -235,6 +237,6 @@ just bench-compare before
 
 ### I. Mode 执行上下文统一（2026-04-29）
 
-**原始问题**：旧 `is_eval_mode` 同时承担层行为与 backward 缓存控制；中间过渡设计 `ExecutionContext { training, grad_enabled }` 把两者拆成两个正交字段，但实际没有"训练分支 + 不缓存"或"推理分支 + 仍缓存"的合理用例，反而让节点接入和测试覆盖度爆炸。
+**原始问题**：旧 `is_eval_mode` 同时承担层行为与 backward 缓存控制；中间过渡设计 `ExecutionContext { training, grad_enabled }` 把两者拆成两个正交字段。对 only_torch 当前训练 / 验证 / 推理 / 演化评估目标来说，"训练分支 + 不缓存"或"推理分支 + 仍缓存"不是核心用例，继续保留会让节点接入和测试覆盖度爆炸。
 
-**解决方案**：用单枚举 `Mode { Train, Inference }` 统一三件事：层行为切换、backward 缓存策略、`backward()` 是否被允许（详见 [`mode_design.md`](design/mode_design.md)）。`Graph::load_model()` / `Graph::from_onnx()` 默认进入 `Mode::Inference`，即推理分支 + 不缓存 backward + `backward()` 直接报错。已接入 mode 的重缓存节点：Dropout、BatchNorm、Conv2d、Softmax、LogSoftmax、LayerNorm、RMSNorm、Abs、Square、Pow、Clip、Reciprocal、Ln、Log2、Log10。性能回归继续沿用 `pre-execution-context` baseline 对比，验证 `Mode::Train` 路径无回归 + `Mode::Inference` 路径节省内存。
+**解决方案**：用单枚举 `Mode { Train, Inference }` 统一三件事：层行为切换、backward 缓存策略、`backward()` 是否被允许（详见 [`mode_design.md`](design/mode_design.md)）。`Graph::load_model()` / `Graph::from_onnx()` 默认进入 `Mode::Inference`，即推理分支 + 不缓存 backward + `backward()` 直接报错。已接入 mode 的重缓存节点：Dropout、BatchNorm、Conv2d、Softmax、LogSoftmax、LayerNorm、RMSNorm、Abs、Square、Pow、Clip、Reciprocal、Ln、Log2、Log10。重构后的后续性能回归统一沿用 `post-mode-refactor` baseline 对比，验证 `Mode::Train` 路径无回归 + `Mode::Inference` 路径节省内存。

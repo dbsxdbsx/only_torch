@@ -4,20 +4,21 @@
 
 ### Added
 
-- **feat(bench): 建立 Track A benchmark 可观测性工作流**
+- **feat(bench): 建立 benchmark 可观测性工作流**
   - 新增 `smoke`、`pool2d`、`optimizer`、`normalization` 四组 Criterion benchmark，覆盖快速回归、Pool2d、优化器和归一化层关键路径
   - 补齐 `loss`、`rnn`、`attention` 三组 focused benchmark，覆盖 Loss、循环层和 MultiHeadAttention 的 forward + backward 路径
   - `justfile` 新增 `bench-smoke`、`bench-save`、`bench-compare`、`bench-macro`、`bench-macro-core`，支持改动前保存 baseline、改动后对比和 release example 宏基准
-  - 文档补充性能验证标准流程，并已保存 Track B 前 `pre-execution-context` Criterion baseline
+  - 文档补充性能验证标准流程，并已保存 `Mode` 重构前 `pre-execution-context` Criterion baseline
 
 ### Changed
 
 - **refactor(graph)!: 用 `Mode { Train, Inference }` 统一执行上下文（Breaking）**
   - 删除 `ExecutionContext { training, grad_enabled }` 双字段；新 `Mode` 一个枚举同时承载层行为切换、backward 缓存策略与 backward 是否被允许，详见 `.doc/design/mode_design.md`
-  - `Inference` 模式下 `Graph::backward()` 现在直接返回 `GraphError::InvalidOperation`，不再降级为警告
+  - `Inference` 模式下 `Graph::backward()` / `Var::backward()` 现在会在 ensure-forward 前直接返回 `GraphError::InvalidOperation`，不再降级为警告
   - `forward_recursive` 与 `TraitNode::set_mode` 改为按值传递 `Mode`；新增 12 个重缓存节点（Softmax / LogSoftmax / LayerNorm / RMSNorm / Abs / Square / Pow / Clip / Reciprocal / Ln / Log2 / Log10）实现按 mode 切缓存
-  - Evolution `Trainer::predict_*` / `EvolutionTask::evaluate` 自动进入 `Inference` 模式，候选评估期间不再重复保留 backward 缓存
-  - `tests/test_execution_context_invariants.rs` 整文件迁移到 `tests/test_mode_invariants.rs`，旧 `gradient_flow_control_design.md` 归档至 `.doc/_archive/`，新文档落到 `.doc/design/mode_design.md`
+  - `Graph::inference_scope()` / `GraphInner::inference_scope()` 改为 panic-safe 恢复：闭包 panic 后若被上层捕获，图 mode 仍恢复到进入前状态
+  - Evolution `Trainer::predict_*` / `EvolutionTask::evaluate` 自动进入 `Inference` 模式，候选评估期间不再重复保留 backward 缓存；`evaluate` 结束或出错后恢复进入前的 mode
+  - `tests/test_execution_context_invariants.rs` 整文件迁移到 `tests/test_mode_invariants.rs`，旧 `gradient_flow_control_design.md` 归档至 `.doc/_archive/`，新文档落到 `.doc/design/mode_design.md`；新增 `mode_cache` 测试覆盖重缓存节点的 Inference 跳缓存契约
   - **API 迁移表**：
 
 | 旧 API | 新等价物 |
@@ -36,7 +37,7 @@
 | `TraitNode::set_execution_ctx(&ctx)` | `TraitNode::set_mode(mode)` |
 
 - **perf(nn): 优化 Conv2d Debug 推理路径**
-  - `Conv2d` 在 eval 推理模式下对 `1x1 stride=1 padding=0` 卷积启用直接 GEMM 快路径，避免为 backward 生成无用 `im2col` 缓存
+  - `Conv2d` 在 `Inference` 推理模式下对 `1x1 stride=1 padding=0` 卷积启用直接 GEMM 快路径，避免为 backward 生成无用 `im2col` 缓存
   - `Conv2d` padding 与 `im2col` 热循环改用连续 slice 索引，减少 Debug 模式下动态 Tensor 索引开销
   - `chess_yolo_onnx_detect` Debug forward 从约 1871 ms 降到约 596 ms，总耗时从约 2030 ms 降到约 745 ms，并保持两张 sample 的 FEN 位级匹配
 

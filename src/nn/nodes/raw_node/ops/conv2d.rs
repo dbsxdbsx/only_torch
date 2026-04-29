@@ -550,9 +550,9 @@ impl TraitNode for Conv2d {
         let padded_input = if self.padding == (0, 0) {
             input
         } else {
-            self.padded_input
-                .as_ref()
-                .ok_or_else(|| GraphError::ComputationError("缺少填充后的输入缓存".to_string()))?
+            self.padded_input.as_ref().ok_or_else(|| {
+                GraphError::backward_cache_missing(self.display_node(), "padded_input")
+            })?
         };
 
         let kernel = parent_values
@@ -640,10 +640,9 @@ impl TraitNode for Conv2d {
                 let grad_flat_slice = grad_flat.as_slice().unwrap();
                 let sample_grad_size = out_c * spatial;
 
-                let im2col_cache = self
-                    .im2col_cache
-                    .as_ref()
-                    .ok_or_else(|| GraphError::ComputationError("缺少 im2col 缓存".to_string()))?;
+                let im2col_cache = self.im2col_cache.as_ref().ok_or_else(|| {
+                    GraphError::backward_cache_missing(self.display_node(), "im2col")
+                })?;
                 let kernel_grad = (0..batch_size)
                     .into_par_iter()
                     .map(|b| {

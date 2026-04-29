@@ -101,7 +101,7 @@ impl TraitNode for Square {
         let input = self
             .input_cache
             .as_ref()
-            .ok_or_else(|| GraphError::ComputationError("Square 输入缓存为空".to_string()))?;
+            .ok_or_else(|| GraphError::backward_cache_missing(self.display_node(), "input"))?;
         Ok(GradResult::Computed(upstream_grad * &(input * 2.0)))
     }
 

@@ -221,6 +221,12 @@ impl Var {
     pub fn backward(&self) -> Result<f32, GraphError> {
         let graph_rc = self.graph();
         let mut g = graph_rc.borrow_mut();
+        if !g.mode().allows_backward() {
+            return Err(GraphError::InvalidOperation(
+                "inference 模式不允许 backward；请先 graph.train() 或退出 inference_scope"
+                    .to_string(),
+            ));
+        }
         // ensure-forward：先执行前向传播
         g.forward_via_node_inner(&self.node)?;
         // 然后执行反向传播
@@ -230,6 +236,12 @@ impl Var {
     pub(crate) fn backward_timed(&self) -> Result<(f32, Duration, Duration), GraphError> {
         let graph_rc = self.graph();
         let mut g = graph_rc.borrow_mut();
+        if !g.mode().allows_backward() {
+            return Err(GraphError::InvalidOperation(
+                "inference 模式不允许 backward；请先 graph.train() 或退出 inference_scope"
+                    .to_string(),
+            ));
+        }
 
         let forward_start = Instant::now();
         g.forward_via_node_inner(&self.node)?;
