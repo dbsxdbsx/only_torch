@@ -15,8 +15,9 @@ use rand::rngs::StdRng;
 use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::fm_mutation::*;
 use crate::nn::evolution::fm_ops::analyze_fm_subgraph;
-use crate::nn::evolution::gene::NetworkGenome;
+use crate::nn::evolution::gene::{NetworkGenome, TrainingConfig};
 use crate::nn::evolution::mutation::{Mutation, SizeConstraints};
+use crate::nn::evolution::node_gene::NodeGene;
 
 /// 创建一个已 FM 化的空间基因组用于测试
 fn make_fm_genome() -> NetworkGenome {
@@ -61,6 +62,65 @@ fn assert_genome_consistent(genome: &NetworkGenome) {
             );
         }
     }
+}
+
+#[test]
+fn test_migrate_to_fm_level_does_not_treat_unconnected_parameter_as_conv_bias() {
+    let nodes = vec![
+        NodeGene::new(
+            1,
+            NodeTypeDescriptor::Parameter,
+            vec![3, 1, 3, 3],
+            vec![],
+            Some(10),
+        ),
+        NodeGene::new(
+            2,
+            NodeTypeDescriptor::Conv2d {
+                stride: (1, 1),
+                padding: (1, 1),
+                dilation: (1, 1),
+            },
+            vec![1, 3, 4, 4],
+            vec![0, 1],
+            Some(10),
+        ),
+        // 同 block 的额外参数若没有通过 Add 连接到 Conv 输出，不应被当作 bias。
+        NodeGene::new(
+            3,
+            NodeTypeDescriptor::Parameter,
+            vec![1, 3, 1, 1],
+            vec![],
+            Some(10),
+        ),
+    ];
+    let mut genome = NetworkGenome::from_node_parts(
+        1,
+        3,
+        None,
+        Some((4, 4)),
+        TrainingConfig::default(),
+        "fm_bias_detection_test".to_string(),
+        Vec::new(),
+        4,
+        nodes,
+    );
+
+    genome.migrate_to_fm_level();
+
+    let false_bias_params = genome
+        .nodes()
+        .iter()
+        .filter(|node| {
+            node.enabled
+                && matches!(node.node_type, NodeTypeDescriptor::Parameter)
+                && node.output_shape == vec![1, 1, 1, 1]
+        })
+        .count();
+    assert_eq!(
+        false_bias_params, 0,
+        "未连接到 Conv+Add 的参数不应在 FM 分解时触发 per-channel bias"
+    );
 }
 
 // ==================== 1. AddFeatureMap ====================

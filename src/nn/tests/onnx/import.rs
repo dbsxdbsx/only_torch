@@ -1039,6 +1039,80 @@ fn test_import_report_records_conv_bias_split() {
 }
 
 #[test]
+fn test_import_report_records_conv_transpose_bias_split() {
+    let w = TensorProto::from_f32("deconv_w", vec![4, 2, 3, 3], vec![0.1; 72]);
+    let b = TensorProto::from_f32("deconv_b", vec![2], vec![0.0; 2]);
+    let deconv_node = Node {
+        input: vec!["x", "deconv_w", "deconv_b"],
+        output: vec!["deconv_out"],
+        name: "deconv0",
+        op_type: OpType::ConvTranspose,
+        attribute: vec![
+            Attribute {
+                name: "kernel_shape",
+                ints: vec![3, 3],
+                ..Default::default()
+            },
+            Attribute {
+                name: "strides",
+                ints: vec![2, 2],
+                ..Default::default()
+            },
+            Attribute {
+                name: "pads",
+                ints: vec![1, 1, 1, 1],
+                ..Default::default()
+            },
+            Attribute {
+                name: "output_padding",
+                ints: vec![1, 1],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
+        graph: Some(Graph {
+            node: vec![deconv_node],
+            name: "deconv_test",
+            initializer: vec![w, b],
+            input: vec![make_value_info("x", vec![1, 4, 8, 8])],
+            output: vec![make_value_info("deconv_out", vec![1, 2, 16, 16])],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let bytes = onnx_rs::encode(&model);
+    let result = load_onnx_from_bytes(&bytes).unwrap();
+
+    assert_eq!(result.import_report.rewritten.len(), 1);
+    let record = &result.import_report.rewritten[0];
+    assert_eq!(record.pattern, "conv_with_bias_to_conv_plus_add");
+    assert_eq!(record.consumed_onnx_nodes, vec!["deconv0".to_string()]);
+
+    assert!(
+        result
+            .descriptor
+            .nodes
+            .iter()
+            .any(|n| matches!(n.node_type, NodeTypeDescriptor::ConvTranspose2d { .. }))
+    );
+    let bias_node = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "deconv_b")
+        .expect("deconv bias initializer 应保留为 Parameter 节点");
+    assert_eq!(bias_node.output_shape, vec![1, 2, 1, 1]);
+    assert_eq!(result.weights[&bias_node.id].shape(), &[1, 2, 1, 1]);
+}
+
+#[test]
 fn test_import_report_records_gemm_split() {
     // Gemm 模型（已有 build_gemm_model_bytes 复用）
     let bytes = build_gemm_model_bytes();

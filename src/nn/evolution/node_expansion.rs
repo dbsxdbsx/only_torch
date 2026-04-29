@@ -1125,20 +1125,36 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
         let input_h = (output_h - 1) * stride.0 + eff_kh - 2 * padding.0;
         let input_w = (output_w - 1) * stride.1 + eff_kw - 2 * padding.1;
 
-        // 查找同 block_id 的 bias 和 add 节点
+        // 查找同 block_id 的 Conv + bias Add。必须通过父边关系确认，
+        // 避免把同块内其它 Parameter 误判为 bias。
         let mut bias_id = None;
         let mut add_id = None;
         for m in nodes
             .iter()
             .filter(|m| m.enabled && m.block_id == Some(block_id))
         {
-            if m.is_parameter() && m.innovation_number != kernel_id {
-                bias_id = Some(m.innovation_number);
-            }
-            if matches!(m.node_type, NodeTypeDescriptor::Add)
-                && m.innovation_number != n.innovation_number
+            if !matches!(m.node_type, NodeTypeDescriptor::Add)
+                || !m.parents.contains(&n.innovation_number)
             {
+                continue;
+            }
+            let Some(candidate_bias_id) = m
+                .parents
+                .iter()
+                .copied()
+                .find(|&pid| pid != n.innovation_number)
+            else {
+                continue;
+            };
+            let Some(candidate_bias) = node_map.get(&candidate_bias_id) else {
+                continue;
+            };
+            if candidate_bias.is_parameter()
+                && is_conv_bias_shape(&candidate_bias.output_shape, out_channels)
+            {
+                bias_id = Some(candidate_bias_id);
                 add_id = Some(m.innovation_number);
+                break;
             }
         }
 
@@ -1163,6 +1179,16 @@ fn find_conv2d_blocks(nodes: &[NodeGene]) -> Vec<Conv2dBlock> {
     }
 
     blocks
+}
+
+fn is_conv_bias_shape(shape: &[usize], out_channels: usize) -> bool {
+    match shape {
+        [c] => *c == out_channels,
+        [1, c] => *c == out_channels,
+        [c, 1, 1] => *c == out_channels,
+        [1, c, 1, 1] => *c == out_channels,
+        _ => false,
+    }
 }
 
 /// 将单个 Conv2d 层块分解为 FM 节点和边

@@ -48,6 +48,7 @@ pub fn export_to_bytes(
 
 // ==================== 第 1 层：分类过滤 ====================
 
+#[derive(Clone)]
 struct NodePlan {
     name: String,
     id: u64,
@@ -82,7 +83,121 @@ fn build_plan(desc: &GraphDescriptor) -> Result<Vec<NodePlan>, OnnxError> {
         });
     }
 
-    Ok(nodes)
+    Ok(fuse_conv_bias_add(nodes))
+}
+
+/// 导出端把内部 IR 的 `Conv/ConvTranspose + Add(bias)` 安全合并为 ONNX 三输入卷积。
+///
+/// only_torch 的 raw Conv 不内嵌 bias，训练图里用独立 `Parameter + Add` 表达；
+/// ONNX 标准 Conv/ConvTranspose 可直接接受一维 bias。仅当 conv 输出和 bias 都只被
+/// 该 Add 消费时才融合，避免改变共享子图语义。
+fn fuse_conv_bias_add(plan: Vec<NodePlan>) -> Vec<NodePlan> {
+    let id_to_idx: HashMap<u64, usize> = plan
+        .iter()
+        .enumerate()
+        .map(|(idx, node)| (node.id, idx))
+        .collect();
+    let mut consumer_count: HashMap<u64, usize> = HashMap::new();
+    for node in &plan {
+        for &pid in &node.parents {
+            *consumer_count.entry(pid).or_insert(0) += 1;
+        }
+    }
+
+    let mut fused_by_conv_idx: HashMap<usize, NodePlan> = HashMap::new();
+    let mut rewritten_bias_shapes: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut skip_add_indices = std::collections::HashSet::new();
+
+    for (add_idx, add_node) in plan.iter().enumerate() {
+        if !is_operator(add_node, "Add") || add_node.parents.len() != 2 {
+            continue;
+        }
+
+        let lhs_idx = match id_to_idx.get(&add_node.parents[0]).copied() {
+            Some(idx) => idx,
+            None => continue,
+        };
+        let rhs_idx = match id_to_idx.get(&add_node.parents[1]).copied() {
+            Some(idx) => idx,
+            None => continue,
+        };
+
+        let (conv_idx, bias_idx) = match (
+            is_conv_operator(&plan[lhs_idx]),
+            is_conv_operator(&plan[rhs_idx]),
+            is_initializer(&plan[lhs_idx]),
+            is_initializer(&plan[rhs_idx]),
+        ) {
+            (true, false, false, true) => (lhs_idx, rhs_idx),
+            (false, true, true, false) => (rhs_idx, lhs_idx),
+            _ => continue,
+        };
+
+        if consumer_count.get(&plan[conv_idx].id).copied().unwrap_or(0) != 1
+            || consumer_count.get(&plan[bias_idx].id).copied().unwrap_or(0) != 1
+        {
+            continue;
+        }
+
+        let out_channels = match plan[conv_idx].output_shape.get(1).copied() {
+            Some(ch) => ch,
+            None => continue,
+        };
+        if !is_conv_bias_shape(&plan[bias_idx].output_shape, out_channels) {
+            continue;
+        }
+
+        let mut fused = plan[conv_idx].clone();
+        fused.id = add_node.id;
+        fused.name = add_node.name.clone();
+        fused.output_shape = add_node.output_shape.clone();
+        fused.parents.push(plan[bias_idx].id);
+
+        fused_by_conv_idx.insert(conv_idx, fused);
+        rewritten_bias_shapes.insert(bias_idx, vec![out_channels]);
+        skip_add_indices.insert(add_idx);
+    }
+
+    plan.into_iter()
+        .enumerate()
+        .filter_map(|(idx, mut node)| {
+            if skip_add_indices.contains(&idx) {
+                return None;
+            }
+            if let Some(shape) = rewritten_bias_shapes.remove(&idx) {
+                node.output_shape = shape;
+            }
+            Some(fused_by_conv_idx.remove(&idx).unwrap_or(node))
+        })
+        .collect()
+}
+
+fn is_operator(node: &NodePlan, op_type: &str) -> bool {
+    matches!(&node.category, ExportCategory::Operator(op) if op.op_type == op_type)
+}
+
+fn is_conv_operator(node: &NodePlan) -> bool {
+    matches!(
+        &node.category,
+        ExportCategory::Operator(op) if op.op_type == "Conv" || op.op_type == "ConvTranspose"
+    )
+}
+
+fn is_initializer(node: &NodePlan) -> bool {
+    matches!(
+        &node.category,
+        ExportCategory::Initializer | ExportCategory::StateInitializer
+    )
+}
+
+fn is_conv_bias_shape(shape: &[usize], out_channels: usize) -> bool {
+    match shape {
+        [c] => *c == out_channels,
+        [1, c] => *c == out_channels,
+        [c, 1, 1] => *c == out_channels,
+        [1, c, 1, 1] => *c == out_channels,
+        _ => false,
+    }
 }
 
 // ==================== 第 2 层：字符串池 ====================

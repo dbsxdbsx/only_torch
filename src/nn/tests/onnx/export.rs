@@ -289,6 +289,162 @@ fn test_export_conv2d_with_attributes() {
 }
 
 #[test]
+fn test_export_fuses_conv2d_add_bias_into_conv_input() {
+    let mut desc = GraphDescriptor::new("conv_bias_model");
+    desc.add_node(NodeDescriptor::new(
+        1,
+        "img",
+        NodeTypeDescriptor::BasicInput,
+        vec![1, 1, 28, 28],
+        None,
+        vec![],
+    ));
+    desc.add_node(NodeDescriptor::new(
+        2,
+        "conv_w",
+        NodeTypeDescriptor::Parameter,
+        vec![8, 1, 3, 3],
+        None,
+        vec![],
+    ));
+    desc.add_node(NodeDescriptor::new(
+        3,
+        "conv_out",
+        NodeTypeDescriptor::Conv2d {
+            stride: (1, 1),
+            padding: (1, 1),
+            dilation: (1, 1),
+        },
+        vec![1, 8, 28, 28],
+        None,
+        vec![1, 2],
+    ));
+    desc.add_node(NodeDescriptor::new(
+        4,
+        "conv_b",
+        NodeTypeDescriptor::Parameter,
+        vec![1, 8, 1, 1],
+        None,
+        vec![],
+    ));
+    desc.add_node(NodeDescriptor::new(
+        5,
+        "conv_biased",
+        NodeTypeDescriptor::Add,
+        vec![1, 8, 28, 28],
+        None,
+        vec![3, 4],
+    ));
+
+    let mut weights = HashMap::new();
+    weights.insert(
+        "conv_w".to_string(),
+        Tensor::new(&vec![0.1; 72], &[8, 1, 3, 3]),
+    );
+    weights.insert(
+        "conv_b".to_string(),
+        Tensor::new(&vec![0.2; 8], &[1, 8, 1, 1]),
+    );
+
+    let bytes = export_to_bytes(&desc, &weights).unwrap();
+    let model = onnx_rs::parse(&bytes).unwrap();
+    let graph = model.graph.as_ref().unwrap();
+
+    assert_eq!(graph.node.len(), 1, "Conv + Add(bias) 应导出为单个 Conv");
+    let conv = &graph.node[0];
+    assert_eq!(conv.op_type, onnx_rs::ast::OpType::Conv);
+    assert_eq!(conv.input, vec!["img", "conv_w", "conv_b"]);
+    assert_eq!(conv.output, vec!["conv_biased"]);
+
+    let bias = graph
+        .initializer
+        .iter()
+        .find(|t| t.name() == "conv_b")
+        .unwrap();
+    assert_eq!(bias.dims(), &[8], "ONNX Conv bias 必须是一维 [C]");
+}
+
+#[test]
+fn test_export_fuses_conv_transpose_add_bias_into_conv_input() {
+    let mut desc = GraphDescriptor::new("deconv_bias_model");
+    desc.add_node(NodeDescriptor::new(
+        1,
+        "x",
+        NodeTypeDescriptor::BasicInput,
+        vec![1, 4, 8, 8],
+        None,
+        vec![],
+    ));
+    desc.add_node(NodeDescriptor::new(
+        2,
+        "deconv_w",
+        NodeTypeDescriptor::Parameter,
+        vec![4, 2, 3, 3],
+        None,
+        vec![],
+    ));
+    desc.add_node(NodeDescriptor::new(
+        3,
+        "deconv_out",
+        NodeTypeDescriptor::ConvTranspose2d {
+            stride: (2, 2),
+            padding: (1, 1),
+            output_padding: (1, 1),
+        },
+        vec![1, 2, 16, 16],
+        None,
+        vec![1, 2],
+    ));
+    desc.add_node(NodeDescriptor::new(
+        4,
+        "deconv_b",
+        NodeTypeDescriptor::Parameter,
+        vec![1, 2, 1, 1],
+        None,
+        vec![],
+    ));
+    desc.add_node(NodeDescriptor::new(
+        5,
+        "deconv_biased",
+        NodeTypeDescriptor::Add,
+        vec![1, 2, 16, 16],
+        None,
+        vec![3, 4],
+    ));
+
+    let mut weights = HashMap::new();
+    weights.insert(
+        "deconv_w".to_string(),
+        Tensor::new(&vec![0.1; 72], &[4, 2, 3, 3]),
+    );
+    weights.insert(
+        "deconv_b".to_string(),
+        Tensor::new(&vec![0.0; 2], &[1, 2, 1, 1]),
+    );
+
+    let bytes = export_to_bytes(&desc, &weights).unwrap();
+    let model = onnx_rs::parse(&bytes).unwrap();
+    let graph = model.graph.as_ref().unwrap();
+
+    assert_eq!(
+        graph.node.len(),
+        1,
+        "ConvTranspose + Add(bias) 应导出为单个 ConvTranspose"
+    );
+    let deconv = &graph.node[0];
+    assert_eq!(deconv.op_type, onnx_rs::ast::OpType::ConvTranspose);
+    assert_eq!(deconv.input, vec!["x", "deconv_w", "deconv_b"]);
+    assert_eq!(deconv.output, vec!["deconv_biased"]);
+
+    let bias = graph
+        .initializer
+        .iter()
+        .find(|t| t.name() == "deconv_b")
+        .unwrap();
+    assert_eq!(bias.dims(), &[2], "ONNX ConvTranspose bias 必须是一维 [C]");
+}
+
+#[test]
 fn test_export_leaky_relu_alpha() {
     let mut desc = GraphDescriptor::new("lrelu_model");
     desc.add_node(NodeDescriptor::new(

@@ -47,6 +47,10 @@
   - ONNX `BatchNormalization(X, scale, B, mean, var)` 导入时展开为确定推理算术子图，不再错误映射成训练态 `BatchNormOp`
   - `BatchNormOp` 增加 `eps`、`momentum`、running stats 形状校验和单样本训练态报错，避免 running variance 被无效统计污染
   - `.otm` / `GraphDescriptor` 保存并恢复 BatchNorm `running_mean` / `running_var`，ONNX 导出侧拒绝生成缺少 scale/bias/mean/var 的不完整 BatchNormalization
+- **fix(onnx/evolution): 收口卷积 bias 导入导出与演化识别**
+  - ONNX `Conv` / `ConvTranspose` 导入时将一维 bias 自动升维为内部 `[1, C, 1, 1]` 广播参数，导出时把安全的 `Conv + Add(bias)` 合并为标准三输入卷积
+  - Evolution 的 Conv2d block 分解和通道 resize 改为通过 `Add(conv, bias)` 父边识别真实 bias，避免同 block 其它参数被误判或误改
+  - 补充 ConvTranspose bias 拆分、ONNX bias 融合、无 bias Conv2d 保存加载和 FM 分解误判防护测试
 - **fix(onnx): 修复 YOLOv5 `Pow` 常量指数导入与数值漂移**
   - ONNX `Pow(base, exponent)` 导入时读取 Constant / initializer 标量 exponent，并折叠为 only_torch `Pow { exponent }` 属性，避免 `x^2` 被误导成默认 `x^1`
   - VinXiangQi YOLOv5 增加 raw output 与 ORT 对照、逐节点中间张量 drift 诊断和最小 `Pow` 常量指数回归测试；strict 数值门下 raw output `max_abs` 已降至 `5.19e-4`

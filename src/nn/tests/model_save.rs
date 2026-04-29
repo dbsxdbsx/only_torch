@@ -130,6 +130,52 @@ fn test_save_load_cnn_bn_roundtrip() {
     std::fs::remove_file("test_otm_cnn_bn_roundtrip.otm").ok();
 }
 
+/// 无 bias 的 Conv2d 往返：保存 / 加载不能凭默认层习惯补出额外 bias 参数。
+#[test]
+fn test_save_load_conv2d_without_bias_roundtrip() {
+    let path = "test_otm_conv_no_bias_roundtrip";
+
+    let graph = Graph::new();
+    let x = graph.input(&Tensor::ones(&[1, 1, 4, 4])).unwrap();
+    let conv = Conv2d::new(
+        &graph,
+        1,
+        2,
+        (2, 2),
+        (1, 1),
+        (0, 0),
+        (1, 1),
+        false,
+        "conv_no_bias",
+    )
+    .unwrap();
+    conv.kernel()
+        .set_value(&Tensor::ones(&[2, 1, 2, 2]))
+        .unwrap();
+    let out = conv.forward(&x);
+
+    graph.forward(&out).unwrap();
+    let original_pred = out.value().unwrap().unwrap().to_vec();
+    assert_eq!(
+        graph.parameter_count(),
+        1,
+        "无 bias Conv2d 应只有 kernel 参数"
+    );
+
+    graph.save_model(path, &[&out]).unwrap();
+
+    let loaded = Graph::load_model(path).unwrap();
+    assert_eq!(
+        loaded.graph.parameter_count(),
+        1,
+        "加载后不应额外产生 bias 参数"
+    );
+    let loaded_pred = predict(&loaded, &Tensor::ones(&[1, 1, 4, 4]));
+    assert_vec_close(&original_pred, &loaded_pred, 1e-5, "无 bias Conv2d 预测");
+
+    std::fs::remove_file("test_otm_conv_no_bias_roundtrip.otm").ok();
+}
+
 /// BatchNorm running stats 是推理语义的一部分，保存 / 加载后必须保持一致。
 #[test]
 fn test_save_load_batch_norm_running_stats_roundtrip() {

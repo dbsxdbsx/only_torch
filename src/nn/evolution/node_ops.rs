@@ -1114,36 +1114,71 @@ pub fn resize_conv2d_out(
     };
     let bid_set: HashSet<u64> = block.node_ids.iter().copied().collect();
 
-    // 通过 Conv2d 节点的父节点关系精确定位 kernel 参数
-    let kernel_id: Option<u64> = {
+    // 通过 Conv2d 的第二个父节点精确定位 kernel 参数。
+    let (conv_id, kernel_id): (Option<u64>, Option<u64>) = {
         let nodes = genome.nodes();
-        nodes
-            .iter()
-            .find(|n| {
-                bid_set.contains(&n.innovation_number)
-                    && matches!(n.node_type, NodeTypeDescriptor::Conv2d { .. })
-            })
-            .and_then(|conv| {
-                conv.parents.iter().find(|&&pid| {
+        match nodes.iter().find(|n| {
+            bid_set.contains(&n.innovation_number)
+                && matches!(n.node_type, NodeTypeDescriptor::Conv2d { .. })
+        }) {
+            Some(conv) => {
+                let kernel_id = conv.parents.get(1).copied().filter(|&pid| {
                     bid_set.contains(&pid)
                         && nodes
                             .iter()
                             .any(|n| n.innovation_number == pid && n.is_parameter())
+                });
+                (Some(conv.innovation_number), kernel_id)
+            }
+            None => (None, None),
+        }
+    };
+
+    let bias_ids: HashSet<u64> = {
+        let nodes = genome.nodes();
+        let node_map: HashMap<u64, &NodeGene> = nodes
+            .iter()
+            .map(|node| (node.innovation_number, node))
+            .collect();
+        match conv_id {
+            Some(cid) => nodes
+                .iter()
+                .filter(|node| {
+                    bid_set.contains(&node.innovation_number)
+                        && matches!(node.node_type, NodeTypeDescriptor::Add)
+                        && node.parents.contains(&cid)
                 })
-            })
-            .copied()
+                .filter_map(|add| {
+                    add.parents
+                        .iter()
+                        .copied()
+                        .find(|&pid| pid != cid)
+                        .and_then(|pid| {
+                            node_map.get(&pid).and_then(|candidate| {
+                                if candidate.is_parameter()
+                                    && is_conv_bias_shape(&candidate.output_shape, old_ch)
+                                {
+                                    Some(pid)
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                })
+                .collect(),
+            None => HashSet::new(),
+        }
     };
 
     for node in genome.nodes_mut().iter_mut() {
         if bid_set.contains(&node.innovation_number) && node.is_parameter() {
-            if node.output_shape.len() == 4 {
-                if Some(node.innovation_number) == kernel_id {
+            if Some(node.innovation_number) == kernel_id {
+                if node.output_shape.len() == 4 {
                     // kernel: [old_ch, in_ch, kH, kW] → [new_ch, in_ch, kH, kW]
                     node.output_shape[0] = new_ch;
-                } else if node.output_shape[1] == old_ch {
-                    // bias/gamma/beta: [1, old_ch, 1, 1] → [1, new_ch, 1, 1]
-                    node.output_shape[1] = new_ch;
                 }
+            } else if bias_ids.contains(&node.innovation_number) {
+                resize_conv_bias_shape(&mut node.output_shape, new_ch);
             }
         }
     }
@@ -1159,6 +1194,26 @@ pub fn resize_conv2d_out(
 
     repair_param_input_dims(genome);
     Ok(())
+}
+
+fn is_conv_bias_shape(shape: &[usize], out_channels: usize) -> bool {
+    match shape {
+        [c] => *c == out_channels,
+        [1, c] => *c == out_channels,
+        [c, 1, 1] => *c == out_channels,
+        [1, c, 1, 1] => *c == out_channels,
+        _ => false,
+    }
+}
+
+fn resize_conv_bias_shape(shape: &mut [usize], new_ch: usize) {
+    match shape {
+        [c] => *c = new_ch,
+        [1, c] => *c = new_ch,
+        [c, 1, 1] => *c = new_ch,
+        [1, c, 1, 1] => *c = new_ch,
+        _ => {}
+    }
 }
 
 /// 将循环块的隐藏维度调整为 `new_hidden`。

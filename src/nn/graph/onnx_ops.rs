@@ -356,6 +356,7 @@ pub fn onnx_op_to_descriptors(
 // ==================== 导出方向：NodeTypeDescriptor → ONNX ====================
 
 /// 导出映射结果：包含 ONNX 算子名和需要设置的属性
+#[derive(Clone)]
 pub struct OnnxExportOp {
     /// ONNX 算子名称（如 "Relu"、"Conv" 等）
     pub op_type: &'static str,
@@ -379,6 +380,7 @@ impl OnnxExportOp {
 }
 
 /// 节点在导出方向上的分类
+#[derive(Clone)]
 pub enum ExportCategory {
     /// 可导出为 ONNX 算子节点
     Operator(OnnxExportOp),

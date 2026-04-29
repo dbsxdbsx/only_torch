@@ -648,24 +648,27 @@ fn emit_conv_with_bias(
     let weight_id = parent_ids[1];
     let bias_id = parent_ids[2];
 
-    // Reshape bias from [1, C] to [1, C, 1, 1] for 4D broadcasting
+    // ONNX Conv/ConvTranspose 的 bias 是 [C]；only_torch 显式广播用 [1, C, 1, 1]。
     let mut bias_was_reshaped = false;
     if let Some(b_node) = descriptor.nodes.iter_mut().find(|n| n.id == bias_id) {
-        if b_node.output_shape.len() == 2 {
-            let c = b_node.output_shape[1];
-            b_node.output_shape = vec![1, c, 1, 1];
-            bias_was_reshaped = true;
+        if let Some(new_shape) = conv_bias_broadcast_shape(&b_node.output_shape) {
+            if b_node.output_shape != new_shape {
+                b_node.output_shape = new_shape;
+                bias_was_reshaped = true;
+            }
         }
     }
     if let Some(b_tensor) = weights.get_mut(&bias_id) {
-        if b_tensor.shape().len() == 2 {
-            let c = b_tensor.shape()[1];
-            *b_tensor = b_tensor.reshape(&[1, c, 1, 1]);
+        if let Some(new_shape) = conv_bias_broadcast_shape(b_tensor.shape()) {
+            if b_tensor.shape() != new_shape.as_slice() {
+                *b_tensor = b_tensor.reshape(&new_shape);
+            }
+            bias_was_reshaped = true;
         }
     }
     if bias_was_reshaped {
         import_report.warnings.push(format!(
-            "Conv \"{}\" 的 bias 从 [1, C] 自动升维到 [1, C, 1, 1] 以匹配 4D 广播",
+            "Conv \"{}\" 的 bias 自动升维到 [1, C, 1, 1] 以匹配 4D 广播",
             node.name
         ));
     }
@@ -707,6 +710,16 @@ fn emit_conv_with_bias(
         consumed_onnx_nodes: vec![node.name.to_string()],
         produced_descriptor_nodes: vec![conv_id, add_id],
     });
+}
+
+fn conv_bias_broadcast_shape(shape: &[usize]) -> Option<Vec<usize>> {
+    match shape {
+        [c] => Some(vec![1, *c, 1, 1]),
+        [1, c] => Some(vec![1, *c, 1, 1]),
+        [c, 1, 1] => Some(vec![1, *c, 1, 1]),
+        [1, _, 1, 1] => Some(shape.to_vec()),
+        _ => None,
+    }
 }
 
 // ==================== Gemm 拆分 ====================
