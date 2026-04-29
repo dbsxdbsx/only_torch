@@ -429,8 +429,9 @@ impl NodeInner {
     /// - detached 节点可以**收到**梯度（作为其他节点的父节点）
     /// - 但 detached 节点**不会向上游**传播梯度（在此方法开头检查）
     pub fn propagate_grad_to_parents(&self, upstream_grad: &Tensor) -> Result<(), GraphError> {
-        // 1. 检查 detach 状态：detached 节点不向上游传播梯度
-        if self.is_detached() {
+        // 1. 检查梯度屏障：detached 节点不向上游传播梯度。
+        // `set_detached(true)` 和显式 Detach 节点语义一致。
+        if self.is_gradient_barrier() {
             return Ok(());
         }
 
@@ -444,9 +445,9 @@ impl NodeInner {
         // - 父节点可以收到梯度
         // - 当到达父节点执行 propagate_grad_to_parents 时，它会检查自己的 detach 状态
         for (i, parent) in self.parents.iter().enumerate() {
-            if !parent.has_trainable_ancestor(&mut HashSet::new()) {
-                // 该父分支不会通向任何 Parameter，提前跳过可避免第一层
-                // Conv/MatMul 为普通数据输入计算大块无用梯度。
+            if !parent.branch_needs_gradient() {
+                // BasicInput / TargetInput 是梯度汇点，不保存梯度；
+                // 其他中间节点即使不通向 Parameter，也应接收梯度以保持调试语义和 pass_id 一致。
                 continue;
             }
 
@@ -533,20 +534,12 @@ impl NodeInner {
         result
     }
 
-    /// 当前节点及其祖先中是否存在需要接收梯度的参数节点。
+    /// 当前节点是否需要接收本次反向传播计算出的梯度。
     ///
-    /// 输入数据与 target 输入不保存梯度；若某个父分支最终只通向这些输入，
-    /// 反向传播无需为该分支计算 VJP。
-    fn has_trainable_ancestor(&self, visited: &mut HashSet<NodeId>) -> bool {
-        if !visited.insert(self.id()) || self.is_detached() {
-            return false;
-        }
-        if self.is_parameter() {
-            return true;
-        }
-        self.parents
-            .iter()
-            .any(|parent| parent.has_trainable_ancestor(visited))
+    /// 普通输入节点不保存梯度；Parameter / State / Detach 以及普通中间节点都可以
+    /// 接收梯度。中间节点的梯度每次 backward 前会自动清理，不参与优化器更新。
+    fn branch_needs_gradient(&self) -> bool {
+        self.is_gradient_receiver() || !self.is_leaf()
     }
 
     /// 执行完整的反向传播
@@ -576,13 +569,14 @@ impl NodeInner {
             }
 
             // 借用当前节点梯度直接传播，避免为空间节点克隆整块梯度张量。
-            node.with_grad(|grad| match grad {
-                Some(grad) => node.propagate_grad_to_parents(grad),
-                None => Ok(()), // 没有梯度的节点跳过
+            let processed = node.with_grad(|grad| match grad {
+                Some(grad) => node.propagate_grad_to_parents(grad).map(|()| true),
+                None => Ok(false), // 没有梯度的节点跳过，不标记本次 backward
             })?;
 
-            // 更新 pass_id
-            node.set_last_backward_pass_id(pass_id);
+            if processed {
+                node.set_last_backward_pass_id(pass_id);
+            }
         }
 
         Ok(())
@@ -616,6 +610,35 @@ impl NodeInner {
     /// 判断节点是否是输入节点
     pub fn is_input(&self) -> bool {
         matches!(&*self.raw_node.borrow(), NodeType::Input(_))
+    }
+
+    /// 判断节点是否是 State 节点。
+    ///
+    /// State 不是可训练参数，但需要接收 BPTT 梯度；它不属于参数注册表，
+    /// 因此不会被优化器更新，也不会被 `Graph::zero_grad()` 自动清理。
+    pub fn is_state(&self) -> bool {
+        matches!(&*self.raw_node.borrow(), NodeType::State(_))
+    }
+
+    /// 判断节点是否是显式 Detach 节点。
+    pub fn is_detach_node(&self) -> bool {
+        matches!(&*self.raw_node.borrow(), NodeType::Detach(_))
+    }
+
+    /// 是否是梯度屏障。
+    ///
+    /// 梯度屏障本身可以接收下游梯度，但不会继续向父节点传播。
+    fn is_gradient_barrier(&self) -> bool {
+        self.is_detached() || self.is_detach_node()
+    }
+
+    /// 是否是当前分支中的梯度接收点。
+    ///
+    /// - Parameter：可训练参数，接收梯度并由优化器更新。
+    /// - State：时间状态，接收梯度但不由优化器更新。
+    /// - Detach：截断点，接收下游梯度用于语义一致性和调试观察。
+    fn is_gradient_receiver(&self) -> bool {
+        self.is_parameter() || self.is_state() || self.is_gradient_barrier()
     }
 
     /// 获取节点的期望形状

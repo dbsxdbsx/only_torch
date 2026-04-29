@@ -660,6 +660,57 @@ impl FMBuilderAnalysis {
 }
 
 impl NetworkGenome {
+    /// 将 CellRnn/LSTM/GRU 内部记录的序列长度与 genome 的全局序列长度对齐。
+    ///
+    /// `minimal_sequential()` 会先用 `seq_len=0` 创建初始 cell，随后由
+    /// `Evolution::run()` 根据数据集把 `NetworkGenome::seq_len` 设置为真实长度。
+    /// GraphDescriptor 重建时必须以全局长度为准，否则可视化和执行都会退化成
+    /// `max(0, 1)` 的单时间步展开。
+    fn normalize_recurrent_cell_descriptor(
+        &self,
+        node_type: NodeTypeDescriptor,
+    ) -> NodeTypeDescriptor {
+        let Some(genome_seq_len) = self.seq_len else {
+            return node_type;
+        };
+        match node_type {
+            NodeTypeDescriptor::CellRnn {
+                input_size,
+                hidden_size,
+                return_sequences,
+                seq_len,
+            } => NodeTypeDescriptor::CellRnn {
+                input_size,
+                hidden_size,
+                return_sequences,
+                seq_len: seq_len.max(genome_seq_len),
+            },
+            NodeTypeDescriptor::CellLstm {
+                input_size,
+                hidden_size,
+                return_sequences,
+                seq_len,
+            } => NodeTypeDescriptor::CellLstm {
+                input_size,
+                hidden_size,
+                return_sequences,
+                seq_len: seq_len.max(genome_seq_len),
+            },
+            NodeTypeDescriptor::CellGru {
+                input_size,
+                hidden_size,
+                return_sequences,
+                seq_len,
+            } => NodeTypeDescriptor::CellGru {
+                input_size,
+                hidden_size,
+                return_sequences,
+                seq_len: seq_len.max(genome_seq_len),
+            },
+            other => other,
+        }
+    }
+
     /// 将当前基因组转换为 `GraphDescriptor`
     ///
     /// 仅支持 NodeLevel 基因组。
@@ -854,6 +905,7 @@ impl NetworkGenome {
                 // 确定最终的 node_type 和 output_shape
                 let (final_type, final_shape, final_parents) =
                     fm_analysis.transform_node(node, &nodes);
+                let final_type = self.normalize_recurrent_cell_descriptor(final_type);
 
                 let dynamic = final_shape.first().map(|_| {
                     let mut d: Vec<Option<usize>> = final_shape.iter().map(|&x| Some(x)).collect();
@@ -1494,13 +1546,13 @@ fn backfill_node_group_tags(genome: &NetworkGenome, node_map: &HashMap<u64, Var>
             NodeBlockKind::Conv2d { .. } => ("Conv2d", GroupStyle::Layer),
             NodeBlockKind::DeformableConv2d { .. } => ("DeformableConv2d", GroupStyle::Layer),
             NodeBlockKind::ConvTranspose2d { .. } => ("ConvTranspose2d", GroupStyle::Layer),
-            NodeBlockKind::Pool2d { .. } => ("Pool2d", GroupStyle::Layer),
+            NodeBlockKind::Pool2d => ("Pool2d", GroupStyle::Layer),
             NodeBlockKind::Flatten => ("Flatten", GroupStyle::Layer),
-            NodeBlockKind::Dropout { .. } => ("Dropout", GroupStyle::Layer),
-            NodeBlockKind::BatchNorm { .. } => ("BatchNorm", GroupStyle::Layer),
-            NodeBlockKind::LayerNorm { .. } => ("LayerNorm", GroupStyle::Layer),
-            NodeBlockKind::RMSNorm { .. } => ("RMSNorm", GroupStyle::Layer),
-            NodeBlockKind::Activation { .. } => ("Activation", GroupStyle::Layer),
+            NodeBlockKind::Dropout => ("Dropout", GroupStyle::Layer),
+            NodeBlockKind::BatchNorm => ("BatchNorm", GroupStyle::Layer),
+            NodeBlockKind::LayerNorm => ("LayerNorm", GroupStyle::Layer),
+            NodeBlockKind::RMSNorm => ("RMSNorm", GroupStyle::Layer),
+            NodeBlockKind::Activation => ("Activation", GroupStyle::Layer),
             NodeBlockKind::Rnn { .. } => ("RNN", GroupStyle::Recurrent),
             NodeBlockKind::Lstm { .. } => ("LSTM", GroupStyle::Recurrent),
             NodeBlockKind::Gru { .. } => ("GRU", GroupStyle::Recurrent),

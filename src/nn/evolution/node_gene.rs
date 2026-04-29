@@ -8,7 +8,6 @@
  * - GenomeAnalysis: 不可变分析快照，调用方式为 genome.analyze() -> GenomeAnalysis
  *                   mutation / builder / serializer 三方共同依赖此结构，不各自重复推导
  * - infer_output_shape: 覆盖全部 NodeTypeDescriptor 变体的形状推导函数
- * - GenomeKind   : 区分基因组当前使用旧层级表示还是新节点级表示
  *
  * 设计原则：
  * - 本文件只定义节点级类型，作为 evolution 的唯一运行时 IR
@@ -23,17 +22,6 @@ use serde::{Deserialize, Serialize};
 use crate::nn::descriptor::NodeTypeDescriptor;
 
 use super::gene::ShapeDomain;
-
-// ==================== GenomeKind ====================
-
-/// 基因组当前使用的表示方式（历史序列化标签保留）
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GenomeKind {
-    /// 旧层级表示（仅用于识别历史格式）
-    LayerLevel,
-    /// 节点级表示（NodeGene）
-    NodeLevel,
-}
 
 // ==================== AnalysisError ====================
 

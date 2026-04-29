@@ -21,8 +21,6 @@ use crate::nn::evolution::node_gene::NodeGene;
 /// 单个 Feature Map 的元信息
 #[derive(Debug, Clone)]
 pub struct FMNodeInfo {
-    /// fm_id（全局唯一）
-    pub fm_id: u64,
     /// 该 FM 中所有节点的创新号（聚合节点、激活节点等）
     pub node_ids: Vec<u64>,
     /// FM 的空间尺寸 (H, W)
@@ -130,10 +128,6 @@ pub struct FMSubgraphAnalysis {
     pub fm_nodes: BTreeMap<u64, FMNodeInfo>,
     /// 所有 FM 边信息
     pub fm_edges: Vec<FMEdgeInfo>,
-    /// 输入 FM 的 fm_id 集合（无上游 FM 边的 FM）
-    pub input_fm_ids: HashSet<u64>,
-    /// 输出 FM 的 fm_id 集合（无下游 FM 边的 FM）
-    pub output_fm_ids: HashSet<u64>,
 }
 
 /// 分析基因组中的 FM 子图
@@ -167,7 +161,6 @@ pub fn analyze_fm_subgraph(nodes: &[NodeGene]) -> FMSubgraphAnalysis {
         fm_nodes.insert(
             fid,
             FMNodeInfo {
-                fm_id: fid,
                 node_ids: ids.clone(),
                 spatial_size,
                 output_node_id,
@@ -178,23 +171,7 @@ pub fn analyze_fm_subgraph(nodes: &[NodeGene]) -> FMSubgraphAnalysis {
     // 3. 收集所有 FM 边（识别连接两个 FM 的 conv/pool/deconv 操作）
     let fm_edges = find_fm_edges(nodes, &fm_nodes, &node_map);
 
-    // 4. 确定输入/输出 FM
-    let mut has_incoming: HashSet<u64> = HashSet::new();
-    let mut has_outgoing: HashSet<u64> = HashSet::new();
-    for edge in &fm_edges {
-        has_incoming.insert(edge.dst_fm_id);
-        has_outgoing.insert(edge.src_fm_id);
-    }
-    let all_fm_ids: HashSet<u64> = fm_nodes.keys().copied().collect();
-    let input_fm_ids: HashSet<u64> = all_fm_ids.difference(&has_incoming).copied().collect();
-    let output_fm_ids: HashSet<u64> = all_fm_ids.difference(&has_outgoing).copied().collect();
-
-    FMSubgraphAnalysis {
-        fm_nodes,
-        fm_edges,
-        input_fm_ids,
-        output_fm_ids,
-    }
+    FMSubgraphAnalysis { fm_nodes, fm_edges }
 }
 
 /// 在一组 FM 节点中找到输出节点（被其他 FM 节点依赖的最终计算节点）
@@ -319,49 +296,6 @@ pub fn next_fm_id(nodes: &[NodeGene]) -> u64 {
         .max()
         .map(|m| m + 1)
         .unwrap_or(1)
-}
-
-/// 检测一组输出 FM 是否与输入 FM 全连接（且边类型完全一致）
-///
-/// 返回 `Some((in_count, out_count, edge_type))` 如果全连接，否则 `None`
-pub fn detect_fully_connected(
-    input_fm_ids: &[u64],
-    output_fm_ids: &[u64],
-    edges: &[FMEdgeInfo],
-) -> Option<(usize, usize, FMEdgeType)> {
-    if input_fm_ids.is_empty() || output_fm_ids.is_empty() {
-        return None;
-    }
-
-    let in_set: HashSet<u64> = input_fm_ids.iter().copied().collect();
-    let out_set: HashSet<u64> = output_fm_ids.iter().copied().collect();
-
-    // 过滤出跨越 input→output 的边
-    let crossing_edges: Vec<&FMEdgeInfo> = edges
-        .iter()
-        .filter(|e| in_set.contains(&e.src_fm_id) && out_set.contains(&e.dst_fm_id))
-        .collect();
-
-    let expected_count = input_fm_ids.len() * output_fm_ids.len();
-    if crossing_edges.len() != expected_count {
-        return None;
-    }
-
-    // 检查所有边类型一致
-    let first_type = &crossing_edges[0].edge_type;
-    if !crossing_edges.iter().all(|e| &e.edge_type == first_type) {
-        return None;
-    }
-
-    // 检查所有 (src, dst) 对都有且仅有一条边
-    let mut pairs: HashSet<(u64, u64)> = HashSet::new();
-    for e in &crossing_edges {
-        if !pairs.insert((e.src_fm_id, e.dst_fm_id)) {
-            return None;
-        }
-    }
-
-    Some((input_fm_ids.len(), output_fm_ids.len(), first_type.clone()))
 }
 
 /// 查找可以添加新边的 FM 对（src_fm, dst_fm）

@@ -301,21 +301,6 @@ pub struct TrainOutcome {
     pub(crate) timing: TrainTiming,
 }
 
-impl TrainOutcome {
-    pub fn new(final_loss: f32) -> Self {
-        Self {
-            final_loss,
-            proxy: None,
-            timing: TrainTiming::default(),
-        }
-    }
-
-    /// `final_loss.is_finite()` 的便捷投影，方便测试与调用点直接使用。
-    pub fn is_finite(&self) -> bool {
-        self.final_loss.is_finite()
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TrainTiming {
     pub setup: Duration,
@@ -572,6 +557,7 @@ impl SupervisedTask {
     /// 创建监督学习任务
     ///
     /// 输入/标签为空或数量不匹配时返回 `Err(EvolutionError::InvalidData)`。
+    #[cfg(test)]
     pub fn new(
         train_data: (Vec<Tensor>, Vec<Tensor>),
         test_data: (Vec<Tensor>, Vec<Tensor>),
@@ -720,28 +706,17 @@ impl SupervisedTask {
         &self.primary_head().meta.metric
     }
 
-    /// 显式设置 batch size（覆盖自动策略）
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
-        assert!(batch_size > 0, "batch_size 必须 > 0");
-        self.batch_size = Some(batch_size);
-        self
-    }
-
-    /// 启用学习速度代理（F3）：训练时记录 loss 轨迹并计算 proxy。
-    pub fn with_primary_proxy(mut self, kind: ProxyKind) -> Self {
-        self.proxy_kind = Some(kind);
-        self
-    }
-
     /// 在默认报告指标基础上追加用户指定的报告指标。
     ///
     /// 不兼容当前任务类型的指标会被忽略，重复指标会自动去重。
+    #[cfg(test)]
     pub fn with_report_metrics(mut self, metrics: impl IntoIterator<Item = ReportMetric>) -> Self {
         self.configure_report_metrics(&metrics.into_iter().collect::<Vec<_>>());
         self
     }
 
     /// 获取当前报告指标配置。
+    #[cfg(test)]
     pub fn report_metrics(&self) -> &[ReportMetric] {
         &self.primary_head().report_metrics
     }

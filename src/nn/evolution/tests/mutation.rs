@@ -125,7 +125,7 @@ fn test_mutate_layer_param_touches_node_level_activation() {
     let mut counter = make_counter(&genome);
     let last_hidden = node_main_path(&genome)
         .into_iter()
-        .find(|block| matches!(block.kind, NodeBlockKind::Activation { .. }))
+        .find(|block| matches!(block.kind, NodeBlockKind::Activation))
         .unwrap()
         .output_id;
     let dropout = expand_dropout(last_hidden, vec![1, 8], 0.25, &mut counter);
@@ -247,10 +247,7 @@ fn test_deformable_conv2d_block_builds_in_spatial_segmentation_genome() {
     assert!(node_main_path(&genome).iter().any(|block| {
         matches!(
             block.kind,
-            NodeBlockKind::DeformableConv2d {
-                out_channels: 4,
-                kernel_size: 3,
-            }
+            NodeBlockKind::DeformableConv2d { out_channels: 4 }
         )
     }));
 
@@ -275,10 +272,7 @@ fn test_deformable_segmentation_seed_builds_dense_output() {
     assert!(node_main_path(&genome).iter().any(|block| {
         matches!(
             block.kind,
-            NodeBlockKind::DeformableConv2d {
-                out_channels: 4,
-                kernel_size: 3,
-            }
+            NodeBlockKind::DeformableConv2d { out_channels: 4 }
         )
     }));
 

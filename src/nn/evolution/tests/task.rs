@@ -263,7 +263,7 @@ fn test_basic_training_returns_finite_loss() {
         .unwrap();
 
     assert!(
-        final_loss.is_finite(),
+        final_loss.final_loss.is_finite(),
         "训练后 loss 应为有限值: {final_loss}"
     );
 }
@@ -504,7 +504,10 @@ fn test_genome_batch_size_used_when_set() {
     let loss = task
         .train(&genome, &build, &short_convergence(), &mut rng)
         .unwrap();
-    assert!(loss.is_finite(), "genome batch_size=2 应正常训练");
+    assert!(
+        loss.final_loss.is_finite(),
+        "genome batch_size=2 应正常训练"
+    );
 }
 
 #[test]
@@ -596,7 +599,7 @@ fn test_train_then_evaluate_integration() {
     let loss = task.train(&genome, &build, &convergence, &mut rng).unwrap();
     let score = task.evaluate(&genome, &build, &mut rng).unwrap();
 
-    assert!(loss.is_finite());
+    assert!(loss.final_loss.is_finite());
     assert!(score.primary >= 0.0 && score.primary <= 1.0);
     assert!(score.tiebreak_loss.unwrap().is_finite());
 
@@ -692,7 +695,10 @@ fn test_loss_override_flows_through_train_and_evaluate() {
     let loss = task
         .train(&genome, &build, &short_convergence(), &mut rng)
         .unwrap();
-    assert!(loss.is_finite(), "MSE override 训练应产生有限 loss");
+    assert!(
+        loss.final_loss.is_finite(),
+        "MSE override 训练应产生有限 loss"
+    );
 
     let score = task.evaluate(&genome, &build, &mut rng).unwrap();
     assert!(
@@ -1085,7 +1091,10 @@ fn test_mini_batch_training_medium_dataset() {
         .train(&genome, &build, &short_convergence(), &mut rng)
         .unwrap();
 
-    assert!(loss.is_finite(), "mini-batch 训练应产生有限 loss: {loss}");
+    assert!(
+        loss.final_loss.is_finite(),
+        "mini-batch 训练应产生有限 loss: {loss}"
+    );
 }
 
 #[test]
@@ -1132,7 +1141,7 @@ fn test_explicit_batch_size_via_configure() {
         .train(&genome, &build, &short_convergence(), &mut rng)
         .unwrap();
 
-    assert!(loss.is_finite(), "显式 batch_size=2 应正常训练");
+    assert!(loss.final_loss.is_finite(), "显式 batch_size=2 应正常训练");
 }
 
 #[test]
@@ -1152,7 +1161,10 @@ fn test_genome_batch_size_overrides_task_setting() {
         .train(&genome, &build, &short_convergence(), &mut rng)
         .unwrap();
 
-    assert!(loss.is_finite(), "genome batch_size 覆盖应正常训练");
+    assert!(
+        loss.final_loss.is_finite(),
+        "genome batch_size 覆盖应正常训练"
+    );
 }
 
 #[test]

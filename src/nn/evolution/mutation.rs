@@ -3,9 +3,9 @@
  * @Date         : 2026-03-06
  * @Description  : 神经架构演化的变异操作
  *
- * Mutation trait + MutationRegistry + 12 种变异操作：
+ * Mutation trait + MutationRegistry + NodeLevel 变异操作：
  * - 7 种结构/参数变异
- * - 3 种 SkipEdge 变异
+ * - NodeLevel 跳跃连接变异
  * - 2 种训练超参数变异
  *
  * 每种变异通过 is_applicable() 自检合法性，apply() 执行变异。
@@ -14,8 +14,8 @@
 
 use super::cell_migration::{CellKind, migrate_cell_weights};
 use super::gene::{
-    ActivationType, AggregateStrategy, GenomeRepr, INPUT_INNOVATION, LayerConfig, LayerGene,
-    LossType, NetworkGenome, OptimizerType, ShapeDomain, SkipEdge, TaskMetric, compatible_losses,
+    ActivationType, GenomeRepr, INPUT_INNOVATION, LayerConfig, LossType, NetworkGenome,
+    OptimizerType, TaskMetric, compatible_losses,
 };
 use super::net2net::apply_widen_to_snapshots;
 use super::node_expansion::{
@@ -512,24 +512,6 @@ fn set_resizable_size(config: &mut LayerConfig, new_size: usize) {
     }
 }
 
-/// 检查指定位置（在 enabled 层序列中）的相邻层是否有 Activation
-fn has_adjacent_activation(genome: &NetworkGenome, insert_pos: usize) -> bool {
-    let enabled: Vec<&LayerGene> = genome.layers().iter().filter(|l| l.enabled).collect();
-    let before = if insert_pos > 0 {
-        matches!(
-            enabled.get(insert_pos - 1).map(|l| &l.layer_config),
-            Some(LayerConfig::Activation { .. })
-        )
-    } else {
-        false
-    };
-    let after = matches!(
-        enabled.get(insert_pos).map(|l| &l.layer_config),
-        Some(LayerConfig::Activation { .. })
-    );
-    before || after
-}
-
 /// 将采样尺寸约束到当前 SizeStrategy
 fn sample_size_in_range(
     min: usize,
@@ -554,35 +536,6 @@ fn sample_size_in_range(
             }
         }
     }
-}
-
-/// 获取插入位置的主路径输入维度
-fn insert_input_dim(genome: &NetworkGenome, insert_pos: usize) -> usize {
-    if insert_pos == 0 {
-        return genome.input_dim;
-    }
-    let enabled: Vec<&LayerGene> = genome.layers().iter().filter(|l| l.enabled).collect();
-    let pred_inn = enabled[insert_pos - 1].innovation_number;
-    genome
-        .resolve_dimensions()
-        .ok()
-        .and_then(|dims| {
-            dims.into_iter()
-                .find(|d| d.innovation_number == pred_inn)
-                .map(|d| d.out_dim)
-        })
-        .unwrap_or(genome.input_dim)
-}
-
-/// 获取插入位置的主路径输入空间尺寸（空间模式专用）
-fn insert_input_spatial(genome: &NetworkGenome, insert_pos: usize) -> Option<(usize, usize)> {
-    let spatial_map = genome.compute_spatial_map();
-    if insert_pos == 0 {
-        return spatial_map.get(&INPUT_INNOVATION).copied().flatten();
-    }
-    let enabled: Vec<&LayerGene> = genome.layers().iter().filter(|l| l.enabled).collect();
-    let pred_inn = enabled[insert_pos - 1].innovation_number;
-    spatial_map.get(&pred_inn).copied().flatten()
 }
 
 /// 根据 SizeStrategy 计算增长后的值
@@ -1866,337 +1819,6 @@ impl Mutation for MutateKernelSizeMutation {
     }
 }
 
-// ==================== AddSkipEdgeMutation ====================
-
-/// 随机可选的聚合策略列表
-fn all_aggregate_strategies() -> Vec<AggregateStrategy> {
-    vec![
-        AggregateStrategy::Add,
-        AggregateStrategy::Concat { dim: 1 },
-        AggregateStrategy::Mean,
-        AggregateStrategy::Max,
-    ]
-}
-
-pub struct AddSkipEdgeMutation;
-
-impl AddSkipEdgeMutation {
-    /// 收集所有可行的 (from, to, strategy) 候选
-    ///
-    /// 预过滤逻辑：
-    /// 1. DAG 前向约束：from 在层序列中的位置 < to
-    /// 2. 不重复：已存在的 (from, to) 对被排除
-    /// 3. 目标层 group 约束：已有 skip edge 的目标层只许沿用已有策略
-    /// 4. 域约束：序列模型中只允许 Flat 域内的 skip edge
-    ///    记忆单元（RNN/LSTM/GRU）作为原子单元，不允许 skip edge
-    ///    跨越或穿透 Sequence 域（避免 3D/2D 形状不兼容和 concat dim 语义混乱）
-    /// 5. 维度兼容性：trial resolve_dimensions 验证
-    fn feasible_candidates(genome: &NetworkGenome) -> Vec<(u64, u64, AggregateStrategy)> {
-        let enabled: Vec<u64> = genome
-            .layers()
-            .iter()
-            .filter(|l| l.enabled)
-            .map(|l| l.innovation_number)
-            .collect();
-
-        let existing: std::collections::HashSet<(u64, u64)> = genome
-            .skip_edges()
-            .iter()
-            .filter(|e| e.enabled)
-            .map(|e| (e.from_innovation, e.to_innovation))
-            .collect();
-
-        // 域映射：序列模型中只允许 Flat 域内的 skip edge。
-        // Sequence 域内的 skip edge 有 concat dim 语义问题（dim=1 对 3D 是 seq_len
-        // 而非 features），且记忆单元应作为原子单元不被 skip 穿透。
-        let domain_map = genome.compute_domain_map();
-        // 每层的“输入域”：即主路径在聚合点处的域
-        //   = 前一层的输出域（或 Input 域）
-        let input_domain_at: std::collections::HashMap<u64, ShapeDomain> = {
-            let mut map = std::collections::HashMap::new();
-            let input_domain = *domain_map.get(&INPUT_INNOVATION).unwrap();
-            let mut prev_domain = input_domain;
-            for &inn in &enabled {
-                map.insert(inn, prev_domain);
-                prev_domain = *domain_map.get(&inn).unwrap();
-            }
-            map
-        };
-
-        let mut candidates = Vec::new();
-
-        // 空间模式需要 spatial_map 做 H/W 兼容检查
-        let spatial_map = if genome.is_spatial() {
-            Some(genome.compute_spatial_map())
-        } else {
-            None
-        };
-
-        for (to_idx, &to_inn) in enabled.iter().enumerate() {
-            let to_domain = input_domain_at.get(&to_inn).copied().unwrap();
-            // Sequence 域不允许 skip edge
-            if to_domain == ShapeDomain::Sequence {
-                continue;
-            }
-
-            // 确定该目标层允许的策略
-            let group_strategy = genome
-                .skip_edges()
-                .iter()
-                .find(|e| e.enabled && e.to_innovation == to_inn)
-                .map(|e| e.strategy.clone());
-            let strategies = match group_strategy {
-                Some(s) => vec![s],
-                None => all_aggregate_strategies(),
-            };
-
-            // 直接前驱的创新号：主路径已经将该层的输出送到 to，
-            // skip edge 会携带完全相同的张量，对所有聚合策略都是退化的
-            // （Add=×2 缩放、Mean/Max=恒等、Concat=冗余翻倍）
-            let immediate_pred = if to_idx > 0 {
-                Some(enabled[to_idx - 1])
-            } else {
-                None // to 是第一层，直接前驱为 INPUT
-            };
-
-            // 空间域 skip edge 目标的输入 spatial（用于 H/W 兼容检查）
-            let to_input_spatial = if to_domain == ShapeDomain::Spatial {
-                if to_idx == 0 {
-                    spatial_map
-                        .as_ref()
-                        .and_then(|m| m.get(&INPUT_INNOVATION).copied().flatten())
-                } else {
-                    spatial_map
-                        .as_ref()
-                        .and_then(|m| m.get(&enabled[to_idx - 1]).copied().flatten())
-                }
-            } else {
-                None
-            };
-
-            // 收集所有前向 from，要求同域 + 空间域 H/W 匹配
-            let mut froms = Vec::new();
-            if !existing.contains(&(INPUT_INNOVATION, to_inn)) && immediate_pred.is_some() {
-                let from_domain = *domain_map.get(&INPUT_INNOVATION).unwrap();
-                if from_domain == to_domain {
-                    let sp_ok = if to_domain == ShapeDomain::Spatial {
-                        spatial_map
-                            .as_ref()
-                            .and_then(|m| m.get(&INPUT_INNOVATION).copied().flatten())
-                            == to_input_spatial
-                    } else {
-                        true
-                    };
-                    if sp_ok {
-                        froms.push(INPUT_INNOVATION);
-                    }
-                }
-            }
-            for &from_inn in &enabled[..to_idx] {
-                if Some(from_inn) == immediate_pred {
-                    continue;
-                }
-                if !existing.contains(&(from_inn, to_inn)) {
-                    let from_domain = *domain_map.get(&from_inn).unwrap();
-                    if from_domain == to_domain {
-                        let sp_ok = if to_domain == ShapeDomain::Spatial {
-                            spatial_map
-                                .as_ref()
-                                .and_then(|m| m.get(&from_inn).copied().flatten())
-                                == to_input_spatial
-                        } else {
-                            true
-                        };
-                        if sp_ok {
-                            froms.push(from_inn);
-                        }
-                    }
-                }
-            }
-
-            // 对每个 (from, strategy) 组合做 trial 验证
-            for &from in &froms {
-                for strategy in &strategies {
-                    let mut trial = genome.clone();
-                    trial.skip_edges_mut().push(SkipEdge {
-                        innovation_number: u64::MAX, // placeholder
-                        from_innovation: from,
-                        to_innovation: to_inn,
-                        strategy: strategy.clone(),
-                        enabled: true,
-                    });
-                    if trial.resolve_dimensions().is_ok() {
-                        candidates.push((from, to_inn, strategy.clone()));
-                    }
-                }
-            }
-        }
-
-        candidates
-    }
-}
-
-impl Mutation for AddSkipEdgeMutation {
-    fn name(&self) -> &str {
-        "AddSkipEdge"
-    }
-
-    fn is_structural(&self) -> bool {
-        true
-    }
-
-    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
-        // 快速预筛：至少有 1 个 enabled 层才可能有候选对
-        genome.layers().iter().any(|l| l.enabled)
-    }
-
-    fn apply(
-        &self,
-        genome: &mut NetworkGenome,
-        _constraints: &SizeConstraints,
-        rng: &mut StdRng,
-    ) -> Result<(), MutationError> {
-        let candidates = Self::feasible_candidates(genome);
-        if candidates.is_empty() {
-            return Err(MutationError::NotApplicable(
-                "没有可行的 skip edge 候选".into(),
-            ));
-        }
-
-        let &(from, to, ref strategy) = candidates.choose(rng).unwrap();
-        let inn = genome.next_innovation_number();
-        genome.skip_edges_mut().push(SkipEdge {
-            innovation_number: inn,
-            from_innovation: from,
-            to_innovation: to,
-            strategy: strategy.clone(),
-            enabled: true,
-        });
-        Ok(())
-    }
-}
-
-// ==================== RemoveSkipEdgeMutation ====================
-
-pub struct RemoveSkipEdgeMutation;
-
-impl Mutation for RemoveSkipEdgeMutation {
-    fn name(&self) -> &str {
-        "RemoveSkipEdge"
-    }
-
-    fn is_structural(&self) -> bool {
-        true
-    }
-
-    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
-        genome.skip_edges().iter().any(|e| e.enabled)
-    }
-
-    fn apply(
-        &self,
-        genome: &mut NetworkGenome,
-        _constraints: &SizeConstraints,
-        rng: &mut StdRng,
-    ) -> Result<(), MutationError> {
-        let enabled_indices: Vec<usize> = genome
-            .skip_edges()
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.enabled)
-            .map(|(i, _)| i)
-            .collect();
-
-        if enabled_indices.is_empty() {
-            return Err(MutationError::NotApplicable(
-                "没有可移除的 skip edge".into(),
-            ));
-        }
-
-        let &idx = enabled_indices.choose(rng).unwrap();
-        genome.skip_edges_mut().remove(idx);
-        Ok(())
-    }
-}
-
-// ==================== MutateAggregateStrategyMutation ====================
-
-pub struct MutateAggregateStrategyMutation;
-
-impl Mutation for MutateAggregateStrategyMutation {
-    fn name(&self) -> &str {
-        "MutateAggregateStrategy"
-    }
-
-    fn is_applicable(&self, genome: &NetworkGenome, _constraints: &SizeConstraints) -> bool {
-        genome.skip_edges().iter().any(|e| e.enabled)
-    }
-
-    fn apply(
-        &self,
-        genome: &mut NetworkGenome,
-        _constraints: &SizeConstraints,
-        rng: &mut StdRng,
-    ) -> Result<(), MutationError> {
-        // 收集所有不同的 target group
-        let mut target_inns: Vec<u64> = genome
-            .skip_edges()
-            .iter()
-            .filter(|e| e.enabled)
-            .map(|e| e.to_innovation)
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        if target_inns.is_empty() {
-            return Err(MutationError::NotApplicable(
-                "没有 skip edge target group".into(),
-            ));
-        }
-
-        // 打乱顺序，依次尝试每个 target group
-        target_inns.shuffle(rng);
-
-        for target in &target_inns {
-            let current_strategy = genome
-                .skip_edges()
-                .iter()
-                .find(|e| e.enabled && e.to_innovation == *target)
-                .map(|e| e.strategy.clone())
-                .unwrap();
-
-            // 计算可行的替代策略（排除当前 + trial 验证）
-            let feasible: Vec<AggregateStrategy> = all_aggregate_strategies()
-                .into_iter()
-                .filter(|s| s != &current_strategy)
-                .filter(|s| {
-                    let mut trial = genome.clone();
-                    for edge in trial.skip_edges_mut().iter_mut() {
-                        if edge.enabled && edge.to_innovation == *target {
-                            edge.strategy = s.clone();
-                        }
-                    }
-                    trial.resolve_dimensions().is_ok()
-                })
-                .collect();
-
-            if let Some(new_strategy) = feasible.choose(rng) {
-                let new_strategy = new_strategy.clone();
-                for edge in genome.skip_edges_mut().iter_mut() {
-                    if edge.enabled && edge.to_innovation == *target {
-                        edge.strategy = new_strategy.clone();
-                    }
-                }
-                return Ok(());
-            }
-        }
-
-        Err(MutationError::NotApplicable(
-            "所有 target group 均无可行替代策略".into(),
-        ))
-    }
-}
-
 // ==================== NodeLevel 变异分派实现 ====================
 
 /// 内部辅助：将 NodeLevel 基因组的 next_innovation 前进 by 步
@@ -2990,14 +2612,14 @@ fn is_next_dropout(genome: &NetworkGenome, after_id: u64) -> bool {
     let blocks = node_main_path(genome);
     if let Some(idx) = blocks.iter().position(|b| b.output_id == after_id) {
         if let Some(next) = blocks.get(idx + 1) {
-            return matches!(next.kind, NodeBlockKind::Dropout { .. });
+            return matches!(next.kind, NodeBlockKind::Dropout);
         }
     }
     // INPUT 后的第一个块
     if after_id == INPUT_INNOVATION {
         return blocks
             .first()
-            .map(|b| matches!(b.kind, NodeBlockKind::Dropout { .. }))
+            .map(|b| matches!(b.kind, NodeBlockKind::Dropout))
             .unwrap_or(false);
     }
     false

@@ -2046,7 +2046,7 @@ impl CandidateFeatures {
                     features.conv2d_blocks += 1;
                     features.deformable_conv2d_blocks += 1;
                 }
-                NodeBlockKind::Pool2d { .. } => features.pool2d_blocks += 1,
+                NodeBlockKind::Pool2d => features.pool2d_blocks += 1,
                 NodeBlockKind::Linear { .. } => features.linear_blocks += 1,
                 NodeBlockKind::Flatten => features.has_flatten = true,
                 _ => {}

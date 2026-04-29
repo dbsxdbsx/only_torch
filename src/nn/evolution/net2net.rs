@@ -168,9 +168,7 @@ fn locate_recurrent_cell_params(
 fn is_pass_through(kind: &NodeBlockKind) -> bool {
     matches!(
         kind,
-        NodeBlockKind::Activation { .. }
-            | NodeBlockKind::Dropout { .. }
-            | NodeBlockKind::Pool2d { .. }
+        NodeBlockKind::Activation | NodeBlockKind::Dropout | NodeBlockKind::Pool2d
     )
 }
 
@@ -238,9 +236,7 @@ pub(crate) fn apply_widen_to_snapshots(
     for down in blocks.iter().skip(owner_idx + 1) {
         match &down.kind {
             k if is_pass_through(k) => continue,
-            NodeBlockKind::BatchNorm { .. }
-            | NodeBlockKind::LayerNorm { .. }
-            | NodeBlockKind::RMSNorm { .. } => {
+            NodeBlockKind::BatchNorm | NodeBlockKind::LayerNorm | NodeBlockKind::RMSNorm => {
                 for pid in block_param_ids(genome, down) {
                     if let Some(old) = genome.node_weight_snapshots().get(&pid).cloned() {
                         let shape = old.shape().to_vec();

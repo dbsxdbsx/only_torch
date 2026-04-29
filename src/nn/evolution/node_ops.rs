@@ -59,58 +59,39 @@ pub enum NodeBlockKind {
     Linear {
         out_features: usize,
     },
-    Activation {
-        act_type: ActivationType,
-    },
+    Activation,
     Conv2d {
         out_channels: usize,
-        kernel_size: usize,
     },
     DeformableConv2d {
         out_channels: usize,
-        kernel_size: usize,
     },
     ConvTranspose2d {
         out_channels: usize,
     },
-    Pool2d {
-        pool_type: PoolType,
-        kernel_size: usize,
-        stride: usize,
-    },
+    Pool2d,
     Flatten,
-    Dropout {
-        p: f32,
-    },
-    BatchNorm {
-        num_features: usize,
-    },
-    LayerNorm {
-        normalized_dims: usize,
-    },
-    RMSNorm {
-        normalized_dims: usize,
-    },
+    Dropout,
+    BatchNorm,
+    LayerNorm,
+    RMSNorm,
     /// 跳跃连接聚合节点（Add/Concat/Maximum）
     SkipAgg,
     Rnn {
         hidden_size: usize,
-        return_sequences: bool,
     },
     Lstm {
         hidden_size: usize,
-        return_sequences: bool,
     },
     Gru {
         hidden_size: usize,
-        return_sequences: bool,
     },
     Unknown,
 }
 
 impl NodeBlockKind {
     pub fn is_activation(&self) -> bool {
-        matches!(self, NodeBlockKind::Activation { .. })
+        matches!(self, NodeBlockKind::Activation)
     }
     pub fn is_linear(&self) -> bool {
         matches!(self, NodeBlockKind::Linear { .. })
@@ -121,9 +102,7 @@ impl NodeBlockKind {
     pub fn is_normalization(&self) -> bool {
         matches!(
             self,
-            NodeBlockKind::BatchNorm { .. }
-                | NodeBlockKind::LayerNorm { .. }
-                | NodeBlockKind::RMSNorm { .. }
+            NodeBlockKind::BatchNorm | NodeBlockKind::LayerNorm | NodeBlockKind::RMSNorm
         )
     }
     pub fn is_recurrent(&self) -> bool {
@@ -276,64 +255,22 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
             None => return NodeBlockKind::Unknown,
         };
         return match &node.node_type {
-            NT::ReLU => NodeBlockKind::Activation {
-                act_type: ActivationType::ReLU,
-            },
-            NT::Tanh => NodeBlockKind::Activation {
-                act_type: ActivationType::Tanh,
-            },
-            NT::Sigmoid => NodeBlockKind::Activation {
-                act_type: ActivationType::Sigmoid,
-            },
-            NT::Gelu => NodeBlockKind::Activation {
-                act_type: ActivationType::GELU,
-            },
-            NT::Swish => NodeBlockKind::Activation {
-                act_type: ActivationType::SiLU,
-            },
-            NT::SoftPlus => NodeBlockKind::Activation {
-                act_type: ActivationType::Softplus,
-            },
-            NT::ReLU6 => NodeBlockKind::Activation {
-                act_type: ActivationType::ReLU6,
-            },
-            NT::Selu => NodeBlockKind::Activation {
-                act_type: ActivationType::SELU,
-            },
-            NT::Mish => NodeBlockKind::Activation {
-                act_type: ActivationType::Mish,
-            },
-            NT::HardSwish => NodeBlockKind::Activation {
-                act_type: ActivationType::HardSwish,
-            },
-            NT::HardSigmoid => NodeBlockKind::Activation {
-                act_type: ActivationType::HardSigmoid,
-            },
-            NT::LeakyReLU { alpha } => NodeBlockKind::Activation {
-                act_type: ActivationType::LeakyReLU { alpha: *alpha },
-            },
-            NT::Elu { alpha } => NodeBlockKind::Activation {
-                act_type: ActivationType::ELU { alpha: *alpha },
-            },
-            NT::Dropout { p } => NodeBlockKind::Dropout { p: *p },
+            NT::ReLU
+            | NT::Tanh
+            | NT::Sigmoid
+            | NT::Gelu
+            | NT::Swish
+            | NT::SoftPlus
+            | NT::ReLU6
+            | NT::Selu
+            | NT::Mish
+            | NT::HardSwish
+            | NT::HardSigmoid
+            | NT::LeakyReLU { .. }
+            | NT::Elu { .. } => NodeBlockKind::Activation,
+            NT::Dropout { .. } => NodeBlockKind::Dropout,
             NT::Flatten { .. } => NodeBlockKind::Flatten,
-            NT::MaxPool2d {
-                kernel_size,
-                stride,
-                ..
-            } => NodeBlockKind::Pool2d {
-                pool_type: PoolType::Max,
-                kernel_size: kernel_size.0,
-                stride: stride.0,
-            },
-            NT::AvgPool2d {
-                kernel_size,
-                stride,
-            } => NodeBlockKind::Pool2d {
-                pool_type: PoolType::Avg,
-                kernel_size: kernel_size.0,
-                stride: stride.0,
-            },
+            NT::MaxPool2d { .. } | NT::AvgPool2d { .. } => NodeBlockKind::Pool2d,
             NT::Add | NT::Maximum => NodeBlockKind::SkipAgg,
             NT::Concat { .. } => NodeBlockKind::SkipAgg,
             _ => NodeBlockKind::Unknown,
@@ -400,7 +337,6 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
                                 if p.is_parameter() && p.output_shape.len() == 4 {
                                     return NodeBlockKind::DeformableConv2d {
                                         out_channels: p.output_shape[0],
-                                        kernel_size: p.output_shape[2],
                                     };
                                 }
                             }
@@ -423,7 +359,6 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
                                 if p.is_parameter() && p.output_shape.len() == 4 {
                                     return NodeBlockKind::Conv2d {
                                         out_channels: p.output_shape[0],
-                                        kernel_size: p.output_shape[2],
                                     };
                                 }
                             }
@@ -460,24 +395,14 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
     for &id in node_ids {
         if let Some(n) = node_map.get(&id) {
             match &n.node_type {
-                NT::BatchNormOp { num_features, .. } => {
-                    return NodeBlockKind::BatchNorm {
-                        num_features: *num_features,
-                    };
+                NT::BatchNormOp { .. } => {
+                    return NodeBlockKind::BatchNorm;
                 }
-                NT::LayerNormOp {
-                    normalized_dims, ..
-                } => {
-                    return NodeBlockKind::LayerNorm {
-                        normalized_dims: *normalized_dims,
-                    };
+                NT::LayerNormOp { .. } => {
+                    return NodeBlockKind::LayerNorm;
                 }
-                NT::RMSNormOp {
-                    normalized_dims, ..
-                } => {
-                    return NodeBlockKind::RMSNorm {
-                        normalized_dims: *normalized_dims,
-                    };
+                NT::RMSNormOp { .. } => {
+                    return NodeBlockKind::RMSNorm;
                 }
                 _ => {}
             }
@@ -488,34 +413,19 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
     for &id in node_ids {
         if let Some(n) = node_map.get(&id) {
             match &n.node_type {
-                NT::CellRnn {
-                    hidden_size,
-                    return_sequences,
-                    ..
-                } => {
+                NT::CellRnn { hidden_size, .. } => {
                     return NodeBlockKind::Rnn {
                         hidden_size: *hidden_size,
-                        return_sequences: *return_sequences,
                     };
                 }
-                NT::CellLstm {
-                    hidden_size,
-                    return_sequences,
-                    ..
-                } => {
+                NT::CellLstm { hidden_size, .. } => {
                     return NodeBlockKind::Lstm {
                         hidden_size: *hidden_size,
-                        return_sequences: *return_sequences,
                     };
                 }
-                NT::CellGru {
-                    hidden_size,
-                    return_sequences,
-                    ..
-                } => {
+                NT::CellGru { hidden_size, .. } => {
                     return NodeBlockKind::Gru {
                         hidden_size: *hidden_size,
-                        return_sequences: *return_sequences,
                     };
                 }
                 _ => {}
@@ -885,18 +795,9 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 }
                 dim_map.insert(block.output_id, out);
             }
-            NodeBlockKind::Rnn {
-                hidden_size,
-                return_sequences: _,
-            }
-            | NodeBlockKind::Lstm {
-                hidden_size,
-                return_sequences: _,
-            }
-            | NodeBlockKind::Gru {
-                hidden_size,
-                return_sequences: _,
-            } => {
+            NodeBlockKind::Rnn { hidden_size }
+            | NodeBlockKind::Lstm { hidden_size }
+            | NodeBlockKind::Gru { hidden_size } => {
                 let out = *hidden_size;
                 let cell_node = genome
                     .nodes()
@@ -989,7 +890,7 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 }
             }
             // 归一化块：更新 gamma/beta 参数形状 + BatchNormOp 的 num_features
-            NodeBlockKind::BatchNorm { .. } => {
+            NodeBlockKind::BatchNorm => {
                 for node in genome.nodes_mut().iter_mut() {
                     if !bid_set.contains(&node.innovation_number) {
                         continue;
@@ -1011,7 +912,7 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 }
                 dim_map.insert(block.output_id, prev_out);
             }
-            NodeBlockKind::LayerNorm { .. } | NodeBlockKind::RMSNorm { .. } => {
+            NodeBlockKind::LayerNorm | NodeBlockKind::RMSNorm => {
                 for node in genome.nodes_mut().iter_mut() {
                     if !bid_set.contains(&node.innovation_number) {
                         continue;
@@ -1342,11 +1243,11 @@ fn needs_return_sequences_after(genome: &NetworkGenome, after_id: u64) -> bool {
 
     for block in blocks.iter().skip(current_idx + 1) {
         match &block.kind {
-            NodeBlockKind::Activation { .. }
-            | NodeBlockKind::Dropout { .. }
-            | NodeBlockKind::BatchNorm { .. }
-            | NodeBlockKind::LayerNorm { .. }
-            | NodeBlockKind::RMSNorm { .. }
+            NodeBlockKind::Activation
+            | NodeBlockKind::Dropout
+            | NodeBlockKind::BatchNorm
+            | NodeBlockKind::LayerNorm
+            | NodeBlockKind::RMSNorm
             | NodeBlockKind::SkipAgg => {
                 continue;
             }

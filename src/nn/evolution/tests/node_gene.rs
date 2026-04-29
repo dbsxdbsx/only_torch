@@ -12,7 +12,7 @@
 use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::gene::ShapeDomain;
 use crate::nn::evolution::node_gene::{
-    AnalysisError, GenomeAnalysis, GenomeKind, NodeGene, infer_domain, infer_output_shape,
+    AnalysisError, GenomeAnalysis, NodeGene, infer_domain, infer_output_shape,
 };
 use crate::nn::nodes::raw_node::Reduction;
 
@@ -75,11 +75,6 @@ fn node_gene_state_is_leaf() {
     let g = NodeGene::new(5, NodeTypeDescriptor::State, shape![1, 16], vec![], None);
     assert!(g.is_state());
     assert!(g.is_leaf());
-}
-
-#[test]
-fn genome_kind_variants() {
-    assert_ne!(GenomeKind::LayerLevel, GenomeKind::NodeLevel);
 }
 
 // ==================== 叶节点形状推导（应返回 Err）====================

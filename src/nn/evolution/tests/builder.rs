@@ -1,6 +1,7 @@
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
+use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::evolution::builder::BuildResult;
 use crate::nn::evolution::gene::*;
 use crate::nn::evolution::mutation::{GrowHiddenSizeMutation, Mutation, SizeConstraints};
@@ -187,6 +188,45 @@ fn test_sequential_minimal_forward() {
 
     assert_eq!(build.output.value().unwrap().unwrap().shape(), &[1, 2]);
     assert!(build.all_parameters().len() >= 5);
+}
+
+#[test]
+fn test_sequential_cell_descriptor_uses_genome_seq_len_for_visualization() {
+    let mut genome = NetworkGenome::minimal_sequential(3, 2);
+    genome.seq_len = Some(5);
+
+    let desc = genome.to_graph_descriptor().unwrap();
+    let cell = desc
+        .nodes
+        .iter()
+        .find(|node| {
+            matches!(
+                node.node_type,
+                NodeTypeDescriptor::CellRnn { .. }
+                    | NodeTypeDescriptor::CellLstm { .. }
+                    | NodeTypeDescriptor::CellGru { .. }
+            )
+        })
+        .expect("minimal_sequential 应包含 memory cell");
+
+    let seq_len = match &cell.node_type {
+        NodeTypeDescriptor::CellRnn { seq_len, .. }
+        | NodeTypeDescriptor::CellLstm { seq_len, .. }
+        | NodeTypeDescriptor::CellGru { seq_len, .. } => *seq_len,
+        _ => unreachable!(),
+    };
+    assert_eq!(seq_len, 5);
+
+    let build = build(&genome);
+    let dot = build.output.to_dot();
+    assert!(
+        dot.contains("×5"),
+        "memory cell 应按真实序列长度折叠：\n{dot}"
+    );
+    assert!(
+        dot.contains("#E67E22") && dot.contains("t=0") && dot.contains("peripheries=2"),
+        "memory cell 可视化应保留橙色时序边和双框标识：\n{dot}"
+    );
 }
 
 #[test]

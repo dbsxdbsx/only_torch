@@ -97,6 +97,9 @@ examples-traditional: example-xor example-iris example-sine example-mnist exampl
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
 
+# 运行所有 memory unit examples（traditional + evolution）
+examples-memory-unit: example-parity example-evolution-parity-seq example-evolution-parity-seq-var-len
+
 example-xor:
     @echo "=== Running XOR [{{_blas_name}}] ==="
     cargo run --example xor {{_blas_flag}}

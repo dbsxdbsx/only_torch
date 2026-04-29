@@ -6,7 +6,7 @@ digraph ComputeGraph {
     edge [fontname="Microsoft YaHei,SimHei,Arial"];
 
     subgraph cluster_group_linear_0 {
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 8] → [?, 1]</FONT>>;
+        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 14] → [?, 1]</FONT>>;
         style=filled;
         fillcolor="#E3F2FD80";
         fontname="Microsoft YaHei,SimHei,Arial";
@@ -15,41 +15,27 @@ digraph ComputeGraph {
             "2" [label=<evo_1<BR/><B>Add</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "4" [label=<evo_2<BR/><B>MatMul</B><BR/>[?, 1]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
             "5" [label=<evo_3<BR/><B>Parameter</B><BR/>[1, 1]<BR/>(1 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "7" [label=<evo_1<BR/><B>Parameter</B><BR/>[8, 1]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "7" [label=<evo_1<BR/><B>Parameter</B><BR/>[14, 1]<BR/>(14 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
-    subgraph cluster_group_linear_2 {
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 2] → [?, 8]</FONT>>;
+    subgraph cluster_group_linear_1 {
+        label=<<B>Linear</B><BR/><FONT POINT-SIZE="9">Linear: [?, 2] → [?, 14]</FONT>>;
         style=filled;
         fillcolor="#E8F5E980";
         fontname="Microsoft YaHei,SimHei,Arial";
         fontsize=11;
         margin=12;
-            "8" [label=<evo_4<BR/><B>Add</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "9" [label=<evo_5<BR/><B>MatMul</B><BR/>[?, 8]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "10" [label=<evo_14<BR/><B>Parameter</B><BR/>[1, 8]<BR/>(8 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "12" [label=<evo_12<BR/><B>Parameter</B><BR/>[2, 8]<BR/>(16 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-    }
-
-    subgraph cluster_group_layernorm_1 {
-        label=<<B>LayerNorm</B><BR/><FONT POINT-SIZE="9">LayerNorm: [?, 2] → [?, 2]</FONT>>;
-        style=filled;
-        fillcolor="#FFF3E080";
-        fontname="Microsoft YaHei,SimHei,Arial";
-        fontsize=11;
-        margin=12;
-            "11" [label=<evo_6<BR/><B>Add</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "13" [label=<evo_7<BR/><B>Multiply</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "14" [label=<evo_9<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
-            "15" [label=<evo_8<BR/><B>LayerNormOp</B><BR/>[?, 2]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
-            "16" [label=<evo_6<BR/><B>Parameter</B><BR/>[1, 2]<BR/>(2 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "8" [label=<evo_4<BR/><B>Add</B><BR/>[?, 14]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "9" [label=<evo_5<BR/><B>MatMul</B><BR/>[?, 14]> shape=box style="filled,rounded" fillcolor="#FFFDE7" fontsize=10];
+            "10" [label=<evo_9<BR/><B>Parameter</B><BR/>[1, 14]<BR/>(14 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
+            "12" [label=<evo_7<BR/><B>Parameter</B><BR/>[2, 14]<BR/>(28 params)> shape=box style=filled fillcolor="#E8F5E9" fontsize=10];
     }
 
     "1" [label=<bce_1<BR/><B>BCE</B><BR/>[?, 1]<BR/><FONT COLOR="#C62828" POINT-SIZE="9">▸ Output</FONT>> shape=octagon style=filled fillcolor="#FFEBEE" fontsize=10 penwidth=2.5 color="#C62828"];
     "3" [label=<target_1<BR/><B>TargetInput</B><BR/>[?, 1]> shape=ellipse style=filled fillcolor="#FFE0B2" fontsize=10];
-    "6" [label=<evo_3<BR/><B>LeakyReLU</B><BR/>[?, 8]<BR/>(α=0.01)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "17" [label=<evo_9<BR/><B>HardSigmoid</B><BR/>[?, 2]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
-    "18" [label=<evo_input_1<BR/><B>Input</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
+    "6" [label=<evo_3<BR/><B>SoftPlus</B><BR/>[?, 14]> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "11" [label=<evo_6<BR/><B>LeakyReLU</B><BR/>[?, 2]<BR/>(α=0.01)> shape=diamond style=filled fillcolor="#FFF3E0" fontsize=10];
+    "13" [label=<evo_input_1<BR/><B>Input</B><BR/>[?, 2]> shape=ellipse style=filled fillcolor="#E3F2FD" fontsize=10];
 
     "2" -> "1";
     "3" -> "1";
@@ -63,9 +49,4 @@ digraph ComputeGraph {
     "11" -> "9";
     "12" -> "9";
     "13" -> "11";
-    "14" -> "11";
-    "15" -> "13";
-    "16" -> "13";
-    "17" -> "15";
-    "18" -> "17";
 }
