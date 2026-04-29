@@ -27,7 +27,7 @@ use std::rc::Rc;
 ///
 /// # 注意
 /// - Dropout 仅在训练模式下生效，评估模式下直接通过
-/// - 使用 `graph.train()` / `graph.eval()` 切换模式
+/// - 使用 `graph.train()` / `graph.inference()` 切换模式
 pub trait VarRegularizationOps {
     /// Dropout 正则化
     ///

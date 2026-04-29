@@ -10,11 +10,11 @@
  * 比直接计算 softmax().ln() 更数值稳定。
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 use rayon::prelude::*;
 
@@ -49,6 +49,8 @@ pub(crate) struct LogSoftmax {
     supports_dynamic: bool,
     /// 缓存 softmax 输出，用于反向传播
     softmax_cache: Option<Tensor>,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl LogSoftmax {
@@ -73,6 +75,7 @@ impl LogSoftmax {
             dynamic_shape: parent_dynamic_shape.clone(),
             supports_dynamic: parent_dynamic_shape.has_dynamic_dims(),
             softmax_cache: None,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -109,10 +112,18 @@ impl TraitNode for LogSoftmax {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 计算 log_softmax（沿最后一维）
         let output = parent_values[0].log_softmax_last_dim();
-        // 缓存 softmax 输出用于反向传播
-        self.softmax_cache = Some(output.exp());
+        if self.should_cache_for_backward {
+            // 缓存 softmax 输出用于反向传播
+            self.softmax_cache = Some(output.exp());
+        } else {
+            self.softmax_cache = None;
+        }
         self.value = Some(output);
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

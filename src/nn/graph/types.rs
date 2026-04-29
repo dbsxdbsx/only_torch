@@ -6,36 +6,47 @@
 
 use crate::nn::NodeId;
 
-// ==================== 执行上下文 ====================
+// ==================== 执行模式 ====================
 
-/// 图执行上下文。
+/// 图执行模式（backbone 不可分割契约）。
 ///
-/// `training` 控制 Dropout、BatchNorm 等层行为；`grad_enabled` 控制是否为
-/// backward 保存中间缓存。两者保持正交，避免把 PyTorch 中的 `model.train/eval`
-/// 与 `torch.no_grad` 混成同一个布尔位。
+/// 把"层行为 + backward 缓存策略 + backward 是否允许"合并为同一个枚举，
+/// 避免拆成多个布尔位后语义模糊（参考 .doc/design/mode_design.md）。
+///
+/// - `Train`: Dropout/BN 走训练态、forward 写 backward 缓存、`backward()` 允许。
+/// - `Inference`: Dropout/BN 走评估态、forward 跳过 backward 缓存、`backward()` 直接返回错误。
+///
+/// 调用 `Graph::train()` / `Graph::inference()` 切换模式；
+/// 用 `Graph::inference_scope(|g| { ... })` 临时进入推理域并自动恢复。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ExecutionContext {
-    /// 层行为模式。影响 Dropout、BatchNorm 等依赖训练状态的算子。
-    pub training: bool,
-    /// 全图梯度记录开关。影响是否保存 backward 所需缓存。
-    pub grad_enabled: bool,
+pub enum Mode {
+    /// 训练模式
+    Train,
+    /// 推理模式（包含原 PyTorch 的 eval + no_grad 语义）
+    Inference,
 }
 
-impl ExecutionContext {
-    /// 默认训练上下文：训练行为 + 记录 backward 缓存。
-    pub const fn training() -> Self {
-        Self {
-            training: true,
-            grad_enabled: true,
-        }
+impl Mode {
+    /// 是否处于训练模式。
+    #[inline]
+    pub const fn is_training(self) -> bool {
+        matches!(self, Self::Train)
     }
 
-    /// 推理上下文：eval 行为 + 不记录 backward 缓存。
-    pub const fn inference() -> Self {
-        Self {
-            training: false,
-            grad_enabled: false,
-        }
+    /// 是否需要为 backward 写入缓存。
+    ///
+    /// 与 `is_training` 等价：本框架不区分"评估行为 + 仍要梯度"的中间态。
+    #[inline]
+    pub const fn caches_for_backward(self) -> bool {
+        matches!(self, Self::Train)
+    }
+
+    /// 是否允许调用 `backward()`。
+    ///
+    /// 与 `is_training` 等价：本框架不区分"评估行为 + 仍要梯度"的中间态。
+    #[inline]
+    pub const fn allows_backward(self) -> bool {
+        matches!(self, Self::Train)
     }
 }
 

@@ -14,11 +14,11 @@
  *   其中 d = 归一化维度元素总数，sum 沿归一化维度归约
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 
 /// 层归一化运算节点（不含 gamma/beta）
@@ -51,6 +51,8 @@ pub(crate) struct LayerNormOp {
     std_cache: Option<Tensor>,
     /// 归一化维度的元素总数 d
     d: usize,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl LayerNormOp {
@@ -97,6 +99,7 @@ impl LayerNormOp {
             x_hat_cache: None,
             std_cache: None,
             d,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -185,11 +188,20 @@ impl TraitNode for LayerNormOp {
         }
         let std_tensor = Tensor::new(&std_data, &std_shape);
 
-        self.x_hat_cache = Some(x_hat.clone());
-        self.std_cache = Some(std_tensor);
+        if self.should_cache_for_backward {
+            self.x_hat_cache = Some(x_hat.clone());
+            self.std_cache = Some(std_tensor);
+        } else {
+            self.x_hat_cache = None;
+            self.std_cache = None;
+        }
         self.value = Some(x_hat);
 
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

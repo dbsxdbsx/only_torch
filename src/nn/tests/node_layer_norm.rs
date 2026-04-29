@@ -12,7 +12,7 @@
  *   见 tests/layer_norm_reference.py
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -39,8 +39,7 @@ fn test_layer_norm_op_forward_2d() {
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
 
-    ln.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    ln.forward_recursive(1, Mode::Train).unwrap();
     let val = ln.value().unwrap();
 
     assert_eq!(val.shape(), &[2, 3]);
@@ -73,8 +72,7 @@ fn test_layer_norm_op_forward_3d() {
         0.1, 0.2, 0.3, 0.4,  0.5, 0.6, 0.7, 0.8,
     ], &[2, 2, 4]))).unwrap();
 
-    ln.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    ln.forward_recursive(1, Mode::Train).unwrap();
     let val = ln.value().unwrap();
 
     assert_eq!(val.shape(), &[2, 2, 4]);
@@ -105,8 +103,7 @@ fn test_layer_norm_op_vjp_sum() -> Result<(), GraphError> {
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
 
-    ln.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    ln.forward_recursive(1, Mode::Train).unwrap();
 
     // upstream = 全 1（对应 sum loss）
     let upstream_grad = Tensor::ones(&[2, 3]);

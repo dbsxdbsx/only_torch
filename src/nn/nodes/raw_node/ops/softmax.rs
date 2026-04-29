@@ -5,11 +5,11 @@
  *                 实现沿最后一维的 softmax: softmax(x)_i = exp(x_i) / Σ exp(x_j)
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 use rayon::prelude::*;
 
@@ -38,6 +38,8 @@ pub(crate) struct Softmax {
     supports_dynamic: bool,
     /// 缓存输出结果，用于反向传播
     output_cache: Option<Tensor>,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl Softmax {
@@ -62,6 +64,7 @@ impl Softmax {
             dynamic_shape: parent_dynamic_shape.clone(),
             supports_dynamic: parent_dynamic_shape.has_dynamic_dims(),
             output_cache: None,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -98,9 +101,17 @@ impl TraitNode for Softmax {
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
         // 复用 Tensor 层的数值稳定 softmax 实现
         let output = parent_values[0].softmax_last_dim();
-        self.output_cache = Some(output.clone());
+        if self.should_cache_for_backward {
+            self.output_cache = Some(output.clone());
+        } else {
+            self.output_cache = None;
+        }
         self.value = Some(output);
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

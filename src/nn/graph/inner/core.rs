@@ -9,7 +9,7 @@
  */
 
 use super::super::error::GraphError;
-use super::super::types::{ExecutionContext, RecurrentFoldingMeta, RecurrentUnrollInfo};
+use super::super::types::{Mode, RecurrentFoldingMeta, RecurrentUnrollInfo};
 use super::GraphInner;
 use crate::nn::NodeId;
 use rand::SeedableRng;
@@ -30,7 +30,7 @@ impl GraphInner {
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
-            execution_ctx: ExecutionContext::training(),
+            mode: Mode::Train,
             rng: Some(StdRng::seed_from_u64(seed)),
             recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
@@ -52,7 +52,7 @@ impl GraphInner {
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
-            execution_ctx: ExecutionContext::training(),
+            mode: Mode::Train,
             rng: Some(StdRng::seed_from_u64(seed)),
             recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
@@ -73,7 +73,7 @@ impl GraphInner {
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
-            execution_ctx: ExecutionContext::training(),
+            mode: Mode::Train,
             rng: None,
             recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
@@ -282,7 +282,7 @@ impl GraphInner {
         node: &std::rc::Rc<crate::nn::nodes::NodeInner>,
     ) -> Result<(), GraphError> {
         let pass_id = self.last_forward_pass_id + 1;
-        node.forward_recursive(pass_id, &self.execution_ctx)?;
+        node.forward_recursive(pass_id, self.mode)?;
         self.last_forward_pass_id = pass_id;
         Ok(())
     }
@@ -305,9 +305,12 @@ impl GraphInner {
     ) -> Result<f32, GraphError> {
         use crate::tensor::Tensor;
 
-        // 1. 检查训练模式
-        if !self.is_grad_enabled() {
-            eprintln!("[only_torch 警告] 在 grad disabled 模式下调用 backward，这通常是误用。");
+        // 1. 模式契约：Inference 模式禁止 backward
+        if !self.mode.allows_backward() {
+            return Err(GraphError::InvalidOperation(
+                "inference 模式不允许 backward；请先 graph.train() 或退出 inference_scope"
+                    .to_string(),
+            ));
         }
 
         // 2. 获取 loss 值并验证

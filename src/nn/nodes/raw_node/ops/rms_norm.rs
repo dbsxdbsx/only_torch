@@ -12,11 +12,11 @@
  *   dx = (1/d) * (1/rms) * (d * upstream - x_hat * sum(upstream * x_hat))
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 
 /// RMS 归一化运算节点（不含 gamma）
@@ -39,6 +39,8 @@ pub(crate) struct RMSNormOp {
     x_hat_cache: Option<Tensor>,
     rms_cache: Option<Tensor>,
     d: usize,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl RMSNormOp {
@@ -78,6 +80,7 @@ impl RMSNormOp {
             x_hat_cache: None,
             rms_cache: None,
             d,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -151,11 +154,20 @@ impl TraitNode for RMSNormOp {
         }
         let rms_tensor = Tensor::new(&rms_data, &rms_shape);
 
-        self.x_hat_cache = Some(x_hat.clone());
-        self.rms_cache = Some(rms_tensor);
+        if self.should_cache_for_backward {
+            self.x_hat_cache = Some(x_hat.clone());
+            self.rms_cache = Some(rms_tensor);
+        } else {
+            self.x_hat_cache = None;
+            self.rms_cache = None;
+        }
         self.value = Some(x_hat);
 
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

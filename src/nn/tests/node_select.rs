@@ -12,7 +12,7 @@
  * Select 从张量中选择指定轴的切片。VJP: 全零张量 scatter 上游梯度到选中索引位置
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -186,9 +186,7 @@ fn test_select_vjp_scatter_unit() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 3, 4], 42)))
         .unwrap();
-    selected
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    selected.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[2, 4]);
     let grad = selected
@@ -230,9 +228,7 @@ fn test_select_vjp_scatter_non_unit() -> Result<(), GraphError> {
         .unwrap();
 
     input.set_value(Some(&Tensor::zeros(&[2, 3, 4]))).unwrap();
-    selected
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    selected.forward_recursive(1, Mode::Train).unwrap();
 
     // 非 unit 上游梯度
     let mut upstream = Tensor::zeros(&[2, 4]);

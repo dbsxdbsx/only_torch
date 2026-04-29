@@ -23,7 +23,7 @@
  *   grad(x^3) = 3*x^2 → 3*[1,4,9,16] = [3,12,27,48]
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -131,8 +131,7 @@ fn test_pow_vjp_square_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
         .unwrap();
-    pow.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    pow.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = pow
@@ -169,8 +168,7 @@ fn test_pow_vjp_cube_non_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
         .unwrap();
-    pow.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    pow.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 1.0, 0.5, 3.0], &[2, 2]);
     let grad = pow

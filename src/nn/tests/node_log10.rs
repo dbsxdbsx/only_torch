@@ -9,7 +9,7 @@
  *   grad = 1/(x * ln(10)) → [0.4343, 0.04343, 0.004343, 0.000434]
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -44,7 +44,7 @@ fn test_log10_vjp() -> Result<(), GraphError> {
         .create_log10_node(x.clone(), Some("log10"))?;
 
     x.set_value(Some(&Tensor::new(&[1.0, 10.0, 100.0, 1000.0], &[2, 2])))?;
-    log.forward_recursive(1, &ExecutionContext::training())?;
+    log.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 2]);
     let grad = log

@@ -11,7 +11,7 @@
  * 6. 广播测试 → 混合（高层前向/e2e + 底层 VJP）
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -111,9 +111,7 @@ fn test_divide_vjp_to_left() -> Result<(), GraphError> {
     right
         .set_value(Some(&Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2])))
         .unwrap();
-    result
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    result.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = result
@@ -155,9 +153,7 @@ fn test_divide_vjp_to_right() -> Result<(), GraphError> {
     right
         .set_value(Some(&Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2])))
         .unwrap();
-    result
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    result.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = result
@@ -198,9 +194,7 @@ fn test_divide_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
     right
         .set_value(Some(&Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2])))
         .unwrap();
-    result
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    result.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
@@ -248,9 +242,7 @@ fn test_divide_vjp_with_negative_values() -> Result<(), GraphError> {
     right
         .set_value(Some(&Tensor::new(&[2.0, -3.0, 4.0, -5.0], &[2, 2])))
         .unwrap();
-    result
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    result.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证前向传播: [-4/2, 6/-3, -8/4, 10/-5] = [-2, -2, -2, -2]
     let output = result.value().unwrap();
@@ -304,9 +296,7 @@ fn test_divide_backward_invalid_parent_index() -> Result<(), GraphError> {
     right
         .set_value(Some(&Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2])))
         .unwrap();
-    result
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    result.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad_result = result.calc_grad_to_parent_index(2, &upstream_grad); // 索引 2 越界
@@ -346,9 +336,7 @@ fn test_divide_broadcast_vjp() -> Result<(), GraphError> {
     scale
         .set_value(Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))
         .unwrap();
-    result
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    result.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 3]);
 
@@ -405,9 +393,7 @@ fn test_divide_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     scale
         .set_value(Some(&Tensor::new(&[1., 2., 3.], &[1, 3])))
         .unwrap();
-    result
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    result.forward_recursive(1, Mode::Train).unwrap();
 
     // upstream_grad = [[1,2,3], [4,5,6]]（非全 1）
     let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);

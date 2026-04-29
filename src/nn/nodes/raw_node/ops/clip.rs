@@ -8,11 +8,11 @@
  * 等价于 NumPy 的 np.clip() 或 PyTorch 的 torch.clamp()。
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 
 /// 值域裁剪节点
@@ -48,6 +48,8 @@ pub(crate) struct Clip {
     max: f32,
     /// 缓存输入值，用于反向传播（判断梯度通过与否）
     input_cache: Option<Tensor>,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl Clip {
@@ -85,6 +87,7 @@ impl Clip {
             min,
             max,
             input_cache: None,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -127,11 +130,19 @@ impl TraitNode for Clip {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 缓存输入用于反向传播
-        self.input_cache = Some(parent_values[0].clone());
+        if self.should_cache_for_backward {
+            // 缓存输入用于反向传播
+            self.input_cache = Some(parent_values[0].clone());
+        } else {
+            self.input_cache = None;
+        }
         // 计算 clip(x, min, max)（委托给 Tensor::clip()）
         self.value = Some(parent_values[0].clip(self.min, self.max));
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

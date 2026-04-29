@@ -6,7 +6,7 @@
  * 与 LayerNorm 的区别：不减均值
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -41,8 +41,7 @@ fn test_rms_norm_op_forward_2d() {
     )))
     .unwrap();
 
-    rn.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    rn.forward_recursive(1, Mode::Train).unwrap();
     let val = rn.value().unwrap();
 
     assert_eq!(val.shape(), &[2, 4]);
@@ -74,8 +73,7 @@ fn test_rms_norm_op_forward_3d() {
     let data: Vec<f32> = (1..=12).map(|i| i as f32).collect();
     x.set_value(Some(&Tensor::new(&data, &[2, 2, 3]))).unwrap();
 
-    rn.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    rn.forward_recursive(1, Mode::Train).unwrap();
     let val = rn.value().unwrap();
 
     assert_eq!(val.shape(), &[2, 2, 3]);
@@ -101,8 +99,7 @@ fn test_rms_norm_op_vjp() -> Result<(), GraphError> {
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4])))
         .unwrap();
 
-    rn.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    rn.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[1, 4]);
     let grad = rn

@@ -21,7 +21,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -54,7 +54,7 @@ fn test_conv2d_forward_simple() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 2, 2])))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     // 输出 [1, 1, 2, 2]，2×2 窗口求和 = 4.0
     let output = conv.value().unwrap();
@@ -97,10 +97,10 @@ fn test_conv2d_1x1_eval_fast_path_matches_train_path() -> Result<(), GraphError>
     input.set_value(Some(&input_tensor))?;
     kernel.set_value(Some(&kernel_tensor))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
     let train_output = conv.value().unwrap().clone();
 
-    conv.forward_recursive(2, &ExecutionContext::inference())?;
+    conv.forward_recursive(2, Mode::Inference)?;
     let eval_output = conv.value().unwrap();
 
     assert_eq!(eval_output.shape(), &[1, 3, 2, 3]);
@@ -138,7 +138,7 @@ fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     // 输出 [1, 1, 3, 3]（same padding）
     let output = conv.value().unwrap();
@@ -183,7 +183,7 @@ fn test_conv2d_forward_batch() -> Result<(), GraphError> {
     input.set_value(Some(&input_val))?;
     kernel.set_value(Some(&kernel_val))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     let output = conv.value().unwrap();
     assert_eq!(output.shape(), &[2, 1, 3, 3]);
@@ -227,7 +227,7 @@ fn test_conv2d_multi_output_channels() -> Result<(), GraphError> {
     input.set_value(Some(&input_val))?;
     kernel.set_value(Some(&kernel_val))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     let output = conv.value().unwrap();
     assert_eq!(output.shape(), &[1, 2, 3, 3]);
@@ -265,7 +265,7 @@ fn test_conv2d_forward_with_stride() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 1, 8, 8])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     // 输出 H' = (8 - 3) / 2 + 1 = 3
     let output = conv.value().unwrap();
@@ -388,7 +388,7 @@ fn test_conv2d_vjp_to_input() -> Result<(), GraphError> {
     let kernel_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]);
     input.set_value(Some(&input_val))?;
     kernel.set_value(Some(&kernel_val))?;
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     // upstream 形状 = conv 输出: [1, 1, 1, 1]
     let upstream = Tensor::ones(&[1, 1, 1, 1]);
@@ -436,7 +436,7 @@ fn test_conv2d_vjp_to_kernel() -> Result<(), GraphError> {
     let kernel_val = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[1, 1, 2, 2]);
     input.set_value(Some(&input_val))?;
     kernel.set_value(Some(&kernel_val))?;
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[1, 1, 1, 1]);
     let grad = conv
@@ -486,7 +486,7 @@ fn test_conv2d_vjp_to_kernel_batch() -> Result<(), GraphError> {
 
     input.set_value(Some(&input_val))?;
     kernel.set_value(Some(&kernel_val))?;
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     // upstream 全 1，形状 [2, 1, 2, 2]
     let upstream = Tensor::ones(&[2, 1, 2, 2]);
@@ -533,7 +533,7 @@ fn test_conv2d_vjp_to_input_multi_output() -> Result<(), GraphError> {
 
     input.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
     kernel.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2])))?;
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
     let grad = conv
@@ -839,13 +839,13 @@ fn test_conv2d_dynamic_batch_forward() -> Result<(), GraphError> {
     // 第一次 forward：batch=2
     input.set_value(Some(&Tensor::zeros(&[2, 1, 5, 5])))?;
     kernel.set_value(Some(&Tensor::ones(&[2, 1, 3, 3])))?;
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
     let value1 = conv.value().unwrap();
     assert_eq!(value1.shape(), &[2, 2, 3, 3], "第一次 forward: batch=2");
 
     // 第二次 forward：batch=5（动态改变 batch）
     input.set_value(Some(&Tensor::zeros(&[5, 1, 5, 5])))?;
-    conv.forward_recursive(2, &ExecutionContext::training())?;
+    conv.forward_recursive(2, Mode::Train)?;
     let value2 = conv.value().unwrap();
     assert_eq!(value2.shape(), &[5, 2, 3, 3], "第二次 forward: batch=5");
 
@@ -1082,7 +1082,7 @@ fn test_conv2d_dilation2_forward_all_ones() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 1, 5, 5])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     // effective_k = 2*(3-1)+1 = 5, output_h = (5-5)/1+1 = 1
     let output = conv.value().unwrap();
@@ -1123,7 +1123,7 @@ fn test_conv2d_dilation2_forward_sequential() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::new(&input_data, &[1, 1, 5, 5])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     let output = conv.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 1, 1]);
@@ -1160,7 +1160,7 @@ fn test_conv2d_dilation2_larger_input() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 1, 7, 7])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     let output = conv.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 3, 3]);
@@ -1201,7 +1201,7 @@ fn test_conv2d_dilation2_with_padding() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 1, 5, 5])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
 
-    conv.forward_recursive(1, &ExecutionContext::training())?;
+    conv.forward_recursive(1, Mode::Train)?;
 
     let output = conv.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 5, 5]);

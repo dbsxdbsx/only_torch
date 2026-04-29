@@ -13,7 +13,7 @@
 
 use crate::nn::optimizer::{Optimizer, SGD};
 use crate::nn::{
-    BatchNorm, Conv2d, Graph, Linear, RebuildResult, VarActivationOps, VarLossOps,
+    BatchNorm, Conv2d, Graph, Linear, Mode, RebuildResult, VarActivationOps, VarLossOps,
     VarRegularizationOps, VarShapeOps,
 };
 use crate::tensor::Tensor;
@@ -87,8 +87,7 @@ fn test_save_load_mlp_roundtrip() {
     assert_vec_close(&original_pred, &loaded_pred, 1e-5, "MLP 预测");
 
     // 6. 验证默认推理上下文
-    assert!(!loaded.graph.training(), "加载后应为 eval 行为");
-    assert!(!loaded.graph.is_grad_enabled(), "加载后应默认关闭 grad");
+    assert_eq!(loaded.graph.mode(), Mode::Inference);
 
     // 清理
     std::fs::remove_file("test_otm_mlp_roundtrip.otm").ok();
@@ -114,7 +113,7 @@ fn test_save_load_cnn_bn_roundtrip() {
     let fc = Linear::new(&graph, 64, 2, true, "fc_out").unwrap();
     let out = fc.forward(&h);
 
-    graph.eval(); // BN 使用 running stats
+    graph.inference(); // BN 使用 running stats
     graph.forward(&out).unwrap();
     let original_pred = out.value().unwrap().unwrap().to_vec();
 
@@ -143,7 +142,7 @@ fn test_save_load_dropout_eval() {
     let h = fc.forward(&x).dropout(0.5).unwrap();
 
     // eval 模式下 dropout 不生效
-    graph.eval();
+    graph.inference();
     graph.forward(&h).unwrap();
     let pred1 = h.value().unwrap().unwrap().to_vec();
 
@@ -157,8 +156,7 @@ fn test_save_load_dropout_eval() {
     let loaded = Graph::load_model(path).unwrap();
 
     // 3. 验证加载后为推理上下文，结果一致
-    assert!(!loaded.graph.training());
-    assert!(!loaded.graph.is_grad_enabled());
+    assert_eq!(loaded.graph.mode(), Mode::Inference);
     let loaded_pred = predict(&loaded, &Tensor::ones(&[1, 4]));
     assert_vec_close(&pred1, &loaded_pred, 1e-5, "Dropout eval 预测");
 
@@ -437,7 +435,7 @@ fn test_load_then_continue_training() {
     assert!(any_changed, "训练后至少一个参数应被更新");
 
     // 6. 训练后仍可正常推理
-    loaded.graph.eval();
+    loaded.graph.inference();
     loaded.inputs[0]
         .1
         .set_value(&Tensor::new(&[0.0, 1.0], &[1, 2]))
@@ -529,7 +527,7 @@ fn test_evolution_model_load_and_manual_train() {
     assert!(any_changed, "训练后至少一个参数应被更新");
 
     // 6. 训练后仍可推理
-    loaded.graph.eval();
+    loaded.graph.inference();
     loaded.inputs[0]
         .1
         .set_value(&Tensor::new(&[0.0, 1.0], &[1, 2]))

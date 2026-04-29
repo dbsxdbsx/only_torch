@@ -17,7 +17,6 @@
 use super::descriptor_rebuild::RebuildResult;
 use super::error::GraphError;
 use super::handle::Graph;
-use super::types::ExecutionContext;
 use crate::nn::descriptor::GraphDescriptor;
 use crate::nn::var::Var;
 use crate::tensor::Tensor;
@@ -318,10 +317,8 @@ impl Graph {
         // 加载权重
         apply_params_to_graph(&result.graph, &params)?;
 
-        // 默认 inference 上下文（推理场景）
-        result
-            .graph
-            .set_execution_ctx(ExecutionContext::inference());
+        // 默认 inference 模式（推理场景）
+        result.graph.inference();
         Ok(result)
     }
 
@@ -377,9 +374,7 @@ impl Graph {
             .collect();
         apply_params_to_graph(&result.graph, &name_params)?;
 
-        result
-            .graph
-            .set_execution_ctx(ExecutionContext::inference());
+        result.graph.inference();
         // 透传 ONNX 导入报告供上层观测（rewrite 记录 + 警告）
         result.import_report = Some(import_result.import_report);
         Ok(result)

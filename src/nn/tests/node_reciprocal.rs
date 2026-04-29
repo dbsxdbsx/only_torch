@@ -9,7 +9,7 @@
  *   grad(1/x) = -1/x² → -1/[1,4,16,25] = [-1, -0.25, -0.0625, -0.04]
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -44,7 +44,7 @@ fn test_reciprocal_vjp() -> Result<(), GraphError> {
         .create_reciprocal_node(x.clone(), Some("rec"))?;
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 4.0, 5.0], &[2, 2])))?;
-    rec.forward_recursive(1, &ExecutionContext::training())?;
+    rec.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 2]);
     let grad = rec

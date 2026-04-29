@@ -245,7 +245,7 @@ impl ParityNetwork {
         let mut correct = 0;
         let total = sequences.len();
 
-        self.graph.eval();
+        self.graph.inference();
 
         // 分 batch 评估
         for chunk_start in (0..total).step_by(self.batch_size) {

@@ -147,7 +147,7 @@ fn test_california_housing_regression() -> Result<(), GraphError> {
         let epoch_avg_loss = epoch_loss_sum / num_batches as f32;
 
         // 测试集评估（计算 R²）
-        graph.eval();
+        graph.inference();
         let mut predictions: Vec<f32> = Vec::with_capacity(test_samples);
         let mut actuals: Vec<f32> = Vec::with_capacity(test_samples);
 

@@ -16,7 +16,7 @@ use only_torch::tensor::Tensor;
 /// # 注意
 /// 使用了 Dropout，训练/测试时需要切换模式：
 /// - 训练前：`graph.train()`（默认）
-/// - 测试前：`graph.eval()`
+/// - 测试前：`graph.inference()`
 pub struct MnistMLP {
     fc1: Linear,
     fc2: Linear,

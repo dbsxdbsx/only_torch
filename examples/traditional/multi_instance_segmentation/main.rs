@@ -83,7 +83,7 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        graph.eval();
+        graph.inference();
         let (acc, iou) = evaluate(&model, &test_x, &test_y)?;
         best_acc = best_acc.max(acc);
         best_iou = best_iou.max(iou);

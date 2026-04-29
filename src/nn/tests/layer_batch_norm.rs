@@ -231,7 +231,7 @@ fn test_batch_norm_layer_train_eval_switch() -> Result<(), GraphError> {
     let train_output = y.value()?.unwrap().clone();
 
     // 评估模式
-    graph.eval();
+    graph.inference();
     y.forward()?;
     let eval_output = y.value()?.unwrap();
 
@@ -273,7 +273,7 @@ fn test_batch_norm_layer_running_stats_across_forwards() -> Result<(), GraphErro
     }
 
     // eval 模式：用新输入 forward
-    graph.eval();
+    graph.inference();
     let x_eval = graph.input(&Tensor::new(
         &(1..=12).map(|v| v as f32).collect::<Vec<_>>(),
         &[4, 3],

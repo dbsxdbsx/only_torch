@@ -15,7 +15,7 @@
  * 高层 API: VarLossOps 的 .mse_loss() 使用 Mean reduction。
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::nodes::raw_node::Reduction;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
@@ -241,8 +241,7 @@ fn test_mse_vjp_mean_basic() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
-    mse.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mse.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证前向值
     let mse_val = mse.value().expect("mse 应有值");
@@ -296,8 +295,7 @@ fn test_mse_vjp_mean_2d() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[1.5, 2.5, 3.5, 4.5], &[2, 2])))
         .unwrap();
-    mse.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mse.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
     let grad = mse
@@ -347,8 +345,7 @@ fn test_mse_vjp_sum_forward_and_grad() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
-    mse.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mse.forward_recursive(1, Mode::Train).unwrap();
 
     // 前向验证: sum([0.25, 0.25, 0.25]) = 0.75
     let mse_val = mse.value().expect("mse 应有值");

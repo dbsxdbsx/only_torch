@@ -203,7 +203,7 @@ fn test_mnist_cnn() -> Result<(), GraphError> {
         let epoch_avg_loss = epoch_loss_sum / num_batches as f32;
 
         // 测试精度
-        graph.eval();
+        graph.inference();
         let mut correct = 0;
 
         for batch_idx in 0..test_batches {

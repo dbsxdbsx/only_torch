@@ -140,7 +140,7 @@ fn main() -> Result<(), GraphError> {
                     }
                 }
             }
-            r.graph.eval();
+            r.graph.inference();
             r.import_report = Some(import_result.import_report.clone());
             r
         }

@@ -11,7 +11,7 @@
  * 6. 新节点创建 API 测试（KEEP AS-IS）
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -210,9 +210,7 @@ fn test_huber_vjp_small_error() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[0.15, 0.25, 0.35], &[1, 3])))
         .unwrap();
-    huber
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    huber.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
     let grad = huber
@@ -261,9 +259,7 @@ fn test_huber_vjp_large_error() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
         .unwrap();
-    huber
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    huber.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
     let grad = huber
@@ -308,9 +304,7 @@ fn test_huber_vjp_mixed_error() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[0.5, 1.0, 1.5, 2.0], &[1, 4])))
         .unwrap();
-    huber
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    huber.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
     let grad = huber
@@ -366,9 +360,7 @@ fn test_huber_vjp_sum_reduction() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3])))
         .unwrap();
-    huber
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    huber.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证 Sum 前向值
     let loss_val = huber.value().unwrap();
@@ -429,9 +421,7 @@ fn test_huber_vjp_custom_delta() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[0.3, 1.0], &[1, 2])))
         .unwrap();
-    huber
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    huber.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证前向值
     // |0.3| <= 0.5: 0.5 * 0.09 = 0.045
@@ -615,9 +605,7 @@ fn test_huber_dynamic_batch_forward() -> Result<(), GraphError> {
     // 第一次 forward：batch=2
     input.set_value(Some(&Tensor::ones(&[2, 4]))).unwrap();
     target.set_value(Some(&Tensor::zeros(&[2, 4]))).unwrap();
-    huber
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    huber.forward_recursive(1, Mode::Train).unwrap();
     let loss_val1 = huber.value().unwrap();
     assert_eq!(loss_val1.shape(), &[1, 1], "Huber 输出应为标量");
     assert!(loss_val1[[0, 0]] > 0.0);
@@ -625,9 +613,7 @@ fn test_huber_dynamic_batch_forward() -> Result<(), GraphError> {
     // 第二次 forward：batch=6（不同 batch 大小）
     input.set_value(Some(&Tensor::ones(&[6, 4]))).unwrap();
     target.set_value(Some(&Tensor::zeros(&[6, 4]))).unwrap();
-    huber
-        .forward_recursive(2, &ExecutionContext::training())
-        .unwrap();
+    huber.forward_recursive(2, Mode::Train).unwrap();
     let loss_val2 = huber.value().unwrap();
     assert_eq!(loss_val2.shape(), &[1, 1], "Huber 输出应始终为标量");
 

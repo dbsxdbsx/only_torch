@@ -7,11 +7,11 @@
  * 注意：输入 x 必须为正数，否则结果为 NaN 或 -Inf
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 
 /// 自然对数节点
@@ -39,6 +39,8 @@ pub(crate) struct Ln {
     supports_dynamic: bool,
     /// 缓存输入值，用于反向传播
     input_cache: Option<Tensor>,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl Ln {
@@ -58,6 +60,7 @@ impl Ln {
             dynamic_shape: parent_dynamic_shape.clone(),
             supports_dynamic,
             input_cache: None,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -92,11 +95,19 @@ impl TraitNode for Ln {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 缓存输入用于反向传播
-        self.input_cache = Some(parent_values[0].clone());
+        if self.should_cache_for_backward {
+            // 缓存输入用于反向传播
+            self.input_cache = Some(parent_values[0].clone());
+        } else {
+            self.input_cache = None;
+        }
         // 计算 ln(x)
         self.value = Some(parent_values[0].ln());
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

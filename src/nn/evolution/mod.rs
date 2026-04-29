@@ -156,7 +156,7 @@ impl EvolutionResult {
         names: &[&str],
         input: &Tensor,
     ) -> Result<Vec<(String, Tensor)>, EvolutionError> {
-        self.build.graph.eval();
+        self.build.graph.inference();
         let shaped = self.shaped_input(input);
         self.build.input.set_value(&shaped)?;
 
@@ -180,7 +180,7 @@ impl EvolutionResult {
         input: &Tensor,
         output: &crate::nn::Var,
     ) -> Result<Tensor, EvolutionError> {
-        self.build.graph.eval();
+        self.build.graph.inference();
         let shaped = self.shaped_input(input);
         self.build.input.set_value(&shaped)?;
         self.build.graph.forward(output)?;

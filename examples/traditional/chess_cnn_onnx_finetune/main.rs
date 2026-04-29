@@ -109,7 +109,7 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        graph.eval();
+        graph.inference();
         let acc = evaluate_rebuild(&onnx_result, &test_x, &test_y)?;
         println!(
             "  Epoch {:2}: loss={:.4}, acc={:.1}%, {:.1}s",
@@ -168,7 +168,7 @@ fn evaluate_rebuild(
     test_images: &Tensor,
     test_labels: &Tensor,
 ) -> Result<f32, GraphError> {
-    result.graph.eval();
+    result.graph.inference();
     let test_samples = test_images.shape()[0];
     let mut total_correct = 0.0;
     let mut total = 0;
@@ -202,7 +202,7 @@ fn print_per_class_accuracy(
     test_images: &Tensor,
     test_labels: &Tensor,
 ) -> Result<(), GraphError> {
-    result.graph.eval();
+    result.graph.inference();
     let num_classes = 15;
     let test_samples = test_images.shape()[0];
     let mut class_correct = vec![0usize; num_classes];

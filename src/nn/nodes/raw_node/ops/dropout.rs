@@ -13,7 +13,7 @@ use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
-use crate::nn::{ExecutionContext, GraphError};
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -207,8 +207,8 @@ impl TraitNode for Dropout {
 
     // ========== 训练模式 ==========
 
-    fn set_execution_ctx(&mut self, ctx: &ExecutionContext) {
-        self.is_training = ctx.training;
+    fn set_mode(&mut self, mode: Mode) {
+        self.is_training = mode.is_training();
     }
 
     fn dedup_fingerprint(&self) -> Option<u64> {

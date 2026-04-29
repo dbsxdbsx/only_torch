@@ -20,27 +20,27 @@ fn test_graph_creation() {
 fn test_graph_mode() {
     // 1. 默认创建 — 应该是训练模式
     let graph = Graph::new();
-    assert!(graph.inner().is_train_mode());
+    assert!(graph.inner().is_training());
 
     // 切换到评估模式
-    graph.eval();
-    assert!(!graph.inner().is_train_mode());
+    graph.inference();
+    assert!(!graph.inner().is_training());
 
     // 切换回训练模式
     graph.train();
-    assert!(graph.inner().is_train_mode());
+    assert!(graph.inner().is_training());
 
     // 2. 指定名称创建 — 同样默认训练模式
     let named_graph = Graph::from_inner(GraphInner::with_name("custom_graph"));
-    assert!(named_graph.inner().is_train_mode());
+    assert!(named_graph.inner().is_training());
 
     // 切换到评估模式
-    named_graph.eval();
-    assert!(!named_graph.inner().is_train_mode());
+    named_graph.inference();
+    assert!(!named_graph.inner().is_training());
 
     // 切换回训练模式
     named_graph.train();
-    assert!(named_graph.inner().is_train_mode());
+    assert!(named_graph.inner().is_training());
 }
 
 /// 测试: 错误处理（新架构适配）

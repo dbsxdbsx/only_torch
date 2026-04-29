@@ -22,7 +22,7 @@
  * Python 对照脚本: tests/python/calc_jacobi_by_pytorch/node_mish.py
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -100,8 +100,7 @@ fn test_mish_vjp_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
         .unwrap();
-    mish.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mish.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = mish
@@ -134,8 +133,7 @@ fn test_mish_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
         .unwrap();
-    mish.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mish.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
     let grad = mish

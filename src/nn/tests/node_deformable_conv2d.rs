@@ -6,7 +6,7 @@
  * 参考值来源：PyTorch 2.6 + torchvision.ops.deform_conv2d。
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::{Graph, GraphError, Var};
 use crate::tensor::Tensor;
@@ -87,7 +87,7 @@ fn test_deformable_conv2d_zero_offset_matches_pytorch_reference() -> Result<(), 
     kernel.set_value(Some(&reference_kernel()))?;
     offset.set_value(Some(&Tensor::zeros(&[1, 8, 2, 2])))?;
 
-    deform.forward_recursive(1, &ExecutionContext::training())?;
+    deform.forward_recursive(1, Mode::Train)?;
     let output = deform.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 2, 2]);
     assert_slice_close(output.data_as_slice(), &[11.0, 13.5, 18.5, 21.0], 1e-5);
@@ -119,7 +119,7 @@ fn test_deformable_conv2d_supports_runtime_dynamic_batch() -> Result<(), GraphEr
     kernel.set_value(Some(&reference_kernel()))?;
     offset.set_value(Some(&Tensor::zeros(&[2, 8, 2, 2])))?;
 
-    deform.forward_recursive(1, &ExecutionContext::training())?;
+    deform.forward_recursive(1, Mode::Train)?;
     let output = deform.value().unwrap();
     assert_eq!(output.shape(), &[2, 1, 2, 2]);
     assert_slice_close(
@@ -159,7 +159,7 @@ fn test_deformable_conv2d_nonzero_offset_matches_pytorch_reference() -> Result<(
     kernel.set_value(Some(&reference_kernel()))?;
     offset.set_value(Some(&reference_offset()))?;
 
-    deform.forward_recursive(1, &ExecutionContext::training())?;
+    deform.forward_recursive(1, Mode::Train)?;
     let output = deform.value().unwrap();
     assert_slice_close(
         output.data_as_slice(),
@@ -238,7 +238,7 @@ fn test_deformable_conv2d_descriptor_roundtrip() -> Result<(), GraphError> {
     input.set_value(Some(&reference_input()))?;
     kernel.set_value(Some(&reference_kernel()))?;
     offset.set_value(Some(&reference_offset()))?;
-    deform.forward_recursive(1, &ExecutionContext::training())?;
+    deform.forward_recursive(1, Mode::Train)?;
 
     let deform_var = Var::new_with_rc_graph(deform.clone(), &graph.inner_rc());
     let desc = deform_var.to_graph_descriptor();

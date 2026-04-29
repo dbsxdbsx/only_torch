@@ -11,7 +11,7 @@
  * 5. Create API
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -49,7 +49,7 @@ fn test_max_pool2d_forward_simple() -> Result<(), GraphError> {
     ], &[1, 1, 4, 4]);
 
     input.set_value(Some(&input_val))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 2, 2]);
@@ -87,7 +87,7 @@ fn test_max_pool2d_forward_batch() -> Result<(), GraphError> {
         data.push((i + 1) as f32);
     }
     input.set_value(Some(&Tensor::new(&data, &[2, 1, 4, 4])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[2, 1, 2, 2]);
@@ -128,7 +128,7 @@ fn test_max_pool2d_forward_multi_channel() -> Result<(), GraphError> {
     let mut data = vec![1.0f32; 16];
     data.extend(vec![2.0f32; 16]);
     input.set_value(Some(&Tensor::new(&data, &[1, 2, 4, 4])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[1, 2, 2, 2]);
@@ -165,7 +165,7 @@ fn test_max_pool2d_forward_with_stride() -> Result<(), GraphError> {
     // 6x6 递增输入
     let data: Vec<f32> = (1..=36).map(|x| x as f32).collect();
     input.set_value(Some(&Tensor::new(&data, &[1, 1, 6, 6])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     // (6 - 3) / 2 + 1 = 2
@@ -263,7 +263,7 @@ fn test_max_pool2d_vjp_sparse_basic() -> Result<(), GraphError> {
     ], &[1, 1, 4, 4]);
 
     input.set_value(Some(&input_val))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
     let grad = pool
@@ -316,7 +316,7 @@ fn test_max_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
     ], &[1, 1, 4, 4]);
 
     input.set_value(Some(&input_val))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::new(&[2.0, 3.0, 5.0, 7.0], &[1, 1, 2, 2]);
     let grad = pool
@@ -363,7 +363,7 @@ fn test_max_pool2d_vjp_batch() -> Result<(), GraphError> {
         data.push((i + 1) as f32);
     }
     input.set_value(Some(&Tensor::new(&data, &[2, 1, 4, 4])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 1, 2, 2]);
     let grad = pool
@@ -427,7 +427,7 @@ fn test_max_pool2d_e2e_backward_sparse() -> Result<(), GraphError> {
     target.set_value(Some(&Tensor::zeros(&[1, 4])))?;
 
     // 前向 + 反向
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
 
     // pool 输出 = [6, 8, 14, 16]
@@ -518,7 +518,7 @@ fn test_max_pool2d_e2e_conv_pool_cascade() -> Result<(), GraphError> {
     target.set_value(Some(&Tensor::zeros(&[1, 4])))?;
 
     // 前向 + 反向
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
 
     // 验证 conv 输出形状
@@ -610,7 +610,7 @@ fn test_max_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
             .borrow_mut()
             .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
 
     // === 第一次：batch=2 ===
     param.set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 4, 4], 42)))?;
@@ -792,7 +792,7 @@ fn test_max_pool2d_sppf_style_padding() -> Result<(), GraphError> {
 
     let input_val = Tensor::new(&vec![1.0f32; 25], &[1, 1, 5, 5]);
     input.set_value(Some(&input_val))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(
@@ -837,7 +837,7 @@ fn test_max_pool2d_ceil_mode() -> Result<(), GraphError> {
 
     let input_val = Tensor::new(&vec![0.5f32; 64], &[1, 1, 8, 8]);
     input_f.set_value(Some(&input_val))?;
-    pool_f.forward_recursive(1, &ExecutionContext::training())?;
+    pool_f.forward_recursive(1, Mode::Train)?;
     assert_eq!(pool_f.value().unwrap().shape(), &[1, 1, 3, 3], "floor 模式");
 
     // ceil 模式：注意 ceil 模式下池化窗口可能跨过 padding 区域
@@ -856,7 +856,7 @@ fn test_max_pool2d_ceil_mode() -> Result<(), GraphError> {
         Some("pool_ceil"),
     )?;
     input_c.set_value(Some(&input_val))?;
-    pool_c.forward_recursive(1, &ExecutionContext::training())?;
+    pool_c.forward_recursive(1, Mode::Train)?;
     assert_eq!(pool_c.value().unwrap().shape(), &[1, 1, 4, 4], "ceil 模式");
     Ok(())
 }
@@ -890,7 +890,7 @@ fn test_max_pool2d_backward_with_padding() -> Result<(), GraphError> {
         6.0, 1.0, 1.0, 4.0,
     ], &[1, 1, 4, 4]);
     input.set_value(Some(&input_val))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     // 输出值检查（每个窗口 max）
     let out = pool.value().unwrap();

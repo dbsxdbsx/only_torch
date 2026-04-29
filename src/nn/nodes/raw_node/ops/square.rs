@@ -4,11 +4,11 @@
  *                 实现逐元素平方: y = x²
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 
 /// 平方节点
@@ -27,6 +27,8 @@ pub(crate) struct Square {
     supports_dynamic: bool,
     /// 缓存输入值，用于反向传播
     input_cache: Option<Tensor>,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl Square {
@@ -43,6 +45,7 @@ impl Square {
             dynamic_shape: parent_dynamic_shape.clone(),
             supports_dynamic: parent_dynamic_shape.has_dynamic_dims(),
             input_cache: None,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -71,9 +74,17 @@ impl TraitNode for Square {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        self.input_cache = Some(parent_values[0].clone());
+        if self.should_cache_for_backward {
+            self.input_cache = Some(parent_values[0].clone());
+        } else {
+            self.input_cache = None;
+        }
         self.value = Some(parent_values[0].square());
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

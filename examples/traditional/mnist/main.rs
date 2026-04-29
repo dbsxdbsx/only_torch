@@ -124,7 +124,7 @@ fn main() -> Result<(), GraphError> {
         }
 
         // ========== 测试阶段 ==========
-        graph.eval(); // 切换到评估模式（Dropout 不生效）
+        graph.inference(); // 切换到评估模式（Dropout 不生效）
 
         let mut total_correct = 0.0;
         let mut total = 0;

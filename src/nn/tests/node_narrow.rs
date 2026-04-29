@@ -18,7 +18,7 @@
  * Python 对照脚本: tests/python/calc_jacobi_by_pytorch/node_narrow.py
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -182,9 +182,7 @@ fn test_narrow_vjp_unit_upstream() -> Result<(), GraphError> {
             &[2, 4],
         )))
         .unwrap();
-    narrowed
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    narrowed.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[2, 2]);
     let grad = narrowed
@@ -225,9 +223,7 @@ fn test_narrow_vjp_non_unit_upstream() -> Result<(), GraphError> {
         .unwrap();
 
     input.set_value(Some(&Tensor::zeros(&[2, 4]))).unwrap();
-    narrowed
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    narrowed.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
     let grad = narrowed

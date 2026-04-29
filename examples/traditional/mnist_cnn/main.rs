@@ -142,7 +142,7 @@ fn main() -> Result<(), GraphError> {
         }
 
         // ========== 测试阶段 ==========
-        graph.eval();
+        graph.inference();
 
         let mut total_correct = 0.0;
         let mut total = 0;
@@ -218,7 +218,7 @@ fn inference_benchmark(
     model: &MnistCNN,
     test_images: &Tensor,
 ) -> Result<(), GraphError> {
-    graph.eval();
+    graph.inference();
 
     // 测试不同 batch 大小的推理速度
     let batch_sizes = [1, 10, 90, 256];

@@ -7,11 +7,11 @@
  * 指数 p 为常量（非计算图变量），在创建节点时确定。
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 
 /// 幂运算节点
@@ -42,6 +42,8 @@ pub(crate) struct Pow {
     exponent: f32,
     /// 缓存输入值，用于反向传播
     input_cache: Option<Tensor>,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl Pow {
@@ -67,6 +69,7 @@ impl Pow {
             supports_dynamic,
             exponent,
             input_cache: None,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -101,11 +104,19 @@ impl TraitNode for Pow {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 缓存输入用于反向传播
-        self.input_cache = Some(parent_values[0].clone());
+        if self.should_cache_for_backward {
+            // 缓存输入用于反向传播
+            self.input_cache = Some(parent_values[0].clone());
+        } else {
+            self.input_cache = None;
+        }
         // 计算 x^p
         self.value = Some(parent_values[0].powf(self.exponent));
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

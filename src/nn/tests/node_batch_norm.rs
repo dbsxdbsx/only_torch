@@ -17,7 +17,7 @@
  *       gamma/beta 由 BatchNorm Layer 通过 Mul/Add 节点处理。
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -69,8 +69,7 @@ fn test_batch_norm_op_forward_2d() {
         10., 11., 12.,
     ], &[4, 3]))).unwrap();
 
-    bn.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    bn.forward_recursive(1, Mode::Train).unwrap();
 
     let output = bn.value().unwrap();
     assert_eq!(output.shape(), &[4, 3]);
@@ -105,8 +104,7 @@ fn test_batch_norm_op_forward_4d() {
     x.set_value(Some(&Tensor::new(&data, &[2, 2, 2, 2])))
         .unwrap();
 
-    bn.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    bn.forward_recursive(1, Mode::Train).unwrap();
 
     let output = bn.value().unwrap();
     assert_eq!(output.shape(), &[2, 2, 2, 2]);
@@ -146,12 +144,10 @@ fn test_batch_norm_op_eval_mode() {
     ], &[4, 3]))).unwrap();
 
     // 训练模式前向（更新 running stats）
-    bn.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    bn.forward_recursive(1, Mode::Train).unwrap();
 
     // 切换到推理上下文（eval 行为 + 不记录 backward 缓存）
-    bn.forward_recursive(2, &ExecutionContext::inference())
-        .unwrap();
+    bn.forward_recursive(2, Mode::Inference).unwrap();
 
     let output = bn.value().unwrap();
     assert_eq!(output.shape(), &[4, 3]);
@@ -194,8 +190,7 @@ fn test_batch_norm_op_vjp_sum_grad() -> Result<(), GraphError> {
         10., 11., 12.,
     ], &[4, 3]))).unwrap();
 
-    bn.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    bn.forward_recursive(1, Mode::Train).unwrap();
 
     // upstream = 全 1（对应 sum loss）
     let upstream_grad = Tensor::ones(&[4, 3]);
@@ -343,7 +338,7 @@ fn test_batch_norm_op_running_stats_persist_across_forwards() {
             10., 11., 12.,
         ], &[4, 3]))).unwrap();
 
-        bn.forward_recursive((step + 1) as u64, &ExecutionContext::training())
+        bn.forward_recursive((step + 1) as u64, Mode::Train)
             .unwrap();
     }
 
@@ -388,9 +383,7 @@ fn test_batch_norm_op_running_stats_persist_across_forwards() {
         10., 11., 12.,
     ], &[4, 3]))).unwrap();
 
-    bn_eval
-        .forward_recursive(100, &ExecutionContext::inference())
-        .unwrap();
+    bn_eval.forward_recursive(100, Mode::Inference).unwrap();
 
     let eval_output = bn_eval.value().unwrap();
     assert_eq!(eval_output.shape(), &[4, 3]);

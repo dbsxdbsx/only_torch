@@ -8,7 +8,7 @@
  *   np.log2([1, 2, 4, 8]) = [0, 1, 2, 3]
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -43,7 +43,7 @@ fn test_log2_vjp() -> Result<(), GraphError> {
         .create_log2_node(x.clone(), Some("log2"))?;
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 4.0, 8.0], &[2, 2])))?;
-    log.forward_recursive(1, &ExecutionContext::training())?;
+    log.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 2]);
     let grad = log

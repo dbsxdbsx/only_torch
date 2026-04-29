@@ -7,7 +7,7 @@
  * - 级联释放机制
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::NodeId;
 use crate::nn::nodes::NodeInner;
 use crate::nn::nodes::raw_node::{Add, InputVariant, Negate, Parameter};
@@ -284,8 +284,7 @@ fn test_forward_recursive_basic() {
     ));
 
     // 执行前向传播
-    add.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    add.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证结果：1 + 1 = 2
     let result = add.value().unwrap();
@@ -340,9 +339,7 @@ fn test_forward_recursive_diamond_dag() {
     ));
 
     // 执行前向传播
-    output
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    output.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证结果：(1+1) + (1+1) = 4
     let result = output.value().unwrap();
@@ -374,24 +371,21 @@ fn test_forward_recursive_skip_computed() {
     ));
 
     // 第一次前向传播
-    add.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    add.forward_recursive(1, Mode::Train).unwrap();
     let first_result = add.value().unwrap();
 
     // 修改输入值
     input.set_value(Some(&Tensor::zeros(&[2, 3]))).unwrap();
 
     // 同一 pass_id 再次调用，应跳过计算
-    add.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    add.forward_recursive(1, Mode::Train).unwrap();
     let second_result = add.value().unwrap();
 
     // 结果应该相同（因为被跳过）
     assert_eq!(first_result.data_as_slice(), second_result.data_as_slice());
 
     // 新 pass_id 会重新计算
-    add.forward_recursive(2, &ExecutionContext::training())
-        .unwrap();
+    add.forward_recursive(2, Mode::Train).unwrap();
     let third_result = add.value().unwrap();
 
     // 结果应该是 0 + 0 = 0
@@ -404,7 +398,7 @@ fn test_forward_recursive_leaf_no_value() {
     let input = Rc::new(NodeInner::new_leaf(NodeId(1), None, make_input(&[2, 3])));
 
     // Input（Data）节点不会自动初始化值
-    let result = input.forward_recursive(1, &ExecutionContext::training());
+    let result = input.forward_recursive(1, Mode::Train);
 
     assert!(result.is_err());
     let err = format!("{:?}", result.unwrap_err());
@@ -439,8 +433,7 @@ fn test_backward_propagate_basic() {
     ));
 
     // 前向传播
-    add.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    add.forward_recursive(1, Mode::Train).unwrap();
     assert_eq!(add.value().unwrap()[[0, 0]], 4.0);
 
     // 设置 loss 梯度为 1（模拟 MSE 等损失函数）
@@ -495,9 +488,7 @@ fn test_backward_propagate_diamond_dag() {
     ));
 
     // 前向传播
-    output
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    output.forward_recursive(1, Mode::Train).unwrap();
     assert_eq!(output.value().unwrap()[[0, 0]], 4.0);
 
     // 设置 output 梯度为 1
@@ -548,9 +539,7 @@ fn test_backward_propagate_detach() {
     ));
 
     // 前向传播
-    output
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    output.forward_recursive(1, Mode::Train).unwrap();
 
     // 设置 output 梯度
     output.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
@@ -581,8 +570,7 @@ fn test_backward_propagate_pass_id() {
     ));
 
     // 前向传播
-    add.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    add.forward_recursive(1, Mode::Train).unwrap();
 
     // 第一次反向传播
     add.set_grad(Some(&Tensor::ones(&[1, 1]))).unwrap();
@@ -632,8 +620,7 @@ fn test_backward_negated_first_accumulation() {
     ));
 
     // 前向传播
-    neg.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    neg.forward_recursive(1, Mode::Train).unwrap();
     assert_eq!(neg.value().unwrap()[[0, 0]], -3.0);
 
     // 设置 negate 节点梯度为 5（模拟从下游收到的梯度）
@@ -688,9 +675,7 @@ fn test_backward_negated_inplace_subtraction() {
     ));
 
     // 前向传播
-    output
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    output.forward_recursive(1, Mode::Train).unwrap();
     assert_eq!(output.value().unwrap()[[0, 0]], -4.0);
 
     // 设置 output 梯度为 1
@@ -749,9 +734,7 @@ fn test_backward_mixed_passthrough_and_negated() {
     ));
 
     // 前向传播
-    output
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    output.forward_recursive(1, Mode::Train).unwrap();
     assert_eq!(output.value().unwrap()[[0, 0]], 0.0);
 
     // 设置 output 梯度为 1

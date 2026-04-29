@@ -35,7 +35,7 @@ fn bench_conv2d_fwd_b32_3x28x28(c: &mut Criterion) {
 
 fn bench_conv2d_eval_1x1_b1(c: &mut Criterion) {
     let graph = Graph::new();
-    graph.eval();
+    graph.inference();
     let conv = Conv2d::new(&graph, 3, 16, (1, 1), (1, 1), (0, 0), (1, 1), true, "conv").unwrap();
     let input = Tensor::random(0.0, 1.0, &[1, 3, 64, 64]);
 

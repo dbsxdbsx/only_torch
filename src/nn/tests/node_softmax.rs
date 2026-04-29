@@ -15,7 +15,7 @@
  * 高层 API: VarActivationOps 的 .softmax()
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -134,8 +134,7 @@ fn test_softmax_vjp_uniform_input_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[0.0, 0.0, 0.0], &[1, 3])))
         .unwrap();
-    sm.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sm.forward_recursive(1, Mode::Train).unwrap();
 
     let softmax_output = sm.value().expect("softmax 应有值");
     assert_abs_diff_eq!(softmax_output[[0, 0]], 1.0 / 3.0, epsilon = 1e-5);
@@ -174,8 +173,7 @@ fn test_softmax_vjp_non_uniform_selective_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])))
         .unwrap();
-    sm.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sm.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::new(&[1.0, 0.0, 0.0], &[1, 3]);
     let grad = sm
@@ -210,8 +208,7 @@ fn test_softmax_vjp_batch_non_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0], &[2, 3])))
         .unwrap();
-    sm.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sm.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3]);
     let grad = sm

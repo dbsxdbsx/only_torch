@@ -80,7 +80,7 @@ fn test_dropout_cannot_set_value() {
 #[test]
 fn test_dropout_train_mode_drops_elements() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
 
     let x = graph.input(&Tensor::ones(&[1, 100]))?;
     let dropped = x.dropout(0.5)?;
@@ -111,7 +111,7 @@ fn test_dropout_train_mode_drops_elements() -> Result<(), GraphError> {
 #[test]
 fn test_dropout_eval_mode_passthrough() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    graph.inner_mut().set_eval_mode();
+    graph.inner_mut().inference();
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
     let x = graph.input(&input_data)?;
@@ -141,7 +141,7 @@ fn test_dropout_mode_switch_train_to_eval() -> Result<(), GraphError> {
     let dropped = x.dropout(0.5)?;
 
     // 1. 训练模式
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
     dropped.forward()?;
     let train_output = dropped.value()?.unwrap();
 
@@ -149,7 +149,7 @@ fn test_dropout_mode_switch_train_to_eval() -> Result<(), GraphError> {
     assert!(has_zeros, "训练模式应有元素被丢弃");
 
     // 2. 切换到评估模式，重新 forward
-    graph.inner_mut().set_eval_mode();
+    graph.inner_mut().inference();
     dropped.forward()?;
     let eval_output = dropped.value()?.unwrap();
 
@@ -173,7 +173,7 @@ fn test_dropout_mode_switch_eval_to_train() -> Result<(), GraphError> {
     let dropped = x.dropout(0.5)?;
 
     // 1. 评估模式
-    graph.inner_mut().set_eval_mode();
+    graph.inner_mut().inference();
     dropped.forward()?;
     let eval_output = dropped.value()?.unwrap();
 
@@ -182,7 +182,7 @@ fn test_dropout_mode_switch_eval_to_train() -> Result<(), GraphError> {
     }
 
     // 2. 切换到训练模式，重新 forward
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
     dropped.forward()?;
     let train_output = dropped.value()?.unwrap();
 
@@ -196,7 +196,7 @@ fn test_dropout_mode_switch_eval_to_train() -> Result<(), GraphError> {
 #[test]
 fn test_dropout_different_masks_each_forward() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
 
     let x = graph.input(&Tensor::ones(&[1, 100]))?;
     let dropped = x.dropout(0.5)?;
@@ -222,7 +222,7 @@ fn test_dropout_different_masks_each_forward() -> Result<(), GraphError> {
 #[test]
 fn test_dropout_backward_train_mode() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
 
     // w -> dropout -> mse_loss
     let w = graph.parameter(&[1, 10], Init::Ones, "w")?;
@@ -244,7 +244,7 @@ fn test_dropout_backward_train_mode() -> Result<(), GraphError> {
 #[test]
 fn test_dropout_backward_p_zero_passthrough() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
 
     let w = graph.parameter(&[1, 4], Init::Ones, "w")?;
     w.set_value(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]))?;
@@ -276,7 +276,7 @@ fn test_dropout_backward_p_zero_passthrough() -> Result<(), GraphError> {
 fn test_dropout_eval_vs_train_same_input() -> Result<(), GraphError> {
     // 训练模式图
     let graph_train = Graph::new_with_seed(42);
-    graph_train.inner_mut().set_train_mode();
+    graph_train.inner_mut().train();
 
     let x_train = graph_train.input(&Tensor::ones(&[1, 100]))?;
     let d_train = x_train.dropout(0.5)?;
@@ -286,7 +286,7 @@ fn test_dropout_eval_vs_train_same_input() -> Result<(), GraphError> {
 
     // 评估模式图
     let graph_eval = Graph::new_with_seed(42);
-    graph_eval.inner_mut().set_eval_mode();
+    graph_eval.inner_mut().inference();
 
     let x_eval = graph_eval.input(&Tensor::ones(&[1, 100]))?;
     let d_eval = x_eval.dropout(0.5)?;
@@ -332,7 +332,7 @@ fn create_dropout_with_seed(
 fn test_dropout_deterministic_same_seed() -> Result<(), GraphError> {
     // 第一次
     let graph1 = Graph::new_with_seed(42);
-    graph1.inner_mut().set_train_mode();
+    graph1.inner_mut().train();
     let x1 = graph1.input(&Tensor::ones(&[1, 100]))?;
     let d1 = create_dropout_with_seed(&graph1, &x1, 0.5, 42, Some("d"))?;
     d1.forward()?;
@@ -340,7 +340,7 @@ fn test_dropout_deterministic_same_seed() -> Result<(), GraphError> {
 
     // 第二次（相同 seed）
     let graph2 = Graph::new_with_seed(42);
-    graph2.inner_mut().set_train_mode();
+    graph2.inner_mut().train();
     let x2 = graph2.input(&Tensor::ones(&[1, 100]))?;
     let d2 = create_dropout_with_seed(&graph2, &x2, 0.5, 42, Some("d"))?;
     d2.forward()?;
@@ -364,7 +364,7 @@ fn test_dropout_deterministic_same_seed() -> Result<(), GraphError> {
 fn test_dropout_deterministic_different_seed() -> Result<(), GraphError> {
     // seed = 42
     let graph1 = Graph::new_with_seed(42);
-    graph1.inner_mut().set_train_mode();
+    graph1.inner_mut().train();
     let x1 = graph1.input(&Tensor::ones(&[1, 100]))?;
     let d1 = create_dropout_with_seed(&graph1, &x1, 0.5, 42, Some("d"))?;
     d1.forward()?;
@@ -372,7 +372,7 @@ fn test_dropout_deterministic_different_seed() -> Result<(), GraphError> {
 
     // seed = 123
     let graph2 = Graph::new_with_seed(123);
-    graph2.inner_mut().set_train_mode();
+    graph2.inner_mut().train();
     let x2 = graph2.input(&Tensor::ones(&[1, 100]))?;
     let d2 = create_dropout_with_seed(&graph2, &x2, 0.5, 123, Some("d"))?;
     d2.forward()?;
@@ -390,7 +390,7 @@ fn test_dropout_deterministic_different_seed() -> Result<(), GraphError> {
 #[test]
 fn test_dropout_drop_rate() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
 
     let x = graph.input(&Tensor::ones(&[1, 10000]))?;
     let dropped = x.dropout(0.3)?;
@@ -413,7 +413,7 @@ fn test_dropout_drop_rate() -> Result<(), GraphError> {
 #[test]
 fn test_dropout_expected_value_preserved() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
 
     let x = graph.input(&Tensor::ones(&[1, 10000]))?;
     let dropped = x.dropout(0.5)?;
@@ -437,7 +437,7 @@ fn test_dropout_expected_value_preserved() -> Result<(), GraphError> {
 #[test]
 fn test_dropout_p_zero_is_identity() -> Result<(), GraphError> {
     let graph = Graph::new_with_seed(42);
-    graph.inner_mut().set_train_mode();
+    graph.inner_mut().train();
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 4]);
     let x = graph.input(&input_data)?;

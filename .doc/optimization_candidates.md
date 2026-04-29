@@ -233,15 +233,8 @@ just bench-compare before
 
 报告输出在 `target/criterion/` 目录。
 
-### I. ExecutionContext 执行上下文拆分（2026-04-29）
+### I. Mode 执行上下文统一（2026-04-29）
 
-**原始问题**：旧 `is_eval_mode` 同时承担层行为与 backward 缓存控制，导致 `eval()`、`no_grad()`、缓存型算子之间语义耦合，后续新增算子容易重复发明规则。
+**原始问题**：旧 `is_eval_mode` 同时承担层行为与 backward 缓存控制；中间过渡设计 `ExecutionContext { training, grad_enabled }` 把两者拆成两个正交字段，但实际没有"训练分支 + 不缓存"或"推理分支 + 仍缓存"的合理用例，反而让节点接入和测试覆盖度爆炸。
 
-**解决方案**：引入 `ExecutionContext { training, grad_enabled }`：
-
-| 字段 | 控制范围 | API |
-|---|---|---|
-| `training` | Dropout / BatchNorm 等层行为 | `Graph::train()` / `Graph::eval()` |
-| `grad_enabled` | 是否保存 backward 缓存 | `Graph::no_grad_scope()` / `Graph::set_execution_ctx()` |
-
-`Graph::load_model()` / `Graph::from_onnx()` 默认进入 `ExecutionContext::inference()`，即 eval 行为 + 不记录 backward 缓存。性能回归验证使用 `pre-execution-context` baseline 对比。
+**解决方案**：用单枚举 `Mode { Train, Inference }` 统一三件事：层行为切换、backward 缓存策略、`backward()` 是否被允许（详见 [`mode_design.md`](design/mode_design.md)）。`Graph::load_model()` / `Graph::from_onnx()` 默认进入 `Mode::Inference`，即推理分支 + 不缓存 backward + `backward()` 直接报错。已接入 mode 的重缓存节点：Dropout、BatchNorm、Conv2d、Softmax、LogSoftmax、LayerNorm、RMSNorm、Abs、Square、Pow、Clip、Reciprocal、Ln、Log2、Log10。性能回归继续沿用 `pre-execution-context` baseline 对比，验证 `Mode::Train` 路径无回归 + `Mode::Inference` 路径节省内存。

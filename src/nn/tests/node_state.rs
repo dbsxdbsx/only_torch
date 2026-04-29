@@ -194,7 +194,7 @@ fn test_state_accepts_grad() -> Result<(), GraphError> {
         .create_mse_mean_node(add, target, Some("loss"))?;
 
     // 设置训练模式、前向传播、反向传播
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
     inner.borrow_mut().backward_via_node_inner(&loss)?;
 
@@ -240,7 +240,7 @@ fn test_input_has_no_grad() -> Result<(), GraphError> {
         .borrow_mut()
         .create_mse_mean_node(add, target, Some("loss"))?;
 
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
     inner.borrow_mut().backward_via_node_inner(&loss)?;
 
@@ -305,7 +305,7 @@ fn test_state_in_rnn_structure() -> Result<(), GraphError> {
         .borrow_mut()
         .create_mse_mean_node(hidden, target, Some("loss"))?;
 
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
     inner.borrow_mut().backward_via_node_inner(&loss)?;
 
@@ -354,7 +354,7 @@ fn test_state_zero_grad() -> Result<(), GraphError> {
         .borrow_mut()
         .create_mse_mean_node(add, target, Some("loss"))?;
 
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
     inner.borrow_mut().backward_via_node_inner(&loss)?;
 
@@ -636,7 +636,7 @@ fn test_state_dynamic_batch_backward() -> Result<(), GraphError> {
         .create_mse_mean_node(output, target.clone(), Some("loss"))?;
 
     // 第一次训练: batch=2
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
     inner.borrow_mut().zero_grad()?;
     inner.borrow_mut().backward_via_node_inner(&loss)?;

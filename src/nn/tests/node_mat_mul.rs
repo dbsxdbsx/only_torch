@@ -17,7 +17,7 @@
  */
 
 use crate::assert_err;
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -126,7 +126,7 @@ fn test_mat_mul_vjp_to_left() -> Result<(), GraphError> {
     );
     left.set_value(Some(&left_value))?;
     right.set_value(Some(&right_value))?;
-    mm.forward_recursive(1, &ExecutionContext::training())?;
+    mm.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 4]);
     let grad_to_left = mm
@@ -168,7 +168,7 @@ fn test_mat_mul_vjp_to_right() -> Result<(), GraphError> {
     );
     left.set_value(Some(&left_value))?;
     right.set_value(Some(&right_value))?;
-    mm.forward_recursive(1, &ExecutionContext::training())?;
+    mm.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 4]);
     let grad_to_right = mm
@@ -205,7 +205,7 @@ fn test_mat_mul_vjp_non_unit_upstream() -> Result<(), GraphError> {
     let right_value = Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2]);
     left.set_value(Some(&left_value))?;
     right.set_value(Some(&right_value))?;
-    mm.forward_recursive(1, &ExecutionContext::training())?;
+    mm.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
@@ -247,7 +247,7 @@ fn test_mat_mul_vjp_negative_values() -> Result<(), GraphError> {
     let right_value = Tensor::new(&[5.0, -6.0, 7.0, -8.0], &[2, 2]);
     left.set_value(Some(&left_value))?;
     right.set_value(Some(&right_value))?;
-    mm.forward_recursive(1, &ExecutionContext::training())?;
+    mm.forward_recursive(1, Mode::Train)?;
 
     let output = mm.value().unwrap();
     let expected_output = Tensor::new(&[9.0, -10.0, 13.0, -14.0], &[2, 2]);
@@ -293,7 +293,7 @@ fn test_mat_mul_vjp_zero_values() -> Result<(), GraphError> {
     let right_value = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]);
     left.set_value(Some(&left_value))?;
     right.set_value(Some(&right_value))?;
-    mm.forward_recursive(1, &ExecutionContext::training())?;
+    mm.forward_recursive(1, Mode::Train)?;
 
     let output = mm.value().unwrap();
     let expected_output = Tensor::new(&[0.0, 1.0, 2.0, 0.0], &[2, 2]);
@@ -337,7 +337,7 @@ fn test_mat_mul_vjp_invalid_parent_index() -> Result<(), GraphError> {
 
     left.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))?;
     right.set_value(Some(&Tensor::new(&[1.0; 12], &[3, 4])))?;
-    mm.forward_recursive(1, &ExecutionContext::training())?;
+    mm.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 4]);
     let result = mm.calc_grad_to_parent_index(2, &upstream);

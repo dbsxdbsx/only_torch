@@ -13,7 +13,7 @@
  * Reshape 只改变形状不改变数据。VJP: grad_to_input = reshape(upstream, input_shape)
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -244,9 +244,7 @@ fn test_reshape_vjp_unit_upstream() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
-    reshaped
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    reshaped.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[3, 2]);
     let grad = reshaped
@@ -278,9 +276,7 @@ fn test_reshape_vjp_non_unit_upstream() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
-    reshaped
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    reshaped.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
     let grad = reshaped

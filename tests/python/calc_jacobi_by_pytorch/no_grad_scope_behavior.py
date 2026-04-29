@@ -29,7 +29,7 @@ def test_no_grad_backward_still_works():
     x = torch.tensor([[1.0], [2.0]])
 
     with torch.no_grad():
-        print(f"  在 no_grad 内: torch.is_grad_enabled() = {torch.is_grad_enabled()}")
+        print(f"  在 no_grad 内: torch.is_training() = {torch.is_training()}")
 
         # forward 正常工作
         y = torch.matmul(w, x)
@@ -42,7 +42,7 @@ def test_no_grad_backward_still_works():
         except RuntimeError as e:
             print(f"  backward 失败（预期）: {str(e)[:50]}...")
 
-    print(f"  退出后: torch.is_grad_enabled() = {torch.is_grad_enabled()}")
+    print(f"  退出后: torch.is_training() = {torch.is_training()}")
 
     # 在 no_grad 外部重新计算
     y2 = torch.matmul(w, x)

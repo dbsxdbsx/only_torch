@@ -968,7 +968,7 @@ impl EvolutionTask for SupervisedTask {
         build: &BuildResult,
         _rng: &mut StdRng,
     ) -> Result<FitnessScore, GraphError> {
-        build.graph.eval();
+        build.graph.inference();
 
         build.input.set_value(&self.test_x)?;
 

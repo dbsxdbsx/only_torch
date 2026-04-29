@@ -1,8 +1,8 @@
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 
 /// Abs 绝对值节点
@@ -26,6 +26,8 @@ pub(crate) struct Abs {
     supports_dynamic: bool,
     /// 缓存父节点的值，用于反向传播计算 sign(x)
     parent_value_cache: Option<Tensor>,
+    /// Inference 模式下跳过 backward 缓存
+    should_cache_for_backward: bool,
 }
 
 impl Abs {
@@ -45,6 +47,7 @@ impl Abs {
             dynamic_shape: parent_dynamic_shape.clone(),
             supports_dynamic,
             parent_value_cache: None,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -79,11 +82,19 @@ impl TraitNode for Abs {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        // 缓存父节点的值用于反向传播
-        self.parent_value_cache = Some(parent_values[0].clone());
+        if self.should_cache_for_backward {
+            // 缓存父节点的值用于反向传播
+            self.parent_value_cache = Some(parent_values[0].clone());
+        } else {
+            self.parent_value_cache = None;
+        }
         // 计算 abs(x) = |x|
         self.value = Some(parent_values[0].abs());
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

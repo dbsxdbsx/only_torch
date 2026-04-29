@@ -84,7 +84,7 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        graph.eval();
+        graph.inference();
         let report = evaluate(&model, &test_x, &test_y)?;
         best_iou = best_iou.max(report.mean_valid_slot_iou);
         best_empty_acc = best_empty_acc.max(report.empty_slot_accuracy);

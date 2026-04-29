@@ -11,7 +11,7 @@
  * 6. 广播测试 → 混合（高层前向/e2e + 底层 VJP）
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -88,8 +88,7 @@ fn test_multiply_vjp_to_left() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    mul.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mul.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = mul
@@ -128,8 +127,7 @@ fn test_multiply_vjp_to_right() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    mul.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mul.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = mul
@@ -167,8 +165,7 @@ fn test_multiply_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    mul.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mul.forward_recursive(1, Mode::Train).unwrap();
 
     // upstream = [[2,2],[2,2]]
     let upstream_grad = Tensor::new(&[2.0, 2.0, 2.0, 2.0], &[2, 2]);
@@ -215,8 +212,7 @@ fn test_multiply_vjp_with_negative_values() -> Result<(), GraphError> {
     let right_value = Tensor::new(&[5.0, -6.0, 7.0, -8.0], &[2, 2]);
     p1.set_value(Some(&left_value)).unwrap();
     p2.set_value(Some(&right_value)).unwrap();
-    mul.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mul.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证前向传播：[[-1*5, 2*-6], [-3*7, 4*-8]] = [[-5,-12],[-21,-32]]
     let output = mul.value().unwrap();
@@ -265,8 +261,7 @@ fn test_multiply_backward_with_zero_value() -> Result<(), GraphError> {
     let right_value = Tensor::new(&[5.0, 0.0, 0.0, 8.0], &[2, 2]);
     p1.set_value(Some(&left_value)).unwrap();
     p2.set_value(Some(&right_value)).unwrap();
-    mul.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mul.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证前向传播：[[0*5, 2*0], [3*0, 0*8]] = [[0,0],[0,0]]
     let output = mul.value().unwrap();
@@ -313,8 +308,7 @@ fn test_multiply_backward_invalid_parent_index() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    mul.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mul.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let result = mul.calc_grad_to_parent_index(2, &upstream_grad); // 索引 2 越界
@@ -353,8 +347,7 @@ fn test_multiply_broadcast_vjp() -> Result<(), GraphError> {
     scale
         .set_value(Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))
         .unwrap();
-    mul.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mul.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 3]);
 
@@ -407,8 +400,7 @@ fn test_multiply_broadcast_vjp_non_unit() -> Result<(), GraphError> {
     scale
         .set_value(Some(&Tensor::new(&[2., 3., 4.], &[1, 3])))
         .unwrap();
-    mul.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    mul.forward_recursive(1, Mode::Train).unwrap();
 
     // upstream = [[1,2,3],[4,5,6]]（非全 1）
     let upstream_grad = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);

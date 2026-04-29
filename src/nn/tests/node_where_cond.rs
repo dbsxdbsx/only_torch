@@ -17,7 +17,7 @@
  * Python 对照脚本: tests/python/calc_jacobi_by_pytorch/node_where_cond.py
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarFilterOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -138,8 +138,7 @@ fn test_where_cond_vjp_all_true() -> Result<(), GraphError> {
         .unwrap();
     y.set_value(Some(&Tensor::new(&[10.0, 20.0, 30.0, 40.0], &[2, 2])))
         .unwrap();
-    wc.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    wc.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
 
@@ -183,8 +182,7 @@ fn test_where_cond_vjp_all_false() -> Result<(), GraphError> {
         .unwrap();
     y.set_value(Some(&Tensor::new(&[10.0, 20.0, 30.0, 40.0], &[2, 2])))
         .unwrap();
-    wc.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    wc.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
 
@@ -229,8 +227,7 @@ fn test_where_cond_vjp_mixed() -> Result<(), GraphError> {
         .unwrap();
     y.set_value(Some(&Tensor::new(&[10.0, 20.0, 30.0, 40.0], &[2, 2])))
         .unwrap();
-    wc.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    wc.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
 

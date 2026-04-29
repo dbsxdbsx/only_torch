@@ -16,7 +16,7 @@
  *   VJP: grad_to_parent = upstream_grad * (1 - y²)
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -100,9 +100,7 @@ fn test_tanh_vjp_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
         .unwrap();
-    tanh_node
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    tanh_node.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = tanh_node
@@ -135,9 +133,7 @@ fn test_tanh_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
         .unwrap();
-    tanh_node
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    tanh_node.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
     let grad = tanh_node
@@ -171,9 +167,7 @@ fn test_tanh_vjp_saturation() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[5.0, -5.0], &[1, 2])))
         .unwrap();
-    tanh_node
-        .forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    tanh_node.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[1, 2]);
     let grad = tanh_node

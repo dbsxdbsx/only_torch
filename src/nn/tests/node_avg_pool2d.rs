@@ -11,7 +11,7 @@
  * 5. Create API 测试（保持原样）
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -46,7 +46,7 @@ fn test_avg_pool2d_forward_simple() -> Result<(), GraphError> {
     ], &[1, 1, 4, 4]);
 
     input.set_value(Some(&tensor))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 2, 2]);
@@ -80,7 +80,7 @@ fn test_avg_pool2d_forward_batch() -> Result<(), GraphError> {
     );
 
     input.set_value(Some(&tensor))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[2, 1, 2, 2]);
@@ -117,7 +117,7 @@ fn test_avg_pool2d_forward_multi_channel() -> Result<(), GraphError> {
     );
 
     input.set_value(Some(&tensor))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[1, 2, 2, 2]);
@@ -150,7 +150,7 @@ fn test_avg_pool2d_forward_with_stride() -> Result<(), GraphError> {
     // 全 1 输入 → 平均值也全为 1
     let tensor = Tensor::ones(&[1, 1, 6, 6]);
     input.set_value(Some(&tensor))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_abs_diff_eq!(output[[0, 0, 0, 0]], 1.0, epsilon = 1e-6);
@@ -189,7 +189,7 @@ fn test_avg_pool2d_forward_overlapping_windows() -> Result<(), GraphError> {
     ], &[1, 1, 4, 4]);
 
     input.set_value(Some(&tensor))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 3, 3]);
@@ -267,7 +267,7 @@ fn test_avg_pool2d_vjp_unit_upstream() -> Result<(), GraphError> {
             .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     input.set_value(Some(&Tensor::ones(&[1, 1, 4, 4])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
     let grad = pool
@@ -302,7 +302,7 @@ fn test_avg_pool2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
             .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     input.set_value(Some(&Tensor::ones(&[1, 1, 4, 4])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     // upstream_grad: 每个窗口不同值
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[1, 1, 2, 2]);
@@ -346,7 +346,7 @@ fn test_avg_pool2d_vjp_batch() -> Result<(), GraphError> {
             .create_avg_pool2d_node(input.clone(), (2, 2), None, Some("pool"))?;
 
     input.set_value(Some(&Tensor::ones(&[2, 1, 4, 4])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 1, 2, 2]);
     let grad = pool
@@ -385,7 +385,7 @@ fn test_avg_pool2d_vjp_overlapping() -> Result<(), GraphError> {
     assert_eq!(pool.shape(), vec![1, 1, 2, 2]);
 
     input.set_value(Some(&Tensor::ones(&[1, 1, 3, 3])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[1, 1, 2, 2]);
     let grad = pool
@@ -442,7 +442,7 @@ fn test_avg_pool2d_e2e_loss_grad() -> Result<(), GraphError> {
     target.set_value(Some(&Tensor::zeros(&[1, 4])))?;
 
     // 前向
-    loss.forward_recursive(1, &ExecutionContext::training())?;
+    loss.forward_recursive(1, Mode::Train)?;
 
     let loss_val = loss.value().unwrap();
     // loss = mean([1,1,1,1]^2) = 1.0
@@ -501,7 +501,7 @@ fn test_avg_pool2d_e2e_conv_pool_chain() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[2, 1, 8, 8])))?;
     kernel.set_value(Some(&Tensor::ones(&[4, 1, 3, 3])))?;
 
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
 
     let output = pool.value().unwrap();
     assert_eq!(output.shape(), &[2, 4, 4, 4]);
@@ -561,13 +561,13 @@ fn test_avg_pool2d_dynamic_batch_forward() -> Result<(), GraphError> {
 
     // 第一次 forward：batch=2
     input.set_value(Some(&Tensor::ones(&[2, 1, 4, 4])))?;
-    pool.forward_recursive(1, &ExecutionContext::training())?;
+    pool.forward_recursive(1, Mode::Train)?;
     let value1 = pool.value().unwrap();
     assert_eq!(value1.shape(), &[2, 1, 2, 2], "第一次 forward: batch=2");
 
     // 第二次 forward：batch=5
     input.set_value(Some(&Tensor::ones(&[5, 1, 4, 4])))?;
-    pool.forward_recursive(2, &ExecutionContext::training())?;
+    pool.forward_recursive(2, Mode::Train)?;
     let value2 = pool.value().unwrap();
     assert_eq!(value2.shape(), &[5, 1, 2, 2], "第二次 forward: batch=5");
 
@@ -607,7 +607,7 @@ fn test_avg_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 4, 4], 42)))?;
     target.set_value(Some(&Tensor::zeros(&[2, 4])))?;
 
-    loss.forward_recursive(1, &ExecutionContext::training())?;
+    loss.forward_recursive(1, Mode::Train)?;
     let loss_val1 = loss.value().unwrap()[[0, 0]];
     assert!(loss_val1 >= 0.0);
 
@@ -623,7 +623,7 @@ fn test_avg_pool2d_dynamic_batch_backward() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[4, 1, 4, 4], 100)))?;
     target.set_value(Some(&Tensor::zeros(&[4, 4])))?;
 
-    loss.forward_recursive(2, &ExecutionContext::training())?;
+    loss.forward_recursive(2, Mode::Train)?;
     let loss_val2 = loss.value().unwrap()[[0, 0]];
     assert!(loss_val2 >= 0.0);
 

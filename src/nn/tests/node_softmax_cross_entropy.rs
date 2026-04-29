@@ -11,7 +11,7 @@
  * 6. 新节点创建 API 测试（KEEP AS-IS）
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -146,8 +146,7 @@ fn test_sce_vjp_simple() -> Result<(), GraphError> {
     labels
         .set_value(Some(&Tensor::new(&[0.0, 0.0, 1.0], &[1, 3])))
         .unwrap();
-    sce.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sce.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
     let grad = sce
@@ -190,8 +189,7 @@ fn test_sce_vjp_uniform() -> Result<(), GraphError> {
     labels
         .set_value(Some(&Tensor::new(&[0.0, 1.0, 0.0, 0.0], &[1, 4])))
         .unwrap();
-    sce.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sce.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream = Tensor::ones(&[1, 1]);
     let grad = sce
@@ -242,8 +240,7 @@ fn test_sce_vjp_10_classes() -> Result<(), GraphError> {
     labels
         .set_value(Some(&Tensor::new(&labels_data, &[1, 10])))
         .unwrap();
-    sce.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sce.forward_recursive(1, Mode::Train).unwrap();
 
     // 验证前向值
     let loss_val = sce.value().unwrap();
@@ -417,8 +414,7 @@ fn test_sce_dynamic_batch_forward() -> Result<(), GraphError> {
         .set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 3], 42)))
         .unwrap();
     labels.set_value(Some(&labels_data)).unwrap();
-    sce.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sce.forward_recursive(1, Mode::Train).unwrap();
     let val1 = sce.value().unwrap();
     assert_eq!(val1.shape(), &[1, 1], "Loss 输出固定为 [1, 1]");
     assert!(val1[[0, 0]] > 0.0);
@@ -432,8 +428,7 @@ fn test_sce_dynamic_batch_forward() -> Result<(), GraphError> {
         .set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[5, 3], 100)))
         .unwrap();
     labels.set_value(Some(&labels_data2)).unwrap();
-    sce.forward_recursive(2, &ExecutionContext::training())
-        .unwrap();
+    sce.forward_recursive(2, Mode::Train).unwrap();
     let val2 = sce.value().unwrap();
     assert_eq!(val2.shape(), &[1, 1], "Loss 输出固定为 [1, 1]");
     assert!(val2[[0, 0]] > 0.0);
@@ -488,8 +483,7 @@ fn test_sce_dynamic_batch_backward() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[2, 5]))).unwrap();
     labels.set_value(Some(&labels_data)).unwrap();
 
-    sce.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sce.forward_recursive(1, Mode::Train).unwrap();
     inner.borrow_mut().zero_grad()?;
     // backward_via_node_inner 会清除中间节点梯度、设置 loss grad=1 并反向传播
     inner.borrow_mut().backward_via_node_inner(&sce)?;
@@ -504,8 +498,7 @@ fn test_sce_dynamic_batch_backward() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[4, 5]))).unwrap();
     labels.set_value(Some(&labels_data2)).unwrap();
 
-    sce.forward_recursive(2, &ExecutionContext::training())
-        .unwrap();
+    sce.forward_recursive(2, Mode::Train).unwrap();
     inner.borrow_mut().zero_grad()?;
     inner.borrow_mut().backward_via_node_inner(&sce)?;
     let grad2 = weight.grad().unwrap();

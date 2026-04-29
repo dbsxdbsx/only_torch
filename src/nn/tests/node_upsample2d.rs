@@ -16,7 +16,7 @@
  * 单测预期值由 Python 参考脚本 tests/python_reference/upsample2d_reference.py 验证一致。
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -45,7 +45,7 @@ fn test_upsample2d_forward_simple() -> Result<(), GraphError> {
 
     let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]);
     input.set_value(Some(&input_val))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     let output = up.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 4, 4]);
@@ -84,7 +84,7 @@ fn test_upsample2d_forward_batch() -> Result<(), GraphError> {
     let mut data = vec![5.0f32; 4]; // batch 0
     data.extend_from_slice(&[1.0, 2.0, 3.0, 4.0]); // batch 1
     input.set_value(Some(&Tensor::new(&data, &[2, 1, 2, 2])))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     let output = up.value().unwrap();
     assert_eq!(output.shape(), &[2, 1, 4, 4]);
@@ -119,7 +119,7 @@ fn test_upsample2d_forward_multi_channel() -> Result<(), GraphError> {
     let mut data = vec![1.0, 2.0, 3.0, 4.0]; // channel 0
     data.extend(vec![7.0f32; 4]); // channel 1
     input.set_value(Some(&Tensor::new(&data, &[1, 2, 2, 2])))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     let output = up.value().unwrap();
     assert_eq!(output.shape(), &[1, 2, 4, 4]);
@@ -157,7 +157,7 @@ fn test_upsample2d_forward_asymmetric_scale() -> Result<(), GraphError> {
 
     let input_val = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2]);
     input.set_value(Some(&input_val))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     let output = up.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 4, 6]);
@@ -197,7 +197,7 @@ fn test_upsample2d_forward_scale3() -> Result<(), GraphError> {
         .create_upsample2d_node(input.clone(), 3, 3, Some("up"))?;
 
     input.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2])))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     let output = up.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 6, 6]);
@@ -271,7 +271,7 @@ fn test_upsample2d_vjp_basic() -> Result<(), GraphError> {
         .create_upsample2d_node(input.clone(), 2, 2, Some("up"))?;
 
     input.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2])))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[1, 1, 4, 4]);
     let grad = up
@@ -314,7 +314,7 @@ fn test_upsample2d_vjp_non_unit_upstream() -> Result<(), GraphError> {
         .create_upsample2d_node(input.clone(), 2, 2, Some("up"))?;
 
     input.set_value(Some(&Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 1, 2, 2])))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     let upstream_data: Vec<f32> = (1..=16).map(|x| x as f32).collect();
     let upstream = Tensor::new(&upstream_data, &[1, 1, 4, 4]);
@@ -347,7 +347,7 @@ fn test_upsample2d_vjp_asymmetric_scale() -> Result<(), GraphError> {
         .create_upsample2d_node(input.clone(), 2, 3, Some("up"))?;
 
     input.set_value(Some(&Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[1, 1, 2, 2])))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[1, 1, 4, 6]);
     let grad = up
@@ -380,7 +380,7 @@ fn test_upsample2d_vjp_batch() -> Result<(), GraphError> {
         .create_upsample2d_node(input.clone(), 2, 2, Some("up"))?;
 
     input.set_value(Some(&Tensor::zeros(&[2, 1, 2, 2])))?;
-    up.forward_recursive(1, &ExecutionContext::training())?;
+    up.forward_recursive(1, Mode::Train)?;
 
     // batch 0: upstream 全 1 → grad 全 4
     // batch 1: upstream = 2 → grad 全 8
@@ -442,7 +442,7 @@ fn test_upsample2d_e2e_backward() -> Result<(), GraphError> {
     param.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2])))?;
     target.set_value(Some(&Tensor::zeros(&[1, 16])))?;
 
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
 
     // upsample 输出元素总和验证
@@ -513,7 +513,7 @@ fn test_upsample2d_e2e_pool_upsample_cascade() -> Result<(), GraphError> {
     param.set_value(Some(&input_val))?;
     target.set_value(Some(&Tensor::zeros(&[1, 16])))?;
 
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
     inner.borrow_mut().forward_via_node_inner(&loss)?;
 
     // pool 输出 [1,1,2,2] = [6, 8, 14, 16]，upsample 后 [1,1,4,4]
@@ -593,7 +593,7 @@ fn test_upsample2d_dynamic_batch_backward() -> Result<(), GraphError> {
             .borrow_mut()
             .create_mse_mean_node(flat.clone(), target.clone(), Some("loss"))?;
 
-    inner.borrow_mut().set_train_mode();
+    inner.borrow_mut().train();
 
     // 第一次：batch=2
     param.set_value(Some(&Tensor::normal_seeded(0.0, 1.0, &[2, 1, 2, 2], 42)))?;

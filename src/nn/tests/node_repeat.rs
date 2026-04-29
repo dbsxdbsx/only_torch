@@ -3,7 +3,7 @@
  * @Description  : Repeat 节点单元测试
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -26,8 +26,7 @@ fn test_repeat_forward() {
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
 
-    rep.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    rep.forward_recursive(1, Mode::Train).unwrap();
     let val = rep.value().unwrap();
 
     assert_eq!(val.shape(), &[4, 9]);

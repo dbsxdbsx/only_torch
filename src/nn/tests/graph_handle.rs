@@ -337,24 +337,19 @@ fn test_graph_handle_zero_grad() {
     assert!(w.grad().unwrap().is_some(), "再次 backward 后 w 应该有梯度");
 }
 
-/// 测试 train/eval 模式
+/// 测试 train/inference 模式切换（详细契约见 tests/test_mode_invariants.rs）
 #[test]
-fn test_graph_handle_train_eval() {
+fn test_graph_handle_train_inference_smoke() {
     let graph = Graph::new();
 
-    // 默认应该是训练模式
-    assert!(graph.training());
-    assert!(graph.is_grad_enabled());
+    // 默认是训练模式
+    assert!(graph.is_training());
 
-    // 切换到评估模式
-    graph.eval();
-    assert!(!graph.training());
-    assert!(graph.is_grad_enabled(), "eval 不应关闭 grad");
+    graph.inference();
+    assert!(!graph.is_training());
 
-    // 切换回训练模式
     graph.train();
-    assert!(graph.training());
-    assert!(graph.is_grad_enabled());
+    assert!(graph.is_training());
 }
 
 // ==================== Clone 语义测试 ====================
@@ -391,87 +386,27 @@ fn test_graph_handle_inner_access() {
     assert_eq!(graph.parameter_count(), 1);
 }
 
-// ==================== no_grad_scope 测试 ====================
+// ==================== inference_scope 烟雾测试 ====================
+// 详细契约（嵌套、回滚、backward 禁用）见 tests/test_mode_invariants.rs。
 
-/// 测试 no_grad_scope 基本功能
+/// inference_scope 闭包返回值正常传递，闭包退出后回滚到进入前的模式
 #[test]
-fn test_graph_handle_no_grad_scope_basic() {
+fn test_graph_handle_inference_scope_basic() {
     let graph = Graph::new();
+    assert!(graph.is_training());
 
-    // 默认是训练模式
-    assert!(graph.training());
-    assert!(graph.is_grad_enabled());
-
-    // 进入 no_grad_scope
-    let result = graph.no_grad_scope(|g| {
-        // no_grad 只关闭 grad，不改变训练/评估行为
-        assert!(g.training());
-        assert!(!g.is_grad_enabled());
+    let result = graph.inference_scope(|g| {
+        assert!(!g.is_training());
         42
     });
-
-    // 返回值应该正确传递
     assert_eq!(result, 42);
 
-    // 退出 scope 后应该恢复 grad
-    assert!(graph.training());
-    assert!(graph.is_grad_enabled());
+    assert!(graph.is_training());
 }
 
-/// 测试 no_grad_scope 从 eval 模式开始
+/// inference_scope 内可以正常做 forward 取值
 #[test]
-fn test_graph_handle_no_grad_scope_from_eval() {
-    let graph = Graph::new();
-
-    // 先切换到 eval 模式
-    graph.eval();
-    assert!(!graph.training());
-    assert!(graph.is_grad_enabled());
-
-    // 进入 no_grad_scope
-    graph.no_grad_scope(|g| {
-        // 仍然是 eval 行为，同时关闭 grad
-        assert!(!g.training());
-        assert!(!g.is_grad_enabled());
-    });
-
-    // 退出 scope 后仍然是 eval 行为，并恢复 grad
-    assert!(!graph.training());
-    assert!(graph.is_grad_enabled());
-}
-
-/// 测试 no_grad_scope 嵌套调用
-#[test]
-fn test_graph_handle_no_grad_scope_nested() {
-    let graph = Graph::new();
-
-    // 默认是训练模式
-    assert!(graph.training());
-    assert!(graph.is_grad_enabled());
-
-    graph.no_grad_scope(|g| {
-        assert!(g.training());
-        assert!(!g.is_grad_enabled());
-
-        // 嵌套调用
-        g.no_grad_scope(|g2| {
-            assert!(g2.training());
-            assert!(!g2.is_grad_enabled());
-        });
-
-        // 嵌套退出后仍在外层 no_grad
-        assert!(g.training());
-        assert!(!g.is_grad_enabled());
-    });
-
-    // 完全退出后恢复 grad
-    assert!(graph.training());
-    assert!(graph.is_grad_enabled());
-}
-
-/// 测试 no_grad_scope 中执行计算
-#[test]
-fn test_graph_handle_no_grad_scope_with_computation() {
+fn test_graph_handle_inference_scope_with_computation() {
     let graph = Graph::new();
     let x = graph
         .input(&Tensor::new(&[1.0, 2.0, 3.0], &[3, 1]))
@@ -480,8 +415,7 @@ fn test_graph_handle_no_grad_scope_with_computation() {
         .input(&Tensor::new(&[4.0, 5.0, 6.0], &[3, 1]))
         .unwrap();
 
-    // 在 no_grad_scope 中执行 forward
-    let result = graph.no_grad_scope(|_g| {
+    let result = graph.inference_scope(|_g| {
         let z = &x + &y;
         z.forward().unwrap();
         z.value().unwrap().unwrap().data_as_slice().to_vec()

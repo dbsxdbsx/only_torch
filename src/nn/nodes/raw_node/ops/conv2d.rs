@@ -19,7 +19,7 @@ use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
-use crate::nn::{ExecutionContext, GraphError};
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 use ndarray::{Array2, ArrayView2};
 use rayon::prelude::*;
@@ -520,8 +520,8 @@ impl TraitNode for Conv2d {
         Ok(())
     }
 
-    fn set_execution_ctx(&mut self, ctx: &ExecutionContext) {
-        self.should_cache_for_backward = ctx.grad_enabled;
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

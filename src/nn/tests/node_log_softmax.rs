@@ -16,7 +16,7 @@
  *   高层 API: 使用 VarActivationOps 的 .log_softmax()
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -119,8 +119,7 @@ fn test_log_softmax_vjp_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 1.0, 1.0, 1.0], &[2, 3])))
         .unwrap();
-    ls.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    ls.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 3]);
     let grad = ls
@@ -158,8 +157,7 @@ fn test_log_softmax_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])))
         .unwrap();
-    ls.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    ls.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::new(&[0.0, 0.0, 1.0], &[1, 3]);
     let grad = ls

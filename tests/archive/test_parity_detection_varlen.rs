@@ -395,7 +395,7 @@ fn evaluate_varlen_batch(
     let total = padded_sequences.len();
     let max_len = padded_sequences[0].len();
 
-    graph.eval();
+    graph.inference();
 
     // 分 batch 评估
     for chunk_start in (0..total).step_by(batch_size) {
@@ -453,7 +453,7 @@ fn print_varlen_output_distribution(
     hidden_size: usize,
     batch_size: usize,
 ) {
-    graph.eval();
+    graph.inference();
 
     let chunk_seqs: Vec<Vec<f32>> = padded_sequences[0..batch_size].to_vec();
     let chunk_labels: Vec<f32> = labels[0..batch_size].to_vec();

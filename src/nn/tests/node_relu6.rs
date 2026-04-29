@@ -9,7 +9,7 @@
  *   relu6([-2, -1, 0, 3, 6, 7]) = [0, 0, 0, 3, 6, 6]
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -50,7 +50,7 @@ fn test_relu6_vjp() -> Result<(), GraphError> {
         &[-2.0, -1.0, 0.0, 3.0, 6.0, 7.0],
         &[2, 3],
     )))?;
-    r6.forward_recursive(1, &ExecutionContext::training())?;
+    r6.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 3]);
     let grad = r6

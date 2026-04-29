@@ -6,7 +6,7 @@
 
 use super::error::GraphError;
 use super::inner::GraphInner;
-use super::types::ExecutionContext;
+use super::types::Mode;
 use crate::nn::var::{Init, Var};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
@@ -308,56 +308,44 @@ impl Graph {
         self.inner.borrow_mut().zero_grad()
     }
 
-    /// 设置训练模式
+    /// 切换到训练模式（forward 写 backward 缓存 + Dropout/BN 训练态 + backward 允许）
     pub fn train(&self) {
-        self.inner.borrow_mut().set_train_mode();
+        self.inner.borrow_mut().train();
     }
 
-    /// 设置评估模式
-    pub fn eval(&self) {
-        self.inner.borrow_mut().set_eval_mode();
+    /// 切换到推理模式（forward 跳过 backward 缓存 + Dropout/BN 评估态 + backward 报错）
+    pub fn inference(&self) {
+        self.inner.borrow_mut().inference();
     }
 
     /// 是否处于训练模式
-    pub fn training(&self) -> bool {
-        self.inner.borrow().is_train_mode()
+    pub fn is_training(&self) -> bool {
+        self.inner.borrow().is_training()
     }
 
-    /// 是否启用梯度记录
-    pub fn is_grad_enabled(&self) -> bool {
-        self.inner.borrow().is_grad_enabled()
+    /// 当前执行模式
+    pub fn mode(&self) -> Mode {
+        self.inner.borrow().mode()
     }
 
-    /// 获取当前执行上下文
-    pub fn execution_ctx(&self) -> ExecutionContext {
-        self.inner.borrow().execution_ctx()
+    /// 直接设置执行模式
+    pub fn set_mode(&self, mode: Mode) {
+        self.inner.borrow_mut().set_mode(mode);
     }
 
-    /// 设置当前执行上下文
-    pub fn set_execution_ctx(&self, ctx: ExecutionContext) {
-        self.inner.borrow_mut().set_execution_ctx(ctx);
-    }
-
-    /// 在 `no_grad` 上下文中执行闭包
-    pub fn no_grad_scope<F, R>(&self, f: F) -> R
+    /// 临时进入推理模式执行闭包，闭包返回后自动恢复原模式
+    pub fn inference_scope<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&Self) -> R,
     {
-        let was_grad_enabled = {
+        let prev = {
             let mut inner = self.inner.borrow_mut();
-            let was_grad_enabled = inner.is_grad_enabled();
-            let mut ctx = inner.execution_ctx();
-            ctx.grad_enabled = false;
-            inner.set_execution_ctx(ctx);
-            was_grad_enabled
+            let prev = inner.mode();
+            inner.inference();
+            prev
         };
         let result = f(self);
-        {
-            let mut inner = self.inner.borrow_mut();
-            let mut ctx = inner.execution_ctx();
-            ctx.grad_enabled = was_grad_enabled;
-            inner.set_execution_ctx(ctx);
-        }
+        self.inner.borrow_mut().set_mode(prev);
         result
     }
 

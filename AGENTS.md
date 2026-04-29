@@ -52,7 +52,7 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 按场景查阅，不要重复发明设计：
 
 - 广播 / shape 问题：[广播机制设计](.doc/design/broadcast_mechanism_design.md)
-- 梯度流、`detach()`、`no_grad()`：[梯度流控制设计](.doc/design/gradient_flow_control_design.md)
+- 训练 / 推理模式与 `detach()`：[Mode 设计](.doc/design/mode_design.md)
 - 梯度清零与累积：[梯度清零与累积设计](.doc/design/gradient_clear_and_accumulation_design.md)
 - Node 与 Layer 的边界：[节点与层边界设计](.doc/design/node_vs_layer_design.md)
 - 演化系统：[神经架构演化设计](.doc/design/neural_architecture_evolution_design.md)
@@ -66,7 +66,7 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 - **必须手动** `optimizer.zero_grad()`；不要假设框架会自动清梯度。
 - 本项目强调**显式 broadcast**；不要按 PyTorch 的隐式广播习惯直接写。
 - `Module` trait 只统一 `parameters()`；`forward()` **不是**通用 trait 方法。
-- `graph.train()` / `graph.eval()` 只控制层行为；`graph.no_grad_scope(|| { ... })` 只临时关闭 `grad_enabled`；`var.detach()` 是局部截断梯度。
+- `graph.train()` / `graph.inference()` 是图执行的二态切换：`Inference` 同时关闭层训练分支、跳过 backward 缓存，并让 `backward()` 直接报错；临时切换用 `graph.inference_scope(|g| { ... })`；`var.detach()` 是节点级局部梯度截断（与 mode 正交）。
 - 新增 op 时，一般要同时改 `raw_node` 实现与 `Var` 便捷接口。
 - RL / pyo3 相关测试容易有导入竞态；优先 `serial_test` 或 `just test-serial`。
 - 演化阶段长时间无日志，通常表示候选仍在评估，不一定是卡死。

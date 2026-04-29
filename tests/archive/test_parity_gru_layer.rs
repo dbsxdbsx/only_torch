@@ -134,7 +134,7 @@
 //     use std::hash::{Hash, Hasher};
 
 //     let mut graph = Graph::new_with_seed(seed);
-//     graph.set_train_mode();
+//     graph.train();
 
 //     // === 输入节点 ===
 //     let input = graph.new_input_node(&[batch_size, 1], Some("input"))?;
@@ -296,7 +296,7 @@
 //     let total = padded_sequences.len();
 //     let max_len = padded_sequences[0].len();
 
-//     graph.set_eval_mode();
+//     graph.inference();
 
 //     for chunk_start in (0..total).step_by(batch_size) {
 //         let chunk_end = (chunk_start + batch_size).min(total);
@@ -329,7 +329,7 @@
 //         }
 //     }
 
-//     graph.set_train_mode();
+//     graph.train();
 //     Ok(correct as f32 / (total - (total % batch_size)) as f32)
 // }
 

@@ -157,7 +157,7 @@ fn evaluate(
     graph: &Graph,
     test_loader: &DataLoader<TensorDataset>,
 ) -> Result<f32, GraphError> {
-    graph.eval();
+    graph.inference();
 
     let mut total_correct = 0.0;
     let mut total = 0;

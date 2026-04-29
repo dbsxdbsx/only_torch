@@ -72,7 +72,7 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        graph.eval();
+        graph.inference();
         let report = evaluate(&model, &test_x, &test_y)?;
         best_acc = best_acc.max(report.pixel_accuracy);
         best_iou = best_iou.max(report.binary_iou);

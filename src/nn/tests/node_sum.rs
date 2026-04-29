@@ -16,7 +16,7 @@
  * - Axis=1: [2,3]→[2,1], grad = upstream 沿 axis 1 broadcast
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps, VarReduceOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -122,8 +122,7 @@ fn test_sum_vjp_global() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
-    sum.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sum.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::new(&[2.0], &[1, 1]);
     let grad = sum
@@ -157,8 +156,7 @@ fn test_sum_vjp_axis1() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
-    sum.forward_recursive(1, &ExecutionContext::training())
-        .unwrap();
+    sum.forward_recursive(1, Mode::Train).unwrap();
 
     let upstream_grad = Tensor::new(&[1.0, 2.0], &[2, 1]);
     let grad = sum

@@ -77,7 +77,7 @@ fn main() -> Result<(), GraphError> {
             num_batches += 1;
         }
 
-        graph.eval();
+        graph.inference();
         let (mae, iou) = evaluate(&model, &test_x, &test_y)?;
         best_iou = best_iou.max(iou);
         best_mae = best_mae.min(mae);

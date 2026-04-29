@@ -4,11 +4,11 @@
  *                 实现逐元素 log2: y = log2(x)
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{GraphError, Mode};
 use crate::tensor::Tensor;
 
 /// 以 2 为底的对数节点
@@ -26,6 +26,7 @@ pub(crate) struct Log2 {
     #[allow(dead_code)]
     supports_dynamic: bool,
     input_cache: Option<Tensor>,
+    should_cache_for_backward: bool,
 }
 
 impl Log2 {
@@ -42,6 +43,7 @@ impl Log2 {
             dynamic_shape: parent_dynamic_shape.clone(),
             supports_dynamic: parent_dynamic_shape.has_dynamic_dims(),
             input_cache: None,
+            should_cache_for_backward: true,
         })
     }
 }
@@ -70,9 +72,17 @@ impl TraitNode for Log2 {
     }
 
     fn calc_value_by_parents(&mut self, parent_values: &[&Tensor]) -> Result<(), GraphError> {
-        self.input_cache = Some(parent_values[0].clone());
+        if self.should_cache_for_backward {
+            self.input_cache = Some(parent_values[0].clone());
+        } else {
+            self.input_cache = None;
+        }
         self.value = Some(parent_values[0].log2());
         Ok(())
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.should_cache_for_backward = mode.caches_for_backward();
     }
 
     fn value(&self) -> Option<&Tensor> {

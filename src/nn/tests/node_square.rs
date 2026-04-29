@@ -9,7 +9,7 @@
  *   grad(x²) = 2*[1,2,3,4] = [2, 4, 6, 8]
  */
 
-use crate::nn::ExecutionContext;
+use crate::nn::Mode;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -61,7 +61,7 @@ fn test_square_vjp() -> Result<(), GraphError> {
         .create_square_node(x.clone(), Some("sq"))?;
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))?;
-    sq.forward_recursive(1, &ExecutionContext::training())?;
+    sq.forward_recursive(1, Mode::Train)?;
 
     let upstream = Tensor::ones(&[2, 2]);
     let grad = sq

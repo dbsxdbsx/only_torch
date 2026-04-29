@@ -12,10 +12,28 @@
 
 ### Changed
 
-- **refactor(graph): 拆分执行上下文的训练行为与梯度记录**
-  - 新增 `ExecutionContext { training, grad_enabled }`，`Graph::train()` / `eval()` 只控制层行为，`no_grad_scope()` 只临时关闭 `grad_enabled`
-  - `forward_recursive` 与 `TraitNode::set_execution_ctx` 改为传递完整执行上下文，Conv2d / Dropout / BatchNorm 分别按层行为与 backward 缓存策略读取字段
-  - `Graph::load_model()` / `Graph::from_onnx()` 默认进入 `ExecutionContext::inference()`，并补充执行上下文 invariants 测试与文档说明
+- **refactor(graph)!: 用 `Mode { Train, Inference }` 统一执行上下文（Breaking）**
+  - 删除 `ExecutionContext { training, grad_enabled }` 双字段；新 `Mode` 一个枚举同时承载层行为切换、backward 缓存策略与 backward 是否被允许，详见 `.doc/design/mode_design.md`
+  - `Inference` 模式下 `Graph::backward()` 现在直接返回 `GraphError::InvalidOperation`，不再降级为警告
+  - `forward_recursive` 与 `TraitNode::set_mode` 改为按值传递 `Mode`；新增 12 个重缓存节点（Softmax / LogSoftmax / LayerNorm / RMSNorm / Abs / Square / Pow / Clip / Reciprocal / Ln / Log2 / Log10）实现按 mode 切缓存
+  - Evolution `Trainer::predict_*` / `EvolutionTask::evaluate` 自动进入 `Inference` 模式，候选评估期间不再重复保留 backward 缓存
+  - `tests/test_execution_context_invariants.rs` 整文件迁移到 `tests/test_mode_invariants.rs`，旧 `gradient_flow_control_design.md` 归档至 `.doc/_archive/`，新文档落到 `.doc/design/mode_design.md`
+  - **API 迁移表**：
+
+| 旧 API | 新等价物 |
+|---|---|
+| `ExecutionContext::training()` | `Mode::Train` |
+| `ExecutionContext::inference()` | `Mode::Inference` |
+| `Graph::eval()` | `Graph::inference()` |
+| `Graph::training()` | `Graph::is_training()` |
+| `Graph::set_train_mode()` | `Graph::train()` |
+| `Graph::set_eval_mode()` | `Graph::inference()` |
+| `Graph::is_train_mode()` | `Graph::is_training()` |
+| `Graph::is_grad_enabled()` | `Graph::is_training()` |
+| `Graph::execution_ctx()` | `Graph::mode()` |
+| `Graph::set_execution_ctx(ctx)` | `Graph::set_mode(mode)` |
+| `Graph::no_grad_scope(\|g\| ...)` | `Graph::inference_scope(\|g\| ...)` |
+| `TraitNode::set_execution_ctx(&ctx)` | `TraitNode::set_mode(mode)` |
 
 - **perf(nn): 优化 Conv2d Debug 推理路径**
   - `Conv2d` 在 eval 推理模式下对 `1x1 stride=1 padding=0` 卷积启用直接 GEMM 快路径，避免为 backward 生成无用 `im2col` 缓存
