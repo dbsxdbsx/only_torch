@@ -203,7 +203,7 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 
 ## Benchmark 基础设施（✅ 已搭建）
 
-已引入 `criterion` 框架，4 个 benchmark 文件覆盖各层面：
+已引入 `criterion` 框架，11 个 benchmark 文件覆盖各层面：
 
 | 文件 | 覆盖范围 | 场景 |
 |------|---------|------|
@@ -215,6 +215,9 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 | `benches/pool2d.rs` | Pool2d | MaxPool2d / AvgPool2d forward + backward |
 | `benches/optimizer.rs` | 优化器 | SGD / Adam step |
 | `benches/normalization.rs` | 归一化层 | BatchNorm / LayerNorm / RMSNorm / GroupNorm |
+| `benches/loss.rs` | Loss | MSE / CrossEntropy / BCE / Huber forward + backward |
+| `benches/rnn.rs` | 循环层 | RNN / LSTM / GRU 小规模序列 forward + backward |
+| `benches/attention.rs` | Attention | MultiHeadAttention self-attention / cross-attention forward + backward |
 
 ```bash
 # 运行所有 benchmark

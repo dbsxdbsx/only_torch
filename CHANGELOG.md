@@ -6,6 +6,7 @@
 
 - **feat(bench): 建立 Track A benchmark 可观测性工作流**
   - 新增 `smoke`、`pool2d`、`optimizer`、`normalization` 四组 Criterion benchmark，覆盖快速回归、Pool2d、优化器和归一化层关键路径
+  - 补齐 `loss`、`rnn`、`attention` 三组 focused benchmark，覆盖 Loss、循环层和 MultiHeadAttention 的 forward + backward 路径
   - `justfile` 新增 `bench-smoke`、`bench-save`、`bench-compare`、`bench-macro`、`bench-macro-core`，支持改动前保存 baseline、改动后对比和 release example 宏基准
   - 文档补充性能验证标准流程，并已保存 Track B 前 `pre-execution-context` Criterion baseline
 

@@ -79,6 +79,9 @@ bench-save baseline:
     cargo bench --bench pool2d {{_blas_flag}} -- --save-baseline {{baseline}}
     cargo bench --bench optimizer {{_blas_flag}} -- --save-baseline {{baseline}}
     cargo bench --bench normalization {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench loss {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench rnn {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench attention {{_blas_flag}} -- --save-baseline {{baseline}}
 
 # 与 Criterion baseline 对比（用法: just bench-compare before-change）
 bench-compare baseline:
@@ -90,6 +93,9 @@ bench-compare baseline:
     cargo bench --bench pool2d {{_blas_flag}} -- --baseline {{baseline}}
     cargo bench --bench optimizer {{_blas_flag}} -- --baseline {{baseline}}
     cargo bench --bench normalization {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench loss {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench rnn {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench attention {{_blas_flag}} -- --baseline {{baseline}}
 
 # 运行特定 benchmark（用法: just bench-filter <pattern>）
 bench-filter pattern:
@@ -116,6 +122,15 @@ bench-optimizer:
 
 bench-normalization:
     cargo bench --bench normalization {{_blas_flag}}
+
+bench-loss:
+    cargo bench --bench loss {{_blas_flag}}
+
+bench-rnn:
+    cargo bench --bench rnn {{_blas_flag}}
+
+bench-attention:
+    cargo bench --bench attention {{_blas_flag}}
 
 # 真实 example 级宏基准；显式触发，整组耗时分钟级
 bench-macro:

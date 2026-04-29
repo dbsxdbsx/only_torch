@@ -136,6 +136,18 @@
     name   ="normalization"
     harness=false
 
+[[bench]]
+    name   ="loss"
+    harness=false
+
+[[bench]]
+    name   ="rnn"
+    harness=false
+
+[[bench]]
+    name   ="attention"
+    harness=false
+
     # ==================== 示例 ====================
 
 [[example]]
