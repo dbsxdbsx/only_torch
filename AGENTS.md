@@ -25,6 +25,10 @@ just test-filter <pattern> # 定位单个测试/模块
 just test-serial           # 单线程调试（pyo3 / 竞态问题优先用它）
 just lint                  # clippy
 just fmt                   # rustfmt
+just bench-smoke           # 约 30 秒快速性能回归
+just bench-save <name>     # 保存 Criterion baseline（重构前）
+just bench-compare <name>  # 与 baseline 对比（重构后）
+just bench-macro           # hyperfine 跑 release example 宏基准
 just bench-conv2d          # 卷积基准
 just example-xor           # 最小传统示例
 just example-evolution-mnist # 演化版 MNIST 示例

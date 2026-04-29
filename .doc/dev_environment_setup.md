@@ -86,6 +86,24 @@ cargo build
 
 ---
 
+## Benchmark 工具
+
+宏基准命令 `just bench-macro` / `just bench-macro-core` 依赖 `hyperfine`：
+
+```bash
+cargo install hyperfine
+```
+
+安装后可用以下命令确认：
+
+```bash
+hyperfine --version
+```
+
+`just bench-macro` 会跑 release example，属于显式触发的分钟级 benchmark；日常快速回归优先使用 `just bench-smoke`。
+
+---
+
 ## 相关配置文件
 
 ### .cargo/config.toml

@@ -120,6 +120,22 @@
     name   ="tensor_ops"
     harness=false
 
+[[bench]]
+    name   ="smoke"
+    harness=false
+
+[[bench]]
+    name   ="pool2d"
+    harness=false
+
+[[bench]]
+    name   ="optimizer"
+    harness=false
+
+[[bench]]
+    name   ="normalization"
+    harness=false
+
     # ==================== 示例 ====================
 
 [[example]]

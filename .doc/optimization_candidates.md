@@ -5,6 +5,30 @@
 
 ---
 
+## 性能验证标准流程
+
+任何声称"优化"或"重构"的改动，必须按以下流程验证：
+
+1. **保存 baseline**：`just bench-save before-change`（在改动前的 commit / 工作树上）
+2. **执行改动**
+3. **正确性验证**：优先 `just test-filter <pattern>`，影响面大时跑 `just test`
+4. **快速性能回归检查**：`just bench-smoke`（目标整组约 30 秒内）
+5. **对比关键路径**：`just bench-compare before-change`（查看 Criterion 输出与 HTML report）
+6. **Macro 验证**：`just bench-macro`（缺少本地 chess ONNX 模型时先跑 `just bench-macro-core`）
+7. **回填本文档**：在对应优化段写明 before / after 数据、命令与环境
+
+宏基准用于真实用户路径参考，不作为默认门禁；不要把不同 CPU、不同 BLAS 后端或不同模型文件的百分比直接混为同一条趋势。
+
+### 当前 baseline
+
+| baseline | 日期 | 命令 | 后端 | 用途 |
+|---|---|---|---|---|
+| `pre-execution-context` | 2026-04-29 | `just bench-save pre-execution-context` | `blas-mkl` | Track B 引入 `ExecutionContext` 前的 Criterion 对照基线 |
+
+说明：baseline 保存在 Criterion 的 `target/criterion` 报告目录中，属于本地构建产物，不入仓。Track B 完成后用 `just bench-compare pre-execution-context` 对比。
+
+---
+
 ## 待优化项
 
 ### 1. RNN 场景 `select` + `set_value` 二次复制问题

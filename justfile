@@ -65,6 +65,32 @@ test-filter pattern:
 bench:
     cargo bench {{_blas_flag}}
 
+# PR 前快速性能回归（目标整组约 30 秒内）
+bench-smoke:
+    cargo bench --bench smoke {{_blas_flag}}
+
+# 保存 Criterion baseline（用法: just bench-save before-change）
+bench-save baseline:
+    cargo bench --bench tensor_ops {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench conv2d {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench backward {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench end_to_end {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench smoke {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench pool2d {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench optimizer {{_blas_flag}} -- --save-baseline {{baseline}}
+    cargo bench --bench normalization {{_blas_flag}} -- --save-baseline {{baseline}}
+
+# 与 Criterion baseline 对比（用法: just bench-compare before-change）
+bench-compare baseline:
+    cargo bench --bench tensor_ops {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench conv2d {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench backward {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench end_to_end {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench smoke {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench pool2d {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench optimizer {{_blas_flag}} -- --baseline {{baseline}}
+    cargo bench --bench normalization {{_blas_flag}} -- --baseline {{baseline}}
+
 # 运行特定 benchmark（用法: just bench-filter <pattern>）
 bench-filter pattern:
     cargo bench {{_blas_flag}} -- {{pattern}}
@@ -81,6 +107,35 @@ bench-end-to-end:
 
 bench-tensor:
     cargo bench --bench tensor_ops {{_blas_flag}}
+
+bench-pool2d:
+    cargo bench --bench pool2d {{_blas_flag}}
+
+bench-optimizer:
+    cargo bench --bench optimizer {{_blas_flag}}
+
+bench-normalization:
+    cargo bench --bench normalization {{_blas_flag}}
+
+# 真实 example 级宏基准；显式触发，整组耗时分钟级
+bench-macro:
+    @echo "=== Macro benchmark (release, {{_blas_name}}) ==="
+    @command -v hyperfine >/dev/null 2>&1 || (echo "hyperfine 未安装，请先 cargo install hyperfine" && exit 1)
+    @test -f "models/vinxiangqi.onnx" || (echo "缺少 chess_yolo_onnx_detect 所需本地 ONNX 模型，请先按 example 文档下载；或改跑 just bench-macro-core" && exit 1)
+    hyperfine --warmup 1 --runs 2 \
+      'cargo run --release {{_blas_flag}} --example mnist_cnn' \
+      'cargo run --release {{_blas_flag}} --example chess_yolo_onnx_detect' \
+      'cargo run --release {{_blas_flag}} --example evolution_mnist' \
+      --export-json target/bench-macro.json
+
+# 不依赖本地 ONNX 模型的宏基准子集
+bench-macro-core:
+    @echo "=== Macro benchmark core (release, {{_blas_name}}) ==="
+    @command -v hyperfine >/dev/null 2>&1 || (echo "hyperfine 未安装，请先 cargo install hyperfine" && exit 1)
+    hyperfine --warmup 1 --runs 2 \
+      'cargo run --release {{_blas_flag}} --example mnist_cnn' \
+      'cargo run --release {{_blas_flag}} --example evolution_mnist' \
+      --export-json target/bench-macro-core.json
 
 # ==================== Examples ====================
 
