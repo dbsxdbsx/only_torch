@@ -3,6 +3,7 @@
 mod california_housing;
 mod dataloader;
 mod dataloader_transforms;
+mod detection;
 mod mnist;
 mod transform_affine;
 mod transform_center_crop;
@@ -16,3 +17,4 @@ mod transform_normalize;
 mod transform_resized_crop;
 mod transform_rotation;
 mod transforms;
+mod yolo;

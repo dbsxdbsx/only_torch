@@ -6,6 +6,8 @@
 
 mod california_housing;
 mod mnist;
+mod yolo;
 
 pub use california_housing::CaliforniaHousingDataset;
 pub use mnist::{MnistDataset, default_data_dir};
+pub use yolo::{parse_yolo_txt_file, parse_yolo_txt_labels};

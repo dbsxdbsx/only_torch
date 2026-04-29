@@ -143,6 +143,13 @@ bench-macro:
       'cargo run --release {{_blas_flag}} --example evolution_mnist' \
       --export-json target/bench-macro.json
 
+# 决策性 bench：对比 ONNX 直载 vs OTM 预处理两条 model loading 路径
+# （冷启动、文件大小、参数量、推理速度），评估新模型选型时跑。不进 bench-save/compare 回归。
+bench-onnx-vs-otm:
+    @echo "=== ONNX vs OTM loading bench (release, {{_blas_name}}) ==="
+    @test -f "models/vinxiangqi.onnx" || (echo "缺少 models/vinxiangqi.onnx，请先按 examples/traditional/chess_yolo_onnx_detect/README.md 拉取" && exit 1)
+    cargo test --release --test onnx_otm_load_bench {{_blas_flag}} -- --ignored --nocapture
+
 # 不依赖本地 ONNX 模型的宏基准子集
 bench-macro-core:
     @echo "=== Macro benchmark core (release, {{_blas_name}}) ==="

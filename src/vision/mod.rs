@@ -16,7 +16,9 @@ use crate::utils::traits::image::ForDynamicImage;
 use image::{ColorType, DynamicImage, GenericImageView, ImageBuffer};
 
 pub mod detect;
+pub mod detection;
 pub mod draw;
+pub mod preprocess;
 pub mod process;
 pub mod shape;
 

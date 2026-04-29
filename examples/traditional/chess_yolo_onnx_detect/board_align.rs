@@ -35,8 +35,8 @@
 //! 例:初始局面(仅含子方):
 //!     `rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR`
 
-use crate::letterbox::LetterboxResult;
-use crate::yolo_decode::Detection;
+use only_torch::vision::detection::Detection;
+use only_torch::vision::preprocess::LetterboxResult;
 
 pub const BOARD_COLS: usize = 9;
 pub const BOARD_ROWS: usize = 10;
@@ -85,7 +85,7 @@ pub fn auto_detect_board_roi(
         .iter()
         .filter(|d| d.class_id < NUM_CLASSES)
         .map(|d| {
-            let (cx_lb, cy_lb) = d.center();
+            let (cx_lb, cy_lb) = d.bbox.center();
             letterbox.to_origin(cx_lb, cy_lb)
         })
         .collect();
@@ -115,12 +115,12 @@ pub fn auto_detect_board_roi(
         .iter()
         .filter(|d| d.class_id == BOARD_CLASS_ID)
         .max_by(|a, b| {
-            a.conf
-                .partial_cmp(&b.conf)
+            a.score
+                .partial_cmp(&b.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     if let Some(d) = board_det {
-        let (x0_lb, y0_lb, x1_lb, y1_lb) = (d.bbox[0], d.bbox[1], d.bbox[2], d.bbox[3]);
+        let [x0_lb, y0_lb, x1_lb, y1_lb] = d.bbox.to_xyxy();
         let (x0, y0) = letterbox.to_origin(x0_lb, y0_lb);
         let (x1, y1) = letterbox.to_origin(x1_lb, y1_lb);
         // 内缩 bbox 的 5% 作格点矩形(经验估计:bbox 比格点矩形稍大)
@@ -156,12 +156,12 @@ pub fn detect_red_on_top(
         .iter()
         .filter(|d| d.class_id == 10) // r_jiang
         .max_by(|a, b| {
-            a.conf
-                .partial_cmp(&b.conf)
+            a.score
+                .partial_cmp(&b.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     if let Some(d) = red_jiang {
-        let (_, cy_lb) = d.center();
+        let (_, cy_lb) = d.bbox.center();
         let (_, cy) = letterbox.to_origin(0.0, cy_lb);
         let mid_y = (roi.1 + roi.3) as f32 / 2.0;
         return cy < mid_y;
@@ -201,7 +201,7 @@ pub fn align_to_grid(dets: &[Detection], letterbox: &LetterboxResult, cfg: &Boar
             continue;
         }
 
-        let (cx_lb, cy_lb) = d.center();
+        let (cx_lb, cy_lb) = d.bbox.center();
         let (cx, cy) = letterbox.to_origin(cx_lb, cy_lb);
 
         // 给 ROI 半个 cell 容差(格点本身可能恰好在 ROI 边缘)
@@ -226,8 +226,8 @@ pub fn align_to_grid(dets: &[Detection], letterbox: &LetterboxResult, cfg: &Boar
         let col = col as usize;
         let row = row as usize;
 
-        if d.conf > grid_conf[row][col] {
-            grid_conf[row][col] = d.conf;
+        if d.score > grid_conf[row][col] {
+            grid_conf[row][col] = d.score;
             grid[row][col] = Some(d.class_id);
         }
     }
@@ -286,4 +286,72 @@ pub fn count_pieces(grid: &Grid) -> usize {
         .flat_map(|row| row.iter())
         .filter(|c| c.is_some())
         .count()
+}
+
+/// 一次完整识别的全部信息（ROI + 朝向 + grid + FEN），供 main 一句话拿走。
+pub struct BoardOutput {
+    pub fen: String,
+    pub grid: Grid,
+    pub red_on_top: bool,
+    pub piece_count: usize,
+    pub detection_count: usize,
+    pub roi: (u32, u32, u32, u32),
+    pub roi_was_fallback: bool,
+    class_to_fen: [char; NUM_CLASSES],
+}
+
+impl BoardOutput {
+    /// 把 grid 渲染成 `r n b a k a b n r` 形式，每行末尾换行，便于直接 `print!`。
+    pub fn grid_visualization(&self) -> String {
+        use std::fmt::Write;
+        let mut s = String::new();
+        for row in &self.grid {
+            for cell in row {
+                let ch = match cell {
+                    Some(class_id) if *class_id < NUM_CLASSES => self.class_to_fen[*class_id],
+                    Some(_) => '?',
+                    None => '.',
+                };
+                let _ = write!(s, "{ch} ");
+            }
+            s.push('\n');
+        }
+        s
+    }
+}
+
+/// 端到端：detections + letterbox + 原图尺寸 → 标准 FEN（含视觉朝向归一化）。
+///
+/// 流程：自动锁定 ROI → 检测红帅朝向 → 必要时旋转 180° → 序列化 FEN。
+pub fn recognize(
+    dets: &[Detection],
+    letterbox: &LetterboxResult,
+    original_size: (u32, u32),
+) -> BoardOutput {
+    let (orig_w, orig_h) = original_size;
+    let (roi, roi_was_fallback) = match auto_detect_board_roi(dets, letterbox) {
+        Some(r) => (r, false),
+        None => ((0, 0, orig_w, orig_h), true),
+    };
+    let cfg = BoardConfig {
+        roi,
+        class_to_fen: BoardConfig::default_class_to_fen(),
+    };
+    let raw_grid = align_to_grid(dets, letterbox, &cfg);
+    let red_on_top = detect_red_on_top(dets, letterbox, roi);
+    let grid = if red_on_top {
+        rotate_grid_180(&raw_grid)
+    } else {
+        raw_grid
+    };
+    BoardOutput {
+        fen: to_fen(&grid, &cfg),
+        piece_count: count_pieces(&grid),
+        grid,
+        red_on_top,
+        detection_count: dets.len(),
+        roi,
+        roi_was_fallback,
+        class_to_fen: cfg.class_to_fen,
+    }
 }

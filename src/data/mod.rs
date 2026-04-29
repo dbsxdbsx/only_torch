@@ -32,6 +32,7 @@
 
 mod dataloader;
 pub mod datasets;
+mod detection;
 pub mod download;
 pub mod error;
 mod synthetic_rng;
@@ -45,7 +46,11 @@ pub use dataloader::{
     BucketedSampling, DataLoader, Dataset, SamplingStrategy, SequentialSampling, TensorDataset,
     VarLenDataset, VarLenSample,
 };
-pub use datasets::{CaliforniaHousingDataset, MnistDataset, default_data_dir};
+pub use datasets::{
+    CaliforniaHousingDataset, MnistDataset, default_data_dir, parse_yolo_txt_file,
+    parse_yolo_txt_labels,
+};
+pub use detection::{DetectionBatch, DetectionSample};
 pub use error::DataError;
 pub use synthetic_rng::SyntheticRng;
 pub use transforms::{

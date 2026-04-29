@@ -4,6 +4,21 @@
 
 ### Added
 
+- **feat(vision/data/metrics): 沉淀通用 2D detection 能力**
+  - `src/vision/preprocess`：通用 letterbox（保比缩放 + 填充）+ `LetterboxResult::to_origin` 反向映射 + `image_to_nchw_normalized` 归一化
+  - `src/vision/detection`：`BBox` 统一封装 + `BoxFormat::{XyXy, CxCyWh}` 显式互转，`iou` / `giou` / `diou` / `ciou` 全家桶，`scale_translate` / `horizontal_flip` 几何变换，`Detection` / `GroundTruthBox` 标准载体，`NmsOptions { class_aware }` 参数化 NMS（同时覆盖 class-aware 与 class-agnostic）
+  - `src/data/detection`：`DetectionSample` / `DetectionBatch` 处理变长检测标签
+  - `src/data/datasets/yolo`：YOLO `.txt` 标签解析（支持空行、行内 `#` 注释、错误行 [文件:行号] 定位）
+  - `src/metrics/detection`：mAP / Precision / Recall 复用 `vision::detection::BBox`，预置 `VOC_IOU_THRESHOLDS`（11 点 0.0..=0.5）与 `COCO_IOU_THRESHOLDS`（10 点 0.5..=0.95），新增 `DetectionMapMetric` / `DetectionPrMetric` 形式化指标条目
+  - 配套单元测试覆盖格式互转、IoU 家族数值、几何变换与 NMS 行为；YOLO label 解析覆盖正/异常路径
+- **feat(nn): `RebuildResult` 推理便捷 API**
+  - 新增 `predict(input)` / `predict_head(name, input)` 一行调用，免去 `set_value → forward → value` 三步
+  - 新增 `input_by_name(name)` / `output_by_name(name)` 按名取节点；多 input/output 场景默认走第一个，并补充按名访问
+  - 新增 `tests/model_save.rs::test_rebuild_result_predict_uses_first_input_and_output` / `test_rebuild_result_predict_head_reports_missing_output` 覆盖默认与按名访问行为
+- **bench(devops): ONNX 直接载入 vs OTM 中转载入决策 bench**
+  - 新增 `tests/onnx_otm_load_bench.rs`，对比冷启动耗时、磁盘体积、参数保真度、推理速度，定位为低频"决策性 bench"，独立于 Criterion 回归体系（不进 `bench-save` / `bench-compare`）
+  - `justfile` 新增 `bench-onnx-vs-otm`，跑法 `just bench-onnx-vs-otm`
+  - 真机数据：OTM 冷启动仅快 ~3 ms，文件大 ~1.9%，推理速度持平，且发现 OTM round-trip 丢 2 个非训练参数（137 → 135），后续按需要追踪 `save_model` 的状态保真度
 - **feat(bench): 建立 benchmark 可观测性工作流**
   - 新增 `smoke`、`pool2d`、`optimizer`、`normalization` 四组 Criterion benchmark，覆盖快速回归、Pool2d、优化器和归一化层关键路径
   - 补齐 `loss`、`rnn`、`attention` 三组 focused benchmark，覆盖 Loss、循环层和 MultiHeadAttention 的 forward + backward 路径
@@ -11,6 +26,12 @@
   - 文档补充性能验证标准流程，并已保存 `Mode` 重构前 `pre-execution-context` Criterion baseline
 
 ### Changed
+
+- **refactor(example): chess_yolo_onnx_detect 大幅精简至库版 pipeline**
+  - `main.rs` 393 → 162 行：去掉手工 ONNX → Graph 双步、各阶段计时、`ImportReport` 打印、`num_classes` 手算、五段式后处理调用，改为 `Graph::from_onnx → RebuildResult::predict → yolo_decode::detect → board_align::recognize` 三步
+  - `examples/traditional/chess_yolo_onnx_detect/letterbox.rs` 删除，整体迁移到 `src/vision::preprocess`
+  - `yolo_decode.rs` / `board_align.rs` 复用库内 `Detection` / `LetterboxResult` / `nms`，新增 `detect()` / `recognize() -> BoardOutput` 端到端封装
+  - `examples/traditional/chess_yolo_onnx_detect/README.md` 同步到库版 pipeline 描述
 
 - **refactor(graph)!: 用 `Mode { Train, Inference }` 统一执行上下文（Breaking）**
   - 删除 `ExecutionContext { training, grad_enabled }` 双字段；新 `Mode` 一个枚举同时承载层行为切换、backward 缓存策略与 backward 是否被允许，详见 `.doc/design/mode_design.md`

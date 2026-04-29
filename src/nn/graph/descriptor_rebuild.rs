@@ -39,6 +39,54 @@ pub struct RebuildResult {
     pub import_report: Option<ImportReport>,
 }
 
+impl RebuildResult {
+    /// 按名称查找数据输入节点。
+    pub fn input_by_name(&self, name: &str) -> Option<&Var> {
+        self.inputs
+            .iter()
+            .find(|(input_name, _)| input_name == name)
+            .map(|(_, var)| var)
+    }
+
+    /// 按名称查找输出节点。
+    pub fn output_by_name(&self, name: &str) -> Option<&Var> {
+        self.outputs
+            .iter()
+            .find(|output| output.name() == Some(name))
+    }
+
+    /// 使用第一个输入和第一个输出执行一次推理。
+    pub fn predict(&self, input: &Tensor) -> Result<Tensor, GraphError> {
+        let output = self
+            .outputs
+            .first()
+            .ok_or_else(|| GraphError::ComputationError("模型没有可用输出节点".to_string()))?;
+        self.predict_var(input, output)
+    }
+
+    /// 使用第一个输入和指定名称输出执行一次推理。
+    pub fn predict_head(&self, output_name: &str, input: &Tensor) -> Result<Tensor, GraphError> {
+        let output = self.output_by_name(output_name).ok_or_else(|| {
+            GraphError::ComputationError(format!("找不到输出节点: {output_name}"))
+        })?;
+        self.predict_var(input, output)
+    }
+
+    fn predict_var(&self, input: &Tensor, output: &Var) -> Result<Tensor, GraphError> {
+        let input_var = self
+            .inputs
+            .first()
+            .map(|(_, var)| var)
+            .ok_or_else(|| GraphError::ComputationError("模型没有可用输入节点".to_string()))?;
+        self.graph.inference();
+        input_var.set_value(input)?;
+        self.graph.forward(output)?;
+        output
+            .value()?
+            .ok_or_else(|| GraphError::ComputationError("推理后输出节点无值".to_string()))
+    }
+}
+
 impl Graph {
     /// 从 GraphDescriptor 重建计算图
     ///

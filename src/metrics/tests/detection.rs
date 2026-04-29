@@ -1,7 +1,12 @@
 //! 目标检测指标测试
 
-use crate::metrics::mean_box_iou_cxcywh;
+use approx::assert_abs_diff_eq;
+
+use crate::metrics::{
+    VOC_IOU_THRESHOLDS, mean_average_precision, mean_box_iou_cxcywh, precision_recall_at_iou,
+};
 use crate::tensor::Tensor;
+use crate::vision::detection::{BBox, Detection, GroundTruthBox};
 
 #[test]
 fn test_mean_box_iou_cxcywh_perfect() {
@@ -10,7 +15,7 @@ fn test_mean_box_iou_cxcywh_perfect() {
 
     let result = mean_box_iou_cxcywh(&predictions, &actuals);
 
-    assert!((result.value() - 1.0).abs() < 1e-6);
+    assert_abs_diff_eq!(result.value(), 1.0, epsilon = 1e-6);
     assert_eq!(result.n_samples(), 2);
 }
 
@@ -22,7 +27,7 @@ fn test_mean_box_iou_cxcywh_partial_overlap() {
     let result = mean_box_iou_cxcywh(&predictions, &actuals);
 
     // 两个 0.4x0.4 框在 x 方向错开 0.1：intersection=0.3*0.4，union=0.2
-    assert!((result.value() - 0.6).abs() < 1e-6);
+    assert_abs_diff_eq!(result.value(), 0.6, epsilon = 1e-6);
     assert_eq!(result.n_samples(), 1);
 }
 
@@ -55,7 +60,7 @@ fn test_mean_box_iou_cxcywh_clips_to_unit_square() {
 
     let result = mean_box_iou_cxcywh(&predictions, &actuals);
 
-    assert!((result.value() - 1.0).abs() < 1e-6);
+    assert_abs_diff_eq!(result.value(), 1.0, epsilon = 1e-6);
 }
 
 #[test]
@@ -74,4 +79,105 @@ fn test_mean_box_iou_cxcywh_invalid_bbox_width_panics() {
     let actuals = Tensor::new(&[0.5, 0.5, 0.2], &[1, 3]);
 
     let _ = mean_box_iou_cxcywh(&predictions, &actuals);
+}
+
+#[test]
+fn test_mean_average_precision_perfect_predictions() {
+    let predictions = vec![
+        vec![Detection::new(BBox::from_xyxy(0.0, 0.0, 1.0, 1.0), 0.9, 0)],
+        vec![Detection::new(BBox::from_xyxy(2.0, 2.0, 3.0, 3.0), 0.8, 1)],
+    ];
+    let ground_truths = vec![
+        vec![GroundTruthBox::new(BBox::from_xyxy(0.0, 0.0, 1.0, 1.0), 0)],
+        vec![GroundTruthBox::new(BBox::from_xyxy(2.0, 2.0, 3.0, 3.0), 1)],
+    ];
+
+    let result = mean_average_precision(&predictions, &ground_truths, 2, VOC_IOU_THRESHOLDS);
+
+    assert_abs_diff_eq!(result.value(), 1.0, epsilon = 1e-6);
+    assert_eq!(result.n_samples(), 2);
+    assert_eq!(result.per_threshold_ap().len(), 1);
+    assert_abs_diff_eq!(result.per_threshold_ap()[0], 1.0, epsilon = 1e-6);
+}
+
+#[test]
+fn test_average_precision_penalizes_high_score_false_positive() {
+    let predictions = vec![vec![
+        Detection::new(BBox::from_xyxy(2.0, 2.0, 3.0, 3.0), 0.9, 0),
+        Detection::new(BBox::from_xyxy(0.0, 0.0, 1.0, 1.0), 0.8, 0),
+    ]];
+    let ground_truths = vec![vec![GroundTruthBox::new(
+        BBox::from_xyxy(0.0, 0.0, 1.0, 1.0),
+        0,
+    )]];
+
+    let result = mean_average_precision(&predictions, &ground_truths, 1, VOC_IOU_THRESHOLDS);
+
+    assert_abs_diff_eq!(result.value(), 0.5, epsilon = 1e-6);
+}
+
+#[test]
+fn test_mean_average_precision_multiple_thresholds() {
+    let predictions = vec![vec![Detection::new(
+        BBox::from_xyxy(0.25, 0.0, 1.25, 1.0),
+        0.9,
+        0,
+    )]];
+    let ground_truths = vec![vec![GroundTruthBox::new(
+        BBox::from_xyxy(0.0, 0.0, 1.0, 1.0),
+        0,
+    )]];
+
+    let result = mean_average_precision(&predictions, &ground_truths, 1, &[0.5, 0.75]);
+
+    assert_abs_diff_eq!(result.per_threshold_ap()[0], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(result.per_threshold_ap()[1], 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(result.value(), 0.5, epsilon = 1e-6);
+}
+
+#[test]
+fn test_precision_recall_counts_empty_class_predictions_as_false_positive() {
+    let predictions = vec![vec![
+        Detection::new(BBox::from_xyxy(0.0, 0.0, 1.0, 1.0), 0.9, 0),
+        Detection::new(BBox::from_xyxy(2.0, 2.0, 3.0, 3.0), 0.8, 1),
+    ]];
+    let ground_truths = vec![vec![GroundTruthBox::new(
+        BBox::from_xyxy(0.0, 0.0, 1.0, 1.0),
+        0,
+    )]];
+
+    let result = precision_recall_at_iou(&predictions, &ground_truths, 2, 0.5);
+
+    assert_eq!(result.true_positives(), 1);
+    assert_eq!(result.false_positives(), 1);
+    assert_eq!(result.false_negatives(), 0);
+    assert_abs_diff_eq!(result.precision(), 0.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(result.recall(), 1.0, epsilon = 1e-6);
+}
+
+#[test]
+fn test_mean_average_precision_ignores_classes_without_ground_truth() {
+    let predictions = vec![vec![Detection::new(
+        BBox::from_xyxy(2.0, 2.0, 3.0, 3.0),
+        0.9,
+        1,
+    )]];
+    let ground_truths = vec![vec![GroundTruthBox::new(
+        BBox::from_xyxy(0.0, 0.0, 1.0, 1.0),
+        0,
+    )]];
+
+    let result = mean_average_precision(&predictions, &ground_truths, 2, VOC_IOU_THRESHOLDS);
+
+    assert_abs_diff_eq!(result.value(), 0.0, epsilon = 1e-6);
+    assert_eq!(result.n_samples(), 1);
+}
+
+#[test]
+#[should_panic(expected = "predictions 和 ground_truths 图片数量不一致")]
+fn test_mean_average_precision_rejects_mismatched_image_count() {
+    let predictions = vec![Vec::new(), Vec::new()];
+    let ground_truths = vec![Vec::new()];
+
+    let _ = mean_average_precision(&predictions, &ground_truths, 1, VOC_IOU_THRESHOLDS);
 }

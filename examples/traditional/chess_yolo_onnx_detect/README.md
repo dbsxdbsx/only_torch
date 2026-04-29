@@ -35,8 +35,7 @@
 ```
 chess_yolo_onnx_detect/
 ├── main.rs                  # 入口:加载 → pipeline → 打印耗时 + ImportReport + FEN 对比
-├── letterbox.rs             # 等比缩放 + 灰色填充到 640×640 + NCHW 归一化
-├── yolo_decode.rs           # YOLOv5 输出解码 + 纯 Rust per-class NMS
+├── yolo_decode.rs           # YOLOv5 输出解码；NMS / bbox 复用 only_torch::vision::detection
 ├── board_align.rs           # ROI 自动锁定 + 视觉朝向检测 + 9×10 网格对齐 + FEN 序列化
 ├── download_model.py        # VinXiangQi v1.4.0 release 拉取 + 算子缺口审计
 ├── requirements.txt         # 仅需 onnx>=1.16
@@ -234,9 +233,11 @@ FEN 也会一致**——这是 FEN 标准的属性,跟视觉朝向解耦。
 
 1. **框架层**(`only_torch::nn`):ONNX 加载 + 前向推理是 only_torch 公开 API,
    直接 `Cargo.toml` 加 `only_torch = { path = "..." }` 就能用
-2. **业务层**(本目录下 4 个 `.rs`):letterbox / decode / NMS / ROI / 视觉朝向 / FEN
-   全是中国象棋特有逻辑,目前在 example 里。最简单的复用方式是把
-   `letterbox.rs` / `yolo_decode.rs` / `board_align.rs` 三个文件复制到目标项目改下命名空间
+2. **通用视觉层**(`only_torch::vision`):letterbox / NCHW 归一化 / bbox / NMS
+   已下沉到库内,下游不需要复制。
+3. **业务层**(本目录下 `yolo_decode.rs` + `board_align.rs`):YOLOv5 ONNX 输出布局解析、
+   ROI / 视觉朝向 / FEN 是模型族或中国象棋特有逻辑,目前保留在 example 里。
+   最简单的复用方式是把这两个 adapter 文件复制到目标项目改下命名空间。
 
 ## 已知限制
 

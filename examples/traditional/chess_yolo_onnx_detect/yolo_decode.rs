@@ -9,42 +9,31 @@
 //!
 //! 解码流程：obj_conf × max(cls_score) ≥ conf_thresh 的行保留，按类别分组做 NMS。
 
-/// 单个检测结果（letterbox 空间下的 bbox）
-#[derive(Debug, Clone)]
-pub struct Detection {
-    /// (x_min, y_min, x_max, y_max) 在 letterbox 坐标系
-    pub bbox: [f32; 4],
-    /// 综合置信度 = obj_conf × cls_score
-    pub conf: f32,
-    /// 类别索引（0..nc）
-    pub class_id: usize,
-}
+use only_torch::nn::GraphError;
+use only_torch::tensor::Tensor;
+use only_torch::vision::detection::{BBox, Detection, NmsOptions};
 
-impl Detection {
-    /// bbox 中心坐标 (cx, cy)
-    pub fn center(&self) -> (f32, f32) {
-        let cx = (self.bbox[0] + self.bbox[2]) * 0.5;
-        let cy = (self.bbox[1] + self.bbox[3]) * 0.5;
-        (cx, cy)
+/// 端到端：YOLOv5 raw output → NMS 后的 Detection 列表。
+///
+/// 内部完成 shape 校验、`num_classes` 反推、decode、per-class NMS。
+/// 兼容形状为 `[1, num_anchors, 5+nc]` 或扁平等价排布的输出。
+pub fn detect(
+    output: &Tensor,
+    conf_thresh: f32,
+    iou_thresh: f32,
+) -> Result<Vec<Detection>, GraphError> {
+    let last_dim = *output
+        .shape()
+        .last()
+        .ok_or_else(|| GraphError::ComputationError("YOLOv5 输出张量无维度".to_string()))?;
+    if last_dim < 5 {
+        return Err(GraphError::ComputationError(format!(
+            "YOLOv5 输出最后一维 {last_dim} < 5，无法解析"
+        )));
     }
-
-    /// IoU 计算
-    pub fn iou(&self, other: &Detection) -> f32 {
-        let x1 = self.bbox[0].max(other.bbox[0]);
-        let y1 = self.bbox[1].max(other.bbox[1]);
-        let x2 = self.bbox[2].min(other.bbox[2]);
-        let y2 = self.bbox[3].min(other.bbox[3]);
-        let inter_w = (x2 - x1).max(0.0);
-        let inter_h = (y2 - y1).max(0.0);
-        let inter = inter_w * inter_h;
-
-        let area_a =
-            (self.bbox[2] - self.bbox[0]).max(0.0) * (self.bbox[3] - self.bbox[1]).max(0.0);
-        let area_b =
-            (other.bbox[2] - other.bbox[0]).max(0.0) * (other.bbox[3] - other.bbox[1]).max(0.0);
-        let union = area_a + area_b - inter;
-        if union <= 0.0 { 0.0 } else { inter / union }
-    }
+    let num_classes = last_dim - 5;
+    let raw = decode(&output.flatten_view().to_vec(), num_classes, conf_thresh);
+    Ok(nms(raw, iou_thresh))
 }
 
 /// 解码 YOLOv5 输出张量为检测结果列表（未 NMS）
@@ -91,11 +80,11 @@ pub fn decode(output: &[f32], num_classes: usize, conf_thresh: f32) -> Vec<Detec
         let h = row[3];
         let half_w = w * 0.5;
         let half_h = h * 0.5;
-        detections.push(Detection {
-            bbox: [cx - half_w, cy - half_h, cx + half_w, cy + half_h],
+        detections.push(Detection::new(
+            BBox::from_xyxy(cx - half_w, cy - half_h, cx + half_w, cy + half_h),
             conf,
-            class_id: best_cls,
-        });
+            best_cls,
+        ));
     }
     detections
 }
@@ -103,34 +92,6 @@ pub fn decode(output: &[f32], num_classes: usize, conf_thresh: f32) -> Vec<Detec
 /// Per-class NMS（按类别分组分别 NMS）
 ///
 /// O(N²) 朴素实现，对单张棋盘 N < 100 的场景完全够用。
-pub fn nms(mut dets: Vec<Detection>, iou_thresh: f32) -> Vec<Detection> {
-    if dets.is_empty() {
-        return dets;
-    }
-    // 按 conf 降序排序
-    dets.sort_by(|a, b| {
-        b.conf
-            .partial_cmp(&a.conf)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let mut keep: Vec<Detection> = Vec::with_capacity(dets.len());
-    let mut suppressed = vec![false; dets.len()];
-
-    for i in 0..dets.len() {
-        if suppressed[i] {
-            continue;
-        }
-        keep.push(dets[i].clone());
-        for j in (i + 1)..dets.len() {
-            if suppressed[j] {
-                continue;
-            }
-            // 仅同类之间互相抑制
-            if dets[i].class_id == dets[j].class_id && dets[i].iou(&dets[j]) > iou_thresh {
-                suppressed[j] = true;
-            }
-        }
-    }
-    keep
+pub fn nms(dets: Vec<Detection>, iou_thresh: f32) -> Vec<Detection> {
+    only_torch::vision::detection::nms(&dets, NmsOptions::class_aware(iou_thresh))
 }

@@ -13,4 +13,6 @@ mod shape;
 mod draw;
 
 mod detect;
+mod detection;
+mod preprocess;
 mod process;

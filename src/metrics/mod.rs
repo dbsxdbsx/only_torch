@@ -471,7 +471,10 @@ pub use classification::{
     accuracy, confusion_matrix, f1_score, multilabel_loose_accuracy, multilabel_strict_accuracy,
     precision, recall,
 };
-pub use detection::mean_box_iou_cxcywh;
+pub use detection::{
+    COCO_IOU_THRESHOLDS, DetectionMapMetric, DetectionPrMetric, VOC_IOU_THRESHOLDS,
+    mean_average_precision, mean_box_iou_cxcywh, precision_recall_at_iou,
+};
 pub use regression::{mean_absolute_error, mean_squared_error, r2_score, root_mean_squared_error};
 pub use segmentation::{
     binary_iou, dice_score, mean_iou, per_class_iou, pixel_accuracy, semantic_pixel_accuracy,

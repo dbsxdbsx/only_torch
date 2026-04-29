@@ -93,6 +93,61 @@ fn test_save_load_mlp_roundtrip() {
     std::fs::remove_file("test_otm_mlp_roundtrip.otm").ok();
 }
 
+#[test]
+fn test_rebuild_result_predict_uses_first_input_and_output() {
+    let path = "test_otm_predict_helper";
+
+    let graph = Graph::new_with_seed(42);
+    let x = graph
+        .input_named(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]), "features")
+        .unwrap();
+    let fc = Linear::new(&graph, 4, 2, true, "predict_fc").unwrap();
+    let out = fc.forward(&x);
+
+    graph.save_model(path, &[&out]).unwrap();
+    let loaded = Graph::load_model(path).unwrap();
+    let input = Tensor::new(&[0.5, 1.5, 2.5, 3.5], &[1, 4]);
+
+    let via_helper = loaded.predict(&input).unwrap();
+    let via_manual = {
+        loaded.inputs[0].1.set_value(&input).unwrap();
+        loaded.graph.forward(&loaded.outputs[0]).unwrap();
+        loaded.outputs[0].value().unwrap().unwrap()
+    };
+
+    assert_vec_close(
+        &via_helper.to_vec(),
+        &via_manual.to_vec(),
+        1e-6,
+        "predict helper",
+    );
+    assert!(loaded.input_by_name("features").is_some());
+
+    let _ = std::fs::remove_file("test_otm_predict_helper.otm");
+}
+
+#[test]
+fn test_rebuild_result_predict_head_reports_missing_output() {
+    let path = "test_otm_predict_head_missing";
+
+    let graph = Graph::new_with_seed(42);
+    let x = graph.input(&Tensor::zeros(&[1, 2])).unwrap();
+    let fc = Linear::new(&graph, 2, 1, true, "predict_head_fc").unwrap();
+    let out = fc.forward(&x);
+
+    graph.save_model(path, &[&out]).unwrap();
+    let loaded = Graph::load_model(path).unwrap();
+    let input = Tensor::zeros(&[1, 2]);
+    let err = loaded.predict_head("missing_head", &input).unwrap_err();
+
+    assert!(
+        format!("{err:?}").contains("找不到输出节点: missing_head"),
+        "错误信息应包含缺失输出名，实际: {err:?}"
+    );
+
+    let _ = std::fs::remove_file("test_otm_predict_head_missing.otm");
+}
+
 /// CNN + BatchNorm 往返：Conv2d → BN → ReLU → Flatten → Linear
 #[test]
 fn test_save_load_cnn_bn_roundtrip() {
