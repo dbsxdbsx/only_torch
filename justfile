@@ -7,14 +7,14 @@
 # 手动覆盖：设置 MKLROOT 或 OPENBLAS_DIR 环境变量即可
 
 _detected_blas := ```
-    if [ -n "$MKLROOT" ]; then
+    if [ -n "${MKLROOT:-}" ]; then
         echo "blas-mkl"
     elif [ -d "/c/Program Files (x86)/Intel/oneAPI/mkl/latest" ] || \
          [ -d "/c/Program Files/Intel/oneAPI/mkl/latest" ] || \
          [ -d "/opt/intel/oneapi/mkl/latest" ] || \
          [ -d "/opt/intel/mkl" ]; then
         echo "blas-mkl"
-    elif [ -n "$OPENBLAS_DIR" ]; then
+    elif [ -n "${OPENBLAS_DIR:-}" ]; then
         echo "blas-openblas"
     elif pkg-config --exists openblas 2>/dev/null; then
         echo "blas-openblas"
