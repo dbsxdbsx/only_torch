@@ -30,6 +30,11 @@
 
 ### Changed
 
+- **feat(example): DeformableConv2d evolution 示例新增审计矩阵**
+  - `examples/evolution/deformable_conv2d_segmentation` 保持默认 deformable-only smoke 路径，用于验证算子进入 evolution 主流程
+  - 新增 `ONLY_TORCH_EVOLUTION_DEFORMABLE_SEG_AUDIT=1`，对比 deformable-only、默认 segmentation portfolio、`vision_segmentation_with_deformable()`、heuristic 开关与小幅预算提升
+  - 示例输出全测试集 PixelAccuracy、BinaryIoU min/mean/max、Dice mean，并保存最差 IoU 样本图片，避免单样本或低阈值误导判断
+  - 当前矩阵显示默认 dense segmentation 族明显优于 deformable-only，因此暂不把 DeformableConv2d 提升为默认 heuristic family
 - **refactor(example): chess_yolo_onnx_detect 大幅精简至库版 pipeline**
   - `main.rs` 393 → 162 行：去掉手工 ONNX → Graph 双步、各阶段计时、`ImportReport` 打印、`num_classes` 手算、五段式后处理调用，改为 `Graph::from_onnx → RebuildResult::predict → yolo_decode::detect → board_align::recognize` 三步
   - `examples/traditional/chess_yolo_onnx_detect/letterbox.rs` 删除，整体迁移到 `src/vision::preprocess`

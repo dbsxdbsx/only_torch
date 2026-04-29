@@ -79,7 +79,7 @@ let dot = graph.to_dot();
 | [evolution_mnist](examples/evolution/mnist/) | **神经架构演化** | **Evolution API**、Spatial 域 CNN 自动搜索 | 自动演化 | `cargo run --example evolution_mnist` |
 | [evolution_overlapping_shapes_semantic_segmentation](examples/evolution/overlapping_shapes_semantic_segmentation/) | **分割架构演化** | **Spatial-to-spatial**、Mean IoU、无 Flatten 输出头 | 自动演化 | `cargo run --example evolution_overlapping_shapes_semantic_segmentation` |
 | [evolution_overlapping_shapes_unet_lite_segmentation](examples/evolution/overlapping_shapes_unet_lite_segmentation/) | **分割 benchmark 演化** | **64x64 U-Net-lite 对照任务**、encoder-decoder 初始族、结构变异、多类别 Mean IoU、可视化 target/prediction | 自动演化 | `cargo run --example evolution_overlapping_shapes_unet_lite_segmentation` |
-| [evolution_deformable_conv2d_segmentation](examples/evolution/deformable_conv2d_segmentation/) | **Deformable 分割演化** | **DeformableConv2d 初始族**、关闭启发式预筛、16x16 二值 Binary IoU 小 benchmark | 自动演化 | `cargo run --example evolution_deformable_conv2d_segmentation` |
+| [evolution_deformable_conv2d_segmentation](examples/evolution/deformable_conv2d_segmentation/) | **Deformable 分割演化** | **DeformableConv2d smoke**、16x16 Binary IoU、小型审计矩阵可对比 heuristic / portfolio | 自动演化 | `cargo run --example evolution_deformable_conv2d_segmentation` |
 | [evolution_parity_seq](examples/evolution/parity_seq/) | **神经架构演化** | **Evolution API**、序列数据、记忆单元自动选择 | 自动演化 | `cargo run --example evolution_parity_seq` |
 | [evolution_parity_seq_var_len](examples/evolution/parity_seq_var_len/) | **神经架构演化** | **Evolution API**、变长序列、zero-pad | 自动演化 | `cargo run --example evolution_parity_seq_var_len` |
 
@@ -487,11 +487,20 @@ cargo run --example evolution_mnist
 
 **Evolution DeformableConv2d Segmentation** ⭐⭐
 
-小型验证示例。使用 16x16 二值前景分割数据，显式启用 DeformableConv2d dense segmentation 初始候选族，并关闭启发式预筛，验证算子能进入 evolution 主流程。
+小型验证示例。默认路径使用 16x16 二值前景分割数据，显式启用 DeformableConv2d dense segmentation 初始候选族，并关闭启发式预筛，只验证算子能进入 evolution 主流程。该默认输出仍是 smoke 级别，不代表分割质量达标。
 
 ```bash
 cargo run --example evolution_deformable_conv2d_segmentation
 # 默认 seed=42 在 4 个测试样本上达到 Binary IoU 40.3%，最终基因组包含 DeformableConv2d
+```
+
+需要判断 DeformableConv2d 是否应进入默认 segmentation 搜索策略时，开启审计矩阵：
+
+```bash
+ONLY_TORCH_EVOLUTION_DEFORMABLE_SEG_AUDIT=1 \
+ONLY_TORCH_EVOLUTION_DEFORMABLE_SEG_SAVE_ARTIFACTS=0 \
+cargo run --example evolution_deformable_conv2d_segmentation
+# 当前审计结论：dense segmentation 初始族明显优于 deformable-only，暂不把 DeformableConv2d 提升为默认 heuristic family
 ```
 
 **Evolution Parity Seq（固定长度序列）** ⭐⭐⭐
