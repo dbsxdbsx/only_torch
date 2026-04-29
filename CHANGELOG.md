@@ -18,7 +18,7 @@
 - **bench(devops): ONNX 直接载入 vs OTM 中转载入决策 bench**
   - 新增 `tests/onnx_otm_load_bench.rs`，对比冷启动耗时、磁盘体积、参数保真度、推理速度，定位为低频"决策性 bench"，独立于 Criterion 回归体系（不进 `bench-save` / `bench-compare`）
   - `justfile` 新增 `bench-onnx-vs-otm`，跑法 `just bench-onnx-vs-otm`
-  - 真机数据：OTM 冷启动仅快 ~3 ms，文件大 ~1.9%，推理速度持平，且发现 OTM round-trip 丢 2 个非训练参数（137 → 135），后续按需要追踪 `save_model` 的状态保真度
+  - 真机数据：OTM 文件大 ~1.9%，冷启动未优于 ONNX 直载；补充 missing parameter diff 观测，当前 VinXiangQi round-trip 参数名集合一致（135 → 135）
 - **feat(bench): 建立 benchmark 可观测性工作流**
   - 新增 `smoke`、`pool2d`、`optimizer`、`normalization` 四组 Criterion benchmark，覆盖快速回归、Pool2d、优化器和归一化层关键路径
   - 补齐 `loss`、`rnn`、`attention` 三组 focused benchmark，覆盖 Loss、循环层和 MultiHeadAttention 的 forward + backward 路径
@@ -64,6 +64,9 @@
 
 ### Fixed
 
+- **fix(onnx): 修复 Resize roi initializer 被误导入为参数**
+  - ONNX `Resize` 的 `roi` / `scales` / `sizes` 统一标记为 metadata consumed，避免非空 `roi` initializer 被注册成不参与输出路径的死 `Parameter`
+  - VinXiangQi YOLOv5 `Graph::from_onnx` → `Graph::save_model` → `Graph::load_model` 参数数量已从 137 → 135 的异常收口为 135 → 135，并在 bench 中保留缺失参数名 / shape / origin diff
 - **fix(onnx): 补齐 BatchNormalization 导入语义与 BatchNorm 状态持久化**
   - ONNX `BatchNormalization(X, scale, B, mean, var)` 导入时展开为确定推理算术子图，不再错误映射成训练态 `BatchNormOp`
   - `BatchNormOp` 增加 `eps`、`momentum`、running stats 形状校验和单样本训练态报错，避免 running variance 被无效统计污染

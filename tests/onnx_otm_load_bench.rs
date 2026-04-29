@@ -29,6 +29,7 @@
 
 use only_torch::nn::Graph;
 use only_torch::tensor::Tensor;
+use std::collections::BTreeSet;
 use std::time::Instant;
 
 const ONNX_PATH: &str = "models/vinxiangqi.onnx";
@@ -61,6 +62,45 @@ fn measure_predict(model: &only_torch::nn::RebuildResult, input: &Tensor) -> (f6
         }
     }
     (total / REPEAT as f64, min_ms)
+}
+
+fn parameter_names(model: &only_torch::nn::RebuildResult) -> BTreeSet<String> {
+    model
+        .graph
+        .inner()
+        .get_all_parameters()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+fn print_missing_parameters(
+    before: &only_torch::nn::RebuildResult,
+    after: &only_torch::nn::RebuildResult,
+) {
+    let after_names = parameter_names(after);
+    let missing: Vec<_> = before
+        .graph
+        .inner()
+        .get_all_parameters()
+        .into_iter()
+        .filter(|(name, _)| !after_names.contains(name))
+        .collect();
+
+    if missing.is_empty() {
+        println!("  OTM round-trip 参数名集合一致");
+        return;
+    }
+
+    println!("  OTM round-trip 缺失参数明细:");
+    for (name, node) in missing {
+        let shape = node
+            .value()
+            .map(|t| t.shape().to_vec())
+            .unwrap_or_else(|| node.value_expected_shape());
+        let origin = node.origin_onnx_nodes();
+        println!("    - {name}: shape={shape:?}, origin={origin:?}");
+    }
 }
 
 #[test]
@@ -118,6 +158,7 @@ fn bench_onnx_vs_otm_load_and_predict() {
         model_otm.outputs.len(),
         model_otm.graph.parameter_count()
     );
+    print_missing_parameters(&model_onnx, &model_otm);
 
     println!(
         "\n==== 推理速度对比（{} 次 warmup + {} 次取均值/最小） ====\n",

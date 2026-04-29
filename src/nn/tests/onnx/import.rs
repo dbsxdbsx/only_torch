@@ -1619,11 +1619,12 @@ fn test_constant_fold_reshape_keeps_zero_dim() {
 #[test]
 fn test_constant_fold_resize_scales() {
     // X(1×3×4×4) → Resize(scales=[1,1,2,2], nearest) → Y(1×3×8×8)
-    // 用空字符串 "" 占位 roi（ONNX 标准做法：可选输入未提供）
+    // 非空 roi 也是 Resize 元信息，导入时不应成为运行时 Parameter。
+    let roi_init = make_f32_tensor("roi", vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
     let scales_init = make_f32_tensor("scales", vec![1.0, 1.0, 2.0, 2.0]);
     let input_vi = make_value_info("X", vec![1, 3, 4, 4]);
     let resize_node = Node {
-        input: vec!["X", "", "scales"],
+        input: vec!["X", "roi", "scales"],
         output: vec!["Y"],
         name: "resize0",
         op_type: OpType::Resize,
@@ -1644,7 +1645,7 @@ fn test_constant_fold_resize_scales() {
         graph: Some(Graph {
             node: vec![resize_node],
             name: "resize_scales",
-            initializer: vec![scales_init],
+            initializer: vec![roi_init, scales_init],
             input: vec![input_vi],
             ..Default::default()
         }),
@@ -1667,6 +1668,22 @@ fn test_constant_fold_resize_scales() {
         }
         _ => panic!("expected Upsample2d"),
     }
+
+    let param_names: HashSet<_> = result
+        .descriptor
+        .nodes
+        .iter()
+        .filter(|n| matches!(n.node_type, NodeTypeDescriptor::Parameter))
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        !param_names.contains("roi"),
+        "Resize roi 应被折叠为元信息，不应生成 Parameter"
+    );
+    assert!(
+        !param_names.contains("scales"),
+        "Resize scales 应被折叠为元信息，不应生成 Parameter"
+    );
 
     assert!(
         result

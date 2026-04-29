@@ -51,14 +51,23 @@ pub(super) fn build_consumed_meta_names<'a>(
             OpType::Reshape if node.input.len() >= 2 && !node.input[1].is_empty() => {
                 consumed.insert(node.input[1]);
             }
-            OpType::Resize | OpType::Upsample => {
+            OpType::Resize => {
                 // ONNX Resize 输入布局：[X, roi, scales, sizes]
-                // YOLOv5 通常 roi 为空、scales 或 sizes 二选一
+                // roi/scales/sizes 都是控制 Resize 语义的元信息，不应暴露为运行时 Parameter。
+                if node.input.len() >= 2 && !node.input[1].is_empty() {
+                    consumed.insert(node.input[1]);
+                }
                 if node.input.len() >= 3 && !node.input[2].is_empty() {
                     consumed.insert(node.input[2]);
                 }
                 if node.input.len() >= 4 && !node.input[3].is_empty() {
                     consumed.insert(node.input[3]);
+                }
+            }
+            OpType::Upsample => {
+                // 保持既有 Upsample 路径行为：当前折叠实现读取 input[2] 的 scales。
+                if node.input.len() >= 3 && !node.input[2].is_empty() {
+                    consumed.insert(node.input[2]);
                 }
             }
             OpType::Split if node.input.len() >= 2 && !node.input[1].is_empty() => {
