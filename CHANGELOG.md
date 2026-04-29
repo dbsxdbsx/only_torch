@@ -2,6 +2,8 @@
 
 ## [Unreleased] - 待提交
 
+## [0.17.0] - 2026-04-29
+
 ### Fixed
 
 - **fix(nn): 修复 DeformableConv2d 动态 batch 与 BinaryIoU 评估**
