@@ -75,8 +75,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MODELS_DIR = PROJECT_ROOT / "models"
 OUTPUT_PATH = MODELS_DIR / "vinxiangqi.onnx"
 
-# only_torch 当前 ONNX import 已支持的算子（基于 src/nn/graph/onnx_ops.rs 实际代码）
-# 用于审计 VinXiangQi 模型的算子缺口
+# only_torch 当前 ONNX import 已支持的算子（含 onnx_ops.rs 直映射与装配层 special path）
+# 用于审计 VinXiangQi 模型的算子缺口；不要只按 onnx_ops.rs 判断 Constant/Split 等重写路径。
 ONLY_TORCH_SUPPORTED_OPS = {
     # 激活
     "Relu", "Sigmoid", "Tanh", "Softmax", "LogSoftmax", "Gelu", "Selu",
@@ -86,16 +86,16 @@ ONLY_TORCH_SUPPORTED_OPS = {
     # 数学
     "Abs", "Exp", "Sqrt", "Log", "Sign", "Reciprocal", "Pow",
     # 形状
-    "Reshape", "Flatten", "Concat",
+    "Reshape", "Flatten", "Concat", "Transpose", "Split",
     # 卷积/池化
     "Conv", "ConvTranspose", "MaxPool", "AveragePool", "Gemm",
     # 归一化
     "BatchNormalization",
-    # 上采样（本 plan 已新增 Upsample2d 节点 + 双向桥接，装配层占位）
+    # 上采样（Resize 在装配层折叠为 Upsample2d）
     "Resize", "Upsample",
-    # 杂项
+    # 杂项 / 装配层常量路径
     "Clip", "ReduceSum", "ReduceMean", "ReduceMax", "ReduceMin",
-    "Identity", "Max", "Min",
+    "Identity", "Max", "Min", "Constant",
 }
 
 
@@ -221,7 +221,7 @@ def main() -> None:
 
     header("完成")
     print(f"  模型已就位: {OUTPUT_PATH}")
-    print(f"  下一步: 在 only_torch 端按 plan §3 补缺失算子 → 编写 example 主程序")
+    print("  下一步: 运行 cargo run --example chess_yolo_onnx_detect 验证端到端推理")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
 use std::collections::HashSet;
 
+use crate::nn::Graph as OtGraph;
 use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::nn::graph::onnx_error::OnnxError;
 use crate::nn::graph::onnx_import::load_onnx_from_bytes;
+use crate::tensor::Tensor;
 use onnx_rs::ast::*;
 
 /// Input(2) → MatMul(W=[2,4]) → Add(b=[4]) → Relu → MatMul(W2=[4,1]) → Add(b2=[1])
@@ -1086,6 +1088,86 @@ fn make_i64_tensor(name: &'static str, vals: Vec<i64>) -> TensorProto<'static> {
 fn make_f32_tensor(name: &'static str, vals: Vec<f32>) -> TensorProto<'static> {
     let dims = vec![vals.len() as i64];
     TensorProto::from_f32(name, dims, vals)
+}
+
+#[test]
+fn test_pow_const_exponent_folded_from_constant_node() {
+    // ONNX Pow 是双输入；only_torch Pow 节点使用静态 exponent 属性。
+    // 这里验证装配层会读取 Constant exponent=2.0，而不是保留默认占位 1.0。
+    let exponent_value = TensorProto::from_f32("", vec![], vec![2.0]);
+    let exponent_constant = Node {
+        input: vec![],
+        output: vec!["exp_out"],
+        name: "pow_exp_const",
+        op_type: OpType::Constant,
+        attribute: vec![Attribute {
+            name: "value",
+            t: Some(exponent_value),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let pow_node = Node {
+        input: vec!["X", "exp_out"],
+        output: vec!["Y"],
+        name: "pow0",
+        op_type: OpType::Pow,
+        ..Default::default()
+    };
+
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
+        graph: Some(Graph {
+            node: vec![exponent_constant, pow_node],
+            name: "pow_const_fold",
+            input: vec![make_value_info("X", vec![1, 3])],
+            output: vec![make_value_info("Y", vec![1, 3])],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let result = load_onnx_from_bytes(&onnx_rs::encode(&model)).unwrap();
+    let pow = result
+        .descriptor
+        .nodes
+        .iter()
+        .find(|n| n.name == "Y")
+        .expect("Pow 输出节点应存在");
+    match &pow.node_type {
+        NodeTypeDescriptor::Pow { exponent } => assert!((*exponent - 2.0).abs() < 1e-6),
+        other => panic!("expected Pow, got {other:?}"),
+    }
+    assert_eq!(
+        pow.parents.len(),
+        1,
+        "Constant exponent 应被折叠为 Pow 属性，不应保留为运行时父节点"
+    );
+    assert!(
+        result.descriptor.nodes.iter().all(|n| n.name != "exp_out"),
+        "Constant exponent 节点应被消费，不应出现在 descriptor 中"
+    );
+    assert!(
+        result
+            .import_report
+            .rewritten
+            .iter()
+            .any(|r| r.pattern == "pow_const_exponent")
+    );
+
+    let rebuilt = OtGraph::from_descriptor(&result.descriptor).unwrap();
+    let input = &rebuilt.inputs[0].1;
+    let output = &rebuilt.outputs[0];
+    input
+        .set_value(&Tensor::new(&[2.0, 3.0, 4.0], &[1, 3]))
+        .unwrap();
+    rebuilt.graph.forward(output).unwrap();
+    let actual = output.value().unwrap().unwrap();
+    assert_eq!(actual.data_as_slice(), &[4.0, 9.0, 16.0]);
 }
 
 /// 通用 ValueInfo 构造

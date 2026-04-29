@@ -64,6 +64,9 @@ pub(super) fn build_consumed_meta_names<'a>(
             OpType::Split if node.input.len() >= 2 && !node.input[1].is_empty() => {
                 consumed.insert(node.input[1]);
             }
+            OpType::Pow if node.input.len() >= 2 && !node.input[1].is_empty() => {
+                consumed.insert(node.input[1]);
+            }
             _ => {}
         }
     }

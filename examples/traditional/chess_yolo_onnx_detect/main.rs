@@ -328,6 +328,9 @@ fn main() -> Result<(), GraphError> {
             println!("    ✗ 不匹配!");
             println!("    期望: {expected}");
             println!("    实际: {fen}");
+            return Err(GraphError::ComputationError(format!(
+                "sample FEN 不匹配: expected={expected}, actual={fen}"
+            )));
         }
     }
 

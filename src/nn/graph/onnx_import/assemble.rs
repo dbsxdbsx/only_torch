@@ -21,7 +21,8 @@ use super::fold_reshape::assemble_reshape_with_const_fold;
 use super::fold_resize::assemble_resize_with_const_fold;
 use super::split_narrow::assemble_split_to_narrows;
 use super::util::{
-    SymbolTable, extract_shape_from_value_info, infer_output_shape_placeholder, resolve_parents,
+    SymbolTable, extract_const_f32, extract_shape_from_value_info, infer_output_shape_placeholder,
+    resolve_parents,
 };
 use super::{ImportReport, RewriteRecord};
 
@@ -205,6 +206,19 @@ pub(super) fn assemble<'a>(
             continue;
         }
 
+        // Pow：ONNX 是双输入 (base, exponent)。当前运行时 Pow 节点只支持静态标量指数，
+        // 因此从 Constant / initializer 读取 exponent 并折叠为节点属性。
+        if node.op_type == OpType::Pow {
+            assemble_pow_with_const_exponent(
+                node,
+                &const_table,
+                symbols,
+                &mut descriptor,
+                &mut import_report,
+            )?;
+            continue;
+        }
+
         // ── 默认路径 ──
         let mapped_descriptors =
             onnx_ops::onnx_op_to_descriptors(&node.op_type, &node.attribute, node.name)?;
@@ -282,6 +296,62 @@ pub(super) fn assemble<'a>(
         weights,
         import_report,
     })
+}
+
+// ==================== Pow 常量指数折叠 ====================
+
+fn assemble_pow_with_const_exponent<'a>(
+    node: &'a onnx_rs::ast::Node<'a>,
+    const_table: &HashMap<&'a str, &'a onnx_rs::ast::TensorProto<'a>>,
+    symbols: &mut SymbolTable,
+    descriptor: &mut GraphDescriptor,
+    import_report: &mut ImportReport,
+) -> Result<(), OnnxError> {
+    if node.input.len() < 2 {
+        return Err(OnnxError::InvalidGraph(format!(
+            "Pow 节点 \"{}\" 需要 base 和 exponent 两个输入",
+            node.name
+        )));
+    }
+
+    let op_ctx = format!("Pow 节点 \"{}\"", node.name);
+    let exponent_data = extract_const_f32(const_table, node.input[1], &op_ctx)?;
+    if exponent_data.len() != 1 {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "Pow".to_string(),
+            attribute: "exponent".to_string(),
+            reason: format!(
+                "{op_ctx}: 当前仅支持静态标量 exponent,实际元素数 {}",
+                exponent_data.len()
+            ),
+        });
+    }
+
+    let input_id = symbols.get_or_assign(node.input[0]);
+    let output_name = node.output.first().copied().unwrap_or(node.name);
+    let out_id = symbols.get_or_assign(output_name);
+    let desc = NodeTypeDescriptor::Pow {
+        exponent: exponent_data[0],
+    };
+    let output_shape = infer_output_shape_placeholder(&desc, &[input_id], descriptor);
+
+    descriptor.add_node(
+        NodeDescriptor::new(
+            out_id,
+            output_name,
+            desc,
+            output_shape,
+            None,
+            vec![input_id],
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
+    import_report.rewritten.push(RewriteRecord {
+        pattern: "pow_const_exponent",
+        consumed_onnx_nodes: vec![node.name.to_string()],
+        produced_descriptor_nodes: vec![out_id],
+    });
+    Ok(())
 }
 
 // ==================== Conv+bias 拆分 ====================

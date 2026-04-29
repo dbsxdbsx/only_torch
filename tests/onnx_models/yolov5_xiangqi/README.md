@@ -12,16 +12,17 @@ tests/onnx_models/yolov5_xiangqi/
 └── numeric_check.py   # 用 onnxruntime 跑同一输入存参考输出，供 Rust 端 forward 对照
 ```
 
-对应 Rust 端集成测试在 [`tests/yolov5_xiangqi_import.rs`](../../yolov5_xiangqi_import.rs)，
-默认 `#[ignore]`，本地按需 `cargo test --test yolov5_xiangqi_import -- --ignored` 跑。
+对应 Rust 端集成测试在 [`tests/yolov5_xiangqi_import.rs`](../../yolov5_xiangqi_import.rs)。
+目录骨架测试默认跑；依赖本地模型或 `.npy` fixture 的测试用 `#[ignore]` 标记，
+本地按需 `cargo test --test yolov5_xiangqi_import -- --ignored` 跑。
 
 ## 当前覆盖范围
 
 | 阶段 | 验证内容 | 状态 |
 |------|---------|------|
-| import | descriptor 节点数 + 4 种 rewrite 模式（Conv+bias / Constant 折叠×2 / Split 重写）出现次数 | ✅ |
-| rebuild | `Graph::from_descriptor` 不报 shape mismatch | ⏭️ 已知 limitation，当前 ignored |
-| forward | 与 onnxruntime 数值对照（前 100 元素，相对误差 < 1e-3） | ⏭️ 待 rebuild 通过后启用 |
+| import | descriptor 节点数 + 5 种 rewrite 模式（Conv+bias / Constant 折叠×2 / Split 重写 / Pow 常量指数折叠）出现次数 | ✅ |
+| rebuild | `Graph::from_descriptor` 不报 shape mismatch，且只还原 ONNX 显式声明的单个输出 | ✅（依赖本地模型，默认 ignored） |
+| forward | 与 onnxruntime raw output 做统计对照（max abs / max rel / mean abs） | 诊断入口：需先生成 `.npy` fixture，默认 ignored；严格断言需设置 `ONLY_TORCH_STRICT_YOLO_NUMERIC=1` |
 
 ## 准备步骤
 

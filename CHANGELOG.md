@@ -41,6 +41,13 @@
   - `Conv2d` padding 与 `im2col` 热循环改用连续 slice 索引，减少 Debug 模式下动态 Tensor 索引开销
   - `chess_yolo_onnx_detect` Debug forward 从约 1871 ms 降到约 596 ms，总耗时从约 2030 ms 降到约 745 ms，并保持两张 sample 的 FEN 位级匹配
 
+### Fixed
+
+- **fix(onnx): 修复 YOLOv5 `Pow` 常量指数导入与数值漂移**
+  - ONNX `Pow(base, exponent)` 导入时读取 Constant / initializer 标量 exponent，并折叠为 only_torch `Pow { exponent }` 属性，避免 `x^2` 被误导成默认 `x^1`
+  - VinXiangQi YOLOv5 增加 raw output 与 ORT 对照、逐节点中间张量 drift 诊断和最小 `Pow` 常量指数回归测试；strict 数值门下 raw output `max_abs` 已降至 `5.19e-4`
+  - 更新 Chinese YOLOv5 示例与 fixture 文档，明确真实模型不含独立 `BatchNormalization`，NMS 数量差异不再被当作算子根因
+
 ## [0.17.0] - 2026-04-29
 
 ### Fixed

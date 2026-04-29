@@ -89,8 +89,8 @@ cargo run --example chess_yolo_onnx_detect -- <路径>.png
 cargo run --release --example chess_yolo_onnx_detect
 ```
 
-跑 `samples/` 下的图时,会自动从 `samples/example_answer.txt` 找对应答案做位级对比,
-输出 `✓ 匹配` 或 `✗ 不匹配 期望=... 实际=...`。
+跑 `samples/` 下的图时,会自动从 `samples/example_answer.txt` 找对应答案做位级对比。
+匹配时输出 `✓ 匹配`；不匹配时输出期望/实际 FEN 并返回错误,让 sample 路径可作为回归门。
 
 ### 实测输出(sample 1:中盘残局,红方在下)
 
@@ -181,7 +181,7 @@ FEN 也会一致**——这是 FEN 标准的属性,跟视觉朝向解耦。
 2. **board 类(class 14)的 bbox 内缩 5%**(fallback)
    - 内缩是因为 VinXiangQi 训练时给整个棋盘外接矩形(含装饰边)标了 board 类,
      bbox 比格点矩形稍大
-   - only_torch 推理路径下 board 类 bbox 数值比 ORT 小一些(框架内部数值漂移),
+   - only_torch 推理路径下 board 类 bbox 与 ORT 观测值有差异(具体根因待 raw output 对照定位),
      所以只作 fallback
 
 ### 视觉朝向自动检测
@@ -201,15 +201,10 @@ FEN 也会一致**——这是 FEN 标准的属性,跟视觉朝向解耦。
 - `CONF_THRESHOLD`(默认 0.25):检测置信度下限,调低会增加召回但引入更多误检
 - `IOU_THRESHOLD`(默认 0.45):NMS 的 IoU 阈值,调低会更激进地抑制重叠 box
 
-### Fine-tune(R3 兜底)
+### Fine-tune
 
-若 VinXiangQi 在你的目标软件上精度不足(实测 < 30/32 棋子检出),按以下步骤训练:
-
-1. 用 Roboflow / LabelImg 标注 ~30 张目标软件截图(YOLOv5 标准 txt 格式)
-2. 以 VinXiangQi 权重为初始化,用 ultralytics yolov5 训 10-30 epoch
-3. 导出新 `.onnx` 替换 `models/vinxiangqi.onnx`
-
-> 本 example 不实现 fine-tune 端到端,仅在此提示路径。
+本 example 只覆盖第三方 ONNX 推理与 FEN 后处理,不实现 fine-tune 端到端。
+若后续要训练或重新导出模型,应单独立项,不要把训练链路混入当前推理示例。
 
 ## 与 only_torch 框架的对齐
 
@@ -221,6 +216,7 @@ FEN 也会一致**——这是 FEN 标准的属性,跟视觉朝向解耦。
 | Resize → Upsample2d | `assemble_resize_with_const_fold`(路线 B 折叠)                |
 | Constant 折叠      | `assemble_reshape_with_const_fold` 等(路线 B 折叠)            |
 | Split → N×Narrow   | `assemble_split_to_narrows`(路线 B 重写)                      |
+| Pow 常量指数折叠   | `assemble_pow_with_const_exponent`                            |
 | Conv+bias 拆分     | 装配层 `is_conv_with_bias` 分支                                 |
 | **显式输出节点**   | `GraphDescriptor.explicit_output_ids` + `descriptor_rebuild` 优先用此 |
 
@@ -244,10 +240,10 @@ FEN 也会一致**——这是 FEN 标准的属性,跟视觉朝向解耦。
 
 ## 已知限制
 
-- **NMS 后检出数偏多**:only_torch 推理路径下 NMS 后约 76-77 个检出,ORT 约 30 个。
-  差异来自框架内部数值漂移(可能在 BatchNorm/Sigmoid 实现上),但不影响最高 conf 的
-  piece-class 检测,因此 ROI + FEN 仍能位级匹配。**未来若要诊断**:可以加一个
-  `numeric_check.py` 逐层对比 only_torch vs ORT 中间张量。
+- **raw output 数值对照**:当前 VinXiangQi 小模型算子审计不含 `BatchNormalization`,
+  不应提前归因到 BatchNorm。`numeric_check.py` 可生成 ORT raw output fixture,
+  Rust ignored 数值对照测试会比较 max abs / max rel / mean abs；严格门禁可用
+  `ONLY_TORCH_STRICT_YOLO_NUMERIC=1` 打开。
 - 只支持 nearest 模式 + 整数倍 Resize(YOLOv5 默认)
 - 只支持静态 split_sizes(动态形状要先用 onnxsim 预处理)
 - ROI 容错:棋子检出 < 4 时退回 board 类 bbox(精度稍差,但仍能工作)
