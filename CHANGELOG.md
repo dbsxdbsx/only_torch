@@ -19,6 +19,9 @@
   - 新增 `tests/onnx_otm_load_bench.rs`，对比冷启动耗时、磁盘体积、参数保真度、推理速度，定位为低频"决策性 bench"，独立于 Criterion 回归体系（不进 `bench-save` / `bench-compare`）
   - `justfile` 新增 `bench-onnx-vs-otm`，跑法 `just bench-onnx-vs-otm`
   - 真机数据：OTM 文件大 ~1.9%，冷启动未优于 ONNX 直载；补充 missing parameter diff 观测，当前 VinXiangQi round-trip 参数名集合一致（135 → 135）
+- **chore(devops): 新增保留 benchmark 结果的构建缓存清理命令**
+  - `justfile` 新增 `clean-cache`，用于清理 `target/debug/incremental`、`target/debug/examples`、`target/release`、`target/ra` 等大体积可重建产物
+  - 保留 `target/criterion` 与宏基准导出结果；`just clean` 仍保持 `cargo clean` 的彻底清理语义
 - **feat(bench): 建立 benchmark 可观测性工作流**
   - 新增 `smoke`、`pool2d`、`optimizer`、`normalization` 四组 Criterion benchmark，覆盖快速回归、Pool2d、优化器和归一化层关键路径
   - 补齐 `loss`、`rnn`、`attention` 三组 focused benchmark，覆盖 Loss、循环层和 MultiHeadAttention 的 forward + backward 路径

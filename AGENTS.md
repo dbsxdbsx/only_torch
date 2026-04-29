@@ -25,6 +25,8 @@ just test-filter <pattern> # 定位单个测试/模块
 just test-serial           # 单线程调试（pyo3 / 竞态问题优先用它）
 just lint                  # clippy
 just fmt                   # rustfmt
+just clean                 # cargo clean，彻底清理构建产物
+just clean-cache           # 清大体积编译缓存，保留 benchmark 结果
 just bench-smoke           # 约 30 秒快速性能回归
 just bench-save <name>     # 保存 Criterion baseline（重构前）
 just bench-compare <name>  # 与 baseline 对比（重构后）

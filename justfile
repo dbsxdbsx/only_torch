@@ -368,6 +368,11 @@ check:
 clean:
     cargo clean
 
+# 清理大体积编译缓存，保留 Criterion 结果与宏基准导出
+clean-cache:
+    @echo "=== Cleaning build cache (keeping benchmark results) ==="
+    rm -rf target/debug/incremental target/debug/examples target/release target/ra target/tmp target/yolov5_xiangqi_ort_intermediates
+
 # 完整清理并更新依赖
 clean-all:
     cargo clean && cargo update
