@@ -1170,6 +1170,82 @@ fn test_pow_const_exponent_folded_from_constant_node() {
     assert_eq!(actual.data_as_slice(), &[4.0, 9.0, 16.0]);
 }
 
+#[test]
+fn test_batch_normalization_import_expands_to_arithmetic() {
+    let scale = TensorProto::from_f32("scale", vec![2], vec![2.0, 3.0]);
+    let bias = TensorProto::from_f32("bias", vec![2], vec![0.5, -1.0]);
+    let mean = TensorProto::from_f32("mean", vec![2], vec![1.0, 2.0]);
+    let var = TensorProto::from_f32("var", vec![2], vec![4.0, 9.0]);
+    let bn = Node {
+        input: vec!["X", "scale", "bias", "mean", "var"],
+        output: vec!["Y"],
+        name: "bn0",
+        op_type: OpType::BatchNormalization,
+        attribute: vec![Attribute {
+            name: "epsilon",
+            f: 1e-5,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let model = Model {
+        ir_version: 8,
+        opset_import: vec![OperatorSetId {
+            domain: "",
+            version: 17,
+        }],
+        graph: Some(Graph {
+            node: vec![bn],
+            name: "bn_import",
+            initializer: vec![scale, bias, mean, var],
+            input: vec![make_value_info("X", vec![1, 2, 1, 2])],
+            output: vec![make_value_info("Y", vec![1, 2, 1, 2])],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let bytes = onnx_rs::encode(&model);
+
+    let imported = load_onnx_from_bytes(&bytes).unwrap();
+    assert!(
+        imported
+            .descriptor
+            .nodes
+            .iter()
+            .all(|n| !matches!(n.node_type, NodeTypeDescriptor::BatchNormOp { .. })),
+        "ONNX BatchNormalization 不应被简化成训练态 BatchNormOp"
+    );
+    assert!(
+        imported
+            .import_report
+            .rewritten
+            .iter()
+            .any(|r| r.pattern == "batch_norm_to_arithmetic"),
+        "导入报告应记录 BatchNormalization 展开"
+    );
+
+    let rebuilt = OtGraph::from_onnx_bytes(&bytes).unwrap();
+    let input = &rebuilt.inputs[0].1;
+    let output = &rebuilt.outputs[0];
+    input
+        .set_value(&Tensor::new(&[5.0, 9.0, 8.0, 11.0], &[1, 2, 1, 2]))
+        .unwrap();
+    rebuilt.graph.forward(output).unwrap();
+    let actual = output.value().unwrap().unwrap();
+    let expected = [
+        (5.0 - 1.0) / (4.0_f32 + 1e-5).sqrt() * 2.0 + 0.5,
+        (9.0 - 1.0) / (4.0_f32 + 1e-5).sqrt() * 2.0 + 0.5,
+        (8.0 - 2.0) / (9.0_f32 + 1e-5).sqrt() * 3.0 - 1.0,
+        (11.0 - 2.0) / (9.0_f32 + 1e-5).sqrt() * 3.0 - 1.0,
+    ];
+    for (a, e) in actual.data_as_slice().iter().zip(expected) {
+        assert!(
+            (a - e).abs() < 1e-5,
+            "BatchNormalization 展开结果不一致：actual={a}, expected={e}"
+        );
+    }
+}
+
 /// 通用 ValueInfo 构造
 fn make_value_info<'a>(name: &'a str, dims: Vec<i64>) -> ValueInfo<'a> {
     ValueInfo {

@@ -305,6 +305,78 @@ fn test_batch_norm_op_rejects_1d_input() {
     assert!(result.is_err(), "1D 输入应被拒绝");
 }
 
+#[test]
+fn test_batch_norm_op_rejects_invalid_config() {
+    use crate::nn::nodes::raw_node::BatchNormOp;
+    use crate::nn::shape::DynamicShape;
+
+    let (rm, rv) = default_running_stats(3);
+    assert!(
+        BatchNormOp::new(
+            &[2, 3],
+            &DynamicShape::new(&[Some(2), Some(3)]),
+            0.0,
+            0.1,
+            Rc::clone(&rm),
+            Rc::clone(&rv),
+        )
+        .is_err(),
+        "eps<=0 应被拒绝"
+    );
+    assert!(
+        BatchNormOp::new(
+            &[2, 3],
+            &DynamicShape::new(&[Some(2), Some(3)]),
+            1e-5,
+            1.5,
+            Rc::clone(&rm),
+            Rc::clone(&rv),
+        )
+        .is_err(),
+        "momentum 超出 [0,1] 应被拒绝"
+    );
+
+    let bad_rm = Rc::new(RefCell::new(Tensor::zeros(&[2])));
+    let bad_rv = Rc::new(RefCell::new(Tensor::ones(&[3])));
+    assert!(
+        BatchNormOp::new(
+            &[2, 3],
+            &DynamicShape::new(&[Some(2), Some(3)]),
+            1e-5,
+            0.1,
+            bad_rm,
+            bad_rv,
+        )
+        .is_err(),
+        "running stats 长度不等于通道数应被拒绝"
+    );
+}
+
+#[test]
+fn test_batch_norm_op_train_rejects_single_value_per_channel() {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let x = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 3], Some("x"))
+        .unwrap();
+    let (rm, rv) = default_running_stats(3);
+    let bn = inner
+        .borrow_mut()
+        .create_batch_norm_op_node(x.clone(), 1e-5, 0.1, rm, rv, Some("bn"))
+        .unwrap();
+
+    x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0], &[1, 3])))
+        .unwrap();
+    let err = bn.forward_recursive(1, Mode::Train).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("至少需要 2 个值"),
+        "错误信息应说明单 channel 样本数不足，实际：{msg}"
+    );
+}
+
 // ==================== 跨 forward 调用 running stats 持久化测试 ====================
 
 /// 测试 running stats 通过 Rc<RefCell> 在多个 BatchNormOp 节点间共享

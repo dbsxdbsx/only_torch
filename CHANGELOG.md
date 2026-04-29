@@ -43,6 +43,10 @@
 
 ### Fixed
 
+- **fix(onnx): 补齐 BatchNormalization 导入语义与 BatchNorm 状态持久化**
+  - ONNX `BatchNormalization(X, scale, B, mean, var)` 导入时展开为确定推理算术子图，不再错误映射成训练态 `BatchNormOp`
+  - `BatchNormOp` 增加 `eps`、`momentum`、running stats 形状校验和单样本训练态报错，避免 running variance 被无效统计污染
+  - `.otm` / `GraphDescriptor` 保存并恢复 BatchNorm `running_mean` / `running_var`，ONNX 导出侧拒绝生成缺少 scale/bias/mean/var 的不完整 BatchNormalization
 - **fix(onnx): 修复 YOLOv5 `Pow` 常量指数导入与数值漂移**
   - ONNX `Pow(base, exponent)` 导入时读取 Constant / initializer 标量 exponent，并折叠为 only_torch `Pow { exponent }` 属性，避免 `x^2` 被误导成默认 `x^1`
   - VinXiangQi YOLOv5 增加 raw output 与 ORT 对照、逐节点中间张量 drift 诊断和最小 `Pow` 常量指数回归测试；strict 数值门下 raw output `max_abs` 已降至 `5.19e-4`

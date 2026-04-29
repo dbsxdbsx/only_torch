@@ -330,15 +330,13 @@ pub fn onnx_op_to_descriptors(
         }
 
         // ─── 归一化 ───
-        OpType::BatchNormalization => {
-            let eps = find_attr_float(attrs, "epsilon").unwrap_or(1e-5);
-            let momentum = find_attr_float(attrs, "momentum").unwrap_or(0.1);
-            Ok(vec![NodeTypeDescriptor::BatchNormOp {
-                eps,
-                momentum,
-                num_features: 0, // 装配层从输入形状推导
-            }])
-        }
+        OpType::BatchNormalization => Err(OnnxError::UnsupportedAttribute {
+            op_type: "BatchNormalization".to_string(),
+            attribute: "inputs".to_string(),
+            reason: format!(
+                "BatchNormalization 需要在装配层展开 scale/bias/mean/var 输入；节点 \"{node_name}\" 不支持 1:1 映射"
+            ),
+        }),
 
         // ─── 恒等映射 ───
         OpType::Identity => Ok(vec![NodeTypeDescriptor::Identity]),
@@ -684,14 +682,10 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         }
 
         // ─── 归一化 ───
-        NodeTypeDescriptor::BatchNormOp { eps, momentum, .. } => {
-            ExportCategory::Operator(OnnxExportOp {
-                op_type: "BatchNormalization",
-                float_attrs: vec![("epsilon", *eps), ("momentum", *momentum)],
-                int_attrs: vec![],
-                int_list_attrs: vec![],
-            })
-        }
+        NodeTypeDescriptor::BatchNormOp { .. } => ExportCategory::Unsupported(
+            "BatchNormOp 暂不能直接导出为 ONNX BatchNormalization：缺少 scale/bias/mean/var 输入节点；请先做 Conv+BN 融合或实现完整导出展开"
+                .to_string(),
+        ),
 
         // ─── 循环单元 ───
         NodeTypeDescriptor::CellRnn { .. } => ExportCategory::Operator(OnnxExportOp::simple("RNN")),

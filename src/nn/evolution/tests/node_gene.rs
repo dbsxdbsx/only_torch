@@ -167,7 +167,9 @@ fn infer_batch_norm() {
             NodeTypeDescriptor::BatchNormOp {
                 eps: 1e-5,
                 momentum: 0.1,
-                num_features: 4
+                num_features: 4,
+                running_mean: None,
+                running_var: None,
             },
             vec![shape![2, 4, 8]]
         )
@@ -966,7 +968,9 @@ fn infer_unary_insufficient_parents_err() {
             NodeTypeDescriptor::BatchNormOp {
                 eps: 1e-5,
                 momentum: 0.1,
-                num_features: 4
+                num_features: 4,
+                running_mean: None,
+                running_var: None,
             },
             vec![]
         )

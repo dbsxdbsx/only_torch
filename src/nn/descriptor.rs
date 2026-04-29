@@ -350,6 +350,10 @@ pub enum NodeTypeDescriptor {
         eps: f32,
         momentum: f32,
         num_features: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        running_mean: Option<Vec<f32>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        running_var: Option<Vec<f32>>,
     },
     /// 层归一化（不含 gamma/beta）
     LayerNormOp {

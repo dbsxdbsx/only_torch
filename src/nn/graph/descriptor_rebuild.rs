@@ -51,7 +51,7 @@ impl Graph {
     /// # 注意
     /// - Parameter 节点使用默认初始化，权重由后续 load 步骤填充
     /// - Dropout 使用固定 seed=42，加载后建议设为 eval 模式
-    /// - BatchNormOp 的 running_mean/running_var 初始化为零
+    /// - BatchNormOp 的 running_mean/running_var 优先从 descriptor 恢复，缺省时使用 0/1
     /// 从 GraphDescriptor 重建计算图（使用指定种子，每代 build 可复现）
     pub fn from_descriptor_seeded(
         desc: &GraphDescriptor,
@@ -758,11 +758,33 @@ fn rebuild_node(
             eps,
             momentum,
             num_features,
+            running_mean,
+            running_var,
         } => {
             let input = get_parent(node_desc, node_map, 0)?;
-            // 初始化 running stats 为零（后续由 load 恢复）
-            let running_mean = Rc::new(std::cell::RefCell::new(Tensor::zeros(&[1, *num_features])));
-            let running_var = Rc::new(std::cell::RefCell::new(Tensor::ones(&[1, *num_features])));
+            let mean_data = running_mean
+                .clone()
+                .unwrap_or_else(|| vec![0.0; *num_features]);
+            let var_data = running_var
+                .clone()
+                .unwrap_or_else(|| vec![1.0; *num_features]);
+            if mean_data.len() != *num_features || var_data.len() != *num_features {
+                return Err(GraphError::InvalidOperation(format!(
+                    "BatchNormOp '{}' 的 running stats 长度必须等于 num_features={}，实际为 {}/{}",
+                    node_desc.name,
+                    num_features,
+                    mean_data.len(),
+                    var_data.len()
+                )));
+            }
+            let running_mean = Rc::new(std::cell::RefCell::new(Tensor::new(
+                &mean_data,
+                &[*num_features],
+            )));
+            let running_var = Rc::new(std::cell::RefCell::new(Tensor::new(
+                &var_data,
+                &[*num_features],
+            )));
             let node = graph.inner_mut().create_batch_norm_op_node(
                 input,
                 *eps,

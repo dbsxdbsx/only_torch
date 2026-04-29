@@ -219,6 +219,20 @@ pub(super) fn assemble<'a>(
             continue;
         }
 
+        // BatchNormalization：ONNX 推理算子显式携带 scale/bias/mean/var 五个输入。
+        // only_torch 的 BatchNormOp 是训练态节点（running stats 内置），不能 1:1 表达
+        // ONNX 节点语义，因此这里展开成确定的算术子图。
+        if node.op_type == OpType::BatchNormalization {
+            assemble_batch_normalization(
+                node,
+                symbols,
+                &mut descriptor,
+                &mut weights,
+                &mut import_report,
+            )?;
+            continue;
+        }
+
         // ── 默认路径 ──
         let mapped_descriptors =
             onnx_ops::onnx_op_to_descriptors(&node.op_type, &node.attribute, node.name)?;
@@ -296,6 +310,271 @@ pub(super) fn assemble<'a>(
         weights,
         import_report,
     })
+}
+
+// ==================== BatchNormalization 推理子图展开 ====================
+
+fn assemble_batch_normalization(
+    node: &onnx_rs::ast::Node,
+    symbols: &mut SymbolTable,
+    descriptor: &mut GraphDescriptor,
+    weights: &mut HashMap<u64, Tensor>,
+    import_report: &mut ImportReport,
+) -> Result<(), OnnxError> {
+    if node.input.len() < 5 {
+        return Err(OnnxError::InvalidGraph(format!(
+            "BatchNormalization 节点 \"{}\" 需要 5 个输入: X, scale, B, mean, var",
+            node.name
+        )));
+    }
+
+    let x_id = symbols.get_or_assign(node.input[0]);
+    let scale_id = symbols.get_or_assign(node.input[1]);
+    let bias_id = symbols.get_or_assign(node.input[2]);
+    let mean_id = symbols.get_or_assign(node.input[3]);
+    let var_id = symbols.get_or_assign(node.input[4]);
+
+    let x_shape = descriptor_node_shape(descriptor, x_id).ok_or_else(|| {
+        OnnxError::InvalidGraph(format!(
+            "BatchNormalization 节点 \"{}\" 的输入 \"{}\" 未找到",
+            node.name, node.input[0]
+        ))
+    })?;
+    if x_shape.len() < 2 {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "BatchNormalization".to_string(),
+            attribute: "rank".to_string(),
+            reason: format!(
+                "节点 \"{}\" 的输入至少需要 2 维 [N, C, ...]，实际 shape={x_shape:?}",
+                node.name
+            ),
+        });
+    }
+    let num_features = x_shape[1];
+    if num_features == 0 {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "BatchNormalization".to_string(),
+            attribute: "num_features".to_string(),
+            reason: format!("节点 \"{}\" 的通道维不能为动态或 0", node.name),
+        });
+    }
+
+    for (id, label) in [
+        (scale_id, "scale"),
+        (bias_id, "bias"),
+        (mean_id, "mean"),
+        (var_id, "var"),
+    ] {
+        validate_batch_norm_channel_param(descriptor, id, num_features, node.name, label)?;
+    }
+
+    let mut bcast_shape = vec![1usize; x_shape.len()];
+    bcast_shape[1] = num_features;
+
+    let scale =
+        reshape_batch_norm_param(scale_id, "scale", &bcast_shape, node, symbols, descriptor);
+    let bias = reshape_batch_norm_param(bias_id, "bias", &bcast_shape, node, symbols, descriptor);
+    let mean = reshape_batch_norm_param(mean_id, "mean", &bcast_shape, node, symbols, descriptor);
+    let var = reshape_batch_norm_param(var_id, "var", &bcast_shape, node, symbols, descriptor);
+
+    let eps = onnx_ops::find_attr_float(&node.attribute, "epsilon").unwrap_or(1e-5);
+    if !eps.is_finite() || eps <= 0.0 {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "BatchNormalization".to_string(),
+            attribute: "epsilon".to_string(),
+            reason: format!("epsilon 必须是正的有限值，实际为 {eps}"),
+        });
+    }
+    let eps_id = emit_batch_norm_eps(
+        eps,
+        num_features,
+        &bcast_shape,
+        node,
+        symbols,
+        descriptor,
+        weights,
+    );
+
+    let centered = emit_batch_norm_arith(
+        NodeTypeDescriptor::Subtract,
+        "centered",
+        &[x_id, mean],
+        &x_shape,
+        node,
+        symbols,
+        descriptor,
+    );
+    let var_eps = emit_batch_norm_arith(
+        NodeTypeDescriptor::Add,
+        "var_eps",
+        &[var, eps_id],
+        &bcast_shape,
+        node,
+        symbols,
+        descriptor,
+    );
+    let std = emit_batch_norm_arith(
+        NodeTypeDescriptor::Sqrt,
+        "std",
+        &[var_eps],
+        &bcast_shape,
+        node,
+        symbols,
+        descriptor,
+    );
+    let normalized = emit_batch_norm_arith(
+        NodeTypeDescriptor::Divide,
+        "normalized",
+        &[centered, std],
+        &x_shape,
+        node,
+        symbols,
+        descriptor,
+    );
+    let scaled = emit_batch_norm_arith(
+        NodeTypeDescriptor::Multiply,
+        "scaled",
+        &[normalized, scale],
+        &x_shape,
+        node,
+        symbols,
+        descriptor,
+    );
+
+    let output_name = node.output.first().copied().unwrap_or(node.name);
+    let out_id = symbols.get_or_assign(output_name);
+    descriptor.add_node(
+        NodeDescriptor::new(
+            out_id,
+            output_name,
+            NodeTypeDescriptor::Add,
+            x_shape,
+            None,
+            vec![scaled, bias],
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
+
+    import_report.rewritten.push(RewriteRecord {
+        pattern: "batch_norm_to_arithmetic",
+        consumed_onnx_nodes: vec![node.name.to_string()],
+        produced_descriptor_nodes: vec![centered, var_eps, std, normalized, scaled, out_id],
+    });
+    Ok(())
+}
+
+fn descriptor_node_shape(descriptor: &GraphDescriptor, id: u64) -> Option<Vec<usize>> {
+    descriptor
+        .nodes
+        .iter()
+        .find(|n| n.id == id)
+        .map(|n| n.output_shape.clone())
+}
+
+fn validate_batch_norm_channel_param(
+    descriptor: &GraphDescriptor,
+    id: u64,
+    num_features: usize,
+    node_name: &str,
+    label: &str,
+) -> Result<(), OnnxError> {
+    let shape = descriptor_node_shape(descriptor, id).ok_or_else(|| {
+        OnnxError::InvalidGraph(format!(
+            "BatchNormalization 节点 \"{node_name}\" 的 {label} 输入未找到"
+        ))
+    })?;
+    let elem_count: usize = shape.iter().product();
+    if elem_count != num_features {
+        return Err(OnnxError::UnsupportedAttribute {
+            op_type: "BatchNormalization".to_string(),
+            attribute: label.to_string(),
+            reason: format!(
+                "节点 \"{node_name}\" 的 {label} 元素数必须等于通道数 {num_features}，实际 shape={shape:?}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn reshape_batch_norm_param(
+    param_id: u64,
+    label: &str,
+    bcast_shape: &[usize],
+    node: &onnx_rs::ast::Node,
+    symbols: &mut SymbolTable,
+    descriptor: &mut GraphDescriptor,
+) -> u64 {
+    if descriptor_node_shape(descriptor, param_id).as_deref() == Some(bcast_shape) {
+        return param_id;
+    }
+
+    let name = format!("{}/{}_reshape", node.name, label);
+    let id = symbols.get_or_assign(&name);
+    descriptor.add_node(
+        NodeDescriptor::new(
+            id,
+            &name,
+            NodeTypeDescriptor::Reshape {
+                target_shape: bcast_shape.to_vec(),
+            },
+            bcast_shape.to_vec(),
+            None,
+            vec![param_id],
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
+    id
+}
+
+fn emit_batch_norm_eps(
+    eps: f32,
+    num_features: usize,
+    bcast_shape: &[usize],
+    node: &onnx_rs::ast::Node,
+    symbols: &mut SymbolTable,
+    descriptor: &mut GraphDescriptor,
+    weights: &mut HashMap<u64, Tensor>,
+) -> u64 {
+    let name = format!("{}/eps", node.name);
+    let id = symbols.get_or_assign(&name);
+    descriptor.add_node(
+        NodeDescriptor::new(
+            id,
+            &name,
+            NodeTypeDescriptor::Parameter,
+            bcast_shape.to_vec(),
+            None,
+            vec![],
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
+    weights.insert(id, Tensor::new(&vec![eps; num_features], bcast_shape));
+    id
+}
+
+fn emit_batch_norm_arith(
+    node_type: NodeTypeDescriptor,
+    suffix: &str,
+    parents: &[u64],
+    output_shape: &[usize],
+    node: &onnx_rs::ast::Node,
+    symbols: &mut SymbolTable,
+    descriptor: &mut GraphDescriptor,
+) -> u64 {
+    let name = format!("{}/{}", node.name, suffix);
+    let id = symbols.get_or_assign(&name);
+    descriptor.add_node(
+        NodeDescriptor::new(
+            id,
+            &name,
+            node_type,
+            output_shape.to_vec(),
+            None,
+            parents.to_vec(),
+        )
+        .with_origin_onnx_nodes(vec![node.name.to_string()]),
+    );
+    id
 }
 
 // ==================== Pow 常量指数折叠 ====================

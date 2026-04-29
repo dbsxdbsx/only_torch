@@ -130,6 +130,46 @@ fn test_save_load_cnn_bn_roundtrip() {
     std::fs::remove_file("test_otm_cnn_bn_roundtrip.otm").ok();
 }
 
+/// BatchNorm running stats 是推理语义的一部分，保存 / 加载后必须保持一致。
+#[test]
+fn test_save_load_batch_norm_running_stats_roundtrip() {
+    let path = "test_otm_bn_running_stats_roundtrip";
+
+    let graph = Graph::new();
+    let bn = BatchNorm::new(&graph, 3, 1e-5, 0.1, "bn_stats").unwrap();
+    let x = graph
+        .input(&Tensor::new(
+            &[
+                1.0, 2.0, 3.0, //
+                4.0, 5.0, 6.0, //
+                7.0, 8.0, 9.0, //
+                10.0, 11.0, 12.0,
+            ],
+            &[4, 3],
+        ))
+        .unwrap();
+    let y = bn.forward(&x);
+
+    graph.train();
+    graph.forward(&y).unwrap();
+    graph.inference();
+    graph.forward(&y).unwrap();
+    let original_pred = y.value().unwrap().unwrap().to_vec();
+
+    graph.save_model(path, &[&y]).unwrap();
+
+    let loaded = Graph::load_model(path).unwrap();
+    let loaded_pred = predict(&loaded, &x.value().unwrap().unwrap());
+    assert_vec_close(
+        &original_pred,
+        &loaded_pred,
+        1e-5,
+        "BatchNorm running stats 推理预测",
+    );
+
+    std::fs::remove_file("test_otm_bn_running_stats_roundtrip.otm").ok();
+}
+
 /// Dropout 模型往返：加载后 eval 模式，dropout 应直接通过
 #[test]
 fn test_save_load_dropout_eval() {

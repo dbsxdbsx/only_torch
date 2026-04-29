@@ -204,6 +204,8 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
             eps: b.eps(),
             momentum: b.momentum(),
             num_features: b.num_features(),
+            running_mean: Some(b.running_mean_data()),
+            running_var: Some(b.running_var_data()),
         },
         NodeType::LayerNormOp(l) => NodeTypeDescriptor::LayerNormOp {
             normalized_dims: l.normalized_dims(),

@@ -517,6 +517,8 @@ pub fn expand_batch_norm(
                 eps: 1e-5,
                 momentum: 0.1,
                 num_features,
+                running_mean: None,
+                running_var: None,
             },
             input_shape.clone(),
             vec![input_id],

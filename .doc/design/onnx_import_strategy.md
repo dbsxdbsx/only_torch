@@ -30,6 +30,11 @@ PyTorch (训练) ──export──▶ ONNX ──import──▶ only_torch ─
 
 这个定位决定了 import 阶段可以做**激进的 lowering**（常量折叠、模式重写、子图合并）—— 这不是越权，而是"编译器"的本职工作。
 
+> **BatchNormalization 特例**：ONNX `BatchNormalization(X, scale, B, mean, var)` 是推理图里的五输入算子；
+> only_torch 的 `BatchNormOp` 是训练态节点，running stats 内置且由 `BatchNorm` layer 持有。
+> 因此导入时不做 1:1 映射，而是 lowering 为
+> `(X - mean) / sqrt(var + eps) * scale + B` 算术子图；形状、epsilon 或输入缺失时必须 fail-fast。
+
 ## 2. 算子分类决策树
 
 遇到新的 ONNX 算子缺口时，按此决策树判断处理路径：
@@ -38,7 +43,7 @@ PyTorch (训练) ──export──▶ ONNX ──import──▶ only_torch ─
 
 | 类别 | 特征 | 典型算子 | 处理方式 |
 |------|------|---------|---------|
-| **数值计算类** | 有梯度、有真实 tensor 数据、参与前向 | Conv, MatMul, GELU, LayerNorm, BatchNorm, Softmax | 直接做 runtime node |
+| **数值计算类** | 有梯度、有真实 tensor 数据、参与前向 | Conv, MatMul, GELU, LayerNorm, Softmax | 直接做 runtime node |
 | **shape 元信息类** | 无梯度或仅透传、输入/输出常为 shape 向量 | Shape, Gather, Slice, Reshape, Squeeze, Unsqueeze, Concat(维度维)，Cast, Where, Constant, ConstantOfShape | 进 Step 2 |
 
 ### Step 2：shape 类 —— 表达语义 vs 真动态计算

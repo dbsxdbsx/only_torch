@@ -79,6 +79,12 @@ impl BatchNormOp {
     pub(crate) const fn num_features(&self) -> usize {
         self.num_features
     }
+    pub(crate) fn running_mean_data(&self) -> Vec<f32> {
+        self.running_mean.borrow().data_as_slice().to_vec()
+    }
+    pub(crate) fn running_var_data(&self) -> Vec<f32> {
+        self.running_var.borrow().data_as_slice().to_vec()
+    }
 
     /// 创建 BatchNormOp 节点
     ///
@@ -102,6 +108,28 @@ impl BatchNormOp {
         }
 
         let num_features = parent_shape[1];
+        if num_features == 0 {
+            return Err(GraphError::InvalidOperation(
+                "BatchNormOp: num_features 必须大于 0".to_string(),
+            ));
+        }
+        if !eps.is_finite() || eps <= 0.0 {
+            return Err(GraphError::InvalidOperation(format!(
+                "BatchNormOp: eps 必须是正的有限值，实际为 {eps}"
+            )));
+        }
+        if !momentum.is_finite() || !(0.0..=1.0).contains(&momentum) {
+            return Err(GraphError::InvalidOperation(format!(
+                "BatchNormOp: momentum 必须在 [0, 1] 范围内，实际为 {momentum}"
+            )));
+        }
+        let running_mean_len = running_mean.borrow().data_as_slice().len();
+        let running_var_len = running_var.borrow().data_as_slice().len();
+        if running_mean_len != num_features || running_var_len != num_features {
+            return Err(GraphError::InvalidOperation(format!(
+                "BatchNormOp: running_mean/running_var 长度必须等于通道数 {num_features}，实际为 {running_mean_len}/{running_var_len}"
+            )));
+        }
         let supports_dynamic = parent_dynamic_shape.dims().first() == Some(&None);
 
         Ok(Self {
@@ -225,6 +253,13 @@ impl TraitNode for BatchNormOp {
         self.n_reduce = shape[0] * spatial_size.max(1);
 
         if self.is_training {
+            if self.n_reduce <= 1 {
+                return Err(GraphError::InvalidOperation(format!(
+                    "BatchNormOp: 训练模式每个 channel 至少需要 2 个值，当前只有 {} 个；请增大 batch 或空间尺寸，或切换到 inference 模式",
+                    self.n_reduce
+                )));
+            }
+
             // 训练模式：用 batch 统计量
             let mean = Self::channel_mean(x);
             let var = Self::channel_var(x, &mean);

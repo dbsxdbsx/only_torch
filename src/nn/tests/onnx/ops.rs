@@ -492,13 +492,21 @@ fn test_import_batchnorm() {
         make_float_attr("epsilon", 1e-5),
         make_float_attr("momentum", 0.1),
     ];
-    let result = onnx_op_to_descriptors(&OpType::BatchNormalization, &attrs, "bn0").unwrap();
-    match &result[0] {
-        NodeTypeDescriptor::BatchNormOp { eps, momentum, .. } => {
-            assert!((*eps - 1e-5).abs() < 1e-8);
-            assert!((*momentum - 0.1).abs() < 1e-6);
+    let result = onnx_op_to_descriptors(&OpType::BatchNormalization, &attrs, "bn0");
+    match result.unwrap_err() {
+        OnnxError::UnsupportedAttribute {
+            op_type,
+            attribute,
+            reason,
+        } => {
+            assert_eq!(op_type, "BatchNormalization");
+            assert_eq!(attribute, "inputs");
+            assert!(
+                reason.contains("装配层展开"),
+                "错误信息应提示 BatchNormalization 由装配层展开，实际：{reason}"
+            );
         }
-        _ => panic!("expected BatchNormOp"),
+        other => panic!("expected UnsupportedAttribute, got {other:?}"),
     }
 }
 
@@ -726,13 +734,17 @@ fn test_export_batchnorm() {
         eps: 1e-5,
         momentum: 0.1,
         num_features: 64,
+        running_mean: None,
+        running_var: None,
     };
     match descriptor_to_export_category(&desc) {
-        ExportCategory::Operator(op) => {
-            assert_eq!(op.op_type, "BatchNormalization");
-            assert_eq!(op.float_attrs.len(), 2);
+        ExportCategory::Unsupported(reason) => {
+            assert!(
+                reason.contains("缺少 scale/bias/mean/var"),
+                "错误信息应说明不完整 ONNX BatchNormalization 导出原因，实际：{reason}"
+            );
         }
-        _ => panic!("expected Operator BatchNormalization"),
+        _ => panic!("expected Unsupported BatchNormOp export"),
     }
 }
 
@@ -926,12 +938,14 @@ fn test_roundtrip_batchnorm() {
         make_float_attr("epsilon", 1e-5),
         make_float_attr("momentum", 0.1),
     ];
-    let imported = onnx_op_to_descriptors(&OpType::BatchNormalization, &attrs, "test").unwrap();
-    match descriptor_to_export_category(&imported[0]) {
-        ExportCategory::Operator(exp) => {
-            assert_eq!(exp.op_type, "BatchNormalization");
+    match onnx_op_to_descriptors(&OpType::BatchNormalization, &attrs, "test").unwrap_err() {
+        OnnxError::UnsupportedAttribute { reason, .. } => {
+            assert!(
+                reason.contains("装配层展开"),
+                "BatchNormalization direct import 应提示走装配层展开，实际：{reason}"
+            );
         }
-        _ => panic!("roundtrip failed for BatchNormalization"),
+        other => panic!("expected UnsupportedAttribute, got {other:?}"),
     }
 }
 
