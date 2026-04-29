@@ -13,6 +13,7 @@
  * Flatten 将高维张量展平。keep_first_dim=true 保留 batch 维。VJP: grad = reshape(upstream, input_shape)
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps, VarMatrixOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -64,7 +65,8 @@ fn test_flatten_to_row_vector() -> Result<(), GraphError> {
 
     let input_data = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
     input.set_value(Some(&input_data)).unwrap();
-    flat.forward_recursive(1, false).unwrap();
+    flat.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let output = flat.value().unwrap();
     assert_eq!(output.shape(), &[1, 6]);
@@ -94,7 +96,8 @@ fn test_flatten_square_matrix() -> Result<(), GraphError> {
 
     let input_data = Tensor::normal_seeded(0.0, 1.0, &[4, 4], 42);
     input.set_value(Some(&input_data)).unwrap();
-    flat.forward_recursive(1, false).unwrap();
+    flat.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let output = flat.value().unwrap();
     assert_eq!(output.shape(), &[1, 16]);
@@ -193,7 +196,9 @@ fn test_flatten_reshape_chain() -> Result<(), GraphError> {
         &[3, 4],
     );
     input.set_value(Some(&input_data)).unwrap();
-    reshaped.forward_recursive(1, false).unwrap();
+    reshaped
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let output = reshaped.value().unwrap();
     assert_eq!(output.shape(), &[4, 3]);
@@ -255,7 +260,8 @@ fn test_flatten_vjp_unit_upstream() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
-    flat.forward_recursive(1, false).unwrap();
+    flat.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream = Tensor::ones(&[1, 6]);
     let grad = flat
@@ -289,7 +295,8 @@ fn test_flatten_vjp_non_unit_upstream() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
-    flat.forward_recursive(1, false).unwrap();
+    flat.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // 非单位上游梯度
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1, 6]);

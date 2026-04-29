@@ -16,6 +16,7 @@
  * Python 对照脚本: tests/python/calc_jacobi_by_pytorch/node_topk.py
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarSelectionOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -145,7 +146,8 @@ fn test_topk_vjp_unit_upstream() -> Result<(), GraphError> {
             &[2, 4],
         )))
         .unwrap();
-    topk.forward_recursive(1, false).unwrap();
+    topk.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream = Tensor::ones(&[2, 2]);
     let grad = topk
@@ -197,7 +199,8 @@ fn test_topk_vjp_non_unit_upstream() -> Result<(), GraphError> {
             &[2, 4],
         )))
         .unwrap();
-    topk.forward_recursive(1, false).unwrap();
+    topk.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
     let grad = topk

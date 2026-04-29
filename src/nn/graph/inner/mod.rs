@@ -28,7 +28,7 @@ mod visualization;
 // 注意：bptt.rs 和 recurrent.rs 已删除
 // 新架构使用展开式 RNN，BPTT 通过标准 backward() 自动完成
 
-use super::types::{NodeGroupTag, RecurrentFoldingMeta};
+use super::types::{ExecutionContext, NodeGroupTag, RecurrentFoldingMeta};
 use crate::nn::nodes::{NodeId, NodeInner};
 use rand::rngs::StdRng;
 use std::collections::HashMap;
@@ -47,7 +47,7 @@ pub struct GraphInner {
     /// 最后一次反向传播的 id
     pub(in crate::nn::graph) last_backward_pass_id: u64,
     pub(in crate::nn::graph) next_id: u64,
-    pub(in crate::nn::graph) is_eval_mode: bool,
+    pub(in crate::nn::graph) execution_ctx: ExecutionContext,
 
     // ========== 参数管理 ==========
     /// 参数注册表（弱引用，不控制参数生命周期）

@@ -6,6 +6,7 @@
 
 use super::error::GraphError;
 use super::inner::GraphInner;
+use super::types::ExecutionContext;
 use crate::nn::var::{Init, Var};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
@@ -317,9 +318,24 @@ impl Graph {
         self.inner.borrow_mut().set_eval_mode();
     }
 
-    /// 是否处于评估模式
-    pub fn is_eval(&self) -> bool {
-        !self.inner.borrow().is_train_mode()
+    /// 是否处于训练模式
+    pub fn training(&self) -> bool {
+        self.inner.borrow().is_train_mode()
+    }
+
+    /// 是否启用梯度记录
+    pub fn is_grad_enabled(&self) -> bool {
+        self.inner.borrow().is_grad_enabled()
+    }
+
+    /// 获取当前执行上下文
+    pub fn execution_ctx(&self) -> ExecutionContext {
+        self.inner.borrow().execution_ctx()
+    }
+
+    /// 设置当前执行上下文
+    pub fn set_execution_ctx(&self, ctx: ExecutionContext) {
+        self.inner.borrow_mut().set_execution_ctx(ctx);
     }
 
     /// 在 `no_grad` 上下文中执行闭包
@@ -327,11 +343,20 @@ impl Graph {
     where
         F: FnOnce(&Self) -> R,
     {
-        let was_train = !self.is_eval();
-        self.eval();
+        let was_grad_enabled = {
+            let mut inner = self.inner.borrow_mut();
+            let was_grad_enabled = inner.is_grad_enabled();
+            let mut ctx = inner.execution_ctx();
+            ctx.grad_enabled = false;
+            inner.set_execution_ctx(ctx);
+            was_grad_enabled
+        };
         let result = f(self);
-        if was_train {
-            self.train();
+        {
+            let mut inner = self.inner.borrow_mut();
+            let mut ctx = inner.execution_ctx();
+            ctx.grad_enabled = was_grad_enabled;
+            inner.set_execution_ctx(ctx);
         }
         result
     }

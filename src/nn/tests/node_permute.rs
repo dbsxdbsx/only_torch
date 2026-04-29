@@ -18,6 +18,7 @@
  * Python 对照脚本: tests/python/calc_jacobi_by_pytorch/node_permute.py
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -172,7 +173,9 @@ fn test_permute_vjp_2d() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3])))
         .unwrap();
-    permuted.forward_recursive(1, false).unwrap();
+    permuted
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // upstream shape = [3, 2]（permuted 的输出形状）
     let upstream = Tensor::new(&[10.0, 40.0, 20.0, 50.0, 30.0, 60.0], &[3, 2]);
@@ -215,7 +218,9 @@ fn test_permute_vjp_3d() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&data, &[2, 3, 4])))
         .unwrap();
-    permuted.forward_recursive(1, false).unwrap();
+    permuted
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // upstream 全 1.0，形状 [2, 4, 3]
     let upstream = Tensor::ones(&[2, 4, 3]);
@@ -258,7 +263,9 @@ fn test_permute_vjp_3d_non_self_inverse() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&data, &[2, 3, 4])))
         .unwrap();
-    permuted.forward_recursive(1, false).unwrap();
+    permuted
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // 构造非 unit upstream [4, 2, 3]
     let upstream_data: Vec<f32> = (1..=24).map(|i| i as f32 * 0.1).collect();

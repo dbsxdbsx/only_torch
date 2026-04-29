@@ -17,6 +17,7 @@
 use super::descriptor_rebuild::RebuildResult;
 use super::error::GraphError;
 use super::handle::Graph;
+use super::types::ExecutionContext;
 use crate::nn::descriptor::GraphDescriptor;
 use crate::nn::var::Var;
 use crate::tensor::Tensor;
@@ -298,7 +299,7 @@ impl Graph {
     ///
     /// `path` 不含文件后缀，自动添加 `.otm`。
     /// 返回 `RebuildResult`，包含重建后的图、输入/输出 Var。
-    /// 加载后自动设为 eval 模式。
+    /// 加载后自动设为 inference 上下文（eval 行为 + no_grad 缓存策略）。
     ///
     /// # 示例
     /// ```ignore
@@ -317,15 +318,17 @@ impl Graph {
         // 加载权重
         apply_params_to_graph(&result.graph, &params)?;
 
-        // 默认 eval 模式（推理场景）
-        result.graph.eval();
+        // 默认 inference 上下文（推理场景）
+        result
+            .graph
+            .set_execution_ctx(ExecutionContext::inference());
         Ok(result)
     }
 
     /// 从 .onnx 文件导入模型（重建拓扑 + 恢复权重）
     ///
     /// 返回 `RebuildResult`，包含重建后的图、输入/输出 Var。
-    /// 加载后自动设为 eval 模式。
+    /// 加载后自动设为 inference 上下文（eval 行为 + no_grad 缓存策略）。
     ///
     /// # 示例
     /// ```ignore
@@ -374,7 +377,9 @@ impl Graph {
             .collect();
         apply_params_to_graph(&result.graph, &name_params)?;
 
-        result.graph.eval();
+        result
+            .graph
+            .set_execution_ctx(ExecutionContext::inference());
         // 透传 ONNX 导入报告供上层观测（rewrite 记录 + 警告）
         result.import_report = Some(import_result.import_report);
         Ok(result)

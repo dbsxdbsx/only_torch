@@ -17,6 +17,7 @@
  * 预期值来自 tests/python/calc_jacobi_by_pytorch/node_softplus.py
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -105,7 +106,8 @@ fn test_softplus_vjp_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[-2.0, -1.0, 0.0, 1.0, 2.0], &[1, 5])))
         .unwrap();
-    sp.forward_recursive(1, false).unwrap();
+    sp.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[1, 5]);
     let grad = sp
@@ -142,7 +144,8 @@ fn test_softplus_vjp_non_unit_upstream() -> Result<(), GraphError> {
         &[2, 3],
     )))
     .unwrap();
-    sp.forward_recursive(1, false).unwrap();
+    sp.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 1.0, 0.5, 4.0, 2.0], &[2, 3]);
     let grad = sp

@@ -13,6 +13,7 @@
  */
 
 use crate::assert_err;
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, Var, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -202,7 +203,9 @@ fn test_stack_vjp_to_first_parent() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    stack.forward_recursive(1, false).unwrap();
+    stack
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream = Tensor::ones(&[2, 2, 2]);
     let grad_p1 = stack
@@ -241,7 +244,9 @@ fn test_stack_vjp_to_second_parent() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    stack.forward_recursive(1, false).unwrap();
+    stack
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // upstream = [[[1,2],[3,4]], [[5,6],[7,8]]]
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[2, 2, 2]);
@@ -282,7 +287,9 @@ fn test_stack_vjp_axis1() -> Result<(), GraphError> {
         &[2, 3],
     )))
     .unwrap();
-    stack.forward_recursive(1, false).unwrap();
+    stack
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // upstream [2, 2, 3] 递增值
     let upstream = Tensor::new(

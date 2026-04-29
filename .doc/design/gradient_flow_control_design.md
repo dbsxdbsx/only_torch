@@ -11,7 +11,7 @@
 
 | 机制 | 作用域 | 目的 | 影响范围 | 典型场景 |
 |------|--------|------|----------|----------|
-| `no_grad` | 全局上下文 | 完全禁用梯度追踪 | 整个代码块 | 推理、评估、验证 |
+| `no_grad` | 全局上下文 | 临时关闭 backward 缓存记录 | 整个代码块 | 推理、评估、验证 |
 | `detach` | 单个节点 | 截断特定路径的梯度流 | 局部路径 | GAN、Actor-Critic、Target Network |
 | 多次 `backward()` | backward 调用 | 多个 loss 分别反向传播 | 梯度累积 | 多 Loss、多任务学习 |
 | `requires_grad`* | 参数节点 | 控制参数是否参与梯度计算 | 单个参数 | 迁移学习（冻结层）、部分微调 |
@@ -36,9 +36,9 @@
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                        no_grad (全局禁用)                        │
+│                        no_grad (关闭缓存记录)                     │
 │  x → A → B → C → output                                         │
-│      (无计算图构建，纯前向计算)                                     │
+│      (仍可复用已有图，但缓存型算子不保存 backward 中间量)             │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -77,22 +77,31 @@
 impl Graph {
     /// 在 no_grad 上下文中执行闭包
     /// 在此上下文中，前向传播不会为反向传播缓存中间值
-    pub fn no_grad_scope<F, R>(&mut self, f: F) -> R
+    pub fn no_grad_scope<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&mut Self) -> R,
+        F: FnOnce(&Self) -> R,
     {
-        let was_train = self.is_train_mode();
-        self.set_eval_mode();
+        let was_grad_enabled = self.execution_ctx().grad_enabled;
+        self.set_execution_ctx(ExecutionContext {
+            grad_enabled: false,
+            ..self.execution_ctx()
+        });
         let result = f(self);
-        if was_train {
-            self.set_train_mode();
-        }
+        self.set_execution_ctx(ExecutionContext {
+            grad_enabled: was_grad_enabled,
+            ..self.execution_ctx()
+        });
         result
     }
 
-    /// 检查是否在 no_grad 模式
+    /// 检查是否启用梯度记录
     pub fn is_grad_enabled(&self) -> bool {
-        self.is_train_mode()
+        self.execution_ctx().grad_enabled
+    }
+
+    /// train/eval 只控制层行为，不联动 grad_enabled
+    pub fn training(&self) -> bool {
+        self.execution_ctx().training
     }
 }
 ```
@@ -126,9 +135,9 @@ for epoch in 0..epochs {
 
 ### 1.4 实现要点
 
-- 与现有 `is_train_mode()` / `set_eval_mode()` 集成
-- `eval_mode` 下的 `forward_node` 可跳过为 backward 缓存的中间值
-- 某些层（如未来的 Dropout、BatchNorm）在 eval 模式下行为不同
+- `ExecutionContext.training` 控制 `train()` / `eval()` 层行为
+- `ExecutionContext.grad_enabled` 控制 `no_grad_scope()` 是否保存 backward 缓存
+- Dropout、BatchNorm 等层行为与 Conv2d、BatchNorm 等缓存策略按两维独立读取
 
 ### 1.5 与 PyTorch/tch-rs 的对比
 
@@ -211,12 +220,12 @@ graph.forward_node(output)?;         // ❌ 无法再借用 graph！
 
 #### 实现
 
-在 `backward_nodes_ex` 和 `backward_batch` 开头添加警告：
+在 backward 入口添加警告：
 
 ```rust
-if !self.is_train_mode() {
+if !self.is_grad_enabled() {
     eprintln!(
-        "[only_torch 警告] 在 no_grad/eval 模式下调用 backward，这通常是误用。\
+        "[only_torch 警告] 在 grad disabled 模式下调用 backward，这通常是误用。\
         如确需此行为，请忽略此警告。"
     );
 }
@@ -618,7 +627,7 @@ for batch in train_loader.iter() {
 
 | 功能 | 优先级 | 依赖 | 触发条件 |
 |------|--------|------|----------|
-| `no_grad` / eval mode 增强 | 高 | 现有 `is_train_mode` | 推理/评估需求 |
+| `ExecutionContext { training, grad_enabled }` | ✅ 已完成 | 图执行上下文 | 分离 train/eval 与 no_grad 语义 |
 | `detach` | 中 | `pass_id` 机制 | GAN/RL 示例 |
 | 多次 backward | ✅ 已完成 | Rc 引用计数天然支持 | 多 Loss 场景 |
 

@@ -18,6 +18,7 @@
  * ReLU 测试已分离到 node_relu.rs
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -84,7 +85,8 @@ fn test_leaky_relu_vjp_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
         .unwrap();
-    relu.forward_recursive(1, false).unwrap();
+    relu.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = relu
@@ -119,7 +121,8 @@ fn test_leaky_relu_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
         .unwrap();
-    relu.forward_recursive(1, false).unwrap();
+    relu.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
     let grad = relu
@@ -153,7 +156,8 @@ fn test_leaky_relu_vjp_all_positive() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2])))
         .unwrap();
-    relu.forward_recursive(1, false).unwrap();
+    relu.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = relu
@@ -182,7 +186,8 @@ fn test_leaky_relu_vjp_all_negative() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[-1.0, -2.0, -3.0, -4.0], &[2, 2])))
         .unwrap();
-    relu.forward_recursive(1, false).unwrap();
+    relu.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = relu

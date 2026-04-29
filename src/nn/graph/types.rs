@@ -6,6 +6,39 @@
 
 use crate::nn::NodeId;
 
+// ==================== 执行上下文 ====================
+
+/// 图执行上下文。
+///
+/// `training` 控制 Dropout、BatchNorm 等层行为；`grad_enabled` 控制是否为
+/// backward 保存中间缓存。两者保持正交，避免把 PyTorch 中的 `model.train/eval`
+/// 与 `torch.no_grad` 混成同一个布尔位。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExecutionContext {
+    /// 层行为模式。影响 Dropout、BatchNorm 等依赖训练状态的算子。
+    pub training: bool,
+    /// 全图梯度记录开关。影响是否保存 backward 所需缓存。
+    pub grad_enabled: bool,
+}
+
+impl ExecutionContext {
+    /// 默认训练上下文：训练行为 + 记录 backward 缓存。
+    pub const fn training() -> Self {
+        Self {
+            training: true,
+            grad_enabled: true,
+        }
+    }
+
+    /// 推理上下文：eval 行为 + 不记录 backward 缓存。
+    pub const fn inference() -> Self {
+        Self {
+            training: false,
+            grad_enabled: false,
+        }
+    }
+}
+
 // ==================== 节点分组标签 ====================
 
 /// 分组的视觉渲染风格

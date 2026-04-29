@@ -9,6 +9,7 @@
  *   hard_tanh([-2, -0.5, 0.5, 2], -1, 1) = [-1, -0.5, 0.5, 1]
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -61,7 +62,7 @@ fn test_hard_tanh_vjp() -> Result<(), GraphError> {
         .create_hard_tanh_node(x.clone(), -1.0, 1.0, Some("ht"))?;
 
     x.set_value(Some(&Tensor::new(&[-2.0, -0.5, 0.5, 2.0], &[2, 2])))?;
-    ht.forward_recursive(1, false)?;
+    ht.forward_recursive(1, &ExecutionContext::training())?;
 
     let upstream = Tensor::ones(&[2, 2]);
     let grad = ht

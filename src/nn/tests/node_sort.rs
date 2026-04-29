@@ -13,6 +13,7 @@
  * Python 对照脚本: tests/python/calc_jacobi_by_pytorch/node_sort.py
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarReduceOps, VarSelectionOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -170,7 +171,9 @@ fn test_sort_vjp_inverse_permutation() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&[3.0, 1.0, 2.0], &[1, 3])))
         .unwrap();
-    sorted.forward_recursive(1, false).unwrap();
+    sorted
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // upstream = [10, 20, 30]
     let upstream = Tensor::new(&[10.0, 20.0, 30.0], &[1, 3]);
@@ -222,7 +225,9 @@ fn test_sort_vjp_2d_non_unit() -> Result<(), GraphError> {
     input
         .set_value(Some(&Tensor::new(&[5.0, 3.0, 4.0, 2.0, 6.0, 1.0], &[2, 3])))
         .unwrap();
-    sorted.forward_recursive(1, false).unwrap();
+    sorted
+        .forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
     let grad = sorted

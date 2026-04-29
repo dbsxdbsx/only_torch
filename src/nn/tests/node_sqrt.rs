@@ -16,6 +16,7 @@
  *   VJP: grad_to_parent = upstream_grad * 0.5 / √x
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -102,7 +103,8 @@ fn test_sqrt_vjp_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 4.0, 9.0, 16.0], &[2, 2])))
         .unwrap();
-    sqrt.forward_recursive(1, false).unwrap();
+    sqrt.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = sqrt
@@ -137,7 +139,8 @@ fn test_sqrt_vjp_non_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1.0, 4.0], &[1, 2])))
         .unwrap();
-    sqrt.forward_recursive(1, false).unwrap();
+    sqrt.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 6.0], &[1, 2]);
     let grad = sqrt

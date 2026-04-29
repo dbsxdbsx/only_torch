@@ -11,6 +11,7 @@
  * 6. 新节点创建 API 测试（KEEP AS-IS）
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -213,7 +214,8 @@ fn test_bce_vjp_mean() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
         .unwrap();
-    bce.forward_recursive(1, false).unwrap();
+    bce.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // 上游梯度为标量 1.0（loss 输出 [1,1]）
     let upstream = Tensor::ones(&[1, 1]);
@@ -267,7 +269,8 @@ fn test_bce_vjp_sum() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[1.0, 0.0, 1.0], &[1, 3])))
         .unwrap();
-    bce.forward_recursive(1, false).unwrap();
+    bce.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // 验证 Sum 前向值
     let bce_val = bce.value().unwrap();

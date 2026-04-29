@@ -11,6 +11,11 @@
 
 ### Changed
 
+- **refactor(graph): 拆分执行上下文的训练行为与梯度记录**
+  - 新增 `ExecutionContext { training, grad_enabled }`，`Graph::train()` / `eval()` 只控制层行为，`no_grad_scope()` 只临时关闭 `grad_enabled`
+  - `forward_recursive` 与 `TraitNode::set_execution_ctx` 改为传递完整执行上下文，Conv2d / Dropout / BatchNorm 分别按层行为与 backward 缓存策略读取字段
+  - `Graph::load_model()` / `Graph::from_onnx()` 默认进入 `ExecutionContext::inference()`，并补充执行上下文 invariants 测试与文档说明
+
 - **perf(nn): 优化 Conv2d Debug 推理路径**
   - `Conv2d` 在 eval 推理模式下对 `1x1 stride=1 padding=0` 卷积启用直接 GEMM 快路径，避免为 backward 生成无用 `im2col` 缓存
   - `Conv2d` padding 与 `im2col` 热循环改用连续 slice 索引，减少 Debug 模式下动态 Tensor 索引开销

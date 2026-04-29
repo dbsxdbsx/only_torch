@@ -8,22 +8,31 @@
  */
 
 use super::GraphInner;
+use crate::nn::ExecutionContext;
 
 impl GraphInner {
     pub const fn set_train_mode(&mut self) {
-        self.is_eval_mode = false;
+        self.execution_ctx.training = true;
     }
 
     pub const fn set_eval_mode(&mut self) {
-        self.is_eval_mode = true;
+        self.execution_ctx.training = false;
     }
 
     pub const fn is_train_mode(&self) -> bool {
-        !self.is_eval_mode
+        self.execution_ctx.training
     }
 
     pub const fn is_grad_enabled(&self) -> bool {
-        self.is_train_mode()
+        self.execution_ctx.grad_enabled
+    }
+
+    pub const fn execution_ctx(&self) -> ExecutionContext {
+        self.execution_ctx
+    }
+
+    pub const fn set_execution_ctx(&mut self, ctx: ExecutionContext) {
+        self.execution_ctx = ctx;
     }
 
     /// `no_grad` 上下文
@@ -31,12 +40,10 @@ impl GraphInner {
     where
         F: FnOnce(&mut Self) -> R,
     {
-        let was_train = self.is_train_mode();
-        self.set_eval_mode();
+        let was_grad_enabled = self.execution_ctx.grad_enabled;
+        self.execution_ctx.grad_enabled = false;
         let result = f(self);
-        if was_train {
-            self.set_train_mode();
-        }
+        self.execution_ctx.grad_enabled = was_grad_enabled;
         result
     }
 

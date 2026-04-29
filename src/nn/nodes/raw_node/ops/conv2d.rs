@@ -15,11 +15,11 @@
  * - parents[1]: 卷积核参数（Parameter 节点）
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{ExecutionContext, GraphError};
 use crate::tensor::Tensor;
 use ndarray::{Array2, ArrayView2};
 use rayon::prelude::*;
@@ -38,8 +38,8 @@ pub(crate) struct Conv2d {
     /// 是否支持动态 batch
     #[allow(dead_code)]
     supports_dynamic: bool,
-    /// 当前是否处于训练模式；eval 推理可跳过反向传播缓存。
-    is_training: bool,
+    /// 是否需要为 backward 保存缓存；Conv2d 前向数学与训练模式无关。
+    should_cache_for_backward: bool,
     #[allow(dead_code)]
     parents_ids: Vec<NodeId>, // [input_id, kernel_id]
 
@@ -186,7 +186,7 @@ impl Conv2d {
             fixed_shape,
             dynamic_shape,
             supports_dynamic,
-            is_training: true,
+            should_cache_for_backward: true,
             parents_ids: parent_ids,
             in_channels,
             out_channels,
@@ -489,7 +489,7 @@ impl TraitNode for Conv2d {
         let kernel = parent_values[1];
         self.input_shape = input.shape().to_vec();
 
-        if !self.is_training
+        if !self.should_cache_for_backward
             && self.kernel_size == (1, 1)
             && self.stride == (1, 1)
             && self.padding == (0, 0)
@@ -510,13 +510,18 @@ impl TraitNode for Conv2d {
             self.padded_input = Some(self.pad_input(input));
             self.convolve(self.padded_input.as_ref().unwrap(), kernel)
         };
-        self.im2col_cache = Some(im2col_cache);
+        if self.should_cache_for_backward {
+            self.im2col_cache = Some(im2col_cache);
+        } else {
+            self.padded_input = None;
+            self.im2col_cache = None;
+        }
         self.value = Some(result);
         Ok(())
     }
 
-    fn set_training_mode(&mut self, is_training: bool) {
-        self.is_training = is_training;
+    fn set_execution_ctx(&mut self, ctx: &ExecutionContext) {
+        self.should_cache_for_backward = ctx.grad_enabled;
     }
 
     fn value(&self) -> Option<&Tensor> {

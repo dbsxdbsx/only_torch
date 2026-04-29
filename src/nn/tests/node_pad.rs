@@ -18,6 +18,7 @@
  *   shape: [4, 7]
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarShapeOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -180,7 +181,8 @@ fn test_pad_vjp_unit_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3])))
         .unwrap();
-    pad.forward_recursive(1, false).unwrap();
+    pad.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[4, 7]);
     let grad = pad
@@ -215,7 +217,8 @@ fn test_pad_vjp_non_uniform_upstream() -> Result<(), GraphError> {
 
     x.set_value(Some(&Tensor::new(&[1., 2., 3., 4.], &[2, 2])))
         .unwrap();
-    pad.forward_recursive(1, false).unwrap();
+    pad.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // upstream [4, 4] 用不同值填充，验证裁切位置
     #[rustfmt::skip]

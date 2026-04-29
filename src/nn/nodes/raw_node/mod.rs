@@ -456,6 +456,7 @@ define_node_types! {
 
 use super::{GraphError, NodeId};
 use crate::nn::format_node_display;
+use crate::nn::graph::ExecutionContext;
 use crate::nn::shape::DynamicShape;
 use crate::tensor::Tensor;
 use std::any::type_name;
@@ -666,16 +667,16 @@ pub(in crate::nn) trait TraitNode {
         false
     }
 
-    // ========== 训练模式 ==========
+    // ========== 执行上下文 ==========
 
-    /// 设置训练模式
+    /// 设置执行上下文
     ///
-    /// 仅 Dropout、BatchNorm 等训练/评估行为不同的节点需要实现。
-    /// 默认空实现，大多数节点不需要关心训练模式。
+    /// 仅 Dropout、BatchNorm、Conv2d 等依赖训练行为或 backward 缓存策略的节点需要实现。
+    /// 默认空实现，大多数节点不需要关心执行上下文。
     ///
     /// # 参数
-    /// - `is_training`: 是否处于训练模式
-    fn set_training_mode(&mut self, _is_training: bool) {
+    /// - `ctx`: 当前图执行上下文
+    fn set_execution_ctx(&mut self, _ctx: &ExecutionContext) {
         // 默认空实现
     }
 

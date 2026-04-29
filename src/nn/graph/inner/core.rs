@@ -9,7 +9,7 @@
  */
 
 use super::super::error::GraphError;
-use super::super::types::{RecurrentFoldingMeta, RecurrentUnrollInfo};
+use super::super::types::{ExecutionContext, RecurrentFoldingMeta, RecurrentUnrollInfo};
 use super::GraphInner;
 use crate::nn::NodeId;
 use rand::SeedableRng;
@@ -30,7 +30,7 @@ impl GraphInner {
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
-            is_eval_mode: false,
+            execution_ctx: ExecutionContext::training(),
             rng: Some(StdRng::seed_from_u64(seed)),
             recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
@@ -52,7 +52,7 @@ impl GraphInner {
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
-            is_eval_mode: false,
+            execution_ctx: ExecutionContext::training(),
             rng: Some(StdRng::seed_from_u64(seed)),
             recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
@@ -73,7 +73,7 @@ impl GraphInner {
             last_forward_pass_id: 0,
             last_backward_pass_id: 0,
             next_id: 0,
-            is_eval_mode: false,
+            execution_ctx: ExecutionContext::training(),
             rng: None,
             recurrent_folding_metas: Vec::new(),
             parameters: HashMap::new(),
@@ -282,8 +282,7 @@ impl GraphInner {
         node: &std::rc::Rc<crate::nn::nodes::NodeInner>,
     ) -> Result<(), GraphError> {
         let pass_id = self.last_forward_pass_id + 1;
-        let is_training = !self.is_eval_mode;
-        node.forward_recursive(pass_id, is_training)?;
+        node.forward_recursive(pass_id, &self.execution_ctx)?;
         self.last_forward_pass_id = pass_id;
         Ok(())
     }
@@ -307,8 +306,8 @@ impl GraphInner {
         use crate::tensor::Tensor;
 
         // 1. 检查训练模式
-        if !self.is_train_mode() {
-            eprintln!("[only_torch 警告] 在 no_grad/eval 模式下调用 backward，这通常是误用。");
+        if !self.is_grad_enabled() {
+            eprintln!("[only_torch 警告] 在 grad disabled 模式下调用 backward，这通常是误用。");
         }
 
         // 2. 获取 loss 值并验证

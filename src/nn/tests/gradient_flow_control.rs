@@ -7,7 +7,7 @@
 
 use approx::assert_abs_diff_eq;
 
-use crate::nn::Graph;
+use crate::nn::{ExecutionContext, Graph};
 use crate::tensor::Tensor;
 use std::rc::Rc;
 
@@ -15,26 +15,31 @@ use std::rc::Rc;
 // 1. no_grad 机制测试
 // ============================================================================
 
-/// 测试: is_grad_enabled 与 is_train_mode 一致
+/// 测试: training 与 grad_enabled 是两个正交维度
 #[test]
-fn test_is_grad_enabled_equals_is_train_mode() {
+fn test_training_and_grad_enabled_are_orthogonal() {
     let graph = Graph::new();
     let inner = graph.inner_rc();
     let mut gi = inner.borrow_mut();
 
-    // 默认训练模式
+    // 默认训练上下文
     assert!(gi.is_grad_enabled());
     assert!(gi.is_train_mode());
 
-    // 切换到评估模式
+    // 切换到评估模式只影响层行为，不关闭 grad
     gi.set_eval_mode();
-    assert!(!gi.is_grad_enabled());
+    assert!(gi.is_grad_enabled());
     assert!(!gi.is_train_mode());
 
-    // 切换回训练模式
+    // 切换回训练模式也不改变 grad
     gi.set_train_mode();
     assert!(gi.is_grad_enabled());
     assert!(gi.is_train_mode());
+
+    // 高级 API 可显式进入推理上下文
+    gi.set_execution_ctx(ExecutionContext::inference());
+    assert!(!gi.is_grad_enabled());
+    assert!(!gi.is_train_mode());
 }
 
 /// 测试: no_grad_scope 基本功能 - 临时禁用梯度
@@ -49,12 +54,12 @@ fn test_no_grad_scope_basic() {
 
     // 进入 no_grad 上下文
     gi.no_grad_scope(|g| {
-        // 应该处于评估模式
+        // no_grad 只关闭 grad，不改变训练/评估行为
         assert!(!g.is_grad_enabled());
-        assert!(!g.is_train_mode());
+        assert!(g.is_train_mode());
     });
 
-    // 退出后恢复训练模式
+    // 退出后恢复 grad，训练模式不变
     assert!(gi.is_grad_enabled());
     assert!(gi.is_train_mode());
 }
@@ -68,15 +73,18 @@ fn test_no_grad_scope_from_eval_mode() {
 
     // 先切换到评估模式
     gi.set_eval_mode();
-    assert!(!gi.is_grad_enabled());
+    assert!(gi.is_grad_enabled());
+    assert!(!gi.is_train_mode());
 
-    // 进入 no_grad 上下文（已经是评估模式）
+    // 进入 no_grad 上下文（已经是 eval 行为）
     gi.no_grad_scope(|g| {
         assert!(!g.is_grad_enabled());
+        assert!(!g.is_train_mode());
     });
 
-    // 退出后应该保持评估模式（因为之前就是评估模式）
-    assert!(!gi.is_grad_enabled());
+    // 退出后保持 eval 行为，但恢复 grad
+    assert!(gi.is_grad_enabled());
+    assert!(!gi.is_train_mode());
 }
 
 /// 测试: no_grad_scope 返回值传递
@@ -275,17 +283,20 @@ fn test_no_grad_scope_interaction_with_eval_mode() {
     gi.no_grad_scope(|g| {
         assert!(!g.is_grad_enabled());
 
-        // 手动切换到训练模式（不推荐但应该能工作）
+        // 手动切换训练行为不应重新打开 grad
         g.set_train_mode();
-        assert!(g.is_grad_enabled());
+        assert!(!g.is_grad_enabled());
+        assert!(g.is_train_mode());
 
-        // 切换回评估模式
+        // 切换回评估行为，也不影响 grad
         g.set_eval_mode();
         assert!(!g.is_grad_enabled());
+        assert!(!g.is_train_mode());
     });
 
-    // 退出后恢复（因为进入前是训练模式）
+    // 退出后恢复 grad，但闭包内最后切到 eval 的训练行为会保留
     assert!(gi.is_grad_enabled());
+    assert!(!gi.is_train_mode());
 }
 
 /// 测试: no_grad_scope 闭包中的可变借用

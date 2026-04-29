@@ -17,11 +17,11 @@
  *   其中 sum 沿 channel 以外的所有维度归约
  */
 
-use crate::nn::GraphError;
 use crate::nn::nodes::NodeId;
 use crate::nn::nodes::raw_node::GradResult;
 use crate::nn::nodes::raw_node::TraitNode;
 use crate::nn::shape::DynamicShape;
+use crate::nn::{ExecutionContext, GraphError};
 use crate::tensor::Tensor;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -54,6 +54,8 @@ pub(crate) struct BatchNormOp {
     momentum: f32,
     /// 训练/评估模式
     is_training: bool,
+    /// 是否需要为 backward 保存缓存
+    should_cache_for_backward: bool,
     /// 运行均值 [C]（共享引用，跨 forward 调用持久化）
     running_mean: Rc<RefCell<Tensor>>,
     /// 运行方差 [C]（共享引用，跨 forward 调用持久化）
@@ -114,6 +116,7 @@ impl BatchNormOp {
             eps,
             momentum,
             is_training: true,
+            should_cache_for_backward: true,
             running_mean,
             running_var,
             x_hat_cache: None,
@@ -250,8 +253,13 @@ impl TraitNode for BatchNormOp {
                 *rv = &(&*rv * (1.0 - self.momentum)) + &(&unbiased_var * self.momentum);
             }
 
-            self.x_hat_cache = Some(x_hat.clone());
-            self.std_cache = Some(std);
+            if self.should_cache_for_backward {
+                self.x_hat_cache = Some(x_hat.clone());
+                self.std_cache = Some(std);
+            } else {
+                self.x_hat_cache = None;
+                self.std_cache = None;
+            }
             self.value = Some(x_hat);
         } else {
             // 评估模式：用 running stats
@@ -264,7 +272,7 @@ impl TraitNode for BatchNormOp {
             let std = (&var + self.eps).powf(0.5);
 
             let x_hat = &(x - &mean) / &std;
-            self.std_cache = Some(std);
+            self.std_cache = self.should_cache_for_backward.then_some(std);
             self.x_hat_cache = None; // 评估模式不需要缓存 x_hat（不做复杂 backward）
             self.value = Some(x_hat);
         }
@@ -363,7 +371,8 @@ impl TraitNode for BatchNormOp {
         self.value = value.cloned();
     }
 
-    fn set_training_mode(&mut self, is_training: bool) {
-        self.is_training = is_training;
+    fn set_execution_ctx(&mut self, ctx: &ExecutionContext) {
+        self.is_training = ctx.training;
+        self.should_cache_for_backward = ctx.grad_enabled;
     }
 }

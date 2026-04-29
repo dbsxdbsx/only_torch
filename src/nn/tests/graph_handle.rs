@@ -343,15 +343,18 @@ fn test_graph_handle_train_eval() {
     let graph = Graph::new();
 
     // 默认应该是训练模式
-    assert!(!graph.is_eval());
+    assert!(graph.training());
+    assert!(graph.is_grad_enabled());
 
     // 切换到评估模式
     graph.eval();
-    assert!(graph.is_eval());
+    assert!(!graph.training());
+    assert!(graph.is_grad_enabled(), "eval 不应关闭 grad");
 
     // 切换回训练模式
     graph.train();
-    assert!(!graph.is_eval());
+    assert!(graph.training());
+    assert!(graph.is_grad_enabled());
 }
 
 // ==================== Clone 语义测试 ====================
@@ -396,20 +399,23 @@ fn test_graph_handle_no_grad_scope_basic() {
     let graph = Graph::new();
 
     // 默认是训练模式
-    assert!(!graph.is_eval());
+    assert!(graph.training());
+    assert!(graph.is_grad_enabled());
 
     // 进入 no_grad_scope
     let result = graph.no_grad_scope(|g| {
-        // 在 scope 内应该是 eval 模式
-        assert!(g.is_eval());
+        // no_grad 只关闭 grad，不改变训练/评估行为
+        assert!(g.training());
+        assert!(!g.is_grad_enabled());
         42
     });
 
     // 返回值应该正确传递
     assert_eq!(result, 42);
 
-    // 退出 scope 后应该恢复训练模式
-    assert!(!graph.is_eval());
+    // 退出 scope 后应该恢复 grad
+    assert!(graph.training());
+    assert!(graph.is_grad_enabled());
 }
 
 /// 测试 no_grad_scope 从 eval 模式开始
@@ -419,16 +425,19 @@ fn test_graph_handle_no_grad_scope_from_eval() {
 
     // 先切换到 eval 模式
     graph.eval();
-    assert!(graph.is_eval());
+    assert!(!graph.training());
+    assert!(graph.is_grad_enabled());
 
     // 进入 no_grad_scope
     graph.no_grad_scope(|g| {
-        // 仍然是 eval 模式
-        assert!(g.is_eval());
+        // 仍然是 eval 行为，同时关闭 grad
+        assert!(!g.training());
+        assert!(!g.is_grad_enabled());
     });
 
-    // 退出 scope 后仍然是 eval 模式（因为进入前就是 eval）
-    assert!(graph.is_eval());
+    // 退出 scope 后仍然是 eval 行为，并恢复 grad
+    assert!(!graph.training());
+    assert!(graph.is_grad_enabled());
 }
 
 /// 测试 no_grad_scope 嵌套调用
@@ -437,22 +446,27 @@ fn test_graph_handle_no_grad_scope_nested() {
     let graph = Graph::new();
 
     // 默认是训练模式
-    assert!(!graph.is_eval());
+    assert!(graph.training());
+    assert!(graph.is_grad_enabled());
 
     graph.no_grad_scope(|g| {
-        assert!(g.is_eval());
+        assert!(g.training());
+        assert!(!g.is_grad_enabled());
 
         // 嵌套调用
         g.no_grad_scope(|g2| {
-            assert!(g2.is_eval());
+            assert!(g2.training());
+            assert!(!g2.is_grad_enabled());
         });
 
-        // 嵌套退出后仍然是 eval（因为外层 scope 还在）
-        assert!(g.is_eval());
+        // 嵌套退出后仍在外层 no_grad
+        assert!(g.training());
+        assert!(!g.is_grad_enabled());
     });
 
-    // 完全退出后恢复训练模式
-    assert!(!graph.is_eval());
+    // 完全退出后恢复 grad
+    assert!(graph.training());
+    assert!(graph.is_grad_enabled());
 }
 
 /// 测试 no_grad_scope 中执行计算

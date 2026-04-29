@@ -27,8 +27,8 @@ pub use inner::GraphInner;
 pub use onnx_error::OnnxError;
 // 可视化分组类型导出
 pub use types::{
-    GroupStyle, NodeGroupTag, RecurrentFoldingMeta, RecurrentUnrollInfo, SnapshotNode,
-    VisualizationSnapshot,
+    ExecutionContext, GroupStyle, NodeGroupTag, RecurrentFoldingMeta, RecurrentUnrollInfo,
+    SnapshotNode, VisualizationSnapshot,
 };
 
 // ==================== 节点分组上下文 ====================

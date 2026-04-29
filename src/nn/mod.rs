@@ -25,8 +25,8 @@ mod var;
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{
-    Graph, GraphError, GraphInner, ImageFormat, OnnxError, RebuildResult, SnapshotNode,
-    VisualizationOutput, VisualizationSnapshot,
+    ExecutionContext, Graph, GraphError, GraphInner, ImageFormat, OnnxError, RebuildResult,
+    SnapshotNode, VisualizationOutput, VisualizationSnapshot,
 };
 // ONNX 导入路径的可观测性入口（让用户在 from_onnx rebuild 失败时仍能拿 ImportReport）
 pub use graph::onnx_import::{

@@ -16,6 +16,7 @@
  *   VJP: grad_to_parent = upstream_grad * mask
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -131,7 +132,8 @@ fn test_clip_vjp_unit_upstream() -> Result<(), GraphError> {
         &[2, 3],
     )))
     .unwrap();
-    clip.forward_recursive(1, false).unwrap();
+    clip.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 3]);
     let grad = clip
@@ -169,7 +171,8 @@ fn test_clip_vjp_non_unit_upstream() -> Result<(), GraphError> {
     // x = [-2, 0, 0.5, 2], mask = [0, 1, 1, 0]
     x.set_value(Some(&Tensor::new(&[-2.0, 0.0, 0.5, 2.0], &[1, 4])))
         .unwrap();
-    clip.forward_recursive(1, false).unwrap();
+    clip.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::new(&[3.0, 5.0, 7.0, 9.0], &[1, 4]);
     let grad = clip
@@ -203,7 +206,8 @@ fn test_clip_vjp_all_clipped() -> Result<(), GraphError> {
     // 所有值都在范围外
     x.set_value(Some(&Tensor::new(&[-5.0, 5.0, -1.0], &[1, 3])))
         .unwrap();
-    clip.forward_recursive(1, false).unwrap();
+    clip.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[1, 3]);
     let grad = clip

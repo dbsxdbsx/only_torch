@@ -27,6 +27,12 @@
 
 说明：baseline 保存在 Criterion 的 `target/criterion` 报告目录中，属于本地构建产物，不入仓。Track B 完成后用 `just bench-compare pre-execution-context` 对比。
 
+### Track B 对比结果
+
+- `just bench-compare pre-execution-context` 已完成；完整输出中存在多项 Criterion regression 标记，但回归主要集中在未触碰的 `tensor_ops`，同时 backward / optimizer / normalization 等路径大面积改善，判定本轮 full compare 受机器状态噪声影响较大。
+- 已复跑 `cargo bench --bench smoke --features blas-mkl -- --baseline pre-execution-context`；6 个 smoke 项全部显著改善，关键链路未复现回归。
+- 行为回归已用 invariants、梯度流、模型加载、BatchNorm / Conv2d 节点测试，以及 MNIST / MNIST GAN / CartPole SAC / chess YOLO ONNX example 验证；CartPole SAC 训练达到单回合 200，但三次测试平均 185.7，低于示例目标 190，仍为随机训练波动范围内。
+
 ---
 
 ## 待优化项
@@ -205,17 +211,34 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 | `benches/backward.rs` | 节点反向传播 | Add/Negate/Subtract 链路 + MLP backward（4 组） |
 | `benches/conv2d.rs` | Conv2d 卷积 | forward/full_step/two_layer_cnn（3 组） |
 | `benches/end_to_end.rs` | 端到端训练步 | MLP(XOR/MNIST)/CNN(MNIST) × 多 batch_size（2 组） |
+| `benches/smoke.rs` | 快速性能回归 | Tensor / Conv2d / MLP / CNN / Add backward 主链路 |
+| `benches/pool2d.rs` | Pool2d | MaxPool2d / AvgPool2d forward + backward |
+| `benches/optimizer.rs` | 优化器 | SGD / Adam step |
+| `benches/normalization.rs` | 归一化层 | BatchNorm / LayerNorm / RMSNorm / GroupNorm |
 
 ```bash
 # 运行所有 benchmark
-cargo bench
+just bench
 
 # 运行特定 benchmark
-cargo bench --bench backward
+just bench-backward
 
 # 保存基准线并对比
-cargo bench -- --save-baseline before
-cargo bench -- --baseline before
+just bench-save before
+just bench-compare before
 ```
 
 报告输出在 `target/criterion/` 目录。
+
+### I. ExecutionContext 执行上下文拆分（2026-04-29）
+
+**原始问题**：旧 `is_eval_mode` 同时承担层行为与 backward 缓存控制，导致 `eval()`、`no_grad()`、缓存型算子之间语义耦合，后续新增算子容易重复发明规则。
+
+**解决方案**：引入 `ExecutionContext { training, grad_enabled }`：
+
+| 字段 | 控制范围 | API |
+|---|---|---|
+| `training` | Dropout / BatchNorm 等层行为 | `Graph::train()` / `Graph::eval()` |
+| `grad_enabled` | 是否保存 backward 缓存 | `Graph::no_grad_scope()` / `Graph::set_execution_ctx()` |
+
+`Graph::load_model()` / `Graph::from_onnx()` 默认进入 `ExecutionContext::inference()`，即 eval 行为 + 不记录 backward 缓存。性能回归验证使用 `pre-execution-context` baseline 对比。

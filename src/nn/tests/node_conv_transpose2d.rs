@@ -15,6 +15,7 @@
  */
 
 use crate::assert_err;
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -46,7 +47,7 @@ fn test_conv_transpose2d_forward_simple() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 1, 2, 2])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 2, 2])))?;
 
-    deconv.forward_recursive(1, false)?;
+    deconv.forward_recursive(1, &ExecutionContext::training())?;
 
     let output = deconv.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 3, 3]);
@@ -90,7 +91,7 @@ fn test_conv_transpose2d_forward_nonuniform() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 1, 2, 2])))?;
     kernel.set_value(Some(&Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[1, 1, 2, 2])))?;
 
-    deconv.forward_recursive(1, false)?;
+    deconv.forward_recursive(1, &ExecutionContext::training())?;
 
     let output = deconv.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 3, 3]);
@@ -139,7 +140,7 @@ fn test_conv_transpose2d_forward_batch() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::new(&input_data, &[2, 1, 2, 2])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 2, 2])))?;
 
-    deconv.forward_recursive(1, false)?;
+    deconv.forward_recursive(1, &ExecutionContext::training())?;
 
     let output = deconv.value().unwrap();
     assert_eq!(output.shape(), &[2, 1, 3, 3]);
@@ -176,7 +177,7 @@ fn test_conv_transpose2d_multi_channel() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 2, 2, 2])))?;
     kernel.set_value(Some(&Tensor::ones(&[2, 1, 2, 2])))?;
 
-    deconv.forward_recursive(1, false)?;
+    deconv.forward_recursive(1, &ExecutionContext::training())?;
 
     let output = deconv.value().unwrap();
     assert_eq!(output.shape(), &[1, 1, 3, 3]);
@@ -212,7 +213,7 @@ fn test_conv_transpose2d_stride2() -> Result<(), GraphError> {
     input.set_value(Some(&Tensor::ones(&[1, 1, 2, 2])))?;
     kernel.set_value(Some(&Tensor::ones(&[1, 1, 2, 2])))?;
 
-    deconv.forward_recursive(1, false)?;
+    deconv.forward_recursive(1, &ExecutionContext::training())?;
 
     // H_out = (2-1)*2 + 2 = 4
     let output = deconv.value().unwrap();

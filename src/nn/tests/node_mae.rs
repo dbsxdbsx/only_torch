@@ -11,6 +11,7 @@
  * 6. 新节点创建 API 测试（KEEP AS-IS）
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, Reduction, VarLossOps, VarMatrixOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -237,7 +238,8 @@ fn test_mae_vjp_mean() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
-    mae.forward_recursive(1, false).unwrap();
+    mae.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // 验证前向值: mean(|0.5|*3) = 0.5
     let mae_val = mae.value().expect("MAE 应有值");
@@ -286,7 +288,8 @@ fn test_mae_vjp_sum() -> Result<(), GraphError> {
     target
         .set_value(Some(&Tensor::new(&[1.5, 2.5, 3.5], &[1, 3])))
         .unwrap();
-    mae.forward_recursive(1, false).unwrap();
+    mae.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // 验证前向值: sum(|0.5|*3) = 1.5
     let mae_val = mae.value().expect("MAE Sum 应有值");

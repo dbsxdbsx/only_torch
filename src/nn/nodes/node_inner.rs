@@ -12,6 +12,7 @@
 use super::NodeType;
 use super::raw_node::{GradResult, TraitNode};
 use crate::nn::NodeId;
+use crate::nn::graph::ExecutionContext;
 use crate::nn::graph::GraphError;
 use crate::nn::graph::NodeGroupTag;
 use crate::tensor::Tensor;
@@ -300,7 +301,7 @@ impl NodeInner {
     ///
     /// # 性能优化
     /// 直接借用父节点的 raw_node，避免通过 `value()` 方法 clone Tensor
-    fn calc_value_from_parents(&self, is_training: bool) -> Result<(), GraphError> {
+    fn calc_value_from_parents(&self, ctx: &ExecutionContext) -> Result<(), GraphError> {
         // 1. 先收集错误信息所需的元数据（在借用 raw_node 之前）
         let self_type_name = self.type_name();
         let parent_info: Vec<(String, NodeId)> = self
@@ -329,10 +330,10 @@ impl NodeInner {
             .collect();
         let parent_values = parent_values?;
 
-        // 4. 设置训练模式并计算
+        // 4. 设置执行上下文并计算
         // 注意：self.raw_node 与 parent.raw_node 是不同的 RefCell，可以同时借用
         let mut raw = self.raw_node.borrow_mut();
-        raw.set_training_mode(is_training);
+        raw.set_execution_ctx(ctx);
         raw.calc_value_by_parents(&parent_values)
     }
 
@@ -340,7 +341,7 @@ impl NodeInner {
     ///
     /// # 参数
     /// - `pass_id`: 当前前向传播的 ID（用于避免重复计算）
-    /// - `is_training`: 是否训练模式
+    /// - `ctx`: 当前执行上下文
     ///
     /// # 逻辑
     /// 1. 如果 `last_forward_pass_id == pass_id`，跳过（已计算）
@@ -348,7 +349,11 @@ impl NodeInner {
     /// 3. 叶子节点检查值是否已设置
     /// 4. 非叶子节点调用 `calc_value_from_parents`
     /// 5. 更新 `last_forward_pass_id`
-    pub fn forward_recursive(&self, pass_id: u64, is_training: bool) -> Result<(), GraphError> {
+    pub fn forward_recursive(
+        &self,
+        pass_id: u64,
+        ctx: &ExecutionContext,
+    ) -> Result<(), GraphError> {
         // 1. 检查是否已计算
         if self.last_forward_pass_id.get() == pass_id {
             return Ok(());
@@ -356,7 +361,7 @@ impl NodeInner {
 
         // 2. 递归计算父节点
         for parent in &self.parents {
-            parent.forward_recursive(pass_id, is_training)?;
+            parent.forward_recursive(pass_id, ctx)?;
         }
 
         // 3. 计算当前节点
@@ -372,7 +377,7 @@ impl NodeInner {
             }
         } else {
             // 非叶子节点：从父节点计算
-            self.calc_value_from_parents(is_training)?;
+            self.calc_value_from_parents(ctx)?;
         }
 
         // 4. 更新 pass_id

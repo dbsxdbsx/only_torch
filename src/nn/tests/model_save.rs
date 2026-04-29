@@ -86,8 +86,9 @@ fn test_save_load_mlp_roundtrip() {
     let loaded_pred = predict(&loaded, &Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]));
     assert_vec_close(&original_pred, &loaded_pred, 1e-5, "MLP 预测");
 
-    // 6. 验证 eval 模式
-    assert!(loaded.graph.is_eval(), "加载后应为 eval 模式");
+    // 6. 验证默认推理上下文
+    assert!(!loaded.graph.training(), "加载后应为 eval 行为");
+    assert!(!loaded.graph.is_grad_enabled(), "加载后应默认关闭 grad");
 
     // 清理
     std::fs::remove_file("test_otm_mlp_roundtrip.otm").ok();
@@ -155,8 +156,9 @@ fn test_save_load_dropout_eval() {
     graph.save_model(path, &[&h]).unwrap();
     let loaded = Graph::load_model(path).unwrap();
 
-    // 3. 验证加载后为 eval 模式，结果一致
-    assert!(loaded.graph.is_eval());
+    // 3. 验证加载后为推理上下文，结果一致
+    assert!(!loaded.graph.training());
+    assert!(!loaded.graph.is_grad_enabled());
     let loaded_pred = predict(&loaded, &Tensor::ones(&[1, 4]));
     assert_vec_close(&pred1, &loaded_pred, 1e-5, "Dropout eval 预测");
 

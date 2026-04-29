@@ -14,6 +14,7 @@
  *   因此无梯度累积测试（0 + 0 = 0 没有意义）。
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarActivationOps, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -95,7 +96,8 @@ fn test_sign_vjp_always_zero() -> Result<(), GraphError> {
     // x = [0.5, -1.0, 0.0, 2.0]
     x.set_value(Some(&Tensor::new(&[0.5, -1.0, 0.0, 2.0], &[2, 2])))
         .unwrap();
-    sign.forward_recursive(1, false).unwrap();
+    sign.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 3.0, 4.0, 5.0], &[2, 2]);
     let grad = sign

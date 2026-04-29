@@ -16,6 +16,7 @@
  * - Axis=1: [2,3]→[2,1], mean=[[2],[5]], grad = upstream/3 broadcast along axis
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarLossOps, VarReduceOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -108,7 +109,7 @@ fn test_mean_vjp_global() -> Result<(), GraphError> {
         .borrow_mut()
         .create_mean_node(x.clone(), None, Some("m"))
         .unwrap();
-    m.forward_recursive(1, false)?;
+    m.forward_recursive(1, &ExecutionContext::training())?;
 
     let upstream_grad = Tensor::new(&[6.0], &[1, 1]);
     let grad = m
@@ -141,7 +142,7 @@ fn test_mean_vjp_axis1() -> Result<(), GraphError> {
         .borrow_mut()
         .create_mean_node(x.clone(), Some(1), Some("m"))
         .unwrap();
-    m.forward_recursive(1, false)?;
+    m.forward_recursive(1, &ExecutionContext::training())?;
 
     let upstream_grad = Tensor::new(&[3.0, 6.0], &[2, 1]);
     let grad = m

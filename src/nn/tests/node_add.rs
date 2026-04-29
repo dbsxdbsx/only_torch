@@ -11,6 +11,7 @@
  * 6. 广播测试 → 混合（高层前向/e2e + 底层 VJP）
  */
 
+use crate::nn::ExecutionContext;
 use crate::nn::{Graph, GraphError, Init, VarLossOps};
 use crate::tensor::Tensor;
 use approx::assert_abs_diff_eq;
@@ -68,7 +69,8 @@ fn test_add_forward_three_parents() {
     p3.set_value(Some(&Tensor::new(&[10.0, 10.0, 10.0, 10.0], &[2, 2])))
         .unwrap();
 
-    add.forward_recursive(1, false).unwrap();
+    add.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let output = add.value().unwrap();
     let expected = Tensor::new(&[16.0, 18.0, 20.0, 22.0], &[2, 2]);
@@ -125,7 +127,8 @@ fn test_add_vjp_to_first_parent() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    add.forward_recursive(1, false).unwrap();
+    add.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = add
@@ -161,7 +164,8 @@ fn test_add_vjp_to_second_parent() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    add.forward_recursive(1, false).unwrap();
+    add.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[2, 2]);
     let grad = add
@@ -197,7 +201,8 @@ fn test_add_vjp_with_non_unit_upstream() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, 6.0, 7.0, 8.0], &[2, 2])))
         .unwrap();
-    add.forward_recursive(1, false).unwrap();
+    add.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
     let grad_to_p1 = add
@@ -235,7 +240,8 @@ fn test_add_vjp_with_negative_values() -> Result<(), GraphError> {
         .unwrap();
     p2.set_value(Some(&Tensor::new(&[5.0, -6.0, 7.0, -8.0], &[2, 2])))
         .unwrap();
-    add.forward_recursive(1, false).unwrap();
+    add.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // 验证前向传播
     let output = add.value().unwrap();
@@ -283,7 +289,8 @@ fn test_add_vjp_three_parents() -> Result<(), GraphError> {
         .unwrap();
     p3.set_value(Some(&Tensor::new(&[10.0, 10.0, 10.0, 10.0], &[2, 2])))
         .unwrap();
-    add.forward_recursive(1, false).unwrap();
+    add.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::new(&[2.0, 4.0, 6.0, 8.0], &[2, 2]);
     let grad_0 = add
@@ -334,7 +341,8 @@ fn test_add_broadcast_vjp() -> Result<(), GraphError> {
         .unwrap();
     bias.set_value(Some(&Tensor::new(&[10., 20., 30., 40.], &[1, 4])))
         .unwrap();
-    add.forward_recursive(1, false).unwrap();
+    add.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     let upstream_grad = Tensor::ones(&[3, 4]);
 
@@ -379,7 +387,8 @@ fn test_add_broadcast_vjp_non_unit() -> Result<(), GraphError> {
         .unwrap();
     bias.set_value(Some(&Tensor::new(&[10., 20., 30.], &[1, 3])))
         .unwrap();
-    add.forward_recursive(1, false).unwrap();
+    add.forward_recursive(1, &ExecutionContext::training())
+        .unwrap();
 
     // upstream = [[1,2,3],[4,5,6]], sum(axis=0) = [[5,7,9]]
     // upstream = [[1,2,3],[4,5,6]], sum(axis=0) = [[5,7,9]]
