@@ -66,6 +66,52 @@ fn test_conv2d_forward_simple() -> Result<(), GraphError> {
     Ok(())
 }
 
+/// eval 模式的 1x1 快路径必须与训练模式通用路径一致
+#[test]
+fn test_conv2d_1x1_eval_fast_path_matches_train_path() -> Result<(), GraphError> {
+    let graph = Graph::new();
+    let inner = graph.inner_rc();
+
+    let input = inner
+        .borrow_mut()
+        .create_basic_input_node(&[1, 2, 2, 3], Some("input"))?;
+    let kernel = inner
+        .borrow_mut()
+        .create_basic_input_node(&[3, 2, 1, 1], Some("kernel"))?;
+    let conv = inner.borrow_mut().create_conv2d_node(
+        vec![input.clone(), kernel.clone()],
+        (1, 1),
+        (0, 0),
+        (1, 1),
+        Some("conv"),
+    )?;
+
+    let input_tensor = Tensor::new(
+        &[
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0,
+        ],
+        &[1, 2, 2, 3],
+    );
+    let kernel_tensor = Tensor::new(&[1.0, 0.0, 0.0, 1.0, 0.5, -0.1], &[3, 2, 1, 1]);
+    input.set_value(Some(&input_tensor))?;
+    kernel.set_value(Some(&kernel_tensor))?;
+
+    conv.forward_recursive(1, true)?;
+    let train_output = conv.value().unwrap().clone();
+
+    conv.forward_recursive(2, false)?;
+    let eval_output = conv.value().unwrap();
+
+    assert_eq!(eval_output.shape(), &[1, 3, 2, 3]);
+    assert_abs_diff_eq!(eval_output, &train_output, epsilon = 1e-6);
+    assert_abs_diff_eq!(eval_output[[0, 0, 0, 0]], 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(eval_output[[0, 1, 1, 2]], 60.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(eval_output[[0, 2, 0, 0]], -0.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(eval_output[[0, 2, 1, 2]], -3.0, epsilon = 1e-6);
+
+    Ok(())
+}
+
 /// 测试 Conv2d 前向传播（带 padding）：padding=1 保持尺寸
 #[test]
 fn test_conv2d_forward_with_padding() -> Result<(), GraphError> {

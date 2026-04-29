@@ -2,6 +2,13 @@
 
 ## [Unreleased] - 待提交
 
+### Changed
+
+- **perf(nn): 优化 Conv2d Debug 推理路径**
+  - `Conv2d` 在 eval 推理模式下对 `1x1 stride=1 padding=0` 卷积启用直接 GEMM 快路径，避免为 backward 生成无用 `im2col` 缓存
+  - `Conv2d` padding 与 `im2col` 热循环改用连续 slice 索引，减少 Debug 模式下动态 Tensor 索引开销
+  - `chess_yolo_onnx_detect` Debug forward 从约 1871 ms 降到约 596 ms，总耗时从约 2030 ms 降到约 745 ms，并保持两张 sample 的 FEN 位级匹配
+
 ## [0.17.0] - 2026-04-29
 
 ### Fixed

@@ -1,7 +1,7 @@
 # 性能优化候选项
 
 > 本文档记录性能优化的候选项、已实施项和已否决项。
-> 最后更新: 2026-02-15
+> 最后更新: 2026-04-29
 
 ---
 
@@ -147,6 +147,27 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 | Conv2d `padded_input` | `Some(padded.clone())` 缓存 | `Some(self.pad_input(input))` 直接 move |
 | LeakyReLU | 缓存完整 `parent_value` | 不再缓存，反向时用 `value`（输出）判断区域，数学等价 |
 | ChannelBiasAdd | `let mut result = input.clone()` | 节点已删除，由通用 Add + 广播替代 |
+
+### I. Conv2d eval 推理快路径（2026-04-29）
+
+**原始问题**：YOLOv5 TinyChess 在 Debug 模式下单图检测约 2.0s，其中 forward 约 1.87s；decode + NMS 仅约 0.4ms，不是瓶颈。`Conv2d` 原本不区分训练 / 推理，`1x1` 卷积也走通用 `im2col + GEMM`，并保存 backward 需要的 `im2col_cache`。
+
+**解决方案**：
+
+| 改动 | 效果 |
+|------|------|
+| `Conv2d` 感知 `eval` 模式 | 推理时可跳过 backward 缓存 |
+| `1x1 stride=1 padding=0 dilation=1` 卷积走直接 GEMM 快路径 | 避免为每个空间位置构造等价的 `im2col` 矩阵 |
+| padding / `im2col` 热循环改用连续 slice 索引 | 避免 Debug 模式下多维动态索引开销 |
+
+**实测效果**（`chess_yolo_onnx_detect`，Debug + MKL，单图）：
+
+| 指标 | 优化前 | 优化后 | 提升 |
+|------|--------|--------|------|
+| forward | 1871 ms | 596 ms | 约 3.1x |
+| 总耗时 | 2030 ms | 745 ms | 约 2.7x |
+
+**设计结论**：卷积的数学前向在 train/eval 下相同，但执行引擎需要区分“是否要为 backward 保存缓存”。后续新增重算代价高、缓存占用大的节点时，应同时设计训练路径和推理路径，避免推理承担训练负担。
 
 ---
 

@@ -38,6 +38,8 @@ pub(crate) struct Conv2d {
     /// 是否支持动态 batch
     #[allow(dead_code)]
     supports_dynamic: bool,
+    /// 当前是否处于训练模式；eval 推理可跳过反向传播缓存。
+    is_training: bool,
     #[allow(dead_code)]
     parents_ids: Vec<NodeId>, // [input_id, kernel_id]
 
@@ -184,6 +186,7 @@ impl Conv2d {
             fixed_shape,
             dynamic_shape,
             supports_dynamic,
+            is_training: true,
             parents_ids: parent_ids,
             in_channels,
             out_channels,
@@ -212,17 +215,24 @@ impl Conv2d {
         let new_w = w + 2 * pad_w;
         let new_shape = vec![batch_size, c, new_h, new_w];
         let single_sample_size = c * new_h * new_w;
+        let input_flat = input.flatten_view();
+        let input_slice = input_flat.as_slice().unwrap();
+        let input_sample_size = c * h * w;
 
         // Rayon 并行处理每个 batch 样本
         let batch_results: Vec<Vec<f32>> = (0..batch_size)
             .into_par_iter()
             .map(|bi| {
                 let mut sample_data = vec![0.0f32; single_sample_size];
+                let input_base = bi * input_sample_size;
                 for ci in 0..c {
+                    let input_channel_base = input_base + ci * h * w;
+                    let output_channel_base = ci * new_h * new_w;
                     for hi in 0..h {
+                        let input_row_base = input_channel_base + hi * w;
+                        let output_row_base = output_channel_base + (hi + pad_h) * new_w + pad_w;
                         for wi in 0..w {
-                            let idx = ci * new_h * new_w + (hi + pad_h) * new_w + (wi + pad_w);
-                            sample_data[idx] = input[[bi, ci, hi, wi]];
+                            sample_data[output_row_base + wi] = input_slice[input_row_base + wi];
                         }
                     }
                 }
@@ -256,6 +266,13 @@ impl Conv2d {
         let col_h = out_h * out_w;
         let col_w = in_c * k_h * k_w;
         let mut col = Array2::<f32>::zeros((col_h, col_w));
+        let input_shape = input.shape();
+        let in_h = input_shape[2];
+        let in_w = input_shape[3];
+        let input_flat = input.flatten_view();
+        let input_slice = input_flat.as_slice().unwrap();
+        let batch_base = b * in_c * in_h * in_w;
+        let col_slice = col.as_slice_mut().unwrap();
 
         for oh in 0..out_h {
             for ow in 0..out_w {
@@ -264,10 +281,12 @@ impl Conv2d {
                 let w_start = ow * stride_w;
                 let mut col_idx = 0;
                 for ic in 0..in_c {
+                    let input_channel_base = batch_base + ic * in_h * in_w;
                     for kh in 0..k_h {
+                        let input_row_base = input_channel_base + (h_start + kh * dil_h) * in_w;
                         for kw in 0..k_w {
-                            col[[row, col_idx]] =
-                                input[[b, ic, h_start + kh * dil_h, w_start + kw * dil_w]];
+                            col_slice[row * col_w + col_idx] =
+                                input_slice[input_row_base + w_start + kw * dil_w];
                             col_idx += 1;
                         }
                     }
@@ -374,6 +393,50 @@ impl Conv2d {
 
         (Tensor::new(&all_data, &output_shape), im2col_cache)
     }
+
+    /// eval 模式下的 1x1 stride=1 卷积快路径。
+    ///
+    /// YOLOv5 中 1x1 卷积很多，通用 im2col 会为每个空间位置重新拷贝通道值。
+    /// 对 1x1/stride=1/padding=0，NCHW 单样本可直接视为 `[C, H*W]` 后做 GEMM。
+    fn convolve_1x1_stride1_eval(&self, input: &Tensor, kernel: &Tensor) -> Tensor {
+        let input_shape = input.shape();
+        let (batch_size, in_c, in_h, in_w) = (
+            input_shape[0],
+            input_shape[1],
+            input_shape[2],
+            input_shape[3],
+        );
+        let out_c = kernel.shape()[0];
+        let spatial = in_h * in_w;
+        let output_shape = vec![batch_size, out_c, in_h, in_w];
+
+        let k_flat = kernel.flatten_view();
+        let kernel_mat = k_flat.into_shape((out_c, in_c)).unwrap();
+        let input_flat = input.flatten_view();
+        let input_slice = input_flat.as_slice().unwrap();
+        let sample_size = in_c * spatial;
+
+        let batch_results: Vec<Vec<f32>> = (0..batch_size)
+            .into_par_iter()
+            .map(|b| {
+                let start = b * sample_size;
+                let sample = ArrayView2::from_shape(
+                    (in_c, spatial),
+                    &input_slice[start..start + sample_size],
+                )
+                .unwrap();
+                let result = kernel_mat.dot(&sample);
+                result.iter().copied().collect()
+            })
+            .collect();
+
+        let mut all_data = Vec::with_capacity(batch_size * out_c * spatial);
+        for output in batch_results {
+            all_data.extend(output);
+        }
+
+        Tensor::new(&all_data, &output_shape)
+    }
 }
 
 impl TraitNode for Conv2d {
@@ -426,6 +489,18 @@ impl TraitNode for Conv2d {
         let kernel = parent_values[1];
         self.input_shape = input.shape().to_vec();
 
+        if !self.is_training
+            && self.kernel_size == (1, 1)
+            && self.stride == (1, 1)
+            && self.padding == (0, 0)
+            && self.dilation == (1, 1)
+        {
+            self.padded_input = None;
+            self.im2col_cache = None;
+            self.value = Some(self.convolve_1x1_stride1_eval(input, kernel));
+            return Ok(());
+        }
+
         let (result, im2col_cache) = if self.padding == (0, 0) {
             // 无 padding 的 1x1 / valid conv 不需要复制整块输入；反向时可直接使用父输入。
             self.padded_input = None;
@@ -438,6 +513,10 @@ impl TraitNode for Conv2d {
         self.im2col_cache = Some(im2col_cache);
         self.value = Some(result);
         Ok(())
+    }
+
+    fn set_training_mode(&mut self, is_training: bool) {
+        self.is_training = is_training;
     }
 
     fn value(&self) -> Option<&Tensor> {
