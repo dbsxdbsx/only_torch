@@ -86,3 +86,22 @@ fn test_erasing_rectangular() {
         return; // 成功验证一次即可
     }
 }
+
+#[test]
+fn test_erasing_supports_2d_grayscale() {
+    // 2D [H, W] 灰度图像也应能被擦除（放宽原来只接受 3D 的限制）
+    let erasing = RandomErasing::new(1.0).value(-1.0).scale(0.1, 0.5);
+    let input = Tensor::new(&[1.0; 25], &[5, 5]);
+
+    let mut ever_erased = false;
+    for _ in 0..50 {
+        let output = erasing.apply(&input);
+        assert_eq!(output.shape(), &[5, 5]);
+        let flat = output.flatten_view();
+        if flat.iter().any(|&v| v == -1.0) {
+            ever_erased = true;
+            break;
+        }
+    }
+    assert!(ever_erased, "2D 灰度输入 p=1.0 时也应能被擦除");
+}

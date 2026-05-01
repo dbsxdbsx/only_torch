@@ -49,9 +49,18 @@
   - `CenterCrop` / `RandomCrop` 新增 `with_label_filter(DetectionLabelFilter)` builder，控制 detection bbox crop 后的最小面积过滤
   - 新增 `data/transforms/crop_helpers.rs` 抽出 image-only / paired 共用的 crop / pad / bbox-shift / clip-filter 逻辑，避免重复
   - 配套 5 个 paired hflip 测试 + 7 个 paired crop 测试覆盖 cls / det / seg 三档；image-only 老测试保持兼容
+- **feat(data/transforms): 补齐 `SampleTransform` 实现矩阵（Rotation / Affine / Erasing）**
+  - `RandomRotation` / `RandomAffine`：为三种 Sample 补齐 paired 实现——detection 路径把 bbox 4 个角点按正向变换后取 AABB，再经 `clip_filter_labels` 裁到图像边界并过滤过小框；segmentation 路径 mask 改用**最近邻**插值（避免 bilinear 把离散类别混出非法中间值）；新增 `with_label_filter(DetectionLabelFilter)` builder 控制最小面积过滤
+  - `RandomErasing`：按 torchvision v2 的 A 方案——**只擦 image，labels / mask 保留**，保留"训练抗遮挡能力"的意图；`sample_erase_window` 把"概率掷骰 + 采样窗口"封成一次返回 `Option`，三档 sample 共用同一路径
+  - 新增 `data/transforms/affine_kernel.rs`：`AffineParams` + `affine_bilinear` / `affine_nearest` / `affine_bbox` 三个纯函数；`RandomAffine::apply` 重构为 "sample_params → kernel" 两步，为 paired 路径让 image / mask / bbox 共用同一组随机采样（否则随机性各自独立，paired 不再 paired）
+  - `transforms/mod.rs` 顶部 rustdoc 更新为完整的 `SampleTransform` 实现矩阵（6 个 transform × 3 档 Sample）
+  - 配套 26 个新 paired 测试（9 rotation + 10 affine + 7 erasing）覆盖 identity 短路、纯旋转 / 纯缩放 / 纯平移数学、mask nearest 离散类别保持、Erasing A 方案下 labels / mask 必须保留等断言
 
 ### Changed
 
+- **fix(data/transforms): `RandomErasing` image-only 路径放宽 shape 支持**
+  - 原 `RandomErasing::apply` assert 输入必须是 3D `[C, H, W]`——这是早期遗留限制而非设计决策；放宽后同时接受 2D `[H, W]` 灰度图像，与 paired 路径（`SampleTransform`）行为一致，也与 torchvision 对齐
+  - 现有 3D 测试不受影响；新增 `test_erasing_supports_2d_grayscale` 锁住新支持
 - **refactor(examples): 9 个空间域 example 改用库 API，共减重约 1100 行**
   - `traditional/single_object_detection`：删除本地 `tensor_rows_to_clipped_bboxes` / `draw_bbox` / `draw_hline` / `draw_vline` / `bbox_to_canvas_rect` / `tiny_text_*` / `put_pixel_checked` 等约 150 行可视化辅助；改用 `BBox::vec_from_tensor` + `vision::draw::draw_bbox`(DynamicImage 中转)+ `vision::viz::TinyFont::draw_with_box`
   - `traditional/single_object_segmentation` / `multi_instance_segmentation` / `overlapping_fixed_slot_instance_segmentation`：删除本地 `mask_row` / `fill_scaled_pixel` / `overlay` / `blend_channel` / `slot_pixel_accuracy` / `mean_instance_iou` / `mean_valid_slot_iou` / `empty_slot_accuracy` / `instance_iou` / `slot_color` 等，改用 `vision::mask` + `vision::viz` + `metrics::segmentation` + `vision::io::save_rgb_image`

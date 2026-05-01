@@ -1,34 +1,54 @@
 /*
  * @Author       : 老董
  * @Date         : 2025-01-21
- * @LastModified : 2025-02-15
+ * @LastModified : 2026-05-01
  * @Description  : 数据变换模块
  *
- * 提供 Transform trait 和常用数据变换实现。
+ * 提供两套正交的变换契约，外加常用工具函数。
  *
- * # 主要组件
+ * # 两套 trait
  *
- * ## 基础设施
- * - [`Transform`] trait: 数据变换抽象接口
- * - [`Compose`]: 链式组合多个变换
- * - [`RandomApply`]: 按概率应用变换
+ * - [`Transform`]：image-only，输入 `&Tensor` → `Tensor`，适用于分类 /
+ *   自监督预训练等单图流水线。
+ * - [`SampleTransform<S>`]：sample-level（owned），输入一个 `Sample` →
+ *   `Sample`，适用于 detection / segmentation 等需要 image 与 label 几何
+ *   同步的场景。Sample 类型见 [`crate::data::sample`]。
  *
- * ## 图像变换
+ * # SampleTransform 实现矩阵
+ *
+ * | Transform | Classification | Detection | Segmentation |
+ * |---|---|---|---|
+ * | `RandomHorizontalFlip` | ✓ | ✓ 同步 bbox | ✓ 同步 mask |
+ * | `CenterCrop`           | ✓ | ✓ 同步 bbox + 可选 `label_filter` | ✓ 同步 mask |
+ * | `RandomCrop`           | ✓ | ✓ 同步 bbox + 可选 `label_filter` | ✓ 同步 mask |
+ * | `RandomRotation`       | ✓ | ✓ 同步 bbox（4 角 → AABB）         | ✓ 同步 mask（nearest） |
+ * | `RandomAffine`         | ✓ | ✓ 同步 bbox（4 角 → AABB）         | ✓ 同步 mask（nearest） |
+ * | `RandomErasing`        | ✓ | ✓ 只擦图，labels 保留（A 方案）    | ✓ 只擦图，mask 保留（A 方案） |
+ *
+ * mask 之所以使用 **nearest** 插值，是因为它是离散类别——bilinear 会混出
+ * 非法中间值。`RandomErasing` 的 A 方案对齐 torchvision v2：擦图的意图是
+ * 训练抗遮挡能力，同步擦 label 会反向抵消。
+ *
+ * # 基础组合器
+ *
+ * - [`Compose`]: 链式组合多个 `Transform`
+ * - [`RandomApply`]: 按概率应用 `Transform`
+ *
+ * # 纯图像变换（只实现 `Transform`）
+ *
  * - [`Normalize`]: 按通道均值/标准差归一化
- * - [`RandomHorizontalFlip`]: 随机水平翻转
- * - [`RandomCrop`]: 随机裁切（含可选填充）
- * - [`CenterCrop`]: 中心裁切
- * - [`RandomRotation`]: 随机旋转（双线性插值）
  * - [`ColorJitter`]: 随机色彩扰动（亮度/对比度/饱和度）
- * - [`RandomErasing`]: 随机区域擦除
+ * - [`RandomResizedCrop`]: 随机区域裁切 + resize
  * - [`GaussianNoise`]: 高斯噪声（通用，适用于图像/表格/序列）
  *
- * ## 工具函数
+ * # 工具函数
+ *
  * - [`normalize_pixels`]: 像素值 [0,255] → [0,1]
  * - [`one_hot`]: 类别索引 → one-hot 编码
  * - [`flatten_images`]: 多维图像展平
  */
 
+pub(crate) mod affine_kernel;
 mod center_crop;
 mod color_jitter;
 mod crop_helpers;
@@ -39,7 +59,7 @@ mod one_hot;
 mod pixel_normalize;
 mod random_affine;
 mod random_crop;
-mod random_erasing;
+pub(crate) mod random_erasing;
 pub(crate) mod random_flip;
 mod random_resized_crop;
 pub(crate) mod random_rotation;

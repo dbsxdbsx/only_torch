@@ -2,9 +2,19 @@
 //!
 //! 对图像应用随机的旋转、平移、缩放、剪切组合变换，使用双线性插值。
 //! 对应 PyTorch `torchvision.transforms.RandomAffine`。
+//!
+//! 同时为 `ClassificationSample` / `DetectionSample` / `SegmentationSample`
+//! 实现 [`SampleTransform`]——所有 paired 路径下 image / mask / bbox 必须
+//! 共用**同一组**随机采样参数，因此 `apply` 与三档 paired 实现都走统一的
+//! `sample_params` → `affine_kernel` 组合。
 
 use super::Transform;
+use super::affine_kernel::{AffineParams, affine_bbox, affine_bilinear, affine_nearest};
+use super::sample_transform::SampleTransform;
+use crate::data::DetectionSample;
+use crate::data::sample::{ClassificationSample, SegmentationSample};
 use crate::tensor::Tensor;
+use crate::vision::detection::{DetectionLabelFilter, GroundTruthBox, clip_filter_labels};
 use rand::Rng;
 
 /// 随机仿射变换
@@ -41,6 +51,7 @@ pub struct RandomAffine {
     scale_range: Option<(f64, f64)>,
     shear: Option<f64>,
     fill_value: f32,
+    label_filter: DetectionLabelFilter,
 }
 
 impl RandomAffine {
@@ -56,6 +67,7 @@ impl RandomAffine {
             scale_range: None,
             shear: None,
             fill_value: 0.0,
+            label_filter: DetectionLabelFilter::default(),
         }
     }
 
@@ -92,28 +104,24 @@ impl RandomAffine {
         self.fill_value = value;
         self
     }
-}
 
-impl Transform for RandomAffine {
-    fn apply(&self, tensor: &Tensor) -> Tensor {
-        let shape = tensor.shape();
-        let ndim = shape.len();
-        assert!(
-            ndim == 2 || ndim == 3,
-            "RandomAffine: 输入应为 2D [H, W] 或 3D [C, H, W]，得到 {ndim}D"
-        );
+    /// 设置 detection label 过滤规则；仅在 `SampleTransform<DetectionSample>`
+    /// 路径下生效。仿射后的 bbox 会先 clip 到图像边界，再按此 filter 丢弃
+    /// 面积过小的框（典型：大幅缩小或移到图外）。
+    pub fn with_label_filter(mut self, filter: DetectionLabelFilter) -> Self {
+        self.label_filter = filter;
+        self
+    }
 
-        let (c, h, w) = if ndim == 2 {
-            (1, shape[0], shape[1])
-        } else {
-            (shape[0], shape[1], shape[2])
-        };
-
-        // 采样随机参数
+    /// 采样一次随机仿射参数。
+    ///
+    /// `w / h` 仅用于把 `translate` 比例转换为像素位移——因此 paired 路径下
+    /// image / mask / bbox 只要尺寸一致（都是同一张图），采样结果就一致。
+    fn sample_params(&self, h: usize, w: usize) -> AffineParams {
         let mut rng = rand::thread_rng();
 
-        let angle = if self.degrees > 0.0 {
-            rng.gen_range(-self.degrees..=self.degrees)
+        let angle_rad = if self.degrees > 0.0 {
+            rng.gen_range(-self.degrees..=self.degrees).to_radians()
         } else {
             0.0
         };
@@ -126,104 +134,101 @@ impl Transform for RandomAffine {
             (0.0, 0.0)
         };
 
-        let s = if let Some((min_s, max_s)) = self.scale_range {
+        let scale = if let Some((min_s, max_s)) = self.scale_range {
             rng.gen_range(min_s..=max_s)
         } else {
             1.0
         };
 
         let shear_rad = if let Some(max_shear) = self.shear {
-            let shear_deg = rng.gen_range(-max_shear..=max_shear);
-            shear_deg.to_radians()
+            rng.gen_range(-max_shear..=max_shear).to_radians()
         } else {
             0.0
         };
 
-        // 构建仿射矩阵（围绕图像中心）
-        // 变换顺序: 剪切 → 缩放 → 旋转 → 平移
-        //
-        // 正向变换矩阵 M = T * R * S * Sh * C^(-1)
-        // 其中 C 是中心化平移
-        //
-        // 我们需要逆变换（从输出坐标反推输入坐标）用于双线性插值
-        let cx = (w as f64 - 1.0) / 2.0;
-        let cy = (h as f64 - 1.0) / 2.0;
-
-        let angle_rad = angle.to_radians();
-        let cos_a = angle_rad.cos();
-        let sin_a = angle_rad.sin();
-        let tan_sh = shear_rad.tan();
-
-        // 逆变换: input_coord = inv_M * (output_coord - center - translate) + center
-        // inv_M = inv(R * S * Sh)
-        //
-        // R * S * Sh = s * [cos_a, cos_a*tan_sh - sin_a]
-        //                  [sin_a, sin_a*tan_sh + cos_a]
-        //
-        // det = s^2 * (cos_a*(sin_a*tan_sh + cos_a) - sin_a*(cos_a*tan_sh - sin_a))
-        //     = s^2 * (cos_a*sin_a*tan_sh + cos_a^2 - sin_a*cos_a*tan_sh + sin_a^2)
-        //     = s^2
-        let a00 = s * cos_a;
-        let a01 = s * (cos_a * tan_sh - sin_a);
-        let a10 = s * sin_a;
-        let a11 = s * (sin_a * tan_sh + cos_a);
-        let det = s * s; // det of the 2x2 part
-
-        // inv of 2x2: [a11, -a01; -a10, a00] / det
-        let inv00 = a11 / det;
-        let inv01 = -a01 / det;
-        let inv10 = -a10 / det;
-        let inv11 = a00 / det;
-
-        let flat: Vec<f32> = tensor.flatten_view().to_vec();
-        let mut out = vec![self.fill_value; c * h * w];
-
-        for ch in 0..c {
-            let ch_offset = ch * h * w;
-            for out_y in 0..h {
-                for out_x in 0..w {
-                    // 输出坐标相对于中心+平移
-                    let dx = out_x as f64 - cx - tx;
-                    let dy = out_y as f64 - cy - ty;
-
-                    // 逆变换得到输入坐标
-                    let in_x = inv00 * dx + inv01 * dy + cx;
-                    let in_y = inv10 * dx + inv11 * dy + cy;
-
-                    // 边界检查 + 双线性插值
-                    if in_x >= -0.5
-                        && in_x <= w as f64 - 0.5
-                        && in_y >= -0.5
-                        && in_y <= h as f64 - 0.5
-                    {
-                        out[ch_offset + out_y * w + out_x] =
-                            bilinear_sample(&flat, ch_offset, h, w, in_y, in_x);
-                    }
-                }
-            }
+        AffineParams {
+            angle_rad,
+            tx,
+            ty,
+            scale,
+            shear_rad,
         }
-
-        Tensor::new(&out, shape)
     }
 }
 
-/// 双线性插值采样（clamp 边界）
-fn bilinear_sample(flat: &[f32], ch_offset: usize, h: usize, w: usize, y: f64, x: f64) -> f32 {
-    let x = x.clamp(0.0, (w - 1) as f64);
-    let y = y.clamp(0.0, (h - 1) as f64);
+impl Transform for RandomAffine {
+    fn apply(&self, tensor: &Tensor) -> Tensor {
+        let (h, w) = image_h_w(tensor);
+        let params = self.sample_params(h, w);
+        if params.is_identity() {
+            return tensor.clone();
+        }
+        affine_bilinear(tensor, params, self.fill_value)
+    }
+}
 
-    let x0 = x.floor() as usize;
-    let y0 = y.floor() as usize;
-    let x1 = (x0 + 1).min(w - 1);
-    let y1 = (y0 + 1).min(h - 1);
+// ============================================================================
+// SampleTransform 实现：保持 image / label 几何同步
+// ============================================================================
 
-    let dx = (x - x0 as f64) as f32;
-    let dy = (y - y0 as f64) as f32;
+impl SampleTransform<ClassificationSample> for RandomAffine {
+    fn apply_to(&self, mut sample: ClassificationSample) -> ClassificationSample {
+        let (h, w) = image_h_w(&sample.image);
+        let params = self.sample_params(h, w);
+        if params.is_identity() {
+            return sample;
+        }
+        sample.image = affine_bilinear(&sample.image, params, self.fill_value);
+        sample
+    }
+}
 
-    let v00 = flat[ch_offset + y0 * w + x0];
-    let v01 = flat[ch_offset + y0 * w + x1];
-    let v10 = flat[ch_offset + y1 * w + x0];
-    let v11 = flat[ch_offset + y1 * w + x1];
+impl SampleTransform<DetectionSample> for RandomAffine {
+    fn apply_to(&self, sample: DetectionSample) -> DetectionSample {
+        let DetectionSample { image, labels } = sample;
+        let (h, w) = image_h_w(&image);
+        let params = self.sample_params(h, w);
+        if params.is_identity() {
+            return DetectionSample::new(image, labels);
+        }
+        let new_image = affine_bilinear(&image, params, self.fill_value);
+        let transformed: Vec<GroundTruthBox> = labels
+            .into_iter()
+            .map(|gt| {
+                GroundTruthBox::new(
+                    affine_bbox(gt.bbox, params, w as f32, h as f32),
+                    gt.class_id,
+                )
+            })
+            .collect();
+        let filtered = clip_filter_labels(&transformed, w as f32, h as f32, self.label_filter);
+        DetectionSample::new(new_image, filtered)
+    }
+}
 
-    v00 * (1.0 - dx) * (1.0 - dy) + v01 * dx * (1.0 - dy) + v10 * (1.0 - dx) * dy + v11 * dx * dy
+impl SampleTransform<SegmentationSample> for RandomAffine {
+    fn apply_to(&self, sample: SegmentationSample) -> SegmentationSample {
+        let (h, w) = image_h_w(&sample.image);
+        let params = self.sample_params(h, w);
+        if params.is_identity() {
+            return sample;
+        }
+        let SegmentationSample { image, mask } = sample;
+        let new_image = affine_bilinear(&image, params, self.fill_value);
+        let new_mask = affine_nearest(&mask, params, self.fill_value);
+        SegmentationSample::new(new_image, new_mask)
+    }
+}
+
+/// 推断图像 Tensor 的 `(height, width)`。支持 `[H, W]` 与 `[C, H, W]`。
+fn image_h_w(tensor: &Tensor) -> (usize, usize) {
+    let shape = tensor.shape();
+    match shape.len() {
+        2 => (shape[0], shape[1]),
+        3 => (shape[1], shape[2]),
+        _ => panic!(
+            "RandomAffine: 期望图像形状 [H, W] 或 [C, H, W]，得到 {:?}",
+            shape
+        ),
+    }
 }
