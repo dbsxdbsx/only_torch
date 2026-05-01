@@ -8,7 +8,7 @@
 //! 与本契约配套的"任务级"积木：
 //! - `vision::detection::{BBox, Detection, GroundTruthBox}`：基础数据类型
 //! - `vision::detection::nms`：通用后处理
-//! - `vision::detection::loss`：通用 loss 组件加权（迁位中）
+//! - `vision::detection::loss`：detection 任务级 loss 周边工具（如多任务加权组合）
 //! - `metrics::detection`：mAP / precision / recall
 
 use crate::nn::{GraphError, Var};

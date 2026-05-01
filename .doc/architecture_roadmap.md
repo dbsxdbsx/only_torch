@@ -121,19 +121,19 @@ for (x, target) in &dataloader {
 | :--- | :---------------------------------------------------------- | :--: |
 | 输入 | Input (Data/Target), Parameter, State                       |  3   |
 | 算术 | Add, Subtract, Multiply, Divide, Negate, Pow, Square, Reciprocal |  8   |
-| 矩阵/卷积 | MatMul, Conv2d, MaxPool2d, AvgPool2d                   |  4   |
+| 矩阵/卷积 | MatMul, Conv2d, ConvTranspose2d, DeformableConv2d, MaxPool2d, AvgPool2d, Upsample2d | 7 |
 | 形状 | Reshape, Flatten, Select, Gather, Narrow, Permute, Stack, Concat, Pad, Repeat |  10  |
 | 选择 | TopK, SortNode                                              |  2   |
 | 归约 | Maximum, Minimum, Amax, Amin, Sum, Mean                     |  6   |
 | 激活 | Sigmoid, Tanh, ReLU, LeakyReLU, ReLU6, HardTanh, Softmax, LogSoftmax, SoftPlus, GELU, Swish, ELU, SELU, Mish, HardSwish, HardSigmoid, Step, Sign, Abs, Ln, Log10, Log2, Exp, Sqrt | 24 |
 | 裁剪 | Clip                                                        |  1   |
 | 条件 | WhereCond                                                   |  1   |
-| 损失 | MSE, MAE, BCE, Huber, SoftmaxCrossEntropy                   |  5   |
+| 损失 | MSE, MAE, BCE, Huber, BBoxLoss, SoftmaxCrossEntropy         |  6   |
 | 归一化 | BatchNormOp, LayerNormOp, RMSNormOp                       |  3   |
 | 辅助 | Identity, Dropout, ZerosLike, Detach                        |  4   |
-| **合计** |                                                         | **71 + 2 复合** |
+| **合计** |                                                         | **75**          |
 
-> 注：Input 和 Parameter 各含子类型，实际枚举变体总数 73。
+> 注：Input 内部含 Data/Target 两种子变体（同一 `NodeType` 变体）。准确总数请运行 `nn::debug::print_registered_node_types()` 查看。
 
 > 运行 `nn::debug::print_registered_node_types()` 可查看完整列表（自动从 `NodeType` 枚举获取）。
 >

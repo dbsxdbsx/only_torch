@@ -5,6 +5,7 @@ mod basic;
 mod convert;
 mod cv;
 mod detection;
+mod detection_loss;
 mod draw;
 mod filter;
 mod geom;

@@ -58,6 +58,11 @@
 
 ### Changed
 
+- **refactor(vision/detection + docs): detection loss 测试归位与文档对齐**
+  - `DetectionLossComponents` 单元测试从 `src/nn/tests/node_bbox_loss.rs` 内嵌迁到 `src/vision/tests/detection_loss.rs`；`vision/detection/loss.rs` 删除内嵌 `mod tests` 并强化 doc-comment（明确"detection 任务级 loss 周边工具，非新算子"的层级边界）
+  - `architecture_roadmap.md` 节点统计补齐 `BBoxLoss` 与 `ConvTranspose2d / DeformableConv2d / Upsample2d`（损失 5→6、矩阵/卷积 4→7、合计 71→75）；`node_vs_layer_design.md` 损失行同步；`vision/detection/contract.rs` 删除"迁位中"过时标注；`AGENTS.md` 测试约定段重写为符合实际的"模块下 tests/ 主流 + 内嵌 mod tests 仅小场景 + 顶层 tests/ 集成"三档
+  - 新增 `.issue/items/bbox_loss_analytical_grad.md`（suspended）：BBoxLoss 反向当前用有限差分占位，记录解析梯度 TODO 与恢复条件（第一个原生 detector 训练 / fine-tune adapter 上线）
+
 - **rename: tests/ 集成测试与中国象棋 example 命名规范化**
   - **tests/ 去 `test_` 前缀**(向同目录已有的 `onnx_otm_load_bench.rs` / `yolov5_xiangqi_import.rs` 看齐):`tests/test_cse_dedup.rs` → `tests/cse_dedup.rs`、`tests/test_mode_invariants.rs` → `tests/mode_invariants.rs`;`mode_invariants.rs` 内部 `target/test_mode_invariants` 临时目录跟着改成 `target/mode_invariants`;同步 `.doc/design/mode_design.md` / `src/nn/tests/{graph_handle,gradient_flow_control}.rs` 共 4 处链接
   - **chess example 改名为 `chinese_chess_*`,且把 task / 模型版本写清楚**:旧名 `chess_yolo_onnx_detect` 看不出"做的是空间域 detection 还是棋局识别(recognition)"且 `yolo` 不带版本号;新名按"领域 + 模型(带版本) + 互通方式 + 核心动作"四段式表达

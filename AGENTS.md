@@ -94,8 +94,9 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 
 ## 测试约定
 
-- 源码旁测试：各模块内部 `mod tests`。
-- 集成测试：`tests/` 下每个 `.rs` 文件尽量只放一个 `#[test]`。
+- **主流：模块下 `tests/` 子目录**，例如 `src/nn/tests/`、`src/tensor/tests/`、`src/vision/tests/`、`src/data/tests/`、`src/metrics/tests/`、`src/nn/evolution/tests/`。每个测试文件聚焦一个主题（命名如 `node_<op>.rs` / `layer_<name>.rs` / `transform_<name>.rs`），由对应模块的 `tests/mod.rs` 集中索引。这是事实上的 default。
+- **源码旁内嵌 `mod tests`**：仅用于极少数"小且紧贴单一 struct" 的场景（≤ 2 个 test、≤ 30 行、不依赖跨模块 fixture），用 `super::*` 直通私有 API 即可。规模一旦超出就归位到风格 A。
+- **顶层 `tests/`**：仅用于跨 crate / 跨模块、需要从 public API 走端到端的集成测试，每个 `.rs` 文件尽量只放一个 `#[test]`。
 - 数值验证：复杂算子优先参考 `tests/*.py` 中的 PyTorch 对照实现。
 - 普通验证优先用 debug 构建；仅在性能或发布场景才切 release。
 
