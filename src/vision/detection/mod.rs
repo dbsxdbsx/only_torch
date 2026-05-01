@@ -1,5 +1,19 @@
 //! 通用 2D detection 原语与任务契约。
 //!
+//! # Quick Start：我应该看哪个 API？
+//!
+//! - **推理第三方 ONNX YOLO 模型** → [`adapter::yolo::v5::detect`] 一站式拿
+//!   到 letterbox 空间下的 [`Detection`] 列表（已做 per-class NMS）；输出回到
+//!   原图坐标用 [`Detection::map_to_origin`] / [`restore_letterbox_detections`]。
+//! - **训练自己的 detector** → [`contract`] 模块的 `Backbone` /
+//!   `DetectionHeadDecode` / `Assigner` trait；bbox 回归 loss 用
+//!   [`crate::nn::Var`] 的 `bbox_loss / giou_loss / diou_loss / ciou_loss`。
+//! - **bbox / NMS / clip 等通用积木** → 本模块顶层（`BBox`、`Detection`、
+//!   `GroundTruthBox`、`nms`、`batch_nms`、`clip_filter_*`）。
+//! - **mAP / precision / recall 评估** → [`crate::metrics::detection`]。
+//!
+//! # 模块组成
+//!
 //! - 数据 / 几何积木：`BBox`、`Detection`、`GroundTruthBox`、IoU family、NMS、
 //!   `clip_filter_*`，不绑定具体检测模型族。
 //! - 任务契约（[`contract`] 模块）：`Backbone` / `BackboneOutput` /
@@ -8,6 +22,8 @@
 //!   或 head 实现。
 //! - 第三方 / 外部预训练检测器适配（[`adapter`] 模块）：把 YOLO 等具体模型族
 //!   的特殊输出格式翻译成本框架的 [`Detection`] / [`BBox`] 类型。
+//! - label / prediction 几何同步（[`transform`] 模块）：letterbox 与原图坐标互
+//!   转、水平翻转、按图像边界 clip + filter。
 //!
 //! 配套的高层组合：
 //! - `vision::preprocess::letterbox` / `image_to_nchw_normalized`：图像侧预处理
@@ -25,12 +41,13 @@ pub use io::{parse_yolo_txt_file, parse_yolo_txt_labels};
 pub use loss::{DetectionLossComponents, DetectionLossWeights};
 pub use transform::{
     DetectionLabelFilter, clip_filter_labels, horizontal_flip_labels, letterbox_labels,
-    restore_letterbox_labels,
+    restore_letterbox_detections, restore_letterbox_labels,
 };
 
 use std::cmp::Ordering;
 
 use crate::tensor::Tensor;
+use crate::vision::preprocess::LetterboxResult;
 
 /// bbox 坐标所属空间。
 ///
@@ -339,6 +356,22 @@ impl Detection {
             score,
             class_id,
         }
+    }
+
+    /// 把 letterbox 坐标系下的检测结果反映射到原图坐标。
+    ///
+    /// 仅做几何同步：保留 `score` / `class_id` 不变，对 `bbox` 调用
+    /// [`LetterboxResult::bbox_to_origin`]，让调用方不再需要手拼
+    /// `Detection::new(lb.bbox_to_origin(d.bbox), d.score, d.class_id)`。
+    ///
+    /// 批量版（含 clip + min_area 过滤）见 [`restore_letterbox_detections`]，
+    /// 与 label 侧 [`restore_letterbox_labels`] 形态对称。
+    pub fn map_to_origin(self, letterbox: &LetterboxResult) -> Self {
+        Self::new(
+            letterbox.bbox_to_origin(self.bbox),
+            self.score,
+            self.class_id,
+        )
     }
 }
 

@@ -1,9 +1,19 @@
-//! Detection 标签的几何变换。
+//! Detection label / prediction 的几何变换。
 //!
-//! 这里只做"图像几何 + label"的同步映射，不绑定具体训练器。配合
-//! `vision::preprocess::letterbox` 等图像几何工具使用。
+//! 这里做"图像几何 + (label | prediction)"的同步映射，不绑定具体训练器。
+//! 配合 `vision::preprocess::letterbox` 等图像几何工具使用。
+//!
+//! - **label 侧**（训练数据增强 / 评估目标对齐）：[`letterbox_labels`] /
+//!   [`restore_letterbox_labels`] / [`horizontal_flip_labels`] /
+//!   [`clip_filter_labels`]。
+//! - **prediction 侧**（推理后还原原图坐标 / 评估前对齐）：
+//!   [`restore_letterbox_detections`]；单框就近用
+//!   [`super::Detection::map_to_origin`]。
+//!
+//! 两侧共享同一个面积过滤策略 [`DetectionLabelFilter`]——名字保留 "Label" 是
+//! 历史命名，语义上对 prediction 也一致。
 
-use super::{GroundTruthBox, clip_filter_ground_truths};
+use super::{Detection, GroundTruthBox, clip_filter_detections, clip_filter_ground_truths};
 use crate::vision::preprocess::LetterboxResult;
 
 /// 检测标签过滤规则。
@@ -58,6 +68,30 @@ pub fn restore_letterbox_labels(
         letterbox.original_size.0 as f32,
         letterbox.original_size.1 as f32,
         filter,
+    )
+}
+
+/// 把 letterbox 输出坐标的检测结果同步反映射到原图坐标，并裁剪 / 过滤无效框。
+///
+/// 与 [`restore_letterbox_labels`] 在 prediction 侧形态对称：保留每个
+/// [`Detection`] 的 `score` / `class_id`，仅对 `bbox` 做几何反映射，再按
+/// `letterbox.original_size` 做边界裁剪 + `filter.min_area` 面积过滤。
+///
+/// 单框就近用 [`Detection::map_to_origin`]（不带 clip / filter）。
+pub fn restore_letterbox_detections(
+    detections: &[Detection],
+    letterbox: &LetterboxResult,
+    filter: DetectionLabelFilter,
+) -> Vec<Detection> {
+    let mapped = detections
+        .iter()
+        .map(|d| Detection::new(letterbox.bbox_to_origin(d.bbox), d.score, d.class_id))
+        .collect::<Vec<_>>();
+    clip_filter_detections(
+        &mapped,
+        letterbox.original_size.0 as f32,
+        letterbox.original_size.1 as f32,
+        filter.min_area,
     )
 }
 

@@ -4,6 +4,14 @@
 
 ### Added
 
+- **feat(vision/detection): prediction 侧 letterbox→原图反映射 API（与 label 侧对称）**
+  - `Detection::map_to_origin(self, &LetterboxResult) -> Self`：单框反映射，保留 `score` / `class_id`，bbox 几何由 `LetterboxResult::bbox_to_origin` 接管（含原图边界 clip）；调用方不再需要手拼 `Detection::new(lb.bbox_to_origin(d.bbox), d.score, d.class_id)`
+  - `vision::detection::restore_letterbox_detections(detections, &LetterboxResult, DetectionLabelFilter) -> Vec<Detection>`：批量反映射 + clip + min_area 过滤，与 label 侧 `restore_letterbox_labels` 在 prediction 侧形态完全对称（共用 `DetectionLabelFilter`）
+  - `vision::detection` mod 顶部 rustdoc 新增 **Quick Start 卡片**：按"推理第三方 ONNX YOLO / 训练自己的 detector / bbox 通用积木 / mAP 评估"四类高频入口给出导航，避免新用户翻 CHANGELOG 才发现 `adapter::yolo::v5::detect`
+  - `vision::detection::transform` mod rustdoc 改为"label / prediction 双侧"形态说明
+  - 配套 3 个新单元测试：单框 `map_to_origin` 保留 score/class_id 且 bbox 跨界自动 clip；批量版正常框 / 跨界框 clip / 过小框被 min_area 过滤的端到端组合行为；`min_area=0` 时批量版逐元素 ≡ 单框版的等价性锚定（防两条路径未来漂移）
+  - 三个改动文件相对仓库现存 207 条预存 clippy warning **零新增**
+
 - **feat(vision/metrics): 把空间域 example 的通用 helper 沉淀到库**
   - `src/vision/mask`：像素级 mask 处理（`argmax_to_class_map` / `foreground_from_multiclass` / `mask_to_ascii_lines`），统一替代 example 各自手写的 argmax / 多类→前景 / mask 文本化
   - `src/vision/viz`：展示画布工具——`Palette`（含 `default_categorical()` Tab10 风格 8 色调色板）、`pixel_block_scale`（toy 像素 N 倍放大）、`blend_alpha`（mask 半透明叠加）、`TinyFont` 5x3 像素字体（内置 0-9 / A-Z / 标点 / 小写自动落到大写，含 `draw_with_box` 一键画带底框的标签）

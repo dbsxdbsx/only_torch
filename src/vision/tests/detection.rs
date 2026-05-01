@@ -2,8 +2,8 @@ use approx::assert_abs_diff_eq;
 
 use crate::tensor::Tensor;
 use crate::vision::detection::{
-    BBox, BoxFormat, Detection, GroundTruthBox, NmsOptions, batch_nms, clip_filter_detections,
-    clip_filter_ground_truths, nms,
+    BBox, BoxFormat, Detection, DetectionLabelFilter, GroundTruthBox, NmsOptions, batch_nms,
+    clip_filter_detections, clip_filter_ground_truths, nms, restore_letterbox_detections,
 };
 
 #[test]
@@ -268,4 +268,91 @@ fn test_bbox_vec_from_tensor_empty() {
 fn test_bbox_vec_from_tensor_panics_on_wrong_shape() {
     let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     let _ = BBox::vec_from_tensor(&tensor, BoxFormat::XyXy);
+}
+
+#[test]
+fn test_detection_map_to_origin_inherits_bbox_clip_and_preserves_score_class() {
+    use crate::vision::preprocess::letterbox;
+    use image::{DynamicImage, ImageBuffer, Rgb};
+
+    // 4x2 原图 → letterbox(8) 输出 8x8，scale=2.0、pad=(0, 2)。
+    let img = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(4, 2, Rgb([0, 0, 0])));
+    let lb = letterbox(&img, 8);
+
+    // 落在原图边界内的框：letterbox (2, 2, 6, 6) → 原图 (1, 0, 3, 2)。
+    let det_in = Detection::new(BBox::from_xyxy(2.0, 2.0, 6.0, 6.0), 0.85, 7);
+    let det_in_origin = det_in.map_to_origin(&lb);
+    assert_abs_diff_eq!(det_in_origin.bbox.x1, 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(det_in_origin.bbox.y1, 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(det_in_origin.bbox.x2, 3.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(det_in_origin.bbox.y2, 2.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(det_in_origin.score, 0.85, epsilon = 1e-6);
+    assert_eq!(det_in_origin.class_id, 7);
+
+    // 跨界框：letterbox (0, 0, 10, 6) → 原图 (0, -1, 5, 2)，再被 bbox_to_origin
+    // 自带的 clip_to_size(4, 2) 截到 (0, 0, 4, 2)；score / class_id 不受影响。
+    let det_out = Detection::new(BBox::from_xyxy(0.0, 0.0, 10.0, 6.0), 0.5, 3);
+    let det_out_origin = det_out.map_to_origin(&lb);
+    assert_eq!(det_out_origin.bbox.to_xyxy(), [0.0, 0.0, 4.0, 2.0]);
+    assert_abs_diff_eq!(det_out_origin.score, 0.5, epsilon = 1e-6);
+    assert_eq!(det_out_origin.class_id, 3);
+}
+
+#[test]
+fn test_restore_letterbox_detections_clips_filters_and_preserves_metadata() {
+    use crate::vision::preprocess::letterbox;
+    use image::{DynamicImage, ImageBuffer, Rgb};
+
+    let img = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(4, 2, Rgb([0, 0, 0])));
+    let lb = letterbox(&img, 8);
+
+    let detections = vec![
+        // 落在原图边界内：(2, 2, 6, 6) → (1, 0, 3, 2)，面积 4。
+        Detection::new(BBox::from_xyxy(2.0, 2.0, 6.0, 6.0), 0.9, 0),
+        // 跨界后被 clip 到 (0, 0, 4, 2)，面积 8。
+        Detection::new(BBox::from_xyxy(0.0, 0.0, 10.0, 6.0), 0.8, 1),
+        // 反映射 + clip 后形如 (0, 0, 0.25, 1)，面积 0.25 < min_area=1.0，应被过滤。
+        Detection::new(BBox::from_xyxy(0.0, 0.0, 0.5, 4.0), 0.7, 2),
+    ];
+
+    let kept = restore_letterbox_detections(&detections, &lb, DetectionLabelFilter::new(1.0));
+
+    assert_eq!(kept.len(), 2);
+
+    assert_eq!(kept[0].bbox.to_xyxy(), [1.0, 0.0, 3.0, 2.0]);
+    assert_abs_diff_eq!(kept[0].score, 0.9, epsilon = 1e-6);
+    assert_eq!(kept[0].class_id, 0);
+
+    assert_eq!(kept[1].bbox.to_xyxy(), [0.0, 0.0, 4.0, 2.0]);
+    assert_abs_diff_eq!(kept[1].score, 0.8, epsilon = 1e-6);
+    assert_eq!(kept[1].class_id, 1);
+}
+
+#[test]
+fn test_restore_letterbox_detections_matches_single_map_to_origin_when_no_filter() {
+    use crate::vision::preprocess::letterbox;
+    use image::{DynamicImage, ImageBuffer, Rgb};
+
+    let img = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(4, 2, Rgb([0, 0, 0])));
+    let lb = letterbox(&img, 8);
+
+    // 全部反映射后落在原图边界内：min_area=0 时，批量版 ≡ 单框版逐元素。
+    let detections = vec![
+        Detection::new(BBox::from_xyxy(2.0, 2.0, 6.0, 6.0), 0.9, 0),
+        Detection::new(BBox::from_xyxy(0.0, 2.0, 4.0, 6.0), 0.8, 1),
+    ];
+
+    let batch = restore_letterbox_detections(&detections, &lb, DetectionLabelFilter::new(0.0));
+    let singles: Vec<Detection> = detections
+        .iter()
+        .cloned()
+        .map(|d| d.map_to_origin(&lb))
+        .collect();
+
+    assert_eq!(batch.len(), singles.len());
+    for (got, expected) in batch.iter().zip(singles.iter()) {
+        assert_eq!(got.bbox.to_xyxy(), expected.bbox.to_xyxy());
+        assert_abs_diff_eq!(got.score, expected.score, epsilon = 1e-6);
+        assert_eq!(got.class_id, expected.class_id);
+    }
 }
