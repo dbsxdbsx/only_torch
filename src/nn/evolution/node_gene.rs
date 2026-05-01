@@ -317,7 +317,13 @@ pub fn infer_output_shape(
         }
 
         // ── 二元逐元素操作（遵循广播规则）──
-        NT::Add | NT::Subtract | NT::Divide | NT::Multiply | NT::Maximum | NT::Minimum => {
+        NT::Add
+        | NT::Subtract
+        | NT::Divide
+        | NT::Multiply
+        | NT::Maximum
+        | NT::Minimum
+        | NT::Atan2 => {
             if parent_shapes.len() < 2 {
                 return Err(format!("需要至少 2 个父节点，实际 {}", parent_shapes.len()));
             }
@@ -642,7 +648,6 @@ pub fn infer_output_shape(
         // ── 损失函数（输出标量）──
         NT::BCE { .. }
         | NT::Huber { .. }
-        | NT::BBoxLoss { .. }
         | NT::MAE { .. }
         | NT::MSE { .. }
         | NT::SoftmaxCrossEntropy => Ok(vec![1]),

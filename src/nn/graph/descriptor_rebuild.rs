@@ -551,6 +551,13 @@ fn rebuild_node(
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
+        NodeTypeDescriptor::Atan2 => {
+            let y = get_parent(node_desc, node_map, 0)?;
+            let x = get_parent(node_desc, node_map, 1)?;
+            let node = graph.inner_mut().create_atan2_node(y, x, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
         NodeTypeDescriptor::Amax { axis } => {
             let input = get_parent(node_desc, node_map, 0)?;
             let node = graph.inner_mut().create_amax_node(input, *axis, name)?;
@@ -902,19 +909,6 @@ fn rebuild_node(
             let node = graph
                 .inner_mut()
                 .create_huber_node(input, target, *reduction, *delta, name)?;
-            Ok(Var::new_with_rc_graph(node, &inner_rc))
-        }
-
-        NodeTypeDescriptor::BBoxLoss {
-            kind,
-            format,
-            reduction,
-        } => {
-            let input = get_parent(node_desc, node_map, 0)?;
-            let target = get_parent(node_desc, node_map, 1)?;
-            let node = graph
-                .inner_mut()
-                .create_bbox_loss_node(input, target, *kind, *format, *reduction, name)?;
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 

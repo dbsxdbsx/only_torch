@@ -65,7 +65,7 @@ Node 层使用**统一的 VJP 模式 API**：
 | **运算** | `Add`, `MatMul`, `Multiply`, `ScalarMultiply` | 基础数学运算         |
 | **形状** | `Reshape`, `Flatten`                          | 张量形状变换         |
 | **激活** | `Step`, `Tanh`, `Sigmoid`, `LeakyReLU`        | 非线性激活           |
-| **损失** | `MSE`, `MAE`, `BCE`, `Huber`, `BBoxLoss`, `SoftmaxCrossEntropy` | 损失计算（含检测框 IoU 族） |
+| **损失** | `MSE`, `MAE`, `BCE`, `Huber`, `SoftmaxCrossEntropy` | 损失计算（IoU 族 bbox loss 由 `vision::detection::iou_loss` 用基础算子拼接，不在节点层） |
 | **CNN**  | `Conv2d`, `MaxPool2d`, `AvgPool2d`            | 卷积与池化           |
 
 ### Node 特性

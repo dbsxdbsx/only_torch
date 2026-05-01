@@ -24,6 +24,7 @@ mod var;
 // pub use criterion::{...}; // 已移除
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
 pub(in crate::nn) use display::format_node_display;
+pub(crate) use graph::NodeGroupContext;
 pub use graph::{
     Graph, GraphError, GraphInner, ImageFormat, Mode, OnnxError, RebuildResult, SnapshotNode,
     VisualizationOutput, VisualizationSnapshot,
@@ -37,10 +38,11 @@ pub use layer::{
     LayerNorm, Linear, Lstm, MaxPool2d, MultiHeadAttention, RMSNorm, Rnn,
 };
 // pub use model_state::{ForwardInput, ForwardOutput, ModelState}; // 已移除
+pub use crate::vision::detection::BBoxLossKind;
 pub use module::Module;
 pub use nodes::NodeId;
 pub use nodes::node_inner::NodeInner; // 供内部模块使用
-pub use nodes::raw_node::{BBoxLossKind, DEFAULT_DROPOUT_P, Reduction};
+pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
 pub use optimizer::{Adam, CosineAnnealingLR, LambdaLR, LrScheduler, Optimizer, SGD, StepLR};
 pub use shape::{Dim, DynamicShape};
 pub use var::ops::{

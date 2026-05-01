@@ -5,8 +5,7 @@
  *                 统一的中间表示（IR），用于序列化、可视化和调试输出
  */
 
-use crate::nn::nodes::raw_node::{BBoxLossKind, Reduction};
-use crate::vision::detection::BoxFormat;
+use crate::nn::nodes::raw_node::Reduction;
 use serde::{Deserialize, Serialize};
 
 /// 图的可序列化描述
@@ -211,11 +210,6 @@ pub enum NodeTypeDescriptor {
         delta: f32,
         reduction: Reduction,
     },
-    BBoxLoss {
-        kind: BBoxLossKind,
-        format: BoxFormat,
-        reduction: Reduction,
-    },
     MAE {
         reduction: Reduction,
     },
@@ -303,6 +297,8 @@ pub enum NodeTypeDescriptor {
     Square,
     /// 倒数 y = 1/x
     Reciprocal,
+    /// 双输入逐元素 atan2(y, x)（CIoU 角度差等）
+    Atan2,
 
     // ──────────────────── 张量变换 ────────────────────
     /// 沿轴取连续范围 narrow(axis, start, length)

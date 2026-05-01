@@ -20,7 +20,7 @@
   - `src/data/detection`：`DetectionSample` / `DetectionBatch` 处理变长检测标签，并补充 letterbox、restore、horizontal flip、clip/filter 等 bbox 同步变换 helper
   - `src/data/datasets/yolo`：YOLO `.txt` 标签解析（支持空行、行内 `#` 注释、错误行 [文件:行号] 定位）
   - `src/metrics/detection`：mAP / Precision / Recall / F1 复用 `vision::detection::BBox`，预置 `VOC_IOU_THRESHOLDS`（`mAP@0.5`）与 `COCO_IOU_THRESHOLDS`（10 点 0.5..=0.95），新增 `DetectionMetricOptions`、per-class AP、per-threshold AP、score threshold 与 max detections 评估协议
-  - `src/nn/nodes/raw_node/loss/bbox`：新增 `BBoxLossKind::{IoU, GIoU, DIoU, CIoU}` 与 `VarLossOps::{bbox_loss, giou_loss, diou_loss, ciou_loss}`，支持 `[N, 4]` 已匹配检测框回归训练并接入 descriptor rebuild / ONNX training-only 分类；反向传播当前仍为有限差分，真实 fine-tune 前需替换解析梯度
+  - `src/vision/detection/iou_loss`：新增 `BBoxLossKind::{IoU, GIoU, DIoU, CIoU}`（移到 `vision::detection`，更贴近其语义层级）与 `VarLossOps::{bbox_loss, giou_loss, diou_loss, ciou_loss}`，支持 `[N, 4]` 已匹配检测框回归训练；用基础算子拼接（`Maximum / Minimum / ReLU / Square / Atan2 / Sign / Mean`）+ autograd 自动反向，避开 fused 节点手推解析梯度的工程成本，可视化层面用 `NodeGroupContext` 折叠成单个 IoULoss / GIoULoss / DIoULoss / CIoULoss cluster；新增 `Atan2` 可微节点（CIoU 角度差所需）+ `tests/bbox_loss_reference.py` PyTorch oracle + 18 个对照测试（`epsilon = 1e-5` 逐元素一致）
   - `src/nn/detection_loss`：新增 `DetectionLossComponents` / `DetectionLossWeights`，作为 adapter 组合 bbox / objectness / class loss 的通用积木，不内置 YOLOv5 anchor/grid matching
   - 配套单元测试覆盖格式互转、IoU 家族数值、坐标契约、几何变换、NMS、指标选项、同步标签变换与 detection loss 组合；YOLO label 解析覆盖正/异常路径
 - **feat(nn): `RebuildResult` 推理便捷 API**
@@ -58,10 +58,14 @@
 
 ### Changed
 
-- **refactor(vision/detection + docs): detection loss 测试归位与文档对齐**
-  - `DetectionLossComponents` 单元测试从 `src/nn/tests/node_bbox_loss.rs` 内嵌迁到 `src/vision/tests/detection_loss.rs`；`vision/detection/loss.rs` 删除内嵌 `mod tests` 并强化 doc-comment（明确"detection 任务级 loss 周边工具，非新算子"的层级边界）
-  - `architecture_roadmap.md` 节点统计补齐 `BBoxLoss` 与 `ConvTranspose2d / DeformableConv2d / Upsample2d`（损失 5→6、矩阵/卷积 4→7、合计 71→75）；`node_vs_layer_design.md` 损失行同步；`vision/detection/contract.rs` 删除"迁位中"过时标注；`AGENTS.md` 测试约定段重写为符合实际的"模块下 tests/ 主流 + 内嵌 mod tests 仅小场景 + 顶层 tests/ 集成"三档
-  - 新增 `.issue/items/bbox_loss_analytical_grad.md`（suspended）：BBoxLoss 反向当前用有限差分占位，记录解析梯度 TODO 与恢复条件（第一个原生 detector 训练 / fine-tune adapter 上线）
+- **refactor(vision/detection)!: bbox loss 从 fused 节点迁到拼接式 helper（Breaking, autograd composition）**
+  - 删除 `src/nn/nodes/raw_node/loss/bbox.rs`（fused `BBoxLoss` + 有限差分梯度）以及 11 处引用：`NodeTypeDescriptor::BBoxLoss` variant、`create_bbox_loss_node` 节点构造器、`descriptor_rebuild` 分支、ONNX `TrainingOnly` 分类、evolution `node_gene` shape 推断、`var/descriptor` 分支、`raw_node` re-export；旧 `src/nn/tests/node_bbox_loss.rs` 整文件移除
+  - 新增 `Atan2` 可微节点（CIoU 角度差所需）：覆盖前向 + 解析梯度 `∂out/∂y = x / (x² + y²)` / `∂out/∂x = -y / (x² + y²)`，`(0, 0)` 处梯度 fallback 为 `0`（**与 PyTorch 的 `NaN` 不一致**——避免污染下游训练，特别是 CIoU 退化样本）；descriptor / rebuild / ONNX `Unsupported`（ONNX 缺原生 op）/ evolution / node_builders 全链路注册；含 6 个 known-value 单测
+  - 新增 `src/vision/detection/iou_loss.rs`：把 `BBoxLossKind`（从 `nn::nodes::raw_node::loss` 搬到 `vision::detection`，与其语义所属模块对齐）+ 4 套 IoU 损失统一收口；用 `Maximum / Minimum / ReLU / Square / Atan2 / Sign / Mean` 基础算子拼接，autograd 自动反向；CIoU 零面积退化复用 ReLU 已保证非负的特性，用 `Sign` 直接得到 `w > 0` 的运行时硬 mask（梯度恒 0），不引入 `DEGENERATE_EPS` 数值阈值，行为严格对齐 `BBox::ciou` 的 `w/h <= 0` 判断；`NodeGroupContext` 把 30+ 内部节点折叠成单个 cluster，`.dot` 可视化与原 fused 节点形态等价
+  - `Var::bbox_loss / giou_loss / diou_loss / ciou_loss` 直接 delegate 到拼接式 helper；helper 入口显式 `target.detach()`，target 即便是 Parameter 也不会反向收梯度（fused 时代由节点 hard-reject 实现）；`f32 - Var` 标量减法运算符重载补齐
+  - 测试体系：`tests/bbox_loss_reference.py` 用 PyTorch autograd 在 8 组典型样本（含部分重叠 / 对角偏移 / pred 包住 target / aspect ratio 错配 / CxCyWh 中心偏移 / CxCyWh aspect 改变 / N=2 batch / 完全不重叠）上算 4 套 IoU 的 forward + backward oracle，输出 Rust 常量；新建 `src/vision/tests/bbox_loss_composed.rs` 取代旧 `src/nn/tests/node_bbox_loss.rs`，18 个 test 覆盖 forward known-value（手算 IoU=2/3、4/3）+ 8 组 backward 对照 PyTorch oracle（`epsilon = 1e-5` 逐元素一致，相比旧 `2e-3` 有限差分容忍收紧 200×）+ shape 严格相等（拒绝 `[3, 4]` vs `[1, 4]` 隐式 broadcast）+ target Parameter 无梯度 + CIoU 零面积退化 → DIoU 等价 + CIoU 极小正宽（1e-8）保留 aspect penalty（防 epsilon 阈值化误判）+ 4 套 IoU 的 NodeGroupTag 可视化分组（遍历 `backward_topo_order` 内部节点逐个断言 group_type / instance_id 一致）
+  - 文档同步：`architecture_roadmap.md` 节点统计 `BBoxLoss` 移除（损失 6→5、合计 75→74，新增 Atan2 算术 +1 → 75）；`node_vs_layer_design.md` 损失行同步；`spatial_vision_tasks_roadmap.md` 删除"`bbox_loss` 反向传播仍使用有限差分"caveat
+  - 归档 `.issue/_archive/bbox_loss_analytical_grad.md`（resolved，记录拼接式 + autograd 的 final 闭环路径）
 
 - **rename: tests/ 集成测试与中国象棋 example 命名规范化**
   - **tests/ 去 `test_` 前缀**(向同目录已有的 `onnx_otm_load_bench.rs` / `yolov5_xiangqi_import.rs` 看齐):`tests/test_cse_dedup.rs` → `tests/cse_dedup.rs`、`tests/test_mode_invariants.rs` → `tests/mode_invariants.rs`;`mode_invariants.rs` 内部 `target/test_mode_invariants` 临时目录跟着改成 `target/mode_invariants`;同步 `.doc/design/mode_design.md` / `src/nn/tests/{graph_handle,gradient_flow_control}.rs` 共 4 处链接

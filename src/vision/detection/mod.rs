@@ -16,6 +16,7 @@
 pub mod adapter;
 mod contract;
 mod io;
+pub(crate) mod iou_loss;
 mod loss;
 mod transform;
 
@@ -48,6 +49,22 @@ pub enum BoxFormat {
     XyXy,
     /// `[center_x, center_y, width, height]`。
     CxCyWh,
+}
+
+/// bbox IoU-family 损失类型。
+///
+/// 该枚举只是 `Var::bbox_loss / giou_loss / diou_loss / ciou_loss` 的数据标签，
+/// 实际可微图由 [`crate::vision::detection::iou_loss`] 模块用基础算子拼出。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum BBoxLossKind {
+    /// `1 - IoU`
+    IoU,
+    /// `1 - GIoU`
+    GIoU,
+    /// `1 - DIoU`
+    DIoU,
+    /// `1 - CIoU`
+    CIoU,
 }
 
 /// 2D 边界框，内部统一使用 `xyxy` 表示。

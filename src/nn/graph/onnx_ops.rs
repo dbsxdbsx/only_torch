@@ -412,8 +412,7 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         | NodeTypeDescriptor::BCE { .. }
         | NodeTypeDescriptor::MSE { .. }
         | NodeTypeDescriptor::MAE { .. }
-        | NodeTypeDescriptor::Huber { .. }
-        | NodeTypeDescriptor::BBoxLoss { .. } => ExportCategory::TrainingOnly,
+        | NodeTypeDescriptor::Huber { .. } => ExportCategory::TrainingOnly,
 
         // ─── 激活函数 ───
         NodeTypeDescriptor::ReLU => ExportCategory::Operator(OnnxExportOp::simple("Relu")),
@@ -494,6 +493,9 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         NodeTypeDescriptor::Log2 => {
             ExportCategory::Unsupported("Log2（ONNX 仅有自然对数 Log）".to_string())
         }
+        NodeTypeDescriptor::Atan2 => ExportCategory::Unsupported(
+            "Atan2（ONNX 标准只有单参 Atan，无 atan2(y, x) 等价算子）".to_string(),
+        ),
 
         // ─── 归约 ───
         NodeTypeDescriptor::Sum { axis } => ExportCategory::Operator(OnnxExportOp {

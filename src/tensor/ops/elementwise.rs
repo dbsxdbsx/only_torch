@@ -128,6 +128,49 @@ impl Tensor {
     }
     /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑minimum/maximum↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
 
+    /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓atan2↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
+    /// 逐元素计算 `atan2(self, other)`（self 是 y，other 是 x）
+    ///
+    /// 类似 `PyTorch` 的 `torch.atan2(y, x)` 或 `NumPy` 的 `np.arctan2(y, x)`。
+    /// 支持 NumPy 风格的广播（broadcasting）。返回值范围 `(-π, π]`。
+    ///
+    /// 与单参 `atan(y/x)` 的区别：`atan2` 同时考虑 `y` 与 `x` 的符号，
+    /// 因此能区分 `(1, 1)` 与 `(-1, -1)` 等不同象限的角度。
+    ///
+    /// # 参数
+    /// - `other`: 对应 `atan2(y, x)` 中的 x 张量
+    ///
+    /// # 返回
+    /// 新张量，形状为广播后的形状，每个元素为 `self[i].atan2(other[i])`
+    ///
+    /// # Panics
+    /// 如果两个张量的形状不兼容（无法广播）
+    ///
+    /// # 备注
+    /// `atan2(0, 0)` 在 IEEE 754 中定义为 `0.0`。Tensor 这一层只负责前向，
+    /// `(0, 0)` 处的反向传播 fallback 由调用方（如 `raw_node::Atan2`）决定。
+    pub fn atan2(&self, other: &Tensor) -> Tensor {
+        use crate::tensor::property::broadcast_shape;
+
+        assert!(
+            self.can_broadcast_with(other),
+            "{}",
+            TensorError::IncompatibleShape
+        );
+
+        let result_shape = broadcast_shape(self.shape(), other.shape()).expect("广播形状计算失败");
+
+        let result_data = Zip::from(self.data.broadcast(IxDyn(&result_shape)).unwrap())
+            .and(other.data.broadcast(IxDyn(&result_shape)).unwrap())
+            .map_collect(|&y, &x| y.atan2(x));
+
+        Tensor {
+            data: result_data,
+            source_id: next_source_id(),
+        }
+    }
+    /*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑atan2↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/
+
     /*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓sign↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
     /// 返回张量每个元素的符号
     ///

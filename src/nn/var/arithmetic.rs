@@ -579,6 +579,26 @@ impl Sub<f32> for Var {
     }
 }
 
+// -------------------- Sub: f32 - Var --------------------
+
+impl Sub<&Var> for f32 {
+    type Output = Var;
+
+    fn sub(self, var: &Var) -> Var {
+        // 标量左减：scalar - var = -var + scalar，复用 Negate 节点 + Var + f32 即可
+        let neg = -var;
+        neg + self
+    }
+}
+
+impl Sub<Var> for f32 {
+    type Output = Var;
+
+    fn sub(self, var: Var) -> Var {
+        self - &var
+    }
+}
+
 // -------------------- Div: Var / f32 --------------------
 
 impl Div<f32> for &Var {

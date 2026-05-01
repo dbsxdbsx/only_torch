@@ -216,16 +216,7 @@ impl VarLossOps for Var {
         format: BoxFormat,
     ) -> Result<Var, GraphError> {
         let target_var = target.into_var(self);
-        let graph = self.graph();
-        let node = graph.borrow_mut().create_bbox_loss_node(
-            Rc::clone(self.node()),
-            Rc::clone(target_var.node()),
-            kind,
-            format,
-            crate::nn::Reduction::Mean,
-            None,
-        )?;
-        Ok(Self::new_with_rc_graph(node, &graph))
+        crate::vision::detection::iou_loss::compute_bbox_loss(self, &target_var, kind, format)
     }
 
     fn giou_loss<T: LossTarget>(&self, target: T, format: BoxFormat) -> Result<Var, GraphError> {

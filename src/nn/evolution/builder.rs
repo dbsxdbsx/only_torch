@@ -1723,6 +1723,10 @@ fn evaluate_step_node(
             require_parents(2, parents, "Maximum")?;
             parents[0].maximum(&parents[1])
         }
+        NT::Atan2 => {
+            require_parents(2, parents, "Atan2")?;
+            parents[0].atan2(&parents[1])
+        }
         NT::Concat { axis } => {
             let refs: Vec<&Var> = parents.iter().collect();
             Var::concat(&refs, *axis)

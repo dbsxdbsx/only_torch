@@ -394,6 +394,25 @@ impl Var {
         Ok(Self::new_with_rc_graph(node, &graph))
     }
 
+    /// 逐元素双参反正切：`atan2(self, x)`（self 是 y，对齐 `PyTorch torch.atan2(y, x)`）
+    ///
+    /// 返回值范围 `(-π, π]`。`(0, 0)` 处 backward fallback 为 0（项目意图，
+    /// 区别于 `PyTorch NaN`），适合用在 CIoU 角度差等可能踩到退化点的场景。
+    pub fn atan2(&self, x: &Self) -> Result<Self, GraphError> {
+        if !self.same_graph(x) {
+            return Err(GraphError::InvalidOperation(
+                "不能对来自不同 Graph 的 Var 进行 atan2".to_string(),
+            ));
+        }
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_atan2_node(
+            Rc::clone(&self.node),
+            Rc::clone(&x.node),
+            None,
+        )?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
     /// 创建与当前 Var 相同形状的全零 Var
     ///
     /// 返回一个新的输入节点，值为全零。

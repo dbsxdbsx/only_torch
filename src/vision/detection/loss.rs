@@ -2,10 +2,12 @@
 //!
 //! ## 与 `nn::nodes::raw_node::loss/` 的边界
 //!
-//! 本模块**不实现新的 loss 算子**——bbox / objectness / class 这些可微分 loss
-//! 节点都属于通用算子层（`src/nn/nodes/raw_node/loss/`），并在 `Var` 用户 API
-//! 层（`src/nn/var/ops/loss.rs`）通过 `mse_loss / bce_loss / bbox_loss` 等链式
-//! 方法暴露。本模块只负责 detection 任务**特有的 loss 周边工具**：
+//! 本模块**不实现新的可微 loss 算子**——objectness / class 等通用 loss 节点都
+//! 属于通用算子层（`src/nn/nodes/raw_node/loss/`），由 `Var` 用户 API 层
+//! （`src/nn/var/ops/loss.rs`）通过 `mse_loss / bce_loss` 等链式方法暴露；
+//! detection 专属的 IoU-family bbox loss 走拼接式实现，由本子模块的同侪
+//! [`super::iou_loss`] 用基础算子 + autograd 拼出（不在 raw_node 节点层）。
+//! 本文件只负责 detection 任务**特有的 loss 周边工具**：
 //!
 //! - 已实现：[`DetectionLossComponents`] / [`DetectionLossWeights`]——把已经
 //!   完成正负样本匹配后的 bbox / objectness / class loss 按权重组合成单个总
@@ -98,4 +100,3 @@ impl DetectionLossComponents {
         })
     }
 }
-

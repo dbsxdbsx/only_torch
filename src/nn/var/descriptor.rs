@@ -128,6 +128,7 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
         // === 归约 ===
         NodeType::Maximum(_) => NodeTypeDescriptor::Maximum,
         NodeType::Minimum(_) => NodeTypeDescriptor::Minimum,
+        NodeType::Atan2(_) => NodeTypeDescriptor::Atan2,
         NodeType::Amax(a) => NodeTypeDescriptor::Amax { axis: a.axis() },
         NodeType::Amin(a) => NodeTypeDescriptor::Amin { axis: a.axis() },
         NodeType::Sum(s) => NodeTypeDescriptor::Sum { axis: s.axis() },
@@ -193,11 +194,6 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
         NodeType::Huber(h) => NodeTypeDescriptor::Huber {
             delta: h.delta(),
             reduction: h.reduction(),
-        },
-        NodeType::BBoxLoss(b) => NodeTypeDescriptor::BBoxLoss {
-            kind: b.kind(),
-            format: b.format(),
-            reduction: b.reduction(),
         },
         NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
 

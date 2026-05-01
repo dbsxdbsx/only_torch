@@ -120,7 +120,7 @@ for (x, target) in &dataloader {
 | 类型 | 节点                                                        | 数量 |
 | :--- | :---------------------------------------------------------- | :--: |
 | 输入 | Input (Data/Target), Parameter, State                       |  3   |
-| 算术 | Add, Subtract, Multiply, Divide, Negate, Pow, Square, Reciprocal |  8   |
+| 算术 | Add, Subtract, Multiply, Divide, Negate, Pow, Square, Reciprocal, Atan2 |  9   |
 | 矩阵/卷积 | MatMul, Conv2d, ConvTranspose2d, DeformableConv2d, MaxPool2d, AvgPool2d, Upsample2d | 7 |
 | 形状 | Reshape, Flatten, Select, Gather, Narrow, Permute, Stack, Concat, Pad, Repeat |  10  |
 | 选择 | TopK, SortNode                                              |  2   |
@@ -128,7 +128,7 @@ for (x, target) in &dataloader {
 | 激活 | Sigmoid, Tanh, ReLU, LeakyReLU, ReLU6, HardTanh, Softmax, LogSoftmax, SoftPlus, GELU, Swish, ELU, SELU, Mish, HardSwish, HardSigmoid, Step, Sign, Abs, Ln, Log10, Log2, Exp, Sqrt | 24 |
 | 裁剪 | Clip                                                        |  1   |
 | 条件 | WhereCond                                                   |  1   |
-| 损失 | MSE, MAE, BCE, Huber, BBoxLoss, SoftmaxCrossEntropy         |  6   |
+| 损失 | MSE, MAE, BCE, Huber, SoftmaxCrossEntropy                   |  5   |
 | 归一化 | BatchNormOp, LayerNormOp, RMSNormOp                       |  3   |
 | 辅助 | Identity, Dropout, ZerosLike, Detach                        |  4   |
 | **合计** |                                                         | **75**          |

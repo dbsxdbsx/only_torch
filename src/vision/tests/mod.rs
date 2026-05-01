@@ -2,6 +2,7 @@
 
 mod adapter_yolo_v5;
 mod basic;
+mod bbox_loss_composed;
 mod convert;
 mod cv;
 mod detection;

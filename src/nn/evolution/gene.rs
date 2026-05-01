@@ -1805,6 +1805,9 @@ impl NetworkGenome {
                 | NT::Concat { .. }
                 | NT::Dropout { .. }
                 | NT::Maximum => {}
+                NT::Atan2 => {
+                    total += 5 * out_elements;
+                }
                 _ => {}
             }
 

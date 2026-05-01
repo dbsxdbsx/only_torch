@@ -18,9 +18,9 @@ mod node_zeros_like; // ZerosLike 节点测试（动态零张量）
 // ===== 节点测试 =====
 mod node_abs;
 mod node_add;
+mod node_atan2;
 mod node_avg_pool2d;
 mod node_batch_norm;
-mod node_bbox_loss;
 mod node_bce;
 mod node_clip;
 mod node_concat;
