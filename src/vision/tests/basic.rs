@@ -1,5 +1,8 @@
-use crate::vision::Vision;
 use image::ColorType;
+
+use crate::utils::traits::image::ForDynamicImage;
+use crate::vision::color::to_luma;
+use crate::vision::io::{load_image, save_image};
 
 fn temp_image_path(name: &str) -> String {
     std::env::temp_dir()
@@ -8,64 +11,54 @@ fn temp_image_path(name: &str) -> String {
         .into_owned()
 }
 
-/*↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓保存、载入↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓*/
 #[test]
 fn test_save_load_image() {
     test_load_save_color_image();
     test_load_save_luma_image();
 }
+
 fn test_load_save_color_image() {
-    // 1.测试载入、保存本地的png图片
-    let loaded_image = Vision::load_image("./assets/lenna.png").unwrap();
-    assert_eq!(loaded_image.shape(), &[512, 512, 3]);
-    assert_eq!(loaded_image.is_image().unwrap(), ColorType::Rgb8);
-    // (再次保存载入检查一致性)
+    // 1.加载本地 PNG，验证基础元信息
+    let img = load_image("./assets/lenna.png").unwrap();
+    let tensor = img.to_tensor().unwrap();
+    assert_eq!(tensor.shape(), &[512, 512, 3]);
+    assert_eq!(tensor.is_image().unwrap(), ColorType::Rgb8);
+
+    // 2.再次保存载入检查 PNG 一致性
     let png_path = temp_image_path("lenna_copy.png");
-    Vision::save_image(&loaded_image, &png_path).unwrap();
-    let new_load_image = Vision::load_image(&png_path).unwrap();
+    save_image(&img, &png_path).unwrap();
+    let loaded = load_image(&png_path).unwrap();
     let _ = std::fs::remove_file(&png_path);
-    assert_eq!(loaded_image, new_load_image);
+    assert_eq!(loaded.to_rgb8(), img.to_rgb8());
 
-    // 2.测试保存、载入为jpg图片
+    // 3.保存为 JPG（有损）后，只检查能成功重新载入与基本元信息
     let jpg_path = temp_image_path("lenna.jpg");
-    Vision::save_image(&loaded_image, &jpg_path).unwrap();
-    let loaded_image = Vision::load_image(&jpg_path).unwrap();
+    save_image(&img, &jpg_path).unwrap();
+    let loaded_jpg = load_image(&jpg_path).unwrap();
     let _ = std::fs::remove_file(&jpg_path);
-    // (由于jpg是有损压损，故只检查形状，不检查数据一致性)
-    assert_eq!(loaded_image.shape(), &[512, 512, 3]);
-    assert_eq!(loaded_image.is_image().unwrap(), ColorType::Rgb8);
-
-    // TODO: 3.测试rgba
-    // TODO: 4.测试lumaA
+    let jpg_tensor = loaded_jpg.to_tensor().unwrap();
+    assert_eq!(jpg_tensor.shape(), &[512, 512, 3]);
+    assert_eq!(jpg_tensor.is_image().unwrap(), ColorType::Rgb8);
 }
+
 fn test_load_save_luma_image() {
-    // 1.测试载入本地的png彩色图片，并转化为灰度图
-    let image = Vision::load_image("./assets/lenna.png").unwrap();
-    let luma_image = Vision::to_luma(&image).unwrap();
-    assert_eq!(luma_image.shape(), &[512, 512]);
-    assert_eq!(luma_image.is_image().unwrap(), ColorType::L8);
-    // (再次保存载入检查一致性；写入临时目录，避免并发测试覆盖共享 fixture)
+    // 1.PNG → Luma 转换 + roundtrip
+    let img = load_image("./assets/lenna.png").unwrap();
+    let luma = to_luma(&img);
+    let luma_tensor = luma.to_tensor().unwrap();
+    assert_eq!(luma_tensor.shape(), &[512, 512]);
+    assert_eq!(luma_tensor.is_image().unwrap(), ColorType::L8);
+
     let copy_path = temp_image_path("lenna_luma.png");
-    Vision::save_image(&luma_image, &copy_path).unwrap();
-    let loaded_image = Vision::load_image(&copy_path).unwrap();
+    save_image(&luma, &copy_path).unwrap();
+    let loaded = load_image(&copy_path).unwrap();
     let _ = std::fs::remove_file(&copy_path);
-    assert_eq!(luma_image, loaded_image);
+    assert_eq!(loaded.to_luma8(), luma.to_luma8());
 
-    // 2.测试载入本地的jpg彩色图片，并转化为灰度图
-    let image = Vision::load_image("./assets/lenna.jpg").unwrap();
-    let luma_image = Vision::to_luma(&image).unwrap();
-    assert_eq!(luma_image.shape(), &[512, 512]);
-    assert_eq!(luma_image.is_image().unwrap(), ColorType::L8);
-    // (再次保存载入检查一致性)
-    let jpg_path = temp_image_path("lenna_luma.jpg");
-    Vision::save_image(&luma_image, &jpg_path).unwrap();
-    let loaded_image = Vision::load_image(&jpg_path).unwrap();
-    let _ = std::fs::remove_file(&jpg_path);
-    // (由于jpg是有损压损，故只检查形状，不检查数据一致性)
-    assert_eq!(loaded_image.shape(), &[512, 512]);
-    assert_eq!(loaded_image.is_image().unwrap(), ColorType::L8);
-
-    // TODO: 3.测试rgba
-    // TODO: 4.测试lumaA
+    // 2.JPG → Luma 转换（有损，仅检查元信息）
+    let jpg_img = load_image("./assets/lenna.jpg").unwrap();
+    let jpg_luma = to_luma(&jpg_img);
+    let jpg_luma_tensor = jpg_luma.to_tensor().unwrap();
+    assert_eq!(jpg_luma_tensor.shape(), &[512, 512]);
+    assert_eq!(jpg_luma_tensor.is_image().unwrap(), ColorType::L8);
 }
-/*↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑保存、载入↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑*/

@@ -47,7 +47,8 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 - `src/nn/graph/`：图执行、`train/inference`、Mode 契约、可视化、序列化。
 - `src/nn/layer/`：`Linear`、`Conv2d`、`Rnn` 等高层模块。
 - `src/nn/evolution/`：基因、变异、builder、收敛与演化主流程。
-- `src/data/`、`src/metrics/`、`src/rl/`、`src/vision/`：数据、指标、强化学习和图像支持。
+- `src/data/`、`src/metrics/`、`src/rl/`：数据、指标、强化学习；`src/data/` 同时承载 `Transform`（image-only）与 `SampleTransform`（image + label 同步）两套变换契约。
+- `src/vision/`：图像支持，按职能划分为 `io / color / geom / filter / draw / preprocess / detection / cv`。`detection/` 闭环收口 `BBox / NMS / mAP-friendly 类型 / Backbone 契约 / loss 组合 / label 同步变换 / YOLO 标签解析`；`cv/` 收纳 OpenCV 风格的传统 CV 算法（PyTorch / JAX 不收录的部分）。
 
 ## 改动前先看这些文档
 

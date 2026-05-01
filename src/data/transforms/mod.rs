@@ -31,6 +31,7 @@
 
 mod center_crop;
 mod color_jitter;
+mod crop_helpers;
 mod flatten;
 mod gaussian_noise;
 mod normalize;
@@ -42,6 +43,7 @@ mod random_erasing;
 pub(crate) mod random_flip;
 mod random_resized_crop;
 pub(crate) mod random_rotation;
+mod sample_transform;
 
 use crate::tensor::Tensor;
 
@@ -61,6 +63,7 @@ pub use random_erasing::RandomErasing;
 pub use random_flip::RandomHorizontalFlip;
 pub use random_resized_crop::RandomResizedCrop;
 pub use random_rotation::RandomRotation;
+pub use sample_transform::SampleTransform;
 
 // ═══════════════════════════════════════════════════════════════
 // Transform trait

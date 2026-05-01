@@ -1,12 +1,12 @@
 use approx::assert_abs_diff_eq;
 use image::{DynamicImage, ImageBuffer, Rgb};
 
-use crate::data::{
-    DetectionBatch, DetectionLabelFilter, DetectionSample, clip_filter_labels,
-    horizontal_flip_labels, letterbox_labels, restore_letterbox_labels,
-};
+use crate::data::{DetectionBatch, DetectionSample};
 use crate::tensor::Tensor;
-use crate::vision::detection::{BBox, GroundTruthBox};
+use crate::vision::detection::{
+    BBox, DetectionLabelFilter, GroundTruthBox, clip_filter_labels, horizontal_flip_labels,
+    letterbox_labels, restore_letterbox_labels,
+};
 use crate::vision::preprocess::letterbox;
 
 #[test]

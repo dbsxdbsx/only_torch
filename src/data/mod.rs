@@ -35,6 +35,7 @@ pub mod datasets;
 mod detection;
 pub mod download;
 pub mod error;
+mod sample;
 mod synthetic_rng;
 pub mod transforms;
 
@@ -46,17 +47,13 @@ pub use dataloader::{
     BucketedSampling, DataLoader, Dataset, SamplingStrategy, SequentialSampling, TensorDataset,
     VarLenDataset, VarLenSample,
 };
-pub use datasets::{
-    CaliforniaHousingDataset, MnistDataset, default_data_dir, parse_yolo_txt_file,
-    parse_yolo_txt_labels,
-};
-pub use detection::{
-    DetectionBatch, DetectionLabelFilter, DetectionSample, clip_filter_labels,
-    horizontal_flip_labels, letterbox_labels, restore_letterbox_labels,
-};
+pub use datasets::{CaliforniaHousingDataset, MnistDataset, default_data_dir};
+pub use detection::{DetectionBatch, DetectionSample};
 pub use error::DataError;
+pub use sample::{ClassificationSample, SegmentationSample};
 pub use synthetic_rng::SyntheticRng;
 pub use transforms::{
     CenterCrop, ColorJitter, Compose, GaussianNoise, Normalize, RandomAffine, RandomApply,
-    RandomCrop, RandomErasing, RandomHorizontalFlip, RandomResizedCrop, RandomRotation, Transform,
+    RandomCrop, RandomErasing, RandomHorizontalFlip, RandomResizedCrop, RandomRotation,
+    SampleTransform, Transform,
 };

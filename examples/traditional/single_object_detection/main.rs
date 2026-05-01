@@ -14,9 +14,10 @@ mod model;
 
 use model::SingleObjectDetectionNet;
 use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
-use only_torch::metrics::mean_box_iou_cxcywh;
+use only_torch::metrics::mean_box_iou;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
+use only_torch::vision::detection::{BBox, BoxFormat};
 use std::time::Instant;
 
 const IMAGE_SIZE: usize = 16;
@@ -138,8 +139,28 @@ fn evaluate(
     let boxes = model.predict_boxes(inputs)?;
     let boxes = boxes.value()?.unwrap();
     let mae = bbox_mae(&boxes, targets);
-    let iou = mean_box_iou_cxcywh(&boxes, targets);
+    let pred_bboxes = tensor_rows_to_clipped_bboxes(&boxes);
+    let actual_bboxes = tensor_rows_to_clipped_bboxes(targets);
+    let iou = mean_box_iou(&pred_bboxes, &actual_bboxes);
     Ok((mae, iou.value()))
+}
+
+/// 把 `[N, 4]` cxcywh Tensor 转换为已裁剪到 `[0, 1]` 的 BBox 列表。
+fn tensor_rows_to_clipped_bboxes(tensor: &Tensor) -> Vec<BBox> {
+    (0..tensor.shape()[0])
+        .map(|i| {
+            BBox::from_array(
+                [
+                    tensor[[i, 0]],
+                    tensor[[i, 1]],
+                    tensor[[i, 2]],
+                    tensor[[i, 3]],
+                ],
+                BoxFormat::CxCyWh,
+            )
+            .clip(0.0, 1.0)
+        })
+        .collect()
 }
 
 fn bbox_mae(predictions: &Tensor, targets: &Tensor) -> f32 {
@@ -454,9 +475,9 @@ fn bbox_at(tensor: &Tensor, index: usize) -> [f32; 4] {
 }
 
 fn single_box_iou(pred: [f32; 4], actual: [f32; 4]) -> f32 {
-    let pred_tensor = Tensor::new(&pred, &[1, 4]);
-    let actual_tensor = Tensor::new(&actual, &[1, 4]);
-    mean_box_iou_cxcywh(&pred_tensor, &actual_tensor).value()
+    let pred_box = BBox::from_array(pred, BoxFormat::CxCyWh).clip(0.0, 1.0);
+    let actual_box = BBox::from_array(actual, BoxFormat::CxCyWh).clip(0.0, 1.0);
+    pred_box.iou(actual_box)
 }
 
 fn deterministic_noise(seed: u64, sample_idx: usize, x: usize, y: usize) -> f32 {

@@ -4,83 +4,64 @@ use approx::assert_abs_diff_eq;
 
 use crate::metrics::{
     DetectionMetricOptions, VOC_IOU_THRESHOLDS, mean_average_precision,
-    mean_average_precision_with_options, mean_box_iou_cxcywh, precision_recall_at_iou,
+    mean_average_precision_with_options, mean_box_iou, precision_recall_at_iou,
     precision_recall_at_iou_with_options,
 };
-use crate::tensor::Tensor;
-use crate::vision::detection::{BBox, Detection, GroundTruthBox};
+use crate::vision::detection::{BBox, BoxFormat, Detection, GroundTruthBox};
+
+fn cxcywh(cx: f32, cy: f32, w: f32, h: f32) -> BBox {
+    BBox::from_array([cx, cy, w, h], BoxFormat::CxCyWh)
+}
 
 #[test]
-fn test_mean_box_iou_cxcywh_perfect() {
-    let predictions = Tensor::new(&[0.5, 0.5, 0.4, 0.2, 0.3, 0.4, 0.2, 0.2], &[2, 4]);
-    let actuals = Tensor::new(&[0.5, 0.5, 0.4, 0.2, 0.3, 0.4, 0.2, 0.2], &[2, 4]);
+fn test_mean_box_iou_perfect() {
+    let predictions = vec![cxcywh(0.5, 0.5, 0.4, 0.2), cxcywh(0.3, 0.4, 0.2, 0.2)];
+    let actuals = predictions.clone();
 
-    let result = mean_box_iou_cxcywh(&predictions, &actuals);
+    let result = mean_box_iou(&predictions, &actuals);
 
     assert_abs_diff_eq!(result.value(), 1.0, epsilon = 1e-6);
     assert_eq!(result.n_samples(), 2);
 }
 
 #[test]
-fn test_mean_box_iou_cxcywh_partial_overlap() {
-    let predictions = Tensor::new(&[0.5, 0.5, 0.4, 0.4], &[1, 4]);
-    let actuals = Tensor::new(&[0.6, 0.5, 0.4, 0.4], &[1, 4]);
+fn test_mean_box_iou_partial_overlap() {
+    let predictions = vec![cxcywh(0.5, 0.5, 0.4, 0.4)];
+    let actuals = vec![cxcywh(0.6, 0.5, 0.4, 0.4)];
 
-    let result = mean_box_iou_cxcywh(&predictions, &actuals);
+    let result = mean_box_iou(&predictions, &actuals);
 
-    // 两个 0.4x0.4 框在 x 方向错开 0.1：intersection=0.3*0.4，union=0.2
+    // 两个 0.4×0.4 框在 x 方向错开 0.1：intersection = 0.3·0.4，union = 0.20
     assert_abs_diff_eq!(result.value(), 0.6, epsilon = 1e-6);
     assert_eq!(result.n_samples(), 1);
 }
 
 #[test]
-fn test_mean_box_iou_cxcywh_no_overlap() {
-    let predictions = Tensor::new(&[0.2, 0.2, 0.2, 0.2], &[1, 4]);
-    let actuals = Tensor::new(&[0.8, 0.8, 0.2, 0.2], &[1, 4]);
+fn test_mean_box_iou_no_overlap() {
+    let predictions = vec![cxcywh(0.2, 0.2, 0.2, 0.2)];
+    let actuals = vec![cxcywh(0.8, 0.8, 0.2, 0.2)];
 
-    let result = mean_box_iou_cxcywh(&predictions, &actuals);
+    let result = mean_box_iou(&predictions, &actuals);
 
     assert_eq!(result.value(), 0.0);
     assert_eq!(result.n_samples(), 1);
 }
 
 #[test]
-fn test_mean_box_iou_cxcywh_empty_tensor() {
-    let predictions = Tensor::new(&[] as &[f32], &[0, 4]);
-    let actuals = Tensor::new(&[] as &[f32], &[0, 4]);
-
-    let result = mean_box_iou_cxcywh(&predictions, &actuals);
+fn test_mean_box_iou_empty_pairs() {
+    let result = mean_box_iou(&[], &[]);
 
     assert_eq!(result.value(), 0.0);
     assert_eq!(result.n_samples(), 0);
 }
 
 #[test]
-fn test_mean_box_iou_cxcywh_clips_to_unit_square() {
-    let predictions = Tensor::new(&[0.0, 0.0, 0.4, 0.4], &[1, 4]);
-    let actuals = Tensor::new(&[0.0, 0.0, 0.4, 0.4], &[1, 4]);
+#[should_panic(expected = "predictions 与 actuals 长度必须一致")]
+fn test_mean_box_iou_length_mismatch_panics() {
+    let predictions = vec![cxcywh(0.5, 0.5, 0.2, 0.2)];
+    let actuals: Vec<BBox> = Vec::new();
 
-    let result = mean_box_iou_cxcywh(&predictions, &actuals);
-
-    assert_abs_diff_eq!(result.value(), 1.0, epsilon = 1e-6);
-}
-
-#[test]
-#[should_panic(expected = "mean_box_iou_cxcywh: 形状不匹配")]
-fn test_mean_box_iou_cxcywh_shape_mismatch_panics() {
-    let predictions = Tensor::new(&[0.5, 0.5, 0.2, 0.2], &[1, 4]);
-    let actuals = Tensor::new(&[0.5, 0.5, 0.2, 0.2], &[4]);
-
-    let _ = mean_box_iou_cxcywh(&predictions, &actuals);
-}
-
-#[test]
-#[should_panic(expected = "mean_box_iou_cxcywh: bbox Tensor 必须是 [N, 4]")]
-fn test_mean_box_iou_cxcywh_invalid_bbox_width_panics() {
-    let predictions = Tensor::new(&[0.5, 0.5, 0.2], &[1, 3]);
-    let actuals = Tensor::new(&[0.5, 0.5, 0.2], &[1, 3]);
-
-    let _ = mean_box_iou_cxcywh(&predictions, &actuals);
+    let _ = mean_box_iou(&predictions, &actuals);
 }
 
 #[test]

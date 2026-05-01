@@ -1,118 +1,115 @@
-use super::{ImageBufferEnum, Vision};
-use crate::tensor::Tensor;
-use crate::utils::traits::image::ForImageBuffer;
-use image::{ColorType, Luma, Rgb};
+//! 在图像上绘制可视化几何（bbox / 矩形 / 圆 / 线）。
+//!
+//! 参照 `torchvision.utils.draw_bounding_boxes` 的设计：接收 `&mut DynamicImage`
+//! 在原图上 in-place 绘制；颜色用 `[u8; 3]` RGB；坐标使用强类型（`BBox` /
+//! 像素 i32 等），不依赖"裸 Tensor 是图像"的运行时检查。
 
-impl Vision {
-    /// 在图像上绘制一个圆形。
-    /// `tensor`：输入的图像张量；
-    /// `center`：圆心坐标；
-    /// `radius`：圆的半径；
-    /// `rgb_color`：圆的颜色(若是灰色)；
-    /// `thickness`：圆的轮廓线宽度。
-    ///
-    /// 注：若`thickness`为0或超过`radius`，则填充整个圆。
-    pub fn draw_circle(
-        tensor: &Tensor,
-        center: (usize, usize),
-        radius: usize,
-        rgb_color: [u8; 3],
-        thickness: usize,
-    ) -> Result<Tensor, String> {
-        // 检查是否为图像
-        let image_type = tensor.is_image()?;
-        let mut buf = match image_type {
-            ColorType::L8 => ImageBufferEnum::Luma(tensor.to_image_buff_for_luma8()),
-            ColorType::Rgb8 => ImageBufferEnum::Rgb(tensor.to_image_buff_for_rgb8()),
-            _ => todo!(),
-        };
-        let (x, y) = center;
-        let inner_radius = radius.saturating_sub(thickness);
+use crate::vision::detection::BBox;
+use image::{DynamicImage, GenericImage, GenericImageView, Rgb};
 
-        for dy in 0..radius * 2 {
-            for dx in 0..radius * 2 {
-                let xt = x as i32 + dx as i32 - radius as i32;
-                let yt = y as i32 + dy as i32 - radius as i32;
-                let distance_squared = (xt - x as i32).pow(2) + (yt - y as i32).pow(2);
+/// 在图像上绘制一个 `BBox`。
+///
+/// `thickness == 0` 表示填充矩形；`>0` 时绘制指定粗细的矩形边框。
+/// 落在图像外的部分会被自动裁剪。
+pub fn draw_bbox(canvas: &mut DynamicImage, bbox: BBox, color: [u8; 3], thickness: u32) {
+    let (img_w, img_h) = canvas.dimensions();
+    let x1 = bbox.x1.round().clamp(0.0, img_w as f32 - 1.0) as i32;
+    let y1 = bbox.y1.round().clamp(0.0, img_h as f32 - 1.0) as i32;
+    let x2 = bbox.x2.round().clamp(0.0, img_w as f32 - 1.0) as i32;
+    let y2 = bbox.y2.round().clamp(0.0, img_h as f32 - 1.0) as i32;
+    draw_rectangle_xyxy(canvas, x1, y1, x2, y2, color, thickness);
+}
 
-                if distance_squared <= radius.pow(2) as i32
-                    && (thickness == 0 || distance_squared > inner_radius.pow(2) as i32)
-                {
-                    match &mut buf {
-                        ImageBufferEnum::Rgb(buf) => {
-                            buf.put_pixel(xt as u32, yt as u32, Rgb(rgb_color));
-                        }
-                        ImageBufferEnum::Luma(buf) => {
-                            buf.put_pixel(xt as u32, yt as u32, Luma([rgb_color[0]]));
-                        }
-                    }
-                }
+/// 按 `(x1, y1, x2, y2)` 像素坐标绘制矩形。
+///
+/// `thickness == 0` 表示填充；落在图像外的部分会被自动裁剪。
+pub fn draw_rectangle_xyxy(
+    canvas: &mut DynamicImage,
+    x1: i32,
+    y1: i32,
+    x2: i32,
+    y2: i32,
+    color: [u8; 3],
+    thickness: u32,
+) {
+    let (left, right) = (x1.min(x2), x1.max(x2));
+    let (top, bottom) = (y1.min(y2), y1.max(y2));
+
+    if thickness == 0 {
+        for y in top..=bottom {
+            for x in left..=right {
+                put_pixel(canvas, x, y, color);
             }
         }
-
-        // 将ImageBuffer转回Tensor
-        let new_tensor = match buf {
-            ImageBufferEnum::Rgb(buf) => buf.to_tensor()?,
-            ImageBufferEnum::Luma(buf) => buf.to_tensor()?,
-        };
-        Ok(new_tensor)
+        return;
     }
 
-    /// 在图像上绘制一个矩形。
-    /// `tensor`：输入的图像张量；
-    /// `center`：矩形中心坐标；
-    /// `height`：矩形的高度；
-    /// `width`：矩形的宽度；
-    /// `rgb_color`：矩形的颜色；
-    /// `thickness`：矩形的轮廓线宽度。
-    ///
-    /// 注：若`thickness`为0或超过`radius`，则填充整个矩形。
-    pub fn draw_rectangle(
-        tensor: &Tensor,
-        center: (usize, usize),
-        height: usize,
-        width: usize,
-        rgb_color: [u8; 3],
-        thickness: usize,
-    ) -> Result<Tensor, String> {
-        // 检查是否为图像
-        let image_type = tensor.is_image()?;
-        let mut buf = match image_type {
-            ColorType::L8 => ImageBufferEnum::Luma(tensor.to_image_buff_for_luma8()),
-            ColorType::Rgb8 => ImageBufferEnum::Rgb(tensor.to_image_buff_for_rgb8()),
-            _ => todo!(),
-        };
-        let (x, y) = center;
-        let left = x.saturating_sub(width / 2);
-        let top = y.saturating_sub(height / 2);
-        let right = x + width / 2;
-        let bottom = y + height / 2;
-
-        for dy in top..=bottom {
-            for dx in left..=right {
-                let is_contour = dx < left + thickness
-                    || dx > right - thickness
-                    || dy < top + thickness
-                    || dy > bottom - thickness;
-
-                if thickness == 0 || is_contour {
-                    match &mut buf {
-                        ImageBufferEnum::Rgb(buf) => {
-                            buf.put_pixel(dx as u32, dy as u32, Rgb(rgb_color));
-                        }
-                        ImageBufferEnum::Luma(buf) => {
-                            buf.put_pixel(dx as u32, dy as u32, Luma([rgb_color[0]]));
-                        }
-                    }
-                }
+    let t = thickness as i32;
+    for y in top..=bottom {
+        for x in left..=right {
+            let on_border = x < left + t || x > right - t || y < top + t || y > bottom - t;
+            if on_border {
+                put_pixel(canvas, x, y, color);
             }
         }
+    }
+}
 
-        // 将ImageBuffer转回Tensor
-        let new_tensor = match buf {
-            ImageBufferEnum::Rgb(buf) => buf.to_tensor()?,
-            ImageBufferEnum::Luma(buf) => buf.to_tensor()?,
-        };
-        Ok(new_tensor)
+/// 在图像上绘制一个圆。
+///
+/// `thickness == 0` 或 `thickness >= radius` 表示填充；`>0` 时绘制环形带。
+/// 落在图像外的部分会被自动裁剪。
+pub fn draw_circle(
+    canvas: &mut DynamicImage,
+    center: (i32, i32),
+    radius: u32,
+    color: [u8; 3],
+    thickness: u32,
+) {
+    let (cx, cy) = center;
+    let r = radius as i32;
+    let r_sq = r * r;
+    let inner_r = radius.saturating_sub(thickness) as i32;
+    let inner_sq = inner_r * inner_r;
+    let fill = thickness == 0 || thickness >= radius;
+
+    for dy in -r..=r {
+        for dx in -r..=r {
+            let dist_sq = dx * dx + dy * dy;
+            let in_circle = dist_sq <= r_sq;
+            if !in_circle {
+                continue;
+            }
+            if fill || dist_sq > inner_sq {
+                put_pixel(canvas, cx + dx, cy + dy, color);
+            }
+        }
+    }
+}
+
+fn put_pixel(canvas: &mut DynamicImage, x: i32, y: i32, color: [u8; 3]) {
+    let (w, h) = canvas.dimensions();
+    if x < 0 || y < 0 {
+        return;
+    }
+    let (xu, yu) = (x as u32, y as u32);
+    if xu >= w || yu >= h {
+        return;
+    }
+
+    match canvas {
+        DynamicImage::ImageLuma8(buf) => {
+            buf.put_pixel(xu, yu, image::Luma([color[0]]));
+        }
+        DynamicImage::ImageRgb8(buf) => {
+            buf.put_pixel(xu, yu, Rgb(color));
+        }
+        DynamicImage::ImageRgba8(buf) => {
+            buf.put_pixel(xu, yu, image::Rgba([color[0], color[1], color[2], 255]));
+        }
+        _ => {
+            // 其他色彩模式按 RGB 写入；image crate 会自行做转换映射。
+            canvas.put_pixel(xu, yu, image::Rgba([color[0], color[1], color[2], 255]));
+        }
     }
 }

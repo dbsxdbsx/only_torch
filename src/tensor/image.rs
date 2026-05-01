@@ -1,6 +1,6 @@
 use super::Tensor;
 use crate::utils::traits::float::FloatTrait;
-use crate::vision::Vision;
+use crate::utils::traits::image::ForDynamicImage;
 use image::{ColorType, DynamicImage, GrayImage, ImageBuffer, RgbImage};
 
 impl Tensor {
@@ -97,13 +97,18 @@ impl Tensor {
     }
 }
 
-// 这里是一些可以直接用于Tensor实例的Vision静态方法
 impl Tensor {
+    /// 把图像 Tensor 转换为单通道 Luma8 灰度。
+    ///
+    /// 内部走 `vision::color::to_luma`；输入张量必须是合法图像
+    /// （`is_image()` 通过）。
     pub fn to_luma(&self) -> Result<Self, String> {
-        Vision::to_luma(self)
+        let image = self.to_image()?;
+        let luma = crate::vision::color::to_luma(&image);
+        luma.to_tensor()
     }
 
     pub fn to_luma_mut(&mut self) {
-        *self = Vision::to_luma(self).unwrap();
+        *self = self.to_luma().unwrap();
     }
 }

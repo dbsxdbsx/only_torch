@@ -1,6 +1,6 @@
 use approx::assert_abs_diff_eq;
 
-use crate::data::parse_yolo_txt_labels;
+use crate::vision::detection::parse_yolo_txt_labels;
 
 #[test]
 fn test_parse_yolo_txt_labels_allows_blank_lines_and_comments() {

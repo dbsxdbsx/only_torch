@@ -1,6 +1,28 @@
-//! 通用 2D detection 原语。
+//! 通用 2D detection 原语与任务契约。
 //!
-//! 这里提供 bbox 几何、IoU family 与 NMS，不绑定具体检测模型族。
+//! - 数据 / 几何积木：`BBox`、`Detection`、`GroundTruthBox`、IoU family、NMS、
+//!   `clip_filter_*`，不绑定具体检测模型族。
+//! - 任务契约（[`contract`] 模块）：`Backbone` / `BackboneOutput` /
+//!   `DetectionHeadDecode` / `Assigner` / `AssignmentResult`，让 only_torch 内
+//!   不同检测器实现能够互换。**契约比实现先行**，本目录暂不提供具体 backbone
+//!   或 head 实现。
+//!
+//! 配套的高层组合：
+//! - `vision::preprocess::letterbox` / `image_to_nchw_normalized`：图像侧预处理
+//! - `metrics::detection`：mAP / precision / recall
+
+mod contract;
+mod io;
+mod loss;
+mod transform;
+
+pub use contract::{Assigner, AssignmentResult, Backbone, BackboneOutput, DetectionHeadDecode};
+pub use io::{parse_yolo_txt_file, parse_yolo_txt_labels};
+pub use loss::{DetectionLossComponents, DetectionLossWeights};
+pub use transform::{
+    DetectionLabelFilter, clip_filter_labels, horizontal_flip_labels, letterbox_labels,
+    restore_letterbox_labels,
+};
 
 use std::cmp::Ordering;
 

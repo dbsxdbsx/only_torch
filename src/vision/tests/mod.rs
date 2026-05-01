@@ -1,18 +1,10 @@
-/*
- * @Author       : 老董
- * @Date         : 2023-10-21 03:22:26
- * @LastEditors  : 老董
- * @LastEditTime : 2024-01-11 20:34:02
- * @Description  : vision模块的测试模块
- */
+//! vision 模块的单元测试
 
 mod basic;
 mod convert;
-mod shape;
-
-mod draw;
-
-mod detect;
+mod cv;
 mod detection;
+mod draw;
+mod filter;
+mod geom;
 mod preprocess;
-mod process;

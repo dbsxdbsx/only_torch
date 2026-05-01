@@ -5,6 +5,8 @@ mod dataloader;
 mod dataloader_transforms;
 mod detection;
 mod mnist;
+mod sample_transform_crop;
+mod sample_transform_flip;
 mod transform_affine;
 mod transform_center_crop;
 mod transform_color_jitter;

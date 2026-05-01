@@ -30,6 +30,16 @@
   - 补齐 `loss`、`rnn`、`attention` 三组 focused benchmark，覆盖 Loss、循环层和 MultiHeadAttention 的 forward + backward 路径
   - `justfile` 新增 `bench-smoke`、`bench-save`、`bench-compare`、`bench-macro`、`bench-macro-core`，支持改动前保存 baseline、改动后对比和 release example 宏基准
   - 文档补充性能验证标准流程，并已保存 `Mode` 重构前 `pre-execution-context` Criterion baseline
+- **feat(vision/detection): 立检测任务接口契约**
+  - 新增 `vision/detection/contract.rs`：`Backbone` / `BackboneOutput`、`DetectionHeadDecode`、`Assigner<P>` / `AssignmentResult`
+  - 契约比实现先行——本次只立类型约定（不写第一个 backbone 实现），避免后续 example 各自发明互不兼容的 head / assignment 接口
+- **feat(data/transforms): 引入 `SampleTransform` 与 image+label 同步变换**
+  - 新增 `SampleTransform<S>` trait，与 image-only `Transform` 正交；适用于 detection / segmentation 训练时让 image 与 bbox / mask 几何同步
+  - 新增 `ClassificationSample` / `SegmentationSample` 数据载体（`DetectionSample` 复用 `data::detection`）
+  - `RandomHorizontalFlip` / `CenterCrop` / `RandomCrop` 各自为三种 Sample 类型补齐 `SampleTransform` 实现：detection 路径自动同步 bbox（hflip 用 `image_w - x`，crop 用平移 + 与 crop window 求交集 + filter 过小框）；segmentation 路径同步翻转 / 裁剪 mask
+  - `CenterCrop` / `RandomCrop` 新增 `with_label_filter(DetectionLabelFilter)` builder，控制 detection bbox crop 后的最小面积过滤
+  - 新增 `data/transforms/crop_helpers.rs` 抽出 image-only / paired 共用的 crop / pad / bbox-shift / clip-filter 逻辑，避免重复
+  - 配套 5 个 paired hflip 测试 + 7 个 paired crop 测试覆盖 cls / det / seg 三档；image-only 老测试保持兼容
 
 ### Changed
 
@@ -72,6 +82,21 @@
   - `Conv2d` 在 `Inference` 推理模式下对 `1x1 stride=1 padding=0` 卷积启用直接 GEMM 快路径，避免为 backward 生成无用 `im2col` 缓存
   - `Conv2d` padding 与 `im2col` 热循环改用连续 slice 索引，减少 Debug 模式下动态 Tensor 索引开销
   - `chess_yolo_onnx_detect` Debug forward 从约 1871 ms 降到约 596 ms，总耗时从约 2030 ms 降到约 745 ms，并保持两张 sample 的 FEN 位级匹配
+- **refactor(vision)!: vision 模块按职能重组（Breaking）**
+  - `vision/` 子模块从"`Vision::xxx` impl method + 裸 Tensor"切换到"模块函数 + `&DynamicImage` 强类型"，对齐 `torchvision.transforms.functional` / `torchvision.utils` / `torchvision.io`：
+    - 新增 `vision/io.rs`（`load_image` / `save_image`）、`vision/color.rs`（`to_luma`）、`vision/geom.rs`（`resize_exact` / `resize_keep_ratio` / `center_crop`）、`vision/filter.rs`（`median_blur`）
+    - 新增 `vision/draw.rs`（`draw_bbox` / `draw_circle` / `draw_rectangle_xyxy`，接收 `BBox` 等强类型 + `&mut DynamicImage`，断言可验证像素而非"保存到 temp 再删"）
+    - 新增 `vision/cv/` 子模块收纳传统 CV 算法（Hough 圆检测等，与 PyTorch / JAX 不收录的范畴对齐）
+  - **删除** `vision/detect.rs`（迁 `vision/cv/hough_circles.rs`）、`vision/process.rs`（重写为 `vision/filter.rs`）、`vision/shape.rs`（重写为 `vision/geom.rs`）
+  - **删除** `pub struct Vision` 命名空间与 `ImageBufferEnum`：`Vision::load_image / save_image / to_luma` 全部迁到对应模块函数
+  - `Tensor::to_luma` 内部不再调 `Vision::to_luma`，改走 `vision::color::to_luma`；外部 API 不变
+- **refactor(vision/detection)!: detection 任务级 helper 收口到 `vision/detection/`（Breaking）**
+  - `nn/detection_loss.rs` → `vision/detection/loss.rs`：`DetectionLossWeights` / `DetectionLossComponents` 现从 `crate::vision::detection::` 引入（不再从 `crate::nn::`）
+  - `data/detection.rs` 拆分：数据载体 `DetectionSample` / `DetectionBatch` 留 `data/`；label 几何变换 `letterbox_labels` / `restore_letterbox_labels` / `horizontal_flip_labels` / `clip_filter_labels` 与 `DetectionLabelFilter` 迁 `vision/detection/transform.rs`
+  - `data/datasets/yolo.rs` → `vision/detection/io.rs`：`parse_yolo_txt_file` / `parse_yolo_txt_labels` 现从 `crate::vision::detection::` 引入
+- **refactor(metrics)!: detection 指标 API 升级到强类型（Breaking）**
+  - **删除** `mean_box_iou_cxcywh(&Tensor, &Tensor)`，新增 `mean_box_iou(&[BBox], &[BBox])`；调用方需要先做 `Tensor → Vec<BBox>` 转换。整个 detection 系统现在统一只走 `BBox::iou`，不再维护"裸 Tensor 配对 IoU"代码路径
+  - `single_object_detection` example 同步适配
 
 ### Fixed
 

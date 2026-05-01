@@ -6,12 +6,9 @@
  */
 
 use crate::nn::nodes::raw_node::Reduction;
-use crate::nn::{
-    BBoxLossKind, DetectionLossComponents, DetectionLossWeights, Graph, GraphError, Mode,
-    NodeTypeDescriptor, VarLossOps,
-};
+use crate::nn::{BBoxLossKind, Graph, GraphError, Mode, NodeTypeDescriptor, VarLossOps};
 use crate::tensor::Tensor;
-use crate::vision::detection::BoxFormat;
+use crate::vision::detection::{BoxFormat, DetectionLossComponents, DetectionLossWeights};
 use approx::assert_abs_diff_eq;
 
 #[test]

@@ -45,6 +45,68 @@ impl Transform for RandomHorizontalFlip {
     }
 }
 
+// ============================================================================
+// SampleTransform 实现：保持 image / label 几何同步
+// ============================================================================
+
+use crate::data::DetectionSample;
+use crate::data::sample::{ClassificationSample, SegmentationSample};
+use crate::data::transforms::SampleTransform;
+use crate::vision::detection::GroundTruthBox;
+
+impl SampleTransform<ClassificationSample> for RandomHorizontalFlip {
+    fn apply_to(&self, mut sample: ClassificationSample) -> ClassificationSample {
+        let mut rng = rand::thread_rng();
+        if rng.gen_range(0.0_f64..1.0) < self.p {
+            sample.image = flip_horizontal(&sample.image);
+        }
+        sample
+    }
+}
+
+impl SampleTransform<DetectionSample> for RandomHorizontalFlip {
+    fn apply_to(&self, sample: DetectionSample) -> DetectionSample {
+        let mut rng = rand::thread_rng();
+        if rng.gen_range(0.0_f64..1.0) >= self.p {
+            return sample;
+        }
+        let DetectionSample { image, labels } = sample;
+        let image_width = sample_image_width(&image) as f32;
+        let new_image = flip_horizontal(&image);
+        let new_labels = labels
+            .into_iter()
+            .map(|gt| GroundTruthBox::new(gt.bbox.horizontal_flip(image_width), gt.class_id))
+            .collect();
+        DetectionSample::new(new_image, new_labels)
+    }
+}
+
+impl SampleTransform<SegmentationSample> for RandomHorizontalFlip {
+    fn apply_to(&self, mut sample: SegmentationSample) -> SegmentationSample {
+        let mut rng = rand::thread_rng();
+        if rng.gen_range(0.0_f64..1.0) < self.p {
+            sample.image = flip_horizontal(&sample.image);
+            sample.mask = flip_horizontal(&sample.mask);
+        }
+        sample
+    }
+}
+
+/// 推断图像 Tensor 的宽度。
+///
+/// 支持 `[H, W]`、`[C, H, W]` 两种 layout；DetectionSample / SegmentationSample
+/// 不带 batch 维。
+fn sample_image_width(tensor: &Tensor) -> usize {
+    let shape = tensor.shape();
+    match shape.len() {
+        2 => shape[1],
+        3 => shape[2],
+        _ => panic!(
+            "RandomHorizontalFlip(SampleTransform): 期望图像形状 [H, W] 或 [C, H, W]，得到 {shape:?}"
+        ),
+    }
+}
+
 /// 水平翻转（确定性版本，供内部和测试使用）
 pub(crate) fn flip_horizontal(tensor: &Tensor) -> Tensor {
     let shape = tensor.shape();

@@ -1,12 +1,14 @@
-//! YOLO txt 检测标签解析。
+//! Detection 标签的 IO / 解析。
 //!
-//! 支持常见 YOLOv5 txt 格式：`<class> <cx> <cy> <w> <h>`，坐标归一化到 `[0, 1]`。
+//! 当前支持 YOLO txt 格式；未来可扩展 COCO json、Pascal VOC xml 等。
 
+use super::{BBox, BoxFormat, GroundTruthBox};
 use crate::data::DataError;
-use crate::vision::detection::{BBox, BoxFormat, GroundTruthBox};
 use std::path::Path;
 
 /// 解析 YOLO txt 标签文件。
+///
+/// 常见 YOLOv5 txt 格式：`<class> <cx> <cy> <w> <h>`，坐标归一化到 `[0, 1]`。
 pub fn parse_yolo_txt_file(
     path: impl AsRef<Path>,
     num_classes: usize,

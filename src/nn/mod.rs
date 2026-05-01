@@ -9,7 +9,6 @@
 // mod criterion; // 已移除，统一用 Var 方法（如 mse_loss()）
 pub mod debug;
 mod descriptor;
-mod detection_loss;
 mod display;
 pub mod distributions;
 pub mod evolution;
@@ -24,7 +23,6 @@ mod var;
 
 // pub use criterion::{...}; // 已移除
 pub use descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
-pub use detection_loss::{DetectionLossComponents, DetectionLossWeights};
 pub(in crate::nn) use display::format_node_display;
 pub use graph::{
     Graph, GraphError, GraphInner, ImageFormat, Mode, OnnxError, RebuildResult, SnapshotNode,

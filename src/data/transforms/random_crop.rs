@@ -1,27 +1,42 @@
 //! 随机裁切
 //!
-//! 可选填充后随机裁切到目标尺寸。
+//! 可选填充后随机裁切到目标尺寸；对 detection / segmentation sample 同步裁标签。
 
 use super::Transform;
+use super::crop_helpers::{
+    crop_and_filter_bboxes, narrow_image, pad_image, shift_bboxes_by_padding, tensor_h_w,
+};
+use super::sample_transform::SampleTransform;
+use crate::data::DetectionSample;
+use crate::data::sample::{ClassificationSample, SegmentationSample};
 use crate::tensor::Tensor;
+use crate::vision::detection::DetectionLabelFilter;
 use rand::Rng;
 
 /// 随机裁切
 ///
-/// 对输入张量 [C, H, W] 或 [H, W]，可选填充后随机裁切到 `(target_h, target_w)`。
+/// 对输入张量 `[C, H, W]` 或 `[H, W]`，可选填充后随机裁切到
+/// `(target_h, target_w)`。同时为 `ClassificationSample` / `DetectionSample` /
+/// `SegmentationSample` 实现 [`SampleTransform`]，让 image 与 label 同步
+/// 裁剪。
 ///
 /// # 示例
 ///
 /// ```ignore
-/// // 先填充 4 像素再裁切到 32x32
-/// let crop = RandomCrop::new(32, 32).padding(4);
-/// let output = crop.apply(&image_tensor);
+/// use only_torch::data::transforms::{RandomCrop, SampleTransform};
+/// use only_torch::vision::detection::DetectionLabelFilter;
+///
+/// let crop = RandomCrop::new(32, 32)
+///     .padding(4)
+///     .with_label_filter(DetectionLabelFilter::new(2.0));
+/// let new_sample = crop.apply_to(detection_sample);
 /// ```
 pub struct RandomCrop {
     target_h: usize,
     target_w: usize,
     padding: usize,
     fill_value: f32,
+    label_filter: DetectionLabelFilter,
 }
 
 impl RandomCrop {
@@ -36,6 +51,7 @@ impl RandomCrop {
             target_w,
             padding: 0,
             fill_value: 0.0,
+            label_filter: DetectionLabelFilter::default(),
         }
     }
 
@@ -50,66 +66,95 @@ impl RandomCrop {
         self.fill_value = value;
         self
     }
+
+    /// 设置 detection label 过滤规则；仅在 `SampleTransform<DetectionSample>`
+    /// 路径下生效。
+    pub fn with_label_filter(mut self, filter: DetectionLabelFilter) -> Self {
+        self.label_filter = filter;
+        self
+    }
+
+    /// 验证 padded 尺寸足够大，并随机选择 crop 起点。
+    fn random_origin(&self, padded_h: usize, padded_w: usize) -> (usize, usize) {
+        assert!(
+            padded_h >= self.target_h && padded_w >= self.target_w,
+            "RandomCrop: 填充后尺寸 ({padded_h}x{padded_w}) 必须 >= 目标尺寸 ({}x{})",
+            self.target_h,
+            self.target_w
+        );
+        let mut rng = rand::thread_rng();
+        let top = if padded_h == self.target_h {
+            0
+        } else {
+            rng.gen_range(0..=padded_h - self.target_h)
+        };
+        let left = if padded_w == self.target_w {
+            0
+        } else {
+            rng.gen_range(0..=padded_w - self.target_w)
+        };
+        (top, left)
+    }
 }
 
 impl Transform for RandomCrop {
     fn apply(&self, tensor: &Tensor) -> Tensor {
-        let shape = tensor.shape();
-        let ndim = shape.len();
+        let ndim = tensor.shape().len();
         assert!(
             ndim == 2 || ndim == 3,
             "RandomCrop: 输入应为 2D [H, W] 或 3D [C, H, W]，得到 {ndim}D"
         );
+        let padded = pad_image(tensor, self.padding, self.fill_value);
+        let (h, w) = tensor_h_w(&padded);
+        let (top, left) = self.random_origin(h, w);
+        narrow_image(&padded, top, left, self.target_h, self.target_w)
+    }
+}
 
-        // 填充（如果需要）
-        let padded = if self.padding > 0 {
-            let p = self.padding;
-            if ndim == 2 {
-                tensor.pad(&[(p, p), (p, p)], self.fill_value)
-            } else {
-                // [C, H, W] — 通道维不填充
-                tensor.pad(&[(0, 0), (p, p), (p, p)], self.fill_value)
-            }
-        } else {
-            tensor.clone()
-        };
+impl SampleTransform<ClassificationSample> for RandomCrop {
+    fn apply_to(&self, sample: ClassificationSample) -> ClassificationSample {
+        let padded_image = pad_image(&sample.image, self.padding, self.fill_value);
+        let (h, w) = tensor_h_w(&padded_image);
+        let (top, left) = self.random_origin(h, w);
+        ClassificationSample::new(
+            narrow_image(&padded_image, top, left, self.target_h, self.target_w),
+            sample.label,
+        )
+    }
+}
 
-        let padded_shape = padded.shape().to_vec();
-        let (h, w) = if ndim == 2 {
-            (padded_shape[0], padded_shape[1])
-        } else {
-            (padded_shape[1], padded_shape[2])
-        };
-
-        assert!(
-            h >= self.target_h && w >= self.target_w,
-            "RandomCrop: 填充后尺寸 ({h}x{w}) 必须 >= 目标尺寸 ({}x{})",
+impl SampleTransform<DetectionSample> for RandomCrop {
+    fn apply_to(&self, sample: DetectionSample) -> DetectionSample {
+        let DetectionSample { image, labels } = sample;
+        let padded_image = pad_image(&image, self.padding, self.fill_value);
+        let padded_labels = shift_bboxes_by_padding(labels, self.padding);
+        let (h, w) = tensor_h_w(&padded_image);
+        let (top, left) = self.random_origin(h, w);
+        let cropped_image = narrow_image(&padded_image, top, left, self.target_h, self.target_w);
+        let cropped_labels = crop_and_filter_bboxes(
+            &padded_labels,
+            top,
+            left,
             self.target_h,
-            self.target_w
+            self.target_w,
+            self.label_filter,
         );
+        DetectionSample::new(cropped_image, cropped_labels)
+    }
+}
 
-        // 随机起始位置
-        let mut rng = rand::thread_rng();
-        let top = if h == self.target_h {
-            0
-        } else {
-            rng.gen_range(0..=h - self.target_h)
-        };
-        let left = if w == self.target_w {
-            0
-        } else {
-            rng.gen_range(0..=w - self.target_w)
-        };
-
-        // 裁切（利用 narrow）
-        if ndim == 2 {
-            padded
-                .narrow(0, top, self.target_h)
-                .narrow(1, left, self.target_w)
-        } else {
-            padded
-                .narrow(1, top, self.target_h)
-                .narrow(2, left, self.target_w)
-        }
+impl SampleTransform<SegmentationSample> for RandomCrop {
+    fn apply_to(&self, sample: SegmentationSample) -> SegmentationSample {
+        // 注意：mask 与 image 共用 fill_value，符合"crop window 之外按训练
+        // 边界默认值处理"的简化语义；如果项目需要 ignore_index 等更复杂的
+        // mask 填充策略，可在调用方先做好 padding。
+        let padded_image = pad_image(&sample.image, self.padding, self.fill_value);
+        let padded_mask = pad_image(&sample.mask, self.padding, self.fill_value);
+        let (h, w) = tensor_h_w(&padded_image);
+        let (top, left) = self.random_origin(h, w);
+        SegmentationSample::new(
+            narrow_image(&padded_image, top, left, self.target_h, self.target_w),
+            narrow_image(&padded_mask, top, left, self.target_h, self.target_w),
+        )
     }
 }

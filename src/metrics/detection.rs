@@ -3,8 +3,7 @@
 //! 支持单框回归指标与多目标检测 mAP / precision / recall。
 
 use super::{ClassificationMetric, Metric};
-use crate::tensor::Tensor;
-use crate::vision::detection::{BBox, BoxFormat, Detection, GroundTruthBox};
+use crate::vision::detection::{BBox, Detection, GroundTruthBox};
 use std::cmp::Ordering;
 
 /// VOC 风格 `mAP@0.5` 阈值。
@@ -209,35 +208,32 @@ impl DetectionPrMetric {
     }
 }
 
-/// 计算归一化 `cx, cy, w, h` bbox 的平均 IoU。
+/// 计算配对 `BBox` 的平均 IoU。
 ///
-/// `predictions` 与 `actuals` 必须同为 `[N, 4]`，每一行表示：
-/// `[center_x, center_y, width, height]`。坐标会裁剪到 `[0, 1]`，宽高小于
-/// 0 时按 0 处理。
-pub fn mean_box_iou_cxcywh(predictions: &Tensor, actuals: &Tensor) -> ClassificationMetric {
-    assert_bbox_shape("mean_box_iou_cxcywh", predictions, actuals);
+/// `predictions[i]` 与 `actuals[i]` 必须形成 1-1 配对，常用于单框回归 / 单目标
+/// 检测的 toy benchmark；多目标检测请使用 [`mean_average_precision`]。
+///
+/// 调用方负责坐标格式转换与裁剪——例如归一化 `cxcywh` 输入可在转换 `BBox` 时
+/// 调用 `BBox::from_array(arr, BoxFormat::CxCyWh).clip(0.0, 1.0)`。
+pub fn mean_box_iou(predictions: &[BBox], actuals: &[BBox]) -> ClassificationMetric {
+    assert_eq!(
+        predictions.len(),
+        actuals.len(),
+        "mean_box_iou: predictions 与 actuals 长度必须一致，分别为 {} / {}",
+        predictions.len(),
+        actuals.len(),
+    );
 
-    let n = predictions.shape()[0];
+    let n = predictions.len();
     if n == 0 {
         return ClassificationMetric::new(0.0, 0);
     }
 
-    let mut iou_sum = 0.0f32;
-    for i in 0..n {
-        let pred = [
-            predictions[[i, 0]],
-            predictions[[i, 1]],
-            predictions[[i, 2]],
-            predictions[[i, 3]],
-        ];
-        let actual = [
-            actuals[[i, 0]],
-            actuals[[i, 1]],
-            actuals[[i, 2]],
-            actuals[[i, 3]],
-        ];
-        iou_sum += box_iou_cxcywh(pred, actual);
-    }
+    let iou_sum: f32 = predictions
+        .iter()
+        .zip(actuals.iter())
+        .map(|(pred, actual)| pred.iou(*actual))
+        .sum();
 
     ClassificationMetric::new(iou_sum / n as f32, n)
 }
@@ -404,26 +400,6 @@ fn prepare_predictions(
             filtered
         })
         .collect()
-}
-
-fn box_iou_cxcywh(a: [f32; 4], b: [f32; 4]) -> f32 {
-    let a = BBox::from_array(a, BoxFormat::CxCyWh).clip(0.0, 1.0);
-    let b = BBox::from_array(b, BoxFormat::CxCyWh).clip(0.0, 1.0);
-    a.iou(b)
-}
-
-fn assert_bbox_shape(metric_name: &str, predictions: &Tensor, actuals: &Tensor) {
-    assert!(
-        predictions.shape() == actuals.shape(),
-        "{metric_name}: 形状不匹配，predictions={:?}, actuals={:?}",
-        predictions.shape(),
-        actuals.shape()
-    );
-    assert!(
-        predictions.shape().len() == 2 && predictions.shape()[1] == 4,
-        "{metric_name}: bbox Tensor 必须是 [N, 4]，实际 shape={:?}",
-        predictions.shape()
-    );
 }
 
 fn assert_detection_inputs(
