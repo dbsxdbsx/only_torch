@@ -63,11 +63,25 @@ pub fn parse_yolo_txt_labels(
                 ));
             }
         }
+        if coords[2] <= 0.0 || coords[3] <= 0.0 {
+            return Err(yolo_format_error(
+                line_idx,
+                format!("bbox 宽高必须大于 0，得到 w={}, h={}", coords[2], coords[3]),
+            ));
+        }
 
-        labels.push(GroundTruthBox::new(
-            BBox::from_array(coords, BoxFormat::CxCyWh),
-            class_id,
-        ));
+        let bbox = BBox::from_array(coords, BoxFormat::CxCyWh);
+        if bbox.x1 < 0.0 || bbox.y1 < 0.0 || bbox.x2 > 1.0 || bbox.y2 > 1.0 {
+            return Err(yolo_format_error(
+                line_idx,
+                format!(
+                    "bbox 转换到 xyxy 后必须落在 [0, 1]，得到 {:?}",
+                    bbox.to_xyxy()
+                ),
+            ));
+        }
+
+        labels.push(GroundTruthBox::new(bbox, class_id));
     }
     Ok(labels)
 }

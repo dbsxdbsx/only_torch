@@ -14,20 +14,69 @@ pub const VOC_IOU_THRESHOLDS: &[f32] = &[0.5];
 pub const COCO_IOU_THRESHOLDS: &[f32] =
     &[0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95];
 
+/// 多目标检测评估选项。
+///
+/// 当前实现使用 VOC 风格 all-points interpolation，并支持 COCO-style 的多 IoU
+/// 阈值集合；它不完整复刻 pycocotools 的 crowd / area range / 101-point 细节。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DetectionMetricOptions {
+    pub iou_thresholds: Vec<f32>,
+    pub score_threshold: f32,
+    pub max_detections: Option<usize>,
+}
+
+impl DetectionMetricOptions {
+    pub fn new(iou_thresholds: &[f32]) -> Self {
+        Self {
+            iou_thresholds: iou_thresholds.to_vec(),
+            score_threshold: f32::NEG_INFINITY,
+            max_detections: None,
+        }
+    }
+
+    pub fn voc() -> Self {
+        Self::new(VOC_IOU_THRESHOLDS)
+    }
+
+    pub fn coco_style() -> Self {
+        Self::new(COCO_IOU_THRESHOLDS)
+    }
+
+    pub fn with_score_threshold(mut self, score_threshold: f32) -> Self {
+        self.score_threshold = score_threshold;
+        self
+    }
+
+    pub fn with_max_detections(mut self, max_detections: usize) -> Self {
+        self.max_detections = Some(max_detections);
+        self
+    }
+}
+
 /// 多阈值 mAP 指标结果。
 #[derive(Debug, Clone, PartialEq)]
 pub struct DetectionMapMetric {
     mean_ap: f32,
     num_ground_truths: usize,
+    iou_thresholds: Vec<f32>,
     per_threshold_ap: Vec<f32>,
+    per_class_ap: Vec<Option<f32>>,
 }
 
 impl DetectionMapMetric {
-    pub(crate) fn new(mean_ap: f32, num_ground_truths: usize, per_threshold_ap: Vec<f32>) -> Self {
+    pub(crate) fn new(
+        mean_ap: f32,
+        num_ground_truths: usize,
+        iou_thresholds: Vec<f32>,
+        per_threshold_ap: Vec<f32>,
+        per_class_ap: Vec<Option<f32>>,
+    ) -> Self {
         Self {
             mean_ap,
             num_ground_truths,
+            iou_thresholds,
             per_threshold_ap,
+            per_class_ap,
         }
     }
 
@@ -54,6 +103,34 @@ impl DetectionMapMetric {
     /// 每个 IoU 阈值上的 AP。
     pub fn per_threshold_ap(&self) -> &[f32] {
         &self.per_threshold_ap
+    }
+
+    /// 每个阈值对应的 IoU threshold。
+    pub fn iou_thresholds(&self) -> &[f32] {
+        &self.iou_thresholds
+    }
+
+    /// 每个类别的 AP；没有 GT 的类别为 `None`。
+    pub fn per_class_ap(&self) -> &[Option<f32>] {
+        &self.per_class_ap
+    }
+
+    /// 指定 IoU 阈值上的 mAP。
+    pub fn map_at(&self, iou_threshold: f32) -> Option<f32> {
+        self.iou_thresholds
+            .iter()
+            .position(|&threshold| (threshold - iou_threshold).abs() < 1e-6)
+            .map(|idx| self.per_threshold_ap[idx])
+    }
+
+    /// VOC 常用 `mAP@0.5`。
+    pub fn map_50(&self) -> Option<f32> {
+        self.map_at(0.5)
+    }
+
+    /// 当前阈值集合上的平均值，COCO-style 调用时即 `mAP@0.5:0.95`。
+    pub fn map_50_95(&self) -> f32 {
+        self.mean_ap
     }
 }
 
@@ -121,6 +198,15 @@ impl DetectionPrMetric {
     pub const fn false_negatives(&self) -> usize {
         self.false_negatives
     }
+
+    pub fn f1_score(&self) -> f32 {
+        let denom = self.precision + self.recall;
+        if denom <= 0.0 {
+            0.0
+        } else {
+            2.0 * self.precision * self.recall / denom
+        }
+    }
 }
 
 /// 计算归一化 `cx, cy, w, h` bbox 的平均 IoU。
@@ -166,20 +252,58 @@ pub fn mean_average_precision(
     num_classes: usize,
     iou_thresholds: &[f32],
 ) -> DetectionMapMetric {
-    assert_detection_inputs(predictions, ground_truths, num_classes, iou_thresholds);
+    mean_average_precision_with_options(
+        predictions,
+        ground_truths,
+        num_classes,
+        &DetectionMetricOptions::new(iou_thresholds),
+    )
+}
+
+/// 使用显式评估选项计算多目标检测 mean Average Precision。
+pub fn mean_average_precision_with_options(
+    predictions: &[Vec<Detection>],
+    ground_truths: &[Vec<GroundTruthBox>],
+    num_classes: usize,
+    options: &DetectionMetricOptions,
+) -> DetectionMapMetric {
+    assert_detection_inputs(
+        predictions,
+        ground_truths,
+        num_classes,
+        &options.iou_thresholds,
+    );
 
     let num_ground_truths = ground_truths.iter().map(Vec::len).sum();
-    if num_ground_truths == 0 || iou_thresholds.is_empty() {
-        return DetectionMapMetric::new(0.0, num_ground_truths, Vec::new());
+    if options.iou_thresholds.is_empty() {
+        return DetectionMapMetric::new(
+            0.0,
+            num_ground_truths,
+            Vec::new(),
+            Vec::new(),
+            vec![None; num_classes],
+        );
+    }
+    if num_ground_truths == 0 {
+        return DetectionMapMetric::new(
+            0.0,
+            0,
+            options.iou_thresholds.clone(),
+            vec![0.0; options.iou_thresholds.len()],
+            vec![None; num_classes],
+        );
     }
 
-    let mut per_threshold_ap = Vec::with_capacity(iou_thresholds.len());
-    for &threshold in iou_thresholds {
+    let predictions = prepare_predictions(predictions, options);
+    let mut per_threshold_ap = Vec::with_capacity(options.iou_thresholds.len());
+    let mut class_ap_values: Vec<Vec<f32>> = vec![Vec::new(); num_classes];
+    for &threshold in &options.iou_thresholds {
         let mut class_aps = Vec::new();
-        for class_id in 0..num_classes {
+        for (class_id, class_values) in class_ap_values.iter_mut().enumerate() {
             if let Some(ap) =
-                average_precision_for_class(predictions, ground_truths, class_id, threshold)
+                average_precision_for_class(&predictions, ground_truths, class_id, threshold)
             {
+                class_values.push(ap);
                 class_aps.push(ap);
             }
         }
@@ -187,7 +311,17 @@ pub fn mean_average_precision(
     }
 
     let mean_ap = mean_or_zero(&per_threshold_ap);
-    DetectionMapMetric::new(mean_ap, num_ground_truths, per_threshold_ap)
+    let per_class_ap = class_ap_values
+        .iter()
+        .map(|values| (!values.is_empty()).then(|| mean_or_zero(values)))
+        .collect();
+    DetectionMapMetric::new(
+        mean_ap,
+        num_ground_truths,
+        options.iou_thresholds.clone(),
+        per_threshold_ap,
+        per_class_ap,
+    )
 }
 
 /// 在单个 IoU 阈值上计算 micro precision / recall。
@@ -199,14 +333,32 @@ pub fn precision_recall_at_iou(
     num_classes: usize,
     iou_threshold: f32,
 ) -> DetectionPrMetric {
+    precision_recall_at_iou_with_options(
+        predictions,
+        ground_truths,
+        num_classes,
+        iou_threshold,
+        &DetectionMetricOptions::new(&[iou_threshold]),
+    )
+}
+
+/// 在单个 IoU 阈值上按显式评估选项计算 micro precision / recall。
+pub fn precision_recall_at_iou_with_options(
+    predictions: &[Vec<Detection>],
+    ground_truths: &[Vec<GroundTruthBox>],
+    num_classes: usize,
+    iou_threshold: f32,
+    options: &DetectionMetricOptions,
+) -> DetectionPrMetric {
     assert_detection_inputs(predictions, ground_truths, num_classes, &[iou_threshold]);
+    let predictions = prepare_predictions(predictions, options);
 
     let mut tp = 0usize;
     let mut fp = 0usize;
     let mut total_gt = 0usize;
 
     for class_id in 0..num_classes {
-        let outcome = match_class_predictions(predictions, ground_truths, class_id, iou_threshold);
+        let outcome = match_class_predictions(&predictions, ground_truths, class_id, iou_threshold);
         tp += outcome.true_positives;
         fp += outcome.false_positives;
         total_gt += outcome.num_ground_truths;
@@ -224,6 +376,34 @@ pub fn precision_recall_at_iou(
         tp as f32 / total_gt as f32
     };
     DetectionPrMetric::new(precision, recall, tp, fp, fn_count)
+}
+
+fn prepare_predictions(
+    predictions: &[Vec<Detection>],
+    options: &DetectionMetricOptions,
+) -> Vec<Vec<Detection>> {
+    predictions
+        .iter()
+        .map(|image_predictions| {
+            let mut filtered = image_predictions
+                .iter()
+                .filter(|prediction| {
+                    prediction.score.is_finite() && prediction.score >= options.score_threshold
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            filtered.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| a.class_id.cmp(&b.class_id))
+            });
+            if let Some(max_detections) = options.max_detections {
+                filtered.truncate(max_detections);
+            }
+            filtered
+        })
+        .collect()
 }
 
 fn box_iou_cxcywh(a: [f32; 4], b: [f32; 4]) -> f32 {
@@ -263,6 +443,28 @@ fn assert_detection_inputs(
             (0.0..=1.0).contains(&threshold),
             "detection metric: IoU threshold 必须在 [0, 1]，得到 {threshold}"
         );
+    }
+    for (image_idx, image_predictions) in predictions.iter().enumerate() {
+        for prediction in image_predictions {
+            assert!(
+                prediction.class_id < num_classes,
+                "detection metric: prediction class_id {} 越界，num_classes={}，image_idx={}",
+                prediction.class_id,
+                num_classes,
+                image_idx
+            );
+        }
+    }
+    for (image_idx, image_ground_truths) in ground_truths.iter().enumerate() {
+        for gt in image_ground_truths {
+            assert!(
+                gt.class_id < num_classes,
+                "detection metric: ground truth class_id {} 越界，num_classes={}，image_idx={}",
+                gt.class_id,
+                num_classes,
+                image_idx
+            );
+        }
     }
 }
 

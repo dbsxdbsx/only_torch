@@ -50,7 +50,10 @@ pub use datasets::{
     CaliforniaHousingDataset, MnistDataset, default_data_dir, parse_yolo_txt_file,
     parse_yolo_txt_labels,
 };
-pub use detection::{DetectionBatch, DetectionSample};
+pub use detection::{
+    DetectionBatch, DetectionLabelFilter, DetectionSample, clip_filter_labels,
+    horizontal_flip_labels, letterbox_labels, restore_letterbox_labels,
+};
 pub use error::DataError;
 pub use synthetic_rng::SyntheticRng;
 pub use transforms::{

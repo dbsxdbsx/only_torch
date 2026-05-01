@@ -6,12 +6,14 @@
 
 - **feat(vision/data/metrics): 沉淀通用 2D detection 能力**
   - `src/vision/preprocess`：通用 letterbox（保比缩放 + 填充）+ `LetterboxResult::to_origin` 反向映射 + `image_to_nchw_normalized` 归一化
-  - `src/vision/detection`：`BBox` 统一封装 + `BoxFormat::{XyXy, CxCyWh}` 显式互转，`iou` / `giou` / `diou` / `ciou` 全家桶，`scale_translate` / `horizontal_flip` 几何变换，`Detection` / `GroundTruthBox` 标准载体，`NmsOptions { class_aware }` 参数化 NMS（同时覆盖 class-aware 与 class-agnostic）
-  - `src/data/detection`：`DetectionSample` / `DetectionBatch` 处理变长检测标签
+  - `src/vision/detection`：`BBox` 统一封装 + `BoxFormat::{XyXy, CxCyWh}` 显式互转，`iou` / `giou` / `diou` / `ciou` 全家桶，`scale_translate` / `horizontal_flip` 几何变换，`Detection` / `GroundTruthBox` 标准载体，支持坐标契约、像素 / 归一化互转、clip/filter、score threshold、pre-NMS top-k、max detections 与 batch NMS
+  - `src/vision/preprocess`：letterbox 扩展到矩形输出，补充 bbox 与 letterbox / 原图坐标互转，NCHW 归一化支持矩形输入
+  - `src/data/detection`：`DetectionSample` / `DetectionBatch` 处理变长检测标签，并补充 letterbox、restore、horizontal flip、clip/filter 等 bbox 同步变换 helper
   - `src/data/datasets/yolo`：YOLO `.txt` 标签解析（支持空行、行内 `#` 注释、错误行 [文件:行号] 定位）
-  - `src/metrics/detection`：mAP / Precision / Recall 复用 `vision::detection::BBox`，预置 `VOC_IOU_THRESHOLDS`（11 点 0.0..=0.5）与 `COCO_IOU_THRESHOLDS`（10 点 0.5..=0.95），新增 `DetectionMapMetric` / `DetectionPrMetric` 形式化指标条目
-  - `src/nn/nodes/raw_node/loss/bbox`：新增 `BBoxLossKind::{IoU, GIoU, DIoU, CIoU}` 与 `VarLossOps::{bbox_loss, giou_loss, diou_loss, ciou_loss}`，支持 `[N, 4]` 检测框回归训练并接入 descriptor rebuild / ONNX training-only 分类
-  - 配套单元测试覆盖格式互转、IoU 家族数值、几何变换与 NMS 行为；YOLO label 解析覆盖正/异常路径
+  - `src/metrics/detection`：mAP / Precision / Recall / F1 复用 `vision::detection::BBox`，预置 `VOC_IOU_THRESHOLDS`（`mAP@0.5`）与 `COCO_IOU_THRESHOLDS`（10 点 0.5..=0.95），新增 `DetectionMetricOptions`、per-class AP、per-threshold AP、score threshold 与 max detections 评估协议
+  - `src/nn/nodes/raw_node/loss/bbox`：新增 `BBoxLossKind::{IoU, GIoU, DIoU, CIoU}` 与 `VarLossOps::{bbox_loss, giou_loss, diou_loss, ciou_loss}`，支持 `[N, 4]` 已匹配检测框回归训练并接入 descriptor rebuild / ONNX training-only 分类；反向传播当前仍为有限差分，真实 fine-tune 前需替换解析梯度
+  - `src/nn/detection_loss`：新增 `DetectionLossComponents` / `DetectionLossWeights`，作为 adapter 组合 bbox / objectness / class loss 的通用积木，不内置 YOLOv5 anchor/grid matching
+  - 配套单元测试覆盖格式互转、IoU 家族数值、坐标契约、几何变换、NMS、指标选项、同步标签变换与 detection loss 组合；YOLO label 解析覆盖正/异常路径
 - **feat(nn): `RebuildResult` 推理便捷 API**
   - 新增 `predict(input)` / `predict_head(name, input)` 一行调用，免去 `set_value → forward → value` 三步
   - 新增 `input_by_name(name)` / `output_by_name(name)` 按名取节点；多 input/output 场景默认走第一个，并补充按名访问

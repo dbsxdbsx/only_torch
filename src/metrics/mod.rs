@@ -472,8 +472,9 @@ pub use classification::{
     precision, recall,
 };
 pub use detection::{
-    COCO_IOU_THRESHOLDS, DetectionMapMetric, DetectionPrMetric, VOC_IOU_THRESHOLDS,
-    mean_average_precision, mean_box_iou_cxcywh, precision_recall_at_iou,
+    COCO_IOU_THRESHOLDS, DetectionMapMetric, DetectionMetricOptions, DetectionPrMetric,
+    VOC_IOU_THRESHOLDS, mean_average_precision, mean_average_precision_with_options,
+    mean_box_iou_cxcywh, precision_recall_at_iou, precision_recall_at_iou_with_options,
 };
 pub use regression::{mean_absolute_error, mean_squared_error, r2_score, root_mean_squared_error};
 pub use segmentation::{

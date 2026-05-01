@@ -4,7 +4,7 @@ use crate::data::parse_yolo_txt_labels;
 
 #[test]
 fn test_parse_yolo_txt_labels_allows_blank_lines_and_comments() {
-    let content = "\n# class cx cy w h\n0 0.5 0.5 0.2 0.4\n2 0.1 0.2 0.3 0.4\n";
+    let content = "\n# class cx cy w h\n0 0.5 0.5 0.2 0.4\n2 0.5 0.5 0.3 0.4\n";
 
     let labels = parse_yolo_txt_labels(content, 3).unwrap();
 
@@ -45,5 +45,45 @@ fn test_parse_yolo_txt_labels_rejects_coordinate_out_of_range() {
     assert!(
         format!("{err}").contains("必须在 [0, 1]"),
         "错误信息应说明坐标范围，实际: {err}"
+    );
+}
+
+#[test]
+fn test_parse_yolo_txt_labels_rejects_zero_classes() {
+    let err = parse_yolo_txt_labels("0 0.5 0.5 0.2 0.2", 0).unwrap_err();
+
+    assert!(
+        format!("{err}").contains("num_classes > 0"),
+        "错误信息应说明类别数约束，实际: {err}"
+    );
+}
+
+#[test]
+fn test_parse_yolo_txt_labels_rejects_negative_class_id() {
+    let err = parse_yolo_txt_labels("-1 0.5 0.5 0.2 0.2", 1).unwrap_err();
+
+    assert!(
+        format!("{err}").contains("类别 ID 不是非负整数"),
+        "错误信息应说明类别 ID 非法，实际: {err}"
+    );
+}
+
+#[test]
+fn test_parse_yolo_txt_labels_rejects_zero_area_box() {
+    let err = parse_yolo_txt_labels("0 0.5 0.5 0.0 0.2", 1).unwrap_err();
+
+    assert!(
+        format!("{err}").contains("宽高必须大于 0"),
+        "错误信息应说明 bbox 正面积约束，实际: {err}"
+    );
+}
+
+#[test]
+fn test_parse_yolo_txt_labels_rejects_box_outside_normalized_image() {
+    let err = parse_yolo_txt_labels("0 0.1 0.5 0.4 0.2", 1).unwrap_err();
+
+    assert!(
+        format!("{err}").contains("xyxy 后必须落在 [0, 1]"),
+        "错误信息应说明转换后 bbox 越界，实际: {err}"
     );
 }

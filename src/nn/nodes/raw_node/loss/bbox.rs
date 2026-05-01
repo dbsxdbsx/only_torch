@@ -29,6 +29,9 @@ pub enum BBoxLossKind {
 /// 输入与 target 均为 `[N, 4]`，坐标格式由 `format` 显式指定。该节点面向
 /// 已完成正负样本匹配后的 bbox 回归，不包含 anchor matching / obj / cls 等
 /// 具体检测器逻辑。
+///
+/// 反向传播当前使用有限差分近似梯度，适合小规模验证和 adapter 原型；若进入真实
+/// detection fine-tune，需要优先替换为解析梯度以降低训练成本并提升数值稳定性。
 #[derive(Clone)]
 pub(crate) struct BBoxLoss {
     id: Option<NodeId>,

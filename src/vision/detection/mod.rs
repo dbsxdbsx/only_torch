@@ -4,6 +4,16 @@
 
 use std::cmp::Ordering;
 
+/// bbox 坐标所属空间。
+///
+/// - `Pixel`：坐标单位是像素，通常属于原图或 letterbox 后图像。
+/// - `Normalized`：坐标归一化到 `[0, 1]`，需要结合图像宽高还原为像素。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CoordinateSpace {
+    Pixel,
+    Normalized,
+}
+
 /// 外部 bbox 坐标格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BoxFormat {
@@ -67,6 +77,21 @@ impl BBox {
         self.width() * self.height()
     }
 
+    /// bbox 是否是有限且面积为正的有效框。
+    pub fn is_valid(self) -> bool {
+        self.x1.is_finite()
+            && self.y1.is_finite()
+            && self.x2.is_finite()
+            && self.y2.is_finite()
+            && self.x2 > self.x1
+            && self.y2 > self.y1
+    }
+
+    /// bbox 面积是否达到指定阈值。
+    pub fn has_min_area(self, min_area: f32) -> bool {
+        self.is_valid() && self.area() >= min_area.max(0.0)
+    }
+
     pub fn center(self) -> (f32, f32) {
         ((self.x1 + self.x2) * 0.5, (self.y1 + self.y2) * 0.5)
     }
@@ -78,6 +103,39 @@ impl BBox {
             x2: self.x2.clamp(min, max),
             y2: self.y2.clamp(min, max),
         }
+    }
+
+    /// 按图像尺寸裁剪 bbox。
+    ///
+    /// `image_width` / `image_height` 使用当前坐标空间的单位；像素坐标传图像尺寸，
+    /// 归一化坐标可传 `1.0, 1.0`。
+    pub fn clip_to_size(self, image_width: f32, image_height: f32) -> Self {
+        let max_x = image_width.max(0.0);
+        let max_y = image_height.max(0.0);
+        Self {
+            x1: self.x1.clamp(0.0, max_x),
+            y1: self.y1.clamp(0.0, max_y),
+            x2: self.x2.clamp(0.0, max_x),
+            y2: self.y2.clamp(0.0, max_y),
+        }
+    }
+
+    /// 从归一化坐标转换到像素坐标。
+    pub fn to_pixel_space(self, image_width: f32, image_height: f32) -> Self {
+        assert!(
+            image_width > 0.0 && image_height > 0.0,
+            "to_pixel_space: 图像宽高必须大于 0"
+        );
+        self.scale_translate(image_width, image_height, 0.0, 0.0)
+    }
+
+    /// 从像素坐标转换到归一化坐标。
+    pub fn to_normalized(self, image_width: f32, image_height: f32) -> Self {
+        assert!(
+            image_width > 0.0 && image_height > 0.0,
+            "to_normalized: 图像宽高必须大于 0"
+        );
+        self.scale_translate(1.0 / image_width, 1.0 / image_height, 0.0, 0.0)
     }
 
     /// 对 bbox 做缩放和平移。
@@ -212,6 +270,12 @@ pub struct NmsOptions {
     pub iou_threshold: f32,
     /// `true` 表示只抑制同类框；`false` 表示 class-agnostic NMS。
     pub class_aware: bool,
+    /// NMS 前按置信度过滤。默认不额外过滤，调用方可显式设置。
+    pub score_threshold: f32,
+    /// NMS 前保留的最高分候选数。
+    pub pre_nms_top_k: Option<usize>,
+    /// NMS 后最多返回的检测数。
+    pub max_detections: Option<usize>,
 }
 
 impl NmsOptions {
@@ -219,6 +283,9 @@ impl NmsOptions {
         Self {
             iou_threshold,
             class_aware: true,
+            score_threshold: f32::NEG_INFINITY,
+            pre_nms_top_k: None,
+            max_detections: None,
         }
     }
 
@@ -226,7 +293,25 @@ impl NmsOptions {
         Self {
             iou_threshold,
             class_aware: false,
+            score_threshold: f32::NEG_INFINITY,
+            pre_nms_top_k: None,
+            max_detections: None,
         }
+    }
+
+    pub const fn with_score_threshold(mut self, score_threshold: f32) -> Self {
+        self.score_threshold = score_threshold;
+        self
+    }
+
+    pub const fn with_pre_nms_top_k(mut self, pre_nms_top_k: usize) -> Self {
+        self.pre_nms_top_k = Some(pre_nms_top_k);
+        self
+    }
+
+    pub const fn with_max_detections(mut self, max_detections: usize) -> Self {
+        self.max_detections = Some(max_detections);
+        self
     }
 }
 
@@ -235,14 +320,26 @@ pub fn nms(detections: &[Detection], options: NmsOptions) -> Vec<Detection> {
     if detections.is_empty() {
         return Vec::new();
     }
+    if options.max_detections == Some(0) {
+        return Vec::new();
+    }
 
-    let mut order: Vec<usize> = (0..detections.len()).collect();
+    let mut order: Vec<usize> = (0..detections.len())
+        .filter(|&idx| {
+            let score = detections[idx].score;
+            score.is_finite() && score >= options.score_threshold
+        })
+        .collect();
     order.sort_by(|&a, &b| {
         detections[b]
             .score
             .partial_cmp(&detections[a].score)
             .unwrap_or(Ordering::Equal)
+            .then_with(|| a.cmp(&b))
     });
+    if let Some(top_k) = options.pre_nms_top_k {
+        order.truncate(top_k);
+    }
 
     let mut suppressed = vec![false; detections.len()];
     let mut keep = Vec::with_capacity(detections.len());
@@ -253,6 +350,12 @@ pub fn nms(detections: &[Detection], options: NmsOptions) -> Vec<Detection> {
         }
         let current = &detections[idx];
         keep.push(current.clone());
+        if options
+            .max_detections
+            .is_some_and(|max_detections| keep.len() >= max_detections)
+        {
+            break;
+        }
 
         for &other_idx in &order[(rank + 1)..] {
             if suppressed[other_idx] {
@@ -269,6 +372,48 @@ pub fn nms(detections: &[Detection], options: NmsOptions) -> Vec<Detection> {
     }
 
     keep
+}
+
+/// 对 batch 中每张图分别执行同一套 NMS。
+pub fn batch_nms(batch_detections: &[Vec<Detection>], options: NmsOptions) -> Vec<Vec<Detection>> {
+    batch_detections
+        .iter()
+        .map(|detections| nms(detections, options))
+        .collect()
+}
+
+/// 按图像边界裁剪并过滤无效检测。
+pub fn clip_filter_detections(
+    detections: &[Detection],
+    image_width: f32,
+    image_height: f32,
+    min_area: f32,
+) -> Vec<Detection> {
+    detections
+        .iter()
+        .filter_map(|detection| {
+            let bbox = detection.bbox.clip_to_size(image_width, image_height);
+            bbox.has_min_area(min_area)
+                .then(|| Detection::new(bbox, detection.score, detection.class_id))
+        })
+        .collect()
+}
+
+/// 按图像边界裁剪并过滤无效真值框。
+pub fn clip_filter_ground_truths(
+    labels: &[GroundTruthBox],
+    image_width: f32,
+    image_height: f32,
+    min_area: f32,
+) -> Vec<GroundTruthBox> {
+    labels
+        .iter()
+        .filter_map(|label| {
+            let bbox = label.bbox.clip_to_size(image_width, image_height);
+            bbox.has_min_area(min_area)
+                .then(|| GroundTruthBox::new(bbox, label.class_id))
+        })
+        .collect()
 }
 
 fn squared(x: f32) -> f32 {
