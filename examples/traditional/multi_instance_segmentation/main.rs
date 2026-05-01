@@ -18,8 +18,12 @@ mod model;
 
 use model::MultiInstanceSegmentationNet;
 use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
+use only_torch::metrics::{mean_instance_iou, pixel_accuracy};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
+use only_torch::vision::io::save_rgb_image;
+use only_torch::vision::mask::mask_to_ascii_lines;
+use only_torch::vision::viz::{Palette, blend_alpha, pixel_block_scale};
 use std::time::Instant;
 
 const IMAGE_SIZE: usize = 16;
@@ -144,80 +148,11 @@ fn evaluate(
     inputs: &Tensor,
     targets: &Tensor,
 ) -> Result<(f32, f32), GraphError> {
-    let probs = model.predict_probs(inputs)?;
-    let probs = probs.value()?.unwrap();
+    let probs = model.predict_probs(inputs)?.value()?.unwrap();
     Ok((
-        slot_pixel_accuracy(&probs, targets, MASK_THRESHOLD),
-        mean_instance_iou(&probs, targets, MASK_THRESHOLD),
+        pixel_accuracy(&probs, targets, MASK_THRESHOLD).value(),
+        mean_instance_iou(&probs, targets, MASK_THRESHOLD).value(),
     ))
-}
-
-fn slot_pixel_accuracy(predictions: &Tensor, targets: &Tensor, threshold: f32) -> f32 {
-    assert_eq!(predictions.shape(), targets.shape());
-    let total = predictions.size();
-    if total == 0 {
-        return 0.0;
-    }
-
-    let correct = predictions
-        .to_vec()
-        .into_iter()
-        .zip(targets.to_vec())
-        .filter(|(pred, target)| (*pred >= threshold) == (*target >= threshold))
-        .count();
-    correct as f32 / total as f32
-}
-
-fn mean_instance_iou(predictions: &Tensor, targets: &Tensor, threshold: f32) -> f32 {
-    assert_eq!(predictions.shape(), targets.shape());
-    assert!(
-        predictions.shape().len() == 4 && predictions.shape()[1] == INSTANCE_SLOTS,
-        "mean_instance_iou: 期望 shape=[N, {INSTANCE_SLOTS}, H, W]，实际 {:?}",
-        predictions.shape()
-    );
-
-    let n = predictions.shape()[0];
-    if n == 0 {
-        return 0.0;
-    }
-
-    let mut total_iou = 0.0f32;
-    for sample_idx in 0..n {
-        for slot in 0..INSTANCE_SLOTS {
-            total_iou += instance_iou(predictions, targets, sample_idx, slot, threshold);
-        }
-    }
-    total_iou / (n * INSTANCE_SLOTS) as f32
-}
-
-fn instance_iou(
-    predictions: &Tensor,
-    targets: &Tensor,
-    sample_idx: usize,
-    slot: usize,
-    threshold: f32,
-) -> f32 {
-    let mut intersection = 0usize;
-    let mut union = 0usize;
-
-    for y in 0..IMAGE_SIZE {
-        for x in 0..IMAGE_SIZE {
-            let pred_positive = predictions[[sample_idx, slot, y, x]] >= threshold;
-            let target_positive = targets[[sample_idx, slot, y, x]] >= threshold;
-            if pred_positive && target_positive {
-                intersection += 1;
-            }
-            if pred_positive || target_positive {
-                union += 1;
-            }
-        }
-    }
-
-    if union == 0 {
-        1.0
-    } else {
-        intersection as f32 / union as f32
-    }
 }
 
 fn print_sample_prediction(
@@ -226,32 +161,19 @@ fn print_sample_prediction(
     targets: &Tensor,
     sample_idx: usize,
 ) -> Result<(), GraphError> {
-    let probs = model.predict_probs(inputs)?;
-    let probs = probs.value()?.unwrap();
+    let probs = model.predict_probs(inputs)?.value()?.unwrap();
 
     for slot in 0..INSTANCE_SLOTS {
+        let target_lines = mask_to_ascii_lines(targets, sample_idx, slot, MASK_THRESHOLD, '#', '.');
+        let pred_lines = mask_to_ascii_lines(&probs, sample_idx, slot, MASK_THRESHOLD, '#', '.');
         println!("slot {slot} 目标 mask        slot {slot} 预测 mask");
-        for y in 0..IMAGE_SIZE {
-            let target_row = mask_row(targets, sample_idx, slot, y, MASK_THRESHOLD);
-            let pred_row = mask_row(&probs, sample_idx, slot, y, MASK_THRESHOLD);
+        for (target_row, pred_row) in target_lines.iter().zip(pred_lines.iter()) {
             println!("{target_row}    {pred_row}");
         }
         println!();
     }
 
     Ok(())
-}
-
-fn mask_row(tensor: &Tensor, sample_idx: usize, slot: usize, y: usize, threshold: f32) -> String {
-    (0..IMAGE_SIZE)
-        .map(|x| {
-            if tensor[[sample_idx, slot, y, x]] >= threshold {
-                '#'
-            } else {
-                '.'
-            }
-        })
-        .collect()
 }
 
 fn save_sample_visualizations(
@@ -261,8 +183,9 @@ fn save_sample_visualizations(
 ) -> Result<(), GraphError> {
     use image::{ImageBuffer, Rgb};
 
-    let probs = model.predict_probs(inputs)?;
-    let probs = probs.value()?.unwrap();
+    let probs = model.predict_probs(inputs)?.value()?.unwrap();
+    // 使用自定义调色板，让前两个 slot 颜色与原 example 完全一致
+    let slot_palette = Palette::new(vec![[255, 64, 64], [64, 128, 255], [64, 220, 64]]);
 
     let panel_size = IMAGE_SIZE as u32 * OVERLAY_SCALE;
     let mut input_img = ImageBuffer::from_pixel(panel_size, panel_size, Rgb([245, 245, 245]));
@@ -274,66 +197,30 @@ fn save_sample_visualizations(
             let base_rgb = [base, base, base];
             let mut out_rgb = base_rgb;
 
-            fill_scaled_pixel(&mut input_img, x, y, base_rgb);
             for slot in 0..INSTANCE_SLOTS {
                 let prob = probs[[sample_idx, slot, y, x]].clamp(0.0, 1.0);
-                let enabled = prob >= MASK_THRESHOLD;
-                out_rgb = overlay(out_rgb, enabled, slot_color(slot), prob * 0.65);
+                if prob >= MASK_THRESHOLD {
+                    out_rgb = blend_alpha(out_rgb, slot_palette.color(slot), prob * 0.65);
+                }
             }
-            fill_scaled_pixel(&mut overlay_img, x, y, out_rgb);
+
+            pixel_block_scale(&mut input_img, x as u32, y as u32, base_rgb, OVERLAY_SCALE);
+            pixel_block_scale(&mut overlay_img, x as u32, y as u32, out_rgb, OVERLAY_SCALE);
         }
     }
 
     save_rgb_image(
         &input_img,
         "examples/traditional/multi_instance_segmentation/test_in.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
     save_rgb_image(
         &overlay_img,
         "examples/traditional/multi_instance_segmentation/test_out.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
 
     Ok(())
-}
-
-fn save_rgb_image(image: &image::RgbImage, path: &str) -> Result<(), GraphError> {
-    image
-        .save(path)
-        .map_err(|err| GraphError::ComputationError(format!("保存图像失败 {path}: {err}")))
-}
-
-fn fill_scaled_pixel(canvas: &mut image::RgbImage, x: usize, y: usize, color: [u8; 3]) {
-    let x0 = x as u32 * OVERLAY_SCALE;
-    let y0 = y as u32 * OVERLAY_SCALE;
-    for dy in 0..OVERLAY_SCALE {
-        for dx in 0..OVERLAY_SCALE {
-            canvas.put_pixel(x0 + dx, y0 + dy, image::Rgb(color));
-        }
-    }
-}
-
-fn overlay(base: [u8; 3], enabled: bool, mask_color: [u8; 3], alpha: f32) -> [u8; 3] {
-    if !enabled {
-        return base;
-    }
-
-    [
-        blend_channel(base[0], mask_color[0], alpha),
-        blend_channel(base[1], mask_color[1], alpha),
-        blend_channel(base[2], mask_color[2], alpha),
-    ]
-}
-
-fn blend_channel(base: u8, overlay: u8, alpha: f32) -> u8 {
-    ((base as f32 * (1.0 - alpha)) + (overlay as f32 * alpha)).round() as u8
-}
-
-fn slot_color(slot: usize) -> [u8; 3] {
-    match slot {
-        0 => [255, 64, 64],
-        1 => [64, 128, 255],
-        _ => [64, 220, 64],
-    }
 }
 
 /// 生成固定两实例数据。

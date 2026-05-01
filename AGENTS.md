@@ -48,7 +48,7 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 - `src/nn/layer/`：`Linear`、`Conv2d`、`Rnn` 等高层模块。
 - `src/nn/evolution/`：基因、变异、builder、收敛与演化主流程。
 - `src/data/`、`src/metrics/`、`src/rl/`：数据、指标、强化学习；`src/data/` 同时承载 `Transform`（image-only）与 `SampleTransform`（image + label 同步）两套变换契约。
-- `src/vision/`：图像支持，按职能划分为 `io / color / geom / filter / draw / preprocess / detection / cv`。`detection/` 闭环收口 `BBox / NMS / mAP-friendly 类型 / Backbone 契约 / loss 组合 / label 同步变换 / YOLO 标签解析`；`cv/` 收纳 OpenCV 风格的传统 CV 算法（PyTorch / JAX 不收录的部分）。
+- `src/vision/`：图像支持，按职能划分为 `io / color / geom / filter / draw / mask / preprocess / viz / detection / cv`。`detection/` 闭环收口 `BBox / NMS / mAP-friendly 类型 / Backbone 契约 / loss 组合 / label 同步变换 / YOLO 标签解析`，并通过 `adapter::yolo::v5` 适配第三方 YOLOv5 ONNX 输出解码；`mask/` 是像素级 mask 处理（argmax / 多类→前景 / mask→ASCII）；`viz/` 是展示画布工具（`Palette` 调色板、像素放大、alpha 混合、5x3 像素字体 `TinyFont`）；`cv/` 收纳 OpenCV 风格的传统 CV 算法（PyTorch / JAX 不收录的部分）。
 
 ## 改动前先看这些文档
 

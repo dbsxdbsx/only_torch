@@ -18,8 +18,11 @@ mod model;
 
 use model::OverlappingFixedSlotInstanceSegmentationNet;
 use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
+use only_torch::metrics::{empty_slot_accuracy, mean_valid_slot_iou};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
+use only_torch::vision::io::save_rgb_image;
+use only_torch::vision::viz::{Palette, blend_alpha, pixel_block_scale};
 use std::time::Instant;
 
 const IMAGE_SIZE: usize = 64;
@@ -159,108 +162,11 @@ fn evaluate(
     inputs: &Tensor,
     targets: &Tensor,
 ) -> Result<EvalReport, GraphError> {
-    let probs = model.predict_probs(inputs)?;
-    let probs = probs.value()?.unwrap();
+    let probs = model.predict_probs(inputs)?.value()?.unwrap();
     Ok(EvalReport {
-        mean_valid_slot_iou: mean_valid_slot_iou(&probs, targets, MASK_THRESHOLD),
-        empty_slot_accuracy: empty_slot_accuracy(&probs, targets, MASK_THRESHOLD),
+        mean_valid_slot_iou: mean_valid_slot_iou(&probs, targets, MASK_THRESHOLD).value(),
+        empty_slot_accuracy: empty_slot_accuracy(&probs, targets, MASK_THRESHOLD).value(),
     })
-}
-
-fn mean_valid_slot_iou(predictions: &Tensor, targets: &Tensor, threshold: f32) -> f32 {
-    assert_eq!(predictions.shape(), targets.shape());
-    let n = predictions.shape()[0];
-    let mut total_iou = 0.0f32;
-    let mut valid_slots = 0usize;
-
-    for sample in 0..n {
-        for slot in 0..INSTANCE_SLOTS {
-            if slot_has_target(targets, sample, slot) {
-                total_iou += instance_iou(predictions, targets, sample, slot, threshold);
-                valid_slots += 1;
-            }
-        }
-    }
-
-    if valid_slots == 0 {
-        0.0
-    } else {
-        total_iou / valid_slots as f32
-    }
-}
-
-fn empty_slot_accuracy(predictions: &Tensor, targets: &Tensor, threshold: f32) -> f32 {
-    let n = predictions.shape()[0];
-    let mut empty_slots = 0usize;
-    let mut correct_empty_slots = 0usize;
-
-    for sample in 0..n {
-        for slot in 0..INSTANCE_SLOTS {
-            if !slot_has_target(targets, sample, slot) {
-                empty_slots += 1;
-                if !slot_has_prediction(predictions, sample, slot, threshold) {
-                    correct_empty_slots += 1;
-                }
-            }
-        }
-    }
-
-    if empty_slots == 0 {
-        1.0
-    } else {
-        correct_empty_slots as f32 / empty_slots as f32
-    }
-}
-
-fn instance_iou(
-    predictions: &Tensor,
-    targets: &Tensor,
-    sample: usize,
-    slot: usize,
-    threshold: f32,
-) -> f32 {
-    let mut intersection = 0usize;
-    let mut union = 0usize;
-    for y in 0..IMAGE_SIZE {
-        for x in 0..IMAGE_SIZE {
-            let pred_positive = predictions[[sample, slot, y, x]] >= threshold;
-            let target_positive = targets[[sample, slot, y, x]] >= threshold;
-            if pred_positive && target_positive {
-                intersection += 1;
-            }
-            if pred_positive || target_positive {
-                union += 1;
-            }
-        }
-    }
-
-    if union == 0 {
-        1.0
-    } else {
-        intersection as f32 / union as f32
-    }
-}
-
-fn slot_has_target(targets: &Tensor, sample: usize, slot: usize) -> bool {
-    for y in 0..IMAGE_SIZE {
-        for x in 0..IMAGE_SIZE {
-            if targets[[sample, slot, y, x]] >= 0.5 {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn slot_has_prediction(predictions: &Tensor, sample: usize, slot: usize, threshold: f32) -> bool {
-    for y in 0..IMAGE_SIZE {
-        for x in 0..IMAGE_SIZE {
-            if predictions[[sample, slot, y, x]] >= threshold {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 fn generate_dataset(n: usize, seed: u64) -> (Tensor, Tensor) {
@@ -400,8 +306,8 @@ fn save_sample_visualizations(
 ) -> Result<(), GraphError> {
     use image::{ImageBuffer, Rgb};
 
-    let probs = model.predict_probs(inputs)?;
-    let probs = probs.value()?.unwrap();
+    let probs = model.predict_probs(inputs)?.value()?.unwrap();
+    let slot_palette = Palette::new(vec![[255, 64, 64], [64, 128, 255], [64, 220, 96]]);
 
     let panel_size = IMAGE_SIZE as u32 * OVERLAY_SCALE;
     let mut input_img = ImageBuffer::from_pixel(panel_size, panel_size, Rgb([245, 245, 245]));
@@ -411,72 +317,31 @@ fn save_sample_visualizations(
         for x in 0..IMAGE_SIZE {
             let base = (inputs[[sample_idx, 0, y, x]].clamp(0.0, 1.0) * 255.0) as u8;
             let base_rgb = [base, base, base];
-            fill_scaled_pixel(&mut input_img, x, y, base_rgb);
+            pixel_block_scale(&mut input_img, x as u32, y as u32, base_rgb, OVERLAY_SCALE);
 
             let mut out_rgb = base_rgb;
             for slot in 0..INSTANCE_SLOTS {
                 let prob = probs[[sample_idx, slot, y, x]].clamp(0.0, 1.0);
-                out_rgb = overlay(
-                    out_rgb,
-                    prob >= MASK_THRESHOLD,
-                    slot_color(slot),
-                    prob * 0.65,
-                );
+                if prob >= MASK_THRESHOLD {
+                    out_rgb = blend_alpha(out_rgb, slot_palette.color(slot), prob * 0.65);
+                }
             }
-            fill_scaled_pixel(&mut output_img, x, y, out_rgb);
+            pixel_block_scale(&mut output_img, x as u32, y as u32, out_rgb, OVERLAY_SCALE);
         }
     }
 
     save_rgb_image(
         &input_img,
         "examples/traditional/overlapping_fixed_slot_instance_segmentation/test_in.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
     save_rgb_image(
         &output_img,
         "examples/traditional/overlapping_fixed_slot_instance_segmentation/test_out.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
 
     Ok(())
-}
-
-fn save_rgb_image(image: &image::RgbImage, path: &str) -> Result<(), GraphError> {
-    image
-        .save(path)
-        .map_err(|err| GraphError::ComputationError(format!("保存图像失败 {path}: {err}")))
-}
-
-fn fill_scaled_pixel(canvas: &mut image::RgbImage, x: usize, y: usize, color: [u8; 3]) {
-    let x0 = x as u32 * OVERLAY_SCALE;
-    let y0 = y as u32 * OVERLAY_SCALE;
-    for dy in 0..OVERLAY_SCALE {
-        for dx in 0..OVERLAY_SCALE {
-            canvas.put_pixel(x0 + dx, y0 + dy, image::Rgb(color));
-        }
-    }
-}
-
-fn overlay(base: [u8; 3], enabled: bool, mask_color: [u8; 3], alpha: f32) -> [u8; 3] {
-    if !enabled {
-        return base;
-    }
-    [
-        blend_channel(base[0], mask_color[0], alpha),
-        blend_channel(base[1], mask_color[1], alpha),
-        blend_channel(base[2], mask_color[2], alpha),
-    ]
-}
-
-fn blend_channel(base: u8, overlay: u8, alpha: f32) -> u8 {
-    ((base as f32 * (1.0 - alpha)) + (overlay as f32 * alpha)).round() as u8
-}
-
-fn slot_color(slot: usize) -> [u8; 3] {
-    match slot {
-        0 => [255, 64, 64],
-        1 => [64, 128, 255],
-        2 => [64, 220, 96],
-        _ => [245, 245, 245],
-    }
 }
 
 fn deterministic_noise(seed: u64, sample_idx: usize, x: usize, y: usize) -> f32 {

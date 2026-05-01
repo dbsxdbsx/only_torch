@@ -4,6 +4,15 @@
 
 ### Added
 
+- **feat(vision/metrics): 把空间域 example 的通用 helper 沉淀到库**
+  - `src/vision/mask`：像素级 mask 处理（`argmax_to_class_map` / `foreground_from_multiclass` / `mask_to_ascii_lines`），统一替代 example 各自手写的 argmax / 多类→前景 / mask 文本化
+  - `src/vision/viz`：展示画布工具——`Palette`（含 `default_categorical()` Tab10 风格 8 色调色板）、`pixel_block_scale`（toy 像素 N 倍放大）、`blend_alpha`（mask 半透明叠加）、`TinyFont` 5x3 像素字体（内置 0-9 / A-Z / 标点 / 小写自动落到大写，含 `draw_with_box` 一键画带底框的标签）
+  - `src/vision/detection/adapter/yolo/v5`：YOLOv5 ONNX 输出解码 + per-class NMS（`detect` 端到端 + `decode` 低层），从 `chess_yolo_onnx_detect/yolo_decode.rs` 上提；为后续 v3/v4/v8/x 等独立子模块预留位置
+  - `src/metrics/segmentation`：新增 `mean_instance_iou` / `mean_valid_slot_iou` / `empty_slot_accuracy` 三个实例分割指标，沿用现有运行时 shape 反推风格，与 `binary_iou` / `mean_iou` 系列 API 保持一致
+  - `BBox::vec_from_tensor` / `vec_to_tensor`：`[N, 4]` Tensor ↔ `Vec<BBox>` 批量转换；故意不附带任何 clip 行为，让调用方按归一化 / letterbox / 原图坐标空间显式选择 `clip(0.0, 1.0)` 或 `clip_to_size(w, h)`
+  - `vision::io::save_rgb_image`：直接保存 `RgbImage`，避免 `RgbImage → DynamicImage` 的 clone
+  - 配套 42 个新单元测试，覆盖 BBox 批量 API、mask 工具、viz 调色板/字体/像素操作、yolo v5 decoder 阈值过滤与 NMS、instance segmentation 指标空 slot / valid slot / 完美匹配等边界
+
 - **feat(vision/data/metrics): 沉淀通用 2D detection 能力**
   - `src/vision/preprocess`：通用 letterbox（保比缩放 + 填充）+ `LetterboxResult::to_origin` 反向映射 + `image_to_nchw_normalized` 归一化
   - `src/vision/detection`：`BBox` 统一封装 + `BoxFormat::{XyXy, CxCyWh}` 显式互转，`iou` / `giou` / `diou` / `ciou` 全家桶，`scale_translate` / `horizontal_flip` 几何变换，`Detection` / `GroundTruthBox` 标准载体，支持坐标契约、像素 / 归一化互转、clip/filter、score threshold、pre-NMS top-k、max detections 与 batch NMS
@@ -42,6 +51,19 @@
   - 配套 5 个 paired hflip 测试 + 7 个 paired crop 测试覆盖 cls / det / seg 三档；image-only 老测试保持兼容
 
 ### Changed
+
+- **refactor(examples): 9 个空间域 example 改用库 API，共减重约 1100 行**
+  - `traditional/single_object_detection`：删除本地 `tensor_rows_to_clipped_bboxes` / `draw_bbox` / `draw_hline` / `draw_vline` / `bbox_to_canvas_rect` / `tiny_text_*` / `put_pixel_checked` 等约 150 行可视化辅助；改用 `BBox::vec_from_tensor` + `vision::draw::draw_bbox`(DynamicImage 中转)+ `vision::viz::TinyFont::draw_with_box`
+  - `traditional/single_object_segmentation` / `multi_instance_segmentation` / `overlapping_fixed_slot_instance_segmentation`：删除本地 `mask_row` / `fill_scaled_pixel` / `overlay` / `blend_channel` / `slot_pixel_accuracy` / `mean_instance_iou` / `mean_valid_slot_iou` / `empty_slot_accuracy` / `instance_iou` / `slot_color` 等，改用 `vision::mask` + `vision::viz` + `metrics::segmentation` + `vision::io::save_rgb_image`
+  - `traditional/overlapping_shapes_semantic_segmentation` / `overlapping_shapes_unet_lite_segmentation`：删除本地 `argmax_class` / `foreground_probability_mask` / `foreground_target_mask` / `class_color` 等，改用 `vision::mask::{argmax_to_class_map, foreground_from_multiclass}` + `Palette::default_categorical()`
+  - `traditional/deformable_conv2d_segmentation` 与 `evolution/{overlapping_shapes_unet_lite, deformable_conv2d}_segmentation`：用 `vision::viz::pixel_block_scale` 替换本地 `fill_scaled_pixel`；保留各自的连续概率→颜色或 binary_color 等任务特化映射
+  - `traditional/chess_yolo_onnx_detect`：**整个 `yolo_decode.rs`(98 行)删除**，改用 `vision::detection::adapter::yolo::v5::detect`
+  - 行为不变：所有 example 在重构前后产出相同的 mean IoU / Pixel Accuracy / Mean Instance IoU / Empty-slot Accuracy 数值
+
+- **refactor(examples/shared): 跨 traditional / evolution 共享合成形状数据集生成**
+  - 新增 `examples/shared/synthetic_shapes.rs`(99 行)：统一封装 R/C/T 三类形状的 `ShapeKind` / `ShapeObject` / `contains` / `generate_objects`；class_id 由 kind 派生(Rectangle=1, Circle=2, Triangle=3)，参数 `(image_size, max_objects)` 由调用方显式传
+  - `traditional/{overlapping_shapes_semantic, overlapping_shapes_unet_lite}_segmentation` 与 `evolution/overlapping_shapes_unet_lite_segmentation` 通过 `#[path = "../../shared/synthetic_shapes.rs"] mod synthetic_shapes;` 跨大类引用，消除约 245 行 100% 复制粘贴
+  - 与 shared 不一致的 example(`evolution/overlapping_shapes_semantic_segmentation` 用 R/C 两类 + 随机 class_id；`deformable_conv2d_segmentation` 用 16x16 + small range)保留各自本地 helper，避免过度抽象
 
 - **feat(example): DeformableConv2d evolution 示例新增审计矩阵**
   - `examples/evolution/deformable_conv2d_segmentation` 保持默认 deformable-only smoke 路径，用于验证算子进入 evolution 主流程

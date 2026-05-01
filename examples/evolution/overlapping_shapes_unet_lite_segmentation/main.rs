@@ -4,13 +4,18 @@
  * @Description  : 对齐 U-Net-lite 强基线的重叠形状语义分割 Evolution benchmark
  */
 
+#[path = "../../shared/synthetic_shapes.rs"]
+mod synthetic_shapes;
+
 use only_torch::data::SyntheticRng;
 use only_torch::metrics::{mean_iou, per_class_iou, semantic_pixel_accuracy};
 use only_torch::nn::evolution::{Evolution, ReportMetric, TaskMetric};
 use only_torch::tensor::Tensor;
+use only_torch::vision::viz::{Palette, pixel_block_scale};
 use std::env;
 use std::error::Error;
 use std::time::Instant;
+use synthetic_shapes::generate_objects;
 
 const IMAGE_SIZE: usize = 64;
 const NUM_CLASSES: usize = 4;
@@ -140,7 +145,7 @@ fn generate_dataset(n: usize, seed: u64) -> SegmentationDataset {
     let mut object_counts = Vec::with_capacity(n);
 
     for sample_idx in 0..n {
-        let objects = generate_objects(sample_idx, seed);
+        let objects = generate_objects(sample_idx, seed, IMAGE_SIZE, MAX_OBJECTS);
         let mut image = Vec::with_capacity(IMAGE_SIZE * IMAGE_SIZE);
         let mut class_map = vec![0usize; IMAGE_SIZE * IMAGE_SIZE];
 
@@ -185,79 +190,6 @@ fn generate_dataset(n: usize, seed: u64) -> SegmentationDataset {
     }
 }
 
-fn generate_objects(sample_idx: usize, seed: u64) -> Vec<ShapeObject> {
-    let mut rng = SyntheticRng::from_seed_parts(seed, &[sample_idx as u64]);
-    let count = rng.usize_range(0..MAX_OBJECTS + 1);
-    (0..count)
-        .map(|idx| {
-            let mut obj_rng = rng.fork(idx as u64 + 1);
-            let kind = match obj_rng.usize_range(0..3) {
-                0 => ShapeKind::Rectangle,
-                1 => ShapeKind::Circle,
-                _ => ShapeKind::Triangle,
-            };
-            let margin = 12isize;
-            ShapeObject {
-                kind,
-                class_id: kind.class_id(),
-                cx: obj_rng.isize_range(margin..IMAGE_SIZE as isize - margin),
-                cy: obj_rng.isize_range(margin..IMAGE_SIZE as isize - margin),
-                half_w: obj_rng.isize_range(5..16),
-                half_h: obj_rng.isize_range(5..16),
-            }
-        })
-        .collect()
-}
-
-#[derive(Clone, Copy)]
-enum ShapeKind {
-    Rectangle,
-    Circle,
-    Triangle,
-}
-
-impl ShapeKind {
-    const fn class_id(self) -> usize {
-        match self {
-            Self::Rectangle => 1,
-            Self::Circle => 2,
-            Self::Triangle => 3,
-        }
-    }
-}
-
-struct ShapeObject {
-    kind: ShapeKind,
-    class_id: usize,
-    cx: isize,
-    cy: isize,
-    half_w: isize,
-    half_h: isize,
-}
-
-impl ShapeObject {
-    fn contains(&self, x: usize, y: usize) -> bool {
-        let dx = x as isize - self.cx;
-        let dy = y as isize - self.cy;
-        match self.kind {
-            ShapeKind::Rectangle => dx.abs() <= self.half_w && dy.abs() <= self.half_h,
-            ShapeKind::Circle => {
-                let rx = self.half_w.max(1) as f32;
-                let ry = self.half_h.max(1) as f32;
-                (dx as f32 / rx).powi(2) + (dy as f32 / ry).powi(2) <= 1.0
-            }
-            ShapeKind::Triangle => {
-                if dy < -self.half_h || dy > self.half_h {
-                    return false;
-                }
-                let t = (dy + self.half_h) as f32 / (2 * self.half_h.max(1)) as f32;
-                let half_width_at_y = (self.half_w as f32 * t).max(1.0);
-                (dx as f32).abs() <= half_width_at_y
-            }
-        }
-    }
-}
-
 fn representative_sample_index(dataset: &SegmentationDataset) -> usize {
     dataset
         .object_counts
@@ -273,6 +205,7 @@ fn save_sample_visualizations(
 ) -> Result<(), Box<dyn Error>> {
     use image::{ImageBuffer, Rgb};
 
+    let palette = Palette::default_categorical();
     let panel_size = IMAGE_SIZE as u32 * OVERLAY_SCALE;
     let mut input_img = ImageBuffer::from_pixel(panel_size, panel_size, Rgb([245, 245, 245]));
     let mut target_img = ImageBuffer::from_pixel(panel_size, panel_size, Rgb([245, 245, 245]));
@@ -283,19 +216,27 @@ fn save_sample_visualizations(
     for y in 0..IMAGE_SIZE {
         for x in 0..IMAGE_SIZE {
             let base = (input[[0, y, x]].clamp(0.0, 1.0) * 255.0) as u8;
-            fill_scaled_pixel(&mut input_img, x, y, [base, base, base]);
-
-            fill_scaled_pixel(
-                &mut target_img,
-                x,
-                y,
-                class_color(argmax_class(target, y, x)),
+            pixel_block_scale(
+                &mut input_img,
+                x as u32,
+                y as u32,
+                [base, base, base],
+                OVERLAY_SCALE,
             );
-            fill_scaled_pixel(
+
+            pixel_block_scale(
+                &mut target_img,
+                x as u32,
+                y as u32,
+                palette.color(argmax_class(target, y, x)),
+                OVERLAY_SCALE,
+            );
+            pixel_block_scale(
                 &mut pred_img,
-                x,
-                y,
-                class_color(argmax_prediction_class(prediction, y, x)),
+                x as u32,
+                y as u32,
+                palette.color(argmax_prediction_class(prediction, y, x)),
+                OVERLAY_SCALE,
             );
         }
     }
@@ -358,16 +299,6 @@ fn save_rgb_image(image: &image::RgbImage, path: &str) -> Result<(), image::Imag
     image.save(path)
 }
 
-fn fill_scaled_pixel(canvas: &mut image::RgbImage, x: usize, y: usize, color: [u8; 3]) {
-    let x0 = x as u32 * OVERLAY_SCALE;
-    let y0 = y as u32 * OVERLAY_SCALE;
-    for dy in 0..OVERLAY_SCALE {
-        for dx in 0..OVERLAY_SCALE {
-            canvas.put_pixel(x0 + dx, y0 + dy, image::Rgb(color));
-        }
-    }
-}
-
 fn class_name(class_idx: usize) -> &'static str {
     match class_idx {
         0 => "background",
@@ -375,16 +306,6 @@ fn class_name(class_idx: usize) -> &'static str {
         2 => "circle",
         3 => "triangle",
         _ => "unknown",
-    }
-}
-
-fn class_color(class_idx: usize) -> [u8; 3] {
-    match class_idx {
-        0 => [32, 32, 32],
-        1 => [240, 76, 76],
-        2 => [76, 160, 255],
-        3 => [80, 220, 120],
-        _ => [245, 245, 245],
     }
 }
 

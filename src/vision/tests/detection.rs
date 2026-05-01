@@ -1,5 +1,6 @@
 use approx::assert_abs_diff_eq;
 
+use crate::tensor::Tensor;
 use crate::vision::detection::{
     BBox, BoxFormat, Detection, GroundTruthBox, NmsOptions, batch_nms, clip_filter_detections,
     clip_filter_ground_truths, nms,
@@ -199,4 +200,72 @@ fn test_clip_filter_helpers_drop_invalid_boxes() {
     assert_eq!(kept_dets.len(), 1);
     assert_eq!(kept_labels.len(), 1);
     assert_eq!(kept_dets[0].bbox.to_xyxy(), [0.0, 0.0, 4.0, 4.0]);
+}
+
+#[test]
+fn test_bbox_vec_from_tensor_xyxy() {
+    let tensor = Tensor::new(&[0.0, 0.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0], &[2, 4]);
+
+    let boxes = BBox::vec_from_tensor(&tensor, BoxFormat::XyXy);
+
+    assert_eq!(boxes.len(), 2);
+    assert_abs_diff_eq!(boxes[0].x1, 0.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(boxes[0].x2, 1.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(boxes[1].x1, 2.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(boxes[1].y2, 5.0, epsilon = 1e-6);
+}
+
+#[test]
+fn test_bbox_vec_from_tensor_cxcywh_matches_from_array() {
+    let tensor = Tensor::new(&[0.5, 0.4, 0.2, 0.6], &[1, 4]);
+
+    let boxes = BBox::vec_from_tensor(&tensor, BoxFormat::CxCyWh);
+    let expected = BBox::from_array([0.5, 0.4, 0.2, 0.6], BoxFormat::CxCyWh);
+
+    assert_eq!(boxes.len(), 1);
+    assert_abs_diff_eq!(boxes[0].x1, expected.x1, epsilon = 1e-6);
+    assert_abs_diff_eq!(boxes[0].y1, expected.y1, epsilon = 1e-6);
+    assert_abs_diff_eq!(boxes[0].x2, expected.x2, epsilon = 1e-6);
+    assert_abs_diff_eq!(boxes[0].y2, expected.y2, epsilon = 1e-6);
+}
+
+#[test]
+fn test_bbox_vec_tensor_roundtrip_preserves_format() {
+    let original = vec![
+        BBox::from_xyxy(0.1, 0.2, 0.3, 0.5),
+        BBox::from_xyxy(0.4, 0.4, 0.7, 0.9),
+    ];
+
+    let xyxy_tensor = BBox::vec_to_tensor(&original, BoxFormat::XyXy);
+    assert_eq!(xyxy_tensor.shape(), &[2, 4]);
+    let xyxy_round = BBox::vec_from_tensor(&xyxy_tensor, BoxFormat::XyXy);
+    for (got, expected) in xyxy_round.iter().zip(&original) {
+        assert_abs_diff_eq!(got.x1, expected.x1, epsilon = 1e-6);
+        assert_abs_diff_eq!(got.x2, expected.x2, epsilon = 1e-6);
+    }
+
+    let cxcywh_tensor = BBox::vec_to_tensor(&original, BoxFormat::CxCyWh);
+    let cxcywh_round = BBox::vec_from_tensor(&cxcywh_tensor, BoxFormat::CxCyWh);
+    for (got, expected) in cxcywh_round.iter().zip(&original) {
+        // 中心宽高表示 round-trip 后允许浮点尾差，但对应的 xyxy 必须基本一致。
+        assert_abs_diff_eq!(got.x1, expected.x1, epsilon = 1e-6);
+        assert_abs_diff_eq!(got.y2, expected.y2, epsilon = 1e-6);
+    }
+}
+
+#[test]
+fn test_bbox_vec_from_tensor_empty() {
+    let tensor = Tensor::new(&[], &[0, 4]);
+    let boxes = BBox::vec_from_tensor(&tensor, BoxFormat::XyXy);
+    assert!(boxes.is_empty());
+
+    let empty_tensor = BBox::vec_to_tensor(&[], BoxFormat::XyXy);
+    assert_eq!(empty_tensor.shape(), &[0, 4]);
+}
+
+#[test]
+#[should_panic(expected = "BBox::vec_from_tensor")]
+fn test_bbox_vec_from_tensor_panics_on_wrong_shape() {
+    let tensor = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    let _ = BBox::vec_from_tensor(&tensor, BoxFormat::XyXy);
 }

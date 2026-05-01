@@ -200,6 +200,103 @@ pub fn mean_iou(predictions: &Tensor, actuals: &Tensor) -> ClassificationMetric 
     ClassificationMetric::new(value, n_samples)
 }
 
+/// 实例分割的 slot-wise IoU 平均（所有 slot 都参与平均）。
+///
+/// 输入形状必须是 `[N, S, H, W]`，`S` 是固定 slot 数（每个 slot 一个 instance mask）。
+/// 对每个 `(sample, slot)` 计算二值 IoU 后求均值；`union == 0` 的 slot
+/// （pred 和 target 都为空）按"完美匹配空 slot"返回 1.0，参与平均。
+///
+/// 适合 multi_instance_segmentation 这种"slot 数量固定且每个 slot 都有意义"
+/// 的场景。如果允许部分 slot 为空、且只想评估有 GT 的 slot，参考
+/// [`mean_valid_slot_iou`] 与 [`empty_slot_accuracy`] 配套使用。
+pub fn mean_instance_iou(
+    predictions: &Tensor,
+    actuals: &Tensor,
+    threshold: f32,
+) -> ClassificationMetric {
+    assert_instance_shape("mean_instance_iou", predictions, actuals);
+    let shape = predictions.shape();
+    let (n, slots) = (shape[0], shape[1]);
+    let total_slots = n * slots;
+    if total_slots == 0 {
+        return ClassificationMetric::new(0.0, 0);
+    }
+
+    let mut total_iou = 0.0f32;
+    for sample in 0..n {
+        for slot in 0..slots {
+            total_iou += slot_iou(predictions, actuals, sample, slot, threshold);
+        }
+    }
+    ClassificationMetric::new(total_iou / total_slots as f32, total_slots)
+}
+
+/// 实例分割的 slot-wise IoU，但**只在 target 非空**的 slot 上做平均。
+///
+/// 输入形状必须是 `[N, S, H, W]`。"target 是否非空"的判断阈值固定为 `0.5`，
+/// 与一般 0/1 mask 的语义保持一致；预测侧的二值化阈值由 `threshold` 控制。
+///
+/// 适合"允许 slot 为空"的固定 slot 实例分割任务，单独评估有真值的 slot
+/// 上分割质量；空 slot 性能用 [`empty_slot_accuracy`] 评估，两者互补。
+pub fn mean_valid_slot_iou(
+    predictions: &Tensor,
+    actuals: &Tensor,
+    threshold: f32,
+) -> ClassificationMetric {
+    assert_instance_shape("mean_valid_slot_iou", predictions, actuals);
+    let shape = predictions.shape();
+    let (n, slots) = (shape[0], shape[1]);
+
+    let mut total_iou = 0.0f32;
+    let mut valid_slots = 0usize;
+    for sample in 0..n {
+        for slot in 0..slots {
+            if !slot_has_positive(actuals, sample, slot, 0.5) {
+                continue;
+            }
+            total_iou += slot_iou(predictions, actuals, sample, slot, threshold);
+            valid_slots += 1;
+        }
+    }
+    if valid_slots == 0 {
+        return ClassificationMetric::new(0.0, 0);
+    }
+    ClassificationMetric::new(total_iou / valid_slots as f32, valid_slots)
+}
+
+/// 空 slot 准确率：target 全 0 的 slot 中，prediction 也（按 `threshold`）
+/// 全 0 的占比。
+///
+/// 输入形状必须是 `[N, S, H, W]`。`target 是否非空`的判断阈值固定为 `0.5`。
+/// 没有任何空 slot 时返回 `value = 1.0, n_samples = 0`，调用方按需判断。
+pub fn empty_slot_accuracy(
+    predictions: &Tensor,
+    actuals: &Tensor,
+    threshold: f32,
+) -> ClassificationMetric {
+    assert_instance_shape("empty_slot_accuracy", predictions, actuals);
+    let shape = predictions.shape();
+    let (n, slots) = (shape[0], shape[1]);
+
+    let mut empty_slots = 0usize;
+    let mut correct_empty = 0usize;
+    for sample in 0..n {
+        for slot in 0..slots {
+            if slot_has_positive(actuals, sample, slot, 0.5) {
+                continue;
+            }
+            empty_slots += 1;
+            if !slot_has_positive(predictions, sample, slot, threshold) {
+                correct_empty += 1;
+            }
+        }
+    }
+    if empty_slots == 0 {
+        return ClassificationMetric::new(1.0, 0);
+    }
+    ClassificationMetric::new(correct_empty as f32 / empty_slots as f32, empty_slots)
+}
+
 fn assert_same_shape(metric_name: &str, predictions: &Tensor, actuals: &Tensor) {
     assert!(
         predictions.shape() == actuals.shape(),
@@ -240,4 +337,60 @@ fn argmax_channel(tensor: &Tensor, sample: usize, y: usize, x: usize) -> usize {
         }
     }
     best_class
+}
+
+fn assert_instance_shape(metric_name: &str, predictions: &Tensor, actuals: &Tensor) {
+    assert_same_shape(metric_name, predictions, actuals);
+    assert!(
+        predictions.shape().len() == 4,
+        "{metric_name}: 期望 shape=[N, S, H, W]，实际 {:?}",
+        predictions.shape()
+    );
+}
+
+/// 计算单个 `(sample, slot)` 上的二值 IoU。
+///
+/// `union == 0` 时按"两边都是空 mask 完全匹配"返回 1.0，与 [`binary_iou`]
+/// 在全空场景下的行为一致。
+fn slot_iou(
+    predictions: &Tensor,
+    actuals: &Tensor,
+    sample: usize,
+    slot: usize,
+    threshold: f32,
+) -> f32 {
+    let shape = predictions.shape();
+    let (h, w) = (shape[2], shape[3]);
+    let mut intersection = 0usize;
+    let mut union = 0usize;
+    for y in 0..h {
+        for x in 0..w {
+            let pred = predictions[[sample, slot, y, x]] >= threshold;
+            let actual = actuals[[sample, slot, y, x]] >= threshold;
+            if pred && actual {
+                intersection += 1;
+            }
+            if pred || actual {
+                union += 1;
+            }
+        }
+    }
+    if union == 0 {
+        1.0
+    } else {
+        intersection as f32 / union as f32
+    }
+}
+
+fn slot_has_positive(tensor: &Tensor, sample: usize, slot: usize, threshold: f32) -> bool {
+    let shape = tensor.shape();
+    let (h, w) = (shape[2], shape[3]);
+    for y in 0..h {
+        for x in 0..w {
+            if tensor[[sample, slot, y, x]] >= threshold {
+                return true;
+            }
+        }
+    }
+    false
 }

@@ -21,14 +21,15 @@
 //! - **标准 FEN**：逻辑棋局表示，约定红方永远在 row 9 底，跟原图视觉无关。
 //! - **视觉朝向**：原图里红方在哪侧，FEN 字符串本身**无法表达**，作为独立元信息输出。
 //!
-//! 类别字典、ROI 检测、朝向归一化的实现细节见 `board_align.rs`；YOLOv5 输出布局
-//! 见 `yolo_decode.rs`。本文件只关心"怎么用 only_torch"。
+//! 类别字典、ROI 检测、朝向归一化的实现细节见 `board_align.rs`；YOLOv5 输出
+//! 解码 + per-class NMS 由库 `only_torch::vision::detection::adapter::yolo::v5`
+//! 提供。本文件只关心"怎么用 only_torch"。
 
 mod board_align;
-mod yolo_decode;
 
 use board_align::{BoardOutput, recognize};
 use only_torch::nn::{Graph, GraphError, RebuildResult};
+use only_torch::vision::detection::adapter::yolo::v5;
 use only_torch::vision::preprocess::{image_to_nchw_normalized, letterbox};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -61,7 +62,7 @@ fn main() -> Result<(), GraphError> {
         .map_err(|e| GraphError::ComputationError(format!("读图失败: {e}")))?;
     let lb = letterbox(&raw_img, TARGET_SIZE);
     let raw_output = model.predict(&image_to_nchw_normalized(&lb.image, TARGET_SIZE))?;
-    let detections = yolo_decode::detect(&raw_output, CONF_THRESHOLD, IOU_THRESHOLD)?;
+    let detections = v5::detect(&raw_output, CONF_THRESHOLD, IOU_THRESHOLD)?;
     let board = recognize(&detections, &lb, lb.original_size);
 
     print_summary(&model, &board);

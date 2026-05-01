@@ -6,11 +6,14 @@
 //!   `DetectionHeadDecode` / `Assigner` / `AssignmentResult`，让 only_torch 内
 //!   不同检测器实现能够互换。**契约比实现先行**，本目录暂不提供具体 backbone
 //!   或 head 实现。
+//! - 第三方 / 外部预训练检测器适配（[`adapter`] 模块）：把 YOLO 等具体模型族
+//!   的特殊输出格式翻译成本框架的 [`Detection`] / [`BBox`] 类型。
 //!
 //! 配套的高层组合：
 //! - `vision::preprocess::letterbox` / `image_to_nchw_normalized`：图像侧预处理
 //! - `metrics::detection`：mAP / precision / recall
 
+pub mod adapter;
 mod contract;
 mod io;
 mod loss;
@@ -25,6 +28,8 @@ pub use transform::{
 };
 
 use std::cmp::Ordering;
+
+use crate::tensor::Tensor;
 
 /// bbox 坐标所属空间。
 ///
@@ -252,6 +257,53 @@ impl BBox {
         let alpha_den = 1.0 - iou + v;
         let alpha = if alpha_den <= 0.0 { 0.0 } else { v / alpha_den };
         diou - alpha * v
+    }
+
+    /// 从 `[N, 4]` Tensor 批量构造 `BBox`，按 `format` 解析每一行的四个数。
+    ///
+    /// 输入 shape 必须严格是 `[N, 4]`，否则 panic；`N == 0` 时返回空 `Vec`。
+    ///
+    /// 故意**不附带任何 clip 行为**：归一化坐标要 `clip(0.0, 1.0)`、像素坐标要
+    /// `clip_to_size(w, h)` 时，由调用方在链式 `.map()` 里显式处理。这样同一个
+    /// API 既能服务归一化输出，也能服务 letterbox / 原图像素坐标的检测器输出。
+    pub fn vec_from_tensor(tensor: &Tensor, format: BoxFormat) -> Vec<Self> {
+        let shape = tensor.shape();
+        assert!(
+            shape.len() == 2 && shape[1] == 4,
+            "BBox::vec_from_tensor: 期望 shape=[N, 4]，实际 {shape:?}"
+        );
+        let n = shape[0];
+        let data = tensor.to_vec();
+        (0..n)
+            .map(|i| {
+                let offset = i * 4;
+                Self::from_array(
+                    [
+                        data[offset],
+                        data[offset + 1],
+                        data[offset + 2],
+                        data[offset + 3],
+                    ],
+                    format,
+                )
+            })
+            .collect()
+    }
+
+    /// 把 `BBox` 列表序列化为 `[N, 4]` Tensor，按 `format` 写每一行的四个数。
+    ///
+    /// `boxes` 为空时返回 shape `[0, 4]` 的空 Tensor。
+    pub fn vec_to_tensor(boxes: &[Self], format: BoxFormat) -> Tensor {
+        let n = boxes.len();
+        let mut data = Vec::with_capacity(n * 4);
+        for bbox in boxes {
+            let row = match format {
+                BoxFormat::XyXy => bbox.to_xyxy(),
+                BoxFormat::CxCyWh => bbox.to_cxcywh(),
+            };
+            data.extend_from_slice(&row);
+        }
+        Tensor::new(&data, &[n, 4])
     }
 }
 

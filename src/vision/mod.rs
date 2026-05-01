@@ -14,7 +14,9 @@
 //! | [`filter`] | 图像滤波（中值等） |
 //! | [`geom`] | 通用图像几何（resize / center_crop 等） |
 //! | [`io`] | 图像加载与保存 |
+//! | [`mask`] | 像素级 mask 处理（argmax / 多类 → 前景 / mask 转 ASCII 等） |
 //! | [`preprocess`] | 高层组合（letterbox / image_to_nchw_normalized 等） |
+//! | [`viz`] | 展示画布工具（调色板、像素放大、alpha 混合、像素字体标签） |
 
 pub mod color;
 pub mod cv;
@@ -23,7 +25,9 @@ pub mod draw;
 pub mod filter;
 pub mod geom;
 pub mod io;
+pub mod mask;
 pub mod preprocess;
+pub mod viz;
 
 #[cfg(test)]
 mod tests;

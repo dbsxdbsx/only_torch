@@ -14,6 +14,8 @@ use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
 use only_torch::metrics::{binary_iou, pixel_accuracy};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
+use only_torch::vision::io::save_rgb_image;
+use only_torch::vision::viz::pixel_block_scale;
 use std::time::Instant;
 
 const IMAGE_SIZE: usize = 16;
@@ -244,8 +246,7 @@ fn save_sample_visualizations(
 ) -> Result<(), GraphError> {
     use image::{ImageBuffer, Rgb};
 
-    let probs = model.predict_probs(inputs)?;
-    let probs = probs.value()?.unwrap();
+    let probs = model.predict_probs(inputs)?.value()?.unwrap();
     let panel_size = IMAGE_SIZE as u32 * OVERLAY_SCALE;
     let mut input_img = ImageBuffer::from_pixel(panel_size, panel_size, Rgb([245, 245, 245]));
     let mut output_img = ImageBuffer::from_pixel(panel_size, panel_size, Rgb([245, 245, 245]));
@@ -253,12 +254,19 @@ fn save_sample_visualizations(
     for y in 0..IMAGE_SIZE {
         for x in 0..IMAGE_SIZE {
             let base = (inputs[[sample_idx, 0, y, x]].clamp(0.0, 1.0) * 255.0) as u8;
-            fill_scaled_pixel(&mut input_img, x, y, [base, base, base]);
-            fill_scaled_pixel(
+            pixel_block_scale(
+                &mut input_img,
+                x as u32,
+                y as u32,
+                [base, base, base],
+                OVERLAY_SCALE,
+            );
+            pixel_block_scale(
                 &mut output_img,
-                x,
-                y,
+                x as u32,
+                y as u32,
                 foreground_color(probs[[sample_idx, 0, y, x]]),
+                OVERLAY_SCALE,
             );
         }
     }
@@ -266,30 +274,20 @@ fn save_sample_visualizations(
     save_rgb_image(
         &input_img,
         "examples/traditional/deformable_conv2d_segmentation/test_in.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
     save_rgb_image(
         &output_img,
         "examples/traditional/deformable_conv2d_segmentation/test_out.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
     Ok(())
 }
 
-fn save_rgb_image(image: &image::RgbImage, path: &str) -> Result<(), GraphError> {
-    image
-        .save(path)
-        .map_err(|err| GraphError::ComputationError(format!("保存图像失败 {path}: {err}")))
-}
-
-fn fill_scaled_pixel(canvas: &mut image::RgbImage, x: usize, y: usize, color: [u8; 3]) {
-    let x0 = x as u32 * OVERLAY_SCALE;
-    let y0 = y as u32 * OVERLAY_SCALE;
-    for dy in 0..OVERLAY_SCALE {
-        for dx in 0..OVERLAY_SCALE {
-            canvas.put_pixel(x0 + dx, y0 + dy, image::Rgb(color));
-        }
-    }
-}
-
+/// 把前景概率 ∈ [0, 1] 映射为绿色渐变 RGB。
+///
+/// 这是连续 prob → 颜色的映射，跟 `Palette` 的"离散索引→颜色"不同；
+/// 用作连续概率热图时，在 example 内部保留更直观。
 fn foreground_color(value: f32) -> [u8; 3] {
     let v = value.clamp(0.0, 1.0);
     let base = (32.0 * (1.0 - v)) as u8;

@@ -18,6 +18,9 @@ use only_torch::metrics::mean_box_iou;
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
 use only_torch::vision::detection::{BBox, BoxFormat};
+use only_torch::vision::draw::draw_bbox;
+use only_torch::vision::io::save_rgb_image;
+use only_torch::vision::viz::{TinyFont, pixel_block_scale};
 use std::time::Instant;
 
 const IMAGE_SIZE: usize = 16;
@@ -139,27 +142,21 @@ fn evaluate(
     let boxes = model.predict_boxes(inputs)?;
     let boxes = boxes.value()?.unwrap();
     let mae = bbox_mae(&boxes, targets);
-    let pred_bboxes = tensor_rows_to_clipped_bboxes(&boxes);
-    let actual_bboxes = tensor_rows_to_clipped_bboxes(targets);
+    let pred_bboxes = clipped_bboxes_from_tensor(&boxes);
+    let actual_bboxes = clipped_bboxes_from_tensor(targets);
     let iou = mean_box_iou(&pred_bboxes, &actual_bboxes);
     Ok((mae, iou.value()))
 }
 
-/// 把 `[N, 4]` cxcywh Tensor 转换为已裁剪到 `[0, 1]` 的 BBox 列表。
-fn tensor_rows_to_clipped_bboxes(tensor: &Tensor) -> Vec<BBox> {
-    (0..tensor.shape()[0])
-        .map(|i| {
-            BBox::from_array(
-                [
-                    tensor[[i, 0]],
-                    tensor[[i, 1]],
-                    tensor[[i, 2]],
-                    tensor[[i, 3]],
-                ],
-                BoxFormat::CxCyWh,
-            )
-            .clip(0.0, 1.0)
-        })
+/// 把 `[N, 4]` cxcywh Tensor 转换为裁剪到 `[0, 1]` 后的 BBox 列表。
+///
+/// 这里只是一个 example 局部 adapter：复用 `BBox::vec_from_tensor` 拆分 Tensor，
+/// 然后按本任务的归一化坐标约定 `clip(0.0, 1.0)`。换成像素坐标的检测器，把
+/// 这一行换成 `clip_to_size(w, h)` 即可。
+fn clipped_bboxes_from_tensor(tensor: &Tensor) -> Vec<BBox> {
+    BBox::vec_from_tensor(tensor, BoxFormat::CxCyWh)
+        .into_iter()
+        .map(|bbox| bbox.clip(0.0, 1.0))
         .collect()
 }
 
@@ -214,13 +211,12 @@ fn save_sample_visualizations(
     targets: &Tensor,
     sample_idx: usize,
 ) -> Result<(), GraphError> {
-    use image::{ImageBuffer, Rgb};
+    use image::{DynamicImage, ImageBuffer, Rgb};
 
-    let boxes = model.predict_boxes(inputs)?;
-    let boxes = boxes.value()?.unwrap();
-    let pred_box = bbox_at(&boxes, sample_idx);
-    let actual_box = bbox_at(targets, sample_idx);
-    let iou = single_box_iou(pred_box, actual_box);
+    let boxes = model.predict_boxes(inputs)?.value()?.unwrap();
+    let pred_arr = bbox_at(&boxes, sample_idx);
+    let actual_arr = bbox_at(targets, sample_idx);
+    let iou = single_box_iou(pred_arr, actual_arr);
 
     let panel_size = IMAGE_SIZE as u32 * OVERLAY_SCALE;
     let mut input_img = ImageBuffer::from_pixel(panel_size, panel_size, Rgb([245, 245, 245]));
@@ -230,160 +226,48 @@ fn save_sample_visualizations(
         for x in 0..IMAGE_SIZE {
             let base = (inputs[[sample_idx, 0, y, x]].clamp(0.0, 1.0) * 255.0) as u8;
             let base_rgb = [base, base, base];
-            fill_scaled_pixel(&mut input_img, x, y, base_rgb);
-            fill_scaled_pixel(&mut output_img, x, y, base_rgb);
+            pixel_block_scale(&mut input_img, x as u32, y as u32, base_rgb, OVERLAY_SCALE);
+            pixel_block_scale(&mut output_img, x as u32, y as u32, base_rgb, OVERLAY_SCALE);
         }
     }
 
-    draw_bbox(&mut output_img, pred_box, [32, 220, 64]);
-    draw_detection_label(&mut output_img, pred_box, iou);
+    // 把归一化 cxcywh 映射到像素空间，然后用库的 draw_bbox 画 3px 边框。
+    // 中转 DynamicImage 是因为 vision::draw 统一接受 DynamicImage。
+    let pred_bbox_pixel = BBox::from_array(pred_arr, BoxFormat::CxCyWh)
+        .clip(0.0, 1.0)
+        .scale_translate(panel_size as f32, panel_size as f32, 0.0, 0.0);
+    let mut output_dyn = DynamicImage::ImageRgb8(output_img);
+    draw_bbox(&mut output_dyn, pred_bbox_pixel, [32, 220, 64], 3);
+    let mut output_img = output_dyn.into_rgb8();
+
+    let label = format!("IoU {}%", (iou * 100.0).round() as usize);
+    let label_x = pred_bbox_pixel.x1.max(0.0) as u32;
+    let label_y = if pred_bbox_pixel.y1 >= 11.0 {
+        (pred_bbox_pixel.y1 - 11.0) as u32
+    } else {
+        0
+    };
+    TinyFont::draw_with_box(
+        &mut output_img,
+        label_x,
+        label_y,
+        &label,
+        [230, 255, 230],
+        [20, 20, 20],
+    );
 
     save_rgb_image(
         &input_img,
         "examples/traditional/single_object_detection/test_in.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
     save_rgb_image(
         &output_img,
         "examples/traditional/single_object_detection/test_out.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
 
     Ok(())
-}
-
-fn save_rgb_image(image: &image::RgbImage, path: &str) -> Result<(), GraphError> {
-    image
-        .save(path)
-        .map_err(|err| GraphError::ComputationError(format!("保存图像失败 {path}: {err}")))
-}
-
-fn fill_scaled_pixel(canvas: &mut image::RgbImage, x: usize, y: usize, color: [u8; 3]) {
-    let x0 = x as u32 * OVERLAY_SCALE;
-    let y0 = y as u32 * OVERLAY_SCALE;
-    for dy in 0..OVERLAY_SCALE {
-        for dx in 0..OVERLAY_SCALE {
-            canvas.put_pixel(x0 + dx, y0 + dy, image::Rgb(color));
-        }
-    }
-}
-
-fn draw_bbox(canvas: &mut image::RgbImage, bbox: [f32; 4], color: [u8; 3]) {
-    let (x1, y1, x2, y2) = bbox_to_canvas_rect(bbox, canvas.width(), canvas.height());
-    for t in 0..3 {
-        let t = t as i32;
-        draw_hline(canvas, x1, x2, y1 + t, color);
-        draw_hline(canvas, x1, x2, y2 - t, color);
-        draw_vline(canvas, x1 + t, y1, y2, color);
-        draw_vline(canvas, x2 - t, y1, y2, color);
-    }
-}
-
-fn draw_detection_label(canvas: &mut image::RgbImage, bbox: [f32; 4], iou: f32) {
-    let (x1, y1, _, _) = bbox_to_canvas_rect(bbox, canvas.width(), canvas.height());
-    let label = format!("IoU {}%", (iou * 100.0).round() as usize);
-    let text_w = tiny_text_width(&label);
-    let x = x1.max(0) as u32;
-    let y = if y1 >= 11 { (y1 - 11) as u32 } else { 0 };
-
-    fill_rect(canvas, x, y, text_w + 4, 9, [20, 20, 20]);
-    draw_tiny_text(canvas, x + 2, y + 2, &label, [230, 255, 230]);
-}
-
-fn bbox_to_canvas_rect(bbox: [f32; 4], width: u32, height: u32) -> (i32, i32, i32, i32) {
-    let [cx, cy, bw, bh] = bbox;
-    let x1 = ((cx - bw * 0.5).clamp(0.0, 1.0) * width as f32).round() as i32;
-    let y1 = ((cy - bh * 0.5).clamp(0.0, 1.0) * height as f32).round() as i32;
-    let x2 = ((cx + bw * 0.5).clamp(0.0, 1.0) * width as f32).round() as i32 - 1;
-    let y2 = ((cy + bh * 0.5).clamp(0.0, 1.0) * height as f32).round() as i32 - 1;
-    (
-        x1.clamp(0, width as i32 - 1),
-        y1.clamp(0, height as i32 - 1),
-        x2.max(x1).clamp(0, width as i32 - 1),
-        y2.max(y1).clamp(0, height as i32 - 1),
-    )
-}
-
-fn draw_hline(canvas: &mut image::RgbImage, x1: i32, x2: i32, y: i32, color: [u8; 3]) {
-    for x in x1..=x2 {
-        put_pixel_checked(canvas, x, y, color);
-    }
-}
-
-fn draw_vline(canvas: &mut image::RgbImage, x: i32, y1: i32, y2: i32, color: [u8; 3]) {
-    for y in y1..=y2 {
-        put_pixel_checked(canvas, x, y, color);
-    }
-}
-
-fn fill_rect(
-    canvas: &mut image::RgbImage,
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-    color: [u8; 3],
-) {
-    for dy in 0..height {
-        for dx in 0..width {
-            put_pixel_checked(canvas, (x + dx) as i32, (y + dy) as i32, color);
-        }
-    }
-}
-
-fn put_pixel_checked(canvas: &mut image::RgbImage, x: i32, y: i32, color: [u8; 3]) {
-    if x >= 0 && y >= 0 && (x as u32) < canvas.width() && (y as u32) < canvas.height() {
-        canvas.put_pixel(x as u32, y as u32, image::Rgb(color));
-    }
-}
-
-fn tiny_text_width(text: &str) -> u32 {
-    let char_count = text.chars().count() as u32;
-    if char_count == 0 {
-        0
-    } else {
-        char_count * 4 - 1
-    }
-}
-
-fn draw_tiny_text(canvas: &mut image::RgbImage, x: u32, y: u32, text: &str, color: [u8; 3]) {
-    let mut cursor = x;
-    for ch in text.chars() {
-        draw_tiny_char(canvas, cursor, y, ch, color);
-        cursor += 4;
-    }
-}
-
-fn draw_tiny_char(canvas: &mut image::RgbImage, x: u32, y: u32, ch: char, color: [u8; 3]) {
-    let pattern = match ch {
-        '0' => ["111", "101", "101", "101", "111"],
-        '1' => ["010", "110", "010", "010", "111"],
-        '2' => ["111", "001", "111", "100", "111"],
-        '3' => ["111", "001", "111", "001", "111"],
-        '4' => ["101", "101", "111", "001", "001"],
-        '5' => ["111", "100", "111", "001", "111"],
-        '6' => ["111", "100", "111", "101", "111"],
-        '7' => ["111", "001", "010", "010", "010"],
-        '8' => ["111", "101", "111", "101", "111"],
-        '9' => ["111", "101", "111", "001", "111"],
-        'I' => ["111", "010", "010", "010", "111"],
-        'O' | 'o' => ["111", "101", "101", "101", "111"],
-        'U' => ["101", "101", "101", "101", "111"],
-        '%' => ["101", "001", "010", "100", "101"],
-        ' ' => ["000", "000", "000", "000", "000"],
-        _ => ["000", "000", "000", "000", "000"],
-    };
-
-    for (dy, row) in pattern.iter().enumerate() {
-        for (dx, bit) in row.as_bytes().iter().enumerate() {
-            if *bit == b'1' {
-                put_pixel_checked(
-                    canvas,
-                    (x + dx as u32) as i32,
-                    (y + dy as u32) as i32,
-                    color,
-                );
-            }
-        }
-    }
 }
 
 fn generate_dataset(n: usize, seed: u64) -> (Tensor, Tensor) {

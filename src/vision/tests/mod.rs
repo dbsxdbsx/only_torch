@@ -1,5 +1,6 @@
 //! vision 模块的单元测试
 
+mod adapter_yolo_v5;
 mod basic;
 mod convert;
 mod cv;
@@ -7,4 +8,6 @@ mod detection;
 mod draw;
 mod filter;
 mod geom;
+mod mask;
 mod preprocess;
+mod viz;

@@ -11,6 +11,7 @@ use only_torch::nn::evolution::{
     TaskMetric,
 };
 use only_torch::tensor::Tensor;
+use only_torch::vision::viz::pixel_block_scale;
 use std::env;
 use std::error::Error;
 use std::time::Instant;
@@ -649,13 +650,31 @@ fn save_sample_visualizations(
     for y in 0..IMAGE_SIZE {
         for x in 0..IMAGE_SIZE {
             let base = (input[[0, y, x]].clamp(0.0, 1.0) * 255.0) as u8;
-            fill_scaled_pixel(&mut input_img, x, y, [base, base, base]);
+            pixel_block_scale(
+                &mut input_img,
+                x as u32,
+                y as u32,
+                [base, base, base],
+                OVERLAY_SCALE,
+            );
 
             let target_on = target[[0, y, x]] >= 0.5;
-            fill_scaled_pixel(&mut target_img, x, y, binary_color(target_on));
+            pixel_block_scale(
+                &mut target_img,
+                x as u32,
+                y as u32,
+                binary_color(target_on),
+                OVERLAY_SCALE,
+            );
 
             let pred_on = prediction[[0, 0, y, x]] >= 0.0;
-            fill_scaled_pixel(&mut pred_img, x, y, binary_color(pred_on));
+            pixel_block_scale(
+                &mut pred_img,
+                x as u32,
+                y as u32,
+                binary_color(pred_on),
+                OVERLAY_SCALE,
+            );
         }
     }
 
@@ -683,16 +702,6 @@ fn artifact_path(stem: &str, kind: &str) -> String {
 
 fn save_rgb_image(image: &image::RgbImage, path: &str) -> Result<(), image::ImageError> {
     image.save(path)
-}
-
-fn fill_scaled_pixel(canvas: &mut image::RgbImage, x: usize, y: usize, color: [u8; 3]) {
-    let x0 = x as u32 * OVERLAY_SCALE;
-    let y0 = y as u32 * OVERLAY_SCALE;
-    for dy in 0..OVERLAY_SCALE {
-        for dx in 0..OVERLAY_SCALE {
-            canvas.put_pixel(x0 + dx, y0 + dy, image::Rgb(color));
-        }
-    }
 }
 
 fn binary_color(on: bool) -> [u8; 3] {

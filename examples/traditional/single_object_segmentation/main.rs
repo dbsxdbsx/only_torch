@@ -17,6 +17,9 @@ use only_torch::data::{DataLoader, SyntheticRng, TensorDataset};
 use only_torch::metrics::{binary_iou, pixel_accuracy};
 use only_torch::nn::{Adam, Graph, GraphError, Module, Optimizer, VarLossOps};
 use only_torch::tensor::Tensor;
+use only_torch::vision::io::save_rgb_image;
+use only_torch::vision::mask::mask_to_ascii_lines;
+use only_torch::vision::viz::{blend_alpha, pixel_block_scale};
 use std::time::Instant;
 
 const IMAGE_SIZE: usize = 16;
@@ -148,29 +151,16 @@ fn print_sample_prediction(
     targets: &Tensor,
     sample_idx: usize,
 ) -> Result<(), GraphError> {
-    let probs = model.predict_probs(inputs)?;
-    let probs = probs.value()?.unwrap();
+    let probs = model.predict_probs(inputs)?.value()?.unwrap();
+    let target_lines = mask_to_ascii_lines(targets, sample_idx, 0, 0.5, '#', '.');
+    let pred_lines = mask_to_ascii_lines(&probs, sample_idx, 0, 0.5, '#', '.');
 
     println!("目标 mask        预测 mask");
-    for y in 0..IMAGE_SIZE {
-        let target_row = mask_row(targets, sample_idx, y, 0.5);
-        let pred_row = mask_row(&probs, sample_idx, y, 0.5);
+    for (target_row, pred_row) in target_lines.iter().zip(pred_lines.iter()) {
         println!("{target_row}    {pred_row}");
     }
 
     Ok(())
-}
-
-fn mask_row(tensor: &Tensor, sample_idx: usize, y: usize, threshold: f32) -> String {
-    (0..IMAGE_SIZE)
-        .map(|x| {
-            if tensor[[sample_idx, 0, y, x]] >= threshold {
-                '#'
-            } else {
-                '.'
-            }
-        })
-        .collect()
 }
 
 fn save_sample_visualizations(
@@ -181,8 +171,7 @@ fn save_sample_visualizations(
 ) -> Result<(), GraphError> {
     use image::{ImageBuffer, Rgb};
 
-    let probs = model.predict_probs(inputs)?;
-    let probs = probs.value()?.unwrap();
+    let probs = model.predict_probs(inputs)?.value()?.unwrap();
 
     let panel_size = IMAGE_SIZE as u32 * OVERLAY_SCALE;
     let mut input_img = ImageBuffer::from_pixel(panel_size, panel_size, Rgb([245, 245, 245]));
@@ -192,16 +181,20 @@ fn save_sample_visualizations(
         for x in 0..IMAGE_SIZE {
             let base = (inputs[[sample_idx, 0, y, x]].clamp(0.0, 1.0) * 255.0) as u8;
             let base_rgb = [base, base, base];
-            let pred_positive = probs[[sample_idx, 0, y, x]] >= 0.5;
             let pred_prob = probs[[sample_idx, 0, y, x]].clamp(0.0, 1.0);
+            let overlay_rgb = if pred_prob >= 0.5 {
+                blend_alpha(base_rgb, [255, 64, 64], pred_prob * 0.60)
+            } else {
+                base_rgb
+            };
 
-            fill_scaled_pixel(&mut input_img, 0, x, y, base_rgb);
-            fill_scaled_pixel(
+            pixel_block_scale(&mut input_img, x as u32, y as u32, base_rgb, OVERLAY_SCALE);
+            pixel_block_scale(
                 &mut overlay_img,
-                0,
-                x,
-                y,
-                overlay(base_rgb, pred_positive, [255, 64, 64], pred_prob * 0.60),
+                x as u32,
+                y as u32,
+                overlay_rgb,
+                OVERLAY_SCALE,
             );
         }
     }
@@ -209,51 +202,15 @@ fn save_sample_visualizations(
     save_rgb_image(
         &input_img,
         "examples/traditional/single_object_segmentation/test_in.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
     save_rgb_image(
         &overlay_img,
         "examples/traditional/single_object_segmentation/test_out.png",
-    )?;
+    )
+    .map_err(GraphError::ComputationError)?;
 
     Ok(())
-}
-
-fn save_rgb_image(image: &image::RgbImage, path: &str) -> Result<(), GraphError> {
-    image
-        .save(path)
-        .map_err(|err| GraphError::ComputationError(format!("保存图像失败 {path}: {err}")))
-}
-
-fn fill_scaled_pixel(
-    canvas: &mut image::RgbImage,
-    x_offset: u32,
-    x: usize,
-    y: usize,
-    color: [u8; 3],
-) {
-    let x0 = x_offset + x as u32 * OVERLAY_SCALE;
-    let y0 = y as u32 * OVERLAY_SCALE;
-    for dy in 0..OVERLAY_SCALE {
-        for dx in 0..OVERLAY_SCALE {
-            canvas.put_pixel(x0 + dx, y0 + dy, image::Rgb(color));
-        }
-    }
-}
-
-fn overlay(base: [u8; 3], enabled: bool, mask_color: [u8; 3], alpha: f32) -> [u8; 3] {
-    if !enabled {
-        return base;
-    }
-
-    [
-        blend_channel(base[0], mask_color[0], alpha),
-        blend_channel(base[1], mask_color[1], alpha),
-        blend_channel(base[2], mask_color[2], alpha),
-    ]
-}
-
-fn blend_channel(base: u8, overlay: u8, alpha: f32) -> u8 {
-    ((base as f32 * (1.0 - alpha)) + (overlay as f32 * alpha)).round() as u8
 }
 
 fn generate_dataset(n: usize, seed: u64) -> (Tensor, Tensor) {

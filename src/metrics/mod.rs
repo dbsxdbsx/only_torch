@@ -478,7 +478,8 @@ pub use detection::{
 };
 pub use regression::{mean_absolute_error, mean_squared_error, r2_score, root_mean_squared_error};
 pub use segmentation::{
-    binary_iou, dice_score, mean_iou, per_class_iou, pixel_accuracy, semantic_pixel_accuracy,
+    binary_iou, dice_score, empty_slot_accuracy, mean_instance_iou, mean_iou, mean_valid_slot_iou,
+    per_class_iou, pixel_accuracy, semantic_pixel_accuracy,
 };
 
 // 注：MultiLabelMetric 已在本模块定义并自动导出
