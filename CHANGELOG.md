@@ -10,6 +10,7 @@
   - `src/data/detection`：`DetectionSample` / `DetectionBatch` 处理变长检测标签
   - `src/data/datasets/yolo`：YOLO `.txt` 标签解析（支持空行、行内 `#` 注释、错误行 [文件:行号] 定位）
   - `src/metrics/detection`：mAP / Precision / Recall 复用 `vision::detection::BBox`，预置 `VOC_IOU_THRESHOLDS`（11 点 0.0..=0.5）与 `COCO_IOU_THRESHOLDS`（10 点 0.5..=0.95），新增 `DetectionMapMetric` / `DetectionPrMetric` 形式化指标条目
+  - `src/nn/nodes/raw_node/loss/bbox`：新增 `BBoxLossKind::{IoU, GIoU, DIoU, CIoU}` 与 `VarLossOps::{bbox_loss, giou_loss, diou_loss, ciou_loss}`，支持 `[N, 4]` 检测框回归训练并接入 descriptor rebuild / ONNX training-only 分类
   - 配套单元测试覆盖格式互转、IoU 家族数值、几何变换与 NMS 行为；YOLO label 解析覆盖正/异常路径
 - **feat(nn): `RebuildResult` 推理便捷 API**
   - 新增 `predict(input)` / `predict_head(name, input)` 一行调用，免去 `set_value → forward → value` 三步

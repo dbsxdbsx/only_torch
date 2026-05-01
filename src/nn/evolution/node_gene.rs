@@ -642,6 +642,7 @@ pub fn infer_output_shape(
         // ── 损失函数（输出标量）──
         NT::BCE { .. }
         | NT::Huber { .. }
+        | NT::BBoxLoss { .. }
         | NT::MAE { .. }
         | NT::MSE { .. }
         | NT::SoftmaxCrossEntropy => Ok(vec![1]),

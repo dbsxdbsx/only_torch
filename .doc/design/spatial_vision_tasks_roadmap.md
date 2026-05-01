@@ -72,7 +72,7 @@ graph TD
 |---|---|---|---|---|
 | Classification | 图像分类 | `[x]` | `mnist`、`mnist_cnn`、`evolution_mnist` 已覆盖手写模型与空间域演化 | 大规模真实数据和性能优化仍有限 |
 | Detection | 单目标 2D bbox | `[~]` | `single_object_detection` 可训练 16x16 合成图像单框回归 | 不是多目标检测；没有 objectness、类别、多尺度、NMS、mAP |
-| Detection | 多目标 2D Detection | `[ ]` | `chess_yolo_onnx_detect` 可导入第三方 YOLO ONNX 做推理演示 | only_torch 原生训练 / 演化检测头尚未支持 |
+| Detection | 多目标 2D Detection | `[~]` | 已沉淀通用 `BBox`、IoU family、NMS、mAP / precision / recall、YOLO txt parser、`DetectionBatch` 与 `bbox_loss(IoU/GIoU/DIoU/CIoU)`；`chess_yolo_onnx_detect` 可导入第三方 YOLO ONNX 做推理演示 | only_torch 原生检测 head、objectness / cls 多任务 loss、anchor/grid matching 与端到端 fine-tune 示例尚未支持 |
 | Detection | Oriented Detection | `[ ]` | 暂无 | 需要旋转框表示、角度损失、旋转 IoU |
 | Detection | 3D Detection | `[ ]` | 暂无 | 需要深度 / 点云 / 相机几何等数据表示 |
 | Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练合成 mask；`deformable_conv2d_segmentation` 提供 offset-only DeformableConv2d 传统基线 | 数据仍偏 toy；缺少更可信真实 benchmark |
@@ -93,7 +93,7 @@ graph TD
 | 方向 | 状态 | 目标 |
 |---|---|---|
 | Segmentation 真实数据 benchmark | `[ ]` | 当前合成数据已覆盖闭环验证，下一步引入更可信的小型自然图像 benchmark（如 Pascal VOC 子集、Cityscapes 子图） |
-| YOLO-lite Detection 前置能力 | `[ ]` | 支持 grid head、objectness、bbox loss、简化 NMS / mAP；这是 only_torch 原生进入多目标检测的最小可行路径 |
+| YOLO-lite Detection 前置能力 | `[~]` | 通用 bbox 几何、NMS、mAP、检测 batch 与 IoU-family bbox loss 已入库；下一步支持 grid head、objectness / cls 多任务 loss 与 matching，这是 only_torch 原生进入多目标检测的最小可行路径 |
 | 空间 / 序列多头 Evolution | `[ ]` | 在已有平坦多头基础上扩展到空间多任务输出（如 detection + mask）和实例级指标 |
 | Instance Segmentation Lite | `[ ]` | 从固定 slot 过渡到可变实例、matching 和实例级指标 |
 | Pose / Keypoints | `[ ]` | 需要 heatmap 或关键点回归头与 OKS 类指标 |

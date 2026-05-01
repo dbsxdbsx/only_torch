@@ -5,7 +5,7 @@
 use std::cmp::Ordering;
 
 /// 外部 bbox 坐标格式。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BoxFormat {
     /// `[x_min, y_min, x_max, y_max]`。
     XyXy,

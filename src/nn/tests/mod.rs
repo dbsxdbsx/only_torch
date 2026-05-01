@@ -20,6 +20,7 @@ mod node_abs;
 mod node_add;
 mod node_avg_pool2d;
 mod node_batch_norm;
+mod node_bbox_loss;
 mod node_bce;
 mod node_clip;
 mod node_concat;

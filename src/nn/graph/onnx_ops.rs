@@ -412,7 +412,8 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
         | NodeTypeDescriptor::BCE { .. }
         | NodeTypeDescriptor::MSE { .. }
         | NodeTypeDescriptor::MAE { .. }
-        | NodeTypeDescriptor::Huber { .. } => ExportCategory::TrainingOnly,
+        | NodeTypeDescriptor::Huber { .. }
+        | NodeTypeDescriptor::BBoxLoss { .. } => ExportCategory::TrainingOnly,
 
         // ─── 激活函数 ───
         NodeTypeDescriptor::ReLU => ExportCategory::Operator(OnnxExportOp::simple("Relu")),

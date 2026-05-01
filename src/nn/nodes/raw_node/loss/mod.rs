@@ -1,9 +1,12 @@
+mod bbox;
 mod bce;
 mod huber;
 mod mae;
 mod mse;
 mod softmax_cross_entropy;
 
+pub(crate) use bbox::BBoxLoss;
+pub use bbox::BBoxLossKind;
 pub(crate) use bce::BCE;
 pub use huber::DEFAULT_HUBER_DELTA;
 pub(crate) use huber::Huber;

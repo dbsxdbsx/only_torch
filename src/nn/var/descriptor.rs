@@ -194,6 +194,11 @@ fn node_type_to_descriptor(raw: &NodeType) -> NodeTypeDescriptor {
             delta: h.delta(),
             reduction: h.reduction(),
         },
+        NodeType::BBoxLoss(b) => NodeTypeDescriptor::BBoxLoss {
+            kind: b.kind(),
+            format: b.format(),
+            reduction: b.reduction(),
+        },
         NodeType::SoftmaxCrossEntropy(_) => NodeTypeDescriptor::SoftmaxCrossEntropy,
 
         // === 辅助/归一化 ===

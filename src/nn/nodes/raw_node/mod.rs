@@ -5,9 +5,10 @@ mod parameter;
 mod state;
 
 pub(in crate::nn) use input::InputVariant;
+pub use loss::BBoxLossKind;
 pub use loss::DEFAULT_HUBER_DELTA;
 pub use loss::Reduction;
-pub(in crate::nn) use loss::{BCE, Huber, MAE, MSE, SoftmaxCrossEntropy};
+pub(in crate::nn) use loss::{BBoxLoss, BCE, Huber, MAE, MSE, SoftmaxCrossEntropy};
 pub use ops::DEFAULT_DROPOUT_P;
 pub(in crate::nn) use ops::*;
 pub(crate) use parameter::Parameter;
@@ -409,6 +410,11 @@ define_node_types! {
         category: "损失",
         description: "Huber 损失（强化学习）",
         var_method: Some("huber_loss()"),
+    },
+    BBoxLoss(BBoxLoss) {
+        category: "损失",
+        description: "BBox IoU-family 损失",
+        var_method: Some("bbox_loss()"),
     },
     SoftmaxCrossEntropy(SoftmaxCrossEntropy) {
         category: "损失",

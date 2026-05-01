@@ -7,8 +7,9 @@
  * 设计依据：architecture_v2_design.md §4.2.1.3
  */
 
-use crate::nn::{GraphError, Var};
+use crate::nn::{BBoxLossKind, GraphError, Var};
 use crate::tensor::Tensor;
+use crate::vision::detection::BoxFormat;
 use std::rc::Rc;
 
 // ==================== LossTarget Trait ====================
@@ -92,6 +93,7 @@ impl_loss_target_for_scalar!(f32, f64, i32, i64, u32, u64, usize, isize);
 /// - `mse_loss(target)`: 均方误差损失 - 用于回归
 /// - `mae_loss(target)`: 平均绝对误差损失 - 用于回归（对异常值更鲁棒）
 /// - `huber_loss(target)`: Huber 损失 - 用于强化学习 / 带离群值的回归
+/// - `bbox_loss(target, kind, format)`: BBox IoU-family 损失 - 用于检测框回归
 ///
 /// # 使用示例
 /// ```ignore
@@ -130,6 +132,25 @@ pub trait VarLossOps {
     /// 结合 MSE（小误差）和 MAE（大误差）的优点。
     /// 是强化学习（DQN 等）的标准损失函数。
     fn huber_loss<T: LossTarget>(&self, target: T) -> Result<Var, GraphError>;
+
+    /// BBox IoU-family loss。
+    ///
+    /// `self` 和 `target` 必须同为 `[N, 4]`，坐标格式通过 `format` 显式指定。
+    fn bbox_loss<T: LossTarget>(
+        &self,
+        target: T,
+        kind: BBoxLossKind,
+        format: BoxFormat,
+    ) -> Result<Var, GraphError>;
+
+    /// `1 - GIoU` bbox loss。
+    fn giou_loss<T: LossTarget>(&self, target: T, format: BoxFormat) -> Result<Var, GraphError>;
+
+    /// `1 - DIoU` bbox loss。
+    fn diou_loss<T: LossTarget>(&self, target: T, format: BoxFormat) -> Result<Var, GraphError>;
+
+    /// `1 - CIoU` bbox loss。
+    fn ciou_loss<T: LossTarget>(&self, target: T, format: BoxFormat) -> Result<Var, GraphError>;
 }
 
 impl VarLossOps for Var {
@@ -186,5 +207,36 @@ impl VarLossOps for Var {
             None,
         )?;
         Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    fn bbox_loss<T: LossTarget>(
+        &self,
+        target: T,
+        kind: BBoxLossKind,
+        format: BoxFormat,
+    ) -> Result<Var, GraphError> {
+        let target_var = target.into_var(self);
+        let graph = self.graph();
+        let node = graph.borrow_mut().create_bbox_loss_node(
+            Rc::clone(self.node()),
+            Rc::clone(target_var.node()),
+            kind,
+            format,
+            crate::nn::Reduction::Mean,
+            None,
+        )?;
+        Ok(Self::new_with_rc_graph(node, &graph))
+    }
+
+    fn giou_loss<T: LossTarget>(&self, target: T, format: BoxFormat) -> Result<Var, GraphError> {
+        self.bbox_loss(target, BBoxLossKind::GIoU, format)
+    }
+
+    fn diou_loss<T: LossTarget>(&self, target: T, format: BoxFormat) -> Result<Var, GraphError> {
+        self.bbox_loss(target, BBoxLossKind::DIoU, format)
+    }
+
+    fn ciou_loss<T: LossTarget>(&self, target: T, format: BoxFormat) -> Result<Var, GraphError> {
+        self.bbox_loss(target, BBoxLossKind::CIoU, format)
     }
 }

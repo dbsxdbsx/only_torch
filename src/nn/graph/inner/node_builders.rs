@@ -1192,6 +1192,38 @@ impl GraphInner {
         )
     }
 
+    /// 创建 BBox IoU-family 损失节点
+    pub fn create_bbox_loss_node(
+        &mut self,
+        input: Rc<NodeInner>,
+        target: Rc<NodeInner>,
+        kind: crate::nn::nodes::raw_node::BBoxLossKind,
+        format: crate::vision::detection::BoxFormat,
+        reduction: crate::nn::nodes::raw_node::Reduction,
+        name: Option<&str>,
+    ) -> Result<Rc<NodeInner>, GraphError> {
+        use crate::nn::nodes::raw_node::BBoxLoss;
+
+        let input_shape = input.shape();
+        let target_shape = target.shape();
+        let input_dynamic_shape = input.dynamic_shape();
+        let target_dynamic_shape = target.dynamic_shape();
+
+        let bbox_loss = BBoxLoss::new(
+            &input_shape,
+            &target_shape,
+            &input_dynamic_shape,
+            &target_dynamic_shape,
+            vec![input.id(), target.id()],
+            kind,
+            format,
+            reduction,
+        )?;
+        let raw_node: NodeType = bbox_loss.into();
+
+        self.create_node_inner(raw_node, name, "bbox_loss", vec![input, target])
+    }
+
     /// 创建 SoftmaxCrossEntropy 损失节点    ///
     /// 融合 Softmax + CrossEntropy，数值稳定
     pub fn create_softmax_cross_entropy_node(

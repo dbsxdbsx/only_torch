@@ -72,7 +72,7 @@ neat/              0%       ❌ 远期特色
 | **Layer** | Linear/Conv2d/Pool/RNN/LSTM/GRU/BatchNorm/LayerNorm/RMSNorm/GroupNorm/InstanceNorm/Embedding/MultiHeadAttention | ✅ |
 | **Optimizer** | SGD/Adam + with_params 选择性优化 | ✅ |
 | **DetachedVar** | 轻量 detach 包装（GAN/RL 梯度隔离） | ✅ |
-| **Loss** 方法 | `var.mse_loss()` / `var.cross_entropy()` / `var.bce_loss()` 等 | ✅ |
+| **Loss** 方法 | `var.mse_loss()` / `var.cross_entropy()` / `var.bce_loss()` / `var.bbox_loss()` 等 | ✅ |
 
 ### 示例 API 风格
 

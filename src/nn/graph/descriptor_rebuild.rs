@@ -905,6 +905,19 @@ fn rebuild_node(
             Ok(Var::new_with_rc_graph(node, &inner_rc))
         }
 
+        NodeTypeDescriptor::BBoxLoss {
+            kind,
+            format,
+            reduction,
+        } => {
+            let input = get_parent(node_desc, node_map, 0)?;
+            let target = get_parent(node_desc, node_map, 1)?;
+            let node = graph
+                .inner_mut()
+                .create_bbox_loss_node(input, target, *kind, *format, *reduction, name)?;
+            Ok(Var::new_with_rc_graph(node, &inner_rc))
+        }
+
         NodeTypeDescriptor::SoftmaxCrossEntropy => {
             let logits = get_parent(node_desc, node_map, 0)?;
             let labels = get_parent(node_desc, node_map, 1)?;

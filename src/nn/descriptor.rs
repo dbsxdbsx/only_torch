@@ -5,7 +5,8 @@
  *                 统一的中间表示（IR），用于序列化、可视化和调试输出
  */
 
-use crate::nn::nodes::raw_node::Reduction;
+use crate::nn::nodes::raw_node::{BBoxLossKind, Reduction};
+use crate::vision::detection::BoxFormat;
 use serde::{Deserialize, Serialize};
 
 /// 图的可序列化描述
@@ -208,6 +209,11 @@ pub enum NodeTypeDescriptor {
     },
     Huber {
         delta: f32,
+        reduction: Reduction,
+    },
+    BBoxLoss {
+        kind: BBoxLossKind,
+        format: BoxFormat,
         reduction: Reduction,
     },
     MAE {

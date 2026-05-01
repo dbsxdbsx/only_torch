@@ -40,7 +40,7 @@ pub use layer::{
 pub use module::Module;
 pub use nodes::NodeId;
 pub use nodes::node_inner::NodeInner; // 供内部模块使用
-pub use nodes::raw_node::{DEFAULT_DROPOUT_P, Reduction};
+pub use nodes::raw_node::{BBoxLossKind, DEFAULT_DROPOUT_P, Reduction};
 pub use optimizer::{Adam, CosineAnnealingLR, LambdaLR, LrScheduler, Optimizer, SGD, StepLR};
 pub use shape::{Dim, DynamicShape};
 pub use var::ops::{
