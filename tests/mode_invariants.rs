@@ -121,7 +121,7 @@ fn inference_mode_rejects_backward_with_hard_error() {
 
 #[test]
 fn load_model_defaults_to_inference_mode() {
-    let dir = std::path::PathBuf::from("target/test_mode_invariants");
+    let dir = std::path::PathBuf::from("target/mode_invariants");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("linear_{}", std::process::id()));
     let otm_path = path.with_extension("otm");

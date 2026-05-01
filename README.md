@@ -71,8 +71,8 @@ let dot = graph.to_dot();
 | [cartpole_sac](examples/traditional/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
 | [pendulum_sac](examples/traditional/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、动作缩放 | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
 | [moving_sac](examples/traditional/sac/moving/) | **强化学习** | **Hybrid SAC**、独立连续分支、双温度 | `Actor(10→256→离散+连续) Critic(12→256→3)` | `cargo run --example moving_sac` |
-| [chess_cnn_onnx_finetune](examples/traditional/chess_cnn_onnx_finetune/) | 图像分类 | **ONNX 互通**、CNN、继续训练、.otm 保存/加载 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chess_cnn_onnx_finetune` |
-| [chess_yolo_onnx_detect](examples/traditional/chess_yolo_onnx_detect/) | 目标检测 → FEN | **第三方真实 YOLOv5 ONNX**、整盘识别 → 标准 FEN | YOLOv5 (~7M 参数) | `cargo run --example chess_yolo_onnx_detect` |
+| [chinese_chess_cnn_onnx_finetune](examples/traditional/chinese_chess_cnn_onnx_finetune/) | 图像分类 | **ONNX 互通**、CNN、继续训练、.otm 保存/加载 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess_cnn_onnx_finetune` |
+| [chinese_chess_yolov5_onnx_recognize_fen](examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/) | YOLOv5 检测 → FEN 识别 | **第三方真实 YOLOv5 ONNX**、整盘识别 → 标准 FEN | YOLOv5 (~7M 参数) | `cargo run --example chinese_chess_yolov5_onnx_recognize_fen` |
 | [evolution_xor](examples/evolution/xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
 | [evolution_iris](examples/evolution/iris/) | **神经架构演化** | **Evolution API**、mini-batch、三分类 | 自动演化 | `cargo run --example evolution_iris` |
 | [evolution_multi_head_quadrant_radius](examples/evolution/multi_head_quadrant_radius/) | **多头架构演化** | **SupervisedSpec**、共享输入、分类 + 回归双 head、选择性推理 | 自动演化 | `cargo run --example evolution_multi_head_quadrant_radius` |
@@ -348,10 +348,10 @@ cargo run --example multi_label_point
 
 | 示例 | 角度 | 模型来源 | 核心能力 |
 |---|---|---|---|
-| `chess_cnn_onnx_finetune` | **训练侧** | 自己用 PyTorch 训 | ONNX 导入 → **继续训练**(fine-tune) → `.otm` 保存/加载/验证一致性 |
-| `chess_yolo_onnx_detect` | **推理侧** | VinXiangQi 第三方真实 YOLOv5 | ONNX 导入 → 整盘检测 + NMS + ROI + 视觉朝向 → 标准 FEN |
+| `chinese_chess_cnn_onnx_finetune` | **训练侧** | 自己用 PyTorch 训 | ONNX 导入 → **继续训练**(fine-tune) → `.otm` 保存/加载/验证一致性 |
+| `chinese_chess_yolov5_onnx_recognize_fen` | **推理侧** | VinXiangQi 第三方真实 YOLOv5 | ONNX 导入 → 整盘检测 + NMS + ROI + 视觉朝向 → 标准 FEN |
 
-**chess_cnn_onnx_finetune ⭐⭐⭐**
+**chinese_chess_cnn_onnx_finetune ⭐⭐⭐**
 
 中国象棋棋子 15 类分类（空位 + 红方 7 子 + 黑方 7 子），展示 ONNX 互通 + 继续训练 + 模型持久化的完整闭环：
 
@@ -362,31 +362,31 @@ cargo run --example multi_label_point
 
 ```bash
 # 1. 生成合成训练数据
-python examples/traditional/chess_cnn_onnx_finetune/generate_data.py
+python examples/traditional/chinese_chess_cnn_onnx_finetune/generate_data.py
 # 2. 用 PyTorch 训练并导出 ONNX
-python examples/traditional/chess_cnn_onnx_finetune/train_pytorch.py
+python examples/traditional/chinese_chess_cnn_onnx_finetune/train_pytorch.py
 # 3. 运行 Rust 示例（载入 ONNX → 继续训练 → 保存 .otm → 重载验证）
-cargo run --example chess_cnn_onnx_finetune
+cargo run --example chinese_chess_cnn_onnx_finetune
 ```
 
-**chess_yolo_onnx_detect ⭐⭐⭐**
+**chinese_chess_yolov5_onnx_recognize_fen ⭐⭐⭐**
 
-整张棋盘截图识别（YOLO 检测 → 9×10 棋盘对齐 → 标准 FEN），展示 only_torch 接收**第三方真实 YOLOv5 ONNX 模型**做端到端推理：
+整张棋盘截图识别（YOLOv5 检测 → 9×10 棋盘对齐 → 标准 FEN），展示 only_torch 接收**第三方真实 YOLOv5 ONNX 模型**做端到端推理：
 
 - 接受任意中国象棋桌面截图 → 输出 [视觉朝向] + [标准 FEN]
 - 内置两张 sample 截图（红方在上 / 红方在下），开箱即跑且自动对比 FEN
-- 完整 pipeline：letterbox → ONNX forward → YOLO 解码 → NMS → ROI 自动锁定 → 视觉朝向检测 → FEN 序列化
+- 完整 pipeline：letterbox → ONNX forward → YOLOv5 解码 → NMS → ROI 自动锁定 → 视觉朝向检测 → FEN 序列化
 
 ```bash
 # 1. 拉取 VinXiangQi v1.4.0 release 模型(约 93 MB,自动落到本地 cache 目录)
-uv run --with onnx python examples/traditional/chess_yolo_onnx_detect/download_model.py
+uv run --with onnx python examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/download_model.py
 # 2. 默认跑内置 sample 1(中盘残局,红方在下)
-cargo run --example chess_yolo_onnx_detect
+cargo run --example chinese_chess_yolov5_onnx_recognize_fen
 # 3. 跑 sample 2(初始局面,红方在上 → 自动旋转回标准方向)
-cargo run --example chess_yolo_onnx_detect -- examples/traditional/chess_yolo_onnx_detect/samples/sample_red_top.png
+cargo run --example chinese_chess_yolov5_onnx_recognize_fen -- examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/samples/sample_red_top.png
 ```
 
-详见 [`examples/traditional/chess_yolo_onnx_detect/README.md`](examples/traditional/chess_yolo_onnx_detect/README.md)。
+详见 [`examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/README.md`](examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/README.md)。
 
 </details>
 

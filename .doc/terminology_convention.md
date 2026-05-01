@@ -140,7 +140,55 @@ let concat = Tensor::stack(&[&a, &b], 0, false);
 
 ---
 
-## 七、更新记录
+## 七、外部模型与版本命名
+
+### 7.1 总准则：跟随上游官方 / 论文标题写法
+
+新增对某个外部模型族的引用（命名 example、新建子模块、写文档/注释）时，**统一以上游官方仓库 / 论文标题的写法为准**，不为内部一致性强行改造。
+
+**理由**：
+
+- **搜索友好**：开发者会按官方名搜索代码、issue、论文
+- **避免心智翻译**：跟 GitHub / HuggingFace / 论文一致，新成员零歧义
+- **各模型族的"视觉规则"互不相通**：YOLO 的 `v` 紧贴数字（`yolov5`），MobileNet 用下划线分隔（`mobilenet_v2`），都是各自上游约定
+
+### 7.2 常见模型族速查表
+
+| 模型族 | 散文 / 注释 / doc | snake_case（路径 / 标识符 / cargo example） | 上游来源 |
+|---|---|---|---|
+| **YOLO** | `YOLOv5` / `YOLOv8` / `YOLOv11` | `yolov5` / `yolov8` / `yolov11` | Ultralytics（紧贴 `v`） |
+| MobileNet | `MobileNetV2` / `MobileNetV3` | `mobilenet_v2` / `mobilenet_v3` | torchvision（下划线 `_v`） |
+| EfficientNet | `EfficientNetV2` / `EfficientNet-B0` | `efficientnet_v2` / `efficientnet_b0` | Google / TensorFlow |
+| ResNet | `ResNet-50` / `ResNet-101` | `resnet50` / `resnet101` | torchvision（紧贴无符号） |
+| BERT | `BERT-base` / `BERT-large` | `bert_base` / `bert_large` | HuggingFace |
+| GPT | `GPT-3` / `GPT-4` | `gpt_3` / `gpt_4` | OpenAI |
+| LLaMA | `Llama 2` / `Llama 3` | `llama2` / `llama3` | Meta |
+
+泛指系列时（不指定版本）：散文用大写（`YOLO` / `BERT`），snake 用全小写（`yolo` / `bert`）。
+
+### 7.3 本项目 YOLO 写法（已落地）
+
+| 上下文 | 本项目实际写法 | 示例 |
+|---|---|---|
+| 散文 / 注释 / doc | `YOLOv5` | `//! YOLOv5 ONNX 输出解码器。` |
+| snake_case 路径 | `yolov5` | `chinese_chess_yolov5_onnx_recognize_fen` |
+| 多版本子模块（mod 树） | `adapter::yolo::v5` | `src/vision/detection/adapter/yolo/v5.rs` |
+| 测试文件名（按模块路径平铺） | `adapter_yolo_v5.rs` | `src/vision/tests/adapter_yolo_v5.rs` |
+
+> **关于模块层级 `yolo::v5` vs 品牌全名 `yolov5` 的两种写法并存**：
+> 源码模块层级 `adapter::yolo::v5` 是**目录组织**（两级，为后续 `yolo::v8` / `yolo::v11` 子模块预留并保留分类清晰度）；品牌全名 `yolov5` 是**对外标识**（一段，跟上游对齐）。两者各自合理，不冲突。
+
+### 7.4 第三方模型项目名
+
+引用第三方具体模型项目（如 VinXiangQi、StableDiffusion）时，同样跟随其官方写法：
+
+| 项目 | 散文 | snake_case |
+|---|---|---|
+| VinXiangQi | `VinXiangQi v1.4.0` | `vinxiangqi` |
+
+---
+
+## 八、更新记录
 
 | 日期       | 内容                                                                  |
 | ---------- | --------------------------------------------------------------------- |
@@ -148,3 +196,4 @@ let concat = Tensor::stack(&[&a, &b], 0, false);
 | 2025-12-21 | 统一使用"维度(dim)"术语，避免"阶(rank)"；明确 API 命名规范            |
 | 2025-12-21 | 完成 `shuffle` 系列 API 重构，参数 `axis` 统一改为 `dim`，符合规范 ✅ |
 | 2026-01-28 | 新增 Stack 统一设计说明（覆盖 PyTorch 的 `stack` 和 `cat` 两种功能） |
+| 2026-05-01 | 新增 §七「外部模型与版本命名」：跟随上游官方写法（YOLO 用 `YOLOv5`/`yolov5` 紧贴 `v`），列出常见模型族速查表 |

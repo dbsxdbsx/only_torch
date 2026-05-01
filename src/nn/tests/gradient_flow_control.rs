@@ -1,6 +1,6 @@
 //! `detach` 与多次 backward 等梯度流控制测试
 //!
-//! Mode（Train/Inference）相关的契约测试位于 `tests/test_mode_invariants.rs`，
+//! Mode（Train/Inference）相关的契约测试位于 `tests/mode_invariants.rs`，
 //! 本文件只覆盖与 mode 正交的细粒度梯度截断（detach）与多次 backward 行为。
 //! 参考设计文档: `.doc/design/mode_design.md`
 

@@ -192,7 +192,7 @@ per-sample Rayon 并行策略在有无 BLAS 时完全一致。
 | `1x1 stride=1 padding=0 dilation=1` 卷积走直接 GEMM 快路径 | 避免为每个空间位置构造等价的 `im2col` 矩阵 |
 | padding / `im2col` 热循环改用连续 slice 索引 | 避免 Debug 模式下多维动态索引开销 |
 
-**实测效果**（`chess_yolo_onnx_detect`，Debug + MKL，单图）：
+**实测效果**（`chinese_chess_yolov5_onnx_recognize_fen`，Debug + MKL，单图）：
 
 | 指标 | 优化前 | 优化后 | 提升 |
 |------|--------|--------|------|

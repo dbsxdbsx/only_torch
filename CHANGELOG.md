@@ -58,6 +58,17 @@
 
 ### Changed
 
+- **rename: tests/ 集成测试与中国象棋 example 命名规范化**
+  - **tests/ 去 `test_` 前缀**(向同目录已有的 `onnx_otm_load_bench.rs` / `yolov5_xiangqi_import.rs` 看齐):`tests/test_cse_dedup.rs` → `tests/cse_dedup.rs`、`tests/test_mode_invariants.rs` → `tests/mode_invariants.rs`;`mode_invariants.rs` 内部 `target/test_mode_invariants` 临时目录跟着改成 `target/mode_invariants`;同步 `.doc/design/mode_design.md` / `src/nn/tests/{graph_handle,gradient_flow_control}.rs` 共 4 处链接
+  - **chess example 改名为 `chinese_chess_*`,且把 task / 模型版本写清楚**:旧名 `chess_yolo_onnx_detect` 看不出"做的是空间域 detection 还是棋局识别(recognition)"且 `yolo` 不带版本号;新名按"领域 + 模型(带版本) + 互通方式 + 核心动作"四段式表达
+    - `chess_yolo_onnx_detect` → `chinese_chess_yolov5_onnx_recognize_fen`(YOLOv5 检测 + ONNX 互通,产出 FEN 字符串,跟 example 内部已统一使用的 `board_align::recognize` 函数对齐)
+    - `chess_cnn_onnx_finetune` → `chinese_chess_cnn_onnx_finetune`(只补 `chinese_` 前缀,CNN+finetune 已准确表达 task)
+    - 影响 18 个文件 60+ 处引用:Cargo.toml + justfile(task 名 / bench-macro / examples-traditional 聚合)+ 两个 example 内部所有路径常量与文档 + `tests/onnx_models/yolov5_xiangqi/{README,export.py}` 转发链接 + 主 README 概览表 / 特性矩阵 / ONNX 互通章节 + `.doc/design/{onnx_import_strategy,spatial_vision_tasks_roadmap}.md` + `.doc/optimization_candidates.md` + `src/nn/tests/node_max_pool2d.rs` SPPF 注释
+    - 运行时数据 / 模型路径(`data/chess_cnn_onnx_finetune/` → `data/chinese_chess_cnn_onnx_finetune/`、`models/chess_cnn_onnx_finetune.otm` 同改)同步迁移,以保证 example 内部 `DATA_DIR` / `OTM_PATH` 与 `generate_data.py` / `train_pytorch.py` 默认输出目录一致
+  - **新增命名规范文档**:`.doc/terminology_convention.md` §七「外部模型与版本命名」沉淀长期规则——跟随上游官方 / 论文标题写法(YOLO 用 `YOLOv5` / `yolov5` 紧贴 `v`,MobileNet 用 `mobilenet_v2` 下划线分隔,各取所长不强行内部一致),含常见模型族(YOLO / MobileNet / EfficientNet / ResNet / BERT / GPT / LLaMA)速查表
+  - **故意保留**:CHANGELOG 历史条目(时光胶囊属性,记录改名前的旧名)+ `src/nn/graph/onnx_import/mod.rs:43` 注释里的 plan 文件名引用(plan 文件已不在仓库,作为历史工作代号保留)
+  - 验收:`cargo check` + `cargo test --lib` 2970/2970 全过 + 4 个集成测试 binary 全部被 cargo 正确识别(cse_dedup / mode_invariants / yolov5_xiangqi_import / onnx_otm_load_bench)+ `cargo check --example chinese_chess_yolov5_onnx_recognize_fen --example chinese_chess_cnn_onnx_finetune` 通过
+
 - **fix(data/transforms): `RandomErasing` image-only 路径放宽 shape 支持**
   - 原 `RandomErasing::apply` assert 输入必须是 3D `[C, H, W]`——这是早期遗留限制而非设计决策；放宽后同时接受 2D `[H, W]` 灰度图像，与 paired 路径（`SampleTransform`）行为一致，也与 torchvision 对齐
   - 现有 3D 测试不受影响；新增 `test_erasing_supports_2d_grayscale` 锁住新支持

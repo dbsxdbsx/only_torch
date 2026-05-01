@@ -1,4 +1,4 @@
-# Chinese Chess YOLO Example
+# Chinese Chess YOLOv5 ONNX Recognize FEN Example
 
 > 用 only_torch 接收 VinXiangQi (YOLOv5) 预训练 ONNX,对桌面象棋截图做整盘识别 → 输出
 > [视觉朝向] + [标准 FEN] 两份信息。
@@ -33,7 +33,7 @@
 ## 目录布局
 
 ```
-chess_yolo_onnx_detect/
+chinese_chess_yolov5_onnx_recognize_fen/
 ├── main.rs                  # 入口:加载 → pipeline → 打印耗时 + ImportReport + FEN 对比
 ├── board_align.rs           # ROI 自动锁定 + 视觉朝向检测 + 9×10 网格对齐 + FEN 序列化
 ├── download_model.py        # VinXiangQi v1.4.0 release 拉取 + 算子缺口审计
@@ -50,7 +50,7 @@ chess_yolo_onnx_detect/
 ### 1. 拉取 VinXiangQi 预训练模型
 
 ```bash
-uv run --with onnx python examples/traditional/chess_yolo_onnx_detect/download_model.py
+uv run --with onnx python examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/download_model.py
 ```
 
 脚本会:
@@ -74,17 +74,17 @@ uv run --with onnx python examples/traditional/chess_yolo_onnx_detect/download_m
 
 ```bash
 # 默认:跑 sample 1(中盘残局,红方在下)
-cargo run --example chess_yolo_onnx_detect
+cargo run --example chinese_chess_yolov5_onnx_recognize_fen
 
 # 跑 sample 2(初始局面,红方在上 → 自动旋转回标准方向)
-cargo run --example chess_yolo_onnx_detect -- \
-  examples/traditional/chess_yolo_onnx_detect/samples/sample_red_top.png
+cargo run --example chinese_chess_yolov5_onnx_recognize_fen -- \
+  examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/samples/sample_red_top.png
 
 # 跑用户自备截图
-cargo run --example chess_yolo_onnx_detect -- <路径>.png
+cargo run --example chinese_chess_yolov5_onnx_recognize_fen -- <路径>.png
 
 # release 模式(推理快 3-5 倍)
-cargo run --release --example chess_yolo_onnx_detect
+cargo run --release --example chinese_chess_yolov5_onnx_recognize_fen
 ```
 
 跑 `samples/` 下的图时,会自动从 `samples/example_answer.txt` 找对应答案做位级对比。

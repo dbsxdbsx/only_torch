@@ -1,19 +1,19 @@
-//! # Chinese Chess YOLO Example（VinXiangQi YOLOv5 → 9×10 FEN）
+//! # Chinese Chess YOLOv5 ONNX Recognize FEN Example（VinXiangQi YOLOv5 → 9×10 FEN）
 //!
-//! 端到端演示：only_torch 加载第三方真实 YOLOv5 ONNX → 识别中国象棋 → 标准 FEN。
+//! 端到端演示：only_torch 加载第三方真实 YOLOv5 ONNX → 识别中国象棋棋局 → 标准 FEN。
 //! 内置两张测试 sample（红方在下 / 红方在上），实测 FEN 位级匹配人类标注答案。
 //!
 //! ## 用法
 //!
 //! ```bash
 //! # 首次需先拉取 VinXiangQi 预训练模型（约 93 MB）
-//! uv run --with onnx python examples/traditional/chess_yolo_onnx_detect/download_model.py
+//! uv run --with onnx python examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/download_model.py
 //!
 //! # 默认跑 sample 1（红方在下）
-//! cargo run --example chess_yolo_onnx_detect
+//! cargo run --example chinese_chess_yolov5_onnx_recognize_fen
 //!
 //! # 跑 sample 2（红方在上 → 自动旋转回标准方向）或自备截图
-//! cargo run --example chess_yolo_onnx_detect -- <路径>.png
+//! cargo run --example chinese_chess_yolov5_onnx_recognize_fen -- <路径>.png
 //! ```
 //!
 //! ## 关键概念：视觉朝向 vs 标准 FEN
@@ -35,9 +35,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 const MODEL_PATH: &str = "models/vinxiangqi.onnx";
-const SAMPLES_DIR: &str = "examples/traditional/chess_yolo_onnx_detect/samples";
+const SAMPLES_DIR: &str = "examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/samples";
 const DEFAULT_IMAGE: &str =
-    "examples/traditional/chess_yolo_onnx_detect/samples/sample_red_bottom.png";
+    "examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/samples/sample_red_bottom.png";
 
 const TARGET_SIZE: u32 = 640;
 const CONF_THRESHOLD: f32 = 0.25;
@@ -139,7 +139,7 @@ fn preflight(image_path: &Path) -> Result<(), String> {
     if !image_path.exists() {
         return Err(format!(
             "[预检失败] 测试图不存在: {}\n\
-             用法: cargo run --example chess_yolo_onnx_detect [<路径>.png]",
+             用法: cargo run --example chinese_chess_yolov5_onnx_recognize_fen [<路径>.png]",
             image_path.display()
         ));
     }

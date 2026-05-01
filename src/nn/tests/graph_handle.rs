@@ -337,7 +337,7 @@ fn test_graph_handle_zero_grad() {
     assert!(w.grad().unwrap().is_some(), "再次 backward 后 w 应该有梯度");
 }
 
-/// 测试 train/inference 模式切换（详细契约见 tests/test_mode_invariants.rs）
+/// 测试 train/inference 模式切换（详细契约见 tests/mode_invariants.rs）
 #[test]
 fn test_graph_handle_train_inference_smoke() {
     let graph = Graph::new();
@@ -387,7 +387,7 @@ fn test_graph_handle_inner_access() {
 }
 
 // ==================== inference_scope 烟雾测试 ====================
-// 详细契约（嵌套、回滚、backward 禁用）见 tests/test_mode_invariants.rs。
+// 详细契约（嵌套、回滚、backward 禁用）见 tests/mode_invariants.rs。
 
 /// inference_scope 闭包返回值正常传递，闭包退出后回滚到进入前的模式
 #[test]

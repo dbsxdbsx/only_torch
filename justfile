@@ -136,10 +136,10 @@ bench-attention:
 bench-macro:
     @echo "=== Macro benchmark (release, {{_blas_name}}) ==="
     @command -v hyperfine >/dev/null 2>&1 || (echo "hyperfine 未安装，请先 cargo install hyperfine" && exit 1)
-    @test -f "models/vinxiangqi.onnx" || (echo "缺少 chess_yolo_onnx_detect 所需本地 ONNX 模型，请先按 example 文档下载；或改跑 just bench-macro-core" && exit 1)
+    @test -f "models/vinxiangqi.onnx" || (echo "缺少 chinese_chess_yolov5_onnx_recognize_fen 所需本地 ONNX 模型，请先按 example 文档下载；或改跑 just bench-macro-core" && exit 1)
     hyperfine --warmup 1 --runs 2 \
       'cargo run --release {{_blas_flag}} --example mnist_cnn' \
-      'cargo run --release {{_blas_flag}} --example chess_yolo_onnx_detect' \
+      'cargo run --release {{_blas_flag}} --example chinese_chess_yolov5_onnx_recognize_fen' \
       'cargo run --release {{_blas_flag}} --example evolution_mnist' \
       --export-json target/bench-macro.json
 
@@ -147,7 +147,7 @@ bench-macro:
 # （冷启动、文件大小、参数量、推理速度），评估新模型选型时跑。不进 bench-save/compare 回归。
 bench-onnx-vs-otm:
     @echo "=== ONNX vs OTM loading bench (release, {{_blas_name}}) ==="
-    @test -f "models/vinxiangqi.onnx" || (echo "缺少 models/vinxiangqi.onnx，请先按 examples/traditional/chess_yolo_onnx_detect/README.md 拉取" && exit 1)
+    @test -f "models/vinxiangqi.onnx" || (echo "缺少 models/vinxiangqi.onnx，请先按 examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/README.md 拉取" && exit 1)
     cargo test --release --test onnx_otm_load_bench {{_blas_flag}} -- --ignored --nocapture
 
 # 不依赖本地 ONNX 模型的宏基准子集
@@ -167,9 +167,9 @@ examples: examples-traditional examples-evolution
 # ---------- Traditional（手动定义网络）----------
 
 # 运行所有 traditional examples
-# 注:example-chess-yolo-onnx-detect 不在此聚合内,因为它依赖 ~93MB 的 VinXiangQi
+# 注:example-chinese-chess-yolov5-onnx-recognize-fen 不在此聚合内,因为它依赖 ~93MB 的 VinXiangQi
 # .onnx 模型(已被 .gitignore),需用户先跑 download_model.py 才能跑通
-examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-shapes-unet-lite-segmentation example-deformable-conv2d-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
+examples-traditional: example-xor example-iris example-sine example-mnist example-mnist-cnn example-single-object-segmentation example-single-object-detection example-multi-instance-segmentation example-overlapping-shapes-semantic-segmentation example-overlapping-shapes-unet-lite-segmentation example-deformable-conv2d-segmentation example-overlapping-fixed-slot-instance-segmentation example-mnist-gan example-california example-parity example-dual-input example-siamese example-dual-output example-multi-io example-multi-label example-chinese-chess-cnn-onnx-finetune example-cartpole-sac example-pendulum-sac example-moving-sac
 
 # 运行所有 parity examples（RNN/LSTM/GRU）
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
@@ -269,13 +269,13 @@ example-multi-label:
     @echo "=== Running Multi Label Point (BCE Loss) [{{_blas_name}}] ==="
     cargo run --example multi_label_point {{_blas_flag}}
 
-example-chess-cnn-onnx-finetune:
-    @echo "=== Running Chess CNN ONNX Finetune [{{_blas_name}}] ==="
-    cargo run --example chess_cnn_onnx_finetune {{_blas_flag}}
+example-chinese-chess-cnn-onnx-finetune:
+    @echo "=== Running Chinese Chess CNN ONNX Finetune [{{_blas_name}}] ==="
+    cargo run --example chinese_chess_cnn_onnx_finetune {{_blas_flag}}
 
-example-chess-yolo-onnx-detect:
-    @echo "=== Running Chess YOLO ONNX Detect [{{_blas_name}}] ==="
-    cargo run --example chess_yolo_onnx_detect {{_blas_flag}}
+example-chinese-chess-yolov5-onnx-recognize-fen:
+    @echo "=== Running Chinese Chess YOLOv5 ONNX Recognize FEN [{{_blas_name}}] ==="
+    cargo run --example chinese_chess_yolov5_onnx_recognize_fen {{_blas_flag}}
 
 example-cartpole-sac:
     @echo "=== Running CartPole SAC [{{_blas_name}}] (requires Python + gymnasium) ==="

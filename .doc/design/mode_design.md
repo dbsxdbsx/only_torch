@@ -148,7 +148,7 @@ impl TraitNode for MyOp {
 
 ## 9. 测试入口
 
-- `tests/test_mode_invariants.rs`：`Mode` 契约（默认值、互转、`inference_scope` 回滚和 panic-safe 恢复、推理模式 backward 报错、`load_model` 默认 inference）。
+- `tests/mode_invariants.rs`：`Mode` 契约（默认值、互转、`inference_scope` 回滚和 panic-safe 恢复、推理模式 backward 报错、`load_model` 默认 inference）。
 - `src/nn/tests/gradient_flow_control.rs`：`detach` + 多次 backward 行为，已删除全部 `no_grad_*` 段。
 - `src/nn/tests/graph_handle.rs::test_graph_handle_inference_scope_*`：handle 层 smoke。
 - `src/nn/tests/mode_cache.rs`：重缓存节点在 `Mode::Inference` forward 后跳过 backward cache，并在直接调用 VJP 时返回明确错误。

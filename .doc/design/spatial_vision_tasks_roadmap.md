@@ -72,7 +72,7 @@ graph TD
 |---|---|---|---|---|
 | Classification | 图像分类 | `[x]` | `mnist`、`mnist_cnn`、`evolution_mnist` 已覆盖手写模型与空间域演化 | 大规模真实数据和性能优化仍有限 |
 | Detection | 单目标 2D bbox | `[~]` | `single_object_detection` 可训练 16x16 合成图像单框回归 | 不是多目标检测；没有 objectness、类别、多尺度、NMS、mAP |
-| Detection | 多目标 2D Detection | `[~]` | 已沉淀通用 `BBox` 坐标契约、IoU family、带 score/top-k/max-det 的 NMS、矩形 letterbox、mAP / precision / recall / F1、per-class AP、YOLO txt parser、检测标签同步变换、`DetectionBatch`、通用 detection loss 组合与 `bbox_loss(IoU/GIoU/DIoU/CIoU)`；已立 `Backbone` / `DetectionHeadDecode` / `Assigner` 类型契约（`vision/detection/contract.rs`）；`chess_yolo_onnx_detect` 可导入第三方 YOLO ONNX 做推理演示 | only_torch 原生检测 head、assignment / matching、端到端 fine-tune 示例尚未支持；`bbox_loss` 反向传播仍使用有限差分，真实训练前应替换为解析梯度 |
+| Detection | 多目标 2D Detection | `[~]` | 已沉淀通用 `BBox` 坐标契约、IoU family、带 score/top-k/max-det 的 NMS、矩形 letterbox、mAP / precision / recall / F1、per-class AP、YOLO txt parser、检测标签同步变换、`DetectionBatch`、通用 detection loss 组合与 `bbox_loss(IoU/GIoU/DIoU/CIoU)`；已立 `Backbone` / `DetectionHeadDecode` / `Assigner` 类型契约（`vision/detection/contract.rs`）；`chinese_chess_yolov5_onnx_recognize_fen` 可导入第三方 YOLOv5 ONNX 做推理演示 | only_torch 原生检测 head、assignment / matching、端到端 fine-tune 示例尚未支持；`bbox_loss` 反向传播仍使用有限差分，真实训练前应替换为解析梯度 |
 | Detection | Oriented Detection | `[ ]` | 暂无 | 需要旋转框表示、角度损失、旋转 IoU |
 | Detection | 3D Detection | `[ ]` | 暂无 | 需要深度 / 点云 / 相机几何等数据表示 |
 | Segmentation | 二值语义分割 | `[~]` | `single_object_segmentation` 可训练合成 mask；`deformable_conv2d_segmentation` 提供 offset-only DeformableConv2d 传统基线 | 数据仍偏 toy；缺少更可信真实 benchmark |

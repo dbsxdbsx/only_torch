@@ -243,12 +243,12 @@
     path="examples/traditional/multi_label_point/main.rs"
 
 [[example]]
-    name="chess_cnn_onnx_finetune"
-    path="examples/traditional/chess_cnn_onnx_finetune/main.rs"
+    name="chinese_chess_cnn_onnx_finetune"
+    path="examples/traditional/chinese_chess_cnn_onnx_finetune/main.rs"
 
 [[example]]
-    name="chess_yolo_onnx_detect"
-    path="examples/traditional/chess_yolo_onnx_detect/main.rs"
+    name="chinese_chess_yolov5_onnx_recognize_fen"
+    path="examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/main.rs"
 
 [[example]]
     name="cartpole_sac"
