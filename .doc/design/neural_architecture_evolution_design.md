@@ -37,11 +37,11 @@ result.visualize("output/my_model")?;
 
 数据形状决定演化范式：
 
-- 平坦 `[D]`：从 `Input(D) → [Linear(output_dim)]` 出发。
-- 序列 `[seq_len, input_dim]`：从最简 RNN 出发，可演化为 LSTM / GRU，并支持变长样本（自动零填充至最大长度）。
+- 平坦 `[D]`：从 `Input(D) → [Linear(output_dim)]` 出发z。
+- 序列 `[seq_len, input_dim]`：从最简 RNN 出发，可演化为 LSTM / GRU；通过 `Evolution::with_sequence_ops` 还可加入 MultiHeadAttention 候选，并支持变长样本（自动零填充至最大长度）。
 - 空间 `[C, H, W]`：从 `Input(C@H×W) → Conv2d(8,k=3) → Pool2d → Flatten → [Linear(out_dim)]` 出发，可演化为完整 CNN。
 
-完整示例分别见 `examples/evolution/parity_seq`、`examples/evolution/parity_seq_var_len`、`examples/evolution/mnist`。
+完整示例分别见 `examples/evolution/parity_seq`、`examples/evolution/parity_seq_var_len`、`examples/evolution/parity_seq_attention`（启用 attention 候选）、`examples/evolution/mnist`。
 
 ### 1.2 多输出 / 多头监督任务
 
@@ -481,7 +481,7 @@ pub trait Mutation: Send + Sync {
 
 | 变异 | 权重 | 结构性 | 核心逻辑 |
 |---|---|---|---|
-| `InsertLayer` | **0.20** | ✅ | 域感知：Flat 域选 Linear / Activation / BatchNorm / LayerNorm / RMSNorm；Sequence 域选 RNN / LSTM / GRU / LayerNorm / RMSNorm；Spatial 域选 Conv2d / Pool2d / BatchNorm；segmentation 的空间保持插入有概率生成 DeformableConv2d block。归一化层以 10% 概率独立触发，不与同类连续 |
+| `InsertLayer` | **0.20** | ✅ | 域感知：Flat 域选 Linear / Activation / BatchNorm / LayerNorm / RMSNorm；Sequence 域按 `SequenceOpSet` 选 RNN / LSTM / GRU 或 MultiHeadAttention（默认仅循环，需通过 `Evolution::with_sequence_ops` 显式启用 attention）+ LayerNorm / RMSNorm；Spatial 域选 Conv2d / Pool2d / BatchNorm；segmentation 的空间保持插入有概率生成 DeformableConv2d block。归一化层以 10% 概率独立触发，不与同类连续 |
 | `InsertEncoderDecoderSkip` | 0.08 | ✅ | Segmentation 专用：一次性插入 `Pool2d → Conv2d → ConvTranspose2d → Concat(skip) → Conv2d`，保持输出 H/W 与通道数不变 |
 | `InsertAtomicNode` | 0.10 | ✅ | NEAT "Add Node"：在主路径两块之间插入单个激活节点（15 种激活函数随机选择，85%）或 Dropout（15%，p∈{0.1, 0.2, 0.3, 0.5}）。保护输出头、避免连续激活 / 连续 Dropout |
 | `RemoveLayer` | 0.08 | ✅ | 随机移除非输出头的隐藏层 |
@@ -520,7 +520,7 @@ pub trait Mutation: Send + Sync {
 
 | 变异 | Phase 1 | Phase 2 | 结构性 | 核心逻辑 |
 |---|---|---|---|---|
-| `AddRecurrentEdge` | 0.08 | 0.08 | ✅ | EXAMM 风格：在两个非叶计算节点间添加循环连接 + 权重参数节点。与 cell-based 循环互斥 |
+| `AddRecurrentEdge` | 0.08 | 0.08 | ✅ | EXAMM 风格：在两个非叶计算节点间添加循环连接 + 权重参数节点。与 cell-based 循环 / 注意力（CellRnn / CellLstm / CellGru / CellAttention）互斥 |
 | `RemoveRecurrentEdge` | 0.04 | 0.04 | ✅ | 移除循环边及其孤立权重参数节点 |
 
 **FM 级别变异（Spatial 域专属，作用于 feature map 子图）**：
@@ -788,11 +788,25 @@ pub trait EvolutionTask {
 
 #### 序列 / 记忆单元（Sequence）
 
-最小架构 `Input(seq×D) → Rnn(output_dim) → [Linear(output_dim)]`。系统从最简 RNN 出发，`MutateCellType` 可升级为 LSTM / GRU；`AddRecurrentEdge` / `RemoveRecurrentEdge` 支持 EXAMM 风格 edge-based 循环连接（与 cell-based 互斥）。变长序列自动零填充至最大长度。
+最小架构 `Input(seq×D) → Rnn(output_dim) → [Linear(output_dim)]`。系统从最简 RNN 出发，`MutateCellType` 可在 RNN ↔ LSTM ↔ GRU 三种循环单元间切换；`AddRecurrentEdge` / `RemoveRecurrentEdge` 支持 EXAMM 风格 edge-based 循环连接（与 cell-based 循环 / 注意力互斥）。变长序列自动零填充至最大长度。
 
-`build()` 中的 `needs_return_sequences` 逻辑：builder 在构建循环层时自动判断是否需要返回完整序列——向后扫描 resolved 层列表（跳过 Activation / Dropout），若下一个实质层也是循环层则调用 `forward_seq()`（返回 `[batch, seq_len, hidden]`），否则调用 `forward()`（仅返回最后一步 `[batch, hidden]`）。
+`build()` 中的 `needs_return_sequences` 逻辑：builder 在构建循环层时自动判断是否需要返回完整序列——向后扫描 resolved 层列表（跳过 Activation / Dropout），若下一个实质层也是序列层（循环单元 **或** 注意力）则调用 `forward_seq()`（返回 `[batch, seq_len, hidden]`），否则调用 `forward()`（仅返回最后一步 `[batch, hidden]`）。
 
-域约束：序列模式下 skip edge 仅允许在 Flat 域内。记忆单元（RNN / LSTM / GRU）作为原子单元，不允许 skip edge 跨越或穿透 Sequence 域。
+**MultiHeadAttention 接入（默认关闭，向后兼容）**：
+
+通过 `Evolution::with_sequence_ops(SequenceOpSet::*)` 显式开启 attention 候选；候选语义：
+
+- `Recurrent`（默认）：仅 RNN / LSTM / GRU，等价于过去的行为。
+- `AttentionOnly`：仅 MultiHeadAttention，不再插入循环单元。
+- `RecurrentWithAttention`：循环单元 + MultiHeadAttention 混合，由 NSGA-II 选择决定每轮谁更强。
+
+InsertLayer 序列分支会按 `SizeConstraints::attention_num_heads_candidates`（默认 `[2, 4, 8]`）从中过滤出能整除当前采样 `embed_dim` 的 head 数。`GrowHiddenSize` 触发 attention 块时也会自动把目标尺寸对齐到 `num_heads` 的整数倍，保证 reshape 合法。
+
+CellAttention 在 NodeLevel 上是一个**复合模板节点**（与 CellRnn / CellLstm / CellGru 同级），父节点顺序固定为 `[input, w_q, b_q, w_k, b_k, w_v, b_v, w_o, b_o]`；演化阶段把整个多头注意力当原子单元变异，避免 NEAT 在 QKV 微观结构中盲搜。重建时 `descriptor_rebuild::rebuild_node` 走 `MultiHeadAttention::from_vars` 复用现有 Var 参数，并在输入维度不为 3D 时返回 `GraphError::InvalidOperation`，让上游 evaluate 路径优雅淘汰非法拓扑而不是 panic。
+
+ONNX 导出暂标记为 unsupported（CellAttention 需要拆成 MatMul / Softmax 等原子节点子图，留待后续阶段）；net2net function-preserving 扩宽对 attention 块走朴素重新初始化路径。
+
+域约束：序列模式下 skip edge 仅允许在 Flat 域内。记忆单元（RNN / LSTM / GRU）和 MultiHeadAttention 都作为原子单元，不允许 skip edge 跨越或穿透 Sequence 域。
 
 #### 卷积神经网络（Spatial）
 

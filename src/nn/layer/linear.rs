@@ -157,6 +157,27 @@ impl Linear {
     pub const fn bias(&self) -> Option<&Var> {
         self.bias.as_ref()
     }
+
+    /// 从已有参数 Var 构造（演化 NodeLevel rebuild 路径专用）
+    ///
+    /// 不创建新参数节点，直接复用传入的 `weights` 与可选 `bias`。
+    pub fn from_vars(
+        weights: Var,
+        bias: Option<Var>,
+        in_features: usize,
+        out_features: usize,
+    ) -> Self {
+        let graph = weights.get_graph();
+        let instance_id = graph.inner_mut().next_node_group_instance_id();
+        Self {
+            weights,
+            bias,
+            in_features,
+            out_features,
+            name: "linear_rebuilt".to_string(),
+            instance_id,
+        }
+    }
 }
 
 impl Module for Linear {

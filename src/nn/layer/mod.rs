@@ -21,8 +21,10 @@ mod layer_norm;
 mod linear;
 mod lstm;
 mod max_pool2d;
+mod positional;
 mod rms_norm;
 mod rnn;
+mod transformer;
 
 pub use attention::MultiHeadAttention;
 pub use avg_pool2d::AvgPool2d;
@@ -38,5 +40,7 @@ pub use layer_norm::LayerNorm;
 pub use linear::Linear;
 pub use lstm::Lstm;
 pub use max_pool2d::MaxPool2d;
+pub use positional::{LearnableAbsolutePositionalEncoding, SinusoidalPositionalEncoding};
 pub use rms_norm::RMSNorm;
 pub use rnn::Rnn;
+pub use transformer::{TransformerEncoder, TransformerEncoderLayer};

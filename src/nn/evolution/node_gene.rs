@@ -752,6 +752,29 @@ pub fn infer_output_shape(
                 Ok(vec![1, *hidden_size])
             }
         }
+
+        // ── CellAttention（多头自注意力复合模板节点）──
+        //
+        // 与 CellRnn/CellLstm/CellGru 一致：parents[0] 是输入张量，其余 8 个是
+        // QKV/输出投影的权重/偏置叶节点（不通过此函数推导形状）。
+        // 输出形状：
+        //   - !return_sequences → [1, embed_dim]
+        //   - return_sequences  → [1, seq_len.max(1), embed_dim]
+        NT::CellAttention {
+            embed_dim,
+            return_sequences,
+            seq_len,
+            ..
+        } => {
+            if parent_shapes.is_empty() {
+                return Err("CellAttention 至少需要 1 个父节点（输入张量）".to_string());
+            }
+            if *return_sequences {
+                Ok(vec![1, (*seq_len).max(1), *embed_dim])
+            } else {
+                Ok(vec![1, *embed_dim])
+            }
+        }
     }
 }
 
@@ -801,7 +824,7 @@ pub fn infer_domain(node_type: &NodeTypeDescriptor, parent_domains: &[ShapeDomai
         NT::Flatten { .. } => Flat,
         // 输入节点默认平坦（调用方会根据 genome 的输入模式修正）
         NT::BasicInput | NT::TargetInput => Flat,
-        // 循环单元：return_sequences → Sequence，否则 → Flat
+        // 循环单元 / Attention：return_sequences → Sequence，否则 → Flat
         NT::CellRnn {
             return_sequences, ..
         }
@@ -809,6 +832,9 @@ pub fn infer_domain(node_type: &NodeTypeDescriptor, parent_domains: &[ShapeDomai
             return_sequences, ..
         }
         | NT::CellGru {
+            return_sequences, ..
+        }
+        | NT::CellAttention {
             return_sequences, ..
         } => {
             if *return_sequences {
@@ -972,6 +998,7 @@ impl GenomeAnalysis {
                     NodeTypeDescriptor::CellRnn { .. }
                         | NodeTypeDescriptor::CellLstm { .. }
                         | NodeTypeDescriptor::CellGru { .. }
+                        | NodeTypeDescriptor::CellAttention { .. }
                 )
             });
 

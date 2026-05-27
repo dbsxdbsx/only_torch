@@ -13,7 +13,8 @@ use super::error::GraphError;
 use super::handle::Graph;
 use super::onnx_import::ImportReport;
 use crate::nn::descriptor::{GraphDescriptor, NodeDescriptor, NodeTypeDescriptor};
-use crate::nn::layer::{Gru, Lstm, Rnn};
+use crate::nn::layer::{Gru, Lstm, MultiHeadAttention, Rnn};
+use crate::nn::var::ops::{VarReduceOps, VarShapeOps};
 use crate::nn::var::Var;
 use crate::tensor::Tensor;
 use std::collections::{HashMap, HashSet};
@@ -1023,6 +1024,59 @@ fn rebuild_node(
                 gru.forward_seq(input_var)
             } else {
                 gru.forward(input_var)
+            }
+        }
+
+        NodeTypeDescriptor::CellAttention {
+            input_size,
+            embed_dim,
+            num_heads,
+            return_sequences,
+            seq_len,
+        } => {
+            let effective_seq = (*seq_len).max(1);
+            let input_var = get_parent_var(node_desc, node_map, 0, "input")?;
+            ensure_recurrent_input_value(&input_var, &[1, effective_seq, *input_size])?;
+
+            // attention.forward 内部用 unwrap 推 reshape，若上游块输出 2D 会 panic。
+            // 这里主动校验输入形状必须是 3D [batch, seq_len, input_size]，否则返回 GraphError，
+            // 让 evolution 的 InsertLayer 走 validate 失败 / fitness=NaN 路径回滚，而不是炸进程。
+            let input_shape = input_var.node().shape();
+            if input_shape.len() != 3 || input_shape[2] != *input_size {
+                return Err(GraphError::InvalidOperation(format!(
+                    "MultiHeadAttention 需要 3D 输入 [batch, seq_len, input_size={}], 实际: {:?}",
+                    input_size, input_shape
+                )));
+            }
+
+            let w_q = get_parent_var(node_desc, node_map, 1, "w_q")?;
+            let b_q = get_parent_var(node_desc, node_map, 2, "b_q")?;
+            let w_k = get_parent_var(node_desc, node_map, 3, "w_k")?;
+            let b_k = get_parent_var(node_desc, node_map, 4, "b_k")?;
+            let w_v = get_parent_var(node_desc, node_map, 5, "w_v")?;
+            let b_v = get_parent_var(node_desc, node_map, 6, "b_v")?;
+            let w_o = get_parent_var(node_desc, node_map, 7, "w_o")?;
+            let b_o = get_parent_var(node_desc, node_map, 8, "b_o")?;
+            let mha = MultiHeadAttention::from_vars(
+                *input_size,
+                *embed_dim,
+                *num_heads,
+                w_q,
+                b_q,
+                w_k,
+                b_k,
+                w_v,
+                b_v,
+                w_o,
+                b_o,
+            );
+            // self-attention 复用 input_var 三次
+            let attn_out = mha.forward(&input_var, &input_var, &input_var);
+            if *return_sequences {
+                Ok(attn_out)
+            } else {
+                // 与 traditional 示例的 mean pooling 对齐：mean_axis(1) keepdims=true → squeeze(1)
+                Ok(attn_out.mean_axis(1).squeeze(Some(1))?)
             }
         }
     }

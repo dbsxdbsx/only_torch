@@ -187,6 +187,10 @@
     path="examples/traditional/parity_gru_var_len/main.rs"
 
 [[example]]
+    name="parity_transformer_var_len"
+    path="examples/traditional/parity_transformer_var_len/main.rs"
+
+[[example]]
     name="mnist_cnn"
     path="examples/traditional/mnist_cnn/main.rs"
 
@@ -285,6 +289,10 @@
 [[example]]
     name="evolution_parity_seq_var_len"
     path="examples/evolution/parity_seq_var_len/main.rs"
+
+[[example]]
+    name="evolution_parity_seq_attention"
+    path="examples/evolution/parity_seq_attention/main.rs"
 
 [[example]]
     name="evolution_overlapping_shapes_semantic_segmentation"

@@ -28,8 +28,8 @@ use super::node_ops::{
     find_connectable_pairs, find_removable_skip_connections, insert_after, is_activation_node,
     is_dropout_node, is_skip_projection_block, make_counter, next_block_id, node_main_path,
     node_output_shape_at, node_param_count, node_spatial_at, remove_block, remove_skip_connection,
-    repair_param_input_dims, resize_conv2d_out, resize_linear_out, resize_recurrent_out,
-    sync_computation_shapes,
+    repair_param_input_dims, resize_attention_out, resize_conv2d_out, resize_linear_out,
+    resize_recurrent_out, sync_computation_shapes,
 };
 use crate::nn::descriptor::NodeTypeDescriptor;
 use crate::tensor::Tensor;
@@ -74,6 +74,43 @@ pub enum SizeStrategy {
     AlignTo(usize),
 }
 
+/// 序列任务允许的算子集合
+///
+/// 用于在 InsertLayer / 初始化序列模型时限制可用的循环 / 注意力算子。
+/// 默认 `Recurrent`：保持向后兼容（只用 RNN/LSTM/GRU），不会自动引入 Attention，
+/// 用户可显式切换到 `RecurrentWithAttention` 让演化在序列任务中尝试 attention。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SequenceOpSet {
+    /// 仅循环单元（默认，向后兼容）
+    Recurrent,
+    /// 仅注意力（适合 attention-only 实验）
+    AttentionOnly,
+    /// 循环单元 + 注意力混合（让演化挑选）
+    RecurrentWithAttention,
+}
+
+impl Default for SequenceOpSet {
+    fn default() -> Self {
+        SequenceOpSet::Recurrent
+    }
+}
+
+impl SequenceOpSet {
+    pub fn allow_recurrent(&self) -> bool {
+        matches!(
+            self,
+            SequenceOpSet::Recurrent | SequenceOpSet::RecurrentWithAttention
+        )
+    }
+
+    pub fn allow_attention(&self) -> bool {
+        matches!(
+            self,
+            SequenceOpSet::AttentionOnly | SequenceOpSet::RecurrentWithAttention
+        )
+    }
+}
+
 /// 网络规模约束
 #[derive(Clone, Debug)]
 pub struct SizeConstraints {
@@ -82,6 +119,13 @@ pub struct SizeConstraints {
     pub max_total_params: usize,
     pub min_hidden_size: usize,
     pub size_strategy: SizeStrategy,
+    /// 序列任务允许的算子集合（默认仅 RNN/LSTM/GRU）
+    pub sequence_ops: SequenceOpSet,
+    /// Attention 候选 num_heads 列表（embed_dim 必须能被其中至少一个值整除）
+    ///
+    /// 默认 `[2, 4, 8]`：覆盖常见嵌入维度对齐方案；演化采样时会过滤掉
+    /// 不满足整除关系的取值。
+    pub attention_num_heads_candidates: Vec<usize>,
 }
 
 impl Default for SizeConstraints {
@@ -92,6 +136,8 @@ impl Default for SizeConstraints {
             max_total_params: 10000,
             min_hidden_size: 1,
             size_strategy: SizeStrategy::Free,
+            sequence_ops: SequenceOpSet::default(),
+            attention_num_heads_candidates: vec![2, 4, 8],
         }
     }
 }
@@ -156,6 +202,8 @@ impl SizeConstraints {
             max_total_params,
             min_hidden_size,
             size_strategy,
+            sequence_ops: SequenceOpSet::default(),
+            attention_num_heads_candidates: vec![2, 4, 8],
         }
     }
 }
@@ -1964,11 +2012,11 @@ fn node_level_remove_apply(
     }
 
     let block = (*removable.choose(rng).unwrap()).clone();
-    if genome.seq_len.is_some() && block.kind.is_recurrent() {
-        let recurrent_count = blocks.iter().filter(|b| b.kind.is_recurrent()).count();
-        if recurrent_count <= 1 {
+    if genome.seq_len.is_some() && block.kind.is_sequence() {
+        let sequence_count = blocks.iter().filter(|b| b.kind.is_sequence()).count();
+        if sequence_count <= 1 {
             return Err(MutationError::NotApplicable(
-                "序列图至少需要保留一个循环块".into(),
+                "序列图至少需要保留一个序列处理块".into(),
             ));
         }
     }
@@ -2058,7 +2106,7 @@ fn node_level_grow_apply(
     let block = (*candidates.choose(rng).unwrap()).clone();
     let current_size = block.kind.current_size().unwrap();
 
-    let new_size = if is_grow {
+    let raw_new_size = if is_grow {
         grow_size(
             current_size,
             constraints.max_hidden_size,
@@ -2074,6 +2122,23 @@ fn node_level_grow_apply(
         )
     };
 
+    // 注意力块需要 embed_dim % num_heads == 0：把 raw_new_size 调整到最近的合法值
+    let new_size = if let NodeBlockKind::Attention { num_heads, .. } = block.kind {
+        let nh = num_heads.max(1);
+        let aligned = (raw_new_size / nh).max(1) * nh;
+        let aligned = aligned
+            .max(constraints.min_hidden_size.max(nh))
+            .min(constraints.max_hidden_size);
+        if aligned == current_size {
+            return Err(MutationError::NotApplicable(
+                "注意力块当前规模已是合法对齐边界".into(),
+            ));
+        }
+        aligned
+    } else {
+        raw_new_size
+    };
+
     // 执行 resize
     match &block.kind {
         NodeBlockKind::Linear { .. } => resize_linear_out(genome, &block, new_size)
@@ -2084,6 +2149,8 @@ fn node_level_grow_apply(
             resize_recurrent_out(genome, &block, new_size)
                 .map_err(|e| MutationError::InternalError(e))?
         }
+        NodeBlockKind::Attention { .. } => resize_attention_out(genome, &block, new_size)
+            .map_err(|e| MutationError::InternalError(e))?,
         _ => return Err(MutationError::NotApplicable("不可调整大小的块类型".into())),
     }
 
@@ -2105,6 +2172,9 @@ fn node_level_grow_apply(
                     | NodeBlockKind::Lstm { .. }
                     | NodeBlockKind::Gru { .. } => {
                         resize_recurrent_out(genome, updated, current_size)
+                    }
+                    NodeBlockKind::Attention { .. } => {
+                        resize_attention_out(genome, updated, current_size)
                     }
                     _ => Ok(()),
                 };
@@ -2654,7 +2724,7 @@ impl Mutation for AddRecurrentEdgeMutation {
         if !genome.is_node_level() || genome.seq_len.is_none() {
             return false;
         }
-        // 范式互斥：不能已有 cell-based 循环节点
+        // 范式互斥：不能已有 cell-based 循环 / 注意力节点
         let has_cell = genome.nodes().iter().any(|n| {
             n.enabled
                 && matches!(
@@ -2662,6 +2732,7 @@ impl Mutation for AddRecurrentEdgeMutation {
                     NodeTypeDescriptor::CellRnn { .. }
                         | NodeTypeDescriptor::CellLstm { .. }
                         | NodeTypeDescriptor::CellGru { .. }
+                        | NodeTypeDescriptor::CellAttention { .. }
                 )
         });
         if has_cell {

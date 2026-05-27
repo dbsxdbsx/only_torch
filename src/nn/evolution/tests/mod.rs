@@ -1,5 +1,8 @@
 mod asha;
+mod attention_evolution;
+mod attention_rebuild;
 mod builder;
+mod cell_attention;
 mod cell_migration;
 mod convergence;
 mod evolution;

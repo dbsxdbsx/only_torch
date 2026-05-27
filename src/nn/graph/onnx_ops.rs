@@ -698,6 +698,11 @@ pub fn descriptor_to_export_category(desc: &NodeTypeDescriptor) -> ExportCategor
             ExportCategory::Operator(OnnxExportOp::simple("LSTM"))
         }
         NodeTypeDescriptor::CellGru { .. } => ExportCategory::Operator(OnnxExportOp::simple("GRU")),
+        // CellAttention：ONNX 完整导出留给 Phase 3（需要拆成 MatMul/Softmax/etc 子图）
+        NodeTypeDescriptor::CellAttention { .. } => ExportCategory::Unsupported(
+            "CellAttention 暂未支持 ONNX 导出：复合模板节点需要拆成 MatMul/Softmax 等原子节点子图，留待 Phase 3"
+                .to_string(),
+        ),
 
         // ─── 零张量 ───
         NodeTypeDescriptor::ZerosLike => {

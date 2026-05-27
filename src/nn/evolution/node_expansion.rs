@@ -997,6 +997,127 @@ pub fn expand_gru(
     ]
 }
 
+/// 展开 MultiHeadAttention 层 → 8 个权重参数节点 + 1 个 CellAttention 复合节点（共 9 个节点）
+///
+/// 父节点顺序：`[input_id, w_q, b_q, w_k, b_k, w_v, b_v, w_o, b_o]`
+///
+/// 形状约定（batch=1，input_size 与 embed_dim 可不同）：
+/// - w_q/w_k/w_v: `[in_dim, embed_dim]`
+/// - b_q/b_k/b_v: `[1, embed_dim]`
+/// - w_o:        `[embed_dim, embed_dim]`
+/// - b_o:        `[1, embed_dim]`
+/// - CellAttention 输出：`[1, embed_dim]`（!return_sequences）或 `[1, seq_len, embed_dim]`
+///
+/// 注意：调用方必须保证 `embed_dim % num_heads == 0`，否则 `MultiHeadAttention::from_vars`
+/// 在重建阶段会 panic（与 RNN/LSTM/GRU 不同，attention 有这个硬约束）。
+#[allow(clippy::too_many_arguments)]
+pub fn expand_attention(
+    input_id: u64,
+    in_dim: usize,
+    embed_dim: usize,
+    num_heads: usize,
+    return_sequences: bool,
+    seq_len: usize,
+    block_id: u64,
+    counter: &mut InnovationCounter,
+) -> Vec<NodeGene> {
+    let bid = Some(block_id);
+
+    let w_q_id = counter.next();
+    let b_q_id = counter.next();
+    let w_k_id = counter.next();
+    let b_k_id = counter.next();
+    let w_v_id = counter.next();
+    let b_v_id = counter.next();
+    let w_o_id = counter.next();
+    let b_o_id = counter.next();
+    let cell_id = counter.next();
+
+    let cell_shape = if return_sequences {
+        vec![1, seq_len.max(1), embed_dim]
+    } else {
+        vec![1, embed_dim]
+    };
+
+    let qkv_w = vec![in_dim, embed_dim];
+    let o_w = vec![embed_dim, embed_dim];
+    let bias = vec![1, embed_dim];
+
+    vec![
+        NodeGene::new(
+            w_q_id,
+            NodeTypeDescriptor::Parameter,
+            qkv_w.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_q_id,
+            NodeTypeDescriptor::Parameter,
+            bias.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_k_id,
+            NodeTypeDescriptor::Parameter,
+            qkv_w.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_k_id,
+            NodeTypeDescriptor::Parameter,
+            bias.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_v_id,
+            NodeTypeDescriptor::Parameter,
+            qkv_w,
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_v_id,
+            NodeTypeDescriptor::Parameter,
+            bias.clone(),
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            w_o_id,
+            NodeTypeDescriptor::Parameter,
+            o_w,
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            b_o_id,
+            NodeTypeDescriptor::Parameter,
+            bias,
+            vec![],
+            bid,
+        ),
+        NodeGene::new(
+            cell_id,
+            NodeTypeDescriptor::CellAttention {
+                input_size: in_dim,
+                embed_dim,
+                num_heads,
+                return_sequences,
+                seq_len,
+            },
+            cell_shape,
+            vec![
+                input_id, w_q_id, b_q_id, w_k_id, b_k_id, w_v_id, b_v_id, w_o_id, b_o_id,
+            ],
+            bid,
+        ),
+    ]
+}
+
 pub fn decompose_conv2d_to_feature_maps(
     nodes: &mut Vec<NodeGene>,
     counter: &mut InnovationCounter,

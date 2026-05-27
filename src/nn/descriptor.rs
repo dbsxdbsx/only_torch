@@ -250,6 +250,31 @@ pub enum NodeTypeDescriptor {
         return_sequences: bool,
         seq_len: usize,
     },
+    /// 多头自注意力复合模板节点（演化原子单元）
+    ///
+    /// parents 顺序：`[input, w_q, b_q, w_k, b_k, w_v, b_v, w_o, b_o]`
+    /// output_shape:
+    /// - `return_sequences=true`  → `[1, seq_len, embed_dim]`
+    /// - `return_sequences=false` → `[1, embed_dim]`
+    ///
+    /// 形状约束（参考 [`crate::nn::layer::MultiHeadAttention`]）：
+    /// - `w_q / w_k / w_v`: `[input_size, embed_dim]`
+    /// - `w_o`: `[embed_dim, embed_dim]`
+    /// - 所有 `b_*`: `[1, embed_dim]`
+    /// - `embed_dim % num_heads == 0`
+    ///
+    /// 与 `CellRnn/CellLstm/CellGru` 一脉相承：演化把整个多头注意力当原子单元变异，
+    /// 不展开 Q/K/V 内部子图（避免搜索空间爆炸）。
+    CellAttention {
+        /// 输入特征维（= 前驱节点输出的最后一维，与 embed_dim 可不同）
+        input_size: usize,
+        /// 注意力嵌入维度（必须能被 num_heads 整除）
+        embed_dim: usize,
+        num_heads: usize,
+        return_sequences: bool,
+        /// 构图占位序列长度（0 = 动态，rebuild 时取 max(1, seq_len)，与 CellRnn 一致）
+        seq_len: usize,
+    },
 
     // ──────────────────── 激活函数 ────────────────────
     /// 取反 y = -x

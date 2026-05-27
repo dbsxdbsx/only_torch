@@ -707,6 +707,19 @@ impl NetworkGenome {
                 return_sequences,
                 seq_len: seq_len.max(genome_seq_len),
             },
+            NodeTypeDescriptor::CellAttention {
+                input_size,
+                embed_dim,
+                num_heads,
+                return_sequences,
+                seq_len,
+            } => NodeTypeDescriptor::CellAttention {
+                input_size,
+                embed_dim,
+                num_heads,
+                return_sequences,
+                seq_len: seq_len.max(genome_seq_len),
+            },
             other => other,
         }
     }
@@ -1556,6 +1569,7 @@ fn backfill_node_group_tags(genome: &NetworkGenome, node_map: &HashMap<u64, Var>
             NodeBlockKind::Rnn { .. } => ("RNN", GroupStyle::Recurrent),
             NodeBlockKind::Lstm { .. } => ("LSTM", GroupStyle::Recurrent),
             NodeBlockKind::Gru { .. } => ("GRU", GroupStyle::Recurrent),
+            NodeBlockKind::Attention { .. } => ("Attention", GroupStyle::Recurrent),
             NodeBlockKind::SkipAgg | NodeBlockKind::Unknown => continue,
         };
 

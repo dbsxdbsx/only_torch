@@ -56,7 +56,9 @@ pub use self::convergence::{ConvergenceConfig, TrainingBudget};
 pub use self::error::EvolutionError;
 pub(crate) use self::gene::NetworkGenome;
 pub use self::gene::TaskMetric;
-pub use self::mutation::{MutationError, MutationRegistry, SizeConstraints, SizeStrategy};
+pub use self::mutation::{
+    MutationError, MutationRegistry, SequenceOpSet, SizeConstraints, SizeStrategy,
+};
 use self::node_ops::{NodeBlockKind, node_main_path};
 pub use self::task::ProxyKind;
 use self::task::{
@@ -818,6 +820,23 @@ impl Evolution {
 
     pub fn with_constraints(mut self, constraints: SizeConstraints) -> Self {
         self.constraints = Some(constraints);
+        self
+    }
+
+    /// 设置序列任务允许的算子集合（默认仅循环单元）
+    ///
+    /// 影响 InsertLayer 在序列模式下采样的算子：
+    /// - `Recurrent`（默认）：仅 RNN/LSTM/GRU
+    /// - `AttentionOnly`：仅 MultiHeadAttention
+    /// - `RecurrentWithAttention`：RNN/LSTM/GRU + MultiHeadAttention 混合
+    ///
+    /// 注意力算子需要 `embed_dim % num_heads == 0`。`SizeConstraints::attention_num_heads_candidates`
+    /// 控制候选 head 数（默认 `[2, 4, 8]`）；若当前采样的 hidden 不能被任何候选整除，
+    /// 该次插入会回退到循环算子（若启用），否则跳过。
+    pub fn with_sequence_ops(mut self, ops: SequenceOpSet) -> Self {
+        let mut c = self.constraints.unwrap_or_default();
+        c.sequence_ops = ops;
+        self.constraints = Some(c);
         self
     }
 

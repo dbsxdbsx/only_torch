@@ -600,9 +600,9 @@ cargo build --features blas-openblas
 
 ### 🔴 演化模块持续完善
 
-> 已完成：MVP → NodeLevel 统一内核（Phase 1-10）→ Pareto/NSGA-II 多目标搜索 → ONNX 桥接 → Spatial / Sequential / Flat 三域演化 → FM 粒度 EXACT 级演化 → Net2Net 函数保持性变异 → ASHA 多保真评估。详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)。
+> 已完成：MVP → NodeLevel 统一内核（Phase 1-10）→ Pareto/NSGA-II 多目标搜索 → ONNX 桥接 → Spatial / Sequential / Flat 三域演化 → FM 粒度 EXACT 级演化 → Net2Net 函数保持性变异 → ASHA 多保真评估 → MultiHeadAttention（CellAttention 复合模板节点 + `SequenceOpSet` 配置）。详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)。
 
-- 阶段 D：新算子多样性扩展（Deformable Conv、Attention 算子集等）
+- 阶段 D：剩余多样性扩展（Conv2d Attention、3D 批量 MatMul、`CellAttention` ONNX 拆解导出等）
 - 阶段 E：搜索效率优化（权重共享、Surrogate 模型、分布式演化等）
 - MNIST 演化示例性能优化（当前运行较慢）
 - RL 任务对接（演化 + 强化学习联合搜索）

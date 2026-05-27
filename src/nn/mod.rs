@@ -35,7 +35,8 @@ pub use graph::onnx_import::{
 };
 pub use layer::{
     AvgPool2d, BatchNorm, Conv2d, DeformableConv2d, Embedding, GroupNorm, Gru, InstanceNorm,
-    LayerNorm, Linear, Lstm, MaxPool2d, MultiHeadAttention, RMSNorm, Rnn,
+    LayerNorm, LearnableAbsolutePositionalEncoding, Linear, Lstm, MaxPool2d, MultiHeadAttention,
+    RMSNorm, Rnn, SinusoidalPositionalEncoding, TransformerEncoder, TransformerEncoderLayer,
 };
 // pub use model_state::{ForwardInput, ForwardOutput, ModelState}; // 已移除
 pub use crate::vision::detection::BBoxLossKind;

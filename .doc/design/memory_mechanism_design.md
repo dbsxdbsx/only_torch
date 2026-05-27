@@ -14,7 +14,9 @@
 | Phase 2 修复 A: 通用激活 | ✅ | 支持 tanh/sigmoid/任意组合 |
 | Phase 2 修复 B: VJP 模式 | ✅ | 大 batch/hidden 高效训练 |
 | Phase 3: 模板层 | ✅ | `rnn()`, `lstm()`, `gru()` Layer API |
-| Phase 4: NEAT 集成 | ⏳ | 结构变异、物种形成 |
+| Phase 3.5: Attention | ✅ | `MultiHeadAttention` Layer + `TransformerEncoder*` + `Sinusoidal/LearnableAbsolutePositionalEncoding`；`forward` / `forward_masked` + 因果 / padding mask 工具 |
+| Phase 4: NEAT 集成（循环 cell） | ✅ | `MutateCellType` RNN ↔ LSTM ↔ GRU + Net2Net 扩容 + edge-based recurrent |
+| Phase 4.5: NEAT 集成（注意力） | ✅ | `CellAttention` 复合模板节点 + `expand_attention` + `SequenceOpSet` 配置 + `resize_attention_out`；ONNX 导出 / net2net 函数保持留待后续 |
 
 **验收指标**：
 - 21/21 PyTorch 数值对照测试通过（RNN 7 + LSTM 7 + GRU 7）
@@ -74,7 +76,7 @@ NEAT 的循环不是"死循环"，而是基于**离散时间步 + 双缓冲**：
 | **记忆能力** | ✅ 可以 | 通过拓扑循环（自连接）实现 |
 | **RNN 等价功能** | ✅ 功能等价 | 但结构不同（无权重共享） |
 | **LSTM 门控结构** | ⚠️ 理论可能，实际极难 | 需要极大搜索空间，概率趋近于 0 |
-| **Transformer/Attention** | ❌ 几乎不可能 | Q·K^T·V 模式太特殊 |
+| **Transformer/Attention** | ❌ NEAT 不会自然演化出 QKV 微观结构（Q·K^T·V 模式过于特殊）。only_torch 的折中方案：把 MultiHeadAttention 当作 `CellAttention` 复合模板节点加入演化候选——演化在"是否使用 attention / 用多少头 / 多大 embed_dim" 这一**层级**做选择，QKV 内部权重靠梯度训练。详见 `neural_architecture_evolution_design.md` 的 Sequence 章节。 |
 
 **关键洞察**：NEAT 循环是更底层、更通用的"记忆"概念，但它不会自然产生权重共享或门控机制。LSTM/Attention 等是人类设计的**强归纳偏置**，目的是让学习更稳定、更高效——而非增加表达能力。
 

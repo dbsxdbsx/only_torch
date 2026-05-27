@@ -216,6 +216,9 @@ pub(crate) fn apply_widen_to_snapshots(
                 &mut new_snapshots,
             )
         }
+        // Attention 块的 8 参数布局与 RNN 系列差别较大（Q/K/V/O 而非 4 门），
+        // 暂不实现 net2net 函数保持。返回 false 让外层走朴素重新初始化路径。
+        NodeBlockKind::Attention { .. } => return Ok(false),
         _ => return Ok(false),
     };
     if !owner_ok {
@@ -337,6 +340,9 @@ pub(crate) fn apply_widen_to_snapshots(
                 }
                 break;
             }
+            // Attention 作为下游消费者：8 个参数中 W_q/W_k/W_v 的 in_dim 需要
+            // 跟随上游扩宽，但 net2net 函数保持暂未实现 → 直接回退到朴素初始化。
+            NodeBlockKind::Attention { .. } => return Ok(false),
             _ => return Ok(false),
         }
     }

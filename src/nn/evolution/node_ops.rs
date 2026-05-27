@@ -28,8 +28,8 @@ use crate::nn::evolution::gene::{
 use crate::nn::evolution::mutation::SizeConstraints;
 use crate::nn::evolution::node_expansion::{
     InnovationCounter, expand_activation, expand_batch_norm, expand_conv2d,
-    expand_deformable_conv2d, expand_gru, expand_layer_norm, expand_linear, expand_lstm,
-    expand_pool2d, expand_rms_norm, expand_rnn,
+    expand_attention, expand_deformable_conv2d, expand_gru, expand_layer_norm, expand_linear,
+    expand_lstm, expand_pool2d, expand_rms_norm, expand_rnn,
 };
 use crate::nn::evolution::node_gene::{GenomeAnalysis, NodeGene};
 
@@ -86,6 +86,11 @@ pub enum NodeBlockKind {
     Gru {
         hidden_size: usize,
     },
+    /// 多头自注意力块（与 RNN 系列同类，sequence 域）
+    Attention {
+        embed_dim: usize,
+        num_heads: usize,
+    },
     Unknown,
 }
 
@@ -111,8 +116,19 @@ impl NodeBlockKind {
             NodeBlockKind::Rnn { .. } | NodeBlockKind::Lstm { .. } | NodeBlockKind::Gru { .. }
         )
     }
+    /// 是否是注意力块
+    pub fn is_attention(&self) -> bool {
+        matches!(self, NodeBlockKind::Attention { .. })
+    }
+    /// 序列域块（RNN 系列 + Attention）
+    pub fn is_sequence(&self) -> bool {
+        self.is_recurrent() || self.is_attention()
+    }
     pub fn is_resizable(&self) -> bool {
-        self.is_linear() || matches!(self, NodeBlockKind::Conv2d { .. }) || self.is_recurrent()
+        self.is_linear()
+            || matches!(self, NodeBlockKind::Conv2d { .. })
+            || self.is_recurrent()
+            || self.is_attention()
     }
     pub fn current_size(&self) -> Option<usize> {
         match self {
@@ -122,6 +138,7 @@ impl NodeBlockKind {
             NodeBlockKind::Rnn { hidden_size, .. }
             | NodeBlockKind::Lstm { hidden_size, .. }
             | NodeBlockKind::Gru { hidden_size, .. } => Some(*hidden_size),
+            NodeBlockKind::Attention { embed_dim, .. } => Some(*embed_dim),
             _ => None,
         }
     }
@@ -426,6 +443,16 @@ fn infer_block_kind(node_ids: &[u64], node_map: &HashMap<u64, &NodeGene>) -> Nod
                 NT::CellGru { hidden_size, .. } => {
                     return NodeBlockKind::Gru {
                         hidden_size: *hidden_size,
+                    };
+                }
+                NT::CellAttention {
+                    embed_dim,
+                    num_heads,
+                    ..
+                } => {
+                    return NodeBlockKind::Attention {
+                        embed_dim: *embed_dim,
+                        num_heads: *num_heads,
                     };
                 }
                 _ => {}
@@ -871,6 +898,69 @@ fn repair_param_input_dims_inner(genome: &mut NetworkGenome) {
                 }
                 dim_map.insert(block.output_id, out);
             }
+            NodeBlockKind::Attention {
+                embed_dim,
+                num_heads: _,
+            } => {
+                // CellAttention 的 9 个 parents：
+                //   parents[0]   = input
+                //   parents[1..7] = W_q, b_q, W_k, b_k, W_v, b_v   ([input_size, embed_dim] / [1, embed_dim])
+                //   parents[7..9] = W_o, b_o                      ([embed_dim, embed_dim] / [1, embed_dim])
+                let out = *embed_dim;
+                let cell_node = genome
+                    .nodes()
+                    .iter()
+                    .find(|n| {
+                        bid_set.contains(&n.innovation_number)
+                            && matches!(n.node_type, NodeTypeDescriptor::CellAttention { .. })
+                    })
+                    .cloned();
+
+                if let Some(cell) = cell_node {
+                    // 同步 descriptor 的 input_size（必须，否则 GenomeAnalysis 会与参数形状对不上）
+                    for node in genome.nodes_mut().iter_mut() {
+                        if node.innovation_number == cell.innovation_number {
+                            if let NodeTypeDescriptor::CellAttention {
+                                input_size,
+                                embed_dim: cell_embed,
+                                ..
+                            } = &mut node.node_type
+                            {
+                                *input_size = prev_out;
+                                *cell_embed = out;
+                            }
+                        }
+                    }
+
+                    // 修复 8 个参数 — parents[1..9] 按 (W, b) 对依次排列：
+                    //   parents[1..7]: W_q/b_q/W_k/b_k/W_v/b_v  → W shape [prev_out, out], b shape [1, out]
+                    //   parents[7..9]: W_o/b_o                   → W shape [out, out],     b shape [1, out]
+                    for (idx, pid) in cell.parents.iter().skip(1).copied().enumerate() {
+                        let is_qkv_w = idx < 6 && idx % 2 == 0; // 0,2,4 → W_q, W_k, W_v
+                        let is_o_w = idx == 6; // W_o
+                        for node in genome.nodes_mut().iter_mut() {
+                            if node.innovation_number != pid || !node.is_parameter() {
+                                continue;
+                            }
+                            if node.output_shape.len() == 2 {
+                                if is_qkv_w {
+                                    node.output_shape[0] = prev_out;
+                                    node.output_shape[1] = out;
+                                } else if is_o_w {
+                                    node.output_shape[0] = out;
+                                    node.output_shape[1] = out;
+                                } else {
+                                    // 所有 bias 都是 [1, out]
+                                    node.output_shape[0] = 1;
+                                    node.output_shape[1] = out;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                dim_map.insert(block.output_id, out);
+            }
             NodeBlockKind::Flatten => {
                 // Flatten 后刷新形状，重新获取平坦维度
                 sync_computation_shapes(genome);
@@ -1289,6 +1379,78 @@ pub fn resize_recurrent_out(
     Ok(())
 }
 
+/// 将注意力块的 embed_dim 调整为 `new_embed`。
+///
+/// 输入特征维度由 `repair_param_input_dims` 统一修复；这里负责：
+/// 1. 更新 CellAttention 元数据中的 `embed_dim`
+/// 2. 更新 8 个 attention 参数（W_q/b_q/W_k/b_k/W_v/b_v/W_o/b_o）的输出维度
+///
+/// 约束：`new_embed` 必须能被 `num_heads` 整除（调用方负责保证）。
+pub fn resize_attention_out(
+    genome: &mut NetworkGenome,
+    block: &NodeBlock,
+    new_embed: usize,
+) -> Result<(), String> {
+    let bid_set: HashSet<u64> = block.node_ids.iter().copied().collect();
+    let cell_node = genome
+        .nodes()
+        .iter()
+        .find(|n| {
+            bid_set.contains(&n.innovation_number)
+                && matches!(n.node_type, NodeTypeDescriptor::CellAttention { .. })
+        })
+        .cloned()
+        .ok_or_else(|| "注意力块中缺少 CellAttention 节点".to_string())?;
+
+    if let NodeTypeDescriptor::CellAttention { num_heads, .. } = cell_node.node_type {
+        if new_embed % num_heads != 0 {
+            return Err(format!(
+                "embed_dim={} 不能被 num_heads={} 整除",
+                new_embed, num_heads
+            ));
+        }
+    }
+
+    // 跳过 input，剩 8 个为参数：W_q/b_q/W_k/b_k/W_v/b_v/W_o/b_o
+    let param_ids: Vec<u64> = cell_node.parents.iter().skip(1).copied().collect();
+
+    for node in genome.nodes_mut().iter_mut() {
+        if node.innovation_number == cell_node.innovation_number {
+            if let NodeTypeDescriptor::CellAttention { embed_dim, .. } = &mut node.node_type {
+                *embed_dim = new_embed;
+            }
+        }
+    }
+
+    for (idx, pid) in param_ids.iter().enumerate() {
+        let is_qkv_w = idx < 6 && idx % 2 == 0; // 0,2,4
+        let is_o_w = idx == 6;
+        for node in genome.nodes_mut().iter_mut() {
+            if node.innovation_number != *pid || !node.is_parameter() {
+                continue;
+            }
+            if node.output_shape.len() == 2 {
+                if is_qkv_w {
+                    // W_q/W_k/W_v: [in, embed] —— 列变 new_embed，行由 repair 修
+                    node.output_shape[1] = new_embed;
+                } else if is_o_w {
+                    // W_o: [embed, embed]
+                    node.output_shape[0] = new_embed;
+                    node.output_shape[1] = new_embed;
+                } else {
+                    // 所有 bias: [1, embed]
+                    node.output_shape[0] = 1;
+                    node.output_shape[1] = new_embed;
+                }
+            }
+            break;
+        }
+    }
+
+    repair_param_input_dims(genome);
+    Ok(())
+}
+
 fn needs_return_sequences_after(genome: &NetworkGenome, after_id: u64) -> bool {
     let blocks = node_main_path(genome);
     let current_idx = match blocks.iter().position(|b| b.output_id == after_id) {
@@ -1306,7 +1468,7 @@ fn needs_return_sequences_after(genome: &NetworkGenome, after_id: u64) -> bool {
             | NodeBlockKind::SkipAgg => {
                 continue;
             }
-            kind => return kind.is_recurrent(),
+            kind => return kind.is_sequence(),
         }
     }
     false
@@ -1450,35 +1612,73 @@ pub fn create_insert_nodes(
             sample_size_in_range_simple(effective_min, size_cap, &constraints.size_strategy, rng);
         let return_sequences = needs_return_sequences_after(genome, after_id);
         let seq_len = genome.seq_len.unwrap_or(0);
-        let choice = rng.gen_range(0..3);
-        return Some(match choice {
-            0 => expand_rnn(
+        let allow_recurrent = constraints.sequence_ops.allow_recurrent();
+        let allow_attention = constraints.sequence_ops.allow_attention();
+
+        // Attention 的 embed_dim 必须能被 num_heads 整除——优先采样满足整除关系的候选 head 数
+        let pick_heads = |embed: usize, rng: &mut StdRng| -> Option<usize> {
+            let candidates: Vec<usize> = constraints
+                .attention_num_heads_candidates
+                .iter()
+                .copied()
+                .filter(|&h| h > 0 && embed % h == 0)
+                .collect();
+            candidates.choose(rng).copied()
+        };
+
+        // 总候选种类：每个 cell 类型占 1 个 slot。这样让演化在三种循环 + attention 之间均匀采样。
+        let recurrent_slots = if allow_recurrent { 3 } else { 0 };
+        let attention_slot_available = allow_attention && pick_heads(hidden_size, rng).is_some();
+        let attention_slots = if attention_slot_available { 1 } else { 0 };
+        let total_slots = recurrent_slots + attention_slots;
+        if total_slots == 0 {
+            return None;
+        }
+        let choice = rng.gen_range(0..total_slots);
+        return Some(if choice < recurrent_slots {
+            match choice {
+                0 => expand_rnn(
+                    after_id,
+                    in_dim,
+                    hidden_size,
+                    return_sequences,
+                    seq_len,
+                    block_id,
+                    &mut counter,
+                ),
+                1 => expand_lstm(
+                    after_id,
+                    in_dim,
+                    hidden_size,
+                    return_sequences,
+                    seq_len,
+                    block_id,
+                    &mut counter,
+                ),
+                _ => expand_gru(
+                    after_id,
+                    in_dim,
+                    hidden_size,
+                    return_sequences,
+                    seq_len,
+                    block_id,
+                    &mut counter,
+                ),
+            }
+        } else {
+            // 注意力分支：embed_dim = hidden_size, num_heads 从合法候选中采样
+            let num_heads =
+                pick_heads(hidden_size, rng).expect("attention slot 已通过整除检查");
+            expand_attention(
                 after_id,
                 in_dim,
                 hidden_size,
+                num_heads,
                 return_sequences,
                 seq_len,
                 block_id,
                 &mut counter,
-            ),
-            1 => expand_lstm(
-                after_id,
-                in_dim,
-                hidden_size,
-                return_sequences,
-                seq_len,
-                block_id,
-                &mut counter,
-            ),
-            _ => expand_gru(
-                after_id,
-                in_dim,
-                hidden_size,
-                return_sequences,
-                seq_len,
-                block_id,
-                &mut counter,
-            ),
+            )
         });
     }
 
