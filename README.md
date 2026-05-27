@@ -598,16 +598,29 @@ cargo build --features blas-openblas
 
 ## TODO
 
-> 按优先级排序
+> 按优先级排序。Agent 接手任务时：**优先「当前主线」**，演化阶段 D 与低优先级项除非用户点名否则不默认展开。
 
-### 🔴 演化模块持续完善
+### 🟢 当前主线（v0.18.0 后）
 
-> 已完成：MVP → NodeLevel 统一内核（Phase 1-10）→ Pareto/NSGA-II 多目标搜索 → ONNX 桥接 → Spatial / Sequential / Flat 三域演化 → FM 粒度 EXACT 级演化 → Net2Net 函数保持性变异 → ASHA 多保真评估 → MultiHeadAttention（CellAttention 复合模板节点 + `SequenceOpSet` 配置）。详见 [设计文档](.doc/design/neural_architecture_evolution_design.md)。
+**强化学习** — 详见 [RL 路线图](.doc/design/rl_roadmap.md) 与 [AGENTS.md — 当前版本与焦点](AGENTS.md#当前版本与焦点)
 
-- 阶段 D：剩余多样性扩展（Conv2d Attention、3D 批量 MatMul、`CellAttention` ONNX 拆解导出等）
+| 优先级 | 任务 | 入口 |
+|--------|------|------|
+| P0 | 跑通 SAC + CartPole | `just example-cartpole-sac` |
+| P1 | ReplayBuffer / Actor-Critic 更新步沉淀到 `src/rl/` | 对照 `examples/traditional/sac/` |
+| P2 | 连续 / 混合动作验证 | `just example-pendulum-sac`、`just example-moving-sac` |
+| P3 | Gymnasium 封装与 Windows 说明 | `.doc/rl_python_env_setup.md` |
+
+环境配置： [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md)
+
+### 🔴 演化模块（阶段 D 暂缓，非当前主线）
+
+> 已完成：MVP → NodeLevel 统一内核（Phase 1-10）→ Pareto/NSGA-II 多目标搜索 → ONNX 桥接 → Spatial / Sequential / Flat 三域演化 → FM 粒度 EXACT 级演化 → Net2Net 函数保持性变异 → ASHA 多保真评估 → MultiHeadAttention（CellAttention 复合模板节点 + `SequenceOpSet` 配置）。详见 [设计文档](.doc/design/neural_architecture_evolution_design.md) 与 [记忆机制 — 状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)。
+
+- 阶段 D：Conv2d Attention、3D 批量 MatMul、`CellAttention` ONNX 拆解导出、Attention Net2Net 函数保持（⏳，见 memory_mechanism Phase D 表）
 - 阶段 E：搜索效率优化（权重共享、Surrogate 模型、分布式演化等）
 - MNIST 演化示例性能优化（当前运行较慢）
-- RL 任务对接（演化 + 强化学习联合搜索）
+- RL 任务对接（演化 + 强化学习联合搜索，长期项）
 
 ### ⚫ 实战验证
 
@@ -644,7 +657,7 @@ cargo build --features blas-openblas
 - [Graph 序列化与可视化设计](.doc/design/graph_serialization_design.md) - 统一的图描述层（IR）设计，支持模型保存/加载（JSON+bin）、Graphviz 可视化、Keras 风格 summary 输出
 - [计算图可视化指南](.doc/design/visualization_guide.md) - 可视化 API 使用指南、节点/边样式说明、循环层时间步标注、最佳实践
 - [ONNX 导入/互通策略设计](.doc/design/onnx_import_strategy.md) - 与第三方（PyTorch / Netron 等）通过 ONNX 协作的定位、算子扩展决策树、UX 契约、可视化与语义漂移对策
-- [记忆/循环机制设计](.doc/design/memory_mechanism_design.md) - NEAT 风格循环与传统 RNN 循环的关系、Hybrid 设计方案、BPTT/TBPTT 训练策略、实现路径及相关论文
+- [记忆/循环机制设计](.doc/design/memory_mechanism_design.md) - NEAT 循环 vs RNN/BPTT、Attention Phase 3.5/4.5 进度表、Phase D 留坑、IT-* 集成示例与单元测试计数（**接手序列 / Attention 先看此文**）
 - [神经架构演化设计](.doc/design/neural_architecture_evolution_design.md) - **核心特色**：NEAT 风格拓扑变异 + 梯度训练的混合策略，NodeLevel 统一内核、Pareto/NSGA-II、FM 粒度演化、Net2Net、ASHA
 - [空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md) - 梳理 Classification / Detection / Segmentation / Tracking 等空间域任务关系、当前能力矩阵与后续 Roadmap
 - [节点与层边界设计](.doc/design/node_vs_layer_design.md) - Node 和 Layer 的职责划分、新增算子的分层决策

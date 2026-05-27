@@ -1,30 +1,88 @@
 # Memory Mechanism Design（记忆/循环机制设计）
 
-> 本文档阐述 only_torch 中记忆机制（循环结构）的设计决策，包括 NEAT 风格循环与传统 RNN 循环的关系、设计选择及实现路径。
+> 本文档阐述 only_torch 中**记忆机制**（循环结构 + 序列 Layer + Attention 模板）的设计决策，包括 NEAT 风格循环与传统 RNN 循环的关系、设计选择及实现路径。实现状态以文首「图例 + Phase 表 + Phase D 留坑表」为准。
 
 ---
 
 ## 📋 实现状态速览
 
+### 图例
+
+| 符号 | 含义 |
+|------|------|
+| ✅ | **该 Phase 规划范围内已全部完成**（功能 + 对应测试 / 示例可跑通） |
+| ⏳ | **已识别、故意留到后续 Phase**（不影响当前训练 / 演化主路径） |
+| 🔲 | **可选增强**（有设计方向，非当前阻塞项） |
+| 📦 | **已归档**（历史集成测试，逻辑已迁移到 `examples/` 或由新方案替代） |
+
+### Phase 完成度
+
 | Phase | 状态 | 说明 |
 |-------|------|------|
-| Phase 1: 基础循环 | ✅ | `step()`/`reset()`/`connect_recurrent()` |
-| Phase 2: BPTT | ✅ | 时间步快照 + 梯度累加 |
-| Phase 2.5: State 节点 | ✅ | 修复跨时间梯度传递 |
-| Phase 2 修复 A: 通用激活 | ✅ | 支持 tanh/sigmoid/任意组合 |
-| Phase 2 修复 B: VJP 模式 | ✅ | 大 batch/hidden 高效训练 |
-| Phase 3: 模板层 | ✅ | `rnn()`, `lstm()`, `gru()` Layer API |
-| Phase 3.5: Attention | ✅ | `MultiHeadAttention` Layer + `TransformerEncoder*` + `Sinusoidal/LearnableAbsolutePositionalEncoding`；`forward` / `forward_masked` + 因果 / padding mask 工具 |
-| Phase 4: NEAT 集成（循环 cell） | ✅ | `MutateCellType` RNN ↔ LSTM ↔ GRU + Net2Net 扩容 + edge-based recurrent |
-| Phase 4.5: NEAT 集成（注意力） | ✅ | `CellAttention` 复合模板节点 + `expand_attention` + `SequenceOpSet` 配置 + `resize_attention_out`；ONNX 导出 / net2net 函数保持留待后续 |
+| Phase 1: 基础循环 | ✅ | `step()` / `reset()` / `connect_recurrent()`（循环语义由展开式 Layer + State 测试覆盖，旧 `recurrent_basic` 已移除） |
+| Phase 2: BPTT | ✅ | 时间步快照 + 梯度累加（标准 `backward()` + 展开式 RNN/LSTM/GRU） |
+| Phase 2.5: State 节点 | ✅ | 修复跨时间梯度传递；`State` 可收梯度、`Input` 不可 |
+| Phase 2 修复 A: 通用激活 | ✅ | 支持 tanh / sigmoid / 任意组合 |
+| Phase 2 修复 B: VJP 模式 | ✅ | 大 batch / hidden 高效训练 |
+| Phase 3: 模板层 | ✅ | `Rnn` / `Lstm` / `Gru` Layer API（∆-RNN 仍为 🔲 可选） |
+| Phase 3.5: Attention | ✅ | `MultiHeadAttention` + `TransformerEncoder*` + PE + mask 工具 |
+| Phase 4: NEAT 集成（循环 cell） | ✅ | `MutateCellType` RNN ↔ LSTM ↔ GRU + Net2Net（循环块）+ edge-based recurrent |
+| Phase 4.5: NEAT 集成（注意力） | ✅ | `CellAttention` + `SequenceOpSet` + expand / resize / rebuild / mutation |
 
-**验收指标**：
-- 21/21 PyTorch 数值对照测试通过（RNN 7 + LSTM 7 + GRU 7）
-- batch=64, hidden=256：241ms/5epochs，无 OOM
-- IT-1 奇偶性检测：98% 准确率
-- IT-3b RNN Layer：95.3% 准确率
-- IT-3c LSTM Layer：93.8% 准确率
-- IT-3d GRU Layer：90.6% 准确率
+> **打勾只代表上表各行自己的验收范围。** 与 Attention 相关的 ONNX / Net2Net 高级路径**不在** Phase 4.5 范围内，见下节。
+
+### ⏳ 后续 Phase D（刻意未做）
+
+| 项 | 状态 | 影响 | 说明 |
+|----|------|------|------|
+| `CellAttention` ONNX 导出 | ⏳ | 演化模型无法 ONNX deploy | 需拆成 MatMul / Softmax 等原子子图（`onnx_ops.rs` 现返回 `Unsupported`） |
+| Attention 块 Net2Net 函数保持 | ⏳ | 扩 embed / head 时权重不能平滑继承 | `net2net.rs` 对 `NodeBlockKind::Attention` 返回 `Ok(false)`，走朴素重初始化 |
+| Conv2d Attention | ⏳ | 无空间域 attention | README 演化「阶段 D」 |
+| 3D 批量 MatMul | ⏳ | attention 大 batch 性能未优化 | 基础设施项 |
+| ∆-RNN 模板层 | 🔲 | 无 | EXAMM 推荐的高性价比单元，尚未实现 |
+| IT-3a 原子节点 + mask 变长路径 | 📦 | 无 | 旧 `tests/archive/test_parity_detection_varlen.rs` 已整文件注释；当前变长 parity 改用 **桶式同长度 batch**（见 `DataLoader::from_var_len`） |
+
+详见 [演化设计 — Sequence / Attention 章节](./neural_architecture_evolution_design.md) 与 README 演化模块「阶段 D」。
+
+### 验收指标
+
+#### 单元测试（`cargo test --lib`，2026-05-27 统计）
+
+| 模块 | 测试文件 | 数量 | 覆盖要点 |
+|------|---------|------|---------|
+| State 节点 | `src/nn/tests/node_state.rs` | **21** | 创建 / 梯度 / 与 Input 对比 |
+| Rnn Layer | `src/nn/tests/layer_rnn.rs` | **17** | 展开式 BPTT、形状、部分 PyTorch 数值点 |
+| Lstm Layer | `src/nn/tests/layer_lstm.rs` | **15** | 前向 / 反向 / 参数形状 |
+| Gru Layer | `src/nn/tests/layer_gru.rs` | **15** | 前向 / 反向 / 参数形状 |
+| MultiHeadAttention | `src/nn/tests/layer_attention.rs` | **11** | mask、因果 / padding、`from_vars` |
+| Positional Encoding | `src/nn/tests/layer_positional.rs` | **8** | 正弦 / 可学习 PE |
+| TransformerEncoder | `src/nn/tests/layer_transformer.rs` | **7** | Pre-LN 块堆叠 |
+| CellAttention 演化 | `src/nn/evolution/tests/cell_attention.rs` | **5** | descriptor / expand / block 识别 |
+| Attention 演化搜索 | `src/nn/evolution/tests/attention_evolution.rs` | **3** | `SequenceOpSet` 集成 |
+| Attention rebuild | `src/nn/evolution/tests/attention_rebuild.rs` | **3** | descriptor → Var 重建 |
+
+**合计（记忆 + Attention 相关）**：**105** 个 lib 单元测试。
+
+> ⚠️ **过时说法已废弃**：早期文档中的「21/21 PyTorch 数值对照（RNN 7 + LSTM 7 + GRU 7）」对应已删除的 `bptt_pytorch_comparison` / `recurrent_basic` 模块（见 `src/nn/tests/mod.rs` 注释）。当前 PyTorch 对照分散在 `tests/python/layer_reference/{rnn,lstm,gru}_layer_reference.py` 与 `layer_rnn` 等测试的少量硬编码数值点，**不再维护「每单元 7 个」的固定计数**。
+
+#### 集成示例（IT-*，以 `examples/` 内 **target 阈值** 为准）
+
+| ID | 示例 | 路径 | 示例内 target | 状态 |
+|----|------|------|--------------|------|
+| IT-1 | 固定长度 parity + RNN | `examples/traditional/parity_rnn_fixed_len/` | **≥ 95%** | ✅ 活跃 |
+| IT-2 | 固定长度 parity + Batch | `tests/archive/test_parity_detection.rs` | loss 下降 + 优于随机 | 📦 已归档 |
+| IT-3a | 变长 + 原子节点 mask | `tests/archive/test_parity_detection_varlen.rs` | 曾记 **96.9%** | 📦 整文件注释；mask 方案未迁入新 Layer API |
+| IT-3b | 变长 + Rnn Layer | `examples/traditional/parity_rnn_var_len/` | **≥ 90%** | ✅ 活跃（桶式 batch，无 padding mask） |
+| IT-3c | 变长 + Lstm Layer | `examples/traditional/parity_lstm_var_len/` | **≥ 90%** | ✅ 活跃 |
+| IT-3d | 变长 + Gru Layer | `examples/traditional/parity_gru_var_len/` | **≥ 90%** | ✅ 活跃 |
+| IT-3e | 变长 + Transformer | `examples/traditional/parity_transformer_var_len/` | **≥ 70%** | ✅ 活跃（parity 对 vanilla transformer 极难，目标刻意低于 RNN 系） |
+| IT-4 | 演化 parity + Attention 混合 | `examples/evolution/parity_seq_attention/` | **≥ 85%** | ✅ 活跃（`SequenceOpSet::RecurrentWithAttention`） |
+
+> 文档早期记录的 **98% / 95.3% / 93.8% / 90.6%** 为旧集成测试单次跑出的**历史快照**，不是当前示例的 `target_accuracy` 常量。验收以各 `main.rs` 内断言阈值为准。
+
+#### 性能快照（非 CI 门禁）
+
+- batch=64, hidden=256：约 241 ms / 5 epochs，无 OOM（Phase 2 VJP 优化后记录，未随每次发版重测）
 
 ---
 
@@ -157,7 +215,7 @@ impl TraitNode for State {
 
 ## 4. 分层架构
 
-> 参考 [架构 V2 设计](./architecture_v2_design.md)
+> 参考 [架构 V2 设计（归档）](../_archive/architecture_v2_design.md)
 
 ### 4.1 记忆机制在 3+1 层架构中的位置
 
@@ -168,8 +226,7 @@ impl TraitNode for State {
 │   Module trait + 高层 Layer 封装（Linear, RNN, LSTM...）         │
 │   用户无感知时间调度细节                                         │
 │                                                                 │
-│   🔸 记忆机制组件：rnn(), lstm(), gru() 便捷 API                 │
-│      本质是原子节点的组合，不是新的核心概念                       │
+│   🔸 记忆机制组件：`Rnn` / `Lstm` / `Gru` / `MultiHeadAttention` 等 Layer 封装 │
 ├─────────────────────────────────────────────────────────────────┤
 │ 第2层：演化 API（NEAT）                                          │
 │   职责：结构变异、物种形成、recurrent_depth 配置                │
@@ -196,14 +253,14 @@ impl TraitNode for State {
 
 | 架构层 | 记忆机制组件 | 职责 |
 |--------|-------------|------|
-| **第1层** 高层 API | `rnn()`, `lstm()`, `gru()` | 便捷封装，用户无需手动组装节点 |
+| **第1层** 高层 API | `Rnn` / `Lstm` / `Gru` / `MultiHeadAttention` / `TransformerEncoder` | PyTorch 风格 Layer 封装 |
 | **第2层** 演化 API | NEAT 变异操作 | 直接操作第4层的原子节点进行结构搜索 |
 | **第3层** 训练语义层 | BPTT / TBPTT | 管理时间维度的梯度传递和截断 |
 | **第4层** 核心底座 | `State` 节点、`step()`/`reset()` | 原子级记忆能力，不感知"时间" |
 
 **关键洞察**：
 - BPTT 不是"把单步 backward 调 3 次"，而是**第3层训练语义层的时间调度问题**
-- `rnn()`/`lstm()` 等 Layer API 是**第1层的便捷封装**，不是新的核心概念
+- `rnn()` / `lstm()` / `gru()` 等 Layer API 是**第1层的便捷封装**，不是新的核心概念
 - NEAT 直接操作**第4层的原子节点**（如 State），而非第1层的模板
 
 ### 4.3 训练方法选择
@@ -245,7 +302,7 @@ impl TraitNode for State {
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**验收**：8 个单元测试全部通过（见 `src/nn/tests/recurrent_basic.rs`）
+**验收**：循环 / BPTT 语义由 **`src/nn/tests/node_state.rs`（21 个）** 与 **`layer_rnn.rs`（17 个）** 等展开式 Layer 测试覆盖；旧 `recurrent_basic.rs` 已移除（见 `src/nn/tests/mod.rs` 注释）。
 
 ### 5.2 Phase 2: BPTT 训练 ✅
 
@@ -302,7 +359,7 @@ pub struct State {
 }
 ```
 
-**验收**：12 个单元测试全部通过（见 `src/nn/tests/node_state.rs`）
+**验收**：**21** 个单元测试（见 `src/nn/tests/node_state.rs`）；循环边 / BPTT 端到端行为见 `layer_rnn.rs` 等 Layer 测试。
 
 ### 5.4 Phase 2 改进：通用化与效率优化 ✅
 
@@ -322,33 +379,38 @@ BPTT 最初实现有两个限制，现已修复：
 - `bptt_backward_from_node_vjp()` — 中间节点 → 参数
 - `bptt_propagate_to_state_vjp()` — 传播到 State 节点
 
-### 5.5 Phase 3: 模板层 ⏳
+### 5.5 Phase 3: 模板层 ✅
 
-**目标**：提供便捷的循环层 API
+**目标**：提供便捷的循环层 API（**已完成**：`Rnn` / `Lstm` / `Gru`）
 
-**优先级**（按 EXAMM 论文推荐）：
+**可选扩展（🔲 未做）**：
 
 | 单元 | 门数量 | 状态 | 说明 |
 |------|--------|------|------|
-| ∆-RNN | 1 | ⏳ 优先 | 性价比最高 |
-| GRU | 2 | ⏳ | 稳定选择 |
-| LSTM | 3 | ⏳ | 复杂但不一定更好 |
+| ∆-RNN | 1 | 🔲 可选 | EXAMM 推荐的高性价比单元 |
+| GRU | 2 | ✅ | 已实现 |
+| LSTM | 3 | ✅ | 已实现 |
 
-**∆-RNN 公式**：
+**∆-RNN 公式**（供未来实现参考）：
 ```
 z_t = σ(x_t · W_xz + h_{t-1} · W_hz)
 h_t = (1 - z_t) ⊙ h_{t-1} + z_t ⊙ tanh(x_t · W_xh)
 ```
 
-### 5.6 Phase 4: NEAT 集成 ⏳
+### 5.6 Phase 4 / 4.5: NEAT 集成 ✅
 
-**目标**：支持网络结构进化
+**目标**：在演化系统中接入循环 cell 与 Attention 模板（**已完成**）。
 
-- [ ] 连接级变异（添加/删除边）
-- [ ] 节点级变异（添加/删除节点）
-- [ ] 物种形成（speciation）
-- [ ] 可配置 `recurrent_depth`（1-N 时间步跳跃）
-- [ ] Lamarckian 权重继承
+通用 NEAT 主流程（Pareto、ASHA、物种形成、连接 / 节点变异等）不在本文展开，见 [神经架构演化设计](./neural_architecture_evolution_design.md)。
+
+本文档 Phase 4 / 4.5 特有交付物：
+
+- [x] `CellRnn` / `CellLstm` / `CellGru` + `MutateCellType` 互换
+- [x] 循环块 Net2Net 函数保持扩宽（Attention 块除外，见 Phase D）
+- [x] `AddRecurrentEdge`（edge-based recurrent，与 cell-based 互斥）
+- [x] `CellAttention` + `SequenceOpSet` + expand / resize / rebuild
+
+**⏳ 仍属 Phase D**：`CellAttention` ONNX 导出、Attention Net2Net 函数保持（见文首 Phase D 表）。
 
 ---
 
@@ -389,18 +451,15 @@ self.bptt_backward_from_node_vjp(from_node, incoming_grad, ...)?;
 // grad = grad_from_loss + grad_from_future
 ```
 
-这是 Phase 3 的可选扩展。
+这是 many-to-many 的可选扩展（🔲 未做）；当前 Layer 示例均为 many-to-one。
 
-### 6.3 变长序列处理：Padding + Mask
+### 6.3 变长序列处理
 
-**问题**：Batch 训练时，不同样本序列长度不同，如何对齐？
+**当前主路径（✅）**：**桶式同长度 batch** —— `DataLoader::from_var_len` 把变长样本按长度分桶，同 batch 内序列等长，**无需 padding mask**。所有 `parity_*_var_len` 传统示例与 `parity_transformer_var_len` 均走此路径。详见 [DataLoader 设计](./data_loader_design.md)。
 
-**方案**：采用经典的 **Padding + Mask** 机制：
+**历史方案（📦 归档）**：Padding + Mask + 状态冻结公式：
 
-1. **Padding**：将所有序列填充到 `max_len`，短序列用 0（或特殊 token）填充
-2. **Mask**：生成 `[batch, 1]` 或 `[batch, hidden]` 的 mask 张量，标记有效时间步
-
-**状态冻结公式**：
+**状态冻结公式**（IT-3a 原子节点路径曾使用，现未迁入 Layer API）：
 
 ```
 h_t = mask_t ⊙ h̃_t + (1 - mask_t) ⊙ h_{t-1}
@@ -420,7 +479,7 @@ h_t = mask_t ⊙ h̃_t + (1 - mask_t) ⊙ h_{t-1}
 | one-to-many | loss | 只对有效输出步计 loss |
 | one-to-one | 通常不需要 | 长度为 1 或同步映射 |
 
-**实现方式（当前原子节点）**：
+**实现方式（原子节点级，📦 仅 IT-3a 归档测试使用）**：
 
 ```rust
 // 在图中添加 mask 输入（每时间步更新）
@@ -438,7 +497,7 @@ let masked_delta = graph.new_multiply_node(mask, delta, None)?;
 let hidden = graph.new_add_node(&[h_prev, masked_delta], None)?;
 ```
 
-**验收测试**：IT-3a（见第 8 节）
+**验收**：IT-3a 已归档；当前变长 parity 验收见 **IT-3b / IT-3c / IT-3d / IT-3e**（文首集成示例表）。
 
 ---
 
@@ -472,20 +531,23 @@ graph.set_initial_state(h_prev, h_0)?;
 
 ## 8. 集成测试策略
 
-采用**渐进式验证**：
+采用**渐进式验证**。完整 IT 表与 target 阈值见文首「验收指标 → 集成示例」；此处保留任务说明。
 
 | 阶段 | 测试类型 | Batch | 状态 |
 |------|---------|-------|------|
-| IT-1 | 奇偶性检测（固定长度） | ❌ 单序列 | ✅ 98% 准确率 |
-| IT-2 | 奇偶性检测（固定长度） | ✅ Batch | ✅ 梯度正确 |
-| IT-3a | 奇偶性检测（变长 + Padding/Mask） | ✅ Batch | ✅ 96.9% 准确率 |
-| IT-3b | 奇偶性检测（变长 + RNN Layer） | ✅ Batch | ✅ 95.3% 准确率 |
-| IT-3c | 奇偶性检测（变长 + LSTM Layer） | ✅ Batch | ✅ 93.8% 准确率 |
-| IT-3d | 奇偶性检测（变长 + GRU Layer） | ✅ Batch | ✅ 90.6% 准确率 |
+| IT-1 | 奇偶性检测（固定长度 + Rnn） | 单序列 | ✅ `parity_rnn_fixed_len`，target **≥ 95%** |
+| IT-2 | 奇偶性检测（固定长度 + Batch） | ✅ | 📦 `tests/archive/test_parity_detection.rs` |
+| IT-3a | 变长 + 原子节点 mask | ✅ | 📦 已注释；曾记 96.9% 为历史快照 |
+| IT-3b | 变长 + Rnn Layer | ✅ | ✅ `parity_rnn_var_len`，target **≥ 90%** |
+| IT-3c | 变长 + Lstm Layer | ✅ | ✅ `parity_lstm_var_len`，target **≥ 90%** |
+| IT-3d | 变长 + Gru Layer | ✅ | ✅ `parity_gru_var_len`，target **≥ 90%** |
+| IT-3e | 变长 + Transformer Encoder | ✅ | ✅ `parity_transformer_var_len`，target **≥ 70%** |
+| IT-4 | 演化 parity + RNN/LSTM/GRU/MHA 混合 | — | ✅ `evolution_parity_seq_attention`，target **≥ 85%** |
 
 **集成测试说明**：
-- **IT-3a**：用原子节点手工实现 padding + mask，验证变长语义的核心正确性
-- **IT-3b/c/d**：分别用 `rnn()`, `lstm()`, `gru()` Layer API 实现同一任务，验收 Phase 3 封装易用性
+- **IT-3a**：验证 padding + mask 原子节点语义；方案未迁入当前 Layer API，测试已归档
+- **IT-3b/c/d/e**：同一 parity 任务、不同序列建模头；变长路径统一用 **桶式 batch**
+- **IT-4**：验证 `SequenceOpSet::RecurrentWithAttention` 演化主路径（不含 ONNX / Net2Net Phase D 项）
 
 **奇偶性检测任务**：
 
@@ -521,9 +583,9 @@ graph.set_initial_state(h_prev, h_0)?;
 |---------|---------|--------|
 | neat-python | 双缓冲机制 | 🔴 必须（已实现） |
 | 所有项目 | 隐式 hidden state + reset() | 🔴 必须（已实现） |
-| EXAMM | 可配置 recurrent_depth | 🟡 建议（Phase 4） |
-| EXAMM | Lamarckian 权重继承 | 🟡 建议（Phase 4） |
-| EXAMM | ∆-RNN 作为轻量级模板 | 🟢 可选（Phase 3） |
+| EXAMM | 可配置 recurrent_depth | 🟡 建议（⏳ Phase D / 7.1） |
+| EXAMM | Lamarckian 权重继承 | 🟡 建议（演化模块部分能力，见演化设计文档） |
+| EXAMM | ∆-RNN 作为轻量级模板 | 🔲 可选（Phase 3 扩展） |
 | neat-rs | ❌ **避免**禁止循环的设计 | — |
 
 ### 9.3 EXAMM 论文关键洞察
@@ -603,7 +665,7 @@ graph.reset();  // 新序列前重置
 | 需要硬编码 RNN/LSTM 吗？ | **不需要**：作为可选模板层提供 | Hybrid 方案 |
 | hidden state 如何管理？ | **默认隐式**：可选显式接口 | 开源项目共识 |
 | NEAT 和梯度训练兼容吗？ | **兼容**：NEAT 搜索结构 + 梯度微调权重 | EXAMM 验证 |
-| 优先实现哪个记忆单元？ | **∆-RNN**（性价比最高） | EXAMM 论文 |
+| 优先实现哪个记忆单元？ | **RNN/LSTM/GRU 已实现**；∆-RNN 为 🔲 可选 | EXAMM 论文 |
 | 循环连接的正确抽象？ | **Delay(k) 边**：跨时间步的连接 | 架构文档 |
 | BPTT 应在哪层实现？ | **执行引擎层** | 五层架构 |
 
@@ -611,4 +673,4 @@ graph.reset();  // 新序列前重置
 
 *本文档记录了 only_torch 记忆机制的设计决策，综合了 NEAT/EXAMM 论文洞察及多个开源项目的实现经验。*
 
-*最后更新：2024-12-29（Phase 2 完成；新增变长序列 Padding+Mask 方案文档）*
+*最后更新：2026-05-27（0.18.0：Attention Phase 3.5/4.5 闭环；重写验收指标与 Phase D 留坑表；同步 IT-* / 单元测试计数）*

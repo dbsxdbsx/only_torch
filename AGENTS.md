@@ -13,6 +13,21 @@ only_torch 是一个纯 Rust 的 PyTorch 风格玩具框架，当前重点是：
 
 处理需求时请优先保持：CPU 友好、接口直观、跨平台、易扩展。
 
+## 当前版本与焦点
+
+| 项 | 内容 |
+|----|------|
+| **版本** | `0.18.0`（2026-05-27；本地可能超前 `origin/master`，以 `git log` / `CHANGELOG.md` 为准） |
+| **刚闭环** | vision / detection 栈；Attention / Transformer Layer + `CellAttention` 演化主路径（Phase 3.5 / 4.5 ✅） |
+| **当前主线** | **强化学习**：环境层已有 `GymEnv` + SAC 三示例；下一步把算法从 `examples/traditional/sac/` 沉淀到 `src/rl/`，见 [RL 路线图](.doc/design/rl_roadmap.md) |
+| **刻意暂缓** | 演化 **阶段 D**（`CellAttention` ONNX、`Attention` Net2Net 函数保持、Conv2d Attention、3D batched MatMul）——与 RL 零耦合，见 [记忆机制设计 — Phase D](.doc/design/memory_mechanism_design.md#-后续-phase-d刻意未做) |
+
+**进度符号**（设计文档统一口径）：✅ Phase 验收范围内已完成 · ⏳ 已识别、留后续 Phase · 🔲 可选增强 · 📦 已归档历史路径。
+
+**接手 RL 时建议顺序**：读 `rl_roadmap.md` → 配环境 [`.doc/rl_python_env_setup.md`](.doc/rl_python_env_setup.md) → 跑通 `just example-cartpole-sac` → 再改 `src/rl/`。
+
+**接手 Attention 阶段 D 时**：先读 [记忆机制设计 — 实现状态速览](.doc/design/memory_mechanism_design.md#-实现状态速览)（含 105 个相关单元测试与 IT-* 示例表），勿假设「打勾 = ONNX 也做完」。
+
 ## 日常命令
 
 本项目统一使用 `just`：
@@ -33,8 +48,9 @@ just bench-compare <name>  # 与 baseline 对比（重构后）
 just bench-macro           # hyperfine 跑 release example 宏基准
 just bench-conv2d          # 卷积基准
 just example-xor           # 最小传统示例
-just example-evolution-mnist # 演化版 MNIST 示例
-just example-cartpole-sac  # RL 示例，需 Python + gymnasium
+just example-evolution-mnist   # 演化版 MNIST 示例
+just examples-memory-unit      # parity RNN/LSTM/GRU/Transformer + 演化序列示例聚合
+just example-cartpole-sac      # RL 示例，需 Python + gymnasium
 ```
 
 除非用户明确要求，否则不要默认运行耗时 bench、RL 示例或 `test-all`。
@@ -45,7 +61,7 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 - `src/nn/nodes/`：原子计算节点；新增 op 通常先改这里。
 - `src/nn/var/`：面向用户的 `Var` API；运算符重载和链式调用在这里。
 - `src/nn/graph/`：图执行、`train/inference`、Mode 契约、可视化、序列化。
-- `src/nn/layer/`：`Linear`、`Conv2d`、`Rnn` 等高层模块。
+- `src/nn/layer/`：`Linear`、`Conv2d`、`Rnn` / `Lstm` / `Gru`、`MultiHeadAttention`、`TransformerEncoder` 等高层模块。
 - `src/nn/evolution/`：基因、变异、builder、收敛与演化主流程。
 - `src/data/`、`src/metrics/`、`src/rl/`：数据、指标、强化学习；`src/data/` 同时承载 `Transform`（image-only）与 `SampleTransform`（image + label 同步）两套变换契约。
 - `src/vision/`：图像支持，按职能划分为 `io / color / geom / filter / draw / mask / preprocess / viz / detection / cv`。`detection/` 闭环收口 `BBox / NMS / mAP-friendly 类型 / Backbone 契约 / loss 组合 / label 同步变换 / YOLO 标签解析`，并通过 `adapter::yolo::v5` 适配第三方 YOLOv5 ONNX 输出解码；`mask/` 是像素级 mask 处理（argmax / 多类→前景 / mask→ASCII）；`viz/` 是展示画布工具（`Palette` 调色板、像素放大、alpha 混合、5x3 像素字体 `TinyFont`）；`cv/` 收纳 OpenCV 风格的传统 CV 算法（PyTorch / JAX 不收录的部分）。
@@ -59,6 +75,8 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 - 梯度清零与累积：[梯度清零与累积设计](.doc/design/gradient_clear_and_accumulation_design.md)
 - Node 与 Layer 的边界：[节点与层边界设计](.doc/design/node_vs_layer_design.md)
 - 演化系统：[神经架构演化设计](.doc/design/neural_architecture_evolution_design.md)
+- 记忆 / RNN / Attention（含 Phase 进度与留坑表）：[记忆机制设计](.doc/design/memory_mechanism_design.md)
+- 强化学习（当前主线）：[RL 路线图](.doc/design/rl_roadmap.md)、[Python 环境配置](.doc/rl_python_env_setup.md)
 - 空间视觉任务路线：[空间视觉任务路线图](.doc/design/spatial_vision_tasks_roadmap.md)
 - DataLoader / 变长序列：[数据加载设计](.doc/design/data_loader_design.md)
 - 开发环境 / rust-analyzer：[开发环境配置](.doc/dev_environment_setup.md)
@@ -86,6 +104,11 @@ just example-cartpole-sac  # RL 示例，需 Python + gymnasium
 1. 参考已有 `Linear`、`Conv2d`、`Rnn/Lstm/Gru` 的写法。
 2. 不要强行把 `forward()` 抽成统一 trait 签名。
 3. 确保 `parameters()` 返回完整可训练参数。
+
+### 修改 RL
+1. 改前读 [RL 路线图](.doc/design/rl_roadmap.md) 与 [`.github/instructions/rl.instructions.md`](.github/instructions/rl.instructions.md)。
+2. 库侧当前只维护环境桥（`GymEnv` / `MinariDataset`）；ReplayBuffer / Agent 仍在示例层，沉淀到 `src/rl/` 前勿强行抽象。
+3. 验证：`just example-cartpole-sac`；测试用 `just test-serial` 或 `just test-filter rl`。
 
 ### 修改 Evolution
 1. 保持主流程稳定：build → restore weights → train → capture → evaluate → accept/rollback → mutate。
