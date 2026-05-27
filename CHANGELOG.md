@@ -2,7 +2,16 @@
 
 ## [Unreleased] - 待提交
 
+## [0.18.0] - 2026-05-27
+
 ### Added
+
+- **feat(nn): Attention / Transformer 闭环并入演化系统**
+  - **Layer**：`MultiHeadAttention` 补齐 `input_size`、`from_vars`、因果 / padding mask 工具与 `forward_masked`；新增 `SinusoidalPositionalEncoding` / `LearnableAbsolutePositionalEncoding`；新增 Pre-LN `TransformerEncoder` / `TransformerEncoderLayer`
+  - **Evolution**：`CellAttention` 复合模板节点（QKV 父边顺序与 Layer 对齐）、`SequenceOpSet::{RecurrentOnly, AttentionOnly, RecurrentWithAttention}`、`expand_attention` / `resize_attention_out`、descriptor rebuild / mutation / net2net 占位路径；ONNX 导出与函数保持 net2net 扩宽留 Phase 3
+  - **示例**：`parity_transformer_var_len`（传统 API，桶式同长度变长 parity + Transformer Encoder）；`evolution_parity_seq_attention`（演化 API，`RecurrentWithAttention` 混合搜索 RNN/LSTM/GRU 与 MHA）
+  - **测试**：37 个单元测试（`layer_attention` / `layer_positional` / `layer_transformer` / `cell_attention` / `attention_evolution` / `attention_rebuild`）
+  - **文档**：`memory_mechanism_design.md` Phase 3.5 / 4.5、`neural_architecture_evolution_design.md` Sequence 章节同步
 
 - **feat(vision/detection): prediction 侧 letterbox→原图反映射 API（与 label 侧对称）**
   - `Detection::map_to_origin(self, &LetterboxResult) -> Self`：单框反映射，保留 `score` / `class_id`，bbox 几何由 `LetterboxResult::bbox_to_origin` 接管（含原图边界 clip）；调用方不再需要手拼 `Detection::new(lb.bbox_to_origin(d.bbox), d.score, d.class_id)`

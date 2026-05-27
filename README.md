@@ -63,6 +63,7 @@ let dot = graph.to_dot();
 | [parity_rnn_var_len](examples/traditional/parity_rnn_var_len/) | 序列分类 | **RNN 层**、变长序列、BucketedDataLoader | `RNN(1→16) → FC(2)` | `cargo run --example parity_rnn_var_len` |
 | [parity_lstm_var_len](examples/traditional/parity_lstm_var_len/) | 序列分类 | **LSTM 层**、变长序列 | `LSTM(1→16) → FC(2)` | `cargo run --example parity_lstm_var_len` |
 | [parity_gru_var_len](examples/traditional/parity_gru_var_len/) | 序列分类 | **GRU 层**、变长序列 | `GRU(1→16) → FC(2)` | `cargo run --example parity_gru_var_len` |
+| [parity_transformer_var_len](examples/traditional/parity_transformer_var_len/) | 序列分类 | **Transformer Encoder**、桶式同长度 batch、变长 parity | `PE → TransformerEncoder → FC(2)` | `cargo run --example parity_transformer_var_len` |
 | [dual_input_add](examples/traditional/dual_input_add/) | 回归 | **多输入**、特征融合 | `2×Linear → Concat → 1` | `cargo run --example dual_input_add` |
 | [siamese_similarity](examples/traditional/siamese_similarity/) | 二分类 | **多输入**、共享编码器 | `共享Encoder → Concat → 1` | `cargo run --example siamese_similarity` |
 | [dual_output_classify](examples/traditional/dual_output_classify/) | 多任务 | **多输出**、多 Loss 训练 | `Shared → (Cls, Reg)` | `cargo run --example dual_output_classify` |
@@ -82,6 +83,7 @@ let dot = graph.to_dot();
 | [evolution_deformable_conv2d_segmentation](examples/evolution/deformable_conv2d_segmentation/) | **Deformable 分割演化** | **DeformableConv2d smoke**、16x16 Binary IoU、小型审计矩阵可对比 heuristic / portfolio | 自动演化 | `cargo run --example evolution_deformable_conv2d_segmentation` |
 | [evolution_parity_seq](examples/evolution/parity_seq/) | **神经架构演化** | **Evolution API**、序列数据、记忆单元自动选择 | 自动演化 | `cargo run --example evolution_parity_seq` |
 | [evolution_parity_seq_var_len](examples/evolution/parity_seq_var_len/) | **神经架构演化** | **Evolution API**、变长序列、zero-pad | 自动演化 | `cargo run --example evolution_parity_seq_var_len` |
+| [evolution_parity_seq_attention](examples/evolution/parity_seq_attention/) | **神经架构演化** | **SequenceOpSet**、RNN/LSTM/GRU + MHA 混合搜索 | 自动演化 | `cargo run --example evolution_parity_seq_attention` |
 
 #### 详细说明
 

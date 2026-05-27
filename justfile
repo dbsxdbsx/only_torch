@@ -175,7 +175,7 @@ examples-traditional: example-xor example-iris example-sine example-mnist exampl
 example-parity: example-parity-fixed example-parity-var example-parity-lstm example-parity-gru
 
 # 运行所有 memory unit examples（traditional + evolution）
-examples-memory-unit: example-parity example-evolution-parity-seq example-evolution-parity-seq-var-len
+examples-memory-unit: example-parity example-parity-transformer-var-len example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-parity-seq-attention
 
 example-xor:
     @echo "=== Running XOR [{{_blas_name}}] ==="
@@ -249,6 +249,10 @@ example-parity-gru:
     @echo "=== Running Parity (GRU, Variable Length) [{{_blas_name}}] ==="
     cargo run --example parity_gru_var_len {{_blas_flag}}
 
+example-parity-transformer-var-len:
+    @echo "=== Running Parity (Transformer Encoder, Variable Length) [{{_blas_name}}] ==="
+    cargo run --example parity_transformer_var_len {{_blas_flag}}
+
 example-dual-input:
     @echo "=== Running Dual Input Add (forward2) [{{_blas_name}}] ==="
     cargo run --example dual_input_add {{_blas_flag}}
@@ -292,7 +296,7 @@ example-moving-sac:
 # ---------- Evolution（神经架构自动演化）----------
 
 # 运行所有 evolution examples
-examples-evolution: example-evolution-xor example-evolution-iris example-evolution-multi-head-quadrant-radius example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-mnist example-evolution-overlapping-shapes-semantic-segmentation example-evolution-overlapping-shapes-unet-lite-segmentation example-evolution-deformable-conv2d-segmentation
+examples-evolution: example-evolution-xor example-evolution-iris example-evolution-multi-head-quadrant-radius example-evolution-parity-seq example-evolution-parity-seq-var-len example-evolution-parity-seq-attention example-evolution-mnist example-evolution-overlapping-shapes-semantic-segmentation example-evolution-overlapping-shapes-unet-lite-segmentation example-evolution-deformable-conv2d-segmentation
 
 example-evolution-xor:
     @echo "=== Running Evolution XOR [{{_blas_name}}] ==="
@@ -313,6 +317,10 @@ example-evolution-parity-seq:
 example-evolution-parity-seq-var-len:
     @echo "=== Running Evolution Parity Seq (variable length) [{{_blas_name}}] ==="
     cargo run --example evolution_parity_seq_var_len {{_blas_flag}}
+
+example-evolution-parity-seq-attention:
+    @echo "=== Running Evolution Parity Seq (RNN/LSTM/GRU + Attention) [{{_blas_name}}] ==="
+    cargo run --example evolution_parity_seq_attention {{_blas_flag}}
 
 example-evolution-mnist:
     @echo "=== Running Evolution MNIST [{{_blas_name}}] ==="
