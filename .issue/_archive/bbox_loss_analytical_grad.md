@@ -44,7 +44,7 @@ fn finite_diff_grad(...) -> Tensor {
 ### 问题
 
 - **性能**：每个 input 元素都要做 2 次 forward (plus + minus)。`[N, 4]` 输入下，反向一次就需要 `8N` 次 IoU/GIoU/DIoU/CIoU 计算，相比解析梯度的常数级开销慢一个数量级以上。
-- **数值精度**：`epsilon = 1e-3` 在 IoU/GIoU 接近 0 或 1 的边界附近会出现明显截断误差；旧 `tests/node_bbox_loss.rs` 的 VJP 断言只能容忍到 `2e-3`。
+- **数值精度**：$epsilon = 1e-3$ 在 IoU/GIoU 接近 0 或 1 的边界附近会出现明显截断误差；旧 `tests/node_bbox_loss.rs` 的 VJP 断言只能容忍到 `2e-3`。
 - **API 风险**：`vision::detection::DetectionLossComponents` 已经把 bbox_loss 作为 detection 多任务 loss 组合的一员暴露出去，第一个原生 detection example 接入时会卡在训练性能上。
 
 ### 当时暂缓的理由

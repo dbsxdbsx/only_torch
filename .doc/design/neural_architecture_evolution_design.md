@@ -618,7 +618,7 @@ Evolution::supervised(train, test, metric)
 
 回滚机制利用此特性：`best_genome.clone()` 自带权重快照，恢复后 `restore_weights()` 直接还原到 best 时期的权重状态。
 
-**Net2Net function-preserving 扩容**：`GrowHiddenSize` 扩容时新增列复制已有列 + 小扰动，下游消费者行按复制次数缩放；RNN / GRU / LSTM 的 `W_hh` 用 `gather_along_axis_scaled(axis=0, counts)` + `gather_along_axis(axis=1)` 的两轴变换保持前向等价。覆盖 Linear / Conv2d / RNN / LSTM / GRU + 下游 Linear / Conv2d / RNN 消耗端 + BN / LN / RMS pass-through + Flatten 跨域。
+**Net2Net function-preserving 扩容**：`GrowHiddenSize` 扩容时新增列复制已有列 + 小扰动，下游消费者行按复制次数缩放；RNN / GRU / LSTM 的 $W_hh$ 用 `gather_along_axis_scaled(axis=0, counts)` + `gather_along_axis(axis=1)` 的两轴变换保持前向等价。覆盖 Linear / Conv2d / RNN / LSTM / GRU + 下游 Linear / Conv2d / RNN 消耗端 + BN / LN / RMS pass-through + Flatten 跨域。
 
 **Cell 类型切换权重迁移**：`MutateCellType` 在 RNN ↔ LSTM ↔ GRU 6 种切换间，特征门保留权重（g/n gate），饱和门用 `W=0 + bias=±6` 使 σ 饱和为 1/0，信号路径逼近原 cell。在删除旧节点前采集旧快照，新节点 commit 后调用迁移并合并进新 param_ids，避免全部权重重初始化。
 

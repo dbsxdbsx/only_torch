@@ -18,7 +18,7 @@
 | 采样（不可微） | `Tensor` | 采样过程断开梯度 |
 | 重参数化采样（可微） | `Var` | 重参数化技巧保留梯度路径 |
 
-**唯一例外**：`sample()`（非重参数化采样）返回 `Tensor`，因为离散采样不可微。`rsample()`（重参数化采样）返回 `Var`，因为 `mean + std * ε` 对 mean 和 std 可微。
+**唯一例外**：`sample()`（非重参数化采样）返回 `Tensor`，因为离散采样不可微。`rsample()`（重参数化采样）返回 `Var`，因为 $mean + std * ε$ 对 mean 和 std 可微。
 
 ### 2. 构造时预计算并缓存共享的 Var 中间值
 
@@ -27,7 +27,7 @@
 | 分布 | 缓存内容 | 被哪些方法共享 |
 |------|----------|--------------|
 | **Categorical** | `probs`（softmax）、`log_probs`（log_softmax） | entropy、log_prob、sample、用户的 probs() |
-| **Normal** | `log_std`（ln(σ)） | entropy、log_prob |
+| **Normal** | `log_std`（$ln(σ)$） | entropy、log_prob |
 | **TanhNormal** | 继承 Normal 的缓存 | — |
 
 这保证了同一 logits 上最多只有 2 个图节点（softmax + log_softmax），与手写公式的拓扑一致。

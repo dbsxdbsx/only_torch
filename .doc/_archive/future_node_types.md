@@ -57,20 +57,20 @@
 
 | 节点 | 公式 | 用途 | 状态 |
 |------|------|------|--------|
-| ~~**Exp**~~ | `y = e^x` | SAC：`log_std.exp()` → std | ✅ 已实现 |
-| ~~**Sqrt**~~ | `y = √x` | Adam 优化器：`sqrt(v + ε)` | ✅ 已实现 |
-| ~~**Pow**~~ | `y = x^n` | 通用幂运算 | ✅ 已实现 |
-| ~~**Square**~~ | `y = x²` | 独立节点（非 pow 组合），梯度 2x | ✅ 已实现 |
-| ~~**Reciprocal**~~ | `y = 1/x` | 独立节点（非 pow 组合），梯度 -1/x² | ✅ 已实现 |
-| ~~**Log10/Log2**~~ | `y = log₁₀(x)` / `y = log₂(x)` | 特定场景的对数计算 | ✅ 已实现 |
+| ~~**Exp**~~ | $y = e^x$ | SAC：`log_std.exp()` → std | ✅ 已实现 |
+| ~~**Sqrt**~~ | $y = √x$ | Adam 优化器：$sqrt(v + ε)$ | ✅ 已实现 |
+| ~~**Pow**~~ | $y = x^n$ | 通用幂运算 | ✅ 已实现 |
+| ~~**Square**~~ | $y = x²$ | 独立节点（非 pow 组合），梯度 2x | ✅ 已实现 |
+| ~~**Reciprocal**~~ | $y = 1/x$ | 独立节点（非 pow 组合），梯度 -1/x² | ✅ 已实现 |
+| ~~**Log10/Log2**~~ | $y = log₁₀(x)$ / $y = log₂(x)$ | 特定场景的对数计算 | ✅ 已实现 |
 
 ### ~~2.2 裁剪/限制节点~~ （已全部完成）
 
 | 节点 | 公式 | 用途 | 状态 |
 |------|------|------|--------|
-| ~~**Clamp/Clip**~~ | `y = clamp(x, min, max)` | SAC：`log_std` 裁剪；PPO：ratio clipping | ✅ 已实现 |
-| ~~**ReLU6**~~ | `y = min(max(0, x), 6)` | MobileNet 等轻量网络，独立节点 | ✅ 已实现 |
-| ~~**HardTanh**~~ | `y = clamp(x, min, max)` | 硬 Tanh 激活，独立节点 | ✅ 已实现 |
+| ~~**Clamp/Clip**~~ | $y = clamp(x, min, max)$ | SAC：$log_std$ 裁剪；PPO：ratio clipping | ✅ 已实现 |
+| ~~**ReLU6**~~ | $y = min(max(0, x), 6)$ | MobileNet 等轻量网络，独立节点 | ✅ 已实现 |
+| ~~**HardTanh**~~ | $y = clamp(x, min, max)$ | 硬 Tanh 激活，独立节点 | ✅ 已实现 |
 
 ### ~~2.3 形状/维度操作节点~~ （已全部完成）
 
@@ -114,7 +114,7 @@
 
 | 节点 | 功能 | 用途 | 状态 |
 |------|------|------|--------|
-| ~~**Where/Cond**~~ | 条件选择 | `y = cond ? a : b` | ✅ 已实现 |
+| ~~**Where/Cond**~~ | 条件选择 | $y = cond ? a : b$ | ✅ 已实现 |
 | ~~**OneHot**~~ | 独热编码 | 分类标签转换 | ✅ 已实现（Tensor 方法，非计算图节点） |
 | ~~**TopK**~~ | 取前 K 个最大值 | Beam Search、采样 | ✅ 已实现 |
 | ~~**Sort/ArgSort**~~ | 排序 | 排序相关任务 | ✅ 已实现 |

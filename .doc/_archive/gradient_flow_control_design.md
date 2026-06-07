@@ -684,21 +684,21 @@ graph.forward_node(out2)?;  // forward_pass_id = 2
 
 **规则 4 的重要补充**：即使下游节点也是需要累积梯度的参数节点，在计算上游节点的梯度时，也必须使用下游节点**本次 backward 新算的贡献**，而非其累加器中的累积值。
 
-```
 假设存在拓扑：u(param) → w(param) → out
 
 第 1 次 backward:
-  w.grad = ∂L1/∂w
-  u.grad = ∂L1/∂w × ∂w/∂u  ← 使用本次新算的 ∂L1/∂w
+
+- $w.grad = ∂L_1/∂w$
+- $u.grad = ∂L_1/∂w × ∂w/∂u$ ← 使用本次新算的 $∂L_1/∂w$
 
 第 2 次 backward:
-  w.grad += ∂L2/∂w  → 累积后 = ∂L1/∂w + ∂L2/∂w
-  u.grad += ∂L2/∂w × ∂w/∂u  ← 必须使用本次新算的 ∂L2/∂w，不能用累积后的！
 
-正确结果：u.grad = (∂L1/∂w + ∂L2/∂w) × ∂w/∂u = ∂(L1+L2)/∂u ✓
-错误结果（若用累积值）：u.grad = ∂L1/∂w×∂w/∂u + (∂L1/∂w+∂L2/∂w)×∂w/∂u
-                                = 2×∂L1/∂w×∂w/∂u + ∂L2/∂w×∂w/∂u ✗ (L1 被算了两次)
-```
+- $w.grad += ∂L_2/∂w$ → 累积后 $= ∂L_1/∂w + ∂L_2/∂w$
+- $u.grad += ∂L_2/∂w × ∂w/∂u$ ← 必须使用本次新算的 $∂L_2/∂w$，不能用累积后的！
+
+正确结果：$u.grad = (∂L_1/∂w + ∂L_2/∂w) × ∂w/∂u = ∂(L_1+L_2)/∂u$ ✓
+
+错误结果（若用累积值）：$u.grad = ∂L_1/∂w×∂w/∂u + (∂L_1/∂w+∂L_2/∂w)×∂w/∂u = 2×∂L_1/∂w×∂w/∂u + ∂L_2/∂w×∂w/∂u$ ✗（$L_1$ 被算了两次）
 
 #### 为什么中间节点不累积不影响参数的正确性？
 
@@ -720,7 +720,7 @@ graph.forward_node(out2)?;  // forward_pass_id = 2
   w_shared.grad += ∂L2/∂w_shared ← 累积到参数
 ```
 
-**关键洞察**：计算 `w_shared` 的梯度时，只需要**当前这次 backward** 算出来的 `∂L/∂features`，不需要上一次 backward 留下来的值。所以清除中间节点的 grad 不会影响参数的累积正确性。
+**关键洞察**：计算 `w_shared` 的梯度时，只需要**当前这次 backward** 算出来的 $∂L/∂features$，不需要上一次 backward 留下来的值。所以清除中间节点的 grad 不会影响参数的累积正确性。
 
 从"责任"的角度理解：
 - **参数节点**：需要知道"我对所有 loss 负多少责任" → 累积

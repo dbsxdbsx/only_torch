@@ -115,7 +115,7 @@ cargo run --example iris
 
 **正弦函数拟合**
 
-拟合 `y = sin(x)`，展示 `MseLoss` 在回归任务中的基本使用。
+拟合 $y = sin(x)$，展示 `MseLoss` 在回归任务中的基本使用。
 
 ```bash
 cargo run --example sine_regression
@@ -426,7 +426,7 @@ cargo run --example pendulum_sac
 
 使用 SAC Hybrid 版本解决混合动作空间（离散 + 连续）的 Moving-v0 任务，展示：
 - 独立连续分支（方式 B）：每个离散动作配专属连续头（Accelerate / Turn / Brake 无连续头）
-- 双温度参数（α_d, α_c）：分别自动调节离散和连续探索
+- 双温度参数（$α_d$, $α_c$）：分别自动调节离散和连续探索
 - `Categorical` + `TanhNormal` 分布组合
 - 统一 Actor Loss 公式（log_prob 构建，离散/连续/混合共用逻辑）
 
@@ -551,7 +551,7 @@ cargo run --example evolution_parity_seq_var_len
 | **经验回放** | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | | | | | |
 | **TanhNormal 分布** | | | | | | | | | | | | | | | | ✅ | ✅ | | | | | |
 | **Categorical 分布** | | | | | | | | | | | | | | | ✅ | | ✅ | | | | | |
-| **双温度 (α_d + α_c)** | | | | | | | | | | | | | | | | | ✅ | | | | | |
+| **双温度 ($α_d + α_c$)** | | | | | | | | | | | | | | | | | ✅ | | | | | |
 | **Evolution API** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **自动架构搜索** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Lamarckian 权重继承** | | | | | | | | | | | | | | | | | | ✅ | ✅ | ✅ | ✅ | ✅ |

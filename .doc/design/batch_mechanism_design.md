@@ -50,7 +50,7 @@ for i in 0..num_samples {
 
 | 对比           | Jacobi（当前单样本） | Gradient（Batch） |
 | -------------- | -------------------- | ----------------- |
-| **存储内容**   | 完整 `∂y/∂x` 矩阵    | 最终 `∂L/∂x` 梯度 |
+| **存储内容**   | 完整 $∂y/∂x$ 矩阵    | 最终 $∂L/∂x$ 梯度 |
 | **Shape**      | `[dim_y, dim_x]`     | `= param.shape`   |
 | **内存占用**   | O(dim_y × dim_x)     | O(param_size)     |
 | **Batch 扩展** | 内存爆炸             | 线性增长          |
@@ -58,9 +58,9 @@ for i in 0..num_samples {
 
 **原因**：
 
-- Jacobi 对 batch 内存不可接受：`[batch × dim_y, dim_x]`
+- Jacobi 对 batch 内存不可接受：$[batch × dim_y, dim_x]$
 - Gradient 是所有现代框架（PyTorch/JAX/TensorFlow）的做法
-- 训练只需要 `∂L/∂param`，不需要完整 Jacobi
+- 训练只需要 $∂L/∂param$，不需要完整 Jacobi
 
 ### 2.2 保留两套机制
 

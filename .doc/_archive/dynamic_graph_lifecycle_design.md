@@ -56,7 +56,7 @@
 |------|-------------|---------------------|
 | GAN | `MseLoss.forward()` | ✅ 是（MseLoss 内部有缓存） |
 | MNIST | `CrossEntropyLoss.forward()` | ✅ 是 |
-| SAC | `log_probs * α - Q` 手工组合 | ❌ 否（闭包外运算） |
+| SAC | $log_probs * α - Q$ 手工组合 | ❌ 否（闭包外运算） |
 
 强化学习的损失函数涉及多个模型输出的组合，这些组合运算**必然发生在闭包外**。
 
