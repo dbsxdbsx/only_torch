@@ -3,9 +3,9 @@
 > 本文档记录 RL 模块的当前状态、设计决策、已知差距与未来方向，
 > 供后续开发者快速了解全貌并确定下一步工作。
 >
-> **创建日期**：2026-02-14  
-> **当前状态**：环境层 + 概率分布 + SAC 三变体示例已完成；**v0.18.0 后起为项目当前主线**（算法沉淀到 `src/rl/` 尚未做）  
-> **接手入口**：项目 [AGENTS.md](../AGENTS.md#当前版本与焦点) · 环境 [rl_python_env_setup.md](../rl_python_env_setup.md)
+> **创建日期**：2026-02-14
+> **当前状态**：环境层 + 概率分布 + SAC 三变体示例已完成；**v0.18.0 后起为项目当前主线**（v0.19.0 目标：Gymnasium-only 环境 + `Transition`/`ReplayBuffer` 入库）
+> **接手入口**：项目 [AGENTS.md](../../AGENTS.md#当前版本与焦点) · 环境 [rl_python_env_setup.md](../rl_python_env_setup.md) · 实施计划见 [§7](#7-v0190-实施计划)
 
 ---
 
@@ -17,6 +17,7 @@
 4. [SAC 技术笔记：统一 Actor Loss 公式](#4-sac-技术笔记统一-actor-loss-公式)
 5. [未来方向](#5-未来方向)
 6. [参考](#6-参考)
+7. [v0.19.0 实施计划](#7-v0190-实施计划)
 
 ---
 
@@ -28,33 +29,35 @@
 |------|------|------|
 | **GymEnv** | `src/rl/env/gym_env.rs` | 支持离散 / 连续 / 混合动作空间、图像观察、自定义环境 |
 | **MinariDataset** | `src/rl/env/minari.rs` | 离线 RL 数据集封装，提供 episode 采样 |
-| **Step** | `src/rl/mod.rs` | 单步交互数据结构（`Vec<f32>` 字段） |
+| **Step**（待删） | `src/rl/mod.rs` | 死代码；v0.19.0 由 **`Transition`** 取代，无 deprecated 过渡 |
 | **Categorical** | `src/nn/distributions/` | 离散分类分布（probs / log_probs / entropy / sample） |
 | **Normal** | `src/nn/distributions/` | 正态分布，支持重参数化采样（rsample） |
 | **TanhNormal** | `src/nn/distributions/` | Squashed Gaussian，带 Jacobian 修正的 log_prob |
-| **SAC-Discrete** | `examples/sac/cartpole/` | CartPole-v0，离散动作，Categorical 策略 |
-| **SAC-Continuous** | `examples/sac/pendulum/` | Pendulum-v1，连续动作，TanhNormal 策略 |
-| **Hybrid SAC** | `examples/sac/moving/` | Moving-v0，混合动作，双温度（α_d + α_c） |
+| **SAC-Discrete** | `examples/traditional/sac/cartpole/` | **CartPole-v0**（架构跑通；发版验收 **reward ≥ 195**） |
+| **SAC-Continuous** | `examples/traditional/sac/pendulum/` | Pendulum-v1，连续动作，TanhNormal 策略 |
+| **Hybrid SAC** | `examples/traditional/sac/platform/`（由 `moving/` 迁移） | **`Platform-v0`**（[`hybrid-platform`](https://pypi.org/project/hybrid-platform/)，Gymnasium 生态，**不用** gym-hybrid） |
 
 ### 1.2 目录结构
 
 ```
 src/rl/
-├── mod.rs              # 模块入口，导出核心类型，定义 Step 结构
+├── mod.rs              # 导出 env + buffer + Transition
 ├── env/
 │   ├── mod.rs
-│   ├── gym_env.rs      # GymEnv 实现（~1000 行）
-│   └── minari.rs       # MinariDataset 实现（~340 行）
+│   ├── gym_env.rs      # GymEnv：仅 gymnasium.make（~1000 行，v0.19.0 去 legacy gym）
+│   └── minari.rs       # MinariDataset（离线数据，独立 pip 包）
+├── buffer/             # v0.19.0 新增
+│   ├── transition.rs   # Transition { obs, action, reward, next_obs, done }
+│   └── replay.rs       # ReplayBuffer
 └── tests/
-    └── env/            # 环境测试（serial_test 串行执行）
+    ├── env/            # 环境测试（#[serial]）
+    └── buffer_replay.rs
 
-examples/sac/
-├── README.md                        # SAC 算法说明（Entropy / Alpha / Target Entropy）
-├── sac_mathematical_foundations.md   # 数学基础（Hybrid 6 种模式、KL 散度等）
-├── beta_distribution_note.md        # Beta 分布备选方案分析
-├── cartpole/                        # SAC-Discrete 完整示例
-├── pendulum/                        # SAC-Continuous 完整示例
-└── moving/                          # Hybrid SAC 完整示例
+examples/traditional/sac/
+├── README.md
+├── cartpole/           # 主线 + smoke
+├── pendulum/
+└── platform/           # Hybrid SAC，Platform-v0（取代 moving/ + gym-hybrid）
 ```
 
 ---
@@ -73,14 +76,54 @@ examples/sac/
 
 详见 [DataLoader 设计文档](./data_loader_design.md) Phase 2 段落。
 
-### 2.2 Step 使用 Vec\<f32\>，不使用 Tensor
+### 2.2 在线环境：仅 Gymnasium，不回退 OpenAI Gym
+
+**结论（v0.19.0）**：`GymEnv` **只**调用 `gymnasium.make`；删除 `use_legacy_gym`、`py.import("gym")` 及双套 reset/step 分支。
+
+| 概念 | 说明 |
+|------|------|
+| **Gymnasium** | OpenAI Gym 的官方继任者（Farama），API 与维护线以它为准 |
+| **与「老 gym」** | 不是「真包含」：标准环境在 Gymnasium 里；**不采用** gym-hybrid（硬依赖老 `gym`）；混合动作用 **`hybrid-platform` / Platform-v0** |
+| **扩展环境** | 通过 **extras** 或独立包安装，例如 `gymnasium[mujoco]`、`gymnasium[atari]`、自定义 `gymnasium.register` |
+| **离线数据** | **不在** `gymnasium` 核心里；用 **Minari**（`pip install minari`），库侧已有 `MinariDataset` |
+
+详见 [RL Python 环境搭建 — 生态分层](../rl_python_env_setup.md#生态分层gymnasium--扩展包--minari)。
+
+#### 2.2.1 环境能力矩阵（Gymnasium-only 目标）
+
+| 观察 \\ 动作 | 离散 | 连续 | 混合（Tuple 离散+连续） |
+|-------------|------|------|-------------------------|
+| **向量** | **CartPole-v0**（SAC/MuZero/PPO 架构验收 ≥195）、LunarLander-v3（离散） | Pendulum-v1、MountainCarContinuous-v0 | **`Platform-v0`**（`hybrid-platform`，见 §2.2.2） |
+| **图像** | ALE/Breakout-v5 等（`gymnasium[atari]`） | 少见；可用 MuJoCo 等 | 无标准内置；需自定义 |
+| **离线** | — | — | Minari 数据集（`MinariDataset`，非 `env.step`） |
+
+**仅装 `pip install gymnasium` 即可覆盖**：离散 + 连续向量（主线 CartPole / Pendulum）。
+**需 extras**：Box2D、MuJoCo、Atari 图像。
+**混合动作**：`pip install hybrid-platform`（**不**装 gym-hybrid / 老 `gym`）。
+
+#### 2.2.2 混合动作：`Platform-v0`（已定案，取代 gym-hybrid）
+
+| 项 | 内容 |
+|----|------|
+| **环境 ID** | `Platform-v0` |
+| **Python 包** | [`hybrid-platform`](https://pypi.org/project/hybrid-platform/)（Gymnasium API fork，原 [gym-platform](https://github.com/cycraig/gym-platform) / Masson et al. 2016） |
+| **依赖** | `gymnasium`、`numpy`、`pygame` — **无** `gym` |
+| **用法** | `import gymnasium as gym` + `import gym_platform` → `gym.make("Platform-v0")` |
+| **任务** | 横版跳台：run / hop / leap + 连续参数；躲敌人、过沟、到终点（**不是** Moving 的俯视角进绿圈） |
+| **弃用** | gym-hybrid、`Moving-v0`、`Sliding-v0`；Rust 不再 `import gym` / `gym_hybrid` |
+| **示例** | `moving_sac` → **`platform_sac`**，`moving/` → **`platform/`**（Phase 0b） |
+| **Rust** | `GymEnv` 在 `Platform-v0` 前 `import gym_platform`；观察为 Tuple(Box, Discrete)，需在 `GymEnv` 展平/适配 |
+
+**论文与示意图**：[arXiv:1509.01644](https://arxiv.org/abs/1509.01644) Figure 4/6；[gym-platform 截图](https://github.com/cycraig/gym-platform/blob/master/img/platform_domain.png)。
+
+### 2.3 Transition 使用 Vec\<f32\>，不使用 Tensor
 
 **理由**：
 - **轻量**：Buffer 存储大量历史数据，`Vec<f32>` 内存紧凑
 - **去耦合**：存储层不依赖计算图；训练时批量转为 Tensor 即可
 - **灵活**：离散动作存 `[action_index as f32]`，连续动作存 `[a1, a2, ...]`，混合动作存 `[discrete, cont1, cont2, ...]`
 
-### 2.3 对 rustRL 的态度：参考设计，不直接迁移
+### 2.4 对 rustRL 的态度：参考设计，不直接迁移
 
 [rustRL](https://github.com/dbsxdbsx/rustRL) 是基于 tch-rs 的 SAC / SAC-Hybrid 实现。其核心设计思路（Buffer 结构、Policy trait、哑值统一公式）有很高参考价值，但代码与 tch-rs 深度耦合（`tch::Tensor`、`tch::nn::VarStore` 等），直接迁移代价大于重写。
 
@@ -92,21 +135,23 @@ examples/sac/
 
 按影响程度排序：
 
-### 3.1 🟡 `Step` 类型是死代码
+### 3.1 🟡 `Step` 死代码 → **`Transition`（已定案）**
 
-`src/rl/mod.rs` 中定义了 `Step` 结构，但三个 SAC 示例**全都没有使用它**——各自定义了独立的 `Experience` 类型：
+`src/rl/mod.rs` 的 `Step` 未被示例使用；三示例各自 `Experience`。v0.19.0：
 
-| 示例 | 自定义类型 | action 字段 |
-|------|-----------|------------|
-| CartPole | `Experience { action: usize, ... }` | 离散索引 |
-| Pendulum | `Experience { action: Vec<f32>, ... }` | 连续值 |
-| Moving | `Experience { action: Vec<f32>, ... }` | 混合展平 `[d, a1, a2]` |
+- **删除** `Step`（无 `deprecated`、无 type alias）
+- **新增** `pub struct Transition`（字段同原 `Step`：`obs, action: Vec<f32>, reward, next_obs, done`）
+- 三示例（cartpole / pendulum；moving 待环境恢复）改用 `rl::{ReplayBuffer, Transition}`
 
-**处理选项**：
+| 示例 | action 编码 |
+|------|------------|
+| CartPole | `vec![idx as f32]`，读取时集中 `action[0] as usize` |
+| Pendulum | 连续向量 |
+| Platform（Hybrid SAC） | 混合展平：离散 run/hop/leap + 对应连续参数（与 Moving 编码方式可能不同，迁移时对齐） |
 
-- **A. 统一使用 Step**：让 `Step.action` 为 `Vec<f32>`（已如此定义），三个示例改为使用 `rl::Step`。离散动作存为 `vec![action as f32]`
-- **B. 移除 Step**：既然设计决策是 Buffer 由用户管理，库层面也不需要定义 Step
-- **C. 保持现状**：Step 作为"推荐但不强制"的参考结构
+### 3.1b 🔴 `GymEnv` 仍含 legacy gym 回退（Phase 0 首要清理）
+
+`gym_env.rs` 在 `gymnasium.make` 失败时会 `import gym`。Phase 0 删除；Phase 0b 以 **Platform-v0** 恢复混合测例与 Hybrid SAC 示例，不再使用 Moving。
 
 ### 3.2 🟡 三个示例之间存在大量代码重复
 
@@ -202,14 +247,17 @@ Moving 的 Brake 动作（纯离散，无连续参数）用 `zero_lp_var` 作为
 
 > 均为"可做但不紧迫"的方向，按自然推进顺序排列。
 
-### 5.1 整理现有 SAC 示例
+### 5.1 整理现有 SAC 示例（**v0.20 主线**）
 
-**工作量**：小
+**工作量**：小–中
 
-- 处理 `Step` 死代码（§3.1 的选项 A / B / C）
+- 完成 `Transition` + buffer 入库（§3.1，v0.19 已落）
 - 统一三个示例的 Actor Loss 风格为哑值统一写法（§4.2）
-- 统一 Agent 接口命名（`select_action`）
-- 可选：提取 `examples/sac/common.rs` 减少重复
+- 统一 Agent 接口命名（`sample_action`）
+- 算法 helper 入库 `src/rl/algo/sac/`：critic_update / actor_update / alpha_update / soft_update（**函数式**，无状态）
+- **否决** `examples/sac/common.rs`（examples 树共享文件是反模式）
+- 三 SAC 示例瘦身到 ≤ 150 行 main.rs；新 LunarLander SAC ≤ 80 行
+- 目录重组：`examples/traditional/sac/` → `examples/sac/`（为后续 AZ/MZ 顶层目录腾位置）
 
 ### 5.2 Beta 分布
 
@@ -231,32 +279,100 @@ Moving 的 Brake 动作（纯离散，无连续参数）用 `zero_lp_var` 作为
 
 ### 5.4 更多 RL 算法示例
 
-**工作量**：大
-
-| 算法 | 类型 | 适用场景 |
-|------|------|---------|
-| **DQN / Double DQN** | Off-policy, 离散 | 入门级，验证基础设施 |
-| **PPO** | On-policy | 通用性最强的算法之一 |
-| **TD3** | Off-policy, 连续 | SAC 的确定性策略对标 |
+| 算法 | 类型 | 适用场景 | 落地版本 |
+|------|------|---------|----------|
+| **PPO** | On-policy | 通用性最强；on-policy buffer 与 SAC 不同 | **v0.22**（与 `Trajectory` 一起落） |
+| **DQN** | Off-policy, 离散 | 教学示例；功能上是 SAC-Discrete 的真子集 | 长期 backlog（v0.20 已**决定不做**） |
+| **TD3** | Off-policy, 连续 | SAC 的确定性策略对标；与 SAC 高度重叠 | 长期 backlog |
 
 PPO 需要 Clamp 节点（ratio clipping），当前已实现（详见 [节点类型规划](./future_node_types.md)）。
 
-### 5.5 统一 Agent / Policy 框架
+**关于 v0.20 不加 DQN 的决定**（2026-05-27）：SAC 已覆盖离散 / 连续 / 混合三种动作空间，DQN 仅做纯离散，在「`ReplayBuffer<Transition>` / helper 抽象边界」上没有新增压力，仅有教学价值。v0.20 主线聚焦「helper 入库 + 示例瘦身 + LunarLander-v3 离散 SAC 验证复用」，DQN 推至 backlog。
 
-**工作量**：大
+### 5.5 `Agent` / `PlanningAgent` 双 trait（**v0.21 主线**）
 
-如果算法示例增多，可能需要抽象统一的 Policy trait：
+> v0.20 之前**故意推迟**，避免单算法时空抽象；v0.21 与 AlphaZero 一同引入。
 
 ```rust
-pub trait Policy {
-    /// 根据观察选择动作（explore=true 时带探索噪声）
-    fn select_action(&self, obs: &[f32], explore: bool) -> Vec<f32>;
-    /// 从一个 batch 更新策略，返回训练统计
-    fn update(&mut self, batch: &[Step]) -> PolicyStats;
+pub trait Agent {
+    fn act(&self, obs: &[f32]) -> Vec<f32>;
+}
+
+pub trait PlanningAgent {
+    /// MCTS 之类先模拟再决策的算法用这个 trait
+    fn act_with_target(&self, obs: &[f32]) -> (Vec<f32>, Vec<f32>);  // (action, target_distribution)
 }
 ```
 
-但目前只有 SAC 一族算法，抽象为时尚早。建议在有 2+ 种不同算法后再考虑。
+| Trait | 实现者 | 何时引入 |
+|-------|--------|----------|
+| `Agent::act` | SAC / DQN / PPO / TD3 | v0.21 |
+| `PlanningAgent::act_with_target` | AlphaZero / MuZero / EfficientZero V2 | v0.21 |
+
+### 5.6 AlphaZero / 五子棋（**v0.21 主线**）
+
+> **环境宪法（2026-05-27）**：环境 **100% Python**，目录 **`python/gym_env/<游戏>/`**（**扁平包**：`python/gym_env/` 即 `import gym_env`，无 `gym_env/gym_env/`）；Rust 只桥接 `GymEnv`。**MCTS 在 `src/rl/mcts/`**；**`board.py` 只写规则**，**不在 Env 里写 MCTS**。
+
+| 层 | 位置 | 说明 |
+|----|------|------|
+| **Board** | `python/gym_env/gomoku/board.py` | `legal_mask`、`clone`/`restore`、终局（**非** MCTS） |
+| **Gym Env** | `python/gym_env/gomoku/env.py` | 薄包装：`reset`/`step`/`obs`，委托 `Board` |
+| **MCTS** | `src/rl/mcts/` | `mcts_search(&GymEnv, predictor, cfg)`；UCB、树、backup |
+| **规划桥接** | `src/rl/env/gym_env.rs` | 转调 `unwrapped.board` 的 snapshot/restore 等 |
+| `Predictor` | `src/rl/mcts/predictor.rs` | `predict_batch` |
+| 数据结构 | `GamePlayLog` | `impl BufferItem` |
+| 示例 | `examples/alphazero/gomoku/` | `Gomoku-selfplay-v0` 训练；`Gomoku-naive*-v0` 评测 |
+
+**安装**：`pip install -e python/gym_env`。v0.21 默认 **9×9** 验收；性能瓶颈：缩棋盘/sims → MCTS 批量调 Python（仍无 Rust 棋盘）。
+
+### 5.6.1 算法验收分层（2026-05-27 定稿）
+
+| 层级 | 算法 | CartPole 环境 | 门禁 | 说明 |
+|------|------|---------------|------|------|
+| **架构跑通** | SAC、MuZero、PPO | **`CartPole-v0`**（满分 200，solved = **195**） | 发版 / 示例：**单局 reward ≥ 195**（或 100 局均值 ≥ 195） | v0.19 **smoke** 不断言 reward，只验管线 |
+| **终极调优** | **[EfficientZero V2](https://arxiv.org/abs/2403.00564)（EZ-V2，第二代，唯一）** | **`-v1` / 新版 ID** | 各任务专属指标 | 离散+连续+视觉+低维；混合 Tuple 为工程扩展 |
+
+端到端表见 [RL 主线实施计划](../../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md)。
+
+### 5.7 MuZero + PPO（**v0.22 主线**）
+
+> Reviewer 终审（2026-05-27）将原「v0.22 MuZero + EfficientZero + 环境矩阵」拆为 v0.22 / v0.23。v0.22 聚焦「`Trajectory` + `Dynamics` 落地 + 第一个 model-based 闭环」。
+
+引入 **learned dynamics** 与 **on-policy buffer**（与 SAC 共用 **CartPole-v0 ≥ 195** 标准，见 §5.6.1）：
+
+| 组件 | 位置 | 说明 |
+|------|------|------|
+| `Trajectory` | `src/rl/buffer/trajectory.rs` | 变长序列；`impl BufferItem`；含 PPO 用的 `log_probs / values` 字段 |
+| `Dynamics` trait | `src/rl/mcts/dynamics.rs` | `initial_state` / `recurrent` |
+| MuZero 示例 | `examples/muzero/cartpole/` | **`CartPole-v0`**；简化版（**无 reanalyze**）；**reward ≥ 195** |
+| PPO 示例 | `examples/ppo/cartpole/` | **`CartPole-v0`**；`Trajectory` + `src/rl/algo/ppo/`；**reward ≥ 195** |
+
+### 5.8 EfficientZero V2 终极调优 + 多模式矩阵（**v0.23 主线**）
+
+> **算法定稿**：v0.23 **只以 [EfficientZero V2（EZ-V2）](https://arxiv.org/abs/2403.00564)**（ICML 2024 Spotlight，第二代）为终极调优算法；**不以** EfficientZero V1（NeurIPS 2021）为发版目标。参考：[EfficientZeroV2](https://github.com/Shengjiewang-Jason/EfficientZeroV2)。
+>
+> v0.23 起性能调优只落在 EZ-V2；环境 ID **一律 `-v1` / 新版**（与架构层 `CartPole-v0` 区分）。EZ-V2 在 V1 的 value prefix / reanalyze 之上增加 **Gumbel 连续动作搜索**、**SVE** 等。
+
+| 模式 | 示例 | 环境 ID | 验收 |
+|------|------|---------|------|
+| 完美信息博弈 | `examples/efficientzero/gomoku/` | `Gomoku-*-v0` | 同训练量胜率 ≥ AlphaZero |
+| 向量离散 | `examples/efficientzero/cartpole/` | **`CartPole-v1`** | EZ 任务指标（非 195） |
+| 图像离散 | `examples/efficientzero/atari/` | `ALE/*-v5` | 训练闭环 |
+| 连续高维 | `examples/efficientzero/ant/` | `Ant-v5` 等 | 训练闭环 |
+| 混合动作 | `examples/efficientzero/platform/` | `Platform-v0` | Tuple 离散+连续 |
+| 离线（可选） | `examples/efficientzero/minari_pointmaze/` | Minari | 离线评估 |
+
+- **降级路径**：完整 reanalyze 超 1 周 → value prefix + SVE only，完整 reanalyze 推 v0.24
+- **辅助 pipeline**（`examples/dqn/atari/` 等）：仅跑通，**不进** EZ 性能门禁
+
+### 5.9 长期 backlog（≥ v0.24）
+
+- Beta 分布（§5.2 旧 → 长期）
+- 优先级经验回放 PER（示例或独立 crate，不入库核心）
+- DQN / TD3（教学价值，非架构必需；SAC 已覆盖）
+- MCTS rayon 并行 / virtual loss（v0.21 单线程版稳定后视性能再决定）
+- 演化（NEAT）+ RL 联合搜索
+- 多智能体 / 分布式 self-play（与 CPU only 约束冲突，需重新评估）
 
 ---
 
@@ -264,10 +380,10 @@ pub trait Policy {
 
 ### 项目内文档
 
-- [RL Python 环境搭建指南](../rl_python_env_setup.md) — Windows 下 Gymnasium / MuJoCo / Minari / gym-hybrid / 五子棋环境的安装与验证
-- [SAC 示例总览](../../examples/sac/README.md) — Entropy、Alpha、Target Entropy 核心概念
-- [SAC 数学基础分析](../../examples/sac/sac_mathematical_foundations.md) — Hybrid 6 种模式、收敛性、KL 散度
-- [Beta 分布备选方案](../../examples/sac/beta_distribution_note.md) — 有界连续策略分析
+- [RL Python 环境搭建指南](../rl_python_env_setup.md) — Gymnasium-only、扩展包、Minari、五子棋
+- [SAC 示例总览](../../examples/traditional/sac/README.md) — Entropy、Alpha、Target Entropy 核心概念
+- [SAC 数学基础分析](../../examples/traditional/sac/sac_mathematical_foundations.md) — Hybrid 6 种模式、收敛性、KL 散度
+- [Beta 分布备选方案](../../examples/traditional/sac/beta_distribution_note.md) — 有界连续策略分析
 - [概率分布模块设计](./distributions_design.md) — Categorical / Normal / TanhNormal API 设计
 - [DataLoader 设计](./data_loader_design.md) — Phase 2 段落记录了 Buffer 解耦决策
 - [待扩展节点类型](./future_node_types.md) — PPO 等算法可能需要的节点
@@ -279,3 +395,70 @@ pub trait Policy {
 - Christodoulou 2019 — SAC-Discrete
 - Delalleau et al. 2019 — Hybrid SAC
 - Chou et al. 2017 — Beta Policy
+
+---
+
+## 7. v0.19.0 实施计划
+
+> 2026-05-27 定稿：环境 **最先**、**Gymnasium-only**；`Transition` 取代 `Step`（直接删除）；CartPole **smoke** 为同一示例的短跑模式。
+>
+> **v0.19 之后的版本路线**：§5.1 v0.20 示例瘦身 / §5.5 v0.21 双 trait / §5.6 v0.21 AlphaZero / **§5.7 v0.22 MuZero + PPO** / **§5.8 v0.23 EfficientZero V2 + 多模式矩阵**；端到端表参见 [RL 主线实施计划](../../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md)。
+>
+> **Reviewer 终审（2026-05-27）裁决要点**（已并入本路线图）：v0.19 Conditional Go；原 v0.22 拆分为 v0.22 + v0.23；MCTS v0.21 单线程；**终极算法定为 EfficientZero V2（第二代）**；EZ-V2 reanalyze 可降级为 value prefix + SVE only。
+>
+> **Creator 环境宪法（2026-05-27）**：`python/gym_env/<游戏>/`；MCTS 在库、Board 在 Python；详见 [RL 主线实施计划 v0.21](../../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md)。
+
+### 7.1 里程碑一句话
+
+CartPole SAC 在 Windows + 仅 Gymnasium 下可复现；`GymEnv` 无 legacy gym；Hybrid SAC 跑 **Platform-v0**；`ReplayBuffer` + `Transition` 入库；`cartpole_sac` smoke；文档与示例路径一致。
+
+### 7.2 Phase 顺序（环境优先）
+
+| Phase | 焦点 | 工时 | 验收 |
+|-------|------|------|------|
+| **0** | **Gymnasium-only `GymEnv`** + 文档/测试对齐 | S–M | `rg 'import\("gym"\)' src/rl` 为零；离散/连续 Gymnasium 测例绿 |
+| **0b** | **Platform-v0**（hybrid-platform）+ 示例/测例迁移 | S–M | `gymnasium.make('Platform-v0')`；`platform_sac`；`test_07` 更新 |
+| **1** | `buffer/` + `Transition`；删 `Step`；三示例接 buffer | M | cartpole / pendulum / platform 用库 buffer |
+| **2** | 文档路径、`just examples-rl`、`py-gym-platform` | S | 无 gym-hybrid 推荐路径；`rg examples/sac` 清零 |
+| **3** | `cartpole_sac` smoke（`SMOKE=1` / `just example-cartpole-sac-smoke`） | S | 数分钟内跑通整条训练链；**不以 reward 收敛为通过条件** |
+| **4** | CHANGELOG / AGENTS / v0.19.0 | S | 发版前手跑 smoke + `just test-filter rl` |
+
+### 7.3 Phase 0 代码要点（最先做）
+
+1. `gym_env.rs`：仅 `gymnasium.make`；删除 `use_legacy_gym`、gym 分支、双 API reset/step。
+2. 错误信息：环境未注册时提示安装对应 **gymnasium extra** 或注册自定义环境，**不**提示安装 `gym`。
+3. `src/rl/tests/env/`：删除 Moving/Sliding 测例；**Phase 0b** 增加 Platform-v0 混合测例。
+4. `.doc/rl_python_env_setup.md`：批次 6 改为 **hybrid-platform**；移除 gym-hybrid 安装说明。
+5. `try_import_env_module`：`Platform-v0` → `import gym_platform`（删 `gym_hybrid`）。
+5. 验证：`just py-gym-basic` → `just test-serial`（或 `just test-filter rl`）。
+
+### 7.4 Smoke 含义
+
+- **不是**新二进制；是 **`cartpole_sac` 同一 example** 在 `SMOKE=1` 下的短参数（约 3 episode、小 buffer）。
+- **仅 CartPole**（主线、依赖最少）。
+- **不进**默认 CI；**进入** v0.19.0 发布前手动清单。
+
+### 7.5 明确不做
+
+- OpenAI Gym / `pip install gym` 回退路径
+- `Policy` trait、库内 `SacAgent`
+- `examples/traditional/sac/common.rs`（本版）
+- 默认 CI 跑 500 episode 或 `just examples-traditional` 作 RL 门禁
+
+### 7.6 Backlog（非 v0.19.0）
+
+- 无（混合环境已定为 Platform-v0）
+- Minari **离线训练**示例（`MinariDataset` 已有，无训练 example）
+- PER、DQN/PPO/TD3、Beta 分布
+
+### 7.7 2026-06-07 体检补充决策（buffer / 环境 API 形状）
+
+> Reviewer 体检 + 架构师裁决，5 项 API 形状决策在开工前定案，与 RL 主线实施计划 plan 同步。**凡与前文 §3.1 / §7.2 / §7.3 的字段或 Phase 描述冲突，以本节为准。**
+
+1. **终止语义（镜像 Gymnasium）**：`Transition` 字段由 `done` 改为 **`terminated` + `truncated` 两个 bool**（取代 §3.1 的 `done`）。TD target 用 `r + γ·(1 - terminated)·V(next)`；`CartPole-v0` 撞 200 步是 `truncated`、**仍需 bootstrap**，合并成 `done` 会算错 loss（[Gymnasium 官方](https://gymnasium.farama.org/main/tutorials/gymnasium_basics/handling_time_limits/)）。`GymEnv::step` 须透出两个信号（Phase 0 一并改）；便捷 `is_episode_end() = terminated || truncated`。
+2. **`BufferItem` 砍 `Send`**：改为 `Clone + 'static`。CPU-only 单线程无跨线程需求；`T` 须为纯 owned 数据（不持 `PyObject` / 借用）；真要并行（v0.22+）再加。
+3. **`sample` 语义边界**：`ReplayBuffer::sample` = 按**存储单位**随机有放回抽样，**非训练采样器**。`Transition` 存储单位 == 训练单位；`SelfPlayGame`（v0.21）整局存、position 取，需两级采样（helper 或独立 `GameBuffer`），不由本 `sample` 承诺覆盖。
+4. **采样实现红线**：`sample` 直接 `rng.gen_range(0..len)` 有放回，**禁止** `(0..len).collect()` 建全长索引；返 owned `Vec<T>`，不返 `&T` / 索引借用。
+5. **`GymEnv` 错误策略 + seed**：维持 **panic 为主**（程序员错误继续 `panic!` / `expect`），**不**全面 `Result` 化（教学玩具避免过度设计）；可复现靠显式注入 RNG（`reset(Some(seed))` / `sample(.., rng)` / `StdRng::seed_from_u64`）。
+
+**Phase 修订**（取代 §7.2 / §7.3 对应描述）：Phase 0 增「`step` 透出 `terminated` / `truncated` + 单测一例 truncation」；Phase 1 示例改 **切片迁移**（CartPole → Pendulum → Platform，逐个跑绿，不一次性三连改）。

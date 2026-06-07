@@ -100,7 +100,7 @@ struct SacConfig {
     update_every: usize,         // 每 N 步更新一次
     max_episodes: usize,
     /// 训练达标线（单回合达到即停止训练，测试 3 轮平均达到即判定成功）
-    /// CartPole-v0 最大步数 200，标准 solved 条件为 195，这里取 190 用于快速演示
+    /// CartPole-v0 最大步数 200，Gym solved 条件为 195（SAC/MuZero/PPO 统一架构跑通标准）
     target_reward: f32,
 }
 
@@ -114,7 +114,7 @@ impl Default for SacConfig {
             start_training_after: 1000,
             update_every: 1,
             max_episodes: 500,
-            target_reward: 190.0,
+            target_reward: 195.0,
         }
     }
 }

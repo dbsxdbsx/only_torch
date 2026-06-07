@@ -2,6 +2,16 @@
 
 ## [Unreleased] - 待提交
 
+### Changed
+
+- **docs(rl): v0.19 主线规划定稿 + 2026-06-07 体检决策同步**
+  - 环境：`GymEnv` 定调 **Gymnasium-only**（删 legacy gym 回退）；混合动作改用 **`Platform-v0`**（`hybrid-platform`），弃 gym-hybrid / Moving；离线数据用 Minari
+  - 验收分层：SAC / MuZero / PPO 架构跑通统一 **`CartPole-v0` reward ≥ 195**；**EfficientZero V2（EZ-V2，第二代）** 为唯一终极调优算法（全 `-v1` 环境）
+  - buffer（v0.19 计划）：`Transition` 取代 `Step`；`ReplayBuffer<T: Clone + 'static>` 泛型（砍 `Send`）；`sample` 定义为按存储单位有放回抽样、**非训练采样器**，禁建全长索引、返 owned `Vec<T>`
+  - **终止语义**：`Transition` 存 `terminated` + `truncated`（对齐 Gymnasium），`truncated` 仍 bootstrap；`GymEnv::step` 透出两信号，修正 `CartPole-v0` 200 步截断被当真终止导致的 TD target 误算
+  - `GymEnv` 维持 panic 为主、不全面 `Result` 化；seed 显式注入契约
+  - 文档同步：`rl_roadmap.md`（新增 §7.7 体检决策）、`AGENTS.md`、`rl.instructions.md`、`rl_python_env_setup.md`、`sac/README.md`、`sac_mathematical_foundations.md`；`examples/traditional/sac/cartpole` `target_reward` 190 → 195
+
 ## [0.18.0] - 2026-05-27
 
 ### Added

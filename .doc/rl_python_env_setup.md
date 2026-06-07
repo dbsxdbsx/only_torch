@@ -20,7 +20,7 @@
 | 推荐程度 | 已过时 | **官方推荐替代品** |
 | 官网 | - | https://gymnasium.farama.org/ |
 
-**结论**：直接使用 **Gymnasium**，不要用老的 OpenAI Gym。
+**结论**：项目 **仅支持 Gymnasium**；不要安装或使用 OpenAI Gym（`pip install gym`）。`GymEnv` 不再回退到老 gym。
 
 ### MuJoCo
 
@@ -35,13 +35,38 @@
 - 支持 Python 3.8 - 3.12
 - 官网：https://minari.farama.org/
 
-### gym-hybrid（混合动作空间）
+### 混合动作：`Platform-v0`（[`hybrid-platform`](https://pypi.org/project/hybrid-platform/)）
 
-- 提供离散+连续混合动作空间的测试环境
-- 包含 `Moving-v0` 和 `Sliding-v0` 两个环境
-- **推荐通过 DI-engine 安装**（内置集成，维护更好）
-- DI-engine GitHub：https://github.com/opendilab/DI-engine（3.5k+ stars）
-- gym-hybrid 文档：https://di-engine-docs.readthedocs.io/en/latest/13_envs/gym_hybrid.html
+- **取代** gym-hybrid / Moving-v0 / Sliding-v0（后者依赖老 `gym`，项目不再使用）
+- 安装：`pip install hybrid-platform`（依赖 `gymnasium`、`numpy`、`pygame`）
+- 用法：`import gymnasium as gym` + **`import gym_platform`** → `gym.make("Platform-v0")`
+- 任务：横版跳台（run / hop / leap + 连续参数）；论文 [Masson et al. 2016](https://arxiv.org/abs/1509.01644)
+- 示意图：[gym-platform platform_domain.png](https://github.com/cycraig/gym-platform/blob/master/img/platform_domain.png)
+
+## 生态分层（Gymnasium / 扩展包 / Minari）
+
+| 层级 | 是什么 | 安装 | only_torch 对接 |
+|------|--------|------|-----------------|
+| **核心** | Gymnasium API + 内置环境 ID（CartPole、Pendulum 等） | `pip install gymnasium` | 见下 **CartPole 版本约定** |
+| **扩展环境** | 同一 API，额外物理/任务包 | `gymnasium[mujoco]`、`[box2d]`、`[atari]` 等 | 同上，换 env id |
+| **自定义环境** | 用户 `gymnasium.register` | 项目自有 Python 包 | 同上 |
+| **离线数据** | **不是**在线 `env.step` 循环 | `pip install minari` + `minari download …` | `MinariDataset`（`src/rl/env/minari.rs`） |
+
+### CartPole 版本约定（2026-05-27）
+
+| 用途 | 环境 ID | 说明 |
+|------|---------|------|
+| **SAC / MuZero / PPO 架构跑通** | **`CartPole-v0`** | 满分 200；Gym solved = **单局或 100 局均值 ≥ 195** |
+| **EfficientZero V2（EZ-V2）终极调优** | **`CartPole-v1`** | 满分 500；性能指标按 EZ-V2 / v1 任务单独定义 |
+| **GymEnv 单元测试** | `CartPole-v1` 等 | 与算法验收无关，仅测桥接 API |
+
+**关于「Gymnasium 是否包含老 gym 的一切」**：
+
+- Gymnasium 是 OpenAI Gym 的**官方继任者**（维护方、API 规范），**不是**数学意义上的「老 gym 环境全集 ⊂ Gymnasium」。
+- **标准环境**（CartPole、Pendulum、MuJoCo 等）应使用 Gymnasium 及其 extras。
+- **混合动作**：用第三方 **`hybrid-platform`**（Platform-v0），不装 gym-hybrid；Rust 不回退老 `gym`。
+
+**离线 RL**：数据在 **Minari**（D4RL 继任），与 `gymnasium` 是**并列包**；装 Gymnasium **不会**自动带上 Minari 数据集。
 
 ## 安装与测试环境一览
 
@@ -56,7 +81,7 @@ pip install --upgrade pip
 
 | 批次 | 安装命令 | 环境名称 | 观察空间 | 动作空间 | 测试场景 |
 |:----:|---------|---------|---------|---------|---------|
-| 1 | `pip install gymnasium` | CartPole-v1 | Box(4,) | Discrete(2) | 基础离散 |
+| 1 | `pip install gymnasium` | CartPole-v0 / CartPole-v1 | Box(4,) | Discrete(2) | v0：SAC/MZ/PPO（≥195）；v1：EfficientZero V2 |
 | 1 | | Acrobot-v1 | Box(6,) | Discrete(3) | 基础离散 |
 | 1 | | Pendulum-v1 | Box(3,) | Box(1,) [-2,2] | 基础连续 |
 | 1 | | MountainCarContinuous-v0 | Box(2,) | Box(1,) [-1,1] | 基础连续 |
@@ -70,8 +95,7 @@ pip install --upgrade pip
 | 4 | | ALE/Pong-v5 | Box(210,160,3) | Discrete(6) | Atari 图像+离散 |
 | 4 | | ALE/SpaceInvaders-v5 | Box(210,160,3) | Discrete(6) | Atari 图像+离散 |
 | 5 | `pip install minari` | D4RL/pointmaze/umaze-v2 | 离线数据集 | 离线数据集 | Offline RL |
-| 6 | `pip install DI-engine` | Moving-v0 | Box(10,) | Tuple(Discrete(3), Box(2,)) | 混合动作空间 |
-| 6 | | Sliding-v0 | Box(10,) | Tuple(Discrete(3), Box(2,)) | 混合动作空间 |
+| 6 | `pip install hybrid-platform` | Platform-v0 | Tuple(Box(9,), Discrete(200)) | Tuple(Discrete(3), Tuple(Box×3)) | 混合动作；需 `import gym_platform` |
 | 7 | 自定义环境 | Gomoku-random-v0 | Box(3,15,15) | Discrete(225) | 五子棋-随机对手 |
 | 7 | | Gomoku-naive0-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive0 |
 | 7 | | Gomoku-naive1-v0 | Box(3,15,15) | Discrete(225) | 五子棋-Naive1 |
@@ -82,7 +106,7 @@ pip install --upgrade pip
 > - Box(n,) 表示 n 维连续向量；Discrete(n) 表示 n 选 1 离散动作
 > - Atari 观察空间为 HWC 格式图像 (高度 × 宽度 × 通道)
 > - Minari 用于离线 RL，通过 `minari download <dataset_id>` 下载数据集
-> - gym-hybrid 的动作格式为 `(action_id, [param1, param2])`，action_id 对应加速/转向/刹车
+> - Platform-v0：离散选 run(0)/hop(1)/leap(2)，连续参数见 [hybrid-platform PyPI](https://pypi.org/project/hybrid-platform/)
 
 ### 按学习范式分类
 
@@ -138,7 +162,7 @@ just py-gym-box2d          # test_03: Box2D 环境
 just py-gym-mujoco         # test_04: MuJoCo 环境
 just py-gym-atari          # test_05: Atari 环境
 just py-gym-minari         # test_06: Minari 离线数据集
-just py-gym-hybrid         # test_07: 混合动作空间
+just py-gym-platform       # test_07: Platform-v0 混合动作（待 justfile 从 py-gym-hybrid 改名）
 just py-gym-gomoku         # test_08: 五子棋自定义环境
 ```
 
@@ -147,7 +171,7 @@ just py-gym-gomoku         # test_08: 五子棋自定义环境
 - [x] **批次 3**：MuJoCo 环境 ✅
 - [x] **批次 4**：Atari 环境 ✅
 - [x] **批次 5**：Minari 离线数据集 ✅
-- [x] **批次 6**：混合动作空间（gym-hybrid）✅
+- [ ] **批次 6**：混合动作空间（**Platform-v0 / hybrid-platform**，取代 gym-hybrid）⏳ Phase 0b
 - [x] **批次 7**：五子棋自定义环境 ✅
 
 ## 后续步骤
@@ -194,6 +218,8 @@ fn test_gym_env() {
 ## 自定义环境支持
 
 ### 五子棋环境（Gomoku）
+
+> **TODO v0.21**：将 `tests/python/custom_envs/gomoku.py` 迁入 **`python/gym_env/gomoku/`**（`pip install -e python/gym_env`）。**扁平布局**：`python/gym_env/` 即 `import gym_env` 的包根（`__init__.py` 与 `pyproject.toml` 同级，**不**建 `gym_env/gym_env/`）；`pyproject.toml` 用 `[tool.setuptools.package-dir] "gym_env" = "."`。子模块：`board.py`（规则 + `legal_mask` + `clone`/`restore`，**无 MCTS**）+ `env.py`（薄 Gym 包装）。注册 **`Gomoku-selfplay-v0`**（训练）与 **`Gomoku-naive*-v0`**（评测）。Rust：**MCTS 在 `src/rl/mcts/`**；`GymEnv` 仅桥接 Board；**无** `GomokuRust`。详见 [RL 主线实施计划 v0.21](../c:/Users/Administrator/.cursor/plans/rl_主线实施计划_5966956a.plan.md)。
 
 项目已实现基于 Gymnasium 的五子棋环境，位于 `tests/python/custom_envs/gomoku.py`。
 
@@ -268,6 +294,8 @@ env.render()  # 打印棋盘
 
 ### 自定义环境目录结构
 
+**当前（v0.19）**：
+
 ```
 tests/python/
 ├── __init__.py
@@ -278,6 +306,20 @@ tests/python/
 └── custom_envs/            # 自定义环境
     ├── __init__.py         # 导入时自动注册所有环境
     └── gomoku.py           # 五子棋环境实现
+```
+
+**目标（v0.21，`python/gym_env/` 扁平包）**：
+
+```
+python/
+└── gym_env/                # pip install -e python/gym_env；import gym_env
+    ├── pyproject.toml      # package-dir: "gym_env" = "."
+    ├── __init__.py         # gymnasium.register
+    └── gomoku/
+        ├── __init__.py
+        ├── board.py
+        ├── env.py
+        └── opponents.py
 ```
 
 ### Rust 端使用自定义环境
@@ -293,37 +335,35 @@ Python::attach(|py| {
 });
 ```
 
-## Rust 端智能环境加载
+## Rust 端环境加载（Gymnasium-only）
 
-### 设计目标
+### 设计目标（v0.19.0+）
 
-Rust 层的 `GymEnv` 对用户透明地处理各种 Python 环境来源：
+`GymEnv` **只**通过 `gymnasium.make(env_id)` 创建环境：
 
-- **gymnasium 环境**：CartPole-v1, Pendulum-v1, MuJoCo 环境等
-- **gym 环境**：gym-hybrid 的 Moving-v0, Sliding-v0 等（仅支持老 gym）
-- **自定义环境**：注册到 gymnasium 的用户自定义环境
+- **内置 / extras 环境**：CartPole-v1、Pendulum-v1、MuJoCo、Atari 等（需对应 `pip install` extras）
+- **自定义环境**：已 `gymnasium.register` 的包（如五子棋）
+- **不支持**：OpenAI Gym（`import gym`）、gym-hybrid（Moving-v0 / Sliding-v0）
+- **混合动作**：`Platform-v0`（先 `import gym_platform`）
 
 ### 加载策略
 
 ```
-用户调用: GymEnv::new(py, "Moving-v0")
-                    ↓
-         1. 尝试 gymnasium.make("Moving-v0")
-                    ↓ (失败: 环境未注册)
-         2. 尝试 gym.make("Moving-v0")
-                    ↓ (成功)
-         3. 返回环境，用户无感知
+GymEnv::new(py, "CartPole-v1")
+        ↓
+gymnasium.make("CartPole-v1")
+        ↓
+成功 → 统一 reset/step API（terminated || truncated → done）
+失败 → 明确报错（缺 extra / 未 register），不尝试 gym
 ```
 
-### gym 与 gymnasium 的 API 差异
+### API（仅 Gymnasium）
 
-| 方面 | gymnasium | gym (legacy) |
-|------|-----------|--------------|
-| reset() 返回值 | `(obs, info)` | `obs` 或 `(obs, info)` |
-| step() 返回值 | `(obs, reward, terminated, truncated, info)` | `(obs, reward, done, info)` |
-| seed 设置 | `reset(seed=42)` | `env.seed(42)` |
-
-这些差异由 Rust 端的 `GymEnv` 内部统一处理，对用户完全透明。
+| 方面 | 约定 |
+|------|------|
+| reset | `(obs, info)`，`reset(seed=…)` |
+| step | `(obs, reward, terminated, truncated, info)` |
+| done（Rust 侧） | `terminated \|\| truncated` |
 
 ### 架构图
 
@@ -332,9 +372,9 @@ Rust 层的 `GymEnv` 对用户透明地处理各种 Python 环境来源：
 │                     Rust 层 (only_torch)                     │
 ├─────────────────────────────────────────────────────────────┤
 │  GymEnv                                                      │
-│  ├── new(py, "CartPole-v1")     → 自动选择 gymnasium         │
-│  ├── new(py, "Moving-v0")       → 自动回退到 gym             │
-│  ├── new(py, "Gomoku-v0")       → 自定义环境 (gymnasium)     │
+│  ├── new(py, "CartPole-v1")     → gymnasium                  │
+│  ├── new(py, "Gomoku-v0")       → 自定义 (gymnasium.register) │
+│  ├── new(py, "Platform-v0")     → hybrid-platform（import gym_platform）│
 │  │                                                          │
 │  ├── reset(seed) → Vec<Vec<f32>>                           │
 │  ├── step(action) → (obs, reward, done)                    │
@@ -348,8 +388,8 @@ Rust 层的 `GymEnv` 对用户透明地处理各种 Python 环境来源：
 │  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 │         ↑                ↑                    ↑             │
 │         │                │                    │             │
-│  CartPole-v1      Moving-v0             Gomoku-*-v0   │
-│  Pendulum-v1      Sliding-v0            (5 难度级别)        │
+│  CartPole-v1      Platform-v0           Gomoku-*-v0   │
+│  Pendulum-v1      (hybrid-platform)     (5 难度级别)        │
 │  MuJoCo envs...                                            │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -361,6 +401,6 @@ Rust 层的 `GymEnv` 对用户透明地处理各种 Python 环境来源：
 - [MuJoCo 官网](https://mujoco.org/)
 - [Minari 官方文档](https://minari.farama.org/)
 - [Farama Foundation](https://farama.org/)
-- [gym-hybrid](https://github.com/thomashirtz/gym-hybrid) - 混合动作空间环境
-- [DI-engine](https://github.com/opendilab/DI-engine) - 生产级 RL 框架（含 PDQN/MPDQN/HPPO 算法）
-- [DI-engine gym-hybrid 文档](https://di-engine-docs.readthedocs.io/en/latest/13_envs/gym_hybrid.html)
+- [hybrid-platform](https://pypi.org/project/hybrid-platform/) - Platform-v0 混合动作（Gymnasium）
+- [gym-platform](https://github.com/cycraig/gym-platform) - Platform 原实现与论文截图
+- [Masson et al. 2016](https://arxiv.org/abs/1509.01644) - Parameterized Actions / Platform domain
