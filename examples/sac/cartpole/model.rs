@@ -172,19 +172,4 @@ impl SacAgent {
             .soft_update_from(&self.critic2, self.tau);
     }
 
-    /// 更新 alpha（温度参数）
-    ///
-    /// SAC 的 alpha loss: `L_α` = α * (H(π) - `target_entropy`)
-    /// 梯度: ∂`L/∂log_α` = α * (H(π) - `target_entropy`)
-    ///
-    /// - 若 H(π) < `target_entropy`，α 增大，鼓励更多探索
-    /// - 若 H(π) > `target_entropy`，α 减小，减少探索
-    ///
-    /// # 参数
-    /// - `avg_entropy` — 当前策略的 batch 平均熵（从 probs/log_probs 离线计算）
-    pub fn update_alpha(&mut self, avg_entropy: f32) {
-        let alpha = self.alpha();
-        let alpha_grad = alpha * (avg_entropy - self.target_entropy);
-        self.log_alpha -= self.alpha_lr * alpha_grad;
-    }
 }

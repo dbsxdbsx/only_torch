@@ -298,10 +298,14 @@ example-platform-sac:
     @echo "=== Running Platform Hybrid SAC [{{_blas_name}}] (requires Python + gymnasium + hybrid-platform) ==="
     cargo run --example platform_sac {{_blas_flag}}
 
+example-lunarlander-sac:
+    @echo "=== Running LunarLander-v3 SAC-Discrete [{{_blas_name}}] (requires Python + gymnasium[box2d]) ==="
+    cargo run --example lunarlander_sac {{_blas_flag}}
+
 # ---------- RL 聚合 ----------
 
-# 运行所有 RL examples（需 Python + gymnasium）
-examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac
+# 运行所有 RL examples（需 Python + gymnasium + extras）
+examples-rl: example-cartpole-sac example-pendulum-sac example-platform-sac example-lunarlander-sac
 
 # 验证 Platform-v0 Python 环境可用
 py-gym-platform:

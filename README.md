@@ -69,9 +69,10 @@ let dot = graph.to_dot();
 | [dual_output_classify](examples/traditional/dual_output_classify/) | 多任务 | **多输出**、多 Loss 训练 | `Shared → (Cls, Reg)` | `cargo run --example dual_output_classify` |
 | [multi_io_fusion](examples/traditional/multi_io_fusion/) | 多任务 | **多输入+多输出**、特征融合 | `2×Enc → Fusion → (Cls, Reg)` | `cargo run --example multi_io_fusion` |
 | [multi_label_point](examples/traditional/multi_label_point/) | **多标签分类** | **BceLoss**、multi_label_accuracy | `2 → 16 → 16 → 4` | `cargo run --example multi_label_point` |
-| [cartpole_sac](examples/traditional/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
-| [pendulum_sac](examples/traditional/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、动作缩放 | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
-| [moving_sac](examples/traditional/sac/moving/) | **强化学习** | **Hybrid SAC**、独立连续分支、双温度 | `Actor(10→256→离散+连续) Critic(12→256→3)` | `cargo run --example moving_sac` |
+| [cartpole_sac](examples/sac/cartpole/) | **强化学习** | **SAC-Discrete**、GymEnv、经验回放 | `Actor-Critic(4→64→2)` | `cargo run --example cartpole_sac` |
+| [pendulum_sac](examples/sac/pendulum/) | **强化学习** | **SAC-Continuous**、TanhNormal、动作缩放 | `Actor(3→32→mean+std) Critic(4→32→1)` | `cargo run --example pendulum_sac` |
+| [platform_sac](examples/sac/platform/) | **强化学习** | **Hybrid SAC**、Platform-v0 混合动作、双温度 | `Actor(10→128→离散+连续) Critic(13→128→3)` | `cargo run --example platform_sac` |
+| [lunarlander_sac](examples/sac/lunarlander/) | **强化学习** | **SAC-Discrete**、LunarLander-v3、验证 helper 复用 | `Actor(8→128→4) Critic(8→128→4)` | `cargo run --example lunarlander_sac` |
 | [chinese_chess_cnn_onnx_finetune](examples/traditional/chinese_chess_cnn_onnx_finetune/) | 图像分类 | **ONNX 互通**、CNN、继续训练、.otm 保存/加载 | `Conv(3→16→32) FC(1568→128→15)` | `cargo run --example chinese_chess_cnn_onnx_finetune` |
 | [chinese_chess_yolov5_onnx_recognize_fen](examples/traditional/chinese_chess_yolov5_onnx_recognize_fen/) | YOLOv5 检测 → FEN 识别 | **第三方真实 YOLOv5 ONNX**、整盘识别 → 标准 FEN | YOLOv5 (~7M 参数) | `cargo run --example chinese_chess_yolov5_onnx_recognize_fen` |
 | [evolution_xor](examples/evolution/xor/) | **神经架构演化** | **Evolution API**、零模型代码、自动架构搜索 | 自动演化 | `cargo run --example evolution_xor` |
@@ -607,7 +608,7 @@ cargo build --features blas-openblas
 | 优先级 | 任务 | 入口 |
 |--------|------|------|
 | P0 | 跑通 SAC + CartPole | `just example-cartpole-sac` |
-| P1 | ReplayBuffer / Actor-Critic 更新步沉淀到 `src/rl/` | 对照 `examples/traditional/sac/` |
+| P1 | ReplayBuffer / Actor-Critic 更新步沉淀到 `src/rl/` | 对照 `examples/sac/` |
 | P2 | 连续 / 混合动作验证 | `just example-pendulum-sac`、`just example-moving-sac` |
 | P3 | Gymnasium 封装与 Windows 说明 | `.doc/rl_python_env_setup.md` |
 

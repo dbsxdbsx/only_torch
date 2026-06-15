@@ -33,9 +33,9 @@
 | **Categorical** | `src/nn/distributions/` | 离散分类分布（probs / log_probs / entropy / sample） |
 | **Normal** | `src/nn/distributions/` | 正态分布，支持重参数化采样（rsample） |
 | **TanhNormal** | `src/nn/distributions/` | Squashed Gaussian，带 Jacobian 修正的 log_prob |
-| **SAC-Discrete** | `examples/traditional/sac/cartpole/` | **CartPole-v0**（架构跑通；发版验收 **reward ≥ 195**） |
-| **SAC-Continuous** | `examples/traditional/sac/pendulum/` | Pendulum-v1，连续动作，TanhNormal 策略 |
-| **Hybrid SAC** | `examples/traditional/sac/platform/`（由 `moving/` 迁移） | **`Platform-v0`**（[`hybrid-platform`](https://pypi.org/project/hybrid-platform/)，Gymnasium 生态，**不用** gym-hybrid） |
+| **SAC-Discrete** | `examples/sac/cartpole/` | **CartPole-v0**（架构跑通；发版验收 **reward ≥ 195**） |
+| **SAC-Continuous** | `examples/sac/pendulum/` | Pendulum-v1，连续动作，TanhNormal 策略 |
+| **Hybrid SAC** | `examples/sac/platform/`（由 `moving/` 迁移） | **`Platform-v0`**（[`hybrid-platform`](https://pypi.org/project/hybrid-platform/)，Gymnasium 生态，**不用** gym-hybrid） |
 
 ### 1.2 目录结构
 
@@ -53,7 +53,7 @@ src/rl/
     ├── env/            # 环境测试（#[serial]）
     └── buffer_replay.rs
 
-examples/traditional/sac/
+examples/sac/
 ├── README.md
 ├── cartpole/           # 主线 + smoke
 ├── pendulum/
@@ -302,7 +302,7 @@ $$
 
 作为 TanhNormal 的备选连续策略后端。Beta 分布天然有界（[0, 1]，可缩放），无需 Jacobian 修正，在高维连续动作 + 严格边界控制的场景有优势。
 
-详见 [Beta 分布备选方案分析](../../examples/traditional/sac/beta_distribution_note.md)。
+详见 [Beta 分布备选方案分析](../../examples/sac/beta_distribution_note.md)。
 
 **依赖**：需要实现 `src/nn/distributions/beta.rs`。
 
@@ -436,9 +436,9 @@ pub trait PlanningAgent {
 ### 项目内文档
 
 - [RL Python 环境搭建指南](../rl_python_env_setup.md) — Gymnasium-only、扩展包、Minari、五子棋
-- [SAC 示例总览](../../examples/traditional/sac/README.md) — Entropy、Alpha、Target Entropy 核心概念
-- [SAC 数学基础分析](../../examples/traditional/sac/sac_mathematical_foundations.md) — Hybrid 6 种模式、收敛性、KL 散度
-- [Beta 分布备选方案](../../examples/traditional/sac/beta_distribution_note.md) — 有界连续策略分析
+- [SAC 示例总览](../../examples/sac/README.md) — Entropy、Alpha、Target Entropy 核心概念
+- [SAC 数学基础分析](../../examples/sac/sac_mathematical_foundations.md) — Hybrid 6 种模式、收敛性、KL 散度
+- [Beta 分布备选方案](../../examples/sac/beta_distribution_note.md) — 有界连续策略分析
 - [概率分布模块设计](./distributions_design.md) — Categorical / Normal / TanhNormal API 设计
 - [DataLoader 设计](./data_loader_design.md) — Phase 2 段落记录了 Buffer 解耦决策
 - [待扩展节点类型](./future_node_types.md) — PPO 等算法可能需要的节点

@@ -41,6 +41,7 @@
 //! });
 //! ```
 
+pub mod algo;
 pub mod buffer;
 mod env;
 

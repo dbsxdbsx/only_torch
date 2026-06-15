@@ -256,15 +256,19 @@
 
 [[example]]
     name="cartpole_sac"
-    path="examples/traditional/sac/cartpole/main.rs"
+    path="examples/sac/cartpole/main.rs"
 
 [[example]]
     name="pendulum_sac"
-    path="examples/traditional/sac/pendulum/main.rs"
+    path="examples/sac/pendulum/main.rs"
 
 [[example]]
     name="platform_sac"
-    path="examples/traditional/sac/platform/main.rs"
+    path="examples/sac/platform/main.rs"
+
+[[example]]
+    name="lunarlander_sac"
+    path="examples/sac/lunarlander/main.rs"
 
 [[example]]
     name="evolution_xor"

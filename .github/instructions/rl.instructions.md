@@ -1,5 +1,5 @@
 ---
-applyTo: "{src/rl/**,examples/traditional/sac/**,tests/python/gym/**}"
+applyTo: "{src/rl/**,examples/sac/**,tests/python/gym/**}"
 description: "Use when editing reinforcement learning code, Gym/Gymnasium integration, or the PyO3 bridge in only_torch."
 ---
 

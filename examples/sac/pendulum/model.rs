@@ -244,14 +244,4 @@ impl SacAgent {
             .soft_update_from(&self.critic2, self.tau);
     }
 
-    /// 更新 alpha（温度参数）
-    ///
-    /// - `avg_entropy` — 当前策略的 batch 平均熵（从 log_prob 离线计算）
-    pub fn update_alpha(&mut self, avg_entropy: f32) {
-        let alpha = self.alpha();
-        let alpha_grad = alpha * (avg_entropy - self.target_entropy);
-        self.log_alpha -= self.alpha_lr * alpha_grad;
-        // 安全 clamp
-        self.log_alpha = self.log_alpha.clamp(-20.0, 2.0);
-    }
 }

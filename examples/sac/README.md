@@ -1,8 +1,7 @@
 # SAC（Soft Actor-Critic）系列示例
 
 > 本目录包含基于 SAC 算法的强化学习示例，以及 SAC 核心概念的系统讲解。
->
-> **v0.21 计划**：本目录将重组为 `examples/sac/`；三示例瘦身到 ≤ 150 行 main.rs，新增 `lunarlander/`（≤ 80 行）。
+> 训练逻辑复用 `only_torch::rl::algo::sac` 函数式 helper（TD target / V 值 / alpha 更新 / batch 转换）。
 
 ## 目录
 
@@ -11,6 +10,7 @@
 | [cartpole/](cartpole/) | SAC-Discrete，CartPole 平衡杆任务 | `cargo run --example cartpole_sac` |
 | [pendulum/](pendulum/) | SAC-Continuous，Pendulum 摆锤控制 | `cargo run --example pendulum_sac` |
 | [platform/](platform/) | Hybrid SAC，Platform-v0 混合动作空间 | `cargo run --example platform_sac` |
+| [lunarlander/](lunarlander/) | SAC-Discrete，LunarLander-v3 着陆任务 | `cargo run --example lunarlander_sac` |
 
 ---
 
