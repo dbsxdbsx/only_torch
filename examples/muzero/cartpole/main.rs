@@ -9,8 +9,8 @@ mod model;
 
 use model::MuZeroModel;
 use only_torch::nn::{Adam, Graph, GraphError, Optimizer};
-use only_torch::rl::algo::muzero::compute_n_step_target;
-use only_torch::rl::mcts::{mcts_search, ActionPayload, DynamicsModel, MctsConfig, PuctPolicy};
+use only_torch::rl::algo::muzero::{MuZeroConfig, compute_n_step_target, reanalyze_game};
+use only_torch::rl::mcts::{ActionPayload, DynamicsModel, MctsConfig, PuctPolicy, mcts_search};
 use only_torch::rl::{GameOutcome, GymEnv, ReplayBuffer, SelfPlayGame, SelfPlayStep};
 use pyo3::Python;
 use rand::rngs::StdRng;
@@ -37,31 +37,8 @@ fn self_play_one_episode(
             _ => 0,
         };
 
-        // root value = visit-weighted Q from root's perspective:
-        // Q(a) = reward(a) + discount * V(child(a))
-        let root_value = if !result.children.is_empty() {
-            let total_visits: u32 = result.children.iter().map(|c| c.visit_count).sum();
-            if total_visits > 0 {
-                result
-                    .children
-                    .iter()
-                    .map(|c| {
-                        if c.visit_count > 0 {
-                            let child_v = c.value_sum / c.visit_count as f32;
-                            let q = c.reward + c.discount * child_v;
-                            q * c.visit_count as f32
-                        } else {
-                            0.0
-                        }
-                    })
-                    .sum::<f32>()
-                    / total_visits as f32
-            } else {
-                0.0
-            }
-        } else {
-            0.0
-        };
+        // root value：visit 加权的子节点 Q（与 reanalyze 共用 SearchResult::root_value 口径）
+        let root_value = result.root_value();
 
         steps.push(SelfPlayStep {
             obs: obs.clone(),
@@ -98,10 +75,7 @@ fn train_batch(
     gamma: f32,
     rng: &mut impl Rng,
 ) -> Result<f32, GraphError> {
-    let valid_games: Vec<&SelfPlayGame> = games
-        .iter()
-        .filter(|g| g.steps.len() >= 2)
-        .collect();
+    let valid_games: Vec<&SelfPlayGame> = games.iter().filter(|g| g.steps.len() >= 2).collect();
     if valid_games.is_empty() {
         return Ok(0.0);
     }
@@ -233,18 +207,33 @@ fn eval_episodes(
 fn main() -> Result<(), GraphError> {
     let smoke = std::env::var("SMOKE").is_ok();
 
+    // 网络拓扑（环境相关，留示例）
     let latent_dim = 64;
     let action_dim = 2;
     let obs_dim = 4;
-    let lr = 0.02;
-    let gamma = 0.997;
-    let k_unroll = 5;
-    let td_steps = 50;
-    let num_simulations = 50;
-    let buffer_capacity = 1000;
-    let start_training_after = 10;
-    let batch_games = 8;
-    let trains_per_episode = 8;
+
+    // 算法超参：库级 MuZeroConfig 容器，按环境配置（CartPole 用 CPU 友好默认）。
+    // 换环境时在此覆盖字段，尤其 num_simulations（棋类自对弈应显著调高）。
+    let mut cfg = MuZeroConfig::default();
+    // reanalyze 默认关闭（CPU 上较贵）；用 `REANALYZE=<比例>` 开启 demo（如 0.5）。
+    if let Ok(v) = std::env::var("REANALYZE") {
+        if let Ok(f) = v.parse::<f32>() {
+            cfg.reanalyze_fraction = f.clamp(0.0, 1.0);
+        }
+    }
+    let MuZeroConfig {
+        gamma,
+        k_unroll,
+        td_steps,
+        num_simulations,
+        lr,
+        batch_games,
+        trains_per_episode,
+        buffer_capacity,
+        start_training_after,
+        reanalyze_fraction,
+    } = cfg;
+
     let max_episodes = if smoke {
         3
     } else {
@@ -262,8 +251,7 @@ fn main() -> Result<(), GraphError> {
         let mut buffer: ReplayBuffer<SelfPlayGame> = ReplayBuffer::new(buffer_capacity);
         let mut rng = StdRng::seed_from_u64(42);
 
-        let actions: Vec<ActionPayload> =
-            (0..action_dim).map(ActionPayload::Discrete).collect();
+        let actions: Vec<ActionPayload> = (0..action_dim).map(ActionPayload::Discrete).collect();
 
         let mut ep_rewards: VecDeque<f32> = VecDeque::with_capacity(100);
 
@@ -285,8 +273,7 @@ fn main() -> Result<(), GraphError> {
                 ..MctsConfig::default()
             };
 
-            let steps =
-                self_play_one_episode(&env, &model, &actions, &mcts_cfg, gamma);
+            let steps = self_play_one_episode(&env, &model, &actions, &mcts_cfg, gamma);
             let ep_reward: f32 = steps.iter().map(|s| s.reward).sum();
             let ep_len = steps.len();
 
@@ -295,8 +282,14 @@ fn main() -> Result<(), GraphError> {
                 let rvs: Vec<f32> = steps.iter().filter_map(|s| s.root_value).collect();
                 let rv_min = rvs.iter().cloned().fold(f32::INFINITY, f32::min);
                 let rv_max = rvs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-                let p0 = steps.first().map(|s| s.policy_target.clone()).unwrap_or_default();
-                let pmid = steps.get(ep_len / 2).map(|s| s.policy_target.clone()).unwrap_or_default();
+                let p0 = steps
+                    .first()
+                    .map(|s| s.policy_target.clone())
+                    .unwrap_or_default();
+                let pmid = steps
+                    .get(ep_len / 2)
+                    .map(|s| s.policy_target.clone())
+                    .unwrap_or_default();
                 println!(
                     "  [dbg] ep{ep} root_value∈[{rv_min:.2},{rv_max:.2}] π0={p0:?} πmid={pmid:?}"
                 );
@@ -312,9 +305,33 @@ fn main() -> Result<(), GraphError> {
                 let mut loss_sum = 0.0;
                 let n_trains = if smoke { 1 } else { trains_per_episode };
                 for _ in 0..n_trains {
-                    let games = buffer.sample(batch_games, &mut rng);
+                    let mut games = buffer.sample(batch_games, &mut rng);
+                    // reanalyze（可选，CPU 贵）：用最新模型对部分采样局重跑 MCTS，
+                    // 刷新 policy/value 目标（生成干净目标，关 Dirichlet 噪声）。
+                    if reanalyze_fraction > 0.0 {
+                        let re_cfg = MctsConfig {
+                            num_simulations,
+                            temperature: 1.0,
+                            discount: gamma,
+                            root_exploration_fraction: 0.0,
+                            ..MctsConfig::default()
+                        };
+                        let re_policy = PuctPolicy::new();
+                        for g in games.iter_mut() {
+                            if rng.gen_range(0.0..1.0) < reanalyze_fraction {
+                                let dyn_model = DynamicsModel::new(&model, actions.clone(), gamma);
+                                reanalyze_game(&dyn_model, &re_policy, g, &re_cfg);
+                            }
+                        }
+                    }
                     let l = train_batch(
-                        &model, &mut optimizer, &games, k_unroll, td_steps, gamma, &mut rng,
+                        &model,
+                        &mut optimizer,
+                        &games,
+                        k_unroll,
+                        td_steps,
+                        gamma,
+                        &mut rng,
                     )?;
                     loss_sum += l;
                 }
@@ -350,9 +367,7 @@ fn main() -> Result<(), GraphError> {
                 let recent: f32 = ep_rewards.iter().rev().take(20).sum::<f32>() / 20.0;
                 if recent >= 170.0 {
                     let eval_r = eval_episodes(&env, &model, &actions, gamma, 20, num_simulations);
-                    println!(
-                        "  贪心 eval 20 局均值={eval_r:.1}（self-play 近20均值={recent:.1}）"
-                    );
+                    println!("  贪心 eval 20 局均值={eval_r:.1}（self-play 近20均值={recent:.1}）");
                     if eval_r >= 195.0 {
                         println!("MuZero CartPole-v0 达标！贪心 eval 20 局均值={eval_r:.1} ≥ 195");
                         break;

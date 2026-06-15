@@ -64,6 +64,7 @@ mod node_relu6;
 mod node_repeat;
 mod node_reshape;
 mod node_rms_norm;
+mod node_scale_gradient; // scale_gradient（梯度缩放：前向恒等、反向 ×scale；MuZero K 步 unroll 半衰）
 mod node_select;
 mod node_selu;
 mod node_sigmoid;

@@ -5,7 +5,10 @@
 pub enum ActionPayload {
     Discrete(usize),
     Continuous(Vec<f32>),
-    Hybrid { discrete: usize, continuous: Vec<f32> },
+    Hybrid {
+        discrete: usize,
+        continuous: Vec<f32>,
+    },
 }
 
 /// root 推理输出
@@ -72,6 +75,33 @@ pub struct SearchResult {
     pub recommended: ActionPayload,
     /// 学习用策略目标（visit count 归一化）
     pub learn_policy: Vec<f32>,
+}
+
+impl SearchResult {
+    /// 根节点 value 估计：visit 加权的子节点动作价值
+    /// `Q(a) = reward(a) + discount(a)·V(child(a))`，`V(child) = value_sum/visit_count`。
+    ///
+    /// 这是 MuZero self-play 记录 `root_value` 与 reanalyze 重算 value 目标共用的口径，
+    /// 抽到此处避免两边公式漂移。
+    ///
+    /// 单智能体口径（不翻转视角）；双人零和的 negamax 视角翻转待 AlphaZero 用到时再扩展。
+    /// 无子节点或零访问时返回 `0.0`。
+    pub fn root_value(&self) -> f32 {
+        let total_visits: u32 = self.children.iter().map(|c| c.visit_count).sum();
+        if total_visits == 0 {
+            return 0.0;
+        }
+        self.children
+            .iter()
+            .filter(|c| c.visit_count > 0)
+            .map(|c| {
+                let child_v = c.value_sum / c.visit_count as f32;
+                let q = c.reward + c.discount * child_v;
+                q * c.visit_count as f32
+            })
+            .sum::<f32>()
+            / total_visits as f32
+    }
 }
 
 /// MCTS 搜索配置

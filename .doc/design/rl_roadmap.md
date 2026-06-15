@@ -402,8 +402,10 @@ pub trait PlanningAgent {
 |------|------|------|
 | `Rollout` + `RolloutBuffer` | `src/rl/buffer/rollout.rs` / `rollout_buffer.rs` | on-policy 段；**不** `impl BufferItem`（独立容器，见主计划 buffer 三分法）；含 PPO 用的 `log_probs / values` 字段 |
 | `Dynamics` trait | `src/rl/mcts/dynamics.rs` | `initial_state` / `recurrent`；**`impl MctsModel`** 复用 v0.22 `mcts_search` 不改签名（见 §2.5） |
-| MuZero 示例 | `examples/muzero/cartpole/` | **`CartPole-v0`**；简化版（**无 reanalyze**）；**reward ≥ 195** |
+| MuZero 示例 | `examples/muzero/cartpole/` | **`CartPole-v0`**；**canonical 完全体达标 greedy eval 199.5 ≥195**（v0.23.1）：categorical value/reward + latent min-max 归一化 + absorbing state + canonical 梯度缩放（`Var::scale_gradient`）+ `MuZeroConfig`（按环境配 sim）+ `reanalyze_game`（默认关）|
 | PPO 示例 | `examples/ppo/cartpole/` | **`CartPole-v0`**；`Rollout`/`RolloutBuffer` + `src/rl/algo/ppo/`；**reward ≥ 195** |
+
+> **v0.23.1 收口（2026-06-15）**：MuZero 平台期真因是搜索的 **no-terminal 价值膨胀**（非 categorical 缺失），由 canonical absorbing state 修复后达标。`scale_gradient` / `MuZeroConfig`(按环境 sim) / `reanalyze` 机制均已入库（`*Zero` 家族共享地基）；独立 target network 属 EZ 增强、不在 base MuZero。详见 [`.issue/items/muzero_cartpole_scalar_value_plateau.md`](../../.issue/items/muzero_cartpole_scalar_value_plateau.md)。
 
 ### 5.8 EfficientZero V2 终极调优 + 多模式矩阵（**v0.24 主线**）
 

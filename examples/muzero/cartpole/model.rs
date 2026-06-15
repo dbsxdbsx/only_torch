@@ -13,7 +13,7 @@ use only_torch::nn::{
     Graph, GraphError, IntoVar, Linear, Module, Var, VarActivationOps, VarLossOps, VarReduceOps,
     VarShapeOps,
 };
-use only_torch::rl::algo::muzero::{loss, scalar_to_two_hot, two_hot_to_scalar, SupportConfig};
+use only_torch::rl::algo::muzero::{SupportConfig, loss, scalar_to_two_hot, two_hot_to_scalar};
 use only_torch::rl::mcts::{ActionPayload, Dynamics, DynamicsOutput};
 use only_torch::tensor::Tensor;
 
@@ -229,6 +229,13 @@ impl MuZeroModel {
     /// value/reward 用 **categorical 交叉熵**（two-hot 目标），policy 用交叉熵，
     /// 与 canonical MuZero 一致。
     ///
+    /// # 梯度缩放（canonical MuZero，附录 G）
+    /// 两处 `scale_gradient`，均只改反传、不改前向损失值：
+    /// 1. **hidden state ×0.5**：每个 dynamics step 后对 latent 施加，使越深的展开步对
+    ///    repr/dynamics 的梯度贡献按 `0.5^k` 衰减，防 K 步反传梯度指数增长。
+    /// 2. **recurrent loss ×(1/K)**：每个 recurrent step 的 loss 梯度按 `1/K` 缩放，
+    ///    初始步权重 1.0、K 个 recurrent 步合计 1.0（梯度总权重恒 2.0，与 K 无关）。
+    ///
     /// # absorbing state（终止处理，canonical MuZero）
     /// 终止后的 unroll 位置由调用方（`train_batch`）填入 **absorbing 目标**：
     /// `reward=0 / value=0 / policy=uniform`。模型据此学到「终局之后回报恒 0」，
@@ -255,6 +262,10 @@ impl MuZeroModel {
         total_loss =
             &total_loss + &(&pred_value_logits.cross_entropy(&target_v0)? * loss::VALUE_LOSS_COEF);
 
+        // canonical MuZero 梯度缩放（附录 G）：每个 recurrent step 的 loss 梯度按 1/K 缩放，
+        // 使初始步权重 1.0、K 个 recurrent 步合计权重 1.0（总和恒 2.0，与 K 无关）。
+        let step_scale = if k > 0 { 1.0 / k as f32 } else { 1.0 };
+
         // K 步展开
         for i in 0..k {
             let oh = self.action_to_onehot(actions[i]);
@@ -262,6 +273,7 @@ impl MuZeroModel {
             let oh_var = self.graph.input(&oh_tensor)?;
 
             let (next_latent, pred_reward_logits) = self.dyn_net.forward(&latent, &oh_var)?;
+            // prediction 用未缩放的 next_latent（本步预测拿到完整梯度）
             let (pred_p, pred_v_logits) = self.pred.forward(&next_latent);
 
             let tp = Tensor::new(&target_policies[i + 1], &[1, self.action_dim]);
@@ -272,18 +284,21 @@ impl MuZeroModel {
             let step_value_loss = pred_v_logits.cross_entropy(&tv)?;
             let step_reward_loss = pred_reward_logits.cross_entropy(&tr)?;
 
-            // prediction head 不缩放；dynamics 贡献通过 latent 的梯度自然衰减
             let step_loss = &step_policy_loss
                 + &(&step_value_loss * loss::VALUE_LOSS_COEF)
                 + &(&step_reward_loss * loss::REWARD_LOSS_COEF);
 
-            total_loss = &total_loss + &step_loss;
+            // recurrent step loss 梯度 ×(1/K)（前向值不变，仅缩放反传）
+            total_loss = &total_loss + &step_loss.scale_gradient(step_scale);
 
-            latent = next_latent;
+            // canonical：每步对 hidden state 梯度 ×0.5，防 K 步反传梯度指数增长。
+            // 下一步 dynamics 用缩放后的 latent，故越深的展开步对 repr/dynamics 的梯度
+            // 贡献按 0.5^k 衰减（DYNAMICS_GRADIENT_SCALE 真正生效）。
+            latent = next_latent.scale_gradient(loss::DYNAMICS_GRADIENT_SCALE);
         }
 
-        let scale = 1.0 / (k + 1) as f32;
-        Ok(total_loss * scale)
+        // 总损失为各步损失之和（前向值口径不变）；梯度已按 canonical 规则逐项缩放。
+        Ok(total_loss)
     }
 }
 

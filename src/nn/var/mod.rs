@@ -177,6 +177,40 @@ impl Var {
         }
     }
 
+    /// 梯度缩放：前向恒等透传，反向把回传到本节点的梯度按 `scale` 缩放
+    ///
+    /// 语义与 PyTorch/JAX 的 `scale_gradient`、MuZero 论文伪码的
+    /// `scale_gradient(tensor, scale)` 一致：前向 `y = x`，反向 `dx = scale · dy`。
+    /// [`detach`](Self::detach) 是本操作 `scale = 0.0` 的特例（完全阻断）；
+    /// `scale = 1.0` 则是恒等透传。
+    ///
+    /// # 典型用途（MuZero / EfficientZero 等 `*Zero` 家族）
+    /// K 步 unroll 训练中，每经过一个 dynamics step 对 latent 施加
+    /// `scale_gradient(0.5)`，使越深的展开步对 representation/dynamics 的梯度贡献按
+    /// `0.5^k` 衰减，防止 K 步反传梯度指数增长（canonical MuZero，附录 G）。
+    ///
+    /// # 实现
+    /// 用恒等分解 `x = scale·x + (1-scale)·detach(x)`：前向两项相加恰为 `x`；反向时
+    /// `detach(x)` 分支为梯度屏障不回传，故仅 `scale·x` 分支生效，回传梯度恰为
+    /// `scale × 上游`。复用已测的 [`detach`](Self::detach) 与标量乘加，不引入新的
+    /// autograd 原语。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let latent = dynamics.forward(&latent, &action)?;
+    /// let latent = latent.scale_gradient(0.5); // 每步半衰梯度
+    /// ```
+    pub fn scale_gradient(&self, scale: f32) -> Self {
+        if scale == 1.0 {
+            return self.clone();
+        }
+        if scale == 0.0 {
+            return self.detach();
+        }
+        // x = scale·x + (1-scale)·detach(x)：前向恒等，反向仅 scale·x 分支回传
+        &(self * scale) + &(&self.detach() * (1.0 - scale))
+    }
+
     /// 检查此 Var 对应的节点是否处于 detached 状态
     ///
     /// detached 节点在反向传播时不会传递梯度给其父节点。

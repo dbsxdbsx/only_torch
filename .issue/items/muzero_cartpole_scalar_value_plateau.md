@@ -6,7 +6,7 @@ updated: 2026-06-15
 
 # MuZero CartPole 标量 value 表示导致训练停在 ~40 分平台期，无法达到 195（已定位并修复）
 
-## 收口（2026-06-15）：absorbing state 掐断 no-terminal 膨胀，MuZero 恢复学习并逼近 ≥195 ✅
+## 收口（2026-06-15）：absorbing state 掐断 no-terminal 膨胀，MuZero canonical 完全体达标 ≥195 ✅
 
 > **最终结论**：平台期 / categorical regressed 的真凶是 **no-terminal 价值膨胀**（搜索在 learned model
 > 上「幻想」无限存活、每步累加 +1，见下方诊断）。按 **canonical MuZero 的 absorbing state**（终止后的
@@ -23,17 +23,21 @@ updated: 2026-06-15
 | ep 800 | — | **174，频繁打满 200，temp 已退到 0.25** |
 
 - self-play 均值受温度采样系统性压低；真实达标判据是 **greedy(temp=0) eval 20 局均值 ≥195**
-  （`examples/muzero/cartpole/main.rs` 内置，比 Gym 训练均值口径更严）。**greedy-eval ≥195 的正式盖章
-  由 1200 局长跑后半段触发确认**（撰写时长跑在飞，曲线与 800 局一致上升）。
+  （`examples/muzero/cartpole/main.rs` 内置，比 Gym 训练均值口径更严）。**已正式盖章**：最终代码默认配置
+  多次跑出 **greedy eval = 199.5 ~ 200.0**（约 ep 750~1100 达标），见 `target/muzero_final.log`、`muzero_scalegrad.log`。
 - **选型说明**：未走「dynamics 加 done 头」，而是按原版 MuZero 用 absorbing state（无需显式 terminal 头），
   更忠于 canonical 且改动更小。
 
-**相关单测全绿**：`algo_muzero` 14 / `node_amax` 14（含 `amax/amin` Var 包装 + min-max 组合前向反向）/
-`mcts` 14 / `self_play` 7。
+**相关单测全绿**：`algo_muzero` 13（含 `MuZeroConfig` / `reanalyze` mock）/ `node_scale_gradient` 7 /
+`node_amax` 14 / `mcts` 14 / `self_play` 7。
 
-**遗留（推 v0.24 EZ-V2，非本 issue 范畴）**：reanalyze / SVE / value prefix / Gumbel；外加两条小 canonical
-缺口——`scale_gradient` 算子（让 `DYNAMICS_GRADIENT_SCALE=0.5` 真正生效，现为死常量）、`num_simulations`
-去硬编码（现固定 50）。
+**v0.23.1 已补齐的 canonical 完全体**（原列为「小缺口」者均已落地）：
+- ✅ `scale_gradient` 算子（`Var::scale_gradient`）——`DYNAMICS_GRADIENT_SCALE=0.5` 真正生效（每 step latent ×0.5 + 每 recurrent loss ×1/K）。
+- ✅ `num_simulations` 等经 `MuZeroConfig` 按环境配置（去硬编码；canonical 本就是按环境设固定值、非运行时动态）。
+- ✅ reanalyze 机制入库（`reanalyze_game`，默认关闭，CPU 上 ~20–40×/局，按需开）。
+
+**真正推 v0.24 EZ-V2 的（非 base MuZero）**：value prefix / SVE / Gumbel 搜索 / reanalyze 调强 / target network
+（base MuZero Reanalyze 用最新网络，独立冻结 target 属 DQN/EZ 增强）。
 
 ---
 

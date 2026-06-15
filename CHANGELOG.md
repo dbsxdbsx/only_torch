@@ -1,5 +1,45 @@
 # 更新日志
 
+## [0.23.1] - 2026-06-15
+
+> **MuZero canonical 完全体达标**：补齐 categorical value/reward + latent min-max 归一化 + absorbing state + canonical 梯度缩放后，MuZero CartPole-v0 从「卡 ~40 平台期」收口到 **greedy(temp=0) eval 20 局均值 199.5 ≥ 195**。真因是搜索在 learned model 上的 **no-terminal 价值膨胀**，由 absorbing state 直击修复。这套机制是整个 `*Zero` 家族（AlphaZero / MuZero / EfficientZero）的共享地基，已逐项正确性验证。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
+
+### Added
+
+- **feat(nn): `Var::scale_gradient(scale)` 梯度缩放算子**（`src/nn/var/mod.rs`）
+  - 前向恒等、反向梯度 ×scale；恒等分解 `s·x + (1-s)·detach(x)`，复用已测 `detach` + 标量乘加，零新增手写反传
+  - `detach()` 是其 `scale=0` 特例；通用 autograd 原语，供 `*Zero` 家族 K 步 unroll 复用
+  - 7 个单元测试（前向恒等 / 反向 ×s / 链式半衰 / detach 等价）
+
+- **feat(nn): `Var::amax` / `Var::amin`**（`src/nn/var/ops/reduce.rs`）
+  - 复用带 backward 的 `Amax`/`Amin` raw node，Var 级包装 + min-max 组合前向/反向单测；支撑 latent 归一化
+
+- **feat(rl): MuZero categorical value/reward 表示**（`src/rl/algo/muzero/support.rs`）
+  - `SupportConfig` + `scalar_to_two_hot`（h(x) 变换域 two-hot 编码）+ `two_hot_to_scalar`（期望解码），对齐 canonical MuZero 附录 F
+
+- **feat(rl): `MuZeroConfig` 超参容器**（`src/rl/algo/muzero/config.rs`）
+  - 训练/搜索超参按环境配置（`num_simulations` 等：棋类 ~800、向量/Atari ~50），跨 `*Zero` 家族复用；2 个单元测试
+
+- **feat(rl): MuZero Reanalyze**（`src/rl/algo/muzero/reanalyze.rs`）
+  - `reanalyze_game`：用**最新**网络对旧轨迹重跑 MCTS，刷新 policy/value 目标（reward/terminated 不变）
+  - 共享 `SearchResult::root_value()`：self-play 与 reanalyze 统一 root value 口径
+  - 示例训练循环配置门控接入（`reanalyze_fraction`，默认关、`REANALYZE=` 可开）+ mock 单元测试
+
+### Changed
+
+- **refactor(rl): MuZero 示例补齐 canonical 完全体**（`examples/muzero/cartpole/`）
+  - categorical value/reward 头 + 交叉熵 loss（替换标量 MSE）
+  - representation / dynamics 末尾 latent min-max 归一化到 [0,1]
+  - canonical 梯度缩放：每 dynamics step latent 梯度 ×0.5 + 每 recurrent step loss 梯度 ×(1/K)（`DYNAMICS_GRADIENT_SCALE` 真正生效，替换原 `1/(K+1)` 替身）
+  - n-step target 区分 terminated/truncated（truncation 仍 bootstrap，避免低估满分局末端 value）
+  - 超参经 `MuZeroConfig` 注入；`SelfPlayStep` 增加 `terminated` 字段
+
+### Fixed
+
+- **fix(rl): MuZero no-terminal 价值膨胀（CartPole 平台期真因）**
+  - 搜索在 learned model 上「幻想无限存活、每步累加 +1」→ root_value 膨胀 + policy 坍缩；canonical **absorbing state**（终止后 unroll 填 reward0/value0/uniform）直击修复 → greedy eval 199.5 达标
+  - 实测修正：categorical 单上反而 regressed（~9），证伪「categorical 是平台期主因」；真因是 no-terminal
+
 ## [0.23.0] - 2026-06-15
 
 > SAC ✅ / PPO ✅ CartPole-v0 ≥195；MCTS 算法底座收口（Dynamics + MinMaxStats）+ 8 个逻辑 bug 修复；on-policy buffer 入库。**MuZero 架构已验证（能学习），但 ≥195 推 v0.24**（缺 categorical value + latent 归一化，见 `.issue/items/muzero_cartpole_scalar_value_plateau.md`）。「发版」= bump 版本号 + 更新 CHANGELOG，不 `cargo publish`。
